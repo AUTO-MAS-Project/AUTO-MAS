@@ -22,7 +22,14 @@ from pathlib import Path
 
 from app.config import config_manager
 from app.core import Config, EmulatorManager, Notify, Publisher
-from app.core.script_update import ScriptUpdateRequest, run_script_update
+from app.core.script_update import (
+    ScriptUpdateRequest,
+    auto_recover_script_install,
+    run_managed_script_install,
+    run_script_update,
+    run_script_update_with_safe_fallback,
+)
+from app.core.script_update_recovery import DownloadRetryFailed
 from app.core.ws import protocol
 from app.models.config import SrcConfig
 from app.models.emulator import DeviceProvider
@@ -42,6 +49,8 @@ from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
+from .tools.managed_recovery import SRCInstallAdapter
+from app.services.script_install_backup import ManagedInstallBackup
 from .tools import (
     SrcConfigSnapshotState,
     SrcProcessState,
@@ -50,7 +59,6 @@ from .tools import (
     is_src_config_available,
     kill_src_processes,
     program_update,
-    install_recovery,
     read_src_config_snapshot_state,
     read_src_installation_id,
     read_src_process_state,
@@ -749,31 +757,35 @@ class SrcManager(ScriptManagerBase):
         shutil.rmtree(discarded_path, ignore_errors=True)
 
     async def _recover_unconfirmed_install(self) -> bool:
-        """SRC 安装锁由 _recover_previous_run 持有；所有模式均可恢复旧标记。"""
+        """安装状态收发统一交给 #1916，不再等待 UI 用户确认。"""
         root = self.src_root_path
         marker = script_install.workspace(root) / "src-install.json"
-        if not marker.exists() and not marker.is_symlink():
-            return False
-        # 询问本身只读，不需要 SRC 已退出。未知归属的手工启动进程
-        # 不应被 MAS 擅自终止；用户选择后的安装/跳过操作会严格检查停写状态。
-        action, snapshot = await install_recovery.ask_install_recovery(
-            self.task_info.task_id,
-            root,
-            managed_name=getattr(self.script_info, "name", "SRC"),
-            takeover_enabled=self.script_config.Update.TakeoverEnabled,
+        request = ScriptUpdateRequest(str(self.script_info.script_id), "SRC")
+        adapter = SRCInstallAdapter(root)
+        backup = ManagedInstallBackup(
+            root, script_id=request.script_id, script_type="SRC"
         )
-        if action == "skip":
-            commit = await program_update.skip_unconfirmed_install(root, snapshot)
-            result = f"用户确认跳过 SRC 上轮未完成安装，当前 Git 提交 {commit}"
-        else:
-            result = await run_script_update(
-                ScriptUpdateRequest(self.script_info.script_id, "SRC"),
-                program_update.update_before_run,
-                root,
-                recovery_snapshot=snapshot,
+        if backup.read() is not None:
+            result = await run_managed_script_install(
+                request,
+                install_root=root,
+                inspect=adapter.inspect,
+                acknowledge=adapter.acknowledge,
+                install=adapter.install,
+                ensure_idle=adapter.ensure_idle,
+                after_rollback=adapter.after_rollback,
             )
-            await program_update.confirm_current_install(root)
-        await self.script_info.set_log(result)
+        elif marker.exists() or marker.is_symlink():
+            result = await auto_recover_script_install(
+                request,
+                install_root=root,
+                inspect=adapter.inspect,
+                acknowledge=adapter.acknowledge,
+                reinstall=adapter.install,
+            )
+        else:
+            return False
+        await self.script_info.set_log(f"SRC 安装状态已自动恢复：{result}")
         if self.execution_mode == "AutoProxy":
             self._program_update_prepared = True
         return True
@@ -781,36 +793,49 @@ class SrcManager(ScriptManagerBase):
     async def _prepare_program_update(self) -> None:
         if self.execution_mode != "AutoProxy" or self._program_update_prepared:
             return
-        program_update.recover_deploy(self.src_root_path)
+        root = self.src_root_path
+        program_update.recover_deploy(root)
         self.check_result = "SRC 更新准备未完成"
+        marker = script_install.workspace(root) / "src-install.json"
         if self.script_config.Update.TakeoverEnabled:
-            try:
-                await self.script_info.set_log(
-                    await run_script_update(
-                        ScriptUpdateRequest(self.script_info.script_id, "SRC"),
-                        program_update.update_before_run,
-                        self.src_root_path,
-                    )
-                )
-            except (script_install.InstallUnsafeError, FluxdownCancelUnconfirmed):
-                raise
-            except Exception as error:
-                await program_update.confirm_current_install(self.src_root_path)
-                message = f"SRC 更新准备失败，沿用当前安装继续任务：{error}"
-                logger.warning(message)
-                await self.script_info.set_log(message)
-                with suppress(Exception):
-                    await Publisher.send(
-                        id=self.task_info.task_id,
-                        type=protocol.TASK_NOTICE,
-                        data=WSTaskNoticeData(level="warning", message=message),
-                    )
-        elif (
-            script_install.workspace(self.src_root_path) / "src-install.json"
-        ).exists():
-            raise script_install.InstallUnsafeError(
-                "SRC 上次安装未确认，请开启更新托管重试或手动修复"
+            request = ScriptUpdateRequest(str(self.script_info.script_id), "SRC")
+
+            async def prepare():
+                try:
+                    return await program_update.prepare_update(root)
+                except (script_install.InstallUnsafeError, FluxdownCancelUnconfirmed):
+                    raise
+                except Exception as error:
+                    raise DownloadRetryFailed(
+                        source="SRC Git/CDN",
+                        reason=f"下载或只读准备失败（{type(error).__name__}）",
+                    ) from error
+
+            candidate = await run_script_update_with_safe_fallback(
+                request, prepare, root, SRCInstallAdapter(root).inspect
             )
+            if isinstance(candidate, program_update.PreparedUpdate):
+                adapter = SRCInstallAdapter(root, prepared=candidate)
+                try:
+                    result = await run_managed_script_install(
+                        request,
+                        install_root=root,
+                        inspect=adapter.inspect,
+                        acknowledge=adapter.acknowledge,
+                        install=adapter.install,
+                        ensure_idle=adapter.ensure_idle,
+                        after_rollback=adapter.after_rollback,
+                    )
+                finally:
+                    await adapter.ensure_idle()
+                    program_update.remove_cached_git_objects(candidate.objects)
+            else:
+                # 不更新或安全旧版回退时，也必须确认原生安装确实完整。
+                await program_update.confirm_current_install(root)
+                result = candidate or "SRC 当前已经是最新版本"
+            await self.script_info.set_log(str(result))
+        elif marker.exists() or marker.is_symlink():
+            raise script_install.InstallUnsafeError("SRC 有未确认更新标记，禁止继续启动")
         self._program_update_prepared = True
         self.check_result = "Pass"
 
@@ -830,8 +855,7 @@ class SrcManager(ScriptManagerBase):
             )
             return
 
-        # 已有安装标记的用户须在清理/校验原安装前得到恢复选择；
-        # 只恢复本轮被显式授权的标记，不能自动清除。
+        # 公共入口先核验上次安装；不通过就阻断，不能带残留启动。
         await self._recover_unconfirmed_install()
         if self.execution_mode == "AutoProxy":
             await self._cleanup_current_src_root()
