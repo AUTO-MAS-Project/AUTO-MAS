@@ -82,6 +82,8 @@ logger = get_logger("ModAVD 管理")
 #: 界面上「打开游戏中心」之类一次点击的上限（ModAVD 没有游戏中心，留作接口一致）。
 _LAUNCH_TIMEOUT_CAP = 45.0
 _BOOT_TIMEOUT_CAP = 120.0
+#: MAS 自己的换上正在跑时，要起 modavd 的查询 / 客体命令一律这样报错。
+_UPDATING_MESSAGE = "ModAVD 正在更新，更新完再用"
 
 
 def map_status(status: str | None, busy: str | None = "") -> DeviceStatus:
@@ -273,6 +275,11 @@ class FreezeWatchdog:
                 return "frozen"
 
 
+#: 判冻结后 ``modavd stop --force`` 失败时隔这么多秒重试，最多重试这么多次。
+WATCHDOG_KILL_RETRY_SECONDS = 5.0
+WATCHDOG_KILL_RETRIES = 3
+
+
 def _start_watchdog(
     root: Path, native_index: str, pid: int, *, cli: modavd_cli.ModAvdCli
 ) -> None:
@@ -301,13 +308,22 @@ def _start_watchdog(
         )
 
     async def kill() -> None:
-        try:
-            await cli.stop(native_index, force=True)
-        except modavd_cli.CLIError as error:
-            logger.warning(
-                f"ModAVD 实例 {native_index} 判冻结后 modavd stop --force 失败: "
-                f"{error.message}"
-            )
+        # modavd 可能正忙（busy，比如另一个 stop 在关）：隔一会儿再试，免得实例一直卡着
+        for attempt in range(WATCHDOG_KILL_RETRIES + 1):
+            if attempt:
+                await asyncio.sleep(WATCHDOG_KILL_RETRY_SECONDS)
+            try:
+                await cli.stop(native_index, force=True)
+                return
+            except modavd_cli.CLIError as error:
+                logger.warning(
+                    f"ModAVD 实例 {native_index} 判冻结后 modavd stop --force 失败"
+                    f"（第 {attempt + 1} 次）: {error.message}"
+                )
+        logger.error(
+            f"ModAVD 实例 {native_index} 判冻结后 modavd stop --force 重试 "
+            f"{WATCHDOG_KILL_RETRIES} 次仍失败，放弃"
+        )
 
     def is_alive() -> bool:
         try:
@@ -348,8 +364,8 @@ def _int_field(data: object, key: str) -> int | None:
 def _ports_from_cli(item: dict[str, Any], idx: str) -> InstancePorts:
     """``modavd list/info/status`` 的实例对象 → 端口与序列号。
 
-    端口段由 modavd 定（根目录可以设 ``portBase``），MAS 不算：``ports`` 不全时报错（ModAVDManager
-    v0.3.1 起才带）。``serial`` 缺着时按 modavd 报的控制台端口写成 ``emulator-<控制台端口>``。
+    端口段由 modavd 定（根目录可以设 ``portBase``），MAS 不算：``ports`` 不全时报错（没有它的
+    命令行太旧）。``serial`` 缺着时按 modavd 报的控制台端口写成 ``emulator-<控制台端口>``。
     """
     ports = item.get("ports")
     values = [_int_field(ports, key) for key in ("console", "adb", "grpc")]
@@ -409,7 +425,7 @@ class _AvdCore(DeviceBase):
     # ---- 查询 -----------------------------------------------------------
 
     def _raise_cli_error(self, error: modavd_cli.CLIError) -> NoReturn:
-        """把 modavd 的机读错误还原成旧管理器的异常类型。"""
+        """把 modavd 的机读错误换成调用方认得的异常（:func:`~.cli.map_cli_error`）。"""
         raise modavd_cli.map_cli_error(error) from error
 
     async def _raise_cli_precheck(
@@ -476,7 +492,7 @@ class _AvdCore(DeviceBase):
         ``adb_exe``、``adb_server_port`` 和这台实例的端口。MAS 正在换上新版时不起 modavd，直接报错。"""
         idx = str(idx)
         if updater.update_in_progress(self.root):
-            raise RuntimeError("ModAVD 正在更新，更新完再用")
+            raise RuntimeError(_UPDATING_MESSAGE)
         try:
             data = await self._cli.list()
         except modavd_cli.CLIError as error:
@@ -867,7 +883,7 @@ class _AvdCore(DeviceBase):
     async def write_instance_settings(
         self, idx: str, changes: dict, expected: dict | None = None
     ) -> dict[str, int]:
-        """可改 CPU、内存与帧率（30 / 60，写 ``hw.lcd.vsync``），分辨率两档联动 DPI，保留方向，都是下次启动生效。
+        """可改 CPU、内存与帧率（30 / 60），分辨率两档联动 DPI，保留方向；都经 ``modavd set``，下次启动生效。
 
         同一台实例的改设置排队做：两个请求拿着同一份 ``expected`` 同时来时，后一个会看到前一个写的值、
         报冲突，不会两个都说成功、互相覆盖。"""
@@ -1100,7 +1116,7 @@ def _display_settings(current: dict, changes: dict[str, int]) -> dict[str, int]:
 
 
 class AvdHostAdb:
-    """MAS 宿主进程对一台 ModAVD 实例发 adb 命令的通道：``modavd adb <i> -- <参数…>``（私有 server，
+    """MAS 宿主进程对一台 ModAVD 实例发 adb 命令的通道：``modavd adb <i> -- <参数…>``（ModAVD 的私有 server，
     脚本的 adb server 杀不到它；server 没在跑、设备丢了由 modavd 起好、重新登记）。
 
     调用约定同 :data:`~..applaunch.AdbRunner`：``await runner(*args, timeout=…)`` → ``(返回码, 输出)``，
@@ -1112,7 +1128,13 @@ class AvdHostAdb:
         self._cli = cli
         self.native_index = str(native_index)
 
+    def _updating(self) -> bool:
+        """MAS 自己的换上正在跑：每次调用都看，这期间不起 modavd。"""
+        return updater.update_in_progress(self._cli.root)
+
     async def __call__(self, *args: str, timeout: float = 20.0) -> tuple[int, str]:
+        if self._updating():
+            return -1, _UPDATING_MESSAGE
         try:
             code, output, _ = await self._cli.adb(
                 self.native_index, *args, timeout=timeout, merge_stderr=True
@@ -1123,6 +1145,8 @@ class AvdHostAdb:
 
     async def screencap_png(self, timeout: float = 30.0) -> bytes:
         """``exec-out screencap -p`` 的 PNG 字节；失败抛 ``RuntimeError``。"""
+        if self._updating():
+            raise RuntimeError(_UPDATING_MESSAGE)
         try:
             code, data, error = await self._cli.adb(
                 self.native_index, "exec-out", "screencap", "-p", timeout=timeout
@@ -1169,7 +1193,7 @@ class AvdManager(AppLaunchMixin, _AvdCore):
 
         不先问实例在不在（省一个进程）：不在时每条命令由 modavd 报错。MAS 正在换上新版时报错。"""
         if updater.update_in_progress(self.root):
-            raise RuntimeError("ModAVD 正在更新，更新完再用")
+            raise RuntimeError(_UPDATING_MESSAGE)
         return AvdHostAdb(self._cli, str(idx))
 
     async def open(

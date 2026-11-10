@@ -85,8 +85,11 @@ async def script_process_env(manager: Any, index: Any) -> dict[str, str] | None:
         await _utils_emulator2.avd.host.ensure_script_adb_server(root)
     except _utils_emulator2.avd.host.ScriptAdbPortConflict:
         raise  # 端口被别的程序占着，脚本的 adb 连上去只会一直失败，直接报给用户
-    except Exception as e:  # noqa: BLE001 - 起不来就交给脚本自己的 adb
-        logger.warning(f"预先启动脚本专用 adb server 失败: {e}")
+    except Exception as e:  # noqa: BLE001 - 见下
+        # 这次没问成 modavd：之前问到过端口就接着用（server 交给脚本的 adb 起），没问到过就把原因报出去
+        if not _utils_emulator2.avd.host.script_adb_port_known(root):
+            raise
+        logger.warning(f"modavd servers 这次失败，沿用之前报的脚本专用 adb 端口: {e}")
     env = dict(os.environ)
     env.update(_utils_emulator2.avd.host.script_adb_env(root))
     logger.info(

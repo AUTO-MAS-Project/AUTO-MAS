@@ -68,7 +68,7 @@ class EmulatorGameUpdateTask(TaskExecuteBase):
                     self.emulator_manager, allowed=self.allow_mod_avd
                 ),
             )
-            # ModAVD 实例：宿主的 adb 走 MAS 私有 server，不落到 5037；其余模拟器不接管
+            # ModAVD 实例：宿主的 adb 走 ``modavd adb``（ModAVD 的私有 server），不落到 5037；其余模拟器不接管
             host_adb = await resolve_host_adb(self, index=self.emulator_index)
             with _utils_game_apk.adb_runner_scope(host_adb):
                 self.result = await self.checker(

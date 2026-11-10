@@ -64,7 +64,7 @@ def validate_resolution(resolution: int | None) -> int:
 def display_changes(
     config: dict[str, str], resolution: int | None = None
 ) -> dict[str, str]:
-    """按所选档位给出宽、高、DPI，保持方向并关闭导航栏。省略档位时识别现有宽高。"""
+    """按所选档位给出宽、高、DPI，保持方向。省略档位时识别现有宽高。"""
     preset = (
         resolution_for(config)
         if resolution is None
@@ -79,7 +79,6 @@ def display_changes(
         "hw.lcd.width": str(width),
         "hw.lcd.height": str(height),
         "hw.lcd.density": str(density),
-        "hw.mainKeys": "yes",
     }
 
 

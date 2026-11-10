@@ -89,8 +89,8 @@ LIGHT_LAUNCHER_PACKAGE = "de.jrpie.android.launcher"
 
 # ---- 实例 -----------------------------------------------------------------
 
-#: 实例可选的内存（MB）与 CPU 核数（预研 §6.15：3 GB 能跑、很紧）。只收这几档，每次开机用实例自己
-#: 设的内存传 ``-memory``。不按游戏自动分配（用户 10-04 定）：一台实例一轮里可能先后跑好几个游戏，
+#: 实例可选的内存（MB）与 CPU 核数（预研 §6.15：3 GB 能跑、很紧）。只收这几档，交给 modavd 的
+#: ``create`` / ``set``，开机用多少由 modavd 定。不按游戏自动分配（用户 10-04 定）：一台实例一轮里可能先后跑好几个游戏，
 #: 开机后内存就改不了了。默认 6 核 6 GB，够任何一个游戏用。
 MEMORY_CHOICES_MB = (3072, 4096, 5120, 6144)
 CPU_CHOICES = (2, 4, 6)
@@ -105,10 +105,10 @@ RECOMMENDED_MEMORY_MB: dict[str, int] = {
 DEFAULT_DATA_PARTITION_GB = 64
 DATA_PARTITION_RANGE_GB = (16, 512)
 
-#: 两档显示，DPI 随档位切换；开机前写 ``config.ini``，不用运行时显示覆盖。
+#: 两档显示，DPI 随档位切换；以 ``--resolution`` 交给 modavd，下次开机生效，不用运行时显示覆盖。
 DISPLAY_PRESETS = {1080: (1920, 1080, 280), 720: (1280, 720, 240)}
 DEFAULT_RESOLUTION = 1080
-#: 刷新率（``config.ini`` 的 ``hw.lcd.vsync``，下次开机生效），按实例设。默认 60（用户 10-16 定：
+#: 刷新率（以 ``--fps`` 交给 modavd，下次开机生效），按实例设。默认 60（用户 10-16 定：
 #: 帧率影响脚本操作）；30 是低消耗档：终末地大世界 30 Hz 下稳定 30 fps、qemu 约 1.6 核，60 Hz 下
 #: 54–61 fps、qemu 4 核以上（ModAVD 实测）。
 FPS_CHOICES = (30, 60)

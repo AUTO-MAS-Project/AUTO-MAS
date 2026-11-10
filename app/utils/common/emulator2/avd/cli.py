@@ -43,7 +43,10 @@ import psutil
 
 from app.utils import get_logger
 from app.utils.common.process import runner as _utils_process_runner
-from app.utils.common.process.scope import current_process_scope
+from app.utils.common.process.scope import (
+    current_process_scope,
+    detached_process_context,
+)
 
 logger = get_logger("ModAVD CLI")
 
@@ -881,8 +884,14 @@ class ModAvdCli:
         return await self._call("shell", *args, timeout=float(timeout) + 10)
 
     async def servers(self) -> Any:
-        """``modavd servers``：确保私有和脚本用的两个 adb server 在跑，报两个端口和在不在听。"""
-        return await self._call("servers")
+        """``modavd servers``：确保私有和脚本用的两个 adb server 在跑，报两个端口和在不在听。
+
+        不放进调用方任务的进程组（:func:`~app.utils.common.process.scope.detached_process_context`）：
+        任务的 Job 不许子进程脱离，modavd 想脱离着起的 adb server 就会留在 Job 里，手动停止任务时
+        跟着被结束，而这两个 server 是各实例、各脚本共用的。"""
+        return await asyncio.create_task(
+            self._call("servers"), context=detached_process_context()
+        )
 
     async def adb(
         self,

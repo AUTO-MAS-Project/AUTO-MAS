@@ -34,6 +34,7 @@ import psutil
 from app.utils import get_logger
 
 from . import cli as modavd_cli
+from . import updater
 from .components import root_key
 from .constants import ADB_NO_LOCAL_SCAN_ENV
 
@@ -83,7 +84,10 @@ async def adb_servers(root: str | Path) -> AdbServers:
     脚本进程（MaaFW 的 worker、agent、MAA …）里的 adb 客户端顺手拉起的 server 会继承那个进程的输出
     管道，读它输出的一方就等不到结束；先由 modavd 起好就没有这个问题。端口被别的程序占着时 modavd 报
     ``port_conflict``，这里抛 :class:`ScriptAdbPortConflict`（说明原样带上，里面写了改哪个端口）。
+    MAS 自己的换上正在跑（:func:`.updater.update_in_progress`）时不起 modavd，直接报错。
     """
+    if updater.update_in_progress(root):
+        raise RuntimeError("ModAVD 正在更新，更新完再用")
     cli = await modavd_cli.resolve_cli(root)
     if cli is None:
         raise RuntimeError(f"找不到 ModAVD 命令行 {modavd_cli.ModAvdCli(root).exe}")
@@ -118,6 +122,11 @@ async def ensure_script_adb_server(root: str | Path) -> bool:
     return (await adb_servers(root)).script_adb_server_up
 
 
+def script_adb_port_known(root: str | Path) -> bool:
+    """之前从 ``modavd servers`` 问到过这个根目录的脚本 adb 端口。"""
+    return root_key(root) in _SERVERS
+
+
 def script_adb_env(root: str | Path) -> dict[str, str]:
     """脚本进程要叠加的环境变量（端口取最近一次 ``modavd servers`` 报的，见 :meth:`AdbServers.script_env`）。
 
@@ -145,4 +154,5 @@ __all__ = [
     "ensure_script_adb_server",
     "process_cpu_seconds",
     "script_adb_env",
+    "script_adb_port_known",
 ]

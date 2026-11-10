@@ -2771,7 +2771,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
     async def _maa_process_env(self) -> dict[str, str] | None:
         """MAA 进程的环境变量。ModAVD 实例上把它（连同 MaaCore 起的 adb）指到脚本专用的 adb
-        server（``scriptAdbServerPort``，默认 20049），不落到 5037；其余模拟器返回 ``None``，
+        server（``modavd servers`` 报的 ``script_adb_server_port``，默认 20049），不落到 5037；其余模拟器返回 ``None``，
         照旧继承 MAS 的环境。"""
         return await script_process_env(
             self.emulator_manager, self.script_config.Emulator.Index
@@ -3212,7 +3212,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         )
         if shot is not None:
             return shot
-        # ModAVD 实例：截图走 MAS 私有 server（它的 adb 不能落到 5037）。
+        # ModAVD 实例：截图走 ``modavd adb``（ModAVD 的私有 server，它的 adb 不能落到 5037）。
         host_adb = await resolve_host_adb(self)
         image = await capture_current_image(
             capture_adb=self.capture_adb,

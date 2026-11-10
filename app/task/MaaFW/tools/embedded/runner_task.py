@@ -1644,7 +1644,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         self._append_log("正在检查游戏客户端更新")
         try:
-            # ModAVD 实例：钩子在宿主进程里调 adb（game_apk），改走 MAS 私有 server，
+            # ModAVD 实例：钩子在宿主进程里调 adb（game_apk），改走 ``modavd adb``（ModAVD 的私有 server），
             # 不落到 5037；其余模拟器不接管
             with _utils_game_apk.adb_runner_scope(await resolve_host_adb(self)):
                 result = await hook(
@@ -1894,8 +1894,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await _utils_emulator2.avd.host.ensure_script_adb_server(root)
         except _utils_emulator2.avd.host.ScriptAdbPortConflict:
             raise  # 端口被别的程序占着，worker 里的 adb 连上去只会一直失败，直接报给用户
-        except Exception:  # noqa: BLE001 - 起不来就交给 worker 自己的 adb
-            pass
+        except Exception as exc:  # noqa: BLE001 - 见下
+            # 这次没问成 modavd：之前问到过端口就接着用（server 交给 worker 的 adb 起），没问到过就把原因报出去
+            if not _utils_emulator2.avd.host.script_adb_port_known(root):
+                raise
+            logger.warning(
+                f"modavd servers 这次失败，沿用之前报的脚本专用 adb 端口: {exc}"
+            )
         return _utils_emulator2.avd.host.script_adb_env(root)
 
     def _check_avd_runtime_version(self, maafw_version: str | None) -> None:
