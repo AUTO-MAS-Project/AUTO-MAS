@@ -264,6 +264,13 @@ class ScriptUpdateSession:
                 f"；目录：{event.install_root}"
             )
         message = "\n".join(lines)
+        if any(
+            event.outcome in ("old_version", "blocked", "deferred")
+            for event in self._recovery_events
+        ):
+            logger.warning(message)
+        else:
+            logger.info(message)
         # TaskItem.current.log 是虚拟投影（不可写）；汇总保存在任务树自身
         # 的 recovery_summary 字段，再通过任务完成包和任务通知同时传递。
         self._task.current.recovery_summary = message
