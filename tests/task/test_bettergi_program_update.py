@@ -658,7 +658,9 @@ def test_offroot_bettergi_installer_is_not_treated_as_idle(tmp_path, monkeypatch
     monkeypatch.setattr(
         update.psutil,
         "process_iter",
-        lambda attrs: [SimpleNamespace(info={"exe": str(installer), "name": "setup.exe"})],
+        lambda attrs: [
+            SimpleNamespace(info={"exe": str(installer), "name": "setup.exe"})
+        ],
     )
     with pytest.raises(script_install.InstallUnsafeError, match="官方安装器"):
         update.assert_idle(root)
