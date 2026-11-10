@@ -17,6 +17,8 @@ from . import program_update
 
 logger = get_logger("BAAH 安装恢复")
 _TIMEOUT = 120
+# 完整事务包含三份路径哈希清单；64 KiB 不是实际安装的有效上限。
+_MAX_TRANSACTION_BYTES = 128 * 1024 * 1024
 
 
 def _state(root: Path) -> tuple[Path, Path, Path]:
@@ -33,7 +35,7 @@ def confirm_snapshot(root: Path, snapshot: bytes) -> None:
     if (
         marker.is_symlink()
         or not marker.is_file()
-        or len(snapshot) > 64 * 1024
+        or len(snapshot) > _MAX_TRANSACTION_BYTES
         or marker.read_bytes() != snapshot
     ):
         raise script_install.InstallUnsafeError("BAAH 安装恢复记录已变化，拒绝旧选择")
@@ -50,7 +52,7 @@ async def ask_install_recovery(
     if marker.is_symlink() or not marker.is_file():
         raise script_install.InstallUnsafeError("BAAH 安装事务标记异常，请保留现场")
     snapshot = await asyncio.to_thread(marker.read_bytes)
-    if len(snapshot) > 64 * 1024:
+    if len(snapshot) > _MAX_TRANSACTION_BYTES:
         raise script_install.InstallUnsafeError("BAAH 事务标记过大，拒绝修改")
     can_skip = not (
         previous.exists()
