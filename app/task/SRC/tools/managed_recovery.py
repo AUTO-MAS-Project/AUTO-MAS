@@ -55,10 +55,9 @@ class SRCInstallAdapter:
             )
             if expected is None:
                 expected = target
-        healthy = (
-            (self.root / "src.exe").is_file()
-            and (self.root / "installer.py").is_file()
-        )
+        healthy = (self.root / "src.exe").is_file() and (
+            self.root / "installer.py"
+        ).is_file()
         if healthy:
             try:
                 python = self.root / str(
