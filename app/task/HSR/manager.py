@@ -300,6 +300,7 @@ class HSRManager(NotificationTaskBase):
         """
 
         from app.task.HSR.tools.update import rollback_pending
+        from app.task.HSR.tools.update_recovery import ask_rollback_recovery
 
         for engine in ("M7A", "SRA"):
             root = resolve_script_path(self.script_config, engine)
@@ -307,13 +308,35 @@ class HSRManager(NotificationTaskBase):
                 continue
             try:
                 await rollback_pending(Path(root), send_log=self._append_log)
-            except Exception as e:  # noqa: BLE001 - 未完成安装必须阻止任务启动
+            except Exception as error:  # noqa: BLE001 - 只能重试安全的原生回滚
                 name = engine_label(engine, left=False)
                 logger.opt(exception=True).warning(
-                    f"HSR 更新：回滚{engine_label(engine)}残留失败"
+                    f"HSR 更新：{name} 自动回滚失败，要求用户明确选择"
                 )
-                self._append_log(f"{name}未完成更新的回滚失败，已停止任务：{e}")
-                raise RuntimeError(f"{name}更新状态无法恢复，不能开始任务") from e
+                self._append_log(f"{name}未完成更新的自动回滚失败：{error}")
+                # 目录的运行锁仍由本轮 HSR manager 持有。询问阶段不修改工作目录。
+                # 选择重试也复用原生 journal 校验和回滚，绝不删除备份/标记跳过。
+                try:
+                    choice = await ask_rollback_recovery(
+                        self.task_info.task_id,
+                        Path(root),
+                        engine=engine,
+                        managed_name=getattr(self.script_info, "name", "HSR"),
+                        failure=str(error),
+                    )
+                    if choice != "retry":
+                        raise RuntimeError("用户未确认再次回滚")
+                    if not await rollback_pending(
+                        Path(root), send_log=self._append_log
+                    ):
+                        raise RuntimeError("未确认上轮更新已经安全回滚")
+                except Exception as retry_error:
+                    self._append_log(
+                        f"{name} 更新备份仍未恢复，拒绝启动：{retry_error}"
+                    )
+                    raise RuntimeError(
+                        f"{name}更新状态无法恢复，不能开始任务；请保留 .automas_update 目录"
+                    ) from retry_error
 
     def _update_aborted(self) -> bool:
         """用户是否已经要求停止——下载途中每收一块问一次。

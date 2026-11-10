@@ -1081,3 +1081,73 @@ async def test_module_verdict_remains_independent_of_deferred_prefetch(
     assert "first_task_completed_at" not in user.info.model_dump()
     assert "first_task_completed_at" not in script.info.model_dump()
     await proxy.callbacks.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("engine", ("M7A", "SRA"))
+async def test_failed_engine_rollback_prompts_and_retries_same_safe_path(
+    scheduler, monkeypatch, tmp_path, engine
+):
+    from app.task.HSR.tools import update_recovery
+
+    scheduler.task_info = SimpleNamespace(task_id="test-run")
+    for name in ("M7A", "SRA"):
+        root = tmp_path / name
+        root.mkdir()
+    seen = []
+
+    async def rollback(root, *, send_log=None):
+        seen.append(root.name)
+        if root.name == engine and seen.count(engine) == 1:
+            raise update.HSRUpdateError("stale journal")
+        return root.name == engine
+
+    prompt = AsyncMock(return_value="retry")
+    monkeypatch.setattr(update, "rollback_pending", rollback)
+    monkeypatch.setattr(update_recovery, "ask_rollback_recovery", prompt)
+    await scheduler._rollback_pending_updates()
+    prompt.assert_awaited_once()
+    assert prompt.await_args.kwargs["engine"] == engine
+    assert seen.count(engine) == 2
+
+
+@pytest.mark.asyncio
+async def test_cancel_rollback_preserves_engine_installation_and_stops(
+    scheduler, monkeypatch, tmp_path
+):
+    from app.task.HSR.tools import update_recovery
+
+    scheduler.task_info = SimpleNamespace(task_id="test-run")
+    (tmp_path / "M7A").mkdir()
+    (tmp_path / "SRA").mkdir()
+    calls = []
+
+    async def rollback(root, *, send_log=None):
+        calls.append(root.name)
+        raise update.HSRUpdateError("journal unavailable")
+
+    monkeypatch.setattr(update, "rollback_pending", rollback)
+    monkeypatch.setattr(
+        update_recovery,
+        "ask_rollback_recovery",
+        AsyncMock(side_effect=RuntimeError("用户取消")),
+    )
+    with pytest.raises(RuntimeError, match="保留 \.automas_update"):
+        await scheduler._rollback_pending_updates()
+    assert calls == ["M7A"]
+    update_recovery.ask_rollback_recovery.assert_awaited_once()
+
+
+def test_hsr_rollback_rejects_symlink_journal(tmp_path):
+    root = tmp_path / "script"
+    root.mkdir()
+    journal = installer.journal_path(root)
+    journal.parent.mkdir()
+    other = tmp_path / "other.json"
+    other.write_text('{"schema":1}')
+    try:
+        journal.symlink_to(other)
+    except (NotImplementedError, OSError):
+        pytest.skip("symlink not supported on current runner")
+    assert installer.rollback(root) is False
+    assert other.exists()
