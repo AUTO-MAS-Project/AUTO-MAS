@@ -188,7 +188,6 @@ def select_installer(release: dict) -> tuple[Version, str, str, int, str]:
     raise ValueError("BetterGI 官方发行版没有完整安装器")
 
 
-
 # BetterGI 以内置 notice.json 控制正式版灰度；GitHub Release 可能先于 OTA 资源公开。
 _STABLE_NOTICE_URL = "https://hui-config.oss-cn-hangzhou.aliyuncs.com/bgi/notice.json"
 _STABLE_DFS2_URL = "https://bgi-ota.cocogoat.cn/resource/BetterGI.Install.exe"
