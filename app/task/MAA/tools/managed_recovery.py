@@ -30,7 +30,6 @@ _RESOURCE_MARKER = ".automas-resource-update.json"
 class MAAInstallAdapter:
     def __init__(self, root: Path) -> None:
         self.root = root
-        self.previous_target: str | None = None
 
     async def ensure_idle(self) -> None:
         if await process.is_process_running(self.root / "MAA.Updater.exe"):
@@ -53,7 +52,7 @@ class MAAInstallAdapter:
             release, exe_ok, clock = None, None, None
         version = release[0] if release else None
         healthy = bool(version and exe_ok and clock is not None)
-        target = self.previous_target
+        target: str | None = None
         package = ""
         if software_pending:
             try:
@@ -98,7 +97,7 @@ class MAAInstallAdapter:
 
         await skip_delegated_failure(self.root, {"software": software.read_bytes()})
 
-    async def reinstall(self, install_software, install_resources) -> None:
+    async def reinstall(self, install_resources) -> None:
         """仅自动修复 MAS 自有资源半更新；原生本体失败交官方恢复。"""
         software = self.root / _SOFTWARE_MARKER
         resource = self.root / _RESOURCE_MARKER
