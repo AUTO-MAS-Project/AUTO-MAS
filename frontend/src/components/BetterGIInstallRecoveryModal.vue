@@ -11,9 +11,7 @@ const { t } = useI18n()
 const prompt = computed(() => bettergiInstallPrompts.value[0] ?? null)
 const acknowledged = ref(false)
 const sendFailed = ref(false)
-const submitting = computed(
-  () => bettergiInstallDecisionPending.value === prompt.value?.requestId
-)
+const submitting = computed(() => bettergiInstallDecisionPending.value === prompt.value?.requestId)
 
 watch(
   () => prompt.value?.requestId,
@@ -74,11 +72,7 @@ function decide(action: 'retry' | 'skip' | 'stop') {
         show-icon
         :message="t('bootstrap.comp.bettergiRecoveryRisk')"
       />
-      <a-checkbox
-        v-model:checked="acknowledged"
-        :disabled="submitting"
-        class="recovery-check"
-      >
+      <a-checkbox v-model:checked="acknowledged" :disabled="submitting" class="recovery-check">
         {{ t('bootstrap.comp.bettergiRecoveryAcknowledgement') }}
       </a-checkbox>
       <a-alert
