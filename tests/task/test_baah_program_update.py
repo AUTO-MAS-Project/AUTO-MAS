@@ -365,9 +365,7 @@ async def test_baah_stale_journal_automatically_requires_verified_receipt(
 
 
 @pytest.mark.asyncio
-async def test_baah_corrupt_install_has_no_gui_dependency(
-    installation, monkeypatch
-):
+async def test_baah_corrupt_install_has_no_gui_dependency(installation, monkeypatch):
     root, config, _, _ = installation
     candidate = await update.prepare_update(root, config)
     await update.apply_update(root, candidate)
