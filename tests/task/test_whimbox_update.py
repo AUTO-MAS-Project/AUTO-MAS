@@ -228,6 +228,7 @@ async def test_public_recovery_handles_legacy_pending_without_modal(
     managed_batch, installation, monkeypatch
 ):
     update.pending_marker(installation).write_text("3.1.1", encoding="utf-8")
+
     async def recover_and_confirm(*args, **kwargs):
         update.pending_marker(installation).unlink()
         return "verified"
