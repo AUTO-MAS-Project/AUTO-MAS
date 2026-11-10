@@ -3,7 +3,7 @@
 import json
 from datetime import datetime, timezone
 from tests.runtime_support import RuntimeStub as SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -63,6 +63,7 @@ async def test_maa_repair_reuses_verified_full_resource_pipeline(partial, monkey
         assert kwargs["github"] is True
         assert kwargs["recovery_snapshot"] == snapshot
         marker.unlink()
+
     monkeypatch.setattr(manager, "prepare_install_resources", install_resources)
     monkeypatch.setattr(
         manager,

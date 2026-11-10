@@ -64,14 +64,14 @@ it('drops stale MAA install prompt after active websocket reconnect without clos
       installPath: '/sandbox/one',
     },
   })
-  expect(module.maaInstallPrompts.value).toHaveLength(1)
+  expect(module.maaResourceRecoveryPrompts.value).toHaveLength(1)
   expect(boundary.connected).toHaveLength(1)
 
   // Simulate reconnectNow successful: stale socket close was intentionally ignored,
   // and backend's final prompt-closed frame never arrived.
   boundary.connected[0]()
-  expect(module.maaInstallPrompts.value).toHaveLength(0)
-  expect(module.maaInstallDecisionPending.value).toBeNull()
+  expect(module.maaResourceRecoveryPrompts.value).toHaveLength(0)
+  expect(module.maaResourceRecoveryDecisionPending.value).toBeNull()
   expect(module.respondToMAAResourceRecovery('retry')).toBe(false)
   expect(boundary.send).not.toHaveBeenCalled()
 

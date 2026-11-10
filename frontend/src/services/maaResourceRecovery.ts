@@ -13,19 +13,19 @@ import {
 } from '@/services/websocket/types'
 
 const logger = window.electronAPI.getLogger('MAA安装恢复')
-export const maaInstallPrompts = ref<WSMAAResourceRecoveryPromptData[]>([])
-export const maaInstallDecisionPending = ref<string | null>(null)
+export const maaResourceRecoveryPrompts = ref<WSMAAResourceRecoveryPromptData[]>([])
+export const maaResourceRecoveryDecisionPending = ref<string | null>(null)
 
 let subscriptionIds: string[] = []
 let disposeDisconnect: (() => void) | null = null
 let disposeConnect: (() => void) | null = null
 
 const forgetRequest = (requestId: string) => {
-  maaInstallPrompts.value = maaInstallPrompts.value.filter(
+  maaResourceRecoveryPrompts.value = maaResourceRecoveryPrompts.value.filter(
     prompt => prompt.requestId !== requestId
   )
-  if (maaInstallDecisionPending.value === requestId) {
-    maaInstallDecisionPending.value = null
+  if (maaResourceRecoveryDecisionPending.value === requestId) {
+    maaResourceRecoveryDecisionPending.value = null
   }
 }
 
@@ -37,31 +37,31 @@ export function bootstrapMAAResourceRecovery(): void {
       if (
         !prompt.requestId ||
         !prompt.taskId ||
-        maaInstallPrompts.value.some(previous => previous.requestId === prompt.requestId)
+        maaResourceRecoveryPrompts.value.some(previous => previous.requestId === prompt.requestId)
       ) {
         return
       }
-      maaInstallPrompts.value.push(prompt)
+      maaResourceRecoveryPrompts.value.push(prompt)
     }),
     subscribe({ id: WS_ID_TASK_MANAGER, type: WS_MAA_RESOURCE_RECOVERY_CLOSED }, message => {
       forgetRequest(message.data.requestId)
     }),
   ]
   disposeDisconnect = onDisconnected(() => {
-    maaInstallPrompts.value = []
-    maaInstallDecisionPending.value = null
+    maaResourceRecoveryPrompts.value = []
+    maaResourceRecoveryDecisionPending.value = null
   })
   // reconnectNow 在切换连接代次时不会触发 onDisconnected。
   // 新连接建立后，旧连接的关闭帧可能已丢失；绝不可沿用旧确认请求。
   disposeConnect = onConnected(() => {
-    maaInstallPrompts.value = []
-    maaInstallDecisionPending.value = null
+    maaResourceRecoveryPrompts.value = []
+    maaResourceRecoveryDecisionPending.value = null
   })
 }
 
 export function respondToMAAResourceRecovery(action: 'retry' | 'stop'): boolean {
-  const prompt = maaInstallPrompts.value[0]
-  if (!prompt || maaInstallDecisionPending.value) return false
+  const prompt = maaResourceRecoveryPrompts.value[0]
+  if (!prompt || maaResourceRecoveryDecisionPending.value) return false
   const sent = send(WS_ID_TASK_MANAGER, WS_MAA_RESOURCE_RECOVERY_DECISION, {
     requestId: prompt.requestId,
     taskId: prompt.taskId,
@@ -71,7 +71,7 @@ export function respondToMAAResourceRecovery(action: 'retry' | 'stop'): boolean 
     logger.warn('未能发送 MAA 安装恢复选择')
     return false
   }
-  maaInstallDecisionPending.value = prompt.requestId
+  maaResourceRecoveryDecisionPending.value = prompt.requestId
   return true
 }
 
@@ -81,6 +81,6 @@ export function disposeMAAResourceRecovery(): void {
   disposeDisconnect = null
   disposeConnect?.()
   disposeConnect = null
-  maaInstallPrompts.value = []
-  maaInstallDecisionPending.value = null
+  maaResourceRecoveryPrompts.value = []
+  maaResourceRecoveryDecisionPending.value = null
 }

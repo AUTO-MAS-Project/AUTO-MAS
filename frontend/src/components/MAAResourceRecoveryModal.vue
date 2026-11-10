@@ -2,15 +2,15 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  maaInstallPrompts,
-  maaInstallDecisionPending,
+  maaResourceRecoveryPrompts,
+  maaResourceRecoveryDecisionPending,
   respondToMAAResourceRecovery,
 } from '@/services/maaResourceRecovery'
 
 const { t } = useI18n()
-const prompt = computed(() => maaInstallPrompts.value[0] ?? null)
+const prompt = computed(() => maaResourceRecoveryPrompts.value[0] ?? null)
 const sendFailed = ref(false)
-const submitting = computed(() => maaInstallDecisionPending.value === prompt.value?.requestId)
+const submitting = computed(() => maaResourceRecoveryDecisionPending.value === prompt.value?.requestId)
 
 watch(
   () => prompt.value?.requestId,
@@ -28,7 +28,7 @@ function decide(action: 'retry' | 'stop') {
 <template>
   <a-modal
     :open="Boolean(prompt)"
-    :title="t('bootstrap.comp.maaRecoveryTitle')"
+    :title="t('bootstrap.comp.maaResourceRecoveryTitle')"
     :closable="false"
     :keyboard="false"
     :mask-closable="false"
@@ -39,28 +39,28 @@ function decide(action: 'retry' | 'stop') {
     centered
   >
     <template v-if="prompt">
-      <p>{{ t('bootstrap.comp.maaRecoveryMessage') }}</p>
+      <p>{{ t('bootstrap.comp.maaResourceRecoveryMessage') }}</p>
       <a-descriptions bordered :column="1" size="small" class="recovery-details">
-        <a-descriptions-item :label="t('bootstrap.comp.maaRecoveryManagedName')">
-          {{ prompt.managedName || t('bootstrap.comp.maaRecoveryUnknown') }}
+        <a-descriptions-item :label="t('bootstrap.comp.maaResourceRecoveryManagedName')">
+          {{ prompt.managedName || t('bootstrap.comp.maaResourceRecoveryUnknown') }}
         </a-descriptions-item>
-        <a-descriptions-item :label="t('bootstrap.comp.maaRecoveryInstallPath')">
+        <a-descriptions-item :label="t('bootstrap.comp.maaResourceRecoveryInstallPath')">
           <span class="recovery-path">{{
-            prompt.installPath || t('bootstrap.comp.maaRecoveryUnknown')
+            prompt.installPath || t('bootstrap.comp.maaResourceRecoveryUnknown')
           }}</span>
         </a-descriptions-item>
-        <a-descriptions-item :label="t('bootstrap.comp.maaRecoveryCurrent')">
-          {{ prompt.installedVersion || t('bootstrap.comp.maaRecoveryUnknown') }}
+        <a-descriptions-item :label="t('bootstrap.comp.maaResourceRecoveryCurrent')">
+          {{ prompt.installedVersion || t('bootstrap.comp.maaResourceRecoveryUnknown') }}
         </a-descriptions-item>
-        <a-descriptions-item :label="t('bootstrap.comp.maaRecoveryTarget')">
-          {{ prompt.targetVersion || t('bootstrap.comp.maaRecoveryUnknown') }}
+        <a-descriptions-item :label="t('bootstrap.comp.maaResourceRecoveryTarget')">
+          {{ prompt.targetVersion || t('bootstrap.comp.maaResourceRecoveryUnknown') }}
         </a-descriptions-item>
-        <a-descriptions-item :label="t('bootstrap.comp.maaRecoveryTakeover')">
+        <a-descriptions-item :label="t('bootstrap.comp.maaResourceRecoveryTakeover')">
           {{
             t(
               prompt.takeoverEnabled
-                ? 'bootstrap.comp.maaRecoveryEnabled'
-                : 'bootstrap.comp.maaRecoveryDisabled'
+                ? 'bootstrap.comp.maaResourceRecoveryEnabled'
+                : 'bootstrap.comp.maaResourceRecoveryDisabled'
             )
           }}
         </a-descriptions-item>
@@ -69,21 +69,21 @@ function decide(action: 'retry' | 'stop') {
         class="recovery-warning"
         type="warning"
         show-icon
-        :message="t('bootstrap.comp.maaRecoveryRisk')"
+        :message="t('bootstrap.comp.maaResourceRecoveryRisk')"
       />
       <a-alert
         v-if="sendFailed"
         class="recovery-error"
         type="error"
         show-icon
-        :message="t('bootstrap.comp.maaRecoverySendFailed')"
+        :message="t('bootstrap.comp.maaResourceRecoverySendFailed')"
       />
       <div class="recovery-actions">
         <a-button :disabled="submitting" @click="decide('stop')">
-          {{ t('bootstrap.comp.maaRecoveryStop') }}
+          {{ t('bootstrap.comp.maaResourceRecoveryStop') }}
         </a-button>
         <a-button type="primary" :loading="submitting" @click="decide('retry')">
-          {{ t('bootstrap.comp.maaRecoveryRetry') }}
+          {{ t('bootstrap.comp.maaResourceRecoveryRetry') }}
         </a-button>
       </div>
     </template>

@@ -22,6 +22,10 @@ async def ask_resource_recovery(
     takeover_enabled: bool,
 ) -> tuple[str, bytes]:
     marker = root / ".automas-resource-update.json"
+    if marker.is_symlink() or not marker.is_file():
+        raise resource_update.MaaUpdateUnsafeError(
+            "MAA 资源更新记录缺失或不是普通文件，拒绝恢复"
+        )
     snapshot = await asyncio.to_thread(marker.read_bytes)
     target = resource_update.verify_resource_recovery_marker(root, snapshot)
     current = await asyncio.to_thread(resource_update.read_resource_clock, root)
