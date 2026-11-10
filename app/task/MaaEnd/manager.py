@@ -287,9 +287,7 @@ class MaaEndManager(ScriptManagerBase):
             f"账号列表加载完成, 已筛选账号数: {len(self.script_info.user_list)}"
         )
 
-    async def _recover_unusable_install(
-        self, root: Path, config: MaaEndConfig
-    ) -> bool:
+    async def _recover_unusable_install(self, root: Path, config: MaaEndConfig) -> bool:
         """仅损坏原生安装且持有可靠 MAS 架构记录时，询问用户是否完整修复。"""
         try:
             await asyncio.to_thread(script_update.read_install, root)
