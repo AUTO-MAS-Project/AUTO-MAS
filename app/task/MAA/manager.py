@@ -35,6 +35,7 @@ from app.models.notification.report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.services import capture_adb
+from app.services import script_install
 from app.task.emulator_core import close_emulator
 from app.task.game_update import EmulatorGameUpdateTask
 from app.task.MAA.stage import maa_stage_service
@@ -58,7 +59,7 @@ from .AutoProxy import (
 )
 from .constants import ARKNIGHTS_PACKAGE_NAME
 from .ScriptConfig import ScriptConfigTask
-from .tools import update_maa
+from .tools import install_recovery, update_maa
 from .tools.backup_archive import (
     archive_native_backup,
     collect_native_files,
@@ -96,6 +97,7 @@ from .tools.software_update import (
 )
 from .tools.update_config import restore_maa_update_config
 from .tools.update_credentials import (
+    resolve_takeover_cdk,
     resolve_takeover_credentials,
     use_maa_github_update,
 )
@@ -306,8 +308,14 @@ class MaaManager(ScriptManagerBase):
         ].Emulator.Index in ["", "-"]:
             return "未完成模拟器配置, 请检查托管配置中的模拟器设置！"
         root_path = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Info.Path
-        if root_path is None or not (root_path / "MAA.exe").exists():
+        if root_path is None or not root_path.is_dir():
             return "MAA.exe文件不存在, 请检查MAA路径设置！"
+        if not (root_path / "MAA.exe").is_file():
+            # 有真实官方失败记录时，先进入已持锁的恢复询问，再检查
+            # 重装后的主程序；无标记的普通无效安装仍拒绝。
+            flag = root_path / "pending-update-failure.txt"
+            if not flag.is_file() or flag.is_symlink():
+                return "MAA.exe文件不存在, 请检查MAA路径设置！"
         if not (root_path / "config/gui.new.json").exists():
             return "MAA配置文件不存在, 请检查MAA路径设置或先启动MAA完成配置文件生成！"
         # 托管级存档仅在确实有用户选择共享来源时需要；独立来源使用各自的
@@ -507,6 +515,53 @@ class MaaManager(ScriptManagerBase):
             return False
         return base == CONFIG_BASE_NATIVE
 
+    async def _recover_unconfirmed_update(self) -> None:
+        """由用户明确决定如何恢复上次 MAA 官方安装或 MAS 资源写入。"""
+        root = self.maa_set_path.parent
+        software_flag = root / "pending-update-failure.txt"
+        resource_flag = root / ".automas-resource-update.json"
+        if not (
+            software_flag.exists()
+            or software_flag.is_symlink()
+            or resource_flag.exists()
+            or resource_flag.is_symlink()
+        ):
+            return
+
+        # prepare() 已拿到本安装的资源访问锁并关闭 MAA；此后才允许恢复或放行。
+        action, snapshot = await install_recovery.ask_maa_recovery(
+            self.task_info.task_id,
+            root,
+            managed_name=getattr(self.script_info, "name", "MAA"),
+            takeover_enabled=self.script_config.Update.TakeoverEnabled,
+        )
+        if action == "skip":
+            version = await install_recovery.skip_delegated_failure(root, snapshot)
+            message = f"用户确认沿用手动修复的 MAA {version}；原失败记录已归档"
+        else:
+            install_recovery.confirm_snapshot(root, snapshot)
+            if software_flag.exists():
+                version, package = read_pending_update(root)
+                if not package or not (root / package).is_file():
+                    raise MaaUpdateUnsafeError(
+                        "MAA 原安装包不在，无法自动重试；请先通过官方 MAA 安装器手动修复"
+                    )
+                await self._install_pending_software_update(target=version or None)
+            if resource_flag.exists():
+                cdk = resolve_takeover_cdk(
+                    str(self.script_config.Update.MirrorChyanCDK or "")
+                )
+                # 用户明确选择了本次重试：即使关闭了日常自动接管也允许
+                # 单次通过公开 GitHub 资源或已有 CDK 修复中断的资源合并。
+                await prepare_install_resources(
+                    root, cdk=cdk or None, github=not bool(cdk)
+                )
+            install_recovery.confirm_recovery_finished(root)
+            message = "MAA 本体与资源恢复已完成，允许继续运行"
+        await self.script_info.set_log(message)
+        # 本次用户已明确选择，避免刚恢复后又自动执行第二轮版本升级。
+        self._maa_update_checked = True
+
     async def main_task(self):
 
         self.check_result = await self.check()
@@ -526,6 +581,8 @@ class MaaManager(ScriptManagerBase):
         # prepare() 内每次 await 都可能被中止。只有它整体返回后，收尾依赖的
         # 配置锁、备份目录与模拟器实例才确实建立，此时才允许 final_task 收尾
         self.prepared = True
+
+        await self._recover_unconfirmed_update()
 
         if not isinstance(self.script_config, MaaConfig):
             raise RuntimeError("托管配置类型错误, 不是MAA托管类型")
