@@ -13,6 +13,7 @@ import { useAppInitialization } from './composables/useAppInitialization.ts'
 import AppLayout from './components/AppLayout.vue'
 import TitleBar from './components/TitleBar.vue'
 import UpdateModal from './components/UpdateModal.vue'
+import WhimboxInstallRecoveryModal from './components/WhimboxInstallRecoveryModal.vue'
 import GlobalPowerCountdown from './components/GlobalPowerCountdown.vue'
 import AppClosingOverlay from './components/AppClosingOverlay.vue'
 import BackendStartupOverlay from './components/BackendStartupOverlay.vue'
@@ -155,6 +156,8 @@ onMounted(async () => {
   <ConfigProvider :theme="antdTheme" :locale="antdLocale" :render-empty="renderEmpty">
     <ThemeTokenBridge />
     <AppearanceDecoration />
+    <!-- 非独立窗口全局展示奇想盒未完成安装的恢复决定 -->
+    <WhimboxInstallRecoveryModal v-if="!isStandalonePage" />
     <!-- 初始化页面使用带标题栏的全屏布局 -->
     <div v-if="isInitializationPage" class="initialization-container">
       <TitleBar />

@@ -21,6 +21,10 @@ import {
   bootstrapVirtualDisplayPrompt,
   disposeVirtualDisplayPrompt,
 } from '@/services/virtualDisplayPrompt'
+import {
+  bootstrapWhimboxInstallRecovery,
+  disposeWhimboxInstallRecovery,
+} from '@/services/whimboxInstallRecovery'
 
 let registered = false
 
@@ -70,6 +74,10 @@ export function bootstrapRealtimeResidents(): void {
     registerResidentResource('virtual-display-prompt', {
       bootstrap: bootstrapVirtualDisplayPrompt,
       dispose: disposeVirtualDisplayPrompt,
+    })
+    registerResidentResource('whimbox-install-recovery', {
+      bootstrap: bootstrapWhimboxInstallRecovery,
+      dispose: disposeWhimboxInstallRecovery,
     })
     registered = true
   }
