@@ -18,6 +18,7 @@ import psutil
 
 from app.core import Dispatcher, Publisher
 from app.core.ws import protocol
+from app.services import script_install
 from app.utils import get_logger
 
 from .apply import journal_path, work_dir
@@ -26,6 +27,7 @@ from .guards import check_no_process_running
 
 logger = get_logger("HSR 更新恢复")
 _TIMEOUT = 120
+_MAX_TRANSACTION_BYTES = 128 * 1024 * 1024
 
 
 class HSRRecoveryUnsafeError(RuntimeError):
@@ -37,7 +39,12 @@ def _assert_idle(root: Path) -> None:
     if failure:
         raise HSRRecoveryUnsafeError(failure.reason)
     # 不要把无法读取路径的相关安装器进程视为确定已退出。
-    names = {"march7th assistant.exe", "sra-cli.exe", "sra-server.exe"}
+    names = {
+        "march7th assistant.exe",
+        "sra.exe",
+        "sra-cli.exe",
+        "sra-server.exe",
+    }
     for proc in psutil.process_iter(["exe", "name"]):
         try:
             path = proc.info.get("exe")
@@ -59,7 +66,7 @@ def confirm_snapshot(root: Path, snapshot: bytes) -> None:
     if (
         marker.is_symlink()
         or not marker.is_file()
-        or len(snapshot) > 64 * 1024
+        or len(snapshot) > _MAX_TRANSACTION_BYTES
         or marker.read_bytes() != snapshot
     ):
         raise HSRRecoveryUnsafeError("HSR 旧更新事务记录已经变化，拒绝旧请求")
@@ -76,7 +83,7 @@ async def ask_install_recovery(
     if marker.is_symlink() or not marker.is_file():
         raise HSRRecoveryUnsafeError("HSR 外部脚本恢复记录不是普通文件")
     snapshot = await asyncio.to_thread(marker.read_bytes)
-    if len(snapshot) > 64 * 1024:
+    if len(snapshot) > _MAX_TRANSACTION_BYTES:
         raise HSRRecoveryUnsafeError("HSR 外部脚本记录异常，拒绝恢复")
     stage = work_dir(root) / "stage"
     backup = work_dir(root) / "backup"
@@ -152,8 +159,16 @@ async def skip_stale_journal(engine: str, root: Path, snapshot: bytes) -> str:
     confirm_snapshot(root, snapshot)
     if any(p.exists() or p.is_symlink() for p in (stage, backup)):
         raise HSRRecoveryUnsafeError("HSR 仍有更新备份或暂存目录，禁止跳过")
-    if not (root / spec.executable).is_file():
+    executable = root / spec.executable
+    if not executable.is_file():
         raise HSRRecoveryUnsafeError("HSR 外部脚本主程序缺失，必须重新安装")
+    if engine == "M7A":
+        try:
+            script_install.read_pe_architecture(executable)
+        except (OSError, ValueError) as error:
+            raise HSRRecoveryUnsafeError(
+                "M7A 主程序 PE 文件已损坏，不能跳过更新恢复"
+            ) from error
     try:
         version = await asyncio.to_thread(read_installed_version, spec, root)
     except Exception as error:
