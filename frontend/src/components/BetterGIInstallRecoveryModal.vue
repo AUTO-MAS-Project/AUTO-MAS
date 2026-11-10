@@ -47,7 +47,9 @@ function decide(action: 'retry' | 'skip' | 'stop') {
           {{ prompt.managedName || t('bootstrap.comp.bettergiRecoveryUnknown') }}
         </a-descriptions-item>
         <a-descriptions-item :label="t('bootstrap.comp.bettergiRecoveryInstallPath')">
-          <span class="recovery-path">{{ prompt.installPath || t('bootstrap.comp.bettergiRecoveryUnknown') }}</span>
+          <span class="recovery-path">{{
+            prompt.installPath || t('bootstrap.comp.bettergiRecoveryUnknown')
+          }}</span>
         </a-descriptions-item>
         <a-descriptions-item :label="t('bootstrap.comp.bettergiRecoveryCurrent')">
           {{ prompt.installedVersion || t('bootstrap.comp.bettergiRecoveryUnknown') }}

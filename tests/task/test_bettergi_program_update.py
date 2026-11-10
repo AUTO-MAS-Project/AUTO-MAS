@@ -243,6 +243,7 @@ async def test_disabled_takeover_does_not_query_and_blocks_unfinished_install(
     marker.write_text('{"target": "0.56.0"}')
     instance._program_update_prepared = False
     instance.task_info = SimpleNamespace(task_id=str(uuid.uuid4()))
+    instance.script_info = SimpleNamespace(name="BetterGI 测试托管")
     monkeypatch.setattr(
         manager.install_recovery,
         "ask_install_recovery",
