@@ -219,9 +219,7 @@ class BetterGIManager(ScriptManagerBase):
         else:
             # 用户主动选择重试：即使 TakeoverEnabled=False，也只为本次恢复调用更新器。
             # 不走普通更新失败的旧版回退：安装标记仍在时任何失败都必须停止。
-            result = await self._run_program_update(
-                root, recovery_snapshot=snapshot
-            )
+            result = await self._run_program_update(root, recovery_snapshot=snapshot)
             await program_update.confirm_current_install(root)
             await self.script_info.set_log(f"BetterGI 安装恢复成功：{result}")
         return True

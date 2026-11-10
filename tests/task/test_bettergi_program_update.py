@@ -838,7 +838,9 @@ async def test_missing_executable_requires_explicit_recovery(installation, monke
     marker.write_text('{"target": "0.56.0"}', encoding="utf-8")
     (root / "BetterGI.exe").unlink()
 
-    monkeypatch.setattr(update, "read_version", lambda _root: (_ for _ in ()).throw(OSError("missing")))
+    monkeypatch.setattr(
+        update, "read_version", lambda _root: (_ for _ in ()).throw(OSError("missing"))
+    )
     with pytest.raises(OSError, match="missing"):
         await update.update_before_run(root, config)
     update.download_script_package.assert_not_awaited()

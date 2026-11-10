@@ -382,7 +382,9 @@ async def update_before_run(
             )
         try:
             record = json.loads(recovery_snapshot)
-            if not isinstance(record, dict) or not isinstance(record.get("target"), str):
+            if not isinstance(record, dict) or not isinstance(
+                record.get("target"), str
+            ):
                 raise ValueError("无效的安装目标")
             recorded_target = Version(record["target"])
         except (ValueError, TypeError) as error:
@@ -393,12 +395,16 @@ async def update_before_run(
     try:
         current = await asyncio.to_thread(read_version, root)
         if script_install.read_pe_architecture(root / "BetterGI.exe") != "x86_64":
-            raise script_install.InstallUnsafeError("BetterGI 当前安装架构不支持自动更新")
+            raise script_install.InstallUnsafeError(
+                "BetterGI 当前安装架构不支持自动更新"
+            )
     except Exception:
         if recovery_snapshot is None:
             raise
         current = None
-        logger.warning("BetterGI 恢复安装：当前程序缺失或损坏，将校验并重新安装完整安装包")
+        logger.warning(
+            "BetterGI 恢复安装：当前程序缺失或损坏，将校验并重新安装完整安装包"
+        )
 
     cdk = (
         config.Update.MirrorChyanCDK.strip()
