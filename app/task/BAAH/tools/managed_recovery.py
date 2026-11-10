@@ -6,6 +6,7 @@ import asyncio
 import base64
 import hashlib
 import os
+import threading
 from pathlib import Path
 from uuid import uuid4
 
@@ -112,7 +113,8 @@ class BAAHInstallAdapter:
 
     async def after_rollback(self) -> None:
         await self.ensure_idle()
-        await asyncio.to_thread(restore_original_receipts, self.root)
+        # 注册到安装访问生命周期；取消不会让外置收据线程越过目录锁。
+        await script_install.run_worker(restore_original_receipts, self.root)
         # 回退前的原 MAS 收据已同步恢复，仍要重新验证目录哈希。
         await program_update.confirm_current_install(self.root)
 
@@ -203,8 +205,10 @@ def _read_receipt_backup(root: Path) -> dict:
     return data["receipts"]
 
 
-def snapshot_original_receipts(root: Path) -> None:
-    """必须在公共备份创建/任何原生安装写盘之前调用，且仅允许单次建立。"""
+def snapshot_original_receipts(root: Path, cancelled: threading.Event) -> None:
+    """公共备份创建前快照收据；文件线程归 installation_access 管理。"""
+    if cancelled.is_set():
+        raise InterruptedError("BAAH 收据快照已取消")
     marker = receipt_backup_path(root)
     if marker.exists() or marker.is_symlink():
         raise script_install.InstallUnsafeError("BAAH 尚有未结算的外置收据备份")
@@ -224,6 +228,8 @@ def snapshot_original_receipts(root: Path) -> None:
                 "sha256": hashlib.sha256(content).hexdigest(),
             }
         )
+    if cancelled.is_set():
+        raise InterruptedError("BAAH 收据快照已取消")
     marker.parent.mkdir(parents=True, exist_ok=True)
     io_utils.write_file(
         marker,
@@ -235,8 +241,10 @@ def snapshot_original_receipts(root: Path) -> None:
     )
 
 
-def restore_original_receipts(root: Path) -> None:
-    """公共备份恢复原程序目录之后，再恢复 MAS 自有的两份外置收据。"""
+def restore_original_receipts(root: Path, cancelled: threading.Event) -> None:
+    """回滚时完整恢复外置收据；启动后即使取消也必须完成写盘。"""
+    # 线程会被 run_worker 登记；不在两张收据之间响应取消，避免半恢复。
+    _ = cancelled
     receipts = _read_receipt_backup(root)
     for name in _RECEIPT_NAMES:
         path = script_install.record_path(root, name)
@@ -262,10 +270,12 @@ def restore_original_receipts(root: Path) -> None:
         os.replace(staged, path)
 
 
-def cleanup_original_receipts(root: Path) -> None:
+def cleanup_original_receipts(root: Path, cancelled: threading.Event) -> None:
     marker = receipt_backup_path(root)
     if marker.is_symlink():
         raise script_install.InstallUnsafeError("BAAH 备份文件被重定向")
     if marker.exists():
         _read_receipt_backup(root)
+        if cancelled.is_set():
+            raise InterruptedError("BAAH 收据备份清理已取消")
         marker.unlink()
