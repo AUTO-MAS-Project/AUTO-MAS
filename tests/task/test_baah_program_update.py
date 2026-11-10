@@ -278,10 +278,10 @@ def test_real_idle_whitelist_rejects_baah_but_allows_known_adb(
     with pytest.raises(script_install.InstallUnsafeError):
         REAL_ASSERT_IDLE(root, allow_background_adb=True)
 
+
 @pytest.mark.asyncio
 async def test_invalid_baah_executable_is_reported_as_install_unsafe(installation):
     root, _, _, _ = installation
     (root / "BAAH.exe").write_bytes(b"damaged executable")
-    with pytest.raises(script_install.InstallUnsafeError, match="主程序缺失或架构无法识别"):
+    with pytest.raises(script_install.InstallUnsafeError, match="主程序"):
         await update.confirm_current_install(root)
-

@@ -648,6 +648,7 @@ async def test_unready_release_does_not_bypass_existing_unconfirmed_install(
     assert marker.exists()
     update.run_installer.assert_not_awaited()
 
+
 def test_offroot_bettergi_installer_is_not_treated_as_idle(tmp_path, monkeypatch):
     root = tmp_path / "BetterGI"
     installer = tmp_path / "downloads" / "BetterGI.Install.0.56.0.exe"
@@ -661,4 +662,3 @@ def test_offroot_bettergi_installer_is_not_treated_as_idle(tmp_path, monkeypatch
     )
     with pytest.raises(script_install.InstallUnsafeError, match="官方安装器"):
         update.assert_idle(root)
-

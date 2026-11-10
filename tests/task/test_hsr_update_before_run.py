@@ -1080,6 +1080,7 @@ async def test_prefetch_success_follows_final_module_verdict(
     assert (user.first_task_completed_at is not None) is completed
     assert (script.first_task_completed_at is not None) is completed
 
+
 def test_hsr_rollback_refuses_linked_workdir_before_reading_journal(
     tmp_path, monkeypatch
 ):
@@ -1097,4 +1098,3 @@ def test_hsr_rollback_refuses_linked_workdir_before_reading_journal(
     )
     assert installer.rollback(root) is False
     assert journal.read_text(encoding="utf-8") == "original journal"
-
