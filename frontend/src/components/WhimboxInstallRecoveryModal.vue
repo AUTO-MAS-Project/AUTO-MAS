@@ -47,7 +47,9 @@ function decide(action: 'retry' | 'skip' | 'stop') {
           {{ prompt.managedName || t('bootstrap.comp.whimboxRecoveryUnknown') }}
         </a-descriptions-item>
         <a-descriptions-item :label="t('bootstrap.comp.whimboxRecoveryInstallPath')">
-          <span class="recovery-path">{{ prompt.installPath || t('bootstrap.comp.whimboxRecoveryUnknown') }}</span>
+          <span class="recovery-path">{{
+            prompt.installPath || t('bootstrap.comp.whimboxRecoveryUnknown')
+          }}</span>
         </a-descriptions-item>
         <a-descriptions-item :label="t('bootstrap.comp.whimboxRecoveryCurrent')">
           {{ prompt.installedVersion || t('bootstrap.comp.whimboxRecoveryUnknown') }}
@@ -55,7 +57,7 @@ function decide(action: 'retry' | 'skip' | 'stop') {
         <a-descriptions-item :label="t('bootstrap.comp.whimboxRecoveryTarget')">
           {{ prompt.targetVersion || t('bootstrap.comp.whimboxRecoveryUnknown') }}
         </a-descriptions-item>
-                <a-descriptions-item :label="t('bootstrap.comp.whimboxRecoveryTakeover')">
+        <a-descriptions-item :label="t('bootstrap.comp.whimboxRecoveryTakeover')">
           {{
             t(
               prompt.takeoverEnabled

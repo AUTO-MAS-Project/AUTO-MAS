@@ -27,10 +27,10 @@ async def ask_install_recovery(
     if marker.is_symlink() or not marker.is_file():
         raise WhimboxUpdateUnsafeError("奇想盒安装标记不是普通文件，拒绝恢复")
     snapshot = await asyncio.to_thread(marker.read_bytes)
-    if not snapshot or len(snapshot) > 512:
+    if len(snapshot) > 512:
         raise WhimboxUpdateUnsafeError("奇想盒安装记录无效，不能自动恢复")
     try:
-        target = snapshot.decode("utf-8").strip()[:64]
+        target = snapshot.decode("utf-8").strip()[:64] or "未知"
     except UnicodeDecodeError:
         target = "未知"
     try:

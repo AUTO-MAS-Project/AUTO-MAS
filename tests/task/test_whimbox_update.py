@@ -268,28 +268,21 @@ async def test_fallback_rejects_unusable_installation(managed_batch, installatio
 
 @pytest.mark.asyncio
 async def test_disabled_takeover_cannot_bypass_partial_install(
-    managed_batch, installation
+    managed_batch, installation, monkeypatch
 ):
     managed_batch.script_config.Update.TakeoverEnabled = False
     update.pending_marker(installation).touch()
     from app.task.Whimbox.tools import install_recovery
 
-    monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(
         install_recovery,
         "ask_install_recovery",
         AsyncMock(side_effect=update.WhimboxUpdateUnsafeError("取消恢复")),
     )
-    try:
-        with pytest.raises(RuntimeError):
-            await managed_batch._run_prepared(installation)
-    finally:
-        monkeypatch.undo()
+    with pytest.raises(RuntimeError):
+        await managed_batch._run_prepared(installation)
     manager.ensure_backend_updated.assert_not_awaited()
     managed_batch.run_user_task.assert_not_awaited()
-
-    # 旧测试只断言开关关闭不能自动跳过；新行为由显式恢复测试单独覆盖。
-
 
 
 @pytest.mark.asyncio
@@ -557,4 +550,50 @@ async def test_whimbox_prompt_is_bound_to_installation(installation, monkeypatch
         )
     assert seen[0]["managedName"] == "夜间奇想盒"
     assert seen[0]["installPath"] == str(installation.resolve())
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_whimbox_skip_rejects_changed_marker(installation):
+    marker = update.pending_marker(installation)
+    marker.write_text("3.1.1")
+    old = marker.read_bytes()
+    marker.write_text("3.1.2")
+    with pytest.raises(update.WhimboxUpdateUnsafeError, match="变化"):
+        await update.skip_pending_installation(installation, old)
+    assert marker.read_text() == "3.1.2"
+
+
+@pytest.mark.asyncio
+async def test_whimbox_prompt_without_connected_frontend_fails_closed(
+    installation, monkeypatch
+):
+    from app.task.Whimbox.tools import install_recovery
+
+    marker = update.pending_marker(installation)
+    marker.touch()
+    send = AsyncMock(return_value=False)
+    monkeypatch.setattr(install_recovery.Publisher, "send", send)
+    with pytest.raises(update.WhimboxUpdateUnsafeError, match="主界面"):
+        await install_recovery.ask_install_recovery(
+            "task", installation, managed_name="奇想盒", takeover_enabled=False
+        )
+    assert marker.exists()
+    assert send.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_whimbox_prompt_timeout_keeps_marker(installation, monkeypatch):
+    from app.task.Whimbox.tools import install_recovery
+
+    marker = update.pending_marker(installation)
+    marker.write_text("3.1.1")
+    monkeypatch.setattr(install_recovery, "_TIMEOUT_SECONDS", 0.003)
+    monkeypatch.setattr(
+        install_recovery.Publisher, "send", AsyncMock(return_value=True)
+    )
+    with pytest.raises(update.WhimboxUpdateUnsafeError, match="超时"):
+        await install_recovery.ask_install_recovery(
+            "task", installation, managed_name="奇想盒", takeover_enabled=False
+        )
     assert marker.exists()
