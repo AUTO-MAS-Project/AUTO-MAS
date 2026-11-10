@@ -21,10 +21,7 @@ import {
   bootstrapVirtualDisplayPrompt,
   disposeVirtualDisplayPrompt,
 } from '@/services/virtualDisplayPrompt'
-import {
-  bootstrapHSRRollback,
-  disposeHSRRollback,
-} from '@/services/hsrRollback'
+import { bootstrapHSRRollback, disposeHSRRollback } from '@/services/hsrRollback'
 
 let registered = false
 
