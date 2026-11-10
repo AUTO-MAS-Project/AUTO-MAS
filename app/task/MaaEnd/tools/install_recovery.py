@@ -142,7 +142,7 @@ async def skip_stale_transaction(root: Path, snapshot: bytes) -> str:
         )
     try:
         version, arch = await asyncio.to_thread(script_update.read_install, root)
-        if arch != "x86_64":
+        if arch not in ("x86_64", "aarch64"):
             raise ValueError("MaaEnd 架构不可识别")
     except (ValueError, OSError) as error:
         raise script_install.InstallUnsafeError(

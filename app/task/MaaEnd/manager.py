@@ -492,8 +492,7 @@ class MaaEndManager(ScriptManagerBase):
                 raise script_install.InstallUnsafeError(
                     "MaaEnd 事务记录是符号链接，拒绝恢复"
                 )
-            recovered_by_user = False
-            try:
+             try:
                 await script_install.run_worker(
                     script_install.recover_install,
                     root,
@@ -527,8 +526,7 @@ class MaaEndManager(ScriptManagerBase):
                         verify_receipt=config.Update.TakeoverEnabled,
                     )
                     await self.script_info.set_log("MaaEnd 旧安装事务已重新恢复")
-                recovered_by_user = True
-                # 显式恢复操作本轮不再重复下载/覆盖新包。
+                 # 显式恢复操作本轮不再重复下载/覆盖新包。
                 self._program_update_prepared = True
             if self.execution_mode == "AutoProxy" and config.Update.TakeoverEnabled:
                 self.maaend_config_dir = root / "config"
