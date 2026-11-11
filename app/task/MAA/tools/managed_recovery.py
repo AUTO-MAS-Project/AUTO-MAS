@@ -6,8 +6,7 @@ import asyncio
 from pathlib import Path
 
 from app.core.script_update_recovery import InstallInspection
-from app.services import script_install
-from app.utils import process
+from app.services import System
 
 from .resource_update import (
     has_incomplete_resource_update,
@@ -32,7 +31,7 @@ class MAAInstallAdapter:
         self.root = root
 
     async def ensure_idle(self) -> None:
-        if await process.is_process_running(self.root / "MAA.Updater.exe"):
+        if await System.is_process_running(self.root / "MAA.Updater.exe"):
             raise MaaUpdateUnsafeError("MAA 官方更新器仍在运行，不能修改安装状态")
 
     async def inspect(self) -> InstallInspection:

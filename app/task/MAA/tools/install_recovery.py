@@ -13,8 +13,8 @@ import asyncio
 from pathlib import Path
 from uuid import uuid4
 
-from app.services import script_install
-from app.utils import get_logger, process
+from app.services import System, script_install
+from app.utils import get_logger
 
 from .resource_update import has_incomplete_resource_update, read_resource_clock
 from .software_package import has_delegated_update_failure, read_pending_update
@@ -61,7 +61,7 @@ def confirm_recovery_finished(root: Path) -> None:
 
 
 async def _check_current_install(root: Path) -> str:
-    if await process.is_process_running(root / "MAA.Updater.exe"):
+    if await System.is_process_running(root / "MAA.Updater.exe"):
         raise MaaUpdateUnsafeError("MAA 官方更新器仍在写盘，禁止跳过")
     if not (root / "MAA.exe").is_file() or not (root / "MAA.dll").is_file():
         raise MaaUpdateUnsafeError("MAA 主程序或核心程序集缺失，不能跳过安装失败")
@@ -100,7 +100,7 @@ async def skip_delegated_failure(root: Path, snapshot: dict[str, bytes]) -> str:
     backup = directory / f"maa-failure-ack-{uuid4().hex}.txt"
     marker.replace(backup)
     try:
-        if await process.is_process_running(root / "MAA.Updater.exe"):
+        if await System.is_process_running(root / "MAA.Updater.exe"):
             raise MaaUpdateUnsafeError("MAA 更新器在确认过程中启动，不能跳过")
         confirm_recovery_finished(root)
     except BaseException:

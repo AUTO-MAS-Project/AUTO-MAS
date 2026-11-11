@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import psutil
 import pytest
 
 from app.services import script_install
@@ -34,9 +35,7 @@ def maa_root(tmp_path, monkeypatch):
         lambda root: datetime(2026, 10, 1, tzinfo=timezone.utc),
     )
     monkeypatch.setattr(recovery, "read_pending_update", lambda root: ("", ""))
-    monkeypatch.setattr(
-        recovery.process, "is_process_running", AsyncMock(return_value=False)
-    )
+    monkeypatch.setattr(psutil, "process_iter", lambda _: iter(()))
     return root
 
 
@@ -88,7 +87,9 @@ async def test_install_corrupted_or_pending_package_never_skips(maa_root, monkey
 
 
 @pytest.mark.asyncio
-async def test_updater_running_or_marker_changed_never_skips(maa_root):
+async def test_updater_running_or_marker_changed_never_skips(maa_root, monkeypatch):
+    from app.task.MAA.tools import managed_recovery
+
     flag = maa_root / "pending-update-failure.txt"
     flag.write_bytes(b"old")
     snapshot = {"software": flag.read_bytes()}
@@ -96,9 +97,18 @@ async def test_updater_running_or_marker_changed_never_skips(maa_root):
     with pytest.raises(MaaUpdateUnsafeError, match="变化"):
         await recovery.skip_delegated_failure(maa_root, snapshot)
     assert flag.read_bytes() == b"new"
-    recovery.process.is_process_running.return_value = True
+    updater = SimpleNamespace(
+        info={
+            "pid": 42,
+            "name": "MAA.Updater.exe",
+            "exe": str(maa_root / "MAA.Updater.exe"),
+        }
+    )
+    monkeypatch.setattr(psutil, "process_iter", lambda _: iter((updater,)))
     with pytest.raises(MaaUpdateUnsafeError, match="仍在写盘"):
         await recovery.skip_delegated_failure(maa_root, {"software": flag.read_bytes()})
+    with pytest.raises(MaaUpdateUnsafeError, match="仍在运行"):
+        await managed_recovery.MAAInstallAdapter(maa_root).inspect()
     assert flag.exists()
 
 
