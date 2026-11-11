@@ -2,6 +2,7 @@
 import { onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
+import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
 import { useAppClosePreferences } from '@/composables/useAppClosePreferences'
 
 const logger = window.electronAPI.getLogger('关闭应用设置')
@@ -25,13 +26,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <!-- 只输出控件本体：标签与提示由父级 SettingRow 承担 -->
-  <a-switch
+  <a-checkbox
     :checked="confirmBeforeClose"
-    :loading="saving"
     :disabled="!loaded || saving"
     :aria-busy="saving"
-    :aria-label="t('core.setting.basic.closeConfirmation')"
-    @change="(checked: boolean | string | number) => handleChange(!!checked)"
-  />
+    @change="(event: CheckboxChangeEvent) => handleChange(event.target.checked)"
+  >
+    {{ t('core.setting.basic.closeConfirmation') }}
+  </a-checkbox>
 </template>

@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { EditOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { DEFAULT_TRAY_ITEMS, TRAY_ACTION_OPTIONS, type TrayMenuItem } from '@/types/tray'
-import SettingRow from '@/components/ui/SettingRow.vue'
 import TrayMenuDialog from './TrayMenuDialog.vue'
 
 const { t } = useI18n()
@@ -14,12 +13,7 @@ const loadFailed = ref(false)
 const editorOpen = ref(false)
 let disposed = false
 
-const preview = computed(() =>
-  items.value
-    .slice(0, 3)
-    .map(item => item.label)
-    .join(' · ')
-)
+const preview = computed(() => items.value.map(item => item.label).join(' · '))
 
 const load = async () => {
   loading.value = true
@@ -67,46 +61,33 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <SettingRow
-    :label="t('core.setting.tray.section')"
-    :hint="t('core.setting.tray.sectionTip')"
-    :description="!loading && !loadFailed ? preview : undefined"
-    stacked
-  >
-    <div class="tray-menu-summary" :aria-busy="loading">
-      <span v-if="loadFailed" class="tray-menu-preview tray-menu-preview--error" role="alert">
-        {{ t('core.setting.tray.loadFailed') }}
-      </span>
-      <a-button v-if="loadFailed" size="small" @click="load">
-        {{ t('core.setting.tray.retry') }}
-      </a-button>
-      <a-button
-        v-else
-        size="small"
-        :loading="loading"
-        :disabled="loading"
-        @click="editorOpen = true"
-      >
-        <template #icon><EditOutlined /></template>
-        {{ t('core.setting.tray.edit') }}
-      </a-button>
-      <TrayMenuDialog
-        v-if="editorOpen"
-        :saved-items="items"
-        @saved="handleSaved"
-        @close="editorOpen = false"
-      />
-    </div>
-  </SettingRow>
+  <div class="tray-menu-summary" :aria-busy="loading">
+    <span v-if="loadFailed" class="tray-menu-preview tray-menu-preview--error" role="alert">
+      {{ t('core.setting.tray.loadFailed') }}
+    </span>
+    <span v-else-if="!loading" class="tray-menu-preview">{{ preview }}</span>
+    <a-button v-if="loadFailed" size="small" @click="load">
+      {{ t('core.setting.tray.retry') }}
+    </a-button>
+    <a-button v-else size="small" :loading="loading" :disabled="loading" @click="editorOpen = true">
+      <template #icon><EditOutlined /></template>
+      {{ t('core.setting.tray.edit') }}
+    </a-button>
+    <TrayMenuDialog
+      v-if="editorOpen"
+      :saved-items="items"
+      @saved="handleSaved"
+      @close="editorOpen = false"
+    />
+  </div>
 </template>
 
 <style scoped>
 .tray-menu-summary {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px 12px;
   min-width: 0;
 }
 
