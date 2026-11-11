@@ -16,7 +16,6 @@
           :class="{
             done: node.done,
             current: node.current,
-            future: node.future,
           }"
           :disabled="isSaving(node.record)"
           @click="emit('toggle', node.record)"
@@ -191,10 +190,6 @@ const hideCover = (ev: Event) => {
 .tb-version-card.done {
   border-color: var(--ant-color-primary-border);
   background: var(--ant-color-primary-bg);
-}
-
-.tb-version-card.future {
-  opacity: 0.55;
 }
 
 .tb-version-dot {

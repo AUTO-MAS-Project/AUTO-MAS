@@ -45,7 +45,6 @@ export interface TaskboardVersionStoryNode {
   record: TaskboardVersionStoryRecord
   done: boolean
   current: boolean
-  future: boolean
   ended: boolean
 }
 

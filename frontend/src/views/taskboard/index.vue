@@ -142,9 +142,10 @@ const counts = computed(() => {
     result[state] += 1
   })
   const panelKeys = new Set(panelOptions.value.map(option => option.key))
+  const now = Date.now()
   result.weekly = weeklyVisibleOptions.value.length
-  result.version = Object.values(taskboardState.versionStory).filter(record =>
-    panelKeys.has(record.game)
+  result.version = Object.values(taskboardState.versionStory).filter(
+    record => panelKeys.has(record.game) && parseActivityTime(record.start) <= now
   ).length
   return result
 })
