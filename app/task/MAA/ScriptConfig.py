@@ -232,8 +232,10 @@ class ScriptConfigTask(TaskExecuteBase):
 
     async def _close_gui_for_stop(self) -> None:
         await self.maa_process_manager.close()
-        if await self.maa_process_manager.is_running():
-            raise RuntimeError("MAA 配置窗口未正常退出，无法确认保存")
+        # 窗口可能先于进程销毁，继续在停止确认的时限内等待退出。
+        maa_process = self.maa_process_manager.process
+        assert maa_process is not None
+        await maa_process.wait()
         self._gui_closed_for_stop = True
 
     def _mas_owner(self) -> str | None:
