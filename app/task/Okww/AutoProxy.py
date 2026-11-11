@@ -86,8 +86,7 @@ logger = get_logger("OK-WW 自动代理")
 # 鸣潮 PC 客户端窗口进程名固定，MAS 接管启动前据此避免重复拉起
 _WUWA_CLIENT_PROCESS = "Client-Win64-Shipping.exe"
 
-# 直启客户端时 MAS 内置的启动参数：实测可绕过官方启动器校验直接进入游戏，
-# 与用户自配的 Game.Arguments 并存不冲突
+# 直启客户端的默认资源档位；用户指定 -krqlv 时优先使用用户值。
 _WUWA_DIRECT_LAUNCH_ARG = "-krqlv=hd"
 
 # 多账号切换时等待旧游戏完全退出的上限（秒）：
@@ -641,8 +640,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
     async def _mas_launch_game_before_task(self) -> None:
         """检查并触发官方更新，然后按启动方式拉起鸣潮客户端。
 
-        Client 态（默认）：直启客户端 exe，MAS 内置 ``-krqlv=hd``（实测可绕过
-        启动器校验），与用户自配的 Game.Arguments 并存；
+        Client 态（默认）：直启客户端 exe，未指定资源档位时补充 ``-krqlv=hd``；
         Launcher 态：MAS 拉起官方启动器后由 OCR 流程点击「进入游戏」
         （launcher_start），启动器出现更新/下载时按下载态等待。
         """
@@ -709,7 +707,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         await async_start_game_via_launcher(launcher_path, on_log=_push_launch_log)
 
     async def _launch_game_direct(self) -> None:
-        """直启客户端 exe：内置 -krqlv=hd，与用户启动参数并存。
+        """直启客户端 exe：缺省补充 -krqlv=hd，用户指定资源档位优先。
 
         待启动的客户端 exe 来自 check()：手动指定了 Game.ClientPath 时用该值，
         否则由启动器路径解码得到。MAS 不打开启动器界面。
@@ -719,11 +717,22 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         if game_process_path is None:
             raise RuntimeError("未找到鸣潮客户端程序路径，请重新导入启动器")
         await self._push_dispatch_log("未检测到运行中的客户端，正在直启鸣潮...")
-        await self.game_manager.open_process(
-            game_process_path,
-            _WUWA_DIRECT_LAUNCH_ARG,
-            *split_args(self.script_config.Game.Arguments),
-        )
+        arguments = split_args(self.script_config.Game.Arguments)
+        # 同名参数取最后一项，避免依赖游戏对重复参数的处理顺序。
+        quality_indices = [
+            index
+            for index, argument in enumerate(arguments)
+            if argument.lower().startswith("-krqlv=")
+        ]
+        if quality_indices:
+            arguments = [
+                argument
+                for index, argument in enumerate(arguments)
+                if index not in quality_indices[:-1]
+            ]
+        else:
+            arguments.insert(0, _WUWA_DIRECT_LAUNCH_ARG)
+        await self.game_manager.open_process(game_process_path, *arguments)
         await self._push_dispatch_log("鸣潮启动指令已发送")
 
     def _game_process_info(self) -> ProcessInfo:

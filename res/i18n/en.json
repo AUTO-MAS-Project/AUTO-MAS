@@ -1337,7 +1337,7 @@
   "core.edit.launchGameOtherWay": "The script controls the game itself",
   "core.edit.launchMode": "Launch mode",
   "core.edit.launchType": "Game launch method",
-  "core.edit.launchTypeHint": "Via launcher: enter the game through the official launcher; Direct launch: start the game client directly (MAS passes -krqlv=hd) without opening the launcher. Both use the launcher path to locate the game",
+  "core.edit.launchTypeHint": "Direct launch skips the official launcher and uses HD assets by default. For installed SD/UHD assets, enter -krqlv=sd / -krqlv=uhd in launch arguments.",
   "core.edit.launchTypeSaveFailed": "Failed to save the game launch method; the previous setting was restored",
   "core.edit.launchViaLauncher": "Via launcher",
   "core.edit.leadingKeyword": "Leading keyword",
