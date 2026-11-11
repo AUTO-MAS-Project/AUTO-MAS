@@ -261,3 +261,30 @@ async def test_dependency_installation_progress_extends_wait(launch):
     )
     await launch.run()
     assert launch.clock.now >= 500
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "arguments,expected",
+    [
+        ("", ["-krqlv=hd"]),
+        ("-Res=1920x1080", ["-krqlv=hd", "-Res=1920x1080"]),
+        ("-krqlv=uhd -Res=1920x1080", ["-krqlv=uhd", "-Res=1920x1080"]),
+        ("-krqlv=sd", ["-krqlv=sd"]),
+        ("-krqlv=hd -Res=1920x1080 -KRQLV=uhd", ["-Res=1920x1080", "-KRQLV=uhd"]),
+    ],
+)
+async def test_direct_launch_uses_explicit_resource_tier(tmp_path, arguments, expected):
+    from app.models.config.script import OkwwConfig
+    from app.task.Okww.AutoProxy import AutoProxyTask
+
+    client = tmp_path / "Client-Win64-Shipping.exe"
+    manager = SimpleNamespace(open_process=AsyncMock())
+    task = SimpleNamespace(
+        game_process_path=client,
+        game_manager=manager,
+        script_config=OkwwConfig.model_validate({"Game": {"Arguments": arguments}}),
+        _push_dispatch_log=AsyncMock(),
+    )
+    await AutoProxyTask._launch_game_direct(task)
+    manager.open_process.assert_awaited_once_with(client, *expected)

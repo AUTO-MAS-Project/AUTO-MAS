@@ -1337,7 +1337,7 @@
   "core.edit.launchGameOtherWay": "スクリプト自身がゲームを制御する",
   "core.edit.launchMode": "起動方式",
   "core.edit.launchType": "ゲームの起動方法",
-  "core.edit.launchTypeHint": "ランチャー起動：公式ランチャー経由でゲームに入ります。直接起動：ランチャーを開かずゲームクライアントを直接起動します（MAS が -krqlv=hd を付与）。どちらもランチャーのパスでゲームを特定します",
+  "core.edit.launchTypeHint": "直接起動は公式ランチャーをスキップし、既定で HD リソースを使います。SD/UHD リソースをインストール済みの場合は、起動引数に -krqlv=sd / -krqlv=uhd を指定してください。",
   "core.edit.launchTypeSaveFailed": "ゲームの起動方法を保存できませんでした。元の設定に戻しました",
   "core.edit.launchViaLauncher": "ランチャー起動",
   "core.edit.leadingKeyword": "先頭を切るキーワード",

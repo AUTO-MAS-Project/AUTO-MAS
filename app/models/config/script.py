@@ -3768,7 +3768,7 @@ class OkwwConfig(DomainEntry):
 
         Arguments: CliArgumentString = Field(
             default_factory=lambda: "",
-            description="鸣潮启动参数（直启时 MAS 会额外内置 -krqlv=hd，与本参数并存）",
+            description="鸣潮启动参数（直启默认补充 -krqlv=hd，可用 -krqlv=sd 或 -krqlv=uhd 覆盖，需已安装对应资源）",
         )
 
         ClientPath: FilePath = Field(
@@ -3792,7 +3792,7 @@ class OkwwConfig(DomainEntry):
 
         Type: Literal["Client", "Launcher"] = Field(
             default_factory=lambda: "Client",
-            description="游戏启动方式：Client=直启客户端（内置 -krqlv=hd），Launcher=经官方启动器 默认值必须排首位：值非法时 correct() 回落到 options[0]",
+            description="游戏启动方式：Client=直启客户端（资源档位默认 HD，可通过启动参数覆盖），Launcher=经官方启动器 默认值必须排首位：值非法时 correct() 回落到 options[0]",
         )
 
         UpdateFullSyncLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
