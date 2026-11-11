@@ -388,23 +388,8 @@ onMounted(() => {
   min-width: 0;
 }
 
-/* 响应式设计 */
-@media (max-width: 1200px) {
-  .queue-items-grid {
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  }
-}
-
+/* 响应式设计：窄屏行转为纵向排列，flex-basis 会变成高度基准，改为按内容撑开 */
 @media (max-width: 768px) {
-  .queue-items-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .queue-item-card-item {
-    padding: 12px;
-  }
-
-  /* 窄屏行转为纵向排列，flex-basis 会变成高度基准，改为按内容撑开 */
   .row-cell.script-cell,
   .row-cell.days-cell {
     flex: 0 0 auto;
