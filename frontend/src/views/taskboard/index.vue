@@ -33,6 +33,7 @@ const {
   isSaving,
   load,
   loading,
+  nowTs,
   progressOf,
   refreshing,
   reloadCompletions,
@@ -285,7 +286,7 @@ const saveGames = async (keys: string[]) => {
         :options="weeklyVisibleOptions"
         :all-options="enabledOptions"
       />
-      <VersionStoryPanel v-else-if="tab === 'version'" :options="panelOptions" />
+      <VersionStoryPanel v-else-if="tab === 'version'" :options="panelOptions" :now="nowTs" />
     </div>
 
     <GamePickerModal

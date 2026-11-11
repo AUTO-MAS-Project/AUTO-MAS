@@ -67,9 +67,10 @@ import { safeCoverUrl } from '@/utils/safeUrl'
 
 interface Props {
   groups: TaskboardVersionStoryGroup[]
+  now: number
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 const emit = defineEmits<{ toggle: [record: TaskboardVersionStoryRecord] }>()
 const { t } = useI18n()
 const taskboardState = useTaskboardStateStore()
@@ -86,7 +87,7 @@ const formatDate = (value: string) => formatBeijingDate(value)
 const footText = (node: TaskboardVersionStoryNode) => {
   const end = parseActivityTime(node.record.end)
   if (node.current && !node.ended && end) {
-    const days = Math.max(0, Math.ceil((end - Date.now()) / DAY))
+    const days = Math.max(0, Math.ceil((end - props.now) / DAY))
     return `${t('core.taskboard.versionEndsAt', { p0: formatDate(node.record.end) })} · ${t('core.taskboard.versionDaysLeft', { p0: days })}`
   }
   return `${formatDate(node.record.start)} → ${formatDate(node.record.end)}`

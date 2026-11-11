@@ -67,7 +67,7 @@
               {{ t('core.taskboard.versionLocalNote') }}
             </span>
           </div>
-          <VersionStoryTimeline :groups="groups" @toggle="toggle" />
+          <VersionStoryTimeline :groups="groups" :now="now" @toggle="toggle" />
         </section>
       </template>
 
@@ -97,6 +97,8 @@ import VersionStoryTimeline from './VersionStoryTimeline.vue'
 
 interface Props {
   options: TaskboardGameOption[]
+  /** 任务台统一的五分钟时钟，版本筛选、倒计时和排序共用。 */
+  now: number
 }
 
 interface CurrentCard {
@@ -118,7 +120,7 @@ const isSaving = (record: TaskboardVersionStoryRecord) =>
 const recordsByGame = computed(() => {
   const allowed = new Set(props.options.map(option => option.key))
   const grouped = new Map<string, TaskboardVersionStoryRecord[]>()
-  const now = Date.now()
+  const now = props.now
   for (const record of Object.values(taskboardState.versionStory)) {
     if (!allowed.has(record.game)) continue
     // SRA 提前下发的下一版本，在开始前不展示。
@@ -134,7 +136,7 @@ const recordsByGame = computed(() => {
 })
 
 const groups = computed<TaskboardVersionStoryGroup[]>(() => {
-  const now = Date.now()
+  const now = props.now
   return props.options.flatMap(option => {
     const records = recordsByGame.value.get(option.key)
     if (!records?.length) return []
@@ -163,7 +165,7 @@ const beijingDay = (timestamp: number) =>
 
 /* 本地目录里可能已经存了下一版本；用它的开始日期判断今天是否真的更新。 */
 const nextStartByGame = computed(() => {
-  const now = Date.now()
+  const now = props.now
   const starts = new Map<string, number>()
   for (const record of Object.values(taskboardState.versionStory)) {
     const start = parseActivityTime(record.start)
@@ -177,12 +179,12 @@ const nextStartByGame = computed(() => {
 /* 排序与文案用同一个时间口径：优先下一版本开始时间，没有再看当前版本结束时间。 */
 const remainingOf = (record: TaskboardVersionStoryRecord) => {
   const target = nextStartByGame.value.get(record.game) ?? parseActivityTime(record.end)
-  return target ? Math.max(0, target - Date.now()) : Number.POSITIVE_INFINITY
+  return target ? Math.max(0, target - props.now) : Number.POSITIVE_INFINITY
 }
 
 const versionPhaseText = (record: TaskboardVersionStoryRecord) => {
   const end = parseActivityTime(record.end)
-  const now = Date.now()
+  const now = props.now
   const nextStart = nextStartByGame.value.get(record.game)
   if (nextStart) {
     if (beijingDay(nextStart) === beijingDay(now)) {
