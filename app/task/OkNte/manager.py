@@ -162,7 +162,7 @@ class OkNteManager(ScriptManagerBase):
                 self.build_proxy_user_list(self.user_config.items())
             )
 
-        # Enabled=游戏管理总开关；LaunchBeforeTask/CloseOnFinish=启动与收尾子项（可单独开启）
+        # 进程管理器承接启动与收尾；CloseOnFinish 独立生效，无管理器时也按进程名关闭。
         self.game_manager = None
         if self.script_config.Game.Enabled and (
             self.script_config.Game.LaunchBeforeTask
