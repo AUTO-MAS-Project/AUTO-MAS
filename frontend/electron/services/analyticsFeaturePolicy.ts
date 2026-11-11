@@ -162,6 +162,7 @@ export const featureAnalyticsSchemas = {
       'auto_start',
       'scheduled_wakeup',
       'start_minimized',
+      'silent_start',
       'show_tray',
       'close_to_tray',
       'hide_close',

@@ -22,6 +22,8 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 
 定时唤醒复用 `app_started.launch_kind=scheduled_wakeup` 区分启动来源，复用设置保存事件记录开关变更。两者分别表示进入 ready 和配置保存，不代表硬件唤醒成功；后台计划任务对账不额外采集。
 
+静默启动保存复用 `settings_change_finished`，改用 `silent_start` 区分旧的 `start_minimized` 类别；开机自启仍为 `auto_start`。关闭至托盘的 `close_to_tray` 类别改由 `useAppClosePreferences` 在前端关闭偏好写入成功或失败时确认，设置页和关闭确认框共用同一入口；不再以旧的 `UI.IfToTray` 写入推断关闭行为。窗口最小化和静默隐藏不新增事件，启动来源与正常退出继续复用原主进程观察者。
+
 | 事件 | 含义 | 自定义字段 | 频率 |
 | --- | --- | --- | --- |
 | `app_started` | 主进程进入 ready | `launch_kind`、`runtime_mode`、`release_channel` | 每进程最多一次 |

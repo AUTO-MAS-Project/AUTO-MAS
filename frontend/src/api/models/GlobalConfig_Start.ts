@@ -8,7 +8,7 @@ export type GlobalConfig_Start = {
      */
     IfScheduledWakeUp?: (boolean | null);
     /**
-     * 是否启动时直接最小化
+     * 是否在开机自启时静默启动到托盘
      */
     IfMinimizeDirectly?: (boolean | null);
     /**

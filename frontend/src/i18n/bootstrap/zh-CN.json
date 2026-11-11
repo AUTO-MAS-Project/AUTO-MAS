@@ -38,6 +38,7 @@
     "couldNotOpenLink": "打开链接失败，请手动复制链接地址",
     "maximizeWindow": "最大化",
     "minimize": "最小化",
+    "minimizeFailed": "无法最小化窗口",
     "minimizeMasToTray": "最小化 MAS 到托盘",
     "minimizeToTrayFailed": "无法最小化到托盘，请检查托盘设置",
     "pleaseWaitAppClosing": "请稍候，应用即将退出",

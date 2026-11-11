@@ -38,6 +38,7 @@
     "couldNotOpenLink": "Could not open the link — copy the address manually",
     "maximizeWindow": "Maximize",
     "minimize": "Minimize",
+    "minimizeFailed": "Could not minimize the window",
     "minimizeMasToTray": "Minimize MAS to tray",
     "minimizeToTrayFailed": "Could not minimize to the tray. Check your tray settings.",
     "pleaseWaitAppClosing": "Please wait, the app is closing",

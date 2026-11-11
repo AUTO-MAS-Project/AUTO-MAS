@@ -4,6 +4,8 @@
   `app_started` 的同名来源。只记录配置保存和应用 ready，不推断硬件唤醒结果，
   不发送定时时刻、星期、队列或安装路径。
 
+- 静默启动的设置保存由 `useSettingsApi` 复用 `settings_change_finished/silent_start`；旧 `start_minimized` 只保留历史类别。默认关闭动作和关闭确认开关由 `useAppClosePreferences` 唯一记录保存结果，`close_to_tray` 不再观察旧后端最小化字段。最小化、自动隐藏和托盘恢复不另加采集，沿用已有启动、退出及托盘操作事件。
+
 - MCP 工具页沿用 `screen_view` 的有限页面/来源分类 `tools`；手动重新加载由
   `useMcpApi` 唯一记录 `mcp_retry_requested` 的 accepted/rejected/unknown 与耗时桶。
   accepted 只表示后端受理，不计作加载完成；快照恢复、WS 阶段更新和自动加载不逐次采集，
