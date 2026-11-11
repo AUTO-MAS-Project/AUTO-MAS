@@ -83,7 +83,7 @@
 | T056 | notification_binding_finished：二维码绑定、取消、解绑及高级手动配置保存是否完成 | 已接入，持续复核 |
 | T057 | webhook_test_finished：自定义通知配置是否容易出错 | 已接入，持续复核 |
 | T058 | settings_change_finished：设置修改成功率及主要功能采用情况（含关闭确认开关） | 已接入，持续复核 |
-| T059 | appearance_preference_changed：主题、语言、低性能模式需求 | 已接入，持续复核 |
+| T059 | appearance_preference_changed：主题、语言、低性能模式和自定义光标需求 | 已接入，持续复核 |
 | T060 | appearance_package_finished：本地外观导入、启用、删除是否顺利 | 已接入，持续复核 |
 | T061 | appearance_store_install_finished：主题商店发现到安装的转化 | 已接入，持续复核 |
 | T062 | appearance_share_finished：外观上传与分享是否顺利 | 已接入，持续复核 |

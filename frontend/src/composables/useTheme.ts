@@ -41,22 +41,30 @@ const cursorSizePx = ref<number | null>(null)
 let savedCursorSizePx: number | null = null
 let cursorSizeSaveTimer: ReturnType<typeof setTimeout> | undefined
 let cursorSizeRevision = 0
+let cursorSizeBroadcastRevision = 0
+let cursorSizePending = false
 const applyAppearanceCursor = createAppearanceCursorApplier()
 
 const previewCursorSize = (value: number | null, onError: () => void) => {
   cursorSizePx.value = normalizeCursorSize(value)
   const next = cursorSizePx.value
   const revision = ++cursorSizeRevision
+  cursorSizePending = true
   clearTimeout(cursorSizeSaveTimer)
   cursorSizeSaveTimer = setTimeout(async () => {
+    const broadcastRevision = cursorSizeBroadcastRevision
     try {
       await observePreference('cursor_size', next === null ? 'auto' : 'custom', () =>
         saveConfig({ cursorSizePx: next })
       )
-      savedCursorSizePx = next
+      if (broadcastRevision === cursorSizeBroadcastRevision) savedCursorSizePx = next
     } catch {
-      if (revision === cursorSizeRevision) cursorSizePx.value = savedCursorSizePx
       onError()
+    } finally {
+      if (revision === cursorSizeRevision) {
+        cursorSizePending = false
+        cursorSizePx.value = savedCursorSizePx
+      }
     }
   }, 300)
 }
@@ -994,12 +1002,19 @@ export function useTheme() {
     themeConfigListenerInitialized = true
     window.electronAPI.onThemeConfigChanged?.(rawConfig => {
       if (rawConfig === null || typeof rawConfig !== 'object') return
-      themeRevision += 1
-      configRevision += 1
       const config = rawConfig as Partial<FrontendConfig> & {
         customBackgroundUpdated?: boolean
         customSurfaceOpacityUpdated?: boolean
       }
+      if (config.cursorSizePx !== undefined) {
+        ++cursorSizeBroadcastRevision
+        savedCursorSizePx = normalizeCursorSize(config.cursorSizePx)
+        // 已落盘的尺寸可用于回滚，但不能覆盖本窗口尚未保存的预览。
+        if (!cursorSizePending) cursorSizePx.value = savedCursorSizePx
+        if (!('appearanceId' in config)) return
+      }
+      themeRevision += 1
+      configRevision += 1
       if (
         config.themeMode === 'system' ||
         config.themeMode === 'light' ||
