@@ -1,21 +1,25 @@
 <template>
   <div class="form-section">
+    <UserAccountHeading
+      v-if="heading"
+      :user-name="formData.userName"
+      :options="{ ...heading, logoSrc: accountIcon }"
+    />
     <div class="section-header">
       <h3>{{ t('core.edit.basicInfo') }}</h3>
     </div>
+    <UserBasicInfoFields
+      v-model:user-name="formData.userName"
+      v-model:status="formData.Info.Status"
+      v-model:remained-day="formData.Info.RemainedDay"
+      v-model:notes="formData.Info.Notes"
+      :disabled="loading"
+      @save-name="emitSave('userName', formData.userName)"
+      @save-status="emitSave('Info.Status', formData.Info.Status)"
+      @save-days="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
+      @save-notes="emitSave('Info.Notes', formData.Info.Notes)"
+    />
     <a-row :gutter="24">
-      <a-col :span="12">
-        <UserNameField
-          name="userName"
-          required
-          v-model="formData.userName"
-          :hint="t('core.edit.nameUsedTellUsers')"
-          :placeholder="t('core.edit.enterUsername')"
-          :disabled="loading"
-          enhanced
-          @save="emitSave('userName', formData.userName)"
-        />
-      </a-col>
       <a-col :span="12">
         <a-form-item name="userId">
           <template #label>
@@ -37,15 +41,6 @@
     </a-row>
 
     <a-row :gutter="24">
-      <a-col :span="12">
-        <UserStatusField
-          name="status"
-          v-model="formData.Info.Status"
-          :hint="t('core.edit.whetherThisUserEnabled')"
-          :disabled="loading"
-          @save="emitSave('Info.Status', formData.Info.Status)"
-        />
-      </a-col>
       <a-col :span="12">
         <a-form-item :name="['Info', 'Password']">
           <template #label>
@@ -86,37 +81,15 @@
           />
         </a-form-item>
       </a-col>
-
-      <a-col :span="12">
-        <UserRemainedDayField
-          name="remainedDay"
-          v-model="formData.Info.RemainedDay"
-          :hint="t('core.edit.daysLeftAccount1')"
-          placeholder="0"
-          :disabled="loading"
-          @save="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
-        />
-      </a-col>
     </a-row>
-
-    <UserNotesField
-      name="notes"
-      v-model="formData.Info.Notes"
-      :hint="t('core.edit.addNoteAboutThis')"
-      :placeholder="t('core.edit.enterNote3')"
-      :disabled="loading"
-      :rows="4"
-      enhanced
-      @save="emitSave('Info.Notes', formData.Info.Notes)"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
-import UserNameField from '@/views/EditView/User/components/UserNameField.vue'
-import UserNotesField from '@/views/EditView/User/components/UserNotesField.vue'
-import UserRemainedDayField from '@/views/EditView/User/components/UserRemainedDayField.vue'
-import UserStatusField from '@/views/EditView/User/components/UserStatusField.vue'
+import accountIcon from '@/assets/MAA.png'
+import UserAccountHeading from '@/components/UserAccountHeading.vue'
+import type { UserAccountHeadingOptions } from '@/types/userEditor'
+import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useI18n } from 'vue-i18n'
 
@@ -125,6 +98,7 @@ const { t } = useI18n()
 const formData = defineModel<any>('formData', { required: true })
 
 defineProps<{
+  heading?: Omit<UserAccountHeadingOptions, 'logoSrc'>
   loading: boolean
   serverOptions: any[]
 }>()

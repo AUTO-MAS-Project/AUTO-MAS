@@ -24,7 +24,7 @@ export type OkwwUserConfig_Task = {
      */
     WhichTacetSuppressionToFarm?: (number | null);
     /**
-     * MAS 仅接管 DailyTask 及 DailyTask 高频设置；账号切换由 MAS 侧 account_switch 实现，不再暴露上游 MultiAccountDailyTask。 每日任务体力用途
+     * 每日任务体力用途（仅日常任务且开启覆写常规配置时生效）
      */
     WhichToFarm?: ('Tacet Suppression' | 'Forgery Challenge' | 'Simulation Challenge' | null);
 };

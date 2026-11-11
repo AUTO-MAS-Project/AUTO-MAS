@@ -460,9 +460,9 @@ def swap_in_dir(src: Path, dst: Path) -> None:
         force_rmtree(backup_path)
 
 
-def _preserve_legacy_snapshot(snapshot_path: Path) -> Path:
+def _preserve_native_snapshot(snapshot_path: Path, *, kind: str = "legacy") -> Path:
     """
-    把指纹版本不符的旧快照改名留存
+    把无法自动恢复的原始快照改名留存
 
     旧快照里的原始配置仍是用户的数据, 但它的指纹由旧算法生成, 无法与当前目录
     比较。改名留存后, 下一次提交快照不会把它覆盖掉。
@@ -477,7 +477,7 @@ def _preserve_legacy_snapshot(snapshot_path: Path) -> Path:
     index = 0
     while True:
         suffix = "" if index == 0 else f".{index}"
-        target = snapshot_path.with_name(f"{snapshot_path.name}.legacy{suffix}")
+        target = snapshot_path.with_name(f"{snapshot_path.name}.{kind}{suffix}")
         if not target.exists() and not _snapshot_ready_path(target).exists():
             break
         index += 1
@@ -492,6 +492,7 @@ def recover_native_config(
     live_path: Path,
     *,
     expected_script_id: str | None = None,
+    preserve_on_mismatch: bool = False,
 ) -> str:
     """
     任务开始时处置上次运行残留的原生配置快照
@@ -510,6 +511,7 @@ def recover_native_config(
         snapshot_path: 快照目录(与提交标记配套)。
         live_path: 脚本原生配置目录。
         expected_script_id: 期望归属的脚本, 不符则只清理不恢复。
+        preserve_on_mismatch: 现场归属不明时另存原始快照，供人工核对恢复。
 
     Returns:
         处置结果: restored / intact / skipped / cleared / legacy。
@@ -525,7 +527,7 @@ def recover_native_config(
     if state is None:
         result = "cleared"
     elif state.fingerprint_version != NATIVE_CONFIG_FINGERPRINT_VERSION:
-        _preserve_legacy_snapshot(snapshot_path)
+        _preserve_native_snapshot(snapshot_path)
         return "legacy"
     elif not live_path.exists():
         if state.original_exists:
@@ -545,6 +547,9 @@ def recover_native_config(
             result = "intact"
         else:
             result = "skipped"
+            if preserve_on_mismatch:
+                _preserve_native_snapshot(snapshot_path, kind="unresolved")
+                return result
 
     clear_native_config_snapshot(snapshot_path)
     return result

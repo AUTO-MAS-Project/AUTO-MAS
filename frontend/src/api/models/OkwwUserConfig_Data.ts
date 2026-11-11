@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type OkwwUserConfig_Data = {
     /**
+     * 上次运行的 ok-ww 任务名称；空值沿用历史任务序号
+     */
+    LastTaskName?: ('' | 'DailyTask' | 'MultiAccountConfigTask' | null);
+    /**
      * 上次代理日期
      */
     LastProxyDate?: (string | null);

@@ -67,6 +67,10 @@ from .tools.backup_archive import (
     owner_for_mode,
     read_overlay_values,
 )
+from .tools.batch_logs import (
+    NATIVE_SWITCH_UNSUPPORTED_MESSAGE,
+    NativeSwitchUnsupportedError,
+)
 from .tools.launcher_start import (
     async_start_game_via_launcher,
     detect_game_maintenance_text,
@@ -130,9 +134,6 @@ _OKWW_REL_LOG_FILE = "data/apps/ok-ww/working/logs/ok-script.log"
 _OKWW_REL_PYTHONW = "data/apps/ok-ww/python/pythonw.exe"
 _OKWW_TRACK_PROCESS_NAME = "pythonw.exe"
 _OKWW_UPDATE_METHOD = "AUTO_UPDATE"
-# ok-ww 只调度日常任务（-t 1 = DailyTask）；账号切换由 MAS 侧 account_switch
-# 实现，不再暴露上游 MultiAccountDailyTask（其 -t 序号与 MAS 面板语义不符）。
-_OKWW_TASK_INDEX = 1
 _OKWW_LOG_TIME_START = 1
 _OKWW_LOG_TIME_END = 23
 _OKWW_LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
@@ -240,6 +241,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         self.script_config_path: Path | None = None
         # prepare() 失败时收尾仍会读取该属性，必须在任何可失败步骤前初始化
         self.run_book = False
+        self.task_name = "DailyTask"
+        self.native_switch_unsupported = False
 
     async def check(self) -> str:
         root = self.script_config.Info.RootPath
@@ -420,8 +423,10 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             rotated_name=f"{self.script_log_path.stem}.%Y-%m-%d{self.script_log_path.suffix}",
         )
 
-        self.task_index = _OKWW_TASK_INDEX
-        self.okww_args = ["-t", str(self.task_index), "-e"]
+        self.task_name = "DailyTask"
+        self.task_index = 1 if self.task_name == "DailyTask" else 0
+        task_argument = "1" if self.task_name == "DailyTask" else self.task_name
+        self.okww_args = ["-t", task_argument, "-e"]
 
         self.script_config_path = self.script_root_path / _OKWW_REL_CONFIG_DIR
 
@@ -831,11 +836,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             if await self.skip_on_game_maintenance(self._maintenance_detect):
                 break
 
-            # 游戏启动成功后、下发脚本配置前，按「运行前强制切换账号」开关切号。
+            # 游戏启动成功后、下发脚本配置前，按「运行前由 MAS 切换账号」开关切号。
             # 开关在游戏配置区，依赖 Game.Enabled（未启用游戏配置则不生效）；
             # 用户未填写手机号时跳过不切换。
             if (
-                self.script_config.Game.AccountSwitch
+                self.task_name == "DailyTask"
+                and self.script_config.Game.AccountSwitchMethod == "MAS"
                 and self.script_config.Game.Enabled
                 and (self.game_manager is not None)
             ):
@@ -844,7 +850,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     await self._push_dispatch_log("未配置账号，跳过账号切换")
                 else:
                     try:
-                        await self._push_dispatch_log("正在强制切换鸣潮登录账号...")
+                        await self._push_dispatch_log("正在切换鸣潮登录账号...")
                         # 账号切换在后台线程内同步执行，on_log 契约是同步回调；
                         # _push_dispatch_log 是 async 方法，须经 run_coroutine_threadsafe
                         # 调度回事件循环，否则进度不会推送到调度台且产生未等待协程告警。
@@ -871,7 +877,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                         continue
 
             await self.set_okww()
-            await self._push_dispatch_log(f"启动 OK-WW: -t {self.task_index} -e")
+            await self._push_dispatch_log(f"启动 OK-WW: {' '.join(self.okww_args)}")
             logger.info(
                 f"启动 OK-WW 进程: {self.script_exe_path} {' '.join(self.okww_args)}"
             )
@@ -884,6 +890,17 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     target=self.script_target_process_info,
                     on_log=self._push_dispatch_log,
                 )
+            except NativeSwitchUnsupportedError:
+                self.native_switch_unsupported = True
+                await self.cur_user_log.set_state(
+                    status=NATIVE_SWITCH_UNSUPPORTED_MESSAGE
+                )
+                await self.cur_user_log.append_content(
+                    NATIVE_SWITCH_UNSUPPORTED_MESSAGE
+                )
+                await self.cur_user_item.set_state(status="异常")
+                await self._push_dispatch_log(NATIVE_SWITCH_UNSUPPORTED_MESSAGE)
+                break
             except (OSError, RuntimeError) as e:
                 # 启动器可能已拉起进程；清理后再重试，避免下一轮重复启动。
                 if not await self.handle_pre_okww_error("OK-WW 启动失败", e=e):
@@ -923,6 +940,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 with suppress(asyncio.CancelledError):
                     await maintenance_watch
             await self.log_monitor.stop()
+
+            if self.native_switch_unsupported:
+                break
 
             # 运行期间命中维护弹窗：按维护跳过收尾，不再重试；结论与内容
             # 在日志监控停止后落笔，避免被 check_log 的末次轮询覆盖
@@ -997,7 +1017,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
     def _game_management_enabled(self) -> bool:
         return bool(self.script_config.Game.Enabled)
 
-    async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
+    async def check_log(
+        self,
+        log_content: list[str],
+        latest_time: datetime,
+        *,
+        signal_completion: bool = True,
+    ) -> None:
         """按内置日志判定结果，未见成功日志便退出则视为异常。"""
         log = "".join(log_content)
         await self.cur_user_log.set_state(content=log_content)
@@ -1012,7 +1038,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 user_item_status = "异常"
                 break
         else:
-            if any(needle in log for needle in _OKWW_SUCCESS_LOG):
+            # 多账号任务的单次日常完成不代表整批完成，只认框架退出语。
+            success_logs = (
+                _OKWW_SUCCESS_LOG[:1]
+                if self.task_name == "MultiAccountConfigTask"
+                else _OKWW_SUCCESS_LOG
+            )
+            if any(needle in log for needle in success_logs):
                 log_status = "Success!"
                 user_item_status = "完成"
             elif any(needle in log for needle in _OKWW_DISCONNECT_LOG):
@@ -1034,7 +1066,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         logger.debug(f"OK-WW 日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "OK-WW 正常运行中":
             logger.info(f"OK-WW 任务结果: {self.cur_user_log.status}, 日志锁已释放")
-            self.wait_event.set()
+            if signal_completion:
+                self.wait_event.set()
 
     async def final_task(self):
         self.history.begin_user_history_capture(
@@ -1147,6 +1180,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         if self.cur_user_config is None:
             return
 
+        self.cur_user_config.Data.LastTaskName = self.task_name
         self.cur_user_config.Data.LastTaskIndex = getattr(self, "task_index", 0)
         await self.cur_user_config.commit()
         if self.run_book:

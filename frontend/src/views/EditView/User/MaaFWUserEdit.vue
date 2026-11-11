@@ -15,20 +15,6 @@
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="loading">
-        <template #title>
-          <div class="card-title">
-            <img
-              :src="projectIconUrl || flavor.logo"
-              :alt="flavor.typeTagLabel"
-              width="22"
-              height="22"
-              class="title-logo"
-              @error="handleProjectIconError"
-            />
-            <span>{{ scriptName || 'MFW' }}</span>
-          </div>
-        </template>
-
         <a-form
           v-if="isEdit"
           ref="formRef"
@@ -39,6 +25,13 @@
         >
           <component
             :is="sections.basicInfo"
+            :heading="{
+              isEdit,
+              logoSrc: projectIconUrl || flavor.logo,
+              saveStatus,
+              saveErrorMessage,
+              onIconError: handleProjectIconError,
+            }"
             :form-data="formData"
             :interface-dependent-disabled="interfaceDependentDisabled"
             :account-record-tooltip="accountRecordTooltip"
@@ -306,18 +299,6 @@ const handleShellImported = (snapshot: Record<string, unknown>, info: Record<str
 
 .config-card :deep(.ant-card-body) {
   padding: 24px;
-}
-
-.card-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.title-logo {
-  width: 22px;
-  height: 22px;
-  object-fit: contain;
 }
 
 /* 配置恢复预览（分区行；弹窗内滚动由通用组件负责） */

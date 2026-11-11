@@ -1,55 +1,26 @@
 <template>
   <div class="form-section">
+    <UserAccountHeading
+      v-if="heading"
+      :user-name="formData.userName"
+      :options="{ ...heading, logoSrc: accountIcon }"
+    />
     <div class="section-header">
       <h3>{{ t('core.edit.basicInfo') }}</h3>
     </div>
-    <a-row :gutter="24">
-      <a-col :span="12">
-        <UserNameField
-          name="userName"
-          required
-          v-model="formData.userName"
-          :hint="t('core.edit.displayNameUsedIdentify')"
-          :placeholder="t('core.edit.enterUsername')"
-          :disabled="loading"
-          enhanced
-          @save="emit('save', 'userName', formData.userName)"
-        />
-      </a-col>
-      <a-col :span="6">
-        <UserStatusField
-          name="status"
-          v-model="formData.Info.Status"
-          :hint="t('core.edit.whetherThisUserEnabled')"
-          :disabled="loading"
-          @save="emit('save', 'Info.Status', formData.Info.Status)"
-        />
-      </a-col>
-      <a-col :span="6">
-        <UserRemainedDayField
-          name="remainedDay"
-          v-model="formData.Info.RemainedDay"
-          :hint="t('core.edit.daysLeftAccount1')"
-          placeholder="-1"
-          :disabled="loading"
-          @save="emit('save', 'Info.RemainedDay', formData.Info.RemainedDay)"
-        />
-      </a-col>
-    </a-row>
+    <UserBasicInfoFields
+      v-model:user-name="formData.userName"
+      v-model:status="formData.Info.Status"
+      v-model:remained-day="formData.Info.RemainedDay"
+      v-model:notes="formData.Info.Notes"
+      :disabled="loading"
+      @save-name="emit('save', 'userName', formData.userName)"
+      @save-status="emit('save', 'Info.Status', formData.Info.Status)"
+      @save-days="emit('save', 'Info.RemainedDay', formData.Info.RemainedDay)"
+      @save-notes="emit('save', 'Info.Notes', formData.Info.Notes)"
+    />
 
     <a-row :gutter="24">
-      <a-col :span="16">
-        <UserNotesField
-          name="notes"
-          v-model="formData.Info.Notes"
-          :hint="t('core.edit.addNoteAboutThis')"
-          :placeholder="t('core.edit.enterNote3')"
-          :disabled="loading"
-          :rows="3"
-          enhanced
-          @save="emit('save', 'Info.Notes', formData.Info.Notes)"
-        />
-      </a-col>
       <a-col :span="8">
         <a-form-item>
           <template #label>
@@ -93,10 +64,10 @@
 </template>
 
 <script setup lang="ts">
-import UserNameField from '@/views/EditView/User/components/UserNameField.vue'
-import UserNotesField from '@/views/EditView/User/components/UserNotesField.vue'
-import UserRemainedDayField from '@/views/EditView/User/components/UserRemainedDayField.vue'
-import UserStatusField from '@/views/EditView/User/components/UserStatusField.vue'
+import accountIcon from '@/assets/whimbox.png'
+import UserAccountHeading from '@/components/UserAccountHeading.vue'
+import type { UserAccountHeadingOptions } from '@/types/userEditor'
+import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -119,6 +90,7 @@ const props = defineProps<{
       Tag: string
     }
   }
+  heading?: Omit<UserAccountHeadingOptions, 'logoSrc'>
   loading: boolean
 }>()
 

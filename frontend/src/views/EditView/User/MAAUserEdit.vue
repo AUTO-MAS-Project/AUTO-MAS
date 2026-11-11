@@ -31,12 +31,11 @@
         </a-button>
       </template>
     </GuiSessionMask>
-    <UserEditHeader
+    <MAAUserEditHeader
       v-if="!cultivationPage"
       :script-id="scriptId"
       :script-name="scriptName"
       :is-edit="isEdit"
-      script-edit-segment="maa"
       :user-id="userId"
       :cancel-loading="leavingPage"
       @cancel="handleCancel"
@@ -81,6 +80,7 @@
         >
           <!-- 基本信息组件 -->
           <BasicInfoSection
+            :heading="{ isEdit }"
             v-model:form-data="formData"
             :loading="loading"
             :server-options="serverOptions"
@@ -247,7 +247,7 @@
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
-import UserEditHeader from '@/components/UserEditHeader.vue'
+import MAAUserEditHeader from '@/views/MAAUserEdit/MAAUserEditHeader.vue'
 import CultivationPage from '@/views/MAAUserEdit/CultivationPage.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
