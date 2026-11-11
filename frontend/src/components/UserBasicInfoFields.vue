@@ -4,7 +4,7 @@
       <a-col :xs="24" :md="8">
         <a-form-item :name="namePath" :label="t('core.edit.username')" required>
           <a-input
-            size="middle"
+            size="large"
             v-model:value="userName"
             :placeholder="t('core.edit.enterUsername')"
             :disabled="disabled"
@@ -15,7 +15,7 @@
       <a-col :xs="24" :md="8">
         <a-form-item :label="t('core.edit.enabled')">
           <a-select
-            size="middle"
+            size="large"
             :value="status ? 'on' : 'off'"
             :disabled="disabled"
             :options="statusOptions"
@@ -32,7 +32,7 @@
               variant="form"
           /></template>
           <a-input-number
-            size="middle"
+            size="large"
             v-model:value="remainedDay"
             :min="-1"
             :max="9999"
@@ -45,7 +45,7 @@
     </a-row>
     <a-form-item :label="t('core.edit.note')">
       <a-textarea
-        size="middle"
+        size="large"
         v-model:value="notes"
         :placeholder="t('core.edit.enterNote')"
         :auto-size="{ minRows: 2, maxRows: 4 }"
@@ -94,6 +94,6 @@ function changeStatus(value: string) {
 .user-basic-info-fields :deep(.ant-form-item-label > label),
 .user-basic-info-fields :deep(.field-label-form) {
   font-size: 14px;
-  font-weight: 400;
+  font-weight: 600;
 }
 </style>

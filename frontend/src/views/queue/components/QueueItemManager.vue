@@ -38,7 +38,7 @@
           <a-select
             v-model:value="record.script"
             size="small"
-            style="width: 200px"
+            style="width: 100%"
             class="script-select"
             :placeholder="t('core.queue.item.selectScript')"
             :options="scriptOptions"
@@ -378,30 +378,21 @@ onMounted(() => {
 
 /* 拖拽表格业务列样式 */
 .script-cell {
-  flex: 1;
-  min-width: 200px;
+  flex: 3 1 320px;
+  min-width: 240px;
 }
 
 .header-cell.days-cell,
 .row-cell.days-cell {
-  flex: 1 1 360px;
+  flex: 2 1 240px;
   min-width: 0;
 }
 
-/* 响应式设计 */
-@media (max-width: 1200px) {
-  .queue-items-grid {
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  }
-}
-
+/* 响应式设计：窄屏行转为纵向排列，flex-basis 会变成高度基准，改为按内容撑开 */
 @media (max-width: 768px) {
-  .queue-items-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .queue-item-card-item {
-    padding: 12px;
+  .row-cell.script-cell,
+  .row-cell.days-cell {
+    flex: 0 0 auto;
   }
 }
 

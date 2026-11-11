@@ -19,6 +19,7 @@ import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
 import { EmulatorOperateIn, Service } from '@/composables/useEmulatorApi'
 import { importLegacyEmulator } from '@/views/Emulator/importLegacyEmulator'
 import DocLink from '@/components/DocLink.vue'
+import EmulatorTabTitle from './Emulator/EmulatorTabTitle.vue'
 import Emulator2Panel from '@/views/Emulator/Emulator2Panel.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { usePerformanceStore } from '@/stores/performance'
@@ -940,12 +941,9 @@ const handleBossKeyInputChange = (uuid: string) => {
           class="emulator-tabs app-page-surface app-page-surface--tabs"
           @change="onTabChange"
         >
-          <!-- 每个模拟器一个 Tab -->
           <a-tab-pane v-for="element in emulatorIndex" :key="element.uid" :closable="false">
             <template #tab>
-              <span class="tab-title">
-                {{ emulatorData[element.uid]?.Info?.Name || t('core.emulator.unnamed') }}
-              </span>
+              <EmulatorTabTitle :info="getEditingData(element.uid)" />
             </template>
 
             <!-- Tab 内容：配置 + 设备列表 -->

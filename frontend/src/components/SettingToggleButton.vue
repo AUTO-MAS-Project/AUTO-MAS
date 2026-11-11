@@ -41,8 +41,8 @@ const toggle = () => {
 .setting-toggle-button {
   min-width: 60px;
   border-radius: 6px;
-  border-color: var(--ant-color-error);
-  color: var(--ant-color-error);
+  border-color: var(--ant-color-border);
+  color: var(--ant-color-text-secondary);
   background: var(--ant-color-bg-container);
   font-weight: 600;
 }
@@ -55,8 +55,8 @@ const toggle = () => {
     :hover,
     :focus-visible
   ) {
-  border-color: var(--ant-color-error);
-  color: var(--ant-color-error);
+  border-color: var(--ant-color-border);
+  color: var(--ant-color-text-secondary);
 }
 
 .setting-toggle-button--on {
@@ -66,8 +66,8 @@ const toggle = () => {
 }
 
 .setting-toggle-button.ant-btn:not(.setting-toggle-button--on):disabled {
-  border-color: var(--ant-color-error);
-  color: var(--ant-color-error);
+  border-color: var(--ant-color-border);
+  color: var(--ant-color-text-secondary);
   background: var(--ant-color-bg-container);
 }
 

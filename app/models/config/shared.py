@@ -228,7 +228,7 @@ def _tag_remained_days(config: UserConfigType) -> dict:
     """剩余天数标签。"""
     remained_day = config.Info.RemainedDay
     if remained_day == -1:
-        tag_color = "gold"
+        tag_color = "default"
     elif remained_day == 0:
         tag_color = "red"
     elif remained_day <= 3:
@@ -252,7 +252,7 @@ def _tag_notes(config: UserConfigType) -> dict:
     notes = config.Info.Notes
     return {
         "text": (f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."),
-        "color": "pink",
+        "color": "default",
     }
 
 

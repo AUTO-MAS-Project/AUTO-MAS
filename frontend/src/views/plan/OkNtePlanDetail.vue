@@ -1,12 +1,12 @@
 <template>
   <div class="user-edit-container oknte-plan-detail">
     <div class="user-edit-content">
-      <a-space direction="vertical" class="detail-header">
+      <a-flex class="detail-header" justify="space-between" align="center" wrap="wrap" gap="middle">
+        <h2>{{ t('core.plan.oknte.detail') }} — {{ dayLabel }}</h2>
         <a-button size="large" :aria-label="t('core.edit.back')" @click="back"
           ><template #icon><ArrowLeftOutlined /></template>{{ t('core.edit.back') }}</a-button
         >
-        <h2>{{ t('core.plan.oknte.detail') }} — {{ dayLabel }}</h2>
-      </a-space>
+      </a-flex>
       <a-card class="config-card">
         <OkNtePlanOverrideEditor ref="editor" :plan-id="planId" :day="day" />
       </a-card>
@@ -37,7 +37,6 @@ async function back() {
 
 <style scoped>
 .user-edit-container {
-  padding: 32px;
   height: 100%;
   min-height: 0;
   background: var(--ant-color-bg-layout);
@@ -65,12 +64,9 @@ async function back() {
 }
 .config-card :deep(.ant-card-body) {
   height: 100%;
-  padding: 32px;
+  padding: 24px;
 }
 @media (max-width: 768px) {
-  .user-edit-container {
-    padding: 16px;
-  }
   .config-card :deep(.ant-card-body) {
     padding: 20px;
   }

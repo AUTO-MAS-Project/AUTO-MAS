@@ -191,9 +191,7 @@
 
             <a-row :gutter="24">
               <a-col :span="24">
-                <!-- 快速配置开关已隐藏：按配置来源派生（原生来源 = 关，共享 / 独立 = 开），
-                     见 handleConfigModeChange 与后端 BetterGIUserConfig.load 的加载归一。
-                     派生值仍交给选择器只读展示，让「本次任务生效的配置」与实际运行一致。 -->
+                <!-- 覆写由配置来源派生，精简模式只显示实际生效的结论。 -->
                 <GeneralConfigModeSelector
                   :model-value="formData.Info.Base"
                   :options="bettergiConfigModeOptions"
@@ -201,6 +199,7 @@
                   :saving="configModeSaving"
                   :quick-config="formData.Info.IfQuickConfig"
                   :quick-config-readonly="true"
+                  compact
                   @change="handleConfigModeChange"
                 />
               </a-col>

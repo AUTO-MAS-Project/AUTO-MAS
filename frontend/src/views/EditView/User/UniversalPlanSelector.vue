@@ -17,6 +17,7 @@
         </template>
         <a-select
           class="universal-plan-select"
+          size="large"
           :value="selected"
           :options="options"
           :loading="busy"

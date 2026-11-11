@@ -3087,7 +3087,10 @@ class OkwwUserConfig(DomainEntry):
         tags = []
         last_status = self.Data.LastProxyStatus
         tags.append(
-            {"text": f"上次：{_tag_last_status(last_status)}", "color": "green"}
+            {
+                "text": f"上次：{_tag_last_status(last_status)}",
+                "color": "red" if last_status == "失败" else "green",
+            }
         )
         last_task_index = int(self.Data.LastTaskIndex or 0)
         task_label = self.OKWW_TASK_BOOK.get(last_task_index, "未知")
@@ -3278,7 +3281,10 @@ class OkNteUserConfig(DomainEntry):
         tags = []
         last_status = self.Data.LastProxyStatus
         tags.append(
-            {"text": f"上次：{_tag_last_status(last_status)}", "color": "green"}
+            {
+                "text": f"上次：{_tag_last_status(last_status)}",
+                "color": "red" if last_status == "失败" else "green",
+            }
         )
         last_task_index = int(self.Data.LastTaskIndex or 0)
         task_label = self.OKNTE_TASK_BOOK.get(last_task_index, "未知")
@@ -3513,7 +3519,10 @@ class BetterGIUserConfig(DomainEntry):
         tags = []
         last_status = self.Data.LastProxyStatus
         tags.append(
-            {"text": f"上次：{_tag_last_status(last_status)}", "color": "green"}
+            {
+                "text": f"上次：{_tag_last_status(last_status)}",
+                "color": "red" if last_status == "失败" else "green",
+            }
         )
         if self.Info.IfQuickConfig:
             config_name = "MAS独立配置"
