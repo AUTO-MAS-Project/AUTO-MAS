@@ -3,7 +3,7 @@ import { observeFeature } from '@/utils/featureAnalytics'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { theme } from 'ant-design-vue'
 import { getConfig, saveConfig, type FrontendConfig } from '@/utils/config'
-import { createAppearanceCursorValue } from '@/components/appearanceCursor'
+import { createAppearanceCursorApplier, normalizeCursorSize } from '@/components/appearanceCursor'
 import { createAppearanceBackgroundApplier } from './appearanceBackground'
 import { createAppearanceSurfaceColor, getAppearanceSurfaceOpacity } from './appearanceSurfaces'
 import type { InstalledAppearance, OnlineAppearanceInstallResult } from '@/types/appearance'
@@ -37,6 +37,38 @@ const themeMode = ref<ThemeMode>('system')
 const themeColor = ref<ThemeColor>('blue')
 const appearanceId = ref<string | null>(null)
 const activeAppearance = ref<InstalledAppearance | null>(null)
+const cursorSizePx = ref<number | null>(null)
+let savedCursorSizePx: number | null = null
+let cursorSizeSaveTimer: ReturnType<typeof setTimeout> | undefined
+let cursorSizeRevision = 0
+let cursorSizeBroadcastRevision = 0
+let cursorSizePending = false
+const applyAppearanceCursor = createAppearanceCursorApplier()
+
+const previewCursorSize = (value: number | null, onError: () => void) => {
+  cursorSizePx.value = normalizeCursorSize(value)
+  const next = cursorSizePx.value
+  const revision = ++cursorSizeRevision
+  cursorSizePending = true
+  clearTimeout(cursorSizeSaveTimer)
+  cursorSizeSaveTimer = setTimeout(async () => {
+    const broadcastRevision = cursorSizeBroadcastRevision
+    try {
+      await observePreference('cursor_size', next === null ? 'auto' : 'custom', () =>
+        saveConfig({ cursorSizePx: next })
+      )
+      if (broadcastRevision === cursorSizeBroadcastRevision) savedCursorSizePx = next
+    } catch {
+      onError()
+    } finally {
+      if (revision === cursorSizeRevision) {
+        cursorSizePending = false
+        cursorSizePx.value = savedCursorSizePx
+      }
+    }
+  }, 300)
+}
+
 const appearances = ref<InstalledAppearance[]>([])
 const customBackgroundPath = ref('')
 const customBackgroundUrl = ref('')
@@ -160,26 +192,6 @@ const restorePersistedThemeSnapshot = () => {
 const updateCSSVariables = () => {
   const root = document.documentElement
   root.classList.toggle('appearance-custom', Boolean(activeAppearance.value))
-  const cursorUrls = activeAppearance.value?.cursorUrls
-  const cursors = activeAppearance.value?.cursors
-  if (cursors && Object.keys(cursors).length > 0) {
-    root.classList.add('appearance-cursor-custom')
-  } else {
-    root.classList.remove('appearance-cursor-custom')
-  }
-  // 光标变量独立于 AntD token bridge，确保首屏、清除和回退立即恢复浏览器默认语义。
-  root.style.setProperty(
-    '--app-appearance-cursor-default',
-    createAppearanceCursorValue('default', cursorUrls, cursors)
-  )
-  root.style.setProperty(
-    '--app-appearance-cursor-pointer',
-    createAppearanceCursorValue('pointer', cursorUrls, cursors)
-  )
-  root.style.setProperty(
-    '--app-appearance-cursor-text',
-    createAppearanceCursorValue('text', cursorUrls, cursors)
-  )
   const backgroundSource =
     activeAppearance.value?.backgroundUrl ?? (customBackgroundUrl.value || undefined)
   const surfaceOpacity =
@@ -504,6 +516,19 @@ const handleSystemThemeChange = () => {
 mediaQuery.addEventListener('change', handleSystemThemeChange)
 
 // 监听主题模式和颜色变化
+watch(
+  [activeAppearance, cursorSizePx],
+  ([appearance, size]) => {
+    const root = document.documentElement
+    root.classList.toggle(
+      'appearance-cursor-custom',
+      Boolean(Object.keys(appearance?.cursors ?? {}).length)
+    )
+    applyAppearanceCursor(root.style, appearance?.cursorUrls, appearance?.cursors, size)
+  },
+  { immediate: true }
+)
+
 watch(themeMode, updateTheme, { immediate: true })
 watch(themeColor, updateTheme)
 
@@ -977,12 +1002,19 @@ export function useTheme() {
     themeConfigListenerInitialized = true
     window.electronAPI.onThemeConfigChanged?.(rawConfig => {
       if (rawConfig === null || typeof rawConfig !== 'object') return
-      themeRevision += 1
-      configRevision += 1
       const config = rawConfig as Partial<FrontendConfig> & {
         customBackgroundUpdated?: boolean
         customSurfaceOpacityUpdated?: boolean
       }
+      if (config.cursorSizePx !== undefined) {
+        ++cursorSizeBroadcastRevision
+        savedCursorSizePx = normalizeCursorSize(config.cursorSizePx)
+        // 已落盘的尺寸可用于回滚，但不能覆盖本窗口尚未保存的预览。
+        if (!cursorSizePending) cursorSizePx.value = savedCursorSizePx
+        if (!('appearanceId' in config)) return
+      }
+      themeRevision += 1
+      configRevision += 1
       if (
         config.themeMode === 'system' ||
         config.themeMode === 'light' ||
@@ -1034,6 +1066,8 @@ export function useTheme() {
     initAppearanceChangedListener()
     initThemeConfigListener()
     const config = preloadedConfig ?? (await getConfig())
+    savedCursorSizePx = normalizeCursorSize(config.cursorSizePx)
+    cursorSizePx.value = savedCursorSizePx
     if (
       config.themeMode === 'system' ||
       config.themeMode === 'light' ||
@@ -1058,6 +1092,8 @@ export function useTheme() {
   }
 
   return {
+    cursorSizePx: computed(() => cursorSizePx.value),
+    previewCursorSize,
     themeMode: computed(() => themeMode.value),
     themeColor: computed(() => themeColor.value),
     isDark: computed(() => isDark.value),

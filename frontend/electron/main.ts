@@ -2218,29 +2218,33 @@ ipcMain.handle('save-config', (event, patch, defaults) => {
 
     desktopMascot.configChanged(patch)
 
-    if (
-      patch &&
-      typeof patch === 'object' &&
-      [
+    if (patch && typeof patch === 'object') {
+      const themeChanged = [
         'themeMode',
         'themeColor',
         'appearanceId',
         'customBackgroundPath',
         'customSurfaceOpacity',
       ].some(key => key in patch)
-    ) {
-      for (const window of BrowserWindow.getAllWindows()) {
-        if (!window.isDestroyed()) {
+      const cursorSizeChanged = 'cursorSizePx' in patch
+      if (themeChanged || cursorSizeChanged) {
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (window.isDestroyed()) continue
           window.webContents.send('theme-config-changed', {
-            themeMode: config.themeMode,
-            themeColor: config.themeColor,
-            appearanceId: config.appearanceId ?? null,
-            customBackgroundPath: config.customBackgroundPath ?? '',
-            customBackgroundUpdated:
-              'customBackgroundPath' in patch && window.webContents.id !== event.sender.id,
-            customSurfaceOpacityUpdated:
-              'customSurfaceOpacity' in patch && window.webContents.id !== event.sender.id,
-            customSurfaceOpacity: config.customSurfaceOpacity ?? 1,
+            ...(themeChanged
+              ? {
+                  themeMode: config.themeMode,
+                  themeColor: config.themeColor,
+                  appearanceId: config.appearanceId ?? null,
+                  customBackgroundPath: config.customBackgroundPath ?? '',
+                  customBackgroundUpdated:
+                    'customBackgroundPath' in patch && window.webContents.id !== event.sender.id,
+                  customSurfaceOpacityUpdated:
+                    'customSurfaceOpacity' in patch && window.webContents.id !== event.sender.id,
+                  customSurfaceOpacity: config.customSurfaceOpacity ?? 1,
+                }
+              : {}),
+            ...(cursorSizeChanged ? { cursorSizePx: config.cursorSizePx ?? null } : {}),
           })
         }
       }

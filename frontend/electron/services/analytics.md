@@ -97,7 +97,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `community_account_manage_finished` | 签到账号创建、启停、删除 | `action` |
 | `community_activity_requested` | 社区活动工具是否有需求 | `operation_kind` |
 | `settings_change_finished` | 设置修改成功率及主要功能采用情况 | `setting_key`、`value_kind`、`setting_kind`；包含关闭应用二次确认开关及设置页布局偏好 |
-| `appearance_preference_changed` | 主题、语言、低性能模式需求 | `preference_kind`、`preset_value` |
+| `appearance_preference_changed` | 主题、语言、低性能模式和自定义光标需求 | `preference_kind`、`preset_value` |
 | `appearance_package_finished` | 本地外观导入、启用、删除是否顺利 | `package_kind`、`action` |
 | `appearance_store_install_finished` | 主题商店发现到安装的转化 | `category_kind` |
 | `appearance_share_finished` | 外观上传与分享是否顺利 | `category_kind` |
