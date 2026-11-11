@@ -24,14 +24,15 @@ from app.utils.common.process.scope import TaskProcessScope, current_process_sco
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("unresponsive", [False, True])
+@pytest.mark.parametrize("shutdown", ["delayed_exit", "stuck_window", "stuck_process"])
 @pytest.mark.parametrize("base", ["native", "shared"])
 async def test_maa_config_stop_saves_before_kill_or_reports_timeout(
-    monkeypatch, tmp_path, unresponsive, base
+    monkeypatch, tmp_path, shutdown, base
 ):
     import importlib
 
     module = importlib.import_module("app.task.MAA.ScriptConfig")
+    process_module = importlib.import_module("app.utils.common.process.manager")
     host = tmp_path / "mas"
     host.mkdir()
     monkeypatch.chdir(host)
@@ -40,43 +41,52 @@ async def test_maa_config_stop_saves_before_kill_or_reports_timeout(
     output = install / "config" / "gui.new.json"
     output.parent.mkdir(parents=True)
     output.write_text('{"Gui":{"custom":"original"}}', encoding="utf-8")
+    window_closed = tmp_path / "window-closed"
+    unresponsive = shutdown != "delayed_exit"
+    shutdown_code = {
+        "delayed_exit": (
+            "p=Path(sys.argv[1]); d=json.loads(p.read_text(encoding='utf-8-sig')); "
+            "d.setdefault('Gui', {})['custom']='saved'; "
+            "p.write_text(json.dumps(d), encoding='utf-8'); "
+            "Path(sys.argv[2]).touch(); time.sleep(1)"
+        ),
+        "stuck_window": "time.sleep(30)",
+        "stuck_process": "Path(sys.argv[2]).touch(); time.sleep(30)",
+    }[shutdown]
 
-    class GuiProcess:
+    class GuiProcess(process_module.ProcessManager):
         async def open_process(self, path):
             self.process = await create_subprocess(
                 sys.executable,
                 "-I",
                 "-c",
                 "import sys,time,json; from pathlib import Path; sys.stdin.readline(); "
-                + (
-                    "time.sleep(30)"
-                    if unresponsive
-                    else "p=Path(sys.argv[1]); d=json.loads(p.read_text(encoding='utf-8-sig')); "
-                    "d.setdefault('Gui', {})['custom']='saved'; "
-                    "p.write_text(json.dumps(d), encoding='utf-8')"
-                ),
+                + shutdown_code,
                 str(output),
+                str(window_closed),
                 stdin=asyncio.subprocess.PIPE,
             )
             ready.set()
 
-        async def close(self):
-            if not hasattr(self, "process"):
-                return
-            self.process.stdin.write(b"close\n")
-            await self.process.stdin.drain()
-            # ProcessManager.close 同样等待窗口退出。
-            await self.process.wait()
-
-        async def is_running(self):
-            return self.process.returncode is None
+    def close_window(hwnd):
+        child = session.maa_process_manager.process
+        assert child is not None and child.stdin is not None
+        child.stdin.write(b"close\n")
+        return True
 
     monkeypatch.setattr(module, "ProcessManager", GuiProcess)
+    # 只替换窗口边界；保留真实 close()，覆盖窗口先消失、进程稍后退出的间隔。
+    monkeypatch.setattr(
+        process_module,
+        "get_main_window_handle",
+        lambda *args: None if window_closed.exists() else 1,
+    )
+    monkeypatch.setattr(process_module.window, "close_window", close_window)
     monkeypatch.setattr(module.System, "kill_process", AsyncMock())
     monkeypatch.setattr(
         module.ScriptConfigTask,
         "GUI_CLOSE_TIMEOUT",
-        0.15 if unresponsive else 2,
+        0.5 if unresponsive else 2,
         raising=False,
     )
     user_id = uuid.uuid4()
