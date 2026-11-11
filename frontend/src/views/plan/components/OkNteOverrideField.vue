@@ -113,8 +113,11 @@ const selectValue = computed(() =>
 .override-input {
   width: 100%;
 }
-.override-field--inherited {
+.override-field {
   margin-bottom: 16px;
+}
+.override-field:last-child {
+  margin-bottom: 0;
 }
 .override-field--inherited :deep(.ant-form-item-control) {
   display: none;

@@ -38,7 +38,7 @@
           <a-select
             v-model:value="record.script"
             size="small"
-            style="width: 200px"
+            style="width: 100%"
             class="script-select"
             :placeholder="t('core.queue.item.selectScript')"
             :options="scriptOptions"
@@ -378,13 +378,13 @@ onMounted(() => {
 
 /* 拖拽表格业务列样式 */
 .script-cell {
-  flex: 1;
-  min-width: 200px;
+  flex: 3 1 320px;
+  min-width: 240px;
 }
 
 .header-cell.days-cell,
 .row-cell.days-cell {
-  flex: 1 1 360px;
+  flex: 2 1 240px;
   min-width: 0;
 }
 
