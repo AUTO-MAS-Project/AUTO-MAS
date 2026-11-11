@@ -60,3 +60,81 @@ def test_check_rejects_missing_paths(tmp_path, log_path, config_path, expected):
         tmp_path / config_path if config_path else None,
     )
     assert asyncio.run(proxy.check()) == expected
+
+
+@pytest.mark.parametrize("launch_before_task", [False, True])
+def test_close_only_does_not_require_launcher(tmp_path, launch_before_task):
+    proxy = _proxy(tmp_path, tmp_path / "log", tmp_path / "cfg")
+    proxy.script_config.Game = SimpleNamespace(
+        Enabled=True,
+        Type="Client",
+        LaunchBeforeTask=launch_before_task,
+        CloseOnFinish=True,
+        Path=None,
+    )
+    expected = "请设置异环启动器路径" if launch_before_task else "Pass"
+    assert asyncio.run(proxy.check()) == expected
+
+
+@pytest.mark.parametrize(
+    ("enabled", "launch", "close", "retry"),
+    [
+        (False, False, True, True),
+        (False, True, True, True),
+        (False, True, False, False),
+        (True, True, False, True),
+        (True, False, False, False),
+        (True, False, True, True),
+    ],
+)
+def test_close_policy_is_independent_of_game_launch(enabled, launch, close, retry):
+    from app.models.config import OkNteConfig
+
+    proxy = AutoProxyTask.__new__(AutoProxyTask)
+    proxy.script_config = OkNteConfig.model_validate(
+        {
+            "Game": {
+                "Enabled": enabled,
+                "LaunchBeforeTask": launch,
+                "CloseOnFinish": close,
+            }
+        }
+    )
+    assert proxy._mas_should_close_game_after_success() is close
+    assert proxy._mas_should_close_game_on_retry() is retry
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("game", "expected"),
+    [
+        ({"Enabled": False, "LaunchBeforeTask": False, "CloseOnFinish": True}, False),
+        ({"Enabled": True, "CloseOnFinish": True}, True),
+        ({"Enabled": True, "CloseOnFinish": False}, False),
+        ({}, False),
+    ],
+)
+async def test_legacy_close_choice_survives_upgrade_and_later_opt_in(
+    tmp_path, game, expected
+):
+    import json
+
+    from app.models.config import OkNteConfig
+    from tests.config_support import activate_config
+
+    path = tmp_path / "oknte.yaml"
+    path.write_text(json.dumps({"Game": game}), encoding="utf-8")
+    config = await activate_config(OkNteConfig(), path)
+    proxy = AutoProxyTask.__new__(AutoProxyTask)
+    proxy.script_config = config
+    assert proxy._mas_should_close_game_after_success() is expected
+    assert proxy._mas_should_close_game_on_retry() is expected
+
+    config.Game.Enabled = False
+    config.Game.CloseOnFinish = True
+    await config.commit()
+    reloaded = await activate_config(OkNteConfig(), path)
+    proxy.script_config = reloaded
+    assert reloaded.Game.Enabled is False
+    assert proxy._mas_should_close_game_after_success() is True
+    assert proxy._mas_should_close_game_on_retry() is True

@@ -388,6 +388,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         if (
             self.script_config.Game.Enabled
             and self.script_config.Game.Type == "Client"
+            and self.script_config.Game.LaunchBeforeTask
             and (
                 not self.script_config.Game.Path
                 or not self.script_config.Game.Path.is_file()
@@ -1114,15 +1115,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         return bool(self.script_config.Game.Enabled)
 
     def _mas_should_close_game_after_success(self) -> bool:
-        return self._game_management_enabled() and bool(
-            self.script_config.Game.CloseOnFinish
-        )
+        return bool(self.script_config.Game.CloseOnFinish)
 
     def _mas_should_close_game_on_retry(self) -> bool:
-        """失败/重试/启动游戏失败：总开关开启且任一生周期子项启用时结束游戏"""
-        return self._game_management_enabled() and bool(
-            self.script_config.Game.LaunchBeforeTask
-            or self.script_config.Game.CloseOnFinish
+        """独立关闭开启，或由 MAS 启动游戏需要重试时结束游戏。"""
+        return bool(self.script_config.Game.CloseOnFinish) or (
+            self._game_management_enabled()
+            and bool(self.script_config.Game.LaunchBeforeTask)
         )
 
     def _resolve_log_file_path(self) -> Path:
@@ -1411,17 +1410,22 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 OK-NTE 进程失败: {exe} ({e})")
         if self.script_config.Game.Enabled and self.script_config.Game.Type == "Client":
-            try:
-                launcher_path = self._resolve_launcher_path(use_script_fallback=False)
-                if launcher_path is not None:
-                    await process.kill_process(launcher_path, kill_tree=False)
-                    if launcher_path.name.casefold() == "ntegloballauncher.exe":
-                        # 国际服入口会退出，实际窗口由安装目录中的独立进程承载。
-                        window_process = launcher_process_paths(launcher_path)[1]
-                        # 不结束子进程：游戏可能仍属于此进程树，由游戏关闭策略单独处理。
-                        await process.kill_process(window_process, kill_tree=False)
-            except Exception as e:
-                logger.opt(exception=True).warning(f"中止异环启动器进程失败: {e}")
+            await self._kill_launcher_process(use_script_fallback=False)
+
+    async def _kill_launcher_process(self, *, use_script_fallback: bool) -> None:
+        try:
+            launcher_path = self._resolve_launcher_path(
+                use_script_fallback=use_script_fallback
+            )
+            if launcher_path is not None:
+                await process.kill_process(launcher_path, kill_tree=False)
+                if launcher_path.name.casefold() == "ntegloballauncher.exe":
+                    # 国际服入口会退出，实际窗口由安装目录中的独立进程承载。
+                    window_process = launcher_process_paths(launcher_path)[1]
+                    # 不结束子进程：游戏由游戏关闭策略单独处理。
+                    await process.kill_process(window_process, kill_tree=False)
+        except Exception as e:
+            logger.opt(exception=True).warning(f"中止异环启动器进程失败: {e}")
 
     async def _kill_game_process(self) -> None:
         """结束游戏：不依赖 LaunchBeforeTask（可自行开游戏，由 CloseOnFinish/失败重试触发）"""
@@ -1433,6 +1437,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 logger.opt(exception=True).warning(f"通过进程管理器关闭异环失败: {e}")
         try:
             if game_type == "Client":
+                # 明确关闭游戏时也清理启动器，包括由本体启动且未开启托管的情况。
+                await self._kill_launcher_process(use_script_fallback=True)
                 # Game.Path 是启动器，游戏本体按进程名结束；进程管理器只跟踪
                 # 启动器，HTGame.exe 由启动器拉起、可能不在其进程树内。
                 # 全进程扫描放到线程里，不阻塞事件循环

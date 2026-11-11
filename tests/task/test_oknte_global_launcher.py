@@ -132,3 +132,32 @@ async def test_cleanup_uses_mas_launcher_not_script_config(
         ]
     else:
         kill_process.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_close_game_also_closes_native_launcher_without_game_management(
+    tmp_path: Path, monkeypatch
+):
+    launcher = tmp_path / "Neverness To Everness" / "NTELauncher" / "NTEGame.exe"
+    launcher.parent.mkdir(parents=True)
+    launcher.touch()
+    config = tmp_path / "LauncherTask.json"
+    config.write_text(json.dumps({"Launcher Path": str(launcher)}), encoding="utf-8")
+    proxy = object.__new__(AutoProxyTask)
+    proxy.script_config = SimpleNamespace(
+        Game=SimpleNamespace(Enabled=False, Type="Client", Path=None)
+    )
+    proxy.script_config_path = config
+    proxy.game_manager = None
+    proxy.oknte_process_manager = SimpleNamespace(
+        kill=AsyncMock(), cleanup_executables=Mock(return_value=[])
+    )
+    kill_process = AsyncMock(return_value=True)
+    kill_game = AsyncMock(return_value=0)
+    monkeypatch.setattr(process, "kill_process", kill_process)
+    monkeypatch.setattr("app.task.OkNte.AutoProxy.kill_pids_by_name", kill_game)
+
+    await proxy.kill_managed_process(kill_game=True)
+
+    kill_game.assert_awaited_once_with("HTGame.exe")
+    assert call(launcher, kill_tree=False) in kill_process.await_args_list
