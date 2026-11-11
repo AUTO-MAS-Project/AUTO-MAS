@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.models.config import OkNteUserConfig
 from app.task.OkNte.AutoProxy import AutoProxyTask
 
 
@@ -20,7 +21,7 @@ def test_run_book_initialized_before_prepare():
     proxy = AutoProxyTask(
         script_info=script_info,
         script_config=SimpleNamespace(),
-        user_config={uid: SimpleNamespace()},
+        user_config={uid: OkNteUserConfig()},
         game_manager=None,
     )
     assert proxy.run_book is False
@@ -33,13 +34,18 @@ def _proxy(tmp_path: Path, log_path, config_path):
     proxy.script_config = SimpleNamespace(
         Info=SimpleNamespace(RootPath=tmp_path),
         Script=SimpleNamespace(
-            ScriptPath=exe, LogPath=log_path, ConfigPath=config_path
+            ScriptPath=exe,
+            LogPath=log_path,
+            ConfigPath=config_path,
+            ConfigPathMode="Folder",
         ),
         Run=SimpleNamespace(ProxyTimesLimit=0),
         Game=SimpleNamespace(Enabled=False, Type="Client", LaunchBeforeTask=False),
     )
     proxy.task_info = SimpleNamespace(is_queue_task=False)
-    proxy.cur_user_config = SimpleNamespace(Info=SimpleNamespace(RemainedDay=-1))
+    proxy.cur_user_config = SimpleNamespace(
+        Info=SimpleNamespace(RemainedDay=-1, PlanMode="Fixed")
+    )
     proxy.native_base = False
     proxy._reset_daily_proxy_count = AsyncMock()
     return proxy
@@ -60,6 +66,17 @@ def test_check_rejects_missing_paths(tmp_path, log_path, config_path, expected):
         tmp_path / config_path if config_path else None,
     )
     assert asyncio.run(proxy.check()) == expected
+
+
+def test_file_plan_is_rejected_before_injection(tmp_path):
+    proxy = _proxy(tmp_path, tmp_path / "log", tmp_path / "DailyRoutineTask.json")
+    proxy.script_config.Script.ConfigPathMode = "File"
+    proxy.cur_user_config.Info.PlanMode = str(uuid.uuid4())
+    assert (
+        asyncio.run(proxy.check())
+        == "OK-NTE 计划需要文件夹配置模式，请选择日常配置所在文件夹"
+    )
+    assert not (tmp_path / "DailyRoutineTaskConfigs.json").exists()
 
 
 @pytest.mark.parametrize("launch_before_task", [False, True])

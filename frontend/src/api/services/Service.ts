@@ -23,6 +23,7 @@ import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_up
 import type { Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post } from '../models/Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post';
 import type { Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post } from '../models/Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post';
 import type { Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post } from '../models/Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post';
+import type { Body_save_oknte_plan_configs_api_scripts_oknte_plan_save_post } from '../models/Body_save_oknte_plan_configs_api_scripts_oknte_plan_save_post';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { CommunityActivityOut } from '../models/CommunityActivityOut';
 import type { CommunityActivityQueryIn } from '../models/CommunityActivityQueryIn';
@@ -116,6 +117,7 @@ import type { NoticeOut } from '../models/NoticeOut';
 import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
 import type { ObsReplayCheckOut } from '../models/ObsReplayCheckOut';
 import type { ObsReplaySaveOut } from '../models/ObsReplaySaveOut';
+import type { OkNtePlanConfigsOut } from '../models/OkNtePlanConfigsOut';
 import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
@@ -3287,6 +3289,48 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/oknte/configs/batch-update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Oknte Plan Configs
+     * @param planId
+     * @param day
+     * @returns OkNtePlanConfigsOut Successful Response
+     * @throws ApiError
+     */
+    public static getOkntePlanConfigsApiScriptsOkntePlanConfigsPost(
+        planId: string,
+        day: string,
+    ): CancelablePromise<OkNtePlanConfigsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/oknte/plan/configs',
+            query: {
+                'plan_id': planId,
+                'day': day,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Save Oknte Plan Configs
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static saveOkntePlanConfigsApiScriptsOkntePlanSavePost(
+        requestBody: Body_save_oknte_plan_configs_api_scripts_oknte_plan_save_post,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/oknte/plan/save',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

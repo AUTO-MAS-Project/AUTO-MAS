@@ -33,7 +33,7 @@ from app.core.notify.task_content import (
     build_script_statistics_payload as build_script_statistics_payload,
 )
 from app.core.ws import protocol
-from app.models.config import OkNteConfig, OkNteUserConfig
+from app.models.config import OkNteConfig, OkNtePlanConfig, OkNteUserConfig
 from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
@@ -326,6 +326,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         self.config_base, self.native_base = resolve_config_base(
             self.cur_user_config, CONFIG_BASE_SHARED
         )
+        self.plan_active = self.cur_user_config.Info.PlanMode != "Fixed"
         self.curdate = ""
         self.user_run_result_persisted = False
         self.daily_activity_required = True
@@ -363,6 +364,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             return "请设置 OK-NTE 日志路径"
         if self.script_config.Script.ConfigPath is None:
             return "请设置 OK-NTE 配置文件路径"
+
+        if (
+            self.cur_user_config.Info.PlanMode != "Fixed"
+            and self.script_config.Script.ConfigPathMode == "File"
+        ):
+            return "OK-NTE 计划需要文件夹配置模式，请选择日常配置所在文件夹"
 
         await self._reset_daily_proxy_count()
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
@@ -478,7 +485,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
 
         # 当前账号配置
 
-        self.task_index = int(self.cur_user_config.Task.TaskIndex)
+        self.task_index = (
+            2 if self.plan_active else int(self.cur_user_config.Task.TaskIndex)
+        )
         self.exit_on_finish = bool(self.cur_user_config.Task.ExitOnFinish)
 
         extra_args = split_args(self.script_config.Script.Arguments)
@@ -598,6 +607,16 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         target_dir = (
             self.script_config_path if folder_mode else self.script_config_path.parent
         )
+        if self.plan_active:
+            from app.core import Config
+            from app.models.schema import OkNtePlanKey
+
+            from .tools.plan import apply_plan
+
+            plan = Config.PlanConfig[self.cur_user_config.Info.PlanMode]
+            if not isinstance(plan, OkNtePlanConfig):
+                raise ValueError("所选计划不是 OkNte 计划表")
+            apply_plan(target_dir, OkNtePlanKey.model_validate(plan.get_current_key()))
         self.daily_activity_required = _oknte_daily_activity_enabled(target_dir)
         if folder_mode:
             _utils_io.mark_native_config_injected(
@@ -635,6 +654,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
 
         # 原生来源：原生配置不属于 MAS，不得把它抄回 MAS 侧 ConfigFile——否则
         # 下一次切回独立来源会把这个原生来源账号的原生配置当成他的独立配置。
+        if self.plan_active:
+            return
         quick = user_uses_quick_config(self.cur_user_config)
         if self.native_base and not quick:
             logger.info("OK-NTE 原生来源配置：跳过配置回写 MAS")

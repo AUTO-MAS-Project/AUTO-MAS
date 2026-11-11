@@ -112,22 +112,15 @@
               </a-col>
             </a-row>
 
-            <a-row :gutter="24">
-              <a-col :span="24">
-                <GeneralConfigModeSelector
-                  :model-value="formData.Info.Base"
-                  :options="oknteConfigModeOptions"
-                  :disabled="pageLoading"
-                  :quick-config="formData.Info.IfQuickConfig"
-                  :quick-config-disabled="
-                    pageLoading || isInitializing || isSaving || configEditorSaving
-                  "
-                  :alert-message="t('core.edit.configSourceHintBase')"
-                  @change="handleConfigModeChange"
-                  @quick-config-change="handleQuickConfigChange"
-                />
-              </a-col>
-            </a-row>
+            <OkNteConfigSource
+              :script-id="scriptId"
+              :user-id="activeUserId"
+              :info="formData.Info"
+              :disabled="pageLoading || isInitializing || isSaving || configEditorSaving"
+              @base-change="handleConfigModeChange"
+              @quick-change="handleQuickConfigChange"
+              @plan-change="formData.Info.PlanMode = $event"
+            />
 
             <a-row :gutter="24">
               <a-col :span="12">
@@ -193,6 +186,7 @@
                   </template>
                   <a-select
                     v-model:value="formData.Task.TaskIndex"
+                    :disabled="formData.Info.PlanMode !== 'Fixed'"
                     size="large"
                     @change="handleTaskIndexChange"
                   >
@@ -316,7 +310,7 @@ import UserEditHeader from '@/components/UserEditHeader.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
-import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
+import OkNteConfigSource from './OkNteUserEdit/OkNteConfigSource.vue'
 import OkNteConfigEditor from './OkNteUserEdit/OkNteConfigEditor.vue'
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
@@ -358,35 +352,6 @@ const OKNTE_MAX_TASK_INDEX = 19
 
 const resourceOptions = [{ label: '官服', value: '官服' }]
 // 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
-const oknteConfigModeOptions: Array<{
-  label: string
-  value: 'shared' | 'independent' | 'native'
-  title: string
-  description: string
-  icon: 'file' | 'database' | 'setting'
-}> = [
-  {
-    label: t('core.edit.script'),
-    value: 'shared',
-    title: t('core.edit.script'),
-    description: t('core.edit.useSharedScriptLevel'),
-    icon: 'file',
-  },
-  {
-    label: t('core.edit.user'),
-    value: 'independent',
-    title: t('core.edit.user'),
-    description: t('core.edit.useThisUserS'),
-    icon: 'database',
-  },
-  {
-    label: t('core.edit.directControl'),
-    value: 'native',
-    title: t('core.edit.directControl'),
-    description: t('core.edit.nativeConfigSourceDescription'),
-    icon: 'setting',
-  },
-]
 
 const pushLogModeOptions = [
   { label: t('core.edit.pushLogModeOff'), value: '关闭' },
@@ -434,6 +399,7 @@ const getDefaultUserData = (): Omit<OkNteUserFormData, 'userName'> => ({
     Status: true,
     Id: '',
     Password: '',
+    PlanMode: 'Fixed',
     Base: 'shared',
     IfQuickConfig: true,
     Resource: '官服',
@@ -471,7 +437,9 @@ const formData = reactive<OkNteUserFormData>({
   ...getDefaultUserData(),
 })
 
-const currentStartupArguments = computed(() => `-t ${formData.Task.TaskIndex || 2} -e`)
+const currentStartupArguments = computed(
+  () => `-t ${formData.Info.PlanMode !== 'Fixed' ? 2 : formData.Task.TaskIndex || 2} -e`
+)
 
 const handleCancel = () => {
   void stopSession()
@@ -509,8 +477,7 @@ const handleQuickConfigChange = async (value: boolean) => {
 }
 
 const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !oknteConfigModeOptions.some(option => option.value === value))
-    return
+  if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
   formData.Info.Base = value as 'shared' | 'independent' | 'native'
   await saveField('Info.Base', formData.Info.Base)
 }

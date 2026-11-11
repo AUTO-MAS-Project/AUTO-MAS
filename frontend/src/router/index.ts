@@ -84,6 +84,12 @@ const routes = [
   ...maafwRoutes.userEdit,
   MAA_CULTIVATE_ROUTE,
   {
+    path: '/plans/:planId/oknte/:day',
+    name: 'OkNtePlanDetail',
+    component: () => import('@/views/plan/OkNtePlanDetail.vue'),
+    meta: { title: 'core.plan.oknte.detail' },
+  },
+  {
     path: '/plans',
     name: 'Plans',
     component: () => import('../views/plan/index.vue'),

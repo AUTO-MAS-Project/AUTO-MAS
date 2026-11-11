@@ -709,17 +709,77 @@ class UniversalPlanConfig(PlanDaysConfig):
         return super().current_group(shifted)
 
 
+class OkNtePlanConfig(WeeklyKeyPlan):
+    """按日叠加日常体力参数，其他账号配置保持原有来源。"""
+
+    class DayFields(ConfigGroup):
+        Key: schema_model.OkNtePlanKey = Field(
+            default_factory=schema_model.OkNtePlanKey, description="体力计划参数"
+        )
+
+    ALL: DayFields = Field(default_factory=DayFields)
+    Monday: DayFields = Field(default_factory=DayFields)
+    Tuesday: DayFields = Field(default_factory=DayFields)
+    Wednesday: DayFields = Field(default_factory=DayFields)
+    Thursday: DayFields = Field(default_factory=DayFields)
+    Friday: DayFields = Field(default_factory=DayFields)
+    Saturday: DayFields = Field(default_factory=DayFields)
+    Sunday: DayFields = Field(default_factory=DayFields)
+    Day1: DayFields = Field(default_factory=DayFields)
+    Day2: DayFields = Field(default_factory=DayFields)
+    Day3: DayFields = Field(default_factory=DayFields)
+    Day4: DayFields = Field(default_factory=DayFields)
+    Day5: DayFields = Field(default_factory=DayFields)
+    Day6: DayFields = Field(default_factory=DayFields)
+    Day7: DayFields = Field(default_factory=DayFields)
+    Day8: DayFields = Field(default_factory=DayFields)
+    Day9: DayFields = Field(default_factory=DayFields)
+    Day10: DayFields = Field(default_factory=DayFields)
+    Day11: DayFields = Field(default_factory=DayFields)
+    Day12: DayFields = Field(default_factory=DayFields)
+    Day13: DayFields = Field(default_factory=DayFields)
+    Day14: DayFields = Field(default_factory=DayFields)
+    Day15: DayFields = Field(default_factory=DayFields)
+    Day16: DayFields = Field(default_factory=DayFields)
+    Day17: DayFields = Field(default_factory=DayFields)
+    Day18: DayFields = Field(default_factory=DayFields)
+    Day19: DayFields = Field(default_factory=DayFields)
+    Day20: DayFields = Field(default_factory=DayFields)
+    Day21: DayFields = Field(default_factory=DayFields)
+    Day22: DayFields = Field(default_factory=DayFields)
+    Day23: DayFields = Field(default_factory=DayFields)
+    Day24: DayFields = Field(default_factory=DayFields)
+    Day25: DayFields = Field(default_factory=DayFields)
+    Day26: DayFields = Field(default_factory=DayFields)
+    Day27: DayFields = Field(default_factory=DayFields)
+    Day28: DayFields = Field(default_factory=DayFields)
+    Day29: DayFields = Field(default_factory=DayFields)
+    Day30: DayFields = Field(default_factory=DayFields)
+    Day31: DayFields = Field(default_factory=DayFields)
+
+    class InfoFields(ConfigGroup):
+        Name: str = Field(default="新 OkNte 计划表", description="计划表名称")
+        Mode: Literal["ALL", "Weekly", "Rotate"] = Field(
+            default="Weekly", description="计划模式"
+        )
+        RotateDays: int = Field(default=7, ge=1, le=31, description="轮换天数")
+
+    Info: InfoFields = Field(default_factory=InfoFields)
+
+
 type PlanConfigType = (
     MaaPlanConfig
     | MaaEndPlanConfig
     | BAAHPlanConfig
     | MSSPlanConfig
     | UniversalPlanConfig
+    | OkNtePlanConfig
 )
 
 
 __all__ = [
     "PlanConfigType",
+    "OkNtePlanConfig",
     "UniversalPlanConfig",
     "WeeklyKeyPlan",
     "MaaPlanConfig",

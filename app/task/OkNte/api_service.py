@@ -16,6 +16,8 @@
 #   Contact: DLmaster_361@163.com
 """OK-NTE 覆写常规配置目录、字段枚举与文件保存业务。"""
 
+import calendar
+import json
 import uuid
 from pathlib import Path
 from typing import Any
@@ -135,3 +137,85 @@ def save_configs(script_id: str, user_id: str, *, configs: dict) -> list[str]:
         updated_files.append(filename)
 
     return updated_files
+
+
+def plan_configs(
+    plan_id: str,
+    day: str,
+    configs: dict | None = None,
+    *,
+    replace: bool = False,
+):
+    from app.models.config import OkNtePlanConfig
+    from app.task.OkNte.config_schema import (
+        DEFAULT_CONFIG_DATA,
+        build_fields_for_config,
+        get_all_config_info,
+        load_oknte_option_labels,
+        merge_oknte_config_data,
+    )
+
+    plan = Config.PlanConfig[uuid.UUID(plan_id)]
+    if not isinstance(plan, OkNtePlanConfig):
+        raise ValueError("不是 OkNte 计划表")
+    group = (
+        day
+        if day == "ALL" or day in calendar.day_name
+        else plan.day_group_of(day.removeprefix("Day"))
+    )
+    if group != day:
+        raise ValueError("无效的计划日期")
+    key = getattr(plan, group).Key
+    if configs is not None:
+        return group, {
+            "Configs": configs
+            if replace
+            else merge_oknte_config_data(key.Configs, configs)
+        }
+    reference = next(
+        (
+            script
+            for _, script in Config.ScriptConfig.items()
+            if isinstance(script, RuntimeOkNteConfig)
+            and any(
+                user.Info.PlanMode == plan.uid for _, user in script.UserData.items()
+            )
+        ),
+        None,
+    )
+    labels = {}
+    if reference is not None:
+        labels = (
+            load_oknte_option_labels(reference.Info.RootPath)
+            if reference.Info.RootPath
+            else {}
+        )
+    result = []
+    for info in get_all_config_info():
+        name = info["filename"]
+        if name not in ("DailyRoutineTask.json", "DailyRoutineTaskConfigs.json"):
+            continue
+        source = DEFAULT_CONFIG_DATA.get(name, {})
+        if reference is not None:
+            config_path = reference.Script.ConfigPath
+            if config_path is None:
+                raise ValueError("绑定托管未配置脚本配置路径")
+            target = (
+                config_path / name
+                if reference.Script.ConfigPathMode == "Folder"
+                else config_path
+            )
+            if target.name == name and target.is_file():
+                source = json.loads(target.read_text(encoding="utf-8-sig"))
+        result.append(
+            {
+                **info,
+                "fields": build_fields_for_config(name, source, labels),
+                "currentData": merge_oknte_config_data(
+                    source, key.Configs.get(name, {})
+                ),
+                "parseError": False,
+                "overrides": key.Configs.get(info["filename"], {}),
+            }
+        )
+    return result

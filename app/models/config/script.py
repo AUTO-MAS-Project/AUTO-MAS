@@ -63,6 +63,7 @@ from .plan import (
     MaaEndPlanConfig,
     MaaPlanConfig,
     MSSPlanConfig,
+    OkNtePlanConfig,
     UniversalPlanConfig,
 )
 from .queue import Webhook
@@ -3154,6 +3155,16 @@ class OkNteUserConfig(DomainEntry):
     Data: DataFields = Field(default_factory=DataFields)
 
     class InfoFields(ConfigGroup):
+        PlanMode: Annotated[
+            UUID | Literal["Fixed"],
+            ref(
+                "PlanConfig",
+                default="Fixed",
+                allow_values=("Fixed",),
+                entry_types=(OkNtePlanConfig,),
+            ),
+        ] = Field(default="Fixed", description="固定配置或 OkNte 计划表")
+
         Base: Annotated[
             Literal["shared", "independent", "native"],
             legacy(
