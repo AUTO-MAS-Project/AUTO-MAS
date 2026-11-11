@@ -4909,10 +4909,7 @@
   "core.plan.oknte.overridden": "当日の上書き",
   "core.plan.oknte.on": "有効",
   "core.plan.oknte.off": "無効",
-  "core.plan.oknte.startOverride": "継承中・クリックして当日の設定を指定",
-  "core.plan.oknte.resetInherit": "継承に戻す",
-  "core.plan.oknte.inheritanceHint": "当日の上書きはこの日のみに適用され、それ以外はアカウント設定を使用します。",
-  "core.plan.oknte.configureOverride": "当日の上書きを設定",
+  "core.plan.oknte.inheritanceHint": "項目横のボタンで継承と当日の上書きを切り替えます。他の設定はアカウント設定に従います。",
   "core.plan.oknte.invalidJson": "正しい型の有効な JSON を入力してください",
   "core.plan.oknte.inheritShort": "継承"
 }

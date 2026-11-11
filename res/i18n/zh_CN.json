@@ -4909,10 +4909,7 @@
   "core.plan.oknte.overridden": "当天覆写",
   "core.plan.oknte.on": "开启",
   "core.plan.oknte.off": "关闭",
-  "core.plan.oknte.startOverride": "继承账号配置 · 点击设置当天覆写",
-  "core.plan.oknte.resetInherit": "恢复继承",
-  "core.plan.oknte.inheritanceHint": "当天覆写仅对这一天生效，其余设置沿用账号配置。",
-  "core.plan.oknte.configureOverride": "设置当天覆写",
+  "core.plan.oknte.inheritanceHint": "点击配置项旁的按钮可切换继承或当天覆写；其余设置沿用账号配置。",
   "core.plan.oknte.invalidJson": "请输入有效且类型匹配的 JSON",
   "core.plan.oknte.inheritShort": "继承"
 }

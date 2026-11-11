@@ -4909,10 +4909,7 @@
   "core.plan.oknte.overridden": "Daily override",
   "core.plan.oknte.on": "On",
   "core.plan.oknte.off": "Off",
-  "core.plan.oknte.startOverride": "Inherited · click to set a daily override",
-  "core.plan.oknte.resetInherit": "Restore inheritance",
-  "core.plan.oknte.inheritanceHint": "Daily overrides apply only to this day. Other settings follow the account configuration.",
-  "core.plan.oknte.configureOverride": "Set daily override",
+  "core.plan.oknte.inheritanceHint": "Click the button beside a setting to switch between inheritance and a daily override. Other settings follow the account configuration.",
   "core.plan.oknte.invalidJson": "Enter valid JSON with the expected type",
   "core.plan.oknte.inheritShort": "Inherit"
 }

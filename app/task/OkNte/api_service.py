@@ -205,9 +205,8 @@ def plan_configs(
                 if reference.Script.ConfigPathMode == "Folder"
                 else config_path
             )
-            if target.name != name:
-                continue
-            source = json.loads(target.read_text(encoding="utf-8"))
+            if target.name == name and target.is_file():
+                source = json.loads(target.read_text(encoding="utf-8-sig"))
         result.append(
             {
                 **info,

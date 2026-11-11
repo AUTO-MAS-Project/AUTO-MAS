@@ -77,6 +77,46 @@ async def test_bound_script_discovers_fields_without_copying_values(
     assert children["nested"]["children"][0]["type"] == "int"
     assert children["values"]["value"] == [1, 2]
     assert plans[plan_id].Monday.Key.model_dump() == before
+    # File references must still expose both plan files so replace saves are lossless.
+    await script.update(
+        OkNteConfig.model_validate(
+            {
+                "Script": {
+                    "ConfigPath": str(tmp_path / "DailyRoutineTask.json"),
+                    "ConfigPathMode": "File",
+                }
+            }
+        ),
+        check_visibility=False,
+    )
+    plans[plan_id].Monday.Key = OkNtePlanKey(
+        Configs={
+            "DailyRoutineTaskConfigs.json": {"daily_anomaly": {"目标消耗体力": 77}},
+            "DailyRoutineTask.json": {
+                "Routine Items": [{"id": "coffee", "enabled": True}]
+            },
+        }
+    )
+    await plans[plan_id].commit()
+    files = plan_configs(str(plan_id), "Monday")
+    draft = {file["filename"]: file["overrides"] for file in files}
+    draft["DailyRoutineTask.json"]["Routine Items"][0]["enabled"] = False
+    group, key = plan_configs(str(plan_id), "Monday", draft, replace=True)
+    await isolated_app_paths.update_plan(str(plan_id), {group: {"Key": key}})
+    assert (
+        plans[plan_id].Monday.Key.Configs["DailyRoutineTaskConfigs.json"][
+            "daily_anomaly"
+        ]["目标消耗体力"]
+        == 77
+    )
+    assert {file["filename"] for file in files} == {
+        "DailyRoutineTask.json",
+        "DailyRoutineTaskConfigs.json",
+    }
+    # A new installation can be configured before its native daily files exist.
+    (tmp_path / "DailyRoutineTask.json").unlink()
+    files = plan_configs(str(plan_id), "Monday")
+    assert len(files) == 2
 
 
 def test_plan_overlay_keeps_other_routine_items_and_account_fields(tmp_path):

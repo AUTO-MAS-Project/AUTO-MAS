@@ -365,6 +365,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         if self.script_config.Script.ConfigPath is None:
             return "请设置 OK-NTE 配置文件路径"
 
+        if (
+            self.cur_user_config.Info.PlanMode != "Fixed"
+            and self.script_config.Script.ConfigPathMode == "File"
+        ):
+            return "OK-NTE 计划需要文件夹配置模式，请选择日常配置所在文件夹"
+
         await self._reset_daily_proxy_count()
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
         if (
