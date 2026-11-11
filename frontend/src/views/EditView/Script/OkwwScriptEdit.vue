@@ -99,28 +99,10 @@
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.forceSwitchAccountBeforeRun')"
-                    :hint="t('core.edit.okwwAccountSwitchHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="okwwConfig.Game.AccountSwitch"
-                  size="large"
-                  class="modern-input"
-                  :disabled="!okwwConfig.Game.Enabled"
-                  @change="handleChange('Game', 'AccountSwitch', $event)"
-                >
-                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
-                </a-select>
-                <span class="control-hint">
-                  {{ t('core.edit.accountSwitch16x9ArgHint', { p0: '-Res=1920x1080' }) }}
-                </span>
-              </a-form-item>
+              <OkwwAccountSwitchField
+                v-model="okwwConfig.Game.AccountSwitchMethod"
+                @save="handleChange('Game', 'AccountSwitchMethod', $event)"
+              />
             </a-col>
           </a-row>
 
@@ -412,6 +394,7 @@
 <script setup lang="ts">
 import PathPickerField from '@/components/PathPickerField.vue'
 import ScriptRunLimitsSection from './components/ScriptRunLimitsSection.vue'
+import OkwwAccountSwitchField from './components/OkwwAccountSwitchField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { requestUserUpdateStart } from '@/composables/useTaskApi'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
@@ -468,6 +451,7 @@ interface OkwwInfoForm {
 interface OkwwGameForm {
   Enabled: boolean
   AccountSwitch: boolean
+  AccountSwitchMethod: 'NONE' | 'MAS' | 'OKWW_SINGLE' | 'OKWW'
   Type: 'Launcher' | 'Client'
   Path: string
   ClientPath: string
@@ -505,6 +489,7 @@ const okwwConfig = reactive<OkwwScriptConfigForm>({
   Game: {
     Enabled: false,
     AccountSwitch: false,
+    AccountSwitchMethod: 'MAS',
     Type: 'Client',
     Path: '.',
     ClientPath: '',

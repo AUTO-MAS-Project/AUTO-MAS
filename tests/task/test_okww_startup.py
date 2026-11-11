@@ -56,9 +56,13 @@ def launch(tmp_path, monkeypatch):
                 f"2026-11-04 INFO pyappify_lib::emitter: INFO [ok-ww]: {message}\n"
             )
 
-    async def run():
+    async def run(args=()):
         await startup.start_okww(
-            manager, tmp_path / "ok-ww.exe", [], target=object(), on_log=AsyncMock()
+            manager,
+            tmp_path / "ok-ww.exe",
+            list(args),
+            target=object(),
+            on_log=AsyncMock(),
         )
 
     return SimpleNamespace(
@@ -75,6 +79,22 @@ def launch(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [
+        "ValueError: Task not found: MultiAccountConfigTask",
+        "argument -t/--task: invalid int value: 'MultiAccountConfigTask'",
+    ],
+)
+async def test_native_switch_not_supported_reports_actionable_error(launch, error):
+    launch.schedule.append((1, lambda: launch.emit(error)))
+    with pytest.raises(RuntimeError, match="当前ok-ww版本不支持或已移除原生账号切换"):
+        await launch.run(["-t", "MultiAccountConfigTask", "-e"])
+    assert launch.clock.now < 60
+    assert launch.search_finished.is_set()
+
+
+@pytest.mark.asyncio
 async def test_update_allows_worker_to_start_after_sixty_seconds(launch):
     launch.schedule.extend(
         [(30, lambda: launch.emit("Downloading package-a")), (100, launch.found.set)]
@@ -84,10 +104,20 @@ async def test_update_allows_worker_to_start_after_sixty_seconds(launch):
 
 
 @pytest.mark.asyncio
-async def test_historical_logs_do_not_extend_startup(launch):
-    launch.emit("Downloading old-package")
+@pytest.mark.parametrize(
+    "message,args",
+    [
+        ("Downloading old-package", []),
+        (
+            "ValueError: Task not found: MultiAccountConfigTask",
+            ["-t", "MultiAccountConfigTask", "-e"],
+        ),
+    ],
+)
+async def test_historical_logs_do_not_affect_current_startup(launch, message, args):
+    launch.emit(message)
     with pytest.raises(RuntimeError, match="60"):
-        await launch.run()
+        await launch.run(args)
     assert launch.clock.now == 60
 
 

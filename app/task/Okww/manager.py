@@ -48,6 +48,7 @@ from .AutoProxy import (
     AutoProxyTask,
     _okww_config_base,
 )
+from .BatchProxy import BatchProxyTask
 from .ScriptConfig import ScriptConfigTask
 from .tools.backup_archive import archive_native_backup
 from .Update import WuwaUpdateTask
@@ -231,6 +232,7 @@ class OkwwManager(ScriptManagerBase):
             self.temp_path,
             self.script_config_path,
             expected_script_id=self.script_info.script_id,
+            preserve_on_mismatch=True,
         )
         if result == "restored":
             logger.info("已恢复上次中断前的 OK-WW 原始配置")
@@ -240,7 +242,7 @@ class OkwwManager(ScriptManagerBase):
             )
         elif result == "skipped":
             logger.warning(
-                "检测到 OK-WW 原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
+                "无法确认 OK-WW 中断后的配置归属，保留当前配置；原始快照已另存为 Temp.unresolved 副本，请核对后恢复"
             )
 
     def _cleanup_script_config_temp(self) -> None:
@@ -288,6 +290,48 @@ class OkwwManager(ScriptManagerBase):
             )
             return
 
+        if self.script_config.Game.AccountSwitchMethod == "OKWW":
+            participants = []
+            for index, user in enumerate(self.script_info.user_list):
+                await self.script_info.set_current_index(index)
+                if await self.check_user_before_run(
+                    user, self.user_config[uuid.UUID(user.user_id)]
+                ):
+                    candidate = AutoProxyTask(
+                        self.script_info,
+                        self.script_config,
+                        self.user_config,
+                        self.game_manager,
+                    )
+                    result = await candidate.check()
+                    if result == "Pass":
+                        participants.append(user)
+                    else:
+                        await self.notify_user_check_failure(user, result)
+            if participants:
+                await self.script_info.set_current_index(
+                    self.script_info.user_list.index(participants[0])
+                )
+                method = BatchProxyTask(
+                    self.script_info,
+                    self.script_config,
+                    self.user_config,
+                    self.game_manager,
+                    participants=participants,
+                )
+                result = await method.check()
+                if result != "Pass":
+                    for user in participants:
+                        await self.notify_user_check_failure(user, result)
+                else:
+                    try:
+                        for user in participants:
+                            self.record_user_run_start(user)
+                        await self.spawn(method)
+                    finally:
+                        await self._restore_script_config_from_temp()
+            return
+
         for _runtime_user_index in range(len(self.script_info.user_list)):
             await self.script_info.set_current_index(_runtime_user_index)
             current_user = self.script_info.user_list[self.script_info.current_index]
@@ -307,12 +351,21 @@ class OkwwManager(ScriptManagerBase):
             if config_base == BASE_NATIVE:
                 await self._restore_script_config_from_temp()
 
-            method = AutoProxyTask(
-                script_info=self.script_info,
-                script_config=self.script_config,
-                user_config=self.user_config,
-                game_manager=self.game_manager,
-            )
+            if self.script_config.Game.AccountSwitchMethod == "OKWW_SINGLE":
+                method = BatchProxyTask(
+                    script_info=self.script_info,
+                    script_config=self.script_config,
+                    user_config=self.user_config,
+                    game_manager=self.game_manager,
+                    participants=[current_user],
+                )
+            else:
+                method = AutoProxyTask(
+                    script_info=self.script_info,
+                    script_config=self.script_config,
+                    user_config=self.user_config,
+                    game_manager=self.game_manager,
+                )
 
             sub_check = await method.check()
             if sub_check != "Pass":
@@ -338,8 +391,14 @@ class OkwwManager(ScriptManagerBase):
                 logger.info("原生来源配置会话成功，保留脚本原生配置")
             self._cleanup_script_config_temp()
 
-            if self.check_result != "Pass" and not any(
-                user.status in ("完成", "跳过") for user in self.script_info.user_list
+            # 前面账号检查失败后，后续已运行账号仍须在中止时汇总通知。
+            if (
+                self.check_result != "Pass"
+                and not self.has_proxy_run
+                and not any(
+                    user.status in ("完成", "跳过")
+                    for user in self.script_info.user_list
+                )
             ):
                 if self.execution_mode == "AutoProxy" and self.user_config is not None:
                     await config_manager.flush()
