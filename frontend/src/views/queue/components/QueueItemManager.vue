@@ -403,6 +403,12 @@ onMounted(() => {
   .queue-item-card-item {
     padding: 12px;
   }
+
+  /* 窄屏行转为纵向排列，flex-basis 会变成高度基准，改为按内容撑开 */
+  .row-cell.script-cell,
+  .row-cell.days-cell {
+    flex: 0 0 auto;
+  }
 }
 
 /* 标签样式 */
