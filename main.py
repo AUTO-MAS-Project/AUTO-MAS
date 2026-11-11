@@ -255,7 +255,7 @@ def _resolve_supervised_port() -> int:
     return DEFAULT_HTTP_PORT
 
 
-@logger.catch
+@logger.catch(reraise=True)
 def main():
     raw_environment = os.getenv("AUTO_MAS_ENV", "").strip().lower()
     if raw_environment not in {"", "dev", "development", "production"}:

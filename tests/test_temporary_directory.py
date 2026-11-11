@@ -61,6 +61,29 @@ with tempfile.TemporaryDirectory() as directory:
     subprocess.run([sys.executable, "-I", "-c", code], check=True, timeout=15)
 
 
+def test_startup_failure_logs_exception_and_exits_nonzero(tmp_path, startup_entry):
+    (tmp_path / "temp").write_text("blocks temporary directory creation", "utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(startup_entry)],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PYTHONPATH": str(Path(main.__file__).parent),
+            "PYTHONIOENCODING": "utf-8",
+            "AUTO_MAS_ENV": "development",
+            "AUTO_MAS_SUPERVISED": "1",
+        },
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=15,
+    )
+
+    assert "FileExistsError" in (tmp_path / "debug/app.log").read_text("utf-8")
+    assert result.returncode != 0, result.stderr
+
+
 @pytest.mark.parametrize("supervised", [False, True])
 def test_startup_sets_temp_before_business_imports(tmp_path, startup_entry, supervised):
     expected_root = tmp_path if supervised else startup_entry.parent
