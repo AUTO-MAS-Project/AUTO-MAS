@@ -192,7 +192,7 @@ def _build_mcp(
     factory: Callable[..., FastApiMCP], schema_app: FastAPI, client: httpx.AsyncClient
 ) -> FastApiMCP:
     """只在线程里生成工具；HTTP 调用仍使用原应用。"""
-    return factory(
+    mcp = factory(
         schema_app,
         name="AUTO-MAS MCP",
         description=(
@@ -219,6 +219,49 @@ def _build_mcp(
         # fastapi-mcp 的操作与标签过滤取并集，白名单不能再搭配标签过滤。
         include_operations=list(MCP_INCLUDED_OPERATIONS),
     )
+    # fastapi-mcp 0.4.0 给联合类型补入单一 type，使可空字段拒绝 null。
+    # 仅移除转换器新增的约束，保留 OpenAPI 自己声明的 type。
+    body_routes = set()
+    for tool in mcp.tools:
+        operation = mcp.operation_map[tool.name]
+        properties = tool.inputSchema["properties"]
+        fields = {
+            parameter["name"]: parameter.get("schema", {})
+            for parameter in operation["parameters"]
+        }
+        request_body = operation["request_body"]
+        body_schema = (
+            request_body.get("content", {})
+            .get("application/json", {})
+            .get("schema", {})
+        )
+        fields.update(body_schema.get("properties", {}))
+        for name, schema in fields.items():
+            if "type" not in schema and any(
+                key in schema for key in ("anyOf", "oneOf", "allOf", "$ref")
+            ):
+                properties[name].pop("type", None)
+        if request_body.get("required") and body_schema.get("type") == "object":
+            body_routes.add((operation["method"], operation["path"]))
+
+    # 同版本还会把空参数转成无请求体。按原路由契约保留必需的 JSON 对象。
+    # 上游同时修复这两项转换行为后可移除此处适配。
+    original_request = mcp._request
+
+    async def request_with_body(client, method, path, query, headers, body):
+        if body is None and (method, path) in body_routes:
+            body = {}
+        return await original_request(
+            client=client,
+            method=method,
+            path=path,
+            query=query,
+            headers=headers,
+            body=body,
+        )
+
+    mcp._request = request_with_body
+    return mcp
 
 
 def _validate_mcp(mcp: FastApiMCP) -> None:

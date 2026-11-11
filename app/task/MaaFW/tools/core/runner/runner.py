@@ -363,7 +363,7 @@ STARTUP_SCREEN_BLANK_STD = 6.0
 STARTUP_SCREEN_CONTENT_SECONDS = 20
 # 首个任务前的放行判据（job 的 taskStartGateMode）。screen：上面两条按画面提前放行；
 # disk_quiet：画面有内容、且客体读盘速度连续 DISK_QUIET_SAMPLES 次（每秒一次）低于
-# DISK_QUIET_READ_BYTES_PER_SECOND 才放行。依据（2026-10-16 魔改 AVD 逐秒实测，终末地 / 星铁 /
+# DISK_QUIET_READ_BYTES_PER_SECOND 才放行。依据（2026-10-16 ModAVD 逐秒实测，终末地 / 星铁 /
 # 1999 冷启动）：加载页和动态标题都一直在动，CPU、出帧也是标题更忙，只有读盘量分得开——
 # 加载时持续读盘，到标题后几乎为 0；终末地、1999 各轮都在到标题后 7~15s 放行。读盘安静、
 # 但还没到标题的阶段会提前放行（星铁的 logo / 健康提示页、加载页上等网络），交给项目自己识别。

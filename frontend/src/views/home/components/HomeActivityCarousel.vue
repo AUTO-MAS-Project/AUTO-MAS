@@ -6,13 +6,13 @@
     @focusin="focused = true"
     @focusout="onFocusOut"
   >
-    <a-card v-if="!items.length" class="carousel-empty">
+    <a-card v-if="!items.length" class="carousel-empty app-page-surface">
       <NoData :description="t('core.home.carousel.allHidden')" />
     </a-card>
 
     <template v-else>
       <div class="activity-header">
-        <div class="activity-header-top">
+        <div class="activity-header-top app-page-surface">
           <!-- 没做 tablist 的方向键漫游焦点，就别用 tab 语义许下做不到的承诺 -->
           <div v-if="items.length > 1" class="banner-switcher">
             <button
@@ -278,9 +278,6 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 10px;
   padding: 5px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 12px;
-  background: var(--ant-color-bg-container);
 }
 
 .activity-header-top .banner-switcher {

@@ -936,3 +936,291 @@ async def test_no_update_prefetch_is_rechecked_at_script_start(
     await scheduler._prepare_program_update(root)
     check.assert_awaited_once()
     apply.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_maaend_stale_journal_verified_by_public_native_adapter(installation):
+    from app.task.MaaEnd.tools.managed_recovery import MaaEndInstallAdapter
+
+    root, config = installation
+    work = script_install.workspace(root)
+    work.mkdir(parents=True, exist_ok=True)
+    marker = work / "transaction.json"
+    marker.write_bytes(b"stale-journal")
+    adapter = MaaEndInstallAdapter(root, config, takeover_enabled=False)
+    state = await adapter.inspect()
+    assert state.pending and state.healthy and state.updated_confirmed
+    await adapter.acknowledge()
+    assert not marker.exists()
+    assert list(work.glob("maaend-transaction-ack-*.json"))
+
+
+@pytest.mark.asyncio
+async def test_maaend_old_backup_prevents_journal_bypass(installation):
+    from app.task.MaaEnd.tools.managed_recovery import MaaEndInstallAdapter
+
+    root, config = installation
+    work = script_install.workspace(root)
+    work.mkdir(parents=True, exist_ok=True)
+    marker = work / "transaction.json"
+    marker.write_bytes(b"stale-journal")
+    (work / "previous").mkdir()
+    adapter = MaaEndInstallAdapter(root, config, takeover_enabled=True)
+    state = await adapter.inspect()
+    assert state.pending and not state.healthy
+    with pytest.raises(script_install.InstallUnsafeError):
+        await adapter.acknowledge()
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_maaend_bad_exe_stays_blocked_without_frontend(installation):
+    from app.task.MaaEnd.tools.managed_recovery import MaaEndInstallAdapter
+
+    root, config = installation
+    marker = script_install.workspace(root) / "transaction.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_bytes(b"stale-journal")
+    (root / "MaaEnd.exe").write_bytes(b"damaged")
+    adapter = MaaEndInstallAdapter(root, config, takeover_enabled=False)
+    state = await adapter.inspect()
+    assert state.pending and not state.healthy
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_maaend_repaired_native_build_can_ignore_stale_receipt_without_takeover(
+    installation,
+):
+    from app.task.MaaEnd.tools.managed_recovery import MaaEndInstallAdapter
+
+    root, config = installation
+    await update.update_before_run(root, config)
+    (root / "interface.json").write_text(
+        json.dumps({"name": "MaaEnd", "version": "v2.3.0", "mirrorchyan_rid": "MaaEnd"})
+    )
+    marker = script_install.workspace(root) / "transaction.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_bytes(b"stale-journal")
+    adapter = MaaEndInstallAdapter(root, config, takeover_enabled=False)
+    state = await adapter.inspect()
+    assert state.pending and state.healthy
+    await adapter.acknowledge()
+    assert not marker.exists()
+
+
+async def _interrupt_native_install_after_ready(root: Path, monkeypatch):
+    """调用真实原生安装器，在写入 transaction.json 前故障注入。"""
+    archive = root.parent / "official.zip"
+    original_copytree = script_install.shutil.copytree
+
+    def copy_then_interrupt(source, destination, *args, **kwargs):
+        result = original_copytree(source, destination, *args, **kwargs)
+        if Path(destination).name == "ready":
+            raise OSError("injected failure after ready copy")
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(script_install.shutil, "copytree", copy_then_interrupt)
+        with pytest.raises(OSError, match="after ready copy"):
+            await script_install.run_worker(
+                script_install.install_package,
+                root,
+                archive,
+                archive.stat().st_size,
+                hashlib.sha256(archive.read_bytes()).hexdigest(),
+                update.PROTECTED,
+                lambda path: None,
+                lambda: None,
+            )
+    workspace = script_install.workspace(root)
+    assert (workspace / "ready").is_dir()
+    assert (workspace / "package").is_dir()
+    assert not (workspace / "transaction.json").exists()
+    assert not (workspace / "previous").exists()
+
+
+async def _start_real_maaend_manager_for_repair(root: Path, monkeypatch):
+    """保留真实 main_task / adapter / #1916 公共恢复层，只截断游戏任务。"""
+    from app.models.config import MaaEndConfig
+
+    home = root.parent / "mas-home"
+    home.mkdir(exist_ok=True)
+    monkeypatch.chdir(home)
+    config = MaaEndConfig.model_validate(
+        {"Info": {"Path": str(root)}, "Update": {"TakeoverEnabled": True}}
+    )
+    await config.activate()
+    script_id = config.uid
+    info = SimpleNamespace(
+        task_info=SimpleNamespace(mode="AutoProxy", task_id="test"),
+        script_id=str(script_id),
+        user_list=[],
+        status="等待",
+        log="",
+        set_log=AsyncMock(),
+    )
+    instance = manager.MaaEndManager(info)
+    instance.check = AsyncMock(return_value="test stop before game startup")
+    lock, unlock = AsyncMock(return_value="ticket"), AsyncMock()
+    monkeypatch.setattr(MaaEndConfig, "try_lock_x", lock)
+    monkeypatch.setattr(MaaEndConfig, "unlock", unlock)
+    monkeypatch.setattr(manager.Config, "ScriptConfig", {script_id: config})
+    monkeypatch.setattr(manager.MaaEndResourceLoader, "get_cached", Mock())
+    monkeypatch.setattr(
+        manager, "load_maaend_controller_protocol", lambda *args: "Win32"
+    )
+    monkeypatch.setattr(manager, "push_dispatch_log", AsyncMock())
+    monkeypatch.setattr(manager.Publisher, "send", AsyncMock())
+    return instance, lock, unlock
+
+
+@pytest.mark.asyncio
+async def test_manager_repairs_damaged_exe_with_no_native_journal_via_common_entry(
+    installation, monkeypatch
+):
+    root, existing_config = installation
+    await update.update_before_run(root, existing_config)
+    (root / "MaaEnd.exe").write_bytes(b"damaged executable")
+    await _interrupt_native_install_after_ready(root, monkeypatch)
+    instance, lock, unlock = await _start_real_maaend_manager_for_repair(
+        root, monkeypatch
+    )
+    await instance.main_task()
+    assert update.read_install(root) == (Version("2.2.0"), "x86_64")
+    assert script_install.verify_installed_files(root, threading.Event())
+    assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
+    assert not (script_install.workspace(root) / "ready").exists()
+    assert any(
+        "reinstalled" in str(call)
+        for call in instance.script_info.set_log.await_args_list
+    )
+    lock.assert_awaited_once()
+    await instance.final_task()
+    unlock.assert_awaited_once_with("ticket")
+
+
+@pytest.mark.asyncio
+async def test_manager_repairs_native_upgrade_receipt_at_exact_newer_version(
+    installation, tmp_path, monkeypatch
+):
+    root, existing_config = installation
+    await update.update_before_run(root, existing_config)
+    native_tag = "v2.3.0-beta.1"
+    (root / "interface.json").write_text(
+        json.dumps(
+            {"name": "MaaEnd", "version": native_tag, "mirrorchyan_rid": "MaaEnd"}
+        )
+    )
+    archive, release = _official_release_for_test(tmp_path, native_tag)
+    exact = AsyncMock(return_value=release)
+    monkeypatch.setattr(update, "request_release_for_version", exact)
+
+    async def download_exact(_url, destination, **_kwargs):
+        shutil.copyfile(archive, destination)
+
+    monkeypatch.setattr(update, "download_file", AsyncMock(side_effect=download_exact))
+    await _interrupt_native_install_after_ready(root, monkeypatch)
+    instance, _, _ = await _start_real_maaend_manager_for_repair(root, monkeypatch)
+    await instance.main_task()
+    assert not (script_install.workspace(root) / "ready").exists()
+    assert update.read_install(root) == (Version(native_tag), "x86_64")
+    assert script_install.verify_installed_files(root, threading.Event())
+    exact.assert_awaited_once_with(Version(native_tag), native_tag)
+    await instance.final_task()
+
+
+@pytest.mark.asyncio
+async def test_manager_recovers_ready_left_before_native_journal(
+    installation, monkeypatch
+):
+    """真实安装器完成 ready 复制后异常，下一轮真实 manager 可安全清理重跑。"""
+    root, config = installation
+    await update.update_before_run(root, config)
+    original_version = update.read_install(root)
+    archive = root.parent / "official.zip"
+    candidate = update.PreparedUpdate(
+        root.resolve(),
+        original_version,
+        original_version[0],
+        original_version[1],
+        archive,
+        archive.stat().st_size,
+        hashlib.sha256(archive.read_bytes()).hexdigest(),
+    )
+    original_copytree = script_install.shutil.copytree
+
+    def fail_after_ready(*args, **kwargs):
+        result = original_copytree(*args, **kwargs)
+        if Path(args[1]).name == "ready":
+            raise OSError("interrupted after ready copy, before transaction")
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(script_install.shutil, "copytree", fail_after_ready)
+        with pytest.raises(OSError, match="before transaction"):
+            await update.apply_update(root, candidate)
+
+    work = script_install.workspace(root)
+    assert (work / "ready").is_dir()
+    assert (work / "package").is_dir()
+    assert not (work / "transaction.json").exists()
+    assert not (work / "previous").exists()
+    assert update.read_install(root) == original_version
+    assert script_install.verify_installed_files(root, threading.Event())
+    instance, _, unlock = await _start_real_maaend_manager_for_repair(root, monkeypatch)
+    await instance.main_task()
+    assert not (work / "ready").exists()
+    assert not (work / "package").exists()
+    assert update.read_install(root) == original_version
+    assert script_install.verify_installed_files(root, threading.Event())
+    await instance.final_task()
+    unlock.assert_awaited_once_with("ticket")
+
+
+@pytest.mark.asyncio
+async def test_maaend_precommit_cleanup_preserves_previous_and_invalid_original(
+    installation,
+):
+    from app.task.MaaEnd.tools.managed_recovery import MaaEndInstallAdapter
+
+    root, config = installation
+    await update.update_before_run(root, config)
+    work = script_install.workspace(root)
+    work.mkdir(parents=True, exist_ok=True)
+    (work / "ready").mkdir()
+    (work / "previous").mkdir()
+    adapter = MaaEndInstallAdapter(root, config, takeover_enabled=True)
+    with pytest.raises(script_install.InstallUnsafeError, match="备份存在"):
+        await adapter.recover_native()
+    assert (work / "ready").exists() and (work / "previous").exists()
+
+    (work / "previous").rmdir()
+    (root / "MaaEnd.exe").write_bytes(b"damaged")
+    with pytest.raises((OSError, ValueError, script_install.InstallUnsafeError)):
+        await adapter.recover_native()
+    assert (work / "ready").exists()
+    assert not (work / "transaction.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_precommit_staging_repair_requires_trusted_identity(
+    installation, monkeypatch
+):
+    from app.task.MaaEnd.tools.managed_recovery import MaaEndInstallAdapter
+
+    root, config = installation
+    await update.update_before_run(root, config)
+    (root / "MaaEnd.exe").write_bytes(b"damaged")
+    await _interrupt_native_install_after_ready(root, monkeypatch)
+    script_install.record_path(root, "program-identity.json").unlink()
+    adapter = MaaEndInstallAdapter(
+        root,
+        config,
+        takeover_enabled=True,
+        allow_damaged_repair=True,
+    )
+    with pytest.raises(script_install.InstallUnsafeError, match="可信 MAS 身份"):
+        await adapter.recover_native()
+    assert (script_install.workspace(root) / "ready").exists()
+    assert (root / "MaaEnd.exe").read_bytes() == b"damaged"

@@ -1,5 +1,5 @@
 /**
- * 实例设置的档位：雷电 14 / MuMu 6 共用一套，魔改 AVD 另有自己的限制。
+ * 实例设置的档位：雷电 14 / MuMu 6 共用一套，ModAVD 另有自己的限制。
  *
  * 弹窗只给档位下拉，不给自由数字框。实例现有的值不在档位里时，打开弹窗就选中最近的一档
  * （等距取大的那档），保存时把对齐后的值写进去；读不到或从没设过的项不对齐、不写。
@@ -7,7 +7,7 @@
  */
 import { AVD_RESOLUTIONS, FPS_CHOICES, MEMORY_CHOICES_MB } from './avdLogic'
 
-/** ``standard`` 雷电 14 / MuMu 6；``avd`` 魔改 AVD */
+/** ``standard`` 雷电 14 / MuMu 6；``avd`` ModAVD */
 export type TierKind = 'standard' | 'avd'
 
 export type ResolutionTier = '720p' | '1080p'
@@ -29,7 +29,7 @@ export const STANDARD_TIERS = {
   fps: [30, 60],
 } as const
 
-/** 魔改 AVD：核数、内存、刷新率与后端 ``CPU_CHOICES`` / ``MEMORY_CHOICES_MB`` / ``FPS_CHOICES`` 一致 */
+/** ModAVD：核数、内存、刷新率与后端 ``CPU_CHOICES`` / ``MEMORY_CHOICES_MB`` / ``FPS_CHOICES`` 一致 */
 export const AVD_TIERS = {
   cpu: [2, 4, 6],
   memoryMb: MEMORY_CHOICES_MB,
@@ -51,8 +51,8 @@ export const tierKindOf = (realType: string | undefined): TierKind =>
   realType === 'avd' ? 'avd' : 'standard'
 
 /**
- * 批量设置按整条配置下发。配置里全是魔改 AVD 时使用它的档位，否则按雷电 / MuMu 的档位给；
- * 混着放的配置里，魔改 AVD 改不了的项由后端逐台拒绝，列在失败清单里。
+ * 批量设置按整条配置下发。配置里全是 ModAVD 时使用它的档位，否则按雷电 / MuMu 的档位给；
+ * 混着放的配置里，ModAVD 改不了的项由后端逐台拒绝，列在失败清单里。
  */
 export const batchKindOf = (pathTypes: string[]): TierKind =>
   pathTypes.length > 0 && pathTypes.every(type => type === 'avd') ? 'avd' : 'standard'
@@ -157,7 +157,7 @@ export const alignSettings = (
  *
  * 分辨率按档位整体处理：宽高与档位不同、或 DPI 与档位推出的值不同，就宽、高、DPI 三项一起写
  * （实例从没设过 DPI、宽高又正好在档位上时不写）。
- * 魔改 AVD 使用自身的 DPI 档位并保留方向。
+ * ModAVD 使用自身的 DPI 档位并保留方向。
  */
 export const settingsChanges = (
   actual: ActualSettings,
@@ -184,7 +184,7 @@ export const settingsChanges = (
   return changes
 }
 
-/** 批量：只下发选了的项；分辨率选了就连 DPI 一起下发。魔改 AVD 由后端逐台保留方向。 */
+/** 批量：只下发选了的项；分辨率选了就连 DPI 一起下发。ModAVD 由后端逐台保留方向。 */
 export const batchChanges = (form: TierForm, kind: TierKind): Record<string, number> => {
   const changes: Record<string, number> = {}
   if (form.resolution) {

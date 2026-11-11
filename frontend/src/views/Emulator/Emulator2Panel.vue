@@ -331,9 +331,9 @@ const confirmRemove = async () => {
 
 const runningAffected = computed(() => removeAffected.value.filter(item => item.running))
 
-// ---- 魔改 AVD ----
+// ---- ModAVD ----
 
-/** 魔改 AVD 没有安装可搜，用户选根目录添加；已添加的根目录也从同一个弹窗看组件与电脑检查 */
+/** ModAVD 没有安装可搜，用户选根目录添加；已添加的根目录也从同一个弹窗看组件与电脑检查 */
 const avdRootOpen = ref(false)
 const avdRootInitial = ref('')
 const openAvdRoot = (root = '') => {
@@ -356,7 +356,7 @@ const createOpen = ref(false)
 const creating = ref(false)
 const createPathId = ref('')
 const createName = ref('')
-/** 在魔改 AVD 下新建时一并设好的选项 */
+/** 在 ModAVD 下新建时一并设好的选项 */
 const createAvd = ref<AvdOptionsForm>(defaultAvdOptions())
 
 const pathSelectOptions = computed(() =>
@@ -520,7 +520,7 @@ const settingsForm = ref<TierForm>(emptyTierForm())
 const settingsSnapped = ref<SnappedActual | null>(null)
 /** 表单打开时看到的实际值。保存时带回后端做冲突比对，避免盖掉别人的改动。 */
 const settingsBaseline = ref<ActualSettings>(actualSettingsOf())
-/** 魔改 AVD 实例在用软件渲染：首次开机检测到没有可用显卡驱动时由后端记下 */
+/** ModAVD 实例在用软件渲染：首次开机检测到没有可用显卡驱动时由后端记下 */
 const settingsSoftwareRenderer = ref(false)
 
 function actualSettingsOf(device?: Emulator2DeviceItem): ActualSettings {
@@ -529,7 +529,7 @@ function actualSettingsOf(device?: Emulator2DeviceItem): ActualSettings {
   return actual
 }
 
-/** 魔改 AVD 行打开设置时顺带读一次实例选项，只为软件渲染那条警告；读不到不影响改设置 */
+/** ModAVD 行打开设置时顺带读一次实例选项，只为软件渲染那条警告；读不到不影响改设置 */
 const loadSoftwareRenderer = async (slot: string) => {
   try {
     const out = await getInstanceOptions(props.emulatorId, slot)
@@ -538,7 +538,7 @@ const loadSoftwareRenderer = async (slot: string) => {
     }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    logger.warn(`读取魔改 AVD 实例 #${slot} 的选项失败: ${detail}`)
+    logger.warn(`读取 ModAVD 实例 #${slot} 的选项失败: ${detail}`)
   }
 }
 
@@ -606,7 +606,7 @@ const confirmSettings = async () => {
 const batchOpen = ref(false)
 const batchSaving = ref(false)
 const batchForm = ref<TierForm>(emptyTierForm())
-/** 整条配置都是魔改 AVD 时只给它能改的项 */
+/** 整条配置都是 ModAVD 时只给它能改的项 */
 const batchKind = computed(() => batchKindOf(paths.value.map(item => item.type ?? '')))
 
 /** 批量写入里失败的那几台，连原因一起显示在弹窗内。 */
@@ -1449,7 +1449,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
       </a-spin>
     </a-modal>
 
-    <!-- 魔改 AVD：添加 / 组件与电脑检查 -->
+    <!-- ModAVD：添加 / 组件与电脑检查 -->
     <AvdRootDialog
       v-model:open="avdRootOpen"
       :emulator-id="emulatorId"

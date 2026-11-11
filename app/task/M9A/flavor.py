@@ -20,8 +20,12 @@
 
 「启动游戏」（entry ``StartUp``）、「切换账号」（entry ``SwitchAccount``）、「关闭游戏」
 （entry ``Close1999``）由 MAS 全权控制（规则见 ``managed.py``）。运行前先把勾选列表里这三类
-全部剔掉，再按固定顺序补：启动放队首；脚本资源为官服且有账号时切号紧跟启动，账号填进它唯一的
-input 选项；关闭放队尾。用户排的顺序不影响这三项。队列里有多个有效切号的用户拒绝运行。
+全部剔掉，再按固定顺序补：启动放队首；脚本资源为官服、账号非空且没开「MAS 登录」时切号紧跟启动，
+账号填进它唯一的 input 选项；关闭放队尾。用户排的顺序不影响这三项。队列里有多个有效切号的用户拒绝运行。
+
+``Run.LoginMode`` 为 ``Mas`` 时（B 服登录由 MAS 完成，见 ``login.py``）：不再补「切换账号」，
+``Info.Account`` 是 MAS 登录要选中的哔哩哔哩昵称；启动 / 关闭照常补，登录完成后 ``StartUp``
+负责从标题页进游戏，随后跑用户任务。
 
 按 entry 而不是按任务名找：任务名会随 M9A 的版本与语言变，entry 是它的 pipeline 入口，稳定。
 
@@ -44,6 +48,7 @@ from typing import TYPE_CHECKING, Any
 
 from app.task.M9A.managed import (
     CLOSE_ENTRY,
+    LOGIN_MODE_MAS,
     MANAGED_ENTRIES,
     OFFICIAL_RESOURCE_NAME,
     STARTUP_ENTRY,
@@ -54,6 +59,7 @@ from app.task.M9A.managed import (
     settle_snapshot,
     settle_user_info,
     split_message,
+    supports_account_switch,
 )
 from app.task.MaaFW.tools.core.interface.models import (
     MaaFWInterface,
@@ -120,7 +126,8 @@ class M9AFlavor:
     """满足 ``MaaFWFlavor`` 协议的 M9A 特调对象。"""
 
     type_key = TYPE_KEY
-    # 切换账号失败或超时就结束本轮、照常重试：切号没成功，后面的任务会跑在错的账号上
+    # 切换账号失败或超时就结束本轮、照常重试：切号没成功，后面的任务会跑在错的账号上。
+    # 不列 StartUp：它失败不代表游戏用不了（上游一直只声明切号），本轮照旧按普通失败继续。
     abort_round_entries = {SWITCH_ACCOUNT_ENTRY: "切换账号失败"}
     # 关闭游戏失败、超时只记一行，不算本轮失败：收尾时 MAS 会关闭模拟器，重跑一整轮没有意义
     nonfatal_entries = {CLOSE_ENTRY: "MAS 收尾时会关闭游戏/模拟器，不影响本轮结果"}
@@ -201,18 +208,17 @@ class M9AFlavor:
         resource_name: str | None,
         send_log: Callable[[str], None] | None,
     ) -> tuple[list[str], dict[str, Any]]:
-        del script_config  # 资源名由引擎按脚本配置解析后传入，这里不再读配置
-
         def log(message: str) -> None:
             if send_log is not None:
                 send_log(message)
 
         entry_of, account_of = _entry_and_account_readers(interface_model)
-        official = str(resource_name or "").strip() == OFFICIAL_RESOURCE_NAME
+        login_mode = _login_mode(script_config)
+        supported = supports_account_switch(resource_name, login_mode=login_mode)
         queued_accounts = effective_switch_accounts(
             task_ids, task_options, entry_of=entry_of, account_of=account_of
         )
-        if official and len(queued_accounts) >= 2:
+        if supported and len(queued_accounts) >= 2:
             # 一个账号对应一个账号：MAS 没法替用户决定这一轮切到哪个号，整个账号不跑
             message = split_message(queued_accounts)
             log(f"[M9A] {message}")
@@ -253,7 +259,7 @@ class M9AFlavor:
             if len(queued_accounts) == 1
             else str(_get(user_config, "Info", "Account") or "").strip()
         )
-        if account and official:
+        if account and supported:
             switch = task_name_for_entry(interface_model, SWITCH_ACCOUNT_ENTRY)
             if switch is None:
                 log(
@@ -270,9 +276,15 @@ class M9AFlavor:
                 else:
                     log("[M9A] 切换账号任务没有 input 类型的账号选项，账号未能填入")
         elif account:
-            log(
-                f"[M9A] 资源不是{OFFICIAL_RESOURCE_NAME}，Info.Account 只作备注，不自动切换账号"
-            )
+            if login_mode == LOGIN_MODE_MAS:
+                log(
+                    "[M9A] 已开启 MAS 登录：Info.Account 是 MAS 登录要选中的账号昵称，"
+                    "不再加入切换账号"
+                )
+            else:
+                log(
+                    f"[M9A] 资源不是{OFFICIAL_RESOURCE_NAME}，Info.Account 只作备注，不自动切换账号"
+                )
 
         close = task_name_for_entry(interface_model, CLOSE_ENTRY)
         if close is None:
@@ -301,13 +313,14 @@ class M9AFlavor:
         备注只由启动整理写，这里不写（账号页上有常驻提示）。
         """
 
-        del script_config  # 资源由引擎按建运行计划的同一口径解析后传入
         entry_of, account_of = _entry_and_account_readers(interface_model)
         settlement = settle_snapshot(
             snapshot,
             entry_of=entry_of,
             account_of=account_of,
-            official=str(resource_name or "").strip() == OFFICIAL_RESOURCE_NAME,
+            supports_switch=supports_account_switch(
+                resource_name, login_mode=_login_mode(script_config)
+            ),
         )
         change = settle_user_info(
             settlement,
@@ -318,6 +331,34 @@ class M9AFlavor:
         return (
             settlement.snapshot if settlement.changed else snapshot,
             change.updates(),
+        )
+
+    async def ensure_logged_in(
+        self,
+        *,
+        script_config: Any,
+        user_config: Any,
+        resource_name: str | None,
+        package_name: str | None,
+        adb_path: str | None,
+        adb_address: str,
+        progress: Callable[[str], Awaitable[None]] | None,
+        host_adb: Any = None,
+    ) -> str:
+        """引擎的可选运行前登录钩子：B 服登录由 MAS 完成，契约见 MaaFW 的 ``flavor.py``。"""
+
+        # 按需导入：本包在导入期不拉起 OCR / 图像与 adb 相关模块（迁移也会导入 flavor）
+        from .login import ensure_logged_in
+
+        return await ensure_logged_in(
+            script_config=script_config,
+            user_config=user_config,
+            resource_name=resource_name,
+            package_name=package_name,
+            adb_path=adb_path,
+            adb_address=adb_address,
+            progress=progress,
+            host_adb=host_adb,
         )
 
     async def ensure_game_updated(
@@ -418,6 +459,12 @@ def _get(config: Any, group: str, name: str) -> Any:
         return getattr(getattr(config, group), name)
     except Exception:  # noqa: BLE001 - 假配置对象缺项时按空处理
         return None
+
+
+def _login_mode(script_config: Any) -> str:
+    """``Run.LoginMode``；假配置对象缺项时按项目自登录（``Project``）处理。"""
+
+    return str(_get(script_config, "Run", "LoginMode") or "").strip()
 
 
 FLAVOR = M9AFlavor()

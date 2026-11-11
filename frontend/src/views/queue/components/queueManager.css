@@ -1,10 +1,5 @@
-.queue-manager-card {
-  margin-bottom: 24px;
-}
-
-.queue-manager-card :deep(.ant-card-head-title) {
-  font-size: 18px;
-  font-weight: 600;
+.app-page-section {
+  margin-bottom: var(--app-page-content-gap);
 }
 
 /* 操作按钮布局 */

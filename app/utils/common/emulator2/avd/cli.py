@@ -21,9 +21,9 @@
 """调用发布包里的 ``tools\\modavd.exe``。
 
 这个模块只负责一次 CLI 调用：构造参数、隔离 stdout/stderr、解析 ``--json`` 信封，交回 modavd
-原样的状态字符串，不依赖 MAS 的业务模型。状态值怎么翻译成 AUTO-MAS 的设备状态、根目录是否应该走
-CLI、业务异常如何和旧实现对齐，由 ``manager.py`` 决定：根目录没有 ``tools\\modavd.exe`` 时继续用原来的 Python 实现；exe 在但不可用时抛
-:class:`ModAvdUnavailable`，不回退，免得同一台实例两套开关机混用。
+原样的状态字符串，不依赖 MAS 的业务模型。状态值怎么翻译成 AUTO-MAS 的设备状态、业务异常怎么还原，
+由 ``manager.py`` 决定：根目录没有 ``tools\\modavd.exe`` 时不支持；exe 在但不可用时抛
+:class:`ModAvdUnavailable`。
 """
 
 from __future__ import annotations
@@ -31,22 +31,24 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import time
 from contextlib import suppress
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Sequence
+from typing import Any, Awaitable, Callable, Mapping, Sequence
 
 import psutil
 
 from app.utils import get_logger
 from app.utils.common.process import runner as _utils_process_runner
-from app.utils.common.process.scope import current_process_scope
+from app.utils.common.process.scope import (
+    current_process_scope,
+    detached_process_context,
+)
 
-from .host import AdbPortConflict
-from .instances import config_path, read_ini, resolution_for
-
-logger = get_logger("魔改 AVD CLI")
+logger = get_logger("ModAVD CLI")
 
 #: MAS 认得的 modavd 协议版本。2 是 ModAVDManager 0.3.0 去掉 ``restart`` 命令时升的；MAS 重启本来就是
 #: 先 stop 再 start，两个都能用。逐个列出而不写成「≥1」，以后再升还能认出不兼容。
@@ -76,6 +78,17 @@ _STOP_AFTER_START_ERRORS = frozenset(
 _CANCEL_POLL_SECONDS = 2.0
 #: 新建被取消 / 超时后，最多等 create CLI 自己退出这么久，再结束它。
 _CREATE_CLEANUP_SECONDS = STOP_PROCESS_TIMEOUT_SECONDS
+#: ``update status`` / ``recover`` 只看本地、改几次名；``check`` 要联网问一次。
+UPDATE_QUICK_TIMEOUT_SECONDS = 300
+#: ``update prepare`` / ``install`` 要下载整包，慢网下要很久；modavd 自己有连接和停顿超时，这里只兜底。
+UPDATE_LONG_TIMEOUT_SECONDS = 6 * 3600
+#: ``update`` 的 ``--source`` / ``--cdk-dpapi`` 只在 Windows 上可用（``--cdk-dpapi`` 是 DPAPI 密文）。
+CALLER_UPDATE_OPTIONS_PLATFORM = sys.platform == "win32"
+#: 边读边回调 stderr 时单行的上限（进度行很短；超长的行丢掉，不影响结果）。
+_STREAM_LINE_LIMIT = 1024 * 1024
+#: ``modavd adb`` 在跑 adb 之前先确保私有 server 在跑（最多 20 秒）、必要时替模拟器重新登记，
+#: 进程时限在 adb 命令本身的时限上再加这么多秒。
+ADB_PASSTHROUGH_MARGIN_SECONDS = 25.0
 _next_start_at = 0.0
 
 
@@ -124,22 +137,76 @@ class CLIError(RuntimeError):
         message: str,
         advice: str = "",
         returncode: int | None = None,
+        details: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.advice = advice
         self.returncode = returncode
+        #: 错误信封里的 ``details``（可选，值都是字符串，比如 busy 的 ``reason``）
+        self.details: dict[str, str] = dict(details or {})
 
 
 class ModAvdUnavailable(RuntimeError):
-    """根目录有 modavd.exe，但它不可用；不允许悄悄切回 Python 实现。"""
+    """根目录有 modavd.exe，但它不可用。"""
+
+
+@dataclass(frozen=True)
+class UpdateProgressEvent:
+    """``modavd --json update`` 在 stderr 上的一条进度日志（带 ``progress`` 的那种）。
+
+    ``percent`` 为 -1 表示不知道；``stage`` 是 checking / downloading / extracting / verifying /
+    installing，以后可能多出别的值。"""
+
+    stage: str
+    message: str
+    percent: float
+    done_bytes: int
+    total_bytes: int
 
 
 ProcessTimeoutHandler = Callable[[asyncio.subprocess.Process], Awaitable[None]]
-Runner = Callable[
-    [Sequence[str], float, ProcessTimeoutHandler | None, bool], Awaitable[ProcessOutput]
-]
+#: 按位置收 ``(参数, 时限, 超时收尾, 脱离任务组)``；要边读 stderr 或换环境时另带关键字
+#: ``env`` / ``on_stderr_line``（只在用到时传，别的调用点照旧四个位置参数）。
+Runner = Callable[..., Awaitable[ProcessOutput]]
+#: ``modavd adb`` 透传用：收 ``(参数, 时限, 是否把 stderr 并进 stdout)``，返回
+#: ``(退出码, stdout 原始字节, stderr 原始字节)``；起不来、超时抛 :class:`CLIError`。
+RawRunner = Callable[[Sequence[str], float, bool], Awaitable[tuple[int, bytes, bytes]]]
+
+
+async def _collect(
+    process: asyncio.subprocess.Process,
+    on_stderr_line: Callable[[str], None] | None,
+) -> tuple[bytes, bytes]:
+    """读完 stdout 和 stderr；给了 ``on_stderr_line`` 时 stderr 按行边读边回调。"""
+    if on_stderr_line is None:
+        return await process.communicate()
+    assert process.stdout is not None and process.stderr is not None
+    stderr_stream = process.stderr
+
+    async def read_stderr() -> bytes:
+        chunks: list[bytes] = []
+        while True:
+            try:
+                line = await stderr_stream.readline()
+            except ValueError:
+                # 超长的一行：丢掉这一段，接着读
+                continue
+            if not line:
+                return b"".join(chunks)
+            chunks.append(line)
+            text = _utils_process_runner.decode_bytes(line).strip()
+            if not text:
+                continue
+            try:
+                on_stderr_line(text)
+            except Exception as error:  # noqa: BLE001 - 回调出错不影响命令本身
+                logger.warning(f"处理 modavd 输出失败: {error}")
+
+    stdout, stderr = await asyncio.gather(process.stdout.read(), read_stderr())
+    await process.wait()
+    return stdout, stderr
 
 
 async def _run_process(
@@ -147,11 +214,21 @@ async def _run_process(
     timeout: float,
     timeout_handler: ProcessTimeoutHandler | None = None,
     breakaway: bool = False,
+    *,
+    env: Mapping[str, str] | None = None,
+    on_stderr_line: Callable[[str], None] | None = None,
 ) -> ProcessOutput:
     """启动一次 modavd；命令超时回收 CLI，任务停止仍由任务进程组统一清理。
 
-    参数按 :data:`Runner` 的位置约定收：``ModAvdCli._call`` 按位置传四个参数。"""
+    参数按 :data:`Runner` 的位置约定收：``ModAvdCli._call`` 按位置传四个参数。``env`` 是子进程的
+    整份环境（``None`` 继承 MAS 的）；``on_stderr_line`` 给了就按行边读边回调 stderr（``update``
+    的进度），否则一次读完。参数列表不进日志和错误（``update`` 的 ``--cdk-dpapi`` 在里面）。"""
 
+    extra: dict[str, Any] = {}
+    if env is not None:
+        extra["env"] = dict(env)
+    if on_stderr_line is not None:
+        extra["limit"] = _STREAM_LINE_LIMIT
     try:
         process = await _utils_process_runner.create_subprocess(
             *args,
@@ -159,12 +236,15 @@ async def _run_process(
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            **extra,
         )
     except (OSError, ValueError) as exc:
         raise CLIError("internal", f"启动 modavd 失败: {exc}") from exc
 
     try:
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout)
+        stdout, stderr = await asyncio.wait_for(
+            _collect(process, on_stderr_line), timeout
+        )
     except (asyncio.CancelledError, TimeoutError) as exc:
 
         async def cleanup() -> None:
@@ -214,6 +294,34 @@ async def _run_process(
     )
 
 
+async def _run_raw_process(
+    args: Sequence[str], timeout: float, merge_stderr: bool
+) -> tuple[int, bytes, bytes]:
+    """跑一次不带 ``--json`` 的 modavd（``adb`` 透传）：stdout 原样按字节交回，退出码是 adb 的。
+
+    超时或被取消时连同它起的 adb 一起结束（modavd 退出不会带走子进程）。"""
+    try:
+        process = await _utils_process_runner.create_subprocess(
+            *args,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT
+            if merge_stderr
+            else asyncio.subprocess.PIPE,
+        )
+    except (OSError, ValueError) as exc:
+        raise CLIError("internal", f"启动 modavd 失败: {exc}") from exc
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout)
+    except (asyncio.CancelledError, TimeoutError) as exc:
+        with suppress(Exception):
+            await _utils_process_runner.stop_process(process, kill_tree=True)
+        if isinstance(exc, asyncio.CancelledError):
+            raise
+        raise CLIError("timeout", f"modavd adb 超过 {timeout:.0f} 秒未结束") from exc
+    return process.returncode or 0, stdout or b"", stderr or b""
+
+
 def _as_text(value: object) -> str:
     return value if isinstance(value, str) else str(value or "")
 
@@ -254,18 +362,60 @@ def _parse_envelope(output: ProcessOutput, *, allow_nonzero_ok: bool = False) ->
         return envelope.get("data")
 
     error = envelope.get("error")
+    details: dict[str, str] = {}
     if isinstance(error, dict):
         code = _as_text(error.get("code")) or "internal"
         message = _as_text(error.get("message")) or code
         advice = _as_text(error.get("advice"))
+        raw_details = error.get("details")
+        if isinstance(raw_details, dict):
+            details = {str(key): _as_text(value) for key, value in raw_details.items()}
     else:
         code = "internal"
         message = f"modavd 命令失败（退出码 {output.returncode}）"
         advice = ""
-    raise CLIError(code, message, advice, output.returncode)
+    raise CLIError(code, message, advice, output.returncode, details)
+
+
+def parse_update_progress(line: str) -> UpdateProgressEvent | None:
+    """``update`` 的一行 stderr 日志里的进度；不是 JSON、没有 ``progress`` 的行返回 ``None``。
+
+    认不得的键不管，缺的数字按 -1 / 0 算（契约：日志行以后还可能多出键）。"""
+    try:
+        record = json.loads(line)
+    except ValueError:
+        return None
+    if not isinstance(record, dict):
+        return None
+    progress = record.get("progress")
+    if not isinstance(progress, dict):
+        return None
+
+    def number(value: object, default: float) -> float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return default
+        return float(value)
+
+    return UpdateProgressEvent(
+        stage=_as_text(progress.get("stage")),
+        message=_as_text(record.get("msg")),
+        percent=number(progress.get("percent"), -1),
+        done_bytes=int(number(progress.get("done_bytes"), 0)),
+        total_bytes=int(number(progress.get("total_bytes"), 0)),
+    )
+
+
+def _forward_progress(
+    callback: Callable[[UpdateProgressEvent], None], line: str
+) -> None:
+    event = parse_update_progress(line)
+    if event is not None:
+        callback(event)
 
 
 _VERSION_CACHE: dict[str, tuple[int, int, str | None]] = {}
+#: ``help update`` 里有没有 ``--source``（新命令行才有 ``--source`` / ``--cdk-dpapi``），按 exe 缓存。
+_UPDATE_OPTIONS_CACHE: dict[str, tuple[int, int, bool]] = {}
 
 
 def _exe_cache_key(exe: Path) -> tuple[str, int, int]:
@@ -274,7 +424,7 @@ def _exe_cache_key(exe: Path) -> tuple[str, int, int]:
 
 
 async def resolve_cli(root: str | Path) -> "ModAvdCli | None":
-    """按 exe 是否存在选择 CLI；存在但检测失败就抛，不回退 Python。"""
+    """exe 不在返回 ``None``；在就做版本检查，检测失败抛 :class:`ModAvdUnavailable`。"""
     cli = ModAvdCli(root)
     if not cli.executable_available:
         return None
@@ -325,6 +475,8 @@ def map_cli_error(error: CLIError) -> RuntimeError:
     if error.code == "invalid_argument":
         return ValueError(message)
     if error.code == "port_conflict":
+        from .host import AdbPortConflict
+
         return AdbPortConflict(message)
     if error.code == "precheck_failed":
         from .precheck import PrecheckFailed, PrecheckItem
@@ -332,7 +484,7 @@ def map_cli_error(error: CLIError) -> RuntimeError:
         return PrecheckFailed(
             PrecheckItem(
                 "precheck",
-                "魔改 AVD 开机前检查",
+                "ModAVD 开机前检查",
                 False,
                 True,
                 error.message,
@@ -351,10 +503,12 @@ class ModAvdCli:
         *,
         exe: str | Path | None = None,
         runner: Runner | None = None,
+        raw_runner: RawRunner | None = None,
     ) -> None:
         self.root = Path(root)
         self.exe = Path(exe) if exe is not None else self.root / CLI_EXE_RELATIVE_PATH
         self._runner = runner or _run_process
+        self._raw_runner = raw_runner or _run_raw_process
 
     @property
     def executable_available(self) -> bool:
@@ -433,13 +587,21 @@ class ModAvdCli:
         allow_nonzero_ok: bool = False,
         timeout_handler: ProcessTimeoutHandler | None = None,
         breakaway: bool = False,
+        env: Mapping[str, str] | None = None,
+        on_stderr_line: Callable[[str], None] | None = None,
     ) -> Any:
+        extra: dict[str, Any] = {}
+        if env is not None:
+            extra["env"] = env
+        if on_stderr_line is not None:
+            extra["on_stderr_line"] = on_stderr_line
         try:
             output = await self._runner(
                 self._args(command, *command_args, include_root=include_root),
                 timeout,
                 timeout_handler,
                 breakaway,
+                **extra,
             )
         except CLIError:
             raise
@@ -660,9 +822,11 @@ class ModAvdCli:
         *,
         window: bool = False,
         timeout: int | float | None = None,
+        resolution: int | None = None,
     ) -> Any:
-        if resolution_for(read_ini(config_path(self.root, index))) == 1080:
-            # Old CLIs rewrite 1080p to 720p on start. Refuse before they can write.
+        """``resolution`` 是调用方从 ``info`` 拿到的这台实例的分辨率档位（不知道就不传）。"""
+        if resolution == 1080:
+            # 没有 --resolution 的命令行（ModAVDManager 0.4.0 以前）开机时会把 1080p 改回 720p：先拒绝
             await self._resolution_args(1080)
         boot_timeout = int(timeout or DEFAULT_START_TIMEOUT_SECONDS)
         args = [str(index)]
@@ -679,11 +843,20 @@ class ModAvdCli:
 
         await _wait_start_turn()
         try:
-            return await self._call(
-                "start",
-                *args,
-                timeout=process_timeout,
-                timeout_handler=stop_started_cli,
+            if (scope := current_process_scope.get()) is not None:
+                # 任务已在停止：和放进进程组时一样不再开机
+                scope.ensure_can_start()
+            # 和 servers() 一样不放进调用方任务的进程组：modavd 起的模拟器会跟着留在任务的 Job 里，
+            # 手动停止任务时连同任务进程一起被强制结束，等于强杀模拟器。外层被取消时直接 await 的
+            # task 会一并被取消，_run_process 的取消收尾（请求 stop、回收 CLI）跑完后才把取消抛回来
+            return await asyncio.create_task(
+                self._call(
+                    "start",
+                    *args,
+                    timeout=process_timeout,
+                    timeout_handler=stop_started_cli,
+                ),
+                context=detached_process_context(),
             )
         except CLIError as error:
             if error.code in _STOP_AFTER_START_ERRORS:
@@ -719,6 +892,43 @@ class ModAvdCli:
         args = [str(index), "--timeout", str(int(timeout)), "--", *command]
         return await self._call("shell", *args, timeout=float(timeout) + 10)
 
+    async def servers(self) -> Any:
+        """``modavd servers``：确保私有和脚本用的两个 adb server 在跑，报两个端口和在不在听。
+
+        不放进调用方任务的进程组（:func:`~app.utils.common.process.scope.detached_process_context`）：
+        任务的 Job 不许子进程脱离，modavd 想脱离着起的 adb server 就会留在 Job 里，手动停止任务时
+        跟着被结束，而这两个 server 是各实例、各脚本共用的。"""
+        return await asyncio.create_task(
+            self._call("servers"), context=detached_process_context()
+        )
+
+    async def adb(
+        self,
+        index: str | int,
+        *args: str,
+        timeout: float = 20.0,
+        merge_stderr: bool = False,
+    ) -> tuple[int, bytes, bytes]:
+        """``modavd --root <根> --quiet adb <i> -- <参数…>``：在私有 server 上对这台实例跑 adb。
+
+        不带 ``--json``：stdout 是 adb 的原始字节（截图就是 PNG），退出码是 adb 的；modavd 自己的错误
+        和日志只写 stderr（``--quiet`` 只留警告）。``timeout`` 管 adb 命令本身，modavd 先起私有 server、
+        补登记的等待另加 :data:`ADB_PASSTHROUGH_MARGIN_SECONDS`。返回 ``(退出码, stdout, stderr)``，
+        ``merge_stderr`` 时 stderr 并进 stdout、第三项为空；起不来、超时抛 :class:`CLIError`。"""
+        command = [
+            str(self.exe),
+            "--root",
+            str(self.root),
+            "--quiet",
+            "adb",
+            str(index),
+            "--",
+            *args,
+        ]
+        return await self._raw_runner(
+            command, float(timeout) + ADB_PASSTHROUGH_MARGIN_SECONDS, merge_stderr
+        )
+
     async def window(self, index: str | int, *, visible: bool) -> Any:
         """显示或隐藏一个已带窗口开机的实例。"""
 
@@ -734,8 +944,83 @@ class ModAvdCli:
             timeout=INSTALL_PROCESS_TIMEOUT_SECONDS,
         )
 
+    async def update_caller_options(self) -> bool:
+        """这个命令行的 ``update`` 收不收 ``--source`` / ``--cdk-dpapi``（看 ``help update`` 的
+        ``options``，按 exe 缓存）。已发布的 v0.6.0 及更早没有。"""
+        try:
+            key, size, mtime_ns = _exe_cache_key(self.exe)
+        except OSError:
+            key, size, mtime_ns = "", -1, -1
+        cached = _UPDATE_OPTIONS_CACHE.get(key) if key else None
+        if cached is not None and cached[:2] == (size, mtime_ns):
+            return cached[2]
+        try:
+            help_data = await self._call("help", "update", include_root=False)
+        except CLIError as error:
+            # 查不出就按旧命令行处理（不缓存，下次再问）：不带这两个选项，更新照样能做
+            logger.warning(
+                f"modavd help update 失败，这次不传更新源和 CDK: {error.message}"
+            )
+            return False
+        commands = help_data.get("commands", []) if isinstance(help_data, dict) else []
+        supported = any(
+            str(option.get("flag", "")).split(" ", 1)[0] == "--source"
+            for command in commands
+            if isinstance(command, dict)
+            for option in command.get("options", []) or []
+            if isinstance(option, dict)
+        )
+        if key:
+            _UPDATE_OPTIONS_CACHE[key] = (size, mtime_ns, supported)
+        return supported
+
+    async def update(
+        self,
+        action: str = "status",
+        *,
+        automas_version: str | None = None,
+        source: str | None = None,
+        cdk_dpapi: str | None = None,
+        env: Mapping[str, str] | None = None,
+        on_progress: Callable[[UpdateProgressEvent], None] | None = None,
+    ) -> Any:
+        """``modavd update <action>``，返回 ``update.Status``。
+
+        - ``automas_version``：调用方 AUTO-MAS 的版本（新版要求更高的 AUTO-MAS 时 modavd 不装），只给
+          ``check`` / ``prepare`` / ``install`` 传。
+        - ``source`` / ``cdk_dpapi``：这一次的更新源（github / mirrorchyan）和 Mirror 酱 CDK（DPAPI 密文的
+          base64，空串表示这次不用 CDK）。有这两个选项的命令行（Windows）上每次两个一起传，没有就都不传
+          （modavd 用自己存的设置）；``recover`` 不收。``cdk_dpapi`` 的值不进日志和错误。
+        - ``env``：子进程的整份环境（MAS 的代理）；``on_progress``：stderr 上带 ``progress`` 的日志行。
+        """
+        args = [action]
+        if automas_version and action in {"check", "prepare", "install"}:
+            args.extend(("--automas-version", automas_version))
+        if (
+            action != "recover"
+            and (source is not None or cdk_dpapi is not None)
+            and CALLER_UPDATE_OPTIONS_PLATFORM
+            and await self.update_caller_options()
+        ):
+            args.extend(("--source", source or "github"))
+            args.extend(("--cdk-dpapi", cdk_dpapi or ""))
+        on_line = (
+            None if on_progress is None else partial(_forward_progress, on_progress)
+        )
+        quick = action in {"status", "check", "recover"}
+        return await self._call(
+            "update",
+            *args,
+            timeout=UPDATE_QUICK_TIMEOUT_SECONDS
+            if quick
+            else UPDATE_LONG_TIMEOUT_SECONDS,
+            env=env,
+            on_stderr_line=on_line,
+        )
+
 
 __all__ = [
+    "ADB_PASSTHROUGH_MARGIN_SECONDS",
     "CLIError",
     "CLI_EXE_RELATIVE_PATH",
     "COMMAND_TIMEOUT_SECONDS",
@@ -750,6 +1035,10 @@ __all__ = [
     "START_STAGGER_SECONDS",
     "STOP_PROCESS_TIMEOUT_SECONDS",
     "SUPPORTED_PROTOCOLS",
+    "UPDATE_LONG_TIMEOUT_SECONDS",
+    "UPDATE_QUICK_TIMEOUT_SECONDS",
+    "UpdateProgressEvent",
     "map_cli_error",
+    "parse_update_progress",
     "start_process_timeout",
 ]

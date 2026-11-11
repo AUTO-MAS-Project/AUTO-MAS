@@ -1081,3 +1081,91 @@ async def test_module_verdict_remains_independent_of_deferred_prefetch(
     assert "first_task_completed_at" not in user.info.model_dump()
     assert "first_task_completed_at" not in script.info.model_dump()
     await proxy.callbacks.close()
+
+
+@pytest.mark.asyncio
+async def test_hsr_native_health_refuses_corrupted_m7a_exe(tmp_path, monkeypatch):
+    from app.task.HSR.tools.update import install_recovery
+
+    root = tmp_path / "m7a"
+    root.mkdir()
+    (root / "March7th Assistant.exe").write_bytes(b"")
+    monkeypatch.setattr(install_recovery, "assert_idle", lambda root: None)
+    monkeypatch.setattr(
+        install_recovery, "read_installed_version", lambda spec, root: "v1.2.3"
+    )
+    state = await install_recovery.inspect_installation("M7A", root)
+    assert not state.healthy
+    assert not state.updated_confirmed
+
+
+def test_hsr_sra_gui_without_readable_exe_path_blocks_recovery(monkeypatch, tmp_path):
+    from app.task.HSR.tools.update import install_recovery
+
+    fake = SimpleNamespace(info={"exe": None, "name": "SRA.exe"})
+    monkeypatch.setattr(install_recovery, "check_no_process_running", lambda root: None)
+    monkeypatch.setattr(
+        install_recovery.psutil, "process_iter", lambda attributes: [fake]
+    )
+    with pytest.raises(
+        install_recovery.script_install.InstallUnsafeError, match="无法确认"
+    ):
+        install_recovery.assert_idle(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_hsr_native_journal_requires_real_recovery(tmp_path, monkeypatch):
+    from app.task.HSR.tools.update import install_recovery
+
+    root = tmp_path / "m7a"
+    root.mkdir()
+    executable = bytearray(128)
+    executable[:2] = b"MZ"
+    executable[60:64] = (64).to_bytes(4, "little")
+    executable[64:70] = b"PE\x00\x00\x64\x86"
+    (root / "March7th Assistant.exe").write_bytes(executable)
+    marker = install_recovery.journal_path(root)
+    marker.parent.mkdir()
+    marker.write_bytes(b"pending journal")
+    monkeypatch.setattr(install_recovery, "assert_idle", lambda root: None)
+    monkeypatch.setattr(
+        install_recovery, "read_installed_version", lambda spec, root: "v1.2.3"
+    )
+    state = await install_recovery.inspect_installation("M7A", root)
+    assert state.healthy and state.pending
+    assert not state.updated_confirmed and marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_hsr_recovered_engine_is_not_auto_updated_again(scheduler):
+    scheduler._recovered_update_engines = {"M7A"}
+    assert await scheduler._update_external_scripts() is None
+    assert update.update_engine_if_needed.await_count == 1
+    assert scheduler._append_log.called
+
+
+@pytest.mark.asyncio
+async def test_hsr_manager_retries_failed_rollback_through_common_entry(
+    scheduler, tmp_path, monkeypatch
+):
+    from app.task.HSR.tools.update import install_recovery
+
+    root = tmp_path / "M7A"
+    root.mkdir()
+    marker = install_recovery.journal_path(root)
+    marker.parent.mkdir()
+    marker.write_bytes(b"pending journal")
+    scheduler.task_info = SimpleNamespace(task_id="task-id")
+    scheduler._recovered_update_engines = set()
+
+    async def rollback(root, **kwargs):
+        if root.name == "M7A":
+            raise update.HSRUpdateError("cannot rollback")
+        return False
+
+    monkeypatch.setattr(update, "rollback_pending", AsyncMock(side_effect=rollback))
+    common = AsyncMock(return_value="reinstalled")
+    monkeypatch.setattr(manager, "auto_recover_script_install", common)
+    await scheduler._rollback_pending_updates()
+    common.assert_awaited_once()
+    assert scheduler._recovered_update_engines == {"M7A"}

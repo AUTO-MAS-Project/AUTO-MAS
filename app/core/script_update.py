@@ -7,6 +7,7 @@
 import asyncio
 import time
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -15,10 +16,19 @@ from uuid import UUID
 
 import httpx
 
-from app.core import Config
+from app.core import Config, Publisher
 from app.core.script_update_queue import ScriptUpdateQueue
+from app.core.script_update_recovery import (
+    DownloadRetryFailed,
+    InstallInspection,
+    RecoveryIncident,
+    reconcile_installation,
+    run_managed_installation,
+)
 from app.core.update import download_file, download_method, download_observer
+from app.core.ws import protocol
 from app.models.config import CLASS_BOOK
+from app.models.schema import WSTaskNoticeData
 from app.models.task import (
     TaskExecuteBase,
     TaskItem,
@@ -42,6 +52,132 @@ class ScriptUpdateRequest:
     script_id: str
     script_type: str
     engine: str | None = None
+
+
+_current_recovery_session: ContextVar["ScriptUpdateSession | None"] = ContextVar(
+    "current_script_update_recovery_session", default=None
+)
+
+
+def _record_recovery_event(event: RecoveryIncident) -> None:
+    session = _current_recovery_session.get()
+    if session is not None:
+        session.record_recovery(event)
+    else:
+        logger.warning(
+            f"脚本恢复报告未附着运行队列：{event.script_type} {event.outcome}"
+        )
+
+
+async def auto_recover_script_install(
+    request: ScriptUpdateRequest,
+    *,
+    install_root: Path,
+    inspect: Callable[[], Awaitable[InstallInspection]],
+    acknowledge: Callable[[], Awaitable[None]],
+    reinstall: Callable[[], Awaitable[None]],
+) -> str:
+    """公共脚本更新入口统一编排恢复，不在专项适配器内发通知。"""
+
+    return await reconcile_installation(
+        script_id=request.script_id,
+        script_type=request.script_type,
+        install_root=install_root,
+        inspect=inspect,
+        acknowledge=acknowledge,
+        reinstall=reinstall,
+        report=_record_recovery_event,
+    )
+
+
+async def run_managed_script_install(
+    request: ScriptUpdateRequest,
+    *,
+    install_root: Path,
+    inspect: Callable[[], Awaitable[InstallInspection]],
+    acknowledge: Callable[[], Awaitable[None]],
+    install: Callable[[], Awaitable[None]],
+    ensure_idle: Callable[[], Awaitable[None]],
+    after_rollback: Callable[[], Awaitable[None]],
+) -> str:
+    """统一收发安装事务，决定备份、重试、回退、清理并汇总结果。
+
+    专项只负责提供真实的健康证据、执行原生安装以及确认没有后台写盘。
+    安装锁由调用方从开始到整个结果收束时一直持有。
+    """
+    return await run_script_update(
+        request,
+        run_managed_installation,
+        script_id=request.script_id,
+        script_type=request.script_type,
+        install_root=install_root,
+        inspect=inspect,
+        acknowledge=acknowledge,
+        install=install,
+        ensure_idle=ensure_idle,
+        after_rollback=after_rollback,
+        report=_record_recovery_event,
+    )
+
+
+async def run_script_update_with_safe_fallback(
+    request: ScriptUpdateRequest,
+    operation: Callable[P, Awaitable[str]],
+    install_root: Path,
+    inspect_previous: Callable[[], Awaitable[InstallInspection]],
+    /,
+    *args: P.args,
+    **kwargs: P.kwargs,
+) -> str:
+    """更新下载失败时由公共层验证旧安装；结果汇总留到任务结束。
+
+    专项只允许在任何安装写盘开始前的下载/包准备错误处抛
+    DownloadRetryFailed。未知/已开始安装的错误不允许回退。
+    """
+    try:
+        return await run_script_update(request, operation, *args, **kwargs)
+    except DownloadRetryFailed as error:
+        try:
+            previous = await inspect_previous()
+        except Exception as check_error:
+            _record_recovery_event(
+                RecoveryIncident(
+                    script_id=request.script_id,
+                    script_type=request.script_type,
+                    install_root=str(install_root.resolve()),
+                    outcome="blocked",
+                    source=error.source,
+                    reason=f"下载失败且旧版健康检查异常（{type(check_error).__name__}）",
+                )
+            )
+            raise
+        if not previous.pending and previous.healthy and previous.previous_confirmed:
+            _record_recovery_event(
+                RecoveryIncident(
+                    script_id=request.script_id,
+                    script_type=request.script_type,
+                    install_root=str(install_root.resolve()),
+                    outcome="old_version",
+                    installed_version=previous.installed_version,
+                    source=error.source,
+                    reason=error.reason,
+                )
+            )
+            return (
+                f"脚本 {request.script_type} 下载失败，但旧版"
+                f" {previous.installed_version or '未知'} 已验证可用，继续任务"
+            )
+        _record_recovery_event(
+            RecoveryIncident(
+                script_id=request.script_id,
+                script_type=request.script_type,
+                install_root=str(install_root.resolve()),
+                outcome="blocked",
+                source=error.source,
+                reason=f"下载失败：{error.reason}；旧安装未确认安全",
+            )
+        )
+        raise
 
 
 async def run_script_update(
@@ -90,6 +226,71 @@ class ScriptUpdateSession:
         self._config = config
         self._queue = ScriptUpdateQueue()
         self._pending: tuple[UUID, object, TaskExecuteBase] | None = None
+        self._recovery_events: list[RecoveryIncident] = []
+        self._recovery_reported = False
+
+    def record_recovery(self, event: RecoveryIncident) -> None:
+        """只记录当前任务的恢复结果，去重重复确认与后续账号复检。"""
+        if event not in self._recovery_events:
+            self._recovery_events.append(event)
+
+    async def publish_recovery_summary(self) -> None:
+        """在整轮任务完成时集中发一份报告，非脚本级即时弹窗。"""
+        if self._recovery_reported:
+            return
+        self._recovery_reported = True
+        if not self._recovery_events:
+            return
+        outcomes = {
+            "verified": "已校验安装并自动清理残留记录",
+            "installed": "更新成功，已验证并删除更新前备份",
+            "deferred": "安装结果尚未确认，保留备份等待下次恢复",
+            "reinstalled": "自动重装修复完成",
+            "old_version": "重新下载失败，已验证旧版并继续运行",
+            "blocked": "恢复失败，已保护安装现场并阻止启动",
+        }
+        lines = ["[脚本安装恢复汇总]"]
+        for event in self._recovery_events:
+            detail = f"；原因：{event.reason}" if event.reason else ""
+            source = f"；来源：{event.source}" if event.source else ""
+            version = (
+                f"；当前版本：{event.installed_version}"
+                if event.installed_version
+                else ""
+            )
+            lines.append(
+                f"- {event.script_type} ({event.script_id})："
+                f"{outcomes[event.outcome]}{version}{source}{detail}"
+                f"；目录：{event.install_root}"
+            )
+        message = "\n".join(lines)
+        if any(
+            event.outcome in ("old_version", "blocked", "deferred")
+            for event in self._recovery_events
+        ):
+            logger.warning(message)
+        else:
+            logger.info(message)
+        # TaskItem.current.log 是虚拟投影（不可写）；汇总保存在任务树自身
+        # 的 recovery_summary 字段，再通过任务完成包和任务通知同时传递。
+        self._task.current.recovery_summary = message
+        await self._task.commit()
+        try:
+            await Publisher.send(
+                id=self._task.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="warning"
+                    if any(
+                        e.outcome in ("old_version", "blocked", "deferred")
+                        for e in self._recovery_events
+                    )
+                    else "info",
+                    message=message,
+                ),
+            )
+        except Exception:
+            logger.warning("脚本恢复汇总已写入日志，但发送任务通知失败")
 
     async def _set_progress(
         self, text: str, details: WSTaskPrefetchData | None = None

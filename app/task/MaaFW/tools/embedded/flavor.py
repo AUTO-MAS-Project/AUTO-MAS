@@ -27,6 +27,24 @@
 换类型说明发通知）、在模拟器启动后调一次可选的游戏更新钩子、在写账号任务快照前调一次可选的
 快照整理钩子。这里不出现任何具体专项的名字；专项自己的逻辑全在它自己的包里。
 
+可选钩子 ``ensure_logged_in``（运行前登录）的契约：
+
+- **可选**：不进 ``MaaFWFlavor`` 协议，``resolve_login_hook`` 按 ``getattr`` 探测；没实现的特调
+  与通用 MaaFW 行为完全不变。
+- **何时调**：本次 controller 是 ADB、MAS 启动模拟器（连带拉起游戏）之后、第一个任务下发之前，
+  紧跟在 ``ensure_game_updated`` 之后。登录**成功**后才记完成；失败时下一次尝试会重新调用，
+  重试关闭游戏 / 模拟器（客户端重启）后也会重新验证，不允许带着未登录状态下发任务。
+  在事件循环里 ``await``。要不要真正做事由钩子自己按配置判断（返回空串表示没做事）。
+- **签名**：``async def ensure_logged_in(self, *, script_config, user_config, resource_name,
+  package_name, adb_path, adb_address, progress, host_adb=None) -> str``。``user_config`` 是本次运行的账号配置
+  （账号字段在 ``Info.Account``）；``package_name`` 是这次随模拟器拉起的包名（空串表示没拉起，
+  钩子可自行按包名拉起）；``host_adb`` 非空时截图与命令必须使用该私有通道；否则按 ``adb_path`` 连接；``progress`` 是写
+  用户运行日志的异步回调。返回值是写进运行日志的一句话，空串表示不写。
+- Win32 控制器以空 ``adb_address`` 调用，供钩子拒绝不支持的登录模式。
+- **失败**：抛 :class:`MaaFWLoginRequired`，文案直接给用户看；本账号本次尝试判失败，按普通失败
+  走重试（不特殊处理退出条件）。抛其它异常同样按失败处理，原因会附在异常原文后面。
+- **取消**：用户停止（``CancelledError``）必须照常向上抛，不能吞掉。
+
 可选钩子 ``sanitize_task_snapshot``（写账号任务快照前整理）的契约：
 
 - **可选**：同样不进协议，``resolve_snapshot_sanitizer`` 按 ``getattr`` 探测。
@@ -140,7 +158,7 @@
 - **效果**：返回的行接在系统通知「已按项目识别为 …」下面；引擎自己不写任何专项的行为说明，
   标题里的类型名取 ``type_key``。
 
-魔改 AVD（Emulator 2.0 的 ``avd`` 后端）不是特调声明：所有 MaaFW 脚本（通用项目与各特调）一律放行，
+ModAVD（Emulator 2.0 的 ``avd`` 后端）不是特调声明：所有 MaaFW 脚本（通用项目与各特调）一律放行，
 ``runner_task`` 给门面 ``open`` 传 ``allow_mod_avd=True``、按设备构造 AVDExtras 截图配置；脚本保存时
 ``app.core.EmulatorManager.mod_avd_binding_error`` 读取宿主登记的设备能力，MaaFW 特调继承引擎声明。
 """
@@ -306,6 +324,22 @@ def flavor_for_project(interface_model: MaaFWInterface) -> MaaFWFlavor | None:
 
 GameUpdateHook = Callable[..., Awaitable[_utils_game_update.GameUpdateResult]]
 """特调可选的游戏更新钩子，契约见模块说明"""
+
+
+class MaaFWLoginRequired(RuntimeError):
+    """特调的运行前登录钩子判定本次无法继续运行（如 B 服登录失败）；文案直接给用户看。"""
+
+
+LoginHook = Callable[..., Awaitable[str]]
+"""特调可选的运行前登录钩子，契约见模块说明"""
+
+
+def resolve_login_hook(script_config: Any) -> LoginHook | None:
+    """脚本对应特调的运行前登录钩子；通用 MaaFW 或特调没实现时返回 None。"""
+
+    flavor = resolve_flavor(script_config)
+    hook = getattr(flavor, "ensure_logged_in", None) if flavor is not None else None
+    return hook if callable(hook) else None
 
 
 def resolve_game_update_hook(script_config: Any) -> GameUpdateHook | None:
@@ -491,7 +525,9 @@ def _is_empty_json_object(value: Any) -> bool:
 
 __all__ = [
     "GameUpdateHook",
+    "LoginHook",
     "MaaFWFlavor",
+    "MaaFWLoginRequired",
     "SnapshotSanitizer",
     "no_default_fallback_inputs",
     "off_day_scope",
@@ -501,6 +537,7 @@ __all__ = [
     "flavored_config_classes",
     "resolve_flavor",
     "resolve_game_update_hook",
+    "resolve_login_hook",
     "resolve_snapshot_sanitizer",
     "retype_notice_lines",
     "sanitize_user_task_update",

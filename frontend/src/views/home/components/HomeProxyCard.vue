@@ -1,6 +1,10 @@
 <template>
   <section class="overview-grid" :aria-label="t('core.home.proxy.aria')">
-    <a-card class="proxy-card" :title="t('core.home.proxy.title')" :loading="loading">
+    <a-card
+      class="proxy-card app-page-surface"
+      :title="t('core.home.proxy.title')"
+      :loading="loading"
+    >
       <div v-if="Object.keys(proxyData).length > 0" class="proxy-list">
         <a-row :gutter="[16, 16]">
           <a-col v-for="(proxy, username) in proxyData" :key="username" :xs="24" :lg="12" :xl="8">
@@ -79,13 +83,6 @@ const formatProxyDisplay = (dateString: string) => {
 
 .proxy-card {
   width: 100%;
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
-}
-
-.proxy-card :deep(.ant-card-head-title) {
-  font-size: 18px;
-  font-weight: 600;
 }
 
 .empty-state {

@@ -1,6 +1,7 @@
 """SRC 的只读预取、快进安装和失败保护，使用本地 Git 仓库替代网络。"""
 
 import asyncio
+import json
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -347,3 +348,182 @@ async def test_cn_unconfirmed_download_does_not_delete_active_archive(
     archives = list((update.Config.data_path / "src_update").glob("git-*.zip"))
     assert len(archives) == 1
     assert archives[0].read_bytes() == b"partial FluxDown output"
+
+
+@pytest.mark.asyncio
+async def test_src_skip_requires_complete_git_and_native_dependencies(
+    installation, monkeypatch
+):
+    root, _ = installation
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
+    recorded = marker.read_bytes()
+    original_command = update.command
+
+    async def pip_check(*args, **kwargs):
+        if args[-3:] == ("-m", "pip", "check"):
+            return "No broken requirements found."
+        return await original_command(*args, **kwargs)
+
+    monkeypatch.setattr(update, "command", pip_check)
+    result = await update.skip_unconfirmed_install(root, recorded)
+    assert result == git(root, "rev-parse", "HEAD")[:12]
+    assert not marker.exists()
+    await update.confirm_current_install(root)
+
+
+@pytest.mark.asyncio
+async def test_src_skip_rejects_partial_git_update(installation):
+    root, _ = installation
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(
+        json.dumps({"target": git(root.parent / "remote", "rev-parse", "HEAD")})
+    )
+    with pytest.raises(script_install.InstallUnsafeError, match="Git 代码未完整"):
+        await update.skip_unconfirmed_install(root, marker.read_bytes())
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_src_skip_rejects_changed_marker(installation):
+    root, _ = installation
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    old = json.dumps({"target": git(root, "rev-parse", "HEAD")}).encode()
+    marker.write_text('{"target":"0000000000000000000000000000000000000000"}')
+    with pytest.raises(script_install.InstallUnsafeError, match="变化"):
+        await update.skip_unconfirmed_install(root, old)
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_src_retry_same_commit_only_reruns_native_installer(
+    installation, monkeypatch
+):
+    root, _ = installation
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
+    head = git(root, "rev-parse", "HEAD")
+    assert not (root / "native-finished").exists()
+    await update.update_before_run(root, recovery_snapshot=marker.read_bytes())
+    assert git(root, "rev-parse", "HEAD") == head
+    assert (root / "native-finished").read_text() == "done"
+    assert not marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_src_normal_update_cannot_overwrite_existing_marker(installation):
+    root, _ = installation
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
+    with pytest.raises(script_install.InstallUnsafeError, match="用户决定"):
+        await update.update_before_run(root)
+    assert marker.exists()
+    assert not (script_install.workspace(root) / "src-deploy.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_src_legacy_marker_uses_common_recovery_without_frontend(
+    installation, monkeypatch
+):
+    from app.task.SRC import manager
+
+    root, _ = installation
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
+    instance = object.__new__(manager.SrcManager)
+    instance.src_root_path = root
+    instance.script_info = SimpleNamespace(
+        script_id="test-script", name="SRC", set_log=AsyncMock()
+    )
+    instance.script_config = SimpleNamespace(
+        Update=SimpleNamespace(TakeoverEnabled=False)
+    )
+    instance.maintenance = False
+    instance.task_info = SimpleNamespace(task_id="task-id", mode="AutoProxy")
+    common = AsyncMock(return_value="reinstalled")
+    monkeypatch.setattr(manager, "auto_recover_script_install", common)
+    assert await instance._recover_unconfirmed_install()
+    common.assert_awaited_once()
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_src_missing_frontend_never_blocks_common_recovery(
+    installation, monkeypatch
+):
+    from app.task.SRC import manager
+
+    root, _ = installation
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
+    instance = object.__new__(manager.SrcManager)
+    instance.src_root_path = root
+    instance.script_info = SimpleNamespace(
+        script_id="test-script", name="SRC", set_log=AsyncMock()
+    )
+    instance.script_config = SimpleNamespace(
+        Update=SimpleNamespace(TakeoverEnabled=False)
+    )
+    instance.maintenance = False
+    instance.task_info = SimpleNamespace(task_id="task-id", mode="AutoProxy")
+    monkeypatch.setattr(
+        manager, "auto_recover_script_install", AsyncMock(return_value="verified")
+    )
+    assert await instance._recover_unconfirmed_install()
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_src_git_head_at_target_does_not_prove_native_dependencies_complete(
+    installation, monkeypatch
+):
+    from app.task.SRC.tools.managed_recovery import SRCInstallAdapter
+
+    root, _ = installation
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
+    adapter = SRCInstallAdapter(root)
+    state = await adapter.inspect()
+    # 即使 pip check 成功也不能跳过本提交的原生 installer。
+    assert state.pending and not state.updated_confirmed
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_src_native_completion_record_survives_adapter_recreation(
+    installation, monkeypatch
+):
+    from app.task.SRC.tools.managed_recovery import SRCInstallAdapter
+    from app.services.script_install_backup import ManagedInstallBackup
+
+    root, _ = installation
+    old_commit = git(root, "rev-parse", "HEAD")
+    backup = ManagedInstallBackup(root, script_id="test", script_type="SRC")
+    await backup.create(old_commit)
+    candidate = await update.prepare_update(root)
+    if candidate is None:
+        pytest.skip("SRC 测试代码源无新目标提交")
+    await update.apply_update(root, candidate)
+    # 安装器在夹具中仅写 native-finished，未创建真实 SRC requirements 环境；
+    # 将 pip check 固定为健康，只校验安装完成证据跨 adapter 重建的传递。
+    original_command = update.command
+
+    async def command_with_test_python(*args, **kwargs):
+        if len(args) >= 4 and args[1:4] == ("-m", "pip", "check"):
+            return "No broken requirements found."
+        return await original_command(*args, **kwargs)
+
+    monkeypatch.setattr(update, "command", command_with_test_python)
+    adapter = SRCInstallAdapter(root)
+    state = await adapter.inspect()
+    assert state.updated_confirmed
+    assert state.installed_version == candidate.target_commit
+    assert backup.read()["version"] == old_commit

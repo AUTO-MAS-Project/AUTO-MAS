@@ -114,7 +114,7 @@ async def capture_current_image(
     不会触发 adb server 版本重启）；路径取不到、地址为空或截图/画面异常
     时返回 ``None``；纯色检查与异常兜底交给公共补截控制。
 
-    ``png_reader`` 给魔改 AVD 实例用：由 MAS 私有 adb server 取 PNG 字节（它的 adb 不能落到
+    ``png_reader`` 给 ModAVD 实例用：经 ``modavd adb``（ModAVD 的私有 adb server）取 PNG 字节（它的 adb 不能落到
     5037，``adb_path`` 对它也是 ``None``），给了就不走 ``adb_path`` / ``adb_address``。
     """
 

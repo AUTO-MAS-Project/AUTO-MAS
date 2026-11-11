@@ -121,7 +121,7 @@ class EmulatorOperations:
         if isinstance(error, ValueError):
             return str(error)
 
-        # 魔改 AVD 这几类的消息本来就是写给用户的中文（含原因与该怎么办），不带类名前缀
+        # ModAVD 这几类的消息本来就是写给用户的中文（含原因与该怎么办），不带类名前缀
         if isinstance(
             error,
             (
@@ -240,11 +240,11 @@ class EmulatorOperations:
         return affected
 
     def script_supports_mod_avd(self, script: ConfigEntry) -> bool:
-        """读取专项声明的魔改 AVD 支持能力。"""
+        """读取专项声明的 ModAVD 支持能力。"""
         return Config.script_supports_mod_avd(script)
 
     async def is_mod_avd_device(self, emulator_id: Any, index: Any) -> bool:
-        """这个设备号是不是魔改 AVD 实例。不是 Emulator 2.0 配置、设备号无效都返回 ``False``。"""
+        """这个设备号是不是 ModAVD 实例。不是 Emulator 2.0 配置、设备号无效都返回 ``False``。"""
         if str(emulator_id) in ("", "-", "None") or str(index) in ("", "-", "None"):
             return False
         try:
@@ -255,7 +255,7 @@ class EmulatorOperations:
         return device_ref is not None and device_ref.emulator_type == "avd"
 
     async def mod_avd_binding_error(self, script_id: str, patch: dict) -> str | None:
-        """脚本保存时：不支持魔改 AVD 的脚本（目前只有 MaaFW 和 MAA 支持）要绑到魔改 AVD 设备，返回拒绝原因；否则 ``None``。
+        """脚本保存时：不支持 ModAVD 的脚本（目前只有 MaaFW 和 MAA 支持）要绑到 ModAVD 设备，返回拒绝原因；否则 ``None``。
 
         按专项声明解析本次补丁，只在带了设备号时检查；只改设备号时合并当前模拟器配置。
         只改模拟器配置（没带设备号）不检查，避免分步保存时用旧号误拦新配置。
@@ -361,30 +361,19 @@ class EmulatorOperations:
 
         await self._save(emulator_id, paths, manager.slots)
 
-        if record.type == "avd":
-            # MAS 不下载组件；解压出来的根目录可能还没有 mas-avd.json：补一份
-
-            try:
-                if await asyncio.to_thread(
-                    _utils_emulator2.avd.components.ensure_metadata, resolved_path
-                ):
-                    logger.info(f"魔改 AVD {resolved_path} 没有 mas-avd.json，已补写")
-            except OSError as e:
-                logger.warning(f"魔改 AVD {resolved_path} 补写 mas-avd.json 失败: {e}")
-
-        # 魔改 AVD 根目录里一台实例都没有（刚解压的内测包）：按默认值建第一台，
+        # ModAVD 根目录里一台实例都没有（刚解压的内测包）：按默认值建第一台，
         # 测试者加完就能直接用。已经有实例的不动；建不出来不影响路径本身已经加好
         if record.type == "avd" and native_indexes is not None and not native_indexes:
             try:
                 created = await self.create_instance(emulator_id, path_id, None, {})
             except Exception as e:  # noqa: BLE001 - 路径已经加好，建实例失败只记下来
-                logger.warning(f"魔改 AVD {resolved_path} 自动新建第一台实例失败: {e}")
+                logger.warning(f"ModAVD {resolved_path} 自动新建第一台实例失败: {e}")
             else:
                 added_slots.append(
                     {"slot": created["slot"], "nativeIndex": created["nativeIndex"]}
                 )
                 logger.info(
-                    f"魔改 AVD {resolved_path} 还没有实例，已按默认值新建第一台"
+                    f"ModAVD {resolved_path} 还没有实例，已按默认值新建第一台"
                     f"（设备号 #{created['slot']}）"
                 )
 
@@ -446,7 +435,7 @@ class EmulatorOperations:
     ) -> dict:
         """在某条模拟器安装下新建一个实例，并给它分配设备号。
 
-        ``options`` 只对魔改 AVD 生效（``memory_mb`` / ``cpu`` / ``fps`` / ``resolution`` / ``data_partition_gb`` /
+        ``options`` 只对 ModAVD 生效（``memory_mb`` / ``cpu`` / ``fps`` / ``resolution`` / ``data_partition_gb`` /
         ``native_index``）：
         雷电 / MuMu 新建时用的是模拟器自己的默认配置。
         """
@@ -462,7 +451,7 @@ class EmulatorOperations:
         else:
             native_index = await backend.create_instance(name)
 
-        # 魔改 AVD 新建要在后台开一次机，动辄几分钟；这期间另一次新建、设备列表轮询都可能存过槽位表。
+        # ModAVD 新建要在后台开一次机，动辄几分钟；这期间另一次新建、设备列表轮询都可能存过槽位表。
         # 拿新建前那份快照存会把它们登记的设备号盖掉，所以重新读一份最新的再登记
         manager = await self.build_manager(emulator_id)
         added = manager.slots.sync_path(path_id, [native_index])
@@ -668,7 +657,7 @@ class EmulatorOperations:
             "title": getattr(info, "title", ""),
             "status": int(getattr(info, "status", 5)),
             "adbAddress": getattr(info, "adb_address", ""),
-            # 魔改 AVD 无头运行的实例没有窗口，界面据此把显示 / 隐藏置灰
+            # ModAVD 无头运行的实例没有窗口，界面据此把显示 / 隐藏置灰
             "headless": getattr(info, "headless", None),
             "creationError": getattr(info, "creation_error", ""),
             # 这里给的是「已保存设置，下次启动使用」，不是运行中实例的当前配置——
@@ -778,7 +767,7 @@ class EmulatorOperations:
         manager = await self.build_manager(emulator_id)
         path, record = manager.resolve_slot(str(slot))
         if path.type != "avd":
-            raise ValueError("该设备不是魔改 AVD")
+            raise ValueError("该设备不是 ModAVD")
         backend = await manager.manager_for(path)
         assert isinstance(backend, _utils_emulator2.avd.manager.AvdManager)
         return backend, record.native_index

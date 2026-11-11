@@ -60,7 +60,6 @@ from app.task.M9A.flavor import (
     CLOSE_ENTRY,
     FALLBACK_TASK_NAMES,
     LEGACY_ENTRY_ALIASES,
-    OFFICIAL_RESOURCE_NAME,
     STARTUP_ENTRY,
     SWITCH_ACCOUNT_ENTRY,
     is_m9a_project,
@@ -72,6 +71,7 @@ from app.task.M9A.managed import (
     settle_snapshot,
     settle_user_info,
     split_message,
+    supports_account_switch,
 )
 from app.task.MaaFW.tools.core.interface.models import resolve_task_instance_name
 from app.utils import constants as _utils_constants
@@ -667,19 +667,22 @@ def _migrate_user(
         user, index, script_payload, script_uid, user_uid, script_label, report
     )
     account = str(info.get("Account") or "")
-    # 关了快速配置时旧版原样跑实例文件、不读「账号」；迁移后特调只看账号非空、资源是官服就补切号。
+    switch_supported = supports_account_switch(
+        script_resource, login_mode=_login_mode(script_payload)
+    )
+    # 关了快速配置时旧版原样跑实例文件、不读「账号」；迁移后特调只看账号非空、资源支持切号就补切号。
     # 实例文件里本来就勾了切号的，目标账号下面会收进「账号」，行为不变；没勾的要提醒一句。
     if (
         status
         and account.strip()
         and not _truthy(info.get("IfQuickConfig", True))
-        and script_resource == OFFICIAL_RESOURCE_NAME
+        and switch_supported
         and not _has_switch_account(snapshot["taskOrder"], index)
     ):
         report.account_switch_users.append(f"{script_label} / {name}")
     if settle_switches:
         settlement = _settle_with_index(
-            snapshot, index, official=script_resource == OFFICIAL_RESOURCE_NAME
+            snapshot, index, supports_switch=switch_supported
         )
         snapshot = settlement.snapshot
         change = settle_user_info(
@@ -882,7 +885,7 @@ def _has_switch_account(task_order: list[str], index: _InterfaceIndex) -> bool:
 
 
 def _settle_with_index(
-    snapshot: dict[str, Any], index: _InterfaceIndex, *, official: bool
+    snapshot: dict[str, Any], index: _InterfaceIndex, *, supports_switch: bool
 ) -> Settlement:
     """按 ``managed.py`` 的规则整理一份快照（interface 是字典形状的迁移索引）。"""
 
@@ -903,7 +906,10 @@ def _settle_with_index(
         return first_text_value(options)
 
     return settle_snapshot(
-        snapshot, entry_of=entry_of, account_of=account_of, official=official
+        snapshot,
+        entry_of=entry_of,
+        account_of=account_of,
+        supports_switch=supports_switch,
     )
 
 
@@ -1455,7 +1461,9 @@ def repair_script_config_payload(
         )
         answer_users = _user_data_of(answer) or {}
         legacy_users = _user_data_of(legacy) or {}
-        official = (payload.get("Info") or {}).get("Resource") == OFFICIAL_RESOURCE_NAME
+        supports_switch = supports_account_switch(
+            (payload.get("Info") or {}).get("Resource"), login_mode=_login_mode(payload)
+        )
         for user_uid, user in user_data.items():
             answer_user = answer_users.get(user_uid)
             if not isinstance(user, dict) or not isinstance(answer_user, dict):
@@ -1474,7 +1482,7 @@ def repair_script_config_payload(
                 answer_user,
                 index,
                 keep_account=bool(account and account_changed),
-                official=official,
+                supports_switch=supports_switch,
                 label=label,
                 report=report,
             ):
@@ -1484,7 +1492,7 @@ def repair_script_config_payload(
             # 自己改过账号的，是有意要切，不提醒；实例文件里本来就配了切号的，「账号」
             # 已经是（或该是）那个切号的目标账号，也不提醒
             if (
-                official
+                supports_switch
                 and _truthy(info.get("Status", True))
                 and account
                 and not account_changed
@@ -1503,7 +1511,7 @@ def _repair_user_snapshot(
     index: _InterfaceIndex,
     *,
     keep_account: bool,
-    official: bool,
+    supports_switch: bool,
     label: str,
     report: RepairReport,
 ) -> bool:
@@ -1563,7 +1571,7 @@ def _repair_user_snapshot(
         and isinstance(current_order, list)
         and not _has_switch_account(current_order, index)
     ):
-        settlement = _settle_with_index(answer, index, official=official)
+        settlement = _settle_with_index(answer, index, supports_switch=supports_switch)
         accounts = [
             str(value)
             for task_id in switch_ids
@@ -1723,6 +1731,13 @@ def normalize_m9a_managed_entries(
     return report
 
 
+def _login_mode(payload: dict[str, Any]) -> str:
+    """脚本的 ``Run.LoginMode``（原始 JSON 版）；缺省按项目自登录处理。"""
+
+    run = payload.get("Run") if isinstance(payload.get("Run"), dict) else {}
+    return str(run.get("LoginMode") or "").strip()
+
+
 def _run_resource(model: Any, payload: dict[str, Any]) -> str | None:
     """脚本运行时实际生效的资源：与建运行计划同一个 ``resolve_run_selection``（原始 JSON 版）。"""
 
@@ -1781,7 +1796,9 @@ def normalize_script_config_payload(
             )
             continue
         script_label = _script_label(payload, uid)
-        official = _run_resource(model, payload) == OFFICIAL_RESOURCE_NAME
+        switch_supported = supports_account_switch(
+            _run_resource(model, payload), login_mode=_login_mode(payload)
+        )
         for user_uid in [
             str(item.get("uid") or "")
             for item in user_data.get("order", user_data.get("instances")) or []
@@ -1791,7 +1808,7 @@ def normalize_script_config_payload(
             if isinstance(user, dict) and _normalize_user(
                 user,
                 index,
-                official=official,
+                supports_switch=switch_supported,
                 label=f"{script_label} / {str((user.get('Info') or {}).get('Name') or user_uid[:8])}",
                 report=report,
             ):
@@ -1803,7 +1820,7 @@ def _normalize_user(
     user: dict[str, Any],
     index: _InterfaceIndex,
     *,
-    official: bool,
+    supports_switch: bool,
     label: str,
     report: ManagedEntriesReport,
 ) -> bool:
@@ -1816,7 +1833,7 @@ def _normalize_user(
     info = user.get("Info")
     if not isinstance(info, dict):
         info = {}
-    settlement = _settle_with_index(snapshot, index, official=official)
+    settlement = _settle_with_index(snapshot, index, supports_switch=supports_switch)
     change = settle_user_info(
         settlement,
         account=str(info.get("Account") or ""),

@@ -2,7 +2,7 @@
   <!-- 主要内容 -->
   <div class="scheduler-main">
     <!-- 页面头部 -->
-    <div class="scheduler-header">
+    <div class="scheduler-header app-page-header">
       <div class="header-left">
         <h1 class="page-title app-page-title">{{ t('core.scheduler.title') }}</h1>
       </div>
@@ -29,7 +29,7 @@
     </div>
 
     <!-- 调度台标签页 -->
-    <div class="scheduler-tabs">
+    <div class="scheduler-tabs app-page-surface app-page-surface--tabs">
       <a-tabs
         v-model:active-key="activeSchedulerTab"
         type="editable-card"
@@ -297,25 +297,11 @@ onDeactivated(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   background-color: transparent;
-}
-
-/* 页面头部样式 */
-.scheduler-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 16px;
-  padding: 0 4px;
 }
 
 .header-left {
   flex: 1;
-}
-
-.page-title {
-  margin: 0 0 8px 0;
 }
 
 .header-actions {
@@ -344,9 +330,6 @@ onDeactivated(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
-  border-radius: 8px;
-  padding: 12px;
 }
 
 .scheduler-tabs :deep(.ant-tabs) {
@@ -354,6 +337,15 @@ onDeactivated(() => {
   display: flex;
   flex-direction: column;
   background-color: transparent;
+}
+
+.scheduler-tabs :deep(.ant-tabs-content-holder) {
+  min-height: 0;
+}
+
+.scheduler-tabs :deep(.ant-tabs-content),
+.scheduler-tabs :deep(.ant-tabs-tabpane) {
+  height: 100%;
 }
 
 /* 自定义标签页tab内容布局 */
@@ -406,8 +398,6 @@ onDeactivated(() => {
   align-items: center;
   gap: 4px;
   margin-left: 8px;
-  margin-top: -12px;
-  /* 负边距抵消容器padding，使按钮上边距与右边距(12px)相同 */
 }
 
 .tab-action-btn {
@@ -451,7 +441,7 @@ onDeactivated(() => {
 .task-unified-card {
   background-color: transparent;
   box-shadow: none;
-  height: calc(100vh - 237px);
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -474,14 +464,8 @@ onDeactivated(() => {
 
 /* 响应式 - 移动端适配 */
 @media (max-width: 768px) {
-  .scheduler-main {
-    padding: 8px;
-  }
-
   .scheduler-header {
     flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
   }
 
   .header-actions {

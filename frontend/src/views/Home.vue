@@ -1,9 +1,7 @@
 <template>
   <div class="home-page">
-    <div class="home-header">
-      <div>
-        <a-typography-title :level="2" class="home-title">{{ greeting }}</a-typography-title>
-      </div>
+    <div class="home-header app-page-header">
+      <h1 class="home-title app-page-title">{{ greeting }}</h1>
 
       <div class="header-actions">
         <a-button
@@ -275,27 +273,6 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.home-page {
-  max-width: 1600px;
-  margin: 0 auto;
-}
-
-.home-header {
-  margin-bottom: 24px;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 24px;
-}
-
-.home-title {
-  margin: 0 0 4px;
-  color: var(--ant-color-text);
-  font-size: 24px;
-  font-weight: 600;
-  letter-spacing: 0;
-}
-
 .header-actions {
   display: flex;
   align-items: center;
@@ -315,7 +292,7 @@ onMounted(async () => {
 .home-content {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: var(--app-page-content-gap);
 }
 
 .satellite-animation-section {
@@ -332,7 +309,6 @@ onMounted(async () => {
 @media (max-width: 800px) {
   .home-header {
     flex-direction: column;
-    gap: 16px;
     align-items: stretch;
   }
 

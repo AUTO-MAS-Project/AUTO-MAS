@@ -49,12 +49,21 @@ def assert_idle(root: Path) -> None:
         try:
             executable = process.info["exe"]
             name = str(process.info.get("name", "")).casefold()
-            if not executable and (
-                name in {"bettergi.exe", "bettergi.update.exe"}
+            # 官方安装器可能在下载目录启动，而不是在安装目录内。
+            # 无论安装器路径如何，未停写时都不能进行恢复与目录切换。
+            exe_name = Path(executable).name.casefold() if executable else ""
+            if (
+                name == "bettergi.update.exe"
                 or name.startswith("bettergi.install.")
+                or exe_name == "bettergi.update.exe"
+                or exe_name.startswith("bettergi.install.")
             ):
                 raise script_install.InstallUnsafeError(
-                    "无法确认 BetterGI 更新器已退出，请以管理员身份重试"
+                    "BetterGI 官方安装器仍在运行，请先结束安装器"
+                )
+            if not executable and name == "bettergi.exe":
+                raise script_install.InstallUnsafeError(
+                    "无法确认 BetterGI 程序已退出，请以管理员身份重试"
                 )
             if executable and any(
                 Path(executable).resolve().is_relative_to(path.resolve())
@@ -186,6 +195,74 @@ def select_installer(release: dict) -> tuple[Version, str, str, int, str]:
         url = f"https://github.com/{REPOSITORY}/releases/download/{quote(tag, safe='')}/{quote(name, safe='')}"
         return version, name, url, size, digest[7:]
     raise ValueError("BetterGI 官方发行版没有完整安装器")
+
+
+# BetterGI 以内置 notice.json 控制正式版灰度；GitHub Release 可能先于 OTA 资源公开。
+_STABLE_NOTICE_URL = "https://hui-config.oss-cn-hangzhou.aliyuncs.com/bgi/notice.json"
+_STABLE_DFS2_URL = "https://bgi-ota.cocogoat.cn/resource/BetterGI.Install.exe"
+
+
+async def check_stable_distribution(target: Version) -> str | None:
+    """核对官方公告和 Kachina 的 DFS2 元数据；未确认就保留当前安装。
+
+    该检查不创建 DFS2 下载会话，资源同步中的失败不会生成新的安装标记。
+    """
+    try:
+        async with httpx.AsyncClient(
+            proxy=Config.proxy, timeout=6, follow_redirects=True
+        ) as client:
+            notice_response = await client.get(_STABLE_NOTICE_URL)
+            notice_response.raise_for_status()
+            notice = notice_response.json()
+            if not isinstance(notice, dict):
+                raise ValueError("invalid notice data")
+            announced = Version(str(notice.get("version", notice.get("Version", ""))))
+            # 上游 Notice.Gray 默认为 10，分母固定为设备哈希模 10。
+            gray = notice.get("gray", notice.get("Gray", 10))
+            if type(gray) is not int or not 0 <= gray <= 10:
+                raise ValueError("invalid rollout percentage")
+            if announced < target:
+                return (
+                    f"BetterGI 正式版 {target} 尚未进入官方更新公告"
+                    f"（当前公告 {announced}），暂缓本次更新"
+                )
+            if gray < 10:
+                return (
+                    f"BetterGI 正式版 {target} 仍处于官方灰度推送"
+                    f"（{gray}/10），暂缓本次更新"
+                )
+
+            # 上游 DFS2 协议的 GET ?with_metadata=1，不执行安装或分配 session。
+            resource_response = await client.get(
+                _STABLE_DFS2_URL, params={"with_metadata": "1"}
+            )
+            resource_response.raise_for_status()
+            resource = resource_response.json()
+            data = resource.get("data") if isinstance(resource, dict) else None
+            metadata = data.get("metadata") if isinstance(data, dict) else None
+            if not isinstance(metadata, dict):
+                raise ValueError("missing dfs2 metadata")
+            available = Version(str(metadata.get("tag_name", "")))
+            if available != target:
+                return (
+                    f"BetterGI 正式版 {target} 的安装资源尚未同步"
+                    f"（Steambird 当前 {available}），暂缓本次更新"
+                )
+            index = data.get("index")
+            installer_end = data.get("installer_end")
+            if (
+                not isinstance(index, dict)
+                or not index
+                or type(installer_end) is not int
+                or installer_end <= 0
+            ):
+                raise ValueError("incomplete dfs2 resource index")
+    except (httpx.HTTPError, ValueError, TypeError) as error:
+        return (
+            f"BetterGI 正式版 {target} 的资源就绪状态无法确认"
+            f"（{type(error).__name__}），暂缓本次更新"
+        )
+    return None
 
 
 def verify_installer(
@@ -324,6 +401,15 @@ async def update_before_run(
         raise script_install.InstallUnsafeError(
             "BetterGI 上次安装未完成且高于所选通道，请切换通道或手动修复，不会自动降级"
         )
+    # Mirror 包有独立分发校验；GitHub 正式版须等待官方公告及 OTA 资源同步。
+    if not cdk and config.Update.Channel == "stable":
+        unready = await check_stable_distribution(target)
+        if unready:
+            if marker.exists():
+                raise script_install.InstallUnsafeError(
+                    f"{unready}；上次安装仍未确认，不能直接启动旧版本"
+                )
+            return unready
     directory.mkdir(parents=True, exist_ok=True)
     cache = Path(tempfile.mkdtemp(dir=directory, prefix="download-"))
     installer = cache / name

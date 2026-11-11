@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** 魔改 AVD 根目录里的组件：名称、版本（内测包或本地 SDK 标记）、状态。缺什么、怎么办由电脑检查写明。 */
+/** ModAVD 根目录里的组件：名称、版本（内测包或本地 SDK 标记）、状态。缺什么、怎么办由电脑检查写明。 */
 import { useI18n } from 'vue-i18n'
 
 import type { Emulator2AvdComponentItem } from '@/api'

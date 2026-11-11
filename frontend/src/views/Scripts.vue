@@ -20,7 +20,7 @@
   </div>
 
   <!-- 主要内容 -->
-  <div class="scripts-header">
+  <div class="scripts-header app-page-header">
     <div class="header-left">
       <h1 class="page-title app-page-title">{{ t('core.scripts.title') }}</h1>
       <DocLink :url="MAS_DOC_URLS.scripts" />
@@ -864,20 +864,12 @@ const handleToggleUserStatus = async (user: ScriptListUser) => {
   margin: 0;
 }
 
-.scripts-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 24px;
-  padding: 0 4px;
-}
-
 .header-left {
   display: flex;
   flex: 1;
   min-width: 0;
   align-items: center;
-  gap: 24px;
+  gap: 16px;
 }
 
 .script-search {
@@ -886,19 +878,12 @@ const handleToggleUserStatus = async (user: ScriptListUser) => {
 
 .header-actions {
   flex-shrink: 0;
-  margin-left: 16px;
 }
 
 @media (max-width: 768px) {
-  .page-title {
-    font-size: 24px;
-  }
-
   .scripts-header {
     align-items: stretch;
     flex-direction: column;
-    gap: 16px;
-    padding: 0 2px;
   }
 
   .header-left {
@@ -910,14 +895,9 @@ const handleToggleUserStatus = async (user: ScriptListUser) => {
   .script-search {
     width: 100%;
   }
-
-  .header-actions {
-    margin-left: 0;
-  }
 }
 
 .page-title {
-  margin: 0 0 8px 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

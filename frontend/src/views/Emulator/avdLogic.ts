@@ -1,5 +1,5 @@
 /**
- * 魔改 AVD 面板的纯逻辑：新建实例的选项、开机前检查的分级、组件状态、更新按钮。
+ * ModAVD 面板的纯逻辑：新建实例的选项、开机前检查的分级、组件状态、更新按钮。
  *
  * 和界面拆开，是为了能在 node 里直接测；组件只管把结果画出来。
  */
@@ -44,7 +44,7 @@ export const defaultAvdOptions = (): AvdOptionsForm => ({
   resolution: 1080,
 })
 
-/** 新建实例时随请求带上的魔改 AVD 选项。 */
+/** 新建实例时随请求带上的 ModAVD 选项。 */
 export const createOptions = (form: AvdOptionsForm) => ({
   memoryMb: form.memoryMb,
   fps: form.fps,

@@ -11,6 +11,7 @@
     <a-card class="config-card">
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <BasicInfoSection
+          :heading="{ isEdit }"
           :form-data="formData"
           :loading="loading"
           @save="handleFieldSave"
@@ -53,25 +54,13 @@
   >
     <!-- 两池同构：预览载荷为分区行（文件清单由基座在预览区最下方统一渲染） -->
     <template #preview="{ raw }">
-      <NoData
-        v-if="!previewSections(raw).length"
-        :description="t('core.edit.configRestorePreviewEmpty')"
-      />
-      <template v-else>
-        <template v-for="section in previewSections(raw)" :key="section.name">
-          <h4 class="whimbox-preview-section">{{ section.label }}</h4>
-          <a-descriptions :column="1" size="small" bordered class="whimbox-preview-box">
-            <a-descriptions-item v-for="row in section.rows" :key="row.key" :label="row.key">
-              {{ row.value }}
-            </a-descriptions-item>
-          </a-descriptions>
-        </template>
-      </template>
+      <BasicInfoRestorePreview :raw="raw" />
     </template>
   </ConfigRestoreSection>
 </template>
 
 <script setup lang="ts">
+import BasicInfoRestorePreview from '@/views/WhimboxUserEdit/BasicInfoRestorePreview.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -309,30 +298,6 @@ const openRestoreModal = () => {
   restoreOpen.value = true
 }
 
-// 预览响应原文收敛为分区视图（两池同构：sections[].rows[]；文件清单由基座渲染）
-interface WhimboxPreviewSection {
-  name: string
-  label: string
-  rows: Array<{ key: string; value: string }>
-}
-const previewSections = (raw: unknown): WhimboxPreviewSection[] => {
-  if (!raw || typeof raw !== 'object') return []
-  const sections = (raw as { sections?: unknown }).sections
-  if (!Array.isArray(sections)) return []
-  return sections
-    .filter((s): s is Record<string, unknown> => Boolean(s && typeof s === 'object'))
-    .map(s => ({
-      name: String(s.name ?? ''),
-      label: String(s.label ?? ''),
-      rows: Array.isArray(s.rows)
-        ? s.rows
-            .filter((r): r is Record<string, unknown> => Boolean(r && typeof r === 'object'))
-            .map(r => ({ key: String(r.key ?? ''), value: String(r.value ?? '') }))
-        : [],
-    }))
-    .filter(s => s.rows.length > 0)
-}
-
 const handleRestored = async (target: string) => {
   restoreOpen.value = false
   // 成功提示由基座组件给出（ConfigRestoreSection），此处只负责表单刷新
@@ -509,20 +474,3 @@ onUnmounted(() => {
 </script>
 
 <style scoped src="@/styles/userEditForm.css"></style>
-
-<style scoped>
-.whimbox-preview-box {
-  margin-top: 8px;
-}
-
-.whimbox-preview-section {
-  margin: 12px 0 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.whimbox-preview-section:first-child {
-  margin-top: 0;
-}
-</style>

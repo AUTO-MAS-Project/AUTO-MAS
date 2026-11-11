@@ -1,29 +1,14 @@
 <template>
   <div class="user-edit-container">
-    <div class="user-edit-header">
-      <div class="header-nav">
-        <a-breadcrumb class="breadcrumb">
-          <a-breadcrumb-item>
-            <router-link to="/scripts">{{ t('core.edit.scripts') }}</router-link>
-          </a-breadcrumb-item>
-          <a-breadcrumb-item>
-            <router-link :to="`/scripts/${scriptId}/edit/bettergi`" class="breadcrumb-link">
-              {{ scriptName }}
-            </router-link>
-          </a-breadcrumb-item>
-          <a-breadcrumb-item>
-            {{ isEdit ? t('core.comp.editUser') : t('core.comp.addUser2') }}
-          </a-breadcrumb-item>
-        </a-breadcrumb>
-      </div>
-
-      <a-space size="middle">
-        <a-button v-if="!!userId" size="large" :loading="folderLoading" @click="handleOpenFolder">
-          <template #icon>
-            <FolderOpenOutlined />
-          </template>
-          {{ t('core.comp.openConfigFolder') }}
-        </a-button>
+    <UserEditHeader
+      :script-id="scriptId"
+      :script-name="scriptName"
+      :is-edit="isEdit"
+      script-edit-segment="bettergi"
+      :user-id="userId"
+      @cancel="handleCancel"
+    >
+      <template #extra-actions>
         <a-tooltip
           v-if="!showBettergiConfigMask && !pageLoading && masConfigEnabled"
           placement="bottom"
@@ -36,7 +21,7 @@
           <a-button
             type="primary"
             ghost
-            size="large"
+            size="middle"
             :loading="bettergiConfigLoading"
             :disabled="pageLoading || !userId || configLocked"
             @click="handleBettergiConfig"
@@ -51,7 +36,7 @@
           v-else-if="!showBettergiConfigMask"
           type="primary"
           ghost
-          size="large"
+          size="middle"
           :loading="bettergiConfigLoading"
           :disabled="pageLoading || !userId || configLocked"
           @click="handleBettergiConfig"
@@ -61,20 +46,14 @@
           </template>
           {{ t('core.edit.bettergiConfigure') }}
         </a-button>
-        <a-button v-else type="default" size="large" disabled class="configuring-button">
+        <a-button v-else type="default" size="middle" disabled class="configuring-button">
           <template #icon>
             <SettingOutlined />
           </template>
           {{ t('core.edit.configuring') }}
         </a-button>
-        <a-button size="large" class="cancel-button" @click="handleCancel">
-          <template #icon>
-            <ArrowLeftOutlined />
-          </template>
-          {{ t('core.edit.back') }}
-        </a-button>
-      </a-space>
-    </div>
+      </template>
+    </UserEditHeader>
 
     <!-- ══ BetterGI 配置/查看会话遮罩（配置会话保存设置、查看会话只读）══ -->
     <GuiSessionMask
@@ -117,36 +96,26 @@
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
+            <UserAccountHeading
+              :user-name="formData.userName"
+              :options="{ isEdit, logoSrc: accountIcon }"
+            />
             <div class="section-header">
               <h3>{{ t('core.edit.basicInfo') }}</h3>
             </div>
 
             <!-- 基本信息布局：用户名:启用状态:剩余天数 = 2:1:1 -->
-            <a-row :gutter="24">
-              <a-col :span="12">
-                <UserNameField
-                  v-model="formData.userName"
-                  :hint="t('core.edit.bettergiUserNameHint')"
-                  :placeholder="t('core.edit.enterUsername')"
-                  enhanced
-                  @save="saveField('Info.Name', formData.userName)"
-                />
-              </a-col>
-              <a-col :span="6">
-                <UserStatusField
-                  v-model="formData.Info.Status"
-                  :hint="t('core.edit.whetherThisUserEnabled')"
-                  @save="saveField('Info.Status', formData.Info.Status)"
-                />
-              </a-col>
-              <a-col :span="6">
-                <UserRemainedDayField
-                  v-model="formData.Info.RemainedDay"
-                  :hint="t('core.edit.daysLeftAccount1')"
-                  @save="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
-                />
-              </a-col>
-            </a-row>
+            <UserBasicInfoFields
+              v-model:user-name="formData.userName"
+              v-model:status="formData.Info.Status"
+              v-model:remained-day="formData.Info.RemainedDay"
+              v-model:notes="formData.Info.Notes"
+              :disabled="pageLoading"
+              @save-name="saveField('Info.Name', formData.userName)"
+              @save-status="saveField('Info.Status', formData.Info.Status)"
+              @save-days="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
+              @save-notes="saveField('Info.Notes', formData.Info.Notes)"
+            />
 
             <!-- 账户:密码 = 1:1 -->
             <a-row :gutter="24">
@@ -262,15 +231,6 @@
                 </a-form-item>
               </a-col>
             </a-row>
-
-            <UserNotesField
-              v-model="formData.Info.Notes"
-              :hint="t('core.edit.addNoteAboutThis')"
-              :placeholder="t('core.edit.enterNote')"
-              :rows="4"
-              enhanced
-              @save="saveField('Info.Notes', formData.Info.Notes)"
-            />
           </div>
         </a-form>
       </a-card>
@@ -787,10 +747,10 @@
 </template>
 
 <script setup lang="ts">
-import UserNameField from '@/views/EditView/User/components/UserNameField.vue'
-import UserNotesField from '@/views/EditView/User/components/UserNotesField.vue'
-import UserRemainedDayField from '@/views/EditView/User/components/UserRemainedDayField.vue'
-import UserStatusField from '@/views/EditView/User/components/UserStatusField.vue'
+import UserAccountHeading from '@/components/UserAccountHeading.vue'
+import UserEditHeader from '@/components/UserEditHeader.vue'
+import accountIcon from '@/assets/bettergi.ico'
+import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useBettergiDragonQueue } from './BetterGIUserEdit/useBettergiDragonQueue'
 import BettergiDragonQueueList from './BetterGIUserEdit/BettergiDragonQueueList.vue'
@@ -820,13 +780,11 @@ import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
 import {
-  ArrowLeftOutlined,
   CloseOutlined,
   CopyOutlined,
   EditOutlined,
   DownOutlined,
   EyeOutlined,
-  FolderOpenOutlined,
   HistoryOutlined,
   QuestionCircleOutlined,
   SaveOutlined,
@@ -853,22 +811,11 @@ const { t } = useI18n()
 const logger = window.electronAPI.getLogger('BetterGI用户编辑')
 const route = useRoute()
 const router = useRouter()
-const {
-  addUser,
-  getUsers,
-  updateUser,
-  error: userApiError,
-  openUserConfigFolder,
-  loading: folderLoading,
-} = useUserApi()
+const { addUser, getUsers, updateUser, error: userApiError } = useUserApi()
 const { getScript, error: scriptApiError } = useScriptApi()
 
 const scriptId = route.params.scriptId as string
 
-const handleOpenFolder = async () => {
-  if (!userId.value) return
-  await openUserConfigFolder(scriptId, userId.value)
-}
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
 const catalogs = useBettergiCatalogs(scriptId, userId)
@@ -1697,36 +1644,7 @@ const addProjects = (rows: unknown[]) =>
 
 @import './BetterGIUserEdit/bettergiFormControls.css';
 .user-edit-container {
-  padding: 32px;
-  min-height: 100vh;
   background: var(--ant-color-bg-layout);
-}
-
-.user-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.cancel-button {
-  border: 1px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-}
-
-.configuring-button {
-  color: #52c41a;
-  border-color: #52c41a;
 }
 
 .user-edit-content {
@@ -1886,16 +1804,6 @@ const addProjects = (rows: unknown[]) =>
 }
 
 @media (max-width: 768px) {
-  .user-edit-container {
-    padding: 16px;
-  }
-
-  .user-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
-  }
-
   .config-card :deep(.ant-card-body) {
     padding: 20px;
   }

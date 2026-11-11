@@ -625,6 +625,6 @@ onMounted(() => {
 .plans-content {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: var(--app-page-content-gap);
 }
 </style>

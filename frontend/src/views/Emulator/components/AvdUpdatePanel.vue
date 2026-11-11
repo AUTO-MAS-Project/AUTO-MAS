@@ -1,11 +1,11 @@
 <script setup lang="ts">
 /**
- * 魔改 AVD 根目录的「模拟器更新」：当前 / 最新版本，一个按钮，进度和结果。
+ * ModAVD 根目录的「模拟器更新」：当前 / 最新版本，一个按钮，进度和结果。
  *
  * 按钮照 MFW 项目更新的做法：打开时不自动查，先显示「检查更新」；点了强制查一次（不走缓存、不带 CDK），
  * 查到新版本按钮变成「更新到 …」，再点才更新；已是最新、查失败时仍是「检查更新」。已经下好一版时直接
  * 显示「换上已下载好的 …」。点更新：有实例开着（或正在开机）就提示先关掉，什么都不动；没有时先确认
- * 「更新期间不会启动用到这个魔改 AVD 的脚本和实例」，再让后端开始（下载、核对、换上一次做完）。进度由
+ * 「更新期间不会启动用到这个 ModAVD 的脚本和实例」，再让后端开始（下载、核对、换上一次做完）。进度由
  * 后端经 WebSocket 推，操作结束后重新取一次状态。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -87,7 +87,7 @@ const refresh = async () => {
     status.value = next
     if (!next.busy) progress.value = null
   } catch (error) {
-    logger.warn(`读取魔改 AVD 更新状态失败 (${props.root}): ${describe(error)}`)
+    logger.warn(`读取 ModAVD 更新状态失败 (${props.root}): ${describe(error)}`)
   } finally {
     schedulePoll()
   }
@@ -125,7 +125,7 @@ const start = async () => {
     const response = await api.update(props.root)
     if (!response.ok) message.warning(response.message)
   } catch (error) {
-    logger.error(`魔改 AVD 更新失败 (${props.root}): ${describe(error)}`)
+    logger.error(`ModAVD 更新失败 (${props.root}): ${describe(error)}`)
     message.error(describe(error))
   } finally {
     acting.value = false

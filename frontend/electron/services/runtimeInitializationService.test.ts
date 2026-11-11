@@ -207,6 +207,67 @@ beforeEach(() => {
 // ==================== bootstrap ====================
 
 describe('bootstrap', () => {
+  it('实际普通 Python 重试在已知支持能力时仍完整准备', async () => {
+    alignStub.result = {
+      status: 'current',
+      target: { version: 'v0.1.28' },
+      bootstrapEnvironmentReuse: true,
+    }
+    const outcome = await createService().retryStage('python', () => {})
+    expect(outcome.success).toBe(true)
+    expect(FakeRuntimeClient.calls[0].command).toEqual(['bootstrap', '--version', 'v5.5.0-beta.3'])
+  })
+
+  it('已确认支持环境复用时只在正常完整初始化启用，并补齐进度', async () => {
+    alignStub.result = {
+      status: 'current',
+      target: { version: 'v0.1.28' },
+      bootstrapEnvironmentReuse: true,
+    }
+    const service = createService()
+    const updates: BootstrapProgressUpdate[] = []
+    FakeRuntimeClient.scripts = [
+      {
+        events: [
+          helloEvent,
+          {
+            ...base,
+            type: 'progress',
+            sequence: 2,
+            stage: 'uv.check',
+            status: 'succeeded',
+            message: '已就绪',
+          },
+          {
+            ...base,
+            type: 'progress',
+            sequence: 3,
+            stage: 'dependencies.check',
+            status: 'succeeded',
+            message: '检查通过',
+          },
+          okResult('bootstrap'),
+        ],
+      },
+    ]
+    expect((await service.bootstrap(update => updates.push(update))).success).toBe(true)
+    expect(FakeRuntimeClient.calls[0].command).toEqual([
+      'bootstrap',
+      '--version',
+      'v5.5.0-beta.3',
+      '--reuse-ready-environment',
+    ])
+    expect(
+      updates.filter(update => update.status === 'completed').map(update => update.stage)
+    ).toEqual(expect.arrayContaining(['python', 'repository', 'dependency']))
+    expect(service.resolveRetryCommand('python')).toEqual([
+      'bootstrap',
+      '--version',
+      'v5.5.0-beta.3',
+    ])
+    expect(service.resolveRetryCommand('python', 'rebuild')).toEqual(['repair'])
+  })
+
   it('argv 是 bootstrap --version v<应用版本>，且没有对应物的三段立刻置完成', async () => {
     const updates: BootstrapProgressUpdate[] = []
     FakeRuntimeClient.scripts = [
@@ -524,6 +585,11 @@ describe('分段恢复的完整性', () => {
   })
 
   it('锁文件损坏时通过完整准备恢复受管源码', async () => {
+    alignStub.result = {
+      status: 'current',
+      target: { version: 'v0.1.28' },
+      bootstrapEnvironmentReuse: true,
+    }
     FakeRuntimeClient.scripts = [
       { events: [helloEvent, failedResult('dependencies.check', 'LOCKFILE_INVALID')] },
       { events: [helloEvent, okResult('bootstrap')] },

@@ -278,6 +278,19 @@ def upgrade_json_configs(
     if record and record.get("version") != 2:
         raise ValueError("配置迁移记录版本无效")
     record.setdefault("version", 2)
+    if record.get("complete") and all(
+        record.get("files", {}).get(old, {}).get("state") == "complete"
+        and (config_path / old).is_file()
+        for old, _new, _key in CONFIG_FILES
+    ):
+        # 调用方只在旧数据库版本进入迁移；整套 JSON 再现时以当前旧版配置为准。
+        # 先检查来源并登记重迁，逐文件准备好替代结果后再覆盖，不生成 YAML 备份。
+        for old, _new, _key in CONFIG_FILES:
+            source = config_path / old
+            if not is_blank_file(source):
+                _utils_io.read_dict_file(source)
+        record = {"version": 2, "files": {}, "reset_targets": True}
+        _utils_io.write_file(record_path, record)
     files = record.setdefault("files", {})
     backup_dir = config_path / "legacy-json"
     backup_dir.mkdir(exist_ok=True)
@@ -301,7 +314,15 @@ def upgrade_json_configs(
         target = config_path / new_name
         archived = backup_dir / old_name
         progress = files.get(old_name)
-        if progress:
+        reset_target = record.get("reset_targets") and (
+            not progress or (progress["state"] == "prepared" and source.is_file())
+        )
+        if reset_target:
+            if not source.is_file():
+                raise ValueError(f"重新迁移的原配置缺失：{old_name}")
+            if progress and _digest(source) != progress["source_sha256"]:
+                raise ValueError(f"迁移期间原配置发生变化：{old_name}")
+        elif progress:
             if (
                 progress["state"] == "complete"
                 and target.exists()
@@ -358,6 +379,8 @@ def upgrade_json_configs(
             "state": "prepared",
         }
         _utils_io.write_file(record_path, record)
+        if reset_target:
+            archived.unlink(missing_ok=True)
         temporary.replace(target)
         if source.exists():
             if archived.exists() and _digest(archived) != _digest(source):
@@ -368,5 +391,6 @@ def upgrade_json_configs(
                 source.unlink()
         files[old_name]["state"] = "complete"
         _utils_io.write_file(record_path, record)
+    record.pop("reset_targets", None)
     record["complete"] = True
     _utils_io.write_file(record_path, record)

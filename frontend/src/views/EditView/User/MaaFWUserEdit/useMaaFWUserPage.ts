@@ -185,7 +185,12 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   const managedQueueAlert = computed<{ type: 'warning' | 'info'; message: string } | null>(() => {
     const state = managedMaaFWQueueState(presentQueuedTasks.value, {
       managedEntries: managedTaskEntries.value,
-      accountTask: flavor.value.userPage.managed.accountTask,
+      // MAS 原生登录（Run.LoginMode = Mas）时切号由 MAS 完成，队列里的切号是残留、后端会直接移出，
+      // 不会拒跑，也就不给「拆分前不会运行」的警告
+      accountTask:
+        scriptConfig.value?.Run?.LoginMode === 'Mas'
+          ? null
+          : flavor.value.userPage.managed.accountTask,
       resourceName: effectiveResourceName.value,
       taskOptions: taskSnapshot.value.taskOptions,
       options: previewData.value?.options || [],
