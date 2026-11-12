@@ -9,6 +9,7 @@
  * 本模块负责 Runtime 命令映射与初始化、重试和诊断编排；后端生命周期由 backendService 管理。
  */
 
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { app } from 'electron'
@@ -123,7 +124,7 @@ export function mapRuntimeStage(stage: RuntimeStage): InitializationRunStage {
 /**
  * 补齐 Runtime 要求的 `v` 前缀。
  *
- * Runtime 用目标版本拼 `release/<版本>` 分支名，版本号必须以 `v` 开头；
+ * Runtime 用目标版本解析后端分支，版本号必须以 `v` 开头；
  * Electron 的 `app.getVersion()` 给的是不带 `v` 的 `5.5.0-beta.3`。
  */
 export function toRuntimeVersion(raw: string): string {
@@ -131,9 +132,17 @@ export function toRuntimeVersion(raw: string): string {
   return trimmed.startsWith('v') ? trimmed : `v${trimmed}`
 }
 
-/** 首次安装的目标版本就是应用自身版本；更新流程的目标版本由更新任务另行给出。 */
-export function resolveRuntimeTargetVersion(): string {
-  return toRuntimeVersion(app.getVersion())
+/** 本地打包通过 alpha 目标跟踪 dev，其余包沿用调用方目标或应用版本。 */
+export function resolveRuntimeTargetVersion(targetVersion?: string): string {
+  if (
+    app.isPackaged &&
+    process.resourcesPath &&
+    existsSync(join(process.resourcesPath, 'auto-mas-backend-dev'))
+  ) {
+    const [baseVersion] = app.getVersion().split(/[-+]/)
+    return `${toRuntimeVersion(baseVersion)}-alpha.1`
+  }
+  return targetVersion ?? toRuntimeVersion(app.getVersion())
 }
 
 // ==================== 进度桥接 ====================
@@ -597,9 +606,9 @@ export class RuntimeInitializationService {
     return this.options.launchConfig
   }
 
-  /** 本实例的目标版本；省略时退回应用自身版本。 */
+  /** 本实例使用的后端目标版本。 */
   get targetVersion(): string {
-    return this.options.targetVersion ?? resolveRuntimeTargetVersion()
+    return resolveRuntimeTargetVersion(this.options.targetVersion)
   }
 
   get isBusy(): boolean {
@@ -674,7 +683,7 @@ export class RuntimeInitializationService {
    * 只接受 Runtime 正式版。更新流程换目标版本时，通道跟着目标版本走。
    */
   get releaseChannel(): RuntimeReleaseChannel {
-    return resolveRuntimeReleaseChannel(this.targetVersion)
+    return resolveRuntimeReleaseChannel(this.options.targetVersion ?? app.getVersion())
   }
 
   /**

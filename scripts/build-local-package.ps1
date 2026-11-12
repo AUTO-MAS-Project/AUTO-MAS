@@ -137,12 +137,20 @@ try {
     }
     $runtimeVersionOutput | ForEach-Object { Write-Host $_ }
 
-    $runtimeHello = $runtimeVersionOutput |
-        ForEach-Object { $_ | ConvertFrom-Json } |
+    $runtimeVersionEvents = @($runtimeVersionOutput | ForEach-Object { $_ | ConvertFrom-Json -AsHashtable })
+    $runtimeHello = $runtimeVersionEvents |
         Where-Object { $_.type -eq "hello" } |
         Select-Object -First 1
     if (-not $runtimeHello -or (-not $LocalRuntimePath -and $runtimeHello.runtimeVersion -ne $runtimeVersion)) {
         throw "Runtime 实际版本与 $runtimeVersion 不一致。"
+    }
+
+    $runtimeDetails = $runtimeVersionEvents |
+        Where-Object { $_.type -eq 'result' } |
+        ForEach-Object { $_.details } |
+        Select-Object -Last 1
+    if (-not $runtimeDetails -or $runtimeDetails['alphaBackend'] -ne 'dev') {
+        throw 'Runtime 不支持从 dev 更新后端，请使用支持 alpha 后端的 Runtime。'
     }
 
     # 用非法版本做只读协议探测，避免旧 Runtime 与新桌面包组合后无法启动。
@@ -186,6 +194,9 @@ try {
 
         New-Item -ItemType Directory -Path (Split-Path -Parent $runtimeTarget) -Force | Out-Null
         Copy-Item -LiteralPath $runtimePath -Destination $runtimeTarget -Force
+        # 本地测试包由 Electron 将 alpha 目标交给 Runtime，跟踪主仓库 dev。
+        New-Item -ItemType File -Path (Join-Path $unpackedDirectory "resources\auto-mas-backend-dev") -Force |
+            Out-Null
 
         $packagedRuntimeHash = (Get-FileHash -LiteralPath $runtimeTarget -Algorithm SHA256).Hash
         if ($packagedRuntimeHash -ne $expectedRuntimeHash) {
@@ -223,11 +234,10 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "无法检查安装程序内容（退出码 $LASTEXITCODE）。"
     }
-    $installerContainsRuntime = $installerListing |
-        Where-Object { $_ -eq 'Path = resources\auto-mas-runtime.exe' } |
-        Select-Object -First 1
-    if (-not $installerContainsRuntime) {
-        throw "安装程序中未找到 resources\auto-mas-runtime.exe。"
+    foreach ($resource in @('auto-mas-runtime.exe', 'auto-mas-backend-dev')) {
+        if ($installerListing -notcontains "Path = resources\$resource") {
+            throw "安装程序中未找到 resources\$resource。"
+        }
     }
 
     $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"

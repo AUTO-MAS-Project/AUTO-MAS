@@ -1,7 +1,7 @@
 import { spawn } from 'child_process'
 import { BrowserWindow } from 'electron'
 import { EventEmitter } from 'node:events'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -226,9 +226,31 @@ async function passEnvironmentEnsure(offset = 0): Promise<FakeChild> {
  * bootstrap --if-needed，各 spawn 一次），用真实成功夹具让它们结束，
  * 再返回随后 spawn 出来的 backend supervise 子进程。
  */
-async function passManagedPreparation(offset = 0): Promise<FakeChild> {
+async function passManagedPreparation(offset = 0, installedVersion?: string): Promise<FakeChild> {
   const check = await waitForSpawn(offset)
-  check.stdout.feed(fixtureLines('bootstrap-success.ndjson').join(''))
+  check.stdout.feed(
+    line({
+      ...base,
+      type: 'hello',
+      sequence: 1,
+      runtimeVersion: 'dev',
+      command: 'workspace check',
+      capabilities: [],
+    }) +
+      line({
+        ...base,
+        type: 'result',
+        sequence: 2,
+        success: true,
+        code: 'OK',
+        stage: 'workspace.check',
+        status: 'succeeded',
+        message: '检查完成',
+        retryable: false,
+        remediation: [],
+        details: { healthy: installedVersion !== undefined, version: installedVersion },
+      })
+  )
   check.close(0)
   const bootstrap = await waitForSpawn(offset + 1)
   bootstrap.stdout.feed(fixtureLines('bootstrap-success.ndjson').join(''))
@@ -735,6 +757,36 @@ describe('development 模式', () => {
 })
 
 describe('managed 模式', () => {
+  it('本地包启动时从已有的发布后端切换到 dev 目标', async () => {
+    appState.isPackaged = true
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    const resourcesPath = mkdtempSync(join(appRoot, 'resources-'))
+    writeFileSync(join(resourcesPath, 'auto-mas-backend-dev'), '')
+    const previousResourcesPath = process.resourcesPath
+    process.resourcesPath = resourcesPath
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ ready: true, version: 'v5.5.0-alpha.1' }),
+    })
+    mockSpawn()
+
+    try {
+      const pending = createService().startBackend()
+      const child = await passManagedPreparation(0, 'v5.5.0-beta.3')
+      expect(spawnedArgs(1).slice(-4)).toEqual([
+        'bootstrap',
+        '--version',
+        'v5.5.0-alpha.1',
+        '--if-needed',
+      ])
+      child.stdout.feed(helloLine + runningStateLine)
+      expect(await pending).toEqual({ success: true })
+    } finally {
+      if (previousResourcesPath === undefined) Reflect.deleteProperty(process, 'resourcesPath')
+      else process.resourcesPath = previousResourcesPath
+    }
+  })
+
   it.each(['workspace check', 'bootstrap'] as const)(
     '%s 准备失败时保留 Runtime 协议日志',
     async command => {
