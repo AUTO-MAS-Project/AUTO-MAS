@@ -1,0 +1,46 @@
+name: 自动回挑已合并 PR
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backport-merged-pr
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  backport:
+    if: >-
+      github.repository == 'AUTO-MAS-Project/AUTO-MAS' &&
+      github.event.pull_request.merged &&
+      ((github.event.pull_request.base.ref == 'main' && startsWith(github.event.pull_request.title, 'ci(')) ||
+       (github.event.pull_request.base.ref == 'dev' && startsWith(github.event.pull_request.title, 'hotfix(')))
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出受信任的工作流版本
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 回挑合并后的改动
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
+        run: |
+          # 回挑可能修改工作流。使用仓库已有的 Contents/Pull requests/Workflows 写入令牌。
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::缺少 WORKFLOW_TOKEN，无法推送回挑提交或创建 PR"
+            exit 1
+          fi
+          script="$RUNNER_TEMP/backport_merged_pr.py"
+          cp .github/scripts/backport_merged_pr.py "$script"
+          gh auth setup-git --hostname github.com
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python3 "$script"
