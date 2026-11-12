@@ -183,6 +183,35 @@ describe('一次性命令退出', () => {
     expect(spawnMock).toHaveBeenCalledTimes(1)
   })
 
+  it('supervise 未确认退出时保留同一进程，下一次 stop 继续回收', async () => {
+    vi.useFakeTimers()
+    const client = createClient()
+    const child = mockSpawn()
+    const terminate = vi.spyOn(child, 'kill').mockImplementation(() => {
+      child.killed = true
+      return true
+    })
+    const pending = client
+      .supervise({ mode: 'managed', handshakeTimeoutMs: 1 })
+      .catch(error => error)
+    const firstStop = client.stop(0).catch(error => error)
+    await vi.advanceTimersByTimeAsync(2001)
+    expect(await firstStop).toMatchObject({ code: 'RUNTIME_EXITED_UNEXPECTEDLY' })
+    expect(await pending).toMatchObject({
+      code: 'RUNTIME_HANDSHAKE_TIMEOUT',
+      details: { command: 'backend supervise', processExited: false },
+    })
+    expect(client.hasActiveSessions).toBe(true)
+
+    const secondStop = client.stop(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(terminate).toHaveBeenCalledTimes(2)
+    child.close(0)
+    await secondStop
+    expect(client.hasActiveSessions).toBe(false)
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+  })
+
   it('握手前也持有并回收命令进程，关闭后不能再派生命令', async () => {
     const client = createClient()
     const child = mockSpawn()
@@ -584,6 +613,23 @@ describe('RuntimeClient.supervise', () => {
     retryable: false,
     remediation: [],
     details: {},
+  })
+
+  it('握手前的 stop 在 hello 到达后使用 shutdown，句柄接手不重复发送', async () => {
+    const client = createClient()
+    const child = mockSpawn()
+    const pending = client.supervise({ mode: 'managed' })
+    const stopping = client.stop(1000)
+    child.stdout.feed(helloLine)
+    const handle = await pending
+    const handleStop = handle.shutdown({ timeoutMs: 1000 })
+    const commandsBeforeClose = child.stdin.chunks.map(chunk => JSON.parse(chunk).command)
+    child.stdout.feed(stoppedResultLine)
+    child.close(0)
+    await stopping
+    await handleStop
+    expect(commandsBeforeClose).toEqual(['shutdown'])
+    expect(client.hasActiveSessions).toBe(false)
   })
 
   it('shutdown 写出合法控制行，并在收到 result 与进程退出后 resolve', async () => {
