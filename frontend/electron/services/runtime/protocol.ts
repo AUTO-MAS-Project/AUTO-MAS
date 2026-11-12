@@ -936,6 +936,10 @@ export function isRuntimeResultEvent(event: RuntimeEvent): event is RuntimeResul
 // ==================== 调用侧错误 ====================
 
 export interface RuntimeClientErrorDetails {
+  /** 不含参数的命令类型，用于调用方区分可恢复的只读检查。 */
+  command?: string
+  /** 只有收到实际 close 才为 true；Promise 失败或发送 kill 不代表已退出。 */
+  processExited?: boolean
   /** Runtime 进程退出码，未退出时为 undefined。 */
   exitCode?: number | null
   /** 结束进程的信号。 */

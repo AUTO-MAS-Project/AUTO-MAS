@@ -107,6 +107,82 @@ afterEach(() => {
 })
 
 describe('一次性命令退出', () => {
+  it('握手超时后等到真实 close 才报告可重新启动', async () => {
+    vi.useFakeTimers()
+    const client = createClient()
+    const child = mockSpawn()
+    child.kill = () => {
+      child.killed = true
+      return true
+    }
+    let finished = false
+    const pending = client.run(['workspace', 'check'], { handshakeTimeoutMs: 20 })
+    void pending.then(
+      () => {
+        finished = true
+      },
+      () => {
+        finished = true
+      }
+    )
+    await vi.advanceTimersByTimeAsync(20)
+    expect(child.killed).toBe(true)
+    const finishedBeforeClose = finished
+    expect(client.hasActiveSessions).toBe(true)
+    child.close(7)
+    await expect(pending).rejects.toMatchObject({
+      code: 'RUNTIME_HANDSHAKE_TIMEOUT',
+      details: { command: 'workspace check', processExited: true, exitCode: 7 },
+    })
+    expect(finishedBeforeClose).toBe(false)
+    expect(client.hasActiveSessions).toBe(false)
+  })
+
+  it('无法确认退出时有界失败，迟到 hello 不交出控制权并保留进程供再次清理', async () => {
+    vi.useFakeTimers()
+    const client = createClient()
+    const child = mockSpawn()
+    child.kill = () => {
+      child.killed = true
+      return true
+    }
+    const onStarted = vi.fn()
+    const pending = client
+      .run(['workspace', 'check'], { handshakeTimeoutMs: 20, onStarted })
+      .catch(error => error)
+    await vi.advanceTimersByTimeAsync(2020)
+    expect(await pending).toMatchObject({
+      code: 'RUNTIME_HANDSHAKE_TIMEOUT',
+      details: { command: 'workspace check', processExited: false, exitCode: null },
+    })
+    child.stdout.feed(fixture('version.ndjson'))
+    expect(onStarted).not.toHaveBeenCalled()
+    expect(client.hasActiveSessions).toBe(true)
+    child.close(0)
+    expect(await client.stop()).toBeUndefined()
+    expect(client.hasActiveSessions).toBe(false)
+  })
+
+  it('supervise 握手前同样归客户端持有并在退出时回收', async () => {
+    vi.useFakeTimers()
+    const client = createClient()
+    const child = mockSpawn()
+    const pending = client.supervise({ mode: 'managed' }).catch(error => error)
+    const stopping = client.stop(20)
+    await vi.advanceTimersByTimeAsync(20)
+    await stopping
+    const killedByStop = child.killed
+    if (!killedByStop) child.close(null, 'SIGKILL')
+    expect(await pending).toMatchObject({
+      code: 'RUNTIME_EXITED_UNEXPECTEDLY',
+      details: { command: 'backend supervise', processExited: true },
+    })
+    expect(killedByStop).toBe(true)
+    expect(client.hasActiveSessions).toBe(false)
+    await expect(client.supervise({ mode: 'managed' })).rejects.toBeInstanceOf(Error)
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+  })
+
   it('握手前也持有并回收命令进程，关闭后不能再派生命令', async () => {
     const client = createClient()
     const child = mockSpawn()
@@ -217,6 +293,129 @@ describe('buildRuntimeArgs', () => {
 // ==================== run ====================
 
 describe('RuntimeClient.run', () => {
+  it.each(['silent', 'stderr'])(
+    '原生子进程 %s 的 hello 超时确认真实退出，并记录首输出是否到达',
+    async behavior => {
+      vi.useFakeTimers()
+      const { spawn: nativeSpawn } =
+        await vi.importActual<typeof import('child_process')>('child_process')
+      let child: ReturnType<typeof nativeSpawn> | undefined
+      spawnMock.mockImplementation((_command, _args, options) => {
+        child = nativeSpawn(
+          process.execPath,
+          [
+            '-e',
+            `
+          if (${JSON.stringify(behavior === 'stderr')}) process.stderr.write('private diagnostic');
+          setInterval(() => {}, 1000);
+        `,
+          ],
+          options
+        )
+        return child as never
+      })
+      try {
+        const client = createClient()
+        const pending = client
+          .run(['workspace', 'check'], { handshakeTimeoutMs: 20 })
+          .catch(error => error)
+        // 真实管道或 spawn 事件作同步点，超时由假时钟触发，不依赖机器启动 Node 的速度。
+        await once(
+          behavior === 'stderr' ? child!.stderr! : child!,
+          behavior === 'stderr' ? 'data' : 'spawn'
+        )
+        await vi.advanceTimersByTimeAsync(20)
+        expect(await pending).toMatchObject({
+          code: 'RUNTIME_HANDSHAKE_TIMEOUT',
+          details: { command: 'workspace check', processExited: true },
+        })
+        expect(client.hasActiveSessions).toBe(false)
+        expect(child!.exitCode !== null || child!.signalCode !== null).toBe(true)
+        const diagnostics = loggerMock.info.mock.calls
+          .map(([message]) => String(message))
+          .filter(message => message.startsWith('[Runtime进程] '))
+          .map(message => JSON.parse(message.slice('[Runtime进程] '.length)))
+        const timeout = diagnostics.find(item => item.event === 'handshake_timeout')
+        expect(timeout).toMatchObject({
+          command: 'workspace check',
+          stdoutBytes: 0,
+          timeoutMs: 20,
+        })
+        expect(timeout.stderrBytes > 0).toBe(behavior === 'stderr')
+        expect(timeout.timeoutCallbackDelayMs).toBeGreaterThanOrEqual(0)
+        expect(diagnostics.some(item => item.event === 'spawned' && item.pid === child!.pid)).toBe(
+          true
+        )
+        expect(diagnostics.at(-1)).toMatchObject({ event: 'close', processExited: true })
+      } finally {
+        if (child && child.exitCode === null && child.signalCode === null) {
+          const exited = once(child, 'close')
+          child.kill('SIGKILL')
+          await exited
+        }
+      }
+    }
+  )
+
+  it('创建进程被拒时保留系统错误，并区分 error 与实际 close', async () => {
+    const child = mockSpawn()
+    const client = createClient()
+    const pending = client.run(['workspace', 'check'])
+    child.emit('error', Object.assign(new Error('access denied'), { code: 'EACCES' }))
+    await expect(pending).rejects.toMatchObject({
+      code: 'RUNTIME_SPAWN_FAILED',
+      message: '启动 Runtime 失败：access denied',
+      cause: { code: 'EACCES' },
+      details: { command: 'workspace check', processExited: true },
+    })
+    const diagnostics = loggerMock.info.mock.calls
+      .map(([message]) => String(message))
+      .filter(message => message.startsWith('[Runtime进程] '))
+      .map(message => JSON.parse(message.slice('[Runtime进程] '.length)))
+    expect(diagnostics.map(item => item.event)).toEqual(['spawn_requested', 'spawn_error', 'close'])
+    expect(diagnostics[1]).toMatchObject({ systemCode: 'EACCES' })
+  })
+
+  it('本地诊断关联创建、首输出、hello 与退出，不记录输出或命令参数', async () => {
+    const client = createClient()
+    const child = mockSpawn()
+    const pending = client.run(['version', '--private', 'private-argument'])
+    child.emit('spawn')
+    child.stderr.feed('private-stderr')
+    child.stderr.feed('more-private-stderr')
+    child.stdout.feed(fixture('version.ndjson'))
+    child.emit('exit', 0, null)
+    child.close(0)
+    await pending
+    const diagnostics = loggerMock.info.mock.calls
+      .map(([message]) => String(message))
+      .filter(message => message.startsWith('[Runtime进程] '))
+      .map(message => JSON.parse(message.slice('[Runtime进程] '.length)))
+    expect(diagnostics.map(item => item.event)).toEqual([
+      'spawn_requested',
+      'spawned',
+      'first_stderr',
+      'first_stdout',
+      'hello',
+      'exit',
+      'close',
+    ])
+    expect(new Set(diagnostics.map(item => item.sessionId)).size).toBe(1)
+    expect(diagnostics.every(item => item.command === 'version' && item.elapsedMs >= 0)).toBe(true)
+    expect(diagnostics.find(item => item.event === 'spawned')).toMatchObject({ pid: 4242 })
+    expect(diagnostics.find(item => item.event === 'close')).toMatchObject({
+      processExited: true,
+      exitCode: 0,
+      signal: null,
+      stderrBytes: Buffer.byteLength('private-stderrmore-private-stderr'),
+    })
+    const logged = JSON.stringify(diagnostics)
+    expect(logged).not.toContain('private-argument')
+    expect(logged).not.toContain('private-stderr')
+    expect(logged).not.toContain(APP_ROOT)
+    expect(logged).not.toContain(RUNTIME_PATH)
+  })
+
   it('跑通真实 version 输出并返回终态 result', async () => {
     const client = createClient({ env: { AUTO_MAS_TELEMETRY: 'disabled' } })
     const child = mockSpawn()
