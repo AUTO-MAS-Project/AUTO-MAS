@@ -45,9 +45,9 @@
               <span class="tb-version-current-main">
                 <span class="tb-version-current-name">{{ card.option.name }}</span>
                 <span class="tb-version-current-version">{{ card.node.record.version }}</span>
-                <span v-if="daysLeftOf(card.node.record) !== null" class="tb-version-current-days">
-                  {{ t('core.taskboard.versionDaysLeft', { p0: daysLeftOf(card.node.record) }) }}
-                </span>
+                <span class="tb-version-current-days">{{
+                  versionPhaseText(card.node.record)
+                }}</span>
               </span>
               <span class="tb-version-mark" :class="{ on: card.node.done }">
                 <CheckSquareFilled v-if="card.node.done" />
@@ -67,7 +67,7 @@
               {{ t('core.taskboard.versionLocalNote') }}
             </span>
           </div>
-          <VersionStoryTimeline :groups="groups" @toggle="toggle" />
+          <VersionStoryTimeline :groups="groups" :now="now" @toggle="toggle" />
         </section>
       </template>
 
@@ -97,6 +97,8 @@ import VersionStoryTimeline from './VersionStoryTimeline.vue'
 
 interface Props {
   options: TaskboardGameOption[]
+  /** 任务台统一的五分钟时钟，版本筛选、倒计时和排序共用。 */
+  now: number
 }
 
 interface CurrentCard {
@@ -118,8 +120,11 @@ const isSaving = (record: TaskboardVersionStoryRecord) =>
 const recordsByGame = computed(() => {
   const allowed = new Set(props.options.map(option => option.key))
   const grouped = new Map<string, TaskboardVersionStoryRecord[]>()
+  const now = props.now
   for (const record of Object.values(taskboardState.versionStory)) {
     if (!allowed.has(record.game)) continue
+    // SRA 提前下发的下一版本，在开始前不展示。
+    if (parseActivityTime(record.start) > now) continue
     const list = grouped.get(record.game)
     if (list) list.push(record)
     else grouped.set(record.game, [record])
@@ -131,7 +136,7 @@ const recordsByGame = computed(() => {
 })
 
 const groups = computed<TaskboardVersionStoryGroup[]>(() => {
-  const now = Date.now()
+  const now = props.now
   return props.options.flatMap(option => {
     const records = recordsByGame.value.get(option.key)
     if (!records?.length) return []
@@ -141,7 +146,6 @@ const groups = computed<TaskboardVersionStoryGroup[]>(() => {
         record,
         done: isDone(record),
         current: index === 0,
-        future: parseActivityTime(record.start) > now,
         ended: end > 0 && end <= now,
       }
     })
@@ -156,15 +160,51 @@ const groups = computed<TaskboardVersionStoryGroup[]>(() => {
 })
 
 const DAY = 86_400_000
+const beijingDay = (timestamp: number) =>
+  new Date(timestamp + 8 * 3_600_000).toISOString().slice(0, 10)
 
+/* 本地目录里可能已经存了下一版本；用它的开始日期判断今天是否真的更新。 */
+const nextStartByGame = computed(() => {
+  const now = props.now
+  const starts = new Map<string, number>()
+  for (const record of Object.values(taskboardState.versionStory)) {
+    const start = parseActivityTime(record.start)
+    if (start <= now) continue
+    const current = starts.get(record.game)
+    if (!current || start < current) starts.set(record.game, start)
+  }
+  return starts
+})
+
+/* 排序与文案用同一个时间口径：优先下一版本开始时间，没有再看当前版本结束时间。 */
 const remainingOf = (record: TaskboardVersionStoryRecord) => {
-  const end = parseActivityTime(record.end)
-  return end ? Math.max(0, end - Date.now()) : Number.POSITIVE_INFINITY
+  const target = nextStartByGame.value.get(record.game) ?? parseActivityTime(record.end)
+  return target ? Math.max(0, target - props.now) : Number.POSITIVE_INFINITY
 }
 
-const daysLeftOf = (record: TaskboardVersionStoryRecord) => {
-  const left = remainingOf(record)
-  return Number.isFinite(left) ? Math.ceil(left / DAY) : null
+const versionPhaseText = (record: TaskboardVersionStoryRecord) => {
+  const end = parseActivityTime(record.end)
+  const now = props.now
+  const nextStart = nextStartByGame.value.get(record.game)
+  if (nextStart) {
+    if (beijingDay(nextStart) === beijingDay(now)) {
+      return t('core.taskboard.versionUpdatedToday')
+    }
+    // 按北京时间日期差算，明天更新就是「1 天后更新」，不按 24 小时向上取整。
+    const days = Math.max(
+      1,
+      Math.round((Date.parse(beijingDay(nextStart)) - Date.parse(beijingDay(now))) / DAY)
+    )
+    if (end && end <= now) {
+      return t('core.taskboard.versionEndedNext', { p0: days })
+    }
+    return t('core.taskboard.versionDaysLeft', { p0: days })
+  }
+  if (!end) return t('core.taskboard.versionWaitingNext')
+  if (end > now) {
+    return t('core.taskboard.versionDaysLeft', { p0: Math.ceil((end - now) / DAY) })
+  }
+  return t('core.taskboard.versionEnded')
 }
 
 /* 倒计时最短的排在最前面，没有结束时间的排最后。 */
@@ -201,7 +241,7 @@ const hideCover = (event: Event) => {
 .tb-version {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 32px;
   padding: 0 4px;
 }
 
@@ -212,7 +252,13 @@ const hideCover = (event: Event) => {
 .tb-version-block {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
+}
+
+/* 当前版本与版本主线之间加分隔线，避免时间轴表头贴着上一组卡片。 */
+.tb-version-block + .tb-version-block {
+  padding-top: 24px;
+  border-top: 1px solid var(--ant-color-border-secondary);
 }
 
 .tb-version-block-head {
@@ -221,13 +267,16 @@ const hideCover = (event: Event) => {
   align-items: baseline;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+/* 药丸只包标题，长说明放在药丸外，避免整条表头变成压在卡片上的长条。 */
+.tb-version-section-title {
+  display: inline-flex;
+  align-items: baseline;
   padding: 6px 14px;
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 999px;
   background: var(--app-background-card-bg, var(--ant-color-bg-container));
-}
-
-.tb-version-section-title {
   color: var(--ant-color-text);
   font-size: 16px;
   font-weight: 700;
