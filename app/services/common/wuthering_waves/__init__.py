@@ -18,21 +18,18 @@
 
 import base64
 import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import httpx
-
 from app.utils import UnsupportedPlatformError, get_logger, registry
 
-logger = get_logger("鸣潮更新检查")
+logger = get_logger("鸣潮启动器")
 
 
 _CLIENT_RELATIVE_PATH = Path("Client/Binaries/Win64/Client-Win64-Shipping.exe")
 _LAUNCHER_PREFERENCE_RELATIVE_PATH = Path("kr_game_cache/kr_game_temp.bin")
-_LAUNCHER_STATE_RELATIVE_PATH = Path("launcherDownloadConfig.json")
+_LAUNCHER_SELECTION_RELATIVE_PATH = Path("kr_game_cache/platform_ui_state.bin")
 _LAUNCHER_EXECUTABLE = "launcher.exe"
 # 启动器记录不可用时，在启动器目录树下试的最大嵌套层数（安装目录是它的子目录）
 _CLIENT_SEARCH_MAX_DEPTH = 2
@@ -44,34 +41,13 @@ _KURO_LAUNCHER_REGISTRY = r"Software\kurogame\KRLauncher"
 _LAUNCHER_INSTALL_VALUE = "SingleLauncherInstallPath"
 _LAUNCHER_RESOURCE_MARKS = {"官服": "g152", "国际服": "g153"}
 
-# 官方启动器的版本元数据入口。除这两个 URL 外不要硬编码任何 CDN 路径，
-# 其余路径一律从接口返回的清单里取。
-_OFFICIAL_UPDATE_API = {
-    "官服": "https://prod-cn-alicdn-gamestarter.kurogame.com/launcher/game/G152/10003_Y8xXrXk65DqFHEDgApn3cpK5lfczpFx5/index.json",
-    "国际服": "https://prod-alicdn-gamestarter.kurogame.com/launcher/game/G153/50004_obOHXFrFanqsaIEOmuKroCcbZkQRBC7c/index.json",
-}
+
+class _LauncherSelectionError(ValueError):
+    """启动器已明确选择游戏或档位，不能靠目录搜索回退。"""
 
 
-@dataclass(frozen=True)
-class WutheringWavesLocalState:
-    """`launcherDownloadConfig.json` 记录的本地安装状态。"""
-
-    version: str
-    state: str
-    is_predownload: bool
-
-
-@dataclass(frozen=True)
-class WutheringWavesUpdateInfo:
-    """鸣潮官方启动器更新检查结果。"""
-
-    install_dir: Path
-    current_version: str
-    release_version: str
-    predownload_version: str | None
-    update_available: bool
-    predownload_available: bool
-    api_url: str
+class LauncherSelectionReadError(_LauncherSelectionError):
+    """启动器选择记录暂不可读；运行中的启动器可能正在写入。"""
 
 
 @dataclass(frozen=True)
@@ -82,13 +58,41 @@ class WutheringWavesFallback:
     process_path: Path | None = None
 
 
-def _resources_install_dir(payload: Any) -> str:
+def read_wuthering_waves_launcher_selection(launcher_path: Path) -> str | None:
+    """读取官方启动器当前选中的鸣潮画质；旧启动器没有平台记录时返回 None。"""
+    state_path = launcher_path.parent / _LAUNCHER_SELECTION_RELATIVE_PATH
+    message = "请在官方启动器中选择鸣潮及 SD、HD 或 UHD 资源档位后重试"
+    try:
+        encoded = state_path.read_bytes().strip()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise LauncherSelectionReadError(message) from exc
+    try:
+        encrypted = base64.b64decode(encoded, validate=True)
+        payload = json.loads(
+            bytes(value ^ 0x63 for value in encrypted).decode("utf-8-sig")
+        )
+    except (ValueError, UnicodeError) as exc:
+        raise LauncherSelectionReadError(message) from exc
+    active = payload.get("activeGameScope") if isinstance(payload, dict) else None
+    if not isinstance(active, dict) or active.get("gameIdentity") != "Aki":
+        raise _LauncherSelectionError(message)
+    bundle = active.get("bundleName")
+    if not isinstance(bundle, str) or bundle.lower() not in ("sd", "hd", "uhd"):
+        raise _LauncherSelectionError(message)
+    return bundle.lower()
+
+
+def _resources_install_dir(payload: Any, bundle: str | None = None) -> str:
     """从启动器记录的 `resources` 里取游戏安装目录（改版后的新位置）。
 
     旧记录的安装目录是顶层 `installDirPath`；新记录顶层只剩启动器偏好项，
     安装目录按 HD/UHD/SD 各记一条，且 `resources` 是「装着 JSON 的字符串」，
-    要解两层。取不到一律返回空串——**绝不能放行成空 Path**，
-    `Path("")` 是当前工作目录，更新链会照着它往盘上写。
+    要解两层。有当前档位及档位绑定时只选对应记录；旧记录多条目录优先取
+    仍有客户端的目录，避免旧画质绑定已移走。
+    明确选择的档位没有目录时抛错，其余取不到返回空串，避免把当前工作
+    目录 `Path("")` 当成有效游戏安装。
     """
 
     if not isinstance(payload, dict):
@@ -101,19 +105,42 @@ def _resources_install_dir(payload: Any) -> str:
             return ""
     if not isinstance(value, list):
         return ""
+    if bundle is not None:
+        bound = [
+            item
+            for item in value
+            if isinstance(item, dict)
+            and isinstance(item.get("bundleName"), str)
+            and item["bundleName"]
+        ]
+        if not bound:
+            return ""
+        value = [item for item in bound if item["bundleName"].lower() == bundle]
+    first_install_dir = ""
     for item in value:
         install_dir = item.get("installDirPath") if isinstance(item, dict) else None
         if isinstance(install_dir, str) and install_dir.strip():
-            return install_dir
-    return ""
+            if not first_install_dir:
+                first_install_dir = install_dir
+            if (Path(install_dir) / _CLIENT_RELATIVE_PATH).is_file():
+                return install_dir
+    if bundle is not None and not first_install_dir:
+        raise _LauncherSelectionError(
+            f"官方启动器未记录当前 {bundle.upper()} 档位的游戏安装目录，"
+            "请在启动器中确认该档位已安装"
+        )
+    return first_install_dir
 
 
-def _decode_official_launcher_install_dir(launcher_path: Path) -> Path:
+def _decode_official_launcher_install_dir(
+    launcher_path: Path, *, require_client: bool = False
+) -> Path:
     """Decode the official launcher's read-only game install metadata."""
 
     if launcher_path.name.lower() != _LAUNCHER_EXECUTABLE:
         raise ValueError("请选择鸣潮官方启动器 launcher.exe")
 
+    bundle = read_wuthering_waves_launcher_selection(launcher_path)
     preference_path = launcher_path.parent / _LAUNCHER_PREFERENCE_RELATIVE_PATH
     if not preference_path.is_file():
         raise FileNotFoundError(
@@ -125,6 +152,17 @@ def _decode_official_launcher_install_dir(launcher_path: Path) -> Path:
         payload = json.loads(bytes(value ^ 0x63 for value in encrypted).decode("utf-8"))
     except (OSError, UnicodeError, ValueError) as e:
         raise ValueError("鸣潮启动器游戏路径记录无法解码，请重新导入启动器") from e
+
+    if bundle is not None:
+        bound_install_dir = _resources_install_dir(payload, bundle)
+        if bound_install_dir:
+            selected_dir = Path(bound_install_dir)
+            if require_client and not (selected_dir / _CLIENT_RELATIVE_PATH).is_file():
+                raise _LauncherSelectionError(
+                    f"官方启动器当前 {bundle.upper()} 档位的鸣潮客户端不存在，"
+                    "请在启动器中确认该档位已安装"
+                )
+            return selected_dir
 
     install_dir = payload.get("installDirPath") if isinstance(payload, dict) else None
     if not isinstance(install_dir, str) or not install_dir.strip():
@@ -211,25 +249,10 @@ def discover_wuthering_waves_fallback(resource: str) -> WutheringWavesFallback:
     return WutheringWavesFallback(process_path=client_candidate)
 
 
-def is_wuthering_waves_record_usable(launcher_path: Path) -> bool:
-    """本地记录能否支撑启动前自动更新。
-
-    更新检查依赖两份本地记录：启动器记录解出的安装目录，与该目录下的
-    ``launcherDownloadConfig.json``（缺一即无法判断版本）。客户端 exe 有
-    目录搜索兜底，更新没有——记录读不出来时启动照跑、更新无从下手，
-    调用方据此决定要不要提示用户，别让更新静默停掉。
-    """
-
-    try:
-        install_dir = resolve_wuthering_waves_install_dir(launcher_path)
-        read_wuthering_waves_local_state(install_dir)
-    except (FileNotFoundError, ValueError):
-        return False
-    return True
-
-
 def _decode_official_launcher_process_path(launcher_path: Path) -> Path:
-    install_dir = _decode_official_launcher_install_dir(launcher_path)
+    install_dir = _decode_official_launcher_install_dir(
+        launcher_path, require_client=True
+    )
     process_path = install_dir / _CLIENT_RELATIVE_PATH
     if not process_path.is_file():
         raise FileNotFoundError(
@@ -267,6 +290,8 @@ def resolve_wuthering_waves_process_path(launcher_path: Path) -> Path:
         raise FileNotFoundError("鸣潮启动器不存在，请重新导入启动器")
     try:
         return _decode_official_launcher_process_path(launcher_path)
+    except _LauncherSelectionError:
+        raise
     except (FileNotFoundError, ValueError) as e:
         if launcher_path.name.lower() != _LAUNCHER_EXECUTABLE:
             # 选错文件是配置错误，要原样报出去，别靠目录搜索掩盖
@@ -282,190 +307,3 @@ def resolve_wuthering_waves_process_path(launcher_path: Path) -> Path:
             ) from e
         logger.warning(f"鸣潮启动器记录不可用，已按目录搜索定位客户端: {process_path}")
         return process_path
-
-
-def read_wuthering_waves_local_state(install_dir: Path) -> WutheringWavesLocalState:
-    """读取本地安装状态。
-
-    读不到时一律抛错，绝不退化成「已是最新」——否则会静默启动旧版客户端。
-
-    Raises:
-        FileNotFoundError: 版本记录不存在。
-        ValueError: 版本记录无法解析或缺少 version 字段。
-    """
-
-    state_path = install_dir / _LAUNCHER_STATE_RELATIVE_PATH
-    try:
-        payload: Any = json.loads(state_path.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise FileNotFoundError(
-            f"未找到鸣潮本地版本记录 {_LAUNCHER_STATE_RELATIVE_PATH}，"
-            "请先用官方启动器完整安装一次游戏"
-        ) from exc
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise ValueError("鸣潮本地版本记录无法读取，请重新导入启动器") from exc
-
-    version = payload.get("version") if isinstance(payload, dict) else None
-    version = str(version).strip() if version else ""
-    if not version:
-        raise ValueError("鸣潮本地版本记录缺少 version，请重新导入启动器")
-
-    return WutheringWavesLocalState(
-        version=version,
-        state=str(payload.get("state") or "").strip(),
-        is_predownload=bool(payload.get("isPreDownload")),
-    )
-
-
-def get_official_index_url(resource: str) -> str:
-    """取指定服的版本元数据入口 URL。"""
-
-    try:
-        return _OFFICIAL_UPDATE_API[resource]
-    except KeyError as exc:
-        raise ValueError(f"不支持的鸣潮游戏资源: {resource}") from exc
-
-
-def write_wuthering_waves_local_version(install_dir: Path, version: str) -> None:
-    """把已装版本写回本地记录，保留启动器自己的其余字段。
-
-    只应在所有文件都落盘成功后调用：这份记录就是"装到哪一版"的唯一凭据，
-    提前写入会让中断后的下一轮误判为已完成。
-    """
-
-    state_path = install_dir / _LAUNCHER_STATE_RELATIVE_PATH
-    try:
-        payload = json.loads(state_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        payload = {}
-    if not isinstance(payload, dict):
-        payload = {}
-    payload["version"] = version
-    payload["state"] = ""
-    payload["isPreDownload"] = False
-    state_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-
-
-def _version_key(version: str) -> tuple[int, ...]:
-    """把版本号转成可比较元组，并抹掉尾部 0（使 3.6 与 3.6.0 等价）。"""
-
-    values = [int(item) for item in re.findall(r"\d+", version)]
-    while values and values[-1] == 0:
-        values.pop()
-    return tuple(values)
-
-
-def _is_newer_version(candidate: str, current: str) -> bool:
-    """candidate 是否比 current 新。
-
-    不对空值做特判：`_version_key("")` 为空元组，于是本地版本未知时
-    任何有效版本都判为更新，方向是安全的。若在此静默返回 False，
-    未来新增调用点就会把"查不到版本"误当成"已是最新"。
-    """
-
-    return _version_key(candidate) > _version_key(current)
-
-
-def _parse_update_payload(
-    payload: Any,
-    *,
-    install_dir: Path,
-    local_version: str,
-    api_url: str,
-) -> WutheringWavesUpdateInfo:
-    """比对接口返回的版本元数据与本地版本。"""
-
-    if not isinstance(payload, dict):
-        raise ValueError("鸣潮官方更新接口返回格式错误")
-
-    default_info = payload.get("default")
-    if not isinstance(default_info, dict):
-        raise ValueError("鸣潮官方更新接口缺少 default 版本信息")
-
-    release_version = str(default_info.get("version") or "").strip()
-    if not release_version:
-        raise ValueError("鸣潮官方更新接口缺少 default.version")
-
-    # 预下载段仅在预下载窗口期存在，平时整个键都不下发。
-    predownload_info = payload.get("predownload")
-    predownload_version = (
-        str(predownload_info.get("version") or "").strip() or None
-        if isinstance(predownload_info, dict)
-        else None
-    )
-    predownload_enabled = payload.get("predownloadSwitch") in (True, 1, "1", "true")
-
-    # 与官方启动器一致：只要版本号不等就需要更新，不假设官方只会升版本。
-    update_available = release_version != local_version
-    return WutheringWavesUpdateInfo(
-        install_dir=install_dir,
-        current_version=local_version,
-        release_version=release_version,
-        predownload_version=predownload_version,
-        update_available=update_available,
-        predownload_available=(
-            predownload_enabled
-            and not update_available
-            and predownload_version is not None
-            and _is_newer_version(predownload_version, local_version)
-        ),
-        api_url=api_url,
-    )
-
-
-async def check_wuthering_waves_update(
-    launcher_path: Path,
-    resource: str,
-    *,
-    timeout: float = 15.0,
-) -> WutheringWavesUpdateInfo:
-    """读取官方版本元数据，判断正式更新或预下载是否可用。
-
-    MAS 只读版本元数据；包体下载、覆盖、校验全部仍由官方启动器负责。
-
-    Args:
-        launcher_path: 官方鸣潮启动器 `launcher.exe` 路径。
-        resource: `官服` 或 `国际服`。
-        timeout: HTTP 请求超时时间（秒）。
-
-    Raises:
-        ValueError: 资源名不支持、接口响应格式错误，或本地版本记录不可用。
-        FileNotFoundError: 启动器或本地版本记录不存在。
-        httpx.HTTPError: 官方接口请求失败。
-    """
-
-    try:
-        api_url = _OFFICIAL_UPDATE_API[resource]
-    except KeyError as exc:
-        raise ValueError(f"不支持的鸣潮游戏资源: {resource}") from exc
-
-    install_dir = resolve_wuthering_waves_install_dir(launcher_path)
-    local_state = read_wuthering_waves_local_state(install_dir)
-
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        response = await client.get(
-            api_url,
-            headers={
-                "User-Agent": "AUTO-MAS/okww",
-                "Accept": "application/json",
-            },
-        )
-        response.raise_for_status()
-        payload: Any = response.json()
-
-    result = _parse_update_payload(
-        payload,
-        install_dir=install_dir,
-        local_version=local_state.version,
-        api_url=api_url,
-    )
-    logger.info(
-        "鸣潮更新检查: 本地={} (state={}), 正式={}, 预下载={}, 需更新={}, 可预下载={}",
-        result.current_version,
-        local_state.state or "-",
-        result.release_version,
-        result.predownload_version or "无",
-        result.update_available,
-        result.predownload_available,
-    )
-    return result

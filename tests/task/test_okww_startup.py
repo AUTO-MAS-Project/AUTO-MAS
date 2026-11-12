@@ -283,6 +283,7 @@ async def test_direct_launch_uses_explicit_resource_tier(tmp_path, arguments, ex
     task = SimpleNamespace(
         game_process_path=client,
         game_manager=manager,
+        _updated_game_quality=None,
         script_config=OkwwConfig.model_validate({"Game": {"Arguments": arguments}}),
         _push_dispatch_log=AsyncMock(),
     )

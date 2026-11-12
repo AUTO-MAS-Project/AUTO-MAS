@@ -35,9 +35,6 @@ from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import wuthering_waves as _service_wuthering_waves
-from app.services.common.wuthering_waves import (
-    updater as _service_wuthering_waves_updater,
-)
 from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import (
     kill_pids,
@@ -71,6 +68,7 @@ from .tools.batch_logs import (
     NATIVE_SWITCH_UNSUPPORTED_MESSAGE,
     NativeSwitchUnsupportedError,
 )
+from .tools.game_update import update_game_via_launcher
 from .tools.launcher_start import (
     async_start_game_via_launcher,
     detect_game_maintenance_text,
@@ -79,6 +77,7 @@ from .tools.launcher_start import (
     find_launcher_pids,
     has_launcher_window,
 )
+from .tools.maintenance import GameMaintenanceDetected
 from .tools.startup import start_okww
 
 logger = get_logger("OK-WW 自动代理")
@@ -221,6 +220,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         self.cur_user_log: LogRecord | None = None
         self.launcher_path: Path | None = None
         self.game_process_path: Path | None = None
+        self._updated_game_quality: str | None = None
         # check() 阶段发现的寻址兜底提示：调度台日志会在 main_task 每轮开头被
         # 整体重置，check() 里直接推会被清屏，改存到这里在启动流程内补推
         self._fallback_notice: str | None = None
@@ -559,88 +559,43 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         return str(self.script_config.Game.Type or "Client")
 
     async def _ensure_wuthering_waves_updated(self) -> None:
-        """确保游戏已是官方最新版，需要时由 MAS 自行下载覆写。
-
-        全程不启动官方启动器、不做界面识别：版本元数据取自官方接口，
-        包体下载、md5 校验、增量应用与覆写全部由 MAS 完成。
-        更新靠启动器路径解码游戏安装目录来确定更新目标，与启动方式无关：直启且
-        手动指定了 Game.ClientPath 时，启动器路径也只为更新服务，启动不经过它；
-        未配置启动器或路径失效时更新检查不可用（降级跳过，不阻断启动）。
-
-        接口不可用属于「无法判断」，放行启动流程（旧客户端通常仍能登录，
-        不该因为查不到版本就拦住用户）；而更新已确认需要却失败，
-        则必须抛错阻断，否则会拿旧客户端撞登录失败。
-        """
-
+        """复用官方启动器完成更新，不以已冻结的旧版本接口判断是否最新。"""
         if not self.script_config.Game.IfAutoUpdate:
-            logger.info("已关闭启动前自动更新，跳过鸣潮更新检查")
             return
-        # 直启可只填客户端路径，此时启动器可能没配或路径已失效：安装目录只能从
-        # 启动器记录解码，更新检查无从下手，按预期跳过而不是报「更新检查失败」
         if self.launcher_path is None or not self.launcher_path.is_file():
-            logger.info("鸣潮启动器未配置或文件不存在，跳过启动前自动更新检查")
-            return
-        resource = str(self.cur_user_config.Info.Resource)
-        try:
-            update_info = await _service_wuthering_waves.check_wuthering_waves_update(
-                self.launcher_path,
-                resource,
-            )
-        except Exception as e:
-            logger.warning(f"鸣潮官方更新检查失败，将继续启动游戏: {e}")
-            # 本地记录（启动器记录或版本记录）读不出来时客户端靠目录搜索还能
-            # 拉起来，更新却无从下手：不说一声用户会一直停在旧版。接口/网络
-            # 问题属「无法判断」，按既有决策静默放行
-            if not _service_wuthering_waves.is_wuthering_waves_record_usable(
-                self.launcher_path
+            if (
+                self._game_launch_type() == "Client"
+                and not str(self.script_config.Game.Path or "").strip()
             ):
                 await self._push_dispatch_log(
-                    "鸣潮本地更新记录不可用，已跳过启动前自动更新，"
-                    "请用官方启动器检查游戏更新"
+                    "未配置官方启动器，跳过启动前更新检查并直接启动客户端"
                 )
-            return
-
-        # 直启可手动指定客户端：若它不在启动器记录的安装目录内，更新会打到另一
-        # 份安装上，直启的那个客户端永远升不上去。只提示不改行为
-        client_path = str(self.script_config.Game.ClientPath or "").strip()
-        if (
-            self._game_launch_type() == "Client"
-            and client_path
-            and not Path(client_path).is_relative_to(update_info.install_dir)
-        ):
-            message = (
-                f"手动指定的客户端不在启动器记录的安装目录内"
-                f"（{update_info.install_dir}），自动更新不会作用于该客户端，"
-                "请确认两者指向同一份安装"
+                return
+            raise RuntimeError(
+                "已开启启动前自动更新，请先导入对应的鸣潮官方启动器；"
+                "只使用客户端时可关闭自动更新"
             )
-            logger.warning(message)
-            await self._push_dispatch_log(message)
-
-        if update_info.predownload_available:
-            logger.info(
-                "官方已开放预下载 {}，MAS 暂不接管预下载",
-                update_info.predownload_version or "未知",
-            )
-        if not update_info.update_available:
-            return
-
-        await self._push_dispatch_log(
-            f"鸣潮需更新: {update_info.current_version}"
-            f" -> {update_info.release_version}"
+        quality_arguments = (
+            [
+                argument.partition("=")[2].lower()
+                for argument in split_args(self.script_config.Game.Arguments)
+                if argument.lower().startswith("-krqlv=")
+            ]
+            if self._game_launch_type() == "Client"
+            else []
         )
-        limit_gb = int(self.script_config.Game.UpdateFullSyncLimit or 0)
-        await _service_wuthering_waves_updater.update_wuthering_waves(
-            update_info.install_dir,
-            resource,
-            update_info.current_version,
+        self._updated_game_quality = await update_game_via_launcher(
+            self.launcher_path,
+            client_path=self.game_process_path,
+            quality=quality_arguments[-1] if quality_arguments else None,
             on_progress=self._push_dispatch_log,
-            full_sync_limit=max(limit_gb, 1) * 1024**3,
         )
 
     async def _mas_launch_game_before_task(self) -> None:
         """检查并触发官方更新，然后按启动方式拉起鸣潮客户端。
 
-        Client 态（默认）：直启客户端 exe，未指定资源档位时补充 ``-krqlv=hd``；
+        Client 态（默认）：直启客户端 exe，未指定档位时沿用本次官方更新的档位，
+        旧启动器按 ``-krqlv=hd``；
         Launcher 态：MAS 拉起官方启动器后由 OCR 流程点击「进入游戏」
         （launcher_start），启动器出现更新/下载时按下载态等待。
         """
@@ -652,7 +607,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             if self._fallback_notice is not None:
                 await self._push_dispatch_log(self._fallback_notice)
                 self._fallback_notice = None
-            await self._ensure_wuthering_waves_updated()
             if self.game_process_path is None:
                 # 路径未知（启动器记录解不出且目录搜索未命中）：只有「名称 + 启动器
                 # 根目录树内」这一层信息，扫到即视为已在运行。不把进程交给进程管理
@@ -676,6 +630,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     await self._note_launch_arguments_skipped()
                     return
 
+            await self._ensure_wuthering_waves_updated()
             if self._game_launch_type() == "Client":
                 await self._launch_game_direct()
             else:
@@ -707,10 +662,10 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         await async_start_game_via_launcher(launcher_path, on_log=_push_launch_log)
 
     async def _launch_game_direct(self) -> None:
-        """直启客户端 exe：缺省补充 -krqlv=hd，用户指定资源档位优先。
+        """直启客户端：用户指定资源档位优先，否则沿用本次更新的档位。
 
         待启动的客户端 exe 来自 check()：手动指定了 Game.ClientPath 时用该值，
-        否则由启动器路径解码得到。MAS 不打开启动器界面。
+        否则由启动器路径解码得到。旧启动器无法提供档位时按高清启动。
         """
 
         game_process_path = self.game_process_path
@@ -731,7 +686,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 if index not in quality_indices[:-1]
             ]
         else:
-            arguments.insert(0, _WUWA_DIRECT_LAUNCH_ARG)
+            arguments.insert(
+                0,
+                f"-krqlv={self._updated_game_quality}"
+                if self._updated_game_quality
+                else _WUWA_DIRECT_LAUNCH_ARG,
+            )
         await self.game_manager.open_process(game_process_path, *arguments)
         await self._push_dispatch_log("鸣潮启动指令已发送")
 
@@ -839,8 +799,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                         await self.cur_user_item.set_state(status="异常")
                     continue
 
-            # 游戏窗口已就绪时先做画面维护检测（公告通道覆盖启动前，这里兜底
-            # 「公告未覆盖但维护弹窗已出现」的场景）：命中即跳过当前账号；
+            # 鸣潮尚未接入维护公告源；游戏窗口就绪后按明确维护弹窗跳过当前账号。
+            # 登录期间再由切号流程检查同一判据，避免维护被误判为登录失败；
             # 维护不会在重试间隔内结束，不再消耗剩余尝试次数
             if await self.skip_on_game_maintenance(self._maintenance_detect):
                 break
@@ -874,6 +834,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                         await self._push_dispatch_log(
                             f"鸣潮账号切换成功：****{account_id[-4:]}"
                         )
+                    except GameMaintenanceDetected as e:
+                        await self.mark_game_maintenance_skip(e.text)
+                        break
                     except Exception as e:
                         await self.handle_pre_okww_error("鸣潮账号切换失败", e)
                         if attempt < run_limit:

@@ -147,6 +147,11 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
         if maintenance_text is None:
             return False
 
+        await self.mark_game_maintenance_skip(maintenance_text)
+        return True
+
+    async def mark_game_maintenance_skip(self, maintenance_text: str) -> None:
+        """记录已确认的维护结果，不重新触发后台画面检测。"""
         reason = f"游戏维护中，本次跳过（画面检测到：{maintenance_text}）"
         await self.cur_user_item.set_state(status="跳过")
         self.user_state(self.cur_user_item).maintenance_skipped = True
@@ -154,7 +159,6 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
         await self.cur_user_log.set_state(content=[reason])
         logger.info(f"账号 {self.cur_user_item.name} - {reason}")
         await self.notify_maintenance_skip(reason)
-        return True
 
     async def _detect_game_maintenance(
         self, detect: Callable[[], str | None]

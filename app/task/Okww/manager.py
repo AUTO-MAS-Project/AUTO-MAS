@@ -266,13 +266,10 @@ class OkwwManager(ScriptManagerBase):
 
         if self.execution_mode == "Update":
             await self.script_info.set_current_index(0)
-            target_user_id = self.task_info.user_id or "Default"
-            resource = str(self.user_config[uuid.UUID(target_user_id)].Info.Resource)
             await self.spawn(
                 WuwaUpdateTask(
                     self.script_info,
                     self.script_config,
-                    resource,
                 )
             )
             return
