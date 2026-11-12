@@ -69,6 +69,59 @@ def packages(tmp_path, monkeypatch, isolated_app_paths):
     return extracted, target
 
 
+@pytest.mark.asyncio
+async def test_save_external_install_while_managed_install_is_complete(
+    tmp_path, monkeypatch
+):
+    """自动推荐 MAS 托管目录时，已补齐的外部目标仍能成功保存。"""
+    monkeypatch.chdir(tmp_path)
+    managed = tmp_path / "data" / "fluxdown" / "bin"
+    external = tmp_path / "user-fluxdown"
+    for directory in (managed, external):
+        directory.mkdir(parents=True)
+        for name in install._REQUIRED_BINARIES:
+            (directory / name).write_bytes(b"binary")
+    (managed / "portable").touch()
+    monkeypatch.setattr(cli, "_candidate_drives", lambda: [])
+    monkeypatch.setattr(cli, "_scan_drives", lambda *args, **kwargs: [])
+    assert cli.fluxdown_detect(str(external), managed_dir=managed)["path"] == str(
+        managed
+    )
+
+    config = GlobalConfig.build()
+    await activate_config(config)
+    await config.update(
+        type(config).model_validate({"Update": {"FluxdownPath": str(external)}}),
+        check_visibility=False,
+    )
+    flush = AsyncMock()
+    monkeypatch.setattr(
+        install,
+        "Config",
+        SimpleNamespace(setting=config, flush=flush, data_path=tmp_path / "data"),
+    )
+    progress = AsyncMock()
+    monkeypatch.setattr(install, "_report_install_progress", progress)
+    result = await install._save_path(
+        str(external), external, version="existing", cli_size=0, server_size=0
+    )
+    assert result["path"] == str(external)
+    assert config.Update.FluxdownPath == str(external)
+    flush.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_save_external_install_rejects_missing_components(tmp_path, monkeypatch):
+    """定向安装校验仍须拒绝缺失组件的目录。"""
+    external = tmp_path / "external"
+    external.mkdir()
+    (external / "fluxdown.exe").write_bytes(b"binary")
+    with pytest.raises(RuntimeError, match="Server"):
+        await install._save_path(
+            str(external), external, version="existing", cli_size=0, server_size=0
+        )
+
+
 def test_zip_roundtrip_and_escape(tmp_path):
     archive = tmp_path / "package.zip"
     with zipfile.ZipFile(archive, "w") as bundle:

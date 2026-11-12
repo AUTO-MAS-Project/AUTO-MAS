@@ -632,11 +632,36 @@ def fluxdown_detect(
     *,
     managed_dir: Path | None = None,
 ) -> dict:
-    """自动检测完整的 CLI + Server 目录，不把缺件桌面版判为已安装。
+    """优先检测 MAS 托管目录，缺件时扫描完整的 CLI + Server 安装。
 
     未完成的候选目录仍会出现在 candidates 中，供设置页提示补装组件；
     只有 CLI 和 Agent/Daemon 同目录时才返回可保存的 path。
     """
+    # 自动检测首先信任 MAS 自己管理的完整安装；不要让历史配置或全盘扫描
+    # 把用户自用的 FluxDown 抢到它前面。只有缺件时才执行较慢的全盘回退。
+    if managed_dir is not None:
+        managed = Path(managed_dir)
+        state = fluxdown_components(managed)
+        if state["cli"] and state["server"]:
+            return {
+                "path": str(managed),
+                "is_portable_cli": (managed / "portable").is_file(),
+                "only_full_warning": False,
+                "scanned_drives": [],
+                "candidates": [
+                    {
+                        "path": str(managed),
+                        "is_portable_cli": (managed / "portable").is_file(),
+                        "complete": True,
+                        "has_cli": True,
+                        "has_server": True,
+                        "has_desktop": state["desktop"],
+                        "missing": "",
+                    }
+                ],
+                "message": "",
+            }
+
     raw: list[Path] = []
     configured = Path(configured_path) if configured_path else None
     known_dirs = [Path.cwd() / "res" / "fluxdown-cli"]
@@ -694,16 +719,8 @@ def fluxdown_detect(
         )
 
     mas_root = Path.cwd()
-    preferred = str(
-        configured
-        if configured is not None and configured.is_dir()
-        else configured.parent
-        if configured is not None
-        else ""
-    ).lower()
     candidates.sort(
         key=lambda c: (
-            0 if preferred and c["path"].lower() == preferred else 1,
             0 if c["complete"] else 1,
             0 if c["is_portable_cli"] else 1,
             0 if Path(c["path"]).drive.lower() == mas_root.drive.lower() else 1,

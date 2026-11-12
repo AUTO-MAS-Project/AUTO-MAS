@@ -4389,7 +4389,6 @@
   "core.setting.others.fluxdownInstallMissingServer": "FluxDown CLI was found, but the Server package (Agent/Daemon) is missing. Use “Download via MAS” to install Server.",
   "core.setting.others.fluxdownInstallMissing": "FluxDown was found, but CLI and Server are not both installed in the same folder. Use “Download via MAS” to repair.",
   "core.setting.others.fluxdownInstallSaving": "Saving the FluxDown installation folder…",
-  "core.setting.others.fluxdownInstallVerifyFailed": "FluxDown installation finished, but autodetection did not confirm CLI and Server in the same folder.",
   "core.setting.others.fluxdownInstallVerifying": "Verifying package SHA-256…",
   "core.setting.others.fluxdownInstallCliLink": "Download CLI package {version}",
   "core.setting.others.fluxdownInstallDesktopRequired": "Install FluxDown from the MAS desktop app after starting or restarting its backend.",
