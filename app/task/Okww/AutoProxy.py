@@ -23,6 +23,8 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
+from packaging.version import InvalidVersion, Version
+
 from app.config import ConfigCollection
 from app.core import Notify, Publisher
 from app.core.history import aggregate_data
@@ -136,6 +138,24 @@ _OKWW_TASK_INDEX = 1
 _OKWW_LOG_TIME_START = 1
 _OKWW_LOG_TIME_END = 23
 _OKWW_LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
+
+
+def _daily_task_argument(script_root: Path) -> str:
+    """按已安装版本选择上游支持的日常任务参数。"""
+    app_config = json.loads(
+        (script_root / _OKWW_REL_APP_JSON).read_text(encoding="utf-8-sig")
+    )
+    if not isinstance(app_config, dict):
+        raise ValueError("OK-WW 启动器配置格式错误，请先在脚本启动器中完成安装或更新")
+    raw_version = app_config.get("current_version")
+    try:
+        version = Version(str(raw_version))
+    except InvalidVersion as exc:
+        raise ValueError(
+            "无法识别 OK-WW 当前版本，请先在脚本启动器中完成安装或更新"
+        ) from exc
+    # 上游 f09ac771（ok-script 2.0.7b1）；首个含此变更的预发布 tag。
+    return "DailyTask" if version >= Version("3.6.7b2") else "1"
 
 
 def _okww_config_base(raw: object) -> str:
@@ -421,9 +441,39 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         )
 
         self.task_index = _OKWW_TASK_INDEX
-        self.okww_args = ["-t", str(self.task_index), "-e"]
+        self.okww_args = ["-t", _daily_task_argument(self.script_root_path), "-e"]
 
         self.script_config_path = self.script_root_path / _OKWW_REL_CONFIG_DIR
+
+    async def _start_okww_with_current_arguments(self) -> None:
+        """启动时刷新参数，自更新跨过兼容边界后用新参数重启。"""
+        daily = self.okww_args[1] in ("1", "DailyTask")
+        while True:
+            if daily:
+                self.okww_args = [
+                    "-t",
+                    _daily_task_argument(self.script_root_path),
+                    "-e",
+                ]
+            await self._push_dispatch_log(f"启动 OK-WW: {' '.join(self.okww_args)}")
+            logger.info(
+                f"启动 OK-WW 进程: {self.script_exe_path} {' '.join(self.okww_args)}"
+            )
+            await start_okww(
+                self.okww_process_manager,
+                self.script_exe_path,
+                args=self.okww_args,
+                target=self.script_target_process_info,
+                on_log=self._push_dispatch_log,
+            )
+            if (
+                not daily
+                or _daily_task_argument(self.script_root_path) == self.okww_args[1]
+            ):
+                return
+            await self._push_dispatch_log("OK-WW 自更新改变了启动参数，正在重新启动")
+            await self.okww_process_manager.kill()
+            await System.kill_process(self.script_exe_path)
 
     def _resolve_log_file_path(self) -> Path:
         return self.script_log_path
@@ -871,19 +921,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                         continue
 
             await self.set_okww()
-            await self._push_dispatch_log(f"启动 OK-WW: -t {self.task_index} -e")
-            logger.info(
-                f"启动 OK-WW 进程: {self.script_exe_path} {' '.join(self.okww_args)}"
-            )
-
             try:
-                await start_okww(
-                    self.okww_process_manager,
-                    self.script_exe_path,
-                    args=self.okww_args,
-                    target=self.script_target_process_info,
-                    on_log=self._push_dispatch_log,
-                )
+                await self._start_okww_with_current_arguments()
             except (OSError, RuntimeError) as e:
                 # 启动器可能已拉起进程；清理后再重试，避免下一轮重复启动。
                 if not await self.handle_pre_okww_error("OK-WW 启动失败", e=e):
