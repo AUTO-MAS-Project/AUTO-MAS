@@ -55,6 +55,29 @@ export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000
 /** 判定失败并结束进程后，等待 close 事件的兜底时间，避免调用方永久挂起。 */
 const FAIL_SETTLE_GRACE_MS = 2_000
 
+/** 诊断只记录命令类型，不把版本、路径或任意参数写入阶段记录。 */
+const DIAGNOSTIC_COMMANDS = new Set([
+  'version',
+  'doctor',
+  'bootstrap',
+  'repair',
+  'cleanup',
+  'workspace check',
+  'workspace sync',
+  'workspace recover',
+  'environment ensure',
+  'environment repair',
+  'dependencies sync',
+  'dependencies rebuild',
+  'backend supervise',
+])
+
+function diagnosticCommand(command: readonly string[]): string {
+  const compound = `${command[0]} ${command[1]}`
+  if (DIAGNOSTIC_COMMANDS.has(compound)) return compound
+  return DIAGNOSTIC_COMMANDS.has(command[0]) ? command[0] : 'unknown'
+}
+
 /**
  * 保留的最近 log 事件条数。
  *
@@ -462,6 +485,12 @@ class RuntimeSession {
   private resolveClosed!: () => void
   private stopFlight: Promise<void> | null = null
   private cancelSent = false
+  private closeConfirmed = false
+  private readonly sessionId = randomBytes(8).toString('hex')
+  readonly command: string
+  private readonly requestedAt = performance.now()
+  private stdoutBytes = 0
+  private stderrBytes = 0
 
   private readonly listeners = new Set<(event: RuntimeEvent) => void>()
   private readonly stdoutStream = new NdjsonEventStream()
@@ -494,6 +523,7 @@ class RuntimeSession {
     private readonly emitter: EventEmitter
   ) {
     this.argv = buildRuntimeArgs(clientOptions, command)
+    this.command = diagnosticCommand(command)
     this.recentLogs = new RingBuffer(options.recentLogCapacity ?? DEFAULT_RECENT_LOG_CAPACITY)
 
     this.hello = new Promise<RuntimeHelloEvent>((resolve, reject) => {
@@ -516,11 +546,12 @@ class RuntimeSession {
       throw new RuntimeClientError(
         'RUNTIME_NOT_FOUND',
         `找不到 Runtime 可执行文件：${clientOptions.runtimePath}`,
-        { runtimePath: clientOptions.runtimePath, argv: this.argv }
+        { command: this.command, runtimePath: clientOptions.runtimePath, argv: this.argv }
       )
     }
 
     logger.debug(`启动 Runtime：${clientOptions.runtimePath} ${this.argv.join(' ')}`)
+    this.diagnose('spawn_requested')
 
     // 只有长期运行的 backend supervise 需要脱离 libuv 给普通子进程套的
     // KILL_ON_JOB_CLOSE Job：宿主被强杀时，Runtime 才能从 stdin EOF 得知宿主消失并优雅收口。
@@ -535,19 +566,37 @@ class RuntimeSession {
       stdio: ['pipe', 'pipe', 'pipe'],
     }) as ChildProcessWithoutNullStreams
 
+    this.child.on('spawn', () => this.diagnose('spawned'))
     this.child.stdout?.setEncoding('utf8')
     this.child.stderr?.setEncoding('utf8')
-    this.child.stdout?.on('data', chunk => this.consumeStdout(chunk))
-    this.child.stderr?.on('data', chunk => this.stderrChunks.push(String(chunk)))
+    this.child.stdout?.on('data', chunk => {
+      const first = this.stdoutBytes === 0
+      this.stdoutBytes += Buffer.byteLength(chunk)
+      if (first) this.diagnose('first_stdout')
+      this.consumeStdout(chunk)
+    })
+    this.child.stderr?.on('data', chunk => {
+      const first = this.stderrBytes === 0
+      this.stderrBytes += Buffer.byteLength(chunk)
+      if (first) this.diagnose('first_stderr')
+      this.stderrChunks.push(String(chunk))
+    })
     this.child.stdin?.on('error', error => {
       logger.warn(`向 Runtime stdin 写入失败：${String(error)}`)
     })
     this.child.on('error', error => this.onSpawnError(error))
+    this.child.on('exit', (exitCode, signal) => this.diagnose('exit', { exitCode, signal }))
     this.child.on('close', (code, signal) => this.onClose(code, signal))
 
     const timeoutMs =
       options.handshakeTimeoutMs ?? clientOptions.handshakeTimeoutMs ?? DEFAULT_HANDSHAKE_TIMEOUT_MS
+    const timerStartedAt = performance.now()
     this.handshakeTimer = setTimeout(() => {
+      // 这里只量到超时回调迟到多久；休眠和事件循环阻塞都可能造成迟到。
+      this.diagnose('handshake_timeout', {
+        timeoutMs,
+        timeoutCallbackDelayMs: Math.max(0, performance.now() - timerStartedAt - timeoutMs),
+      })
       this.fail(
         new RuntimeClientError(
           'RUNTIME_HANDSHAKE_TIMEOUT',
@@ -557,6 +606,22 @@ class RuntimeSession {
       )
     }, timeoutMs)
     this.handshakeTimer.unref?.()
+  }
+
+  /** 每个阶段最多一条本地记录；不采集输出正文、路径或命令参数。 */
+  private diagnose(event: string, details: Record<string, unknown> = {}): void {
+    logger.info(
+      `[Runtime进程] ${JSON.stringify({
+        sessionId: this.sessionId,
+        command: this.command,
+        event,
+        elapsedMs: Math.round((performance.now() - this.requestedAt) * 10) / 10,
+        pid: this.child?.pid,
+        stdoutBytes: this.stdoutBytes,
+        stderrBytes: this.stderrBytes,
+        ...details,
+      })}`
+    )
   }
 
   addListener(listener: (event: RuntimeEvent) => void): () => void {
@@ -639,6 +704,8 @@ class RuntimeSession {
   }
 
   private consumeItem(item: NdjsonItem): void {
+    // 已失败的会话仍可能有迟到输出，不能再交出控制权或发布 running 状态。
+    if (this.failure || this.settled) return
     if (item.kind === 'unknown') {
       logger.debug(`忽略未知类型的 Runtime 事件：${item.line}`)
       return
@@ -739,6 +806,7 @@ class RuntimeSession {
     }
 
     this.helloEvent = event
+    this.diagnose('hello')
     logger.info(
       `Runtime ${event.runtimeVersion} 已握手，命令 ${event.command}，能力 [${event.capabilities.join(', ')}]`
     )
@@ -758,6 +826,7 @@ class RuntimeSession {
   }
 
   private onSpawnError(error: NodeJS.ErrnoException): void {
+    this.diagnose('spawn_error', { systemCode: error.code })
     const code = error.code === 'ENOENT' ? 'RUNTIME_NOT_FOUND' : 'RUNTIME_SPAWN_FAILED'
     this.fail(
       new RuntimeClientError(
@@ -770,6 +839,8 @@ class RuntimeSession {
   }
 
   private onClose(exitCode: number | null, signal: NodeJS.Signals | null): void {
+    this.closeConfirmed = true
+    this.diagnose('close', { processExited: true, exitCode, signal })
     this.resolveClosed()
     for (const item of this.stdoutStream.flush()) {
       this.consumeItem(item)
@@ -836,6 +907,8 @@ class RuntimeSession {
   private fail(error: RuntimeClientError): void {
     if (this.settled || this.failure) return
     this.failure = error
+    error.details.command = this.command
+    error.details.processExited = this.closeConfirmed
     if (this.handshakeTimer) {
       clearTimeout(this.handshakeTimer)
       this.handshakeTimer = undefined
@@ -858,6 +931,8 @@ class RuntimeSession {
   ) {
     if (this.settled) return
     this.settled = true
+    error.details.command = this.command
+    error.details.processExited = this.closeConfirmed
     if (error.details.exitCode === undefined) {
       error.details.exitCode = exitCode
       error.details.signal = signal
@@ -914,10 +989,14 @@ export class RuntimeClient extends EventEmitter {
     return this.sessions.size > 0
   }
 
-  /** 一次性命令归客户端所有，覆盖握手前；禁止关闭后再派生新命令。 */
+  /** 回收尚未移交的会话，监督进程用 shutdown，一次性命令用 cancel。 */
   async stop(timeoutMs = RUNTIME_STOP_TIMEOUT_MS): Promise<void> {
     this.stopping = true
-    await Promise.all([...this.sessions].map(session => session.stop('cancel', timeoutMs)))
+    await Promise.all(
+      [...this.sessions].map(session =>
+        session.stop(session.command === 'backend supervise' ? 'shutdown' : 'cancel', timeoutMs)
+      )
+    )
   }
 
   get runtimePath(): string {
@@ -941,13 +1020,20 @@ export class RuntimeClient extends EventEmitter {
     this.sessions.add(session)
     void session.closed.then(() => this.sessions.delete(session))
 
-    await session.hello
-    options.onStarted?.({
-      pid: session.child.pid,
-      sendControl: control => session.sendControl(control),
-      cancel: () => session.sendControl('cancel'),
-      kill: signal => session.kill(signal),
-    })
+    try {
+      await session.hello
+    } catch {
+      // hello 先拒绝不代表进程退出；completion 在 close 或既有有界清理后收敛。
+      return session.completion
+    }
+    if (!this.stopping) {
+      options.onStarted?.({
+        pid: session.child.pid,
+        sendControl: control => session.sendControl(control),
+        cancel: () => session.sendControl('cancel'),
+        kill: signal => session.kill(signal),
+      })
+    }
     return session.completion
   }
 
@@ -958,6 +1044,7 @@ export class RuntimeClient extends EventEmitter {
    * 不会中断被监督的后端，只记录并回调，避免为一行脏输出杀掉正在运行的后端。
    */
   async supervise(options: RuntimeSuperviseOptions): Promise<RuntimeSuperviseHandle> {
+    if (this.stopping) throw new Error('Runtime 客户端正在关闭')
     const command = ['backend', 'supervise', '--mode', options.mode]
     if (options.repo) {
       command.push('--repo', options.repo)
@@ -969,8 +1056,19 @@ export class RuntimeClient extends EventEmitter {
     }
 
     const session = new RuntimeSession(this.options, command, options, this)
+    this.sessions.add(session)
+    void session.closed.then(() => this.sessions.delete(session))
 
-    const hello = await session.hello
+    let hello: RuntimeHelloEvent
+    try {
+      hello = await session.hello
+    } catch (error) {
+      // 失败后仍由客户端持有未退出会话，退出流程可继续清理同一进程。
+      await session.completion.catch(() => undefined)
+      throw error
+    }
+    // 成功后交给长驻句柄；客户端只负责握手前的进程所有权。
+    this.sessions.delete(session)
     const canShutdown = hello.capabilities.includes('stdin.shutdown')
 
     return {

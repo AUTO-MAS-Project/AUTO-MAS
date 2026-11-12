@@ -3,7 +3,7 @@
  * 协调 Runtime 准备与后端启动
  */
 
-import { BackendService } from './backendService'
+import { BackendService, BackendStartResult } from './backendService'
 import { getBackendOwnership } from './instanceConfig'
 import { RUNTIME_KILL_WAIT_MS, RUNTIME_STOP_TIMEOUT_MS, waitForSettle } from './runtime/shutdown'
 import { RuntimeLaunchMode, RuntimeRemediation, resolveRuntimeLaunchConfig } from './runtime'
@@ -73,6 +73,13 @@ export interface InitializationResult {
   remediation?: RuntimeRemediation[]
   logs?: string
   logPath?: string
+  runtimeFailure?: BackendStartResult['runtimeFailure']
+}
+
+interface DesktopStartupAttempt {
+  attempt: number
+  durationMs: number
+  result: InitializationResult
 }
 
 // ==================== 初始化服务类 ====================
@@ -96,6 +103,7 @@ export class InitializationService {
     fullInitialization: boolean
     state: 'running' | 'ready' | 'failed'
     progress: InitializationProgress[]
+    attempts: DesktopStartupAttempt[]
   } | null = null
   private closing = false
   private environmentOperation: Promise<unknown> | null = null
@@ -123,6 +131,7 @@ export class InitializationService {
       fullInitialization,
       state: 'running',
       progress: [],
+      attempts: [],
     }
     const state = this.desktopState
     const publish = (progress: InitializationProgress) => {
@@ -136,7 +145,41 @@ export class InitializationService {
       .then(async () => {
         if (this.closing) return this.cancelledStartup()
         if (fullInitialization) return this.initialize(publish)
-        return this.startBackendStage(publish, 7, [])
+        for (let attempt = 1; ; attempt += 1) {
+          if (this.closing) return this.cancelledStartup()
+          const startedAt = performance.now()
+          logger.info(`桌面启动尝试 ${attempt}/2 开始`)
+          let failedProgress: InitializationProgress | undefined
+          const result = await this.startBackendStage(
+            progress => {
+              // 自动恢复仍属同一次进行中的启动，不向窗口提前发布最终失败。
+              if (progress.status === 'failed') failedProgress = progress
+              else publish(progress)
+            },
+            7,
+            []
+          )
+          const durationMs = performance.now() - startedAt
+          state.attempts.push({ attempt, durationMs, result })
+          logger.info(
+            `桌面启动尝试 ${attempt}/2 ${result.success ? '完成' : '失败'}，耗时 ${durationMs.toFixed(1)}ms` +
+              (result.code ? `，code=${result.code}` : '')
+          )
+          // workspace check 是只读命令且先于后端创建；只恢复已确认退出的握手超时。
+          // UV_EXEC_FAILED 的协议分类不能区分权限与竞态，留给用户明确处置。
+          const recover =
+            attempt === 1 &&
+            runtimeMode === 'managed' &&
+            result.code === 'RUNTIME_HANDSHAKE_TIMEOUT' &&
+            result.retryable === true &&
+            result.runtimeFailure?.command === 'workspace check' &&
+            result.runtimeFailure.processExited === true
+          if (result.success || !recover || this.closing) {
+            if (failedProgress) publish(failedProgress)
+            return result
+          }
+          logger.warn('只读工作区检查握手超时且 Runtime 已退出，重新执行一次桌面启动')
+        }
       })
       .catch((error: unknown): InitializationResult => ({
         success: false,
@@ -371,6 +414,7 @@ export class InitializationService {
         retryable: backendResult.retryable,
         remediation: backendResult.remediation,
         logs: backendResult.logs,
+        runtimeFailure: backendResult.runtimeFailure,
       }
     }
 

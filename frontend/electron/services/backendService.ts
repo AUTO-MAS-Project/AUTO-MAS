@@ -13,6 +13,7 @@ import { resolveHttpPort } from './instanceConfig'
 import {
   RUNTIME_CLIENT_ERROR_DEFINITIONS,
   RuntimeClient,
+  RuntimeClientErrorDetails,
   RuntimeRemediation,
   RuntimeRunResult,
   RuntimeLogEvent,
@@ -86,6 +87,8 @@ export interface BackendStartResult {
   code?: string
   retryable?: boolean
   remediation?: RuntimeRemediation[]
+  /** 调用侧失败保留命令与真实退出证据，供桌面启动编排决定是否恢复。 */
+  runtimeFailure?: Pick<RuntimeClientErrorDetails, 'command' | 'processExited'>
 }
 
 /** 渲染进程实际使用的后端地址。 */
@@ -175,6 +178,18 @@ export class BackendService {
     if (this.runtimeHandle) {
       logger.info('Runtime 已在监督后端，跳过重复启动')
       return { success: true }
+    }
+    if (
+      this.startingRuntimeHandle ||
+      [...this.runtimeClients].some(client => client.hasActiveSessions)
+    ) {
+      return {
+        success: false,
+        code: 'RUNTIME_EXITED_UNEXPECTEDLY',
+        retryable: false,
+        remediation: ['open-log'],
+        error: '无法确认上一次 Runtime 进程已退出，请先停止后端后重试。',
+      }
     }
     const startedAt = performance.now()
     refreshAnalyticsPreference()
@@ -366,6 +381,8 @@ export class BackendService {
     let handle: RuntimeSuperviseHandle
     const superviseStartedAt = performance.now()
     try {
+      // 握手前尚无 supervise 句柄，退出仍须回收到这个客户端持有的进程。
+      this.runtimeClients.add(client)
       handle = await client.supervise({
         mode: config.mode,
         repo: config.repo,
@@ -398,6 +415,8 @@ export class BackendService {
     } catch (error) {
       // 握手阶段的失败（可执行文件缺失、spawn 被拒、协议不匹配、参数错误）都在这里收敛。
       return this.buildRuntimeStartFailure(error, stdoutLines, stderrLines)
+    } finally {
+      if (!client.hasActiveSessions) this.runtimeClients.delete(client)
     }
 
     // supervise 独立于一次性准备命令：即使仍在等待就绪，也只能通过 shutdown 请求收尾。
@@ -585,6 +604,10 @@ export class BackendService {
         code: reason.code,
         retryable: reason.retryable,
         remediation: [...reason.remediation],
+        runtimeFailure: {
+          command: reason.details.command,
+          processExited: reason.details.processExited,
+        },
       }
     }
 
@@ -964,6 +987,7 @@ export class BackendService {
   private async cancelRuntimePreparations(): Promise<void> {
     this.runtimeStopping = true
     await Promise.all([...this.runtimeClients].map(client => client.stop()))
+    this.runtimeClients.clear()
   }
 
   /**
