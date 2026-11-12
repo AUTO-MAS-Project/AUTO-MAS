@@ -4389,7 +4389,6 @@
   "core.setting.others.fluxdownInstallMissingServer": "FluxDown CLI を検出しましたが、Server（Agent/Daemon）が不足しています。「MAS で代理ダウンロード」で補完できます。",
   "core.setting.others.fluxdownInstallMissing": "FluxDown が見つかりましたが、同一フォルダーに CLI と Server がそろっていません。「MAS で代理ダウンロード」で補完できます。",
   "core.setting.others.fluxdownInstallSaving": "FluxDown のインストール先を保存しています…",
-  "core.setting.others.fluxdownInstallVerifyFailed": "インストール後の自動検出で CLI と Server が同じフォルダーにあることを確認できませんでした。",
   "core.setting.others.fluxdownInstallVerifying": "パッケージの SHA-256 を検証しています…",
   "core.setting.others.fluxdownInstallCliLink": "CLI パッケージ {version} をダウンロード",
   "core.setting.others.fluxdownInstallDesktopRequired": "MAS デスクトップアプリでバックエンドを起動または再起動してから FluxDown をインストールしてください。",
