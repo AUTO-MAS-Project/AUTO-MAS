@@ -51,7 +51,12 @@ defineProps<{
 }
 
 html:not(.dark):not(.appearance-custom) .ui-section-card {
-  border-color: color-mix(in srgb, var(--ant-color-border) 92%, var(--ant-color-text) 8%);
+  /* 卡片已回到纯白，边框不再需要压到 #cacaca 去冒充分隔；
+     与发丝线保持同一档，深度交给下面的极轻阴影。 */
+  border-color: var(--ant-color-border-secondary);
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.04),
+    0 4px 12px -4px rgba(16, 24, 40, 0.06);
 }
 
 /* 头部两行网格：第一行标题 + 动作区，第二行副标题占满整行 */
