@@ -85,6 +85,24 @@ _LAUNCH_TIMEOUT_CAP = 45.0
 #: 多半是商店被禁用了（此时 ``pm path`` 仍有路径, 三路启动都不会报错, 只会等到超时）。
 _STORE_LAUNCH_TIMEOUT = 10.0
 
+#: adb 输出里表示「这条连接已经不可用」的几种写法, 见到就要重连而不是继续等。
+#: 实测两台 MuMu 共用 5037 时: 一个版本的 adb 会把另一个版本的 server 顶掉,
+#: server 里留着的旧条目让 ``connect`` 直接回成功, 之后每条命令都报 offline。
+_STALE_CONNECTION_MARKERS = (
+    "device offline",
+    # 掉线时 adb 打的是 ``device '127.0.0.1:16384' not found``——中间插了地址,
+    # 写成 ``device not found`` 一条都匹配不上, 实测就是这样漏判的。
+    "not found",
+    "cannot connect",
+    "failed to connect",
+    "connection refused",
+    "no devices",
+)
+
+#: 两次重连之间的最小间隔。等开机是每秒轮询, 不加限制会把 disconnect/connect 刷成
+#: 每秒一轮, 反而搅乱同一台机器上其它实例的连接。
+_RECONNECT_COOLDOWN = 5.0
+
 #: ``dumpsys activity activities`` 里表示「这个 Activity 正在前台」的几种写法。
 #: 不同 Android 版本用词不一样, 全都要认——只认一种会在某些镜像上永远判成没起来。
 _FOREGROUND_MARKERS = (
@@ -178,6 +196,32 @@ def is_package_present(pm_path_output: str) -> bool:
     )
 
 
+def is_stale_connection(output: str) -> bool:
+    """从 adb 输出判断这条连接是否已经不可用（要重连, 而不是继续等）。
+
+    ``device offline`` 和 ``device '...' not found`` 都不代表安卓没起来: 前者是 server
+    里留着的旧连接, 后者是地址对不上。两种都只能靠重新 ``connect`` 恢复,
+    靠「再多等几秒」永远等不到。
+    """
+    text = (output or "").lower()
+    return any(marker in text for marker in _STALE_CONNECTION_MARKERS)
+
+
+def describe_adb_failure(output: str) -> str:
+    """把「等不到开机完成」的最后一手 adb 输出翻译成能照做的提示。
+
+    连接过期时重试多少次都没用: 同一台机器上两个模拟器各自带一个 adb, 后启动的会把
+    5037 的 server 顶掉, 顶掉之后旧连接记录就成了僵尸——``connect`` 回成功, 每条命令
+    却都报 offline。这不是「安卓起得慢」, 提示里直接说清该动什么。
+    """
+    if not is_stale_connection(output):
+        return ""
+    return (
+        "。adb 连接已失效且重连无效, 通常是同一台机器上另一个模拟器带的 adb 顶掉了"
+        " 5037 的 server, 请先关掉其它模拟器再重试, 或在模拟器设置里换一个端口"
+    )
+
+
 def is_process_running(pidof_output: str) -> bool:
     """从 ``pidof <包名>`` 的输出里判断这个包的主进程是否活着。
 
@@ -212,41 +256,74 @@ def build_adb_runner(adb_path: Path | None, adb_address: str) -> AdbRunner:
 
     执行器**吞掉所有异常**并转成 ``(-1, 错误文本)``: 上层是轮询逻辑, 一次执行失败
     应该继续等下一轮, 而不是把整个启动流程炸掉。
+
+    连之前一定先 ``disconnect``: 两台 MuMu 会互相顶掉 5037 上的 server, server 里留着
+    指向旧实例的连接时, ``connect`` 会直接回一句 ``connected`` 而设备实际是 offline。
+    命令结果里出现过期连接的字样时, 也会重连一次再试。
     """
     program: Path | str = adb_path if adb_path is not None else "adb"
     need_connect = ":" in adb_address
     failed_once = False
+    reconnect_lock = asyncio.Lock()
+    last_reconnect = 0.0
+
+    async def connect(disconnect_first: bool) -> None:
+        """重建到这台设备的连接。连不上照旧吞掉——调用方本来就在等下一轮。"""
+        with suppress(Exception):
+            if disconnect_first:
+                await ProcessRunner.run_process(
+                    program,
+                    "disconnect",
+                    adb_address,
+                    timeout=_ADB_CONNECT_TIMEOUT,
+                    if_merge_std=True,
+                )
+            await ProcessRunner.run_process(
+                program,
+                "connect",
+                adb_address,
+                timeout=_ADB_CONNECT_TIMEOUT,
+                if_merge_std=True,
+            )
+
+    async def reconnect() -> None:
+        nonlocal last_reconnect
+        async with reconnect_lock:
+            now = time.monotonic()
+            if now - last_reconnect < _RECONNECT_COOLDOWN:
+                return
+            last_reconnect = now
+            await connect(disconnect_first=True)
 
     async def run(*args: str, timeout: float = _ADB_TIMEOUT) -> tuple[int, str]:
         nonlocal need_connect, failed_once
         if need_connect:
             # 连不上也照样往下走: 设备可能本来就连着, 真没连上后面的命令会自己报错
             need_connect = False
-            with suppress(Exception):
-                await ProcessRunner.run_process(
+            await reconnect()
+        for retried in (False, True):
+            try:
+                result = await ProcessRunner.run_process(
                     program,
-                    "connect",
+                    "-s",
                     adb_address,
-                    timeout=_ADB_CONNECT_TIMEOUT,
+                    *args,
+                    timeout=timeout,
                     if_merge_std=True,
                 )
-        try:
-            result = await ProcessRunner.run_process(
-                program,
-                "-s",
-                adb_address,
-                *args,
-                timeout=timeout,
-                if_merge_std=True,
-            )
-        except Exception as e:  # noqa: BLE001 - 见 docstring: 转成返回码, 不抛
-            # 只记第一次: adb 路径失效这类连子进程都没起来的失败没有别的日志可查,
-            # 而这里是每秒轮询, 全记会把日志刷满
-            if not failed_once:
-                failed_once = True
-                logger.warning(f"adb 命令执行失败，期间不再重复记录: {e}")
-            return -1, str(e)
-        return result.returncode, result.stdout.strip()
+            except Exception as e:  # noqa: BLE001 - 见 docstring: 转成返回码, 不抛
+                # 只记第一次: adb 路径失效这类连子进程都没起来的失败没有别的日志可查,
+                # 而这里是每秒轮询, 全记会把日志刷满
+                if not failed_once:
+                    failed_once = True
+                    logger.warning(f"adb 命令执行失败，期间不再重复记录: {e}")
+                return -1, str(e)
+            if not retried and is_stale_connection(result.stdout):
+                # 连接已失效: 重建一次再试; 还是不行就把这次的输出原样交给上层
+                await reconnect()
+                continue
+            return result.returncode, result.stdout.strip()
+        return -1, ""
 
     return run
 
@@ -335,11 +412,12 @@ async def ensure_app_running(
         run_adb, time.monotonic() + boot_timeout, poll_seconds
     )
     if not booted:
+        hint = describe_adb_failure(boot_detail)
         logger.warning(
             f"{prefix}等待系统启动完成超时，跳过启动 {package_name}"
-            f"（最后一次 adb 返回: {boot_detail}）"
+            f"（最后一次 adb 返回: {boot_detail}）{hint}"
         )
-        return AppLaunchResult(False, "boot-timeout", boot_detail)
+        return AppLaunchResult(False, "boot-timeout", f"{boot_detail}{hint}")
 
     # 没装就别白试一轮 monkey 再等一轮前台，直接给出能照做的结论。
     # 判据见 is_package_missing：只认「输出为空」，返回码分不开没装和掉线。
@@ -471,7 +549,7 @@ class AppLaunchMixin(DeviceBase):
             if result.reason == "boot-timeout":
                 raise RuntimeError(
                     f"实例 {idx} 已在线，但等待安卓系统启动完成超时"
-                    f"（ADB {info.adb_address}）"
+                    f"（ADB {info.adb_address}）: {result.detail}"
                 )
             # 复制一份再填：后端可能把同一个 DeviceInfo 留作缓存
             info = replace(info, app_launch=result.reason)
@@ -541,9 +619,11 @@ __all__ = [
     "AppLaunchResult",
     "LaunchReason",
     "build_adb_runner",
+    "describe_adb_failure",
     "ensure_app_running",
     "is_package_foreground",
     "is_package_missing",
+    "is_stale_connection",
     "is_process_running",
     "parse_launch_component",
 ]
