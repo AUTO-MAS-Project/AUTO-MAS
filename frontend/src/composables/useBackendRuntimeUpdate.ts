@@ -204,7 +204,7 @@ export function useBackendRuntimeUpdate() {
     const telemetry = (restartObservation ??= beginAnalyticsOperation('backend_update_finished'))
     restartingBackend.value = true
     try {
-      const result = await window.electronAPI.backendStart()
+      const result = await window.electronAPI.backendStart(true)
       telemetry.finish({
         trigger_kind: 'restart',
         phase: result.success ? 'complete' : 'restart',

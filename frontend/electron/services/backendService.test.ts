@@ -19,6 +19,8 @@ import {
 } from './scheduledWakeup'
 
 vi.mock('child_process', () => ({ spawn: vi.fn() }))
+// 更新弹窗的检查不渲染 DOM；启动、更新状态与退出协调仍运行生产代码。
+vi.mock('ant-design-vue', () => ({ Modal: {}, message: {}, notification: {} }))
 vi.mock('https', () => ({
   get: () => {
     const request = new EventEmitter()
@@ -1136,6 +1138,77 @@ describe('关闭时收口仍在运行的 Runtime 命令', () => {
 })
 
 describe('主进程拥有两种模式的启动生命周期', () => {
+  it('更新弹窗重启失败后再次点击会真实启动，普通请求仍复用旧失败', async () => {
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    mockSpawn()
+    vi.resetModules()
+    ipcHandlers.clear()
+    const handlers = await import('../ipc/initializationHandlers')
+    const browserWindow = new BrowserWindow()
+    handlers.registerInitializationHandlers(browserWindow)
+    const event = { sender: browserWindow.webContents }
+    vi.stubGlobal('window', {
+      appEnvironment: 'development',
+      backendOwnership: 'owned',
+      setTimeout,
+      clearTimeout,
+      electronAPI: {
+        getLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+        onBackendUpdateProgress: vi.fn(),
+        removeBackendUpdateProgressListener: vi.fn(),
+        updateBackendViaRuntime: async () => ({
+          success: false,
+          phase: 'restart',
+          error: 'backend restart failed after update',
+        }),
+        backendStart: (retry?: boolean) => ipcHandlers.get('backend-start')?.(event, retry),
+      },
+    })
+    const { useBackendRuntimeUpdate } = await import('@/composables/useBackendRuntimeUpdate')
+    const connection = await import('@/services/websocket/connection')
+    const { Service } = await import('@/api')
+    // 只隔离成功后刷新的两条网络出口，重试判断及 IPC/进程所有权保持真实。
+    const reconnect = vi.spyOn(connection, 'reconnectNow').mockResolvedValue(true)
+    const version = vi
+      .spyOn(Service, 'getGitVersionApiInfoVersionPost')
+      .mockRejectedValue(new Error('metadata unavailable'))
+    const update = useBackendRuntimeUpdate()
+    const pending: Promise<void>[] = []
+    try {
+      await update.start('v5.5.0-beta.3')
+      expect(update.outcome.value).toMatchObject({ success: false, phase: 'restart' })
+      pending.push(update.restartBackend())
+      const failed = await waitForSpawn()
+      failed.emit('error', Object.assign(new Error('temporarily busy'), { code: 'EBUSY' }))
+      await pending[0]
+      expect(update.outcome.value).toMatchObject({ success: false, phase: 'restart' })
+      expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({ state: 'failed' })
+      expect(await ipcHandlers.get('backend-start')?.(event)).toMatchObject({ success: false })
+      expect(spawnMock).toHaveBeenCalledTimes(1)
+
+      pending.push(update.restartBackend())
+      const child = await passManagedPreparation(1)
+      child.stdout.feed(helloLine + runningStateLine)
+      await pending[1]
+      expect(update.outcome.value).toEqual({ success: true })
+      expect(update.restartingBackend.value).toBe(false)
+      expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({ state: 'ready' })
+      expect(handlers.getBackendService().getStatus().isRunning).toBe(true)
+      expect(spawnMock).toHaveBeenCalledTimes(4)
+      child.stdout.feed(stoppedResultLine)
+      child.close(0)
+    } finally {
+      for (const result of spawnMock.mock.results) {
+        if (result.value instanceof FakeChild) result.value.close(1)
+      }
+      await Promise.allSettled(pending)
+      update.close()
+      reconnect.mockRestore()
+      version.mockRestore()
+    }
+  })
+
   it('窗口晚到和重复 IPC 接入同一次有限恢复，首次失败仍留在快照中', async () => {
     process.env[RUNTIME_MODE_ENV] = 'managed'
     process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
