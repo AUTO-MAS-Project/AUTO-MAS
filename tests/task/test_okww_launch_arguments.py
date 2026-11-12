@@ -1,5 +1,6 @@
 """OK-WW 普通日常启动参数回归。"""
 
+import json
 import uuid
 from types import SimpleNamespace
 
@@ -12,7 +13,20 @@ from tests.runtime_support import RuntimeStub
 
 
 @pytest.mark.asyncio
-async def test_daily_task_uses_stable_task_name(tmp_path):
+@pytest.mark.parametrize(
+    ("version", "argument"),
+    [
+        ("v3.6.6", "1"),
+        ("v3.6.7-beta.2", "DailyTask"),
+        ("v3.6.7", "DailyTask"),
+        ("v3.8.0-beta.1", "DailyTask"),
+        ("unknown", None),
+    ],
+)
+async def test_daily_task_uses_version_supported_argument(tmp_path, version, argument):
+    app_json = tmp_path / "data/apps/ok-ww/app.json"
+    app_json.parent.mkdir(parents=True)
+    app_json.write_text(json.dumps({"current_version": version}), encoding="utf-8")
     uid = uuid.uuid4()
     user = UserItem(user_id=str(uid), name="用户", status="等待")
     script_info = RuntimeStub(
@@ -28,6 +42,10 @@ async def test_daily_task_uses_stable_task_name(tmp_path):
         None,
     )
 
+    if argument is None:
+        with pytest.raises(ValueError, match="无法识别 OK-WW 当前版本"):
+            await task.prepare()
+        return
     await task.prepare()
 
-    assert task.okww_args == ["-t", "DailyTask", "-e"]
+    assert task.okww_args == ["-t", argument, "-e"]
