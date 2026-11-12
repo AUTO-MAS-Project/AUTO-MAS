@@ -538,13 +538,15 @@ function getThemeConfig() {
   const primaryColor = activeAppearance.value?.tokens.colorPrimary ?? themeColors[themeColor.value]
   const token = {
     colorPrimary: primaryColor,
-    // 保留柔和灰白表面，内容分隔线使用一致的层次；外观包仍可覆盖。
+    // 中浅灰画布 + 纯白卡片：层次交给边线与阴影，页面底不再靠压暗撑出来；
+    // 底色压到 #e9e9e9 时整块画布发灰，而侧栏又比画布更亮，导航反而成了最高平面。
     ...(!isDark.value
       ? {
-          colorBgLayout: '#e9e9e9',
-          colorBgContainer: '#f2f2f2',
-          colorBgElevated: '#f7f7f7',
-          colorBorderSecondary: '#e0e0e0',
+          colorBgLayout: '#f4f4f5',
+          colorBgContainer: '#ffffff',
+          colorBgElevated: '#ffffff',
+          // 发丝线默认 #f0f0f0 压在纯白卡片上几乎看不见，卡片内的行/列分隔会消失
+          colorBorderSecondary: '#eeeef0',
         }
       : {}),
     ...(activeAppearance.value?.tokens.colorBgLayout
