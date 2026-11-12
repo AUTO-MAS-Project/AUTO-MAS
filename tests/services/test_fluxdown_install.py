@@ -69,7 +69,6 @@ def packages(tmp_path, monkeypatch, isolated_app_paths):
     return extracted, target
 
 
-
 @pytest.mark.asyncio
 async def test_save_external_install_while_managed_install_is_complete(
     tmp_path, monkeypatch
