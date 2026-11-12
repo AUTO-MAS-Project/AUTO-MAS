@@ -487,7 +487,7 @@ class RuntimeSession {
   private cancelSent = false
   private closeConfirmed = false
   private readonly sessionId = randomBytes(8).toString('hex')
-  private readonly command: string
+  readonly command: string
   private readonly requestedAt = performance.now()
   private stdoutBytes = 0
   private stderrBytes = 0
@@ -989,10 +989,14 @@ export class RuntimeClient extends EventEmitter {
     return this.sessions.size > 0
   }
 
-  /** 一次性命令归客户端所有，覆盖握手前；禁止关闭后再派生新命令。 */
+  /** 回收尚未移交的会话，监督进程用 shutdown，一次性命令用 cancel。 */
   async stop(timeoutMs = RUNTIME_STOP_TIMEOUT_MS): Promise<void> {
     this.stopping = true
-    await Promise.all([...this.sessions].map(session => session.stop('cancel', timeoutMs)))
+    await Promise.all(
+      [...this.sessions].map(session =>
+        session.stop(session.command === 'backend supervise' ? 'shutdown' : 'cancel', timeoutMs)
+      )
+    )
   }
 
   get runtimePath(): string {
