@@ -71,6 +71,10 @@ async def test_login_maintenance_skips_proxy_without_retry(
     from app.task.Okww.tools import launcher_start
     from app.utils import ProcessManager
 
+    app_json = tmp_path / "data/apps/ok-ww/app.json"
+    app_json.parent.mkdir(parents=True)
+    app_json.write_text('{"current_version": "v3.8.0-beta.1"}', encoding="utf-8")
+
     uid = uuid.uuid4()
     _, script, user = await create_runtime_tree(
         script_id=str(uuid.uuid4()), user_id=str(uid)
