@@ -34,7 +34,7 @@ from pathlib import Path
 UA = {"User-Agent": "AutoMasGui/contract-check"}
 GITHUB_API = "https://api.github.com"
 MIRROR_API = "https://mirrorchyan.com/api/resources"
-STATION = "https://download.auto-mas.top/d"
+STATION = "https://data2.auto-mas.top/api/v1/files/starrailassistant/Release/beta"
 
 M7A_REPO, M7A_RID = "moesnow/March7thAssistant", "March7thAssistant"
 SRA_REPO, SRA_RID = "Shasnow/StarRailAssistant", "StarRailAssistant"
@@ -149,41 +149,29 @@ def check_asset_contract(facts: dict) -> None:
         f"{sra.get(full_name, {}).get('size', 0) / 1048576:.1f} MB",
     )
 
-    # 自建站：与 GitHub 字节一致、支持 Range、beta 也在
-    gh_size = sra.get(full_name, {}).get("size", 0)
-    gh_digest = sra.get(full_name, {}).get("digest", "").split(":")[-1]
-
-    st_zip = f"{STATION}/StarRailAssistant/StarRailAssistant-{sra_tag}.zip"
+    # 数据站通过发布记录提供文件名、哈希与不可变下载版本编号。
+    published = get_json(STATION)["data"]["published_version"]
+    check(
+        "自建站发布的是目标版本 Full 包",
+        published["source_filename"] == full_name,
+        published["source_filename"],
+    )
+    st_zip = f"{STATION}/download/content?version_no={published['version_no']}"
     status, head, crange = range_probe(st_zip, 1023)
     st_size = int(crange.split("/")[-1]) if "/" in crange else 0
+    gh_size = sra.get(full_name, {}).get("size", 0)
+    gh_digest = sra.get(full_name, {}).get("digest", "").split(":")[-1]
     check("自建站 SRA zip 支持 Range 续传", status == 206, f"HTTP {status}")
     check(
-        "自建站 SRA zip 与 GitHub 字节数一致",
-        st_size == gh_size and gh_size > 0,
+        "自建站 SRA zip 与发布记录及 GitHub 字节数一致",
+        st_size == published["file_size"] == gh_size and gh_size > 0,
         f"station={st_size} github={gh_size}",
     )
     check("自建站 SRA zip 是合法 zip", head[:4] == b"PK\x03\x04", repr(head[:4]))
-
-    req = urllib.request.Request(
-        f"{STATION}/StarRailAssistant/StarRailAssistant-{sra_tag}.sha256", headers=UA
-    )
-    with urllib.request.urlopen(req, timeout=20) as r:
-        st_sha = r.read().decode().strip()
     check(
-        "自建站 sha256 旁文件与 GitHub digest 一致",
-        st_sha == gh_digest,
-        f"{st_sha[:16]}… vs {gh_digest[:16]}…",
+        "自建站发布记录 sha256 与 GitHub digest 一致",
+        published["sha256"] == gh_digest and len(gh_digest) == 64,
     )
-
-    if facts.get("SRA_beta"):
-        try:
-            s, _, _ = range_probe(
-                f"{STATION}/StarRailAssistant/StarRailAssistant-{facts['SRA_beta']}.zip",
-                255,
-            )
-            check("自建站同步 SRA beta", s == 206, f"HTTP {s}")
-        except urllib.error.HTTPError as e:
-            check("自建站同步 SRA beta", False, f"HTTP {e.code}")
 
     # M7A full.zip 根文件夹（回退路径要据此脱壳）
     url = m7a["March7thAssistant_full.zip"]["browser_download_url"]
