@@ -1,4 +1,4 @@
-import { computed, readonly, ref } from 'vue'
+import { computed, readonly, ref, toRaw } from 'vue'
 import { beginAnalyticsOperation } from '@/utils/analytics'
 import { getConfig, saveConfig } from '@/utils/config'
 import {
@@ -44,7 +44,9 @@ async function save(next: AppClosePreferences): Promise<void> {
   }
 
   const confirmationChanged = current.confirmBeforeClose !== next.confirmBeforeClose
+  const actionChanged = current.lastAction !== next.lastAction
   const analytics = confirmationChanged ? beginAnalyticsOperation('settings_change_finished') : null
+  const actionAnalytics = actionChanged ? beginAnalyticsOperation('settings_change_finished') : null
   preferences.value = next
   pendingSaves.value += 1
 
@@ -59,12 +61,24 @@ async function save(next: AppClosePreferences): Promise<void> {
       value_kind: next.confirmBeforeClose ? 'enabled' : 'disabled',
       outcome: 'success',
     })
+    actionAnalytics?.finish({
+      setting_kind: 'close',
+      setting_key: 'close_to_tray',
+      value_kind: next.lastAction === 'tray' ? 'enabled' : 'disabled',
+      outcome: 'success',
+    })
   } catch (error) {
-    if (preferences.value === next) preferences.value = current
+    if (toRaw(preferences.value) === next) preferences.value = current
     analytics?.finish({
       setting_kind: 'close',
       setting_key: 'close_confirmation',
       value_kind: next.confirmBeforeClose ? 'enabled' : 'disabled',
+      outcome: 'failure',
+    })
+    actionAnalytics?.finish({
+      setting_kind: 'close',
+      setting_key: 'close_to_tray',
+      value_kind: next.lastAction === 'tray' ? 'enabled' : 'disabled',
       outcome: 'failure',
     })
     throw error

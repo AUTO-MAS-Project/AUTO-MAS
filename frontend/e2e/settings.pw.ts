@@ -58,11 +58,13 @@ test.describe('@settings user preferences', () => {
     // 列数由宽度决定：窄屏单列、宽屏两列，都检查问号提示。
     for (const layout of [{ width: 1440 }, { width: 1920 }]) {
       await page.setViewportSize({ width: layout.width, height: 891 })
-      await checkHint(page.locator('.startup-options-row .ui-row-label .help-icon'))
-      const autoStart = page.getByRole('checkbox', { name: 'Start with the system', exact: true })
-      const checked = await autoStart.isChecked()
-      await checkHint(page.locator('.startup-options-row .ant-checkbox-wrapper .help-icon'))
-      await expect(autoStart).toBeChecked({ checked })
+      for (const name of ['Start with the system', 'Silent startup']) {
+        const control = page.getByRole('checkbox', { name, exact: true })
+        const checked = await control.isChecked()
+        const row = page.locator('.setting-item').filter({ has: control })
+        await checkHint(row.locator('.help-icon'))
+        await expect(control).toBeChecked({ checked })
+      }
     }
     await checkHint(page.locator('.row-label .help-icon:visible'))
     await page.getByRole('tab', { name: 'Features', exact: true }).click()
@@ -74,28 +76,54 @@ test.describe('@settings user preferences', () => {
   })
 
   test('saves scheduled wake-up independently of login startup', async ({ app, page }) => {
+    const loaded = settingsResponse(page, 'get')
     await app.goto('/settings')
-    const wakeup = page.getByRole('switch', { name: 'Scheduled wake-up', exact: true })
+    const initialResponse = await loaded
+    const originalStart = (await initialResponse.json()).data.Start
+    const backend = new URL(initialResponse.url()).origin
+    const wakeup = page.getByRole('checkbox', { name: 'Scheduled wake-up', exact: true })
     const autoStart = page.getByRole('checkbox', { name: 'Start with the system', exact: true })
-    const loginEnabled = await autoStart.isChecked()
-    for (const enabled of [true, false]) {
-      const saved = settingsResponse(page, 'update')
-      await wakeup.click()
-      const response = await saved
-      expect(response.request().postDataJSON()).toMatchObject({
-        data: { Start: { IfScheduledWakeUp: enabled } },
+    const silentStart = page.getByRole('checkbox', { name: 'Silent startup', exact: true })
+    try {
+      // 旧版本允许仅定时唤醒并保留静默偏好，重新载入后必须仍能独立修改。
+      const seeded = await page.request.post(`${backend}/api/setting/update`, {
+        data: {
+          data: {
+            Start: { IfSelfStart: false, IfScheduledWakeUp: true, IfMinimizeDirectly: true },
+          },
+        },
       })
-      expect((await response.json()).code).toBe(200)
+      expect((await seeded.json()).code).toBe(200)
       await page.reload()
-      await expect(wakeup).toBeChecked({ checked: enabled })
-      await expect(autoStart).toBeChecked({ checked: loginEnabled })
-      await app.evidence(`scheduled-wakeup-${enabled ? 'enabled' : 'disabled'}`)
-      if (enabled) {
-        await chooseSegment(page.locator('.theme-mode-control'), 'Dark')
-        await expect(page.locator('html')).toHaveClass(/dark/)
-        await app.evidence('scheduled-wakeup-dark')
-        await chooseSegment(page.locator('.theme-mode-control'), 'Light')
+      await expect(silentStart).toBeChecked()
+      for (const [control, key, values] of [
+        [silentStart, 'IfMinimizeDirectly', [false, true]],
+        [wakeup, 'IfScheduledWakeUp', [false, true]],
+        [autoStart, 'IfSelfStart', [true, false]],
+      ] as const) {
+        for (const enabled of values) {
+          await expect(control).toBeEnabled()
+          const saved = settingsResponse(page, 'update')
+          await control.click()
+          const response = await saved
+          expect(response.request().postDataJSON()).toEqual({ data: { Start: { [key]: enabled } } })
+          expect((await response.json()).code).toBe(200)
+          await expect(control).toBeChecked({ checked: enabled })
+          await page.reload()
+          await expect(autoStart).toBeChecked({ checked: key === 'IfSelfStart' && enabled })
+          await expect(wakeup).toBeChecked({ checked: key !== 'IfScheduledWakeUp' || enabled })
+          await expect(silentStart).toBeChecked({
+            checked: key !== 'IfMinimizeDirectly' || enabled,
+          })
+          await expect(silentStart).toBeEnabled()
+        }
       }
+      await app.evidence('scheduled-wakeup-silent-preference')
+    } finally {
+      const restored = await page.request.post(`${backend}/api/setting/update`, {
+        data: { data: { Start: originalStart } },
+      })
+      expect((await restored.json()).code).toBe(200)
     }
   })
 
@@ -296,7 +324,7 @@ test.describe('@settings user preferences', () => {
     }
   })
 
-  test('preserves startup and appearance preferences through their settings', async ({
+  test('preserves close and appearance preferences through their settings', async ({
     app,
     page,
   }) => {
@@ -304,8 +332,30 @@ test.describe('@settings user preferences', () => {
     await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
     const loaded = settingsResponse(page, 'get')
     await app.goto('/settings')
-    const originalMinimize = (await (await loaded).json()).data.UI.IfToTray === true
-    const minimize = page.locator('[aria-label="When minimizing"]')
+    const initial = (await (await loaded).json()).data
+    const originalToTray = initial.UI.IfToTray
+    const closeBehavior = page.locator('[aria-label="When closing"]')
+    const closeConfirmation = page.getByRole('checkbox', {
+      name: 'Confirm before closing',
+      exact: true,
+    })
+    const readClosePreferences = () =>
+      page.evaluate(async () => {
+        const config = await window.electronAPI.loadConfig()
+        return {
+          lastCloseAction: config?.lastCloseAction,
+          confirmBeforeClose: config?.confirmBeforeClose,
+        }
+      })
+    await expect(closeConfirmation).toBeEnabled()
+    await expect(closeBehavior.getByRole('radio')).toHaveCount(2)
+    const initialClose = await readClosePreferences()
+    const originalClose = {
+      lastCloseAction: initialClose.lastCloseAction ?? 'quit',
+      confirmBeforeClose: initialClose.confirmBeforeClose ?? true,
+    }
+    const closeLabel = (action: 'quit' | 'tray') =>
+      action === 'quit' ? 'Quit immediately' : 'Minimize to tray'
     const header = page.locator('.settings-shell-header')
     const sider = page.locator('.app-sider')
     const theme = page.locator('.theme-mode-control')
@@ -314,15 +364,57 @@ test.describe('@settings user preferences', () => {
       .locator('.color-swatch[aria-pressed="true"]')
       .getAttribute('aria-label')
     try {
-      for (const toTray of [!originalMinimize, originalMinimize]) {
-        const saved = settingsResponse(page, 'update')
-        await chooseSegment(minimize, toTray ? 'Minimize to tray' : 'Minimize to taskbar')
-        const response = await saved
-        expect(response.request().postDataJSON()).toMatchObject({
-          data: { UI: { IfToTray: toTray } },
-        })
-        expect((await response.json()).code).toBe(200)
+      for (const action of [
+        originalClose.lastCloseAction === 'quit' ? 'tray' : 'quit',
+        originalClose.lastCloseAction,
+      ] as const) {
+        await expect(
+          closeBehavior.getByRole('radio', { name: closeLabel(action), exact: true })
+        ).toBeEnabled()
+        await chooseSegment(closeBehavior, closeLabel(action))
+        await expect(closeBehavior.getByRole('radio', { checked: true })).toHaveCount(1)
+        const expectedClose = { ...originalClose, lastCloseAction: action }
+        await expect.poll(readClosePreferences).toEqual(expectedClose)
+        await expect(closeConfirmation).toBeChecked({ checked: originalClose.confirmBeforeClose })
+
+        const reloaded = settingsResponse(page, 'get')
+        await page.reload()
+        expect((await (await reloaded).json()).data.UI.IfToTray).toBe(originalToTray)
+        await expect(
+          closeBehavior.getByRole('radio', { name: closeLabel(action), exact: true })
+        ).toBeChecked()
+        await expect(closeConfirmation).toBeChecked({ checked: originalClose.confirmBeforeClose })
+        await expect.poll(readClosePreferences).toEqual(expectedClose)
       }
+
+      for (const enabled of [!originalClose.confirmBeforeClose, originalClose.confirmBeforeClose]) {
+        await closeConfirmation.setChecked(enabled)
+        const expectedClose = { ...originalClose, confirmBeforeClose: enabled }
+        await expect.poll(readClosePreferences).toEqual(expectedClose)
+        await page.reload()
+        await expect(closeConfirmation).toBeChecked({ checked: enabled })
+        await expect.poll(readClosePreferences).toEqual(expectedClose)
+      }
+
+      if (originalClose.confirmBeforeClose) {
+        await page.locator('.window-controls .close-button').click()
+        const prompt = page
+          .getByRole('dialog')
+          .filter({ hasText: 'When clicking the close button:' })
+        const defaultLabel =
+          originalClose.lastCloseAction === 'quit' ? 'Close MAS' : 'Minimize MAS to tray'
+        await expect(prompt.getByRole('radio', { name: defaultLabel, exact: true })).toBeChecked()
+        await prompt
+          .getByText(defaultLabel === 'Close MAS' ? 'Minimize MAS to tray' : 'Close MAS', {
+            exact: true,
+          })
+          .click()
+        await prompt.getByRole('checkbox', { name: "Don't show again", exact: true }).check()
+        await prompt.getByRole('button', { name: 'Cancel', exact: true }).click()
+        await expect(prompt).toBeHidden()
+        await expect.poll(readClosePreferences).toEqual(originalClose)
+      }
+
       await expect(theme.getByRole('radio', { name: 'Follow system', exact: true })).toBeChecked()
       await expect(sider).toHaveCSS('background-color', 'rgb(242, 242, 242)')
       await page.getByRole('button', { name: 'Purple', exact: true }).click()
@@ -333,6 +425,8 @@ test.describe('@settings user preferences', () => {
       await expect(sider).toHaveCSS('background-color', 'rgb(20, 20, 20)')
       await expect(sider).toHaveCSS('border-right-color', 'rgb(48, 48, 48)')
       await expect(theme.getByRole('radio', { name: 'Dark', exact: true })).toBeChecked()
+      await page.locator('.startup-window-settings').scrollIntoViewIfNeeded()
+      await app.evidence('settings-close-options-dark')
       await expect(page.getByRole('button', { name: 'Purple', exact: true })).toHaveAttribute(
         'aria-pressed',
         'true'
@@ -369,17 +463,18 @@ test.describe('@settings user preferences', () => {
       )
       await app.evidence('settings-header-narrow-reloaded')
     } finally {
-      await page.getByRole('tab', { name: 'Interface', exact: true }).click()
-      const originalMinimizeLabel = originalMinimize ? 'Minimize to tray' : 'Minimize to taskbar'
-      if (
-        !(await minimize
-          .getByRole('radio', { name: originalMinimizeLabel, exact: true })
-          .isChecked())
-      ) {
-        const restored = settingsResponse(page, 'update')
-        await chooseSegment(minimize, originalMinimizeLabel)
-        expect((await (await restored).json()).code).toBe(200)
+      const prompt = page.locator('.app-close-prompt-modal .ant-modal:visible')
+      if (await prompt.isVisible()) {
+        await prompt.getByRole('button', { name: 'Cancel', exact: true }).click()
       }
+      await page.evaluate(async preferences => {
+        await window.electronAPI.saveConfig(preferences)
+      }, originalClose)
+      const restoredRead = settingsResponse(page, 'get')
+      await page.reload()
+      const restoredSettings = (await (await restoredRead).json()).data
+      expect(restoredSettings.UI.IfToTray).toBe(originalToTray)
+      await expect.poll(readClosePreferences).toEqual(originalClose)
       await chooseSegment(theme, originalTheme)
       if (originalAccent)
         await page.getByRole('button', { name: originalAccent, exact: true }).click()

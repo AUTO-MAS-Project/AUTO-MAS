@@ -10,7 +10,7 @@ const logger = window.electronAPI.getLogger('配置管理')
 export interface FrontendConfig {
   /** 关闭窗口时是否先显示退出/最小化到托盘确认。 */
   confirmBeforeClose?: boolean
-  /** 关闭确认弹窗中上次选择的动作。 */
+  /** 关闭时的默认动作；开启确认后也作为弹窗的默认选择。 */
   lastCloseAction?: 'quit' | 'tray'
 
   /** 设置页右侧分区目录的显示偏好。 */
