@@ -1,7 +1,7 @@
 """版本发现：查最新版本并解析出下载地址。
 
-Mirror 酱的免 CDK 接口是**所有下载源**的版本权威——自建站只能用 tag 拼 URL，
-没有 latest 接口，靠这条口径补上。下载源只决定字节从哪来，不参与版本判断，
+Mirror 酱的免 CDK 接口是**所有下载源**的版本权威。自建站根据发布记录核对
+目标版本并固定下载包。下载源只决定字节从哪来，不参与版本判断，
 也**绝不自动分流**：选了 Mirror 酱而 CDK 不可用时报错跳过，不悄悄换成 GitHub。
 
 唯一的例外是「用户选了 GitHub 而 Mirror 酱不可达」：此时回退查 GitHub 自己的
@@ -10,6 +10,7 @@ release 接口。字节仍来自用户选定的源，所以不违反上面那条
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 import httpx
@@ -143,7 +144,7 @@ async def discover(
         )
 
     if source == "AutoSite":
-        url = spec.station_url(latest)
+        url = spec.station_url()
         if not url:
             return DiscoveryResult(
                 **base,
@@ -151,7 +152,7 @@ async def discover(
                     f"{engine_label(spec.engine, left=False)}未提供 AUTO-MAS 下载站渠道"
                 ),
             )
-        sha = await _fetch_station_sha256(url, proxy=proxy)
+        url, sha = await _station_asset(url, latest, proxy=proxy)
         return DiscoveryResult(
             **base,
             candidate=UpdateCandidate(
@@ -343,20 +344,37 @@ async def _github_asset(
     return "", ""
 
 
-async def _fetch_station_sha256(zip_url: str, *, proxy: httpx.Proxy | None) -> str:
-    """自建站的 ``.sha256`` 旁文件。取不到就返回空串，退化为完整性校验。"""
+async def _station_asset(
+    content_url: str, tag: str, *, proxy: httpx.Proxy | None
+) -> tuple[str, str]:
+    """读取数据站的已发布记录，固定版本后交给下载器做哈希校验。"""
 
-    url = f"{zip_url.rsplit('.', 1)[0]}.sha256"
+    detail_url = content_url.removesuffix("/download/content")
     try:
         async with httpx.AsyncClient(
             proxy=proxy, follow_redirects=True, timeout=_TIMEOUT
         ) as client:
-            response = await client.get(url, headers={"User-Agent": _USER_AGENT})
+            response = await client.get(detail_url, headers={"User-Agent": _USER_AGENT})
             response.raise_for_status()
-            return response.text.strip().split()[0]
-    except Exception as exc:  # noqa: BLE001 - 旁文件缺失不该让更新失败
-        logger.warning(f"HSR 更新：未取到自建站校验文件 {url}：{exc}")
-        return ""
+            payload = response.json()
+        if payload["code"] != 0:
+            raise ValueError("发布记录不可用")
+        published = payload["data"]["published_version"]
+        version_no = published["version_no"]
+        filename = published["source_filename"]
+        sha = published["sha256"]
+        if type(version_no) is not int or version_no < 1:
+            raise ValueError("缺少有效的发布记录编号")
+        if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", sha):
+            raise ValueError("缺少有效的安装包校验值")
+        match = re.fullmatch(r"StarRailAssistant_(.+)\.zip", filename)
+        if match is None or Version(match[1]) != Version(tag):
+            raise ValueError(f"下载站安装包 {filename} 与目标版本 {tag} 不一致")
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        raise HSRUpdateError(f"读取 AUTO-MAS 下载站安装包失败：{exc}") from exc
+
+    # beta 是可变的文件记录名；固定版本编号，防止下载时被后续发布替换。
+    return f"{content_url}?version_no={version_no}", sha.lower()
 
 
 def _tag_candidates(tag: str) -> tuple[str, ...]:
