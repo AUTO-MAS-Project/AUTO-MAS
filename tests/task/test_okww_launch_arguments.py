@@ -1,15 +1,16 @@
 """OK-WW 普通日常启动参数回归。"""
 
+import importlib
 import json
 import uuid
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
 from app.models.config.script import OkwwUserConfig
 from app.models.task import UserItem
 from app.task.Okww.AutoProxy import AutoProxyTask
-from tests.runtime_support import RuntimeStub
 
 
 @pytest.mark.asyncio
@@ -23,14 +24,16 @@ from tests.runtime_support import RuntimeStub
         ("unknown", None),
     ],
 )
-async def test_daily_task_uses_version_supported_argument(tmp_path, version, argument):
+async def test_daily_task_uses_version_supported_argument(
+    tmp_path, version, argument, monkeypatch
+):
     app_json = tmp_path / "data/apps/ok-ww/app.json"
     app_json.parent.mkdir(parents=True)
     app_json.write_text(json.dumps({"current_version": version}), encoding="utf-8")
     uid = uuid.uuid4()
     user = UserItem(user_id=str(uid), name="用户", status="等待")
-    script_info = RuntimeStub(
-        task_info=RuntimeStub(),
+    script_info = SimpleNamespace(
+        task_info=SimpleNamespace(),
         script_id=str(uuid.uuid4()),
         user_list=[user],
         current_index=0,
@@ -49,3 +52,21 @@ async def test_daily_task_uses_version_supported_argument(tmp_path, version, arg
     await task.prepare()
 
     assert task.okww_args == ["-t", argument, "-e"]
+
+    module = importlib.import_module("app.task.Okww.AutoProxy")
+    launches = []
+
+    async def launch(*args, **kwargs):
+        launches.append(list(kwargs["args"]))
+        app_json.write_text('{"current_version": "v3.8.0-beta.1"}', encoding="utf-8")
+
+    monkeypatch.setattr(module, "start_okww", launch)
+    monkeypatch.setattr(task, "_push_dispatch_log", AsyncMock())
+    monkeypatch.setattr(task.okww_process_manager, "kill", AsyncMock())
+    monkeypatch.setattr(module.process, "kill_process", AsyncMock())
+    await task._start_okww_with_current_arguments()
+    expected = [["-t", "DailyTask", "-e"]]
+    if argument == "1":
+        expected.insert(0, ["-t", "1", "-e"])
+    assert launches == expected
+    assert task.okww_process_manager.kill.await_count == (argument == "1")
