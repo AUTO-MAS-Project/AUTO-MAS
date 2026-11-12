@@ -19,6 +19,7 @@ const bridge = vi.hoisted(() => ({
   sent: [] as Array<{ channel: string; payload: unknown }>,
   mounted: [] as Array<() => unknown>,
   logs: [] as unknown[][],
+  senderDestroyed: false,
   api: undefined as Window['electronAPI'] | undefined,
   config: {
     mode: 'managed' as const,
@@ -30,8 +31,10 @@ const bridge = vi.hoisted(() => ({
 vi.mock('electron', () => {
   const event = {
     sender: {
-      isDestroyed: () => false,
+      isDestroyed: () => bridge.senderDestroyed,
       send: (channel: string, payload: unknown) => {
+        // Mirrors Electron: sending to a destroyed WebContents throws.
+        if (bridge.senderDestroyed) throw new TypeError('Object has been destroyed')
         // Electron serializes IPC payloads with the structured clone algorithm.
         const cloned = structuredClone(payload)
         bridge.sent.push({ channel, payload: cloned })
@@ -114,6 +117,7 @@ beforeAll(async () => {
 })
 beforeEach(() => {
   vi.useFakeTimers()
+  bridge.senderDestroyed = false
   bridge.mounted.length = 0
   bridge.sent.length = 0
   bridge.logs.length = 0
@@ -397,4 +401,45 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
       }
     }
   )
+
+  // AUTO-MAS-DESKTOP-16: the Runtime keeps emitting bootstrap progress after the
+  // window is closed during quit; sending it must not crash the main process.
+  it('drops initialization progress once the renderer is destroyed', async () => {
+    let emit!: (progress: RuntimeBinarySyncProgress) => void
+    let finish!: () => void
+    const completion = new Promise<void>(resolve => {
+      finish = resolve
+    })
+    const runtime = new RuntimeInitializationService({
+      launchConfig: bridge.config,
+      alignRuntimeBinary: async options => {
+        emit = progress => options.onProgress?.(progress)
+        await completion
+        return { status: 'cancelled' }
+      },
+      createClient: () => {
+        throw new Error('The test must not launch a Runtime process')
+      },
+    })
+    vi.spyOn(InitializationService.prototype, 'getRuntimeService').mockReturnValue(runtime)
+    const pending = window.electronAPI.initialize('dev', false)
+    try {
+      await vi.waitFor(() => expect(emit).toBeTypeOf('function'))
+      const progress: RuntimeBinarySyncProgress = {
+        phase: 'download',
+        progress: 50,
+        item: 'runtime.exe',
+        message: 'downloading',
+      }
+      emit(progress)
+      const delivered = bridge.sent.length
+      expect(delivered).toBeGreaterThan(0)
+      bridge.senderDestroyed = true
+      expect(() => emit(progress)).not.toThrow()
+      expect(bridge.sent).toHaveLength(delivered)
+    } finally {
+      finish()
+      await pending
+    }
+  })
 })
