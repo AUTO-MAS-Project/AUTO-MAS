@@ -4912,5 +4912,8 @@
   "core.edit.okwwLoginAccountHint": "用于匹配游戏登录列表中已保存的账号。MAS 切换填写完整手机号；ok-ww 切换支持完整大陆手机号、138****1234 或列表显示的邮箱，不支持仅填后四位。不切换时可留空。",
   "core.edit.okwwLoginAccountPlaceholder": "完整手机号或登录列表中的账号",
   "core.edit.okwwDailyArgumentsExample": "普通日常模式启动参数示例",
-  "core.edit.okwwArgumentsExampleHint": "原生切号模式由托管的账号切换方式决定，实际使用 -t MultiAccountConfigTask -e。"
+  "core.edit.okwwArgumentsExampleHint": "原生切号模式由托管的账号切换方式决定，实际使用 -t MultiAccountConfigTask -e。",
+  "core.edit.updatePackageMode": "更新方式",
+  "core.edit.updatePackageRisk": "增量更新有风险，依赖当前安装完整且版本匹配；无可用增量或校验失败时会回退全量。",
+  "core.edit.updatePackagePreferIncremental": "增量更新（优先）"
 }

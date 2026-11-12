@@ -53,7 +53,6 @@ from .payloads import (
 from .projection import PROJECTION_REVISION, abandoned_native_runtime_files
 from .projection_heal import format_size
 from .range_delta import (
-    FORCE_FULL_PACKAGE_ENV,
     RangeDeltaCancelled,
     RangeDeltaUnavailable,
     RangeSpeedGuard,
@@ -636,12 +635,12 @@ async def update_maafw_project_if_needed(
             and not base_missing
         ):
             send_update_log("当前版本是本地导入的，改为请求全量包")
-        force_full = force_full_package()
+        force_full = (
+            force_full_package() or (source_config or {}).get("package_mode") == "full"
+        )
         if force_full:
             prefer_full = True
-            send_update_log(
-                f"已设环境变量 {FORCE_FULL_PACKAGE_ENV}=1：一律请求全量包、不按区间差量"
-            )
+            send_update_log("已选择全量更新：请求全量包、不按区间差量")
         gate = precheck_gate
         if base_missing:
             # 新载荷要以当前载荷为基准建，它的清单不在本机就一定建不成（以前要等下载、
@@ -656,6 +655,11 @@ async def update_maafw_project_if_needed(
             prefetched is not None
             and prefetched[0] == current_version
             and not base_missing
+            and (
+                not force_full
+                or prefetched[1].candidate is None
+                or prefetched[1].candidate.package_type in {None, "", "full"}
+            )
         ):
             # 同一配置代次、同一基准下复用已下载候选，避免重签 Mirror 一次性地址。
             discovery = prefetched[1]
@@ -818,6 +822,14 @@ async def update_maafw_project_if_needed(
             send_update_log(f"{blocker}，不按区间差量，下载全量包")
         else:
             range_delta = True
+    registered = False
+
+    async def on_register(result: RegisterResult) -> Any:
+        nonlocal registered
+        registered = True
+        if after_register is not None:
+            return await after_register(result)
+
     try:
         apply_result = await apply_maafw_project_update(
             project_path.resolve(),
@@ -829,7 +841,7 @@ async def update_maafw_project_if_needed(
             cancel_event=cancel_event,
             github_mirror_urls=github_mirror_urls,
             payload=payload,
-            after_register=after_register,
+            after_register=on_register,
             range_delta=range_delta,
         )
     except Exception as exc:
@@ -845,6 +857,29 @@ async def update_maafw_project_if_needed(
                 final=True,
             )
             raise
+        if (
+            candidate.package_type == "delta"
+            and not registered
+            and isinstance(exc.__cause__, UpdateApplyError)
+        ):
+            send_update_log("增量更新失败，当前版本未改动，回退全量更新")
+            return await update_maafw_project_if_needed(
+                project_path,
+                interface_model,
+                mirror_cdk=mirror_cdk,
+                channel=channel,
+                proxy=proxy,
+                send_log=send_log,
+                source_config={**(source_config or {}), "package_mode": "full"},
+                progress=progress,
+                post_validate=post_validate,
+                precheck_gate=precheck_gate,
+                cancel_event=cancel_event,
+                github_mirror_urls=github_mirror_urls,
+                payload=payload,
+                after_register=after_register,
+                allow_misnumbered_rollback=allow_misnumbered_rollback,
+            )
         detail = _exception_detail(exc)
         message = (
             detail

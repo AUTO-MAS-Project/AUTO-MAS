@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type M9AConfig_UpdateInput = {
     /**
+     * 更新方式：全量或优先增量；增量依赖完整且匹配的基线，必要时回退全量。
+     */
+    PackageMode?: ('full' | 'incremental' | null);
+    /**
      * 项目自动更新时机：Off 不更新，BeforeRun 在账号任务开始前更新。旧配置 AfterRun 兼容为运行前更新。更新和环境准备耗时不计入账号任务时限。
      */
     AutoUpdateMode?: ('Off' | 'BeforeRun' | 'AfterRun' | null);

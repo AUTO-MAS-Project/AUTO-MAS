@@ -102,6 +102,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     Hotkeys: '{}',
   },
   Update: {
+    PackageMode: 'full',
     AutoUpdateMode: 'BeforeRun',
     Source: 'GitHub',
     Channel: 'stable',

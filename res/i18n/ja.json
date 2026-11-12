@@ -4912,5 +4912,8 @@
   "core.edit.okwwLoginAccountHint": "ゲームのログイン一覧に保存済みのアカウントを指定します。MAS 切替では完全な携帯番号を入力します。ok-ww 切替では中国本土の完全な携帯番号、138****1234 形式、または一覧に表示されたメールに対応し、下4桁だけでは利用できません。切替なしの場合は空欄にできます。",
   "core.edit.okwwLoginAccountPlaceholder": "完全な携帯番号またはログイン一覧のアカウント",
   "core.edit.okwwDailyArgumentsExample": "通常の日常タスクの起動引数例",
-  "core.edit.okwwArgumentsExampleHint": "ネイティブ切替では、管理スクリプトの切替方式に従い -t MultiAccountConfigTask -e を使用します。"
+  "core.edit.okwwArgumentsExampleHint": "ネイティブ切替では、管理スクリプトの切替方式に従い -t MultiAccountConfigTask -e を使用します。",
+  "core.edit.updatePackageMode": "更新方式",
+  "core.edit.updatePackageRisk": "差分更新にはリスクがあり、正常かつ一致するバージョンが必要です。対応する差分がない場合や検証に失敗した場合は完全更新に切り替えます。",
+  "core.edit.updatePackagePreferIncremental": "差分更新を優先"
 }

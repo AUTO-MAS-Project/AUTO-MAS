@@ -4912,5 +4912,8 @@
   "core.edit.okwwLoginAccountHint": "Identifies an account saved in the game's login list. For MAS switching, enter the full phone number. For ok-ww switching, use a full mainland China phone number, a masked number such as 138****1234, or the email shown in the list; the last four digits alone are not supported. Leave blank if switching is disabled.",
   "core.edit.okwwLoginAccountPlaceholder": "Full phone number or account shown in the login list",
   "core.edit.okwwDailyArgumentsExample": "Daily task launch argument example",
-  "core.edit.okwwArgumentsExampleHint": "Native switching uses -t MultiAccountConfigTask -e, according to the managed script account switching method."
+  "core.edit.okwwArgumentsExampleHint": "Native switching uses -t MultiAccountConfigTask -e, according to the managed script account switching method.",
+  "core.edit.updatePackageMode": "Update method",
+  "core.edit.updatePackageRisk": "Incremental updates carry risks and require an intact, matching installation. Full updates are used when no compatible delta is available or validation fails.",
+  "core.edit.updatePackagePreferIncremental": "Prefer incremental"
 }

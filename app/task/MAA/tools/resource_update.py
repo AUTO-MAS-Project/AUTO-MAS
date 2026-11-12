@@ -353,13 +353,23 @@ async def _fetch_latest_version(current: str) -> datetime:
         raise _QueryError(f"version_name 无法解析: {name}") from e
 
 
-async def _request_resource_package(cdk: str) -> tuple[str, datetime | None]:
-    """申请全量包，返回一次性地址与响应版本；版本损坏由调用方记账后报错。"""
+async def _request_resource_package(
+    cdk: str, *, base_clock: datetime | None = None
+) -> tuple[str, datetime | None, bool]:
+    """申请更新包，返回地址、版本与增量标记；提供基线时允许增量。"""
     try:
         async with asyncio.timeout(_QUERY_TIMEOUT):
             payload = await _service_update_transport.request_mirror_resource(
                 "MaaResource",
-                params={"cdk": cdk, "sp_id": _sp_id()},
+                params={
+                    "cdk": cdk,
+                    "sp_id": _sp_id(),
+                    **(
+                        {"current_version": _format_clock(base_clock)}
+                        if base_clock
+                        else {}
+                    ),
+                },
                 proxy=Config.proxy,
                 timeout=_QUERY_TIMEOUT,
             )
@@ -372,18 +382,21 @@ async def _request_resource_package(cdk: str) -> tuple[str, datetime | None]:
         url = payload["data"].get("url")
     if not url:
         raise _DownloadError("镜像酱未返回下载地址")
-    if payload["data"].get("update_type") != "full":
-        raise _DownloadError("镜像酱未返回全量资源包，跳过以避免多实例重复取包")
+    kind = payload["data"].get("update_type")
+    if kind not in {"full", "incremental"} or (
+        kind == "incremental" and base_clock is None
+    ):
+        raise _DownloadError("镜像酱返回了不匹配的资源包类型")
     try:
         version = _parse_clock(str(payload["data"].get("version_name") or ""))
     except ValueError:
         version = None
-    return str(url), version
+    return str(url), version, kind == "incremental"
 
 
 def _download_line(downloaded: int, total: int, speed: float) -> str:
     """下载进度行：有 Content-Length 时带 x/y MB，速度按量级选单位。"""
-    label = "下载 Mirror酱 全量资源包"
+    label = "下载 Mirror酱 资源更新包"
     speed_text = (
         f"{speed / _MB:.1f} MB/s" if speed >= _MB else f"{speed / 1024:.0f} KB/s"
     )
@@ -415,7 +428,13 @@ async def _stream_download(url: str, progress: _Progress | None) -> None:
         raise _DownloadError(f"资源包下载失败: {e}") from e
 
 
-def _build_stage(zip_path: Path, target: datetime, *, github: bool = False) -> None:
+def _build_stage(
+    zip_path: Path,
+    target: datetime,
+    *,
+    github: bool = False,
+    base_clock: datetime | None = None,
+) -> None:
     """解压 → 校验 → 单调把关 → 换位 → 核账 → manifest。线程内执行；任何
     失败都抛 _DownloadError（进下载退避）。
 
@@ -465,7 +484,17 @@ def _build_stage(zip_path: Path, target: datetime, *, github: bool = False) -> N
                     f"资源包版本({_format_clock(new_clock)})旧于现有暂存"
                     f"({_format_clock(old_clock)})，拒绝替换"
                 )
-        expected = count_zip_entries(zip_path, prefix=prefix)
+        if base_clock is not None:
+            baseline = _load_valid_manifest()
+            if baseline is None or parse_iso(baseline.get("target")) != base_clock:
+                raise _DownloadError("资源增量基线已失效，必须重新下载全量包")
+            complete = stage_tmp / "complete"
+            shutil.copytree(_STAGE_DIR / "resource", complete)
+            merge_package_tree(root, complete)
+            root = complete
+            expected = len(resource_tree_hashes(root))
+        else:
+            expected = count_zip_entries(zip_path, prefix=prefix)
         file_hashes = resource_tree_hashes(root)
         _MANIFEST_FILE.unlink(missing_ok=True)
         if _STAGE_DIR.exists():
@@ -503,7 +532,11 @@ def _build_stage(zip_path: Path, target: datetime, *, github: bool = False) -> N
 
 
 async def _refresh_stage(
-    target: datetime, url: str, progress: _Progress | None = None
+    target: datetime,
+    url: str,
+    progress: _Progress | None = None,
+    *,
+    base_clock: datetime | None = None,
 ) -> None:
     """下载已取得地址的资源包并重建暂存；失败抛 _DownloadError。"""
     await _stream_download(url, progress)
@@ -512,6 +545,7 @@ async def _refresh_stage(
         _build_stage,
         zip_path=_STAGE_ZIP,
         target=target,
+        base_clock=base_clock,
     )
     # zip 是可弃缓存，删不掉（AV 隔离等）也无妨——下次下载按 "wb" 截断重写
     with suppress(OSError):
@@ -775,6 +809,7 @@ async def _refresh_resource_stage(
     progress: _Progress | None,
     cdk: str,
     refund_cancelled: bool = False,
+    incremental: bool = False,
 ) -> dict[str, object] | None:
     """按版本每日限额与失败退避刷新缓存；state 由编排器持有并在此记账。"""
     if (
@@ -806,7 +841,11 @@ async def _refresh_resource_stage(
     attempt_version: str | None = None
     try:
         # 凭据被拒、尚未取得下载地址时不消耗当天取包次数；不同 CDK 独立退避。
-        url, actual = await _request_resource_package(cdk)
+        # 增量只作用于通过摘要验证的完整共享缓存，不使用任一安装目录作为多实例基线。
+        base_clock = parse_iso(stage.get("target")) if incremental and stage else None
+        if base_clock is None and incremental:
+            await _report(progress, "没有可信资源增量基线，回退全量资源包…")
+        url, actual, delta = await _request_resource_package(cdk, base_clock=base_clock)
         attempt_stamp = datetime.now(timezone.utc).isoformat()
         attempt_version = max(target, actual or target).isoformat()
         state[attempt_field] = attempt_stamp
@@ -814,7 +853,21 @@ async def _refresh_resource_stage(
         _utils_io.write_file(_STATE_FILE, state)
         if actual is None or actual < target:
             raise _DownloadError("镜像酱资源包未达到已确认的目标版本，请稍后重试")
-        await _refresh_stage(target=actual, url=url, progress=progress)
+        try:
+            await _refresh_stage(
+                target=actual,
+                url=url,
+                progress=progress,
+                base_clock=base_clock if delta else None,
+            )
+        except _DownloadError:
+            if not delta:
+                raise
+            await _report(progress, "资源增量下载或校验失败，回退全量资源包…")
+            url, actual, _ = await _request_resource_package(cdk)
+            if actual is None or actual < target:
+                raise _DownloadError("回退的资源包未达到目标版本")
+            await _refresh_stage(target=actual, url=url, progress=progress)
         return _load_manifest()
     except asyncio.CancelledError:
         # 队列撤销预取不应耗尽当日额度；普通下载失败仍按原规则记账。
@@ -958,9 +1011,13 @@ async def _sweep(progress: _Progress | None = None, cdk: str = "") -> None:
     )
 
 
-async def prefetch_resources(install: Path, *, github: bool, cdk: str | None) -> None:
+async def prefetch_resources(
+    install: Path, *, github: bool, cdk: str | None, incremental: bool = False
+) -> None:
     """共享 staging 的只下载边界，绝不分发到任何安装目录。"""
-    await prepare_install_resources(install, github=github, cdk=cdk, download_only=True)
+    await prepare_install_resources(
+        install, github=github, cdk=cdk, download_only=True, incremental=incremental
+    )
 
 
 async def _run_update(cdk: str) -> None:
@@ -1053,6 +1110,7 @@ async def prepare_install_resources(
     progress: _Progress | None = None,
     download_only: bool = False,
     recovery_snapshot: bytes | None = None,
+    incremental: bool = False,
 ) -> None:
     """本体安装之后、账号启动之前补齐资源；调用方已持有安装访问锁。
 
@@ -1119,6 +1177,11 @@ async def prepare_install_resources(
                     # never remove that file until it is safe to do so.
                     can_cleanup = prefetch_directory is not None
                     try:
+                        if incremental:
+                            await _report(
+                                progress,
+                                "GitHub 资源源未提供匹配增量包，本次使用全量资源包…",
+                            )
                         await _report(progress, "启动前下载 GitHub 全量资源包…")
                         # 下载入口尚未接管前，不能清理上次留下的共享归档。
                         can_cleanup = True
@@ -1165,6 +1228,7 @@ async def prepare_install_resources(
                         progress=progress,
                         cdk=cdk,
                         refund_cancelled=download_only,
+                        incremental=incremental,
                     )
                     if not _stage_reusable(stage, target):
                         raise RuntimeError(

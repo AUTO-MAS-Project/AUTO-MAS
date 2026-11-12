@@ -721,6 +721,9 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         from app.task.MaaFW.tools.embedded.view_update import memo_path_factory
 
         config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        # 增量依赖启动时的当前载荷，交给运行前更新，避免提前下载全量。
+        if config.Update.PackageMode == "incremental":
+            return
         if resolve_auto_update_mode(config) == "Off" or follow_source_enabled(config):
             return
         credentials = resolve_update_credentials(config)
@@ -1030,7 +1033,10 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
 
         del project_path  # 视图路径由托管 ID 推出，run_view_update 自己取
         send_log = self._threadsafe_update_log()
-        source_config: dict[str, Any] = {"package_source": credentials.package_source}
+        source_config: dict[str, Any] = {
+            "package_source": credentials.package_source,
+            "package_mode": self.script_config.Update.PackageMode,
+        }
         # 副本里没有 MFW.exe / maafw/ 可扫，外壳家族只能从导入报告取；不回填，
         # M9A 这种同版本同时发 -MXU.zip 与 -MFAA.zip 的项目会选错资产。
         shell_hint = shell_hint_from_report(self.script_config)

@@ -117,6 +117,7 @@ class PreparedUpdate:
     version: str
     package: Path
     digest: str
+    package_mode: str
 
 
 def _digest(path: Path) -> str:
@@ -162,6 +163,8 @@ async def prepare_maa_fluxdown_update(
             logger.info("MAA 已有待安装包，保留原生更新登记")
             raise RuntimeError("MAA 仍有未安装的更新包，请先完成安装")
         if prepared is not None:
+            if config.Update.PackageMode != prepared.package_mode:
+                raise RuntimeError("预下载后更新方式已变化，请重新检查更新")
             if release != prepared.release:
                 raise RuntimeError("MAA 安装已变化，请重新检查更新")
             destination = maa_root / prepared.package.name
@@ -184,6 +187,7 @@ async def prepare_maa_fluxdown_update(
                 return None
             if (
                 read_installed_release(maa_root) != release
+                or config.Update.PackageMode != prepared.package_mode
                 or has_delegated_update_failure(maa_root)
                 or read_pending_update(maa_root) != pending_update
             ):
@@ -194,6 +198,7 @@ async def prepare_maa_fluxdown_update(
             )
             return prepared.version
         current, arch = release
+        package_mode = config.Update.PackageMode
         channel = config.Update.Channel
         latest = await query_latest_maa_version(arch, channel, github=True)
         target_version, current_version = parse_version(latest), parse_version(current)
@@ -209,7 +214,11 @@ async def prepare_maa_fluxdown_update(
 
         # 只使用官方规范包名，不接受清单中的任意下载 URL。
         tag = latest if latest.startswith("v") else f"v{latest}"
-        filename = await _select_package(current, latest, arch, channel)
+        filename = (
+            await _select_package(current, latest, arch, channel)
+            if package_mode == "incremental"
+            else f"MAA-{tag}-win-{arch}.zip"
+        )
         if download_only:
             cache = Path.cwd() / "data" / "maa_github_update"
             cache.mkdir(parents=True, exist_ok=True)
@@ -240,6 +249,21 @@ async def prepare_maa_fluxdown_update(
                     source="GitHub",
                 )
                 break
+            except httpx.HTTPStatusError as error:
+                if (
+                    not filename.startswith("MAAComponent-OTA-")
+                    or error.response.status_code != 404
+                    or attempt == 2
+                ):
+                    raise
+                logger.warning("官方 OTA 包已不可用，回退全量更新")
+                part.unlink(missing_ok=True)
+                filename = f"MAA-{tag}-win-{arch}.zip"
+                destination = directory / filename
+                part = directory / (
+                    f"{filename}.part" if download_only else f".mas-{filename}.part"
+                )
+                url = url.rsplit("/", 1)[0] + "/" + filename
             except _service_update_fluxdown.FluxdownResumableError:
                 if attempt == 2:
                     raise
@@ -251,10 +275,14 @@ async def prepare_maa_fluxdown_update(
         ):
             logger.info("下载期间更新来源已变更，保留文件但不登记安装")
             return None
+        if config.Update.PackageMode != package_mode:
+            raise RuntimeError("下载期间更新方式已变化，请重新检查更新")
         if download_only:
             part.replace(destination)
             digest = await _run_write_thread(_digest, destination)
-            candidate = PreparedUpdate(release, latest, destination, digest)
+            candidate = PreparedUpdate(
+                release, latest, destination, digest, package_mode
+            )
             # The candidate manager now owns this verified directory.
             retain_download = True
             return candidate

@@ -45,7 +45,7 @@ def software_install(tmp_path, monkeypatch, isolated_app_paths):
     cache = tmp_path / "software-cache"
     monkeypatch.setattr(software, "_STATE_FILE", state)
     monkeypatch.setattr(
-        software, "software_cache_dir", lambda os_name, arch, channel: cache
+        software, "software_cache_dir", lambda os_name, arch, channel, **kwargs: cache
     )
     monkeypatch.setattr(software, "_running_updater_paths", lambda: set())
     monkeypatch.setattr(
@@ -93,7 +93,10 @@ def software_install(tmp_path, monkeypatch, isolated_app_paths):
         downloader=downloader,
         config=SimpleNamespace(
             Update=SimpleNamespace(
-                TakeoverEnabled=True, Channel="beta", MirrorChyanCDK="test-cdk"
+                TakeoverEnabled=True,
+                Channel="beta",
+                MirrorChyanCDK="test-cdk",
+                PackageMode="full",
             )
         ),
     )
@@ -387,3 +390,58 @@ async def test_resource_invalid_or_older_response_is_accounted_before_rejection(
         )
     install.request.assert_awaited_once()
     install.downloader.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("corrupt", [False, True])
+async def test_mirror_incremental_uses_baseline_and_falls_back_on_corruption(
+    software_install, monkeypatch, corrupt
+):
+    install = software_install
+    install.config.Update.PackageMode = "incremental"
+    requests = []
+
+    async def request(rid, *, params, **kwargs):
+        requests.append(params)
+        delta = "current_version" in params
+        return {
+            "data": {
+                "version_name": "v6.1.0",
+                "url": "https://example.invalid/" + ("delta" if delta else "full"),
+                "update_type": "incremental" if delta else "full",
+            }
+        }
+
+    async def download(url, path, **kwargs):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if url.endswith("delta") and corrupt:
+            path.write_bytes(b"bad zip")
+            return
+        with zipfile.ZipFile(path, "w") as package:
+            if url.endswith("delta"):
+                package.writestr("changes.json", '{"deleted": []}')
+                package.writestr("resource/change.json", "new")
+            else:
+                package.writestr("MAA.exe", "exe")
+                package.writestr("MAA.dll", "dll")
+
+    monkeypatch.setattr(
+        software._service_update_transport, "request_mirror_resource", request
+    )
+    monkeypatch.setattr(software, "download_file", download)
+    assert await prepare_software(install) == "v6.1.0"
+    assert requests[0]["current_version"] == "v6.0.0"
+    if corrupt:
+        assert len(requests) == 2
+        assert "current_version" not in requests[1]
+    from app.task.MAA.tools.software_package import (
+        load_cache_manifest,
+        software_cache_dir,
+    )
+
+    manifest = load_cache_manifest(install.cache)
+    assert manifest["package_type"] == ("full" if corrupt else "incremental")
+    assert manifest["base_version"] == "v6.0.0"
+    assert software_cache_dir(
+        "win", "x64", "beta", base_version="v6.0.0"
+    ) != software_cache_dir("win", "x64", "beta", base_version="v5.0.0")

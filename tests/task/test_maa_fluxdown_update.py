@@ -22,10 +22,15 @@ from app.task.MAA.tools import software_update as mirror
 from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
-def script_config(*, enabled=True, channel="stable", cdk=""):
+def script_config(
+    *, enabled=True, channel="stable", cdk="", package_mode="incremental"
+):
     return SimpleNamespace(
         Update=SimpleNamespace(
-            TakeoverEnabled=enabled, Channel=channel, MirrorChyanCDK=cdk
+            TakeoverEnabled=enabled,
+            Channel=channel,
+            MirrorChyanCDK=cdk,
+            PackageMode=package_mode,
         )
     )
 
@@ -933,7 +938,9 @@ async def test_cancelled_mirror_prefetch_keeps_cache_lock_until_hash_closes(
 
     monkeypatch.setattr(software_package, "_file_sha256", slow_checksum)
     pending = asyncio.create_task(
-        mirror.prefetch_maa_software_update(root, script_config(cdk="test-cdk"))
+        mirror.prefetch_maa_software_update(
+            root, script_config(cdk="test-cdk", package_mode="full")
+        )
     )
     try:
         assert await asyncio.to_thread(hashing.wait, 3)
@@ -956,7 +963,9 @@ async def test_cancelled_resource_prefetch_can_retry_mirror_on_same_day(
     resource_install, monkeypatch
 ):
     install, target, github_download = resource_install
-    request = AsyncMock(return_value=("https://example.invalid/resource", target))
+    request = AsyncMock(
+        return_value=("https://example.invalid/resource", target, False)
+    )
     monkeypatch.setattr(resource, "_request_resource_package", request)
     started = asyncio.Event()
 
@@ -1645,3 +1654,182 @@ async def test_cancellation_before_resource_download_does_not_delete_previous_ar
         )
     assert resource._STAGE_ZIP.read_bytes() == b"previous unconfirmed writer"
     downloader.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_full_mode_ignores_available_official_ota(installation):
+    root, release, downloader = installation
+    release.return_value["details"]["assets"] = [
+        {"name": "MAAComponent-OTA-v6.0.0_v6.1.0-win-x64.zip"}
+    ]
+    await update.prepare_maa_fluxdown_update(
+        root, config=script_config(package_mode="full"), config_dir=root / "config"
+    )
+    assert downloader.call_args.args[0].endswith("/MAA-v6.1.0-win-x64.zip")
+
+
+def test_package_mode_defaults_to_full_and_survives_config_projection():
+    from app.config.wire import ConfigInput
+    from app.models.config import M9AConfig, MaaFWConfig, MSSConfig
+
+    for config_type in (MaaConfig, MaaFWConfig, M9AConfig, MSSConfig):
+        assert config_type.UpdateFields().PackageMode == "full"
+        payload = ConfigInput[config_type].model_validate(
+            {"Update": {"PackageMode": "incremental"}}
+        )
+        assert (
+            payload.model_dump(exclude_unset=True)["Update"]["PackageMode"]
+            == "incremental"
+        )
+
+
+@pytest.mark.asyncio
+async def test_resource_delta_rebuilds_complete_cache_before_distribution(
+    resource_install, monkeypatch
+):
+    from datetime import timedelta
+
+    install, target, _ = resource_install
+    baseline = target - timedelta(days=1)
+    resource._WORK_DIR.mkdir(parents=True)
+    archive = resource._WORK_DIR / "baseline.zip"
+    with zipfile.ZipFile(archive, "w") as package:
+        package.writestr(
+            "resource/version.json",
+            json.dumps({"last_updated": resource._format_clock(baseline)}),
+        )
+        package.writestr("resource/unchanged.json", "keep")
+        package.writestr("resource/changed.json", "old")
+    resource._build_stage(archive, baseline)
+    request = AsyncMock(
+        return_value={
+            "data": {
+                "url": "https://example.invalid/delta.zip",
+                "version_name": resource._format_clock(target),
+                "update_type": "incremental",
+            }
+        }
+    )
+    monkeypatch.setattr(
+        resource._service_update_transport, "request_mirror_resource", request
+    )
+
+    async def download(url, path, **kwargs):
+        with zipfile.ZipFile(path, "w") as package:
+            package.writestr(
+                "resource/version.json",
+                json.dumps({"last_updated": resource._format_clock(target)}),
+            )
+            package.writestr("resource/changed.json", "new")
+
+    monkeypatch.setattr(resource, "download_file", download)
+    await resource.prepare_install_resources(
+        install, github=False, cdk="test", incremental=True
+    )
+    assert request.call_args.kwargs["params"][
+        "current_version"
+    ] == resource._format_clock(baseline)
+    assert (install / "resource/unchanged.json").read_text() == "keep"
+    assert (install / "resource/changed.json").read_text() == "new"
+    assert resource.read_resource_clock(install) == target
+    assert resource._load_valid_manifest()["full"] is True
+
+
+@pytest.mark.asyncio
+async def test_invalid_resource_delta_falls_back_without_publishing_partial_cache(
+    resource_install, monkeypatch
+):
+    from datetime import timedelta
+
+    install, target, _ = resource_install
+    baseline = target - timedelta(days=1)
+    resource._WORK_DIR.mkdir(parents=True)
+    archive = resource._WORK_DIR / "baseline.zip"
+    with zipfile.ZipFile(archive, "w") as package:
+        package.writestr(
+            "resource/version.json",
+            json.dumps({"last_updated": resource._format_clock(baseline)}),
+        )
+    resource._build_stage(archive, baseline)
+    requests = []
+
+    async def request(rid, *, params, **kwargs):
+        requests.append(params)
+        return {
+            "data": {
+                "url": "https://example.invalid/"
+                + ("delta" if "current_version" in params else "full"),
+                "version_name": resource._format_clock(target),
+                "update_type": "incremental" if "current_version" in params else "full",
+            }
+        }
+
+    async def download(url, path, **kwargs):
+        if url.endswith("delta"):
+            path.write_bytes(b"broken zip")
+            return
+        with zipfile.ZipFile(path, "w") as package:
+            package.writestr(
+                "resource/version.json",
+                json.dumps({"last_updated": resource._format_clock(target)}),
+            )
+            package.writestr("resource/full.json", "recovered")
+
+    monkeypatch.setattr(
+        resource._service_update_transport, "request_mirror_resource", request
+    )
+    monkeypatch.setattr(resource, "download_file", download)
+    await resource.prepare_install_resources(
+        install, github=False, cdk="test", incremental=True
+    )
+    assert "current_version" in requests[0] and "current_version" not in requests[1]
+    assert (install / "resource/full.json").read_text() == "recovered"
+    assert resource.read_resource_clock(install) == target
+
+
+@pytest.mark.asyncio
+async def test_prefetched_ota_is_rejected_after_switching_to_full(
+    installation, monkeypatch
+):
+    root, release, _ = installation
+    monkeypatch.chdir(root.parent)
+    release.return_value["details"]["assets"] = [
+        {"name": "MAAComponent-OTA-v6.0.0_v6.1.0-win-x64.zip"}
+    ]
+    config = script_config()
+    candidate = await update.prepare_maa_fluxdown_update(
+        root, config=config, config_dir=root / "config", download_only=True
+    )
+    try:
+        config.Update.PackageMode = "full"
+        with pytest.raises(RuntimeError):
+            await update.prepare_maa_fluxdown_update(
+                root, config=config, config_dir=root / "config", prepared=candidate
+            )
+        assert update.read_pending_update(root) == ("", "")
+    finally:
+        update.discard_prepared_update(candidate)
+
+
+@pytest.mark.asyncio
+async def test_withdrawn_github_ota_falls_back_to_full(installation):
+    import httpx
+
+    root, release, downloader = installation
+    release.return_value["details"]["assets"] = [
+        {"name": "MAAComponent-OTA-v6.0.0_v6.1.0-win-x64.zip"}
+    ]
+    full_download = downloader.side_effect
+
+    async def download(url, path, **kwargs):
+        if "MAAComponent-OTA" in url:
+            response = httpx.Response(404, request=httpx.Request("GET", url))
+            response.raise_for_status()
+        return await full_download(url, path, **kwargs)
+
+    downloader.side_effect = download
+    await update.prepare_maa_fluxdown_update(
+        root, config=script_config(), config_dir=root / "config"
+    )
+    assert downloader.await_count == 2
+    assert update.read_pending_update(root)[1].endswith("MAA-v6.1.0-win-x64.zip")

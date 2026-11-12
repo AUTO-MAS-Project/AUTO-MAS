@@ -19,12 +19,12 @@
 #   Contact: DLmaster_361@163.com
 
 
-"""MAA 本体更新包原语：共享缓存、完整包校验、待更新登记。
+"""MAA 本体更新包原语：共享缓存、包校验、待更新登记。
 
 与 resource_package.py（资源包合并）平行的本体包最小实现，只做三件事：
-- 共享缓存：``data/maa_update/software/{os}/{arch}/{channel}/`` 下每个通道
-  架构只保留一个最新有效完整包（package.zip + manifest.json）；
-- 完整包校验：zip 可读、条目路径安全、根目录无 OTA 清单、关键程序集存在；
+- 共享缓存：``data/maa_update/software/{os}/{arch}/{channel}/`` 下保存完整包，
+  增量请求按基准版本分目录保存（package.zip + manifest.json）；
+- 包校验：zip 可读、条目路径安全；完整包要求关键程序集，增量包要求 OTA 清单；
 - 待更新登记：点读点写新旧两份 MAA 配置的待更新字段，包复制成功后才写
   ``Update.Name``/``Update.UpdatePackage``（新版）或 ``Global.VersionUpdate.
   name``/``package``（旧版），已有合法登记一律保护，值经手语义不过手。
@@ -35,13 +35,15 @@ UpdatePackage 同时非空且包文件存在）；完整包文件名沿用上游
 路径的 ``MirrorChyanApp<版本>.zip``；登记使用绝对路径（上游 GetPlanned
 UpdatePackagePath 同款）；根目录出现 ``removelist.txt``/``changes.json``
 即 OTA 包（HasOtaMetadata 判据）——启动应用路径不校验包基准版本，本模块
-的拒收是唯一防线，因此只接受完整包。
+需要由登记入口复核基线。全量请求拒收 OTA；增量请求验证清单存在与 ZIP 完整性，
+不解释清单语义，由官方更新器应用。
 
 归属判定与合规边界见 software_update.py 模块头。
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import shutil
@@ -74,9 +76,16 @@ _ILLEGAL_NAME_RE = re.compile(r'[\\/:*?"<>|]')
 # --------------------------------------------------------------------------
 
 
-def software_cache_dir(os_name: str, arch: str, channel: str) -> Path:
+def software_cache_dir(
+    os_name: str, arch: str, channel: str, *, base_version: str = ""
+) -> Path:
     """本体更新共享缓存目录：按系统、架构、通道隔离，互不覆盖。"""
-    return Path.cwd() / "data" / "maa_update" / "software" / os_name / arch / channel
+    root = Path.cwd() / "data" / "maa_update" / "software" / os_name / arch / channel
+    return (
+        root / ("base-" + hashlib.sha256(base_version.encode()).hexdigest()[:16])
+        if base_version
+        else root
+    )
 
 
 def load_cache_manifest(cache_dir: Path) -> dict[str, str] | None:
@@ -91,9 +100,14 @@ def load_cache_manifest(cache_dir: Path) -> dict[str, str] | None:
         not isinstance(manifest.get(key), str) or not manifest[key] for key in fields
     ):
         return None
-    if manifest["package_type"] != "full":
+    if manifest["package_type"] not in {"full", "incremental"}:
         return None
-    return {key: str(manifest[key]) for key in fields}
+    if manifest["package_type"] == "incremental" and not manifest.get("base_version"):
+        return None
+    return {
+        **{key: str(manifest[key]) for key in fields},
+        "base_version": str(manifest.get("base_version") or ""),
+    }
 
 
 def cache_zip_matches(cache_dir: Path, manifest: dict[str, str]) -> bool:
@@ -124,8 +138,8 @@ def store_cache(
     )
 
 
-def validate_software_zip(zip_path: Path) -> None:
-    """校验完整包 zip，不满足完整包特征时抛 ValueError（线程内执行）。
+def validate_software_zip(zip_path: Path, *, package_type: str = "full") -> None:
+    """校验指定类型的 zip，不满足包特征时抛 ValueError（线程内执行）。
 
     - 全条目 CRC 校验（服务端不下发摘要，损坏只能靠包自身完整性兜底）；
     - 条目路径安全：绝对路径、非法 Windows 文件名和尾部空格/点一律拒绝；
@@ -139,6 +153,7 @@ def validate_software_zip(zip_path: Path) -> None:
         names = archive.namelist()
 
     essentials: set[str] = set()
+    ota = False
     for name in names:
         normalized = name.replace("\\", "/")
         segments = [segment for segment in normalized.split("/") if segment]
@@ -152,9 +167,15 @@ def validate_software_zip(zip_path: Path) -> None:
         if not segments:
             continue
         if len(segments) == 1 and segments[0].lower() in _OTA_MANIFEST_ENTRIES:
-            raise ValueError("更新包是 OTA 包（根目录含 OTA 清单），只支持完整包")
+            ota = True
         if segments[-1].lower() in _ESSENTIAL_ENTRIES and len(segments) <= 2:
             essentials.add(segments[-1].lower())
+    if package_type == "incremental":
+        if not ota:
+            raise ValueError("增量更新包缺少官方 OTA 清单")
+        return
+    if ota:
+        raise ValueError("全量更新请求收到 OTA 包")
     missing = _ESSENTIAL_ENTRIES - essentials
     if missing:
         raise ValueError(f"更新包缺少关键文件: {sorted(missing)}")
@@ -248,8 +269,9 @@ def register_pending_update(
     version: str,
     package_zip: Path,
     package_sha256: str,
+    base_version: str = "",
 ) -> bool:
-    """把完整包复制进 MAA 安装目录并登记待更新字段，返回是否登记成功。
+    """把已校验的包复制进 MAA 安装目录并登记，增量包另行复核安装基准。
 
     由 software_update.prepare_maa_software_update 在原有 update_maa() 调用
     点前调用；登记后仍由 update_maa() 启动 MAA 官方更新链安装。
@@ -265,6 +287,12 @@ def register_pending_update(
 
     幂等：重复调用对同版本包只复制一次、登记值重复写入无副作用。
     """
+    if base_version:
+        from .software_update import read_installed_release
+
+        release = read_installed_release(maa_root)
+        if release is None or release[0] != base_version:
+            raise ValueError("MAA 增量包基线不匹配")
     if not version or _ILLEGAL_NAME_RE.search(version):
         logger.warning(f"MAA 本体更新: 版本名无法用作包文件名，跳过登记: {version!r}")
         return False
@@ -274,7 +302,12 @@ def register_pending_update(
         )
         return False
 
-    target = maa_root / f"{_FULL_PACKAGE_PREFIX}{version}.zip"
+    suffix = (
+        "-" + hashlib.sha256(base_version.encode()).hexdigest()[:16]
+        if base_version
+        else ""
+    )
+    target = maa_root / f"{_FULL_PACKAGE_PREFIX}{version}{suffix}.zip"
     if not target.is_absolute():
         target = Path(os.path.abspath(target))
 
@@ -320,6 +353,8 @@ def register_pending_update(
         _copy_if_changed(package_zip, target, expected_sha256=package_sha256)
         copied = not target_valid
 
+        if base_version and read_installed_release(maa_root) != release:
+            raise ValueError("复制期间 MAA 增量基线发生变化")
         write_pending_update(maa_root, version=version, package=str(target))
         return True
     except Exception as e:

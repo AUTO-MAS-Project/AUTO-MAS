@@ -76,7 +76,7 @@ test.describe('@maa-update configuration and dispatch', () => {
       .locator('.form-section')
       .filter({ has: page.getByRole('heading', { name: 'Update takeover', exact: true }) })
     await expect(updatePanel).toBeVisible()
-    await updatePanel.locator('.ant-select-selector').click()
+    await updatePanel.locator('.ant-select-selector').first().click()
     const save = page.waitForResponse(
       response =>
         response.url().endsWith('/api/scripts/update') &&
@@ -92,7 +92,7 @@ test.describe('@maa-update configuration and dispatch', () => {
     await updatePanel.getByRole('switch').click()
     expect((await (await enable).json()).code).toBe(200)
     await page.reload()
-    await expect(updatePanel.locator('.ant-select-selection-item')).toHaveText('Beta')
+    await expect(updatePanel.locator('.ant-select-selection-item').first()).toHaveText('Beta')
     await expect(updatePanel.getByRole('switch')).toBeChecked()
     await updatePanel.scrollIntoViewIfNeeded()
     await app.evidence('maa-update-channel-persisted')
@@ -134,4 +134,33 @@ test.describe('@maa-update configuration and dispatch', () => {
     expect(saved.data[scriptId].Update.TakeoverEnabled).toBe(true)
     await app.evidence('maa-update-unconfigured-task-failed')
   })
+})
+
+test('@maa-update package mode persists with a risk notice and no CDK', async ({ app, page }) => {
+  const created = await post(page.request, '/api/scripts/add', { type: 'MAA' })
+  await app.goto(`/scripts/${created.scriptId}/edit/maa`)
+  const panel = page.locator('.form-section').filter({
+    has: page.getByRole('heading', { name: 'Update takeover', exact: true }),
+  })
+  const mode = panel.getByRole('combobox', { name: 'Update method', exact: true })
+  await expect(mode).toBeDisabled()
+  await panel.getByRole('switch').click()
+  await expect(mode).toBeEnabled()
+  await mode.locator('xpath=ancestor::*[contains(@class, "ant-select-selector")]').click()
+  const saved = page.waitForResponse(
+    response =>
+      response.url().endsWith('/api/scripts/update') &&
+      response.request().postDataJSON()?.data?.Update?.PackageMode === 'incremental'
+  )
+  await page
+    .locator('.ant-select-dropdown:visible')
+    .getByText('Prefer incremental', { exact: true })
+    .click()
+  expect((await (await saved).json()).code).toBe(200)
+  await expect(panel.getByText('Incremental updates carry risks', { exact: false })).toBeVisible()
+  await page.reload()
+  await expect(panel.getByText('Prefer incremental', { exact: true })).toBeVisible()
+  await expect(panel.getByText('Incremental updates carry risks', { exact: false })).toBeVisible()
+  await panel.scrollIntoViewIfNeeded()
+  await app.evidence('incremental-update-risk-and-persistence')
 })
