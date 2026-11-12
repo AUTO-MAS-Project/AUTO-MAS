@@ -27,9 +27,7 @@ def test_managed_fluxdown_preferred_over_configured_path(tmp_path, monkeypatch):
 
     monkeypatch.setattr(fluxdown_cli, "_scan_drives", unexpected_scan)
     for _ in range(3):
-        result = fluxdown_cli.fluxdown_detect(
-            str(external), managed_dir=managed
-        )
+        result = fluxdown_cli.fluxdown_detect(str(external), managed_dir=managed)
         assert result["path"] == str(managed)
         assert result["scanned_drives"] == []
 
@@ -42,7 +40,5 @@ def test_incomplete_managed_fluxdown_falls_back(tmp_path, monkeypatch):
     _complete(external)
     monkeypatch.setattr(fluxdown_cli, "_candidate_drives", lambda: [])
     monkeypatch.setattr(fluxdown_cli, "_scan_drives", lambda *args, **kwargs: [])
-    result = fluxdown_cli.fluxdown_detect(
-        str(external), managed_dir=managed
-    )
+    result = fluxdown_cli.fluxdown_detect(str(external), managed_dir=managed)
     assert result["path"] == str(external)
