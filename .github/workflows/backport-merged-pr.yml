@@ -30,17 +30,62 @@ jobs:
           persist-credentials: false
 
       - name: 回挑合并后的改动
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
+          SOURCE: ${{ github.event.pull_request.base.ref }}
+          SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
-          # 回挑可能修改工作流。使用仓库已有的 Contents/Pull requests/Workflows 写入令牌。
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::error::缺少 WORKFLOW_TOKEN，无法推送回挑提交或创建 PR"
-            exit 1
-          fi
-          script="$RUNNER_TEMP/backport_merged_pr.py"
-          cp .github/scripts/backport_merged_pr.py "$script"
+          : "${GH_TOKEN:?需要能推送 dev 和 release 分支的 WORKFLOW_TOKEN}"
           gh auth setup-git --hostname github.com
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          python3 "$script"
+          git fetch --prune --tags origin
+          git merge-base --is-ancestor "$SHA" "origin/$SOURCE"
+
+          targets=(dev)
+          if [[ "$SOURCE" == dev ]]; then
+            targets=()
+            stable= beta=
+            for tag in $(git tag --sort=-version:refname); do
+              if [[ -z "$stable" && "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                stable=$tag
+                targets+=("release/$tag")
+              elif [[ -z "$beta" && "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+                beta=$tag
+                targets+=("release/$tag")
+              fi
+            done
+            if (( ${#targets[@]} == 0 )); then
+              echo '::error::找不到正式版或公测版标签'
+              exit 1
+            fi
+            if [[ -n "$(git diff --name-only --no-renames "$SHA^1" "$SHA" -- frontend)" ]]; then
+              echo '::error::发布分支不回挑包含前端改动的热修'
+              exit 1
+            fi
+          fi
+
+          pick=(-x --empty=drop)
+          if git rev-parse --verify --quiet "$SHA^2" >/dev/null; then
+            pick+=(-m 1)
+          fi
+          updates=()
+          for target in "${targets[@]}"; do
+            echo "回挑 $SHA 到 $target"
+            git switch --detach "origin/$target"
+            if git merge-base --is-ancestor "$SHA" HEAD; then
+              continue
+            fi
+            if ! git cherry-pick "${pick[@]}" "$SHA"; then
+              echo "::error::回挑到 $target 失败，详见 Git 输出"
+              git -c core.quotePath=false diff --name-only --diff-filter=U
+              exit 1
+            fi
+            if [[ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/$target")" ]]; then
+              updates+=("$(git rev-parse HEAD):refs/heads/$target")
+            fi
+          done
+          if (( ${#updates[@]} )); then
+            git push --atomic origin "${updates[@]}"
+          fi
