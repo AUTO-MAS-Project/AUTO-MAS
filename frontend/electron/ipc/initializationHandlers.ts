@@ -19,7 +19,10 @@ import type {
   RuntimeRetryMode,
   RuntimeStageOutcome,
 } from '../services/runtimeInitializationService'
-import { mapDoctorChecksToCriticalFiles } from '../services/runtimeInitializationService'
+import {
+  mapDoctorChecksToCriticalFiles,
+  resolveRuntimeTargetVersion,
+} from '../services/runtimeInitializationService'
 import type {
   RuntimeUpdateOutcome,
   RuntimeUpdateRetryAction,
@@ -311,7 +314,17 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
     if (runtimeBinaryUpdating || init.isEnvironmentBusy) {
       return { success: false, error: '运行环境操作尚未结束，请稍后再试。' }
     }
-    const result = await backend.startBackend()
+    if (startup && backend.getStatus().isRunning) return startup
+    // 后端退出后的重启与手动重试仍由主进程持有，普通 IPC 只接回同一个任务。
+    if (startup && init.getDesktopStartupSnapshot()?.state !== 'running') {
+      init.resetDesktopStartup()
+    }
+    const version = resolveRuntimeTargetVersion()
+    const result = await startDesktopStartup({
+      version,
+      initializedVersion: version,
+      autoUpdate: false,
+    })
 
     if (!result.success) {
       logger.error(`后端启动失败: ${result.error}`)

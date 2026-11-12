@@ -922,7 +922,7 @@ describe('managed 模式', () => {
   })
 })
 
-// 主进程已开始启动，renderer 晚到或重载仍须收到同一次结果，失败不自动重试。
+// 主进程已开始启动，renderer 晚到或重载仍接回同一任务，恢复次数由主进程限制。
 describe('桌面前端只连接已有后端', () => {
   it.each(['development', 'managed'])('%s 不安装或接管外部后端', async mode => {
     process.argv.push('--connect-existing-backend')
@@ -1136,6 +1136,238 @@ describe('关闭时收口仍在运行的 Runtime 命令', () => {
 })
 
 describe('主进程拥有两种模式的启动生命周期', () => {
+  it('窗口晚到和重复 IPC 接入同一次有限恢复，首次失败仍留在快照中', async () => {
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    mockSpawn()
+    vi.resetModules()
+    ipcHandlers.clear()
+    const handlers = await import('../ipc/initializationHandlers')
+    vi.useFakeTimers()
+    const startup = handlers.startDesktopStartup({
+      version: '5.5.0-beta.3',
+      initializedVersion: '5.5.0-beta.3',
+      autoUpdate: false,
+    })
+    const first = await waitForSpawn()
+    expect(spawnedArgs(0).slice(-2)).toEqual(['workspace', 'check'])
+    // 挂起的只读 Runtime 没有输出；只有真实 close 才允许下一次创建。
+    try {
+      await vi.advanceTimersByTimeAsync(10_000)
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(first.exitCode !== null || first.signalCode !== null).toBe(true)
+    const window = new BrowserWindow()
+    handlers.registerInitializationHandlers(window)
+    const event = { sender: window.webContents }
+    const requests = [
+      ipcHandlers.get('desktop-startup-wait')?.(),
+      ipcHandlers.get('backend-start')?.(event),
+      ipcHandlers.get('backend-start')?.(event),
+    ]
+    expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({ state: 'running' })
+    const recovered = await passManagedPreparation(1)
+    recovered.stdout.feed(helloLine + runningStateLine)
+    expect(await startup).toMatchObject({ success: true })
+    for (const request of requests) expect(await request).toMatchObject({ success: true })
+    expect(spawnMock).toHaveBeenCalledTimes(4)
+    const snapshot = ipcHandlers.get('desktop-startup-status')?.()
+    expect(snapshot).toMatchObject({
+      state: 'ready',
+      attempts: [
+        { attempt: 1, result: { success: false, code: 'RUNTIME_HANDSHAKE_TIMEOUT' } },
+        { attempt: 2, result: { success: true } },
+      ],
+    })
+    expect(event.sender.send).not.toHaveBeenCalledWith(
+      'initialization-progress',
+      expect.objectContaining({ status: 'failed' })
+    )
+    recovered.stdout.feed(stoppedResultLine)
+    recovered.close(0)
+  })
+
+  it('持续握手超时只尝试两次，普通请求复用终态，手动重试建立新任务', async () => {
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    mockSpawn()
+    vi.resetModules()
+    ipcHandlers.clear()
+    const handlers = await import('../ipc/initializationHandlers')
+    const window = new BrowserWindow()
+    handlers.registerInitializationHandlers(window)
+    vi.useFakeTimers()
+    const startup = handlers.startDesktopStartup({
+      version: '5.5.0-beta.3',
+      initializedVersion: '5.5.0-beta.3',
+      autoUpdate: false,
+    })
+    try {
+      await waitForSpawn()
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({ state: 'running' })
+      expect(window.webContents.send).not.toHaveBeenCalledWith(
+        'initialization-progress',
+        expect.objectContaining({ status: 'failed' })
+      )
+      await waitForSpawn(1)
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(await startup).toMatchObject({ success: false, code: 'RUNTIME_HANDSHAKE_TIMEOUT' })
+      expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({
+        state: 'failed',
+        attempts: [
+          { attempt: 1, durationMs: expect.any(Number), result: { success: false } },
+          { attempt: 2, durationMs: expect.any(Number), result: { success: false } },
+        ],
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+    const event = { sender: window.webContents }
+    for (let index = 0; index < 3; index += 1) {
+      expect(await ipcHandlers.get('backend-start')?.(event)).toBe(await startup)
+    }
+    expect(spawnMock).toHaveBeenCalledTimes(2)
+    const manual = ipcHandlers.get('backend-start')?.(event, true)
+    const child = await passManagedPreparation(2)
+    expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({ state: 'running' })
+    child.stdout.feed(helloLine + runningStateLine)
+    expect(await manual).toMatchObject({ success: true })
+    expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({ state: 'ready' })
+    expect(spawnMock).toHaveBeenCalledTimes(5)
+    child.stdout.feed(stoppedResultLine)
+    child.close(0)
+  })
+
+  it.each(['workspace', 'supervise'])(
+    '%s 握手失败未确认 close 时，自动和手动重试均不能再创建进程',
+    async command => {
+      process.env[RUNTIME_MODE_ENV] = 'managed'
+      process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+      mockSpawn()
+      vi.resetModules()
+      ipcHandlers.clear()
+      const handlers = await import('../ipc/initializationHandlers')
+      const window = new BrowserWindow()
+      handlers.registerInitializationHandlers(window)
+      vi.useFakeTimers()
+      let child: FakeChild | undefined
+      try {
+        const startup = handlers.startDesktopStartup({
+          version: '5.5.0-beta.3',
+          initializedVersion: '5.5.0-beta.3',
+          autoUpdate: false,
+        })
+        child = command === 'supervise' ? await passManagedPreparation() : await waitForSpawn()
+        const pendingChild = child
+        child.kill = () => {
+          pendingChild.killed = true
+          return true
+        }
+        await vi.advanceTimersByTimeAsync(12_000)
+        expect(await startup).toMatchObject({
+          success: false,
+          code: 'RUNTIME_HANDSHAKE_TIMEOUT',
+          runtimeFailure: { processExited: false },
+        })
+        expect(
+          await ipcHandlers.get('backend-start')?.({ sender: window.webContents }, true)
+        ).toMatchObject({
+          success: false,
+          code: 'RUNTIME_EXITED_UNEXPECTEDLY',
+        })
+        await vi.advanceTimersByTimeAsync(30_000)
+        expect(spawnMock).toHaveBeenCalledTimes(command === 'supervise' ? 3 : 1)
+      } finally {
+        child?.close(null, 'SIGKILL')
+        vi.useRealTimers()
+        await handlers.stopDesktopStartup(true)
+      }
+    }
+  )
+
+  it('自动恢复等待上一进程退出时取消，迟到 close 不会重新启动', async () => {
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    mockSpawn()
+    const service = new InitializationService(appRoot)
+    vi.useFakeTimers()
+    try {
+      const startup = service.startDesktopStartup({
+        version: '5.5.0-beta.3',
+        initializedVersion: '5.5.0-beta.3',
+        autoUpdate: false,
+      })
+      const child = await waitForSpawn()
+      child.kill = () => {
+        child.killed = true
+        return true
+      }
+      await vi.advanceTimersByTimeAsync(10_000)
+      const stopped = service.stopDesktopStartup(true)
+      child.close(null, 'SIGKILL')
+      expect(await startup).toMatchObject({ success: false })
+      await stopped
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(spawnMock).toHaveBeenCalledTimes(1)
+      expect(service.getBackendService().getStatus().isRunning).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['permission', 'protocol', 'argument', 'uv-isolation'])(
+    '%s 错误保留准确分类，不按泛 retryable 标记自动重试',
+    async fault => {
+      process.env[RUNTIME_MODE_ENV] = 'managed'
+      process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+      mockSpawn()
+      const service = new InitializationService(appRoot)
+      const startup = service.startDesktopStartup({
+        version: '5.5.0-beta.3',
+        initializedVersion: '5.5.0-beta.3',
+        autoUpdate: false,
+      })
+      let child = await waitForSpawn()
+      let expectedCode: string
+      if (fault === 'permission') {
+        child.emit('error', Object.assign(new Error('access denied'), { code: 'EACCES' }))
+        expectedCode = 'RUNTIME_SPAWN_FAILED'
+      } else if (fault === 'protocol') {
+        child.close(10)
+        expectedCode = 'RUNTIME_PROTOCOL_MISMATCH'
+      } else {
+        if (fault === 'uv-isolation') {
+          child.stdout.feed(fixtureLines('bootstrap-success.ndjson').join(''))
+          child.close(0)
+          child = await waitForSpawn(1)
+        }
+        expectedCode = fault === 'argument' ? 'INVALID_ARGUMENT' : 'UV_EXEC_FAILED'
+        child.stdout.feed(
+          helloLine +
+            line({
+              ...base,
+              type: 'result',
+              sequence: 2,
+              success: false,
+              code: expectedCode,
+              stage: fault === 'argument' ? 'workspace.check' : 'uv.verify',
+              status: 'failed',
+              message: fault,
+              retryable: true,
+              remediation: ['open-log'],
+              details: fault === 'uv-isolation' ? { failureKind: 'process_isolation_failed' } : {},
+            })
+        )
+        child.close(50)
+      }
+      expect(await startup).toMatchObject({ success: false, code: expectedCode })
+      expect(service.getDesktopStartupSnapshot()?.attempts).toHaveLength(1)
+      expect(spawnMock).toHaveBeenCalledTimes(fault === 'uv-isolation' ? 2 : 1)
+    }
+  )
+
   it.each(['development', 'managed'])('%s 窗口请求在后端退出后恢复真实监督', async mode => {
     process.env[RUNTIME_MODE_ENV] = mode
     process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
@@ -1168,14 +1400,18 @@ describe('主进程拥有两种模式的启动生命周期', () => {
     const backend = handlers.getBackendService()
     await vi.waitFor(() => expect(backend.getStatus().isRunning).toBe(false))
 
-    const recovered = start?.({ sender: window.webContents })
+    const recovered = [
+      start?.({ sender: window.webContents }),
+      start?.({ sender: window.webContents }),
+    ]
     const offset = mode === 'development' ? 2 : 3
     const restarted =
       mode === 'development'
         ? await passEnvironmentEnsure(offset)
         : await passManagedPreparation(offset)
     restarted.stdout.feed(helloLine + runningStateLine)
-    expect(await recovered).toMatchObject({ success: true })
+    for (const request of recovered) expect(await request).toMatchObject({ success: true })
+    expect(spawnMock).toHaveBeenCalledTimes(offset * 2)
     expect(backend.getStatus().isRunning).toBe(true)
     const stopped = ipcHandlers.get('backend-stop')?.()
     await vi.waitFor(() => expect(restarted.stdin.chunks.join('')).toContain('shutdown'))
