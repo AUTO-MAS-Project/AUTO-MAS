@@ -310,7 +310,6 @@ interface AppConfig extends DesktopMascotHostPreferences {
   lastCloseAction: 'quit' | 'tray'
   UI: {
     IfShowTray: boolean
-    IfToTray: boolean
     IfHideCloseButton: boolean
     location: string
     maximized: boolean
@@ -337,7 +336,6 @@ const defaultConfig: AppConfig = {
   lastCloseAction: 'quit',
   UI: {
     IfShowTray: false,
-    IfToTray: false,
     IfHideCloseButton: false,
     location: '100,100',
     maximized: false,
@@ -465,7 +463,7 @@ function createTray(): boolean {
   tray.on('click', () => {
     if (!mainWindow) return
     if (mainWindow.isVisible()) {
-      hideMainWindow()
+      hideMainWindowToTray()
     } else {
       showMainWindow()
     }
@@ -485,16 +483,6 @@ function showMainWindow(): void {
   mainWindow.show()
   mainWindow.focus()
   updateTrayVisibility(loadConfig())
-}
-
-// 隐藏主窗口
-function hideMainWindow(): void {
-  if (!mainWindow) return
-  const currentConfig = loadConfig()
-  if (currentConfig.UI.IfToTray) {
-    mainWindow.setSkipTaskbar(true) // 隐藏任务栏图标
-  }
-  mainWindow.hide()
 }
 
 function hideMainWindowToTray(): boolean {
@@ -554,7 +542,7 @@ function handleTrayAction(item: TrayItem): void {
       showMainWindow()
       break
     case 'hide':
-      hideMainWindow()
+      hideMainWindowToTray()
       break
     case 'stopAll':
       void stopAllTasksByShortcut('tray')
@@ -708,30 +696,12 @@ function requestRendererClose(reason: string, confirmRunningTasks = false): void
 
 // 更新托盘状态
 function updateTrayVisibility(config: AppConfig) {
-  // 根据需求逻辑判断是否应该显示托盘
-  let shouldShowTray = false
-
-  if (config.UI.IfShowTray && config.UI.IfToTray) {
-    // 勾选常驻显示托盘和最小化到托盘，就一直展示托盘
-    shouldShowTray = true
-  } else if (config.UI.IfShowTray && !config.UI.IfToTray) {
-    // 勾选常驻显示托盘但没有最小化到托盘，就一直展示托盘
-    shouldShowTray = true
-  } else if (!config.UI.IfShowTray && config.UI.IfToTray) {
-    // 没有常驻显示托盘但勾选最小化到托盘，有窗口时就只有窗口，最小化后任务栏消失，只有托盘
-    shouldShowTray = !mainWindow || !mainWindow.isVisible()
-  } else {
-    // 没有常驻显示托盘也没有最小化到托盘，托盘一直不展示
-    shouldShowTray = false
-  }
-
-  if (forceTrayVisibleUntilWindowShown) shouldShowTray = true
-
-  // 特殊情况：如果没有窗口显示且没有托盘，强制显示托盘避免程序成为幽灵
-  if (!shouldShowTray && (!mainWindow || !mainWindow.isVisible()) && !tray) {
-    shouldShowTray = true
-    logger.warn('防幽灵机制：强制显示托盘图标')
-  }
+  // 普通最小化保留任务栏入口；隐藏到托盘后必须保留托盘恢复入口。
+  const shouldShowTray =
+    config.UI.IfShowTray ||
+    forceTrayVisibleUntilWindowShown ||
+    !mainWindow ||
+    (!mainWindow.isVisible() && !mainWindow.isMinimized())
 
   if (shouldShowTray && !tray) {
     if (createTray()) logger.info('托盘图标已创建')
@@ -941,9 +911,9 @@ function createWindow() {
 
   // 崩溃时窗口若在托盘里，恢复后保持隐藏，不要自己弹出来打断用户。
   let keepHiddenAfterRecovery = false
-  let hasShownMainWindow = false
-  win.once('show', () => {
-    hasShownMainWindow = true
+  let hasLoadedMainWindow = false
+  win.webContents.once('did-finish-load', () => {
+    hasLoadedMainWindow = true
   })
 
   // 主框架重载或导航后旧确认窗已销毁，撤销等待；同文档路由切换不触发此事件。
@@ -961,8 +931,8 @@ function createWindow() {
       else if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
     },
     onReload: () => {
-      // 崩溃前窗口就在托盘里，重载后继续保持隐藏。
-      keepHiddenAfterRecovery = hasShownMainWindow && !win.isVisible()
+      // 首次加载失败仍按启动偏好恢复；加载后进入托盘的窗口继续保持隐藏。
+      keepHiddenAfterRecovery = hasLoadedMainWindow && !win.isVisible()
     },
   })
 
@@ -1014,13 +984,18 @@ function createWindow() {
       return
     }
 
-    // 仅开机自启动且开启"启动后直接最小化"时才隐藏窗口，手动双击启动始终显示
-    if (!(isAutoStart && config.Start.IfMinimizeDirectly)) {
+    // 沿用旧启动字段保存用户偏好，静默自启始终直接进入托盘。
+    if (
+      isAutoStart &&
+      isInitialStartup &&
+      config.Start.IfMinimizeDirectly &&
+      hideMainWindowToTray()
+    ) {
+      notifyWindowActivity('background')
+      logger.info('静默启动，窗口已进入托盘')
+    } else {
       win.show()
       logger.info('页面加载完成，窗口已显示')
-    } else {
-      notifyWindowActivity('background')
-      logger.info('页面加载完成，窗口保持后台状态')
     }
   })
 
@@ -1092,11 +1067,6 @@ function createWindow() {
   win.on('resized', recomputeMinSize)
   screen.on('display-metrics-changed', handleDisplayConfigurationChanged)
   screen.on('display-removed', handleDisplayConfigurationChanged)
-
-  // 最大化配置
-  if (config.UI.maximized) {
-    win.maximize()
-  }
 
   win.setMenuBarVisibility(false)
   assertDevelopmentRuntime()
@@ -1174,13 +1144,6 @@ function createWindow() {
 
   win.on('minimize', () => {
     notifyWindowActivity('background')
-    const currentConfig = loadConfig()
-    if (currentConfig.UI.IfToTray) {
-      win.hide()
-      win.setSkipTaskbar(true)
-      updateTrayVisibility(currentConfig)
-      logger.info('窗口已最小化到托盘，任务栏图标已隐藏')
-    }
   })
 
   win.on('show', () => {
@@ -1196,12 +1159,7 @@ function createWindow() {
 
   win.on('hide', () => {
     notifyWindowActivity('background')
-    const currentConfig = loadConfig()
-    if (currentConfig.UI.IfToTray) {
-      win.setSkipTaskbar(true)
-      logger.info('窗口已隐藏，任务栏图标已隐藏')
-    }
-    updateTrayVisibility(currentConfig)
+    updateTrayVisibility(loadConfig())
   })
 
   // 窗口尺寸/位置变化时防抖保存
@@ -1260,19 +1218,6 @@ function createWindow() {
 
     // 根据配置初始化托盘
     updateTrayVisibility(currentConfig)
-
-    // 处理启动后直接最小化（仅开机自启动时执行）
-    if (isAutoStart && isInitialStartup && currentConfig.Start.IfMinimizeDirectly) {
-      if (currentConfig.UI.IfToTray) {
-        win.hide()
-        win.setSkipTaskbar(true)
-        logger.info('应用初次启动后直接最小化到托盘')
-      } else {
-        win.minimize()
-        logger.info('应用初次启动后直接最小化')
-      }
-      updateTrayVisibility(currentConfig)
-    }
 
     // 标记初次启动已完成
     isInitialStartup = false
@@ -1878,9 +1823,6 @@ ipcMain.handle('open-dev-tools', () => {
 // 窗口控制
 ipcMain.handle('window-minimize', () => {
   if (!mainWindow || mainWindow.isDestroyed()) return false
-
-  const config = loadConfig()
-  if (config.UI.IfToTray) return hideMainWindowToTray()
 
   mainWindow.minimize()
   return true

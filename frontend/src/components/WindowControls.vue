@@ -69,11 +69,11 @@ let removeNativeCloseListener: (() => void) | undefined
 const minimizeWindow = async (): Promise<void> => {
   try {
     const minimized = await window.electronAPI.windowMinimize()
-    if (!minimized) message.error(t('bootstrap.comp.minimizeToTrayFailed'))
+    if (!minimized) message.error(t('bootstrap.comp.minimizeFailed'))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`最小化窗口失败: ${errorMsg}`)
-    message.error(t('bootstrap.comp.minimizeToTrayFailed'))
+    message.error(t('bootstrap.comp.minimizeFailed'))
   }
 }
 

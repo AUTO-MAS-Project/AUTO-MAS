@@ -38,6 +38,7 @@
     "couldNotOpenLink": "リンクを開けませんでした。アドレスを手動でコピーしてください",
     "maximizeWindow": "最大化",
     "minimize": "最小化",
+    "minimizeFailed": "ウィンドウを最小化できません",
     "minimizeMasToTray": "MAS をトレイに最小化",
     "minimizeToTrayFailed": "トレイに最小化できませんでした。トレイの設定を確認してください。",
     "pleaseWaitAppClosing": "終了処理中です。しばらくお待ちください",

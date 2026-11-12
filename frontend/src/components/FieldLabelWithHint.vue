@@ -2,7 +2,7 @@
   <span
     class="field-label"
     :class="{ 'field-label-form': variant === 'form' }"
-    role="group"
+    :role="text ? 'group' : undefined"
     :aria-label="text"
   >
     {{ text }}
@@ -17,7 +17,7 @@
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 
 defineProps<{
-  text: string
+  text?: string
   hint?: string
   variant?: 'secondary' | 'form'
 }>()

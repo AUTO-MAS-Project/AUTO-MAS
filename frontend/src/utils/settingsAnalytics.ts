@@ -6,9 +6,8 @@ type Setting = AnalyticsEventProps['settings_change_finished']
 const entries = [
   ['Start', 'IfSelfStart', 'startup', 'auto_start'],
   ['Start', 'IfScheduledWakeUp', 'scheduler', 'scheduled_wakeup'],
-  ['Start', 'IfMinimizeDirectly', 'startup', 'start_minimized'],
+  ['Start', 'IfMinimizeDirectly', 'startup', 'silent_start'],
   ['UI', 'IfShowTray', 'close', 'show_tray'],
-  ['UI', 'IfToTray', 'close', 'close_to_tray'],
   ['Function', 'HistoryRetentionTime', 'other', 'history_retention'],
   ['Function', 'IfAllowSleep', 'scheduler', 'allow_sleep'],
   ['Function', 'IfBlockAd', 'emulator', 'block_ads'],

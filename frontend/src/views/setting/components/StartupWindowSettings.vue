@@ -5,7 +5,6 @@ import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
 import type { GlobalConfig } from '@/api'
 import type { SettingChangeHandler } from '../settingTypes'
 import SectionCard from '@/components/ui/SectionCard.vue'
-import SettingRow from '@/components/ui/SettingRow.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import CloseConfirmationSettings from './CloseConfirmationSettings.vue'
 import TrayMenuEditor from './TrayMenuEditor.vue'
@@ -16,6 +15,24 @@ const { settings, handleSettingChange } = defineProps<{
 }>()
 
 const { t } = useI18n()
+
+const startupOptions = [
+  {
+    key: 'IfScheduledWakeUp',
+    label: 'core.setting.func.scheduledWakeup',
+    hint: 'core.setting.func.scheduledWakeupTip',
+  },
+  {
+    key: 'IfSelfStart',
+    label: 'core.setting.func.autoStart',
+    hint: 'core.setting.func.autoStartTip',
+  },
+  {
+    key: 'IfMinimizeDirectly',
+    label: 'core.setting.func.silentStart',
+    hint: 'core.setting.func.silentStartTip',
+  },
+] as const
 </script>
 
 <template>
@@ -24,94 +41,149 @@ const { t } = useI18n()
     :title="t('core.setting.basic.startupWindowSection')"
     :icon="DesktopOutlined"
   >
-    <SettingRow
-      class="startup-options-row"
-      :label="t('core.setting.basic.startupOptions')"
-      :hint="t('core.setting.basic.startupBehaviorHint')"
-    >
-      <a-checkbox
-        :checked="settings.Start?.IfSelfStart === true"
-        @change="
-          (event: CheckboxChangeEvent) =>
-            handleSettingChange('Start', 'IfSelfStart', event.target.checked)
-        "
-      >
-        <FieldLabelWithHint
-          :text="t('core.setting.func.autoStart')"
-          :hint="t('core.setting.func.autoStartTip')"
-        />
-      </a-checkbox>
-      <a-checkbox
-        :checked="settings.Start?.IfMinimizeDirectly === true"
-        @change="
-          (event: CheckboxChangeEvent) =>
-            handleSettingChange('Start', 'IfMinimizeDirectly', event.target.checked)
-        "
-      >
-        {{ t('core.setting.func.startMinimized') }}
-      </a-checkbox>
-    </SettingRow>
+    <div class="settings-columns">
+      <section class="setting-group">
+        <h4 class="setting-group-title">{{ t('core.setting.func.startupGroup') }}</h4>
 
-    <SettingRow
-      :label="t('core.setting.func.scheduledWakeup')"
-      :hint="t('core.setting.func.scheduledWakeupTip')"
-    >
-      <a-switch
-        :checked="settings.Start?.IfScheduledWakeUp === true"
-        :aria-label="t('core.setting.func.scheduledWakeup')"
-        @change="
-          (checked: boolean | string | number) =>
-            handleSettingChange('Start', 'IfScheduledWakeUp', !!checked)
-        "
-      />
-    </SettingRow>
+        <div
+          v-for="option in startupOptions"
+          :key="option.key"
+          class="setting-item"
+          :class="{ 'setting-item--nested': option.key === 'IfMinimizeDirectly' }"
+        >
+          <a-checkbox
+            :checked="settings.Start?.[option.key] === true"
+            @change="
+              (event: CheckboxChangeEvent) =>
+                handleSettingChange('Start', option.key, event.target.checked === true)
+            "
+          >
+            {{ t(option.label) }}
+          </a-checkbox>
+          <FieldLabelWithHint class="setting-help" :hint="t(option.hint)" variant="form" />
+        </div>
+      </section>
 
-    <SettingRow :label="t('core.setting.basic.minimizeBehavior')">
-      <a-segmented
-        :value="settings.UI?.IfToTray === true ? 'tray' : 'taskbar'"
-        :options="[
-          { label: t('core.setting.basic.minToTray'), value: 'tray' },
-          { label: t('core.setting.basic.minToTaskbar'), value: 'taskbar' },
-        ]"
-        :aria-label="t('core.setting.basic.minimizeBehavior')"
-        @change="
-          (value: string | number) => handleSettingChange('UI', 'IfToTray', value === 'tray')
-        "
-      />
-    </SettingRow>
+      <section class="setting-group">
+        <h4 class="setting-group-title">{{ t('core.setting.basic.closeBehavior') }}</h4>
 
-    <SettingRow
-      :label="t('core.setting.basic.showTray')"
-      :hint="t('core.setting.basic.showTrayTip')"
-    >
-      <a-switch
-        :checked="settings.UI?.IfShowTray === true"
-        :aria-label="t('core.setting.basic.showTray')"
-        @change="
-          (checked: boolean | string | number) => handleSettingChange('UI', 'IfShowTray', !!checked)
-        "
-      />
-    </SettingRow>
+        <CloseConfirmationSettings />
+      </section>
 
-    <SettingRow
-      :label="t('core.setting.basic.closeConfirmation')"
-      :description="t('core.setting.basic.closeBehaviorHint')"
-    >
-      <CloseConfirmationSettings />
-    </SettingRow>
+      <section class="setting-group setting-group--wide">
+        <h4 class="setting-group-title">{{ t('core.setting.basic.trayGroup') }}</h4>
 
-    <TrayMenuEditor />
+        <div class="setting-item">
+          <a-checkbox
+            :checked="settings.UI?.IfShowTray === true"
+            @change="
+              (event: CheckboxChangeEvent) =>
+                handleSettingChange('UI', 'IfShowTray', event.target.checked === true)
+            "
+          >
+            {{ t('core.setting.basic.showTray') }}
+          </a-checkbox>
+          <FieldLabelWithHint
+            class="setting-help"
+            :hint="t('core.setting.basic.showTrayTip')"
+            variant="form"
+          />
+        </div>
+
+        <div class="setting-item setting-item--fill">
+          <span class="setting-item-label">{{ t('core.setting.tray.section') }}</span>
+          <FieldLabelWithHint
+            class="setting-help"
+            :hint="t('core.setting.tray.sectionTip')"
+            variant="form"
+          />
+          <TrayMenuEditor class="setting-item-fill" />
+        </div>
+      </section>
+    </div>
   </SectionCard>
 </template>
 
 <style scoped>
-.settings-card-grid .startup-window-settings :deep(.ui-row.startup-options-row) {
-  grid-template-columns: auto minmax(0, 1fr);
+/* 两列：启动 / 关闭时并排，托盘跨两列。分组标题负责分区，列内不再画线。 */
+.settings-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 48px;
+  row-gap: 12px;
 }
 
-@container (max-width: 560px) {
-  .settings-card-grid .startup-window-settings :deep(.ui-row.startup-options-row) {
+.setting-group--wide {
+  grid-column: 1 / -1;
+}
+
+@container (max-width: 520px) {
+  .settings-columns {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .setting-group--wide {
+    grid-column: auto;
+  }
+}
+
+.setting-group-title {
+  margin: 0;
+  padding: 8px 0 2px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 18px;
+}
+
+.setting-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  color: var(--ant-color-text);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* 静默启动缩进展示，区别启动来源与启动方式。 */
+.setting-item--nested {
+  padding-left: 24px;
+}
+
+.setting-item--fill {
+  width: 100%;
+  min-width: 0;
+}
+
+.setting-item-fill {
+  flex: 1;
+  min-width: 0;
+}
+
+.setting-item :deep(.ant-checkbox-wrapper) {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.setting-item-label {
+  color: var(--ant-color-text);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.setting-help {
+  flex: 0 0 auto;
+}
+
+.setting-help :deep(.help-icon) {
+  color: var(--ant-color-text-quaternary);
+}
+
+.setting-help :deep(.help-icon:hover) {
+  color: var(--ant-color-primary);
 }
 </style>

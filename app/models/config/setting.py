@@ -338,8 +338,10 @@ class GlobalConfig(DomainEntry):
             default_factory=lambda: False, description="是否在定时队列前五分钟唤醒电脑"
         )
 
+        # 沿用旧字段名，保留已保存的自启后台运行偏好。
         IfMinimizeDirectly: bool = Field(
-            default_factory=lambda: False, description="是否启动时直接最小化"
+            default_factory=lambda: False,
+            description="是否在开机自启或定时唤醒启动时静默进入托盘",
         )
 
         IfSelfStart: bool = Field(
