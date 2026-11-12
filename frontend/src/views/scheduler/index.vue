@@ -2,7 +2,7 @@
   <!-- 主要内容 -->
   <div class="scheduler-main">
     <!-- 页面头部 -->
-    <div class="scheduler-header">
+    <div class="scheduler-header app-page-header">
       <div class="header-left">
         <h1 class="page-title app-page-title">{{ t('core.scheduler.title') }}</h1>
       </div>
@@ -29,14 +29,14 @@
     </div>
 
     <!-- 调度台标签页 -->
-    <div class="scheduler-tabs">
+    <div class="scheduler-tabs app-page-surface app-page-surface--tabs">
       <a-tabs
         v-model:active-key="activeSchedulerTab"
         type="editable-card"
         :hide-add="true"
         @edit="onSchedulerTabEdit"
       >
-        <template #tabBarExtraContent>
+        <template #rightExtra>
           <div class="tab-actions">
             <a-tooltip :title="t('core.scheduler.addTab')" placement="top">
               <a-button class="tab-action-btn tab-add-btn" size="middle" @click="addSchedulerTab">
@@ -61,66 +61,46 @@
           </div>
         </template>
         <a-tab-pane
-          v-for="tab in schedulerTabs"
-          :key="tab.key"
-          :closable="tab.closable && tab.status !== '运行'"
-          :data-tab-key="tab.key"
+          v-for="view in schedulerPanels"
+          :key="view.tab.key"
+          :closable="view.tab.closable && !view.tab.starting && view.status !== '运行'"
+          :data-tab-key="view.tab.key"
         >
           <template #tab>
             <div class="tab-content">
-              <span class="tab-title">{{ tab.title }}</span>
-              <a-tag :color="TAB_STATUS_COLOR[tab.status]" size="small" class="tab-status">
-                {{ statusLabel(tab.status) }}
+              <span class="tab-title">{{ view.title }}</span>
+              <a-tag :color="TAB_STATUS_COLOR[view.status]" size="small" class="tab-status">
+                {{ statusLabel(view.status) }}
               </a-tag>
             </div>
           </template>
 
           <!-- 任务控制与状态内容 -->
-          <div class="task-unified-card" :class="`status-${tab.status}`">
+          <div class="task-unified-card" :class="`status-${view.status}`">
             <!-- 任务控制栏 -->
             <SchedulerTaskControl
-              v-model:selected-task-id="tab.selectedTaskId"
-              :selected-mode="tab.selectedMode"
-              v-model:resume-from-script-id="tab.resumeFromScriptId"
-              v-model:selected-user-ids="tab.selectedUserIds"
-              v-model:queue-user-scope="tab.queueUserScope"
-              v-model:running-task-label="tab.runningTaskLabel"
-              v-model:running-mode-label="tab.runningModeLabel"
-              :resume-script-options="tab.resumeScriptOptions || []"
-              :resume-script-loading="tab.resumeScriptLoading"
-              :user-options="tab.userOptions || []"
-              :user-disabled-options="tab.userDisabledOptions || []"
-              :user-options-loading="tab.userOptionsLoading"
+              :selected-task-id="view.tab.selectedTaskId"
+              v-model:scope="view.tab.scope"
+              :running-task-label="view.taskLabel"
+              :running-mode-label="view.modeLabel"
               :task-options="taskOptions"
               :task-options-loading="taskOptionsLoading"
-              :status="tab.status"
-              :cycle-next-list="tab.cycleNextList || []"
-              :queue-scope-groups="tab.queueScopeGroups || []"
-              :queue-scope-loading="tab.queueScopeLoading"
-              :queue-scope-failed="tab.queueScopeFailed"
-              :disabled="tab.status === '运行'"
-              @task-changed="(taskId: string | null) => handleTaskSelectionChange(tab, taskId)"
-              @refresh-resume-scripts="() => loadResumeScriptOptions(tab)"
-              @refresh-users="() => loadUserOptions(tab)"
-              @refresh-queue-scope="() => loadQueueScope(tab)"
-              @start="onStartTaskClick(tab)"
-              @stop="stopTask(tab)"
+              :status="view.status"
+              :scope-loading="view.tab.scopeLoading"
+              :scope-error="view.tab.scopeError"
+              :starting="view.tab.starting"
+              @task-changed="(taskId: string | null) => handleTaskSelectionChange(view.tab, taskId)"
+              @refresh-scope="() => loadTaskScope(view.tab)"
+              @start="onStartTaskClick(view.tab)"
+              @stop="stopTask(view.tab)"
               @refresh-tasks="loadTaskOptions"
             />
 
-            <!-- 状态展示区域 -->
-            <div class="status-container">
-              <div class="overview-panel-container">
-                <TaskOverviewPanel :ref="el => setOverviewRef(el, tab.key)" />
-              </div>
-              <div class="log-panel-container">
-                <SchedulerLogPanel
-                  :log-content="tab.lastLogContent"
-                  :external-log-mode="tab.logMode"
-                  :first-line="tab.displayLogFirstLine ?? tab.logFirstLine ?? 1"
-                />
-              </div>
-            </div>
+            <SchedulerRunPanels
+              :runtime="view.runtime"
+              :active="pageActive && activeSchedulerTab === view.tab.key"
+              :run-id="view.tab.taskId"
+            />
           </div>
         </a-tab-pane>
 
@@ -154,8 +134,7 @@ import { MinusOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { POWER_ACTION_LABEL_KEY, TAB_STATUS_COLOR } from './schedulerConstants'
 import { useSchedulerLogic } from './useSchedulerLogic'
 import SchedulerTaskControl from './SchedulerTaskControl.vue'
-import SchedulerLogPanel from './SchedulerLogPanel.vue'
-import TaskOverviewPanel from './TaskOverviewPanel.vue'
+import SchedulerRunPanels from './SchedulerRunPanels.vue'
 import OverlayRainMask from '@/components/OverlayRainMask.vue'
 import { useStatusLabel } from '@/i18n/status'
 import type { SchedulerTab } from './schedulerConstants'
@@ -186,7 +165,7 @@ watch([activeAppearance, appearanceId, themeMode, isDark], resetLogThemeMode, { 
 // 使用业务逻辑层
 const {
   // 状态
-  schedulerTabs,
+  schedulerPanels,
   activeSchedulerTab,
   taskOptionsLoading,
   taskOptions,
@@ -201,9 +180,7 @@ const {
   startTask,
   stopTask,
   handleTaskSelectionChange,
-  loadResumeScriptOptions,
-  loadUserOptions,
-  loadQueueScope,
+  loadTaskScope,
 
   // keep-alive 激活/停用
   setSchedulerViewActive,
@@ -215,11 +192,9 @@ const {
   initialize,
   loadTaskOptions,
   cleanup,
-
-  // 新增：任务总览面板引用管理
-  setOverviewRef,
 } = useSchedulerLogic()
 
+const pageActive = ref(true)
 const aprilFoolsMaskVisible = ref(false)
 const APRIL_FOOLS_STORAGE_PREFIX = 'scheduler-april-fools-triggered-'
 
@@ -270,7 +245,9 @@ const onAprilFoolsStopped = () => {
 
 // 计算属性：检查是否有可删除的调度台
 const hasNonRunningTabs = computed(() => {
-  return schedulerTabs.value.some(tab => tab.key !== 'main' && tab.status !== '运行')
+  return schedulerPanels.value.some(
+    view => view.tab.key !== 'main' && !view.tab.starting && view.status !== '运行'
+  )
 })
 
 // Tab 操作
@@ -301,12 +278,14 @@ onUnmounted(() => {
 
 // keep-alive 生命周期钩子
 onActivated(() => {
+  pageActive.value = true
   logger.info('调度中心组件激活（路由切回）')
   resetLogThemeMode()
   setSchedulerViewActive(true)
 })
 
 onDeactivated(() => {
+  pageActive.value = false
   logger.info('调度中心组件停用（路由切走），但组件保持存活，WebSocket订阅继续运行')
   setSchedulerViewActive(false)
 })
@@ -318,25 +297,11 @@ onDeactivated(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   background-color: transparent;
-}
-
-/* 页面头部样式 */
-.scheduler-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 16px;
-  padding: 0 4px;
 }
 
 .header-left {
   flex: 1;
-}
-
-.page-title {
-  margin: 0 0 8px 0;
 }
 
 .header-actions {
@@ -365,9 +330,6 @@ onDeactivated(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
-  border-radius: 8px;
-  padding: 12px;
 }
 
 .scheduler-tabs :deep(.ant-tabs) {
@@ -375,6 +337,15 @@ onDeactivated(() => {
   display: flex;
   flex-direction: column;
   background-color: transparent;
+}
+
+.scheduler-tabs :deep(.ant-tabs-content-holder) {
+  min-height: 0;
+}
+
+.scheduler-tabs :deep(.ant-tabs-content),
+.scheduler-tabs :deep(.ant-tabs-tabpane) {
+  height: 100%;
 }
 
 /* 自定义标签页tab内容布局 */
@@ -427,8 +398,6 @@ onDeactivated(() => {
   align-items: center;
   gap: 4px;
   margin-left: 8px;
-  margin-top: -12px;
-  /* 负边距抵消容器padding，使按钮上边距与右边距(12px)相同 */
 }
 
 .tab-action-btn {
@@ -472,7 +441,7 @@ onDeactivated(() => {
 .task-unified-card {
   background-color: transparent;
   box-shadow: none;
-  height: calc(100vh - 237px);
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -491,45 +460,12 @@ onDeactivated(() => {
   background-color: transparent;
 }
 
-/* 状态容器 */
-.status-container {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-  gap: 16px;
-  padding: 0;
-  margin: 0;
-}
-
-/* 任务总览面板容器 */
-.overview-panel-container {
-  flex: 0 0 33.333333%;
-  /* 占据1/3宽度 */
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-/* 日志面板容器 */
-.log-panel-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
 /* 电源操作倒计时弹窗样式已移至 GlobalPowerCountdown.vue */
 
 /* 响应式 - 移动端适配 */
 @media (max-width: 768px) {
-  .scheduler-main {
-    padding: 8px;
-  }
-
   .scheduler-header {
     flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
   }
 
   .header-actions {
@@ -539,16 +475,6 @@ onDeactivated(() => {
 
   .power-label {
     display: none;
-  }
-
-  .status-container {
-    flex-direction: column;
-  }
-
-  .overview-panel-container,
-  .log-panel-container {
-    flex: 1;
-    width: 100%;
   }
 
   /* 移动端倒计时弹窗适配已移至 GlobalPowerCountdown.vue */

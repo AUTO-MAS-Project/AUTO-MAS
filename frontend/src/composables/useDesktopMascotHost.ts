@@ -1,6 +1,6 @@
+import { TaskMode } from '@/api'
 import { computed, effectScope, getCurrentScope, onScopeDispose, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { TaskCreateIn } from '@/api'
 import { t } from '@/i18n'
 import { useHomeGreetingStore } from '@/stores/homeGreeting'
 import { usePerformanceStore } from '@/stores/performance'
@@ -14,14 +14,14 @@ import { useDesktopMascotTaskActions } from './useDesktopMascotTaskActions'
 import { useDesktopMascotTaskAdapter } from './useDesktopMascotTaskAdapter'
 import { useLocale } from './useLocale'
 import { useTheme } from './useTheme'
-import type { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
+import type { useSchedulerStore } from '@/stores/scheduler'
 
 interface DesktopMascotHostOptions {
   isStandalonePage: Readonly<Ref<boolean>>
   isInitializationPage: Readonly<Ref<boolean>>
   // 音频和调度台由应用持有，宿主只使用已有实例提供的能力。
   playSound: ReturnType<typeof useAudioPlayer>['playSound']
-  trackStartedTask: ReturnType<typeof useSchedulerLogic>['trackStartedTask']
+  trackStartedTask: ReturnType<typeof useSchedulerStore>['trackStartedTask']
 }
 
 /** 桌宠渲染端唯一装配入口，只释放自身作用域，不接管共享服务的生命周期。 */
@@ -49,7 +49,7 @@ export function useDesktopMascotHost(options: DesktopMascotHostOptions): () => v
         onStarted: task => {
           options.trackStartedTask({
             ...task,
-            selectedMode: TaskCreateIn.mode.AUTO_PROXY,
+            selectedMode: TaskMode.AUTO_PROXY,
             modeLabel: t('core.scheduler.mode.autoProxy'),
           })
           void options

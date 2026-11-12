@@ -13,7 +13,6 @@ import hashlib
 import re
 import tempfile
 import zipfile
-from contextlib import suppress
 from copy import deepcopy
 from pathlib import Path
 from urllib.parse import quote, urlsplit
@@ -31,24 +30,40 @@ from app.services.common.update.transport import (
     request_mirror_resource,
 )
 from app.utils import io as _utils_io
+from app.utils.common.process.runner import (
+    create_subprocess,
+    observe_process_exit,
+    wait_for_process_cleanup,
+)
 
 REPOSITORY = "babalae/better-genshin-impact"
 NOTICE_KEY = "notShowNewVersionNoticeEndVersion"
 # BetterGI 使用严格 SemVer 比较，不能填通配符或空的版本号。
 IGNORED_VERSION = "2147483647.0.0"
+_INSTALLER_CLEANUP_SECONDS = 5
 
 
 def assert_idle(root: Path) -> None:
+    script_install.assert_no_pending_process(root)
     for process in psutil.process_iter(["exe", "name"]):
         try:
             executable = process.info["exe"]
             name = str(process.info.get("name", "")).casefold()
-            if not executable and (
-                name in {"bettergi.exe", "bettergi.update.exe"}
+            # 官方安装器可能在下载目录启动，而不是在安装目录内。
+            # 无论安装器路径如何，未停写时都不能进行恢复与目录切换。
+            exe_name = Path(executable).name.casefold() if executable else ""
+            if (
+                name == "bettergi.update.exe"
                 or name.startswith("bettergi.install.")
+                or exe_name == "bettergi.update.exe"
+                or exe_name.startswith("bettergi.install.")
             ):
                 raise script_install.InstallUnsafeError(
-                    "无法确认 BetterGI 更新器已退出，请以管理员身份重试"
+                    "BetterGI 官方安装器仍在运行，请先结束安装器"
+                )
+            if not executable and name == "bettergi.exe":
+                raise script_install.InstallUnsafeError(
+                    "无法确认 BetterGI 程序已退出，请以管理员身份重试"
                 )
             if executable and any(
                 Path(executable).resolve().is_relative_to(path.resolve())
@@ -182,6 +197,74 @@ def select_installer(release: dict) -> tuple[Version, str, str, int, str]:
     raise ValueError("BetterGI 官方发行版没有完整安装器")
 
 
+# BetterGI 以内置 notice.json 控制正式版灰度；GitHub Release 可能先于 OTA 资源公开。
+_STABLE_NOTICE_URL = "https://hui-config.oss-cn-hangzhou.aliyuncs.com/bgi/notice.json"
+_STABLE_DFS2_URL = "https://bgi-ota.cocogoat.cn/resource/BetterGI.Install.exe"
+
+
+async def check_stable_distribution(target: Version) -> str | None:
+    """核对官方公告和 Kachina 的 DFS2 元数据；未确认就保留当前安装。
+
+    该检查不创建 DFS2 下载会话，资源同步中的失败不会生成新的安装标记。
+    """
+    try:
+        async with httpx.AsyncClient(
+            proxy=Config.proxy, timeout=6, follow_redirects=True
+        ) as client:
+            notice_response = await client.get(_STABLE_NOTICE_URL)
+            notice_response.raise_for_status()
+            notice = notice_response.json()
+            if not isinstance(notice, dict):
+                raise ValueError("invalid notice data")
+            announced = Version(str(notice.get("version", notice.get("Version", ""))))
+            # 上游 Notice.Gray 默认为 10，分母固定为设备哈希模 10。
+            gray = notice.get("gray", notice.get("Gray", 10))
+            if type(gray) is not int or not 0 <= gray <= 10:
+                raise ValueError("invalid rollout percentage")
+            if announced < target:
+                return (
+                    f"BetterGI 正式版 {target} 尚未进入官方更新公告"
+                    f"（当前公告 {announced}），暂缓本次更新"
+                )
+            if gray < 10:
+                return (
+                    f"BetterGI 正式版 {target} 仍处于官方灰度推送"
+                    f"（{gray}/10），暂缓本次更新"
+                )
+
+            # 上游 DFS2 协议的 GET ?with_metadata=1，不执行安装或分配 session。
+            resource_response = await client.get(
+                _STABLE_DFS2_URL, params={"with_metadata": "1"}
+            )
+            resource_response.raise_for_status()
+            resource = resource_response.json()
+            data = resource.get("data") if isinstance(resource, dict) else None
+            metadata = data.get("metadata") if isinstance(data, dict) else None
+            if not isinstance(metadata, dict):
+                raise ValueError("missing dfs2 metadata")
+            available = Version(str(metadata.get("tag_name", "")))
+            if available != target:
+                return (
+                    f"BetterGI 正式版 {target} 的安装资源尚未同步"
+                    f"（Steambird 当前 {available}），暂缓本次更新"
+                )
+            index = data.get("index")
+            installer_end = data.get("installer_end")
+            if (
+                not isinstance(index, dict)
+                or not index
+                or type(installer_end) is not int
+                or installer_end <= 0
+            ):
+                raise ValueError("incomplete dfs2 resource index")
+    except (httpx.HTTPError, ValueError, TypeError) as error:
+        return (
+            f"BetterGI 正式版 {target} 的资源就绪状态无法确认"
+            f"（{type(error).__name__}），暂缓本次更新"
+        )
+    return None
+
+
 def verify_installer(
     path: Path, size: int, digest: str, *, executable: bool = True
 ) -> None:
@@ -236,29 +319,36 @@ def unpack_mirror_installer(
 
 async def run_installer(installer: Path, root: Path) -> None:
     # Kachina -S 静默安装，-D 显式指定现有安装目录；不用 -O，避免离线包再联网取包。
-    process = await asyncio.create_subprocess_exec(
+    process = await create_subprocess(
         str(installer), "-S", "-D", str(root.resolve()), cwd=str(installer.parent)
     )
     waiter = asyncio.create_task(process.wait())
     try:
         code = await asyncio.wait_for(asyncio.shield(waiter), timeout=30 * 60)
-    except asyncio.CancelledError:
-        # 不强杀正在写盘的官方安装器，等待退出后才释放目录锁；取消仍阻断启动。
-        while not waiter.done():
-            with suppress(asyncio.CancelledError):
-                await asyncio.shield(waiter)
+    except (asyncio.CancelledError, TimeoutError) as error:
+        # 只在确认阶段限时等待；确认结束后的强杀仍由任务 scope 负责。
+        try:
+            await wait_for_process_cleanup(waiter, timeout=_INSTALLER_CLEANUP_SECONDS)
+        except asyncio.CancelledError:
+            script_install.defer_installation_release(
+                root, observe_process_exit(process, after_task_cleanup=True)
+            )
+            raise
+        except TimeoutError as cleanup_error:
+            script_install.defer_installation_release(
+                root, observe_process_exit(process, after_task_cleanup=True)
+            )
+            failure = script_install.InstallUnsafeError(
+                "BetterGI 安装器尚未退出，任务已停止等待，安装目录将保持占用直至进程结束"
+            )
+            if isinstance(error, asyncio.CancelledError):
+                raise error from failure
+            raise failure from cleanup_error
+        if isinstance(error, TimeoutError):
+            raise script_install.InstallUnsafeError(
+                "BetterGI 官方安装器超时时尚未退出，现已结束；已保留安装现场，请手动确认"
+            ) from error
         raise
-    except TimeoutError as error:
-        # 超时不是安装结束。持有目录锁直到安装器真正退出，否则下一任务
-        # 可能在同一目录仍被原生安装器修改时启动。
-        while not waiter.done():
-            try:
-                await asyncio.shield(waiter)
-            except asyncio.CancelledError:
-                continue
-        raise script_install.InstallUnsafeError(
-            "BetterGI 官方安装器尚未退出，已保留安装现场，请手动确认"
-        ) from error
     if code != 0:
         raise script_install.InstallUnsafeError(
             "BetterGI 官方安装器失败，已保留安装标记，请重试更新或手动修复"
@@ -311,6 +401,15 @@ async def update_before_run(
         raise script_install.InstallUnsafeError(
             "BetterGI 上次安装未完成且高于所选通道，请切换通道或手动修复，不会自动降级"
         )
+    # Mirror 包有独立分发校验；GitHub 正式版须等待官方公告及 OTA 资源同步。
+    if not cdk and config.Update.Channel == "stable":
+        unready = await check_stable_distribution(target)
+        if unready:
+            if marker.exists():
+                raise script_install.InstallUnsafeError(
+                    f"{unready}；上次安装仍未确认，不能直接启动旧版本"
+                )
+            return unready
     directory.mkdir(parents=True, exist_ok=True)
     cache = Path(tempfile.mkdtemp(dir=directory, prefix="download-"))
     installer = cache / name

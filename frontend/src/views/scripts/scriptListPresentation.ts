@@ -1,11 +1,11 @@
 import { translate as t } from '@/i18n'
 import { SCRIPT_LOGOS, SCRIPT_LABELS } from '@/utils/scriptLogos'
+import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
 import type { ScriptListItem, ScriptListUser } from './scriptListModel'
 import {
   isMaaFWFamily,
   resolveMaaFWFlavor,
   usesMaaFWProjectIcon,
-  type MaaFWFlavorType,
 } from '@/composables/useMaaFWFlavor'
 import { buildMaaFWScriptIconUrl } from '@/utils/maafwProjectIcon'
 export const getScriptLogo = (type: ScriptListItem['type']) => SCRIPT_LOGOS[type]
@@ -70,25 +70,8 @@ export const getScriptTypeLabel = (script: ScriptListItem) => {
   return type
 }
 
-// MaaFW 与各特调的标签颜色取自特调注册表
-const SCRIPT_TYPE_TAG_COLORS: Record<Exclude<ScriptListItem['type'], MaaFWFlavorType>, string> = {
-  MAA: 'blue',
-  SRC: 'purple',
-  MaaEnd: 'blue',
-  Okww: 'blue',
-  OkNte: 'blue',
-  HSR: 'purple',
-  BetterGI: 'gold',
-  ZzzOd: 'volcano',
-  BAAH: 'magenta',
-  Whimbox: 'pink',
-  General: 'green',
-}
-
 export const getScriptTypeTagColor = (type: ScriptListItem['type']) =>
-  isMaaFWFamily(type)
-    ? resolveMaaFWFlavor(type).typeTagColor
-    : (SCRIPT_TYPE_TAG_COLORS[type] ?? 'green')
+  SCRIPT_METADATA[type]?.typeTagColor ?? 'green'
 
 export const getMaaEndResourceLabel = (user: ScriptListUser): string => {
   return user.Info?.Resource || '官服'

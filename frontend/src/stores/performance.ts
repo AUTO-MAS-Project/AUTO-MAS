@@ -2,11 +2,14 @@ import { observePreference } from '@/utils/preferenceAnalytics'
 import { observeFeature } from '@/utils/featureAnalytics'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
+import { TaskMode } from '@/api'
 import { useTaskRuntimeState } from '@/composables/useTaskRuntimeState'
+import { scriptHasStatus } from '@/utils/taskFailures'
 import { getConfig, saveConfig } from '@/utils/config'
 
 export type WindowActivity = 'visible' | 'background'
 
+const RUNNING_STATUSES = new Set(['运行', '运行中'])
 const DEFAULT_LOW_PERFORMANCE_MODE = false
 /** 有脚本任务在跑就自动暂停主页动效：默认开，旧配置缺省同此 */
 const DEFAULT_PAUSE_HOME_EFFECTS_WHEN_RUNNING = true
@@ -28,10 +31,15 @@ export const usePerformanceStore = defineStore('performance', () => {
   const isLowPower = computed(() => lowPerformanceMode.value || isBackgrounded.value)
 
   // 任务运行状态来自常驻订阅（WS 增量 + HTTP 快照兜底），这里只读
-  const { scriptStatusesByType } = useTaskRuntimeState()
+  const { tasks } = useTaskRuntimeState()
   /** 是否有脚本任务在运行（手动 / 定时 / 周期 / 自动代理都算） */
   const anyScriptRunning = computed(() =>
-    [...scriptStatusesByType.value.values()].some(status => status.running)
+    [...tasks.value.values()].some(
+      task =>
+        task.phase !== 'completed' &&
+        task.mode === TaskMode.AUTO_PROXY &&
+        task.taskInfo.some(info => scriptHasStatus(info, RUNNING_STATUSES))
+    )
   )
   /**
    * 脚本运行期间自动暂停主页动效；与低性能模式、窗口后台是三条独立的停帧路径。

@@ -64,8 +64,15 @@ if TYPE_CHECKING:
     from .common import log as log
     from .common import log_box as log_box
     from .common import mirrorchyan as mirrorchyan
+    from .common import process as process
     from .common import security as security
     from .common import supervision as supervision
+    from .contracts.power import PowerController
+    from .contracts.startup import StartupManager
+
+    power: PowerController
+    startup: StartupManager
+
     from .common import tools as tools
     from .common import update_files as update_files
     from .common import websocket as websocket
@@ -153,7 +160,6 @@ if TYPE_CHECKING:
     from .common.mirrorchyan import (
         compare_mirrorchyan_versions as compare_mirrorchyan_versions,
     )
-    from .common.process import manager as process
     from .common.process.manager import ProcessInfo as ProcessInfo
     from .common.process.manager import ProcessManager as ProcessManager
     from .common.process.manager import is_process_alive as is_process_alive
@@ -172,7 +178,6 @@ if TYPE_CHECKING:
     from .common.websocket import WebSocketClient as WebSocketClient
     from .contracts.audio import AudioAPI
     from .contracts.display import DisplayAPI
-    from .contracts.emulator_native import EmulatorNativeAPI
     from .contracts.file_lock import FileLockAPI
     from .contracts.host import HostAPI, HostPredicate
     from .contracts.process import ProcessAPI
@@ -184,7 +189,6 @@ if TYPE_CHECKING:
 
     audio: AudioAPI
     display: DisplayAPI
-    emulator_native: EmulatorNativeAPI
     file_lock: FileLockAPI
     host: HostAPI
     process_platform: ProcessAPI
@@ -323,10 +327,12 @@ _LAZY_EXPORTS = {
     "BASE_SOURCE_LABELS": (".common.constants", "BASE_SOURCE_LABELS"),
 }
 _COMMON_MODULES = {
+    "process": ".common.process",
+    "power": ".common.power",
+    "startup": ".common.startup",
     "log_box": ".common.log_box",
     "file_lock": ".unsupported.file_lock",
     "update_native": ".common.update_native",
-    "emulator_native": ".common.emulator_native",
     "registry": ".unsupported.registry",
     "audio": ".unsupported.audio",
     "update_files": ".common.update_files",
@@ -346,7 +352,6 @@ _COMMON_MODULES = {
     "secret": ".unsupported.secret",
     "LogMonitor": ".common.log.monitor",
     "environment": ".common.environment",
-    "process": ".common.process.manager",
     "errors": ".common.errors",
     "process_platform": ".common.process.platform",
     "game_update": ".common.game_update",
@@ -362,9 +367,10 @@ _COMMON_MODULES = {
 }
 _PLATFORM_MODULES = {
     "win32": {
+        "power": ".windows.power",
+        "startup": ".windows.startup",
         "file_lock": ".windows.file_lock",
         "update_native": ".windows.update_native",
-        "emulator_native": ".windows.emulator_native",
         "registry": ".windows.registry",
         "integrity": ".windows.integrity",
         "host": ".windows.host",
@@ -399,6 +405,8 @@ def __getattr__(name: str):
             value = import_module(".common.dummy", __name__).create_dummy(name)
         else:
             value = import_module(target, __name__)
+        if name == "power":
+            value = value.power
     globals()[name] = value
     return value
 
@@ -437,6 +445,9 @@ class LazyProxy:
 
 
 __all__ = [
+    "process",
+    "power",
+    "startup",
     "log_box",
     "file_lock",
     "SIGN_MODE_REGEX",
@@ -540,7 +551,6 @@ __all__ = [
     "LEGACY_BASE_SOURCES",
     "BASE_SOURCE_LABELS",
     "update_native",
-    "emulator_native",
     "registry",
     "integrity",
     "audio",

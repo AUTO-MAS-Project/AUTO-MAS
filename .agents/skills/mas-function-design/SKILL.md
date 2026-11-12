@@ -55,12 +55,13 @@ For validation, fallback, catch and retry decisions, load [mas-defensive-program
 7. Avoid mixing sync blocking calls directly in async hot paths.
 8. Do not ship a function body containing module lazy imports to a thread pool (`asyncio.to_thread`/`run_in_executor`): resolve imports on the event loop or at startup, then pass the imported callables to the thread. Concurrent cold imports of one package from multiple worker threads can deadlock on CPython's per-module import locks or observe half-initialized modules.
 9. Keep task spawning in orchestrator-level functions, not leaf utilities.
-10. Prefer one clear wait/check block over several tiny sleeps, logs, or staged wrappers that express the same step.
-11. When success/failure depends on log text, log timestamps, and process exit together, keep that decision rule centralized and readable instead of scattering partial checks across helpers.
-12. `TaskExecuteBase.main_task`, `final_task`, and `on_crash` are the required execution contract for task classes; keep their responsibilities distinct.
-13. `main_task` and `final_task` may raise normally, but `on_crash` must protect itself from uncaught exceptions.
-14. Await child task spawning through `await self.spawn(...)`; do not fire child tasks without awaiting unless the owning orchestration has a documented reason.
-15. Use `.cancel()` plus `await .accomplish.wait()` when parent code must wait for nested task shutdown and cleanup to finish.
+10. Trust existing base-layer guarantees instead of repeating their correction logic in every function.
+11. Prefer one clear wait/check block over several tiny sleeps, logs, or staged wrappers that express the same step.
+12. When success/failure depends on log text, log timestamps, and process exit together, keep that decision rule centralized and readable instead of scattering partial checks across helpers.
+13. Scheduling execution follows the source `TaskBase` contract (`main_task`, `final_task`, `on_crash`); existing `TaskExecuteBase` is a legacy compatibility path. Apply [mas-task-scheduler](../mas-task-scheduler/SKILL.md) for layer responsibilities and parent-owned locks; do not promote legacy-manager behavior into the new framework.
+14. `main_task` and `final_task` may raise normally, but `on_crash` must protect itself from uncaught exceptions.
+15. Await execution-tree children through `await self.spawn(...)`, directly running the child's complete lifecycle in the same Task. Independent application background work belongs to its background-task owner rather than the execution tree.
+16. Stop a started `TaskBase` through `await task.stop()` and wait for cleanup. Nested cancellation follows the direct await chain; do not assume TaskBase exposes `.cancel()`. Direct background-task cancellation follows the background manager's own API, and a wait timeout does not mean execution has stopped.
 
 ## Configuration Mutation Flows
 For functions reading or modifying config state, use [the configuration framework reference](../mas-data-model/references/config-framework.md).

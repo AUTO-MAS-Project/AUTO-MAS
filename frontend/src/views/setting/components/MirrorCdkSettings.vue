@@ -3,6 +3,7 @@ import { onScopeDispose, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig, SettingMirrorCdkData } from '@/api'
+import type { SettingChangeHandler } from '../settingTypes'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import MirrorCdkStatusHint from '@/components/MirrorCdkStatusHint.vue'
@@ -11,7 +12,7 @@ import { handleExternalLink } from '@/utils/openExternal'
 
 const props = defineProps<{
   settings: GlobalConfig
-  handleSettingChange: (category: keyof GlobalConfig, key: string, value: unknown) => Promise<void>
+  handleSettingChange: SettingChangeHandler
 }>()
 
 const { t } = useI18n()
@@ -78,8 +79,8 @@ const handleBlur = async () => {
   const sequence = draftSequence
   const value = cdk.value
   void refresh()
-  await enqueue(() => props.handleSettingChange('Update', 'MirrorChyanCDK', value))
-  if (sequence === draftSequence && cdk.value === props.settings.Update?.MirrorChyanCDK) {
+  const saved = await enqueue(() => props.handleSettingChange('Update', 'MirrorChyanCDK', value))
+  if (saved && sequence === draftSequence && cdk.value === props.settings.Update?.MirrorChyanCDK) {
     savedDraftSequence = sequence
   }
 }

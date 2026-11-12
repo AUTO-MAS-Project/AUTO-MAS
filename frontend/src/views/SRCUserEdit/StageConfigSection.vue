@@ -63,54 +63,54 @@
             <a-select-option value="-">{{
               t('core.edit.keepOriginalConfiguration')
             }}</a-select-option>
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Insight"
-              >遗器：领航员 & 名冶（观火之径）</a-select-option
-            >
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Possession"
-              >遗器：魔法少女 & 卜者（魔占之径）</a-select-option
-            >
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Hidden_Salvation"
-              >遗器：救世主 & 隐士（隐救之径）</a-select-option
-            >
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Thundersurge"
-              >遗器：烈阳 & 船长（雳涌之径）</a-select-option
-            >
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Aria"
-              >遗器：英豪 & 诗人（弦歌之径）</a-select-option
-            >
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Uncertainty"
-              >遗器：司铎 & 学者（迷识之径）</a-select-option
-            >
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Cavalier"
-              >遗器：铁骑 & 勇烈（勇骑之径）</a-select-option
-            >
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Dreamdive"
-              >遗器：死水 & 钟表匠（梦潜之径）</a-select-option
-            >
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Darkness"
-              >遗器：大公 & DoT套（幽冥之径）</a-select-option
-            >
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Elixir_Seekers"
-              >遗器：莳者 & 信使（药使之径）</a-select-option
-            >
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Conflagration"
-              >遗器：火套 & 虚数套（野焰之径）</a-select-option
-            >
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Holy_Hymn"
-              >遗器：防御套 & 雷套（圣颂之径）</a-select-option
-            >
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Providence"
-              >遗器：铁卫 & 量子套（睿治之径）</a-select-option
-            >
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Drifting"
-              >遗器：治疗套 & 快枪手（漂泊之径）</a-select-option
-            >
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Jabbing_Punch"
-              >遗器：物理套 & 怪盗（迅拳之径）</a-select-option
-            >
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Gelid_Wind"
-              >遗器：冰套 & 风套（霜风之径）</a-select-option
-            >
+            <a-select-option value="Cavern_of_Corrosion_Path_of_Insight">{{
+              t('core.edit.srcStage1')
+            }}</a-select-option>
+            <a-select-option value="Cavern_of_Corrosion_Path_of_Possession">{{
+              t('core.edit.srcStage2')
+            }}</a-select-option>
+            <a-select-option value="Cavern_of_Corrosion_Path_of_Hidden_Salvation">{{
+              t('core.edit.srcStage3')
+            }}</a-select-option>
+            <a-select-option value="Cavern_of_Corrosion_Path_of_Thundersurge">{{
+              t('core.edit.srcStage4')
+            }}</a-select-option>
+            <a-select-option value="Cavern_of_Corrosion_Path_of_Aria">{{
+              t('core.edit.srcStage5')
+            }}</a-select-option>
+            <a-select-option value="Cavern_of_Corrosion_Path_of_Uncertainty">{{
+              t('core.edit.srcStage6')
+            }}</a-select-option>
+            <a-select-option value="Cavern_of_Corrosion_Path_of_Cavalier">{{
+              t('core.edit.srcStage7')
+            }}</a-select-option>
+            <a-select-option value="Cavern_of_Corrosion_Path_of_Dreamdive">{{
+              t('core.edit.srcStage8')
+            }}</a-select-option>
+            <a-select-option value="Cavern_of_Corrosion_Path_of_Darkness">{{
+              t('core.edit.srcStage9')
+            }}</a-select-option>
+            <a-select-option value="Cavern_of_Corrosion_Path_of_Elixir_Seekers">{{
+              t('core.edit.srcStage10')
+            }}</a-select-option>
+            <a-select-option value="Cavern_of_Corrosion_Path_of_Conflagration">{{
+              t('core.edit.srcStage11')
+            }}</a-select-option>
+            <a-select-option value="Cavern_of_Corrosion_Path_of_Holy_Hymn">{{
+              t('core.edit.srcStage12')
+            }}</a-select-option>
+            <a-select-option value="Cavern_of_Corrosion_Path_of_Providence">{{
+              t('core.edit.srcStage13')
+            }}</a-select-option>
+            <a-select-option value="Cavern_of_Corrosion_Path_of_Drifting">{{
+              t('core.edit.srcStage14')
+            }}</a-select-option>
+            <a-select-option value="Cavern_of_Corrosion_Path_of_Jabbing_Punch">{{
+              t('core.edit.srcStage15')
+            }}</a-select-option>
+            <a-select-option value="Cavern_of_Corrosion_Path_of_Gelid_Wind">{{
+              t('core.edit.srcStage16')
+            }}</a-select-option>
           </a-select>
         </a-form-item>
       </a-col>
@@ -134,48 +134,48 @@
             <a-select-option value="-">{{
               t('core.edit.keepOriginalConfiguration')
             }}</a-select-option>
-            <a-select-option value="Divergent_Universe_Bugs_Incoming"
-              >饰品：坠星 & 寰宇（虫虫来袭）</a-select-option
-            >
-            <a-select-option value="Divergent_Universe_Gilded_Recollection"
-              >饰品：朋克洛德 & 千星荟萃（鎏金追忆）</a-select-option
-            >
-            <a-select-option value="Divergent_Universe_Within_the_West_Wind"
-              >饰品：翁法罗斯 & 天国（西风丛中）</a-select-option
-            >
-            <a-select-option value="Divergent_Universe_Moonlit_Blood"
-              >饰品：妖精 & 沉醉（月下朱殷）</a-select-option
-            >
-            <a-select-option value="Divergent_Universe_Unceasing_Strife"
-              >饰品：拾骨地 & 巨树（纷争不休）</a-select-option
-            >
-            <a-select-option value="Divergent_Universe_Famished_Worker"
-              >饰品：海域 & 奇想（蠹役饥肠）</a-select-option
-            >
-            <a-select-option value="Divergent_Universe_Eternal_Comedy"
-              >饰品：奔狼 & 火宫（永恒笑剧）</a-select-option
-            >
-            <a-select-option value="Divergent_Universe_To_Sweet_Dreams"
-              >饰品：茨冈尼亚 & 出云（伴你入眠）</a-select-option
-            >
-            <a-select-option value="Divergent_Universe_Pouring_Blades"
-              >饰品：苍穹 & 匹诺康尼（天剑如雨）</a-select-option
-            >
-            <a-select-option value="Divergent_Universe_Fruit_of_Evil"
-              >饰品：繁星 & 龙骨（孽果盘生）</a-select-option
-            >
-            <a-select-option value="Divergent_Universe_Permafrost"
-              >饰品：贝洛伯格 & 萨尔索图（百年冻土）</a-select-option
-            >
-            <a-select-option value="Divergent_Universe_Gentle_Words"
-              >饰品：商业公司 & 差分机（温柔话语）</a-select-option
-            >
-            <a-select-option value="Divergent_Universe_Smelted_Heart"
-              >饰品：盗贼 & 翁瓦克（浴火钢心）</a-select-option
-            >
-            <a-select-option value="Divergent_Universe_Untoppled_Walls"
-              >饰品：太空 & 仙舟（坚城不倒）</a-select-option
-            >
+            <a-select-option value="Divergent_Universe_Bugs_Incoming">{{
+              t('core.edit.srcStage17')
+            }}</a-select-option>
+            <a-select-option value="Divergent_Universe_Gilded_Recollection">{{
+              t('core.edit.srcStage18')
+            }}</a-select-option>
+            <a-select-option value="Divergent_Universe_Within_the_West_Wind">{{
+              t('core.edit.srcStage19')
+            }}</a-select-option>
+            <a-select-option value="Divergent_Universe_Moonlit_Blood">{{
+              t('core.edit.srcStage20')
+            }}</a-select-option>
+            <a-select-option value="Divergent_Universe_Unceasing_Strife">{{
+              t('core.edit.srcStage21')
+            }}</a-select-option>
+            <a-select-option value="Divergent_Universe_Famished_Worker">{{
+              t('core.edit.srcStage22')
+            }}</a-select-option>
+            <a-select-option value="Divergent_Universe_Eternal_Comedy">{{
+              t('core.edit.srcStage23')
+            }}</a-select-option>
+            <a-select-option value="Divergent_Universe_To_Sweet_Dreams">{{
+              t('core.edit.srcStage24')
+            }}</a-select-option>
+            <a-select-option value="Divergent_Universe_Pouring_Blades">{{
+              t('core.edit.srcStage25')
+            }}</a-select-option>
+            <a-select-option value="Divergent_Universe_Fruit_of_Evil">{{
+              t('core.edit.srcStage26')
+            }}</a-select-option>
+            <a-select-option value="Divergent_Universe_Permafrost">{{
+              t('core.edit.srcStage27')
+            }}</a-select-option>
+            <a-select-option value="Divergent_Universe_Gentle_Words">{{
+              t('core.edit.srcStage28')
+            }}</a-select-option>
+            <a-select-option value="Divergent_Universe_Smelted_Heart">{{
+              t('core.edit.srcStage29')
+            }}</a-select-option>
+            <a-select-option value="Divergent_Universe_Untoppled_Walls">{{
+              t('core.edit.srcStage30')
+            }}</a-select-option>
           </a-select>
         </a-form-item>
       </a-col>
@@ -252,33 +252,33 @@
             @change="emitSave('Stage.EchoOfWar', formData.Stage.EchoOfWar)"
           >
             <a-select-option value="-">{{ t('core.edit.disabled') }}</a-select-option>
-            <a-select-option value="Echo_of_War_The_Comedy_of_Doom"
-              >坏灭的喜剧（二相乐园）</a-select-option
-            >
-            <a-select-option value="Echo_of_War_Rusted_Crypt_of_the_Iron_Carcass"
-              >铁骸的锈冢（翁法罗斯）</a-select-option
-            >
-            <a-select-option value="Echo_of_War_Glance_of_Twilight"
-              >晨昏的回眸（翁法罗斯）</a-select-option
-            >
-            <a-select-option value="Echo_of_War_Inner_Beast_Battlefield"
-              >心兽的战场（仙舟「罗浮」）</a-select-option
-            >
-            <a-select-option value="Echo_of_War_Salutations_of_Ashen_Dreams"
-              >尘梦的赞礼（匹诺康尼）</a-select-option
-            >
-            <a-select-option value="Echo_of_War_Borehole_Planet_Past_Nightmares"
-              >蛀星的旧魇（空间站「黑塔」）</a-select-option
-            >
-            <a-select-option value="Echo_of_War_Divine_Seed"
-              >不死的神实（仙舟「罗浮」）</a-select-option
-            >
-            <a-select-option value="Echo_of_War_End_of_the_Eternal_Freeze"
-              >寒潮的落幕（雅利洛-Ⅵ）</a-select-option
-            >
-            <a-select-option value="Echo_of_War_Destruction_Beginning"
-              >毁灭的开端（空间站「黑塔」）</a-select-option
-            >
+            <a-select-option value="Echo_of_War_The_Comedy_of_Doom">{{
+              t('core.edit.srcStage31')
+            }}</a-select-option>
+            <a-select-option value="Echo_of_War_Rusted_Crypt_of_the_Iron_Carcass">{{
+              t('core.edit.srcStage32')
+            }}</a-select-option>
+            <a-select-option value="Echo_of_War_Glance_of_Twilight">{{
+              t('core.edit.srcStage33')
+            }}</a-select-option>
+            <a-select-option value="Echo_of_War_Inner_Beast_Battlefield">{{
+              t('core.edit.srcStage34')
+            }}</a-select-option>
+            <a-select-option value="Echo_of_War_Salutations_of_Ashen_Dreams">{{
+              t('core.edit.srcStage35')
+            }}</a-select-option>
+            <a-select-option value="Echo_of_War_Borehole_Planet_Past_Nightmares">{{
+              t('core.edit.srcStage36')
+            }}</a-select-option>
+            <a-select-option value="Echo_of_War_Divine_Seed">{{
+              t('core.edit.srcStage37')
+            }}</a-select-option>
+            <a-select-option value="Echo_of_War_End_of_the_Eternal_Freeze">{{
+              t('core.edit.srcStage38')
+            }}</a-select-option>
+            <a-select-option value="Echo_of_War_Destruction_Beginning">{{
+              t('core.edit.srcStage39')
+            }}</a-select-option>
           </a-select>
         </a-form-item>
       </a-col>
@@ -415,7 +415,7 @@ const emitSave = (key: string, value: any) => {
 const materialCategory = ref('')
 
 // 材料关卡选项
-const materialOptions = [
+const materialOptions = computed(() => [
   // 拟造花萼（金）
   {
     value: 'Calyx_Golden_Memories_Planarcadia',
@@ -739,14 +739,14 @@ const materialOptions = [
     label: t('core.edit.ascensionMaterialImaginaryLv'),
     category: 'Stagnant_Shadow',
   },
-]
+])
 
 // 筛选后的材料关卡选项
 const filteredMaterialOptions = computed(() => {
   if (!materialCategory.value) {
-    return materialOptions
+    return materialOptions.value
   }
-  return materialOptions.filter(option => option.category === materialCategory.value)
+  return materialOptions.value.filter(option => option.category === materialCategory.value)
 })
 
 // 获取当前生效关卡
@@ -759,7 +759,7 @@ const getCurrentStage = () => {
   } else if (channel === 'Ornament') {
     return getStageLabel(formData.value.Stage.Ornament, 'Ornament')
   }
-  return '未配置'
+  return t('core.edit.srcStageUnconfigured')
 }
 
 // 获取当前生效关卡的颜色（根据前缀）
@@ -791,46 +791,46 @@ const getCurrentStageColor = () => {
 
 // 获取关卡标签
 const getStageLabel = (value: string, type: string) => {
-  if (!value || value === '-') return '禁用'
+  if (!value || value === '-') return t('core.edit.disabled')
 
   const stageMap: Record<string, string> = {
     // 遗器
-    Cavern_of_Corrosion_Path_of_Insight: '遗器：领航员 & 名冶（观火之径）',
-    Cavern_of_Corrosion_Path_of_Possession: '遗器：魔法少女 & 卜者（魔占之径）',
-    Cavern_of_Corrosion_Path_of_Hidden_Salvation: '遗器：救世主 & 隐士（隐救之径）',
-    Cavern_of_Corrosion_Path_of_Thundersurge: '遗器：烈阳 & 船长（雳涌之径）',
-    Cavern_of_Corrosion_Path_of_Aria: '遗器：英豪 & 诗人（弦歌之径）',
-    Cavern_of_Corrosion_Path_of_Uncertainty: '遗器：司铎 & 学者（迷识之径）',
-    Cavern_of_Corrosion_Path_of_Cavalier: '遗器：铁骑 & 勇烈（勇骑之径）',
-    Cavern_of_Corrosion_Path_of_Dreamdive: '遗器：死水 & 钟表匠（梦潜之径）',
-    Cavern_of_Corrosion_Path_of_Darkness: '遗器：大公 & DoT套（幽冥之径）',
-    Cavern_of_Corrosion_Path_of_Elixir_Seekers: '遗器：莳者 & 信使（药使之径）',
-    Cavern_of_Corrosion_Path_of_Conflagration: '遗器：火套 & 虚数套（野焰之径）',
-    Cavern_of_Corrosion_Path_of_Holy_Hymn: '遗器：防御套 & 雷套（圣颂之径）',
-    Cavern_of_Corrosion_Path_of_Providence: '遗器：铁卫 & 量子套（睿治之径）',
-    Cavern_of_Corrosion_Path_of_Drifting: '遗器：治疗套 & 快枪手（漂泊之径）',
-    Cavern_of_Corrosion_Path_of_Jabbing_Punch: '遗器：物理套 & 怪盗（迅拳之径）',
-    Cavern_of_Corrosion_Path_of_Gelid_Wind: '遗器：冰套 & 风套（霜风之径）',
+    Cavern_of_Corrosion_Path_of_Insight: t('core.edit.srcStage1'),
+    Cavern_of_Corrosion_Path_of_Possession: t('core.edit.srcStage2'),
+    Cavern_of_Corrosion_Path_of_Hidden_Salvation: t('core.edit.srcStage3'),
+    Cavern_of_Corrosion_Path_of_Thundersurge: t('core.edit.srcStage4'),
+    Cavern_of_Corrosion_Path_of_Aria: t('core.edit.srcStage5'),
+    Cavern_of_Corrosion_Path_of_Uncertainty: t('core.edit.srcStage6'),
+    Cavern_of_Corrosion_Path_of_Cavalier: t('core.edit.srcStage7'),
+    Cavern_of_Corrosion_Path_of_Dreamdive: t('core.edit.srcStage8'),
+    Cavern_of_Corrosion_Path_of_Darkness: t('core.edit.srcStage9'),
+    Cavern_of_Corrosion_Path_of_Elixir_Seekers: t('core.edit.srcStage10'),
+    Cavern_of_Corrosion_Path_of_Conflagration: t('core.edit.srcStage11'),
+    Cavern_of_Corrosion_Path_of_Holy_Hymn: t('core.edit.srcStage12'),
+    Cavern_of_Corrosion_Path_of_Providence: t('core.edit.srcStage13'),
+    Cavern_of_Corrosion_Path_of_Drifting: t('core.edit.srcStage14'),
+    Cavern_of_Corrosion_Path_of_Jabbing_Punch: t('core.edit.srcStage15'),
+    Cavern_of_Corrosion_Path_of_Gelid_Wind: t('core.edit.srcStage16'),
     // 饰品
-    Divergent_Universe_Bugs_Incoming: '饰品：坠星 & 寰宇（虫虫来袭）',
-    Divergent_Universe_Gilded_Recollection: '饰品：朋克洛德 & 千星荟萃（鎏金追忆）',
-    Divergent_Universe_Within_the_West_Wind: '饰品：翁法罗斯 & 天国（西风丛中）',
-    Divergent_Universe_Moonlit_Blood: '饰品：妖精 & 沉醉（月下朱殷）',
-    Divergent_Universe_Unceasing_Strife: '饰品：拾骨地 & 巨树（纷争不休）',
-    Divergent_Universe_Famished_Worker: '饰品：海域 & 奇想（蠹役饥肠）',
-    Divergent_Universe_Eternal_Comedy: '饰品：奔狼 & 火宫（永恒笑剧）',
-    Divergent_Universe_To_Sweet_Dreams: '饰品：茨冈尼亚 & 出云（伴你入眠）',
-    Divergent_Universe_Pouring_Blades: '饰品：苍穹 & 匹诺康尼（天剑如雨）',
-    Divergent_Universe_Fruit_of_Evil: '饰品：繁星 & 龙骨（孽果盘生）',
-    Divergent_Universe_Permafrost: '饰品：贝洛伯格 & 萨尔索图（百年冻土）',
-    Divergent_Universe_Gentle_Words: '饰品：商业公司 & 差分机（温柔话语）',
-    Divergent_Universe_Smelted_Heart: '饰品：盗贼 & 翁瓦克（浴火钢心）',
-    Divergent_Universe_Untoppled_Walls: '饰品：太空 & 仙舟（坚城不倒）',
+    Divergent_Universe_Bugs_Incoming: t('core.edit.srcStage17'),
+    Divergent_Universe_Gilded_Recollection: t('core.edit.srcStage18'),
+    Divergent_Universe_Within_the_West_Wind: t('core.edit.srcStage19'),
+    Divergent_Universe_Moonlit_Blood: t('core.edit.srcStage20'),
+    Divergent_Universe_Unceasing_Strife: t('core.edit.srcStage21'),
+    Divergent_Universe_Famished_Worker: t('core.edit.srcStage22'),
+    Divergent_Universe_Eternal_Comedy: t('core.edit.srcStage23'),
+    Divergent_Universe_To_Sweet_Dreams: t('core.edit.srcStage24'),
+    Divergent_Universe_Pouring_Blades: t('core.edit.srcStage25'),
+    Divergent_Universe_Fruit_of_Evil: t('core.edit.srcStage26'),
+    Divergent_Universe_Permafrost: t('core.edit.srcStage27'),
+    Divergent_Universe_Gentle_Words: t('core.edit.srcStage28'),
+    Divergent_Universe_Smelted_Heart: t('core.edit.srcStage29'),
+    Divergent_Universe_Untoppled_Walls: t('core.edit.srcStage30'),
   }
 
   // 材料关卡从materialOptions中查找
   if (type === 'Materials') {
-    const option = materialOptions.find(opt => opt.value === value)
+    const option = materialOptions.value.find(opt => opt.value === value)
     return option ? option.label : value
   }
 

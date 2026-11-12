@@ -166,6 +166,13 @@ test('真实流程按公开 MAS 配置隔离用户并允许无模拟器专项', 
         serial: 107,
       },
       {
+        scriptType: 'OkNteConfig',
+        userType: 'OkNteUserConfig',
+        planField: 'PlanMode',
+        planType: 'OkNtePlanConfig',
+        serial: 119,
+      },
+      {
         scriptType: 'M9AConfig',
         userType: 'M9AUserConfig',
         planField: undefined,
@@ -213,6 +220,11 @@ test('真实流程按公开 MAS 配置隔离用户并允许无模拟器专项', 
         await writeFile(path.join(view, 'agent.txt'), 'selected MFW view')
       }
 
+      if (scriptType === 'OkNteConfig') {
+        const quick = path.join(source, 'data', variantScriptId, variantUserId, 'QuickConfig')
+        await mkdir(quick, { recursive: true })
+        await writeFile(path.join(quick, 'daily.json'), 'opaque account quick configuration')
+      }
       const variantTarget = path.join(root, `${scriptType}-target`)
       await seedRealProfile(source, variantTarget, {
         AUTO_MAS_E2E_SCRIPT_ID: variantScriptId,
@@ -223,6 +235,22 @@ test('真实流程按公开 MAS 配置隔离用户并允许无模拟器专项', 
         await readFile(path.join(variantTarget, 'config', 'ScriptConfig.json'))
       )
       assert.deepEqual(variantSeed.instances, [{ uid: variantScriptId, type: scriptType }])
+      if (scriptType === 'OkNteConfig') {
+        assert.equal(
+          await readFile(
+            path.join(
+              variantTarget,
+              'data',
+              variantScriptId,
+              variantUserId,
+              'QuickConfig',
+              'daily.json'
+            ),
+            'utf8'
+          ),
+          'opaque account quick configuration'
+        )
+      }
       if (planType && variantPlanId) {
         const selectedPlan = JSON.parse(
           await readFile(path.join(variantTarget, 'config', 'PlanConfig.json'))

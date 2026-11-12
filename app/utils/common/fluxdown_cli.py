@@ -68,6 +68,8 @@ from app.utils import (
     process_platform,
     update_native,
 )
+from app.utils.common.process.runner import create_subprocess
+from app.utils.common.process.scope import current_process_scope
 
 logger = get_logger("FluxDown")
 _LOCAL_CLI_LOCK = threading.Lock()
@@ -356,7 +358,7 @@ async def fluxdown_download(
             ) from error
 
     spawning = asyncio.create_task(
-        asyncio.create_subprocess_exec(
+        create_subprocess(
             *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
@@ -943,7 +945,8 @@ def _run_cli(
     try:
         # 管理命令也会初始化 CLI 的便携日志，不能写进用户自己的安装目录。
         private_cli = _local_cli_exe(cli_exe)
-        process = subprocess.Popen(
+        scope = current_process_scope.get()
+        process = (scope.popen if scope is not None else subprocess.Popen)(
             [str(private_cli), *args],
             env=env,
             stdout=subprocess.PIPE,

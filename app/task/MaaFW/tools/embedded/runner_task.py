@@ -42,7 +42,7 @@ from app.models.schema import (
     WSTaskNoticeData,
 )
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
-from app.services import execute_script_task, power
+from app.services import execute_script_task
 from app.task.emulator_core import close_emulator, resolve_host_adb
 from app.task.MaaFW.tools.core.controller_win32.service import (
     MaaFWWin32ControllerService,
@@ -108,6 +108,9 @@ from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     strip_host_python_environment,
     subprocess_proxy_scope,
 )
+from app.task.MaaFW.tools.core.runtime_pool.installer import (
+    install_process_factory_scope,
+)
 from app.task.MaaFW.tools.core.worker_protocol import (
     AUDIENCE_UI,
     SIGNAL_SCREENSHOT_KINDS,
@@ -119,16 +122,23 @@ from app.task.MaaFW.tools.core.worker_protocol import (
     forwards_to_ui,
     strip_ansi,
 )
-from app.utils import UTC4, ProcessInfo, ProcessManager, get_logger
+from app.utils import UTC4, ProcessInfo, ProcessManager, get_logger, power
 from app.utils import game_apk as _utils_game_apk
 from app.utils import io as _utils_io
+from app.utils.common.process.runner import create_subprocess, observe_process_exit
+from app.utils.common.process.scope import (
+    current_process_scope,
+    detached_process_context,
+)
 
 from .embedded_project import resolve_maafw_project_root
 from .flavor import (
+    MaaFWLoginRequired,
     no_default_fallback_inputs,
     off_day_scope,
     resolve_flavor,
     resolve_game_update_hook,
+    resolve_login_hook,
     unselectable_entries,
 )
 from .game_package import resolve_game_package
@@ -331,15 +341,6 @@ _PRETASK_TAIL_NOISE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]?|[\x00-\x1f\x7f]")
 # worker 发事件时按它定 audience，宿主只对旧格式事件与 stdout 上的原生诊断再用它判。
 
 
-def _avd_adb_path(manager_path: str | Path) -> Path:
-    """魔改 AVD 这条安装的 adb：SDK 的 ``platform-tools\\adb.exe``（指定了本地 SDK 时取它的）。"""
-    from app.utils import emulator2 as _utils_emulator2
-
-    return _utils_emulator2.avd.components.adb_exe(
-        _utils_emulator2.avd.components.root_from_manager_exe(manager_path)
-    )
-
-
 @dataclass(frozen=True)
 class MaaFWAdbControlProfile:
     """描述某模拟器实例的 ADB EmulatorExtras 能力与 controller extras 配置。"""
@@ -377,6 +378,11 @@ async def _abandon_environment_preparation(
             await asyncio.to_thread(release, prepared_after_cancel)
 
     cleanup_task = asyncio.create_task(release_after_prepare())
+    scope = current_process_scope.get()
+    if scope is not None:
+        scope.retain_worker(cleanup_task)
+        if scope.closed:
+            grace_seconds = 0
     try:
         await asyncio.wait_for(asyncio.shield(cleanup_task), timeout=grace_seconds)
     except asyncio.TimeoutError:
@@ -567,6 +573,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.pretask_process: asyncio.subprocess.Process | None = None
         # 正在进行的运行前设置清理（见 _terminate_pretask_process）
         self.pretask_cleanup: asyncio.Task[None] | None = None
+        # 即使清理入口先清空 pretask_process，也要保留退出观察句柄；
+        # 停止确认超时或 native 强杀失败时不能提前放开项目预约。
+        self._stopping_pretask_process: asyncio.subprocess.Process | None = None
         self._cached_adb_address: str | None = None
         self._cached_device_info: DeviceInfo | None = None
         self._cached_adb_path: str | None = None
@@ -575,6 +584,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._launched_package_name = ""
         # 游戏更新钩子每个账号每次运行只调一次，重试重新开模拟器时不再查
         self._game_update_checked = False
+        # 运行前登录在同一客户端会话内只完成一次；客户端重启后重新验证
+        self._login_checked = False
         self.maafw_runtime_pool_root: Path | None = None
         self.maafw_runtime_pool_id: str | None = None
         # 本轮（整个脚本）的信号账：同一资源已确认维护时后续账号直接跳过，收尾时由
@@ -603,7 +614,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._extra_attempts = 0
         self._release_check_task: asyncio.Task[Any] | None = None
         # 结构化运行记录（每次尝试一份）：worker 推的阶段 / 任务起止 + 宿主自己的阶段，
-        # 进 history 的 data、调度台进度与推送里单列的原地打转 / 单任务超时。
+        # 进 history 的 data 与推送里单列的原地打转 / 单任务超时。
         self._run_record = MaaFWRunRecorder()
 
     async def check(self) -> str:
@@ -617,14 +628,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self.script_config.Run.ProxyTimesLimit != 0
             and proxy_times >= self.script_config.Run.ProxyTimesLimit
         ):
-            self.cur_user_item.status = "跳过"
+            await self.cur_user_item.set_state(status="跳过")
             return "今日代理次数已达上限，跳过该账号"
 
         if not await self._try_enter_project_path():
             # 项目被占着没跑成：记「异常」而不是「跳过」。「跳过」不进异常用户，
             # 脚本会记「完成」、汇总是 0 完成 / 0 未完成，「仅失败时」也不推送。
             # 与 manager 层「正在切换版本，已跳过」同一口径。
-            self.cur_user_item.status = "异常"
+            await self.cur_user_item.set_state(status="异常")
             self.project_busy_skipped = True
             if is_project_updating(self.project_path):
                 return "项目正在更新，本次未运行该账号"
@@ -667,11 +678,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     game_path_error,
                 ) = state
             except Exception as exc:
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
                 return f"无法构建 MaaFW 运行计划，请检查项目和任务配置: {exc}"
 
             if not self.run_plan.tasks:
-                self.cur_user_item.status = "跳过"
+                await self.cur_user_item.set_state(status="跳过")
                 return _period_all_done_message(self.run_plan)
 
             # 本轮前面的用户已经撞上同一资源的停服维护：不再拉起游戏 / 模拟器，
@@ -679,7 +690,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             maintenance = self.signal_tracker.maintenance(self.run_plan.resourceName)
             if maintenance is not None:
                 maintenance.add_user(str(self.cur_user_uid), self.cur_user_item.name)
-                self.cur_user_item.status = "跳过"
+                await self.cur_user_item.set_state(status="跳过")
                 self.maintenance_skipped = True
                 return MAINTENANCE_SKIP_MESSAGE
 
@@ -687,12 +698,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 emulator_id = self.script_config.Emulator.Id
                 emulator_index = self.script_config.Emulator.Index
                 if emulator_id == "-" or emulator_index in ("", "-"):
-                    self.cur_user_item.status = "异常"
+                    await self.cur_user_item.set_state(status="异常")
                     return (
                         "当前 MaaFW controller 需要 ADB，请在托管管理页选择模拟器和实例"
                     )
             elif game_path_error is not None:
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
                 return game_path_error
 
             # 项目自带的 MaaFramework 与本机架构不符时 worker 里必然加载失败；在这里先说清楚
@@ -701,7 +712,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self._describe_runtime_architecture_mismatch
             )
             if architecture_error:
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
                 return architecture_error
 
             keep_reservation = True
@@ -721,18 +732,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.user_start_time = start_time
         self.cur_user_log_started_at = start_time
         self.cur_user_log = LogRecord()
-        self.cur_user_item.add_log_record(start_time, self.cur_user_log)
+        self.cur_user_log = await self.cur_user_item.add_log_record(
+            start_time, self.cur_user_log
+        )
+        await self.cur_user_log.append_content(
+            *self.project_update_logs, *self._pending_user_log
+        )
         content = self.cur_user_log.content
-        content.extend(self.project_update_logs)
-        content.extend(self._pending_user_log)
         self._pending_user_log.clear()
         if content:
-            self.script_info.log = "".join(content[-80:])
-        # 窗口在这里重建，行号也得跟着回到这份日志的开头；更新日志本身就超过 80 行时，
-        # 与 _append_log 用同一套算法把滑出去的行数补上。
-        self.script_info.log_first_line = (
-            sum(chunk.count("\n") for chunk in content[:-80]) + 1
-        )
+            await self.script_info.set_log("".join(content))
 
     async def main_task(self) -> None:
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
@@ -768,17 +777,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 await self.prepare()
                 self._append_log(self.check_result)
                 if self.cur_user_log is not None:
-                    self.cur_user_log.status = self.check_result
+                    await self.cur_user_log.set_state(status=self.check_result)
             else:
                 # 没有本账号的日志：窗口只剩检查结果这一行，行号回到 1，
                 # 不接着上一个账号的行号往下数
-                self.script_info.log_first_line = 1
-                self.script_info.log = self.check_result
+                await self.script_info.set_log(self.check_result)
             return
 
         await self._mark_run_started()
         await self.prepare()
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
         logger.info(f"开始代理 MaaFW 账号: {self.cur_user_uid}")
         if self.run_plan is not None:
             selected_preset = str(
@@ -831,7 +839,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 每次尝试单独一份日志（界面与 history 都分开）：第一次沿用 prepare()
             # 建的那份，开头有更新检查与运行总览；之后每次另起。
             if index > 0:
-                self._start_attempt_log()
+                await self._start_attempt_log()
 
             if rerun_note is not None:
                 header, current_label = rerun_note
@@ -885,7 +893,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     index + 1, [], message, category=CATEGORY_GAME_UPDATE_REQUIRED
                 )
                 if self.cur_user_log is not None:
-                    self.cur_user_log.status = message
+                    await self.cur_user_log.set_state(status=message)
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
@@ -904,7 +912,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             except Exception as exc:
                 message = (
                     str(exc)
-                    if isinstance(exc, MaaFWPretaskError)
+                    if isinstance(exc, (MaaFWPretaskError, MaaFWLoginRequired))
                     else f"MaaFW 运行异常: {exc}"
                 )
                 self._append_log(message, warning=True)
@@ -935,7 +943,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         warning=True,
                     )
                 if self.cur_user_log is not None:
-                    self.cur_user_log.status = message
+                    await self.cur_user_log.set_state(status=message)
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
@@ -959,7 +967,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if result.success:
                 self.run_complete = True
                 if self.cur_user_log is not None:
-                    self.cur_user_log.status = "Success!"
+                    await self.cur_user_log.set_state(status="Success!")
                 completed_task_labels = _format_completed_task_labels(
                     self.run_plan,
                     result.completedTasks,
@@ -1000,7 +1008,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     if total > 1 and done > 0:
                         message += f"（共 {total} 个任务，完成 {done} 个）"
                 if self.cur_user_log is not None:
-                    self.cur_user_log.status = message
+                    await self.cur_user_log.set_state(status=message)
                 self._append_log(message, warning=True)
                 self._record_attempt(
                     index + 1,
@@ -1060,7 +1068,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self._user_finalized:
             return
         self._user_finalized = True
-        self.task_info.begin_user_history_capture(
+        self.history.begin_user_history_capture(
             self.script_info,
             self.cur_user_item,
             failed=self.check_result == "Pass"
@@ -1080,7 +1088,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 if not self._history_saved:
                     await self._save_user_history()
             finally:
-                await asyncio.to_thread(self._history_temp.cleanup)
+                try:
+                    if self.stopped_manually:
+                        # 即使设备关闭或统计中断，也必须把预约交给安全释放检查。
+                        await self._release_project_path()
+                finally:
+                    await asyncio.to_thread(self._history_temp.cleanup)
 
     async def _finalize_user(self) -> None:
         if self._user_teardown_pending:
@@ -1124,17 +1137,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await self.cur_user_config.commit()
             self.cur_user_config.Data.LastProxyStatus = "成功"
             await self.cur_user_config.commit()
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
         elif self.run_signal == SERVER_MAINTENANCE:
             # 维护是跳过不是失败：代理次数、剩余天数不动，下次定时照常再跑
             self.cur_user_config.Data.LastProxyStatus = MAINTENANCE_LAST_STATUS
             await self.cur_user_config.commit()
-            self.cur_user_item.status = "跳过"
+            await self.cur_user_item.set_state(status="跳过")
         else:
             self.cur_user_config.Data.LastProxyStatus = "失败"
             await self.cur_user_config.commit()
             if self.cur_user_item.status == "运行":
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
 
         await self._save_user_history()
         if self.run_complete:
@@ -1143,13 +1156,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         await self._release_project_path()
 
     async def on_crash(self, e: Exception) -> None:
-        self.cur_user_item.status = "异常"
-        self.cur_user_item.progress = None
+        await self.cur_user_item.set_state(status="异常")
         logger.exception(f"MaaFW 内置运行任务出现异常: {e}")
         # 还没进第一次尝试就崩了（prepare、脚本前任务出错）时推送靠它说原因
         self._crash_message = str(e)
         if self.cur_user_log is not None:
-            self.cur_user_log.status = f"MaaFW 内置运行任务出现异常: {e}"
+            await self.cur_user_log.set_state(status=f"MaaFW 内置运行任务出现异常: {e}")
             if self.cur_user_log_started_at is not None:
                 self._history_statuses[id(self.cur_user_log)] = "error"
         try:
@@ -1401,6 +1413,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             address, device_info = await self._resolve_adb_address()
             adb_path = await self._resolve_adb_path(address, device_info)
             await self._ensure_game_updated(address, adb_path)
+            await self._ensure_logged_in(address, adb_path)
             adb_profile = await self._build_adb_control_profile()
             return MaaFWDeviceConfig(
                 type="Adb",
@@ -1415,6 +1428,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
 
         if plan.controllerType == "Win32":
+            await self._ensure_logged_in("", None)
             controller = _find_controller(interface_model, plan.controllerName)
             win32_config = controller.win32
             mouse = win32_config.mouse if win32_config else None
@@ -1572,7 +1586,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         )
                         return self._cached_adb_path
 
-        derived_path = self._derive_adb_path_from_emulator_config()
+        derived_path = await self._derive_adb_path_from_emulator_config()
         if derived_path is not None and derived_path.exists():
             self._cached_adb_path = str(derived_path)
             self._append_log(
@@ -1584,6 +1598,30 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._append_log(
             f"主程序未解析到 ADB 路径{title}，将由 MaaFW Runner 按设备地址发现"
         )
+        return None
+
+    def _resolve_adb_path_by_toolkit(self, address: str) -> str | None:
+        """按设备地址问 MaaFW Toolkit 要 adb 路径（与 worker 的发现规则同一套）。
+
+        ``_resolve_adb_path`` 只认脚本配置、模拟器管理器与安装目录；通用模拟器把 adb 放在
+        别的文件名下（BlueStacks 的 ``HD-Adb.exe``）时推不出来，而 MaaFW Runner 本来就会
+        按地址发现。登录钩子跑在 Runner 之前，先在这里补上，别让钩子退回 PATH 里的 ``adb``。
+        拿不到（没装 Toolkit、列表里没有这个地址）就返回 ``None``，调用方保持原行为。
+        """
+
+        if not address:
+            return None
+        try:
+            from maa.toolkit import Toolkit
+        except Exception:  # noqa: BLE001 - 没有 Toolkit 时交给 Runner 自己发现
+            return None
+        with suppress(Exception):
+            for device in Toolkit.find_adb_devices():
+                if str(getattr(device, "address", "")) != address:
+                    continue
+                path = Path(str(getattr(device, "adb_path", "") or ""))
+                if path.name and path.exists():
+                    return str(path)
         return None
 
     async def _ensure_game_updated(self, address: str, adb_path: str | None) -> None:
@@ -1606,7 +1644,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         self._append_log("正在检查游戏客户端更新")
         try:
-            # 魔改 AVD 实例：钩子在宿主进程里调 adb（game_apk），改走 MAS 私有 server，
+            # ModAVD 实例：钩子在宿主进程里调 adb（game_apk），改走 ``modavd adb``（ModAVD 的私有 server），
             # 不落到 5037；其余模拟器不接管
             with _utils_game_apk.adb_runner_scope(await resolve_host_adb(self)):
                 result = await hook(
@@ -1627,7 +1665,58 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if result.status == "NeedManualUpdate":
             raise _MaaFWGameUpdateRequired(result.message)
 
-    def _derive_adb_path_from_emulator_config(self) -> Path | None:
+    async def _ensure_logged_in(self, address: str, adb_path: str | None) -> None:
+        """模拟器启动后、第一个任务下发前，调特调的运行前登录钩子（契约见 flavor.py）。
+
+        每个账号每次运行只调一次，紧跟游戏更新检查之后。钩子判定本次无法继续时抛
+        ``MaaFWLoginRequired``，按普通失败结算、照常重试；钩子实现里的其它异常同样按失败
+        处理，原因附在异常原文后面。没实现钩子（通用 MaaFW）时什么都不做。
+        """
+
+        if self._login_checked:
+            return
+        hook = resolve_login_hook(self.script_config)
+        if hook is None or self.run_plan is None:
+            return
+
+        if adb_path is None and address:
+            # 登录钩子跑在 worker 之前，用不到 Runner 的按地址发现；宿主先把这条兜上，
+            # 否则钩子只能拿 PATH 里的 ``adb``（通用模拟器自带的多半叫 HD-Adb.exe）。
+            adb_path = await asyncio.to_thread(
+                self._resolve_adb_path_by_toolkit, address
+            )
+            if adb_path:
+                self._append_log(
+                    f"ADB 路径选择: MaaFW Toolkit 按地址发现; 路径={adb_path}"
+                )
+
+        async def report(text: str) -> None:
+            self._append_log(text)
+
+        try:
+            message = await hook(
+                script_config=self.script_config,
+                user_config=self.cur_user_config,
+                resource_name=self.run_plan.resourceName,
+                package_name=self._launched_package_name,
+                adb_path=adb_path,
+                adb_address=address,
+                progress=report,
+                host_adb=await resolve_host_adb(self),
+            )
+        except MaaFWLoginRequired:
+            raise
+        except Exception as exc:
+            logger.opt(exception=True).warning(f"运行前登录钩子异常: {exc}")
+            raise MaaFWLoginRequired(f"运行前登录出错：{exc}") from exc
+
+        if message:
+            self._append_log(str(message))
+        # 登录成功才记「已登录」：失败时保持未完成，外层重试会重新走这个钩子，
+        # 不允许带着没登录（或登录到别的账号）的状态下发任务。
+        self._login_checked = True
+
+    async def _derive_adb_path_from_emulator_config(self) -> Path | None:
         emulator_id = self.script_config.Emulator.Id
         if emulator_id == "-":
             return None
@@ -1640,8 +1729,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if resolve_device is not None and emulator_index not in ("", "-"):
                 device_ref = resolve_device(emulator_index)
                 if device_ref is not None and device_ref.emulator_type == "avd":
-                    # 魔改 AVD 的 adb 在 SDK 的 platform-tools 里（认 sdkRoot），不在主程序旁边
-                    return _avd_adb_path(device_ref.manager_path)
+                    # ModAVD 的 adb 问 modavd（``modavd list`` 的 adb_exe），不在主程序旁边
+                    adb_info = await self.emulator_manager.avd_adb_info(emulator_index)
+                    return Path(adb_info.adb_exe)
                 if device_ref is not None and device_ref.manager_path:
                     return Path(device_ref.manager_path).parent / "adb.exe"
 
@@ -1664,14 +1754,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self._cached_adb_profile = MaaFWAdbControlProfile(None, False, False, {})
             return self._cached_adb_profile
 
-        # 魔改 AVD 在下面的 try 之外：它没有退回默认配置这条路（截图不许回落到普通 adb），
+        # ModAVD 在下面的 try 之外：它没有退回默认配置这条路（截图不许回落到普通 adb），
         # 构造不出 AVDExtras 配置就直接报错
         avd_ref = None
         with suppress(Exception):
             resolve_device = getattr(self.emulator_manager, "resolve_device", None)
             avd_ref = resolve_device(emulator_index) if resolve_device else None
         if avd_ref is not None and avd_ref.emulator_type == "avd":
-            self._cached_adb_profile = self._build_avd_adb_profile(avd_ref)
+            self._cached_adb_profile = await self._build_avd_adb_profile(
+                avd_ref, emulator_index
+            )
             return self._cached_adb_profile
 
         try:
@@ -1739,7 +1831,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return self._cached_adb_profile
 
     def _mod_avd_open_kwargs(self) -> dict[str, Any]:
-        """Emulator 2.0 门面的 ``open`` 要知道调用方能不能用魔改 AVD（MaaFW 脚本一律放行）；
+        """Emulator 2.0 门面的 ``open`` 要知道调用方能不能用 ModAVD（MaaFW 脚本一律放行）；
         旧式模拟器管理器不收这个参数。"""
         from app.utils import emulator2 as _utils_emulator2
 
@@ -1747,35 +1839,42 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return {"allow_mod_avd": True}
         return {}
 
-    def _build_avd_adb_profile(self, device_ref: Any) -> MaaFWAdbControlProfile:
-        """魔改 AVD：只给 AVDExtras 截图，推流开关走私有 adb server。任何一步不成立都抛错。"""
+    async def _build_avd_adb_profile(
+        self, device_ref: Any, emulator_index: str
+    ) -> MaaFWAdbControlProfile:
+        """ModAVD：只给 AVDExtras 截图，推流开关走私有 adb server。任何一步不成立都抛错。
+
+        adb 程序、私有 server 端口、控制台端口都问 modavd（``modavd list``；根目录可以设 ``portBase``
+        换一段端口），截图共享内存按控制台端口命名。
+        """
         from app.utils import emulator2 as _utils_emulator2
 
         capability = build_adb_emulator_extra_capabilities().get("avd", {})
         if not capability.get("screencap"):
             raise RuntimeError(
                 "当前 MaaFW 运行时不带模拟器截图增强（MaaAdbControlUnit），"
-                "魔改 AVD 上截图不能回落到普通 adb，本次不运行"
+                "ModAVD 上截图不能回落到普通 adb，本次不运行"
             )
-        adb_path = _avd_adb_path(device_ref.manager_path)
+        adb_info = await self.emulator_manager.avd_adb_info(emulator_index)
+        if adb_info is None:
+            raise RuntimeError(f"设备 {emulator_index} 不是 ModAVD 实例")
+        adb_path = Path(adb_info.adb_exe)
         if not adb_path.is_file():
-            raise RuntimeError(f"找不到魔改 AVD 的 adb：{adb_path}")
-        root = _utils_emulator2.avd.components.root_from_manager_exe(
-            device_ref.manager_path
-        )
-        console = _utils_emulator2.avd.constants.console_port(device_ref.native_index)
+            raise RuntimeError(f"找不到 ModAVD 的 adb：{adb_path}")
+        console = adb_info.ports.console
         config = _utils_emulator2.avd.maafw_extras.build_maafw_avd_config(
-            adb_path, _utils_emulator2.avd.components.adb_server_port(root), console
+            adb_path, adb_info.adb_server_port, console
         )
         self._append_log(
-            f"魔改 AVD 截图走 AVDExtras（共享内存 SHM_videmulator{console}），不回落普通 adb"
+            f"ModAVD 截图走 AVDExtras（共享内存 SHM_videmulator{console}），不回落普通 adb"
         )
         return MaaFWAdbControlProfile("avd", True, False, config)
 
     async def _script_adb_env(self) -> dict[str, str]:
-        """魔改 AVD 实例上叠加给 worker（agent 与它们起的 adb 继承）和 pretask 的环境变量：
-        ``ANDROID_ADB_SERVER_PORT=<scriptAdbServerPort>``（默认 20049）。脚本用 SDK 的新版 adb，
-        放在 5037 上会和雷电 / MuMu 自带的旧版 adb 互杀 server。其余模拟器返回空字典。"""
+        """ModAVD 实例上叠加给 worker（agent 与它们起的 adb 继承）和 pretask 的环境变量：
+        ``ANDROID_ADB_SERVER_PORT=<script_adb_server_port>``（``modavd servers`` 报的，默认 20049）。
+        脚本用 SDK 的新版 adb，放在 5037 上会和雷电 / MuMu 自带的旧版 adb 互杀 server；端口问不到时报错。
+        其余模拟器返回空字典。"""
         emulator_index = self.script_config.Emulator.Index
         if self.script_config.Emulator.Id == "-" or emulator_index in ("", "-"):
             return {}
@@ -1790,17 +1889,22 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         root = _utils_emulator2.avd.components.root_from_manager_exe(
             device_ref.manager_path
         )
-        # 先由 MAS 以脱离方式起好：worker 里的 adb 顺手拉起的 server 会继承 worker 的输出管道
+        # 先由 modavd 以脱离方式起好：worker 里的 adb 顺手拉起的 server 会继承 worker 的输出管道
         try:
             await _utils_emulator2.avd.host.ensure_script_adb_server(root)
         except _utils_emulator2.avd.host.ScriptAdbPortConflict:
             raise  # 端口被别的程序占着，worker 里的 adb 连上去只会一直失败，直接报给用户
-        except Exception:  # noqa: BLE001 - 起不来就交给 worker 自己的 adb
-            pass
-        return _utils_emulator2.avd.components.script_adb_env(root)
+        except Exception as exc:  # noqa: BLE001 - 见下
+            # 这次没问成 modavd：之前问到过端口就接着用（server 交给 worker 的 adb 起），没问到过就把原因报出去
+            if not _utils_emulator2.avd.host.script_adb_port_known(root):
+                raise
+            logger.warning(
+                f"modavd servers 这次失败，沿用之前报的脚本专用 adb 端口: {exc}"
+            )
+        return _utils_emulator2.avd.host.script_adb_env(root)
 
     def _check_avd_runtime_version(self, maafw_version: str | None) -> None:
-        """魔改 AVD 要 AVDExtras：运行环境的 MaaFramework 低于 5.7.0 时明确报错，不让它静默回落。"""
+        """ModAVD 要 AVDExtras：运行环境的 MaaFramework 低于 5.7.0 时明确报错，不让它静默回落。"""
         profile = self._cached_adb_profile
         if profile is None or profile.emulator_type != "avd":
             return
@@ -1811,12 +1915,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         )
         if supported is False:
             raise RuntimeError(
-                f"项目使用的 MaaFramework {maafw_version} 低于 5.7.0，不支持魔改 AVD 的截图通道"
+                f"项目使用的 MaaFramework {maafw_version} 低于 5.7.0，不支持 ModAVD 的截图通道"
                 "（AVDExtras）；请把项目更新到带 MaaFramework 5.7.0 以上的版本"
             )
         if supported is None:
             self._append_log(
-                "认不出项目使用的 MaaFramework 版本，无法预先确认是否支持魔改 AVD 截图通道"
+                "认不出项目使用的 MaaFramework 版本，无法预先确认是否支持 ModAVD 截图通道"
                 "（AVDExtras，5.7.0 起）；不支持时连接会直接失败"
             )
 
@@ -1844,7 +1948,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _resolve_adb_screencap_methods(self, profile: MaaFWAdbControlProfile) -> int:
         extra_method = _ADB_SCREENCAP_EMULATOR_EXTRAS
         if profile.emulator_type == "avd":
-            # 魔改 AVD 只给 AVDExtras，不让测速有机会选普通 adb（约 250 ms）
+            # ModAVD 只给 AVDExtras，不让测速有机会选普通 adb（约 250 ms）
             return extra_method
         if profile.emulator_type in {"ldplayer", "mumu"}:
             default_methods = _ADB_SCREENCAP_DEFAULT
@@ -1876,7 +1980,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 文本已改走 ldconsole，见 _ADB_INPUT_LDPLAYER_CONSOLE_TEXT
             return _ADB_INPUT_LDPLAYER_CONSOLE_TEXT
         if profile.emulator_type in {"ldplayer", "mumu", "avd"}:
-            # 魔改 AVD：AVDExtras 没有输入，默认会选中 Maatouch（官方镜像上 minitouch 不可用）
+            # ModAVD：AVDExtras 没有输入，默认会选中 Maatouch（官方镜像上 minitouch 不可用）
             return _ADB_INPUT_DEFAULT
 
         configured = int(self.script_config.Device.AdbInputMethods)
@@ -2071,12 +2175,18 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 与运行前更新 / 预检同一份解析：托管级 Update.ProxyAddress 优先，留空跟随
         # 全局。运行时装依赖也走它，否则「更新能走代理、真跑时装不上」。
         proxy_url = resolve_update_proxy_url(self.script_config)
+        process_scope = current_process_scope.get()
 
         def _prepare_environment_with_proxy() -> MaaFWRunnerEnvironment:
             # 代理作用域按线程登记，要在 to_thread 的目标函数体内进入：池的 uv /
             # pip 子进程、以及这里派生出的 worker 环境（worker 内的 agent pip 与
             # 项目 agent 再从它继承）都从 strip_host_python_environment 拿到代理变量。
-            with subprocess_proxy_scope(proxy_url):
+            with (
+                subprocess_proxy_scope(proxy_url),
+                install_process_factory_scope(
+                    process_scope.popen if process_scope is not None else None
+                ),
+            ):
                 return service.prepare_environment(
                     self.project_path,
                     runtime_pool_root=runtime_pool_root,
@@ -2091,7 +2201,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 )
 
         prepare_environment_task = asyncio.create_task(
-            asyncio.to_thread(_prepare_environment_with_proxy)
+            process_scope.run_update_worker(
+                _prepare_environment_with_proxy,
+                cancel=prepare_cancel_event.set,
+                release_cancelled=service.release_environment,
+            )
+            if process_scope is not None
+            else asyncio.to_thread(_prepare_environment_with_proxy)
         )
         try:
             with self._run_record.stage(STAGE_ENVIRONMENT):
@@ -2156,7 +2272,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 payload,
                 event_channel=event_server.spec if event_server is not None else None,
             )
-            # 魔改 AVD 实例：worker 及其 agent、adb 子进程的 adb 走脚本专用 server。
+            # ModAVD 实例：worker 及其 agent、adb 子进程的 adb 走脚本专用 server。
             # 另拷一份，不改运行环境对象里那份（可能被缓存复用）
             script_env = await self._script_adb_env()
             worker_env = {
@@ -2166,7 +2282,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 # 不进项目视图），见 runner._inject_agent_pip_constraint。
                 AGENT_PIP_CONSTRAINT_DIR_ENV: str(_maafw_agent_constraints_dir()),
             }
-            process = await asyncio.create_subprocess_exec(
+            process = await create_subprocess(
                 str(runner_environment.python_executable),
                 "-m",
                 "app.task.MaaFW.tools.core.runner.worker",
@@ -2245,7 +2361,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 result_payload = event["data"]
                 result_received.set()
             elif event_type == RUN_RECORD_EVENT_TYPE:
-                # 结构化运行记录：只进记录与调度台进度，不进日志
+                # 结构化运行记录：只进专项记录，不进日志
                 self._on_run_record_event(event.get("data"))
             elif event_type == "error":
                 message = str(event.get("message") or "")
@@ -2397,8 +2513,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await drain_readers(propagate_errors=False)
             if event_server is not None:
                 event_server.close()
-            # worker 已退出：调度台不再显示「第几个任务」，重试时由新 worker 重新推
-            self.cur_user_item.progress = None
             if framework_log_writer is not None:
                 try:
                     await asyncio.to_thread(framework_log_writer.close)
@@ -2621,7 +2735,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
         env.update(self.run_plan.piEnv)
-        # 魔改 AVD 实例：pretask 若用 adb，也走脚本专用 server（同 worker）
+        # ModAVD 实例：pretask 若用 adb，也走脚本专用 server（同 worker）
         env.update(await self._script_adb_env())
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         # 运行前设置没有自己的时限设置：沿用本托管的「单次运行时间限制」（RunTimeLimit），
@@ -2648,7 +2762,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 )
             self._append_log(f"开始应用运行前设置: {display_name}")
             started_at = loop.time()
-            process = await asyncio.create_subprocess_exec(
+            process = await create_subprocess(
                 pretask.executable,
                 *pretask.args,
                 cwd=self.run_plan.path,
@@ -2755,10 +2869,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self.pretask_process = None
             if process is None or process.returncode is not None:
                 return
+            self._stopping_pretask_process = process
             cleanup = asyncio.create_task(
                 _kill_pretask_process(process, self._append_log)
             )
             self.pretask_cleanup = cleanup
+            # 进程核对可能仍在 to_thread() 中。统一取消仅可打断等待，
+            # 不能取消真正负责清理的任务，否则后续释放预约永远等不到。
+            scope = current_process_scope.get()
+            if scope is not None:
+                scope.retain_worker(cleanup)
         await asyncio.shield(cleanup)
 
     async def _terminate_runner_process(self) -> None:
@@ -3298,6 +3418,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await self.game_process_manager.search_process(
                 ProcessInfo(exe=str(game_path.resolve())),
                 WINDOW_SEARCH_TIMEOUT_SECONDS,
+                owned=self.opened_game,
             )
         except Exception as exc:
             logger.warning(f"MaaFW 定位游戏进程窗口失败: {exc}")
@@ -3432,12 +3553,20 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return False
         if not self.opened_game and not self.opened_emulator:
             return False
+        # 只在真正要重启 MAS 自己启动的客户端时撤销预下载资格。
+        # 等待 FluxDown/HTTPX 确认停止后才关闭游戏或模拟器；AttachOnly、
+        # 最后一次尝试和不重登的资源换载荷路径不需要重置成功计时。
+        from app.core.script_update_queue import report_script_task_retrying
+
+        await report_script_task_retrying()
         self._append_log("本轮失败，关闭由 MAS 启动的游戏/模拟器，下一轮重新启动")
         emulator_closed = await self._close_emulator()
         game_closed = await self._close_game()
+        # 客户端被重启了：登录会话可能变化（也可能回到别的账号），下一轮必须重新验证登录。
+        self._login_checked = False
         return emulator_closed and game_closed
 
-    def _start_attempt_log(self) -> None:
+    async def _start_attempt_log(self) -> None:
         """重试前另起一份日志记录，与 MAA 等专项一样每次尝试单独成段。
 
         界面日志从这一次重新显示；history 里的 ``.log`` / ``.json``、``.worker.log``、
@@ -3448,9 +3577,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         start_time = datetime.now().astimezone()
         self.cur_user_log_started_at = start_time
         self.cur_user_log = LogRecord()
-        self.cur_user_item.add_log_record(start_time, self.cur_user_log, retry=True)
+        self.cur_user_log = await self.cur_user_item.add_log_record(
+            start_time, self.cur_user_log
+        )
         # 这份日志从零开始，行号也要回到 1，否则会接着上一个账号的行号往下数
-        self.script_info.log_first_line = 1
 
     def _run_record_call(self, action: Callable[[], Any]) -> Any:
         """运行记录是旁路：记录这一侧出了错只记后端日志、返回 None，不影响运行与收尾。"""
@@ -3491,16 +3621,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return HistorySnapshotStatistic(value=value) if value is not None else None
 
     def _on_run_record_event(self, data: Any) -> None:
-        """worker 推来的阶段 / 任务起止：归进本次尝试的记录，任务开始时刷新调度台进度。"""
+        """将 worker 推来的阶段、任务起止事件归入本次尝试的专项记录。"""
 
-        progress = self._run_record_call(lambda: self._run_record.apply(data))
+        self._run_record_call(lambda: self._run_record.apply(data))
         record = self._run_record.current
         if record is not None and any(
             task.outcome == "succeeded" for task in record.tasks
         ):
-            self.cur_user_item.mark_task_completed()
-        if progress is not None:
-            self.cur_user_item.progress = progress
+            from app.core.script_update_queue import report_script_task_completed
+
+            report_script_task_completed()
 
     def run_incident_notice(self) -> str:
         """本次运行里被原地打转检测或单任务时限停下的任务：进用户与脚本两份报告。
@@ -3562,7 +3692,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             signal=signal,
         )
         if self.cur_user_log is not None:
-            self.cur_user_log.status = message
+            await self.cur_user_log.set_state(status=message)
 
         project_name = ""
         if self.interface_model is not None:
@@ -3648,6 +3778,52 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     async def _release_project_path(self) -> None:
         if self.project_lock_key is None:
             return
+        scope = current_process_scope.get()
+        if scope is not None and scope.requested:
+            # #1871 的新收尾确认可能早于统一进程清理结束，不能此时
+            # 放开预约；后面的强杀若失败，还可能有旧 pretask 在写目录。
+            key, self.project_lock_key = self.project_lock_key, None
+            pending = self._release_check_task
+            cleanup = self.pretask_cleanup
+            process = self._stopping_pretask_process
+
+            async def release_after_confirmed_stop() -> None:
+                await scope.finished.wait()
+                if scope.cleanup_failed:
+                    logger.error("MaaFW 任务进程未确认停止，保留项目占用，拒绝并发修改")
+                    return
+                if cleanup is not None:
+                    try:
+                        await asyncio.shield(cleanup)
+                    except Exception as error:
+                        logger.warning(f"MaaFW 运行前设置清理未确认，保留占用: {error}")
+                        return
+                if process is not None:
+                    # pretask 的 stdout 可能由游戏继承，不能用 process.wait()
+                    # 等其管道 EOF；只检查真正的进程退出状态。
+                    await observe_process_exit(process)
+                if pending is not None:
+                    try:
+                        await asyncio.shield(pending)
+                    except asyncio.CancelledError:
+                        # 核对通过停止令牌退出也算完成；它由 scope 保留，
+                        # 不会在文件操作尚未结束时被统一取消。
+                        # 若只是当前释放任务被取消，核对仍在运行，则继续保留预约。
+                        if not pending.cancelled():
+                            raise
+                    except Exception as error:
+                        logger.warning(f"MaaFW 项目核对未确认，保留占用: {error}")
+                        return
+                release_project_path_sync(key)
+
+            worker = asyncio.create_task(
+                release_after_confirmed_stop(),
+                name="maafw-confirmed-project-release",
+                context=detached_process_context(),
+            )
+            scope.retain_worker(worker)
+            return
+
         pending = self._release_check_task
         if pending is not None and not pending.done():
             # 资源加载失败后的核对 / 清理还在工作线程里改视图（用户停止时）：等它收尾，等不到就
@@ -3754,7 +3930,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             record.attachments.extend(self._history_attachments.get(id(log_item), []))
             records.append(record)
         if records:
-            await self.task_info.save_user_history(
+            await self.history.save_user_history(
                 records,
                 script=self.script_info,
                 user=self.cur_user_item,
@@ -4030,14 +4206,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self.cur_user_log is None:
             self._pending_user_log.append(_format_user_log_line(message))
             return
-        content = self.cur_user_log.content
-        content.append(_format_user_log_line(message))
-        kept = content[-80:]
-        self.script_info.log = "".join(kept)
-        # 滑出窗口的行仍然占着行号：界面据此从 81 接着往下数，而不是每轮都把
-        # 最后 80 条重新编号成 1-80。
-        dropped_lines = sum(chunk.count("\n") for chunk in content[:-80])
-        self.script_info.log_first_line = dropped_lines + 1
+        record = self.cur_user_log
+
+        async def publish():
+            await record.append_content(_format_user_log_line(message))
+            content = record.content
+            await self.script_info.set_log("".join(content))
+
+        self.callbacks.submit(publish())
 
 
 def _sweep_legacy_runner_jobs() -> None:

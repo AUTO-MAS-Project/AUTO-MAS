@@ -3,7 +3,6 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
-import type { MirrorConfig, MirrorSource } from './mirrorService'
 import type { RuntimeEvent, RuntimeLaunchConfig, RuntimeRunOptions } from './runtime'
 import {
   RUNTIME_BINARY_CANCELLED,
@@ -13,7 +12,6 @@ import {
 } from './runtimeBinaryService'
 import {
   BootstrapProgressUpdate,
-  MirrorLookup,
   RUNTIME_TAKEOVER_MESSAGE,
   RuntimeInitializationService,
 } from './runtimeInitializationService'
@@ -114,41 +112,6 @@ class FakeRuntimeClient {
   }
 }
 
-// ==================== 假 MirrorService ====================
-
-/** key/name 组合与 mirrorService.ts 的默认配置一致，覆盖测试要用到的三类、含中文 name。 */
-const FAKE_MIRROR_SOURCES: Readonly<Record<string, MirrorSource[]>> = {
-  python: [
-    { key: 'aliyun', name: '阿里云镜像', url: '', type: 'mirror', description: '' },
-    { key: 'official', name: 'Python 官方', url: '', type: 'official', description: '' },
-  ],
-  repo: [
-    { key: 'cnb', name: 'CNB 官方镜像', url: '', type: 'mirror', description: '' },
-    { key: 'github', name: 'GitHub 官方', url: '', type: 'official', description: '' },
-    {
-      key: 'ghproxy_edgeone',
-      name: 'gh-proxy (EdgeOne)',
-      url: '',
-      type: 'mirror',
-      description: '',
-    },
-    { key: 'ghfast', name: 'ghfast 镜像', url: '', type: 'mirror', description: '' },
-  ],
-  pip_mirror: [
-    { key: 'aliyun', name: '阿里云', url: '', type: 'mirror', description: '' },
-    { key: 'tsinghua', name: '清华大学', url: '', type: 'mirror', description: '' },
-    { key: 'ustc', name: '中科大', url: '', type: 'mirror', description: '' },
-    { key: 'official', name: 'PyPI 官方', url: '', type: 'official', description: '' },
-  ],
-}
-
-/** 只实现 mapMirrorSelection 需要的 getMirrors，不碰真实 MirrorService 的文件读写。 */
-function fakeMirrorService(): MirrorLookup {
-  return {
-    getMirrors: (type: keyof MirrorConfig) => FAKE_MIRROR_SOURCES[type] ?? [],
-  }
-}
-
 // ==================== 假的第 0 步 ====================
 
 /**
@@ -168,10 +131,7 @@ const alignStub = {
   },
 }
 
-function createService(
-  overrides: Partial<RuntimeLaunchConfig> = {},
-  mirrorService: MirrorLookup = fakeMirrorService()
-) {
+function createService(overrides: Partial<RuntimeLaunchConfig> = {}) {
   const launchConfig: RuntimeLaunchConfig = {
     mode: 'managed',
     runtimePath: RUNTIME_PATH,
@@ -181,7 +141,6 @@ function createService(
   }
   return new RuntimeInitializationService({
     launchConfig,
-    mirrorService,
     createClient: options => new FakeRuntimeClient(options) as never,
     alignRuntimeBinary: options => alignStub.run(options),
   })
@@ -218,6 +177,24 @@ function okResult(stage: string): RuntimeEvent {
   } as unknown as RuntimeEvent
 }
 
+type ResultEvent = Extract<RuntimeEvent, { type: 'result' }>
+function failedResult(stage: ResultEvent['stage'], code: ResultEvent['code']): ResultEvent {
+  return {
+    ...base,
+    protocol: 1,
+    type: 'result',
+    sequence: 99,
+    success: false,
+    code,
+    stage,
+    status: 'failed',
+    message: '准备失败',
+    retryable: true,
+    remediation: ['retry'],
+    details: {},
+  }
+}
+
 beforeEach(() => {
   FakeRuntimeClient.calls = []
   FakeRuntimeClient.scripts = [{ events: [helloEvent, okResult('bootstrap')] }]
@@ -230,6 +207,67 @@ beforeEach(() => {
 // ==================== bootstrap ====================
 
 describe('bootstrap', () => {
+  it('实际普通 Python 重试在已知支持能力时仍完整准备', async () => {
+    alignStub.result = {
+      status: 'current',
+      target: { version: 'v0.1.28' },
+      bootstrapEnvironmentReuse: true,
+    }
+    const outcome = await createService().retryStage('python', () => {})
+    expect(outcome.success).toBe(true)
+    expect(FakeRuntimeClient.calls[0].command).toEqual(['bootstrap', '--version', 'v5.5.0-beta.3'])
+  })
+
+  it('已确认支持环境复用时只在正常完整初始化启用，并补齐进度', async () => {
+    alignStub.result = {
+      status: 'current',
+      target: { version: 'v0.1.28' },
+      bootstrapEnvironmentReuse: true,
+    }
+    const service = createService()
+    const updates: BootstrapProgressUpdate[] = []
+    FakeRuntimeClient.scripts = [
+      {
+        events: [
+          helloEvent,
+          {
+            ...base,
+            type: 'progress',
+            sequence: 2,
+            stage: 'uv.check',
+            status: 'succeeded',
+            message: '已就绪',
+          },
+          {
+            ...base,
+            type: 'progress',
+            sequence: 3,
+            stage: 'dependencies.check',
+            status: 'succeeded',
+            message: '检查通过',
+          },
+          okResult('bootstrap'),
+        ],
+      },
+    ]
+    expect((await service.bootstrap(update => updates.push(update))).success).toBe(true)
+    expect(FakeRuntimeClient.calls[0].command).toEqual([
+      'bootstrap',
+      '--version',
+      'v5.5.0-beta.3',
+      '--reuse-ready-environment',
+    ])
+    expect(
+      updates.filter(update => update.status === 'completed').map(update => update.stage)
+    ).toEqual(expect.arrayContaining(['python', 'repository', 'dependency']))
+    expect(service.resolveRetryCommand('python')).toEqual([
+      'bootstrap',
+      '--version',
+      'v5.5.0-beta.3',
+    ])
+    expect(service.resolveRetryCommand('python', 'rebuild')).toEqual(['repair'])
+  })
+
   it('argv 是 bootstrap --version v<应用版本>，且没有对应物的三段立刻置完成', async () => {
     const updates: BootstrapProgressUpdate[] = []
     FakeRuntimeClient.scripts = [
@@ -333,6 +371,26 @@ describe('bootstrap', () => {
 // ==================== 第 0 步：Runtime 对齐 ====================
 
 describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
+  it('Runtime 丢失时补装到 resources，并使用补装后的路径执行完整准备', async () => {
+    const processWithResources = process as NodeJS.Process & { resourcesPath?: string }
+    const previousResources = processWithResources.resourcesPath
+    processWithResources.resourcesPath = join(APP_ROOT, 'resources')
+    alignStub.result = { status: 'upgraded', target: { version: 'v0.1.10' } }
+    try {
+      const service = createService({ runtimePath: null })
+      expect(await service.bootstrap(() => undefined)).toMatchObject({ success: true })
+      const restoredPath = join(processWithResources.resourcesPath, 'auto-mas-runtime.exe')
+      expect(alignStub.calls[0].runtimePath).toBe(restoredPath)
+      expect(service.launchConfig.runtimePath).toBe(restoredPath)
+      expect(FakeRuntimeClient.calls.map(call => call.command)).toEqual([
+        ['bootstrap', '--version', 'v5.5.0-beta.3'],
+      ])
+    } finally {
+      if (previousResources === undefined) delete processWithResources.resourcesPath
+      else processWithResources.resourcesPath = previousResources
+    }
+  })
+
   it('按目标版本的发布通道、当前 exe 与 app-root 调用对齐，且在 bootstrap 命令之前', async () => {
     const order: string[] = []
     const updates: BootstrapProgressUpdate[] = []
@@ -361,7 +419,6 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
         appRoot: APP_ROOT,
         dataRoot: APP_ROOT,
       },
-      mirrorService: fakeMirrorService(),
       createClient: options => {
         order.push('client')
         return new FakeRuntimeClient(options) as never
@@ -497,5 +554,63 @@ describe('单步重试', () => {
 
     expect(outcome.success).toBe(true)
     expect(FakeRuntimeClient.calls[0].command).toEqual(['dependencies', 'sync'])
+  })
+})
+
+describe('自动选源后的失败恢复', () => {
+  it('运行环境普通重试重新准备整套环境，而不只检查 uv', async () => {
+    FakeRuntimeClient.scripts = [{ events: [helloEvent, okResult('bootstrap')] }]
+    const outcome = await createService().retryStage('python', () => undefined)
+    expect(outcome.success).toBe(true)
+    expect(FakeRuntimeClient.calls[0].command).toEqual(['bootstrap', '--version', 'v5.5.0-beta.3'])
+    expect(FakeRuntimeClient.calls[0].mirrors).toEqual([])
+  })
+})
+
+describe('分段恢复的完整性', () => {
+  it('依赖重试发现 Python 缺失时先修复 Python，再恢复依赖', async () => {
+    FakeRuntimeClient.scripts = [
+      { events: [helloEvent, failedResult('dependencies.check', 'PYTHON_VERSION_MISMATCH')] },
+      { events: [helloEvent, okResult('python.install')] },
+      { events: [helloEvent, okResult('dependencies.sync')] },
+    ]
+    expect(await createService().retryStage('dependency', () => undefined)).toMatchObject({
+      success: true,
+    })
+    expect(FakeRuntimeClient.calls.map(call => call.command)).toEqual([
+      ['dependencies', 'sync'],
+      ['environment', 'repair'],
+      ['dependencies', 'sync'],
+    ])
+  })
+
+  it('锁文件损坏时通过完整准备恢复受管源码', async () => {
+    alignStub.result = {
+      status: 'current',
+      target: { version: 'v0.1.28' },
+      bootstrapEnvironmentReuse: true,
+    }
+    FakeRuntimeClient.scripts = [
+      { events: [helloEvent, failedResult('dependencies.check', 'LOCKFILE_INVALID')] },
+      { events: [helloEvent, okResult('bootstrap')] },
+    ]
+    expect(await createService().retryStage('dependency', () => undefined)).toMatchObject({
+      success: true,
+    })
+    expect(FakeRuntimeClient.calls.map(call => call.command)).toEqual([
+      ['dependencies', 'sync'],
+      ['bootstrap', '--version', 'v5.5.0-beta.3'],
+    ])
+  })
+
+  it.each([
+    ['python', ['repair']],
+    ['dependency', ['dependencies', 'rebuild']],
+  ] as const)('显式重建 %s 仍使用原有重建操作', async (stage, expected) => {
+    FakeRuntimeClient.scripts = [{ events: [helloEvent, okResult('repair')] }]
+    expect(await createService().retryStage(stage, () => undefined, 'rebuild')).toMatchObject({
+      success: true,
+    })
+    expect(FakeRuntimeClient.calls[0].command).toEqual(expected)
   })
 })

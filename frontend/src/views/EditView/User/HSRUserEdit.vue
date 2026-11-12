@@ -5,8 +5,6 @@
       :script-name="scriptName"
       :is-edit="isEdit"
       script-edit-segment="hsr"
-      :current-label="isEdit ? t('core.edit.editHsrUser') : t('core.edit.addHsrUser')"
-      :logo-src="hsrLogo"
       :user-id="userId"
       @cancel="handleCancel"
     />
@@ -30,6 +28,10 @@
         <a-form ref="formRef" :model="formData" layout="vertical" class="config-form">
           <!-- 基本信息 -->
           <div class="form-section form-section-flat">
+            <UserAccountHeading
+              :user-name="formData.Info.Name ?? ''"
+              :options="{ isEdit, logoSrc: hsrLogo }"
+            />
             <div class="section-header">
               <h3>{{ t('core.edit.basicInfo') }}</h3>
               <!-- 配置恢复入口固定在这里，不随配置来源跳动 -->
@@ -43,52 +45,22 @@
               </div>
             </div>
             <!-- 与其他专项一致：用户名 / 启用 / 剩余天数一行，备注单独一行 -->
-            <a-row :gutter="24">
-              <a-col :span="8">
-                <a-form-item>
-                  <template #label>
-                    <a-tooltip :title="t('core.edit.thisNameAlsoWritten')">
-                      <span class="form-label"
-                        >{{ t('core.edit.username') }} <QuestionCircleOutlined class="help-icon"
-                      /></span>
-                    </a-tooltip>
-                  </template>
-                  <a-input
-                    v-model:value="formData.Info.Name"
-                    size="large"
-                    @blur="handleFieldSave('Info.Name', formData.Info.Name)"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">{{ t('core.edit.enabled2') }}</span>
-                  </template>
-                  <!-- 和同一行的其他控件一样用下拉，别一个开关孤零零地矮一截 -->
-                  <a-select v-model:value="statusValue" size="large" :options="statusOptions" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item>
-                  <template #label>
-                    <a-tooltip :title="t('core.edit.daysLeft1Means')">
-                      <span class="form-label"
-                        >{{ t('core.edit.daysLeft') }} <QuestionCircleOutlined class="help-icon"
-                      /></span>
-                    </a-tooltip>
-                  </template>
-                  <a-input-number
-                    v-model:value="formData.Info.RemainedDay"
-                    :min="-1"
-                    :max="9999"
-                    size="large"
-                    style="width: 100%"
-                    @blur="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
+            <UserBasicInfoFields
+              :name-path="['Info', 'Name']"
+              :user-name="formData.Info.Name ?? ''"
+              @update:user-name="formData.Info.Name = $event"
+              :status="formData.Info.Status ?? true"
+              @update:status="formData.Info.Status = $event"
+              :remained-day="formData.Info.RemainedDay ?? -1"
+              @update:remained-day="formData.Info.RemainedDay = $event"
+              :notes="formData.Info.Notes ?? ''"
+              @update:notes="formData.Info.Notes = $event"
+              :disabled="isInitializing"
+              @save-name="handleFieldSave('Info.Name', formData.Info.Name)"
+              @save-status="handleFieldSave('Info.Status', formData.Info.Status)"
+              @save-days="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
+              @save-notes="handleFieldSave('Info.Notes', formData.Info.Notes)"
+            />
             <a-row v-if="showCredentials" :gutter="24">
               <!-- 账号密码只给 SRA StartGame 切号用；云·星穹铁道按用户分浏览器登录态，不需要 -->
               <a-col :span="8">
@@ -151,19 +123,7 @@
                 </div>
               </a-col>
             </a-row>
-            <a-form-item>
-              <template #label>
-                <span class="form-label">{{ t('core.edit.note') }}</span>
-              </template>
-              <a-textarea
-                v-model:value="formData.Info.Notes"
-                :rows="2"
-                allow-clear
-                auto-size
-                class="notes-textarea"
-                @blur="handleFieldSave('Info.Notes', formData.Info.Notes)"
-              />
-            </a-form-item>
+
             <!-- 页面上唯一的模式控件；三张卡片自带描述，不再另挂来源提示 -->
             <GeneralConfigModeSelector
               :model-value="formData.Info.Base ?? 'shared'"
@@ -360,6 +320,8 @@
 </template>
 
 <script setup lang="ts">
+import UserAccountHeading from '@/components/UserAccountHeading.vue'
+import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { formatConfigDate } from '@/utils/configDateTime'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
@@ -514,7 +476,7 @@ const sharedPlan = reactive<HSRPlanData>(createDefaultPlan())
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId)
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId }))
 
 const scriptName = ref('')
 const scriptConfig = ref<HSRScriptConfig | null>(null)
@@ -575,19 +537,6 @@ const managedConfigLoading = ref(false)
 const hsrStageOptions = ref<HSRDynamicStageOptionsData | null>(null)
 const hsrStageOptionsLoading = ref(false)
 const hsrStageOptionsError = ref('')
-
-// 启用状态用下拉表达；a-select 的值只认字符串 / 数字，这里和布尔互转
-const statusOptions = computed(() => [
-  { label: t('core.edit.enabled3'), value: 'on' },
-  { label: t('core.edit.disabled'), value: 'off' },
-])
-const statusValue = computed({
-  get: () => (formData.Info.Status ? 'on' : 'off'),
-  set: (value: string) => {
-    formData.Info.Status = value === 'on'
-    handleFieldSave('Info.Status', formData.Info.Status)
-  },
-})
 
 // 配置来源三态卡片（value 为后端 Info.Base 取值，驱动逻辑需保持原样；文案走词表）
 // 共享 = 本脚本下选了「共享」的用户共用一份任务配置；独立 = 该用户自己一份；
@@ -1331,8 +1280,6 @@ const loadUserData = async () => {
 
 <style scoped>
 .user-edit-container {
-  padding: 32px;
-  min-height: 100vh;
   background: var(--ant-color-bg-layout);
 }
 

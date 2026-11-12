@@ -11,6 +11,7 @@
     <a-card class="config-card">
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <BasicInfoSection
+          :heading="{ isEdit }"
           :form-data="formData"
           :loading="loading"
           @save="handleFieldSave"
@@ -53,31 +54,20 @@
   >
     <!-- 两池同构：预览载荷为分区行（文件清单由基座在预览区最下方统一渲染） -->
     <template #preview="{ raw }">
-      <NoData
-        v-if="!previewSections(raw).length"
-        :description="t('core.edit.configRestorePreviewEmpty')"
-      />
-      <template v-else>
-        <template v-for="section in previewSections(raw)" :key="section.name">
-          <h4 class="whimbox-preview-section">{{ section.label }}</h4>
-          <a-descriptions :column="1" size="small" bordered class="whimbox-preview-box">
-            <a-descriptions-item v-for="row in section.rows" :key="row.key" :label="row.key">
-              {{ row.value }}
-            </a-descriptions-item>
-          </a-descriptions>
-        </template>
-      </template>
+      <BasicInfoRestorePreview :raw="raw" />
     </template>
   </ConfigRestoreSection>
 </template>
 
 <script setup lang="ts">
+import BasicInfoRestorePreview from '@/views/WhimboxUserEdit/BasicInfoRestorePreview.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
+import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
@@ -120,7 +110,7 @@ const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
 // 任务运行期锁定配置编辑（保存门禁在 useUserApi 内，这里只做界面提示与禁用）
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId }))
 
 // 脚本信息
 const scriptName = ref('')
@@ -271,16 +261,7 @@ const handleTaskConfigSave = async (key: string, value: unknown) => {
 const handleFieldSave = async (key: string, value: any) => {
   if (isInitializing.value || !userId) return
 
-  // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
-  const parts = key.split('.')
-  let userData: Record<string, any> = {}
-  let current = userData
-
-  for (let i = 0; i < parts.length - 1; i++) {
-    current[parts[i]] = {}
-    current = current[parts[i]]
-  }
-  current[parts[parts.length - 1]] = value
+  let userData = buildFieldPatch(key, value)
 
   // 特殊处理：userName 需要同步到 Info.Name
   if (key === 'userName') {
@@ -315,30 +296,6 @@ const { restoreApi, ensure: ensureConfigBackup } = useConfigBackupApi({
 
 const openRestoreModal = () => {
   restoreOpen.value = true
-}
-
-// 预览响应原文收敛为分区视图（两池同构：sections[].rows[]；文件清单由基座渲染）
-interface WhimboxPreviewSection {
-  name: string
-  label: string
-  rows: Array<{ key: string; value: string }>
-}
-const previewSections = (raw: unknown): WhimboxPreviewSection[] => {
-  if (!raw || typeof raw !== 'object') return []
-  const sections = (raw as { sections?: unknown }).sections
-  if (!Array.isArray(sections)) return []
-  return sections
-    .filter((s): s is Record<string, unknown> => Boolean(s && typeof s === 'object'))
-    .map(s => ({
-      name: String(s.name ?? ''),
-      label: String(s.label ?? ''),
-      rows: Array.isArray(s.rows)
-        ? s.rows
-            .filter((r): r is Record<string, unknown> => Boolean(r && typeof r === 'object'))
-            .map(r => ({ key: String(r.key ?? ''), value: String(r.value ?? '') }))
-        : [],
-    }))
-    .filter(s => s.rows.length > 0)
 }
 
 const handleRestored = async (target: string) => {
@@ -517,20 +474,3 @@ onUnmounted(() => {
 </script>
 
 <style scoped src="@/styles/userEditForm.css"></style>
-
-<style scoped>
-.whimbox-preview-box {
-  margin-top: 8px;
-}
-
-.whimbox-preview-section {
-  margin: 12px 0 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.whimbox-preview-section:first-child {
-  margin-top: 0;
-}
-</style>

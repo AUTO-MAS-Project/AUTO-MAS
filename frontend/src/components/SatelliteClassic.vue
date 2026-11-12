@@ -39,7 +39,7 @@ import { usePressSound } from './satellite/usePressSound'
 import { SatelliteScene, type SatellitePick } from './satellite-classic/satelliteScene'
 import SatelliteEffectsPausedChip from './satellite/SatelliteEffectsPausedChip.vue'
 
-/** 主 WS 没开着时，按这个间隔拉运行快照兜底 */
+/** 前台按此间隔刷新配置与持久化历史，后台暂停。 */
 const STATUS_POLL_INTERVAL = 10000
 /** 同时在飞的浮字上限；快速连点时先到的先让位，免得 DOM 和合成层无限堆 */
 const MAX_STAR_BURSTS = 12
@@ -51,7 +51,7 @@ const { getScripts } = useScriptApi()
 const performanceStore = usePerformanceStore()
 // 中心图标的按压音效：与 3D 星系共用同一套设置与播放逻辑
 const { playPress, playRelease } = usePressSound()
-// 卫星状态来自任务运行时常驻订阅（WS 增量 + HTTP 快照兜底）
+// 卫星提示来自配置与持久化历史查询，由组件已有轮询刷新
 const {
   statuses: satelliteStatuses,
   setScriptKeys: setSatelliteScriptKeys,
@@ -84,7 +84,7 @@ watch(isDark, dark => {
   requestRender()
 })
 
-// 常驻订阅推送新状态时同步刷新展示
+// 配置／历史查询更新后同步刷新展示
 watch(satelliteStatuses, statuses => {
   scene?.setStatuses(statuses)
   requestRender()
@@ -105,17 +105,6 @@ watch(
     requestRender()
   }
 )
-
-// WS 打开时事件推送足够，停掉 HTTP 轮询（运行态资源在 onConnected 里已重拉一次快照）；
-// 掉线期间再靠轮询兜底
-watch(connectionState(), state => {
-  if (isUnmounted || performanceStore.isBackgrounded) return
-  if (state === 'open') {
-    stopStatusPolling()
-  } else {
-    startStatusPolling()
-  }
-})
 
 watch(
   () => performanceStore.isBackgrounded,
@@ -197,7 +186,7 @@ onUnmounted(() => {
 // ==================== 场景 ====================
 
 // 后端未就绪（主 WS 未 open）时不发请求：启动遮罩期间立即初始化会把脚本列表与
-// 运行快照打向尚未监听的端口，请求直接以 "Network Error" 弹错，卫星也会整场不渲染。
+// 配置查询打向尚未监听的端口，请求直接以 "Network Error" 弹错，卫星也会整场不渲染。
 function waitBackendReady(): Promise<void> {
   if (connectionState().value === 'open') return Promise.resolve()
   return new Promise(resolve => {
@@ -277,15 +266,11 @@ function stopStatusPolling(): void {
 }
 
 function startStatusPolling(): void {
-  if (
-    performanceStore.isBackgrounded ||
-    statusPollTimer !== null ||
-    connectionState().value === 'open'
-  ) {
+  if (performanceStore.isBackgrounded || statusPollTimer !== null) {
     return
   }
 
-  // 周期性 HTTP 快照兜底：只在主 WS 没开着时轮询；WS 开着靠 task.* 事件推送
+  // 配置与历史不由 task.* 推送，WS 连通时也正常刷新。
   statusPollTimer = setInterval(() => void refreshSatelliteStatuses(), STATUS_POLL_INTERVAL)
 }
 

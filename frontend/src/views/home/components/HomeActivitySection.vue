@@ -1,5 +1,5 @@
 <template>
-  <a-card :title="section.title" class="activity-section">
+  <a-card :title="section.title" class="activity-section app-page-surface">
     <template #extra>
       <div class="card-extra">
         <a-typography-link
@@ -122,12 +122,10 @@ const handleBoundary = (time: number) => {
 }
 .activity-section :deep(.ant-card-head) {
   flex-wrap: wrap;
-  padding: 0 16px;
 }
 .activity-section :deep(.ant-card-head-wrapper) {
   flex-wrap: wrap;
   gap: 8px;
-  padding: 12px 0;
 }
 .activity-section :deep(.ant-card-head-title) {
   flex-basis: auto;

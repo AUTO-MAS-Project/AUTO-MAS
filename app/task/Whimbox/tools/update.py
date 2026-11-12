@@ -25,9 +25,11 @@ from packaging.version import Version
 
 from app.core import Config
 from app.core.script_update import download_script_package as download_file
+from app.services import script_install
 from app.services.script_release import request_github_release
 from app.utils import ProcessRunner
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+from app.utils.common.process.runner import is_process_cleanup_unconfirmed
 from app.utils.common.proxy_env import proxy_environment
 
 from .launcher import find_upstream_pids
@@ -46,6 +48,7 @@ class WhimboxUpdateUnsafeError(RuntimeError):
 
 
 async def confirm_usable_installation(root: Path) -> None:
+    script_install.assert_no_pending_process(root)
     if pending_marker(root).exists():
         raise WhimboxUpdateUnsafeError(RECOVERY_HINT)
     if await asyncio.to_thread(find_upstream_pids, root):
@@ -65,6 +68,56 @@ async def confirm_usable_installation(root: Path) -> None:
         ) from error
 
 
+async def skip_pending_installation(root: Path, snapshot: bytes) -> str:
+    """用户确认后仅在依赖完整、安装无进程占用且标记未变时跳过。
+
+    调用方必须持有奇想盒安装锁；最后仍重新执行正常安装健康检查。
+    """
+    marker = pending_marker(root)
+    if marker.is_symlink() or not marker.is_file() or marker.read_bytes() != snapshot:
+        raise WhimboxUpdateUnsafeError("奇想盒安装记录已变化，拒绝跳过")
+    try:
+        Version(snapshot.decode("utf-8").strip())
+    except (UnicodeDecodeError, ValueError) as error:
+        raise WhimboxUpdateUnsafeError(
+            "奇想盒安装记录内容不可识别，无法确认跳过目标，请重试安装"
+        ) from error
+
+    script_install.assert_no_pending_process(root)
+    if await asyncio.to_thread(find_upstream_pids, root):
+        raise WhimboxUpdateUnsafeError("奇想盒仍在运行，请关闭后重试")
+    error = WheelAssetsConfigSurface(root).check_install()
+    if error:
+        raise WhimboxUpdateUnsafeError(error)
+    try:
+        version = await installed_version(root)
+        await run_python(root, "-m", "pip", "check")
+        await run_python(
+            root, "-c", "import importlib.util as u; assert u.find_spec('whimbox.main')"
+        )
+    except Exception as error:
+        raise WhimboxUpdateUnsafeError(
+            "奇想盒当前后端或依赖检查失败，不允许跳过安装，请重新安装"
+        ) from error
+
+    script_install.assert_no_pending_process(root)
+    if await asyncio.to_thread(find_upstream_pids, root):
+        raise WhimboxUpdateUnsafeError("奇想盒在恢复确认期间已启动，拒绝跳过")
+    if marker.is_symlink() or not marker.is_file() or marker.read_bytes() != snapshot:
+        raise WhimboxUpdateUnsafeError("奇想盒安装记录在恢复期间发生变化，拒绝跳过")
+    marker.unlink()
+    try:
+        await confirm_usable_installation(root)
+    except BaseException:
+        if not marker.exists() and not marker.is_symlink():
+            try:
+                marker.write_bytes(snapshot)
+            except OSError:
+                pass
+        raise
+    return str(version)
+
+
 def pending_marker(root: Path) -> Path:
     return root / "python-embedded" / ".mas-update-pending"
 
@@ -72,6 +125,13 @@ def pending_marker(root: Path) -> Path:
 @contextmanager
 def installation_access(root: Path):
     """同一安装的更新、运行和设置会话互斥；进程退出由操作系统释放。"""
+    with script_install.installation_access(root), _legacy_installation_access(root):
+        yield
+
+
+@contextmanager
+def _legacy_installation_access(root: Path):
+    """保留与旧版 MAS 共用的奇想盒安装锁。"""
     key = hashlib.sha256(os.path.normcase(str(root.resolve())).encode()).hexdigest()
     directory = Path(tempfile.gettempdir()) / "auto-mas-whimbox-locks"
     directory.mkdir(parents=True, exist_ok=True)
@@ -135,19 +195,25 @@ async def run_python(
     timeout: float = 30,
     env: Mapping[str, str] | None = None,
 ) -> str:
+    script_install.assert_no_pending_process(root)
     # -I 会忽略 PYTHON* 环境变量，本进程另传 -B；构建子进程通过环境继承。
     child_env = dict(os.environ if env is None else env)
     child_env["PYTHONDONTWRITEBYTECODE"] = "1"
-    result = await ProcessRunner.run_process(
-        root / REL_PYTHON_EXE,
-        "-I",
-        "-B",  # 预取的只读探测/构建导入不能向当前安装补写字节码缓存。
-        *args,
-        cwd=root,
-        timeout=timeout,
-        kill_tree_on_cancel=True,
-        env=child_env,
-    )
+    try:
+        result = await ProcessRunner.run_process(
+            root / REL_PYTHON_EXE,
+            "-I",
+            "-B",  # 预取的只读探测/构建导入不能向当前安装补写字节码缓存。
+            *args,
+            cwd=root,
+            timeout=timeout,
+            kill_tree_on_cancel=True,
+            env=child_env,
+        )
+    except BaseException as error:
+        if is_process_cleanup_unconfirmed(error):
+            script_install.defer_installation_release(root)
+        raise
     if result.returncode != 0:
         if pending_marker(root).exists():
             raise WhimboxUpdateUnsafeError(RECOVERY_HINT)
@@ -200,6 +266,9 @@ class PreparedUpdate:
     hashes: dict[str, str]
 
 
+_UNCONFIRMED_STAGES: set[Path] = set()
+
+
 def _package_hashes(directory: Path) -> dict[str, str]:
     result = {}
     for path in directory.iterdir():
@@ -210,7 +279,10 @@ def _package_hashes(directory: Path) -> dict[str, str]:
 
 
 def discard_update(candidate: PreparedUpdate | str) -> None:
-    if isinstance(candidate, PreparedUpdate):
+    if (
+        isinstance(candidate, PreparedUpdate)
+        and candidate.packages.parent.resolve() not in _UNCONFIRMED_STAGES
+    ):
         shutil.rmtree(candidate.packages.parent, ignore_errors=True)
 
 
@@ -267,11 +339,12 @@ async def prepare_update(root: Path) -> PreparedUpdate | str:
         return PreparedUpdate(
             root.resolve(), target, current, repairing, wheel, packages, hashes
         )
-    except FluxdownCancelUnconfirmed:
-        # The daemon might still own this isolated destination. Do not
-        # delete a file that an external writer may continue to update.
-        raise
-    except BaseException:
+    except BaseException as error:
+        if isinstance(
+            error, FluxdownCancelUnconfirmed
+        ) or is_process_cleanup_unconfirmed(error):
+            # 外部写入尚未确认停止，不能删除仍在使用的文件。
+            raise
         # Failures and confirmed cancellations before a candidate is returned
         # otherwise have no manager-owned object to discard.
         await _run_package_worker(lambda: shutil.rmtree(stage, ignore_errors=True))
@@ -332,6 +405,11 @@ async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
             str(wheel),
             timeout=10 * 60,
         )
+    except BaseException as error:
+        if is_process_cleanup_unconfirmed(error):
+            # 调度器和未预下载入口还会再次清理，保留状态必须由统一删包入口消费。
+            _UNCONFIRMED_STAGES.add(candidate.packages.parent.resolve())
+        raise
     finally:
         discard_update(candidate)
     if await installed_version(root) != target:

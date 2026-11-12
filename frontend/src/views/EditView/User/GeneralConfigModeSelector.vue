@@ -20,7 +20,7 @@
 
     <!-- 调用方显式传空串表示卡片描述已够用、不挂来源提示（HSR）；不传仍用默认文案 -->
     <a-alert
-      v-if="alertMessage"
+      v-if="alertMessage && !compact"
       class="config-mode-alert"
       type="info"
       show-icon
@@ -33,7 +33,7 @@
       形态与上面的 base 三态卡片同构；BetterGI 的 overlay 由配置来源派生（原生来源 = 关、
       共享 / 独立 = 开），传 quickConfigReadonly 只读展示派生结果，避免出现可点却无效的卡片。
     -->
-    <a-form-item v-if="quickConfig !== undefined" class="overlay-config-form-item">
+    <a-form-item v-if="quickConfig !== undefined && !compact" class="overlay-config-form-item">
       <template #label>
         <span class="config-mode-label">
           {{ t('core.edit.enableQuickConfiguration') }}
@@ -62,8 +62,15 @@
       <span class="config-effective-title">{{ t('core.edit.configSemanticsTitle') }}</span>
       <p class="config-effective-formula">{{ semantics.formula }}</p>
       <p v-if="semantics.effect" class="config-effective-effect">{{ semantics.effect }}</p>
-      <p v-if="semantics.note" class="config-effective-note">{{ semantics.note }}</p>
-      <p v-if="showGuiHint && semantics.gui" class="config-effective-gui">{{ semantics.gui }}</p>
+      <details v-if="compact && (semantics.note || (showGuiHint && semantics.gui))">
+        <summary>{{ t('core.edit.configModeShowDescriptions') }}</summary>
+        <p v-if="semantics.note" class="config-effective-note">{{ semantics.note }}</p>
+        <p v-if="showGuiHint && semantics.gui" class="config-effective-gui">{{ semantics.gui }}</p>
+      </details>
+      <template v-else>
+        <p v-if="semantics.note" class="config-effective-note">{{ semantics.note }}</p>
+        <p v-if="showGuiHint && semantics.gui" class="config-effective-gui">{{ semantics.gui }}</p>
+      </template>
     </div>
   </a-form-item>
 </template>
@@ -103,6 +110,8 @@ const props = withDefaults(
      * 免得同一句既挂在配置来源下、又挂在配置操作下，反而看不清「选什么就改什么」。
      */
     showGuiHint?: boolean
+    /** 只展示配置结论，详细规则按需展开。 */
+    compact?: boolean
   }>(),
   {
     options: undefined,
@@ -110,6 +119,7 @@ const props = withDefaults(
     quickConfig: undefined,
     quickConfigDisabled: undefined,
     quickConfigReadonly: undefined,
+    compact: false,
     showGuiHint: true,
   }
 )

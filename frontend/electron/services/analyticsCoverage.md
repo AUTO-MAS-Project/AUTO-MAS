@@ -17,8 +17,8 @@
 “已接入”描述代码边界，不表示已经完成真实游戏、扫码、升级或正式服务入库验收。
 
 运行环境隔离统一使用 Electron 打包状态和 preload 下发值；Runtime 启动模式不改变采集环境。
-设置页布局偏好由 `SettingsSectionLayout` 的唯一保存入口复用 `settings_change_finished`（settings_layout/other/default|custom），按前端配置保存结果记录成功或失败；初始化、窗口缩放与目录跳转不采集，不发送设置内容或卡片位置。
-设置页工具栏的明暗主题快捷入口复用 `useTheme.setThemeMode` 的 `appearance_preference_changed` 保存结果，不增加点击事件或重复观察；自动保存说明是静态提示，不表示某次写入成功。
+设置页分区目录显隐由 `SettingsSectionLayout` 的唯一保存入口复用 `settings_change_finished`（settings_navigation/other/enabled|disabled），按前端配置保存结果记录成功或失败；初始化、窗口缩放、列数回流与目录跳转不采集，不发送分区标题或位置。
+主题模式统一从「外观与语言」设置，复用 `useTheme.setThemeMode` 的 `appearance_preference_changed` 保存结果，不增加点击事件或重复观察。
 源码 Electron 与安装版统一由 BackendService 记录 Runtime 启动结果，初始化阶段复用实际命令
 边界；移除旧安装器后不再产生 off 模式事件。独立后端和浏览器调试不新增采集。
 此次复用既有事件族与结果所有者；关闭应用二次确认开关复用 `settings_change_finished`，托盘菜单保存由主进程按真实写入结果补齐 `config_write_finished`（settings/ui/none），不发送菜单文本、任务标识或草稿操作。分区目录、打开编辑和取消不采集，托盘隐藏动作不单独采集；受控探针不作为正式服务入库证据。
@@ -29,7 +29,7 @@
 | T002 | initialization_decided：多少启动需要初始化或直接进入 | 已接入，持续复核 |
 | T003 | initialization_finished_v2：初始化走完、失败、跳过分别多少 | 已接入，持续复核 |
 | T004 | initialization_stage_finished_v2：Python、依赖、仓库等阶段哪里卡住 | 已接入，持续复核 |
-| T005 | initialization_recovery_selected：重试、重建、换镜像、跳过是否有效 | 已接入，持续复核 |
+| T005 | initialization_recovery_selected：重试、重建、源码恢复与跳过是否有效 | 已接入，持续复核 |
 | T006 | backend_start_finished：后端启动成功率和等待时间 | 已接入，持续复核 |
 | T007 | backend_restart_finished：主动更新和故障重启能否恢复 | 已接入，持续复核 |
 | T008 | runtime_alignment_finished：Runtime 升级、校验、回退是否完成 | 已接入，持续复核 |
@@ -83,7 +83,7 @@
 | T056 | notification_binding_finished：二维码绑定、取消、解绑及高级手动配置保存是否完成 | 已接入，持续复核 |
 | T057 | webhook_test_finished：自定义通知配置是否容易出错 | 已接入，持续复核 |
 | T058 | settings_change_finished：设置修改成功率及主要功能采用情况（含关闭确认开关） | 已接入，持续复核 |
-| T059 | appearance_preference_changed：主题、语言、低性能模式需求 | 已接入，持续复核 |
+| T059 | appearance_preference_changed：主题、语言、低性能模式和自定义光标需求 | 已接入，持续复核 |
 | T060 | appearance_package_finished：本地外观导入、启用、删除是否顺利 | 已接入，持续复核 |
 | T061 | appearance_store_install_finished：主题商店发现到安装的转化 | 已接入，持续复核 |
 | T062 | appearance_share_finished：外观上传与分享是否顺利 | 已接入，持续复核 |
@@ -140,7 +140,7 @@
 - 全部已有干员托管的开启与关闭复用 `useUserApi.updateUser` 的配置写入结果；开启同步失败仍走保存失败，关闭不改目标。运行前增量补入目标沿用现有任务终态，不新增名单、目标内容或自动重算事件。
 - 养成月卡设置经现有字段保存队列进入 `useUserApi.updateUser`，复用配置写入结果；不采集月卡值、理智或预计天数，本地重算不另发事件。
 - 专项检查更新与应用更新分开；检查发现新版不能当作安装完成。已有任务式更新只记录 accepted/rejected，实际运行终态仍由任务观察事件报告；原生保存/安装没有可靠完成信号时同样不猜测成功。
-- T081：OK-WW 更新以账号 UID 发起原业务请求，入口显式传入 Okww 分类；不拿账号 UID 查询托管 UID 缓存，也不上报任何 UID。
+- T081：OK-WW 更新以账号 UID 发起原业务请求，入口显式传入 Okww 分类；不拿账号 UID 查询托管 UID 缓存，也不上报任何 UID。官方启动器更新仍复用任务终态观察，只有显示可启动后才完成；维护跳过沿用脚本运行终态，不新增 OCR、版本或资源档位事件。
 - PR 复审 P3（6369303497/6369397213）：旧模拟器请求超过 120 秒仍可能返回，不能覆盖为新请求；已按未决/歧义键保留并在本地验证 A=0s、B=200s、A终态=300s 的顺序，禁止把 A 终态记到 B。
 
 ## 设置、外观和首页批次补充
@@ -182,6 +182,18 @@ QQ 官方机器人私聊和群内提及重试托管、启动普通或循环队�
 
 - 新增 `taskboard_marking_finished`，不在 Issue #1605 的 84 项场景内：每周任务的全选/清空保存、单条打卡与撤销，以及版本主线的标记/取消标记，按真实接口结果各记一次。`target_kind` 只区分 `weekly_task` / `version`，`action` 只区分 `select` / `mark` / `unmark`，`count_bucket` 描述本次影响对象数量。不发送游戏 key、任务标题、版本号、版本名、时间或封面地址；本地已判定重复的保存不重复记录，接口返回非 200 记为 failure，请求异常记为 unknown，客户端周键过期被后端拒绝时记为 blocked。
 
+任务树迁移沿用 `useTaskApi.ts` 的请求受理观察和 `taskAnalytics.ts` 的创建/完成观察。
+`ScriptView` 是有限模式类别；队列/托管/用户运行 UUID 只用于本地关联，不进入事件属性。
+只读查看的打开请求仍使用 `native_config_action_finished` 的 `view` 操作；恢复快照不新增执行样本。
+独立维护请求沿用历史 `Update` 统计类别，仅表示受理，不把它加入公共调度模式或将受理记成完成。
+
+队列触发设置复用 queue_schedule_changed：启动、定时、循环可独立启用；队列级间隔保存记录 interval，重置计时请求记录 reset。重置只表示请求受理，不表示新任务启动或完成。队列项星期保存记录 queue_time/days；不采集具体间隔、日期或时间。
+
+任务分支整合复用既有观察：后端 `telemetry.observe_script_run` 统一记录一次托管运行，
+本地 started/finished 消息由 BackgroundTaskManager 的遥测任务组限制最多 32 个在途发送；
+started 未送达时不发送对应 finished。运行 UUID 只留在本机消息关联中，不进入指标属性。
+任务树快照和完成消息在前端统一生成展示投影，恢复快照不新增执行样本；
+维护派发合并、历史/OBS 会话和临时副本清理不增加统计事件或改变执行成功口径。
 - T010 补充：重载结果由主进程窗口恢复服务确认，页面加载完成和 Vue 挂载信号缺一不计成功；
   加载失败、再次退出、异常、超时及退出取消各有有限分类，一次尝试仅结算一次。
   Windows 会话结束不新建恢复尝试；取消关机后重新允许恢复。验证采用隔离窗口事件和本地采集器，
@@ -192,3 +204,6 @@ QQ 官方机器人私聊和群内提及重试托管、启动普通或循环队�
 - BetterGI 本体托管更新：设置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；每批更新准备、普通失败后继续及安装未确认拦截沿用 `task_observed_finished`。安装阶段不另建事件，不采集版本、CDK 或路径。
 
 通用脚本计划表复用 `plan_manage_finished` 与原生配置会话事件（`task_start_result`、`native_config_action_finished` 的打开与保存）；计划类型新增有限值 `UniversalPlanConfig`，不采集计划、账号、脚本 ID 或配置内容。
+
+OkNte 日常计划的快捷表格与详细编辑共享当天字段覆写。快捷保存复用计划编辑事件，详细编辑按保存接口结果记录；不采集日常参数或计划标识。
+- Okww 原生多账号任务：任务选择保存复用 `useUserApi.updateUser` 的 `config_write_finished`；批次仍按 MAS 用户归属结果，运行结局沿用 `taskAnalytics.ts` 的现有观察边界，不拆分或采集上游账号、任务配置及日志。

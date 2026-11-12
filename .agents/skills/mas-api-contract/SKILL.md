@@ -23,6 +23,8 @@ Apply to:
 2. Endpoint-local request/response models in `app/api/` and shared contracts in `app/models/schema.py`.
 3. WebSocket message contracts used by backend services.
 
+For dispatch creation, runtime trees, task snapshots and task WS updates, also apply [mas-task-scheduler](../mas-task-scheduler/SKILL.md). Keep endpoint wrappers at the API boundary; internal creation takes mode, requirements and an explicit trigger reason. Derive task payloads from the one runtime tree rather than adding transport-owned writable state or preserving migration-only queue nodes as the target contract.
+
 Current `dev` baseline:
 1. Keep FastAPI responses aligned with `OutBase`-style envelopes used in `app/models/schema.py`.
 2. Keep WebSocket contracts aligned with current envelope conventions already used by `app/api/core.py` and WS command routes.

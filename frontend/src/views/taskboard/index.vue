@@ -33,6 +33,7 @@ const {
   isSaving,
   load,
   loading,
+  nowTs,
   progressOf,
   refreshing,
   reloadCompletions,
@@ -142,9 +143,10 @@ const counts = computed(() => {
     result[state] += 1
   })
   const panelKeys = new Set(panelOptions.value.map(option => option.key))
+  const now = Date.now()
   result.weekly = weeklyVisibleOptions.value.length
-  result.version = Object.values(taskboardState.versionStory).filter(record =>
-    panelKeys.has(record.game)
+  result.version = Object.values(taskboardState.versionStory).filter(
+    record => panelKeys.has(record.game) && parseActivityTime(record.start) <= now
   ).length
   return result
 })
@@ -284,7 +286,7 @@ const saveGames = async (keys: string[]) => {
         :options="weeklyVisibleOptions"
         :all-options="enabledOptions"
       />
-      <VersionStoryPanel v-else-if="tab === 'version'" :options="panelOptions" />
+      <VersionStoryPanel v-else-if="tab === 'version'" :options="panelOptions" :now="nowTs" />
     </div>
 
     <GamePickerModal

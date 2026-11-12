@@ -7,7 +7,7 @@
   <!-- 主要内容 -->
   <div v-else class="queue-main">
     <!-- 页面头部 -->
-    <div class="queue-header">
+    <div class="queue-header app-page-header">
       <div class="header-left">
         <h1 class="page-title app-page-title">{{ t('core.queue.title') }}</h1>
       </div>
@@ -20,20 +20,14 @@
             {{ t('core.queue.create') }}
           </a-button>
 
-          <a-popconfirm
+          <QueueDeleteButton
             v-if="queueList.length > 0"
             :title="t('core.queue.deleteConfirm')"
-            :ok-text="t('core.queue.ok')"
-            :cancel-text="t('core.queue.cancel')"
-            @confirm="handleRemoveQueue(activeQueueId)"
-          >
-            <a-button danger size="large" :disabled="!activeQueueId || cycleRunning">
-              <template #icon>
-                <DeleteOutlined />
-              </template>
-              {{ t('core.queue.deleteCurrent') }}
-            </a-button>
-          </a-popconfirm>
+            :text="t('core.queue.deleteCurrent')"
+            size="large"
+            :disabled="!activeQueueId"
+            :confirm="() => handleRemoveQueue(activeQueueId)"
+          />
         </a-space>
       </div>
     </div>
@@ -51,7 +45,7 @@
     <!-- 队列内容 -->
     <div v-else class="queue-content">
       <!-- 队列选择卡片 -->
-      <a-card class="queue-selector-card" :bordered="false">
+      <a-card class="queue-selector-card app-page-surface" :bordered="false">
         <template #title>
           <div class="card-title">
             <span>{{ t('core.queue.selectLabel') }}</span>
@@ -81,7 +75,7 @@
       </a-card>
 
       <!-- 队列配置卡片 -->
-      <a-card class="queue-config-card" :bordered="false">
+      <a-card class="queue-config-card app-page-surface" :bordered="false">
         <template #title>
           <div class="queue-title-container">
             <div v-if="!isEditingQueueName" class="queue-title-display">
@@ -108,154 +102,49 @@
           </div>
         </template>
 
-        <!-- 队列开关配置 -->
-        <div class="config-section">
-          <a-row :gutter="[24, 24]">
-            <a-col :xs="24" :md="8">
-              <div class="form-item-vertical">
-                <div class="form-label-wrapper">
-                  <span class="form-label">{{ t('core.queue.cycleType') }}</span>
-                  <a-tooltip
-                    :title="
-                      cycleRunning ? t('core.queue.cycleLocked') : t('core.queue.cycleTypeTip')
-                    "
-                  >
-                    <QuestionCircleOutlined class="help-icon" />
-                  </a-tooltip>
-                </div>
-                <a-select
-                  v-model:value="currentCycleEnabled"
-                  style="width: 100%"
-                  size="large"
-                  :disabled="cycleRunning"
-                  @change="(value: any) => handleConfigChange('CycleEnabled', value)"
-                >
-                  <a-select-option :value="false">{{ t('core.queue.typeTimed') }}</a-select-option>
-                  <a-select-option :value="true">{{ t('core.queue.typeCycle') }}</a-select-option>
-                </a-select>
-              </div>
-            </a-col>
-            <a-col :xs="24" :md="8">
-              <div class="form-item-vertical">
-                <div class="form-label-wrapper">
-                  <span class="form-label">{{ t('core.queue.runOnStart') }}</span>
-                  <a-tooltip :title="t('core.queue.runOnStartTip')">
-                    <QuestionCircleOutlined class="help-icon" />
-                  </a-tooltip>
-                </div>
-                <a-select
-                  v-model:value="currentStartUpMode"
-                  style="width: 100%"
-                  size="large"
-                  @change="(value: any) => handleConfigChange('StartUpMode', value)"
-                >
-                  <a-select-option :value="'Always'">{{ t('core.queue.always') }}</a-select-option>
-                  <a-select-option :value="'Never'">{{ t('core.queue.never') }}</a-select-option>
-                  <a-select-option :value="'DailyFirst'">{{
-                    t('core.queue.dailyFirst')
-                  }}</a-select-option>
-                </a-select>
-              </div>
-            </a-col>
-            <a-col :xs="24" :md="8">
-              <div class="form-item-vertical">
-                <div class="form-label-wrapper">
-                  <span class="form-label">{{ t('core.queue.scheduled') }}</span>
-                  <a-tooltip :title="t('core.queue.scheduledTip')">
-                    <QuestionCircleOutlined class="help-icon" />
-                  </a-tooltip>
-                </div>
-                <a-select
-                  v-model:value="currentTimeEnabled"
-                  style="width: 100%"
-                  size="large"
-                  :disabled="currentCycleEnabled"
-                  @change="(value: any) => handleConfigChange('TimeEnabled', value)"
-                >
-                  <a-select-option :value="true">{{ t('core.queue.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('core.queue.no') }}</a-select-option>
-                </a-select>
-              </div>
-            </a-col>
-            <a-col :xs="24" :md="8">
-              <div class="form-item-vertical">
-                <div class="form-label-wrapper">
-                  <span class="form-label">{{ t('core.queue.afterDone') }}</span>
-                  <a-tooltip :title="t('core.queue.afterDoneTip')">
-                    <QuestionCircleOutlined class="help-icon" />
-                  </a-tooltip>
-                </div>
-                <a-select
-                  v-model:value="currentAfterAccomplish"
-                  style="width: 100%"
-                  :options="afterAccomplishOptions"
-                  :placeholder="t('core.queue.actionPlaceholder')"
-                  size="large"
-                  @change="(value: any) => handleConfigChange('AfterAccomplish', value)"
-                />
-              </div>
-            </a-col>
-            <a-col :xs="24" :md="8">
-              <div class="form-item-vertical">
-                <div class="form-label-wrapper">
-                  <span class="form-label">{{ t('core.queue.afterDoneDelay') }}</span>
-                  <a-tooltip :title="t('core.queue.afterDoneDelayTip')">
-                    <QuestionCircleOutlined class="help-icon" />
-                  </a-tooltip>
-                </div>
-                <a-input-number
-                  v-model:value="currentAfterAccomplishDelay"
-                  :min="0"
-                  :max="1440"
-                  :precision="0"
-                  :disabled="currentAfterAccomplish === 'NoAction'"
-                  :addon-after="t('core.queue.afterDoneDelayUnit')"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleAfterAccomplishDelayBlur"
-                />
-              </div>
-            </a-col>
-          </a-row>
-        </div>
-        <a-divider />
-
-        <a-form layout="vertical">
-          <ExtraScriptSection
-            :key="activeQueueId"
-            v-model:form-data="extraScriptFormData"
-            :loading="
-              queueConfigLoading || extraScriptSaving || extraScriptConfigQueueId !== activeQueueId
-            "
-            scope="queue"
-            @save="handleExtraScriptSave"
-          />
-        </a-form>
-        <a-divider />
-
-        <!-- 定时项管理 -->
-        <a-col :span="24" class="manager-col">
-          <TimeSetManager
-            v-if="activeQueueId && currentQueueData && !currentCycleEnabled"
-            :queue-id="activeQueueId"
-            :time-sets="currentTimeSets"
-            style="font-size: 14px"
-            @refresh="refreshTimeSets"
-          />
-        </a-col>
-
-        <!-- 队列项管理 -->
-        <a-col :span="24" class="manager-col">
-          <QueueItemManager
-            v-if="activeQueueId && currentQueueData"
-            :queue-id="activeQueueId"
-            :queue-items="currentQueueItems"
-            :show-cycle-config="currentCycleEnabled"
-            :locked="cycleRunning"
-            style="font-size: 14px"
-            @refresh="refreshQueueItems"
-          />
-        </a-col>
+        <QueueTriggerSettings
+          :key="activeQueueId"
+          :queue-id="activeQueueId"
+          :info="currentQueueData?.[activeQueueId]?.Info"
+          @refresh="refreshQueueConfig()"
+        />
+        <TimeSetManager
+          v-if="activeQueueId && currentQueueData?.[activeQueueId]?.Info?.TimeEnabled"
+          :key="`time-${activeQueueId}`"
+          :queue-id="activeQueueId"
+          :time-sets="currentTimeSets"
+          @refresh="refreshTimeSets"
+        />
+        <QueueCycleSettings
+          v-if="activeQueueId && currentQueueData?.[activeQueueId]?.Info?.CycleEnabled"
+          :key="`cycle-${activeQueueId}`"
+          :queue-id="activeQueueId"
+          :cycle="currentQueueData?.[activeQueueId]?.Cycle"
+          @refresh="refreshQueueConfig()"
+        />
+        <QueueItemManager
+          v-if="activeQueueId && currentQueueData"
+          :key="`items-${activeQueueId}`"
+          :queue-id="activeQueueId"
+          :queue-items="currentQueueItems"
+          @refresh="refreshQueueItems"
+        />
+        <a-card :title="t('core.comp.extraScripts')" class="queue-extra-settings">
+          <a-form layout="vertical">
+            <ExtraScriptSection
+              :key="activeQueueId"
+              v-model:form-data="extraScriptFormData"
+              :loading="
+                queueConfigLoading ||
+                extraScriptSaving ||
+                extraScriptConfigQueueId !== activeQueueId
+              "
+              scope="queue"
+              hide-section-header
+              @save="handleExtraScriptSave"
+            />
+          </a-form>
+        </a-card>
       </a-card>
     </div>
   </div>
@@ -266,17 +155,14 @@ import { useI18n } from 'vue-i18n'
 import { Service, type QueueConfig_Info } from '@/api'
 import { queueApi } from '@/composables/useQueueApi'
 import QueueItemManager from '@/views/queue/components/QueueItemManager.vue'
+import QueueDeleteButton from './components/QueueDeleteButton.vue'
+import QueueTriggerSettings from './components/QueueTriggerSettings.vue'
+import QueueCycleSettings from './components/QueueCycleSettings.vue'
 import TimeSetManager from '@/views/queue/components/TimeSetManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
-import {
-  DeleteOutlined,
-  EditOutlined,
-  PlusOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
+import { EditOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { useTaskRuntimeState } from '@/composables/useTaskRuntimeState'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 
 const { t } = useI18n()
 
@@ -294,23 +180,6 @@ const currentQueueData = ref<Record<string, any> | null>(null)
 // 当前队列的名称和状态
 const currentQueueName = ref<string>('')
 const currentQueueEnabled = ref<boolean>(true)
-// 新增：将启动时运行的状态从 boolen 类型修改为 枚举 类型
-const currentStartUpMode = ref<'Never' | 'Always' | 'DailyFirst'>('Never')
-// 定时运行的开关状态
-const currentTimeEnabled = ref<boolean>(false)
-// 队列类型：true 为循环队列，与定时互斥
-const currentCycleEnabled = ref<boolean>(false)
-// 当前队列是否正在循环运行。运行中后端会拦下增删排序队列项、换脚本、删队列、
-// 切换队列类型，这里提前把对应控件置灰，别让用户撞到报错才知道。
-const { tasks: runtimeTasks } = useTaskRuntimeState()
-const cycleRunning = computed(() =>
-  [...runtimeTasks.value.values()].some(
-    state => state.isCycle && state.queueId === activeQueueId.value && state.phase !== 'completed'
-  )
-)
-// 新增：完成后操作状态
-const currentAfterAccomplish = ref<string>('NoAction')
-const currentAfterAccomplishDelay = ref<number>(0)
 const extraScriptFormData = ref({
   Info: {
     IfScriptBeforeTask: false,
@@ -324,19 +193,6 @@ const extraScriptSaving = ref(false)
 const extraScriptConfigQueueId = ref('')
 // 队列名称编辑状态
 const isEditingQueueName = ref<boolean>(false)
-
-// 完成后操作选项。label 随语言变，必须是 computed
-const afterAccomplishOptions = computed(() => [
-  { label: t('core.queue.action.NoAction'), value: 'NoAction' },
-  { label: t('core.queue.action.Shutdown'), value: 'Shutdown' },
-  { label: t('core.queue.action.ShutdownForce'), value: 'ShutdownForce' },
-  { label: t('core.queue.action.Reboot'), value: 'Reboot' },
-  { label: t('core.queue.action.Hibernate'), value: 'Hibernate' },
-  { label: t('core.queue.action.Sleep'), value: 'Sleep' },
-  { label: t('core.queue.action.KillSelf'), value: 'KillSelf' },
-  { label: t('core.queue.action.RestartSelf'), value: 'RestartSelf' },
-  { label: t('core.queue.action.Logoff'), value: 'Logoff' },
-])
 
 // 当前队列的定时项和队列项
 const currentTimeSets = ref<any[]>([])
@@ -417,13 +273,6 @@ const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) 
       await nextTick()
       if (!isMounted || queueId !== activeQueueId.value) return
 
-      // 更新开关状态 - 从API响应中获取
-      currentStartUpMode.value = queueData.Info?.StartUpMode ?? 'Never'
-      currentTimeEnabled.value = queueData.Info?.TimeEnabled ?? false
-      currentCycleEnabled.value = queueData.Info?.CycleEnabled ?? false
-      // 更新完成后操作状态 - 从API响应中获取
-      currentAfterAccomplish.value = queueData.Info?.AfterAccomplish ?? 'NoAction'
-      currentAfterAccomplishDelay.value = queueData.Info?.AfterAccomplishDelay ?? 0
       loadExtraScriptConfig(queueData.Info)
 
       // 定时项和队列项互不依赖，并行拉取
@@ -596,11 +445,6 @@ const finishEditQueueName = () => {
   onQueueNameBlur()
 }
 
-// 统一的配置字段变更处理 - 即时保存单个字段
-const handleConfigChange = async (key: string, value: any) => {
-  await handleSaveChange(key, value)
-}
-
 const loadExtraScriptConfig = (info?: QueueConfig_Info) => {
   extraScriptConfigQueueId.value = activeQueueId.value
   extraScriptFormData.value = {
@@ -620,13 +464,6 @@ const handleExtraScriptSave = async (key: string, value: boolean | string) => {
   } finally {
     extraScriptSaving.value = false
   }
-}
-
-// 延时输入框失焦时保存，清空输入得到的 null 按 0 处理
-const handleAfterAccomplishDelayBlur = async () => {
-  const delay = currentAfterAccomplishDelay.value ?? 0
-  currentAfterAccomplishDelay.value = delay
-  await handleConfigChange('AfterAccomplishDelay', delay)
 }
 
 // 添加队列
@@ -740,10 +577,6 @@ const refreshQueueConfig = async (queueId = activeQueueId.value) => {
       // 更新本地状态
       if (queueData.Info) {
         currentQueueName.value = queueData.Info.Name || ''
-        currentStartUpMode.value = queueData.Info.StartUpMode ?? 'Never'
-        currentTimeEnabled.value = queueData.Info.TimeEnabled ?? false
-        currentAfterAccomplish.value = queueData.Info.AfterAccomplish ?? 'NoAction'
-        currentAfterAccomplishDelay.value = queueData.Info.AfterAccomplishDelay ?? 0
         loadExtraScriptConfig(queueData.Info)
 
         // 更新队列列表中的名称
@@ -823,12 +656,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.queue-container {
-  min-height: 100vh;
-  background: var(--ant-color-bg-layout);
-  padding: 24px;
-}
-
 .loading-container {
   display: flex;
   justify-content: center;
@@ -840,21 +667,8 @@ onUnmounted(() => {
   margin: 0 auto;
 }
 
-/* 页面头部 */
-.queue-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 24px;
-  padding: 0 4px;
-}
-
 .header-left {
   flex: 1;
-}
-
-.page-title {
-  margin: 0 0 8px 0;
 }
 
 .page-description {
@@ -885,26 +699,13 @@ onUnmounted(() => {
 .queue-content {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-}
-
-/* 队列选择卡片 */
-.queue-selector-card {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border-radius: 12px;
-  border: 1px solid var(--ant-color-border-secondary);
+  gap: var(--app-page-content-gap);
 }
 
 .card-title {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.queue-selection-container {
-  padding: 16px;
 }
 
 /* 队列按钮组 */
@@ -923,9 +724,6 @@ onUnmounted(() => {
 
 /* 队列配置卡片 */
 .queue-config-card {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border-radius: 12px;
-  border: 1px solid var(--ant-color-border-secondary);
   min-height: 600px;
 }
 
@@ -940,7 +738,6 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
 }
 
 .queue-title-display {
@@ -950,8 +747,6 @@ onUnmounted(() => {
 }
 
 .queue-title-text {
-  font-size: 18px;
-  font-weight: 600;
   color: var(--ant-color-text);
 }
 
@@ -968,11 +763,6 @@ onUnmounted(() => {
   transition: all 0.2s ease;
 }
 
-/* 配置区域 */
-.config-section {
-  margin-bottom: 12px;
-}
-
 /* 定时项与队列项上下布局 */
 .managers-row {
   margin-bottom: 24px;
@@ -983,88 +773,17 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
-/* 垂直排列的表单项 */
-.form-item-vertical {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 16px;
+.queue-extra-settings :deep(.ant-card-head-title) {
+  font-size: var(--app-page-card-title-size);
+  font-weight: var(--app-page-card-title-weight);
+  line-height: var(--app-page-card-title-line-height);
 }
-
-.form-label-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* 表单标签 */
-.form-label {
-  font-weight: 600;
-  color: var(--ant-color-text);
-  font-size: 14px;
-}
-
-.help-icon {
-  color: #8c8c8c;
-  font-size: 14px;
-}
-
-/* 完成后操作配置 */
-.after-accomplish-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.setting-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.setting-label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.setting-title {
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--ant-color-text);
-}
-
-.setting-description {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
+.queue-extra-settings :deep(.form-section) {
+  margin-bottom: 0;
 }
 
 /* 响应式设计 */
-@media (max-width: 1200px) {
-  .queue-container {
-    padding: 16px;
-  }
-
-  .queue-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
-  }
-
-  .page-title {
-    font-size: 28px;
-  }
-}
-
 @media (max-width: 768px) {
-  .queue-container {
-    padding: 12px;
-  }
-
-  .page-title {
-    font-size: 24px;
-  }
-
   .page-description {
     font-size: 14px;
   }
@@ -1078,22 +797,6 @@ onUnmounted(() => {
     display: flex;
     justify-content: center;
   }
-}
-
-/* 深度样式使用全局CSS变量 */
-.queue-selector-card :deep(.ant-card-head) {
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  padding: 16px 24px;
-}
-
-.queue-config-card :deep(.ant-card-head) {
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  padding: 16px 24px;
-}
-
-.queue-config-card :deep(.ant-card-head-title) {
-  font-size: 18px;
-  font-weight: 600;
 }
 
 .queue-title-input :deep(.ant-input) {

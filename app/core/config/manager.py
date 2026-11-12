@@ -23,6 +23,7 @@ import sqlite3
 import sys
 import time
 import uuid
+from collections import Counter
 from collections.abc import Callable
 from contextlib import closing
 from datetime import datetime, timedelta
@@ -40,12 +41,13 @@ from typing import (
 import httpx
 import truststore
 
+from app.utils import environment as _utils_environment
+
 # 仅用于类型标注的顶层依赖移到 TYPE_CHECKING，避免启动导入开销
 if TYPE_CHECKING:
     import uvicorn
 
     from app.config import ConfigEntry
-    from app.models.task import ScriptTaskResources
     from app.utils.common.config import restore as _utils_config_restore
 
 from app.config import ConfigCollection, ConfigEntry, NodeState, config_manager
@@ -87,22 +89,26 @@ from app.models.config import (
     MSSPlanConfig,
     MSSUserConfig,
     OkNteConfig,
+    OkNtePlanConfig,
     OkNteUserConfig,
     OkwwConfig,
     OkwwUserConfig,
+    PlanConfigType,
     QueueConfig,
     QueueItem,
+    ScriptConfigType,
     SrcConfig,
     SrcUserConfig,
     TimeSet,
     UniversalPlanConfig,
+    UserConfigType,
     Webhook,
     WhimboxConfig,
     WhimboxUserConfig,
     ZzzOdConfig,
     ZzzOdUserConfig,
 )
-from app.models.schema import PlanComboxConsumer
+from app.models.schema import PlanComboxConsumer, ScriptStatusOverviewItem
 from app.models.script_contracts import ScriptConfigHandler
 from app.task.M9A.migration import (
     migrate_legacy_m9a_scripts,
@@ -214,7 +220,7 @@ class QueueItemNotFoundError(LookupError):
 
 
 class AppConfig:
-    VERSION = "v5.8.0-beta.4"
+    VERSION = "v5.8.0"
 
     def __init__(self) -> None:
 
@@ -235,6 +241,7 @@ class AppConfig:
             else self.work_path
         )
 
+        # [兼容旧专项] 存量配置回调索引；插件配置能力接管后移除此索引及绑定／查找入口。
         self._script_config_handlers: dict[
             type[ConfigEntry], ScriptConfigHandler | None
         ] = {}
@@ -259,16 +266,18 @@ class AppConfig:
 
         # 所有集合先登记，随后按引用依赖激活；迁移完成前不登记持久化根。
         self.setting = GlobalConfig.build()
-        self.EmulatorConfig = ConfigCollection.build(
+        self.EmulatorConfig = ConfigCollection[EmulatorConfig].build(
             [EmulatorConfig], name="EmulatorConfig"
         )
-        self.PlanConfig = ConfigCollection.build(
+        self.PlanConfig = ConfigCollection[PlanConfigType].build(
             [item["config_class"] for item in PLAN_BOOK.values()], name="PlanConfig"
         )
-        self.ScriptConfig = ConfigCollection.build(
+        self.ScriptConfig = ConfigCollection[ScriptConfigType].build(
             list(CLASS_BOOK.values()), name="ScriptConfig"
         )
-        self.QueueConfig = ConfigCollection.build([QueueConfig], name="QueueConfig")
+        self.QueueConfig = ConfigCollection[QueueConfig].build(
+            [QueueConfig], name="QueueConfig"
+        )
         from app.models.config import ToolsConfig
 
         self.ToolsConfig = ToolsConfig.build()
@@ -306,8 +315,9 @@ class AppConfig:
             HSRUserConfig,
             QueueItem,
         ):
-            if hasattr(model, "related_config"):
-                model.related_config.update(
+            related_config = getattr(model, "related_config", None)
+            if related_config is not None:
+                related_config.update(
                     {
                         "EmulatorConfig": self.EmulatorConfig,
                         "PlanConfig": self.PlanConfig,
@@ -320,22 +330,7 @@ class AppConfig:
         self._repo_initialized = False
 
         self.server: Optional["uvicorn.Server"] = None
-        self.power_sign: Literal[
-            "NoAction",
-            "Shutdown",
-            "ShutdownForce",
-            "Reboot",
-            "Hibernate",
-            "Sleep",
-            "KillSelf",
-            "RestartSelf",
-            "Logoff",
-        ] = "NoAction"
-        # 电源操作前的静默延时秒数, 与 power_sign 一同由队列配置写入
-        self.power_delay: int = 0
         self.temp_task: List[asyncio.Task] = []
-        # 正在循环运行的队列，供配置改动前的安全检查使用
-        self.running_cycle_queue_ids: set[uuid.UUID] = set()
         self._game_sign_result_date = ""
         self._community_account_add_lock = asyncio.Lock()
 
@@ -445,14 +440,30 @@ class AppConfig:
             self._game_sign_result_date = today
 
         with startup_stage("后端/配置/系统服务导入"):
-            from app.services import System
             from app.services import telemetry as _service_telemetry
+            from app.utils import power, startup
+
+        async def set_self_start(enabled: bool) -> None:
+            if _utils_environment.is_development_environment():
+                return
+            if startup.supported:
+                await startup.set_enabled(
+                    enabled,
+                    executable=self.work_path / "AUTO-MAS.exe",
+                    name="AUTO-MAS_AutoStart",
+                    description="AUTO-MAS自启动服务",
+                    arguments="--auto-start",
+                )
+
+        async def set_sleep_prevention(enabled: bool) -> None:
+            if power.supported:
+                await power.set_sleep_prevention(enabled)
 
         async def on_self_start(sender, event):
-            await System.set_SelfStart(event.value)
+            await set_self_start(event.value)
 
         async def on_allow_sleep(sender, event):
-            await System.set_Sleep(event.value)
+            await set_sleep_prevention(event.value)
 
         def on_telemetry(sender, event):
             _service_telemetry.set_telemetry_enabled(event.value)
@@ -500,7 +511,7 @@ class AppConfig:
             )
         # 注册自启动会读写注册表, 不阻塞初始化; 持有引用避免被 GC 且异常不被静默吞掉
         self_start_task = asyncio.create_task(
-            System.set_SelfStart(self.setting.Start.IfSelfStart)
+            set_self_start(self.setting.Start.IfSelfStart)
         )
         self.temp_task.append(self_start_task)
 
@@ -512,7 +523,7 @@ class AppConfig:
 
         self_start_task.add_done_callback(_self_start_done)
         with startup_stage("后端/配置/系统休眠设置"):
-            await System.set_Sleep(self.setting.Function.IfAllowSleep)
+            await set_sleep_prevention(self.setting.Function.IfAllowSleep)
         _service_telemetry.set_telemetry_enabled(
             self.setting.Function.IfEnableTelemetry
         )
@@ -1196,9 +1207,9 @@ class AppConfig:
         if handler is not None and handler.validate_update is not None:
             handler.validate_update(data)
 
-        await self.ScriptConfig[uid].update(
-            type(self.ScriptConfig[uid]).model_validate(data)
-        )
+        # 补丁由目标的实际类型创建；通过基类视图保留同型 update 的配对关系。
+        entry = cast(ConfigEntry, self.ScriptConfig[uid])
+        await entry.update(type(entry).model_validate(data))
 
     async def del_script(self, script_id: str) -> None:
         """删除托管配置"""
@@ -1210,13 +1221,7 @@ class AppConfig:
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"托管 {script_id} 正在运行, 无法删除")
 
-        # 删托管会顺带删掉引用它的队列项；正在循环运行的队列靠下标回写状态，
-        # 结构一变就会跑错托管，两轮之间托管没锁也要拦住。
-        for queue_uid, queue in self.QueueConfig.items():
-            if any((item.Info.ScriptId == uid for item in queue.QueueItem.values())):
-                self._ensure_cycle_safe(queue_uid, "删除它引用的托管")
-
-        # 删除托管相关的队列项
+        # 删除脚本相关的队列项
         for queue in self.QueueConfig.values():
             for key, value in queue.QueueItem.items():
                 if value.Info.ScriptId == uid:
@@ -1316,8 +1321,10 @@ class AppConfig:
         if user_class is None:
             raise TypeError(f"不支持的托管配置类型: {type(script_config)}")
 
-        uid = script_config.UserData.add(user_class, payload=payload)
-        await script_config.UserData.commit()
+        # handler 选择具体用户类，集合登记表在 add 时核验；联合类型不保留这层配对。
+        users = cast(ConfigCollection[ConfigEntry], script_config.UserData)
+        uid = users.add(user_class, payload=payload)
+        await users.commit()
         config = script_config.UserData[uid]
         if handler is not None and handler.initialize_user is not None:
 
@@ -1493,7 +1500,8 @@ class AppConfig:
                         script_id=script_id,
                         user_id=user_id,
                     )
-            await user_config.update(type(user_config).model_validate(data))
+            entry = cast(ConfigEntry, user_config)
+            await entry.update(type(entry).model_validate(data))
         return True
 
     async def import_script_config_file(
@@ -1523,7 +1531,10 @@ class AppConfig:
     def bind_script_config_handler(
         self, entry_type: type[ConfigEntry], handler: ScriptConfigHandler | None
     ) -> None:
-        """由宿主将专项操作绑定到当前配置实例。"""
+        """[兼容旧专项] 绑定存量配置回调，待插件配置能力接管后移除。
+
+        新插件通过自身的配置能力声明接入，不新增此兼容绑定。
+        """
         if entry_type in self._script_config_handlers:
             raise ValueError(f"重复的配置处理器登记: {entry_type.__name__}")
         self._script_config_handlers[entry_type] = handler
@@ -1531,19 +1542,11 @@ class AppConfig:
     def _get_script_config_handler(
         self, script: ConfigEntry
     ) -> ScriptConfigHandler | None:
+        """[兼容旧专项] 查找存量配置回调，随插件配置能力迁移一并移除。"""
         for entry_type, handler in self._script_config_handlers.items():
             if isinstance(script, entry_type):
                 return handler
         raise RuntimeError(f"专项配置处理器未登记: {type(script).__name__}")
-
-    def get_script_task_resources(self, script: ConfigEntry) -> "ScriptTaskResources":
-        """读取专项资源声明，不提交配置或访问脚本资源文件。"""
-        from app.models.task import ScriptTaskResources
-
-        handler = self._get_script_config_handler(script)
-        if handler is None or handler.task_resources is None:
-            return ScriptTaskResources()
-        return handler.task_resources(script)
 
     def get_script_emulator_binding(
         self, script: ConfigEntry, *, patch: dict[str, Any] | None = None
@@ -1628,7 +1631,7 @@ class AppConfig:
     async def add_plan(
         self,
         script: Literal[
-            "MaaPlan", "MaaEndPlan", "BAAHPlan", "MSSPlan", "UniversalPlan"
+            "MaaPlan", "MaaEndPlan", "BAAHPlan", "MSSPlan", "UniversalPlan", "OkNtePlan"
         ],
         *,
         payload: dict[str, Any] | None = None,
@@ -1639,7 +1642,8 @@ class AppConfig:
         | MaaEndPlanConfig
         | BAAHPlanConfig
         | MSSPlanConfig
-        | UniversalPlanConfig,
+        | UniversalPlanConfig
+        | OkNtePlanConfig,
     ]:
         """添加计划表"""
 
@@ -1719,12 +1723,12 @@ class AppConfig:
 
         plan = self.PlanConfig[plan_uid]
         if isinstance(plan, UniversalPlanConfig):
-            for name in ("ScriptId",):
-                if name in (data.get("Info") or {}) and str(data["Info"][name]) != str(
-                    getattr(plan.Info, name)
-                ):
-                    raise ValueError("通用脚本计划表所属脚本不可修改")
-        await plan.update(type(plan).model_validate(data))
+            if "ScriptId" in (data.get("Info") or {}) and str(
+                data["Info"]["ScriptId"]
+            ) != str(plan.Info.ScriptId):
+                raise ValueError("通用脚本计划表所属脚本不可修改")
+        entry = cast(ConfigEntry, plan)
+        await entry.update(type(entry).model_validate(data))
 
     async def del_plan(self, plan_id: str) -> None:
         """删除计划表配置"""
@@ -1739,13 +1743,7 @@ class AppConfig:
             raise TypeError(f"不支持的计划表配置类型: {plan_type}")
 
         consumer_config = PLAN_BOOK[plan_type]
-        user_list: list[
-            MaaUserConfig
-            | MaaEndUserConfig
-            | BAAHUserConfig
-            | MSSUserConfig
-            | GeneralUserConfig
-        ] = []
+        user_list: list[UserConfigType] = []
 
         for script in self.ScriptConfig.values():
             if not isinstance(script, consumer_config["script_class"]):
@@ -1881,6 +1879,46 @@ class AppConfig:
         _config_entry = self.QueueConfig[_config_uid]
         return _config_uid, _config_entry
 
+    async def get_script_status_overview(self) -> list[ScriptStatusOverviewItem]:
+        """汇总托管排期配置和持久化历史，供卫星等配置展示查询。
+
+        历史沿用 script_name 与当前 Info.Name 的关联；同名配置无法区分时保留未知。
+        仅捕获本次查询的配置值，不访问任务运行表或写入排期时间。
+        """
+        from app.core import History
+
+        types = {value: key for key, value in CLASS_BOOK.items()}
+        scripts = [
+            (str(uid), script.Info.Name, types.get(type(script), "unknown"))
+            for uid, script in self.ScriptConfig.items()
+        ]
+        scheduled: set[str] = set()
+        for queue in self.QueueConfig.values():
+            if queue.Info.CycleEnabled or (
+                queue.Info.TimeEnabled
+                and any(
+                    item.Info.Enabled and item.Info.Days
+                    for item in queue.TimeSet.values()
+                )
+            ):
+                scheduled.update(
+                    str(item.Info.ScriptId) for item in queue.QueueItem.values()
+                )
+        counts = Counter(name for _, name, _ in scripts)
+        latest = await History.get_latest_script_results(
+            script_names=[name for name, count in counts.items() if count == 1]
+        )
+        return [
+            ScriptStatusOverviewItem(
+                scriptId=uid,
+                scriptType=script_type,
+                scheduled=uid in scheduled,
+                lastRunAt=latest[name][0] if name in latest else None,
+                lastFailed=name in latest and latest[name][1] == "error",
+            )
+            for uid, name, script_type in scripts
+        ]
+
     async def get_queue(self, queue_id: Optional[str]) -> tuple[list, dict]:
         """获取调度队列配置"""
 
@@ -1908,11 +1946,6 @@ class AppConfig:
         logger.info(f"更新调度队列配置: {queue_id}")
 
         queue_uid = uuid.UUID(queue_id)
-        # 队列名、完成后操作这类字段改了不影响正在跑的循环，放行；
-        # 只有循环开关本身不能在运行中动。
-        if "CycleEnabled" in data.get("Info", {}):
-            self._ensure_cycle_safe(queue_uid, "切换循环开关")
-
         await self.QueueConfig[queue_uid].update(
             type(self.QueueConfig[queue_uid]).model_validate(data)
         )
@@ -1923,7 +1956,6 @@ class AppConfig:
         logger.info(f"删除调度队列配置: {queue_id}")
 
         queue_uid = uuid.UUID(queue_id)
-        self._ensure_cycle_safe(queue_uid, "删除")
 
         self.QueueConfig.remove(queue_uid)
         await self.QueueConfig.commit()
@@ -1981,7 +2013,9 @@ class AppConfig:
             .update(
                 type(self.QueueConfig[queue_uid].TimeSet[time_set_uid]).model_validate(
                     data
-                )
+                ),
+                # 可写性由模型信号裁定，不能被界面显隐静默跳过。
+                check_visibility=False,
             )
         )
 
@@ -2002,7 +2036,6 @@ class AppConfig:
         logger.info(f"{queue_id} 重新排序时间设置: {index_list}")
 
         queue_uid = uuid.UUID(queue_id)
-
         self.QueueConfig[queue_uid].TimeSet.set_order(list(map(uuid.UUID, index_list)))
         await self.QueueConfig[queue_uid].TimeSet.commit()
 
@@ -2040,7 +2073,6 @@ class AppConfig:
         logger.info(f"{queue_id} 添加队列项配置")
 
         queue_uid = uuid.UUID(queue_id)
-        self._ensure_cycle_safe(queue_uid, "增删队列项")
 
         uid = self.QueueConfig[queue_uid].QueueItem.add(QueueItem, payload=payload)
         await self.QueueConfig[queue_uid].QueueItem.commit()
@@ -2057,11 +2089,6 @@ class AppConfig:
 
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
-        # 循环调度参数每轮都会重读，运行中改没问题；换托管会让任务的托管列表
-        # 与队列对不上号，必须拦住。
-        if "Info" in data:
-            self._ensure_cycle_safe(queue_uid, "更换队列项的托管")
-
         await (
             self.QueueConfig[queue_uid]
             .QueueItem[queue_item_uid]
@@ -2079,7 +2106,6 @@ class AppConfig:
 
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
-        self._ensure_cycle_safe(queue_uid, "增删队列项")
 
         self.QueueConfig[queue_uid].QueueItem.remove(queue_item_uid)
         await self.QueueConfig[queue_uid].QueueItem.commit()
@@ -2090,30 +2116,11 @@ class AppConfig:
         logger.info(f"{queue_id} 重新排序队列项: {index_list}")
 
         queue_uid = uuid.UUID(queue_id)
-        self._ensure_cycle_safe(queue_uid, "调整队列项顺序")
 
         self.QueueConfig[queue_uid].QueueItem.set_order(
             list(map(uuid.UUID, index_list))
         )
         await self.QueueConfig[queue_uid].QueueItem.commit()
-
-    def _ensure_cycle_safe(self, queue_uid: uuid.UUID, action: str) -> None:
-        """拦住会打乱正在运行的循环的改动。
-
-        任务的托管列表在创建时就冻结了，循环靠下标回写状态；队列项的增删、
-        排序、换托管都会让下标对不上号。只拦这些，改名、改完成后操作、改循环
-        周期都不受影响。
-        """
-
-        if queue_uid not in self.running_cycle_queue_ids:
-            return
-
-        queue_name = (
-            self.QueueConfig[queue_uid].Info.Name
-            if queue_uid in self.QueueConfig
-            else str(queue_uid)
-        )
-        raise RuntimeError(f"循环队列 {queue_name} 正在运行，无法{action}")
 
     async def get_tools(self) -> Dict[str, Any]:
         """获取工具设置"""
@@ -2565,25 +2572,6 @@ class AppConfig:
                 }
             )
         logger.success("托管下拉框信息获取成功")
-
-        return data
-
-    async def get_task_combox(self):
-        """获取任务下拉框信息"""
-
-        logger.info("开始获取任务下拉框信息")
-        data = [{"label": "未选择", "value": None}]
-        for uid, queue in self.QueueConfig.items():
-            data.append({"label": f"队列 - {queue.Info.Name}", "value": str(uid)})
-        for uid, script in self.ScriptConfig.items():
-            if not script.is_locked:
-                data.append(
-                    {
-                        "label": f"托管 - {_utils_constants.TYPE_BOOK[type(script).__name__]} - {script.Info.Name}",
-                        "value": str(uid),
-                    }
-                )
-        logger.success("任务下拉框信息获取成功")
 
         return data
 

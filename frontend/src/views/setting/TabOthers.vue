@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { ref } from 'vue'
 import type { GlobalConfig, VersionOut } from '@/api'
+import type { SettingChangeHandler } from './settingTypes'
 import ChangelogView from '@/components/ChangelogView.vue'
 import UpdateSettingsSection from '@/views/setting/UpdateSettingsSection.vue'
 import SectionCard from '@/components/ui/SectionCard.vue'
@@ -25,21 +26,11 @@ const logger = window.electronAPI.getLogger('设置-其他')
 const { t } = useI18n()
 const emit = defineEmits<{ fluxdownInstalled: [] }>()
 
-const {
-  version,
-  backendUpdateInfo,
-  settings,
-  updateSourceOptions,
-  updateChannelOptions,
-  handleSettingChange,
-  checkUpdate,
-} = defineProps<{
+const { version, backendUpdateInfo, settings, handleSettingChange, checkUpdate } = defineProps<{
   version: string
   backendUpdateInfo: VersionOut | null
   settings: GlobalConfig
-  updateSourceOptions: { label: string; value: string }[]
-  updateChannelOptions: { label: string; value: string }[]
-  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<boolean>
+  handleSettingChange: SettingChangeHandler
   checkUpdate: () => Promise<void>
 }>()
 
@@ -120,8 +111,6 @@ const copyAllInfo = async () => {
       <div class="about-main">
         <UpdateSettingsSection
           :settings="settings"
-          :update-source-options="updateSourceOptions"
-          :update-channel-options="updateChannelOptions"
           :handle-setting-change="handleSettingChange"
           :check-update="checkUpdate"
           @fluxdown-installed="emit('fluxdownInstalled')"
@@ -203,7 +192,7 @@ const copyAllInfo = async () => {
   padding: 24px;
   margin-bottom: 16px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 10px;
+  border-radius: var(--ant-border-radius-lg);
   background: var(--app-appearance-surface-bg);
 }
 

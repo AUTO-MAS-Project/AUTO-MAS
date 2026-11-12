@@ -34,7 +34,7 @@ from typing import Any, Dict, List, Optional, Protocol
 import httpx
 from packaging import version
 
-from app.core import Publisher
+from app.core import Power, Publisher
 from app.core.ws import protocol
 from app.models.schema import (
     UpdateDownloadSnapshot,
@@ -42,7 +42,6 @@ from app.models.schema import (
     WSUpdateFailedData,
     WSUpdateProgressData,
 )
-from app.services.common.system import System
 from app.services.common.update.fluxdown import FluxdownResumableError
 from app.services.common.update.transport import (
     DownloadProgress,
@@ -50,6 +49,7 @@ from app.services.common.update.transport import (
 )
 from app.utils import LazyProxy, ProcessRunner, get_logger, process_platform
 from app.utils import fluxdown_cli as _utils_fluxdown_cli
+from app.utils.contracts.power import PowerSignal
 
 logger = get_logger("更新服务")
 
@@ -733,4 +733,4 @@ class UpdateHandler:
             ],
             creationflags=process_platform.platform_process.detached_flags,
         )
-        await System.set_power("KillSelf")
+        await Power.set_power(PowerSignal.KILL_SELF)

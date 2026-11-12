@@ -82,7 +82,7 @@ export function bootstrapTaskAnalytics(): void {
         mode: state.mode ?? 'unknown',
         script_type: types.size > 1 ? 'multi' : (types.values().next().value ?? 'unknown'),
       })
-      if (state.mode === 'ScriptConfig') {
+      if (state.mode === 'ScriptConfig' || state.mode === 'ScriptView') {
         const entry = observed.get(state.taskId)!
         const discard = beginAnalyticsOperation('native_config_action_finished')
         entry.discardSubscription = subscribe(

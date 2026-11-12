@@ -41,6 +41,7 @@ const planSelectionByScriptType = {
   MaaEndConfig: { field: 'SanityMode', type: 'MaaEndPlanConfig' },
   BAAHConfig: { field: 'StageMode', type: 'BAAHPlanConfig' },
   MSSConfig: { field: 'PlanMode', type: 'MSSPlanConfig' },
+  OkNteConfig: { field: 'PlanMode', type: 'OkNtePlanConfig' },
 }
 
 const defaultRealRunLockPath =
@@ -395,7 +396,9 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
           'GlobalDomain',
           'GlobalStygian',
         ]
-      : ['ConfigFile', 'Infrastructure']
+      : scriptType === 'OkNteConfig'
+        ? ['ConfigFile', 'Infrastructure', 'QuickConfig']
+        : ['ConfigFile', 'Infrastructure']
   for (const owner of dataOwners) {
     for (const directory of dataDirectories) {
       await copyDirectory(path.join('data', scriptId, owner, directory))
@@ -482,6 +485,20 @@ async function main() {
       }
       // 其他配置由隔离根按默认值新建，不复制本机工具、签到账号或启动队列。
       await mkdir(path.join(dataRoot, 'config'), { recursive: true })
+      if (!real) {
+        // 非真实流程使用有效的空公告缓存，避免当天线上维护把失败验证改成跳过。
+        await writeFile(
+          // 空数据根从 v1.11 初始化，交给正常升级流程生成 setting.yaml。
+          path.join(dataRoot, 'config', 'Config.json'),
+          JSON.stringify({
+            Data: {
+              Maintenance: JSON.stringify({ schema_version: 1, games: {} }),
+              LastMaintenanceUpdated: new Date().toISOString(),
+            },
+          }),
+          'utf8'
+        )
+      }
       console.warn(`[e2e] 隔离数据根 ${dataRoot}${keepRoot ? '（跑完保留）' : '（跑完删除）'}`)
     }
     await seedBrowserHistory(dataRoot, { real, inPlace })

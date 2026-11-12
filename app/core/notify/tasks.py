@@ -2,25 +2,31 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable, Coroutine, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any
+from functools import cached_property
+from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
-from app.core import RuntimeTasks
+from app.core import BackgroundTaskManager
+from app.core.background_tasks import BackgroundTaskGroup, BackgroundTaskHandle
 from app.models.notification.channel import DispatchResult
 from app.utils import get_logger
 
 logger = get_logger("任务通知")
 type NotificationDelivery = Callable[[], Coroutine[Any, Any, DispatchResult]]
 
+if TYPE_CHECKING:
+    from app.core.notify.coordinator import TaskReportCoordinator
+
 
 @dataclass
 class TaskNotificationBatch:
     owner: NotificationTasks
     task_id: str | None
+    coordinator: TaskReportCoordinator | None = None
     deliveries: list[NotificationDelivery] = field(default_factory=list)
     closed: bool = False
 
@@ -35,22 +41,41 @@ class NotificationTasks:
     """每个通知服务独立记录 drain 范围；后台任务的关闭仍由宿主统一拥有。"""
 
     def __init__(self) -> None:
-        self._pending: set[asyncio.Task[None]] = set()
         self._current_batch: ContextVar[TaskNotificationBatch | None] = ContextVar(
             "task_notification_batch", default=None
         )
 
+    @cached_property
+    def group(self) -> BackgroundTaskGroup:
+        # 无排队；限制宿主通知的同时执行数，结果在发送完成后直接释放。
+        return BackgroundTaskManager.register_group(
+            f"task-notifications:{uuid4()}", max_running=128, max_retained=128
+        )
+
+    @cached_property
+    def community_group(self) -> BackgroundTaskGroup:
+        # 快速等待窗口结束后仍可发送；无人提取的渠道结果保留五分钟。
+        return BackgroundTaskManager.register_group(
+            f"community-notifications:{uuid4()}", max_running=32, max_retained=64
+        )
+
+    async def close(self) -> None:
+        """注销已申请的组，完整等待投递收尾后才能关闭渠道资源。"""
+        if "group" in self.__dict__:
+            await BackgroundTaskManager.unregister_group(self.group)
+        if "community_group" in self.__dict__:
+            await BackgroundTaskManager.unregister_group(self.community_group)
+
     def spawn_notification(
         self,
-        coroutine: Coroutine[Any, Any, None],
+        factory: Callable[[], Coroutine[Any, Any, None]],
         *,
         task_id: str | None,
         name: str = "task-notification",
-    ) -> asyncio.Task[None] | None:
-        task = RuntimeTasks.spawn(coroutine, name=f"{name}:{task_id}")
-        if task is not None:
-            self._pending.add(task)
-            task.add_done_callback(self._pending.discard)
+    ) -> BackgroundTaskHandle[None] | None:
+        task = self.group.spawn(factory, retain_result=False)
+        if task is None:
+            logger.warning(f"通知注册失败: {name}:{task_id}")
         return task
 
     async def publish_notification_failure(
@@ -81,7 +106,7 @@ class NotificationTasks:
     ) -> None:
         if result.failed:
             self.spawn_notification(
-                self.publish_notification_failure(result, system_notice=True),
+                lambda: self.publish_notification_failure(result, system_notice=True),
                 task_id=task_id,
             )
 
@@ -97,10 +122,14 @@ class NotificationTasks:
             )
 
     @contextmanager
-    def task_notification_batch(self, *, task_id: str | None) -> Iterator[None]:
+    def task_notification_batch(
+        self, *, task_id: str | None, coordinator: TaskReportCoordinator | None = None
+    ) -> Iterator[None]:
         """覆盖整个脚本执行及收尾；子账号沿用同一批次，退出后才注册投递。"""
 
-        batch = TaskNotificationBatch(owner=self, task_id=task_id)
+        batch = TaskNotificationBatch(
+            owner=self, task_id=task_id, coordinator=coordinator
+        )
         token = self._current_batch.set(batch)
         try:
             yield
@@ -108,13 +137,17 @@ class NotificationTasks:
             self._current_batch.reset(token)
             batch.closed = True
             if batch.deliveries:
-                self.spawn_notification(batch.deliver(), task_id=batch.task_id)
+                self.spawn_notification(batch.deliver, task_id=batch.task_id)
 
     def current_notification_task_id(
         self,
     ) -> str | None:
         batch = self._current_batch.get()
         return batch.task_id if batch is not None else None
+
+    def current_task_report_coordinator(self) -> TaskReportCoordinator | None:
+        batch = self._current_batch.get()
+        return batch.coordinator if batch is not None else None
 
     def submit_task_notification(
         self, delivery: NotificationDelivery, *, immediate: bool = False
@@ -125,9 +158,12 @@ class NotificationTasks:
         if batch is None or batch.closed:
             return False
         if immediate:
-            self.spawn_notification(
-                self._deliver_notification(delivery, task_id=batch.task_id),
-                task_id=batch.task_id,
+            return (
+                self.spawn_notification(
+                    lambda: self._deliver_notification(delivery, task_id=batch.task_id),
+                    task_id=batch.task_id,
+                )
+                is not None
             )
         else:
             batch.deliveries.append(delivery)
@@ -136,12 +172,4 @@ class NotificationTasks:
     async def drain_notifications(self, timeout: float) -> bool:
         """电源动作前有限等待全部任务通知与反馈；超时不取消投递。"""
 
-        deadline = asyncio.get_running_loop().time() + timeout
-        while tasks := {task for task in self._pending if not task.done()}:
-            remaining = deadline - asyncio.get_running_loop().time()
-            if remaining <= 0:
-                return False
-            _, pending = await asyncio.wait(tasks, timeout=remaining)
-            if pending:
-                return False
-        return True
+        return "group" not in self.__dict__ or await self.group.drain(timeout)

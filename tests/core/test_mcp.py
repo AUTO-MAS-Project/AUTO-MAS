@@ -1,6 +1,7 @@
 """可选 MCP 的生命周期与外部工具契约，不需要账号、网络或游戏。"""
 
 import asyncio
+import json
 import threading
 from unittest.mock import AsyncMock
 
@@ -8,23 +9,24 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
+from pydantic import BaseModel
 
 import app.core.mcp as module
 from app.core import Publisher
-from app.core.runtime_tasks import OwnedTaskRegistry
+
+
+class QueryIn(BaseModel):
+    scriptId: str | None = None
 
 
 @pytest_asyncio.fixture
 async def service(monkeypatch):
-    registry = OwnedTaskRegistry()
-    monkeypatch.setattr(module, "RuntimeTasks", registry)
     monkeypatch.setenv("AUTO_MAS_ENABLE_MCP", "1")
     monkeypatch.setattr(module, "MCP_INCLUDED_OPERATIONS", ("read",))
     monkeypatch.setattr(Publisher, "send", AsyncMock(return_value=False))
     instance = module.McpService()
     yield instance
     await instance.shutdown()
-    await registry.shutdown()
 
 
 @pytest.fixture
@@ -132,6 +134,40 @@ async def test_real_transport_tools_call_stages_and_cleanup(service, app):
         assert (await http.get("/private")).status_code == 200
     assert client.is_closed
     await service.shutdown()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "arguments", [{}, {"scriptId": None}, {"scriptId": "script-1"}]
+)
+async def test_optional_query_body_preserves_omission_and_null(
+    service, app, monkeypatch, arguments
+):
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
+
+    @app.post("/query", operation_id="query")
+    async def query(body: QueryIn):
+        return body.model_dump()
+
+    monkeypatch.setattr(module, "MCP_INCLUDED_OPERATIONS", ("query",))
+    service.start(app)
+    await wait_loaded(service)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+    ) as http:
+        expired = await http.get("/mcp", headers={"Mcp-Session-Id": "expired"})
+        assert expired.status_code == 404
+        async with streamable_http_client(
+            "http://localhost/mcp", http_client=http
+        ) as streams:
+            async with ClientSession(streams[0], streams[1]) as session:
+                await session.initialize()
+                result = await session.call_tool("query", arguments)
+                assert not result.isError, result.content
+                assert json.loads(result.content[0].text) == {
+                    "scriptId": arguments.get("scriptId")
+                }
 
 
 @pytest.mark.asyncio
@@ -252,9 +288,7 @@ async def test_full_application_whitelist_and_schema_guards(monkeypatch):
 
     import app.api as api
 
-    registry = OwnedTaskRegistry()
     monkeypatch.setenv("AUTO_MAS_ENABLE_MCP", "1")
-    monkeypatch.setattr(module, "RuntimeTasks", registry)
     monkeypatch.setattr(Publisher, "send", AsyncMock(return_value=False))
     service = module.McpService()
     app = FastAPI()
@@ -286,4 +320,3 @@ async def test_full_application_whitelist_and_schema_guards(monkeypatch):
         assert resolved
     finally:
         await service.shutdown()
-        await registry.shutdown()

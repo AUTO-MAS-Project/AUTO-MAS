@@ -23,8 +23,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from app.services import System
-from app.utils import ProcessRunner, get_logger
+from app.utils import ProcessRunner, get_logger, process
 from app.utils import io as _utils_io
 
 from ..base_preset import ensure_maa_default_configuration
@@ -63,7 +62,7 @@ async def update_maa(maa_path: Path, *, snapshot_path: Path, script_id: str):
     if not maa_update_package or not (maa_path / maa_update_package).exists():
         return
 
-    if not await System.kill_process(maa_path / "MAA.exe"):
+    if not await process.kill_process(maa_path / "MAA.exe"):
         raise MaaUpdaterRunningError(
             "无法关闭 MAA 窗口，暂不安装更新；请退出 MAA 后重试"
         )
@@ -159,9 +158,9 @@ async def update_maa(maa_path: Path, *, snapshot_path: Path, script_id: str):
 async def _wait_for_updater(maa_path: Path) -> None:
     try:
         async with asyncio.timeout(_UPDATER_TIMEOUT):
-            while await System.is_process_running(maa_path / "MAA.Updater.exe"):
+            while await process.is_process_running(maa_path / "MAA.Updater.exe"):
                 await asyncio.sleep(0.2)
-        if not await System.kill_process(maa_path / "MAA.exe"):
+        if not await process.kill_process(maa_path / "MAA.exe"):
             raise MaaUpdaterRunningError(
                 "无法关闭更新后的 MAA 窗口，请退出 MAA 后从原生配置备份恢复"
             )

@@ -2,6 +2,7 @@ import { expect, test } from './fixtures'
 import type { Page, WebSocket, WebSocketRoute } from '@playwright/test'
 import type { WSTaskCompletedData } from '../src/services/websocket/types'
 import { observeMainConnection } from './socket-recovery'
+import { projectTaskTree } from '../src/composables/taskTreeProjection'
 
 // 后端端口由环境变量注入，保持与 init.pw.ts / real-integration.pw.ts 一致
 const backendUrl = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? '36174'}`
@@ -76,10 +77,12 @@ test.describe('@recovery websocket resilience', () => {
       // 没有安装路径和模拟器的隔离任务应失败；真实消息只用于证明恢复后的双向链路。
       await expect
         .poll(
-          () =>
-            completedTasks
-              .get(accepted.taskId)
-              ?.data.task_info.find(script => script.script_id === scriptId)?.status,
+          () => {
+            const task = completedTasks.get(accepted.taskId)?.data.task
+            return task
+              ? projectTaskTree(task).find(script => script.config_id === scriptId)?.status
+              : undefined
+          },
           { timeout: 30_000 }
         )
         .toBe('异常')

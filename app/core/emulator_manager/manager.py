@@ -25,6 +25,8 @@ import shutil
 import uuid
 from typing import Dict, Literal
 
+import psutil
+
 from app.core import Config, Publisher
 from app.core.emulator_manager.operations import EmulatorOperations
 from app.core.emulator_manager.update import AvdUpdateOperations
@@ -48,6 +50,26 @@ class _EmulatorManager(EmulatorOperations, AvdUpdateOperations):
             block_ads_enabled=lambda: Config.setting.Function.IfBlockAd,
             resource_path=Config.resource_path,
         )
+
+    async def kill_emulator_processes(self):
+        """这里暂时仅支持 MuMu 模拟器"""
+
+        logger.info("正在清除模拟器进程")
+
+        keywords = ["Nemu", "nemu", "emulator", "MuMu"]
+
+        def _kill_all() -> None:
+            for proc in psutil.process_iter(["pid", "name"]):
+                try:
+                    pname = proc.info["name"].lower()
+                    if any(keyword.lower() in pname for keyword in keywords):
+                        proc.kill()
+                        logger.info(f"已关闭 MuMu 模拟器进程: {proc.info['name']}")
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+
+        await asyncio.to_thread(_kill_all)
+        logger.success("模拟器进程清除完成")
 
     async def close_running_avd_instances(self) -> dict[str, str]:
         """电源操作时按当前纳管配置正常关闭 AVD。"""
@@ -112,7 +134,7 @@ class _EmulatorManager(EmulatorOperations, AvdUpdateOperations):
 
             if operate == "open":
                 if isinstance(temp_emulator, _utils_emulator2.facade.Emulator2Manager):
-                    # 模拟器页手动点的启动：魔改 AVD 据此带窗口开机（任务拉起跟静默模式走）
+                    # 模拟器页手动点的启动：ModAVD 据此带窗口开机（任务拉起跟静默模式走）
                     await temp_emulator.open(index, manual=True)
                 else:
                     await temp_emulator.open(index)

@@ -49,9 +49,9 @@ class DeviceStatus(IntEnum):
     NOT_FOUND = 5
     """未找到设备"""
     CREATING = 6
-    """正在新建：魔改 AVD（modavd v0.2.0 起）建完文件还要在后台无头开机一次做初始化，做完前不能开机、关机、改设置"""
+    """正在新建：ModAVD（modavd v0.2.0 起）建完文件还要在后台无头开机一次做初始化，做完前不能开机、关机、改设置"""
     CREATE_FAILED = 7
-    """新建失败：魔改 AVD 新建后的初始化没做完（或新建它的程序中途退出），开不了机，只能删掉重建；原因见
+    """新建失败：ModAVD 新建后的初始化没做完（或新建它的程序中途退出），开不了机，只能删掉重建；原因见
     :attr:`DeviceInfo.creation_error`"""
     UNKNOWN = 10
     """未知状态"""
@@ -66,13 +66,13 @@ class DeviceInfo:
     """``open`` 带包名时拉应用那一步的结果（``AppLaunchResult.reason``，如冷启动 ``launched``、
     在前台 ``already-running``、从后台切回 ``resumed``）；没拉应用、或后端不支持带包启动时为空串。"""
     process_id: int | None = None
-    """模拟器进程号；脚本等 adb 时据此判断模拟器是不是已经退出，退出了就不再空等。目前只有魔改 AVD
+    """模拟器进程号；脚本等 adb 时据此判断模拟器是不是已经退出，退出了就不再空等。目前只有 ModAVD
     的 ``open`` 给（qemu 进程），其它后端为 ``None``。"""
     process_started_at: float | None = None
     """该进程的启动时刻（Unix 秒，``psutil.Process.create_time()``）。和进程号一起比对，进程号被
     系统复用给别的进程时也能认出原来的模拟器已经没了。"""
     headless: bool | None = None
-    """正在运行的实例是不是无头开机的（没有窗口，显示 / 隐藏无从谈起）。目前只有魔改 AVD 给：
+    """正在运行的实例是不是无头开机的（没有窗口，显示 / 隐藏无从谈起）。目前只有 ModAVD 给：
     modavd 0.3.0 起看它的 ``window`` 字段，旧版看 qemu 进程，认不出时按无头算；其它后端、没在运行时为 ``None``。"""
     creation_error: str = ""
     """:attr:`DeviceStatus.CREATE_FAILED` 时新建为什么失败（modavd 的 ``creation_error``）；其余为空串。"""

@@ -13,6 +13,7 @@ export namespace PlanCreateIn {
         BAAHPLAN = 'BAAHPlan',
         MSSPLAN = 'MSSPlan',
         UNIVERSAL_PLAN = 'UniversalPlan',
+        OK_NTE_PLAN = 'OkNtePlan',
     }
 }
 

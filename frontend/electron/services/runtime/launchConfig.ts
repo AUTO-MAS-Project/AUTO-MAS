@@ -2,8 +2,8 @@ import { isDevelopmentEnvironment } from '../instanceConfig'
 /**
  * Runtime 启动模式与可执行文件定位。
  *
- * 源码默认 development，安装版默认 managed。环境变量优先于用户设置和构建默认值；
- * 存量 off 值视为未覆盖，不再提供直接启动 Python 的执行链。
+ * 源码默认 development，安装版默认 managed。环境变量可覆盖构建默认值；
+ * 旧版保存的启动方式不再参与判定。
  */
 
 import { app } from 'electron'
@@ -33,16 +33,8 @@ export type RuntimeLaunchMode = 'development' | 'managed'
 
 const RUNTIME_LAUNCH_MODES: readonly RuntimeLaunchMode[] = ['development', 'managed']
 
-/** 持久化设置比运行时开关多一个哨兵值：`auto` 表示不覆盖，跟随构建默认值。 */
-export type PersistedRuntimeLaunchMode = RuntimeLaunchMode | 'auto'
-
-const PERSISTED_RUNTIME_LAUNCH_MODES: readonly PersistedRuntimeLaunchMode[] = [
-  'auto',
-  ...RUNTIME_LAUNCH_MODES,
-]
-
-/** 最终生效值来自哪一级，供设置界面展示「当前由环境变量强制」之类的说明。 */
-export type RuntimeLaunchModeSource = 'env' | 'setting' | 'default'
+/** 最终生效值的来源，供运行诊断使用。 */
+export type RuntimeLaunchModeSource = 'env' | 'default'
 
 /** 一次解析的完整结果：生效模式 + 来源。 */
 export interface RuntimeLaunchModeResolution {
@@ -74,58 +66,13 @@ function isRuntimeLaunchMode(value: string): value is RuntimeLaunchMode {
   return (RUNTIME_LAUNCH_MODES as readonly string[]).includes(value)
 }
 
-/** 供 IPC 校验渲染进程传入值使用。 */
-export function isPersistedRuntimeLaunchMode(value: unknown): value is PersistedRuntimeLaunchMode {
-  return (
-    typeof value === 'string' &&
-    (PERSISTED_RUNTIME_LAUNCH_MODES as readonly string[]).includes(value)
-  )
-}
-
-/** 持久化设置文件路径，须与 `main.ts` 的 `loadConfig()`/`saveConfig()` 保持一致。 */
-function resolveSettingsPath(appRoot: string): string {
-  return path.join(appRoot, 'config', 'frontend_config.json')
-}
-
-/**
- * 读取持久化设置里的启动方式。
- *
- * 文件不存在、字段缺失、类型不对或 JSON 损坏都视为「未设置」而不是报错——设置文件在用户
- * 从未碰过这一项时本就可能没有 `Runtime` 节点，这不是异常情况。
- */
-function readPersistedLaunchMode(appRoot: string): string | undefined {
-  try {
-    const settingsPath = resolveSettingsPath(appRoot)
-    if (!fs.existsSync(settingsPath)) return undefined
-
-    const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) as {
-      Runtime?: { LaunchMode?: unknown }
-    }
-    const value = parsed.Runtime?.LaunchMode
-    return typeof value === 'string' ? value : undefined
-  } catch (error) {
-    logger.warn(
-      `读取持久化的 Runtime 启动方式设置失败，改按构建默认值处理: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    )
-    return undefined
-  }
-}
-
 /** 构建默认值只由打包状态决定，Runtime 缺失由启动流程显式报错。 */
 function resolveBuildDefaultLaunchMode(): RuntimeLaunchMode {
   return isDevelopmentEnvironment() ? 'development' : 'managed'
 }
 
-/**
- * 解析启动模式，并带上生效来源。
- *
- * 优先级：环境变量 `AUTO_MAS_RUNTIME_MODE` > 持久化的用户设置 > 构建默认值。任一级取值
- * 非法都记 warning 后落到下一级，最终结果来自合法设置或构建默认值，
- * 不会因为拼错一个单词就整体失效。
- */
-export function resolveRuntimeLaunchModeDetail(appRoot: string): RuntimeLaunchModeResolution {
+/** 环境变量可覆盖构建默认值；存量界面设置不再参与启动模式判定。 */
+export function resolveRuntimeLaunchModeDetail(): RuntimeLaunchModeResolution {
   const rawEnv = process.env[RUNTIME_MODE_ENV]
   if (rawEnv !== undefined && rawEnv.trim() !== '') {
     const normalizedEnv = rawEnv.trim().toLowerCase()
@@ -133,28 +80,16 @@ export function resolveRuntimeLaunchModeDetail(appRoot: string): RuntimeLaunchMo
       return { mode: normalizedEnv, source: 'env' }
     }
     logger.warn(
-      `${RUNTIME_MODE_ENV} 取值非法：${rawEnv}，改按持久化设置处理（可选值：development/managed）`
+      `${RUNTIME_MODE_ENV} 取值非法：${rawEnv}，改按构建默认值处理（可选值：development/managed）`
     )
-  }
-
-  const rawSetting = readPersistedLaunchMode(appRoot)
-  if (rawSetting !== undefined && rawSetting.trim() !== '') {
-    const normalizedSetting = rawSetting.trim().toLowerCase()
-    if (normalizedSetting !== 'auto') {
-      if (isRuntimeLaunchMode(normalizedSetting)) {
-        return { mode: normalizedSetting, source: 'setting' }
-      }
-      logger.warn(`持久化的 Runtime 启动方式设置非法：${rawSetting}，改按构建默认值处理`)
-    }
-    // normalizedSetting === 'auto'：用户显式选择跟随构建默认值，直接走下一级。
   }
 
   return { mode: resolveBuildDefaultLaunchMode(), source: 'default' }
 }
 
 /** 只要最终生效模式时用这个；需要在界面上展示来源时用 `resolveRuntimeLaunchModeDetail`。 */
-export function resolveRuntimeLaunchMode(appRoot: string): RuntimeLaunchMode {
-  return resolveRuntimeLaunchModeDetail(appRoot).mode
+export function resolveRuntimeLaunchMode(): RuntimeLaunchMode {
+  return resolveRuntimeLaunchModeDetail().mode
 }
 
 function isExistingFile(candidate: string): boolean {
@@ -261,7 +196,7 @@ export function resolveDevelopmentRuntimeRoot(dataRoot: string): string {
  * 另取仓外位置（见 `resolveDevelopmentRuntimeRoot`）。
  */
 export function resolveRuntimeLaunchConfig(appRoot: string): RuntimeLaunchConfig {
-  const mode = resolveRuntimeLaunchMode(appRoot)
+  const mode = resolveRuntimeLaunchMode()
   if (mode === 'development') {
     return {
       mode,

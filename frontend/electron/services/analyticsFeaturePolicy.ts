@@ -41,6 +41,7 @@ const plan = [
   'MaaEndPlanConfig',
   'BAAHPlanConfig',
   'MSSPlanConfig',
+  'OkNtePlanConfig',
   'UniversalPlanConfig',
   'multi',
   'unknown',
@@ -184,7 +185,7 @@ export const featureAnalyticsSchemas = {
       'update_pause',
       'proxy',
       'performance_effects',
-      'settings_layout',
+      'settings_navigation',
       'other',
     ] as const,
     value_kind: ['enabled', 'disabled', 'default', 'custom'] as const,
@@ -202,7 +203,7 @@ export const featureAnalyticsSchemas = {
     ] as const,
   }),
   appearance_preference_changed: finished({
-    preference_kind: ['theme', 'language', 'performance'] as const,
+    preference_kind: ['theme', 'language', 'performance', 'cursor_size'] as const,
     preset_value: [
       'light',
       'dark',

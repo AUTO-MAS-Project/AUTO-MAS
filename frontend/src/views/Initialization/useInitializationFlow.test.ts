@@ -72,8 +72,6 @@ beforeEach(() => {
     electronAPI: {
       getLogger: () => logger,
       getRuntimeInitContext: async () => ({ mode: 'managed' }),
-      initMirrors: async () => {},
-      getMirrors: async () => [],
       loadConfig: async () => ({}),
       getInitializedVersion: async () => '',
       onInitializationProgress: (callback: typeof receive) => {
@@ -89,7 +87,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-// Real IPC handler → flow state/computed → real LaunchStatus HTML, without a Runtime process.
+// Preload progress callback → flow state/computed → real LaunchStatus HTML.
 describe('initialization progress language switching', () => {
   it('re-renders the same received repository event in Chinese, English and Japanese', async () => {
     await initialize()
@@ -464,29 +462,6 @@ describe('initialization progress language switching', () => {
     }
   })
 
-  it('retains download details through the initialization IPC path', async () => {
-    await initialize()
-    receive({
-      stage: 'python',
-      status: 'running',
-      runtimeStage: 'runtime.download',
-      runtimeStatus: 'running',
-      message: '原始下载信息',
-      targetVersion: 'v0.1.99',
-      source: 'cnb',
-      sourceName: 'CNB',
-      sourceIndex: 2,
-      sourceCount: 5,
-    })
-    for (const locale of ['zh-CN', 'en-US', 'ja-JP'] as const) {
-      i18n.global.locale.value = locale
-      const html = await render()
-      expect(html).toContain('CNB')
-      expect(html).toContain('2/5')
-      expect(html).toContain('v0.1.99')
-    }
-  })
-
   it('localizes known normal statuses while leaving failures and unknown events untouched', () => {
     const normalStages = [
       'runtime.check',
@@ -558,5 +533,116 @@ describe('initialization progress language switching', () => {
           ).toBeUndefined()
       }
     }
+  })
+})
+
+describe('managed recovery routing', () => {
+  it.each(['startup', 'backend'] as const)(
+    'reinstalls a missing Runtime after a failure from %s, keeping failed downloads retryable',
+    async origin => {
+      const missing = {
+        success: false,
+        failedStage: 'backend',
+        error: 'Runtime executable is missing',
+        code: 'RUNTIME_NOT_FOUND',
+        retryable: false,
+        remediation: ['update-desktop', 'contact-support'],
+      }
+      const api = window.electronAPI
+      api.desktopStartupStatus = async () => ({
+        runtimeMode: 'managed',
+        flowKind: 'startup',
+        fullInitialization: false,
+        state: origin === 'startup' ? 'failed' : 'ready',
+        progress: [],
+      })
+      api.waitDesktopStartup = async () => (origin === 'startup' ? missing : { success: true })
+      api.initialize = vi
+        .fn()
+        .mockResolvedValueOnce({
+          success: false,
+          completedStages: [],
+          failedStage: 'python',
+          failureOrigin: 'runtime_binary',
+          code: 'RUNTIME_BINARY_ALIGN_ERROR',
+          retryable: true,
+          remediation: ['retry', 'open-log'],
+          error: 'Download interrupted',
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          completedStages: ['python', 'repository', 'dependency'],
+        })
+      await initialize()
+      if (origin === 'backend') await flow.handleBackendError(missing.error, missing)
+      expect(flow.currentStep.value.key).toBe('python')
+      expect(flow.flowKind.value).toBe('startup')
+      expect(flow.failureProps.value.failureActions.map(action => action.kind)).toEqual([
+        'retry',
+        'open-log',
+      ])
+      expect(api.initialize).not.toHaveBeenCalled()
+      await flow.handleFailureAction('retry')
+      expect(flow.flowKind.value).toBe('update')
+      expect(flow.currentStep.value.key).toBe('python')
+      expect(flow.hasFailed.value).toBe(true)
+      expect(flow.failureProps.value.message).toBe('Download interrupted')
+      expect(flow.failureProps.value.failureActions.map(action => action.kind)).toEqual([
+        'retry',
+        'open-log',
+      ])
+      await flow.handleFailureAction('retry')
+      expect(api.initialize).toHaveBeenCalledTimes(2)
+      expect(flow.currentStep.value.key).toBe('backend')
+      expect(flow.hasFailed.value).toBe(false)
+    }
+  )
+
+  it('does not offer managed Runtime installation in development mode', async () => {
+    window.electronAPI.getRuntimeInitContext = async () => ({
+      mode: 'development',
+      fallbackLogPath: '',
+    })
+    await initialize()
+    await flow.handleBackendError('Runtime executable is missing', {
+      code: 'RUNTIME_NOT_FOUND',
+      retryable: false,
+    })
+    expect(flow.currentStep.value.key).toBe('backend')
+    expect(flow.flowKind.value).toBe('startup')
+  })
+
+  it('retries the environment through full initialization without repeating completed stages', async () => {
+    await initialize()
+    receive({ stage: 'python', status: 'failed', message: 'download interrupted' })
+    const api = window.electronAPI
+    api.initialize = vi.fn(async () => ({ success: true, completedStages: [] }))
+    api.installPython = vi.fn(async () => ({ success: true }))
+    api.pullRepository = vi.fn(async () => ({ success: true }))
+    api.installDependencies = vi.fn(async () => ({ success: true }))
+    await flow.handleFailureAction('retry')
+    expect(api.initialize).toHaveBeenCalledOnce()
+    expect(api.installPython).not.toHaveBeenCalled()
+    expect(api.pullRepository).not.toHaveBeenCalled()
+    expect(api.installDependencies).not.toHaveBeenCalled()
+    expect(flow.currentStep.value.key).toBe('backend')
+  })
+
+  it('shows the actual failed stage when dependency recovery has to restore program files', async () => {
+    await initialize()
+    receive({ stage: 'dependency', status: 'failed', message: 'lockfile missing' })
+    window.electronAPI.installDependencies = vi.fn(async () => ({
+      success: false,
+      failedStage: 'repository',
+      error: 'Program files could not be restored',
+      code: 'WORKSPACE_RESTORE_FAILED',
+      retryable: false,
+    }))
+    await flow.handleFailureAction('retry')
+    expect(flow.currentStep.value.key).toBe('repository')
+    expect(flow.failureProps.value.failureActions.map(action => action.kind)).toEqual([
+      'restore-workspace',
+      'open-log',
+    ])
   })
 })

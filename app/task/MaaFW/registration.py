@@ -20,17 +20,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.models.config import M9AConfig, MaaFWConfig, MSSConfig
-from app.models.script_contracts import ScriptConfigHandler
-from app.task.registration import ManagerBuildContext, ScriptRegistration
+from app.models.script_contracts import ScriptConfigHandler, ScriptEmulatorBinding
+from app.task.registration import ScriptRegistration
 
 if TYPE_CHECKING:
     from app.models.task import ScriptItem, TaskExecuteBase
     from app.utils.common.config.restore import ConfigRestorePool
 
 
-def build_manager(
-    script_item: ScriptItem, context: ManagerBuildContext
-) -> TaskExecuteBase:
+def build_manager(script_item: ScriptItem) -> TaskExecuteBase:
     from .embedded_manager import MaaFWEmbeddedManager
 
     return MaaFWEmbeddedManager(script_item)
@@ -43,15 +41,6 @@ def build_config_handler() -> ScriptConfigHandler:
     )
     from app.task.MaaFW.tools.embedded.default_snapshot import (
         prepare_user_read as prepare_maafw_user_read,
-    )
-    from app.task.MaaFW.tools.embedded.resources import (
-        EMULATOR_BINDING as maafw_emulator_binding,
-    )
-    from app.task.MaaFW.tools.embedded.resources import (
-        SUPPORTS_MOD_AVD as maafw_supports_mod_avd,
-    )
-    from app.task.MaaFW.tools.embedded.resources import (
-        declare_task_resources as maafw_task_resources,
     )
     from app.task.MaaFW.tools.embedded.script_lifecycle import (
         after_script_removal as after_maafw_script_removal,
@@ -70,9 +59,10 @@ def build_config_handler() -> ScriptConfigHandler:
         prepare_user_update=prepare_maafw_user_update,
         prepare_user_read=prepare_maafw_user_read,
         initialize_user=initialize_maafw_user,
-        task_resources=maafw_task_resources,
-        emulator_binding=maafw_emulator_binding,
-        supports_mod_avd=maafw_supports_mod_avd,
+        emulator_binding=ScriptEmulatorBinding(
+            group="Emulator", id_field="Id", index_field="Index"
+        ),
+        supports_mod_avd=True,
     )
 
 

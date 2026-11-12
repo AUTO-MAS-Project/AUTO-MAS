@@ -1,5 +1,5 @@
 <template>
-  <div class="plans-header">
+  <div class="plans-header app-page-header">
     <div class="header-left">
       <h1 class="page-title app-page-title">{{ t('core.plan.title') }}</h1>
     </div>
@@ -89,21 +89,12 @@ const onAddPlanMenu = ({ key }: { key: string }) => {
 </script>
 
 <style scoped>
-.plans-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 24px;
-  padding: 0 4px;
-}
-
 .header-left {
   flex: 1;
   min-width: 0; /* 防止文字溢出 */
 }
 
 .page-title {
-  margin: 0 0 8px 0;
   white-space: nowrap; /* 防止标题换行 */
   overflow: hidden;
   text-overflow: ellipsis; /* 长标题时显示省略号 */
@@ -111,20 +102,5 @@ const onAddPlanMenu = ({ key }: { key: string }) => {
 
 .header-actions {
   flex-shrink: 0;
-  margin-left: 16px; /* 添加间距防止太紧密 */
-}
-
-@media (max-width: 768px) {
-  .page-title {
-    font-size: 24px;
-  }
-
-  .plans-header {
-    padding: 0 2px; /* 减少边距给内容更多空间 */
-  }
-
-  .header-actions {
-    margin-left: 8px; /* 小屏幕时减少间距 */
-  }
 }
 </style>

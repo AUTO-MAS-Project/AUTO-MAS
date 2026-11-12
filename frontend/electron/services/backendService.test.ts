@@ -3,7 +3,7 @@ import { BrowserWindow } from 'electron'
 import { EventEmitter } from 'node:events'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
@@ -27,7 +27,7 @@ vi.mock('https', () => ({
   },
 }))
 // 同时验证开发 Electron 与打包 Electron 的环境会显式传到 Runtime，且覆盖继承值。
-const appState = vi.hoisted(() => ({ isPackaged: false, appPath: '' }))
+const appState = vi.hoisted(() => ({ isPackaged: false, appPath: '', userData: '' }))
 const ipcHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>())
 vi.mock('electron', () => ({
   ipcMain: {
@@ -43,6 +43,8 @@ vi.mock('electron', () => ({
     },
     getVersion: () => '5.5.0-beta.3',
     getAppPath: () => appState.appPath,
+    getPath: (name: string) =>
+      name === 'userData' ? appState.userData : join(dirname(appState.appPath), 'AUTO-MAS.exe'),
   },
 }))
 vi.mock('../utils/processManager', () => ({
@@ -144,7 +146,7 @@ function mockSpawn(): void {
  * 会在 supervise 前创建仓外的 Runtime 根目录，常量路径会把目录建到真实磁盘上。
  */
 let appRoot: string
-/** development 模式的 Runtime 根目录：非 Electron 环境下是 appRoot 同级的 `<目录名>-runtime`。 */
+/** 模拟 Electron 的仓外 userData，隔离开发模式的 Runtime 根目录。 */
 let runtimeRoot: string
 // Runtime 可执行文件的存在性都用 fs 判断，借用一定存在的 node 自身路径。
 const EXISTING_EXE = process.execPath
@@ -240,7 +242,8 @@ beforeEach(() => {
   appState.isPackaged = false
   appRoot = mkdtempSync(join(tmpdir(), 'auto-mas-backend-'))
   appState.appPath = join(appRoot, 'frontend')
-  runtimeRoot = join(dirname(appRoot), `${basename(appRoot)}-runtime`)
+  appState.userData = mkdtempSync(join(tmpdir(), 'auto-mas-backend-userdata-'))
+  runtimeRoot = join(appState.userData, 'auto-mas-runtime')
   spawnMock.mockReset()
   killAllMock.mockClear()
   vi.stubEnv('AUTO_MAS_HTTP_PORT', undefined)
@@ -267,7 +270,7 @@ afterEach(() => {
   delete process.env[RUNTIME_MODE_ENV]
   delete process.env[RUNTIME_EXE_ENV]
   rmSync(appRoot, { recursive: true, force: true })
-  rmSync(runtimeRoot, { recursive: true, force: true })
+  rmSync(appState.userData, { recursive: true, force: true })
 })
 
 // ==================== Runtime 监督链路 ====================
@@ -940,8 +943,6 @@ describe('桌面前端只连接已有后端', () => {
       'backend-restart',
       'initialize',
       'install-python',
-      'install-pip',
-      'install-git',
       'pull-repository',
       'install-dependencies',
       'update-runtime-binary',
@@ -1153,6 +1154,13 @@ describe('主进程拥有两种模式的启动生命周期', () => {
       mode === 'development' ? await passEnvironmentEnsure() : await passManagedPreparation()
     child.stdout.feed(helloLine + runningStateLine)
     expect(await initial).toMatchObject({ success: true })
+    const event = { sender: window.webContents }
+    expect(await ipcHandlers.get('get-api-endpoint')?.(event, 'local')).toBe(
+      'http://127.0.0.1:36163'
+    )
+    expect(await ipcHandlers.get('get-api-endpoint')?.(event, 'websocket')).toBe(
+      'ws://127.0.0.1:36163'
+    )
     const start = ipcHandlers.get('backend-start')
     expect(start).toBeDefined()
     expect(await start?.({ sender: window.webContents })).toMatchObject({ success: true })
@@ -1296,4 +1304,23 @@ it('环境变更进行中拒绝第二次操作，完成后允许显式恢复', a
     await pending
   }
   expect(await service.runEnvironmentOperation(async () => 'recovered')).toBe('recovered')
+})
+
+it.each([false, true])('启动前使用当前环境默认端点，支持自定义端口 packaged=%s', async packaged => {
+  appState.isPackaged = packaged
+  vi.resetModules()
+  ipcHandlers.clear()
+  const handlers = await import('../ipc/initializationHandlers')
+  const window = new BrowserWindow()
+  handlers.registerInitializationHandlers(window)
+  const event = { sender: window.webContents }
+  const port = packaged ? 36163 : 36164
+  expect(await ipcHandlers.get('get-api-endpoint')?.(event, 'local')).toBe(
+    `http://127.0.0.1:${port}`
+  )
+  vi.stubEnv('AUTO_MAS_HTTP_PORT', '36184')
+  expect(await ipcHandlers.get('get-api-endpoint')?.(event, 'local')).toBe('http://127.0.0.1:36184')
+  expect(await ipcHandlers.get('get-api-endpoint')?.(event, 'websocket')).toBe(
+    'ws://127.0.0.1:36184'
+  )
 })

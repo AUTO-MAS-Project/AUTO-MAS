@@ -30,6 +30,7 @@ description: Define and enforce backend module boundaries for Python services. U
 
 - 按用途分文件，某用途源码过长、确有多个实现单元时再改为文件夹。
 - 保存共享数据结构、类型契约、字段约束，不承载业务执行和核心编排，不依赖 API、core、services 或任务实现。
+- 任务运行模型的状态／日志推送属于模型业务：在模型定义之后直接订阅配置类信号，接收者允许在执行时访问既有任务登记、WS 发送能力和共享传输契约。此例外仅限任务模型推送，不将 L1 受理、专项执行或设备编排搬入 models；声明导入不初始化宿主，不另建回调注入或发布队列。
 - 配置领域声明放在 `models/config/`，复用 `app/config/` 的配置框架；框架行为、配置模型和应用级配置操作分别归属，遵循[配置框架参考](../mas-data-model/references/config-framework.md)。
 - 独立 tools 功能的专用模型必须留在该工具内部，不能借共享 models 绕过工具边界。
 
@@ -60,7 +61,7 @@ description: Define and enforce backend module boundaries for Python services. U
 
 ### app/tasks：任务逻辑
 
-任务逻辑将在插件化后移除，当前暂不增加额外组织限定。仓库现有目录名为 `app/task/`；这里不附带全目录更名或任务迁移要求。现有任务生命周期、专项黑箱边界和对应 AGENTS.md 继续适用。
+旧专项任务逻辑将在插件化后移除，当前暂不增加额外组织限定。仓库现有目录名为 `app/task/`；这里不附带全目录更名或任务迁移要求。调度执行骨架、运行树与锁所有权遵守 [mas-task-scheduler](../mas-task-scheduler/SKILL.md)，旧 manager 仅在 L2 兼容分叉。专项黑箱边界和对应 AGENTS.md 继续适用。
 
 ### app 下的其他位置
 

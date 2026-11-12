@@ -1,5 +1,5 @@
 <template>
-  <a-card class="command-card">
+  <a-card class="command-card app-page-surface">
     <section class="command-panel" :aria-label="t('core.home.command.aria')">
       <div class="command-main">
         <ParticlesBg
@@ -154,15 +154,6 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
 </script>
 
 <style scoped>
-.command-card {
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
-}
-
-.command-card :deep(.ant-card-body) {
-  padding: 24px;
-}
-
 .command-panel {
   min-height: 148px;
   display: grid;
@@ -314,10 +305,6 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
 }
 
 @media (max-width: 800px) {
-  .command-card :deep(.ant-card-body) {
-    padding: 18px;
-  }
-
   .command-title {
     font-size: 24px;
   }

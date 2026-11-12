@@ -28,15 +28,15 @@ from app.models.config import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskConfigDiscardedData, WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
-from app.services import System
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_NATIVE,
     CONFIG_BASE_SHARED,
     read_config_base,
 )
-from app.utils import ProcessManager, get_logger
+from app.utils import ProcessManager, get_logger, process
 from app.utils import io as _utils_io
+from app.utils.common.process.scope import current_process_scope
 
 from .AutoProxy import (
     _MAA_CONFIG_FILES,
@@ -176,6 +176,8 @@ class ScriptConfigTask(TaskExecuteBase):
     ) = None
     """配置会话强制过的启动编排项及其会话前原值，回写时逐项还原。"""
 
+    GUI_CLOSE_TIMEOUT = 10.0
+
     def __init__(
         self,
         script_info: ScriptItem,
@@ -196,6 +198,8 @@ class ScriptConfigTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         # 查看会话：只读预览（如「查看历史备份」），结束不回写 MAS 配置
         self.view_only = view_only
+        self._stop_scope = None
+        self._gui_closed_for_stop = False
 
     async def prepare(self):
 
@@ -217,7 +221,22 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.info(f"启动MAA进程: {self.maa_exe_path}")
         self.wait_event.clear()
         await self.maa_process_manager.open_process(self.maa_exe_path)
+        self._stop_scope = current_process_scope.get()
+        if self._stop_scope is not None:
+            self._stop_scope.add_check(
+                "maa_config_save",
+                self._close_gui_for_stop,
+                timeout=self.GUI_CLOSE_TIMEOUT,
+            )
         await self.wait_event.wait()
+
+    async def _close_gui_for_stop(self) -> None:
+        await self.maa_process_manager.close()
+        # 窗口可能先于进程销毁，继续在停止确认的时限内等待退出。
+        maa_process = self.maa_process_manager.process
+        assert maa_process is not None
+        await maa_process.wait()
+        self._gui_closed_for_stop = True
 
     def _mas_owner(self) -> str | None:
         """本会话的 MAS 配置目录 owner；原生来源/无法解析时返回 ``None``。
@@ -253,7 +272,7 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.info(f"开始配置MAA运行参数: 设置账号 {self.cur_user_item.user_id}")
 
         await self.maa_process_manager.close()
-        await System.kill_process(self.maa_exe_path)
+        await process.kill_process(self.maa_exe_path)
 
         # 查看会话的托管级入口：原生目录即所选备份，跳过下发与注入
         if self.view_only and self.cur_user_item.user_id == "Default":
@@ -393,20 +412,27 @@ class ScriptConfigTask(TaskExecuteBase):
 
         # MAA 的改动只堆在内存里，退出时才批量落盘；先把关闭请求发出去等它
         # 自己走完保存流程，直接强杀会让本次设置丢失、下次启动恢复原样
-        await self.maa_process_manager.close()
-        await System.kill_process(self.maa_exe_path)
+        if self._stop_scope is not None and self._stop_scope.requested:
+            # 确认超时后不重新等待，也不把强杀后的旧文件当成保存成功。
+            if not self._gui_closed_for_stop:
+                if not self.view_only:
+                    await self._notify_config_discarded("not_written")
+                return
+        else:
+            await self.maa_process_manager.close()
+            await process.kill_process(self.maa_exe_path)
 
         # 查看会话：只读预览，不把安装 config/ 回写用户目录（安装现场由
         # manager 的任务前快照还原）；GUI 内的改动一律丢弃
         if self.view_only:
             logger.success("MAA 查看结束（只读，不回写配置）")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             return
 
         # 原生来源会话：MAS 零写入，安装目录配置由本体保存并保留，不回写 MAS 目录
         if self._mas_owner() is None:
             logger.success("MAA 原生来源配置已由脚本原生 GUI 保存")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             return
 
         mas_dir = mas_config_dir(self.script_info.script_id, self._mas_owner())
@@ -453,7 +479,7 @@ class ScriptConfigTask(TaskExecuteBase):
             _utils_io.write_file(mas_dir / name, current)
 
     async def on_crash(self, e: Exception):
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
         await Publisher.send(
             id=self.task_info.task_id,

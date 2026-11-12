@@ -102,7 +102,7 @@ onMounted(() => {
 <template>
   <section
     v-if="hasCommunityData || showNoteFeedback"
-    class="home-activity-notes"
+    class="home-activity-notes app-page-surface"
     :aria-label="t('core.home.activityNotes.title')"
   >
     <HomeSignSummary
@@ -163,9 +163,6 @@ onMounted(() => {
   align-items: stretch;
   gap: 12px;
   padding: 8px 12px;
-  background: var(--ant-color-bg-container);
-  border-radius: 12px;
-  border: 1px solid var(--ant-color-border-secondary);
 }
 
 /* 日常情况占一小列 */

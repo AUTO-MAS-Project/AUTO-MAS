@@ -23,6 +23,7 @@ import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_up
 import type { Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post } from '../models/Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post';
 import type { Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post } from '../models/Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post';
 import type { Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post } from '../models/Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post';
+import type { Body_save_oknte_plan_configs_api_scripts_oknte_plan_save_post } from '../models/Body_save_oknte_plan_configs_api_scripts_oknte_plan_save_post';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { CommunityActivityOut } from '../models/CommunityActivityOut';
 import type { CommunityActivityQueryIn } from '../models/CommunityActivityQueryIn';
@@ -116,6 +117,7 @@ import type { NoticeOut } from '../models/NoticeOut';
 import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
 import type { ObsReplayCheckOut } from '../models/ObsReplayCheckOut';
 import type { ObsReplaySaveOut } from '../models/ObsReplaySaveOut';
+import type { OkNtePlanConfigsOut } from '../models/OkNtePlanConfigsOut';
 import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
@@ -153,10 +155,15 @@ import type { ScriptCreateOut } from '../models/ScriptCreateOut';
 import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
 import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
+import type { ScriptLockIn } from '../models/ScriptLockIn';
+import type { ScriptLockOut } from '../models/ScriptLockOut';
 import type { ScriptMirrorCdkIn } from '../models/ScriptMirrorCdkIn';
 import type { ScriptMirrorCdkOut } from '../models/ScriptMirrorCdkOut';
+import type { ScriptOperationIn } from '../models/ScriptOperationIn';
+import type { ScriptOperationOut } from '../models/ScriptOperationOut';
 import type { ScriptReorderIn } from '../models/ScriptReorderIn';
 import type { ScriptShareInspectIn } from '../models/ScriptShareInspectIn';
+import type { ScriptStatusOverviewOut } from '../models/ScriptStatusOverviewOut';
 import type { ScriptTemplateImportIn } from '../models/ScriptTemplateImportIn';
 import type { ScriptUpdateIn } from '../models/ScriptUpdateIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
@@ -190,6 +197,8 @@ import type { TaskboardWeeklyIn } from '../models/TaskboardWeeklyIn';
 import type { TaskboardWeeklyOut } from '../models/TaskboardWeeklyOut';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
+import type { TaskGetIn } from '../models/TaskGetIn';
+import type { TaskGetOut } from '../models/TaskGetOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
 import type { TaskStatusOut } from '../models/TaskStatusOut';
 import type { TaygedoLoginIn } from '../models/TaygedoLoginIn';
@@ -562,17 +571,6 @@ export class Service {
         });
     }
     /**
-     * 获取可选任务下拉框信息
-     * @returns ComboBoxOut Successful Response
-     * @throws ApiError
-     */
-    public static getTaskComboxApiInfoComboxTaskPost(): CancelablePromise<ComboBoxOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/info/combox/task',
-        });
-    }
-    /**
      * 获取可选计划下拉框信息
      * @param requestBody
      * @returns ComboBoxOut Successful Response
@@ -641,6 +639,17 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/notice/confirm',
+        });
+    }
+    /**
+     * 查询托管排期配置与最近历史结果
+     * @returns ScriptStatusOverviewOut Successful Response
+     * @throws ApiError
+     */
+    public static getScriptStatusOverviewApiInfoScriptsStatusGet(): CancelablePromise<ScriptStatusOverviewOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/scripts/status',
         });
     }
     /**
@@ -845,6 +854,25 @@ export class Service {
         });
     }
     /**
+     * 查询配置锁状态
+     * @param requestBody
+     * @returns ScriptLockOut Successful Response
+     * @throws ApiError
+     */
+    public static getScriptLockApiScriptsLockPost(
+        requestBody: ScriptLockIn,
+    ): CancelablePromise<ScriptLockOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/lock',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 更新托管配置信息
      * @param requestBody
      * @returns OutBase Successful Response
@@ -913,6 +941,25 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/config/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Start Operation
+     * @param requestBody
+     * @returns ScriptOperationOut Successful Response
+     * @throws ApiError
+     */
+    public static startOperationApiScriptsOperationsStartPost(
+        requestBody: ScriptOperationIn,
+    ): CancelablePromise<ScriptOperationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/operations/start',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -3250,6 +3297,48 @@ export class Service {
         });
     }
     /**
+     * Get Oknte Plan Configs
+     * @param planId
+     * @param day
+     * @returns OkNtePlanConfigsOut Successful Response
+     * @throws ApiError
+     */
+    public static getOkntePlanConfigsApiScriptsOkntePlanConfigsPost(
+        planId: string,
+        day: string,
+    ): CancelablePromise<OkNtePlanConfigsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/oknte/plan/configs',
+            query: {
+                'plan_id': planId,
+                'day': day,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Save Oknte Plan Configs
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static saveOkntePlanConfigsApiScriptsOkntePlanSavePost(
+        requestBody: Body_save_oknte_plan_configs_api_scripts_oknte_plan_save_post,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/oknte/plan/save',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 列出配置备份（时间倒序；target 取值由专项定义，非法值返回 400）
      * 返回 ``items``（``time`` + 备份时点来源标注 ``base``，倒序）与当前
      * 来源 ``base``（仅三态池，供前端跨来源提示）；非法 target 返回 400。
@@ -3901,6 +3990,25 @@ export class Service {
             path: {
                 'task_id': taskId,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Tasks
+     * @param requestBody
+     * @returns TaskGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getTasksApiDispatchGetPost(
+        requestBody: TaskGetIn,
+    ): CancelablePromise<TaskGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/dispatch/get',
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

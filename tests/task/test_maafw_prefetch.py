@@ -9,6 +9,55 @@ from app.task.MaaFW.tools.core.project_update import updater
 
 
 @pytest.mark.asyncio
+async def test_task_force_stop_kills_installation_thread_process(tmp_path):
+    import asyncio
+    import sys
+    from contextlib import suppress
+
+    import psutil
+
+    from app.task.MaaFW.tools.core.runtime_pool import installer
+    from app.utils.common.process.scope import TaskProcessScope
+
+    scope = TaskProcessScope()
+    marker = tmp_path / "installer.pid"
+    code = (
+        "import os,sys,time; from pathlib import Path; "
+        "Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(30)"
+    )
+
+    def install():
+        with installer.install_process_factory_scope(scope.popen):
+            return installer._run_subprocess(
+                [sys.executable, "-I", "-c", code, str(marker)],
+                cwd=tmp_path,
+                env=None,
+                timeout=60,
+            )
+
+    worker = asyncio.create_task(asyncio.to_thread(install))
+    try:
+        async with asyncio.timeout(5):
+            while not marker.exists():
+                await asyncio.sleep(0.01)
+        process = psutil.Process(int(marker.read_text()))
+        scope.add_check("update", scope.stop_updates, timeout=0.05)
+        await scope.run_checks()
+        assert scope.checks[0].status == "timed_out"
+        await scope.force_close()
+        result = await asyncio.wait_for(worker, 3)
+        assert result.returncode != 0
+        with suppress(psutil.NoSuchProcess):
+            assert process.status() == psutil.STATUS_ZOMBIE
+        with pytest.raises(asyncio.CancelledError):
+            scope.popen([sys.executable, "-c", "pass"])
+    finally:
+        if not scope.closed:
+            await scope.force_close()
+        await asyncio.gather(worker, return_exceptions=True)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "changed,blocked", [(False, False), (True, False), (False, True)]
 )
@@ -53,9 +102,11 @@ async def test_prefetched_candidate_consumption_checks_baseline_and_gate(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("changed", [False, True])
+@pytest.mark.parametrize(
+    "changed,stop_build", [(False, False), (True, False), (False, True)]
+)
 async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
-    tmp_path, monkeypatch, isolated_app_paths, changed
+    tmp_path, monkeypatch, isolated_app_paths, changed, stop_build
 ):
     """同版重新导入改变来源时，旧下载不能登记到新谱系；未变化的来源继续复用。"""
     import asyncio
@@ -68,10 +119,8 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
 
     import httpx
 
-    from app.core import script_update
-    from app.core.task_manager.manager import TaskInfo
     from app.models.config import GlobalConfig, MaaFWConfig
-    from app.models.task import ScriptItem
+    from app.models.task import TaskItem, TaskScriptItem
     from app.task.MaaFW import embedded_manager
     from app.task.MaaFW.tools.core.project_update import transport
     from app.task.MaaFW.tools.embedded import embedded_project
@@ -175,21 +224,25 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
         GlobalConfig.model_validate({"Update": {"GitHubMirror": "Off"}}),
     )
     view = embedded_project.embedded_project_dir(script_id)
-    item = ScriptItem(script_id, "audit", "等待")
-    info = TaskInfo("AutoProxy", "audit", "queue", None, None)
-    monkeypatch.setattr(info, "schedule_on_change", lambda: None)
-    info.script_list = [item]
-    session = script_update.ScriptUpdateSession(
-        info,
-        make_manager=lambda item, *_args, **_kwargs: (
-            embedded_manager.MaaFWEmbeddedManager(item)
-        ),
-        resources=lambda _: ((view.resolve(),), None),
-        scheduled=lambda _: True,
-        config=isolated_app_paths,
+    info = TaskItem(mode="AutoProxy", name="audit")
+    await activate_config(info)
+    item_uid = info.scripts.add(
+        TaskScriptItem, payload={"info": {"script_id": script_id, "name": "audit"}}
     )
-    before = session._identity(0)
-    await session._prefetch(0)
+    await info.scripts.commit()
+    manager = embedded_manager.MaaFWEmbeddedManager(info.scripts[item_uid])
+    from app.core.update import download_observer
+
+    progress = []
+    token = download_observer.set(
+        lambda path, downloaded, total, speed: progress.append((downloaded, total))
+    )
+    try:
+        await manager.prefetch_script_update()
+    finally:
+        download_observer.reset(token)
+    assert any(downloaded == total and total > 0 for downloaded, total in progress)
+    assert info.scripts[item_uid].current.log == ""
     (source / "interface.json").write_text(json.dumps(replacement))
     second = await asyncio.to_thread(
         embedded_project.import_embedded_project, script_id, source
@@ -198,9 +251,6 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
         MaaFWConfig.model_validate({"Embedded": imported_fields(second)})
     )
     assert first["report"] == second["report"]
-    assert session._identity(0) == before
-    manager = await session.take(0)
-    assert manager is not None
     assert json.loads((view / "interface.json").read_text()) == replacement
     marker_before = embedded_project.read_view_marker(view)
     before_consume = list(requests)
@@ -217,6 +267,57 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
         "_prepare_project_environment_sync",
         lambda *_args, **_kwargs: True,
     )
+    if stop_build:
+        from tests.task_stop_support import StopTask
+
+        entered, release = threading.Event(), threading.Event()
+        building = []
+        build = updater.build_from_package
+
+        def blocked_build(*args, **kwargs):
+            result = build(*args, **kwargs)
+            building.append((Path(args[3]), Path(args[4])))
+            entered.set()
+            assert release.wait(5)
+            return result
+
+        from pathlib import Path
+
+        monkeypatch.setattr(updater, "build_from_package", blocked_build)
+
+        class AutoUpdateTask(StopTask):
+            async def main_task(self):
+                self._stop_scope.checks[0].timeout = 0.03
+                await manager._run_project_update("BeforeRun")
+
+        task = AutoUpdateTask(info)
+        task.start()
+        try:
+            async with asyncio.timeout(3):
+                while not entered.is_set():
+                    await asyncio.sleep(0.01)
+            task.request_stop()
+            await asyncio.wait_for(task.accomplish.wait(), 2)
+            unpacked, staging = building[0]
+            assert unpacked.is_dir(), "构建线程尚未结束时，解压输入不能被清理"
+            assert staging.is_dir()
+            release.set()
+            await asyncio.wait_for(task._stop_scope._updates_idle.wait(), 3)
+            assert not staging.exists()
+            assert not unpacked.exists()
+            states = [
+                json.loads(path.read_text())
+                for path in (tmp_path / "operations").glob("*/state.json")
+            ]
+            assert states and states[-1]["status"] == "cancelled"
+            assert json.loads((view / "interface.json").read_text())["version"] == "1.0"
+        finally:
+            release.set()
+            task.request_stop()
+            await asyncio.gather(task._task, return_exceptions=True)
+            async with asyncio.timeout(3):
+                await task._stop_scope._updates_idle.wait()
+        return
     outcome = await manager._invoke_project_update(
         view,
         resolve_update_credentials(config),
@@ -552,3 +653,42 @@ async def test_waiting_for_busy_artifact_cache_observes_stop(
         if download is not None:
             download.cancel()
             await asyncio.gather(download, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "owned,attempt,notified",
+    [(True, 1, True), (False, 1, False), (True, 3, False)],
+)
+async def test_owned_maafw_retry_notifies_before_client_shutdown(
+    owned, attempt, notified
+):
+    """仅在还有下一轮、且需要重启 MAS 自有客户端时撤销预下载。"""
+    from app.core.script_update_queue import script_task_retrying
+    from app.task.MaaFW.tools.embedded.runner_task import MaaFWPluginAutoProxyTask
+
+    runner = object.__new__(MaaFWPluginAutoProxyTask)
+    runner.script_config = SimpleNamespace(Run=SimpleNamespace(RunTimesLimit=3))
+    runner._extra_attempts = 0
+    runner.opened_game = owned
+    runner.opened_emulator = False
+    runner._append_log = lambda _text: None
+    order = []
+
+    async def close_game():
+        order.append("close")
+        return True
+
+    runner._close_emulator = AsyncMock(return_value=True)
+    runner._close_game = close_game
+
+    async def on_retry():
+        order.append("notify")
+
+    token = script_task_retrying.set(on_retry)
+    try:
+        result = await runner._restart_client_before_retry(attempt)
+    finally:
+        script_task_retrying.reset(token)
+    assert result is notified
+    assert order == (["notify", "close"] if notified else [])

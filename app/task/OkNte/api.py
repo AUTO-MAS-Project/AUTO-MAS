@@ -16,12 +16,49 @@
 #   Contact: DLmaster_361@163.com
 """托管管理：OK-NTE 路由与端点专用模型。"""
 
-from fastapi import APIRouter, Body
+from typing import Any
 
+from fastapi import APIRouter, Body
+from pydantic import BaseModel, Field
+
+from app.models.schema import OutBase
 from app.utils import get_logger
 
 router = APIRouter()
 logger = get_logger("托管管理 API")
+
+
+class OkNtePlanRoutineItem(BaseModel):
+    id: str
+    label: str
+    exclusiveGroup: str | None = None
+
+
+class OkNtePlanField(BaseModel):
+    name: str
+    label: str | None = None
+    type: str
+    value: Any = None
+    min: float | None = None
+    max: float | None = None
+    step: float | None = None
+    options: list[str] | None = None
+    children: list["OkNtePlanField"] | None = None
+    itemDefinitions: list[OkNtePlanRoutineItem] | None = None
+
+
+class OkNtePlanFile(BaseModel):
+    filename: str
+    displayName: str
+    taskIndex: int | None
+    fields: list[OkNtePlanField]
+    currentData: dict[str, Any]
+    parseError: bool = False
+    overrides: dict[str, Any]
+
+
+class OkNtePlanConfigsOut(OutBase):
+    data: list[OkNtePlanFile] = Field(default_factory=list)
 
 
 @router.post(
@@ -111,3 +148,34 @@ async def batch_update_oknte_configs(
             "status": "error",
             "message": f"{type(e).__name__}: {str(e)}",
         }
+
+
+@router.post("/oknte/plan/configs", tags=["OKNTE"], response_model=OkNtePlanConfigsOut)
+async def get_oknte_plan_configs(plan_id: str, day: str):
+    from .api_service import plan_configs
+
+    try:
+        return OkNtePlanConfigsOut(data=plan_configs(plan_id, day))
+    except (ValueError, KeyError, OSError) as e:
+        logger.opt(exception=True).warning(f"读取 OK-NTE 计划配置失败: {e}")
+        return OkNtePlanConfigsOut(code=400, status="error", message=str(e))
+
+
+@router.post("/oknte/plan/save", tags=["OKNTE"], response_model=OutBase)
+async def save_oknte_plan_configs(
+    plan_id: str = Body(...),
+    day: str = Body(...),
+    configs: dict = Body(...),
+    replace: bool = Body(False),
+):
+    from app.core import Config
+
+    from .api_service import plan_configs
+
+    try:
+        group, key = plan_configs(plan_id, day, configs, replace=replace)
+        await Config.update_plan(plan_id, {group: {"Key": key}})
+        return OutBase()
+    except (ValueError, KeyError, OSError) as e:
+        logger.opt(exception=True).warning(f"保存 OK-NTE 计划配置失败: {e}")
+        return OutBase(code=400, status="error", message=str(e))

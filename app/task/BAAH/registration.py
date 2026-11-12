@@ -20,17 +20,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.models.config import BAAHConfig
-from app.models.script_contracts import ScriptConfigHandler
-from app.task.registration import ManagerBuildContext, ScriptRegistration
+from app.models.script_contracts import ScriptConfigHandler, ScriptEmulatorBinding
+from app.task.registration import ScriptRegistration
 
 if TYPE_CHECKING:
     from app.models.task import ScriptItem, TaskExecuteBase
     from app.utils.common.config.restore import ConfigRestorePool
 
 
-def build_manager(
-    script_item: ScriptItem, context: ManagerBuildContext
-) -> TaskExecuteBase:
+def build_manager(script_item: ScriptItem) -> TaskExecuteBase:
     from .manager import BAAHManager
 
     return BAAHManager(script_item)
@@ -38,13 +36,12 @@ def build_manager(
 
 def build_config_handler() -> ScriptConfigHandler:
     from app.models.config import BAAHUserConfig
-    from app.task.BAAH.resources import EMULATOR_BINDING as baah_emulator_binding
-    from app.task.BAAH.resources import declare_task_resources as baah_task_resources
 
     return ScriptConfigHandler(
         user_config_class=BAAHUserConfig,
-        task_resources=baah_task_resources,
-        emulator_binding=baah_emulator_binding,
+        emulator_binding=ScriptEmulatorBinding(
+            group="Emulator", id_field="Id", index_field="Index"
+        ),
     )
 
 

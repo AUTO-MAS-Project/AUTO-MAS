@@ -491,8 +491,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   结局与类别**只在** `tools/core/runner/run_events.py` 定义（换传输通道时只搬它）。runner 的各收尾分支用
   `_mark_task_outcome` 记结局，task_end 在下一个任务开始或本轮结束时才发——新增收尾分支要跟着记，漏记的
   按穿出的异常归类。宿主 `tools/embedded/run_record.py` 按尝试归并，存进该尝试 history 的
-  `data["maafw_run_record"]`（snapshot，读用 `read_run_record`，旧历史没有这个键），驱动调度台进度
-  （`UserItem.progress`）与推送（`tools/embedded/run_report.py`：最后一次尝试的逐任务时间线；最后没成功
+  `data["maafw_run_record"]`（snapshot，读用 `read_run_record`，旧历史没有这个键），用于专项报告
+  （`tools/embedded/run_report.py`：最后一次尝试的逐任务时间线；最后没成功
   时单列各次的原地打转 / 单任务超时）。推送里的失败原因只用 `userMessage`（宿主还没投递任务就抛的
   异常用异常原文，同样过 `human_reason` 过滤）与失败类别的固定说法；`errorMessage`（节点链、框架失败
   事件、原生栈）不进推送，仍照旧写进任务日志、history 状态与调度台完成面板。记录是旁路，
@@ -554,9 +554,9 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
     老 binding（实测 5.12.3、5.14.0b1）没给 `MaaControllerPostShell` / `MaaControllerGetShellOutput`
     声明 ctypes 签名，64 位句柄一传就 `OverflowError`；调用前由 `runner._declare_shell_signatures`
     按 5.14.2 的签名补上，binding 自己声明过就不动。
-    **不用 `/proc/diskstats`**：adb shell 用户读它和 `/sys/block/*/stat` 都被 SELinux 拒绝（API 34 魔改
-    AVD，Enforcing），pgpgin 不需要 root、不随 dm 叠层重复计数，实测与整块盘 diskstats 读速误差 < 2%。阈值、窗口、采样间隔是 `runner.py` 的 `DISK_QUIET_*` 常量。核心只认这个
-    模式，不判断设备类型。真机数据（2026-10-16 魔改 AVD 实测）：终末地加载页和动态标题都一直在动、
+    **不用 `/proc/diskstats`**：adb shell 用户读它和 `/sys/block/*/stat` 都被 SELinux 拒绝（API 34 ModAVD，
+    Enforcing），pgpgin 不需要 root、不随 dm 叠层重复计数，实测与整块盘 diskstats 读速误差 < 2%。阈值、窗口、采样间隔是 `runner.py` 的 `DISK_QUIET_*` 常量。核心只认这个
+    模式，不判断设备类型。真机数据（2026-10-16 ModAVD 实测）：终末地加载页和动态标题都一直在动、
     都有内容，「20s 有内容」在拉起后 37~48s、仍在加载资源时就放行，冷启动到标题要 76~96s；CPU 与
     出帧也是标题比加载更忙（星铁标题只有 35 fps），都不能当判据；读盘量这套阈值在终末地 8 轮、
     1999 1 轮冷启动里都在到标题后 7~15s 放行。
@@ -579,7 +579,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
       - 实测两轮编译都改在标题后 8~9s 放行，其余各轮的放行时刻不变。
       - 这一条只为挡编译。星铁 logo / 健康提示页本身有 48~60 帧，加载页等网络时有 60 帧，出帧判据
         都挡不住（阈值取 20 时 logo 页那轮被挡住，是因为碰巧有一秒只有 17.9 帧）。
-    - 出帧数的来源：魔改 AVD 读截图共享内存里的帧号，其他模拟器读 SurfaceFlinger 的帧时间戳。
+    - 出帧数的来源：ModAVD 读截图共享内存里的帧号，其他模拟器读 SurfaceFlinger 的帧时间戳。
     通用默认等待时间因此是 120s（`MaaFWConfig.DEFAULT_GAME_WAIT_TIME`），M9A 特调 15s。
 - **连上控制器后先截一张图**（`runner._prime_first_screencap`，每次连接一次，在启动画面判定与
   首个任务之前），不是多余代码：控制器没截过图时 binding 的 `cached_image` 抛

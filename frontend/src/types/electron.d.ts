@@ -54,14 +54,6 @@ export interface ElectronConfig {
   [key: string]: unknown
 }
 
-export interface ElectronMirrorSource {
-  name: string
-  url: string
-  type: 'official' | 'mirror'
-  description: string
-}
-
-export type ElectronMirrorType = 'python' | 'get_pip' | 'git' | 'repo' | 'pip_mirror'
 export type ElectronApiEndpointKey = 'local' | 'websocket'
 
 // ==================== Runtime 后端更新 ====================
@@ -149,8 +141,6 @@ export interface RuntimeInitContext {
   mode: RuntimeInitMode
   /** Runtime 没给 logPath 时「打开日志」退回的文件。 */
   fallbackLogPath: string
-  /** 各段在 Runtime 链路下可选的镜像键；空数组表示该段不展示镜像选择。 */
-  mirrorKeys: Record<string, string[]>
 }
 
 /** Runtime doctor 的单项检查结果。 */
@@ -187,14 +177,13 @@ export interface RuntimeFailureFields {
 export type InstallStageResult = {
   success: boolean
   error?: string
+  failedStage?: string
 } & RuntimeFailureFields
 
 // ==================== Runtime 启动模式 ====================
 
-/** Runtime 启动模式的持久化设置取值；`auto` 表示跟随构建默认值。 */
-export type RuntimeLaunchModeSetting = 'auto' | 'development' | 'managed'
 /** 最终生效值来自哪一级。 */
-export type RuntimeLaunchModeSource = 'env' | 'setting' | 'default'
+export type RuntimeLaunchModeSource = 'env' | 'default'
 
 /** 日志页增量读取的返回，与主进程 electron/services/logFileReader.ts 一致 */
 export interface LogIncrement {
@@ -217,9 +206,7 @@ export interface BackendStatus {
 }
 
 export interface RuntimeLaunchModeState {
-  /** 持久化设置里存的原始值，用于回填选择控件。 */
-  persisted: RuntimeLaunchModeSetting
-  /** 本次实际生效的模式（`auto` 已被解析成具体值）。 */
+  /** 本次实际生效的模式。 */
   mode: 'development' | 'managed'
   source: RuntimeLaunchModeSource
 }
@@ -318,10 +305,9 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   getInitializedVersion: () => Promise<string | null>
   setInitializedVersion: (version: string) => Promise<boolean>
 
-  // Runtime 启动模式：持久化设置 + 当前生效值与来源，重启后生效。
+  // Runtime 当前生效模式与来源（只读）。
   // `mode` 同时是标题栏更新入口走哪条链路的判据。
   getRuntimeLaunchMode: () => Promise<RuntimeLaunchModeState>
-  setRuntimeLaunchMode: (mode: RuntimeLaunchModeSetting) => Promise<RuntimeLaunchModeState>
 
   // 托盘设置
   updateTraySettings: (uiSettings: unknown) => Promise<boolean>
@@ -507,22 +493,11 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   // ==================== 初始化 API ====================
 
   // 单步初始化API
-  initMirrors: () => Promise<{ success: boolean; error?: string }>
-  // rebuild 对应失败态的「重建环境」按钮，只在 Runtime 链路下有意义
-  installPython: (selectedMirror?: string, rebuild?: boolean) => Promise<InstallStageResult>
-  installPip: (selectedMirror?: string, rebuild?: boolean) => Promise<InstallStageResult>
-  installGit: (selectedMirror?: string, rebuild?: boolean) => Promise<InstallStageResult>
-  pullRepository: (
-    targetBranch?: string,
-    selectedMirror?: string,
-    rebuild?: boolean
-  ) => Promise<InstallStageResult>
-  installDependencies: (
-    selectedMirror?: string,
-    rebuild?: boolean
-  ) => Promise<InstallStageResult & { skipped?: boolean }>
-  getMirrors: (type: ElectronMirrorType) => Promise<ElectronMirrorSource[]>
-  /** 初始化界面开局问一次：走没走 Runtime、回退日志文件、各段可用镜像键。 */
+  // rebuild 对应失败态的「重建环境」按钮。
+  installPython: (rebuild?: boolean) => Promise<InstallStageResult>
+  pullRepository: (rebuild?: boolean) => Promise<InstallStageResult>
+  installDependencies: (rebuild?: boolean) => Promise<InstallStageResult & { skipped?: boolean }>
+  /** 初始化界面的运行模式与回退日志文件。 */
   getRuntimeInitContext: () => Promise<RuntimeInitContext>
   updateRuntimeBinary: () => Promise<RuntimeBinaryUpdateResult>
   checkRuntimeBinaryUpdate: () => Promise<RuntimeBinaryUpdateCheck>
@@ -581,18 +556,6 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   cancelBackendUpdate: () => Promise<{ accepted: boolean; forwarded: boolean }>
   onBackendUpdateProgress: (callback: (progress: RuntimeUpdateProgress) => void) => void
   removeBackendUpdateProgressListener?: () => void
-
-  // 监听单步进度
-  onPythonProgress: (callback: (progress: unknown) => void) => void
-  removePythonProgressListener?: () => void
-  onPipProgress: (callback: (progress: unknown) => void) => void
-  removePipProgressListener?: () => void
-  onGitProgress: (callback: (progress: unknown) => void) => void
-  removeGitProgressListener?: () => void
-  onRepositoryProgress: (callback: (progress: unknown) => void) => void
-  removeRepositoryProgressListener?: () => void
-  onDependencyProgress: (callback: (progress: unknown) => void) => void
-  removeDependencyProgressListener?: () => void
 
   // 监听完整初始化进度
   onInitializationProgress: (

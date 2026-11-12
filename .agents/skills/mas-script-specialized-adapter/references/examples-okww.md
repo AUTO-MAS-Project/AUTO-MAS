@@ -8,7 +8,7 @@ Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -
 
 - **只支持官方资源与官方启动器，不接管 WeGame 侧**。Electron 发现、前端保存、后端解析都不得回退到 WeGame 路径。这是产品决定，不是尚未实现。
 - 前端只存**官方启动器完整路径**，由后端读启动器缓存解析真实客户端 exe——**启动器路径与游戏进程路径职责分离**，不要在前端直接存客户端路径。
-- MAS 任务只开放 `1`（DailyTask）与 `7`（MultiAccountDailyTask）；旧值 `2` 读取时纠正为 `7`。
+- 托管级 `Game.AccountSwitchMethod` 选择 MAS（推荐）、OKWW_SINGLE 逐账号原生切换、OKWW 批次或旧配置兼容 NONE。逐账号原生模式每次只传当前用户，沿用逐用户检查、重试和配置恢复，某账号失败后继续下一个；OKWW 仍保持批量语义。用户明确授权临时依赖上游多账号配置和结果格式；待上游提供稳定批次接口后替换。OKWW 只打包本轮参与用户，以本轮结果排除成功账号再补跑；原始参与名单和节点保留至收尾。手机号输入支持完整大陆手机号、前三后四的星号形式或七位标识，下发前统一转为登录列表去星号后的键；邮箱和显示名沿用上游匹配规则。只填后四位及转换后重复须在启动前报错。
 
 ## 三态来源与独立覆写常规配置
 
@@ -57,7 +57,7 @@ Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -
 
 `Window closed exit_event.is_set` 是关窗日志，任何退出路径都会打，不能作完成依据。`connected:0` 也不能进内置 fatal：ok-ww 成功后按 `-e` 关游戏同样会打它（只比完成日志晚约 5s），日志监控若跨过这 5s，两行会落进同一批——所以未连接只在没有完成日志时判定。
 
-成功标记有两个、任一命中即成功，都归上游所有（ok-ww 走 `AUTO_UPDATE`，MAS 不钉版本），改判据前先核对上游事实：
+日常任务成功标记有两个、任一命中即成功；原生多账号任务只认框架退出语，单账号日常完成不能提前结束整批。这些判据均归上游所有（ok-ww 走 `AUTO_UPDATE`，MAS 不钉版本），改判据前先核对上游事实：
 
 - **框架退出语** `Successfully Executed Task, Exiting Game and App!`（ok-script 框架 `ok/task/TaskExecutor.py`）：`DailyTask.run()` 正常返回后才打印，失败路径走异常分支不打印；logger 硬编码英文、不走 gettext，是唯一不受 ok-ww 界面语言影响的成功标志。MAS 固定传 `-e`（exit_after_task），成功后必打，比关游戏的 `connected:0` 早约 5 秒。
 - **旧版英文完成日志** `Daily Task Completed`（`src/task/DailyTask.py` 的 `run()` 末尾）：v3.7.4 源码核实为硬编码英文（其框架 ok-script 2.0.8 已有退出语，双判据均命中），保留既有判据兜底以覆盖更早无法核实的版本。新版起该文案走 gettext（中文环境输出「每日任务已完成」），不要用翻译文案当标记——「每日任务已完成，开始传送并刷取4C声骸」是 farm 4C 追加阶段预告，子串命中会在中途误判成功杀进程；退出语已覆盖全部语言。
@@ -68,10 +68,10 @@ Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -
 
 进程清理至少覆盖：ProcessManager 管理的进程、`ok-ww.exe`、`data/apps/ok-ww/python/pythonw.exe`、`Game.Enabled` 时解析出的客户端进程。**每步独立捕获异常**，一个失败不阻断后续。
 
-## 账号切换（MAS 强制切号）
+## 账号切换（MAS 运行前切号）
 
-游戏配置区 `Game.AccountSwitch`（是/否，默认否）控制游戏启动后是否由 MAS 按
-用户手机号后 4 位强制切换登录账号；开关依赖 `Game.Enabled`（未启用游戏配置
+游戏配置区 `Game.AccountSwitchMethod=MAS` 控制游戏启动后是否由 MAS 按
+用户手机号后 4 位切换登录账号（原生多账号任务不走此逻辑）；该方式依赖 `Game.Enabled`（未启用游戏配置
 则不生效），用户未填写手机号时跳过不切换。
 
 OCR 走共享工具 `app/tools/common/ocr/__init__.py`（用法见 [ocr-tools.md](./ocr-tools.md)），
@@ -130,3 +130,5 @@ ok-ww 已接入通用配置恢复（`ConfigRestoreSection`），mas 池形态与
 - [ ] 「游戏更新成功」命中后至少再跑一轮：`RunTimesLimit=1` 不终局，状态文案「即将重启任务」与实际行为一致
 - [ ] 配置会话离开页面或超时会停止任务并释放锁
 - [ ] schema、表单、运行时三者无虚假功能分支
+
+- 批次切号失败按上游公开日志归属：`当前账号` 开始切号，账号登录成功后进入任务阶段；`状态 执行失败` 按阶段记失败节点与账号原因。ComboBox 回退 OCR 仅是警告，不提前判失败；新轮次开始清空日志账号归属，关闭节点采集仍保留失败原因。

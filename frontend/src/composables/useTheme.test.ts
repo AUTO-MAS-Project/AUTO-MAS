@@ -29,7 +29,7 @@ beforeEach(() => {
   const properties = new Map<string, string>()
   vi.stubGlobal('document', {
     documentElement: {
-      classList: { add: vi.fn(), remove: vi.fn() },
+      classList: { add: vi.fn(), remove: vi.fn(), toggle: vi.fn() },
       style: {
         setProperty: (name: string, value: string) => properties.set(name, value),
         getPropertyValue: (name: string) => properties.get(name) ?? '',
@@ -76,6 +76,53 @@ describe('theme link contrast', () => {
       ]) {
         expect(readability(color, background)).toBeGreaterThanOrEqual(4.5)
       }
+    }
+  })
+})
+
+describe('cursor size across windows', () => {
+  it('updates an already open log window and keeps newer local previews until save completes', async () => {
+    const listeners: ((config: { cursorSizePx: number | null }) => void)[] = []
+    const { saveConfig } = await import('@/utils/config')
+    const { observePreference } = await import('@/utils/preferenceAnalytics')
+    vi.mocked(observePreference).mockImplementation((_kind, _preset, save) => save())
+    vi.mocked(saveConfig).mockImplementation(async patch => {
+      for (const listener of listeners) listener({ cursorSizePx: patch.cursorSizePx ?? null })
+    })
+    Object.assign(window.electronAPI, {
+      onThemeConfigChanged: (listener: (typeof listeners)[number]) => listeners.push(listener),
+    })
+
+    vi.useFakeTimers()
+    try {
+      const main = (await import('./useTheme')).useTheme()
+      await main.initTheme({ cursorSizePx: 24 })
+      vi.resetModules()
+      const logs = (await import('./useTheme')).useTheme()
+      await logs.initTheme({ cursorSizePx: 24 })
+      const onError = vi.fn()
+
+      main.previewCursorSize(48, onError)
+      expect(main.cursorSizePx.value).toBe(48)
+      expect(logs.cursorSizePx.value).toBe(24)
+      await vi.advanceTimersByTimeAsync(300)
+      expect(logs.cursorSizePx.value).toBe(48)
+
+      main.previewCursorSize(null, onError)
+      await vi.advanceTimersByTimeAsync(300)
+      expect(main.cursorSizePx.value).toBeNull()
+      expect(logs.cursorSizePx.value).toBeNull()
+
+      main.previewCursorSize(32, onError)
+      await saveConfig({ cursorSizePx: 48 })
+      expect(main.cursorSizePx.value).toBe(32)
+      expect(logs.cursorSizePx.value).toBe(48)
+      vi.mocked(saveConfig).mockRejectedValueOnce(new Error('write failed'))
+      await vi.advanceTimersByTimeAsync(300)
+      expect(main.cursorSizePx.value).toBe(48)
+      expect(onError).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
     }
   })
 })

@@ -63,6 +63,7 @@ from .plan import (
     MaaEndPlanConfig,
     MaaPlanConfig,
     MSSPlanConfig,
+    OkNtePlanConfig,
     UniversalPlanConfig,
 )
 from .queue import Webhook
@@ -2701,6 +2702,16 @@ class M9AConfig(MaaFWConfig):
     )
 
     class RunFields(MaaFWConfig.RunFields):
+        LoginMode: Literal["Project", "Mas"] = Field(
+            default_factory=lambda: "Project",
+            description="B 服登录方式。Project：由 M9A 项目的启动任务自己登录（上游「切换账号」仍只声明官服）；"
+            "Mas：由 MAS 完成 B 服登录——拉起 B 服客户端后处理隐私政策提示、在登录记录里选择已保存的账号，"
+            "回到标题页后再交给 M9A 的启动任务进游戏并照常运行。Mas 需要 ADB controller 并在「游戏包名」里"
+            "填写 B 服包名（com.shenlan.m.reverse1999.bilibili），账号填登录记录里显示的完整昵称，"
+            "且不再向 M9A 下发「切换账号」。自动同意隐私提示复用全局「同意哔哩哔哩用户协议」开关（默认关闭），"
+            "未开启时登录会停下并提示手动处理。",
+        )
+
         TaskTimeLimitOverrides: JsonDictString = Field(
             default_factory=lambda: (
                 '{"智能均衡刷材料": 45, "自动深眠": 60, "自动醒梦": 60}'
@@ -2909,6 +2920,10 @@ class OkwwUserConfig(DomainEntry):
     OKWW_TASK_BOOK: ClassVar = {1: "日常"}
 
     class DataFields(ConfigGroup):
+        LastTaskName: Literal["", "DailyTask", "MultiAccountConfigTask"] = Field(
+            default="", description="上次运行的 ok-ww 任务名称；空值沿用历史任务序号"
+        )
+
         LastProxyDate: Annotated[
             datetime, tz(_utils_constants.UTC4), ui(format="date")
         ] = Field(
@@ -3062,7 +3077,7 @@ class OkwwUserConfig(DomainEntry):
             "Tacet Suppression", "Forgery Challenge", "Simulation Challenge"
         ] = Field(
             default_factory=lambda: "Tacet Suppression",
-            description="MAS 仅接管 DailyTask 及 DailyTask 高频设置；账号切换由 MAS 侧 account_switch 实现，不再暴露上游 MultiAccountDailyTask。 每日任务体力用途",
+            description="每日任务体力用途（仅日常任务且开启覆写常规配置时生效）",
         )
 
     Task: TaskFields = Field(default_factory=TaskFields)
@@ -3072,10 +3087,15 @@ class OkwwUserConfig(DomainEntry):
         tags = []
         last_status = self.Data.LastProxyStatus
         tags.append(
-            {"text": f"上次：{_tag_last_status(last_status)}", "color": "green"}
+            {
+                "text": f"上次：{_tag_last_status(last_status)}",
+                "color": "red" if last_status == "失败" else "green",
+            }
         )
         last_task_index = int(self.Data.LastTaskIndex or 0)
         task_label = self.OKWW_TASK_BOOK.get(last_task_index, "未知")
+        if self.Data.LastTaskName == "MultiAccountConfigTask":
+            task_label = "原生多账号配置"
         tags.append({"text": f"任务：{task_label}", "color": "orange"})
         tags.append(_tag_remained_days(self))
         tags.append(_tag_notes(self))
@@ -3138,6 +3158,16 @@ class OkNteUserConfig(DomainEntry):
     Data: DataFields = Field(default_factory=DataFields)
 
     class InfoFields(ConfigGroup):
+        PlanMode: Annotated[
+            UUID | Literal["Fixed"],
+            ref(
+                "PlanConfig",
+                default="Fixed",
+                allow_values=("Fixed",),
+                entry_types=(OkNtePlanConfig,),
+            ),
+        ] = Field(default="Fixed", description="固定配置或 OkNte 计划表")
+
         Base: Annotated[
             Literal["shared", "independent", "native"],
             legacy(
@@ -3251,7 +3281,10 @@ class OkNteUserConfig(DomainEntry):
         tags = []
         last_status = self.Data.LastProxyStatus
         tags.append(
-            {"text": f"上次：{_tag_last_status(last_status)}", "color": "green"}
+            {
+                "text": f"上次：{_tag_last_status(last_status)}",
+                "color": "red" if last_status == "失败" else "green",
+            }
         )
         last_task_index = int(self.Data.LastTaskIndex or 0)
         task_label = self.OKNTE_TASK_BOOK.get(last_task_index, "未知")
@@ -3486,7 +3519,10 @@ class BetterGIUserConfig(DomainEntry):
         tags = []
         last_status = self.Data.LastProxyStatus
         tags.append(
-            {"text": f"上次：{_tag_last_status(last_status)}", "color": "green"}
+            {
+                "text": f"上次：{_tag_last_status(last_status)}",
+                "color": "red" if last_status == "失败" else "green",
+            }
         )
         if self.Info.IfQuickConfig:
             config_name = "MAS独立配置"
@@ -3722,14 +3758,26 @@ class OkwwConfig(DomainEntry):
     "OK-WW 配置（ok-script 线）"
 
     class GameFields(ConfigGroup):
+        AccountSwitchMethod: Annotated[
+            Literal["NONE", "MAS", "OKWW_SINGLE", "OKWW"],
+            legacy(
+                group="Game",
+                name="AccountSwitch",
+                convert=lambda value: "MAS" if value else "NONE",
+            ),
+        ] = Field(
+            default="MAS",
+            description="账号切换方式：NONE 不切换；MAS 切换（推荐）；OKWW_SINGLE 由脚本逐账号切换、分别运行和重试；OKWW 批量切换并补跑未完成账号",
+        )
+
         AccountSwitch: bool = Field(
             default_factory=lambda: False,
-            description="运行前强制切换账号（依赖游戏配置启用；用户未填手机号时不切换）",
+            description="运行前由 MAS 切换账号（仅日常任务且游戏配置启用时生效；用户未填手机号时不切换）",
         )
 
         Arguments: CliArgumentString = Field(
             default_factory=lambda: "",
-            description="鸣潮启动参数（直启时 MAS 会额外内置 -krqlv=hd，与本参数并存）",
+            description="鸣潮启动参数（直启默认补充 -krqlv=hd，可用 -krqlv=sd 或 -krqlv=uhd 覆盖，需已安装对应资源）",
         )
 
         ClientPath: FilePath = Field(
@@ -3753,7 +3801,7 @@ class OkwwConfig(DomainEntry):
 
         Type: Literal["Client", "Launcher"] = Field(
             default_factory=lambda: "Client",
-            description="游戏启动方式：Client=直启客户端（内置 -krqlv=hd），Launcher=经官方启动器 默认值必须排首位：值非法时 correct() 回落到 options[0]",
+            description="游戏启动方式：Client=直启客户端（资源档位默认 HD，可通过启动参数覆盖），Launcher=经官方启动器 默认值必须排首位：值非法时 correct() 回落到 options[0]",
         )
 
         UpdateFullSyncLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
@@ -3816,6 +3864,10 @@ class OkNteConfig(DomainEntry):
         CloseOnFinish: bool = Field(
             description="任务结束后是否关闭游戏", default_factory=lambda: True
         )
+
+        ClosePolicyMigrationVersion: Annotated[
+            int, Field(ge=0, le=1), ui(visibility=UiVisibility.HIDE)
+        ] = Field(default=1, description="独立关闭游戏策略迁移版本")
 
         Enabled: bool = Field(
             description="游戏相关功能是否启用", default_factory=lambda: False
@@ -3973,9 +4025,14 @@ class OkNteConfig(DomainEntry):
 
     @classmethod
     def normalize_payload(cls, data):
-        data = deepcopy(data)
-        migrated_data, migrated = _migrate_oknte_launch_mode_default(data)
-        return migrated_data
+        data, _ = _migrate_oknte_launch_mode_default(data)
+        game = data.get("Game")
+        if isinstance(game, dict) and not game.get("ClosePolicyMigrationVersion"):
+            # 旧版关闭受托管总开关限制；只转换一次，后续保留用户独立开启的选择。
+            if not game.get("Enabled", False):
+                game["CloseOnFinish"] = False
+            game["ClosePolicyMigrationVersion"] = 1
+        return data
 
 
 class BetterGIConfig(DomainEntry):

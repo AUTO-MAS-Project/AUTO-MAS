@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { TaskMode } from '@/api'
 import { computed, defineAsyncComponent, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ConfigProvider } from 'ant-design-vue'
@@ -24,8 +25,8 @@ import { useLocale } from './composables/useLocale.ts'
 import { useDesktopMascotHost } from './composables/useDesktopMascotHost'
 import { useTrayTaskActions } from './composables/useTrayTaskActions'
 import { isBackendRuntimeUpdating } from './composables/useBackendRuntimeUpdate'
-import { useSchedulerLogic } from './views/scheduler/useSchedulerLogic'
-import { TaskCreateIn } from './api'
+import { useSchedulerStore } from '@/stores/scheduler'
+import { type TaskCreateIn } from './api'
 import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import { useBackendI18nStore } from '@/stores/backendI18n'
 import I18nResourceGate from '@/components/I18nResourceGate.vue'
@@ -61,7 +62,7 @@ const isStandalonePage = computed(
   () => route.name === 'Logs' || route.name === 'VirtualDisplayPrompt'
 )
 
-const { trackStartedTask } = useSchedulerLogic()
+const { trackStartedTask } = useSchedulerStore()
 useDesktopMascotHost({
   isStandalonePage,
   isInitializationPage: computed(() => isInitializationPage.value || !languageResources.ready),
@@ -78,7 +79,7 @@ useTrayTaskActions({
   onStarted: task =>
     trackStartedTask({
       ...task,
-      selectedMode: TaskCreateIn.mode.AUTO_PROXY,
+      selectedMode: TaskMode.AUTO_PROXY,
       modeLabel: t('core.scheduler.mode.autoProxy'),
     }),
 })

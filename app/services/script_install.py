@@ -16,7 +16,10 @@ import threading
 import zipfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import BinaryIO
 
 from app.core import Config
 from app.utils import update_files
@@ -24,6 +27,132 @@ from app.utils import update_files
 
 class InstallUnsafeError(RuntimeError):
     """不能确认安装完整或仍有进程访问，必须停止启动。"""
+
+
+@dataclass
+class _InstallationWork:
+    active: bool = True
+    workers: set[asyncio.Task] = field(default_factory=set)
+
+
+_installation_work: ContextVar[tuple[_InstallationWork, ...]] = ContextVar(
+    "installation_work", default=()
+)
+
+
+def _workers_finished(workers: set[asyncio.Task]) -> asyncio.Task:
+    from app.utils.common.process.scope import detached_process_context
+
+    async def finished() -> None:
+        # 文件线程抛错也表示已停写；错误现场仍由安装事务标记保护。
+        await asyncio.gather(*workers, return_exceptions=True)
+
+    return asyncio.create_task(finished(), context=detached_process_context())
+
+
+_pending_processes: dict[str, asyncio.Future | None] = {}
+_deferred_locks: dict[str, list[BinaryIO]] = {}
+_process_lock = threading.Lock()
+
+
+def assert_no_pending_process(root: Path) -> None:
+    """后台安装仍在收尾时，禁止同一安装的恢复、启动与再次写入。"""
+    with _process_lock:
+        key = _key(root)
+        if key in _pending_processes:
+            message = (
+                "进程退出状态未确认，请先关闭相关程序并重启 MAS 后重试"
+                if _pending_processes[key] is None
+                else "更新进程尚未退出，已保留安装现场，请稍后重试"
+            )
+            raise InstallUnsafeError(message)
+
+
+def _release_access(handle: BinaryIO) -> None:
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle, fcntl.LOCK_UN)
+    finally:
+        handle.close()
+
+
+def defer_installation_release(
+    root: Path, completion: asyncio.Future | None = None
+) -> None:
+    """任务可结束，但跨进程目录锁要等原生安装真正完成才释放。"""
+    if completion is None:
+        from app.utils.common.process.scope import (
+            current_process_scope,
+            detached_process_context,
+        )
+
+        scope = current_process_scope.get()
+        if scope is not None:
+
+            async def confirmed_force_cleanup() -> None:
+                await scope.finished.wait()
+                if scope.cleanup_failed:
+                    raise InstallUnsafeError("任务强制清理失败，保留安装占用")
+                # 创建句柄晚到时，业务任务可先结束，目录仍须等它被回收。
+                results = await asyncio.gather(
+                    *tuple(scope.pending_creations), return_exceptions=True
+                )
+                from app.utils.common.process.runner import (
+                    is_process_cleanup_unconfirmed,
+                )
+
+                for result in results:
+                    if isinstance(
+                        result, BaseException
+                    ) and is_process_cleanup_unconfirmed(result):
+                        raise InstallUnsafeError(
+                            "晚到进程未确认退出，保留安装占用"
+                        ) from result
+
+            completion = asyncio.create_task(
+                confirmed_force_cleanup(), context=detached_process_context()
+            )
+    key = _key(root)
+    with _process_lock:
+        if key in _pending_processes:
+            previous = _pending_processes[key]
+            if previous is None:
+                completion = None
+            elif completion is not None and previous is not completion:
+                from app.utils.common.process.scope import detached_process_context
+
+                async def both(prior=previous, later=completion) -> None:
+                    await asyncio.gather(prior, later)
+
+                completion = asyncio.create_task(
+                    both(), context=detached_process_context()
+                )
+        _pending_processes[key] = completion
+
+    # 进程树已失去归属、无法再证明停写时保留占用到宿主退出，不能猜测安全。
+    if completion is None:
+        return
+
+    def finished(task: asyncio.Future) -> None:
+        # 取消等待或读取失败不能证明安装器已退出；此时锁保留到宿主退出。
+        if task.cancelled() or task.exception() is not None:
+            return
+        with _process_lock:
+            if _pending_processes.get(key) is not task:
+                return
+            _pending_processes.pop(key)
+            handles = _deferred_locks.pop(key, [])
+        for handle in handles:
+            _release_access(handle)
+
+    completion.add_done_callback(finished)
 
 
 def _key(root: Path) -> str:
@@ -50,7 +179,12 @@ def installation_access(root: Path) -> Iterator[None]:
     """跨 MAS 进程互斥；调用方须持有到任务/配置恢复结束。"""
     directory = Path(tempfile.gettempdir()) / "auto-mas-install-locks"
     directory.mkdir(parents=True, exist_ok=True)
-    with (directory / f"{_key(root)}.lock").open("a+b") as handle:
+    key = _key(root)
+    assert_no_pending_process(root)
+    handle = (directory / f"{key}.lock").open("a+b")
+    acquired = False
+    work = _InstallationWork()
+    try:
         if handle.seek(0, 2) == 0:
             handle.write(b"\0")
             handle.flush()
@@ -68,33 +202,60 @@ def installation_access(root: Path) -> Iterator[None]:
             raise InstallUnsafeError(
                 "脚本安装正被另一个任务使用，请稍后重试"
             ) from error
-        try:
-            yield
-        finally:
-            if os.name == "nt":
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        acquired = True
+        _installation_work.set(
+            tuple(item for item in _installation_work.get() if item.active) + (work,)
+        )
+        yield
+    finally:
+        work.active = False
+        remaining = {task for task in work.workers if not task.done()}
+        if acquired and remaining:
+            defer_installation_release(root, _workers_finished(remaining))
+        with _process_lock:
+            deferred = acquired and key in _pending_processes
+            if deferred:
+                _deferred_locks.setdefault(key, []).append(handle)
+        if not deferred:
+            if acquired:
+                _release_access(handle)
             else:
-                fcntl.flock(handle, fcntl.LOCK_UN)
+                handle.close()
 
 
 async def run_worker(function: Callable, *args, **kwargs):
     """取消后等待文件操作确实停止，线程不能在任务退出后继续写入。"""
     cancelled = threading.Event()
     work = asyncio.create_task(asyncio.to_thread(function, *args, cancelled, **kwargs))
+    from app.utils.common.process.scope import current_process_scope
+
+    scope = current_process_scope.get()
+    if scope is not None:
+        scope.retain_worker(work)
+    for access in _installation_work.get():
+        if access.active:
+            access.workers.add(work)
+            work.add_done_callback(access.workers.discard)
     try:
         return await asyncio.shield(work)
     except asyncio.CancelledError:
         cancelled.set()
         while not work.done():
+            if scope is not None and scope.closed:
+                # 确认已到期：不再等线程，锁由 installation_access 交给真实完成者。
+                break
             try:
                 await asyncio.shield(work)
             except (asyncio.CancelledError, Exception):
                 if work.done():
                     break
         # 取出异常，取消的任务仍以 CancelledError 收口。
-        if not work.cancelled():
+        if work.done() and not work.cancelled():
             work.exception()
+        elif not work.done():
+            work.add_done_callback(
+                lambda done: None if done.cancelled() else done.exception()
+            )
         raise
 
 

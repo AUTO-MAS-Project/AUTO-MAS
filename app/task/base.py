@@ -23,6 +23,7 @@ from app.services import execute_script_task
 from app.task.failure_capture_core import FailureCapture
 from app.task.proxy_helpers import push_dispatch_log
 from app.utils import get_logger
+from app.utils.common.process.scope import detached_process_context
 
 logger = get_logger("脚本运行")
 
@@ -48,7 +49,7 @@ def _running_inflight_detection(script_id: str) -> asyncio.Task | None:
         return task
     _INFLIGHT_DETECTIONS.pop(script_id, None)
     # 取回异常，避免「Task exception was never retrieved」告警
-    with suppress(Exception):
+    with suppress(asyncio.CancelledError, Exception):
         task.exception()
     return None
 
@@ -68,15 +69,17 @@ type ProxyScriptConfigType = (
 
 
 class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecuteBase):
+    """[兼容旧专项] 旧单用户自动代理基类；新 L4 自动代理执行器继承 AutoProxyWorker。"""
+
     _failure_capture: FailureCapture | None = None
 
     def _on_finalize_cancel_requested(self) -> None:
+        """[兼容旧专项] 仅桥接旧专项取消；新执行器在所属层响应取消。"""
         if self._failure_capture is not None:
             self.stopped_manually = True
             self._failure_capture.cancel()
 
     # 总时限涵盖等待和全部重试，不随日志推进重置；收尾必须完成后再切换账号。
-    wait_for_finalizer_on_cancel = True
 
     script_info: ScriptItem
     script_config: S
@@ -127,7 +130,7 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
                 logger.opt(exception=True).warning(message)
                 logs = self.cur_user_item.iter_history_logs()
                 if logs:
-                    logs[-1][1].content.append(message + "\n")
+                    await logs[-1][1].append_content(message + "\n")
 
     async def skip_on_game_maintenance(self, detect: Callable[[], str | None]) -> bool:
         """游戏画面维护检测：命中维护弹窗文本则把当前账号记为维护跳过。
@@ -144,14 +147,18 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
         if maintenance_text is None:
             return False
 
+        await self.mark_game_maintenance_skip(maintenance_text)
+        return True
+
+    async def mark_game_maintenance_skip(self, maintenance_text: str) -> None:
+        """记录已确认的维护结果，不重新触发后台画面检测。"""
         reason = f"游戏维护中，本次跳过（画面检测到：{maintenance_text}）"
-        self.cur_user_item.status = "跳过"
-        self.cur_user_item.maintenance_skipped = True
-        self.cur_user_log.status = reason
-        self.cur_user_log.content = [reason]
+        await self.cur_user_item.set_state(status="跳过")
+        self.user_state(self.cur_user_item).maintenance_skipped = True
+        await self.cur_user_log.set_state(status=reason)
+        await self.cur_user_log.set_state(content=[reason])
         logger.info(f"账号 {self.cur_user_item.name} - {reason}")
         await self.notify_maintenance_skip(reason)
-        return True
 
     async def _detect_game_maintenance(
         self, detect: Callable[[], str | None]
@@ -168,7 +175,9 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
         if _running_inflight_detection(script_id) is not None:
             # 上一轮底层检测仍未结束：跳过本轮采样（按未命中处理）
             return None
-        task = asyncio.ensure_future(asyncio.to_thread(detect))
+        task = asyncio.create_task(
+            asyncio.to_thread(detect), context=detached_process_context()
+        )
         _INFLIGHT_DETECTIONS[script_id] = task
         try:
             text = await asyncio.wait_for(
@@ -186,7 +195,7 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
 
         try:
             await push_dispatch_log(self.script_info, reason)
-            await self.task_info.send_notice(level="info", message=reason)
+            await self.send_notice(level="info", message=reason)
         except Exception:
             logger.opt(exception=True).warning("维护跳过通知推送失败（忽略）")
 
@@ -226,8 +235,8 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
                 self._maintenance_reason = (
                     f"游戏维护中，本次跳过（运行期间画面检测到：{maintenance_text}）"
                 )
-                self.cur_user_item.status = "跳过"
-                self.cur_user_item.maintenance_skipped = True
+                await self.cur_user_item.set_state(status="跳过")
+                self.user_state(self.cur_user_item).maintenance_skipped = True
                 logger.info(
                     f"账号 {self.cur_user_item.name} - {self._maintenance_reason}"
                 )
@@ -236,13 +245,15 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
                 stop.set()
             return
 
-    def clear_maintenance_hit(self) -> None:
+    async def clear_maintenance_hit(self) -> None:
         """成功结论优先：清除运行期晚到的维护命中标记，避免被误报成维护跳过。"""
-        self.cur_user_item.maintenance_skipped = False
+        self.user_state(self.cur_user_item).maintenance_skipped = False
         self._maintenance_reason = None
 
     async def _finalize_task(self) -> None:
-        """收尾时成对执行后置脚本；收尾被取消或异常中断也仍会尝试执行。"""
+        """[兼容旧专项] 旧收尾方法名；新执行器在 TaskBase.final_task 完成所属资源恢复。
+
+        收尾时成对执行后置脚本；收尾被取消或异常中断也仍会尝试执行。"""
 
         try:
             await super()._finalize_task()
@@ -254,6 +265,7 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
                 logger.warning("上一轮游戏画面维护检测仍未结束，本轮不再投递新检测")
 
     async def _run_main_task(self) -> None:
+        """[兼容旧专项] 旧主流程加超时保护；新 L4 的业务超时在执行器所属层实现。"""
         timeout = asyncio.timeout(self.run_timeout_seconds)
         try:
             async with timeout:
@@ -265,13 +277,13 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
 
             message = f"运行超过 {self.run_timeout_seconds / 60:g} 分钟，已终止"
             user = self.cur_user_item
-            user.status = "异常"
+            await user.set_state(status="异常")
             if user.log_record:
                 record = user.log_record[max(user.log_record)]
             else:
                 record = LogRecord()
-                user.add_log_record(datetime.now().astimezone(), record)
-            record.status = message
-            record.content.append(message)
-            self.script_info.log = f"{message}\n正在中止相关程序"
+                record = await user.add_log_record(datetime.now().astimezone(), record)
+            await record.set_state(status=message)
+            await record.append_content(message)
+            await self.script_info.set_log(f"{message}\n正在中止相关程序")
             logger.warning(f"{self.script_info.name} - {user.name}: {message}")

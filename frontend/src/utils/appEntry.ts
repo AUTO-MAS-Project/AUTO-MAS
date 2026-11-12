@@ -140,27 +140,4 @@ function completeAppEntry(reason: string, { navigateHome }: { navigateHome: bool
   }
   logger.info(`${reason}：语言资源就绪，已进入应用`)
   startVersionServices()
-  void preloadSchedulerView(reason)
-}
-
-/**
- * 预加载调度中心
- * 静默加载调度中心逻辑
- */
-async function preloadSchedulerView(reason: string) {
-  logger.info(`${reason}：调度中心初始化...`)
-
-  try {
-    // 动态导入并初始化调度中心逻辑
-    const { useSchedulerLogic } = await import('../views/scheduler/useSchedulerLogic')
-    const { initialize } = useSchedulerLogic()
-
-    if (initialize) {
-      initialize()
-      logger.info(`${reason}：调度中心就绪`)
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`${reason}：调度中心初始化失败: ${errorMsg}`)
-  }
 }

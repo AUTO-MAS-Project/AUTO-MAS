@@ -13,11 +13,12 @@ export interface FrontendConfig {
   /** 关闭确认弹窗中上次选择的动作。 */
   lastCloseAction?: 'quit' | 'tray'
 
+  /** 设置页右侧分区目录的显示偏好。 */
+  settingsShowNavigation?: boolean
+
   // 主题设置
   themeMode: ThemeMode
   themeColor: ThemeColor
-  /** 设置页卡片布局；窄窗口仅回流，不修改用户偏好。 */
-  settingsLayoutMode?: 'single' | 'dual'
   /** 当前自定义外观包 ID；为空时使用内置外观模式。 */
   appearanceId?: string | null
   /** 为空时跟随主题附带的桌宠；否则固定使用独立桌宠。 */
@@ -28,6 +29,7 @@ export interface FrontendConfig {
   desktopMascotAnimationPaused?: boolean
   desktopMascotIdleMessagePaused?: boolean
   desktopMascotPosition?: { x: number; y: number }
+  cursorSizePx?: number | null
   cursorEffect?: CursorEffect
   lowPerformanceMode?: boolean
   /** 有脚本任务运行时自动暂停主页卫星动效；旧配置缺省按开启算 */
@@ -83,7 +85,7 @@ const DEFAULT_CONFIG: FrontendConfig = {
   lastCloseAction: 'quit',
   themeMode: 'system',
   themeColor: 'blue',
-  settingsLayoutMode: 'single',
+  settingsShowNavigation: true,
   desktopMascotFps: null,
   cursorEffect: 'none',
   lowPerformanceMode: false,

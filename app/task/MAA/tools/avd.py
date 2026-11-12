@@ -18,12 +18,13 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""MAA 在魔改 AVD 上的截图通道：冒充 MuMu 的截图接口。
+"""MAA 在 ModAVD 上的截图通道：冒充 MuMu 的截图接口。
 
-MaaCore（v6.18.0 实测）对魔改 AVD 没有截图增强，走 adb 单次约 250 ms。它的 MuMu 通道
+MaaCore（v6.18.0 实测）对 ModAVD 没有截图增强，走 adb 单次约 250 ms。它的 MuMu 通道
 只是在配置的 MuMu 目录下 ``LoadLibrary`` ``shell\\sdk\\external_renderer_ipc.dll`` 再按名字
-取四个函数，所以放一个自己写的同名 DLL（``res/avdshim``，读模拟器的截图共享内存
-``SHM_videmulator<控制台端口>``）就能让 MaaCore 选中 MumuExtras，稳态 3 ms（预研 §5）。
+取四个函数，所以放一个同名 DLL（``res/avdshim``：ModAVDExtras 发布的兼容外壳，读模拟器的
+截图共享内存 ``SHM_videmulator<控制台端口>``，来源和版本见同目录的 ``README.md``）就能让
+MaaCore 选中 MumuExtras，稳态 2–3 ms。
 
 MAA 侧的连接配置按 MAA 6.18.0 源码写（``MaaWpfGui/Configuration/Single/Settings/
 ConnectSettings.cs``、``ConnectionExtra/Mumu12Extra.cs``、``Models/EmulatorConnectionExtra/
@@ -54,10 +55,9 @@ from pathlib import Path
 from typing import Any
 
 from app.core import Config
-from app.utils import emulator2 as _utils_emulator2
 from app.utils import get_logger
 
-logger = get_logger("魔改 AVD MAA 截图")
+logger = get_logger("ModAVD MAA 截图")
 
 SHIM_SOURCE = Config.resource_path / "avdshim" / "external_renderer_ipc.dll"
 
@@ -106,12 +106,15 @@ def ensure_mumu_shim(root: str | Path) -> Path:
 
 
 def build_maa_connect_settings(
-    root: str | Path, console_port: int, current: dict[str, Any] | None
+    root: str | Path,
+    console_port: int,
+    current: dict[str, Any] | None,
+    adb_path: str | Path,
 ) -> dict[str, Any]:
-    """在 ``gui.new.json`` 当前配置的 ``Gui.ConnectSettings`` 上叠加魔改 AVD 需要的项。
+    """在 ``gui.new.json`` 当前配置的 ``Gui.ConnectSettings`` 上叠加 ModAVD 需要的项。
 
     ``current`` 原样保留其余键（``AdbPath``、``AddressHistory`` 等），只改下面这几项；
-    返回新字典，不改入参。
+    返回新字典，不改入参。``adb_path`` 是 modavd 报的这条安装的 adb（``modavd list`` 的 ``adb_exe``）。
     """
     settings = dict(current or {})
     extras = dict(settings.get("Extras") or {})
@@ -126,9 +129,9 @@ def build_maa_connect_settings(
     )
     extras[MAA_CONNECT_CONFIG] = mumu
     if not str(settings.get("AdbPath") or "").strip():
-        # 用户的 MAA 从没配过 adb（只装了魔改 AVD 的新账号）时才补 SDK 自带的 adb；
+        # 用户的 MAA 从没配过 adb（只装了 ModAVD 的新账号）时才补 SDK 自带的 adb；
         # 已经配了的不动——换 adb 可能和雷电 / MuMu 自带的 adb 抢 5037
-        settings["AdbPath"] = str(_utils_emulator2.avd.components.adb_exe(root))
+        settings["AdbPath"] = str(adb_path)
     settings.update(
         {
             "AutoDetect": False,
@@ -142,12 +145,12 @@ def build_maa_connect_settings(
 
 
 def screencap_fallback_status(log: str) -> str | None:
-    """魔改 AVD 实例上 MAA 截图回落到普通 adb 时给运行结果用的说法；没回落返回 ``None``。"""
+    """ModAVD 实例上 MAA 截图回落到普通 adb 时给运行结果用的说法；没回落返回 ``None``。"""
     method = detect_screencap_fallback(log)
     if method is None:
         return None
     return (
-        f"MAA 在魔改 AVD 上没用上截图增强（{method}），截图回落到普通 adb 会很慢，"
+        f"MAA 在 ModAVD 上没用上截图增强（{method}），截图回落到普通 adb 会很慢，"
         "本次判失败；请检查 MAA 的连接设置是否被改动，或 MAA 版本是否过旧"
     )
 
@@ -175,10 +178,10 @@ MAA_MUMU_NOT_ENABLED_MARKERS = (
 
 
 def detect_screencap_fallback(log: str) -> str | None:
-    """从 MAA 界面日志判断魔改 AVD 实例上截图有没有回落到普通 adb。
+    """从 MAA 界面日志判断 ModAVD 实例上截图有没有回落到普通 adb。
 
     回落了返回 MAA 实际选中的方式（给报错用），没回落或还没测完返回 ``None``。
-    魔改 AVD 上普通 adb 截图约 250 ms，用户明确说过「不如不做」，所以一旦回落就要
+    ModAVD 上普通 adb 截图约 250 ms，用户明确说过「不如不做」，所以一旦回落就要
     让这次运行失败，而不是静默变慢。
     """
     if any(marker in log for marker in MAA_MUMU_NOT_ENABLED_MARKERS):

@@ -50,7 +50,11 @@ from collections.abc import Callable, MutableMapping
 from pathlib import Path
 from typing import Any
 
+from app.task.MaaFW.tools.core.runtime_pool.installer import (
+    install_process_factory_scope,
+)
 from app.utils import get_logger
+from app.utils.common.process.scope import current_process_scope
 
 # 切换后确认失败的那行告警沿用手动更新的 logger 名（原先就在 ``api_service/update.py`` 里记）。
 _update_logger = get_logger("MaaFW 项目更新")
@@ -81,7 +85,16 @@ def resolve_prepare_environment() -> PrepareEnvironment:
 
     from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
 
-    return MaaFWEmbeddedManager._prepare_project_environment_sync
+    prepare = MaaFWEmbeddedManager._prepare_project_environment_sync
+    scope = current_process_scope.get()
+    if scope is None:
+        return prepare
+
+    def scoped_prepare(*args, **kwargs):
+        with install_process_factory_scope(scope.popen):
+            return prepare(*args, **kwargs)
+
+    return scoped_prepare
 
 
 def bind_proxy(

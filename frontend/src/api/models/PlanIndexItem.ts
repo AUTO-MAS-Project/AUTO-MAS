@@ -22,6 +22,7 @@ export namespace PlanIndexItem {
         BAAHPLAN_CONFIG = 'BAAHPlanConfig',
         MSSPLAN_CONFIG = 'MSSPlanConfig',
         UNIVERSAL_PLAN_CONFIG = 'UniversalPlanConfig',
+        OK_NTE_PLAN_CONFIG = 'OkNtePlanConfig',
     }
 }
 

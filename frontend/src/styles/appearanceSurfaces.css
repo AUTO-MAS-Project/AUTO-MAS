@@ -8,12 +8,12 @@
 html.appearance-background-custom
   :is(.content-area, .initialization-content, .standalone-container)
   :is(
+    .app-page-surface,
     .ant-card,
     .ant-collapse,
     .ant-table,
     .ant-tree,
     .ant-descriptions-view,
-    .settings-content,
     .tb-content,
     .gamesign-content,
     .tools-content,
@@ -44,13 +44,14 @@ html.appearance-background-custom
   background-color: var(--app-appearance-surface-bg);
 }
 
-/* 外层已提供表面时，内层只保留边框，避免同一块背景反复叠加透明度。 */
+/* 外层已提供表面时，内层不重复叠加；设置页由分区卡片承接表面，画布保持透明。 */
 html.appearance-background-custom
   :is(.content-area, .initialization-content, .standalone-container)
   :is(
+    .app-page-surface,
     .ant-card,
     .ant-collapse,
-    .settings-content,
+    .ui-section-card,
     .tb-content,
     .gamesign-content,
     .tools-content,
@@ -65,6 +66,8 @@ html.appearance-background-custom
     .record-list-panel
   )
   :is(
+    .app-page-surface,
+    .banner-switcher,
     .ant-card,
     .ant-collapse,
     .ant-table,
@@ -140,6 +143,50 @@ html.appearance-background-custom
   background-color: transparent;
 }
 
+/* 页首与目录用扁平层次，圆角容器承载正文设置。 */
+html.appearance-background-custom
+  .content-area
+  .settings-section-layout
+  :where(.settings-shell-header, .settings-tabs > .ant-tabs-nav, .settings-section-navigation) {
+  background-color: var(--app-appearance-surface-bg);
+  border-radius: 0;
+}
+
+html.appearance-background-custom .content-area .settings-shell-header {
+  margin-bottom: 0;
+  padding: 16px 16px 0;
+}
+
+html.appearance-background-custom .content-area .settings-tabs > .ant-tabs-nav {
+  padding-inline: 16px;
+}
+
+html.appearance-background-custom .content-area .settings-section-navigation {
+  padding-bottom: 28px;
+  background-color: transparent;
+  background-image: linear-gradient(
+    to bottom,
+    var(--app-appearance-surface-bg) 0%,
+    var(--app-appearance-surface-bg) calc(100% - 24px),
+    transparent 100%
+  );
+  background-attachment: local;
+}
+
+html.appearance-background-custom .content-area .navigation-link {
+  border-radius: 0;
+}
+
+html.appearance-background-custom .content-area .navigation-link--active {
+  background: transparent;
+  color: var(--ant-color-link);
+  font-weight: 600;
+}
+
+html.appearance-background-custom .content-area .navigation-link:hover {
+  background: var(--ant-color-fill-quaternary);
+}
+
 /* 表头与激活页签保留轻微填充，输入框、按钮、选中/悬停行不受影响。 */
 html.appearance-background-custom
   .content-area
@@ -148,7 +195,7 @@ html.appearance-background-custom
   > th:not(:where(.ant-modal *, .ant-drawer *)),
 html.appearance-background-custom
   .content-area
-  :is(.settings-tabs, .community-tabs, .tools-tabs, .cultivation-tabs)
+  :is(.community-tabs, .tools-tabs, .cultivation-tabs)
   .ant-tabs-nav
   .ant-tabs-tab-active {
   background-color: var(--ant-color-fill-secondary);

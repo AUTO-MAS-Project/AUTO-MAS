@@ -19,6 +19,7 @@ import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
 import { EmulatorOperateIn, Service } from '@/composables/useEmulatorApi'
 import { importLegacyEmulator } from '@/views/Emulator/importLegacyEmulator'
 import DocLink from '@/components/DocLink.vue'
+import EmulatorTabTitle from './Emulator/EmulatorTabTitle.vue'
 import Emulator2Panel from '@/views/Emulator/Emulator2Panel.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { usePerformanceStore } from '@/stores/performance'
@@ -905,7 +906,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 
 <template>
   <div class="emulator-page">
-    <div class="page-header">
+    <div class="page-header app-page-header">
       <h1 class="page-title app-page-title">{{ t('core.emulator.title') }}</h1>
       <DocLink :url="MAS_DOC_URLS.emulator" />
     </div>
@@ -937,21 +938,18 @@ const handleBossKeyInputChange = (uuid: string) => {
           v-model:active-key="activeKey"
           type="editable-card"
           hide-add
-          class="emulator-tabs"
+          class="emulator-tabs app-page-surface app-page-surface--tabs"
           @change="onTabChange"
         >
-          <!-- 每个模拟器一个 Tab -->
           <a-tab-pane v-for="element in emulatorIndex" :key="element.uid" :closable="false">
             <template #tab>
-              <span class="tab-title">
-                {{ emulatorData[element.uid]?.Info?.Name || t('core.emulator.unnamed') }}
-              </span>
+              <EmulatorTabTitle :info="getEditingData(element.uid)" />
             </template>
 
             <!-- Tab 内容：配置 + 设备列表 -->
             <div class="tab-content">
               <!-- 配置区域 -->
-              <div class="config-section">
+              <div class="config-section app-page-section">
                 <div class="section-header">
                   <h3>{{ t('core.emulator.configTitle') }}</h3>
                   <div class="section-actions">
@@ -1354,31 +1352,26 @@ const handleBossKeyInputChange = (uuid: string) => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   background: var(--ant-color-bg-layout);
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  padding: 0;
-}
-
-.page-title {
-  margin: 0 0 8px 0;
 }
 
 .page-content {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   background: transparent;
   padding: 0;
   border-radius: 0;
   box-shadow: none;
+}
+
+.page-content > :deep(.ant-spin-nested-loading),
+.page-content > :deep(.ant-spin-nested-loading > .ant-spin-container) {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 空状态样式 */
@@ -1403,22 +1396,17 @@ const handleBossKeyInputChange = (uuid: string) => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--ant-color-bg-container);
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid var(--ant-color-border-secondary);
+  min-height: 0;
 }
 
-.emulator-tabs :deep(.ant-tabs) {
+.emulator-tabs :deep(.ant-tabs-content-holder),
+.emulator-tabs :deep(.ant-tabs-content) {
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  background-color: var(--ant-color-bg-container);
+  min-height: 0;
 }
 
 .emulator-tabs :deep(.ant-tabs-nav) {
-  margin-bottom: 16px;
+  margin-bottom: var(--app-page-content-gap);
 }
 
 /* 禁止 Tab 内容滚动 */
@@ -1444,20 +1432,16 @@ const handleBossKeyInputChange = (uuid: string) => {
 }
 
 .tab-content {
-  height: calc(100vh - 248px);
+  height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--app-page-content-gap);
   overflow: hidden;
 }
 
 /* 配置区域 */
 .config-section {
-  background-color: var(--ant-color-bg-container);
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid var(--ant-color-border-secondary);
-  padding: 16px;
+  padding: var(--app-page-content-padding);
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -1468,8 +1452,9 @@ const handleBossKeyInputChange = (uuid: string) => {
 }
 
 .section-header h3 {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: var(--app-page-card-title-size);
+  font-weight: var(--app-page-card-title-weight);
+  line-height: var(--app-page-card-title-line-height);
   gap: 8px;
 }
 
@@ -1533,25 +1518,36 @@ const handleBossKeyInputChange = (uuid: string) => {
   min-height: 0;
 }
 
+.devices-panel > :deep(.ant-spin-nested-loading),
+.devices-panel > :deep(.ant-spin-nested-loading > .ant-spin-container) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .panel-header {
   margin-bottom: 16px;
   padding-bottom: 12px;
-  border-bottom: 1px solid var(--ant-color-border);
+  border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
 .panel-title {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: var(--app-page-card-title-size);
+  font-weight: var(--app-page-card-title-weight);
+  line-height: var(--app-page-card-title-line-height);
   color: var(--ant-color-text);
 }
 
 .empty-devices {
   flex: 1;
+  min-height: 0;
   display: flex;
-  align-items: center;
+  align-items: safe center;
   justify-content: center;
-  padding: 48px 0;
+  padding: 0 var(--app-page-content-padding);
+  overflow-y: auto;
   text-align: center;
 }
 
@@ -1636,21 +1632,10 @@ const handleBossKeyInputChange = (uuid: string) => {
 @media (max-width: 768px) {
   .page-header {
     flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-  }
-
-  .emulator-tabs {
-    padding: 12px;
   }
 
   .tab-content {
-    height: calc(100vh - 188px);
-    gap: 12px;
-  }
-
-  .config-section {
-    padding: 12px;
+    gap: var(--app-page-content-gap);
   }
 
   .devices-section {

@@ -55,27 +55,25 @@
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
+            <UserAccountHeading
+              :user-name="formData.userName"
+              :options="{ isEdit, logoSrc: accountIcon }"
+            />
             <div class="section-header">
               <h3>{{ t('core.edit.basicInfo') }}</h3>
             </div>
 
-            <a-row :gutter="24">
-              <a-col :span="12">
-                <UserNameField
-                  v-model="formData.userName"
-                  :hint="t('core.edit.nameUsedTellUsers')"
-                  :placeholder="t('core.edit.enterUsername')"
-                  @save="saveField('Info.Name', formData.userName)"
-                />
-              </a-col>
-              <a-col :span="12">
-                <UserStatusField
-                  v-model="formData.Info.Status"
-                  :hint="t('core.edit.whetherThisUserEnabled')"
-                  @save="saveField('Info.Status', formData.Info.Status)"
-                />
-              </a-col>
-            </a-row>
+            <UserBasicInfoFields
+              v-model:user-name="formData.userName"
+              v-model:status="formData.Info.Status"
+              v-model:remained-day="formData.Info.RemainedDay"
+              v-model:notes="formData.Info.Notes"
+              :disabled="pageLoading"
+              @save-name="saveField('Info.Name', formData.userName)"
+              @save-status="saveField('Info.Status', formData.Info.Status)"
+              @save-days="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
+              @save-notes="saveField('Info.Notes', formData.Info.Notes)"
+            />
 
             <a-row :gutter="24">
               <a-col :span="12">
@@ -114,22 +112,15 @@
               </a-col>
             </a-row>
 
-            <a-row :gutter="24">
-              <a-col :span="24">
-                <GeneralConfigModeSelector
-                  :model-value="formData.Info.Base"
-                  :options="oknteConfigModeOptions"
-                  :disabled="pageLoading"
-                  :quick-config="formData.Info.IfQuickConfig"
-                  :quick-config-disabled="
-                    pageLoading || isInitializing || isSaving || configEditorSaving
-                  "
-                  :alert-message="t('core.edit.configSourceHintBase')"
-                  @change="handleConfigModeChange"
-                  @quick-config-change="handleQuickConfigChange"
-                />
-              </a-col>
-            </a-row>
+            <OkNteConfigSource
+              :script-id="scriptId"
+              :user-id="activeUserId"
+              :info="formData.Info"
+              :disabled="pageLoading || isInitializing || isSaving || configEditorSaving"
+              @base-change="handleConfigModeChange"
+              @quick-change="handleQuickConfigChange"
+              @plan-change="formData.Info.PlanMode = $event"
+            />
 
             <a-row :gutter="24">
               <a-col :span="12">
@@ -149,13 +140,6 @@
                     @change="saveField('Info.Resource', formData.Info.Resource)"
                   />
                 </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <UserRemainedDayField
-                  v-model="formData.Info.RemainedDay"
-                  :hint="t('core.edit.daysLeftAccount1')"
-                  @save="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
-                />
               </a-col>
             </a-row>
 
@@ -183,14 +167,6 @@
                 </a-form-item>
               </a-col>
             </a-row>
-
-            <UserNotesField
-              v-model="formData.Info.Notes"
-              :hint="t('core.edit.addNoteAboutThis')"
-              :placeholder="t('core.edit.enterNote')"
-              :rows="4"
-              @save="saveField('Info.Notes', formData.Info.Notes)"
-            />
           </div>
 
           <div class="form-section">
@@ -210,6 +186,7 @@
                   </template>
                   <a-select
                     v-model:value="formData.Task.TaskIndex"
+                    :disabled="formData.Info.PlanMode !== 'Fixed'"
                     size="large"
                     @change="handleTaskIndexChange"
                   >
@@ -307,10 +284,9 @@
 </template>
 
 <script setup lang="ts">
-import UserNameField from '@/views/EditView/User/components/UserNameField.vue'
-import UserNotesField from '@/views/EditView/User/components/UserNotesField.vue'
-import UserRemainedDayField from '@/views/EditView/User/components/UserRemainedDayField.vue'
-import UserStatusField from '@/views/EditView/User/components/UserStatusField.vue'
+import UserAccountHeading from '@/components/UserAccountHeading.vue'
+import accountIcon from '@/assets/ok-nte.ico'
+import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
@@ -326,6 +302,7 @@ import {
 } from '@ant-design/icons-vue'
 import type { OkNteUserConfig } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
+import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useOknteGuiSession } from '@/composables/useOknteGuiSession'
 import { useSaveQueue } from '@/composables/useSaveQueue'
@@ -333,7 +310,7 @@ import UserEditHeader from '@/components/UserEditHeader.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
-import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
+import OkNteConfigSource from './OkNteUserEdit/OkNteConfigSource.vue'
 import OkNteConfigEditor from './OkNteUserEdit/OkNteConfigEditor.vue'
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
@@ -358,7 +335,7 @@ const {
 const scriptId = route.params.scriptId as string
 let userId = (route.params.userId as string) || ''
 const isEdit = ref(!!userId)
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId }))
 const activeUserId = ref(userId)
 const scriptName = ref('OK-NTE脚本')
 
@@ -375,35 +352,6 @@ const OKNTE_MAX_TASK_INDEX = 19
 
 const resourceOptions = [{ label: '官服', value: '官服' }]
 // 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
-const oknteConfigModeOptions: Array<{
-  label: string
-  value: 'shared' | 'independent' | 'native'
-  title: string
-  description: string
-  icon: 'file' | 'database' | 'setting'
-}> = [
-  {
-    label: t('core.edit.script'),
-    value: 'shared',
-    title: t('core.edit.script'),
-    description: t('core.edit.useSharedScriptLevel'),
-    icon: 'file',
-  },
-  {
-    label: t('core.edit.user'),
-    value: 'independent',
-    title: t('core.edit.user'),
-    description: t('core.edit.useThisUserS'),
-    icon: 'database',
-  },
-  {
-    label: t('core.edit.directControl'),
-    value: 'native',
-    title: t('core.edit.directControl'),
-    description: t('core.edit.nativeConfigSourceDescription'),
-    icon: 'setting',
-  },
-]
 
 const pushLogModeOptions = [
   { label: t('core.edit.pushLogModeOff'), value: '关闭' },
@@ -451,6 +399,7 @@ const getDefaultUserData = (): Omit<OkNteUserFormData, 'userName'> => ({
     Status: true,
     Id: '',
     Password: '',
+    PlanMode: 'Fixed',
     Base: 'shared',
     IfQuickConfig: true,
     Resource: '官服',
@@ -488,7 +437,9 @@ const formData = reactive<OkNteUserFormData>({
   ...getDefaultUserData(),
 })
 
-const currentStartupArguments = computed(() => `-t ${formData.Task.TaskIndex || 2} -e`)
+const currentStartupArguments = computed(
+  () => `-t ${formData.Info.PlanMode !== 'Fixed' ? 2 : formData.Task.TaskIndex || 2} -e`
+)
 
 const handleCancel = () => {
   void stopSession()
@@ -526,8 +477,7 @@ const handleQuickConfigChange = async (value: boolean) => {
 }
 
 const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !oknteConfigModeOptions.some(option => option.value === value))
-    return
+  if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
   formData.Info.Base = value as 'shared' | 'independent' | 'native'
   await saveField('Info.Base', formData.Info.Base)
 }
@@ -535,14 +485,7 @@ const handleConfigModeChange = async (value: boolean | string) => {
 const saveField = async (key: string, value: unknown) => {
   if (isInitializing.value || !userId) return
 
-  const parts = key.split('.')
-  const patch: Record<string, any> = {}
-  let current = patch
-  for (let i = 0; i < parts.length - 1; i += 1) {
-    current[parts[i]] = {}
-    current = current[parts[i]]
-  }
-  current[parts[parts.length - 1]] = value
+  const patch = buildFieldPatch(key, value)
 
   if (key === 'Info.Name') {
     formData.userName = String(value || '')
@@ -764,8 +707,6 @@ onUnmounted(() => {
 
 <style scoped>
 .user-edit-container {
-  padding: 32px;
-  min-height: 100vh;
   background: var(--ant-color-bg-layout);
 }
 
@@ -811,10 +752,6 @@ onUnmounted(() => {
 }
 
 @media (max-width: 768px) {
-  .user-edit-container {
-    padding: 16px;
-  }
-
   .config-card :deep(.ant-card-body) {
     padding: 20px;
   }

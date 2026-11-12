@@ -25,7 +25,7 @@ MAA / M9A / BAAH / MaaEnd / MaaFW / SRC 在任务收尾与各条失败分支上�
 判空。这里只做「取实例索引 → 限时关闭 → 记录结果」这一件事：是否要关、以及
 关闭失败算不算异常，由调用方自己决定。
 
-另有魔改 AVD 实例上用的几个小工具：门面 ``open`` 的放行参数、脚本进程的 adb 环境、宿主 adb 通道。
+另有 ModAVD 实例上用的几个小工具：门面 ``open`` 的放行参数、脚本进程的 adb 环境、宿主 adb 通道。
 """
 
 import asyncio
@@ -41,8 +41,8 @@ EMULATOR_CLOSE_TIMEOUT_SECONDS = 30
 
 
 def mod_avd_open_kwargs(manager: Any, *, allowed: bool) -> dict[str, Any]:
-    """给设备管理器 ``open`` 的额外参数：Emulator 2.0 门面要知道调用方能不能用魔改 AVD（不能时
-    设备是魔改 AVD 就拒绝开机）；旧式模拟器管理器不收这个参数，返回空字典。"""
+    """给设备管理器 ``open`` 的额外参数：Emulator 2.0 门面要知道调用方能不能用 ModAVD（不能时
+    设备是 ModAVD 就拒绝开机）；旧式模拟器管理器不收这个参数，返回空字典。"""
     from app.utils import emulator2 as _utils_emulator2
 
     if isinstance(manager, _utils_emulator2.facade.Emulator2Manager):
@@ -63,10 +63,12 @@ def resolve_device_ref(manager: Any, index: Any) -> Any | None:
 
 
 async def script_process_env(manager: Any, index: Any) -> dict[str, str] | None:
-    """为某台设备起脚本进程时要用的环境：魔改 AVD 实例返回「MAS 环境 + ``ANDROID_ADB_SERVER_PORT``
-    = 脚本专用端口（``scriptAdbServerPort``，默认 20049）」，其余返回 ``None``（照旧继承 MAS 的环境）。
+    """为某台设备起脚本进程时要用的环境：ModAVD 实例返回「MAS 环境 + ``ANDROID_ADB_SERVER_PORT``
+    = 脚本专用端口（``modavd servers`` 报的 ``script_adb_server_port``，默认 20049）」，其余返回
+    ``None``（照旧继承 MAS 的环境）。
 
-    脚本用 SDK 的新版 adb，跑在 5037 上会和雷电 / MuMu 自带的旧版 adb 互杀 server。
+    脚本用 SDK 的新版 adb，跑在 5037 上会和雷电 / MuMu 自带的旧版 adb 互杀 server。端口问不到时报错：
+    不能让脚本的 adb 落到 5037 上。
     """
     device_ref = resolve_device_ref(manager, index)
     if device_ref is None or getattr(device_ref, "emulator_type", None) != "avd":
@@ -78,17 +80,20 @@ async def script_process_env(manager: Any, index: Any) -> dict[str, str] | None:
     root = _utils_emulator2.avd.components.root_from_manager_exe(
         device_ref.manager_path
     )
-    env = dict(os.environ)
-    env.update(_utils_emulator2.avd.components.script_adb_env(root))
     try:
-        # 先由 MAS 以脱离方式起好：脚本里的 adb 顺手拉起的 server 会继承脚本的输出管道
+        # 先由 modavd 以脱离方式起好：脚本里的 adb 顺手拉起的 server 会继承脚本的输出管道
         await _utils_emulator2.avd.host.ensure_script_adb_server(root)
     except _utils_emulator2.avd.host.ScriptAdbPortConflict:
         raise  # 端口被别的程序占着，脚本的 adb 连上去只会一直失败，直接报给用户
-    except Exception as e:  # noqa: BLE001 - 起不来就交给脚本自己的 adb
-        logger.warning(f"预先启动脚本专用 adb server 失败: {e}")
+    except Exception as e:  # noqa: BLE001 - 见下
+        # 这次没问成 modavd：之前问到过端口就接着用（server 交给脚本的 adb 起），没问到过就把原因报出去
+        if not _utils_emulator2.avd.host.script_adb_port_known(root):
+            raise
+        logger.warning(f"modavd servers 这次失败，沿用之前报的脚本专用 adb 端口: {e}")
+    env = dict(os.environ)
+    env.update(_utils_emulator2.avd.host.script_adb_env(root))
     logger.info(
-        f"设备 {index} 是魔改 AVD 实例：脚本的 adb 走专用 server（端口 "
+        f"设备 {index} 是 ModAVD 实例：脚本的 adb 走专用 server（端口 "
         f"{env['ANDROID_ADB_SERVER_PORT']}）"
     )
     return env
@@ -97,12 +102,12 @@ async def script_process_env(manager: Any, index: Any) -> dict[str, str] | None:
 async def resolve_host_adb(
     owner: Any, *, index: str | None = None, config_key: str = "Emulator"
 ) -> Any | None:
-    """owner 接管的设备是魔改 AVD 实例时，返回宿主进程对它发 adb 的通道（MAS 私有 server，
+    """owner 接管的设备是 ModAVD 实例时，返回宿主进程对它发 adb 的通道（``modavd adb``，私有 server，
     ``await runner(*args, timeout=…)``，另有 ``screencap_png()``）；其余情况返回 ``None``。
 
-    魔改 AVD 实例上宿主自己的 adb 命令（游戏更新检查、失败截图）不能落到 5037：脚本用的 SDK adb
+    ModAVD 实例上宿主自己的 adb 命令（游戏更新检查、失败截图）不能落到 5037：脚本用的 SDK adb
     会和雷电 / MuMu 自带的旧版 adb 互杀 server。雷电 / MuMu 返回 ``None``，调用方照旧走
-    ``get_adb_path()`` + 设备地址。查不到只当作不是魔改 AVD。
+    ``get_adb_path()`` + 设备地址。查不到只当作不是 ModAVD。
     """
 
     emulator_manager = getattr(owner, "emulator_manager", None)
@@ -139,6 +144,9 @@ async def close_emulator(
         log_failure: 失败时是否记录警告日志。
     """
 
+    # TODO(游戏管理迁移，#1845)：不同托管的配置锁不能保护同一模拟器的完整使用期，
+    # 一方结束时仍可能关闭另一方正在使用的实例。待来源游戏管理接管占用与释放，
+    # 本轮不另补设备预约机制。
     emulator_manager = getattr(owner, "emulator_manager", None)
     if emulator_manager is None:
         return True

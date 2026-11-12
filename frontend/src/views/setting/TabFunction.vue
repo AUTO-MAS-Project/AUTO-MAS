@@ -7,15 +7,16 @@ import {
   ControlOutlined,
   DesktopOutlined,
   QuestionCircleOutlined,
-  SoundOutlined,
 } from '@ant-design/icons-vue'
 import type { GlobalConfig } from '@/api'
+import type { SettingChangeHandler } from './settingTypes'
 import { useVirtualDisplaySettings } from './useVirtualDisplaySettings'
 import { openExternalUrl } from '@/utils/openExternal'
 import { navigateTo } from '@/router'
 import SectionCard from '@/components/ui/SectionCard.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
 import FailureReplaySettings from './components/FailureReplaySettings.vue'
+import VoiceSettings from './components/VoiceSettings.vue'
 
 const { t } = useI18n()
 
@@ -27,7 +28,8 @@ const VDD_DOWNLOAD_URL = 'https://github.com/nomi-san/parsec-vdd/releases/latest
 // 游戏窗口又要面对 DPI 虚拟化——而虚拟屏本来就是为了绕开这类问题。所以这里只让用户
 // 选刷新率。驱动的刷新率表是 24/30/60/144/240，写 120 会被 BADMODE 拒绝。
 // 选项放在 computed 里，t() 是响应式的。
-const virtualDisplayModeOptions = computed(() => [
+type VirtualDisplayMode = NonNullable<NonNullable<GlobalConfig['Display']>['VirtualDisplayMode']>
+const virtualDisplayModeOptions = computed<{ label: string; value: VirtualDisplayMode }[]>(() => [
   { label: `60 Hz（${t('core.setting.display.refreshDefault')}）`, value: '1920x1080@60' },
   { label: `30 Hz（${t('core.setting.display.refreshLowPower')}）`, value: '1920x1080@30' },
 ])
@@ -50,12 +52,34 @@ function openVddDownload() {
   openExternalUrl(VDD_DOWNLOAD_URL)
 }
 
-const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange } = defineProps<{
+const { settings, handleSettingChange } = defineProps<{
   settings: GlobalConfig
-  historyRetentionOptions: { label: string; value: number }[]
-  voiceTypeOptions: { label: string; value: string }[]
-  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<boolean>
+  handleSettingChange: SettingChangeHandler
 }>()
+
+type HistoryRetentionTime = NonNullable<
+  NonNullable<GlobalConfig['Function']>['HistoryRetentionTime']
+>
+const historyRetentionOptions = computed<{ label: string; value: HistoryRetentionTime }[]>(() => [
+  { label: t('core.setting.retention.d7'), value: 7 },
+  { label: t('core.setting.retention.d15'), value: 15 },
+  { label: t('core.setting.retention.d30'), value: 30 },
+  { label: t('core.setting.retention.d60'), value: 60 },
+  { label: t('core.setting.retention.d90'), value: 90 },
+  { label: t('core.setting.retention.d180'), value: 180 },
+  { label: t('core.setting.retention.d365'), value: 365 },
+  { label: t('core.setting.retention.forever'), value: 0 },
+])
+
+const handleHistoryRetentionChange = (value: unknown) => {
+  const option = historyRetentionOptions.value.find(option => option.value === value)
+  if (option) void handleSettingChange('Function', 'HistoryRetentionTime', option.value)
+}
+
+const handleVirtualDisplayModeChange = (value: unknown) => {
+  const option = virtualDisplayModeOptions.value.find(option => option.value === value)
+  if (option) void handleSettingChange('Display', 'VirtualDisplayMode', option.value)
+}
 </script>
 <template>
   <div class="tab-content function-settings">
@@ -70,7 +94,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
           :options="historyRetentionOptions"
           class="retention-select"
           :aria-label="t('core.setting.func.retention')"
-          @change="(value: any) => handleSettingChange('Function', 'HistoryRetentionTime', value)"
+          @change="handleHistoryRetentionChange"
         />
       </SettingRow>
 
@@ -153,35 +177,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
       </SettingRow>
     </SectionCard>
 
-    <!-- 语音：一个总开关 + 一个详细程度选择，关掉时类型选择跟着禁用 -->
-    <SectionCard :title="t('core.setting.func.voiceSection')" :icon="SoundOutlined">
-      <SettingRow
-        :label="t('core.setting.func.voiceEnable')"
-        :hint="t('core.setting.func.voiceEnableTip')"
-      >
-        <a-switch
-          :checked="settings.Voice?.Enabled === true"
-          :aria-label="t('core.setting.func.voiceEnable')"
-          @change="
-            (checked: boolean | string | number) =>
-              handleSettingChange('Voice', 'Enabled', !!checked)
-          "
-        />
-      </SettingRow>
-
-      <SettingRow
-        :label="t('core.setting.func.voiceType')"
-        :hint="t('core.setting.func.voiceTypeTip')"
-      >
-        <a-segmented
-          :value="settings.Voice?.Type"
-          :options="voiceTypeOptions"
-          :disabled="!settings.Voice?.Enabled"
-          :aria-label="t('core.setting.func.voiceType')"
-          @change="(value: any) => handleSettingChange('Voice', 'Type', value)"
-        />
-      </SettingRow>
-    </SectionCard>
+    <VoiceSettings :settings="settings.Voice" :handle-setting-change="handleSettingChange" />
 
     <FailureReplaySettings :settings="settings" :handle-setting-change="handleSettingChange" />
 
@@ -233,7 +229,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
           :options="virtualDisplayModeOptions"
           :disabled="!settings.Display?.IfEnableVirtualDisplay"
           :aria-label="t('core.setting.display.mode')"
-          @change="(value: any) => handleSettingChange('Display', 'VirtualDisplayMode', value)"
+          @change="handleVirtualDisplayModeChange"
         />
       </SettingRow>
 

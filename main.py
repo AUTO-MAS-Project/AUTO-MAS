@@ -255,7 +255,7 @@ def _resolve_supervised_port() -> int:
     return DEFAULT_HTTP_PORT
 
 
-@logger.catch
+@logger.catch(reraise=True)
 def main():
     raw_environment = os.getenv("AUTO_MAS_ENV", "").strip().lower()
     if raw_environment not in {"", "dev", "development", "production"}:
@@ -354,10 +354,8 @@ def main():
 
         with startup_stage("后端/任务与定时器组件导入"):
             from app.core import Config, MainTimer, TaskManager
-            from app.services import System
 
         TaskManager.bind_manager_factories(script_capabilities.manager_factories)
-        System.avd_instance_closer = EmulatorManager.close_running_avd_instances
 
         async def warm_ssl() -> None:
             with startup_stage("后端/SSL 上下文预热（后台）"):
@@ -392,13 +390,15 @@ def main():
 
         with startup_stage("后端/后台服务组件导入"):
             from app.config import config_manager
-            from app.core import MCP, RuntimeTasks
+            from app.core import MCP, BackgroundTaskManager
 
         async def preload_maaend_resources() -> None:
             with startup_stage("后端/MaaEnd 资源预热（后台）"):
                 await maaend_config_service.preload_resources()
 
-        RuntimeTasks.spawn(preload_maaend_resources(), name="maaend-resource-preload")
+        BackgroundTaskManager.register_group(
+            "maaend-resource-preload", max_running=1, max_retained=1
+        ).spawn(preload_maaend_resources, retain_result=False)
         background_task: asyncio.Task | None = None
 
         async def initialize_background_services() -> None:
@@ -447,7 +447,7 @@ def main():
 
             async def init_avd_update() -> None:
 
-                # 收拾上次没做完的魔改 AVD 换上（几次改名，很快）
+                # 每个纳管的根目录跑一次 modavd update status（不联网），上次换上被打断的再 recover
                 await EmulatorManager.startup_avd_update()
 
             async def init_stage_info() -> None:
@@ -492,7 +492,7 @@ def main():
                 # 空转一次巡检远比定时任务整夜不触发轻。
                 await run_optional_step("桌面显示输出守卫", start_desktop_guard)
                 # 要在主定时器之前：定时器可能马上拉起实例，而 sdk\emulator 可能正停在换到一半
-                await run_optional_step("魔改 AVD 更新恢复", init_avd_update)
+                await run_optional_step("ModAVD 更新恢复", init_avd_update)
                 timer_error = await run_step("主业务定时器", MainTimer.start)
                 startup_mark("后端/主定时器启动结束")
 
@@ -549,8 +549,13 @@ def main():
         async def shutdown_services() -> None:
             """完整的非 WS teardown，供 /close 与 lifespan 收尾共用（幂等）。"""
 
-            from app.core import Dispatcher, MainConnection, RuntimeTasks, Updater
-            from app.services import System
+            from app.core import (
+                BackgroundTaskManager,
+                Dispatcher,
+                MainConnection,
+                Power,
+                Updater,
+            )
 
             # 同步封禁新加载，独立回收 MCP；不能让不可取消线程挡住停止主业务。
             mcp_shutdown = asyncio.create_task(MCP.shutdown(), name="mcp-shutdown")
@@ -575,7 +580,7 @@ def main():
 
             # 取消待执行的电源操作（无任务在跑属正常）
             with suppress(RuntimeError):
-                await System.cancel_power_task()
+                await Power.cancel_power_task()
 
             stop_timer = asyncio.create_task(MainTimer.stop())
             stop_tasks = asyncio.create_task(TaskManager.stop_task("ALL"))
@@ -591,7 +596,7 @@ def main():
             await DesktopGuard.stop()
             # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
             with suppress(RuntimeError):
-                await System.cancel_power_task()
+                await Power.cancel_power_task()
             # 取消时若无法确认 FluxDown 任务已停止会抛 FluxdownCancelUnconfirmed，
             # 关停流程不因此中断后续清理
             with suppress(RuntimeError):
@@ -600,7 +605,7 @@ def main():
 
             await _service_obs_replay.ObsReplay.stop()
             # 已托管通知随运行时任务一起回收，完成后再关闭渲染器和渠道。
-            await RuntimeTasks.shutdown()
+            await BackgroundTaskManager.shutdown()
             await Notify.close()
 
             await config_manager.flush()

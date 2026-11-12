@@ -165,6 +165,7 @@ test.describe('@settings @shared-form-styles', () => {
       tokens: {
         colorPrimary: '#1677ff',
         colorBgContainer: mode === 'light' ? '#f2e8dc' : '#243040',
+        colorBgElevated: mode === 'light' ? '#fff6ec' : '#302b3b',
         colorBorderSecondary: mode === 'light' ? '#987654' : '#a4b5c6',
       },
       background: { path: 'assets/background.png', opacity: 0.75, surfaceOpacity: 0.5 },
@@ -190,13 +191,14 @@ test.describe('@settings @shared-form-styles', () => {
     await app.goto('/settings')
     const selector = page.locator('.appearance-select')
     const settingsSurface = page.locator('.settings-content')
+    const settingsCards = page.locator('.ant-tabs-tabpane-active .ui-section-card')
     const rows = page.locator(
       '.ant-tabs-tabpane-active .ui-section-card-body > .ui-row:not(:last-child)'
     )
     await expect(selector).toBeVisible()
-    const builtInBackground = await settingsSurface.evaluate(
-      element => getComputedStyle(element).backgroundColor
-    )
+    const builtInCardBackground = await settingsCards
+      .first()
+      .evaluate(element => getComputedStyle(element).backgroundColor)
     const builtInDivider = await resolveColor(page, 'var(--ant-color-border-secondary)')
     const selectAppearance = async (label: string) => {
       await selector.click()
@@ -224,11 +226,51 @@ test.describe('@settings @shared-form-styles', () => {
           `color-mix(in srgb, ${appearance.tokens.colorBgContainer} 50%, transparent)`
         )
         await app.evidence(`shared-form-appearance-settings-${appearance.mode}`)
-        await expect.soft(settingsSurface).toHaveCSS('background-color', surfaceColor)
+        await expect.soft(settingsSurface).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)', {
+          timeout: 1000,
+        })
+        await expect.soft(settingsCards.first()).toHaveCSS('background-color', surfaceColor, {
+          timeout: 1000,
+        })
+        for (const chrome of ['.settings-shell-header', '.settings-tabs > .ant-tabs-nav']) {
+          await expect.soft(page.locator(chrome)).toHaveCSS('background-color', surfaceColor, {
+            timeout: 1000,
+          })
+          await expect.soft(page.locator(chrome)).toHaveCSS('border-radius', '0px')
+        }
+        const navigation = page.locator('.settings-section-navigation')
+        if (await navigation.count()) {
+          await expect.soft(navigation).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+          await expect.soft(navigation).toHaveCSS('border-radius', '0px')
+          await expect.soft(navigation).not.toHaveCSS('background-image', 'none')
+        }
         await expect
-          .soft(page.locator('.ant-tabs-tabpane-active .ui-section-card').first())
-          .toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+          .soft(page.locator('.settings-tabs .ant-tabs-tab-active'))
+          .toHaveCSS('background-color', 'rgba(0, 0, 0, 0)', { timeout: 1000 })
         await expectContentDividers(rows, dividerColor)
+
+        await page.getByRole('tab', { name: 'Notifications', exact: true }).click()
+        const channel = page.locator('.chan-card').first()
+        await expect(channel).toBeVisible()
+        await expect.soft(channel).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+        await expect
+          .soft(settingsCards.filter({ has: page.locator('.chan-card') }).first())
+          .toHaveCSS('background-color', surfaceColor, { timeout: 1000 })
+        await app.evidence(`shared-form-appearance-notifications-${appearance.mode}`)
+        await channel.click()
+        const modal = page.locator('.notify-channel-modal')
+        await expect(modal.locator('.ant-modal-content')).toBeVisible()
+        await expect(modal.locator('.ant-modal-content')).toHaveCSS(
+          'background-color',
+          await resolveColor(page, appearance.tokens.colorBgElevated!)
+        )
+        await modal.getByRole('button', { name: 'Close', exact: true }).click()
+        await page.getByRole('tab', { name: 'About', exact: true }).click()
+        await expect
+          .soft(page.locator('.version-card'))
+          .toHaveCSS('background-color', surfaceColor, {
+            timeout: 1000,
+          })
 
         await app.goto(`/scripts/${scriptId}/users/${userId}/edit/general`)
         const userHeaders = page.locator('.user-edit-content .form-section > .section-header')
@@ -245,7 +287,10 @@ test.describe('@settings @shared-form-styles', () => {
         await app.goto('/settings')
         await selectAppearance('Default appearance')
         await expect(page.locator('.appearance-background')).toHaveCount(0)
-        await expect.soft(settingsSurface).toHaveCSS('background-color', builtInBackground)
+        await expect.soft(settingsSurface).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+        await expect
+          .soft(settingsCards.first())
+          .toHaveCSS('background-color', builtInCardBackground)
         await expectContentDividers(rows, builtInDivider)
       }
       await app.evidence('shared-form-appearance-default-restored')

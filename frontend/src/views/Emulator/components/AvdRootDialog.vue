@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 添加魔改 AVD：选根目录（解压好的模拟器内测包）→ 看电脑检查与组件 → 添加。
+ * 添加 ModAVD：选根目录（解压好的模拟器内测包）→ 看电脑检查与组件 → 添加。
  *
  * 组件随内测包提供，MAS 不下载；缺了由电脑检查写明缺哪几项、请用完整的内测包。组件齐了点「添加」
  * 走普通的路径纳管。已纳管的根目录也从这里看组件和电脑检查，并一键更新模拟器。
@@ -18,7 +18,7 @@ import AvdPrecheckList from './AvdPrecheckList.vue'
 import AvdUpdatePanel from './AvdUpdatePanel.vue'
 
 const open = defineModel<boolean>('open', { required: true })
-/** `addedRoots`：这条配置里已经纳管的魔改 AVD 根目录，已在里面的不再给「添加」 */
+/** `addedRoots`：这条配置里已经纳管的 ModAVD 根目录，已在里面的不再给「添加」 */
 const props = defineProps<{ emulatorId: string; initialRoot?: string; addedRoots?: string[] }>()
 const emit = defineEmits<{ added: [] }>()
 
@@ -55,7 +55,7 @@ const check = async (refresh = false) => {
     checkedRoot.value = target
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    logger.error(`读取魔改 AVD 状态失败 (${target}): ${detail}`)
+    logger.error(`读取 ModAVD 状态失败 (${target}): ${detail}`)
     message.error(detail || t('core.emulator2.avd.toast.statusFailed'))
   } finally {
     checking.value = false
@@ -84,7 +84,7 @@ const addRoot = async () => {
     open.value = false
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    logger.error(`添加魔改 AVD 失败: ${detail}`)
+    logger.error(`添加 ModAVD 失败: ${detail}`)
     message.error(detail || t('core.emulator2.avd.toast.addFailed'))
   } finally {
     adding.value = false

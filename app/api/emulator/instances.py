@@ -61,9 +61,9 @@ class Emulator2SearchItem(BaseModel):
             "判定原因: ok 可添加 / version_too_old 版本太旧 / planned 后续版本接入 / "
             "unsupported 暂不支持 / already_added 已添加 / "
             "not_found 找不到模拟器程序 / probe_failed 版本认不出 / "
-            "components_missing 魔改 AVD 根目录里组件不全 (用包里的「补全组件.bat」补齐) / "
-            "test_package_required 根目录里的模拟器不是魔改 AVD 内测包里的自编版 / "
-            "test_package_outdated 魔改 AVD 内测包编号太旧或读不到, 要换新包"
+            "components_missing ModAVD 根目录里组件不全 (用包里的「补全组件.bat」补齐) / "
+            "test_package_required 根目录里的模拟器不是 ModAVD 内测包里的自编版 / "
+            "test_package_outdated ModAVD 内测包编号太旧或读不到, 要换新包"
         ),
     )
     instanceCount: Optional[int] = Field(default=None, description="实例数量")
@@ -147,22 +147,22 @@ class Emulator2InstanceCreateIn(BaseModel):
     )
     memoryMb: Optional[int] = Field(
         default=None,
-        description="仅魔改 AVD: 内存 MB, 可选 3072 / 4096 / 5120 / 6144; 留空为 6144",
+        description="仅 ModAVD: 内存 MB, 可选 3072 / 4096 / 5120 / 6144; 留空为 6144",
     )
     cpu: Optional[int] = Field(
-        default=None, description="仅魔改 AVD: CPU 核数, 可选 2 / 4 / 6, 留空为 6"
+        default=None, description="仅 ModAVD: CPU 核数, 可选 2 / 4 / 6, 留空为 6"
     )
     fps: Optional[int] = Field(
         default=None,
-        description="仅魔改 AVD: 帧率 (hw.lcd.vsync), 可选 30 / 60, 留空为 60",
+        description="仅 ModAVD: 帧率 (hw.lcd.vsync), 可选 30 / 60, 留空为 60",
     )
     resolution: Optional[Literal[1080, 720]] = Field(
         default=None,
-        description="仅魔改 AVD: 分辨率档位，1080 为 1920×1080 / DPI 280（默认），720 为 1280×720 / DPI 240",
+        description="仅 ModAVD: 分辨率档位，1080 为 1920×1080 / DPI 280（默认），720 为 1280×720 / DPI 240",
     )
     dataPartitionGb: Optional[int] = Field(
         default=None,
-        description="仅魔改 AVD: 数据盘上限 GB (16–512), 按实际写入增长, 留空为 64",
+        description="仅 ModAVD: 数据盘上限 GB (16–512), 按实际写入增长, 留空为 64",
     )
 
 
@@ -298,10 +298,10 @@ class Emulator2DeviceItem(BaseModel):
     adbAddress: str = Field(default="", description="ADB 地址")
     headless: Optional[bool] = Field(
         default=None,
-        description="正在运行的实例是不是无头开机的(没有窗口, 显示 / 隐藏用不了); 只有魔改 AVD 给, 其余为空",
+        description="正在运行的实例是不是无头开机的(没有窗口, 显示 / 隐藏用不了); 只有 ModAVD 给, 其余为空",
     )
     creationError: str = Field(
-        default="", description="状态为新建失败时的原因(魔改 AVD), 其余为空"
+        default="", description="状态为新建失败时的原因(ModAVD), 其余为空"
     )
     settings: Dict[str, Emulator2SettingField] = Field(
         default_factory=dict,
@@ -325,7 +325,7 @@ class Emulator2DevicesOut(OutBase):
 
 
 class Emulator2AvdRootIn(BaseModel):
-    root: str = Field(..., description="魔改 AVD 根目录 (解压好的模拟器内测包)")
+    root: str = Field(..., description="ModAVD 根目录 (解压好的模拟器内测包)")
 
 
 class Emulator2AvdStatusIn(Emulator2AvdRootIn):
@@ -352,7 +352,7 @@ class Emulator2AvdComponentItem(BaseModel):
     )
     testPackage: bool = Field(
         default=False,
-        description="仅 Android 模拟器: 根目录里是魔改 AVD 内测包的自编版, 已就绪",
+        description="仅 Android 模拟器: 根目录里是 ModAVD 内测包的自编版, 已就绪",
     )
     needsTestPackage: bool = Field(
         default=False,
@@ -369,7 +369,7 @@ class Emulator2AvdComponentItem(BaseModel):
 
 
 class Emulator2AvdPrecheckItem(BaseModel):
-    """魔改 AVD 开机前电脑检查的一项。拦截项不满足时开机直接被拒绝, 原因同 reason + advice。"""
+    """ModAVD 开机前电脑检查的一项。拦截项不满足时开机直接被拒绝, 原因同 reason + advice。"""
 
     id: str = Field(
         ...,
@@ -455,7 +455,7 @@ class Emulator2AvdApkInstallOut(OutBase):
 
 class Emulator2AvdUpdateIn(BaseModel):
     root: str = Field(
-        ..., description="魔改 AVD 根目录; 必须已加进 Emulator 2.0, 别的目录一律拒绝"
+        ..., description="ModAVD 根目录; 必须已加进 Emulator 2.0, 别的目录一律拒绝"
     )
 
 
@@ -901,13 +901,13 @@ async def capture_baselines(
     return Emulator2GuardCaptureOut(**result)
 
 
-# ---- 魔改 AVD（Android Emulator）------------------------------------------
+# ---- ModAVD（Android Emulator）------------------------------------------
 
 
 @router.post(
     "/avd/status",
     tags=["Get"],
-    summary="查询魔改 AVD 根目录的组件状态",
+    summary="查询 ModAVD 根目录的组件状态",
     response_model=Emulator2AvdStatusOut,
     status_code=200,
 )
@@ -930,7 +930,7 @@ async def avd_status(
 @router.post(
     "/avd/instance/options",
     tags=["Get"],
-    summary="查询魔改 AVD 实例选项",
+    summary="查询 ModAVD 实例选项",
     response_model=Emulator2AvdInstanceOptionsOut,
     status_code=200,
 )
@@ -953,7 +953,7 @@ async def avd_instance_options(
 @router.post(
     "/avd/instance/apk/install",
     tags=["Action"],
-    summary="在魔改 AVD 实例里安装 APK",
+    summary="在 ModAVD 实例里安装 APK",
     response_model=Emulator2AvdApkInstallOut,
     status_code=200,
 )
@@ -973,13 +973,13 @@ async def avd_install_apk(
     return Emulator2AvdApkInstallOut(**result)
 
 
-# ---- 魔改 AVD 更新 ----------------------------------------------------------
+# ---- ModAVD 更新 ----------------------------------------------------------
 
 
 @router.post(
     "/avd/update/status",
     tags=["Get"],
-    summary="查询魔改 AVD 根目录的更新状态",
+    summary="查询 ModAVD 根目录的更新状态",
     response_model=Emulator2AvdUpdateStatusOut,
     status_code=200,
 )
@@ -1003,7 +1003,7 @@ async def avd_update_status(
 @router.post(
     "/avd/update",
     tags=["Action"],
-    summary="更新魔改 AVD",
+    summary="更新 ModAVD",
     response_model=Emulator2AvdUpdateActionOut,
     status_code=200,
 )

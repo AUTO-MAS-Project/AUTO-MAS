@@ -6,7 +6,6 @@ import json
 import threading
 import zipfile
 from datetime import datetime, timezone
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -20,6 +19,7 @@ from app.task.MAA.tools import fluxdown_update as update
 from app.task.MAA.tools import resource_update as resource
 from app.task.MAA.tools import software_package
 from app.task.MAA.tools import software_update as mirror
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
 def script_config(*, enabled=True, channel="stable", cdk=""):
@@ -828,7 +828,7 @@ async def test_interrupted_resource_merge_blocks_next_run_until_repaired(
     )
     monkeypatch.setattr(manager, "has_delegated_update_failure", lambda root: False)
     monkeypatch.setattr(
-        manager.System, "is_process_running", AsyncMock(return_value=False)
+        manager.process, "is_process_running", AsyncMock(return_value=False)
     )
     monkeypatch.setattr(manager.Publisher, "send", AsyncMock())
     task = SimpleNamespace(update_config_dir=install / "config")

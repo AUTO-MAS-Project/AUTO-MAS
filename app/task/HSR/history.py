@@ -7,7 +7,7 @@ logger = get_logger("HSR 历史记录")
 
 
 async def save_hsr_user_history(
-    *, task_info, script_info, user_item, cancelled: bool
+    *, history, script_info, user_item, cancelled: bool
 ) -> None:
     records = []
     for started_at, log_item in user_item.iter_history_logs():
@@ -16,7 +16,9 @@ async def save_hsr_user_history(
             "HSR 脚本原生来源运行中",
             "未开始监看日志",
         }:
-            log_item.status = "任务被用户手动中止" if cancelled else "HSR 账号未完成"
+            await log_item.set_state(
+                status="任务被用户手动中止" if cancelled else "HSR 账号未完成"
+            )
         status = (
             "success"
             if log_item.status
@@ -39,7 +41,7 @@ async def save_hsr_user_history(
         )
     if not records:
         return
-    await task_info.save_user_history(
+    await history.save_user_history(
         records,
         script=script_info,
         user=user_item,

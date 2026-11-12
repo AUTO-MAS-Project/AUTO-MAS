@@ -49,8 +49,7 @@ from app.models.emulator import (
 from app.utils import get_logger
 
 from .applaunch import AppLaunchResult
-from .avd import updater as avd_updater
-from .avd.constants import MOD_AVD_UNSUPPORTED_MESSAGE
+from .avd.constants import MOD_AVD_UNSUPPORTED_MESSAGE, AvdAdbInfo
 from .avd.manager import AvdManager
 from .avd.manager import build_manager as build_avd_manager
 from .guard import drift, load_baselines
@@ -62,7 +61,7 @@ from .mumu6 import build_manager as build_mumu_manager
 from .settings import InstanceSettings
 from .slots import PathRecord, SlotRecord, SlotTable
 
-#: 一条安装的后端管理器。雷电 / MuMu 各自继承旧实现, 魔改 AVD（avd）自己驱动
+#: 一条安装的后端管理器。雷电 / MuMu 各自继承旧实现, ModAVD（avd）自己驱动
 #: emulator.exe, 三家对门面暴露同一组方法。
 Backend = LDPlayer14Manager | MuMu6Manager | AvdManager
 
@@ -255,11 +254,11 @@ class Emulator2Manager(DeviceBase):
     ) -> DeviceInfo:
         """启动设备；``package_name`` 非空时在设备就绪后把该应用也拉起来。
 
-        ``manual``：用户在模拟器页手动点的启动（任务路径不传）。只有魔改 AVD 用得上——它开机时就要
+        ``manual``：用户在模拟器页手动点的启动（任务路径不传）。只有 ModAVD 用得上——它开机时就要
         定有没有窗口，手动启动带窗口，任务拉起跟「静默模式」走；雷电 / MuMu 不收这个参数。
 
-        ``allow_mod_avd``：调用方能用魔改 AVD（MaaFW 脚本——通用项目与各特调——与 MAA）。
-        魔改 AVD 目前只支持这两类：设备是魔改 AVD、又不是手动启动、调用方也没放行时直接拒绝，不开机。
+        ``allow_mod_avd``：调用方能用 ModAVD（MaaFW 脚本——通用项目与各特调——与 MAA）。
+        ModAVD 目前只支持这两类：设备是 ModAVD、又不是手动启动、调用方也没放行时直接拒绝，不开机。
         雷电 / MuMu 不看它。
 
         应用那一步由后端的 :class:`~.applaunch.AppLaunchMixin` 走纯 adb 完成，
@@ -271,10 +270,6 @@ class Emulator2Manager(DeviceBase):
         manager, native_index = await self._dispatch(idx)
         if isinstance(manager, AvdManager) and not (manual or allow_mod_avd):
             raise RuntimeError(MOD_AVD_UNSUPPORTED_MESSAGE)
-        if isinstance(manager, AvdManager) and avd_updater.update_in_progress(
-            manager.root
-        ):
-            raise RuntimeError("魔改 AVD 正在更新，更新完再开机")
 
         self._apply_host_mode()
 
@@ -327,12 +322,21 @@ class Emulator2Manager(DeviceBase):
         return await manager.launch_app(native_index, package_name)
 
     async def host_adb(self, idx: str):
-        """设备是魔改 AVD 实例时，返回宿主进程对它发 adb 命令的通道（走 MAS 的私有 server，
+        """设备是 ModAVD 实例时，返回宿主进程对它发 adb 命令的通道（``modavd adb``，
         见 :class:`~.avd.manager.AvdHostAdb`）；雷电 / MuMu 返回 ``None``，调用方照旧用
         ``get_adb_path()`` 与设备地址。"""
         manager, native_index = await self._dispatch(idx)
         if isinstance(manager, AvdManager):
-            return manager.host_adb(native_index)
+            return await manager.host_adb(native_index)
+        return None
+
+    async def avd_adb_info(self, idx: str) -> AvdAdbInfo | None:
+        """设备是 ModAVD 实例时，返回给脚本配 adb 用的数据（这条安装的 adb 程序、私有 server 端口、
+        这台实例的端口，都是 ``modavd list`` 报的，见 :meth:`~.avd.manager.AvdManager.adb_info`）；
+        雷电 / MuMu 返回 ``None``。"""
+        manager, native_index = await self._dispatch(idx)
+        if isinstance(manager, AvdManager):
+            return await manager.adb_info(native_index)
         return None
 
     async def open_store(self, idx: str) -> AppLaunchResult:

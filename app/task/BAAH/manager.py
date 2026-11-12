@@ -23,6 +23,8 @@
 按账号逐个拉起 BAAH 自动代理任务，结束时统一组装任务报告并推送。
 """
 
+import asyncio
+import shutil
 import uuid
 from contextlib import ExitStack, suppress
 from datetime import datetime
@@ -30,7 +32,13 @@ from datetime import datetime
 import app.core.notify.report as _node_report
 from app.config import config_manager
 from app.core import Config, EmulatorManager, Notify, Publisher
-from app.core.script_update import ScriptUpdateRequest, run_script_update
+from app.core.script_update import (
+    ScriptUpdateRequest,
+    auto_recover_script_install,
+    run_managed_script_install,
+    run_script_update_with_safe_fallback,
+)
+from app.core.script_update_recovery import DownloadRetryFailed
 from app.core.ws import protocol
 from app.models.config import BAAHConfig
 from app.models.emulator import DeviceBase, DeviceProvider
@@ -45,6 +53,15 @@ from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .AutoProxy import AutoProxyTask
 from .tools import program_update
+from .tools.managed_recovery import (
+    BAAHInstallAdapter,
+    acknowledge_stale_transaction,
+    inspect_stale_transaction,
+    snapshot_original_receipts,
+    cleanup_original_receipts,
+    receipt_backup_path,
+)
+from app.services.script_install_backup import ManagedInstallBackup
 
 logger = get_logger("BAAH 调度器")
 
@@ -80,7 +97,7 @@ class BAAHManager(ScriptManagerBase):
     async def check(self) -> str:
         """校验 BAAH 脚本配置是否可用"""
 
-        if self.task_info.mode not in METHOD_BOOK:
+        if self.execution_mode not in METHOD_BOOK:
             return "不支持的任务模式, 请检查任务配置！"
 
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
@@ -99,7 +116,8 @@ class BAAHManager(ScriptManagerBase):
             return "未填写 BAAH 主程序路径, 请检查托管配置中的主程序路径设置！"
         if not path.is_file():
             directory = script_install.workspace(path.parent)
-            if not ((directory / "transaction.json").exists()):
+            receipt = script_install.record_path(path.parent, "installed.json")
+            if not (directory / "transaction.json").is_file() and not receipt.is_file():
                 return "BAAH 主程序不存在，且没有可信的中断安装记录，请检查安装路径"
 
         return "Pass"
@@ -109,13 +127,15 @@ class BAAHManager(ScriptManagerBase):
 
         self.config_locks[
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].uid
-        ] = await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].lock_x()
+        ] = await self.lock_script_config(
+            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        )
         self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         self.user_config = self.script_config.UserData
         logger.success(f"{self.script_info.script_id} 已锁定, BAAH 托管配置提取完成")
 
-        self.script_info.user_list = self.build_proxy_user_list(
-            self.user_config.items()
+        await self.script_info.set_users(
+            self.build_proxy_user_list(self.user_config.items())
         )
         logger.info(
             f"账号列表加载完成, 已筛选账号数: {len(self.script_info.user_list)}"
@@ -131,45 +151,142 @@ class BAAHManager(ScriptManagerBase):
     async def _prepare_program_update(self) -> None:
         root = self.script_config.Script.BAAHPath.parent
         self.check_result = "BAAH 更新准备未完成"
-        # 按真实安装路径排队，等待前一 BAAH 运行的全部账号及恢复动作结束；
-        # 跨 MAS 进程仍由文件锁保障，不改变不同安装目录的并行能力。
         lock = update_files.directory_lock(root.resolve())
         await lock.acquire()
         self._directory_lock = lock
         self._install_access.enter_context(script_install.installation_access(root))
-        if self.script_config.Update.TakeoverEnabled:
-
-            async def progress(downloaded: int, total: int, speed: float) -> None:
-                self.script_info.log = f"BAAH 更新下载：{downloaded / 1024**2:.1f} / {total / 1024**2:.1f} MB"
-
-            try:
-                self.script_info.log = await run_script_update(
-                    ScriptUpdateRequest(self.script_info.script_id, "BAAH"),
-                    program_update.update_before_run,
-                    root,
-                    self.script_config,
-                    progress=progress,
-                )
-            except (script_install.InstallUnsafeError, FluxdownCancelUnconfirmed):
-                raise
-            except Exception as error:
-                await program_update.confirm_current_install(root)
-                message = f"BAAH 更新准备失败，沿用当前安装继续任务：{error}"
-                self.script_info.log = message
-                logger.warning(message)
-                with suppress(Exception):
-                    await Publisher.send(
-                        id=self.task_info.task_id,
-                        type=protocol.TASK_NOTICE,
-                        data=WSTaskNoticeData(level="warning", message=message),
-                    )
-        else:
-            # 即使关闭接管，上轮未确认安装也必须先恢复。
+        request = ScriptUpdateRequest(str(self.script_info.script_id), "BAAH")
+        backup = ManagedInstallBackup(
+            root, script_id=request.script_id, script_type="BAAH"
+        )
+        # 原生事务未完成时不能通过清除 journal 绕过正在使用的备份。
+        try:
             await script_install.run_worker(
                 script_install.recover_install,
                 root,
                 lambda: program_update.assert_idle(root),
             )
+        except (script_install.InstallUnsafeError, OSError, ValueError):
+            marker = script_install.workspace(root) / "transaction.json"
+            if marker.is_symlink() or not marker.is_file():
+                raise
+
+            async def retry_native_rollback():
+                await script_install.run_worker(
+                    script_install.recover_install,
+                    root,
+                    lambda: program_update.assert_idle(root),
+                )
+
+            outcome = await auto_recover_script_install(
+                request,
+                install_root=root,
+                inspect=lambda: inspect_stale_transaction(root),
+                acknowledge=lambda: acknowledge_stale_transaction(root),
+                reinstall=retry_native_rollback,
+            )
+            await self.script_info.set_log(
+                f"BAAH 原生安装事务由公共入口恢复：{outcome}"
+            )
+        # 检查旧安装不写目录，可以保留 BAAH 内置的 adb server。
+        await asyncio.to_thread(
+            program_update.assert_idle, root, allow_background_adb=True
+        )
+
+        if backup.read() is not None:
+            adapter = BAAHInstallAdapter(root, self.script_config)
+            result = await run_managed_script_install(
+                request,
+                install_root=root,
+                inspect=adapter.inspect,
+                acknowledge=adapter.acknowledge,
+                install=adapter.install,
+                ensure_idle=adapter.ensure_idle,
+                after_rollback=adapter.after_rollback,
+            )
+            await script_install.run_worker(cleanup_original_receipts, root)
+            await self.script_info.set_log(f"BAAH 上次安装恢复：{result}")
+            self.check_result = "Pass"
+            return
+
+        try:
+            await program_update.confirm_current_install(root)
+            if receipt_backup_path(root).exists():
+                await script_install.run_worker(cleanup_original_receipts, root)
+        except (script_install.InstallUnsafeError, OSError, ValueError) as error:
+            # 损坏本体只能在已核验的 MAS 安装身份下自动完整重装。
+            receipt = script_install.record_path(root, "installed.json")
+            if receipt.is_symlink() or not receipt.is_file():
+                raise script_install.InstallUnsafeError(
+                    "BAAH 原安装不完整且缺少可信回执，不能自动修复"
+                ) from error
+            snapshot = receipt.read_bytes()
+            program_update.verify_recovery_receipt(root, snapshot)
+            adapter = BAAHInstallAdapter(
+                root, self.script_config, recovery_receipt=snapshot
+            )
+            result = await auto_recover_script_install(
+                request,
+                install_root=root,
+                inspect=adapter.inspect,
+                acknowledge=adapter.acknowledge,
+                reinstall=adapter.install,
+            )
+            await self.script_info.set_log(f"BAAH 自动修复：{result}")
+            self.check_result = "Pass"
+            return
+
+        if self.script_config.Update.TakeoverEnabled:
+
+            async def progress(downloaded: int, total: int, speed: float) -> None:
+                await self.script_info.set_log(
+                    f"BAAH 下载：{downloaded / 1024**2:.1f} / {total / 1024**2:.1f} MB"
+                )
+
+            async def prepare():
+                try:
+                    return await program_update.prepare_update(
+                        root, self.script_config, progress=progress
+                    )
+                except (script_install.InstallUnsafeError, FluxdownCancelUnconfirmed):
+                    raise
+                except Exception as error:
+                    raise DownloadRetryFailed(
+                        source="BAAH GitHub/MirrorChyan",
+                        reason=f"BAAH 更新准备失败（{type(error).__name__}）",
+                    ) from error
+
+            candidate = await run_script_update_with_safe_fallback(
+                request,
+                prepare,
+                root,
+                BAAHInstallAdapter(root, self.script_config).inspect,
+            )
+            if isinstance(candidate, program_update.PreparedUpdate):
+                adapter = BAAHInstallAdapter(
+                    root, self.script_config, prepared=candidate
+                )
+                await script_install.run_worker(snapshot_original_receipts, root)
+                try:
+                    result = await run_managed_script_install(
+                        request,
+                        install_root=root,
+                        inspect=adapter.inspect,
+                        acknowledge=adapter.acknowledge,
+                        install=adapter.install,
+                        ensure_idle=adapter.ensure_idle,
+                        after_rollback=adapter.after_rollback,
+                    )
+                finally:
+                    await adapter.ensure_idle()
+                    if candidate.archive.parent.exists():
+                        shutil.rmtree(candidate.archive.parent)
+                    if backup.read() is None:
+                        await script_install.run_worker(cleanup_original_receipts, root)
+            else:
+                await program_update.confirm_current_install(root)
+                result = candidate or "BAAH 当前无需更新"
+            await self.script_info.set_log(str(result))
         self.check_result = "Pass"
 
     async def main_task(self):
@@ -192,16 +309,17 @@ class BAAHManager(ScriptManagerBase):
 
         await self._prepare_program_update()
 
-        for self.script_info.current_index in range(len(self.script_info.user_list)):
+        for _runtime_user_index in range(len(self.script_info.user_list)):
+            await self.script_info.set_current_index(_runtime_user_index)
             current_user = self.script_info.user_list[self.script_info.current_index]
             if (
-                self.task_info.mode == "AutoProxy"
+                self.execution_mode == "AutoProxy"
                 and not await self.check_user_before_run(
                     current_user, self.user_config[uuid.UUID(current_user.user_id)]
                 )
             ):
                 continue
-            task = METHOD_BOOK[self.task_info.mode](
+            task = METHOD_BOOK[self.execution_mode](
                 self.script_info,
                 self.script_config,
                 self.user_config,
@@ -216,12 +334,12 @@ class BAAHManager(ScriptManagerBase):
         """运行结束后的收尾工作"""
         try:
             if self.check_result != "Pass":
-                self.script_info.status = "异常"
+                await self.script_info.set_state(status="异常")
                 return self.check_result
 
             logger.info("BAAH 任务已结束, 开始执行后续操作")
 
-            if self.task_info.mode == "AutoProxy":
+            if self.execution_mode == "AutoProxy":
                 await close_emulator(self)
                 await config_manager.flush()
 
@@ -230,7 +348,7 @@ class BAAHManager(ScriptManagerBase):
                 title = (
                     f"{datetime.now().strftime('%m-%d')} | "
                     f"{self.script_info.name or '空白'}的"
-                    f"{TASK_MODE_ZH[self.task_info.mode]}任务报告"
+                    f"{TASK_MODE_ZH[self.execution_mode]}任务报告"
                 )
                 ## 按账号交错组装「账号结果行 + 该账号节点详情」，
                 ## 失败类型条目仅在本次任务存在未完成账号时纳入报告
@@ -240,7 +358,7 @@ class BAAHManager(ScriptManagerBase):
                 )
                 # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
                 if user_result_text:
-                    self.script_info.log = (
+                    await self.script_info.set_log(
                         f"{self.script_info.log}\n{user_result_text}"
                         if self.script_info.log
                         else user_result_text
@@ -268,9 +386,9 @@ class BAAHManager(ScriptManagerBase):
                 user.status not in {"完成", "跳过"}
                 for user in self.script_info.user_list
             ):
-                self.script_info.status = "异常"
+                await self.script_info.set_state(status="异常")
             else:
-                self.script_info.status = "完成"
+                await self.script_info.set_state(status="完成")
         finally:
             try:
                 self._install_access.close()
@@ -287,7 +405,7 @@ class BAAHManager(ScriptManagerBase):
 
     async def on_crash(self, e: Exception):
 
-        self.script_info.status = "异常"
+        await self.script_info.set_state(status="异常")
         logger.opt(exception=True).warning(f"BAAH 任务出现异常: {e}")
         await Publisher.send(
             id=self.task_info.task_id,
@@ -303,12 +421,12 @@ class BAAHManager(ScriptManagerBase):
                 item
                 if isinstance(item, log_box.LogEntry)
                 else log_box.LogEntry.from_legacy(item)
-                for item in _report_user.push_log
+                for item in self.user_state(_report_user).push_log
                 if (item.log_type if isinstance(item, log_box.LogEntry) else item[0])
                 != LOG_TYPE_ERROR
                 or has_uncompleted
             ]
-            _mode = getattr(_report_user, "push_log_mode", "逐条")
+            _mode = self.user_state(_report_user).push_log_mode
             if _mode == "关闭":
                 _details = []
             elif _mode == "汇总":

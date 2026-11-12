@@ -16,24 +16,23 @@ export type Emulator2InstanceCreateIn = {
      */
     name?: (string | null);
     /**
-     * 仅魔改 AVD: 内存 MB, 可选 3072 / 4096 / 5120 / 6144; 留空为 6144
+     * 仅 ModAVD: 内存 MB, 可选 3072 / 4096 / 5120 / 6144; 留空为 6144
      */
     memoryMb?: (number | null);
     /**
-     * 仅魔改 AVD: CPU 核数, 可选 2 / 4 / 6, 留空为 6
+     * 仅 ModAVD: CPU 核数, 可选 2 / 4 / 6, 留空为 6
      */
     cpu?: (number | null);
     /**
-     * 仅魔改 AVD: 帧率 (hw.lcd.vsync), 可选 30 / 60, 留空为 60
+     * 仅 ModAVD: 帧率 (hw.lcd.vsync), 可选 30 / 60, 留空为 60
      */
     fps?: (number | null);
     /**
-     * 仅魔改 AVD: 分辨率档位，1080 为 1920×1080 / DPI 280（默认），720 为 1280×720 / DPI 240
+     * 仅 ModAVD: 分辨率档位，1080 为 1920×1080 / DPI 280（默认），720 为 1280×720 / DPI 240
      */
     resolution?: (1080 | 720 | null);
     /**
-     * 仅魔改 AVD: 数据盘上限 GB (16–512), 按实际写入增长, 留空为 64
+     * 仅 ModAVD: 数据盘上限 GB (16–512), 按实际写入增长, 留空为 64
      */
     dataPartitionGb?: (number | null);
 };
-

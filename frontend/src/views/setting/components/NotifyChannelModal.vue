@@ -200,7 +200,7 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
   width: 30px;
   height: 30px;
   flex: 0 0 30px;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius-sm);
   display: grid;
   place-items: center;
   font-size: 17px;
@@ -230,7 +230,7 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
   color: var(--ant-color-text-tertiary);
   font-size: 15px;
   padding: 2px 6px;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius-sm);
   cursor: pointer;
 }
 
@@ -262,7 +262,7 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
   gap: 4px;
   background: var(--ant-color-fill-quaternary);
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   padding: 8px 14px;
 }
 

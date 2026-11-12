@@ -1,5 +1,9 @@
 <template>
-  <a-card class="plan-config-card" :class="{ 'plan-config-compact': compact }" :bordered="false">
+  <a-card
+    class="plan-config-card app-page-surface"
+    :class="{ 'plan-config-compact': compact }"
+    :bordered="false"
+  >
     <template #title>
       <div class="plan-title-container">
         <div v-if="!isEditingPlanName" class="plan-title-display">
@@ -134,12 +138,6 @@ const handleRotateDaysChange = (value: number | string | null) => {
 </script>
 
 <style scoped>
-.plan-config-card {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border-radius: 12px;
-  border: 1px solid var(--ant-color-border-secondary);
-}
-
 .mode-label,
 .view-label {
   color: var(--ant-color-text-secondary);
@@ -156,19 +154,12 @@ const handleRotateDaysChange = (value: number | string | null) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
 }
 
 .plan-title-display {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.plan-title-text {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ant-color-text);
 }
 
 .plan-edit-btn {
@@ -187,25 +178,6 @@ const handleRotateDaysChange = (value: number | string | null) => {
   border-radius: 8px;
   overflow: hidden;
   /* border: 1px solid var(--ant-color-border-secondary); */
-}
-
-/* 深度样式 */
-.plan-config-card :deep(.ant-card-head) {
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  padding: 16px 24px;
-}
-
-.plan-config-card :deep(.ant-card-head-title) {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.plan-config-compact .plan-title-container {
-  margin-bottom: 0;
-}
-
-.plan-config-compact :deep(.ant-card-head) {
-  padding: 12px 24px;
 }
 
 .plan-config-compact :deep(.ant-card-head-wrapper) {

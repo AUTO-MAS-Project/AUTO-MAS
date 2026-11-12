@@ -4,7 +4,6 @@
     :script-name="scriptName"
     :is-edit="isEdit"
     script-edit-segment="general"
-    :current-label="isEdit ? t('core.comp.editUser') : t('core.comp.addUser')"
     :user-id="userId"
     :config-label="t('core.edit.generalConfiguration')"
     :config-loading="generalConfigLoading"
@@ -64,6 +63,10 @@
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <!-- 基本信息 -->
         <div class="form-section">
+          <UserAccountHeading
+            :user-name="formData.userName"
+            :options="{ isEdit, logoSrc: accountIcon }"
+          />
           <div class="section-header">
             <h3>{{ t('core.edit.basicInfo') }}</h3>
             <div class="section-header-actions">
@@ -73,37 +76,18 @@
               </a-button>
             </div>
           </div>
+          <UserBasicInfoFields
+            v-model:user-name="formData.userName"
+            v-model:status="formData.Info.Status"
+            v-model:remained-day="formData.Info.RemainedDay"
+            v-model:notes="formData.Info.Notes"
+            :disabled="loading"
+            @save-name="handleFieldSave('userName', formData.userName)"
+            @save-status="handleFieldSave('Info.Status', formData.Info.Status)"
+            @save-days="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
+            @save-notes="handleFieldSave('Info.Notes', formData.Info.Notes)"
+          />
           <a-row :gutter="24">
-            <a-col :span="12">
-              <UserNameField
-                name="userName"
-                required
-                v-model="formData.userName"
-                :hint="t('core.edit.displayNameUsedIdentify')"
-                :placeholder="t('core.edit.enterUsername')"
-                :disabled="loading"
-                enhanced
-                @save="handleFieldSave('userName', formData.userName)"
-              />
-            </a-col>
-            <a-col :span="6">
-              <UserStatusField
-                name="status"
-                v-model="formData.Info.Status"
-                :hint="t('core.edit.whetherThisUserEnabled')"
-                @save="handleFieldSave('Info.Status', formData.Info.Status)"
-              />
-            </a-col>
-            <a-col :span="6">
-              <UserRemainedDayField
-                name="remainedDay"
-                v-model="formData.Info.RemainedDay"
-                :hint="t('core.edit.daysLeftAccount1')"
-                placeholder="-1"
-                :disabled="loading"
-                @save="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
-              />
-            </a-col>
             <a-col :span="24">
               <GeneralUserConfigurationSection
                 :model-value="formData.Info.Base ?? 'independent'"
@@ -116,17 +100,6 @@
               />
             </a-col>
           </a-row>
-
-          <UserNotesField
-            name="notes"
-            v-model="formData.Info.Notes"
-            :hint="t('core.edit.addNoteAboutThis')"
-            :placeholder="t('core.edit.enterNote3')"
-            :disabled="loading"
-            :rows="4"
-            enhanced
-            @save="handleFieldSave('Info.Notes', formData.Info.Notes)"
-          />
         </div>
 
         <!-- 额外脚本 -->
@@ -162,10 +135,9 @@
 </template>
 
 <script setup lang="ts">
-import UserNameField from '@/views/EditView/User/components/UserNameField.vue'
-import UserNotesField from '@/views/EditView/User/components/UserNotesField.vue'
-import UserRemainedDayField from '@/views/EditView/User/components/UserRemainedDayField.vue'
-import UserStatusField from '@/views/EditView/User/components/UserStatusField.vue'
+import UserAccountHeading from '@/components/UserAccountHeading.vue'
+import accountIcon from '@/assets/AUTO-MAS.ico'
+import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import UserEditHeader from '@/components/UserEditHeader.vue'
@@ -177,6 +149,7 @@ import { message, Modal } from 'ant-design-vue'
 import { EyeOutlined, HistoryOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
+import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
@@ -187,7 +160,6 @@ import {
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import { Service } from '@/api'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GeneralUserConfigurationSection from './GeneralUserConfigurationSection.vue'
@@ -215,7 +187,7 @@ const scriptId = route.params.scriptId as string
 
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId }))
 
 // 脚本信息
 const scriptName = ref('')
@@ -308,16 +280,7 @@ const handleFieldSave = async (key: string, value: any) => {
 
   await enqueue(async () => {
     try {
-      // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
-      const parts = key.split('.')
-      let userData: Record<string, any> = {}
-      let current = userData
-
-      for (let i = 0; i < parts.length - 1; i++) {
-        current[parts[i]] = {}
-        current = current[parts[i]]
-      }
-      current[parts[parts.length - 1]] = value
+      let userData = buildFieldPatch(key, value)
 
       // 特殊处理：userName 需要同步到 Info.Name
       if (key === 'userName') {
@@ -802,17 +765,6 @@ onUnmounted(() => {
   margin-left: 12px;
   font-size: 13px;
   color: var(--ant-color-text-secondary);
-}
-
-.cancel-button {
-  border: 1px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-}
-
-.cancel-button:hover {
-  border-color: var(--ant-color-primary);
-  color: var(--ant-color-primary);
 }
 
 .save-button {

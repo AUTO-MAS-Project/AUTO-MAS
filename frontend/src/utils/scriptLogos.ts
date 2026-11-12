@@ -1,51 +1,12 @@
 import type { ScriptType } from '@/types/script'
-import generalIcon from '@/assets/AUTO-MAS.ico'
-import baahIcon from '@/assets/baah.png'
-import bettergiIcon from '@/assets/bettergi.ico'
-import hsrIcon from '@/assets/hsr.png'
-import maaIcon from '@/assets/MAA.png'
-import maaEndIcon from '@/assets/MaaEnd.png'
-import m9aIcon from '@/assets/M9A.png'
-import okNteIcon from '@/assets/ok-nte.ico'
-import okwwIcon from '@/assets/ok-ww.ico'
-import srcIcon from '@/assets/SRC.png'
-import maafwIcon from '@/assets/maafw.png'
-import whimboxIcon from '@/assets/whimbox.png'
-import mssIcon from '@/assets/mss.png'
-import zzzOdIcon from '@/assets/zzz-od.ico'
+import { SCRIPT_METADATA } from './scriptMetadata'
 
 /** 脚本类型 → 图标资源，Vite 处理后的 URL */
-export const SCRIPT_LOGOS: Record<ScriptType, string> = {
-  BAAH: baahIcon,
-  BetterGI: bettergiIcon,
-  General: generalIcon,
-  HSR: hsrIcon,
-  M9A: m9aIcon,
-  MAA: maaIcon,
-  MaaEnd: maaEndIcon,
-  MaaFW: maafwIcon,
-  MSS: mssIcon,
-  OkNte: okNteIcon,
-  Okww: okwwIcon,
-  SRC: srcIcon,
-  Whimbox: whimboxIcon,
-  ZzzOd: zzzOdIcon,
-}
+export const SCRIPT_LOGOS = Object.fromEntries(
+  Object.entries(SCRIPT_METADATA).map(([type, metadata]) => [type, metadata.logo])
+) as Record<ScriptType, string>
 
 /** 脚本类型 → 展示名（图片 alt；可见名称走 i18n 词表） */
-export const SCRIPT_LABELS: Record<ScriptType, string> = {
-  BAAH: 'BAAH',
-  BetterGI: 'BetterGI',
-  General: 'AUTO-MAS',
-  HSR: 'HSR',
-  M9A: 'M9A',
-  MAA: 'MAA',
-  MaaEnd: 'MaaEnd',
-  MaaFW: 'MFW',
-  MSS: 'MSS',
-  OkNte: 'OK-NTE',
-  Okww: 'ok-ww',
-  SRC: 'SRC',
-  Whimbox: 'Whimbox',
-  ZzzOd: 'ZZZ-OD',
-}
+export const SCRIPT_LABELS = Object.fromEntries(
+  Object.entries(SCRIPT_METADATA).map(([type, metadata]) => [type, metadata.label])
+) as Record<ScriptType, string>

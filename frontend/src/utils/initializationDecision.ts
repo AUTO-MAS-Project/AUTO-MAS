@@ -73,7 +73,7 @@ async function resolveInitializationDecision(): Promise<InitializationDecision> 
   const startup = await api.desktopStartupStatus?.()
   if (startup) {
     return {
-      mode: startup.fullInitialization ? 'full-init' : 'skip-home',
+      mode: startup.fullInitialization || startup.state === 'failed' ? 'full-init' : 'skip-home',
       currentVersion,
       savedVersion: startup.flowKind === 'first-run' ? null : currentVersion,
       autoUpdateEnabled: startup.fullInitialization,
@@ -129,7 +129,6 @@ async function resolveInitializationDecision(): Promise<InitializationDecision> 
 export type FailureActionKind =
   | 'restore-workspace'
   | 'retry'
-  | 'retry-other-mirror'
   | 'rebuild-environment'
   | 'open-log'
   | 'run-doctor'
@@ -146,12 +145,8 @@ export type FailureNoticeKind = 'internal-error' | 'contact-support'
 interface FailureActionPlan {
   /** 有序动作列表，界面按这个顺序渲染，第一个作主按钮。 */
   actions: FailureAction[]
-  /** 是否展开镜像源选择面板。 */
-  showMirrorSelection: boolean
   /** 额外提示文案的种类，不需要时为 null。 */
   notice: FailureNoticeKind | null
-  /** 本次失败没带任何 Runtime 结构化字段，按旧链路原样展示。 */
-  legacy: boolean
 }
 
 /** 决策输入，全部来自失败结果里的机器字段，不含任何展示文案。 */
@@ -165,38 +160,23 @@ interface FailureContext {
   runtimeMode?: RuntimeInitMode
 }
 
-/**
- * Runtime 链路下仍有镜像可换的段。
- *
- * Runtime 的镜像目录里 `python`（python-build-standalone）、`git` 与 `package-index` 三类
- * 对得上界面：依赖段的锁文件虽然冻结在 PyPI，但 Runtime 同步时会把锁副本里的下载地址改写到
- * 所选镜像（显式指定的排在尝试顺序最前，失败再逐个换源），所以依赖段也能换镜像。
- * `pip` / `git` 两段在 Runtime 下根本不执行，给「换镜像」按钮只会弹出空面板。
- */
-const RUNTIME_MIRROR_STAGES = new Set(['python', 'repository', 'dependency'])
-
 /** remediation 到界面动作的显式对应；这里没有的一律忽略。 */
 const REMEDIATION_ACTIONS: Readonly<Record<string, FailureActionKind>> = {
   retry: 'retry',
   'retry-sync': 'retry',
   'restart-backend': 'retry',
-  'retry-other-mirror': 'retry-other-mirror',
+  'retry-other-mirror': 'retry',
   'rebuild-environment': 'rebuild-environment',
   'open-log': 'open-log',
   'run-doctor': 'run-doctor',
 }
 
 /** 会真的再跑一次安装的动作，`retryable === false` 时全部屏蔽。 */
-const RETRY_KINDS = new Set<FailureActionKind>([
-  'retry',
-  'retry-other-mirror',
-  'rebuild-environment',
-])
+const RETRY_KINDS = new Set<FailureActionKind>(['retry', 'rebuild-environment'])
 
 const ACTION_LABEL_KEYS: Readonly<Record<FailureActionKind, string>> = {
   'restore-workspace': 'bootstrap.init.failure.restoreWorkspace',
   retry: 'bootstrap.init.step.retry',
-  'retry-other-mirror': 'bootstrap.init.failure.retryOtherMirror',
   'rebuild-environment': 'bootstrap.init.failure.rebuildEnvironment',
   'open-log': 'bootstrap.launch.viewLog',
   'run-doctor': 'bootstrap.init.failure.runDoctor',
@@ -213,17 +193,9 @@ function pushUnique(kinds: FailureActionKind[], kind: FailureActionKind): void {
   if (!kinds.includes(kind)) kinds.push(kind)
 }
 
-/** 旧链路的老样子：一个「用选中的镜像源重试」加一整块镜像面板。 */
-function legacyPlan(): FailureActionPlan {
-  return {
-    actions: [
-      { kind: 'retry-other-mirror', labelKey: 'bootstrap.init.step.retryWithMirror' },
-      toAction('open-log'),
-    ],
-    showMirrorSelection: true,
-    notice: null,
-    legacy: true,
-  }
+/** 缺少可识别处置动作时仍保留普通重试和本地日志。 */
+function fallbackPlan(): FailureActionPlan {
+  return { actions: [toAction('retry'), toAction('open-log')], notice: null }
 }
 
 /**
@@ -231,36 +203,28 @@ function legacyPlan(): FailureActionPlan {
  *
  * 纯函数，不碰 DOM 也不读全局状态，界面只负责渲染返回的动作列表并把点击接回对应通道。
  * 三条硬规则：
- * - `retryable === false` 不出普通重试按钮；受管源码可独立执行完整恢复；
+ * - `retryable === false` 不出普通重试按钮；受管源码恢复与 Runtime 补装独立处理；
  * - `INTERNAL_ERROR` 一律按不可重试处理，只给日志和一句「请携带日志反馈」；
- * - 认不出来的 remediation 按协议要求忽略，一条都认不出来时退回旧链路的现有行为。
+ * - 认不出来的 remediation 按协议要求忽略，一条都认不出来时保留普通重试与日志。
  * 日志是界面兜底：等待态始终有「查看日志」，失败态不能因为这个错误码没声明
  * `open-log` 就把入口收走。
  */
 export function decideFailureActions(context: FailureContext): FailureActionPlan {
+  // 找不到现有 exe 时不能重启它；managed 模式的重试已转到完整初始化，先补装再启动。
+  if (context.runtimeMode === 'managed' && context.code === 'RUNTIME_NOT_FOUND') {
+    return fallbackPlan()
+  }
   // 源码恢复会先重新校验 Runtime 并执行完整 bootstrap，不是重跑失败的依赖命令。
   if (context.runtimeMode === 'managed' && canRestoreWorkspace(context.code)) {
     return {
       actions: [toAction('restore-workspace'), toAction('open-log')],
-      showMirrorSelection: false,
       notice: null,
-      legacy: false,
     }
   }
   const remediation = context.remediation ?? []
 
-  // 旧链路：既没有结果码也没有处置动作，退回原有的换源恢复方式。
-  if (!context.code && remediation.length === 0) {
-    return legacyPlan()
-  }
-
   const isInternalError = context.code === INTERNAL_ERROR_CODE
   const retryAllowed = context.retryable !== false && !isInternalError
-  // 主进程没给模式（旧版本主进程）时按旧链路处理，镜像面板照常可用。
-  const canSwitchMirror =
-    context.runtimeMode === undefined ||
-    (context.stage !== undefined && RUNTIME_MIRROR_STAGES.has(context.stage))
-
   const kinds: FailureActionKind[] = []
   let notice: FailureNoticeKind | null = null
   let recognized = 0
@@ -276,8 +240,7 @@ export function decideFailureActions(context: FailureContext): FailureActionPlan
     const mapped = REMEDIATION_ACTIONS[item]
     if (!mapped) continue
     recognized += 1
-    // 该段没有可换的镜像时降级成普通重试，免得弹出一个空的镜像面板。
-    pushUnique(kinds, mapped === 'retry-other-mirror' && !canSwitchMirror ? 'retry' : mapped)
+    pushUnique(kinds, mapped)
   }
 
   if (isInternalError) {
@@ -287,12 +250,10 @@ export function decideFailureActions(context: FailureContext): FailureActionPlan
 
   // 一条都没认出来（只给了未知 code、或 remediation 全是界面管不了的动作）。
   if (recognized === 0) {
-    if (retryAllowed) return legacyPlan()
+    if (retryAllowed) return fallbackPlan()
     return {
       actions: [toAction('open-log')],
-      showMirrorSelection: false,
       notice: notice ?? 'contact-support',
-      legacy: false,
     }
   }
 
@@ -301,9 +262,7 @@ export function decideFailureActions(context: FailureContext): FailureActionPlan
 
   return {
     actions: allowed.map(toAction),
-    showMirrorSelection: allowed.includes('retry-other-mirror'),
     notice,
-    legacy: false,
   }
 }
 
@@ -322,22 +281,4 @@ const WORKSPACE_RECOVERY_CODES = new Set([
 /** canRestoreWorkspace 标记能通过完整 bootstrap 恢复受管源码的错误。 */
 export function canRestoreWorkspace(code: string | undefined): boolean {
   return code !== undefined && WORKSPACE_RECOVERY_CODES.has(code)
-}
-
-/**
- * 过滤「换镜像重试」的候选列表。
- *
- * Runtime 只收得下自己镜像目录里有对应源的那几个键，键名由主进程从 W9b 的映射表原样导出
- * （`mirrorKeys`），界面不自己抄一份。旧链路原样返回。
- */
-export function filterRuntimeMirrors<T extends { key: string }>(
-  mirrors: readonly T[],
-  stage: string,
-  runtimeMode: RuntimeInitMode | undefined,
-  mirrorKeys: Readonly<Record<string, string[]>> | undefined
-): T[] {
-  if (runtimeMode === undefined) return [...mirrors]
-
-  const allowed = new Set(mirrorKeys?.[stage] ?? [])
-  return mirrors.filter(mirror => allowed.has(mirror.key))
 }

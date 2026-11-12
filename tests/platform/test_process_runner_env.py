@@ -78,12 +78,26 @@ async def test_repeated_cancel_waits_for_process_tree_cleanup(
     created = []
     ready = asyncio.Event()
     stopping, release = threading.Event(), threading.Event()
+    release_pipes = asyncio.Event()
     create = process_runner.create_subprocess
     terminate = process_runner._terminate_process_tree
 
     async def record(*args, **kwargs):
         process = await create(*args, **kwargs)
         created.append(process)
+        communicate = process.communicate
+        reads = 0
+
+        async def held_output():
+            nonlocal reads
+            reads += 1
+            if reads == 1:
+                return await communicate()
+            # 写入进程退出不代表输出 EOF；收尾不能再次等待这条管道。
+            await release_pipes.wait()
+            return b"", b""
+
+        process.communicate = held_output
         ready.set()
         return process
 
@@ -113,8 +127,14 @@ async def test_repeated_cancel_waits_for_process_tree_cleanup(
         done, _ = await asyncio.wait({task}, timeout=0.05)
         assert not done, "进程清理仍在执行，重复取消不能提前结束等待"
         assert created[0].returncode is None
+        release.set()
+        done, _ = await asyncio.wait({task}, timeout=1)
+        assert done, "写入进程已停止，取消不应再等待输出 EOF"
+        for fd in (1, 2):
+            assert created[0]._transport.get_pipe_transport(fd).is_closing()
     finally:
         release.set()
+        release_pipes.set()
         await asyncio.gather(task, return_exceptions=True)
         for process in created:
             if process.returncode is None:
@@ -178,6 +198,44 @@ async def test_cancel_with_full_output_pipe_finishes_cleanup(monkeypatch):
         await asyncio.gather(task, return_exceptions=True)
     assert task.cancelled()
     assert created[0].returncode is not None
+
+
+@pytest.mark.asyncio
+async def test_unstoppable_writer_is_not_reported_as_cleaned(monkeypatch):
+    created = []
+    create = process_runner.create_subprocess
+    writer = Mock()
+    writer.children.return_value = []
+    writer.terminate.side_effect = psutil.AccessDenied(42)
+    writer.kill.side_effect = psutil.AccessDenied(42)
+
+    async def record(*args, **kwargs):
+        process = await create(*args, **kwargs)
+        created.append(process)
+        return process
+
+    monkeypatch.setattr(process_runner, "create_subprocess", record)
+    monkeypatch.setattr(process_runner.psutil, "Process", lambda _: writer)
+    monkeypatch.setattr(
+        process_runner.psutil, "wait_procs", lambda *_args, **_kwargs: ([], [writer])
+    )
+    try:
+        with pytest.raises(RuntimeError):
+            await process_runner.ProcessRunner.run_process(
+                sys.executable,
+                "-I",
+                "-c",
+                "import time; time.sleep(30)",
+                timeout=0.05,
+                kill_tree_on_cancel=True,
+            )
+        assert created[0].returncode is None
+    finally:
+        for process in created:
+            if process.returncode is None:
+                with suppress(ProcessLookupError):
+                    process.kill()
+            await process.communicate()
 
 
 @pytest.mark.asyncio
@@ -289,8 +347,9 @@ async def test_deadline_and_cancel_cover_stalled_creation(monkeypatch, cancelled
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cancelled", [False, True])
+@pytest.mark.parametrize("with_deadline", [False, True])
 async def test_deadline_reaps_wrapper_and_child_holding_pipes(
-    monkeypatch, tmp_path, cancelled
+    monkeypatch, tmp_path, cancelled, with_deadline
 ):
     """只有包装进程退出不能释放继承给子进程的输出管道。"""
     pid_path = tmp_path / "child.pid"
@@ -326,7 +385,7 @@ async def test_deadline_reaps_wrapper_and_child_holding_pipes(
             code,
             str(pid_path),
             timeout=30 if cancelled else 0.1,
-            deadline=time.monotonic() + 20,
+            deadline=time.monotonic() + 20 if with_deadline else None,
             kill_tree_on_cancel=True,
             if_merge_std=True,
         )

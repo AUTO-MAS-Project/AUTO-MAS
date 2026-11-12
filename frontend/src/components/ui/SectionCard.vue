@@ -45,12 +45,12 @@ defineProps<{
   margin-bottom: 16px;
   padding: 0 var(--section-card-padding) 8px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 10px;
+  border-radius: var(--ant-border-radius-lg);
   background: var(--app-appearance-surface-bg, var(--ant-color-bg-container));
   container-type: inline-size;
 }
 
-html:not(.dark) .ui-section-card {
+html:not(.dark):not(.appearance-custom) .ui-section-card {
   border-color: color-mix(in srgb, var(--ant-color-border) 92%, var(--ant-color-text) 8%);
 }
 
@@ -85,7 +85,7 @@ html:not(.dark) .ui-section-card {
   width: 28px;
   height: 28px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 7px;
+  border-radius: var(--ant-border-radius-sm);
   background: var(--ant-color-fill-quaternary);
   color: var(--ant-color-text-secondary);
   font-size: 15px;
@@ -126,22 +126,22 @@ html:not(.dark) .ui-section-card {
   margin: 8px calc(-1 * var(--section-card-padding)) -8px;
   padding: 12px var(--section-card-padding);
   border-top: 1px solid var(--ant-color-border-secondary);
-  border-radius: 0 0 10px 10px;
+  border-radius: 0 0 max(0px, calc(var(--ant-border-radius-lg) - 1px))
+    max(0px, calc(var(--ant-border-radius-lg) - 1px));
   background: var(--ant-color-fill-quaternary);
 }
 
 .ui-section-card :deep(.ant-segmented) {
   padding: 3px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 7px;
 }
 
 .ui-section-card :deep(:is(.ant-select, .ant-input, .ant-input-number, .ant-btn, .ant-segmented)) {
   font-size: 12px;
 }
 
-/* 浅色默认边框过于接近灰白卡面；仅加强静止控件，保留主题色 hover/focus。 */
-html:not(.dark)
+/* 只加强默认浅色外观的静止控件，外观包保留自身边框与选中态。 */
+html:not(.dark):not(.appearance-custom)
   .ui-section-card
   :deep(
     :is(
@@ -156,7 +156,7 @@ html:not(.dark)
   border-color: var(--ant-color-text-tertiary);
 }
 
-html:not(.dark) .ui-section-card :deep(.ant-segmented-item-selected) {
+html:not(.dark):not(.appearance-custom) .ui-section-card :deep(.ant-segmented-item-selected) {
   color: var(--ant-color-link);
   box-shadow: inset 0 0 0 1px var(--ant-color-text-tertiary);
 }

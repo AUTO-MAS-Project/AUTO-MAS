@@ -1,5 +1,4 @@
-// 设置保存职责：从 index.vue 抽出。设置页已超 500 行，按组件尺寸约束
-// 局部维护不得再增长，保存/回读/同步这条链路独立成 composable。
+// 设置页持有数据，这里统一处理字段补丁、规范化回读和 Electron 同步。
 import { toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
@@ -8,6 +7,7 @@ import { useSettingsApi } from '@/composables/useSettingsApi'
 import { invalidateVoiceSettingsCache } from '@/composables/useAudioPlayer'
 import { setTelemetryEnabled } from '@/utils/sentry'
 import { updateInfo } from '@/composables/useVersionService'
+import type { DynamicSettingChangeHandler, SettingChangeHandler } from './settingTypes'
 
 const logger = window.electronAPI.getLogger('设置')
 
@@ -62,7 +62,10 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
   }
 
   // 保存设置 - 只发送修改的字段（遵循最小原则）
-  const saveSettings = async (category: keyof GlobalConfig, changes: any): Promise<boolean> => {
+  const saveSettings = async (
+    category: keyof GlobalConfig,
+    changes: Record<string, unknown>
+  ): Promise<boolean> => {
     try {
       const updateData: GlobalConfig = { [category]: changes }
       const result = await updateSettings(updateData)
@@ -80,7 +83,11 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
   }
 
   // 保存成功后本地应用这次变更，不再整份回读
-  const applyLocalSettingChange = async (category: keyof GlobalConfig, key: string, value: any) => {
+  const applyLocalSettingChange = async (
+    category: keyof GlobalConfig,
+    key: string,
+    value: unknown
+  ) => {
     const section = settings[category] as Record<string, unknown> | undefined
     if (!section) {
       await refreshSettings()
@@ -91,11 +98,7 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
   }
 
   // 返回本次保存是否成功，供子组件在失败时跳过成功提示
-  const handleSettingChange = async (
-    category: keyof GlobalConfig,
-    key: string,
-    value: any
-  ): Promise<boolean> => {
+  const handleDynamicSettingChange: DynamicSettingChangeHandler = async (category, key, value) => {
     // 只发送修改的字段
     const changes = { [key]: value }
     const success = await saveSettings(category, changes)
@@ -149,5 +152,7 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
     return true
   }
 
-  return { loading, syncConfigToElectron, refreshSettings, saveSettings, handleSettingChange }
+  const handleSettingChange: SettingChangeHandler = handleDynamicSettingChange
+
+  return { loading, refreshSettings, handleSettingChange, handleDynamicSettingChange }
 }

@@ -107,6 +107,7 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
 )
 from app.task.MaaFW.tools.embedded.view_heal import heal_projection
 from app.utils import TASK_MODE_ZH, get_logger, sanitize_log_message
+from app.utils.common.process.scope import current_process_scope
 
 if TYPE_CHECKING:  # pragma: no cover - 仅供类型检查，运行期不导入 maa
     from app.task.MaaFW.tools.embedded.runner_task import MaaFWPluginAutoProxyTask
@@ -354,8 +355,6 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
     ``MaaFWPluginAutoProxyTask``。
     """
 
-    wait_for_finalizer_on_cancel = True
-
     def __init__(
         self,
         script_info: ScriptItem,
@@ -436,7 +435,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         return result
 
     async def _check(self) -> str:
-        if self.task_info.mode != "AutoProxy":
+        if self.execution_mode != "AutoProxy":
             return "MFW 内置运行当前仅支持自动代理模式"
 
         try:
@@ -511,6 +510,9 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 return None
 
             work = asyncio.create_task(prepare_before_lock())
+            process_scope = current_process_scope.get()
+            if process_scope is not None:
+                process_scope.retain_worker(work)
             handed_off = False
             try:
                 if problem := await asyncio.shield(work):
@@ -523,11 +525,12 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 self._script_locked = True
             except asyncio.CancelledError:
                 stop.set()
-                with suppress(BaseException):
-                    await asyncio.wait_for(
-                        asyncio.shield(work),
-                        timeout=_ENV_PREPARE_CANCEL_GRACE_SECONDS,
-                    )
+                if process_scope is None or not process_scope.closed:
+                    with suppress(BaseException):
+                        await asyncio.wait_for(
+                            asyncio.shield(work),
+                            timeout=_ENV_PREPARE_CANCEL_GRACE_SECONDS,
+                        )
                 if not work.done():
                     handed_off = True
                     work.add_done_callback(
@@ -704,6 +707,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
     # ------------------------------------------------------------------
 
     async def prefetch_script_update(self) -> None:
+        from app.core.update import download_observer
         from app.task.MaaFW.tools.core.project_update.transport import (
             download_resumable,
         )
@@ -764,6 +768,21 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         ):
             return
         candidate = discovery.candidate
+        observer = download_observer.get()
+
+        def report(event: dict[str, Any]) -> None:
+            # 只转接下载器的公开进度，不改独立核心的传输和缓存逻辑。
+            from .tools.core.project_update.progress import UpdateProgressEvent
+
+            parsed = UpdateProgressEvent.of(event)
+            if observer is not None and parsed.stage == "downloading":
+                observer(
+                    Path("项目更新包"),
+                    parsed.downloaded_bytes or 0,
+                    parsed.total_bytes or 0,
+                    0.0,
+                )
+
         await download_resumable(
             source=candidate.source,
             version=candidate.to_version or candidate.version,
@@ -772,6 +791,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             artifact_id=candidate.artifact_id,
             proxy=proxy,
             expected_size=candidate.size,
+            progress=report,
             alternates=github_release_mirror_urls(candidate.download_url),
         )
         # 完整包留在核心的共享缓存，启动前按来源身份与版本基线复核后消费。
@@ -799,7 +819,9 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         timestamp = datetime.now().astimezone().strftime("%H:%M:%S")
         for line in str(message).splitlines() or [""]:
             self.project_update_logs.append(f"[{timestamp}] {line}\n")
-        self.script_info.log = "".join(self.project_update_logs[-80:])
+        self.callbacks.submit(
+            self.script_info.set_log("".join(self.project_update_logs))
+        )
 
     def _threadsafe_update_log(self) -> Callable[[str], None]:
         """给会在工作线程里回调的下游用的日志入口。
@@ -908,6 +930,9 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         """收尾期间用户点了停止：让运行后更新 / 环境确认按停止处理（见 ``_await_or_stop``）。"""
 
         self._stop_requested.set()
+        if self.inner_task is not None and not self._inner_finalized:
+            self.inner_task.stopped_manually = True
+            self.inner_task._on_finalize_cancel_requested()
 
     def _stop_seen(self) -> bool:
         """用户已经要求停止（停在主任务里，或收尾进行中又点了停止）。"""
@@ -1393,8 +1418,10 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             update_task.add_done_callback(
                 lambda task: None if task.cancelled() else task.exception()
             )
-            with suppress(BaseException):
-                await asyncio.wait_for(asyncio.shield(update_task), timeout=grace)
+            process_scope = current_process_scope.get()
+            if process_scope is None or not process_scope.closed:
+                with suppress(BaseException):
+                    await asyncio.wait_for(asyncio.shield(update_task), timeout=grace)
 
         try:
             finished = await self._await_or_stop(update_task)
@@ -1636,9 +1663,14 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         # 装依赖走的代理与更新下载同一份：托管级优先，留空跟随全局。
         proxy_url, _proxy = self._resolve_update_proxy()
         health_warnings: list[str] = []
+        from app.task.MaaFW.tools.embedded.env_confirm import (
+            resolve_prepare_environment,
+        )
+
+        prepare_environment = resolve_prepare_environment()
         prepare_task = asyncio.create_task(
             asyncio.to_thread(
-                self._prepare_project_environment_sync,
+                prepare_environment,
                 project_path,
                 cancel_event,
                 self._threadsafe_update_log(),
@@ -1649,6 +1681,10 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             )
         )
 
+        process_scope = current_process_scope.get()
+        if process_scope is not None:
+            process_scope.retain_worker(prepare_task)
+
         handed_off = False
 
         async def abort_prepare() -> None:
@@ -1656,11 +1692,12 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             # 项目锁之前收干净，等不到也不再拖着关机。
             nonlocal handed_off
             cancel_event.set()
-            with suppress(BaseException):
-                await asyncio.wait_for(
-                    asyncio.shield(prepare_task),
-                    timeout=_ENV_PREPARE_CANCEL_GRACE_SECONDS,
-                )
+            if process_scope is None or not process_scope.closed:
+                with suppress(BaseException):
+                    await asyncio.wait_for(
+                        asyncio.shield(prepare_task),
+                        timeout=_ENV_PREPARE_CANCEL_GRACE_SECONDS,
+                    )
             if prepare_task.done():
                 # 异常在这里取走，免得事件循环报「Task exception was never retrieved」。
                 if not prepare_task.cancelled():
@@ -1714,7 +1751,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             benign = self.check_result in _BENIGN_SKIPS
-            self.script_info.status = "跳过" if benign else "异常"
+            await self.script_info.set_state(status="跳过" if benign else "异常")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -1728,13 +1765,17 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         # 脚本保持空表，避免任务总览把占位项显示成真实用户。
         assert self.user_config is not None
         assert self.script_config is not None
-        self.script_info.user_list = [
-            UserItem(
-                user_id=str(uid), name=self.user_config[uid].Info.Name, status="等待"
-            )
-            for uid in self.runnable_user_uids
-        ]
-        self.script_info.status = "运行"
+        await self.script_info.set_users(
+            [
+                UserItem(
+                    user_id=str(uid),
+                    name=self.user_config[uid].Info.Name,
+                    status="等待",
+                )
+                for uid in self.runnable_user_uids
+            ]
+        )
+        await self.script_info.set_state(status="运行")
         logger.info(
             f"MFW 内置运行账号列表加载完成，已筛选账号数: "
             f"{len(self.script_info.user_list)}"
@@ -1773,7 +1814,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         # AutoProxy 的 main_task / final_task 都是**按账号**的（final_task 会
         # 结算该账号的代理次数、剩余天数并释放项目锁），因此每个账号各建一个。
         for index in range(len(self.runnable_user_uids)):
-            self.script_info.current_index = index
+            await self.script_info.set_current_index(index)
             user_id = self.runnable_user_uids[index]
             # 物化前归档本账号 MAS 字段侧车（下发前存底；指纹去重，
             # 失败只记日志不阻断任务——与 native 归档同一语义）
@@ -1907,7 +1948,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             if user.status == "运行" or (
                 user.status == "等待" and not self.stopped_manually
             ):
-                user.status = "异常"
+                await user.set_state(status="异常")
         waiting_users = [
             user for user in self.script_info.user_list if user.status == "等待"
         ]
@@ -1929,14 +1970,14 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         ]
         if self.check_result in _BENIGN_SKIPS:
             # 项目被暂时占着、整脚本跳过：不是故障（main_task 已按「跳过」发过提示）。
-            self.script_info.status = "跳过"
+            await self.script_info.set_state(status="跳过")
         elif self.check_result == "Pass" and not error_users and not waiting_users:
             # 全员因维护跳过时不能显示成「完成」
-            self.script_info.status = (
-                "跳过" if maintenance_users and not completed_users else "完成"
+            await self.script_info.set_state(
+                status="跳过" if maintenance_users and not completed_users else "完成"
             )
         else:
-            self.script_info.status = "异常"
+            await self.script_info.set_state(status="异常")
 
         if self.check_result != "Pass":
             return
@@ -2001,10 +2042,10 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         ]
         title = (
             f"{datetime.now().strftime('%m-%d')} | "
-            f"{self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
+            f"{self.script_info.name or '空白'}的{TASK_MODE_ZH[self.execution_mode]}任务报告"
         )
         result: TaskResultData = {
-            "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
+            "title": f"{TASK_MODE_ZH[self.execution_mode]}任务报告",
             "script_name": self.script_info.name or "空白",
             "start_time": self.begin_time,
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -2125,7 +2166,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         if self.inner_task is not None and not self._inner_finalized:
             await self.inner_task.on_crash(e)
             return
-        self.script_info.status = "异常"
+        await self.script_info.set_state(status="异常")
 
 
 __all__ = ["MaaFWEmbeddedManager"]

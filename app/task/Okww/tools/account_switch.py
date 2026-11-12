@@ -56,6 +56,8 @@ from app.tools import ocr as _tool_ocr
 from app.utils import IS_WINDOWS, get_logger, is_process_alive
 from app.utils import display as _utils_display
 
+from .maintenance import GameMaintenanceDetected, find_game_maintenance_text
+
 if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
     # IS_WINDOWS 检查一并惰性导入，避免非 Windows 环境在未启用切号时导入崩溃
@@ -579,6 +581,9 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
             last_progress = time.monotonic()
         if iter_count % _DIAGNOSTIC_DUMP_EVERY_POLLS == 0:
             _dump_ocr_items(items_full)
+        maintenance_text = find_game_maintenance_text(text for text, _ in items_full)
+        if maintenance_text is not None:
+            raise GameMaintenanceDetected(maintenance_text)
         if on_login_page or _find_text(items_full, _LOGGED_IN_MENU_TEXTS) is not None:
             return hwnd
         # 游戏内更新完成提示重启：点「确认」后游戏自行重启，换新窗口后继续在
@@ -790,7 +795,15 @@ def _wait_login_success(hwnd: int, *, timeout: int = 180) -> None:
     deadline = time.monotonic() + timeout
     absent_count = 0
     while time.monotonic() < deadline:
-        if not _on_login_page(hwnd):
+        frame = _capture_window(hwnd, activate=False)
+        items = _tool_ocr.ocr_image(frame)
+        maintenance_text = find_game_maintenance_text(text for text, _ in items)
+        if maintenance_text is not None:
+            raise GameMaintenanceDetected(maintenance_text)
+        if (
+            _find_text(_tool_ocr.ocr_image(frame, _LOGIN_ROI), _LOGIN_PAGE_TEXTS)
+            is None
+        ):
             absent_count += 1
             if absent_count >= 2:
                 return
@@ -868,6 +881,7 @@ def account_switch(
         切换成功返回 True；失败抛出带原因描述的 RuntimeError。
 
     Raises:
+        GameMaintenanceDetected: 登录过程中出现维护弹窗。
         RuntimeError: 未找到游戏窗口 / 登录流程失败 / 超时。
     """
     on_log = on_log or (lambda msg: logger.info(msg))

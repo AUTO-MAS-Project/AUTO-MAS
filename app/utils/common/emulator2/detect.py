@@ -28,9 +28,10 @@ Emulator 2.0 只接受特定大版本，添加路径时必须先探测。探测�
 - 雷电：裸跑 ``ldconsole.exe``，首行形如
   ``dnplayer v14.0.25.1 Command Line Management Interface``
 - MuMu：``MuMuManager.exe version`` 输出 ``{"version": "6.5.9.0"}``
-- 魔改 AVD（avd）：没有厂商管理器，「安装路径」是用户选的根目录，主程序是
-  ``<根>/sdk/emulator/emulator.exe``；版本读 ``sdk/emulator/source.properties`` 的
-  ``Pkg.Revision``，不起进程
+- ModAVD（avd）：「安装路径」是用户选的根目录，根目录里要有 ModAVD 命令行 ``tools/modavd.exe``，
+  而且 ``modavd version --json`` 的协议 MAS 认识（:func:`.avd.cli.resolve_cli`）；版本是
+  ``modavd list`` 报的 ModAVD 包版本。组件齐不齐、能不能开机由 ``/avd/status``（``modavd check``）回答，
+  这里不管。主程序路径固定是 ``<根>/sdk/emulator/emulator.exe``（只当实例锁的键）
 
 解析与判定是纯函数，可以脱离模拟器测试；只有 :func:`probe_install_path` 会起子进程。
 """
@@ -44,8 +45,8 @@ from app.utils import EMULATOR_PATH_BOOK, ProcessRunner, get_logger
 
 logger = get_logger("Emulator2 版本探测")
 
-#: 接受的大版本。两家都已实现后端。
-SUPPORTED_MAJOR = {"ldplayer": 14, "mumu": 6, "avd": 37}
+#: 接受的大版本。两家都已实现后端；ModAVD 不看版本号，见 :func:`_probe_avd`。
+SUPPORTED_MAJOR = {"ldplayer": 14, "mumu": 6}
 #: 还没接、但界面要如实说「后续接入」而不是「不支持」的。
 PLANNED_MAJOR: dict[str, int] = {}
 
@@ -77,10 +78,7 @@ class DetectResult:
     #: - ``planned``         后续版本接入（当前没有类型命中，留给以后加第三家）
     #: - ``unsupported``     暂不支持（MuMu 12、其他品牌）
     #: - ``not_found``       路径下没找到管理器程序
-    #: - ``probe_failed``    管理器程序跑不起来或输出认不出
-    #: - ``components_missing`` 魔改 AVD 根目录里组件不全（用包里的「补全组件.bat」补齐）
-    #: - ``test_package_required`` 魔改 AVD 根目录里的模拟器不是内测包里的自编版
-    #: - ``test_package_outdated`` 魔改 AVD 内测包编号低于最低要求或读不到，要换新包
+    #: - ``probe_failed``    管理器程序跑不起来或输出认不出（ModAVD：命令行用不了、协议不认识）
 
 
 def parse_ldplayer_version(output: str) -> str | None:
@@ -157,12 +155,12 @@ def resolve_manager_exe(install_path: str, emulator_type: str) -> Path | None:
     if not install_path:
         return None
     if emulator_type == "avd":
-        from .avd.components import emulator_exe, manager_key_exe
+        from .avd.components import manager_key_exe
 
-        # 主管理器路径固定落在根目录下（实例锁的键、反推根目录都靠它）；能不能用看实际要
-        # 启动的程序——指定了本地 SDK 时两者不是同一个文件
+        # 主管理器路径固定落在根目录下（实例锁的键、反推根目录都靠它），只当键用；能不能用看
+        # 根目录里有没有 ModAVD 命令行。只看文件在不在，不起进程（门面每次解析设备都会调）
         root = avd_root_of(install_path)
-        return manager_key_exe(root) if emulator_exe(root).is_file() else None
+        return manager_key_exe(root) if is_avd_root(str(root)) else None
     from app.utils import emulator as _utils_emulator
 
     resolved = Path(
@@ -177,10 +175,10 @@ def resolve_manager_exe(install_path: str, emulator_type: str) -> Path | None:
 
 
 def avd_root_of(install_path: str) -> Path:
-    """魔改 AVD 的「安装路径」可能是根目录，也可能是用户直接选的 ``<根>\\sdk\\emulator\\emulator.exe``。
+    """ModAVD 的「安装路径」可能是根目录，也可能是用户直接选的 ``<根>\\sdk\\emulator\\emulator.exe``。
 
     只有路径确实是这个布局时才往上退两层；别处的 ``emulator.exe``（层数不够、或不在
-    ``sdk\\emulator`` 下）原样返回，交给调用方按「不是魔改 AVD 根目录」处理。"""
+    ``sdk\\emulator`` 下）原样返回，交给调用方按「不是 ModAVD 根目录」处理。"""
     from .avd.constants import SDK_DIR
 
     path = Path(install_path)
@@ -195,14 +193,12 @@ def avd_root_of(install_path: str) -> Path:
 
 
 def is_avd_root(install_path: str) -> bool:
-    """根目录里有我们的元数据或 SDK 目录，就当魔改 AVD 根目录。"""
-    from .avd.constants import METADATA_FILE, SDK_DIR
+    """根目录里有 ModAVD 命令行 ``tools\\modavd.exe``，就当 ModAVD 根目录（只看文件在不在）。"""
+    from .avd.cli import CLI_EXE_RELATIVE_PATH
 
     root = avd_root_of(install_path)
     try:
-        return (root / METADATA_FILE).is_file() or (
-            root / SDK_DIR / "emulator" / "emulator.exe"
-        ).is_file()
+        return (root / CLI_EXE_RELATIVE_PATH).is_file()
     except OSError:
         return False
 
@@ -279,7 +275,7 @@ async def probe_install_path(
         )
 
     if resolved_type == "avd":
-        return _probe_avd(install_path)
+        return await _probe_avd(install_path)
 
     manager_exe = resolve_manager_exe(install_path, resolved_type)
     if manager_exe is None:
@@ -311,52 +307,49 @@ async def probe_install_path(
     )
 
 
-def _probe_avd(install_path: str) -> DetectResult:
-    """魔改 AVD 根目录：组件齐了才可添加，版本取 ``source.properties``，不起进程。"""
-    from .avd.components import (
-        emulator_build_ok,
-        emulator_present,
-        emulator_self_built,
-        install_status,
-        read_emulator_version,
-    )
+async def _probe_avd(install_path: str) -> DetectResult:
+    """ModAVD 根目录：有 ``tools\\modavd.exe`` 且命令行可用就可添加（只在添加时调，不在自动搜索里）。
+
+    命令行可用 = ``modavd version --json`` 的协议 MAS 认识（:func:`.avd.cli.resolve_cli`，按 exe 缓存，
+    添加对话框先查过 ``/avd/status`` 时不再起进程）；版本是 ``modavd list`` 报的 ModAVD 包版本，问不到
+    留空。组件齐不齐、能不能开机由 ``/avd/status``（``modavd check``）回答，这里不管。
+    """
+    from .avd import cli as modavd_cli
+    from .avd.components import manager_key_exe
 
     root = avd_root_of(install_path)
-    status = install_status(root)
-    version = read_emulator_version(root) or ""
-    exe = resolve_manager_exe(str(root), "avd")
-    if emulator_present(root) and not emulator_self_built(root):
-        # 只支持魔改 AVD 内测包里的自编版，谷歌原版不让加
+    if not is_avd_root(str(root)):
         return DetectResult(
             supported=False,
-            reason="test_package_required",
+            reason="not_found",
             type="avd",
-            version=version,
             install_path=root.as_posix(),
         )
-    if emulator_present(root) and not emulator_build_ok(root):
-        # 是自编版，但内测包编号太旧或读不到：要换新包
+    try:
+        cli = await modavd_cli.resolve_cli(root)
+    except modavd_cli.ModAvdUnavailable as e:
+        logger.warning(f"ModAVD {root} 的命令行用不了: {e}")
+        cli = None
+    if cli is None:
         return DetectResult(
             supported=False,
-            reason="test_package_outdated",
+            reason="probe_failed",
             type="avd",
-            version=version,
             install_path=root.as_posix(),
         )
-    if not status["ready"] or exe is None:
-        return DetectResult(
-            supported=False,
-            reason="components_missing",
-            type="avd",
-            version=version,
-            install_path=root.as_posix(),
-        )
-    supported, reason = judge("avd", version)
+    version = ""
+    try:
+        listing = await cli.list()
+    except modavd_cli.CLIError as e:
+        logger.warning(f"ModAVD {root} 的 modavd list 失败，版本留空: {e.message}")
+    else:
+        if isinstance(listing, dict) and isinstance(listing.get("version"), str):
+            version = listing["version"]
     return DetectResult(
-        supported=supported,
-        reason=reason,
+        supported=True,
+        reason="ok",
         type="avd",
         version=version,
-        manager_exe=exe.as_posix(),
+        manager_exe=manager_key_exe(root).as_posix(),
         install_path=root.as_posix(),
     )

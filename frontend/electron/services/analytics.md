@@ -11,8 +11,13 @@ Electron 主进程按 Aptabase 的单事件协议向
 后续新增或修改可观察业务流程时，按 [mas-telemetry Skill](../../../.agents/skills/mas-telemetry/SKILL.md)
 主动复用或补齐埋点。首页活动只统计实际开始的新加载批次，busy 跳过不复用旧结果；
 OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固定脚本类型，标识不进入事件属性。
+官方启动器更新复用任务的实际终态；维护跳过沿用脚本运行结果，不采集画面文本或资源档位。
 
 桌面启动由主进程提前编排；`backend_start_finished` 和 Runtime 阶段事件仍由原服务确认结果，窗口接入已有启动任务不重复上报。完整初始化结果仍在界面词表与应用入口就绪后记录。
+
+初始化恢复继续复用 `initialization_recovery_selected` 与命令结果事件。镜像由 Runtime 自动选择，新客户端不再产生手选镜像动作，`mirror_kind` 固定为 `default`；旧动作枚举仅为历史口径保留。设置页不再提供后端运行方式选择，不新增采集。
+
+日常启动缺失 Runtime 时转入运行环境失败页，补装复用完整初始化的 Runtime 对齐与 bootstrap。恢复选择仍记录 `retry`，补装和命令结果由原有主进程阶段事件确认；转入完整准备后 `flow_kind` 为 `update`，不把下载完成视为应用初始化成功。
 
 ## 当前采集范围
 
@@ -93,7 +98,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `community_account_manage_finished` | 签到账号创建、启停、删除 | `action` |
 | `community_activity_requested` | 社区活动工具是否有需求 | `operation_kind` |
 | `settings_change_finished` | 设置修改成功率及主要功能采用情况 | `setting_key`、`value_kind`、`setting_kind`；包含关闭应用二次确认开关及设置页布局偏好 |
-| `appearance_preference_changed` | 主题、语言、低性能模式需求 | `preference_kind`、`preset_value` |
+| `appearance_preference_changed` | 主题、语言、低性能模式和自定义光标需求 | `preference_kind`、`preset_value` |
 | `appearance_package_finished` | 本地外观导入、启用、删除是否顺利 | `package_kind`、`action` |
 | `appearance_store_install_finished` | 主题商店发现到安装的转化 | `category_kind` |
 | `appearance_share_finished` | 外观上传与分享是否顺利 | `category_kind` |
@@ -298,7 +303,7 @@ QQ 高级手动配置复用 `notification_binding_finished`，`action=manual_bin
 
 脚本更新下载器开关复用 `settings_change_finished`，固定键为 `script_update_takeover`，只记录开关状态与保存结果。
 
-设置页布局复用 `settings_change_finished`，由布局组件在前端配置实际保存后记录结果。固定键为 `settings_layout`、类别为 `other`，单列映射 `default`、双列映射 `custom`；初次读取、响应式回流及目录跳转不产生事件，不上传卡片内容或位置。
+设置页分区目录显隐复用 `settings_change_finished`，由布局组件在前端配置实际保存后记录结果。固定键为 `settings_navigation`、类别为 `other`，显示映射 `enabled`、隐藏映射 `disabled`；初次读取、窗口缩放、列数回流及目录跳转不产生事件，不上传分区标题或位置。
 专项运行前的自动检查、缓存命中、下载进度和重试不逐次采集；任务终态由各专项复用 `script_run_finished` 的原观察者负责。
 
 脚本更新公共入口沿用这一观察边界，不另发完成事件。MFW、M9A、MSS 的自动更新统一在用户任务之前执行；更新时机配置保存仍由 `useScriptApi.updateScript` 观察，目录、版本和调度标识不进入匿名统计。
@@ -308,6 +313,13 @@ QQ 高级手动配置复用 `notification_binding_finished`，`action=manual_bin
 
 - 奇想盒运行前后端更新：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；更新准备失败继续运行与安装未完成拦截沿用任务终态。后端更新阶段不新增独立事件，不将下载或 pip 受理当作安装成功。
 
+
+任务树迁移沿用 `useTaskApi.ts` 的请求受理观察和 `taskAnalytics.ts` 的创建/完成观察。
+`ScriptView` 是有限模式类别；队列/托管/用户运行 UUID 只用于本地关联，不进入事件属性。
+只读查看的打开请求仍使用 `native_config_action_finished` 的 `view` 操作；恢复快照不新增执行样本。
+独立维护请求沿用历史 `Update` 统计类别，仅表示受理，不把它加入公共调度模式或将受理记成完成。
+
+队列触发设置复用 queue_schedule_changed：启动、定时、循环可独立启用；队列级间隔保存记录 interval，重置计时请求记录 reset。重置只表示请求受理，不表示新任务启动或完成。队列项星期保存记录 queue_time/days；不采集具体间隔、日期或时间。
 HSR 运行前更新复用公共更新入口和 `script_run_finished` 的任务终态观察；更新选项保存沿用 `useScriptApi.updateScript`，不新增逐包、逐引擎或进度事件，不采集安装路径、版本及 CDK。
 
 ## 渲染进程恢复

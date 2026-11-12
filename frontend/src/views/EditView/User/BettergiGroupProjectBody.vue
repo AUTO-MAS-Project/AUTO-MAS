@@ -293,7 +293,7 @@ const emit = defineEmits<{
 }>()
 
 const logger = window.electronAPI.getLogger('BetterGI配置组项目编辑')
-const { configLocked } = useScriptConfigLock(() => props.scriptId)
+const { configLocked } = useScriptConfigLock(props)
 
 const loading = ref(false)
 // 是否已存在 per-user 配置组副本（js/路径 未编辑时为 false，仅合成单项目展示）

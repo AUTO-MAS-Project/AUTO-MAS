@@ -68,12 +68,26 @@ const progressPercent = computed(() => {
 const sourceLabel = computed(() => {
   if (!source.value) return ''
   const labels: Record<string, string> = {
-    GitHub: 'GitHub 源',
-    CNB: 'CNB 源',
-    MirrorChyan: 'Mirror 酱源',
-    AutoSite: '自建源',
+    GitHub: t('bootstrap.comp.sourceGithub'),
+    CNB: t('bootstrap.comp.sourceCnb'),
+    MirrorChyan: t('bootstrap.comp.sourceMirror'),
+    AutoSite: t('bootstrap.comp.sourceCustom'),
   }
   return labels[source.value] || source.value
+})
+
+const downloadHint = computed(() => {
+  if (status.value === 'completed') return t('bootstrap.comp.downloadReady')
+  if (status.value === 'switchingSource') return t('bootstrap.comp.downloadSwitching')
+  if (status.value === 'cancelling') return t('bootstrap.comp.downloadCancelling')
+  if (status.value === 'failed') return t('bootstrap.comp.downloadFailed')
+  if (status.value === 'downloading') {
+    const source = sourceLabel.value
+      ? t('bootstrap.comp.downloadSource', { source: sourceLabel.value })
+      : ''
+    return t('bootstrap.comp.downloading', { source, progress: progressPercent.value.toFixed(1) })
+  }
+  return ''
 })
 
 const estimatedTimeRemaining = computed(() => {
@@ -189,7 +203,9 @@ const receiveProgress = (data: UpdateDownloadProgress) => {
 
   if (lowSpeedDetector.update(data.source, data.speed)) {
     Modal.confirm({
-      title: `${sourceLabel.value || '当前来源'}下载速度较慢`,
+      title: t('bootstrap.comp.downloadSlow', {
+        source: sourceLabel.value || t('bootstrap.comp.currentSource'),
+      }),
       content: t('bootstrap.misc.downloadHasBeenUnder'),
       okText: t('bootstrap.misc.switchCnbSource'),
       cancelText: t('bootstrap.misc.continueDownload'),
@@ -475,6 +491,7 @@ export function useUpdateDownload() {
     modalVisible,
     source,
     sourceLabel,
+    downloadHint,
     downloadedSize,
     fileSize,
     speed,

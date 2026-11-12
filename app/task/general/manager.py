@@ -61,14 +61,16 @@ class GeneralManager(ScriptManagerBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
-        self.plan_locks = []
         self.external_config_exists = False
         self.external_config_snapshot_ready = False
         self._device_provider = device_provider
 
     async def check(self) -> str:
         """校验通用脚本配置是否可用"""
-        if self.task_info.mode not in METHOD_BOOK:
+        # TODO(插件迁移，#1845)：dev 新增的通用计划日期编辑会话暂不接入；
+        # params 传递、计划归属/日期校验、计划锁及模板换入后的保存结果待统一讨论。
+        # 同步时不能直接带入依赖 task_info.plan_id/plan_day 的旧执行分支。
+        if self.execution_mode not in METHOD_BOOK:
             return "不支持的任务模式, 请检查任务配置！"
         if not isinstance(
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], GeneralConfig
@@ -235,14 +237,7 @@ class GeneralManager(ScriptManagerBase):
             return True
         user_config = self.user_config[uuid.UUID(user_id)]
         # 原生来源=不写；shared/independent 来源都写面板值
-        return (
-            (
-                self.task_info.mode == "AutoProxy"
-                and user_config.Info.PlanMode != "Fixed"
-            )
-            or bool(self.task_info.plan_id)
-            or read_config_base(user_config) != CONFIG_BASE_NATIVE
-        )
+        return read_config_base(user_config) != CONFIG_BASE_NATIVE
 
     async def prepare(self):
         """运行前准备"""
@@ -250,20 +245,11 @@ class GeneralManager(ScriptManagerBase):
         # 锁定脚本配置并加载账号配置
         self.config_locks[
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].uid
-        ] = await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].lock_x()
+        ] = await self.lock_script_config(
+            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        )
         self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         self.user_config = self.script_config.UserData
-        plan_ids = {
-            user.Info.PlanMode
-            for user in self.user_config.values()
-            if user.Info.PlanMode != "Fixed"
-        }
-        if self.task_info.plan_id:
-            plan_ids.add(uuid.UUID(self.task_info.plan_id))
-        for plan_id in plan_ids:
-            plan = Config.PlanConfig[plan_id]
-            ticket = await plan.lock_s()
-            self.plan_locks.append((plan, ticket))
         logger.success(f"{self.script_info.script_id}已锁定, 通用托管配置提取完成")
 
         script_config_path = self.script_config.Script.ConfigPath
@@ -290,15 +276,19 @@ class GeneralManager(ScriptManagerBase):
                 self.game_process_manager = ProcessManager()
 
         # 构建账号列表
-        if self.task_info.mode == "ScriptConfig":
-            self.script_info.user_list = [
-                UserItem(
-                    user_id=self.task_info.user_id or "Default", name="", status="等待"
-                )
-            ]
+        if self.execution_mode == "ScriptConfig":
+            await self.script_info.set_users(
+                [
+                    UserItem(
+                        user_id=self.task_info.user_id or "Default",
+                        name="",
+                        status="等待",
+                    )
+                ]
+            )
         else:
-            self.script_info.user_list = self.build_proxy_user_list(
-                self.user_config.items()
+            await self.script_info.set_users(
+                self.build_proxy_user_list(self.user_config.items())
             )
         logger.info(
             f"账号列表加载完成, 已筛选账号数: {len(self.script_info.user_list)}"
@@ -338,10 +328,11 @@ class GeneralManager(ScriptManagerBase):
         if not isinstance(self.script_config, GeneralConfig):
             raise RuntimeError("托管配置类型错误, 不是通用托管类型")
 
-        for self.script_info.current_index in range(len(self.script_info.user_list)):
+        for _runtime_user_index in range(len(self.script_info.user_list)):
+            await self.script_info.set_current_index(_runtime_user_index)
             current_user = self.script_info.user_list[self.script_info.current_index]
             if (
-                self.task_info.mode == "AutoProxy"
+                self.execution_mode == "AutoProxy"
                 and not await self.check_user_before_run(
                     current_user, self.user_config[uuid.UUID(current_user.user_id)]
                 )
@@ -356,7 +347,7 @@ class GeneralManager(ScriptManagerBase):
             if not use_mas_config:
                 self._restore_external_config()
 
-            task = METHOD_BOOK[self.task_info.mode](
+            task = METHOD_BOOK[self.execution_mode](
                 self.script_info,
                 self.script_config,
                 self.user_config,
@@ -383,7 +374,7 @@ class GeneralManager(ScriptManagerBase):
         """运行结束后的收尾工作"""
         try:
             if self.check_result != "Pass":
-                self.script_info.status = "异常"
+                await self.script_info.set_state(status="异常")
                 return self.check_result
 
             logger.info("通用脚本任务已结束, 开始执行后续操作")
@@ -391,12 +382,12 @@ class GeneralManager(ScriptManagerBase):
             self._restore_external_config()
             self._cleanup_external_config_snapshot()
 
-            if self.task_info.mode == "AutoProxy":
+            if self.execution_mode == "AutoProxy":
                 await config_manager.flush()
 
                 summary = self.collect_user_results()
 
-                title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
+                title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.execution_mode]}任务报告"
                 # 按账号交错组装「账号结果行 + 该账号进程信息」：
                 # 多账号任务时各账号信息归属清晰，不再全部平铺。
                 # 「失败」类型条目仅在本次任务存在未完成账号时纳入报告，
@@ -423,11 +414,8 @@ class GeneralManager(ScriptManagerBase):
                         ),
                     )
 
-            self.script_info.status = "完成"
+            await self.script_info.set_state(status="完成")
         finally:
-            for plan, ticket in self.plan_locks:
-                await plan.unlock(ticket)
-            self.plan_locks.clear()
             script_config = getattr(self, "script_config", None)
             if script_config is not None:
                 ticket = self.config_locks.pop(script_config.uid, None)
@@ -436,7 +424,7 @@ class GeneralManager(ScriptManagerBase):
 
     async def on_crash(self, e: Exception):
 
-        self.script_info.status = "异常"
+        await self.script_info.set_state(status="异常")
         logger.opt(exception=True).warning(f"通用脚本任务出现异常: {e}")
         try:
             self._restore_external_config()
@@ -459,12 +447,12 @@ class GeneralManager(ScriptManagerBase):
                 item
                 if isinstance(item, log_box.LogEntry)
                 else log_box.LogEntry.from_legacy(item)
-                for item in _report_user.push_log
+                for item in self.user_state(_report_user).push_log
                 if (item.log_type if isinstance(item, log_box.LogEntry) else item[0])
                 != LOG_TYPE_ERROR
                 or has_uncompleted
             ]
-            _mode = getattr(_report_user, "push_log_mode", "逐条")
+            _mode = self.user_state(_report_user).push_log_mode
             if _mode == "关闭":
                 _details = []
             elif _mode == "汇总":

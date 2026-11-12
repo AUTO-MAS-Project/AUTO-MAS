@@ -32,7 +32,7 @@ PROTECTED = frozenset({"baah_configs", ".git"})
 @dataclass(frozen=True)
 class PreparedUpdate:
     root: Path
-    base_exe_sha256: str
+    base_exe_sha256: str | None
     version: Version
     archive: Path
     size: int
@@ -89,7 +89,13 @@ async def confirm_current_install(root: Path) -> None:
     await asyncio.to_thread(assert_idle, root, allow_background_adb=True)
     if (script_install.workspace(root) / "transaction.json").exists():
         raise script_install.InstallUnsafeError("BAAH 安装尚未确认，请开启更新托管修复")
-    if script_install.read_pe_architecture(root / "BAAH.exe") != "x86_64":
+    try:
+        architecture = script_install.read_pe_architecture(root / "BAAH.exe")
+    except (OSError, ValueError) as error:
+        raise script_install.InstallUnsafeError(
+            "BAAH 主程序缺失或架构无法识别，需要修复"
+        ) from error
+    if architecture != "x86_64":
         raise script_install.InstallUnsafeError(
             "BAAH 安装架构不可识别，请使用官方包修复"
         )
@@ -154,7 +160,11 @@ def verify_package(
 
 
 async def prepare_update(
-    root: Path, config, *, progress: DownloadProgress | None = None
+    root: Path,
+    config,
+    *,
+    progress: DownloadProgress | None = None,
+    recovery_receipt: bytes | None = None,
 ) -> PreparedUpdate | None:
     """只读当前版本，在 MAS 数据目录下载并校验；允许与上一轮 BAAH 运行并行。"""
     channel = config.Update.Channel
@@ -164,17 +174,29 @@ async def prepare_update(
     )
     proxy = Config.proxy
     root = root.resolve()
-    baseline = await asyncio.to_thread(exe_digest, root)
-    current = await asyncio.to_thread(read_version, root)
+    if recovery_receipt is not None:
+        verify_recovery_receipt(root, recovery_receipt)
+    try:
+        baseline = await asyncio.to_thread(exe_digest, root)
+        current = await asyncio.to_thread(read_version, root)
+    except (OSError, ValueError, KeyError, TypeError):
+        if recovery_receipt is None:
+            raise
+        baseline = (
+            await asyncio.to_thread(exe_digest, root)
+            if (root / "BAAH.exe").is_file()
+            else None
+        )
+        current = None
     release = await request_release(channel)
     target = Version(release["tag_name"].removeprefix("BAAH"))
     receipt = script_install.record_path(root, "installed.json")
     verified = not receipt.exists() or await script_install.run_worker(
         script_install.verify_installed_files, root
     )
-    if target <= current and verified:
+    if recovery_receipt is None and target <= current and verified:
         return None
-    if target < current:
+    if current is not None and target < current:
         raise script_install.InstallUnsafeError(
             "当前 BAAH 安装未通过校验，不会自动降级，请手动修复"
         )
@@ -230,16 +252,29 @@ async def prepare_update(
         progress=progress,
     )
     await script_install.run_worker(verify_package, destination, size, digest)
+    if recovery_receipt is not None:
+        verify_recovery_receipt(root, recovery_receipt)
     return PreparedUpdate(root, baseline, target, destination, size, digest)
 
 
-async def apply_update(root: Path, prepared: PreparedUpdate) -> None:
+async def apply_update(
+    root: Path,
+    prepared: PreparedUpdate,
+    *,
+    recovery_receipt: bytes | None = None,
+) -> None:
     """调用者持安装锁；重新验证安装身份和包体后，才允许修改安装目录。"""
-    if (
-        root.resolve() != prepared.root
-        or await asyncio.to_thread(exe_digest, root) != prepared.base_exe_sha256
-    ):
+    if root.resolve() != prepared.root:
         raise ValueError("BAAH 安装在预下载后发生变化，请重新检查更新")
+    if prepared.base_exe_sha256 is None:
+        if recovery_receipt is None or (root / "BAAH.exe").exists():
+            raise script_install.InstallUnsafeError(
+                "BAAH 安装身份发生变化，拒绝覆盖新出现的程序"
+            )
+    elif await asyncio.to_thread(exe_digest, root) != prepared.base_exe_sha256:
+        raise ValueError("BAAH 安装在预下载后发生变化，请重新检查更新")
+    if recovery_receipt is not None:
+        verify_recovery_receipt(root, recovery_receipt)
     await asyncio.to_thread(assert_idle, root)
     await script_install.run_worker(
         verify_package, prepared.archive, prepared.size, prepared.digest
@@ -266,15 +301,39 @@ async def apply_update(root: Path, prepared: PreparedUpdate) -> None:
     shutil.rmtree(prepared.archive.parent)
 
 
+def verify_recovery_receipt(root: Path, snapshot: bytes) -> None:
+    """只允许用户确认的相同 MAS 安装回执触发损坏本体重装。"""
+    receipt = script_install.record_path(root, "installed.json")
+    if (
+        receipt.is_symlink()
+        or not receipt.is_file()
+        or not snapshot
+        or len(snapshot) > 1024 * 1024
+        or receipt.read_bytes() != snapshot
+    ):
+        raise script_install.InstallUnsafeError(
+            "BAAH 安装校验回执已改变，拒绝继续旧恢复请求"
+        )
+
+
 async def update_before_run(
-    root: Path, config, *, progress: DownloadProgress | None = None
+    root: Path,
+    config,
+    *,
+    progress: DownloadProgress | None = None,
+    recovery_receipt: bytes | None = None,
 ) -> str:
     await script_install.run_worker(
         script_install.recover_install, root, lambda: assert_idle(root)
     )
-    candidate = await prepare_update(root, config, progress=progress)
+    if recovery_receipt is not None:
+        verify_recovery_receipt(root, recovery_receipt)
+    candidate = await prepare_update(
+        root, config, progress=progress, recovery_receipt=recovery_receipt
+    )
     if candidate is None:
         await confirm_current_install(root)
         return "BAAH 当前版本无需更新"
-    await apply_update(root, candidate)
+    await apply_update(root, candidate, recovery_receipt=recovery_receipt)
+    await confirm_current_install(root)
     return f"BAAH 已更新至 {candidate.version}，完整性校验通过"

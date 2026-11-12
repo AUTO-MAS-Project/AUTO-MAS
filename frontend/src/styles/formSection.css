@@ -99,3 +99,13 @@
   font-size: 13px;
   color: var(--ant-color-text-secondary);
 }
+
+/* 用户编辑卡片的末项由卡片内边距留白，避免叠加分区和表单尾距。 */
+.user-edit-content .config-form > .form-section:last-child,
+.user-edit-content .config-form > .form-section:last-child > .ant-row:last-child .ant-form-item {
+  margin-bottom: 0;
+}
+
+.user-edit-content > .config-card + .section-header {
+  margin-top: 24px;
+}

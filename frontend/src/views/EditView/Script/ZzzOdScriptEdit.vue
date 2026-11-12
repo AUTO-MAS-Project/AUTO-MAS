@@ -227,39 +227,15 @@
           <div class="section-header">
             <h3>{{ t('core.edit.runConfiguration') }}</h3>
           </div>
-          <ScriptHardTimeoutField
-            v-model:value="zzzodConfig.Run.HardTimeLimit"
-            @save="handleChange('Run', 'HardTimeLimit', zzzodConfig.Run.HardTimeLimit)"
+          <ScriptRunLimitsSection
+            v-model:hard-time-limit="zzzodConfig.Run.HardTimeLimit"
+            v-model:daily-limit="zzzodConfig.Run.ProxyTimesLimit"
+            v-model:retry-limit="zzzodConfig.Run.RunTimesLimit"
+            v-model:timeout="zzzodConfig.Run.RunTimeLimit"
+            :retry-hint="t('core.edit.zzzodRetryLimitHint')"
+            :timeout-hint="t('core.edit.zzzodRunTimeoutHint')"
+            @save="key => handleChange('Run', key, zzzodConfig.Run[key])"
           />
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="zzzodConfig.Run.ProxyTimesLimit"
-                kind="daily"
-                :label="t('core.edit.runsPerDay')"
-                :hint="t('core.edit.k0MeansNoLimit')"
-                @save="handleChange('Run', 'ProxyTimesLimit', zzzodConfig.Run.ProxyTimesLimit)"
-              />
-            </a-col>
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="zzzodConfig.Run.RunTimesLimit"
-                kind="retry"
-                :label="t('core.edit.retryLimit2')"
-                :hint="t('core.edit.zzzodRetryLimitHint')"
-                @save="handleChange('Run', 'RunTimesLimit', zzzodConfig.Run.RunTimesLimit)"
-              />
-            </a-col>
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="zzzodConfig.Run.RunTimeLimit"
-                kind="timeout"
-                :label="t('core.edit.runTimeoutMinutes')"
-                :hint="t('core.edit.zzzodRunTimeoutHint')"
-                @save="handleChange('Run', 'RunTimeLimit', zzzodConfig.Run.RunTimeLimit)"
-              />
-            </a-col>
-          </a-row>
         </div>
 
         <!-- 实例槽管理：脚本级诊断（槽目录按安装目录归池、跨脚本共享），默认折叠 -->
@@ -270,10 +246,9 @@
 </template>
 
 <script setup lang="ts">
-import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
+import ScriptRunLimitsSection from './components/ScriptRunLimitsSection.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
-import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import PathPickerField from '@/components/PathPickerField.vue'
 import ZzzOdSlotManage from './ZzzOdSlotManage.vue'

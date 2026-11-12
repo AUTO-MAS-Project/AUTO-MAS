@@ -10,6 +10,12 @@ from pathlib import Path
 from app.utils import ProcessInfo, ProcessManager
 from app.utils.common.log.sources import LogSource
 
+from .batch_logs import (
+    NATIVE_SWITCH_UNSUPPORTED_MESSAGE,
+    NativeSwitchUnsupportedError,
+    native_switch_unsupported,
+)
+
 _START_TIMEOUT = 60.0
 # 新进展后的静默上限：非 tty 下 pip 输出「Downloading 包名」一行后静默下载，
 # 大包慢速下载期可长时间无完整新行，窗口须覆盖（量级对齐启动器交互的
@@ -115,6 +121,10 @@ async def start_okww(
                 ]
 
             lines = await asyncio.to_thread(read_logs)
+            if "MultiAccountConfigTask" in args and any(
+                native_switch_unsupported(line) for line in lines
+            ):
+                raise NativeSwitchUnsupportedError(NATIVE_SWITCH_UNSUPPORTED_MESSAGE)
             if search.done():
                 await search
                 return

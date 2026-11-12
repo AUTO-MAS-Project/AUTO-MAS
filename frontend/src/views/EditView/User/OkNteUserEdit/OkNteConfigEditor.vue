@@ -2,32 +2,11 @@
   <div class="oknte-config-editor">
     <a-spin :spinning="loading" :tip="t('core.edit.loadingConfiguration')">
       <a-row :gutter="24" class="editor-layout">
-        <!-- 左侧：配置文件列表 -->
-        <a-col :span="8" class="left-panel">
-          <div class="config-groups">
-            <div v-for="(group, groupName) in groupedConfigs" :key="groupName" class="config-group">
-              <div class="group-header">{{ groupName }}</div>
-              <div class="group-items">
-                <div
-                  v-for="config in group"
-                  :key="config.filename"
-                  class="config-item"
-                  :class="{
-                    'config-item--active': selectedFilename === config.filename,
-                  }"
-                  @click="selectConfig(config.filename)"
-                >
-                  <div class="config-item-info">
-                    <span class="config-item-name">{{ config.displayName }}</span>
-                    <span v-if="config.taskIndex" class="config-item-badge">
-                      -t {{ config.taskIndex }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </a-col>
+        <OkNteConfigNavigation
+          :groups="groupedConfigs"
+          :selected="selectedFilename"
+          @select="selectConfig"
+        />
 
         <!-- 右侧：配置表单 -->
         <a-col :span="16" class="right-panel">
@@ -320,6 +299,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons-vue'
+import OkNteConfigNavigation from './OkNteConfigNavigation.vue'
 import { OkNteSetupService as OknteService } from '@/composables/useAdapterSetupApi'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 
@@ -373,7 +353,7 @@ const emit = defineEmits<{
 }>()
 
 const logger = window.electronAPI.getLogger('OK-NTE配置编辑')
-const { configLocked } = useScriptConfigLock(() => props.scriptId)
+const { configLocked } = useScriptConfigLock(props)
 
 const loading = ref(false)
 const saving = ref(false)

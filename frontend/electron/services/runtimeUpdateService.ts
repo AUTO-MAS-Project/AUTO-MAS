@@ -22,7 +22,6 @@ import { beginMainFeature } from './featureAnalytics'
 import type { BackendStartResult, BackendStopResult } from './backendService'
 import { getLogger } from './logger'
 import { RUNTIME_STOP_TIMEOUT_MS, waitForSettle } from './runtime/shutdown'
-import { MirrorService } from './mirrorService'
 import type { RuntimeLaunchConfig, RuntimeRemediation } from './runtime'
 import {
   RUNTIME_BINARY_ALIGN_ERROR,
@@ -302,8 +301,6 @@ async function runBackendUpdate(
   const runtimeService = (deps.createRuntimeService ?? defaultRuntimeServiceFactory)({
     launchConfig,
     targetVersion: version,
-    // 更新流程不按段重试，这里的镜像查找只为满足构造契约；镜像配置与初始化流程同源。
-    mirrorService: new MirrorService(launchConfig.appRoot),
   })
   const current: UpdateSession = {
     version,
@@ -409,12 +406,7 @@ async function runBackendUpdateRetry(
 
   const outcome = await trackInFlight(
     current,
-    current.runtimeService.retryStage(
-      mapped.stage,
-      update => onProgress(update),
-      undefined,
-      mapped.mode
-    )
+    current.runtimeService.retryStage(mapped.stage, update => onProgress(update), mapped.mode)
   )
   if (!outcome.success) {
     // 单步重试时源码可能已是新版本，取消后不能再拉旧后端；保留重试入口让用户接着修。

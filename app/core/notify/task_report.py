@@ -135,7 +135,12 @@ class PreparedTaskReport:
 
 
 def prepare_task_report(task_info: TaskItem | None = None) -> PreparedTaskReport:
-    coordinator = getattr(task_info, "community_sign_notification", None)
+    coordinator = (
+        Notify.tasks.current_task_report_coordinator()
+        if task_info is None
+        or task_info.task_id == Notify.tasks.current_notification_task_id()
+        else None
+    )
     if coordinator is None:
         batch_task_id = Notify.tasks.current_notification_task_id()
         task_id = (

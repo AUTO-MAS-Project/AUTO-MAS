@@ -25,8 +25,7 @@ from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
-from app.services import System
-from app.utils import ProcessManager, get_logger
+from app.utils import ProcessManager, get_logger, process
 from app.utils import constants as _utils_constants
 from app.utils import io as _utils_io
 
@@ -172,7 +171,7 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.info(f"开始配置 MaaEnd 运行参数: 设置账号 {self.cur_user_item.user_id}")
 
         await self.maaend_process_manager.kill()
-        await System.kill_process(self.maaend_exe_path)
+        await process.kill_process(self.maaend_exe_path)
 
         maaend_set_path = self.maaend_set_path / "mxu-MaaEnd.json"
 
@@ -258,13 +257,13 @@ class ScriptConfigTask(TaskExecuteBase):
     async def final_task(self):
 
         await self.maaend_process_manager.kill()
-        await System.kill_process(self.maaend_exe_path)
+        await process.kill_process(self.maaend_exe_path)
 
         # 查看会话：只读预览，不把安装 config/ 回写 MAS 目录（安装现场由
         # manager 的任务前快照还原）；GUI 内的改动一律丢弃
         if self.view_only:
             logger.success("MaaEnd 查看结束（只读，不回写配置）")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             return
 
         # 配置会话没有自然结束点: main_task 里的 wait_event 没有任何设置方,
@@ -281,14 +280,14 @@ class ScriptConfigTask(TaskExecuteBase):
             )
             _utils_io.write_file(config_path, maaend_set)
             logger.success(f"MaaEnd 配置已保存到: {self.config_file_path}")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
         elif not self.crashed:
             logger.success("MaaEnd 原生来源配置已由脚本原生 GUI 保存")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
 
     async def on_crash(self, e: Exception):
         self.crashed = True
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
         await Publisher.send(
             id=self.task_info.task_id,

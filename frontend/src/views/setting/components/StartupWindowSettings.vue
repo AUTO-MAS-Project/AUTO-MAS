@@ -3,6 +3,7 @@ import { DesktopOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
 import type { GlobalConfig } from '@/api'
+import type { SettingChangeHandler } from '../settingTypes'
 import SectionCard from '@/components/ui/SectionCard.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
@@ -11,7 +12,7 @@ import TrayMenuEditor from './TrayMenuEditor.vue'
 
 const { settings, handleSettingChange } = defineProps<{
   settings: GlobalConfig
-  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<boolean>
+  handleSettingChange: SettingChangeHandler
 }>()
 
 const { t } = useI18n()

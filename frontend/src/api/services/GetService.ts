@@ -76,9 +76,12 @@ import type { QueueItemGetOut } from '../models/QueueItemGetOut';
 import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
 import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
+import type { ScriptLockIn } from '../models/ScriptLockIn';
+import type { ScriptLockOut } from '../models/ScriptLockOut';
 import type { ScriptMirrorCdkIn } from '../models/ScriptMirrorCdkIn';
 import type { ScriptMirrorCdkOut } from '../models/ScriptMirrorCdkOut';
 import type { ScriptShareInspectIn } from '../models/ScriptShareInspectIn';
+import type { ScriptStatusOverviewOut } from '../models/ScriptStatusOverviewOut';
 import type { SettingGetOut } from '../models/SettingGetOut';
 import type { SettingMirrorCdkIn } from '../models/SettingMirrorCdkIn';
 import type { SettingMirrorCdkOut } from '../models/SettingMirrorCdkOut';
@@ -92,6 +95,8 @@ import type { ShareInspectOut } from '../models/ShareInspectOut';
 import type { ShareTemplateListIn } from '../models/ShareTemplateListIn';
 import type { ShareTemplateListOut } from '../models/ShareTemplateListOut';
 import type { TaskboardStateOut } from '../models/TaskboardStateOut';
+import type { TaskGetIn } from '../models/TaskGetIn';
+import type { TaskGetOut } from '../models/TaskGetOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
 import type { TaskStatusOut } from '../models/TaskStatusOut';
 import type { TimeSetGetIn } from '../models/TimeSetGetIn';
@@ -193,17 +198,6 @@ export class GetService {
         });
     }
     /**
-     * 获取可选任务下拉框信息
-     * @returns ComboBoxOut Successful Response
-     * @throws ApiError
-     */
-    public static getTaskComboxApiInfoComboxTaskPost(): CancelablePromise<ComboBoxOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/info/combox/task',
-        });
-    }
-    /**
      * 获取可选计划下拉框信息
      * @param requestBody
      * @returns ComboBoxOut Successful Response
@@ -261,6 +255,17 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/notice/get',
+        });
+    }
+    /**
+     * 查询托管排期配置与最近历史结果
+     * @returns ScriptStatusOverviewOut Successful Response
+     * @throws ApiError
+     */
+    public static getScriptStatusOverviewApiInfoScriptsStatusGet(): CancelablePromise<ScriptStatusOverviewOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/scripts/status',
         });
     }
     /**
@@ -438,6 +443,25 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询配置锁状态
+     * @param requestBody
+     * @returns ScriptLockOut Successful Response
+     * @throws ApiError
+     */
+    public static getScriptLockApiScriptsLockPost(
+        requestBody: ScriptLockIn,
+    ): CancelablePromise<ScriptLockOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/lock',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1017,7 +1041,7 @@ export class GetService {
         });
     }
     /**
-     * 查询魔改 AVD 根目录的组件状态
+     * 查询 ModAVD 根目录的组件状态
      * 组件清单与是否齐全（缺哪几项）、硬件加速（WHPX）是否可用、开机前电脑检查。
      * 组件随模拟器内测包提供，MAS 不下载。只读，不联网。``refresh`` 为 true 时检查不走缓存。
      * @param requestBody
@@ -1038,7 +1062,7 @@ export class GetService {
         });
     }
     /**
-     * 查询魔改 AVD 实例选项
+     * 查询 ModAVD 实例选项
      * 显示档位、内存、核数、数据盘、首次初始化与渲染器检测结果、端口。
      * @param requestBody
      * @returns Emulator2AvdInstanceOptionsOut Successful Response
@@ -1058,7 +1082,7 @@ export class GetService {
         });
     }
     /**
-     * 查询魔改 AVD 根目录的更新状态
+     * 查询 ModAVD 根目录的更新状态
      * 装着的版本、最新版本、已下载好的版本、更新进度。``check`` 为 true 时（「检查更新」）先强制问一次
      * 下载源（Mirror 酱、GitHub）最新版本，不带 CDK；查不到不算接口失败，原因写在 ``checkError``。
      * @param requestBody
@@ -1163,6 +1187,25 @@ export class GetService {
             path: {
                 'task_id': taskId,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Tasks
+     * @param requestBody
+     * @returns TaskGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getTasksApiDispatchGetPost(
+        requestBody: TaskGetIn,
+    ): CancelablePromise<TaskGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/dispatch/get',
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

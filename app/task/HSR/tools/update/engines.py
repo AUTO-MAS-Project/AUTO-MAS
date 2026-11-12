@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from app.utils.common.process.runner import run_process_sync
+
 from ...task_mapping import ENGINE_DISPLAY_NAMES
 
 HSREngine = Literal["M7A", "SRA"]
@@ -160,7 +162,7 @@ def _probe_sra_version(executable: Path) -> str | None:
     if not executable.is_file():
         return None
     try:
-        completed = subprocess.run(
+        completed = run_process_sync(
             [str(executable), "--version"],
             capture_output=True,
             text=True,

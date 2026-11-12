@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from app.task.legacy import TaskExecuteBase
 from app.task.HSR import manager
 from app.task.HSR.tools import update
 from app.task.HSR.tools.update import apply as installer
@@ -17,6 +18,7 @@ from app.task.HSR.tools.update import apply as installer
 @pytest.fixture
 def scheduler(tmp_path, monkeypatch):
     instance = object.__new__(manager.HSRManager)
+    TaskExecuteBase.__init__(instance)
     instance.script_config = SimpleNamespace(
         Update=SimpleNamespace(
             AutoUpdateMode="BeforeRun",
@@ -1013,16 +1015,15 @@ async def test_consumption_cancel_waits_for_reader_before_discard(
         ("StartGame", "", True),
     ],
 )
-async def test_prefetch_success_follows_final_module_verdict(
+async def test_module_verdict_remains_independent_of_deferred_prefetch(
     monkeypatch, module_key, output, completed
 ):
     """进程成功结束但周常未完成，不能启动下一脚本的预取宽限期。"""
     from functools import partial
 
     from app.config import ConfigCollection
-    from app.core.task_manager.manager import TaskInfo
+    from tests.runtime_support import create_runtime_tree
     from app.models.config import HSRConfig, HSRUserConfig
-    from app.models.task import ScriptItem, UserItem
     from app.task.HSR.AutoProxy import HSRAutoProxyTask
     from app.task.HSR.tools.run_model import HSRRunItem, HSRRuntimeState
     from app.task.HSR.tools.sra_control import _on_sra_weekly_success
@@ -1032,11 +1033,11 @@ async def test_prefetch_success_follows_final_module_verdict(
     await users.activate()
     uid = users.add(HSRUserConfig)
     await users.commit()
-    user = UserItem(str(uid), "test", "运行")
-    script = ScriptItem(str(uuid.uuid4()), "HSR", "运行", user_list=[user])
-    task_info = TaskInfo("AutoProxy", "test", "queue", None, None)
-    monkeypatch.setattr(task_info, "schedule_on_change", lambda: None)
-    task_info.script_list = [script]
+    task_info, script, user = await create_runtime_tree(
+        script_id=str(uuid.uuid4()), user_id=str(uid)
+    )
+    await script.set_state(status="运行")
+    await user.set_state(status="运行")
     runtime = HSRRuntimeState(log_lines=[], completion_writebacks=[])
     proxy = HSRAutoProxyTask(
         script, HSRConfig(Game={"Enabled": False}), users, user, runtime
@@ -1077,5 +1078,94 @@ async def test_prefetch_success_follows_final_module_verdict(
         assert runtime.module_results[0].status == (
             "completed" if completed else "incomplete"
         )
-    assert (user.first_task_completed_at is not None) is completed
-    assert (script.first_task_completed_at is not None) is completed
+    assert "first_task_completed_at" not in user.info.model_dump()
+    assert "first_task_completed_at" not in script.info.model_dump()
+    await proxy.callbacks.close()
+
+
+@pytest.mark.asyncio
+async def test_hsr_native_health_refuses_corrupted_m7a_exe(tmp_path, monkeypatch):
+    from app.task.HSR.tools.update import install_recovery
+
+    root = tmp_path / "m7a"
+    root.mkdir()
+    (root / "March7th Assistant.exe").write_bytes(b"")
+    monkeypatch.setattr(install_recovery, "assert_idle", lambda root: None)
+    monkeypatch.setattr(
+        install_recovery, "read_installed_version", lambda spec, root: "v1.2.3"
+    )
+    state = await install_recovery.inspect_installation("M7A", root)
+    assert not state.healthy
+    assert not state.updated_confirmed
+
+
+def test_hsr_sra_gui_without_readable_exe_path_blocks_recovery(monkeypatch, tmp_path):
+    from app.task.HSR.tools.update import install_recovery
+
+    fake = SimpleNamespace(info={"exe": None, "name": "SRA.exe"})
+    monkeypatch.setattr(install_recovery, "check_no_process_running", lambda root: None)
+    monkeypatch.setattr(
+        install_recovery.psutil, "process_iter", lambda attributes: [fake]
+    )
+    with pytest.raises(
+        install_recovery.script_install.InstallUnsafeError, match="无法确认"
+    ):
+        install_recovery.assert_idle(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_hsr_native_journal_requires_real_recovery(tmp_path, monkeypatch):
+    from app.task.HSR.tools.update import install_recovery
+
+    root = tmp_path / "m7a"
+    root.mkdir()
+    executable = bytearray(128)
+    executable[:2] = b"MZ"
+    executable[60:64] = (64).to_bytes(4, "little")
+    executable[64:70] = b"PE\x00\x00\x64\x86"
+    (root / "March7th Assistant.exe").write_bytes(executable)
+    marker = install_recovery.journal_path(root)
+    marker.parent.mkdir()
+    marker.write_bytes(b"pending journal")
+    monkeypatch.setattr(install_recovery, "assert_idle", lambda root: None)
+    monkeypatch.setattr(
+        install_recovery, "read_installed_version", lambda spec, root: "v1.2.3"
+    )
+    state = await install_recovery.inspect_installation("M7A", root)
+    assert state.healthy and state.pending
+    assert not state.updated_confirmed and marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_hsr_recovered_engine_is_not_auto_updated_again(scheduler):
+    scheduler._recovered_update_engines = {"M7A"}
+    assert await scheduler._update_external_scripts() is None
+    assert update.update_engine_if_needed.await_count == 1
+    assert scheduler._append_log.called
+
+
+@pytest.mark.asyncio
+async def test_hsr_manager_retries_failed_rollback_through_common_entry(
+    scheduler, tmp_path, monkeypatch
+):
+    from app.task.HSR.tools.update import install_recovery
+
+    root = tmp_path / "M7A"
+    root.mkdir()
+    marker = install_recovery.journal_path(root)
+    marker.parent.mkdir()
+    marker.write_bytes(b"pending journal")
+    scheduler.task_info = SimpleNamespace(task_id="task-id")
+    scheduler._recovered_update_engines = set()
+
+    async def rollback(root, **kwargs):
+        if root.name == "M7A":
+            raise update.HSRUpdateError("cannot rollback")
+        return False
+
+    monkeypatch.setattr(update, "rollback_pending", AsyncMock(side_effect=rollback))
+    common = AsyncMock(return_value="reinstalled")
+    monkeypatch.setattr(manager, "auto_recover_script_install", common)
+    await scheduler._rollback_pending_updates()
+    common.assert_awaited_once()
+    assert scheduler._recovered_update_engines == {"M7A"}

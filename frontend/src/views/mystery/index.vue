@@ -156,7 +156,6 @@ const lock = async () => {
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 24px;
 }
 
 .mystery-header,

@@ -56,9 +56,13 @@ def launch(tmp_path, monkeypatch):
                 f"2026-11-04 INFO pyappify_lib::emitter: INFO [ok-ww]: {message}\n"
             )
 
-    async def run():
+    async def run(args=()):
         await startup.start_okww(
-            manager, tmp_path / "ok-ww.exe", [], target=object(), on_log=AsyncMock()
+            manager,
+            tmp_path / "ok-ww.exe",
+            list(args),
+            target=object(),
+            on_log=AsyncMock(),
         )
 
     return SimpleNamespace(
@@ -75,6 +79,22 @@ def launch(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [
+        "ValueError: Task not found: MultiAccountConfigTask",
+        "argument -t/--task: invalid int value: 'MultiAccountConfigTask'",
+    ],
+)
+async def test_native_switch_not_supported_reports_actionable_error(launch, error):
+    launch.schedule.append((1, lambda: launch.emit(error)))
+    with pytest.raises(RuntimeError, match="当前ok-ww版本不支持或已移除原生账号切换"):
+        await launch.run(["-t", "MultiAccountConfigTask", "-e"])
+    assert launch.clock.now < 60
+    assert launch.search_finished.is_set()
+
+
+@pytest.mark.asyncio
 async def test_update_allows_worker_to_start_after_sixty_seconds(launch):
     launch.schedule.extend(
         [(30, lambda: launch.emit("Downloading package-a")), (100, launch.found.set)]
@@ -84,10 +104,20 @@ async def test_update_allows_worker_to_start_after_sixty_seconds(launch):
 
 
 @pytest.mark.asyncio
-async def test_historical_logs_do_not_extend_startup(launch):
-    launch.emit("Downloading old-package")
+@pytest.mark.parametrize(
+    "message,args",
+    [
+        ("Downloading old-package", []),
+        (
+            "ValueError: Task not found: MultiAccountConfigTask",
+            ["-t", "MultiAccountConfigTask", "-e"],
+        ),
+    ],
+)
+async def test_historical_logs_do_not_affect_current_startup(launch, message, args):
+    launch.emit(message)
     with pytest.raises(RuntimeError, match="60"):
-        await launch.run()
+        await launch.run(args)
     assert launch.clock.now == 60
 
 
@@ -231,3 +261,31 @@ async def test_dependency_installation_progress_extends_wait(launch):
     )
     await launch.run()
     assert launch.clock.now >= 500
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "arguments,expected",
+    [
+        ("", ["-krqlv=hd"]),
+        ("-Res=1920x1080", ["-krqlv=hd", "-Res=1920x1080"]),
+        ("-krqlv=uhd -Res=1920x1080", ["-krqlv=uhd", "-Res=1920x1080"]),
+        ("-krqlv=sd", ["-krqlv=sd"]),
+        ("-krqlv=hd -Res=1920x1080 -KRQLV=uhd", ["-Res=1920x1080", "-KRQLV=uhd"]),
+    ],
+)
+async def test_direct_launch_uses_explicit_resource_tier(tmp_path, arguments, expected):
+    from app.models.config.script import OkwwConfig
+    from app.task.Okww.AutoProxy import AutoProxyTask
+
+    client = tmp_path / "Client-Win64-Shipping.exe"
+    manager = SimpleNamespace(open_process=AsyncMock())
+    task = SimpleNamespace(
+        game_process_path=client,
+        game_manager=manager,
+        _updated_game_quality=None,
+        script_config=OkwwConfig.model_validate({"Game": {"Arguments": arguments}}),
+        _push_dispatch_log=AsyncMock(),
+    )
+    await AutoProxyTask._launch_game_direct(task)
+    manager.open_process.assert_awaited_once_with(client, *expected)

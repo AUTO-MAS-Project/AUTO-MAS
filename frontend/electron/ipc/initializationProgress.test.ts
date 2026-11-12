@@ -1,6 +1,6 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
-import { createSSRApp, h, nextTick } from 'vue'
+import { createSSRApp, h } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { i18n } from '@/i18n'
 import LaunchStatus from '@/components/LaunchStatus.vue'
@@ -69,7 +69,6 @@ vi.mock('../services', async () => ({
 vi.mock('../services/logger', () => ({
   getLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
-vi.mock('../services/mirrorService', () => ({ MirrorService: class {} }))
 vi.mock('../services/backendService', () => ({ BackendService: class {} }))
 vi.mock('../services/environmentService', () => ({
   getAppRoot: () => bridge.config.appRoot,
@@ -125,14 +124,13 @@ beforeEach(() => {
     electronAPI: {
       ...bridge.api!,
       getRuntimeInitContext: async () => ({ mode: 'managed' }),
-      initMirrors: async () => {},
-      getMirrors: async () => [],
       loadConfig: async () => ({}),
       getInitializedVersion: async () => '',
     },
   })
   vi.stubGlobal('sessionStorage', { getItem: () => null })
-  i18n.global.locale.value = 'zh-CN'
+  // 三语动态切换由 useInitializationFlow.test.ts 覆盖；这里验证完整 IPC 连线。
+  i18n.global.locale.value = 'en-US'
 })
 afterEach(() => {
   vi.clearAllTimers()
@@ -142,6 +140,23 @@ afterEach(() => {
 })
 
 describe('Runtime alignment → InitializationService → IPC/preload → Vue display', () => {
+  it.each([
+    ['installPython', 'python'],
+    ['pullRepository', 'repository'],
+    ['installDependencies', 'dependency'],
+  ] as const)(
+    '%s keeps retry separate from rebuild through preload and IPC',
+    async (method, stage) => {
+      const retry = vi
+        .spyOn(InitializationService.prototype, 'retryStageViaRuntime')
+        .mockResolvedValue({ success: true })
+      await bridge.api![method](false)
+      expect(retry).toHaveBeenLastCalledWith(stage, expect.any(Function), 'sync')
+      await bridge.api![method](true)
+      expect(retry).toHaveBeenLastCalledWith(stage, expect.any(Function), 'rebuild')
+    }
+  )
+
   it.each(['initialize', 'installPython'] as const)(
     'preserves download metadata through %s',
     async entry => {
@@ -153,7 +168,6 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
       })
       const runtime = new RuntimeInitializationService({
         launchConfig: bridge.config,
-        mirrorService: { getMirrors: () => [] },
         alignRuntimeBinary: async options => {
           emit = progress => options.onProgress?.(progress)
           await completion
@@ -179,7 +193,7 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
       vi.clearAllTimers()
       const api = window.electronAPI
       const pending = entry === 'initialize' ? api.initialize('dev', false) : api.installPython()
-      const channel = entry === 'initialize' ? 'initialization-progress' : 'python-progress'
+      const channel = 'initialization-progress'
       const html = () =>
         renderToString(
           createSSRApp({
@@ -194,13 +208,12 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
       try {
         await vi.waitFor(() => expect(emit).toBeTypeOf('function'))
         for (const source of [
-          { key: 'cnb', name: 'CNB', index: 1, en: 'CNB', ja: 'CNB' },
+          { key: 'cnb', name: 'CNB', index: 1, displayName: 'CNB' },
           {
             key: 'github',
             name: 'GitHub 官方',
             index: 5,
-            en: 'GitHub (official)',
-            ja: 'GitHub 公式',
+            displayName: 'GitHub (official)',
           },
         ]) {
           const input: RuntimeBinarySyncProgress = {
@@ -231,16 +244,10 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
             runtimeStatus: 'running',
             runtimeMode: 'managed',
           } satisfies Partial<InitializationProgress>)
-          for (const [locale, title] of [
-            ['zh-CN', `正在从 ${source.name}（${source.index}/5）下载 Runtime v0.1.99`],
-            ['en-US', `Downloading Runtime v0.1.99 from ${source.en} (${source.index}/5)`],
-            ['ja-JP', `${source.ja}（${source.index}/5）から Runtime v0.1.99 をダウンロード中`],
-          ] as const) {
-            i18n.global.locale.value = locale
-            await nextTick()
-            expect(await html()).toContain(title)
-            expect(bridge.logs).toContainEqual(['info', '初始化流程', `[python] ${input.message}`])
-          }
+          expect(await html()).toContain(
+            `Downloading Runtime v0.1.99 from ${source.displayName} (${source.index}/5)`
+          )
+          expect(bridge.logs).toContainEqual(['info', '初始化流程', `[python] ${input.message}`])
         }
         const legacy = {
           phase: 'download' as const,
@@ -249,10 +256,7 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
           message: 'legacy: 完整原文',
         }
         emit(legacy)
-        for (const locale of ['zh-CN', 'en-US', 'ja-JP'] as const) {
-          i18n.global.locale.value = locale
-          expect(await html()).toContain(legacy.message)
-        }
+        expect(await html()).toContain(legacy.message)
         // The copied IPC payload retains unknown/missing fields without fabricating metadata.
         const last = bridge.sent.filter(event => event.channel === channel).at(-1)!
           .payload as InitializationProgress
@@ -281,7 +285,6 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
       })
       const runtime = new RuntimeInitializationService({
         launchConfig: bridge.config,
-        mirrorService: { getMirrors: () => [] },
         alignRuntimeBinary: async () => ({ status: 'current', target: { version: 'v0.1.99' } }),
         createClient: () =>
           ({
@@ -336,7 +339,7 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
         entry === 'initialize'
           ? window.electronAPI.initialize('dev', false)
           : window.electronAPI.installDependencies()
-      const channel = entry === 'initialize' ? 'initialization-progress' : 'dependency-progress'
+      const channel = 'initialization-progress'
       const html = () =>
         renderToString(
           createSSRApp({
@@ -369,11 +372,7 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
           })
           expect(sent.source).toBeUndefined()
           expect(sent.item).toBeUndefined()
-          for (const locale of ['zh-CN', 'en-US', 'ja-JP'] as const) {
-            i18n.global.locale.value = locale
-            await nextTick()
-            expect(await html()).toContain(message)
-          }
+          expect(await html()).toContain(message)
           expect(bridge.logs).toContainEqual(['info', '初始化流程', `[dependency] ${message}`])
         }
         emit({
@@ -383,22 +382,15 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
           current: 1024,
           total: 2048,
         })
-        for (const locale of ['zh-CN', 'en-US', 'ja-JP'] as const) {
-          i18n.global.locale.value = locale
-          expect(flow.statusTitle.value).toBe(
-            i18n.global.t('bootstrap.init.progress.dependenciesSync')
-          )
-          expect(await html()).toContain('package.whl')
-          expect(await html()).toContain('aliyun')
-          expect(await html()).toContain('1 KB / 2 KB')
-        }
+        expect(flow.statusTitle.value).toBe(
+          i18n.global.t('bootstrap.init.progress.dependenciesSync')
+        )
+        const details = await html()
+        expect(details).toContain('package.whl')
+        expect(details).toContain('aliyun')
+        expect(details).toContain('1 KB / 2 KB')
         ready()
-        for (const locale of ['zh-CN', 'en-US', 'ja-JP'] as const) {
-          i18n.global.locale.value = locale
-          expect(flow.statusTitle.value).toBe(
-            i18n.global.t('bootstrap.init.progress.bootstrapReady')
-          )
-        }
+        expect(flow.statusTitle.value).toBe(i18n.global.t('bootstrap.init.progress.bootstrapReady'))
       } finally {
         finish()
         await pending

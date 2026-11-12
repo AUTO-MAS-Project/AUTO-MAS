@@ -6,6 +6,7 @@ import type { BAAHPlanConfigInput } from './BAAHPlanConfigInput';
 import type { MaaEndPlanConfigInput } from './MaaEndPlanConfigInput';
 import type { MaaPlanConfigInput } from './MaaPlanConfigInput';
 import type { MSSPlanConfigInput } from './MSSPlanConfigInput';
+import type { OkNtePlanConfigInput } from './OkNtePlanConfigInput';
 import type { UniversalPlanConfigInput } from './UniversalPlanConfigInput';
-export type PlanConfigDataInput = (MaaPlanConfigInput | MaaEndPlanConfigInput | BAAHPlanConfigInput | MSSPlanConfigInput | UniversalPlanConfigInput);
+export type PlanConfigDataInput = (MaaPlanConfigInput | MaaEndPlanConfigInput | BAAHPlanConfigInput | MSSPlanConfigInput | UniversalPlanConfigInput | OkNtePlanConfigInput);
 

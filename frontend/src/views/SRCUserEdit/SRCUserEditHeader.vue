@@ -4,7 +4,6 @@
     :script-name="scriptName"
     :is-edit="isEdit"
     script-edit-segment="src"
-    :current-label="isEdit ? t('core.comp.editUser') : t('core.comp.addUser')"
     :user-id="userId"
     :config-label="userMode === 'independent' ? t('core.edit.srcConfiguration') : undefined"
     :config-loading="srcConfigLoading"

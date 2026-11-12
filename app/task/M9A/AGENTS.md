@@ -1,20 +1,22 @@
 # app/task/M9A — M9A 是 MaaFW 的特调类型，不是专项
 
 进这个目录之前先读 `app/task/MaaFW/AGENTS.md`：M9A 的运行、更新、内嵌副本、通知、失败截图、
-周期任务、代理次数……全部是 MaaFW 引擎的既有语义，这里一行都没有重写。本目录只有四个文件：
+周期任务、代理次数……全部是 MaaFW 引擎的既有语义，这里一行都没有重写。本目录只有五个文件：
 
 - `managed.py`：**受管任务**的唯一规则。entry `StartUp`（启动游戏）、`SwitchAccount`（切换账号）、
   `Close1999`（关闭游戏）由 MAS 全权控制，不许留在账号队列里；按 entry 判，不按任务名。
   启动 / 关闭一律移除；切换账号只数「勾选且账号非空」的——恰好 1 个：账号进 `Info.Account`、从队列移除
   （`Info.Account` 原来非空且不同时队列值优先，原值追加进备注）；0 个：直接移除、不动账号；≥ 2 个且脚本
-  资源是官服：队列里的切号原样保留（启动 / 关闭照删），备注与启动通知写明拆成几个账号，运行期拒绝该账号；
-  ≥ 2 个但资源不是官服：切号只在官服生效、从没跑过，直接移除。下面四个入口都调它，不要另写一份：
+  资源支持切号：队列里的切号原样保留（启动 / 关闭照删），备注与启动通知写明拆成几个账号，运行期拒绝该账号；
+  ≥ 2 个但资源不支持切号：切号从没跑过，直接移除。「资源支持切号」的口径只在
+  `managed.supports_account_switch` 一处：官服按原有规则；`Run.LoginMode` 为 `Mas`（登录由 MAS 完成）时
+  一律不支持——四个入口都按它判，不要再各自读资源名。下面四个入口都调它，不要另写一份：
   运行前装饰、启动整理、旧版迁移 / beta.1 补救、写 `Task.TaskSnapshot` 的保存入口。
   「资源是不是官服」在运行前装饰、启动整理、保存入口三处一律取引擎的
   `tools/core/runner/run_plan.resolve_run_selection`（脚本资源留空时按控制器回落：PC 控制器回落到
   「国际服（EN）」，不是 `interface.resource[0]`）；装饰与保存钩子由引擎把结果作 `resource_name` 传入，
   启动整理自己按原始 JSON 调它。别在特调里另写回落。
-  **保留态的判据是队列内容本身**（有效切号 ≥ 2 且官服），不是标记：普通保存交回同一份队列照样判成
+  **保留态的判据是队列内容本身**（有效切号 ≥ 2 且资源支持切号），不是标记：普通保存交回同一份队列照样判成
   保留、不会被抹掉；用户删到只剩 1 个，下一次保存就收进「账号」。前端不许过滤已在队列里的受管任务再
   保存——那样会绕过这条判据把保留态抹掉。
 - `flavor.py`：`FLAVOR` 对象（满足 `app/task/MaaFW/tools/embedded/flavor.py` 的 `MaaFWFlavor` 协议）。
@@ -23,9 +25,9 @@
      任一命中即认领——导入完成后引擎据此把托管类型定成 `M9AConfig`（不命中的项目导进 M9A 脚本会变回
      `MaaFWConfig`，类型由项目决定、双向自动、uid 不变）。
   2. `decorate_selection(...)`：运行前先把勾选列表里三类受管任务**全部剔掉**（连同它们的选项），再按
-     固定顺序补：`StartUp` 放队首；脚本资源为「官服」且有账号时 `SwitchAccount` 紧跟启动、账号填进它
+     固定顺序补：`StartUp` 放队首；脚本资源支持切号且有账号时 `SwitchAccount` 紧跟启动、账号填进它
      第一个 input 选项；`Close1999` 放队尾。用户排的顺序不影响这三项。账号取 `Info.Account`，但队列里
-     恰好残留一个有效切号时取它（与启动整理的结果一致）。官服且有效切号 ≥ 2 时写账号日志并抛
+     恰好残留一个有效切号时取它（与启动整理的结果一致）。支持切号且有效切号 ≥ 2 时写账号日志并抛
      `M9ASplitRequiredError`——引擎把它当成运行计划构建失败，该账号记「异常」、发错误通知、不跑，其它
      用户照常。剔完是空队列就什么都不补。按 entry 找不到就写一行账号日志跳过。**不**过滤 standalone、
      **不**结束 `M9A.exe`、**不**碰重试 / 周期 / 超时 / 更新。
@@ -34,8 +36,13 @@
      `managed.py` 整理快照并返回要一并写的 `Info.Account` / `Info.Notes`；拆分提示不在这里写。
   4. `ensure_game_updated(...)`：引擎的**可选**游戏更新钩子（契约写在 MaaFW `flavor.py` 的模块
      说明里，不在协议里），转给 `game_update.py`。
-  5. `abort_round_entries` / `nonfatal_entries`：引擎的**可选**声明（契约同上）。切换账号失败就结束
-     本轮、照常重试；关闭游戏（`Close1999`）失败、超时或打转只截图记一行，不算本轮失败、不重试。
+  4a. `ensure_logged_in(...)`：引擎的**可选**运行前登录钩子（契约写在 MaaFW `flavor.py` 的模块
+     说明里，不在协议里），转给 `login.py`。只有 `Run.LoginMode == "Mas"` 时真正做事，
+     其余情况返回空串；失败抛 `MaaFWLoginRequired`（本轮按普通失败重试）。
+  5. `abort_round_entries` / `nonfatal_entries`：引擎的**可选**声明（契约同上）。切换账号失败就
+     结束本轮、照常重试；**启动游戏（`StartUp`）不在名单里**（上游一直只声明切号：它失败不代表
+     游戏用不了，按普通任务失败继续）；关闭游戏（`Close1999`）失败、超时或打转
+     只截图记一行，不算本轮失败、不重试。
   6. `skip_on_retry_entries`：引擎的**可选**声明（契约同上）。列的是 v4.11.3 全部非受管任务的 entry，
      本次运行里完成过的重试时不再补跑；**逐个写出**，M9A 新增的任务默认照旧补跑，确认重跑无意义再加。
      受管三项每次尝试都要重做，不列。
@@ -57,6 +64,30 @@
   官网 4.0.0 是 170）时 Android 不许降级、官网包永远装不上，两种模式都直接判失败、不下载。
   否则落后时 `Check` 判失败提示手动更新，`AutoInstall` 下载到 `data/GameApk` 后
   `adb install -r`、装完复查，安装包成败都删。下载 / 安装各 60 分钟上限，写死不做配置。
+- `login.py`：`Run.LoginMode == "Mas"` 时的 B 服原生登录（`ensure_logged_in` 钩子）。MAS 启动模拟器
+  （连带拉起游戏）之后、第一个任务之前，用 `adb` 截图 + `app.tools.common.ocr` 识别哔哩哔哩登录面板：
+  点「隐私政策提示」里唯一的「同意」，在「登录记录」里按 `Info.Account`（登录记录里显示的完整昵称）
+  精确匹配、唯一命中后选中并点「登录」，等面板消失、连续两帧认出标题页后才返回；进游戏与跑任务交给
+  M9A 的 `StartUp` 与用户队列。标题页的正向信号有四种：OCR 到「START」（或漏首字母的 TART）、
+  标题 logo 下的完整「REVERSE」或实机常读到的残词 `ERSE`、或登录成功后顶栏的「<昵称> 欢迎回来」横幅。
+  游戏已登录停在标题页（任一信号）时，
+  MAS 不知道当前是哪个号，为保证切到目标账号，先点标题页右下角退出图标 → 唯一的「确认」→ 等「登录记录」
+  出现再选号。`adb` 子进程走 `app/utils/common/process/runner.py` 的受管入口：任务被停止时命令随作用域
+  回收，截图分支保留 PNG 原始 bytes（不能按文本解码）。
+  **边界**：自动同意只复用全局 `Config.setting.Function.IfAgreeBilibili`（默认关），关着时不点、
+  提示手动处理并停止；既认不出登录记录也认不出标题页（例如停在别的账号的主界面）时明确停止，
+  不把"没认出登录页"当成功；这段等待的预算取 `Game.WaitTime`（冷启动加载画面同样认不出，不能按
+  固定 60 秒截断慢启动的客户端），总时长仍受登录主循环 240 秒约束；所有循环先查总时限，
+  `adb input tap` 失败直接抛错。
+  坐标全按屏幕宽高取比例（16:9 实测值），面板 / 标题页布局改版要跟着改。失败抛
+  `MaaFWLoginRequired`（文案直接给用户看，本轮按普通失败重试）；`CancelledError` 照常上抛。
+  引擎侧只在登录成功后才记「已登录」，客户端被重试重启时会清掉标记、下一轮重新验证。
+  依赖：ADB controller + `Game.PackageName` 填 B 服包名（`com.shenlan.m.reverse1999.bilibili`，
+  没填时按这个包名拉起）。脚本资源不是「B 服」或实际要启动的包名不是 B 服包时直接报错，
+  不拿错客户端去走哔哩哔哩登录面板。`Run.LoginMode` 默认 `Project`（M9A 项目自己登录），只在 M9A 脚本有。
+  这是**临时补位**：上游 M9A 的 interface 已声明 B 服资源（任务运行可用），但「切换账号」仍只声明
+  官服、没有按 B 站昵称选号的入口；上游补齐等价入口后删除本模块的选号逻辑（立项时未单独向上游提
+  PR：本实现属于 MAS 侧运行前编排，上游入口补齐前无法复用）。
 - `migration.py`：旧版 M9A 专项配置（`Run.IfPsychubeDailyOnce`、`Task.Queue`、`Data.LastPsychubeDate`…）
   → MaaFW 形状的一次性迁移，以及「通用 MaaFW 脚本指向 M9A 项目 → 换类型标签」。在
   `Config.init_config` 里 **`ScriptConfig.connect()` 之前**改原始 JSON（`ConfigBase.load` 只认类里
@@ -84,13 +115,15 @@
 
 前端没有 M9A 专用页面：托管页 / 账号页 / 创建流程都是 MaaFW 的组件，按脚本实际类型取特调注册表里
 M9A 的描述对象（`frontend/src/views/EditView/MaaFWFlavor/m9a/index.ts`，写法见
-`frontend/src/composables/useMaaFWFlavor.ts` 文件头）。托管页的「游戏更新」下拉（`Run.GameUpdateMode`，对应
-`game_update.py`）是 M9A 挂在插入点 `scriptPage.slots.besidePackageName` 上的独有区块
-（同目录 `M9AGameUpdateField.vue`，按需加载）。描述对象里的 `userPage.managed.entries` 与 `managed.py` 的
+`frontend/src/composables/useMaaFWFlavor.ts` 文件头）。托管页的两个独占下拉都挂在插入点
+`scriptPage.slots.besidePackageName`（同目录、按需加载）：「游戏更新」（`Run.GameUpdateMode`，对应
+`game_update.py`，`M9AGameUpdateField.vue`）与「登录方式」（`Run.LoginMode`，对应 `login.py`，
+`M9ALoginModeField.vue`，Project / Mas 与后端字面量一致）。描述对象里的 `userPage.managed.entries` 与 `managed.py` 的
 `MANAGED_ENTRIES` 是同一组：通用账号页按它把受管任务挡在「添加任务」与预设模板之外，已在队列里的照常显示；
 `userPage.managed.accountTask`
 （`SwitchAccount` + 官服）是拆分判据，只有页面上生效的资源在其中、有效切号 ≥ 2 时才给「拆分前不会运行」
-的警告，其余残留只给轻提示（`frontend/src/views/EditView/User/maafwManagedTasks.ts`）。改一边要同步另一边。#799 的配置备份恢复走 MaaFW 的两个池（`data/<sid>/MaaFWBackups/{mas,native}`）；
+的警告；`Run.LoginMode == "Mas"` 时用户页把 accountTask 置空（切号由 MAS 完成、后端会直接移出残留），
+其余残留只给轻提示（`frontend/src/views/EditView/User/maafwManagedTasks.ts`）。改一边要同步另一边。#799 的配置备份恢复走 MaaFW 的两个池（`data/<sid>/MaaFWBackups/{mas,native}`）；
 旧 `M9ABackups/` 不再被列出、不支持恢复、原地保留。
 
 要给 M9A 加任何"专项行为"之前先问：这是不是所有 MaaFW 项目都该有的？是就做进引擎；不是就问用户
