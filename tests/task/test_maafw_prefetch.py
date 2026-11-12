@@ -12,7 +12,6 @@ from app.task.MaaFW.tools.core.project_update import updater
 async def test_task_force_stop_kills_installation_thread_process(tmp_path):
     import asyncio
     import sys
-    from contextlib import suppress
 
     import psutil
 
@@ -47,8 +46,8 @@ async def test_task_force_stop_kills_installation_thread_process(tmp_path):
         await scope.force_close()
         result = await asyncio.wait_for(worker, 3)
         assert result.returncode != 0
-        with suppress(psutil.NoSuchProcess):
-            assert process.status() == psutil.STATUS_ZOMBIE
+        # Windows 的退出状态可能尚未刷新，限时等待实际退出。
+        await asyncio.to_thread(process.wait, timeout=3)
         with pytest.raises(asyncio.CancelledError):
             scope.popen([sys.executable, "-c", "pass"])
     finally:
