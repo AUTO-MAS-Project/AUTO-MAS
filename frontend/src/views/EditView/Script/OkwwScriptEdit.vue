@@ -137,28 +137,6 @@
                 </span>
               </a-form-item>
             </a-col>
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.wholeFileSyncLimit')"
-                    :hint="t('core.edit.largeVersionGapNeeds')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="okwwConfig.Game.UpdateFullSyncLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  :disabled="!okwwConfig.Game.Enabled"
-                  @blur="
-                    handleChange('Game', 'UpdateFullSyncLimit', okwwConfig.Game.UpdateFullSyncLimit)
-                  "
-                />
-              </a-form-item>
-            </a-col>
           </a-row>
 
           <a-row :gutter="24" class="game-control-row">
@@ -458,7 +436,6 @@ interface OkwwGameForm {
   Arguments: string
   WaitTime: number
   IfAutoUpdate: boolean
-  UpdateFullSyncLimit: number
 }
 
 interface OkwwRunForm {
@@ -496,7 +473,6 @@ const okwwConfig = reactive<OkwwScriptConfigForm>({
     Arguments: '',
     WaitTime: 60,
     IfAutoUpdate: true,
-    UpdateFullSyncLimit: 30,
   },
   Run: { HardTimeLimit: 120, ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 60 },
 })

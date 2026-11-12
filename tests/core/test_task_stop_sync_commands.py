@@ -1,4 +1,4 @@
-"""同步更新工具与异步补丁工具都须随所属任务结束。"""
+"""同步更新工具须随所属任务结束。"""
 
 import asyncio
 import subprocess
@@ -44,9 +44,8 @@ def _heartbeat_command(tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows 任务进程组")
-@pytest.mark.parametrize("entry", ["sync_update", "wuthering_patch"])
 async def test_update_helpers_stop_writing_after_task_scope_closes(
-    tmp_path, monkeypatch, entry
+    tmp_path,
 ):
     command, pid_file, heartbeat, marker = _heartbeat_command(tmp_path)
     native_spawn = asyncio.create_subprocess_exec
@@ -56,31 +55,12 @@ async def test_update_helpers_stop_writing_after_task_scope_closes(
     scope = TaskProcessScope()
     token = current_process_scope.set(scope)
     child = None
-    expected_stop_errors = ()
     try:
-        if entry == "sync_update":
-            operation = asyncio.create_task(
-                asyncio.to_thread(
-                    run_process_sync, command, capture_output=True, timeout=15
-                )
+        operation = asyncio.create_task(
+            asyncio.to_thread(
+                run_process_sync, command, capture_output=True, timeout=15
             )
-        else:
-            from app.services.common.wuthering_waves import updater
-
-            expected_stop_errors = (updater.HpatchzApplyError,)
-
-            async def patch_binary(*args, **kwargs):
-                return await native_spawn(*command, **kwargs)
-
-            monkeypatch.setattr(asyncio, "create_subprocess_exec", patch_binary)
-            operation = asyncio.create_task(
-                updater._run_hpatchz(
-                    tmp_path / "hpatchz.exe",
-                    tmp_path,
-                    tmp_path / "blob",
-                    tmp_path / "out",
-                )
-            )
+        )
     finally:
         current_process_scope.reset(token)
     try:
@@ -97,8 +77,7 @@ async def test_update_helpers_stop_writing_after_task_scope_closes(
         before = heartbeat.read_text()
         await asyncio.sleep(0.08)
         assert heartbeat.read_text() == before
-        with suppress(*expected_stop_errors):
-            await asyncio.wait_for(asyncio.shield(operation), 2)
+        await asyncio.wait_for(asyncio.shield(operation), 2)
         assert unrelated.returncode is None
     finally:
         if child is None and pid_file.exists():
@@ -109,8 +88,7 @@ async def test_update_helpers_stop_writing_after_task_scope_closes(
                 await asyncio.to_thread(child.wait, timeout=3)
         if not scope.closed:
             await scope.force_close()
-        with suppress(*expected_stop_errors):
-            await asyncio.wait_for(asyncio.shield(operation), 3)
+        await asyncio.wait_for(asyncio.shield(operation), 3)
         unrelated.kill()
         await unrelated.wait()
 
