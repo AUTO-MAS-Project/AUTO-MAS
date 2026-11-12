@@ -35,14 +35,17 @@ onMounted(() => {
     :aria-label="t('core.setting.basic.closeBehavior')"
     @change="(event: RadioChangeEvent) => handleChange(event.target.value)"
   >
-    <a-radio value="quit" class="close-action-row">{{ t('core.setting.basic.closeQuit') }}</a-radio>
-    <a-radio value="tray" class="close-action-row">{{
-      t('core.setting.basic.closeToTray')
-    }}</a-radio>
+    <a-radio value="quit" class="close-action-row">
+      {{ t('core.setting.basic.closeQuit') }}
+    </a-radio>
+    <a-radio value="tray" class="close-action-row">
+      {{ t('core.setting.basic.closeToTray') }}
+    </a-radio>
   </a-radio-group>
 </template>
 
 <style scoped>
+/* 列内竖排，与同列勾选项共用行高与字号。 */
 .close-action-options {
   display: flex;
   flex-direction: column;
@@ -51,21 +54,10 @@ onMounted(() => {
 .close-action-row {
   display: flex;
   align-items: center;
-  min-height: 42px;
-  margin: 0 -6px;
-  padding: 0 6px;
-  border-radius: var(--ant-border-radius-sm);
+  min-height: 36px;
+  margin: 0;
   color: var(--ant-color-text);
   font-size: 14px;
   font-weight: 500;
-  transition: background-color 0.2s ease;
-}
-
-.close-action-row:hover {
-  background: var(--ant-color-fill-quaternary);
-}
-
-.close-action-row + .close-action-row {
-  border-top: 1px solid var(--ant-color-split);
 }
 </style>

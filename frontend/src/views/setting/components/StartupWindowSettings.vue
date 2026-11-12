@@ -23,115 +23,111 @@ const { t } = useI18n()
     :title="t('core.setting.basic.startupWindowSection')"
     :icon="DesktopOutlined"
   >
-    <div class="settings-grid">
-      <section class="settings-group">
-        <h4 class="settings-group-title">{{ t('core.setting.func.startupGroup') }}</h4>
+    <div class="settings-columns">
+      <section class="setting-group">
+        <h4 class="setting-group-title">{{ t('core.setting.func.startupGroup') }}</h4>
 
-        <div class="option-list">
-          <div class="option-row">
-            <a-checkbox
-              :checked="settings.Start?.IfSelfStart === true"
-              @change="
-                (event: CheckboxChangeEvent) =>
-                  handleSettingChange('Start', 'IfSelfStart', event.target.checked === true)
-              "
-            >
-              {{ t('core.setting.func.autoStart') }}
-            </a-checkbox>
-            <a-tooltip :title="t('core.setting.func.autoStartTip')">
-              <QuestionCircleOutlined
-                class="help-icon option-help"
-                tabindex="0"
-                :aria-label="t('core.setting.func.autoStartTip')"
-              />
-            </a-tooltip>
-          </div>
+        <div class="setting-item">
+          <a-checkbox
+            :checked="settings.Start?.IfScheduledWakeUp === true"
+            @change="
+              (event: CheckboxChangeEvent) =>
+                handleSettingChange('Start', 'IfScheduledWakeUp', event.target.checked === true)
+            "
+          >
+            {{ t('core.setting.func.scheduledWakeup') }}
+          </a-checkbox>
+          <a-tooltip :title="t('core.setting.func.scheduledWakeupTip')">
+            <QuestionCircleOutlined
+              class="help-icon setting-help"
+              tabindex="0"
+              :aria-label="t('core.setting.func.scheduledWakeupTip')"
+            />
+          </a-tooltip>
+        </div>
 
-          <div class="option-row">
-            <a-checkbox
-              :checked="settings.Start?.IfMinimizeDirectly === true"
-              :disabled="settings.Start?.IfSelfStart !== true"
-              @change="
-                (event: CheckboxChangeEvent) =>
-                  handleSettingChange('Start', 'IfMinimizeDirectly', event.target.checked === true)
-              "
-            >
-              {{ t('core.setting.func.silentStart') }}
-            </a-checkbox>
-            <a-tooltip :title="t('core.setting.func.silentStartTip')">
-              <QuestionCircleOutlined
-                class="help-icon option-help"
-                tabindex="0"
-                :aria-label="t('core.setting.func.silentStartTip')"
-              />
-            </a-tooltip>
-          </div>
+        <div class="setting-item">
+          <a-checkbox
+            :checked="settings.Start?.IfSelfStart === true"
+            @change="
+              (event: CheckboxChangeEvent) =>
+                handleSettingChange('Start', 'IfSelfStart', event.target.checked === true)
+            "
+          >
+            {{ t('core.setting.func.autoStart') }}
+          </a-checkbox>
+          <a-tooltip :title="t('core.setting.func.autoStartTip')">
+            <QuestionCircleOutlined
+              class="help-icon setting-help"
+              tabindex="0"
+              :aria-label="t('core.setting.func.autoStartTip')"
+            />
+          </a-tooltip>
+        </div>
 
-          <div class="option-row">
-            <a-checkbox
-              :checked="settings.Start?.IfScheduledWakeUp === true"
-              @change="
-                (event: CheckboxChangeEvent) =>
-                  handleSettingChange('Start', 'IfScheduledWakeUp', event.target.checked === true)
-              "
-            >
-              {{ t('core.setting.func.scheduledWakeup') }}
-            </a-checkbox>
-            <a-tooltip :title="t('core.setting.func.scheduledWakeupTip')">
-              <QuestionCircleOutlined
-                class="help-icon option-help"
-                tabindex="0"
-                :aria-label="t('core.setting.func.scheduledWakeupTip')"
-              />
-            </a-tooltip>
-          </div>
+        <div class="setting-item setting-item--nested">
+          <a-checkbox
+            :checked="settings.Start?.IfMinimizeDirectly === true"
+            :disabled="settings.Start?.IfSelfStart !== true"
+            @change="
+              (event: CheckboxChangeEvent) =>
+                handleSettingChange('Start', 'IfMinimizeDirectly', event.target.checked === true)
+            "
+          >
+            {{ t('core.setting.func.silentStart') }}
+          </a-checkbox>
+          <a-tooltip :title="t('core.setting.func.silentStartTip')">
+            <QuestionCircleOutlined
+              class="help-icon setting-help"
+              tabindex="0"
+              :aria-label="t('core.setting.func.silentStartTip')"
+            />
+          </a-tooltip>
         </div>
       </section>
 
-      <section class="settings-group">
-        <h4 class="settings-group-title">{{ t('core.setting.basic.closeBehavior') }}</h4>
+      <section class="setting-group">
+        <h4 class="setting-group-title">{{ t('core.setting.basic.closeBehavior') }}</h4>
 
         <CloseBehaviorSettings />
 
-        <div class="option-row option-row--solo">
+        <div class="setting-item setting-item--nested">
           <CloseConfirmationSettings />
         </div>
       </section>
 
-      <section class="settings-group settings-group--wide">
-        <h4 class="settings-group-title">{{ t('core.setting.basic.trayGroup') }}</h4>
+      <section class="setting-group setting-group--wide">
+        <h4 class="setting-group-title">{{ t('core.setting.basic.trayGroup') }}</h4>
 
-        <div class="option-list">
-          <div class="option-row">
-            <a-checkbox
-              :checked="settings.UI?.IfShowTray === true"
-              @change="
-                (event: CheckboxChangeEvent) =>
-                  handleSettingChange('UI', 'IfShowTray', event.target.checked === true)
-              "
-            >
-              {{ t('core.setting.basic.showTray') }}
-            </a-checkbox>
-            <a-tooltip :title="t('core.setting.basic.showTrayTip')">
-              <QuestionCircleOutlined
-                class="help-icon option-help"
-                tabindex="0"
-                :aria-label="t('core.setting.basic.showTrayTip')"
-              />
-            </a-tooltip>
-          </div>
+        <div class="setting-item">
+          <a-checkbox
+            :checked="settings.UI?.IfShowTray === true"
+            @change="
+              (event: CheckboxChangeEvent) =>
+                handleSettingChange('UI', 'IfShowTray', event.target.checked === true)
+            "
+          >
+            {{ t('core.setting.basic.showTray') }}
+          </a-checkbox>
+          <a-tooltip :title="t('core.setting.basic.showTrayTip')">
+            <QuestionCircleOutlined
+              class="help-icon setting-help"
+              tabindex="0"
+              :aria-label="t('core.setting.basic.showTrayTip')"
+            />
+          </a-tooltip>
+        </div>
 
-          <div class="option-row">
-            <span class="option-name">{{ t('core.setting.tray.section') }}</span>
-            <a-tooltip :title="t('core.setting.tray.sectionTip')">
-              <QuestionCircleOutlined
-                class="help-icon option-help"
-                tabindex="0"
-                :aria-label="t('core.setting.tray.sectionTip')"
-              />
-            </a-tooltip>
-            <TrayMenuEditor />
-          </div>
+        <div class="setting-item setting-item--fill">
+          <span class="setting-item-label">{{ t('core.setting.tray.section') }}</span>
+          <a-tooltip :title="t('core.setting.tray.sectionTip')">
+            <QuestionCircleOutlined
+              class="help-icon setting-help"
+              tabindex="0"
+              :aria-label="t('core.setting.tray.sectionTip')"
+            />
+          </a-tooltip>
+          <TrayMenuEditor class="setting-item-fill" />
         </div>
       </section>
     </div>
@@ -139,86 +135,84 @@ const { t } = useI18n()
 </template>
 
 <style scoped>
-/* 宽卡片两列排布，让内容铺满卡片宽度；窄卡片回落单列。 */
-.settings-grid {
+/* 两列：启动 / 关闭时并排，托盘跨两列。分组标题负责分区，列内不再画线。 */
+.settings-columns {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 40px;
+  column-gap: 48px;
+  row-gap: 12px;
 }
 
-.settings-group--wide {
+.setting-group--wide {
   grid-column: 1 / -1;
 }
 
 @container (max-width: 520px) {
-  .settings-grid {
+  .settings-columns {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .settings-group--wide {
+  .setting-group--wide {
     grid-column: auto;
   }
 }
 
-.settings-group-title {
+.setting-group-title {
   margin: 0;
-  padding: 14px 0 2px;
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
+  padding: 8px 0 2px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
   font-weight: 600;
-  line-height: 20px;
+  letter-spacing: 0.02em;
+  line-height: 18px;
 }
 
-.option-list {
-  display: flex;
-  flex-direction: column;
-}
-
-/* 行式设置：勾选框紧贴功能名，行间用极淡分隔线形成清单结构。 */
-.option-row {
+.setting-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 42px;
-  padding: 0 6px;
-  margin: 0 -6px;
-  border-radius: var(--ant-border-radius-sm);
+  min-height: 36px;
   color: var(--ant-color-text);
   font-size: 14px;
   font-weight: 500;
-  transition: background-color 0.2s ease;
 }
 
-.option-row:hover {
-  background: var(--ant-color-fill-quaternary);
+/* 从属项缩进一格：静默启动挂在开机自启下，二次确认挂在关闭行为下。 */
+.setting-item--nested {
+  padding-left: 24px;
 }
 
-.option-row + .option-row,
-.option-row--solo {
-  border-top: 1px solid var(--ant-color-split);
+.setting-item--fill {
+  width: 100%;
+  min-width: 0;
 }
 
-.option-row :deep(.ant-checkbox-wrapper) {
+.setting-item-fill {
+  flex: 1;
+  min-width: 0;
+}
+
+.setting-item :deep(.ant-checkbox-wrapper) {
   margin: 0;
   font-size: 14px;
   font-weight: 500;
 }
 
-.option-name {
+.setting-item-label {
+  color: var(--ant-color-text);
+  font-size: 14px;
+  font-weight: 500;
   white-space: nowrap;
 }
 
-.option-help {
-  color: var(--ant-color-text-tertiary);
+.setting-help {
+  flex: 0 0 auto;
+  color: var(--ant-color-text-quaternary);
   font-size: 14px;
   cursor: help;
 }
 
-.option-help:hover {
+.setting-help:hover {
   color: var(--ant-color-primary);
-}
-
-.startup-window-settings :deep(.tray-menu-summary) {
-  padding: 2px 0 4px;
 }
 </style>

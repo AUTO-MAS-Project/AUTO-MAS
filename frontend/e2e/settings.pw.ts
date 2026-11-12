@@ -61,8 +61,8 @@ test.describe('@settings user preferences', () => {
       for (const name of ['Start with the system', 'Silent startup']) {
         const control = page.getByRole('checkbox', { name, exact: true })
         const checked = await control.isChecked()
-        const row = page.locator('.setting-line').filter({ has: control })
-        await checkHint(row.locator('.help-icon'))
+        const row = page.locator('.setting-item').filter({ has: control })
+        await checkHint(row.locator('.option-help'))
         await expect(control).toBeChecked({ checked })
       }
     }
