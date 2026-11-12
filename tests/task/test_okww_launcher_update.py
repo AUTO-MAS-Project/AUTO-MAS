@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import json
+from pathlib import PureWindowsPath
 from threading import Event
 from types import SimpleNamespace
 
@@ -152,8 +153,9 @@ def test_stop_before_update_prevents_any_desktop_click(desktop):
     assert desktop.reads == 0
 
 
-def test_launcher_window_requires_verified_install_path(monkeypatch, tmp_path):
-    selected = tmp_path / "selected" / "launcher.exe"
+def test_launcher_window_requires_verified_install_path(monkeypatch):
+    # 模拟的是 Windows 窗口进程，在 Linux CI 中同样使用 Windows 路径。
+    selected = PureWindowsPath("C:/selected/launcher.exe")
     monkeypatch.setattr(
         launcher,
         "win32gui",
@@ -174,7 +176,7 @@ def test_launcher_window_requires_verified_install_path(monkeypatch, tmp_path):
     monkeypatch.setattr(launcher, "_process_name", lambda pid: "launcher_main.exe")
     paths = {
         1: None,
-        2: str(tmp_path / "other" / "launcher_main.exe"),
+        2: str(PureWindowsPath("C:/other/launcher_main.exe")),
         3: str(selected.parent / "2.7.0" / "launcher_main.exe"),
     }
     monkeypatch.setattr(launcher, "_process_exe", paths.__getitem__)
