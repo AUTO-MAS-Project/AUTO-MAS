@@ -96,7 +96,7 @@ const task = defineModel<TaskForm>({ required: true })
 defineProps<{ quickConfig: boolean; disabled: boolean }>()
 const emit = defineEmits<{ save: [] }>()
 const { t } = useI18n()
-const currentStartupArguments = '-t 1 -e'
+const currentStartupArguments = '-t DailyTask -e'
 
 const farmOptions = [
   { label: '无音区', value: 'Tacet Suppression' },

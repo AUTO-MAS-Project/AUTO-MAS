@@ -424,8 +424,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
         self.task_name = "DailyTask"
         self.task_index = 1 if self.task_name == "DailyTask" else 0
-        task_argument = "1" if self.task_name == "DailyTask" else self.task_name
-        self.okww_args = ["-t", task_argument, "-e"]
+        # 稳定任务名同时避免任务调序和新版 ok-script 对数字参数的误取消。
+        self.okww_args = ["-t", self.task_name, "-e"]
 
         self.script_config_path = self.script_root_path / _OKWW_REL_CONFIG_DIR
 
