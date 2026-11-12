@@ -3,6 +3,7 @@
 import base64
 import json
 import uuid
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import httpx
@@ -117,6 +118,38 @@ async def test_update_failure_blocks_direct_launch(update_context):
     assert client not in opened
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("configured_launcher", [False, True])
+async def test_client_only_auto_update_preserves_optional_launcher(
+    update_context, configured_launcher
+):
+    config, users, script, _, path, client, opened, interact = update_context
+    await config.update(
+        OkwwConfig.model_validate(
+            {
+                "Game": {
+                    "Path": str(path) if configured_launcher else None,
+                    "ClientPath": str(client),
+                }
+            }
+        )
+    )
+    proxy = AutoProxyTask(script, config, users, ProcessManager())
+    # 路径通过配置校验后启动器被删除，与从未配置启动器是不同的可达情况。
+    path.unlink()
+    proxy.launcher_path = path if configured_launcher else Path("")
+    proxy.game_process_path = client
+
+    if not configured_launcher:
+        await proxy._mas_launch_game_before_task()
+        assert opened == [client]
+    else:
+        with pytest.raises(RuntimeError):
+            await proxy._mas_launch_game_before_task()
+        assert opened == []
+    interact.assert_not_awaited()
+
+
 def select_quality(launcher, quality):
     raw = json.dumps(
         {"activeGameScope": {"gameIdentity": "Aki", "bundleName": quality}}
@@ -155,6 +188,25 @@ async def test_explicit_quality_mismatch_does_not_update_other_package(update_co
         await proxy._mas_launch_game_before_task()
     assert opened == []
     interact.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_launcher_mode_ignores_direct_client_quality_argument(update_context):
+    config, users, script, _, path, client, opened, interact = update_context
+    await config.update(
+        OkwwConfig.model_validate(
+            {"Game": {"Type": "Launcher", "Arguments": "-krqlv=hd"}}
+        )
+    )
+    select_quality(path, "UHD")
+    proxy = AutoProxyTask(script, config, users, ProcessManager())
+    proxy.launcher_path = path
+    proxy.game_process_path = client
+
+    await proxy._ensure_wuthering_waves_updated()
+
+    assert opened == [path]
+    assert interact.await_args.kwargs["update_only"] is True
 
 
 @pytest.mark.asyncio

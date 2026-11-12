@@ -14,7 +14,9 @@ from app.task.Okww.tools import launcher_start as launcher
 @pytest.fixture
 def desktop(tmp_path, monkeypatch):
     clock = SimpleNamespace(now=0.0)
-    state = SimpleNamespace(frames=[], clicks=[], game_window=None, reads=0)
+    state = SimpleNamespace(
+        frames=[], clicks=[], game_window=None, reads=0, last_frame=[], clock=clock
+    )
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(launcher, "IS_WINDOWS", True)
     monkeypatch.setattr(
@@ -46,8 +48,8 @@ def desktop(tmp_path, monkeypatch):
     def read(hwnd):
         state.reads += 1
         if state.frames:
-            return state.frames.pop(0)
-        return []
+            state.last_frame = state.frames.pop(0)
+        return state.last_frame
 
     monkeypatch.setattr(launcher, "_read_texts", read)
     state.path = tmp_path / "launcher.exe"
@@ -67,7 +69,6 @@ def test_update_waits_for_download_and_stops_before_start(desktop):
     ]
 
     assert launcher.start_game_via_launcher(desktop.path, update_only=True)
-    assert desktop.reads == 4
     assert desktop.clicks == [UPDATE]
 
 
@@ -77,14 +78,52 @@ def test_open_game_does_not_confirm_update_or_bypass_launcher(
 ):
     desktop.game_window = 9
     desktop.frames = [[("进入游戏", START)]] if ready else [[]]
-    monkeypatch.setattr(launcher, "_FIND_BUTTON_TIMEOUT", 1)
+    monkeypatch.setattr(launcher, "_FIND_BUTTON_TIMEOUT", 20 if ready else 1)
 
     if ready:
         assert launcher.start_game_via_launcher(desktop.path, update_only=True)
     else:
         with pytest.raises(RuntimeError):
             launcher.start_game_via_launcher(desktop.path, update_only=True)
-    assert desktop.reads == 1
+    assert desktop.clicks == []
+
+
+def test_initial_ready_frame_does_not_skip_pending_update(desktop):
+    desktop.frames = [
+        [("进入游戏", START)],
+        [("更新", UPDATE)],
+        [("下载中 20%", UPDATE)],
+        [("进入游戏", START)],
+    ]
+
+    assert launcher.start_game_via_launcher(desktop.path, update_only=True)
+    assert desktop.clicks == [UPDATE]
+
+
+@pytest.mark.parametrize("recover", [True, False])
+def test_platform_read_failure_waits_without_clicking(desktop, monkeypatch, recover):
+    platform = desktop.path.parent / "kr_game_cache/platform_ui_state.bin"
+    platform.parent.mkdir()
+    platform.write_bytes(b"partial base64!")
+    desktop.frames = [[("更新", UPDATE)], [("进入游戏", START)]]
+    original_read = launcher._read_texts
+
+    def read(hwnd):
+        if desktop.reads == 1 and recover:
+            assert desktop.clicks == []
+            raw = json.dumps(
+                {"activeGameScope": {"gameIdentity": "Aki", "bundleName": "HD"}}
+            ).encode()
+            platform.write_bytes(base64.b64encode(bytes(value ^ 0x63 for value in raw)))
+        return original_read(hwnd)
+
+    monkeypatch.setattr(launcher, "_read_texts", read)
+    if recover:
+        assert launcher.start_game_via_launcher(desktop.path, update_only=True)
+    else:
+        with pytest.raises(ValueError):
+            launcher.start_game_via_launcher(desktop.path, update_only=True)
+        assert desktop.clock.now < 20
     assert desktop.clicks == []
 
 

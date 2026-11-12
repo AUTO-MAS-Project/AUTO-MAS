@@ -59,7 +59,10 @@ import numpy as np
 import psutil
 from PIL import Image
 
-from app.services.common.wuthering_waves import read_wuthering_waves_launcher_selection
+from app.services.common.wuthering_waves import (
+    LauncherSelectionReadError,
+    read_wuthering_waves_launcher_selection,
+)
 from app.tools import error_screenshot as _tool_error_screenshot
 from app.tools import ocr as _tool_ocr
 from app.utils import IS_WINDOWS, get_logger
@@ -183,6 +186,10 @@ _START_CLICK_INTERVAL_SECONDS = 12.0
 # 以按钮长时间停留原状（未被下载/进度 UI 取代）为被吞判据
 _UPDATE_CLICK_RETRY_SECONDS = 15.0
 _UPDATE_CLICK_RETRY_LIMIT = 3
+# 启动器首帧可能仍显示缓存的「进入游戏」，等待按钮连续稳定后再结束更新检查。
+_UPDATE_READY_STABLE_SECONDS = 10.0
+# 非原子写盘期间不点击；持续不可读仍响亮失败，不能当作旧启动器跳过身份确认。
+_SELECTION_READ_RETRY_SECONDS = 6.0
 
 
 # ── 窗口 / 进程定位 ─────────────────────────────────────────────────────
@@ -776,6 +783,8 @@ def start_game_via_launcher(
         last_download_sig: int | None = None
         last_download_progress = time.monotonic()
         busy_since: float | None = None
+        ready_since: float | None = None
+        selection_unavailable_since: float | None = None
         iter_count = 0
         deadline = time.monotonic() + _FIND_BUTTON_TIMEOUT
         while time.monotonic() < deadline:
@@ -799,7 +808,19 @@ def start_game_via_launcher(
                 raise
 
             # 新版统一启动器可切换游戏；每轮操作前确认仍在鸣潮页，避免更新其它游戏。
-            read_wuthering_waves_launcher_selection(launcher_path)
+            try:
+                read_wuthering_waves_launcher_selection(launcher_path)
+            except LauncherSelectionReadError:
+                ready_since = None
+                now = time.monotonic()
+                if selection_unavailable_since is None:
+                    selection_unavailable_since = now
+                    on_log("启动器选择记录暂不可读，等待写入完成...")
+                elif now - selection_unavailable_since >= _SELECTION_READ_RETRY_SECONDS:
+                    raise
+                _pause(2, stop_event)
+                continue
+            selection_unavailable_since = None
 
             # 每 5 轮（≈10s）落一次 OCR 全量条目，空转时可从诊断文件定位
             if iter_count % 5 == 0:
@@ -813,6 +834,7 @@ def start_game_via_launcher(
             # 弹窗，本轮不再处理按钮（对齐 ok-nte launcher_popup_close 的
             # 防护顺序；其余弹窗状态待实测后补充）
             if any(text.strip() == "提示" for text, _ in items):
+                ready_since = None
                 popup_box = _find_text(items, ("确定",)) or _find_text(items, ("忽略",))
                 if popup_box is not None:
                     on_log("检测到启动器「提示」弹窗，点击关闭...")
@@ -832,6 +854,7 @@ def start_game_via_launcher(
             # 游戏下载/校验解压进行中：基于忙碌态动态续延等待，并以进度签名
             # 检测卡死（校验解压阶段进度行为「过程不消耗流量 88.08%」）
             if _find_busy_box(action_items) is not None:
+                ready_since = None
                 if update_clicked:
                     update_went_busy = True
                 if busy_since is None:
@@ -869,10 +892,17 @@ def start_game_via_launcher(
             start_box = _find_text(action_items, ("进入游戏",))
             update_box = None if start_box else _find_text(action_items, ("更新",))
             if update_only and start_box is not None:
-                _write_diagnostic("\n状态：官方启动器已确认游戏可启动\n")
-                _dump_ocr_items(items)
-                on_log("官方启动器已确认游戏可启动，更新检查完成")
-                return True
+                if ready_since is None:
+                    ready_since = now
+                    on_log("启动器显示可进入游戏，正在等待更新检查状态稳定...")
+                elif now - ready_since >= _UPDATE_READY_STABLE_SECONDS:
+                    _write_diagnostic("\n状态：官方启动器已确认游戏可启动\n")
+                    _dump_ocr_items(items)
+                    on_log("官方启动器已确认游戏可启动，更新检查完成")
+                    return True
+                _pause(2, stop_event)
+                continue
+            ready_since = None
             if start_box is not None and update_clicked:
                 # 「进入游戏」出现即更新流程已结束（无论更新是否真正执行过）：
                 # 清理更新标记，避免残留污染超时报错文案与补点日志措辞

@@ -46,6 +46,10 @@ class _LauncherSelectionError(ValueError):
     """启动器已明确选择游戏或档位，不能靠目录搜索回退。"""
 
 
+class LauncherSelectionReadError(_LauncherSelectionError):
+    """启动器选择记录暂不可读；运行中的启动器可能正在写入。"""
+
+
 @dataclass(frozen=True)
 class WutheringWavesFallback:
     """配置路径失效时的兜底定位结果，两者至多其一非空。"""
@@ -63,14 +67,14 @@ def read_wuthering_waves_launcher_selection(launcher_path: Path) -> str | None:
     except FileNotFoundError:
         return None
     except OSError as exc:
-        raise _LauncherSelectionError(message) from exc
+        raise LauncherSelectionReadError(message) from exc
     try:
         encrypted = base64.b64decode(encoded, validate=True)
         payload = json.loads(
             bytes(value ^ 0x63 for value in encrypted).decode("utf-8-sig")
         )
     except (ValueError, UnicodeError) as exc:
-        raise _LauncherSelectionError(message) from exc
+        raise LauncherSelectionReadError(message) from exc
     active = payload.get("activeGameScope") if isinstance(payload, dict) else None
     if not isinstance(active, dict) or active.get("gameIdentity") != "Aki":
         raise _LauncherSelectionError(message)

@@ -563,15 +563,27 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         if not self.script_config.Game.IfAutoUpdate:
             return
         if self.launcher_path is None or not self.launcher_path.is_file():
+            if (
+                self._game_launch_type() == "Client"
+                and not str(self.script_config.Game.Path or "").strip()
+            ):
+                await self._push_dispatch_log(
+                    "未配置官方启动器，跳过启动前更新检查并直接启动客户端"
+                )
+                return
             raise RuntimeError(
                 "已开启启动前自动更新，请先导入对应的鸣潮官方启动器；"
                 "只使用客户端时可关闭自动更新"
             )
-        quality_arguments = [
-            argument.partition("=")[2].lower()
-            for argument in split_args(self.script_config.Game.Arguments)
-            if argument.lower().startswith("-krqlv=")
-        ]
+        quality_arguments = (
+            [
+                argument.partition("=")[2].lower()
+                for argument in split_args(self.script_config.Game.Arguments)
+                if argument.lower().startswith("-krqlv=")
+            ]
+            if self._game_launch_type() == "Client"
+            else []
+        )
         self._updated_game_quality = await update_game_via_launcher(
             self.launcher_path,
             client_path=self.game_process_path,
