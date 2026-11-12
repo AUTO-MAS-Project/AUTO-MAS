@@ -448,6 +448,36 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
         self.script_config_path = self.script_root_path / _OKWW_REL_CONFIG_DIR
 
+    async def _start_okww_with_current_arguments(self) -> None:
+        """启动时刷新参数，自更新跨过兼容边界后用新参数重启。"""
+        daily = self.okww_args[1] in ("1", "DailyTask")
+        while True:
+            if daily:
+                self.okww_args = [
+                    "-t",
+                    _daily_task_argument(self.script_root_path),
+                    "-e",
+                ]
+            await self._push_dispatch_log(f"启动 OK-WW: {' '.join(self.okww_args)}")
+            logger.info(
+                f"启动 OK-WW 进程: {self.script_exe_path} {' '.join(self.okww_args)}"
+            )
+            await start_okww(
+                self.okww_process_manager,
+                self.script_exe_path,
+                args=self.okww_args,
+                target=self.script_target_process_info,
+                on_log=self._push_dispatch_log,
+            )
+            if (
+                not daily
+                or _daily_task_argument(self.script_root_path) == self.okww_args[1]
+            ):
+                return
+            await self._push_dispatch_log("OK-WW 自更新改变了启动参数，正在重新启动")
+            await self.okww_process_manager.kill()
+            await process.kill_process(self.script_exe_path)
+
     def _resolve_log_file_path(self) -> Path:
         return self.script_log_path
 
@@ -868,19 +898,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                         continue
 
             await self.set_okww()
-            await self._push_dispatch_log(f"启动 OK-WW: {' '.join(self.okww_args)}")
-            logger.info(
-                f"启动 OK-WW 进程: {self.script_exe_path} {' '.join(self.okww_args)}"
-            )
-
             try:
-                await start_okww(
-                    self.okww_process_manager,
-                    self.script_exe_path,
-                    args=self.okww_args,
-                    target=self.script_target_process_info,
-                    on_log=self._push_dispatch_log,
-                )
+                await self._start_okww_with_current_arguments()
             except NativeSwitchUnsupportedError:
                 self.native_switch_unsupported = True
                 await self.cur_user_log.set_state(
