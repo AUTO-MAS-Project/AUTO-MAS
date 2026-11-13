@@ -4914,6 +4914,5 @@
   "core.edit.okwwDailyArgumentsExample": "普通日常模式启动参数示例",
   "core.edit.okwwArgumentsExampleHint": "原生切号模式由托管的账号切换方式决定，实际使用 -t MultiAccountConfigTask -e。",
   "core.edit.updatePackageMode": "更新方式",
-  "core.edit.updatePackageRisk": "增量更新有风险，依赖当前安装完整且版本匹配；无可用增量或校验失败时会回退全量。",
-  "core.edit.updatePackagePreferIncremental": "增量更新（优先）"
+  "core.edit.updatePackageRisk": "增量更新有风险，依赖当前安装完整且版本匹配；无可用增量或校验失败时会回退全量。"
 }

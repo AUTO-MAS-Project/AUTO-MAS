@@ -4914,6 +4914,5 @@
   "core.edit.okwwDailyArgumentsExample": "Daily task launch argument example",
   "core.edit.okwwArgumentsExampleHint": "Native switching uses -t MultiAccountConfigTask -e, according to the managed script account switching method.",
   "core.edit.updatePackageMode": "Update method",
-  "core.edit.updatePackageRisk": "Incremental updates carry risks and require an intact, matching installation. Full updates are used when no compatible delta is available or validation fails.",
-  "core.edit.updatePackagePreferIncremental": "Prefer incremental"
+  "core.edit.updatePackageRisk": "Incremental updates carry risks and require an intact, matching installation. Full updates are used when no compatible delta is available or validation fails."
 }

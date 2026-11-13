@@ -19,7 +19,7 @@ const selectId = useId()
       :disabled="disabled"
       :options="[
         { label: t('core.edit.updatePackageFull'), value: 'full' },
-        { label: t('core.edit.updatePackagePreferIncremental'), value: 'incremental' },
+        { label: t('core.edit.updatePackageIncremental'), value: 'incremental' },
       ]"
       @change="(value: 'full' | 'incremental') => emit('change', value)"
     />
