@@ -82,7 +82,7 @@ PLAN_BOOK: dict[str, _PlanRegistration] = {
         "create_type": "UniversalPlan",
         "config_class": UniversalPlanConfig,
         "consumer": PLAN_CONSUMER_VALUES[4],
-        # 仅供 General 使用；专项计划独立注册，不复用此类型
+        # General 的完整原生配置轮换计划
         "script_class": GeneralConfig,
         "field_group": "Info",
         "field_name": "PlanMode",

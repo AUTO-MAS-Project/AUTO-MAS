@@ -26,7 +26,7 @@ import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useScriptApi } from '@/composables/useScriptApi'
 const { t } = useI18n()
-// 通用脚本计划表仅供 General 使用；专项计划按各自消费方独立注册
+// 通用脚本计划表仅供 General 使用
 const UNIVERSAL_PLAN_SCRIPT_TYPE = 'General'
 const props = defineProps<{ activePlanId: string; creating?: boolean }>()
 const emit = defineEmits<{ create: [scriptId: string] }>()
