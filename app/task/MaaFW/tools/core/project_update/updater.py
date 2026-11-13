@@ -857,10 +857,17 @@ async def update_maafw_project_if_needed(
                 final=True,
             )
             raise
+        # 构建阶段把包校验错误包装为 PayloadError，应用边界再包装一次。
+        # 文件读取失败也可能经 UpdateApplyError 上抛，重下全量不能修复磁盘故障。
+        apply_error = exc.__cause__
+        if isinstance(apply_error, PayloadError):
+            apply_error = apply_error.__cause__
         if (
             candidate.package_type == "delta"
+            and not force_full
             and not registered
-            and isinstance(exc.__cause__, UpdateApplyError)
+            and isinstance(apply_error, UpdateApplyError)
+            and not isinstance(apply_error.__cause__, OSError)
         ):
             send_update_log("增量更新失败，当前版本未改动，回退全量更新")
             return await update_maafw_project_if_needed(

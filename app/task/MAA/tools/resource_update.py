@@ -489,7 +489,11 @@ def _build_stage(
             if baseline is None or parse_iso(baseline.get("target")) != base_clock:
                 raise _DownloadError("资源增量基线已失效，必须重新下载全量包")
             complete = stage_tmp / "complete"
-            shutil.copytree(_STAGE_DIR / "resource", complete)
+            shutil.copytree(
+                _STAGE_DIR / "resource",
+                complete,
+                ignore=shutil.ignore_patterns(".gitignore"),
+            )
             merge_package_tree(root, complete)
             root = complete
             expected = len(resource_tree_hashes(root))

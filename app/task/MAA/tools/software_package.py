@@ -47,6 +47,7 @@ import hashlib
 import os
 import re
 import shutil
+import time
 import zipfile
 from pathlib import Path
 
@@ -69,6 +70,8 @@ _FAILURE_FLAG_FILE = "pending-update-failure.txt"
 # 完整包安装峰值占用 ≈ 包 + 解压临时目录 + .old 备份（MaaUpdater 换血语义）
 _FREE_SPACE_SCALE = 3
 _ILLEGAL_NAME_RE = re.compile(r'[\\/:*?"<>|]')
+_BASE_CACHE_KEEP = 3
+_BASE_CACHE_GRACE_SECONDS = 24 * 60 * 60
 
 
 # --------------------------------------------------------------------------
@@ -86,6 +89,34 @@ def software_cache_dir(
         if base_version
         else root
     )
+
+
+def prune_software_caches(channel_dir: Path, *, keep: Path) -> None:
+    """持通道缓存锁清理旧基线，保留最近三份及一天内下载的缓存。
+
+    当日取包额度不能因清理被迫再扣；安装目录里的待更新包是独立副本。
+    只删除本通道直接子目录，不跟随符号链接或 Windows 目录联接。
+    """
+    try:
+        root = channel_dir.resolve()
+        candidates = [
+            path
+            for path in channel_dir.glob("base-*")
+            if re.fullmatch(r"base-[0-9a-f]{16}", path.name)
+            and path.is_dir()
+            and not path.is_symlink()
+            and not path.is_junction()
+            and path.resolve().parent == root
+        ]
+        candidates.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+        cutoff = time.time() - _BASE_CACHE_GRACE_SECONDS
+        for path in candidates[_BASE_CACHE_KEEP:]:
+            if path == keep or path.stat().st_mtime >= cutoff:
+                continue
+            shutil.rmtree(path)
+    except OSError:
+        # 已完成的取包不因清理失败作废；下次成功入缓存再试。
+        logger.warning("MAA 本体更新: 清理旧基线缓存失败", exc_info=True)
 
 
 def load_cache_manifest(cache_dir: Path) -> dict[str, str] | None:

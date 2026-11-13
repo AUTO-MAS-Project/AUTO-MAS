@@ -95,6 +95,7 @@ from .resource_update import _path_key, _run_write_thread, _sp_id
 from .software_package import (
     cache_zip_matches,
     load_cache_manifest,
+    prune_software_caches,
     read_pending_update,
     register_pending_update,
     software_cache_dir,
@@ -476,6 +477,7 @@ def _store_verified_cache(
     logger.info(
         f"MAA 本体更新包已缓存: {latest.version}（{latest.package_type}，win/{arch}/{channel}）"
     )
+    prune_software_caches(software_cache_dir("win", arch, channel), keep=cache_dir)
 
 
 async def _ensure_cache(latest: _Latest, channel: str, arch: str) -> None:

@@ -1700,6 +1700,8 @@ async def test_resource_delta_rebuilds_complete_cache_before_distribution(
         )
         package.writestr("resource/unchanged.json", "keep")
         package.writestr("resource/changed.json", "old")
+        package.writestr("resource/.gitignore", "cache/")
+        package.writestr("resource/nested/.gitignore", "*.tmp")
     resource._build_stage(archive, baseline)
     request = AsyncMock(
         return_value={
@@ -1726,6 +1728,7 @@ async def test_resource_delta_rebuilds_complete_cache_before_distribution(
     await resource.prepare_install_resources(
         install, github=False, cdk="test", incremental=True
     )
+    assert request.await_count == 1, "合法增量不应再申请全量下载地址"
     assert request.call_args.kwargs["params"][
         "current_version"
     ] == resource._format_clock(baseline)
@@ -1733,6 +1736,66 @@ async def test_resource_delta_rebuilds_complete_cache_before_distribution(
     assert (install / "resource/changed.json").read_text() == "new"
     assert resource.read_resource_clock(install) == target
     assert resource._load_valid_manifest()["full"] is True
+
+
+@pytest.mark.parametrize("recent_count", [1, 4])
+def test_verified_software_cache_prunes_old_baselines_only(
+    tmp_path, monkeypatch, recent_count
+):
+    import os
+    import time
+
+    monkeypatch.chdir(tmp_path)
+    root = software_package.software_cache_dir("win", "x64", "stable")
+    old = []
+    now = time.time()
+    for index in range(6):
+        directory = software_package.software_cache_dir(
+            "win", "x64", "stable", base_version=f"v6.0.{index}"
+        )
+        directory.mkdir(parents=True)
+        (directory / "package.zip").write_bytes(b"old package")
+        os.utime(directory, (now - 172800 + index, now - 172800 + index))
+        old.append(directory)
+    recent = []
+    for index in range(recent_count):
+        directory = software_package.software_cache_dir(
+            "win", "x64", "stable", base_version=f"v6.0.{90 + index}"
+        )
+        directory.mkdir()
+        (directory / "package.zip").write_bytes(b"another installation's recent cache")
+        recent.append(directory)
+    (root / "package.zip").write_bytes(b"full cache")
+    (root / "user-data").mkdir()
+    beta = software_package.software_cache_dir(
+        "win", "x64", "beta", base_version="v6.0.0"
+    )
+    beta.mkdir(parents=True)
+    (beta / "package.zip").write_bytes(b"other channel")
+    part = tmp_path / "download.part"
+    with zipfile.ZipFile(part, "w") as archive:
+        archive.writestr("changes.json", "{}")
+    current = software_package.software_cache_dir(
+        "win", "x64", "stable", base_version="v6.1.0"
+    )
+    mirror._store_verified_cache(
+        current,
+        part,
+        mirror._Latest("v6.2.0", "", "incremental", "v6.1.0"),
+        "stable",
+        "x64",
+    )
+    retained_old = [directory for directory in old if directory.is_dir()]
+    assert retained_old == ([old[-1]] if recent_count == 1 else [])
+    assert all(
+        (directory / "package.zip").read_bytes()
+        == b"another installation's recent cache"
+        for directory in recent
+    )
+    assert software_package.load_cache_manifest(current)["version"] == "v6.2.0"
+    assert (root / "package.zip").read_bytes() == b"full cache"
+    assert (root / "user-data").is_dir()
+    assert (beta / "package.zip").read_bytes() == b"other channel"
 
 
 @pytest.mark.asyncio
