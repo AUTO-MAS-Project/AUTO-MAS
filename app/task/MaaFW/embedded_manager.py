@@ -801,6 +801,12 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         self._prefetched_project_identity = identity
         self._prefetched_project_update = (str(interface.version or ""), discovery)
 
+    async def discard_prefetched_update(self) -> None:
+        """丢弃本次预下载候选，完整包仍由核心共享缓存维护。"""
+        self._prefetched_project_update = None
+        self._prefetched_project_identity = None
+        self._prefetched_full_package = False
+
     def _take_project_update_logs(self) -> list[str]:
         logs, self.project_update_logs = self.project_update_logs, []
         return logs
