@@ -8,7 +8,6 @@ import shutil
 import threading
 import zipfile
 from pathlib import Path
-from tests.runtime_support import RuntimeStub as SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import httpx
@@ -18,8 +17,10 @@ from packaging.version import Version
 from app.services import script_install
 from app.services.common.update.fluxdown import FluxdownResumableError
 from app.task.MaaEnd import manager
+from app.task.MaaEnd.tools import package_download
 from app.task.MaaEnd.tools import script_update as update
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
 def pe(machine=0x8664):
@@ -29,6 +30,90 @@ def pe(machine=0x8664):
     data[128:132] = b"PE\0\0"
     data[132:134] = machine.to_bytes(2, "little")
     return bytes(data)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("variant", ["valid", "corrupt", "wrong-base", "cancel"])
+async def test_site_delta_installs_exact_official_package_or_falls_back(
+    installation, tmp_path, monkeypatch, variant
+):
+    root, config = installation
+    old = tmp_path / "official.zip"
+    config.Update.PackageMode = "incremental"
+    unchanged = b"unchanged distribution data" * 40000
+    with zipfile.ZipFile(old, "a") as archive:
+        archive.writestr("resource/large.bin", unchanged)
+    asset = update.request_release.return_value["assets"][0]
+    asset.update(
+        size=old.stat().st_size,
+        digest="sha256:" + hashlib.sha256(old.read_bytes()).hexdigest(),
+    )
+    await update.update_before_run(root, config)
+    target, release = _official_release_for_test(tmp_path, "v2.3.0")
+    with zipfile.ZipFile(target, "a") as archive:
+        archive.writestr("resource/large.bin", unchanged)
+    asset = release["assets"][0]
+    size = target.stat().st_size
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    asset.update(size=size, digest="sha256:" + digest)
+    with zipfile.ZipFile(old) as archive:
+        item = archive.getinfo("resource/large.bin")
+        old_start = item.header_offset + 30 + len(item.filename.encode())
+    with zipfile.ZipFile(target) as archive:
+        item = archive.getinfo("resource/large.bin")
+        new_start = item.header_offset + 30 + len(item.filename.encode())
+    data = target.read_bytes()
+    tail = new_start + len(unchanged)
+    metadata = {
+        "version": 1,
+        "base_sha256": hashlib.sha256(old.read_bytes()).hexdigest(),
+        "target_size": size,
+        "target_sha256": digest,
+        "operations": [
+            ["new", 0, new_start],
+            ["old", old_start, len(unchanged)],
+            ["new", new_start, size - tail],
+        ],
+    }
+    patch = tmp_path / "site.delta.zip"
+    if variant == "wrong-base":
+        metadata["base_sha256"] = "0" * 64
+    with zipfile.ZipFile(patch, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("manifest.json", json.dumps(metadata))
+        payload = data[:new_start] + data[tail:]
+        archive.writestr("payload", b"corrupt" if variant == "corrupt" else payload)
+
+    async def site_download(url, destination, **kwargs):
+        assert url.endswith("/maaend-x64-stable-delta/download")
+        if variant == "cancel":
+            raise asyncio.CancelledError
+        shutil.copyfile(patch, destination)
+
+    monkeypatch.setattr(
+        package_download, "download_file", AsyncMock(side_effect=site_download)
+    )
+    monkeypatch.setattr(update, "request_release", AsyncMock(return_value=release))
+
+    async def full_download(url, destination, **kwargs):
+        shutil.copyfile(target, destination)
+
+    monkeypatch.setattr(update, "download_file", AsyncMock(side_effect=full_download))
+    config.Update.PackageMode = "incremental"
+    if variant == "cancel":
+        with pytest.raises(asyncio.CancelledError):
+            await update.prepare_update(root, config)
+        assert update.read_install(root)[0] == Version("2.2.0")
+        update.download_file.assert_not_awaited()
+        return
+    candidate = await update.prepare_update(root, config)
+    assert candidate.destination.read_bytes() == target.read_bytes()
+    assert update.read_install(root)[0] == Version("2.2.0")
+    assert update.download_file.await_count == int(variant != "valid")
+    await update.apply_update(root, candidate)
+    assert update.read_install(root)[0] == Version("2.3.0")
+    assert script_install.verify_installed_files(root, threading.Event())
+    assert (root / "resource/large.bin").read_bytes() == unchanged
+    assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
 
 
 @pytest.fixture
@@ -85,7 +170,10 @@ def installation(tmp_path, monkeypatch, isolated_app_paths):
     monkeypatch.setattr(update, "download_file", AsyncMock(side_effect=download))
     config = SimpleNamespace(
         Update=SimpleNamespace(
-            TakeoverEnabled=True, Channel="stable", MirrorChyanCDK=""
+            TakeoverEnabled=True,
+            Channel="stable",
+            MirrorChyanCDK="",
+            PackageMode="full",
         ),
         Game=SimpleNamespace(ControllerType="Win32-Front"),
     )

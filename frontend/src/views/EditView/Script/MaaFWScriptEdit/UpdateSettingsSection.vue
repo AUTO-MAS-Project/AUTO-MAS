@@ -9,7 +9,14 @@
       :message="autoUpdateDisabledMessage"
     />
     <a-row :gutter="24" class="update-config-row">
-      <a-col :span="8">
+      <a-col :span="6">
+        <UpdatePackageMode
+          v-model="maafwConfig.Update.PackageMode"
+          :disabled="isAutoUpdateDisabled"
+          @change="emit('change', 'Update', 'PackageMode', $event)"
+        />
+      </a-col>
+      <a-col :span="6">
         <a-form-item>
           <template #label>
             <a-tooltip :title="t('core.edit.autoUpdateModeTip')">
@@ -28,7 +35,7 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :span="8">
+      <a-col :span="6">
         <a-form-item>
           <template #label>
             <a-tooltip :title="t('core.edit.updateSourceTip')">
@@ -46,7 +53,7 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :span="8">
+      <a-col :span="6">
         <a-form-item :label="t('core.edit.updateChannel')">
           <a-select
             v-model:value="maafwConfig.Update.Channel"
@@ -180,6 +187,7 @@ import { useMaaFWUpdateApi, type MaaFWMirrorCdkState } from '@/composables/useMa
 import { handleExternalLink } from '@/utils/openExternal'
 import MaaFWFormSection from './MaaFWFormSection.vue'
 import UpdateProcessPanel from './UpdateProcessPanel.vue'
+import UpdatePackageMode from '../components/UpdatePackageMode.vue'
 import type {
   MaaFWScriptUpdateSectionEmits,
   MaaFWScriptUpdateSectionProps,

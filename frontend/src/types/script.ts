@@ -33,7 +33,10 @@ export interface MAAScriptConfig {
   Run: DraftGroup<NonNullable<MaaConfig['Run']>>
   Emulator: DraftGroup<NonNullable<MaaConfig['Emulator']>>
   Update: DraftGroup<
-    Pick<NonNullable<MaaConfig['Update']>, 'TakeoverEnabled' | 'MirrorChyanCDK' | 'Channel'>
+    Pick<
+      NonNullable<MaaConfig['Update']>,
+      'TakeoverEnabled' | 'MirrorChyanCDK' | 'Channel' | 'PackageMode'
+    >
   >
 }
 
@@ -172,6 +175,7 @@ export interface MaaFWScriptConfig {
   }
   Update: {
     /** 自动更新时机：不更新 / 运行前 / 运行后。 */
+    PackageMode: 'full' | 'incremental'
     AutoUpdateMode: MaaFWAutoUpdateMode
     /** 更新包的下载源，由用户显式选择，没有「自动」；默认 GitHub（零配置可用）。 */
     Source: 'MirrorChyan' | 'GitHub'

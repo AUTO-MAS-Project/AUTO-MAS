@@ -4930,5 +4930,7 @@
   "core.plan.oknte.basedOnDetail": "Based on detailed configuration",
   "core.edit.okwwCustomArguments": "Custom arguments",
   "core.edit.okwwCustomArgumentsPlaceholder": "Example: -t DailyTask -h",
-  "core.edit.okwwCustomArgumentsWarning": "Changing launch arguments may prevent ok-ww from running correctly or affect task result detection and automatic shutdown. If you are unfamiliar with them, keep the default settings."
+  "core.edit.okwwCustomArgumentsWarning": "Changing launch arguments may prevent ok-ww from running correctly or affect task result detection and automatic shutdown. If you are unfamiliar with them, keep the default settings.",
+  "core.edit.updatePackageMode": "Update method",
+  "core.edit.updatePackageRisk": "Incremental updates carry risks and require an intact, matching installation. Full updates are used when no compatible delta is available or validation fails."
 }

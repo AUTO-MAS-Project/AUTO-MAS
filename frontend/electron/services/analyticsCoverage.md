@@ -210,6 +210,7 @@ started 未送达时不发送对应 finished。运行 UUID 只留在本机消息
 OkNte 日常计划的快捷表格与详细编辑共享当天字段覆写。快捷保存复用计划编辑事件，详细编辑按保存接口结果记录；不采集日常参数或计划标识。
 - Okww 原生多账号任务：任务选择保存复用 `useUserApi.updateUser` 的 `config_write_finished`；批次仍按 MAS 用户归属结果，运行结局沿用 `taskAnalytics.ts` 的现有观察边界，不拆分或采集上游账号、任务配置及日志。
 
+MAA / MaaEnd / MFW 家族全量与增量更新方式：保存沿用 `useScriptApi.updateScript` 的 `config_write_finished`；运行更新沿用现有脚本终态与手动更新观察入口，不新增逐包或回退事件，不采集基线版本、路径或 CDK。
+
 Okww 日常计划复用计划管理及保存事件，账号绑定复用用户配置写入事件；不采集计划内容。
 - OK-WW 自定义启动参数的账号保存复用 `useUserApi.updateUser` 的 `config_write_finished`；运行复用既有任务启动和终态事件，不采集参数内容或任务名称。
-

@@ -4930,5 +4930,7 @@
   "core.plan.oknte.basedOnDetail": "基于详细配置",
   "core.edit.okwwCustomArguments": "自定义参数",
   "core.edit.okwwCustomArgumentsPlaceholder": "例如：-t DailyTask -h",
-  "core.edit.okwwCustomArgumentsWarning": "修改启动参数可能导致 ok-ww 无法正常运行，或影响任务结果识别与自动结束。如果不了解参数含义，建议保持默认设置。"
+  "core.edit.okwwCustomArgumentsWarning": "修改启动参数可能导致 ok-ww 无法正常运行，或影响任务结果识别与自动结束。如果不了解参数含义，建议保持默认设置。",
+  "core.edit.updatePackageMode": "更新方式",
+  "core.edit.updatePackageRisk": "增量更新有风险，依赖当前安装完整且版本匹配；无可用增量或校验失败时会回退全量。"
 }
