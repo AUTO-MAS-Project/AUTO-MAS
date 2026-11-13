@@ -4877,7 +4877,7 @@ def task_time_limits_from_config(config: Any) -> tuple[int, dict[str, int]]:
 
 
 def loop_guard_from_config(config: Any) -> bool:
-    """读 Run.LoopGuard（原地打转检测，实验性，默认关）；读不到或写坏都按关。"""
+    """读 Run.LoopGuard（原地打转检测，配置默认开）；读不到或写坏按关。"""
 
     try:
         return config.Run.LoopGuard is True
