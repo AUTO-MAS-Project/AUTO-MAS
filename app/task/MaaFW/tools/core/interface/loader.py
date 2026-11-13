@@ -759,6 +759,19 @@ def _warn_preset_value_coercions(data: dict[str, Any]) -> None:
     for preset in presets:
         if not isinstance(preset, dict):
             continue
+        # PI v2.10.4：controller 必须是字符串数组；写错时模型按「不限」处理，这里告警，
+        # 免得作者的限制被悄悄放宽
+        raw_controllers = preset.get("controller")
+        if raw_controllers is not None and (
+            not isinstance(raw_controllers, list)
+            or any(not isinstance(item, str) for item in raw_controllers)
+        ):
+            logger.warning(
+                "MaaFW ProjectInterface preset %s.controller 不是字符串数组，"
+                "非字符串的部分已忽略（整项不是数组时按不限控制器处理）：%s",
+                preset.get("name"),
+                json.dumps(raw_controllers, ensure_ascii=False, default=str),
+            )
         raw_pretasks = preset.get("pretask")
         if raw_pretasks is not None and not isinstance(raw_pretasks, list):
             logger.warning(
@@ -818,7 +831,11 @@ def _warn_input_default_coercions(data: dict[str, Any]) -> None:
                 continue
             # PI v2.10.5：input_type 只认 text / file / directory，其余按 text（普通文本框）
             raw_input_type = input_item.get("input_type")
-            if raw_input_type is not None and raw_input_type not in MAAFW_INPUT_TYPES:
+            # 写成数组 / 对象时不能直接查 frozenset（不可哈希会抛 TypeError，整份读不出来）
+            if raw_input_type is not None and (
+                not isinstance(raw_input_type, str)
+                or raw_input_type not in MAAFW_INPUT_TYPES
+            ):
                 logger.warning(
                     "MaaFW ProjectInterface option %s 的输入字段 %s 的 input_type 不认识，"
                     "已按 text 处理：%s",
