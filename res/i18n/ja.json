@@ -4022,7 +4022,7 @@
   "core.setting.basic.closeBehavior": "閉じるとき",
   "core.setting.basic.closeAction": "ウィンドウを閉じた後",
   "core.setting.basic.closeConfirmation": "閉じる前に確認する",
-  "core.setting.basic.closeConfirmationTip": "「トレイに最小化」の場合のみ有効です",
+  "core.setting.basic.closeConfirmationTip": "終了またはトレイに最小化する前に確認します",
   "core.setting.basic.closeQuit": "そのまま終了",
   "core.setting.basic.closeToTray": "トレイに最小化",
   "core.setting.basic.cursorSize": "カーソルサイズ",

@@ -24,10 +24,6 @@ const closeActionOptions = computed(() => [
   { label: t('core.setting.basic.closeToTray'), value: 'tray' },
 ])
 
-// 「关闭后再提示」只在最小化到托盘时有意义；直接退出时整行置灰，
-// 但保留已保存的值，切回托盘不会丢掉用户之前的选择。
-const confirmationAvailable = () => lastAction.value === 'tray'
-
 const handleChange = async (change: Promise<void>): Promise<void> => {
   try {
     await change
@@ -50,10 +46,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <SettingRow
-    :label="t('core.setting.basic.closeAction')"
-    :aria-busy="saving"
-  >
+  <SettingRow :label="t('core.setting.basic.closeAction')" :aria-busy="saving">
     <a-segmented
       class="close-action-options"
       :value="lastAction"
@@ -68,13 +61,12 @@ onMounted(() => {
 
   <SettingRow
     child
-    :disabled="!confirmationAvailable()"
     :label="t('core.setting.basic.closeConfirmation')"
     :description="t('core.setting.basic.closeConfirmationTip')"
   >
     <a-checkbox
       :checked="confirmBeforeClose"
-      :disabled="!loaded || saving || !confirmationAvailable()"
+      :disabled="!loaded || saving"
       :aria-busy="saving"
       :aria-label="t('core.setting.basic.closeConfirmation')"
       @change="handleConfirmationChange"

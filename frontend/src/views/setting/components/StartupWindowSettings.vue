@@ -19,8 +19,7 @@ const { t } = useI18n()
 type StartKey = 'IfSelfStart' | 'IfScheduledWakeUp' | 'IfMinimizeDirectly'
 
 const startValue = (key: StartKey) => settings.Start?.[key] === true
-const setStart = (key: StartKey, value: boolean) =>
-  handleSettingChange('Start', key, value)
+const setStart = (key: StartKey, value: boolean) => handleSettingChange('Start', key, value)
 
 // 静默启动只在自启或定时唤醒拉起时生效（main.ts：isAutoStart && IfMinimizeDirectly）。
 // 两个入口都关着时它不会起作用，禁用而不是让用户拨一个没有效果的开关。

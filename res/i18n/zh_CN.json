@@ -4022,7 +4022,7 @@
   "core.setting.basic.closeBehavior": "关闭时",
   "core.setting.basic.closeAction": "关闭窗口后",
   "core.setting.basic.closeConfirmation": "二次弹出提示",
-  "core.setting.basic.closeConfirmationTip": "仅在「最小化到托盘」时生效",
+  "core.setting.basic.closeConfirmationTip": "退出或最小化到托盘前弹出确认提示",
   "core.setting.basic.closeQuit": "直接退出",
   "core.setting.basic.closeToTray": "最小化到托盘",
   "core.setting.basic.cursorSize": "光标大小",
