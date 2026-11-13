@@ -66,7 +66,7 @@ test.describe('@okww-plan', () => {
     await page.reload()
     await expect(cells.nth(2)).toHaveText('—')
     await expect(cells.nth(3)).toContainText('武器经验')
-    await expect(row.locator('.ant-select-borderless')).toHaveCount(4)
+    await expect(row.locator('.ant-select-borderless')).toHaveCount(3)
     await page.setViewportSize({ width: 1653, height: 1080 })
     await app.evidence('okww-plan-light')
     await app.goto('/settings')
@@ -95,9 +95,87 @@ test.describe('@okww-plan', () => {
     await number.fill('5')
     await number.press('Tab')
     await expect(number).toHaveValue('5')
+    await expect(page.locator('.okww-plan-table input[role="spinbutton"]').nth(1)).toBeDisabled()
+    await expect(page.locator('.additional-task-trigger').nth(1)).toBeDisabled()
     await page.getByRole('button', { name: 'Retry', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0)
     await page.reload()
     await expect(number).toHaveValue('5')
+  })
+  test('daily echo supports on, off and inheritance after reload', async ({ app, page }) => {
+    const created = await (
+      await page.request.post(`${backend}/api/plan/add`, { data: { type: 'OkwwPlan' } })
+    ).json()
+    await app.goto(`/plans?planId=${created.planId}`)
+    const selector = page
+      .locator('.okww-plan-table tr.ant-table-row')
+      .first()
+      .locator('td')
+      .nth(4)
+      .locator('.ant-select')
+    for (const [label, expected] of [
+      ['On', true],
+      ['Off', false],
+      ['Inherit', null],
+      ['On', true],
+      ['Inherit', null],
+    ] as const) {
+      await selector.click()
+      const saved = page.waitForResponse(r => r.url().includes('/api/plan/update'))
+      await page.locator('.ant-select-dropdown:visible').getByTitle(label, { exact: true }).click()
+      expect((await (await saved).json()).code).toBe(200)
+      await page.reload()
+      await expect(selector).toContainText(label)
+      const result = (
+        await (
+          await page.request.post(`${backend}/api/plan/get`, { data: { planId: created.planId } })
+        ).json()
+      ).data[created.planId]
+      expect(result.Monday.Key.FarmNightmareNestForDailyEcho).toBe(expected)
+    }
+  })
+  test('additional task checklist stays open and separates inheritance from tasks', async ({
+    app,
+    page,
+  }) => {
+    const created = await (
+      await page.request.post(`${backend}/api/plan/add`, { data: { type: 'OkwwPlan' } })
+    ).json()
+    await app.goto(`/plans?planId=${created.planId}`)
+    const trigger = page.locator('.additional-task-trigger').first()
+    await expect(trigger).toContainText('Inherit')
+    await expect(page.locator('.okww-plan-table').getByRole('checkbox')).toHaveCount(0)
+    await trigger.click()
+    const editor = page.locator('.ant-popover:visible .additional-task-editor')
+    const garden = editor.getByRole('checkbox', { name: '检查每周乐园', exact: true })
+    const nest = editor.getByRole('checkbox', { name: '自动刷所有梦魇巢穴', exact: true })
+    await expect(editor.getByRole('checkbox')).toHaveCount(4)
+    await garden.check()
+    await nest.check()
+    const read = async () =>
+      (
+        await (
+          await page.request.post(`${backend}/api/plan/get`, { data: { planId: created.planId } })
+        ).json()
+      ).data[created.planId].Monday.Key.AdditionalTasks
+    await expect.poll(read).toEqual(['Check Weekly Garden', 'Auto Farm all Nightmare Nest'])
+    await garden.uncheck()
+    await nest.uncheck()
+    await expect.poll(read).toEqual([])
+    await expect(trigger).toContainText('Off')
+    await editor.getByRole('button', { name: 'Inherit', exact: true }).click()
+    await expect.poll(read).toBeNull()
+    await page.reload()
+    await expect(trigger).toContainText('Inherit')
+    await page.setViewportSize({ width: 1653, height: 1080 })
+    await app.evidence('okww-additional-compact')
+    await trigger.click()
+    await expect(editor).toBeVisible()
+    await page
+      .locator('.ant-popover:visible')
+      .evaluate(element =>
+        Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished))
+      )
+    await app.evidence('okww-additional-checklist')
   })
 })

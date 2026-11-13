@@ -11,8 +11,16 @@ export const materialOptions = [
 ]
 
 export const additionalTaskOptions = [
-  { label: '检查每周乐园', value: 'Check Weekly Garden' },
-  { label: '自动刷所有梦魇巢穴', value: 'Auto Farm all Nightmare Nest' },
-  { label: '已弃置声骸超过 1000 时融合', value: 'Merge Echo If discarded > 1000' },
-  { label: '传送并刷取 4C 声骸', value: 'Teleport and Farm 4C Echo' },
+  { label: '检查每周乐园', shortLabel: '每周乐园', value: 'Check Weekly Garden' },
+  {
+    label: '自动刷所有梦魇巢穴',
+    shortLabel: '全部梦魇巢穴',
+    value: 'Auto Farm all Nightmare Nest',
+  },
+  {
+    label: '已弃置声骸超过 1000 时融合',
+    shortLabel: '融合弃置声骸',
+    value: 'Merge Echo If discarded > 1000',
+  },
+  { label: '传送并刷取 4C 声骸', shortLabel: '传送刷 4C 声骸', value: 'Teleport and Farm 4C Echo' },
 ]

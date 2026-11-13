@@ -27,29 +27,76 @@
         :bordered="false"
         :min="1"
         :max="99"
-        :disabled="isSaving"
+        :disabled="isSaving || Boolean(error)"
         :placeholder="t('core.plan.oknte.inheritShort')"
         :aria-label="`${label(record.day)} 序号`"
         @change="(value: any) => save(record.day, numberField(record.day), value)"
       />
+      <a-popover
+        v-else-if="column.key === 'AdditionalTasks'"
+        trigger="click"
+        placement="bottomRight"
+      >
+        <template #content>
+          <div class="additional-task-editor">
+            <a-checkbox-group
+              :value="key(record.day).AdditionalTasks ?? []"
+              :disabled="isSaving || Boolean(error)"
+              class="additional-task-options"
+              @change="(tasks: unknown) => save(record.day, 'AdditionalTasks', tasks)"
+            >
+              <a-checkbox
+                v-for="task in additionalTaskOptions"
+                :key="task.value"
+                :value="task.value"
+                >{{ task.label }}</a-checkbox
+              >
+            </a-checkbox-group>
+            <div class="additional-task-footer">
+              <a-button
+                type="text"
+                size="small"
+                class="inherit-option"
+                :disabled="isSaving || Boolean(error)"
+                @click="save(record.day, 'AdditionalTasks', null)"
+                >{{ t('core.plan.oknte.inheritShort') }}</a-button
+              >
+            </div>
+          </div>
+        </template>
+        <a-button
+          type="text"
+          :disabled="isSaving || Boolean(error)"
+          class="plan-field additional-task-trigger"
+          :class="{ 'inherit-option': key(record.day).AdditionalTasks == null }"
+        >
+          <span class="additional-task-summary">{{ additionalTaskSummary(record.day) }}</span>
+          <DownOutlined />
+        </a-button>
+      </a-popover>
       <a-select
         v-else
         :value="value(record.day, column.key)"
-        :mode="column.key === 'AdditionalTasks' ? 'multiple' : undefined"
         :options="options(column.key)"
-        :disabled="isSaving"
+        :disabled="isSaving || Boolean(error)"
         :bordered="false"
         allow-clear
         :placeholder="t('core.plan.oknte.inheritShort')"
         class="plan-field"
+        :class="{ 'plan-field--inherited': value(record.day, column.key) === '__inherit' }"
         :aria-label="`${label(record.day)} ${column.title}`"
         @change="(value: any) => save(record.day, column.key, value)"
-      />
+      >
+        <template #option="{ value: optionValue, label: optionLabel }">
+          <span :class="{ 'inherit-option': optionValue === '__inherit' }">{{ optionLabel }}</span>
+        </template>
+      </a-select>
     </template>
   </a-table>
 </template>
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { DownOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 import type { OkwwPlanConfig } from '@/api'
 import { planDayKeys, planDayLabel, planColumnGroup, type PlanMode } from '@/utils/planDays'
@@ -84,15 +131,15 @@ const days = computed(() =>
 const columns = computed(() =>
   [
     { title: t('core.plan.oknte.date'), key: 'day', width: 64 },
-    { title: t('core.plan.okww.farm'), key: 'WhichToFarm', width: 144 },
-    { title: t('core.plan.okww.number'), key: 'number', width: 112 },
-    { title: t('core.plan.okww.material'), key: 'MaterialSelection', width: 144 },
+    { title: t('core.plan.okww.farm'), key: 'WhichToFarm', width: 136 },
+    { title: t('core.plan.okww.number'), key: 'number', width: 104 },
+    { title: t('core.plan.okww.material'), key: 'MaterialSelection', width: 136 },
     {
       title: t('core.plan.okww.nightmare'),
       key: 'FarmNightmareNestForDailyEcho',
-      width: 160,
+      width: 144,
     },
-    { title: t('core.plan.okww.additional'), key: 'AdditionalTasks', width: 220 },
+    { title: t('core.plan.okww.additional'), key: 'AdditionalTasks', width: 260 },
   ].map(column => ({ ...column, align: 'center' as const }))
 )
 function label(day: string) {
@@ -107,7 +154,10 @@ function key(day: string): Record<string, any> {
 }
 function value(day: string, field: string) {
   const result = key(day)[field]
-  return typeof result === 'boolean' ? String(result) : (result ?? undefined)
+  if (field === 'FarmNightmareNestForDailyEcho') {
+    return result == null ? '__inherit' : String(result)
+  }
+  return result ?? undefined
 }
 function numberField(day: string) {
   return value(day, 'WhichToFarm') === 'Tacet Suppression'
@@ -124,25 +174,35 @@ function notApplicable(day: string, field: string) {
 function number(day: string) {
   return key(day)[numberField(day)] ?? undefined
 }
+function additionalTaskSummary(day: string) {
+  const tasks: string[] | null = key(day).AdditionalTasks
+  if (tasks == null) return t('core.plan.oknte.inheritShort')
+  if (!tasks.length) return t('core.plan.oknte.off')
+  return additionalTaskOptions
+    .filter(task => tasks.includes(task.value))
+    .map(task => task.shortLabel)
+    .join('、')
+}
 function options(field: string) {
   return field === 'WhichToFarm'
     ? farmOptions
     : field === 'MaterialSelection'
       ? materialOptions
-      : field === 'AdditionalTasks'
-        ? additionalTaskOptions
-        : [
-            { label: t('core.plan.oknte.on'), value: 'true' },
-            { label: t('core.plan.oknte.off'), value: 'false' },
-          ]
+      : [
+          { label: t('core.plan.oknte.inheritShort'), value: '__inherit' },
+          { label: t('core.plan.oknte.on'), value: 'true' },
+          { label: t('core.plan.oknte.off'), value: 'false' },
+        ]
 }
 async function save(day: string, field: string, input: unknown) {
   if (!field) return
   const next = {
     ...key(day),
     [field]:
-      field === 'FarmNightmareNestForDailyEcho' && input != null
-        ? input === 'true'
+      field === 'FarmNightmareNestForDailyEcho'
+        ? input == null || input === '__inherit'
+          ? null
+          : input === 'true'
         : (input ?? null),
   }
   drafts.value[day] = next
@@ -156,9 +216,45 @@ async function save(day: string, field: string, input: unknown) {
 defineExpose({ beforeLeave: () => !isSaving.value && !error.value })
 </script>
 <style scoped>
+.additional-task-editor {
+  width: 280px;
+}
+.additional-task-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.additional-task-options :deep(.ant-checkbox-wrapper) {
+  margin-inline-start: 0;
+}
+.additional-task-footer {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+  text-align: right;
+}
+.additional-task-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.additional-task-trigger.inherit-option .additional-task-summary,
+.additional-task-trigger.inherit-option :deep(.anticon) {
+  color: var(--ant-color-text-placeholder);
+}
+.additional-task-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .plan-field {
   width: 100%;
   min-width: 0;
+}
+.plan-field--inherited :deep(.ant-select-selection-item),
+.inherit-option {
+  color: var(--ant-color-text-placeholder);
 }
 .not-applicable {
   color: var(--ant-color-text-tertiary);
