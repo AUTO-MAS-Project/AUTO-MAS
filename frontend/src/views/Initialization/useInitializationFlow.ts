@@ -345,7 +345,7 @@ export function useInitializationFlow() {
     if (!steps.some(step => step.key === progress.stage)) return
 
     const stepKey = progress.stage as InitializationStepKey
-    if (stepKey === 'backend' || RUNTIME_TAKEOVER_STEPS.has(stepKey)) return
+    if (RUNTIME_TAKEOVER_STEPS.has(stepKey)) return
 
     currentStepIndex.value = steps.findIndex(step => step.key === stepKey)
     handleProgress(stepKey, progress)
