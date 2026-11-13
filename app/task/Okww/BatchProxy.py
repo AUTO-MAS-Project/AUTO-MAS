@@ -116,17 +116,10 @@ class BatchProxyTask(AutoProxyTask):
             )
             if not isinstance(values, dict):
                 raise ValueError(f"日常配置格式错误: {daily}")
-            if config.Info.IfQuickConfig:
-                values.update(
-                    {
-                        "Which to Farm": config.Task.WhichToFarm,
-                        "Which Tacet Suppression to Farm": config.Task.WhichTacetSuppressionToFarm,
-                        "Which Forgery Challenge to Farm": config.Task.WhichForgeryChallengeToFarm,
-                        "Material Selection": config.Task.MaterialSelection,
-                        "Farm Nightmare Nest for Daily Echo": config.Task.FarmNightmareNestForDailyEcho,
-                        "Additional Tasks to Run After Daily Task": config.Task.AdditionalTasks,
-                    }
-                )
+            from .tools.plan import task_config
+
+            task = task_config(config)
+            values.update(task)
             key = normalize_account_key(config.Info.Id)
             self.account_users[key] = user
             self.accounts.append(

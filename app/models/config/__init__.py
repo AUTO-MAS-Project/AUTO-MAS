@@ -62,6 +62,14 @@ class _PlanRegistration(TypedDict):
 
 
 PLAN_BOOK: dict[str, _PlanRegistration] = {
+    "OkwwPlanConfig": {
+        "create_type": "OkwwPlan",
+        "config_class": OkwwPlanConfig,
+        "consumer": PLAN_CONSUMER_VALUES[6],
+        "script_class": OkwwConfig,
+        "field_group": "Info",
+        "field_name": "PlanMode",
+    },
     "OkNtePlanConfig": {
         "create_type": "OkNtePlan",
         "config_class": OkNtePlanConfig,
@@ -74,7 +82,7 @@ PLAN_BOOK: dict[str, _PlanRegistration] = {
         "create_type": "UniversalPlan",
         "config_class": UniversalPlanConfig,
         "consumer": PLAN_CONSUMER_VALUES[4],
-        # 只服务通用脚本：专项各自的整份配置由各自计划承载
+        # General 的完整原生配置轮换计划
         "script_class": GeneralConfig,
         "field_group": "Info",
         "field_name": "PlanMode",

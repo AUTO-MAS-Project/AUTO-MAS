@@ -492,19 +492,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             self.script_config_path / "Basic Options.json",
             {"Exit App when Game Exits": True},
         )
-        if not self.cur_user_config.Info.IfQuickConfig:
-            return
-        _update_json(
-            self.script_config_path / "DailyTask.json",
-            {
-                "Which to Farm": self.cur_user_config.Task.WhichToFarm,
-                "Which Tacet Suppression to Farm": self.cur_user_config.Task.WhichTacetSuppressionToFarm,
-                "Which Forgery Challenge to Farm": self.cur_user_config.Task.WhichForgeryChallengeToFarm,
-                "Material Selection": self.cur_user_config.Task.MaterialSelection,
-                "Farm Nightmare Nest for Daily Echo": self.cur_user_config.Task.FarmNightmareNestForDailyEcho,
-                "Additional Tasks to Run After Daily Task": self.cur_user_config.Task.AdditionalTasks,
-            },
-        )
+        from .tools.plan import task_config
+
+        task = task_config(self.cur_user_config)
+        if task:
+            _update_json(self.script_config_path / "DailyTask.json", task)
 
     async def set_okww(self) -> None:
         """将 MAS 侧 OK-WW 任务配置下发到脚本 working 目录（对齐 General.set_general）。"""

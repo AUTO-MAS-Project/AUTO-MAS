@@ -10,6 +10,7 @@ type PlanCreateType = PlanCreateIn.type
 export type PlanConfigData = PlanGetOut['data'][string]
 
 export const PLAN_CONFIG_TYPES = {
+  OKWW: PlanIndexItem.type.OKWW_PLAN_CONFIG,
   OKNTE: PlanIndexItem.type.OK_NTE_PLAN_CONFIG,
   UNIVERSAL: PlanIndexItem.type.UNIVERSAL_PLAN_CONFIG,
   MAA: PlanIndexItem.type.MAA_PLAN_CONFIG,
@@ -49,6 +50,16 @@ interface PlanTypeDescriptor {
 // ==================== 注册表 ====================
 
 export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
+  [PLAN_CONFIG_TYPES.OKWW]: {
+    configType: PLAN_CONFIG_TYPES.OKWW,
+    createType: PlanCreateIn.type.OKWW_PLAN,
+    displayNameKey: 'core.plan.type.okww',
+    defaultName: '新 Okww 计划表',
+    selectorTag: 'Okww',
+    reloadAfterSave: false,
+    supportsSimpleView: false,
+    tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/OkwwPlanTable.vue')),
+  },
   [PLAN_CONFIG_TYPES.OKNTE]: {
     configType: PLAN_CONFIG_TYPES.OKNTE,
     createType: PlanCreateIn.type.OK_NTE_PLAN,

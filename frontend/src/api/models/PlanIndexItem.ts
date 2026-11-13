@@ -23,6 +23,7 @@ export namespace PlanIndexItem {
         MSSPLAN_CONFIG = 'MSSPlanConfig',
         UNIVERSAL_PLAN_CONFIG = 'UniversalPlanConfig',
         OK_NTE_PLAN_CONFIG = 'OkNtePlanConfig',
+        OKWW_PLAN_CONFIG = 'OkwwPlanConfig',
     }
 }
 

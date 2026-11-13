@@ -64,11 +64,13 @@ from .plan import (
     MaaPlanConfig,
     MSSPlanConfig,
     OkNtePlanConfig,
+    OkwwPlanConfig,
     UniversalPlanConfig,
 )
 from .queue import Webhook
 from .shared import (
     _BGI_LEGACY_SERVERS_TO_RESOURCE,
+    OkwwTaskFields,
     SRAProfileName,
     _migrate_baah_event_first,
     _migrate_bgi_account_switch_default,
@@ -2947,6 +2949,16 @@ class OkwwUserConfig(DomainEntry):
     Data: DataFields = Field(default_factory=DataFields)
 
     class InfoFields(ConfigGroup):
+        PlanMode: Annotated[
+            UUID | Literal["Fixed"],
+            ref(
+                "PlanConfig",
+                default="Fixed",
+                allow_values=("Fixed",),
+                entry_types=(OkwwPlanConfig,),
+            ),
+        ] = Field(default="Fixed", description="固定配置或 Okww 计划表")
+
         Base: Annotated[
             Literal["shared", "independent", "native"],
             legacy(
@@ -3044,48 +3056,13 @@ class OkwwUserConfig(DomainEntry):
 
     Notify: NotifyFields = Field(default_factory=NotifyFields)
 
-    class TaskFields(ConfigGroup):
-        AdditionalTasks: list[
-            Literal[
-                "Check Weekly Garden",
-                "Auto Farm all Nightmare Nest",
-                "Merge Echo If discarded > 1000",
-                "Teleport and Farm 4C Echo",
-            ]
-        ] = Field(
-            default_factory=lambda: ["Check Weekly Garden"],
-            description="每日任务后运行的附加任务",
-        )
-
+    class TaskFields(OkwwTaskFields):
         IfCustomArguments: bool = Field(
             default_factory=lambda: False, description="启用自定义启动参数"
         )
         CustomArguments: str = Field(
             default_factory=lambda: "-t DailyTask",
             description="自定义启动参数，开启后原样传递给 ok-ww",
-        )
-
-        FarmNightmareNestForDailyEcho: bool = Field(
-            default_factory=lambda: True, description="使用梦魇巢穴完成日常声骸"
-        )
-
-        MaterialSelection: Literal["Resonator EXP", "Weapon EXP", "Shell Credit"] = (
-            Field(default_factory=lambda: "Shell Credit", description="模拟领域材料")
-        )
-
-        WhichForgeryChallengeToFarm: Annotated[int, Field(ge=1, le=99), none_as(1)] = (
-            Field(default_factory=lambda: 1, description="凝素领域序号")
-        )
-
-        WhichTacetSuppressionToFarm: Annotated[int, Field(ge=1, le=99), none_as(1)] = (
-            Field(default_factory=lambda: 1, description="无音区序号")
-        )
-
-        WhichToFarm: Literal[
-            "Tacet Suppression", "Forgery Challenge", "Simulation Challenge"
-        ] = Field(
-            default_factory=lambda: "Tacet Suppression",
-            description="每日任务体力用途（仅日常任务且开启覆写常规配置时生效）",
         )
 
     Task: TaskFields = Field(default_factory=TaskFields)

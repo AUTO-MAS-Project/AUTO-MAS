@@ -370,7 +370,9 @@ class EmulatorDeleteIn(BaseModel):
     emulatorId: str = Field(..., description="模拟器 ID")
 
 
-PlanComboxConsumer = Literal["maa", "maaend", "baah", "mss", "universal", "oknte"]
+PlanComboxConsumer = Literal[
+    "maa", "maaend", "baah", "mss", "universal", "oknte", "okww"
+]
 
 
 class MaaEndAutoEssencePlanKey(BaseModel):

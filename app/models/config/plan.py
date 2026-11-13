@@ -26,7 +26,7 @@ from datetime import datetime, timedelta
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import BeforeValidator, ConfigDict, Field, create_model
 
 from app.config import (
     ConfigGroup,
@@ -37,6 +37,7 @@ from app.utils import constants as _utils_constants
 
 from .base import DomainEntry
 from .shared import (
+    OkwwTaskFields,
     default_baah_plan_key,
     none_as,
     normalize_baah_plan_key,
@@ -680,7 +681,7 @@ class MSSPlanConfig(WeeklyKeyPlan):
 
 
 class UniversalPlanConfig(PlanDaysConfig):
-    """完整原生配置的按日轮换；初版由通用脚本消费。"""
+    """通用脚本完整原生配置的按日轮换。"""
 
     class InfoFields(ConfigGroup):
         Name: str = Field(default="新通用脚本计划表", description="计划表名称")
@@ -767,6 +768,92 @@ class OkNtePlanConfig(WeeklyKeyPlan):
     Info: InfoFields = Field(default_factory=InfoFields)
 
 
+# 日常字段只声明一次；计划中的空值表示继承，不把默认值当作当天覆写。
+OkwwPlanKey = create_model(
+    "OkwwPlanKey",
+    __config__=ConfigDict(extra="forbid"),
+    **{
+        name: (
+            Annotated[field.annotation | None, *metadata]
+            if (
+                metadata := [
+                    item
+                    for item in field.metadata
+                    if not isinstance(item, BeforeValidator)
+                ]
+            )
+            else field.annotation | None,
+            Field(default=None, description=field.description),
+        )
+        for name, field in OkwwTaskFields.model_fields.items()
+    },
+)
+
+
+class OkwwPlanConfig(WeeklyKeyPlan):
+    """按日叠加日常体力参数，其他账号配置保持原有来源。"""
+
+    class DayFields(ConfigGroup):
+        Key: OkwwPlanKey = Field(
+            default_factory=lambda: OkwwPlanKey(
+                WhichToFarm="Tacet Suppression",
+                WhichTacetSuppressionToFarm=1,
+                WhichForgeryChallengeToFarm=1,
+                MaterialSelection="Shell Credit",
+            ),
+            description="体力计划参数",
+        )
+
+    ALL: DayFields = Field(default_factory=DayFields)
+    Monday: DayFields = Field(default_factory=DayFields)
+    Tuesday: DayFields = Field(default_factory=DayFields)
+    Wednesday: DayFields = Field(default_factory=DayFields)
+    Thursday: DayFields = Field(default_factory=DayFields)
+    Friday: DayFields = Field(default_factory=DayFields)
+    Saturday: DayFields = Field(default_factory=DayFields)
+    Sunday: DayFields = Field(default_factory=DayFields)
+    Day1: DayFields = Field(default_factory=DayFields)
+    Day2: DayFields = Field(default_factory=DayFields)
+    Day3: DayFields = Field(default_factory=DayFields)
+    Day4: DayFields = Field(default_factory=DayFields)
+    Day5: DayFields = Field(default_factory=DayFields)
+    Day6: DayFields = Field(default_factory=DayFields)
+    Day7: DayFields = Field(default_factory=DayFields)
+    Day8: DayFields = Field(default_factory=DayFields)
+    Day9: DayFields = Field(default_factory=DayFields)
+    Day10: DayFields = Field(default_factory=DayFields)
+    Day11: DayFields = Field(default_factory=DayFields)
+    Day12: DayFields = Field(default_factory=DayFields)
+    Day13: DayFields = Field(default_factory=DayFields)
+    Day14: DayFields = Field(default_factory=DayFields)
+    Day15: DayFields = Field(default_factory=DayFields)
+    Day16: DayFields = Field(default_factory=DayFields)
+    Day17: DayFields = Field(default_factory=DayFields)
+    Day18: DayFields = Field(default_factory=DayFields)
+    Day19: DayFields = Field(default_factory=DayFields)
+    Day20: DayFields = Field(default_factory=DayFields)
+    Day21: DayFields = Field(default_factory=DayFields)
+    Day22: DayFields = Field(default_factory=DayFields)
+    Day23: DayFields = Field(default_factory=DayFields)
+    Day24: DayFields = Field(default_factory=DayFields)
+    Day25: DayFields = Field(default_factory=DayFields)
+    Day26: DayFields = Field(default_factory=DayFields)
+    Day27: DayFields = Field(default_factory=DayFields)
+    Day28: DayFields = Field(default_factory=DayFields)
+    Day29: DayFields = Field(default_factory=DayFields)
+    Day30: DayFields = Field(default_factory=DayFields)
+    Day31: DayFields = Field(default_factory=DayFields)
+
+    class InfoFields(ConfigGroup):
+        Name: str = Field(default="新 Okww 计划表", description="计划表名称")
+        Mode: Literal["ALL", "Weekly", "Rotate"] = Field(
+            default="Weekly", description="计划模式"
+        )
+        RotateDays: int = Field(default=7, ge=1, le=31, description="轮换天数")
+
+    Info: InfoFields = Field(default_factory=InfoFields)
+
+
 type PlanConfigType = (
     MaaPlanConfig
     | MaaEndPlanConfig
@@ -774,12 +861,14 @@ type PlanConfigType = (
     | MSSPlanConfig
     | UniversalPlanConfig
     | OkNtePlanConfig
+    | OkwwPlanConfig
 )
 
 
 __all__ = [
     "PlanConfigType",
     "OkNtePlanConfig",
+    "OkwwPlanConfig",
     "UniversalPlanConfig",
     "WeeklyKeyPlan",
     "MaaPlanConfig",
