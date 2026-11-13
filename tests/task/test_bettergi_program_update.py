@@ -6,16 +6,23 @@ import json
 import shutil
 import uuid
 import zipfile
-from tests.runtime_support import RuntimeStub as SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from packaging.version import Version
 
+from app.config import ConfigCollection
+from app.core import Config
+from app.models.config import BetterGIConfig
+from app.models.task import TaskMode
 from app.services import script_install
+from app.task.BetterGI import ScriptConfig as config_session
 from app.task.BetterGI import manager
 from app.task.BetterGI.tools import program_update as update
+from app.task.history_core import TaskHistorySession
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+from tests.runtime_support import RuntimeStub as SimpleNamespace
+from tests.runtime_support import create_runtime_tree
 
 
 def pe():
@@ -170,6 +177,60 @@ def test_notice_restore_after_restart_preserves_other_changes(tmp_path, monkeypa
     path.write_text(json.dumps({update.NOTICE_KEY: "0.57.0", "custom": 3}))
     update.recover_update_notice(root)
     assert json.loads(path.read_text())[update.NOTICE_KEY] == "0.57.0"
+
+
+@pytest.mark.asyncio
+async def test_manager_starts_config_session_with_real_runtime_tree(
+    installation, monkeypatch
+):
+    root, _, _ = installation
+    scripts = ConfigCollection(BetterGIConfig)
+    await scripts.activate()
+    script_id = scripts.add(
+        BetterGIConfig,
+        payload={"Info": {"RootPath": root}, "Run": {"UseAdmin": False}},
+    )
+    await scripts.commit()
+    monkeypatch.setattr(Config, "ScriptConfig", scripts)
+    task, script, _ = await create_runtime_tree(
+        script_id=str(script_id), user_id="Default"
+    )
+    task.info.mode = TaskMode.SCRIPT_CONFIG
+    await task.commit()
+    subject = manager.BetterGIManager(script)
+    subject.history = TaskHistorySession(task)
+    sessions = []
+    session_type = manager.ScriptConfigTask
+
+    def create_session(*args, **kwargs):
+        session = session_type(*args, **kwargs)
+        # 保留真实配置会话，只替代外部进程，并在打开后结束会话。
+        session.process_manager.open_process = AsyncMock(
+            side_effect=lambda *args, **kwargs: session.wait_event.set()
+        )
+        session.process_manager.kill = AsyncMock()
+        sessions.append(session)
+        return session
+
+    monkeypatch.setattr(manager, "ScriptConfigTask", create_session)
+    monkeypatch.setattr(config_session.process, "kill_process", AsyncMock())
+    monkeypatch.setattr(config_session, "_wait_bgi_exit", AsyncMock(return_value=[]))
+
+    try:
+        await subject.main_task()
+    finally:
+        await subject.final_task()
+
+    (session,) = sessions
+    assert session.script_info is script
+    assert session.script_config is scripts[script_id]
+    assert session.user_config is scripts[script_id].UserData
+    assert session.process_manager.open_process.await_args.args == (
+        root / "BetterGI.exe",
+    )
+    assert script.status == "完成"
+    assert script.user_list[0].status == "完成"
+    assert not scripts[script_id].is_locked
 
 
 @pytest.mark.asyncio
