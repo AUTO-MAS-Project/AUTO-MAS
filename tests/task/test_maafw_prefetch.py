@@ -9,6 +9,58 @@ from app.task.MaaFW.tools.core.project_update import updater
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("cleanup", ["retry", "cancel", "policy_changed"])
+async def test_real_manager_prefetch_cleanup_without_update(
+    monkeypatch, isolated_app_paths, cleanup
+):
+    """关闭自动更新也会登记候选，重试和撤销必须正常清理真实管理器。"""
+    from uuid import uuid4
+
+    from app.core.script_update import ScriptUpdateSession
+    from app.core.script_update_queue import (
+        report_script_task_retrying,
+        script_task_retrying,
+    )
+    from app.models.config import GlobalConfig, MaaFWConfig
+    from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
+    from tests.config_support import activate_config
+    from tests.runtime_support import create_runtime_tree
+
+    uid = uuid4()
+    root, script, _ = await create_runtime_tree(script_id=str(uid))
+    config = await activate_config(
+        MaaFWConfig.build(payload={"Update": {"AutoUpdateMode": "Off"}})
+    )
+    setting = await activate_config(GlobalConfig.build())
+    monkeypatch.setattr(isolated_app_paths, "ScriptConfig", {uid: config})
+    monkeypatch.setattr(isolated_app_paths, "setting", setting)
+    manager = MaaFWEmbeddedManager(script)
+    session = ScriptUpdateSession(root, make_manager=lambda _: manager)
+    try:
+        await session._prefetch(0)
+        assert root.current.prefetch is not None
+        if cleanup == "retry":
+            token = script_task_retrying.set(lambda: session.retry(script, None))
+            try:
+                await report_script_task_retrying()
+            finally:
+                script_task_retrying.reset(token)
+        elif cleanup == "cancel":
+            await session.finish(cancelled=True)
+        else:
+            config.Update.AutoUpdateMode = "BeforeRun"
+            await config.commit()
+            assert await session.take(script.uid) is None
+        assert root.current.prefetch is None
+        assert not config.is_locked
+        assert manager.callbacks.closed
+        assert await session.take(script.uid) is None
+    finally:
+        await session.close()
+        await manager.callbacks.close()
+
+
+@pytest.mark.asyncio
 async def test_task_force_stop_kills_installation_thread_process(tmp_path):
     import asyncio
     import sys
@@ -102,10 +154,16 @@ async def test_prefetched_candidate_consumption_checks_baseline_and_gate(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "changed,stop_build", [(False, False), (True, False), (False, True)]
+    "changed,stop_build,discard",
+    [
+        (False, False, False),
+        (True, False, False),
+        (False, True, False),
+        (False, False, True),
+    ],
 )
 async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
-    tmp_path, monkeypatch, isolated_app_paths, changed, stop_build
+    tmp_path, monkeypatch, isolated_app_paths, changed, stop_build, discard
 ):
     """同版重新导入改变来源时，旧下载不能登记到新谱系；未变化的来源继续复用。"""
     import asyncio
@@ -155,6 +213,7 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
         archive.writestr("resource/data.json", '{"source":"aaaa-v2"}')
     package_bytes = package.getvalue()
     requests = []
+    withdrawn = False
 
     def respond(request):
         url = str(request.url)
@@ -165,6 +224,8 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
             # 两个项目都已撤下旧版本的发行包，实际导入核对返回同样的报告。
             return httpx.Response(404, json={"message": "Not Found"})
         if "/repos/audit/aaaa/" in url:
+            if withdrawn:
+                return httpx.Response(200, json={"tag_name": "1.0", "assets": []})
             return httpx.Response(
                 200,
                 json={
@@ -253,6 +314,18 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
     assert json.loads((view / "interface.json").read_text()) == replacement
     marker_before = embedded_project.read_view_marker(view)
     before_consume = list(requests)
+    if discard:
+        cached = {
+            path: path.read_bytes()
+            for path in (tmp_path / "cache").rglob("*")
+            if path.is_file()
+        }
+        assert cached
+        await manager.discard_prefetched_update()
+        await manager.discard_prefetched_update()
+        assert all(path.read_bytes() == content for path, content in cached.items())
+        # 撤下刚才发现的版本，运行前必须重新检查，不能继续安装旧候选。
+        withdrawn = True
 
     # 只隔离真实运行池/agent 环境准备；发现、缓存、预检门、登记和视图切换照常执行。
     manager.script_config = config
@@ -323,18 +396,20 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
         update_cancel=threading.Event(),
     )
     installed = json.loads((view / "interface.json").read_text())
+    updated = not changed and not discard
     assert installed["github"] == replacement["github"]
-    assert installed["version"] == ("1.0" if changed else "2.0")
+    assert installed["version"] == ("2.0" if updated else "1.0")
     assert json.loads((view / "resource/data.json").read_text()) == {
-        "source": "shared" if changed else "aaaa-v2"
+        "source": "aaaa-v2" if updated else "shared"
     }
-    assert outcome.updated is not changed
+    assert outcome.updated is updated
     assert (
         embedded_project.read_view_marker(view)["lineage"] == marker_before["lineage"]
     )
-    if changed:
+    if changed or discard:
+        repo = "bbbb" if changed else "aaaa"
         assert any(
-            "/repos/audit/bbbb/" in url for url in requests[len(before_consume) :]
+            f"/repos/audit/{repo}/" in url for url in requests[len(before_consume) :]
         )
     else:
         assert requests == before_consume
