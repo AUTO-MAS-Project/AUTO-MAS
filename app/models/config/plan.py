@@ -681,7 +681,7 @@ class MSSPlanConfig(WeeklyKeyPlan):
 
 
 class UniversalPlanConfig(PlanDaysConfig):
-    """完整原生配置的按日轮换；初版由通用脚本消费。"""
+    """通用脚本完整原生配置的按日轮换。"""
 
     class InfoFields(ConfigGroup):
         Name: str = Field(default="新通用脚本计划表", description="计划表名称")

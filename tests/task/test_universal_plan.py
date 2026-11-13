@@ -100,18 +100,42 @@ def test_first_save_from_empty_template_succeeds(tmp_path):
     assert (template / "config.json").read_text(encoding="utf-8") == "first"
 
 
-def test_universal_plan_general_only():
-    """通用脚本计划表只绑通用脚本；OkNte 使用独立专项计划。"""
-
+@pytest.mark.asyncio
+async def test_universal_plan_general_only(isolated_app_paths, monkeypatch):
+    """通用计划仅供通用脚本选择，OkNte 与 Okww 各用独立专项计划。"""
+    from app.config import ConfigCollection
     from app.models.config import (
         PLAN_BOOK,
         GeneralConfig,
+        OkNteConfig,
+        OkNtePlanConfig,
         OkNteUserConfig,
+        OkwwConfig,
+        OkwwPlanConfig,
         OkwwUserConfig,
     )
 
     assert PLAN_BOOK["UniversalPlanConfig"]["script_class"] is GeneralConfig
-    assert GeneralUserConfig().Info.PlanMode == "Fixed"
-    assert OkNteUserConfig().Info.PlanMode == "Fixed"
-    for user_cls in (OkwwUserConfig,):
-        assert "PlanMode" not in type(user_cls().Info).model_fields
+    assert PLAN_BOOK["OkNtePlanConfig"]["script_class"] is OkNteConfig
+    assert PLAN_BOOK["OkwwPlanConfig"]["script_class"] is OkwwConfig
+    for user_cls in (GeneralUserConfig, OkNteUserConfig, OkwwUserConfig):
+        assert user_cls().Info.PlanMode == "Fixed"
+
+    plans = ConfigCollection.build(
+        [UniversalPlanConfig, OkNtePlanConfig, OkwwPlanConfig]
+    )
+    await plans.activate()
+    universal_id = plans.add(
+        UniversalPlanConfig, payload={"Info": {"ScriptId": str(uuid4())}}
+    )
+    oknte_id = plans.add(OkNtePlanConfig)
+    okww_id = plans.add(OkwwPlanConfig)
+    await plans.commit()
+    monkeypatch.setattr(isolated_app_paths, "PlanConfig", plans)
+    for consumer, plan_id in (
+        ("universal", universal_id),
+        ("oknte", oknte_id),
+        ("okww", okww_id),
+    ):
+        options = await isolated_app_paths.get_plan_combox(consumer)
+        assert [item["value"] for item in options] == ["Fixed", str(plan_id)]
