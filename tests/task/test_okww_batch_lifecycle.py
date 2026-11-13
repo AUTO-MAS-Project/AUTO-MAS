@@ -504,3 +504,93 @@ async def test_stop_preserves_success_written_since_last_log_poll(
         else ("完成", True, "Success!")
     )
     assert results[1] == ("异常", False, "任务被用户手动中止")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["normal", "invalid", "duplicate", "cancel"])
+async def test_batch_arguments_grouping_preserves_user_order(tmp_path, scenario):
+    (tmp_path / "ok-ww.exe").touch()
+    app_json = tmp_path / "data/apps/ok-ww/app.json"
+    app_json.parent.mkdir(parents=True)
+    app_json.write_text('{"current_version":"unknown"}')
+    native = app_json.parent / "working/configs"
+    native.mkdir(parents=True)
+    (native / "DailyTask.json").write_text("{}")
+    ids = [uuid.uuid4() for _ in range(5)]
+    users = [
+        UserItem(user_id=str(uid), name=str(i), status="等待")
+        for i, uid in enumerate(ids)
+    ]
+    info = RuntimeStub(
+        task_info=RuntimeStub(mode="AutoProxy", is_queue_task=False),
+        script_id=str(uuid.uuid4()),
+        user_list=users,
+        current_index=0,
+    )
+    manager = OkwwManager(info)
+    # 下发给任务的是已校验的配置；安装路径在此测试中直接使用临时安装目录。
+    manager.script_config = SimpleNamespace(
+        Info=SimpleNamespace(RootPath=tmp_path),
+        Game=SimpleNamespace(AccountSwitchMethod="OKWW", Enabled=False),
+        Run=SimpleNamespace(ProxyTimesLimit=0),
+    )
+    drafts = [None, "-t OtherTask", "-t OtherTask", None, None]
+    if scenario == "invalid":
+        drafts[2] = '"unfinished'
+    manager.user_config = {
+        uid: OkwwUserConfig.model_validate(
+            {
+                "Info": {"Id": f"1301234000{i}", "Base": "native"},
+                "Task": {
+                    "IfCustomArguments": draft is not None,
+                    "CustomArguments": draft or '"ignored',
+                },
+            }
+        )
+        for i, (uid, draft) in enumerate(zip(ids, drafts))
+    }
+    if scenario == "duplicate":
+        manager.user_config[ids[1]].Info.Id = manager.user_config[ids[0]].Info.Id
+    manager.game_manager = None
+    manager.check = AsyncMock(return_value="Pass")
+    manager.prepare = AsyncMock()
+    manager.check_user_before_run = AsyncMock(return_value=True)
+    manager.notify_user_check_failure = AsyncMock()
+    manager._restore_script_config_from_temp = AsyncMock()
+    manager.record_user_run_start = lambda user: None
+    dispatched = []
+
+    async def run(task):
+        dispatched.append(
+            ([user.user_id for user in task.participants], task._build_run_arguments())
+        )
+
+        if scenario == "cancel":
+            raise asyncio.CancelledError
+
+    manager.spawn = AsyncMock(side_effect=run)
+    if scenario == "cancel":
+        with pytest.raises(asyncio.CancelledError):
+            await manager.main_task()
+        assert len(dispatched) == 1
+        assert manager._restore_script_config_from_temp.await_count == 1
+        return
+    await manager.main_task()
+    if scenario == "duplicate":
+        assert not dispatched
+        assert manager.notify_user_check_failure.await_count == 5
+        return
+    default = ["-t", "MultiAccountConfigTask", "-e"]
+    assert dispatched == [
+        ([str(ids[0])], default),
+        (
+            [str(ids[1])] if scenario == "invalid" else [str(ids[1]), str(ids[2])],
+            ["-t", "OtherTask"],
+        ),
+        ([str(ids[3]), str(ids[4])], default),
+    ]
+    if scenario == "invalid":
+        manager.notify_user_check_failure.assert_awaited_once()
+    else:
+        manager.notify_user_check_failure.assert_not_awaited()
+    assert manager._restore_script_config_from_temp.await_count == 3

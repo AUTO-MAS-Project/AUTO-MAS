@@ -54,6 +54,11 @@ class BatchProxyTask(AutoProxyTask):
         self.account_failures = {}
         self.attempted_accounts = set()
 
+    def _build_run_arguments(self) -> list[str]:
+        if self.cur_user_config.Task.IfCustomArguments:
+            return super()._build_run_arguments()
+        return ["-t", "MultiAccountConfigTask", "-e"]
+
     async def check(self):
         result = await super().check()
         if result != "Pass":
@@ -80,7 +85,7 @@ class BatchProxyTask(AutoProxyTask):
                 config.Data.ProxyTimes = 0
                 await config.commit()
         self.task_name = "MultiAccountConfigTask"
-        self.okww_args = ["-t", self.task_name, "-e"]
+        self.okww_args = self._build_run_arguments()
         self.task_index = 0
         # 原始账号历史独立于节点推送开关，关闭节点时也需保留日志。
         if self._log_source is None:

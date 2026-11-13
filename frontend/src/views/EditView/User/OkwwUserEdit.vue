@@ -188,6 +188,8 @@
         </a-space>
       </a-flex>
       <OkwwTaskConfigSection
+        :save-task="saveTaskConfig"
+        :script-id="scriptId"
         v-model="formData.Task"
         :quick-config="formData.Info.IfQuickConfig"
         :disabled="configActionsDisabled"
@@ -251,6 +253,7 @@
 
 <script setup lang="ts">
 import OkwwTaskConfigSection from './components/OkwwTaskConfigSection.vue'
+import { getDefaultOkwwTaskConfig } from './components/okwwTaskConfig'
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import accountIcon from '@/assets/ok-ww.ico'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
@@ -395,14 +398,7 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Notes: '',
     Tag: '',
   },
-  Task: {
-    WhichToFarm: 'Tacet Suppression',
-    WhichTacetSuppressionToFarm: 1,
-    WhichForgeryChallengeToFarm: 1,
-    MaterialSelection: 'Shell Credit',
-    FarmNightmareNestForDailyEcho: true,
-    AdditionalTasks: ['Check Weekly Garden'],
-  },
+  Task: getDefaultOkwwTaskConfig(),
   Notify: {
     Enabled: false,
     PushLogMode: '汇总',
@@ -493,20 +489,10 @@ const handleQuickConfigChange = async (value: boolean) => {
   }
 }
 
-const saveTaskConfig = async () => {
-  if (isInitializing.value || !userId.value) return
-  await enqueue(() =>
-    updateUser(scriptId, userId.value, {
-      Task: {
-        WhichToFarm: formData.Task.WhichToFarm,
-        WhichTacetSuppressionToFarm: formData.Task.WhichTacetSuppressionToFarm,
-        WhichForgeryChallengeToFarm: formData.Task.WhichForgeryChallengeToFarm,
-        MaterialSelection: formData.Task.MaterialSelection,
-        FarmNightmareNestForDailyEcho: formData.Task.FarmNightmareNestForDailyEcho,
-        AdditionalTasks: formData.Task.AdditionalTasks,
-      },
-    })
-  )
+const saveTaskConfig = async (): Promise<boolean> => {
+  if (isInitializing.value || !userId.value) return false
+  const Task = { ...formData.Task, AdditionalTasks: [...formData.Task.AdditionalTasks] }
+  return await enqueue(() => updateUser(scriptId, userId.value, { Task }))
 }
 
 const handleOkwwConfig = async () => {

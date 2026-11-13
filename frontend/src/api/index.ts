@@ -974,6 +974,8 @@ export type { OkNteUserConfig_NotifyInput } from './models/OkNteUserConfig_Notif
 export type { OkNteUserConfig_Task } from './models/OkNteUserConfig_Task';
 export type { OkNteUserConfig_TaskInput } from './models/OkNteUserConfig_TaskInput';
 export type { OkNteUserConfigInput } from './models/OkNteUserConfigInput';
+export type { OkwwArgumentsIn } from './models/OkwwArgumentsIn';
+export type { OkwwArgumentsOut } from './models/OkwwArgumentsOut';
 export type { OkwwClientPathOut } from './models/OkwwClientPathOut';
 export type { OkwwConfig } from './models/OkwwConfig';
 export type { OkwwConfig_Game } from './models/OkwwConfig_Game';
