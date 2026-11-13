@@ -29,7 +29,7 @@
         :max="99"
         :disabled="isSaving || Boolean(error)"
         :placeholder="t('core.plan.oknte.inheritShort')"
-        :aria-label="`${label(record.day)} 序号`"
+        :aria-label="`${label(record.day)} ${column.title}`"
         @change="(value: any) => save(record.day, numberField(record.day), value)"
       />
       <a-popover
@@ -180,7 +180,7 @@ function additionalTaskSummary(day: string) {
   if (!tasks.length) return t('core.plan.oknte.off')
   return additionalTaskOptions
     .filter(task => tasks.includes(task.value))
-    .map(task => task.shortLabel)
+    .map(task => t(task.shortLabelKey))
     .join('、')
 }
 function options(field: string) {

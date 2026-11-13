@@ -159,6 +159,11 @@ test.describe('@okww-plan', () => {
         ).json()
       ).data[created.planId].Monday.Key.AdditionalTasks
     await expect.poll(read).toEqual(['Check Weekly Garden', 'Auto Farm all Nightmare Nest'])
+    await expect(trigger).toContainText('Weekly Garden')
+    await expect(trigger).toContainText('All Nightmare Nests')
+    await expect(
+      page.getByRole('spinbutton', { name: 'Mon Dungeon number (F2)', exact: true })
+    ).toBeVisible()
     await garden.uncheck()
     await nest.uncheck()
     await expect.poll(read).toEqual([])
