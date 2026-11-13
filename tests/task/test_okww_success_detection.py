@@ -38,6 +38,7 @@
 import asyncio
 from datetime import datetime
 
+from app.models.config.script import OkwwUserConfig
 from app.task.Okww.AutoProxy import AutoProxyTask
 from tests.runtime_support import RuntimeStub as SimpleNamespace
 
@@ -45,6 +46,7 @@ from tests.runtime_support import RuntimeStub as SimpleNamespace
 def make_proxy() -> AutoProxyTask:
     proxy = AutoProxyTask.__new__(AutoProxyTask)
     proxy.task_name = "DailyTask"
+    proxy.cur_user_config = OkwwUserConfig()
     proxy.script_config = SimpleNamespace(Run=SimpleNamespace(RunTimeLimit=30))
     proxy.cur_user_log = SimpleNamespace(content=[], status="")
     proxy.cur_user_item = SimpleNamespace(status="运行")
@@ -63,6 +65,22 @@ async def judge(lines: list[str]) -> AutoProxyTask:
     proxy = make_proxy()
     await proxy.check_log(lines, datetime.now())
     return proxy
+
+
+def test_custom_task_waits_for_framework_completion():
+    async def scenario():
+        proxy = make_proxy()
+        proxy.cur_user_config.Task.IfCustomArguments = True
+        await proxy.check_log(["DailyTask:Daily Task Completed\n"], datetime.now())
+        assert not proxy.wait_event.is_set()
+        await proxy.check_log(
+            ["TaskExecutor:Successfully Executed Task, Exiting Game and App!\n"],
+            datetime.now(),
+        )
+        assert proxy.cur_user_log.status == "Success!"
+        assert proxy.wait_event.is_set()
+
+    asyncio.run(scenario())
 
 
 def test_chinese_completion_with_exit_line_marks_success():

@@ -33,3 +33,21 @@ def resolve_client_path(script_id: str) -> Path:
         launcher_path
     )
     return client_path
+
+
+def resolve_startup_arguments(
+    script_id: str, *, custom: bool, arguments: str
+) -> tuple[list[str], bool]:
+    from .tools.arguments import build_custom_arguments, daily_task_argument
+
+    config = Config.ScriptConfig[uuid.UUID(script_id)]
+    if not isinstance(config, RuntimeOkwwConfig):
+        raise TypeError("托管配置类型错误, 不是 OK-WW 类型")
+    native = config.Game.AccountSwitchMethod in ("OKWW", "OKWW_SINGLE")
+    if custom:
+        return build_custom_arguments(arguments), native
+    if native:
+        return ["-t", "MultiAccountConfigTask", "-e"], True
+    if config.Info.RootPath is None:
+        raise ValueError("请设置 ok-ww 脚本路径")
+    return ["-t", daily_task_argument(config.Info.RootPath), "-e"], False
