@@ -262,6 +262,12 @@ _WORKER_STREAM_LINE_LIMIT = 16 * 1024 * 1024
 WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
 # Game.WaitTime 填 0 时等游戏窗口出现的上限（秒）
 _WINDOW_READY_FALLBACK_SECONDS = 60
+# URL 模式打开链接后找游戏进程的最短时限（秒）：Steam 冷启动要先起客户端再拉游戏
+_URL_LAUNCH_MIN_TIMEOUT_SECONDS = 60
+# 按创建时间认「本次运行期间打开的进程」时的容差（秒），与 ProcessManager.search_process 一致
+_PROCESS_CREATE_TIME_TOLERANCE_SECONDS = 2.0
+# 兜底关闭进程时 terminate 之后等它自己退出的秒数，到点仍在就 kill
+_PROCESS_TERMINATE_GRACE_SECONDS = 3.0
 # 托管页没有填窗口句柄的入口，提示不能让用户去找一个不存在的设置。
 _WIN32_NO_WINDOW_RULES_MESSAGE = (
     "该项目的这个 Win32 控制器没有声明窗口匹配规则（interface 里的 class_regex / "
@@ -565,6 +571,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 启动的才记：桌面游戏是窗口出现那一刻（MAS 拉起、或接管时等到窗口冒出来），
         # 模拟器是 MAS 随模拟器把游戏拉到前台那一刻。None 表示游戏早就在跑。
         self.game_started_at: float | None = None
+        # URL 模式本轮打开链接的时刻（epoch 秒）：Steam 拉起的游戏不是 MAS 的子进程、还可能
+        # 自我重启换 PID，关游戏时据此兜底结束这之后出现的同 exe 进程。None 表示没经链接拉起
+        self.game_launched_at: float | None = None
+        # URL 模式本次运行**第一次**打开链接的时刻：重试之间不清，只在最终收尾用完清空。
+        # Steam 冷启动 / 更新超过等待时限时，游戏会在 MAS 放弃之后才出现，下一轮又按「已在
+        # 运行」接管、不算 MAS 开的；收尾按它再扫一遍，MAS 拉起的游戏不会留在外面
+        self.url_first_launched_at: float | None = None
+        # 本账号这次运行开始的时刻（epoch 秒，第一次尝试的运行前设置之前）：AttachOnly 下由
+        # MAS 兜底关闭时只关这之后才出现的进程，收尾做过一次就清空（见 _close_attached_game）
+        self.run_started_at: float | None = None
         # 模拟器冷启动游戏时为真：闸门改按「画面有内容 + 客体读盘停下来」放行，上限仍是
         # Game.WaitTime（加载页和动态标题都一直在动，像素判断分不出两者）。桌面路径始终为假。
         self.game_start_disk_quiet = False
@@ -787,6 +803,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         await self._mark_run_started()
         await self.prepare()
         await self.cur_user_item.set_state(status="运行")
+        # AttachOnly 兜底关闭的分界：之后才出现的游戏 / 启动器才算本次运行打开的
+        self.run_started_at = time.time()
         logger.info(f"开始代理 MaaFW 账号: {self.cur_user_uid}")
         if self.run_plan is not None:
             selected_preset = str(
@@ -1121,7 +1139,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return
 
         await self._close_emulator()
-        await self._close_game()
+        await self._close_game_after_run(failed=not self.run_complete)
         if self.run_complete:
             if (
                 self.cur_user_config.Data.ProxyTimes == 0
@@ -1177,27 +1195,54 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             pass
         await self._shutdown_runner()
         await self._close_emulator()
-        await self._close_game()
+        await self._close_game_after_run(failed=True)
         await self._release_project_path()
+
+    def _game_launch_mode(self) -> str:
+        """``Game.LaunchMode``：DirectExe / URL / AttachOnly。
+
+        配置激活后一定有默认值，这里的兜底只是防御性的。
+        """
+
+        return str(self.script_config.Game.LaunchMode or "DirectExe").strip()
 
     def _mas_manages_game_launch(self) -> bool:
         """MAS 是否负责启动/关闭游戏。
 
-        只有两种模式：DirectExe（默认；MAS 启动，结束后一律由 MAS 关闭）与
-        AttachOnly（脚本或用户自己启停，MAS 只接管窗口、不启动也不关闭）。
-        此前这里根本没读过 LaunchMode，Win32 controller 无论哪种模式都强制索要 exe。
-        配置激活后 LaunchMode 一定有默认值，这里的兜底
-        只是防御性的。
+        三种模式：DirectExe（默认；MAS 按 exe 启动，结束后由 MAS 关闭）、URL（MAS 打开
+        链接拉起游戏，游戏 exe 只用来认出它，结束后同样由 MAS 关闭）与 AttachOnly（脚本或
+        用户自己启动，MAS 只接管窗口；结束后关不关看 ``Game.CloseMode``，见
+        ``_close_attached_game``）。
         """
 
-        mode = str(self.script_config.Game.LaunchMode or "DirectExe").strip()
-        return mode != "AttachOnly"
+        return self._game_launch_mode() != "AttachOnly"
 
     def _resolve_game_launch_path(self) -> Path | None:
-        """DirectExe 模式下 MAS 要启动的客户端 exe。"""
+        """游戏 exe：DirectExe 下 MAS 启动它，URL / AttachOnly 下只用来认出游戏。"""
 
         raw = str(self.script_config.Game.LaunchPath or "").strip()
         return Path(raw) if raw else None
+
+    def _resolve_launcher_path(self) -> Path | None:
+        """AttachOnly 下可选的启动器 exe，MAS 兜底关闭时一并关它。"""
+
+        raw = str(self.script_config.Game.LauncherPath or "").strip()
+        return Path(raw) if raw else None
+
+    def _describe_game_launch_config_error(self) -> str | None:
+        """MAS 负责启动游戏时缺了什么配置；不缺返回 None。会读盘，调用方放在工作线程里。"""
+
+        mode = self._game_launch_mode()
+        game_path = self._resolve_game_launch_path()
+        if mode == "URL":
+            if not str(self.script_config.Game.URL or "").strip():
+                return "启动方式为通过链接启动，请在托管管理页填写启动链接"
+            if game_path is None or not game_path.is_file():
+                return "启动方式为通过链接启动，请在托管管理页选择游戏 exe（用来识别和关闭游戏）"
+            return None
+        if game_path is None or not game_path.is_file():
+            return "当前 MaaFW controller 需要由 MAS 启动游戏，请在托管管理页选择实际游戏 exe"
+        return None
 
     def _load_run_state_for_check(
         self,
@@ -1226,9 +1271,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             and run_plan.controllerType == "Win32"
             and self._mas_manages_game_launch()
         ):
-            game_path = self._resolve_game_launch_path()
-            if game_path is None or not game_path.is_file():
-                game_path_error = "当前 MaaFW controller 需要由 MAS 启动游戏，请在托管管理页选择实际游戏 exe"
+            game_path_error = self._describe_game_launch_config_error()
         return interface_model, base_run_plan, run_plan, game_path_error
 
     def _build_run_plan(
@@ -3146,10 +3189,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 的窗口」，比在这里索要一个本模式用不上的 exe 更贴题。
             return
 
+        config_error = await asyncio.to_thread(self._describe_game_launch_config_error)
         game_path = self._resolve_game_launch_path()
-        if game_path is None or not await asyncio.to_thread(game_path.is_file):
+        if config_error is not None or game_path is None:
             raise RuntimeError(
-                "当前 MaaFW controller 需要由 MAS 启动游戏，请在托管管理页选择实际游戏 exe"
+                config_error
+                or "当前 MaaFW controller 需要由 MAS 启动游戏，请在托管管理页选择实际游戏 exe"
             )
 
         if self.interface_model is not None and self.run_plan is not None:
@@ -3184,6 +3229,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await self._activate_desktop_game_window(game_path)
             return
 
+        if self._game_launch_mode() == "URL":
+            await self._launch_game_by_url(game_path)
+            await self._activate_desktop_game_window(game_path)
+            return
+
         game_arguments = shlex.split(
             str(self.script_config.Game.Arguments or "").strip()
         )
@@ -3211,6 +3261,53 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         await self._activate_desktop_game_window(game_path)
 
+    async def _launch_game_by_url(self, game_path: Path) -> None:
+        """URL 模式：打开链接拉起游戏，再按游戏 exe 找到本次启动后出现的进程、等窗口。
+
+        游戏不是 MAS 的子进程（Steam 等转一手），只能按 exe + 创建时间认；``Game.Arguments``
+        不用，参数要写进链接。Steam 冷启动慢，找进程的时限不少于
+        ``_URL_LAUNCH_MIN_TIMEOUT_SECONDS``。
+        """
+
+        url = str(self.script_config.Game.URL or "").strip()
+        timeout = max(
+            int(self.script_config.Game.WaitTime or 0), _URL_LAUNCH_MIN_TIMEOUT_SECONDS
+        )
+        logger.info(f"通过链接启动游戏: {url} - {game_path}")
+        # 注册表必须在进程起来之前改好：Unity 播放器只在启动时读一次这些值
+        await self._apply_game_resolution_override(game_path)
+        launched_at = time.time()
+        try:
+            await _open_launch_url(url)
+        except Exception as exc:
+            # 被停止（取消）时不在这里恢复：收尾的 _close_game 见 opened_game 为假也会恢复
+            await self._restore_game_resolution_override()
+            raise RuntimeError(f"无法打开启动链接 {url}: {exc}") from exc
+        # 链接一打开就算 MAS 开的（同 DirectExe）：之后等不到、被停止，收尾都要关
+        self.opened_game = True
+        self.game_launched_at = launched_at
+        if self.url_first_launched_at is None:
+            self.url_first_launched_at = launched_at
+        self._append_log(
+            f"已打开启动链接，等待游戏进程启动（最多 {timeout}s）: {game_path.name}"
+        )
+        try:
+            try:
+                await self.game_process_manager.search_process(
+                    ProcessInfo(exe=str(game_path.resolve())),
+                    timeout,
+                    min_create_time=launched_at,
+                )
+            except RuntimeError as exc:
+                raise RuntimeError(
+                    f"打开启动链接后 {timeout}s 内没有等到游戏进程: {game_path.name}"
+                ) from exc
+            await self._wait_for_desktop_game_ready(game_path)
+            self.game_started_at = time.monotonic()
+        except Exception:
+            await self._close_game()
+            raise
+
     def _unity_resolution_target(self) -> tuple[int, int] | None:
         """``Game.UnityResolution`` 选了尺寸就返回 (宽, 高)，Off 返回 None。"""
 
@@ -3225,6 +3322,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _note_launch_arguments_skipped(self) -> None:
         """游戏已在运行时不会重复启动，配了启动参数的用户要知道这轮没生效。"""
 
+        if self._game_launch_mode() == "URL":
+            # URL 模式本来就不用启动参数（参数写在链接里）
+            return
         arguments = str(self.script_config.Game.Arguments or "").strip()
         if arguments:
             self._append_log(f"检测到游戏已在运行，本轮不会应用启动参数（{arguments}）")
@@ -3749,24 +3849,167 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     async def _close_game(self) -> bool:
         """关闭由 MAS 启动的游戏，返回是否关成（本来就没开过算关成）。
 
-        只看 opened_game：由 MAS 启动的一律关，其他方式启动（AttachOnly、或
-        DirectExe 下发现游戏已在运行而没重复启动）的一律不碰，没有开关。
+        只看 opened_game：由 MAS 启动的（DirectExe、URL）一律关，其他方式启动（AttachOnly、
+        或发现游戏已在运行而没重复启动）的这里不碰——AttachOnly 的兜底关闭只在最终收尾做，
+        见 ``_close_attached_game``。URL 模式另按游戏 exe 兜底扫一遍：游戏不是 MAS 的子进程，
+        有的还会自我重启换 PID，跟踪的那一个关掉了不等于游戏关掉了。
         """
 
         if not self.opened_game:
             await self._restore_game_resolution_override()
             return True
 
+        launched_at = self.game_launched_at
+        closed = True
         try:
-            await self.game_process_manager.kill()
-            return True
-        except Exception as exc:
-            logger.warning(f"MaaFW 清理时关闭游戏失败: {exc}")
-            return False
+            try:
+                await self.game_process_manager.kill()
+            except Exception as exc:
+                logger.warning(f"MaaFW 清理时关闭游戏失败: {exc}")
+                closed = False
+            else:
+                if launched_at is not None:
+                    # 链接拉起的游戏不是 MAS 的子进程，写一行让用户知道是 MAS 关的
+                    self._append_log("已关闭本次通过链接打开的游戏")
+            game_path = self._resolve_game_launch_path()
+            if launched_at is not None and game_path is not None:
+                try:
+                    if not await self._end_processes_started_since(
+                        launched_at, exes=[game_path]
+                    ):
+                        closed = False
+                except Exception as exc:
+                    logger.warning(f"MaaFW 清理时关闭链接拉起的游戏失败: {exc}")
+                    closed = False
+            return closed
         finally:
             self.opened_game = False
             self.game_started_at = None
+            self.game_launched_at = None
             await self._restore_game_resolution_override()
+
+    async def _close_game_after_run(self, *, failed: bool) -> None:
+        """最终收尾关游戏：MAS 启动的照常关，AttachOnly 再按 ``Game.CloseMode`` 兜底。
+
+        ``failed`` 为真表示本次运行没正常完成（失败、超时、停止、``on_crash``）。重试之间
+        走的是 ``_restart_client_before_retry``，不经这里，AttachOnly 下不关。
+        """
+
+        await self._close_game()
+        await self._close_url_game_left_behind()
+        await self._close_attached_game(failed=failed)
+
+    async def _close_url_game_left_behind(self) -> None:
+        """URL 模式最终收尾：按本次运行第一次打开链接的时刻，再扫一遍同 exe 的进程。
+
+        覆盖「等进程超时之后游戏才出现」：那一轮 _close_game 时还没有进程可关，之后的
+        尝试按「已在运行」接管（opened_game 为假），没有这一步就会留在外面。运行前就开着
+        的游戏不会进 URL 分支（直接接管），所以这个时刻之后出现的同 exe 进程都是 MAS 拉起的。
+        """
+
+        since = self.url_first_launched_at
+        self.url_first_launched_at = None
+        game_path = self._resolve_game_launch_path()
+        if since is None or game_path is None:
+            return
+        try:
+            await self._end_processes_started_since(since, exes=[game_path])
+        except Exception as exc:
+            logger.warning(f"MaaFW 收尾关闭链接拉起的游戏失败: {exc}")
+            self._append_log(f"关闭游戏失败: {exc}", warning=True)
+
+    def _attached_game_close_wanted(self, *, failed: bool) -> bool:
+        if self._game_launch_mode() != "AttachOnly":
+            return False
+        if self.run_plan is None or self.run_plan.controllerType != "Win32":
+            return False
+        mode = str(self.script_config.Game.CloseMode or "OnFailure").strip()
+        return mode == "Always" or (mode == "OnFailure" and failed)
+
+    async def _close_attached_game(self, *, failed: bool) -> None:
+        """AttachOnly 下由 MAS 兜底关闭本次运行期间打开的游戏与启动器。
+
+        只关创建时间不早于本次运行开始（``run_started_at``，容差 2s）的进程，运行前就开着的
+        一律不碰。候选三路：控制器窗口匹配到的窗口所属进程、``Game.LaunchPath``、
+        ``Game.LauncherPath``。每次运行只做一次（做过即清空分界时刻），``on_crash`` 与正常
+        收尾先后来时不会重复关、重复写日志。
+        """
+
+        since = self.run_started_at
+        self.run_started_at = None
+        if since is None or not self._attached_game_close_wanted(failed=failed):
+            return
+        try:
+            pids = await asyncio.to_thread(self._attached_game_window_pids)
+            exes = [
+                path
+                for path in (
+                    self._resolve_game_launch_path(),
+                    self._resolve_launcher_path(),
+                )
+                if path is not None
+            ]
+            await self._end_processes_started_since(
+                since, exes=exes, pids=pids, log_kept=True
+            )
+        except Exception as exc:
+            logger.warning(f"MaaFW 收尾关闭游戏失败: {exc}")
+            self._append_log(f"关闭游戏失败: {exc}", warning=True)
+
+    def _attached_game_window_pids(self) -> set[int]:
+        """控制器窗口匹配到的窗口所属进程；没有窗口规则、扫不了窗口时返回空集。"""
+
+        if self.interface_model is None or self.run_plan is None:
+            return set()
+        try:
+            controller = _find_controller(
+                self.interface_model, self.run_plan.controllerName
+            )
+            if not controller_has_window_rules(controller):
+                return set()
+            windows = _match_controller_windows(controller)
+        except Exception as exc:
+            logger.warning(f"MaaFW 收尾查找游戏窗口失败: {exc}")
+            return set()
+        pids: set[int] = set()
+        for window in windows:
+            pid = _window_process_id(int(window.hWnd))
+            if pid:
+                pids.add(pid)
+        return pids
+
+    async def _end_processes_started_since(
+        self,
+        since: float,
+        *,
+        exes: list[Path],
+        pids: set[int] | None = None,
+        log_kept: bool = False,
+    ) -> bool:
+        """结束候选里创建时间不早于 ``since``（容差 2s）的进程，每个写一行运行日志。
+
+        候选是 pid 在 ``pids`` 里、或 exe 等于 ``exes`` 之一的进程。``log_kept`` 为真时，
+        运行前就在的候选也各写一行说明为什么不关。返回该关的是否都关掉了；没关掉的
+        （多半是游戏以管理员身份运行、MAS 没有）写一行警告进运行日志。
+        """
+
+        closing, kept = await asyncio.to_thread(
+            _find_processes_started_since, since, exes=exes, pids=pids or set()
+        )
+        if log_kept:
+            for process in kept:
+                self._append_log(f"{process.label} 在运行开始前就已打开，不关闭")
+        if not closing:
+            return True
+        ended, failed = await asyncio.to_thread(_end_processes, closing)
+        for process in ended:
+            self._append_log(f"已关闭本次运行期间打开的 {process.label}")
+        for process in failed:
+            self._append_log(
+                f"没能关闭 {process.label}，可能需要以管理员身份运行 AUTO-MAS",
+                warning=True,
+            )
+        return not failed
 
     async def _try_enter_project_path(self) -> bool:
         project_lock_key = await try_reserve_project_path(self.project_path)
@@ -4285,6 +4528,134 @@ def _is_process_path_running(executable_path: Path) -> bool:
             if raw_exe and Path(raw_exe).resolve() == target_path:
                 return True
     return False
+
+
+async def _open_launch_url(url: str) -> None:
+    """用系统默认处理程序打开启动链接（Windows 上是 ShellExecute）。"""
+
+    from app.utils import process_platform
+
+    await process_platform.platform_process.open_protocol(url)
+
+
+@dataclass(frozen=True)
+class _ProcessSnapshot:
+    """兜底关闭用的进程快照：exe 读不到时为空串，创建时间读不到时为 None。"""
+
+    pid: int
+    exe: str
+    create_time: float | None
+
+    @property
+    def label(self) -> str:
+        name = Path(self.exe).name if self.exe else "进程"
+        return f"{name}（pid={self.pid}）"
+
+
+def _normalized_exe(path: str | Path) -> str:
+    return os.path.normcase(os.path.normpath(str(path)))
+
+
+def _snapshot_processes() -> list[_ProcessSnapshot]:
+    snapshots: list[_ProcessSnapshot] = []
+    for proc in psutil.process_iter(["pid", "exe", "create_time"]):
+        info = proc.info
+        snapshots.append(
+            _ProcessSnapshot(
+                pid=int(info.get("pid") or proc.pid),
+                exe=str(info.get("exe") or ""),
+                create_time=info.get("create_time"),
+            )
+        )
+    return snapshots
+
+
+def _window_process_id(hwnd: int) -> int | None:
+    """窗口所属进程的 pid；拿不到（窗口已销毁、非 Windows）返回 None。"""
+
+    try:
+        import win32process
+
+        _, pid = win32process.GetWindowThreadProcessId(hwnd)
+    except Exception:
+        return None
+    return int(pid) or None
+
+
+def _find_processes_started_since(
+    since: float, *, exes: list[Path], pids: set[int]
+) -> tuple[list[_ProcessSnapshot], list[_ProcessSnapshot]]:
+    """按 pid 或 exe 找候选，按创建时间分成（本次之后才出现的, 之前就在的）。
+
+    创建时间读不到的算「之前就在」：宁可漏关，不误关用户自己开着的进程。本进程不算候选。
+    """
+
+    targets: set[str] = set()
+    for path in exes:
+        with suppress(OSError):
+            path = path.resolve()
+        targets.add(_normalized_exe(path))
+    own_pid = os.getpid()
+    closing: list[_ProcessSnapshot] = []
+    kept: list[_ProcessSnapshot] = []
+    for snapshot in _snapshot_processes():
+        if snapshot.pid == own_pid:
+            continue
+        matched = snapshot.pid in pids or (
+            bool(snapshot.exe) and _normalized_exe(snapshot.exe) in targets
+        )
+        if not matched:
+            continue
+        if (
+            snapshot.create_time is not None
+            and snapshot.create_time >= since - _PROCESS_CREATE_TIME_TOLERANCE_SECONDS
+        ):
+            closing.append(snapshot)
+        else:
+            kept.append(snapshot)
+    return closing, kept
+
+
+def _end_processes(
+    targets: list[_ProcessSnapshot],
+    grace_seconds: float = _PROCESS_TERMINATE_GRACE_SECONDS,
+) -> tuple[list[_ProcessSnapshot], list[_ProcessSnapshot]]:
+    """先 terminate，``grace_seconds`` 后仍在的 kill；返回（已结束的, 没能结束的）。
+
+    结束前按创建时间再核一次：快照之后 pid 被别的进程复用了就不碰它（两边都不算）。
+    已经自己退出的也不算失败。
+    """
+
+    started: dict[psutil.Process, _ProcessSnapshot] = {}
+    failed: list[_ProcessSnapshot] = []
+    for target in targets:
+        try:
+            proc = psutil.Process(target.pid)
+            if (
+                target.create_time is not None
+                and abs(proc.create_time() - target.create_time) > 1
+            ):
+                continue
+            proc.terminate()
+        except psutil.NoSuchProcess:
+            continue
+        except (psutil.AccessDenied, OSError) as exc:
+            logger.warning(f"MaaFW 结束进程失败 {target.label}: {exc}")
+            failed.append(target)
+            continue
+        started[proc] = target
+    if not started:
+        return [], failed
+    _, alive = psutil.wait_procs(list(started), timeout=grace_seconds)
+    for proc in alive:
+        with suppress(psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+            proc.kill()
+    if alive:
+        _, alive = psutil.wait_procs(alive, timeout=grace_seconds)
+    for proc in alive:
+        logger.warning(f"MaaFW 结束进程后仍在运行: {started[proc].label}")
+        failed.append(started[proc])
+    return [snapshot for proc, snapshot in started.items() if proc not in alive], failed
 
 
 def _optional_int(value: Any) -> int | None:

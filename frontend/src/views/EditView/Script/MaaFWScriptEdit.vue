@@ -102,6 +102,7 @@
             @resource-change="handleResourceChangeWithPackage"
             @emulator-select-change="handleEmulatorSelectChange"
             @select-launch-path="selectLaunchPath"
+            @select-launcher-path="selectLauncherPath"
           >
             <template v-if="hasBesidePackageName" #besidePackageName>
               <MaaFWFlavorSlot
@@ -270,6 +271,7 @@ const {
   handleResourceChangeWithPackage,
   handleEmulatorSelectChange,
   selectLaunchPath,
+  selectLauncherPath,
   dailyOnceTasks,
   weeklyOnceTasks,
   monthlyOnceTasks,

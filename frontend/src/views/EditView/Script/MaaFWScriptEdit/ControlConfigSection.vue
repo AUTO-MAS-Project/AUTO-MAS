@@ -176,149 +176,34 @@
     </a-row>
 
     <Transition name="control-fade" mode="out-in">
-      <div v-if="isDesktopController" key="win32">
-        <!-- 两行摆完：启动方式 | 游戏 exe ；Unity 分辨率 | 启动参数 | 等待时间 | 键位映射 -->
-        <a-row :gutter="24" class="control-detail-row">
-          <a-col :span="12">
-            <a-form-item>
-              <template #label>
-                <span class="form-label">{{ t('core.edit.howPcGameLaunched') }}</span>
-              </template>
-              <!-- 收起时只显示标题（option-label-prop），说明只在展开的选项里出现 -->
-              <a-select
-                v-model:value="maafwConfig.Game.LaunchMode"
-                size="large"
-                style="width: 100%"
-                option-label-prop="label"
-                @change="emit('change', 'Game', 'LaunchMode', maafwConfig.Game.LaunchMode)"
-              >
-                <a-select-option value="DirectExe" :label="t('core.edit.letMasLaunchGame')">
-                  <div class="launch-option">
-                    <span class="launch-option-title">{{ t('core.edit.letMasLaunchGame') }}</span>
-                    <span class="launch-option-hint">{{ t('core.edit.pickGameSOwn') }}</span>
-                  </div>
-                </a-select-option>
-                <a-select-option value="AttachOnly" :label="t('core.edit.launchGameOtherWay')">
-                  <div class="launch-option">
-                    <span class="launch-option-title">{{ t('core.edit.launchGameOtherWay') }}</span>
-                    <span class="launch-option-hint">{{ t('core.edit.masOnlyTakesOver') }}</span>
-                  </div>
-                </a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col v-if="launchMode === 'DirectExe'" :span="12">
-            <a-form-item>
-              <template #label>
-                <span class="form-label">{{ t('core.edit.gameExecutable') }}</span>
-              </template>
-              <PathPickerField
-                v-model="maafwConfig.Game.LaunchPath"
-                mode="file"
-                :placeholder="t('core.edit.pickGameExeThat')"
-                :pick-label="t('core.edit.pickExe')"
-                @pick="emit('select-launch-path')"
-              />
-            </a-form-item>
-          </a-col>
-          <!-- 由脚本自身控制游戏时第二行整行隐藏，键位映射挪到启动方式右边 -->
-          <MaaFWHotkeyField
-            v-if="launchMode !== 'DirectExe'"
-            :script-id="scriptId"
-            :preview-data="previewData"
-            :controller-name="effectiveControllerName"
-            :resource-name="effectiveResourceName"
-            :value="maafwConfig.Game.Hotkeys"
-            @save="handleHotkeysSave"
-          />
-        </a-row>
-
-        <a-row v-if="launchMode === 'DirectExe'" :gutter="24" class="control-detail-row">
-          <a-col :span="directExeColSpan">
-            <a-form-item>
-              <template #label>
-                <a-tooltip :title="t('core.edit.mfwUnityResolutionTip')">
-                  <span class="form-label">
-                    {{ t('core.edit.mfwUnityResolution') }}
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-select
-                v-model:value="maafwConfig.Game.UnityResolution"
-                size="large"
-                style="width: 100%"
-                :options="unityResolutionOptions"
-                @change="
-                  (value: string | number) => emit('change', 'Game', 'UnityResolution', value)
-                "
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="directExeColSpan">
-            <a-form-item>
-              <template #label>
-                <span class="form-label">{{ t('core.edit.launchArguments') }}</span>
-              </template>
-              <a-input
-                v-model:value="maafwConfig.Game.Arguments"
-                :placeholder="t('core.edit.optional')"
-                size="large"
-                class="modern-input"
-                @blur="emit('change', 'Game', 'Arguments', maafwConfig.Game.Arguments)"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="directExeColSpan">
-            <a-form-item>
-              <template #label>
-                <a-tooltip :title="t('core.edit.mfwWaitTimeTip')">
-                  <span class="form-label">
-                    {{ t('core.edit.waitTimeSeconds') }}
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input-number
-                v-model:value="maafwConfig.Game.WaitTime"
-                :min="0"
-                :max="9999"
-                size="large"
-                style="width: 100%"
-                @blur="emit('change', 'Game', 'WaitTime', maafwConfig.Game.WaitTime)"
-              />
-            </a-form-item>
-          </a-col>
-          <MaaFWHotkeyField
-            v-if="launchMode === 'DirectExe'"
-            :script-id="scriptId"
-            :preview-data="previewData"
-            :controller-name="effectiveControllerName"
-            :resource-name="effectiveResourceName"
-            :value="maafwConfig.Game.Hotkeys"
-            @save="handleHotkeysSave"
-          />
-        </a-row>
-      </div>
+      <MaaFWDesktopGameFields
+        v-if="isDesktopController"
+        key="win32"
+        :script-id="scriptId"
+        :maafw-config="maafwConfig"
+        :preview-data="previewData"
+        :effective-controller-name="effectiveControllerName"
+        :effective-resource-name="effectiveResourceName"
+        @change="(category, key, value) => emit('change', category, key, value)"
+        @select-launch-path="emit('select-launch-path')"
+        @select-launcher-path="emit('select-launcher-path')"
+      />
     </Transition>
   </MaaFWFormSection>
 </template>
 
 <script setup lang="ts">
-import PathPickerField from '@/components/PathPickerField.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, useSlots } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { isDirectControllerType } from '@/composables/useMaaFWScriptConfig'
-import type { MaaFWLaunchMode, MaaFWUnityResolution } from '@/types/script'
 import type {
   MaaFWScriptControlSectionEmits,
   MaaFWScriptControlSectionProps,
 } from '../../MaaFWFlavor/sectionContracts'
 import MaaFWControlStrategyTable from './MaaFWControlStrategyTable.vue'
+import MaaFWDesktopGameFields from './MaaFWDesktopGameFields.vue'
 import MaaFWFormSection from './MaaFWFormSection.vue'
-import MaaFWHotkeyField from './MaaFWHotkeyField.vue'
-import { collectHotkeyOptions } from './hotkeyOptions'
 
 const { t } = useI18n()
 
@@ -326,8 +211,6 @@ const { t } = useI18n()
 const props = defineProps<MaaFWScriptControlSectionProps>()
 
 const emit = defineEmits<MaaFWScriptControlSectionEmits>()
-
-const launchMode = computed<MaaFWLaunchMode>(() => props.maafwConfig.Game.LaunchMode)
 
 const slots = useSlots()
 
@@ -393,56 +276,12 @@ const emulatorIndexValue = computed({
     props.maafwConfig.Emulator.Index = value ?? '-'
   },
 })
-
-// 「让 MAS 启动游戏」的第二行：键位映射格只在 interface 有对当前控制器 / 资源生效的 hotkey option
-// 时才渲染（与 MaaFWHotkeyField 同一判据），没有它时其余三格各占三分之一，不在右边空出一格
-const hasHotkeyField = computed(
-  () =>
-    collectHotkeyOptions(
-      props.previewData,
-      props.effectiveControllerName,
-      props.effectiveResourceName
-    ).length > 0
-)
-const directExeColSpan = computed(() => (hasHotkeyField.value ? 6 : 8))
-
-// 键位映射弹窗保存：先改草稿再走页面的自动保存通道
-const handleHotkeysSave = (value: string) => {
-  props.maafwConfig.Game.Hotkeys = value
-  emit('change', 'Game', 'Hotkeys', value)
-}
-
-// 只给两档常用尺寸：Unity 播放器只认整数宽高，1080p 是各脚本闸门的基准，720p 留给小屏
-const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnityResolution }>>(
-  () => [
-    { label: t('core.edit.mfwUnityResolutionOff'), value: 'Off' },
-    { label: '1920×1080', value: '1920x1080' },
-    { label: '1280×720', value: '1280x720' },
-  ]
-)
 </script>
 
 <style scoped src="./maafwSection.css"></style>
 
 <style scoped>
-.launch-option {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.35;
-  padding: 2px 0;
-}
-
-.launch-option-title {
-  font-weight: 500;
-}
-
-.launch-option-hint {
-  font-size: 12px;
-  opacity: 0.65;
-}
-
-.controller-resource-row,
-.control-detail-row {
+.controller-resource-row {
   margin-top: 16px;
 }
 
