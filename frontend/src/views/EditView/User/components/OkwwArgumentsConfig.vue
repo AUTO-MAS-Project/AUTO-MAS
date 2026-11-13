@@ -34,7 +34,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Modal } from 'ant-design-vue'
 import { useOkwwArgumentsApi } from '@/composables/useOkwwArgumentsApi'
 import { useI18n } from 'vue-i18n'
@@ -50,18 +50,22 @@ const { previewArguments } = useOkwwArgumentsApi()
 const resolvedArguments = ref('')
 const previewError = ref('')
 const previewLoading = ref(true)
+let confirmation: ReturnType<typeof Modal.confirm> | undefined
 
 const { saving, changeCustomArguments } = useOkwwCustomArguments(
   task,
   resolvedArguments,
   () => props.save(),
-  onOk =>
-    Modal.confirm({
+  onOk => {
+    confirmation = Modal.confirm({
       title: t('core.edit.okwwCustomArguments'),
       content: t('core.edit.okwwCustomArgumentsWarning'),
       onOk,
     })
+  }
 )
+
+onBeforeUnmount(() => confirmation?.destroy())
 
 onMounted(() => {
   watch(

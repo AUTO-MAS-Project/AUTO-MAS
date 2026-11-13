@@ -614,3 +614,119 @@ async def test_batch_arguments_grouping_preserves_user_order(tmp_path, scenario)
     else:
         manager.notify_user_check_failure.assert_not_awaited()
     assert manager._restore_script_config_from_temp.await_count == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "outcome,expected",
+    [("success", "success"), ("maintenance", "skipped"), ("cancel", "cancelled")],
+)
+async def test_single_batch_archives_only_account_summary(
+    tmp_path, monkeypatch, outcome, expected
+):
+    import importlib
+
+    from app.task.history_core import UserHistoryDependencies, save_user_history
+
+    module = importlib.import_module("app.task.Okww.AutoProxy")
+    work = tmp_path / "mas"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    root = tmp_path / "okww"
+    native = root / "data/apps/ok-ww/working/configs"
+    native.mkdir(parents=True)
+    (native / "DailyTask.json").write_text("{}")
+    logs = native.parent / "logs"
+    logs.mkdir()
+    (logs / "ok-script.log").write_text("")
+    (root / "data/apps/ok-ww/app.json").write_text('{"current_version":"v3.8.0"}')
+    uid = uuid.uuid4()
+    user = UserItem(user_id=str(uid), name="user", status="等待")
+    info = RuntimeStub(
+        task_info=RuntimeStub(mode="AutoProxy", is_queue_task=False),
+        script_id=str(uuid.uuid4()),
+        user_list=[user],
+        current_index=0,
+        name="okww",
+    )
+    config = await activate_config(
+        OkwwUserConfig.model_validate(
+            {
+                "Info": {"Id": "13012346220", "Base": "native"},
+                "Notify": {"PushLogMode": "关闭"},
+            }
+        )
+    )
+    script = OkwwConfig.model_validate(
+        {
+            "Info": {"RootPath": str(root)},
+            "Game": {"Enabled": False, "AccountSwitchMethod": "OKWW_SINGLE"},
+            "Run": {"RunTimesLimit": 1},
+        }
+    )
+    task = BatchProxyTask(info, script, {uid: config}, None, participants=[user])
+    monkeypatch.setattr(module.process, "kill_process", AsyncMock())
+    monkeypatch.setattr(module.Notify, "push_statistics_report", AsyncMock())
+    task.kill_managed_process = AsyncMock(return_value=True)
+    task.notify_maintenance_skip = AsyncMock()
+    task._maintenance_detect = lambda: None
+    written = []
+
+    async def record(row):
+        written.append(row)
+
+    async def save(records, **kwargs):
+        await save_user_history(
+            records,
+            dependencies=UserHistoryDependencies(
+                record=record,
+                collect_attachments=AsyncMock(return_value=[]),
+                discard_capture=AsyncMock(),
+                report_failure=AsyncMock(),
+                log_warning=lambda message: None,
+            ),
+        )
+
+    task.history = SimpleNamespace(
+        begin_user_history_capture=lambda *args, **kwargs: None, save_user_history=save
+    )
+
+    async def start():
+        if outcome == "cancel":
+            task.stopped_manually = True
+            raise asyncio.CancelledError
+
+    task._start_okww_with_current_arguments = start
+
+    async def deliver():
+        if outcome == "success":
+            (native / "MultiAccountResults.json").write_text(
+                '{"1306220":{"status":"success"}}'
+            )
+            await task.check_log(
+                ["TaskExecutor:Successfully Executed Task, Exiting Game and App!\n"],
+                datetime.now(),
+            )
+        else:
+            await task.mark_game_maintenance_skip("测试维护")
+            task._maintenance_reason = "测试维护"
+            task.wait_event.set()
+
+    async def monitor(*args):
+        asyncio.create_task(deliver())
+
+    monkeypatch.setattr(
+        module,
+        "LogMonitor",
+        lambda *args: SimpleNamespace(start_monitor_file=monitor, stop=AsyncMock()),
+    )
+    if outcome == "cancel":
+        with pytest.raises(asyncio.CancelledError):
+            await task.main_task()
+    else:
+        await asyncio.wait_for(task.main_task(), timeout=10)
+    await task.final_task()
+    assert len(written) == 1
+    assert written[0].status == expected
+    assert len(user.iter_history_logs()) == 1
+    assert config.Data.ProxyTimes == int(outcome == "success")

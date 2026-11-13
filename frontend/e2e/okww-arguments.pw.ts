@@ -111,6 +111,13 @@ test.describe('@okww-arguments', () => {
       expect((await (await disabled).json()).code).toBe(200)
       await expect(input).toHaveValue(original)
       await expect(input).toHaveAttribute('readonly')
+      await expect(toggle).toBeEnabled()
+      await toggle.click()
+      await expect(dialog).toBeVisible()
+      await app.goto('/scripts')
+      await expect(dialog).not.toBeVisible()
+      const stored = await post('/api/scripts/user/get', { scriptId, userId })
+      expect(stored.data[userId].Task.IfCustomArguments).toBe(false)
     })
   }
 })
