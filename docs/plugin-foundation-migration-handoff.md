@@ -719,3 +719,9 @@ Operations 保留命令业务层、复用 core.BackgroundTaskManager 执行，�
 - 新增三来源及无效声明回归：修正前三条有效来源用例失败，修正后七项通过。相关插件生命周期、依赖、网关及 MAA 插件回归共 36 passed；Pyright、Ruff 和格式检查通过。
 - 在干净暂存目录构建 core/MAA 的 wheel 和源码包，twine 严格校验通过；真实分发包的三来源解析结果一致。独立仓库工作流补充 wheel 内 Project-URL 的 HTTP/HTTPS 链接检查，执行证据为拒绝旧包、接受新包。
 - 复用插件市场既有操作结果统计，不新增元数据解析事件。当前仅修正并提交代码，不触发发布，不更改版本；已有 v0.1.0 标签仍指向旧提交，后续须按插件发布流程推进版本并创建新标签，不能靠重跑旧标签发布新代码。
+
+### MAA 测试插件首次成功发布（2026-11-13）
+
+- 按用户明确授权将测试插件版本推进至 `0.1.1`，发布标签 `v0.1.1` 指向独立仓库提交 `5c89c5372a1ccbe87e4b6d8442cb83bc9e839158`；旧失败标签保持不变。
+- Trusted Publishing 工作流 https://github.com/AUTO-MAS-Project/AUTO-MAS-MAA-Adapter/actions/runs/43427546559 成功，PyPI 已提供 `auto-mas-maa-adapter==0.1.1` 的 wheel 和源码包：https://pypi.org/project/auto-mas-maa-adapter/0.1.1/ 。
+- 主程序随附插件元数据同步为 `0.1.1`，主程序及 core SDK 版本不变。发布不代表已经完成独立环境的插件市场安装和真实 MAA/游戏运行验收，这些仍是后续验证项。
