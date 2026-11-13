@@ -710,3 +710,12 @@ Operations 保留命令业务层、复用 core.BackgroundTaskManager 执行，�
 - 主程序的插件化升级安装映射、对应测试、随附插件元数据及独立仓库的构建元数据、工作流项目地址和发布说明同步修改。
 - Trusted Publishing 的 GitHub Owner 仍为 `AUTO-MAS-Project`；使用个人 PyPI 账号配置不要求两边用户名一致。用户已澄清不修改 GitHub Owner。
 - 新发行名的 wheel/源码包构建与严格元数据校验通过，宿主真实市场解析器能识别发行名和原插件 ID，主程序配置升级相关 9 项回归通过。未推发布标签，未上传 PyPI。
+
+### PyPI 多语言元数据载体修正（2026-11-13）
+
+- 首次 `v0.1.0` 发布已执行构建与认证，但上传被 PyPI 拒绝：此前 `auto-mas-display-name` Project-URL 的值是 HTML/JSON，不是有效 URL；本地 twine check 未覆盖这一服务端约束。
+- 按用户确认方案，core 与 MAA 将名称、简介和标签统一放在 README 开头的 `<!-- auto-mas:i18n … -->` 注释中，使用既有三个 `*_i18n` 字段；标准 Summary、Keywords 和 Project-URL 恢复各自用途。插件身份门禁、依赖声明及运行时语言资源方案保持原契约。
+- 宿主只解析该 README 声明：PyPI JSON 读取 info.description，源码和已安装包读取标准 Description/元数据正文；市场与发现复用同一解析结果。缺少或损坏的声明仍不能进入市场，已安装/本地插件仍可登记身份并回退到普通简介，不保留非法 URL 编码的兼容分支。
+- 新增三来源及无效声明回归：修正前三条有效来源用例失败，修正后七项通过。相关插件生命周期、依赖、网关及 MAA 插件回归共 36 passed；Pyright、Ruff 和格式检查通过。
+- 在干净暂存目录构建 core/MAA 的 wheel 和源码包，twine 严格校验通过；真实分发包的三来源解析结果一致。独立仓库工作流补充 wheel 内 Project-URL 的 HTTP/HTTPS 链接检查，执行证据为拒绝旧包、接受新包。
+- 复用插件市场既有操作结果统计，不新增元数据解析事件。当前仅修正并提交代码，不触发发布，不更改版本；已有 v0.1.0 标签仍指向旧提交，后续须按插件发布流程推进版本并创建新标签，不能靠重跑旧标签发布新代码。

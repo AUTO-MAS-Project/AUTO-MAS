@@ -1,7 +1,6 @@
 """发布元数据解析：同文件分产 ``PluginMeta`` / ``PluginRecord``。
 
-门禁与公共非展示字段由 ``_view`` 解析一次，两对外函数复用；
-市场展示 ``*_i18n`` 仅 ``parse_to_plugin_meta`` 填写。
+身份门禁和 README 多语言声明由 ``_view`` 解析一次，市场与发现入口共用。
 """
 
 from __future__ import annotations
@@ -10,7 +9,7 @@ import importlib.metadata as importlib_metadata
 import json
 import re
 from email.message import Message
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 from app.models.config import PluginMeta, PluginRecord
 from app.plugin.types import (
@@ -20,9 +19,59 @@ from app.plugin.types import (
     PluginState,
 )
 
-# 描述段 / 固定元信息值文首：<!--{...}-->
-_I18N_COMMENT = re.compile(r"^\s*<!--\s*(.*?)\s*-->", re.DOTALL)
-_DISPLAY_NAME_URL = "auto-mas-display-name"
+# README 开头的专用声明同时进入 PyPI 描述和发行包 METADATA 正文。
+_I18N_COMMENT = re.compile(r"^\s*<!--\s*auto-mas:i18n\s+(.*?)\s*-->", re.DOTALL)
+
+
+class _DisplayMetadata(TypedDict):
+    display_name_i18n: dict[str, str]
+    description_i18n: dict[str, str]
+    tags_i18n: dict[str, list[str]]
+
+
+def _read_readme_i18n(readme: str) -> _DisplayMetadata | None:
+    """解析 README 专用注释中的三类语言映射，缺失或格式无效时不生成市场声明。"""
+    match = _I18N_COMMENT.match(readme)
+    if match is None:
+        return None
+    try:
+        declaration = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(declaration, dict):
+        return None
+
+    def text_map(field: str) -> dict[str, str]:
+        """读取名称或简介的语言映射，过滤空语言键及非文本条目。"""
+        values = declaration.get(field)
+        if not isinstance(values, dict):
+            return {}
+        return {
+            locale: value
+            for locale, value in values.items()
+            if isinstance(locale, str) and locale and isinstance(value, str) and value
+        }
+
+    display_name = text_map("display_name_i18n")
+    description = text_map("description_i18n")
+    raw_tags = declaration.get("tags_i18n")
+    if not display_name or not description or not isinstance(raw_tags, dict):
+        return None
+    tags = {
+        locale: list(values)
+        for locale, values in raw_tags.items()
+        if isinstance(locale, str)
+        and locale
+        and isinstance(values, list)
+        and all(isinstance(value, str) for value in values)
+    }
+    if not tags:
+        return None
+    return {
+        "display_name_i18n": display_name,
+        "description_i18n": description,
+        "tags_i18n": tags,
+    }
 
 
 def _view(
@@ -35,7 +84,8 @@ def _view(
         assert isinstance(info, dict)
         name = str(info.get("name") or "")
         version = str(info.get("version") or "")
-        summary = str(info.get("summary") or info.get("description") or "")
+        summary = str(info.get("summary") or "")
+        readme = str(info.get("description") or "")
         author = str(info.get("author") or info.get("author_email") or "")
         license_text = str(info.get("license_expression") or info.get("license") or "")
         raw_kw = info.get("keywords")
@@ -50,6 +100,10 @@ def _view(
         name = str(meta.get("Name") or "")
         version = str(meta.get("Version") or "")
         summary = str(meta.get("Summary") or "")
+        description = meta.get("Description")
+        if not description and isinstance(meta, Message):
+            description = meta.get_payload()
+        readme = description if isinstance(description, str) else ""
         author = str(meta.get("Author") or meta.get("Author-email") or "")
         license_text = str(meta.get("License-Expression") or meta.get("License") or "")
         raw_kw = meta.get("Keywords")
@@ -62,28 +116,11 @@ def _view(
             else []
         )
 
-    # ── Keywords：可选文首 tags_i18n 注释 + 门禁 token ──
+    # Keywords 只承载普通关键词与插件身份门禁，不再编码语言映射。
     if isinstance(raw_kw, list):
         kw_text = ", ".join(str(item).strip() for item in raw_kw if str(item).strip())
     else:
         kw_text = str(raw_kw or "").strip()
-    tags_i18n: dict[str, list[str]] | None = None
-    kw_match = _I18N_COMMENT.match(kw_text)
-    if kw_match:
-        try:
-            parsed_tags = json.loads(kw_match.group(1))
-        except (json.JSONDecodeError, TypeError):
-            parsed_tags = None
-        if isinstance(parsed_tags, dict) and parsed_tags:
-            cleaned: dict[str, list[str]] = {}
-            for locale, labels in parsed_tags.items():
-                if not isinstance(locale, str) or not locale:
-                    continue
-                if isinstance(labels, list) and all(isinstance(x, str) for x in labels):
-                    cleaned[locale] = list(labels)
-            if cleaned:
-                tags_i18n = cleaned
-        kw_text = kw_text[kw_match.end() :].strip()
     if "," in kw_text:
         tokens = [item.strip() for item in kw_text.split(",") if item.strip()]
     else:
@@ -143,7 +180,7 @@ def _view(
         "homepage": homepage,
         "requires_dist": requires,
         "urls": urls,
-        "tags_i18n": tags_i18n,
+        "display_metadata": _read_readme_i18n(readme),
         "author": author,
         "license": license_text,
     }
@@ -157,28 +194,8 @@ def parse_to_plugin_meta(
     if view is None:
         return None
 
-    # 文首 HTML 注释 → locale→文案（描述段与展示名各用一次）
-    def maps(raw: str) -> dict[str, str] | None:
-        """从元数据注释中提取多语言 JSON 映射，仅保留有效语言键和非空文本。"""
-        match = _I18N_COMMENT.match(raw or "")
-        if not match:
-            return None
-        try:
-            parsed = json.loads(match.group(1))
-        except (json.JSONDecodeError, TypeError):
-            return None
-        if not isinstance(parsed, dict) or not parsed:
-            return None
-        out: dict[str, str] = {}
-        for locale, text in parsed.items():
-            if isinstance(locale, str) and locale and isinstance(text, str) and text:
-                out[locale] = text
-        return out or None
-
-    description_i18n = maps(str(view["summary"]))
-    display_name_i18n = maps(str(view["urls"].get(_DISPLAY_NAME_URL) or ""))
-    tags_i18n = view["tags_i18n"]
-    if not description_i18n or not display_name_i18n or not tags_i18n:
+    display = view["display_metadata"]
+    if display is None:
         return None
     return PluginMeta.build(
         info={
@@ -188,32 +205,20 @@ def parse_to_plugin_meta(
             "docs_url": view["docs_url"],
             "homepage": view["homepage"],
             "requires_dist": list(view["requires_dist"]),
-            "display_name_i18n": display_name_i18n,
-            "description_i18n": description_i18n,
-            "tags_i18n": tags_i18n,
+            **display,
         }
     )
 
 
-def _record_display_metadata(
-    meta: Message[Any, Any] | importlib_metadata.PackageMetadata | dict[str, Any],
-    view: dict[str, Any],
-) -> dict[str, Any]:
-    """本地和已安装插件复用市场的展示元数据，普通 Summary 保留为描述。"""
-    catalog = parse_to_plugin_meta(meta)
-    if catalog is not None:
-        return {
-            key: getattr(catalog.info, key)
-            for key in ("display_name_i18n", "description_i18n", "tags_i18n")
-        }
-    summary = str(view["summary"])
-    match = _I18N_COMMENT.match(summary)
-    if match:
-        summary = summary[match.end() :].strip()
+def _record_display_metadata(view: dict[str, Any]) -> _DisplayMetadata:
+    """本地与安装记录复用 README 声明，缺失时按标准简介和插件身份展示。"""
+    display = view["display_metadata"]
+    if display is not None:
+        return display
     return {
         "display_name_i18n": {"en": str(view["plugin_name"])},
-        "description_i18n": {"en": summary},
-        "tags_i18n": view["tags_i18n"] or {},
+        "description_i18n": {"en": str(view["summary"])},
+        "tags_i18n": {},
     }
 
 
@@ -223,7 +228,7 @@ def parse_to_plugin_record(
     import_name: str,
     source: Literal["installed", "local"],
 ) -> PluginRecord | None:
-    """发行版/本地 METADATA → 未激活 ``PluginRecord``（无展示字段）。"""
+    """发行版/本地 METADATA → 未激活记录，并保留可用的 README 展示声明。"""
     view = _view(meta)
     if view is None:
         return None
@@ -247,7 +252,7 @@ def parse_to_plugin_record(
             "author": view["author"],
             "license": view["license"],
             "requires_dist": view["requires_dist"],
-            **_record_display_metadata(meta, view),
+            **_record_display_metadata(view),
             "source": source,
             "is_local": source == "local",
             "is_core": plugin_name == CORE_PLUGIN_NAME,

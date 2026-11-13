@@ -1,3 +1,26 @@
+<!-- auto-mas:i18n
+{
+  "display_name_i18n": {
+    "zh_CN": "AUTO-MAS 核心",
+    "en": "AUTO-MAS Core"
+  },
+  "description_i18n": {
+    "zh_CN": "AUTO-MAS 核心系统插件与开发者 SDK",
+    "en": "AUTO-MAS core system plugin and developer SDK"
+  },
+  "tags_i18n": {
+    "zh_CN": [
+      "核心",
+      "SDK"
+    ],
+    "en": [
+      "core",
+      "SDK"
+    ]
+  }
+}
+-->
+
 # auto_mas_core
 
 AUTO-MAS 插件基类、配置骨架与开发 SDK。运行时由宿主提供真实实现；SDK 不提供独立运行的宿主。
@@ -72,6 +95,14 @@ result = await Notify.send_global(
 `send_user()`、`send_statistics()` 和 `push_proxy_result()` 分别复用账号通知、统计策略和代理结果流程。`attempted == 0` 不表示已投递。通知服务统一读取新用户的 `notify` 配置和来源专项保留的 `Notify` 分组；调用方直接传入用户配置。
 
 ## 界面与多语言
+
+插件市场的名称、简介和标签统一在 README 开头的 `<!-- auto-mas:i18n … -->` 注释内声明，
+使用 `display_name_i18n`、`description_i18n`、`tags_i18n` 三个语言映射。
+这份 README 经 `project.readme` 进入发行包 METADATA 正文及 PyPI JSON 的 `info.description`，
+本地源码、已安装插件和未安装的市场条目共用同一解析方式。
+`project.description` 使用普通简介，`keywords` 保留普通关键词和插件身份标记，
+`project.urls` 只保存真实链接，不再用 URL 或 Keywords 携带多语言 JSON。
+此处仅描述市场展示元数据；插件业务界面的语言资源仍按下述资源机制提供。
 
 宿主提供插件中心、市场和声明式配置页面。插件语言资源放在包内 `i18n/`，键使用 `plugins.<plugin_id>.*`；core 与插件资源由同一个后端快照提供。当前 SDK 不声明任意 iframe、自定义元素或动态前端资源加载器。
 

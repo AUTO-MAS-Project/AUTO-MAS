@@ -1,3 +1,26 @@
+<!-- auto-mas:i18n
+{
+  "display_name_i18n": {
+    "zh_CN": "MAA 专项",
+    "en": "MAA Adapter"
+  },
+  "description_i18n": {
+    "zh_CN": "MAA 专项适配插件",
+    "en": "MAA specialized script adapter"
+  },
+  "tags_i18n": {
+    "zh_CN": [
+      "专项适配",
+      "明日方舟"
+    ],
+    "en": [
+      "Script adapter",
+      "Arknights"
+    ]
+  }
+}
+-->
+
 # MAA 专项插件
 
 以 `origin/dev` 的 `5b8dc3cea01ba4741f4d0b7029ec9ed1ad963e77` 为核对基准，全量承接 MAA 专项；包含配置窗口延迟退出保存修复。旧 `app/task/MAA`、宿主内置 MAA 配置类及内置注册已移除，不提供旧导入路径转发。
