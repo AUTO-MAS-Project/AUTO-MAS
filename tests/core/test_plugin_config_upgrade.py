@@ -37,7 +37,7 @@ def test_plugin_upgrade_preserves_documents_and_backup(tmp_path, legacy):
     path = tmp_path / ("ScriptConfig.json" if legacy else "scripts.yaml")
     config_io.write_file(path, document)
     original = path.read_bytes()
-    assert required_adapter_plugins(tmp_path) == {"maa_adapter": "auto-mas-maa"}
+    assert required_adapter_plugins(tmp_path) == {"maa_adapter": "auto-mas-maa-adapter"}
     prepare_plugin_documents(tmp_path)
     converted = config_io.read_dict_file(path)
     assert converted[index] == [{"uid": sid, "type": "MaaConfig"}]
@@ -124,7 +124,7 @@ if fresh:
         io.write_file(Config.config_path / "plugin_registry.yaml", {
             "order": [{"uid": rid, "type": "PluginRecord"}],
             "data": {rid: {"info": {
-                "plugin_name": "maa_adapter", "package_name": "auto-mas-maa",
+                "plugin_name": "maa_adapter", "package_name": "auto-mas-maa-adapter",
                 "import_name": "maa_adapter", "source": "installed", "enabled": False,
             }}},
         })
@@ -149,7 +149,7 @@ async def available(path):
 
 async def install(spec, *, dry_run=False):
     global visible
-    assert spec == "auto-mas-maa"
+    assert spec == "auto-mas-maa-adapter"
     installs.append(spec)
     if failure == "install":
         raise OSError("installation unavailable")
@@ -182,7 +182,7 @@ async def run():
                     assert db.execute("SELECT v FROM version").fetchone()[0] == "v2.1"
                 return
             assert failure == "none"
-            assert installs == ([] if installed_before else ["auto-mas-maa"])
+            assert installs == ([] if installed_before else ["auto-mas-maa-adapter"])
             script = Config.ScriptConfig[sid]
             assert script.Info.Name == "原托管"
             assert list(map(str, script.users.keys())) == [uid]

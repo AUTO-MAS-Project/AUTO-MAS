@@ -3,7 +3,7 @@ requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "auto-mas-maa"
+name = "auto-mas-maa-adapter"
 version = "0.1.0"
 description = """<!--{"zh_CN":"MAA 专项适配插件","en":"MAA specialized script adapter"}-->"""
 readme = { file = "README.md", content-type = "text/markdown" }

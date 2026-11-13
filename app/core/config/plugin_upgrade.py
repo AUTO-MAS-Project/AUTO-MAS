@@ -12,10 +12,10 @@ from app.utils import io as _utils_io
 
 # 只列入已经完成插件化的专项；后续专项迁移随对应的数据升级段落扩展。
 _ADAPTER_PLUGINS = {
-    "MaaConfig": ("maa_adapter", "auto-mas-maa"),
-    "MaaPluginConfig": ("maa_adapter", "auto-mas-maa"),
-    "MaaPlanConfig": ("maa_adapter", "auto-mas-maa"),
-    "MaaPluginPlanConfig": ("maa_adapter", "auto-mas-maa"),
+    "MaaConfig": ("maa_adapter", "auto-mas-maa-adapter"),
+    "MaaPluginConfig": ("maa_adapter", "auto-mas-maa-adapter"),
+    "MaaPlanConfig": ("maa_adapter", "auto-mas-maa-adapter"),
+    "MaaPluginPlanConfig": ("maa_adapter", "auto-mas-maa-adapter"),
 }
 
 
@@ -34,7 +34,7 @@ def required_adapter_plugins(config_path: Path) -> dict[str, str]:
     if any(config_path.glob("MaaConfig/*/config.json")) or any(
         config_path.glob("MaaPlanConfig/*/config.json")
     ):
-        required["maa_adapter"] = "auto-mas-maa"
+        required["maa_adapter"] = "auto-mas-maa-adapter"
     return required
 
 

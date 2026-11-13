@@ -703,3 +703,10 @@ Operations 保留命令业务层、复用 core.BackgroundTaskManager 执行，�
 - 独立仓库已有 pypi GitHub 环境；publish.yml 改为分支推送构建和 v* 标签发布，校验标签与包版本一致，所有 Action 固定完整提交 SHA。采用 Trusted Publishing，需要用户在 PyPI 为 auto-mas-maa 配置对应仓库、publish.yml 与 pypi 环境。本轮未推发布标签、未上传 PyPI，尚未执行真实市场在线安装。
 - 市场安装由宿主向解析器提供当前 core 的本地元数据，复用宿主 SDK 源码，不要求 core 先在 PyPI 发布。使用真实 core 元数据生成方法对当前宿主依赖与 MAA wheel 做 uv 联合解析 dry-run，103 个包解析成功，没有写入应用共享环境。独立 pip 安装才需额外可获取的 SDK 包。
 - 独立仓库插件测试 14 passed，主程序包名映射回归 9 passed；wheel/源码包构建、twine check --strict、Ruff/格式以及宿主市场元数据与入口校验通过，首次远端构建成功且发布任务按预期跳过。完整发布与独立测试环境市场安装步骤位于新仓库 docs/PUBLISHING.md。
+
+### PyPI 发行名调整（2026-11-13）
+
+- 用户将最终发行名改为 `auto-mas-maa-adapter`，取代前一节的 `auto-mas-maa`；Python 导入名及插件 ID 继续使用 `maa_adapter`，版本保持 `0.1.0`。
+- 主程序的插件化升级安装映射、对应测试、随附插件元数据及独立仓库的构建元数据、工作流项目地址和发布说明同步修改。
+- Trusted Publishing 的 GitHub Owner 仍为 `AUTO-MAS-Project`；使用个人 PyPI 账号配置不要求两边用户名一致。用户已澄清不修改 GitHub Owner。
+- 新发行名的 wheel/源码包构建与严格元数据校验通过，宿主真实市场解析器能识别发行名和原插件 ID，主程序配置升级相关 9 项回归通过。未推发布标签，未上传 PyPI。
