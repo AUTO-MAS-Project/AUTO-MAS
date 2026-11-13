@@ -1285,6 +1285,10 @@ class MaaEndConfig(DomainEntry):
             default_factory=lambda: False,
             description="运行前由 MAS 下载、校验并安装 MaaEnd 官方完整包；不暂停 MXU 自身的更新检查",
         )
+        PackageMode: Literal["full", "incremental"] = Field(
+            default="full",
+            description="全量或优先增量；增量有风险，无可信缓存、匹配增量包或校验失败时回退全量",
+        )
         Channel: Literal["stable", "beta"] = Field(
             default_factory=lambda: "stable", description="MaaEnd 更新通道"
         )

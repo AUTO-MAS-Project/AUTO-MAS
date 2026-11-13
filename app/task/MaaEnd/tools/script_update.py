@@ -32,6 +32,10 @@ from app.services.common.update.transport import (
     DownloadProgress,
     request_mirror_resource,
 )
+from app.task.MaaEnd.tools.package_download import (
+    download_incremental,
+    remember_package,
+)
 from app.task.MaaEnd.tools.pipeline_migration import refresh_merged_pipelines
 from app.utils import fluxdown_cli as _fluxdown_cli
 from app.utils import io as _utils_io
@@ -162,6 +166,7 @@ class PreparedUpdate:
     destination: Path
     size: int
     digest: str
+    package_mode: str = "full"
 
 
 def discard_update(candidate: PreparedUpdate | str) -> None:
@@ -238,33 +243,6 @@ async def prepare_update(
     # Mirror 酱提供的是通道最新包，不能假定其中含有该历史版本。
     cdk = "" if recover_native else (effective_cdk)
     source = "GitHub"
-    if cdk:
-        payload = await request_mirror_resource(
-            "MaaEnd",
-            params={
-                "cdk": cdk,
-                "os": "win",
-                "arch": "x64" if arch == "x86_64" else "arm64",
-                "channel": channel,
-            },
-            proxy=proxy,
-        )
-        data = payload.get("data", {})
-        if (
-            data.get("update_type") != "full"
-            or Version(str(data.get("version_name", ""))) != target
-        ):
-            raise ValueError("Mirror 酱完整包版本与官方发行版本不一致")
-        url = str(data.get("url", ""))
-        parsed = urlsplit(url)
-        if (
-            parsed.scheme != "https"
-            or not parsed.hostname
-            or parsed.username
-            or parsed.password
-        ):
-            raise ValueError("Mirror 酱下载地址无效")
-        source = "MirrorChyan"
     # 每次独立暂存，不覆盖取消尚未确认的下载目标；恢复时也不依赖缓存内容。
     import tempfile
 
@@ -272,15 +250,54 @@ async def prepare_update(
     cache.mkdir(parents=True, exist_ok=True)
     destination = Path(tempfile.mkdtemp(dir=cache, prefix="download-")) / name
     try:
-        await download_file(
-            url,
+        incremental = config.Update.PackageMode == "incremental"
+        rebuilt = incremental and await download_incremental(
+            root,
             destination,
-            timeout=30 * 60,
+            size,
+            digest,
             proxy=proxy,
-            downloader=downloader,
-            source=source,
+            arch=arch,
+            channel=channel,
             progress=progress,
         )
+        if not rebuilt:
+            if cdk:
+                payload = await request_mirror_resource(
+                    "MaaEnd",
+                    params={
+                        "cdk": cdk,
+                        "os": "win",
+                        "arch": "x64" if arch == "x86_64" else "arm64",
+                        "channel": channel,
+                    },
+                    proxy=proxy,
+                )
+                data = payload.get("data", {})
+                if (
+                    data.get("update_type") != "full"
+                    or Version(str(data.get("version_name", ""))) != target
+                ):
+                    raise ValueError("Mirror 酱完整包版本与官方发行版本不一致")
+                url = str(data.get("url", ""))
+                parsed = urlsplit(url)
+                if (
+                    parsed.scheme != "https"
+                    or not parsed.hostname
+                    or parsed.username
+                    or parsed.password
+                ):
+                    raise ValueError("Mirror 酱下载地址无效")
+                source = "MirrorChyan"
+            await download_file(
+                url,
+                destination,
+                timeout=30 * 60,
+                proxy=proxy,
+                downloader=downloader,
+                source=source,
+                progress=progress,
+            )
     except asyncio.CancelledError:
         # 公共入口只在确认写入已收敛后传播普通取消，所有下载器同样回收。
         shutil.rmtree(destination.parent, ignore_errors=True)
@@ -303,7 +320,14 @@ async def prepare_update(
         )
         raise
     return PreparedUpdate(
-        root.resolve(), original, target, arch, destination, size, digest
+        root.resolve(),
+        original,
+        target,
+        arch,
+        destination,
+        size,
+        digest,
+        "incremental" if incremental else "full",
     )
 
 
@@ -357,6 +381,16 @@ async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
             script_install.record_directory(root) / "program-identity.json",
             {"arch": arch, "version": str(target)},
         )
+        # 缓存仅是下一次下载的优化，不决定这次安装是否成功。
+        if candidate.package_mode == "incremental":
+            with suppress(OSError, ValueError):
+                await script_install.run_worker(
+                    remember_package,
+                    root,
+                    candidate.destination,
+                    candidate.size,
+                    candidate.digest,
+                )
         return f"MaaEnd 已更新至 {target}，完整性校验通过"
     finally:
         # run_worker 在取消时等待安装线程结束，避免删掉仍在使用的压缩包。

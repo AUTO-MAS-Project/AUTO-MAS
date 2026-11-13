@@ -8,6 +8,10 @@ export type MaaEndConfig_Update = {
      */
     TakeoverEnabled?: (boolean | null);
     /**
+     * 全量或优先增量；增量有风险，无可信缓存、匹配增量包或校验失败时回退全量
+     */
+    PackageMode?: ('full' | 'incremental' | null);
+    /**
      * MaaEnd 更新通道
      */
     Channel?: ('stable' | 'beta' | null);
