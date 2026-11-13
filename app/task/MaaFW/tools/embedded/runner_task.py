@@ -134,6 +134,7 @@ from app.utils.common.process.scope import (
 from .embedded_project import resolve_maafw_project_root
 from .flavor import (
     MaaFWLoginRequired,
+    manages_game_startup,
     no_default_fallback_inputs,
     off_day_scope,
     resolve_flavor,
@@ -1362,6 +1363,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 no_default_fallback_inputs=no_default_fallback_inputs(flavor),
                 excluded_task_reasons=dict.fromkeys(off_day_extra, off_day_reason),
             )
+            if manages_game_startup(flavor, self.script_config):
+                plan.firstTaskStartupGuard = False
             plan = _mark_nonfatal_tasks(_mark_abort_round_tasks(plan, flavor), flavor)
             return _with_skipped_tasks(
                 _with_warnings(plan, stale_warnings), missing_skips
@@ -1412,6 +1415,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if plan.controllerType == "Adb":
             address, device_info = await self._resolve_adb_address()
             adb_path = await self._resolve_adb_path(address, device_info)
+            adb_path = await self._resolve_login_adb_path(address, adb_path)
             await self._ensure_game_updated(address, adb_path)
             await self._ensure_logged_in(address, adb_path)
             adb_profile = await self._build_adb_control_profile()
@@ -1600,6 +1604,21 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         )
         return None
 
+    async def _resolve_login_adb_path(
+        self, address: str, adb_path: str | None
+    ) -> str | None:
+        """在宿主统一解析登录钩子和 worker 使用的 ADB 路径。"""
+        if adb_path is None and address and resolve_login_hook(self.script_config):
+            adb_path = await asyncio.to_thread(
+                self._resolve_adb_path_by_toolkit, address
+            )
+            if adb_path:
+                self._append_log(
+                    f"ADB 路径选择: MaaFW Toolkit 按地址发现; 路径={adb_path}"
+                )
+
+        return adb_path
+
     def _resolve_adb_path_by_toolkit(self, address: str) -> str | None:
         """按设备地址问 MaaFW Toolkit 要 adb 路径（与 worker 的发现规则同一套）。
 
@@ -1678,17 +1697,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         hook = resolve_login_hook(self.script_config)
         if hook is None or self.run_plan is None:
             return
-
-        if adb_path is None and address:
-            # 登录钩子跑在 worker 之前，用不到 Runner 的按地址发现；宿主先把这条兜上，
-            # 否则钩子只能拿 PATH 里的 ``adb``（通用模拟器自带的多半叫 HD-Adb.exe）。
-            adb_path = await asyncio.to_thread(
-                self._resolve_adb_path_by_toolkit, address
-            )
-            if adb_path:
-                self._append_log(
-                    f"ADB 路径选择: MaaFW Toolkit 按地址发现; 路径={adb_path}"
-                )
 
         async def report(text: str) -> None:
             self._append_log(text)
@@ -2108,45 +2116,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 截止时刻交给 worker：到点它自己停任务、截图、把已完成的任务带回来。
         # 宿主这层只在 worker 没停下时才强杀，那时既没有截图也没有进度。
         run_deadline_at = time.time() + timeout
-        async def run_plan() -> MaaFWRunResult:
-            flavor = resolve_flavor(self.script_config)
-            get_entry = getattr(flavor, "account_verification_entry", None)
-            entry = get_entry(self.script_config) if get_entry is not None else None
-
-            async def run(part: MaaFWRunPlan) -> MaaFWRunResult:
-                return await self._run_maafw_worker(
+        try:
+            return await asyncio.wait_for(
+                self._run_maafw_worker(
                     device_config,
-                    plan=part,
                     run_deadline_at=run_deadline_at,
                     task_time_limit_seconds=task_limit_seconds,
                     task_time_limit_overrides=task_limit_overrides,
                     loop_guard=loop_guard,
-                )
-
-            if entry is None:
-                return await run(plan)
-            if not plan.tasks or plan.tasks[0].entry != entry:
-                raise MaaFWLoginRequired("无法核对游戏账号：运行计划缺少开头的启动游戏任务")
-            startup = await run(plan.model_copy(update={"tasks": plan.tasks[:1]}))
-            if not startup.success or startup.signal is not None:
-                return startup
-            message = await flavor.verify_game_account(
-                user_config=self.cur_user_config,
-                adb_path=device_config.adbPath,
-                adb_address=device_config.address or "",
-                host_adb=await resolve_host_adb(self),
-            )
-            self._append_log(message)
-            if len(plan.tasks) == 1:
-                return startup
-            result = await run(plan.model_copy(update={"tasks": plan.tasks[1:]}))
-            return result.model_copy(
-                update={"completedTasks": startup.completedTasks + result.completedTasks}
-            )
-
-        try:
-            return await asyncio.wait_for(
-                run_plan(),
+                ),
                 timeout=timeout + _RUN_DEADLINE_GRACE_SECONDS,
             )
         except asyncio.TimeoutError as exc:
@@ -2162,13 +2140,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self,
         device_config: MaaFWDeviceConfig,
         *,
-        plan: MaaFWRunPlan | None = None,
         run_deadline_at: float | None = None,
         task_time_limit_seconds: int = 0,
         task_time_limit_overrides: dict[str, int] | None = None,
         loop_guard: bool = False,
     ) -> MaaFWRunResult:
-        plan = self.run_plan if plan is None else plan
+        plan = self.run_plan
         if plan is None:
             raise RuntimeError("MaaFW 运行计划尚未初始化")
 

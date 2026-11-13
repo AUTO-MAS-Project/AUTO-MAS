@@ -113,7 +113,7 @@ def _decorate(
 
 def test_mas_mode_does_not_queue_switch_account() -> None:
     entries, options, logs = _decorate(LOGIN_MODE_MAS)
-    assert entries == ["StartUp", "Psychube", "Close1999"]
+    assert entries == ["Psychube", "Close1999"]
     assert SWITCH_ACCOUNT_ENTRY not in entries
     assert all(SWITCH_ACCOUNT_ENTRY not in entry for entry in entries)
     assert any("MAS 登录" in line for line in logs)

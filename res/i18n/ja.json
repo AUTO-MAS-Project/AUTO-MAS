@@ -1374,6 +1374,7 @@
   "core.edit.m9aFlavorManagedTaskNotice": "「{tasks}」は上の情報をもとに MAS が自動で追加するため、キューに残す必要はありません（実行時も固定の順序で実行されます）。次にタスクキューを保存するか AUTO-MAS を再起動するとキューから外れます（アカウント切替の対象アカウントは上の「アカウント」に入ります）",
   "core.edit.m9aFlavorManagedTaskWarning": "このキューには「アカウント切替」が {count} 件あります（アカウント {accounts}）。M9A では 1 アカウント = 1 ゲームアカウントです。{count} 個のアカウントに分けて（それぞれ上の「アカウント」に 1 つずつ入力）、これらのタスクをキューから削除してください。分けるまでこのアカウントは実行されません",
   "core.edit.m9aFlavorQueueHint": "ゲーム起動・アカウント切替・ゲーム終了は上の「アカウント」をもとに MAS が自動で追加します（起動が先頭、切替はその直後、終了は最後）。「タスクを追加」やプリセットには表示されません",
+  "core.edit.m9aGameUidInvalid": "UID には半角数字（0～9）のみ入力できます",
   "core.edit.m9aGameUidPlaceholder": "ゲーム内の数字 UID を入力（MAS の bilibili ログイン時は必須）",
   "core.edit.m9aLoginModeMas": "MAS で bilibili サーバーにログイン",
   "core.edit.m9aLoginModeProject": "M9A プロジェクトでログイン",

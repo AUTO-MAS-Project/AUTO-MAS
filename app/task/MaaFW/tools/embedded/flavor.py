@@ -45,6 +45,15 @@
   走重试（不特殊处理退出条件）。抛其它异常同样按失败处理，原因会附在异常原文后面。
 - **取消**：用户停止（``CancelledError``）必须照常向上抛，不能吞掉。
 
+可选钩子 ``manages_game_startup(self, script_config) -> bool`` 的契约：
+
+- 建运行计划时通过 ``manages_game_startup`` 解析器探测，缺省为 False。该声明必须与特调
+  的队列装饰规则一致，为 True 时不加入启动任务。
+- 声明为 True 的特调必须在 ``ensure_logged_in`` 成功返回之前完成进入游戏和必要的账号核对。
+  失败时按登录失败结算，保留未完成状态供下次尝试。此模式的首项是普通任务，单任务超时和
+  原地打转不触发首项启动保护，显式声明的关键任务规则仍生效。
+- 宿主和单次 worker 共用同一份任务计划，历史按该计划预建并记录任务事件。
+
 可选钩子 ``sanitize_task_snapshot``（写账号任务快照前整理）的契约：
 
 - **可选**：同样不进协议，``resolve_snapshot_sanitizer`` 按 ``getattr`` 探测。
@@ -342,6 +351,13 @@ def resolve_login_hook(script_config: Any) -> LoginHook | None:
     return hook if callable(hook) else None
 
 
+def manages_game_startup(flavor: MaaFWFlavor, script_config: Any) -> bool:
+    """特调是否在运行前登录阶段完成进入游戏。"""
+
+    hook = getattr(flavor, "manages_game_startup", None)
+    return callable(hook) and bool(hook(script_config))
+
+
 def resolve_game_update_hook(script_config: Any) -> GameUpdateHook | None:
     """脚本对应特调的游戏更新钩子；通用 MaaFW 或特调没实现时返回 None。"""
 
@@ -538,6 +554,7 @@ __all__ = [
     "resolve_flavor",
     "resolve_game_update_hook",
     "resolve_login_hook",
+    "manages_game_startup",
     "resolve_snapshot_sanitizer",
     "retype_notice_lines",
     "sanitize_user_task_update",

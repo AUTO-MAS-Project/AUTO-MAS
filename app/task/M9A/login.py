@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""B 服（哔哩哔哩渠服）登录：MAS 原生实现，登录完成后交给 M9A 的启动任务进游戏。
+"""B 服（哔哩哔哩渠服）登录：MAS 原生实现，登录并在游戏主页核对 UID 后交给 M9A。
 
 入口是 ``MaaFWFlavor`` 的可选钩子 ``ensure_logged_in``（契约见
 ``app/task/MaaFW/tools/embedded/flavor.py`` 模块说明）：MAS 启动模拟器（连带拉起游戏）之后、
@@ -30,13 +30,13 @@
 2. 循环截图 + OCR：
 
    - 「隐私政策提示」弹层：找到唯一的「同意」按钮（中心点限定在屏幕中下部）就点它；
-   - 「登录记录」面板：收起态先点右侧箭头展开列表，再按登录记录里显示的完整昵称精确匹配
-     （兼容「ゞ」被 OCR 读成「>」，中心点限定在列表区域），唯一命中后点击，
+   - 「登录记录」面板：收起态先点右侧箭头展开列表，再按登录记录里显示的完整昵称匹配
+     （含汉字的昵称仅比对汉字，中心点限定在列表区域），唯一命中后点击，
      复核「登录」按钮与仍可见的昵称，最后点「登录」；
    - 已登录停在标题页（OCR 到「START」，或标题 logo 下的「REVERSE」副标题——实机常只读到 `ERSE`）：MAS 无法知道当前登录的是哪个
      账号，为了保证切到目标账号，点标题页右下角退出图标 → 唯一的「确认」→ 等「登录记录」面板出现后按
      上一条选号；
-3. 登录后等面板消失，由 M9A 的 StartUp 进入游戏。核对游戏内 UID 后才运行剩余任务。
+3. 登录后等面板消失，点击标题页 START 并等待主页 UID；核对通过后才运行 M9A 任务。
 
 沿用的是哔哩哔哩 SDK 登录面板与标题页的 UI 锚点；布局改版后这里要跟着改。脚本能自己登录的
 项目照旧走 ``Run.LoginMode == "Project"``，本模块只在 MAS 原生登录模式下生效。
@@ -45,10 +45,8 @@
 
 - 自动同意只复用全局 ``Config.setting.Function.IfAgreeBilibili``（默认关闭）：开关没开时
   不点「同意」，提示手动处理并停止本次登录，不新增第二份协议开关；
-- 既认不出登录记录、也认不出标题页（例如游戏停在别的账号的主界面）时，**明确停止**并让用户
-  把游戏放到标题页——不能把"没认出登录页"当成"目标账号已登录"，否则任务会跑在错的账号上；
-  等待时长服从脚本的 `Game.WaitTime`（加载画面同样认不出，不能按固定 60 秒截断慢启动的客户端），
-  总时长仍受登录主循环的 240 秒约束；
+- 已在主页时连续两帧核对 UID；确认不匹配时经游戏设置退出，再回到登录面板选号。
+  无法识别画面时按脚本的 Game.WaitTime 等待，受登录总时限约束；
 - 登录后等待面板退出，进游戏后核对 UID，未确认身份时不运行后续任务；
 - 所有循环都先检查总时限，``adb input tap`` 失败直接抛错，不让点击失败被静默吞掉；
 - 只在 `Mas` 模式、资源是「B 服」、且实际要启动的客户端是 B 服包名时干活：配错客户端要立刻
@@ -72,8 +70,11 @@ import io
 import re
 import subprocess
 import time
+import unicodedata
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 import cv2
@@ -96,6 +97,7 @@ _BILIBILI_RESOURCE_NAME = "B服"
 BILIBILI_START_ACTIVITY = "com.ssgame.mobile.gamesdk.frame.AppStartUpActivity"
 
 _PRIVACY_HINT = "隐私政策"
+_WELCOME_HINT = "欢迎回来"
 #: 冷启动的健康警告页标题（「警告：请在游戏前阅读」），点一下继续。
 _WARNING_HINT = "请在游戏前阅读"
 _LOGIN_RECORD = "登录记录"
@@ -107,8 +109,8 @@ _CONFIRM_RE = re.compile(r"^确认$")
 #: 标题页可读的 OCR 文字：「START」按钮（允许 OCR 漏掉首字母）与标题 logo 下的「REVERSE」
 #: 副标题（实机常只读到 ERSE）。登录面板与主界面都读不到这两处。
 _TITLE_HINTS = ("START", "TART", "REVERSE", "ERSE")
-#: 标题页右下角退出图标的中心（相对游戏画面宽高）。
-_EXIT_POINT = (0.963, 0.912)
+#: 标题页右下角退出图标的中心（2560×1440 实机验证）。
+_EXIT_POINT = (0.956, 0.91)
 #: 登录后的标题页「START」按钮中心（相对游戏画面宽高）。
 _START_POINT = (0.50, 0.745)
 
@@ -148,7 +150,7 @@ _AGREE_Y_RANGE = (0.60, 0.85)
 _ACCOUNT_X_RANGE = (0.40, 0.57)
 _ACCOUNT_Y_RANGE = (0.37, 0.70)
 #: 收起态账号卡片右侧的展开箭头（相对游戏画面宽高）。
-_EXPAND_POINT = (0.635, 0.413)
+_EXPAND_POINT = (0.608, 0.43)
 
 Box = tuple[int, int, int, int]
 
@@ -163,9 +165,19 @@ def _mask(text: str) -> str:
 
 
 def _account_matches(text: str, account: str) -> bool:
-    """兼容实机 OCR 将昵称中的「ゞ」读成「>」；仍需唯一匹配并核对游戏 UID。"""
+    """含汉字的昵称仅比较汉字，其余昵称精确匹配 OCR 原文。"""
 
-    return text.replace("ゞ", ">") == account.replace("ゞ", ">")
+    def han(value: str) -> str:
+        return "".join(
+            char
+            for char in value
+            if unicodedata.name(char, "").startswith(
+                ("CJK UNIFIED IDEOGRAPH-", "CJK COMPATIBILITY IDEOGRAPH-")
+            )
+        )
+
+    account_han = han(account)
+    return han(text) == account_han if account_han else text == account
 
 
 def _center(box: Box) -> tuple[float, float]:
@@ -225,7 +237,10 @@ def _warning_like(items: list[tuple[str, Box]]) -> bool:
 def _title_like(items: list[tuple[str, Box]], frame: np.ndarray) -> bool:
     """识别标题文字，或用左上版本号和左下适龄标识共同确认标题页。"""
 
-    if any("".join(text.upper().split()) in _TITLE_HINTS for text, _ in items):
+    if any(
+        _WELCOME_HINT in text or "".join(text.upper().split()) in _TITLE_HINTS
+        for text, _ in items
+    ):
         return True
     version = _pick(
         items,
@@ -555,7 +570,7 @@ async def _wait_panel_closed(
     *,
     progress: Progress | None,
 ) -> None:
-    """等待登录面板消失，遇到标题页先点击 START，再交给 M9A。"""
+    """等待登录面板消失，遇到标题页先点击 START。"""
 
     deadline = time.monotonic() + _LOGIN_TIMEOUT
     closed_frames = 0
@@ -595,40 +610,112 @@ def _homepage_uid(
     frame: np.ndarray,
     *,
     require_label: bool = False,
-    expected_length: int | None = None,
 ) -> str:
     height, width = frame.shape[:2]
     matches = [
         match[2]
         for text, box in items
-        if (match := re.fullmatch(r"(?:(UID|ID)\s*[:：]?\s*)?([0-9]+)", text.strip(), re.I))
+        if (
+            match := re.fullmatch(
+                r"(?:(UID|ID)\s*[:：]?\s*)?([0-9]+)", text.strip(), re.I
+            )
+        )
         and (not require_label or match[1])
-        and (expected_length is None or len(match[2]) == expected_length)
         and 45 <= _center(box)[0] * 1280 / width <= 165
         and 113 <= _center(box)[1] * 720 / height <= 145
     ]
     return matches[0] if len(matches) == 1 else ""
 
 
-async def verify_game_uid(
-    *, user_config: Any, adb_path: str | None, adb_address: str, host_adb: Any = None
-) -> str:
-    """M9A 的 StartUp 完成后，在游戏主页核对 UID。"""
+async def _verify_game_uid(device: _Device, expected_uid: str) -> str:
+    """选号后只允许连续两帧核对通过的账号进入任务队列。"""
 
-    expected_uid = user_config.Info.GameUID.strip()
-    device = _Device(adb_path, adb_address, host_adb)
     deadline = time.monotonic() + _LOGIN_PANEL_SECONDS
     previous_uid = ""
     while time.monotonic() < deadline:
         frame, items = await _ocr(device)
-        actual_uid = _homepage_uid(items, frame, expected_length=len(expected_uid))
+        actual_uid = (
+            ""
+            if _privacy_prompt(items) or _has(items, _LOGIN_RECORD, _SWITCH_OTHER)
+            else _homepage_uid(items, frame)
+        )
         if actual_uid and actual_uid == previous_uid:
             if actual_uid != expected_uid:
-                raise MaaFWLoginRequired("B 服登录失败：游戏内 UID 与配置不一致，已停止运行")
+                raise MaaFWLoginRequired(
+                    "B 服登录失败：游戏内 UID 与配置不一致，已停止运行"
+                )
             return "B 服登录完成，已核对游戏内 UID，继续运行 M9A 任务"
         previous_uid = actual_uid
         await asyncio.sleep(_POLL_SECONDS)
     raise MaaFWLoginRequired("B 服登录失败：未能确认游戏内 UID，已停止运行")
+
+
+@lru_cache(maxsize=2)
+def _menu_template(name: str) -> np.ndarray:
+    data = (Path(__file__).with_name("login_assets") / name).read_bytes()
+    return cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+
+
+def _find_menu_button(frame: np.ndarray, name: str, roi: Box) -> Box | None:
+    height, width = frame.shape[:2]
+    x, y, w, h = roi
+    scaled = cv2.resize(frame, (1280, 720))
+    template = _menu_template(name)
+    th, tw = template.shape[:2]
+    if th > h or tw > w:
+        return None
+    scores = cv2.matchTemplate(
+        scaled[y : y + h, x : x + w], template, cv2.TM_CCOEFF_NORMED
+    )
+    _, score, _, (dx, dy) = cv2.minMaxLoc(scores)
+    if score < 0.8:
+        return None
+    return (
+        round((x + dx) * width / 1280),
+        round((y + dy) * height / 720),
+        round(tw * width / 1280),
+        round(th * height / 720),
+    )
+
+
+async def _logout_from_homepage(device: _Device, *, progress: Progress | None) -> None:
+    """按 M9A 的退出导航回到标题页或 B 服登录记录。"""
+
+    await _progress(progress, "游戏内 UID 与目标账号不同，正在退出当前账号")
+    deadline = time.monotonic() + _LOGIN_PANEL_SECONDS
+    # MAA1999/M9A resource/base/pipeline/switch_account.json (AGPL-3.0).
+    steps = (
+        (("设置",), (33, 457, 515, 214), ("MenuRight.png", (450, 484, 119, 125))),
+        (("账号", "账户"), (22, 78, 177, 630), None),
+        (("退出",), (796, 500, 161, 53), None),
+        (("返回登录",), (739, 404, 126, 33), None),
+    )
+    for index, (labels, (x, y, w, h), fallback) in enumerate(steps):
+        while time.monotonic() < deadline:
+            frame, items = await _ocr(device)
+            matches = _pick(
+                items,
+                lambda text: text.strip() in labels,
+                frame,
+                x_range=(x / 1280, (x + w) / 1280),
+                y_range=(y / 720, (y + h) / 720),
+            )
+            if len(matches) == 1:
+                await device.tap(matches[0])
+                break
+            if index == 0 and not matches:
+                button = _find_menu_button(frame, *fallback) if fallback else None
+                if button is None and _homepage_uid(items, frame):
+                    button = _find_menu_button(
+                        frame, "MainMenuEntry.png", (3, 460, 141, 151)
+                    )
+                if button is not None:
+                    await device.tap(button)
+            await asyncio.sleep(_POLL_SECONDS)
+        else:
+            raise MaaFWLoginRequired(
+                f"B 服切号失败：游戏设置中未识别到「{'／'.join(labels)}」"
+            )
 
 
 async def _logout_to_login_panel(
@@ -732,6 +819,8 @@ async def ensure_logged_in(
     unknown_budget = _unknown_screen_budget(script_config)
     title_polls = 0
     logout_tried = False
+    homepage_logout_tried = False
+    previous_uid = ""
     while True:
         if time.monotonic() > deadline:
             raise MaaFWLoginRequired(
@@ -755,7 +844,25 @@ async def ensure_logged_in(
         if _has(items, _LOGIN_RECORD):
             await _select_account(device, frame, items, account, progress=progress)
             await _wait_panel_closed(device, progress=progress)
-            return "B 服登录面板已关闭，交给 M9A 启动游戏"
+            return await _verify_game_uid(device, expected_uid)
+
+        actual_uid = _homepage_uid(items, frame)
+        if actual_uid:
+            if actual_uid == previous_uid:
+                if actual_uid == expected_uid:
+                    return "B 服登录完成，已核对游戏内 UID，继续运行 M9A 任务"
+                if homepage_logout_tried:
+                    raise MaaFWLoginRequired(
+                        "B 服切号失败：退出后仍停在其他账号的游戏主页"
+                    )
+                await _logout_from_homepage(device, progress=progress)
+                homepage_logout_tried = True
+                previous_uid = ""
+                unknown_since = None
+                title_polls = 0
+                continue
+            unknown_since = None
+        previous_uid = actual_uid
 
         if not logout_tried and _title_like(items, frame):
             title_polls += 1
@@ -768,7 +875,7 @@ async def ensure_logged_in(
         else:
             title_polls = 0
 
-        # 既不是登录界面、也认不出标题页（例如游戏停在别的账号的主界面）：
+        # 既不是登录界面、也认不出标题页（例如加载中的画面）：
         # 无法确认当前账号，明确停止，不能把「没认出来」当成「目标账号已登录」。
         # 冷启动的加载画面同样落在这里，所以预算服从 Game.WaitTime，不能按固定 60 秒截断。
         if unknown_since is None:

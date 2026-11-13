@@ -48,14 +48,18 @@
         </a-form-item>
       </a-col>
       <a-col v-if="showGameUid" :xs="24" :md="8">
-        <a-form-item label="UID">
+        <a-form-item
+          label="UID"
+          :validate-status="invalidGameUid ? 'error' : undefined"
+          :help="invalidGameUid ? t('core.edit.m9aGameUidInvalid') : undefined"
+        >
           <a-input
             v-model:value="formData.Info.GameUID"
             size="large"
             inputmode="numeric"
             autocomplete="off"
             :placeholder="t('core.edit.m9aGameUidPlaceholder')"
-            @blur="emitSave('Info.GameUID', (formData.Info.GameUID ?? '').trim())"
+            @blur="saveGameUid"
           />
         </a-form-item>
       </a-col>
@@ -67,6 +71,7 @@
 <script setup lang="ts">
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type {
   MaaFWUserBasicInfoSectionEmits,
@@ -76,9 +81,18 @@ import type {
 const { t } = useI18n()
 
 // props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
-defineProps<MaaFWUserBasicInfoSectionProps>()
+const props = defineProps<MaaFWUserBasicInfoSectionProps>()
 
 const emit = defineEmits<MaaFWUserBasicInfoSectionEmits>()
+
+const gameUid = computed(() => (props.formData.Info.GameUID ?? '').trim())
+const invalidGameUid = computed(() => !/^[0-9]*$/.test(gameUid.value))
+
+const saveGameUid = () => {
+  if (invalidGameUid.value) return
+  props.formData.Info.GameUID = gameUid.value
+  emitSave('Info.GameUID', gameUid.value)
+}
 
 const emitSave = (key: string, value: unknown) => {
   emit('save', key, value)

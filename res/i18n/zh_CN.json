@@ -1374,6 +1374,7 @@
   "core.edit.m9aFlavorManagedTaskNotice": "「{tasks}」由 MAS 按上方信息自动加入，不需要留在队列里，运行时也会按固定顺序执行；下次保存任务队列或重启 AUTO-MAS 时会移出队列（切换账号的目标账号会填进上方「账号」）",
   "core.edit.m9aFlavorManagedTaskWarning": "该账号队列里有 {count} 个切换账号（账号 {accounts}），M9A 一个账号对应一个游戏账号：请拆成 {count} 个账号（每个账号在上方「账号」填一个），再把这些切换账号从队列里删掉；拆分前该账号不会运行",
   "core.edit.m9aFlavorQueueHint": "启动游戏、切换账号、关闭游戏由 MAS 按上方「账号」自动加入（启动在前、切号紧跟、关闭在最后），无需手动添加，「添加任务」与预设里也不提供",
+  "core.edit.m9aGameUidInvalid": "UID 只能包含数字 0–9",
   "core.edit.m9aGameUidPlaceholder": "填写游戏内数字 UID（MAS 登录 B 服时必填）",
   "core.edit.m9aLoginModeMas": "由 MAS 登录 B 服",
   "core.edit.m9aLoginModeProject": "由 M9A 登录",

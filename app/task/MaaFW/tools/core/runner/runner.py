@@ -1673,7 +1673,7 @@ class MaaFWRunner:
         返回 None 表示没超时；``"next"`` 让调用方跳到下一个任务；``"skip_rest"`` 让调用方
         结束本轮（不计入失败）。
 
-        计划里的第一个任务超时直接按失败结束本轮：它往往是前置任务（M9A 特调的
+        启动保护启用时，计划里的第一个任务超时直接按失败结束本轮：它往往是前置任务（M9A 特调的
         第一个任务是受管的「启动游戏」），前置都没做完，后面的任务没有意义。看的是
         计划位置而不是「还没有任务完成」——第一个任务失败后第二个超时照样继续。
 
@@ -1729,7 +1729,7 @@ class MaaFWRunner:
                 level=LEVEL_WARNING,
             )
             return "next"
-        if index == 0 or task.abortRoundMessage:
+        if (index == 0 and self.plan.firstTaskStartupGuard) or task.abortRoundMessage:
             reason = f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）"
             user_reason = f"{task.abortRoundMessage or display_name}：{reason}"
             if task.abortRoundMessage:
@@ -1833,7 +1833,7 @@ class MaaFWRunner:
     ) -> Literal["next", "skip_rest"] | None:
         """本任务被原地打转检测停掉时收尾；返回值同 ``_handle_task_deadline``。
 
-        口径与 ``_handle_task_deadline`` 完全一致：计划里的第一个任务或特调声明的关键
+        口径与 ``_handle_task_deadline`` 完全一致：受启动保护的第一个任务或特调声明的关键
         任务（``abortRoundMessage``）结束本轮，收尾任务（``nonFatalMessage``）放过（恰好
         又被脚本侧强停时跳过剩余任务；排在中间且等满仍停不下来时结束本轮并计入失败），
         其余记一条任务失败再继续。必须早于
@@ -1882,7 +1882,7 @@ class MaaFWRunner:
                 f"{reason}，{stopped}: {display_name}；{task.nonFatalMessage}"
             )
             return "next"
-        if index == 0 or task.abortRoundMessage:
+        if (index == 0 and self.plan.firstTaskStartupGuard) or task.abortRoundMessage:
             user_reason = f"{task.abortRoundMessage or display_name}：{reason}"
             if task.abortRoundMessage:
                 reason = f"{task.abortRoundMessage}：{reason}"

@@ -244,14 +244,16 @@ class M9AFlavor:
             return ids, options
 
         added: list[str] = []
-        startup = task_name_for_entry(interface_model, STARTUP_ENTRY)
-        if startup is None:
-            log(
-                f"[M9A] interface 里没有 entry 为 {STARTUP_ENTRY} 的任务，未自动加入启动游戏"
-            )
-        else:
-            ids.insert(0, startup)
-            added.append(startup)
+        startup = None
+        if not self.manages_game_startup(script_config):
+            startup = task_name_for_entry(interface_model, STARTUP_ENTRY)
+            if startup is None:
+                log(
+                    f"[M9A] interface 里没有 entry 为 {STARTUP_ENTRY} 的任务，未自动加入启动游戏"
+                )
+            else:
+                ids.insert(0, startup)
+                added.append(startup)
 
         # 队列里恰好一个有效切号时以它为准，与启动整理的结果一致（整理会把它收进「账号」）
         account = (
@@ -361,20 +363,8 @@ class M9AFlavor:
             host_adb=host_adb,
         )
 
-    def account_verification_entry(self, script_config: Any) -> str | None:
-        return STARTUP_ENTRY if _login_mode(script_config) == LOGIN_MODE_MAS else None
-
-    async def verify_game_account(
-        self, *, user_config: Any, adb_path: str | None, adb_address: str, host_adb: Any
-    ) -> str:
-        from .login import verify_game_uid
-
-        return await verify_game_uid(
-            user_config=user_config,
-            adb_path=adb_path,
-            adb_address=adb_address,
-            host_adb=host_adb,
-        )
+    def manages_game_startup(self, script_config: Any) -> bool:
+        return _login_mode(script_config) == LOGIN_MODE_MAS
 
     async def ensure_game_updated(
         self,
