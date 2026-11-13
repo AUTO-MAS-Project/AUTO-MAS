@@ -393,7 +393,7 @@ TASK_STOP_SETTLE_POLL_SECONDS = 0.05
 # 收尾任务（nonFatalMessage）被我们自己停下（单任务时限、原地打转）之后，最多等这么久
 # 看脚本侧是不是也强停了：MaaTaskerPostStop 的通知比 job.wait() 返回晚到（实测约 19ms）。
 NONFATAL_SCRIPT_STOP_NOTICE_SECONDS = 0.2
-# 原地打转检测（Run.LoopGuard，实验性，默认关）判定卡死：停这个任务、截图，收尾与
+# 原地打转检测（Run.LoopGuard，配置默认开）判定卡死：停这个任务、截图，收尾与
 # 单任务超时同一口径。截图 kind 只能是小写字母（见 SIGNAL_SCREENSHOT_KINDS 的说明）。
 LOOP_GUARD_MESSAGE = "MaaFW 任务原地打转"
 LOOP_GUARD_SCREENSHOT_KIND = "loop"
@@ -1136,7 +1136,7 @@ class MaaFWRunner:
         self._signal_hit: tuple[str, str] | None = None
         self._signal_task: str | None = None
         self._signal_stop_thread: threading.Thread | None = None
-        # 原地打转检测（Run.LoopGuard，实验性）。关闭时不建检测器、不喂事件、不扫豁免。
+        # 原地打转检测（Run.LoopGuard）。关闭时不建检测器、不喂事件、不扫豁免。
         # 回调线程持 _loop_guard_lock 喂事件；主线程每个任务投递前持同一把锁 reset()。
         # 判到卡死时记下（任务名, 判定）并在单独线程里 post_stop，主线程收尾。
         self._loop_guard_lock: threading.Lock = threading.Lock()

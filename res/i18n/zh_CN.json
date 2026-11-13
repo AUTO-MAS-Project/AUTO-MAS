@@ -1365,7 +1365,7 @@
   "core.edit.logPathSelected": "日志路径选择成功",
   "core.edit.logThatStaysUnchanged": "日志长期无变化将判定超时",
   "core.edit.logTimestampFormat": "日志时间戳格式",
-  "core.edit.loopGuard": "原地打转检测（实验性）",
+  "core.edit.loopGuard": "原地打转检测",
   "core.edit.m9aFlavorAccountPlaceholder": "「由 M9A 登录」时填了会自动加入「切换账号」（官服有效）；「由 MAS 登录 B 服」时填登录记录里的完整昵称，用来选号",
   "core.edit.m9aFlavorAccountTooltip": "「由 M9A 登录」时账号填写后会自动加入「切换账号」任务（官服有效）；「由 MAS 登录 B 服」时账号是登录记录里显示的完整昵称，只用于选中目标账号，不会加入「切换账号」。密码仅用于本地记录，不会传入脚本",
   "core.edit.m9aFlavorGameUpdateHint": "启动模拟器后比对游戏客户端与官网最新版本，只对官服生效（B 服等其他资源不检查）。落后时：「仅检查」让本次运行失败并提示手动更新；「自动下载安装」下载约 2 GB 的官方安装包并覆盖安装，保留游戏数据",

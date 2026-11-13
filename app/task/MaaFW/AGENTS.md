@@ -472,7 +472,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   特调声明的不可选任务（`unselectable_entries`，如 M9A 的小游戏）更早一步：`/maafw/preview` 给它们填
   `unselectableReason`（核心包的预览不认识特调，在 `api_service/interface.py` 补），账号页不让选；
   运行时在 `decorate_selection` 之前剔掉、按原因合并记一行，不进计划，所以上面几项声明对它不起作用。
-- **原地打转检测**（`Run.LoopGuard`，托管级开关，**实验性、默认关**；纯逻辑在
+- **原地打转检测**（`Run.LoopGuard`，托管级开关，**默认开**：新建托管取类默认；既有托管配置里写着这个键的不改（全量落盘分不清用户关过还是没碰过），没有这个键的落到类默认；纯逻辑在
   `tools/core/runner/loop_guard.py`）：只看 `Node.Recognition.*` 与 `Node.PipelineNode.*`，按节点名
   找周期 ≤ 8 步的循环，连续各轮都有物理动作（Click / Swipe / 按键…，Custom 与 DoNothing 不算，等待型
   轮询本来就该一直等；没有物理动作的一轮让轮数与时长从头数，否则空等很久后第一次点击会被当场判卡死）、≥ 200 轮、持续 ≥ 10 分钟、最近 30 轮识别结果指纹 ≤ 4 种、单轮中位 ≤ 20 秒

@@ -1365,7 +1365,7 @@
   "core.edit.logPathSelected": "Log path selected",
   "core.edit.logThatStaysUnchanged": "A log that stays unchanged for too long counts as a timeout",
   "core.edit.logTimestampFormat": "Log timestamp format",
-  "core.edit.loopGuard": "Loop detection (experimental)",
+  "core.edit.loopGuard": "Loop detection",
   "core.edit.m9aFlavorAccountPlaceholder": "With “M9A project login” it is added to “Switch account” automatically (CN official server only); with “MAS login” enter the exact nickname from the login records so MAS can pick the account",
   "core.edit.m9aFlavorAccountTooltip": "With “M9A project login”, filling the account adds a “Switch account” task automatically (CN official server only); with “MAS login for the Bilibili server” the account is the exact nickname shown in the login records, used only to pick the target account and never added as a “Switch account” task. The password is a local note only and is never passed to the script",
   "core.edit.m9aFlavorGameUpdateHint": "After the emulator starts, compare the game client with the latest version on the official site. Official server only (Bilibili and other resources are not checked). When outdated: \"Check only\" fails this run and asks you to update manually; \"Download and install automatically\" downloads the official package (about 2 GB) and installs it over the old client, keeping game data",
