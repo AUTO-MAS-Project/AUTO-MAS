@@ -24,8 +24,16 @@ export type OkwwUserConfig_Task = {
      */
     WhichTacetSuppressionToFarm?: (number | null);
     /**
-     * 每日任务体力用途（仅日常任务且开启覆写常规配置时生效）
+     * 每日任务体力用途（日常任务按账号覆写或绑定计划生效）
      */
     WhichToFarm?: ('Tacet Suppression' | 'Forgery Challenge' | 'Simulation Challenge' | null);
+    /**
+     * 启用自定义启动参数
+     */
+    IfCustomArguments?: (boolean | null);
+    /**
+     * 自定义启动参数，开启后原样传递给 ok-ww
+     */
+    CustomArguments?: (string | null);
 };
 

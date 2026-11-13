@@ -22,9 +22,12 @@
     </a-form>
   </a-card>
   <OkwwTaskConfigSection
-    v-if="!form.Info.PlanMode || form.Info.PlanMode === 'Fixed'"
     v-model="form.Task"
-    :quick-config="form.Info.IfQuickConfig"
+    :quick-config="
+      form.Info.IfQuickConfig && (!form.Info.PlanMode || form.Info.PlanMode === 'Fixed')
+    "
+    :script-id="scriptId"
+    :save-task="saveTask"
     :disabled="disabled"
     @save="emit('save')"
   />
@@ -40,7 +43,12 @@ const form = defineModel<{
   Info: { PlanMode?: string | null; IfQuickConfig: boolean }
   Task: Task
 }>({ required: true })
-defineProps<{ scriptId: string; userId: string; disabled: boolean }>()
+defineProps<{
+  scriptId: string
+  userId: string
+  disabled: boolean
+  saveTask: () => Promise<boolean>
+}>()
 const { t } = useI18n()
 const emit = defineEmits<{ save: []; restore: [] }>()
 </script>

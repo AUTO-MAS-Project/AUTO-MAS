@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
-import type { RadioChangeEvent } from 'ant-design-vue/es/radio/interface'
 import { useAppClosePreferences } from '@/composables/useAppClosePreferences'
+import type { AppCloseAction } from '@/utils/appClosePreferences'
+import SettingRow from '@/components/ui/SettingRow.vue'
 
 const logger = window.electronAPI.getLogger('关闭应用设置')
 const { t } = useI18n()
@@ -18,6 +19,11 @@ const {
   chooseAction,
 } = useAppClosePreferences()
 
+const closeActionOptions = computed(() => [
+  { label: t('core.setting.basic.closeQuit'), value: 'quit' },
+  { label: t('core.setting.basic.closeToTray'), value: 'tray' },
+])
+
 const handleChange = async (change: Promise<void>): Promise<void> => {
   try {
     await change
@@ -28,61 +34,48 @@ const handleChange = async (change: Promise<void>): Promise<void> => {
   }
 }
 
+const handleActionChange = (value: string | number | boolean) =>
+  handleChange(chooseAction(value as AppCloseAction, false))
+
+const handleConfirmationChange = (event: CheckboxChangeEvent) =>
+  handleChange(setConfirmationEnabled(event.target.checked === true))
+
 onMounted(() => {
   void load()
 })
 </script>
 
 <template>
-  <div class="close-settings">
-    <a-radio-group
-      :value="lastAction"
-      name="close-action"
+  <SettingRow :label="t('core.setting.basic.closeAction')" :aria-busy="saving">
+    <a-segmented
       class="close-action-options"
-      :disabled="!loaded || saving"
-      :aria-busy="saving"
-      :aria-label="t('core.setting.basic.closeBehavior')"
-      @change="(event: RadioChangeEvent) => handleChange(chooseAction(event.target.value, false))"
-    >
-      <a-radio value="quit" class="close-action-row">
-        {{ t('core.setting.basic.closeQuit') }}
-      </a-radio>
-      <a-radio value="tray" class="close-action-row">
-        {{ t('core.setting.basic.closeToTray') }}
-      </a-radio>
-    </a-radio-group>
+      :value="lastAction"
+      :options="closeActionOptions"
+      :disabled="!loaded"
+      :loading="saving"
+      :block="false"
+      :aria-label="t('core.setting.basic.closeAction')"
+      @change="handleActionChange"
+    />
+  </SettingRow>
+
+  <SettingRow
+    child
+    :label="t('core.setting.basic.closeConfirmation')"
+    :description="t('core.setting.basic.closeConfirmationTip')"
+  >
     <a-checkbox
-      class="close-confirmation"
       :checked="confirmBeforeClose"
       :disabled="!loaded || saving"
       :aria-busy="saving"
-      @change="
-        (event: CheckboxChangeEvent) => handleChange(setConfirmationEnabled(event.target.checked))
-      "
-    >
-      {{ t('core.setting.basic.closeConfirmation') }}
-    </a-checkbox>
-  </div>
+      :aria-label="t('core.setting.basic.closeConfirmation')"
+      @change="handleConfirmationChange"
+    />
+  </SettingRow>
 </template>
 
 <style scoped>
 .close-action-options {
-  display: flex;
-  flex-direction: column;
-}
-
-.close-action-row,
-.close-confirmation {
-  display: flex;
-  align-items: center;
-  min-height: 36px;
-  margin: 0;
-  color: var(--ant-color-text);
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.close-confirmation {
-  padding-left: 24px;
+  min-width: 0;
 }
 </style>

@@ -4020,7 +4020,9 @@
   "core.setting.basic.applyAppearance": "应用外观",
   "core.setting.basic.trayGroup": "托盘",
   "core.setting.basic.closeBehavior": "关闭时",
+  "core.setting.basic.closeAction": "关闭窗口后",
   "core.setting.basic.closeConfirmation": "二次弹出提示",
+  "core.setting.basic.closeConfirmationTip": "退出或最小化到托盘前弹出确认提示",
   "core.setting.basic.closeQuit": "直接退出",
   "core.setting.basic.closeToTray": "最小化到托盘",
   "core.setting.basic.cursorSize": "光标大小",
@@ -4921,7 +4923,10 @@
   "core.edit.okwwLoginAccount": "登录账号",
   "core.edit.okwwLoginAccountHint": "用于匹配游戏登录列表中已保存的账号。MAS 切换填写完整手机号；ok-ww 切换支持完整大陆手机号、138****1234 或列表显示的邮箱，不支持仅填后四位。不切换时可留空。",
   "core.edit.okwwLoginAccountPlaceholder": "完整手机号或登录列表中的账号",
-  "core.edit.okwwDailyArgumentsExample": "普通日常模式启动参数示例",
-  "core.edit.okwwArgumentsExampleHint": "原生切号模式由托管的账号切换方式决定，实际使用 -t MultiAccountConfigTask -e。",
-  "core.plan.oknte.basedOnDetail": "基于详细配置"
+  "core.edit.okwwDailyArgumentsExample": "启动参数",
+  "core.edit.okwwArgumentsExampleHint": "关闭自定义时由 MAS 选择启动参数；开启后按填写内容原样发送。",
+  "core.plan.oknte.basedOnDetail": "基于详细配置",
+  "core.edit.okwwCustomArguments": "自定义参数",
+  "core.edit.okwwCustomArgumentsPlaceholder": "例如：-t DailyTask -h",
+  "core.edit.okwwCustomArgumentsWarning": "修改启动参数可能导致 ok-ww 无法正常运行，或影响任务结果识别与自动结束。如果不了解参数含义，建议保持默认设置。"
 }

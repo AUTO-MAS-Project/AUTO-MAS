@@ -4,16 +4,12 @@
       <div class="form-section">
         <a-row :gutter="24">
           <a-col :span="24">
-            <a-form-item>
-              <template #label>
-                <FieldLabelWithHint
-                  :text="t('core.edit.okwwDailyArgumentsExample')"
-                  :hint="t('core.edit.okwwArgumentsExampleHint')"
-                  variant="form"
-                />
-              </template>
-              <a-input :value="currentStartupArguments" size="large" readonly />
-            </a-form-item>
+            <OkwwArgumentsConfig
+              :script-id="scriptId"
+              :save="saveTask"
+              v-model="task"
+              @save="emit('save')"
+            />
           </a-col>
         </a-row>
 
@@ -84,18 +80,17 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import type { OkwwUserConfig } from '@/api'
 import { farmOptions, materialOptions, additionalTaskOptions } from '@/utils/okwwTaskOptions'
-import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import OkwwArgumentsConfig from './OkwwArgumentsConfig.vue'
+import type { OkwwTaskForm } from './okwwTaskConfig'
 
-type TaskForm = {
-  [K in keyof NonNullable<OkwwUserConfig['Task']>]-?: NonNullable<
-    NonNullable<OkwwUserConfig['Task']>[K]
-  >
-}
-const task = defineModel<TaskForm>({ required: true })
-defineProps<{ quickConfig: boolean; disabled: boolean }>()
+const task = defineModel<OkwwTaskForm>({ required: true })
+defineProps<{
+  quickConfig: boolean
+  disabled: boolean
+  scriptId: string
+  saveTask: () => Promise<boolean>
+}>()
 const emit = defineEmits<{ save: [] }>()
 const { t } = useI18n()
-const currentStartupArguments = '-t DailyTask -e / -t 1 -e'
 </script>

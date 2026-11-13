@@ -20,4 +20,8 @@ def task_config(user: OkwwUserConfig) -> dict:
         "FarmNightmareNestForDailyEcho": "Farm Nightmare Nest for Daily Echo",
         "AdditionalTasks": "Additional Tasks to Run After Daily Task",
     }
-    return {names[name]: value for name, value in values.items() if value is not None}
+    return {
+        target: values[name]
+        for name, target in names.items()
+        if values.get(name) is not None
+    }

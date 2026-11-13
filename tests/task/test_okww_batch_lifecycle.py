@@ -218,12 +218,21 @@ async def test_report_after_check_failure_and_later_manual_stop(monkeypatch, sta
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("limited_index", [0, 1])
-async def test_batch_filters_each_accounts_real_daily_limit(tmp_path, limited_index):
-    sentinel = tmp_path / "data/apps/ok-ww/app.json"
+@pytest.mark.parametrize("skip_reason", ["daily_limit", "expired"])
+@pytest.mark.parametrize("method", ["OKWW", "OKWW_SINGLE"])
+async def test_batch_filters_each_accounts_real_daily_limit(
+    tmp_path, monkeypatch, limited_index, skip_reason, method
+):
+    work = tmp_path / "mas"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    root = tmp_path / "okww"
+    root.mkdir()
+    sentinel = root / "data/apps/ok-ww/app.json"
     sentinel.parent.mkdir(parents=True)
     sentinel.write_text("{}", encoding="utf-8")
-    (tmp_path / "ok-ww.exe").touch()
-    native = tmp_path / "data/apps/ok-ww/working/configs"
+    (root / "ok-ww.exe").touch()
+    native = root / "data/apps/ok-ww/working/configs"
     native.mkdir(parents=True)
     (native / "DailyTask.json").write_text("{}", encoding="utf-8")
     ids = [uuid.uuid4(), uuid.uuid4()]
@@ -237,8 +246,8 @@ async def test_batch_filters_each_accounts_real_daily_limit(tmp_path, limited_in
     manager = OkwwManager(info)
     manager.script_config = OkwwConfig.model_validate(
         {
-            "Info": {"RootPath": str(tmp_path)},
-            "Game": {"AccountSwitchMethod": "OKWW"},
+            "Info": {"RootPath": str(root)},
+            "Game": {"AccountSwitchMethod": method},
             "Run": {"ProxyTimesLimit": 1},
         }
     )
@@ -246,8 +255,19 @@ async def test_batch_filters_each_accounts_real_daily_limit(tmp_path, limited_in
     manager.user_config = {
         uid: OkwwUserConfig.model_validate(
             {
-                "Info": {"Id": phone, "Base": "native"},
-                "Data": {"LastProxyDate": now, "ProxyTimes": int(i == limited_index)},
+                "Info": {
+                    "Id": phone,
+                    "Base": "native",
+                    "RemainedDay": 0
+                    if i == limited_index and skip_reason == "expired"
+                    else -1,
+                },
+                "Data": {
+                    "LastProxyDate": now,
+                    "ProxyTimes": int(
+                        i == limited_index and skip_reason == "daily_limit"
+                    ),
+                },
             }
         )
         for i, (uid, phone) in enumerate(zip(ids, ["13012346220", "13912347052"]))
@@ -504,3 +524,209 @@ async def test_stop_preserves_success_written_since_last_log_poll(
         else ("完成", True, "Success!")
     )
     assert results[1] == ("异常", False, "任务被用户手动中止")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["normal", "invalid", "duplicate", "cancel"])
+async def test_batch_arguments_grouping_preserves_user_order(tmp_path, scenario):
+    (tmp_path / "ok-ww.exe").touch()
+    app_json = tmp_path / "data/apps/ok-ww/app.json"
+    app_json.parent.mkdir(parents=True)
+    app_json.write_text('{"current_version":"unknown"}')
+    native = app_json.parent / "working/configs"
+    native.mkdir(parents=True)
+    (native / "DailyTask.json").write_text("{}")
+    ids = [uuid.uuid4() for _ in range(5)]
+    users = [
+        UserItem(user_id=str(uid), name=str(i), status="等待")
+        for i, uid in enumerate(ids)
+    ]
+    info = RuntimeStub(
+        task_info=RuntimeStub(mode="AutoProxy", is_queue_task=False),
+        script_id=str(uuid.uuid4()),
+        user_list=users,
+        current_index=0,
+    )
+    manager = OkwwManager(info)
+    # 下发给任务的是已校验的配置；安装路径在此测试中直接使用临时安装目录。
+    manager.script_config = SimpleNamespace(
+        Info=SimpleNamespace(RootPath=tmp_path),
+        Game=SimpleNamespace(AccountSwitchMethod="OKWW", Enabled=False),
+        Run=SimpleNamespace(ProxyTimesLimit=0),
+    )
+    drafts = [None, "-t OtherTask", "-t OtherTask", None, None]
+    if scenario == "invalid":
+        drafts[2] = '"unfinished'
+    manager.user_config = {
+        uid: OkwwUserConfig.model_validate(
+            {
+                "Info": {"Id": f"1301234000{i}", "Base": "native"},
+                "Task": {
+                    "IfCustomArguments": draft is not None,
+                    "CustomArguments": draft or '"ignored',
+                },
+            }
+        )
+        for i, (uid, draft) in enumerate(zip(ids, drafts))
+    }
+    if scenario == "duplicate":
+        manager.user_config[ids[1]].Info.Id = manager.user_config[ids[0]].Info.Id
+    manager.game_manager = None
+    manager.check = AsyncMock(return_value="Pass")
+    manager.prepare = AsyncMock()
+    manager.check_user_before_run = AsyncMock(return_value=True)
+    manager.notify_user_check_failure = AsyncMock()
+    manager._restore_script_config_from_temp = AsyncMock()
+    manager.record_user_run_start = lambda user: None
+    dispatched = []
+
+    async def run(task):
+        dispatched.append(
+            ([user.user_id for user in task.participants], task._build_run_arguments())
+        )
+
+        if scenario == "cancel":
+            raise asyncio.CancelledError
+
+    manager.spawn = AsyncMock(side_effect=run)
+    if scenario == "cancel":
+        with pytest.raises(asyncio.CancelledError):
+            await manager.main_task()
+        assert len(dispatched) == 1
+        assert manager._restore_script_config_from_temp.await_count == 1
+        return
+    await manager.main_task()
+    if scenario == "duplicate":
+        assert not dispatched
+        assert manager.notify_user_check_failure.await_count == 5
+        return
+    default = ["-t", "MultiAccountConfigTask", "-e"]
+    assert dispatched == [
+        ([str(ids[0])], default),
+        (
+            [str(ids[1])] if scenario == "invalid" else [str(ids[1]), str(ids[2])],
+            ["-t", "OtherTask"],
+        ),
+        ([str(ids[3]), str(ids[4])], default),
+    ]
+    if scenario == "invalid":
+        manager.notify_user_check_failure.assert_awaited_once()
+    else:
+        manager.notify_user_check_failure.assert_not_awaited()
+    assert manager._restore_script_config_from_temp.await_count == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "outcome,expected",
+    [("success", "success"), ("maintenance", "skipped"), ("cancel", "cancelled")],
+)
+async def test_single_batch_archives_only_account_summary(
+    tmp_path, monkeypatch, outcome, expected
+):
+    import importlib
+
+    from app.task.history_core import UserHistoryDependencies, save_user_history
+
+    module = importlib.import_module("app.task.Okww.AutoProxy")
+    work = tmp_path / "mas"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    root = tmp_path / "okww"
+    native = root / "data/apps/ok-ww/working/configs"
+    native.mkdir(parents=True)
+    (native / "DailyTask.json").write_text("{}")
+    logs = native.parent / "logs"
+    logs.mkdir()
+    (logs / "ok-script.log").write_text("")
+    (root / "data/apps/ok-ww/app.json").write_text('{"current_version":"v3.8.0"}')
+    uid = uuid.uuid4()
+    user = UserItem(user_id=str(uid), name="user", status="等待")
+    info = RuntimeStub(
+        task_info=RuntimeStub(mode="AutoProxy", is_queue_task=False),
+        script_id=str(uuid.uuid4()),
+        user_list=[user],
+        current_index=0,
+        name="okww",
+    )
+    config = await activate_config(
+        OkwwUserConfig.model_validate(
+            {
+                "Info": {"Id": "13012346220", "Base": "native"},
+                "Notify": {"PushLogMode": "关闭"},
+            }
+        )
+    )
+    script = OkwwConfig.model_validate(
+        {
+            "Info": {"RootPath": str(root)},
+            "Game": {"Enabled": False, "AccountSwitchMethod": "OKWW_SINGLE"},
+            "Run": {"RunTimesLimit": 1},
+        }
+    )
+    task = BatchProxyTask(info, script, {uid: config}, None, participants=[user])
+    monkeypatch.setattr(module.process, "kill_process", AsyncMock())
+    monkeypatch.setattr(module.Notify, "push_statistics_report", AsyncMock())
+    task.kill_managed_process = AsyncMock(return_value=True)
+    task.notify_maintenance_skip = AsyncMock()
+    task._maintenance_detect = lambda: None
+    written = []
+
+    async def record(row):
+        written.append(row)
+
+    async def save(records, **kwargs):
+        await save_user_history(
+            records,
+            dependencies=UserHistoryDependencies(
+                record=record,
+                collect_attachments=AsyncMock(return_value=[]),
+                discard_capture=AsyncMock(),
+                report_failure=AsyncMock(),
+                log_warning=lambda message: None,
+            ),
+        )
+
+    task.history = SimpleNamespace(
+        begin_user_history_capture=lambda *args, **kwargs: None, save_user_history=save
+    )
+
+    async def start():
+        if outcome == "cancel":
+            task.stopped_manually = True
+            raise asyncio.CancelledError
+
+    task._start_okww_with_current_arguments = start
+
+    async def deliver():
+        if outcome == "success":
+            (native / "MultiAccountResults.json").write_text(
+                '{"1306220":{"status":"success"}}'
+            )
+            await task.check_log(
+                ["TaskExecutor:Successfully Executed Task, Exiting Game and App!\n"],
+                datetime.now(),
+            )
+        else:
+            await task.mark_game_maintenance_skip("测试维护")
+            task._maintenance_reason = "测试维护"
+            task.wait_event.set()
+
+    async def monitor(*args):
+        asyncio.create_task(deliver())
+
+    monkeypatch.setattr(
+        module,
+        "LogMonitor",
+        lambda *args: SimpleNamespace(start_monitor_file=monitor, stop=AsyncMock()),
+    )
+    if outcome == "cancel":
+        with pytest.raises(asyncio.CancelledError):
+            await task.main_task()
+    else:
+        await asyncio.wait_for(task.main_task(), timeout=10)
+    await task.final_task()
+    assert len(written) == 1
+    assert written[0].status == expected
+    assert len(user.iter_history_logs()) == 1
+    assert config.Data.ProxyTimes == int(outcome == "success")

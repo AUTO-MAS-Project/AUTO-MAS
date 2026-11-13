@@ -146,3 +146,17 @@ def test_numeric_inheritance_is_not_coerced_to_default():
     )
     assert plan.Monday.Key.WhichTacetSuppressionToFarm is None
     assert plan.Monday.Key.WhichForgeryChallengeToFarm is None
+
+
+def test_custom_start_arguments_are_not_daily_plan_fields():
+    from app.models.config.plan import OkwwPlanKey
+
+    user = OkwwUserConfig()
+    user.Task.IfCustomArguments = True
+    user.Task.CustomArguments = "-t FarmEchoTask"
+    values = task_config(user)
+    assert values["Which to Farm"] == user.Task.WhichToFarm
+    assert "IfCustomArguments" not in OkwwPlanKey.model_fields
+    assert "CustomArguments" not in OkwwPlanKey.model_fields
+    assert "IfCustomArguments" not in values
+    assert "CustomArguments" not in values

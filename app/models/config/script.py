@@ -3056,7 +3056,16 @@ class OkwwUserConfig(DomainEntry):
 
     Notify: NotifyFields = Field(default_factory=NotifyFields)
 
-    Task: OkwwTaskFields = Field(default_factory=OkwwTaskFields)
+    class TaskFields(OkwwTaskFields):
+        IfCustomArguments: bool = Field(
+            default_factory=lambda: False, description="启用自定义启动参数"
+        )
+        CustomArguments: str = Field(
+            default_factory=lambda: "-t DailyTask",
+            description="自定义启动参数，开启后原样传递给 ok-ww",
+        )
+
+    Task: TaskFields = Field(default_factory=TaskFields)
     Notify_CustomWebhooks: ConfigCollection[Webhook] = collection(Webhook)
 
     def getTags(self) -> str:
@@ -3072,6 +3081,8 @@ class OkwwUserConfig(DomainEntry):
         task_label = self.OKWW_TASK_BOOK.get(last_task_index, "未知")
         if self.Data.LastTaskName == "MultiAccountConfigTask":
             task_label = "原生多账号配置"
+        elif self.Data.LastTaskName == "CustomTask":
+            task_label = "自定义任务"
         tags.append({"text": f"任务：{task_label}", "color": "orange"})
         tags.append(_tag_remained_days(self))
         tags.append(_tag_notes(self))
