@@ -30,7 +30,7 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
-## [未发布]
+## [v5.9.0-beta.1] - 2026-11-13
 
 ### 破坏性变更
 
@@ -65,6 +65,7 @@
 - 【ok-ww】修复直接启动游戏时无法覆盖默认资源档位的问题 (#1925) by @AthenaHibou
 - 【ok-ww】修复新版脚本启动后不执行每日任务的问题 (#1940) by @AthenaHibou
 - 【ok-ww】修复新版启动器不触发游戏更新及停服维护时反复重试的问题 (#1934) by @1w1w11w1
+- 【ok-ww】修复鸣潮和异环更新重启后自动切号失败的问题。 (#1933) by @AthenaHibou
 - 【ok-nte】修复仅开启任务后关闭时无法关闭游戏及启动器的问题。 (#1920) by @AthenaHibou
 - 【BAAH】损坏的托管安装须由用户明确选择官方完整包修复，禁止绕过校验运行 (#1908) by @youngslin
 - 【奇想盒】修复后端安装中断后无法自主确认恢复的问题 (#1905) by @youngslin
@@ -81,6 +82,7 @@
 - 【Runtime】修复回退旧版后再次升级时无法启动的问题 (#1889) by @jinghero
 - 【Runtime】修复后端启动异常退出却被误判为正常结束的问题 (#1929) by @jinghero
 - 【Runtime】修复临时启动失败后反复停留在失败页的问题 (#1938) by @jinghero
+- 【Runtime】修复初始化时依赖安装已成功却被误报为失败的问题。 by @ClozyA
 
 ## [v5.8.0] - 2026-11-09
 
@@ -806,7 +808,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
-[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0...dev
+[v5.9.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0...v5.9.0-beta.1
 [v5.8.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0...v5.8.0
 [v5.7.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.2...v5.7.0
 [v5.6.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.1...v5.6.2
