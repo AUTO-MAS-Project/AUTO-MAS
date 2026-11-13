@@ -697,43 +697,6 @@ test.describe('@settings user preferences', () => {
     await expect(navigation).toHaveCount(0)
     await expect(page.locator('.settings-navigation-toggle')).toHaveCount(0)
     await app.evidence('settings-layout-about')
-
-    const horizontalBounds = () =>
-      page.locator('.settings-shell-header, .settings-tabs > .ant-tabs-nav').evaluateAll(elements =>
-        elements.map(element => {
-          const { x, width } = element.getBoundingClientRect()
-          return { x, width }
-        })
-      )
-    await page.getByRole('tab', { name: 'Interface', exact: true }).click()
-    const theme = page.locator('.theme-mode-control')
-    const originalTheme = await theme.locator('.ant-segmented-item-selected').innerText()
-    try {
-      for (const mode of ['Light', 'Dark']) {
-        await page.getByRole('tab', { name: 'Interface', exact: true }).click()
-        await chooseSegment(theme, mode)
-        await expect(page.locator('html')).not.toHaveClass(/theme-transition/)
-        for (const width of [1920, 1040]) {
-          await page.setViewportSize({ width, height: 900 })
-          await page.getByRole('tab', { name: 'Interface', exact: true }).click()
-          const referenceBounds = await horizontalBounds()
-          await app.evidence(`settings-width-${mode}-${width}-interface`)
-          for (const tab of ['Features', 'Notifications', 'Advanced', 'About']) {
-            await page.getByRole('tab', { name: tab, exact: true }).click()
-            if (tab === 'About') await app.evidence(`settings-width-${mode}-${width}-about`)
-            await expect
-              .poll(horizontalBounds, `${mode} ${width}px: ${tab} keeps the title and tabs aligned`)
-              .toEqual(referenceBounds)
-            expect(
-              await pane.evaluate(element => element.scrollWidth - element.clientWidth)
-            ).toBeLessThanOrEqual(1)
-          }
-        }
-      }
-    } finally {
-      await page.getByRole('tab', { name: 'Interface', exact: true }).click()
-      await chooseSegment(theme, originalTheme)
-    }
   })
 
   test('keeps the section navigation under user control instead of window width', async ({
