@@ -3867,6 +3867,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             except Exception as exc:
                 logger.warning(f"MaaFW 清理时关闭游戏失败: {exc}")
                 closed = False
+            else:
+                if launched_at is not None:
+                    # 链接拉起的游戏不是 MAS 的子进程，写一行让用户知道是 MAS 关的
+                    self._append_log("已关闭本次通过链接打开的游戏")
             game_path = self._resolve_game_launch_path()
             if launched_at is not None and game_path is not None:
                 try:
