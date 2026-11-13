@@ -91,6 +91,7 @@ import { createOkwwIssueReport } from './services/okwwIssueReportService'
 import { createOkNteIssueReport } from './services/okNteIssueReportService'
 import { createZzzOdIssueReport } from './services/zzzOdIssueReportService'
 import { createWhimboxIssueReport } from './services/whimboxIssueReportService'
+import { createHSRIssueReport } from './services/hsrIssueReportService'
 import {
   configureMainSentry,
   recordMainCount,
@@ -1709,6 +1710,12 @@ registerIssueReportExporter(
   '导出 MSS 问题包',
   'MSS-logs',
   createMSSIssueReport
+)
+registerIssueReportExporter(
+  'hsr:exportIssueReport',
+  '导出 HSR 问题包',
+  'HSR-logs',
+  createHSRIssueReport
 )
 
 ipcMain.handle('maafw:listIssueReportScripts', (_event, configTypes?: unknown) => {

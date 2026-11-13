@@ -23,6 +23,7 @@ import { useBetterGIIssueReport } from '@/composables/useBetterGIIssueReport'
 import { useMaaFWIssueReport } from '@/composables/useMaaFWIssueReport'
 import { useM9AIssueReport } from '@/composables/useM9AIssueReport'
 import { useMSSIssueReport } from '@/composables/useMSSIssueReport'
+import { useHSRIssueReport } from '@/composables/useHSRIssueReport'
 import { useScriptApi } from '@/composables/useScriptApi'
 import SectionCard from '@/components/ui/SectionCard.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
@@ -53,6 +54,7 @@ const { exporting: exportingBetterGILogs, exportBetterGIIssueReport } =
 const { exporting: exportingMaaFWLogs, exportMaaFWIssueReport } = useMaaFWIssueReport(logger)
 const { exporting: exportingM9ALogs, exportM9AIssueReport } = useM9AIssueReport(logger)
 const { exporting: exportingMSSLogs, exportMSSIssueReport } = useMSSIssueReport(logger)
+const { exporting: exportingHSRLogs, exportHSRIssueReport } = useHSRIssueReport(logger)
 
 const { getScripts, error: scriptApiError } = useScriptApi()
 /** 已添加的脚本类型：设置页只显示这些专项的导出按钮 */
@@ -149,6 +151,7 @@ const issueTiles = computed<IssueTile[]>(() => [
   },
   tileOf('M9A', exportingM9ALogs.value, () => void exportM9AIssueReport()),
   tileOf('MSS', exportingMSSLogs.value, () => void exportMSSIssueReport()),
+  tileOf('HSR', exportingHSRLogs.value, () => void exportHSRIssueReport()),
 ])
 
 onMounted(() => {
