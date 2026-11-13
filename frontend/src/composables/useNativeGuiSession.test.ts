@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { useNativeGuiSession } from './useNativeGuiSession'
+import { WS_TASK_NOTICE } from '@/services/websocket/types'
 
 const mocks = vi.hoisted(() => ({
   success: vi.fn(),
@@ -8,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   start: vi.fn(),
   stop: vi.fn(),
   status: vi.fn(),
+  listeners: new Map<string, (frame: unknown) => void>(),
 }))
 vi.mock('ant-design-vue', () => ({ message: mocks }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
@@ -19,7 +21,13 @@ vi.mock('@/api/services/Service', () => ({
   Service: { getTaskStatusApiDispatchTaskTaskIdGet: mocks.status },
 }))
 vi.mock('@/composables/useWebSocket', () => ({
-  useWebSocket: () => ({ subscribe: () => 'id', unsubscribe: vi.fn() }),
+  useWebSocket: () => ({
+    subscribe: (request: { type: string }, listener: (frame: unknown) => void) => {
+      mocks.listeners.set(request.type, listener)
+      return request.type
+    },
+    unsubscribe: (type: string) => mocks.listeners.delete(type),
+  }),
 }))
 vi.mock('@/utils/configSessionDiscard', () => ({ showConfigDiscardWarning: vi.fn() }))
 
@@ -50,6 +58,7 @@ describe('native configuration session during scheduler migration', () => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
     vi.clearAllMocks()
+    mocks.listeners.clear()
   })
 
   it('uses the requirement-tree entry for a native session', async () => {
@@ -68,6 +77,29 @@ describe('native configuration session during scheduler migration', () => {
     await vi.advanceTimersByTimeAsync(300)
     await saving
     expect(mocks.status).not.toHaveBeenCalled()
+    expect(mocks.success).toHaveBeenCalledWith('saved')
+  })
+
+  it('keeps a failed save from reporting success and resets for the next session', async () => {
+    const session = useNativeGuiSession({ loggerName: 'test', keys })
+    await session.startSession('script')
+    mocks.success.mockClear()
+    mocks.stop.mockImplementationOnce(async () => {
+      mocks.listeners.get(WS_TASK_NOTICE)?.({
+        data: { level: 'error', message: 'configuration write failed' },
+      })
+      return { code: 200 }
+    })
+    const failedSave = session.saveSession()
+    await vi.advanceTimersByTimeAsync(300)
+    await failedSave
+    expect(mocks.error).toHaveBeenCalledWith('setupFailed')
+    expect(mocks.success).not.toHaveBeenCalledWith('saved')
+
+    await session.startSession('script')
+    const successfulSave = session.saveSession()
+    await vi.advanceTimersByTimeAsync(300)
+    await successfulSave
     expect(mocks.success).toHaveBeenCalledWith('saved')
   })
 })
