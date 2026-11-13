@@ -497,10 +497,28 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   异常用异常原文，同样过 `human_reason` 过滤）与失败类别的固定说法；`errorMessage`（节点链、框架失败
   事件、原生栈）不进推送，仍照旧写进任务日志、history 状态与调度台完成面板。记录是旁路，
   **不参与重试判断**。
-- Win32 下 `Game.LaunchMode` 只有两态：`DirectExe`（默认，MAS 启动、结束后一律关闭）与
-  `AttachOnly`（其他方式启停，MAS 只接管窗口）。关不关只看 `opened_game`，没有开关；
-  DirectExe 下发现游戏已在运行时也只接管、不关。`Game.UnityResolution`（Off / 1920x1080 /
-  1280x720）走
+- Win32 下 `Game.LaunchMode` 三态：`DirectExe`（默认，MAS 按 `Game.LaunchPath` 启动、结束后关闭）、
+  `URL`（MAS 用 ShellExecute 打开 `Game.URL` 拉起游戏，如 `steam://rungameid/<appid>`，结束后关闭）与
+  `AttachOnly`（脚本或用户自己启动，MAS 只接管窗口）。
+  - DirectExe / URL 关不关只看 `opened_game`；发现游戏已在运行（控制器窗口在，或 exe 在跑）时只接管、
+    不关。重试前 `_restart_client_before_retry` 照常关、下一轮重新拉起。
+  - **URL 模式**：`LaunchPath` 必填但不用来启动，只用来认游戏（是否已在运行、等窗口、前置、关闭、Unity
+    分辨率覆盖）；缺 exe 或缺链接在运行前检查就报。打开链接前记下时刻，按 exe +
+    `min_create_time` 找进程，时限 `max(WaitTime, 60)`（Steam 冷启动慢）；链接一打开就置
+    `opened_game`。`Game.Arguments` 不用，参数写进链接（`steam://run/<appid>//<参数>/`）。关闭时
+    `kill()` 跟踪的那个之后，再把 exe 等于游戏 exe、创建时间不早于打开链接时刻（容差 2s）的进程都
+    结束（先 terminate，3s 后 kill）：游戏不是 MAS 的子进程，有的还会自我重启换 PID。
+  - **AttachOnly 兜底关闭**（`Game.CloseMode`，默认 `OnFailure`；DirectExe / URL 忽略它）：`Script`
+    交给脚本、MAS 不关；`OnFailure` 本次运行没正常完成（`run_complete` 为假：失败、超时、停止、维护
+    信号，以及 `on_crash`）时关；`Always` 结束后一律关。**硬规则：只关本次运行期间新出现的进程**——
+    账号运行开始（脚本前任务与第一次尝试的运行前设置之前）记下 `run_started_at`，收尾时候选三路（控制器窗口匹配
+    到的窗口所属进程、exe 等于 `Game.LaunchPath` 的、exe 等于可选 `Game.LauncherPath` 的），只结束
+    创建时间 ≥ `run_started_at − 2s` 的，运行前就在的各写一行「运行开始前就已打开，不关闭」；创建时间
+    读不到的按「运行前就在」处理。控制器没写窗口规则时窗口这一路不参与。**只在最终收尾做**
+    （`_close_game_after_run`：`_finalize_user` 与 `on_crash`），重试之间不关，免得和运行前设置的
+    重跑判定（`_pretasks_need_rerun`）打架；每次运行只做一次。运行前设置超时 / 停止时的清理不变，
+    照旧不碰游戏和启动器。
+- `Game.UnityResolution`（Off / 1920x1080 / 1280x720，DirectExe 与 URL 下生效）走
   `game_resolution.py`：按 `<exe>_Data/app.info` 反查 `HKCU\Software\<公司>\<产品>`，
   只改 Unity 播放器的 `Screenmanager *` 值，不碰游戏自有的那层（星铁的
   `GraphicsSettings_PCResolution`、终末地的 `video_resolution_*`），效果要实机验证。
@@ -508,7 +526,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   游戏自有层由该游戏的特调或专项自己调。
 - **项目的运行前设置（interface `pretask`）在每次尝试里跑**，不像账号级「脚本前任务」只跑一次：
   MaaEnd 的「🚀启动游戏（PC）」就是它，此时 `Game.LaunchMode` 是 AttachOnly、`opened_game` 为假，
-  MAS 既不拉起也不关游戏。第一次尝试照常跑；它自己失败按普通失败重试；成功过之后的重试只在客户端
+  MAS 不拉起游戏、重试之间也不关（结束后按 `Game.CloseMode` 兜底，见上一条）。第一次尝试照常跑；它自己失败按普通失败重试；成功过之后的重试只在客户端
   已经不在时重跑（`_pretasks_need_rerun`：MAS 刚关掉自己起的游戏 / 模拟器——关的时候报错也算，
   `_close_*` 不论成败都清 `opened_*`、下一轮会重新拉起，见 `_reset_client_for_retry`；或 Win32 下
   控制器窗口找不到——队列末尾的「关闭游戏」任务会把它关掉）。游戏还开着不重跑，免得项目的启动脚本

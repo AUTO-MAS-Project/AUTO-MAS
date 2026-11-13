@@ -1,6 +1,6 @@
 <template>
   <!-- interface 里没有对当前控制器 / 资源生效的 hotkey option 时整格不渲染 -->
-  <a-col v-if="options.length > 0" :span="6">
+  <a-col v-if="options.length > 0" :span="span ?? 6">
     <a-form-item>
       <template #label>
         <span class="form-label">{{ t('core.edit.mfwHotkey') }}</span>
@@ -56,6 +56,8 @@ const props = defineProps<{
   resourceName: string
   /** 脚本配置 Game.Hotkeys（JSON 字符串） */
   value: string | undefined
+  /** 栅格宽度：由所在行决定，缺省四分之一行 */
+  span?: number
 }>()
 
 const emit = defineEmits<{

@@ -117,6 +117,8 @@ export interface MaaFWScriptControlSectionEmits {
   'resource-change': []
   'emulator-select-change': [emulatorId: string]
   'select-launch-path': []
+  /** 由脚本控制游戏时选启动器 exe（MAS 兜底关闭时一并关它） */
+  'select-launcher-path': []
 }
 
 /** 脚本页 `update`：项目更新来源、渠道、CDK 与检查 / 应用 */

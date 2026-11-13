@@ -118,7 +118,9 @@ export interface MaaEndScriptConfig {
 export type HSRScriptConfig = HSRConfig
 
 // MaaFramework 项目脚本配置（宿主 Config v1；托管字段仍保留兼容读取）
-export type MaaFWLaunchMode = 'DirectExe' | 'AttachOnly'
+export type MaaFWLaunchMode = 'DirectExe' | 'URL' | 'AttachOnly'
+/** 由脚本自身控制游戏时，结束后谁关游戏：交给脚本 / 没正常完成时由 MAS 关 / 总是由 MAS 关。 */
+export type MaaFWCloseMode = 'Script' | 'OnFailure' | 'Always'
 /** 启动 Unity 游戏前临时改成的窗口分辨率；Off 不修改。 */
 export type MaaFWUnityResolution = 'Off' | '1920x1080' | '1280x720'
 
@@ -157,15 +159,25 @@ export interface MaaFWScriptConfig {
     PlayCoverUuid: string
   }
   Game: {
-    /** DirectExe：MAS 启动并在结束后关闭（默认）；AttachOnly：其他方式启停，MAS 只接管。 */
+    /**
+     * DirectExe：MAS 按 exe 启动并在结束后关闭（默认）；URL：MAS 打开链接拉起游戏、结束后关闭；
+     * AttachOnly：脚本或用户自己启动，MAS 只接管窗口，结束后关不关看 CloseMode。
+     */
     LaunchMode: MaaFWLaunchMode
+    /** 游戏 exe：DirectExe 下由 MAS 启动；URL 下必填、只用来识别；AttachOnly 下可选、用来识别要关的游戏。 */
     LaunchPath: string | null
+    /** AttachOnly 下可选的启动器 exe，MAS 兜底关闭时一并关闭本次运行期间打开的启动器。 */
+    LauncherPath: string | null
+    /** URL 模式下打开的链接，如 steam://rungameid/<appid>；启动参数写进链接。 */
+    URL: string
+    /** AttachOnly 下结束后谁关游戏；只关本次运行开始后才打开的进程。 */
+    CloseMode: MaaFWCloseMode
     /** 安卓游戏包名，留空则从项目的 pipeline 中自动识别。 */
     PackageName: string
     Arguments: string
     WaitTime: number
     /** 由 MAS 启动游戏时，窗口出现后至少再等多少秒才下发第一个任务；0 关闭。 */
-    /** DirectExe 下启动前按 exe 反查 Unity 注册表，临时改成所选窗口尺寸，关闭后恢复。 */
+    /** DirectExe / URL 下启动前按 exe 反查 Unity 注册表，临时改成所选窗口尺寸，关闭后恢复。 */
     UnityResolution: MaaFWUnityResolution
     /**
      * PI v2.8 hotkey 键位映射（仅 Win32）：JSON 文本 `{option 名: {字段名: 组合键}}`，
