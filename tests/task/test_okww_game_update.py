@@ -1,6 +1,7 @@
 """旧版本入口不再更新时，自动与手动更新仍交给官方启动器。"""
 
 import base64
+import gc
 import json
 import uuid
 from pathlib import Path
@@ -41,7 +42,7 @@ async def update_context(tmp_path, monkeypatch):
     uid = uuid.uuid4()
     user_config = OkwwUserConfig()
     await activate_config(user_config)
-    _, script, user = await create_runtime_tree(user_id=str(uid))
+    _task, script, user = await create_runtime_tree(user_id=str(uid))
     opened = []
 
     async def open_process(self, path, *args, **kwargs):
@@ -66,7 +67,8 @@ async def update_context(tmp_path, monkeypatch):
         "AsyncClient",
         lambda **kwargs: client_class(transport=transport, **kwargs),
     )
-    return config, {uid: user_config}, script, user, launcher, client, opened, interact
+    # 子节点通过弱引用寻找父任务，挂起夹具以保留根直到用例结束。
+    yield config, {uid: user_config}, script, user, launcher, client, opened, interact
 
 
 @pytest.mark.asyncio
@@ -134,6 +136,8 @@ async def test_client_only_auto_update_preserves_optional_launcher(
             }
         )
     )
+    # 回收时机不应影响用例运行期间的父任务存活。
+    gc.collect()
     proxy = AutoProxyTask(script, config, users, ProcessManager())
     # 路径通过配置校验后启动器被删除，与从未配置启动器是不同的可达情况。
     path.unlink()
