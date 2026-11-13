@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceInfo, DeviceStatus, EmulatorRuntimePolicy
 from app.utils import emulator as _utils_emulator
 from app.utils.common.process import runner as process_runner
@@ -21,7 +22,7 @@ FOREGROUND = f"mResumedActivity: ActivityRecord{{test {PACKAGE}/.MainActivity}}"
 class Harness:
     """只替换时钟和命令边界；执行真实管理器流程，不访问真实设备。"""
 
-    def __init__(self, monkeypatch):
+    def __init__(self, monkeypatch, tmp_path):
         self.now = 0.0
         self.calls = []
         self.options = []
@@ -31,22 +32,27 @@ class Harness:
         self.monkey = (0.2, 0, "")
         self.app_state = "running"
         self.app_launch = (0.2, 0, "")
-        self.manager = object.__new__(mumu.MumuManager)
-        self.manager.config = SimpleNamespace(
-            Info=SimpleNamespace(MaxWaitTime=300, ForceKillBeforeLaunch=False)
+        exe = tmp_path / "MuMuManager.exe"
+        exe.touch()
+        self.manager = mumu.MumuManager(
+            EmulatorConfig.model_validate(
+                {"Info": {"Type": "mumu", "Path": exe, "MaxWaitTime": 300}}
+            ),
+            runtime_policy=EmulatorRuntimePolicy(
+                lambda: False, lambda: False, tmp_path
+            ),
         )
-        self.manager.emulator_path = Path("MuMuManager-test-only")
-        self.manager.runtime_policy = EmulatorRuntimePolicy(
-            silence_enabled=lambda: False,
-            block_ads_enabled=lambda: False,
-            resource_path=Path("MuMuManager-test-only"),
-        )
-        self.manager._audio_mute_states = {}
         monkeypatch.setattr(mumu, "time", SimpleNamespace(monotonic=lambda: self.now))
         monkeypatch.setattr(
             mumu,
             "asyncio",
-            SimpleNamespace(sleep=self.sleep, CancelledError=asyncio.CancelledError),
+            SimpleNamespace(
+                sleep=self.sleep,
+                CancelledError=asyncio.CancelledError,
+                timeout=asyncio.timeout,
+                get_running_loop=asyncio.get_running_loop,
+                Lock=asyncio.Lock,
+            ),
         )
         monkeypatch.setattr(
             mumu, "ProcessRunner", SimpleNamespace(run_process=self.run)
@@ -85,8 +91,8 @@ class Harness:
 
 
 @pytest.fixture
-def harness(monkeypatch):
-    return Harness(monkeypatch)
+def harness(monkeypatch, tmp_path):
+    return Harness(monkeypatch, tmp_path)
 
 
 @pytest.mark.asyncio
@@ -137,7 +143,7 @@ async def test_slow_cold_boot_keeps_full_startup_wait(harness, monkeypatch, fore
     async def status(idx):
         nonlocal status_calls
         status_calls += 1
-        if status_calls == 1:
+        if not harness.commands("launch"):
             return DeviceStatus.OFFLINE
         # 正常但较慢：上线等待超过新的前台辅助预算。
         return DeviceStatus.STARTING if harness.now < 80 else DeviceStatus.ONLINE

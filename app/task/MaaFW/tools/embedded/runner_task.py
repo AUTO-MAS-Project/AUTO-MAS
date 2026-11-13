@@ -32,7 +32,7 @@ from app.core.notify.task_content import (
 )
 from app.core.notify.task_content import screenshot_entries as screenshot_entries
 from app.core.ws import protocol
-from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.emulator import DeviceBase, DeviceInfo, EmulatorStartupError
 from app.models.notification import LocalNotice
 from app.models.schema import (
     HistoryAttachmentInput,
@@ -916,7 +916,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     else f"MaaFW 运行异常: {exc}"
                 )
                 self._append_log(message, warning=True)
-                unretryable = _is_unretryable_failure(message)
+                unretryable = isinstance(
+                    exc, EmulatorStartupError
+                ) or _is_unretryable_failure(message)
                 self._record_attempt(
                     index + 1,
                     [],
