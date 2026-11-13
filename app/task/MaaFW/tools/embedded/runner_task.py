@@ -2096,7 +2096,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return int(matches[0].hWnd)
 
     async def _run_maafw(self, device_config: MaaFWDeviceConfig) -> MaaFWRunResult:
-        if self.run_plan is None:
+        plan = self.run_plan
+        if plan is None:
             raise RuntimeError("MaaFW 运行计划尚未初始化")
         limit_minutes = self.script_config.Run.RunTimeLimit
         timeout = limit_minutes * 60
@@ -2107,15 +2108,45 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 截止时刻交给 worker：到点它自己停任务、截图、把已完成的任务带回来。
         # 宿主这层只在 worker 没停下时才强杀，那时既没有截图也没有进度。
         run_deadline_at = time.time() + timeout
-        try:
-            return await asyncio.wait_for(
-                self._run_maafw_worker(
+        async def run_plan() -> MaaFWRunResult:
+            flavor = resolve_flavor(self.script_config)
+            get_entry = getattr(flavor, "account_verification_entry", None)
+            entry = get_entry(self.script_config) if get_entry is not None else None
+
+            async def run(part: MaaFWRunPlan) -> MaaFWRunResult:
+                return await self._run_maafw_worker(
                     device_config,
+                    plan=part,
                     run_deadline_at=run_deadline_at,
                     task_time_limit_seconds=task_limit_seconds,
                     task_time_limit_overrides=task_limit_overrides,
                     loop_guard=loop_guard,
-                ),
+                )
+
+            if entry is None:
+                return await run(plan)
+            if not plan.tasks or plan.tasks[0].entry != entry:
+                raise MaaFWLoginRequired("无法核对游戏账号：运行计划缺少开头的启动游戏任务")
+            startup = await run(plan.model_copy(update={"tasks": plan.tasks[:1]}))
+            if not startup.success or startup.signal is not None:
+                return startup
+            message = await flavor.verify_game_account(
+                user_config=self.cur_user_config,
+                adb_path=device_config.adbPath,
+                adb_address=device_config.address or "",
+                host_adb=await resolve_host_adb(self),
+            )
+            self._append_log(message)
+            if len(plan.tasks) == 1:
+                return startup
+            result = await run(plan.model_copy(update={"tasks": plan.tasks[1:]}))
+            return result.model_copy(
+                update={"completedTasks": startup.completedTasks + result.completedTasks}
+            )
+
+        try:
+            return await asyncio.wait_for(
+                run_plan(),
                 timeout=timeout + _RUN_DEADLINE_GRACE_SECONDS,
             )
         except asyncio.TimeoutError as exc:
@@ -2131,12 +2162,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self,
         device_config: MaaFWDeviceConfig,
         *,
+        plan: MaaFWRunPlan | None = None,
         run_deadline_at: float | None = None,
         task_time_limit_seconds: int = 0,
         task_time_limit_overrides: dict[str, int] | None = None,
         loop_guard: bool = False,
     ) -> MaaFWRunResult:
-        if self.run_plan is None:
+        plan = self.run_plan if plan is None else plan
+        if plan is None:
             raise RuntimeError("MaaFW 运行计划尚未初始化")
 
         service = MaaFWRunnerService()
@@ -2234,9 +2267,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         event_server_failure: str | None = None
         try:
             self._check_avd_runtime_version(runner_environment.maafw_version)
-            runner_plan = self.run_plan
+            runner_plan = plan
             if runner_environment.maafw_version:
-                runner_plan = self.run_plan.model_copy(deep=True)
+                runner_plan = plan.model_copy(deep=True)
                 runner_plan.piEnv["PI_CLIENT_MAAFW_VERSION"] = (
                     f"v{runner_environment.maafw_version.lstrip('v')}"
                 )

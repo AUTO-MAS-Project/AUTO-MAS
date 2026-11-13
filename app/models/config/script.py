@@ -2670,11 +2670,22 @@ class MaaFWConfig(DomainEntry):
 
 
 class M9AUserConfig(MaaFWUserConfig):
-    """M9A 账号配置：与 MaaFW 账号配置同形。
+    """M9A 账号配置，含 B 服登录后的 UID 核对。
 
     ``Info.Account`` 在这里不只是备注：脚本资源为官服且账号非空时，运行前会自动插入
     「切换账号」任务（见 ``app/task/M9A/flavor.py``）。
     """
+
+    class InfoFields(MaaFWUserConfig.InfoFields):
+        GameUID: str = Field(
+            default_factory=lambda: "",
+            pattern=r"^[0-9]*$",
+            description="游戏内数字 UID，用于 MAS 登录 B 服后核对账号",
+        )
+
+    Info: InfoFields = Field(  # pyright: ignore[reportIncompatibleVariableOverride]
+        default_factory=InfoFields
+    )
 
 
 class M9AConfig(MaaFWConfig):
@@ -2708,7 +2719,7 @@ class M9AConfig(MaaFWConfig):
             default_factory=lambda: "Project",
             description="B 服登录方式。Project：由 M9A 项目的启动任务自己登录（上游「切换账号」仍只声明官服）；"
             "Mas：由 MAS 完成 B 服登录——拉起 B 服客户端后处理隐私政策提示、在登录记录里选择已保存的账号，"
-            "回到标题页后再交给 M9A 的启动任务进游戏并照常运行。Mas 需要 ADB controller 并在「游戏包名」里"
+            "进入游戏并核对账号配置中的 UID 后再交给 M9A 运行。Mas 需要 ADB controller 并在「游戏包名」里"
             "填写 B 服包名（com.shenlan.m.reverse1999.bilibili），账号填登录记录里显示的完整昵称，"
             "且不再向 M9A 下发「切换账号」。自动同意隐私提示复用全局「同意哔哩哔哩用户协议」开关（默认关闭），"
             "未开启时登录会停下并提示手动处理。",

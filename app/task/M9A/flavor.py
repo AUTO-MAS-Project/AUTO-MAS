@@ -361,6 +361,21 @@ class M9AFlavor:
             host_adb=host_adb,
         )
 
+    def account_verification_entry(self, script_config: Any) -> str | None:
+        return STARTUP_ENTRY if _login_mode(script_config) == LOGIN_MODE_MAS else None
+
+    async def verify_game_account(
+        self, *, user_config: Any, adb_path: str | None, adb_address: str, host_adb: Any
+    ) -> str:
+        from .login import verify_game_uid
+
+        return await verify_game_uid(
+            user_config=user_config,
+            adb_path=adb_path,
+            adb_address=adb_address,
+            host_adb=host_adb,
+        )
+
     async def ensure_game_updated(
         self,
         *,

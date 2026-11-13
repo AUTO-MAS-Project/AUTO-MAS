@@ -47,6 +47,18 @@
           />
         </a-form-item>
       </a-col>
+      <a-col v-if="showGameUid" :xs="24" :md="8">
+        <a-form-item label="UID">
+          <a-input
+            v-model:value="formData.Info.GameUID"
+            size="large"
+            inputmode="numeric"
+            autocomplete="off"
+            :placeholder="t('core.edit.m9aGameUidPlaceholder')"
+            @blur="emitSave('Info.GameUID', (formData.Info.GameUID ?? '').trim())"
+          />
+        </a-form-item>
+      </a-col>
     </a-row>
     <a-alert class="account-record-alert" type="info" show-icon :message="accountRecordTooltip" />
   </div>
