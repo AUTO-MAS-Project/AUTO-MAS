@@ -399,6 +399,12 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
     zipPath?: string
     error?: string
   }>
+  exportHSRIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
   exportDataBackup: () => Promise<{
     success: boolean
     message?: string
