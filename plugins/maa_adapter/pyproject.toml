@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "auto-mas-maa"
+version = "0.1.0"
+description = """<!--{"zh_CN":"MAA 专项适配插件","en":"MAA specialized script adapter"}-->"""
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.12,<3.13"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "AUTO-MAS Team" }]
+keywords = [
+  """<!--{"zh_CN":["专项适配","明日方舟"],"en":["Script adapter","Arknights"]}-->""",
+  "auto-mas-plugin",
+  "auto-mas-id:maa_adapter",
+]
+dependencies = ["auto-mas-core>=5.8,<5.9"]
+
+[project.urls]
+Homepage = "https://github.com/AUTO-MAS-Project/AUTO-MAS-MAA-Adapter"
+Repository = "https://github.com/AUTO-MAS-Project/AUTO-MAS-MAA-Adapter"
+Documentation = "https://github.com/AUTO-MAS-Project/AUTO-MAS-MAA-Adapter/blob/master/README.md"
+Issues = "https://github.com/AUTO-MAS-Project/AUTO-MAS-MAA-Adapter/issues"
+auto-mas-display-name = """<!--{"zh_CN":"MAA 专项","en":"MAA Adapter"}-->"""
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+maa_adapter = ["py.typed", "native/*.json", "i18n/*.json"]
+
+[tool.auto-mas]
+bundled = true
+default-enabled = true

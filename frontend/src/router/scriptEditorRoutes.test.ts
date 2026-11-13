@@ -1,20 +1,17 @@
+import { SCRIPT_PLUGIN_ROUTES } from '@/plugins/scriptAdapters'
 import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { MAAFW_FLAVORS } from '@/composables/useMaaFWFlavor'
 import { buildMaaFWRoutes, resolveMaaFWCanonicalLocation } from './maafwFlavorRoutes'
-import {
-  buildScriptEditorRoutes,
-  MAA_CULTIVATE_ROUTE,
-  scriptEditorLocation,
-} from './scriptEditorRoutes'
+import { buildScriptEditorRoutes, scriptEditorLocation } from './scriptEditorRoutes'
 
 const makeRouter = () =>
   createRouter({
     history: createMemoryHistory(),
     routes: [
       ...buildScriptEditorRoutes(),
+      ...SCRIPT_PLUGIN_ROUTES,
       ...Object.values(buildMaaFWRoutes(MAAFW_FLAVORS, {})).flat(),
-      MAA_CULTIVATE_ROUTE,
     ],
   })
 

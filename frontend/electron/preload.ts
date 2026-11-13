@@ -333,6 +333,43 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pullRepository: (rebuild?: boolean) => ipcRenderer.invoke('pull-repository', rebuild),
   installDependencies: (rebuild?: boolean) => ipcRenderer.invoke('install-dependencies', rebuild),
   getRuntimeInitContext: () => ipcRenderer.invoke('get-runtime-init-context'),
+  appUpdateCheck: (input: import('./services/appUpdateTypes').AppUpdateSettings) =>
+    /* 将应用版本检查请求交给主进程，渲染进程只接收查询结果。 */ ipcRenderer.invoke(
+      'app-update:check',
+      input
+    ),
+  appUpdateStatus: () =>
+    /* 向主进程读取当前应用更新快照，用于恢复界面状态。 */ ipcRenderer.invoke('app-update:status'),
+  appUpdateStart: (
+    version: string,
+    input: import('./services/appUpdateTypes').AppUpdateSettings,
+    downloader?: 'builtin' | 'fluxdown'
+  ) =>
+    /* 将目标版本、来源设置和可选下载渠道交给主进程启动下载。 */ ipcRenderer.invoke(
+      'app-update:start',
+      version,
+      input,
+      downloader
+    ),
+  appUpdateCancel: () =>
+    /* 请求主进程取消当前应用更新下载并等待收尾。 */ ipcRenderer.invoke('app-update:cancel'),
+  appUpdateSwitch: () =>
+    /* 请求主进程将当前 GitHub 更新下载切换到 CNB。 */ ipcRenderer.invoke('app-update:switch'),
+  appUpdateInstall: () =>
+    /* 请求主进程校验并安装已经完成准备的应用更新包。 */ ipcRenderer.invoke('app-update:install'),
+  onAppUpdate: (callback: (event: import('./services/appUpdateTypes').AppUpdateEvent) => void) => {
+    // 订阅应用更新事件，并返回取消订阅函数供页面生命周期清理。
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      event: import('./services/appUpdateTypes').AppUpdateEvent
+    ) => /* 移除 Electron 原始事件参数，仅将约定的更新事件交给页面回调。 */ callback(event)
+    ipcRenderer.on('app-update:event', listener)
+    return () =>
+      /* 解除当前回调对应的应用更新事件监听，避免页面卸载后重复处理。 */ ipcRenderer.removeListener(
+        'app-update:event',
+        listener
+      )
+  },
   checkRuntimeBinaryUpdate: () => ipcRenderer.invoke('check-runtime-binary-update'),
   updateRuntimeBinary: () => ipcRenderer.invoke('update-runtime-binary'),
   onRuntimeBinaryProgress: (callback: (progress: unknown) => void) => {

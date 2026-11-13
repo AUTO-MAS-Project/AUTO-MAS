@@ -256,7 +256,7 @@ async def test_missing_task_mapping_recovers_without_proxy_change(
 async def test_history_write_sanitizes_retained_records(monkeypatch):
     from contextlib import asynccontextmanager
 
-    from app.core import update as host
+    from app.core import downloads as host
     from app.models.config.setting import GlobalConfig
 
     setting = GlobalConfig.model_validate(

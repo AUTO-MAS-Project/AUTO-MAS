@@ -61,6 +61,24 @@ logger = get_logger("奇想盒 调度器")
 class WhimboxManager(ScriptManagerBase):
     """奇想盒控制器（无限暖暖，PC 前台原生来源线）"""
 
+    @staticmethod
+    async def check_prefetch(config) -> list:
+        """查询发行版本并比较当前安装，允许接管且确需更新时返回 wheel 下载地址与内容摘要。"""
+        from app.models.schema import DownloadRequest
+
+        root = config.Info.RootPath
+        if not config.Update.TakeoverEnabled or root is None:
+            return []
+        target, _name, url, digest = backend_update.select_wheel(
+            await backend_update.request_release()
+        )
+        if (
+            not backend_update.pending_marker(root).exists()
+            and await backend_update.installed_version(root) >= target
+        ):
+            return []
+        return [DownloadRequest(url=url, content_hash=digest)]
+
     async def prefetch_script_update(self) -> None:
         config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         if config.Update.TakeoverEnabled and config.Info.RootPath is not None:

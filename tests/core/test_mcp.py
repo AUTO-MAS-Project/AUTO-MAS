@@ -283,7 +283,8 @@ async def test_ws_error_does_not_fail_mcp(service, app, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_full_application_whitelist_and_schema_guards(monkeypatch):
+@pytest.mark.parametrize("with_maa", [False, True])
+async def test_full_application_whitelist_and_schema_guards(monkeypatch, with_maa):
     from fastapi_mcp.openapi import utils
 
     import app.api as api
@@ -294,12 +295,16 @@ async def test_full_application_whitelist_and_schema_guards(monkeypatch):
     app = FastAPI()
     for name in api.__all__:
         app.include_router(getattr(api, name))
+    if with_maa:
+        from maa_adapter.plugin import Plugin as MaaPlugin
+
+        app.include_router(MaaPlugin.api_router)
     try:
         service.start(app)
         await wait_loaded(service)
         assert service.status().state == "ready"
         tools = {tool.name: tool for tool in service._instance.tools}
-        assert set(tools) == set(module.MCP_INCLUDED_OPERATIONS)
+        assert set(tools) == set(module.included_operations(app))
         assert set(service._instance.operation_map) == set(tools)
         assert "get_mcp_status_api_core_mcp_status_get" not in tools
         assert "retry_mcp_api_core_mcp_retry_post" not in tools

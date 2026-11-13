@@ -9,16 +9,15 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from maa_adapter.native.runtime_config import _without_maa_update_changes
+from maa_adapter.tasks import auto_proxy, manager
+from maa_adapter.tasks.auto_proxy import AutoProxyTask
+from maa_adapter.updates import fluxdown as update
+from maa_adapter.updates.resources import service as resource
+from maa_adapter.updates.software import package as software_package
+from maa_adapter.updates.software import service as mirror
 
-from app.models.config import MaaConfig
 from app.services.common.update import transport as update_transport
-from app.task.MAA import AutoProxy as auto_proxy
-from app.task.MAA import manager
-from app.task.MAA.AutoProxy import AutoProxyTask, _without_maa_update_changes
-from app.task.MAA.tools import fluxdown_update as update
-from app.task.MAA.tools import resource_update as resource
-from app.task.MAA.tools import software_package
-from app.task.MAA.tools import software_update as mirror
 from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
@@ -303,7 +302,9 @@ async def test_prefetched_maa_package_is_consumed_once_when_release_advances(
     )
     scheduler = object.__new__(manager.MaaManager)
     scheduler.script_config = config
-    scheduler.script_info = SimpleNamespace(log="", script_id="test-script")
+    scheduler.script_info = SimpleNamespace(
+        log="", info=SimpleNamespace(script_id="test-script")
+    )
     scheduler.maa_set_path = root / "config"
     scheduler.temp_path = root / "Temp"
     scheduler._updater_running = False
@@ -330,7 +331,7 @@ async def test_prefetched_maa_package_is_consumed_once_when_release_advances(
         assert downloader.await_count == 2
         assert not candidate.package.exists()
     finally:
-        await scheduler.discard_prefetched_update()
+        update.discard_prepared_update(candidate)
 
 
 @pytest.mark.asyncio
@@ -537,7 +538,9 @@ async def test_unconfirmed_installation_never_updates_resources(
     root, _, _ = installation
     instance = object.__new__(manager.MaaManager)
     instance.script_config = script_config()
-    instance.script_info = SimpleNamespace(log="", script_id="test-script")
+    instance.script_info = SimpleNamespace(
+        log="", info=SimpleNamespace(script_id="test-script")
+    )
     instance.maa_set_path = root / "config"
     instance.temp_path = root / "Temp"
     instance._updater_running = False
@@ -651,44 +654,6 @@ def test_mirror_resource_stage_accepts_official_and_legacy_layout(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("channel", ["stable", "beta"])
-async def test_existing_channel_is_migrated_once(tmp_path, monkeypatch, channel):
-    from tests.config_support import activate_config
-
-    config_root = tmp_path / "maa" / "config"
-    config_root.mkdir(parents=True)
-    (config_root / "gui.new.json").write_text(
-        json.dumps({"Update": {"VersionType": channel.title()}}), encoding="utf-8"
-    )
-    config = MaaConfig.build(
-        payload={
-            "Info": {"Path": str(config_root.parent)},
-            "Update": {"TakeoverEnabled": True, "TakeoverMigrationVersion": 1},
-        }
-    )
-    await activate_config(config)
-    assert config.Update.ChannelMigrationVersion == 0
-    await mirror.migrate_maa_update_channel(config)
-    assert config.Update.Channel == channel
-    assert config.Update.ChannelMigrationVersion == 1
-    # A later user choice is authoritative even if the native GUI still says Beta.
-    await config.update(type(config).model_validate({"Update": {"Channel": "stable"}}))
-    await mirror.migrate_maa_update_channel(config)
-    assert config.Update.Channel == "stable"
-
-
-@pytest.mark.asyncio
-async def test_explicit_channel_does_not_trigger_migration(tmp_path):
-    from tests.config_support import activate_config
-
-    config = MaaConfig.build(payload={"Update": {"Channel": "beta"}})
-    await activate_config(config)
-    assert config.Update.ChannelMigrationVersion == 1
-    await mirror.migrate_maa_update_channel(config)
-    assert config.Update.Channel == "beta"
-
-
-@pytest.mark.asyncio
 async def test_native_only_cdk_cannot_fall_back_to_runtime_updates(
     installation, monkeypatch
 ):
@@ -752,7 +717,7 @@ async def test_local_resource_lock_contention_has_deadline(
 
 @pytest.mark.parametrize("limit", ["entries", "bytes"])
 def test_resource_archive_limits_reject_before_extracting(tmp_path, monkeypatch, limit):
-    from app.task.MAA.tools import resource_package
+    from maa_adapter.updates.resources import package as resource_package
 
     archive = tmp_path / "oversized.zip"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as package:
@@ -773,8 +738,8 @@ def test_resource_archive_limits_reject_before_extracting(tmp_path, monkeypatch,
 async def test_interrupted_resource_merge_blocks_next_run_until_repaired(
     resource_install, monkeypatch, failure
 ):
-    from app.task.MAA.tools import resource_package
-    from app.task.MAA.tools.update_errors import MaaUpdateUnsafeError
+    from maa_adapter.updates.errors import MaaUpdateUnsafeError
+    from maa_adapter.updates.resources import package as resource_package
 
     install, target, downloader = resource_install
     (install / "MAA.exe").touch()

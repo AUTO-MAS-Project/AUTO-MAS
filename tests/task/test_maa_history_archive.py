@@ -18,7 +18,7 @@ async def test_maa_finalizer_archives_original_without_system_temp(
     tmp_path, monkeypatch, isolated_app_paths
 ):
     monkeypatch.chdir(tmp_path)
-    module = importlib.import_module("app.task.MAA.AutoProxy")
+    module = importlib.import_module("maa_adapter.tasks.auto_proxy")
     monkeypatch.setattr(module.Notify, "push_statistics_report", AsyncMock())
     monkeypatch.setattr(module.process, "kill_process", AsyncMock())
     monkeypatch.setattr(module, "agree_bilibili", AsyncMock())
@@ -38,6 +38,7 @@ async def test_maa_finalizer_archives_original_without_system_temp(
         name="synthetic user",
         result="synthetic failure",
         status="running",
+        logs={now: log},
         log_record={now: log},
         iter_history_logs=lambda: [(now, log)],
     )
@@ -65,6 +66,8 @@ async def test_maa_finalizer_archives_original_without_system_temp(
         )
 
     task = SimpleNamespace(
+        current_log_at=lambda moment: None,
+        iter_logs=lambda: [(now, log)],
         check_result="Pass",
         history=SimpleNamespace(
             begin_user_history_capture=Mock(),
@@ -91,7 +94,7 @@ async def test_maa_finalizer_archives_original_without_system_temp(
         cur_user_uid="synthetic",
     )
     try:
-        await module.AutoProxyTask.final_task(task)
+        await module.AutoProxyTask._business_final(task)
         assert len(submitted) == len(saved) == 1
         assert submitted[0].attachments[0].path == shot
         assert submitted[0].attachments[0].archive_mode == "copy"

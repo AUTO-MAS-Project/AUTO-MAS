@@ -65,7 +65,13 @@ def test_user_scripts_pair_on_terminal_failure(config_name, tmp_path, monkeypatc
     after.write_text("@echo off", encoding="utf-8")
 
     async def scenario():
-        cfg = getattr(configs, config_name)()
+        from maa_adapter.config.user import MaaUserConfig
+
+        cfg = (
+            MaaUserConfig()
+            if config_name == "MaaUserConfig"
+            else getattr(configs, config_name)()
+        )
         await cfg.activate()
         cfg.Info.IfScriptBeforeTask = True
         await cfg.commit()

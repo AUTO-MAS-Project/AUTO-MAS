@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from app.core import downloads as host
 from app.core import script_update as update
-from app.core import update as host
 from app.models.config.setting import GlobalConfig
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 

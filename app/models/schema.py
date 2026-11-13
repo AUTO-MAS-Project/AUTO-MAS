@@ -36,6 +36,66 @@ from app.utils import MSS_DEFAULT_TRIBULATION_STAGE, MSS_TRIBULATION_STAGES
 from app.utils.contracts.power import PowerSignal
 
 
+class DownloadRequest(BaseModel):
+    """文件需求；内容身份按 rid、内容哈希、null 的顺序确定。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    url: str
+    rid: str | None = None
+    content_hash: str | None = None
+    downloader: Literal["builtin", "fluxdown"] | None = None
+
+    @property
+    def identity(self) -> tuple[Literal["rid", "hash", "null"], str | None]:
+        """按 rid、内容哈希、空身份的优先级确定下载文件身份，供缓存复用和变更重下载判断。"""
+        if self.rid is not None:
+            return ("rid", self.rid)
+        if self.content_hash is not None:
+            return ("hash", self.content_hash)
+        return ("null", None)
+
+
+class OperationInfo(BaseModel):
+    """宿主命令快照，业务参数和插件实例不进入外部契约。"""
+
+    operationId: UUID
+    configUid: UUID
+    field: str
+    owner: UUID | None = None
+    state: Literal[
+        "queued", "running", "cancelling", "succeeded", "failed", "cancelled"
+    ] = "queued"
+    cancellable: bool = True
+    createdAt: AwareDatetime
+    completedAt: AwareDatetime | None = None
+    errorCode: str | None = None
+
+
+class DownloadSnapshot(BaseModel):
+    """下载中心的可重复读取快照，不消费背景结果。"""
+
+    url: str
+    identity_type: Literal["rid", "hash", "null"]
+    identity: str | None
+    generation: str | None = None
+    state: Literal[
+        "not_found",
+        "pending",
+        "running",
+        "retrying",
+        "succeeded",
+        "failed",
+        "cancelling",
+        "cancelled",
+    ]
+    path: str | None = None
+    error_code: str | None = None
+    writer_unconfirmed: bool = False
+    downloaded: int = 0
+    total: int = 0
+    speed: float = 0
+
+
 class TaskSelectionNode(BaseModel):
     """有序要求节点；队列下 uid 指队列项，直接运行时指托管。"""
 
@@ -292,6 +352,83 @@ class OutBase(BaseModel):
     message: str = Field(default="操作成功", description="操作消息")
 
 
+class ConfigBackupItemOut(BaseModel):
+    """配置备份条目"""
+
+    time: str = Field(..., description="备份时间戳（目录名，如 20260910-104500）")
+    base: Optional[str] = Field(
+        default=None,
+        description="备份时点的 base 来源（shared/independent/native）；无标注（旧版备份或未声明来源）为 null",
+    )
+
+
+class ConfigBackupListOut(OutBase):
+    data: List[ConfigBackupItemOut] = Field(..., description="备份列表（时间倒序）")
+    base: Optional[str] = Field(
+        default=None,
+        description="当前 base 来源（shared/independent/native）；无来源概念（非 base 专项）为 null",
+    )
+
+
+class ConfigBackupRestoreIn(BaseModel):
+    """把指定备份恢复到目标位置（target 取值由专项池定义）"""
+
+    scriptId: str = Field(..., description="所属托管ID")
+    userId: str = Field(..., description="目标账号ID")
+    time: str = Field(..., description="备份时间戳")
+    target: str = Field(
+        ...,
+        description="恢复目标（如 zzz-od 的 mas/onedragon、ok-nte 的 mas/native）；非法值返回 400",
+    )
+    force: bool = Field(
+        default=False,
+        description="源配置损坏时是否强制恢复（False 时返回 409 由前端二次确认，True 跳过损坏文件相关的保护步骤）",
+    )
+
+
+class ConfigBackupRestoreOut(OutBase):
+    target: str = Field(..., description="实际执行的恢复目标")
+
+
+class ConfigBackupEnsureIn(BaseModel):
+    """按需归档目标池当前配置（编辑界面进入/退出时机，指纹去重）"""
+
+    scriptId: str = Field(..., description="所属托管ID")
+    userId: str = Field(..., description="目标账号ID")
+    target: str = Field(..., description="归档目标（取值由专项池定义）")
+
+
+class ConfigBackupEnsureOut(OutBase):
+    created: bool = Field(
+        ..., description="本次是否新建了归档（False=指纹无变化跳过或无可归档内容）"
+    )
+    time: str = Field(..., description="最新备份时间戳（无任何备份为空串）")
+
+
+class ConfigBackupPreviewOut(OutBase):
+    """备份配置摘要（预览用，纯读不恢复；载荷结构由专项定义）"""
+
+    time: str = Field(..., description="备份时间戳")
+    target: str = Field(..., description="备份类别")
+    data: dict = Field(
+        ...,
+        description="专项预览载荷（如 zzz-od 的 info/account/tasks/instances 或 ok-nte 的 files）",
+    )
+
+
+class ConfigBackupFileOut(OutBase):
+    """备份内文本文件内容（只读；路径限归档内相对路径，防穿越）"""
+
+    time: str = Field(..., description="备份时间戳")
+    target: str = Field(..., description="备份类别")
+    path: str = Field(..., description="归档内相对路径（如 M7A/config.yaml）")
+    size: int = Field(..., description="文件字节数")
+    content: str = Field(
+        ...,
+        description="文本内容（utf-8 兼容 BOM 读取，无法解码部分以替换符呈现；超出大小上限返回 400）",
+    )
+
+
 class TagItem(BaseModel):
     text: str = Field(..., description="标签文本")
     color: Literal[
@@ -370,7 +507,7 @@ class EmulatorDeleteIn(BaseModel):
     emulatorId: str = Field(..., description="模拟器 ID")
 
 
-PlanComboxConsumer = Literal["maa", "maaend", "baah", "mss", "universal"]
+PlanComboxConsumer = Literal["maaend", "baah", "mss", "universal"]
 
 
 class MaaEndAutoEssencePlanKey(BaseModel):
@@ -1729,6 +1866,17 @@ class UserDeleteIn(UserInBase):
 
 
 __all__ = [
+    "ConfigBackupItemOut",
+    "ConfigBackupListOut",
+    "ConfigBackupRestoreIn",
+    "ConfigBackupRestoreOut",
+    "ConfigBackupEnsureIn",
+    "ConfigBackupEnsureOut",
+    "ConfigBackupPreviewOut",
+    "ConfigBackupFileOut",
+    "OperationInfo",
+    "DownloadRequest",
+    "DownloadSnapshot",
     "ScriptDeleteIn",
     "UserInBase",
     "UserDeleteIn",

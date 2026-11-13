@@ -5023,6 +5023,7 @@ __metadata:
     pinia: "npm:^3.0.3"
     pinyin-pro: "npm:^3.29.5"
     qrcode: "npm:1.5.4"
+    smol-toml: "npm:^1.9.1"
     three: "npm:^0.184.0"
     typescript: "npm:^5.9.2"
     vite: "catalog:"
@@ -8462,7 +8463,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"smol-toml@npm:^1.9.0":
+"smol-toml@npm:^1.9.0, smol-toml@npm:^1.9.1":
   version: 1.9.1
   resolution: "smol-toml@npm:1.9.1"
   checksum: 10c0/8acccf7bbc063f29405f58f5014ab39bf4eb9d7f0e000e5e3f140f7d4d6ead5696681a7c15260d1f2910213012c0af43b31a05bf94f704b0bdf39989fba08c02

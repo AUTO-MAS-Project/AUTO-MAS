@@ -101,6 +101,7 @@
     "form-data": "^4.0.4",
     "json5": "2.2.3",
     "pinyin-pro": "^3.29.5",
+    "smol-toml": "^1.9.1",
     "yaml": "2.8.1"
   },
   "devDependencies": {

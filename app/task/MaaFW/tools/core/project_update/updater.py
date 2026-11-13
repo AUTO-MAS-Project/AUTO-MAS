@@ -478,6 +478,7 @@ async def update_maafw_project_if_needed(
     allow_misnumbered_rollback: bool = False,
     prefetch_full_package: bool = False,
     prefetched: tuple[str, MaaFWProjectUpdateDiscovery] | None = None,
+    download_paths: dict[str, str] | None = None,
 ) -> MaaFWProjectUpdateResult:
     """检查并按需更新项目：发现 → 下载一次 → 在 staging 里从当前载荷 + 包建新载荷 →
     预检 → 并入共用库 → 登记。项目视图在这里一个字节都不动。
@@ -831,6 +832,7 @@ async def update_maafw_project_if_needed(
             payload=payload,
             after_register=after_register,
             range_delta=range_delta,
+            download_paths=download_paths,
         )
     except Exception as exc:
         if getattr(exc, "cancelled", False):
@@ -1382,6 +1384,7 @@ async def apply_maafw_project_update(
     payload: PayloadTarget | None = None,
     after_register: Callable[[RegisterResult], Awaitable[Any]] | None = None,
     range_delta: bool = False,
+    download_paths: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """下载一次 → 在 staging 里建新载荷 → 预检 → 并入共用库 → 登记 → ``after_register``。
 
@@ -1504,6 +1507,9 @@ async def apply_maafw_project_update(
                 source=candidate.source,
                 version=target_version,
                 download_url=download_url,
+                prefetched_path=Path(download_paths[download_url])
+                if download_paths and download_url in download_paths
+                else None,
                 expected_sha256=candidate.sha256,
                 artifact_id=candidate.artifact_id,
                 cache_root=DEFAULT_CACHE_ROOT,

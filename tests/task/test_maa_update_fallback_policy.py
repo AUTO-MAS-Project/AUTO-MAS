@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from maa_adapter.tasks import manager
+from maa_adapter.updates.errors import MaaUpdateUnsafeError
 
-from app.task.MAA import manager
-from app.task.MAA.tools.update_errors import MaaUpdateUnsafeError
 from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
@@ -117,13 +117,14 @@ async def test_failed_update_injects_runtime_config_and_restores_pending_package
     import json
     import shutil
 
-    from app.task.MAA import AutoProxy as auto_proxy
-    from app.task.MAA.base_preset import get_maa_base_preset
-    from app.task.MAA.tools.software_package import (
+    from maa_adapter.native.presets import get_maa_base_preset
+    from maa_adapter.tasks import auto_proxy
+    from maa_adapter.updates.software.package import (
         load_deferred_update,
         read_pending_update,
         write_pending_update,
     )
+
     from app.utils import io as io_utils
 
     monkeypatch.chdir(tmp_path)
@@ -161,7 +162,7 @@ async def test_failed_update_injects_runtime_config_and_restores_pending_package
     )
     task.config_base = auto_proxy.CONFIG_BASE_NATIVE
     task.native_base = True
-    task.mode = "Routine"
+    task.phase = "Routine"
     task.maa_root_path = root
     task.maa_set_path = root / "config"
     task.maa_exe_path = root / "MAA.exe"

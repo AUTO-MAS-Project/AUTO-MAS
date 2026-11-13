@@ -40,4 +40,11 @@ class NotificationTaskBase(TaskExecuteBase):
                 await self.script_info.commit()
                 last_wait_message = message
             await asyncio.sleep(1)
+        callback = getattr(self, "after_config_lock", None)
+        if callback is not None:
+            try:
+                await callback(config)
+            except BaseException:
+                await config.unlock(ticket)
+                raise
         return ticket

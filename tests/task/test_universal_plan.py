@@ -2,10 +2,11 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
+from maa_adapter.config.plan import MaaPlanConfig
 from pydantic import ValidationError
 
 from app.core.config.universal_plan import plan_directory, save_plan_config
-from app.models.config import GeneralUserConfig, MaaPlanConfig, UniversalPlanConfig
+from app.models.config import GeneralUserConfig, UniversalPlanConfig
 
 
 def make_plan(script_id, user_id, **info):

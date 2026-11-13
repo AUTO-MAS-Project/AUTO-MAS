@@ -144,6 +144,10 @@ export interface RuntimeUpdateDependencies {
   launchConfig: RuntimeLaunchConfig
   /** 省略时用真实的初始化编排器。 */
   createRuntimeService?: (options: RuntimeInitializationOptions) => RuntimeInitializationService
+  prepareUpgrade: (
+    version: string,
+    signal: AbortSignal
+  ) => Promise<RuntimeInitializationOptions['alignRuntimeBinary']>
 }
 
 // ==================== 版本号 ====================
@@ -191,6 +195,7 @@ interface UpdateSession {
   abortedForShutdown: boolean
   /** 在途的 bootstrap 或单步重试，退出清场要等它落地。 */
   inFlight: Promise<unknown> | null
+  preparation?: AbortController
 }
 
 let session: UpdateSession | null = null
@@ -222,10 +227,12 @@ const RUNTIME_UPDATE_ABORT_TIMEOUT_MS = RUNTIME_STOP_TIMEOUT_MS
 export async function abortRuntimeUpdateForShutdown(
   timeoutMs = RUNTIME_UPDATE_ABORT_TIMEOUT_MS
 ): Promise<RuntimeUpdateAbortResult> {
+  // 应用退出时取消更新准备与在途 Runtime 操作，并在期限内等待当前更新会话收尾。
   const current = session
   if (!current) return { hadSession: false, forwarded: false, settled: true }
 
   current.cancelRequested = true
+  current.preparation?.abort()
   current.abortedForShutdown = true
   const forwarded = current.runtimeService.cancel()
   const deadline = Date.now() + timeoutMs
@@ -276,6 +283,7 @@ async function runBackendUpdate(
   onProgress: (update: RuntimeUpdateProgress) => void,
   deps: RuntimeUpdateDependencies
 ): Promise<RuntimeUpdateOutcome> {
+  // 校验模式与目标版本，先执行前端升级准备和依赖预检，再协调后端停止、Runtime 更新及后端重启。
   const { launchConfig } = deps
 
   if (launchConfig.mode === 'development') {
@@ -298,9 +306,16 @@ async function runBackendUpdate(
     }
   }
 
+  let preparedAlignment: RuntimeInitializationOptions['alignRuntimeBinary']
+  const preparation = new AbortController()
   const runtimeService = (deps.createRuntimeService ?? defaultRuntimeServiceFactory)({
     launchConfig,
     targetVersion: version,
+    alignRuntimeBinary: options => {
+      // 向 Runtime 更新过程提供已预检和准备的二进制对齐入口，缺少材料时拒绝执行。
+      if (!preparedAlignment) throw new Error('Runtime 更新尚未准备完成')
+      return preparedAlignment(options)
+    },
   })
   const current: UpdateSession = {
     version,
@@ -309,8 +324,32 @@ async function runBackendUpdate(
     cancelRequested: false,
     abortedForShutdown: false,
     inFlight: null,
+    preparation,
   }
   session = current
+  onProgress({
+    stage: 'repository',
+    status: 'started',
+    progress: 0,
+    message: '正在准备更新并检查插件兼容性',
+  })
+  try {
+    preparedAlignment = await trackInFlight(
+      current,
+      deps.prepareUpgrade(version, preparation.signal)
+    )
+  } catch (error) {
+    return {
+      success: false,
+      phase: 'shutdown',
+      cancelled: current.cancelRequested,
+      error: error instanceof Error ? error.message : String(error),
+      retryable: !current.cancelRequested,
+    }
+  } finally {
+    current.preparation = undefined
+  }
+  if (current.cancelRequested) return { success: false, phase: 'shutdown', cancelled: true }
 
   logger.info(`开始经 Runtime 更新后端到 ${version}`)
 
@@ -432,10 +471,12 @@ export function describeRetryAction(action: RuntimeUpdateRetryAction): string[] 
  * 仓库，提交点之后的迟到取消不会把已激活的现场伪装成取消，结局仍以它的 `result` 为准。
  */
 export function cancelBackendUpdate(): { accepted: boolean; forwarded: boolean } {
+  // 标记当前更新会话取消，中止前端准备并向在途 Runtime 操作转发取消请求。
   const current = session
   if (!current) return { accepted: false, forwarded: false }
 
   current.cancelRequested = true
+  current.preparation?.abort()
   const forwarded = current.runtimeService.cancel()
   logger.info(`已受理更新取消请求${forwarded ? '，并已通知在途步骤取消' : ''}`)
   return { accepted: true, forwarded }

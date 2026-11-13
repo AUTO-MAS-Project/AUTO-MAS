@@ -25,7 +25,7 @@ import psutil
 from packaging.version import Version
 
 from app.core import Config
-from app.core.update import download_file
+from app.core.downloads import download_file
 from app.models.config import MaaEndConfig
 from app.services import script_install
 from app.services.common.update.transport import (
@@ -171,10 +171,21 @@ def discard_update(candidate: PreparedUpdate | str) -> None:
             candidate.destination.parent.rmdir()
 
 
-async def prepare_update(
-    root: Path, config: MaaEndConfig, *, progress: DownloadProgress | None = None
-) -> PreparedUpdate | str:
-    """只读安装身份并下载到独立 MAS 缓存；不要求原安装空闲。"""
+@dataclass(frozen=True)
+class UpdateDownload:
+    original: tuple[Version, str] | None
+    target: Version
+    arch: str
+    name: str
+    url: str
+    size: int
+    digest: str
+    source: str
+    downloader: str
+
+
+async def check_update(root: Path, config: MaaEndConfig) -> UpdateDownload | str:
+    """只读安装身份、回执并查询发行包，不分配下载目录或安装工作。"""
     channel = config.Update.Channel
     effective_cdk = (
         config.Update.MirrorChyanCDK.strip()
@@ -265,6 +276,26 @@ async def prepare_update(
         ):
             raise ValueError("Mirror 酱下载地址无效")
         source = "MirrorChyan"
+    return UpdateDownload(
+        original, target, arch, name, url, size, digest, source, downloader
+    )
+
+
+async def prepare_update(
+    root: Path, config: MaaEndConfig, *, progress: DownloadProgress | None = None
+) -> PreparedUpdate | str:
+    """检查专项发行版本并准备更新包，完成下载与校验后返回安装材料，无需更新时返回检查结论。"""
+    candidate = await check_update(root, config)
+    if isinstance(candidate, str):
+        return candidate
+    original, target, arch = candidate.original, candidate.target, candidate.arch
+    name, url, size, digest = (
+        candidate.name,
+        candidate.url,
+        candidate.size,
+        candidate.digest,
+    )
+    source, downloader, proxy = candidate.source, candidate.downloader, Config.proxy
     # 每次独立暂存，不覆盖取消尚未确认的下载目标；恢复时也不依赖缓存内容。
     import tempfile
 

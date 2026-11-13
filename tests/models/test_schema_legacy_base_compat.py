@@ -7,16 +7,12 @@ Literal 语义拒绝。
 
 import unittest
 
+from maa_adapter.config.user import MaaUserConfig
 from pydantic import ValidationError
 
 from app.api.scripts import UserUpdateIn
 from app.config.wire import config_contract
-from app.models.config import (
-    GeneralUserConfig,
-    HSRUserConfig,
-    MaaFWUserConfig,
-    MaaUserConfig,
-)
+from app.models.config import GeneralUserConfig, HSRUserConfig, MaaFWUserConfig
 
 GeneralUserConfig_Input = config_contract(GeneralUserConfig, mode="input")
 HSRUserConfig_Input = config_contract(HSRUserConfig, mode="input")

@@ -231,7 +231,7 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
     )
     await info.scripts.commit()
     manager = embedded_manager.MaaFWEmbeddedManager(info.scripts[item_uid])
-    from app.core.update import download_observer
+    from app.core.downloads import download_observer
 
     progress = []
     token = download_observer.set(

@@ -8,3 +8,4 @@ export type WhimboxConfig_UpdateInput = {
      */
     TakeoverEnabled?: (boolean | null);
 };
+

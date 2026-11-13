@@ -52,3 +52,4 @@ export type GeneralUserConfig_InfoInput = {
      */
     readonly Tag?: (string | null);
 };
+

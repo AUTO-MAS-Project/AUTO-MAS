@@ -1,23 +1,21 @@
 """全部内置接入、家族复用、宿主服务绑定与冷导入边界。"""
 
 import importlib
-from pathlib import Path
-from unittest.mock import AsyncMock, Mock
-
 import json
 import os
 import subprocess
 import sys
 from dataclasses import fields, replace
+from pathlib import Path
 from types import ModuleType
+from unittest.mock import AsyncMock, Mock
 
 import pytest
-
-from app.models.task import ScriptItem
 
 from app.config import ConfigCollection
 from app.core.config.manager import AppConfig
 from app.models import config as models
+from app.models.task import ScriptItem
 from app.task.builtin_registration import build_builtin_script_capabilities
 
 # 固定迁移前的能力契约；可选钩子缺省是明确不支持，不要求各专项长成同一形状。
@@ -34,12 +32,6 @@ EXPECTED = [
         },
     ),
     ("BetterGI", "BetterGI", "BetterGIManager", {"prepare_user_update"}),
-    (
-        "Maa",
-        "MAA",
-        "MaaManager",
-        {"prepare_user_update", "emulator_binding", "user_config_directory"},
-    ),
     (
         "Src",
         "SRC",
@@ -255,7 +247,7 @@ def test_cold_declarations_and_parent_packages_do_not_load_execution_or_config(
     code = r"""
 import importlib, json, sys, asyncio
 from unittest.mock import patch
-folders = ["MAA","SRC","general","MaaEnd","MaaFW","Okww","OkNte","HSR","BetterGI","ZzzOd","BAAH","Whimbox"]
+folders = ["SRC","general","MaaEnd","MaaFW","Okww","OkNte","HSR","BetterGI","ZzzOd","BAAH","Whimbox"]
 with patch("asyncio.create_task",side_effect=AssertionError("spawn")):
     for folder in folders:
         importlib.import_module("app.task."+folder+".registration")

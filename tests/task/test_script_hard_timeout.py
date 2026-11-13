@@ -154,7 +154,9 @@ def test_hard_timeout_config_persistence_and_runtime(name, tmp_path):
     from app.models import config as configs
 
     async def scenario():
-        cls = getattr(configs, f"{name}Config")
+        from maa_adapter.config.script import MaaConfig
+
+        cls = MaaConfig if name == "Maa" else getattr(configs, f"{name}Config")
         config = cls()
         path = tmp_path / f"{name}.yaml"
         await activate_config(config, path)
@@ -171,7 +173,7 @@ def test_hard_timeout_config_persistence_and_runtime(name, tmp_path):
         assert loaded.Run.HardTimeLimit == 240
         proxy.script_config = loaded
         assert ScriptAutoProxyBase.run_timeout_seconds.fget(proxy) == 240 * 60
-        model = config_contract(getattr(configs, f"{name}Config"))
+        model = config_contract(cls)
         assert (
             model.model_validate({"Run": {"HardTimeLimit": 240}}).Run.HardTimeLimit
             == 240

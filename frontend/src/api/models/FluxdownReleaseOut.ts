@@ -43,3 +43,4 @@ export type FluxdownReleaseOut = {
      */
     mirrors?: Array<string>;
 };
+

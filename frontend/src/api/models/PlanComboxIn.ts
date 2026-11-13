@@ -13,10 +13,10 @@ export namespace PlanComboxIn {
      * 计划表消费方
      */
     export enum consumer {
-        MAA = 'maa',
         MAAEND = 'maaend',
         BAAH = 'baah',
         MSS = 'mss',
         UNIVERSAL = 'universal',
     }
 }
+

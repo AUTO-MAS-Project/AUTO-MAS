@@ -29,11 +29,15 @@ from app.core.lifecycle import _ShutdownCoordinator
 def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
     monkeypatch, isolated_app_paths, failure, cleanup_failure, desktop
 ):
+    """验证业务就绪与定时器启动不被 MCP 阻塞或失败拖住，退出时仍按生命周期清理组件。"""
+    from maa_adapter import stages as stage_service
+
     from app.config import config_manager
     from app.core import Power
+    from app.plugin.http import HttpRegistry
     from app.services import obs_replay
-    from app.task.MAA.stage import maa_stage_service
 
+    monkeypatch.setattr(core.Plugin, "http", HttpRegistry())
     registry = BackgroundTaskRegistry()
     monkeypatch.setattr(core, "BackgroundTaskManager", registry)
     monkeypatch.setattr(core, "ShutdownCoordinator", _ShutdownCoordinator())
@@ -83,10 +87,11 @@ def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
         (core.TaskManager, ["stop_task"]),
         (core.MainConnection, ["begin_shutdown", "cancel_hook_tasks"]),
         (core.Dispatcher, ["shutdown"]),
-        (core.Updater, ["cancel_download"]),
+        (core.Operations, ["shutdown"]),
+        (core.Plugin, ["shutdown"]),
         (Power, ["cancel_power_task"]),
         (obs_replay.ObsReplay, ["cleanup_temporary", "stop"]),
-        (maa_stage_service, ["get_stage"]),
+        (stage_service, ["get_stage"]),
         (config_manager, ["flush"]),
         (
             core.Config.maafw_maintenance,
@@ -103,6 +108,11 @@ def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
         for method in methods:
             monkeypatch.setattr(owner, method, AsyncMock())
     monkeypatch.setattr(core.MainTimer, "start", timer_start)
+    # 插件/下载生命周期另有集成覆盖；本用例只验证 MCP 不阻塞业务就绪与收尾。
+    monkeypatch.setattr(core.Operations, "seal", lambda: None)
+    monkeypatch.setattr(core.Plugin, "seal", lambda: None)
+    monkeypatch.setattr(core.Downloads, "seal", lambda: None)
+    monkeypatch.setattr(core.Downloads, "shutdown_all", AsyncMock(return_value=True))
     monkeypatch.setattr(core.Publisher, "send", AsyncMock(return_value=False))
     if cleanup_failure:
         original_shutdown = service.shutdown

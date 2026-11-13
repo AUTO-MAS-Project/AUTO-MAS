@@ -105,6 +105,24 @@ class MaaEndManager(ScriptManagerBase):
         self._program_update_prepared = False
         self._update_candidate: script_update.PreparedUpdate | str | None = None
 
+    @staticmethod
+    async def check_prefetch(config) -> list:
+        """在允许接管更新且已配置安装目录时检查更新候选，返回文件身份和适用渠道的下载请求。"""
+        from app.models.schema import DownloadRequest
+
+        if not config.Update.TakeoverEnabled or config.Info.Path is None:
+            return []
+        candidate = await script_update.check_update(config.Info.Path, config)
+        if isinstance(candidate, str):
+            return []
+        return [
+            DownloadRequest(
+                url=candidate.url,
+                content_hash=candidate.digest or None,
+                downloader="builtin" if candidate.source == "MirrorChyan" else None,
+            )
+        ]
+
     async def prefetch_script_update(self) -> None:
         config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         if config.Update.TakeoverEnabled and config.Info.Path is not None:

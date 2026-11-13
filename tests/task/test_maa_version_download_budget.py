@@ -10,10 +10,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
-from app.task.MAA.tools import fluxdown_update as github
-from app.task.MAA.tools import resource_update as resource
-from app.task.MAA.tools import software_update as software
+from maa_adapter.updates import fluxdown as github
+from maa_adapter.updates.resources import service as resource
+from maa_adapter.updates.software import service as software
 
 NOW = datetime(2026, 11, 1, 4, tzinfo=timezone.utc)
 

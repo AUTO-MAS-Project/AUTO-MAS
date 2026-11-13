@@ -507,10 +507,27 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         new_uids = [item if isinstance(item, UUID) else item.uid for item in order]
         self._stage(StagedOp.collection_set_order(new_uids))
 
-    def add_type(self, entry_cls: type[TEntry]) -> None:
-        """登记新 Entry 类型；须为集合静态上界 ``TEntry`` 的子类。"""
-        if self.activation_state != NodeState.ACTIVE:
-            raise ValueError("须先 activate")
+    @property
+    def entry_types(self) -> dict[str, type[TEntry]]:
+        """当前类型表的只读快照，修改仍须走声明或提交入口。"""
+        return dict(self.effective._entry_types)
+
+    def register_initial_type(self, entry_cls: type[TEntry]) -> None:
+        """激活前登记插件类型，按类名替换冷态声明。"""
+        if self.activation_state != NodeState.INACTIVE:
+            raise ValueError("须在 activate 前声明类型")
+        self._check_entry_type(entry_cls)
+        self._entry_types[entry_cls.__name__] = entry_cls
+
+    def remove_initial_type(self, entry_type: type[TEntry] | str) -> None:
+        """撤销尚未激活的类型声明，不删除配置成员。"""
+        if self.activation_state != NodeState.INACTIVE:
+            raise ValueError("须在 activate 前撤销类型声明")
+        name = entry_type if isinstance(entry_type, str) else entry_type.__name__
+        self._entry_types.pop(name, None)
+
+    def _check_entry_type(self, entry_cls: type[TEntry]) -> None:
+        """冷态声明和热态登记共享集合静态上界约束。"""
         from .entry import ConfigEntry
 
         if not issubclass(entry_cls, ConfigEntry):
@@ -535,6 +552,12 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
             break
         if not issubclass(entry_cls, bound):
             raise TypeError(f"须为集合静态上界 {bound.__name__} 的子类: {entry_cls!r}")
+
+    def add_type(self, entry_cls: type[TEntry]) -> None:
+        """登记新 Entry 类型；须为集合静态上界 ``TEntry`` 的子类。"""
+        if self.activation_state != NodeState.ACTIVE:
+            raise ValueError("须先 activate")
+        self._check_entry_type(entry_cls)
         name = entry_cls.__name__
         cur = self.effective._entry_types.get(name)
         if cur is not None and cur is not entry_cls:

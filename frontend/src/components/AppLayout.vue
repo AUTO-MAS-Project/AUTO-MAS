@@ -138,14 +138,24 @@ const icon =
 // 调试入口与路由同时要求开发构建和开发环境，避免指向已裁剪的页面。
 const isDevelopment = import.meta.env.DEV && isDev
 
-const mainMenuItems = computed(() => [
-  { key: '/home', label: t('core.comp.home'), icon: icon('home', HomeOutlined) },
-  { key: '/scripts', label: t('core.comp.scripts'), icon: icon('scripts', FileTextOutlined) },
-  { key: '/plans', label: t('core.comp.plans'), icon: icon('plans', CalendarOutlined) },
-  { key: '/emulators', label: t('core.comp.emulators'), icon: icon('emulators', DatabaseOutlined) },
-  { key: '/queue', label: t('core.comp.queue'), icon: icon('queue', UnorderedListOutlined) },
-  { key: '/scheduler', label: t('core.comp.scheduler'), icon: icon('scheduler', ControlOutlined) },
-])
+const mainMenuItems = computed(
+  () => /* 按当前语言生成脚本、计划和调度的主导航项。 */ [
+    { key: '/home', label: t('core.comp.home'), icon: icon('home', HomeOutlined) },
+    { key: '/scripts', label: t('core.comp.scripts'), icon: icon('scripts', FileTextOutlined) },
+    { key: '/plans', label: t('core.comp.plans'), icon: icon('plans', CalendarOutlined) },
+    {
+      key: '/emulators',
+      label: t('core.comp.emulators'),
+      icon: icon('emulators', DatabaseOutlined),
+    },
+    { key: '/queue', label: t('core.comp.queue'), icon: icon('queue', UnorderedListOutlined) },
+    {
+      key: '/scheduler',
+      label: t('core.comp.scheduler'),
+      icon: icon('scheduler', ControlOutlined),
+    },
+  ]
+)
 
 // 开发环境专用菜单项
 const devMenuItems = computed(() => [
@@ -176,6 +186,7 @@ const bottomMenuItems = computed(() => [
   { key: '/gamesign', label: t('core.comp.checkIns'), icon: icon('gameSign', CarryOutOutlined) },
   { key: '/history', label: t('core.comp.history'), icon: icon('history', HistoryOutlined) },
   { key: '/theme-store', label: t('core.comp.themeStore'), icon: icon('themeStore', SkinOutlined) },
+  { key: '/plugins', label: t('core.plugins.title'), icon: icon('plugins', ControlOutlined) },
   { key: '/settings', label: t('core.comp.settings'), icon: icon('settings', SettingOutlined) },
 ])
 

@@ -13,6 +13,8 @@ import type { CheckImageAnyIn } from '../models/CheckImageAnyIn';
 import type { CheckImageIn } from '../models/CheckImageIn';
 import type { CheckImageOut } from '../models/CheckImageOut';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
+import type { CoreUpgradePrecheckIn } from '../models/CoreUpgradePrecheckIn';
+import type { CoreUpgradePrecheckOut } from '../models/CoreUpgradePrecheckOut';
 import type { CultivatePreviewIn } from '../models/CultivatePreviewIn';
 import type { CultivatePreviewOut } from '../models/CultivatePreviewOut';
 import type { Emulator2AvdInstanceIn } from '../models/Emulator2AvdInstanceIn';
@@ -39,7 +41,6 @@ import type { FluxdownInstallIn } from '../models/FluxdownInstallIn';
 import type { FluxdownInstallOut } from '../models/FluxdownInstallOut';
 import type { FluxdownReleaseOut } from '../models/FluxdownReleaseOut';
 import type { GameCalendarActivitiesOut } from '../models/GameCalendarActivitiesOut';
-import type { GetStageIn } from '../models/GetStageIn';
 import type { HistoryDetailGetIn } from '../models/HistoryDetailGetIn';
 import type { HistoryDetailGetOut } from '../models/HistoryDetailGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
@@ -64,9 +65,20 @@ import type { ObsReplayCheckOut } from '../models/ObsReplayCheckOut';
 import type { OCRScreenshotIn } from '../models/OCRScreenshotIn';
 import type { OCRScreenshotOut } from '../models/OCRScreenshotOut';
 import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
+import type { OperationGetIn } from '../models/OperationGetIn';
+import type { OperationListIn } from '../models/OperationListIn';
+import type { OperationListOut } from '../models/OperationListOut';
+import type { OperationOut } from '../models/OperationOut';
 import type { PlanComboxIn } from '../models/PlanComboxIn';
 import type { PlanGetIn } from '../models/PlanGetIn';
 import type { PlanGetOut } from '../models/PlanGetOut';
+import type { PluginCatalogGetIn } from '../models/PluginCatalogGetIn';
+import type { PluginCatalogGetOut } from '../models/PluginCatalogGetOut';
+import type { PluginConfigGetIn } from '../models/PluginConfigGetIn';
+import type { PluginConfigGetOut } from '../models/PluginConfigGetOut';
+import type { PluginRegistryGetIn } from '../models/PluginRegistryGetIn';
+import type { PluginRegistryGetOut } from '../models/PluginRegistryGetOut';
+import type { PluginRuntimeListOut } from '../models/PluginRuntimeListOut';
 import type { PowerCountdownSnapshot } from '../models/PowerCountdownSnapshot';
 import type { PowerOut } from '../models/PowerOut';
 import type { QueueGetIn } from '../models/QueueGetIn';
@@ -82,6 +94,7 @@ import type { ScriptMirrorCdkIn } from '../models/ScriptMirrorCdkIn';
 import type { ScriptMirrorCdkOut } from '../models/ScriptMirrorCdkOut';
 import type { ScriptShareInspectIn } from '../models/ScriptShareInspectIn';
 import type { ScriptStatusOverviewOut } from '../models/ScriptStatusOverviewOut';
+import type { ScriptTypesOut } from '../models/ScriptTypesOut';
 import type { SettingGetOut } from '../models/SettingGetOut';
 import type { SettingMirrorCdkIn } from '../models/SettingMirrorCdkIn';
 import type { SettingMirrorCdkOut } from '../models/SettingMirrorCdkOut';
@@ -104,9 +117,6 @@ import type { TimeSetGetOut } from '../models/TimeSetGetOut';
 import type { ToolsGetOut } from '../models/ToolsGetOut';
 import type { UniversalPlanStateIn } from '../models/UniversalPlanStateIn';
 import type { UniversalPlanStateOut } from '../models/UniversalPlanStateOut';
-import type { UpdateCheckIn } from '../models/UpdateCheckIn';
-import type { UpdateCheckOut } from '../models/UpdateCheckOut';
-import type { UpdateDownloadSnapshot } from '../models/UpdateDownloadSnapshot';
 import type { UserConfigDirIn } from '../models/UserConfigDirIn';
 import type { UserConfigDirOut } from '../models/UserConfigDirOut';
 import type { UserDeleteIn } from '../models/UserDeleteIn';
@@ -122,6 +132,154 @@ import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class GetService {
+    /**
+     * 查询插件注册表配置
+     * 读取单个或全部已安装插件记录，按配置 API 格式返回条目顺序与展示数据。
+     * @param requestBody
+     * @param locale
+     * @returns PluginRegistryGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginRegistryApiPluginRegistryGetPost(
+        requestBody: PluginRegistryGetIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginRegistryGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_registry/get',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询插件目录配置
+     * 读取单个或全部市场插件条目，返回展示顺序、版本及安装操作所需的配置数据。
+     * @param requestBody
+     * @param locale
+     * @returns PluginCatalogGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginCatalogApiPluginCatalogGetPost(
+        requestBody: PluginCatalogGetIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginCatalogGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_catalog/get',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询插件自有配置（凭注册表项定位）
+     * 读取已安装插件的专属配置，未声明配置时返回空值，记录不存在时返回未找到错误。
+     * @param requestBody
+     * @param locale
+     * @returns PluginConfigGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginConfigApiPluginConfigGetPost(
+        requestBody: PluginConfigGetIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginConfigGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_config/get',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 列出已加载插件（运行时）
+     * 汇总已发现插件的运行状态、版本、来源和依赖，供前端插件管理页展示。
+     * @param locale
+     * @returns PluginRuntimeListOut Successful Response
+     * @throws ApiError
+     */
+    public static listPluginsApiPluginListPost(
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginRuntimeListOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/list',
+            query: {
+                'locale': locale,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Operation
+     * 按操作标识读取执行记录，记录不存在时返回未找到错误。
+     * @param requestBody
+     * @returns OperationOut Successful Response
+     * @throws ApiError
+     */
+    public static getOperationApiOperationsGetPost(
+        requestBody: OperationGetIn,
+    ): CancelablePromise<OperationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/operations/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * List Operations
+     * 查询全部或指定配置节点的操作记录，供前端展示执行状态。
+     * @param requestBody
+     * @returns OperationListOut Successful Response
+     * @throws ApiError
+     */
+    public static listOperationsApiOperationsListPost(
+        requestBody: OperationListIn,
+    ): CancelablePromise<OperationListOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/operations/list',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询工具配置
+     * 获取工具设置
+     * @returns ToolsGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getToolsApiToolsGetPost(): CancelablePromise<ToolsGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/get',
+        });
+    }
     /**
      * 获取游戏已完成活动
      * @param game
@@ -165,25 +323,6 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/version',
-        });
-    }
-    /**
-     * 获取关卡号下拉框信息
-     * @param requestBody
-     * @returns ComboBoxOut Successful Response
-     * @throws ApiError
-     */
-    public static getStageComboxApiInfoComboxStagePost(
-        requestBody: GetStageIn,
-    ): CancelablePromise<ComboBoxOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/info/combox/stage',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
         });
     }
     /**
@@ -270,6 +409,7 @@ export class GetService {
     }
     /**
      * 信息总览
+     * 返回宿主托管概览，MAA 关卡及活动资源由所属插件接口提供。
      * @param refresh
      * @returns InfoOut Successful Response
      * @throws ApiError
@@ -429,6 +569,18 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/azurlane/activity',
+        });
+    }
+    /**
+     * Get Script Types
+     * 返回当前已启用的内置和插件托管类型，供新建页面实时筛选能力。
+     * @returns ScriptTypesOut Successful Response
+     * @throws ApiError
+     */
+    public static getScriptTypesApiScriptsTypesGet(): CancelablePromise<ScriptTypesOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/types',
         });
     }
     /**
@@ -603,265 +755,6 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maaend/options',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取当前基建班次
-     * @param requestBody
-     * @returns UserInfrastPlanSelectOut Successful Response
-     * @throws ApiError
-     */
-    public static getInfrastPlanSelectApiScriptsUserInfrastructurePlanSelectGetPost(
-        requestBody: UserDeleteIn,
-    ): CancelablePromise<UserInfrastPlanSelectOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/user/infrastructure/plan-select/get',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 用户自定义基建排班可选项
-     * @param requestBody
-     * @returns UserInfrastPlanComboxOut Successful Response
-     * @throws ApiError
-     */
-    public static getUserComboxInfrastructureApiScriptsUserComboxInfrastructurePost(
-        requestBody: UserDeleteIn,
-    ): CancelablePromise<UserInfrastPlanComboxOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/user/combox/infrastructure',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * MAA 库存保持物品可选项
-     * @param requestBody
-     * @returns ComboBoxOut Successful Response
-     * @throws ApiError
-     */
-    public static getMaaDepotItemsApiScriptsMaaDepotItemsPost(
-        requestBody: ScriptDeleteIn,
-    ): CancelablePromise<ComboBoxOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maa/depot/items',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * MAA 库存保持关卡候选（掉落指定材料，按单件期望理智升序，label 为 xx 理智/件）
-     * @param requestBody
-     * @returns ComboBoxOut Successful Response
-     * @throws ApiError
-     */
-    public static getMaaDepotStageCandidatesApiScriptsMaaDepotStageCandidatesPost(
-        requestBody: Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post,
-    ): CancelablePromise<ComboBoxOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maa/depot/stage/candidates',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 批量获取 MAA 库存保持关卡候选
-     * @param requestBody
-     * @returns MaaDepotStageCandidatesBatchOut Successful Response
-     * @throws ApiError
-     */
-    public static getMaaDepotStageCandidatesBatchApiScriptsMaaDepotStageCandidatesBatchPost(
-        requestBody: MaaDepotStageCandidatesBatchIn,
-    ): CancelablePromise<MaaDepotStageCandidatesBatchOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maa/depot/stage/candidates/batch',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * MAA 仓库库存（当前账号档案；label=数量字符串，value=物品ID）
-     * @param requestBody
-     * @returns MaaDepotInventoryOut Successful Response
-     * @throws ApiError
-     */
-    public static getMaaDepotInventoryApiScriptsMaaDepotInventoryPost(
-        requestBody: Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post,
-    ): CancelablePromise<MaaDepotInventoryOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maa/depot/inventory',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 森空岛绑定角色列表（遍历已配置森空岛凭据的签到账号组，明日方舟）
-     * @returns ComboBoxOut Successful Response
-     * @throws ApiError
-     */
-    public static getMaaCultivateSklandBindingsApiScriptsMaaCultivateSklandBindingsPost(): CancelablePromise<ComboBoxOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maa/cultivate/skland/bindings',
-        });
-    }
-    /**
-     * MAA 干员养成选择器目录（含技能/模组名称目录，稀有度降序）
-     * @param requestBody
-     * @returns MaaCultivateOperatorsOut Successful Response
-     * @throws ApiError
-     */
-    public static getMaaCultivateOperatorsApiScriptsMaaCultivateOperatorsPost(
-        requestBody: Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post,
-    ): CancelablePromise<MaaCultivateOperatorsOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maa/cultivate/operators',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 校验并转换 MAA 剪贴板养成目标（不落库）
-     * @param requestBody
-     * @returns MaaCultivateImportOut Successful Response
-     * @throws ApiError
-     */
-    public static parseMaaCultivateImportApiScriptsMaaCultivateImportPost(
-        requestBody: MaaCultivateImportIn,
-    ): CancelablePromise<MaaCultivateImportOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maa/cultivate/import',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * MAA 养成计划预览（纯计算不落库）
-     * @param requestBody
-     * @returns CultivatePreviewOut Successful Response
-     * @throws ApiError
-     */
-    public static getMaaCultivatePreviewApiScriptsMaaCultivatePreviewPost(
-        requestBody: CultivatePreviewIn,
-    ): CancelablePromise<CultivatePreviewOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maa/cultivate/preview',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 加载或同步作业站公开数据
-     * @param requestBody
-     * @returns MaaCopilotSourceOut Successful Response
-     * @throws ApiError
-     */
-    public static loadMaaCopilotSourceApiScriptsMaaCopilotSourcePost(
-        requestBody: MaaCopilotSourceIn,
-    ): CancelablePromise<MaaCopilotSourceOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maa/copilot/source',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 搜索作业站作者
-     * @param requestBody
-     * @returns ComboBoxOut Successful Response
-     * @throws ApiError
-     */
-    public static searchMaaCopilotAuthorsApiScriptsMaaCopilotAuthorsPost(
-        requestBody: MaaCopilotAuthorsIn,
-    ): CancelablePromise<ComboBoxOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maa/copilot/authors',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 比较作业练度并建议培养目标（不落库）
-     * @param requestBody
-     * @returns MaaCopilotAnalyzeOut Successful Response
-     * @throws ApiError
-     */
-    public static analyzeMaaCopilotTrainingApiScriptsMaaCopilotAnalyzePost(
-        requestBody: MaaCopilotAnalyzeIn,
-    ): CancelablePromise<MaaCopilotAnalyzeOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maa/copilot/analyze',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询脚本生效的 Mirror 酱 CDK 状态
-     * 校验编辑框草稿；MAA 专用 CDK 留空时按接管规则查询全局 CDK。
-     * @param requestBody
-     * @returns ScriptMirrorCdkOut Successful Response
-     * @throws ApiError
-     */
-    public static queryScriptMirrorCdkApiScriptsMirrorCdkPost(
-        requestBody: ScriptMirrorCdkIn,
-    ): CancelablePromise<ScriptMirrorCdkOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/mirror-cdk',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1298,18 +1191,6 @@ export class GetService {
         });
     }
     /**
-     * 查询工具配置
-     * 获取工具设置
-     * @returns ToolsGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getToolsApiToolsGetPost(): CancelablePromise<ToolsGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/get',
-        });
-    }
-    /**
      * 查询全局 Mirror 酱 CDK 状态与到期时间
      * @param requestBody
      * @returns SettingMirrorCdkOut Successful Response
@@ -1524,29 +1405,18 @@ export class GetService {
         });
     }
     /**
-     * 获取更新下载初始快照
-     * 返回当前下载权威状态；WS 只承载后续进度与终态事件。
-     * @returns UpdateDownloadSnapshot Successful Response
-     * @throws ApiError
-     */
-    public static getUpdateDownloadStatusApiUpdateDownloadStatusGet(): CancelablePromise<UpdateDownloadSnapshot> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/update/download/status',
-        });
-    }
-    /**
-     * 检查更新
+     * Precheck Core Upgrade
+     * 在插件状态锁内检查目标 core 版本与插件依赖是否兼容，返回准入结论和冲突明细供前端决策。
      * @param requestBody
-     * @returns UpdateCheckOut Successful Response
+     * @returns CoreUpgradePrecheckOut Successful Response
      * @throws ApiError
      */
-    public static checkUpdateApiUpdateCheckPost(
-        requestBody: UpdateCheckIn,
-    ): CancelablePromise<UpdateCheckOut> {
+    public static precheckCoreUpgradeApiUpdatePrecheckPost(
+        requestBody: CoreUpgradePrecheckIn,
+    ): CancelablePromise<CoreUpgradePrecheckOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/update/check',
+            url: '/api/update/precheck',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1748,6 +1618,265 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/ocr/check/image/all',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取当前基建班次
+     * @param requestBody
+     * @returns UserInfrastPlanSelectOut Successful Response
+     * @throws ApiError
+     */
+    public static getInfrastPlanSelectApiScriptsUserInfrastructurePlanSelectGetPost(
+        requestBody: UserDeleteIn,
+    ): CancelablePromise<UserInfrastPlanSelectOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/infrastructure/plan-select/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 用户自定义基建排班可选项
+     * @param requestBody
+     * @returns UserInfrastPlanComboxOut Successful Response
+     * @throws ApiError
+     */
+    public static getUserComboxInfrastructureApiScriptsUserComboxInfrastructurePost(
+        requestBody: UserDeleteIn,
+    ): CancelablePromise<UserInfrastPlanComboxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/combox/infrastructure',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * MAA 库存保持物品可选项
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaDepotItemsApiScriptsMaaDepotItemsPost(
+        requestBody: ScriptDeleteIn,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/depot/items',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * MAA 库存保持关卡候选（掉落指定材料，按单件期望理智升序，label 为 xx 理智/件）
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaDepotStageCandidatesApiScriptsMaaDepotStageCandidatesPost(
+        requestBody: Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/depot/stage/candidates',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 批量获取 MAA 库存保持关卡候选
+     * @param requestBody
+     * @returns MaaDepotStageCandidatesBatchOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaDepotStageCandidatesBatchApiScriptsMaaDepotStageCandidatesBatchPost(
+        requestBody: MaaDepotStageCandidatesBatchIn,
+    ): CancelablePromise<MaaDepotStageCandidatesBatchOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/depot/stage/candidates/batch',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * MAA 仓库库存（当前账号档案；label=数量字符串，value=物品ID）
+     * @param requestBody
+     * @returns MaaDepotInventoryOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaDepotInventoryApiScriptsMaaDepotInventoryPost(
+        requestBody: Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post,
+    ): CancelablePromise<MaaDepotInventoryOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/depot/inventory',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 森空岛绑定角色列表（遍历已配置森空岛凭据的签到账号组，明日方舟）
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaCultivateSklandBindingsApiScriptsMaaCultivateSklandBindingsPost(): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/skland/bindings',
+        });
+    }
+    /**
+     * MAA 干员养成选择器目录（含技能/模组名称目录，稀有度降序）
+     * @param requestBody
+     * @returns MaaCultivateOperatorsOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaCultivateOperatorsApiScriptsMaaCultivateOperatorsPost(
+        requestBody: Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post,
+    ): CancelablePromise<MaaCultivateOperatorsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/operators',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 校验并转换 MAA 剪贴板养成目标（不落库）
+     * @param requestBody
+     * @returns MaaCultivateImportOut Successful Response
+     * @throws ApiError
+     */
+    public static parseMaaCultivateImportApiScriptsMaaCultivateImportPost(
+        requestBody: MaaCultivateImportIn,
+    ): CancelablePromise<MaaCultivateImportOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * MAA 养成计划预览（纯计算不落库）
+     * @param requestBody
+     * @returns CultivatePreviewOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaCultivatePreviewApiScriptsMaaCultivatePreviewPost(
+        requestBody: CultivatePreviewIn,
+    ): CancelablePromise<CultivatePreviewOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/preview',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 加载或同步作业站公开数据
+     * @param requestBody
+     * @returns MaaCopilotSourceOut Successful Response
+     * @throws ApiError
+     */
+    public static loadMaaCopilotSourceApiScriptsMaaCopilotSourcePost(
+        requestBody: MaaCopilotSourceIn,
+    ): CancelablePromise<MaaCopilotSourceOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/copilot/source',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 搜索作业站作者
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static searchMaaCopilotAuthorsApiScriptsMaaCopilotAuthorsPost(
+        requestBody: MaaCopilotAuthorsIn,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/copilot/authors',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 比较作业练度并建议培养目标（不落库）
+     * @param requestBody
+     * @returns MaaCopilotAnalyzeOut Successful Response
+     * @throws ApiError
+     */
+    public static analyzeMaaCopilotTrainingApiScriptsMaaCopilotAnalyzePost(
+        requestBody: MaaCopilotAnalyzeIn,
+    ): CancelablePromise<MaaCopilotAnalyzeOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/copilot/analyze',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询脚本生效的 Mirror 酱 CDK 状态
+     * 校验编辑框草稿；MAA 专用 CDK 留空时按接管规则查询全局 CDK。
+     * @param requestBody
+     * @returns ScriptMirrorCdkOut Successful Response
+     * @throws ApiError
+     */
+    public static queryScriptMirrorCdkApiScriptsMirrorCdkPost(
+        requestBody: ScriptMirrorCdkIn,
+    ): CancelablePromise<ScriptMirrorCdkOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/mirror-cdk',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

@@ -4,8 +4,7 @@ import json
 from copy import deepcopy
 
 import pytest
-
-from app.task.MAA.tools.activity_inventory import resolve_activity_inventory_plans
+from maa_adapter.cultivate.activity_inventory import resolve_activity_inventory_plans
 
 STAGES = [
     {"Value": "TL-9", "Drop": "31113"},

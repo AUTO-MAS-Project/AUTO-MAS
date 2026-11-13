@@ -11,12 +11,13 @@ from unittest.mock import AsyncMock
 
 import psutil
 import pytest
+from maa_adapter.config.script import MaaConfig
+from maa_adapter.config.user import MaaUserConfig
 
 from app.core.background_tasks import BackgroundTaskManager
 from app.core.script_update import ScriptUpdateRequest, run_script_update
 from app.core.task_manager import _TaskManager
 from app.core.timer import _MainTimer
-from app.models.config import MaaConfig, MaaUserConfig
 from app.models.task import TaskItem, TaskMode
 from app.utils.common.process.runner import ProcessRunner, create_subprocess
 from app.utils.common.process.scope import TaskProcessScope, current_process_scope
@@ -31,7 +32,7 @@ async def test_maa_config_stop_saves_before_kill_or_reports_timeout(
 ):
     import importlib
 
-    module = importlib.import_module("app.task.MAA.ScriptConfig")
+    module = importlib.import_module("maa_adapter.tasks.session")
     host = tmp_path / "mas"
     host.mkdir()
     monkeypatch.chdir(host)
@@ -74,7 +75,7 @@ async def test_maa_config_stop_saves_before_kill_or_reports_timeout(
     monkeypatch.setattr(module, "ProcessManager", GuiProcess)
     monkeypatch.setattr(module.process, "kill_process", AsyncMock())
     monkeypatch.setattr(
-        module.ScriptConfigTask,
+        module.MaaGuiSession,
         "GUI_CLOSE_TIMEOUT",
         0.15 if unresponsive else 2,
         raising=False,
@@ -86,11 +87,35 @@ async def test_maa_config_stop_saves_before_kill_or_reports_timeout(
     user = MaaUserConfig.build(payload={"Info": {"Base": base}})
     await config.activate()
     await user.activate()
-    session = module.ScriptConfigTask(script, config, {user_id: user}, None)
+    from tests.maa_support import make_config_worker
+
+    session = make_config_worker(script, config, {str(user_id): user})
     discarded = AsyncMock()
     monkeypatch.setattr(session, "_notify_config_discarded", discarded)
 
-    class ConfigTask(StopTask):
+    from app.task.lifecycle import TaskBase
+
+    class ConfigTask(TaskBase):
+        def __init__(self, info):
+            super().__init__()
+            self.task_info = info
+            self._stop_scope = TaskProcessScope()
+
+        async def stop(self):
+            await self._stop_scope.run_checks()
+            await super().stop()
+
+        def request_stop(self):
+            return asyncio.create_task(self.stop())
+
+        async def run(self):
+            token = current_process_scope.set(self._stop_scope)
+            try:
+                await super().run()
+            finally:
+                await self._stop_scope.force_close()
+                current_process_scope.reset(token)
+
         async def main_task(self):
             await self.spawn(session)
 

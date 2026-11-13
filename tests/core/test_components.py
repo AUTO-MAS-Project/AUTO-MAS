@@ -45,6 +45,7 @@ import pytest
     ],
 )
 def test_component_import_order_preserves_shared_identity(order):
+    """在独立进程中验证不同导入顺序仍复用同一宿主组件，且惰性入口不提前初始化配置。"""
     code = f"""
 import importlib
 import sys
@@ -78,7 +79,9 @@ for name, module in {{
     "Publisher": "ws",
     "MainTimer": "timer", "BackgroundTaskManager": "background_tasks",
     "GameCalendar": "game_calendar", "GameMaintenance": "game_maintenance",
-    "Updater": "update", "ShutdownCoordinator": "lifecycle",
+    "Downloads": "downloads", "Operations": "plugin.operations",
+    "Plugin": "plugin", "GameManager": "game_manager",
+    "ShutdownCoordinator": "lifecycle",
 }}.items():
     instance = getattr(core, name)
     assert not isinstance(instance, type)

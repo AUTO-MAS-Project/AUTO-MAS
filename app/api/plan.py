@@ -26,13 +26,13 @@ from fastapi import APIRouter, Body
 from pydantic import (
     BaseModel,
     Field,
+    SerializeAsAny,
     model_validator,
 )
 
 import app.models.config as _config_models
 from app.config.wire import ConfigPayload, StrictConfigInput, config_contract
 from app.core import Config
-from app.models.config import PLAN_BOOK
 from app.models.schema import OutBase
 from app.utils import get_logger
 
@@ -45,37 +45,38 @@ MSSPlanConfig = ConfigPayload[_config_models.MSSPlanConfig]
 MSSPlanConfigInput = StrictConfigInput[_config_models.MSSPlanConfig]
 MaaEndPlanConfig = ConfigPayload[_config_models.MaaEndPlanConfig]
 MaaEndPlanConfigInput = StrictConfigInput[_config_models.MaaEndPlanConfig]
-MaaPlanConfig = ConfigPayload[_config_models.MaaPlanConfig]
-MaaPlanConfigInput = StrictConfigInput[_config_models.MaaPlanConfig]
 
-PlanConfigType = Literal[
-    "MaaPlanConfig",
-    "MaaEndPlanConfig",
-    "BAAHPlanConfig",
-    "MSSPlanConfig",
-    "UniversalPlanConfig",
-]
+PlanConfigType = str
 
 
 class PlanIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: PlanConfigType = Field(..., description="配置类型")
+    type: PlanConfigType = Field(
+        json_schema_extra={
+            "enum": [
+                "MaaEndPlanConfig",
+                "BAAHPlanConfig",
+                "MSSPlanConfig",
+                "UniversalPlanConfig",
+            ]
+        },
+        default=...,
+        description="配置类型",
+    )
 
 
-PlanCreateType = Literal[
-    "MaaPlan", "MaaEndPlan", "BAAHPlan", "MSSPlan", "UniversalPlan"
-]
+PlanCreateType = Literal["MaaEndPlan", "BAAHPlan", "MSSPlan", "UniversalPlan"]
 
 
 type PlanConfigData = (
-    MaaPlanConfig
+    SerializeAsAny[BaseModel]
     | MaaEndPlanConfig
     | BAAHPlanConfig
     | MSSPlanConfig
     | UniversalPlanConfig
 )
 type PlanConfigDataInput = (
-    MaaPlanConfigInput
+    SerializeAsAny[BaseModel]
     | MaaEndPlanConfigInput
     | BAAHPlanConfigInput
     | MSSPlanConfigInput
@@ -84,7 +85,11 @@ type PlanConfigDataInput = (
 
 
 class PlanCreateIn(BaseModel):
-    type: PlanCreateType
+    type: str = Field(
+        json_schema_extra={
+            "enum": ["MaaEndPlan", "BAAHPlan", "MSSPlan", "UniversalPlan"]
+        }
+    )
     scriptId: str | None = None
 
 
@@ -162,11 +167,7 @@ async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
         data = cast(PlanConfigData, config_contract(type(config))(**document))
     except Exception as e:
         logger.opt(exception=True).warning(f"add_plan失败: {type(e).__name__}: {e}")
-        plan_contract = next(
-            config_contract(item["config_class"])
-            for item in PLAN_BOOK.values()
-            if item["create_type"] == plan.type
-        )
+        plan_contract = ConfigPayload[_config_models.UniversalPlanConfig]
         return PlanCreateOut(
             code=500,
             status="error",
@@ -199,7 +200,7 @@ async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
             document.pop("ui", None)
             data[uid] = cast(
                 PlanConfigData,
-                config_contract(PLAN_BOOK[plan_type]["config_class"])(**document),
+                config_contract(Config.PlanConfig.entry_types[plan_type])(**document),
             )
     except Exception as e:
         logger.opt(exception=True).warning(f"get_plan失败: {type(e).__name__}: {e}")

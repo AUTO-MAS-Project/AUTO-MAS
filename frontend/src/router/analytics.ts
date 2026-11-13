@@ -7,6 +7,10 @@ import {
 } from '@/utils/analytics'
 
 const screens: Record<string, AnalyticsScreen> = {
+  Plugins: 'plugins',
+  PluginMarket: 'plugin_market',
+  PluginSettings: 'plugin_settings',
+  PluginPage: 'plugin_settings',
   Tools: 'tools',
   Initialization: 'initialization',
   Home: 'home',

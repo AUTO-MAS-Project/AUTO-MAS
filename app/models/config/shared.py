@@ -21,7 +21,6 @@
 
 from __future__ import annotations
 
-import json
 from copy import deepcopy
 from datetime import datetime, timezone, tzinfo
 from typing import TYPE_CHECKING, Annotated, Any, cast
@@ -256,52 +255,6 @@ def _tag_notes(config: UserConfigType) -> dict:
     }
 
 
-def migrate_maa_stamina_pipeline(data: dict) -> tuple[dict, bool]:
-    """保留完整旧配置，将原来启用的两类活动内容合并为动态库存目标。"""
-
-    migrated = deepcopy(data) if isinstance(data, dict) else {}
-    if not migrated or migrated.get("Data", {}).get("StaminaPipelineVersion") == 1:
-        return migrated, False
-    task = migrated.setdefault("Task", {})
-    old_task = data.get("Task", {})
-    plans = []
-    if old_task.get("IfEventDepotMaintain", False):
-        saved = old_task.get("EventDepotMaintainPlans", "[]")
-        try:
-            saved = json.loads(saved) if isinstance(saved, str) else saved
-        except (TypeError, ValueError):
-            saved = []
-            logger.warning("旧活动库存计划无法解析，原内容已保留在迁移前备份")
-        if not isinstance(saved, list):
-            saved = []
-        for index, plan in enumerate(saved, start=1):
-            if isinstance(plan, dict):
-                plan = deepcopy(plan)
-                plan.setdefault("StageType", "material")
-                plan.setdefault("StageIndex", index)
-                plan["LegacyIndex"] = True
-                plans.append(plan)
-    if old_task.get("IfActivityFirst", True):
-        plans.append(
-            {
-                "StageType": "activity",
-                "StageIndex": old_task.get("ActivityStageIndex", 1),
-                "DropCount": 999,
-                "OrundumDropCount": 9999,
-                "LegacyActivityFirst": True,
-            }
-        )
-    task["IfEventDepotMaintain"] = bool(
-        old_task.get("IfEventDepotMaintain", False)
-        or old_task.get("IfActivityFirst", True)
-    )
-    task["EventDepotMaintainPlans"] = json.dumps(plans, ensure_ascii=False)
-    state = migrated.setdefault("Data", {})
-    state["StaminaPipelineBackup"] = json.dumps(data, ensure_ascii=False)
-    state["StaminaPipelineVersion"] = 1
-    return migrated, True
-
-
 BAAH_PLAN_KEY_SHAPE = {
     # 字段: (默认值, 最短长度, 最长长度)，与 schema 的 BAAHPlanKey 逐位对应；
     # 每一位的取值范围见 schema.BAAH_PLAN_KEY_SLOT_RULES，不在这里重复一份。
@@ -528,7 +481,6 @@ __all__ = [
     "_tag_remained_days",
     "default_baah_plan_key",
     "logger",
-    "migrate_maa_stamina_pipeline",
     "normalize_baah_plan_key",
     "normalize_maaend_plan_key",
     "normalize_mss_plan_key",

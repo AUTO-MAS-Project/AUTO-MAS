@@ -24,7 +24,11 @@ from typing import TypedDict
 from app.utils import PLAN_CONSUMER_VALUES
 
 from .emulator import *
+from .game import *
 from .plan import *
+from .plugin import *
+from .plugin_emulator import *
+from .plugin_script import *
 from .queue import *
 from .script import *
 from .setting import *
@@ -35,7 +39,6 @@ from .shared import (
 from .tools import *
 
 CLASS_BOOK: dict[str, type[ScriptConfigType]] = {
-    "MAA": MaaConfig,
     "MaaEnd": MaaEndConfig,
     "SRC": SrcConfig,
     "M9A": M9AConfig,
@@ -65,24 +68,16 @@ PLAN_BOOK: dict[str, _PlanRegistration] = {
     "UniversalPlanConfig": {
         "create_type": "UniversalPlan",
         "config_class": UniversalPlanConfig,
-        "consumer": PLAN_CONSUMER_VALUES[4],
+        "consumer": PLAN_CONSUMER_VALUES[3],
         # 只服务通用脚本：专项各自的整份配置由各自计划承载
         "script_class": GeneralConfig,
         "field_group": "Info",
         "field_name": "PlanMode",
     },
-    "MaaPlanConfig": {
-        "create_type": "MaaPlan",
-        "config_class": MaaPlanConfig,
-        "consumer": PLAN_CONSUMER_VALUES[0],
-        "script_class": MaaConfig,
-        "field_group": "Stage",
-        "field_name": "StageMode",
-    },
     "MaaEndPlanConfig": {
         "create_type": "MaaEndPlan",
         "config_class": MaaEndPlanConfig,
-        "consumer": PLAN_CONSUMER_VALUES[1],
+        "consumer": PLAN_CONSUMER_VALUES[0],
         "script_class": MaaEndConfig,
         "field_group": "Info",
         "field_name": "SanityMode",
@@ -90,7 +85,7 @@ PLAN_BOOK: dict[str, _PlanRegistration] = {
     "BAAHPlanConfig": {
         "create_type": "BAAHPlan",
         "config_class": BAAHPlanConfig,
-        "consumer": PLAN_CONSUMER_VALUES[2],
+        "consumer": PLAN_CONSUMER_VALUES[1],
         "script_class": BAAHConfig,
         "field_group": "Info",
         "field_name": "StageMode",
@@ -99,7 +94,7 @@ PLAN_BOOK: dict[str, _PlanRegistration] = {
         "create_type": "MSSPlan",
         "config_class": MSSPlanConfig,
         # MSS 排在 baah 之后，位置索引跟着往后挪一位
-        "consumer": PLAN_CONSUMER_VALUES[3],
+        "consumer": PLAN_CONSUMER_VALUES[2],
         "script_class": MSSConfig,
         "field_group": "Info",
         "field_name": "PlanMode",

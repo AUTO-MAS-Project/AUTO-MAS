@@ -17,10 +17,11 @@ export namespace PlanIndexItem {
      * 配置类型
      */
     export enum type {
-        MAA_PLAN_CONFIG = 'MaaPlanConfig',
         MAA_END_PLAN_CONFIG = 'MaaEndPlanConfig',
         BAAHPLAN_CONFIG = 'BAAHPlanConfig',
         MSSPLAN_CONFIG = 'MSSPlanConfig',
         UNIVERSAL_PLAN_CONFIG = 'UniversalPlanConfig',
+        MAA_PLAN_CONFIG = 'MaaPlanConfig',
     }
 }
+
