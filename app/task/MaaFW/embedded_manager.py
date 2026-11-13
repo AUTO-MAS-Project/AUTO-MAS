@@ -698,6 +698,8 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             project_update_logs=self._take_project_update_logs(),
             signal_tracker=self.signal_tracker,
         )
+        task.history = self.history
+        task.callbacks = self.callbacks
         task.maafw_runtime_pool_root = route.root
         task.maafw_runtime_pool_id = route.pool_id
         return task

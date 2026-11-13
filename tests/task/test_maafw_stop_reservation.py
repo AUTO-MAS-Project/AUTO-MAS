@@ -1,9 +1,12 @@
-"""停止已运行的 MFW 账号后，同一项目仍可再次运行。"""
+"""MFW 账号收尾保留历史，停止后同一项目仍可再次运行。"""
 
 import asyncio
 import sys
 import threading
 import uuid
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -17,6 +20,76 @@ from app.utils.common.process.runner import create_subprocess, stop_process
 from app.utils.common.process.scope import current_process_scope
 from tests.config_support import activate_config
 from tests.task_stop_support import StopTask, add_script
+
+
+@pytest.mark.asyncio
+async def test_manager_built_account_finishes_and_saves_history(
+    isolated_app_paths, monkeypatch, tmp_path
+):
+    from app.core.history import HistoryStore
+    from app.models.task import TaskItem
+    from app.task import history_core
+    from app.task.MaaFW import embedded_manager
+    from app.task.MaaFW.tools.embedded import runner_task
+    from app.utils import UTC4
+
+    config = await activate_config(MaaFWConfig())
+    user_id = config.UserData.add(
+        MaaFWUserConfig, payload={"Notify": {"Enabled": False}}
+    )
+    await config.UserData.commit()
+    info = TaskItem()
+    script = await add_script(
+        info=info, script_id=str(config.uid), user_id=str(user_id)
+    )
+    manager = embedded_manager.MaaFWEmbeddedManager(script)
+    manager.script_config = config
+    manager.user_config = config.UserData
+    manager.history = history_core.TaskHistorySession(info)
+    storage = HistoryStore()
+    await storage.initialize(video_limit_bytes=0)
+    monkeypatch.setattr(history_core, "History", storage)
+    monkeypatch.setattr(runner_task.Notify, "send_notice", AsyncMock())
+    monkeypatch.setattr(runner_task.Notify, "push_statistics_report", AsyncMock())
+    account = manager._build_inner_task(
+        SimpleNamespace(root=tmp_path / "runtime-pool", pool_id="test")
+    )
+    manager.inner_task = account
+    manager._inner_finalized = False
+    temporary_history = Path(account._history_temp.name)
+    try:
+        # 只隔离游戏执行，使用真实的账号装配、日志、收尾与历史存储。
+        await account.prepare()
+        account.check_result = "Pass"
+        account.run_complete = True
+        account._history_statuses[id(account.cur_user_log)] = "success"
+        account._append_log("completed account log")
+        await manager.callbacks.drain()
+        assert "completed account log" in "".join(account.cur_user_log.content)
+        await manager._finalize_inner_task()
+        await manager._finalize_inner_task()
+        assert script.user_list[0].status == "完成"
+        assert config.UserData[user_id].Data.ProxyTimes == 1
+        assert not temporary_history.exists()
+        day = account.cur_user_log_started_at.astimezone(UTC4).date()
+        groups = await storage.search(start_date=day, end_date=day, mode="DAILY")
+        records = [
+            record
+            for users in groups.values()
+            for bucket in users.values()
+            for record in bucket.index
+        ]
+        assert len(records) == 1
+        assert records[0].status == "success"
+        detail = await storage.get_detail(record_id=records[0].id)
+        assert "completed account log" in detail.log_content
+    finally:
+        await account.callbacks.close()
+        await manager.callbacks.close()
+        await manager.history.close()
+        await storage.close()
+        await account._release_project_path()
+        account._history_temp.cleanup()
 
 
 @pytest.mark.asyncio
