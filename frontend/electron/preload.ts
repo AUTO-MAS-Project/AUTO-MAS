@@ -227,10 +227,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exportZzzOdIssueReport: () => ipcRenderer.invoke('zzzod:exportIssueReport'),
   exportWhimboxIssueReport: () => ipcRenderer.invoke('whimbox:exportIssueReport'),
   exportBetterGIIssueReport: () => ipcRenderer.invoke('bettergi:exportIssueReport'),
-  listMaaFWIssueReportScripts: (configTypes: string[]) =>
-    ipcRenderer.invoke('maafw:listIssueReportScripts', configTypes),
-  exportMaaFWIssueReport: (scriptId: string) =>
-    ipcRenderer.invoke('maafw:exportIssueReport', scriptId),
+  listMaaFWIssueReportProjects: (configTypes: string[]) =>
+    ipcRenderer.invoke('maafw:listIssueReportProjects', configTypes),
+  exportMaaFWIssueReport: (projectKey: string) =>
+    ipcRenderer.invoke('maafw:exportIssueReport', projectKey),
   exportM9AIssueReport: () => ipcRenderer.invoke('m9a:exportIssueReport'),
   exportMSSIssueReport: () => ipcRenderer.invoke('mss:exportIssueReport'),
   exportDataBackup: () => ipcRenderer.invoke('data:backup'),

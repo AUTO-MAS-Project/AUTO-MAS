@@ -27,11 +27,7 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import SectionCard from '@/components/ui/SectionCard.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
 import { SCRIPT_LABELS, SCRIPT_LOGOS } from '@/utils/scriptLogos'
-import {
-  maafwScriptTypeByConfigType,
-  resolveMaaFWFlavor,
-  type MaaFWFlavor,
-} from '@/composables/useMaaFWFlavor'
+import { maafwScriptTypeByConfigType } from '@/composables/useMaaFWFlavor'
 
 const { t } = useI18n()
 
@@ -79,28 +75,25 @@ const loadAddedScriptTypes = async () => {
 const hasScriptType = (...types: ScriptType[]): boolean =>
   addedScriptTypesUnknown.value || types.some(type => addedScriptTypes.value.has(type))
 
-// MFW 问题包按脚本导出：下拉里列出 MaaFW 与各特调的脚本，点哪个导哪个
-const maafwScriptTypes = maafwScriptTypeByConfigType()
-const maafwReportScripts = ref<Array<{ uid: string; name: string; flavor: MaaFWFlavor }>>([])
+// MFW 问题包按项目导出：下拉里列出 MaaFW 与各特调脚本所属的项目（含只剩运行历史的），
+// 点哪个导哪个，同项目已删脚本的运行也收进包里
+const maafwConfigTypes = Object.keys(maafwScriptTypeByConfigType())
+const maafwReportProjects = ref<
+  Array<{ key: string; label: string; scriptCount: number; deletedOnly: boolean }>
+>([])
 
-const loadMaaFWReportScripts = async () => {
+const loadMaaFWReportProjects = async () => {
   try {
-    const scripts = await window.electronAPI?.listMaaFWIssueReportScripts?.(
-      Object.keys(maafwScriptTypes)
-    )
-    maafwReportScripts.value = (scripts ?? []).map(script => ({
-      uid: script.uid,
-      name: script.name,
-      flavor: resolveMaaFWFlavor(maafwScriptTypes[script.type]),
-    }))
+    const projects = await window.electronAPI?.listMaaFWIssueReportProjects?.(maafwConfigTypes)
+    maafwReportProjects.value = projects ?? []
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`读取 MFW 脚本列表失败: ${errorMsg}`)
+    logger.error(`读取 MFW 项目列表失败: ${errorMsg}`)
   }
 }
 
 const handleMaaFWMenuOpenChange = (open: boolean) => {
-  if (open) void loadMaaFWReportScripts()
+  if (open) void loadMaaFWReportProjects()
 }
 
 const handleMaaFWMenuClick = ({ key }: { key: string | number }) => {
@@ -116,7 +109,7 @@ interface IssueTile {
   loading: boolean
   /** 点击导出；MFW 走下拉，没有直接动作 */
   run?: () => void
-  /** MFW 按脚本导出，磁贴改成下拉触发 */
+  /** MFW 按项目导出，磁贴改成下拉触发 */
   dropdown?: boolean
 }
 
@@ -152,7 +145,7 @@ const issueTiles = computed<IssueTile[]>(() => [
 ])
 
 onMounted(() => {
-  void loadMaaFWReportScripts()
+  void loadMaaFWReportProjects()
   void loadAddedScriptTypes()
 })
 
@@ -211,7 +204,7 @@ const exportDataBackup = async () => {
       </div>
     </SectionCard>
 
-    <!-- 专项问题包：一个专项一块磁贴，只出现已添加的脚本；MFW 点开是脚本列表 -->
+    <!-- 专项问题包：一个专项一块磁贴，只出现已添加的脚本；MFW 点开是项目列表 -->
     <SectionCard
       :title="t('core.setting.advanced.issueSection')"
       :subtitle="t('core.setting.advanced.issueSectionDesc')"
@@ -237,13 +230,19 @@ const exportDataBackup = async () => {
             </button>
             <template #overlay>
               <a-menu @click="handleMaaFWMenuClick">
-                <a-menu-item v-for="script in maafwReportScripts" :key="script.uid">
-                  {{ script.name }}
-                  <a-tag :color="script.flavor.typeTagColor" class="maafw-report-tag">
-                    {{ script.flavor.typeTagLabel }}
+                <a-menu-item v-for="project in maafwReportProjects" :key="project.key">
+                  {{ project.label }}
+                  <a-tag class="maafw-report-tag">
+                    {{
+                      project.deletedOnly
+                        ? t('core.setting.advanced.exportMaaFWHistoryOnly')
+                        : t('core.setting.advanced.exportMaaFWScriptCount', {
+                            count: project.scriptCount,
+                          })
+                    }}
                   </a-tag>
                 </a-menu-item>
-                <a-menu-item v-if="maafwReportScripts.length === 0" key="" disabled>
+                <a-menu-item v-if="maafwReportProjects.length === 0" key="" disabled>
                   {{ t('core.setting.advanced.exportMaaFWEmpty') }}
                 </a-menu-item>
               </a-menu>

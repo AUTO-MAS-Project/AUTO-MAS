@@ -84,7 +84,7 @@ import {
   createM9AIssueReport,
   createMSSIssueReport,
   createMaaFWIssueReport,
-  listMaaFWIssueReportScripts,
+  listMaaFWIssueReportProjects,
   maafwIssueReportFileNamePrefix,
 } from './services/maafwIssueReportService'
 import { createOkwwIssueReport } from './services/okwwIssueReportService'
@@ -1711,11 +1711,11 @@ registerIssueReportExporter(
   createMSSIssueReport
 )
 
-ipcMain.handle('maafw:listIssueReportScripts', (_event, configTypes?: unknown) => {
+ipcMain.handle('maafw:listIssueReportProjects', (_event, configTypes?: unknown) => {
   const types = Array.isArray(configTypes)
     ? configTypes.filter((type): type is string => typeof type === 'string')
     : []
-  return listMaaFWIssueReportScripts(getAppRoot(), types)
+  return listMaaFWIssueReportProjects(getAppRoot(), types)
 })
 
 ipcMain.handle('data:backup', async () => {

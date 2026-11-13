@@ -4000,6 +4000,8 @@
   "core.setting.advanced.exportLogDesc": "Includes runtime logs and crash records — attach it when reporting a problem",
   "core.setting.advanced.exportMaa": "Export an MAA issue bundle",
   "core.setting.advanced.exportMaaFWEmpty": "No MaaFW managed scripts yet",
+  "core.setting.advanced.exportMaaFWHistoryOnly": "History only",
+  "core.setting.advanced.exportMaaFWScriptCount": "{count} scripts",
   "core.setting.advanced.issueSection": "Specialized issue bundles",
   "core.setting.advanced.issueSectionDesc": "Export the issue bundle for each managed script; attaching it makes a report easier to trace",
   "core.setting.advanced.issueSectionEmpty": "No managed scripts added yet — add one and its issue bundle will show up here",

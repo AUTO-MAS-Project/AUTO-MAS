@@ -372,16 +372,19 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
     zipPath?: string
     error?: string
   }>
-  /** configTypes：要列出的脚本配置类名（MaaFW 特调注册表的 scriptConfigType） */
-  listMaaFWIssueReportScripts: (configTypes: string[]) => Promise<
+  /** configTypes：要列出的脚本配置类名（MaaFW 特调注册表的 scriptConfigType）；同项目的脚本合成一组 */
+  listMaaFWIssueReportProjects: (configTypes: string[]) => Promise<
     Array<{
-      uid: string
-      type: string
-      name: string
-      projectLabel: string
+      /** 组键，原样传给 exportMaaFWIssueReport */
+      key: string
+      label: string
+      scriptCount: number
+      /** 现存脚本里已经没有、只在运行历史里出现的项目 */
+      deletedOnly: boolean
+      types: string[]
     }>
   >
-  exportMaaFWIssueReport: (scriptId: string) => Promise<{
+  exportMaaFWIssueReport: (projectKey: string) => Promise<{
     success: boolean
     message?: string
     zipPath?: string
