@@ -8,6 +8,14 @@ export type OkwwUserConfig_Task = {
      */
     AdditionalTasks?: (Array<'Check Weekly Garden' | 'Auto Farm all Nightmare Nest' | 'Merge Echo If discarded > 1000' | 'Teleport and Farm 4C Echo'> | null);
     /**
+     * 启用自定义启动参数
+     */
+    IfCustomArguments?: (boolean | null);
+    /**
+     * 自定义启动参数，开启后原样传递给 ok-ww
+     */
+    CustomArguments?: (string | null);
+    /**
      * 使用梦魇巢穴完成日常声骸
      */
     FarmNightmareNestForDailyEcho?: (boolean | null);

@@ -4913,7 +4913,10 @@
   "core.edit.okwwLoginAccount": "ログインアカウント",
   "core.edit.okwwLoginAccountHint": "ゲームのログイン一覧に保存済みのアカウントを指定します。MAS 切替では完全な携帯番号を入力します。ok-ww 切替では中国本土の完全な携帯番号、138****1234 形式、または一覧に表示されたメールに対応し、下4桁だけでは利用できません。切替なしの場合は空欄にできます。",
   "core.edit.okwwLoginAccountPlaceholder": "完全な携帯番号またはログイン一覧のアカウント",
-  "core.edit.okwwDailyArgumentsExample": "通常の日常タスクの起動引数例",
-  "core.edit.okwwArgumentsExampleHint": "ネイティブ切替では、管理スクリプトの切替方式に従い -t MultiAccountConfigTask -e を使用します。",
-  "core.plan.oknte.basedOnDetail": "詳細設定に基づく"
+  "core.edit.okwwDailyArgumentsExample": "起動引数",
+  "core.edit.okwwArgumentsExampleHint": "既定の引数は MAS が選択します。カスタム引数は入力した内容のまま渡します。",
+  "core.plan.oknte.basedOnDetail": "詳細設定に基づく",
+  "core.edit.okwwCustomArguments": "カスタム引数",
+  "core.edit.okwwCustomArgumentsPlaceholder": "例：-t DailyTask -h",
+  "core.edit.okwwCustomArgumentsWarning": "起動引数の変更により、ok-ww の動作やタスク結果の判定、自動終了に影響する場合があります。引数の意味が分からない場合は、既定の設定をお勧めします。"
 }

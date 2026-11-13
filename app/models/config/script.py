@@ -3057,6 +3057,14 @@ class OkwwUserConfig(DomainEntry):
             description="每日任务后运行的附加任务",
         )
 
+        IfCustomArguments: bool = Field(
+            default_factory=lambda: False, description="启用自定义启动参数"
+        )
+        CustomArguments: str = Field(
+            default_factory=lambda: "-t DailyTask",
+            description="自定义启动参数，开启后原样传递给 ok-ww",
+        )
+
         FarmNightmareNestForDailyEcho: bool = Field(
             default_factory=lambda: True, description="使用梦魇巢穴完成日常声骸"
         )
@@ -3096,6 +3104,8 @@ class OkwwUserConfig(DomainEntry):
         task_label = self.OKWW_TASK_BOOK.get(last_task_index, "未知")
         if self.Data.LastTaskName == "MultiAccountConfigTask":
             task_label = "原生多账号配置"
+        elif self.Data.LastTaskName == "CustomTask":
+            task_label = "自定义任务"
         tags.append({"text": f"任务：{task_label}", "color": "orange"})
         tags.append(_tag_remained_days(self))
         tags.append(_tag_notes(self))

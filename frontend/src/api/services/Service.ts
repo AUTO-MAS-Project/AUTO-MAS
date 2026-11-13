@@ -118,6 +118,8 @@ import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
 import type { ObsReplayCheckOut } from '../models/ObsReplayCheckOut';
 import type { ObsReplaySaveOut } from '../models/ObsReplaySaveOut';
 import type { OkNtePlanConfigsOut } from '../models/OkNtePlanConfigsOut';
+import type { OkwwArgumentsIn } from '../models/OkwwArgumentsIn';
+import type { OkwwArgumentsOut } from '../models/OkwwArgumentsOut';
 import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
@@ -1207,6 +1209,26 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/Upload/web',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Preview Okww Arguments Api
+     * 按实际启动规则预览参数，不启动脚本。
+     * @param requestBody
+     * @returns OkwwArgumentsOut Successful Response
+     * @throws ApiError
+     */
+    public static previewOkwwArgumentsApiApiScriptsOkwwStartupArgumentsPost(
+        requestBody: OkwwArgumentsIn,
+    ): CancelablePromise<OkwwArgumentsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/okww/startup-arguments',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
