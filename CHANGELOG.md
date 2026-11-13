@@ -30,6 +30,34 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
+## [未发布]
+
+### 新增
+
+- 【HSR】设置页可一键导出 HSR 问题包，收三月七、SRA 与 MAS 的相关日志 (#1975) by @qiyinxi
+- 【ok-ww】支持为账号自定义启动参数 (#1968) by @AthenaHibou
+- 【ok-ww】新增可绑定账号的日常计划，支持全局、每周和多天轮换刷本。 (#1972) by @AthenaHibou
+- 【MFW】PC 游戏支持通过 Steam 等链接启动，由脚本控制时也可由 MAS 兜底关闭 (#1982) by @qiyinxi
+- 【更新】支持 MAA、MaaEnd 与 MFW 家族选择增量更新，并在必要时回退全量 (#1949) by @youngslin
+
+### 变更
+
+- 【MFW】原地打转检测去掉「实验性」并默认开启；已明确设过开关的旧脚本保持原值 (#1977) by @qiyinxi
+- 【MFW】MFW 问题包改为按项目导出，已删脚本的同项目运行日志也会收进包 (#1976) by @qiyinxi
+- 【设置】统一启动与窗口设置样式，关闭确认在退出和托盘模式下均可调整 by @1w1w11w1
+
+### 修复
+
+- 【MAA】ModAVD 自带 MAA 截图外壳时不再覆盖，免得它的增量更新核对失败 (#1979) by @qiyinxi
+- 【bgi】修复启动任务、打开配置和检查更新时立即异常的问题（仅公测） (#1963) by @jinghero
+- 【MFW】修复任务结束时报错、账号收尾中断及历史记录未保存的问题 (#1966) by @jinghero
+- 【MFW】修复队列预下载后任务重试或停止时报错的问题 (#1969) by @jinghero
+- 【调度】修复原生配置保存失败后仍提示已保存的问题 (#1965) by @jinghero
+- 【工具】修复 MCP 客户端无法获取工具列表的问题 (#1964) by @jinghero
+- 【设置】改善滑条在不同主题下的清晰度，修复光标大小控件错行 (#1970) by @AthenaHibou
+- 【Runtime】修复初始化完成后仍显示正在更新、未及时显示正在启动的问题 (#1962) by @jinghero
+- 【Runtime】修复网络连接关闭报错后退出卡住的问题，并补充脱敏诊断 (#1967) by @jinghero
+
 ## [v5.9.0-beta.1] - 2026-11-13
 
 ### 破坏性变更
@@ -808,6 +836,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.9.0-beta.1...dev
 [v5.9.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0...v5.9.0-beta.1
 [v5.8.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0...v5.8.0
 [v5.7.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.2...v5.7.0

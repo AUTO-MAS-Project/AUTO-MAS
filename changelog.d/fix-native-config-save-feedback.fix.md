@@ -1,2 +1,0 @@
-project: scheduler
-修复原生配置保存失败后仍提示已保存的问题
