@@ -144,48 +144,77 @@ MCP_INCLUDED_OPERATIONS = (
 )
 
 
-def _patch_fastapi_mcp_ref_recursion(max_depth: int = 96) -> None:
-    """给 fastapi_mcp 的 $ref 解析加递归深度上限。
+def _patch_fastapi_mcp_schema_references() -> None:
+    """展开非递归引用，递归处保留 $ref，随后迁入工具自己的 $defs。
 
-    库实现（openapi.utils.resolve_schema_references）在模型互相
-    $ref 引用时会无限展开（A→B→A…），递归 ~1000 层即 RecursionError，
-    导致 MCP 挂载失败。
-    这里以相同逻辑但带深度上限的实现替换；超限的 $ref 原样保留，
-    仅影响 MCP 工具 schema 的展示完整度，不再炸初始化。
-    需同时替换 utils 与 convert 两处按名绑定的引用。
+    fastapi-mcp 0.4.0 会无限展开递归模型；按深度截断仍可能超过
+    Pydantic 的序列化上限。按当前引用链停止展开，不限制参数本身的层数。
+    需同时替换 utils 与 convert 两处按名绑定的引用；上游支持递归后可移除。
     """
     import fastapi_mcp.openapi.convert as _fm_convert
     from fastapi_mcp.openapi import utils as _fm_utils
 
-    def resolve_with_depth_limit(schema_part, reference_schema, _depth=0):
+    def resolve_references(
+        schema_part: dict[str, Any],
+        reference_schema: dict[str, Any],
+        _refs: frozenset[str] = frozenset(),
+    ) -> dict[str, Any]:
         schema_part = schema_part.copy()
-        if "$ref" in schema_part and _depth < max_depth:
-            ref_path = schema_part["$ref"]
-            # 标准 OpenAPI 引用格式："#/components/schemas/ModelName"
-            if ref_path.startswith("#/components/schemas/"):
-                model_name = ref_path.split("/")[-1]
-                components = reference_schema.get("components") or {}
-                schemas = components.get("schemas") or {}
-                if model_name in schemas:
-                    ref_schema = schemas[model_name].copy()
-                    schema_part.pop("$ref")
-                    schema_part.update(ref_schema)
+        ref = schema_part.get("$ref", "")
+        if ref.startswith("#/components/schemas/") and ref not in _refs:
+            model_name = ref.split("/")[-1]
+            schema_part = {
+                **reference_schema["components"]["schemas"][model_name],
+                **schema_part,
+            }
+            schema_part.pop("$ref")
+            _refs = _refs | {ref}
         for key, value in schema_part.items():
             if isinstance(value, dict):
-                schema_part[key] = resolve_with_depth_limit(
-                    value, reference_schema, _depth + 1
+                schema_part[key] = resolve_references(
+                    schema_part=value, reference_schema=reference_schema, _refs=_refs
                 )
             elif isinstance(value, list):
                 schema_part[key] = [
-                    resolve_with_depth_limit(item, reference_schema, _depth + 1)
+                    resolve_references(
+                        schema_part=item, reference_schema=reference_schema, _refs=_refs
+                    )
                     if isinstance(item, dict)
                     else item
                     for item in value
                 ]
         return schema_part
 
-    _fm_utils.resolve_schema_references = resolve_with_depth_limit
-    _fm_convert.resolve_schema_references = resolve_with_depth_limit
+    _fm_utils.resolve_schema_references = resolve_references
+    _fm_convert.resolve_schema_references = resolve_references
+
+
+def _localize_tool_schema(
+    schema: dict[str, Any], components: dict[str, Any]
+) -> dict[str, Any]:
+    """把剩余引用及其传递依赖迁入工具内，避免依赖原 OpenAPI 文档。"""
+    definitions: dict[str, Any] = {}
+
+    def rewrite(value: Any) -> Any:
+        if isinstance(value, list):
+            return [rewrite(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        result = {key: rewrite(item) for key, item in value.items()}
+        ref = result.get("$ref", "")
+        if ref.startswith("#/components/schemas/"):
+            model_name = ref.split("/")[-1]
+            result["$ref"] = f"#/$defs/{model_name}"
+            if model_name not in definitions:
+                # 先登记，互相引用的模型也只复制一次。
+                definitions[model_name] = {}
+                definitions[model_name] = rewrite(components[model_name])
+        return result
+
+    result = rewrite(schema)
+    if definitions:
+        result["$defs"] = definitions
+    return result
 
 
 def _build_mcp(
@@ -221,6 +250,7 @@ def _build_mcp(
     )
     # fastapi-mcp 0.4.0 给联合类型补入单一 type，使可空字段拒绝 null。
     # 仅移除转换器新增的约束，保留 OpenAPI 自己声明的 type。
+    components = schema_app.openapi().get("components", {}).get("schemas", {})
     body_routes = set()
     for tool in mcp.tools:
         operation = mcp.operation_map[tool.name]
@@ -241,6 +271,7 @@ def _build_mcp(
                 key in schema for key in ("anyOf", "oneOf", "allOf", "$ref")
             ):
                 properties[name].pop("type", None)
+        tool.inputSchema = _localize_tool_schema(tool.inputSchema, components)
         if request_body.get("required") and body_schema.get("type") == "object":
             body_routes.add((operation["method"], operation["path"]))
 
@@ -463,7 +494,7 @@ class McpService:
                 base_url="http://apiserver",
                 timeout=10.0,
             )
-            _patch_fastapi_mcp_ref_recursion()
+            _patch_fastapi_mcp_schema_references()
             self._instance = await self._in_thread(
                 _build_mcp, package.FastApiMCP, schema_app, self._client
             )
