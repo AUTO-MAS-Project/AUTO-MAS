@@ -303,7 +303,7 @@ async function runBackendUpdate(
     targetVersion: version,
   })
   const current: UpdateSession = {
-    version,
+    version: runtimeService.targetVersion,
     runtimeService,
     backend: deps.backend,
     cancelRequested: false,
@@ -312,7 +312,7 @@ async function runBackendUpdate(
   }
   session = current
 
-  logger.info(`开始经 Runtime 更新后端到 ${version}`)
+  logger.info(`开始经 Runtime 更新后端到 ${current.version}`)
 
   // ---------- 1. 停机 ----------
   onProgress({ stage: 'shutdown', status: 'started', progress: 0, message: STOP_MESSAGE })
