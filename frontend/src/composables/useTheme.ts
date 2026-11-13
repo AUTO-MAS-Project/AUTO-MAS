@@ -606,6 +606,14 @@ function getThemeConfig() {
     }
     return color
   })
+  // 静止态保留主题色相，对比不足时才调整明度。
+  const sliderBackground = token.colorBgContainer ?? colorTokens.colorBgContainer
+  let sliderColor = colorTokens.colorPrimary
+  const sliderDirection =
+    contrastRatio('#ffffff', sliderBackground) > contrastRatio('#000000', sliderBackground) ? 1 : -1
+  for (let step = 1; contrastRatio(sliderColor, sliderBackground) < 3 && step <= 100; step++) {
+    sliderColor = hslAdjust(colorTokens.colorPrimary, (step / 100) * sliderDirection)
+  }
   return {
     algorithm,
     token: {
@@ -615,6 +623,13 @@ function getThemeConfig() {
       colorLinkActive: linkActive,
     },
     components: {
+      Slider: {
+        colorPrimaryBorder: sliderColor,
+        colorPrimaryBorderHover: sliderColor,
+        colorPrimary: sliderColor,
+        colorFillTertiary: colorTokens.colorTextQuaternary,
+        colorFillSecondary: colorTokens.colorTextTertiary,
+      },
       Segmented: {
         // 视图选中是低强调状态，与主操作按钮保持层级。
         colorBgElevated: colorTokens.colorPrimaryBg,
