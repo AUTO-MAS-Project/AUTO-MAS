@@ -24,9 +24,11 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from datetime import datetime, timezone, tzinfo
-from typing import TYPE_CHECKING, Annotated, Any, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 
-from pydantic import BeforeValidator, TypeAdapter
+from pydantic import BeforeValidator, Field, TypeAdapter
+
+from app.config import ConfigGroup
 
 if TYPE_CHECKING:
     from .script import UserConfigType
@@ -536,3 +538,40 @@ __all__ = [
     "validate_baah_plan_key",
     "validate_maaend_plan_key",
 ]
+
+
+class OkwwTaskFields(ConfigGroup):
+    AdditionalTasks: list[
+        Literal[
+            "Check Weekly Garden",
+            "Auto Farm all Nightmare Nest",
+            "Merge Echo If discarded > 1000",
+            "Teleport and Farm 4C Echo",
+        ]
+    ] = Field(
+        default_factory=lambda: ["Check Weekly Garden"],
+        description="每日任务后运行的附加任务",
+    )
+
+    FarmNightmareNestForDailyEcho: bool = Field(
+        default_factory=lambda: True, description="使用梦魇巢穴完成日常声骸"
+    )
+
+    MaterialSelection: Literal["Resonator EXP", "Weapon EXP", "Shell Credit"] = Field(
+        default_factory=lambda: "Shell Credit", description="模拟领域材料"
+    )
+
+    WhichForgeryChallengeToFarm: Annotated[int, Field(ge=1, le=99), none_as(1)] = Field(
+        default_factory=lambda: 1, description="凝素领域序号"
+    )
+
+    WhichTacetSuppressionToFarm: Annotated[int, Field(ge=1, le=99), none_as(1)] = Field(
+        default_factory=lambda: 1, description="无音区序号"
+    )
+
+    WhichToFarm: Literal[
+        "Tacet Suppression", "Forgery Challenge", "Simulation Challenge"
+    ] = Field(
+        default_factory=lambda: "Tacet Suppression",
+        description="每日任务体力用途（日常任务按账号覆写或绑定计划生效）",
+    )

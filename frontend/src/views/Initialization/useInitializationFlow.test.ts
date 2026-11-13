@@ -536,6 +536,63 @@ describe('initialization progress language switching', () => {
   })
 })
 
+describe('main-process startup progress', () => {
+  it.each(['event', 'snapshot'] as const)(
+    'switches to backend startup before completion from %s progress',
+    async source => {
+      const backendProgress = {
+        stage: 'backend',
+        status: 'started' as const,
+        stageIndex: 7,
+        totalStages: 7,
+        progress: 0,
+        message: '正在启动后端服务...',
+      }
+      let finishStartup!: (result: { success: boolean }) => void
+      const startup = new Promise<{ success: boolean }>(resolve => {
+        finishStartup = resolve
+      })
+      let waiting!: () => void
+      const joined = new Promise<void>(resolve => {
+        waiting = resolve
+      })
+      const api = window.electronAPI
+      api.desktopStartupStatus = async () => ({
+        runtimeMode: 'managed',
+        flowKind: 'update',
+        fullInitialization: true,
+        state: 'running',
+        progress: [
+          {
+            stage: 'dependency',
+            stageIndex: 6,
+            totalStages: 7,
+            progress: 100,
+            status: 'completed',
+            message: '运行环境准备完成',
+          },
+          ...(source === 'snapshot' ? [backendProgress] : []),
+        ],
+      })
+      api.waitDesktopStartup = () => {
+        waiting()
+        return startup
+      }
+
+      const mounting = initialize()
+      await joined
+      try {
+        if (source === 'event') receive(backendProgress)
+        expect(flow.isBackendStep.value).toBe(true)
+        expect(flow.hasFailed.value).toBe(false)
+      } finally {
+        finishStartup({ success: true })
+        await mounting
+      }
+    }
+  )
+})
+
 describe('managed recovery routing', () => {
   it.each(['startup', 'backend'] as const)(
     'reinstalls a missing Runtime after a failure from %s, keeping failed downloads retryable',

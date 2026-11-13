@@ -14,6 +14,7 @@ export namespace PlanCreateIn {
         MSSPLAN = 'MSSPlan',
         UNIVERSAL_PLAN = 'UniversalPlan',
         OK_NTE_PLAN = 'OkNtePlan',
+        OKWW_PLAN = 'OkwwPlan',
     }
 }
 

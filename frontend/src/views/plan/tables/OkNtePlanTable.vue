@@ -141,10 +141,16 @@ function value(day: string, field: string) {
   const cfg = task ? (configs(day)['DailyRoutineTaskConfigs.json']?.[task] ?? {}) : {}
   if (field === '体力任务') {
     const items = configs(day)['DailyRoutineTask.json']?.['Routine Items'] ?? []
-    if (task) return task
+    const loopMode = configs(day)['DailyRoutineTaskConfigs.json']?.daily_anomaly?.['循环模式']
     const overrides = items.filter((item: { id: string }) =>
       ['daily_anomaly', 'daily_anomaly_hunter'].includes(item.id)
     )
+    if (
+      (overrides.length > 0 && overrides.length !== 2) ||
+      (task === 'daily_anomaly' && loopMode !== '停用')
+    )
+      return '__custom'
+    if (task) return task
     return overrides.length === 2 ? '__off' : overrides.length ? '__custom' : undefined
   }
   if (field === '材料序号')
@@ -184,13 +190,16 @@ function options(day: string, field: string) {
         .filter(item => ['daily_anomaly', 'daily_anomaly_hunter'].includes(item.id))
         .map(item => ({ value: item.id, label: item.label })),
       { value: '__off', label: t('core.plan.oknte.off') },
-      { value: '__custom', label: t('core.plan.oknte.detail'), disabled: true },
+      ...(value(day, field) === '__custom'
+        ? [{ value: '__custom', label: t('core.plan.oknte.basedOnDetail'), disabled: true }]
+        : []),
     ]
   return (definition(day, field)?.options ?? []).map(value => ({ value, label: value }))
 }
 function disabled(day: string, field: string) {
   if (!catalog.value.length) return true
   if (field === '体力任务') return false
+  if (value(day, '体力任务') === '__custom') return true
   if (!activity(day)) return true
   if (field === '目标消耗体力') return false
   if (field === '追猎目标') return activity(day) !== 'daily_anomaly_hunter'
@@ -198,7 +207,7 @@ function disabled(day: string, field: string) {
   const kind = configs(day)['DailyRoutineTaskConfigs.json']?.daily_anomaly?.['任务类型']
   return field === '具体奖励目标'
     ? kind !== '经验与甲硬币'
-    : field === '材料序号' && kind === '经验与甲硬币'
+    : field === '材料序号' && !['异能升级材料', '弧盘突破材料', '空幕'].includes(kind)
 }
 async function save(day: string, field: string, input: unknown) {
   if (input === null || input === undefined) return
@@ -212,6 +221,11 @@ async function save(day: string, field: string, input: unknown) {
       else items.push({ id, enabled })
     }
     next['DailyRoutineTask.json'] = { ...next['DailyRoutineTask.json'], 'Routine Items': items }
+    if (input === 'daily_anomaly') {
+      const tasks = (next['DailyRoutineTaskConfigs.json'] ??= {})
+      const anomaly = (tasks.daily_anomaly ??= {})
+      anomaly['循环模式'] = '停用'
+    }
   } else {
     const tasks = (next['DailyRoutineTaskConfigs.json'] ??= {})
     const active = activity(day)

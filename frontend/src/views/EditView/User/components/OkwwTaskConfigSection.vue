@@ -4,16 +4,12 @@
       <div class="form-section">
         <a-row :gutter="24">
           <a-col :span="24">
-            <a-form-item>
-              <template #label>
-                <FieldLabelWithHint
-                  :text="t('core.edit.okwwDailyArgumentsExample')"
-                  :hint="t('core.edit.okwwArgumentsExampleHint')"
-                  variant="form"
-                />
-              </template>
-              <a-input :value="currentStartupArguments" size="large" readonly />
-            </a-form-item>
+            <OkwwArgumentsConfig
+              :script-id="scriptId"
+              :save="saveTask"
+              v-model="task"
+              @save="emit('save')"
+            />
           </a-col>
         </a-row>
 
@@ -84,36 +80,17 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import type { OkwwUserConfig } from '@/api'
-import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import { farmOptions, materialOptions, additionalTaskOptions } from '@/utils/okwwTaskOptions'
+import OkwwArgumentsConfig from './OkwwArgumentsConfig.vue'
+import type { OkwwTaskForm } from './okwwTaskConfig'
 
-type TaskForm = {
-  [K in keyof NonNullable<OkwwUserConfig['Task']>]-?: NonNullable<
-    NonNullable<OkwwUserConfig['Task']>[K]
-  >
-}
-const task = defineModel<TaskForm>({ required: true })
-defineProps<{ quickConfig: boolean; disabled: boolean }>()
+const task = defineModel<OkwwTaskForm>({ required: true })
+defineProps<{
+  quickConfig: boolean
+  disabled: boolean
+  scriptId: string
+  saveTask: () => Promise<boolean>
+}>()
 const emit = defineEmits<{ save: [] }>()
 const { t } = useI18n()
-const currentStartupArguments = '-t DailyTask -e / -t 1 -e'
-
-const farmOptions = [
-  { label: '无音区', value: 'Tacet Suppression' },
-  { label: '凝素领域', value: 'Forgery Challenge' },
-  { label: '模拟领域', value: 'Simulation Challenge' },
-]
-
-const materialOptions = [
-  { label: '共鸣者经验', value: 'Resonator EXP' },
-  { label: '武器经验', value: 'Weapon EXP' },
-  { label: '贝币', value: 'Shell Credit' },
-]
-
-const additionalTaskOptions = [
-  { label: '检查每周乐园', value: 'Check Weekly Garden' },
-  { label: '自动刷所有梦魇巢穴', value: 'Auto Farm all Nightmare Nest' },
-  { label: '已弃置声骸超过 1000 时融合', value: 'Merge Echo If discarded > 1000' },
-  { label: '传送并刷取 4C 声骸', value: 'Teleport and Farm 4C Echo' },
-]
 </script>

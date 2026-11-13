@@ -101,17 +101,8 @@ def test_first_save_from_empty_template_succeeds(tmp_path):
 
 
 def test_universal_plan_general_only():
-    """通用脚本计划表只绑通用脚本；OkNte 使用独立专项计划。"""
-
-    from app.models.config import (
-        PLAN_BOOK,
-        GeneralConfig,
-        OkNteUserConfig,
-        OkwwUserConfig,
-    )
+    """通用计划登记到 General，账号默认使用固定配置。"""
+    from app.models.config import PLAN_BOOK, GeneralConfig
 
     assert PLAN_BOOK["UniversalPlanConfig"]["script_class"] is GeneralConfig
     assert GeneralUserConfig().Info.PlanMode == "Fixed"
-    assert OkNteUserConfig().Info.PlanMode == "Fixed"
-    for user_cls in (OkwwUserConfig,):
-        assert "PlanMode" not in type(user_cls().Info).model_fields

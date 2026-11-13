@@ -11,6 +11,7 @@ export type AnalyticsPlanType =
   | 'MaaEndPlanConfig'
   | 'BAAHPlanConfig'
   | 'MSSPlanConfig'
+  | 'OkwwPlanConfig'
   | 'OkNtePlanConfig'
   | 'UniversalPlanConfig'
   | 'multi'

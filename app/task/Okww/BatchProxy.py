@@ -38,11 +38,7 @@ class BatchProxyTask(AutoProxyTask):
         self, script_info, script_config, user_config, game_manager, *, participants
     ):
         super().__init__(script_info, script_config, user_config, game_manager)
-        self.cur_user_item = UserItem(
-            user_id=self.cur_user_item.user_id,
-            name=self.cur_user_item.name if len(participants) == 1 else "OK-WW 批次",
-            status="等待",
-        )
+        # 准入检查始终保留真实账号节点；运行节点在 prepare 中另建。
         self.participants = participants
         self.succeeded = set()
         self.pending = set()
@@ -53,6 +49,11 @@ class BatchProxyTask(AutoProxyTask):
         self.before_started = set()
         self.account_failures = {}
         self.attempted_accounts = set()
+
+    def _build_run_arguments(self) -> list[str]:
+        if self.cur_user_config.Task.IfCustomArguments:
+            return super()._build_run_arguments()
+        return ["-t", "MultiAccountConfigTask", "-e"]
 
     async def check(self):
         result = await super().check()
@@ -72,6 +73,14 @@ class BatchProxyTask(AutoProxyTask):
 
     async def prepare(self):
         await super().prepare()
+        # 内部轮次日志与真实账号的汇总记录隔离，单账号批次同样需要隔离。
+        self.cur_user_item = UserItem(
+            user_id=self.cur_user_item.user_id,
+            name=self.cur_user_item.name
+            if len(self.participants) == 1
+            else "OK-WW 批次",
+            status="等待",
+        )
         today = datetime.now(tz=_utils_constants.UTC4)
         for user in self.participants:
             config = self.user_config[uuid.UUID(user.user_id)]
@@ -80,7 +89,7 @@ class BatchProxyTask(AutoProxyTask):
                 config.Data.ProxyTimes = 0
                 await config.commit()
         self.task_name = "MultiAccountConfigTask"
-        self.okww_args = ["-t", self.task_name, "-e"]
+        self.okww_args = self._build_run_arguments()
         self.task_index = 0
         # 原始账号历史独立于节点推送开关，关闭节点时也需保留日志。
         if self._log_source is None:
@@ -107,17 +116,10 @@ class BatchProxyTask(AutoProxyTask):
             )
             if not isinstance(values, dict):
                 raise ValueError(f"日常配置格式错误: {daily}")
-            if config.Info.IfQuickConfig:
-                values.update(
-                    {
-                        "Which to Farm": config.Task.WhichToFarm,
-                        "Which Tacet Suppression to Farm": config.Task.WhichTacetSuppressionToFarm,
-                        "Which Forgery Challenge to Farm": config.Task.WhichForgeryChallengeToFarm,
-                        "Material Selection": config.Task.MaterialSelection,
-                        "Farm Nightmare Nest for Daily Echo": config.Task.FarmNightmareNestForDailyEcho,
-                        "Additional Tasks to Run After Daily Task": config.Task.AdditionalTasks,
-                    }
-                )
+            from .tools.plan import task_config
+
+            task = task_config(config)
+            values.update(task)
             key = normalize_account_key(config.Info.Id)
             self.account_users[key] = user
             self.accounts.append(

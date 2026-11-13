@@ -64,11 +64,13 @@ from .plan import (
     MaaPlanConfig,
     MSSPlanConfig,
     OkNtePlanConfig,
+    OkwwPlanConfig,
     UniversalPlanConfig,
 )
 from .queue import Webhook
 from .shared import (
     _BGI_LEGACY_SERVERS_TO_RESOURCE,
+    OkwwTaskFields,
     SRAProfileName,
     _migrate_baah_event_first,
     _migrate_bgi_account_switch_default,
@@ -2574,8 +2576,8 @@ class MaaFWConfig(DomainEntry):
         )
 
         LoopGuard: bool = Field(
-            default_factory=lambda: False,
-            description="原地打转检测（实验性，默认关）。任务在短周期里反复执行同一串节点（周期 ≤ 8 步、每轮都有点击 / 滑动等物理动作）、识别结果又几乎不变时判定卡死：≥ 200 轮且持续 ≥ 10 分钟就停掉这个任务，收尾与单任务超时同一口径（截图、第一个任务或关键任务 结束本轮，其余记失败后继续）。判据见 tools/core/runner/loop_guard.py。",
+            default_factory=lambda: True,
+            description="原地打转检测（默认开）。任务在短周期里反复执行同一串节点（周期 ≤ 8 步、每轮都有点击 / 滑动等物理动作）、识别结果又几乎不变时判定卡死：≥ 200 轮且持续 ≥ 10 分钟就停掉这个任务，收尾与单任务超时同一口径（截图、第一个任务或关键任务 结束本轮，其余记失败后继续）。判据见 tools/core/runner/loop_guard.py。 默认值双轨：新建托管取类默认开；既有托管配置里写着这个键的（用户可能动过）原样保留，配置里没有这个键的（从没保存过，肯定没动过）落到类默认，同样是开。",
         )
 
         MonthlyOnceTasks: JsonListString = Field(
@@ -2959,6 +2961,16 @@ class OkwwUserConfig(DomainEntry):
     Data: DataFields = Field(default_factory=DataFields)
 
     class InfoFields(ConfigGroup):
+        PlanMode: Annotated[
+            UUID | Literal["Fixed"],
+            ref(
+                "PlanConfig",
+                default="Fixed",
+                allow_values=("Fixed",),
+                entry_types=(OkwwPlanConfig,),
+            ),
+        ] = Field(default="Fixed", description="固定配置或 Okww 计划表")
+
         Base: Annotated[
             Literal["shared", "independent", "native"],
             legacy(
@@ -3056,40 +3068,13 @@ class OkwwUserConfig(DomainEntry):
 
     Notify: NotifyFields = Field(default_factory=NotifyFields)
 
-    class TaskFields(ConfigGroup):
-        AdditionalTasks: list[
-            Literal[
-                "Check Weekly Garden",
-                "Auto Farm all Nightmare Nest",
-                "Merge Echo If discarded > 1000",
-                "Teleport and Farm 4C Echo",
-            ]
-        ] = Field(
-            default_factory=lambda: ["Check Weekly Garden"],
-            description="每日任务后运行的附加任务",
+    class TaskFields(OkwwTaskFields):
+        IfCustomArguments: bool = Field(
+            default_factory=lambda: False, description="启用自定义启动参数"
         )
-
-        FarmNightmareNestForDailyEcho: bool = Field(
-            default_factory=lambda: True, description="使用梦魇巢穴完成日常声骸"
-        )
-
-        MaterialSelection: Literal["Resonator EXP", "Weapon EXP", "Shell Credit"] = (
-            Field(default_factory=lambda: "Shell Credit", description="模拟领域材料")
-        )
-
-        WhichForgeryChallengeToFarm: Annotated[int, Field(ge=1, le=99), none_as(1)] = (
-            Field(default_factory=lambda: 1, description="凝素领域序号")
-        )
-
-        WhichTacetSuppressionToFarm: Annotated[int, Field(ge=1, le=99), none_as(1)] = (
-            Field(default_factory=lambda: 1, description="无音区序号")
-        )
-
-        WhichToFarm: Literal[
-            "Tacet Suppression", "Forgery Challenge", "Simulation Challenge"
-        ] = Field(
-            default_factory=lambda: "Tacet Suppression",
-            description="每日任务体力用途（仅日常任务且开启覆写常规配置时生效）",
+        CustomArguments: str = Field(
+            default_factory=lambda: "-t DailyTask",
+            description="自定义启动参数，开启后原样传递给 ok-ww",
         )
 
     Task: TaskFields = Field(default_factory=TaskFields)
@@ -3108,6 +3093,8 @@ class OkwwUserConfig(DomainEntry):
         task_label = self.OKWW_TASK_BOOK.get(last_task_index, "未知")
         if self.Data.LastTaskName == "MultiAccountConfigTask":
             task_label = "原生多账号配置"
+        elif self.Data.LastTaskName == "CustomTask":
+            task_label = "自定义任务"
         tags.append({"text": f"任务：{task_label}", "color": "orange"})
         tags.append(_tag_remained_days(self))
         tags.append(_tag_notes(self))

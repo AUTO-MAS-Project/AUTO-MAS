@@ -36,6 +36,9 @@ from app.models.config import PLAN_BOOK
 from app.models.schema import OutBase
 from app.utils import get_logger
 
+OkwwPlanConfig = ConfigPayload[_config_models.OkwwPlanConfig]
+OkwwPlanConfigInput = StrictConfigInput[_config_models.OkwwPlanConfig]
+
 OkNtePlanConfig = ConfigPayload[_config_models.OkNtePlanConfig]
 OkNtePlanConfigInput = StrictConfigInput[_config_models.OkNtePlanConfig]
 
@@ -58,6 +61,7 @@ PlanConfigType = Literal[
     "MSSPlanConfig",
     "UniversalPlanConfig",
     "OkNtePlanConfig",
+    "OkwwPlanConfig",
 ]
 
 
@@ -67,7 +71,13 @@ class PlanIndexItem(BaseModel):
 
 
 PlanCreateType = Literal[
-    "MaaPlan", "MaaEndPlan", "BAAHPlan", "MSSPlan", "UniversalPlan", "OkNtePlan"
+    "MaaPlan",
+    "MaaEndPlan",
+    "BAAHPlan",
+    "MSSPlan",
+    "UniversalPlan",
+    "OkNtePlan",
+    "OkwwPlan",
 ]
 
 
@@ -78,6 +88,7 @@ type PlanConfigData = (
     | MSSPlanConfig
     | UniversalPlanConfig
     | OkNtePlanConfig
+    | OkwwPlanConfig
 )
 type PlanConfigDataInput = (
     MaaPlanConfigInput
@@ -86,6 +97,7 @@ type PlanConfigDataInput = (
     | MSSPlanConfigInput
     | UniversalPlanConfigInput
     | OkNtePlanConfigInput
+    | OkwwPlanConfigInput
 )
 
 

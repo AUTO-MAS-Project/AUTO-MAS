@@ -257,6 +257,10 @@ def _resolve_supervised_port() -> int:
 
 @logger.catch(reraise=True)
 def main():
+    from app.utils.common.asyncio_compat import install_windows_connection_cleanup
+
+    install_windows_connection_cleanup()
+
     raw_environment = os.getenv("AUTO_MAS_ENV", "").strip().lower()
     if raw_environment not in {"", "dev", "development", "production"}:
         logger.warning("AUTO_MAS_ENV 取值无效，按开发环境启动")

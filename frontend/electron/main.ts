@@ -84,13 +84,14 @@ import {
   createM9AIssueReport,
   createMSSIssueReport,
   createMaaFWIssueReport,
-  listMaaFWIssueReportScripts,
+  listMaaFWIssueReportProjects,
   maafwIssueReportFileNamePrefix,
 } from './services/maafwIssueReportService'
 import { createOkwwIssueReport } from './services/okwwIssueReportService'
 import { createOkNteIssueReport } from './services/okNteIssueReportService'
 import { createZzzOdIssueReport } from './services/zzzOdIssueReportService'
 import { createWhimboxIssueReport } from './services/whimboxIssueReportService'
+import { createHSRIssueReport } from './services/hsrIssueReportService'
 import {
   configureMainSentry,
   recordMainCount,
@@ -1710,12 +1711,18 @@ registerIssueReportExporter(
   'MSS-logs',
   createMSSIssueReport
 )
+registerIssueReportExporter(
+  'hsr:exportIssueReport',
+  '导出 HSR 问题包',
+  'HSR-logs',
+  createHSRIssueReport
+)
 
-ipcMain.handle('maafw:listIssueReportScripts', (_event, configTypes?: unknown) => {
+ipcMain.handle('maafw:listIssueReportProjects', (_event, configTypes?: unknown) => {
   const types = Array.isArray(configTypes)
     ? configTypes.filter((type): type is string => typeof type === 'string')
     : []
-  return listMaaFWIssueReportScripts(getAppRoot(), types)
+  return listMaaFWIssueReportProjects(getAppRoot(), types)
 })
 
 ipcMain.handle('data:backup', async () => {

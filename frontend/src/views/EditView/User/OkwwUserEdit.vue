@@ -178,20 +178,14 @@
         </a-form>
       </a-card>
 
-      <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
-        <h3>{{ t('core.edit.taskConfiguration') }}</h3>
-        <a-space>
-          <a-button size="small" @click="openRestoreModal">
-            <template #icon><HistoryOutlined /></template>
-            {{ t('core.edit.configRestoreTitle') }}
-          </a-button>
-        </a-space>
-      </a-flex>
-      <OkwwTaskConfigSection
-        v-model="formData.Task"
-        :quick-config="formData.Info.IfQuickConfig"
+      <OkwwAccountPlan
+        v-model="formData"
+        :script-id="scriptId"
+        :user-id="userId"
+        :save-task="saveTaskConfig"
         :disabled="configActionsDisabled"
         @save="saveTaskConfig"
+        @restore="openRestoreModal"
       />
 
       <a-card class="config-card" style="margin-top: 24px">
@@ -250,7 +244,9 @@
 </template>
 
 <script setup lang="ts">
-import OkwwTaskConfigSection from './components/OkwwTaskConfigSection.vue'
+import OkwwAccountPlan from './components/OkwwAccountPlan.vue'
+import { getDefaultOkwwTaskConfig } from './components/okwwTaskConfig'
+
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import accountIcon from '@/assets/ok-ww.ico'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
@@ -261,12 +257,7 @@ import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import {
-  EyeOutlined,
-  HistoryOutlined,
-  QuestionCircleOutlined,
-  SettingOutlined,
-} from '@ant-design/icons-vue'
+import { EyeOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { OkwwUserConfig } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { buildFieldPatch } from '@/utils/fieldPatch'
@@ -386,6 +377,7 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Id: '',
     Base: 'shared',
     IfQuickConfig: true,
+    PlanMode: 'Fixed',
     Resource: '官服',
     RemainedDay: -1,
     IfScriptBeforeTask: false,
@@ -395,14 +387,7 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Notes: '',
     Tag: '',
   },
-  Task: {
-    WhichToFarm: 'Tacet Suppression',
-    WhichTacetSuppressionToFarm: 1,
-    WhichForgeryChallengeToFarm: 1,
-    MaterialSelection: 'Shell Credit',
-    FarmNightmareNestForDailyEcho: true,
-    AdditionalTasks: ['Check Weekly Garden'],
-  },
+  Task: getDefaultOkwwTaskConfig(),
   Notify: {
     Enabled: false,
     PushLogMode: '汇总',
@@ -493,20 +478,10 @@ const handleQuickConfigChange = async (value: boolean) => {
   }
 }
 
-const saveTaskConfig = async () => {
-  if (isInitializing.value || !userId.value) return
-  await enqueue(() =>
-    updateUser(scriptId, userId.value, {
-      Task: {
-        WhichToFarm: formData.Task.WhichToFarm,
-        WhichTacetSuppressionToFarm: formData.Task.WhichTacetSuppressionToFarm,
-        WhichForgeryChallengeToFarm: formData.Task.WhichForgeryChallengeToFarm,
-        MaterialSelection: formData.Task.MaterialSelection,
-        FarmNightmareNestForDailyEcho: formData.Task.FarmNightmareNestForDailyEcho,
-        AdditionalTasks: formData.Task.AdditionalTasks,
-      },
-    })
-  )
+const saveTaskConfig = async (): Promise<boolean> => {
+  if (isInitializing.value || !userId.value) return false
+  const Task = { ...formData.Task, AdditionalTasks: [...formData.Task.AdditionalTasks] }
+  return await enqueue(() => updateUser(scriptId, userId.value, { Task }))
 }
 
 const handleOkwwConfig = async () => {

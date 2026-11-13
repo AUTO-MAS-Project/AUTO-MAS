@@ -18,6 +18,7 @@
 
 from fastapi import APIRouter
 from pydantic import (
+    BaseModel,
     Field,
 )
 
@@ -35,6 +36,37 @@ class OkwwClientPathOut(OutBase):
 
 router = APIRouter()
 logger = get_logger("托管管理 API")
+
+
+class OkwwArgumentsIn(BaseModel):
+    scriptId: str
+    custom: bool = False
+    arguments: str = ""
+
+
+class OkwwArgumentsOut(OutBase):
+    arguments: list[str] = Field(default_factory=list)
+    native_switch: bool = False
+
+
+@router.post("/okww/startup-arguments", tags=["Get"], response_model=OkwwArgumentsOut)
+async def preview_okww_arguments_api(data: OkwwArgumentsIn) -> OkwwArgumentsOut:
+    """按实际启动规则预览参数，不启动脚本。"""
+    from .api_service import resolve_startup_arguments
+
+    try:
+        arguments, native = resolve_startup_arguments(
+            data.scriptId, custom=data.custom, arguments=data.arguments
+        )
+        return OkwwArgumentsOut(
+            code=200,
+            status="success",
+            message="",
+            arguments=arguments,
+            native_switch=native,
+        )
+    except (ValueError, KeyError, TypeError, OSError) as error:
+        return OkwwArgumentsOut(code=400, status="error", message=str(error))
 
 
 @router.get(

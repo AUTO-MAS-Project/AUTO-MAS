@@ -171,6 +171,27 @@ def _window_area(hwnd: int) -> int:
         return 0
 
 
+def _probe_game_hwnd() -> int | None:
+    """单次枚举鸣潮主窗口；重启交接期间没有窗口是合法状态。"""
+    candidates: list[int] = []
+
+    def _enum(hwnd: int, _lparam: int) -> bool:
+        try:
+            if not win32gui.IsWindowVisible(hwnd):
+                return True
+            if win32gui.GetClassName(hwnd) != _WUWA_CLASS:
+                return True
+        except Exception:
+            return True
+        _, pid = win32process.GetWindowThreadProcessId(hwnd)
+        if pid and _process_name(pid) == _WUWA_PROCESS:
+            candidates.append(hwnd)
+        return True
+
+    win32gui.EnumWindows(_enum, 0)
+    return max(candidates, key=_window_area) if candidates else None
+
+
 def _find_game_hwnd(*, wait: bool = True, fail_on_exit: bool = False) -> int:
     """按窗口类 + 所属进程名定位鸣潮主窗口。
 
@@ -194,24 +215,9 @@ def _find_game_hwnd(*, wait: bool = True, fail_on_exit: bool = False) -> int:
     seen_alive = False
     gone_since: float | None = None
     while True:
-        candidates: list[int] = []
-
-        def _enum(hwnd: int, _lparam: int) -> bool:
-            try:
-                if not win32gui.IsWindowVisible(hwnd):
-                    return True
-                if win32gui.GetClassName(hwnd) != _WUWA_CLASS:
-                    return True
-            except Exception:
-                return True
-            _, pid = win32process.GetWindowThreadProcessId(hwnd)
-            if pid and _process_name(pid) == _WUWA_PROCESS:
-                candidates.append(hwnd)
-            return True
-
-        win32gui.EnumWindows(_enum, 0)
-        if candidates:
-            return max(candidates, key=_window_area)
+        hwnd = _probe_game_hwnd()
+        if hwnd is not None:
+            return hwnd
         if not wait or time.monotonic() >= deadline:
             break
         if fail_on_exit:
@@ -521,7 +527,7 @@ def _wait_game_restart(hwnd: int, on_log: Callable[[str], None]) -> int:
     # 旧窗口（或其残影）当成重启后的新窗口
     restart_deadline = time.monotonic() + _GAME_WINDOW_WAIT_SECONDS
     while True:
-        new_hwnd = _find_game_hwnd(wait=False)
+        new_hwnd = _probe_game_hwnd()
         if new_hwnd is not None and new_hwnd != hwnd:
             break
         if time.monotonic() >= restart_deadline:

@@ -58,10 +58,10 @@ test.describe('@settings user preferences', () => {
     // 列数由宽度决定：窄屏单列、宽屏两列，都检查问号提示。
     for (const layout of [{ width: 1440 }, { width: 1920 }]) {
       await page.setViewportSize({ width: layout.width, height: 891 })
-      for (const name of ['Start with the system', 'Silent startup']) {
-        const control = page.getByRole('checkbox', { name, exact: true })
+      for (const name of ['Start with the system', 'Scheduled wake-up']) {
+        const control = page.getByRole('switch', { name, exact: true })
         const checked = await control.isChecked()
-        const row = page.locator('.setting-item').filter({ has: control })
+        const row = page.locator('.ui-row').filter({ has: control })
         await checkHint(row.locator('.help-icon'))
         await expect(control).toBeChecked({ checked })
       }
@@ -81,9 +81,9 @@ test.describe('@settings user preferences', () => {
     const initialResponse = await loaded
     const originalStart = (await initialResponse.json()).data.Start
     const backend = new URL(initialResponse.url()).origin
-    const wakeup = page.getByRole('checkbox', { name: 'Scheduled wake-up', exact: true })
-    const autoStart = page.getByRole('checkbox', { name: 'Start with the system', exact: true })
-    const silentStart = page.getByRole('checkbox', { name: 'Silent startup', exact: true })
+    const wakeup = page.getByRole('switch', { name: 'Scheduled wake-up', exact: true })
+    const autoStart = page.getByRole('switch', { name: 'Start with the system', exact: true })
+    const silentStart = page.getByRole('switch', { name: 'Silent startup', exact: true })
     try {
       // 旧版本允许仅定时唤醒并保留静默偏好，重新载入后必须仍能独立修改。
       const seeded = await page.request.post(`${backend}/api/setting/update`, {
@@ -96,27 +96,36 @@ test.describe('@settings user preferences', () => {
       expect((await seeded.json()).code).toBe(200)
       await page.reload()
       await expect(silentStart).toBeChecked()
-      for (const [control, key, values] of [
-        [silentStart, 'IfMinimizeDirectly', [false, true]],
-        [wakeup, 'IfScheduledWakeUp', [false, true]],
-        [autoStart, 'IfSelfStart', [true, false]],
+      const expectedStart = {
+        IfSelfStart: false,
+        IfScheduledWakeUp: true,
+        IfMinimizeDirectly: true,
+      }
+      // 关闭两个入口只暂停静默启动，保留偏好；任一入口恢复后都可继续修改。
+      for (const [control, key, enabled] of [
+        [silentStart, 'IfMinimizeDirectly', false],
+        [silentStart, 'IfMinimizeDirectly', true],
+        [wakeup, 'IfScheduledWakeUp', false],
+        [autoStart, 'IfSelfStart', true],
+        [autoStart, 'IfSelfStart', false],
+        [wakeup, 'IfScheduledWakeUp', true],
       ] as const) {
-        for (const enabled of values) {
-          await expect(control).toBeEnabled()
-          const saved = settingsResponse(page, 'update')
-          await control.click()
-          const response = await saved
-          expect(response.request().postDataJSON()).toEqual({ data: { Start: { [key]: enabled } } })
-          expect((await response.json()).code).toBe(200)
-          await expect(control).toBeChecked({ checked: enabled })
-          await page.reload()
-          await expect(autoStart).toBeChecked({ checked: key === 'IfSelfStart' && enabled })
-          await expect(wakeup).toBeChecked({ checked: key !== 'IfScheduledWakeUp' || enabled })
-          await expect(silentStart).toBeChecked({
-            checked: key !== 'IfMinimizeDirectly' || enabled,
-          })
-          await expect(silentStart).toBeEnabled()
-        }
+        await expect(control).toBeEnabled()
+        const saved = settingsResponse(page, 'update')
+        await control.click()
+        const response = await saved
+        expect(response.request().postDataJSON()).toEqual({ data: { Start: { [key]: enabled } } })
+        expect((await response.json()).code).toBe(200)
+        expectedStart[key] = enabled
+        const reloaded = settingsResponse(page, 'get')
+        await page.reload()
+        expect((await (await reloaded).json()).data.Start).toMatchObject(expectedStart)
+        await expect(autoStart).toBeChecked({ checked: expectedStart.IfSelfStart })
+        await expect(wakeup).toBeChecked({ checked: expectedStart.IfScheduledWakeUp })
+        await expect(silentStart).toBeChecked({ checked: expectedStart.IfMinimizeDirectly })
+        await expect(silentStart).toBeEnabled({
+          enabled: expectedStart.IfSelfStart || expectedStart.IfScheduledWakeUp,
+        })
       }
       await app.evidence('scheduled-wakeup-silent-preference')
     } finally {
@@ -334,7 +343,7 @@ test.describe('@settings user preferences', () => {
     await app.goto('/settings')
     const initial = (await (await loaded).json()).data
     const originalToTray = initial.UI.IfToTray
-    const closeBehavior = page.locator('[aria-label="When closing"]')
+    const closeBehavior = page.locator('.close-action-options')
     const closeConfirmation = page.getByRole('checkbox', {
       name: 'Confirm before closing',
       exact: true,
@@ -385,15 +394,19 @@ test.describe('@settings user preferences', () => {
         ).toBeChecked()
         await expect(closeConfirmation).toBeChecked({ checked: originalClose.confirmBeforeClose })
         await expect.poll(readClosePreferences).toEqual(expectedClose)
-      }
-
-      for (const enabled of [!originalClose.confirmBeforeClose, originalClose.confirmBeforeClose]) {
-        await closeConfirmation.setChecked(enabled)
-        const expectedClose = { ...originalClose, confirmBeforeClose: enabled }
-        await expect.poll(readClosePreferences).toEqual(expectedClose)
-        await page.reload()
-        await expect(closeConfirmation).toBeChecked({ checked: enabled })
-        await expect.poll(readClosePreferences).toEqual(expectedClose)
+        for (const enabled of [
+          !originalClose.confirmBeforeClose,
+          originalClose.confirmBeforeClose,
+        ]) {
+          await expect(closeConfirmation).toBeEnabled()
+          await closeConfirmation.setChecked(enabled)
+          const expectedConfirmation = { ...expectedClose, confirmBeforeClose: enabled }
+          await expect.poll(readClosePreferences).toEqual(expectedConfirmation)
+          await page.reload()
+          await expect(closeConfirmation).toBeEnabled()
+          await expect(closeConfirmation).toBeChecked({ checked: enabled })
+          await expect.poll(readClosePreferences).toEqual(expectedConfirmation)
+        }
       }
 
       if (originalClose.confirmBeforeClose) {
@@ -416,10 +429,12 @@ test.describe('@settings user preferences', () => {
       }
 
       await expect(theme.getByRole('radio', { name: 'Follow system', exact: true })).toBeChecked()
-      await expect(sider).toHaveCSS('background-color', 'rgb(242, 242, 242)')
+      await expect(sider).toHaveCSS('background-color', 'rgb(255, 255, 255)')
       await page.getByRole('button', { name: 'Purple', exact: true }).click()
-      await expect(sider).toHaveCSS('background-color', 'rgb(242, 242, 242)')
-      await expect(sider).toHaveCSS('border-right-color', 'rgb(224, 224, 224)')
+      await expect(sider).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+      await expect(sider).toHaveCSS('border-right-color', 'rgb(238, 238, 240)')
+      await page.locator('.startup-window-settings').scrollIntoViewIfNeeded()
+      await app.evidence('settings-close-options-light')
       await chooseSegment(theme, 'Dark')
       await expect(page.locator('html')).toHaveClass(/dark/)
       await expect(sider).toHaveCSS('background-color', 'rgb(20, 20, 20)')
@@ -445,7 +460,7 @@ test.describe('@settings user preferences', () => {
       await page.getByRole('tab', { name: 'Interface', exact: true }).click()
       await chooseSegment(theme, 'Light')
       await expect(page.locator('html')).not.toHaveClass(/dark/)
-      await expect(sider).toHaveCSS('background-color', 'rgb(242, 242, 242)')
+      await expect(sider).toHaveCSS('background-color', 'rgb(255, 255, 255)')
       await expect(theme.getByRole('radio', { name: 'Light', exact: true })).toBeChecked()
       await page.setViewportSize({ width: 1040, height: 900 })
       await expect(header.getByRole('button')).toHaveCount(0)

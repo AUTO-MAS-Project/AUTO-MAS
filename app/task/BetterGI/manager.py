@@ -232,8 +232,6 @@ class BetterGIManager(ScriptManagerBase):
         await self.prepare()
         assert self.user_config is not None
 
-        self.script_info.user_config = self.user_config
-
         # Update 只更新原神客户端，不启动 BetterGI；运行中的正常 BGI
         # 不应该阻断游戏更新，但未完成的本体安装必须阻断。
         root = self._update_root

@@ -346,10 +346,11 @@ export class BackendService {
         stderrLines.length = 0
         otherLines.length = 0
         const details = current.result.details
-        const version =
+        const currentVersion =
           details.healthy === true && typeof details.version === 'string'
             ? details.version
-            : resolveRuntimeTargetVersion()
+            : undefined
+        const version = resolveRuntimeTargetVersion(currentVersion)
         const prepared = await this.runRuntimePreparation(
           client,
           ['bootstrap', '--version', version, '--if-needed'],

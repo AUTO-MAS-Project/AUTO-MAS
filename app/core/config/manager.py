@@ -92,6 +92,7 @@ from app.models.config import (
     OkNtePlanConfig,
     OkNteUserConfig,
     OkwwConfig,
+    OkwwPlanConfig,
     OkwwUserConfig,
     PlanConfigType,
     QueueConfig,
@@ -220,7 +221,7 @@ class QueueItemNotFoundError(LookupError):
 
 
 class AppConfig:
-    VERSION = "v5.8.0"
+    VERSION = "v5.9.0-beta.1"
 
     def __init__(self) -> None:
 
@@ -1631,7 +1632,13 @@ class AppConfig:
     async def add_plan(
         self,
         script: Literal[
-            "MaaPlan", "MaaEndPlan", "BAAHPlan", "MSSPlan", "UniversalPlan", "OkNtePlan"
+            "MaaPlan",
+            "MaaEndPlan",
+            "BAAHPlan",
+            "MSSPlan",
+            "UniversalPlan",
+            "OkNtePlan",
+            "OkwwPlan",
         ],
         *,
         payload: dict[str, Any] | None = None,
@@ -1643,7 +1650,8 @@ class AppConfig:
         | BAAHPlanConfig
         | MSSPlanConfig
         | UniversalPlanConfig
-        | OkNtePlanConfig,
+        | OkNtePlanConfig
+        | OkwwPlanConfig,
     ]:
         """添加计划表"""
 

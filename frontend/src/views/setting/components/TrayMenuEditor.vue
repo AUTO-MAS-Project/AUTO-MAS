@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { EditOutlined } from '@ant-design/icons-vue'
+import { EditOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { DEFAULT_TRAY_ITEMS, TRAY_ACTION_OPTIONS, type TrayMenuItem } from '@/types/tray'
+import SettingRow from '@/components/ui/SettingRow.vue'
 import TrayMenuDialog from './TrayMenuDialog.vue'
 
 const { t } = useI18n()
@@ -66,11 +67,23 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="tray-menu-summary" :aria-busy="loading">
-    <span v-if="loadFailed" class="tray-menu-preview tray-menu-preview--error" role="alert">
-      {{ t('core.setting.tray.loadFailed') }}
-    </span>
-    <span v-else-if="!loading" class="tray-menu-preview">{{ preview }}</span>
+  <SettingRow :aria-busy="loading">
+    <template #label>
+      <span class="tray-menu-label">
+        {{ t('core.setting.tray.section') }}
+        <a-tooltip :title="t('core.setting.tray.sectionTip')" :trigger="['hover', 'focus']">
+          <QuestionCircleOutlined class="tray-menu-hint" tabindex="0" />
+        </a-tooltip>
+      </span>
+      <p
+        class="tray-menu-description"
+        :class="{ 'tray-menu-description--error': loadFailed }"
+        :role="loadFailed ? 'alert' : undefined"
+      >
+        {{ loadFailed ? t('core.setting.tray.loadFailed') : loading ? '' : preview }}
+      </p>
+    </template>
+
     <a-button v-if="loadFailed" size="small" @click="load">
       {{ t('core.setting.tray.retry') }}
     </a-button>
@@ -78,34 +91,50 @@ onBeforeUnmount(() => {
       <template #icon><EditOutlined /></template>
       {{ t('core.setting.tray.edit') }}
     </a-button>
+
     <TrayMenuDialog
       v-if="editorOpen"
       :saved-items="items"
       @saved="handleSaved"
       @close="editorOpen = false"
     />
-  </div>
+  </SettingRow>
 </template>
 
 <style scoped>
-.tray-menu-summary {
-  display: flex;
+.tray-menu-label {
+  display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  min-width: 0;
+  gap: 6px;
+  color: var(--ant-color-text);
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.tray-menu-preview {
-  min-width: 0;
+.tray-menu-hint {
+  color: var(--ant-color-text-quaternary);
+  font-size: 14px;
+  cursor: help;
+}
+
+.tray-menu-hint:hover,
+.tray-menu-hint:focus-visible {
+  color: var(--ant-color-primary);
+}
+
+.tray-menu-description {
+  flex-basis: 100%;
+  margin: 2px 0 0;
   overflow: hidden;
   color: var(--ant-color-text-secondary);
   font-size: 12px;
+  font-weight: 400;
+  line-height: 19px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tray-menu-preview--error {
+.tray-menu-description--error {
   color: var(--ant-color-error);
 }
 </style>
