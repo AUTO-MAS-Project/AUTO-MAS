@@ -4000,6 +4000,8 @@
   "core.setting.advanced.exportLogDesc": "実行ログとクラッシュ記録を含みます。問題を報告する際に一緒に添付してください",
   "core.setting.advanced.exportMaa": "MAA の問題報告パッケージを書き出す",
   "core.setting.advanced.exportMaaFWEmpty": "MFW マネージドスクリプトはまだありません",
+  "core.setting.advanced.exportMaaFWHistoryOnly": "履歴のみ",
+  "core.setting.advanced.exportMaaFWScriptCount": "{count} 件",
   "core.setting.advanced.issueSection": "専用の問題報告パッケージ",
   "core.setting.advanced.issueSectionDesc": "追加済みのマネージドスクリプトごとに対応する問題報告パッケージを書き出します。Issue に添付すると原因を特定しやすくなります",
   "core.setting.advanced.issueSectionEmpty": "マネージドスクリプトがまだ追加されていません。追加すると、ここに対応する問題報告パッケージが表示されます",

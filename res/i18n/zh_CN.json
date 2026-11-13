@@ -4000,6 +4000,8 @@
   "core.setting.advanced.exportLogDesc": "包含运行日志与崩溃记录，排查问题时一并提交",
   "core.setting.advanced.exportMaa": "导出 MAA 问题包",
   "core.setting.advanced.exportMaaFWEmpty": "还没有 MFW 托管",
+  "core.setting.advanced.exportMaaFWHistoryOnly": "仅历史",
+  "core.setting.advanced.exportMaaFWScriptCount": "{count} 个托管",
   "core.setting.advanced.issueSection": "专项问题包导出",
   "core.setting.advanced.issueSectionDesc": "按已添加的托管导出对应专项的问题包，提交 Issue 时附上更易定位",
   "core.setting.advanced.issueSectionEmpty": "还没有添加任何托管，添加托管后可在这里导出对应问题包",
