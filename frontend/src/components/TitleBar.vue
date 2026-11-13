@@ -1,5 +1,12 @@
 <template>
-  <div class="title-bar" :class="{ 'title-bar-dark': isDark, 'title-bar-macos': isMacOS }">
+  <div
+    class="title-bar"
+    :class="{
+      'title-bar-dark': isDark,
+      'title-bar-macos': isMacOS,
+      'title-bar-effects-paused': performanceStore.isBackgrounded,
+    }"
+  >
     <!-- 左侧：Logo和软件名 -->
     <div class="title-bar-left">
       <div class="logo-section">
@@ -127,6 +134,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { useTheme } from '@/composables/useTheme'
+import { usePerformanceStore } from '@/stores/performance'
 import {
   updateInfo,
   backendUpdateInfo,
@@ -214,6 +222,7 @@ const retryActionLabel = (action: RuntimeUpdateRetryAction): string =>
   retryActionLabels.value[action]
 
 const { isDark } = useTheme()
+const performanceStore = usePerformanceStore()
 
 // 使用 import.meta.env 或直接定义版本号，确保打包后可用
 const version = computed(
@@ -442,64 +451,6 @@ onBeforeUnmount(() => {
   -webkit-app-region: drag;
 }
 
-.update-hint {
-  font-weight: 600;
-  margin-left: 4px;
-  cursor: help;
-  background: linear-gradient(
-    45deg,
-    #ff1744,
-    #ff5722,
-    #ff9800,
-    #ffc107,
-    #4caf50,
-    #00bcd4,
-    #2196f3,
-    #9c27b0,
-    #ff1744
-  );
-  background-size: 400% 400%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation:
-    rainbow-flow 3s ease-in-out infinite,
-    glow-pulse 2s ease-in-out infinite;
-  position: relative;
-  filter: drop-shadow(0 0 4px rgba(255, 64, 129, 0.4));
-  transition: all 0.3s ease;
-  font-size: 13px;
-  line-height: 1.2;
-  padding: 2px 4px;
-  border-radius: 4px;
-}
-
-.update-hint.clickable {
-  cursor: pointer;
-  user-select: none;
-  -webkit-app-region: no-drag;
-}
-
-.update-hint.clickable:hover {
-  transform: scale(1.05);
-  filter: drop-shadow(0 0 10px rgba(255, 64, 129, 0.8));
-}
-
-.update-hint.clickable:active {
-  transform: scale(0.98);
-}
-
-/* development 模式下 Runtime 不管理源码，入口只展示不可点 */
-.update-hint.disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.update-hint.disabled:hover {
-  transform: none;
-  filter: none;
-}
-
 .backend-update-body {
   display: flex;
   flex-direction: column;
@@ -539,121 +490,6 @@ onBeforeUnmount(() => {
   gap: 8px;
   justify-content: flex-end;
 }
-
-.update-hint:hover {
-  transform: scale(1.02);
-  filter: drop-shadow(0 0 8px rgba(255, 64, 129, 0.7));
-  animation-duration: 3s, 2s;
-}
-
-.update-hint::before {
-  content: '';
-  position: absolute;
-  top: -2px;
-  left: -2px;
-  right: -2px;
-  bottom: -2px;
-  background: linear-gradient(
-    45deg,
-    #ff1744,
-    #ff5722,
-    #ff9800,
-    #ffc107,
-    #4caf50,
-    #00bcd4,
-    #2196f3,
-    #9c27b0,
-    #ff1744
-  );
-  background-size: 400% 400%;
-  border-radius: 6px;
-  z-index: -1;
-  opacity: 0.12;
-  filter: blur(8px);
-  animation: rainbow-flow 4s ease-in-out infinite;
-}
-
-.update-hint::after {
-  content: '';
-  position: absolute;
-  top: -3px;
-  left: -3px;
-  right: -3px;
-  bottom: -3px;
-  background: radial-gradient(circle at center, rgba(255, 64, 129, 0.08) 0%, transparent 70%);
-  border-radius: 8px;
-  z-index: -2;
-  animation: pulse-ring 4s ease-in-out infinite;
-}
-
-/* 为相邻的更新提示添加间距 */
-.update-hint + .update-hint {
-  margin-left: 12px;
-}
-
-.title-bar-dark .update-hint {
-  filter: drop-shadow(0 0 6px rgba(255, 64, 129, 0.6));
-}
-
-.title-bar-dark .update-hint::before {
-  opacity: 0.2;
-  filter: blur(10px);
-}
-
-.title-bar-dark .update-hint::after {
-  background: radial-gradient(circle at center, rgba(255, 64, 129, 0.15) 0%, transparent 70%);
-}
-
-@keyframes rainbow-flow {
-  0% {
-    background-position: 0% 50%;
-  }
-
-  50% {
-    background-position: 100% 50%;
-  }
-
-  100% {
-    background-position: 0% 50%;
-  }
-}
-
-@keyframes glow-pulse {
-  0% {
-    filter: drop-shadow(0 0 4px rgba(255, 64, 129, 0.4)) brightness(1);
-    transform: scale(1);
-  }
-
-  33% {
-    filter: drop-shadow(0 0 6px rgba(255, 152, 0, 0.5)) brightness(1.08);
-    transform: scale(1.003);
-  }
-
-  66% {
-    filter: drop-shadow(0 0 5px rgba(76, 175, 80, 0.45)) brightness(1.05);
-    transform: scale(1.002);
-  }
-
-  100% {
-    filter: drop-shadow(0 0 4px rgba(255, 64, 129, 0.4)) brightness(1);
-    transform: scale(1);
-  }
-}
-
-@keyframes pulse-ring {
-  0% {
-    opacity: 0.08;
-    transform: scale(0.98);
-  }
-
-  50% {
-    opacity: 0.04;
-    transform: scale(1.02);
-  }
-
-  100% {
-    opacity: 0.08;
-    transform: scale(0.98);
-  }
-}
 </style>
+
+<style scoped src="./titleBarUpdateHint.css"></style>
