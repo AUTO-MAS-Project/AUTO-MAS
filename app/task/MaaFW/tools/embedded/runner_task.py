@@ -574,6 +574,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # URL 模式本轮打开链接的时刻（epoch 秒）：Steam 拉起的游戏不是 MAS 的子进程、还可能
         # 自我重启换 PID，关游戏时据此兜底结束这之后出现的同 exe 进程。None 表示没经链接拉起
         self.game_launched_at: float | None = None
+        # URL 模式本次运行**第一次**打开链接的时刻：重试之间不清，只在最终收尾用完清空。
+        # Steam 冷启动 / 更新超过等待时限时，游戏会在 MAS 放弃之后才出现，下一轮又按「已在
+        # 运行」接管、不算 MAS 开的；收尾按它再扫一遍，MAS 拉起的游戏不会留在外面
+        self.url_first_launched_at: float | None = None
         # 本账号这次运行开始的时刻（epoch 秒，第一次尝试的运行前设置之前）：AttachOnly 下由
         # MAS 兜底关闭时只关这之后才出现的进程，收尾做过一次就清空（见 _close_attached_game）
         self.run_started_at: float | None = None
@@ -3282,6 +3286,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 链接一打开就算 MAS 开的（同 DirectExe）：之后等不到、被停止，收尾都要关
         self.opened_game = True
         self.game_launched_at = launched_at
+        if self.url_first_launched_at is None:
+            self.url_first_launched_at = launched_at
         self._append_log(
             f"已打开启动链接，等待游戏进程启动（最多 {timeout}s）: {game_path.name}"
         )
@@ -3864,9 +3870,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             game_path = self._resolve_game_launch_path()
             if launched_at is not None and game_path is not None:
                 try:
-                    await self._end_processes_started_since(
+                    if not await self._end_processes_started_since(
                         launched_at, exes=[game_path]
-                    )
+                    ):
+                        closed = False
                 except Exception as exc:
                     logger.warning(f"MaaFW 清理时关闭链接拉起的游戏失败: {exc}")
                     closed = False
@@ -3885,7 +3892,27 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         """
 
         await self._close_game()
+        await self._close_url_game_left_behind()
         await self._close_attached_game(failed=failed)
+
+    async def _close_url_game_left_behind(self) -> None:
+        """URL 模式最终收尾：按本次运行第一次打开链接的时刻，再扫一遍同 exe 的进程。
+
+        覆盖「等进程超时之后游戏才出现」：那一轮 _close_game 时还没有进程可关，之后的
+        尝试按「已在运行」接管（opened_game 为假），没有这一步就会留在外面。运行前就开着
+        的游戏不会进 URL 分支（直接接管），所以这个时刻之后出现的同 exe 进程都是 MAS 拉起的。
+        """
+
+        since = self.url_first_launched_at
+        self.url_first_launched_at = None
+        game_path = self._resolve_game_launch_path()
+        if since is None or game_path is None:
+            return
+        try:
+            await self._end_processes_started_since(since, exes=[game_path])
+        except Exception as exc:
+            logger.warning(f"MaaFW 收尾关闭链接拉起的游戏失败: {exc}")
+            self._append_log(f"关闭游戏失败: {exc}", warning=True)
 
     def _attached_game_close_wanted(self, *, failed: bool) -> bool:
         if self._game_launch_mode() != "AttachOnly":
@@ -3954,11 +3981,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         exes: list[Path],
         pids: set[int] | None = None,
         log_kept: bool = False,
-    ) -> None:
+    ) -> bool:
         """结束候选里创建时间不早于 ``since``（容差 2s）的进程，每个写一行运行日志。
 
         候选是 pid 在 ``pids`` 里、或 exe 等于 ``exes`` 之一的进程。``log_kept`` 为真时，
-        运行前就在的候选也各写一行说明为什么不关。
+        运行前就在的候选也各写一行说明为什么不关。返回该关的是否都关掉了；没关掉的
+        （多半是游戏以管理员身份运行、MAS 没有）写一行警告进运行日志。
         """
 
         closing, kept = await asyncio.to_thread(
@@ -3968,10 +3996,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             for process in kept:
                 self._append_log(f"{process.label} 在运行开始前就已打开，不关闭")
         if not closing:
-            return
-        ended = await asyncio.to_thread(_end_processes, closing)
+            return True
+        ended, failed = await asyncio.to_thread(_end_processes, closing)
         for process in ended:
             self._append_log(f"已关闭本次运行期间打开的 {process.label}")
+        for process in failed:
+            self._append_log(
+                f"没能关闭 {process.label}，可能需要以管理员身份运行 AUTO-MAS",
+                warning=True,
+            )
+        return not failed
 
     async def _try_enter_project_path(self) -> bool:
         project_lock_key = await try_reserve_project_path(self.project_path)
@@ -4581,13 +4615,15 @@ def _find_processes_started_since(
 def _end_processes(
     targets: list[_ProcessSnapshot],
     grace_seconds: float = _PROCESS_TERMINATE_GRACE_SECONDS,
-) -> list[_ProcessSnapshot]:
-    """先 terminate，``grace_seconds`` 后仍在的 kill；返回已结束的那些。
+) -> tuple[list[_ProcessSnapshot], list[_ProcessSnapshot]]:
+    """先 terminate，``grace_seconds`` 后仍在的 kill；返回（已结束的, 没能结束的）。
 
-    结束前按创建时间再核一次：快照之后 pid 被别的进程复用了就不碰它。
+    结束前按创建时间再核一次：快照之后 pid 被别的进程复用了就不碰它（两边都不算）。
+    已经自己退出的也不算失败。
     """
 
     started: dict[psutil.Process, _ProcessSnapshot] = {}
+    failed: list[_ProcessSnapshot] = []
     for target in targets:
         try:
             proc = psutil.Process(target.pid)
@@ -4601,10 +4637,11 @@ def _end_processes(
             continue
         except (psutil.AccessDenied, OSError) as exc:
             logger.warning(f"MaaFW 结束进程失败 {target.label}: {exc}")
+            failed.append(target)
             continue
         started[proc] = target
     if not started:
-        return []
+        return [], failed
     _, alive = psutil.wait_procs(list(started), timeout=grace_seconds)
     for proc in alive:
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied, OSError):
@@ -4613,7 +4650,8 @@ def _end_processes(
         _, alive = psutil.wait_procs(alive, timeout=grace_seconds)
     for proc in alive:
         logger.warning(f"MaaFW 结束进程后仍在运行: {started[proc].label}")
-    return [snapshot for proc, snapshot in started.items() if proc not in alive]
+        failed.append(started[proc])
+    return [snapshot for proc, snapshot in started.items() if proc not in alive], failed
 
 
 def _optional_int(value: Any) -> int | None:
