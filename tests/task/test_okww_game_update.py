@@ -41,7 +41,8 @@ async def update_context(tmp_path, monkeypatch):
     uid = uuid.uuid4()
     user_config = OkwwUserConfig()
     await activate_config(user_config)
-    _, script, user = await create_runtime_tree(user_id=str(uid))
+    # 子节点通过弱引用访问所属任务；夹具存续期间保留根节点。
+    root, script, user = await create_runtime_tree(user_id=str(uid))
     opened = []
 
     async def open_process(self, path, *args, **kwargs):
@@ -66,7 +67,8 @@ async def update_context(tmp_path, monkeypatch):
         "AsyncClient",
         lambda **kwargs: client_class(transport=transport, **kwargs),
     )
-    return config, {uid: user_config}, script, user, launcher, client, opened, interact
+    yield config, {uid: user_config}, script, user, launcher, client, opened, interact
+    del root
 
 
 @pytest.mark.asyncio
