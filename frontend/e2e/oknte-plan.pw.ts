@@ -98,8 +98,63 @@ test.describe('@oknte-plan', () => {
     ])
     await expect(selection).toContainText('Off')
     await expect(page.locator('[data-row-key=Monday] .not-applicable')).toHaveCount(5)
+    await patch([{ id: 'daily_anomaly', enabled: true }])
+    await expect(selection).toContainText('Based on detailed configuration')
     await patch([{ id: 'daily_anomaly', enabled: false }])
-    await expect(selection).toContainText('Detailed configuration')
+    await expect(selection).toContainText('Based on detailed configuration')
+    await selection.click()
+    await page
+      .locator('.ant-select-dropdown:visible')
+      .getByTitle('异象界域', { exact: true })
+      .click()
+    await expect(selection).toContainText('异象界域')
+    await selection.click()
+    await expect(page.locator('.ant-select-dropdown:visible')).not.toContainText(
+      'Based on detailed configuration'
+    )
+    await page.keyboard.press('Escape')
+    for (const mode of ['自动循环序号/目标', '自定义循环', undefined]) {
+      await page.request.post(`${backend}/api/scripts/oknte/plan/save`, {
+        data: {
+          plan_id: created.planId,
+          day: 'Monday',
+          replace: true,
+          configs: {
+            'DailyRoutineTask.json': {
+              'Routine Items': [
+                { id: 'daily_anomaly', enabled: true },
+                { id: 'daily_anomaly_hunter', enabled: false },
+              ],
+            },
+            'DailyRoutineTaskConfigs.json': {
+              daily_anomaly: {
+                循环模式: mode,
+                循环序列: ['异能升级材料: 1', '异能升级材料: 3'],
+              },
+            },
+          },
+        },
+      })
+      await page.reload()
+      await expect(selection).toContainText('Based on detailed configuration')
+      await selection.click()
+      const saved = page.waitForResponse(r => r.url().includes('/api/plan/update'))
+      await page
+        .locator('.ant-select-dropdown:visible')
+        .getByTitle('异象界域', { exact: true })
+        .click()
+      await saved
+      await expect(selection).toContainText('异象界域')
+      const result = (
+        await (
+          await page.request.post(`${backend}/api/plan/get`, {
+            data: { planId: created.planId },
+          })
+        ).json()
+      ).data[created.planId].Monday.Key.Configs
+      expect(result['DailyRoutineTaskConfigs.json'].daily_anomaly['循环模式']).toBe('停用')
+      expect(result['DailyRoutineTaskConfigs.json'].daily_anomaly['循环序列']).toHaveLength(2)
+    }
     await patch([])
     await expect(selection).toContainText('Inherit')
     await page.route('**/oknte/plan/configs?**', async route => {
@@ -114,7 +169,10 @@ test.describe('@oknte-plan', () => {
         .options.push('E2E server target')
       await route.fulfill({ response, json: body })
     })
-    await patch([{ id: 'daily_anomaly_hunter', enabled: true }])
+    await patch([
+      { id: 'daily_anomaly', enabled: false },
+      { id: 'daily_anomaly_hunter', enabled: true },
+    ])
     await task.isVisible()
     await page.locator('[data-row-key=Monday] .ant-select').last().click()
     await expect(page.locator('.ant-select-dropdown:visible')).toContainText('E2E server target')
@@ -294,9 +352,14 @@ test.describe('@oknte-plan', () => {
         day: 'Monday',
         replace: true,
         configs: {
-          'DailyRoutineTask.json': { 'Routine Items': [{ id: 'daily_anomaly', enabled: true }] },
+          'DailyRoutineTask.json': {
+            'Routine Items': [
+              { id: 'daily_anomaly', enabled: true },
+              { id: 'daily_anomaly_hunter', enabled: false },
+            ],
+          },
           'DailyRoutineTaskConfigs.json': {
-            daily_anomaly: { 任务类型: '异能升级材料', 弧盘材料序号: 3 },
+            daily_anomaly: { 任务类型: '异能升级材料', 弧盘材料序号: 3, 循环模式: '停用' },
           },
         },
       },
