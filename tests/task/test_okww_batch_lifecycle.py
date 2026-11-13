@@ -218,12 +218,21 @@ async def test_report_after_check_failure_and_later_manual_stop(monkeypatch, sta
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("limited_index", [0, 1])
-async def test_batch_filters_each_accounts_real_daily_limit(tmp_path, limited_index):
-    sentinel = tmp_path / "data/apps/ok-ww/app.json"
+@pytest.mark.parametrize("skip_reason", ["daily_limit", "expired"])
+@pytest.mark.parametrize("method", ["OKWW", "OKWW_SINGLE"])
+async def test_batch_filters_each_accounts_real_daily_limit(
+    tmp_path, monkeypatch, limited_index, skip_reason, method
+):
+    work = tmp_path / "mas"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    root = tmp_path / "okww"
+    root.mkdir()
+    sentinel = root / "data/apps/ok-ww/app.json"
     sentinel.parent.mkdir(parents=True)
     sentinel.write_text("{}", encoding="utf-8")
-    (tmp_path / "ok-ww.exe").touch()
-    native = tmp_path / "data/apps/ok-ww/working/configs"
+    (root / "ok-ww.exe").touch()
+    native = root / "data/apps/ok-ww/working/configs"
     native.mkdir(parents=True)
     (native / "DailyTask.json").write_text("{}", encoding="utf-8")
     ids = [uuid.uuid4(), uuid.uuid4()]
@@ -237,8 +246,8 @@ async def test_batch_filters_each_accounts_real_daily_limit(tmp_path, limited_in
     manager = OkwwManager(info)
     manager.script_config = OkwwConfig.model_validate(
         {
-            "Info": {"RootPath": str(tmp_path)},
-            "Game": {"AccountSwitchMethod": "OKWW"},
+            "Info": {"RootPath": str(root)},
+            "Game": {"AccountSwitchMethod": method},
             "Run": {"ProxyTimesLimit": 1},
         }
     )
@@ -246,8 +255,19 @@ async def test_batch_filters_each_accounts_real_daily_limit(tmp_path, limited_in
     manager.user_config = {
         uid: OkwwUserConfig.model_validate(
             {
-                "Info": {"Id": phone, "Base": "native"},
-                "Data": {"LastProxyDate": now, "ProxyTimes": int(i == limited_index)},
+                "Info": {
+                    "Id": phone,
+                    "Base": "native",
+                    "RemainedDay": 0
+                    if i == limited_index and skip_reason == "expired"
+                    else -1,
+                },
+                "Data": {
+                    "LastProxyDate": now,
+                    "ProxyTimes": int(
+                        i == limited_index and skip_reason == "daily_limit"
+                    ),
+                },
             }
         )
         for i, (uid, phone) in enumerate(zip(ids, ["13012346220", "13912347052"]))

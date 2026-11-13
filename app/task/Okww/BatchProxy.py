@@ -38,11 +38,14 @@ class BatchProxyTask(AutoProxyTask):
         self, script_info, script_config, user_config, game_manager, *, participants
     ):
         super().__init__(script_info, script_config, user_config, game_manager)
-        self.cur_user_item = UserItem(
-            user_id=self.cur_user_item.user_id,
-            name=self.cur_user_item.name if len(participants) == 1 else "OK-WW 批次",
-            status="等待",
-        )
+        # 单账号准入和逐账号模式必须直接更新真实账号的跳过状态。
+        # 只有多人批次需要独立的聚合运行节点。
+        if len(participants) > 1:
+            self.cur_user_item = UserItem(
+                user_id=self.cur_user_item.user_id,
+                name="OK-WW 批次",
+                status="等待",
+            )
         self.participants = participants
         self.succeeded = set()
         self.pending = set()
