@@ -100,9 +100,17 @@ _WARNED_LANGUAGE_FILES: set[str] = set()
 # - v2.10.3：preset.pretask——账号页应用预设时按它设前置任务的勾选与选项值，未列出的
 #   不勾选；预设没声明时保持用户当前的前置任务不变（task_config._apply_preset_pretasks、
 #   前端 maafwPresetQueue.ts）。
-# 所以声明 v2.10.3。之后的 v2.10.4（preset.controller）、v2.10.5（inputs[].input_type）
-# 还没做，不能再往上声明。
-PI_INTERFACE_VERSION = "v2.10.3"
+# - v2.10.4：preset.controller——加载器解析（interface.models.MaaFWPreset.controller，写错的
+#   名字告警、原样保留），经预览的 MaaFWPresetInfo.controller 给账号页；当前控制器不满足的
+#   预设置灰、不让应用（前端 maafwPresetQueue.isPresetAvailableForController），协议允许的
+#   「隐藏或禁用」取禁用。已选中的预设不因此改掉，运行期不拦截。
+# - v2.10.5：inputs[].input_type——file / directory 在账号页（含前置任务的选项）渲染成可编辑
+#   的路径框加系统选择对话框，选中后原样写入原生绝对路径，verify / pattern_msg 照常校验；
+#   没有原生对话框（浏览器预览）时退化为普通文本框（前端 MaaFWTaskOptionEditor.vue）。
+#   取值语义不变，运行计划不看它。
+# - v2.11.0：PI_USER_DATA_DIR——见 _build_pi_env，取项目根（agent / pretask 的工作目录）。
+# 所以声明 v2.11.0。
+PI_INTERFACE_VERSION = "v2.11.0"
 PI_CLIENT_LANGUAGE = "zh_cn"
 PI_CLIENT_NAME = "AUTO-MAS"
 PROJECT_RUNTIME_MANIFEST_NAME = ".auto_mas_maafw_project.json"
@@ -454,7 +462,9 @@ def build_maafw_run_plan(
             managed_env_root=managed_env_root,
         ),
         pretasks=pretask_plans,
-        piEnv=_build_pi_env(interface, controller, resource, i18n_mapping),
+        piEnv=_build_pi_env(
+            interface, controller, resource, i18n_mapping, resolved_base_dir
+        ),
         tasks=runnable_tasks,
         skippedTasks=[*queue_skipped_tasks, *skipped_tasks],
         globalOptions=copy.deepcopy(global_values),
@@ -1639,7 +1649,20 @@ def _build_pi_env(
     controller: MaaFWController,
     resource: MaaFWResource,
     i18n_mapping: dict[str, Any],
+    project_root: Path,
 ) -> dict[str, str]:
+    """注入给 agent 与 pretask 子进程的 ``PI_*`` 环境变量（runner 与宿主跑 pretask 共用这一份）。
+
+    ``PI_USER_DATA_DIR``（PI v2.11.0）取项目根 ``project_root``，即计划的 ``path``——内嵌运行
+    时就是视图 ``data/mfw/<托管 uuid 前 12 位>/``。协议的语义是「通用 UI 与子进程共同读写
+    config / debug 的目录，便携布局下就是工作目录」，在 MAS 里与它重合的只有这个目录：
+    agent 与 pretask 子进程的 cwd 都是它（``planner`` 的 ``cwd=base_dir``、``runner_task._run_pretasks``
+    的 ``cwd=self.run_plan.path``），runner 的 ``Toolkit.init_option`` 也以它为用户路径，
+    MaaFramework 的 ``config/maa_option.json`` 与 ``debug/maafw.log`` 都落在它下面；项目自己
+    读写的 ``config/``、``debug/`` 是视图私有文件，换版本时随视图带走。MAS 自己的工作目录
+    （后端 cwd）与 ``data/maafw_project_state`` 都不是子进程会去读写的地方，不取它们。
+    """
+
     controller_payload = _resolve_i18n_value(
         controller.model_dump(mode="json", exclude_none=True), i18n_mapping
     )
@@ -1653,6 +1676,7 @@ def _build_pi_env(
         "PI_CLIENT_LANGUAGE": PI_CLIENT_LANGUAGE,
         "PI_CLIENT_MAAFW_VERSION": _load_maafw_version(),
         "PI_VERSION": interface_model.version or "",
+        "PI_USER_DATA_DIR": str(Path(project_root).resolve()),
         "PI_CONTROLLER": json.dumps(
             controller_payload, ensure_ascii=False, separators=(",", ":")
         ),

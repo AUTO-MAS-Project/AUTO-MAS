@@ -2007,6 +2007,7 @@
   "core.edit.pleaseChoose": "選択してください",
   "core.edit.prepareRuntimeEnv": "実行環境を準備",
   "core.edit.preset": "プリセット",
+  "core.edit.presetControllerUnavailable": "現在の操作方式では使用できません",
   "core.edit.previousStep": "前へ",
   "core.edit.processName": "プロセス名",
   "core.edit.processNameEG": "プロセス名（例: StarRail.exe）。未入力だとプロセスの状態を正しく監視できない場合があるため必須です。ゲームを起動してからタスクマネージャーでプログラムの詳細を確認すると分かります。",

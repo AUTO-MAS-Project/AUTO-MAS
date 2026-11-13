@@ -1,9 +1,11 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import {
   buildProjectPresetAppliedSnapshot,
+  isPresetAvailableForController,
   selectPresetTemplateQueue,
   type MaaFWPresetQueueEntry,
 } from '../maafwPresetQueue'
+import { isMaaFWTaskActiveFor } from './maafwHiddenTasks'
 import { MAAFW_MAX_TASK_REPEAT_COUNT } from '@/utils/maafwTaskInstance'
 import { maafwMissingTaskName } from '../maafwTaskChanges'
 import { isManagedMaaFWTask, withoutManagedMaaFWTasks } from '../maafwManagedTasks'
@@ -73,6 +75,8 @@ export function useMaaFWTaskQueue({
     partitionTaskOrder,
     isTaskActiveForCurrentContext,
     managedTaskEntries,
+    effectiveControllerName,
+    effectiveResourceName,
   } = context
 
   const selectedTaskId = ref('')
@@ -158,17 +162,36 @@ export function useMaaFWTaskQueue({
       )
       .map(item => ({ id: item.id, task: item.task }))
   )
+  /**
+   * 预设限定的控制器（PI v2.10.4）下可选的任务：当前控制器不满足的预设置灰列出，卡片上
+   * 显示的任务按它自己的控制器算（资源仍是当前的），受管与不可选任务同样不算。
+   */
+  const selectableTaskByNameFor = (controllerNames: readonly string[]) =>
+    new Map(
+      withoutManagedMaaFWTasks(
+        (previewData.value?.tasks || []).filter(task =>
+          controllerNames.some(controllerName =>
+            isMaaFWTaskActiveFor(task, controllerName, effectiveResourceName.value)
+          )
+        ),
+        managedTaskEntries.value
+      )
+        .filter(task => !isUnselectableMaaFWTask(task))
+        .map(task => [task.name, task] as const)
+    )
   const presetTemplates = computed(() => {
     // 预设里的受管任务（M9A 预设带着启动 / 关闭）不进队列：按「不可用」处理，应用时直接跳过
     const activeTaskByName = availableTaskByName.value
     // 只有前置任务设置（`task` 为空、或普通任务当前全不可用）的预设也列出来，
-    // 什么都做不了的不列，规则见 selectPresetTemplateQueue
+    // 什么都做不了的不列，规则见 selectPresetTemplateQueue。控制器不满足的预设不藏：
+    // 按它自己的控制器判断列不列，列出来置灰（isPresetAvailableForController）
     return presetOptions.value.flatMap(preset => {
+      const available = isPresetAvailableForController(preset, effectiveControllerName.value)
       const snapshot = normalizeTaskSnapshot(preset.snapshot, previewData.value)
       const queue = selectPresetTemplateQueue(
         snapshot.taskOrder,
         preset.snapshot,
-        activeTaskByName,
+        available ? activeTaskByName : selectableTaskByNameFor(preset.controller ?? []),
         validTaskNames.value,
         isPretaskId
       )
@@ -177,6 +200,7 @@ export function useMaaFWTaskQueue({
         {
           preset,
           ...queue,
+          ...(available ? {} : { unavailable: true }),
           taskOptions: snapshot.taskOptions,
           globalOptions: snapshot.globalOptions || {},
         },
@@ -259,7 +283,8 @@ export function useMaaFWTaskQueue({
 
   const applyPresetTemplate = async (presetName: string) => {
     const template = presetTemplates.value.find(item => item.preset.name === presetName)
-    if (!template) return
+    // 当前控制器不满足的预设（PI v2.10.4）不应用：按钮已置灰，这里再挡一次
+    if (!template || template.unavailable) return
 
     // 项目预设不带显示名与运行日；前置任务按预设的 pretask 声明处理，没声明就原样保留
     // （勾选、选项、显示名、运行日），规则见 buildProjectPresetAppliedSnapshot

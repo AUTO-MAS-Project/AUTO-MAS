@@ -1,5 +1,6 @@
 import { resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
 import type {
+  MaaFWPresetInfo,
   MaaFWTaskInfo,
   MaaFWTaskOptionValue,
   MaaFWTaskSchedule,
@@ -13,6 +14,19 @@ import {
 } from './MaaFWUserEdit/maafwTaskSnapshot'
 
 type TaskNameLookup = { has: (value: string) => boolean }
+
+/**
+ * 项目预设在当前控制器下能不能应用（PI v2.10.4 `preset.controller`，语义同任务的 controller）：
+ * 没写或空数组为不限。不满足的预设照样列出、置灰不让应用（协议允许隐藏或禁用，这里取禁用）；
+ * 账号已选中的预设不因此改掉，运行时也不据它拦截。
+ */
+export const isPresetAvailableForController = (
+  preset: Pick<MaaFWPresetInfo, 'controller'>,
+  controllerName: string
+) => {
+  const controllers = preset.controller ?? []
+  return controllers.length === 0 || controllers.includes(controllerName)
+}
 
 /** 预设里的一项：`id` 是任务实例 id，同一任务在预设里第二次起是 `<任务名>__MAS_DUP__presetN`。 */
 export type MaaFWPresetQueueEntry = {
