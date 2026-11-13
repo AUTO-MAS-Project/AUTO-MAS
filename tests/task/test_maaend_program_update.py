@@ -65,7 +65,13 @@ async def test_site_delta_installs_exact_official_package_or_falls_back(
     data = target.read_bytes()
     tail = new_start + len(unchanged)
     metadata = {
-        "version": 1,
+        "version": 2,
+        "mode": "range-zip",
+        "arch": "x86_64",
+        "channel": "stable",
+        "target_version": "2.3.0",
+        "bases": ["2.2.0"],
+        "beta_base": None,
         "base_sha256": hashlib.sha256(old.read_bytes()).hexdigest(),
         "target_size": size,
         "target_sha256": digest,
@@ -78,6 +84,7 @@ async def test_site_delta_installs_exact_official_package_or_falls_back(
     patch = tmp_path / "site.delta.zip"
     if variant == "wrong-base":
         metadata["base_sha256"] = "0" * 64
+    metadata["plans"] = {metadata["base_sha256"]: metadata["operations"]}
     with zipfile.ZipFile(patch, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("manifest.json", json.dumps(metadata))
         payload = data[:new_start] + data[tail:]
@@ -91,6 +98,23 @@ async def test_site_delta_installs_exact_official_package_or_falls_back(
 
     monkeypatch.setattr(
         package_download, "download_file", AsyncMock(side_effect=site_download)
+    )
+    async_client, sync_client = httpx.AsyncClient, httpx.Client
+
+    def response(request):
+        if request.url.host == "api.github.com":
+            return httpx.Response(200, json=[{"tag_name": "v2.2.0"}])
+        return httpx.Response(503)
+
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kw: async_client(**kw, transport=httpx.MockTransport(response)),
+    )
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda **kw: sync_client(**kw, transport=httpx.MockTransport(response)),
     )
     monkeypatch.setattr(update, "request_release", AsyncMock(return_value=release))
 
@@ -114,6 +138,237 @@ async def test_site_delta_installs_exact_official_package_or_falls_back(
     assert script_install.verify_installed_files(root, threading.Event())
     assert (root / "resource/large.bin").read_bytes() == unchanged
     assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("base_tag", ["v3.1.0-beta.4", "v2.2.0"])
+async def test_beta_range_skips_versions_reuses_data_and_removes_obsolete_files(
+    installation, tmp_path, monkeypatch, base_tag
+):
+    import random
+
+    root, config = installation
+    shared = random.Random(7).randbytes(1024 * 1024)
+    old, release = _official_release_for_test(tmp_path, base_tag)
+    with zipfile.ZipFile(old, "a") as archive:
+        archive.writestr("resource/shared.bin", shared)
+        archive.writestr("resource/obsolete.json", "removed in b8")
+        archive.writestr("resource/reverted.json", "changed in b4")
+    release["assets"][0].update(
+        size=old.stat().st_size,
+        digest="sha256:" + hashlib.sha256(old.read_bytes()).hexdigest(),
+    )
+    monkeypatch.setattr(update, "request_release", AsyncMock(return_value=release))
+
+    async def initial_download(_url, destination, **_):
+        shutil.copyfile(old, destination)
+
+    monkeypatch.setattr(
+        update, "download_file", AsyncMock(side_effect=initial_download)
+    )
+    config.Update.PackageMode = "incremental"
+    config.Update.Channel = "beta"
+    await update.update_before_run(root, config)
+    target, release = _official_release_for_test(tmp_path, "v3.1.0-beta.8")
+    with zipfile.ZipFile(target, "a") as archive:
+        archive.writestr("resource/shared.bin", shared)
+        archive.writestr("resource/reverted.json", "original stable content")
+    content = target.read_bytes()
+    release["assets"][0].update(
+        size=len(content), digest="sha256:" + hashlib.sha256(content).hexdigest()
+    )
+    monkeypatch.setattr(update, "request_release", AsyncMock(return_value=release))
+    received = []
+
+    def respond(request):
+        assert request.url.host != "api.github.com", "GitHub Range 不依赖版本范围索引"
+        start, end = map(
+            int, request.headers["Range"].removeprefix("bytes=").split("-")
+        )
+        data = content[start : end + 1]
+        received.append(len(data))
+        return httpx.Response(
+            206,
+            content=data,
+            headers={"Content-Range": f"bytes {start}-{end}/{len(content)}"},
+        )
+
+    async_client, sync_client = httpx.AsyncClient, httpx.Client
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kw: async_client(**kw, transport=httpx.MockTransport(respond)),
+    )
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda **kw: sync_client(**kw, transport=httpx.MockTransport(respond)),
+    )
+    site = AsyncMock(side_effect=AssertionError("GitHub 成功时不应取自建站包"))
+    full = AsyncMock(side_effect=AssertionError("合法区间更新不应下载全量"))
+    monkeypatch.setattr(package_download, "download_file", site)
+    monkeypatch.setattr(update, "download_file", full)
+    candidate = await update.prepare_update(root, config)
+    assert candidate.destination.read_bytes() == content
+    assert sum(received) < len(content) * 0.4
+    await update.apply_update(root, candidate)
+    assert update.read_install(root)[0] == Version("3.1.0b8")
+    assert not (root / "resource/obsolete.json").exists()
+    assert (root / "resource/reverted.json").read_text() == "original stable content"
+    assert (root / "resource/shared.bin").read_bytes() == shared
+    assert script_install.verify_installed_files(root, threading.Event())
+    site.assert_not_awaited()
+    full.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "current,channel,target,bases,anchor,allowed",
+    [
+        ("3.0.0", "stable", "3.1.0", ["3.0.0", "2.9.0", "2.8.0"], None, True),
+        ("2.7.0", "stable", "3.1.0", ["3.0.0", "2.9.0", "2.8.0"], None, False),
+        ("3.1.0", "beta", "3.1.0b8", ["3.1.0"], "3.1.0", True),
+        ("3.1.0b1", "beta", "3.1.0b8", ["3.1.0"], "3.1.0", True),
+        ("3.0.0", "beta", "3.1.0b8", ["3.1.0"], "3.1.0", False),
+        ("3.2.0b1", "beta", "3.2.0b8", [], None, False),
+    ],
+)
+def test_incremental_policy_requires_supported_stable_or_same_cycle_beta(
+    current, channel, target, bases, anchor, allowed
+):
+    policy = {
+        "version": 2,
+        "mode": "range-zip",
+        "target_version": target,
+        "target_size": 100,
+        "target_sha256": "a" * 64,
+        "arch": "x86_64",
+        "channel": channel,
+        "bases": bases,
+        "beta_base": anchor,
+    }
+    assert (
+        package_download.policy_allows(
+            policy, current, target, 100, "a" * 64, "x86_64", channel
+        )
+        is allowed
+    )
+
+
+@pytest.mark.asyncio
+async def test_beta_site_fallback_retains_formal_anchor_across_beta_updates(
+    installation, tmp_path, monkeypatch
+):
+    root, config = installation
+    shared = b"shared formal distribution" * 40000
+    formal, release = _official_release_for_test(tmp_path, "v3.1.0")
+    saved_formal = tmp_path / "saved-formal.zip"
+    shutil.copyfile(formal, saved_formal)
+    formal = saved_formal
+    with zipfile.ZipFile(formal, "a") as archive:
+        archive.writestr("resource/shared.bin", shared)
+    size, digest = (
+        formal.stat().st_size,
+        hashlib.sha256(formal.read_bytes()).hexdigest(),
+    )
+    release["assets"][0].update(size=size, digest="sha256:" + digest)
+    monkeypatch.setattr(update, "request_release", AsyncMock(return_value=release))
+
+    async def first_download(_url, destination, **_):
+        shutil.copyfile(formal, destination)
+
+    monkeypatch.setattr(update, "download_file", AsyncMock(side_effect=first_download))
+    config.Update.PackageMode = "incremental"
+    await update.update_before_run(root, config)
+    beta, beta_release = _official_release_for_test(tmp_path, "v3.1.0-beta.4")
+    with zipfile.ZipFile(beta, "a") as archive:
+        archive.writestr("resource/shared.bin", shared)
+    beta_release["assets"][0].update(
+        size=beta.stat().st_size,
+        digest="sha256:" + hashlib.sha256(beta.read_bytes()).hexdigest(),
+    )
+    monkeypatch.setattr(update, "request_release", AsyncMock(return_value=beta_release))
+
+    async def beta_download(_url, destination, **_):
+        shutil.copyfile(beta, destination)
+
+    monkeypatch.setattr(update, "download_file", AsyncMock(side_effect=beta_download))
+    config.Update.Channel = "beta"
+    config.Update.PackageMode = "full"
+    await update.update_before_run(root, config)
+    await script_install.run_worker(
+        package_download.remember_package,
+        root,
+        beta,
+        beta.stat().st_size,
+        hashlib.sha256(beta.read_bytes()).hexdigest(),
+        version="3.1.0b4",
+    )
+    target, release = _official_release_for_test(tmp_path, "v3.1.0-beta.8")
+    with zipfile.ZipFile(target, "a") as archive:
+        archive.writestr("resource/shared.bin", shared)
+    content = target.read_bytes()
+    target_digest = hashlib.sha256(content).hexdigest()
+    release["assets"][0].update(size=len(content), digest="sha256:" + target_digest)
+    with zipfile.ZipFile(formal) as archive:
+        info = archive.getinfo("resource/shared.bin")
+        old_start = info.header_offset + 30 + len(info.filename.encode())
+    with zipfile.ZipFile(target) as archive:
+        info = archive.getinfo("resource/shared.bin")
+        start = info.header_offset + 30 + len(info.filename.encode())
+    tail = start + len(shared)
+    patch = tmp_path / "beta-fallback.zip"
+    policy = {
+        "version": 2,
+        "mode": "range-zip",
+        "arch": "x86_64",
+        "channel": "beta",
+        "target_version": "3.1.0b8",
+        "target_size": len(content),
+        "target_sha256": target_digest,
+        "bases": ["3.1.0"],
+        "beta_base": "3.1.0",
+        "plans": {
+            digest: [
+                ["new", 0, start],
+                ["old", old_start, len(shared)],
+                ["new", start, len(content) - tail],
+            ]
+        },
+    }
+    with zipfile.ZipFile(patch, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("manifest.json", json.dumps(policy))
+        archive.writestr("payload", content[:start] + content[tail:])
+    client = httpx.Client
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda **kw: client(
+            **kw, transport=httpx.MockTransport(lambda _: httpx.Response(200))
+        ),
+    )
+
+    async def site_download(_url, destination, **_):
+        shutil.copyfile(patch, destination)
+
+    site = AsyncMock(side_effect=site_download)
+    monkeypatch.setattr(package_download, "download_file", site)
+    monkeypatch.setattr(update, "request_release", AsyncMock(return_value=release))
+    full = AsyncMock(side_effect=AssertionError("备用增量成功时不能全量"))
+    monkeypatch.setattr(update, "download_file", full)
+    config.Update.PackageMode = "incremental"
+    candidate = await update.prepare_update(root, config)
+    assert candidate.destination.read_bytes() == content
+    await update.apply_update(root, candidate)
+    directory = (
+        package_download.Config.data_path
+        / "maaend_package_cache"
+        / script_install.record_directory(root).name
+    )
+    assert (directory / "stable.zip").read_bytes() == formal.read_bytes()
+    assert json.loads((directory / "baseline.json").read_text())["version"] == "3.1.0b8"
+    assert script_install.verify_installed_files(root, threading.Event())
+    site.assert_awaited_once()
+    full.assert_not_awaited()
 
 
 @pytest.fixture
