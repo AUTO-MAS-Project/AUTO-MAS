@@ -45,3 +45,4 @@ export type QueueConfig_Info = {
      */
     TimeEnabled?: (boolean | null);
 };
+

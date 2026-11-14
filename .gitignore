@@ -62,6 +62,11 @@ list/
 
 # Plugin workspace (external plugin sources stay ignored)
 /plugins/*
+!/plugins/maa_adapter/
+!/plugins/maa_adapter/**
+/plugins/maa_adapter/build/
+/plugins/maa_adapter/dist/
+/plugins/maa_adapter/**/*.egg-info/
 !/plugins/auto_mas_core/
 !/plugins/auto_mas_core/**
 !/plugins/okww_adapter/
@@ -71,6 +76,9 @@ list/
 /plugins/**/__pycache__/
 /plugins/**/*.py[oc]
 /plugins/**/*.egg-info/
+/plugins/*/build/
+/plugins/*/dist/
+/plugins/**/.pytest_cache/
 /app/core/plugins/_generated/
 
 # Test artifacts

@@ -1,0 +1,5 @@
+{
+  "plugins.auto_mas_core.display_name": "AUTO-MAS 核心",
+  "plugins.auto_mas_core.description": "AUTO-MAS 核心系统插件与开发者 SDK",
+  "plugins.auto_mas_core.tags": "[\"核心\", \"SDK\"]"
+}

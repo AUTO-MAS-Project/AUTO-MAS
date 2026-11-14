@@ -7,9 +7,8 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 from fastapi import FastAPI
-
-from app.task.MAA.tools.cultivate.copilot import analyze_copilots
-from app.task.MAA.tools.cultivate.types import Progression
+from maa_adapter.cultivate.copilot import analyze_copilots
+from maa_adapter.cultivate.types import Progression
 
 
 @pytest.fixture
@@ -131,8 +130,9 @@ def test_missing_operator_is_not_treated_as_ready(catalog):
 async def test_http_analysis_option_reaches_planner(
     catalog, monkeypatch, ignore_level_gaps
 ):
-    from app.task.MAA import api, api_service
-    from app.task.MAA.tools.cultivate import depot_cultivate_service
+    from maa_adapter import api
+    from maa_adapter.cultivate import copilot_service as api_service
+    from maa_adapter.cultivate import depot_cultivate_service
 
     monkeypatch.setattr(
         target=api_service, name="_maa_script_config", value=lambda _: object()

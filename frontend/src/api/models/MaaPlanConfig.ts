@@ -37,12 +37,14 @@ import type { MaaPlanConfig_Day9 } from './MaaPlanConfig_Day9';
 import type { MaaPlanConfig_Friday } from './MaaPlanConfig_Friday';
 import type { MaaPlanConfig_Info } from './MaaPlanConfig_Info';
 import type { MaaPlanConfig_Monday } from './MaaPlanConfig_Monday';
+import type { MaaPlanConfig_plugin_info } from './MaaPlanConfig_plugin_info';
 import type { MaaPlanConfig_Saturday } from './MaaPlanConfig_Saturday';
 import type { MaaPlanConfig_Sunday } from './MaaPlanConfig_Sunday';
 import type { MaaPlanConfig_Thursday } from './MaaPlanConfig_Thursday';
 import type { MaaPlanConfig_Tuesday } from './MaaPlanConfig_Tuesday';
 import type { MaaPlanConfig_Wednesday } from './MaaPlanConfig_Wednesday';
 export type MaaPlanConfig = {
+    info?: (MaaPlanConfig_plugin_info | null);
     ALL?: (MaaPlanConfig_ALL | null);
     Friday?: (MaaPlanConfig_Friday | null);
     Day1?: (MaaPlanConfig_Day1 | null);

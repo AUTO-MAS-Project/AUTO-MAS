@@ -9,20 +9,15 @@ from app.task.MaaFW.tools.core.project_update import updater
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("cleanup", ["retry", "cancel", "policy_changed"])
-async def test_real_manager_prefetch_cleanup_without_update(
-    monkeypatch, isolated_app_paths, cleanup
+async def test_disabled_update_prefetch_keeps_runtime_idle(
+    monkeypatch, isolated_app_paths
 ):
-    """关闭自动更新也会登记候选，重试和撤销必须正常清理真实管理器。"""
+    """新 L2 只读检查无需求时不分配候选或占锁，结束可重复清理。"""
     from uuid import uuid4
 
-    from app.core.script_update import ScriptUpdateSession
-    from app.core.script_update_queue import (
-        report_script_task_retrying,
-        script_task_retrying,
-    )
     from app.models.config import GlobalConfig, MaaFWConfig
     from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
+    from app.task.prefetch import PrefetchSession
     from tests.config_support import activate_config
     from tests.runtime_support import create_runtime_tree
 
@@ -31,33 +26,25 @@ async def test_real_manager_prefetch_cleanup_without_update(
     config = await activate_config(
         MaaFWConfig.build(payload={"Update": {"AutoUpdateMode": "Off"}})
     )
-    setting = await activate_config(GlobalConfig.build())
     monkeypatch.setattr(isolated_app_paths, "ScriptConfig", {uid: config})
-    monkeypatch.setattr(isolated_app_paths, "setting", setting)
-    manager = MaaFWEmbeddedManager(script)
-    session = ScriptUpdateSession(root, make_manager=lambda _: manager)
+    monkeypatch.setattr(
+        isolated_app_paths, "setting", await activate_config(GlobalConfig.build())
+    )
+    session = PrefetchSession(root, {MaaFWConfig: MaaFWEmbeddedManager})
     try:
-        await session._prefetch(0)
-        assert root.current.prefetch is not None
-        if cleanup == "retry":
-            token = script_task_retrying.set(lambda: session.retry(script, None))
-            try:
-                await report_script_task_retrying()
-            finally:
-                script_task_retrying.reset(token)
-        elif cleanup == "cancel":
-            await session.finish(cancelled=True)
-        else:
-            config.Update.AutoUpdateMode = "BeforeRun"
-            await config.commit()
-            assert await session.take(script.uid) is None
+        await session.start()
+        assert root.current.prefetch is None
+        ticket = await config.try_lock_x()
+        assert ticket is not None
+        try:
+            assert await session.prepare(script, config) == {}
+        finally:
+            await config.unlock(ticket)
+        await session.close()
         assert root.current.prefetch is None
         assert not config.is_locked
-        assert manager.callbacks.closed
-        assert await session.take(script.uid) is None
     finally:
         await session.close()
-        await manager.callbacks.close()
 
 
 @pytest.mark.asyncio
@@ -291,7 +278,7 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
     )
     await info.scripts.commit()
     manager = embedded_manager.MaaFWEmbeddedManager(info.scripts[item_uid])
-    from app.core.update import download_observer
+    from app.core.downloads import download_observer
 
     progress = []
     token = download_observer.set(

@@ -5,9 +5,10 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import TYPE_CHECKING, ClassVar
 
-from app.models.config import UserConfigType
+from app.models.config import UserConfigType, UserEntry
 from app.models.task import TaskMode
 from app.task.lifecycle import TaskBase
+from app.utils.common.process.scope import process_finalizer_scope
 
 if TYPE_CHECKING:
     from app.models.task import TaskUserItem
@@ -18,8 +19,12 @@ class ModeWorker(TaskBase):
     mode: ClassVar[TaskMode]
 
     def __init__(
-        self, expander: UserExpander, user: TaskUserItem, config: UserConfigType | None
+        self,
+        expander: UserExpander,
+        user: TaskUserItem,
+        config: UserConfigType | UserEntry | None,
     ) -> None:
+        """绑定 L3 展开器、用户运行节点与已锁配置，合并用户任务参数并初始化执行阶段标记。"""
         super().__init__()
         self.expander = expander
         self.task_info = expander.task_info
@@ -68,16 +73,20 @@ class ModeWorker(TaskBase):
         await super().on_crash(exc)
 
     async def final_task(self) -> None:
-        try:
-            if self._entered:
-                await self.finish()
-        finally:
-            if self.user_config is not None:
-                await self.user_config.commit()
-        if self.cancelled or self.task_info.info.status == "cancelled":
-            await self.user_info.set_state(status="已取消")
-        elif self.error is None and self._entered and self.user_info.status == "运行":
-            raise RuntimeError("插件执行结束但未给出用户结果")
+        """在进程停止确认范围内完成当前层级恢复、保存及状态提交。"""
+        with process_finalizer_scope():
+            try:
+                if self._entered:
+                    await self.finish()
+            finally:
+                if self.user_config is not None:
+                    await self.user_config.commit()
+            if self.cancelled or self.task_info.info.status == "cancelled":
+                await self.user_info.set_state(status="已取消")
+            elif (
+                self.error is None and self._entered and self.user_info.status == "运行"
+            ):
+                raise RuntimeError("插件执行结束但未给出用户结果")
 
 
 class AutoProxyWorker(ModeWorker):
@@ -90,3 +99,10 @@ class ScriptConfigWorker(ModeWorker):
 
 class ScriptViewWorker(ModeWorker):
     mode = TaskMode.SCRIPT_VIEW
+
+
+MODE_WORKERS: dict[TaskMode, type[ModeWorker]] = {
+    TaskMode.AUTO_PROXY: AutoProxyWorker,
+    TaskMode.SCRIPT_CONFIG: ScriptConfigWorker,
+    TaskMode.SCRIPT_VIEW: ScriptViewWorker,
+}

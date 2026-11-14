@@ -10,10 +10,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
-from app.task.MAA.tools import fluxdown_update as github
-from app.task.MAA.tools import resource_update as resource
-from app.task.MAA.tools import software_update as software
+from maa_adapter.updates import fluxdown as github
+from maa_adapter.updates.resources import service as resource
+from maa_adapter.updates.software import service as software
 
 NOW = datetime(2026, 11, 1, 4, tzinfo=timezone.utc)
 
@@ -417,7 +416,7 @@ async def test_mirror_incremental_uses_baseline_and_falls_back_on_corruption(
     if corrupt:
         assert len(requests) == 2
         assert "current_version" not in requests[1]
-    from app.task.MAA.tools.software_package import (
+    from maa_adapter.updates.software.package import (
         load_cache_manifest,
         software_cache_dir,
     )

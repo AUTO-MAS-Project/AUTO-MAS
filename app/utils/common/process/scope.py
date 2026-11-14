@@ -384,3 +384,17 @@ def detached_process_context() -> Context:
     for variable in (current_process_scope, current_update_scope, current_stop_check):
         context.run(variable.set, None)
     return context
+
+
+@contextmanager
+def process_finalizer_scope(*, timeout: float = 10.0) -> Iterator[None]:
+    """登记当前层级收尾的停止确认上限，收尾期间允许完成已有进程资源的释放操作。"""
+    scope = current_process_scope.get()
+    token = current_stop_check.set(scope)
+    try:
+        task = asyncio.current_task()
+        if scope is not None and task is not None:
+            scope.watch_finalizer(task, timeout=timeout)
+        yield
+    finally:
+        current_stop_check.reset(token)

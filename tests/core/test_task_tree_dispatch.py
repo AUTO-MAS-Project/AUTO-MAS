@@ -47,161 +47,150 @@ class Builtin(TaskExecuteBase):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cancel", [False, True])
-async def test_prefetch_follows_new_dispatch_and_waits_for_cancel_cleanup(
-    scheduler, monkeypatch, cancel
+async def test_prefetch_dispatch_waits_for_real_download_cleanup(
+    scheduler, monkeypatch, tmp_path, cancel
 ):
-    from app.core import script_update_queue
-    from app.models.task import TaskScriptItem
+    """通过真实调度验证预下载复查发生在配置锁内，任务结束或取消时等待下载停写并释放引用。"""
+    from app.core.downloads import DownloadManager
+    from app.core.notify.lifecycle import NotificationTaskBase
+    from app.models.schema import DownloadRequest
+    from app.task import prefetch
 
     manager, scripts, _, sid = scheduler
-    next_id = scripts.add(GeneralConfig, payload={"Info": {"Name": "next"}})
-    await scripts.commit()
-    scripts[next_id].UserData.add(
-        GeneralUserConfig,
-        payload={"Info": {"Name": "next-user", "Status": True, "RemainedDay": -1}},
+    started, cleanup, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    background = BackgroundTaskRegistry()
+    downloads = DownloadManager()
+
+    async def transfer(request, path, progress):
+        """模拟可完成或等待取消的下载，并在清理阶段等待测试放行以检查真实停写时机。"""
+        started.set()
+        try:
+            if cancel:
+                await asyncio.Event().wait()
+            path.write_text("artifact")
+        finally:
+            cleanup.set()
+            if cancel:
+                await release.wait()
+
+    downloads.initialize(
+        directory=tmp_path / "cache",
+        max_running=1,
+        attempts=1,
+        retry_delay=0,
+        background=background,
+        transfer=transfer,
     )
-    await scripts[next_id].UserData.commit()
-    downloaded, cleanup_started, release = (
-        asyncio.Event(),
-        asyncio.Event(),
-        asyncio.Event(),
-    )
-    consumed = []
-    main_cancelled = asyncio.Event()
-    monkeypatch.setattr(script_update_queue, "PREFETCH_GRACE_SECONDS", 0)
-    monkeypatch.setattr(script_update_queue, "PREFETCH_POLL_SECONDS", 0.001)
+    monkeypatch.setattr(prefetch, "Downloads", downloads)
+    calls = []
+    lock_checked = asyncio.Event()
 
     class PrefetchBuiltin(Builtin):
-        prepared = False
-
-        async def prefetch_script_update(self):
-            from app.utils.common.process.scope import current_process_scope
-
-            assert current_process_scope.get() is not None
-            assert scripts[next_id].is_locked
-            self.prepared = True
-            downloaded.set()
-            if cancel:
-                try:
-                    await asyncio.Event().wait()
-                finally:
-                    cleanup_started.set()
-                    await release.wait()
-
-        async def discard_prefetched_update(self):
-            self.prepared = False
+        @staticmethod
+        async def check_prefetch(config):
+            """记录预下载检查时是否已取得配置锁，并返回固定需求供前后两次检查对照。"""
+            calls.append(config.is_locked)
+            if config.is_locked:
+                lock_checked.set()
+            return [DownloadRequest(url="https://example.test/file")]
 
         async def main_task(self):
-            assert isinstance(self.script_info, TaskScriptItem)
-            await self.script_info.set_state(status="运行")
-            if self.script_info.info.script_id == str(sid):
-                script_update_queue.report_script_task_completed()
-                await downloaded.wait()
-                if cancel:
-                    try:
-                        await asyncio.Event().wait()
-                    finally:
-                        main_cancelled.set()
-            else:
-                assert self.prepared
-                consumed.append(self.script_info.info.script_id)
-            await super().main_task()
+            """取得旧专项配置锁，确认预下载路径已传入后执行既有测试任务，最后释放锁。"""
+            ticket = await NotificationTaskBase.lock_script_config(self, scripts[sid])
+            try:
+                assert self.script_info.info.params["prefetch_paths"]
+                await super().main_task()
+            finally:
+                await scripts[sid].unlock(ticket)
 
     manager.manager_factories = {GeneralConfig: PrefetchBuiltin}
-    uid = await manager.start(
-        TaskMode.AUTO_PROXY,
-        {0: {"uid": "-", "children": {0: {"uid": str(sid)}, 1: {"uid": str(next_id)}}}},
-    )
-    run = manager.task_handler[uid]
-    if cancel:
-        await asyncio.wait_for(downloaded.wait(), 3)
-        stop = asyncio.create_task(run.stop())
-        await asyncio.wait_for(cleanup_started.wait(), 3)
-        assert not stop.done() and scripts[next_id].is_locked
-        assert not main_cancelled.is_set()
+    try:
+        uid = await manager.start(
+            TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(sid)}}}}
+        )
+        run = manager.task_handler[uid]
+        await asyncio.wait_for(started.wait(), 3)
+        if cancel:
+            await asyncio.wait_for(lock_checked.wait(), 3)
+            stop = asyncio.create_task(run.stop())
+            await asyncio.wait_for(cleanup.wait(), 3)
+            assert not stop.done()
+            release.set()
+            await asyncio.wait_for(stop, 3)
+            assert run.task_info.status == "cancelled"
+        else:
+            await asyncio.wait_for(run.accomplish.wait(), 3)
+            assert run.error is None and run.task_info.status == "success"
+        assert calls == [False, True]
+        assert not scripts[sid].is_locked
+        assert downloads.list(owner=f"task:{run.task_info.uid}") == []
+    finally:
         release.set()
-        await asyncio.wait_for(stop, 3)
-        assert not consumed and run.task_info.status == "cancelled"
-    else:
-        await asyncio.wait_for(run.accomplish.wait(), 4)
-        assert run.error is None and run.task_info.status == "success"
-        assert consumed == [str(next_id)]
-    assert run.task_info.current.prefetch is None
-    assert not scripts[next_id].is_locked
+        await downloads.shutdown_all()
+        await background.shutdown(timeout=3)
 
 
 @pytest.mark.asyncio
-async def test_unconfirmed_prefetch_stop_survives_account_lifecycle(
-    scheduler, monkeypatch
+async def test_unconfirmed_prefetch_writer_blocks_following_scripts(
+    scheduler, monkeypatch, tmp_path
 ):
-    """账号 TaskBase.run 会记录并吞掉异常，外层仍必须阻断下一托管。"""
-    from app.core import script_update_queue
-    from app.task.lifecycle import TaskBase
+    """验证预下载无法确认停写时标记任务失败，并阻止后续专项继续运行。"""
+    from app.core.downloads import DownloadManager
+    from app.core.notify.lifecycle import NotificationTaskBase
+    from app.models.schema import DownloadRequest
+    from app.task import prefetch
     from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
     manager, scripts, _, sid = scheduler
-    next_id = scripts.add(GeneralConfig, payload={"Info": {"Name": "next"}})
-    await scripts.commit()
-    scripts[next_id].UserData.add(
-        GeneralUserConfig,
-        payload={"Info": {"Name": "next-user", "Status": True, "RemainedDay": -1}},
+    background = BackgroundTaskRegistry()
+    downloads = DownloadManager()
+
+    async def transfer(*args):
+        """模拟下载器无法确认后台写入已停止，驱动调度阻断分支。"""
+        raise FluxdownCancelUnconfirmed("daemon may still write")
+
+    downloads.initialize(
+        directory=tmp_path / "cache",
+        max_running=1,
+        attempts=1,
+        retry_delay=0,
+        background=background,
+        transfer=transfer,
     )
-    await scripts[next_id].UserData.commit()
-    started = asyncio.Event()
-    next_started = asyncio.Event()
-    swallowed = []
-    monkeypatch.setattr(script_update_queue, "PREFETCH_GRACE_SECONDS", 0)
-    monkeypatch.setattr(script_update_queue, "PREFETCH_POLL_SECONDS", 0.001)
+    monkeypatch.setattr(prefetch, "Downloads", downloads)
+    entered = []
 
-    class RetryBuiltin(Builtin):
-        async def prefetch_script_update(self):
-            try:
-                started.set()
-                await asyncio.Event().wait()
-            finally:
-                raise FluxdownCancelUnconfirmed("daemon may still write")
-
-        async def discard_prefetched_update(self):
-            pass
+    class UnsafeBuiltin(Builtin):
+        @staticmethod
+        async def check_prefetch(config):
+            """为未确认停写场景声明固定预下载需求。"""
+            return [DownloadRequest(url="https://example.test/file")]
 
         async def main_task(self):
-            await self.script_info.set_state(status="运行")
-            if self.script_info.script_id == str(sid):
-                script_update_queue.report_script_task_completed()
-                await asyncio.wait_for(started.wait(), 2)
+            """尝试取得专项锁并记录已进入执行，供断言不安全预下载是否阻止后续业务。"""
+            ticket = await NotificationTaskBase.lock_script_config(self, scripts[sid])
+            entered.append(True)
+            await scripts[sid].unlock(ticket)
 
-                class Account(TaskBase):
-                    async def main_task(account):
-                        await script_update_queue.report_script_task_retrying()
-
-                    async def on_crash(account, error):
-                        swallowed.append(error)
-                        await self.script_info.user_list[0].set_state(status="异常")
-
-                # 真实账号生命周期捕获并记录失败，不会重新抛给 L2。
-                await Account().run()
-                await self.script_info.set_state(status="异常")
-            else:
-                next_started.set()
-                await super().main_task()
-
-    manager.manager_factories = {GeneralConfig: RetryBuiltin}
-    uid = await manager.start(
-        TaskMode.AUTO_PROXY,
-        {0: {"uid": "-", "children": {0: {"uid": str(sid)}, 1: {"uid": str(next_id)}}}},
-    )
-    run = manager.task_handler[uid]
-    await asyncio.wait_for(run.accomplish.wait(), 5)
-    assert swallowed and isinstance(swallowed[0], FluxdownCancelUnconfirmed)
-    assert isinstance(run.error, FluxdownCancelUnconfirmed)
-    assert run.task_info.status == "error"
-    assert not next_started.is_set()
-    assert run.history.closed
-    assert not scripts[next_id].is_locked
+    manager.manager_factories = {GeneralConfig: UnsafeBuiltin}
+    try:
+        uid = await manager.start(
+            TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(sid)}}}}
+        )
+        run = manager.task_handler[uid]
+        await asyncio.wait_for(run.accomplish.wait(), 3)
+        assert isinstance(run.error, FluxdownCancelUnconfirmed)
+        assert run.task_info.status == "error"
+        assert not entered
+        assert not scripts[sid].is_locked
+        assert not await downloads.shutdown_all()
+    finally:
+        await background.shutdown(timeout=3)
 
 
 @pytest_asyncio.fixture
 async def scheduler():
+    """建立隔离的真实配置、任务管理器及背景任务组，测试结束时停止任务并释放公共资源。"""
     scripts = ConfigCollection[ScriptConfigType].build([GeneralConfig])
     queues = ConfigCollection[QueueConfig].build([QueueConfig])
     await scripts.activate()
@@ -226,6 +215,8 @@ async def scheduler():
         patch("app.core.task_manager.TaskManager", manager),
         patch("app.core.Power", power),
         patch("app.core.BackgroundTaskManager", background),
+        patch("app.task.prefetch.BackgroundTaskManager", background),
+        patch("app.task.history_core.BackgroundTaskManager", background),
         patch.object(Config, "ScriptConfig", scripts),
         patch.object(Config, "QueueConfig", queues),
         patch.dict(config_manager._collections, {"ScriptConfig": scripts}),
@@ -453,10 +444,12 @@ async def test_maintenance_uses_shared_lifecycle_without_normal_panel(
 
 @pytest.mark.asyncio
 async def test_legacy_lock_uses_configuration_without_runtime_projection(scheduler):
+    """验证旧专项直接使用实际配置节点加锁与解锁，不依赖额外运行时配置投影。"""
     from app.core.notify.lifecycle import NotificationTaskBase
 
     _, scripts, _, sid = scheduler
     owner = MagicMock()
+    owner.after_config_lock = None
     owner.script_info.set_state = AsyncMock(
         side_effect=RuntimeError("projection failed")
     )
@@ -1086,3 +1079,74 @@ async def test_stop_all_blocks_new_requests_and_waits_for_inflight_creation(sche
         await asyncio.wait_for(creating, 3)
         await asyncio.wait_for(stopping, 3)
     assert not manager.task_handler
+
+
+@pytest.mark.asyncio
+async def test_recovery_summary_reaches_current_task_completion(
+    scheduler, monkeypatch, tmp_path
+):
+    """通过真实任务完成流程验证安装恢复汇总进入任务快照和完成通知。"""
+    from app.core import Publisher
+    from app.core.script_update import ScriptUpdateRequest, auto_recover_script_install
+    from app.core.script_update_recovery import InstallInspection
+    from app.core.ws import protocol
+
+    manager, _, _, sid = scheduler
+    sent = []
+    monkeypatch.setattr(
+        Publisher, "send", AsyncMock(side_effect=lambda **message: sent.append(message))
+    )
+
+    class Recovering(Builtin):
+        async def main_task(self):
+            """在专项执行中调用公共安装恢复入口，确认事件暂不单独通知，再进入普通任务流程。"""
+            result = await auto_recover_script_install(
+                ScriptUpdateRequest(str(sid), "MAA"),
+                install_root=tmp_path,
+                inspect=AsyncMock(
+                    side_effect=[
+                        InstallInspection(
+                            pending=True,
+                            healthy=True,
+                            installed_version="1.1.0",
+                            updated_confirmed=True,
+                        ),
+                        InstallInspection(
+                            pending=False,
+                            healthy=True,
+                            installed_version="1.1.0",
+                            updated_confirmed=True,
+                        ),
+                    ]
+                ),
+                acknowledge=AsyncMock(),
+                reinstall=AsyncMock(),
+            )
+            assert result == "verified"
+            assert not any(message["type"] == protocol.TASK_NOTICE for message in sent)
+            await super().main_task()
+
+    manager.manager_factories = {GeneralConfig: Recovering}
+    uid = await manager.start(
+        TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(sid)}}}}
+    )
+    run = manager.task_handler[uid]
+    await asyncio.wait_for(run.accomplish.wait(), 4)
+    assert run.error is None
+    assert run.task_info.info.status == "success"
+    notices = [message for message in sent if message["type"] == protocol.TASK_NOTICE]
+    assert len(notices) == 1
+    assert "已校验安装" in notices[0]["data"].message
+    completed = next(
+        message["data"]
+        for message in sent
+        if message["type"] == protocol.TASK_COMPLETED
+    )
+    assert (
+        completed.task.model_dump()["current"]["recovery_summary"]
+        == notices[0]["data"].message
+    )
+    assert (
+        manager.get_task(uid)["current"]["recovery_summary"]
+        == notices[0]["data"].message
+    )

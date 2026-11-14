@@ -33,18 +33,22 @@ class I18nSnapshot:
 
     revision: str
     catalogs: dict[AppLocale, dict[str, JsonValue]]
-    signatures: tuple[tuple[int, int], ...]
+    signatures: tuple[tuple[str, int, int], ...]
 
 
 class I18nManager:
     """缓存只读资源快照；读盘失败保留旧快照，但向本次请求报告失败。"""
 
     def __init__(self, directory: Path) -> None:
-        # TODO(插件迁移)：由插件生命周期提供目录或包资源来源，替代单目录输入；
-        # 本服务只汇总资源，不承担插件发现，也不依赖具体插件注册表。
+        """绑定 core 语言资源目录，初始化插件资源登记、快照缓存及刷新锁。"""
         self._directory = directory
+        self._plugin_sources: dict[str, Path] = {}
         self._snapshot: I18nSnapshot | None = None
         self._lock = asyncio.Lock()
+
+    def set_plugin_sources(self, sources: dict[str, Path]) -> None:
+        """生命周期提供可读资源目录；禁用保留，卸载/来源消失时移除。"""
+        self._plugin_sources = dict(sources)
 
     async def get_locales(self) -> tuple[list[AppLocale], str]:
         snapshot = await self._get_snapshot()
@@ -62,8 +66,6 @@ class I18nManager:
             self._snapshot = snapshot
             changed = previous is not None and previous.revision != snapshot.revision
 
-        # TODO(插件迁移)：安装、启停、升级、卸载也须使快照失效；
-        # 完成一致快照后复用此通知，不能只等待主程序资源文件变化。
         if changed:
             from app.core import Publisher
             from app.core.ws import protocol
@@ -80,28 +82,69 @@ class I18nManager:
         return snapshot
 
     def _read_snapshot(self, previous: I18nSnapshot | None) -> I18nSnapshot:
-        # TODO(插件迁移)：缓存签名与 revision 须包含启用的资源来源身份及内容，
-        # 覆盖插件增删与包资源变化，不能仅比较本目录文件的时间和大小。
-        paths = [self._directory / name for name in LOCALE_FILES.values()]
+        """读取并合并 core 与已登记插件的语言文件，复用未变化资源并生成带内容修订号的新快照。"""
+        files: list[tuple[AppLocale, str, Path]] = [
+            (locale, "core", self._directory / filename)
+            for locale, filename in LOCALE_FILES.items()
+        ]
+        sources = dict(self._plugin_sources)
+        aliases = {
+            "zh-CN": ("zh-CN.json", "zh_CN.json"),
+            "en-US": ("en-US.json", "en.json"),
+            "ja-JP": ("ja-JP.json", "ja.json"),
+        }
+        for name, directory in sorted(sources.items()):
+            for locale, names in aliases.items():
+                path = next(
+                    (
+                        directory / filename
+                        for filename in names
+                        if (directory / filename).is_file()
+                    ),
+                    None,
+                )
+                if path is not None:
+                    files.append((locale, f"plugins.{name}", path))
+        paths = [path for _, _, path in files]
         stats = [path.stat() for path in paths]
-        signatures = tuple((stat.st_mtime_ns, stat.st_size) for stat in stats)
+        source_signatures = tuple(
+            (f"{name}:{directory}", 0, 0) for name, directory in sorted(sources.items())
+        )
+        signatures = source_signatures + tuple(
+            (str(path), stat.st_mtime_ns, stat.st_size)
+            for path, stat in zip(paths, stats, strict=True)
+        )
         if previous is not None and previous.signatures == signatures:
             return previous
 
         catalogs: dict[AppLocale, dict[str, JsonValue]] = {}
         digest = hashlib.sha256()
-        for (locale, filename), path in zip(LOCALE_FILES.items(), paths, strict=True):
+        digest.update(repr(source_signatures).encode())
+        for locale, prefix, path in files:
             raw = path.read_bytes()
-            digest.update(filename.encode())
+            digest.update(f"{locale}:{prefix}:{path}".encode())
             digest.update(b"\0")
             digest.update(raw)
             digest.update(b"\0")
-            catalogs[locale] = self._parse_catalog(raw, filename=filename)
+            messages = self._parse_catalog(raw, filename=str(path), prefix=prefix)
+            catalog = catalogs.setdefault(locale, {})
+            if prefix == "core":
+                catalog.update(messages)
+            else:
+                plugins = catalog.setdefault("plugins", {})
+                assert isinstance(plugins, dict)
+                plugins.update(messages["plugins"])
 
         # 编辑期间跨文件读取不能形成看似有效的混合快照，下次请求可以重试。
         final_stats = [path.stat() for path in paths]
-        if signatures != tuple(
-            (stat.st_mtime_ns, stat.st_size) for stat in final_stats
+        if (
+            signatures
+            != source_signatures
+            + tuple(
+                (str(path), stat.st_mtime_ns, stat.st_size)
+                for path, stat in zip(paths, final_stats, strict=True)
+            )
+            or sources != self._plugin_sources
         ):
             raise ValueError("语言资源正在更新，请重试")
         return I18nSnapshot(
@@ -109,7 +152,11 @@ class I18nManager:
         )
 
     @staticmethod
-    def _parse_catalog(raw: bytes, *, filename: str) -> dict[str, JsonValue]:
+    def _parse_catalog(
+        raw: bytes, *, filename: str, prefix: str = "core"
+    ) -> dict[str, JsonValue]:
+        """解析语言文件并为键添加来源命名空间，将扁平键展开为消息树，拒绝重复键与结构冲突。"""
+
         def unique_object(pairs: list[tuple[str, JsonValue]]) -> dict[str, JsonValue]:
             result: dict[str, JsonValue] = {}
             for key, value in pairs:
@@ -123,10 +170,8 @@ class I18nManager:
             raise ValueError(f"语言资源必须是非空对象：{filename}")
         messages: dict[str, JsonValue] = {}
         for key, value in flat.items():
-            # TODO(插件迁移)：按来源校验 core.* 或 plugins.<插件标识>.*，
-            # 禁止跨插件写入及覆盖 core/bootstrap；同步调整前端命名空间校验。
-            if not key.startswith("core.") or not isinstance(value, str):
-                raise ValueError(f"语言资源必须使用 core.* 字符串词条：{filename}")
+            if not key.startswith(f"{prefix}.") or not isinstance(value, str):
+                raise ValueError(f"语言资源必须使用 {prefix}.* 字符串词条：{filename}")
             parts = key.split(".")
             if any(not part or part in _RESERVED_KEYS for part in parts):
                 raise ValueError(f"语言资源 key 无效：{filename}: {key}")

@@ -16,6 +16,53 @@ from app.core.config.manager import AppConfig
 from app.models import config as models
 from app.task.builtin_registration import build_builtin_script_capabilities
 
+# 固定迁移前的能力契约；可选钩子缺省是明确不支持，不要求各专项长成同一形状。
+EXPECTED = [
+    (
+        "MaaEnd",
+        "MaaEnd",
+        "MaaEndManager",
+        {
+            "initialize",
+            "validate_update",
+            "import_config",
+            "emulator_binding",
+        },
+    ),
+    ("BetterGI", "BetterGI", "BetterGIManager", {"prepare_user_update"}),
+    (
+        "Src",
+        "SRC",
+        "SrcManager",
+        {"prepare_user_update", "emulator_binding"},
+    ),
+    (
+        "ZzzOd",
+        "ZzzOd",
+        "ZzzOdManager",
+        {"prepare_script_removal", "prepare_user_update", "prepare_user_removal"},
+    ),
+    (
+        "MaaFW",
+        "MaaFW",
+        "MaaFWEmbeddedManager",
+        {
+            "clone_script",
+            "after_script_removal",
+            "prepare_user_update",
+            "prepare_user_read",
+            "initialize_user",
+            "emulator_binding",
+        },
+    ),
+    ("Okww", "Okww", "OkwwManager", {"initialize_user", "import_config"}),
+    ("General", "general", "GeneralManager", {"emulator_binding"}),
+    ("OkNte", "OkNte", "OkNteManager", set()),
+    ("HSR", "HSR", "HSRManager", set()),
+    ("BAAH", "BAAH", "BAAHManager", {"emulator_binding"}),
+    ("Whimbox", "Whimbox", "WhimboxManager", set()),
+]
+
 
 def capabilities():
     return build_builtin_script_capabilities(
@@ -131,7 +178,7 @@ def test_cold_declarations_and_parent_packages_do_not_load_execution_or_config(
     code = r"""
 import importlib, json, sys, asyncio
 from unittest.mock import patch
-folders = ["MAA","SRC","general","MaaEnd","MaaFW","Okww","OkNte","HSR","BetterGI","ZzzOd","BAAH","Whimbox"]
+folders = ["SRC","general","MaaEnd","MaaFW","Okww","OkNte","HSR","BetterGI","ZzzOd","BAAH","Whimbox"]
 with patch("asyncio.create_task",side_effect=AssertionError("spawn")):
     for folder in folders:
         importlib.import_module("app.task."+folder+".registration")

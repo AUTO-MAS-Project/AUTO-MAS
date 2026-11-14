@@ -708,8 +708,63 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
     # 项目自动更新
     # ------------------------------------------------------------------
 
+    @staticmethod
+    async def check_prefetch(config) -> list:
+        """按项目更新模式和凭据发现可用更新，跳过跟随源码的项目并返回发行文件下载需求。"""
+        from app.models.schema import DownloadRequest
+        from app.task.MaaFW.tools.core.project_update.updater import (
+            discover_maafw_project_update,
+        )
+
+        if resolve_auto_update_mode(config) == "Off" or follow_source_enabled(config):
+            return []
+        credentials = resolve_update_credentials(config)
+        project = resolve_maafw_project_root(str(config.uid), config).resolve()
+        source = {
+            "package_source": credentials.package_source,
+            "mirror_cdk": credentials.cdk,
+            "channel": credentials.channel,
+            "project_shell_hint": shell_hint_from_report(config),
+        }
+        from app.task.MaaFW.tools.embedded.update_session import UpdateProxy
+
+        proxy = UpdateProxy.parse(
+            resolve_update_proxy_url(config) or None, warn=logger.warning
+        ).client
+        from app.task.MaaFW.tools.core.interface import load_interface_model_cached
+
+        interface = await asyncio.to_thread(load_interface_model_cached, project)
+        marker = await asyncio.to_thread(read_view_marker, project)
+        if marker is None or not marker.get("lineage"):
+            # No trustworthy lineage: leave update discovery to the normal
+            # startup path, which can recover and revalidate project metadata.
+            return []
+        discovery = await discover_maafw_project_update(
+            interface,
+            source_config=source,
+            proxy=proxy,
+            prefer_full_package=True,
+        )
+        if (
+            discovery is None
+            or discovery.candidate is None
+            or not discovery.candidate.download_url
+        ):
+            return []
+        candidate = discovery.candidate
+        return [
+            DownloadRequest(
+                url=candidate.download_url,
+                rid=candidate.artifact_id or None,
+                content_hash=candidate.sha256 or None,
+                downloader="builtin"
+                if candidate.source.lower() == "mirrorchyan"
+                else None,
+            )
+        ]
+
     async def prefetch_script_update(self) -> None:
-        from app.core.update import download_observer
+        from app.core.downloads import download_observer
         from app.task.MaaFW.tools.core.project_update.transport import (
             download_resumable,
         )
@@ -1076,6 +1131,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         )
 
         async def core_call(view_path: Path, target: Any, after_register: Any) -> Any:
+            """重新读取目标项目接口，按项目身份核对预备更新结果，然后调用核心项目更新入口。"""
             interface_model = await asyncio.to_thread(
                 self._load_interface_model, view_path, force_reload=True
             )
@@ -1114,7 +1170,10 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             return await update_maafw_project_if_needed(
                 view_path,
                 interface_model,
-                prefetch_full_package=getattr(self, "_prefetched_full_package", False),
+                prefetch_full_package=bool(
+                    self.script_info.info.params.get("prefetch_paths")
+                ),
+                download_paths=self.script_info.info.params.get("prefetch_paths", {}),
                 prefetched=prefetched,
                 mirror_cdk=credentials.cdk,
                 channel=credentials.channel,

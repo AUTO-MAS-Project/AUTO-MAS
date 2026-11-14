@@ -1,8 +1,7 @@
 """MaaEnd 协议空间材料记录按材料合并成一行合计，上游状态保持原样。"""
 
-from tests.runtime_support import RuntimeStub as SimpleNamespace
-
 from app.task.MaaEnd.AutoProxy import AutoProxyTask
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
 def _proxy(*, push_log_mode: str = "逐条") -> AutoProxyTask:

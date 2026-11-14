@@ -52,3 +52,4 @@ export type GeneralUserConfig_Info = {
      */
     readonly Tag?: (string | null);
 };
+

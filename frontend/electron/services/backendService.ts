@@ -923,6 +923,7 @@ export class BackendService {
             error: 'Runtime 远端检查未返回当前版本',
           }
         }
+        // TODO(plugin-migration): 主流程迁移完成后，由前端在后台热更暂存前调用依赖预检。
         const stageOutcome = await this.runRuntimePreparation(client, [
           'workspace',
           'stage',

@@ -1,8 +1,17 @@
 """后端测试的配置持久化与应用目录隔离。"""
 
-import pytest
+import sys
+from pathlib import Path
 
-from app.config import config_manager
+# 插件作为独立源码包测试，不重新向宿主 models/task 添加别名。
+for package in ("auto_mas_core", "maa_adapter"):
+    sys.path.insert(
+        0, str(Path(__file__).resolve().parents[1] / "plugins" / package / "src")
+    )
+
+import pytest  # noqa: E402 - 插件源码路径须在加载测试依赖前登记。
+
+from app.config import config_manager  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

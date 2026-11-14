@@ -163,7 +163,7 @@ def _format_skland_endfield_awards(payload: object) -> str:
     return "、".join(parts)
 
 
-def _create_skland_client(proxy: str | None = None) -> httpx.AsyncClient:
+def _create_skland_client(proxy: str | httpx.Proxy | None = None) -> httpx.AsyncClient:
     """创建不继承本地环境代理的森空岛 HTTP 客户端。"""
 
     return create_community_client(proxy)
@@ -521,7 +521,7 @@ def encrypt_object_by_des_rules(
 
 
 async def get_device_id(
-    proxy: str | None = None,
+    proxy: str | httpx.Proxy | None = None,
     *,
     client: httpx.AsyncClient | None = None,
 ) -> str:
@@ -609,7 +609,7 @@ async def get_device_id(
 
 
 async def get_cached_device_id(
-    proxy: str | None = None,
+    proxy: str | httpx.Proxy | None = None,
     *,
     client: httpx.AsyncClient | None = None,
 ) -> str:
@@ -888,7 +888,7 @@ async def refresh_skland_session_credential(
 def _skland_sign_header_builder(
     client: httpx.AsyncClient,
     device_id: str,
-    proxy: str | None = None,
+    proxy: str | httpx.Proxy | None = None,
 ):
     """构造签名请求头构建器；device_id 为空时按 proxy 懒取缓存设备 ID。"""
 
@@ -919,7 +919,7 @@ async def fetch_skland_binding_payload(
     cred: str,
     sign_token: str,
     device_id: str = "",
-    proxy: str | None = None,
+    proxy: str | httpx.Proxy | None = None,
 ) -> dict[str, object]:
     """拉取森空岛绑定列表原始响应（不解析；签到流按 appCode 过滤，
     养成绑定下拉走便签的 normalize_skland_roles 归一化，方案 T4.1）。"""
@@ -951,7 +951,7 @@ async def fetch_skland_bindings(
     sign_token: str,
     app_code: str,
     device_id: str = "",
-    proxy: str | None = None,
+    proxy: str | httpx.Proxy | None = None,
 ) -> list[dict[str, object]]:
     """查询指定游戏下已绑定的角色列表（签到与养成共用，方案 T4.1）。
 
@@ -1008,7 +1008,7 @@ async def fetch_skland_player_info(
     sign_token: str,
     uid: str,
     device_id: str = "",
-    proxy: str | None = None,
+    proxy: str | httpx.Proxy | None = None,
 ) -> dict[str, object]:
     """拉取玩家整表数据（player/info?uid=游戏 uid，养成练度源，方案 T4.1）。
 
@@ -1037,7 +1037,7 @@ async def fetch_skland_player_info(
 
 
 async def create_skland_qr_login(
-    proxy: str | None = None,
+    proxy: str | httpx.Proxy | None = None,
 ) -> dict[str, object]:
     """创建森空岛扫码登录，返回 ticket、二维码内容与设备 ID。"""
 
@@ -1071,7 +1071,7 @@ async def create_skland_qr_login(
 async def check_skland_qr_status(
     ticket: str,
     device: str,
-    proxy: str | None = None,
+    proxy: str | httpx.Proxy | None = None,
 ) -> dict[str, object]:
     """轮询森空岛扫码状态，确认后返回短时 scanCode。"""
 
@@ -1126,7 +1126,7 @@ async def check_skland_qr_status(
 
 async def finalize_skland_qr_login(
     scan_code: str,
-    proxy: str | None = None,
+    proxy: str | httpx.Proxy | None = None,
 ) -> str:
     """用扫码确认结果换取完整森空岛凭据并序列化保存。"""
 
@@ -1171,7 +1171,7 @@ async def finalize_skland_qr_login(
 async def skland_sign_in(
     token: str,
     app_code: str = "arknights",
-    proxy: str | None = None,
+    proxy: str | httpx.Proxy | None = None,
     *,
     on_credential_update: Callable[[str], Awaitable[None]] | None = None,
 ) -> dict[str, object]:
@@ -1189,7 +1189,7 @@ async def skland_sign_in(
 async def _run_skland_sign_in(
     token: str,
     app_code: str = "arknights",
-    proxy: str | None = None,
+    proxy: str | httpx.Proxy | None = None,
     *,
     on_credential_update: Callable[[str], Awaitable[None]] | None = None,
 ) -> dict[str, object]:

@@ -22,6 +22,36 @@
 
 
 from importlib import import_module
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .BAAH import BAAHManager as BAAHManager
+    from .BetterGI import BetterGIManager as BetterGIManager
+    from .general import GeneralManager as GeneralManager
+    from .HSR import HSRManager as HSRManager
+    from .MaaEnd import MaaEndManager as MaaEndManager
+    from .MaaFW.embedded_manager import MaaFWEmbeddedManager as MaaFWEmbeddedManager
+    from .mode_worker import (
+        MODE_WORKERS as MODE_WORKERS,
+    )
+    from .mode_worker import (
+        AutoProxyWorker as AutoProxyWorker,
+    )
+    from .mode_worker import (
+        ModeWorker as ModeWorker,
+    )
+    from .mode_worker import (
+        ScriptConfigWorker as ScriptConfigWorker,
+    )
+    from .mode_worker import (
+        ScriptViewWorker as ScriptViewWorker,
+    )
+    from .OkNte import OkNteManager as OkNteManager
+    from .Okww import OkwwManager as OkwwManager
+    from .SRC import SrcManager as SrcManager
+    from .user_expander import UserExpander as UserExpander
+    from .Whimbox import WhimboxManager as WhimboxManager
+    from .ZzzOd import ZzzOdManager as ZzzOdManager
 
 # 惰性导出（与 app/core/__init__.py 同一 idiom）。
 #
@@ -34,7 +64,12 @@ from importlib import import_module
 # 顺带也让宿主启动少导入一批模块。属性访问语义不变：
 # `import app.task as task; task.MaaFWManager` 照常可用。
 _LAZY_EXPORTS = {
-    "MaaManager": (".MAA", "MaaManager"),
+    "UserExpander": (".user_expander", "UserExpander"),
+    "ModeWorker": (".mode_worker", "ModeWorker"),
+    "AutoProxyWorker": (".mode_worker", "AutoProxyWorker"),
+    "ScriptConfigWorker": (".mode_worker", "ScriptConfigWorker"),
+    "ScriptViewWorker": (".mode_worker", "ScriptViewWorker"),
+    "MODE_WORKERS": (".mode_worker", "MODE_WORKERS"),
     "MaaEndManager": (".MaaEnd", "MaaEndManager"),
     "SrcManager": (".SRC", "SrcManager"),
     "GeneralManager": (".general", "GeneralManager"),
@@ -63,7 +98,12 @@ def __dir__() -> list[str]:
 
 
 __all__ = [
-    "MaaManager",
+    "UserExpander",
+    "ModeWorker",
+    "AutoProxyWorker",
+    "ScriptConfigWorker",
+    "ScriptViewWorker",
+    "MODE_WORKERS",
     "SrcManager",
     "GeneralManager",
     "MaaEndManager",

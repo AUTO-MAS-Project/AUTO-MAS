@@ -8,13 +8,13 @@ export type PlanCreateIn = {
 };
 export namespace PlanCreateIn {
     export enum type {
-        MAA_PLAN = 'MaaPlan',
+        OKWW_PLAN = 'OkwwPlan',
+        OK_NTE_PLAN = 'OkNtePlan',
+        UNIVERSAL_PLAN = 'UniversalPlan',
         MAA_END_PLAN = 'MaaEndPlan',
         BAAHPLAN = 'BAAHPlan',
         MSSPLAN = 'MSSPlan',
-        UNIVERSAL_PLAN = 'UniversalPlan',
-        OK_NTE_PLAN = 'OkNtePlan',
-        OKWW_PLAN = 'OkwwPlan',
+        MAA_PLAN_CONFIG = 'MaaPlanConfig',
     }
 }
 

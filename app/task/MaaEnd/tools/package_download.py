@@ -13,7 +13,7 @@ import httpx
 from packaging.version import Version
 
 from app.core import Config
-from app.core.update import download_file
+from app.core.downloads import download_file
 from app.services import script_install
 from app.services.common.update import transport
 from app.services.common.update.transport import DownloadProgress

@@ -1,0 +1,271 @@
+"""游戏管理主入口：订阅取实例；add 时挂管理实例；搜索汇总已启用插件。
+
+TODO(游戏管理迁移)：当前仅接入插件配置激活与控制器重载装配，尚未完成整体迁移。
+订阅/释放、串行准入及恢复流程尚未接入托管执行链，具体游戏/模拟器插件、
+旧数据转换和前端管理仍待游戏管理阶段统一实施；现有模拟器模块继续承担实际业务。
+"""
+
+from __future__ import annotations
+
+import asyncio
+from collections import deque
+from typing import Any, Literal, overload
+from uuid import UUID
+
+from app.config.core.node import LockTicket
+from app.config.signals import CollectionChangeEvent
+from app.models.config.game import GameDeviceEntry, GameEntry
+from app.models.config.plugin_emulator import EmulatorEntry
+from app.plugin.base.emulator import EmulatorControl
+from app.plugin.base.game import GameControl
+from app.utils import get_logger
+
+logger = get_logger("游戏管理")
+
+
+class _GameRuntime:
+    @property
+    def silent(self) -> bool:
+        """读取宿主当前静默设置，供游戏控制实例遵循统一的窗口显示策略。"""
+        from app.core import Config
+
+        return Config.setting.Function.IfSilence
+
+    @property
+    def block_ad(self) -> bool:
+        """读取宿主当前广告拦截设置，供游戏控制实例决定是否启用拦截。"""
+        from app.core import Config
+
+        return Config.setting.Function.IfBlockAd
+
+
+class GameCleanupError(RuntimeError):
+    """上次游戏占用尚未恢复，不能降级为无游戏订阅继续执行。"""
+
+
+class _SerialGate:
+    """进程内全局 FIFO 闸门：同一时刻至多一个不支持并行的游戏处于订阅中。
+
+    与配置 S/X 锁正交。等待可取消：排队中的等待者被取消则从队列摘掉；
+    已放行后取消由调用方 ``release``（``unsubscribe`` 路径）。
+    """
+
+    def __init__(self) -> None:
+        """初始化游戏订阅的串行准入状态和先进先出等待队列。"""
+        self._busy = False
+        self._waiters: deque[asyncio.Event] = deque()
+
+    async def acquire(self) -> None:
+        """按排队顺序取得串行准入资格，取消等待时移除自身或将已取得的资格交给下一位。"""
+        if not self._busy and not self._waiters:
+            self._busy = True
+            return
+        ev = asyncio.Event()
+        self._waiters.append(ev)
+        try:
+            await ev.wait()
+        except asyncio.CancelledError:
+            if ev in self._waiters:
+                self._waiters.remove(ev)
+            elif ev.is_set():
+                # 已出队放行后、wait 返回前被取消：视为持有，交还以免堵死
+                self.release()
+            raise
+
+    def release(self) -> None:
+        """将准入资格交给下一位等待者，无等待者时将串行门恢复为空闲。"""
+        if self._waiters:
+            self._waiters.popleft().set()
+        else:
+            self._busy = False
+
+
+class _GameManager:
+    """对外提供订阅、搜索；add 挂载由 Config 对 GameConfig 实例级 connect 本类方法。"""
+
+    def __init__(self) -> None:
+        """初始化发现结果、设备订阅、清理锁及串行准入记录，统一持有游戏控制实例的运行状态。"""
+        self._found: dict[UUID, Any] = {}
+        self._subs: dict[LockTicket, GameEntry] = {}
+        self._release_locks: dict[LockTicket, asyncio.Lock] = {}
+        self._pending_cleanup: set[LockTicket] = set()
+        self._gate = _SerialGate()
+        self._gate_tokens: set[UUID] = set()
+
+    @staticmethod
+    def create_control(
+        *, config: GameEntry, control_class: type[GameControl]
+    ) -> GameControl:
+        """启动激活和重载共用装配入口，策略始终读当前设置。"""
+        control = control_class(config=config)
+        control.bind_runtime(_GameRuntime())
+        config._game_control = control
+        return control
+
+    @staticmethod
+    async def on_add(sender: object, event: CollectionChangeEvent) -> None:
+        """GameConfig 实例级 add / init_add：按已启用声明挂管理实例。
+
+        设备类由游戏配置子类在字段上收窄；此处不再 ``add_type``。
+        ``entry`` 缺失或无匹配声明视为异常，上抛以使当次事务失败。
+        """
+        _ = sender
+        if not isinstance(event.entry, GameEntry):
+            raise TypeError(f"非 GameEntry: {event.entry}")
+
+        from app.core import Plugin
+
+        for decl in Plugin.game_types.values():
+            if isinstance(event.entry, decl.game_class):
+                _GameManager.create_control(
+                    config=event.entry, control_class=decl.control_class
+                )
+                break
+        else:
+            raise RuntimeError(f"未找到 {type(event.entry)} 对应的 GameTypeDecl")
+
+    @staticmethod
+    async def apply_block_ad(enabled: bool) -> None:
+        """全局去广告开关变更 → 逐个游戏下发，各品牌自行决定做不做。
+
+        开关是系统级的，作用面却在各品牌的宿主机侧（缓存目录占位等），故由主入口
+        统一扇出，而不是等下一次启动实例时顺带处理 —— 用户关掉开关就该立刻生效。
+        单个游戏失败不连累其余：这不是事务，只记警告。
+        """
+        from app.core import Config
+
+        for entry in Config.GameConfig.values():
+            try:
+                await entry._control.set_block_ad(enabled)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"游戏 {entry.info.name} 去广告开关下发失败: {e}")
+
+    @overload
+    async def subscribe(
+        self, uid: UUID, *, kind: Literal["emulator"]
+    ) -> tuple[EmulatorControl, LockTicket]:
+        """校验目标为模拟器，取得主配置只读锁并返回模拟器控制器与释放票据。"""
+        ...
+
+    @overload
+    async def subscribe(
+        self, uid: UUID, *, kind: Literal["client"]
+    ) -> tuple[GameControl[GameEntry, GameDeviceEntry], LockTicket]:
+        """校验目标为游戏客户端，取得主配置只读锁并返回控制器与释放票据。"""
+        ...
+
+    @overload
+    async def subscribe(
+        self, uid: UUID, *, kind: None = None
+    ) -> tuple[GameControl[GameEntry, GameDeviceEntry], LockTicket]:
+        """订阅指定游戏主配置，不限定设备类别，返回控制器及本次订阅的释放票据。"""
+        ...
+
+    async def subscribe(
+        self, uid: UUID, *, kind: Literal["emulator", "client"] | None = None
+    ) -> tuple[GameControl[GameEntry, GameDeviceEntry] | EmulatorControl, LockTicket]:
+        """对主配置加不覆盖子节点的只读锁，返回已挂载管理实例与解锁凭证。
+
+        ``kind`` 为 ``emulator`` / ``client`` 时校验 ``info.type`` 与 Control 类型；
+        ``kind="emulator"`` 时静态类型收窄为 ``EmulatorControl``。
+        """
+        from app.core import Config
+
+        entry = Config.GameConfig.get(uid)
+        if entry is None:
+            raise KeyError(f"游戏不存在: {uid}")
+
+        if kind is not None and entry.info.type != kind:
+            raise TypeError(f"游戏 {uid} 类型为 {entry.info.type!r}，期望 {kind!r}")
+        if kind == "emulator" and not isinstance(entry, EmulatorEntry):
+            raise TypeError(f"游戏 {uid} 不是模拟器配置")
+
+        # ``_control`` 属性：生命周期内必达，未挂载直接上抛
+        ctrl = entry._control
+        # 不支持并行：先拿全局闸门再订设备（闸门在 subscribe 内、设备在调用方）
+        gated = False
+        if not entry.info.concurrent_execution:
+            await self._gate.acquire()
+            gated = True
+        try:
+            # 上一任务的失败还原由宿主持票；重新使用该游戏前先完成恢复。
+            for pending in list(self._pending_cleanup):
+                if self._subs.get(pending) is entry:
+                    try:
+                        await self.unsubscribe(pending)
+                    except Exception as exc:
+                        raise GameCleanupError(f"游戏 {uid} 尚未完成还原") from exc
+            ticket = await entry.lock_s(cascade=False)
+        except BaseException:
+            if gated:
+                self._gate.release()
+            raise
+        self._subs[ticket] = entry
+        self._release_locks[ticket] = asyncio.Lock()
+        if gated:
+            self._gate_tokens.add(ticket.token)
+        return ctrl, ticket
+
+    async def unsubscribe(self, ticket: LockTicket) -> None:
+        """还原后解锁；失败保留恢复票，但不阻塞其他游戏的串行队列。"""
+        lock = self._release_locks.get(ticket)
+        if lock is None:
+            return
+        async with lock:
+            entry = self._subs.get(ticket)
+            if entry is None:
+                return
+            try:
+                # 还原仍须保留原票与主配置锁；失败设备的登记由 Control 保留。
+                await entry._control.unsubscribe_all(ticket)
+                await entry.unlock(ticket)
+            except BaseException:
+                self._pending_cleanup.add(ticket)
+                raise
+            else:
+                del self._subs[ticket]
+                del self._release_locks[ticket]
+                self._pending_cleanup.discard(ticket)
+            finally:
+                if ticket.token in self._gate_tokens:
+                    self._gate_tokens.discard(ticket.token)
+                    self._gate.release()
+
+    async def search(self) -> dict[str, dict[str, Any]]:
+        """逐一调用已启用插件声明的 search，暂存未激活实例并返回目录。"""
+        from app.core.plugin import Plugin
+
+        found: dict[UUID, Any] = {}
+        catalog: dict[str, dict[str, Any]] = {}
+        for decl in Plugin.game_types.values():
+            rows = await decl.search()
+            for entry in rows or []:
+                found[entry.uid] = entry
+                catalog[str(entry.uid)] = {
+                    "name": entry.info.name,
+                    "type": entry.info.type,
+                    "concurrent_execution": entry.info.concurrent_execution,
+                }
+        self._found = found
+        return catalog
+
+    async def add_found(self, uid: UUID) -> GameEntry:
+        """把搜索缓存中的未激活实例写入 GameConfig：add 占位再 update 同步字段。"""
+        from app.core import Config
+
+        if uid not in self._found:
+            raise KeyError(f"搜索结果不存在或已过期: {uid}")
+        if uid in Config.GameConfig:
+            raise ValueError(f"游戏已存在: {uid}")
+        found = self._found.pop(uid)
+        if not isinstance(found, GameEntry):
+            raise TypeError(f"非 GameEntry: {type(found)}")
+
+        Config.GameConfig.add(type(found), uid=uid)
+        await Config.GameConfig.commit()
+        entry = Config.GameConfig[uid]
+        await entry.update(found)
+        return entry
+
+
+GameManager = _GameManager()

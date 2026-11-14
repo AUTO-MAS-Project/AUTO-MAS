@@ -6,6 +6,8 @@ import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
 import type { OutBase } from '../models/OutBase';
 import type { PlanReorderIn } from '../models/PlanReorderIn';
 import type { PlanUpdateIn } from '../models/PlanUpdateIn';
+import type { PluginCatalogUpdateIn } from '../models/PluginCatalogUpdateIn';
+import type { PluginConfigUpdateIn } from '../models/PluginConfigUpdateIn';
 import type { QueueItemReorderIn } from '../models/QueueItemReorderIn';
 import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
 import type { QueueUpdateIn } from '../models/QueueUpdateIn';
@@ -134,63 +136,6 @@ export class UpdateService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/import/web',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 导入基建配置文件
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static importInfrastructureApiScriptsUserInfrastructurePost(
-        requestBody: UserSetIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/user/infrastructure',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 设置基建班次
-     * @param requestBody
-     * @returns UserInfrastPlanSelectOut Successful Response
-     * @throws ApiError
-     */
-    public static setInfrastPlanSelectApiScriptsUserInfrastructurePlanSelectPost(
-        requestBody: UserInfrastPlanSelectIn,
-    ): CancelablePromise<UserInfrastPlanSelectOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/user/infrastructure/plan-select',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 手动刷新 MAA 养成材料数据与干员目录
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static refreshMaaCultivateDataApiScriptsMaaCultivateRefreshPost(
-        requestBody: ScriptDeleteIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maa/cultivate/refresh',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -402,6 +347,113 @@ export class UpdateService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 修改目录项（透传全部字段）
+     * 按目录配置类型校验并保存局部补丁，命令身份由独立操作入口提供。
+     * @param requestBody
+     * @param locale
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updatePluginCatalogApiPluginCatalogUpdatePost(
+        requestBody: PluginCatalogUpdateIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_catalog/update',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 修改插件自有配置（凭注册表项定位）
+     * 按插件实际配置类型校验并保存局部补丁，返回配置更新结果。
+     * @param requestBody
+     * @param locale
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updatePluginConfigApiPluginConfigUpdatePost(
+        requestBody: PluginConfigUpdateIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_config/update',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 导入基建配置文件
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static importInfrastructureApiScriptsUserInfrastructurePost(
+        requestBody: UserSetIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/infrastructure',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 设置基建班次
+     * @param requestBody
+     * @returns UserInfrastPlanSelectOut Successful Response
+     * @throws ApiError
+     */
+    public static setInfrastPlanSelectApiScriptsUserInfrastructurePlanSelectPost(
+        requestBody: UserInfrastPlanSelectIn,
+    ): CancelablePromise<UserInfrastPlanSelectOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/infrastructure/plan-select',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 手动刷新 MAA 养成材料数据与干员目录
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static refreshMaaCultivateDataApiScriptsMaaCultivateRefreshPost(
+        requestBody: ScriptDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/refresh',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
