@@ -1035,6 +1035,7 @@ class MaaFWRunner:
         *,
         send_log: Callable[[str], None] | None = None,
         send_record: Callable[[dict[str, Any]], None] | None = None,
+        verify_startup: Callable[[], None] | None = None,
         failure_screenshot_dir: Path | None = None,
         failure_screenshot_prefix: str = "",
         task_start_not_before: float | None = None,
@@ -1046,6 +1047,7 @@ class MaaFWRunner:
         send_log_event: Callable[[str, str | None, str], None] | None = None,
     ) -> None:
         self.plan: MaaFWRunPlan = plan
+        self.verify_startup = verify_startup
         self.resource: Resource | None = None
         self.tasker: Tasker | None = None
         self.controller: Any | None = None
@@ -1833,7 +1835,7 @@ class MaaFWRunner:
     ) -> Literal["next", "skip_rest"] | None:
         """本任务被原地打转检测停掉时收尾；返回值同 ``_handle_task_deadline``。
 
-        口径与 ``_handle_task_deadline`` 完全一致：计划里的第一个任务或特调声明的关键
+        口径与 ``_handle_task_deadline`` 完全一致：受启动保护的第一个任务或特调声明的关键
         任务（``abortRoundMessage``）结束本轮，收尾任务（``nonFatalMessage``）放过（恰好
         又被脚本侧强停时跳过剩余任务；排在中间且等满仍停不下来时结束本轮并计入失败），
         其余记一条任务失败再继续。必须早于
@@ -3844,6 +3846,10 @@ class MaaFWRunner:
             completed_tasks.append(task.name)
             self._mark_task_outcome(OUTCOME_SUCCEEDED)
             self.send_log(f"任务完成: {display_name}")
+            if index == 0 and self.verify_startup is not None:
+                self._close_task_record()
+                self.verify_startup()
+                self._raise_if_deadline_hit()
             time.sleep(0.1)
         self._close_task_record()
         return completed_tasks

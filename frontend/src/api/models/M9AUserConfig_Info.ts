@@ -63,5 +63,9 @@ export type M9AUserConfig_Info = {
      * 账号标签信息
      */
     readonly Tag?: (string | null);
+    /**
+     * 游戏内数字 UID，用于 MAS 登录 B 服后核对账号
+     */
+    GameUID?: (string | null);
 };
 
