@@ -12,7 +12,7 @@ from app.utils import constants as _utils_constants
 from app.utils import io as _utils_io
 
 from . import push_log
-from .AutoProxy import AutoProxyTask, _okww_mas_config_dir
+from .AutoProxy import AutoProxyTask
 from .tools.batch_config import (
     DAILY_TASK,
     completed_accounts,
@@ -24,6 +24,7 @@ from .tools.batch_logs import (
     account_log_context,
     native_switch_unsupported,
 )
+from .tools.config_paths import _okww_mas_config_dir
 
 logger = get_logger("OK-WW 批次")
 

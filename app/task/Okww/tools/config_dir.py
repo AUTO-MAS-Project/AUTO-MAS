@@ -37,15 +37,15 @@ from app.models.config import OkwwConfig, OkwwUserConfig
 from app.utils import BASE_INDEPENDENT, BASE_NATIVE, BASE_SHARED, get_logger
 from app.utils import io as _utils_io
 
-from ..AutoProxy import (
-    _OKWW_REL_CONFIG_DIR,
-    _okww_config_base,
-    _okww_mas_config_dir,
-)
 from .backup_archive import (
     mas_rollback_point,
     read_overlay_values,
     restore_mas_backup,
+)
+from .config_paths import (
+    _OKWW_REL_CONFIG_DIR,
+    _okww_config_base,
+    _okww_mas_config_dir,
 )
 
 logger = get_logger("OK-WW 配置目录")
