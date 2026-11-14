@@ -10,11 +10,15 @@ import httpx
 import jsonschema
 import pytest
 import pytest_asyncio
+import yaml
 from fastapi import FastAPI
 from pydantic import BaseModel
 
 import app.core.mcp as module
+from app.config import config_manager
 from app.core import Publisher
+from app.models.config import GlobalConfig
+from tests.config_support import activate_config
 
 
 class QueryIn(BaseModel):
@@ -304,18 +308,34 @@ async def test_cancel_waits_for_thread_and_cannot_mount_late(service, app, monke
 
 
 @pytest.mark.asyncio
-async def test_disabled_has_no_import_task_or_mount(app, monkeypatch):
-    monkeypatch.setenv("AUTO_MAS_ENABLE_MCP", "0")
+@pytest.mark.parametrize(
+    "configured,environment", [(False, "1"), (True, "0"), (False, "0")]
+)
+async def test_disabled_has_no_import_task_or_mount(
+    app, monkeypatch, tmp_path, configured, environment
+):
+    monkeypatch.setenv("AUTO_MAS_ENABLE_MCP", environment)
+    path = tmp_path / "setting.yaml"
+    config = await activate_config(GlobalConfig(), path)
+    assert config.Function.IfEnableMCP
+    await config.update(GlobalConfig(Function={"IfEnableMCP": configured}))
+    await config_manager.flush()
+    restored = await activate_config(
+        GlobalConfig.build(payload=yaml.safe_load(path.read_text(encoding="utf-8")))
+    )
     service = module.McpService()
+    service.configure(enabled=restored.Function.IfEnableMCP)
     monkeypatch.setattr(
         module.importlib, "import_module", lambda *args: pytest.fail("heavy import")
     )
     assert service.status().state == "skipped"
     assert not service.start(app)
+    service.notify_home_painted()
     assert service._task is None
     assert not service.retry()
     await service.shutdown()
     assert not service.status().enabled
+    assert service.status().environmentEnabled is (environment == "1")
     assert not [route for route in app.routes if route.path == "/mcp"]
 
 

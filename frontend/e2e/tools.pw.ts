@@ -19,6 +19,27 @@ test.describe('@tools MCP service', () => {
     await expect(card).toContainText('MCP service is ready')
     await socket.reconnect()
     await expect(card).toContainText('MCP service is ready')
+
+    const startup = card.getByRole('switch', { name: 'Enable MCP at startup' })
+    await expect(startup).toBeChecked()
+    await page.route('**/api/setting/update', route =>
+      route.fulfill({ json: { code: 500, status: 'error', message: 'Save failed for test' } })
+    )
+    await startup.click()
+    await expect(page.getByText('Save failed for test', { exact: true })).toBeVisible()
+    await expect(startup).toBeChecked()
+    await page.unroute('**/api/setting/update')
+    await startup.click()
+    await expect(startup).not.toBeChecked()
+    await expect(card).toContainText('Takes effect after restart')
+    await expect(card).toContainText('MCP service is ready')
+    await page.reload()
+    await expect(startup).not.toBeChecked()
+    await expect(card).toContainText('Takes effect after restart')
+    await app.evidence('mcp-startup-disabled')
+    await startup.click()
+    await expect(startup).toBeChecked()
+    await expect(card).not.toContainText('Takes effect after restart')
   })
 
   test('restores phases and retries a failure without treating acceptance as success', async ({
@@ -35,6 +56,7 @@ test.describe('@tools MCP service', () => {
     const socket = await observeMainConnection(page)
     let status: McpStatusData = {
       enabled: true,
+      environmentEnabled: true,
       state: McpStatusData.state.PENDING,
       stage: null,
       startedAt: null,

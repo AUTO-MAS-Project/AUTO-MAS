@@ -69,6 +69,7 @@ class McpStatusData(BaseModel):
     """MCP 的 HTTP 快照与 WS 进度共用契约；revision 在同一进程内单调递增。"""
 
     enabled: bool
+    environmentEnabled: bool = Field(description="启动环境是否允许启用 MCP")
     state: Literal["skipped", "pending", "running", "ready", "failed", "cancelled"]
     stage: Literal["importing", "building", "validating", "mounting"] | None
     startedAt: AwareDatetime | None
