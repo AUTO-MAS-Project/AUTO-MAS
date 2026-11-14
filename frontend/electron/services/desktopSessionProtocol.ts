@@ -2,7 +2,7 @@ export interface DesktopSessionCheck {
   code: string
   ok: boolean
   required: boolean
-  value: string | number | null
+  value: string | number | boolean | null
 }
 
 export interface DesktopSessionRequest {
@@ -29,7 +29,7 @@ export interface DesktopSessionSnapshot {
 export interface DesktopQueueResult {
   queueId: string
   taskId: string
-  message: string
+  code: string
   label: string
 }
 

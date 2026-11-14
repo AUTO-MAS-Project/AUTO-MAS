@@ -8,6 +8,7 @@ import { buildMaaFWRoutes } from './maafwFlavorRoutes'
 import { buildScriptEditorRoutes, MAA_CULTIVATE_ROUTE } from './scriptEditorRoutes'
 import { registerRouterAnalytics } from './analytics'
 import { measureStartup } from '@/utils/startupTiming'
+import { translate as t } from '@/i18n'
 const logger = window.electronAPI.getLogger('路由管理')
 
 // MaaFW 与各特调的路由（每个类型：脚本编辑 / 引导 / 加用户 / 编辑用户）按特调注册表生成；
@@ -193,7 +194,12 @@ const routes = [
     path: '/desktop-session',
     name: 'DesktopSession',
     component: () => import('../views/desktopSession/DesktopSessionWindow.vue'),
-    meta: { title: '桌面分身', skipGuard: true },
+    meta: {
+      get title() {
+        return t('bootstrap.desktopSession.title')
+      },
+      skipGuard: true,
+    },
   },
 ]
 

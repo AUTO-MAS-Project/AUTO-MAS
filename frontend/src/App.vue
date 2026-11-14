@@ -181,6 +181,7 @@ onMounted(async () => {
     </div>
     <!-- 独立页面（如日志窗口）使用全屏布局，不包含 AppLayout -->
     <div v-else-if="isStandalonePage" class="standalone-container">
+      <!-- 桌面分身使用启动词表，交接期间也能运行。 -->
       <router-view
         v-if="route.name === 'Logs' || route.name === 'DesktopSession' || languageResources.ready"
       />

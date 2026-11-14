@@ -75,8 +75,14 @@ const numberArg = (name, fallback) => {
 }
 
 const loadLocale = async locale => {
+  const desktopSession = JSON.parse(
+    readFileSync(join(SRC_DIR, '../electron/services/desktopSessionMessages.json'), 'utf8')
+  )[locale]
   const messages = {
-    bootstrap: JSON.parse(readFileSync(join(BOOTSTRAP_DIR, locale + '.json'), 'utf8')),
+    bootstrap: {
+      ...JSON.parse(readFileSync(join(BOOTSTRAP_DIR, locale + '.json'), 'utf8')),
+      desktopSession,
+    },
     core: {},
   }
   const flat = JSON.parse(readFileSync(join(RUNTIME_DIR, RUNTIME_FILES[locale] + '.json'), 'utf8'))

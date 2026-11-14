@@ -17,12 +17,22 @@ import {
   getRendererEnvironmentArguments,
 } from '../services/instanceConfig'
 import { isApplicationWindowSender } from './analyticsHandlers'
+import desktopSessionMessages from '../services/desktopSessionMessages.json'
 
-const confirmation =
-  '桌面分身正在启动中或运行中。关闭该窗口会同时关闭桌面分身，其中所有正在运行的软件都会关闭，未保存的数据会丢失。是否继续？'
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export function registerDesktopSession(getMainWindow: () => BrowserWindow | null, icon: string) {
+export function registerDesktopSession(
+  getMainWindow: () => BrowserWindow | null,
+  icon: string,
+  getLanguage: () => unknown
+) {
+  function labels() {
+    const configured = getLanguage()
+    const locale = (typeof configured === 'string' ? configured : app.getLocale()).toLowerCase()
+    if (locale.startsWith('zh')) return desktopSessionMessages['zh-CN']
+    if (locale.startsWith('ja')) return desktopSessionMessages['ja-JP']
+    return desktopSessionMessages['en-US']
+  }
   let preview: BrowserWindow | null = null
   let viewport: Rectangle | null = null
   let pending: DesktopSessionRequest | null = null
@@ -63,7 +73,7 @@ export function registerDesktopSession(getMainWindow: () => BrowserWindow | null
   }
 
   function physicalBounds(): [number, number, number, number] {
-    if (!preview || !viewport) throw new Error('预览尚未就绪')
+    if (!preview || !viewport) throw new Error('preview_unavailable')
     const window = preview.getContentBounds()
     const topLeft = screen.dipToScreenPoint({ x: window.x + viewport.x, y: window.y + viewport.y })
     const display = screen.getDisplayMatching(window)
@@ -84,15 +94,16 @@ export function registerDesktopSession(getMainWindow: () => BrowserWindow | null
     closeFlight = (async () => {
       const window = preview
       if (!window || window.isDestroyed()) return true
+      const text = labels()
       if (service.active) {
         if (window.isMinimized()) window.restore()
         if (!window.isVisible()) window.show()
         service.changeWindow('hidden')
         const { response } = await dialog.showMessageBox(window, {
           type: 'warning',
-          title: '关闭桌面分身',
-          message: confirmation,
-          buttons: ['继续关闭', '取消'],
+          title: text.closeTitle,
+          message: text.closeConfirm,
+          buttons: [text.closeContinue, text.cancel],
           defaultId: 1,
           cancelId: 1,
           noLink: true,
@@ -107,8 +118,8 @@ export function registerDesktopSession(getMainWindow: () => BrowserWindow | null
       } catch {
         await dialog.showMessageBox(window, {
           type: 'error',
-          title: '桌面分身',
-          message: '未能确认任务收尾或注销，请查看分身日志后重试。',
+          title: text.title,
+          message: text.closeFailed,
         })
         return false
       }
@@ -131,7 +142,7 @@ export function registerDesktopSession(getMainWindow: () => BrowserWindow | null
     viewport = null
     hidden = false
     const window = new BrowserWindow({
-      title: '桌面分身 - AUTO-MAS',
+      title: `${labels().title} - AUTO-MAS`,
       width: 1100,
       height: 735,
       minWidth: 720,
@@ -149,6 +160,7 @@ export function registerDesktopSession(getMainWindow: () => BrowserWindow | null
     preview = window
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     window.webContents.on('will-navigate', event => event.preventDefault())
+    window.on('page-title-updated', event => event.preventDefault())
     window.on('ready-to-show', () => window.show())
     window.on('close', event => {
       event.preventDefault()
@@ -174,14 +186,14 @@ export function registerDesktopSession(getMainWindow: () => BrowserWindow | null
 
   ipcMain.handle('desktop-session:open', (event, input: DesktopSessionRequest) => {
     if (!isApplicationWindowSender(event, getMainWindow(), { allowDevelopment: true })) {
-      throw new Error('桌面分身入口不可用')
+      throw new Error('entry_unavailable')
     }
     if (
       process.platform !== 'win32' ||
       process.arch !== 'x64' ||
       getBackendOwnership() !== 'owned'
     ) {
-      throw new Error('桌面分身需要 Windows x64 和本机 MAS 后端')
+      throw new Error('unsupported_environment')
     }
     if (
       !input ||
@@ -191,7 +203,7 @@ export function registerDesktopSession(getMainWindow: () => BrowserWindow | null
       !['proxy', 'native'].includes(input.mode) ||
       !['1080p', 'primary'].includes(input.resolution)
     ) {
-      throw new Error('队列选择无效')
+      throw new Error('invalid_selection')
     }
     pending = {
       queueIds: [...new Set(input.queueIds)],

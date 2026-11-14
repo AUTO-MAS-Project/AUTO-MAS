@@ -1,4 +1,4 @@
-import { GetService, TaskMode, type TaskCreateIn } from '@/api'
+import { GetService, TaskMode, type PowerSignal, type TaskCreateIn } from '@/api'
 import { queryClient } from '@/services/queryClient'
 import { queryRequest } from '@/utils/queryRequest'
 import { translate as t } from '@/i18n'
@@ -9,6 +9,7 @@ export interface TaskTarget {
   label: string
   name: string
   kind: 'queue' | 'script'
+  afterAccomplish?: PowerSignal
 }
 
 /** 候选目标只读取配置，不因运行锁而消失；共享同一轮在途查询。 */
@@ -29,6 +30,7 @@ export function fetchTaskTargets(): Promise<TaskTarget[]> {
           name: queues.data[item.uid]?.Info?.Name ?? item.uid,
           label: `${t('core.scheduler.scope.queue')} · ${queues.data[item.uid]?.Info?.Name ?? item.uid}`,
           kind: 'queue' as const,
+          afterAccomplish: queues.data[item.uid]?.Info?.AfterAccomplish,
         })),
         ...scripts.index.map(item => ({
           value: item.uid,

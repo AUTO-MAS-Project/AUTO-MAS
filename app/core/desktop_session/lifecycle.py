@@ -55,11 +55,13 @@ def install_control(app: FastAPI) -> None:
 
     from app.core import Config, Power, ShutdownCoordinator, TaskManager
     from app.models.task import TaskMode
+    from app.utils import get_logger
     from app.utils.contracts.power import PowerSignal
 
     lock = asyncio.Lock()
     draining = False
     inflight = 0
+    logger = get_logger("桌面分身")
 
     async def guard(scope, receive, send, application):
         nonlocal inflight
@@ -192,17 +194,20 @@ def install_control(app: FastAPI) -> None:
                 item = {
                     "queueId": str(uid),
                     "taskId": "",
-                    "message": "",
+                    "code": "",
                     "label": target.Info.Name if target is not None else str(uid),
                 }
+                results.append(item)
+                if target is None:
+                    item["code"] = "target_missing"
+                    continue
+                if (
+                    queue is not None
+                    and queue.Info.AfterAccomplish != PowerSignal.NO_ACTION
+                ):
+                    item["code"] = "power_action"
+                    continue
                 try:
-                    if target is None:
-                        raise ValueError("队列或托管任务不存在")
-                    if (
-                        queue is not None
-                        and queue.Info.AfterAccomplish != PowerSignal.NO_ACTION
-                    ):
-                        raise ValueError("请先把队列的完成后操作设为无操作")
                     node = (
                         {"uid": str(uid)}
                         if queue is not None
@@ -211,8 +216,8 @@ def install_control(app: FastAPI) -> None:
                     task_id = await TaskManager.start(TaskMode.AUTO_PROXY, {0: node})
                     item["taskId"] = str(task_id)
                 except (RuntimeError, ValueError) as exc:
-                    item["message"] = str(exc)
-                results.append(item)
+                    logger.warning(f"任务 {uid} 派发失败: {exc}")
+                    item["code"] = "dispatch_failed"
         return {"results": results}
 
     @app.post("/internal/desktop-session/state", include_in_schema=False)

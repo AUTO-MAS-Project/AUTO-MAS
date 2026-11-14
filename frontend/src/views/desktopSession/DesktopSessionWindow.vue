@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { EyeOutlined, EyeInvisibleOutlined, MinusOutlined } from '@ant-design/icons-vue'
 import type {
@@ -8,6 +9,7 @@ import type {
   DesktopQueueResult,
 } from '../../../electron/services/desktopSessionProtocol'
 
+const { t, te } = useI18n()
 const preview = ref<HTMLElement | null>(null)
 const snapshot = shallowRef<DesktopSessionSnapshot | null>(null)
 const pending = shallowRef<DesktopSessionRequest | null>(null)
@@ -23,15 +25,16 @@ const disposers: (() => void)[] = []
 const api = window.electronAPI
 
 const statusText = computed(() => {
-  if (snapshot.value?.closing) return '关闭中'
-  if (checking.value) return '环境检测中'
-  if (snapshot.value?.state === 'blocked') return '环境检测异常'
-  if (starting.value || snapshot.value?.state === 'connecting') return '启动中'
+  if (snapshot.value?.closing) return t('bootstrap.desktopSession.closing')
+  if (checking.value) return t('bootstrap.desktopSession.checking')
+  if (snapshot.value?.state === 'blocked') return t('bootstrap.desktopSession.blocked')
+  if (starting.value || snapshot.value?.state === 'connecting')
+    return t('bootstrap.desktopSession.starting')
   return snapshot.value?.state === 'connected'
-    ? '已连接'
+    ? t('bootstrap.desktopSession.connected')
     : snapshot.value?.state === 'disconnected'
-      ? '连接已断开'
-      : '未连接'
+      ? t('bootstrap.desktopSession.disconnected')
+      : t('bootstrap.desktopSession.idle')
 })
 const running = computed(() => snapshot.value?.state === 'connected')
 const blocked = computed(
@@ -50,39 +53,6 @@ const canStart = computed(
 )
 const canConfigure = computed(() => !running.value && !starting.value && !snapshot.value?.busy)
 
-const errors: Record<string, string> = {
-  password_required: '请输入当前 Windows 账户的密码。',
-  password_invalid: 'Windows 密码验证失败，请重新输入账户密码。',
-  account_mismatch: '凭据所属账户与当前 Windows 账户不一致。',
-  credential_unreadable: '无法解密保存的凭据，请重新输入密码。',
-  credential_save_failed: '分身已连接，但密码保存失败。',
-  environment_blocked: '当前环境未通过检测，请查看下方检查结果。',
-  main_busy: '主会话有任务、更新或配置操作正在运行，请等收尾完成后重试。',
-  rdp_disconnected: '桌面分身连接已断开。',
-  connection_failed: '桌面分身连接失败，请查看分身日志。',
-  handoff_unconfirmed: '无法确认调度交接或收尾，请查看分身日志。',
-  main_resume_failed: '分身已释放配置，主会话后端恢复失败，请查看日志。',
-  executor_failed: '子会话执行器启动失败，请查看分身日志。',
-  executor_interrupted: '子会话执行器已中断，请查看分身日志中的任务记录。',
-  desktop_size_changed: '子桌面分辨率与连接时的设置不一致。',
-  session_changed: '子会话已变化，任务派发已停止。',
-  host_exited: '桌面分身预览进程已退出。',
-}
-const diagnostics: Record<string, string> = {
-  windows: '仅支持 Windows 10 1809 及以上或 Windows 11 客户端。',
-  x64: '请使用 Windows x64 和 MAS 的 x64 Python。',
-  edition: 'Windows 版本',
-  interactive: '请在已登录的交互桌面打开 MAS。',
-  components: '检查系统的 ATL、远程桌面及凭据保护组件是否完整。',
-  service_dll: '远程桌面服务未使用原生 DLL。请处理 RDP Wrapper 或系统组件修改。',
-  service_signature: '无法确认远程桌面系统文件签名。请检查 Windows 系统文件完整性。',
-  term_service: '远程桌面服务未运行，请在 Windows 服务中检查。',
-  task_scheduler: '任务计划程序未运行，请在 Windows 服务中检查。',
-  child_enabled: 'Windows 子会话尚未启用。请由管理员按系统指引处理后重检。',
-  rdp_policy: '远程桌面已被关闭。请检查 Windows 设置或联系策略管理员。',
-  hello_only: '系统可能只允许 Windows Hello 登录。遇到密码验证失败时请检查登录选项。',
-  rdp_listener: '找不到预期的本机 RDP 监听。请检查远程桌面相关服务与设置。',
-}
 const credentialErrors = new Set([
   'password_required',
   'password_invalid',
@@ -91,7 +61,11 @@ const credentialErrors = new Set([
 ])
 const errorText = computed(() => {
   const code = snapshot.value?.code
-  return code ? errors[code] || `桌面分身操作失败（${code}），详情见日志。` : ''
+  return code
+    ? te(`bootstrap.desktopSession.errors.${code}`)
+      ? t(`bootstrap.desktopSession.errors.${code}`)
+      : t('bootstrap.desktopSession.operationFailed', { code })
+    : ''
 })
 
 function reportBounds() {
@@ -134,7 +108,7 @@ async function start(secret?: string) {
     else if (!response.code) pending.value = null
     else if (snapshot.value) snapshot.value = { ...snapshot.value, code: response.code }
   } catch {
-    message.error('启动桌面分身失败，请查看日志。')
+    message.error(t('bootstrap.desktopSession.startFailed'))
   } finally {
     starting.value = false
   }
@@ -197,11 +171,14 @@ onBeforeUnmount(() => {
           :text="statusText"
         />
         <a-typography-text v-if="snapshot?.sessionId" type="secondary">
-          会话 {{ snapshot.sessionId }} · {{ snapshot.size?.join(' × ') }}
+          {{ t('bootstrap.desktopSession.session', { id: snapshot.sessionId }) }} ·
+          {{ snapshot.size?.join(' × ') }}
         </a-typography-text>
-        <a-tag v-if="running && snapshot?.windowState === 'hidden'">预览已隐藏</a-tag>
-        <a-tag v-if="snapshot?.executing && !snapshot?.closing" color="processing"
-          >任务运行中</a-tag
+        <a-tag v-if="running && snapshot?.windowState === 'hidden'">
+          {{ t('bootstrap.desktopSession.hidden') }}</a-tag
+        >
+        <a-tag v-if="snapshot?.executing && !snapshot?.closing" color="processing">
+          {{ t('bootstrap.desktopSession.running') }}</a-tag
         >
       </a-flex>
       <a-space wrap>
@@ -212,44 +189,55 @@ onBeforeUnmount(() => {
           type="primary"
           @click="start()"
         >
-          {{ pending?.queueIds.length ? '启动所选任务' : '启动' }}
+          {{
+            pending?.queueIds.length
+              ? t('bootstrap.desktopSession.startSelected')
+              : t('bootstrap.desktopSession.start')
+          }}
         </a-button>
         <a-button
           v-if="running && snapshot?.windowState !== 'visible'"
           @click="api?.desktopSessionWindow?.('show')"
         >
-          <template #icon><EyeOutlined /></template>显示
+          <template #icon><EyeOutlined /></template>
+          {{ t('bootstrap.desktopSession.show') }}
         </a-button>
         <a-button v-else :disabled="!running" @click="api?.desktopSessionWindow?.('hide')">
-          <template #icon><EyeInvisibleOutlined /></template>隐藏
+          <template #icon><EyeInvisibleOutlined /></template>
+          {{ t('bootstrap.desktopSession.hide') }}
         </a-button>
-        <a-button aria-label="最小化" @click="api?.desktopSessionWindow?.('minimize')">
+        <a-button
+          :aria-label="t('bootstrap.desktopSession.minimize')"
+          @click="api?.desktopSessionWindow?.('minimize')"
+        >
           <template #icon><MinusOutlined /></template>
         </a-button>
-        <a-button @click="api?.desktopSessionLogs?.()">查看分身日志</a-button>
+        <a-button @click="api?.desktopSessionLogs?.()">
+          {{ t('bootstrap.desktopSession.viewLogs') }}</a-button
+        >
       </a-space>
     </header>
     <div class="desktop-options">
       <a-space wrap>
         <a-select
           v-model:value="resolution"
-          aria-label="分身分辨率"
+          :aria-label="t('bootstrap.desktopSession.resolution')"
           :disabled="!canConfigure"
           :options="[
             { value: '1080p', label: '1920 × 1080' },
-            { value: 'primary', label: '同步主屏分辨率' },
+            { value: 'primary', label: t('bootstrap.desktopSession.primaryResolution') },
           ]"
         />
         <a-select
           v-model:value="mode"
-          aria-label="最小化模式"
+          :aria-label="t('bootstrap.desktopSession.minimizeMode')"
           :disabled="!canConfigure"
           :options="[
-            { value: 'proxy', label: '后台最小化' },
-            { value: 'native', label: '原生最小化' },
+            { value: 'proxy', label: t('bootstrap.desktopSession.proxy') },
+            { value: 'native', label: t('bootstrap.desktopSession.native') },
           ]"
         />
-        <label for="desktop-volume">分身音量</label>
+        <label for="desktop-volume"> {{ t('bootstrap.desktopSession.volume') }}</label>
         <a-slider
           id="desktop-volume"
           v-model:value="volume"
@@ -263,7 +251,7 @@ onBeforeUnmount(() => {
       v-if="snapshot?.closing"
       type="info"
       show-icon
-      message="正在关闭桌面分身，请等待任务收尾和会话注销。"
+      :message="t('bootstrap.desktopSession.closingHint')"
     />
     <a-alert
       v-else-if="errorText"
@@ -279,25 +267,31 @@ onBeforeUnmount(() => {
         gap="middle"
         class="empty"
       >
-        <a-alert type="warning" show-icon message="风险提示：该功能为实验功能" />
+        <a-alert type="warning" show-icon :message="t('bootstrap.desktopSession.experimental')" />
         <template v-if="snapshot?.closing">
           <a-spin />
         </template>
         <template v-else-if="!running">
-          <a-button :loading="checking" :disabled="starting" @click="check">重新检测环境</a-button>
+          <a-button :loading="checking" :disabled="starting" @click="check">
+            {{ t('bootstrap.desktopSession.recheck') }}</a-button
+          >
           <a-typography-text v-if="!checking && blocked" type="secondary">
-            请按下方检查结果手动处理后重新检测。自动修复将在后续版本提供。
+            {{ t('bootstrap.desktopSession.recheckHint') }}
           </a-typography-text>
           <a-typography-text
             v-for="item in snapshot?.checks.filter(check => !check.ok)"
             :key="item.code"
             :type="item.required ? 'danger' : 'secondary'"
           >
-            {{ diagnostics[item.code] || item.code }}
+            {{
+              te(`bootstrap.desktopSession.diagnostics.${item.code}`)
+                ? t(`bootstrap.desktopSession.diagnostics.${item.code}`)
+                : item.code
+            }}
           </a-typography-text>
         </template>
-        <a-typography-text v-else type="secondary"
-          >预览已隐藏，子会话仍保持连接。</a-typography-text
+        <a-typography-text v-else type="secondary">
+          {{ t('bootstrap.desktopSession.hiddenHint') }}</a-typography-text
         >
       </a-flex>
     </div>
@@ -307,21 +301,30 @@ onBeforeUnmount(() => {
         :key="result.queueId"
         :type="result.taskId ? 'success' : 'danger'"
       >
-        {{ result.label }} · {{ result.taskId ? '已派发，进度请查看主窗口调度页' : result.message }}
+        {{ result.label }} ·
+        {{
+          result.taskId
+            ? t('bootstrap.desktopSession.dispatched')
+            : result.code === 'target_missing'
+              ? t('bootstrap.desktopSession.targetMissing')
+              : result.code === 'power_action'
+                ? t('bootstrap.desktopSession.powerAction')
+                : t('bootstrap.desktopSession.dispatchFailed')
+        }}
       </a-typography-text>
     </a-flex>
     <a-modal
       v-model:open="passwordDialog"
-      title="验证 Windows 密码"
-      ok-text="连接"
-      cancel-text="取消"
+      :title="t('bootstrap.desktopSession.passwordTitle')"
+      :ok-text="t('bootstrap.desktopSession.connect')"
+      :cancel-text="t('bootstrap.desktopSession.cancel')"
       :ok-button-props="{ disabled: !password }"
       @ok="submitPassword"
       @cancel="password = ''"
     >
       <a-input-password
         v-model:value="password"
-        placeholder="当前 Windows 账户的密码"
+        :placeholder="t('bootstrap.desktopSession.password')"
         autocomplete="off"
         @press-enter="password && submitPassword()"
       />

@@ -2418,7 +2418,11 @@ app.on('before-quit', event => {
 })
 
 app.whenReady().then(async () => {
-  desktopSession = registerDesktopSession(() => mainWindow, mainWindowIcon)
+  desktopSession = registerDesktopSession(
+    () => mainWindow,
+    mainWindowIcon,
+    () => loadConfig().language
+  )
   keepAwakeForScheduledWakeup(process.argv)
   recordDesktopStartup('Electron 就绪')
   const startupConfig = loadConfig()
