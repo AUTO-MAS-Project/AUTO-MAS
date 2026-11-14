@@ -40,8 +40,6 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
-import subprocess
-import sys
 import threading
 from collections.abc import Callable, MutableMapping
 from pathlib import Path
@@ -142,20 +140,6 @@ class MaaFWNativeLoadError(RuntimeError):
     """新版本里 runner 要用的 MaaFramework 原生库在干净进程里都加载不了。"""
 
 
-# 子进程里只做一件事：按 runner 的 ``Library.open`` 同样的方式（绝对路径的 WinDLL，
-# 依赖从 DLL 所在目录找）加载主库。加载失败退出码 3，并把原因打到 stdout。
-_NATIVE_LOAD_PROBE = (
-    "import ctypes, sys\n"
-    "try:\n"
-    "    ctypes.WinDLL(sys.argv[1])\n"
-    "except OSError as error:\n"
-    "    print(error)\n"
-    "    sys.exit(3)\n"
-)
-_NATIVE_LOAD_FAILED_EXIT = 3
-_NATIVE_LOAD_TIMEOUT_SECONDS = 60
-
-
 def check_staging_native_runtime(root: Path, send_log: Callable[[str], None]) -> None:
     """在独立子进程里加载一次 staging 里 runner 会用的 ``MaaFramework.dll``；确定加载不了
     就 raise。
@@ -171,7 +155,9 @@ def check_staging_native_runtime(root: Path, send_log: Callable[[str], None]) ->
         return
     try:
         from app.task.MaaFW.tools.core.runner.environment import (
-            PROJECT_MAAFW_DLL_NAME,
+            NATIVE_LOAD_FAILED,
+            NATIVE_LOAD_OK,
+            probe_native_runtime_load,
             project_maafw_runtime_path,
         )
 
@@ -181,35 +167,18 @@ def check_staging_native_runtime(root: Path, send_log: Callable[[str], None]) ->
         return
     if runtime is None:
         return
-    dll = runtime / PROJECT_MAAFW_DLL_NAME
-    try:
-        completed = subprocess.run(
-            [sys.executable, "-I", "-c", _NATIVE_LOAD_PROBE, str(dll)],
-            capture_output=True,
-            text=True,
-            errors="replace",
-            timeout=_NATIVE_LOAD_TIMEOUT_SECONDS,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        logger.warning(f"MaaFramework 原生库加载检查没能完成，放行：{exc}")
-        send_log(f"[原生库检查] 没能完成（{type(exc).__name__}），跳过")
-        return
+    verdict, detail = probe_native_runtime_load(runtime)
     try:
         location = runtime.relative_to(root).as_posix()
     except ValueError:
         location = str(runtime)
-    if completed.returncode == _NATIVE_LOAD_FAILED_EXIT:
-        reason = (completed.stdout or "").strip().rstrip("。.") or "原因未知"
+    if verdict == NATIVE_LOAD_FAILED:
         raise MaaFWNativeLoadError(
-            f"新版本自带的 MaaFramework（{location}/）加载不了：{reason}。"
+            f"新版本自带的 MaaFramework（{location}/）加载不了：{detail}。"
             "多半是这个目录里缺了依赖的 DLL"
         )
-    if completed.returncode != 0:
-        logger.warning(
-            f"MaaFramework 原生库加载检查异常退出（{completed.returncode}），放行："
-            f"{(completed.stderr or '').strip()[-500:]}"
-        )
+    if verdict != NATIVE_LOAD_OK:
+        logger.warning(f"MaaFramework 原生库加载检查没能完成，放行：{detail}")
         send_log("[原生库检查] 没能完成，跳过")
         return
     send_log(f"[原生库检查] {location}/MaaFramework.dll 加载正常")

@@ -470,6 +470,20 @@ def _caused_by_native_relocation(exc: BaseException) -> bool:
     return False
 
 
+def _payload_runtime_incomplete(payload: PayloadTarget) -> bool:
+    """当前载荷里 runner 要用的 MaaFramework 原生库缺依赖、真加载也失败（判断不了算没坏）。"""
+
+    try:
+        from app.task.MaaFW.tools.core.runner.environment import (
+            project_runtime_broken,
+        )
+
+        return project_runtime_broken(payload.directory())
+    except Exception:  # noqa: BLE001 - 判断不了就照常按差量 / 全量的原规则走
+        logger.warning("MaaFW 检查当前版本原生库是否完整时出错", exc_info=True)
+        return False
+
+
 async def update_maafw_project_if_needed(
     project_path: Path,
     interface_model: MaaFWInterface,
@@ -585,6 +599,7 @@ async def update_maafw_project_if_needed(
         damaged = False
         stale_projection = False
         native_residue = False
+        runtime_incomplete = False
         base_missing = ""
         if payload is not None:
             try:
@@ -642,11 +657,24 @@ async def update_maafw_project_if_needed(
                     send_update_log(
                         "当前版本里留着新包不再使用的旧布局原生库，改为请求全量包以清掉它"
                     )
+            # runner 要用的原生库依赖不齐（差量更新把它换到了只有几个 DLL 的目录）：差量包
+            # 补不回没改过的文件，只能要全量包；最新版就是当前版本时按全量包重装一遍
+            # （``repair_current``，见发现阶段）。只读本地文件头，不联网。
+            if not base_missing:
+                runtime_incomplete = await asyncio.to_thread(
+                    _payload_runtime_incomplete, payload
+                )
+            if runtime_incomplete:
+                prefer_full = True
+                send_update_log(
+                    "当前版本自带的 MaaFramework 缺依赖的 DLL，改为请求全量包"
+                )
         if (
             prefer_full
             and not damaged
             and not stale_projection
             and not native_residue
+            and not runtime_incomplete
             and not base_missing
         ):
             send_update_log("当前版本是本地导入的，改为请求全量包")
@@ -670,6 +698,8 @@ async def update_maafw_project_if_needed(
             prefetched is not None
             and prefetched[0] == current_version
             and not base_missing
+            # 预下载的候选是按差量 / 「有新版本」拿的；副本残缺时重新按全量包发现
+            and not runtime_incomplete
         ):
             # 同一配置代次、同一基准下复用已下载候选，避免重签 Mirror 一次性地址。
             discovery = prefetched[1]
@@ -694,6 +724,7 @@ async def update_maafw_project_if_needed(
                 precheck_gate=gate,
                 cancel_event=cancel_event,
                 allow_misnumbered_rollback=allow_misnumbered_rollback,
+                repair_current=runtime_incomplete,
             )
     except Exception as exc:
         if getattr(exc, "cancelled", False):
@@ -1035,6 +1066,7 @@ async def _discover_project_update_detailed(
     precheck_gate: Callable[[str], Awaitable[str | None]] | None = None,
     cancel_event: threading.Event | None = None,
     allow_misnumbered_rollback: bool = False,
+    repair_current: bool = False,
 ) -> tuple[
     MaaFWProjectUpdateDiscovery | None,
     MaaFWMirrorChyanVersionCheck | None,
@@ -1066,6 +1098,9 @@ async def _discover_project_update_detailed(
     :func:`_is_misnumbered_current`）时按权威源的版本返回更新，候选包标
     ``misnumbered_rollback``、日志带 :data:`ALERT_LOG_PREFIX`。不传（自动更新）时
     不回退：记一行说明，返回 ``None``，原因是「自动更新不回退」那句结论。
+
+    ``repair_current``：当前副本的原生库缺依赖（调用方已改要全量包）。最新版就是当前版本时
+    不当「已是最新」，照常返回这一版的全量包，让更新流程把它重装一遍。
     """
 
     def stop_if_cancelled() -> None:
@@ -1204,10 +1239,24 @@ async def _discover_project_update_detailed(
             version_check.superseded_by = github_latest
 
     misnumbered = False
+    repair = False
     if not _is_remote_newer(latest, current):
         reason = f"已是最新版本: {current or latest}"
-        if not _is_misnumbered_current(latest, current):
+        if (
+            repair_current
+            and latest
+            and _normalize_version(latest) == _normalize_version(current)
+        ):
+            # 版本没变，但当前副本的原生库缺依赖、每次运行都起不来：按全量包把这一版
+            # 重装一遍。登记时靠「latest 加载不了、这份能」的同版本例外顶替坏的那份；
+            # 重装的仍过不了预检时按目标版本记备忘，下次不再重下。
+            repair = True
+            send_update_log(
+                f"当前版本 {current} 自带的 MaaFramework 缺依赖的 DLL，按全量包重装这一版"
+            )
+        elif not _is_misnumbered_current(latest, current):
             return None, version_check, reason
+    if not repair and not _is_remote_newer(latest, current):
         found = f"当前 {current} 主版本号高于 {version_label} 最新 {latest}"
         if not allow_misnumbered_rollback:
             send_update_log(f"{found}，可能是项目发错了版本号")
@@ -1275,14 +1324,18 @@ async def _discover_project_update_detailed(
         # 确认要从 Mirror 酱下载了，才带 CDK 查第二次拿一次性下载地址。
         # 这一次才可能扣今日下载额度，而它对应一次真实下载。
         prefer_full = prefer_full_package
-        if misnumbered and not prefer_full:
+        if (misnumbered or repair) and not prefer_full:
             # 回退只这一次，按全量包整版重建：不带发错的那个 current_version 去问，
             # 不让 Mirror 酱从它往回算差量包。
             prefer_full = True
             send_update_log("按项目发错版本号回退，改为请求全量包")
         # 用户已经停了就别去换地址：那一下会扣今日下载额度，换来的地址也用不上。
         stop_if_cancelled()
-        send_update_log("已确认有新版本，携带 CDK 获取 Mirror酱 下载地址")
+        send_update_log(
+            "要重装当前版本，携带 CDK 获取 Mirror酱 下载地址"
+            if repair
+            else "已确认有新版本，携带 CDK 获取 Mirror酱 下载地址"
+        )
         authorized = await _query_mirrorchyan_latest(
             interface_model,
             current_version=current,
@@ -1324,7 +1377,8 @@ async def _discover_project_update_detailed(
             source_config=config,
             proxy=proxy,
             target_version=latest,
-            misnumbered_rollback=misnumbered,
+            # 同版本重装同样不要求目标比当前版本新
+            misnumbered_rollback=misnumbered or repair,
         )
     except (MaaFWProjectUpdateError, httpx.HTTPError) as exc:
         # 查询失败不阻断任务：报为「有更新但不可安装」，原因留在
