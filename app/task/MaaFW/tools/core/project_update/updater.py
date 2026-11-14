@@ -35,6 +35,7 @@ from .contracts import normalise_sha256
 from .payloads import (
     ORIGIN_PACKAGE,
     PROJECTION_CHECK_FIELD,
+    DeltaNativeRelocationError,
     PayloadCancelled,
     PayloadError,
     PayloadTarget,
@@ -456,6 +457,19 @@ def _report_progress(
         logger.warning("MaaFW 更新进度回调失败: stage=%s", stage, exc_info=True)
 
 
+def _caused_by_native_relocation(exc: BaseException) -> bool:
+    """异常的原因链上有没有「差量包换了原生库目录」（构建失败会被包装一两层再抛上来）。"""
+
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        if isinstance(current, DeltaNativeRelocationError):
+            return True
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return False
+
+
 async def update_maafw_project_if_needed(
     project_path: Path,
     interface_model: MaaFWInterface,
@@ -845,6 +859,28 @@ async def update_maafw_project_if_needed(
                 final=True,
             )
             raise
+        if not prefetch_full_package and _caused_by_native_relocation(exc):
+            # 差量包让 runner 换到了旧载荷里没有的原生库目录，新版本还没登记、当前版本
+            # 没动。按全量包重来一次（只这一次：全量包不做这个判断）。
+            send_update_log(f"{exc}；当前版本未改动，改为请求全量包")
+            return await update_maafw_project_if_needed(
+                project_path,
+                interface_model,
+                mirror_cdk=mirror_cdk,
+                channel=channel,
+                proxy=proxy,
+                send_log=send_log,
+                source_config=source_config,
+                progress=progress,
+                post_validate=post_validate,
+                precheck_gate=precheck_gate,
+                cancel_event=cancel_event,
+                github_mirror_urls=github_mirror_urls,
+                payload=payload,
+                after_register=after_register,
+                allow_misnumbered_rollback=allow_misnumbered_rollback,
+                prefetch_full_package=True,
+            )
         detail = _exception_detail(exc)
         message = (
             detail
