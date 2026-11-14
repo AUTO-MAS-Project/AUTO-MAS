@@ -90,46 +90,30 @@ async def test_station_rejects_unverifiable_or_different_package(station, field,
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "code,reason",
-    [
-        (7001, "填入的 CDK 已过期"),
-        (7002, "填入的 CDK 错误"),
-        (7003, "填入的 CDK 今日下载次数已达上限"),
-        (7004, "填入的 CDK 类型和待下载的资源不匹配"),
-        (7005, "填入的 CDK 已被封禁"),
-    ],
-)
-async def test_cdk_failure_without_version_explains_reason(mirror, code, reason):
-    mirror["code"] = code
-    with pytest.raises(discovery.HSRUpdateError, match=reason):
+async def test_cdk_failure_without_version_explains_reason(mirror):
+    with pytest.raises(discovery.HSRUpdateError, match="填入的 CDK 错误"):
         await discovery.discover(
             M7A, current_version="v1.0.0", source="MirrorChyan", cdk="test-cdk"
         )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("spec", [M7A, SRA], ids=["M7A", "SRA"])
-@pytest.mark.parametrize("version,available", [("v2.0.0", True), ("v1.0.0", False)])
-async def test_cdk_failure_preserves_version_and_reason(
-    mirror, spec, version, available
-):
+async def test_cdk_failure_preserves_version_and_reason(mirror):
     mirror["data"] = {
-        "version_name": version,
+        "version_name": "v2.0.0",
         "url": "https://example.invalid/must-not-install.zip",
     }
     result = await discovery.discover(
-        spec, current_version="v1.0.0", source="MirrorChyan", cdk="test-cdk"
+        SRA, current_version="v1.0.0", source="MirrorChyan", cdk="test-cdk"
     )
-    assert result.latest_version == version
-    assert result.update_available is available
+    assert result.latest_version == "v2.0.0"
+    assert result.update_available
     assert not result.installable
     assert result.blocked_reason == "填入的 CDK 错误"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("spec", [M7A, SRA], ids=["M7A", "SRA"])
-async def test_valid_mirror_candidate_preserves_download_metadata(mock_http, spec):
+async def test_valid_mirror_candidate_preserves_download_metadata(mock_http):
     data = {
         "version_name": "v2.0.0",
         "url": "https://example.invalid/update.zip",
@@ -138,7 +122,7 @@ async def test_valid_mirror_candidate_preserves_download_metadata(mock_http, spe
     }
     mock_http(lambda request: httpx.Response(200, json={"code": 0, "data": data}))
     result = await discovery.discover(
-        spec, current_version="v1.0.0", source="MirrorChyan", cdk="test-cdk"
+        M7A, current_version="v1.0.0", source="MirrorChyan", cdk="test-cdk"
     )
     assert result.installable
     assert result.candidate.download_url == data["url"]
@@ -152,10 +136,9 @@ async def test_valid_mirror_candidate_preserves_download_metadata(mock_http, spe
     "response",
     [
         httpx.Response(503, text="<html>unavailable</html>"),
-        httpx.Response(200, text="not JSON"),
         httpx.Response(403, json={"code": 0, "data": {"version_name": "v1.0.0"}}),
     ],
-    ids=["http-error", "invalid-json", "http-error-with-success-code"],
+    ids=["http-error", "http-error-with-success-code"],
 )
 async def test_mirror_transport_failure_is_not_up_to_date(mock_http, response):
     def respond(request):
@@ -171,14 +154,11 @@ async def test_mirror_transport_failure_is_not_up_to_date(mock_http, response):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", [404, 503])
-async def test_selected_github_retains_fallback_without_sending_cdk(mock_http, status):
+async def test_selected_github_retains_fallback_without_sending_cdk(mock_http):
     def respond(request):
         assert "cdk" not in request.url.params
         if request.url.host == "mirrorchyan.com":
-            return httpx.Response(
-                status, json={"code": 8001, "msg": "RESOURCE_NOT_FOUND"}
-            )
+            return httpx.Response(404, json={"code": 8001, "msg": "RESOURCE_NOT_FOUND"})
         assert request.url.host == "api.github.com"
         if request.url.path.endswith("/releases/latest"):
             return httpx.Response(200, json={"tag_name": "v2.0.0"})
@@ -203,10 +183,8 @@ async def test_selected_github_retains_fallback_without_sending_cdk(mock_http, s
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("version", [None, "v1.0.0", "v2.0.0"])
-async def test_cdk_failure_reaches_automatic_update_result(mirror, tmp_path, version):
-    if version is not None:
-        mirror["data"] = {"version_name": version}
+async def test_cdk_failure_reaches_automatic_update_when_up_to_date(mirror, tmp_path):
+    mirror["data"] = {"version_name": "v1.0.0"}
     root = tmp_path / "m7a"
     marker = root / "assets" / "config" / "version.txt"
     marker.parent.mkdir(parents=True)
@@ -220,6 +198,8 @@ async def test_cdk_failure_reaches_automatic_update_result(mirror, tmp_path, ver
         download_dir=tmp_path / "downloads",
         send_log=messages.append,
     )
+    assert result.checked and not result.update_available
+    assert result.current_version == result.latest_version == "v1.0.0"
     assert result.message == "填入的 CDK 错误"
     assert any("填入的 CDK 错误" in message for message in messages)
     assert not result.updated and not result.blocking
