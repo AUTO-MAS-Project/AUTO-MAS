@@ -27,7 +27,7 @@ import psutil
 
 from app.utils import ProcessManager, get_logger, process
 from app.utils import io as _utils_io
-from app.utils.common.process.session import process_in_scope
+from app.utils.common.process.operations import iter_processes
 
 from .config import (
     is_src_config_available,
@@ -291,10 +291,8 @@ async def _kill_src_toolkit_processes(
         toolkit_context = _scan_src_toolkit_context(src_root_path)
     success = True
     try:
-        processes = psutil.process_iter(["pid", "name", "exe"])
+        processes = iter_processes(["pid", "name", "exe"])
         for process in processes:
-            if not process_in_scope(process.pid):
-                continue
             try:
                 process_info = process.info
             except (psutil.NoSuchProcess, psutil.ZombieProcess):

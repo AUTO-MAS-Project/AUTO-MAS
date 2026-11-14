@@ -125,12 +125,16 @@ from app.task.MaaFW.tools.core.worker_protocol import (
 from app.utils import UTC4, ProcessInfo, ProcessManager, get_logger, power
 from app.utils import game_apk as _utils_game_apk
 from app.utils import io as _utils_io
+from app.utils.common.process.operations import (
+    iter_processes,
+    managed_process,
+    terminate_process,
+)
 from app.utils.common.process.runner import create_subprocess, observe_process_exit
 from app.utils.common.process.scope import (
     current_process_scope,
     detached_process_context,
 )
-from app.utils.common.process.session import process_in_scope
 
 from .embedded_project import resolve_maafw_project_root
 from .flavor import (
@@ -4523,9 +4527,7 @@ def _match_controller_windows(controller: MaaFWController) -> list[Any]:
 
 def _is_process_path_running(executable_path: Path) -> bool:
     target_path = executable_path.resolve()
-    for proc in psutil.process_iter(["exe"]):
-        if not process_in_scope(proc.pid):
-            continue
+    for proc in iter_processes(["exe"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied, OSError):
             raw_exe = proc.info.get("exe") or proc.exe()
             if raw_exe and Path(raw_exe).resolve() == target_path:
@@ -4561,9 +4563,7 @@ def _normalized_exe(path: str | Path) -> str:
 
 def _snapshot_processes() -> list[_ProcessSnapshot]:
     snapshots: list[_ProcessSnapshot] = []
-    for proc in psutil.process_iter(["pid", "exe", "create_time"]):
-        if not process_in_scope(proc.pid):
-            continue
+    for proc in iter_processes(["pid", "exe", "create_time"]):
         info = proc.info
         snapshots.append(
             _ProcessSnapshot(
@@ -4634,16 +4634,17 @@ def _end_processes(
     started: dict[psutil.Process, _ProcessSnapshot] = {}
     failed: list[_ProcessSnapshot] = []
     for target in targets:
-        if not process_in_scope(target.pid):
-            continue
         try:
-            proc = psutil.Process(target.pid)
+            proc = managed_process(target.pid)
+            if proc is None:
+                continue
             if (
                 target.create_time is not None
                 and abs(proc.create_time() - target.create_time) > 1
             ):
                 continue
-            proc.terminate()
+            if not terminate_process(proc):
+                continue
         except psutil.NoSuchProcess:
             continue
         except (psutil.AccessDenied, OSError) as exc:
@@ -4656,7 +4657,7 @@ def _end_processes(
     _, alive = psutil.wait_procs(list(started), timeout=grace_seconds)
     for proc in alive:
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied, OSError):
-            proc.kill()
+            terminate_process(proc, force=True)
     if alive:
         _, alive = psutil.wait_procs(alive, timeout=grace_seconds)
     for proc in alive:

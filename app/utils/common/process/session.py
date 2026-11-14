@@ -1,10 +1,10 @@
-"""桌面分身执行器内的 Windows 进程归属限制。"""
+"""Windows 进程会话的归属核验。"""
 
 import os
-from functools import lru_cache
-from time import monotonic
+from collections.abc import Callable
 
 _expected: int | None = None
+_parent_scope: Callable[[], int | None] | None = None
 
 
 def bind_process_session(session_id: int) -> None:
@@ -17,26 +17,22 @@ def bind_process_session(session_id: int) -> None:
     _expected = session_id
 
 
+def configure_parent_scope(resolve: Callable[[], int | None]) -> None:
+    global _parent_scope
+    _parent_scope = resolve
+
+
 def restricted_session() -> int | None:
-    if _expected is not None or os.name != "nt":
+    if _expected is not None:
         return _expected
-    return _parent_session(int(monotonic()))
-
-
-@lru_cache(maxsize=1)
-def _parent_session(_second: int) -> int | None:
-    from app.utils.windows.desktop_session.native import child_session, process_session
-
-    try:
-        if child_session() is not None:
-            return process_session(os.getpid())
-    except OSError:
-        return None
-    return None
+    return _parent_scope() if _parent_scope is not None else None
 
 
 def process_in_scope(pid: int) -> bool:
-    session_id = restricted_session()
+    return matches_session(pid, restricted_session())
+
+
+def matches_session(pid: int, session_id: int | None) -> bool:
     if session_id is None:
         return True
     from app.utils.windows.desktop_session.native import process_session

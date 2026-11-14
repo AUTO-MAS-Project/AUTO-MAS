@@ -1,6 +1,7 @@
 """按路径查询及终止进程；调用方提供目标，不读取应用配置。"""
 
 import asyncio
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -8,9 +9,38 @@ import psutil
 
 from app.utils import get_logger, process_platform
 
-from .session import process_in_scope
+from .session import matches_session, process_in_scope, restricted_session
 
 logger = get_logger("进程操作")
+
+
+def iter_processes(attributes: list[str]) -> Iterator[psutil.Process]:
+    """枚举当前进程管理范围内的进程。"""
+    return processes_in_scope(psutil.process_iter(attributes))
+
+
+def processes_in_scope(processes: Iterable[psutil.Process]) -> Iterator[psutil.Process]:
+    """在同一轮枚举内使用一致的会话范围。"""
+    session_id = restricted_session()
+    return (
+        process for process in processes if matches_session(process.pid, session_id)
+    )
+
+
+def managed_process(pid: int) -> psutil.Process | None:
+    """只打开当前管理范围内的进程。"""
+    return psutil.Process(pid) if process_in_scope(pid) else None
+
+
+def terminate_process(process: psutil.Process, *, force: bool = False) -> bool:
+    """核验范围后发送终止请求，返回是否发送。"""
+    if not process_in_scope(process.pid):
+        return False
+    if force:
+        process.kill()
+    else:
+        process.terminate()
+    return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,7 +158,9 @@ async def _scan_processes_by_path(path: Path | str) -> _ProcessPathScan:
 
                 process_path = info.get("exe")
                 if process_path:
-                    if str(process_path).casefold() == target_path and process_in_scope(proc.pid):
+                    if str(process_path).casefold() == target_path and process_in_scope(
+                        proc.pid
+                    ):
                         pids.append(info["pid"])
                     continue
 

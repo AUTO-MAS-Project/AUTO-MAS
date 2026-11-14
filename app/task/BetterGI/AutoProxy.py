@@ -48,11 +48,10 @@ from app.utils import (
     LogMonitor,
     ProcessInfo,
     ProcessManager,
-    ProcessRunner,
     get_logger,
     process,
 )
-from app.utils.common.process.session import restricted_session
+from app.utils.common.process.runner import kill_windows_process_tree_by_image
 
 from .tools import (
     account_switch,
@@ -2282,11 +2281,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         """
         for image in names:
             try:
-                session_id = restricted_session()
-                session_filter = ("/FI", f"SESSION eq {session_id}") if session_id is not None else ()
-                result = await ProcessRunner.run_process(
-                    "taskkill", "/IM", image, "/F", "/T", *session_filter
-                )
+                result = await kill_windows_process_tree_by_image(image)
                 if result.returncode != 0:
                     reason = (result.stderr or result.stdout or "").strip()
                     if "没有找到进程" in reason or "not found" in reason.lower():

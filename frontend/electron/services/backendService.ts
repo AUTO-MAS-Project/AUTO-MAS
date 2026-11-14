@@ -9,7 +9,11 @@ import { captureScheduledWakeupContext, scheduledWakeupBackendReady } from './sc
 
 import * as fs from 'fs'
 import { resolveHttpPort } from './instanceConfig'
-import { desktopSessionControlToken, isDesktopSessionTransition } from './desktopSessionControl'
+import {
+  desktopSessionControlToken,
+  getDesktopSessionChildId,
+  isDesktopSessionTransition,
+} from './desktopSessionControl'
 
 import {
   RUNTIME_CLIENT_ERROR_DEFINITIONS,
@@ -322,6 +326,7 @@ export class BackendService {
       env: {
         ...getFluxdownInstallEnvironment(),
         AUTO_MAS_DESKTOP_CONTROL_TOKEN: desktopSessionControlToken,
+        AUTO_MAS_DESKTOP_PARENT_CHILD_SESSION: getDesktopSessionChildId()?.toString(),
         AUTO_MAS_DESKTOP_RESUME: options?.resumeDesktopSession ? '1' : undefined,
         AUTO_MAS_SCHEDULED_WAKEUP: wakeup.scheduledWakeup ? '1' : undefined,
         // resume 先于第二实例事件，是否有待运行定时由后端配置判定。

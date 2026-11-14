@@ -30,7 +30,7 @@ import psutil
 
 from app.utils import ProcessManager, compare_mirrorchyan_versions, get_logger
 from app.utils import io as _utils_io
-from app.utils.common.process.session import process_in_scope
+from app.utils.common.process.operations import iter_processes, terminate_process
 
 logger = get_logger("MaaEnd 更新接管")
 
@@ -161,8 +161,8 @@ def _find_executable_processes(executable: Path) -> list[psutil.Process]:
     expected = os.path.normcase(os.path.abspath(executable))
     return [
         process
-        for process in psutil.process_iter(["exe"])
-        if process_in_scope(process.pid) and process.info["exe"]
+        for process in iter_processes(["exe"])
+        if process.info["exe"]
         and os.path.normcase(os.path.abspath(process.info["exe"])) == expected
     ]
 
@@ -170,19 +170,15 @@ def _find_executable_processes(executable: Path) -> list[psutil.Process]:
 def _terminate_processes(processes: list[psutil.Process]) -> None:
     active: list[psutil.Process] = []
     for process in processes:
-        if not process_in_scope(process.pid):
-            continue
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied, OSError):
-            process.terminate()
-            active.append(process)
+            if terminate_process(process):
+                active.append(process)
     if not active:
         return
     _, alive = psutil.wait_procs(active, timeout=_PROCESS_STOP_TIMEOUT)
     for process in alive:
-        if not process_in_scope(process.pid):
-            continue
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied, OSError):
-            process.kill()
+            terminate_process(process, force=True)
     if alive:
         _, alive = psutil.wait_procs(alive, timeout=_PROCESS_STOP_TIMEOUT)
     if alive:

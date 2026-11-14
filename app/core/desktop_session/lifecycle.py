@@ -8,12 +8,18 @@ from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field, ValidationError
 from starlette.responses import JSONResponse
 
-from .ownership import CONTROL_TOKEN, EXECUTOR_SESSION, EXECUTOR_TOKEN
+from .ownership import (
+    CONTROL_TOKEN,
+    EXECUTOR_SESSION,
+    EXECUTOR_TOKEN,
+    PARENT_CHILD_SESSION,
+)
 
 # 普通 API 和上下游进程不需要知道控制凭据。
 _control_token = os.environ.pop(CONTROL_TOKEN, "")
 _executor_token = os.environ.pop(EXECUTOR_TOKEN, "")
 _executor_session = os.environ.pop(EXECUTOR_SESSION, "")
+_parent_child_session = os.environ.pop(PARENT_CHILD_SESSION, "")
 _handoff = False
 _commands_inflight = 0
 CONTROL_HEADER = "x-mas-desktop-session"
@@ -21,6 +27,11 @@ CONTROL_HEADER = "x-mas-desktop-session"
 
 class QueueSelection(BaseModel):
     queueIds: list[UUID] = Field(min_length=1, max_length=100)
+
+
+class ParentProcessScope(BaseModel):
+    sessionId: int | None = Field(gt=0, le=0xFFFFFFFE)
+    connecting: bool = False
 
 
 def executor_session() -> int | None:
@@ -56,12 +67,43 @@ def install_control(app: FastAPI) -> None:
     from app.core import Config, Power, ShutdownCoordinator, TaskManager
     from app.models.task import TaskMode
     from app.utils import get_logger
+    from app.utils.common.process.session import configure_parent_scope
     from app.utils.contracts.power import PowerSignal
 
     lock = asyncio.Lock()
     draining = False
     inflight = 0
     logger = get_logger("桌面分身")
+
+    scope_state = (
+        int(_parent_child_session) if _parent_child_session else None,
+        False,
+        None,
+    )
+    if _control_token and not _executor_session:
+        from app.utils.windows.desktop_session.native import (
+            child_session,
+            process_session,
+        )
+
+        parent_session = process_session(os.getpid())
+
+        def parent_scope() -> int | None:
+            tracked_session, connecting, baseline_session = scope_state
+            if tracked_session is None and not connecting:
+                return None
+            try:
+                current = child_session()
+                if current is not None and (
+                    current == tracked_session
+                    or (connecting and current != baseline_session)
+                ):
+                    return parent_session
+            except OSError:
+                return parent_session
+            return None
+
+        configure_parent_scope(parent_scope)
 
     async def guard(scope, receive, send, application):
         nonlocal inflight
@@ -146,6 +188,23 @@ def install_control(app: FastAPI) -> None:
             "source": str(Config.source_path),
             "root": str(Config.work_path),
         }
+
+    @app.post("/internal/desktop-session/process-scope", include_in_schema=False)
+    async def process_scope(
+        request: Request, scope: ParentProcessScope
+    ) -> dict[str, bool]:
+        nonlocal scope_state
+        authorize(request, child=False)
+        from app.utils.windows.desktop_session.native import child_session
+
+        baseline = None
+        if scope.connecting:
+            try:
+                baseline = child_session()
+            except OSError as exc:
+                logger.warning(f"连接前无法读取 Windows 子会话: {exc}")
+        scope_state = (scope.sessionId, scope.connecting, baseline)
+        return {"updated": True}
 
     @app.post("/internal/desktop-session/handoff", include_in_schema=False)
     async def handoff(request: Request):

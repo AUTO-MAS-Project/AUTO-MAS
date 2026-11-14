@@ -12,6 +12,7 @@ import { getApplicationEnvironment } from './instanceConfig'
 import { beginMainFeature } from './featureAnalytics'
 import {
   desktopSessionControlToken,
+  setDesktopSessionChildId,
   setDesktopSessionEndpoint,
   setDesktopSessionTransition,
 } from './desktopSessionControl'
@@ -350,10 +351,13 @@ export class DesktopSessionService {
       this.snapshot.state !== 'connected'
         ? beginMainFeature('desktop_session_connection_finished')
         : null
+    let publishingConnection = false
     try {
       await this.ensureHost()
       if (this.snapshot.state !== 'connected') {
         if (this.snapshot.state === 'disconnected') await this.closeViewer()
+        publishingConnection = true
+        await this.updateParentScope(null, true)
         const event = await this.exchange(
           {
             action: 'connect',
@@ -375,6 +379,10 @@ export class DesktopSessionService {
               : 'connection_failed'
           )
         }
+        const sessionId = this.snapshot.sessionId
+        if (sessionId === undefined) throw new DesktopSessionError('session_changed')
+        await this.updateParentScope(sessionId)
+        publishingConnection = false
         this.changeVolume(this.volume)
         connection?.finish({ outcome: 'success', reason_kind: 'none' })
       }
@@ -402,6 +410,13 @@ export class DesktopSessionService {
       this.scheduleMonitor()
       return { queues: result.results }
     } catch (error) {
+      if (publishingConnection) {
+        try {
+          await this.closeViewer()
+        } catch {
+          this.log('process_scope_cleanup_failed')
+        }
+      }
       const code = error instanceof DesktopSessionError ? error.message : 'desktop_session_failed'
       const reason =
         code === 'environment_blocked'
@@ -419,6 +434,21 @@ export class DesktopSessionService {
     } finally {
       delete input.password
     }
+  }
+
+  private async updateParentScope(sessionId: number | null, connecting = false): Promise<void> {
+    setDesktopSessionChildId(sessionId)
+    if (this.transferred || !this.runtime) return
+    await request(
+      getLocalApiEndpoint(),
+      internal + 'process-scope',
+      desktopSessionControlToken,
+      {
+        sessionId,
+        connecting,
+      },
+      5000
+    )
   }
 
   private async transfer(): Promise<void> {
@@ -586,7 +616,7 @@ export class DesktopSessionService {
     }
   }
 
-  private async closeViewer(): Promise<void> {
+  private async closeViewer(updateParent = true): Promise<void> {
     const orphanedSessionId = this.orphanedSessionId
     if (orphanedSessionId !== undefined) await this.ensureHost()
     if (!this.host) return
@@ -599,6 +629,8 @@ export class DesktopSessionService {
     )
     if (result.event === 'command_error') throw new DesktopSessionError('logoff_failed')
     this.orphanedSessionId = undefined
+    if (updateParent) await this.updateParentScope(null)
+    else setDesktopSessionChildId(null)
   }
 
   async close(closing: boolean): Promise<void> {
@@ -606,6 +638,7 @@ export class DesktopSessionService {
     try {
       if (this.startOperation) await this.startOperation
       const needsRecovery = this.orphanedSessionId !== undefined
+      const parentWillStayStopped = closing && this.transferred
       if (needsRecovery) {
         // 原宿主已退出，由新宿主核验并注销后才能恢复配置写入。
         await this.closeViewer()
@@ -614,7 +647,7 @@ export class DesktopSessionService {
         this.runningTaskIds.clear()
       }
       await this.finish(closing)
-      if (!needsRecovery) await this.closeViewer()
+      if (!needsRecovery) await this.closeViewer(!parentWillStayStopped)
       this.host?.stdin.end()
       this.host = null
       this.volume = 0
