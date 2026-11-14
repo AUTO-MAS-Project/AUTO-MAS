@@ -39,7 +39,7 @@
 - **引用**：`Annotated[UUID | str, ref(target_name, ...)]`。目标是已登记的命名集合；`entry_types` 通过 `isinstance` 接受子类。删除及 `reload_type/replace_type` 后统一重校验，复用 `SET_DEFAULT/RESTRICT/CASCADE/CUSTOM` 策略。`display_field="Info.Name"` 的选项值为 UUID、展示值来自目标字段；候选值和类型过滤由框架 UI 元数据统一计算。
 - **响应式**：`Virtual[T]` 与同步 `@virtual_field("Group.Field")` 配对，计算值只读；`Trigger[bool]` 或 `Trigger[Literal[...]]` 与 `@trigger_field(...)` 配对。触发器立即分派，异步处理另建任务，不能当作普通信号的事务内修改或假定 `commit()` 等待它完成。
 - **显隐**：统一使用 `ui(visibility=...)` 或 `@ui_visibility(...)`；`SHOW/HIDE/DISABLE/MASKED` 分别表达正常、隐藏、禁用与掩码。所有子项隐藏时组隐藏，掩码限具体字段。`UI_MASKED_VALUE` 原样回传表示保持现值，不是待保存的真实内容。UI 元数据能力不自动授权增加动态表单或触发器交互。
-- **字段兼容**：统一使用 `legacy(group=..., name=..., convert=...)`，在输入准备和激活时集中转换并校验；显式目标字段（含 `None`）优先。不新增并行别名、放宽类型标记或 API 搬运逻辑。
+- **字段迁移**：统一使用 `legacy(group=..., name=..., convert=...)`，在输入准备和激活时集中转换并校验；显式目标字段（含 `None`）优先。转换后只使用当前字段，不新增并行别名、放宽类型标记或 API 搬运逻辑。
 
 ## 生命周期、赋值与集合
 

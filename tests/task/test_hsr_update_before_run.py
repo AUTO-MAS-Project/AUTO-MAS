@@ -9,10 +9,10 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from app.task.legacy import TaskExecuteBase
 from app.task.HSR import manager
 from app.task.HSR.tools import update
 from app.task.HSR.tools.update import apply as installer
+from app.task.legacy import TaskExecuteBase
 
 
 @pytest.fixture
@@ -502,16 +502,18 @@ def test_rollback_journal_validates_all_entries_before_mutating(tmp_path):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("engine", ["M7A", "SRA"])
+@pytest.mark.parametrize(
+    "engine,source", [("M7A", "GitHub"), ("SRA", "GitHub"), ("SRA", "AutoSite")]
+)
 async def test_cancelled_builtin_prefetch_removes_private_partial(
-    tmp_path, monkeypatch, engine
+    tmp_path, monkeypatch, engine, source
 ):
     """Cancel after actual HSR download dispatch has written some bytes."""
     from app.task.HSR.tools.update import download as transport
     from app.task.HSR.tools.update.discover import DiscoveryResult, UpdateCandidate
 
     candidate = UpdateCandidate(
-        engine, "1.0", "2.0", "GitHub", "zip", "https://example.invalid/pkg"
+        engine, "1.0", "2.0", source, "zip", "https://example.invalid/pkg"
     )
     monkeypatch.setattr(
         update,
@@ -522,9 +524,11 @@ async def test_cancelled_builtin_prefetch_removes_private_partial(
     started = asyncio.Event()
 
     async def interrupted(_url, destination, **_kwargs):
-        destination.write_bytes(b"partial bytes")
-        started.set()
-        await asyncio.Event().wait()
+        with destination.open("wb") as handle:
+            handle.write(b"partial bytes")
+            handle.flush()
+            started.set()
+            await asyncio.Event().wait()
 
     monkeypatch.setattr(transport, "download_script_package", interrupted)
     root = tmp_path / "script"
@@ -534,7 +538,7 @@ async def test_cancelled_builtin_prefetch_removes_private_partial(
         update.prepare_engine_update(
             engine,
             root,
-            source="GitHub",
+            source=source,
             channel="stable",
             cdk="",
             proxy=None,
@@ -542,14 +546,17 @@ async def test_cancelled_builtin_prefetch_removes_private_partial(
         )
     )
     await asyncio.wait_for(started.wait(), 3)
+    assert list(downloads.rglob("*.part"))
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
     assert not list(downloads.rglob("*.part"))
     assert not list(downloads.iterdir())
+    assert root.is_dir()
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("engine,source", [("M7A", "GitHub"), ("SRA", "AutoSite")])
 @pytest.mark.parametrize(
     "failure,keep",
     [
@@ -559,7 +566,7 @@ async def test_cancelled_builtin_prefetch_removes_private_partial(
     ],
 )
 async def test_hsr_prefetch_failure_releases_only_owned_files(
-    tmp_path, monkeypatch, failure, keep
+    tmp_path, monkeypatch, failure, keep, engine, source
 ):
     """Do not delete FluxDown-owned segments from an unreturned candidate."""
     from app.services.common.update.fluxdown import FluxdownResumableError
@@ -568,12 +575,12 @@ async def test_hsr_prefetch_failure_releases_only_owned_files(
     from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
     candidate = UpdateCandidate(
-        "M7A", "1.0", "2.0", "GitHub", "zip", "https://example.invalid/pkg"
+        engine, "1.0", "2.0", source, "zip", "https://example.invalid/pkg"
     )
     monkeypatch.setattr(
         update,
         "check_engine_update",
-        AsyncMock(return_value=DiscoveryResult("M7A", "1.0", "2.0", True, candidate)),
+        AsyncMock(return_value=DiscoveryResult(engine, "1.0", "2.0", True, candidate)),
     )
     monkeypatch.setattr(update, "_remote_size", AsyncMock(return_value=0))
     monkeypatch.setattr(transport, "_RETRY_DELAY", 0)
@@ -597,9 +604,9 @@ async def test_hsr_prefetch_failure_releases_only_owned_files(
     }[failure]
     with pytest.raises(exception):
         await update.prepare_engine_update(
-            "M7A",
+            engine,
             root,
-            source="GitHub",
+            source=source,
             channel="stable",
             cdk="",
             proxy=None,
@@ -610,16 +617,19 @@ async def test_hsr_prefetch_failure_releases_only_owned_files(
 
 
 @pytest.mark.asyncio
-async def test_hsr_prefetch_digest_failure_cleans_package(tmp_path, monkeypatch):
+@pytest.mark.parametrize("engine,source", [("M7A", "GitHub"), ("SRA", "AutoSite")])
+async def test_hsr_prefetch_digest_failure_cleans_package(
+    tmp_path, monkeypatch, engine, source
+):
     from app.task.HSR.tools.update.discover import DiscoveryResult, UpdateCandidate
 
     candidate = UpdateCandidate(
-        "M7A", "1.0", "2.0", "GitHub", "zip", "https://example.invalid/pkg"
+        engine, "1.0", "2.0", source, "zip", "https://example.invalid/pkg"
     )
     monkeypatch.setattr(
         update,
         "check_engine_update",
-        AsyncMock(return_value=DiscoveryResult("M7A", "1.0", "2.0", True, candidate)),
+        AsyncMock(return_value=DiscoveryResult(engine, "1.0", "2.0", True, candidate)),
     )
 
     async def downloaded(_candidate, package, **_kwargs):
@@ -636,9 +646,9 @@ async def test_hsr_prefetch_digest_failure_cleans_package(tmp_path, monkeypatch)
     downloads = tmp_path / "downloads"
     with pytest.raises(OSError, match="digest failed"):
         await update.prepare_engine_update(
-            "M7A",
+            engine,
             root,
-            source="GitHub",
+            source=source,
             channel="stable",
             cdk="",
             proxy=None,
@@ -668,95 +678,6 @@ def hsr_prefetch_case(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(update, "_remote_size", AsyncMock(return_value=0))
     return install, download_dir, candidate
-
-
-@pytest.mark.asyncio
-async def test_prefetch_cancel_after_partial_builtin_download_removes_private_directory(
-    hsr_prefetch_case, monkeypatch
-):
-    """Cancellation through prepare_engine_update must reclaim the UUID stage."""
-    from app.task.HSR.tools.update import download as hsr_download
-
-    install, download_dir, _ = hsr_prefetch_case
-    started = asyncio.Event()
-
-    async def partial_download(_url, destination, **_kwargs):
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        # Keep a real OS handle open until the coroutine receives cancellation.
-        with destination.open("wb") as handle:
-            handle.write(b"downloaded-but-not-verified")
-            handle.flush()
-            started.set()
-            await asyncio.Event().wait()
-
-    monkeypatch.setattr(hsr_download, "download_script_package", partial_download)
-    task = asyncio.create_task(
-        update.prepare_engine_update(
-            "SRA",
-            install,
-            source="AutoSite",
-            channel="stable",
-            cdk="",
-            proxy=None,
-            download_dir=download_dir,
-        )
-    )
-    await asyncio.wait_for(started.wait(), 3)
-    assert list(download_dir.rglob("*.part"))
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await asyncio.wait_for(task, 3)
-    assert not list(download_dir.iterdir())
-    assert install.is_dir()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("failure", ["ordinary", "resumable", "writer-unconfirmed"])
-async def test_prefetch_failure_cleans_only_when_downloader_releases_ownership(
-    hsr_prefetch_case, monkeypatch, failure
-):
-    from app.services.common.update.fluxdown import FluxdownResumableError
-    from app.task.HSR.tools.update import download as hsr_download
-    from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
-
-    install, download_dir, _ = hsr_prefetch_case
-    monkeypatch.setattr(hsr_download, "_RETRIES", 1)
-
-    async def partial_download(_url, destination, **_kwargs):
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(b"partial")
-        if failure == "resumable":
-            raise FluxdownResumableError("server task can resume")
-        if failure == "writer-unconfirmed":
-            raise FluxdownCancelUnconfirmed("server writer may be active")
-        raise OSError("network lost")
-
-    monkeypatch.setattr(hsr_download, "download_script_package", partial_download)
-    exception = (
-        FluxdownResumableError
-        if failure == "resumable"
-        else (
-            FluxdownCancelUnconfirmed
-            if failure == "writer-unconfirmed"
-            else update.HSRUpdateError
-        )
-    )
-    with pytest.raises(exception):
-        await update.prepare_engine_update(
-            "SRA",
-            install,
-            source="AutoSite",
-            channel="stable",
-            cdk="",
-            proxy=None,
-            download_dir=download_dir,
-        )
-    stages = list(download_dir.iterdir()) if download_dir.exists() else []
-    if failure in ("ordinary", "resumable"):
-        assert not stages
-    else:
-        assert len(stages) == 1
-        assert list(stages[0].glob("*.part"))[0].read_bytes() == b"partial"
 
 
 @pytest.mark.asyncio
@@ -805,34 +726,6 @@ async def test_prefetch_verified_package_transfers_ownership_to_candidate(
     assert prepared.digest == hashlib.sha256(payload).hexdigest()
     assert len(list(download_dir.iterdir())) == 1
     update.discard_prepared_update(prepared)
-    assert not list(download_dir.iterdir())
-
-
-@pytest.mark.asyncio
-async def test_prefetch_digest_failure_reclaims_private_directory(
-    hsr_prefetch_case, monkeypatch
-):
-    install, download_dir, _ = hsr_prefetch_case
-
-    async def download(_candidate, package, **_kwargs):
-        package.parent.mkdir(parents=True, exist_ok=True)
-        package.write_bytes(b"bad file")
-        return package
-
-    monkeypatch.setattr(update, "_download_with_space_check", download)
-    monkeypatch.setattr(
-        update, "_package_digest", Mock(side_effect=OSError("hash failure"))
-    )
-    with pytest.raises(OSError, match="hash failure"):
-        await update.prepare_engine_update(
-            "SRA",
-            install,
-            source="AutoSite",
-            channel="stable",
-            cdk="",
-            proxy=None,
-            download_dir=download_dir,
-        )
     assert not list(download_dir.iterdir())
 
 
@@ -1022,12 +915,12 @@ async def test_module_verdict_remains_independent_of_deferred_prefetch(
     from functools import partial
 
     from app.config import ConfigCollection
-    from tests.runtime_support import create_runtime_tree
     from app.models.config import HSRConfig, HSRUserConfig
     from app.task.HSR.AutoProxy import HSRAutoProxyTask
     from app.task.HSR.tools.run_model import HSRRunItem, HSRRuntimeState
     from app.task.HSR.tools.sra_control import _on_sra_weekly_success
     from app.task.HSR.tools.sra_runtime import SRACommandResult
+    from tests.runtime_support import create_runtime_tree
 
     users = ConfigCollection.build([HSRUserConfig])
     await users.activate()

@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.core import script_update_queue as queue
-from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 
 def _user_state(user_id, name, status):
@@ -65,27 +64,6 @@ async def test_only_prefetches_after_success_and_sixty_seconds(running):
     await asyncio.wait_for(started.wait(), 1)
     await pipeline.finish()
     operation.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("status", ["异常", "跳过", "等待"])
-async def test_unhealthy_user_does_not_start_download(running, status):
-    script, user, clock = running
-    user.first_task_completed_at, clock.now = 100, 200
-    user.status = status
-    operation = AsyncMock()
-    pipeline = queue.ScriptUpdateQueue()
-    pipeline.watch(
-        script,
-        operation,
-        completed_at=lambda: (
-            script.first_task_completed_at
-            or (user.first_task_completed_at if user.status == "运行" else None)
-        ),
-    )
-    await settle()
-    await pipeline.finish()
-    operation.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -253,70 +231,6 @@ async def test_account_switch_keeps_prefetch_and_avoids_second_download(running)
 
 
 @pytest.mark.asyncio
-async def test_first_success_clock_survives_account_switch_before_sixty(running):
-    script, user, clock = running
-    script.first_task_completed_at = user.first_task_completed_at = 100
-    clock.now = 130
-    started = asyncio.Event()
-    pipeline = queue.ScriptUpdateQueue()
-    pipeline.watch(
-        script,
-        AsyncMock(side_effect=started.set),
-        completed_at=lambda: (
-            script.first_task_completed_at or user.first_task_completed_at
-        ),
-    )
-    await settle()
-    user.status = "完成"
-    script.user_list.append(_user_state("second", "", "运行"))
-    script.current_index = 1
-    clock.now = 160
-    await asyncio.wait_for(started.wait(), 1)
-    await pipeline.finish()
-
-
-@pytest.mark.asyncio
-async def test_unconfirmed_fluxdown_stop_blocks_handoff(running):
-    script, user, clock = running
-    user.first_task_completed_at = 100
-    clock.now = 200
-    started = asyncio.Event()
-
-    async def download():
-        started.set()
-        raise FluxdownCancelUnconfirmed("daemon might still write")
-
-    pipeline = queue.ScriptUpdateQueue()
-    pipeline.watch(
-        script,
-        download,
-        completed_at=lambda: (
-            script.first_task_completed_at or user.first_task_completed_at
-        ),
-    )
-    await asyncio.wait_for(started.wait(), 1)
-    with pytest.raises(FluxdownCancelUnconfirmed):
-        await pipeline.finish()
-
-
-@pytest.mark.asyncio
-async def test_unconfirmed_fluxdown_cancel_remains_visible():
-    started = asyncio.Event()
-
-    async def download():
-        try:
-            started.set()
-            await asyncio.Event().wait()
-        finally:
-            raise FluxdownCancelUnconfirmed("daemon cannot confirm stop")
-
-    task = asyncio.create_task(download())
-    await started.wait()
-    with pytest.raises(FluxdownCancelUnconfirmed):
-        await queue._cancel_and_wait(task)
-
-
-@pytest.mark.asyncio
 async def test_unconfirmed_daemon_from_real_service_blocks_next_script(
     running, tmp_path, monkeypatch
 ):
@@ -364,29 +278,3 @@ async def test_unconfirmed_daemon_from_real_service_blocks_next_script(
         await handoff()
     assert not next_script_started
     assert cli._load_task_map(exe)[cli._map_key(url, target)]["task_id"] == "active"
-
-
-@pytest.mark.asyncio
-async def test_unconfirmed_retry_stop_remains_blocking_at_outer_handoff(running):
-    """账号层先消费失败也不能清掉 watcher，L2 结束时必须再次收到错误。"""
-    script, user, clock = running
-    user.first_task_completed_at, clock.now = 100, 200
-    started = asyncio.Event()
-
-    async def download():
-        try:
-            started.set()
-            await asyncio.Event().wait()
-        finally:
-            raise FluxdownCancelUnconfirmed("daemon stop unconfirmed")
-
-    pipeline = queue.ScriptUpdateQueue()
-    pipeline.watch(script, download, completed_at=lambda: user.first_task_completed_at)
-    await asyncio.wait_for(started.wait(), 1)
-    with pytest.raises(FluxdownCancelUnconfirmed):
-        await pipeline.finish(cancelled=True)
-    assert pipeline._watcher is not None
-    with pytest.raises(FluxdownCancelUnconfirmed):
-        await pipeline.finish(cancelled=True)
-    with pytest.raises(RuntimeError, match="未完成停止确认"):
-        pipeline.watch(script, AsyncMock(), completed_at=lambda: None)

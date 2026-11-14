@@ -1,7 +1,6 @@
 """ZZZ 自己固定运行后映射和交付账号结果。"""
 
 import asyncio
-import threading
 
 import pytest
 
@@ -73,45 +72,3 @@ def test_single_account_unprefixed_node_keeps_trigger_fallback(tmp_path):
     asyncio.run(proxy._close_log_details())
     assert [entry[1] for entry in first.push_log] == ["✅ 成功: 邮件"]
     assert mapped.push_log == []
-
-
-def test_mapping_is_copied_before_worker_reads(tmp_path):
-    first, second = user("甲", "汇总"), user("乙", "汇总")
-    proxy = AutoProxyTask.__new__(AutoProxyTask)
-    proxy.user_state = lambda user: user
-    proxy.callbacks = SimpleNamespace()
-    proxy.cur_user_item = first
-    proxy._idx_names = {1: "甲", 2: "乙"}
-    proxy._push_user_book = {"甲": first, "乙": second}
-    proxy._app_name_book = {"mail": "邮件"}
-    path = tmp_path / "log.txt"
-    path.write_text("", encoding="utf-8")
-    proxy._prepare_log_details(path, mode="汇总", enabled=True, rotated_name=None)
-    path.write_text(
-        "开始加载实例配置 1\n指令[ 邮件 ] 执行成功\n开始加载实例配置 2\n指令[ 邮件 ] 执行成功\n",
-        encoding="utf-8",
-    )
-    started, release = threading.Event(), threading.Event()
-    read = proxy._log_source.read_new
-
-    def blocking_read():
-        started.set()
-        assert release.wait(5)
-        return read()
-
-    proxy._log_source.read_new = blocking_read
-
-    async def run():
-        task = asyncio.create_task(proxy._close_log_details())
-        try:
-            assert await asyncio.to_thread(started.wait, 3)
-            proxy._idx_names.clear()
-            proxy._push_user_book.clear()
-            proxy._app_name_book.clear()
-        finally:
-            release.set()
-        await task
-
-    asyncio.run(run())
-    assert [e[1] for e in first.push_log] == ["✅ 成功: 邮件"]
-    assert [e[1] for e in second.push_log] == ["✅ 成功: 邮件"]

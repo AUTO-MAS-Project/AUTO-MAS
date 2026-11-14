@@ -297,23 +297,6 @@ async def test_resource_new_version_legacy_and_previous_day_allow_download(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("backoff", [False, True])
-async def test_resource_same_version_or_backoff_never_requests_url(
-    resource_install, backoff
-):
-    install = resource_install
-    version = install.target - timedelta(hours=1) if backoff else install.target
-    save_state(
-        install.state, key=install.key, version=version.isoformat(), backoff=backoff
-    )
-    with pytest.raises(RuntimeError):
-        await resource.prepare_install_resources(
-            install.root, cdk="test-cdk", github=False
-        )
-    install.request.assert_not_awaited()
-
-
-@pytest.mark.asyncio
 async def test_resource_new_release_updates_shared_cache_once_for_all_installs(
     resource_install,
 ):

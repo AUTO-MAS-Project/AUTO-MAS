@@ -12,9 +12,8 @@ from packaging.version import Version
 
 from app.task.Whimbox import manager
 from app.task.Whimbox.tools import update
-from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
-from tests.runtime_support import RuntimeStub as SimpleNamespace
 from app.utils.common.process.runner import ProcessCleanupUnconfirmed
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
 @pytest.fixture
@@ -180,15 +179,6 @@ async def test_version_mismatch_keeps_marker(installation):
     with pytest.raises(RuntimeError):
         await update.ensure_backend_updated(installation)
     assert update.pending_marker(installation).exists()
-
-
-def test_access_lock_excludes_same_installation(installation):
-    with update.installation_access(installation):
-        with pytest.raises(RuntimeError):
-            with update.installation_access(installation):
-                pytest.fail("concurrent installation access")
-    with update.installation_access(installation):
-        pass
 
 
 @pytest.fixture

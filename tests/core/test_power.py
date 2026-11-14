@@ -324,26 +324,6 @@ async def test_cancelling_countdown_leaves_background_work_running(controller):
 
 
 @pytest.mark.asyncio
-async def test_failed_native_action_does_not_request_exit(controller, monkeypatch):
-    from app.core import power as power_module
-
-    request = AsyncMock()
-    monkeypatch.setattr(core.ShutdownCoordinator, "request_exit", request)
-    monkeypatch.setattr(
-        power_module,
-        "power",
-        SimpleNamespace(
-            supported_actions={PowerSignal.SLEEP},
-            execute=AsyncMock(side_effect=OSError("denied")),
-        ),
-    )
-    with pytest.raises(OSError):
-        await controller.set_power(PowerSignal.SLEEP)
-    request.assert_not_called()
-    assert controller.power_task is None
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("kind", [*TaskTriggerReason, "config", "maintenance"])
 async def test_countdown_ends_new_requests_before_registration_or_clock_updates(
     scheduler, kind

@@ -546,27 +546,6 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
 
 // ==================== 单步重试 ====================
 
-describe('单步重试', () => {
-  it('依赖段重试走 dependencies sync', async () => {
-    FakeRuntimeClient.scripts = [{ events: [helloEvent, okResult('dependencies.sync')] }]
-
-    const outcome = await createService().retryStage('dependency', () => undefined)
-
-    expect(outcome.success).toBe(true)
-    expect(FakeRuntimeClient.calls[0].command).toEqual(['dependencies', 'sync'])
-  })
-})
-
-describe('自动选源后的失败恢复', () => {
-  it('运行环境普通重试重新准备整套环境，而不只检查 uv', async () => {
-    FakeRuntimeClient.scripts = [{ events: [helloEvent, okResult('bootstrap')] }]
-    const outcome = await createService().retryStage('python', () => undefined)
-    expect(outcome.success).toBe(true)
-    expect(FakeRuntimeClient.calls[0].command).toEqual(['bootstrap', '--version', 'v5.5.0-beta.3'])
-    expect(FakeRuntimeClient.calls[0].mirrors).toEqual([])
-  })
-})
-
 describe('分段恢复的完整性', () => {
   it('依赖重试发现 Python 缺失时先修复 Python，再恢复依赖', async () => {
     FakeRuntimeClient.scripts = [

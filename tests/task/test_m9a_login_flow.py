@@ -204,18 +204,36 @@ def test_privacy_prompt_clicked_when_switch_on(monkeypatch) -> None:
     assert device.taps == [(55, 70, 10, 10)]
 
 
-def test_empty_frames_do_not_declare_success(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "screens",
+    [
+        [_PANEL_SCREEN, _UNKNOWN_SCREEN],
+        [_TITLE_SCREEN, _UNKNOWN_SCREEN, _TITLE_SCREEN, _UNKNOWN_SCREEN],
+    ],
+    ids=["empty", "alternating-title"],
+)
+def test_unconfirmed_title_frames_do_not_declare_success(monkeypatch, screens) -> None:
+    """空帧或标题页交替出现都不能凑成连续两帧的交接确认。"""
     _fast(monkeypatch)
-    device = _install_fake_device(monkeypatch, [_PANEL_SCREEN, _UNKNOWN_SCREEN])
+    device = _install_fake_device(monkeypatch, screens)
     with pytest.raises(MaaFWLoginRequired, match="未确认回到游戏标题页"):
         asyncio.run(login_mod._wait_panel_closed(device, progress=None))
 
 
-def test_title_frames_confirm_handover(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "title",
+    [
+        _TITLE_SCREEN,
+        _WELCOME_SCREEN,
+        [("ERSE", (55, 60, 15, 4)), ("V4.1.0-113.0.1421-180", (5, 2, 20, 5))],
+        [("REVERSE", (55, 60, 15, 4)), ("V4.1.0-113.0.1421-180", (5, 2, 20, 5))],
+    ],
+    ids=["start", "welcome", "logo-fragment", "logo"],
+)
+def test_title_frames_confirm_handover(monkeypatch, title) -> None:
+    """START 漏识或被欢迎横幅盖住时，标题 logo 和欢迎横幅也能确认交接。"""
     _fast(monkeypatch)
-    device = _install_fake_device(
-        monkeypatch, [_PANEL_SCREEN, _TITLE_SCREEN, _TITLE_SCREEN]
-    )
+    device = _install_fake_device(monkeypatch, [_PANEL_SCREEN, title, title])
     message = asyncio.run(login_mod._wait_panel_closed(device, progress=None))
     assert "已确认回到游戏标题页" in message
 
@@ -295,16 +313,6 @@ def test_privacy_prompt_persists_until_timeout(monkeypatch) -> None:
         asyncio.run(_run_login())
     # 每轮都点到了「同意」，没有因为点不动就提前判成功
     assert device.taps
-
-
-def test_alternating_title_and_empty_frames_do_not_succeed(monkeypatch) -> None:
-    """标题页与空帧交替时凑不出连续两帧，不能提前判完成。"""
-    _fast(monkeypatch)
-    device = _install_fake_device(
-        monkeypatch, [_TITLE_SCREEN, _UNKNOWN_SCREEN, _TITLE_SCREEN, _UNKNOWN_SCREEN]
-    )
-    with pytest.raises(MaaFWLoginRequired, match="未确认回到游戏标题页"):
-        asyncio.run(login_mod._wait_panel_closed(device, progress=None))
 
 
 @pytest.mark.parametrize("text", ["PLAYERS", "OTHERS", "ERS", "RESTART"])
@@ -409,16 +417,6 @@ def test_win32_device_build_blocks_mas_login_before_window_access(monkeypatch):
     assert not runner._login_checked
 
 
-def test_welcome_banner_confirms_handover(monkeypatch) -> None:
-    """START 被「<昵称> 欢迎回来」横幅盖住时，横幅本身也算标题页的正向信号。"""
-    _fast(monkeypatch)
-    device = _install_fake_device(
-        monkeypatch, [_PANEL_SCREEN, _WELCOME_SCREEN, _WELCOME_SCREEN]
-    )
-    message = asyncio.run(login_mod._wait_panel_closed(device, progress=None))
-    assert "已确认回到游戏标题页" in message
-
-
 def test_health_warning_is_dismissed_before_login(monkeypatch) -> None:
     """冷启动的健康警告页要先点掉，否则认不出画面会等到超时。"""
     _fast(monkeypatch)
@@ -439,24 +437,6 @@ def test_health_warning_is_dismissed_before_login(monkeypatch) -> None:
     assert "已确认回到游戏标题页" in message
     # 第一下点击是警告页中心（100x100 画布 → 50,50）
     assert device.taps[0] == (50.0, 50.0)
-
-
-def test_title_logo_fragment_confirms_handover(monkeypatch) -> None:
-    """标题页只读到 logo 下的「ERSE」时也算标题页（START 太淡时 OCR 读不到）。"""
-    _fast(monkeypatch)
-    ers = [("ERSE", (55, 60, 15, 4)), ("V4.1.0-113.0.1421-180", (5, 2, 20, 5))]
-    device = _install_fake_device(monkeypatch, [_PANEL_SCREEN, ers, ers])
-    message = asyncio.run(login_mod._wait_panel_closed(device, progress=None))
-    assert "已确认回到游戏标题页" in message
-
-
-def test_title_logo_full_word_confirms_handover(monkeypatch) -> None:
-    """OCR 正确读出完整的「REVERSE」时同样是标题页（START 漏识、横幅已消失）。"""
-    _fast(monkeypatch)
-    reverse = [("REVERSE", (55, 60, 15, 4)), ("V4.1.0-113.0.1421-180", (5, 2, 20, 5))]
-    device = _install_fake_device(monkeypatch, [_PANEL_SCREEN, reverse, reverse])
-    message = asyncio.run(login_mod._wait_panel_closed(device, progress=None))
-    assert "已确认回到游戏标题页" in message
 
 
 def test_unknown_screen_budget_follows_game_wait_time(monkeypatch) -> None:
@@ -516,47 +496,23 @@ def test_slow_loading_is_not_cut_off_by_fixed_budget(monkeypatch) -> None:
     assert device.taps
 
 
-def test_mas_login_rejects_official_client() -> None:
-    """Mas 模式配了官服包名时立刻报错，不拿官服客户端去走哔哩哔哩登录面板。"""
-    with pytest.raises(MaaFWLoginRequired, match="B 服客户端"):
+@pytest.mark.parametrize(
+    "resource,package,message",
+    [
+        ("B 服", "com.shenlan.m.reverse1999", "B 服客户端"),
+        ("官服", None, "官服"),
+        ("国际服（EN）", None, "B 服」资源"),
+    ],
+)
+def test_mas_login_rejects_other_servers(resource, package, message) -> None:
+    """只允许 B 服资源与客户端，包名为空也不能绕过资源限制。"""
+    with pytest.raises(MaaFWLoginRequired, match=message):
         asyncio.run(
             login_mod.ensure_logged_in(
                 script_config=_Script(),
                 user_config=_User("示例账号"),
-                resource_name="B 服",
-                package_name="com.shenlan.m.reverse1999",
-                adb_path="adb",
-                adb_address="127.0.0.1:1",
-                progress=None,
-            )
-        )
-
-
-def test_mas_login_rejects_official_resource() -> None:
-    """资源还是官服（包名留空、按 B 服包名兜底）时同样在启动客户端前拦下。"""
-    with pytest.raises(MaaFWLoginRequired, match="官服"):
-        asyncio.run(
-            login_mod.ensure_logged_in(
-                script_config=_Script(),
-                user_config=_User("示例账号"),
-                resource_name="官服",
-                package_name=None,
-                adb_path="adb",
-                adb_address="127.0.0.1:1",
-                progress=None,
-            )
-        )
-
-
-def test_mas_login_rejects_other_server_resource() -> None:
-    """Mas 只允许 B 服资源：国际服等其它资源即使包名能兜底也要拦下。"""
-    with pytest.raises(MaaFWLoginRequired, match="B 服」资源"):
-        asyncio.run(
-            login_mod.ensure_logged_in(
-                script_config=_Script(),
-                user_config=_User("示例账号"),
-                resource_name="国际服（EN）",
-                package_name=None,
+                resource_name=resource,
+                package_name=package,
                 adb_path="adb",
                 adb_address="127.0.0.1:1",
                 progress=None,

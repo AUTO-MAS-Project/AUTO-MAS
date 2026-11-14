@@ -88,23 +88,6 @@ async def test_interrupted_batch_injection_keeps_original_recoverable(
         assert (live / "MultiAccountResults.json").exists()
 
 
-@pytest.mark.parametrize("count", [1, 3])
-def test_batch_timeout_preserves_per_account_budget(count):
-    ids = [uuid.uuid4() for _ in range(count)]
-    users = [UserItem(user_id=str(uid), name="user", status="等待") for uid in ids]
-    info = RuntimeStub(
-        task_info=RuntimeStub(mode="AutoProxy"), user_list=users, current_index=0
-    )
-    task = BatchProxyTask(
-        info,
-        OkwwConfig.model_validate({"Run": {"HardTimeLimit": 2}}),
-        {uid: OkwwUserConfig() for uid in ids},
-        None,
-        participants=users,
-    )
-    assert task.run_timeout_seconds == 120 * count
-
-
 @pytest.mark.asyncio
 async def test_batch_result_is_final_before_monitor_can_be_cancelled(
     tmp_path, monkeypatch

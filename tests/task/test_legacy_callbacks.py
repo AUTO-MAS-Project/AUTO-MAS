@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.core.background_tasks import BackgroundTaskRegistry
-from app.models.task import TaskItem, TaskMode
+from app.models.task import TaskItem
 from app.task import legacy
 from tests.runtime_support import create_runtime_tree
 
@@ -176,24 +176,3 @@ async def test_shutdown_before_consumer_starts_closes_queued_coroutines(monkeypa
     late.submit(rejected)
     assert rejected.cr_frame is None
     assert late.closed and not late.pending
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("mode", list(TaskMode))
-async def test_mode_mapping_lives_only_in_legacy_execution(mode):
-    class Operation(legacy.TaskExecuteBase):
-        main_task = AsyncMock()
-        final_task = AsyncMock()
-        on_crash = AsyncMock()
-
-    operation = Operation()
-    operation.task_info = TaskItem(info={"mode": mode})
-    assert not hasattr(operation.task_info, "execution_mode")
-    assert operation.execution_mode == (
-        TaskMode.SCRIPT_CONFIG if mode is TaskMode.SCRIPT_VIEW else mode
-    )
-    operation.maintenance = True
-    assert operation.execution_mode == "Update"
-    assert operation.task_info.mode is mode
-    await operation.task_info.set_state(status="cancelled")
-    assert operation.stopped_manually

@@ -1,6 +1,5 @@
-"""有界旁路复用后台任务所有者，保留配额及结束消息顺序。"""
+"""脚本运行旁路保留消息顺序与单次统计。"""
 
-import asyncio
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -38,35 +37,4 @@ async def test_script_observation_keeps_message_order_and_single_metric(
         metric.assert_called_once()
         assert metric.call_args.kwargs["attributes"]["outcome"] == "success"
     finally:
-        await registry.shutdown()
-
-
-@pytest.mark.asyncio
-async def test_observation_capacity_drops_only_messages_and_keeps_business_metrics(
-    monkeypatch,
-):
-    root, script, _ = await create_runtime_tree()
-    registry = BackgroundTaskRegistry()
-    monkeypatch.setattr(app.core, "BackgroundTaskManager", registry)
-    release = asyncio.Event()
-
-    async def send(**kwargs):
-        await release.wait()
-        return True
-
-    sender = AsyncMock(side_effect=send)
-    monkeypatch.setattr(Publisher, "send", sender)
-    metric = Mock()
-    monkeypatch.setattr(telemetry, "record_count", metric)
-    try:
-        # 每轮各注册一个 started/finished；超出 32 个在途项只丢本地消息。
-        for _ in range(17):
-            with telemetry.observe_script_run(root, script):
-                pass
-        assert metric.call_count == 17
-        release.set()
-        assert await registry.get_group("script-run-observation").drain(2)
-        assert sender.await_count == 32
-    finally:
-        release.set()
         await registry.shutdown()

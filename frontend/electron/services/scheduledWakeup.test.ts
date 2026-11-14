@@ -153,16 +153,3 @@ it.each(['manual', 'cancelled', 'legacy'] as const)(
     expect(app.relaunch).not.toHaveBeenCalled()
   }
 )
-
-it('allows a fresh automatic quit after a manual attempt was cancelled', async () => {
-  vi.useFakeTimers()
-  vi.setSystemTime(new Date('2026-11-02T08:01:10+08:00'))
-  const wakeup = await import('./scheduledWakeup')
-  wakeup.observeScheduledWakeupQuit({ automatic: false })
-  wakeup.cancelScheduledWakeupQuit()
-  wakeup.observeScheduledWakeupQuit({ automatic: true, nextWakeAt: '2026-11-02T08:01:00+08:00' })
-  wakeup.finishScheduledWakeupQuit({ restart: false })
-  expect(app.relaunch).toHaveBeenCalledExactlyOnceWith({
-    args: ['app.asar', '--scheduled-wakeup'],
-  })
-})

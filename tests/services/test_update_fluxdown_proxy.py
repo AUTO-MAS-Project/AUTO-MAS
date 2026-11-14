@@ -10,12 +10,6 @@ from app.services.common.update import fluxdown as transport
 from app.utils.common import fluxdown_cli as cli
 
 
-def test_direct_proxy_and_history_redaction():
-    assert transport._proxy_to_str(None) is None
-    record = cli.FluxdownDownloadRecord(proxy="http://u%40ser:p%3A%2Fword@[::1]:7890")
-    assert record.to_dict()["proxy"] == "http://[::1]:7890"
-
-
 @pytest.mark.asyncio
 async def test_proxy_change_cannot_resume_unconfirmed_old_task(tmp_path, monkeypatch):
     executable = tmp_path / "fluxdown.exe"

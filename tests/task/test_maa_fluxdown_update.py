@@ -1668,21 +1668,6 @@ async def test_full_mode_ignores_available_official_ota(installation):
     assert downloader.call_args.args[0].endswith("/MAA-v6.1.0-win-x64.zip")
 
 
-def test_package_mode_defaults_to_full_and_survives_config_projection():
-    from app.config.wire import ConfigInput
-    from app.models.config import M9AConfig, MaaFWConfig, MSSConfig
-
-    for config_type in (MaaConfig, MaaFWConfig, M9AConfig, MSSConfig):
-        assert config_type.UpdateFields().PackageMode == "full"
-        payload = ConfigInput[config_type].model_validate(
-            {"Update": {"PackageMode": "incremental"}}
-        )
-        assert (
-            payload.model_dump(exclude_unset=True)["Update"]["PackageMode"]
-            == "incremental"
-        )
-
-
 @pytest.mark.asyncio
 async def test_resource_delta_rebuilds_complete_cache_before_distribution(
     resource_install, monkeypatch

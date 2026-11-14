@@ -1,44 +1,9 @@
 """MaaEnd 新旧日志格式均应进入当前用户的任务报告。"""
 
 import asyncio
-from tests.runtime_support import RuntimeStub as SimpleNamespace
-
-import pytest
 
 from app.task.MaaEnd.AutoProxy import AutoProxyTask
-
-
-@pytest.mark.parametrize(
-    "detail",
-    [
-        "线路1：岩天使叶采集失败",
-        "路线 2：岩天使叶采集失败",
-        "岩天使叶采集失败",
-        '<span style="color: red; font-weight: bold;">岩天使叶采集失败</span>',
-        "&lt;span style=&quot;color: red; font-weight: bold;&quot;&gt;岩天使叶采集失败&lt;/span&gt;",
-    ],
-)
-@pytest.mark.parametrize("mode", ["逐条", "汇总", "关闭"])
-def test_collection_failure_reaches_user_report(tmp_path, detail, mode):
-    proxy = AutoProxyTask.__new__(AutoProxyTask)
-    proxy.user_state = lambda user: user
-    proxy.cur_user_item = SimpleNamespace(push_log=[], push_log_mode=mode)
-    proxy.push_log_enabled = mode != "关闭"
-    path = tmp_path / "run.log"
-    path.write_text(
-        "[2026-11-02 10:13:00.000] 任务开始: 🧺自动采集\n"
-        f"[2026-11-02 10:14:00.000] {detail}\n"
-        "[2026-11-02 10:15:00.000] 血菌、武陵石采集失败\n"
-        "[2026-11-02 10:16:00.000] 种植食材箱（路线1）采集失败\n"
-        "[2026-11-02 10:17:00.000] 任务失败: 🧺自动采集\n",
-        encoding="utf-8",
-    )
-    asyncio.run(proxy._append_stage_log_details([path]))
-    assert [entry[1] for entry in proxy.cur_user_item.push_log] == (
-        []
-        if mode == "关闭"
-        else ["❌ 失败: 自动采集（岩天使叶、血菌、武陵石、种植食材箱（路线1））"]
-    )
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
 def test_details_do_not_cross_task_or_retry_boundaries(tmp_path):

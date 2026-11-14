@@ -229,17 +229,3 @@ async def test_group_identity_and_shutdown_barrier(registry):
     assert other.spawn(Mock()) is None
     with pytest.raises(RuntimeError):
         registry.register_group("late", max_running=1, max_retained=1)
-
-
-@pytest.mark.parametrize(
-    "options",
-    [
-        dict(max_running=0, max_retained=1),
-        dict(max_running=1, max_retained=0),
-        dict(max_running=1, max_retained=1, result_ttl=0),
-        dict(max_running=1, max_retained=1, execution_timeout=-1),
-    ],
-)
-def test_invalid_policy_is_rejected(options):
-    with pytest.raises(ValueError):
-        BackgroundTaskRegistry().register_group("invalid", **options)

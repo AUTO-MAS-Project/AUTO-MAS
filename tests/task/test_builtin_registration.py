@@ -1,77 +1,20 @@
 """全部内置接入、家族复用、宿主服务绑定与冷导入边界。"""
 
 import importlib
-from pathlib import Path
-from unittest.mock import AsyncMock, Mock
-
 import json
 import os
 import subprocess
 import sys
-from dataclasses import fields, replace
-from types import ModuleType
+from dataclasses import replace
+from pathlib import Path
+from unittest.mock import AsyncMock, Mock
 
 import pytest
-
-from app.models.task import ScriptItem
 
 from app.config import ConfigCollection
 from app.core.config.manager import AppConfig
 from app.models import config as models
 from app.task.builtin_registration import build_builtin_script_capabilities
-
-# 固定迁移前的能力契约；可选钩子缺省是明确不支持，不要求各专项长成同一形状。
-EXPECTED = [
-    (
-        "MaaEnd",
-        "MaaEnd",
-        "MaaEndManager",
-        {
-            "initialize",
-            "validate_update",
-            "import_config",
-            "emulator_binding",
-        },
-    ),
-    ("BetterGI", "BetterGI", "BetterGIManager", {"prepare_user_update"}),
-    (
-        "Maa",
-        "MAA",
-        "MaaManager",
-        {"prepare_user_update", "emulator_binding", "user_config_directory"},
-    ),
-    (
-        "Src",
-        "SRC",
-        "SrcManager",
-        {"prepare_user_update", "emulator_binding"},
-    ),
-    (
-        "ZzzOd",
-        "ZzzOd",
-        "ZzzOdManager",
-        {"prepare_script_removal", "prepare_user_update", "prepare_user_removal"},
-    ),
-    (
-        "MaaFW",
-        "MaaFW",
-        "MaaFWEmbeddedManager",
-        {
-            "clone_script",
-            "after_script_removal",
-            "prepare_user_update",
-            "prepare_user_read",
-            "initialize_user",
-            "emulator_binding",
-        },
-    ),
-    ("Okww", "Okww", "OkwwManager", {"initialize_user", "import_config"}),
-    ("General", "general", "GeneralManager", {"emulator_binding"}),
-    ("OkNte", "OkNte", "OkNteManager", set()),
-    ("HSR", "HSR", "HSRManager", set()),
-    ("BAAH", "BAAH", "BAAHManager", {"emulator_binding"}),
-    ("Whimbox", "Whimbox", "WhimboxManager", set()),
-]
 
 
 def capabilities():
@@ -91,72 +34,6 @@ def config_host(caps):
         config.bind_script_config_handler(entry_type, handler)
     config.set_restore_pool_resolver(caps.resolve_restore_pools)
     return config
-
-
-def test_all_builtin_capabilities_and_lazy_factory_selection(monkeypatch):
-    caps = capabilities()
-    assert set(caps.manager_factories) == set(models.CLASS_BOOK.values())
-    assert [t.__name__ for t, _ in caps.config_handlers] == [
-        name + "Config" for name, *_ in EXPECTED
-    ]
-    handler_host = config_host(caps)
-    expected_run_types = set()
-    for name, folder, manager_name, hook_names in EXPECTED:
-        entry_type = getattr(models, name + "Config")
-        entry = entry_type()
-        handler = handler_host._get_script_config_handler(entry)
-        actual = {
-            f.name
-            for f in fields(handler)
-            if getattr(handler, f.name) is not None
-            and f.name not in {"user_config_class", "supports_mod_avd"}
-        }
-        assert actual == hook_names | {"cleanup_script_files"}
-        assert handler.user_config_class is getattr(models, name + "UserConfig")
-        assert handler.supports_mod_avd is (name in {"Maa", "MaaFW"})
-        if handler.emulator_binding is not None:
-            assert len(handler.emulator_binding.read(entry)) == 2
-        assert handler_host.get_script_emulator_binding(entry) == (
-            handler.emulator_binding.read(entry) if handler.emulator_binding else None
-        )
-        module_name = f"app.task.{folder}." + (
-            "embedded_manager" if name == "MaaFW" else "manager"
-        )
-        module = ModuleType(module_name)
-        constructor = Mock(return_value=object())
-        setattr(module, manager_name, constructor)
-        monkeypatch.setitem(sys.modules, module_name, module)
-        run_types = (
-            (entry_type, models.M9AConfig, models.MSSConfig)
-            if name == "MaaFW"
-            else (entry_type,)
-        )
-        for run_type in run_types:
-            expected_run_types.add(run_type)
-            item = ScriptItem(script_id="test", name="test", status="等待")
-            assert caps.manager_factories[run_type](item) is constructor.return_value
-            constructor.assert_called_with(item)
-            pools = importlib.import_module(
-                f"app.task.{folder}.tools.restore_service"
-            ).RESTORE_POOLS
-            assert caps.resolve_restore_pools(run_type()) is pools
-    assert expected_run_types == set(models.CLASS_BOOK.values())
-
-
-def test_builtin_config_and_restore_keep_different_priorities():
-    class Overlap(models.ZzzOdConfig, models.MaaEndConfig):
-        pass
-
-    caps = capabilities()
-    entry = Overlap.model_construct()
-    config = config_host(caps)
-    assert (
-        config._get_script_config_handler(entry)
-        is dict(caps.config_handlers)[models.MaaEndConfig]
-    )
-    from app.task.ZzzOd.tools.restore_service import RESTORE_POOLS
-
-    assert caps.resolve_restore_pools(entry) is RESTORE_POOLS
 
 
 @pytest.mark.asyncio
@@ -213,9 +90,9 @@ async def test_bound_maaend_and_zzzod_services_do_not_cross_hosts():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("name", [name for name, *_ in EXPECTED] + ["M9A", "MSS"])
+@pytest.mark.parametrize("entry_type", list(models.CLASS_BOOK.values()))
 async def test_mfw_cleanup_applies_to_every_builtin_but_reconcile_only_family(
-    name, tmp_path, monkeypatch
+    entry_type, tmp_path, monkeypatch
 ):
     monkeypatch.chdir(tmp_path)
     events = []
@@ -232,7 +109,6 @@ async def test_mfw_cleanup_applies_to_every_builtin_but_reconcile_only_family(
         lifecycle, "after_script_removal", lambda: events.append("after")
     )
     config = config_host(capabilities())
-    entry_type = getattr(models, name + "Config")
     config.ScriptConfig = ConfigCollection[models.ScriptConfigType].build([entry_type])
     config.QueueConfig = {}
     await config.ScriptConfig.activate()

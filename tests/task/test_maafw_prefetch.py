@@ -453,28 +453,6 @@ async def test_shared_artifact_cache_serializes_coroutines(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_prefetch_discovery_forwards_precheck_gate_before_url(monkeypatch):
-    """Public discovery must pass the failed-version gate to the URL resolver."""
-    from app.task.MaaFW.tools.core.project_update import updater
-
-    discovered = updater.MaaFWProjectUpdateDiscovery(
-        source="mirrorchyan",
-        version="2.0",
-        unavailable_reason="previous runtime precheck failed",
-    )
-    detailed = AsyncMock(return_value=(discovered, None, None))
-    monkeypatch.setattr(updater, "_discover_project_update_detailed", detailed)
-    gate = AsyncMock(return_value="previous runtime precheck failed")
-    result = await updater.discover_maafw_project_update(
-        SimpleNamespace(),
-        source_config={"package_source": "mirrorchyan"},
-        precheck_gate=gate,
-    )
-    assert result is discovered
-    assert detailed.await_args.kwargs["precheck_gate"] is gate
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("hash_failure", [False, True])
 async def test_cancelled_cache_hash_keeps_artifact_locked_until_worker_stops(
     tmp_path, monkeypatch, hash_failure

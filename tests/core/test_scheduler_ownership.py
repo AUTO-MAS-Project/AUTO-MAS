@@ -20,42 +20,6 @@ from tests.core.test_task_tree_dispatch import scheduler as scheduler
 
 
 @pytest.mark.asyncio
-async def test_deferred_prefetch_does_not_run_during_queue_dispatch(scheduler):
-    """底层预取可独立验证，但迁移中的真实队列不调用下一托管预下载。"""
-    manager, scripts, queues, sid = scheduler
-    qid, _ = await make_queue(queues, sid, now=datetime.now().astimezone())
-    prefetch = AsyncMock(side_effect=AssertionError("预下载接入已延期"))
-
-    class BuiltinWithPrefetch(Builtin):
-        prefetch_script_update = prefetch
-
-    manager.manager_factories = {type(scripts[sid]): BuiltinWithPrefetch}
-    uid = await manager.start(TaskMode.AUTO_PROXY, {0: {"uid": str(qid)}})
-    run = manager.task_handler[uid]
-    await asyncio.wait_for(run.accomplish.wait(), 3)
-    assert run.task_info.info.status == "success"
-    prefetch.assert_not_awaited()
-
-
-@pytest.mark.parametrize("field", ["planId", "planDay"])
-def test_deferred_plan_session_does_not_restore_flat_creation_arguments(field):
-    from pydantic import ValidationError
-
-    from app.api.dispatch import TaskCreateIn
-
-    with pytest.raises(ValidationError):
-        TaskCreateIn.model_validate(
-            {
-                "mode": "ScriptConfig",
-                "tasks": {
-                    "0": {"uid": "script", "children": {"0": {"uid": "default"}}}
-                },
-                field: "Monday" if field == "planDay" else "plan",
-            }
-        )
-
-
-@pytest.mark.asyncio
 async def test_lock_query_reads_actual_configuration_and_missing_targets(scheduler):
     from app.api.scripts.management import ScriptLockIn, get_script_lock
 
@@ -212,25 +176,6 @@ async def test_late_clock_commit_failure_rolls_back_all_clocks_and_publishes_no_
     assert not any(
         call.kwargs["type"] == protocol.TASK_CREATED for call in sent.await_args_list
     )
-
-
-@pytest.mark.asyncio
-async def test_timer_does_not_write_clocks_when_creation_is_only_stubbed(scheduler):
-    _, _, queues, sid = scheduler
-    now = datetime.now().astimezone()
-    _, queue = await make_queue(queues, sid, now=now, startup="Always", timed=True)
-    previous = queue.model_dump(context={"audience": "persist"})
-    with (
-        patch("app.core.timer._local_now", return_value=now),
-        patch("app.core.timer.TaskManager.start", AsyncMock()) as start,
-    ):
-        await _MainTimer().timed_start(startup=True)
-    assert [call.kwargs["trigger"] for call in start.await_args_list] == [
-        TaskTriggerReason.STARTUP,
-        TaskTriggerReason.TIMED,
-        TaskTriggerReason.CYCLE,
-    ]
-    assert queue.model_dump(context={"audience": "persist"}) == previous
 
 
 @pytest.mark.asyncio

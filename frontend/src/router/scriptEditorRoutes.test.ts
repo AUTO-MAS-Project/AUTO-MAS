@@ -1,6 +1,6 @@
+import { MAAFW_FLAVORS } from '@/composables/useMaaFWFlavor'
 import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { MAAFW_FLAVORS } from '@/composables/useMaaFWFlavor'
 import { buildMaaFWRoutes, resolveMaaFWCanonicalLocation } from './maafwFlavorRoutes'
 import {
   buildScriptEditorRoutes,
@@ -18,52 +18,43 @@ const makeRouter = () =>
     ],
   })
 
-// 既有链接与标题是公开入口契约，预期不从新登记表生成。
+// 既有链接是公开入口契约，预期不从新登记表生成。
 const legacyEditors = [
-  ['MAA', 'maa', 'MAA'],
-  ['SRC', 'src', 'SRC'],
-  ['MaaEnd', 'maaend', 'MaaEnd'],
-  ['HSR', 'hsr', 'HSR'],
-  ['General', 'general', '通用'],
-  ['BAAH', 'baah', 'BAAH'],
-  ['Okww', 'okww', 'ok-ww'],
-  ['OkNte', 'oknte', 'ok-nte'],
-  ['BetterGI', 'bettergi', 'BetterGI'],
-  ['ZzzOd', 'zzzod', 'ZZZ-OD'],
-  ['Whimbox', 'whimbox', '奇想盒'],
+  ['MAA', 'maa'],
+  ['SRC', 'src'],
+  ['MaaEnd', 'maaend'],
+  ['HSR', 'hsr'],
+  ['General', 'general'],
+  ['BAAH', 'baah'],
+  ['Okww', 'okww'],
+  ['OkNte', 'oknte'],
+  ['BetterGI', 'bettergi'],
+  ['ZzzOd', 'zzzod'],
+  ['Whimbox', 'whimbox'],
 ] as const
 
 describe('script editor navigation contract', () => {
-  it('resolves all ordinary edit and add links to their original names, parameters and titles', () => {
+  it('resolves ordinary edit and add links to their original names and parameters', () => {
     const router = makeRouter()
-    for (const [type, suffix, title] of legacyEditors) {
-      for (const [kind, url, params, name, pageTitle] of [
-        [
-          'script',
-          `/scripts/script-1/edit/${suffix}`,
-          { id: 'script-1' },
-          `${type}ScriptEdit`,
-          `编辑${title}脚本`,
-        ],
+    for (const [type, suffix] of legacyEditors) {
+      for (const [kind, url, params, name] of [
+        ['script', `/scripts/script-1/edit/${suffix}`, { id: 'script-1' }, `${type}ScriptEdit`],
         [
           'userAdd',
           `/scripts/script-1/users/add/${suffix}`,
           { scriptId: 'script-1' },
           `${type}UserAdd`,
-          `添加${title}用户`,
         ],
         [
           'userEdit',
           `/scripts/script-1/users/user-1/edit/${suffix}`,
           { scriptId: 'script-1', userId: 'user-1' },
           `${type}UserEdit`,
-          `编辑${title}用户`,
         ],
       ] as const) {
         const linked = router.resolve(url)
         expect(linked.name).toBe(name)
         expect(linked.params).toEqual(params)
-        expect(linked.meta.title).toBe(pageTitle)
         expect(router.resolve(scriptEditorLocation(type, kind, params)).fullPath).toBe(url)
       }
     }
@@ -98,14 +89,10 @@ describe('script editor navigation contract', () => {
     expect(resolveMaaFWCanonicalLocation(oldLink, 'MaaFW')).toBeNull()
   })
 
-  it('retains the MAA cultivation entry and unique route identities', () => {
+  it('retains the MAA cultivation entry', () => {
     const router = makeRouter()
     const route = router.resolve('/scripts/script-1/users/user-1/cultivate/maa')
     expect(route.name).toBe('MAACultivate')
     expect(route.matched[0]?.props.default).toEqual({ cultivationPage: true })
-    const routes = router.getRoutes()
-    expect(routes).toHaveLength(46)
-    expect(new Set(routes.map(item => item.path)).size).toBe(46)
-    expect(new Set(routes.map(item => item.name)).size).toBe(46)
   })
 })

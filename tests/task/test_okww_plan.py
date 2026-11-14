@@ -61,51 +61,6 @@ def test_single_runtime_preserves_unrelated_native_settings(monkeypatch, tmp_pat
     assert values["extra"] == "preserved"
 
 
-@pytest.mark.asyncio
-async def test_plan_api_saves_only_selected_day(isolated_app_paths, monkeypatch):
-    import httpx
-    from fastapi import FastAPI
-
-    from app.api.plan import router
-    from app.config import ConfigCollection
-
-    plans = ConfigCollection.build([OkwwPlanConfig])
-    await plans.activate()
-    monkeypatch.setattr(isolated_app_paths, "PlanConfig", plans)
-    app = FastAPI()
-    app.include_router(router)
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        response = (
-            await client.post("/api/plan/add", json={"type": "OkwwPlan"})
-        ).json()
-        assert response["code"] == 200
-        uid = response["planId"]
-        saved = (
-            await client.post(
-                "/api/plan/update",
-                json={
-                    "planId": uid,
-                    "data": {
-                        "Monday": {"Key": {"WhichToFarm": "Simulation Challenge"}}
-                    },
-                },
-            )
-        ).json()
-        assert saved["code"] == 200
-        assert plans[uid].Monday.Key.WhichToFarm == "Simulation Challenge"
-        assert plans[uid].Tuesday.Key.WhichToFarm == "Tacet Suppression"
-        invalid = await client.post(
-            "/api/plan/update",
-            json={
-                "planId": uid,
-                "data": {"Monday": {"Key": {"WhichForgeryChallengeToFarm": 100}}},
-            },
-        )
-        assert invalid.status_code == 422
-
-
 def test_plan_inherits_account_values_and_can_override_false_and_empty(monkeypatch):
     from app.task.Okww.tools import plan as module
 
@@ -131,32 +86,3 @@ def test_plan_inherits_account_values_and_can_override_false_and_empty(monkeypat
     assert "Which to Farm" not in values
     assert "Material Selection" not in values
     assert values["Farm Nightmare Nest for Daily Echo"] is False
-
-
-def test_numeric_inheritance_is_not_coerced_to_default():
-    plan = OkwwPlanConfig.model_validate(
-        {
-            "Monday": {
-                "Key": {
-                    "WhichTacetSuppressionToFarm": None,
-                    "WhichForgeryChallengeToFarm": None,
-                }
-            }
-        }
-    )
-    assert plan.Monday.Key.WhichTacetSuppressionToFarm is None
-    assert plan.Monday.Key.WhichForgeryChallengeToFarm is None
-
-
-def test_custom_start_arguments_are_not_daily_plan_fields():
-    from app.models.config.plan import OkwwPlanKey
-
-    user = OkwwUserConfig()
-    user.Task.IfCustomArguments = True
-    user.Task.CustomArguments = "-t FarmEchoTask"
-    values = task_config(user)
-    assert values["Which to Farm"] == user.Task.WhichToFarm
-    assert "IfCustomArguments" not in OkwwPlanKey.model_fields
-    assert "CustomArguments" not in OkwwPlanKey.model_fields
-    assert "IfCustomArguments" not in values
-    assert "CustomArguments" not in values

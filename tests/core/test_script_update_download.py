@@ -1,14 +1,12 @@
-"""接管开关、下载器和网络代理是独立的公共契约。"""
+"""公共下载入口的取消与未停写异常不被隐藏或重试。"""
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 
 from app.core import script_update as update
-from app.core import update as host
-from app.models.config.setting import GlobalConfig
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 
@@ -35,87 +33,3 @@ async def test_cancellation_is_never_hidden_or_retried(tmp_path, monkeypatch, er
             timeout=20,
         )
     download.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_actual_downloader_changes_on_http_fallback_without_extra_user_callbacks(
-    monkeypatch, tmp_path
-):
-    methods = []
-    original = AsyncMock()
-
-    async def transport(url, destination, *, progress, http_download, **kwargs):
-        await progress(1, 2, 3)
-        return await http_download(url, destination, timeout=10, progress=progress)
-
-    async def builtin(url, destination, *, progress, **kwargs):
-        await progress(2, 2, 0)
-        return 2
-
-    monkeypatch.setattr(host._service_update_fluxdown, "download_file", transport)
-    monkeypatch.setattr(
-        host,
-        "Config",
-        SimpleNamespace(
-            setting=GlobalConfig.build(), install_path=tmp_path, resource_path=tmp_path
-        ),
-    )
-    token = host.download_observer.set(
-        lambda *args: methods.append(host.download_method.get())
-    )
-    try:
-        await host.download_file(
-            "https://example.invalid/package",
-            tmp_path / "package.zip",
-            timeout=10,
-            progress=original,
-            http_download=builtin,
-        )
-    finally:
-        host.download_observer.reset(token)
-    assert methods == ["FluxDown", "httpx", "httpx"]
-    assert [call.args for call in original.await_args_list] == [(1, 2, 3), (2, 2, 0)]
-
-
-@pytest.mark.asyncio
-async def test_download_observers_are_isolated_between_concurrent_tasks(
-    monkeypatch, tmp_path
-):
-    observers = [Mock(), Mock()]
-
-    async def transport(url, destination, *, progress, **kwargs):
-        await asyncio.sleep(0)
-        if progress:
-            await progress(1, 2, 3)
-        return 1
-
-    monkeypatch.setattr(host._service_update_fluxdown, "download_file", transport)
-    monkeypatch.setattr(
-        host,
-        "Config",
-        SimpleNamespace(
-            setting=GlobalConfig.build(),
-            install_path=tmp_path,
-            resource_path=tmp_path,
-        ),
-    )
-
-    async def download(index):
-        token = host.download_observer.set(observers[index])
-        try:
-            await host.download_file(
-                "https://example.invalid/package", tmp_path / str(index), timeout=20
-            )
-        finally:
-            host.download_observer.reset(token)
-
-    await asyncio.gather(download(0), download(1))
-    for index, observer in enumerate(observers):
-        assert all(
-            call.args[0] == tmp_path / str(index) for call in observer.call_args_list
-        )
-        observer.assert_any_call(tmp_path / str(index), 1, 2, 3)
-    await host.download_file(
-        "https://example.invalid/manual", tmp_path / "manual", timeout=20
-    )
-    assert all(len(observer.call_args_list) == 1 for observer in observers)

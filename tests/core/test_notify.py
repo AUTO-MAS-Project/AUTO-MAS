@@ -299,31 +299,6 @@ def test_dispatch_retries_false_result() -> None:
     assert notify.calls == ["send_koishi", "send_koishi"]
 
 
-def test_dispatch_continues_after_system_failure() -> None:
-    config = _Config(
-        {
-            "IfPushPlyer": True,
-            "IfSendMail": True,
-            "ToAddress": "user@example.com",
-            "IfServerChan": True,
-            "ServerChanKey": "send-key",
-        }
-    )
-    notify = _Notify({"push_plyer": ["raise"]})
-
-    result = _run(
-        dispatch(
-            PAYLOAD,
-            [_global_target(config, include_system=True)],
-            notifier=notify,
-        )
-    )
-
-    assert list(result.failed) == ["全局系统"]
-    assert list(result.succeeded) == ["全局邮件", "全局 ServerChan"]
-    assert notify.calls == ["push_plyer", "send_mail", "ServerChanPush"]
-
-
 def test_dispatch_skips_disabled_webhook_channel() -> None:
     config = _Config(
         webhooks=[

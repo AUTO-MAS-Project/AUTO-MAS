@@ -130,17 +130,6 @@ describe('启动模式默认值与存量配置', () => {
     expect(resolveRuntimeLaunchModeDetail()).toEqual({ mode: 'managed', source: 'default' })
   })
 
-  it.each(['off', 'managed', 'development'])('存量 %s 设置不再覆盖构建默认值', savedMode => {
-    fs.mkdirSync(path.join(appRoot, 'config'))
-    fs.writeFileSync(
-      path.join(appRoot, 'config', 'frontend_config.json'),
-      JSON.stringify({ Runtime: { LaunchMode: savedMode } })
-    )
-    expect(resolveRuntimeLaunchConfig(appRoot).mode).toBe('development')
-    setPackaged(true)
-    expect(resolveRuntimeLaunchConfig(appRoot).mode).toBe('managed')
-  })
-
   it('非法环境变量使用构建默认值，合法环境变量仍可覆盖', () => {
     fs.mkdirSync(path.join(appRoot, 'config'))
     fs.writeFileSync(

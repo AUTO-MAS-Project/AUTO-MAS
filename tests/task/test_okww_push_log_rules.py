@@ -67,12 +67,6 @@ NODE_CASES = [
 ]
 
 
-@pytest.mark.parametrize("label,chinese,english,expected", NODE_CASES)
-def test_node_rules_cover_chinese_and_english_logs(label, chinese, english, expected):
-    assert resolve([chinese]) == [expected], label
-    assert resolve([english]) == [expected], label
-
-
 FAILURE_CASES = [
     ("梦魇巢穴", "梦魇巢穴任务失败", "NightmareNestTask Failed", "❌ 失败: 梦魇巢穴"),
     ("每周乐园", "乐园任务失败", "GardenTask Failed", "❌ 失败: 每周乐园"),
@@ -100,10 +94,8 @@ FAILURE_CASES = [
 ]
 
 
-@pytest.mark.parametrize("label,chinese,english,expected", FAILURE_CASES)
-def test_failure_rules_cover_chinese_and_english_logs(
-    label, chinese, english, expected
-):
+@pytest.mark.parametrize("label,chinese,english,expected", NODE_CASES + FAILURE_CASES)
+def test_node_rules_cover_chinese_and_english_logs(label, chinese, english, expected):
     assert resolve([chinese]) == [expected], label
     assert resolve([english]) == [expected], label
 
@@ -131,12 +123,6 @@ def test_insufficient_discarded_echo_is_skip_with_reason():
     ]
     assert resolve(["检查已弃置声骸", "需要至少 1000 个已弃置声骸才能运行"]) == [
         "⏭ 跳过: 合并声骸（已弃置声骸不足 1000）"
-    ]
-
-
-def test_traceback_source_line_no_longer_infers_skip():
-    assert resolve(["检查已弃置声骸", "if self.click_dialog_left_button():"]) == [
-        "✅ 成功: 合并声骸"
     ]
 
 

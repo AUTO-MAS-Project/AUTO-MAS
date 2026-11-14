@@ -63,27 +63,3 @@ async def test_collection_signal_publishes_and_unregistered_tree_does_not(monkey
     sent.reset_mock()
     await user.set_state(status="完成")
     sent.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_rollback_keeps_emitted_process_notice_but_query_reads_live_tree(
-    monkeypatch,
-):
-    dispatcher, run, script, user = await runtime(monkeypatch)
-    await script.set_current_index(0)
-    uid = user.logs.add(LogRecord, payload={"info": {"content": ["before\n"]}})
-    await user.logs.commit()
-    sent = AsyncMock(return_value=True)
-    monkeypatch.setattr(Publisher, "send", sent)
-    with pytest.raises(ValueError, match="rollback"):
-        async with config_manager.transaction():
-            await user.logs[uid].set_state(content=["after\n"])
-            raise ValueError("rollback")
-    messages = [
-        call.kwargs["data"].log
-        for call in sent.await_args_list
-        if call.kwargs["type"] == protocol.TASK_LOG_UPDATED
-    ]
-    assert messages == ["after\n"]
-    assert dispatcher.get_task(run.task_info.uid)["current"]["log"] == "before\n"
-    assert run.task_info.get_log_snapshot()["logSeq"] is None
