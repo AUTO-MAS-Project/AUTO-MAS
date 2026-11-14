@@ -32,7 +32,7 @@ from app.core import Config, Notify, Publisher
 from app.core.history import aggregate_data
 from app.core.ws import protocol
 from app.models.config import MaaEndConfig, MaaEndUserConfig
-from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.emulator import DeviceBase, DeviceInfo, EmulatorStartupError
 from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
@@ -1624,6 +1624,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                         self.script_config.Game.EmulatorIndex,
                         "" if cloud_adb else "com.hypergryph.endfield",
                     )
+            except EmulatorStartupError:
+                raise
             except Exception as e:
                 # 启动阶段失败后游戏状态不再可信：清除保留标记，避免下一轮
                 # 启动沿用 preserve_running_game 跳过启动器游戏设置

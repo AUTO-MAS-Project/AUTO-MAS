@@ -38,7 +38,7 @@ from app.models.config import (
     MaaConfig,
     MaaUserConfig,
 )
-from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.emulator import DeviceBase, DeviceInfo, EmulatorStartupError
 from app.models.notification import LocalNotice, NotificationImage
 from app.models.schema import (
     HistoryAggregationItem,
@@ -1485,6 +1485,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                         **mod_avd_open_kwargs(self.emulator_manager, allowed=True),
                     )
                     self.emulator_info = emulator_info
+                except EmulatorStartupError:
+                    raise
                 except Exception as e:
                     logger.opt(exception=True).warning(
                         f"账号: {self.cur_user_uid} - 模拟器启动失败: {e}"

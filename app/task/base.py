@@ -18,6 +18,7 @@ from app.models.config import (
     WhimboxConfig,
     ZzzOdConfig,
 )
+from app.models.emulator import EmulatorStartupError
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import execute_script_task
 from app.task.failure_capture_core import FailureCapture
@@ -270,6 +271,21 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
         try:
             async with timeout:
                 await self.main_task()
+        except EmulatorStartupError as e:
+            # 模拟器已完成有限恢复；结束本账号本次尝试，由既有生命周期执行收尾。
+            message = f"模拟器启动失败: {e}"
+            user = self.cur_user_item
+            await user.set_state(status="异常")
+            if user.log_record:
+                record = user.log_record[max(user.log_record)]
+            else:
+                record = await user.add_log_record(
+                    datetime.now().astimezone(), LogRecord()
+                )
+            await record.set_state(status=message)
+            await record.append_content(message)
+            await self.script_info.set_log(message)
+            await self.on_crash(e)
         except TimeoutError:
             # 脚本内部的 TimeoutError 仍交给原异常流程处理。
             if not timeout.expired():

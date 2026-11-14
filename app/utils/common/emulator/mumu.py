@@ -28,6 +28,7 @@ from app.models.emulator import (
     DeviceInfo,
     DeviceStatus,
     EmulatorRuntimePolicy,
+    EmulatorStartupError,
 )
 from app.utils import IS_WINDOWS, ProcessRunner, get_logger
 from app.utils import emulator as _utils_emulator
@@ -49,6 +50,10 @@ MUMU_FORCE_KILL_WAIT_SECONDS = 10
 MUMU_CLOSE_SETTLE_SECONDS = 2
 MUMU_STORE_PACKAGE = "com.mumu.store"
 MUMU_STORE_OVERLAY_APP_OP = "SYSTEM_ALERT_WINDOW"
+# 只重试已知的 mainnx 临时连接错误；所有尝试共用 MaxWaitTime，不逐轮续期。
+MUMU_LAUNCH_ATTEMPTS = 3
+MUMU_LAUNCH_RETRY_SECONDS = 2
+_INSTANCE_LOCKS: dict[tuple[asyncio.AbstractEventLoop, str, str], asyncio.Lock] = {}
 # MuMu 6.8.8 主进程连不上时 control launch 的返回码
 MUMU_MAINNX_ERRCODE = -503
 # 见到 -503 且安装目录带低完整性标签时附在异常里的修复办法。标签来自旧版安装器，
@@ -119,6 +124,18 @@ class MumuManager(DeviceBase):
 
         # {实例索引: 静音记录}，启动时跟随静音、关闭前还原
         self._audio_mute_states: dict[str, _utils_emulator.tools.AudioMuteRecord] = {}
+
+        self._failed_launches: set[str] = set()
+        self._launch_errors: dict[str, str] = {}
+
+    def _get_instance_lock(self, idx: str) -> asyncio.Lock:
+        # 不同配置 / 管理器对象也可能指向同一物理实例，不能按配置 UUID 加锁。
+        key = (
+            asyncio.get_running_loop(),
+            str(self.emulator_path.resolve()).casefold(),
+            str(int(idx)) if str(idx).isdecimal() else str(idx),
+        )
+        return _INSTANCE_LOCKS.setdefault(key, asyncio.Lock())
 
     def get_adb_path(self) -> Path | None:
         adb_path = self.emulator_path.parent / "adb.exe"
@@ -435,6 +452,138 @@ class MumuManager(DeviceBase):
             logger.warning(f"停止 MuMu 应用商店广告进程失败: {result.stdout.strip()}")
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
+        idx = str(int(idx)) if str(idx).isdecimal() else str(idx)
+        acquired = False
+        try:
+            # 包含等待实例锁、状态查询、命令、重试和就绪等待，避免多层超时相加。
+            async with asyncio.timeout(self.config.Info.MaxWaitTime):
+                async with self._get_instance_lock(idx):
+                    acquired = True
+                    self._launch_errors[idx] = ""
+                    # 新操作取得实例锁后才清除旧失败；成功时不清除等待者随后留下的
+                    # 失败标记，避免其收尾关闭本次刚启动的实例。
+                    self._failed_launches.discard(idx)
+                    info = await self._open_locked(idx, package_name)
+                    self._launch_errors.pop(idx, None)
+                    return info
+        except asyncio.CancelledError:
+            self._failed_launches.add(idx)
+            logger.warning(f"MuMu 实例 {idx} 启动操作已取消，已释放实例锁")
+            raise
+        except Exception as e:
+            self._failed_launches.add(idx)
+            reason = (
+                f"超过启动总时限 {self.config.Info.MaxWaitTime} 秒"
+                if isinstance(e, TimeoutError)
+                else str(e)
+            )
+            detail = self._launch_errors.get(idx, "") if acquired else "等待实例锁失败"
+            message = (
+                f"MuMu 实例 {idx} 启动失败: {reason}"
+                f"{('；最后命令错误: ' + detail) if detail and detail != reason else ''}"
+                "；安全恢复已停止，未清理 MuMu 后台进程。"
+                "请检查 MuMu 多开器中该实例的状态，确认其他任务已结束后手动重启 MuMu，"
+                "再重试任务；若手动启动仍失败，请联系 MuMu 支持"
+            )
+            logger.error(message)
+            raise EmulatorStartupError(message) from e
+
+    async def _launch_with_retries(self, idx: str, package_name: str) -> None:
+        commands = (
+            ("setting", "-v", idx, "-k", "app_keptlive", "-val", "false"),
+            (
+                "control",
+                "-v",
+                idx,
+                "launch",
+                *(["-pkg", package_name] if package_name else []),
+            ),
+        )
+        for attempt in range(1, MUMU_LAUNCH_ATTEMPTS + 1):
+            status = await self.getStatus(idx)
+            logger.info(
+                f"MuMu 实例 {idx} 启动第 {attempt}/{MUMU_LAUNCH_ATTEMPTS} 轮前状态: {status.name}"
+            )
+            if status in (DeviceStatus.ONLINE, DeviceStatus.STARTING):
+                logger.info(f"MuMu 实例 {idx} 已启动，跳过重复启动命令")
+                return
+            if status != DeviceStatus.OFFLINE:
+                raise RuntimeError(f"目标实例状态为 {status.name}，无法确认可安全启动")
+
+            for args in commands:
+                if args[0] == "control":
+                    status = await self.getStatus(idx)
+                    if status in (DeviceStatus.ONLINE, DeviceStatus.STARTING):
+                        logger.info(f"MuMu 实例 {idx} 在准备期间已启动，跳过 launch")
+                        return
+                    if status != DeviceStatus.OFFLINE:
+                        raise RuntimeError(
+                            f"启动前复查状态为 {status.name}，停止发送 launch"
+                        )
+                logger.info(
+                    f"执行 MuMu 启动命令（实例 {idx}，第 {attempt} 轮）: {[str(self.emulator_path), *args]}"
+                )
+                result = await ProcessRunner.run_process(
+                    self.emulator_path,
+                    *args,
+                    timeout=self.config.Info.MaxWaitTime,
+                    if_merge_std=True,
+                    breakaway=True,
+                )
+                # Windows 将负数退出码作为无符号 DWORD 返回；保留原值并显示有符号值。
+                signed_code = (result.returncode + 2**31) % 2**32 - 2**31
+                errcode, errmsg = None, ""
+                try:
+                    payload = self._decode_polluted_json(
+                        result.stdout,
+                        lambda v: isinstance(v, dict) and "errcode" in v,
+                    )
+                except json.JSONDecodeError:
+                    pass
+                else:
+                    if isinstance(payload, dict):
+                        errcode = payload.get("errcode")
+                        errmsg = payload.get("errmsg", "")
+                logger.info(
+                    f"MuMu 实例 {idx} 第 {attempt} 轮命令结果: returncode={result.returncode}, "
+                    f"signed_returncode={signed_code}, errcode={errcode}, errmsg={errmsg!r}"
+                )
+                if result.returncode == 0 and errcode in (None, 0):
+                    continue
+
+                reason = (
+                    f"第 {attempt}/{MUMU_LAUNCH_ATTEMPTS} 轮 {args[0]} 失败: "
+                    f"returncode={result.returncode}, signed_returncode={signed_code}, "
+                    f"errcode={errcode}, errmsg={errmsg!r}"
+                )
+                if errcode is None and not errmsg:
+                    reason += f"；原始输出: {result.failure_detail()}"
+                hint = _low_integrity_hint(self.emulator_path, result.stdout)
+                reason += hint
+                self._launch_errors[idx] = reason
+                logger.warning(reason)
+                status = await self.getStatus(idx)
+                logger.info(f"MuMu 实例 {idx} 命令失败后状态: {status.name}")
+                if status in (DeviceStatus.ONLINE, DeviceStatus.STARTING):
+                    logger.warning(f"MuMu 实例 {idx} 命令报错但已启动，继续等待就绪")
+                    return
+                code = errcode if errcode is not None else signed_code
+                if (
+                    bool(hint)
+                    or code != MUMU_MAINNX_ERRCODE
+                    or status != DeviceStatus.OFFLINE
+                    or attempt == MUMU_LAUNCH_ATTEMPTS
+                ):
+                    raise RuntimeError(reason + f"；复查状态={status.name}")
+                logger.warning(
+                    f"MuMu 实例 {idx} mainnx 连接失败，{MUMU_LAUNCH_RETRY_SECONDS} 秒后重新检查并重试"
+                )
+                await asyncio.sleep(MUMU_LAUNCH_RETRY_SECONDS)
+                break
+            else:
+                return
+
+    async def _open_locked(self, idx: str, package_name: str) -> DeviceInfo:
         started_at = time.monotonic()
         logger.info(f"开始启动模拟器 {idx}  - {package_name}")
 
@@ -459,9 +608,13 @@ class MumuManager(DeviceBase):
                 if self.runtime_policy.block_ads_enabled():
                     await self._block_store_overlay_ads(idx)
                 return info
-            elif status == DeviceStatus.OFFLINE:
-                logger.info(f"模拟器离线，开始执行启动流程: {idx} - {package_name}")
+            elif status in (DeviceStatus.OFFLINE, DeviceStatus.STARTING):
+                logger.info(
+                    f"模拟器状态 {status.name}，开始执行启动流程: {idx} - {package_name}"
+                )
                 break
+            elif status == DeviceStatus.NOT_FOUND:
+                raise RuntimeError(f"未找到 MuMu 实例 {idx}")
             await asyncio.sleep(0.1)
 
         else:
@@ -472,63 +625,15 @@ class MumuManager(DeviceBase):
             )
             raise RuntimeError(f"模拟器 {idx} 无法启动, 当前状态码: {status}")
 
-        # 启动前强力清理要放在检查多开器窗口之前：清理会把多开器一起关掉，
-        # 之后按「启动前没开多开器」的口径处理启动过程中弹出的窗口
         if self.config.Info.ForceKillBeforeLaunch:
-            await self._force_clear_before_launch()
+            logger.warning(
+                "安全启动不执行启动前强力清理：无法确认后台进程归属，清理会影响其他 MuMu 实例"
+            )
 
         if_close_mumu_nx = await self.find_mumu_nx_window() is None
 
-        # 启动实例前关闭 MuMu 应用保活
-        logger.info(f"关闭 MuMu 应用保活: {idx}")
-        keepalive_started_at = time.monotonic()
-        result = await ProcessRunner.run_process(
-            self.emulator_path,
-            "setting",
-            "-v",
-            idx,
-            "-k",
-            "app_keptlive",
-            "-val",
-            "false",
-            timeout=self.config.Info.MaxWaitTime,
-            if_merge_std=True,
-            breakaway=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"设置 app_keptlive 失败: {result.failure_detail()}")
-
-        logger.info(
-            f"MuMu 应用保活设置完成: {idx} - 用时: "
-            f"{time.monotonic() - keepalive_started_at:.3f}秒"
-        )
-
-        logger.info(f"执行 MuMu 启动命令: {idx} - {package_name}")
         launch_started_at = time.monotonic()
-        result = await ProcessRunner.run_process(
-            self.emulator_path,
-            "control",
-            "-v",
-            idx,
-            "launch",
-            *(["-pkg", package_name] if package_name else []),
-            timeout=self.config.Info.MaxWaitTime,
-            if_merge_std=True,
-            breakaway=True,
-        )
-        # 参考命令 MuMuManager.exe control -v 2 launch
-
-        if result.returncode != 0:
-            # 界面入口（emulator_manager 的 except）以前只发 WS 气泡不写日志，
-            # 只靠下面这条 raise，失败原因在 app.log 里是空白的。
-            # 这里不拼 _describe_launch_failure：6.8.8 的 info 在实例离线时不产出
-            # launch_err_* / player_state，拼出来恒为空串。
-            # -503 另有环境层面的成因，能自证时把修复命令一起带到界面提示里。
-            hint = _low_integrity_hint(self.emulator_path, result.stdout)
-            logger.error(
-                f"MuMu 启动命令失败: {idx} - {package_name} - {result.failure_detail()}"
-            )
-            raise RuntimeError(f"命令执行失败: {result.failure_detail()}{hint}")
+        await self._launch_with_retries(idx, package_name)
 
         # 只说明命令返回 0，不代表实例会起来：真正的结论在下面的等待循环，
         # 措辞不要写成「已完成」，否则日志会把静默空等读成成功。
@@ -571,7 +676,12 @@ class MumuManager(DeviceBase):
                     resolve_pids=lambda: self._resolve_audio_pids(idx),
                     silence_enabled=self.runtime_policy.silence_enabled,
                 )
-                return (await self.getInfo(idx))[idx]
+                info = (await self.getInfo(idx))[idx]
+                if info.status != DeviceStatus.ONLINE:
+                    raise RuntimeError(
+                        f"MuMu 实例 {idx} 就绪后状态变为 {info.status.name}"
+                    )
+                return info
             await asyncio.sleep(0.1)
         else:
             diagnosis = await self._describe_launch_failure(idx)
@@ -621,6 +731,21 @@ class MumuManager(DeviceBase):
         return await asyncio.to_thread(scan)
 
     async def close(self, idx: str) -> DeviceStatus:
+        idx = str(int(idx)) if str(idx).isdecimal() else str(idx)
+        async with self._get_instance_lock(idx):
+            if idx in self._failed_launches:
+                logger.warning(
+                    f"MuMu 实例 {idx} 启动未完成，跳过自动关闭和强力清理，请检查实例真实状态"
+                )
+                status = await self.getStatus(idx)
+                if status != DeviceStatus.OFFLINE:
+                    raise RuntimeError(
+                        f"MuMu 实例 {idx} 启动未完成，未自动关闭；当前状态={status.name}"
+                    )
+                return status
+            return await self._close_locked(idx)
+
+    async def _close_locked(self, idx: str) -> DeviceStatus:
         await _utils_emulator.tools.restore_audio_before_close(
             self._audio_mute_states, idx
         )
@@ -889,6 +1014,8 @@ class MumuManager(DeviceBase):
             try:
                 data = await self.get_device_info(idx)
             except Exception as e:
+                if idx in self._launch_errors:
+                    self._launch_errors[idx] = f"info 查询失败: {e}"
                 logger.error(f"获取模拟器 {idx} 信息失败: {e}")
                 return DeviceStatus.ERROR
         try:
@@ -905,8 +1032,25 @@ class MumuManager(DeviceBase):
             )
             return DeviceStatus.UNKNOWN
 
-        entry = next(
-            (e for e in entries if str(e.get("index")) == str(idx)), entries[0]
+        entry = next((e for e in entries if str(e.get("index")) == str(idx)), None)
+        if entry is None:
+            return DeviceStatus.NOT_FOUND
+        logger.debug(
+            f"MuMu 实例 {idx} 状态: "
+            + str(
+                {
+                    key: entry[key]
+                    for key in (
+                        "is_process_started",
+                        "is_android_started",
+                        "launch_err_code",
+                        "launch_err_msg",
+                        "player_state",
+                        "info_source",
+                    )
+                    if key in entry
+                }
+            )
         )
         return self._get_status_from_data(entry)
 
