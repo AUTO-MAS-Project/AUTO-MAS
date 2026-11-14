@@ -122,10 +122,11 @@ export function compareNativeVersions(left: string, right: string): number {
 }
 
 /**
- * 后端 project_maafw_runtime_path 的已知布局部分：maafw/ 与 runtimes/<rid>/native（本机 rid 优先）
- * 里有好几份时取版本最高的，版本相同或读不出时按这个顺序取第一份。后端另有 runtimes/<rid> 本身、
+ * 后端 project_maafw_runtime_path 的已知布局部分：maafw/、runtimes/<rid>/native、runtimes/<rid>
+ * （本机 rid 优先）里有好几份时取版本最高的，版本相同或读不出时按这个顺序取第一份。后端另有
  * 有界逐层搜索与跳过架构不符的库，这里不做：非标准布局下这份检查可能报失败而后端能过，
- * 看 nativeDir 是不是 null 就能分辨。
+ * 看 nativeDir 是不是 null 就能分辨。runner 实际加载的目录以运行日志里
+ * 「MaaFramework 实际加载」或「原生库加载失败」那一行为准。
  */
 function findNativeDir(viewDir: string): string | null {
   const candidates = [path.join(viewDir, 'maafw')]
@@ -142,6 +143,8 @@ function findNativeDir(viewDir: string): string | null {
       Number(ridMatchesHost(right)) - Number(ridMatchesHost(left)) || left.localeCompare(right)
   )
   candidates.push(...rids.map(rid => path.join(runtimes, rid, 'native')))
+  // MAA_bbb 这类把原生库直接放在 runtimes/win-x64 下的布局
+  candidates.push(...rids.map(rid => path.join(runtimes, rid)))
   const present = candidates.filter(candidate => isFile(path.join(candidate, FRAMEWORK_DLL)))
   if (present.length <= 1) {
     return present[0] ?? null
