@@ -1,0 +1,2 @@
+project: mfw
+MaaFramework 原生库缺依赖的项目副本会在下次更新检查时按全量包自动重装
