@@ -24,6 +24,18 @@ export type PluginMeta_infoInput = {
      */
     homepage?: (string | null);
     /**
+     * 源码仓库 URL
+     */
+    repository?: (string | null);
+    /**
+     * 作者
+     */
+    author?: (string | null);
+    /**
+     * 许可证
+     */
+    license?: (string | null);
+    /**
      * Requires-Dist 列表
      */
     requires_dist?: (Array<string> | null);

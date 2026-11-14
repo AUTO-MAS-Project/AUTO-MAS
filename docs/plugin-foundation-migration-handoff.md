@@ -725,3 +725,19 @@ Operations 保留命令业务层、复用 core.BackgroundTaskManager 执行，�
 - 按用户明确授权将测试插件版本推进至 `0.1.1`，发布标签 `v0.1.1` 指向独立仓库提交 `5c89c5372a1ccbe87e4b6d8442cb83bc9e839158`；旧失败标签保持不变。
 - Trusted Publishing 工作流 https://github.com/AUTO-MAS-Project/AUTO-MAS-MAA-Adapter/actions/runs/43427546559 成功，PyPI 已提供 `auto-mas-maa-adapter==0.1.1` 的 wheel 和源码包：https://pypi.org/project/auto-mas-maa-adapter/0.1.1/ 。
 - 主程序随附插件元数据同步为 `0.1.1`，主程序及 core SDK 版本不变。发布不代表已经完成独立环境的插件市场安装和真实 MAA/游戏运行验收，这些仍是后续验证项。
+
+### 插件市场刷新与镜像兼容修正（2026-11-14）
+
+- 已复现市场空列表的两项问题：把安装镜像的 Simple 地址推导为不存在的 PyPI JSON 接口；官方接口网络失败后仍将失败包跳过，清空已有目录并返回成功。另已确认本机 PyPI TLS 存在间歇性断线，单次成功不能证明持续可用。
+- 市场优先读取官方 PyPI JSON；按用户确认补充标准镜像读取：有声明时读取并校验 sidecar 元数据，无声明时通过 HTTP Range 读取 wheel 中的 METADATA，镜像不支持 Range 时读取整包。不会解包到磁盘、安装或执行候选插件；UTF-8 README 仍交给既有多语言解析器，不要求镜像实现专用 JSON API，不改写安装镜像偏好。
+- 传输错误有界重试。已知插件读取失败或全部候选均读取失败时明确报错并保留旧目录及身份；无法识别的未知包仅记录并跳过，不让无关候选阻断已识别插件。成功结果通过配置事务统一替换，未发布的宿主 SDK 不作为市场候选种子。
+- 新增真实配置集合与 HTTP 传输边界回归：官方来源发现、索引/元数据/部分已知插件失败后的目录与持久文件保留、短暂断线恢复，以及镜像 sidecar/Range/整包读取与中文展示。修正前相同回归为 4 failed、1 passed；最终相关市场、元数据、生命周期检查为 23 passed，Pyright、Ruff 和格式检查通过。
+- 调试接口连续三次刷新均返回 MAA 专项 `0.1.1`；另在隔离配置进程中仅强制官方 PyPI 传输失败、其余镜像请求走真实网络，完整市场刷新成功，耗时约 5.6 秒。已在开发版 Electron 的插件市场页面观察到同一条目，原有 5 个托管、7 个账号身份未变化。未执行真实市场安装或游戏任务。
+- 前端现有 `usePluginApi` / `plugin_action_finished` 根据刷新业务响应记录结果，继续复用唯一观察入口，没有增加重复采集、接口或生成代码。
+
+### 来源框架发行元信息完整对齐（2026-11-14）
+
+- 按来源 `app/models/config/plugin.py` 的 PluginRecord.Info 与 `app/plugin/runtime/metadata.py` 逐项核对 12 类发行元信息：package_name、plugin_name、version、docs_url、homepage、repository、author、license、requires_dist、display_name_i18n、description_i18n、tags_i18n。其余 source/import_name/is_core/is_local 等来自发现上下文，服务 requires/wants、生命周期与加载错误来自运行时，不从发行包虚构这些值。
+- 已安装记录原本具备完整发行字段；市场原本未保存 repository、author、license，现已补齐声明、解析与 API 投影。Project-URL 标签按 PyPA 标准移除 ASCII 标点/空白并转小写，统一识别 Documentation/Docs、Homepage/Home、Repository/Source/Source Code/GitHub 等别名，三个来源使用同一解析器。
+- 扩展原有三来源回归与镜像 sidecar/Range/整包回归，检查身份、版本、全部链接、作者、许可证、依赖与多语言信息。扩展的三来源回归修正前 3 failed、4 passed，修正后通过；市场、元数据和生命周期相关 23 项全部通过。前端类型仅通过现有 OpenAPI 生成器同步市场新增的三个字段，未增加接口或改变页面布局。
+- 最终调试后端连续三次刷新均得到 MAA 专项 0.1.1 的完整字段：文档为独立仓库 README、主页及仓库为独立仓库地址、作者 AUTO-MAS Team、许可证 AGPL-3.0-or-later、依赖 auto-mas-core<5.9,>=5.8。MAA 发布包本身已正确声明，无需修改插件版本或重新发布 PyPI。

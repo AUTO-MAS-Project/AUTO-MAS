@@ -277,6 +277,9 @@ class PluginMeta(PluginCommandEntry):
         version: str = Field(default="", description="版本")
         docs_url: str = Field(default="", description="文档 URL")
         homepage: str = Field(default="", description="主页 URL")
+        repository: str = Field(default="", description="源码仓库 URL")
+        author: str = Field(default="", description="作者")
+        license: str = Field(default="", description="许可证")
         requires_dist: list[str] = Field(
             default_factory=list, description="Requires-Dist 列表"
         )

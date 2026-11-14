@@ -34,7 +34,13 @@ def plugin_metadata_source(tmp_path):
         "readme": {"file": "README.md", "content-type": "text/markdown"},
         "keywords": ["auto-mas-plugin", "auto-mas-id:demo_adapter", "adapter"],
         "dependencies": ["auto-mas-core>=5.8,<5.9"],
-        "urls": {"Homepage": "https://example.org/demo"},
+        "authors": [{"name": "Demo Team"}],
+        "license": "AGPL-3.0-or-later",
+        "urls": {
+            "Home page": "https://example.org/demo",
+            "DOCUMENTATION": "https://example.org/docs",
+            "Source Code": "https://example.org/source",
+        },
     }
     (tmp_path / "README.md").write_text(readme, encoding="utf-8")
     source = tmp_path / "plugin"
@@ -71,6 +77,8 @@ async def test_readme_i18n_matches_across_discovery_sources(
                     "keywords": ",".join(project["keywords"]),
                     "project_urls": project["urls"],
                     "requires_dist": project["dependencies"],
+                    "author": "Demo Team",
+                    "license_expression": project["license"],
                 }
             }
         )
@@ -100,7 +108,12 @@ async def test_readme_i18n_matches_across_discovery_sources(
     assert item is not None
     assert item.info.package_name == "auto-mas-demo"
     assert item.info.plugin_name == "demo_adapter"
+    assert item.info.version == "0.1.0"
     assert item.info.homepage == "https://example.org/demo"
+    assert item.info.docs_url == "https://example.org/docs"
+    assert item.info.repository == "https://example.org/source"
+    assert item.info.author == "Demo Team"
+    assert item.info.license == "AGPL-3.0-or-later"
     assert [str(Requirement(value)) for value in item.info.requires_dist] == [
         "auto-mas-core<5.9,>=5.8"
     ]

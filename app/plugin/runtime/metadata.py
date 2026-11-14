@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib.metadata as importlib_metadata
 import json
 import re
+import string
 from email.message import Message
 from typing import Any, Literal, TypedDict
 
@@ -138,12 +139,13 @@ def _view(
         return None
     plugin_name = ids[0]
 
-    # ── Project-URL → label→url；抽 docs / homepage ──
+    # Project-URL 标签按 PyPA 规范移除 ASCII 标点、空白后转小写，三种来源共用。
     urls: dict[str, str] = {}
+    removal = str.maketrans("", "", string.punctuation + string.whitespace)
     if isinstance(raw_urls, dict):
         for label, url in raw_urls.items():
             if label and url:
-                urls[str(label).strip()] = str(url).strip()
+                urls[str(label).translate(removal).lower()] = str(url).strip()
     else:
         items = (
             [str(item) for item in raw_urls]
@@ -153,21 +155,13 @@ def _view(
         for item in items:
             if "," in item:
                 label, url = item.split(",", 1)
-                urls[label.strip()] = url.strip()
+                urls[label.translate(removal).lower()] = url.strip()
     docs_url = next(
-        (
-            str(urls[key])
-            for key in ("Documentation", "Docs", "documentation", "docs")
-            if urls.get(key)
-        ),
+        (str(urls[key]) for key in ("documentation", "docs") if urls.get(key)),
         "",
     )
     homepage = next(
-        (
-            str(urls[key])
-            for key in ("Homepage", "Home", "homepage", "home")
-            if urls.get(key)
-        ),
+        (str(urls[key]) for key in ("homepage", "home") if urls.get(key)),
         "",
     )
 
@@ -178,8 +172,15 @@ def _view(
         "summary": summary,
         "docs_url": docs_url,
         "homepage": homepage,
+        "repository": next(
+            (
+                urls[key]
+                for key in ("repository", "source", "sourcecode", "github")
+                if urls.get(key)
+            ),
+            "",
+        ),
         "requires_dist": requires,
-        "urls": urls,
         "display_metadata": _read_readme_i18n(readme),
         "author": author,
         "license": license_text,
@@ -204,6 +205,9 @@ def parse_to_plugin_meta(
             "version": view["version"],
             "docs_url": view["docs_url"],
             "homepage": view["homepage"],
+            "repository": view["repository"],
+            "author": view["author"],
+            "license": view["license"],
             "requires_dist": list(view["requires_dist"]),
             **display,
         }
@@ -241,14 +245,7 @@ def parse_to_plugin_record(
             "docs_url": view["docs_url"],
             "import_name": import_name,
             "homepage": view["homepage"],
-            "repository": next(
-                (
-                    url
-                    for key, url in view["urls"].items()
-                    if key.lower() in {"repository", "source", "source code"}
-                ),
-                "",
-            ),
+            "repository": view["repository"],
             "author": view["author"],
             "license": view["license"],
             "requires_dist": view["requires_dist"],
