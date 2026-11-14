@@ -131,6 +131,30 @@
                 {{ t('core.edit.maafwPasswordClear') }}
               </a-button>
             </div>
+            <!-- 文件 / 文件夹字段（PI v2.10.5）：路径框可手填，选中的路径与手填一样走草稿提交、
+                 过 verify；没有系统对话框（浏览器预览）时只剩路径框 -->
+            <div v-else-if="getPathKind(inputItem)" class="path-field">
+              <a-input
+                :value="getTextInputValue(option, inputItem)"
+                :disabled="props.disabled"
+                :placeholder="inputItem.default || inputItem.description || inputItem.name"
+                class="option-control"
+                @update:value="setInputDraft(option.name, inputItem.name, $event)"
+                @blur="commitInputDraft(option.name, inputItem)"
+                @press-enter="commitInputDraft(option.name, inputItem)"
+              />
+              <a-button
+                v-if="canPickPath(inputItem)"
+                :disabled="props.disabled"
+                @click="pickInputPath(option.name, inputItem)"
+              >
+                {{
+                  getPathKind(inputItem) === 'file'
+                    ? t('core.edit.selectFile')
+                    : t('core.edit.pickFolder')
+                }}
+              </a-button>
+            </div>
             <!-- 数字与文本字段都先改草稿，失焦 / 回车时校验通过才提交（不是每敲一个字存一次）；
                  没填的字段（含字符串）按项目默认值显示，与运行器的回落一致 -->
             <a-input-number
@@ -233,12 +257,14 @@ import {
   isMaaFWIntegerInput,
   isMaaFWOptionActiveFor,
   isMaaFWTruthyInputText,
+  maafwInputPathKind,
   checkMaaFWInputValue,
   resolveMaaFWCheckboxValue,
   resolveMaaFWChoiceValue,
   storedMaaFWInputFieldValue,
 } from './maafwOptionValues'
 import { hideBrokenMaaFWIcon, showLoadedMaaFWIcon } from './maafwIconImage'
+import { canPickMaaFWInputPath, pickMaaFWInputPath } from './maafwInputPathPicker'
 import {
   MAAFW_OPTION_DRAFTS_KEY,
   maafwOptionDraftKey,
@@ -515,6 +541,31 @@ const commitInputDraft = (optionName: string, inputItem: MaaFWOptionInputInfo) =
   handleInputFieldChange(optionName, inputItem, draft, false)
 }
 
+const getPathKind = maafwInputPathKind
+
+const canPickPath = (inputItem: MaaFWOptionInputInfo) => {
+  const kind = getPathKind(inputItem)
+  return kind !== null && canPickMaaFWInputPath(kind)
+}
+
+// 选中的路径原样当作手填的值：进草稿、按 verify / pattern_msg 校验，不过就留在框里等用户改
+const pickInputPath = async (optionName: string, inputItem: MaaFWOptionInputInfo) => {
+  const kind = getPathKind(inputItem)
+  if (!kind) return
+  let picked: string | null
+  try {
+    picked = await pickMaaFWInputPath(kind)
+  } catch {
+    message.error(
+      kind === 'file' ? t('core.edit.couldNotPickFile') : t('core.edit.couldNotPickFolder')
+    )
+    return
+  }
+  if (!picked) return
+  setInputDraft(optionName, inputItem.name, picked)
+  commitInputDraft(optionName, inputItem)
+}
+
 const passwordDraftKey = inputDraftKey
 
 const getPasswordDraft = (optionName: string, inputName: string) =>
@@ -668,10 +719,15 @@ const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) =>
   grid-column: 1 / -1;
 }
 
-.password-field {
+.password-field,
+.path-field {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.path-field > .ant-btn {
+  flex: none;
 }
 
 .input-label {

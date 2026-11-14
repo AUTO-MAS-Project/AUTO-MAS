@@ -451,6 +451,8 @@ export interface MaaFWOptionInputInfo {
   patternMsg?: string | null
   /** PI v2.10.0：密码 / 密钥字段，掩码输入，保存后只拿得到密文 */
   password?: boolean
+  /** PI v2.10.5：编辑控件，file / directory 为路径框 + 系统选择对话框；缺省为 text */
+  inputType?: 'text' | 'file' | 'directory'
 }
 
 export interface MaaFWOptionInfo {
@@ -493,6 +495,7 @@ export interface MaaFWPresetInfo {
   taskCount: number
   checkedCount: number
   snapshot: MaaFWTaskSnapshot
+  /** PI v2.10.4：适用的控制器名，空为不限 */
   controller?: string[]
   resource?: string[]
 }

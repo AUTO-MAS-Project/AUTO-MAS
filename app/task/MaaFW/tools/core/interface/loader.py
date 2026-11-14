@@ -30,6 +30,7 @@ from typing import Any
 import json5
 
 from .models import (
+    MAAFW_INPUT_TYPES,
     MAX_TASK_REPEAT_COUNT,
     SUPPORTED_OPTION_TYPES,
     MaaFWInterface,
@@ -65,7 +66,9 @@ _USER_WARNING_PREFIX = "MaaFW ProjectInterface "
 # 5：缓存里带上加载告警（``warnings``），旧缓存命中会丢掉它们。
 # 6：加载器开始校验 ``preset.pretask``（PI v2.10.3，丢对不上的条目、按 case 校验选项值），
 #    旧缓存里它是没经校验的原样字段。
-DISK_CACHE_VERSION = 6
+# 7：加载告警多了 ``preset.controller`` 写错（PI v2.10.4）与 ``input_type`` 不认识（v2.10.5），
+#    旧缓存里的告警没有这两类。
+DISK_CACHE_VERSION = 7
 DISK_CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 DISK_CACHE_CLEANUP_INTERVAL_SECONDS = 24 * 60 * 60
 _interface_cache: dict[
@@ -756,6 +759,19 @@ def _warn_preset_value_coercions(data: dict[str, Any]) -> None:
     for preset in presets:
         if not isinstance(preset, dict):
             continue
+        # PI v2.10.4：controller 必须是字符串数组；写错时模型按「不限」处理，这里告警，
+        # 免得作者的限制被悄悄放宽
+        raw_controllers = preset.get("controller")
+        if raw_controllers is not None and (
+            not isinstance(raw_controllers, list)
+            or any(not isinstance(item, str) for item in raw_controllers)
+        ):
+            logger.warning(
+                "MaaFW ProjectInterface preset %s.controller 不是字符串数组，"
+                "非字符串的部分已忽略（整项不是数组时按不限控制器处理）：%s",
+                preset.get("name"),
+                json.dumps(raw_controllers, ensure_ascii=False, default=str),
+            )
         raw_pretasks = preset.get("pretask")
         if raw_pretasks is not None and not isinstance(raw_pretasks, list):
             logger.warning(
@@ -813,6 +829,20 @@ def _warn_input_default_coercions(data: dict[str, Any]) -> None:
         for input_item in option["inputs"]:
             if not isinstance(input_item, dict):
                 continue
+            # PI v2.10.5：input_type 只认 text / file / directory，其余按 text（普通文本框）
+            raw_input_type = input_item.get("input_type")
+            # 写成数组 / 对象时不能直接查 frozenset（不可哈希会抛 TypeError，整份读不出来）
+            if raw_input_type is not None and (
+                not isinstance(raw_input_type, str)
+                or raw_input_type not in MAAFW_INPUT_TYPES
+            ):
+                logger.warning(
+                    "MaaFW ProjectInterface option %s 的输入字段 %s 的 input_type 不认识，"
+                    "已按 text 处理：%s",
+                    option_name,
+                    input_item.get("name"),
+                    json.dumps(raw_input_type, ensure_ascii=False, default=str),
+                )
             raw = input_item.get("default")
             if raw is None or isinstance(raw, str):
                 continue
@@ -955,6 +985,17 @@ def _validate_task_context_constraints(interface_model: MaaFWInterface) -> None:
                     "（不会匹配任何资源）：%s",
                     task_ref,
                     resource_name,
+                )
+
+    # 预设的 controller（PI v2.10.4）同一口径：告警、原样保留
+    for preset in interface_model.preset:
+        for controller_name in preset.controller or []:
+            if controller_name not in controller_names:
+                logger.warning(
+                    "MaaFW ProjectInterface 预设 %s 引用了不存在的 controller"
+                    "（不会匹配任何控制器）：%s",
+                    preset.name,
+                    controller_name,
                 )
 
 

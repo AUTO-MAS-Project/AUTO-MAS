@@ -2020,6 +2020,7 @@
   "core.edit.pleaseChoose": "请选择",
   "core.edit.prepareRuntimeEnv": "准备运行环境",
   "core.edit.preset": "预设",
+  "core.edit.presetControllerUnavailable": "当前控制方式不可用",
   "core.edit.previousStep": "上一步",
   "core.edit.processName": "进程名称",
   "core.edit.processNameEG": "进程名称，如StarRail.exe，必须填写否则可能无法正确监测进程状态。开启游戏后，打开任务管理器查看程序详细信息即可获得。",

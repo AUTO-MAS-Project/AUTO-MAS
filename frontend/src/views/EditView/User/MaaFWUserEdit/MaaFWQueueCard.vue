@@ -1,6 +1,6 @@
 <template>
   <!-- 预设 / 模板卡片：左图标、中间标题（预设带描述，模板带任务数与失效数）、右侧按钮，下面是任务标签串 -->
-  <div class="preset-card">
+  <div class="preset-card" :class="{ 'preset-card-disabled': disabled }">
     <div class="preset-card-inner">
       <div class="preset-header">
         <div class="preset-icon-wrap">
@@ -29,7 +29,7 @@
           <slot name="actions" />
         </div>
       </div>
-      <MaaFWQueueChips :chips="chips" />
+      <MaaFWQueueChips :chips="chips" class="preset-card-chips" />
     </div>
   </div>
 </template>
@@ -52,6 +52,8 @@ defineProps<{
   /** 模板：已失效的任务数，0 不显示 */
   invalidCount?: number
   chips: ReadonlyArray<{ id: string; label: string; invalid?: boolean }>
+  /** 当前不能应用（预设不支持当前控制器）：卡片置灰，按钮由调用方禁用 */
+  disabled?: boolean
 }>()
 
 const { t } = useI18n()
@@ -62,6 +64,13 @@ const { t } = useI18n()
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
   background: var(--ant-color-bg-container);
+}
+
+/* 不能应用的卡片：内容置灰，按钮不跟着淡（它自己有禁用样式，还要挂悬停提示） */
+.preset-card-disabled .preset-icon-wrap,
+.preset-card-disabled .preset-info,
+.preset-card-disabled .preset-card-chips {
+  opacity: 0.5;
 }
 
 .preset-card-inner {

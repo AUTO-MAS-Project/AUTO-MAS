@@ -2020,6 +2020,7 @@
   "core.edit.pleaseChoose": "Select an option",
   "core.edit.prepareRuntimeEnv": "Prepare runtime environment",
   "core.edit.preset": "Preset",
+  "core.edit.presetControllerUnavailable": "Not available for the current controller",
   "core.edit.previousStep": "Previous",
   "core.edit.processName": "Process name",
   "core.edit.processNameEG": "Process name, e.g. StarRail.exe. This is required, otherwise the process state may not be tracked correctly. Launch the game and open Task Manager, then check the program details to find it.",
