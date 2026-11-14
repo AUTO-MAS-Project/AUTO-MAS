@@ -124,7 +124,7 @@ async def test_mfw_cleanup_applies_to_every_builtin_but_reconcile_only_family(
     )
 
 
-def test_cold_declarations_and_parent_packages_do_not_load_execution_or_config(
+def test_cold_declarations_and_okww_config_do_not_load_execution_or_config(
     tmp_path,
 ):
     root = Path(__file__).resolve().parents[2]
@@ -135,6 +135,8 @@ folders = ["MAA","SRC","general","MaaEnd","MaaFW","Okww","OkNte","HSR","BetterGI
 with patch("asyncio.create_task",side_effect=AssertionError("spawn")):
     for folder in folders:
         importlib.import_module("app.task."+folder+".registration")
+    from app.task.Okww.registration import build_config_handler
+    build_config_handler()
 forbidden = [n for n in sys.modules if n in {"app.core.config.manager","app.core.task_manager"} or (n.startswith("app.task.") and (n.endswith((".manager",".embedded_manager",".restore_service",".AutoProxy")) or ".tools.core.runner" in n))]
 assert not forbidden, forbidden
 assert not __import__("pathlib").Path("config").exists()

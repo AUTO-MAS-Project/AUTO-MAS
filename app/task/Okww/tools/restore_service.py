@@ -38,7 +38,6 @@ from pathlib import Path
 
 from app.utils.common.config import restore as _utils_config_restore
 
-from ..AutoProxy import _OKWW_REL_CONFIG_DIR, _okww_config_base
 from .backup_archive import (
     build_backup_file_summary,
     build_overlay_summary,
@@ -56,6 +55,7 @@ from .backup_archive import (
     restore_mas_backup,
     restore_native_backup,
 )
+from .config_paths import _OKWW_REL_CONFIG_DIR, _okww_config_base
 
 
 def _user_guard(ctx: _utils_config_restore.RestoreContext) -> None:

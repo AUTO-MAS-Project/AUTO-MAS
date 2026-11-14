@@ -57,18 +57,21 @@ from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
 
 from . import push_log as _push_log
-from .tools import async_switch_account
+from .tools.account_switch import async_switch_account
 from .tools.arguments import build_custom_arguments
 from .tools.arguments import daily_task_argument as _daily_task_argument
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
-    mas_config_dir,
-    owner_for_mode,
     read_overlay_values,
 )
 from .tools.batch_logs import (
     NATIVE_SWITCH_UNSUPPORTED_MESSAGE,
     NativeSwitchUnsupportedError,
+)
+from .tools.config_paths import (
+    _OKWW_REL_CONFIG_DIR,
+    _okww_config_base,
+    _okww_mas_config_dir,
 )
 from .tools.game_update import update_game_via_launcher
 from .tools.launcher_start import (
@@ -129,7 +132,6 @@ _OKWW_SUCCESS_LOG: tuple[str, ...] = (
 # ⚠️ 与前端 OkwwScriptEdit.vue 的 OKWW_EXE_NAME 保持同步，改这里时需同步改前端
 _OKWW_REL_EXE = "ok-ww.exe"
 _OKWW_REL_APP_JSON = "data/apps/ok-ww/app.json"
-_OKWW_REL_CONFIG_DIR = "data/apps/ok-ww/working/configs"
 _OKWW_REL_LOG_FILE = "data/apps/ok-ww/working/logs/ok-script.log"
 _OKWW_REL_PYTHONW = "data/apps/ok-ww/python/pythonw.exe"
 _OKWW_TRACK_PROCESS_NAME = "pythonw.exe"
@@ -137,20 +139,6 @@ _OKWW_UPDATE_METHOD = "AUTO_UPDATE"
 _OKWW_LOG_TIME_START = 1
 _OKWW_LOG_TIME_END = 23
 _OKWW_LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
-
-
-def _okww_config_base(raw: object) -> str:
-    """读取 OK-WW 配置来源（base 三态），并兼容旧版字面量。"""
-
-    return _utils_constants.normalize_base_source(raw) or _utils_constants.BASE_SHARED
-
-
-def _okww_mas_config_dir(script_id: str, user_id: str, base: str) -> Path:
-    base = _okww_config_base(base)
-    owner = owner_for_mode(base, user_id)
-    if owner is None:
-        raise ValueError("原生来源不使用 MAS 全量配置目录")
-    return mas_config_dir(script_id, owner)
 
 
 def _update_json(path: Path, values: dict[str, object]) -> None:

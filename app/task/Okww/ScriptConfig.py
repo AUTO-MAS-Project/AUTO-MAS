@@ -37,17 +37,19 @@ from app.utils import (
 from app.utils import io as _utils_io
 
 from .AutoProxy import (
-    _OKWW_REL_CONFIG_DIR,
     _OKWW_REL_EXE,
     _OKWW_REL_PYTHONW,
     _configure_okww_launcher,
-    _okww_config_base,
-    _okww_mas_config_dir,
 )
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
     owner_for_mode,
     read_overlay_values,
+)
+from .tools.config_paths import (
+    _OKWW_REL_CONFIG_DIR,
+    _okww_config_base,
+    _okww_mas_config_dir,
 )
 
 logger = get_logger("OK-WW 脚本设置")
