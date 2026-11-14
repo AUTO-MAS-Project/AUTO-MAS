@@ -257,6 +257,7 @@ def _resolve_supervised_port() -> int:
 
 @logger.catch(reraise=True)
 def main():
+    """准备后端权限、运行目录和应用依赖，装配 FastAPI 服务并启动事件循环。"""
     from app.utils.common.asyncio_compat import install_windows_connection_cleanup
 
     install_windows_connection_cleanup()
@@ -354,6 +355,7 @@ def main():
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # 预热共享 SSL 上下文：truststore 全量加载证书库较慢，放线程执行避免首个请求卡死
+        """按启动阶段装配调度、后台服务和插件，服务退出时统一执行已登记的清理流程。"""
         import ssl
 
         with startup_stage("后端/任务与定时器组件导入"):
@@ -367,8 +369,24 @@ def main():
 
         asyncio.create_task(warm_ssl())
 
+        async def prepare_plugins() -> None:
+            """初始化插件操作与统一下载中心，加载插件并接入专项任务展开器。"""
+            from app.core import BackgroundTaskManager, Downloads, Operations, Plugin
+
+            Operations.initialize(max_running=Config.setting.plugin.max_operations)
+            options = Config.setting.download
+            Downloads.initialize(
+                directory=Config.data_path / "downloads",
+                max_running=options.max_running,
+                attempts=options.attempts,
+                retry_delay=options.retry_delay,
+                background=BackgroundTaskManager,
+            )
+            await Plugin.initialize()
+            TaskManager.plugin_expander = Plugin.resolve_script_expander
+
         with startup_stage("后端/必要配置初始化"):
-            await Config.init_config()
+            await Config.init_config(prepare_plugins=prepare_plugins)
         startup_mark("后端/必要配置就绪")
         with startup_stage("后端/历史组件导入"):
             from app.core import History
@@ -454,15 +472,8 @@ def main():
                 # 每个纳管的根目录跑一次 modavd update status（不联网），上次换上被打断的再 recover
                 await EmulatorManager.startup_avd_update()
 
-            async def init_stage_info() -> None:
-                from app.task.MAA.stage import maa_stage_service
-
-                # 启动不等待远端检查：缓存过期时后台拉取，页面打开时再等结果
-                await maa_stage_service.get_stage(wait_stale=False)
-
             app.state.background_status = "running"
             try:
-                await run_optional_step("活动关卡信息获取", init_stage_info)
 
                 async def _maafw_startup_maintenance() -> None:
                     # 老副本一次性采纳成「载荷 + 视图」要几分钟：连同它后面依赖终态布局的
@@ -556,10 +567,17 @@ def main():
             from app.core import (
                 BackgroundTaskManager,
                 Dispatcher,
+                Downloads,
                 MainConnection,
+                Operations,
+                Plugin,
                 Power,
-                Updater,
             )
+
+            Operations.seal()
+            Downloads.seal()
+            Plugin.seal()
+            await Plugin.stop_watching()
 
             # 同步封禁新加载，独立回收 MCP；不能让不可取消线程挡住停止主业务。
             mcp_shutdown = asyncio.create_task(MCP.shutdown(), name="mcp-shutdown")
@@ -601,13 +619,16 @@ def main():
             # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
             with suppress(RuntimeError):
                 await Power.cancel_power_task()
-            # 取消时若无法确认 FluxDown 任务已停止会抛 FluxdownCancelUnconfirmed，
-            # 关停流程不因此中断后续清理
-            with suppress(RuntimeError):
-                await Updater.cancel_download(notify=False)
             from app.services import obs_replay as _service_obs_replay
 
             await _service_obs_replay.ObsReplay.stop()
+            from app.core import Downloads, Operations, Plugin
+
+            await Operations.shutdown()
+            await Plugin.shutdown()
+            downloads_clean = await Downloads.shutdown_all()
+            if not downloads_clean:
+                logger.error("下载未确认停写，保留缓存和执行记录")
             # 已托管通知随运行时任务一起回收，完成后再关闭渲染器和渠道。
             await BackgroundTaskManager.shutdown()
             await Notify.close()
@@ -618,6 +639,12 @@ def main():
             except Exception:
                 # MCP 是可选服务，清理失败不能跳过主业务的任何收尾步骤。
                 logger.exception("MCP 服务收尾失败，详见后端日志")
+            if not downloads_clean:
+                from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+
+                raise FluxdownCancelUnconfirmed(
+                    "下载尚未确认停写，不能宣告退出清理完成"
+                )
             logger.info("AUTO-MAS 后端服务清理完成")
 
         from app.core import ShutdownCoordinator
@@ -638,13 +665,16 @@ def main():
             community_router,
             core_router,
             dispatch_router,
+            downloads_router,
             emulator_router,
             history_router,
             i18n_router,
             info_router,
             ocr_router,
             openclaw_qq_router,
+            operations_router,
             plan_router,
+            plugin_router,
             queue_router,
             scripts_router,
             setting_router,
@@ -659,6 +689,11 @@ def main():
             version="1.0.0",
             lifespan=lifespan,
         )
+        from app.core.plugin import Plugin
+        from app.plugin.openapi import bind_openapi
+
+        Plugin.http.bind_app(app)
+        bind_openapi(app)
         app.state.baah_config_service = baah_config_service
         app.state.maaend_config_service = maaend_config_service
 
@@ -685,6 +720,9 @@ def main():
         app.include_router(update_router)
         app.include_router(ocr_router)
         app.include_router(openclaw_qq_router)
+        app.include_router(operations_router)
+        app.include_router(downloads_router)
+        app.include_router(plugin_router)
 
         app.mount(
             "/api/res/materials",

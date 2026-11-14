@@ -45,6 +45,8 @@ dependencies = [
     "pyzipper==0.4.0",
     "blinker>=1.9.0",
     "python-socks[asyncio]==3.1.1",
+    "pyproject-metadata==0.12.1",
+    "watchdog==6.0.0",
 ]
 
 [project.urls]

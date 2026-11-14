@@ -2,7 +2,7 @@
 #   Copyright © 2025-2026 AUTO-MAS Team
 #   SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""通用安装失败自动恢复的决策层：不运行一条龙，不直接删除安装标记。
+"""[兼容旧专项] 通用安装失败自动恢复的决策层：不运行一条龙，不直接删除安装标记。
 
 脚本适配器只提供只读检查、安全确认清理、官方修复回调；
 公用入口严格决定能否继续并将恢复结果交回任务级汇总。
@@ -383,7 +383,6 @@ async def run_managed_installation(
 
 async def script_install_backup_verified(backup: ManagedInstallBackup) -> bool:
     """回退后的深度哈希校验由可取消工作线程执行，避免堵塞调度循环。"""
-    from app.services import script_install
 
     return await script_install.run_worker(
         lambda cancelled: (

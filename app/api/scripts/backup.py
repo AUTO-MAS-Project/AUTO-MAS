@@ -16,101 +16,21 @@
 #   Contact: DLmaster_361@163.com
 """托管管理：配置备份恢复 路由与端点专用模型。"""
 
-from typing import (
-    List,
-    Optional,
-)
-
 from fastapi import APIRouter, Body
-from pydantic import (
-    BaseModel,
-    Field,
-)
 
 from app.core import Config
 from app.models.schema import (
-    OutBase,
+    ConfigBackupEnsureIn,
+    ConfigBackupEnsureOut,
+    ConfigBackupFileOut,
+    ConfigBackupItemOut,
+    ConfigBackupListOut,
+    ConfigBackupPreviewOut,
+    ConfigBackupRestoreIn,
+    ConfigBackupRestoreOut,
 )
 from app.utils import get_logger
 from app.utils import io as _utils_io
-
-
-class ConfigBackupItemOut(BaseModel):
-    """配置备份条目"""
-
-    time: str = Field(..., description="备份时间戳（目录名，如 20260910-104500）")
-    base: Optional[str] = Field(
-        default=None,
-        description="备份时点的 base 来源（shared/independent/native）；无标注（旧版备份或未声明来源）为 null",
-    )
-
-
-class ConfigBackupListOut(OutBase):
-    data: List[ConfigBackupItemOut] = Field(..., description="备份列表（时间倒序）")
-    base: Optional[str] = Field(
-        default=None,
-        description="当前 base 来源（shared/independent/native）；无来源概念（非 base 专项）为 null",
-    )
-
-
-class ConfigBackupRestoreIn(BaseModel):
-    """把指定备份恢复到目标位置（target 取值由专项池定义）"""
-
-    scriptId: str = Field(..., description="所属托管ID")
-    userId: str = Field(..., description="目标账号ID")
-    time: str = Field(..., description="备份时间戳")
-    target: str = Field(
-        ...,
-        description="恢复目标（如 zzz-od 的 mas/onedragon、ok-nte 的 mas/native）；非法值返回 400",
-    )
-    force: bool = Field(
-        default=False,
-        description="源配置损坏时是否强制恢复（False 时返回 409 由前端二次确认，True 跳过损坏文件相关的保护步骤）",
-    )
-
-
-class ConfigBackupRestoreOut(OutBase):
-    target: str = Field(..., description="实际执行的恢复目标")
-
-
-class ConfigBackupEnsureIn(BaseModel):
-    """按需归档目标池当前配置（编辑界面进入/退出时机，指纹去重）"""
-
-    scriptId: str = Field(..., description="所属托管ID")
-    userId: str = Field(..., description="目标账号ID")
-    target: str = Field(..., description="归档目标（取值由专项池定义）")
-
-
-class ConfigBackupEnsureOut(OutBase):
-    created: bool = Field(
-        ..., description="本次是否新建了归档（False=指纹无变化跳过或无可归档内容）"
-    )
-    time: str = Field(..., description="最新备份时间戳（无任何备份为空串）")
-
-
-class ConfigBackupPreviewOut(OutBase):
-    """备份配置摘要（预览用，纯读不恢复；载荷结构由专项定义）"""
-
-    time: str = Field(..., description="备份时间戳")
-    target: str = Field(..., description="备份类别")
-    data: dict = Field(
-        ...,
-        description="专项预览载荷（如 zzz-od 的 info/account/tasks/instances 或 ok-nte 的 files）",
-    )
-
-
-class ConfigBackupFileOut(OutBase):
-    """备份内文本文件内容（只读；路径限归档内相对路径，防穿越）"""
-
-    time: str = Field(..., description="备份时间戳")
-    target: str = Field(..., description="备份类别")
-    path: str = Field(..., description="归档内相对路径（如 M7A/config.yaml）")
-    size: int = Field(..., description="文件字节数")
-    content: str = Field(
-        ...,
-        description="文本内容（utf-8 兼容 BOM 读取，无法解码部分以替换符呈现；超出大小上限返回 400）",
-    )
-
 
 router = APIRouter()
 logger = get_logger("托管管理 API")

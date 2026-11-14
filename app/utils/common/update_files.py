@@ -33,8 +33,10 @@ _LONG_PATH_THRESHOLD = 259
 _directory_locks: dict[str, asyncio.Lock] = {}
 
 
-def native_path(path: str | Path) -> str:
-    """Windows 长路径加扩展前缀，UNC 路径使用对应的 UNC 前缀。
+def native_path(path: str | Path, *, force: bool = False) -> str:
+    """将 Windows 长路径转换为支持扩展长度的本机路径，保留其他路径原样。
+
+    force=True 时也转换较短的 Windows 路径，供子文件路径可能超长的目录树使用。
 
     已经带前缀的原样返回：`abspath` 会把 `\\\\?\\` 当成普通路径段再拼一次前缀，出来的串
     谁都认不得；长度够不够是第二件事，判前缀要排在它前面。
@@ -43,7 +45,7 @@ def native_path(path: str | Path) -> str:
     if (
         os.name != "nt"
         or text.startswith("\\\\?\\")
-        or len(text) < _LONG_PATH_THRESHOLD
+        or (not force and len(text) < _LONG_PATH_THRESHOLD)
     ):
         return text
     absolute = os.path.abspath(text)

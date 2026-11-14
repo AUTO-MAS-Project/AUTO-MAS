@@ -8,3 +8,4 @@ export type FluxdownInstallIn = {
      */
     mirror?: string;
 };
+

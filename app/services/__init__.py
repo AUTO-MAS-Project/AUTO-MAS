@@ -15,7 +15,6 @@ if TYPE_CHECKING:
     from .common import game_maintenance as game_maintenance
     from .common import gi_updater as gi_updater
     from .common import maa_capture as maa_capture
-    from .common import maa_copilot as maa_copilot
     from .common import obs_replay as obs_replay
     from .common import telemetry as telemetry
     from .common import update as update
@@ -42,7 +41,6 @@ _COMMON_MODULES = {
     "custom_script": ".common.custom_script",
     "endfield_launcher": ".common.endfield_launcher",
     "game_maintenance": ".common.game_maintenance",
-    "maa_copilot": ".common.maa_copilot",
     "obs_replay": ".common.obs_replay",
     "telemetry": ".common.telemetry",
     "update": ".common.update",
@@ -90,7 +88,6 @@ __all__ = [
     "custom_script",
     "endfield_launcher",
     "game_maintenance",
-    "maa_copilot",
     "obs_replay",
     "telemetry",
     "update",

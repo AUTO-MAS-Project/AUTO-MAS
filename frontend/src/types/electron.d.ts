@@ -218,6 +218,21 @@ export interface VirtualDisplayPromptPayload {
 }
 
 export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHostAPI {
+  appUpdateCheck(
+    input: import('../../electron/services/appUpdateTypes').AppUpdateSettings
+  ): Promise<import('../../electron/services/appUpdateTypes').AppUpdateCheck>
+  appUpdateStatus(): Promise<import('../../electron/services/appUpdateTypes').AppUpdateSnapshot>
+  appUpdateStart(
+    version: string,
+    input: import('../../electron/services/appUpdateTypes').AppUpdateSettings,
+    downloader?: 'builtin' | 'fluxdown'
+  ): Promise<{ code: number; message?: string }>
+  appUpdateCancel(): Promise<{ code: number; message?: string }>
+  appUpdateSwitch(): Promise<{ code: number; message?: string }>
+  appUpdateInstall(): Promise<{ code: number; message?: string }>
+  onAppUpdate(
+    callback: (event: import('../../electron/services/appUpdateTypes').AppUpdateEvent) => void
+  ): () => void
   analytics?: {
     getContext: () => Promise<AnalyticsContext>
     trackEvent: (context: number, event: RendererAnalyticsEvent) => void

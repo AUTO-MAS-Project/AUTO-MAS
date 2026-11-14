@@ -1,3 +1,4 @@
+import { getOptionalMaaStageOverview } from '@maa/composables/useMaaStageApi'
 import { ref } from 'vue'
 import { translate as t } from '@/i18n'
 import { Service } from '@/api/services/Service'
@@ -62,14 +63,21 @@ export const useHomeOverview = () => {
     error.value = ''
 
     try {
-      const response = await Service.getOverviewApiInfoGetOverviewPost()
+      const [response, stageByServer] = await Promise.all([
+        Service.getOverviewApiInfoGetOverviewPost(),
+        getOptionalMaaStageOverview(),
+      ])
 
       if (version !== fetchVersion) {
         return
       }
 
       if (response.code === 200) {
-        const data = response.data as HomeOverviewResponse
+        const data = {
+          ...response.data,
+          Stage: stageByServer.Official ?? [],
+          StageByServer: stageByServer,
+        } as HomeOverviewResponse
         applyOverview(data)
         hasSnapshot.value = true
         saveOverviewCache(data)

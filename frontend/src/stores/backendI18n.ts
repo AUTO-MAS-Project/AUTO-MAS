@@ -32,6 +32,7 @@ function readMessages(value: unknown): LocaleMessages {
 }
 
 export const useBackendI18nStore = defineStore('backend-i18n', () => {
+  // 管理后端 core 与插件语言资源的缓存、修订号和请求生命周期，协调界面语言与资源刷新。
   const loading = ref(false)
   const error = ref<string | null>(null)
   const revision = ref('')
@@ -73,6 +74,7 @@ export const useBackendI18nStore = defineStore('backend-i18n', () => {
   }
 
   async function load(locale: AppLocale, force: boolean): Promise<boolean> {
+    // 按语言和资源代次复用缓存或在途请求，必要时加载并合并当前及回退语言资源。
     checkEndpoint()
     requested.value = true
     if (active?.locale === locale) return active.promise
@@ -95,6 +97,7 @@ export const useBackendI18nStore = defineStore('backend-i18n', () => {
 
     // 先登记 active，再发请求；通知须续接同一目标语言的等待链。
     const promise = Promise.resolve().then(async () => {
+      // 在当前请求代次内获取一致修订号的语言批次，替换 core 与插件命名空间并更新成功或失败状态。
       try {
         // 切换语言时，旧界面继续可用；新版本必须连同旧界面所需词表一起准备。
         const required = [
@@ -132,21 +135,23 @@ export const useBackendI18nStore = defineStore('backend-i18n', () => {
               ? new Map(cache)
               : new Map<AppLocale, LocaleMessages>()
           for (const response of responses) {
-            // TODO(插件迁移)：与后端同步允许 core 和 plugins.<插件标识>；
-            // 保留 bootstrap 的前端所有权，并拒绝其他无归属命名空间。
-            if (Object.keys(response.messages).some(key => key !== 'core')) {
+            if (
+              Object.keys(response.messages).some(
+                key =>
+                  /* 识别后端响应中超出 core 和 plugins 的旧命名空间，供兼容资源清理使用。 */ key !==
+                    'core' && key !== 'plugins'
+              )
+            ) {
               throw new Error(t('bootstrap.i18n.unavailable'))
             }
-            next.set(response.locale, readMessages(response.messages.core))
+            next.set(response.locale, readMessages(response.messages))
           }
           // 所有响应校验完才统一应用，不能将一半新词表与一半旧词表发布给界面。
-          // TODO(插件迁移)：缓存须保存完整 core + plugins 快照，再与本地 bootstrap 组合；
-          // 保持回退语言的 revision 一致并整体替换，使停用、卸载后的插件词条不再残留。
           for (const item of SUPPORTED_LOCALES) {
-            const core = next.get(item)
+            const messages = next.get(item)
             i18n.global.setLocaleMessage<LocaleMessages>(item, {
               bootstrap: bootstrapMessages[item],
-              ...(core ? { core } : {}),
+              ...messages,
             })
           }
           cache = next

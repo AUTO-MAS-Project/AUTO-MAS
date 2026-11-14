@@ -1,7 +1,6 @@
 """公共脚本安装恢复状态机：拒绝半安装，允许安全旧版并延后报告。"""
 
 import asyncio
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -19,6 +18,7 @@ from app.core.script_update_recovery import (
 )
 from app.services.script_install import InstallUnsafeError
 from app.services.script_install_backup import ManagedInstallBackup
+from app.task import script_update as task_updates
 
 
 def inspection(
@@ -28,6 +28,7 @@ def inspection(
     updated: bool = False,
     previous: bool = False,
 ) -> InstallInspection:
+    """按测试指定的待完成、健康和版本确认状态构造公共安装检查结果。"""
     return InstallInspection(
         pending=pending,
         healthy=healthy,
@@ -40,6 +41,7 @@ def inspection(
 
 @pytest.mark.asyncio
 async def test_verified_finished_install_is_acknowledged_without_download(tmp_path):
+    """验证已确认更新成功的安装直接结算恢复，不再重复下载。"""
     states = iter(
         [
             inspection(pending=True, healthy=True, updated=True),
@@ -66,6 +68,7 @@ async def test_verified_finished_install_is_acknowledged_without_download(tmp_pa
 
 @pytest.mark.asyncio
 async def test_retries_only_when_a_pending_install_needs_repair(tmp_path):
+    """验证只有未完成安装需要修复时才重试安装，健康安装不会多做修复。"""
     states = iter(
         [
             inspection(pending=True, healthy=False),
@@ -90,6 +93,7 @@ async def test_retries_only_when_a_pending_install_needs_repair(tmp_path):
 
 @pytest.mark.asyncio
 async def test_download_failure_with_trusted_previous_version_can_continue(tmp_path):
+    """验证重下载失败后仅在旧版已可靠确认时允许继续使用旧版。"""
     states = iter(
         [
             inspection(pending=True, healthy=False),
@@ -127,6 +131,7 @@ async def test_download_failure_with_trusted_previous_version_can_continue(tmp_p
 async def test_download_failure_never_bypasses_unconfirmed_install(
     tmp_path, pending, healthy, previous
 ):
+    """验证下载失败不能绕过未确认安装状态并启动脚本。"""
     states = iter(
         [
             inspection(pending=True, healthy=False),
@@ -151,6 +156,7 @@ async def test_download_failure_never_bypasses_unconfirmed_install(
 
 @pytest.mark.asyncio
 async def test_install_error_does_not_masquerade_as_download_failure(tmp_path):
+    """验证安装错误保持其原本含义，不被错误归为可回退的网络下载失败。"""
     events: list[RecoveryIncident] = []
     with pytest.raises(RuntimeError, match="installer failed"):
         await reconcile_installation(
@@ -167,6 +173,7 @@ async def test_install_error_does_not_masquerade_as_download_failure(tmp_path):
 
 @pytest.mark.asyncio
 async def test_cancel_is_not_converted_into_old_version_fallback(tmp_path):
+    """验证用户取消原样传播，不会被当作下载故障而继续旧版任务。"""
     events: list[RecoveryIncident] = []
     with pytest.raises(asyncio.CancelledError):
         await reconcile_installation(
@@ -183,24 +190,22 @@ async def test_cancel_is_not_converted_into_old_version_fallback(tmp_path):
 
 @pytest.mark.asyncio
 async def test_common_entry_attaches_report_and_publishes_at_end(monkeypatch, tmp_path):
+    """验证公共恢复入口把事件绑定到当前任务，在任务结束时统一发布报告。"""
     notices = []
     task = SimpleNamespace(
         task_id="task-uuid",
         current=SimpleNamespace(recovery_summary=""),
         commit=AsyncMock(),
     )
-    session = object.__new__(script_update.ScriptUpdateSession)
-    session._task = task
-    session._recovery_events = []
-    session._recovery_reported = False
+    session = task_updates.ScriptRecoverySession(task)
 
     async def send(*, id, type, data):
+        """收集发布目标、消息类型和内容，供断言恢复报告的归属与时机。"""
         notices.append((id, type, data))
         return True
 
-    monkeypatch.setattr(script_update.Publisher, "send", send)
-    token = script_update._current_recovery_session.set(session)
-    try:
+    monkeypatch.setattr(task_updates.Publisher, "send", send)
+    with session.bind():
         states = iter(
             [
                 inspection(pending=True, healthy=False),
@@ -217,8 +222,6 @@ async def test_common_entry_attaches_report_and_publishes_at_end(monkeypatch, tm
             ),
         )
         assert outcome == "old_version"
-    finally:
-        script_update._current_recovery_session.reset(token)
 
     assert not notices, "脚本运行中不能提前发公共结算通知"
     await session.publish_recovery_summary()
@@ -232,60 +235,9 @@ async def test_common_entry_attaches_report_and_publishes_at_end(monkeypatch, tm
 
 
 @pytest.mark.asyncio
-async def test_normal_download_failure_uses_verified_previous_and_defers_notice(
-    monkeypatch, tmp_path
-):
-    reports = []
-    session = object.__new__(script_update.ScriptUpdateSession)
-    session.record_recovery = reports.append
-    token = script_update._current_recovery_session.set(session)
-    try:
-
-        async def download():
-            raise DownloadRetryFailed(source="GitHub", reason="连接超时")
-
-        result = await script_update.run_script_update_with_safe_fallback(
-            script_update.ScriptUpdateRequest("bgi-one", "BetterGI"),
-            download,
-            tmp_path,
-            AsyncMock(
-                return_value=inspection(pending=False, healthy=True, previous=True)
-            ),
-        )
-        assert "继续任务" in result
-        assert len(reports) == 1 and reports[0].outcome == "old_version"
-    finally:
-        script_update._current_recovery_session.reset(token)
-
-
-@pytest.mark.asyncio
-async def test_normal_download_failure_never_bypasses_pending_marker(tmp_path):
-    reports = []
-    session = object.__new__(script_update.ScriptUpdateSession)
-    session.record_recovery = reports.append
-    token = script_update._current_recovery_session.set(session)
-    try:
-
-        async def download():
-            raise DownloadRetryFailed(source="GitHub", reason="连接超时")
-
-        with pytest.raises(DownloadRetryFailed):
-            await script_update.run_script_update_with_safe_fallback(
-                script_update.ScriptUpdateRequest("bgi-two", "BetterGI"),
-                download,
-                tmp_path,
-                AsyncMock(
-                    return_value=inspection(pending=True, healthy=True, previous=True)
-                ),
-            )
-        assert reports[0].outcome == "blocked"
-    finally:
-        script_update._current_recovery_session.reset(token)
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["initial", "acknowledge", "recheck", "post_retry"])
 async def test_recovery_check_exceptions_are_reported(tmp_path, failure):
+    """验证安装检查发生异常时生成恢复事件，错误不会静默丢失。"""
     events = []
     if failure == "initial":
         check = AsyncMock(side_effect=OSError("read failed"))
@@ -326,6 +278,97 @@ async def test_recovery_check_exceptions_are_reported(tmp_path, failure):
         )
     assert len(events) == 1
     assert events[0].outcome == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_repeated_download_failure_is_only_notified_after_queue_completion(
+    monkeypatch, tmp_path
+):
+    """验证重复下载失败在队列结束后统一通知，避免每次重试产生独立提示。"""
+    events = [
+        RecoveryIncident(
+            script_id="bgi-one",
+            script_type="BetterGI",
+            install_root=str(tmp_path),
+            outcome="old_version",
+            installed_version="1.0.0",
+            source="GitHub",
+            reason="恢复时再次下载失败：连接超时；旧版已验证可用",
+        )
+    ]
+    task = SimpleNamespace(
+        task_id="task-done",
+        current=SimpleNamespace(recovery_summary=""),
+        commit=AsyncMock(),
+    )
+    session = task_updates.ScriptRecoverySession(task)
+    for event in events:
+        session.record_recovery(event)
+    notices = []
+    monkeypatch.setattr(
+        task_updates.Publisher,
+        "send",
+        AsyncMock(side_effect=lambda **kwargs: notices.append(kwargs)),
+    )
+    assert not notices
+    await session.publish_recovery_summary()
+    assert len(notices) == 1
+    assert "再次下载失败" in notices[0]["data"].message
+    assert "GitHub" in notices[0]["data"].message
+    assert "旧版" in task.current.recovery_summary
+    assert notices[0]["data"].level == "warning"
+
+
+@pytest.mark.asyncio
+async def test_normal_download_failure_uses_verified_previous_and_defers_notice(
+    monkeypatch, tmp_path
+):
+    reports = []
+    session = object.__new__(task_updates.ScriptRecoverySession)
+    session.record_recovery = reports.append
+    token = task_updates._current_recovery_session.set(session)
+    try:
+
+        async def download():
+            raise DownloadRetryFailed(source="GitHub", reason="连接超时")
+
+        result = await script_update.run_script_update_with_safe_fallback(
+            script_update.ScriptUpdateRequest("bgi-one", "BetterGI"),
+            download,
+            tmp_path,
+            AsyncMock(
+                return_value=inspection(pending=False, healthy=True, previous=True)
+            ),
+        )
+        assert "继续任务" in result
+        assert len(reports) == 1 and reports[0].outcome == "old_version"
+    finally:
+        task_updates._current_recovery_session.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_normal_download_failure_never_bypasses_pending_marker(tmp_path):
+    reports = []
+    session = object.__new__(task_updates.ScriptRecoverySession)
+    session.record_recovery = reports.append
+    token = task_updates._current_recovery_session.set(session)
+    try:
+
+        async def download():
+            raise DownloadRetryFailed(source="GitHub", reason="连接超时")
+
+        with pytest.raises(DownloadRetryFailed):
+            await script_update.run_script_update_with_safe_fallback(
+                script_update.ScriptUpdateRequest("bgi-two", "BetterGI"),
+                download,
+                tmp_path,
+                AsyncMock(
+                    return_value=inspection(pending=True, healthy=True, previous=True)
+                ),
+            )
+        assert reports[0].outcome == "blocked"
+    finally:
+        task_updates._current_recovery_session.reset(token)
 
 
 @pytest.mark.asyncio
@@ -527,45 +570,6 @@ async def test_uncertain_installer_does_not_rollback_while_still_running(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_repeated_download_failure_is_only_notified_after_queue_completion(
-    monkeypatch, tmp_path
-):
-    events = [
-        RecoveryIncident(
-            script_id="bgi-one",
-            script_type="BetterGI",
-            install_root=str(tmp_path),
-            outcome="old_version",
-            installed_version="1.0.0",
-            source="GitHub",
-            reason="恢复时再次下载失败：连接超时；已从更新前备份恢复旧版",
-        )
-    ]
-    task = SimpleNamespace(
-        task_id="task-done",
-        current=SimpleNamespace(recovery_summary=""),
-        commit=AsyncMock(),
-    )
-    session = object.__new__(script_update.ScriptUpdateSession)
-    session._task = task
-    session._recovery_events = events
-    session._recovery_reported = False
-    notices = []
-    monkeypatch.setattr(
-        script_update.Publisher,
-        "send",
-        AsyncMock(side_effect=lambda **kwargs: notices.append(kwargs)),
-    )
-    assert not notices
-    await session.publish_recovery_summary()
-    assert len(notices) == 1
-    assert "再次下载失败" in notices[0]["data"].message
-    assert "GitHub" in notices[0]["data"].message
-    assert "旧版" in task.current.recovery_summary
-    assert notices[0]["data"].level == "warning"
-
-
-@pytest.mark.asyncio
 async def test_install_snapshot_recovers_across_different_profiles(tmp_path):
     root = tmp_path / "shared-BetterGI"
     root.mkdir()
@@ -643,9 +647,9 @@ async def test_new_public_entry_reports_only_through_current_session(tmp_path):
     exe = root / "bin"
     exe.write_bytes(b"old")
     incidents = []
-    session = object.__new__(script_update.ScriptUpdateSession)
+    session = object.__new__(task_updates.ScriptRecoverySession)
     session.record_recovery = incidents.append
-    token = script_update._current_recovery_session.set(session)
+    token = task_updates._current_recovery_session.set(session)
 
     async def inspect():
         updated = exe.read_bytes() == b"new"
@@ -671,7 +675,7 @@ async def test_new_public_entry_reports_only_through_current_session(tmp_path):
             after_rollback=AsyncMock(),
         )
     finally:
-        script_update._current_recovery_session.reset(token)
+        task_updates._current_recovery_session.reset(token)
     assert result == "installed"
     assert len(incidents) == 1
     assert incidents[0].outcome == "installed"

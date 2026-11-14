@@ -18,6 +18,22 @@ import {
   scheduledWakeupBackendReady,
 } from './scheduledWakeup'
 
+// 更新准备本身由下载/预检集成测试守护；这里继续覆盖 Runtime 提交后的关闭协议。
+vi.mock(
+  './runtimeUpgradePreparation',
+  () => /* 隔离真实升级准备和下载，保留后端服务生命周期测试关注的停止与重启行为。 */ ({
+    prepareCoreUpgrade:
+      async () =>
+      /* 模拟 core 升级准备成功，返回无需二进制对齐的执行入口。 */
+      async () => /* 返回 Runtime 对齐跳过结果，避免生命周期测试访问真实发行资源。 */ ({
+        status: 'skipped',
+      }),
+    prepareRuntimeBinary:
+      async () =>
+      /* 模拟 Runtime 二进制准备成功，返回可直接执行的空对齐入口。 */
+      async () => /* 返回受控的二进制跳过结果，供后端服务更新流程继续。 */ ({ status: 'skipped' }),
+  })
+)
 vi.mock('child_process', () => ({ spawn: vi.fn() }))
 // 更新弹窗的检查不渲染 DOM；启动、更新状态与退出协调仍运行生产代码。
 vi.mock('ant-design-vue', () => ({ Modal: {}, message: {}, notification: {} }))

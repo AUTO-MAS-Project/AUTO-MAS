@@ -205,7 +205,7 @@ def managed_batch(installation, monkeypatch):
         lambda **kwargs: SimpleNamespace(check=AsyncMock(return_value="Pass")),
     )
     monkeypatch.setattr(
-        manager, "ensure_backend_updated", AsyncMock(return_value="updated")
+        update, "ensure_backend_updated", AsyncMock(return_value="updated")
     )
     monkeypatch.setattr(manager, "confirm_usable_installation", AsyncMock())
     monkeypatch.setattr(manager, "push_dispatch_log", AsyncMock())
@@ -249,7 +249,7 @@ async def test_disabled_takeover_keeps_healthy_install_without_updating(
 ):
     managed_batch.script_config.Update.TakeoverEnabled = False
     await managed_batch._run_prepared(installation)
-    manager.ensure_backend_updated.assert_not_awaited()
+    update.ensure_backend_updated.assert_not_awaited()
     assert managed_batch.run_user_task.await_count == 2
 
 

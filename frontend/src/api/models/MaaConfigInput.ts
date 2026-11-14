@@ -4,9 +4,11 @@
 /* eslint-disable */
 import type { MaaConfig_EmulatorInput } from './MaaConfig_EmulatorInput';
 import type { MaaConfig_InfoInput } from './MaaConfig_InfoInput';
+import type { MaaConfig_plugin_infoInput } from './MaaConfig_plugin_infoInput';
 import type { MaaConfig_RunInput } from './MaaConfig_RunInput';
 import type { MaaConfig_UpdateInput } from './MaaConfig_UpdateInput';
 export type MaaConfigInput = {
+    info?: (MaaConfig_plugin_infoInput | null);
     Emulator?: (MaaConfig_EmulatorInput | null);
     Info?: (MaaConfig_InfoInput | null);
     Run?: (MaaConfig_RunInput | null);

@@ -1,10 +1,11 @@
+import { SCRIPT_PLUGIN_ROUTES } from '@/plugins/scriptAdapters'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { MAAFW_FLAVORS } from '@/composables/useMaaFWFlavor'
 import { recordAnalyticsEvent } from '@/utils/analytics'
 import { registerRouterAnalytics } from './analytics'
 import { buildMaaFWRoutes } from './maafwFlavorRoutes'
-import { buildScriptEditorRoutes, MAA_CULTIVATE_ROUTE } from './scriptEditorRoutes'
+import { buildScriptEditorRoutes } from './scriptEditorRoutes'
 
 vi.mock('@/utils/analytics', async importOriginal => ({
   ...(await importOriginal<typeof import('@/utils/analytics')>()),
@@ -18,8 +19,8 @@ describe('registered editor screen analytics', () => {
   it('keeps ordinary and MFW screen categories and entry sources without identifiers', async () => {
     const routes = [
       ...buildScriptEditorRoutes(),
+      ...SCRIPT_PLUGIN_ROUTES,
       ...Object.values(buildMaaFWRoutes(MAAFW_FLAVORS, {})).flat(),
-      MAA_CULTIVATE_ROUTE,
     ].map(route => ({ path: route.path, name: route.name, meta: route.meta, component: {} }))
     const router = createRouter({ history: createMemoryHistory(), routes })
     registerRouterAnalytics(router)

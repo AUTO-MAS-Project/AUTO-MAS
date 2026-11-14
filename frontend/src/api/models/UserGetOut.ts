@@ -37,6 +37,6 @@ export type UserGetOut = {
     /**
      * 账号数据字典, key来自于index列表的uid
      */
-    data: Record<string, (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | BetterGIUserConfig | ZzzOdUserConfig | BAAHUserConfig | WhimboxUserConfig | MSSUserConfig)>;
+    data: Record<string, (SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | BetterGIUserConfig | ZzzOdUserConfig | BAAHUserConfig | WhimboxUserConfig | MSSUserConfig | MaaUserConfig)>;
 };
 

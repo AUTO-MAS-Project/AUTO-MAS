@@ -226,9 +226,19 @@ def _config_contract(
         ):
             continue
         group_type = field.annotation
+        # 来源专项可能同时保留 Info 与插件骨架 info；生成文件名必须能在 Windows 上区分。
+        schema_group = (
+            f"plugin_{group}"
+            if group.islower()
+            and any(
+                other != group and other.casefold() == group.casefold()
+                for other in entry_type._cfg_group_fields
+            )
+            else group
+        )
         contract = config_group_contract(
             group_type,
-            name=f"{entry_type.__name__}_{group}{suffix}",
+            name=f"{entry_type.__name__}_{schema_group}{suffix}",
             mode=mode,
             extra=extra,
             entry_type=entry_type,

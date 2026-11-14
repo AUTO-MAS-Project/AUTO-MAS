@@ -143,24 +143,6 @@ class NoticeOut(OutBase):
     )
 
 
-class GetStageIn(BaseModel):
-    type: Literal[
-        "User",
-        "Today",
-        "ALL",
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-        "Sunday",
-    ] = Field(
-        ...,
-        description="选择的日期类型, Today为当天, ALL为包含当天未开放关卡在内的所有项",
-    )
-
-
 class PlanComboxIn(BaseModel):
     consumer: PlanComboxConsumer = Field(..., description="计划表消费方")
 
@@ -467,36 +449,6 @@ async def get_git_version() -> VersionOut:
 
 
 @router.post(
-    "/combox/stage",
-    tags=["Get"],
-    summary="获取关卡号下拉框信息",
-    response_model=ComboBoxOut,
-    status_code=200,
-)
-async def get_stage_combox(
-    stage: GetStageIn = Body(..., description="关卡号类型"),
-) -> ComboBoxOut:
-
-    from app.task.MAA.stage import maa_stage_service
-
-    try:
-        raw_data = await maa_stage_service.get_stage_info(stage.type)
-        data = (
-            [ComboBoxItem(**item) for item in raw_data if isinstance(item, dict)]
-            if raw_data
-            else []
-        )
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_stage_combox失败: {type(e).__name__}: {e}"
-        )
-        return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
-        )
-    return ComboBoxOut(data=data)
-
-
-@router.post(
     "/combox/script",
     tags=["Get"],
     summary="获取托管下拉框信息",
@@ -673,41 +625,11 @@ async def get_script_status_overview() -> ScriptStatusOverviewOut:
 async def get_overview(
     refresh: bool = False,
 ) -> InfoOut:
-    from app.task.MAA.stage import maa_stage_service
-
+    """返回宿主托管概览，MAA 关卡及活动资源由所属插件接口提供。"""
     try:
-        if refresh:
-            await maa_stage_service.get_stage(refresh=True)
-        stage_by_server = {
-            server: await maa_stage_service.get_stage_info("Info", server=server)
-            for server in (
-                "Official",
-                "Bilibili",
-                "YoStarEN",
-                "YoStarJP",
-                "YoStarKR",
-                "txwy",
-            )
-        }
-        proxy = await Config.get_proxy_overview()
-    except Exception as e:
-        logger.opt(exception=True).warning(f"get_overview失败: {type(e).__name__}: {e}")
-        return InfoOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data={
-                "Stage": [],
-                "Proxy": [],
-            },
-        )
-    return InfoOut(
-        data={
-            "Stage": stage_by_server["Official"],
-            "StageByServer": stage_by_server,
-            "Proxy": proxy,
-        }
-    )
+        return InfoOut(data={"Proxy": await Config.get_proxy_overview()})
+    except Exception as error:
+        return InfoOut(code=500, status="error", message=str(error), data={"Proxy": []})
 
 
 @router.post(

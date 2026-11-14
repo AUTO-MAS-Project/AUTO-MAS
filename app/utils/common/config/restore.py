@@ -37,6 +37,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Literal
@@ -126,7 +127,7 @@ class ConfigRestorePool:
     files: (
         Callable[
             [RestoreContext],
-            Awaitable["dict[str, Path | str | bytes] | None"],
+            Awaitable["Mapping[str, Path | str | bytes] | None"],
         ]
         | None
     ) = None

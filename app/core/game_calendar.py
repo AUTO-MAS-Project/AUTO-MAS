@@ -16,6 +16,7 @@ from pydantic import AwareDatetime, TypeAdapter
 from app.core import Config, Notify
 from app.models.config import CLASS_BOOK
 from app.models.notification import NotifyPayload
+from app.models.script_access import script_users
 from app.tools import game_calendar as _tool_game_calendar
 from app.utils import UTC8, get_logger
 from app.utils import io as _utils_io
@@ -26,7 +27,6 @@ CALENDAR_RETRY_INTERVAL_SECONDS = 10 * 60
 SCRIPT_CALENDAR_GAMES = {
     CLASS_BOOK[script]: game
     for script, game in {
-        "MAA": "arknights",
         "MaaEnd": "endfield",
         "SRC": "starrail",
         "HSR": "starrail",
@@ -255,10 +255,17 @@ class _GameCalendar:
         # 同一游戏的不同服分别登记，多个托管账号命中同一服时只提醒一次。
         targets: dict[tuple[str, str], str] = {}
         for script in Config.ScriptConfig.values():
-            game = SCRIPT_CALENDAR_GAMES.get(type(script))
+            from app.core.plugin import Plugin
+
+            decl = Plugin.script_decl(script)
+            game = (
+                decl.activity_game
+                if decl is not None
+                else SCRIPT_CALENDAR_GAMES.get(type(script))
+            )
             if game is None:
                 continue
-            for user in script.UserData.values():
+            for user in script_users(script).values():
                 if not user.Info.Status:
                     continue
                 source, label = _tool_game_calendar.CALENDAR_GAMES[game]

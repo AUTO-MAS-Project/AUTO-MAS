@@ -21,18 +21,6 @@ class QueryIn(BaseModel):
     scriptId: str | None = None
 
 
-class RecursiveNodeIn(BaseModel):
-    value: int
-    branch: "RecursiveBranchIn | None" = None
-
-
-class RecursiveBranchIn(BaseModel):
-    nodes: list[RecursiveNodeIn]
-
-
-RecursiveNodeIn.model_rebuild()
-
-
 @pytest_asyncio.fixture
 async def service(monkeypatch):
     monkeypatch.setenv("AUTO_MAS_ENABLE_MCP", "1")
@@ -185,39 +173,6 @@ async def test_optional_query_body_preserves_omission_and_null(
 
 
 @pytest.mark.asyncio
-async def test_recursive_tool_parameters_keep_validation(service, app, monkeypatch):
-    from mcp import ClientSession
-    from mcp.client.streamable_http import streamable_http_client
-
-    @app.post("/recursive", operation_id="recursive")
-    async def recursive(body: RecursiveBranchIn):
-        return body.model_dump(exclude_unset=True)
-
-    monkeypatch.setattr(module, "MCP_INCLUDED_OPERATIONS", ("recursive",))
-    service.start(app)
-    await wait_loaded(service)
-    arguments = {
-        "nodes": [{"value": 1, "branch": {"nodes": [{"value": 2, "branch": None}]}}]
-    }
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
-    ) as http:
-        async with streamable_http_client(
-            "http://localhost/mcp", http_client=http
-        ) as streams:
-            async with ClientSession(streams[0], streams[1]) as session:
-                await session.initialize()
-                await session.list_tools()
-                result = await session.call_tool("recursive", arguments)
-                assert not result.isError
-                assert json.loads(result.content[0].text) == arguments
-                invalid = deepcopy(arguments)
-                invalid["nodes"][0]["branch"]["nodes"][0]["value"] = "invalid"
-                result = await session.call_tool("recursive", invalid)
-                assert result.isError
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "stage,error",
     [
@@ -330,7 +285,97 @@ async def test_ws_error_does_not_fail_mcp(service, app, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_full_application_whitelist_and_schema_guards(monkeypatch):
+@pytest.mark.parametrize("with_maa", [False, True])
+async def test_full_application_whitelist_and_schema_guards(monkeypatch, with_maa):
+    from fastapi_mcp.openapi import utils
+
+    import app.api as api
+
+    monkeypatch.setenv("AUTO_MAS_ENABLE_MCP", "1")
+    monkeypatch.setattr(Publisher, "send", AsyncMock(return_value=False))
+    service = module.McpService()
+    app = FastAPI()
+    for name in api.__all__:
+        app.include_router(getattr(api, name))
+    if with_maa:
+        from maa_adapter.plugin import Plugin as MaaPlugin
+
+        app.include_router(MaaPlugin.api_router)
+    try:
+        service.start(app)
+        await wait_loaded(service)
+        assert service.status().state == "ready"
+        tools = {tool.name: tool for tool in service._instance.tools}
+        assert set(tools) == set(module.included_operations(app))
+        assert set(service._instance.operation_map) == set(tools)
+        assert "get_mcp_status_api_core_mcp_status_get" not in tools
+        assert "retry_mcp_api_core_mcp_retry_post" not in tools
+        assert (
+            "taskId"
+            in tools["get_task_status_api_dispatch_task__task_id__get"].description
+        )
+        reference = {"$ref": "#/components/schemas/Recursive"}
+        resolved = await asyncio.to_thread(
+            utils.resolve_schema_references,
+            reference,
+            {
+                "components": {
+                    "schemas": {"Recursive": {"properties": {"child": reference}}}
+                }
+            },
+        )
+        assert resolved
+    finally:
+        await service.shutdown()
+
+
+class RecursiveNodeIn(BaseModel):
+    value: int
+    branch: "RecursiveBranchIn | None" = None
+
+
+class RecursiveBranchIn(BaseModel):
+    nodes: list[RecursiveNodeIn]
+
+
+RecursiveNodeIn.model_rebuild()
+
+
+@pytest.mark.asyncio
+async def test_recursive_tool_parameters_keep_validation(service, app, monkeypatch):
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
+
+    @app.post("/recursive", operation_id="recursive")
+    async def recursive(body: RecursiveBranchIn):
+        return body.model_dump(exclude_unset=True)
+
+    monkeypatch.setattr(module, "MCP_INCLUDED_OPERATIONS", ("recursive",))
+    service.start(app)
+    await wait_loaded(service)
+    arguments = {
+        "nodes": [{"value": 1, "branch": {"nodes": [{"value": 2, "branch": None}]}}]
+    }
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+    ) as http:
+        async with streamable_http_client(
+            "http://localhost/mcp", http_client=http
+        ) as streams:
+            async with ClientSession(streams[0], streams[1]) as session:
+                await session.initialize()
+                await session.list_tools()
+                result = await session.call_tool("recursive", arguments)
+                assert not result.isError
+                assert json.loads(result.content[0].text) == arguments
+                invalid = deepcopy(arguments)
+                invalid["nodes"][0]["branch"]["nodes"][0]["value"] = "invalid"
+                result = await session.call_tool("recursive", invalid)
+                assert result.isError
+
+
+@pytest.mark.asyncio
+async def test_full_application_recursive_schema_guards(monkeypatch):
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client
 

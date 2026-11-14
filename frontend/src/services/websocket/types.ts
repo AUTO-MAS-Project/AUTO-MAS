@@ -25,6 +25,8 @@ export interface WSEnvelope<T = WSJsonObject> {
 // ==================== 固定路由 ID ====================
 
 export const WS_ID_MAIN = 'Main'
+export const WS_ID_PLUGIN = 'Plugin'
+export const WS_PLUGIN_CAPABILITIES_UPDATED = 'plugin.capabilities.updated'
 export const WS_ID_MCP = 'MCP'
 export const WS_MCP_STATUS_UPDATED = 'mcp.status.updated'
 export const WS_ID_I18N = 'I18n'

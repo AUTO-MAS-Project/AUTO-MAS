@@ -10,9 +10,31 @@
     "skipLibCheck": true,
     "types": ["vite/client"],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@maa/*": ["../plugins/maa_adapter/frontend/*"],
+      "vue": ["./node_modules/vue"],
+      "vue-router": ["./node_modules/vue-router"],
+      "ant-design-vue": ["./node_modules/ant-design-vue"],
+      "@ant-design/icons-vue": ["./node_modules/@ant-design/icons-vue"],
+      "@vueuse/core": ["./node_modules/@vueuse/core"],
+      "vite-plus/test": ["./node_modules/vite-plus/dist/test/index.d.ts"],
+      "vitest": ["./node_modules/vitest"],
+      "pinyin-pro": ["./node_modules/pinyin-pro"],
+      "vue-i18n": ["./node_modules/vue-i18n"],
+      "ant-design-vue/*": ["./node_modules/ant-design-vue/*"],
+      "@vue/server-renderer": ["./node_modules/@vue/server-renderer"],
+      "vuedraggable": ["./node_modules/vuedraggable"],
+      "dayjs": ["./node_modules/dayjs"]
     },
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue", "vite.config.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.d.ts",
+    "src/**/*.tsx",
+    "src/**/*.vue",
+    "vite.config.ts",
+    "../plugins/*/frontend/**/*.ts",
+    "../plugins/*/frontend/**/*.vue"
+  ]
 }

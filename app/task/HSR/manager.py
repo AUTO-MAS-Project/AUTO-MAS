@@ -68,7 +68,6 @@ from .tools.account_switch import (
     user_needs_account_switch,
 )
 from .tools.backup_archive import archive_native_backup
-from .tools.update import install_recovery
 from .tools.cloud_browser import DEFAULT_DEBUG_PORT, is_port_free
 from .tools.external_locks import (
     HSRExternalPathLockLease,
@@ -94,6 +93,7 @@ from .tools.sra_runtime import (
     sra_cloud_game_enabled,
 )
 from .tools.stage_runtime import resolve_configured_daily_stages
+from .tools.update import install_recovery
 
 logger = get_logger("HSR 调度器")
 
@@ -359,6 +359,39 @@ class HSRManager(NotificationTaskBase):
         task_item = self.task_info
         root_task = getattr(task_item, "task", None) if task_item else None
         return bool(root_task is not None and root_task.cancelled())
+
+    @staticmethod
+    async def check_prefetch(config) -> list:
+        """按已启用的引擎及更新模式检查 M7A、SRA 更新需求，返回需要提前下载的发行文件列表。"""
+        from app.models.schema import DownloadRequest
+        from app.task.HSR.tools.update import check_engine_update
+
+        requests = []
+        if config.Update.AutoUpdateMode == "Off":
+            return requests
+        for engine in ("M7A", "SRA"):
+            root = resolve_script_path(config, engine)
+            if root:
+                result = await check_engine_update(
+                    engine,
+                    Path(root),
+                    source=str(getattr(config.Update, f"{engine}Source")),
+                    channel=str(config.Update.Channel or "stable"),
+                    cdk=str(config.Update.MirrorChyanCDK or ""),
+                    proxy=Config.proxy,
+                )
+                if result.candidate is not None and not result.blocked_reason:
+                    candidate = result.candidate
+                    requests.append(
+                        DownloadRequest(
+                            url=candidate.download_url,
+                            content_hash=candidate.sha256 or None,
+                            downloader="builtin"
+                            if candidate.source == "MirrorChyan"
+                            else None,
+                        )
+                    )
+        return requests
 
     async def prefetch_script_update(self) -> None:
         from app.task.HSR.tools.update import prepare_engine_update

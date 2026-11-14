@@ -41,8 +41,6 @@ def build_builtin_script_capabilities(
         from app.task.general.registration import REGISTRATION as general
     with startup_stage("后端/专项注册导入/HSR.registration"):
         from app.task.HSR.registration import REGISTRATION as hsr
-    with startup_stage("后端/专项注册导入/MAA.registration"):
-        from app.task.MAA.registration import REGISTRATION as maa
     with startup_stage("后端/专项注册导入/MaaEnd.registration"):
         from app.task.MaaEnd.registration import registration as maaend_registration
     with startup_stage("后端/专项注册导入/MaaFW.registration"):
@@ -64,7 +62,6 @@ def build_builtin_script_capabilities(
         (
             maaend_registration(maaend=maaend),
             bettergi,
-            maa,
             src,
             zzzod_registration(zzzod=zzzod),
             maafw,

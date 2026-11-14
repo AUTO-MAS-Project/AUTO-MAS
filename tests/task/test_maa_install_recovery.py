@@ -1,16 +1,15 @@
 """MAA 官方本体失败与资源半更新：统一自动恢复且保持 fail-closed。"""
 
-import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from maa_adapter.tasks import manager
+from maa_adapter.updates import recovery
+from maa_adapter.updates.errors import MaaUpdateUnsafeError
 
 from app.services import script_install
-from app.task.MAA import manager
-from app.task.MAA.tools import install_recovery as recovery
-from app.task.MAA.tools.update_errors import MaaUpdateUnsafeError
 
 
 @pytest.fixture
@@ -105,7 +104,7 @@ async def test_updater_running_or_marker_changed_never_skips(maa_root):
 
 @pytest.mark.asyncio
 async def test_maa_managed_recovery_does_not_depend_on_frontend(maa_root, monkeypatch):
-    from app.task.MAA.tools import managed_recovery
+    from maa_adapter.updates import managed_recovery
 
     flag = maa_root / "pending-update-failure.txt"
     flag.write_bytes(b"native installer failed")
@@ -133,7 +132,7 @@ async def test_maa_manager_resource_recovery_goes_through_common_entry(
     instance = object.__new__(manager.MaaManager)
     instance.maa_set_path = maa_root / "config"
     instance.script_info = SimpleNamespace(
-        name="MAA", script_id="test-script", set_log=AsyncMock()
+        info=SimpleNamespace(name="MAA", script_id="test-script"), set_log=AsyncMock()
     )
     instance.task_info = SimpleNamespace(task_id="task")
     instance.script_config = SimpleNamespace(
@@ -162,7 +161,7 @@ async def test_maa_corrupted_executable_blocks_manual_acknowledge(
 
 @pytest.mark.asyncio
 async def test_maa_missing_executable_never_becomes_healthy(maa_root, monkeypatch):
-    from app.task.MAA.tools import managed_recovery
+    from maa_adapter.updates import managed_recovery
 
     flag = maa_root / "pending-update-failure.txt"
     flag.write_bytes(b"official error")
@@ -186,7 +185,7 @@ async def test_native_failure_marker_with_package_does_not_fake_automatic_retry(
     maa_root, monkeypatch
 ):
     """真实公共入口必须在原生启动前阻断无效重试，保留原始失败现场。"""
-    from app.task.MAA.tools import managed_recovery
+    from maa_adapter.updates import managed_recovery
 
     flag = maa_root / "pending-update-failure.txt"
     flag.write_bytes(b"official updater failed")
@@ -205,7 +204,9 @@ async def test_native_failure_marker_with_package_does_not_fake_automatic_retry(
     )
     instance = object.__new__(manager.MaaManager)
     instance.maa_set_path = maa_root / "config"
-    instance.script_info = SimpleNamespace(script_id="test-script", set_log=AsyncMock())
+    instance.script_info = SimpleNamespace(
+        info=SimpleNamespace(script_id="test-script"), set_log=AsyncMock()
+    )
     instance.script_config = SimpleNamespace(
         Update=SimpleNamespace(MirrorChyanCDK="", TakeoverEnabled=True)
     )
@@ -224,7 +225,7 @@ async def test_native_failure_marker_with_package_does_not_fake_automatic_retry(
 async def test_resource_failure_without_official_marker_keeps_automatic_repair(
     maa_root, monkeypatch
 ):
-    from app.task.MAA.tools import managed_recovery
+    from maa_adapter.updates import managed_recovery
 
     resource = maa_root / ".automas-resource-update.json"
     resource.write_bytes(b'{"target": "2026-11-10T00:00:00+00:00"}')

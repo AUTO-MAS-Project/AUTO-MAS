@@ -501,8 +501,8 @@ async def test_src_git_head_at_target_does_not_prove_native_dependencies_complet
 async def test_src_native_completion_record_survives_adapter_recreation(
     installation, monkeypatch
 ):
-    from app.task.SRC.tools.managed_recovery import SRCInstallAdapter
     from app.services.script_install_backup import ManagedInstallBackup
+    from app.task.SRC.tools.managed_recovery import SRCInstallAdapter
 
     root, _ = installation
     old_commit = git(root, "rev-parse", "HEAD")

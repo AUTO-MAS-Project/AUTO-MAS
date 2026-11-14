@@ -134,6 +134,59 @@ def test_repeated_cancel_waits_for_finalizer():
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Maa",
+        "MaaEnd",
+        "Src",
+        "General",
+        "Okww",
+        "OkNte",
+        "BetterGI",
+        "ZzzOd",
+        "BAAH",
+        "Whimbox",
+    ],
+)
+def test_hard_timeout_config_persistence_and_runtime(name, tmp_path):
+    from app.config.wire import config_contract
+    from app.models import config as configs
+
+    async def scenario():
+        from maa_adapter.config.script import MaaConfig
+
+        cls = MaaConfig if name == "Maa" else getattr(configs, f"{name}Config")
+        config = cls()
+        path = tmp_path / f"{name}.yaml"
+        await activate_config(config, path)
+        assert config.Run.HardTimeLimit == 120
+        proxy = Proxy()
+        proxy.script_config = config
+        assert ScriptAutoProxyBase.run_timeout_seconds.fget(proxy) == 7200
+        await config.update(
+            type(config).model_validate({"Run": {"HardTimeLimit": 240}}),
+            check_visibility=False,
+        )
+        loaded = cls()
+        await activate_config(loaded, path)
+        assert loaded.Run.HardTimeLimit == 240
+        proxy.script_config = loaded
+        assert ScriptAutoProxyBase.run_timeout_seconds.fget(proxy) == 240 * 60
+        model = config_contract(cls)
+        assert (
+            model.model_validate({"Run": {"HardTimeLimit": 240}}).Run.HardTimeLimit
+            == 240
+        )
+        for invalid in (0, 10000):
+            from pydantic import ValidationError
+
+            with pytest.raises(ValidationError):
+                model.model_validate({"Run": {"HardTimeLimit": invalid}})
+
+    asyncio.run(scenario())
+
+
 def test_hard_timeout_setting_persists_to_runtime(tmp_path):
     from app.config.wire import config_contract
     from app.models.config import GeneralConfig

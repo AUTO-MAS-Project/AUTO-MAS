@@ -6,12 +6,13 @@
  */
 
 import { ref } from 'vue'
-import { Service, type UpdateCheckOut, type VersionOut } from '@/api'
+import type { AppUpdateCheck } from '../../electron/services/appUpdateTypes'
+import { Service, type VersionOut } from '@/api'
 import { readUpdatePauseState, requestUpdateCheck } from './useUpdateChecker'
 const logger = window.electronAPI.getLogger('版本服务')
 
 // ========== 标题栏版本信息相关 ==========
-export const updateInfo = ref<UpdateCheckOut | null>(null)
+export const updateInfo = ref<AppUpdateCheck | null>(null)
 export const backendUpdateInfo = ref<VersionOut | null>(null)
 export const runtimeBackendUpdateAvailable = ref(false)
 export const runtimeBackendUpdateCommitMessage = ref('')
