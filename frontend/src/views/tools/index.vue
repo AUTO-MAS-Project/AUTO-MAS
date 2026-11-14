@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { OpenAPI } from '@/api'
 import { useMcpApi } from '@/composables/useMcpApi'
-import McpStartupSwitch from './McpStartupSwitch.vue'
+import McpStartupSwitch from './components/McpStartupSwitch.vue'
 
 const { t } = useI18n()
 const { status, loading, retrying, error, refresh, retry, dispose } = useMcpApi()
