@@ -42,6 +42,7 @@ import psutil
 from app.utils import constants as _utils_constants
 from app.utils import get_logger
 from app.utils import process as process_tools
+from app.utils.common.process.session import process_in_scope
 
 logger = get_logger("专项进程清理")
 
@@ -86,7 +87,7 @@ def find_pids_by_name(process_name: str) -> list[int]:
     pids: list[int] = []
     for process in psutil.process_iter(["name"]):
         try:
-            if process.info["name"] == process_name:
+            if process.info["name"] == process_name and process_in_scope(process.pid):
                 pids.append(process.pid)
         except psutil.Error:
             continue

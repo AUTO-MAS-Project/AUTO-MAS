@@ -32,6 +32,7 @@ from app.utils import UnsupportedPlatformError, get_logger, process_platform, wi
 
 from .runner import create_subprocess
 from .scope import current_process_scope
+from .session import process_in_scope
 
 logger = get_logger("进程管理")
 
@@ -72,7 +73,7 @@ def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
     if target.cmdline is not None and info["cmdline"] != target.cmdline:
         return False
 
-    return True
+    return process_in_scope(proc.pid)
 
 
 def is_process_running(process_name: str) -> bool:
@@ -80,7 +81,7 @@ def is_process_running(process_name: str) -> bool:
 
     for proc in psutil.process_iter(["name"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
-            if proc.info.get("name") == process_name:
+            if proc.info.get("name") == process_name and process_in_scope(proc.pid):
                 # 平台不支持窗口能力时 get_window_handles 返回空列表, 循环不进入
                 for hwnd in get_window_handles(proc.pid):
                     if window.is_visible(hwnd):
@@ -98,7 +99,7 @@ def is_process_alive(process_name: str) -> bool:
 
     for proc in psutil.process_iter(["name"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
-            if proc.info.get("name") == process_name:
+            if proc.info.get("name") == process_name and process_in_scope(proc.pid):
                 return True
     return False
 

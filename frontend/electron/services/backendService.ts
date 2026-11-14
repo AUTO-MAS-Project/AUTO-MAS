@@ -9,6 +9,7 @@ import { captureScheduledWakeupContext, scheduledWakeupBackendReady } from './sc
 
 import * as fs from 'fs'
 import { resolveHttpPort } from './instanceConfig'
+import { desktopSessionControlToken, isDesktopSessionTransition } from './desktopSessionControl'
 
 import {
   RUNTIME_CLIENT_ERROR_DEFINITIONS,
@@ -77,6 +78,7 @@ export interface BackendStatus {
 
 export interface BackendStartOptions {
   timeout?: number // 启动超时时间（毫秒）
+  resumeDesktopSession?: boolean
 }
 
 export interface BackendStartResult {
@@ -160,6 +162,9 @@ export class BackendService {
    * WebSocket连接应该由前端的useWebSocket模块处理
    */
   startBackend(options?: BackendStartOptions): Promise<BackendStartResult> {
+    if (isDesktopSessionTransition() && !options?.resumeDesktopSession) {
+      return Promise.resolve({ success: false, error: '桌面分身正在交接或执行队列' })
+    }
     if (this.startFlight) return this.startFlight
     const operation = this.enqueueOperation(() => this.startBackendInternal(options))
     this.startFlight = operation
@@ -316,6 +321,8 @@ export class BackendService {
       dataRoot: config.dataRoot,
       env: {
         ...getFluxdownInstallEnvironment(),
+        AUTO_MAS_DESKTOP_CONTROL_TOKEN: desktopSessionControlToken,
+        AUTO_MAS_DESKTOP_RESUME: options?.resumeDesktopSession ? '1' : undefined,
         AUTO_MAS_SCHEDULED_WAKEUP: wakeup.scheduledWakeup ? '1' : undefined,
         // resume 先于第二实例事件，是否有待运行定时由后端配置判定。
         AUTO_MAS_SYSTEM_RESUME: wakeup.resumedAt,

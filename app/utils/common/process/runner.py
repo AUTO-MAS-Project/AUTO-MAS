@@ -137,9 +137,16 @@ def observe_process_exit(
 def _terminate_process_tree(pid: int, *, grace_period: float = 3) -> None:
     """同步终止进程及其当前子进程，用于取消异步命令时的兜底清理。"""
 
+    from .session import process_in_scope
+
+    if not process_in_scope(pid):
+        return
     try:
         root = psutil.Process(pid)
-        processes = [*root.children(recursive=True), root]
+        processes = [
+            item for item in [*root.children(recursive=True), root]
+            if process_in_scope(item.pid)
+        ]
     except psutil.NoSuchProcess:
         return
 

@@ -15,6 +15,7 @@ export interface FrontendConfig {
 
   /** 设置页右侧分区目录的显示偏好。 */
   settingsShowNavigation?: boolean
+  desktopSessionQueueIds?: string[]
 
   // 主题设置
   themeMode: ThemeMode

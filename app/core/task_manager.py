@@ -70,6 +70,7 @@ class _TaskManager:
         self._running: dict[UUID, ScriptExpander] = {}
         self._recent: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
         self._stopping_all = False
+        self._admission_paused = False
         self._creating = 0
         self._idle = asyncio.Event()
         self._idle.set()
@@ -114,12 +115,18 @@ class _TaskManager:
         """创建前检查停止全部、电源倒计时，并确认宿主已提供执行能力。"""
         from app.core import Power
 
+        if self._admission_paused:
+            raise RuntimeError("桌面分身正在交接调度")
         if self._stopping_all:
             raise RuntimeError("正在停止全部任务，暂不接受新任务")
         if Power.power_task is not None:
             raise RuntimeError("电源任务已进入倒计时，本次任务不再创建")
         if not self._factories_bound and self.plugin_expander is None:
             raise RuntimeError("宿主尚未绑定专项执行工厂")
+
+    def pause_admission(self) -> None:
+        """关闭本进程的任务入口，直到数据所有权交接完成并重启。"""
+        self._admission_paused = True
 
     async def start(
         self,

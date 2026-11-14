@@ -67,6 +67,7 @@ from app.tools import error_screenshot as _tool_error_screenshot
 from app.tools import ocr as _tool_ocr
 from app.utils import IS_WINDOWS, get_logger
 from app.utils import display as _utils_display
+from app.utils.common.process.session import process_in_scope
 
 from .maintenance import find_game_maintenance_text
 
@@ -295,6 +296,8 @@ def find_launcher_pids(launcher_path: Path) -> list[int]:
     root_prefix = str(launcher_path.parent).casefold().rstrip("\\/") + "\\"
     pids: list[int] = []
     for process in psutil.process_iter(["name", "exe"]):
+        if not process_in_scope(process.pid):
+            continue
         try:
             name = (process.info["name"] or "").casefold()
             if name not in _LAUNCHER_PROCESS_NAMES:
@@ -327,6 +330,8 @@ def find_game_pids(launcher_path: Path) -> list[int]:
     root_prefix = str(launcher_path.parent).casefold().rstrip("\\/") + "\\"
     pids: list[int] = []
     for process in psutil.process_iter(["name", "exe"]):
+        if not process_in_scope(process.pid):
+            continue
         try:
             name = (process.info["name"] or "").casefold()
             if name != _GAME_PROCESS.casefold():
@@ -360,6 +365,8 @@ def find_client_pids(client_exe: Path | None, launcher_path: Path | None) -> set
         return pids
     target = str(client_exe).casefold()
     for process in psutil.process_iter(["name", "exe"]):
+        if not process_in_scope(process.pid):
+            continue
         try:
             name = (process.info["name"] or "").casefold()
             if name != _GAME_PROCESS.casefold():

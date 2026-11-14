@@ -130,6 +130,7 @@ from app.utils.common.process.scope import (
     current_process_scope,
     detached_process_context,
 )
+from app.utils.common.process.session import process_in_scope
 
 from .embedded_project import resolve_maafw_project_root
 from .flavor import (
@@ -4523,6 +4524,8 @@ def _match_controller_windows(controller: MaaFWController) -> list[Any]:
 def _is_process_path_running(executable_path: Path) -> bool:
     target_path = executable_path.resolve()
     for proc in psutil.process_iter(["exe"]):
+        if not process_in_scope(proc.pid):
+            continue
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied, OSError):
             raw_exe = proc.info.get("exe") or proc.exe()
             if raw_exe and Path(raw_exe).resolve() == target_path:
@@ -4559,6 +4562,8 @@ def _normalized_exe(path: str | Path) -> str:
 def _snapshot_processes() -> list[_ProcessSnapshot]:
     snapshots: list[_ProcessSnapshot] = []
     for proc in psutil.process_iter(["pid", "exe", "create_time"]):
+        if not process_in_scope(proc.pid):
+            continue
         info = proc.info
         snapshots.append(
             _ProcessSnapshot(
@@ -4629,6 +4634,8 @@ def _end_processes(
     started: dict[psutil.Process, _ProcessSnapshot] = {}
     failed: list[_ProcessSnapshot] = []
     for target in targets:
+        if not process_in_scope(target.pid):
+            continue
         try:
             proc = psutil.Process(target.pid)
             if (

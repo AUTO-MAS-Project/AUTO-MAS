@@ -9,6 +9,10 @@ import { getAppRoot } from '../services/environmentService'
 import { InitializationService } from '../services'
 import { getDefaultApiEndpoints } from '../services/instanceConfig'
 import type { BackendService } from '../services/backendService'
+import {
+  getDesktopSessionEndpoint,
+  isDesktopSessionTransition,
+} from '../services/desktopSessionControl'
 import { getLogger } from '../services/logger'
 import type { RuntimeBinaryAlignResult } from '../services/runtimeBinaryService'
 import type { RuntimeLaunchMode } from '../services/runtime'
@@ -120,6 +124,10 @@ export async function stopDesktopStartup(shutdown = false) {
  * Runtime 就绪后使用 `state:running` 下发的 baseUrl；开发与受管模式的端口由 Runtime 决定。
  */
 function resolveApiEndpoints(): ApiEndpoints {
+  const desktopEndpoint = getDesktopSessionEndpoint()
+  if (desktopEndpoint) {
+    return { local: desktopEndpoint, websocket: desktopEndpoint.replace(/^http:/, 'ws:') }
+  }
   if (!getInitService().ownsBackend) return getDefaultApiEndpoints()
   const runtimeEndpoints = getBackendService().getRuntimeApiEndpoints()
   if (runtimeEndpoints) return runtimeEndpoints
@@ -341,6 +349,9 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
   })
 
   ipcMain.handle('backend-restart', async (event, reason?: unknown) => {
+    if (isDesktopSessionTransition()) {
+      return { success: false, error: '桌面分身正在交接或执行队列' }
+    }
     logger.info('重启后端服务')
 
     const backend = getBackendService()
@@ -362,6 +373,7 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
   })
 
   ipcMain.handle('backend-status', async () => {
+    if (isDesktopSessionTransition()) return { isRunning: true, runtimeSupervised: true }
     if (!getInitService().ownsBackend) {
       try {
         const response = await fetch(`${getLocalApiEndpoint()}/api/core/health`, {
@@ -385,6 +397,7 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
   })
 
   ipcMain.handle('check-runtime-backend-update', async () => {
+    if (isDesktopSessionTransition()) return { staged: false }
     if (!getInitService().ownsBackend) return { staged: false }
     return getBackendService().checkRuntimeBackendUpdate()
   })
@@ -395,6 +408,9 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
   ipcMain.handle(
     'update-backend-via-runtime',
     async (event, targetVersion: unknown): Promise<RuntimeUpdateOutcome> => {
+      if (isDesktopSessionTransition()) {
+        return { success: false, error: '桌面分身正在执行队列' }
+      }
       logger.info(`收到 Runtime 后端更新请求，目标版本: ${String(targetVersion)}`)
 
       const result = await getInitService().runEnvironmentOperation(() =>

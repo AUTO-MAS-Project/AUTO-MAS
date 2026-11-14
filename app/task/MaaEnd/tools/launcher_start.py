@@ -60,6 +60,7 @@ from app.tools import error_screenshot as _tool_error_screenshot
 from app.tools import ocr as _tool_ocr
 from app.utils import IS_WINDOWS, get_logger
 from app.utils import display as _utils_display
+from app.utils.common.process.session import process_in_scope
 
 if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
@@ -271,6 +272,8 @@ def find_launcher_pids(launcher_path: Path) -> list[int]:
     """
     pids: list[int] = []
     for process in psutil.process_iter(["name", "exe"]):
+        if not process_in_scope(process.pid):
+            continue
         try:
             exe = process.info["exe"]
             if exe is None:

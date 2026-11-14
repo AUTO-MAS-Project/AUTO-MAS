@@ -228,6 +228,10 @@ class TaskProcessScope:
         pid = handle.pid
         if pid is None:
             return
+        from .session import process_in_scope
+
+        if not process_in_scope(pid):
+            raise ProcessLookupError("进程不属于桌面分身")
         try:
             process = (
                 handle if isinstance(handle, psutil.Process) else psutil.Process(pid)

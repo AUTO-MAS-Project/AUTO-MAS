@@ -189,6 +189,12 @@ const routes = [
     component: () => import('../views/VirtualDisplayPrompt.vue'),
     meta: { title: '虚拟显示器', skipGuard: true },
   },
+  {
+    path: '/desktop-session',
+    name: 'DesktopSession',
+    component: () => import('../views/desktopSession/DesktopSessionWindow.vue'),
+    meta: { title: '桌面分身', skipGuard: true },
+  },
 ]
 
 const router = createRouter({

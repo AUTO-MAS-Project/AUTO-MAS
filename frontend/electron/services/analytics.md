@@ -74,6 +74,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | 新增事件族 | 含义 | 固定属性（另含 outcome/耗时桶） |
 | --- | --- | --- |
 | `backend_restart_finished` | 主动更新和故障重启能否恢复 | `reason_kind` |
+| `desktop_session_connection_finished` | 桌面分身能否建立连接 | `reason_kind`（环境、凭据、连接或进程） |
 | `runtime_alignment_finished` | Runtime 升级、校验、回退是否完成 | `operation`、`release_channel` |
 | `backend_update_finished` | 后端热更新完成或停在什么阶段 | `trigger_kind`、`phase` |
 | `renderer_recovery_decided` | 渲染进程异常退出后选择重载或放弃（仅决策） | `reason_kind`、`recovery_action`、`count_bucket` |

@@ -15,6 +15,7 @@ import win32job
 import win32process
 
 from app.utils.common.process.runner import ProcessRunner
+from app.utils.common.process.session import process_in_scope, restricted_session
 
 from ..contracts.process import ElevatedProcess, EmulatorPopenOptions
 
@@ -70,13 +71,15 @@ class WindowsTaskProcessJob:
         with self._lock:
             if self._closed or self._stopping:
                 raise asyncio.CancelledError
+            if not process_in_scope(pid):
+                raise ProcessLookupError("进程不属于桌面分身")
             root = psutil.Process(pid)
             if root.create_time() != create_time:
                 raise psutil.NoSuchProcess(pid, msg="接管进程的 PID 已复用")
             pending, seen = [root], set()
             while pending:
                 target = pending.pop()
-                if target.pid in seen:
+                if target.pid in seen or not process_in_scope(target.pid):
                     continue
                 seen.add(target.pid)
 
@@ -199,7 +202,12 @@ class WindowsProcessPlatform:
     async def kill_process(self, pid: int, kill_tree: bool = False) -> tuple[bool, str]:
         """用 taskkill 终止进程，返回 (是否成功, 失败原因)。"""
 
-        args = ["taskkill", "/F"]
+        if (session_id := restricted_session()) is not None:
+            if not process_in_scope(pid):
+                return False, "进程不属于桌面分身"
+            args = ["taskkill", "/F", "/FI", f"SESSION eq {session_id}"]
+        else:
+            args = ["taskkill", "/F"]
         if kill_tree:
             args.append("/T")
         args.extend(["/PID", str(pid)])

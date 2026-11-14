@@ -113,6 +113,7 @@ let closeDisconnectModal: (() => void) | null = null
 
 // 有意重启后端状态：标题栏「更新后端」先关后端，再由初始化流程重新拉起
 let intentionalRestartActive = false
+let desktopSessionTransition = false
 let intentionalRestartTimer: number | undefined
 
 // HTTP 快照与同时到达的 WS 事件使用单调序号协调：HTTP 是连接建立时的初始权威状态，
@@ -134,7 +135,7 @@ const delay = (ms: number): Promise<void> => new Promise(resolve => window.setTi
 const isClosing = (): boolean => backendClosing
 
 // 计划内的后端重启窗口期：断开是预期的，既不提示也不自行恢复
-const isIntentionalRestart = (): boolean => intentionalRestartActive
+const isIntentionalRestart = (): boolean => intentionalRestartActive || desktopSessionTransition
 
 // ==================== 常驻订阅 ====================
 
@@ -849,6 +850,10 @@ const handleSystemResume = (): Promise<void> => {
  */
 export function initializeAppLifecycle(): void {
   if (initialized) return
+  window.electronAPI?.onDesktopSessionEndpoint?.(({ transition, reconnect }) => {
+    desktopSessionTransition = transition
+    if (reconnect && !isClosing()) void reconnectNow('桌面分身调度交接')
+  })
 
   // 所有应用级业务订阅都必须早于主连接建立；该入口覆盖初始化向导、正常进入和手动连接。
   bootstrapResidentResources()

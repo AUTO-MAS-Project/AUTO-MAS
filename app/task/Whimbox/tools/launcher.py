@@ -42,6 +42,7 @@ import psutil
 from app.task.Whimbox.tools.upstream import APP_EXE_NAME, REL_PYTHON_EXE
 from app.utils import IS_ELEVATED, ProcessInfo, ProcessManager, get_logger
 from app.utils import process as process_tools
+from app.utils.common.process.session import process_in_scope
 
 logger = get_logger("奇想盒 进程启动")
 
@@ -61,6 +62,8 @@ def find_upstream_pids(root_path: Path) -> list[int]:
     pids: list[int] = []
     python_exe = Path(root_path) / REL_PYTHON_EXE
     for process in psutil.process_iter(["name", "exe"]):
+        if not process_in_scope(process.pid):
+            continue
         try:
             if process.info["name"] == APP_EXE_NAME:
                 pids.append(process.pid)

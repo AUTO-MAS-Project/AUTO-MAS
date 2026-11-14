@@ -8,6 +8,8 @@ import psutil
 
 from app.utils import get_logger, process_platform
 
+from .session import process_in_scope
+
 logger = get_logger("进程操作")
 
 
@@ -126,12 +128,16 @@ async def _scan_processes_by_path(path: Path | str) -> _ProcessPathScan:
 
                 process_path = info.get("exe")
                 if process_path:
-                    if str(process_path).casefold() == target_path:
+                    if str(process_path).casefold() == target_path and process_in_scope(proc.pid):
                         pids.append(info["pid"])
                     continue
 
                 process_name = info.get("name")
-                if process_name and str(process_name).casefold() == target_name:
+                if (
+                    process_name
+                    and str(process_name).casefold() == target_name
+                    and process_in_scope(proc.pid)
+                ):
                     uncertain_pids.append(info["pid"])
         except (psutil.AccessDenied, OSError) as e:
             logger.warning(f"扫描进程路径失败: {e}")

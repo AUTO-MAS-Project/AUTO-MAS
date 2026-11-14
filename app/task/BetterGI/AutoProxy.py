@@ -52,6 +52,7 @@ from app.utils import (
     get_logger,
     process,
 )
+from app.utils.common.process.session import restricted_session
 
 from .tools import (
     account_switch,
@@ -2281,8 +2282,10 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         """
         for image in names:
             try:
+                session_id = restricted_session()
+                session_filter = ("/FI", f"SESSION eq {session_id}") if session_id is not None else ()
                 result = await ProcessRunner.run_process(
-                    "taskkill", "/IM", image, "/F", "/T"
+                    "taskkill", "/IM", image, "/F", "/T", *session_filter
                 )
                 if result.returncode != 0:
                     reason = (result.stderr or result.stdout or "").strip()

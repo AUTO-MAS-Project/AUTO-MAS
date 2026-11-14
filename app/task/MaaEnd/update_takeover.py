@@ -30,6 +30,7 @@ import psutil
 
 from app.utils import ProcessManager, compare_mirrorchyan_versions, get_logger
 from app.utils import io as _utils_io
+from app.utils.common.process.session import process_in_scope
 
 logger = get_logger("MaaEnd 更新接管")
 
@@ -161,7 +162,7 @@ def _find_executable_processes(executable: Path) -> list[psutil.Process]:
     return [
         process
         for process in psutil.process_iter(["exe"])
-        if process.info["exe"]
+        if process_in_scope(process.pid) and process.info["exe"]
         and os.path.normcase(os.path.abspath(process.info["exe"])) == expected
     ]
 
@@ -169,6 +170,8 @@ def _find_executable_processes(executable: Path) -> list[psutil.Process]:
 def _terminate_processes(processes: list[psutil.Process]) -> None:
     active: list[psutil.Process] = []
     for process in processes:
+        if not process_in_scope(process.pid):
+            continue
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied, OSError):
             process.terminate()
             active.append(process)
@@ -176,6 +179,8 @@ def _terminate_processes(processes: list[psutil.Process]) -> None:
         return
     _, alive = psutil.wait_procs(active, timeout=_PROCESS_STOP_TIMEOUT)
     for process in alive:
+        if not process_in_scope(process.pid):
+            continue
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied, OSError):
             process.kill()
     if alive:

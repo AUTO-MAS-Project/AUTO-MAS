@@ -256,10 +256,14 @@ def _resolve_supervised_port() -> int:
 
 
 @logger.catch(reraise=True)
-def main():
+def main(*, port: int | None = None):
+    from app.core.desktop_session.lifecycle import executor_session, install_control
+    from app.core.desktop_session.ownership import RESUME
     from app.utils.common.asyncio_compat import install_windows_connection_cleanup
 
     install_windows_connection_cleanup()
+    desktop_executor = executor_session() is not None
+    resume = os.environ.pop(RESUME, "") == "1"
 
     raw_environment = os.getenv("AUTO_MAS_ENV", "").strip().lower()
     if raw_environment not in {"", "dev", "development", "production"}:
@@ -270,7 +274,7 @@ def main():
 
     supervised = is_supervised()
     admin = is_admin()
-    if should_restart_as_admin(
+    if not desktop_executor and should_restart_as_admin(
         supervised=supervised,
         admin=admin,
         hosted_launch=is_hosted_launch(),
@@ -368,7 +372,10 @@ def main():
         asyncio.create_task(warm_ssl())
 
         with startup_stage("后端/必要配置初始化"):
-            await Config.init_config()
+            if desktop_executor:
+                await Config.init_config(desktop_executor=True)
+            else:
+                await Config.init_config()
         startup_mark("后端/必要配置就绪")
         with startup_stage("后端/历史组件导入"):
             from app.core import History
@@ -497,7 +504,9 @@ def main():
                 await run_optional_step("桌面显示输出守卫", start_desktop_guard)
                 # 要在主定时器之前：定时器可能马上拉起实例，而 sdk\emulator 可能正停在换到一半
                 await run_optional_step("ModAVD 更新恢复", init_avd_update)
-                timer_error = await run_step("主业务定时器", MainTimer.start)
+                timer_error = await run_step(
+                    "主业务定时器", lambda: MainTimer.start(resume=resume)
+                )
                 startup_mark("后端/主定时器启动结束")
 
                 await run_optional_step("通知渠道", Notify.start)
@@ -545,10 +554,13 @@ def main():
                 with startup_stage("后端/MCP 启动任务提交"):
                     MCP.start(app)
 
-        app.state.background_status = "starting"
+        app.state.background_status = "ready" if desktop_executor else "starting"
         app.state.background_error = None
         app.state.background_warnings = []
-        background_task = asyncio.create_task(initialize_background_services())
+        if not desktop_executor:
+            background_task = asyncio.create_task(initialize_background_services())
+        else:
+            await Notify.start()
 
         async def shutdown_services() -> None:
             """完整的非 WS teardown，供 /close 与 lifespan 收尾共用（幂等）。"""
@@ -659,6 +671,8 @@ def main():
             version="1.0.0",
             lifespan=lifespan,
         )
+        if IS_WINDOWS:
+            install_control(app)
         app.state.baah_config_service = baah_config_service
         app.state.maaend_config_service = maaend_config_service
 
@@ -698,12 +712,12 @@ def main():
         )
 
     async def run_server():
-        http_port = resolve_http_port(development_environment)
+        http_port = port if port is not None else resolve_http_port(development_environment)
         logger.info(f"后端监听端口: {http_port}")
         # 主 WebSocket 心跳依赖协议层 ping/pong，显式配置底层参数
         config = uvicorn.Config(
             app,
-            host="0.0.0.0",
+            host="127.0.0.1" if desktop_executor else "0.0.0.0",
             port=http_port,
             log_level="info",
             log_config=None,
@@ -722,4 +736,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    from app.core.desktop_session.ownership import data_owner
+
+    with data_owner(Path.cwd()):
+        main()
