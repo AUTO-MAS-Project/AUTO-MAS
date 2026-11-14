@@ -12,6 +12,7 @@ import { usePluginQuery } from '@/views/plugins/usePluginQuery'
 import { usePluginApi } from '@/composables/usePluginApi'
 import { pluginActionHint, pluginToggleChecked } from '@/views/plugins/configActions'
 import { apiErrorMessage } from '@/utils/apiResult'
+import PluginMetadataDetails from '@/views/plugins/PluginMetadataDetails.vue'
 
 type PluginRow = {
   uid: string
@@ -112,18 +113,21 @@ const trigger = async (row: PluginRow, action: 'enable' | 'disable' | 'reload' |
   if (running.value || pluginActionHint(row.ui, 'info', action)?.editable !== true) return
   running.value = true
   try {
-    if (action === 'disable' && row.disableImpact?.length) {
+    if (action === 'uninstall' || (action === 'disable' && row.disableImpact?.length)) {
       const confirmed = await new Promise<boolean>(resolve => {
-        // 适配器及级联下游停用会删除配置；在提交触发器前明确告知且允许取消。
+        // 卸载始终删除插件配置，已禁用适配器也须确认；停用沿用后端给出的配置影响范围。
         Modal.confirm({
-          title: t('core.plugins.disableConfirmTitle'),
-          content: t('core.plugins.disableConfirmContent', {
-            name: pluginName(row),
-            scopes: row
-              .disableImpact!.map(scope => t(`core.plugins.disableScope.${scope}`))
-              .join(' / '),
-          }),
-          okText: t('core.plugins.disable'),
+          title: t(`core.plugins.${action}ConfirmTitle`),
+          content:
+            action === 'uninstall'
+              ? t('core.plugins.uninstallConfirmContent', { name: pluginName(row) })
+              : t('core.plugins.disableConfirmContent', {
+                  name: pluginName(row),
+                  scopes: row
+                    .disableImpact!.map(scope => t(`core.plugins.disableScope.${scope}`))
+                    .join(' / '),
+                }),
+          okText: t(`core.plugins.${action}`),
           okType: 'danger',
           cancelText: t('core.common.cancel'),
           onOk: () => {
@@ -311,55 +315,40 @@ watch(locale, load, { immediate: true })
             ></template
           >
         </a-table-column>
-        <template #expandedRowRender="{ record }"
-          ><a-descriptions class="plugin-details" size="small" :column="3" bordered
-            ><a-descriptions-item :label="t('core.plugins.attribute.author')">{{
-              textValue(record.info.author)
-            }}</a-descriptions-item
-            ><a-descriptions-item :label="t('core.plugins.attribute.license')">{{
-              textValue(record.info.license)
-            }}</a-descriptions-item
-            ><a-descriptions-item :label="t('core.plugins.attribute.requiresDist')">{{
-              listValue(record.info.requires_dist)
-            }}</a-descriptions-item
-            ><a-descriptions-item :label="t('core.plugins.attribute.importName')">{{
-              textValue(record.info.import_name)
-            }}</a-descriptions-item
-            ><a-descriptions-item :label="t('core.plugins.attribute.repository')">{{
-              textValue(record.info.repository)
-            }}</a-descriptions-item
-            ><a-descriptions-item :label="t('core.plugins.attribute.homepage')">{{
-              textValue(record.info.homepage)
-            }}</a-descriptions-item
-            ><a-descriptions-item :label="t('core.plugins.attribute.docs')">{{
-              textValue(record.info.docs_url)
-            }}</a-descriptions-item
-            ><a-descriptions-item :label="t('core.plugins.attribute.requires')">{{
-              listValue(record.info.requires)
-            }}</a-descriptions-item
-            ><a-descriptions-item :label="t('core.plugins.attribute.wants')">{{
-              listValue(record.info.wants)
-            }}</a-descriptions-item
-            ><a-descriptions-item :label="t('core.plugins.attribute.lifecycle')">{{
-              textValue(record.info.lifecycle_context)
-            }}</a-descriptions-item
-            ><a-descriptions-item :label="t('core.plugins.attribute.enabled')">{{
-              flagValue(record.info.enabled)
-            }}</a-descriptions-item
-            ><a-descriptions-item :label="t('core.plugins.attribute.core')">{{
-              flagValue(record.info.is_core)
-            }}</a-descriptions-item
-            ><a-descriptions-item :label="t('core.plugins.attribute.local')">{{
-              flagValue(record.info.is_local)
-            }}</a-descriptions-item
-            ><a-descriptions-item :label="t('core.plugins.attribute.codeDrift')">{{
-              textValue(record.info.code_drift)
-            }}</a-descriptions-item
-            ><a-descriptions-item :label="t('core.plugins.attribute.error')">{{
-              textValue(record.info.last_error)
-            }}</a-descriptions-item></a-descriptions
-          ></template
-        >
+        <template #expandedRowRender="{ record }">
+          <div class="plugin-details">
+            <PluginMetadataDetails :info="record.info" />
+            <a-descriptions size="small" :column="3" bordered>
+              <a-descriptions-item :label="t('core.plugins.attribute.importName')">{{
+                textValue(record.info.import_name)
+              }}</a-descriptions-item
+              ><a-descriptions-item :label="t('core.plugins.attribute.requires')">{{
+                listValue(record.info.requires)
+              }}</a-descriptions-item
+              ><a-descriptions-item :label="t('core.plugins.attribute.wants')">{{
+                listValue(record.info.wants)
+              }}</a-descriptions-item
+              ><a-descriptions-item :label="t('core.plugins.attribute.lifecycle')">{{
+                textValue(record.info.lifecycle_context)
+              }}</a-descriptions-item
+              ><a-descriptions-item :label="t('core.plugins.attribute.enabled')">{{
+                flagValue(record.info.enabled)
+              }}</a-descriptions-item
+              ><a-descriptions-item :label="t('core.plugins.attribute.core')">{{
+                flagValue(record.info.is_core)
+              }}</a-descriptions-item
+              ><a-descriptions-item :label="t('core.plugins.attribute.local')">{{
+                flagValue(record.info.is_local)
+              }}</a-descriptions-item
+              ><a-descriptions-item :label="t('core.plugins.attribute.codeDrift')">{{
+                textValue(record.info.code_drift)
+              }}</a-descriptions-item
+              ><a-descriptions-item :label="t('core.plugins.attribute.error')">{{
+                textValue(record.info.last_error)
+              }}</a-descriptions-item></a-descriptions
+            >
+          </div>
+        </template>
       </a-table>
       <NoData
         v-if="!loading && !loadError && !rows.length"
@@ -404,6 +393,9 @@ watch(locale, load, { immediate: true })
   color: var(--ant-color-error);
 }
 .plugin-details {
+  display: flex;
   margin: 0 8px;
+  flex-direction: column;
+  gap: 16px;
 }
 </style>

@@ -1,6 +1,109 @@
 import { expect, test } from './fixtures'
 
 test.describe('@plugins plugin foundation', () => {
+  test('shows complete metadata and opens documentation from market and installed details', async ({
+    app,
+    page,
+    context,
+  }) => {
+    // 仅隔离接口与外站访问，验证同一份发行元信息在两页均可展开查看、链接可打开。
+    const uid = '47b17e9c-e285-4ef7-9002-676643210777'
+    let invalid = false
+    const info = {
+      display_name: 'Metadata fixture',
+      plugin_name: 'metadata_fixture',
+      package_name: 'auto-mas-metadata-fixture',
+      version: '1.2.3',
+      description: 'Complete adapter metadata',
+      author: 'Fixture Team',
+      license: 'AGPL-3.0-or-later',
+      tags: ['Adapter', 'Fixture'],
+      requires_dist: ['auto-mas-core>=5.8,<5.9', 'httpx>=0.28'],
+      docs_url: 'https://example.org/metadata-guide',
+      homepage: 'https://example.org/metadata-home',
+      repository: 'https://example.org/metadata-source',
+      state: 'disabled',
+    }
+    for (const resource of ['plugin_catalog', 'plugin_registry']) {
+      await page.route(`**/api/${resource}/get?*`, route =>
+        route.fulfill({
+          json: {
+            code: 200,
+            order: [{ uid, type: resource === 'plugin_catalog' ? 'PluginMeta' : 'PluginRecord' }],
+            data: {
+              [uid]: {
+                uid,
+                info: invalid
+                  ? { ...info, author: null, license: null, docs_url: 'javascript:alert(1)' }
+                  : info,
+                ui: { hints: {}, tables: [] },
+                disableImpact: [],
+              },
+            },
+          },
+        })
+      )
+    }
+    await context.route('https://example.org/metadata-guide', route =>
+      route.fulfill({ body: '<h1>Plugin documentation</h1>', contentType: 'text/html' })
+    )
+    for (const route of ['/plugins/market', '/plugins']) {
+      await app.goto(route)
+      if (route === '/plugins/market') {
+        await expect(page.getByRole('columnheader', { name: 'Tags', exact: true })).toBeVisible()
+        await expect(page.getByRole('columnheader', { name: 'Source', exact: true })).toHaveCount(0)
+        const row = page.locator('.ant-table-tbody > tr').first()
+        for (const tag of info.tags) await expect(row.getByText(tag, { exact: true })).toBeVisible()
+      }
+      await page.locator('.ant-table-row-expand-icon').first().click()
+      const details = page.locator('.plugin-metadata')
+      await expect(details).toBeVisible()
+      for (const value of [
+        info.display_name,
+        info.plugin_name,
+        info.package_name,
+        info.version,
+        info.description,
+        info.author,
+        info.license,
+        info.tags.join(', '),
+        info.requires_dist.join(', '),
+      ]) {
+        await expect(details.getByText(value, { exact: true })).toBeVisible()
+      }
+      for (const url of [info.docs_url, info.homepage, info.repository]) {
+        await expect(details.getByRole('link', { name: url, exact: true })).toHaveAttribute(
+          'href',
+          url
+        )
+      }
+      const popupPromise = page.waitForEvent('popup')
+      await details.getByRole('link', { name: info.docs_url, exact: true }).click()
+      const popup = await popupPromise
+      await expect(popup).toHaveURL(info.docs_url)
+      await popup.close()
+      for (const mode of ['light', 'dark'] as const) {
+        await page.evaluate(async mode => {
+          const modulePath = '/src/composables/useTheme.ts'
+          const { useTheme } = await import(modulePath)
+          await useTheme().setThemeMode(mode)
+        }, mode)
+        if (mode === 'dark') await expect(page.locator('html')).toHaveClass(/dark/)
+        else await expect(page.locator('html')).not.toHaveClass(/dark/)
+        await app.evidence(
+          `${route === '/plugins' ? 'plugins' : 'market'}-complete-metadata-${mode}`
+        )
+      }
+    }
+    invalid = true
+    await app.goto('/plugins/market')
+    await page.locator('.ant-table-row-expand-icon').first().click()
+    const details = page.locator('.plugin-metadata')
+    await expect(details.getByText('javascript:alert(1)', { exact: true })).toBeVisible()
+    await expect(details.getByRole('link', { name: 'javascript:alert(1)' })).toHaveCount(0)
+    await expect(details.getByText('-', { exact: true })).toHaveCount(2)
+  })
+
   test('blocks creation on capability failure and reloads available types on retry', async ({
     app,
     page,
@@ -54,6 +157,74 @@ test.describe('@plugins plugin foundation', () => {
     await expect(page.locator('main .ant-empty')).toHaveCount(0)
   })
 
+  test('confirms uninstall before submitting a disabled adapter command', async ({ app, page }) => {
+    // 隔离注册表与命令接口，验证已禁用适配器仍提示清空配置，取消不提交，确认仅提交一次。
+    const configUid = '8f34836e-8498-4a6d-8fbe-a5d4db9d8ca6'
+    const operationId = '9545fe42-3ef9-40d6-a0f0-b1b178bfb58b'
+    let installed = true
+    const submissions: unknown[] = []
+    await page.route('**/api/plugin_registry/get?*', route =>
+      route.fulfill({
+        json: {
+          code: 200,
+          order: installed ? [{ uid: configUid, type: 'PluginRecord' }] : [],
+          data: installed
+            ? {
+                [configUid]: {
+                  uid: configUid,
+                  info: {
+                    display_name: 'Installed adapter',
+                    state: 'disabled',
+                    source: 'installed',
+                  },
+                  disableImpact: [],
+                  ui: {
+                    hints: { info: [{ field: 'uninstall', component: 'button', editable: true }] },
+                    tables: [],
+                  },
+                },
+              }
+            : {},
+        },
+      })
+    )
+    await page.route('**/api/operations/start', route => {
+      submissions.push(route.request().postDataJSON())
+      return route.fulfill({
+        json: { code: 200, data: { operationId, configUid, state: 'queued' } },
+      })
+    })
+    await page.route('**/api/operations/get', route => {
+      installed = false
+      return route.fulfill({
+        json: { code: 200, data: { operationId, configUid, state: 'succeeded' } },
+      })
+    })
+    await app.goto('/plugins')
+    const row = page.getByRole('row').filter({ hasText: 'Installed adapter' })
+    const uninstall = async () => {
+      // 从插件中心的现有更多操作菜单打开卸载确认。
+      await row.getByRole('button', { name: 'More actions', exact: true }).hover()
+      await page.getByRole('menuitem', { name: 'Uninstall', exact: true }).click()
+    }
+    await uninstall()
+    const confirm = page.getByRole('dialog').filter({ hasText: 'Uninstall plugin?' })
+    await expect(confirm).toContainText('Installed adapter')
+    await expect(confirm).toContainText('permanently delete')
+    await expect(confirm).toContainText('managed scripts')
+    await expect(confirm).toContainText('accounts')
+    expect(submissions).toEqual([])
+    await app.evidence('plugins-uninstall-confirm')
+    await confirm.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await expect(confirm).not.toBeVisible()
+    await expect(row).toBeVisible()
+    expect(submissions).toEqual([])
+    await uninstall()
+    await confirm.getByRole('button', { name: 'Uninstall', exact: true }).click()
+    await expect(row).toHaveCount(0)
+    expect(submissions).toEqual([{ configUid, group: 'info', field: 'uninstall', value: true }])
+  })
+
   test('confirms adapter data deletion and updates an open creation dialog after real toggles', async ({
     app,
     page,
@@ -101,7 +272,7 @@ test.describe('@plugins plugin foundation', () => {
     )
     try {
       await app.goto('/plugins')
-      const toggle = page.getByRole('switch', { name: /maa_adapter/i })
+      const toggle = page.getByRole('switch', { name: /^MAA Adapter / })
       await expect(toggle).toBeChecked()
       await toggle.click()
       const confirm = page.getByRole('dialog').filter({ hasText: 'Disable plugin?' })

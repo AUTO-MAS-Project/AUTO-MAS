@@ -1,13 +1,14 @@
 """插件市场：索引元数据刷新并写入 ``Config.plugin_catalog``。
 
-读取 PyPI JSON 或镜像标准发行元数据（不先装包）；门禁与展示 i18n 由解析器判定。
-候选枚举用包名启发缩小扫描面，**不以包名前缀作门禁**。
+优先读取数据站预生成目录，PyPI JSON 与镜像标准元数据作为兜底（不先装包）。
+兜底枚举用包名启发缩小扫描面，不以包名前缀作门禁。
 """
 
 from __future__ import annotations
 
 import asyncio
 import html
+import os
 import re
 from email.message import Message
 from typing import Any
@@ -22,7 +23,8 @@ from app.plugin.runtime.metadata import parse_to_plugin_meta
 from app.plugin.uv.ops import candidates
 from app.utils import get_logger
 
-from . import market_index
+from . import catalog, market_index
+from .catalog_protocol import ENTRY_FIELDS, package_key
 
 logger = get_logger("插件市场")
 
@@ -31,6 +33,7 @@ _NAME_HINTS = ("automas", "auto-mas", "auto_mas")
 _FETCH_CONCURRENCY = 8
 _SIMPLE_TIMEOUT = 45.0
 _PYPI = "https://pypi.org"
+_CATALOG_URL = "https://data.auto-mas.top/api/v1/files/auto-mas/Client/plugins/download"
 _ATTEMPTS = 3
 
 
@@ -40,6 +43,48 @@ def _norm(name: str) -> str:
 
 
 async def refresh() -> None:
+    """优先读取数据站完整目录；未配置或读取失败时才扫描 PyPI 与镜像。"""
+    url = os.environ.get("AUTO_MAS_PLUGIN_INDEX_URL", _CATALOG_URL).strip()
+    if url:
+        cache = Config.data_path / "plugin-market-cache.json"
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(5.0), follow_redirects=True, proxy=Config.proxy
+            ) as client:
+                snapshot = await catalog.fetch_catalog(client, url, cache)
+        except (httpx.HTTPError, OSError, ValueError) as error:
+            logger.warning(
+                f"数据站插件目录不可用，改用发行源检索：{type(error).__name__}"
+            )
+        else:
+            drafts = [
+                PluginMeta.build(info=entry) for entry in snapshot.document["plugins"]
+            ]
+            await _replace_catalog(drafts)
+            catalog.store_cache(cache, snapshot)
+            logger.info(f"数据站插件目录刷新完成：{len(drafts)} 个插件")
+            return
+    await _refresh_pypi()
+
+
+async def _replace_catalog(drafts: list[PluginMeta]) -> None:
+    """完整目录校验后原子替换集合，内容相同时保留条目身份与已有 UI 操作目标。"""
+    col = Config.plugin_catalog
+    drafts = sorted(drafts, key=lambda item: package_key(item.info.package_name))
+    current = sorted(col.values(), key=lambda item: package_key(item.info.package_name))
+    if [{key: getattr(item.info, key) for key in ENTRY_FIELDS} for item in current] == [
+        {key: getattr(item.info, key) for key in ENTRY_FIELDS} for item in drafts
+    ]:
+        return
+    async with config_manager.transaction():
+        for uid in list(col.keys()):
+            col.remove(uid)
+        for draft in drafts:
+            col.add(PluginMeta, payload={"info": draft.info.model_dump(mode="python")})
+        await col.commit()
+
+
+async def _refresh_pypi() -> None:
     """从 PyPI 或镜像索引枚举候选，完整读取元数据成功后再替换目录。
 
     安装镜像仅提供 Simple 下载索引，不要求实现 PyPI 专用的 JSON 元数据接口。
@@ -130,18 +175,23 @@ async def refresh() -> None:
                     return data
             return None
 
-        hinted: list[str] = []
+        hinted: set[str] = set()
         index_errors: list[Exception] = []
         use_pypi_json = False
+        mirror_index_read = False
+        # 官方与镜像可能各自缓存旧索引，合并官方及一个可用镜像的候选，不能只取首个成功源。
         for source in [f"{_PYPI}/simple/", *mirrors]:
             try:
-                hinted = await list_simple(source)
-                use_pypi_json = source == f"{_PYPI}/simple/"
-                break
+                hinted.update(await list_simple(source))
+                if source == f"{_PYPI}/simple/":
+                    use_pypi_json = True
+                else:
+                    mirror_index_read = True
+                    break
             except (httpx.HTTPError, ValueError) as exc:
                 index_errors.append(exc)
                 logger.debug(f"市场索引暂不可用：{source}: {type(exc).__name__}")
-        else:
+        if not use_pypi_json and not mirror_index_read:
             index_error = index_errors[-1]
             raise RuntimeError(
                 f"插件市场索引读取失败，已保留原目录：{type(index_error).__name__}: "
@@ -153,7 +203,9 @@ async def refresh() -> None:
             error: Exception | None = None
             if use_pypi_json:
                 try:
-                    return await fetch_pypi(package)
+                    payload = await fetch_pypi(package)
+                    if payload is not None:
+                        return payload
                 except (httpx.HTTPError, ValueError) as exc:
                     error = exc
             for simple in mirrors:
@@ -203,15 +255,5 @@ async def refresh() -> None:
             logger.warning(f"未能识别市场候选 {name}，暂时跳过：{type(error).__name__}")
 
     # 仅完整读取成功才发布结果；提交失败时由配置事务恢复旧目录。
-    async with config_manager.transaction():
-        for uid in list(col.keys()):
-            col.remove(uid)
-        for draft in sorted(
-            drafts.values(), key=lambda item: _norm(item.info.package_name)
-        ):
-            col.add(
-                PluginMeta,
-                payload={"info": draft.info.model_dump(mode="python")},
-            )
-        await col.commit()
+    await _replace_catalog(list(drafts.values()))
     logger.info(f"插件市场刷新完成：{len(drafts)} 个插件")

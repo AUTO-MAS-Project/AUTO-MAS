@@ -14,6 +14,7 @@ import { usePluginQuery } from '@/views/plugins/usePluginQuery'
 import { usePluginApi } from '@/composables/usePluginApi'
 import { pluginActionHint } from '@/views/plugins/configActions'
 import { apiErrorMessage } from '@/utils/apiResult'
+import PluginMetadataDetails from '@/views/plugins/PluginMetadataDetails.vue'
 
 type CatalogRow = { uid: string; info: Record<string, unknown>; ui?: PluginConfigUi }
 const { t, locale } = useI18n()
@@ -113,6 +114,9 @@ watch(locale, load, { immediate: true })
         :pagination="false"
       >
         <template #emptyText><span /></template>
+        <template #expandedRowRender="{ record }">
+          <PluginMetadataDetails :info="record.info" />
+        </template>
         <a-table-column key="name" :title="t('core.plugins.attribute.name')"
           ><template #default="{ record }">{{
             record.info.display_name || record.info.plugin_name || record.uid
@@ -128,10 +132,13 @@ watch(locale, load, { immediate: true })
             record.info.version || '-'
           }}</template></a-table-column
         >
-        <a-table-column key="source" :title="t('core.plugins.attribute.source')"
-          ><template #default="{ record }">{{
-            record.info.package_name || '-'
-          }}</template></a-table-column
+        <a-table-column key="tags" :title="t('core.plugins.tags')"
+          ><template #default="{ record }">
+            <a-space wrap size="small">
+              <a-tag v-for="tag in record.info.tags || []" :key="tag">{{ tag }}</a-tag>
+              <span v-if="!record.info.tags?.length">-</span>
+            </a-space>
+          </template></a-table-column
         >
         <a-table-column key="action" :title="t('core.plugins.action')" align="right"
           ><template #default="{ record }"

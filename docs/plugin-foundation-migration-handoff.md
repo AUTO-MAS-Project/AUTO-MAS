@@ -1,21 +1,26 @@
 # 调度、插件、游戏与专项迁移交接
 
-更新时间：2026-11-13。本文保留讨论时间线，并记录实施后的接续位置。
+更新时间：2026-11-14。本文保留讨论时间线，并记录实施后的接续位置；历史段落中的待办以本节当前状态为准。
 
 ## 当前接续位置
 
-- 用户已授权将现有成果提交并发布阶段性草稿 PR；当前分支 `codex/migrate-plugin-foundation`，
-  实施基线为 `31f2db9b3`。发布快照时已 fetch，当前基线落后 `origin/dev` 49 个提交，尚待同步；
-  草稿用于审阅当前实现及剩余工作，不代表已经满足合并和发行条件。
+- 当前草稿 PR 为 https://github.com/AUTO-MAS-Project/AUTO-MAS/pull/1974 ，分支 `codex/migrate-plugin-foundation`，
+  实施基线 `31f2db9b3`。2026-11-14 fetch 后，最新 origin/dev 为 `7483cba5e`，本地分支落后 68 个提交，GitHub 仍报告合并冲突。
+  用户本轮授权提交并推送当前成果，市场后续修正、数据站目录客户端、卸载修正及 UI 等已整理纳入本轮交付；当前远端版本以 PR HEAD 为准。
+  无关的纯换行差异留在工作区，不纳入本轮提交；推送当前成果不等于已完成 dev 同步或合并态验收。
 - 插件基类/配置骨架/SDK、Operations、统一下载、双源预下载、来源已实现的插件页面、
   core + 插件 i18n、前端应用升级及启动退出接线已实现。最新验收记录见
   [迁移计划实施补充](plugin-foundation-migration-plan.md#实施补充2026-11-10)。
 - 用户最新决定：**后端热更依赖预检先 TODO，主要流程迁移完成后再补**。
   TODO 位于 `frontend/electron/services/backendService.ts` 与 `runtimeUpgradePreparation.ts`；
   应用跨版本升级仍由前端调用后端 `/api/update/precheck`，不修改相邻 Runtime 仓库。
-- MAA 已全量迁入插件并同步独立仓库，具体游戏管理和其他专项仍待后续迁移；
-  脚本更新完整编排上移 L2、后端热更预检、独立 SDK wheel 类型桩及 PyPI 首发/市场在线安装仍未完成。
-  尚未执行真实账号、模拟器和游戏验收；MAA 前端仍随匹配的主程序构建交付。
+- MAA 已全量迁入插件并在独立仓库发布 `auto-mas-maa-adapter==0.1.1`，无本地 MAA 源码的市场在线安装、启用和卸载已实测。
+  真实旧配置副本自动安装并启用 MAA、v2.1→v2.2 升级及再次启动已通过；8 个托管、19 个账号（MAA 3 个托管、12 个账号）、1 个计划、4 个队列及模拟器身份和原有业务值保留。
+  用户本轮确认 MAA 基本可以正常运行，计入人工验收；不把这一确认改写为已执行或已归档的自动化真实账号/模拟器/游戏 E2E 报告。MAA 前端仍随匹配的主程序构建交付。
+- 数据站插件目录仓库已上线并完成机器凭据真实上传与公开回读，主程序的数据站优先、PyPI/镜像兜底及完整元信息展示已在本地调试验证，随本轮提交交付。
+- 本轮基础设施与 MAA 实现闭环已经形成，仍需同步 dev、解决冲突并验证合并态。
+  脚本更新完整检查/安装/恢复编排上移 L2、后端热更预检和独立 SDK wheel 的宿主类型桩尚未完成。
+  具体游戏管理、游戏/设备适配与其他专项属于已确认的后续阶段，不将它们误写为本次 MAA 插件运行仍未验收。
 
 ## 脚本更新兼容层整理（2026-11-12）
 
@@ -65,7 +70,9 @@
 - 验证：`uv run --no-sync python -m pytest tests plugins/maa_adapter/tests -q` 为 1869 passed、3 skipped、17 subtests passed；SDK sdist/wheel、Ruff 与文档检查通过，SDK 导出与宿主单例身份一致。测试包含新旧用户的邮件、Server 酱、Webhook、统计/六星订阅，以及迁入 MAA 的原有通知分组。
 - 运行中的调试后端未重启：包含停止进程的组合命令被自动审批拒绝，反馈仅为 `blocked by policy`。现有进程保持运行，不能将其作为本轮代码的在线验收。
 
-## 当前 MAA 测试插件（2026-11-11）
+## 早期 MAA 本地测试插件（2026-11-11，历史记录）
+
+本节记录早期本地测试形态，已由后续全量迁移及 PyPI 0.1.1 发布替代，当前状态见开头。
 
 - 用户取消旧测试插件修复，改为从全新 MAA 专项重建；并明确自动代理复用现有模拟器模块，游戏管理暂不迁移。
 - 本轮 fetch 的 `origin/dev` 为 `5418263bf`。MAA 业务重新迁入本地 `plugins/maa_adapter/src/maa_adapter/`，旧插件移入 `.dev/test-plugin-backups/maa_adapter-abandoned-repair/` 保留；未用旧包替换来源业务。
@@ -741,3 +748,95 @@ Operations 保留命令业务层、复用 core.BackgroundTaskManager 执行，�
 - 已安装记录原本具备完整发行字段；市场原本未保存 repository、author、license，现已补齐声明、解析与 API 投影。Project-URL 标签按 PyPA 标准移除 ASCII 标点/空白并转小写，统一识别 Documentation/Docs、Homepage/Home、Repository/Source/Source Code/GitHub 等别名，三个来源使用同一解析器。
 - 扩展原有三来源回归与镜像 sidecar/Range/整包回归，检查身份、版本、全部链接、作者、许可证、依赖与多语言信息。扩展的三来源回归修正前 3 failed、4 passed，修正后通过；市场、元数据和生命周期相关 23 项全部通过。前端类型仅通过现有 OpenAPI 生成器同步市场新增的三个字段，未增加接口或改变页面布局。
 - 最终调试后端连续三次刷新均得到 MAA 专项 0.1.1 的完整字段：文档为独立仓库 README、主页及仓库为独立仓库地址、作者 AUTO-MAS Team、许可证 AGPL-3.0-or-later、依赖 auto-mas-core<5.9,>=5.8。MAA 发布包本身已正确声明，无需修改插件版本或重新发布 PyPI。
+
+### 前端完整发行元信息展示（2026-11-14）
+
+- 插件市场与插件中心共用 `frontend/src/views/plugins/PluginMetadataDetails.vue` 展开详情，展示本地化名称/简介/标签、插件标识、发行包名、版本、作者、许可证、发行依赖及文档/主页/仓库链接。插件中心继续保留原运行状态详情与操作权限；缺失值显示占位，只有 HTTP/HTTPS 地址可以点击，复用现有系统浏览器入口。中英日补齐插件标识、发行包名两个标签。
+- 市场主列表的来源列替换为当前语言的标签列，按标签展示，缺失时使用占位；发行包名继续在展开详情内展示。
+- 组件规模：PluginMarket.vue 170→174，Plugins.vue 409→398，共用详情组件新增 79 行，均不超过 500 行。复用 Ant Design 描述列表与现有页面表格，没有新增主题色或 CSS 变量。
+- `yarn e2e --grep '@plugins'` 最终 9 passed；新增用例覆盖两页完整字段、实际文档链接打开、缺失字段、非法协议及明暗主题截图。原 MAA 启停用例仍按内部标识查找开关，已在未修改的 505f1d243 基线复现同样失败；只将定位器更新为实际本地化展示名称后，原启停/确认/能力刷新流程通过。未执行真实游戏或本机插件启停。
+- `yarn typecheck`、`yarn e2e:check`、插件 API 与词表两文件 6 项检查、全量 lint 和本轮文件的格式检查通过。全量格式检查报告 853 个文件，报告文件与干净基线的源码在归一化换行后全部一致；干净基线本身有 AppLayout.vue 一项格式问题，未格式化无关文件。
+- 开发版 Electron 已刷新页面并观察到真实 MAA 0.1.1 完整详情与三个可点击链接。详情显示及第三方链接不单独采集；安装、刷新等操作继续复用 usePluginApi 的现有唯一结果观察者，不发送元数据或 URL。
+
+### 人工 PyPI 安装验收环境（2026-11-14）
+
+- 按用户要求暂停自动安装验收，启动独立手测配置 `.dev/pypi-manual-20261114/data`。后端通过 `.dev/run_pypi_manual_backend.py` 启动于 36164；仅向独立源码目录复制 core SDK 和宿主依赖元数据，资源仍使用仓库 res，真实插件发现入口不会扫描本地 MAA。原仓库插件与配置均保留。前端通过 `scripts/dev.cjs --connect-existing-backend` 启动于 5173，保留宿主随附 MAA 编辑页面。
+- 干净环境实际暴露首次发现缺陷：官方 Simple 索引 serial 43596148 尚未列出 MAA，而阿里云索引已经列出；原逻辑首个索引成功即停止，之前依靠本地安装种子找到 MAA，无法证明首次市场发现。
+- 刷新改为合并官方与一个可用镜像的候选，官方包元数据返回 404 时继续检查镜像；仍使用相同元数据门禁，不将 MAA 包名硬编码到插件框架。新增无缓存、无本地 MAA 的过期官方索引回归，修正前返回空目录失败，修正后与相关检查共 24 passed，Pyright、Ruff 和格式通过。
+- 当前手测注册表仅 core 已启用，MAA 发行包未安装且托管类型列表尚无 MAA；实际安装、启用、新建托管与插件接口由用户手动验证，不能将启动环境成功记为安装验收通过。
+
+### 已安装插件卸载失败排查与修正（2026-11-14）
+
+- 手测环境三次卸载均在调用 uv 前以 PluginNotFoundError 失败。实际注册项仍存在，但发行包 RECORD 和 MAA 入口文件含大量空字节；发现器因此无法识别已安装导入目录，注册项为 disabled/package_removed，运行时没有插件类。文件损坏来源尚未确认。
+- 卸载准入改为核对真实注册项身份，不再要求插件已成功导入；没有来源路径时跳过模块缓存清理，核心及本地插件禁止卸载的限制保留。卸包期间暂留根注册项，只有发行包和专属配置删除成功才移除；删除失败则保留登记和配置、写入加载故障状态供再次卸载。
+- 同一参数化回归覆盖来源缺失、导入失败和已加载三种实际状态，均经 PluginRecord 卸载触发器进入真实管理器，仅替换外部包管理进程：第一次失败须保留登记和配置，第二次成功须删除。修正前 3 failed，修正后相关 runtime/operations/dependencies/gateway 检查 24 passed。生产管理器 Pyright 0 errors，Ruff 检查及格式通过；测试文件单独类型检查仍报告原有第 167～300 行的类型问题，未扩展修改。
+- 损坏安装清单的副本使用真实 uv 卸载返回 RECORD CSV 错误，确认不能单靠生命周期修正清理现有坏包。已备份至 .dev/uninstall-evidence-20261114，核对本地 0.1.1 发布 wheel 与安装元数据仅有换行差异后恢复原始 RECORD，再通过 /api/operations/start 执行 info.uninstall；操作 f5650097-7bfe-4913-91cc-a714844e2d91 实际 succeeded，MAA 模块与元数据均已删除。原始 wheel 清单不含安装工具追加的 INSTALLER/REQUESTED，两项残留已在限定目录内清理。
+- 36164 后端已加载修正，5173 前端仍可访问，原仓库配置未动。市场重新安装、启用及 MAA 运行尚未复验；同一隔离依赖目录启动时还存在其他文件损坏的 MCP 导入报错，未擅自重建全部共享依赖或将文件损坏归因于网络、缓存或磁盘。卸载结果沿用 usePluginApi 的 plugin_action_finished 唯一观察入口，不新增采集。
+
+### 插件安装失败的环境修复与市场复验（2026-11-14）
+
+- 用户后续两次安装操作以 PluginError 失败。使用相同联合依赖输入对现有目标目录执行真实 uv dry-run，稳定复现 fastapi==0.133.1 的已安装 METADATA 缺少 Name；扫描 102 个发行包发现 29 份 METADATA、10 份 RECORD 含空字节。宿主 .venv 的 FastAPI 元数据正常，本次未发现真实版本约束冲突。
+- 空目录的离线解析成功，但离线实际安装失败：全局 uv 缓存中选中的 pywin32==310 wheel 解包内容也缺少 Name，对应缓存 METADATA 全为空字节。可确认已安装目录及选中缓存都损坏，尚不能确定损坏最初发生在哪一环节，不能归因于镜像或网络。
+- 使用独立 .dev/pypi-manual-20261114/uv-cache 从镜像重新获取依赖，复制安装 102 个包，在切换前核验 RECORD 中 6819 个已声明文件摘要均通过。旧目录完整保留于 .dev/plugin-install-repair-20261114/damaged-site-packages，首次离线失败的暂存目录及诊断日志也保留；仅替换本次手测 profile 的插件依赖，不修改正式环境或原仓库用户配置。
+- 手测启动器 .dev/run_pypi_manual_backend.py 显式传入独立 UV_CACHE_DIR 和 UV_LINK_MODE=copy，后续市场安装不再复用已知损坏的全局缓存，也避免手测文件与缓存共享可写副本。这是本地手测环境调整，没有增加生产自动重建逻辑，也没有修改插件版本、包业务代码或 SDK 依赖约束。
+- 通过实际 /api/operations/start 提交市场 info.install，操作 5ec2f8af-a42e-4c8b-a3ea-ed23d21d1a83 于 2026-11-14 17:18:35（北京时间）succeeded。注册表确认 auto-mas-maa-adapter==0.1.1，source=installed、state=disabled、last_error 为空，成功导入插件类；本地 MAA 工程仍未纳入该 profile 的发现范围。
+- 安装后 103 个发行包的 6910 个已记录文件摘要均通过；宿主会主动改写合成 SDK 的 METADATA/INSTALLER，因此只对这两个有意变更的文件跳过旧 wheel 摘要比对。后端 health ready、backgroundError=null，MCP ready 且 error=null。调试后端 36164、前端 5173 已重新启动，前端 HTTP 200，Electron 编译观察到 0 errors；插件保持禁用供用户手测，本轮未启用插件、新建托管或执行 MAA/模拟器/游戏。
+- 修复采用实际安装前后对照及发行文件完整性检查，没有为本地损坏文件添加生产兜底或同义单测。用户操作仍复用 usePluginApi 的 plugin_action_finished 唯一结果观察入口，不新增遥测。
+
+### 插件卸载二次确认（2026-11-14）
+
+- 插件中心沿用原有 Modal.confirm，在提交卸载触发器前显示插件名称，告知插件及全部配置删除、适配器及受影响依赖对应的托管（账号、关联计划）或游戏设备配置清空，强调无法撤销。卸载本身会删除专属配置，因此统一确认所有允许卸载的插件，已禁用或加载失败的适配器不依赖 disableImpact 也会提示；核心/本地插件仍服从原 UI 操作权限。
+- 取消只关闭弹窗并释放页面互斥状态，不提交命令；确认后继续走现有独立操作入口与结果等待。停用仍复用后端 disableImpact，不修改禁用影响判定、生命周期接口或卸包实现。中英日补齐标题和内容，运行中的调试后端三种语言资源接口均已读到新词条。
+- 新浏览器回归仅隔离注册表与命令 HTTP 边界，覆盖已禁用且 disableImpact=[] 的已安装适配器，断言弹窗包含插件名和配置删除提醒、取消无请求、确认仅提交一次且成功后列表刷新。修正前因缺少弹窗失败；修正后与原真实 MAA 启停/配置清理/新建托管能力变化场景一起 2 passed，证据位于 frontend/test-results/browser/plugins.pw.ts--plugins-plu-60276--a-disabled-adapter-command/plugins-uninstall-confirm.png；未从手测 profile 实际卸包。
+- yarn typecheck、插件 API/词表两文件 6 项检查、yarn e2e:check、涉及文件 lint 与格式检查通过。Plugins.vue 本轮工作区基线 398→401 行（HEAD 505f1d243 为 409 行，含此前元信息整理），符合不超过 500 行的组件约束。确认弹窗不新增遥测，真正提交后的结果沿用 usePluginApi/plugin_action_finished；未改变采集字段。
+
+### 数据站插件目录优先与独立生成仓库（2026-11-14）
+
+- 用户确认数据站预生成目录优先、现有 PyPI/镜像检索兜底。随后明确取消 data 分支及 Git 内目录快照：生成器每轮现场读取数据站公开目录，取得已知包和变更基准；仓库只维护程序、配置、协议及测试。新工作流只有 contents: read，没有生成数据提交或推送权限。
+- 独立公开仓库已创建并推送：https://github.com/AUTO-MAS-Project/AUTO-MAS-Plugin-Index ，默认分支 master，当前提交 714aff7b89c0e7b4d72302fd82735b20ee807aca。本地目录为 D:/Dev/AUTO-MAS-Plugin-Index；元数据解析与宿主现有门禁、README 多语言声明、完整 URL/作者/许可证/依赖语义保持一致，框架不硬编码 MAA，初始补录包位于该仓库 config/packages.json。
+- 目录 v1 包含 schema_version、revision、updated_at 和插件列表，保留现有 12 项发行及语言元信息。摘要只计算协议版本和规范化插件内容，内容未变则复用整个公开文档及时间，不上传新版本；不以目录年龄使其过期。拒绝身份冲突、摘要不匹配、未知协议或配置触发器等非元信息字段。主程序只保留读取、校验和缓存需要的协议函数，不迁入目录生成业务。
+- 更新工作流每 30 分钟检查公开目录中的已知包，每日 UTC 00:07/北京时间 08:07 发现新候选，并支持 refresh/discover/preview。已知插件读取失败不发布残缺目录；真实 404 可移除非固定补录包。现场读取数据站失败不会退化为空目录。公开内容相同时跳过上传；POST 不自动重试，响应丢失后的下一轮会重新读取公开内容，已生效则跳过。上传结果须审核发布通过且公开回读一致。
+- 主程序新增 app/plugin/runtime/catalog.py、catalog_protocol.py，market.refresh 优先使用进程变量 AUTO_MAS_PLUGIN_INDEX_URL 指向的 HTTPS 目录，5 秒读取超时，成功立即结束，不扫描发行源；有效 ETag/304 缓存与相同内容刷新保留条目身份。数据站失败才执行原发行源检索；所有来源失败保留原目录与持久化文件并报错。安装仍使用原 uv 联合解析流程，未新增 HTTP API 或前端生成契约。
+- 用户说明目标文件尚未建立，要求先完成代码和仓库。因此没有创建数据站文件、设置凭据或执行真实上传，也没有虚构默认下载地址；URL 未配置时主程序保持原兜底。待数据站建立目标后，在新仓库配置 AUTOMAS_FILE_ID、AUTOMAS_PUBLIC_URL 和 Secret AUTOMAS_TOKEN，并将同一公开地址配置给主程序，才能启用线上首选目录。
+- GitHub 最新代码检查与真实采集预览均成功：https://github.com/AUTO-MAS-Project/AUTO-MAS-Plugin-Index/actions/runs/43593339062 、https://github.com/AUTO-MAS-Project/AUTO-MAS-Plugin-Index/actions/runs/43593340479 。预览扫描 30 个候选，生成 auto-mas-maa-adapter==0.1.1，revision=531f5f0a0491fed4688c8f22181bc12d44f1d6508254d551126956250b0889fe。下载的真实产物已通过宿主协议和全部 12 项字段投影校验。
+- Actions 的 plugin-catalog 产物只保留本轮 JSON/报告 7 天供人工查看，不作为后续采集基准。本地预览位于 .dev/plugin-index-preview-43593340479。新仓库 15 项测试与 Ruff/锁文件检查通过，宿主市场/元数据/运行时/Operations/gateway 相关 48 项检查通过，新客户端模块 Pyright 0 errors。测试覆盖快路径不访问 PyPI、有效空目录、304、失败回退、双源失败保留、元信息变化、零重复上传及上传失败恢复；没有真实上传结果。
+- 来源显示已按用户要求将 installed 的中英日展示词改为插件市场，内部发现值不变；相关词表检查通过。目录刷新继续由 usePluginApi 的 plugin_action_finished 确认操作最终结果，没有增加采集字段或第二个结果观察者。主程序本轮改动保留在现有迁移工作区，尚未提交或推送；独立仓库已提交推送。
+
+### 数据站首次配置后的采集失败修复（2026-11-14）
+
+- 用户已配置新仓库变量：AUTOMAS_FILE_ID=115，AUTOMAS_PUBLIC_URL=https://data.auto-mas.top/api/v1/files/auto-mas/Client/plugins/download，机器凭据位于 AUTOMAS_TOKEN Secret。失败运行 43596253817 在读取旧目录时以 invalid catalog envelope 结束，尚未进入机器凭据上传阶段。
+- 公开文件详情及实际下载确认目标 plugins 的首传文件为 maintain.json，内容是 generated_at/games 维护策略，不符合插件目录协议。通过用户已登录的管理员文件 115 在线编辑入口，将已校验的真实采集目录提交为新版本 v2，原 v1 保留在历史；未放宽协议校验、未将不合法数据自动当成空目录。在线编辑沿用既有 source_filename，v2 文件名仍显示 maintain.json，但实际内容已经是有效插件目录。
+- 同一工作流重跑 attempt=2 已成功，日志为 Catalog unchanged: 1 plugins 和 Synchronization unchanged，符合无内容变化不上传。此次重跑未实际提交上传请求，不能据此声称机器凭据的权限已完成真实上传验证。公开目录中的 MAA 0.1.1 及全部协议字段已校验通过。
+- 主程序工作区已将实际公开地址设为 market.py 的默认首选目录，AUTO_MAS_PLUGIN_INDEX_URL 仍可覆写，显式空值可只走旧兜底。原发行源回归夹具改为显式空值，市场相关 18 项检查通过；隔离进程实读默认数据站目录耗时约 0.434 秒，重复刷新保留条目身份。正在运行的手测后端未因本轮验证而重启，源代码改动尚未提交推送。
+- 新仓库 README 补充首传必须使用 preview 产物 plugins.json、误传其他 JSON 时的修复方式，并同步已就绪的主程序默认地址；文档提交 ff03984 已推送。修复界面证据保存在 .dev/plugin-directory-v2.jpg。没有修改或读取机器凭据内容。
+
+### 为用户准备真实上传测试（2026-11-14）
+
+- 用户手动清空 plugins 后保留了旧摘要，导致工作流 43597463695 失败；按用户明确要求，将云端文件 115 发布为协议有效的空目录 v4，重新计算 revision=ce55ee0ddec763a8659337ba6b1e966ef63469d5aa6a0e27f3c790bd80499566，并同步内容修改时间。公开下载已实读校验，原版本历史保留。
+- 此空目录是用户主动要求的上传测试前置条件，不应擅自填回插件或弱化摘要校验。下一次用户运行 refresh 时，配置补录的 MAA 将被重新采集，目录内容真正变化，从而触发机器凭据上传。本轮未替用户运行工作流；本地有效测试 JSON 为 .dev/plugin-directory-upload-test.json，发布截图为 .dev/plugin-directory-upload-test.jpg。
+
+### 机器凭据跨节点上传验证完成（2026-11-14）
+
+- 用户实际上传在 data.auto-mas.top 重定向到 data2.auto-mas.top 后返回 401。重新对照 Maintenance 源码确认，同一上传路径依赖 curl 的 --location-trusted 保留跨主机认证头；此前实现删除了该参数，是本轮差异的直接原因。
+- 独立仓库恢复来源的重定向处理，保留 HTTPS 校验、最多 5 次重定向、标准输入提供机器凭据、不自动重试 POST 和公开回读等既有行为。新增真实 curl 与两个本地 HTTPS 节点的回归，证书在测试临时目录生成，只为本地请求指定测试 CA；验证 307 后的认证、multipart 目录内容与变更说明。修正前稳定复现 HTTP 401，修正后与全部检查合计 16 passed。
+- 修复提交 02952553eec497ba0df2ce9a5169117f134f87b7 已推送。代码检查运行 43599432657 与真实更新运行 43599434670 均成功；后者明确记录 Synchronization published。数据站文件 115 已由该工作流机器凭据实际发布 v5，source_filename=plugins.json，change_note=GitHub Actions run 43599434670，公开目录恢复 MAA 0.1.1 并通过摘要校验。因此机器凭据的真实上传与公开回读已经验证，无需继续保留空目录测试状态。
+
+### 正式版真实数据副本升级验收（2026-11-14）
+
+- 按用户要求从 C:/Program Files/AUTO-MAS 复制 config 与 data 到独立调试 profile `.dev/real-upgrade-20261114/data`，数据库从 v2.1 开始；源目录不承受升级写入。副本关闭队列自动触发、签到、通知与遥测，托管本体路径保持原值，未执行模拟器、游戏或脚本任务。
+- 沿用人工市场验收启动入口，只随附 auto_mas_core，初始没有 MAA 源码或已安装发行包。真实 main 启动链识别旧 MaaConfig/MaaPlanConfig，自动从镜像安装 auto-mas-maa-adapter 0.1.1 并启用，再激活领域配置、flush，最终推进至 v2.2；首次安装及启动约 165 秒。没有手工安装插件或调用迁移替身。
+- 8 个托管、19 个账号（其中 MAA 3 个托管、12 个账号）、1 个计划、4 个队列、1 个模拟器的索引与身份完整保留。规范化 MAA 的 UserData→users 持久化字段名后，逐项比较升级前所有脚本、计划、队列和模拟器业务字段，无缺失或值变动；模拟器绑定和账号选择也保持原值。原正式版 28 个配置文件校验值全部不变，源数据库仍为 v2.1。
+- 再次正常启动约 5.8 秒就绪，无重复安装，插件记录身份不变，上述业务配置与首次升级后的文档完全一致。health 为 ready，后台无错误或警告，调度运行快照为空。插件关卡选项接口返回成功且有候选内容。
+- 已重新打开开发 Electron 窗口，前端 5173、后端 36164；正式版 36163 的原进程保持运行。页面实查插件中心显示 MAA 0.1.1、来源插件市场、已启用，旧 MAA 托管编辑页正常显示路径及模拟器绑定。脱敏验证结果 `.dev/real-upgrade-20261114/verification.json`，启用状态截图 `plugin-enabled.png`，首次及再次启动日志均保存在该 profile。
+- 复用 `uv run --no-sync python -m pytest tests/core/test_plugin_config_upgrade.py -q`，9 passed；仅有已知的同名属性 Pydantic 警告。本轮验证配置升级及接口，不涵盖自动代理执行；没有修改迁移生产代码。
+
+### 当前成果提交与剩余任务范围（2026-11-14）
+
+- 用户授权先推送当前成果。仅收录 12 个有实际内容变化的既有文件及 5 个新增文件；工作区其余纯换行变化保留，不提交真实用户数据、调试 profile、日志或依赖缓存。既有单个更新日志碎片继续概括本 PR，不新增第二份碎片或改主程序版本。
+- 推送前复验：市场、元信息、生命周期、依赖、Operations 和配置升级共 52 passed；4 个生产 Python 模块 Pyright 0 errors/0 warnings；6 个 Python 文件 Ruff/格式、uv lock、前端类型、lint、E2E harness 6 项及本轮 4 个前端文件格式检查通过。全量前端格式检查仍报告 853 个文件；未扩展到无关格式整理。更新日志检查仍因 dev 版本较新报告 frontend/package.json、AppConfig、pyproject.toml 和 uv.lock 四处版本差异，没有绕过检查。
+- 合并前收尾：同步最新 dev、逐处合并新增业务而非覆盖，重新验证合并态和发行构建；同步宿主/SDK 版本时同时核对 MAA 依赖。当前 MAA 0.1.1 声明 auto-mas-core>=5.8,<5.9，实际不接受 dev 的 5.9.0b1；需在核实新宿主兼容性后配套调整适配器发行，不能把当前 5.8 宿主的验收直接当作 5.9 验收。
+- 统一更新业务：L2 已管理预下载和恢复会话汇总，版本检查、是否安装、安装写入和失败恢复编排仍由旧 manager/兼容入口承担；后续统一迁入调度，逐步删除 core/script_update.py、script_update_recovery.py、script_update_queue.py 及 SDK 对应兼容桥接。
+- 热更预检：frontend/electron/services/backendService.ts 后台暂存入口及 runtimeUpgradePreparation.ts 同版本更新分支仍有明确 TODO，需由前端在暂存/更新前调用后端依赖预检；跨版本预检已接线，Runtime 不承担是否更新的业务决策。
+- 独立 SDK 类型：宿主内 TYPE_CHECKING 再导出已修正，但 wheel 不包含其依赖的 app.* 类型声明；需补齐独立开发环境的类型交付及版本一致性验证，不能依赖开发者手动加入整份宿主源码。
+- 后续游戏阶段：完整游戏/设备订阅、释放、串行准入及恢复接入托管执行链，配套游戏/模拟器适配器、旧数据转换和前端；以 MuMu 为首个闭环，保留现有多模拟器/原生设备能力。当前 MAA 继续使用现有模拟器模块。
+- 后续专项阶段：旧注册表仍包含 SRC、MaaEnd、MaaFW、M9A、General、Okww、OkNte、HSR、BetterGI、ZzzOd、BAAH、Whimbox、MSS；按已确认顺序逐项迁移配置、任务、API、前端及预下载，再移除对应旧分支。用户的 MAA 人工运行确认继续有效；自动化真实 E2E 报告尚未归档，属于证据交付项，不重开已完成的基本运行验收。

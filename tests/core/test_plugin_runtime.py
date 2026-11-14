@@ -335,3 +335,84 @@ async def test_disabled_instance_never_reopens_retained_service(monkeypatch):
         await record.commit()
     with pytest.raises(PluginBusyError):
         await retained()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source_state", ["missing", "broken", "loaded"])
+async def test_uninstall_retains_failed_package_for_retry(
+    isolated_app_paths, monkeypatch, source_state
+):
+    """已安装插件即使缺失或导入失败也能卸载，包删除失败时保留配置和登记供再次操作。"""
+    from types import SimpleNamespace
+
+    from app.core import plugin
+    from app.plugin.errors import PluginError, PluginPrecheckError
+    from app.plugin.types import PluginCodeDrift
+    from app.plugin.uv import ops
+
+    config = isolated_app_paths
+    registry = PluginRegistryCollection.build([PluginRecord])
+    await registry.activate()
+    monkeypatch.setattr(config, "plugin_registry", registry)
+    manager = _PluginManager()
+    monkeypatch.setattr(plugin, "Plugin", manager)
+    uid = registry.add(
+        PluginRecord,
+        payload={
+            "info": {
+                "plugin_name": "uninstall_example",
+                "package_name": "uninstall-example",
+                "import_name": "uninstall_example",
+                "source": "installed",
+                "state": "disabled",
+            }
+        },
+    )
+    await registry.commit()
+    record = registry[uid]
+    settings = config.config_path / "plugins" / "uninstall_example.yaml"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text("saved: value\n", encoding="utf-8")
+    if source_state == "missing":
+        record.info.code_drift = PluginCodeDrift.PACKAGE_REMOVED
+        await record.commit()
+    else:
+        source = config.plugins_path / "uninstall_example"
+        source.mkdir(parents=True)
+        (source / "__init__.py").write_text(
+            "\x00"
+            if source_state == "broken"
+            else ("from app.plugin.base import BasePlugin\nPLUGIN = BasePlugin\n"),
+            encoding="utf-8",
+        )
+        record._project_dir = config.plugins_path
+        if source_state == "broken":
+            with pytest.raises(PluginPrecheckError):
+                await manager.load(record)
+        else:
+            await manager.load(record)
+
+    attempts = []
+
+    async def execute(*args, **kwargs):
+        """仅替换包管理进程边界，先模拟文件占用失败，再允许同一发行包卸载成功。"""
+        attempts.append(args)
+        return SimpleNamespace(
+            returncode=1 if len(attempts) == 1 else 0,
+            stderr="file in use" if len(attempts) == 1 else "",
+            stdout="",
+        )
+
+    monkeypatch.setattr(ops, "ensure", lambda: "uv")
+    monkeypatch.setattr(ops.ProcessRunner, "run_process", execute)
+    with pytest.raises(PluginError, match="uv"):
+        await record.on_uninstall()
+    assert registry[uid] is record
+    assert record.info.state == PluginState.FAULT_LOAD
+    assert record.info.last_error
+    assert settings.read_text(encoding="utf-8") == "saved: value\n"
+    await record.on_uninstall()
+    assert uid not in registry
+    assert not settings.exists()
+    assert len(attempts) == 2
+    assert all("uninstall-example" in args for args in attempts)

@@ -1,4 +1,6 @@
 {
+  "core.plugins.attribute.pluginId": "プラグイン ID",
+  "core.plugins.attribute.packageName": "配布パッケージ名",
   "core.plan.universal.priority": "有効時はプランの当日のスクリプト設定を使用します。上の設定元はプランが無効な場合に適用されます。",
   "core.plan.universal.script": "管理対象スクリプト",
   "core.plan.universal.chooseScript": "管理対象スクリプトを選択",
@@ -4763,7 +4765,7 @@
   "core.plugins.state.disabling": "無効化中",
   "core.plugins.state.unloading": "アンロード中",
   "core.plugins.source.local": "ローカル",
-  "core.plugins.source.installed": "インストール済み",
+  "core.plugins.source.installed": "マーケット",
   "core.plugins.source.market": "マーケット",
   "core.plugins.source.package": "パッケージ",
   "core.common.language": "言語",
@@ -4840,5 +4842,7 @@
   "core.emulator.deviceActions.deleteInstance": "デバイスを削除",
   "core.emulator.deviceDeleteConfirm": "このデバイスを削除しますか？",
   "core.plugins.outcomeUnknown": "操作の結果を確認できません。状態を更新するかログを確認してください",
-  "core.plugins.actionCancelled": "操作がキャンセルされました"
+  "core.plugins.actionCancelled": "操作がキャンセルされました",
+  "core.plugins.uninstallConfirmTitle": "プラグインをアンインストールしますか？",
+  "core.plugins.uninstallConfirmContent": "「{name}」とそのすべての設定を削除します。このプラグインまたは影響を受ける依存プラグインがアダプターの場合、対応するマネージドスクリプト（アカウントと関連プランを含む）、またはゲームとデバイスの設定も削除されます。この操作は元に戻せません。続行しますか？"
 }

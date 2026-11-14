@@ -731,11 +731,18 @@ class _PluginManager:
         held: bool = False,
         dep_path: list[str] | None = None,
         ctx: LifecycleContext = LifecycleContext.NORMAL,
+        remove_record: bool = True,
     ) -> dict[str, Any]:
-        """DFS 卸载；仅最外层入口成功后裁剪 record。"""
+        """DFS 释放插件运行时；卸包入口可保留注册项，待发行包与配置删除成功后再移除。"""
         if not held:
             async with self._pause_operations(record), self._hold():
-                return await self.unload(record, held=True, dep_path=dep_path, ctx=ctx)
+                return await self.unload(
+                    record,
+                    held=True,
+                    dep_path=dep_path,
+                    ctx=ctx,
+                    remove_record=remove_record,
+                )
 
         path_list = list(dep_path or [])
         name = record.info.plugin_name
@@ -745,7 +752,7 @@ class _PluginManager:
                 f"服务依赖回环: {' → '.join([*path_list, uid_s])}",
                 payload={"path": [*path_list, uid_s]},
             )
-        if record._plugin_cls is None:
+        if self._record_by_plugin_id(name) is not record:
             raise PluginNotFoundError(f"插件不在列表中: {name}", payload={"name": name})
         if record.info.is_core:
             raise PluginPrecheckError("核心插件不可卸载", payload={"name": name})
@@ -785,7 +792,9 @@ class _PluginManager:
 
             if plugin is not None:
                 await plugin.on_unload()
-            loader.clear(record)
+            # 发现失败或来源已移除时没有导入路径，仍须允许卸包，不能要求先成功加载。
+            if record._project_dir is not None:
+                loader.clear(record)
             # 卸出列表：清运行时 → unloaded → 删注册表行
             record._plugin = None
             record._plugin_cls = None
@@ -799,8 +808,9 @@ class _PluginManager:
             await record.commit()
             from app.core.config import Config
 
-            Config.plugin_registry.remove(record.uid)
-            await Config.plugin_registry.commit()
+            if remove_record:
+                Config.plugin_registry.remove(record.uid)
+                await Config.plugin_registry.commit()
             return deps
         except Exception as exc:
             await self._fail_branch(
@@ -980,21 +990,25 @@ class _PluginManager:
             return await self._uninstall(record)
 
     async def _uninstall(self, record: PluginRecord) -> dict[str, Any]:
-        """在生命周期锁内卸载插件及下游接线，移除已无加载实例的发行包并删除插件专属配置文件。"""
+        """释放插件运行时后删除发行包及专属配置；外部删除失败时保留登记和故障状态供重试。"""
         async with self._hold():
             name = record.info.plugin_name
             package = record.info.package_name or name
-            deps = await self.unload(record, held=True)
-            # unload 成功后已不在列表
-            left = self._record_by_plugin_id(name)
-            if left is None or left._plugin_cls is None:
-                try:
-                    await uv_tool.uninstall(package)
-                except PluginError:
-                    raise
+            deps = await self.unload(record, held=True, remove_record=False)
             from app.core.config import Config
 
-            (Config.config_path / "plugins" / f"{name}.yaml").unlink(missing_ok=True)
+            try:
+                await uv_tool.uninstall(package)
+                (Config.config_path / "plugins" / f"{name}.yaml").unlink(
+                    missing_ok=True
+                )
+            except Exception as exc:
+                record.info.state = PluginState.FAULT_LOAD
+                record.info.last_error = str(exc)
+                await record.commit()
+                raise
+            Config.plugin_registry.remove(record.uid)
+            await Config.plugin_registry.commit()
             return deps
 
     async def refresh_market(self) -> None:

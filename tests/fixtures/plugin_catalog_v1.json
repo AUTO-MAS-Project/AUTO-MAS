@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "revision": "136740c99535e95832a067d4db30a84c307bade71de08c6fc1d9273c2291c9a8",
+  "updated_at": "2020-01-01T00:00:00+00:00",
+  "plugins": [
+    {
+      "package_name": "auto-mas-demo",
+      "plugin_name": "demo_adapter",
+      "version": "0.1.1",
+      "docs_url": "https://example.org/docs",
+      "homepage": "https://example.org/demo",
+      "repository": "https://example.org/source",
+      "author": "Demo Team",
+      "license": "AGPL-3.0-or-later",
+      "requires_dist": [
+        "auto-mas-core>=5.8,<5.9"
+      ],
+      "display_name_i18n": {
+        "en": "Demo Adapter",
+        "zh_CN": "示例专项"
+      },
+      "description_i18n": {
+        "en": "Demo script adapter"
+      },
+      "tags_i18n": {
+        "en": [
+          "Adapter"
+        ]
+      }
+    }
+  ]
+}
