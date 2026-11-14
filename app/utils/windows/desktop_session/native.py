@@ -62,6 +62,11 @@ def child_sessions_enabled():
     return bool(enabled.value)
 
 
+def enable_child_sessions() -> None:
+    fn = bind(wtsapi32, "WTSEnableChildSessions", W.BOOL, W.BOOL)
+    checked(fn(True), "WTSEnableChildSessions")
+
+
 def logoff_child(expected: int) -> None:
     current = child_session()
     if current is None:

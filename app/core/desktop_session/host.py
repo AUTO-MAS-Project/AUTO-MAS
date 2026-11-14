@@ -4,6 +4,7 @@ import ctypes as C
 import json
 import logging
 import os
+import platform
 import queue
 import sys
 import threading
@@ -33,12 +34,14 @@ from app.utils.windows.desktop_session.native import (
     SYSTEM32,
     bind,
     child_session,
+    enable_child_sessions,
     logoff_child,
     primary_size,
     set_dpi_awareness,
     user32,
 )
 from app.utils.windows.desktop_session.viewer import RdpViewer
+from app.utils.windows.host import IS_ELEVATED
 
 
 class Host:
@@ -89,11 +92,37 @@ class Host:
 
     def start(self, command: dict) -> None:
         password = command.pop("password", None)
+        windows = sys.getwindowsversion()
+        architecture = platform.machine().upper()
+        self.report(
+            "startup_environment",
+            windowsVersion=[windows.major, windows.minor, windows.build],
+            windowsProductType=windows.product_type,
+            architecture=architecture
+            if architecture in {"AMD64", "ARM64", "X86"}
+            else "unknown",
+            pythonVersion=list(sys.version_info[:3]),
+            pythonBits=C.sizeof(C.c_void_p) * 8,
+            elevated=IS_ELEVATED,
+        )
         if self.viewer is not None:
             raise RuntimeError("already_started")
         checks, port = probe()
+        if not any(row["required"] and not row["ok"] for row in checks) and any(
+            row["code"] == "child_enabled" and row["value"] is False for row in checks
+        ):
+            try:
+                enable_child_sessions()
+            except (OSError, AttributeError) as exc:
+                self.report(
+                    "child_enable_failed", nativeCode=getattr(exc, "winerror", None)
+                )
+            checks, port = probe()
         self.report("diagnostics", checks=checks)
-        if any(row["required"] and not row["ok"] for row in checks):
+        if any(
+            not row["ok"] and (row["required"] or row["code"] == "child_enabled")
+            for row in checks
+        ):
             self.report("state", state="idle", code="environment_blocked")
             return
 

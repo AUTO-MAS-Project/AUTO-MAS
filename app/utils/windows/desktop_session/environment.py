@@ -81,23 +81,25 @@ def probe() -> tuple[list[dict[str, object]], int]:
             version.build,
         ),
     )
+    machine = platform.machine().upper()
     check(
         "x64",
         lambda: (
-            platform.machine().upper() == "AMD64" and C.sizeof(C.c_void_p) == 8,
-            platform.machine(),
+            machine == "AMD64" and C.sizeof(C.c_void_p) == 8,
+            machine if machine in {"AMD64", "ARM64", "X86"} else "unknown",
         ),
     )
-    check(
-        "edition",
-        lambda: (
-            True,
-            registry_value(
-                r"SOFTWARE\Microsoft\Windows NT\CurrentVersion", "EditionID"
-            ),
-        ),
-        required=False,
-    )
+
+    def home_edition():
+        edition = registry_value(
+            r"SOFTWARE\Microsoft\Windows NT\CurrentVersion", "EditionID"
+        )
+        if not isinstance(edition, str) or not edition:
+            return True, "unknown"
+        is_home = edition.startswith("Core")
+        return not is_home, "home" if is_home else "other"
+
+    check("home_edition", home_edition, required=False)
 
     def interactive():
         session = process_session(os.getpid())
@@ -111,20 +113,16 @@ def probe() -> tuple[list[dict[str, object]], int]:
     check("interactive", interactive)
     system = Path(os.environ["SystemRoot"]) / "System32"
 
-    def components():
-        atl = C.WinDLL("atl", winmode=SYSTEM32)
-        mstsc = C.WinDLL("mstscax", winmode=SYSTEM32)
-        ncrypt = C.WinDLL("ncrypt", winmode=SYSTEM32)
-        return all(
-            (
-                atl.AtlAxCreateControlEx,
-                mstsc.DllGetClassObject,
-                ncrypt.NCryptProtectSecret,
-                ncrypt.NCryptUnprotectSecret,
-            )
-        ), None
+    def component(name, *exports):
+        library = C.WinDLL(name, winmode=SYSTEM32)
+        return all(getattr(library, export) for export in exports), None
 
-    check("components", components)
+    check("component_atl", lambda: component("atl", "AtlAxCreateControlEx"))
+    check("component_rdp", lambda: component("mstscax", "DllGetClassObject"))
+    check(
+        "component_credentials",
+        lambda: component("ncrypt", "NCryptProtectSecret", "NCryptUnprotectSecret"),
+    )
 
     def native_service():
         service = registry_value(TERM_SERVICE, "ServiceDll")
@@ -132,11 +130,15 @@ def probe() -> tuple[list[dict[str, object]], int]:
         native = isinstance(service, str) and os.path.normcase(
             os.path.normpath(os.path.expandvars(service))
         ) == os.path.normcase(expected)
-        return native, "native" if native else "non_native"
+        return native, "missing" if service is None else None
 
     check("service_dll", native_service)
+    if result[-1]["value"] == "missing":
+        result[-1]["code"] = "service_dll_config_missing"
     if result[-1]["ok"]:
-        check("service_signature", lambda: (windows_signature(system), None))
+        check("service_dll_missing", lambda: ((system / "termsrv.dll").is_file(), None))
+        if result[-1]["ok"]:
+            check("service_signature", lambda: (windows_signature(system), None))
 
     def service_state(name):
         scm = win32service.OpenSCManager(None, None, win32service.SC_MANAGER_CONNECT)
@@ -146,15 +148,48 @@ def probe() -> tuple[list[dict[str, object]], int]:
             )
             try:
                 state = win32service.QueryServiceStatus(service)[1]
-                return state == win32service.SERVICE_RUNNING, state
+                if state == win32service.SERVICE_RUNNING:
+                    return True, None
+                if state == win32service.SERVICE_STOPPED:
+                    config_handle = win32service.OpenService(
+                        scm, name, win32service.SERVICE_QUERY_CONFIG
+                    )
+                    try:
+                        start_type = win32service.QueryServiceConfig(config_handle)[1]
+                    finally:
+                        win32service.CloseServiceHandle(config_handle)
+                    return False, (
+                        "disabled"
+                        if start_type == win32service.SERVICE_DISABLED
+                        else "stopped"
+                    )
+                return False, "not_running"
             finally:
                 win32service.CloseServiceHandle(service)
         finally:
             win32service.CloseServiceHandle(scm)
 
-    check("term_service", lambda: service_state("TermService"))
-    check("task_scheduler", lambda: service_state("Schedule"))
-    check("child_enabled", lambda: (child_sessions_enabled(), None))
+    for code, name in (("term_service", "TermService"), ("task_scheduler", "Schedule")):
+        check(code, lambda: service_state(name))
+        row = result[-1]
+        if not row["ok"]:
+            reason = row["value"]
+            if reason == 1060:  # ERROR_SERVICE_DOES_NOT_EXIST
+                reason = "missing"
+            if not isinstance(reason, str):
+                reason = "query_failed"
+            row["code"] = f"{code}_{reason}"
+
+    def child_state():
+        enabled = child_sessions_enabled()
+        return enabled, enabled
+
+    check("child_enabled", child_state)
+    # 已确认关闭时允许用户启动，由宿主尝试启用。读取失败仍阻止启动。
+    if result[-1]["value"] is False:
+        result[-1]["required"] = False
+    elif not result[-1]["ok"]:
+        result[-1]["code"] = "child_query_failed"
 
     def host_policy():
         policy = registry_value(TERM_POLICY, "fDenyTSConnections")
@@ -168,6 +203,8 @@ def probe() -> tuple[list[dict[str, object]], int]:
         ) != 1, "local" if policy is None else "policy"
 
     check("rdp_policy", host_policy)
+    if not result[-1]["ok"] and result[-1]["value"] in ("local", "policy"):
+        result[-1]["code"] = f"rdp_{result[-1]['value']}_disabled"
     check(
         "hello_only",
         lambda: (registry_value(HELLO, "DevicePasswordLessBuildVersion") != 2, None),
@@ -181,9 +218,11 @@ def probe() -> tuple[list[dict[str, object]], int]:
         port = 3389 if value is None else value
         if type(port) is not int or not 1 <= port <= 65535:
             port = 0
-            return False, None
+            return False, "invalid_port"
         with socket.create_connection(("localhost", port), timeout=1):
             return True, port
 
     check("rdp_listener", listener)
+    if result[-1]["value"] == "invalid_port":
+        result[-1]["code"] = "rdp_port_invalid"
     return result, port
