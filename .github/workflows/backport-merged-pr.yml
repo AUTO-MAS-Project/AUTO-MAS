@@ -1,0 +1,91 @@
+name: 自动回挑已合并 PR
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backport-merged-pr
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  backport:
+    if: >-
+      github.repository == 'AUTO-MAS-Project/AUTO-MAS' &&
+      github.event.pull_request.merged &&
+      ((github.event.pull_request.base.ref == 'main' && startsWith(github.event.pull_request.title, 'ci(')) ||
+       (github.event.pull_request.base.ref == 'dev' && startsWith(github.event.pull_request.title, 'hotfix(')))
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出受信任的工作流版本
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 回挑合并后的改动
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
+          SOURCE: ${{ github.event.pull_request.base.ref }}
+          SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          : "${GH_TOKEN:?需要能推送 dev 和 release 分支的 WORKFLOW_TOKEN}"
+          gh auth setup-git --hostname github.com
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --prune --tags origin
+          git merge-base --is-ancestor "$SHA" "origin/$SOURCE"
+
+          targets=(dev)
+          if [[ "$SOURCE" == dev ]]; then
+            targets=()
+            stable= beta=
+            for tag in $(git tag --sort=-version:refname); do
+              if [[ -z "$stable" && "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                stable=$tag
+                targets+=("release/$tag")
+              elif [[ -z "$beta" && "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+                beta=$tag
+                targets+=("release/$tag")
+              fi
+            done
+            if (( ${#targets[@]} == 0 )); then
+              echo '::error::找不到正式版或公测版标签'
+              exit 1
+            fi
+            if [[ -n "$(git diff --name-only --no-renames "$SHA^1" "$SHA" -- frontend)" ]]; then
+              echo '::error::发布分支不回挑包含前端改动的热修'
+              exit 1
+            fi
+          fi
+
+          pick=(-x --empty=drop)
+          if git rev-parse --verify --quiet "$SHA^2" >/dev/null; then
+            pick+=(-m 1)
+          fi
+          updates=()
+          for target in "${targets[@]}"; do
+            echo "回挑 $SHA 到 $target"
+            git switch --detach "origin/$target"
+            if git merge-base --is-ancestor "$SHA" HEAD; then
+              continue
+            fi
+            if ! git cherry-pick "${pick[@]}" "$SHA"; then
+              echo "::error::回挑到 $target 失败，详见 Git 输出"
+              git -c core.quotePath=false diff --name-only --diff-filter=U
+              exit 1
+            fi
+            if [[ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/$target")" ]]; then
+              updates+=("$(git rev-parse HEAD):refs/heads/$target")
+            fi
+          done
+          if (( ${#updates[@]} )); then
+            git push --atomic origin "${updates[@]}"
+          fi
