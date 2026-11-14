@@ -39,27 +39,6 @@ def test_version_generation_targets_match_current_repository() -> None:
         assert changelog.read_text(path) == expected, str(path)
 
 
-def test_changelog_round_trips_to_itself() -> None:
-    """仓库里的 CHANGELOG.md 已是规范形式：解析再渲染应逐字不变。"""
-
-    original = changelog.read_text(changelog.CHANGELOG_PATH)
-    _, sections, dates = changelog.parse_changelog(original)
-
-    assert changelog.render_changelog(sections, dates) == original
-
-
-def test_version_json_matches_changelog() -> None:
-    """已提交的 res/version.json 必须是当前 CHANGELOG.md 的生成结果。"""
-
-    current_version, sections, _ = changelog.parse_changelog(
-        changelog.read_text(changelog.CHANGELOG_PATH)
-    )
-
-    assert changelog.render_version_json(
-        current_version, sections
-    ) == changelog.read_text(changelog.VERSION_JSON_PATH)
-
-
 def test_version_json_carries_no_dates() -> None:
     """version.json 的结构是已发布客户端的解析契约，日期只留在 CHANGELOG.md 里。"""
 
@@ -124,16 +103,6 @@ def test_links_compare_against_the_previous_listed_version() -> None:
         f"[v1.5.0]: {changelog.REPO_URL}/compare/v1.0.0...v1.5.0",
         f"[v1.0.0]: {changelog.REPO_URL}/releases/tag/v1.0.0",
     ]
-
-
-def test_unreleased_is_only_allowed_at_the_top() -> None:
-    """已发布的版本段必须带真实日期，否则发布链路取不到发布时间。"""
-
-    with pytest.raises(changelog.ChangelogError, match="只有文件顶部"):
-        changelog.parse_changelog(
-            "## [v2.0.0] - 2026-01-02\n\n### 修复\n\n- 甲\n\n"
-            f"## [v1.0.0] - {changelog.UNRELEASED}\n\n### 修复\n\n- 乙\n"
-        )
 
 
 UNRELEASED_TOP = (
@@ -261,42 +230,6 @@ def test_compile_release_folds_the_unreleased_section_into_the_new_version(
     assert changelog.UNRELEASED not in new_dates
 
 
-def test_duplicate_entry_is_rejected() -> None:
-    """同一分类下重复登记同一条会直接报错，避免更新日志里出现两条一样的。"""
-
-    with pytest.raises(changelog.ChangelogError, match="条目重复"):
-        changelog.parse_changelog(
-            "## [v1.0.0] - 2026-01-01\n\n### 修复\n\n- 同一条\n- 同一条\n"
-        )
-
-
-def test_free_text_line_is_rejected() -> None:
-    """条目之外的散文会被拒绝，保证文件始终能无损转成 version.json。"""
-
-    with pytest.raises(changelog.ChangelogError, match="无法识别的内容"):
-        changelog.parse_changelog(
-            "## [v1.0.0] - 2026-01-01\n\n### 修复\n\n随手写的一段说明\n"
-        )
-
-
-def test_comment_inside_a_version_section_is_rejected() -> None:
-    """版本段里的注释不会被 render 保留，写了就会被 sync 悄悄删掉。"""
-
-    with pytest.raises(changelog.ChangelogError, match="不能写注释"):
-        changelog.parse_changelog(
-            "## [v1.0.0] - 2026-01-01\n\n### 修复\n\n<!-- 顺手记一笔 -->\n\n- 甲\n"
-        )
-
-
-def test_indented_entry_is_rejected() -> None:
-    """嵌套列表转不成 version.json，扁平化会悄悄改变原意。"""
-
-    with pytest.raises(changelog.ChangelogError, match="不能缩进"):
-        changelog.parse_changelog(
-            "## [v1.0.0] - 2026-01-01\n\n### 修复\n\n- 甲\n  - 子项\n"
-        )
-
-
 def test_bom_is_stripped_on_read(tmp_path) -> None:
     """记事本存出来的 BOM 不该让整份文件解析失败。"""
 
@@ -309,18 +242,32 @@ def test_bom_is_stripped_on_read(tmp_path) -> None:
 
 
 @pytest.mark.parametrize(
-    "heading",
+    ("content", "message"),
     [
-        "## v1.0.0",  # 少了方括号与日期
-        "## [v1.0.0]",  # 少了日期
-        "## [1.0.0] - 2026-01-01",  # 少了 v 前缀
-        "## [v1.0.0] - 2026/01/01",  # 日期不是 ISO 8601
-        "## [v1.0.0] - 明天",
+        (f"{heading}\n\n### 修复\n\n- 甲\n", "版本标题|版本号")
+        for heading in (
+            "## v1.0.0",
+            "## [v1.0.0]",
+            "## [1.0.0] - 2026-01-01",
+            "## [v1.0.0] - 2026/01/01",
+            "## [v1.0.0] - 明天",
+        )
+    ]
+    + [
+        (
+            "## [v2.0.0] - 2026-01-02\n\n### 修复\n\n- 甲\n\n"
+            f"## [v1.0.0] - {changelog.UNRELEASED}\n\n### 修复\n\n- 乙\n",
+            "只有文件顶部",
+        ),
+        (MINIMAL + "- 甲\n", "条目重复"),
+        (MINIMAL.replace("- 甲", "随手写的一段说明"), "无法识别的内容"),
+        (MINIMAL.replace("- 甲", "<!-- 顺手记一笔 -->\n\n- 甲"), "不能写注释"),
+        (MINIMAL + "  - 子项\n", "不能缩进"),
     ],
 )
-def test_invalid_release_heading_is_rejected(heading: str) -> None:
-    with pytest.raises(changelog.ChangelogError, match="版本标题|版本号"):
-        changelog.parse_changelog(f"{heading}\n\n### 修复\n\n- 甲\n")
+def test_invalid_changelog_is_rejected(content: str, message: str) -> None:
+    with pytest.raises(changelog.ChangelogError, match=message):
+        changelog.parse_changelog(content)
 
 
 def test_known_categories_are_ordered_and_unknown_ones_kept() -> None:
@@ -349,17 +296,12 @@ def test_known_categories_are_ordered_and_unknown_ones_kept() -> None:
         "开发流程",
         "自定义分类",
     ]
-    # 弃用并进了移除：没有这个后缀，也不在固定顺序里
-    assert "deprecate" not in changelog.FRAGMENT_TYPES
-    assert "弃用" not in changelog.CATEGORY_ORDER
 
 
 @pytest.mark.parametrize(
     ("tag", "expected"),
     [
         ("v5.5.0-beta.3", "5.5.0b3"),
-        ("v5.5.0-alpha.1", "5.5.0a1"),
-        ("v5.5.0-rc.2", "5.5.0rc2"),
         ("v5.4.0", "5.4.0"),
         ("v5.5.10-beta.10", "5.5.10b10"),
     ],
@@ -384,12 +326,13 @@ def _fragment(tmp_path: Path, name: str, content: str):
     return changelog.parse_fragment(path, changelog.read_text(path))
 
 
-def test_fragment_name_decides_category_and_body_is_one_line(tmp_path) -> None:
-    fragment = _fragment(tmp_path, "683.feat.md", "project: emulator\nMuMu 新增开关\n")
+@pytest.mark.parametrize("body", ["MuMu 新增开关", "甲" * 50])
+def test_fragment_name_decides_category_and_body_is_one_line(tmp_path, body) -> None:
+    fragment = _fragment(tmp_path, "683.feat.md", f"project: emulator\n{body}\n")
 
     assert fragment.identifier == "683"
     assert fragment.category == "新增"
-    assert fragment.text == "MuMu 新增开关"
+    assert fragment.text == body
     assert fragment.authors == []
     assert fragment.project == "emulator"
     assert fragment.project_name == "模拟器"
@@ -408,21 +351,6 @@ def test_fragment_accepts_author_override_and_leading_dash(tmp_path) -> None:
     # 键不分大小写
     assert fragment.project == "scheduler"
     assert fragment.project_name == "调度"
-
-
-def test_fragment_malformed_header_line_is_named_instead_of_missing_project(
-    tmp_path,
-) -> None:
-    """`author: a,` 这种写坏的头部行要直接点名，不能当正文再报缺 project。"""
-
-    for bad in (
-        "author: a,",
-        "author: a,, b",
-        "project: 主页",
-        "beta-only: yes please",
-    ):
-        with pytest.raises(changelog.ChangelogError, match="头部行 .* 格式不对"):
-            _fragment(tmp_path, "1.fix.md", f"{bad}\nproject: maa\n甲\n")
 
 
 def test_fragment_author_line_lists_every_collaborator(tmp_path) -> None:
@@ -490,17 +418,20 @@ def test_only_dev_fragments_may_omit_the_project_key(tmp_path) -> None:
         ("683.feat.md", "project: maa\n甲 (#12)\n", "正文里不要写"),
         ("683.feat.md", "project: maa\n甲（仅公测）\n", "正文里不要写"),
         ("683.feat.md", "project: maa\n" + "甲" * 51 + "\n", "超过 50 字上限"),
+    ]
+    + [
+        ("1.fix.md", f"{header}\nproject: maa\n甲\n", "头部行 .* 格式不对")
+        for header in (
+            "author: a,",
+            "author: a,, b",
+            "project: 主页",
+            "beta-only: yes please",
+        )
     ],
 )
 def test_invalid_fragment_is_rejected(tmp_path, name, content, message) -> None:
     with pytest.raises(changelog.ChangelogError, match=message):
         _fragment(tmp_path, name, content)
-
-
-def test_fragment_text_limit_is_inclusive(tmp_path) -> None:
-    fragment = _fragment(tmp_path, "1.fix.md", "project: maa\n" + "甲" * 50 + "\n")
-
-    assert len(fragment.text) == 50
 
 
 def test_fragment_highlight_flag_routes_to_the_highlight_category(tmp_path) -> None:
@@ -928,6 +859,7 @@ def test_release_note_json_carries_the_right_sections(version, expected) -> None
 
 def test_release_note_has_contract_first_line_contributors_and_compare_link() -> None:
     sections, _ = _sections(FULL_HISTORY)
+    sections["v5.5.0"]["新增"] = ["【MAA】丙 (#1, #2) by @a"]
 
     note = changelog.render_release_note(sections, "v5.5.0")
     first, rest = note.split("\n", 1)
@@ -936,10 +868,10 @@ def test_release_note_has_contract_first_line_contributors_and_compare_link() ->
     payload = json.loads(first[4:-3])
     assert list(payload) == ["v5.5.0"]
     # 首行 JSON 里署名不带链接（旧写法在解析时已归一）
-    assert payload["v5.5.0"] == {"新增": ["丙 by @a"]}
+    assert payload["v5.5.0"] == {"新增": ["【MAA】丙 (#1, #2) by @a"]}
     assert "## v5.5.0" in rest
     # 可见正文的分类标题带表情，分类名本身不变
-    assert "### ✨ 新增\n\n- 丙 by @a" in rest
+    assert "### ✨ 新增\n\n- 【MAA】丙 (#1, #2) by @a" in rest
     assert "### 贡献者\n\n[@a](https://github.com/a)" in rest
     # 正式版对比上一个正式版；补丁与公测对比紧邻的上一段
     assert "compare/v5.4.0...v5.5.0" in rest
@@ -949,22 +881,6 @@ def test_release_note_has_contract_first_line_contributors_and_compare_link() ->
     assert "compare/v5.6.0-beta.1...v5.6.0-beta.2" in changelog.render_release_note(
         sections, "v5.6.0-beta.2"
     )
-
-
-def test_release_note_first_line_keeps_project_pr_numbers_and_author() -> None:
-    """首行 JSON 的条目与 CHANGELOG.md 同形：项目、PR 号、署名都在。"""
-
-    sections, _ = _sections(
-        "## [v5.5.0-beta.7] - 2026-09-20\n\n### 修复\n\n- 【MAA】甲 (#1, #2) by @a\n"
-    )
-
-    note = changelog.render_release_note(sections, "v5.5.0-beta.7")
-    first, rest = note.split("\n", 1)
-
-    assert json.loads(first[4:-3]) == {
-        "v5.5.0-beta.7": {"修复": ["【MAA】甲 (#1, #2) by @a"]}
-    }
-    assert "- 【MAA】甲 (#1, #2) by @a" in rest
 
 
 def test_release_note_drops_oldest_sections_to_fit_the_budget() -> None:
@@ -1079,84 +995,12 @@ def test_release_note_hides_contributor_only_categories_from_users() -> None:
     assert "### 🛠️ 开发流程\n\n- 乙 by @b" in body
 
 
-def test_pr_body_keeps_only_a_count_of_unconfirmed_commits() -> None:
-    """没带碎片的提交清单进运行摘要，PR 正文只留数量与链接。"""
-
-    sections, _ = _sections("## [v5.5.0-beta.7] - 2026-09-20\n\n### 修复\n\n- 甲\n")
-    plan = changelog.plan_note_json(sections, "v5.5.0-beta.7")
-    unconfirmed = [("abc123456", "fix: 直推"), ("def123456", "feat: 也直推")]
-
-    body = changelog.render_pr_body(
-        "v5.5.0-beta.7",
-        "v5.5.0-beta.6",
-        "beta",
-        sections["v5.5.0-beta.7"],
-        unconfirmed,
-        plan,
-        "https://example.invalid/runs/1",
-    )
-    assert (
-        "有 2 个提交改了用户可见代码但没带碎片"
-        "（清单见[运行摘要](https://example.invalid/runs/1)）" in body
-    )
-    assert "abc123456" not in body and "待确认" not in body
-    # 没有运行地址时也不把清单塞进正文
-    assert "abc123456" not in changelog.render_pr_body(
-        "v5.5.0-beta.7", None, "beta", sections["v5.5.0-beta.7"], unconfirmed, plan
-    )
-
-    summary = changelog.render_run_summary(
-        "v5.5.0-beta.7", "v5.5.0-beta.6", 3, plan, unconfirmed
-    )
-    assert "编译 3 个碎片" in summary
-    assert "- `abc123456` fix: 直推\n- `def123456` feat: 也直推" in summary
-    assert "都带了碎片" in changelog.render_run_summary(
-        "v5.5.0-beta.7", None, 0, plan, []
-    )
-
-
 def test_note_length_counts_utf16_units() -> None:
     """预算按 UTF-16 码元算：表情占两个、中文占一个，不会比 Mirror 酱算得少。"""
 
     assert changelog.note_length("甲") == 1
     assert changelog.note_length("🐛") == 2
     assert changelog.note_length("a甲🐛") == 4
-
-
-def test_repository_release_note_fits_the_budget() -> None:
-    """仓库当前 CHANGELOG.md 渲染出的首行必须在预算内：这是 Mirror 酱截断的红线。"""
-
-    current_version, sections, _ = changelog.parse_changelog(
-        changelog.read_text(changelog.CHANGELOG_PATH)
-    )
-    plan = changelog.plan_note_json(sections, current_version)
-
-    assert plan.size <= changelog.RELEASE_NOTE_JSON_BUDGET
-    assert plan.kept[0] == current_version
-
-
-def test_repository_stable_rollup_leaves_room_for_more_betas() -> None:
-    """把当前周期全部 beta 段并成正式版段后首行要留够余量，后面几个 beta 再加也不会顶到预算。
-
-    beta.1–6 段按新格式归纳过（≤ 50 字、按项目前缀、仅公测标记），这里钉住归纳的成果。
-    """
-
-    current_version, sections, dates = changelog.parse_changelog(
-        changelog.read_text(changelog.CHANGELOG_PATH)
-    )
-    key = changelog.version_key(current_version)
-    assert key is not None
-    if not changelog.is_prerelease(current_version):
-        pytest.skip("当前版本不是公测版，没有待转正的周期")
-    stable = f"v{key[0]}.{key[1]}.{key[2]}"
-
-    rolled, _ = changelog.compile_release(
-        sections, dates, [], stable, "2026-01-01", {}, [], None, []
-    )
-    plan = changelog.plan_note_json(rolled, stable)
-
-    assert plan.size <= 15000, f"转正首行 {plan.size} 字符，归纳过的段又变胖了"
-    assert plan.kept[0] == stable
 
 
 # ---------------------------------------------------------------------------

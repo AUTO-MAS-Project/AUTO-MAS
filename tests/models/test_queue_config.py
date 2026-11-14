@@ -77,34 +77,23 @@ class QueueConfigStartupModeMigrationTest(unittest.IsolatedAsyncioTestCase):
                     [str(uid) for uid in reloaded.QueueItem.keys()], expected
                 )
 
-    async def test_load_migrates_enabled_legacy_startup_setting(self) -> None:
-        self.write_config({"Info": {"StartUpEnabled": True}})
-        config = QueueConfig()
-        await activate_config(config, self.config_path)
-        self.assertEqual(config.Info.StartUpMode, "Always")
-        persisted_info = self.read_config()["Info"]
-        self.assertEqual(persisted_info["StartUpMode"], "Always")
-        self.assertNotIn("StartUpEnabled", persisted_info)
-
-    async def test_load_migrates_disabled_legacy_startup_setting(self) -> None:
-        self.write_config({"Info": {"StartUpEnabled": False}})
-        config = QueueConfig()
-        await activate_config(config, self.config_path)
-        self.assertEqual(config.Info.StartUpMode, "Never")
-        persisted_info = self.read_config()["Info"]
-        self.assertEqual(persisted_info["StartUpMode"], "Never")
-        self.assertNotIn("StartUpEnabled", persisted_info)
-
-    async def test_load_prefers_current_startup_mode_over_legacy_setting(self) -> None:
-        self.write_config(
-            {"Info": {"StartUpEnabled": True, "StartUpMode": "DailyFirst"}}
-        )
-        config = QueueConfig()
-        await activate_config(config, self.config_path)
-        self.assertEqual(config.Info.StartUpMode, "DailyFirst")
-        persisted_info = self.read_config()["Info"]
-        self.assertEqual(persisted_info["StartUpMode"], "DailyFirst")
-        self.assertNotIn("StartUpEnabled", persisted_info)
+    async def test_load_migrates_legacy_startup_setting(self) -> None:
+        for info, expected in (
+            ({"StartUpEnabled": True}, "Always"),
+            ({"StartUpEnabled": False}, "Never"),
+            ({"StartUpEnabled": True, "StartUpMode": "DailyFirst"}, "DailyFirst"),
+        ):
+            with self.subTest(info=info):
+                self.config_path = (
+                    Path(self.temporary_directory.name) / f"QueueConfig-{expected}.yaml"
+                )
+                self.write_config({"Info": info})
+                config = QueueConfig()
+                await activate_config(config, self.config_path)
+                self.assertEqual(config.Info.StartUpMode, expected)
+                persisted_info = self.read_config()["Info"]
+                self.assertEqual(persisted_info["StartUpMode"], expected)
+                self.assertNotIn("StartUpEnabled", persisted_info)
 
     async def test_load_discards_removed_clock_and_preserves_timed_clock(self) -> None:
         common = "2026-11-06T10:05:00+08:00"

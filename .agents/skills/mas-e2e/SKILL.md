@@ -50,7 +50,7 @@ Repeat the offer after a later push when the changed path changed too.
 ## Add a flow
 
 1. Start from the user action and the smallest observable assertion. Prefer the public UI, MAS HTTP/WebSocket contracts, task terminal status, and public account result.
-2. Put deterministic, isolated flows that protect stable user behavior or public contracts in `frontend/e2e/<scenario>.pw.ts` and maintain them with the implementation. Keep exploratory or non-isolatable runs as local verification evidence; retention follows [tests/AGENTS.md](../../../tests/AGENTS.md).
+2. Apply the [mas-testing retention decision](../mas-testing/SKILL.md#先判断是否值得长期保留) before adding or expanding a permanent flow in `frontend/e2e/<scenario>.pw.ts`. Reproducibility and isolation alone do not justify retention. Keep one-off runs as local verification evidence; directory rules and protected tests follow [tests/AGENTS.md](../../../tests/AGENTS.md).
 3. Tag the flow with `test.describe('@<scope>', ...)`; real game side effects additionally require `@real`. Use `app.goto()` and `app.evidence()` from `fixtures.ts`.
 4. Wait for visible state, API responses, WebSocket events, or terminal task status with a timeout. Keep real startup and game delays separate from short injected debounce or retry delays.
 5. Attach only selected screenshots and `real-e2e-summary.json` to a PR when useful. Record the commit SHA, dirty state, command, preconditions, result, evidence path, and uncovered branches.

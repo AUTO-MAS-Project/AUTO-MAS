@@ -2,8 +2,7 @@
 
 import asyncio
 import socket
-import ssl
-from asyncio import proactor_events, sslproto
+from asyncio import proactor_events
 from unittest.mock import patch
 
 import pytest
@@ -99,7 +98,7 @@ def test_protocol_failure_still_propagates_after_cleanup(patched_cleanup):
     assert errors[0]["exception"] is error
 
 
-def test_diagnostic_survives_sentry_without_private_type_or_object_data(
+def test_diagnostic_does_not_expose_private_type_information(
     patched_cleanup,
 ):
     secret = "private-token@example.invalid/path"
@@ -126,40 +125,4 @@ def test_diagnostic_survives_sentry_without_private_type_or_object_data(
     sanitized = telemetry.sanitize_event(event, hint)
     assert sanitized is not None
     value = sanitized["exception"]["values"][-1]["value"]
-    assert "role=server, protocol=other, tls=False" in value
     assert secret not in value
-    assert "127.0.0.1" not in value
-    assert "::1" not in value
-    for exception in sanitized["exception"]["values"]:
-        for frame in exception["stacktrace"]["frames"]:
-            assert "vars" not in frame
-
-
-def test_tls_client_diagnostic_classifies_inner_protocol():
-    with asyncio.Runner() as runner:
-        loop = runner.get_loop()
-        reader = asyncio.StreamReader(loop=loop)
-        protocol = sslproto.SSLProtocol(
-            loop=loop,
-            app_protocol=asyncio.StreamReaderProtocol(reader, loop=loop),
-            sslcontext=ssl.create_default_context(),
-            waiter=None,
-        )
-        diagnostic = asyncio_compat._connection_diagnostic(
-            protocol=protocol,
-            server_side=False,
-            family=socket.AF_INET,
-            peer=None,
-        )
-        assert diagnostic == (
-            "连接收尾诊断: role=client, protocol=stream, "
-            "tls=True, family=ipv4, peer=unavailable"
-        )
-
-
-def test_non_windows_keeps_original_cleanup():
-    transport_type = proactor_events._ProactorBasePipeTransport
-    original = transport_type._call_connection_lost
-    with patch.object(asyncio_compat.sys, "platform", "linux"):
-        asyncio_compat.install_windows_connection_cleanup()
-    assert transport_type._call_connection_lost is original

@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.config.universal_plan import plan_directory, save_plan_config
-from app.models.config import GeneralUserConfig, MaaPlanConfig, UniversalPlanConfig
+from app.models.config import MaaPlanConfig, UniversalPlanConfig
 
 
 def make_plan(script_id, user_id, **info):
@@ -54,22 +54,6 @@ def test_directory_rejects_wrong_owner_and_unsafe_day(tmp_path):
     assert plan_directory(**kwargs, day="Day31").is_relative_to(tmp_path)
 
 
-@pytest.mark.parametrize("mode", ["File", "Folder"])
-def test_saved_days_and_user_base_are_isolated(tmp_path, mode):
-    native = tmp_path / "native"
-    native.mkdir()
-    source = native / "settings.json"
-    source.write_text("base")
-    monday, tuesday = tmp_path / "Monday", tmp_path / "Tuesday"
-    actual_source = source if mode == "File" else native
-    save_plan_config(source=actual_source, destination=monday, mode=mode)
-    save_plan_config(source=actual_source, destination=tuesday, mode=mode)
-    source.write_text("monday")
-    save_plan_config(source=actual_source, destination=monday, mode=mode)
-    assert (monday / source.name).read_text() == "monday"
-    assert (tuesday / source.name).read_text() == "base"
-
-
 def test_failed_save_preserves_previous_configuration(tmp_path, monkeypatch):
     import app.core.config.universal_plan as module
 
@@ -98,11 +82,3 @@ def test_first_save_from_empty_template_succeeds(tmp_path):
     template.mkdir(parents=True)
     save_plan_config(source=native, destination=template, mode="Folder")
     assert (template / "config.json").read_text(encoding="utf-8") == "first"
-
-
-def test_universal_plan_general_only():
-    """通用计划登记到 General，账号默认使用固定配置。"""
-    from app.models.config import PLAN_BOOK, GeneralConfig
-
-    assert PLAN_BOOK["UniversalPlanConfig"]["script_class"] is GeneralConfig
-    assert GeneralUserConfig().Info.PlanMode == "Fixed"

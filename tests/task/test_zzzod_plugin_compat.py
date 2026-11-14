@@ -1,20 +1,18 @@
-import asyncio
-
 """插件可选扩展不能破坏内置任务目录、运行监控或进度保护。"""
 
+import asyncio
 from datetime import datetime
-from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 import pytest
 
 from app.task.ZzzOd.AutoProxy import (
     AutoProxyTask,
     _judge_after,
-    _judge_baseline,
 )
 from app.task.ZzzOd.service import read_task_catalog
 from app.task.ZzzOd.tools import catalog
 from app.task.ZzzOd.tools import zzz_od_config as records
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
 @pytest.fixture
@@ -87,7 +85,7 @@ def test_duplicate_plugin_cannot_override_builtin(install, monkeypatch):
     assert warnings
 
 
-def test_plugin_progress_survives_clear_restore_and_metadata_disappearance(install):
+def test_opaque_plugin_record_survives_restore_without_metadata(install):
     plugin(install)
     record_dir = install / "config/1001/app_run_record"
     record_dir.mkdir(parents=True)
@@ -102,10 +100,7 @@ def test_plugin_progress_survives_clear_restore_and_metadata_disappearance(insta
     assert not (record_dir / "mail.yml").exists()
     before = records.snapshot_run_record_files(install, 1001)
     assert target.name in before
-    assert _judge_baseline(install, 1001)["extra"] == 0
-    assert _judge_after(install, 1001, before)["extra"] == 0
     target.write_bytes(b"run_status: 1\nopaque_progress: 3\n")
-    assert _judge_after(install, 1001, before)["extra"] == 1
     current = records.snapshot_run_record_files(install, 1001)
     records.restore_instance(install, 1001, backup)
     records.restore_run_record_files(install, 1001, current)

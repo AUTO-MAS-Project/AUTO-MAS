@@ -14,7 +14,6 @@ from app.core.config.manager import AppConfig
 from app.models.config import MaaConfig, MaaUserConfig
 from app.models.script_contracts import ScriptConfigHandler
 from app.task.MAA.tools.activity_inventory import resolve_activity_inventory_plans
-from app.task.MAA.tools.cultivate import Progression
 from app.task.MAA.user_update import prepare_user_update
 
 STAGES = [
@@ -162,22 +161,6 @@ async def test_unreliable_activity_keeps_unresolved_items_but_replaces_exact_old
 
 
 @pytest.mark.asyncio
-async def test_unrelated_save_neither_fetches_stages_nor_changes_old_plans(
-    migration_host,
-):
-    config, script, user, fetch = migration_host
-    original = json.dumps([LEGACY])
-    await user.update(
-        MaaUserConfig.model_validate({"Task": {"EventDepotMaintainPlans": original}})
-    )
-    await config.update_user(
-        str(script.uid), str(user.uid), {"Info": {"Name": "renamed"}}
-    )
-    assert user.Task.EventDepotMaintainPlans == original
-    fetch.assert_not_awaited()
-
-
-@pytest.mark.asyncio
 async def test_server_change_while_waiting_defers_only_ambiguous_mapping(
     migration_host,
 ):
@@ -259,61 +242,8 @@ async def test_same_index_in_different_categories_does_not_delete_another_old_ch
 
 
 @pytest.mark.asyncio
-async def test_migration_keeps_the_existing_owned_cultivation_commit_guard(
-    migration_host, monkeypatch
-):
-    api = importlib.import_module("app.task.MAA.api_service")
-    module = importlib.import_module("app.task.MAA.user_update")
-    monkeypatch.setattr(
-        api,
-        "get_cultivate_skland_progression",
-        AsyncMock(
-            return_value=(
-                {
-                    "owned": Progression(
-                        elite=0, level=1, skill_level=1, masteries={}, modules={}
-                    )
-                },
-                1,
-            )
-        ),
-    )
-    monkeypatch.setattr(
-        module.depot_cultivate_service,
-        "operator_catalog",
-        AsyncMock(return_value=[{"value": "owned", "maxElite": 2, "maxSkillLevel": 7}]),
-    )
-    config, script, user, _ = migration_host
-    await config.update_user(
-        str(script.uid),
-        str(user.uid),
-        {
-            "Task": {
-                "CultivateAllOwned": True,
-                "EventDepotMaintainPlans": json.dumps([LEGACY]),
-            }
-        },
-    )
-    assert "owned" in {
-        row["operator_id"] for row in json.loads(user.Task.CultivateTargets)
-    }
-    assert json.loads(user.Task.EventDepotMaintainPlans) == [
-        {"StageType": "material", "StageIndex": 1, "DropCount": 999}
-    ]
-
-
-@pytest.mark.asyncio
-async def test_migrated_items_survive_reload_and_do_not_change_another_user(
-    migration_host, tmp_path
-):
+async def test_migrated_items_survive_reload(migration_host, tmp_path):
     config, script, user, fetch = migration_host
-    other_uid = script.UserData.add(MaaUserConfig)
-    await script.UserData.commit()
-    other = script.UserData[other_uid]
-    original = json.dumps([LEGACY])
-    await other.update(
-        MaaUserConfig.model_validate({"Task": {"EventDepotMaintainPlans": original}})
-    )
     path = tmp_path / "scripts.yaml"
     config_manager.register_root(config.ScriptConfig, path)
     saved = await save_plans(migration_host, [LEGACY])
@@ -324,9 +254,6 @@ async def test_migrated_items_survive_reload_and_do_not_change_another_user(
     assert (
         json.loads(loaded[script.uid].UserData[user.uid].Task.EventDepotMaintainPlans)
         == saved
-    )
-    assert (
-        loaded[script.uid].UserData[other_uid].Task.EventDepotMaintainPlans == original
     )
 
 

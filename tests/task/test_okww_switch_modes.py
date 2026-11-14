@@ -64,7 +64,7 @@ async def test_native_modes_dispatch_selected_accounts(monkeypatch, mode, expect
     assert manager._restore_script_config_from_temp.await_count == len(expected)
 
 
-def test_existing_batch_value_and_legacy_switch_values_remain_compatible():
+def test_legacy_switch_input_migrates_to_account_switch_method():
     assert (
         OkwwConfig.model_validate(
             {"Game": {"AccountSwitchMethod": "OKWW"}}

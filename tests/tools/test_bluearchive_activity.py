@@ -25,6 +25,8 @@
 接口取数失败退回默认行为属于功能边界，不在本文件覆盖。
 """
 
+import pytest
+
 from app.tools.common.game_calendar import bluearchive as _tool_bluearchive_activity
 
 ## 判定函数只认这几个字段，时间一律是 Unix 秒
@@ -40,20 +42,15 @@ def activity(start: float, end: float, kind: str = "活动") -> dict:
 class TestHasRunningActivityIn:
     """时间轴 → 当前是否有进行中的活动"""
 
-    def test_start_boundary_counts_as_running(self) -> None:
+    @pytest.mark.parametrize(
+        "start,end,expected", [(NOW, NOW + 100, True), (NOW - 100, NOW, False)]
+    )
+    def test_activity_time_boundaries(self, start, end, expected) -> None:
         assert (
             _tool_bluearchive_activity.has_running_activity_in(
-                [activity(NOW, NOW + 100)], NOW
+                [activity(start, end)], NOW
             )
-            is True
-        )
-
-    def test_end_boundary_does_not_count_as_running(self) -> None:
-        assert (
-            _tool_bluearchive_activity.has_running_activity_in(
-                [activity(NOW - 100, NOW)], NOW
-            )
-            is False
+            is expected
         )
 
 

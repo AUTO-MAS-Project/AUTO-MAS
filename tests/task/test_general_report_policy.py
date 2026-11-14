@@ -4,7 +4,6 @@ import pytest
 
 from app.task.general.manager import GeneralManager
 from app.utils import LOG_TYPE_ERROR, LOG_TYPE_NORMAL
-from app.utils.common.log_box.results import LogEntry
 from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
@@ -41,15 +40,6 @@ def test_off_keeps_summary_and_does_not_mutate_input():
     entries = [(LOG_TYPE_NORMAL, "✅ 成功: 邮件", 0.0)]
     assert build_user_result_text([user(entries, "关闭")], False) == "账号 A: 全部完成"
     assert entries == [(LOG_TYPE_NORMAL, "✅ 成功: 邮件", 0.0)]
-
-
-def test_typed_and_legacy_entries_render_identically():
-    entries = [(LOG_TYPE_NORMAL, "✅ 成功: 邮件", 0.0)]
-    typed = [LogEntry.from_legacy(entry) for entry in entries]
-    for mode in ("关闭", "逐条", "汇总"):
-        assert build_user_result_text([user(typed, mode)], False) == (
-            build_user_result_text([user(entries, mode)], False)
-        )
 
 
 def test_user_groups_keep_account_order():

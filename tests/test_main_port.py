@@ -8,15 +8,15 @@ import main
 class ResolveHttpPortTest(unittest.TestCase):
     """端口解析用例单独成文件：本模块只依赖 main，不触发 app.services 的循环导入。"""
 
-    def test_production_keeps_legacy_port(self) -> None:
-        with patch.dict(os.environ, {"AUTO_MAS_HTTP_PORT": ""}):
-            self.assertEqual(main.resolve_http_port(False), main.DEFAULT_HTTP_PORT)
-
-    def test_development_uses_dedicated_port(self) -> None:
+    def test_default_port_follows_application_environment(self) -> None:
         """开发环境错开端口，用户已装正式版仍可同时运行。"""
-
-        with patch.dict(os.environ, {"AUTO_MAS_HTTP_PORT": ""}):
-            self.assertEqual(main.resolve_http_port(True), main.DEV_HTTP_PORT)
+        for development, expected in (
+            (False, main.DEFAULT_HTTP_PORT),
+            (True, main.DEV_HTTP_PORT),
+        ):
+            with self.subTest(development=development):
+                with patch.dict(os.environ, {"AUTO_MAS_HTTP_PORT": ""}):
+                    self.assertEqual(main.resolve_http_port(development), expected)
 
     def test_environment_variable_overrides_both(self) -> None:
         with patch.dict(os.environ, {"AUTO_MAS_HTTP_PORT": "40000"}):

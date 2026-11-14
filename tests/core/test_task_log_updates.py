@@ -263,15 +263,21 @@ async def test_legacy_in_place_append_uses_line_baseline(monkeypatch):
 async def test_append_after_process_state_rollback_replaces_sent_baseline(monkeypatch):
     from app.config import config_manager
 
-    root, script, user, _, sent = await runtime(monkeypatch)
+    root, script, user, manager, sent = await runtime(monkeypatch)
     await script.set_current_index(0)
     uid = user.logs.add(LogRecord, payload={"info": {"content": ["one\n"]}})
     await user.logs.commit()
+    sent.reset_mock()
     with pytest.raises(ValueError, match="rollback"):
         async with config_manager.transaction():
             await user.logs[uid].append_content("discarded\n")
             raise ValueError("rollback")
+    assert [
+        (packet.log, packet.append)
+        for packet in packets(sent, protocol.TASK_LOG_UPDATED)
+    ] == [("discarded\n", True)]
     assert root.get_log_snapshot()["logSeq"] is None
+    assert manager.get_task(root.uid)["current"]["log"] == "one\n"
     sent.reset_mock()
     await user.logs[uid].append_content("actual\n")
     packet = packets(sent, protocol.TASK_LOG_UPDATED)[0]

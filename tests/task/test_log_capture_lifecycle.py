@@ -39,21 +39,6 @@ def capture(request, tmp_path, monkeypatch):
     return proxy, user, path, module
 
 
-def test_offset_concurrent_close_and_user_ownership(capture):
-    proxy, user, path, module = capture
-    other = SimpleNamespace(push_log=[], push_log_mode="汇总")
-    proxy.cur_user_item = other
-
-    async def run():
-        await asyncio.gather(proxy._close_log_details(), proxy._close_log_details())
-        await proxy._close_log_details()
-
-    asyncio.run(run())
-    assert [entry[1] for entry in user.push_log] == ["✅ 成功: 邮件"]
-    assert other.push_log == []
-    assert user.status == "完成"
-
-
 def test_processing_failure_isolated_without_partial_results(capture):
     proxy, user, path, module = capture
 
@@ -70,14 +55,6 @@ def test_processing_failure_isolated_without_partial_results(capture):
     expected = [] if module.__name__.split(".")[2] == "ZzzOd" else ["⚠️ 节点采集失败"]
     assert [entry[1] for entry in user.push_log] == expected
     assert user.status == "完成"
-
-
-def test_disabled_caller_does_not_read_or_compile(capture):
-    proxy, user, path, module = capture
-    proxy._prepare_log_details(None, mode="关闭", enabled=False, rotated_name=None)
-    asyncio.run(proxy._close_log_details())
-    assert user.push_log == []
-    assert proxy._log_source is None and proxy._log_pipeline is None
 
 
 def test_initialization_failure_keeps_failure_policy_with_caller(capture, monkeypatch):

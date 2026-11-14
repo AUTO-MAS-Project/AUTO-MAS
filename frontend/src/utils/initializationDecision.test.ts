@@ -57,21 +57,18 @@ describe('Runtime 自动选源后的恢复入口', () => {
     expect(plan.actions.map(action => action.kind)).toEqual(['retry', 'open-log'])
   })
 
-  it('不可重试错误不因换源提示获得重试入口', () => {
-    const plan = decideFailureActions({
+  it.each([
+    {
       code: 'INTERNAL_ERROR',
       retryable: false,
       remediation: ['retry-other-mirror'],
       stage: 'python',
-      runtimeMode: 'managed',
-    })
+      runtimeMode: 'managed' as const,
+    },
+    { retryable: false },
+  ])('不可重试结果 %# 不提供重试入口', context => {
+    const plan = decideFailureActions(context)
     expect(plan.actions.map(action => action.kind)).toEqual(['open-log'])
-  })
-
-  it('未提供错误码时仍尊重不可重试结果', () => {
-    expect(decideFailureActions({ retryable: false }).actions.map(action => action.kind)).toEqual([
-      'open-log',
-    ])
   })
 
   it('源码损坏仍提供完整恢复，依赖重建仍保持独立', () => {

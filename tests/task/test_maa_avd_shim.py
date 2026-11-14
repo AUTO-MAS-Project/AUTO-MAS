@@ -36,26 +36,22 @@ def _root(tmp_path: Path, *, shim: bytes | None, listed: bool | None) -> Path:
     return root
 
 
-def test_package_shim_is_left_alone(tmp_path: Path, own_shim: bytes) -> None:
-    root = _root(tmp_path, shim=b"package shim", listed=True)
+@pytest.mark.parametrize(
+    "shim,listed,expected",
+    [
+        (b"package shim", True, b"package shim"),
+        (None, True, b"auto-mas shim"),
+        (b"old copy", False, b"auto-mas shim"),
+        (b"old copy", None, b"auto-mas shim"),
+    ],
+)
+def test_package_shim_selection(
+    tmp_path: Path, own_shim: bytes, shim, listed, expected
+):
+    """包内自带外壳保持原样，缺失外壳或旧包使用 MAS 的副本。"""
+    root = _root(tmp_path, shim=shim, listed=listed)
     assert avd.ensure_mumu_shim(root) == avd.shim_dll(root)
-    assert avd.shim_dll(root).read_bytes() == b"package shim"
-
-
-def test_package_shim_missing_gets_ours(tmp_path: Path, own_shim: bytes) -> None:
-    root = _root(tmp_path, shim=None, listed=True)
-    avd.ensure_mumu_shim(root)
-    assert avd.shim_dll(root).read_bytes() == own_shim
-
-
-@pytest.mark.parametrize("listed", [False, None])
-def test_older_package_gets_ours(
-    tmp_path: Path, own_shim: bytes, listed: bool | None
-) -> None:
-    """0.40.1 以前的包不带外壳（清单里没有，或者没有清单）：照旧换成本体的那份。"""
-    root = _root(tmp_path, shim=b"old copy", listed=listed)
-    avd.ensure_mumu_shim(root)
-    assert avd.shim_dll(root).read_bytes() == own_shim
+    assert avd.shim_dll(root).read_bytes() == expected
 
 
 @pytest.mark.parametrize("text", ["{", "[]", '{"files": []}', "﻿{}"])

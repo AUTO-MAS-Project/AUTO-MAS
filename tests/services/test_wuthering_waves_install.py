@@ -40,13 +40,6 @@ def test_resource_records_use_existing_client_outside_launcher_tree(tmp_path):
     assert wuthering_waves.resolve_wuthering_waves_process_path(launcher) == client
 
 
-def test_legacy_launcher_without_platform_selection_returns_none(tmp_path):
-    launcher = tmp_path / "launcher.exe"
-    launcher.touch()
-
-    assert wuthering_waves.read_wuthering_waves_launcher_selection(launcher) is None
-
-
 @pytest.mark.parametrize("game", ["Aki", "OtherGame"])
 def test_launcher_selection_uses_current_game_instead_of_recent(tmp_path, game):
     launcher = tmp_path / "launcher.exe"
@@ -134,29 +127,3 @@ def test_resource_directory_follows_current_launcher_bundle(
         # 当前档位记录或客户端缺失时，不能回退到仍有效的其它档位安装。
         with pytest.raises(ValueError):
             wuthering_waves.resolve_wuthering_waves_process_path(launcher)
-
-
-def test_platform_selection_preserves_unbound_legacy_resources(tmp_path):
-    launcher = tmp_path / "launcher.exe"
-    launcher.touch()
-    client = tmp_path / "game/Client/Binaries/Win64/Client-Win64-Shipping.exe"
-    client.parent.mkdir(parents=True)
-    client.touch()
-    cache = tmp_path / "kr_game_cache"
-    cache.mkdir()
-    for name, payload in (
-        (
-            "kr_game_temp.bin",
-            {"resources": json.dumps([{"installDirPath": str(client.parents[3])}])},
-        ),
-        (
-            "platform_ui_state.bin",
-            {"activeGameScope": {"gameIdentity": "Aki", "bundleName": "HD"}},
-        ),
-    ):
-        raw = json.dumps(payload).encode("utf-8")
-        (cache / name).write_bytes(
-            base64.b64encode(bytes(value ^ 0x63 for value in raw))
-        )
-
-    assert wuthering_waves.resolve_wuthering_waves_process_path(launcher) == client

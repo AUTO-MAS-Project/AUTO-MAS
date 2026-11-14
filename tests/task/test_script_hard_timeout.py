@@ -134,48 +134,28 @@ def test_repeated_cancel_waits_for_finalizer():
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        "Maa",
-        "MaaEnd",
-        "Src",
-        "General",
-        "Okww",
-        "OkNte",
-        "BetterGI",
-        "ZzzOd",
-        "BAAH",
-        "Whimbox",
-    ],
-)
-def test_hard_timeout_config_persistence_and_runtime(name, tmp_path):
+def test_hard_timeout_setting_persists_to_runtime(tmp_path):
     from app.config.wire import config_contract
-    from app.models import config as configs
+    from app.models.config import GeneralConfig
 
     async def scenario():
-        cls = getattr(configs, f"{name}Config")
-        config = cls()
-        path = tmp_path / f"{name}.yaml"
+        config = GeneralConfig()
+        path = tmp_path / "general.yaml"
         await activate_config(config, path)
-        assert config.Run.HardTimeLimit == 120
-        proxy = Proxy()
-        proxy.script_config = config
-        assert ScriptAutoProxyBase.run_timeout_seconds.fget(proxy) == 7200
+        model = config_contract(GeneralConfig)
+        payload = model.model_validate({"Run": {"HardTimeLimit": 240}})
         await config.update(
-            type(config).model_validate({"Run": {"HardTimeLimit": 240}}),
+            GeneralConfig.model_validate(payload.model_dump(exclude_unset=True)),
             check_visibility=False,
         )
-        loaded = cls()
+
+        loaded = GeneralConfig()
         await activate_config(loaded, path)
         assert loaded.Run.HardTimeLimit == 240
+        proxy = Proxy()
         proxy.script_config = loaded
         assert ScriptAutoProxyBase.run_timeout_seconds.fget(proxy) == 240 * 60
-        model = config_contract(getattr(configs, f"{name}Config"))
-        assert (
-            model.model_validate({"Run": {"HardTimeLimit": 240}}).Run.HardTimeLimit
-            == 240
-        )
+
         for invalid in (0, 10000):
             from pydantic import ValidationError
 

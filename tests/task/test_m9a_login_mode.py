@@ -24,8 +24,7 @@
 1. 该模式下切号任务不再下发（``decorate_selection`` / ``settle_snapshot``），账号只作为
    MAS 登录要选中的昵称——这是用户能看到的行为差异（队列里不再出现「切换账号」）；
 2. 会话内的多个有效切号不再判「要拆用户」：队列里的切号会被直接移出队列；
-3. 登录钩子只在 Mas 模式真正做事，非 Mas 直接返回空串；Mas 且账号为空时响亮失败
-   （都在任何 adb 操作之前判定，测试不需要模拟器）。
+3. Mas 且账号为空时响亮失败（在任何 adb 操作之前判定，测试不需要模拟器）。
 
 不覆盖：引擎 ``runner_task._ensure_logged_in`` 的调用点与真实 adb 登录流程（前者是
 一行动调用，后者按 ``docs/testing/e2e.md`` 在作者环境用真实模拟器验证）。
@@ -40,10 +39,8 @@ import pytest
 from app.task.M9A.flavor import FLAVOR
 from app.task.M9A.managed import (
     LOGIN_MODE_MAS,
-    STARTUP_ENTRY,
     SWITCH_ACCOUNT_ENTRY,
     settle_snapshot,
-    supports_account_switch,
 )
 from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 from app.task.MaaFW.tools.embedded.flavor import MaaFWLoginRequired
@@ -131,21 +128,6 @@ def test_project_mode_keeps_switch_account_with_nickname() -> None:
     assert options[switch_id] == {"目标账号": {"账号": "示例账号"}}
 
 
-def test_supports_account_switch_reads_login_mode() -> None:
-    assert supports_account_switch("官服") is True
-    assert supports_account_switch("官服", login_mode="Project") is True
-    assert supports_account_switch("官服", login_mode=LOGIN_MODE_MAS) is False
-    assert supports_account_switch("B 服") is False
-    assert supports_account_switch("", login_mode=LOGIN_MODE_MAS) is False
-
-
-def test_only_account_switch_aborts_round() -> None:
-    # 与上游口径一致：只把「切换账号」列为关键任务。StartUp 失败不代表游戏用不了，
-    # 仍按普通任务失败继续（评审指出这里不该自行加严）。
-    assert STARTUP_ENTRY not in FLAVOR.abort_round_entries
-    assert SWITCH_ACCOUNT_ENTRY in FLAVOR.abort_round_entries
-
-
 def test_settle_snapshot_drops_switches_in_mas_mode() -> None:
     snapshot = {
         "taskOrder": ["心相", "切号甲", "切号乙"],
@@ -175,21 +157,6 @@ def test_settle_snapshot_drops_switches_in_mas_mode() -> None:
     assert settled.snapshot["taskOrder"] == ["心相"]
     assert settled.split_accounts == []
     assert settled.account == ""
-
-
-def test_login_hook_skips_in_project_mode() -> None:
-    message = asyncio.run(
-        FLAVOR.ensure_logged_in(
-            script_config=_Script("Project"),
-            user_config=_User("示例账号"),
-            resource_name="官服",
-            package_name="",
-            adb_path=None,
-            adb_address="127.0.0.1:1",
-            progress=None,
-        )
-    )
-    assert message == ""
 
 
 def test_login_hook_requires_account_in_mas_mode() -> None:

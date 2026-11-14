@@ -15,23 +15,22 @@
 就收口——否则重试等于把整条一条龙再跑一遍（含重新启动游戏），而原因不会自己变。
 """
 
+import pytest
+
 from app.task.Whimbox.AutoProxy import _should_retry
 
 
-def test_retry_without_upstream_verdict():
-    # 没有上游结论的形态：重试（重试机制的原本用途）
-    assert _should_retry("exited_early")
-    assert _should_retry("stalled")
-    assert _should_retry(None)  # 异常路径未留判定
-
-
-def test_upstream_verdict_retries_only_when_reason_changes():
-    # 上游判负：原因与上一轮不同 → 情形在变，继续重试
-    assert _should_retry("failed", same_reason_as_last=False)
-    # 同一原因连续出现 → 收口，不再把整条一条龙重跑一遍
-    assert not _should_retry("failed", same_reason_as_last=True)
-
-
-def test_no_retry_for_environment_fatal_and_success():
-    assert not _should_retry("fatal")  # 缺管理员权限不会因重试而出现
-    assert not _should_retry("success")  # 调用方在此之前已收口
+@pytest.mark.parametrize(
+    "status,same_reason,expected",
+    [
+        ("exited_early", False, True),
+        ("stalled", False, True),
+        (None, False, True),
+        ("failed", False, True),
+        ("failed", True, False),
+        ("fatal", False, False),
+        ("success", False, False),
+    ],
+)
+def test_retry_follows_upstream_verdict(status, same_reason, expected):
+    assert _should_retry(status, same_reason_as_last=same_reason) is expected

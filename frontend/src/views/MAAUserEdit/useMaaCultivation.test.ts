@@ -73,9 +73,11 @@ describe('全部已有干员托管', () => {
 
   it('保存失败不会回读或清空现有目标', async () => {
     const { task, controller } = setup(false)
+    const targets = '[{"operator_id":"existing","goals":[]}]'
+    task.CultivateTargets = targets
     await controller.setManaged(true)
     expect(task.CultivateAllOwned).toBe(false)
-    expect(task.CultivateTargets).toBe('[]')
+    expect(task.CultivateTargets).toBe(targets)
     expect(getUser).not.toHaveBeenCalled()
     expect(controller.managing.value).toBe(false)
   })

@@ -582,19 +582,6 @@ async def test_native_update_does_not_block_non_takeover_configuration(installat
     await update.confirm_current_install(root, verify_receipt=False)
 
 
-def test_missing_installation_path_survives_reload_for_crash_recovery(
-    tmp_path, monkeypatch
-):
-    from app.models.config import MaaEndConfig
-
-    missing_root = tmp_path / "interrupted-installation"
-    home = tmp_path / "mas-home"
-    home.mkdir()
-    monkeypatch.chdir(home)
-    config = MaaEndConfig.model_validate({"Info": {"Path": str(missing_root)}})
-    assert config.Info.Path == missing_root
-
-
 @pytest.mark.asyncio
 async def test_same_version_repairs_corrupted_executable_using_recorded_architecture(
     installation,

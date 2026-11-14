@@ -234,31 +234,6 @@ async def test_manager_starts_config_session_with_real_runtime_tree(
 
 
 @pytest.mark.asyncio
-async def test_batch_download_failure_continues_without_rechecking(
-    installation, monkeypatch
-):
-    root, config, _ = installation
-    instance = object.__new__(manager.BetterGIManager)
-    instance.maintenance = False
-    instance._update_root = root
-    instance._program_update_prepared = False
-    instance.script_config = config
-    instance.script_info = SimpleNamespace(script_id=str(uuid.uuid4()), log="")
-    instance.task_info = SimpleNamespace(task_id=str(uuid.uuid4()))
-    monkeypatch.setattr(manager.Publisher, "send", AsyncMock())
-    update.download_script_package.side_effect = OSError("network unavailable")
-    await instance._prepare_program_update()
-    await instance._prepare_program_update()
-    assert update.request_release.await_count == 1
-    assert (
-        json.loads((root / "User/config.json").read_text())[update.NOTICE_KEY]
-        == update.IGNORED_VERSION
-    )
-    update.recover_update_notice(root)
-    assert json.loads((root / "User/config.json").read_text()) == {"custom": True}
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "error",
     [

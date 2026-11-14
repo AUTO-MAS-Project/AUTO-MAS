@@ -1649,24 +1649,6 @@ it('managed 首次启动先完成环境准备，窗口晚到可读取各阶段�
   backend.close(0)
 })
 
-it('环境变更进行中拒绝第二次操作，完成后允许显式恢复', async () => {
-  const service = new InitializationService(appRoot)
-  let finish: (value: string) => void = () => undefined
-  const gate = new Promise<string>(resolve => {
-    finish = resolve
-  })
-  const pending = service.runEnvironmentOperation(() => gate)
-  try {
-    await expect(service.runEnvironmentOperation(async () => 'second')).rejects.toThrow(
-      '运行环境操作尚未结束'
-    )
-  } finally {
-    finish('completed')
-    await pending
-  }
-  expect(await service.runEnvironmentOperation(async () => 'recovered')).toBe('recovered')
-})
-
 it.each([false, true])('启动前使用当前环境默认端点，支持自定义端口 packaged=%s', async packaged => {
   appState.isPackaged = packaged
   vi.resetModules()

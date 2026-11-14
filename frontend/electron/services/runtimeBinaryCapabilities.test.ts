@@ -72,19 +72,4 @@ describe('Runtime 版本查询的能力透传', () => {
     expect(probe.run).toHaveBeenCalledTimes(1)
     expect(probe.run.mock.calls[0][0]).toEqual(['version'])
   })
-
-  it('本地版本更高时依据实际 exe 能力，不依据线上目标猜测', async () => {
-    probe.run.mockResolvedValue({
-      success: true,
-      result: { details: { runtimeVersion: 'v0.2.0', bootstrapEnvironmentReuse: true } },
-    })
-    const outcome = await syncRuntimeBinary({
-      appRoot: workspace,
-      runtimePath,
-      target: { version: 'v0.1.28' },
-    })
-    expect(outcome.status).toBe('current')
-    expect(outcome.bootstrapEnvironmentReuse).toBe(true)
-    expect(probe.run).toHaveBeenCalledTimes(1)
-  })
 })

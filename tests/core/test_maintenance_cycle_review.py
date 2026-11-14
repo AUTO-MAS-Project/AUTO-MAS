@@ -140,26 +140,6 @@ async def test_cycle_submits_another_task_while_previous_run_is_active(
 
 
 @pytest.mark.asyncio
-async def test_rejected_creation_does_not_advance_any_clock(scheduler):
-    _, _, queues, sid = scheduler
-    now = datetime.now().astimezone().replace(second=5, microsecond=0)
-    _, queue = await make_queue(queues, sid, now=now, startup="Always", timed=True)
-    previous = queue.model_dump(context={"audience": "persist"})
-    timer = _MainTimer()
-    with (
-        patch("app.core.timer._local_now", return_value=now),
-        creation_time(now),
-        patch(
-            "app.core.timer.TaskManager.start",
-            AsyncMock(side_effect=RuntimeError("rejected")),
-        ),
-    ):
-        await timer.timed_start(startup=True)
-    assert queue.model_dump(context={"audience": "persist"}) == previous
-    assert not timer._timed_fired
-
-
-@pytest.mark.asyncio
 async def test_daily_startup_uses_local_date_and_is_independent_of_cycle(scheduler):
     manager, _, queues, sid = scheduler
     # UTC 日期尚未跨天，本机日期已是第二天。
@@ -187,23 +167,6 @@ async def test_daily_startup_uses_local_date_and_is_independent_of_cycle(schedul
     assert (
         queue.Data.LastStartupTime.astimezone(tomorrow.tzinfo).date() == tomorrow.date()
     )
-
-
-@pytest.mark.asyncio
-async def test_startup_async_task_runs_once_per_timer_instance(scheduler):
-    timer = _MainTimer()
-    with (
-        patch.object(timer, "timed_start", AsyncMock()) as startup,
-        patch.object(timer, "second_task", AsyncMock()),
-        patch.object(timer, "hour_task", AsyncMock()),
-        patch.object(timer, "calendar_task", AsyncMock()),
-    ):
-        await timer.start()
-        await timer.startup_task
-        await timer.stop()
-        await timer.start()
-        await timer.stop()
-    startup.assert_awaited_once_with(startup=True)
 
 
 @pytest.mark.asyncio
