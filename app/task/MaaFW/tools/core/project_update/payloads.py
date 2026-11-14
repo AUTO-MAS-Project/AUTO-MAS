@@ -1451,6 +1451,9 @@ def _replaces_unloadable_latest(facts: LatestFacts) -> bool:
     PE 架构不符——旧版在来源 ``runtimes/`` 同时带 win-arm64 与 win-x64 时按名字选中了
     arm64，x64 机器上副本只剩 arm64。不开这个口子，「在托管页重新导入」永远换不掉坏的那份，
     只能等项目出新版本。两边都读不出架构、或都能 / 都不能加载时照旧不换。
+
+    依赖不齐同样算加载不了：差量更新让 runner 换到只有几个 DLL 的目录（MAA_bbb v1.13.20
+    的 ``runtimes/win-x64``），更新器按全量包重装同一版本时靠这条顶替坏的那份。
     """
 
     if facts.same_id or not facts.same_version:
@@ -1535,14 +1538,15 @@ def decide_latest(facts: LatestFacts) -> LatestDecision:
 
 
 def _loadable_probe(directory: Path) -> LoadableProbe:
-    """``directory`` 自带的 MaaFramework 在本机能不能加载，调用时才探测（读 PE 头）。"""
+    """``directory`` 自带的 MaaFramework 在本机能不能用，调用时才探测（读 PE 头与导入表：
+    架构对不上、或依赖的 DLL 不在都算不能用）。"""
 
     def probe() -> bool | None:
         from app.task.MaaFW.tools.core.runner.environment import (
-            project_runtime_loadable_on_host,
+            project_runtime_usable_on_host,
         )
 
-        return project_runtime_loadable_on_host(directory)
+        return project_runtime_usable_on_host(directory)
 
     return probe
 
@@ -1709,15 +1713,14 @@ def settle_same_version_latest(
         if len(manifests) < 2:
             return None
         from app.task.MaaFW.tools.core.runner.environment import (
-            project_runtime_loadable_on_host,
+            project_runtime_usable_on_host,
         )
 
         # 最先看自带的 MaaFramework 在本机能不能加载（与 _replaces_unloadable_latest 同一
         # 判据）：更新得来的坏 arm64 载荷不能因为「有清单背书」压过导入的好载荷。
         loadable = {
             pid: int(
-                project_runtime_loadable_on_host(payload_dir(root, key, pid))
-                is not False
+                project_runtime_usable_on_host(payload_dir(root, key, pid)) is not False
             )
             for pid in manifests
         }
