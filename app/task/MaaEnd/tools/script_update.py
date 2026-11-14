@@ -109,7 +109,15 @@ async def request_release(channel: str) -> dict:
             releases.append((version, item))
     if not releases:
         raise ValueError("MaaEnd 没有可识别的官方发行版")
-    return max(releases, key=lambda item: item[0])[1]
+    # beta 通道同号时显式选择 beta：3.1.0 正式版也允许切到 3.1.0-beta.N。
+    return max(
+        releases,
+        key=lambda item: (
+            item[0].release,
+            channel == "beta" and item[0].is_prerelease,
+            item[0],
+        ),
+    )[1]
 
 
 async def request_release_for_version(version: Version, installed_tag: str) -> dict:
@@ -214,8 +222,14 @@ async def prepare_update(
     )
     if target == current and verified:
         return f"MaaEnd 当前版本 {current} 无需更新"
-    recover_native = target < current and not verified
-    if target < current:
+    same_cycle_beta = (
+        channel == "beta"
+        and target.is_prerelease
+        and not current.is_prerelease
+        and current.release == target.release
+    )
+    recover_native = target < current and not verified and not same_cycle_beta
+    if target < current and not same_cycle_beta:
         if verified:
             return f"MaaEnd 当前版本 {current} 高于所选通道，无需更新"
         # MXU 可以在 MAS 接管之间独立升级；旧回执失效不等于新版本损坏。
@@ -259,6 +273,10 @@ async def prepare_update(
             proxy=proxy,
             arch=arch,
             channel=channel,
+            current_version=str(current),
+            target_version=str(target),
+            official_url=url,
+            guard_speed=bool(cdk),
             progress=progress,
         )
         if not rebuilt:
@@ -390,6 +408,7 @@ async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
                     candidate.destination,
                     candidate.size,
                     candidate.digest,
+                    version=str(target),
                 )
         return f"MaaEnd 已更新至 {target}，完整性校验通过"
     finally:
