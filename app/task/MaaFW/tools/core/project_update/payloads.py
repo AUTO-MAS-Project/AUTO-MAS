@@ -62,6 +62,7 @@ from .projection import (
     ProjectionPlan,
     abandoned_native_runtime_files,
     build_projection_plan,
+    bundled_native_runtime_location,
     is_shared_path,
     materialize_projection,
     read_json_object,
@@ -100,6 +101,10 @@ _VERSION_UNSAFE_RE = re.compile(r"[^0-9A-Za-z._+-]+")
 
 class PayloadError(RuntimeError):
     """载荷操作失败。"""
+
+
+class DeltaNativeRelocationError(PayloadError):
+    """差量包让 runner 换用了另一处原生库目录，差量包补不全它，要改用全量包。"""
 
 
 class PayloadCancelled(PayloadError):
@@ -866,12 +871,40 @@ def build_from_package(
             emit("applying", appliedFiles=applied, totalFiles=total)
             check_cancel()
 
+    if plan.package_type != "full":
+        _reject_delta_native_relocation(old_root, staging)
+
     origins = {
         rel: entry["origin"] for rel, entry in old_files.items() if rel not in stale
     }
     for rel in plan.files:
         origins[rel] = ORIGIN_PACKAGE
     return PackageBuild(plan=plan, stale=stale, origins=origins, applied_files=applied)
+
+
+def _reject_delta_native_relocation(old_root: Path, staging: Path) -> None:
+    """差量包套完后，runner 要用的 MaaFramework 原生库目录换了地方就拒收。
+
+    差量包只带改过的文件。新版本若改用另一处原生库（发行包同时带 ``maafw/`` 与
+    ``runtimes/win-x64/``，新版只升级了后者，按版本取高就换到它），而旧载荷里没有那个目录
+    （导入时它被当成外壳副本剔掉了），新目录里就只有包里改过的那几个 DLL，没改过的依赖
+    （``opencv_world4_maa.dll``、``onnxruntime_maa.dll`` …）一个都没有，运行时
+    ``MaaFramework.dll`` 必然加载失败。MAA_bbb v1.13.18 → v1.13.20 的 Mirror 酱差量包实测如此。
+
+    换布局本来就该走全量包（旧位置的残留也只在全量包里清），所以这里抛
+    :class:`DeltaNativeRelocationError`（原因链上是 ``UpdateApplyError``）：更新流程在
+    登记前据此改要全量包。
+    """
+
+    before = bundled_native_runtime_location(old_root)
+    after = bundled_native_runtime_location(staging)
+    if after is None or after == before:
+        return
+    message = (
+        f"差量包让 MaaFramework 原生库从 {before or '（无）'}/ 换到了 {after}/，"
+        "差量包只带改过的文件，这个目录不全，需要全量包"
+    )
+    raise DeltaNativeRelocationError(message) from UpdateApplyError(message)
 
 
 def linked_hashes(

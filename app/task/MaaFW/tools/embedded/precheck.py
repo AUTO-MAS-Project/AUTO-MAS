@@ -40,6 +40,8 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import subprocess
+import sys
 import threading
 from collections.abc import Callable, MutableMapping
 from pathlib import Path
@@ -136,6 +138,83 @@ def _resolve_requirement(project_path: Path) -> str | None:
         return None
 
 
+class MaaFWNativeLoadError(RuntimeError):
+    """新版本里 runner 要用的 MaaFramework 原生库在干净进程里都加载不了。"""
+
+
+# 子进程里只做一件事：按 runner 的 ``Library.open`` 同样的方式（绝对路径的 WinDLL，
+# 依赖从 DLL 所在目录找）加载主库。加载失败退出码 3，并把原因打到 stdout。
+_NATIVE_LOAD_PROBE = (
+    "import ctypes, sys\n"
+    "try:\n"
+    "    ctypes.WinDLL(sys.argv[1])\n"
+    "except OSError as error:\n"
+    "    print(error)\n"
+    "    sys.exit(3)\n"
+)
+_NATIVE_LOAD_FAILED_EXIT = 3
+_NATIVE_LOAD_TIMEOUT_SECONDS = 60
+
+
+def check_staging_native_runtime(root: Path, send_log: Callable[[str], None]) -> None:
+    """在独立子进程里加载一次 staging 里 runner 会用的 ``MaaFramework.dll``；确定加载不了
+    就 raise。
+
+    agent 那一侧的检查用的是项目自带 Python 里的 maafw，碰不到 runner 用的这份原生库：
+    MAA_bbb v1.13.20 的差量更新把 runner 换到了只有几个 DLL 的 ``runtimes/win-x64``，预检
+    照样通过，切过去以后每次运行都报 ``Could not find module ... (or one of its
+    dependencies)``。只在 Windows 上查；找不到原生库、子进程起不来或超时都放行
+    （宁可漏报，不可误拒），只有子进程明确报「加载失败」才拒。
+    """
+
+    if os.name != "nt":
+        return
+    try:
+        from app.task.MaaFW.tools.core.runner.environment import (
+            PROJECT_MAAFW_DLL_NAME,
+            project_maafw_runtime_path,
+        )
+
+        runtime = project_maafw_runtime_path(root)
+    except Exception as exc:  # noqa: BLE001 - 定位不了就不下结论
+        logger.warning(f"定位新版本的 MaaFramework 原生库失败，放行：{exc}")
+        return
+    if runtime is None:
+        return
+    dll = runtime / PROJECT_MAAFW_DLL_NAME
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-I", "-c", _NATIVE_LOAD_PROBE, str(dll)],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=_NATIVE_LOAD_TIMEOUT_SECONDS,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning(f"MaaFramework 原生库加载检查没能完成，放行：{exc}")
+        send_log(f"[原生库检查] 没能完成（{type(exc).__name__}），跳过")
+        return
+    try:
+        location = runtime.relative_to(root).as_posix()
+    except ValueError:
+        location = str(runtime)
+    if completed.returncode == _NATIVE_LOAD_FAILED_EXIT:
+        reason = (completed.stdout or "").strip().rstrip("。.") or "原因未知"
+        raise MaaFWNativeLoadError(
+            f"新版本自带的 MaaFramework（{location}/）加载不了：{reason}。"
+            "多半是这个目录里缺了依赖的 DLL"
+        )
+    if completed.returncode != 0:
+        logger.warning(
+            f"MaaFramework 原生库加载检查异常退出（{completed.returncode}），放行："
+            f"{(completed.stderr or '').strip()[-500:]}"
+        )
+        send_log("[原生库检查] 没能完成，跳过")
+        return
+    send_log(f"[原生库检查] {location}/MaaFramework.dll 加载正常")
+
+
 def check_staging_agent_imports(
     root: Path,
     agent_env_root: Path,
@@ -195,6 +274,8 @@ def build_precheck_validator(
         # 预检 venv 不参与跨视图共用：建在这份 staging 专用的子目录里
         staging_agent_root = precheck_staging_agent_root(agent_env_root, root)
         try:
+            # 原生库加载只要一两秒，放在建环境前面：加载不了就不必再建
+            check_staging_native_runtime(root, send_log)
             prepare(
                 root,
                 cancel_event,
@@ -243,9 +324,11 @@ def build_precheck_validator(
 
 __all__ = [
     "PRECHECK_AGENT_ROOT_NAME",
+    "MaaFWNativeLoadError",
     "PrepareProjectEnvironment",
     "build_precheck_validator",
     "check_staging_agent_imports",
+    "check_staging_native_runtime",
     "cleanup_precheck_agent_venv",
     "precheck_agent_root",
     "precheck_staging_agent_root",
