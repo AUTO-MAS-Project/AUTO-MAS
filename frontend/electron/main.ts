@@ -204,14 +204,13 @@ async function stopAllTasksByShortcut(source: 'shortcut' | 'tray' = 'shortcut'):
   logger.info(`触发全局快捷键 ${STOP_ALL_TASKS_SHORTCUT}，开始停止所有任务`)
 
   try {
-    const apiUrl = `${getLocalApiEndpoint()}/api/dispatch/stop`
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ taskId: 'ALL' }),
-    })
+    const endpoint = getLocalApiEndpoint()
+    const response = await (desktopSession?.stopAllTasks(endpoint) ??
+      fetch(`${endpoint}/api/dispatch/stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId: 'ALL' }),
+      }))
 
     if (!response.ok) {
       telemetry.finish({ source, outcome: 'rejected' })

@@ -270,10 +270,10 @@ class Host:
             self.executor_pipe = self.executor_pid = self.executor_request = None
             self.clear_registration()
 
-    def close(self) -> None:
+    def close(self, orphaned_session: int | None = None) -> None:
         if self.executor_pipe is not None or self.executor_process is not None:
             raise RuntimeError("executor_running")
-        session = self.session_id
+        session = self.session_id if orphaned_session is None else orphaned_session
         if self.viewer and session is None:
             # 连接期间可能在最后一次轮询后产生会话。只注销连接发起后观察到的分身。
             current = child_session()
@@ -308,7 +308,7 @@ class Host:
         elif action == "execute":
             self.launch(command)
         elif action == "close":
-            self.close()
+            self.close(command.get("orphanedSessionId"))
         elif action == "eof":
             self.dead = True
         elif self.viewer is not None:

@@ -68,6 +68,8 @@ export class DesktopSessionService {
   }
   private host: ChildProcessWithoutNullStreams | null = null
   private startingHost: Promise<void> | null = null
+  private runtime: RuntimeDescription | undefined
+  private orphanedSessionId: number | undefined
   private hostEvents = new EventTarget()
   private startOperation: Promise<DesktopSessionStartResult> | null = null
   private finishOperation: Promise<void> | null = null
@@ -95,6 +97,7 @@ export class DesktopSessionService {
     return (
       this.snapshot.busy ||
       this.transferred ||
+      this.orphanedSessionId !== undefined ||
       this.snapshot.sessionId !== undefined ||
       this.snapshot.state === 'connecting' ||
       this.snapshot.state === 'connected'
@@ -103,6 +106,16 @@ export class DesktopSessionService {
 
   get logFolder(): string | undefined {
     return this.logsRoot
+  }
+
+  stopAllTasks(endpoint: string): Promise<Response> | undefined {
+    if (endpoint !== this.endpoint) return
+    return fetch(`${endpoint}/api/dispatch/stop`, {
+      method: 'POST',
+      redirect: 'error',
+      headers: { 'Content-Type': 'application/json', [header]: this.token },
+      body: JSON.stringify({ taskId: 'ALL' }),
+    })
   }
 
   private patch(patch: Partial<DesktopSessionSnapshot>): void {
@@ -148,13 +161,16 @@ export class DesktopSessionService {
   }
 
   private async spawnHost(): Promise<void> {
-    const runtime = await request<RuntimeDescription>(
-      getLocalApiEndpoint(),
-      internal + 'describe',
-      desktopSessionControlToken,
-      undefined,
-      5000
-    )
+    const runtime =
+      this.runtime ??
+      (await request<RuntimeDescription>(
+        getLocalApiEndpoint(),
+        internal + 'describe',
+        desktopSessionControlToken,
+        undefined,
+        5000
+      ))
+    this.runtime = runtime
     this.logsRoot = join(runtime.root, 'debug', 'desktop-session')
     const child = spawn(runtime.python, ['-m', 'app.core.desktop_session.host', runtime.root], {
       cwd: runtime.source,
@@ -176,10 +192,13 @@ export class DesktopSessionService {
     const exited = () => {
       if (this.host !== child) return
       this.host = null
+      this.orphanedSessionId ??= this.snapshot.sessionId
       this.log('host_exited', { exitCode: child.exitCode })
       this.hostEvents.dispatchEvent(new Event('exit'))
       this.patch({ state: this.active ? 'disconnected' : 'idle', code: 'host_exited' })
-      if (this.transferred) void this.finish(false).catch(() => undefined)
+      if (this.transferred && !this.startOperation && this.orphanedSessionId === undefined) {
+        void this.finish(false).catch(() => undefined)
+      }
     }
     child.once('error', exited)
     child.once('exit', exited)
@@ -302,7 +321,8 @@ export class DesktopSessionService {
       this.snapshot.busy ||
       this.snapshot.closing ||
       this.finishOperation ||
-      this.recoveryRequired
+      this.recoveryRequired ||
+      this.orphanedSessionId !== undefined
     ) {
       return Promise.resolve({ code: 'busy', queues: [] })
     }
@@ -310,7 +330,11 @@ export class DesktopSessionService {
     this.startOperation = this.startInternal(input, owner, bounds).finally(() => {
       this.startOperation = null
       this.patch({ busy: false })
-      if (this.transferred && this.snapshot.state !== 'connected') {
+      if (
+        this.transferred &&
+        this.snapshot.state !== 'connected' &&
+        this.orphanedSessionId === undefined
+      ) {
         void this.finish(false).catch(() => undefined)
       }
     })
@@ -466,31 +490,42 @@ export class DesktopSessionService {
   }
 
   private async monitorExecution(): Promise<void> {
+    if (!this.transferred || this.recoveryRequired || this.orphanedSessionId !== undefined) return
     if (this.startOperation || this.finishOperation) {
       this.scheduleMonitor()
       return
     }
-    try {
-      if (
-        !this.endpoint ||
-        this.executorReleased ||
-        this.snapshot.state !== 'connected' ||
-        (
-          await request<{ idle: boolean }>(
-            this.endpoint,
-            internal + 'state',
-            this.token,
-            undefined,
-            2000
-          )
-        ).idle
-      ) {
-        await this.finish(false)
-      } else {
-        this.scheduleMonitor()
+
+    const monitor = this.monitor
+    let shouldFinish =
+      !this.endpoint || this.executorReleased || this.snapshot.state !== 'connected'
+    if (!shouldFinish && this.endpoint) {
+      try {
+        const state = await request<{ idle: boolean }>(
+          this.endpoint,
+          internal + 'state',
+          this.token,
+          undefined,
+          2000
+        )
+        shouldFinish = state.idle
+      } catch {
+        if (this.monitor === monitor && this.transferred && !this.finishOperation) {
+          this.scheduleMonitor()
+        }
+        return
       }
+    }
+
+    if (this.monitor !== monitor || !this.transferred || this.finishOperation) return
+    if (this.startOperation || !shouldFinish) {
+      this.scheduleMonitor()
+      return
+    }
+    try {
+      await this.finish(false)
     } catch {
-      this.patch({ code: 'handoff_unconfirmed' })
+      // restoreMain 已记录明确的恢复失败状态。
     }
   }
 
@@ -504,13 +539,17 @@ export class DesktopSessionService {
 
   private async restoreMain(closing: boolean): Promise<void> {
     clearTimeout(this.monitor)
+    this.monitor = undefined
     if (!this.transferred) return
     this.patch({ busy: true })
     const started = Date.now()
     try {
       if (this.endpoint) {
         if (!this.executorReleased) {
-          const released = this.wait(event => event.event === 'executor_released', 75000)
+          const released = this.wait(
+            event => event.event === 'executor_released' || event.event === 'executor_interrupted',
+            75000
+          )
           void released.catch(() => undefined)
           try {
             await request(this.endpoint, internal + 'exit', this.token)
@@ -547,27 +586,35 @@ export class DesktopSessionService {
     }
   }
 
-  async closeViewer(): Promise<void> {
+  private async closeViewer(): Promise<void> {
+    const orphanedSessionId = this.orphanedSessionId
+    if (orphanedSessionId !== undefined) await this.ensureHost()
     if (!this.host) return
     const result = await this.exchange(
-      { action: 'close' },
+      { action: 'close', orphanedSessionId },
       event =>
         (event.event === 'state' && event.state === 'idle') ||
         (event.event === 'command_error' && event.action === 'close'),
       45000
     )
     if (result.event === 'command_error') throw new DesktopSessionError('logoff_failed')
+    this.orphanedSessionId = undefined
   }
 
   async close(closing: boolean): Promise<void> {
     this.patch({ closing: true })
     try {
       if (this.startOperation) await this.startOperation
-      await this.finish(closing)
-      if (!this.host && this.snapshot.sessionId !== undefined) {
-        throw new DesktopSessionError('logoff_failed')
+      const needsRecovery = this.orphanedSessionId !== undefined
+      if (needsRecovery) {
+        // 原宿主已退出，由新宿主核验并注销后才能恢复配置写入。
+        await this.closeViewer()
+        this.executorReleased = true
+        this.launchPending = false
+        this.runningTaskIds.clear()
       }
-      await this.closeViewer()
+      await this.finish(closing)
+      if (!needsRecovery) await this.closeViewer()
       this.host?.stdin.end()
       this.host = null
       this.volume = 0

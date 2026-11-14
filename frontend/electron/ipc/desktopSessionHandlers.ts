@@ -275,6 +275,7 @@ export function registerDesktopSession(getMainWindow: () => BrowserWindow | null
     get active() {
       return service.active
     },
+    stopAllTasks: (endpoint: string) => service.stopAllTasks(endpoint),
     closeForAppQuit: () => confirmClose(true),
   }
 }
