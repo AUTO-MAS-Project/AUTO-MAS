@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""B 服（哔哩哔哩渠服）登录：MAS 原生实现，登录并在游戏主页核对 UID 后交给 M9A。
+"""B 服（哔哩哔哩渠服）登录：MAS 原生实现，按昵称选号后交给 M9A。
 
 入口是 ``MaaFWFlavor`` 的可选钩子 ``ensure_logged_in``（契约见
 ``app/task/MaaFW/tools/embedded/flavor.py`` 模块说明）：MAS 启动模拟器（连带拉起游戏）之后、
@@ -36,7 +36,7 @@
    - 已登录停在标题页（OCR 到「START」，或标题 logo 下的「REVERSE」副标题——实机常只读到 `ERSE`）：MAS 无法知道当前登录的是哪个
      账号，为了保证切到目标账号，点标题页右下角退出图标 → 唯一的「确认」→ 等「登录记录」面板出现后按
      上一条选号；
-3. 登录后停在标题页，由 M9A 的公开 StartUp 任务进入主页，随后核对 UID。
+3. 登录后停在标题页，由 M9A 的公开 StartUp 任务进入主页。
 
 沿用的是哔哩哔哩 SDK 登录面板与标题页的 UI 锚点；布局改版后这里要跟着改。脚本能自己登录的
 项目照旧走 ``Run.LoginMode == "Project"``，本模块只在 MAS 原生登录模式下生效。
@@ -45,9 +45,9 @@
 
 - 自动同意只复用全局 ``Config.setting.Function.IfAgreeBilibili``（默认关闭）：开关没开时
   不点「同意」，提示手动处理并停止本次登录，不新增第二份协议开关；
-- 已在主页时连续两帧核对 UID；确认不匹配时经游戏设置退出，再回到登录面板选号。
+- 已在主页时经游戏设置退出，再回到登录面板按昵称重新选号。
   无法识别画面时按脚本的 Game.WaitTime 等待，受登录总时限约束；
-- 登录后等待面板退出，进游戏后核对 UID，未确认身份时不运行后续任务；
+- 登录后等待面板退出并识别标题页，后续进游戏交给 M9A 的公开 StartUp；
 - 所有循环都先检查总时限，``adb input tap`` 失败直接抛错，不让点击失败被静默吞掉；
 - 只在 `Mas` 模式、资源是「B 服」、且实际要启动的客户端是 B 服包名时干活：配错客户端要立刻
   报错，不能拿官服客户端去走哔哩哔哩登录面板。
@@ -73,7 +73,7 @@ import time
 import unicodedata
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
-from functools import lru_cache, partial
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -81,7 +81,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from app.task.MaaFW.tools.embedded.flavor import MaaFWLoginRequired, StartupVerification
+from app.task.MaaFW.tools.embedded.flavor import MaaFWLoginRequired, StartupTask
 from app.utils import get_logger
 from app.utils.common.process.runner import create_subprocess, stop_process
 
@@ -593,73 +593,14 @@ async def _wait_panel_closed(
                 if _title_like(items, frame):
                     await _progress(progress, "B 服选号完成，等待 M9A 启动游戏")
                     return
-                if _homepage_uid(items, frame, require_label=True):
+                if _homepage_visible(frame):
                     await _progress(progress, "B 服登录后已进入游戏主页")
                     return
         await asyncio.sleep(_POLL_SECONDS)
 
 
-def _homepage_uid(
-    items: list[tuple[str, Box]],
-    frame: np.ndarray,
-    *,
-    require_label: bool = False,
-) -> str:
-    height, width = frame.shape[:2]
-    matches = [
-        match[2]
-        for text, box in items
-        if (
-            match := re.fullmatch(
-                r"(?:(UID|ID)\s*[:：]?\s*)?([0-9]+)", text.strip(), re.I
-            )
-        )
-        and (not require_label or match[1])
-        and 45 <= _center(box)[0] * 1280 / width <= 165
-        and 113 <= _center(box)[1] * 720 / height <= 145
-    ]
-    return matches[0] if len(matches) == 1 else ""
-
-
-async def _read_game_uid(device: _Device) -> str:
-    from app.tools.common.ocr import ocr_image
-
-    frame = await device.screencap()
-    if frame.size == 0 or not frame.any():
-        return ""
-    height, width = frame.shape[:2]
-    roi = (
-        int(width * 20 / 1280),
-        int(height * 96 / 720),
-        int(width * 240 / 1280),
-        int(height * 160 / 720),
-    )
-    return _homepage_uid(await asyncio.to_thread(ocr_image, frame, roi), frame)
-
-
-async def _verify_game_uid(device: _Device, expected_uid: str, deadline: float) -> str:
-    consecutive = 0
-    saw_mismatch = False
-    while (remaining := deadline - time.monotonic()) > 0:
-        try:
-            actual_uid = await asyncio.wait_for(_read_game_uid(device), remaining)
-        except asyncio.TimeoutError:
-            break
-        except Exception:
-            actual_uid = ""
-        if time.monotonic() >= deadline:
-            break
-        if actual_uid == expected_uid:
-            consecutive += 1
-            if consecutive == 2:
-                return "B 服登录完成，已核对游戏内 UID，继续运行 M9A 任务"
-        else:
-            consecutive = 0
-            saw_mismatch |= bool(actual_uid)
-        await asyncio.sleep(min(_POLL_SECONDS, max(0, deadline - time.monotonic())))
-    if saw_mismatch:
-        raise MaaFWLoginRequired("B 服登录失败：游戏内 UID 与配置不一致，核验已超时")
-    raise MaaFWLoginRequired("B 服登录失败：始终读不到可确认的游戏内 UID，核验已超时")
+def _homepage_visible(frame: np.ndarray) -> bool:
+    return _find_menu_button(frame, "MainMenuEntry.png", (3, 460, 141, 151)) is not None
 
 
 @lru_cache(maxsize=2)
@@ -693,7 +634,7 @@ def _find_menu_button(frame: np.ndarray, name: str, roi: Box) -> Box | None:
 async def _logout_from_homepage(device: _Device, *, progress: Progress | None) -> None:
     """按 M9A 的退出导航回到标题页或 B 服登录记录。"""
 
-    await _progress(progress, "游戏内 UID 与目标账号不同，正在退出当前账号")
+    await _progress(progress, "当前已在游戏主页，正在退出并重新选号")
     deadline = time.monotonic() + _LOGIN_PANEL_SECONDS
     # MAA1999/M9A resource/base/pipeline/switch_account.json (AGPL-3.0).
     steps = (
@@ -717,7 +658,7 @@ async def _logout_from_homepage(device: _Device, *, progress: Progress | None) -
                 break
             if index == 0 and not matches:
                 button = _find_menu_button(frame, *fallback) if fallback else None
-                if button is None and _homepage_uid(items, frame):
+                if button is None:
                     button = _find_menu_button(
                         frame, "MainMenuEntry.png", (3, 460, 141, 151)
                     )
@@ -780,10 +721,10 @@ async def ensure_logged_in(
     adb_address: str,
     progress: Progress | None,
     host_adb: Any = None,
-) -> str | StartupVerification:
+) -> str | StartupTask:
     """MAS 原生登录入口（契约见 MaaFW ``flavor.py`` 的 ``ensure_logged_in``）。
 
-    只在 ``Run.LoginMode == "Mas"`` 时做事；返回写进运行日志的一句话，没做事就是空串。
+    只在 ``Run.LoginMode == "Mas"`` 时做事；选号完成返回公开启动任务，没做事就是空串。
     """
 
     mode = ""
@@ -804,9 +745,6 @@ async def ensure_logged_in(
         raise MaaFWLoginRequired(
             "B 服登录失败：账号为空，请在本账号的「账号」里填写登录记录中显示的完整昵称"
         )
-    expected_uid = str(getattr(user_config.Info, "GameUID", "") or "").strip()
-    if not re.fullmatch(r"[0-9]+", expected_uid):
-        raise MaaFWLoginRequired("B 服登录失败：请在账号配置中填写游戏内数字 UID")
     package = str(package_name or "").strip() or BILIBILI_PACKAGE
     if package != BILIBILI_PACKAGE:
         raise MaaFWLoginRequired(
@@ -831,7 +769,6 @@ async def ensure_logged_in(
     title_polls = 0
     logout_tried = False
     homepage_logout_tried = False
-    previous_uid = ""
     while True:
         if time.monotonic() > deadline:
             raise MaaFWLoginRequired(
@@ -855,33 +792,16 @@ async def ensure_logged_in(
         if _has(items, _LOGIN_RECORD):
             await _select_account(device, frame, items, account, progress=progress)
             await _wait_panel_closed(device, progress=progress, deadline=deadline)
-            return StartupVerification(
-                deadline,
-                partial(_verify_game_uid, device, expected_uid, deadline),
-                "StartUp",
-            )
+            return StartupTask(deadline, "StartUp")
 
-        actual_uid = _homepage_uid(items, frame)
-        if actual_uid:
-            if actual_uid == previous_uid:
-                if actual_uid == expected_uid:
-                    return StartupVerification(
-                        deadline,
-                        partial(_verify_game_uid, device, expected_uid, deadline),
-                        "StartUp",
-                    )
-                if homepage_logout_tried:
-                    raise MaaFWLoginRequired(
-                        "B 服切号失败：退出后仍停在其他账号的游戏主页"
-                    )
-                await _logout_from_homepage(device, progress=progress)
-                homepage_logout_tried = True
-                previous_uid = ""
-                unknown_since = None
-                title_polls = 0
-                continue
+        if _homepage_visible(frame):
+            if homepage_logout_tried:
+                raise MaaFWLoginRequired("B 服切号失败：退出后仍停在游戏主页")
+            await _logout_from_homepage(device, progress=progress)
+            homepage_logout_tried = True
             unknown_since = None
-        previous_uid = actual_uid
+            title_polls = 0
+            continue
 
         if not logout_tried and _title_like(items, frame):
             title_polls += 1

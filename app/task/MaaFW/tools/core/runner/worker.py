@@ -59,7 +59,6 @@ if __package__ in (None, ""):
     from runner import (  # type: ignore[no-redef]
         MaaFWDeviceConfig,
         MaaFWRunner,
-        MaaFWTaskError,
         MaaFWRunResult,
     )
 else:
@@ -68,7 +67,7 @@ else:
     prefer_active_venv_site_packages()
     from .run_events import RUN_RECORD_EVENT_TYPE
     from .run_plan import MaaFWRunPlan
-    from .runner import MaaFWDeviceConfig, MaaFWRunner, MaaFWRunResult, MaaFWTaskError
+    from .runner import MaaFWDeviceConfig, MaaFWRunner, MaaFWRunResult
 
 
 _EMIT_LOCK = threading.Lock()
@@ -233,8 +232,6 @@ def _read_job() -> tuple[dict[str, Any], Path | None]:
     是新 worker。那份文件读完就删，看门狗与 finally 里的删除照旧兜底。
     """
 
-    if sys.argv[1:] == ["--verify-startup"]:
-        return decode_job(sys.stdin.buffer.readline()), None
     if len(sys.argv) == 2:
         job_path = Path(sys.argv[1])
         try:
@@ -243,15 +240,6 @@ def _read_job() -> tuple[dict[str, Any], Path | None]:
             with suppress(OSError):
                 job_path.unlink()
     return decode_job(sys.stdin.buffer.read()), None
-
-
-def _verify_startup() -> None:
-    _emit({"type": "startup_verification"})
-    response = sys.stdin.buffer.readline()
-    result = decode_job(response) if response else {}
-    if result.get("ok") is not True:
-        message = str(result.get("error") or "启动后 UID 核验未收到宿主确认")
-        raise MaaFWTaskError(message, user_message=message)
 
 
 def main() -> int:
@@ -269,20 +257,13 @@ def main() -> int:
         )
         return 64
 
-    verify_startup = sys.argv[1:] == ["--verify-startup"]
-    job_path = Path(sys.argv[1]) if len(sys.argv) == 2 and not verify_startup else None
+    job_path: Path | None = Path(sys.argv[1]) if len(sys.argv) == 2 else None
     runner: MaaFWRunner | None = None
     try:
         payload, job_path = _read_job()
         _start_owner_watchdog(job_path, payload)
         _open_event_channel(payload.get("eventChannel"))
         plan = MaaFWRunPlan.model_validate(payload["plan"])
-        if verify_startup:
-            if not plan.tasks:
-                raise MaaFWTaskError("启动失败：运行计划缺少首项启动任务")
-            plan.tasks[0] = plan.tasks[0].model_copy(
-                update={"abortRoundMessage": "B 服启动失败"}
-            )
         device_config = MaaFWDeviceConfig.model_validate(payload["deviceConfig"])
         screenshot_dir = payload.get("failureScreenshotDir")
         not_before = payload.get("taskStartNotBefore")
@@ -293,7 +274,6 @@ def main() -> int:
             plan,
             send_log=_emit_log,
             send_record=_emit_record,
-            verify_startup=_verify_startup if verify_startup else None,
             failure_screenshot_dir=Path(screenshot_dir) if screenshot_dir else None,
             failure_screenshot_prefix=str(payload.get("failureScreenshotPrefix") or ""),
             task_start_not_before=float(not_before) if not_before is not None else None,

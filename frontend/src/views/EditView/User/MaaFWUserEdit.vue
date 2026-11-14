@@ -36,7 +36,6 @@
             :interface-dependent-disabled="interfaceDependentDisabled"
             :account-record-tooltip="accountRecordTooltip"
             :account-placeholder="t(flavor.userPage.text.accountPlaceholderKey)"
-            :show-game-uid="flavor.type === 'M9A'"
             @save="handleFieldSave"
           />
 

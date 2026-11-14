@@ -311,8 +311,6 @@ export interface MaaFWUserConfig {
     Tag?: string | null
     Account: string
     Password: string
-    /** M9A 游戏内 UID，供 MAS 登录 B 服后核对。 */
-    GameUID?: string
     Resource?: string
     Base?: 'shared' | 'independent' | 'native'
     /** 快速配置：独立于配置来源的用户级开关 */

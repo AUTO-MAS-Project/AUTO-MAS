@@ -2670,22 +2670,11 @@ class MaaFWConfig(DomainEntry):
 
 
 class M9AUserConfig(MaaFWUserConfig):
-    """M9A 账号配置，含 B 服登录后的 UID 核对。
+    """M9A 账号配置。
 
     ``Info.Account`` 在这里不只是备注：脚本资源为官服且账号非空时，运行前会自动插入
     「切换账号」任务（见 ``app/task/M9A/flavor.py``）。
     """
-
-    class InfoFields(MaaFWUserConfig.InfoFields):
-        GameUID: str = Field(
-            default_factory=lambda: "",
-            pattern=r"^[0-9]*$",
-            description="游戏内数字 UID，用于 MAS 登录 B 服后核对账号",
-        )
-
-    Info: InfoFields = Field(  # pyright: ignore[reportIncompatibleVariableOverride]
-        default_factory=InfoFields
-    )
 
 
 class M9AConfig(MaaFWConfig):

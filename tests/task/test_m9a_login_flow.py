@@ -25,7 +25,7 @@ adb 截图 / 点击与 OCR 属于系统边界，这里用替身喂固定画面�
    不能把"没认出登录页"当成目标账号已登录；
 2. 隐私政策提示 + 全局「同意哔哩哔哩用户协议」关闭 → 不点同意、失败并提示手动处理；
 3. 登录面板持续出现时，等待超时后失败；
-4. 登录后进入游戏，连续两帧读到匹配 UID → 成功；
+4. 登录后停在标题页，无需配置 UID，由公开 StartUp 接续；
 5. 引擎侧：首次登录失败后重试必须重新调用登录钩子；客户端被重启后清掉「已登录」标记；
 6. 标题页信号：完整「REVERSE」、残词 `ERSE`算，`PLAYERS` 这类词不算；
 7. 冷启动加载超过固定预算时服从 `Game.WaitTime`，不提前判「无法确认账号」；
@@ -39,8 +39,8 @@ adb 截图 / 点击与 OCR 属于系统边界，这里用替身喂固定画面�
 from __future__ import annotations
 
 import asyncio
-import time
 import sys
+import time
 import types
 
 import numpy as np
@@ -80,8 +80,7 @@ _UNKNOWN_SCREEN = [
 ]
 
 
-_HOME = [("UID: 104939362", (5, 17, 8, 2))]
-_OTHER_HOME = [("UID: 104939363", (5, 17, 8, 2))]
+_HOME = [("主页菜单", (5, 70, 8, 8))]
 
 
 class _FakeDevice:
@@ -117,7 +116,6 @@ class _FakeDevice:
 class _Info:
     def __init__(self, account: str) -> None:
         self.Account = account
-        self.GameUID = "104939362"
         self.Notes = ""
 
 
@@ -153,6 +151,13 @@ def _install_fake_device(monkeypatch, screens) -> _FakeDevice:
         ), device.next_items()
 
     monkeypatch.setattr(login_mod, "_ocr", fake_ocr)
+    monkeypatch.setattr(
+        login_mod,
+        "_homepage_visible",
+        lambda frame: (
+            device.screens[min(device.cursor - 1, len(device.screens) - 1)] == _HOME
+        ),
+    )
     return device
 
 
@@ -226,6 +231,13 @@ def test_privacy_prompt_clicked_when_switch_on(monkeypatch) -> None:
         return frame, device.next_items()
 
     monkeypatch.setattr(login_mod, "_ocr", fake_ocr)
+    monkeypatch.setattr(
+        login_mod,
+        "_homepage_visible",
+        lambda frame: (
+            device.screens[min(device.cursor - 1, len(device.screens) - 1)] == _HOME
+        ),
+    )
     asyncio.run(login_mod._agree_privacy(device, frame, _PRIVACY_SCREEN, progress=None))
     # 唯一一次点击是「同意」按钮（55,70,10,10）
     assert device.taps == [(55, 70, 10, 10)]
@@ -261,31 +273,23 @@ class _Plan:
     resourceName = "B 服"
 
 
-@pytest.mark.parametrize(
-    ("screen", "error"),
-    [(_HOME, None), (_OTHER_HOME, "退出后仍停在其他账号")],
-)
-def test_login_from_game_home(monkeypatch, screen, error):
+def test_login_from_home_stops_if_logout_does_not_leave_home(monkeypatch):
     _fast(monkeypatch)
-    device = _install_fake_device(monkeypatch, [screen])
+    device = _install_fake_device(monkeypatch, [_HOME])
     exits = []
 
     async def logout(device, *, progress):
         exits.append(device)
 
     monkeypatch.setattr(login_mod, "_logout_from_homepage", logout)
-    if error:
-        with pytest.raises(MaaFWLoginRequired, match=error):
-            asyncio.run(_run_login())
-        assert exits == [device]
-    else:
-        assert isinstance(asyncio.run(_run_login()), login_mod.StartupVerification)
-        assert not exits
+    with pytest.raises(MaaFWLoginRequired, match="退出后仍停在游戏主页"):
+        asyncio.run(_run_login())
+    assert exits == [device]
     assert not device.taps
 
 
 @pytest.mark.parametrize("account", ["player", "12345"])
-def test_non_han_nickname_requires_exact_match_and_uid(monkeypatch, account):
+def test_non_han_nickname_requires_unique_exact_match_without_uid(monkeypatch, account):
     _fast(monkeypatch)
     monkeypatch.setattr(login_mod, "_LOGIN_TIMEOUT", 5)
     panel = [
@@ -297,11 +301,11 @@ def test_non_han_nickname_requires_exact_match_and_uid(monkeypatch, account):
         monkeypatch,
         [panel, expanded, panel, _TITLE_SCREEN, _TITLE_SCREEN, _TITLE_SCREEN, _HOME],
     )
-    assert isinstance(asyncio.run(_run_login(account)), login_mod.StartupVerification)
+    assert isinstance(asyncio.run(_run_login(account)), login_mod.StartupTask)
     assert (45, 66, 10, 4) not in device.taps
 
 
-def test_wrong_home_uid_returns_to_bilibili_selection(monkeypatch):
+def test_home_returns_to_bilibili_selection_without_uid(monkeypatch):
     _fast(monkeypatch)
     monkeypatch.setattr(login_mod, "_LOGIN_TIMEOUT", 5)
     expanded = [(text, box) for text, box in _PANEL_SCREEN if text != "切换其他账号"]
@@ -314,8 +318,7 @@ def test_wrong_home_uid_returns_to_bilibili_selection(monkeypatch):
     device = _install_fake_device(
         monkeypatch,
         [
-            _OTHER_HOME,
-            _OTHER_HOME,
+            _HOME,
             *([step] for step in settings),
             _PANEL_SCREEN,
             expanded,
@@ -324,7 +327,7 @@ def test_wrong_home_uid_returns_to_bilibili_selection(monkeypatch):
             _HOME,
         ],
     )
-    assert isinstance(asyncio.run(_run_login()), login_mod.StartupVerification)
+    assert isinstance(asyncio.run(_run_login()), login_mod.StartupTask)
     assert device.taps[:4] == [box for _, box in settings]
     assert device.taps[-1] == (45, 55, 10, 10)
 
@@ -367,6 +370,24 @@ def test_failed_login_is_retried_not_skipped(monkeypatch) -> None:
     asyncio.run(runner._ensure_logged_in("127.0.0.1:1", None))
     assert runner._login_checked is True
     assert len(calls) == 2
+
+
+def test_startup_pending_retries_selection_with_fresh_deadline(monkeypatch):
+    runner = _fake_runner()
+    calls = []
+
+    async def hook(**kwargs):
+        calls.append(kwargs)
+        return login_mod.StartupTask(60.0 + len(calls), "StartUp")
+
+    monkeypatch.setattr(runner_task, "resolve_login_hook", lambda config: hook)
+    asyncio.run(runner._ensure_logged_in("127.0.0.1:1", "adb"))
+    first = runner._startup_task
+    assert not runner._login_checked
+    asyncio.run(runner._ensure_logged_in("127.0.0.1:1", "adb"))
+    assert len(calls) == 2
+    assert runner._startup_task.deadline > first.deadline
+    assert not runner._login_checked
 
 
 def test_client_restart_resets_login_marker(monkeypatch) -> None:
@@ -447,7 +468,7 @@ def test_login_selects_target_after_logging_out(monkeypatch, version, rating):
     # The real selection flow includes two one-second UI waits.
     monkeypatch.setattr(login_mod, "_LOGIN_TIMEOUT", 5)
     message = asyncio.run(_run_login())
-    assert isinstance(message, login_mod.StartupVerification)
+    assert isinstance(message, login_mod.StartupTask)
     assert device.taps == [
         pytest.approx((95.6, 91.0)),
         (40, 50, 10, 10),
@@ -542,7 +563,7 @@ def test_health_warning_is_dismissed_before_login(monkeypatch) -> None:
         ],
     )
     message = asyncio.run(_run_login())
-    assert isinstance(message, login_mod.StartupVerification)
+    assert isinstance(message, login_mod.StartupTask)
     # 第一下点击是警告页中心（100x100 画布 → 50,50）
     assert device.taps[0] == (50.0, 50.0)
 
@@ -627,7 +648,7 @@ def test_slow_loading_is_not_cut_off_by_fixed_budget(monkeypatch) -> None:
     )
     # 固定 0.2 秒预算会先报「无法确认当前账号」；服从 WaitTime 后能等到 0.6 秒后的登录记录。
     message = asyncio.run(_run_login())
-    assert isinstance(message, login_mod.StartupVerification)
+    assert isinstance(message, login_mod.StartupTask)
     assert device.taps
 
 
@@ -773,98 +794,42 @@ def test_toolkit_discovery_matches_device_address(monkeypatch, tmp_path) -> None
     assert runner._resolve_adb_path_by_toolkit("127.0.0.1:5556") is None
 
 
-@pytest.mark.parametrize(
-    "scenario", ["late", "popup", "wrong", "unreadable", "startup_failed"]
-)
-def test_startup_result_and_two_fresh_uid_frames_gate_daily(monkeypatch, scenario):
+@pytest.mark.parametrize("startup_failed", [False, True])
+def test_startup_result_gates_daily_without_uid(monkeypatch, startup_failed):
     from types import SimpleNamespace
 
     from app.task.MaaFW.tools.core.runner.models import MaaFWRunPlan, MaaFWTaskRunPlan
     from app.task.MaaFW.tools.core.runner.runner import MaaFWRunner, MaaFWTaskError
 
-    expected = "104939362"
-    clock = 0
     posted = []
-    hits = 0
-    popup_visible = scenario == "popup"
-
-    async def sleep(seconds):
-        nonlocal clock
-        clock += seconds
-
-    class Device:
-        async def screencap(self):
-            assert posted == ["StartUp"]
-            assert not popup_visible
-            if scenario == "unreadable" or (scenario == "late" and clock < 25):
-                return np.zeros((720, 1280, 3), dtype=np.uint8)
-            return np.ones((720, 1280, 3), dtype=np.uint8)
-
-    def recognize_uid(frame, roi):
-        nonlocal hits
-        assert roi is not None
-        assert posted == ["StartUp"]
-        if scenario == "wrong":
-            return [("UID: 999", (70, 120, 30, 20))]
-        hits += 1
-        return [(f"UID: {expected}", (70, 120, 30, 20))]
-
-    monkeypatch.setattr(login_mod, "time", SimpleNamespace(monotonic=lambda: clock))
-    monkeypatch.setattr(
-        login_mod,
-        "asyncio",
-        SimpleNamespace(
-            sleep=sleep, wait_for=asyncio.wait_for, to_thread=asyncio.to_thread
-        ),
-    )
-    monkeypatch.setattr(login_mod, "_POLL_SECONDS", 1)
-    monkeypatch.setattr("app.tools.common.ocr.ocr_image", recognize_uid)
-
-    def verify():
-        try:
-            asyncio.run(login_mod._verify_game_uid(Device(), expected, 30))
-        except MaaFWLoginRequired as exc:
-            raise MaaFWTaskError(str(exc)) from exc
 
     def post_task(entry):
-        if entry == "Daily":
-            assert hits == 2
         posted.append(entry)
         return entry
 
     def wait_job(job):
-        nonlocal popup_visible
-        if job == "StartUp":
-            if scenario == "startup_failed":
-                raise MaaFWTaskError("M9A StartUp failed")
-            popup_visible = False
+        if job == "StartUp" and startup_failed:
+            raise MaaFWTaskError("M9A StartUp failed")
 
     plan = MaaFWRunPlan.model_construct(
         tasks=[
             MaaFWTaskRunPlan(
-                name="StartUp", entry="StartUp", abortRoundMessage="B 服启动失败"
+                name="StartUp", entry="StartUp", abortRoundMessage="启动游戏失败"
             ),
             MaaFWTaskRunPlan(name="Daily", entry="Daily"),
         ]
     )
-    runner = MaaFWRunner(plan, verify_startup=verify)
+    runner = MaaFWRunner(plan)
     runner.tasker = SimpleNamespace(post_task=post_task)
     monkeypatch.setattr(runner, "_wait_job", wait_job)
     monkeypatch.setattr(runner, "_external_stop_active", lambda tasker: False)
     monkeypatch.setattr(
         runner, "_capture_failure_screenshot", lambda *args, **kwargs: None
     )
-    errors = {
-        "wrong": "UID 与配置不一致",
-        "unreadable": "始终读不到",
-        "startup_failed": "启动失败",
-    }
-    if scenario in errors:
-        with pytest.raises(MaaFWTaskError, match=errors[scenario]):
+    if startup_failed:
+        with pytest.raises(MaaFWTaskError, match="启动游戏失败"):
             runner._run_tasks()
         assert posted == ["StartUp"]
     else:
         assert runner._run_tasks() == ["StartUp", "Daily"]
         assert posted == ["StartUp", "Daily"]
-        if scenario == "late":
-            assert clock == 26

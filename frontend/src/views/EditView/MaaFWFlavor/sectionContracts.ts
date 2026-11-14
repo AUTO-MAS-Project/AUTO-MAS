@@ -213,7 +213,6 @@ export interface MaaFWUserBasicInfoSectionProps {
   accountRecordTooltip: string
   /** 账号字段占位：特调类型可能把账号绑成切号任务，文案不再是「仅本地记录」 */
   accountPlaceholder?: string
-  showGameUid?: boolean
 }
 
 export interface MaaFWUserBasicInfoSectionEmits {
