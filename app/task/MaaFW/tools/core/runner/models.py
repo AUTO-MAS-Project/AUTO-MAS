@@ -85,8 +85,6 @@ class MaaFWRunPlan(BaseModel):
     pretasks: list[MaaFWPretaskRunPlan] = Field(default_factory=list)
     piEnv: dict[str, str] = Field(default_factory=dict)
     tasks: list[MaaFWTaskRunPlan] = Field(default_factory=list)
-    # 特调在下发计划前已完成启动时，首项按普通任务处理。
-    firstTaskStartupGuard: bool = True
     skippedTasks: list[MaaFWSkippedTaskPlan] = Field(default_factory=list)
     # 用户的全局选项表（已解密、叠过托管级键位），各任务覆盖里全局那一层的取值。任务的
     # options 是给人看的合并结果，同一选项任务自己也有值时看不到这一层，宿主给日志打码时两处都收。

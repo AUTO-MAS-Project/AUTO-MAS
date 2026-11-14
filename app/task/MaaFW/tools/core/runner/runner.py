@@ -1035,6 +1035,7 @@ class MaaFWRunner:
         *,
         send_log: Callable[[str], None] | None = None,
         send_record: Callable[[dict[str, Any]], None] | None = None,
+        verify_startup: Callable[[], None] | None = None,
         failure_screenshot_dir: Path | None = None,
         failure_screenshot_prefix: str = "",
         task_start_not_before: float | None = None,
@@ -1046,6 +1047,7 @@ class MaaFWRunner:
         send_log_event: Callable[[str, str | None, str], None] | None = None,
     ) -> None:
         self.plan: MaaFWRunPlan = plan
+        self.verify_startup = verify_startup
         self.resource: Resource | None = None
         self.tasker: Tasker | None = None
         self.controller: Any | None = None
@@ -1673,7 +1675,7 @@ class MaaFWRunner:
         返回 None 表示没超时；``"next"`` 让调用方跳到下一个任务；``"skip_rest"`` 让调用方
         结束本轮（不计入失败）。
 
-        启动保护启用时，计划里的第一个任务超时直接按失败结束本轮：它往往是前置任务（M9A 特调的
+        计划里的第一个任务超时直接按失败结束本轮：它往往是前置任务（M9A 特调的
         第一个任务是受管的「启动游戏」），前置都没做完，后面的任务没有意义。看的是
         计划位置而不是「还没有任务完成」——第一个任务失败后第二个超时照样继续。
 
@@ -1729,7 +1731,7 @@ class MaaFWRunner:
                 level=LEVEL_WARNING,
             )
             return "next"
-        if (index == 0 and self.plan.firstTaskStartupGuard) or task.abortRoundMessage:
+        if index == 0 or task.abortRoundMessage:
             reason = f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）"
             user_reason = f"{task.abortRoundMessage or display_name}：{reason}"
             if task.abortRoundMessage:
@@ -1882,7 +1884,7 @@ class MaaFWRunner:
                 f"{reason}，{stopped}: {display_name}；{task.nonFatalMessage}"
             )
             return "next"
-        if (index == 0 and self.plan.firstTaskStartupGuard) or task.abortRoundMessage:
+        if index == 0 or task.abortRoundMessage:
             user_reason = f"{task.abortRoundMessage or display_name}：{reason}"
             if task.abortRoundMessage:
                 reason = f"{task.abortRoundMessage}：{reason}"
@@ -3844,6 +3846,10 @@ class MaaFWRunner:
             completed_tasks.append(task.name)
             self._mark_task_outcome(OUTCOME_SUCCEEDED)
             self.send_log(f"任务完成: {display_name}")
+            if index == 0 and self.verify_startup is not None:
+                self._close_task_record()
+                self.verify_startup()
+                self._raise_if_deadline_hit()
             time.sleep(0.1)
         self._close_task_record()
         return completed_tasks

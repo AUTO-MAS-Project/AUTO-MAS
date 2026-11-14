@@ -661,3 +661,33 @@ def test_native_agent_on_plain_layout_not_blocked(
 
     plan = _agent_plan(project, "project_binary")
     MaaFWRunner._check_native_agent_runtime(_fake_runner(project, plan), plan)
+
+
+def test_startup_verification_reads_reply_from_same_job_stream(monkeypatch) -> None:
+    import io
+    from types import SimpleNamespace
+
+    import pytest
+
+    from app.task.MaaFW.tools.core.runner import worker
+    from app.task.MaaFW.tools.core.worker_protocol import encode_job
+
+    for reply, error in [
+        ({"ok": True}, None),
+        ({"error": "UID mismatch"}, "UID mismatch"),
+        (None, "未收到宿主确认"),
+    ]:
+        request = encode_job({"plan": {}}) + b"\n"
+        response = encode_job(reply) + b"\n" if reply is not None else b""
+        stream = SimpleNamespace(buffer=io.BytesIO(request + response))
+        events = []
+        monkeypatch.setattr(worker.sys, "argv", ["worker", "--verify-startup"])
+        monkeypatch.setattr(worker.sys, "stdin", stream)
+        monkeypatch.setattr(worker, "_emit", events.append)
+        assert worker._read_job() == ({"plan": {}}, None)
+        if error is None:
+            worker._verify_startup()
+        else:
+            with pytest.raises(worker.MaaFWTaskError, match=error):
+                worker._verify_startup()
+        assert events == [{"type": "startup_verification"}]

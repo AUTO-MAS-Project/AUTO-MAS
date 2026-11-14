@@ -134,7 +134,7 @@ from app.utils.common.process.scope import (
 from .embedded_project import resolve_maafw_project_root
 from .flavor import (
     MaaFWLoginRequired,
-    manages_game_startup,
+    StartupVerification,
     no_default_fallback_inputs,
     off_day_scope,
     resolve_flavor,
@@ -587,6 +587,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._game_update_checked = False
         # 运行前登录在同一客户端会话内只完成一次；客户端重启后重新验证
         self._login_checked = False
+        self._startup_verification: StartupVerification | None = None
         self.maafw_runtime_pool_root: Path | None = None
         self.maafw_runtime_pool_id: str | None = None
         # 本轮（整个脚本）的信号账：同一资源已确认维护时后续账号直接跳过，收尾时由
@@ -1363,8 +1364,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 no_default_fallback_inputs=no_default_fallback_inputs(flavor),
                 excluded_task_reasons=dict.fromkeys(off_day_extra, off_day_reason),
             )
-            if manages_game_startup(flavor, self.script_config):
-                plan.firstTaskStartupGuard = False
             plan = _mark_nonfatal_tasks(_mark_abort_round_tasks(plan, flavor), flavor)
             return _with_skipped_tasks(
                 _with_warnings(plan, stale_warnings), missing_skips
@@ -1694,6 +1693,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         if self._login_checked:
             return
+        self._startup_verification = None
         hook = resolve_login_hook(self.script_config)
         if hook is None or self.run_plan is None:
             return
@@ -1718,6 +1718,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             logger.opt(exception=True).warning(f"运行前登录钩子异常: {exc}")
             raise MaaFWLoginRequired(f"运行前登录出错：{exc}") from exc
 
+        if isinstance(message, StartupVerification):
+            self._startup_verification = message
+            return
         if message:
             self._append_log(str(message))
         # 登录成功才记「已登录」：失败时保持未完成，外层重试会重新走这个钩子，
@@ -2278,6 +2281,21 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         f"MaaFW 事件通道建立失败（{exc!r}），本次运行事件改走标准输出"
                     )
                     logger.warning(event_server_failure)
+            verification = self._startup_verification
+            if verification is not None:
+                if not plan.tasks or plan.tasks[0].entry != verification.entry:
+                    raise MaaFWLoginRequired(
+                        "B 服启动失败：运行计划缺少公开 StartUp 任务"
+                    )
+                remaining = verification.deadline - time.monotonic()
+                if remaining <= 0:
+                    raise MaaFWLoginRequired("B 服启动失败：登录时限已耗尽")
+                task_name = plan.tasks[0].name
+                overrides = dict(payload.taskTimeLimitOverrides or {})
+                configured = overrides.get(task_name, payload.taskTimeLimitSeconds or 0)
+                limit = max(1, int(remaining))
+                overrides[task_name] = min(configured, limit) if configured else limit
+                payload.taskTimeLimitOverrides = overrides
             job_bytes = encode_job(
                 payload,
                 event_channel=event_server.spec if event_server is not None else None,
@@ -2296,6 +2314,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 str(runner_environment.python_executable),
                 "-m",
                 "app.task.MaaFW.tools.core.runner.worker",
+                *(["--verify-startup"] if verification is not None else []),
                 cwd=str(Path.cwd()),
                 env=worker_env,
                 stdin=asyncio.subprocess.PIPE,
@@ -2356,12 +2375,44 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if event_server_failure:
             write_framework_log("runner", event_server_failure)
 
+        verification_task: asyncio.Task[None] | None = None
+
+        async def verify_startup() -> None:
+            stdin = process.stdin
+            if stdin is None or verification is None:
+                return
+            try:
+                message = await verification.verify()
+            except Exception as exc:
+                message = (
+                    str(exc)
+                    if isinstance(exc, MaaFWLoginRequired)
+                    else "B 服登录失败：UID 核验出错"
+                )
+                response = {"error": message}
+            else:
+                self._append_log(message)
+                response = {"ok": True}
+            try:
+                stdin.write(encode_job(response) + b"\n")
+                await stdin.drain()
+                if response.get("ok") is True:
+                    self._login_checked = True
+                    self._startup_verification = None
+            except (OSError, RuntimeError):
+                pass
+            finally:
+                stdin.close()
+
         def handle_event(event: dict[str, Any]) -> None:
             """worker 发来的一个协议事件（事件通道或 stdout 退回格式，已打码），按类型分发。"""
 
-            nonlocal result_payload
+            nonlocal result_payload, verification_task
             event_type = event.get("type")
-            if event_type == "log":
+            if event_type == "startup_verification" and verification is not None:
+                if verification_task is None:
+                    verification_task = asyncio.create_task(verify_startup())
+            elif event_type == "log":
                 message = str(event.get("message") or "")
                 write_framework_log("runner", message)
                 # 去向由 worker 定好（audience）；旧格式事件不带，按原来的文案规则判
@@ -2404,20 +2455,22 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 event_server.close()
 
         async def feed_job() -> None:
-            """把 job 写进 worker 的 stdin 再关掉；worker 先退出时写不进去，记一句就算了。"""
+            """写入 job；需要启动核验时保留 stdin，供宿主返回核验结果。"""
 
             stdin = process.stdin
             if stdin is None:
                 return
+            keep_open = False
             try:
-                stdin.write(job_bytes)
+                stdin.write(job_bytes + (b"\n" if verification is not None else b""))
                 await stdin.drain()
+                keep_open = verification is not None
             except (OSError, RuntimeError) as exc:
                 write_framework_log(
                     "runner", f"MaaFW job 写入 worker 标准输入失败: {exc!r}"
                 )
             finally:
-                with suppress(Exception):
+                if not keep_open:
                     stdin.close()
 
         async def read_stdout() -> None:
@@ -2521,6 +2574,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             elif self.runner_process is process:
                 self.runner_process = None
             await drain_readers(propagate_errors=False)
+            if verification_task is not None:
+                verification_task.cancel()
+                await asyncio.gather(verification_task, return_exceptions=True)
+            if process.stdin is not None:
+                process.stdin.close()
             if event_server is not None:
                 event_server.close()
             if framework_log_writer is not None:
@@ -2603,7 +2661,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             service.unregister_worker(worker_id)
 
         if result_payload is not None:
-            return MaaFWRunResult.model_validate(result_payload)
+            result = MaaFWRunResult.model_validate(result_payload)
+            if verification is not None and result.success and not self._login_checked:
+                raise MaaFWLoginRequired(
+                    "B 服启动失败：StartUp 未完成，未执行 UID 核验"
+                )
+            return result
         message = f"MaaFW runner worker exited without result: {returncode}"
         detail = "\n".join(stderr_lines[-5:]).strip()
         if detail and _should_forward_framework_log(detail):

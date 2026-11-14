@@ -825,10 +825,9 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
 
 ## 运行前登录与启动
 
-- 特调可声明 `manages_game_startup(script_config)`，具体契约见 `tools/embedded/flavor.py`。
-  声明生效时，特调的 `ensure_logged_in` 完成进入游戏及账号核对后才能下发任务。失败时下次尝试重新登录。
-- 计划装饰不加入启动任务。宿主按同一计划预建历史，单次 worker 加载资源和 agent、记录环境及任务结果。
-  首项按普通任务处理，显式声明的关键任务保护仍生效。
+- 特调的运行前登录钩子可返回 `StartupVerification`，具体契约见 `tools/embedded/flavor.py`。
+  单次 worker 执行同一份计划。首项公开启动任务成功后，worker 等宿主核验 UID；核验通过才放行后续任务。
+- 启动失败或核验未通过时终止本次尝试。启动和日常任务沿用完整计划的编号及各自的超时处理。
 
 ## 测试与排障
 

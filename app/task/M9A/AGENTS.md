@@ -25,7 +25,7 @@
      任一命中即认领——导入完成后引擎据此把托管类型定成 `M9AConfig`（不命中的项目导进 M9A 脚本会变回
      `MaaFWConfig`，类型由项目决定、双向自动、uid 不变）。
   2. `decorate_selection(...)`：运行前先把勾选列表里三类受管任务**全部剔掉**（连同它们的选项），再按
-     固定顺序补：项目登录时 `StartUp` 放队首（MAS 登录 B 服时由登录钩子完成启动）；脚本资源支持切号且有账号时 `SwitchAccount` 紧跟启动、账号填进它
+     固定顺序补：`StartUp` 放队首；脚本资源支持切号且有账号时 `SwitchAccount` 紧跟启动、账号填进它
      第一个 input 选项；`Close1999` 放队尾。用户排的顺序不影响这三项。账号取 `Info.Account`，但队列里
      恰好残留一个有效切号时取它（与启动整理的结果一致）。支持切号且有效切号 ≥ 2 时写账号日志并抛
      `M9ASplitRequiredError`——引擎把它当成运行计划构建失败，该账号记「异常」、发错误通知、不跑，其它
@@ -68,7 +68,7 @@
   （连带拉起游戏）之后、第一个任务之前，用 `adb` 截图 + `app.tools.common.ocr` 识别哔哩哔哩登录面板：
   点「隐私政策提示」里唯一的「同意」，在「登录记录」里按 `Info.Account`（登录记录里显示的完整昵称）
   含汉字的昵称提取汉字后完整匹配，无汉字的昵称按 OCR 原文精确匹配，唯一命中才选中并点「登录」。
-  登录面板退出后由 MAS 在标题页点 START，连续两帧识别到的 UID 与 `Info.GameUID` 一致才投递任务。
+  登录面板退出后由同一 worker 执行 M9A 的公开 `StartUp`。成功后宿主在剩余登录时限内核对 UID，连续两张新截图与 `Info.GameUID` 一致才放行后续任务。
   如果一开始就在主页，UID 一致直接继续，确认不符时经设置 → 账号 → 退出 → 返回登录，然后重新选号。
   主页退出导航及 `login_assets/` 的两个模板来自 MAA1999/M9A（AGPL-3.0，原始提交
   [e03c1c6](https://github.com/MAA1999/M9A/tree/e03c1c60e51bff35c909aad96c58fde58a117946/resource/base/image/SwitchAccount)）。

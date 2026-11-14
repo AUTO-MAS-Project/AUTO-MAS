@@ -36,7 +36,7 @@
   重试关闭游戏 / 模拟器（客户端重启）后也会重新验证，不允许带着未登录状态下发任务。
   在事件循环里 ``await``。要不要真正做事由钩子自己按配置判断（返回空串表示没做事）。
 - **签名**：``async def ensure_logged_in(self, *, script_config, user_config, resource_name,
-  package_name, adb_path, adb_address, progress, host_adb=None) -> str``。``user_config`` 是本次运行的账号配置
+  package_name, adb_path, adb_address, progress, host_adb=None) -> str | StartupVerification``。``user_config`` 是本次运行的账号配置
   （账号字段在 ``Info.Account``）；``package_name`` 是这次随模拟器拉起的包名（空串表示没拉起，
   钩子可自行按包名拉起）；``host_adb`` 非空时截图与命令必须使用该私有通道；否则按 ``adb_path`` 连接；``progress`` 是写
   用户运行日志的异步回调。返回值是写进运行日志的一句话，空串表示不写。
@@ -45,14 +45,10 @@
   走重试（不特殊处理退出条件）。抛其它异常同样按失败处理，原因会附在异常原文后面。
 - **取消**：用户停止（``CancelledError``）必须照常向上抛，不能吞掉。
 
-可选钩子 ``manages_game_startup(self, script_config) -> bool`` 的契约：
-
-- 建运行计划时通过 ``manages_game_startup`` 解析器探测，缺省为 False。该声明必须与特调
-  的队列装饰规则一致，为 True 时不加入启动任务。
-- 声明为 True 的特调必须在 ``ensure_logged_in`` 成功返回之前完成进入游戏和必要的账号核对。
-  失败时按登录失败结算，保留未完成状态供下次尝试。此模式的首项是普通任务，单任务超时和
-  原地打转不触发首项启动保护，显式声明的关键任务规则仍生效。
-- 宿主和单次 worker 共用同一份任务计划，历史按该计划预建并记录任务事件。
+可选钩子 ``ensure_logged_in`` 也可返回 ``StartupVerification``：特调必须把公开启动任务放在
+计划首项。宿主与 worker 共用完整计划，worker 成功完成首项后暂停，由宿主在同一登录时限内
+核验。核验成功才记录登录完成并放行；启动失败、核验失败或通道断开均结束本轮。
+普通任务的超时处理保持不变。
 
 可选钩子 ``sanitize_task_snapshot``（写账号任务快照前整理）的契约：
 
@@ -180,6 +176,7 @@ from collections.abc import Awaitable, Callable, Iterable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from app.task.MaaFW.tools.core.interface import loader as _interface_loader
@@ -339,7 +336,16 @@ class MaaFWLoginRequired(RuntimeError):
     """特调的运行前登录钩子判定本次无法继续运行（如 B 服登录失败）；文案直接给用户看。"""
 
 
-LoginHook = Callable[..., Awaitable[str]]
+@dataclass(frozen=True)
+class StartupVerification:
+    """宿主在同一个 worker 完成首个公开启动任务后执行的核验。"""
+
+    deadline: float
+    verify: Callable[[], Awaitable[str]]
+    entry: str
+
+
+LoginHook = Callable[..., Awaitable[str | StartupVerification]]
 """特调可选的运行前登录钩子，契约见模块说明"""
 
 
@@ -349,13 +355,6 @@ def resolve_login_hook(script_config: Any) -> LoginHook | None:
     flavor = resolve_flavor(script_config)
     hook = getattr(flavor, "ensure_logged_in", None) if flavor is not None else None
     return hook if callable(hook) else None
-
-
-def manages_game_startup(flavor: MaaFWFlavor, script_config: Any) -> bool:
-    """特调是否在运行前登录阶段完成进入游戏。"""
-
-    hook = getattr(flavor, "manages_game_startup", None)
-    return callable(hook) and bool(hook(script_config))
 
 
 def resolve_game_update_hook(script_config: Any) -> GameUpdateHook | None:
@@ -554,7 +553,7 @@ __all__ = [
     "resolve_flavor",
     "resolve_game_update_hook",
     "resolve_login_hook",
-    "manages_game_startup",
+    "StartupVerification",
     "resolve_snapshot_sanitizer",
     "retype_notice_lines",
     "sanitize_user_task_update",

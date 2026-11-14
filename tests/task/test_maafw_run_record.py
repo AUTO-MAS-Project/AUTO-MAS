@@ -53,12 +53,13 @@ def test_first_daily_task_timeout_after_host_startup_keeps_history(monkeypatch):
     from app.task.MaaFW.tools.core.runner.runner import MaaFWRunner
 
     plan = MaaFWRunPlan.model_construct(
-        tasks=[MaaFWTaskRunPlan(name=name, entry=name) for name in ("A", "B")],
-        firstTaskStartupGuard=False,
+        tasks=[
+            MaaFWTaskRunPlan(name=name, entry=name) for name in ("StartUp", "A", "B")
+        ],
     )
     recorder = MaaFWRunRecorder()
     recorder.begin_attempt(
-        1, attempt=1, title="M9A", planned=[("A", None), ("B", None)]
+        1, attempt=1, title="M9A", planned=[("StartUp", None), ("A", None), ("B", None)]
     )
     runner = MaaFWRunner(plan, send_record=recorder.apply)
     posted = []
@@ -78,11 +79,12 @@ def test_first_daily_task_timeout_after_host_startup_keeps_history(monkeypatch):
     monkeypatch.setattr(
         runner, "_capture_failure_screenshot", lambda *args, **kwargs: None
     )
-    assert runner._run_tasks() == ["B"]
-    assert posted == ["A", "B"]
+    assert runner._run_tasks() == ["StartUp", "B"]
+    assert posted == ["StartUp", "A", "B"]
     assert [
         (task.index, task.name, task.outcome) for task in recorder.current.tasks
     ] == [
-        (0, "A", "timeout"),
-        (1, "B", "succeeded"),
+        (0, "StartUp", "succeeded"),
+        (1, "A", "timeout"),
+        (2, "B", "succeeded"),
     ]

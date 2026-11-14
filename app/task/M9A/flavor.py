@@ -42,6 +42,8 @@
 from __future__ import annotations
 
 import re
+from app.task.MaaFW.tools.embedded.flavor import StartupVerification
+
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -244,16 +246,14 @@ class M9AFlavor:
             return ids, options
 
         added: list[str] = []
-        startup = None
-        if not self.manages_game_startup(script_config):
-            startup = task_name_for_entry(interface_model, STARTUP_ENTRY)
-            if startup is None:
-                log(
-                    f"[M9A] interface 里没有 entry 为 {STARTUP_ENTRY} 的任务，未自动加入启动游戏"
-                )
-            else:
-                ids.insert(0, startup)
-                added.append(startup)
+        startup = task_name_for_entry(interface_model, STARTUP_ENTRY)
+        if startup is None:
+            log(
+                f"[M9A] interface 里没有 entry 为 {STARTUP_ENTRY} 的任务，未自动加入启动游戏"
+            )
+        else:
+            ids.insert(0, startup)
+            added.append(startup)
 
         # 队列里恰好一个有效切号时以它为准，与启动整理的结果一致（整理会把它收进「账号」）
         account = (
@@ -346,7 +346,7 @@ class M9AFlavor:
         adb_address: str,
         progress: Callable[[str], Awaitable[None]] | None,
         host_adb: Any = None,
-    ) -> str:
+    ) -> str | StartupVerification:
         """引擎的可选运行前登录钩子：B 服登录由 MAS 完成，契约见 MaaFW 的 ``flavor.py``。"""
 
         # 按需导入：本包在导入期不拉起 OCR / 图像与 adb 相关模块（迁移也会导入 flavor）
@@ -362,9 +362,6 @@ class M9AFlavor:
             progress=progress,
             host_adb=host_adb,
         )
-
-    def manages_game_startup(self, script_config: Any) -> bool:
-        return _login_mode(script_config) == LOGIN_MODE_MAS
 
     async def ensure_game_updated(
         self,

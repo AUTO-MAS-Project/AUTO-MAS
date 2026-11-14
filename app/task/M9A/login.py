@@ -36,7 +36,7 @@
    - 已登录停在标题页（OCR 到「START」，或标题 logo 下的「REVERSE」副标题——实机常只读到 `ERSE`）：MAS 无法知道当前登录的是哪个
      账号，为了保证切到目标账号，点标题页右下角退出图标 → 唯一的「确认」→ 等「登录记录」面板出现后按
      上一条选号；
-3. 登录后等面板消失，点击标题页 START 并等待主页 UID；核对通过后才运行 M9A 任务。
+3. 登录后停在标题页，由 M9A 的公开 StartUp 任务进入主页，随后核对 UID。
 
 沿用的是哔哩哔哩 SDK 登录面板与标题页的 UI 锚点；布局改版后这里要跟着改。脚本能自己登录的
 项目照旧走 ``Run.LoginMode == "Project"``，本模块只在 MAS 原生登录模式下生效。
@@ -73,7 +73,7 @@ import time
 import unicodedata
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
-from functools import lru_cache
+from functools import lru_cache, partial
 from pathlib import Path
 from typing import Any
 
@@ -81,7 +81,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from app.task.MaaFW.tools.embedded.flavor import MaaFWLoginRequired
+from app.task.MaaFW.tools.embedded.flavor import MaaFWLoginRequired, StartupVerification
 from app.utils import get_logger
 from app.utils.common.process.runner import create_subprocess, stop_process
 
@@ -111,8 +111,6 @@ _CONFIRM_RE = re.compile(r"^确认$")
 _TITLE_HINTS = ("START", "TART", "REVERSE", "ERSE")
 #: 标题页右下角退出图标的中心（2560×1440 实机验证）。
 _EXIT_POINT = (0.956, 0.91)
-#: 登录后的标题页「START」按钮中心（相对游戏画面宽高）。
-_START_POINT = (0.50, 0.745)
 
 #: ``dumpsys activity activities`` 里表示 Activity 在前台的几种写法（与模拟器应用启动同一口径）。
 _FOREGROUND_MARKERS = (
@@ -569,10 +567,10 @@ async def _wait_panel_closed(
     device: _Device,
     *,
     progress: Progress | None,
+    deadline: float,
 ) -> None:
-    """等待登录面板消失，遇到标题页先点击 START。"""
+    """等待已选号的标题页或游戏主页，由 M9A 接手。"""
 
-    deadline = time.monotonic() + _LOGIN_TIMEOUT
     closed_frames = 0
     while True:
         if time.monotonic() > deadline:
@@ -593,11 +591,7 @@ async def _wait_panel_closed(
                 continue
             if closed_frames > _PANEL_CLOSED_FRAMES:
                 if _title_like(items, frame):
-                    height, width = frame.shape[:2]
-                    await device.tap_point(
-                        width * _START_POINT[0], height * _START_POINT[1]
-                    )
-                    await _progress(progress, "B 服选号后已点击标题页 START")
+                    await _progress(progress, "B 服选号完成，等待 M9A 启动游戏")
                     return
                 if _homepage_uid(items, frame, require_label=True):
                     await _progress(progress, "B 服登录后已进入游戏主页")
@@ -627,27 +621,45 @@ def _homepage_uid(
     return matches[0] if len(matches) == 1 else ""
 
 
-async def _verify_game_uid(device: _Device, expected_uid: str) -> str:
-    """选号后只允许连续两帧核对通过的账号进入任务队列。"""
+async def _read_game_uid(device: _Device) -> str:
+    from app.tools.common.ocr import ocr_image
 
-    deadline = time.monotonic() + _LOGIN_PANEL_SECONDS
-    previous_uid = ""
-    while time.monotonic() < deadline:
-        frame, items = await _ocr(device)
-        actual_uid = (
-            ""
-            if _privacy_prompt(items) or _has(items, _LOGIN_RECORD, _SWITCH_OTHER)
-            else _homepage_uid(items, frame)
-        )
-        if actual_uid and actual_uid == previous_uid:
-            if actual_uid != expected_uid:
-                raise MaaFWLoginRequired(
-                    "B 服登录失败：游戏内 UID 与配置不一致，已停止运行"
-                )
-            return "B 服登录完成，已核对游戏内 UID，继续运行 M9A 任务"
-        previous_uid = actual_uid
-        await asyncio.sleep(_POLL_SECONDS)
-    raise MaaFWLoginRequired("B 服登录失败：未能确认游戏内 UID，已停止运行")
+    frame = await device.screencap()
+    if frame.size == 0 or not frame.any():
+        return ""
+    height, width = frame.shape[:2]
+    roi = (
+        int(width * 20 / 1280),
+        int(height * 96 / 720),
+        int(width * 240 / 1280),
+        int(height * 160 / 720),
+    )
+    return _homepage_uid(await asyncio.to_thread(ocr_image, frame, roi), frame)
+
+
+async def _verify_game_uid(device: _Device, expected_uid: str, deadline: float) -> str:
+    consecutive = 0
+    saw_mismatch = False
+    while (remaining := deadline - time.monotonic()) > 0:
+        try:
+            actual_uid = await asyncio.wait_for(_read_game_uid(device), remaining)
+        except asyncio.TimeoutError:
+            break
+        except Exception:
+            actual_uid = ""
+        if time.monotonic() >= deadline:
+            break
+        if actual_uid == expected_uid:
+            consecutive += 1
+            if consecutive == 2:
+                return "B 服登录完成，已核对游戏内 UID，继续运行 M9A 任务"
+        else:
+            consecutive = 0
+            saw_mismatch |= bool(actual_uid)
+        await asyncio.sleep(min(_POLL_SECONDS, max(0, deadline - time.monotonic())))
+    if saw_mismatch:
+        raise MaaFWLoginRequired("B 服登录失败：游戏内 UID 与配置不一致，核验已超时")
+    raise MaaFWLoginRequired("B 服登录失败：始终读不到可确认的游戏内 UID，核验已超时")
 
 
 @lru_cache(maxsize=2)
@@ -768,7 +780,7 @@ async def ensure_logged_in(
     adb_address: str,
     progress: Progress | None,
     host_adb: Any = None,
-) -> str:
+) -> str | StartupVerification:
     """MAS 原生登录入口（契约见 MaaFW ``flavor.py`` 的 ``ensure_logged_in``）。
 
     只在 ``Run.LoginMode == "Mas"`` 时做事；返回写进运行日志的一句话，没做事就是空串。
@@ -812,9 +824,8 @@ async def ensure_logged_in(
     await _progress(
         progress, f"B 服登录：使用账号「{_mask(account)}」，客户端 {package}"
     )
-    await _wait_foreground(device, package, progress=progress)
-
     deadline = time.monotonic() + _LOGIN_TIMEOUT
+    await _wait_foreground(device, package, progress=progress)
     unknown_since: float | None = None
     unknown_budget = _unknown_screen_budget(script_config)
     title_polls = 0
@@ -843,14 +854,22 @@ async def ensure_logged_in(
             continue
         if _has(items, _LOGIN_RECORD):
             await _select_account(device, frame, items, account, progress=progress)
-            await _wait_panel_closed(device, progress=progress)
-            return await _verify_game_uid(device, expected_uid)
+            await _wait_panel_closed(device, progress=progress, deadline=deadline)
+            return StartupVerification(
+                deadline,
+                partial(_verify_game_uid, device, expected_uid, deadline),
+                "StartUp",
+            )
 
         actual_uid = _homepage_uid(items, frame)
         if actual_uid:
             if actual_uid == previous_uid:
                 if actual_uid == expected_uid:
-                    return "B 服登录完成，已核对游戏内 UID，继续运行 M9A 任务"
+                    return StartupVerification(
+                        deadline,
+                        partial(_verify_game_uid, device, expected_uid, deadline),
+                        "StartUp",
+                    )
                 if homepage_logout_tried:
                     raise MaaFWLoginRequired(
                         "B 服切号失败：退出后仍停在其他账号的游戏主页"
