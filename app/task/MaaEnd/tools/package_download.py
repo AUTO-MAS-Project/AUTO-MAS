@@ -222,7 +222,7 @@ async def download_incremental(
             destination.unlink(missing_ok=True)
         architecture = "x64" if arch == "x86_64" else "arm64"
         public_url = (
-            "https://data.auto-mas.top/api/v1/files/auto-mas/Client/"
+            "https://data.auto-mas.top/api/v1/files/maaend/ReleaseOTA/"
             f"maaend-{architecture}-{channel}-delta/download"
         )
         await download_file(

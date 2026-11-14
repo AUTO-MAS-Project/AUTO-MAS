@@ -91,7 +91,10 @@ async def test_site_delta_installs_exact_official_package_or_falls_back(
         archive.writestr("payload", b"corrupt" if variant == "corrupt" else payload)
 
     async def site_download(url, destination, **kwargs):
-        assert url.endswith("/maaend-x64-stable-delta/download")
+        assert (
+            url
+            == "https://data.auto-mas.top/api/v1/files/maaend/ReleaseOTA/maaend-x64-stable-delta/download"
+        )
         if variant == "cancel":
             raise asyncio.CancelledError
         shutil.copyfile(patch, destination)
