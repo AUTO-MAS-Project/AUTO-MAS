@@ -2373,9 +2373,6 @@ ipcMain.handle('set-initialized-version', async (_event, version: string) => {
 ipcMain.handle('get-runtime-launch-mode', () => resolveRuntimeLaunchModeDetail())
 
 // 应用生命周期
-// 在沙箱环境下运行会导致无法启动子进程，强制禁用沙箱
-app.commandLine.appendSwitch('no-sandbox')
-
 app.on('second-instance', (_event, argv) => {
   if (keepAwakeForScheduledWakeup(argv)) return
   if (mainWindow) {
