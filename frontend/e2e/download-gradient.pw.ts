@@ -65,3 +65,103 @@ test('@scheduler download text keeps its gradient phase on the first paint after
   expect(phases.firstPaint).toBe(phases.before)
   expect(phases.running).not.toBe(phases.firstPaint)
 })
+
+test('@scheduler prefetch leaves logs and controls visible in a narrow scheduler pane', async ({
+  app,
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      'auto-mas.browser-dev.config',
+      JSON.stringify({ language: 'ja-JP', themeMode: 'light' })
+    )
+  })
+  const prefetch = {
+    target: 'MaaEnd',
+    status: '下载中',
+    method: 'FluxDown',
+    package: 'MaaEnd-update-win-x86_64.zip',
+    progress: '42.0%',
+    size: '84.0/200.0 MiB',
+    rate: '5.2 MiB/s',
+  }
+  const task = {
+    info: { name: 'Narrow header', mode: 'AutoProxy', status: 'running', trigger: 'manual' },
+    current: { index: 'script-run', prefetch },
+    scripts: {
+      order: [{ uid: 'script-run', type: 'TaskScriptItem' }],
+      data: {
+        'script-run': {
+          info: { script_id: 'script-config', name: 'MAA', status: '运行' },
+          users: { order: [], data: {} },
+        },
+      },
+    },
+  }
+  await page.route('**/api/dispatch/runtime-snapshot', async route => {
+    if (route.request().method() !== 'GET') return route.continue()
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'Access-Control-Allow-Origin': '*' },
+      body: JSON.stringify({
+        tasks: [
+          {
+            taskId: 'ab771126-0a99-4d87-8232-6d5ddcc46289',
+            task,
+            mode: 'AutoProxy',
+            trigger: 'manual',
+            scripts: [{ scriptId: 'script-config', scriptType: 'MaaConfig' }],
+            stopping: false,
+            log: Array.from({ length: 60 }, (_, index) => `Test log ${index + 1}\n`).join(''),
+            logSeq: 1,
+            logFirstLine: 1,
+          },
+        ],
+      }),
+    })
+  })
+  await page.setViewportSize({ width: 1000, height: 900 })
+  await app.goto('/scheduler')
+  const panel = page.locator('.log-panel:visible')
+  await expect(panel.locator('.download-log-package')).toHaveText(prefetch.package)
+  await expect(panel.locator('.monaco-editor')).toContainText('Test log 60')
+  for (const locale of ['ja-JP', 'zh-CN', 'en-US']) {
+    await page.setViewportSize({ width: 1000, height: 900 })
+    await page.evaluate(async locale => {
+      const module = '/src/composables/useLocale.ts'
+      const { useLocale } = await import(module)
+      await useLocale().setLocale(locale)
+    }, locale)
+    for (const mode of ['browse', 'follow']) {
+      await page.setViewportSize({ width: 1000, height: 900 })
+      const button = panel.locator('.log-controls button')
+      if ((mode === 'follow') !== ((await button.getAttribute('aria-pressed')) === 'true')) {
+        await button.click()
+      }
+      for (const width of [800, 769, 768]) {
+        await page.setViewportSize({ width, height: 900 })
+        await expect
+          .poll(() =>
+            panel.evaluate(element => {
+              const panel = element.getBoundingClientRect()
+              const controls = element.querySelector('.log-controls')!.getBoundingClientRect()
+              const content = element.querySelector('.log-content')!.getBoundingClientRect()
+              return {
+                logsVisible: content.height > 0 && content.bottom <= panel.bottom,
+                controlsVisible:
+                  controls.top >= panel.top &&
+                  controls.bottom <= panel.bottom &&
+                  controls.right <= panel.right,
+              }
+            })
+          )
+          .toEqual({ logsVisible: true, controlsVisible: true })
+        if (mode === 'follow') {
+          await expect(panel.locator('.monaco-editor')).toContainText('Test log 60')
+        }
+      }
+    }
+  }
+  await app.evidence('prefetch-narrow-scheduler')
+})

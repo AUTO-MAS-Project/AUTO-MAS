@@ -304,6 +304,11 @@ onUnmounted(() => {
 <style scoped src="./schedulerPanel.css"></style>
 
 <style scoped>
+.log-panel {
+  container-type: inline-size;
+  container-name: scheduler-log;
+}
+
 .scheduler-panel-header {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -367,7 +372,7 @@ onUnmounted(() => {
   height: 100%;
 }
 
-@media (max-width: 768px) {
+@container scheduler-log (max-width: 640px) {
   .scheduler-panel-header {
     grid-template-columns: minmax(0, 1fr) auto;
   }
@@ -381,7 +386,9 @@ onUnmounted(() => {
     grid-column: 2;
     grid-row: 1;
   }
+}
 
+@media (max-width: 768px) {
   .log-content {
     padding: 12px;
   }
