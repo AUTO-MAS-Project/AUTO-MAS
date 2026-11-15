@@ -424,6 +424,55 @@ def describe_monitors() -> str:
     return "; ".join(monitor.describe() for monitor in monitors)
 
 
+_DESKTOP_READOBJECTS = 0x0001
+_UOI_NAME = 2
+# 用户登录后的交互式桌面就叫这个名字；锁屏、UAC 安全桌面时输入桌面是 Winlogon。
+_USER_DESKTOP_NAME = "default"
+
+
+def input_desktop_unavailable() -> str | None:
+    """输入桌面不是用户桌面（锁屏、UAC 安全桌面）时返回原因，是用户桌面时返回 None。
+
+    判据照 MXU：锁屏后输入桌面切到 Winlogon 安全桌面，普通进程 `OpenInputDesktop` 打不开。
+    MAS 后端常以管理员身份运行，打得开也不能就此认定没锁，所以打开后再核对一次桌面名。
+    """
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    open_input_desktop = user32.OpenInputDesktop
+    open_input_desktop.restype = ctypes.c_void_p
+    open_input_desktop.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    get_info = user32.GetUserObjectInformationW
+    get_info.restype = wintypes.BOOL
+    get_info.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    close_desktop = user32.CloseDesktop
+    close_desktop.restype = wintypes.BOOL
+    close_desktop.argtypes = [ctypes.c_void_p]
+
+    handle = open_input_desktop(0, False, _DESKTOP_READOBJECTS)
+    if not handle:
+        return f"无法打开输入桌面（错误码 {ctypes.get_last_error()}）"
+    try:
+        buffer = ctypes.create_unicode_buffer(256)
+        needed = wintypes.DWORD(0)
+        if not get_info(
+            handle, _UOI_NAME, buffer, ctypes.sizeof(buffer), ctypes.byref(needed)
+        ):
+            # 打开了却读不到名字：按用户桌面处理，别凭一个查询失败拦掉运行
+            return None
+        name = buffer.value
+    finally:
+        close_desktop(handle)
+    if name.lower() != _USER_DESKTOP_NAME:
+        return f"当前输入桌面是 {name}"
+    return None
+
+
 # 显式声明公开面：`platform/display.py` 用星号导入本模块，不声明的话 ctypes、wintypes
 # 这些实现细节会一起泄漏进 `app.utils.display` 命名空间。
 __all__ = [
@@ -436,4 +485,5 @@ __all__ = [
     "has_real_display",
     "real_display_devices",
     "describe_monitors",
+    "input_desktop_unavailable",
 ]

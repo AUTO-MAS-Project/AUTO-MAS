@@ -122,7 +122,8 @@ from app.task.MaaFW.tools.core.worker_protocol import (
     forwards_to_ui,
     strip_ansi,
 )
-from app.utils import UTC4, ProcessInfo, ProcessManager, get_logger, power
+from app.utils import IS_WINDOWS, UTC4, ProcessInfo, ProcessManager, get_logger, power
+from app.utils import display as _utils_display
 from app.utils import game_apk as _utils_game_apk
 from app.utils import io as _utils_io
 from app.utils.common.process.runner import create_subprocess, observe_process_exit
@@ -411,6 +412,14 @@ class _MaaFWRunTimeoutError(RuntimeError):
 
 class _MaaFWGameUpdateRequired(RuntimeError):
     """特调的游戏更新钩子判定客户端要手动更新：本账号本次判失败，不重试。"""
+
+
+class _MaaFWWorkstationLocked(RuntimeError):
+    """电脑锁着屏，要用交互式桌面的控制器跑不了：本账号本次判失败，不重试。"""
+
+
+# 截图和输入都要落在用户的交互式桌面上的控制器。ADB 不受锁屏影响。
+_DESKTOP_CONTROLLER_TYPES = frozenset({"Win32", "Gamepad"})
 
 
 class _FrameworkLogWriter:
@@ -886,6 +895,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 if self.run_plan is None or self.interface_model is None:
                     raise RuntimeError("MaaFW 运行计划尚未初始化")
                 self._ensure_display_hold()
+                # 放在运行前设置之前：锁屏时启动器、游戏照样能被拉起来，但截图和输入用不了，
+                # 进了重试还会白白重启游戏。
+                await self._ensure_workstation_unlocked()
                 if not pretasks_done or await self._pretasks_need_rerun(client_reset):
                     # 先清标记：重跑到一半失败时，下一轮不能因为窗口已被拉起就跳过
                     pretasks_done = False
@@ -928,13 +940,21 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     )
                 break
             except Exception as exc:
+                locked = isinstance(exc, _MaaFWWorkstationLocked)
                 message = (
                     str(exc)
-                    if isinstance(exc, (MaaFWPretaskError, MaaFWLoginRequired))
+                    if isinstance(
+                        exc,
+                        (
+                            MaaFWPretaskError,
+                            MaaFWLoginRequired,
+                            _MaaFWWorkstationLocked,
+                        ),
+                    )
                     else f"MaaFW 运行异常: {exc}"
                 )
                 self._append_log(message, warning=True)
-                unretryable = _is_unretryable_failure(message)
+                unretryable = locked or _is_unretryable_failure(message)
                 self._record_attempt(
                     index + 1,
                     [],
@@ -955,7 +975,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         else CATEGORY_HOST_ERROR
                     ),
                 )
-                if unretryable:
+                if unretryable and not locked:
+                    # 锁屏的说明自带「不重试」，不再重复一句
                     self._append_log(
                         "运行环境不可用，重试也不会有别的结果，已停止本轮",
                         warning=True,
@@ -4104,6 +4125,29 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self._display_hold = power.hold_display(
                 f"MFW 运行（{self.cur_user_item.name}）"
             )
+
+    async def _ensure_workstation_unlocked(self) -> None:
+        """要用交互式桌面的控制器，锁屏时直接判失败，不进会重启游戏的重试。"""
+
+        if (
+            not IS_WINDOWS
+            or self.run_plan is None
+            or self.run_plan.controllerType not in _DESKTOP_CONTROLLER_TYPES
+        ):
+            return
+        try:
+            reason = await asyncio.to_thread(_utils_display.input_desktop_unavailable)
+        except Exception as error:
+            # 查不出来不拦：这一步是给出明确原因的改善项，不该把本来能跑的任务打掉
+            logger.opt(exception=True).warning(f"检查锁屏状态失败，照常运行：{error}")
+            return
+        if reason is None:
+            return
+        logger.warning(f"MaaFW 运行前检查到锁屏：{reason}")
+        raise _MaaFWWorkstationLocked(
+            "电脑处于锁屏状态，Win32 控制器的项目要在解锁的桌面上才能截图和操作，"
+            "本次不运行、不重试，请解锁后再运行"
+        )
 
     def _release_display_hold(self) -> None:
         hold, self._display_hold = self._display_hold, None
