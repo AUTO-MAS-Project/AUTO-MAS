@@ -4,12 +4,16 @@
 
 ## 当前接续位置
 
+- 本轮审查修正已提交至 `a6afa1bad`；最新 dev 合并态后端全量回归 2051 passed、2 skipped、22 subtests passed，
+  前端完整回归 351 passed；Python 全量格式、前端 lint/格式、Renderer/Electron 类型、锁文件和更新日志检查通过。
+  保留既有 Pydantic 警告及 QueueDeleteButton.text lint 警告，未运行真实 MAA、模拟器或更新安装流程。
 - MAA 预下载选包不一致已确认是插件迁移遗漏：最新 dev `a486390bf` 的预下载遵循包模式，插件新增声明此前未同步该条件。
-  已修正 GitHub 全量包选择和 Mirror 增量基线，并同步独立适配器源码；同输入旧实现两处失败，修正后 MAA 更新回归 117 passed。
+  已修正 GitHub 全量包选择和 Mirror 增量基线；独立适配器修复已推送至 `90d379f`，未发布新 PyPI 版本。
+  同输入旧实现两处失败，修正后 MAA 更新回归 117 passed。
 - 市场来源最新决策见设计记录 28：三级来源首个完整成功结果全量同步，接受来源延迟带来的回退/缺项；不采用逐包保留或撤包事实缓存。
 - 最新确认的重载恢复语义以设计记录 11.6 为准：只沿本次实际禁用返回的完整级联树先父后子恢复，普通依赖启用检查保持不变；旧文档“仅按直接注册项列表恢复”的表述不再作为实现依据。
-- 当前草稿 PR 为 https://github.com/AUTO-MAS-Project/AUTO-MAS/pull/1974 ，分支 `codex/migrate-plugin-foundation`，
-  实施基线 `31f2db9b3`。2026-11-15 已同步最新 origin/dev `c7e1f2490`，冲突解决并完成合并态回归；详见迁移计划末尾的同步记录。
+- 当前 PR 为 https://github.com/AUTO-MAS-Project/AUTO-MAS/pull/1974 ，分支 `codex/migrate-plugin-foundation`，
+  实施基线 `31f2db9b3`。2026-11-15 已同步最新 origin/dev `a486390bf`，保留延后业务启动恢复与插件退出接线；详见迁移计划末尾的同步记录。
   无关的 826 个纯换行差异已备份并保留在工作区，不纳入本轮提交。
 - 插件基类/配置骨架/SDK、Operations、统一下载、双源预下载、来源已实现的插件页面、
   core + 插件 i18n、前端应用升级及启动退出接线已实现。最新验收记录见

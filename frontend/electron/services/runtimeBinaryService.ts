@@ -314,7 +314,7 @@ export function parseRuntimeSums(text: string, asset: string): string | null {
 /** 可信来源给出的期望哈希。 */
 export type TrustedRuntimeHashLookup =
   | { status: 'found'; hash: string; source: string }
-  | { status: 'unavailable'; error: string }
+  | { status: 'unavailable'; error: string; networkUnavailable?: true }
 
 /**
  * 从可信来源取某个 Runtime 版本的期望 SHA-256。
@@ -340,7 +340,11 @@ export async function fetchTrustedRuntimeHash(
     case 'missing':
       return { status: 'unavailable', error: `Release ${version} 没有校验清单` }
     case 'unavailable':
-      return { status: 'unavailable', error: outcome.error }
+      return {
+        status: 'unavailable',
+        error: outcome.error,
+        ...(outcome.networkUnavailable ? { networkUnavailable: true as const } : {}),
+      }
   }
 }
 
@@ -428,6 +432,7 @@ export const RUNTIME_BINARY_REPLACE_FAILED = 'RUNTIME_BINARY_REPLACE_FAILED'
 export const RUNTIME_BINARY_CANCELLED = 'OPERATION_CANCELLED'
 
 export interface RuntimeBinarySyncResult {
+  networkUnavailable?: true
   /**
    * - `current`：磁盘上的 exe 已经是线上最新版（或比它更新，见 {@link runSync}）；
    * - `upgraded`：已经换成线上最新版；
@@ -477,7 +482,7 @@ export type RuntimeBinaryDownloader = (
   url: string,
   savePath: string,
   onProgress?: (progress: RuntimeBinaryDownloadProgress) => void
-) => Promise<{ success: boolean; error?: string }>
+) => Promise<{ success: boolean; error?: string; networkUnavailable?: true }>
 
 export interface RuntimeBinarySyncOptions {
   /** 当前生效的 `auto-mas-runtime.exe` 路径。 */
@@ -729,6 +734,7 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
       target,
       error: describeDownloadFailure(target, runtimePath, downloaded.error),
       code: RUNTIME_BINARY_DOWNLOAD_FAILED,
+      ...(downloaded.networkUnavailable ? { networkUnavailable: true as const } : {}),
     }
   }
 
@@ -888,7 +894,7 @@ function describeLatestUnavailable(detail: string): string {
 
 type DownloadOutcome =
   | { status: 'downloaded'; downloadPath: string }
-  | { status: 'failed'; error: string }
+  | { status: 'failed'; error: string; networkUnavailable?: true }
   | { status: 'cancelled' }
 
 /**
@@ -905,6 +911,7 @@ async function downloadTarget(
   const asset = runtimeAssetName(target.version)
   const sources = buildRuntimeBinarySources(target.version)
   const failures: string[] = []
+  let onlyNetworkFailures = true
   const deadline = Date.now() + (options.budgetMs ?? RUNTIME_BINARY_SYNC_BUDGET_MS)
   const sourceTimeoutMs = options.sourceTimeoutMs ?? RUNTIME_BINARY_SOURCE_TIMEOUT_MS
 
@@ -920,7 +927,11 @@ async function downloadTarget(
     timeoutMs: Math.min(Math.max(deadline - Date.now(), 1), RUNTIME_TEXT_FETCH_TIMEOUT_MS),
   })
   if (trusted.status === 'unavailable') {
-    return { status: 'failed', error: `无法从 CNB / GitHub 获取校验清单（${trusted.error}）` }
+    return {
+      status: 'failed',
+      error: `无法从 CNB / GitHub 获取校验清单（${trusted.error}）`,
+      ...(trusted.networkUnavailable ? { networkUnavailable: true as const } : {}),
+    }
   }
   const expected = trusted.hash
 
@@ -976,6 +987,7 @@ async function downloadTarget(
     )
     if (result.cancelled) return { status: 'cancelled' }
     if (!result.success) {
+      onlyNetworkFailures &&= result.networkUnavailable === true
       failures.push(`${source.name}: ${result.error}`)
       // 超时放弃的那次仍在后台写自己的文件，等它自己结束时再清；这里删了也会被写回来。
       if (!result.abandoned) removeQuietly(downloadPath)
@@ -992,12 +1004,17 @@ async function downloadTarget(
     }
 
     // 与可信清单对不上：该源缓存错乱、被篡改或返回了错误页，只能换下一个源。
+    onlyNetworkFailures = false
     failures.push(`${source.name}: SHA-256 不匹配（清单 ${expected}，得到 ${actual ?? '不可读'}）`)
     logger.warn(`${label} 下载的文件与可信清单不符，换下一个源`)
     removeQuietly(downloadPath)
   }
 
-  return { status: 'failed', error: `${sources.length} 个下载源均失败 —— ${failures.join('；')}` }
+  return {
+    status: 'failed',
+    error: `${sources.length} 个下载源均失败 —— ${failures.join('；')}`,
+    ...(onlyNetworkFailures && failures.length > 0 ? { networkUnavailable: true as const } : {}),
+  }
 }
 
 let downloadSequence = 0
@@ -1015,6 +1032,7 @@ const CANCEL_POLL_INTERVAL_MS = 250
 interface AttemptResult {
   success: boolean
   error?: string
+  networkUnavailable?: true
   /** 超时或取消后放弃了这次下载：它仍在后台写文件，结束后由这里顺手清掉。 */
   abandoned?: boolean
   cancelled?: boolean
@@ -1044,7 +1062,7 @@ async function downloadWithTimeout(
     return { success: false, error: error instanceof Error ? error.message : String(error) }
   }
   const settled: Promise<AttemptResult> = attempt.then(
-    result => (result.success ? result : { success: false, error: result.error ?? '下载失败' }),
+    result => (result.success ? result : { ...result, error: result.error ?? '下载失败' }),
     error => ({ success: false, error: error instanceof Error ? error.message : String(error) })
   )
 

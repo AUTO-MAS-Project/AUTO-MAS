@@ -94,6 +94,7 @@
     },
     "msg": {
       "execFailed": "実行に失敗しました",
+      "autoRetry": "起動を再試行しています",
       "initDone": "初期設定が完了しました",
       "initFailed": "初期設定に失敗しました",
       "skippedStep": "{step} をスキップしました"

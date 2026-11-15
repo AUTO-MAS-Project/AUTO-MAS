@@ -354,6 +354,12 @@ def main():
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        from app.core import Startup
+
+        Startup.prepare(
+            deferred=is_supervised()
+            and os.getenv("AUTO_MAS_DEFER_BUSINESS_START") == "1"
+        )
         # 预热共享 SSL 上下文：truststore 全量加载证书库较慢，放线程执行避免首个请求卡死
         """按启动阶段装配调度、后台服务和插件，服务退出时统一执行已登记的清理流程。"""
         import ssl
@@ -511,7 +517,11 @@ def main():
                 await run_optional_step("桌面显示输出守卫", start_desktop_guard)
                 # 要在主定时器之前：定时器可能马上拉起实例，而 sdk\emulator 可能正停在换到一半
                 await run_optional_step("ModAVD 更新恢复", init_avd_update)
-                timer_error = await run_step("主业务定时器", MainTimer.start)
+
+                async def start_main_timer() -> None:
+                    await MainTimer.start()
+
+                timer_error = await run_step("主业务定时器", start_main_timer)
                 startup_mark("后端/主定时器启动结束")
 
                 await run_optional_step("通知渠道", Notify.start)
@@ -577,6 +587,7 @@ def main():
                 Power,
             )
 
+            Startup.close()
             Operations.seal()
             Downloads.seal()
             Plugin.seal()

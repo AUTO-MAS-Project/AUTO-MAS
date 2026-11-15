@@ -1462,7 +1462,7 @@ describe('主进程拥有两种模式的启动生命周期', () => {
     }
   })
 
-  it.each(['permission', 'protocol', 'argument', 'uv-isolation'])(
+  it.each(['permission', 'protocol', 'argument'])(
     '%s 错误保留准确分类，不按泛 retryable 标记自动重试',
     async fault => {
       process.env[RUNTIME_MODE_ENV] = 'managed'
@@ -1483,11 +1483,6 @@ describe('主进程拥有两种模式的启动生命周期', () => {
         child.close(10)
         expectedCode = 'RUNTIME_PROTOCOL_MISMATCH'
       } else {
-        if (fault === 'uv-isolation') {
-          child.stdout.feed(fixtureLines('bootstrap-success.ndjson').join(''))
-          child.close(0)
-          child = await waitForSpawn(1)
-        }
         expectedCode = fault === 'argument' ? 'INVALID_ARGUMENT' : 'UV_EXEC_FAILED'
         child.stdout.feed(
           helloLine +
@@ -1502,16 +1497,276 @@ describe('主进程拥有两种模式的启动生命周期', () => {
               message: fault,
               retryable: true,
               remediation: ['open-log'],
-              details: fault === 'uv-isolation' ? { failureKind: 'process_isolation_failed' } : {},
+              details: {},
             })
         )
         child.close(50)
       }
       expect(await startup).toMatchObject({ success: false, code: expectedCode })
       expect(service.getDesktopStartupSnapshot()?.attempts).toHaveLength(1)
-      expect(spawnMock).toHaveBeenCalledTimes(fault === 'uv-isolation' ? 2 : 1)
+      expect(spawnMock).toHaveBeenCalledTimes(1)
     }
   )
+
+  it('uv 只读检查失败后可恢复一次，健康检查再失败不能开启第三轮', async () => {
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    mockSpawn()
+    const service = new InitializationService(appRoot)
+    const startup = service.startDesktopStartup({
+      version: '5.5.0-beta.3',
+      initializedVersion: '5.5.0-beta.3',
+      autoUpdate: false,
+    })
+    const check = await waitForSpawn()
+    check.stdout.feed(fixtureLines('bootstrap-success.ndjson').join(''))
+    check.close(0)
+    const failed = await waitForSpawn(1)
+    failed.stdout.feed(
+      helloLine.replace('backend supervise', 'bootstrap') +
+        line({
+          ...base,
+          type: 'result',
+          sequence: 2,
+          success: false,
+          code: 'UV_EXEC_FAILED',
+          stage: 'uv.verify',
+          status: 'failed',
+          message: 'uv verification failed',
+          retryable: true,
+          remediation: ['run-doctor', 'open-log'],
+          details: { failureKind: 'process_isolation_failed' },
+        })
+    )
+    failed.close(50)
+    const backend = await passManagedPreparation(2)
+    backend.stdout.feed(
+      helloLine +
+        line({
+          ...base,
+          type: 'result',
+          sequence: 2,
+          success: false,
+          code: 'BACKEND_HEALTH_TIMEOUT',
+          stage: 'backend.health',
+          status: 'backend_failed',
+          message: 'health timeout',
+          retryable: true,
+          remediation: ['restart-backend', 'open-log'],
+          details: { businessDeferred: true },
+        })
+    )
+    backend.close(60)
+    expect(await startup).toMatchObject({ success: false, code: 'BACKEND_HEALTH_TIMEOUT' })
+    expect(service.getDesktopStartupSnapshot()?.attempts.map(value => value.result.code)).toEqual([
+      'UV_EXEC_FAILED',
+      'BACKEND_HEALTH_TIMEOUT',
+    ])
+    expect(spawnMock).toHaveBeenCalledTimes(5)
+  })
+
+  it('首次完整初始化的 uv 失败也共用两轮预算，重试成功后继续启动', async () => {
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    mockSpawn()
+    const service = new InitializationService(appRoot)
+    const startup = service.startDesktopStartup({ version: '5.5.0-beta.3', autoUpdate: false })
+    const first = await waitForSpawn()
+    first.stdout.feed(
+      helloLine.replace('backend supervise', 'bootstrap') +
+        line({
+          ...base,
+          type: 'result',
+          sequence: 2,
+          success: false,
+          code: 'UV_EXEC_FAILED',
+          stage: 'uv.verify',
+          status: 'failed',
+          message: 'uv verification failed',
+          retryable: true,
+          remediation: ['run-doctor', 'open-log'],
+          details: { failureKind: 'process_isolation_failed' },
+        })
+    )
+    first.close(50)
+    const second = await waitForSpawn(1)
+    expect(spawnedArgs(1)).toContain('bootstrap')
+    second.stdout.feed(fixtureLines('bootstrap-success.ndjson').join(''))
+    second.close(0)
+    const backend = await passManagedPreparation(2)
+    backend.stdout.feed(helloLine + runningStateLine)
+    expect(await startup).toMatchObject({ success: true })
+    expect(service.getDesktopStartupSnapshot()?.attempts).toHaveLength(2)
+    expect(spawnMock).toHaveBeenCalledTimes(5)
+    backend.stdout.feed(stoppedResultLine)
+    backend.close(0)
+  })
+
+  it('自动业务放行确认丢失时查询同一实例，不重复创建后端', async () => {
+    process.env[RUNTIME_MODE_ENV] = 'development'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    mockSpawn()
+    const service = new InitializationService(appRoot)
+    const startup = service.startDesktopStartup({ version: '5.5.0-beta.3', autoUpdate: false })
+    const backend = await passEnvironmentEnsure()
+    vi.useFakeTimers()
+    backend.stdout.feed(
+      helloLine.replace('"stdin.status"', '"stdin.status","stdin.activate"') +
+        line({
+          ...base,
+          type: 'state',
+          sequence: 3,
+          stage: 'backend.run',
+          status: 'running',
+          message: 'ready',
+          details: { baseUrl: 'http://127.0.0.1:36163', startupActivation: 'pending' },
+        })
+    )
+    await vi.waitFor(() => expect(backend.stdin.chunks.join('')).toContain('"command":"activate"'))
+    try {
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(backend.stdin.chunks.join('')).toContain('"command":"status"')
+      backend.stdout.feed(
+        line({
+          ...base,
+          type: 'state',
+          sequence: 4,
+          stage: 'backend.run',
+          status: 'running',
+          message: 'active',
+          details: { baseUrl: 'http://127.0.0.1:36163', startupActivation: 'active' },
+        })
+      )
+      expect(await startup).toMatchObject({ success: true })
+      expect(spawnMock).toHaveBeenCalledTimes(2)
+      expect(service.getDesktopStartupSnapshot()?.attempts).toHaveLength(1)
+      backend.stdout.feed(stoppedResultLine)
+      backend.close(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['active', 'pending'] as const)(
+    '放行确认超时后，失败页重试从 %s 接回同一个进程',
+    async activation => {
+      process.env[RUNTIME_MODE_ENV] = 'development'
+      process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+      mockSpawn()
+      vi.resetModules()
+      ipcHandlers.clear()
+      const handlers = await import('../ipc/initializationHandlers')
+      const window = new BrowserWindow()
+      handlers.registerInitializationHandlers(window)
+      const initial = handlers.startDesktopStartup({ version: '5.5.0-beta.3', autoUpdate: false })
+      const backend = await passEnvironmentEnsure()
+      vi.useFakeTimers()
+      try {
+        backend.stdout.feed(
+          helloLine.replace('"stdin.status"', '"stdin.status","stdin.activate"') +
+            line({
+              ...base,
+              type: 'state',
+              sequence: 3,
+              stage: 'backend.run',
+              status: 'running',
+              message: 'ready',
+              details: { baseUrl: 'http://127.0.0.1:36163', startupActivation: 'pending' },
+            })
+        )
+        await vi.waitFor(() =>
+          expect(backend.stdin.chunks.join('')).toContain('"command":"activate"')
+        )
+        await vi.advanceTimersByTimeAsync(10_000)
+        expect(await initial).toMatchObject({ success: false, code: 'BACKEND_ACTIVATION_UNKNOWN' })
+        const statusCount = () =>
+          backend.stdin.chunks.filter(chunk => chunk.includes('"command":"status"')).length
+        const previousQueries = statusCount()
+        const retry = ipcHandlers.get('backend-start')?.({ sender: window.webContents }, true)
+        await vi.advanceTimersByTimeAsync(0)
+        expect(statusCount()).toBe(previousQueries + 1)
+        if (activation === 'pending') {
+          backend.stdout.feed(
+            line({
+              ...base,
+              type: 'state',
+              sequence: 4,
+              stage: 'backend.run',
+              status: 'running',
+              message: 'pending',
+              details: { baseUrl: 'http://127.0.0.1:36163', startupActivation: 'pending' },
+            })
+          )
+          await vi.waitFor(() =>
+            expect(
+              backend.stdin.chunks.filter(chunk => chunk.includes('"command":"activate"'))
+            ).toHaveLength(2)
+          )
+        }
+        backend.stdout.feed(
+          line({
+            ...base,
+            type: 'state',
+            sequence: 5,
+            stage: 'backend.run',
+            status: 'running',
+            message: 'active',
+            details: { baseUrl: 'http://127.0.0.1:36163', startupActivation: 'active' },
+          })
+        )
+        expect(await retry).toMatchObject({ success: true })
+        expect(handlers.getBackendService().getStatus().pid).toBe(backend.pid)
+        expect(spawnMock).toHaveBeenCalledTimes(2)
+        expect(
+          backend.stdin.chunks.filter(chunk => chunk.includes('"command":"activate"'))
+        ).toHaveLength(activation === 'active' ? 1 : 2)
+        backend.stdout.feed(stoppedResultLine)
+        backend.close(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    }
+  )
+
+  it('无法确认放行时，普通启动请求不能把保留的进程冒充启动成功', async () => {
+    process.env[RUNTIME_MODE_ENV] = 'development'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    mockSpawn()
+    const service = new InitializationService(appRoot)
+    const startup = service.startDesktopStartup({ version: '5.5.0-beta.3', autoUpdate: false })
+    const backend = await passEnvironmentEnsure()
+    vi.useFakeTimers()
+    try {
+      backend.stdout.feed(
+        helloLine.replace('"stdin.status"', '"stdin.status","stdin.activate"') +
+          line({
+            ...base,
+            type: 'state',
+            sequence: 3,
+            stage: 'backend.run',
+            status: 'running',
+            message: 'ready',
+            details: { baseUrl: 'http://127.0.0.1:36163', startupActivation: 'pending' },
+          })
+      )
+      await vi.waitFor(() =>
+        expect(backend.stdin.chunks.join('')).toContain('"command":"activate"')
+      )
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(await startup).toMatchObject({ success: false, code: 'BACKEND_ACTIVATION_UNKNOWN' })
+      const repeatedStart = service.getBackendService().startBackend()
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(await repeatedStart).toMatchObject({
+        success: false,
+        code: 'BACKEND_ACTIVATION_UNKNOWN',
+      })
+      expect(spawnMock).toHaveBeenCalledTimes(2)
+      backend.stdout.feed(stoppedResultLine)
+      backend.close(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 
   it.each(['development', 'managed'])('%s 窗口请求在后端退出后恢复真实监督', async mode => {
     process.env[RUNTIME_MODE_ENV] = mode

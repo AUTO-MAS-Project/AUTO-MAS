@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from .plugin import Plugin as Plugin
     from .plugin.operations import Operations as Operations
     from .power import Power as Power
+    from .startup import Startup as Startup
     from .task_manager import TaskManager as TaskManager
     from .taskboard import Taskboard as Taskboard
     from .timer import MainTimer as MainTimer
@@ -63,6 +64,7 @@ _LAZY_EXPORTS = {
     "MCP": (".mcp", "MCP"),
     "TaskManager": (".task_manager", "TaskManager"),
     "MainTimer": (".timer", "MainTimer"),
+    "Startup": (".startup", "Startup"),
     "EmulatorManager": (".emulator_manager", "EmulatorManager"),
     "MaaFWManager": (".maa_manager", "MaaFWManager"),
     "DesktopGuard": (".desktop_guard", "DesktopGuard"),
@@ -101,6 +103,7 @@ __all__ = [
     "MCP",
     "TaskManager",
     "MainTimer",
+    "Startup",
     "EmulatorManager",
     "MaaFWManager",
     "DesktopGuard",
