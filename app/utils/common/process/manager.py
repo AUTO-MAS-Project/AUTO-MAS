@@ -25,6 +25,7 @@ import time
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import psutil
 
@@ -32,6 +33,10 @@ from app.utils import UnsupportedPlatformError, get_logger, process_platform, wi
 
 from .runner import create_subprocess
 from .scope import current_process_scope
+from .session import desktop_process_target, process_in_scope
+
+if TYPE_CHECKING:
+    from app.utils.windows.desktop_session.process_runner import DesktopProcess
 
 logger = get_logger("进程管理")
 
@@ -72,7 +77,7 @@ def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
     if target.cmdline is not None and info["cmdline"] != target.cmdline:
         return False
 
-    return True
+    return process_in_scope(proc.pid)
 
 
 def is_process_running(process_name: str) -> bool:
@@ -80,7 +85,7 @@ def is_process_running(process_name: str) -> bool:
 
     for proc in psutil.process_iter(["name"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
-            if proc.info.get("name") == process_name:
+            if proc.info.get("name") == process_name and process_in_scope(proc.pid):
                 # 平台不支持窗口能力时 get_window_handles 返回空列表, 循环不进入
                 for hwnd in get_window_handles(proc.pid):
                     if window.is_visible(hwnd):
@@ -98,7 +103,7 @@ def is_process_alive(process_name: str) -> bool:
 
     for proc in psutil.process_iter(["name"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
-            if proc.info.get("name") == process_name:
+            if proc.info.get("name") == process_name and process_in_scope(proc.pid):
                 return True
     return False
 
@@ -141,6 +146,7 @@ class ProcessManager:
         super().__init__()
 
         self.process: asyncio.subprocess.Process | None = None
+        self._desktop_process: DesktopProcess | None = None
         self.target_process: psutil.Process | None = None
         self.window_title = window_title
         self.window_class_name = window_class_name
@@ -159,6 +165,8 @@ class ProcessManager:
             return self.target_process.pid
         if self.process is not None:
             return self.process.pid
+        if self._desktop_process is not None:
+            return self._desktop_process.pid
         return None
 
     @property
@@ -225,6 +233,39 @@ class ProcessManager:
             raise ValueError("目标进程信息不完整")
 
         await self.clear()
+
+        desktop = desktop_process_target.get()
+        if desktop is not None:
+            if (
+                target_process is not None
+                or elevated
+                or env is not None
+                or null_stream_to_pipe
+                or any(
+                    stream != asyncio.subprocess.DEVNULL
+                    for stream in (stdin, stdout, stderr)
+                )
+            ):
+                raise ValueError("桌面分身暂不支持此进程启动方式")
+            from app.utils.windows.desktop_session.process_runner import (
+                launch_desktop_process,
+            )
+
+            scope = current_process_scope.get()
+            if scope is not None:
+                scope.ensure_can_start()
+            self._desktop_process = await launch_desktop_process(
+                desktop.session_id,
+                source=desktop.source,
+                root=desktop.root,
+                argv=[str(program), *args],
+                cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
+            )
+            if scope is not None:
+                scope.add_check(
+                    "停止桌面分身进程", self._desktop_process.stop, timeout=12
+                )
+            return
 
         if elevated and process_platform.platform_process.supports_elevation:
             # 以管理员权限启动进程（触发 UAC），ShellExecute 不返回子进程句柄，
@@ -383,6 +424,8 @@ class ProcessManager:
             return False
         if self.process is not None:
             return self.process.returncode is None
+        if self._desktop_process is not None:
+            return self._desktop_process.running
         return False
 
     async def _reseek_target(self) -> bool:
@@ -449,6 +492,10 @@ class ProcessManager:
 
     async def clear(self) -> None:
         """清空跟踪的进程信息"""
+
+        if self._desktop_process is not None:
+            await self._desktop_process.stop()
+            self._desktop_process = None
 
         # 清理残留的排水任务, 避免泄漏
         if self._drain_tasks:

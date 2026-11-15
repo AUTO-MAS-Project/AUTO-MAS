@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vite-plus/test'
 import enUS from './bootstrap/en-US.json'
 import jaJP from './bootstrap/ja-JP.json'
 import zhCN from './bootstrap/zh-CN.json'
+import desktopSession from '../../electron/services/desktopSessionMessages.json'
 
 const flatten = (node: unknown, prefix = ''): [string, string][] =>
   typeof node === 'string'
@@ -13,6 +14,10 @@ const flatten = (node: unknown, prefix = ''): [string, string][] =>
 
 const catalogEntries = (bootstrap: unknown, filename: string): [string, string][] => [
   ...flatten(bootstrap, 'bootstrap'),
+  ...flatten(
+    desktopSession[filename === 'zh_CN' ? 'zh-CN' : filename === 'ja' ? 'ja-JP' : 'en-US'],
+    'bootstrap.desktopSession'
+  ),
   ...Object.entries(
     JSON.parse(
       readFileSync(new URL(`../../../res/i18n/${filename}.json`, import.meta.url), 'utf8')
@@ -28,6 +33,19 @@ const TRANSLATIONS = [
 ] as const
 
 describe('词表', () => {
+  it('桌面分身的启动词表覆盖三种语言', () => {
+    const keys = flatten(desktopSession['zh-CN'])
+      .map(([key]) => key)
+      .sort()
+    for (const locale of ['en-US', 'ja-JP'] as const) {
+      expect(
+        flatten(desktopSession[locale])
+          .map(([key]) => key)
+          .sort()
+      ).toEqual(keys)
+    }
+  })
+
   // 复数消息，| 是有意的分隔符；其余词条里的 | 都必须转义
   const PLURAL_KEYS = new Set([
     'core.home.endfield.ongoing',

@@ -7,6 +7,7 @@
     "rootDir": "electron",
     "outDir": "dist-electron",
     "esModuleInterop": true,
+    "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "types": ["node", "electron"],
     "paths": {

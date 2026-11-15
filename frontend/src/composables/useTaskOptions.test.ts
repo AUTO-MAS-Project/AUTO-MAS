@@ -36,7 +36,10 @@ describe('任务配置读取', () => {
     api.scripts.mockImplementation(() =>
       reply({ code: 200, index: [{ uid: 's' }], data: { s: { Info: { Name: '队列 - 同名' } } } })
     )
-    const targets = await fetchTaskTargets()
+    const [targets, sharedTargets] = await Promise.all([fetchTaskTargets(), fetchTaskTargets()])
+    expect(sharedTargets).toEqual(targets)
+    expect(api.queues).toHaveBeenCalledTimes(1)
+    expect(api.scripts).toHaveBeenCalledTimes(1)
     expect(targets.map(item => [item.value, item.kind])).toEqual([
       ['q', 'queue'],
       ['s', 'script'],

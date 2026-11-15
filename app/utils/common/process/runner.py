@@ -14,9 +14,19 @@ import psutil
 from app.utils import get_logger
 
 from .scope import current_process_scope, current_update_scope, detached_process_context
+from .session import restricted_session
 
 logger = get_logger("进程管理")
 _PROCESS_CLEANUP_SECONDS = 8
+
+
+async def kill_windows_process_tree_by_image(image: str) -> subprocess.CompletedProcess:
+    """按完整镜像名强制结束 Windows 进程树。"""
+    session_id = restricted_session()
+    filters = ("/FI", f"SESSION eq {session_id}") if session_id is not None else ()
+    return await ProcessRunner.run_process(
+        "taskkill", "/IM", image, "/F", "/T", *filters
+    )
 
 
 class ProcessCleanupUnconfirmed(RuntimeError):
@@ -137,9 +147,17 @@ def observe_process_exit(
 def _terminate_process_tree(pid: int, *, grace_period: float = 3) -> None:
     """同步终止进程及其当前子进程，用于取消异步命令时的兜底清理。"""
 
+    from .session import process_in_scope
+
+    if not process_in_scope(pid):
+        return
     try:
         root = psutil.Process(pid)
-        processes = [*root.children(recursive=True), root]
+        processes = [
+            item
+            for item in [*root.children(recursive=True), root]
+            if process_in_scope(item.pid)
+        ]
     except psutil.NoSuchProcess:
         return
 

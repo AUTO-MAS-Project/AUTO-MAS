@@ -1,0 +1,289 @@
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  screen,
+  shell,
+  type IpcMainInvokeEvent,
+  type Rectangle,
+} from 'electron'
+import { join } from 'node:path'
+import { DesktopSessionService } from '../services/desktopSessionService'
+import type { DesktopSessionRequest } from '../services/desktopSessionProtocol'
+import {
+  getBackendOwnership,
+  getDevelopmentServerUrl,
+  getRendererEnvironmentArguments,
+} from '../services/instanceConfig'
+import { isApplicationWindowSender } from './analyticsHandlers'
+import desktopSessionMessages from '../services/desktopSessionMessages.json'
+
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+const MODES: readonly DesktopSessionRequest['mode'][] = ['proxy', 'native']
+const RESOLUTIONS: readonly DesktopSessionRequest['resolution'][] = ['1080p', 'primary']
+
+/** 入口与启动都走同一份校验；区别只在非法请求怎么报告，由调用方决定。 */
+function normalizeRequest(input: unknown): DesktopSessionRequest | null {
+  if (!input || typeof input !== 'object') return null
+  const request = input as Partial<DesktopSessionRequest>
+  if (
+    !Array.isArray(request.queueIds) ||
+    request.queueIds.length > 100 ||
+    request.queueIds.some(id => typeof id !== 'string' || !uuid.test(id)) ||
+    !MODES.includes(request.mode as DesktopSessionRequest['mode']) ||
+    !RESOLUTIONS.includes(request.resolution as DesktopSessionRequest['resolution'])
+  ) {
+    return null
+  }
+  return {
+    queueIds: [...new Set(request.queueIds.map(id => id.toLowerCase()))],
+    mode: request.mode as DesktopSessionRequest['mode'],
+    resolution: request.resolution as DesktopSessionRequest['resolution'],
+  }
+}
+
+function supportsDesktopSession(): boolean {
+  return process.platform === 'win32' && process.arch === 'x64' && getBackendOwnership() === 'owned'
+}
+
+export function registerDesktopSession(
+  getMainWindow: () => BrowserWindow | null,
+  icon: string,
+  getLanguage: () => unknown
+) {
+  function labels() {
+    const configured = getLanguage()
+    const locale = (typeof configured === 'string' ? configured : app.getLocale()).toLowerCase()
+    if (locale.startsWith('zh')) return desktopSessionMessages['zh-CN']
+    if (locale.startsWith('ja')) return desktopSessionMessages['ja-JP']
+    return desktopSessionMessages['en-US']
+  }
+  let preview: BrowserWindow | null = null
+  let viewport: Rectangle | null = null
+  const pending: DesktopSessionRequest[] = []
+  let hidden = false
+  let closeFlight: Promise<boolean> | null = null
+
+  const service = new DesktopSessionService(
+    snapshot => {
+      if (preview && !preview.isDestroyed())
+        preview.webContents.send('desktop-session:state', snapshot)
+    },
+    action => {
+      if (action === 'close') void confirmClose()
+      else preview?.minimize()
+    },
+    tasks => {
+      const main = getMainWindow()
+      if (main && !main.isDestroyed()) main.webContents.send('desktop-session:tasks-started', tasks)
+    }
+  )
+
+  function fromPreview(event: IpcMainInvokeEvent): boolean {
+    return (
+      isApplicationWindowSender(event, preview, { allowDevelopment: true }) &&
+      new URL(event.senderFrame!.url).hash === '#/desktop-session'
+    )
+  }
+
+  function physicalBounds(): [number, number, number, number] {
+    if (!preview || !viewport) throw new Error('preview_unavailable')
+    const window = preview.getContentBounds()
+    const topLeft = screen.dipToScreenPoint({ x: window.x + viewport.x, y: window.y + viewport.y })
+    const display = screen.getDisplayMatching(window)
+    return [
+      topLeft.x,
+      topLeft.y,
+      Math.max(1, Math.round(viewport.width * display.scaleFactor)),
+      Math.max(1, Math.round(viewport.height * display.scaleFactor)),
+    ]
+  }
+
+  function updateBounds() {
+    if (preview && viewport) service.position(physicalBounds())
+  }
+
+  function confirmClose(): Promise<boolean> {
+    if (closeFlight) return closeFlight
+    closeFlight = (async () => {
+      const window = preview
+      if (!window || window.isDestroyed()) return true
+      const text = labels()
+      if (service.active) {
+        if (window.isMinimized()) window.restore()
+        if (!window.isVisible()) window.show()
+        service.changeWindow('hidden')
+        const { response } = await dialog.showMessageBox(window, {
+          type: 'warning',
+          title: text.closeTitle,
+          message: text.closeConfirm,
+          buttons: [text.closeContinue, text.cancel],
+          defaultId: 1,
+          cancelId: 1,
+          noLink: true,
+        })
+        if (response !== 0) {
+          if (!hidden) service.changeWindow('visible')
+          return false
+        }
+      }
+      try {
+        await service.close()
+      } catch {
+        await dialog.showMessageBox(window, {
+          type: 'error',
+          title: text.title,
+          message: text.closeFailed,
+        })
+        return false
+      }
+      window.destroy()
+      return true
+    })().finally(() => {
+      closeFlight = null
+    })
+    return closeFlight
+  }
+
+  function showPreview() {
+    if (preview && !preview.isDestroyed()) {
+      if (preview.isMinimized()) preview.restore()
+      preview.show()
+      preview.focus()
+      if (pending.length) preview.webContents.send('desktop-session:pending')
+      return
+    }
+    viewport = null
+    hidden = false
+    const window = new BrowserWindow({
+      title: `${labels().title} - AUTO-MAS`,
+      width: 1100,
+      height: 735,
+      minWidth: 720,
+      minHeight: 470,
+      icon,
+      show: false,
+      autoHideMenuBar: true,
+      webPreferences: {
+        preload: join(__dirname, '..', 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        additionalArguments: getRendererEnvironmentArguments(),
+      },
+    })
+    preview = window
+    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    window.webContents.on('will-navigate', event => event.preventDefault())
+    window.on('page-title-updated', event => event.preventDefault())
+    window.on('ready-to-show', () => window.show())
+    window.on('close', event => {
+      event.preventDefault()
+      void confirmClose()
+    })
+    window.on('closed', () => {
+      if (preview === window) {
+        preview = null
+        pending.length = 0
+      }
+    })
+    window.on('move', updateBounds)
+    window.on('resize', updateBounds)
+    window.on('minimize', () => service.changeWindow('minimized'))
+    window.on('restore', () => {
+      updateBounds()
+      service.changeWindow(hidden ? 'hidden' : 'visible')
+    })
+    const dev = getDevelopmentServerUrl()
+    if (dev) void window.loadURL(`${dev}#/desktop-session`)
+    else
+      void window.loadFile(join(app.getAppPath(), 'dist', 'index.html'), {
+        hash: '/desktop-session',
+      })
+  }
+
+  ipcMain.handle(
+    'desktop-session:supported',
+    event =>
+      isApplicationWindowSender(event, getMainWindow(), { allowDevelopment: true }) &&
+      supportsDesktopSession()
+  )
+  ipcMain.handle('desktop-session:open', (event, input: unknown) => {
+    if (!isApplicationWindowSender(event, getMainWindow(), { allowDevelopment: true })) {
+      throw new Error('entry_unavailable')
+    }
+    if (!supportsDesktopSession()) {
+      throw new Error('unsupported_environment')
+    }
+    const request = normalizeRequest(input)
+    if (!request) throw new Error('invalid_selection')
+    pending.push(request)
+    showPreview()
+  })
+  ipcMain.handle('desktop-session:check', event => (fromPreview(event) ? service.check() : null))
+  ipcMain.handle('desktop-session:pending', event => {
+    if (!fromPreview(event)) return null
+    return pending.shift() ?? null
+  })
+  ipcMain.handle('desktop-session:start', (event, input: unknown) => {
+    // 先确认来源，再做任何解析：fromPreview 之外的调用方拿不到校验细节。
+    if (!fromPreview(event) || !preview) return { code: 'invalid_request', queues: [] }
+    const request = normalizeRequest(input)
+    const password = (input as Partial<DesktopSessionRequest> | null)?.password
+    if (
+      !request ||
+      (password !== undefined && (typeof password !== 'string' || password.length > 512))
+    ) {
+      return { code: 'invalid_request', queues: [] }
+    }
+    return service.start(
+      { ...request, password },
+      preview.getNativeWindowHandle().readBigUInt64LE(),
+      physicalBounds()
+    )
+  })
+  ipcMain.on('desktop-session:bounds', (event, bounds: Rectangle) => {
+    if (!fromPreview(event) || !bounds || !preview) return
+    if (![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isSafeInteger)) return
+    const { width, height } = preview.getContentBounds()
+    if (
+      bounds.x < 0 ||
+      bounds.y < 0 ||
+      bounds.width < 1 ||
+      bounds.height < 1 ||
+      bounds.x + bounds.width > width + 2 ||
+      bounds.y + bounds.height > height + 2
+    )
+      return
+    viewport = bounds
+    updateBounds()
+  })
+  ipcMain.on('desktop-session:window', (event, command: unknown) => {
+    if (!fromPreview(event)) return
+    if (command === 'show' || command === 'hide') {
+      hidden = command === 'hide'
+      service.changeWindow(hidden ? 'hidden' : 'visible')
+    }
+  })
+  ipcMain.on('desktop-session:volume', (event, volume: unknown) => {
+    if (
+      fromPreview(event) &&
+      Number.isInteger(volume) &&
+      Number(volume) >= 0 &&
+      Number(volume) <= 100
+    ) {
+      service.changeVolume(Number(volume))
+    }
+  })
+  ipcMain.handle('desktop-session:logs', event =>
+    fromPreview(event) && service.logFolder ? shell.openPath(service.logFolder) : ''
+  )
+
+  return {
+    get active() {
+      return service.active
+    },
+    closeForAppQuit: confirmClose,
+  }
+}

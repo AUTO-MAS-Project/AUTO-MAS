@@ -27,6 +27,7 @@ import psutil
 
 from app.models.config import OkNteConfig
 from app.utils import ProcessInfo, ProcessManager, get_logger
+from app.utils.common.process.operations import iter_processes
 
 logger = get_logger("OK-NTE 运行入口")
 
@@ -95,7 +96,7 @@ class OkNteProcessManager(ProcessManager):
         def scan() -> tuple[psutil.Process, float] | None:
             executables = runtime_executables(self.root)
             candidates: list[tuple[int, float, int, psutil.Process]] = []
-            for proc in psutil.process_iter(["pid", "exe", "cmdline", "create_time"]):
+            for proc in iter_processes(["pid", "exe", "cmdline", "create_time"]):
                 info = proc.info
                 if not info["exe"] or not info["cmdline"]:
                     continue

@@ -125,6 +125,11 @@ from app.task.MaaFW.tools.core.worker_protocol import (
 from app.utils import UTC4, ProcessInfo, ProcessManager, get_logger, power
 from app.utils import game_apk as _utils_game_apk
 from app.utils import io as _utils_io
+from app.utils.common.process.operations import (
+    iter_processes,
+    managed_process,
+    terminate_process,
+)
 from app.utils.common.process.runner import create_subprocess, observe_process_exit
 from app.utils.common.process.scope import (
     current_process_scope,
@@ -4522,7 +4527,7 @@ def _match_controller_windows(controller: MaaFWController) -> list[Any]:
 
 def _is_process_path_running(executable_path: Path) -> bool:
     target_path = executable_path.resolve()
-    for proc in psutil.process_iter(["exe"]):
+    for proc in iter_processes(["exe"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied, OSError):
             raw_exe = proc.info.get("exe") or proc.exe()
             if raw_exe and Path(raw_exe).resolve() == target_path:
@@ -4558,7 +4563,7 @@ def _normalized_exe(path: str | Path) -> str:
 
 def _snapshot_processes() -> list[_ProcessSnapshot]:
     snapshots: list[_ProcessSnapshot] = []
-    for proc in psutil.process_iter(["pid", "exe", "create_time"]):
+    for proc in iter_processes(["pid", "exe", "create_time"]):
         info = proc.info
         snapshots.append(
             _ProcessSnapshot(
@@ -4630,14 +4635,19 @@ def _end_processes(
     failed: list[_ProcessSnapshot] = []
     for target in targets:
         try:
-            proc = psutil.Process(target.pid)
-            if (
-                target.create_time is not None
-                and abs(proc.create_time() - target.create_time) > 1
-            ):
+            proc = managed_process(target.pid, expected_create_time=target.create_time)
+            if proc is None:
                 continue
-            proc.terminate()
+            if not terminate_process(proc):
+                if proc.is_running():
+                    logger.warning(f"MaaFW 未能结束进程: {target.label}")
+                    failed.append(target)
+                continue
         except psutil.NoSuchProcess:
+            continue
+        except ProcessLookupError:
+            logger.warning(f"MaaFW 结束进程时无法确认目标归属: {target.label}")
+            failed.append(target)
             continue
         except (psutil.AccessDenied, OSError) as exc:
             logger.warning(f"MaaFW 结束进程失败 {target.label}: {exc}")
@@ -4649,7 +4659,7 @@ def _end_processes(
     _, alive = psutil.wait_procs(list(started), timeout=grace_seconds)
     for proc in alive:
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied, OSError):
-            proc.kill()
+            terminate_process(proc, force=True)
     if alive:
         _, alive = psutil.wait_procs(alive, timeout=grace_seconds)
     for proc in alive:

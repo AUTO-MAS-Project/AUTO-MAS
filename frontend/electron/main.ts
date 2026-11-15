@@ -67,6 +67,7 @@ import { DEFAULT_MASCOT_MENU } from './services/mascotMenuDefinition'
 import { getAppearance } from './services/appearanceService'
 import { getMascot } from './services/mascotPackageService'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
+import { registerDesktopSession } from './ipc/desktopSessionHandlers'
 import {
   canElectronExitImmediately,
   canRequestRendererClose,
@@ -204,12 +205,10 @@ async function stopAllTasksByShortcut(source: 'shortcut' | 'tray' = 'shortcut'):
   logger.info(`触发全局快捷键 ${STOP_ALL_TASKS_SHORTCUT}，开始停止所有任务`)
 
   try {
-    const apiUrl = `${getLocalApiEndpoint()}/api/dispatch/stop`
-    const response = await fetch(apiUrl, {
+    const endpoint = getLocalApiEndpoint()
+    const response = await fetch(`${endpoint}/api/dispatch/stop`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ taskId: 'ALL' }),
     })
 
@@ -679,6 +678,12 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
 function requestRendererClose(reason: string, confirmRunningTasks = false): void {
   if (!canRequestRendererClose({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight }))
     return
+  if (desktopSession?.active) {
+    void desktopSession.closeForAppQuit().then(confirmed => {
+      if (confirmed) requestRendererClose(reason, confirmRunningTasks)
+    })
+    return
+  }
   observeScheduledWakeupQuit({ automatic: false })
   closeTelemetry ??= beginMainFeature('app_close_finished')
   const win = mainWindow
@@ -716,6 +721,8 @@ function updateTrayVisibility(config: AppConfig) {
 }
 
 let mainWindow: Electron.BrowserWindow | null = null
+let desktopSession: ReturnType<typeof registerDesktopSession> | undefined
+const mainWindowIcon = path.join(__dirname, '../public/AUTO-MAS.ico')
 let logWindow: Electron.BrowserWindow | null = null
 let virtualDisplayPromptWindow: Electron.BrowserWindow | null = null
 const saveMascotPreferences = (patch: Partial<DesktopMascotHostPreferences>): void => {
@@ -886,7 +893,7 @@ function createWindow() {
     useContentSize: true,
     frame: false,
     titleBarStyle: 'hidden',
-    icon: path.join(__dirname, '../public/AUTO-MAS.ico'),
+    icon: mainWindowIcon,
     autoHideMenuBar: true,
     show: false, // 改为 false，等待页面加载完成后再显示
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#000000' : '#ffffff', // 根据系统主题设置背景色
@@ -1958,9 +1965,10 @@ ipcMain.handle('app-wait-for-quit-confirmation', () => {
   return true
 })
 
-ipcMain.handle('app-prepare-quit', () => {
+ipcMain.handle('app-prepare-quit', async () => {
   if (coordinatedQuit || forceQuitInProgress) return null
   if (activeQuitPreparation !== null) return activeQuitPreparation
+  if (desktopSession?.active && !(await desktopSession.closeForAppQuit())) return null
   observeScheduledWakeupQuit({ automatic: false })
   closeTelemetry ??= beginMainFeature('app_close_finished')
   clearQuitFallback()
@@ -2410,6 +2418,11 @@ app.on('before-quit', event => {
 })
 
 app.whenReady().then(async () => {
+  desktopSession = registerDesktopSession(
+    () => mainWindow,
+    mainWindowIcon,
+    () => loadConfig().language
+  )
   keepAwakeForScheduledWakeup(process.argv)
   recordDesktopStartup('Electron 就绪')
   const startupConfig = loadConfig()

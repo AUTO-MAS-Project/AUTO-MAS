@@ -32,6 +32,7 @@ from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
 from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, ProcessManager, get_logger, log_box
 from app.utils import io as _utils_io
+from app.utils.common.process.session import desktop_process_target
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
@@ -42,6 +43,18 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
     "AutoProxy": AutoProxyTask,
     "ScriptConfig": ScriptConfigTask,
 }
+
+
+def supports_desktop_session(config: object) -> bool:
+    return (
+        isinstance(config, GeneralConfig)
+        and (not config.Game.Enabled or config.Game.Type == "Client")
+        and not config.Script.IfTrackProcess
+        and all(
+            not user.Info.IfScriptBeforeTask and not user.Info.IfScriptAfterTask
+            for user in config.UserData.values()
+        )
+    )
 
 
 class GeneralManager(ScriptManagerBase):
@@ -76,6 +89,10 @@ class GeneralManager(ScriptManagerBase):
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], GeneralConfig
         ):
             return "托管配置类型错误, 不是通用托管类型"
+        if desktop_process_target.get() is not None and not supports_desktop_session(
+            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        ):
+            return "此通用托管的启动方式暂不支持桌面分身"
         if not Config.ScriptConfig[
             uuid.UUID(self.script_info.script_id)
         ].Script.ScriptPath:

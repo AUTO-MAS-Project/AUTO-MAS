@@ -1,5 +1,9 @@
 # 匿名统计场景覆盖台账
 
+- 桌面分身由 Electron 主进程分别记录连接结果（`desktop_session_connection_finished`）
+  和各选中目标的调度受理结果（`task_start_result` 的 `desktop_session` 来源）。
+  接受派发仅表示创建了任务，不代表任务完成。不发送任务标识、队列名称、凭据或会话信息。
+
 - 定时唤醒开关复用设置保存事件的 `scheduled_wakeup` 类别，唤醒启动复用
   `app_started` 的同名来源。只记录配置保存和应用 ready，不推断硬件唤醒结果，
   不发送定时时刻、星期、队列或安装路径。

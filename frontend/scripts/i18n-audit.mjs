@@ -64,6 +64,14 @@ const RETAINED_UNUSED_KEYS = new Map([
   ['core.eventDepotPreview.legacyIndex', '无损迁移保留的旧活动优先序号译文'],
 ])
 
+// desktopSessionHandlers.ts 的原生关闭对话框通过 JSON 属性读取这些键。
+const ELECTRON_MESSAGE_KEYS = [
+  'bootstrap.desktopSession.closeTitle',
+  'bootstrap.desktopSession.closeConfirm',
+  'bootstrap.desktopSession.closeContinue',
+  'bootstrap.desktopSession.closeFailed',
+]
+
 // 汉字、假名、谚文；不含全角标点，避免“、。”“「」”单独成条
 const CJK = /[\u3005\u3007\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/
 
@@ -75,8 +83,14 @@ const numberArg = (name, fallback) => {
 }
 
 const loadLocale = async locale => {
+  const desktopSession = JSON.parse(
+    readFileSync(join(SRC_DIR, '../electron/services/desktopSessionMessages.json'), 'utf8')
+  )[locale]
   const messages = {
-    bootstrap: JSON.parse(readFileSync(join(BOOTSTRAP_DIR, locale + '.json'), 'utf8')),
+    bootstrap: {
+      ...JSON.parse(readFileSync(join(BOOTSTRAP_DIR, locale + '.json'), 'utf8')),
+      desktopSession,
+    },
     core: {},
   }
   const flat = JSON.parse(readFileSync(join(RUNTIME_DIR, RUNTIME_FILES[locale] + '.json'), 'utf8'))
@@ -152,8 +166,8 @@ const audit = async () => {
   // ---- 源码引用 ----
   const files = walkSourceFiles(SRC_DIR)
   const referenceFiles = [...files, ...walkBackendFiles(BACKEND_DIR)]
-  const literalKeys = new Set()
-  const calledKeys = new Set()
+  const literalKeys = new Set(ELECTRON_MESSAGE_KEYS)
+  const calledKeys = new Set(ELECTRON_MESSAGE_KEYS)
   const prefixes = new Set()
   const suffixes = new Set()
   let opaqueCalls = 0
