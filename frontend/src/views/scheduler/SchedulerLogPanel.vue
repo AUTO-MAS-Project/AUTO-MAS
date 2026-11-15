@@ -2,6 +2,13 @@
   <div class="scheduler-panel log-panel app-page-section">
     <div class="scheduler-panel-header">
       <h3>{{ t('core.scheduler.log.title') }}</h3>
+      <DownloadLogLine
+        v-if="renderedPrefetch"
+        :data="renderedPrefetch"
+        class="prefetch-status"
+        :class="downloadClasses"
+        :style="{ ...downloadVariables, fontSize: `${editorConfig.fontSize}px` }"
+      />
       <div class="log-controls">
         <a-space size="small">
           <a-select
@@ -27,15 +34,15 @@
     <div
       ref="logContentRef"
       class="log-content"
-      :class="{ ...downloadClasses, 'log-locked': logMode === 'follow', 'log-dark': logIsDark }"
-      :style="{ ...downloadVariables, backgroundColor: logBackground, color: logForeground }"
+      :class="{ 'log-locked': logMode === 'follow', 'log-dark': logIsDark }"
+      :style="{ backgroundColor: logBackground, color: logForeground }"
     >
-      <div v-if="!displayLog" class="empty-state">
+      <div v-if="!renderedLog" class="empty-state">
         <NoData :image-style="{ height: '80px' }" :description="false" />
       </div>
       <div v-else class="monaco-container">
         <vue-monaco-editor
-          :value="displayLog"
+          :value="renderedLog"
           language="logfile"
           :theme="editorTheme"
           :options="editorOptions"
@@ -50,10 +57,11 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { useLogHighlight } from '@/composables/useLogHighlight'
-import { getDownloadParts, useDownloadLogStyle } from '@/composables/useDownloadLogStyle'
+import { useDownloadLogStyle } from '@/composables/useDownloadLogStyle'
 import type { WSTaskPrefetchData } from '@/services/websocket/types'
 import { useTheme } from '@/composables/useTheme'
 import VueMonacoEditor from '@/components/LocalMonacoEditor'
+import DownloadLogLine from '@/components/DownloadLogLine.vue'
 import { useLocalStorage } from '@vueuse/core'
 import { message, theme } from 'ant-design-vue'
 import { computed, nextTick, onUnmounted, ref, shallowRef, watch } from 'vue'
@@ -165,14 +173,8 @@ const editorColors = computed(() => ({
   'editorGutter.background': logBackground.value,
 }))
 
-const { downloadClasses, downloadVariables } = useDownloadLogStyle(logIsDark)
-const downloadParts = computed(() => getDownloadParts(renderedPrefetch.value))
-const downloadText = computed(() => downloadParts.value.map(part => part.text).join(' · '))
-const displayLog = computed(() => {
-  if (!downloadText.value) return renderedLog.value
-  const separator = renderedLog.value && !renderedLog.value.endsWith('\n') ? '\n' : ''
-  return `${renderedLog.value}${separator}${downloadText.value}`
-})
+// 状态位于标题栏，配色跟随标题栏所在的应用主题。
+const { downloadClasses, downloadVariables } = useDownloadLogStyle(isDark)
 
 // 使用独立主题名，保留其他日志页面的配色。
 const { registerLogLanguage, editorTheme, editorConfig, lightColors, darkColors, styles } =
@@ -207,30 +209,6 @@ watch(
 
 // Monaco Editor 实例
 let editorInstance: import('monaco-editor').editor.IStandaloneCodeEditor | null = null
-let downloadDecorations: import('monaco-editor').editor.IEditorDecorationsCollection | null = null
-let contentListener: import('monaco-editor').IDisposable | null = null
-const decorateDownload = () => {
-  const model = editorInstance?.getModel()
-  if (!model || !downloadDecorations || !downloadText.value) {
-    downloadDecorations?.clear()
-    return
-  }
-  const offset = displayLog.value.length - downloadText.value.length
-  let column = model.getPositionAt(offset).column
-  const line = model.getPositionAt(offset).lineNumber
-  downloadDecorations.set(
-    downloadParts.value.map(part => {
-      const range = {
-        startLineNumber: line,
-        startColumn: column,
-        endLineNumber: line,
-        endColumn: column + part.text.length,
-      }
-      column += part.text.length + 3
-      return { range, options: { inlineClassName: `download-log-${part.field}` } }
-    })
-  )
-}
 
 // Monaco Editor 配置
 const editorOptions = computed(() => ({
@@ -269,12 +247,8 @@ const editorOptions = computed(() => ({
 // 处理编辑器挂载
 const handleEditorMount = (editor: import('monaco-editor').editor.IStandaloneCodeEditor) => {
   editorInstance = editor
-  contentListener?.dispose()
-  downloadDecorations = editor.createDecorationsCollection()
-  contentListener = editor.onDidChangeModelContent(decorateDownload)
-  decorateDownload()
   // 初始滚动到底部
-  if (logMode.value === 'follow' && displayLog.value) {
+  if (logMode.value === 'follow' && renderedLog.value) {
     nextTick(() => scrollToBottom())
   }
 }
@@ -305,8 +279,7 @@ const scrollToBottom = () => {
 }
 
 // 只监听日志内容变化
-watch(displayLog, () => {
-  void nextTick(decorateDownload)
+watch(renderedLog, () => {
   if (logMode.value === 'follow') {
     // 使用简单的延迟，避免nextTick可能导致的递归
     setTimeout(scrollToBottom, 10)
@@ -314,8 +287,6 @@ watch(displayLog, () => {
 })
 
 onUnmounted(() => {
-  contentListener?.dispose()
-  downloadDecorations?.clear()
   if (renderTimer !== undefined) window.clearTimeout(renderTimer)
   editorInstance = null
   monacoInstance = null
@@ -327,12 +298,19 @@ onUnmounted(() => {
 
 <style scoped>
 .scheduler-panel-header {
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 8px;
 }
 
+.prefetch-status {
+  min-width: 0;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  text-align: right;
+}
+
 .log-controls {
-  flex-shrink: 0;
+  grid-column: 3;
 }
 
 .log-theme-select {
@@ -383,6 +361,20 @@ onUnmounted(() => {
 }
 
 @media (max-width: 768px) {
+  .scheduler-panel-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .prefetch-status {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .log-controls {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
   .log-content {
     padding: 12px;
   }

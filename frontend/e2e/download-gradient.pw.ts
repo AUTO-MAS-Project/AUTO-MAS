@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { test, expect } from './fixtures'
 
-test('@scheduler prefetch stays after appending logs in the current log panel', async ({
+test('@scheduler prefetch stays in the log header while script logs append', async ({
   app,
   page,
 }) => {
@@ -11,26 +11,25 @@ test('@scheduler prefetch stays after appending logs in the current log panel', 
   })
   await app.goto('/TestRouter')
   const panel = page.locator('.demo-log-panel')
-  const packageName = panel.locator('.download-log-package')
+  const header = panel.locator('.scheduler-panel-header')
+  const packageName = header.locator('.download-log-package')
   const packageText = async () => (await packageName.allTextContents()).join('')
   await expect.poll(packageText, { timeout: 20_000 }).toBe('MaaEnd-update-win-x86_64.zip')
   const methodText = async () =>
-    (await panel.locator('.download-log-method').allTextContents()).join('')
+    (await header.locator('.download-log-method').allTextContents()).join('')
   await expect.poll(methodText).toBe('[FluxDown]')
   const progressText = async () =>
-    (await panel.locator('.download-log-progress').allTextContents()).join('')
+    (await header.locator('.download-log-progress').allTextContents()).join('')
   const first = await progressText()
   await expect.poll(progressText).not.toBe(first)
-  const logText = (await panel.locator('.view-lines').textContent())!
-  expect(logText.lastIndexOf('MaaEnd-update')).toBeGreaterThan(
-    logText.lastIndexOf('理智作战运行中')
-  )
   await expect(panel.locator('.monaco-editor')).toContainText('理智作战运行中')
+  await expect(panel.locator('.monaco-editor')).not.toContainText('MaaEnd-update')
+  await expect(panel.locator('.monaco-editor [class*="download-log-"]')).toHaveCount(0)
   await page.locator('.method-select').click()
   await page.locator('.method-select').getByRole('combobox').press('ArrowUp')
   await page.locator('.method-select').getByRole('combobox').press('Enter')
   await expect.poll(methodText).toBe('[httpx]')
-  await expect(panel.locator('.download-log-animated')).toBeVisible()
+  await expect(header.locator('.download-log-animated')).toBeVisible()
   await app.evidence('prefetch-current-scheduler-panel')
 })
 
