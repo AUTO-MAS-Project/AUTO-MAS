@@ -48,7 +48,7 @@ async def test_maa_config_stop_saves_before_kill_or_reports_timeout(
             "p=Path(sys.argv[1]); d=json.loads(p.read_text(encoding='utf-8-sig')); "
             "d.setdefault('Gui', {})['custom']='saved'; "
             "p.write_text(json.dumps(d), encoding='utf-8'); "
-            "Path(sys.argv[2]).touch(); time.sleep(1)"
+            "Path(sys.argv[2]).touch(); sys.stdin.readline()"
         ),
         "stuck_window": "time.sleep(30)",
         "stuck_process": "Path(sys.argv[2]).touch(); time.sleep(30)",
@@ -71,22 +71,35 @@ async def test_maa_config_stop_saves_before_kill_or_reports_timeout(
     def close_window(hwnd):
         child = session.maa_process_manager.process
         assert child is not None and child.stdin is not None
-        child.stdin.write(b"close\n")
+        if not close_requested.is_set():
+            child.stdin.write(b"close\n")
+            close_requested.set()
         return True
 
+    def get_main_window_handle(*args):
+        if not window_closed.exists():
+            return 1
+        if not unresponsive:
+            child = session.maa_process_manager.process
+            assert child is not None and child.stdin is not None
+            # 模拟窗口消失被观察到之后，GUI 进程才可以结束。
+            child.stdin.close()
+        return None
+
+    close_requested = asyncio.Event()
     monkeypatch.setattr(module, "ProcessManager", GuiProcess)
     # 只替换窗口边界；保留真实 close()，覆盖窗口先消失、进程稍后退出的间隔。
     monkeypatch.setattr(
         process_module,
         "get_main_window_handle",
-        lambda *args: None if window_closed.exists() else 1,
+        get_main_window_handle,
     )
     monkeypatch.setattr(process_module.window, "close_window", close_window)
     monkeypatch.setattr(module.process, "kill_process", AsyncMock())
     monkeypatch.setattr(
         module.ScriptConfigTask,
         "GUI_CLOSE_TIMEOUT",
-        0.5 if unresponsive else 2,
+        0.5 if unresponsive else 5,
         raising=False,
     )
     user_id = uuid.uuid4()
@@ -109,7 +122,7 @@ async def test_maa_config_stop_saves_before_kill_or_reports_timeout(
     try:
         await asyncio.wait_for(ready.wait(), 3)
         task.request_stop()
-        await asyncio.wait_for(task.accomplish.wait(), 3)
+        await asyncio.wait_for(task.accomplish.wait(), 8)
         await asyncio.wait_for(session.accomplish.wait(), 3)
         await asyncio.wait_for(session.maa_process_manager.process.wait(), 3)
         saved = (

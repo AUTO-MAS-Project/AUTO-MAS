@@ -286,7 +286,7 @@ export class DesktopSessionService {
     try {
       await this.ensureHost()
       if (this.snapshot.state !== 'connected') {
-        if (this.snapshot.state === 'disconnected') await this.closeViewer()
+        if (this.snapshot.state === 'disconnected') await this.stopTasksAndCloseViewer()
         publishingConnection = true
         await this.updateParentScope(null, true)
         const event = await this.exchange(
@@ -461,12 +461,16 @@ export class DesktopSessionService {
     await this.updateParentScope(null)
   }
 
+  private async stopTasksAndCloseViewer(): Promise<void> {
+    if (this.snapshot.executing) await this.stopTasks()
+    await this.closeViewer()
+  }
+
   async close(): Promise<void> {
     this.patch({ closing: true })
     try {
       if (this.startOperation) await this.startOperation
-      if (this.snapshot.executing) await this.stopTasks()
-      await this.closeViewer()
+      await this.stopTasksAndCloseViewer()
       this.host?.stdin.end()
       this.host = null
       this.volume = 0
