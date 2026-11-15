@@ -292,7 +292,8 @@ class MaaFWProjectUpdateError(RuntimeError):
     ``cancelled``：调用方置位了 ``cancel_event``，本次更新是被用户停掉的，
     不是失败——调用方据此换文案，别把「已中止」说成「更新失败」。
     ``check_unreachable``：查版本这一步连不上更新源（网络出错、超时、5xx），不是
-    更新源明确拒绝（CDK、资源不存在这类要用户处理的错误码不算）。运行前自动更新据此
+    更新源明确拒绝（CDK、资源不存在这类要用户处理的错误码不算；选 GitHub 源时 Mirror
+    酱回资源不存在、GitHub 又连不上，版本无处可查，仍算连不上）。运行前自动更新据此
     与只看 GitHub 的项目同一口径：只记日志、不弹错误；手动检查 / 更新照常报错。
     """
 
@@ -1214,6 +1215,13 @@ async def _discover_project_update_detailed(
             if mirror_error is not None:
                 # 两边都查不到：按 Mirror 酱的错误报失败，与只看 Mirror 酱时一样。
                 send_update_log(f"GitHub 版本查询也失败: {detail}")
+                if (
+                    isinstance(exc, httpx.HTTPError)
+                    or getattr(exc, "check_unreachable", False)
+                ) and mirror_error.provider_error_code not in MIRROR_CDK_STATUS_BY_CODE:
+                    # 版本只能从 GitHub 来（Mirror 酱那边是 rid 没登记这类业务错误），而
+                    # GitHub 连不上：仍是连不上更新源。CDK 之类要用户处理的错误不降级。
+                    mirror_error.check_unreachable = True
                 raise mirror_error from exc
             # 没声明 rid 的项目原来就是静默跳过；GitHub 连不上时照旧跳过，不让每次
             # 运行都报一次「更新检查失败」。
@@ -2662,7 +2670,8 @@ async def _query_github_release_target(
                     )
     except TimeoutError as exc:
         raise MaaFWProjectUpdateError(
-            f"GitHub release lookup timed out after {timeout:g}s"
+            f"GitHub release lookup timed out after {timeout:g}s",
+            check_unreachable=True,
         ) from exc
 
     if latest_response.status_code == 404 and stable_only:
@@ -2720,20 +2729,26 @@ def _is_alpha_or_dev(parsed: version.Version) -> bool:
 
 
 def _github_api_json(response: httpx.Response, what: str) -> Any:
-    """GitHub API 回包转 JSON；非 JSON、4xx/5xx（含 404）一律抛 :class:`MaaFWProjectUpdateError`。"""
+    """GitHub API 回包转 JSON；非 JSON、4xx/5xx（含 404）一律抛 :class:`MaaFWProjectUpdateError`。
 
+    5xx 与 Mirror 酱同一口径，记为连不上（``check_unreachable``）。
+    """
+
+    server_down = response.status_code >= 500
     try:
         data = response.json()
     except Exception as exc:
         raise MaaFWProjectUpdateError(
-            f"{what} did not return JSON: HTTP {response.status_code}"
+            f"{what} did not return JSON: HTTP {response.status_code}",
+            check_unreachable=server_down,
         ) from exc
     if response.status_code >= 400:
         message = (
             str(data.get("message") or "").strip() if isinstance(data, dict) else ""
         )
         raise MaaFWProjectUpdateError(
-            f"{what} failed: HTTP {response.status_code} {message}".rstrip()
+            f"{what} failed: HTTP {response.status_code} {message}".rstrip(),
+            check_unreachable=server_down,
         )
     return data
 
