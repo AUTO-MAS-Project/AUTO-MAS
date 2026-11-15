@@ -117,8 +117,8 @@ def discover_sra_managed_options(
 ) -> tuple[dict[str, Any], str]:
     """Discover native fields for one HSR module without applying overrides.
 
-    只返回 :data:`SRA_MANAGED_FIELDS` 里列出、且原生 profile 里确实存在的键，
-    顺序同字段表：表单露出什么，运行时就套用什么。
+    只返回 :data:`SRA_MANAGED_FIELDS` 里列出（或按规则自动跟进）、且原生 profile
+    里确实存在的键，顺序同字段表：表单露出什么，运行时就套用什么。
     """
 
     if module_key == "Daily":
@@ -137,14 +137,10 @@ def discover_sra_managed_options(
         if isinstance(rewards, list):
             for index, value in enumerate(rewards):
                 available.setdefault(f"rewards.{index}", value)
-    keys = select_sra_reward_keys(
-        frozenset(managed_field_keys("SRA", module_key)) & available.keys()
-    )
-    options = {
-        key: available[key]
-        for key in managed_field_keys("SRA", module_key)
-        if key in keys
-    }
+    # 字段表之外，新版 SRA 在本节新增的设置按 managed_fields 的规则自动跟进
+    field_keys = managed_field_keys("SRA", module_key, available)
+    keys = select_sra_reward_keys(frozenset(field_keys) & available.keys())
+    options = {key: available[key] for key in field_keys if key in keys}
     return options, section_name
 
 
