@@ -203,6 +203,8 @@ logger = get_logger("MaaFW 插件自动代理")
 # 任务取消后等环境准备线程收尾的最长时间。Runtime 关机只给后端约 5 秒，
 # 安装线程若还在等 uv 子进程退出，超过这个值就不再等它。
 _PREPARE_ENVIRONMENT_CANCEL_GRACE_SECONDS = 2.0
+# 运行环境准备暂时失败（正被其它任务使用、下载失败）后再试之前等的秒数，第 n 次失败后等 n 倍
+_ENVIRONMENT_RETRY_DELAY_SECONDS = 15.0
 # 放弃等待后仍让收尾任务在后台跑完（准备恰好成功时要释放租约），
 # 这里持有强引用，免得任务对象被回收。
 _ABANDONED_PREPARATION_CLEANUPS: set[asyncio.Task[None]] = set()
@@ -1023,9 +1025,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     break
                 previous_failure = message
                 if isinstance(exc, _MaaFWEnvironmentPrepareRetry):
-                    # 运行环境准备与游戏 / 模拟器无关：不关它们，直接再准备一次
+                    # 运行环境准备与游戏 / 模拟器无关：不关它们，等一会儿再准备一次
                     previous_restarted = False
                     client_reset = False
+                    await self._wait_before_environment_retry(index + 1)
                     continue
                 (
                     previous_restarted,
@@ -3700,6 +3703,22 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._append_log(_RESOURCE_FAILURE_STOP_MESSAGE, warning=True)
         return None
 
+    async def _wait_before_environment_retry(self, attempt: int) -> None:
+        """运行环境准备暂时失败后、下一次准备之前等一会儿；没有下一次时不等。
+
+        以前重试之间要关掉再重开游戏 / 模拟器，客观上隔了一段时间；现在不关客户端，不等的话
+        「正被其它任务使用」、下载失败这类会在几秒内把重试次数用完。逐次加长。
+        用户点停止时本协程被取消，``asyncio.sleep`` 当场抛 ``CancelledError``，不用等到点。
+        """
+
+        if attempt >= self._attempt_limit():
+            return
+        delay = _ENVIRONMENT_RETRY_DELAY_SECONDS * attempt
+        self._append_log(
+            f"运行环境这次没能准备好，等 {delay:.0f} 秒后再准备一次（不重启游戏/模拟器）"
+        )
+        await asyncio.sleep(delay)
+
     async def _reset_client_for_retry(self, attempt: int) -> tuple[bool, bool]:
         """重试前关掉 MAS 自己起的客户端，返回（是否全部关成, 是否已不在）。
 
@@ -5541,7 +5560,9 @@ def _failure_reason_for_user(result: Any) -> str:
 
 
 def _failed_task_user_summary(result: Any, plan: Any | None) -> str:
-    if getattr(result, "userMessage", None):
+    # worker 判定的确定性失败（retryable=False）也带 userMessage，但那是异常原文，不像任务
+    # 失败的人话那样自带任务名：照旧走下面「MaaFW 运行失败：<原文>」的写法，日志与以前一字不差
+    if getattr(result, "userMessage", None) and getattr(result, "retryable", True):
         return _failure_reason_for_user(result)
     failed_task = str(getattr(result, "failedTask", "") or "").strip()
     reason = _failure_reason_for_user(result)

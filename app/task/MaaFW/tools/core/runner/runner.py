@@ -413,7 +413,8 @@ class MaaFWTaskError(RuntimeError):
 
 
 class MaaFWNonRetryableError(RuntimeError):
-    """确定性的失败：重试只会原样再失败。随结果的 ``retryable=False`` 交给宿主，文案与以前相同。"""
+    """确定性的失败：重试只会原样再失败。随结果的 ``retryable=False`` 交给宿主，文案与以前相同；
+    原文是写给用户看的，同时作为 ``userMessage`` 回报。"""
 
 
 class MaaFWResourceLoadError(RuntimeError):
@@ -1443,7 +1444,14 @@ class MaaFWRunner:
                 audience=AUDIENCE_WORKER_LOG,
                 level=LEVEL_ERROR,
             )
-            user_message = exc.user_message if isinstance(exc, MaaFWTaskError) else None
+            if isinstance(exc, MaaFWTaskError):
+                user_message = exc.user_message
+            elif isinstance(exc, MaaFWNonRetryableError):
+                # 确定性失败的原文本来就是写给用户看的（原因与怎么处理都在里面）：推送与代理
+                # 结果照它说，不退回按失败阶段的笼统说法（「Agent 没能启动」「运行环境不可用」）
+                user_message = str(exc)
+            else:
+                user_message = None
             if user_message:
                 # 中止本轮之前已经有任务失败过（失败后继续的那些）：一并点名，
                 # 不然报告里只剩最后这一条。
