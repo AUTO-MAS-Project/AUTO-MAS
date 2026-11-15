@@ -290,7 +290,7 @@ def build_precheck_gate(
                 f"上次 {latest} 的运行环境检查失败"
                 f"（{_summarize_reason(memo.get('reason'))}），"
                 f"{retry_at.astimezone():%m-%d %H:%M} 后自动重试（第 {attempts} 次）；"
-                "手动更新可立即重试",
+                "手动更新可强制重试",
             )
 
         version = exact_maafw_version(requirement)
