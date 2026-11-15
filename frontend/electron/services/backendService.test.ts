@@ -18,6 +18,22 @@ import {
   scheduledWakeupBackendReady,
 } from './scheduledWakeup'
 
+// 更新准备本身由下载/预检集成测试守护；这里继续覆盖 Runtime 提交后的关闭协议。
+vi.mock(
+  './runtimeUpgradePreparation',
+  () => /* 隔离真实升级准备和下载，保留后端服务生命周期测试关注的停止与重启行为。 */ ({
+    prepareCoreUpgrade:
+      async () =>
+      /* 模拟 core 升级准备成功，返回无需二进制对齐的执行入口。 */
+      async () => /* 返回 Runtime 对齐跳过结果，避免生命周期测试访问真实发行资源。 */ ({
+        status: 'skipped',
+      }),
+    prepareRuntimeBinary:
+      async () =>
+      /* 模拟 Runtime 二进制准备成功，返回可直接执行的空对齐入口。 */
+      async () => /* 返回受控的二进制跳过结果，供后端服务更新流程继续。 */ ({ status: 'skipped' }),
+  })
+)
 vi.mock('child_process', () => ({ spawn: vi.fn() }))
 // 更新弹窗的检查不渲染 DOM；启动、更新状态与退出协调仍运行生产代码。
 vi.mock('ant-design-vue', () => ({ Modal: {}, message: {}, notification: {} }))
@@ -29,9 +45,11 @@ vi.mock('https', () => ({
   },
 }))
 // 同时验证开发 Electron 与打包 Electron 的环境会显式传到 Runtime，且覆盖继承值。
+const metadataNetwork = vi.hoisted(() => ({ fetch: vi.fn(), setProxy: vi.fn() }))
 const appState = vi.hoisted(() => ({ isPackaged: false, appPath: '', userData: '' }))
 const ipcHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>())
 vi.mock('electron', () => ({
+  session: { fromPartition: () => metadataNetwork },
   ipcMain: {
     handle: (channel: string, handler: (...args: unknown[]) => unknown) =>
       ipcHandlers.set(channel, handler),
@@ -269,6 +287,8 @@ beforeEach(() => {
   appState.userData = mkdtempSync(join(tmpdir(), 'auto-mas-backend-userdata-'))
   runtimeRoot = join(appState.userData, 'auto-mas-runtime')
   spawnMock.mockReset()
+  metadataNetwork.fetch.mockReset()
+  metadataNetwork.setProxy.mockReset()
   killAllMock.mockClear()
   vi.stubEnv('AUTO_MAS_HTTP_PORT', undefined)
   fetchMock.mockReset()
@@ -1665,5 +1685,100 @@ it.each([false, true])('启动前使用当前环境默认端点，支持自定�
   expect(await ipcHandlers.get('get-api-endpoint')?.(event, 'local')).toBe('http://127.0.0.1:36184')
   expect(await ipcHandlers.get('get-api-endpoint')?.(event, 'websocket')).toBe(
     'ws://127.0.0.1:36184'
+  )
+})
+
+describe('后台后端更新的插件预检', () => {
+  it.each(['compatible', 'conflict', 'network'] as const)(
+    '%s：只有依赖预检通过才暂存，失败保留正在运行的后端',
+    async outcome => {
+      process.env[RUNTIME_MODE_ENV] = 'managed'
+      process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+      const service = createService()
+      mockSpawn()
+      const startup = service.startBackend()
+      const backend = await passManagedPreparation()
+      backend.stdout.feed(helloLine + runningStateLine)
+      expect(await startup).toEqual({ success: true })
+      const commit = 'b'.repeat(40)
+      let checked = false
+      metadataNetwork.fetch.mockImplementation(async (url: string) => {
+        // 使用候选提交的真实依赖输入，执行实际前端解析与后端预检请求。
+        expect(url).toContain(`/${commit}/pyproject.toml`)
+        return new Response('[project]\nversion="5.5.0b3"\ndependencies=["pydantic>=2"]\n')
+      })
+      fetchMock.mockImplementation(async (url: URL) => {
+        if (url.pathname === '/api/setting/get')
+          return Response.json({ code: 200, data: { Update: {} } })
+        if (url.pathname === '/api/update/precheck') {
+          checked = true
+          if (outcome === 'network') throw new Error('precheck connection failed')
+          return Response.json({
+            code: 200,
+            compatible: outcome === 'compatible',
+            conflicts: outcome === 'conflict' ? [{ message: 'adapter requires dependency<2' }] : [],
+          })
+        }
+        throw new Error(`Unexpected endpoint: ${url.pathname}`)
+      })
+      const pending = service.checkRuntimeBackendUpdate()
+      const check = await waitForSpawn(3)
+      const reply = (command: string, details: Record<string, unknown>, stage: string) =>
+        line({
+          ...base,
+          type: 'hello',
+          sequence: 1,
+          runtimeVersion: 'dev',
+          command,
+          capabilities: [],
+        }) +
+        line({
+          ...base,
+          type: 'result',
+          sequence: 2,
+          success: true,
+          code: 'OK',
+          stage,
+          status: 'succeeded',
+          message: '完成',
+          retryable: false,
+          remediation: [],
+          details,
+        })
+      check.stdout.feed(
+        reply(
+          'workspace check',
+          {
+            healthy: true,
+            version: 'v5.5.0-beta.3',
+            commit: 'a'.repeat(40),
+            remoteCommit: commit,
+            updateAvailable: true,
+          },
+          'workspace.check'
+        )
+      )
+      check.close(0)
+      if (outcome === 'compatible') {
+        const stage = await waitForSpawn(4)
+        expect(checked).toBe(true)
+        stage.stdout.feed(reply('workspace stage', { staged: true, commit }, 'workspace.verify'))
+        stage.close(0)
+        expect(await pending).toMatchObject({ staged: true, remoteCommit: commit })
+      } else {
+        expect(await pending).toMatchObject({
+          updateAvailable: true,
+          staged: false,
+          remoteCommit: commit,
+          precheckError:
+            outcome === 'conflict' ? 'adapter requires dependency<2' : 'precheck connection failed',
+        })
+        expect(checked).toBe(true)
+        expect(spawnMock).toHaveBeenCalledTimes(4)
+      }
+      expect(service.getStatus().isRunning).toBe(true)
+      backend.stdout.feed(stoppedResultLine)
+      backend.close(0)
+    }
   )
 })

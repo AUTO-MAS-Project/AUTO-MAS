@@ -6,8 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
-
-from app.task.MAA.tools import avd
+from maa_adapter.native import avd
 
 
 @pytest.fixture

@@ -11,6 +11,7 @@ export type AppearanceMode = 'light' | 'dark'
 export const APPEARANCE_MENU_ICON_KEYS = [
   'home',
   'scripts',
+  'plugins',
   'plans',
   'emulators',
   'queue',

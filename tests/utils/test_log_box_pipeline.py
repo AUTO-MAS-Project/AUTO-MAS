@@ -2,7 +2,6 @@
 
 import re
 
-
 from app.utils import log_box
 from app.utils.common.log.patterns import MultiLineAggregator
 

@@ -20,3 +20,4 @@ export type UniversalPlanStateOut = {
      */
     configuredDays?: Array<string>;
 };
+

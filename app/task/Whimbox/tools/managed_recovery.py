@@ -9,8 +9,8 @@ from pathlib import Path
 from packaging.version import Version
 
 from app.core.script_update_recovery import DownloadRetryFailed, InstallInspection
-from app.services.script_install_backup import ManagedInstallBackup
 from app.services import script_install
+from app.services.script_install_backup import ManagedInstallBackup
 
 from . import update
 from .launcher import find_upstream_pids

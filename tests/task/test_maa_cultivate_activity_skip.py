@@ -7,16 +7,15 @@ from types import MethodType, SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
-from app.task.MAA.AutoProxy import AutoProxyTask
-from app.task.MAA.constants import MAA_TASKS
-from app.task.MAA.tools.cultivate.types import (
+from maa_adapter.constants import MAA_TASKS
+from maa_adapter.cultivate.types import (
     CultivatePlan,
     FarmEntry,
     Goal,
     OperatorTarget,
     Requirement,
 )
+from maa_adapter.tasks.auto_proxy import AutoProxyTask
 
 
 @pytest.mark.asyncio
@@ -57,7 +56,7 @@ async def test_activity_skip_only_suppresses_cultivation_farming(
     farming,
     raising,
 ):
-    module = importlib.import_module("app.task.MAA.AutoProxy")
+    module = importlib.import_module("maa_adapter.tasks.auto_proxy")
     target = OperatorTarget("one", (Goal("skill", "", 7),))
     plan = CultivatePlan(
         entries=(FarmEntry(item_id="1", amount=3, stage_code="1-7"),),
@@ -98,7 +97,7 @@ async def test_activity_skip_only_suppresses_cultivation_farming(
         commit=AsyncMock(),
     )
     proxy = SimpleNamespace(
-        mode="Routine",
+        phase="Routine",
         task_dict={key: True for key in MAA_TASKS},
         cur_user_config=config,
         cur_user_item=SimpleNamespace(name="user"),
@@ -127,7 +126,6 @@ async def test_activity_skip_only_suppresses_cultivation_farming(
         module,
         "Config",
         SimpleNamespace(
-            setting=SimpleNamespace(Data=SimpleNamespace(StageData="{}")),
             config_path=tmp_path,
             proxy=None,
         ),
@@ -137,8 +135,9 @@ async def test_activity_skip_only_suppresses_cultivation_farming(
         "_maa_activity_state",
         lambda *args, **kwargs: (activity_open, resource_open),
     )
+    monkeypatch.setattr(module.stage_service, "get_stage", AsyncMock(return_value="{}"))
     monkeypatch.setattr(
-        module.maa_stage_service,
+        module.stage_service,
         "get_stage_info",
         AsyncMock(return_value={"Activity": []}),
     )

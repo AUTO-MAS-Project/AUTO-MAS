@@ -3,13 +3,14 @@
  * 使用新的服务
  */
 
-import { ipcMain, BrowserWindow, IpcMainInvokeEvent } from 'electron'
+import { app, ipcMain, BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import * as path from 'path'
 import { getAppRoot } from '../services/environmentService'
 import { InitializationService } from '../services'
 import { getDefaultApiEndpoints } from '../services/instanceConfig'
 import type { BackendService } from '../services/backendService'
 import { getLogger } from '../services/logger'
+import { prepareCoreUpgrade, prepareRuntimeBinary } from '../services/runtimeUpgradePreparation'
 import type { RuntimeBinaryAlignResult } from '../services/runtimeBinaryService'
 import type { RuntimeLaunchMode } from '../services/runtime'
 import { resolveRuntimeLaunchConfig, resolveRuntimeLaunchMode } from '../services/runtime'
@@ -189,6 +190,7 @@ export async function checkCriticalFilesViaRuntime(): Promise<CriticalFilesCheck
  * 注册所有初始化相关的 IPC 处理器
  */
 export function registerInitializationHandlers(mainWindow: BrowserWindow) {
+  // 注册环境初始化及 Runtime 更新入口，复用当前应用窗口并避免重复注册处理器。
   initializationWindow = mainWindow
   if (isRegistered) {
     logger.info('初始化处理器已经注册，跳过重复注册')
@@ -258,6 +260,7 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
   })
 
   ipcMain.handle('update-runtime-binary', async (event): Promise<RuntimeBinaryAlignResult> => {
+    // 校验受管模式与独占操作状态，准备 Runtime 对齐材料并按进度执行更新。
     const init = getInitService()
     if (!init.ownsBackend) return { status: 'failed', error: '当前仅连接外部后端。' }
     const runtime = init.getRuntimeService()
@@ -270,8 +273,13 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
 
     runtimeBinaryUpdating = true
     try {
+      const alignment = await prepareRuntimeBinary(
+        runtime.launchConfig,
+        getLocalApiEndpoint(),
+        app.getVersion()
+      )
       return await init.runEnvironmentOperation(() =>
-        runtime.updateRuntimeBinary(
+        /* 在环境独占操作内更新 Runtime，停止所属后端后再使用已准备的对齐材料。 */ runtime.updateRuntimeBinary(
           progress => sendToSender(event, 'runtime-binary-progress', progress),
           async () => {
             // 先占用 Runtime 操作，再停止残留后端，避免等待退出时又开始 bootstrap。
@@ -279,7 +287,8 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
             if (!result.success) {
               throw new Error(result.error || '无法停止后端，请重启程序后重试。')
             }
-          }
+          },
+          alignment
         )
       )
     } catch (error) {
@@ -395,15 +404,23 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
   ipcMain.handle(
     'update-backend-via-runtime',
     async (event, targetVersion: unknown): Promise<RuntimeUpdateOutcome> => {
+      // 接收目标后端版本，在环境独占操作内执行前端预检和 Runtime 更新并返回结果。
       logger.info(`收到 Runtime 后端更新请求，目标版本: ${String(targetVersion)}`)
 
       const result = await getInitService().runEnvironmentOperation(() =>
-        updateBackendViaRuntime(
+        /* 使用当前后端和启动配置执行目标版本更新，将进度事件转发给请求页面。 */ updateBackendViaRuntime(
           typeof targetVersion === 'string' ? targetVersion : '',
           progress => sendToSender(event, BACKEND_UPDATE_PROGRESS_CHANNEL, progress),
           {
             backend: getBackendService(),
             launchConfig: resolveRuntimeLaunchConfig(getAppRoot()),
+            prepareUpgrade: (version, signal) =>
+              /* 为目标后端版本调用前端升级准备流程，完成目标依赖读取和后端兼容性预检。 */ prepareCoreUpgrade(
+                resolveRuntimeLaunchConfig(getAppRoot()),
+                getLocalApiEndpoint(),
+                version,
+                signal
+              ),
           }
         )
       )

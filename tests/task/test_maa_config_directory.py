@@ -3,11 +3,14 @@
 from uuid import uuid4
 
 import pytest
+from maa_adapter.config.script import MaaConfig
+from maa_adapter.config.user import MaaUserConfig
 
 from app.core.config.manager import AppConfig
-from app.models.config import GeneralUserConfig, MaaConfig, MaaUserConfig
+from app.models.config import GeneralUserConfig
 from app.models.script_contracts import ScriptConfigHandler
-from app.task.MAA.registration import build_config_handler
+
+pytestmark = pytest.mark.usefixtures("isolated_app_paths")
 
 
 async def _host(
@@ -26,10 +29,8 @@ async def _host(
     host.data_path = tmp_path / "data"
     host.ScriptConfig = {script.uid: script}
     host._script_config_handlers = {}
-    host.bind_script_config_handler(
-        entry_type,
-        build_config_handler() if entry_type is MaaConfig else ScriptConfigHandler(),
-    )
+    if entry_type is not MaaConfig:
+        host.bind_script_config_handler(entry_type, ScriptConfigHandler())
     return host, str(script.uid), str(uid)
 
 
@@ -76,7 +77,8 @@ async def test_native_source_requires_configured_installation(tmp_path):
 
     with pytest.raises(ValueError):
         await host.get_user_config_dir(sid, uid)
-    assert not host.data_path.exists()
+    # 隔离应用夹具预先建立 data 根目录；失败请求不能创建任何托管/账号目录。
+    assert list(host.data_path.iterdir()) == []
 
 
 @pytest.mark.asyncio
@@ -85,4 +87,4 @@ async def test_unknown_user_does_not_create_directory(tmp_path):
 
     with pytest.raises(ValueError):
         await host.get_user_config_dir(sid, str(uuid4()))
-    assert not host.data_path.exists()
+    assert list(host.data_path.iterdir()) == []

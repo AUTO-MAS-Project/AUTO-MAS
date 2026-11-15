@@ -1,6 +1,8 @@
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { Service } from '@/api'
+import { updateDownloadApi } from '@/services/updateDownloadApi'
+import type { AppUpdateCheck } from '../../electron/services/appUpdateTypes'
 import type { GlobalConfig_Update } from '@/api'
 import { message } from 'ant-design-vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
@@ -10,9 +12,6 @@ import { beginAnalyticsOperation } from '@/utils/analytics'
 import type { AnalyticsEventProps } from '@/types/analytics'
 
 const logger = window.electronAPI.getLogger('更新检查器')
-
-// 获取版本号，优先使用环境变量，否则使用一个测试版本
-const version = import.meta.env.VITE_APP_VERSION || '1.0.0'
 
 // 全局状态 - 在所有组件间共享
 const updateVisible = ref(false)
@@ -27,7 +26,7 @@ let initialUpdateCheckTimer: ReturnType<typeof setTimeout> | null = null
 let startPollingRequest: Promise<void> | null = null
 const isPolling = ref(false)
 
-type UpdateCheckPromise = ReturnType<typeof Service.checkUpdateApiUpdateCheckPost>
+type UpdateCheckPromise = Promise<AppUpdateCheck>
 type CheckTrigger = AnalyticsEventProps['update_check_finished']['trigger_kind']
 const updateCheckRequests = new Map<
   boolean,
@@ -45,6 +44,7 @@ export const requestUpdateCheck = (
   forceCheck = false,
   trigger: CheckTrigger = 'automatic'
 ): UpdateCheckPromise => {
+  // 复用同类在途版本检查，按自动或手动触发去重结果观测，并将前端更新检查结果更新到共享状态。
   const inFlightRequest = updateCheckRequests.get(forceCheck)
   const shouldObserve =
     !inFlightRequest?.observed.has(trigger) && (trigger !== 'automatic' || !automaticCheckObserved)
@@ -55,12 +55,7 @@ export const requestUpdateCheck = (
     operation?.finish({ trigger_kind: trigger, outcome: 'failure', update_available: 'unknown' })
   let request: UpdateCheckPromise
   try {
-    request =
-      inFlightRequest?.request ??
-      Service.checkUpdateApiUpdateCheckPost({
-        current_version: version,
-        if_force: forceCheck,
-      })
+    request = inFlightRequest?.request ?? updateDownloadApi.check(forceCheck)
   } catch (error) {
     finishFailure()
     throw error

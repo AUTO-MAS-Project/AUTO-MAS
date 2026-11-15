@@ -7,17 +7,18 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-
-from app.core import Notify
-from app.task.MAA.AutoProxy import AutoProxyTask, _build_auto_cultivate_task
-from app.task.MAA.tools.cultivate.engine import select_auto_cultivate_targets
-from app.task.MAA.tools.cultivate.types import (
+from maa_adapter.cultivate.engine import select_auto_cultivate_targets
+from maa_adapter.cultivate.task_builder import _build_auto_cultivate_task
+from maa_adapter.cultivate.types import (
     CultivateDataSet,
     Goal,
     OperatorTarget,
     Progression,
     ProgressionSnapshot,
 )
+from maa_adapter.tasks.auto_proxy import AutoProxyTask
+
+from app.core import Notify
 from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
@@ -61,19 +62,25 @@ def test_mastery_plan_only_requests_missing_skill_prerequisite(level, expected):
 
 @pytest.fixture
 def finalizer(monkeypatch, tmp_path):
-    module = importlib.import_module("app.task.MAA.AutoProxy")
+    module = importlib.import_module("maa_adapter.tasks.auto_proxy")
     monkeypatch.setattr(module.process, "kill_process", AsyncMock())
     monkeypatch.setattr(module, "agree_bilibili", AsyncMock())
     now = datetime.now(timezone.utc)
     monkeypatch.setattr(module.Notify, "push_statistics_report", AsyncMock())
     monkeypatch.setattr(module.Notify, "send_notice", AsyncMock())
     return SimpleNamespace(
+        current_log_at=lambda moment: None,
+        iter_logs=lambda: [],
         check_result="Pass",
         user_start_time=now,
         log_start_time=now,
         cur_user_uid="user",
         cur_user_item=SimpleNamespace(
-            name="user", log_record={}, iter_history_logs=lambda: [], result="failed"
+            name="user",
+            logs={},
+            log_record={},
+            iter_history_logs=lambda: [],
+            result="failed",
         ),
         cur_user_config=SimpleNamespace(
             Info=SimpleNamespace(IfQuickConfig=True, RemainedDay=-1),
@@ -133,7 +140,7 @@ async def test_report_counts_saved_targets_after_final_refresh(finalizer, synced
         )
 
     finalizer._finish_cultivate_round = refresh
-    await AutoProxyTask.final_task(finalizer)
+    await AutoProxyTask._business_final(finalizer)
     sender = Notify.push_statistics_report
     sender.assert_awaited_once()
     payload = sender.await_args.kwargs["payload"]
@@ -145,14 +152,14 @@ async def test_report_counts_saved_targets_after_final_refresh(finalizer, synced
 @pytest.mark.asyncio
 async def test_count_alone_does_not_trigger_report(finalizer):
     finalizer.run_book = {"Annihilation": False, "Routine": False}
-    await AutoProxyTask.final_task(finalizer)
+    await AutoProxyTask._business_final(finalizer)
     Notify.push_statistics_report.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_disabled_cultivation_does_not_add_counts(finalizer):
     finalizer.cur_user_config.Task.IfCultivate = False
-    await AutoProxyTask.final_task(finalizer)
+    await AutoProxyTask._business_final(finalizer)
     payload = Notify.push_statistics_report.await_args.kwargs["payload"]
     assert "剩余：" not in payload.text
 
@@ -162,7 +169,7 @@ async def test_disabled_cultivation_does_not_add_counts(finalizer):
 async def test_progress_refresh_preserves_targets_until_confirmed(
     monkeypatch, tmp_path, result
 ):
-    module = importlib.import_module("app.task.MAA.AutoProxy")
+    module = importlib.import_module("maa_adapter.tasks.auto_proxy")
     raw = '[{"operator_id":"one","goals":[{"kind":"skill","to_level":7}]}]'
     bound = "" if result == "local" else "bound"
     config = SimpleNamespace(

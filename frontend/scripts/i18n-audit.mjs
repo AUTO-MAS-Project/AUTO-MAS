@@ -23,6 +23,18 @@ const BOOTSTRAP_DIR = join(SRC_DIR, 'i18n', 'bootstrap')
 const RUNTIME_DIR = join(FRONTEND, '..', 'res', 'i18n')
 const RUNTIME_FILES = { 'zh-CN': 'zh_CN', 'en-US': 'en', 'ja-JP': 'ja' }
 const BACKEND_DIR = join(FRONTEND, '..', 'app')
+const PLUGINS_DIR = join(FRONTEND, '..', 'plugins')
+const PLUGIN_DIRS = readdirSync(PLUGINS_DIR, { withFileTypes: true })
+  .filter(entry => entry.isDirectory() && existsSync(join(PLUGINS_DIR, entry.name, 'src')))
+  .map(entry => join(PLUGINS_DIR, entry.name))
+const PLUGIN_CATALOGS = PLUGIN_DIRS.flatMap(directory =>
+  readdirSync(join(directory, 'src'), { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && existsSync(join(directory, 'src', entry.name, 'i18n')))
+    .map(entry => ({
+      directory: join(directory, 'src', entry.name, 'i18n'),
+      prefix: `plugins.${entry.name}`,
+    }))
+)
 const SOURCE_LOCALE = 'zh-CN'
 const TARGET_LOCALES = ['en-US', 'ja-JP']
 
@@ -79,14 +91,20 @@ const loadLocale = async locale => {
     bootstrap: JSON.parse(readFileSync(join(BOOTSTRAP_DIR, locale + '.json'), 'utf8')),
     core: {},
   }
-  const flat = JSON.parse(readFileSync(join(RUNTIME_DIR, RUNTIME_FILES[locale] + '.json'), 'utf8'))
-  for (const [key, value] of Object.entries(flat)) {
-    const parts = key.split('.')
-    if (parts.shift() !== 'core' || typeof value !== 'string')
-      throw new Error(`Invalid resource: ${key}`)
-    let node = messages.core
-    for (const part of parts.slice(0, -1)) node = node[part] ??= {}
-    node[parts.at(-1)] = value
+  for (const { directory, prefix } of [
+    { directory: RUNTIME_DIR, prefix: 'core' },
+    ...PLUGIN_CATALOGS,
+  ]) {
+    const file = join(directory, RUNTIME_FILES[locale] + '.json')
+    const flat = JSON.parse(readFileSync(file, 'utf8'))
+    for (const [key, value] of Object.entries(flat)) {
+      const parts = key.split('.')
+      if (!key.startsWith(prefix + '.') || typeof value !== 'string')
+        throw new Error(`Invalid resource: ${key}`)
+      let node = messages
+      for (const part of parts.slice(0, -1)) node = node[part] ??= {}
+      node[parts.at(-1)] = value
+    }
   }
   return messages
 }
@@ -150,9 +168,22 @@ const audit = async () => {
   const sourceKeys = new Set(locales[SOURCE_LOCALE].keys())
 
   // ---- 源码引用 ----
-  const files = walkSourceFiles(SRC_DIR)
-  const referenceFiles = [...files, ...walkBackendFiles(BACKEND_DIR)]
+  const files = [
+    ...walkSourceFiles(SRC_DIR),
+    ...PLUGIN_DIRS.flatMap(directory =>
+      existsSync(join(directory, 'frontend')) ? walkSourceFiles(join(directory, 'frontend')) : []
+    ),
+  ]
+  const referenceFiles = [
+    ...files,
+    ...walkBackendFiles(BACKEND_DIR),
+    ...PLUGIN_DIRS.flatMap(directory => walkBackendFiles(join(directory, 'src'))),
+  ]
   const literalKeys = new Set()
+  // 发行元数据按固定字段动态读取，不要求每个插件伪造 t() 调用。
+  for (const { prefix } of PLUGIN_CATALOGS)
+    for (const field of ['display_name', 'description', 'tags'])
+      literalKeys.add(`${prefix}.${field}`)
   const calledKeys = new Set()
   const prefixes = new Set()
   const suffixes = new Set()
@@ -222,7 +253,7 @@ const audit = async () => {
     const parsed = parseSfc(source, { filename: file })
     const root = parsed.descriptor.template && parsed.descriptor.template.ast
     if (!root) continue
-    const shown = 'src/' + relative(SRC_DIR, file).split('\\').join('/')
+    const shown = relative(FRONTEND, file).split('\\').join('/')
     const exempt = HARDCODED_ALLOWLIST.find(entry => entry.file === shown)
     const report = (node, text, kind) => {
       hardcoded.push({

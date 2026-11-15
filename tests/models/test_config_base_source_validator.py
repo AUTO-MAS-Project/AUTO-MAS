@@ -2,8 +2,8 @@
 
 import unittest
 
+from maa_adapter.config.user import MaaUserConfig
 
-from app.models.config import MaaUserConfig
 from app.utils import normalize_base_source
 
 

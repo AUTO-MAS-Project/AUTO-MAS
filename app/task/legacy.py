@@ -6,7 +6,7 @@ import asyncio
 import time
 from abc import ABC, abstractmethod
 from collections import deque
-from collections.abc import Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
@@ -15,11 +15,13 @@ from app.core import BackgroundTaskManager, Publisher
 from app.core.background_tasks import BackgroundTaskGroup, BackgroundTaskHandle
 from app.core.ws import protocol
 from app.models.schema import WSTaskNoticeData
+from app.models.script_access import script_users
 from app.models.task import TaskMode
 from app.task.lifecycle import TaskBase
 from app.utils import get_logger
 
 if TYPE_CHECKING:
+    from app.models.config import ScriptConfigType
     from app.models.schema import TaskRequirements
     from app.models.task import TaskItem, TaskUserItem
     from app.task.context import TaskContext
@@ -147,7 +149,7 @@ def maintenance_requirements(target_id: str) -> TaskRequirements:
             (
                 entry
                 for entry in Config.ScriptConfig.values()
-                if target in entry.UserData
+                if target in script_users(entry)
             ),
             None,
         )
@@ -324,6 +326,8 @@ class TaskExecuteBase(ABC):
 
     task_info: TaskItem
     history: TaskHistorySession
+    # [兼容旧专项] L2 注入锁后预下载复核；新插件在 L3 派发前由 L2 直接准备。
+    after_config_lock: Callable[[ScriptConfigType], Awaitable[None]] | None = None
     # [兼容旧专项] 停止确认阶段限时等待已开始的收尾，不改变来源 TaskBase。
     stop_finalizer_timeout: float | None = 10.0
     STOP_CHECK_TIMEOUTS = {"update": 30.0, "finalize": 10.0}

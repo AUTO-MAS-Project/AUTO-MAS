@@ -21,6 +21,10 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 
 ## 当前采集范围
 
+插件管理继续使用 `plugin_action_finished`：由 `usePluginApi` 在配置保存或独立命令查询确认结果后结束。
+命令受理不计为执行成功，失败、取消及无法确认结果分别记录；不发送插件名、配置或操作 ID。
+本轮仅调整命令提交与等待接线，沿用既有 action/outcome 词表及开关，不增加采集字段。
+
 定时唤醒复用 `app_started.launch_kind=scheduled_wakeup` 区分启动来源，复用设置保存事件记录开关变更。两者分别表示进入 ready 和配置保存，不代表硬件唤醒成功；后台计划任务对账不额外采集。
 
 静默启动保存复用 `settings_change_finished`，改用 `silent_start` 区分旧的 `start_minimized` 类别；开机自启仍为 `auto_start`。关闭至托盘的 `close_to_tray` 类别改由 `useAppClosePreferences` 在前端关闭偏好写入成功或失败时确认，设置页和关闭确认框共用同一入口；不再以旧的 `UI.IfToTray` 写入推断关闭行为。窗口最小化和静默隐藏不新增事件，启动来源与正常退出继续复用原主进程观察者。
@@ -315,7 +319,6 @@ QQ 高级手动配置复用 `notification_binding_finished`，`action=manual_bin
 
 - 奇想盒运行前后端更新：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；更新准备失败继续运行与安装未完成拦截沿用任务终态。后端更新阶段不新增独立事件，不将下载或 pip 受理当作安装成功。
 
-
 任务树迁移沿用 `useTaskApi.ts` 的请求受理观察和 `taskAnalytics.ts` 的创建/完成观察。
 `ScriptView` 是有限模式类别；队列/托管/用户运行 UUID 只用于本地关联，不进入事件属性。
 只读查看的打开请求仍使用 `native_config_action_finished` 的 `view` 操作；恢复快照不新增执行样本。
@@ -338,3 +341,5 @@ Sentry 的诊断事件另保留退出码、退出次数、耗时和加载错误�
 Sentry 重载结果也绑定开始时的开关代次，关闭再开启不补发旧结果；不等待发送或新增退出 flush。
 
 通用脚本计划表按原有计划管理与原生配置会话边界观察；仅新增计划类型分类 `UniversalPlanConfig`。
+
+后端后台暂存前的插件预检属于定时轮询内部准备，不另行采集；失败原因仅在本地吐司展示，不进入遥测。手动同版本更新的拒绝沿用 backend_update_finished，由更新服务确认失败，不重复记录预检事件。

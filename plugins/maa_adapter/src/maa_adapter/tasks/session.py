@@ -1,0 +1,490 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025-2026 AUTO-MAS Team
+#   This file is part of AUTO-MAS.
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+#   Contact: DLmaster_361@163.com
+import asyncio
+import json
+import shutil
+import uuid
+from copy import deepcopy
+from pathlib import Path
+from typing import Literal
+
+from auto_mas_core import TaskMode
+from auto_mas_core.host.core import Publisher
+from auto_mas_core.host.core_ws import protocol
+from auto_mas_core.host.models_schema import WSTaskConfigDiscardedData, WSTaskNoticeData
+from auto_mas_core.host.task_proxy_helpers import (
+    CONFIG_BASE_INDEPENDENT,
+    CONFIG_BASE_NATIVE,
+    CONFIG_BASE_SHARED,
+    read_config_base,
+)
+from auto_mas_core.host.utils import ProcessManager, get_logger, process
+from auto_mas_core.host.utils import io as _utils_io
+from auto_mas_core.host.utils_common_process_scope import current_process_scope
+
+from maa_adapter.native.backup import (
+    archive_mas_runtime_backup,
+    mas_config_dir,
+    read_overlay_values,
+)
+from maa_adapter.native.guide import MAA_GUIDE_SKIP_VALUES
+from maa_adapter.native.presets import (
+    MAA_STAMINA_LEGACY_FILENAME,
+    ensure_maa_default_configuration,
+    get_maa_base_preset,
+    is_valid_maa_task_queues,
+    restore_maa_default_task_queue,
+    seed_maa_base_config,
+)
+from maa_adapter.native.runtime_config import (
+    _MAA_CONFIG_FILES,
+    _repair_maa_task_queue,
+    read_maa_config_with_fallback,
+)
+from maa_adapter.tasks.context import MaaWorkerContext
+
+logger = get_logger("MAA 脚本设置")
+
+# 配置会话注入的启动编排项：(文件, 路径, 注入值)。配置会话只让用户调设置，
+# 不该自动跑任务、拉模拟器或拉游戏，所以这些项在会话期间强制关闭；会话结束
+# 回写时逐项还原成会话前的值，绝不写进 base——它们是会话级的运行编排，
+# 不是账号配置。StartGame 关掉后 MAA 打开就是可配置状态，用户不必先终止队列。
+_SESSION_STARTUP_OVERRIDES: tuple[tuple[str, tuple[str, ...], object], ...] = (
+    (
+        "gui.new.json",
+        ("Configurations", "Default", "Gui", "RuntimeSettings", "StartGame"),
+        False,
+    ),
+    (
+        "gui.new.json",
+        ("Configurations", "Default", "Gui", "StartUpSettings", "RunDirectly"),
+        False,
+    ),
+    (
+        "gui.new.json",
+        ("Configurations", "Default", "Gui", "StartUpSettings", "StartEmulator"),
+        False,
+    ),
+    # 调起 MAA 的 GUI 必有人要操作界面，启动即最小化恒为关——否则用户自己
+    # 设过"启动时最小化"的，配置会话打开就是缩在托盘里。会话级覆盖，回写前还原，
+    # 不进 base。
+    (
+        "gui.new.json",
+        ("Gui", "MinimizeOnStartup"),
+        False,
+    ),
+    # 更新由 MAS 的更新流程接管，配置会话只临时关闭，退出时恢复原值。
+    ("gui.new.json", ("Update", "CheckOnSchedule"), False),
+    ("gui.new.json", ("Update", "AutoDownloadUpdatePackage"), False),
+    ("gui.new.json", ("Update", "AutoInstallUpdatePackage"), False),
+    # 引导跳过仅作用于会话，回写前同样还原原值与缺失状态。
+    *(
+        ("gui.new.json", ("Gui", key), value)
+        for key, value in MAA_GUIDE_SKIP_VALUES.items()
+    ),
+)
+
+
+def _dig(doc: dict, path: tuple[str, ...]) -> tuple[dict, str] | None:
+    """按路径取出 (父容器, 末键)；中间层不存在时返回 None。"""
+
+    node: object = doc
+    for key in path[:-1]:
+        if not isinstance(node, dict) or key not in node:
+            return None
+        node = node[key]
+    if not isinstance(node, dict):
+        return None
+    return node, path[-1]
+
+
+def _apply_session_startup_overrides(
+    docs: dict[str, dict],
+) -> dict[str, list[tuple[tuple[str, ...], object | None]]]:
+    """把启动编排项强制成配置会话的值，返回各项的会话前原值（供回写还原）。"""
+
+    restore: dict[str, list[tuple[tuple[str, ...], object | None]]] = {}
+    for name, path, value in _SESSION_STARTUP_OVERRIDES:
+        doc = docs.get(name)
+        if doc is None:
+            continue
+        located = _dig(doc, path)
+        if located is None:
+            continue
+        parent, key = located
+        restore.setdefault(name, []).append((path, deepcopy(parent.get(key))))
+        parent[key] = value
+    return restore
+
+
+def _restore_session_startup_overrides(
+    docs: dict[str, dict],
+    restore: dict[str, list[tuple[tuple[str, ...], object | None]]],
+) -> None:
+    """把配置会话强制过的启动编排项还原为会话前的值。
+
+    用户在 MAA 里改动这些项不会保留（它们是会话级编排，不进 base），
+    其余一切用户修改原样写回。
+    """
+
+    for name, entries in restore.items():
+        doc = docs.get(name)
+        if doc is None:
+            continue
+        for path, original in entries:
+            located = _dig(doc, path)
+            if located is None:
+                continue
+            parent, key = located
+            if original is None:
+                parent.pop(key, None)
+            else:
+                parent[key] = original
+
+
+class MaaGuiSession(MaaWorkerContext):
+    """脚本设置模式
+
+    会话包络（下发源 + 回写目标）与运行下发同一套 owner 规则（shared 来源共享
+    Default、independent 来源独立目录），见 :meth:`_mas_owner`。view_only=True 时为
+    查看会话：只读预览（如「查看历史备份」）——账号级会话下发的 owner 目录
+    即刚恢复的备份（所见即备份），托管级会话跳过下发（原生目录即备份）；
+    结束不回写 MAS 配置，安装 config/ 由 manager 的任务前快照还原（临时
+    注入，看完还原）。
+    """
+
+    _maa_config_baseline: dict[str, dict] | None = None
+    """set_maa 写盘快照；final_task 以此甄别用户的 GUI 修改。"""
+
+    _session_startup_restore: (
+        dict[str, list[tuple[tuple[str, ...], object | None]]] | None
+    ) = None
+    """配置会话强制过的启动编排项及其会话前原值，回写时逐项还原。"""
+
+    GUI_CLOSE_TIMEOUT = 10.0
+
+    def __init__(self, expander, user, config):
+        """绑定配置会话账号与查看模式，初始化 GUI 退出和停止保存确认状态。"""
+        super().__init__(expander, user, config)
+        self.script_config = expander.script_config
+        self.accounts = expander.worker_accounts(user, config)
+        self.cur_user_item = user
+        self.view_only = self.task_info.mode == TaskMode.SCRIPT_VIEW
+        self._stop_scope = None
+        self._gui_closed_for_stop = False
+        self._session_opened = False
+
+    async def prepare(self):
+        """创建配置界面的进程管理器，确认 MAA 安装路径并定位可执行文件与配置目录。"""
+        self.maa_process_manager = ProcessManager()
+        self.wait_event = asyncio.Event()
+
+        maa_root_path = self.script_config.Info.Path
+        if maa_root_path is None:
+            raise ValueError("Path未配置，请检查路径设置")
+        self.maa_root_path = maa_root_path
+        self.maa_set_path = self.maa_root_path / "config"
+        self.maa_exe_path = self.maa_root_path / "MAA.exe"
+
+    async def main_logic(self):
+        """切换到目标账号配置后启动 MAA GUI，登记停止时的保存确认，并等待配置窗口退出。"""
+        await self.set_maa()
+        logger.info(f"启动MAA进程: {self.maa_exe_path}")
+        self.wait_event.clear()
+        await self.maa_process_manager.open_process(self.maa_exe_path)
+        self._session_opened = True
+        self._stop_scope = current_process_scope.get()
+        if self._stop_scope is not None:
+            self._stop_scope.add_check(
+                "maa_config_save",
+                self._close_gui_for_stop,
+                timeout=self.GUI_CLOSE_TIMEOUT,
+            )
+        while await self.maa_process_manager.is_running():
+            await asyncio.sleep(0.2)
+        self._gui_closed_for_stop = True
+
+    async def _close_gui_for_stop(self) -> None:
+        """请求 MAA GUI 正常关闭，确认进程退出后记录已完成停止保存阶段。"""
+        await self.maa_process_manager.close()
+        # 窗口可能先于进程销毁，在停止确认的时限内继续等待写盘和退出。
+        maa_process = self.maa_process_manager.process
+        assert maa_process is not None
+        await maa_process.wait()
+        self._gui_closed_for_stop = True
+
+    def _mas_owner(self) -> str | None:
+        """本会话的 MAS 配置目录 owner；原生来源/无法解析时返回 ``None``。
+
+        与运行下发（AutoProxy ``set_maa``）同一套来源规则——会话的下发与
+        回写此前硬编码用户目录，共享来源账号的会话改动运行时根本不读（改了
+        白改），配置备份也因此采不到会话现场；现对齐运行态。原生来源账号没有
+        MAS 托管配置目录（对齐 MaaEnd 的「原生来源无 mas 池」），返回 ``None``。
+        """
+
+        user_id = self.config_user_id
+        if user_id == "Default":
+            return "Default"
+        base = read_config_base(self.accounts[uuid.UUID(user_id)], CONFIG_BASE_SHARED)
+        if base == CONFIG_BASE_NATIVE:
+            return None
+        return user_id if base == CONFIG_BASE_INDEPENDENT else "Default"
+
+    def _uses_managed_queue(self) -> bool:
+        """仅脚本预设和启用覆写常规配置的用户使用三段托管队列。"""
+
+        user_id = self.config_user_id
+        return (
+            user_id == "Default" or self.accounts[uuid.UUID(user_id)].Info.IfQuickConfig
+        )
+
+    async def set_maa(self):
+        """配置MAA运行参数"""
+
+        logger.info(f"开始配置MAA运行参数: 设置账号 {self.config_user_id}")
+
+        await self.maa_process_manager.close()
+        await process.kill_process(self.maa_exe_path)
+
+        # 查看会话的托管级入口：原生目录即所选备份，跳过下发与注入
+        if self.view_only and self.config_user_id == "Default":
+            logger.info("MAA 查看会话跳过配置下发: 原生目录即所选备份")
+            return
+
+        # 原生来源会话：安装目录原生配置即现场，MAS 零写入（含归档）；MAA GUI
+        # 内的编辑由本体落盘并保留
+        owner = self._mas_owner()
+        if owner is None:
+            logger.info("MAA 原生来源会话: 直接使用安装目录原生配置, MAS 零写入")
+            return
+
+        # 下发前归档 MAS 配置到账号池（下发源，会话保存会覆盖它；带页面
+        # 核心字段侧车，指纹去重，失败不阻断会话）。native 池由
+        # manager.prepare 在任务级一次性归档
+        target_user_id = self.config_user_id
+        mas_dir = mas_config_dir(self.script_info.script_id, owner)
+        seed_maa_base_config(mas_dir)
+
+        overlay = (
+            read_overlay_values(self.accounts[uuid.UUID(target_user_id)])
+            if target_user_id != "Default"
+            else None
+        )
+        archive_mas_runtime_backup(
+            self.script_info.script_id,
+            target_user_id,
+            mas_dir,
+            overlay=overlay,
+            # 备份标注来源：tri_state 池跨来源恢复靠它切回
+            base=(
+                CONFIG_BASE_INDEPENDENT
+                if owner == target_user_id
+                else CONFIG_BASE_SHARED
+            ),
+        )
+
+        preset_queue = get_maa_base_preset()["Configurations"]["Default"]["TaskQueue"]
+        base_gui_new_set = read_maa_config_with_fallback(mas_dir)
+        base_configurations = base_gui_new_set.get("Configurations")
+        repaired_queues = 0
+        managed_queue = self._uses_managed_queue() and not self.view_only
+        if managed_queue and isinstance(base_configurations, dict):
+            for configuration in base_configurations.values():
+                if not isinstance(configuration, dict):
+                    continue
+                queue, repaired = restore_maa_default_task_queue(
+                    configuration.get("TaskQueue"), preset_queue
+                )
+                if repaired:
+                    configuration["TaskQueue"] = _repair_maa_task_queue(queue)
+                    repaired_queues += 1
+        if repaired_queues and not self.view_only:
+            _utils_io.write_file(mas_dir / "gui.new.json", base_gui_new_set)
+            logger.info(f"MAA 已对齐 {repaired_queues} 个三段理智预设队列")
+
+        if mas_dir.is_dir() and any(mas_dir.iterdir()):
+            shutil.copytree(
+                mas_dir,
+                self.maa_set_path,
+                dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns(MAA_STAMINA_LEGACY_FILENAME),
+            )
+
+        # base 缺失/损坏时退回 MAA 自带 .bak 或骨架；下方用预设补齐队列。
+        gui_new_set = read_maa_config_with_fallback(self.maa_set_path)
+
+        # 把生效方案归一为 Default；Default 本身也可能缺失——沿用安装目录配置时
+        # 该文件不由 MAS 生成，兜底必须无条件执行。
+        ensure_maa_default_configuration(gui_new_set)
+
+        # 覆写常规配置使用三段预设；关闭覆写常规配置和查看备份时保留来源原队列。
+        for configuration in gui_new_set["Configurations"].values():
+            if not isinstance(configuration, dict):
+                continue
+            source_queue = configuration.get("TaskQueue")
+            if managed_queue:
+                source_queue, _ = restore_maa_default_task_queue(
+                    source_queue, preset_queue
+                )
+            if isinstance(source_queue, list):
+                configuration["TaskQueue"] = _repair_maa_task_queue(source_queue)
+
+        # 更新容器可能是旧版配置缺省的，先建临时容器，让恢复表能记录缺失键；
+        # 会话结束时缺失键会被删除，不把 MAS 接管项写进 base。
+        gui_new_set.setdefault("Update", {})
+
+        # 配置会话的启动编排：不自动跑任务、不拉模拟器、不拉游戏，让 MAA 打开就是
+        # 可配置状态（用户不必先终止队列）。这些是会话级覆盖，回写时还原成原值。
+        self._session_startup_restore = _apply_session_startup_overrides(
+            {"gui.new.json": gui_new_set}
+        )
+
+        # 关闭所有定时
+        if "Timers" not in gui_new_set:
+            gui_new_set["Timers"] = {}
+        if "List" not in gui_new_set["Timers"]:
+            gui_new_set["Timers"]["List"] = []
+        for timer in gui_new_set["Timers"].get("List", []):
+            if isinstance(timer, dict):
+                timer["IsEnabled"] = False
+
+        # 更新配置
+        update_set = gui_new_set.setdefault("Update", {})
+        update_set["CheckOnSchedule"] = False
+        update_set["AutoDownloadUpdatePackage"] = False
+        update_set["AutoInstallUpdatePackage"] = False
+
+        _utils_io.write_file(self.maa_set_path / "gui.new.json", gui_new_set)
+        _utils_io.mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.maa_set_path,
+            script_id=self.script_info.script_id,
+        )
+        # 会话基线：final_task 以此甄别用户在 MAA GUI 里的真实修改，
+        # 不把 MAA 保存时自带的原生默认任务固化进 MAS 存档
+        self._maa_config_baseline = {"gui.new.json": deepcopy(gui_new_set)}
+        logger.success(f"MAA运行参数配置完成: 设置账号 {self.config_user_id}")
+
+    async def _notify_config_discarded(
+        self, reason: Literal["structure", "unreadable", "not_written"]
+    ) -> None:
+        """本次会话的改动被丢弃时显式通知前端弹窗。
+
+        回写失败过去只留在日志里，用户界面上却提示「已保存」，改动其实没进
+        存档。原因用机器可读值下发，提示正文由前端本地化。
+        """
+
+        await self.cur_user_item.set_state(status="异常")
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_CONFIG_DISCARDED,
+            data=WSTaskConfigDiscardedData(reason=reason),
+        )
+
+    async def finish(self):
+        """按配置或只读模式及退出确认结果处理配置保存，将允许保存的原生配置回写到账号存储。"""
+        if not self._session_opened:
+            return
+
+        # MAA 的改动只堆在内存里，退出时才批量落盘；先把关闭请求发出去等它
+        # 自己走完保存流程，直接强杀会让本次设置丢失、下次启动恢复原样
+        if self._stop_scope is not None and self._stop_scope.requested:
+            # 确认超时后不重新等待，也不把强杀后的旧文件当成保存成功。
+            if not self._gui_closed_for_stop:
+                if not self.view_only:
+                    await self._notify_config_discarded("not_written")
+                return
+        else:
+            try:
+                async with asyncio.timeout(self.GUI_CLOSE_TIMEOUT):
+                    await self._close_gui_for_stop()
+            except (TimeoutError, RuntimeError):
+                if not self.view_only:
+                    await self._notify_config_discarded("not_written")
+                return
+            finally:
+                await self.maa_process_manager.kill()
+                await process.kill_process(self.maa_exe_path)
+
+        # 查看会话：只读预览，不把安装 config/ 回写用户目录（安装现场由
+        # manager 的任务前快照还原）；GUI 内的改动一律丢弃
+        if self.view_only:
+            logger.success("MAA 查看结束（只读，不回写配置）")
+            await self.cur_user_item.set_state(status="完成")
+            return
+
+        # 原生来源会话：MAS 零写入，安装目录配置由本体保存并保留，不回写 MAS 目录
+        owner = self._mas_owner()
+        if owner is None:
+            logger.success("MAA 原生来源配置已由脚本原生 GUI 保存")
+            await self.cur_user_item.set_state(status="完成")
+            return
+
+        mas_dir = mas_config_dir(self.script_info.script_id, owner)
+
+        # 队列结构属于预设的一部分，只允许改任务高级字段；结构变化时整次
+        # GUI 会话都不回写，避免把非预设队列或其他同时发生的修改写进 base。
+        current_docs = {}
+        for name in _MAA_CONFIG_FILES:
+            try:
+                current = _utils_io.read_file(self.maa_set_path / name)
+            except (OSError, json.JSONDecodeError) as e:
+                logger.opt(exception=True).warning(
+                    f"读取 MAA 配置以回写失败({name}), 本次修改全部丢弃: {e}"
+                )
+                await self._notify_config_discarded("unreadable")
+                return
+            if not isinstance(current, dict) or not current:
+                # MAA 未写盘(如被强杀)，GUI 改动无从谈起，存档保持 set_maa 下发态
+                logger.info("MAA 配置回写: 无完整落盘内容, 存档保持不变")
+                await self._notify_config_discarded("not_written")
+                return
+            current_docs[name] = current
+
+        baseline_new = (self._maa_config_baseline or {}).get("gui.new.json", {})
+        if self._uses_managed_queue() and not is_valid_maa_task_queues(
+            baseline_new.get("Configurations"),
+            current_docs["gui.new.json"].get("Configurations"),
+        ):
+            logger.warning("MAA 队列结构或配置方案发生变化, 本次 GUI 配置修改全部丢弃")
+            await self._notify_config_discarded("structure")
+            return
+
+        for name, current in current_docs.items():
+            # 先还原会话强制过的启动编排项：它们是会话级覆盖，不能写进 base
+            entries = (self._session_startup_restore or {}).get(name)
+            if entries:
+                _restore_session_startup_overrides({name: current}, {name: entries})
+            for configurations in (current.get("Configurations") or {}).values():
+                if isinstance(configurations, dict):
+                    queue = configurations.get("TaskQueue")
+                    if isinstance(queue, list):
+                        configurations["TaskQueue"] = _repair_maa_task_queue(queue)
+        for name, current in current_docs.items():
+            _utils_io.write_file(mas_dir / name, current)
+        await self.cur_user_item.set_state(status="完成")
+
+    async def on_crash(self, exc: BaseException):
+        """标记配置会话异常，记录错误并向当前任务发布错误提示。"""
+        await self.cur_user_item.set_state(status="异常")
+        logger.opt(exception=True).warning(f"脚本设置任务出现异常: {exc}")
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(
+                level="error", message=f"脚本设置任务出现异常: {exc}"
+            ),
+        )

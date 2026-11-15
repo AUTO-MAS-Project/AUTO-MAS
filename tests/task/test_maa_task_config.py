@@ -1,16 +1,15 @@
 from copy import deepcopy
 
 import pytest
-
-from app.task.MAA.AutoProxy import (
-    _MAA_DEPOT_QUOTA_KEYS,
+from maa_adapter.cultivate.task_builder import (
     _apply_depot_quota_override,
     _build_cultivate_task,
     _build_depot_maintain_task,
     _build_stock_cultivate_task,
-    _failed_maa_sanity_tasks,
 )
-from app.task.MAA.tools.cultivate.types import CultivatePlan, FarmEntry, Requirement
+from maa_adapter.cultivate.types import CultivatePlan, FarmEntry, Requirement
+from maa_adapter.logs.parsing import _failed_maa_sanity_tasks
+from maa_adapter.native.runtime_config import _MAA_DEPOT_QUOTA_KEYS
 
 _QUOTA_IDS = [f"{gate}/{count_key}" for gate, count_key in _MAA_DEPOT_QUOTA_KEYS]
 

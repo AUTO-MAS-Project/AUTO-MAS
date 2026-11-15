@@ -7,15 +7,15 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+from maa_adapter.config.script import MaaConfig
+from maa_adapter.constants import ARKNIGHTS_PACKAGE_NAME
+from maa_adapter.tasks import manager as maa_manager
+from maa_adapter.tasks.auto_proxy import AutoProxyTask
+from maa_adapter.updates.resources import service as resource_update
 
 from app.core import Publisher
 from app.core.task_manager import _TaskManager
 from app.core.ws import protocol
-from app.models.config import MaaConfig
-from app.task.MAA import manager as maa_manager
-from app.task.MAA.AutoProxy import AutoProxyTask
-from app.task.MAA.constants import ARKNIGHTS_PACKAGE_NAME
-from app.task.MAA.tools import resource_update
 from app.task.script_expander import ScriptExpander
 from tests.runtime_support import create_runtime_tree
 
@@ -23,7 +23,6 @@ from tests.runtime_support import create_runtime_tree
 @pytest_asyncio.fixture
 async def runtime(monkeypatch):
     root, script, user = await create_runtime_tree(script_id=str(uuid4()))
-    script._manager_controls_users = True
     await script.set_current_index(0)
     manager = _TaskManager()
     manager._running[root.uid] = ScriptExpander(root, manager)
@@ -62,7 +61,8 @@ async def test_emulator_wait_is_published_before_native_log(runtime):
         )
     )
     proxy.script_config = SimpleNamespace(
-        Run=SimpleNamespace(RunTimesLimit=1), Emulator=SimpleNamespace(Index="0")
+        Run=SimpleNamespace(RunTimesLimit=1, HardTimeLimit=120),
+        Emulator=SimpleNamespace(Index="0"),
     )
     proxy.emulator_manager = SimpleNamespace(open=open_device)
     proxy.check = AsyncMock(return_value="Pass")
@@ -74,13 +74,18 @@ async def test_emulator_wait_is_published_before_native_log(runtime):
     proxy._failed_sanity_tasks = set()
     proxy._failed_extra_tasks = set()
     proxy._non_sanity_retry = False
-    task = asyncio.create_task(proxy.main_task())
+    proxy.cur_user_config.commit = AsyncMock()
+    proxy.user_info = user
+    proxy._log_updates = asyncio.Queue(maxsize=1)
+    task = asyncio.create_task(proxy.main_logic())
     try:
         await asyncio.wait_for(entered.wait(), 3)
-        assert logs(sent)[-1] == script.log
+        assert logs(sent)[-1] == "正在启动模拟器\n"
         assert logs(sent)[-1]  # 无原生日志时已经有启动提示。
         assert manager.get_runtime_snapshot().tasks[0].log == logs(sent)[-1]
-        assert user.logs and all(not record.content for record in user.logs.values())
+        assert user.logs and list(user.logs.values())[-1].content == [
+            "正在启动模拟器\n"
+        ]
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
@@ -105,7 +110,7 @@ async def test_install_write_wait_is_published_before_config_lock(
     monkeypatch.setattr(maa_manager, "get_resource_write_lock", lambda path: write_lock)
     access = AsyncMock(side_effect=RuntimeError("stop before external access"))
     monkeypatch.setattr(maa_manager, "acquire_resource_access_lock", access)
-    instance = maa_manager.MaaManager(script)
+    instance = maa_manager.MaaManager(script, config)
     task = asyncio.create_task(instance.prepare())
     try:
         await asyncio.sleep(0)

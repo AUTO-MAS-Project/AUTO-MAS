@@ -5,7 +5,8 @@ import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
 import { MAAFW_FLAVORS } from '@/composables/useMaaFWFlavor'
 import { buildMaaFWRoutes } from './maafwFlavorRoutes'
-import { buildScriptEditorRoutes, MAA_CULTIVATE_ROUTE } from './scriptEditorRoutes'
+import { buildScriptEditorRoutes } from './scriptEditorRoutes'
+import { SCRIPT_PLUGIN_ROUTES } from '@/plugins/scriptAdapters'
 import { registerRouterAnalytics } from './analytics'
 import { measureStartup } from '@/utils/startupTiming'
 const logger = window.electronAPI.getLogger('路由管理')
@@ -50,6 +51,32 @@ const devRoutes =
 
 const routes = [
   {
+    path: '/plugins',
+    name: 'Plugins',
+    component: () => /* 进入插件中心时按需加载已安装插件页面。 */ import('@/views/Plugins.vue'),
+    meta: { title: '插件' },
+  },
+  {
+    path: '/plugins/market',
+    name: 'PluginMarket',
+    component: () => /* 进入插件市场时按需加载市场页面。 */ import('@/views/PluginMarket.vue'),
+    meta: { title: '插件市场' },
+  },
+  {
+    path: '/plugins/:pluginId/settings',
+    name: 'PluginSettings',
+    component: () =>
+      /* 进入插件配置路由时按需加载声明式设置页面。 */ import('@/views/PluginSettingsPage.vue'),
+    meta: { title: '插件设置' },
+  },
+  {
+    path: '/plugins/:pluginId/:pageId',
+    name: 'PluginPage',
+    component: () =>
+      /* 通过兼容配置路由进入时复用同一插件设置页面。 */ import('@/views/PluginSettingsPage.vue'),
+    meta: { title: '插件设置' },
+  },
+  {
     path: '/tools',
     name: 'Tools',
     component: () => import('@/views/tools/index.vue'),
@@ -82,7 +109,7 @@ const routes = [
   ...maafwRoutes.setup,
   ...maafwRoutes.userAdd,
   ...maafwRoutes.userEdit,
-  MAA_CULTIVATE_ROUTE,
+  ...SCRIPT_PLUGIN_ROUTES,
   {
     path: '/plans/:planId/oknte/:day',
     name: 'OkNtePlanDetail',

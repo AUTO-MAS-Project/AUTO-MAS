@@ -20,3 +20,4 @@ export type MaaEndConfig_Update = {
      */
     MirrorChyanCDK?: (string | null);
 };
+

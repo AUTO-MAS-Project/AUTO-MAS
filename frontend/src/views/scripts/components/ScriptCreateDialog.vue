@@ -19,65 +19,13 @@
             :title="t('core.scripts.create.typeHeading')"
             :description="t('core.scripts.create.typeHeadingDesc')"
           />
-          <div class="list-toolbar single">
-            <a-input
-              v-model:value="typeKeyword"
-              allow-clear
-              :placeholder="t('core.scripts.create.typeSearch')"
-            >
-              <template #prefix><SearchOutlined /></template>
-            </a-input>
-          </div>
-          <SelectableOptionList v-if="filteredTypes.length" v-model="selectedType">
-            <section v-if="typeSections.general.length" class="type-section">
-              <div class="type-section-heading">
-                <span class="type-section-title">{{ t('core.scripts.create.groupGeneral') }}</span>
-              </div>
-              <div class="type-grid">
-                <SelectableOptionCard
-                  v-for="option in typeSections.general"
-                  :key="option.value"
-                  :value="option.value"
-                  :title="option.title"
-                  :description="option.description"
-                  :selected="selectedType === option.value"
-                  radio-position="end"
-                >
-                  <template #icon>
-                    <img :src="option.icon" :alt="option.title" class="selectable-option-image" />
-                  </template>
-                </SelectableOptionCard>
-              </div>
-            </section>
-            <section
-              v-if="typeSections.specialized.length"
-              class="type-section specialized-section"
-            >
-              <div class="type-section-heading">
-                <span class="type-section-title">{{
-                  t('core.scripts.create.groupSpecialized')
-                }}</span>
-              </div>
-              <div class="type-grid">
-                <SelectableOptionCard
-                  v-for="option in typeSections.specialized"
-                  :key="option.value"
-                  :value="option.value"
-                  :title="option.title"
-                  :description="option.description"
-                  :selected="selectedType === option.value"
-                  radio-position="end"
-                >
-                  <template #icon>
-                    <img :src="option.icon" :alt="option.title" class="selectable-option-image" />
-                  </template>
-                </SelectableOptionCard>
-              </div>
-            </section>
-          </SelectableOptionList>
-          <NoData v-else :description="t('core.scripts.create.noTypeMatch')">
-            <a-button @click="clearTypeFilters">{{ t('core.scripts.clearSearch') }}</a-button>
-          </NoData>
+          <ScriptTypeStep
+            v-model="selectedType"
+            :types="capabilities.types.value"
+            :loading="capabilities.loading.value"
+            :error="capabilities.error.value"
+            @retry="capabilities.refresh"
+          />
         </template>
 
         <!-- MFW 家族第二步：项目从哪来（新建一个别的项目 / 复用已导入的同类型项目）。
@@ -284,7 +232,9 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, defineComponent, h, onBeforeUnmount, ref, watch } from 'vue'
+import ScriptTypeStep from './ScriptTypeStep.vue'
+import { useScriptCapabilities } from '@/composables/useScriptCapabilities'
+import { computed, defineComponent, h, onBeforeUnmount, ref, toRef, watch } from 'vue'
 import {
   ArrowLeftOutlined,
   ClockCircleOutlined,
@@ -311,10 +261,8 @@ import MaaFWSourceStep from './MaaFWSourceStep.vue'
 import {
   buildCreateRequest,
   buildCreateSteps,
-  filterScriptTypeOptions,
   isMfwFamily,
   SCRIPT_TYPE_OPTIONS,
-  splitScriptTypeOptions,
   type ConfigMode,
   type CreateStepKey,
   buildMfwReuseChoices,
@@ -365,7 +313,6 @@ const selectedTemplateKey = ref<string | null>(null)
 const configView = ref<'choice' | 'templates'>('choice')
 /** 'new' = 新建一个别的项目（进引导页选目录）；否则是要复用的项目所属脚本的 id */
 const selectedMfwChoice = ref<string>('new')
-const typeKeyword = ref('')
 const templateKeyword = ref('')
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -381,18 +328,25 @@ const canGoBack = computed(
     currentStepIndex.value > 0 ||
     (currentStep.value === 'config' && configView.value === 'templates')
 )
-// title/description 随语言变，先解析再过滤，别名匹配仍走 keywords
-const typeOptions = computed(() =>
-  SCRIPT_TYPE_OPTIONS.map(option => ({
-    ...option,
-    title: t(option.titleKey),
-    description: t(option.descriptionKey),
-  }))
+const capabilities = useScriptCapabilities(toRef(props, 'open'))
+const availableTypes = computed(() =>
+  SCRIPT_TYPE_OPTIONS.filter(option => capabilities.types.value.includes(option.value))
 )
-const filteredTypes = computed(() =>
-  filterScriptTypeOptions(typeOptions.value, typeKeyword.value, t)
-)
-const typeSections = computed(() => splitScriptTypeOptions(filteredTypes.value))
+watch(capabilities.error, error => {
+  // 能力读取失败时返回带重试入口的步骤，避免配置步骤只剩不可用的下一步按钮。
+  if (error && props.open) currentStep.value = 'type'
+})
+watch(availableTypes, options => {
+  // 原类型被停用时退回类型选择，清除该类型的模板和复用选择。
+  if (!options.some(option => option.value === selectedType.value)) {
+    selectedType.value = options[0]?.value ?? 'General'
+    currentStep.value = 'type'
+    selectedTemplateKey.value = null
+    selectedMfwChoice.value = 'new'
+    selectedConfigMode.value = 'template'
+    configView.value = 'choice'
+  }
+})
 const selectedTemplate = computed(() =>
   props.templates.find(template => template.configKey === selectedTemplateKey.value)
 )
@@ -420,7 +374,13 @@ watch(mfwReuseChoices, () => {
   }
 })
 const nextDisabled = computed(() => {
-  if (props.submitting) return true
+  if (
+    props.submitting ||
+    capabilities.loading.value ||
+    capabilities.error.value ||
+    !availableTypes.value.some(option => option.value === selectedType.value)
+  )
+    return true
   if (isMfwStep.value) {
     return selectedMfwChoice.value !== 'new' && (props.mfwSourcesLoading || !selectedMfwReuse.value)
   }
@@ -459,12 +419,13 @@ watch(
 const resetDialog = () => {
   cancelScheduledSearch()
   currentStep.value = 'type'
-  selectedType.value = 'MAA'
+  selectedType.value = availableTypes.value.some(option => option.value === 'MAA')
+    ? 'MAA'
+    : (availableTypes.value[0]?.value ?? 'MAA')
   selectedConfigMode.value = 'template'
   selectedTemplateKey.value = null
   configView.value = 'choice'
   selectedMfwChoice.value = 'new'
-  typeKeyword.value = ''
   templateKeyword.value = ''
 }
 
@@ -511,6 +472,8 @@ const handleBack = () => {
 }
 
 const handleNext = () => {
+  // 列表刷新或类型不可用时不继续创建流程。
+  if (nextDisabled.value) return
   if (currentStep.value === 'type') {
     if (steps.value.length > 1) {
       currentStep.value = 'config'
@@ -552,10 +515,6 @@ const submitCurrentSelection = () => {
 
 const handleCancel = () => {
   if (!props.submitting) emit('update:open', false)
-}
-
-const clearTypeFilters = () => {
-  typeKeyword.value = ''
 }
 
 const chooseCustomConfig = () => {
@@ -603,44 +562,6 @@ const chooseCustomConfig = () => {
 
 .list-toolbar.single {
   grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.type-grid {
-  display: grid;
-  width: 100%;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.type-sections {
-  display: flex;
-  width: 100%;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.type-section-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.type-section-title {
-  color: var(--ant-color-text);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.type-section-count,
-.type-section-hint {
-  color: var(--ant-color-text-tertiary);
-  font-size: 11px;
-}
-
-.specialized-section {
-  padding-top: 14px;
-  border-top: 1px solid var(--ant-color-border-secondary);
 }
 
 .ellipsis {
@@ -700,10 +621,6 @@ const chooseCustomConfig = () => {
 }
 
 @media (max-width: 760px) {
-  .type-grid {
-    grid-template-columns: 1fr;
-  }
-
   .list-toolbar {
     grid-template-columns: 1fr;
   }

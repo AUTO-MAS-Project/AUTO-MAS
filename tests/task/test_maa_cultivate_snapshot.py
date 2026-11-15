@@ -12,13 +12,15 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
+from maa_adapter import api as maa_api
+from maa_adapter.config.script import MaaConfig
+from maa_adapter.config.user import MaaUserConfig
+from maa_adapter.cultivate import editor as api_service
+from maa_adapter.cultivate import skland, yituliu
 
 from app.config import ConfigCollection
-from app.models.config import MaaConfig, MaaUserConfig
-from app.task.MAA import api as maa_api
-from app.task.MAA import api_service
-from app.task.MAA.tools.cultivate import skland, yituliu
-from app.tools.common.community.providers import skland as skland_provider
+
+HTTPX_CLIENT = httpx.AsyncClient
 
 SNAPSHOT_URL = (
     "https://data.auto-mas.top/api/v1/files/auto-mas/Client/"
@@ -84,7 +86,7 @@ def snapshot(sources):
 
 @pytest.fixture
 def network(monkeypatch, sources):
-    client_type = httpx.AsyncClient
+    client_type = HTTPX_CLIENT
 
     def install(content=b"", *, status=200, upstream_status=200):
         requests = []
@@ -279,6 +281,11 @@ async def refresh_host(monkeypatch, tmp_path, snapshot, network):
     )
     await script.UserData.commit()
     monkeypatch.setattr(api_service, "Config", config)
+    from maa_adapter.config import access
+    from maa_adapter.cultivate import inventory
+
+    monkeypatch.setattr(access, "Config", config)
+    monkeypatch.setattr(inventory, "Config", config)
     credential = {"raw": json.dumps({"cred": "test", "token": "test"})}
 
     async def load_credential(_account_uid):
@@ -323,16 +330,16 @@ async def refresh_host(monkeypatch, tmp_path, snapshot, network):
             },
         )
 
-    client_type = httpx.AsyncClient
+    client_type = HTTPX_CLIENT
     monkeypatch.setattr(
-        skland_provider,
+        skland._tool_skland,
         "create_skland_client",
-        lambda **kwargs: client_type(transport=httpx.MockTransport(respond)),
+        lambda **kwargs: HTTPX_CLIENT(transport=httpx.MockTransport(respond)),
     )
     monkeypatch.setattr(
-        skland_provider, "get_cached_device_id", AsyncMock(return_value="device")
+        skland._tool_skland, "get_cached_device_id", AsyncMock(return_value="device")
     )
-    monkeypatch.setattr(skland_provider, "_server_clock", None)
+    monkeypatch.setattr(skland._tool_skland, "_server_clock", None)
     network(compressed(snapshot))
     skland.clear_skland_progression_cache()
     app = FastAPI()
@@ -495,7 +502,7 @@ async def test_catalog_waiter_cancellation_does_not_cancel_other_waiter(
 ):
     entered, release = asyncio.Event(), asyncio.Event()
     requests = []
-    client_type = httpx.AsyncClient
+    client_type = HTTPX_CLIENT
 
     async def respond(request):
         requests.append(str(request.url))
@@ -594,7 +601,7 @@ async def test_manual_refresh_waits_for_old_catalog_and_shares_new_result(
     tmp_path, snapshot, monkeypatch
 ):
     entered, release = asyncio.Event(), asyncio.Event()
-    client_type = httpx.AsyncClient
+    client_type = HTTPX_CLIENT
     requests = []
     fresh = deepcopy(snapshot)
     fresh["operators"][0]["label"] = "Refreshed operator"

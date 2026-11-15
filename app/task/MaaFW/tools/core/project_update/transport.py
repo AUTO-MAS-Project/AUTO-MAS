@@ -8,6 +8,7 @@ import ipaddress
 import json
 import os
 import re
+import shutil
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -429,6 +430,7 @@ async def download_resumable(
     cancel_event: threading.Event | None = None,
     alternates: Sequence[tuple[str, str]] = (),
     expected_size: int | None = None,
+    prefetched_path: Path | None = None,
 ) -> DownloadOutcome:
     """Download an artifact with Range/validator-aware checkpointing.
 
@@ -481,6 +483,39 @@ async def download_resumable(
                 "partialPath": str(partial_path),
             }
         )
+        if prefetched_path is not None and prefetched_path.is_file():
+            size = prefetched_path.stat().st_size
+            if size > max_bytes or expected_size is not None and size != expected_size:
+                raise RuntimeError("prefetched update package size mismatch")
+            await _run_cache_worker(shutil.copyfile, prefetched_path, partial_path)
+            outcome = await _finalize_partial(
+                partial_path=partial_path,
+                metadata_path=metadata_path,
+                metadata=metadata,
+                expected_sha256=expected,
+                total=size,
+                etag=None,
+                last_modified=None,
+                range_supported=None,
+            )
+            store.update(
+                "verified",
+                downloadedBytes=size,
+                totalBytes=size,
+                sha256=outcome.sha256,
+                cacheHit=True,
+            )
+            emit(
+                {
+                    "stage": "downloaded",
+                    "status": "cache_hit",
+                    "downloaded_bytes": size,
+                    "total_bytes": size,
+                    "cache_hit": True,
+                    "operation_id": store.operation_id,
+                }
+            )
+            return outcome
         existing = partial_path.stat().st_size if partial_path.is_file() else 0
         expected_total = _optional_int(metadata.get("totalBytes"))
         if existing > max_bytes or (

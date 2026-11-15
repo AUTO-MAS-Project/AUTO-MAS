@@ -9,16 +9,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
-from app.config import ConfigCollection
-from app.core.script_update_queue import script_task_retrying
-from app.models.config import MaaConfig, MaaUserConfig
-from app.models.emulator import DeviceInfo, DeviceStatus
-from app.models.task import TaskItem, TaskMode
-from app.task.MAA.AutoProxy import AutoProxyTask
-from app.task.MAA.base_preset import get_maa_base_preset
-from app.task.MAA.constants import MAA_TASKS
-from app.task.MAA.tools.cultivate.types import (
+from maa_adapter.config.script import MaaConfig
+from maa_adapter.config.user import MaaUserConfig
+from maa_adapter.constants import MAA_TASKS
+from maa_adapter.cultivate.types import (
     CultivatePlan,
     FarmEntry,
     Goal,
@@ -27,6 +21,12 @@ from app.task.MAA.tools.cultivate.types import (
     ProgressionSnapshot,
     Requirement,
 )
+from maa_adapter.native.presets import get_maa_base_preset
+
+from app.config import ConfigCollection
+from app.core.script_update_queue import script_task_retrying
+from app.models.emulator import DeviceInfo, DeviceStatus
+from app.models.task import TaskItem, TaskMode
 from tests.config_support import activate_config
 from tests.task_stop_support import add_script
 
@@ -96,7 +96,7 @@ async def test_task_failure_retry_scope(
     expected_modes,
     routine_success,
 ):
-    module = importlib.import_module("app.task.MAA.AutoProxy")
+    module = importlib.import_module("maa_adapter.tasks.auto_proxy")
     root = isolated_app_paths.work_path / "maa"
     root.mkdir()
     config = await activate_config(MaaConfig(Info={"Path": root}))
@@ -152,7 +152,9 @@ async def test_task_failure_retry_scope(
         open=AsyncMock(return_value=DeviceInfo("test", DeviceStatus.ONLINE, "")),
         close=AsyncMock(return_value=True),
     )
-    proxy = AutoProxyTask(script, config, users, emulator, capture_adb=AsyncMock())
+    from tests.maa_support import make_proxy
+
+    proxy = make_proxy(script, config, users, emulator, capture_adb=AsyncMock())
     from app.task.history_core import TaskHistorySession
 
     proxy.history = TaskHistorySession(task_info)
@@ -167,7 +169,7 @@ async def test_task_failure_retry_scope(
         queue = gui["Configurations"]["Default"]["TaskQueue"]
 
     async def open_process(*args, **kwargs):
-        attempts.append((proxy.mode, deepcopy(queue)))
+        attempts.append((proxy.phase, deepcopy(queue)))
 
     process = SimpleNamespace(
         open_process=open_process,
@@ -182,7 +184,7 @@ async def test_task_failure_retry_scope(
 
         async def start_monitor_file(self, *args, **kwargs):
             succeeded = recover and (
-                proxy.mode == "Routine" and (annihilation or len(attempts) > 1)
+                proxy.phase == "Routine" and (annihilation or len(attempts) > 1)
             )
             errors, lines = [], []
             for task in queue:
@@ -210,8 +212,9 @@ async def test_task_failure_retry_scope(
     # 隔离文件落盘、进程/截图、通知和外部关卡查询，保留真实队列构造与重试决策。
     monkeypatch.setattr(proxy, "set_maa", set_maa)
     monkeypatch.setattr(proxy, "_take_failure_shot", AsyncMock(return_value=None))
+    monkeypatch.setattr(module.stage_service, "get_stage", AsyncMock(return_value="{}"))
     monkeypatch.setattr(
-        module.maa_stage_service,
+        module.stage_service,
         "get_stage_info",
         AsyncMock(return_value={"Activity": [{"Value": "ACT-1", "Drop": "30013"}]}),
     )
@@ -281,14 +284,14 @@ async def test_task_failure_retry_scope(
     retried_modes = []
 
     async def on_retry():
-        retried_modes.append(proxy.mode)
+        retried_modes.append(proxy.phase)
 
     retry_token = script_task_retrying.set(on_retry)
     try:
         await proxy.main_task()
     finally:
         script_task_retrying.reset(retry_token)
-        await proxy.callbacks.close()
+        pass
 
     assert [mode for mode, _ in attempts] == expected_modes
     # 只有同一模式重新启动 MAA 才通知 L2；切到下一个模式不应重置成功信号。

@@ -9,17 +9,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
+from maa_adapter.config.script import MaaConfig
+from maa_adapter.config.user import MaaUserConfig
+from maa_adapter.config.user_update import prepare_user_update
+from maa_adapter.cultivate import Progression, append_owned_cultivate_targets
+from maa_adapter.tasks.auto_proxy import AutoProxyTask
 
 from app.config import ConfigCollection, config_manager
 from app.core.config.manager import AppConfig
-from app.models.config import MaaConfig, MaaUserConfig
-from app.models.script_contracts import ScriptConfigHandler
-from app.task.MAA.AutoProxy import AutoProxyTask
-from app.task.MAA.tools.cultivate import (
-    Progression,
-    append_owned_cultivate_targets,
-)
-from app.task.MAA.user_update import prepare_user_update
 from tests.config_support import activate_config
 
 
@@ -70,7 +67,7 @@ def test_owned_defaults_preserve_existing_rows_and_respect_reachable_goals():
 
 @pytest.mark.asyncio
 async def test_enabling_fails_without_a_reliable_owned_snapshot(monkeypatch):
-    api = importlib.import_module("app.task.MAA.api_service")
+    api = importlib.import_module("maa_adapter.cultivate.editor")
     monkeypatch.setattr(
         api, "get_cultivate_skland_progression", AsyncMock(return_value=None)
     )
@@ -87,7 +84,7 @@ async def test_enabling_fails_without_a_reliable_owned_snapshot(monkeypatch):
 async def test_every_run_discovers_new_owned_operators_from_empty_targets(
     monkeypatch, tmp_path
 ):
-    module = importlib.import_module("app.task.MAA.AutoProxy")
+    module = importlib.import_module("maa_adapter.tasks.auto_proxy")
     task = SimpleNamespace(
         IfCultivate=True,
         CultivateAllOwned=True,
@@ -153,11 +150,7 @@ async def test_every_run_discovers_new_owned_operators_from_empty_targets(
 @pytest_asyncio.fixture
 async def managed_host():
     config = AppConfig.__new__(AppConfig)
-    config._script_config_handlers = {
-        MaaConfig: ScriptConfigHandler(
-            user_config_class=MaaUserConfig, prepare_user_update=prepare_user_update
-        )
-    }
+    config._script_config_handlers = {}
     config.ScriptConfig = ConfigCollection.build([MaaConfig])
     await config.ScriptConfig.activate()
     script_uid = config.ScriptConfig.add(MaaConfig)
@@ -190,8 +183,8 @@ async def test_enabling_rejects_binding_changed_during_sync(
         await complete.wait()
         return {"old-owned": progression()}, 1
 
-    api = importlib.import_module("app.task.MAA.api_service")
-    module = importlib.import_module("app.task.MAA.user_update")
+    api = importlib.import_module("maa_adapter.cultivate.editor")
+    module = importlib.import_module("maa_adapter.config.user_update")
     monkeypatch.setattr(api, "get_cultivate_skland_progression", fetch)
     monkeypatch.setattr(
         module.depot_cultivate_service,
@@ -231,11 +224,9 @@ async def test_binding_is_checked_after_waiting_for_the_commit_gate(
         prepared.set()
         return guard
 
-    config._script_config_handlers[MaaConfig] = ScriptConfigHandler(
-        prepare_user_update=prepare
-    )
-    api = importlib.import_module("app.task.MAA.api_service")
-    module = importlib.import_module("app.task.MAA.user_update")
+    api = importlib.import_module("maa_adapter.cultivate.editor")
+    module = importlib.import_module("maa_adapter.config.user_update")
+    monkeypatch.setattr(module, "prepare_user_update", prepare)
     monkeypatch.setattr(
         api,
         "get_cultivate_skland_progression",
@@ -267,7 +258,7 @@ async def test_binding_is_checked_after_waiting_for_the_commit_gate(
 async def test_restore_preserves_explicit_management_and_disables_missing_old_field(
     monkeypatch, tmp_path, saved_flag
 ):
-    module = importlib.import_module("app.task.MAA.tools.restore_service")
+    module = importlib.import_module("maa_adapter.native.restore")
     user = await activate_config(
         MaaUserConfig.model_validate(
             {"Task": {"IfCultivate": True, "CultivateAllOwned": True}}
@@ -294,7 +285,7 @@ async def test_restore_preserves_explicit_management_and_disables_missing_old_fi
     assert user.Task.CultivateTargets == targets
 
     # 恢复后实际准备下一轮；旧侧车不会再扩充名单，新侧车的显式开启仍有效。
-    proxy_module = importlib.import_module("app.task.MAA.AutoProxy")
+    proxy_module = importlib.import_module("maa_adapter.tasks.auto_proxy")
     monkeypatch.setattr(
         proxy_module, "Config", SimpleNamespace(config_path=tmp_path, proxy=None)
     )

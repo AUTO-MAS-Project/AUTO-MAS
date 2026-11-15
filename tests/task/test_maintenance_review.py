@@ -5,21 +5,17 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
 import pytest
+from maa_adapter.config.script import MaaConfig
+from maa_adapter.config.user import MaaUserConfig
+from maa_adapter.tasks.manager import MaaManager
 
 from app.core import Config
-from app.models.config import (
-    BetterGIConfig,
-    GeneralUserConfig,
-    MaaConfig,
-    MaaEndUserConfig,
-    MaaUserConfig,
-)
+from app.models.config import BetterGIConfig, GeneralUserConfig, MaaEndUserConfig
 from app.models.game_maintenance import MaintenanceWindow
 from app.models.task import ScriptItem, UserItem
 from app.task import maintenance
 from app.task import manager_base as base
 from app.task.general.manager import GeneralManager
-from app.task.MAA.manager import MaaManager
 from app.task.MaaEnd.manager import MaaEndManager
 from app.utils import IS_WINDOWS
 from tests.config_support import activate_config
@@ -74,7 +70,9 @@ async def test_server_matching(monkeypatch, adapter, cls, field, value, game):
         )
     lookup = AsyncMock(return_value=object())
     info, script, _ = await create_runtime_tree(script_id=str(uuid.uuid4()))
-    instance = adapter(script)
+    instance = (
+        adapter(script, MaaConfig()) if adapter is MaaManager else adapter(script)
+    )
     result = await maintenance.get_user_maintenance(
         instance.maintenance_game(user), lookup=lookup
     )
@@ -163,7 +161,7 @@ async def test_update_runs_before_maintenance_and_all_skip_bypasses_proxy(
 async def test_maa_resource_update_keeps_takeover_credentials(
     monkeypatch, tmp_path, enabled, cdk
 ):
-    from app.task.MAA import manager as maa
+    from maa_adapter.tasks import manager as maa
 
     script_id = uuid.uuid4()
     config = MaaConfig()
@@ -177,7 +175,7 @@ async def test_maa_resource_update_keeps_takeover_credentials(
     )
     monkeypatch.setattr(Config, "ScriptConfig", {script_id: config})
     info, script, _ = await create_runtime_tree(script_id=str(script_id))
-    instance = maa.MaaManager(script)
+    instance = maa.MaaManager(script, config)
     instance.script_config = config
     instance.maa_set_path = tmp_path / "config"
     instance.temp_path = tmp_path / "Temp"

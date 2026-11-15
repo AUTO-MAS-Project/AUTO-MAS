@@ -6,11 +6,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from maa_adapter.native.presets import get_maa_base_preset
+from maa_adapter.tasks import manager
+from maa_adapter.updates import install as installer
+from maa_adapter.updates.config import restore_maa_update_config
 
-from app.task.MAA import manager
-from app.task.MAA.base_preset import get_maa_base_preset
-from app.task.MAA.tools import UpdateMAA as installer
-from app.task.MAA.tools.update_config import restore_maa_update_config
 from app.utils import io as io_utils
 
 _wait_for_updater = installer._wait_for_updater
@@ -49,7 +49,9 @@ def installation(tmp_path, monkeypatch):
     scheduler = object.__new__(manager.MaaManager)
     scheduler.maa_set_path = config
     scheduler.temp_path = snapshot
-    scheduler.script_info = SimpleNamespace(script_id="test-script")
+    scheduler.script_info = SimpleNamespace(
+        info=SimpleNamespace(script_id="test-script")
+    )
     return root, snapshot, original, scheduler
 
 

@@ -4,8 +4,7 @@ from dataclasses import replace
 from datetime import date
 
 import pytest
-
-from app.task.MAA.tools.cultivate import (
+from maa_adapter.cultivate import (
     Goal,
     OperatorTarget,
     Progression,
@@ -13,7 +12,7 @@ from app.task.MAA.tools.cultivate import (
     build_plan,
     has_material_gap,
 )
-from app.task.MAA.tools.cultivate.yituliu import normalize_dataset
+from maa_adapter.cultivate.yituliu import normalize_dataset
 
 
 @pytest.fixture

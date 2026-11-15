@@ -19,7 +19,7 @@ from pydantic import TypeAdapter
 from app.config import ConfigEntry, ConfigNode, config_manager
 from app.core import Config, Publisher
 from app.core.ws import protocol
-from app.models.config import CLASS_BOOK
+from app.models.config import CLASS_BOOK, ScriptEntry, UserEntry
 from app.models.schema import (
     TaskRequirements,
     TaskRuntimeSnapshot,
@@ -241,9 +241,11 @@ class _TaskManager:
                                         for name, cls in CLASS_BOOK.items()
                                         if type(entry) is cls
                                     ),
-                                    "unknown",
+                                    type(entry).__name__,
                                 ),
-                                "name": entry.Info.Name,
+                                "name": entry.info.name
+                                if isinstance(entry, ScriptEntry)
+                                else entry.Info.Name,
                                 "params": deepcopy(selected.params),
                             }
                         },
@@ -252,16 +254,21 @@ class _TaskManager:
                     script = info.scripts[sid]
                     script._config_ref = ref(entry)
                     script._run_days = tuple(item.Schedule.Days) if item else None
+                    user_configs = (
+                        entry.users
+                        if isinstance(entry, ScriptEntry)
+                        else entry.UserData
+                    )
                     users = (
                         selected.children.values()
                         if session
-                        else select(selected.children, entry.UserData.keys())
+                        else select(selected.children, user_configs.keys())
                     )
                     for user in users:
                         if user.children:
                             raise ValueError("用户节点不能包含子项")
                         shared = session and user.uid == "default"
-                        config = None if shared else entry.UserData.get(UUID(user.uid))
+                        config = None if shared else user_configs.get(UUID(user.uid))
                         if not shared and config is None:
                             raise ValueError(f"用户不属于托管：{user.uid}")
                         uid = script.users.add(
@@ -271,7 +278,11 @@ class _TaskManager:
                                     "user_id": "default"
                                     if shared
                                     else str(UUID(user.uid)),
-                                    "name": config.Info.Name
+                                    "name": (
+                                        config.info.name
+                                        if isinstance(config, UserEntry)
+                                        else config.Info.Name
+                                    )
                                     if config is not None
                                     else "共享配置",
                                     "params": deepcopy(user.params),

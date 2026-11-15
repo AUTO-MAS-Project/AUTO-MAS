@@ -4,9 +4,10 @@ import json
 from datetime import datetime, timezone
 
 import pytest
+from maa_adapter.cultivate.activity_inventory import resolve_activity_inventory_plans
+from maa_adapter.stages.service import MaaStageCache, MaaStageService
 
-from app.task.MAA.stage_service import MaaStageCache, MaaStageService
-from app.task.MAA.tools.activity_inventory import resolve_activity_inventory_plans
+from app.core.background_tasks import BackgroundTaskRegistry
 
 NOW = datetime(2026, 10, 29, tzinfo=timezone.utc)
 
@@ -56,7 +57,9 @@ async def test_expired_template_is_separate_from_runnable_stages():
         write_cache=unexpected_call,
         fetch=unexpected_call,
         now=lambda: NOW,
-        track_task=lambda task: None,
+        background_tasks=BackgroundTaskRegistry().register_group(
+            "maa-stage-test", max_running=1, max_retained=1
+        ),
     )
     overview = await service.get_stage_info("Info", server="Bilibili")
     assert overview["ActivityTemplate"] == ["material", "material", "orundum"]
@@ -98,7 +101,9 @@ async def test_open_activity_suppresses_expired_template():
         write_cache=unexpected_call,
         fetch=unexpected_call,
         now=lambda: NOW,
-        track_task=lambda task: None,
+        background_tasks=BackgroundTaskRegistry().register_group(
+            "maa-stage-test", max_running=1, max_retained=1
+        ),
     )
     overview = await service.get_stage_info("Info")
     assert overview["ActivityTemplate"] == []

@@ -8,7 +8,6 @@ import threading
 import uuid
 import zipfile
 from contextlib import ExitStack
-from tests.runtime_support import RuntimeStub as SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -17,6 +16,7 @@ from packaging.version import Version
 from app.services import script_install
 from app.task.BAAH import manager
 from app.task.BAAH.tools import program_update as update
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 REAL_ASSERT_IDLE = update.assert_idle
 

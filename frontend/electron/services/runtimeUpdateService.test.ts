@@ -251,9 +251,15 @@ const alignStub = {
 }
 
 function createDeps(backend: BackendUpdateController, launchConfig: RuntimeLaunchConfig) {
+  // 组装隔离的后端更新依赖，以受控升级准备和 Runtime 客户端驱动实际更新编排。
   return {
     backend,
     launchConfig,
+    prepareUpgrade:
+      async () =>
+      /* 模拟前端准备完成，并返回绑定当前 Runtime 对齐替身的执行入口。 */
+      (options: RuntimeBinaryAlignOptions) =>
+        /* 把二进制对齐请求转给测试替身，保留参数与执行顺序供断言。 */ alignStub.run(options),
     createRuntimeService: (
       options: ConstructorParameters<typeof RuntimeInitializationService>[0]
     ) =>
@@ -447,15 +453,23 @@ describe('重新监督失败', () => {
 // ==================== 取消 ====================
 
 describe('取消更新', () => {
+  // 组织 Runtime 后端更新在不同阶段取消时的状态和重启行为验证。
   it('bootstrap 进行中取消：OPERATION_CANCELLED 意味着源码没动，把旧后端拉回来', async () => {
+    // 验证停止旧后端后取消源码准备仍会恢复旧后端，并返回已确认的取消结果。
     FakeRuntimeClient.scripts = [cancelledScript()]
 
     const outcome = await updateBackendViaRuntime(
       '5.6.0',
       update => {
+        // 收集进度，并在旧后端停止且仓库准备开始时模拟用户取消更新。
         collect(update)
         // 克隆刚开始时按下取消，等价于用户在进度弹窗上点「取消更新」。
-        if (update.stage === 'repository' && update.status === 'started') cancelBackendUpdate()
+        if (
+          update.stage === 'repository' &&
+          update.status === 'started' &&
+          callLog.includes('stopBackend')
+        )
+          cancelBackendUpdate()
       },
       createDeps(createBackend(), managedConfig())
     )
