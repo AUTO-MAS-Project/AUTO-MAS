@@ -16,8 +16,8 @@
 //      defineEmits<该分节的 …Emits>() 把 change / save 等事件发出来（或把 $attrs 透传给它包的 MFW
 //      分节），否则改动不会落盘。
 //    - 插入点：defineMaaFWLazyComponent 写进 slots，组件以 `context` 一个 prop 接收上下文。
-//      scriptPage：afterBasicInfo / beforeControl / besidePackageName（control 分节内、与游戏包名
-//      并排）/ afterControl / afterUpdate / afterRun
+//      scriptPage：afterBasicInfo / beforeControl / besidePackageName（control 分节内、ADB 下排在
+//      包名、等待时间之后，每个组件一格）/ afterControl / afterUpdate / afterRun
 //      userPage：afterBasicInfo / beforeTaskQueue / afterTaskQueue
 //      create：afterSourceStep（只读）
 //    - 预取数据：scriptPage.prepare / userPage.prepare（页面加载期间调用；新建流程没有）。
