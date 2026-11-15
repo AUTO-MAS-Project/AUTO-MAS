@@ -67,6 +67,7 @@ from app.task.MaaFW.tools.core.interface.task_config import (
 from app.task.MaaFW.tools.core.runner.environment import (
     AGENT_PIP_CONSTRAINT_DIR_ENV,
     ARCHITECTURE_MISMATCH_MARKERS,
+    MaaFWEnvironmentUnusableError,
     MaaFWRunnerEnvironment,
     describe_project_runtime_architecture_mismatch,
 )
@@ -279,12 +280,12 @@ _WIN32_NO_WINDOW_RULES_MESSAGE = (
 # 还要重启一遍模拟器/游戏——默认 RunTimesLimit=3，白等好几分钟才告诉用户同一件事。
 # 判据取消息标记而不是异常类型：这些错误跨了 runtime_pool 与 runner 两个包，
 # 而 runner_task 有意不在模块层导入 runtime_pool（那会让所有请求都付出导入成本）。
+# 运行环境准备与 worker 能给出类型的确定性失败不走这张表（_MaaFWEnvironmentUnavailable、
+# MaaFWRunResult.retryable）。
 _UNRETRYABLE_ENVIRONMENT_MARKERS = (
     "MaaFW runtime Python 自检失败",
     "MaaFW runtime ABI 探测失败",
     "runtime Python identity could not be verified",
-    "MaaFW Runner 环境准备失败",
-    "MaaFW Runner 环境准备超时",
     # 项目自带的 MaaFramework 与本机架构不符：换哪次尝试都是同一份库。运行前自检一般已
     # 拦下，这里兜住 worker 侧才发现的情况（异常与任务失败两条路都认）。
     *ARCHITECTURE_MISMATCH_MARKERS,
@@ -411,6 +412,16 @@ class _MaaFWRunTimeoutError(RuntimeError):
 
 class _MaaFWGameUpdateRequired(RuntimeError):
     """特调的游戏更新钩子判定客户端要手动更新：本账号本次判失败，不重试。"""
+
+
+class _MaaFWEnvironmentUnavailable(RuntimeError):
+    """宿主确认的确定性环境失败（运行环境准备的确定性错误、ModAVD 截图通道缺失或
+    MaaFramework 版本过低）：重试只会原样再失败，本账号本次结束、不重启游戏 / 模拟器。"""
+
+
+class _MaaFWEnvironmentPrepareRetry(RuntimeError):
+    """运行环境准备的暂时性失败（正被其它任务使用、下载失败等）：可以再试一次，但与游戏 /
+    模拟器的状态无关，重试前不关它们。"""
 
 
 class _FrameworkLogWriter:
@@ -934,7 +945,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     else f"MaaFW 运行异常: {exc}"
                 )
                 self._append_log(message, warning=True)
-                unretryable = _is_unretryable_failure(message)
+                unretryable = isinstance(
+                    exc, _MaaFWEnvironmentUnavailable
+                ) or _is_unretryable_failure(message)
+                # 登录钩子判定的确定性配置错误（账号没填、登录方式与客户端不匹配等）
+                login_unretryable = (
+                    isinstance(exc, MaaFWLoginRequired) and not exc.retryable
+                )
+                stop = unretryable or login_unretryable
                 self._record_attempt(
                     index + 1,
                     [],
@@ -960,16 +978,28 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         "运行环境不可用，重试也不会有别的结果，已停止本轮",
                         warning=True,
                     )
+                elif login_unretryable:
+                    self._append_log(
+                        "重试也不会有别的结果，已停止本轮（不再重启游戏/模拟器）",
+                        warning=True,
+                    )
                 if self.cur_user_log is not None:
                     await self.cur_user_log.set_state(status=message)
-                await Publisher.send(
-                    id=self.task_info.task_id,
-                    type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=message),
-                )
-                if unretryable:
+                # 任务页提示会弹窗并响提示音：只在不再重试时发，中间的尝试只写日志与状态
+                if stop or index + 1 >= self._attempt_limit():
+                    await Publisher.send(
+                        id=self.task_info.task_id,
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(level="error", message=message),
+                    )
+                if stop:
                     break
                 previous_failure = message
+                if isinstance(exc, _MaaFWEnvironmentPrepareRetry):
+                    # 运行环境准备与游戏 / 模拟器无关：不关它们，直接再准备一次
+                    previous_restarted = False
+                    client_reset = False
+                    continue
                 (
                     previous_restarted,
                     client_reset,
@@ -1058,9 +1088,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         client_reset = False
                         continue
                     break
-                if _is_unretryable_failure(result.errorMessage or ""):
-                    # worker 在任务里报的环境级失败（如原生库架构不符）：每轮都一样，
-                    # 不再为它起停模拟器 / 游戏重试。
+                if not result.retryable or _is_unretryable_failure(
+                    result.errorMessage or ""
+                ):
+                    # worker 报的确定性失败（agent 握手因协议版本被拒、原生库混装或架构不符）：
+                    # 每轮都一样，不再为它起停模拟器 / 游戏重试。
                     self._append_log(
                         "运行环境不可用，重试也不会有别的结果，已停止本轮",
                         warning=True,
@@ -1712,8 +1744,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         """模拟器启动后、第一个任务下发前，调特调的运行前登录钩子（契约见 flavor.py）。
 
         每个账号每次运行只调一次，紧跟游戏更新检查之后。钩子判定本次无法继续时抛
-        ``MaaFWLoginRequired``，按普通失败结算、照常重试；钩子实现里的其它异常同样按失败
-        处理，原因附在异常原文后面。没实现钩子（通用 MaaFW）时什么都不做。
+        ``MaaFWLoginRequired``，按普通失败结算、照常重试（``retryable=False`` 的不重试，见
+        main_task）；钩子实现里的其它异常按可重试的失败处理，原因附在异常原文后面。
+        没实现钩子（通用 MaaFW）时什么都不做。
         """
 
         if self._login_checked:
@@ -1894,7 +1927,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         capability = build_adb_emulator_extra_capabilities().get("avd", {})
         if not capability.get("screencap"):
-            raise RuntimeError(
+            raise _MaaFWEnvironmentUnavailable(
                 "当前 MaaFW 运行时不带模拟器截图增强（MaaAdbControlUnit），"
                 "ModAVD 上截图不能回落到普通 adb，本次不运行"
             )
@@ -1957,7 +1990,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             maafw_version
         )
         if supported is False:
-            raise RuntimeError(
+            raise _MaaFWEnvironmentUnavailable(
                 f"项目使用的 MaaFramework {maafw_version} 低于 5.7.0，不支持 ModAVD 的截图通道"
                 "（AVDExtras）；请把项目更新到带 MaaFramework 5.7.0 以上的版本"
             )
@@ -2267,6 +2300,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 send_log=self._append_log,
             )
             raise
+        except MaaFWEnvironmentUnusableError as exc:
+            # 离线且本地没有 binding、要升级 AUTO-MAS 这类：下一次准备只会原样再失败
+            raise _MaaFWEnvironmentUnavailable(str(exc)) from exc
+        except Exception as exc:
+            # 其余（正被其它任务使用、下载失败……）可以再试；文案不变，main_task 据类型
+            # 不为它关游戏 / 模拟器。文案命中环境级标记的照旧由标记判不重试。
+            raise _MaaFWEnvironmentPrepareRetry(str(exc)) from exc
         attempt_key = id(self.cur_user_log)
         history_dir = Path(self._history_temp.name) / uuid.uuid4().hex
         await asyncio.to_thread(history_dir.mkdir, parents=True, exist_ok=True)
@@ -5412,7 +5452,7 @@ def _result_failure_category(result: MaaFWRunResult) -> str | None:
         return CATEGORY_RESOURCE_FAILURE
     if result.timedOut:
         return CATEGORY_RUN_TIMEOUT
-    if _is_unretryable_failure(result.errorMessage or ""):
+    if not result.retryable or _is_unretryable_failure(result.errorMessage or ""):
         return CATEGORY_ENVIRONMENT
     return None
 

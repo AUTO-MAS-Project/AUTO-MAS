@@ -80,7 +80,9 @@
   固定 60 秒截断慢启动的客户端），总时长仍受登录主循环 240 秒约束；所有循环先查总时限，
   `adb input tap` 失败直接抛错。
   坐标全按屏幕宽高取比例（16:9 实测值），面板 / 标题页布局改版要跟着改。失败抛
-  `MaaFWLoginRequired`（文案直接给用户看，本轮按普通失败重试）；`CancelledError` 照常上抛。
+  `MaaFWLoginRequired`（文案直接给用户看，本轮按普通失败重试）；配置错误（非 ADB 控制器、账号为空、
+  包名或资源不是 B 服、没开隐私政策开关）抛 `retryable=False`，宿主直接结束本账号、不重启模拟器。
+  `CancelledError` 照常上抛。
   引擎侧只在登录成功后才记「已登录」，客户端被重试重启时会清掉标记、下一轮重新验证。
   依赖：ADB controller + `Game.PackageName` 填 B 服包名（`com.shenlan.m.reverse1999.bilibili`，
   没填时按这个包名拉起）。脚本资源不是「B 服」或实际要启动的包名不是 B 服包时直接报错，

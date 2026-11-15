@@ -51,6 +51,7 @@ from app.task.MaaFW.tools.core.runtime_pool.architecture import (  # noqa: F401 
 from app.task.MaaFW.tools.core.runtime_pool.binding import (
     BindingInfo,
     MaaFWBindingError,
+    MaaFWBindingUnavailableError,
     binding_environment_variables,
     binding_index_candidates,
     ensure_binding,
@@ -139,6 +140,11 @@ def _report_environment_progress(
         logger.warning("MaaFW 运行环境进度回调失败: stage=%s", stage, exc_info=True)
 
 
+class MaaFWEnvironmentUnusableError(RuntimeError):
+    """确定性的环境准备失败：离线且本地没有可用 binding、要升级 AUTO-MAS、运行池身份不匹配、
+    宿主 Python 不能作引导。下一次准备只会原样再失败，宿主据此不重试。文案与以前相同。"""
+
+
 @dataclass(frozen=True)
 class MaaFWRunnerEnvironment:
     python_executable: Path
@@ -215,7 +221,7 @@ def prepare_runner_environment(
         raise RuntimeError("MaaFW Runtime Pool ID 不能为空")
     actual_pool_id = str(pool.root_identity.get("poolId") or "").strip()
     if expected_pool_id and actual_pool_id != expected_pool_id:
-        raise RuntimeError(
+        raise MaaFWEnvironmentUnusableError(
             "MaaFW Runtime Pool 身份不匹配: "
             f"expected={expected_pool_id}, actual={actual_pool_id or '<missing>'}"
         )
@@ -247,7 +253,7 @@ def prepare_runner_environment(
                 bootstrap_request, allow_install=True
             )
         if bootstrap_target is None:  # pragma: no cover - fail-closed
-            raise RuntimeError(
+            raise MaaFWEnvironmentUnusableError(
                 "MaaFW runtime 宿主 Python 不能作引导，且池内没有可用的托管解释器"
             )
         bootstrap_python = str(bootstrap_target["executable"])
@@ -485,6 +491,11 @@ def _ensure_project_binding(
             log=send_log,
         )
     except MaaFWBindingError as exc:
+        if offline and isinstance(exc, MaaFWBindingUnavailableError):
+            # 离线且本地没有：不联网就永远没有，重试也一样
+            raise MaaFWEnvironmentUnusableError(
+                f"MaaFW binding 准备失败：{exc}"
+            ) from exc
         raise RuntimeError(f"MaaFW binding 准备失败：{exc}") from exc
 
 
@@ -558,7 +569,7 @@ def _check_binding_requires(
         except InvalidVersion:
             continue
     if problems:
-        raise RuntimeError(
+        raise MaaFWEnvironmentUnusableError(
             f"maafw {binding.version} 的 binding 需要 base 运行环境里没有的依赖版本："
             + "、".join(problems)
             + "；请升级 AUTO-MAS"

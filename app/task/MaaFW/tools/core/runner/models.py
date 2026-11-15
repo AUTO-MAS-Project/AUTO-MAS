@@ -153,6 +153,10 @@ class MaaFWRunResult(BaseModel):
     # 初始化时资源包没能加载（见 MaaFWResourceFailure）。与 timedOut / signal 同理单独成字段，
     # 宿主据此不重试、去原生 ERR 行里找原因，不靠匹配「加载资源失败」的文案。
     resourceFailure: MaaFWResourceFailure | None = None
+    # False：worker 判定这次失败是确定性的（agent 握手因协议版本被拒、原生 agent 混装两份原生库），
+    # 重试只会原样再失败，宿主不再重启游戏 / 模拟器重试。宿主与 worker 可能不是同一版本：
+    # 老 worker 不带这个字段时按默认 True（可重试）处理，老宿主收到时忽略。
+    retryable: bool = True
 
 
 class MaaFWRunnerJobPayload(BaseModel):

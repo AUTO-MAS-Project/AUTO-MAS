@@ -42,7 +42,8 @@
   用户运行日志的异步回调。返回值是写进运行日志的一句话，空串表示不写。
 - Win32 控制器以空 ``adb_address`` 调用，供钩子拒绝不支持的登录模式。
 - **失败**：抛 :class:`MaaFWLoginRequired`，文案直接给用户看；本账号本次尝试判失败，按普通失败
-  走重试（不特殊处理退出条件）。抛其它异常同样按失败处理，原因会附在异常原文后面。
+  走重试。确定性的配置错误（重试只会原样再失败）抛 ``MaaFWLoginRequired(..., retryable=False)``：
+  本账号本次直接结束，不重启游戏 / 模拟器。抛其它异常同样按可重试的失败处理，原因会附在异常原文后面。
 - **取消**：用户停止（``CancelledError``）必须照常向上抛，不能吞掉。
 
 可选钩子 ``sanitize_task_snapshot``（写账号任务快照前整理）的契约：
@@ -327,7 +328,15 @@ GameUpdateHook = Callable[..., Awaitable[_utils_game_update.GameUpdateResult]]
 
 
 class MaaFWLoginRequired(RuntimeError):
-    """特调的运行前登录钩子判定本次无法继续运行（如 B 服登录失败）；文案直接给用户看。"""
+    """特调的运行前登录钩子判定本次无法继续运行（如 B 服登录失败）；文案直接给用户看。
+
+    ``retryable=False`` 表示重试只会原样再失败（账号没填、登录方式与客户端不匹配这类配置错误）：
+    宿主直接结束本账号，不重启游戏 / 模拟器。默认可重试。
+    """
+
+    def __init__(self, message: str, *, retryable: bool = True) -> None:
+        super().__init__(message)
+        self.retryable = retryable
 
 
 LoginHook = Callable[..., Awaitable[str]]
