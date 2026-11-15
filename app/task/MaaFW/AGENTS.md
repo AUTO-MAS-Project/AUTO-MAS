@@ -825,7 +825,9 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   链接复制都不算：慢盘不该把区间拖成「太慢」，退回整包也要做同样的本地活），不另设墙钟上限；
   单次读取 30 秒没数据由读取超时兜住。放弃走的是同一条退回路径（先报 full、丢 `rpk-*`、整包走镜像）。
 - 预检备忘按**谱系 + 目标版本**记（`.payloads/<谱系>/precheck-<版本>.json`），组共有：一个成员预检
-  过某版本失败，组里谁也不再为它下包；只有运行前自动更新读它，手动更新等于强制重试。
+  过某版本失败，组里在冷却期内都不再为它下包；冷却过后运行前更新自动再试（网络类失败约 6 小时、
+  其它原因约一天，`precheck_gate.TRANSIENT_RETRY_AFTER` / `OTHER_RETRY_AFTER`）。只有运行前自动
+  更新读它，手动更新等于强制重试。
 - "检查更新"走 `version_only`，不换下载地址——带 CDK 换地址会扣 Mirror 酱当日额度。
 - 所以更新检查从不验证 CDK。编辑页 CDK 输入框下的小字（剩余天数 / CDK 有问题）走单独的
   `/maafw/mirror-cdk` → 宿主通过 `from app.services import update_transport` 调用 `update_transport.query_mirror_cdk_status`：
