@@ -213,6 +213,7 @@ export interface MaaFWUserBasicInfoSectionProps {
   heading?: UserAccountHeadingOptions
   formData: MaaFWUserFormData
   interfaceDependentDisabled: boolean
+  /** 账号标签上的问号提示；空串不挂问号 */
   accountRecordTooltip: string
   /** 账号字段占位：特调类型可能把账号绑成切号任务，文案不再是「仅本地记录」 */
   accountPlaceholder?: string

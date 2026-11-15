@@ -80,6 +80,8 @@ export interface MaaFWScriptSlotContext {
   readonly scriptId: string
   maafwConfig: MaaFWScriptConfig
   readonly previewData: MaaFWInterfacePreviewData | null
+  /** 当前生效的控制器类型（Adb / Win32 …）；interface 没读到时为空串 */
+  readonly effectiveControllerType: string
   /** interface 还没读到或正在读：依赖 interface 的控件置灰 */
   readonly interfaceDisabled: boolean
   /** 页面仍在加载 */
@@ -107,7 +109,7 @@ export interface MaaFWUserSlotContext {
 export interface MaaFWCreateSlotContext {
   /** 选中的类型卡片 */
   readonly type: MaaFWFlavorType
-  /** 「项目从哪来」当前的选择：'new' = 新建一个别的项目；否则是要复用的项目所属脚本的 id */
+  /** 「项目从哪来」当前的选择：'new' = 导入新项目；否则是要复用的项目所属脚本的 id */
   readonly selection: string
 }
 
@@ -264,9 +266,10 @@ export interface MaaFWScriptPageText {
 
 /** 用户页文案 */
 export interface MaaFWUserPageText {
-  /** 账号字段的占位与问号提示（密码字段所有 flavor 都是「仅本地记录」） */
+  /** 账号字段的占位（密码字段所有 flavor 都是「仅本地记录」） */
   accountPlaceholderKey: string
-  accountTooltipKey: string
+  /** 账号标签上的问号提示：账号另有用处时写清它的作用；为空不挂问号 */
+  accountTooltipKey: string | null
   /** 任务队列区顶部的提示（\n 分行，一行一个框）；为空则不显示 */
   queueHintKey: string | null
 }

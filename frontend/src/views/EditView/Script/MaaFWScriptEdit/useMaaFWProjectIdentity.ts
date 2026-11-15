@@ -73,8 +73,8 @@ export function useMaaFWProjectIdentity({
     }
   }
 
-  // 引导一律「<项目名> 项目引导」；编辑页通用 MaaFW 用「<项目名> 项目配置」，特调（M9A）用它自己那句
-  // 标题——特调那句是「编辑…」，放在引导里与所处步骤不符
+  // 引导一律「<项目名> 项目引导」；编辑页默认「<项目名> 项目配置」（三种类型都用这句），特调声明了
+  // titleKey 时用它自己那句——那句只用于编辑页，放在引导里与所处步骤不符
   const pageTitle = computed(() => {
     const name = projectDisplayName.value
     if (isWizard.value) return t('core.edit.maafwPageTitleSetup', { name })

@@ -15,7 +15,7 @@
 
 <script setup lang="ts">
 defineProps<{
-  /** `invalid`：interface 已没有、或当前控制器 / 资源下不可用 */
+  /** `invalid`：interface 已没有、当前控制器 / 资源下不可用、受管或不可选，总之导不进队列 */
   chips: ReadonlyArray<{ id: string; label: string; invalid?: boolean }>
 }>()
 </script>

@@ -47,7 +47,7 @@ export const MAAFW_FLAVOR: MaaFWFlavor = {
   userPage: {
     text: {
       accountPlaceholderKey: 'core.edit.localNoteOnly',
-      accountTooltipKey: 'core.edit.maafwAccountRecordTooltip',
+      accountTooltipKey: null,
       queueHintKey: null,
     },
     managed: {
