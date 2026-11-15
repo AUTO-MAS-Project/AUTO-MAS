@@ -1,4 +1,5 @@
 {
+  "core.update.backendPrecheckFailed": "后端更新预检未通过，已跳过本次更新：{reason}",
   "core.plan.universal.priority": "启用后使用计划中当天的脚本配置；上方配置来源在关闭计划时生效。",
   "core.plan.universal.script": "所属托管脚本",
   "core.plan.universal.chooseScript": "选择一个托管脚本",

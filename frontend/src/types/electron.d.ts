@@ -567,6 +567,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   backendStatus: () => Promise<BackendStatus>
   checkRuntimeBackendUpdate: () => Promise<{
     updateAvailable: boolean
+    precheckError?: string
     staged?: boolean
     currentCommit?: string
     remoteCommit?: string

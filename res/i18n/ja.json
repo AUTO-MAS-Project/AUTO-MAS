@@ -1,4 +1,5 @@
 {
+  "core.update.backendPrecheckFailed": "バックエンド更新の事前チェックに失敗したため、今回の更新を見送りました：{reason}",
   "core.plan.universal.priority": "有効時はプランの当日のスクリプト設定を使用します。上の設定元はプランが無効な場合に適用されます。",
   "core.plan.universal.script": "管理対象スクリプト",
   "core.plan.universal.chooseScript": "管理対象スクリプトを選択",

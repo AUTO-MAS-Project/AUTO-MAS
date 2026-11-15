@@ -101,7 +101,7 @@ export async function prepareRuntimeBinary(
     )
 }
 
-/** 应用跨版本升级先预检；后端热更依赖检查按用户要求后补。 */
+/** 前端在停止后端前预检目标依赖，再准备 Runtime 二进制。 */
 export async function prepareCoreUpgrade(
   config: RuntimeLaunchConfig,
   baseUrl: string,
@@ -125,8 +125,16 @@ export async function prepareCoreUpgrade(
     const sameVersion =
       typeof current.result.details.version === 'string' &&
       compareVersions(current.result.details.version, version) === 0
-    // TODO(plugin-migration): 主流程迁移完成后补后端热更依赖预检。
-    if (!sameVersion) {
+    if (sameVersion) {
+      // 同版本热更也可能改变依赖，必须检查远端候选提交，不能复用当前安装版本的依赖。
+      const remote = await client.run(['workspace', 'check', '--remote'])
+      if (!remote.success) throw new Error(remote.result.message)
+      const commit = remote.result.details.remoteCommit
+      if (typeof commit !== 'string' || !/^[a-f0-9]{40}$/i.test(commit))
+        throw new Error('Runtime 未返回有效的更新提交，无法检查插件兼容性')
+      await precheckAppVersion(baseUrl, version, commit)
+      // TODO(plugin-migration): Runtime 支持固定目标提交后，对齐预检与实际更新对象。
+    } else {
       await precheckAppVersion(baseUrl, version)
     }
     signal?.throwIfAborted()

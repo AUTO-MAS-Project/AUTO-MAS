@@ -1,4 +1,5 @@
 {
+  "core.update.backendPrecheckFailed": "Backend update precheck failed. This update was skipped: {reason}",
   "core.plan.universal.priority": "When enabled, the script uses today’s plan configuration. The source above applies when the plan is disabled.",
   "core.plan.universal.script": "Managed script",
   "core.plan.universal.chooseScript": "Select a managed script",

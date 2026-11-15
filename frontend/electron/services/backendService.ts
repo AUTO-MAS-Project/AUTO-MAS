@@ -1,5 +1,6 @@
 import { beginMainFeature } from './featureAnalytics'
 import { getFluxdownInstallEnvironment } from './fluxdownInstallService'
+import { precheckAppVersion } from './appUpdateService'
 import { captureScheduledWakeupContext, scheduledWakeupBackendReady } from './scheduledWakeup'
 /**
  * 后端服务管理
@@ -111,6 +112,7 @@ export interface BackendStopResult {
 
 interface RuntimeBackendUpdateCheck {
   updateAvailable: boolean
+  precheckError?: string
   staged?: boolean
   currentCommit?: string
   remoteCommit?: string
@@ -898,7 +900,9 @@ export class BackendService {
 
   private async prepareRuntimeBackendUpdate(): Promise<RuntimeBackendUpdateCheck> {
     const config = resolveRuntimeLaunchConfig(this.appRoot)
-    if (config.mode !== 'managed' || !config.runtimePath) return { updateAvailable: false }
+    const baseUrl = this.runtimeBaseUrl
+    if (config.mode !== 'managed' || !config.runtimePath || !baseUrl)
+      return { updateAvailable: false }
     try {
       const client = createRuntimeClient({
         runtimePath: config.runtimePath,
@@ -923,7 +927,24 @@ export class BackendService {
             error: 'Runtime 远端检查未返回当前版本',
           }
         }
-        // TODO(plugin-migration): 主流程迁移完成后，由前端在后台热更暂存前调用依赖预检。
+        const remoteCommit = typeof details.remoteCommit === 'string' ? details.remoteCommit : ''
+        try {
+          // 按候选提交读取真实依赖；不兼容或无法完成预检时，保留当前后端且不发起暂存。
+          if (!/^[a-f0-9]{40}$/i.test(remoteCommit))
+            throw new Error('Runtime 未返回有效的更新提交，无法检查插件兼容性')
+          await precheckAppVersion(baseUrl, version, remoteCommit)
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error)
+          return {
+            updateAvailable: true,
+            staged: false,
+            currentCommit: typeof details.commit === 'string' ? details.commit : undefined,
+            remoteCommit,
+            precheckError: reason,
+            error: reason,
+          }
+        }
+        // TODO(plugin-migration): Runtime 支持指定期望提交后，将暂存绑定到预检提交；本轮不修改 Runtime。
         const stageOutcome = await this.runRuntimePreparation(client, [
           'workspace',
           'stage',

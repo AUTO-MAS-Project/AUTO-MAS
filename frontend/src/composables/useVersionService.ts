@@ -6,6 +6,8 @@
  */
 
 import { ref } from 'vue'
+import { message } from 'ant-design-vue'
+import { translate as t } from '@/i18n'
 import type { AppUpdateCheck } from '../../electron/services/appUpdateTypes'
 import { Service, type VersionOut } from '@/api'
 import { readUpdatePauseState, requestUpdateCheck } from './useUpdateChecker'
@@ -18,6 +20,7 @@ export const runtimeBackendUpdateAvailable = ref(false)
 export const runtimeBackendUpdateCommitMessage = ref('')
 
 const TITLEBAR_POLL_MS = 10 * 60 * 1000 // 10 分钟
+let lastPrecheckFailure: string | null = null
 let titlebarPollTimer: number | null = null
 const isTitlebarPolling = ref(false)
 
@@ -51,6 +54,20 @@ export const getBackendVersion = async () => {
 export const checkRuntimeBackendUpdate = async () => {
   try {
     const result = await window.electronAPI.checkRuntimeBackendUpdate?.()
+    if (result?.precheckError) {
+      // 同一候选和原因连续失败只提醒一次；失败不会抹掉此前已确认的更新就绪状态。
+      const failure = JSON.stringify([result.remoteCommit, result.precheckError])
+      if (failure !== lastPrecheckFailure) {
+        lastPrecheckFailure = failure
+        message.warning({
+          key: 'backend-update-precheck',
+          content: t('core.update.backendPrecheckFailed', { reason: result.precheckError }),
+          duration: 8,
+        })
+      }
+    } else if (result && !result.error) {
+      lastPrecheckFailure = null
+    }
     if (result?.staged === true) {
       runtimeBackendUpdateAvailable.value = true
       runtimeBackendUpdateCommitMessage.value = result.commitMessage ?? ''

@@ -5,6 +5,7 @@ import { EventEmitter } from 'node:events'
 import AdmZip from 'adm-zip'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { AppUpdateService, normalizeAppVersion, parseUpdateNotes } from './appUpdateService'
+import { prepareCoreUpgrade } from './runtimeUpgradePreparation'
 import type { BackendService } from './backendService'
 
 const native = vi.hoisted(
@@ -12,8 +13,14 @@ const native = vi.hoisted(
     fetch: vi.fn(),
     setProxy: vi.fn(),
     spawn: vi.fn(),
+    runtimeRun: vi.fn(),
+    runtimeStop: vi.fn(),
   })
 )
+vi.mock('./runtime', async importOriginal => ({
+  ...(await importOriginal<typeof import('./runtime')>()),
+  createRuntimeClient: () => ({ run: native.runtimeRun, stop: native.runtimeStop }),
+}))
 vi.mock('electron', () => /* 替换 Electron 网络分区入口，使更新测试不建立真实桌面网络会话。 */ ({
   session: {
     fromPartition: () => /* 向更新服务提供受控的查询和代理替身。 */ ({
@@ -159,4 +166,37 @@ describe('前端应用升级编排', () => {
       await rm(root, { recursive: true, force: true })
     }
   })
+})
+
+it('手动同版本更新按远端提交预检，冲突在停机和材料准备前返回', async () => {
+  const commit = 'c'.repeat(40)
+  native.runtimeRun
+    .mockResolvedValueOnce({ success: true, result: { details: { version: 'v5.9.0' } } })
+    .mockResolvedValueOnce({ success: true, result: { details: { remoteCommit: commit } } })
+  native.fetch.mockImplementation(async (url: string) => {
+    expect(url).toContain(`/${commit}/pyproject.toml`)
+    return new Response('[project]\nversion="5.9.0"\ndependencies=["pydantic>=2"]\n')
+  })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: URL) => {
+      if (url.pathname === '/api/setting/get')
+        return Response.json({ code: 200, data: { Update: {} } })
+      if (url.pathname === '/api/update/precheck')
+        return Response.json({
+          code: 200,
+          compatible: false,
+          conflicts: [{ message: 'plugin conflict' }],
+        })
+      throw new Error(`Unexpected endpoint: ${url.pathname}`)
+    })
+  )
+  await expect(
+    prepareCoreUpgrade(
+      { runtimePath: 'runtime.exe', appRoot: 'test-root', dataRoot: 'test-root', mode: 'managed' },
+      'http://127.0.0.1:36163',
+      'v5.9.0'
+    )
+  ).rejects.toThrow('plugin conflict')
+  expect(native.runtimeStop).toHaveBeenCalledTimes(1)
 })
