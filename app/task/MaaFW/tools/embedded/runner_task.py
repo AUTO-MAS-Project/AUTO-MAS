@@ -169,12 +169,14 @@ from .resource_failure import (
 from .run_record import (
     RUN_RECORD_HISTORY_KEY,
     MaaFWRunRecorder,
+    MaaFWTaskRecord,
     format_incident_lines,
 )
 from .run_report import (
     CATEGORY_REASONS,
     MaaFWAttemptReport,
     failure_summary,
+    failure_summary_tasks,
     format_timeline,
     human_reason,
 )
@@ -3730,19 +3732,26 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         """本次运行里被原地打转检测或单任务时限停下的任务：进用户与脚本两份报告。
 
         只在最后没成功时列出；后面的重试成功了就不写，免得一份「全部完成」的报告里
-        还挂着前面尝试的问题。最后一次尝试的不列：时间线和结果行里已经说过，代理结果
-        里账号那一行也是它，再单列一遍就是同一件事说两次。"""
+        还挂着前面尝试的问题。结果行（``_report_result``，代理结果里账号那一行也是它）
+        已经点名的最后一次尝试的任务不列，再单列一遍就是同一件事说两次；结果行没点名的
+        （比如不计入失败的任务原地打转，失败的是另一个任务）照常列出。"""
 
         if self.run_complete:
             return ""
-        return (
-            self._run_record_call(
-                lambda: format_incident_lines(
-                    self._run_record.incidents(include_last=False)
-                )
-            )
-            or ""
-        )
+
+        def notice() -> str:
+            named: list[MaaFWTaskRecord] = []
+            attempts = self._run_record.attempts()
+            # 与 _report_result 同一分支：信号或运行前检查没过时结果行不是 failure_summary
+            if (
+                attempts
+                and self._signal_user_message() is None
+                and self.check_result == "Pass"
+            ):
+                named = failure_summary_tasks(attempts[-1])
+            return format_incident_lines(self._run_record.incidents(exclude=named))
+
+        return self._run_record_call(notice) or ""
 
     async def _finish_on_signal(self, attempt: int, result: MaaFWRunResult) -> None:
         """worker 回报了信号节点命中：记账、写日志状态。
@@ -4259,7 +4268,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _build_task_details(self) -> str:
         """账号级统计报告的任务详情：最后一次尝试的逐任务时间线（见 ``run_report``）。
 
-        最后没成功时另起一段列之前各次尝试里的原地打转 / 单任务超时（每类一行），队列里有
+        最后没成功时另起一段列结果行没点名的原地打转 / 单任务超时（每类一行），队列里有
         失效任务时末尾再附一行。整次运行一个任务都没开始时没有时间线，原因在运行结果那行。
         """
 
