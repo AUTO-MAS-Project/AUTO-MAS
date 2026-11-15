@@ -13,6 +13,31 @@ _parent_child_session = os.environ.pop(PARENT_CHILD_SESSION, "")
 CONTROL_HEADER = "x-mas-desktop-session"
 
 
+def supports_task(config: object) -> bool:
+    """仅受理已接入子会话进程与设备入口的托管配置。"""
+    from app.models.config import (
+        BetterGIConfig,
+        GeneralConfig,
+        OkNteConfig,
+        OkwwConfig,
+        WhimboxConfig,
+        ZzzOdConfig,
+    )
+    from app.utils import IS_ELEVATED
+
+    if isinstance(config, GeneralConfig):
+        return not config.Game.Enabled or config.Game.Type != "Emulator"
+    if isinstance(config, (OkNteConfig, OkwwConfig)):
+        return True
+    if isinstance(config, BetterGIConfig):
+        return (
+            not config.Run.UseAdmin or IS_ELEVATED
+        ) and not config.Update.TakeoverEnabled
+    if isinstance(config, WhimboxConfig):
+        return not config.Run.UseAdmin or IS_ELEVATED
+    return isinstance(config, ZzzOdConfig) and IS_ELEVATED
+
+
 def authenticated(value: str | None) -> bool:
     return bool(
         _control_token

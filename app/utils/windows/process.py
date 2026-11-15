@@ -15,7 +15,11 @@ import win32job
 import win32process
 
 from app.utils.common.process.runner import ProcessRunner
-from app.utils.common.process.session import process_in_scope, restricted_session
+from app.utils.common.process.session import (
+    desktop_process_target,
+    process_in_scope,
+    restricted_session,
+)
 
 from ..contracts.process import ElevatedProcess, EmulatorPopenOptions
 
@@ -212,7 +216,16 @@ class WindowsProcessPlatform:
     )
 
     async def open_protocol(self, protocol_url: str) -> None:
-        os.startfile(protocol_url)
+        desktop = desktop_process_target.get()
+        if desktop is None:
+            os.startfile(protocol_url)
+            return
+        from app.utils.common.process.scope import current_process_scope
+        from app.utils.windows.desktop_session.process_runner import open_in_desktop
+
+        if (scope := current_process_scope.get()) is not None:
+            scope.ensure_can_start()
+        await open_in_desktop(desktop, protocol_url)
 
     async def kill_process(self, pid: int, kill_tree: bool = False) -> tuple[bool, str]:
         """用 taskkill 终止进程，返回 (是否成功, 失败原因)。"""

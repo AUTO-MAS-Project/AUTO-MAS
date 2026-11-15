@@ -318,6 +318,10 @@ def unpack_mirror_installer(
 
 
 async def run_installer(installer: Path, root: Path) -> None:
+    from app.utils.common.process.session import desktop_process_target
+
+    if desktop_process_target.get() is not None:
+        raise RuntimeError("请在主桌面完成 BetterGI 更新或恢复后重试")
     # Kachina -S 静默安装，-D 显式指定现有安装目录；不用 -O，避免离线包再联网取包。
     process = await create_subprocess(
         str(installer), "-S", "-D", str(root.resolve()), cwd=str(installer.parent)

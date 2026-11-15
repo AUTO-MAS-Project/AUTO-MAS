@@ -218,15 +218,9 @@ class _TaskManager:
                 if (
                     desktop
                     and queue is not None
-                    and (
-                        queue.Info.IfScriptBeforeTask
-                        or queue.Info.IfScriptAfterTask
-                        or queue.Info.AfterAccomplish != PowerSignal.NO_ACTION
-                    )
+                    and queue.Info.AfterAccomplish != PowerSignal.NO_ACTION
                 ):
-                    raise UnsupportedDesktopTask(
-                        "桌面分身暂不支持队列的前后置命令及电源操作"
-                    )
+                    raise UnsupportedDesktopTask("桌面分身不支持队列的电源操作")
                 if not session and queue is None and not node.children:
                     raise ValueError("不选择队列时必须显式指定托管")
                 selections = (
@@ -250,9 +244,9 @@ class _TaskManager:
                     if entry is None:
                         raise ValueError(f"托管不存在：{script_id}")
                     if desktop:
-                        from app.task.general.manager import supports_desktop_session
+                        from app.core.desktop_session.lifecycle import supports_task
 
-                        if not supports_desktop_session(entry):
+                        if not supports_task(entry):
                             raise UnsupportedDesktopTask(
                                 "此托管的启动方式暂不支持桌面分身"
                             )

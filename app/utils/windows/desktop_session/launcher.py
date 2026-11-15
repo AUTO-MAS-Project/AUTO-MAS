@@ -75,6 +75,7 @@ def run_executor(
     root: Path,
     account: str,
     pipe_name: str,
+    worker_module: str,
 ):
     import pythoncom
     import win32com.client
@@ -109,7 +110,7 @@ def run_executor(
     action.Arguments = subprocess.list2cmdline(
         [
             "-m",
-            "app.utils.windows.desktop_session.process_worker",
+            worker_module,
             "--session-id",
             str(session_id),
             "--pipe",

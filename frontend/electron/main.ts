@@ -2417,6 +2417,11 @@ app.on('before-quit', event => {
   requestRendererClose('Electron before-quit')
 })
 
+if (process.platform === 'win32') {
+  // Chromium 的 DirectComposition 会覆盖嵌在同一 HWND 内的 RDP ActiveX 画面。
+  app.commandLine.appendSwitch('disable-direct-composition')
+}
+
 app.whenReady().then(async () => {
   desktopSession = registerDesktopSession(
     () => mainWindow,

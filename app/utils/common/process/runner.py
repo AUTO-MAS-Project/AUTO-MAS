@@ -14,7 +14,7 @@ import psutil
 from app.utils import get_logger
 
 from .scope import current_process_scope, current_update_scope, detached_process_context
-from .session import restricted_session
+from .session import desktop_process_target, restricted_session
 
 logger = get_logger("进程管理")
 _PROCESS_CLEANUP_SECONDS = 8
@@ -25,7 +25,7 @@ async def kill_windows_process_tree_by_image(image: str) -> subprocess.Completed
     session_id = restricted_session()
     filters = ("/FI", f"SESSION eq {session_id}") if session_id is not None else ()
     return await ProcessRunner.run_process(
-        "taskkill", "/IM", image, "/F", "/T", *filters
+        "taskkill", "/IM", image, "/F", "/T", *filters, cleanup=True
     )
 
 
@@ -392,6 +392,33 @@ class ProcessRunner:
             if deadline is None
             else loop.time() + max(0, deadline - time.monotonic())
         )
+        desktop = desktop_process_target.get()
+        # 分身断线后仍需从主会话执行带会话范围的进程清理。
+        if desktop is not None and not cleanup:
+            from app.utils.windows.desktop_session.process_runner import (
+                launch_desktop_process,
+            )
+
+            scope = current_process_scope.get()
+            if scope is not None:
+                scope.ensure_can_start()
+            async with asyncio.timeout_at(expires_at):
+                remote = await launch_desktop_process(
+                    desktop,
+                    argv=command,
+                    cwd=cwd
+                    or (Path(program).parent if Path(program).is_file() else None),
+                    capture=True,
+                    merge=if_merge_std,
+                    env=env,
+                )
+                try:
+                    async with asyncio.timeout(timeout):
+                        code, stdout, stderr = await remote.wait()
+                finally:
+                    await remote.stop()
+            return ProcessResult(decode_bytes(stdout), decode_bytes(stderr), code)
+
         process = None
         try:
             async with asyncio.timeout_at(expires_at):

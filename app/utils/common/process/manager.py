@@ -29,7 +29,13 @@ from typing import TYPE_CHECKING
 
 import psutil
 
-from app.utils import UnsupportedPlatformError, get_logger, process_platform, window
+from app.utils import (
+    IS_ELEVATED,
+    UnsupportedPlatformError,
+    get_logger,
+    process_platform,
+    window,
+)
 
 from .runner import create_subprocess
 from .scope import current_process_scope
@@ -81,7 +87,11 @@ def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
 
 
 def is_process_running(process_name: str) -> bool:
-    """检查指定进程名是否正在运行且存在可见窗口"""
+    """检查指定进程名是否在当前桌面运行。"""
+
+    if desktop_process_target.get() is not None:
+        # 主会话无法枚举子会话窗口；启动器自身在分身内确认窗口是否就绪。
+        return is_process_alive(process_name)
 
     for proc in psutil.process_iter(["name"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
@@ -236,15 +246,9 @@ class ProcessManager:
 
         desktop = desktop_process_target.get()
         if desktop is not None:
-            if (
-                target_process is not None
-                or elevated
-                or env is not None
-                or null_stream_to_pipe
-                or any(
-                    stream != asyncio.subprocess.DEVNULL
-                    for stream in (stdin, stdout, stderr)
-                )
+            if (elevated and not IS_ELEVATED) or any(
+                stream != asyncio.subprocess.DEVNULL
+                for stream in (stdin, stdout, stderr)
             ):
                 raise ValueError("桌面分身暂不支持此进程启动方式")
             from app.utils.windows.desktop_session.process_runner import (
@@ -254,17 +258,25 @@ class ProcessManager:
             scope = current_process_scope.get()
             if scope is not None:
                 scope.ensure_can_start()
+            started = time.time()
             self._desktop_process = await launch_desktop_process(
-                desktop.session_id,
-                source=desktop.source,
-                root=desktop.root,
+                desktop,
                 argv=[str(program), *args],
                 cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
+                retain=breakaway or target_process is not None,
+                drain=null_stream_to_pipe,
+                env=env,
             )
             if scope is not None:
                 scope.add_check(
                     "停止桌面分身进程", self._desktop_process.stop, timeout=12
                 )
+            if target_process is not None:
+                try:
+                    await self.search_process(target_process, min_create_time=started)
+                except BaseException:
+                    await self.clear()
+                    raise
             return
 
         if elevated and process_platform.platform_process.supports_elevation:
@@ -343,6 +355,7 @@ class ProcessManager:
             target_process (ProcessInfo): 期望目标进程信息
         """
 
+        started = time.time()
         try:
             await process_platform.platform_process.open_protocol(protocol_url)
         except UnsupportedPlatformError:
@@ -353,7 +366,7 @@ class ProcessManager:
         await self.search_process(
             target_process,
             60.0,
-            min_create_time=time.time(),
+            min_create_time=started,
         )
 
     async def search_process(

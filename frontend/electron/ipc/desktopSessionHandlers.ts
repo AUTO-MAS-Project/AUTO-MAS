@@ -6,6 +6,7 @@ import {
   screen,
   shell,
   type IpcMainInvokeEvent,
+  type MessageBoxOptions,
   type Rectangle,
 } from 'electron'
 import { join } from 'node:path'
@@ -91,11 +92,10 @@ export function registerDesktopSession(
   function physicalBounds(): [number, number, number, number] {
     if (!preview || !viewport) throw new Error('preview_unavailable')
     const window = preview.getContentBounds()
-    const topLeft = screen.dipToScreenPoint({ x: window.x + viewport.x, y: window.y + viewport.y })
     const display = screen.getDisplayMatching(window)
     return [
-      topLeft.x,
-      topLeft.y,
+      Math.round(viewport.x * display.scaleFactor),
+      Math.round(viewport.y * display.scaleFactor),
       Math.max(1, Math.round(viewport.width * display.scaleFactor)),
       Math.max(1, Math.round(viewport.height * display.scaleFactor)),
     ]
@@ -109,9 +109,8 @@ export function registerDesktopSession(
     if (closeFlight) return closeFlight
     closeFlight = (async () => {
       const window = preview
-      if (!window || window.isDestroyed()) return true
       const text = labels()
-      if (service.active) {
+      if (service.active && window && !window.isDestroyed()) {
         if (window.isMinimized()) window.restore()
         if (!window.isVisible()) window.show()
         service.changeWindow('hidden')
@@ -132,14 +131,20 @@ export function registerDesktopSession(
       try {
         await service.close()
       } catch {
-        await dialog.showMessageBox(window, {
+        const options: MessageBoxOptions = {
           type: 'error',
           title: text.title,
           message: text.closeFailed,
-        })
+        }
+        if (window && !window.isDestroyed()) {
+          if (!hidden) service.changeWindow('visible')
+          await dialog.showMessageBox(window, options)
+        } else {
+          await dialog.showMessageBox(options)
+        }
         return false
       }
-      window.destroy()
+      if (window && !window.isDestroyed()) window.destroy()
       return true
     })().finally(() => {
       closeFlight = null

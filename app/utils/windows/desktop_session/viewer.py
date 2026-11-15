@@ -26,7 +26,7 @@ CLSID = "{A0C63C30-F08D-4AB4-907C-34905D770C7D}"
 WINDOW_CLASS = "AutoMasDesktopSession"
 WM_SIZE, WM_CLOSE, WM_SETFOCUS = 5, 0x10, 7
 WM_DISPLAYCHANGE, WM_TIMER, WM_RDP_EVENT = 0x7E, 0x113, 0x8002
-SW_SHOW_NOACTIVATE, SW_MINIMIZE, SW_RESTORE = 4, 7, 9
+SW_SHOW_NOACTIVATE, SW_RESTORE = 4, 9
 SWP_NOSIZE, SWP_NOZORDER, SWP_NOACTIVATE = 1, 4, 16
 WS_POPUP, WS_CLIPCHILDREN, WS_CHILD, WS_VISIBLE = (
     0x80000000,
@@ -34,6 +34,7 @@ WS_POPUP, WS_CLIPCHILDREN, WS_CHILD, WS_VISIBLE = (
     0x40000000,
     0x10000000,
 )
+WS_CLIPSIBLINGS = 0x04000000
 WNDPROC = C.WINFUNCTYPE(C.c_ssize_t, W.HWND, W.UINT, W.WPARAM, W.LPARAM)
 MONITORENUMPROC = C.WINFUNCTYPE(W.BOOL, W.HANDLE, W.HDC, C.POINTER(W.RECT), W.LPARAM)
 
@@ -130,19 +131,40 @@ class RdpViewer:
         )
         self.iconic = bind(user32, "IsIconic", W.BOOL, W.HWND)
         self.visible = bind(user32, "IsWindowVisible", W.BOOL, W.HWND)
-        self.native_owner = owner
+        self.embedded = True
 
-    def _owner(self, hwnd: int | None) -> None:
-        if self.native_owner == hwnd:
+    def _embed(self, embedded: bool) -> None:
+        if self.embedded == embedded:
             return
-        setter = bind(
-            user32, "SetWindowLongPtrW", C.c_ssize_t, W.HWND, C.c_int, C.c_ssize_t
-        )
-        C.set_last_error(0)
-        old = setter(self.preview, -8, hwnd or 0)  # GWLP_HWNDPARENT (owner of a popup)
-        if not old and C.get_last_error():
-            checked(False, "SetWindowLongPtrW")
-        self.native_owner = hwnd
+        set_parent = bind(user32, "SetParent", W.HWND, W.HWND, W.HWND)
+        set_style = bind(user32, "SetWindowLongW", W.LONG, W.HWND, C.c_int, W.LONG)
+
+        def change_parent(parent: int | None) -> None:
+            C.set_last_error(0)
+            if not set_parent(self.preview, parent) and C.get_last_error():
+                checked(False, "SetParent")
+
+        def change_style(style: int) -> None:
+            C.set_last_error(0)
+            if not set_style(
+                self.preview,
+                -16,
+                style | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
+            ):
+                if C.get_last_error():
+                    checked(False, "SetWindowLongW(GWL_STYLE)")
+
+        if embedded:
+            change_style(WS_CHILD)
+            try:
+                change_parent(self.owner)
+            except OSError:
+                change_style(WS_POPUP)
+                raise
+        else:
+            change_parent(None)
+            change_style(WS_POPUP)
+        self.embedded = embedded
 
     def open(self, credential: Credential) -> None:
         name = WINDOW_CLASS
@@ -183,7 +205,7 @@ class RdpViewer:
                 0x80,
                 name,
                 "AUTO-MAS",
-                WS_POPUP | WS_CLIPCHILDREN,
+                WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
                 *self.bounds,
                 self.owner,
                 None,
@@ -208,6 +230,7 @@ class RdpViewer:
             ),
             "CreateWindowExW(ATL host)",
         )
+        self.position(self.bounds)
         self.show(self.preview, SW_SHOW_NOACTIVATE)
         self.connect(credential)
         timer = bind(
@@ -219,13 +242,14 @@ class RdpViewer:
         self.bounds = bounds
         if self.window_state == "visible":
             checked(
-                self.move(self.preview, None, *bounds, SWP_NOZORDER | SWP_NOACTIVATE),
+                # HWND_TOP 只调整同一父窗内的顺序，避免 Chromium 渲染子窗遮住画面。
+                self.move(self.preview, None, *bounds, SWP_NOACTIVATE),
                 "Position preview",
             )
 
     def _park(self) -> None:
-        # 解除所有者关系后，Electron 窗口最小化不会连带隐藏 ActiveX。
-        self._owner(None)
+        # 后台模式临时把 ActiveX 停到屏幕外，恢复时装回 Electron 客户区。
+        self._embed(False)
         if self.iconic(self.preview):
             self.show(self.preview, SW_RESTORE)
         edges: list[int] = []
@@ -250,7 +274,7 @@ class RdpViewer:
                 self.preview,
                 None,
                 max(edges) + 64,
-                self.bounds[1],
+                0,
                 0,
                 0,
                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
@@ -273,22 +297,19 @@ class RdpViewer:
         self.window_state = state
         try:
             if state == "visible":
-                self._owner(self.owner)
+                if self.iconic(self.preview):
+                    self.show(self.preview, SW_RESTORE)
+                self._embed(True)
                 self.position(self.bounds)
-                self.show(
-                    self.preview,
-                    SW_RESTORE if self.iconic(self.preview) else SW_SHOW_NOACTIVATE,
-                )
-                self.position(self.bounds)
+                self.show(self.preview, SW_SHOW_NOACTIVATE)
             elif self.mode == "native" and state == "minimized":
-                self._owner(None)
-                self.show(self.preview, SW_MINIMIZE)
+                self._embed(True)
             else:
                 self._park()
         except (OSError, RuntimeError):
             self.window_state = previous
             if previous == "visible":
-                self._owner(self.owner)
+                self._embed(True)
                 self.position(self.bounds)
             raise
         self.report("window", state=state, mode=self.mode, bounds=self.bounds)

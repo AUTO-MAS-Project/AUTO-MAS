@@ -1019,6 +1019,18 @@ async def async_start_game_via_launcher(
     update_only: bool = False,
 ) -> bool:
     """async 版本：在后台线程执行启动器交互，避免阻塞事件循环。"""
+    from app.utils.common.process.session import desktop_process_target
+
+    if (desktop := desktop_process_target.get()) is not None:
+        from app.task.desktop_session_worker import run_desktop_action
+
+        return await run_desktop_action(
+            desktop,
+            "okww_start_game",
+            {"launcher_path": str(launcher_path), "update_only": update_only},
+            on_log,
+        )
+
     stop_event = Event()
     worker = asyncio.create_task(
         asyncio.to_thread(

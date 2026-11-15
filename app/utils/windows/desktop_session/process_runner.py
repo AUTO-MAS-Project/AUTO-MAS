@@ -1,7 +1,9 @@
 """主会话对分身进程的启动、退出观察和停止控制。"""
 
 import asyncio
+import base64
 import time
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from pathlib import Path
 
@@ -12,8 +14,12 @@ import win32event
 import win32pipe
 from pywintypes import error as Win32Error
 
+from app.utils.common.process.session import DesktopProcessTarget
+
 from .credentials import current_identity
 from .launcher import client_pid, create_executor_pipe, receive, run_executor, send
+
+_action_lock = asyncio.Lock()
 
 
 async def _read(pipe, *, deadline: float | None = None) -> dict:
@@ -30,16 +36,31 @@ async def _read(pipe, *, deadline: float | None = None) -> dict:
 
 
 class DesktopProcess:
-    def __init__(self, pid: int, pipe, worker) -> None:
+    def __init__(
+        self, pid: int, pipe, worker, on_log: Callable[[str], None] | None = None
+    ) -> None:
         self.pid = pid
         self._pipe = pipe
         self._worker = worker
         self._stopping = False
+        self._on_log = on_log
         self._completion = asyncio.create_task(self._observe())
 
-    async def _observe(self) -> int:
+    async def _observe(self) -> tuple[int, bytes, bytes]:
+        output = {"stdout": bytearray(), "stderr": bytearray()}
         try:
-            return int((await _read(self._pipe))["returnCode"])
+            while "returnCode" not in (response := await _read(self._pipe)):
+                if "log" in response:
+                    if self._on_log is not None:
+                        self._on_log(response["log"])
+                else:
+                    name, chunk = next(iter(response.items()))
+                    output[name].extend(base64.b64decode(chunk))
+            return (
+                int(response["returnCode"]),
+                bytes(output["stdout"]),
+                bytes(output["stderr"]),
+            )
         finally:
             # 关闭控制管道会让执行器收尾。先等进程退出再释放主端的任务资源。
             self._pipe.Close()
@@ -54,6 +75,9 @@ class DesktopProcess:
             return True
         self._completion.result()
         return False
+
+    async def wait(self) -> tuple[int, bytes, bytes]:
+        return await asyncio.shield(self._completion)
 
     async def stop(self) -> None:
         if not self._completion.done() and not self._stopping:
@@ -79,12 +103,70 @@ def _wait_worker(worker) -> None:
 
 
 async def launch_desktop_process(
-    session_id: int,
+    desktop: DesktopProcessTarget,
     *,
-    source: Path,
-    root: Path,
     argv: list[str],
     cwd: Path | None,
+    capture: bool = False,
+    merge: bool = False,
+    retain: bool = False,
+    drain: bool = False,
+    env: Mapping[str, str] | None = None,
+) -> DesktopProcess:
+    return await _launch(
+        desktop,
+        {
+            "argv": argv,
+            "cwd": str(cwd) if cwd is not None else None,
+            "capture": capture,
+            "merge": merge,
+            "retain": retain,
+            "drain": drain,
+            "env": dict(env) if env is not None else None,
+        },
+    )
+
+
+async def open_in_desktop(desktop: DesktopProcessTarget, target: str) -> None:
+    process = await _launch(desktop, {"open": target})
+    try:
+        await process.wait()
+    finally:
+        await process.stop()
+
+
+async def run_desktop_action(
+    desktop: DesktopProcessTarget,
+    action: str,
+    arguments: dict[str, str | bool | float | None],
+    on_log: Callable[[str], None] | None = None,
+    *,
+    worker_module: str,
+) -> bool:
+    from app.utils.common.process.scope import current_process_scope
+
+    async with _action_lock:
+        if (scope := current_process_scope.get()) is not None:
+            scope.ensure_can_start()
+        process = await _launch(
+            desktop,
+            {"action": action, "arguments": arguments, "root": str(desktop.root)},
+            on_log=on_log,
+            worker_module=worker_module,
+        )
+        try:
+            code, _, _ = await process.wait()
+            return code == 0
+        finally:
+            await process.stop()
+
+
+async def _launch(
+    desktop: DesktopProcessTarget,
+    request: dict,
+    *,
+    on_log: Callable[[str], None] | None = None,
+    worker_module: str = "app.utils.windows.desktop_session.process_worker",
 ) -> DesktopProcess:
     name, pipe = create_executor_pipe()
     worker = None
@@ -92,11 +174,12 @@ async def launch_desktop_process(
     pythoncom.CoInitialize()
     try:
         folder, registration = run_executor(
-            session_id,
-            source=source,
-            root=root,
+            desktop.session_id,
+            source=desktop.source,
+            root=desktop.root,
             account=current_identity()[0],
             pipe_name=name,
+            worker_module=worker_module,
         )
         deadline = time.monotonic() + 30
         try:
@@ -113,15 +196,15 @@ async def launch_desktop_process(
             worker = win32api.OpenProcess(
                 win32con.SYNCHRONIZE | win32con.PROCESS_TERMINATE,
                 False,
-                client_pid(pipe, session_id),
+                client_pid(pipe, desktop.session_id),
             )
-            send(pipe, {"argv": argv, "cwd": str(cwd) if cwd is not None else None})
+            send(pipe, request)
             result = await _read(pipe, deadline=deadline)
         finally:
             with suppress(pythoncom.com_error):
                 folder.DeleteTask(registration, 0)
             del folder
-        process = DesktopProcess(int(result["pid"]), pipe, worker)
+        process = DesktopProcess(int(result["pid"]), pipe, worker, on_log=on_log)
         owned = True
         return process
     finally:

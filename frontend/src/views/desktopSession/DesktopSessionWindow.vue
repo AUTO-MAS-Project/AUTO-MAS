@@ -181,8 +181,7 @@ onBeforeUnmount(() => {
           "
           :text="statusText"
         />
-        <a-typography-text v-if="snapshot?.sessionId" type="secondary">
-          {{ t('bootstrap.desktopSession.session', { id: snapshot.sessionId }) }} ·
+        <a-typography-text v-if="running && snapshot?.size" type="secondary">
           {{ snapshot.size?.join(' × ') }}
         </a-typography-text>
         <a-tag v-if="running && snapshot?.windowState === 'hidden'">

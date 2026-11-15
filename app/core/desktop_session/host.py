@@ -170,27 +170,31 @@ class Host:
 
     def close(self, orphaned_session: int | None = None) -> None:
         session = self.session_id if orphaned_session is None else orphaned_session
-        if self.viewer and session is None:
+        viewer, self.viewer = self.viewer, None
+        if viewer is not None:
+            # 先断开 ActiveX，避免正在登录的连接在注销检查后又创建分身。
+            viewer.close()
+        if viewer is not None and session is None:
             # 连接期间可能在最后一次轮询后产生会话。只注销连接发起后观察到的分身。
             current = child_session()
             if current not in (
                 None,
                 0,
-                self.viewer.parent_session,
+                viewer.parent_session,
                 self.connection_baseline,
             ):
                 session = current
         if session is not None:
+            self.session_id = session
             start = time.monotonic()
             logoff_child(session)
+            if child_session() == session:
+                raise RuntimeError("logoff_unconfirmed")
             self.report(
                 "logoff",
                 sessionId=session,
                 durationMs=round((time.monotonic() - start) * 1000),
             )
-        if self.viewer is not None:
-            self.viewer.close()
-            self.viewer = None
         self.session_id = None
         self.report("state", state="idle")
 
@@ -241,6 +245,8 @@ class Host:
                 )
                 if action == "connect":
                     self.report("state", state="idle", code="connection_failed")
+                elif action == "close":
+                    self.report("state", state="disconnected", code="logoff_failed")
         if self.dead:
             bind(user32, "PostQuitMessage", None, C.c_int)(0)
             return
@@ -270,8 +276,8 @@ class Host:
                 time.sleep(0.05)
                 continue
             viewer.pump_until(lambda: self.viewer is not viewer)
-        if self.viewer is not None:
-            self.viewer.close()
+        if self.viewer is not None or self.session_id is not None:
+            self.close()
 
 
 def main() -> None:
