@@ -179,6 +179,8 @@ from .run_report import (
     human_reason,
 )
 from .signal_notice import (
+    CLIENT_UPDATE_REQUIRED,
+    CLIENT_UPDATE_SKIP_MESSAGE,
     MAINTENANCE_LAST_STATUS,
     MAINTENANCE_SKIP_MESSAGE,
     SERVER_MAINTENANCE,
@@ -622,6 +624,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.run_signal: str | None = None
         # 运行前检查发现同一资源本轮已确认在维护、本账号没启动就跳过。
         self.maintenance_skipped = False
+        # 运行前检查发现同一资源本轮已确认要手动更新客户端、本账号没启动就结束。
+        self.client_update_skipped = False
         # 运行前检查时项目预约被占（手动更新、编辑页准备环境 / 导入），本账号没跑成。
         self.project_busy_skipped = False
         # 队列里 interface 已没有的任务名（项目更新改了 name），建计划时填，进任务报告
@@ -721,6 +725,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self.maintenance_skipped = True
                 return MAINTENANCE_SKIP_MESSAGE
 
+            # 同理：前面的用户已确认这个资源的客户端要手动更新（项目信号或特调游戏更新钩子），
+            # 不再各开一遍模拟器、各查一遍；并进那条通知。与命中的用户同样记「异常」。
+            client_update = self.signal_tracker.client_update(
+                self.run_plan.resourceName
+            )
+            if client_update is not None:
+                client_update.add_user(str(self.cur_user_uid), self.cur_user_item.name)
+                await self.cur_user_item.set_state(status="异常")
+                self.client_update_skipped = True
+                return CLIENT_UPDATE_SKIP_MESSAGE
+
             if self.run_plan.controllerType == "Adb":
                 emulator_id = self.script_config.Emulator.Id
                 emulator_index = self.script_config.Emulator.Index
@@ -783,7 +798,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 提示音。与 embedded_manager._check 那条「整个脚本一句话跳过，别让每个账号在
             # runner_task 里各报一遍」同一用意；「异常」状态、本账号日志与统计
             # 照常记（见下面与 final_task），汇总与「仅失败时」推送照常带上它。
-            if self.cur_user_item.status == "异常" and not self.project_busy_skipped:
+            # 已确认要更新客户端的连带结束同理：那条信号通知已列上本账号。
+            if (
+                self.cur_user_item.status == "异常"
+                and not self.project_busy_skipped
+                and not self.client_update_skipped
+            ):
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
@@ -795,8 +815,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         ),
                     ),
                 )
-            if self.maintenance_skipped or self.project_busy_skipped:
-                # 同一资源已确认在维护、或项目被占用没跑成：记一份本账号的日志，让代理
+            if (
+                self.maintenance_skipped
+                or self.project_busy_skipped
+                or self.client_update_skipped
+            ):
+                # 同一资源已确认在维护 / 要更新客户端、或项目被占用没跑成：记一份本账号的日志，让代理
                 # 结果汇总与统计信息写明原因（其他跳过原因照旧不记），未派发用户不建历史。
                 # 前面拿到的运行前更新日志也随这份内存日志保留。
                 # 窗口与行号由 _append_log 按本账号日志算好（前面可能还有更新日志与
@@ -923,6 +947,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 )
                 if self.cur_user_log is not None:
                     await self.cur_user_log.set_state(status=message)
+                # 与项目信号「需要更新客户端」同样记账：本轮同一资源后面的账号在运行前检查就
+                # 结束（不再开模拟器、不再查），并进收尾那条合并通知
+                await self._record_signal(CLIENT_UPDATE_REQUIRED)
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
@@ -1160,6 +1187,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 # 维护连带跳过：同样是跳过不是失败，代理次数不动；上次状态
                 # 与统计信息都写明原因。
                 self.cur_user_config.Data.LastProxyStatus = MAINTENANCE_LAST_STATUS
+                await self.cur_user_config.commit()
+                await self._save_user_history()
+                await self._push_user_statistics()
+            elif self.client_update_skipped:
+                # 要更新客户端的连带结束：与命中的那位同样记失败（代理次数不动），
+                # 统计信息写明原因。
+                self.cur_user_config.Data.LastProxyStatus = "失败"
                 await self.cur_user_config.commit()
                 await self._save_user_history()
                 await self._push_user_statistics()
@@ -3834,6 +3868,23 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self.cur_user_log is not None:
             await self.cur_user_log.set_state(status=message)
 
+        await self._record_signal(
+            signal,
+            node=result.signalNode,
+            screenshot=Path(evidence.path) if evidence is not None else None,
+            fallback_resource_name=result.resourceName,
+        )
+
+    async def _record_signal(
+        self,
+        signal: str,
+        *,
+        node: str | None = None,
+        screenshot: Path | None = None,
+        fallback_resource_name: str = "",
+    ) -> None:
+        """把本账号记进本轮的信号账（按「信号 + 资源」一条），收尾时由管理器合并通知。"""
+
         project_name = ""
         if self.interface_model is not None:
             with suppress(Exception):
@@ -3853,13 +3904,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             signal,
             resource_name=plan.resourceName
             if plan is not None
-            else result.resourceName,
+            else fallback_resource_name,
             resource_label=resource_label,
             project_name=project_name,
-            node=result.signalNode,
+            node=node,
             user_id=str(self.cur_user_uid),
             user_name=self.cur_user_item.name,
-            screenshot=Path(evidence.path) if evidence is not None else None,
+            screenshot=screenshot,
         )
 
     def _is_maintenance_skip(self) -> bool:

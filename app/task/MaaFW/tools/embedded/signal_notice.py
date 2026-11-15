@@ -43,6 +43,8 @@ SIGNAL_USER_MESSAGES = {
 }
 # 同一资源已确认在维护时，后续账号运行前检查返回的原因。
 MAINTENANCE_SKIP_MESSAGE = "游戏停服维护中，本次跳过（同一资源已确认在维护）"
+# 同一资源已确认要手动更新客户端时，后续账号运行前检查返回的原因。
+CLIENT_UPDATE_SKIP_MESSAGE = "需要更新游戏客户端，本次未运行（同一资源已确认需要更新）"
 # LastProxyStatus 在 MaaFWUserConfig 里不是受限枚举（运行中也写这里），维护跳过写它。
 MAINTENANCE_LAST_STATUS = "维护中"
 
@@ -126,6 +128,11 @@ class MaaFWSignalTracker:
         """该资源本轮已确认在维护时返回那条记录。"""
 
         return self._records.get((SERVER_MAINTENANCE, resource_name))
+
+    def client_update(self, resource_name: str) -> MaaFWSignalRecord | None:
+        """该资源本轮已确认要手动更新客户端时返回那条记录（信号或特调游戏更新钩子判的）。"""
+
+        return self._records.get((CLIENT_UPDATE_REQUIRED, resource_name))
 
     def records(self) -> list[MaaFWSignalRecord]:
         return list(self._records.values())
@@ -256,6 +263,7 @@ async def push_signal_notices(
 
 __all__ = [
     "CLIENT_UPDATE_REQUIRED",
+    "CLIENT_UPDATE_SKIP_MESSAGE",
     "MAINTENANCE_LAST_STATUS",
     "MAINTENANCE_SKIP_MESSAGE",
     "MaaFWSignalRecord",
