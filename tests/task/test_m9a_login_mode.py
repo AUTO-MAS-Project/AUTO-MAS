@@ -43,7 +43,10 @@ from app.task.M9A.managed import (
     settle_snapshot,
 )
 from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
-from app.task.MaaFW.tools.embedded.flavor import MaaFWLoginRequired
+from app.task.MaaFW.tools.embedded.flavor import (
+    MaaFWLoginRequired,
+    MaaFWSelectionContext,
+)
 
 INTERFACE = MaaFWInterface.model_validate(
     {
@@ -100,10 +103,13 @@ def _decorate(
         INTERFACE,
         ["每日心相"],
         {},
-        script_config=_Script(mode),
-        user_config=_User(account),
-        resource_name="官服",
-        send_log=logs.append,
+        context=MaaFWSelectionContext(
+            script_config=_Script(mode),
+            user_config=_User(account),
+            resource_name="官服",
+            excluded_task_ids=frozenset(),
+            log=logs.append,
+        ),
     )
     return [ENTRY_BY_NAME.get(task_id, task_id) for task_id in ids], options, logs
 

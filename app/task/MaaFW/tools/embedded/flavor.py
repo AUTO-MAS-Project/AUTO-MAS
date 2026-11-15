@@ -22,10 +22,22 @@
 队列装饰——比如 M9A 的首尾任务与切号绑定）。这些类型是 ``MaaFWConfig`` 的同形子类，
 用类属性 ``FLAVOR = "模块路径:属性名"`` 指向一个满足 ``MaaFWFlavor`` 协议的对象。
 
-引擎这一侧只做五件事：按需导入并缓存那个对象、在建运行计划前调一次
-``decorate_selection``、在导入项目后用 ``matches_project`` 决定托管类型（换了类型时取可选的
-换类型说明发通知）、在模拟器启动后调一次可选的游戏更新钩子、在写账号任务快照前调一次可选的
-快照整理钩子。这里不出现任何具体专项的名字；专项自己的逻辑全在它自己的包里。
+引擎这一侧只负责：按需导入并缓存那个对象，在约定的时机调协议里的两个方法与下面这些可选钩子，
+按约定读取可选声明（读取一律经本模块的同名函数，形状不对的声明当作没声明）。这里不出现任何
+具体专项的名字；专项自己的逻辑全在它自己的包里。
+
+``decorate_selection``（运行前装饰）的契约：
+
+- **何时调**：每个账号建运行计划时调一次（重试从这份计划重建，不再调），在工作线程里跑。
+  交进来的列表已剔掉不可选任务与今天不在运行日的实例；钩子按自己的规则补回的同一实例照常运行。
+- **签名**：``decorate_selection(self, interface_model, task_ids, task_options, *, context)
+  -> tuple[list[str], dict]``，``context`` 是只读的 :class:`MaaFWSelectionContext`：脚本与账号配置、
+  ``resource_name``（运行时实际生效的资源，特调不要自己再回落）、``excluded_task_ids``（引擎判定本轮
+  不跑的实例：红灯与今天不在运行日的）、``log``（写账号运行日志）。不改入参。
+- **排除的实例**：钩子另读账号配置自动补任务时，不要补回 ``excluded_task_ids`` 里的实例，也不要
+  自己再解析快照判红灯或星期。核心建计划时还会按红灯再滤一遍装饰结果，补回的红灯实例照样不跑。
+- **异常**：钩子抛任何异常都是本账号本次建计划失败：账号记「异常」、不跑、不重试，异常原文接在
+  「无法构建 MaaFW 运行计划」后面给用户看。有意拒跑时文案要能直接给用户看。
 
 可选钩子 ``ensure_logged_in``（运行前登录）的契约：
 
@@ -167,9 +179,7 @@ from __future__ import annotations
 
 import importlib
 import json
-from collections.abc import Awaitable, Callable, Iterable, Iterator
-from contextlib import contextmanager
-from contextvars import ContextVar
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -180,6 +190,7 @@ from app.utils import game_update as _utils_game_update
 from app.utils import get_logger
 
 from . import embedded_project as _embedded_project
+from .flavor_support import MaaFWSelectionContext, config_value, task_name_for_entry
 
 logger = get_logger("MaaFW 特调")
 
@@ -202,42 +213,9 @@ class MaaFWFlavor(Protocol):
         task_ids: list[str],
         task_options: dict[str, Any],
         *,
-        script_config: Any,
-        user_config: Any,
-        resource_name: str | None,
-        send_log: Callable[[str], None] | None,
+        context: MaaFWSelectionContext,
     ) -> tuple[list[str], dict[str, Any]]:
-        """在用户勾选的任务实例列表上做装饰，返回新的列表与选项。
-
-        列表里已去掉今天不在运行日的实例（``taskSchedules``）；钩子按自己的规则补回的同一实例
-        照常运行。钩子另读账号快照自动补任务时，要像尊重红灯一样尊重运行日：引擎判出的这些
-        实例 id 在调用期间由 ``off_day_task_ids()`` 给出，不要自己再判一次星期。
-        """
-
-
-_OFF_DAY_TASK_IDS: ContextVar[frozenset[str]] = ContextVar(
-    "maafw_off_day_task_ids", default=frozenset()
-)
-
-
-def off_day_task_ids() -> frozenset[str]:
-    """引擎这次建计划判出的「今天不在运行日」的实例 id。
-
-    只在引擎调 ``decorate_selection`` 期间有值（``off_day_scope``），其余时候是空集。
-    """
-
-    return _OFF_DAY_TASK_IDS.get()
-
-
-@contextmanager
-def off_day_scope(task_ids: Iterable[str]) -> Iterator[None]:
-    """引擎调装饰钩子时用：把判出的今天不跑的实例 id 交给钩子，钩子签名不变。"""
-
-    token = _OFF_DAY_TASK_IDS.set(frozenset(task_ids))
-    try:
-        yield
-    finally:
-        _OFF_DAY_TASK_IDS.reset(token)
+        """在用户勾选的任务实例列表上做装饰，返回新的列表与选项（契约见模块说明）。"""
 
 
 def _load_flavor(spec: str) -> Any | None:
@@ -298,6 +276,49 @@ def no_default_fallback_inputs(flavor: Any) -> frozenset[tuple[str, str]]:
         for item in declared
         if isinstance(item, (list, tuple)) and len(item) == 2
     )
+
+
+def _entry_messages(flavor: Any, attribute: str) -> dict[str, str]:
+    """``dict[entry, 一句话]`` 形状的声明：不是 dict 当空表，去掉空 entry 与空说明。
+
+    空说明的条目原来也不起作用（引擎按说明是否为空判断要不要特殊处理），这里直接去掉。
+    """
+
+    declared = getattr(flavor, attribute, None) if flavor is not None else None
+    if not isinstance(declared, dict):
+        return {}
+    messages = {
+        str(entry): str(message or "").strip()
+        for entry, message in declared.items()
+        if str(entry or "").strip()
+    }
+    return {entry: message for entry, message in messages.items() if message}
+
+
+def abort_round_entries(flavor: Any) -> dict[str, str]:
+    """特调声明的关键任务：entry → 失败时报的话，契约见模块说明。没声明（或不是特调）返回空表。"""
+
+    return _entry_messages(flavor, "abort_round_entries")
+
+
+def nonfatal_entries(flavor: Any) -> dict[str, str]:
+    """特调声明的收尾任务：entry → 失败时接在日志后的说明，契约见模块说明。没声明返回空表。"""
+
+    return _entry_messages(flavor, "nonfatal_entries")
+
+
+def skip_on_retry_entries(flavor: Any) -> frozenset[str]:
+    """特调声明的重试不补跑任务的 entry，契约见模块说明。没声明（或不是特调）返回空集。
+
+    只认集合 / 列表 / 元组：写成单个字符串时不会被拆成一个个字符，当作没声明。
+    """
+
+    declared = (
+        getattr(flavor, "skip_on_retry_entries", None) if flavor is not None else None
+    )
+    if not isinstance(declared, (set, frozenset, list, tuple)):
+        return frozenset()
+    return frozenset(str(entry) for entry in declared if str(entry or "").strip())
 
 
 def retype_notice_lines(flavor: Any, *, entering: bool, has_users: bool) -> list[str]:
@@ -403,16 +424,16 @@ def sanitize_user_task_update(
     _, resource_name = _run_plan.resolve_run_selection(
         interface_model,
         configured_controller=str(
-            _config_value(script_config, "Info", "Controller") or ""
+            config_value(script_config, "Info", "Controller") or ""
         ),
-        emulator_selected=_config_value(script_config, "Emulator", "Id") != "-",
-        configured_resource=str(_config_value(script_config, "Info", "Resource") or ""),
+        emulator_selected=config_value(script_config, "Emulator", "Id") != "-",
+        configured_resource=str(config_value(script_config, "Info", "Resource") or ""),
     )
     incoming_info = data.get("Info") if isinstance(data.get("Info"), dict) else {}
     user_info = {
         name: incoming_info[name]
         if name in incoming_info
-        else _config_value(user_config, "Info", name)
+        else config_value(user_config, "Info", name)
         for name in ("Account", "Notes")
     }
     try:
@@ -440,13 +461,6 @@ def sanitize_user_task_update(
         info.update(info_updates)
         changed = True
     return changed
-
-
-def _config_value(config: Any, group: str, name: str) -> Any:
-    try:
-        return getattr(getattr(config, group), name)
-    except Exception:  # noqa: BLE001 - 假配置对象缺项时按空处理
-        return None
 
 
 def flavored_config_classes() -> list[tuple[type, MaaFWFlavor]]:
@@ -528,10 +542,12 @@ __all__ = [
     "LoginHook",
     "MaaFWFlavor",
     "MaaFWLoginRequired",
+    "MaaFWSelectionContext",
     "SnapshotSanitizer",
+    "abort_round_entries",
+    "config_value",
     "no_default_fallback_inputs",
-    "off_day_scope",
-    "off_day_task_ids",
+    "nonfatal_entries",
     "decide_project_config_class",
     "flavor_for_project",
     "flavored_config_classes",
@@ -541,6 +557,8 @@ __all__ = [
     "resolve_snapshot_sanitizer",
     "retype_notice_lines",
     "sanitize_user_task_update",
+    "skip_on_retry_entries",
+    "task_name_for_entry",
     "unselectable_entries",
     "user_config_type_transform",
 ]

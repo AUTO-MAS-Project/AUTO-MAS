@@ -39,7 +39,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import uuid
 from collections.abc import Callable
 from typing import Any
@@ -48,7 +47,11 @@ from app.task.MaaFW.tools.core.interface.models import (
     MaaFWInterface,
     resolve_task_instance_name,
 )
-from app.task.MaaFW.tools.embedded.flavor import off_day_task_ids
+from app.task.MaaFW.tools.embedded.flavor_support import (
+    MaaFWSelectionContext,
+    config_value,
+    task_name_for_entry,
+)
 
 TYPE_KEY = "MSS"
 ACTIVITY_ENTRY = "活动快速战斗_入口"
@@ -71,15 +74,6 @@ PLAN_MODE_FIXED = "Fixed"
 ## 项目唯一标识符前缀：官方版是 MaaStellaSora，衍生版在其后加后缀（个人版 MaaStellaSora-Personal）。
 ## github 仓库名按同一口径认。
 _MSS_PROJECT_NAME = "maastellasora"
-
-
-def task_name_for_entry(interface_model: MaaFWInterface, entry: str) -> str | None:
-    """interface 里第一个 ``entry`` 等于给定值的任务名；找不到返回 None。"""
-
-    for task in interface_model.task:
-        if str(task.entry or "") == entry:
-            return task.name
-    return None
 
 
 def github_repo_name(github: str) -> str:
@@ -210,17 +204,11 @@ class MSSFlavor:
         task_ids: list[str],
         task_options: dict[str, Any],
         *,
-        script_config: Any,
-        user_config: Any,
-        resource_name: str | None,
-        send_log: Callable[[str], None] | None,
+        context: MaaFWSelectionContext,
     ) -> tuple[list[str], dict[str, Any]]:
-        del script_config, resource_name  # MSS 的装饰只看账号配置与活动排期
-
-        def log(message: str) -> None:
-            if send_log is not None:
-                send_log(message)
-
+        # MSS 的装饰只看账号配置与活动排期
+        log = context.log
+        user_config = context.user_config
         valid_names = {task.name for task in interface_model.task}
 
         def name_of(task_id: str) -> str:
@@ -228,26 +216,9 @@ class MSSFlavor:
 
         ids = list(task_ids)
         options = dict(task_options)
-        # 自动编排也要尊重队列里这一份实例的红灯，尤其不能给未执行的防线记账。
-        raw_snapshot = _get(user_config, "Task", "TaskSnapshot")
-        if isinstance(raw_snapshot, str):
-            try:
-                raw_snapshot = json.loads(raw_snapshot)
-            except (ValueError, TypeError):
-                raw_snapshot = {}
-        skipped_ids: set[str] = set()
-        if isinstance(raw_snapshot, dict) and raw_snapshot.get("keepUnchecked") is True:
-            checked = raw_snapshot.get("taskChecked")
-            order = raw_snapshot.get("taskOrder")
-            if isinstance(checked, dict) and isinstance(order, list):
-                skipped_ids = {
-                    task_id
-                    for task_id in order
-                    if isinstance(task_id, str) and checked.get(task_id) is False
-                }
-        ## 今天不在运行日的实例同理：引擎已把它们从 ids 里拿掉，这里不能再自动补回来、
-        ## 也不能给没跑的防线记账（用引擎判出的那一份，不自己再判星期）
-        skipped_ids |= off_day_task_ids()
+        ## 自动编排不补回引擎判定本轮不跑的实例（红灯、今天不在运行日），
+        ## 也不因为它们去套计划表
+        skipped_ids = context.excluded_task_ids
 
         activity = task_name_for_entry(interface_model, ACTIVITY_ENTRY)
         tribulation = task_name_for_entry(interface_model, TRIBULATION_ENTRY)
@@ -277,7 +248,7 @@ class MSSFlavor:
             activity is not None
             and activity not in skipped_ids
             and not any(name_of(i) == activity for i in ids)
-            and _get(user_config, "Info", "IfActivityFirst") is not False
+            and config_value(user_config, "Info", "IfActivityFirst") is not False
             and self._activity_probe() is True
         ):
             ids = _insert_before_climb(ids, activity, interface_model, name_of)
@@ -354,7 +325,7 @@ def _current_plan_key(
 ) -> dict[str, Any] | None:
     """用户引用的 MSS 计划表今天那一格；``Fixed`` 或取不到时返回 None（不改悬赏试炼）。"""
 
-    mode = str(_get(user_config, "Info", "PlanMode") or PLAN_MODE_FIXED)
+    mode = str(config_value(user_config, "Info", "PlanMode") or PLAN_MODE_FIXED)
     if mode == PLAN_MODE_FIXED:
         return None
     try:
@@ -438,13 +409,6 @@ def _insert_before_climb(
         len(ids),
     )
     return [*ids[:index], task, *ids[index:]]
-
-
-def _get(config: Any, group: str, name: str) -> Any:
-    try:
-        return getattr(getattr(config, group), name)
-    except Exception:  # noqa: BLE001 - 假配置对象缺项时按空处理
-        return None
 
 
 FLAVOR = MSSFlavor()

@@ -58,6 +58,7 @@
           <a-select
             v-model:value="maafwConfig.Update.Channel"
             size="large"
+            :disabled="isAutoUpdateDisabled"
             :options="updateChannelOptions"
             @change="(value: string | number) => emit('change', 'Update', 'Channel', value)"
           />
@@ -207,13 +208,15 @@ const autoUpdateModeOptions = computed<Array<{ label: string; value: MaaFWAutoUp
   { label: t('core.edit.autoUpdateModeBeforeRun'), value: 'BeforeRun' },
 ])
 
-// 自动更新为什么用不了：没声明版本，或没有接入 Mirror 酱、又不能只看 GitHub
-// （下载源不是 GitHub，或 interface 没声明 github 仓库）
-const autoUpdateDisabledMessage = computed(() =>
-  props.previewData?.project.version
-    ? t('core.edit.maafwNoMirrorchyanRid')
-    : t('core.edit.thisScriptDeclaresNo')
-)
+// 自动更新为什么用不了：没声明版本；或没有接入 Mirror 酱、又不能只看 GitHub。项目声明了 github
+// 仓库时只差下载源没选 GitHub，直接告诉用户改源（更新源下拉不随之置灰）
+const autoUpdateDisabledMessage = computed(() => {
+  const project = props.previewData?.project
+  if (!project?.version) return t('core.edit.thisScriptDeclaresNo')
+  return project.github?.trim()
+    ? t('core.edit.maafwNoMirrorchyanUseGithub')
+    : t('core.edit.maafwNoMirrorchyanRid')
+})
 
 // 选了 Mirror 酱却没填 CDK：下载注定失败，后端不会替用户改走 GitHub，输入框下方直接提醒。
 const isCdkMissingForMirror = computed(

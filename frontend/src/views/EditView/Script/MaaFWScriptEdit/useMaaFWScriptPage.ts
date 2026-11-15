@@ -134,6 +134,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     scriptId,
     maafwConfig,
     previewData: previewData.value,
+    effectiveControllerType: control.effectiveControllerType.value,
     interfaceDisabled: control.interfaceDependentDisabled.value,
     loading: pageLoading.value,
     isWizard: wizard.isWizard.value,
