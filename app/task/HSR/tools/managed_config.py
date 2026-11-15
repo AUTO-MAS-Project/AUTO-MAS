@@ -544,6 +544,9 @@ _M7A_PAREN = re.compile(r"（([^（）]*)）")
 _M7A_PAREN_HEAD = re.compile(r"[^，、。；：:\s\"“”）]+$")
 _M7A_IDENT = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 _M7A_LOWER_IDENT = re.compile(r"[a-z][a-z0-9_]*")
+_M7A_SLASH_OPTIONS = re.compile(
+    r"可选值?[:：]\s*([^\s/，。；（）\"]+(?:/[^\s/，。；（）\"]+)+)"
+)
 _M7A_QUOTED_OPTION = re.compile(
     r"\"([A-Za-z][A-Za-z0-9_]*)\"\s*([^，。；\"（\s][^，。；\"（]*)"
 )
@@ -552,8 +555,9 @@ _M7A_QUOTED_OPTION = re.compile(
 def _m7a_comment_options(comment: str) -> dict[str, str]:
     """从样例配置的注释里解析取值枚举：``{取值: 名称}``，按注释里的顺序。
 
-    认三种写法：``normal（标准博弈）``（引号可有可无）、``连击那刻夏（S2，s2_anaxa）``
-    （名称在前、取值在括号里）、``"restart" 结算后重新开局``。
+    认四种写法：``normal（标准博弈）``（引号可有可无）、``连击那刻夏（S2，s2_anaxa）``
+    （名称在前、取值在括号里）、``"restart" 结算后重新开局``、``可选值：追击/dot/终结技``
+    （取值就是名称）。
     """
 
     options: dict[str, str] = {}
@@ -580,6 +584,10 @@ def _m7a_comment_options(comment: str) -> dict[str, str]:
         options = {
             value: label.strip() for value, label in _M7A_QUOTED_OPTION.findall(comment)
         }
+    if len(options) < 2:
+        slashed = _M7A_SLASH_OPTIONS.search(comment)
+        if slashed:
+            options = {value: value for value in slashed.group(1).split("/")}
     return options
 
 
