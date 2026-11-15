@@ -15,6 +15,7 @@ import {
   RUNTIME_TAKEOVER_MESSAGE,
   RuntimeInitializationService,
 } from './runtimeInitializationService'
+import { canRetryStartup } from './startupRecovery'
 
 vi.mock('electron', () => ({ app: { getVersion: () => '5.5.0-beta.3' } }))
 vi.mock('./logger', () => ({
@@ -468,6 +469,14 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
       appRoot: APP_ROOT,
     })
     expect(FakeRuntimeClient.calls[0].command).toEqual(['bootstrap', '--version', 'v5.5.0-beta.3'])
+  })
+
+  it('未知对齐异常不自动重试，也不启动 bootstrap', async () => {
+    alignStub.throws = new Error('unexpected alignment failure')
+    const outcome = await createService().bootstrap(() => undefined)
+    expect(outcome.code).toBe('RUNTIME_BINARY_ALIGN_ERROR')
+    expect(canRetryStartup(outcome)).toBe(false)
+    expect(FakeRuntimeClient.calls).toHaveLength(0)
   })
 
   it('第 0 步失败时不跑 bootstrap：失败段是运行环境、可重试、给重试与打开日志', async () => {
