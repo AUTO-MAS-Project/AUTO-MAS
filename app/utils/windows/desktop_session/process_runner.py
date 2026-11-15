@@ -142,7 +142,7 @@ async def run_desktop_action(
     on_log: Callable[[str], None] | None = None,
     *,
     worker_module: str,
-) -> bool:
+) -> tuple[int, bytes, bytes]:
     from app.utils.common.process.scope import current_process_scope
 
     async with _action_lock:
@@ -155,8 +155,7 @@ async def run_desktop_action(
             worker_module=worker_module,
         )
         try:
-            code, _, _ = await process.wait()
-            return code == 0
+            return await process.wait()
         finally:
             await process.stop()
 

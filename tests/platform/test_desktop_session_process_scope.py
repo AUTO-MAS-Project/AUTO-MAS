@@ -104,3 +104,61 @@ def test_managed_process_separates_exited_from_out_of_scope(monkeypatch):
     monkeypatch.setattr(native, "process_session", session_after_exit)
     alive.is_running.return_value = False
     assert operations.managed_process(100, expected_create_time=20) is None
+
+
+@pytest.mark.skipif(os.name != "nt", reason="需要 Windows Job Object")
+def test_desktop_job_keeps_game_after_launcher_exits(monkeypatch, tmp_path):
+    import subprocess
+    import sys
+    from concurrent.futures import ThreadPoolExecutor
+    from queue import Queue
+    from threading import Event
+
+    from app.utils.windows.desktop_session import process_worker
+
+    frames = Queue()
+    stop = Event()
+    monkeypatch.setattr(process_worker, "send", lambda pipe, frame: frames.put(frame))
+    monkeypatch.setattr(process_worker, "receive", lambda pipe: {"stop": True})
+    monkeypatch.setattr(
+        process_worker.win32pipe,
+        "PeekNamedPipe",
+        lambda pipe, size: (b"", int(stop.is_set()), 0),
+    )
+
+    game_pid_file = tmp_path / "game.pid"
+    launcher = (
+        "import subprocess, sys; from pathlib import Path; "
+        "game = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
+        "Path(sys.argv[1]).write_text(str(game.pid))"
+    )
+    request = {
+        "argv": [sys.executable, "-c", launcher, str(game_pid_file)],
+        "cwd": str(tmp_path),
+        "merge": False,
+        "env": None,
+        "retain": True,
+        "capture": False,
+    }
+    with ThreadPoolExecutor(max_workers=1) as thread_pool:
+        worker = thread_pool.submit(
+            process_worker.run_process,
+            None,
+            request,
+            subprocess.DEVNULL,
+            subprocess.DEVNULL,
+        )
+        try:
+            launcher_pid = frames.get(timeout=10)["pid"]
+            try:
+                psutil.Process(launcher_pid).wait(timeout=10)
+            except psutil.NoSuchProcess:
+                pass
+            game = psutil.Process(int(game_pid_file.read_text()))
+            assert game.is_running()
+            assert not worker.done()
+        finally:
+            stop.set()
+        worker.result(timeout=10)
+        assert frames.get(timeout=1)["returnCode"] == 0
+        game.wait(timeout=10)

@@ -2,6 +2,7 @@
 
 import asyncio
 import importlib
+import os
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -62,9 +63,21 @@ def test_maintenance_after_login_is_not_login_success(maintenance_screen):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("inflight", [False, True])
+@pytest.mark.parametrize(
+    ("inflight", "desktop"),
+    [
+        (False, False),
+        (True, False),
+        pytest.param(
+            False,
+            True,
+            marks=pytest.mark.skipif(os.name != "nt", reason="Windows 分身执行器"),
+        ),
+    ],
+    ids=["local", "inflight", "desktop"],
+)
 async def test_login_maintenance_skips_proxy_without_retry(
-    monkeypatch, tmp_path, maintenance_screen, inflight
+    monkeypatch, tmp_path, maintenance_screen, inflight, desktop
 ):
     from app.task import base
     from app.task.Okww import AutoProxy as proxy_module
@@ -117,6 +130,43 @@ async def test_login_maintenance_skips_proxy_without_retry(
     proxy = proxy_module.AutoProxyTask(script, config, {uid: account}, game)
     proxy.game_process_path = tmp_path / "Client-Win64-Shipping.exe"
 
+    if desktop:
+        from collections import deque
+        from unittest.mock import Mock
+
+        from app.task import desktop_session_worker
+        from app.utils.common.process import session
+        from app.utils.windows.desktop_session import native, process_runner
+
+        frames = deque()
+        fake_pipe = Mock()
+        monkeypatch.setattr(session, "_parent_scope", None)
+        monkeypatch.setattr(native, "set_dpi_awareness", lambda: None)
+        monkeypatch.setattr(desktop_session_worker, "process_session", lambda pid: 7)
+        monkeypatch.setattr(
+            desktop_session_worker, "send", lambda pipe, frame: frames.append(frame)
+        )
+        monkeypatch.setattr(process_runner, "receive", lambda pipe: frames.popleft())
+        monkeypatch.setattr(
+            process_runner.win32pipe,
+            "PeekNamedPipe",
+            lambda pipe, size: (b"", len(frames), 0),
+        )
+        monkeypatch.setattr(process_runner, "_wait_worker", lambda worker: None)
+
+        async def launch(target, request, *, on_log, worker_module):
+            monkeypatch.setattr(desktop_session_worker, "receive", lambda pipe: request)
+            desktop_session_worker.run_action(fake_pipe)
+            return process_runner.DesktopProcess(
+                frames.popleft()["pid"], fake_pipe, Mock(), on_log
+            )
+
+        launch_spy = AsyncMock(side_effect=launch)
+        monkeypatch.setattr(process_runner, "_launch", launch_spy)
+        token = session.desktop_process_target.set(
+            session.DesktopProcessTarget(7, tmp_path, tmp_path)
+        )
+
     pending = None
     if inflight:
         # 前一账号的后台截图超时后仍在执行；切号已有明确维护结果，不能被采样门槛丢掉。
@@ -126,6 +176,8 @@ async def test_login_maintenance_skips_proxy_without_retry(
         await proxy.main_task()
         await proxy._persist_user_run_result()
     finally:
+        if desktop:
+            session.desktop_process_target.reset(token)
         if pending is not None:
             pending.cancel()
             await asyncio.gather(pending, return_exceptions=True)
@@ -137,3 +189,5 @@ async def test_login_maintenance_skips_proxy_without_retry(
     assert len(user.log_record) == 1
     assert "服务器未开放" in proxy.cur_user_log.status
     start.assert_not_awaited()
+    if desktop:
+        launch_spy.assert_awaited_once()

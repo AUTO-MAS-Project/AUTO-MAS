@@ -211,6 +211,7 @@ class ProcessManager:
         null_stream_to_pipe: bool = False,
         elevated: bool = False,
         breakaway: bool = False,
+        retain_desktop_descendants: bool = False,
         env: dict[str, str] | None = None,
     ) -> None:
         """
@@ -227,6 +228,7 @@ class ProcessManager:
             null_stream_to_pipe (bool): 若为 True, 将设为 DEVNULL 的 stdout/stderr 替换为一条自动销毁输出的标准流管道。
             elevated (bool): 若为 True 且在 Windows 上, 以管理员权限启动进程（触发 UAC），此时不直接持有子进程句柄，依赖 target_process 追踪。
             breakaway (bool): 若为 True 且在 Windows 上, 让子进程脱离监督器的 Job Object（CREATE_BREAKAWAY_FROM_JOB）。只给游戏/模拟器这类不该随后端退出的进程用, 脚本本体、MAA、agent 等保持默认 False。
+            retain_desktop_descendants (bool): 在分身内保留启动器派生进程，直到管理器收尾。
             env (dict[str, str] | None): 子进程环境变量, 默认 None 表示继承当前进程; 传入时会整体替换, 需要保留现有环境的调用点自行并上 os.environ。elevated 走 ShellExecute, 该分支不支持指定环境。
         """
 
@@ -263,7 +265,11 @@ class ProcessManager:
                 desktop,
                 argv=[str(program), *args],
                 cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
-                retain=breakaway or target_process is not None,
+                retain=(
+                    retain_desktop_descendants
+                    or breakaway
+                    or target_process is not None
+                ),
                 drain=null_stream_to_pipe,
                 env=env,
             )

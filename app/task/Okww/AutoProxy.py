@@ -671,7 +671,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             raise RuntimeError("未找到鸣潮官方启动器路径，请重新导入启动器")
         await self._push_dispatch_log("未检测到运行中的客户端，正在拉起官方启动器...")
         await self.game_manager.open_process(
-            launcher_path, *split_args(self.script_config.Game.Arguments)
+            launcher_path,
+            *split_args(self.script_config.Game.Arguments),
+            retain_desktop_descendants=True,
         )
         await self._push_dispatch_log("启动器已拉起，正在等待点击「进入游戏」...")
         # 启动器交互在后台线程内同步执行，on_log 契约是同步回调；
