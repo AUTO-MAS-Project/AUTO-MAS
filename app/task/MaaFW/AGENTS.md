@@ -809,8 +809,11 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   sha256 可校验）；区间这一路任何一步失败（回 200、区间不符、CRC 错、超时、取回超过资产 40% 或
   3000 个条目……）都丢掉这一批，同一次更新里照常下整包（可走镜像），用户停止照常取消。当前载荷
   damaged、旧投影规则、旧布局原生库残留时不走区间（`updater._range_delta_blocker`，先保守）；
-  本地导入的载荷可以走。环境变量 `AUTO_MAS_MAAFW_FORCE_FULL_PACKAGE=1` 一律下全量包（Mirror 酱
-  也不要差量包），供验收比对与应急，不进配置、不上界面。
+  本地导入的载荷可以走。托管级 `Update.PackageMode`（编辑页「更新方式」，M9A、MSS 继承）默认
+  `incremental`：按上面的规则走区间差量 / Mirror 酱差量包、失败回退全量；选 `full` 时一律下全量包
+  （不走区间、Mirror 酱也不要差量包）。环境变量 `AUTO_MAS_MAAFW_FORCE_FULL_PACKAGE=1` 与选 `full`
+  等效、对所有托管生效，供验收比对与应急。队列预下载（`embedded_manager.prefetch_script_update`）
+  只在 `full` 时做：增量要以开跑时的当前载荷为基准，提前下不了，`incremental` 下直接跳过。
   **直连速度保护**（`range_delta.RangeSpeedGuard`）：只在退回的整包真能走加速镜像时设（镜像没关、
   有镜像、资产有 sha256，与 `transport.download_resumable` 同一判据）——国内直连 GitHub 常年
   100 多 KB/s，40% 预算的上限要十几分钟，不如按镜像下整包；没有更快的路可退时不设。从读文件
