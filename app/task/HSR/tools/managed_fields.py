@@ -27,9 +27,9 @@
 - **运行时改什么**：三月七各模块的 patch 白名单、SRA 临时配置套用的原生值，
   都只认这里的键。
 
-所以「表单露出集 = 运行生效集」：表里没有的原生键（包括外部脚本新版本新增的键）
-不再自动露出，也不会被 MAS 覆盖；在 MAS 下没有意义的键（由 MAS 推导的总开关、
-运行状态、MAS 已关掉的通知等）一律不进表。
+所以「表单露出集 = 运行生效集」。外部脚本新版本新增的键按文件末尾「自动跟进」
+的规则接在表后，同样两头生效；在 MAS 下没有意义的键（由 MAS 推导的总开关、
+运行状态、MAS 已关掉的通知等）不进表，并写进自动跟进的排除名单。
 
 本模块只放数据，不导入同包其它模块，供 ``m7a_config`` / ``sra_runtime`` /
 ``managed_config`` 共同引用而不成环。
@@ -38,7 +38,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
 HSRFieldGroup = Literal[
     "common", "team", "support", "activity", "replenish", "reroll", "misc"
@@ -96,9 +96,10 @@ _M7A_TEAM_ON = _on("instance_team_enable")
 _M7A_BORROW_ON = _on("borrow_enable")
 
 M7A_MANAGED_FIELDS: dict[str, tuple[ManagedFieldSpec, ...]] = {
-    # 不露出：power_plan_keep（体力计划不由 MAS 管）、calyx_golden_preference（三月七
-    # 读点已注释掉）、power_limit（只有循环模式读）、activity_enable（MAS 按本模块
-    # 三个活动子开关推导）。
+    # 不露出：power_plan_keep / power_plan_continue（体力计划不由 MAS 管）、
+    # calyx_golden_preference（三月七读点已注释掉）、power_limit（只有循环模式读）、
+    # activity_enable（MAS 按本模块三个活动子开关推导）、weekly_relic_cleanup_timestamp
+    # （运行状态）。merge_immersifier 两项三月七 v2026.11 已删，留给旧版本。
     "Daily": (
         ManagedFieldSpec("build_target_enable"),
         *(
@@ -158,7 +159,22 @@ M7A_MANAGED_FIELDS: dict[str, tuple[ManagedFieldSpec, ...]] = {
         *_specs(
             "misc",
             "tp_before_instance",
+            "relic_bag_cleanup_enable",
             "break_down_level_four_relicset",
+            ManagedFieldSpec(
+                "weekly_relic_cleanup_day_of_week",
+                "misc",
+                visible_when=_on("break_down_level_four_relicset"),
+                label="每周清理遗器的起始日",
+                description="在游戏刷新时间后执行。",
+            ),
+            ManagedFieldSpec(
+                "weekly_relic_smart_discard_enable",
+                "misc",
+                visible_when=_on("break_down_level_four_relicset"),
+                label="每周清理时先智能弃置五星遗器",
+                description="已弃置的遗器会一并分解。",
+            ),
             "merge_immersifier",
             ManagedFieldSpec(
                 "merge_immersifier_limit",
@@ -192,14 +208,26 @@ M7A_MANAGED_FIELDS: dict[str, tuple[ManagedFieldSpec, ...]] = {
         "weekly_divergent_type",
         "weekly_divergent_level",
         "weekly_divergent_bonus_enable",
+        "divergent_auto_save_enable",
     ),
+    # currencywars_strategy_restart_on_special_tags 三月七 v2026.11 已删，留给旧版本。
     "CurrencyWars": _specs(
         "common",
         "currencywars_type",
         "currencywars_rank_difficulty",
+        ManagedFieldSpec(
+            "currencywars_unfinished_match",
+            label="遇到未完成的对局",
+            description="",
+        ),
         "currencywars_bonus_enable",
         "currencywars_fast_mode",
         "currencywars_strategy",
+        ManagedFieldSpec(
+            "currencywars_investment_priority",
+            label="投资环境与投资策略的选择",
+            description="默认策略固定按图鉴优先，不受此项影响。",
+        ),
         "currencywars_strategy_restart_on_special_tags",
     ),
 }
@@ -240,7 +268,9 @@ _SRA_REROLL_MODE = ManagedFieldVisibleWhen("currencyWars.mode", (2,))
 
 SRA_MANAGED_FIELDS: dict[str, tuple[ManagedFieldSpec, ...]] = {
     "Daily": (
-        *_specs("common", "useBuildTarget", "useAssistant"),
+        ManagedFieldSpec("useBuildTarget"),
+        ManagedFieldSpec("materialPriority", visible_when=_on("useBuildTarget")),
+        ManagedFieldSpec("useAssistant"),
         ManagedFieldSpec("replenish.enabled", "replenish"),
         *(
             ManagedFieldSpec(key, "replenish", visible_when=_SRA_REPLENISH_ON)
@@ -259,9 +289,11 @@ SRA_MANAGED_FIELDS: dict[str, tuple[ManagedFieldSpec, ...]] = {
     ),
     # redeemCodes 不露出：兑换码在 SRA 里维护，开关生效时运行期原样拷进临时配置。
     "ReceiveRewards": _specs("common", *SRA_REWARD_NAMED_KEYS, *SRA_REWARD_LEGACY_KEYS),
-    # 不露出 divergentUniverse.mode：SRA 2.21 起固定周期演算，不再读它。
+    # divergentUniverse.mode：SRA 2.21 一度不读它，v2.25.5 的 CosmicStrifeTask
+    # 又把它传给差分宇宙（0 刷单层 / 1 完整对局）。
     "DivergentUniverse": _specs(
         "common",
+        "divergentUniverse.mode",
         "divergentUniverse.runtimes",
         "divergentUniverse.useTechnique",
         "pointRewards.enabled",
@@ -273,6 +305,7 @@ SRA_MANAGED_FIELDS: dict[str, tuple[ManagedFieldSpec, ...]] = {
             "currencyWars.mode",
             "currencyWars.difficulty",
             "currencyWars.runtimes",
+            "currencyWars.pointRewards",
             "currencyWars.strategy",
             "currencyWars.username",
         ),
@@ -295,16 +328,118 @@ MANAGED_FIELDS: dict[str, dict[str, tuple[ManagedFieldSpec, ...]]] = {
 }
 
 
-def managed_field_specs(engine: str, module_key: str) -> tuple[ManagedFieldSpec, ...]:
-    """某引擎某模块的字段表（有序）；没有该模块时为空。"""
+# ---------------------------------------------------------------- 自动跟进
+#
+# 外部脚本新版本加的设置不必等 MAS 改字段表：原生配置里落在本模块范围内、
+# 又不在排除名单里的标量键，自动接在字段表后面（「其它」分组），表单能改、
+# 运行时照常套用。字段表只负责整理：排序、分组、从属显示、文案覆盖。
 
-    return MANAGED_FIELDS.get(str(engine).upper(), {}).get(module_key, ())
+AUTO_FIELD_GROUP: HSRFieldGroup = "misc"
+
+# 三月七 config.yaml 是平铺的，按键名前缀归模块。activity_ 不自动跟进：
+# activity_enable 由 MAS 按已知的活动子开关推导，新活动开关单独打开也不会跑。
+_M7A_AUTO_PREFIXES: dict[str, tuple[str, ...]] = {
+    "Daily": ("instance_team", "borrow_", "build_target_", "relic_", "weekly_relic_"),
+    "ReceiveRewards": ("reward_", "daily_"),
+    "DivergentUniverse": ("weekly_divergent_", "divergent_"),
+    "CurrencyWars": ("currencywars_",),
+}
+# 在 MAS 下没有意义的键：由 MAS 推导或钉死的开关、运行状态。
+_M7A_AUTO_EXCLUDED: frozenset[str] = frozenset(
+    {
+        "daily_enable",
+        "reward_enable",
+        "weekly_divergent_enable",
+        "weekly_divergent_stable_mode",
+        "currencywars_enable",
+        "currencywars_remembrance_trailblazer_name",
+        # 手动跑差分宇宙用的模式；周常读 weekly_divergent_type
+        "divergent_type",
+        # 外置 ASU 路径的队伍类型；MAS 跑的 divergent 命令选队时不读它
+        "divergent_team_type",
+    }
+)
+_M7A_AUTO_EXCLUDED_SUFFIXES: tuple[str, ...] = ("_timestamp", "_completed_count")
+
+# SRA 的 profile 按任务分节：体力、领取奖励各占一节，整节都归本模块；
+# 旷宇纷争一节里按点号前缀分给差分宇宙和货币战争。
+_SRA_AUTO_PREFIXES: dict[str, tuple[str, ...]] = {
+    "Daily": ("",),
+    "ReceiveRewards": ("",),
+    "DivergentUniverse": ("divergentUniverse.",),
+    "CurrencyWars": ("currencyWars.",),
+}
+_SRA_AUTO_EXCLUDED: frozenset[str] = frozenset(
+    {
+        "enabled",
+        "tasklist",
+        "redeemCodes",
+        "rewards",
+        "divergentUniverse.enabled",
+        "currencyWars.enabled",
+        # SRA 不读
+        "currencyWars.strategyIndex",
+        "currencyWars.policy",
+    }
+)
+
+_AUTO_RULES: dict[
+    str, tuple[dict[str, tuple[str, ...]], frozenset[str], tuple[str, ...]]
+] = {
+    "M7A": (_M7A_AUTO_PREFIXES, _M7A_AUTO_EXCLUDED, _M7A_AUTO_EXCLUDED_SUFFIXES),
+    "SRA": (_SRA_AUTO_PREFIXES, _SRA_AUTO_EXCLUDED, ()),
+}
 
 
-def managed_field_keys(engine: str, module_key: str) -> tuple[str, ...]:
+def auto_managed_keys(
+    engine: str, module_key: str, native: Mapping[str, Any]
+) -> tuple[str, ...]:
+    """原生配置 ``native`` 里字段表没列、但按规则归本模块的标量键（按原生顺序）。
+
+    ``native`` 对三月七是整份 config.yaml，对 SRA 是本模块所在的那一节。
+    """
+
+    engine = str(engine).upper()
+    prefixes, excluded, excluded_suffixes = _AUTO_RULES.get(
+        engine, ({}, frozenset(), ())
+    )
+    module_prefixes = prefixes.get(module_key, ())
+    if not module_prefixes:
+        return ()
+    listed = {
+        spec.key for specs in MANAGED_FIELDS.get(engine, {}).values() for spec in specs
+    }
+    return tuple(
+        key
+        for key, value in ((str(key), value) for key, value in native.items())
+        if key.startswith(module_prefixes)
+        and key not in listed
+        and key not in excluded
+        and not key.endswith(excluded_suffixes or ("\0",))
+        and isinstance(value, (bool, int, float, str))
+    )
+
+
+def managed_field_specs(
+    engine: str, module_key: str, native: Mapping[str, Any] | None = None
+) -> tuple[ManagedFieldSpec, ...]:
+    """某引擎某模块的字段（有序）：字段表在前；给了 ``native`` 时自动跟进的键接在后面。"""
+
+    specs = MANAGED_FIELDS.get(str(engine).upper(), {}).get(module_key, ())
+    if native is None:
+        return specs
+    return specs + tuple(
+        ManagedFieldSpec(key, AUTO_FIELD_GROUP)
+        for key in auto_managed_keys(engine, module_key, native)
+    )
+
+
+def managed_field_keys(
+    engine: str, module_key: str, native: Mapping[str, Any] | None = None
+) -> tuple[str, ...]:
     """某引擎某模块 MAS 允许覆盖的原生键（有序）。"""
 
-    return tuple(spec.key for spec in managed_field_specs(engine, module_key))
+    return tuple(spec.key for spec in managed_field_specs(engine, module_key, native))
 
 
 def select_sra_reward_keys(keys: set[str] | frozenset[str]) -> frozenset[str]:
@@ -325,6 +460,7 @@ __all__ = [
     "SRA_REWARD_LABELS",
     "SRA_REWARD_LEGACY_KEYS",
     "SRA_REWARD_NAMED_KEYS",
+    "auto_managed_keys",
     "managed_field_keys",
     "managed_field_specs",
     "select_sra_reward_keys",
