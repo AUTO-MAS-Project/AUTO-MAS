@@ -644,7 +644,7 @@ async def ensure_logged_in(
     # 下面四条是配置错误：重试只会原样再失败，抛不可重试的（宿主不再重启模拟器重试）
     if not adb_address:
         raise MaaFWLoginRequired(
-            "MAS B 服登录仅支持 ADB 控制器，请切换控制器或使用项目登录",
+            "「由 MAS 登录 B 服」仅支持 ADB 控制器，请切换控制器或把登录方式改回「由 M9A 登录」",
             retryable=False,
         )
 
@@ -657,15 +657,15 @@ async def ensure_logged_in(
     package = str(package_name or "").strip() or BILIBILI_PACKAGE
     if package != BILIBILI_PACKAGE:
         raise MaaFWLoginRequired(
-            f"B 服登录失败：登录方式选了「Mas」，但要启动的客户端是「{package}」；"
-            f"Mas 登录只能用于 B 服客户端（{BILIBILI_PACKAGE}）。"
-            "请把脚本资源与游戏包名都改成 B 服，或把登录方式改回「Project」",
+            f"B 服登录失败：登录方式选了「由 MAS 登录 B 服」，但要启动的客户端是「{package}」；"
+            f"这种登录方式只能用于 B 服客户端（{BILIBILI_PACKAGE}）。"
+            "请把游戏资源与游戏包名都改成 B 服，或把登录方式改回「由 M9A 登录」",
             retryable=False,
         )
     if not _is_bilibili_resource(resource_name):
         raise MaaFWLoginRequired(
-            f"B 服登录失败：登录方式选了「Mas」，但脚本资源是「{resource_name or '未选择'}」；"
-            "Mas 登录只支持「B 服」资源，请改选后再运行（或把登录方式改回「Project」）",
+            f"B 服登录失败：登录方式选了「由 MAS 登录 B 服」，但游戏资源是「{resource_name or '未选择'}」；"
+            "这种登录方式只支持「B 服」资源，请改选后再运行（或把登录方式改回「由 M9A 登录」）",
             retryable=False,
         )
     device = _Device(adb_path, adb_address, host_adb)

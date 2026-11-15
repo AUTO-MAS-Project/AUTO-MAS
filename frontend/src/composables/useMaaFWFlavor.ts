@@ -16,8 +16,8 @@
 //      defineEmits<该分节的 …Emits>() 把 change / save 等事件发出来（或把 $attrs 透传给它包的 MFW
 //      分节），否则改动不会落盘。
 //    - 插入点：defineMaaFWLazyComponent 写进 slots，组件以 `context` 一个 prop 接收上下文。
-//      scriptPage：afterBasicInfo / beforeControl / besidePackageName（control 分节内、与游戏包名
-//      并排）/ afterControl / afterUpdate / afterRun
+//      scriptPage：afterBasicInfo / beforeControl / besidePackageName（control 分节内、ADB 下排在
+//      包名、等待时间之后，每个组件一格）/ afterControl / afterUpdate / afterRun
 //      userPage：afterBasicInfo / beforeTaskQueue / afterTaskQueue
 //      create：afterSourceStep（只读）
 //    - 预取数据：scriptPage.prepare / userPage.prepare（页面加载期间调用；新建流程没有）。
@@ -92,9 +92,12 @@ const FLAVOR_BY_TYPE = new Map<string, MaaFWFlavor>(
 const USER_CONFIG_TYPES: ReadonlySet<string> = new Set(
   MAAFW_FLAVORS.map(flavor => flavor.userConfigType)
 )
-const DEFAULT_SCRIPT_NAMES: ReadonlySet<string> = new Set(
-  MAAFW_FLAVORS.map(flavor => flavor.defaultScriptName)
-)
+// 后端默认名从「新 X 脚本」改成「新 X 托管」之前建的托管还叫旧名，同样算默认名
+const LEGACY_DEFAULT_SCRIPT_NAMES = ['新 MFW 脚本', '新 M9A 脚本', '新 MSS 脚本']
+const DEFAULT_SCRIPT_NAMES: ReadonlySet<string> = new Set([
+  ...MAAFW_FLAVORS.map(flavor => flavor.defaultScriptName),
+  ...LEGACY_DEFAULT_SCRIPT_NAMES,
+])
 
 /** 是否由 MaaFW 引擎运行（MaaFW 本身或它的特调） */
 export const isMaaFWFamily = (
