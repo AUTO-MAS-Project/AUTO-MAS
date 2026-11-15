@@ -54,6 +54,22 @@ def test_stale_connection_is_recognised():
     assert not is_stale_connection("package:/system/priv-app/Settings/Settings.apk")
 
 
+def test_shell_command_missing_is_not_a_stale_connection():
+    """设备连得好好的、只是设备里没有某条命令时, 不能当成连接失效。
+
+    雷电 14 的镜像里没有 ``monkey``, 正常连着的设备执行它只会打出
+    ``/system/bin/sh: monkey: not found``; 按裸 ``not found`` 判就会把一条好连接
+    断开重连, 还把命令重复执行一次。
+    """
+    assert not is_stale_connection("/system/bin/sh: monkey: not found")
+    assert not is_stale_connection("/system/bin/sh: am: not found")
+    assert not is_stale_connection("sh: pm: not found")
+    # 真掉线还是照样要认出来
+    assert is_stale_connection("error: device '127.0.0.1:16384' not found")
+    assert is_stale_connection("adb.exe: device 'emulator-5554' not found")
+    assert is_stale_connection("error: device not found")
+
+
 def test_describe_adb_failure_only_speaks_for_stale_connections():
     """只有连接失效才给「换端口」的提示: adb 路径失效之类喂这句会把人带偏。"""
     hint = describe_adb_failure("error: device offline")
@@ -87,6 +103,53 @@ def test_runner_reconnects_and_retries_when_connection_is_stale(monkeypatch):
     # 首次连接一次 + 发现失效后重连一次
     assert [c[1] for c in calls].count("disconnect") == 2
     assert [c[1] for c in calls].count("connect") == 2
+
+
+def test_runner_does_not_reconnect_for_missing_shell_command(monkeypatch):
+    """设备里缺命令不是连接失效: 不能断开重连, 更不能把命令重复执行一次。"""
+    monkeypatch.setattr(applaunch, "_RECONNECT_COOLDOWN", 0.0)
+    calls: list[tuple[str, ...]] = []
+
+    async def fake_run_process(program, *args, timeout=None, if_merge_std=False):
+        calls.append((str(program), *args))
+        if "shell" in args:
+            return SimpleNamespace(returncode=127, stdout="sh: monkey: not found")
+        return SimpleNamespace(returncode=0, stdout="connected")
+
+    monkeypatch.setattr(applaunch.ProcessRunner, "run_process", fake_run_process)
+    runner = build_adb_runner(Path("adb.exe"), "127.0.0.1:16384")
+
+    code, output = asyncio.run(runner("shell", "monkey", "-p", "com.example.game", "1"))
+
+    assert code == 127
+    assert "monkey: not found" in output
+    # 首次那一次连接之外不再重连, 命令只执行一次
+    assert [c[1] for c in calls].count("connect") == 1
+    assert [c[1] for c in calls].count("disconnect") == 1
+    assert len([c for c in calls if "shell" in c]) == 1
+
+
+def test_runner_reconnect_native_serial_skips_connect(monkeypatch):
+    """``emulator-5554`` 这类原生序列号不能用 ``connect`` 恢复, 断开一次让 server 重新扫到。"""
+    monkeypatch.setattr(applaunch, "_RECONNECT_COOLDOWN", 0.0)
+    calls: list[tuple[str, ...]] = []
+    shell_outputs = iter(["error: device offline", "1"])
+
+    async def fake_run_process(program, *args, timeout=None, if_merge_std=False):
+        calls.append((str(program), *args))
+        if "shell" in args:
+            return SimpleNamespace(returncode=0, stdout=next(shell_outputs))
+        return SimpleNamespace(returncode=0, stdout="")
+
+    monkeypatch.setattr(applaunch.ProcessRunner, "run_process", fake_run_process)
+    runner = build_adb_runner(Path("adb.exe"), "emulator-5554")
+
+    code, output = asyncio.run(runner("shell", "getprop", "sys.boot_completed"))
+
+    assert (code, output) == (0, "1")
+    # 原生序列号首次不用连, 失效时只断开
+    assert [c[1] for c in calls].count("disconnect") == 1
+    assert not [c for c in calls if c[1] == "connect"]
 
 
 def test_boot_timeout_detail_carries_port_hint():

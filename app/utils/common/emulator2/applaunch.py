@@ -51,6 +51,7 @@
 """
 
 import asyncio
+import re
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
@@ -88,15 +89,20 @@ _STORE_LAUNCH_TIMEOUT = 10.0
 #: adb 输出里表示「这条连接已经不可用」的几种写法, 见到就要重连而不是继续等。
 #: 实测两台 MuMu 共用 5037 时: 一个版本的 adb 会把另一个版本的 server 顶掉,
 #: server 里留着的旧条目让 ``connect`` 直接回成功, 之后每条命令都报 offline。
-_STALE_CONNECTION_MARKERS = (
-    "device offline",
+#:
+#: 只认 adb 自己的连接错误, **不能用裸 ``not found``**: 雷电 14 的镜像里没有
+#: ``monkey``, 正常连着的设备执行它只会打出 ``/system/bin/sh: monkey: not found``,
+#: 按裸串判就会把一条好连接断开重连、还把命令重复执行一次。
+_STALE_CONNECTION_PATTERNS = (
+    re.compile(r"device offline"),
     # 掉线时 adb 打的是 ``device '127.0.0.1:16384' not found``——中间插了地址,
     # 写成 ``device not found`` 一条都匹配不上, 实测就是这样漏判的。
-    "not found",
-    "cannot connect",
-    "failed to connect",
-    "connection refused",
-    "no devices",
+    re.compile(r"device '[^']*' not found"),
+    re.compile(r"device not found"),
+    re.compile(r"cannot connect"),
+    re.compile(r"failed to connect"),
+    re.compile(r"connection refused"),
+    re.compile(r"no devices"),
 )
 
 #: 两次重连之间的最小间隔。等开机是每秒轮询, 不加限制会把 disconnect/connect 刷成
@@ -204,7 +210,7 @@ def is_stale_connection(output: str) -> bool:
     靠「再多等几秒」永远等不到。
     """
     text = (output or "").lower()
-    return any(marker in text for marker in _STALE_CONNECTION_MARKERS)
+    return any(pattern.search(text) for pattern in _STALE_CONNECTION_PATTERNS)
 
 
 def describe_adb_failure(output: str) -> str:
@@ -260,9 +266,13 @@ def build_adb_runner(adb_path: Path | None, adb_address: str) -> AdbRunner:
     连之前一定先 ``disconnect``: 两台 MuMu 会互相顶掉 5037 上的 server, server 里留着
     指向旧实例的连接时, ``connect`` 会直接回一句 ``connected`` 而设备实际是 offline。
     命令结果里出现过期连接的字样时, 也会重连一次再试。
+
+    ``host:port`` 与 ``emulator-5554`` 这类原生序列号的恢复方式不同: ``connect`` 只认
+    前者, 后者断开一次让 adb server 自己重新扫到就够了。
     """
     program: Path | str = adb_path if adb_path is not None else "adb"
-    need_connect = ":" in adb_address
+    tcp_address = ":" in adb_address
+    need_connect = tcp_address
     failed_once = False
     reconnect_lock = asyncio.Lock()
     last_reconnect = 0.0
@@ -278,13 +288,14 @@ def build_adb_runner(adb_path: Path | None, adb_address: str) -> AdbRunner:
                     timeout=_ADB_CONNECT_TIMEOUT,
                     if_merge_std=True,
                 )
-            await ProcessRunner.run_process(
-                program,
-                "connect",
-                adb_address,
-                timeout=_ADB_CONNECT_TIMEOUT,
-                if_merge_std=True,
-            )
+            if tcp_address:
+                await ProcessRunner.run_process(
+                    program,
+                    "connect",
+                    adb_address,
+                    timeout=_ADB_CONNECT_TIMEOUT,
+                    if_merge_std=True,
+                )
 
     async def reconnect() -> None:
         nonlocal last_reconnect
