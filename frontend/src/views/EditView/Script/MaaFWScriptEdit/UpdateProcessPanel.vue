@@ -193,7 +193,7 @@ watch(
 <style scoped src="./maafwSection.css"></style>
 
 <style scoped>
-/* 面板本身不画框、不铺底色：标题 + 日志框就够了 */
+/* 检查 / 更新进行中面板本身不画框、不铺底色：标题 + 日志框就够了 */
 .update-process {
   display: flex;
   flex-direction: column;
