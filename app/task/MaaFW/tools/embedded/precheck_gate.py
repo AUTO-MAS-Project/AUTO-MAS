@@ -23,18 +23,25 @@
 那一步时，核心包会 await 这里构造的闸门：
 
 - 没备忘、或备忘记的不是这个目标版本 → 放行（正常更新，预检再真建一次）。
-- ``kind == other``（磁盘满、解释器坏……）→ 不探，计数，跳过本次更新。
+- ``kind == transient``（连不上索引、超时、离线）→ 不探；失败后过了
+  :data:`TRANSIENT_RETRY_AFTER` 就放行再试一次，没过就计数、跳过本次更新。
+- ``kind == other``（磁盘满、解释器坏……）→ 同上，冷却 :data:`OTHER_RETRY_AFTER`。
 - ``kind == binding_unavailable`` → 并发轻探 PyPI 各索引的 simple 页与 GitHub
   的 tag 源码包（5 s、只看有没有），任一可得就删备忘放行；都不可得就计数、
-  跳过——不下载、不解压、不建池、不弹通知。
+  跳过——不下载、不解压、不建池。
 
-只有运行前自动更新用它；手动更新不传闸门，等于强制重试。
+放行时备忘留着：预检再失败会按新的失败时刻重写，登记成功由宿主删掉。被挡下时
+同一个备忘每天最多交给 ``on_remind`` 一次（``remindedOn``），宿主据此弹一条
+warning，让用户知道这个版本一直没装上、可以手动更新；其余时候只进日志。
+
+只有运行前自动更新与队列预下载用它；手动更新不传闸门，等于强制重试。
 """
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -45,7 +52,10 @@ from packaging.version import InvalidVersion, Version
 
 from app.task.MaaFW.tools.core.project_update.precheck_memo import (
     KIND_BINDING_UNAVAILABLE,
+    KIND_TRANSIENT,
     clear_runtime_precheck,
+    local_today,
+    memo_failed_at,
     memo_matches_version,
     read_runtime_precheck,
     write_runtime_precheck,
@@ -71,6 +81,10 @@ PROBE_TIMEOUT_SECONDS = 5.0
 PROBE_HEADERS = {"User-Agent": "AutoMasGui"}
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 _REASON_SUMMARY_CHARS = 120
+# 预检因网络失败后多久再自动试一次：断网、索引抖动通常几小时内就好了。
+TRANSIENT_RETRY_AFTER = timedelta(hours=6)
+# 其它原因（磁盘满、解释器坏、发行包缺模块……）多半要人处理，一天才再试一次。
+OTHER_RETRY_AFTER = timedelta(hours=24)
 
 PrecheckGate = Callable[[str], Awaitable[str | None]]
 BindingProbe = Callable[[str], Awaitable[bool]]
@@ -202,18 +216,36 @@ def build_precheck_gate(
     proxy: httpx.Proxy | None = None,
     send_log: Callable[[str], None] | None = None,
     probe: BindingProbe | None = None,
+    on_remind: Callable[[str], None] | None = None,
+    now: Callable[[], datetime] | None = None,
 ) -> PrecheckGate:
     """构造给 ``update_maafw_project_if_needed(precheck_gate=...)`` 的闸门。
 
     ``memo_path_for(目标版本)`` 给出该谱系该版本的备忘路径（组共有：一个成员预检过
     某版本失败，组里谁也不再为它下包）。返回值非空即「本次跳过更新」的原因，由核心包
     按「有更新但不可安装」记日志并返回 ``skipped_reason``（这里不再重复记同一句）。
+    ``on_remind``：被挡下、且这个备忘今天还没提醒过时，收到同一句原因（随后把今天记进
+    ``remindedOn``）；不传就不提醒、也不动 ``remindedOn``（队列预下载就不传）。
     ``probe`` 只给测试替换轻探；生产用 :func:`probe_binding_available` 加 Runtime
-    注入的索引候选与离线判据。
+    注入的索引候选与离线判据。``now`` 只给测试固定时钟。
     """
 
     log = send_log or (lambda _message: None)
     name = str(project_name or "").strip() or "MFW 项目"
+    clock = now or (lambda: datetime.now().astimezone())
+
+    async def block(memo_path: Path, memo: dict, reason: str) -> str:
+        """计数、写回备忘，按天决定要不要提醒，返回跳过原因。"""
+
+        memo["attempts"] = _next_attempts(memo)
+        today = local_today()
+        remind = on_remind is not None and memo.get("remindedOn") != today
+        if remind:
+            memo["remindedOn"] = today
+        await asyncio.to_thread(write_runtime_precheck, memo_path, memo)
+        if remind and on_remind is not None:
+            on_remind(reason)
+        return reason
 
     async def run_probe(version: str) -> bool:
         if probe is not None:
@@ -241,12 +273,24 @@ def build_precheck_gate(
         attempts = _next_attempts(memo)
         requirement = str(memo.get("requirement") or "maafw").strip() or "maafw"
         if memo.get("kind") != KIND_BINDING_UNAVAILABLE:
-            memo["attempts"] = attempts
-            await asyncio.to_thread(write_runtime_precheck, memo_path, memo)
-            return (
+            cooldown = (
+                TRANSIENT_RETRY_AFTER
+                if memo.get("kind") == KIND_TRANSIENT
+                else OTHER_RETRY_AFTER
+            )
+            failed_at = memo_failed_at(memo)
+            # 记不清什么时候失败的（旧备忘、手改过）按已过冷却算：宁可多试一次
+            retry_at = failed_at + cooldown if failed_at is not None else None
+            if retry_at is None or clock() >= retry_at:
+                log(f"上次 {latest} 的运行环境检查失败已过冷却时间，重新尝试更新")
+                return None
+            return await block(
+                memo_path,
+                memo,
                 f"上次 {latest} 的运行环境检查失败"
                 f"（{_summarize_reason(memo.get('reason'))}），"
-                f"本次不再自动重试（第 {attempts} 次）；手动更新可强制重试"
+                f"{retry_at.astimezone():%m-%d %H:%M} 后自动重试（第 {attempts} 次）；"
+                "手动更新可立即重试",
             )
 
         version = exact_maafw_version(requirement)
@@ -262,12 +306,12 @@ def build_precheck_gate(
             log(f"maafw {version} 现在已能获取，重新尝试更新 {latest}")
             return None
 
-        memo["attempts"] = attempts
-        await asyncio.to_thread(write_runtime_precheck, memo_path, memo)
         needed = f"maafw {version}" if version else requirement
-        return (
+        return await block(
+            memo_path,
+            memo,
             f"{name} {latest} 需要 {needed}，"
-            f"仍无法从 PyPI / GitHub 获取，本次不升级（第 {attempts} 次）"
+            f"仍无法从 PyPI / GitHub 获取，本次不升级（第 {attempts} 次）",
         )
 
     return gate
@@ -276,7 +320,9 @@ def build_precheck_gate(
 __all__ = [
     "DEFAULT_PACKAGE_INDEX",
     "MAAFW_CODELOAD_URL",
+    "OTHER_RETRY_AFTER",
     "PROBE_TIMEOUT_SECONDS",
+    "TRANSIENT_RETRY_AFTER",
     "build_precheck_gate",
     "exact_maafw_version",
     "maafw_git_tag_for",

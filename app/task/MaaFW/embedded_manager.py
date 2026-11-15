@@ -1013,6 +1013,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         *,
         update_cancel: threading.Event | None = None,
         precheck_failure: dict[str, Any] | None = None,
+        precheck_reminders: list[str] | None = None,
     ) -> Any:
         """谱系锁内：组同步 → 核心更新（下载 / staging 构建 / 预检 / 登记）→ 切本视图 →
         同步同组空闲脚本。返回 ``view_update.ViewUpdateOutcome``。
@@ -1020,10 +1021,11 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         manager 层没有持本视图的内存预约（账号 inner task 才拿），切换时由
         ``run_view_update`` 自己拿，拿不到就本轮不切。
 
-        ``update_cancel`` / ``precheck_failure`` 由 ``_run_project_update`` 建：
-        前者是用户停止时置位的令牌，同时交给下载和预检回调里的 uv 安装；后者是
-        预检失败时回调写进来的 ``{targetVersion, requirement, kind, reason, …}``，
-        调用方据此决定发 warning 还是 error（D2）。
+        ``update_cancel`` / ``precheck_failure`` / ``precheck_reminders`` 由
+        ``_run_project_update`` 建：第一个是用户停止时置位的令牌，同时交给下载和预检
+        回调里的 uv 安装；第二个是预检失败时回调写进来的 ``{targetVersion, requirement,
+        kind, reason, …}``，调用方据此决定发 warning 还是 error（D2）；第三个收预检备忘
+        闸门「今天该提醒一次」的原因，调用方据此把这次跳过升成 warning。
         """
 
         from app.task.MaaFW.tools.core.project_update import (
@@ -1110,6 +1112,11 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 project_name=getattr(interface_model, "name", None),
                 proxy=session.proxy.client,
                 send_log=send_log,
+                on_remind=(
+                    precheck_reminders.append
+                    if precheck_reminders is not None
+                    else None
+                ),
             )
             return await update_maafw_project_if_needed(
                 view_path,
@@ -1409,6 +1416,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         # 按阶段分——见 ``_describe_update_cancel``。
         update_cancel = threading.Event()
         precheck_failure: dict[str, Any] = {}
+        precheck_reminders: list[str] = []
         self._update_stage = None
         self._update_downloaded = None
         self._update_total = None
@@ -1418,6 +1426,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 credentials,
                 update_cancel=update_cancel,
                 precheck_failure=precheck_failure,
+                precheck_reminders=precheck_reminders,
             )
         )
 
@@ -1521,8 +1530,11 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         for _, text in lines:
             self._append_update_log(text)
         # 「已是最新 / 跳过」只留在日志里；真的更新了或 CDK 有问题才弹通知，
-        # 免得每次运行都弹一条没信息量的提示。
-        has_warning = any(level == "warning" for level, _ in lines)
+        # 免得每次运行都弹一条没信息量的提示。被预检备忘挡下的跳过例外：同一版本
+        # 每天升成一次 warning（闸门按 remindedOn 决定），否则一直没更新也没人知道。
+        has_warning = bool(precheck_reminders) or any(
+            level == "warning" for level, _ in lines
+        )
         if lines and (has_warning or bool(_result_field(result, "updated"))):
             await self._notify_update(
                 "warning" if has_warning else "info",
