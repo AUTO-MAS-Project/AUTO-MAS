@@ -159,6 +159,7 @@ from .project_path import (
     release_project_path_sync,
     try_reserve_project_path,
 )
+from .proxy_quota import proxy_times_used_up, proxy_today
 from .resource_failure import (
     MAX_NATIVE_ERROR_LINES,
     describe_resource_failure,
@@ -558,7 +559,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._user_teardown_pending = False
         self._notification_screenshots: list[tuple[str, bytes]] = []
         self.check_result = "-"
-        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        self.curdate = proxy_today()
         self.run_complete = False
         # 本账号运行期间的「保持显示开启」请求，见 main_task。
         self._display_hold: Any = None
@@ -634,16 +635,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._run_record = MaaFWRunRecorder()
 
     async def check(self) -> str:
-        proxy_times = (
-            self.cur_user_config.Data.ProxyTimes
-            if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d")
-            == self.curdate
-            else 0
-        )
-        if (
-            self.script_config.Run.ProxyTimesLimit != 0
-            and proxy_times >= self.script_config.Run.ProxyTimesLimit
-        ):
+        # 与管理器筛账号同一判据（proxy_quota）：全员到上限时管理器不做运行前更新
+        if proxy_times_used_up(self.cur_user_config, self.script_config, self.curdate):
             await self.cur_user_item.set_state(status="跳过")
             return "今日代理次数已达上限，跳过该账号"
 
@@ -760,7 +753,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await self.script_info.set_log("".join(content))
 
     async def main_task(self) -> None:
-        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        self.curdate = proxy_today()
         self.check_result = await self.check()
         if self.check_result != "Pass":
             # 也记一行后端日志：否则只有 WS 通知，事后日志里只见「任务开始」紧接「任务结束」。

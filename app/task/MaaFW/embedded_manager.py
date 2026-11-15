@@ -90,6 +90,10 @@ from app.task.MaaFW.tools.embedded.project_path import (
     release_project_path_sync,
     try_reserve_project_path,
 )
+from app.task.MaaFW.tools.embedded.proxy_quota import (
+    proxy_times_used_up,
+    proxy_today,
+)
 from app.task.MaaFW.tools.embedded.signal_notice import (
     CLIENT_UPDATE_REQUIRED,
     SERVER_MAINTENANCE,
@@ -1834,8 +1838,19 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         # 运行前更新：整个脚本一次，在第一位用户的 inner task 建起来之前。
         # 更新完接着确认运行环境——更新失败也要确认，项目还是原样，环境该备
         # 还是得备。两步都在账号任务之外，不计入 ``Run.RunTimeLimit``。
+        # 账号全都今日代理次数已满时这一轮谁也不会跑：两步都不做、不联网，账号照常
+        # 逐个走运行前检查记「跳过」（判据与 runner_task.check 同一个函数）。
         self._auto_update_mode = resolve_auto_update_mode(self.script_config)
-        if self._auto_update_mode == "BeforeRun":
+        today = proxy_today()
+        if all(
+            proxy_times_used_up(self.user_config[uid], self.script_config, today)
+            for uid in self.runnable_user_uids
+        ):
+            logger.info(
+                f"MFW 本轮账号今日代理次数都已达上限（{self.script_info.name}），"
+                "跳过运行前更新与运行环境确认"
+            )
+        elif self._auto_update_mode == "BeforeRun":
             await self._run_project_update("BeforeRun")
             await self._ensure_project_environment("BeforeRun")
         elif self._env_confirm_needed:
