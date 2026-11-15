@@ -558,7 +558,8 @@ export class AssetPackageStore<T extends PackageManifest> {
             fs.mkdirSync(path.dirname(destination), { recursive: true })
             fs.copyFileSync(file.source, destination)
           }
-        this.validateDirectory(temp)
+        // 先完成图片转换，避免替换旧包后才发现资源无法加载。
+        const item = this.loadDirectory(temp)
 
         let backup: string | undefined
         if (fs.existsSync(target)) {
@@ -579,12 +580,11 @@ export class AssetPackageStore<T extends PackageManifest> {
             // 新包已原子落地，清理旧备份失败不影响应用；下次导入时仍会忽略隐藏备份目录。
           }
         }
+        return { success: true, item }
       } catch (error) {
         if (fs.existsSync(temp)) fs.rmSync(temp, { recursive: true, force: true })
         throw error
       }
-
-      return { success: true, item: this.loadDirectory(target) }
     } catch (error) {
       const code = error instanceof AssetPackageError ? error.code : 'IMPORT_FAILED'
       return {

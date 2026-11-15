@@ -26,7 +26,7 @@ export type PackageReply =
   | { operation: 'import-mascot'; value: Awaited<ReturnType<typeof Mascot.importMascotPackage>> }
   | { operation: 'error'; code: PackageErrorCode; error: string }
 
-let queue: Promise<unknown> = Promise.resolve()
+let queue: Promise<void> = Promise.resolve()
 let quitting = false
 
 /** 仅由用户确认后的退出收尾调用，等资源写入完成后才允许 Electron 退出。 */
@@ -63,7 +63,10 @@ async function run(job: PackageJob): Promise<PackageReply> {
         })
       })
   )
-  queue = task.catch(() => undefined)
+  queue = task.then(
+    () => undefined,
+    () => undefined
+  )
   const reply = await task
   if (reply.operation === 'error') throw new AssetPackageError(reply.code, reply.error)
   return reply
