@@ -160,6 +160,7 @@ from .project_path import (
     release_project_path_sync,
     try_reserve_project_path,
 )
+from .proxy_quota import proxy_times_used_up, proxy_today
 from .resource_failure import (
     MAX_NATIVE_ERROR_LINES,
     describe_resource_failure,
@@ -169,12 +170,14 @@ from .resource_failure import (
 from .run_record import (
     RUN_RECORD_HISTORY_KEY,
     MaaFWRunRecorder,
+    MaaFWTaskRecord,
     format_incident_lines,
 )
 from .run_report import (
     CATEGORY_REASONS,
     MaaFWAttemptReport,
     failure_summary,
+    failure_summary_tasks,
     format_timeline,
     human_reason,
 )
@@ -567,7 +570,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._user_teardown_pending = False
         self._notification_screenshots: list[tuple[str, bytes]] = []
         self.check_result = "-"
-        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        self.curdate = proxy_today()
         self.run_complete = False
         # 本账号运行期间的「保持显示开启」请求，见 main_task。
         self._display_hold: Any = None
@@ -643,16 +646,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._run_record = MaaFWRunRecorder()
 
     async def check(self) -> str:
-        proxy_times = (
-            self.cur_user_config.Data.ProxyTimes
-            if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d")
-            == self.curdate
-            else 0
-        )
-        if (
-            self.script_config.Run.ProxyTimesLimit != 0
-            and proxy_times >= self.script_config.Run.ProxyTimesLimit
-        ):
+        # 与管理器筛账号同一判据（proxy_quota）：全员到上限时管理器不做运行前更新
+        if proxy_times_used_up(self.cur_user_config, self.script_config, self.curdate):
             await self.cur_user_item.set_state(status="跳过")
             return "今日代理次数已达上限，跳过该账号"
 
@@ -769,7 +764,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await self.script_info.set_log("".join(content))
 
     async def main_task(self) -> None:
-        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        self.curdate = proxy_today()
         self.check_result = await self.check()
         if self.check_result != "Pass":
             # 也记一行后端日志：否则只有 WS 通知，事后日志里只见「任务开始」紧接「任务结束」。
@@ -2384,7 +2379,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             writer = _FrameworkLogWriter(worker_log_path)
             await asyncio.to_thread(writer.start)
             framework_log_writer = writer
-            self._append_log(f"MaaFW worker 日志写入中: {worker_log_path}")
+            # 临时目录收尾就删，文件以附件归档进历史记录：路径只进后端日志，不进账号日志
+            logger.info(f"MaaFW worker 日志写入中: {worker_log_path}")
         except Exception as exc:
             if framework_log_writer is not None:
                 with suppress(Exception):
@@ -2595,7 +2591,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self._append_log(f"MaaFW 原生日志复制失败: {exc}")
             else:
                 if copied:
-                    self._append_log(f"MaaFW 原生日志已保存: {native_log_path}")
+                    logger.info(f"MaaFW 原生日志已保存: {native_log_path}")
             # 资源包加载失败时找原因用：原生日志副本是 UTF-8、已打码，优先用它；worker stdout
             # 里同一行按控制台代码页转过，非 ASCII 的节点名 / 路径可能已成了「?」。
             native_errors = (
@@ -2620,7 +2616,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self._append_log(f"MaaFW 项目日志保存失败: {exc}")
             else:
                 if project_logs.segments:
-                    self._append_log(
+                    logger.info(
                         f"MaaFW 项目日志已保存: {project_log_path}"
                         f"（{len(project_logs.segments)} 个文件，"
                         f"{project_logs.written_bytes} 字节）"
@@ -3756,17 +3752,27 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def run_incident_notice(self) -> str:
         """本次运行里被原地打转检测或单任务时限停下的任务：进用户与脚本两份报告。
 
-        只在最后没成功时列出（各次尝试的都列）；后面的重试成功了就不写，免得一份
-        「全部完成」的报告里还挂着前面尝试的问题。"""
+        只在最后没成功时列出；后面的重试成功了就不写，免得一份「全部完成」的报告里
+        还挂着前面尝试的问题。结果行（``_report_result``，代理结果里账号那一行也是它）
+        已经点名的最后一次尝试的任务不列，再单列一遍就是同一件事说两次；结果行没点名的
+        （比如不计入失败的任务原地打转，失败的是另一个任务）照常列出。"""
 
         if self.run_complete:
             return ""
-        return (
-            self._run_record_call(
-                lambda: format_incident_lines(self._run_record.incidents())
-            )
-            or ""
-        )
+
+        def notice() -> str:
+            named: list[MaaFWTaskRecord] = []
+            attempts = self._run_record.attempts()
+            # 与 _report_result 同一分支：信号或运行前检查没过时结果行不是 failure_summary
+            if (
+                attempts
+                and self._signal_user_message() is None
+                and self.check_result == "Pass"
+            ):
+                named = failure_summary_tasks(attempts[-1])
+            return format_incident_lines(self._run_record.incidents(exclude=named))
+
+        return self._run_record_call(notice) or ""
 
     async def _finish_on_signal(self, attempt: int, result: MaaFWRunResult) -> None:
         """worker 回报了信号节点命中：记账、写日志状态。
@@ -4306,7 +4312,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _build_task_details(self) -> str:
         """账号级统计报告的任务详情：最后一次尝试的逐任务时间线（见 ``run_report``）。
 
-        最后没成功时另起一段列各次尝试里的原地打转 / 单任务超时（每类一行），队列里有
+        最后没成功时另起一段列结果行没点名的原地打转 / 单任务超时（每类一行），队列里有
         失效任务时末尾再附一行。整次运行一个任务都没开始时没有时间线，原因在运行结果那行。
         """
 

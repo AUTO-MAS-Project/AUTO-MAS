@@ -2660,8 +2660,11 @@ class MaaFWConfig(DomainEntry):
     Task: TaskFields = Field(default_factory=TaskFields)
 
     class UpdateFields(ConfigGroup):
+        # 默认增量：GitHub 源按区间差量、Mirror 酱源要差量包，失败都回退全量。
+        # 全量的好处只有一条——队列里可以提前预下载（增量依赖开跑时的当前载荷，
+        # 不预下载，见 embedded_manager.prefetch_script_update）。
         PackageMode: Literal["full", "incremental"] = Field(
-            default="full",
+            default="incremental",
             description="更新方式：全量或优先增量；增量依赖完整且匹配的基线，必要时回退全量。",
         )
         AutoUpdateMode: Annotated[
