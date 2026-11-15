@@ -169,6 +169,25 @@ afterEach(() => {
 // ==================== 同步 ====================
 
 describe('syncRuntimeBinary', () => {
+  it('外层下载计时结束而下载器仍在途时，不自动重试', async () => {
+    const releases: ((value: { success: false; error: string }) => void)[] = []
+    const outcome = await syncRuntimeBinary(
+      syncOptions({
+        sourceTimeoutMs: 5,
+        budgetMs: 500,
+        download: () =>
+          new Promise(resolve => {
+            releases.push(resolve)
+          }),
+      })
+    )
+    expect(releases.length).toBeGreaterThan(0)
+    expect(outcome.code).toBe(RUNTIME_BINARY_DOWNLOAD_FAILED)
+    expect(outcome.networkUnavailable).toBeUndefined()
+    for (const release of releases) release({ success: false, error: 'finished' })
+    await new Promise<void>(resolve => setImmediate(resolve))
+  })
+
   it('透传下载器确认的网络失败，写盘失败与校验错误不冒充网络故障', async () => {
     const networkFailure = await syncRuntimeBinary(
       syncOptions({

@@ -1073,7 +1073,6 @@ async function downloadWithTimeout(
       resolve({
         success: false,
         abandoned: true,
-        networkUnavailable: true,
         error: `超过 ${Math.ceil(timeoutMs / 1000)} 秒仍未下载完成，放弃该源`,
       })
     }, timeoutMs)

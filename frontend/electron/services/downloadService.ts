@@ -328,7 +328,13 @@ export class SmartDownloader {
       try {
         // 并行下载所有分片
         const downloadPromises = chunks.map(chunk => this.downloadChunk(url, chunk))
-        await Promise.all(downloadPromises)
+        const outcomes = await Promise.allSettled(downloadPromises)
+        const failure =
+          outcomes.find(
+            result =>
+              result.status === 'rejected' && !(result.reason instanceof DownloadNetworkError)
+          ) ?? outcomes.find(result => result.status === 'rejected')
+        if (failure?.status === 'rejected') throw failure.reason
 
         clearInterval(progressInterval)
 
