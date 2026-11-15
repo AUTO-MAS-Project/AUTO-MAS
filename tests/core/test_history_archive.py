@@ -7,21 +7,11 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
-import pytest_asyncio
 
 import app.core.history as history_module
 from app.models.schema import HistoryAttachmentInput, HistoryWrite
 from app.task.history_core import UserHistoryDependencies, save_user_history
-
-
-@pytest_asyncio.fixture
-async def store(isolated_app_paths):
-    storage = history_module.HistoryStore()
-    await storage.initialize(video_limit_bytes=1024 * 1024)
-    try:
-        yield storage
-    finally:
-        await storage.close()
+from tests.support.history import store as store
 
 
 def record_for(path, mode="move", *, kind="image"):
@@ -42,25 +32,6 @@ def record_for(path, mode="move", *, kind="image"):
             )
         ],
     )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["copy", "move"])
-async def test_archive_ownership_and_persisted_content(store, tmp_path, mode):
-    source = tmp_path / "source.png"
-    source.write_bytes(b"synthetic image payload")
-    result = await store.record(record_for(source, mode))
-    attachment = result.attachments[0]
-    assert attachment.available and attachment.saved_via == mode
-    assert not result.storage_errors
-    assert source.exists() == (mode == "copy")
-    assert (
-        store.root / attachment.relative_path
-    ).read_bytes() == b"synthetic image payload"
-    detail = await store.get_detail(record_id=result.id)
-    assert detail.attachments[0].available
-    assert not detail.storage_errors
-    assert not list(store.root.rglob("*.temp"))
 
 
 @pytest.mark.asyncio
@@ -114,9 +85,16 @@ async def test_cross_drive_fallback_is_success_and_retains_diagnostic(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("fault", ["read", "write", "fsync", "rename"])
-async def test_copy_failure_preserves_source_and_reports_failure(
-    store, tmp_path, monkeypatch, fault
+@pytest.mark.parametrize(
+    "mode,fault",
+    [
+        ("copy", None),
+        ("move", None),
+        *[("copy", fault) for fault in ("read", "write", "fsync", "rename")],
+    ],
+)
+async def test_attachment_archive_preserves_content_and_reports_incomplete_writes(
+    store, tmp_path, monkeypatch, mode, fault
 ):
     source = tmp_path / "original.png"
     source.write_bytes(b"keep original")
@@ -139,19 +117,37 @@ async def test_copy_failure_preserves_source_and_reports_failure(
             raise OSError("injected flush failure")
         return fsync(fd)
 
-    monkeypatch.setattr(Path, "open", broken_open)
-    monkeypatch.setattr(Path, "rename", broken_rename)
-    monkeypatch.setattr(os, "fsync", broken_fsync)
-    with pytest.raises(history_module.HistorySaveError) as raised:
-        await store.record(record_for(source, "copy"))
-    error = raised.value
-    assert error.record_saved
-    assert any(issue.stage == "copy" and not issue.recovered for issue in error.errors)
-    assert not any(issue.stage == "move" for issue in error.errors)
-    monkeypatch.setattr(Path, "open", open_file)
-    detail = await store.get_detail(record_id=error.record_id)
-    assert not detail.attachments[0].available
-    assert source.read_bytes() == b"keep original"
+    with monkeypatch.context() as filesystem:
+        filesystem.setattr(Path, "open", broken_open)
+        filesystem.setattr(Path, "rename", broken_rename)
+        filesystem.setattr(os, "fsync", broken_fsync)
+        if fault is not None:
+            with pytest.raises(history_module.HistorySaveError) as raised:
+                await store.record(record_for(source, mode))
+            error = raised.value
+            assert error.record_saved
+            assert any(
+                issue.stage == "copy" and not issue.recovered for issue in error.errors
+            )
+            assert not any(issue.stage == "move" for issue in error.errors)
+            record_id = error.record_id
+        else:
+            result = await store.record(record_for(source, mode))
+            assert result.attachments[0].available
+            assert result.attachments[0].saved_via == mode
+            assert not result.storage_errors
+            record_id = result.id
+    detail = await store.get_detail(record_id=record_id)
+    if fault is not None:
+        assert not detail.attachments[0].available
+        assert source.read_bytes() == b"keep original"
+    else:
+        assert detail.attachments[0].available
+        assert not detail.storage_errors
+        assert source.exists() == (mode == "copy")
+        assert (
+            store.root / detail.attachments[0].relative_path
+        ).read_bytes() == b"keep original"
     assert not list(store.root.rglob("*.temp"))
 
 

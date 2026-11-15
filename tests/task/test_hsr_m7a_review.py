@@ -10,8 +10,8 @@ import pytest
 from app.models.config import HSRConfig
 from app.task.HSR.tools.account_switch import configure_m7a_runner
 from app.task.HSR.tools.m7a_runtime import M7ARunner
-from tests.task.test_hsr_m7a_lifecycle import cleanup, inherited_child, wait_until
-from tests.task.test_hsr_m7a_lifecycle import simulator as simulator
+from tests.support.hsr_process import cleanup, inherited_child, wait_until
+from tests.support.hsr_process import simulator as simulator
 
 
 @pytest.mark.parametrize("tail_stream", ["stdout", "stderr"])

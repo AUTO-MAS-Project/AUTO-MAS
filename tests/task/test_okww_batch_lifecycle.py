@@ -1,6 +1,7 @@
 """批次账号准入、跨日计数与异常收尾回归。"""
 
 import asyncio
+import importlib
 import json
 import uuid
 from datetime import datetime, timedelta
@@ -8,15 +9,86 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+import pytest_asyncio
 
+from app.core.background_tasks import BackgroundTaskRegistry
 from app.models.config.script import OkwwConfig, OkwwUserConfig
 from app.models.task import LogRecord, UserItem
+from app.task import history_core
 from app.task.Okww.AutoProxy import AutoProxyTask
 from app.task.Okww.BatchProxy import BatchProxyTask
 from app.task.Okww.manager import OkwwManager
 from app.utils import constants
 from tests.config_support import activate_config
 from tests.runtime_support import RuntimeStub
+from tests.support.history import store as store
+
+
+@pytest.fixture
+def okww_installation(tmp_path, monkeypatch):
+    module = importlib.import_module("app.task.Okww.AutoProxy")
+    work = tmp_path / "mas"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    root = tmp_path / "okww"
+    native = root / "data/apps/ok-ww/working/configs"
+    native.mkdir(parents=True)
+    (native / "DailyTask.json").write_text('{"original":true}', encoding="utf-8")
+    log = native.parent / "logs/ok-script.log"
+    log.parent.mkdir()
+    log.touch()
+    (root / "ok-ww.exe").touch()
+    (root / "data/apps/ok-ww/app.json").write_text(
+        '{"current_version":"unknown"}', encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        module,
+        "ProcessManager",
+        lambda: SimpleNamespace(
+            is_running=AsyncMock(return_value=False), kill=AsyncMock(return_value=True)
+        ),
+    )
+    monkeypatch.setattr(module.process, "kill_process", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        module.process, "is_process_stopped", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(module, "is_process_alive", lambda *args: False)
+    monkeypatch.setattr(module, "find_client_pids", lambda *args: [])
+    monkeypatch.setattr(module, "detect_game_maintenance_text", lambda *args: None)
+    monkeypatch.setattr(module.Notify, "push_statistics_report", AsyncMock())
+    monkeypatch.setattr(module.Notify, "send_notice", AsyncMock())
+    monkeypatch.setattr(module.Publisher, "send", AsyncMock())
+    sleep = asyncio.sleep
+
+    async def settle(delay, result=None):
+        # 启动和退出已由边界替身立即完成，保留让出调度而不空等进程稳定。
+        return await sleep(min(delay, 0.01), result)
+
+    monkeypatch.setattr(module.asyncio, "sleep", settle)
+    return SimpleNamespace(root=root, native=native, log=log)
+
+
+@pytest_asyncio.fixture
+async def okww_history(store, monkeypatch):
+    registry = BackgroundTaskRegistry()
+    session = history_core.TaskHistorySession(
+        RuntimeStub(uid=uuid.uuid4(), mode="AutoProxy")
+    )
+    monkeypatch.setattr(history_core, "History", store)
+    monkeypatch.setattr(history_core, "BackgroundTaskManager", registry)
+    monkeypatch.setattr(
+        history_core,
+        "Config",
+        SimpleNamespace(
+            setting=SimpleNamespace(Replay=SimpleNamespace(Enabled=False)),
+            obs_replay_options=lambda: None,
+        ),
+    )
+    try:
+        yield session
+    finally:
+        await session.close()
+        await registry.shutdown()
 
 
 @pytest.mark.asyncio
@@ -109,6 +181,10 @@ async def test_batch_result_is_final_before_monitor_can_be_cancelled(
         None,
         participants=users,
     )
+    # 与 prepare 一致，父类先更新批次临时节点，再提交真实账号的最终状态。
+    task.cur_user_item = UserItem(
+        user_id=users[0].user_id, name="OK-WW 批次", status="运行"
+    )
     task.task_name = "MultiAccountConfigTask"
     task.script_config_path = tmp_path
     task.pending = {"A", "B"}
@@ -142,12 +218,13 @@ async def test_batch_result_is_final_before_monitor_can_be_cancelled(
     monitor.task = asyncio.create_task(monitor.do_callback())
     try:
         await asyncio.wait_for(committing.wait(), 2)
-        await asyncio.sleep(0)
+        assert not task.wait_event.is_set()
         release.set()
         await asyncio.wait_for(consumer, 2)
         assert task.cur_user_log.status != "Success!"
         assert task.succeeded == {"A"}
         assert users[0].status == "完成"
+        assert users[1].status != "完成"
     finally:
         release.set()
         consumer.cancel()
@@ -511,122 +588,162 @@ async def test_stop_preserves_success_written_since_last_log_poll(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scenario", ["normal", "invalid", "duplicate", "cancel"])
-async def test_batch_arguments_grouping_preserves_user_order(tmp_path, scenario):
-    (tmp_path / "ok-ww.exe").touch()
-    app_json = tmp_path / "data/apps/ok-ww/app.json"
-    app_json.parent.mkdir(parents=True)
-    app_json.write_text('{"current_version":"unknown"}')
-    native = app_json.parent / "working/configs"
-    native.mkdir(parents=True)
-    (native / "DailyTask.json").write_text("{}")
+async def test_batch_arguments_grouping_preserves_user_order(
+    okww_installation, okww_history, monkeypatch, scenario
+):
+    from app.utils import io
+
+    module = importlib.import_module("app.task.Okww.AutoProxy")
+    root, native = okww_installation.root, okww_installation.native
     ids = [uuid.uuid4() for _ in range(5)]
     users = [
         UserItem(user_id=str(uid), name=str(i), status="等待")
         for i, uid in enumerate(ids)
     ]
     info = RuntimeStub(
-        task_info=RuntimeStub(mode="AutoProxy", is_queue_task=False),
+        task_info=RuntimeStub(
+            mode="AutoProxy", is_queue_task=False, task_id=str(uuid.uuid4())
+        ),
+        uid=uuid.uuid4(),
         script_id=str(uuid.uuid4()),
         user_list=users,
         current_index=0,
+        status="等待",
+        name="okww",
+        log="",
     )
     manager = OkwwManager(info)
-    # 下发给任务的是已校验的配置；安装路径在此测试中直接使用临时安装目录。
-    manager.script_config = SimpleNamespace(
-        Info=SimpleNamespace(RootPath=tmp_path),
-        Game=SimpleNamespace(AccountSwitchMethod="OKWW", Enabled=False),
-        Run=SimpleNamespace(ProxyTimesLimit=0),
+    manager.script_config = OkwwConfig.model_validate(
+        {
+            "Info": {"RootPath": str(root)},
+            "Game": {"AccountSwitchMethod": "OKWW", "Enabled": False},
+            "Run": {"RunTimesLimit": 1},
+        }
     )
-    drafts = [None, "-t OtherTask", "-t OtherTask", None, None]
+    drafts = [None, '-t "Other Task" --', " -t 'Other Task' -- ", None, None]
     if scenario == "invalid":
         drafts[2] = '"unfinished'
     manager.user_config = {
-        uid: OkwwUserConfig.model_validate(
-            {
-                "Info": {"Id": f"1301234000{i}", "Base": "native"},
-                "Task": {
-                    "IfCustomArguments": draft is not None,
-                    "CustomArguments": draft or '"ignored',
+        uid: await activate_config(
+            OkwwUserConfig.model_validate(
+                {
+                    "Info": {"Id": f"1301234000{i}", "Base": "native"},
+                    "Task": {
+                        "IfCustomArguments": draft is not None,
+                        "CustomArguments": draft or '"ignored',
+                    },
+                    "Notify": {"PushLogMode": "关闭"},
                 },
-            }
+            )
         )
         for i, (uid, draft) in enumerate(zip(ids, drafts))
     }
     if scenario == "duplicate":
         manager.user_config[ids[1]].Info.Id = manager.user_config[ids[0]].Info.Id
+        await manager.user_config[ids[1]].commit()
     manager.game_manager = None
+    manager.history = okww_history
+    manager.script_config_path = native
+    manager.temp_path = (
+        okww_installation.root.parent / "mas/data" / info.script_id / "Temp"
+    )
+    manager.had_original_script_config = io.commit_native_config_snapshot(
+        manager.temp_path, native, script_id=info.script_id
+    )
+    # 仅省略全局配置提取与取锁；批次准入、执行、归档和目录恢复均走真实逻辑。
     manager.check = AsyncMock(return_value="Pass")
     manager.prepare = AsyncMock()
-    manager.check_user_before_run = AsyncMock(return_value=True)
-    manager.notify_user_check_failure = AsyncMock()
-    manager._restore_script_config_from_temp = AsyncMock()
-    manager.record_user_run_start = lambda user: None
     dispatched = []
 
-    async def run(task):
-        dispatched.append(
-            ([user.user_id for user in task.participants], task._build_run_arguments())
+    async def launch(process_manager, executable, *, args, **kwargs):
+        accounts = json.loads(
+            (native / "MultiAccountConfig.json").read_text(encoding="utf-8")
+        )["accounts"]
+        keys = [account["account_key"] for account in accounts]
+        dispatched.append((keys, list(args)))
+        assert (
+            json.loads(
+                (native / "MultiAccountResults.json").read_text(encoding="utf-8")
+            )
+            == {}
         )
-
         if scenario == "cancel":
+            okww_history.cancelled = True
             raise asyncio.CancelledError
+        (native / "MultiAccountResults.json").write_text(
+            json.dumps({key: {"status": "success"} for key in keys}),
+            encoding="utf-8",
+        )
+        timestamp = (datetime.now() + timedelta(seconds=1)).strftime(
+            "%Y-%m-%d %H:%M:%S,%f"
+        )[:-3]
+        with okww_installation.log.open("a", encoding="utf-8") as log:
+            log.write(
+                f"{timestamp} INFO TaskExecutor:"
+                "Successfully Executed Task, Exiting Game and App!\n"
+            )
 
-    manager.spawn = AsyncMock(side_effect=run)
+    monkeypatch.setattr(module, "start_okww", launch)
     if scenario == "cancel":
         with pytest.raises(asyncio.CancelledError):
-            await manager.main_task()
-        assert len(dispatched) == 1
-        assert manager._restore_script_config_from_temp.await_count == 1
-        return
-    await manager.main_task()
+            await asyncio.wait_for(manager.main_task(), timeout=30)
+        assert dispatched == [(["1300000"], ["-t", "MultiAccountConfigTask", "-e"])]
+        assert [user.status for user in users] == ["异常", *["等待"] * 4]
+    else:
+        await asyncio.wait_for(manager.main_task(), timeout=30)
+    assert [path.name for path in native.iterdir()] == ["DailyTask.json"]
+    assert (native / "DailyTask.json").read_text(encoding="utf-8") == (
+        '{"original":true}'
+    )
     if scenario == "duplicate":
         assert not dispatched
-        assert manager.notify_user_check_failure.await_count == 5
+        assert all(user.status == "异常" for user in users)
+    if scenario in {"duplicate", "cancel"}:
+        assert all(
+            config.Data.ProxyTimes == 0 for config in manager.user_config.values()
+        )
         return
     default = ["-t", "MultiAccountConfigTask", "-e"]
     assert dispatched == [
-        ([str(ids[0])], default),
+        (["1300000"], default),
         (
-            [str(ids[1])] if scenario == "invalid" else [str(ids[1]), str(ids[2])],
-            ["-t", "OtherTask"],
+            ["1300001"] if scenario == "invalid" else ["1300001", "1300002"],
+            ["-t", "Other Task", "--"],
         ),
-        ([str(ids[3]), str(ids[4])], default),
+        (["1300003", "1300004"], default),
     ]
-    if scenario == "invalid":
-        manager.notify_user_check_failure.assert_awaited_once()
-    else:
-        manager.notify_user_check_failure.assert_not_awaited()
-    assert manager._restore_script_config_from_temp.await_count == 3
+    assert [user.status for user in users] == [
+        "异常" if scenario == "invalid" and index == 2 else "完成" for index in range(5)
+    ]
+    assert [config.Data.ProxyTimes for config in manager.user_config.values()] == [
+        int(scenario != "invalid" or index != 2) for index in range(5)
+    ]
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "outcome,expected",
-    [("success", "success"), ("maintenance", "skipped"), ("cancel", "cancelled")],
+    [
+        ("success", "success"),
+        ("maintenance", "skipped"),
+        ("cancel", "cancelled"),
+        ("failure", "error"),
+    ],
 )
 async def test_single_batch_archives_only_account_summary(
-    tmp_path, monkeypatch, outcome, expected
+    tmp_path, monkeypatch, okww_installation, okww_history, store, outcome, expected
 ):
-    import importlib
-
-    from app.task.history_core import UserHistoryDependencies, save_user_history
+    from app.services.common import obs_replay
 
     module = importlib.import_module("app.task.Okww.AutoProxy")
-    work = tmp_path / "mas"
-    work.mkdir()
-    monkeypatch.chdir(work)
-    root = tmp_path / "okww"
-    native = root / "data/apps/ok-ww/working/configs"
-    native.mkdir(parents=True)
-    (native / "DailyTask.json").write_text("{}")
-    logs = native.parent / "logs"
-    logs.mkdir()
-    (logs / "ok-script.log").write_text("")
-    (root / "data/apps/ok-ww/app.json").write_text('{"current_version":"v3.8.0"}')
+    root, native = okww_installation.root, okww_installation.native
     uid = uuid.uuid4()
     user = UserItem(user_id=str(uid), name="user", status="等待")
     info = RuntimeStub(
-        task_info=RuntimeStub(mode="AutoProxy", is_queue_task=False),
+        task_info=RuntimeStub(
+            mode="AutoProxy", is_queue_task=False, task_id=str(uuid.uuid4())
+        ),
+        uid=uuid.uuid4(),
         script_id=str(uuid.uuid4()),
         user_list=[user],
         current_index=0,
@@ -648,43 +765,48 @@ async def test_single_batch_archives_only_account_summary(
         }
     )
     task = BatchProxyTask(info, script, {uid: config}, None, participants=[user])
-    monkeypatch.setattr(module.process, "kill_process", AsyncMock())
-    monkeypatch.setattr(module.Notify, "push_statistics_report", AsyncMock())
-    task.kill_managed_process = AsyncMock(return_value=True)
-    task.notify_maintenance_skip = AsyncMock()
-    task._maintenance_detect = lambda: None
-    written = []
-
-    async def record(row):
-        written.append(row)
-
-    async def save(records, **kwargs):
-        await save_user_history(
-            records,
-            dependencies=UserHistoryDependencies(
-                record=record,
-                collect_attachments=AsyncMock(return_value=[]),
-                discard_capture=AsyncMock(),
-                report_failure=AsyncMock(),
-                log_warning=lambda message: None,
-            ),
-        )
-
-    task.history = SimpleNamespace(
-        begin_user_history_capture=lambda *args, **kwargs: None, save_user_history=save
+    task.history = okww_history
+    replay = obs_replay.ObsReplayService(tmp_path)
+    replay.directory.mkdir(parents=True)
+    other_capture = replay.directory / "other.mkv"
+    own_capture = replay.directory / f"{user.uid}.mkv"
+    other_capture.write_bytes(b"other account replay")
+    own_capture.write_bytes(b"this account replay")
+    replay.capture = AsyncMock(side_effect=[other_capture, own_capture])
+    monkeypatch.setattr(obs_replay, "ObsReplay", replay)
+    monkeypatch.setattr(history_core.Config.setting.Replay, "Enabled", True)
+    other = UserItem(user_id=str(uuid.uuid4()), name="other", status="异常")
+    await other.add_log_record(
+        datetime.now().astimezone(), LogRecord(status="other failure")
     )
+    okww_history.begin_user_history_capture(info, other, failed=True)
+    assert await okww_history._capture_group.drain(2)
 
-    async def start():
+    async def start(*args, **kwargs):
         if outcome == "cancel":
+            # ScriptExpander.stop 先标记历史取消，再将中止传播给账号任务。
+            okww_history.cancelled = True
             task.stopped_manually = True
             raise asyncio.CancelledError
 
-    task._start_okww_with_current_arguments = start
+    monkeypatch.setattr(module, "start_okww", start)
 
     async def deliver():
-        if outcome == "success":
+        with okww_installation.log.open("a", encoding="utf-8") as log:
+            log.write(
+                "MultiAccountConfigTask:info_set 当前账号 1306220\n"
+                "account task details\n"
+            )
+        if outcome in {"success", "failure"}:
             (native / "MultiAccountResults.json").write_text(
-                '{"1306220":{"status":"success"}}'
+                json.dumps(
+                    {
+                        "1306220": {
+                            "status": "success" if outcome == "success" else "failed"
+                        }
+                    }
+                ),
+                encoding="utf-8",
             )
             await task.check_log(
                 ["TaskExecutor:Successfully Executed Task, Exiting Game and App!\n"],
@@ -709,7 +831,21 @@ async def test_single_batch_archives_only_account_summary(
     else:
         await asyncio.wait_for(task.main_task(), timeout=10)
     await task.final_task()
-    assert len(written) == 1
-    assert written[0].status == expected
+    today = datetime.now(tz=constants.UTC4).date()
+    archived = await store.search(start_date=today, end_date=today, mode="DAILY")
+    assert set(archived[today.isoformat()]) == {"user"}
+    records = archived[today.isoformat()]["user"].index
+    assert len(records) == 1
+    detail = await store.get_detail(record_id=records[0].id)
+    assert detail.status == expected
+    assert detail.script_name == "okww"
+    assert detail.log_available
+    assert not detail.storage_errors
+    assert len(detail.attachments) == int(outcome == "failure")
+    if outcome == "failure":
+        attachment = await store.get_attachment(attachment_id=detail.attachments[0].id)
+        assert attachment.display_name == own_capture.name
+        assert attachment.path.read_bytes() == b"this account replay"
+    assert other_capture.read_bytes() == b"other account replay"
     assert len(user.iter_history_logs()) == 1
     assert config.Data.ProxyTimes == int(outcome == "success")

@@ -9,8 +9,8 @@ from app.core import Config
 from app.core.history import HistoryStore
 from app.models.config import GeneralConfig, QueueConfig, QueueItem, TimeSet
 from app.models.schema import HistoryWrite
-from tests.core.test_history_archive import store as store
-from tests.core.test_task_tree_dispatch import scheduler as scheduler
+from tests.support.history import store as store
+from tests.support.scheduler import scheduler as scheduler
 
 
 @pytest.mark.asyncio

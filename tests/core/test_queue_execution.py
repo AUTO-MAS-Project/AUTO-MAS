@@ -8,9 +8,9 @@ import pytest
 
 from app.models.task import TaskMode
 from app.utils.contracts.power import PowerSignal
-from tests.core.test_maintenance_cycle_review import make_queue
-from tests.core.test_task_tree_dispatch import Builtin
-from tests.core.test_task_tree_dispatch import scheduler as scheduler
+from tests.support.queue import make_queue
+from tests.support.scheduler import Builtin
+from tests.support.scheduler import scheduler as scheduler
 
 
 @pytest.mark.asyncio

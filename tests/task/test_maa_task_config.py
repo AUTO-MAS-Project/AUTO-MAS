@@ -186,42 +186,32 @@ def test_quota_override_writes_plan_values(gate: str, count_key: str, count: int
 
 
 @pytest.mark.parametrize(("gate", "count_key"), _MAA_DEPOT_QUOTA_KEYS, ids=_QUOTA_IDS)
-def test_merge_without_cultivate_group_keeps_stock_gate(gate: str, count_key: str):
+@pytest.mark.parametrize("with_cultivate", [False, True])
+def test_merge_never_reopens_a_closed_stock_quota(
+    gate: str, count_key: str, with_cultivate: bool
+):
+    """库存组关闭后，残留额度不能借养成组仍开启的总开关复活。"""
     stock_source = _source_task(
         use_expiring=True, plan_medicine=(True, 5), plan_stone=(True, 9)
     )
     stock_source[gate] = False
 
-    merged = _build_stock_cultivate_task(
-        _stock_task(stock_source), None, _cultivate_plan()
-    )
-
-    assert merged is not None
-    assert merged[gate] is False
-    assert (merged["PlanList"][0][gate], merged["PlanList"][0][count_key]) == (False, 0)
-
-
-@pytest.mark.parametrize(("gate", "count_key"), _MAA_DEPOT_QUOTA_KEYS, ids=_QUOTA_IDS)
-def test_merge_keeps_closed_group_quota_closed(gate: str, count_key: str):
-    """MAA 关掉库存组药石总开关后，计划里残留的旧额度不能借合并后的总开关复活。"""
-
-    stock_source = _source_task(
-        use_expiring=True, plan_medicine=(True, 5), plan_stone=(True, 9)
-    )
-    stock_source[gate] = False
     cultivate_source = _source_task(
         use_expiring=True, plan_medicine=(True, 3), plan_stone=(True, 4)
     )
 
     merged = _build_stock_cultivate_task(
-        _stock_task(stock_source), _cultivate(cultivate_source), _cultivate_plan()
+        _stock_task(stock_source),
+        _cultivate(cultivate_source) if with_cultivate else None,
+        _cultivate_plan(),
     )
 
     assert merged is not None
     # 另一组仍开着，合并后的总开关取并集；关闭的那组由摊平写回计划。
-    assert merged[gate] is True
-    cultivate_plan, stock_plan = merged["PlanList"]
-    assert cultivate_plan[gate] is True
+    assert merged[gate] is with_cultivate
+    stock_plan = merged["PlanList"][-1]
+    if with_cultivate:
+        assert merged["PlanList"][0][gate] is True
     assert (stock_plan[gate], stock_plan[count_key]) == (False, 0)
 
 

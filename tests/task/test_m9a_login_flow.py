@@ -320,37 +320,6 @@ def test_unrelated_words_are_not_title(text):
     assert not login_mod._title_like([(text, (0, 0, 10, 10))])
 
 
-def test_login_selects_target_after_logging_out(monkeypatch):
-    _fast(monkeypatch)
-    expanded = [(text, box) for text, box in _PANEL_SCREEN if text != "切换其他账号"]
-    device = _install_fake_device(
-        monkeypatch,
-        [
-            _TITLE_SCREEN,
-            _TITLE_SCREEN,
-            _TITLE_SCREEN,
-            [("确认", (40, 50, 10, 10))],
-            _PANEL_SCREEN,
-            _PANEL_SCREEN,
-            expanded,
-            _PANEL_SCREEN,
-            _TITLE_SCREEN,
-            _TITLE_SCREEN,
-        ],
-    )
-    # The real selection flow includes two one-second UI waits.
-    monkeypatch.setattr(login_mod, "_LOGIN_TIMEOUT", 5)
-    message = asyncio.run(_run_login())
-    assert "已确认回到游戏标题页" in message
-    assert device.taps == [
-        (95.6, 91.0),
-        (40, 50, 10, 10),
-        (60.8, 43.0),
-        (45, 45, 10, 10),
-        (45, 55, 10, 10),
-    ]
-
-
 def test_mas_login_rejects_non_adb_controller():
     with pytest.raises(MaaFWLoginRequired, match="ADB"):
         asyncio.run(
@@ -467,7 +436,9 @@ def test_unknown_screen_budget_follows_game_wait_time(monkeypatch) -> None:
     assert login_mod._unknown_screen_budget(_Tiny()) == 60.0
 
 
-def test_slow_loading_is_not_cut_off_by_fixed_budget(monkeypatch) -> None:
+def test_slow_login_selects_target_and_confirms_handover_within_game_wait_budget(
+    monkeypatch,
+) -> None:
     """加载画面超过固定预算但仍在 Game.WaitTime 内时，继续等到登录记录，不提前判失败。"""
     _fast(monkeypatch)
     monkeypatch.setattr(login_mod, "_LOGIN_TIMEOUT", 30.0)
@@ -493,7 +464,13 @@ def test_slow_loading_is_not_cut_off_by_fixed_budget(monkeypatch) -> None:
     # 固定 0.2 秒预算会先报「无法确认当前账号」；服从 WaitTime 后能等到 0.6 秒后的登录记录。
     message = asyncio.run(_run_login())
     assert "已确认回到游戏标题页" in message
-    assert device.taps
+    assert device.taps == [
+        (95.6, 91.0),
+        (40, 50, 10, 10),
+        (60.8, 43.0),
+        (45, 45, 10, 10),
+        (45, 55, 10, 10),
+    ]
 
 
 @pytest.mark.parametrize(

@@ -1,48 +1,24 @@
 """任务创建、信息树身份与内建/插件分流的隔离回归。"""
 
 import asyncio
-from contextlib import nullcontext
 from copy import deepcopy
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-import pytest_asyncio
 
-from app.config import ConfigCollection, config_manager
 from app.config.errors import ConfigAggregateError
-from app.core import Config
-from app.core.background_tasks import BackgroundTaskRegistry
-from app.core.task_manager import _TaskManager
 from app.models.config import (
     GeneralConfig,
     GeneralUserConfig,
     QueueConfig,
     QueueItem,
-    ScriptConfigType,
 )
 from app.models.task import TaskMode, TaskTriggerReason
-from app.task.legacy import TaskExecuteBase
 from app.task.mode_worker import AutoProxyWorker, ScriptViewWorker
 from app.task.user_expander import UserExpander
-
-
-class Builtin(TaskExecuteBase):
-    def __init__(self, script):
-        super().__init__()
-        self.script_info = script
-        self.task_info = script.task_info
-
-    async def main_task(self):
-        for user in self.script_info.users.values():
-            await user.set_state(status="完成")
-        await self.script_info.set_state(status="完成")
-
-    async def final_task(self):
-        pass
-
-    async def on_crash(self, exc):
-        raise exc
+from tests.support.scheduler import Builtin
+from tests.support.scheduler import scheduler as scheduler
 
 
 @pytest.mark.asyncio
@@ -198,47 +174,6 @@ async def test_unconfirmed_prefetch_stop_survives_account_lifecycle(
     assert not next_started.is_set()
     assert run.history.closed
     assert not scripts[next_id].is_locked
-
-
-@pytest_asyncio.fixture
-async def scheduler():
-    scripts = ConfigCollection[ScriptConfigType].build([GeneralConfig])
-    queues = ConfigCollection[QueueConfig].build([QueueConfig])
-    await scripts.activate()
-    await queues.activate()
-    sid = scripts.add(GeneralConfig, payload={"Info": {"Name": "script"}})
-    await scripts.commit()
-    for name in ("first", "second"):
-        scripts[sid].UserData.add(
-            GeneralUserConfig,
-            payload={"Info": {"Name": name, "Status": True, "RemainedDay": -1}},
-        )
-    await scripts[sid].UserData.commit()
-    manager = _TaskManager()
-    manager.bind_manager_factories({GeneralConfig: lambda script: Builtin(script)})
-    notify = MagicMock()
-    notify.task_notification_batch.side_effect = lambda **kwargs: nullcontext()
-    background = BackgroundTaskRegistry()
-    from app.core.power import _PowerManager
-
-    power = _PowerManager()
-    with (
-        patch("app.core.task_manager.TaskManager", manager),
-        patch("app.core.Power", power),
-        patch("app.core.BackgroundTaskManager", background),
-        patch.object(Config, "ScriptConfig", scripts),
-        patch.object(Config, "QueueConfig", queues),
-        patch.dict(config_manager._collections, {"ScriptConfig": scripts}),
-        patch("app.task.script_expander.Notify", notify),
-        patch("app.core.ws.Publisher.send", AsyncMock(return_value=True)),
-        patch("app.core.desktop_guard.ensure_desktop_available", AsyncMock()),
-        patch("app.core.timer.MainTimer.schedule_community_for_task"),
-    ):
-        yield manager, scripts, queues, sid
-        for run in list(manager._running.values()):
-            await asyncio.wait_for(run.stop(), 3)
-        await power.cancel_power_task()
-        assert await background.shutdown(timeout=3)
 
 
 @pytest.mark.asyncio
@@ -528,34 +463,11 @@ async def test_runtime_cleanup_failure_ends_registered_task(scheduler, monkeypat
 
 
 @pytest.mark.asyncio
-async def test_repeated_queue_items_keep_independent_run_identity(scheduler):
+async def test_repeated_queue_items_run_in_order_with_independent_identity(
+    scheduler, monkeypatch
+):
     manager, _, queues, sid = scheduler
     qid = queues.add(QueueConfig, payload={"Info": {"Name": "queue"}})
-    await queues.commit()
-    for _ in range(2):
-        queues[qid].QueueItem.add(QueueItem, payload={"Info": {"ScriptId": str(sid)}})
-    await queues[qid].QueueItem.commit()
-    uid = await manager.start(TaskMode.AUTO_PROXY, {0: {"uid": str(qid)}})
-    run = manager.task_handler[uid]
-    await asyncio.wait_for(run.accomplish.wait(), 4)
-    assert run.task_info.status == "success", (
-        run.error,
-        [(s.status, s.log) for s in run.task_info.script_list],
-    )
-    scripts = run.task_info.script_list
-    assert len(scripts) == 2 and scripts[0].uid != scripts[1].uid
-    assert all(script.parent.parent is run.task_info for script in scripts)
-    assert all(
-        not {"queue_id", "queue_item_id", "queue_params"}
-        & script.info.model_dump().keys()
-        for script in scripts
-    )
-
-
-@pytest.mark.asyncio
-async def test_single_queue_dispatches_items_in_order(scheduler, monkeypatch):
-    manager, _, queues, sid = scheduler
-    qid = queues.add(QueueConfig)
     await queues.commit()
     children = {}
     for position in range(3):
@@ -581,9 +493,19 @@ async def test_single_queue_dispatches_items_in_order(scheduler, monkeypatch):
     )
     run = manager.task_handler[uid]
     await asyncio.wait_for(run.accomplish.wait(), 4)
+    assert run.task_info.status == "success", (
+        run.error,
+        [(s.status, s.log) for s in run.task_info.script_list],
+    )
+    scripts = run.task_info.script_list
     assert calls == [0, 1, 2]
-    assert run.task_info.status == "success"
-    assert len({script.uid for script in run.task_info.scripts.values()}) == 3
+    assert len(scripts) == 3 and len({script.uid for script in scripts}) == 3
+    assert all(script.parent.parent is run.task_info for script in scripts)
+    assert all(
+        not {"queue_id", "queue_item_id", "queue_params"}
+        & script.info.model_dump().keys()
+        for script in scripts
+    )
 
 
 @pytest.mark.asyncio

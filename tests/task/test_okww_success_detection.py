@@ -38,6 +38,8 @@
 import asyncio
 from datetime import datetime
 
+import pytest
+
 from app.models.config.script import OkwwUserConfig
 from app.task.Okww.AutoProxy import AutoProxyTask
 from tests.runtime_support import RuntimeStub as SimpleNamespace
@@ -67,122 +69,73 @@ async def judge(lines: list[str]) -> AutoProxyTask:
     return proxy
 
 
-def test_custom_task_waits_for_framework_completion():
-    async def scenario():
-        proxy = make_proxy()
-        proxy.cur_user_config.Task.IfCustomArguments = True
-        await proxy.check_log(["DailyTask:Daily Task Completed\n"], datetime.now())
-        assert not proxy.wait_event.is_set()
-        await proxy.check_log(
-            ["TaskExecutor:Successfully Executed Task, Exiting Game and App!\n"],
-            datetime.now(),
-        )
-        assert proxy.cur_user_log.status == "Success!"
-        assert proxy.wait_event.is_set()
-
-    asyncio.run(scenario())
-
-
-def test_chinese_completion_with_exit_line_marks_success():
-    """新版 ok-ww 中文环境成功：完成文案已翻译，仅退出语可判成功。
-
-    完成日志（中文翻译）、框架退出语与 5 秒后的断连日志可能落入同一
-    监控批次；成功判据必须在断连日志之前命中，否则任务被误判重试。
-    """
-
-    async def scenario():
-        proxy = await judge(
+@pytest.mark.parametrize(
+    "lines,success",
+    [
+        pytest.param(
             [
                 "2026-11-04 14:38:16,060 INFO TaskExecutor DailyTask:每日任务已完成\r\n",
                 "2026-11-04 14:38:16,061 INFO TaskExecutor TaskExecutor:Successfully Executed Task, Exiting Game and App!\r\n",
                 "2026-11-04 14:38:21,157 INFO update_window_size hwnd_window:hwnd changed,connected:0\r\n",
-            ]
-        )
-        assert proxy.cur_user_log.status == "Success!"
-        assert proxy.cur_user_item.status == "完成"
-        assert proxy.wait_event.is_set()
-
-    asyncio.run(scenario())
-
-
-def test_legacy_english_completion_without_exit_line_marks_success():
-    """旧版 ok-ww 成功：无框架退出语，英文完成日志兜底判定。"""
-
-    async def scenario():
-        proxy = await judge(
+            ],
+            True,
+            id="translated-completion",
+        ),
+        pytest.param(
             [
                 "2026-10-29 11:32:40,714 INFO TaskExecutor DailyTask:Daily Task Completed\r\n",
                 "2026-10-29 11:32:45,850 INFO update_window_size hwnd_window:hwnd changed,connected:0\r\n",
-            ]
-        )
-        assert proxy.cur_user_log.status == "Success!"
-        assert proxy.cur_user_item.status == "完成"
-        assert proxy.wait_event.is_set()
-
-    asyncio.run(scenario())
-
-
-def test_disconnect_without_completion_still_fails():
-    """未出现成功标志时断连：仍报未连接异常，不得冒充成功。"""
-
-    async def scenario():
-        proxy = await judge(
+            ],
+            True,
+            id="legacy-completion",
+        ),
+        pytest.param(
             [
                 "2026-11-04 14:05:00,000 INFO update_window_size hwnd_window:hwnd changed,connected:0\r\n",
-            ]
-        )
-        assert proxy.cur_user_log.status == "OK-WW 未连接游戏客户端"
-        assert proxy.cur_user_item.status == "异常"
-        assert proxy.wait_event.is_set()
-
-    asyncio.run(scenario())
-
-
-def test_exit_line_alone_without_completion_text_marks_success():
-    """仅框架退出语、无任何完成文案也判成功：退出语是独立判据。"""
-
-    async def scenario():
-        proxy = await judge(
+            ],
+            False,
+            id="disconnected-without-completion",
+        ),
+        pytest.param(
             [
                 "2026-11-04 14:38:16,061 INFO TaskExecutor TaskExecutor:Successfully Executed Task, Exiting Game and App!\r\n",
                 "2026-11-04 14:38:21,157 INFO update_window_size hwnd_window:hwnd changed,connected:0\r\n",
-            ]
-        )
-        assert proxy.cur_user_log.status == "Success!"
-        assert proxy.cur_user_item.status == "完成"
-        assert proxy.wait_event.is_set()
-
-    asyncio.run(scenario())
-
-
-def test_localized_completion_text_without_exit_line_is_not_success():
-    """仅翻译完成文案（含 farm 4C 追加预告）、无退出语：不得判成功。
-
-    翻译文案是 farm 4C 追加阶段在完成日志之前打印的预告，若被误加为
-    成功判据，任务会在刷声骸中途被判完成并杀进程；无退出语时它只应
-    落回断连异常路径。
-    """
-
-    async def scenario():
-        proxy = await judge(
+            ],
+            True,
+            id="framework-completion",
+        ),
+        pytest.param(
             [
                 "2026-11-04 14:30:00,000 INFO TaskExecutor DailyTask:每日任务已完成，开始传送并刷取4C声骸\r\n",
                 "2026-11-04 14:35:00,000 INFO update_window_size hwnd_window:hwnd changed,connected:0\r\n",
-            ]
-        )
-        assert proxy.cur_user_log.status == "OK-WW 未连接游戏客户端"
-        assert proxy.cur_user_item.status == "异常"
-        assert proxy.wait_event.is_set()
+            ],
+            False,
+            id="translated-intermediate-step",
+        ),
+    ],
+)
+def test_success_verdict_distinguishes_upstream_completion_from_disconnect(
+    lines, success
+):
+    """同批次断连不能盖过完成，也不能把中间步骤误当完成。"""
+    proxy = asyncio.run(judge(lines))
+    assert proxy.cur_user_log.status == (
+        "Success!" if success else "OK-WW 未连接游戏客户端"
+    )
+    assert proxy.cur_user_item.status == ("完成" if success else "异常")
+    assert proxy.wait_event.is_set()
 
-    asyncio.run(scenario())
 
-
-def test_native_multi_account_waits_for_whole_batch():
-    """单账号日常完成后仍运行，直到上游整批任务正常返回。"""
+@pytest.mark.parametrize(
+    "task_name,custom", [("DailyTask", True), ("MultiAccountConfigTask", False)]
+)
+def test_waiting_modes_require_the_terminal_success_marker(task_name, custom):
+    """自定义参数与多账号批次都须等框架终态，日常完成不能提前放行。"""
 
     async def scenario():
         proxy = make_proxy()
-        proxy.task_name = "MultiAccountConfigTask"
+        proxy.task_name = task_name
+        proxy.cur_user_config.Task.IfCustomArguments = custom
         await proxy.check_log(["DailyTask:Daily Task Completed\n"], datetime.now())
         assert proxy.cur_user_item.status == "运行"
         assert not proxy.wait_event.is_set()
@@ -190,6 +143,7 @@ def test_native_multi_account_waits_for_whole_batch():
             ["TaskExecutor:Successfully Executed Task, Exiting Game and App!\n"],
             datetime.now(),
         )
+        assert proxy.cur_user_log.status == "Success!"
         assert proxy.cur_user_item.status == "完成"
         assert proxy.wait_event.is_set()
 

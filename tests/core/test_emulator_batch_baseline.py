@@ -102,6 +102,8 @@ async def test_batch_baseline_keeps_applied_dpi_and_orientation(
         "0": {"width": 1920, "height": 1080, "dpi": 280},
         "1": {"width": 1080, "height": 1920, "dpi": 280},
     }
+    # Native readback is the source of truth, not the requested preset DPI.
+    assert cli.displays == {"7": (1920, 1080, 280), "8": (1080, 1920, 280)}
 
     manager = await operations.build_manager("emulator")
     for slot in ("0", "1"):

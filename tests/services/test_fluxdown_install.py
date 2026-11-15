@@ -6,12 +6,15 @@ import os
 import stat
 import threading
 import zipfile
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+import pytest_asyncio
+import yaml
 from fastapi import FastAPI
 
 from app.api import update as api
@@ -67,6 +70,43 @@ def packages(tmp_path, monkeypatch, isolated_app_paths):
     (target / "portable_data").mkdir()
     (target / "portable_data" / "db").write_bytes(b"user data")
     return extracted, target
+
+
+@pytest_asyncio.fixture
+async def install_session(release, tmp_path, monkeypatch, isolated_app_paths):
+    """复用有效下载包与隔离配置，安装、校验、发布和保存仍走真实业务。"""
+    monkeypatch.chdir(tmp_path)
+    config = GlobalConfig.build()
+    await activate_config(config, tmp_path / "config" / "setting.yaml")
+    monkeypatch.setattr(isolated_app_paths, "setting", config)
+    archives = {}
+    for name, binaries in (
+        (release.cli_name, ("fluxdown.exe",)),
+        (release.server_name, ("fluxdown-agent.exe", "fluxdownd.exe")),
+    ):
+        archive = tmp_path / name
+        with zipfile.ZipFile(archive, "w") as bundle:
+            for binary in binaries:
+                bundle.writestr("package/" + binary, b"new binary")
+        archives[name] = archive.read_bytes()
+    release = replace(
+        release,
+        cli_sha256=hashlib.sha256(archives[release.cli_name]).hexdigest(),
+        server_sha256=hashlib.sha256(archives[release.server_name]).hexdigest(),
+    )
+    monkeypatch.setattr(
+        install, "fetch_latest_release", AsyncMock(return_value=release)
+    )
+    downloaded = []
+
+    async def download(url, destination, **kwargs):
+        downloaded.append(destination.name)
+        destination.write_bytes(archives[destination.name])
+        return destination.stat().st_size
+
+    monkeypatch.setattr(install, "download_file", download)
+    monkeypatch.setattr(cli, "fluxdown_server_shutdown", lambda: None)
+    return config, downloaded
 
 
 @pytest.mark.asyncio
@@ -191,13 +231,21 @@ def test_rollback_failure_survives_retry(packages, monkeypatch):
     with pytest.raises(RuntimeError):
         install._install_from(extracted)
     backup = target.with_name("bin.old")
+    assert not target.exists()
     assert (backup / "fluxdown.exe").read_bytes() == b"old binary"
     with pytest.raises(OSError):
         install._install_from(extracted)
+    assert not target.exists()
+    assert (backup / "fluxdown.exe").read_bytes() == b"old binary"
     assert (backup / "portable_data/db").read_bytes() == b"user data"
     monkeypatch.setattr(install.os, "replace", original)
-    install._install_from(extracted)
+    assert install._install_from(extracted) == target
+    for name in install._REQUIRED_BINARIES:
+        assert (target / name).read_bytes() == b"new binary"
     assert (target / "portable_data/db").read_bytes() == b"user data"
+    assert (target / "portable").is_file()
+    assert not backup.exists()
+    assert not target.with_name("bin.new").exists()
 
 
 @pytest.mark.asyncio
@@ -275,30 +323,53 @@ def test_foreign_agent_not_killed(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_cancel_keeps_lock_until_worker_finishes(monkeypatch):
+async def test_cancel_keeps_lock_until_worker_finishes(
+    packages, install_session, tmp_path, monkeypatch
+):
+    _, target = packages
+    config, _ = install_session
+    await config.update(
+        type(config).model_validate({"Update": {"FluxdownPath": str(target)}}),
+        check_visibility=False,
+    )
     started, finish = threading.Event(), threading.Event()
+    original = os.replace
 
-    def worker():
-        started.set()
-        finish.wait(5)
+    def slow_publish(source, destination):
+        if Path(source) == target.with_name("bin.new"):
+            started.set()
+            assert finish.wait(5)
+        return original(source, destination)
 
-    async def installation(*args):
-        await asyncio.to_thread(worker)
-        return {}
-
-    monkeypatch.setattr(install, "_install_locked", installation)
+    monkeypatch.setattr(install.os, "replace", slow_publish)
     monkeypatch.setattr(install.update_native, "supports_fluxdown_install", True)
     task = asyncio.create_task(install.install_fluxdown())
-    await asyncio.to_thread(started.wait, 5)
-    task.cancel()
-    await asyncio.sleep(0)
-    assert install._install_lock.locked()
-    with pytest.raises(RuntimeError):
-        await install.install_fluxdown()
-    finish.set()
-    with pytest.raises(asyncio.CancelledError):
-        await task
+    try:
+        assert await asyncio.to_thread(started.wait, 5)
+        for _ in range(2):
+            task.cancel()
+            await asyncio.sleep(0)
+        assert not task.done()
+        assert install._install_lock.locked()
+        with pytest.raises(RuntimeError):
+            await install.install_fluxdown()
+        finish.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    finally:
+        finish.set()
+        await asyncio.gather(task, return_exceptions=True)
     assert not install._install_lock.locked()
+    assert (target / "fluxdown.exe").read_bytes() == b"old binary"
+    for name in ("fluxdown-agent.exe", "fluxdownd.exe"):
+        assert (target / name).read_bytes() == b"new binary"
+    assert (target / "portable_data/db").read_bytes() == b"user data"
+    assert (target / "portable").is_file()
+    assert not (target.parent / "install_tmp").exists()
+    result = await install.install_fluxdown()
+    assert result["path"] == str(target)
+    saved = yaml.safe_load((tmp_path / "config/setting.yaml").read_text("utf-8"))
+    assert saved["Update"]["FluxdownPath"] == str(target)
 
 
 @pytest.mark.asyncio
@@ -336,65 +407,42 @@ async def test_local_install_route(client, host, origin, allowed, monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "change_path,fail_save", [(False, False), (True, False), (False, True)]
-)
+@pytest.mark.parametrize("save_error", [False, True], ids=["saved", "save-retry"])
 async def test_full_install_and_config(
-    release, tmp_path, monkeypatch, change_path, fail_save
+    install_session, tmp_path, monkeypatch, save_error
 ):
-    monkeypatch.chdir(tmp_path)
-    config = GlobalConfig.build()
-    await activate_config(config)
-    flush = AsyncMock(side_effect=OSError("disk full") if fail_save else None)
-    monkeypatch.setattr(
-        install,
-        "Config",
-        SimpleNamespace(setting=config, flush=flush, data_path=tmp_path / "data"),
-    )
-    monkeypatch.setattr(
-        install, "fetch_latest_release", AsyncMock(return_value=release)
-    )
-
-    async def download(release, name, *args):
-        work = args[2]
-        with zipfile.ZipFile(work / name, "w") as bundle:
-            names = (
-                ["fluxdown.exe"]
-                if name == release.cli_name
-                else ["fluxdown-agent.exe", "fluxdownd.exe"]
-            )
-            for binary in names:
-                bundle.writestr("package/" + binary, b"new binary")
-        if change_path:
-            await config.update(
-                type(config).model_validate(
-                    {"Update": {"FluxdownPath": "user-choice"}}
-                ),
-                check_visibility=False,
-            )
-        return 100
-
-    monkeypatch.setattr(install, "_download_asset", download)
-    monkeypatch.setattr(cli, "fluxdown_server_shutdown", lambda: None)
+    config, downloaded = install_session
     # 本用例验证全新托管安装；桌面版复用另有覆盖，不扫描开发机已有安装。
-    if change_path or fail_save:
-        with pytest.raises(RuntimeError, match="文件已安装"):
-            await install._install_locked("auto", None, force_managed=True)
-    else:
-        result = await install._install_locked("auto", None, force_managed=True)
-        assert Path(result["path"]) == install._install_dir()
-        assert Path(config.Update.FluxdownPath) == install._install_dir()
-        flush.assert_awaited_once()
+    if save_error:
+        with monkeypatch.context() as storage:
+            storage.setattr(
+                install.Config, "flush", AsyncMock(side_effect=OSError("disk full"))
+            )
+            with pytest.raises(RuntimeError, match="文件已安装.*路径未保存"):
+                await install._install_locked("auto", None, force_managed=True)
+        for name in install._REQUIRED_BINARIES:
+            assert (install._install_dir() / name).read_bytes() == b"new binary"
+        assert not (tmp_path / "data/fluxdown/install_tmp").exists()
+
+    result = await install._install_locked("auto", None, force_managed=True)
+    assert Path(result["path"]) == install._install_dir()
+    assert Path(config.Update.FluxdownPath) == install._install_dir()
+    saved = yaml.safe_load((tmp_path / "config/setting.yaml").read_text("utf-8"))
+    assert saved["Update"]["FluxdownPath"] == str(install._install_dir())
+    assert downloaded == ["cli.zip", "server.zip"]
     assert (install._install_dir() / "portable").is_file()
     assert not (tmp_path / "data/fluxdown/install_tmp").exists()
-    if change_path:
-        assert str(config.Update.FluxdownPath) == "user-choice"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("origin", [None, "null", "http://localhost:5173"])
 @pytest.mark.parametrize(
-    "provided", [None, "Bearer stale-session", "Bearer ", "Bearer 非法"]
+    "origin,provided",
+    [
+        (None, None),
+        ("null", "Bearer stale-session"),
+        ("http://localhost:5173", "Bearer "),
+        ("http://localhost:5173", "Bearer 非法"),
+    ],
 )
 async def test_install_requires_session_authorization(origin, provided, monkeypatch):
     app = FastAPI()
@@ -606,6 +654,9 @@ def test_existing_desktop_copy_failure_does_not_poison_retry(tmp_path, monkeypat
 
     install._install_missing_to_existing(extracted, target)
     assert (target / "fluxdown.exe").read_bytes() == b"new CLI"
+    assert (target / "fluxdown-desktop.exe").read_bytes() == b"gui"
+    assert (target / "fluxdown-agent.exe").read_bytes() == b"original agent"
+    assert (target / "fluxdownd.exe").read_bytes() == b"original daemon"
     assert not list(target.glob(".*.mas-install"))
 
 
@@ -670,139 +721,65 @@ def test_protected_desktop_directory_uses_managed_install(tmp_path, monkeypatch)
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("change_path", [False, True], ids=["unchanged", "user-choice"])
 async def test_permission_changed_after_probe_retries_in_managed_directory(
-    release, tmp_path, monkeypatch
+    release, install_session, tmp_path, monkeypatch, change_path
 ):
-    monkeypatch.chdir(tmp_path)
+    """预检后失去写权限时回退托管安装，保留下载期间用户另选的路径。"""
     external = tmp_path / "protected"
-    external.mkdir()
-    (external / "fluxdown-desktop.exe").write_bytes(b"desktop")
-    (external / "fluxdown-agent.exe").write_bytes(b"original agent")
-    (external / "fluxdownd.exe").write_bytes(b"original daemon")
-
-    config = GlobalConfig.build()
-    await activate_config(config)
-    await config.update(
-        type(config).model_validate({"Update": {"FluxdownPath": str(external)}}),
-        check_visibility=False,
-    )
-    flush = AsyncMock()
-    monkeypatch.setattr(
-        install,
-        "Config",
-        SimpleNamespace(setting=config, flush=flush, data_path=tmp_path / "data"),
-    )
-    monkeypatch.setattr(install, "_can_write_directory", lambda _: True)
-    monkeypatch.setattr(
-        install, "fetch_latest_release", AsyncMock(return_value=release)
-    )
-    downloaded = []
-
-    async def download(release, name, *args):
-        downloaded.append(name)
-        folder = args[2]
-        with zipfile.ZipFile(folder / name, "w") as bundle:
-            names = (
-                ("fluxdown.exe",)
-                if name == release.cli_name
-                else ("fluxdown-agent.exe", "fluxdownd.exe")
-            )
-            for binary in names:
-                bundle.writestr("package/" + binary, b"new binary")
-        return 100
-
-    monkeypatch.setattr(install, "_download_asset", download)
-    monkeypatch.setattr(cli, "fluxdown_server_shutdown", lambda: None)
-    original_copy = install._install_missing_to_existing
-
-    def access_denied(extracted, target):
-        if target == external:
-            raise PermissionError("protected folder")
-        return original_copy(extracted, target)
-
-    monkeypatch.setattr(install, "_install_missing_to_existing", access_denied)
-    result = await install._install_locked("auto", None)
-    managed = tmp_path / "data" / "fluxdown" / "bin"
-    assert result["path"] == str(managed)
-    assert Path(config.Update.FluxdownPath) == managed
-    assert (managed / "fluxdown.exe").is_file()
-    assert (managed / "fluxdown-agent.exe").is_file()
-    assert (managed / "fluxdownd.exe").is_file()
-    assert (external / "fluxdown-agent.exe").read_bytes() == b"original agent"
-    assert (external / "fluxdownd.exe").read_bytes() == b"original daemon"
-    assert not (external / "fluxdown.exe").exists()
-    assert downloaded == [release.cli_name, release.cli_name, release.server_name]
-    flush.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_permission_fallback_preserves_user_selected_path(
-    release, tmp_path, monkeypatch
-):
-    """A -> (download starts) user chooses B -> A denied -> managed fallback must not overwrite B."""
-    monkeypatch.chdir(tmp_path)
-    external = tmp_path / "desktop-a"
     external.mkdir()
     (external / "fluxdown-desktop.exe").write_bytes(b"desktop")
     (external / "fluxdown-agent.exe").write_bytes(b"original agent")
     (external / "fluxdownd.exe").write_bytes(b"original daemon")
     user_choice = str(tmp_path / "desktop-b")
 
-    config = GlobalConfig.build()
-    await activate_config(config)
+    config, downloaded = install_session
     await config.update(
         type(config).model_validate({"Update": {"FluxdownPath": str(external)}}),
         check_visibility=False,
     )
-    flush = AsyncMock()
-    monkeypatch.setattr(
-        install,
-        "Config",
-        SimpleNamespace(setting=config, flush=flush, data_path=tmp_path / "data"),
-    )
-    monkeypatch.setattr(install, "_can_write_directory", lambda _: True)
-    monkeypatch.setattr(
-        install, "fetch_latest_release", AsyncMock(return_value=release)
-    )
-    downloaded = []
+    await install.Config.flush()
+    download_file = install.download_file
 
-    async def download(release, name, *args):
-        downloaded.append(name)
-        folder = args[2]
-        with zipfile.ZipFile(folder / name, "w") as bundle:
-            names = (
-                ("fluxdown.exe",)
-                if name == release.cli_name
-                else ("fluxdown-agent.exe", "fluxdownd.exe")
-            )
-            for binary in names:
-                bundle.writestr("package/" + binary, b"new binary")
-        if len(downloaded) == 1:
+    async def download(url, destination, **kwargs):
+        size = await download_file(url, destination, **kwargs)
+        if change_path and len(downloaded) == 1:
             await config.update(
                 type(config).model_validate({"Update": {"FluxdownPath": user_choice}}),
                 check_visibility=False,
             )
-        return 100
+            await install.Config.flush()
+        return size
 
-    monkeypatch.setattr(install, "_download_asset", download)
-    monkeypatch.setattr(cli, "fluxdown_server_shutdown", lambda: None)
+    monkeypatch.setattr(install, "download_file", download)
+    original_copy = install.shutil.copy2
 
-    def access_denied(extracted, target):
-        if target == external:
+    def access_denied(source, destination, *args, **kwargs):
+        if Path(destination).parent == external:
+            Path(destination).write_bytes(b"partial")
             raise PermissionError("directory became protected")
-        raise AssertionError("unexpected external target")
+        return original_copy(source, destination, *args, **kwargs)
 
-    monkeypatch.setattr(install, "_install_missing_to_existing", access_denied)
-    with pytest.raises(RuntimeError, match="路径未保存"):
-        await install._install_locked("auto", None)
+    monkeypatch.setattr(install.shutil, "copy2", access_denied)
+    if change_path:
+        with pytest.raises(RuntimeError, match="路径未保存"):
+            await install.install_fluxdown()
+    else:
+        result = await install.install_fluxdown()
+        assert result["path"] == str(install._install_dir())
 
+    expected = user_choice if change_path else str(install._install_dir())
     managed = tmp_path / "data" / "fluxdown" / "bin"
-    assert Path(config.Update.FluxdownPath) == Path(user_choice)
-    assert (managed / "fluxdown.exe").is_file()
-    assert (managed / "fluxdown-agent.exe").is_file()
-    assert (managed / "fluxdownd.exe").is_file()
+    assert config.Update.FluxdownPath == expected
+    saved = yaml.safe_load((tmp_path / "config/setting.yaml").read_text("utf-8"))
+    assert saved["Update"]["FluxdownPath"] == expected
+    for name in install._REQUIRED_BINARIES:
+        assert (managed / name).read_bytes() == b"new binary"
+    assert (managed / "portable").is_file()
+    assert (external / "fluxdown-desktop.exe").read_bytes() == b"desktop"
     assert (external / "fluxdown-agent.exe").read_bytes() == b"original agent"
     assert (external / "fluxdownd.exe").read_bytes() == b"original daemon"
     assert not (external / "fluxdown.exe").exists()
+    assert not list(external.glob(".*.mas-install"))
+    assert not (managed.parent / "install_tmp").exists()
     assert downloaded == [release.cli_name, release.cli_name, release.server_name]
-    flush.assert_not_awaited()

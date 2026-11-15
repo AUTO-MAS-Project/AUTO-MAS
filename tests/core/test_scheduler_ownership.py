@@ -14,9 +14,9 @@ from app.models.config import QueueConfig, TimeSet
 from app.models.task import TaskMode, TaskTriggerReason
 from app.task.mode_worker import AutoProxyWorker
 from app.task.user_expander import UserExpander
-from tests.core.test_maintenance_cycle_review import creation_time, make_queue
-from tests.core.test_task_tree_dispatch import Builtin
-from tests.core.test_task_tree_dispatch import scheduler as scheduler
+from tests.support.queue import creation_time, make_queue
+from tests.support.scheduler import Builtin
+from tests.support.scheduler import scheduler as scheduler
 
 
 @pytest.mark.asyncio

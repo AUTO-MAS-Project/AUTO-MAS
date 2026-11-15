@@ -107,18 +107,20 @@ class TelemetryDevelopmentTest(unittest.TestCase):
 
     tearDown = setUp
 
-    def test_development_environment_skips_sentry(self) -> None:
-        with patch.object(telemetry, "_start_sentry") as start_sentry:
-            telemetry.init_sentry(release="v0.0.0", development=True, enabled=True)
-
-            start_sentry.assert_not_called()
-            self.assertIsNone(telemetry._sentry_release)
-
-    def test_disabled_telemetry_skips_sentry(self) -> None:
-        with patch.object(telemetry, "_start_sentry") as start_sentry:
-            telemetry.init_sentry(release="v0.0.0", development=False, enabled=False)
-
-            start_sentry.assert_not_called()
+    def test_environment_and_opt_out_prevent_sentry_start(self) -> None:
+        for development, enabled in ((True, True), (False, False)):
+            with (
+                self.subTest(development=development, enabled=enabled),
+                patch.object(telemetry, "_sentry_release", None),
+                patch.object(telemetry, "_sentry_started", False),
+                patch.object(telemetry, "_start_sentry") as start_sentry,
+            ):
+                telemetry.init_sentry(
+                    release="v0.0.0", development=development, enabled=enabled
+                )
+                start_sentry.assert_not_called()
+                if development:
+                    self.assertIsNone(telemetry._sentry_release)
 
 
 def test_sentry_defers_mcp_without_losing_integrations_or_telemetry_toggle(tmp_path):

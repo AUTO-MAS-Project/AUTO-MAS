@@ -52,7 +52,7 @@ def installation(tmp_path, monkeypatch):
             }
         ],
     }
-    monkeypatch.setattr(update, "assert_idle", lambda root: None)
+    monkeypatch.setattr(update.psutil, "process_iter", lambda fields: [])
     version = [Version("0.55.0")]
     monkeypatch.setattr(update, "read_version", lambda root: version[0])
     monkeypatch.setattr(update, "request_release", AsyncMock(return_value=release))
@@ -118,8 +118,20 @@ async def test_interrupted_install_blocks_old_version_fallback(installation, err
     update.run_installer.side_effect = error
     with pytest.raises(type(error)):
         await update.update_before_run(root, config)
+    marker = script_install.workspace(root) / "bgi-install.json"
+    assert json.loads(marker.read_text()) == {"target": "0.56.0"}
     with pytest.raises(script_install.InstallUnsafeError):
         await update.confirm_current_install(root)
+    update.check_stable_distribution.return_value = "BetterGI 安装资源暂不可用"
+    update.download_script_package.reset_mock()
+    update.run_installer.reset_mock()
+    with pytest.raises(script_install.InstallUnsafeError, match="上次安装仍未确认"):
+        await update.update_before_run(root, config)
+    assert json.loads(marker.read_text()) == {"target": "0.56.0"}
+    assert update.read_version(root) == Version("0.55.0")
+    assert json.loads((root / "User/config.json").read_text()) == {"custom": True}
+    update.download_script_package.assert_not_awaited()
+    update.run_installer.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -164,19 +176,37 @@ def test_notice_restore_after_restart_preserves_other_changes(tmp_path, monkeypa
     (root / "User").mkdir(parents=True)
     path = root / "User/config.json"
     path.write_text(json.dumps({update.NOTICE_KEY: "0.54.0", "custom": 1}))
-    monkeypatch.setattr(update, "assert_idle", lambda root: None)
+    processes = []
+    monkeypatch.setattr(update.psutil, "process_iter", lambda fields: processes)
     update.suppress_update_notice(root)
+    journal = script_install.workspace(root) / "bgi-notice.json"
+    recovery_record = journal.read_bytes()
     injected = json.loads(path.read_text())
     assert injected[update.NOTICE_KEY] == update.IGNORED_VERSION
     injected["custom"] = 2
     path.write_text(json.dumps(injected))
+    processes.append(
+        SimpleNamespace(
+            info={
+                "exe": str(tmp_path / "Downloads" / "BetterGI.Install.0.67.0.exe"),
+                "name": "BetterGI.Install.0.67.0.exe",
+            }
+        )
+    )
+    with pytest.raises(script_install.InstallUnsafeError, match="安装器仍在运行"):
+        update.recover_update_notice(root)
+    assert json.loads(path.read_text()) == injected
+    assert journal.read_bytes() == recovery_record
+    processes.clear()
     update.recover_update_notice(root)
     assert json.loads(path.read_text()) == {update.NOTICE_KEY: "0.54.0", "custom": 2}
+    assert not journal.exists()
     # 用户在托管期间改了该项时保留新值，不盲目覆盖。
     update.suppress_update_notice(root)
     path.write_text(json.dumps({update.NOTICE_KEY: "0.57.0", "custom": 3}))
     update.recover_update_notice(root)
-    assert json.loads(path.read_text())[update.NOTICE_KEY] == "0.57.0"
+    assert json.loads(path.read_text()) == {update.NOTICE_KEY: "0.57.0", "custom": 3}
+    assert not journal.exists()
 
 
 @pytest.mark.asyncio
@@ -669,36 +699,3 @@ async def test_unready_stable_release_keeps_old_install_without_marker(
     update.run_installer.assert_not_awaited()
     assert not (script_install.workspace(root) / "bgi-install.json").exists()
     assert update.read_version(root) == Version("0.55.0")
-
-
-@pytest.mark.asyncio
-async def test_unready_release_does_not_bypass_existing_unconfirmed_install(
-    installation, monkeypatch
-):
-    root, config, _ = installation
-    marker = script_install.workspace(root) / "bgi-install.json"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text('{"target":"0.56.0"}')
-    monkeypatch.setattr(
-        update,
-        "check_stable_distribution",
-        AsyncMock(return_value="BetterGI 安装资源暂不可用"),
-    )
-    with pytest.raises(script_install.InstallUnsafeError, match="上次安装仍未确认"):
-        await update.update_before_run(root, config)
-    assert marker.exists()
-    update.run_installer.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_installer_launched_from_downloads_blocks_managed_recovery(
-    tmp_path, monkeypatch
-):
-    """迁移 #1900 有效的进程防护，不依赖弹窗或安装目录路径。"""
-    installer = tmp_path / "Downloads" / "BetterGI.Install.0.67.0.exe"
-    process = SimpleNamespace(
-        info={"exe": str(installer), "name": "BetterGI.Install.0.67.0.exe"}
-    )
-    monkeypatch.setattr(update.psutil, "process_iter", lambda _: [process])
-    with pytest.raises(script_install.InstallUnsafeError, match="安装器仍在运行"):
-        update.assert_idle(tmp_path / "BetterGI")

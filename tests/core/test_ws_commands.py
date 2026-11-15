@@ -18,36 +18,24 @@ class Result(BaseModel):
 
 
 @pytest.mark.asyncio
-async def test_validated_params_and_model_response():
+async def test_command_dispatch_validates_inputs_and_returns_stable_results():
     commands = _WSCommandRegistry()
 
-    @commands.register("test.get", params=Params)
-    async def handler(params):
-        return Result(count=params.count)
+    handler = AsyncMock(side_effect=lambda params: Result(count=params.count))
+    commands.register("test.get", params=Params)(handler)
 
+    for params in (None, {}, {"count": "invalid"}, [1]):
+        result = await commands.execute("test.get", params)
+        assert result["code"] == 400
+        assert result["success"] is False
+    handler.assert_not_awaited()
     assert await commands.execute("test.get", {"count": 3}) == {
         "success": True,
         "data": {"code": 200, "count": 3},
         "code": 200,
         "message": None,
     }
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("params", [None, {}, {"count": "invalid"}, [1]])
-async def test_invalid_params_do_not_invoke_handler(params):
-    commands = _WSCommandRegistry()
-    handler = AsyncMock()
-    commands.register("test.get", params=Params)(handler)
-    result = await commands.execute("test.get", params)
-    assert result["code"] == 400
-    assert result["success"] is False
-    handler.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_missing_command_and_handler_failure():
-    commands = _WSCommandRegistry()
+    handler.assert_awaited_once_with(Params(count=3))
     assert (await commands.execute("missing"))["code"] == 404
     handler = AsyncMock(side_effect=RuntimeError("failed"))
     commands.register("test.fail")(handler)

@@ -61,111 +61,21 @@ async def test_real_manager_prefetch_cleanup_without_update(
 
 
 @pytest.mark.asyncio
-async def test_task_force_stop_kills_installation_thread_process(tmp_path):
-    import asyncio
-    import sys
-
-    import psutil
-
-    from app.task.MaaFW.tools.core.runtime_pool import installer
-    from app.utils.common.process.scope import TaskProcessScope
-
-    scope = TaskProcessScope()
-    marker = tmp_path / "installer.pid"
-    code = (
-        "import os,sys,time; from pathlib import Path; "
-        "Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(30)"
-    )
-
-    def install():
-        with installer.install_process_factory_scope(scope.popen):
-            return installer._run_subprocess(
-                [sys.executable, "-I", "-c", code, str(marker)],
-                cwd=tmp_path,
-                env=None,
-                timeout=60,
-            )
-
-    worker = asyncio.create_task(asyncio.to_thread(install))
-    try:
-        async with asyncio.timeout(5):
-            while not marker.exists():
-                await asyncio.sleep(0.01)
-        process = psutil.Process(int(marker.read_text()))
-        scope.add_check("update", scope.stop_updates, timeout=0.05)
-        await scope.run_checks()
-        assert scope.checks[0].status == "timed_out"
-        await scope.force_close()
-        result = await asyncio.wait_for(worker, 3)
-        assert result.returncode != 0
-        # Windows 的退出状态可能尚未刷新，限时等待实际退出。
-        await asyncio.to_thread(process.wait, timeout=3)
-        with pytest.raises(asyncio.CancelledError):
-            scope.popen([sys.executable, "-c", "pass"])
-    finally:
-        if not scope.closed:
-            await scope.force_close()
-        await asyncio.gather(worker, return_exceptions=True)
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "changed,blocked", [(False, False), (True, False), (False, True)]
-)
-async def test_prefetched_candidate_consumption_checks_baseline_and_gate(
-    tmp_path, monkeypatch, changed, blocked
-):
-    candidate = updater.MaaFWProjectUpdateCandidate(
-        source="github_release",
-        version="2.0",
-        download_url="https://example.invalid/package.zip",
-        package_type="full",
-    )
-    discovery = updater.MaaFWProjectUpdateDiscovery(
-        source="github_release", version="2.0", candidate=candidate
-    )
-    discover = AsyncMock(return_value=(None, None, "no newer version"))
-    apply = AsyncMock(return_value={})
-    gate = AsyncMock(return_value="environment unavailable" if blocked else None)
-    monkeypatch.setattr(updater, "_discover_project_update_detailed", discover)
-    monkeypatch.setattr(updater, "apply_maafw_project_update", apply)
-    result = await updater.update_maafw_project_if_needed(
-        tmp_path,
-        SimpleNamespace(version="1.1" if changed else "1.0"),
-        source_config={"project_shell_hint": "MXU"},
-        precheck_gate=gate,
-        prefetch_full_package=True,
-        prefetched=("1.0", discovery),
-    )
-    if changed:
-        discover.assert_awaited_once()
-        apply.assert_not_awaited()
-    else:
-        discover.assert_not_awaited()
-        gate.assert_awaited_once_with("2.0")
-        if blocked:
-            assert not result.updated
-            apply.assert_not_awaited()
-        else:
-            assert result.updated
-            apply.assert_awaited_once()
-            assert apply.await_args.kwargs["range_delta"] is False
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "changed,stop_build,discard",
+    "scenario",
     [
-        (False, False, False),
-        (True, False, False),
-        (False, True, False),
-        (False, False, True),
+        "unchanged",
+        "source_changed",
+        "version_changed",
+        "precheck_blocked",
+        "stop_build",
+        "discard",
     ],
 )
-async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
-    tmp_path, monkeypatch, isolated_app_paths, changed, stop_build, discard
+async def test_prefetched_manager_revalidates_candidate_before_switching_view(
+    tmp_path, monkeypatch, isolated_app_paths, scenario
 ):
-    """同版重新导入改变来源时，旧下载不能登记到新谱系；未变化的来源继续复用。"""
+    """预取后重导入、预检失败或撤销候选，都不能把旧下载直接登记到当前视图。"""
     import asyncio
     import hashlib
     import io
@@ -180,10 +90,15 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
     from app.models.task import TaskItem, TaskScriptItem
     from app.task.MaaFW import embedded_manager
     from app.task.MaaFW.tools.core.project_update import transport
+    from app.task.MaaFW.tools.core.project_update.precheck_memo import (
+        read_runtime_precheck,
+        write_runtime_precheck,
+    )
     from app.task.MaaFW.tools.embedded import embedded_project
     from app.task.MaaFW.tools.embedded.update_credentials import (
         resolve_update_credentials,
     )
+    from app.task.MaaFW.tools.embedded.view_update import memo_path_factory
     from tests.config_support import activate_config
 
     install = tmp_path / "mas"
@@ -203,8 +118,10 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
             "task": [],
         }
 
+    changed = scenario == "source_changed"
+    version = "1.1" if scenario == "version_changed" else "1.0"
     previous = interface("aaaa")
-    replacement = interface("bbbb" if changed else "aaaa")
+    replacement = interface("bbbb" if changed else "aaaa", version)
     assert len(json.dumps(previous)) == len(json.dumps(replacement))
     (source / "interface.json").write_text(json.dumps(previous))
     package = io.BytesIO()
@@ -220,12 +137,19 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
         requests.append(url)
         if url == "https://example.com/old.zip":
             return httpx.Response(200, content=package_bytes)
-        if "/releases/tags/1.0" in url or "/releases/tags/v1.0" in url:
+        if url.endswith(
+            (
+                "/releases/tags/1.0",
+                "/releases/tags/v1.0",
+                "/releases/tags/1.1",
+                "/releases/tags/v1.1",
+            )
+        ):
             # 两个项目都已撤下旧版本的发行包，实际导入核对返回同样的报告。
             return httpx.Response(404, json={"message": "Not Found"})
         if "/repos/audit/aaaa/" in url:
             if withdrawn:
-                return httpx.Response(200, json={"tag_name": "1.0", "assets": []})
+                return httpx.Response(200, json={"tag_name": version, "assets": []})
             return httpx.Response(
                 200,
                 json={
@@ -310,11 +234,18 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
     await config.update(
         MaaFWConfig.model_validate({"Embedded": imported_fields(second)})
     )
-    assert first["report"] == second["report"]
+    if scenario != "version_changed":
+        assert first["report"] == second["report"]
     assert json.loads((view / "interface.json").read_text()) == replacement
     marker_before = embedded_project.read_view_marker(view)
     before_consume = list(requests)
-    if discard:
+    if scenario == "precheck_blocked":
+        memo_path = memo_path_factory(marker_before["lineage"])("2.0")
+        write_runtime_precheck(
+            memo_path,
+            {"targetVersion": "2.0", "kind": "other", "reason": "disk full"},
+        )
+    if scenario == "discard":
         cached = {
             path: path.read_bytes()
             for path in (tmp_path / "cache").rglob("*")
@@ -325,6 +256,8 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
         await manager.discard_prefetched_update()
         assert all(path.read_bytes() == content for path, content in cached.items())
         # 撤下刚才发现的版本，运行前必须重新检查，不能继续安装旧候选。
+        withdrawn = True
+    if scenario == "version_changed":
         withdrawn = True
 
     # 只隔离真实运行池/agent 环境准备；发现、缓存、预检门、登记和视图切换照常执行。
@@ -339,7 +272,7 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
         "_prepare_project_environment_sync",
         lambda *_args, **_kwargs: True,
     )
-    if stop_build:
+    if scenario == "stop_build":
         from tests.task_stop_support import StopTask
 
         entered, release = threading.Event(), threading.Event()
@@ -396,9 +329,9 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
         update_cancel=threading.Event(),
     )
     installed = json.loads((view / "interface.json").read_text())
-    updated = not changed and not discard
+    updated = scenario == "unchanged"
     assert installed["github"] == replacement["github"]
-    assert installed["version"] == ("2.0" if updated else "1.0")
+    assert installed["version"] == ("2.0" if updated else version)
     assert json.loads((view / "resource/data.json").read_text()) == {
         "source": "aaaa-v2" if updated else "shared"
     }
@@ -406,7 +339,12 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
     assert (
         embedded_project.read_view_marker(view)["lineage"] == marker_before["lineage"]
     )
-    if changed or discard:
+    if scenario == "precheck_blocked":
+        assert outcome.result.skipped_reason
+        assert outcome.registered_id is None
+        assert read_runtime_precheck(memo_path)["attempts"] == 2
+        assert not list((tmp_path / "operations").glob("*/state.json"))
+    if scenario in {"source_changed", "version_changed", "discard"}:
         repo = "bbbb" if changed else "aaaa"
         assert any(
             f"/repos/audit/{repo}/" in url for url in requests[len(before_consume) :]

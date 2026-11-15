@@ -260,27 +260,6 @@ async def dispatch(payload, targets, *, notifier, **kwargs):
         return await notifications.dispatch(payload, targets, **kwargs)
 
 
-def test_dispatch_isolates_false_result_and_names_webhook() -> None:
-    config = _Config(
-        {
-            "IfSendMail": True,
-            "ToAddress": "user@example.com",
-            "IfServerChan": True,
-            "ServerChanKey": "send-key",
-        },
-        webhooks=[("hook-1", _Webhook(name="值班群"))],
-    )
-    notify = _Notify({"send_mail": ["false"]})
-
-    result = _run(dispatch(PAYLOAD, [_global_target(config)], notifier=notify))
-
-    assert list(result.failed) == ["全局邮件"]
-    assert list(result.succeeded) == ["全局 ServerChan", "全局 Webhook 值班群"]
-    assert result.attempted == 3
-    assert notify.calls == ["send_mail", "ServerChanPush", "WebhookPush"]
-    assert notify.kwargs[0]["to_address"] == "user@example.com"
-
-
 def test_dispatch_retries_false_result() -> None:
     config = _Config({"IfKoishiSupport": True})
     notify = _Notify({"send_koishi": ["false"]})
@@ -297,21 +276,6 @@ def test_dispatch_retries_false_result() -> None:
     assert list(result.failed) == []
     assert result.attempted == 1
     assert notify.calls == ["send_koishi", "send_koishi"]
-
-
-def test_dispatch_skips_disabled_webhook_channel() -> None:
-    config = _Config(
-        webhooks=[
-            ("hook-1", _Webhook(enabled=True, name="启用")),
-            ("hook-2", _Webhook(enabled=False, name="禁用")),
-        ]
-    )
-    notify = _Notify()
-
-    result = _run(dispatch(PAYLOAD, [_global_target(config)], notifier=notify))
-
-    assert result.attempted == 1
-    assert list(result.succeeded) == ["全局 Webhook 启用"]
 
 
 def test_empty_recipient_warn_records_failure() -> None:
@@ -408,7 +372,9 @@ class _Task(TaskItem):
         pass
 
 
-def test_prepared_task_report_retries_only_failed_channels() -> None:
+def test_task_report_retry_omits_disabled_hooks_and_repeats_only_failed_summary() -> (
+    None
+):
     """多脚本任务: 第二批报告只把汇总重发给上次失败的渠道,
     已送达渠道收到的报告不含汇总, 避免重复。"""
 
@@ -418,7 +384,11 @@ def test_prepared_task_report_retries_only_failed_channels() -> None:
             "ToAddress": "user@example.com",
             "IfServerChan": True,
             "ServerChanKey": "send-key",
-        }
+        },
+        webhooks=[
+            ("hook-1", _Webhook(name="值班群")),
+            ("disabled", _Webhook(enabled=False, name="禁用")),
+        ],
     )
     task = _Task()
     task.notification_state.results = _COMMUNITY_RESULTS
@@ -437,7 +407,17 @@ def test_prepared_task_report_retries_only_failed_channels() -> None:
 
     # 第一次: 邮件失败, ServerChan 成功 → 汇总不消费, delivered 记录 ServerChan
     assert list(result.failed) == ["全局邮件"]
-    assert task.notification_state.delivered == {"全局 ServerChan"}
+    assert list(result.succeeded) == ["全局 ServerChan", "全局 Webhook 值班群"]
+    assert result.attempted == 3
+    assert sorted(notify.calls) == sorted(
+        ["send_mail", "ServerChanPush", "WebhookPush"]
+    )
+    sent = dict(zip(notify.calls, notify.kwargs, strict=True))
+    assert sent["send_mail"]["to_address"] == "user@example.com"
+    assert task.notification_state.delivered == {
+        "全局 ServerChan",
+        "全局 Webhook hook-1",
+    }
     assert task.notification_state.summary_consumed is False
 
     # 第二次: 只向失败渠道重发含汇总的载荷; 已送达渠道收到不含汇总的载荷
@@ -453,11 +433,20 @@ def test_prepared_task_report_retries_only_failed_channels() -> None:
         )
 
     assert list(result.failed) == []
-    assert task.notification_state.delivered == {"全局 ServerChan", "全局邮件"}
+    assert task.notification_state.delivered == {
+        "全局 ServerChan",
+        "全局邮件",
+        "全局 Webhook hook-1",
+    }
+    assert result.attempted == 3
+    assert sorted(notify.calls) == sorted(
+        ["send_mail", "ServerChanPush", "WebhookPush"]
+    )
     # 邮件拿到含汇总的重试版, ServerChan 只拿到去掉汇总的报告
-    sent = [kwargs["content"] for kwargs in notify.kwargs]
-    assert "summary-account" in sent[0]
-    assert "summary-account" not in sent[1]
+    sent = dict(zip(notify.calls, notify.kwargs, strict=True))
+    assert "summary-account" in sent["send_mail"]["content"]
+    assert "summary-account" not in sent["ServerChanPush"]["content"]
+    assert "summary-account" not in sent["WebhookPush"]["content"]
 
 
 def test_prepared_task_report_zero_targets_keeps_summary() -> None:

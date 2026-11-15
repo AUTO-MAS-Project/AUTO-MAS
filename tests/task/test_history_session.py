@@ -15,7 +15,7 @@ from tests.runtime_support import create_runtime_tree
 
 
 @pytest.mark.asyncio
-async def test_duplicate_config_runs_keep_independent_captures_and_cleanup(
+async def test_capture_session_owns_each_run_until_archive_or_cancelled_cleanup(
     tmp_path, monkeypatch
 ):
     root, script, user = await create_runtime_tree()
@@ -32,23 +32,44 @@ async def test_duplicate_config_runs_keep_independent_captures_and_cleanup(
     )
     service = obs_replay.ObsReplayService(tmp_path)
     service.directory.mkdir(parents=True)
-    files = [service.directory / "one.mkv", service.directory / "two.mkv"]
+    files = [
+        service.directory / name for name in ("one.mkv", "two.mkv", "unclaimed.mkv")
+    ]
     for path in files:
         path.write_bytes(b"isolated replay")
-    service.capture = AsyncMock(side_effect=files)
+    entered, closed = asyncio.Event(), asyncio.Event()
+    remaining = iter(files)
+
+    async def capture(*args):
+        path = next(remaining, None)
+        if path is not None:
+            return path
+        try:
+            entered.set()
+            await asyncio.Event().wait()
+        finally:
+            closed.set()
+
+    service.capture = AsyncMock(side_effect=capture)
     monkeypatch.setattr(obs_replay, "ObsReplay", service)
-    sid = root.scripts.add(
-        TaskScriptItem, payload={"info": {"script_id": script.script_id}}
-    )
-    await root.scripts.commit()
-    duplicate = root.scripts[sid]
-    uid = duplicate.users.add(
-        TaskUserItem, payload={"info": {"user_id": user.info.user_id}}
-    )
-    await duplicate.users.commit()
-    second = duplicate.users[uid]
+
+    async def duplicate_run():
+        sid = root.scripts.add(
+            TaskScriptItem, payload={"info": {"script_id": script.script_id}}
+        )
+        await root.scripts.commit()
+        duplicate = root.scripts[sid]
+        uid = duplicate.users.add(
+            TaskUserItem, payload={"info": {"user_id": user.info.user_id}}
+        )
+        await duplicate.users.commit()
+        return duplicate, duplicate.users[uid]
+
+    duplicate, second = await duplicate_run()
+    unclaimed_script, unclaimed = await duplicate_run()
+    pending_script, pending = await duplicate_run()
     try:
-        for current in (user, second):
+        for current in (user, second, unclaimed, pending):
             await current.add_log_record(datetime.now().astimezone(), LogRecord())
             await current.set_state(status="异常")
         history.begin_user_history_capture(script, user, failed=True)
@@ -56,48 +77,22 @@ async def test_duplicate_config_runs_keep_independent_captures_and_cleanup(
         history.begin_user_history_capture(duplicate, second, failed=True)
         first = await history.collect_user_history_attachments(script, user)
         other = await history.collect_user_history_attachments(duplicate, second)
-        assert [entry.path for entry in first + other] == files
+        assert [entry.path for entry in first + other] == files[:2]
         assert service.capture.await_count == 2
         assert await history.collect_user_history_attachments(script, user) == []
         await history.discard_user_history_capture(script, user)
         assert not files[0].exists() and files[1].exists()
-        await history.close()
-        assert not files[1].exists()
-    finally:
-        await registry.shutdown()
-
-
-@pytest.mark.asyncio
-async def test_close_waits_for_pending_capture_and_keeps_obs_original(
-    tmp_path, monkeypatch
-):
-    root, script, user = await create_runtime_tree()
-    history = history_core.TaskHistorySession(root)
-    registry = BackgroundTaskRegistry()
-    monkeypatch.setattr(history_core, "BackgroundTaskManager", registry)
-    monkeypatch.setattr(
-        history_core,
-        "Config",
-        SimpleNamespace(
-            setting=SimpleNamespace(Replay=SimpleNamespace(Enabled=True)),
-            obs_replay_options=lambda: None,
-        ),
-    )
-    service = obs_replay.ObsReplayService(tmp_path)
-    entered, closed = asyncio.Event(), asyncio.Event()
-
-    async def capture(*args):
-        try:
-            entered.set()
-            await asyncio.Event().wait()
-        finally:
-            closed.set()
-
-    service.capture = capture
-    monkeypatch.setattr(obs_replay, "ObsReplay", service)
-    await user.add_log_record(datetime.now().astimezone(), LogRecord())
-    history.begin_user_history_capture(script, user, failed=True)
-    try:
+        history._capture_group.result_ttl = 0.01
+        history.begin_user_history_capture(unclaimed_script, unclaimed, failed=True)
+        assert await history._capture_group.drain(2)
+        await asyncio.sleep(0.03)
+        assert files[2].exists()
+        assert (
+            await history.collect_user_history_attachments(unclaimed_script, unclaimed)
+            == []
+        )
+        assert service.capture.await_count == 3
+        history.begin_user_history_capture(pending_script, pending, failed=True)
         await asyncio.wait_for(entered.wait(), 2)
         await history.close()
         assert closed.is_set()
@@ -105,45 +100,8 @@ async def test_close_waits_for_pending_capture_and_keeps_obs_original(
         original.write_bytes(b"original")
         assert not await service.discard_temporary(original)
         assert original.read_bytes() == b"original"
-    finally:
-        await registry.shutdown()
-
-
-@pytest.mark.asyncio
-async def test_expired_capture_result_keeps_file_owned_until_session_cleanup(
-    tmp_path, monkeypatch
-):
-    root, script, user = await create_runtime_tree()
-    registry = BackgroundTaskRegistry()
-    monkeypatch.setattr(history_core, "BackgroundTaskManager", registry)
-    monkeypatch.setattr(
-        history_core,
-        "Config",
-        SimpleNamespace(
-            setting=SimpleNamespace(Replay=SimpleNamespace(Enabled=True)),
-            obs_replay_options=lambda: None,
-        ),
-    )
-    history = history_core.TaskHistorySession(root)
-    service = obs_replay.ObsReplayService(tmp_path)
-    service.directory.mkdir(parents=True)
-    path = service.directory / "unclaimed.mkv"
-    path.write_bytes(b"temporary replay")
-    service.capture = AsyncMock(return_value=path)
-    monkeypatch.setattr(obs_replay, "ObsReplay", service)
-    await user.add_log_record(datetime.now().astimezone(), LogRecord())
-    await user.set_state(status="异常")
-    history._capture_group.result_ttl = 0.01
-    try:
-        history.begin_user_history_capture(script, user, failed=True)
-        assert await history._capture_group.drain(2)
-        await asyncio.sleep(0.03)
-        assert path.exists()
-        # 缓存消失后也不重复采集、不将附件挂到别的执行轮次。
-        assert await history.collect_user_history_attachments(script, user) == []
-        assert service.capture.await_count == 1
-        await history.close()
-        assert not path.exists()
+        assert all(not path.exists() for path in files)
+        assert service.capture.await_count == 4
     finally:
         await history.close()
         await registry.shutdown()

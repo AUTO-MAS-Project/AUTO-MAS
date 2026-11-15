@@ -355,18 +355,15 @@ async def refresh_host(monkeypatch, tmp_path, snapshot, network):
 
 
 @pytest.mark.asyncio
-async def test_refresh_endpoint_updates_cached_progression_and_deduplicates_bindings(
-    refresh_host,
+@pytest.mark.parametrize(
+    ("previous_age", "failure"),
+    [(0, True), (301, True), (None, True), (301, "payload")],
+)
+async def test_refresh_deduplicates_bindings_and_requires_fresh_execution_data(
+    refresh_host, previous_age, failure
 ):
     host = refresh_host
     script_id, user_id = str(host.script.uid), str(host.user.uid)
-    previous = await api_service.get_cultivate_skland_progression(script_id, user_id)
-    assert previous[0]["operator"].level == 1
-    host.state.level = 50
-    assert (
-        await api_service.get_cultivate_skland_progression(script_id, user_id)
-        == previous
-    )
     host.script.UserData.add(
         MaaUserConfig,
         payload={
@@ -374,29 +371,6 @@ async def test_refresh_endpoint_updates_cached_progression_and_deduplicates_bind
         },
     )
     await host.script.UserData.commit()
-    response = await host.client.post(
-        "/maa/cultivate/refresh", json={"scriptId": script_id}
-    )
-    assert response.json()["code"] == 200, response.json()
-    refreshed = await api_service.get_cultivate_skland_progression(script_id, user_id)
-    assert refreshed[0]["operator"].level == 50
-    assert host.state.player_requests == ["role", "role"]
-    assert (
-        yituliu.read_snapshot(host.config.config_path)["operators"][0]["label"]
-        == "Published operator"
-    )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("previous_age", "failure"),
-    [(0, True), (301, True), (None, True), (301, "payload")],
-)
-async def test_refresh_failure_preserves_old_progression_but_execution_requires_fresh(
-    refresh_host, previous_age, failure
-):
-    host = refresh_host
-    script_id, user_id = str(host.script.uid), str(host.user.uid)
     previous = None
     if previous_age is not None:
         previous = await skland.fetch_skland_progression(
@@ -405,23 +379,33 @@ async def test_refresh_failure_preserves_old_progression_but_execution_requires_
             save_credential=host.save_credential,
             now=time.time() - previous_age,
         )
+        assert previous[0]["operator"].level == 1
     host.state.failed = failure
+    host.state.player_requests.clear()
     response = await host.client.post(
         "/maa/cultivate/refresh", json={"scriptId": script_id}
     )
     assert response.json()["code"] == 200, response.json()
+    assert host.state.player_requests == ["role"]
     assert (
         await api_service.get_cultivate_skland_progression(script_id, user_id)
         == previous
     )
     host.state.failed = False
     host.state.level = 50
+    host.state.player_requests.clear()
     response = await host.client.post(
         "/maa/cultivate/refresh", json={"scriptId": script_id}
     )
     assert response.json()["code"] == 200, response.json()
+    assert host.state.player_requests == ["role"]
     refreshed = await api_service.get_cultivate_skland_progression(script_id, user_id)
     assert refreshed[0]["operator"].level == 50
+    assert host.state.player_requests == ["role"]
+    assert (
+        yituliu.read_snapshot(host.config.config_path)["operators"][0]["label"]
+        == "Published operator"
+    )
     host.state.failed = True
     assert (
         await api_service.get_cultivate_skland_progression(
@@ -490,39 +474,52 @@ async def test_slow_batch_refresh_keeps_old_progression_for_preview_reads(
 
 
 @pytest.mark.asyncio
-async def test_catalog_waiter_cancellation_does_not_cancel_other_waiter(
-    tmp_path, snapshot, monkeypatch
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "network",
+        "cache",
+        "empty_stages",
+        "invalid_stages",
+        "empty_recipes",
+        "invalid_recipes",
+    ],
+)
+async def test_failed_refresh_keeps_both_caches_and_recovery_replaces_them(
+    tmp_path, snapshot, sources, network, monkeypatch, failure
 ):
-    entered, release = asyncio.Event(), asyncio.Event()
-    requests = []
-    client_type = httpx.AsyncClient
-
-    async def respond(request):
-        requests.append(str(request.url))
-        entered.set()
-        await release.wait()
-        return httpx.Response(200, content=compressed(snapshot))
-
-    monkeypatch.setattr(
-        yituliu.httpx,
-        "AsyncClient",
-        lambda **kwargs: client_type(transport=httpx.MockTransport(respond), **kwargs),
-    )
-    cancelled = asyncio.create_task(yituliu.load_operator_catalog(tmp_path))
-    await entered.wait()
-    survivor = asyncio.create_task(yituliu.load_operator_catalog(tmp_path))
-    cancelled.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await cancelled
-    release.set()
-    assert await survivor == snapshot["operators"]
-    assert requests == [SNAPSHOT_URL]
-
-
-@pytest.mark.asyncio
-async def test_manual_refresh_bypasses_both_caches(tmp_path, snapshot, network):
     network(compressed(snapshot))
-    await yituliu.get_dataset_cached(tmp_path)
+    previous = await yituliu.get_dataset_cached(tmp_path)
+    path = yituliu.snapshot_path(tmp_path)
+    original = path.read_bytes()
+    with monkeypatch.context() as storage:
+        if failure == "cache":
+            snapshot["dataset"]["data_version"] = "must-not-commit"
+            network(compressed(snapshot))
+
+            def fail_write(*args, **kwargs):
+                raise OSError("read-only cache")
+
+            storage.setattr(yituliu._utils_io, "write_file", fail_write)
+            error = OSError
+        else:
+            if failure == "empty_stages":
+                sources[yituliu._STAGE_INFO_URL] = {"data": []}
+            elif failure == "invalid_stages":
+                sources[yituliu._STAGE_INFO_URL] = {
+                    "data": [{"stageId": "stage", "stageCode": "", "apCost": 0}]
+                }
+            elif failure == "empty_recipes":
+                sources[yituliu._RECIPE_URL] = []
+            elif failure == "invalid_recipes":
+                sources[yituliu._RECIPE_URL] = [{}]
+            network(status=503, upstream_status=503 if failure == "network" else 200)
+            error = yituliu.YituliuDataError
+        with pytest.raises(error):
+            await yituliu.refresh_data(tmp_path)
+    assert path.read_bytes() == original
+    assert await yituliu.get_dataset_cached(tmp_path) is previous
+
     snapshot["dataset"]["data_version"] = "refreshed"
     snapshot["operators"][0]["label"] = "Refreshed operator"
     requests = network(compressed(snapshot))
@@ -535,62 +532,7 @@ async def test_manual_refresh_bypasses_both_caches(tmp_path, snapshot, network):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure", ["network", "cache"])
-async def test_failed_manual_refresh_preserves_disk_and_memory(
-    tmp_path, snapshot, network, monkeypatch, failure
-):
-    network(compressed(snapshot))
-    previous = await yituliu.get_dataset_cached(tmp_path)
-    path = yituliu.snapshot_path(tmp_path)
-    original = path.read_bytes()
-    if failure == "cache":
-        snapshot["dataset"]["data_version"] = "must-not-commit"
-        network(compressed(snapshot))
-
-        def fail_write(*args, **kwargs):
-            raise OSError("read-only cache")
-
-        monkeypatch.setattr(yituliu._utils_io, "write_file", fail_write)
-        error = OSError
-    else:
-        network(status=503, upstream_status=503)
-        error = yituliu.YituliuDataError
-    with pytest.raises(error):
-        await yituliu.refresh_data(tmp_path)
-    assert path.read_bytes() == original
-    assert await yituliu.get_dataset_cached(tmp_path) is previous
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "failure", ["empty_stages", "invalid_stages", "empty_recipes", "invalid_recipes"]
-)
-async def test_incomplete_source_refresh_cannot_be_masked_by_local_supplements(
-    tmp_path, snapshot, sources, network, failure
-):
-    network(compressed(snapshot))
-    previous = await yituliu.get_dataset_cached(tmp_path)
-    path = yituliu.snapshot_path(tmp_path)
-    original = path.read_bytes()
-    if failure == "empty_stages":
-        sources[yituliu._STAGE_INFO_URL] = {"data": []}
-    elif failure == "invalid_stages":
-        sources[yituliu._STAGE_INFO_URL] = {
-            "data": [{"stageId": "stage", "stageCode": "", "apCost": 0}]
-        }
-    elif failure == "empty_recipes":
-        sources[yituliu._RECIPE_URL] = []
-    else:
-        sources[yituliu._RECIPE_URL] = [{}]
-    network(status=503)
-    with pytest.raises(yituliu.YituliuDataError):
-        await yituliu.refresh_data(tmp_path)
-    assert path.read_bytes() == original
-    assert await yituliu.get_dataset_cached(tmp_path) is previous
-
-
-@pytest.mark.asyncio
-async def test_manual_refresh_waits_for_old_catalog_and_shares_new_result(
+async def test_refresh_survives_waiter_cancel_and_replaces_the_old_shared_catalog(
     tmp_path, snapshot, monkeypatch
 ):
     entered, release = asyncio.Event(), asyncio.Event()
@@ -614,11 +556,16 @@ async def test_manual_refresh_waits_for_old_catalog_and_shares_new_result(
     )
     old = asyncio.create_task(yituliu.load_operator_catalog(tmp_path))
     await entered.wait()
+    survivor = asyncio.create_task(yituliu.load_operator_catalog(tmp_path))
+    old.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await old
     refresh = asyncio.create_task(yituliu.refresh_data(tmp_path))
     await asyncio.sleep(0)
     reader = asyncio.create_task(yituliu.load_operator_catalog(tmp_path))
     other_refresh = asyncio.create_task(yituliu.refresh_data(tmp_path))
     release.set()
-    await asyncio.gather(old, refresh, other_refresh)
+    old_result, _, _ = await asyncio.gather(survivor, refresh, other_refresh)
+    assert old_result == snapshot["operators"]
     assert (await reader)[0]["label"] == "Refreshed operator"
     assert requests == [SNAPSHOT_URL, SNAPSHOT_URL]

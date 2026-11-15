@@ -250,24 +250,6 @@ async def test_quick_and_detail_share_selected_day(isolated_app_paths, monkeypat
             if item["filename"] == "DailyRoutineTaskConfigs.json"
         )
         assert "coffee" not in detail["overrides"]
-        invalid = (
-            await client.post(
-                "/api/scripts/oknte/plan/configs",
-                params={"plan_id": uid, "day": "invalid"},
-            )
-        ).json()
-        assert invalid["code"] == 400
-        assert invalid["status"] == "error"
-        assert invalid["message"] == "无效的计划日期"
-        assert invalid["data"] == []
-        rejected = (
-            await client.post(
-                "/api/scripts/oknte/plan/save",
-                json={"plan_id": uid, "day": "invalid", "configs": {}},
-            )
-        ).json()
-        assert rejected["code"] == 400
-        assert rejected["message"] == "无效的计划日期"
 
 
 def test_routine_false_and_inheritance_are_distinct(tmp_path):

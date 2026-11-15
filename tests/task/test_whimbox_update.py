@@ -80,26 +80,26 @@ async def test_unconfirmed_dependency_writer_retains_stage_through_outer_discard
 
 
 @pytest.mark.asyncio
-async def test_no_downgrade_or_unnecessary_install(installation, monkeypatch):
-    update.installed_version.return_value = Version("3.2.0")
-    confirm = AsyncMock()
-    monkeypatch.setattr(update, "confirm_usable_installation", confirm)
-    await update.ensure_backend_updated(installation)
-    update.download_file.assert_not_awaited()
-    confirm.assert_awaited_once_with(installation)
-
-
-@pytest.mark.asyncio
-async def test_partial_install_blocks_fallback_then_forces_repair(
-    installation, monkeypatch
+@pytest.mark.parametrize(
+    "error,expected",
+    [
+        pytest.param(
+            RuntimeError("interrupted pip"), RuntimeError, id="installer-error"
+        ),
+        pytest.param(asyncio.CancelledError(), asyncio.CancelledError, id="cancelled"),
+        pytest.param(None, RuntimeError, id="version-unconfirmed"),
+    ],
+)
+async def test_incomplete_install_blocks_launch_and_forces_a_verified_repair(
+    installation, error, expected
 ):
     async def fail_install(root, *args, **kwargs):
-        if "install" in args:
-            raise RuntimeError("interrupted pip")
+        if "install" in args and error is not None:
+            raise error
         return ""
 
     update.run_python.side_effect = fail_install
-    with pytest.raises(RuntimeError):
+    with pytest.raises(expected):
         await update.ensure_backend_updated(installation)
     assert update.pending_marker(installation).exists()
     with pytest.raises(update.WhimboxUpdateUnsafeError):
@@ -128,57 +128,12 @@ async def test_failed_prefetch_cleans_download_stage(installation, resumable):
 
 
 @pytest.mark.asyncio
-async def test_stale_no_update_prefetch_rechecks_pending_marker(installation):
-    update.pending_marker(installation).touch()
-    with pytest.raises(update.WhimboxUpdateUnsafeError):
-        await update.apply_update(installation, "already up to date")
-
-
-@pytest.mark.asyncio
 async def test_bad_download_never_starts_installation(installation):
     update.request_release.return_value["assets"][0]["digest"] = "sha256:" + "0" * 64
     with pytest.raises(ValueError):
         await update.ensure_backend_updated(installation)
     assert not update.pending_marker(installation).exists()
     update.run_python.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_prefetch_only_builds_dependencies_and_rejects_tampering(installation):
-    candidate = await update.prepare_update(installation)
-    assert isinstance(candidate, update.PreparedUpdate)
-    assert all("install" not in call.args for call in update.run_python.await_args_list)
-    assert not update.pending_marker(installation).exists()
-    candidate.wheel.write_bytes(b"tampered")
-    try:
-        with pytest.raises(RuntimeError):
-            await update.apply_update(installation, candidate)
-        assert not update.pending_marker(installation).exists()
-        assert all(
-            "install" not in call.args for call in update.run_python.await_args_list
-        )
-    finally:
-        update.discard_update(candidate)
-
-
-@pytest.mark.asyncio
-async def test_install_cancel_keeps_marker(installation):
-    async def cancel_install(root, *args, **kwargs):
-        if "install" in args:
-            raise asyncio.CancelledError()
-        return ""
-
-    update.run_python.side_effect = cancel_install
-    with pytest.raises(asyncio.CancelledError):
-        await update.ensure_backend_updated(installation)
-    assert update.pending_marker(installation).exists()
-
-
-@pytest.mark.asyncio
-async def test_version_mismatch_keeps_marker(installation):
-    with pytest.raises(RuntimeError):
-        await update.ensure_backend_updated(installation)
-    assert update.pending_marker(installation).exists()
 
 
 @pytest.fixture
@@ -420,17 +375,29 @@ async def test_python_probes_leave_cold_installation_modules_unchanged(
 
 
 @pytest.mark.asyncio
-async def test_user_can_skip_verified_pending_backend(installation, monkeypatch):
+@pytest.mark.parametrize("current", ["3.1.1", "3.2.0"])
+async def test_no_update_candidate_rechecks_native_repair_before_explicit_acceptance(
+    installation, current
+):
+    (installation / "python-embedded/Lib/site-packages/whimbox").mkdir(parents=True)
+    update.installed_version.return_value = Version(current)
+    candidate = await update.prepare_update(installation)
+    assert isinstance(candidate, str)
+    assert await update.apply_update(installation, candidate) == candidate
+    update.download_file.assert_not_awaited()
     marker = update.pending_marker(installation)
     marker.write_text("3.1.1", encoding="utf-8")
-    update.installed_version.return_value = Version("3.1.1")
-    monkeypatch.setattr(
-        update.WheelAssetsConfigSurface, "check_install", lambda self: None
-    )
-    result = await update.skip_pending_installation(installation, marker.read_bytes())
-    assert result == "3.1.1"
+    with pytest.raises(update.WhimboxUpdateUnsafeError):
+        await update.apply_update(installation, candidate)
+    assert marker.read_bytes() == b"3.1.1"
+    with update.installation_access(installation):
+        result = await update.skip_pending_installation(
+            installation, marker.read_bytes()
+        )
+    assert result == current
     assert not marker.exists()
     update.run_python.assert_awaited()
+    update.download_file.assert_not_awaited()
 
 
 @pytest.mark.asyncio

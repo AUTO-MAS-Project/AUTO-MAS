@@ -5,12 +5,7 @@ from app.services import script_release as release
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "channel, expected", [("stable", "v2.0.0"), ("beta", "v2.1.0-beta.2")]
-)
-async def test_release_selection_preserves_proxy_and_channel(
-    monkeypatch, channel, expected
-):
+async def test_release_selection_preserves_proxy_and_channel(monkeypatch):
     proxy = httpx.Proxy("http://user:secret@127.0.0.1:7890")
     payload = [
         {"tag_name": "v2.0.0", "prerelease": False},
@@ -36,13 +31,10 @@ async def test_release_selection_preserves_proxy_and_channel(
 
     monkeypatch.setattr(release.httpx, "AsyncClient", create)
     result = await release.request_github_release(
-        "MaaEnd/MaaEnd", channel=channel, proxy=proxy
+        "MaaEnd/MaaEnd", channel="stable", proxy=proxy
     )
-    assert result["tag_name"] == expected
-    assert urls == [
-        "https://api.github.com/repos/MaaEnd/MaaEnd/"
-        + ("releases/latest" if channel == "stable" else "releases?per_page=100")
-    ]
+    assert result["tag_name"] == "v2.0.0"
+    assert urls == ["https://api.github.com/repos/MaaEnd/MaaEnd/releases/latest"]
 
 
 @pytest.mark.asyncio

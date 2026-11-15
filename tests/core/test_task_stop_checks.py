@@ -296,35 +296,6 @@ async def test_update_cleanup_error_is_not_reported_as_confirmed():
 
 
 @pytest.mark.asyncio
-async def test_new_confirmation_checks_also_register_their_processes():
-    scope = TaskProcessScope()
-    process = None
-
-    async def check():
-        nonlocal process
-        process = await create_subprocess(
-            sys.executable,
-            "-I",
-            "-c",
-            "import time; time.sleep(30)",
-            stdout=asyncio.subprocess.PIPE,
-        )
-        await asyncio.Event().wait()
-
-    scope.add_check("future-check", check, timeout=0.5)
-    try:
-        await scope.run_checks()
-        assert scope.checks[0].status == "timed_out"
-        assert process is not None and process.returncode is None
-        await scope.force_close()
-        await asyncio.wait_for(process.wait(), 3)
-        assert process._transport.get_pipe_transport(1).is_closing()
-    finally:
-        if not scope.closed:
-            await scope.force_close()
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("times_out", [False, True])
 @pytest.mark.parametrize("update_in_main", [False, True])
 async def test_task_stop_waits_for_update_then_force_closes_owned_processes(

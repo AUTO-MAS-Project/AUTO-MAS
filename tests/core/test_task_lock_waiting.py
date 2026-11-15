@@ -11,8 +11,8 @@ from app.core.ws import protocol
 from app.models.task import TaskMode
 from app.task.mode_worker import AutoProxyWorker
 from app.task.user_expander import UserExpander
-from tests.core.test_task_tree_dispatch import Builtin
-from tests.core.test_task_tree_dispatch import scheduler as scheduler
+from tests.support.scheduler import Builtin
+from tests.support.scheduler import scheduler as scheduler
 
 
 @pytest.mark.asyncio

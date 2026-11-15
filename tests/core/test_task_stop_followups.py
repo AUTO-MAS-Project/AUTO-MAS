@@ -435,21 +435,42 @@ async def test_file_worker_retains_lock_after_task_stop_until_thread_really_exit
 
 
 @pytest.mark.asyncio
-async def test_maafw_prepare_retains_reservation_after_forced_stop(
+async def test_maafw_force_stop_reaps_installer_but_keeps_project_until_thread_finishes(
     monkeypatch, tmp_path
 ):
+    import psutil
+
     from app.models.config import MaaFWConfig
     from app.task.MaaFW import embedded_manager as module
+    from app.task.MaaFW.tools.core.runtime_pool import installer
     from app.task.MaaFW.tools.embedded.project_path import (
         release_project_path,
         try_reserve_project_path,
     )
 
-    entered, release, stopped = threading.Event(), threading.Event(), threading.Event()
+    release, stopped, native_finished = (threading.Event() for _ in range(3))
+    marker = tmp_path / "installer.pid"
+    outcomes = []
+    process = None
+    program = (
+        "import os,sys,time; from pathlib import Path; "
+        "Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(30)"
+    )
 
     def prepare(*args, **kwargs):
-        entered.set()
         try:
+            scope = runner.current_process_scope.get()
+            assert scope is not None
+            # 模拟不响应取消的安装段；子进程和管道仍走真实安装器及任务工厂。
+            with installer.install_process_factory_scope(scope.popen):
+                result = installer._run_subprocess(
+                    [sys.executable, "-I", "-c", program, str(marker)],
+                    cwd=tmp_path,
+                    env=None,
+                    timeout=60,
+                )
+            outcomes.append(result)
+            native_finished.set()
             assert release.wait(5)
             return False
         finally:
@@ -467,6 +488,7 @@ async def test_maafw_prepare_retains_reservation_after_forced_stop(
     config = MaaFWConfig()
 
     async def run(task):
+        task._stop_scope.checks[0].timeout = 0.05
         item = await add_script(task.task_info, str(uuid.uuid4()))
         manager = module.MaaFWEmbeddedManager(item)
         manager.script_config = config
@@ -475,10 +497,17 @@ async def test_maafw_prepare_retains_reservation_after_forced_stop(
     task = start_task(run)
     try:
         async with asyncio.timeout(2):
-            while not entered.is_set():
+            while not marker.exists() or not marker.read_text():
                 await asyncio.sleep(0.01)
+        process = psutil.Process(int(marker.read_text()))
         task.request_stop()
         await asyncio.wait_for(task.accomplish.wait(), 2)
+        assert task._stop_scope.checks[0].status == "timed_out"
+        assert await asyncio.to_thread(native_finished.wait, 2)
+        assert outcomes[0].returncode != 0
+        await asyncio.to_thread(process.wait, timeout=3)
+        with pytest.raises(asyncio.CancelledError):
+            task._stop_scope.popen([sys.executable, "-c", "pass"])
         assert not stopped.is_set()
         key = await try_reserve_project_path(tmp_path)
         if key is not None:
@@ -491,8 +520,18 @@ async def test_maafw_prepare_retains_reservation_after_forced_stop(
         await release_project_path(key)
     finally:
         release.set()
+        if process is not None:
+            with suppress(psutil.NoSuchProcess):
+                process.kill()
+                await asyncio.to_thread(process.wait, timeout=3)
         task.request_stop()
         await asyncio.gather(task._task, return_exceptions=True)
+        await asyncio.wait_for(
+            asyncio.gather(
+                *tuple(task._stop_scope.retained_workers), return_exceptions=True
+            ),
+            3,
+        )
         assert await asyncio.to_thread(stopped.wait, 2)
 
 

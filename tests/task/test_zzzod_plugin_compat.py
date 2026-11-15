@@ -1,7 +1,11 @@
 """插件可选扩展不能破坏内置任务目录、运行监控或进度保护。"""
 
 import asyncio
+import importlib
+import uuid
 from datetime import datetime
+from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -83,28 +87,6 @@ def test_duplicate_plugin_cannot_override_builtin(install, monkeypatch):
     items = catalog.list_app_catalog(install)
     assert len(items) == 1 and items[0]["app_name"] == "邮件"
     assert warnings
-
-
-def test_opaque_plugin_record_survives_restore_without_metadata(install):
-    plugin(install)
-    record_dir = install / "config/1001/app_run_record"
-    record_dir.mkdir(parents=True)
-    (record_dir / "mail.yml").write_text("run_status: 1\n")
-    target = record_dir / "extra.yml"
-    target.write_bytes(b"run_status: 1\nopaque_progress: 2\n")
-    backup = install / "backup"
-    records.backup_instance(install, 1001, backup)
-    # 声明突然失效，仍然保留未知任务的完整记录。
-    (install / "plugins/extra/extra_const.py").write_text("broken (")
-    records.clear_run_records(install, 1001)
-    assert not (record_dir / "mail.yml").exists()
-    before = records.snapshot_run_record_files(install, 1001)
-    assert target.name in before
-    target.write_bytes(b"run_status: 1\nopaque_progress: 3\n")
-    current = records.snapshot_run_record_files(install, 1001)
-    records.restore_instance(install, 1001, backup)
-    records.restore_run_record_files(install, 1001, current)
-    assert target.read_bytes() == b"run_status: 1\nopaque_progress: 3\n"
 
 
 def test_malformed_plugin_record_does_not_hide_builtin_result(install, monkeypatch):
@@ -193,46 +175,50 @@ def test_duplicate_display_names_do_not_override_record_failures():
     ) == ["extra"]
 
 
-def test_new_plugin_record_survives_restore_with_unreadable_catalog(
-    install, monkeypatch
-):
-    slot = install / "config/1001"
-    slot.mkdir(parents=True)
-    (slot / "original.yml").write_bytes(b"original")
-    backup = install / "backup"
-    records.backup_instance(install, 1001, backup)
-    record_dir = slot / "app_run_record"
-    record_dir.mkdir()
-    (record_dir / "new_plugin.yml").write_bytes(b"run_status: 1\nprogress: 9\n")
-
-    def broken(*args, **kwargs):
-        raise PermissionError("source updated during run")
-
-    monkeypatch.setattr(records, "list_app_catalog", broken)
-    current = records.snapshot_run_record_files(install, 1001)
-    records.restore_instance(install, 1001, backup)
-    records.restore_run_record_files(install, 1001, current)
-    assert (
-        record_dir / "new_plugin.yml"
-    ).read_bytes() == b"run_status: 1\nprogress: 9\n"
-
-
 @pytest.mark.asyncio
-async def test_snapshot_exception_still_restores_injected_instance(
-    install, monkeypatch
+@pytest.mark.parametrize(
+    "failure", ["plugin_declaration", "catalog_read", "snapshot_read"]
+)
+async def test_injection_restore_preserves_plugin_progress_or_reports_snapshot_failure(
+    install, monkeypatch, failure
 ):
-    import importlib
-    import uuid
-    from unittest.mock import AsyncMock
-
     module = importlib.import_module("app.task.ZzzOd.AutoProxy")
+    plugin_folder = plugin(install)
     slot = install / "config/1001"
     slot.mkdir(parents=True)
     target = slot / "account.yml"
     target.write_bytes(b"original")
+    record_dir = slot / "app_run_record"
+    record_dir.mkdir()
+    (record_dir / "mail.yml").write_text("run_status: 1\n")
+    existing = record_dir / "extra.yml"
+    existing.write_bytes(b"run_status: 1\nopaque_progress: 2\n")
     backup = install / "backup"
     records.backup_instance(install, 1001, backup)
     target.write_bytes(b"injected")
+
+    def broken(*args, **kwargs):
+        raise PermissionError("source updated during run")
+
+    if failure == "plugin_declaration":
+        (plugin_folder / "extra_const.py").write_text("broken (")
+    elif failure == "catalog_read":
+        monkeypatch.setattr(records, "list_app_catalog", broken)
+    records.clear_run_records(install, 1001)
+    assert (record_dir / "mail.yml").exists() is (failure == "catalog_read")
+    assert existing.name in records.snapshot_run_record_files(install, 1001)
+    existing.write_bytes(b"run_status: 1\nopaque_progress: 3\n")
+    new = record_dir / "new_plugin.yml"
+    new.write_bytes(b"run_status: 1\nprogress: 9\n")
+    if failure == "snapshot_read":
+        iterdir = Path.iterdir
+
+        def fail_record_scan(path):
+            if path == record_dir:
+                raise PermissionError("snapshot unavailable")
+            return iterdir(path)
+
+        monkeypatch.setattr(Path, "iterdir", fail_record_scan)
     proxy = AutoProxyTask.__new__(AutoProxyTask)
     proxy.script_root_path = install
     proxy._injected_slots = [(1001, backup)]
@@ -241,55 +227,45 @@ async def test_snapshot_exception_still_restores_injected_instance(
     proxy.cur_user_item = user
     proxy.task_info = SimpleNamespace(task_id=uuid.uuid4())
     proxy._shutdown_after_success = True
-    monkeypatch.setattr(module, "restore_instance_view", lambda *args: None)
-    monkeypatch.setattr(module, "snapshot_plan_run_times", lambda *args: {})
-    monkeypatch.setattr(module, "restore_plan_run_times", lambda *args: None)
-
-    def broken(*args):
-        raise PermissionError("snapshot unavailable")
-
-    monkeypatch.setattr(module, "snapshot_run_record_files", broken)
     monkeypatch.setattr(module.Publisher, "send", AsyncMock())
     await proxy._restore_injection()
     assert target.read_bytes() == b"original"
-    assert user.status == "异常"
-    assert not proxy._shutdown_after_success
+    if failure == "snapshot_read":
+        assert user.status == "异常"
+        assert not proxy._shutdown_after_success
+        module.Publisher.send.assert_awaited_once()
+    else:
+        assert existing.read_bytes() == b"run_status: 1\nopaque_progress: 3\n"
+        assert new.read_bytes() == b"run_status: 1\nprogress: 9\n"
+        assert user.status == "完成"
+        module.Publisher.send.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_plugin_failure_does_not_release_running_workflow():
-    import asyncio
+async def test_plugin_failure_waits_for_native_terminal_and_never_retries_completed_builtins():
+    from app.utils.common.constants import BASE_INDEPENDENT
 
     proxy = AutoProxyTask.__new__(AutoProxyTask)
     proxy.cur_user_log = SimpleNamespace(content=[], status="")
+    proxy.cur_user_item = SimpleNamespace(status="运行")
     proxy.script_info = SimpleNamespace(log="", log_first_line=0)
     proxy.script_config = SimpleNamespace(Run=SimpleNamespace(RunTimeLimit=10))
     proxy.launcher_process_manager = SimpleNamespace(is_running=running)
     proxy.wait_event = asyncio.Event()
     proxy.is_log_stalled = lambda *args, **kwargs: False
-    await proxy.check_log(["指令[ 插件 ] 执行失败\n"], datetime.now())
-    assert not proxy.wait_event.is_set()
-    assert proxy.cur_user_log.status == "ZZZ-OD 正常运行中"
-
-
-async def running():
-    return True
-
-
-def test_plugin_failure_is_reported_without_retrying_completed_builtins():
-    from app.utils.common.constants import BASE_INDEPENDENT
-
-    proxy = AutoProxyTask.__new__(AutoProxyTask)
-    proxy.cur_user_log = SimpleNamespace(status="Success!")
-    proxy.cur_user_item = SimpleNamespace(status="运行")
-    proxy.script_info = SimpleNamespace(log="")
     proxy._app_name_book = {"mail": "邮件", "extra": "插件"}
     proxy._plugin_app_ids = frozenset({"extra"})
     proxy._futile_app_ids = frozenset()
     proxy.base = BASE_INDEPENDENT
     proxy.account_switch = "单实例切换"
+    await proxy.check_log(["指令[ 插件 ] 执行失败\n"], datetime.now())
+    assert not proxy.wait_event.is_set()
+    assert proxy.cur_user_log.status == "ZZZ-OD 正常运行中"
     complete = "指令[ 插件 ] 执行失败\n指令[ 一条龙 ] 执行成功"
-    asyncio.run(proxy._judge_final({}, {"mail": 1, "extra": 2}, complete))
+    await proxy.check_log([complete], datetime.now())
+    assert proxy.wait_event.is_set()
+    assert proxy.cur_user_log.status == "Success!"
+    await proxy._judge_final({}, {"mail": 1, "extra": 2}, complete)
     assert not proxy.run_book
     assert proxy.cur_user_item.status == "异常"
     assert "插件" in proxy.cur_user_log.status
@@ -297,6 +273,10 @@ def test_plugin_failure_is_reported_without_retrying_completed_builtins():
     assert not proxy._all_failures_futile("指令[ 插件 ] 执行失败")
     proxy._failed_app_ids = ["extra", "mail"]
     assert not proxy._all_failures_futile(complete)
+
+
+async def running():
+    return True
 
 
 def test_real_upstream_fatal_error_is_not_hidden_by_plugin_compatibility():

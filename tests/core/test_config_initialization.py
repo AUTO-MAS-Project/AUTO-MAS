@@ -9,12 +9,13 @@ import pytest
 
 
 @pytest.mark.parametrize("power_supported", [True, False])
-def test_empty_profile_initializes_config_and_community_subscriptions(
+def test_empty_profile_initializes_config_paths_and_community_subscriptions(
     tmp_path, power_supported
 ):
     source_root = Path(__file__).resolve().parents[2]
     code = """
 import asyncio
+import os
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
@@ -24,6 +25,24 @@ from app.core import Community, Config
 from app.models.config import ToolsConfig
 from app.utils import power, startup as startup_tool
 from app.services import telemetry
+
+root = Path.cwd()
+assert Config.work_path == root
+assert Config.resource_path == Config.source_path / "res"
+assert (Config.resource_path / "version.json").is_file()
+for name, directory in {
+    "config_path": "config", "data_path": "data", "debug_path": "debug", "temp_path": "temp",
+    "history_path": "history", "script_path": "script", "plugins_path": "plugins",
+}.items():
+    assert getattr(Config, name) == root / directory, name
+assert Config.log_path == Config.debug_path / "app.log"
+assert Config.database_path == Config.data_path / "data.db"
+os.chdir(Config.source_path)
+assert Config.config_path == root / "config"
+assert Config.data_path == root / "data"
+assert Config.temp_path == root / "temp"
+assert Config.resource_path != root / "res"
+os.chdir(root)
 
 async def run():
     with (

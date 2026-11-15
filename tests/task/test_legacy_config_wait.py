@@ -8,8 +8,8 @@ import pytest
 from app.core.notify.lifecycle import NotificationTaskBase
 from app.models.config import SrcConfig
 from app.task.SRC.manager import SrcManager
-from tests.core.test_task_tree_dispatch import scheduler as scheduler
 from tests.runtime_support import create_runtime_tree
+from tests.support.scheduler import scheduler as scheduler
 
 
 async def wait_for_lock_state(script):

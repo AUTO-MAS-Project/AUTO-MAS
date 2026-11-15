@@ -76,13 +76,20 @@ async def test_unconfirmed_background_write_is_not_retried_or_deleted(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", [200, 206])
-async def test_builtin_http_preserves_safe_resume(tmp_path, monkeypatch, status):
+async def test_http_resume_rejects_wrong_ranges_then_appends_or_restarts(
+    tmp_path, monkeypatch, status
+):
     target = tmp_path / "download.part"
     target.write_bytes(b"abc")
     proxy = httpx.Proxy("http://127.0.0.1:7890")
+    valid_range = False
 
     def respond(request):
         assert request.headers["Range"] == "bytes=3-"
+        if not valid_range:
+            return httpx.Response(
+                206, headers={"Content-Range": "bytes 0-2/6"}, content=b"bad"
+            )
         headers = {"Content-Range": "bytes 3-5/6"} if status == 206 else {}
         return httpx.Response(
             status, headers=headers, content=b"def" if status == 206 else b"abcdef"
@@ -95,6 +102,12 @@ async def test_builtin_http_preserves_safe_resume(tmp_path, monkeypatch, status)
         return original_client(transport=httpx.MockTransport(respond))
 
     monkeypatch.setattr(download.httpx, "AsyncClient", client)
+    with pytest.raises(HSRUpdateError):
+        await download._httpx_fetch(
+            "https://example.invalid/update", target, timeout=30, proxy=proxy
+        )
+    assert target.read_bytes() == b"abc"
+    valid_range = True
     assert (
         await download._httpx_fetch(
             "https://example.invalid/update", target, timeout=30, proxy=proxy
@@ -102,26 +115,3 @@ async def test_builtin_http_preserves_safe_resume(tmp_path, monkeypatch, status)
         == 6
     )
     assert target.read_bytes() == b"abcdef"
-
-
-@pytest.mark.asyncio
-async def test_wrong_resume_range_never_changes_existing_bytes(tmp_path, monkeypatch):
-    target = tmp_path / "download.part"
-    target.write_bytes(b"abc")
-    original_client = httpx.AsyncClient
-    monkeypatch.setattr(
-        download.httpx,
-        "AsyncClient",
-        lambda **kwargs: original_client(
-            transport=httpx.MockTransport(
-                lambda request: httpx.Response(
-                    206, headers={"Content-Range": "bytes 0-2/6"}, content=b"bad"
-                )
-            )
-        ),
-    )
-    with pytest.raises(HSRUpdateError):
-        await download._httpx_fetch(
-            "https://example.invalid/update", target, timeout=30
-        )
-    assert target.read_bytes() == b"abc"

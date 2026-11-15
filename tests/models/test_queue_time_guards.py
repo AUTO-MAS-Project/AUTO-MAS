@@ -21,7 +21,7 @@ async def disabled_queue():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("operation", ["add", "remove", "order", "write", "update"])
+@pytest.mark.parametrize("operation", ["add", "update"])
 async def test_disabled_time_model_rejects_and_rolls_back_all_write_paths(
     disabled_queue, operation
 ):

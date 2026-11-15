@@ -79,7 +79,7 @@ async def test_stop_confirms_cleanup_commands_before_saving_results(
                 await self.game._kill_game_processes(("mas-stop-test.exe",))
             else:
                 assert await execute_script_task(script, "脚本后任务")
-            saved.write_text("saved", encoding="utf-8")
+            saved.write_text(completed.read_text(encoding="utf-8"), encoding="utf-8")
             await super().final_task()
 
     task = Task()
@@ -89,7 +89,7 @@ async def test_stop_confirms_cleanup_commands_before_saving_results(
         await asyncio.wait_for(task.stop(), timeout=3)
         assert completed.exists(), "停止时清理命令没有执行"
         assert completed.read_text() == "done\n"
-        assert saved.read_text() == "saved"
+        assert saved.read_text(encoding="utf-8") == "done\n"
         token = current_process_scope.set(task._stop_scope)
         try:
             with pytest.raises(asyncio.CancelledError):
@@ -145,21 +145,44 @@ async def test_cleanup_confirmation_timeout_reaps_command_and_finishes_local_cle
 
 
 @pytest.mark.asyncio
-async def test_completed_confirmation_is_not_repeated_in_later_stage():
+async def test_later_confirmation_reaps_process_without_repeating_completed_check():
     scope = TaskProcessScope()
     confirmed = []
+    process = None
 
     async def first():
         confirmed.append("first")
 
     async def second():
+        nonlocal process
         confirmed.append("second")
+        process = await create_subprocess(
+            sys.executable,
+            "-I",
+            "-c",
+            "import time; time.sleep(30)",
+            stdout=asyncio.subprocess.PIPE,
+        )
+        await asyncio.Event().wait()
 
     try:
         scope.add_check("first", first, timeout=1)
         await scope.run_checks()
-        scope.add_check("second", second, timeout=1)
+        assert confirmed == ["first"]
+        scope.add_check("second", second, timeout=0.5)
         await scope.run_checks()
         assert confirmed == ["first", "second"]
-    finally:
+        assert [check.status for check in scope.checks] == ["passed", "timed_out"]
+        assert process is not None and process.returncode is None
         await scope.force_close()
+        await asyncio.wait_for(process.wait(), timeout=3)
+        assert process.returncode is not None
+        assert process._transport.get_pipe_transport(1).is_closing()
+    finally:
+        if not scope.closed:
+            await scope.force_close()
+        if process is not None:
+            if process.returncode is None:
+                with suppress(ProcessLookupError):
+                    process.kill()
+            await process.wait()

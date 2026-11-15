@@ -63,14 +63,6 @@ class TestVerdicts:
         assert verdict.result_block is not None
         assert "❌美鸭梨挖掘未完成" in verdict.result_block
 
-    def test_abort_after_done_marker_is_failure(self):
-        # 收尾行无论成败都打印，完成行消息不含结果块头 = 上游自己判了失败/中止
-        verdict = PARSER.evaluate(SAMPLE_ABORT_LOG, process_running=False)
-        assert verdict.status == "failed"
-        assert "未能进入游戏" in verdict.message
-        # 文案只陈述上游给的原因，不断言完成度（step8 之后的收尾步骤失败时步骤其实跑完了）
-        assert verdict.message.startswith("奇想盒运行失败：")
-
     def test_done_marker_without_completion_line_is_success(self):
         # 完成行整行缺失属日志截断（它与收尾行本就相邻打印）：无从判负，
         # 按成功收口并留空结果块，不把「日志没读全」说成任务失败

@@ -146,7 +146,10 @@ async def test_custom_target_wins_over_legacy_default_and_fallback_collision(
 async def test_unreliable_activity_keeps_unresolved_items_but_replaces_exact_old_identity(
     migration_host, status
 ):
-    migration_host[3].return_value = {"Activity": STAGES, "ActivityStatus": status}
+    migration_host[3].return_value = {
+        "Activity": STAGES if status == "stale" else [],
+        "ActivityStatus": status,
+    }
     old = {
         "StageType": "material",
         "StageIndex": 2,
@@ -165,6 +168,13 @@ async def test_server_change_while_waiting_defers_only_ambiguous_mapping(
     migration_host,
 ):
     config, script, user, fetch = migration_host
+    old = {
+        "StageType": "material",
+        "StageIndex": 2,
+        "DropCount": 123,
+        "LegacyIndex": True,
+    }
+    new = {"StageType": "material", "StageIndex": 2, "DropCount": 321, "Skip": True}
     started, complete = asyncio.Event(), asyncio.Event()
 
     async def load(*args, **kwargs):
@@ -173,7 +183,7 @@ async def test_server_change_while_waiting_defers_only_ambiguous_mapping(
         return {"Activity": STAGES, "ActivityStatus": "ready"}
 
     fetch.side_effect = load
-    pending = asyncio.create_task(save_plans(migration_host, [LEGACY]))
+    pending = asyncio.create_task(save_plans(migration_host, [LEGACY, old, new]))
     try:
         await asyncio.wait_for(started.wait(), 1)
         await config.update_user(
@@ -181,7 +191,8 @@ async def test_server_change_while_waiting_defers_only_ambiguous_mapping(
         )
     finally:
         complete.set()
-    assert await pending == [LEGACY]
+    assert await pending == [LEGACY, new]
+    assert user.Info.Server == "YoStarEN"
 
 
 @pytest.mark.asyncio
@@ -242,28 +253,19 @@ async def test_same_index_in_different_categories_does_not_delete_another_old_ch
 
 
 @pytest.mark.asyncio
-async def test_migrated_items_survive_reload(migration_host, tmp_path):
+async def test_cancelled_migration_preserves_saved_value_then_retry_survives_reload(
+    migration_host, tmp_path
+):
     config, script, user, fetch = migration_host
     path = tmp_path / "scripts.yaml"
     config_manager.register_root(config.ScriptConfig, path)
-    saved = await save_plans(migration_host, [LEGACY])
-    await config_manager.flush()
-    config_manager.unregister_root(config.ScriptConfig)
-    loaded = ConfigCollection.build([MaaConfig], file=path)
-    await loaded.activate()
-    assert (
-        json.loads(loaded[script.uid].UserData[user.uid].Task.EventDepotMaintainPlans)
-        == saved
-    )
-
-
-@pytest.mark.asyncio
-async def test_cancelling_before_commit_preserves_the_old_saved_value(migration_host):
-    _, _, user, fetch = migration_host
     original = json.dumps([LEGACY])
     await user.update(
         MaaUserConfig.model_validate({"Task": {"EventDepotMaintainPlans": original}})
     )
+    await config_manager.flush()
+    original_bytes = path.read_bytes()
+    rows = [{**LEGACY, "DropCount": 321}]
     started, complete = asyncio.Event(), asyncio.Event()
 
     async def load(*args, **kwargs):
@@ -272,9 +274,25 @@ async def test_cancelling_before_commit_preserves_the_old_saved_value(migration_
         return {"Activity": STAGES, "ActivityStatus": "ready"}
 
     fetch.side_effect = load
-    pending = asyncio.create_task(save_plans(migration_host, [LEGACY]))
-    await asyncio.wait_for(started.wait(), 1)
-    pending.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await pending
+    pending = asyncio.create_task(save_plans(migration_host, rows))
+    try:
+        await asyncio.wait_for(started.wait(), 1)
+    finally:
+        pending.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await pending
     assert user.Task.EventDepotMaintainPlans == original
+    await config_manager.flush()
+    assert path.read_bytes() == original_bytes
+
+    fetch.side_effect = None
+    saved = await save_plans(migration_host, rows)
+    assert saved == [{"StageType": "material", "StageIndex": 1, "DropCount": 321}]
+    await config_manager.flush()
+    config_manager.unregister_root(config.ScriptConfig)
+    loaded = ConfigCollection.build([MaaConfig], file=path)
+    await loaded.activate()
+    assert (
+        json.loads(loaded[script.uid].UserData[user.uid].Task.EventDepotMaintainPlans)
+        == saved
+    )

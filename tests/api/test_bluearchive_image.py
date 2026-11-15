@@ -29,27 +29,21 @@ def _patch_upstream(monkeypatch: pytest.MonkeyPatch, content: bytes) -> None:
     monkeypatch.setattr(info_api.httpx, "AsyncClient", fake_client)
 
 
-def test_generic_content_type_with_image_bytes_is_served_as_image(
+def test_generic_content_type_is_validated_before_serving_image(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     buffer = io.BytesIO()
     Image.new("RGB", (4, 4), (255, 0, 0)).save(buffer, format="WEBP")
     payload = buffer.getvalue()
-    _patch_upstream(monkeypatch, payload)
+    with monkeypatch.context() as upstream:
+        _patch_upstream(upstream, payload)
+        response = asyncio.run(info_api.get_bluearchive_image(url=IMAGE_URL))
+        assert response.status_code == 200
+        assert response.media_type == "image/webp"
+        assert response.body == payload
 
-    response = asyncio.run(info_api.get_bluearchive_image(url=IMAGE_URL))
-
-    assert response.status_code == 200
-    assert response.media_type == "image/webp"
-    assert response.body == payload
-
-
-def test_non_image_payload_is_rejected(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_upstream(monkeypatch, b"<html><body>error</body></html>")
-
-    with pytest.raises(HTTPException) as excinfo:
-        asyncio.run(info_api.get_bluearchive_image(url=IMAGE_URL))
-
-    assert excinfo.value.status_code == 502
+    with monkeypatch.context() as upstream:
+        _patch_upstream(upstream, b"<html>upstream error</html>")
+        with pytest.raises(HTTPException) as caught:
+            asyncio.run(info_api.get_bluearchive_image(url=IMAGE_URL))
+        assert caught.value.status_code == 502

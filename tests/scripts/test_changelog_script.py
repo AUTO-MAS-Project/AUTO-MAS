@@ -1187,36 +1187,6 @@ def test_pr_check_allows_code_edits_next_to_an_unchanged_version(repo) -> None:
     assert _check(repo, "dev") == []
 
 
-def test_pr_check_release_kind_needs_empty_fragments_and_a_bump(repo) -> None:
-    _write(repo, "changelog.d/x.fix.md", "project: scheduler\n乙\n")
-    _commit(repo, "fix: x")
-    _branch(repo, "chore/release")
-    _write(
-        repo,
-        "CHANGELOG.md",
-        "## [v1.0.0-beta.2] - 2026-01-02\n\n### 修复\n\n- 乙\n\n"
-        "## [v1.0.0-beta.1] - 2026-01-01\n\n### 修复\n\n- 甲\n",
-    )
-    _commit(repo, "chore(release): v1.0.0-beta.2")
-
-    assert any("必须已经清空" in p for p in _check(repo, "dev", "release"))
-
-    (repo / "changelog.d/x.fix.md").unlink()
-    _commit(repo, "chore(release): clean")
-    assert _check(repo, "dev", "release") == []
-
-    # 发版 PR 之后又入账：顶部多了带条目的未发布段，检查要红，让维护者重跑准备发版
-    _write(
-        repo,
-        "CHANGELOG.md",
-        f"## [{changelog.UNRELEASED}]\n\n### 修复\n\n- 【MAA】丙 (#9) by @c\n\n"
-        "## [v1.0.0-beta.2] - 2026-01-02\n\n### 修复\n\n- 乙\n\n"
-        "## [v1.0.0-beta.1] - 2026-01-01\n\n### 修复\n\n- 甲\n",
-    )
-    _commit(repo, "chore(changelog): 入账 #9")
-    assert any("还有未发布段" in p for p in _check(repo, "dev", "release"))
-
-
 def test_pr_check_flags_dev_only_commits_leaking_into_release(repo) -> None:
     """从 dev 切的分支合进 release 会带走一堆 dev 提交（#673 那种事故）。"""
 
@@ -1251,6 +1221,35 @@ def test_pr_check_flags_dev_only_commits_leaking_into_release(repo) -> None:
     assert _check(repo, "release/v1.0.0-beta.1", dev_ref="dev") == []
 
 
+def test_pr_check_release_kind_needs_empty_fragments_and_a_bump(repo) -> None:
+    _write(repo, "changelog.d/x.fix.md", "project: scheduler\n乙\n")
+    _commit(repo, "fix: x")
+    _branch(repo, "chore/release")
+    _write(
+        repo,
+        "CHANGELOG.md",
+        "## [v1.0.0-beta.2] - 2026-01-02\n\n### 修复\n\n- 乙\n\n"
+        "## [v1.0.0-beta.1] - 2026-01-01\n\n### 修复\n\n- 甲\n",
+    )
+    _commit(repo, "chore(release): v1.0.0-beta.2")
+    assert any("必须已经清空" in p for p in _check(repo, "dev", "release"))
+
+    (repo / "changelog.d/x.fix.md").unlink()
+    _commit(repo, "chore(release): clean")
+    assert _check(repo, "dev", "release") == []
+
+    # 发版 PR 之后又入账：顶部多了带条目的未发布段，检查要红，让维护者重跑准备发版
+    _write(
+        repo,
+        "CHANGELOG.md",
+        f"## [{changelog.UNRELEASED}]\n\n### 修复\n\n- 【MAA】丙 (#9) by @c\n\n"
+        "## [v1.0.0-beta.2] - 2026-01-02\n\n### 修复\n\n- 乙\n\n"
+        "## [v1.0.0-beta.1] - 2026-01-01\n\n### 修复\n\n- 甲\n",
+    )
+    _commit(repo, "chore(changelog): 入账 #9")
+    assert any("还有未发布段" in p for p in _check(repo, "dev", "release"))
+
+
 def test_version_floor_catches_a_clobbered_bump(repo) -> None:
     assert changelog.check_version_floor("v1.0.0-beta.1", root=repo) == "v1.0.0-beta.1"
     assert changelog.check_version_floor("v1.0.0-beta.2", root=repo) == "v1.0.0-beta.1"
@@ -1267,6 +1266,10 @@ def test_fragment_author_comes_from_the_commit_that_added_it(repo) -> None:
         "fix: a\n\nCo-authored-by: Robot <robot@example.com>",
         author="Alice <123+alice@users.noreply.github.com>",
     )
+    (repo / "changelog.d/1.fix.md").unlink()
+    _commit(repo, "chore(release): v1.0.0-beta.2")
+    _write(repo, "changelog.d/1.fix.md", "project: scheduler\n甲（复用）\n")
+    _commit(repo, "fix: a again", author="Bob <456+bob@users.noreply.github.com>")
     _write(repo, "changelog.d/2.fix.md", "author: bob\nproject: scheduler\n乙\n")
     _commit(repo, "fix: b", author="Carol <carol@example.com>")
     _write(repo, "changelog.d/3.fix.md", "project: scheduler\n丙\n")
@@ -1280,27 +1283,13 @@ def test_fragment_author_comes_from_the_commit_that_added_it(repo) -> None:
     }
 
     author = changelog.fragment_author
-    assert author(fragments["1"], root=repo, resolve_online=False) == "alice"
+    assert author(fragments["1"], root=repo, resolve_online=False) == "bob"
     assert author(fragments["2"], root=repo, resolve_online=False) == "bob"
     # 解析不到登录名时，git 作者名长得像登录名才拿来用
     assert author(fragments["3"], root=repo, resolve_online=False) == "Carol"
     # 带空格的全名、中文昵称都不是登录名，签进去会变成坏链接，宁可不署名
     assert author(fragments["4"], root=repo, resolve_online=False) is None
     assert author(fragments["5"], root=repo, resolve_online=False) is None
-
-
-def test_fragment_author_follows_the_latest_addition_after_reuse(repo) -> None:
-    """碎片发版后被删，同名文件被别人再次新增，署名要归后来的人。"""
-
-    _write(repo, "changelog.d/fix-x.fix.md", "project: scheduler\n甲\n")
-    _commit(repo, "fix: a", author="Alice <1+alice@users.noreply.github.com>")
-    (repo / "changelog.d/fix-x.fix.md").unlink()
-    _commit(repo, "chore(release): v1.0.0-beta.2")
-    _write(repo, "changelog.d/fix-x.fix.md", "project: scheduler\n乙\n")
-    _commit(repo, "fix: b", author="Bob <2+bob@users.noreply.github.com>")
-    fragment = changelog.list_fragments(repo / "changelog.d")[0]
-
-    assert changelog.fragment_author(fragment, root=repo, resolve_online=False) == "bob"
 
 
 def test_fragment_pr_number_comes_from_the_squash_subject_or_the_file_name(

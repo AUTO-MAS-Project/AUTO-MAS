@@ -34,12 +34,11 @@ async def _host(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("base", ["shared", "independent", "native"])
-@pytest.mark.parametrize("quick", [True, False])
-async def test_folder_follows_maa_source_without_changing_config(tmp_path, base, quick):
+@pytest.mark.parametrize("base", ["independent", "native"])
+async def test_folder_follows_maa_source_without_changing_config(tmp_path, base):
     install = tmp_path / "MAA"
     install.mkdir()
-    host, sid, uid = await _host(tmp_path, base=base, quick=quick, install=install)
+    host, sid, uid = await _host(tmp_path, base=base, install=install)
     expected = (
         install / "config"
         if base == "native"

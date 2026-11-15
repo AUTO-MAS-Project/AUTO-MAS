@@ -190,7 +190,12 @@ async def test_task_job_inside_runtime_job(
 
 
 @pytest.mark.asyncio
-async def test_failed_job_cleanup_still_reaps_the_other_group(monkeypatch):
+@pytest.mark.parametrize("job_fails", [False, True])
+async def test_failed_adoption_keeps_failure_while_other_groups_and_known_process_are_reaped(
+    monkeypatch, job_fails
+):
+    import pywintypes
+    import win32api
     import win32job
 
     from app.utils.common.process.runner import create_subprocess
@@ -199,7 +204,9 @@ async def test_failed_job_cleanup_still_reaps_the_other_group(monkeypatch):
     scope = TaskProcessScope()
     token = current_process_scope.set(scope)
     processes = []
+    unregistered = None
     terminate = win32job.TerminateJobObject
+    open_process = win32api.OpenProcess
     try:
         for breakaway in (False, True):
             processes.append(
@@ -212,24 +219,48 @@ async def test_failed_job_cleanup_still_reaps_the_other_group(monkeypatch):
                 )
             )
 
-        failed = False
+        unregistered = await asyncio.create_subprocess_exec(
+            sys._base_executable, "-I", "-c", "import time; time.sleep(30)"
+        )
 
-        def fail_first(job, code):
-            nonlocal failed
-            if not failed:
-                failed = True
-                raise OSError("injected Job termination failure")
-            terminate(job, code)
+        def deny_adoption(access, inherit, pid):
+            if pid == unregistered.pid:
+                raise pywintypes.error(5, "OpenProcess", "injected access denial")
+            return open_process(access, inherit, pid)
 
-        monkeypatch.setattr(win32job, "TerminateJobObject", fail_first)
-        with pytest.raises(ExceptionGroup):
-            await scope.force_close()
+        with monkeypatch.context() as native:
+            native.setattr(win32api, "OpenProcess", deny_adoption)
+            with pytest.raises(pywintypes.error):
+                scope.track(unregistered)
+            assert scope.cleanup_failed
+            if job_fails:
+                failed = False
+
+                def fail_first(job, code):
+                    nonlocal failed
+                    if not failed:
+                        failed = True
+                        raise OSError("injected Job termination failure")
+                    terminate(job, code)
+
+                native.setattr(win32job, "TerminateJobObject", fail_first)
+                with pytest.raises(ExceptionGroup):
+                    await scope.force_close()
+            else:
+                await scope.force_close()
         assert scope.cleanup_failed
+        await asyncio.wait_for(unregistered.wait(), 3)
         await asyncio.wait_for(processes[1].wait(), 3)
-        assert processes[0].returncode is None
+        if job_fails:
+            assert processes[0].returncode is None
+        else:
+            await asyncio.wait_for(processes[0].wait(), 3)
     finally:
         current_process_scope.reset(token)
-        for process in processes:
+        for process in [
+            *processes,
+            *([unregistered] if unregistered is not None else []),
+        ]:
             with suppress(ProcessLookupError):
                 process.kill()
             await asyncio.wait_for(process.wait(), 3)
@@ -285,8 +316,8 @@ async def test_installer_created_during_stop_is_reaped(monkeypatch):
     "child_before_registration,intermediate",
     [(False, False), (True, False), (False, True)],
 )
-async def test_adopted_process_descendants_stop_after_parent_exit(
-    tmp_path, child_before_registration, intermediate
+async def test_adoption_reaps_descendants_but_never_a_looked_up_foreign_process(
+    tmp_path, monkeypatch, child_before_registration, intermediate
 ):
     """接管进程的已有及后续子进程都须随任务停止，任务外进程不受影响。"""
     import psutil
@@ -343,12 +374,25 @@ async def test_adopted_process_descendants_stop_after_parent_exit(
     child = None
     output = asyncio.create_task(parent.communicate())
     try:
+        # 只隔离宿主进程目录；身份、后代查询与 Job 操作仍使用真实进程。
+        known = [psutil.Process(unrelated.pid), psutil.Process(parent.pid)]
+
+        def iter_known(attrs):
+            for process in known:
+                process.info = process.as_dict(attrs=attrs)
+                yield process
+
+        monkeypatch.setattr(psutil, "process_iter", iter_known)
         if child_before_registration:
             async with asyncio.timeout(5):
                 while not pid_file.exists():
                     await asyncio.sleep(0.01)
         token = current_process_scope.set(scope)
         try:
+            observer = ProcessManager()
+            await observer.search_process(
+                ProcessInfo(pid=unrelated.pid), timeout_seconds=3, owned=False
+            )
             manager = ProcessManager()
             await manager.search_process(ProcessInfo(pid=parent.pid), timeout_seconds=3)
         finally:
@@ -388,74 +432,6 @@ async def test_adopted_process_descendants_stop_after_parent_exit(
             await scope.force_close()
         unrelated.kill()
         await unrelated.wait()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("job_fails", [False, True])
-async def test_failed_adoption_still_reaps_known_process_and_keeps_failure(
-    monkeypatch, job_fails
-):
-    from app.utils.common.process.scope import TaskProcessScope
-
-    scope = TaskProcessScope()
-    process = await asyncio.create_subprocess_exec(
-        sys._base_executable, "-I", "-c", "import time; time.sleep(30)"
-    )
-
-    def deny_adoption(pid, create_time):
-        raise PermissionError("injected ownership registration failure")
-
-    monkeypatch.setattr(scope._job, "adopt", deny_adoption)
-    if job_fails:
-
-        def deny_job_kill():
-            raise PermissionError("injected Job termination failure")
-
-        monkeypatch.setattr(scope._job, "kill", deny_job_kill)
-    try:
-        with pytest.raises(PermissionError):
-            scope.track(process)
-        assert scope.cleanup_failed
-        if job_fails:
-            with pytest.raises(PermissionError):
-                await asyncio.wait_for(scope.force_close(), 3)
-        else:
-            await asyncio.wait_for(scope.force_close(), 3)
-        await asyncio.wait_for(process.wait(), 3)
-        assert scope.cleanup_failed, "终止已知进程不能把不完整的归属登记报告为成功"
-    finally:
-        with suppress(ProcessLookupError):
-            process.kill()
-        await process.wait()
-        if not scope.closed:
-            await scope.force_close()
-
-
-@pytest.mark.asyncio
-async def test_lookup_of_existing_process_does_not_take_stop_ownership():
-    from app.utils.common.process.manager import ProcessInfo, ProcessManager
-    from app.utils.common.process.scope import TaskProcessScope, current_process_scope
-
-    existing = await asyncio.create_subprocess_exec(
-        sys._base_executable, "-I", "-c", "import time; time.sleep(30)"
-    )
-    scope = TaskProcessScope()
-    token = current_process_scope.set(scope)
-    try:
-        manager = ProcessManager()
-        await manager.search_process(
-            ProcessInfo(pid=existing.pid), timeout_seconds=3, owned=False
-        )
-    finally:
-        current_process_scope.reset(token)
-    try:
-        await asyncio.wait_for(scope.force_close(), 3)
-        assert existing.returncode is None, "查找现有窗口不应取得结束该进程的权限"
-    finally:
-        existing.kill()
-        await existing.wait()
-        if not scope.closed:
-            await scope.force_close()
 
 
 @pytest.mark.asyncio

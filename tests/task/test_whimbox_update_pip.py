@@ -129,11 +129,19 @@ def real_update(tmp_path, monkeypatch, pip_runtime):
         path.write_bytes(wheel)
 
     monkeypatch.setattr(update, "download_file", download)
-    monkeypatch.setattr(
-        update,
-        "installed_version",
-        AsyncMock(side_effect=[Version("3.1.0"), Version("3.1.0"), Version("3.1.1")]),
-    )
+
+    async def installed_version(_root):
+        packages = importlib.metadata.distributions(path=[str(target)])
+        return next(
+            (
+                Version(package.version)
+                for package in packages
+                if package.metadata["Name"] == "whimbox"
+            ),
+            Version("3.1.0"),
+        )
+
+    monkeypatch.setattr(update, "installed_version", installed_version)
     phases = []
 
     async def run(root, *args, timeout=30, env=None):
@@ -178,21 +186,10 @@ def real_update(tmp_path, monkeypatch, pip_runtime):
 
 
 @pytest.mark.asyncio
-async def test_real_source_dependency_is_built_before_offline_install(real_update):
-    await update.ensure_backend_updated(real_update.root)
-    installed = {
-        package.metadata["Name"]: package.version
-        for package in importlib.metadata.distributions(path=[str(real_update.target)])
-    }
-    assert installed["whimbox"] == "3.1.1"
-    assert installed["mas_test_dependency"] == "1.0"
-    assert real_update.phases == [("wheel", False), ("install", True)]
-    assert real_update.sentinel.read_text(encoding="utf-8") == "old-backend"
-    assert not update.pending_marker(real_update.root).exists()
-
-
-@pytest.mark.asyncio
-async def test_real_build_failure_never_starts_installation(real_update):
+async def test_real_pip_retry_builds_without_live_writes_then_verifies_offline_install(
+    real_update,
+):
+    builder = real_update.builder.read_bytes()
     real_update.builder.unlink()
     with pytest.raises(RuntimeError):
         await update.ensure_backend_updated(real_update.root)
@@ -200,6 +197,35 @@ async def test_real_build_failure_never_starts_installation(real_update):
     assert not update.pending_marker(real_update.root).exists()
     assert not real_update.target.exists()
     assert real_update.sentinel.read_text(encoding="utf-8") == "old-backend"
+
+    real_update.builder.write_bytes(builder)
+    candidate = await update.prepare_update(real_update.root)
+    assert isinstance(candidate, update.PreparedUpdate)
+    assert real_update.phases == [("wheel", False), ("wheel", False)]
+    assert not update.pending_marker(real_update.root).exists()
+    assert not real_update.target.exists()
+    original_wheel = candidate.wheel.read_bytes()
+    try:
+        candidate.wheel.write_bytes(b"tampered")
+        with update.installation_access(real_update.root):
+            with pytest.raises(RuntimeError):
+                await update.apply_update(real_update.root, candidate)
+            assert real_update.phases == [("wheel", False), ("wheel", False)]
+            assert not update.pending_marker(real_update.root).exists()
+            assert not real_update.target.exists()
+            candidate.wheel.write_bytes(original_wheel)
+            await update.apply_update(real_update.root, candidate)
+    finally:
+        update.discard_update(candidate)
+    installed = {
+        package.metadata["Name"]: package.version
+        for package in importlib.metadata.distributions(path=[str(real_update.target)])
+    }
+    assert installed["whimbox"] == "3.1.1"
+    assert installed["mas_test_dependency"] == "1.0"
+    assert real_update.phases == [("wheel", False), ("wheel", False), ("install", True)]
+    assert real_update.sentinel.read_text(encoding="utf-8") == "old-backend"
+    assert not update.pending_marker(real_update.root).exists()
 
 
 @pytest.mark.asyncio

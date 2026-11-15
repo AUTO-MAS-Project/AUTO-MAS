@@ -1,7 +1,6 @@
 """公共脚本安装恢复状态机：拒绝半安装，允许安全旧版并延后报告。"""
 
 import asyncio
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -89,43 +88,18 @@ async def test_retries_only_when_a_pending_install_needs_repair(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_download_failure_with_trusted_previous_version_can_continue(tmp_path):
-    states = iter(
-        [
-            inspection(pending=True, healthy=False),
-            inspection(pending=False, healthy=True, previous=True),
-        ]
-    )
-    events: list[RecoveryIncident] = []
-    result = await reconcile_installation(
-        script_id="three",
-        script_type="MaaEnd",
-        install_root=tmp_path,
-        inspect=AsyncMock(side_effect=lambda: next(states)),
-        acknowledge=AsyncMock(),
-        reinstall=AsyncMock(
-            side_effect=DownloadRetryFailed(source="GitHub", reason="下载超时")
-        ),
-        report=events.append,
-    )
-    assert result == "old_version"
-    assert events[0].outcome == "old_version"
-    assert events[0].reason == "下载超时"
-    assert events[0].installed_version == "1.0.0"
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "pending,healthy,previous",
+    "pending,healthy,previous,allowed",
     [
-        (True, True, True),
-        (False, True, False),
-        (False, False, True),
-        (True, False, False),
+        (False, True, True, True),
+        (True, True, True, False),
+        (False, True, False, False),
+        (False, False, True, False),
+        (True, False, False, False),
     ],
 )
-async def test_download_failure_never_bypasses_unconfirmed_install(
-    tmp_path, pending, healthy, previous
+async def test_failed_download_only_allows_a_verified_previous_install(
+    tmp_path, pending, healthy, previous, allowed
 ):
     states = iter(
         [
@@ -134,19 +108,29 @@ async def test_download_failure_never_bypasses_unconfirmed_install(
         ]
     )
     events: list[RecoveryIncident] = []
-    with pytest.raises(InstallUnsafeError, match="禁止启动"):
-        await reconcile_installation(
+
+    async def reconcile():
+        return await reconcile_installation(
             script_id="unsafe",
             script_type="BetterGI",
             install_root=tmp_path,
             inspect=AsyncMock(side_effect=lambda: next(states)),
             acknowledge=AsyncMock(),
             reinstall=AsyncMock(
-                side_effect=DownloadRetryFailed(source="MirrorChyan", reason="连接失败")
+                side_effect=DownloadRetryFailed(source="MirrorChyan", reason="下载超时")
             ),
             report=events.append,
         )
-    assert events[0].outcome == "blocked"
+
+    if allowed:
+        assert await reconcile() == "old_version"
+        assert events[0].outcome == "old_version"
+        assert events[0].reason == "下载超时"
+        assert events[0].installed_version == "1.0.0"
+    else:
+        with pytest.raises(InstallUnsafeError, match="禁止启动"):
+            await reconcile()
+        assert events[0].outcome == "blocked"
 
 
 @pytest.mark.asyncio
@@ -329,23 +313,6 @@ async def test_recovery_check_exceptions_are_reported(tmp_path, failure):
 
 
 @pytest.mark.asyncio
-async def test_install_backup_is_persistent_and_cleaned_only_after_success(tmp_path):
-    root = tmp_path / "BetterGI"
-    root.mkdir()
-    (root / "program.exe").write_bytes(b"old-good-program")
-    backup = ManagedInstallBackup(root, script_id="one", script_type="BetterGI")
-    await backup.create("1.0.0")
-    assert backup.snapshot.joinpath("program.exe").read_bytes() == b"old-good-program"
-    assert backup.read()["phase"] == "ready"
-    backup.set_phase("installing")
-    (root / "program.exe").write_bytes(b"new-good-program")
-    await backup.finish_success()
-    assert (root / "program.exe").read_bytes() == b"new-good-program"
-    assert not backup.record.exists()
-    assert not backup.snapshot.exists()
-
-
-@pytest.mark.asyncio
 async def test_installer_reported_failure_rolls_back_and_continues(tmp_path):
     root = tmp_path / "BetterGI"
     root.mkdir()
@@ -387,8 +354,9 @@ async def test_installer_reported_failure_rolls_back_and_continues(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_timeout_keeps_backup_until_next_run_then_retries_and_rolls_back(
-    tmp_path,
+@pytest.mark.parametrize("first_failure", ["timeout", "unconfirmed_writer"])
+async def test_failed_install_retains_backup_until_writer_stops_then_recovers(
+    tmp_path, first_failure
 ):
     root = tmp_path / "MAA"
     root.mkdir()
@@ -396,6 +364,7 @@ async def test_timeout_keeps_backup_until_next_run_then_retries_and_rolls_back(
     exe.write_bytes(b"old-good")
     events = []
     install_count = 0
+    active = False
 
     async def inspect():
         blob = exe.read_bytes()
@@ -408,12 +377,21 @@ async def test_timeout_keeps_backup_until_next_run_then_retries_and_rolls_back(
         )
 
     async def install():
-        nonlocal install_count
+        nonlocal install_count, active
         install_count += 1
         if install_count == 1:
             exe.write_bytes(b"pending")
+            if first_failure == "unconfirmed_writer":
+                active = True
+                raise InstallReportedFailure(
+                    "installer failed while child still writing"
+                )
             raise InstallTimedOut("installer timed out")
         raise DownloadRetryFailed(source="GitHub", reason="network timed out again")
+
+    async def ensure_idle():
+        if active:
+            raise InstallUnsafeError("installer is still writing")
 
     args = dict(
         script_id="one",
@@ -422,16 +400,28 @@ async def test_timeout_keeps_backup_until_next_run_then_retries_and_rolls_back(
         inspect=inspect,
         acknowledge=AsyncMock(),
         install=install,
-        ensure_idle=AsyncMock(),
+        ensure_idle=ensure_idle,
         after_rollback=AsyncMock(),
         report=events.append,
     )
-    with pytest.raises(InstallUnsafeError, match="下一次运行"):
+    with pytest.raises(
+        InstallUnsafeError,
+        match="下一次运行" if first_failure == "timeout" else "still writing",
+    ):
         await run_managed_installation(**args)
     backup = ManagedInstallBackup(root, script_id="one", script_type="MAA")
-    assert backup.read()["phase"] == "timed_out"
+    assert backup.read()["phase"] == (
+        "timed_out" if first_failure == "timeout" else "installing"
+    )
     assert exe.read_bytes() == b"pending"
-    assert events[-1].outcome == "deferred"
+    assert events[-1].outcome == (
+        "deferred" if first_failure == "timeout" else "blocked"
+    )
+    if active:
+        with pytest.raises(InstallUnsafeError, match="still writing"):
+            await run_managed_installation(**args)
+        assert install_count == 1 and exe.read_bytes() == b"pending"
+    active = False
     assert await run_managed_installation(**args) == "old_version"
     assert exe.read_bytes() == b"old-good"
     assert not backup.record.exists()
@@ -476,54 +466,6 @@ async def test_timeout_next_run_accepts_verified_success_without_retry(tmp_path)
     assert await run_managed_installation(**args) == "verified"
     assert install.await_count == 1
     assert events[-1].outcome == "verified"
-
-
-@pytest.mark.asyncio
-async def test_uncertain_installer_does_not_rollback_while_still_running(tmp_path):
-    root = tmp_path / "BAAH"
-    root.mkdir()
-    exe = root / "program.exe"
-    exe.write_bytes(b"old-good")
-    active = False
-    events = []
-
-    async def inspect():
-        blob = exe.read_bytes()
-        return InstallInspection(
-            pending=blob != b"old-good",
-            healthy=blob == b"old-good",
-            installed_version="1.0.0",
-            previous_confirmed=blob == b"old-good",
-        )
-
-    async def install():
-        nonlocal active
-        active = True
-        exe.write_bytes(b"not-finished")
-        raise InstallReportedFailure("installer failed")
-
-    async def ensure_idle():
-        if active:
-            raise InstallUnsafeError("installer is still writing")
-
-    args = dict(
-        script_id="one",
-        script_type="BAAH",
-        install_root=root,
-        inspect=inspect,
-        acknowledge=AsyncMock(),
-        install=install,
-        ensure_idle=ensure_idle,
-        after_rollback=AsyncMock(),
-        report=events.append,
-    )
-    with pytest.raises(InstallUnsafeError, match="still writing"):
-        await run_managed_installation(**args)
-    assert exe.read_bytes() == b"not-finished"
-    assert events[-1].outcome == "blocked"
-    assert ManagedInstallBackup(
-        root, script_id="one", script_type="BAAH"
-    ).record.exists()
 
 
 @pytest.mark.asyncio
@@ -581,29 +523,33 @@ async def test_install_snapshot_recovers_across_different_profiles(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_restore_journal_can_finish_after_crash_during_directory_swap(tmp_path):
+@pytest.mark.parametrize("state", ["interrupted_swap", "tampered_backup"])
+async def test_managed_recovery_only_restores_a_trusted_backup(tmp_path, state):
     root = tmp_path / "script"
     root.mkdir()
     (root / "bin").write_bytes(b"old")
     backup = ManagedInstallBackup(root, script_id="one", script_type="SRC")
     await backup.create("1.0.0")
     backup.set_phase("installing")
-    (root / "bin").write_bytes(b"broken")
+    (root / "bin").write_bytes(b"broken-install")
     backup.set_phase("restoring")
-    root.replace(backup.failed)
-    backup.snapshot.replace(root)
+    if state == "interrupted_swap":
+        root.replace(backup.failed)
+        backup.snapshot.replace(root)
+    else:
+        (backup.snapshot / "bin").write_bytes(b"tampered-backup")
     reinstall = AsyncMock()
 
     async def inspect():
         return InstallInspection(
             pending=False,
-            healthy=True,
+            healthy=(root / "bin").read_bytes() == b"old",
             installed_version="1.0.0",
-            previous_confirmed=True,
+            previous_confirmed=(root / "bin").read_bytes() == b"old",
         )
 
     events = []
-    result = await run_managed_installation(
+    args = dict(
         script_id="one",
         script_type="SRC",
         install_root=root,
@@ -614,26 +560,18 @@ async def test_restore_journal_can_finish_after_crash_during_directory_swap(tmp_
         after_rollback=AsyncMock(),
         report=events.append,
     )
-    assert result == "old_version"
+    if state == "interrupted_swap":
+        assert await run_managed_installation(**args) == "old_version"
+        assert (root / "bin").read_bytes() == b"old"
+        assert not backup.record.exists()
+    else:
+        with pytest.raises(InstallUnsafeError, match="备份文件不完整"):
+            await run_managed_installation(**args)
+        assert events[-1].outcome == "blocked"
+        assert (root / "bin").read_bytes() == b"broken-install"
+        assert (backup.snapshot / "bin").read_bytes() == b"tampered-backup"
+        assert backup.record.exists()
     reinstall.assert_not_awaited()
-    assert (root / "bin").read_bytes() == b"old"
-    assert not backup.record.exists()
-
-
-@pytest.mark.asyncio
-async def test_corrupt_backup_does_not_overwrite_current_install(tmp_path):
-    root = tmp_path / "script"
-    root.mkdir()
-    (root / "bin").write_bytes(b"old")
-    backup = ManagedInstallBackup(root, script_id="one", script_type="MAA")
-    await backup.create("1.0.0")
-    backup.set_phase("installing")
-    (root / "bin").write_bytes(b"broken-install")
-    (backup.snapshot / "bin").write_bytes(b"tampered-backup")
-    with pytest.raises(InstallUnsafeError, match="备份文件不完整"):
-        await backup.restore()
-    assert (root / "bin").read_bytes() == b"broken-install"
-    assert backup.record.exists()
 
 
 @pytest.mark.asyncio
@@ -658,6 +596,9 @@ async def test_new_public_entry_reports_only_through_current_session(tmp_path):
         )
 
     async def install():
+        backup = ManagedInstallBackup(root, script_id="one", script_type="MAA")
+        assert backup.read()["phase"] == "installing"
+        assert (backup.snapshot / "bin").read_bytes() == b"old"
         exe.write_bytes(b"new")
 
     try:
@@ -675,9 +616,9 @@ async def test_new_public_entry_reports_only_through_current_session(tmp_path):
     assert result == "installed"
     assert len(incidents) == 1
     assert incidents[0].outcome == "installed"
-    assert not ManagedInstallBackup(
-        root, script_id="one", script_type="MAA"
-    ).record.exists()
+    assert exe.read_bytes() == b"new"
+    backup = ManagedInstallBackup(root, script_id="one", script_type="MAA")
+    assert not backup.record.exists() and not backup.snapshot.exists()
 
 
 @pytest.mark.asyncio

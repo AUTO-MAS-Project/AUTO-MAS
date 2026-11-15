@@ -136,17 +136,12 @@ async def test_software_cache_is_registered_for_other_install_and_cdk_after_rest
         assert version == "v6.1.0" and Path(package).is_file()
     install.request.assert_awaited_once()
     install.downloader.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_software_new_release_is_downloaded_once_for_other_installs(
-    software_install,
-):
-    install = software_install
-    assert await prepare_software(install) == "v6.1.0"
     install.query.return_value = "v6.2.0"
     install.request.return_value["data"]["version_name"] = "v6.2.0"
-    roots = [install.installation("maa-second"), install.installation("maa-third")]
+    roots = [
+        install.installation("maa-fourth"),
+        install.installation("maa-fifth"),
+    ]
     assert await asyncio.gather(
         *(prepare_software(install, root) for root in roots)
     ) == ["v6.2.0", "v6.2.0"]

@@ -1,6 +1,7 @@
 """通知的有限等待、取消隔离与任务组注销。"""
 
 import asyncio
+from dataclasses import replace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -20,7 +21,7 @@ RESULTS = (CommunityNotificationResult("name", "uid", "game", "platform", "succe
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cancel_request", [False, True])
-async def test_community_wait_timeout_or_request_cancellation_keeps_delivery(
+async def test_notification_waiter_stop_preserves_delivery_and_releases_capacity(
     cancel_request,
 ):
     owner = BackgroundTaskRegistry()
@@ -60,38 +61,23 @@ async def test_community_wait_timeout_or_request_cancellation_keeps_delivery(
         assert await coordinator.drain(2)
         assert delivered.is_set()
         feedback.assert_awaited_once()
-    finally:
-        release.set()
-        assert await owner.shutdown(timeout=2)
-
-
-@pytest.mark.asyncio
-async def test_community_fast_path_returns_result_once_and_full_group_rejects():
-    owner = BackgroundTaskRegistry()
-    group = owner.register_group("community", max_running=1, max_retained=1)
-    dispatch = AsyncMock(return_value=DispatchResult())
-    coordinator = CommunityNotificationCoordinator(
-        CommunityNotificationDependencies(
-            dispatch=dispatch,
-            prepare_targets=lambda: (),
-            render=lambda results: NotifyPayload(title="test", text="test"),
-            enabled=lambda: True,
-            report_failure=AsyncMock(),
-            background_group=lambda: group,
-            fast_path_seconds=2,
+        dispatch_now = AsyncMock(return_value=DispatchResult())
+        fast = CommunityNotificationCoordinator(
+            replace(
+                coordinator.dependencies, dispatch=dispatch_now, fast_path_seconds=2
+            )
         )
-    )
-    try:
-        assert await coordinator.submit(RESULTS) == []
-        # 前一次结果已被唯一提取，容量立即可复用。
-        assert await coordinator.submit(RESULTS) == []
-        dispatch.assert_awaited()
+        assert await fast.submit(RESULTS) == []
+        assert await fast.submit(RESULTS) == []
+        # 慢通知的未领取结果占一个保留位置；快请求取走自己的结果后仍可复用余位。
         held = group.spawn(asyncio.Event().wait)
-        assert await coordinator.submit(RESULTS) == ["通知服务"]
-        assert dispatch.await_count == 2
+        assert held is not None
+        assert await fast.submit(RESULTS) == ["通知服务"]
+        assert dispatch_now.await_count == 2
         held.cancel()
         assert await group.drain(2)
     finally:
+        release.set()
         assert await owner.shutdown(timeout=2)
 
 

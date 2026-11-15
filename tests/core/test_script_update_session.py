@@ -1,13 +1,14 @@
 """预下载在真实运行树中交接，进度独立于脚本日志与日志序号。"""
 
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
 
-from app.core import Publisher, script_update
+from app.core import Publisher
 from app.core import script_update_queue as update_queue
 from app.core.script_update import ScriptUpdateSession
 from app.core.script_update_queue import (
@@ -75,33 +76,6 @@ async def test_progress_snapshot_and_clear_preserve_large_log_increment(monkeypa
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("change", [False, True])
-async def test_candidate_handoff_checks_current_policy_and_releases_lock(
-    monkeypatch, change
-):
-    session, root, script, config, manager, _, _ = await setup_session(monkeypatch)
-
-    async def prepare():
-        assert config.is_locked
-        observer = download_observer.get()
-        observer(script_update.Path("package.zip"), 1, 2, 3)
-
-    manager.prefetch_script_update.side_effect = prepare
-    await session._prefetch(0)
-    assert not config.is_locked
-    assert root.current.prefetch is not None
-    assert "完成" in root.current.prefetch.status
-    if change:
-        config.Update.TakeoverEnabled = not config.Update.TakeoverEnabled
-        await config.commit()
-    assert (await session.take(script.uid)) is (None if change else manager)
-    assert root.current.prefetch is None
-    assert manager.discard_prefetched_update.await_count == int(change)
-    await session.close()
-    await manager.callbacks.close()
-
-
-@pytest.mark.asyncio
 async def test_cancel_waits_for_download_cleanup_before_releasing_config(monkeypatch):
     session, root, script, config, manager, _, _ = await setup_session(monkeypatch)
     started, release = asyncio.Event(), asyncio.Event()
@@ -145,8 +119,9 @@ async def test_other_task_holding_target_lock_skips_prefetch(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("retry_boundary", ["maa", "maafw"])
-async def test_real_session_retry_stops_download_before_relogin_and_restarts_clock(
-    monkeypatch, retry_boundary
+@pytest.mark.parametrize("change_policy", [False, True])
+async def test_retry_and_handoff_wait_for_cleanup_and_recheck_download_policy(
+    monkeypatch, retry_boundary, change_policy
 ):
     """首次成功 -> 预下载 -> MAA 重登边界 -> 停写确认 -> 重新成功计时。"""
     session, root, current, config, _, _, _ = await setup_session(monkeypatch)
@@ -174,6 +149,10 @@ async def test_real_session_retry_stops_download_before_relogin_and_restarts_clo
 
     async def download():
         nonlocal attempts
+        assert config.is_locked
+        observer = download_observer.get()
+        assert observer is not None
+        observer(Path("package.zip"), 1, 2, 3)
         attempts += 1
         if attempts == 1:
             first_started.set()
@@ -248,10 +227,23 @@ async def test_real_session_retry_stops_download_before_relogin_and_restarts_clo
         report_script_task_completed()
         await asyncio.wait_for(second_started.wait(), 2)
         assert attempts == 2
+        await session.finish()
+        assert not config.is_locked
+        assert root.current.prefetch is not None
+        assert "完成" in root.current.prefetch.status
+        if change_policy:
+            config.Update.TakeoverEnabled = not config.Update.TakeoverEnabled
+            await config.commit()
+        candidate = await session.take(following.uid)
+        assert candidate is (None if change_policy else managers[-1])
+        assert root.current.prefetch is None
+        assert managers[-1].discard_prefetched_update.await_count == int(change_policy)
     finally:
         allow_cleanup.set()
         if retry_task is not None:
             await asyncio.gather(retry_task, return_exceptions=True)
         await session.close()
+        for manager in managers:
+            await manager.callbacks.close()
         script_task_retrying.reset(retry_token)
         script_task_completed.reset(completed_token)

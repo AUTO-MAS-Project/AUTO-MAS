@@ -37,36 +37,28 @@ def _root(tmp_path: Path, *, shim: bytes | None, listed: bool | None) -> Path:
 
 
 @pytest.mark.parametrize(
-    "shim,listed,expected",
+    "shim,listed,manifest,expected",
     [
-        (b"package shim", True, b"package shim"),
-        (None, True, b"auto-mas shim"),
-        (b"old copy", False, b"auto-mas shim"),
-        (b"old copy", None, b"auto-mas shim"),
+        (b"package shim", True, None, b"package shim"),
+        (None, True, None, b"auto-mas shim"),
+        (b"old copy", False, None, b"auto-mas shim"),
+        (b"old copy", None, None, b"auto-mas shim"),
+        (b"old copy", None, "{", b"auto-mas shim"),
+        (b"old copy", None, "[]", b"auto-mas shim"),
+        (b"old copy", None, '{"files": []}', b"auto-mas shim"),
+        (b"old copy", None, "\ufeff{}", b"auto-mas shim"),
+        (b"package shim", True, "BOM", b"package shim"),
     ],
 )
-def test_package_shim_selection(
-    tmp_path: Path, own_shim: bytes, shim, listed, expected
+def test_shim_install_respects_package_ownership_and_manifest_readability(
+    tmp_path: Path, own_shim: bytes, shim, listed, manifest, expected
 ):
     """包内自带外壳保持原样，缺失外壳或旧包使用 MAS 的副本。"""
     root = _root(tmp_path, shim=shim, listed=listed)
+    path = root / "modavd-manifest.json"
+    if manifest == "BOM":
+        path.write_bytes(b"\xef\xbb\xbf" + path.read_bytes())
+    elif manifest is not None:
+        path.write_text(manifest, encoding="utf-8")
     assert avd.ensure_mumu_shim(root) == avd.shim_dll(root)
     assert avd.shim_dll(root).read_bytes() == expected
-
-
-@pytest.mark.parametrize("text", ["{", "[]", '{"files": []}', "﻿{}"])
-def test_unreadable_manifest_counts_as_older(
-    tmp_path: Path, own_shim: bytes, text: str
-) -> None:
-    root = _root(tmp_path, shim=b"old copy", listed=None)
-    (root / "modavd-manifest.json").write_text(text, encoding="utf-8")
-    avd.ensure_mumu_shim(root)
-    assert avd.shim_dll(root).read_bytes() == own_shim
-
-
-def test_bom_manifest_is_read(tmp_path: Path, own_shim: bytes) -> None:
-    root = _root(tmp_path, shim=b"package shim", listed=True)
-    path = root / "modavd-manifest.json"
-    path.write_bytes(b"\xef\xbb\xbf" + path.read_bytes())
-    avd.ensure_mumu_shim(root)
-    assert avd.shim_dll(root).read_bytes() == b"package shim"

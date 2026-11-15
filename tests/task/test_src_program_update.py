@@ -2,8 +2,10 @@
 
 import asyncio
 import json
+import shutil
 import subprocess
 import sys
+import zipfile
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -18,7 +20,7 @@ def git(root, *args):
 
 
 @pytest.fixture
-def installation(tmp_path, monkeypatch):
+def installation(tmp_path, monkeypatch, request):
     upstream = tmp_path / "remote"
     upstream.mkdir()
     git(upstream, "init", "-b", "main")
@@ -57,11 +59,49 @@ def installation(tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr(update, "command", transport)
+    if getattr(request, "param", None) == "cn":
+        from app.core import script_update
+
+        deploy = deploy.replace(
+            "Repository: https://src.example/repo", "Repository: cn"
+        ).replace("Branch: main", "Branch: master")
+        (root / "config/deploy.yaml").write_text(deploy)
+        git(upstream, "gc")
+        source_pack = next((upstream / ".git/objects/pack").glob("*.pack"))
+        target = git(upstream, "rev-parse", "HEAD")
+        archive = tmp_path / "cdn.zip"
+        with zipfile.ZipFile(archive, "w") as package:
+            package.write(source_pack, f"pack-{target}.pack")
+            package.write(source_pack.with_suffix(".idx"), f"pack-{target}.idx")
+        monkeypatch.setattr(
+            update,
+            "request_cn_latest",
+            AsyncMock(return_value=("https://vip.123pan.cn/example", target)),
+        )
+        monkeypatch.setattr(
+            script_update,
+            "download_script_package",
+            AsyncMock(
+                side_effect=lambda url, destination, **kwargs: shutil.copyfile(
+                    archive, destination
+                )
+            ),
+        )
     return root, deploy
 
 
 @pytest.mark.asyncio
-async def test_prepare_is_read_only_then_apply_runs_native_installer(installation):
+@pytest.mark.parametrize(
+    "installation,repository",
+    [("git", "https://src.example/repo"), ("cn", "cn")],
+    indirect=["installation"],
+)
+async def test_src_prefetch_preserves_edits_then_installs_with_persistent_completion(
+    installation, monkeypatch, repository
+):
+    from app.services.script_install_backup import ManagedInstallBackup
+    from app.task.SRC.tools.managed_recovery import SRCInstallAdapter
+
     root, deploy = installation
     before = git(root, "rev-parse", "HEAD")
     snapshot = {
@@ -71,6 +111,14 @@ async def test_prepare_is_read_only_then_apply_runs_native_installer(installatio
     }
     candidate = await update.prepare_update(root)
     assert candidate is not None
+    assert candidate.repository == repository
+    assert candidate.target_commit == git(root.parent / "remote", "rev-parse", "HEAD")
+    if repository == "cn":
+        from app.core import script_update
+
+        assert script_update.download_script_package.await_args.args[0].endswith(
+            f"/{candidate.target_commit}/{before}.zip"
+        )
     assert snapshot == {
         str(path.relative_to(root)): path.read_bytes()
         for path in root.rglob("*")
@@ -80,44 +128,70 @@ async def test_prepare_is_read_only_then_apply_runs_native_installer(installatio
     assert (root / "code.py").read_text() == "old"
     assert (root / "config/deploy.yaml").read_text() == deploy
     assert not (root / "native-finished").exists()
+    (root / "code.py").write_text("user edit")
+    with pytest.raises(ValueError):
+        await update.apply_update(root, candidate)
+    assert (root / "code.py").read_text() == "user edit"
+    assert (root / "config/deploy.yaml").read_text() == deploy
+    (root / "code.py").write_bytes(snapshot["code.py"])
+    backup = ManagedInstallBackup(root, script_id="test", script_type="SRC")
+    await backup.create(before)
     with script_install.installation_access(root):
         await update.apply_update(root, candidate)
     assert (root / "code.py").read_text() == "new"
     assert (root / "native-finished").read_text() == "done"
     assert (root / "config/deploy.yaml").read_text() == deploy
     await update.confirm_current_install(root)
+    original_command = update.command
+
+    async def command_with_test_python(*args, **kwargs):
+        if len(args) >= 4 and args[1:4] == ("-m", "pip", "check"):
+            return "No broken requirements found."
+        return await original_command(*args, **kwargs)
+
+    # 原生替身安装器只写完成证据；依赖健康仍在进程端口隔离。
+    with monkeypatch.context() as health:
+        health.setattr(update, "command", command_with_test_python)
+        state = await SRCInstallAdapter(root).inspect()
+    assert state.updated_confirmed
+    assert state.installed_version == candidate.target_commit
+    assert backup.read()["version"] == before
 
 
 @pytest.mark.asyncio
-async def test_changed_worktree_invalidates_prepared_update(installation):
-    root, deploy = installation
-    candidate = await update.prepare_update(root)
-    (root / "code.py").write_text("user edit")
-    with pytest.raises(ValueError):
-        await update.apply_update(root, candidate)
-    assert (root / "code.py").read_text() == "user edit"
-    assert (root / "config/deploy.yaml").read_text() == deploy
-
-
-@pytest.mark.asyncio
-async def test_native_install_failure_blocks_run_and_restores_deploy(
-    installation, monkeypatch
+async def test_src_native_failure_restores_deploy_and_retries_the_same_commit(
+    installation,
 ):
     root, deploy = installation
+    upstream = root.parent / "remote"
+    (upstream / "installer.py").write_text(
+        "from pathlib import Path\n"
+        "if not Path('config/native-ready').exists():\n"
+        "    raise SystemExit(1)\n"
+        "Path('native-finished').write_text('done')\n"
+    )
+    git(upstream, "add", "installer.py")
+    git(upstream, "commit", "-m", "installer requires external readiness")
     candidate = await update.prepare_update(root)
-    original = update.command
-
-    async def fail_install(*args, **kwargs):
-        if "installer.py" in args:
-            raise script_install.InstallUnsafeError("native failed")
-        return await original(*args, **kwargs)
-
-    monkeypatch.setattr(update, "command", fail_install)
-    with pytest.raises(script_install.InstallUnsafeError):
-        await update.apply_update(root, candidate)
+    with script_install.installation_access(root):
+        with pytest.raises(script_install.InstallUnsafeError):
+            await update.apply_update(root, candidate)
     assert (root / "config/deploy.yaml").read_text() == deploy
     with pytest.raises(script_install.InstallUnsafeError):
         await update.confirm_current_install(root)
+    head = git(root, "rev-parse", "HEAD")
+    assert head == candidate.target_commit
+    assert not (root / "native-finished").exists()
+    marker = script_install.workspace(root) / "src-install.json"
+    snapshot = marker.read_bytes()
+    (root / "config/native-ready").touch()
+    with script_install.installation_access(root):
+        await update.update_before_run(root, recovery_snapshot=snapshot)
+    assert git(root, "rev-parse", "HEAD") == head
+    assert (root / "native-finished").read_text() == "done"
+    assert (root / "config/deploy.yaml").read_text() == deploy
+    assert not marker.exists()
+    await update.confirm_current_install(root)
 
 
 @pytest.mark.asyncio
@@ -250,56 +324,6 @@ async def test_cn_repository_does_not_silently_switch_to_github(
 
 
 @pytest.mark.asyncio
-async def test_cn_prefetch_uses_official_git_pack_without_touching_src(
-    installation, monkeypatch, tmp_path
-):
-    import hashlib
-    import zipfile
-
-    root, _ = installation
-    upstream = root.parent / "remote"
-    deploy_path = root / "config" / "deploy.yaml"
-    deploy_path.write_text(
-        deploy_path.read_text()
-        .replace("Repository: https://src.example/repo", "Repository: cn")
-        .replace("Branch: main", "Branch: master")
-    )
-    git(upstream, "gc")
-    source_pack = next((upstream / ".git" / "objects" / "pack").glob("*.pack"))
-    source_idx = source_pack.with_suffix(".idx")
-    target = git(upstream, "rev-parse", "HEAD")
-    archive = tmp_path / "cdn.zip"
-    with zipfile.ZipFile(archive, "w") as package:
-        package.write(source_pack, f"pack-{target}.pack")
-        package.write(source_idx, f"pack-{target}.idx")
-
-    monkeypatch.setattr(
-        update,
-        "request_cn_latest",
-        AsyncMock(return_value=("https://vip.123pan.cn/example", target)),
-    )
-    from app.core import script_update
-
-    downloader = AsyncMock(
-        side_effect=lambda url, destination, **kwargs: __import__("shutil").copyfile(
-            archive, destination
-        )
-    )
-    monkeypatch.setattr(script_update, "download_script_package", downloader)
-    original_head = git(root, "rev-parse", "HEAD")
-    prepared = await update.prepare_update(root)
-    assert prepared is not None
-    assert prepared.repository == "cn"
-    assert git(root, "rev-parse", "HEAD") == original_head
-    assert prepared.target_commit == target
-    assert downloader.await_args.args[0].endswith(f"/{target}/{original_head}.zip")
-    assert (
-        hashlib.sha256((root / "code.py").read_bytes()).hexdigest()
-        == hashlib.sha256(b"old").hexdigest()
-    )
-
-
-@pytest.mark.asyncio
 async def test_cn_no_update_does_not_require_git_pack(installation, monkeypatch):
     root, _ = installation
     deploy = root / "config" / "deploy.yaml"
@@ -399,22 +423,6 @@ async def test_src_skip_rejects_changed_marker(installation):
 
 
 @pytest.mark.asyncio
-async def test_src_retry_same_commit_only_reruns_native_installer(
-    installation, monkeypatch
-):
-    root, _ = installation
-    marker = script_install.workspace(root) / "src-install.json"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
-    head = git(root, "rev-parse", "HEAD")
-    assert not (root / "native-finished").exists()
-    await update.update_before_run(root, recovery_snapshot=marker.read_bytes())
-    assert git(root, "rev-parse", "HEAD") == head
-    assert (root / "native-finished").read_text() == "done"
-    assert not marker.exists()
-
-
-@pytest.mark.asyncio
 async def test_src_normal_update_cannot_overwrite_existing_marker(installation):
     root, _ = installation
     marker = script_install.workspace(root) / "src-install.json"
@@ -454,33 +462,6 @@ async def test_src_legacy_marker_uses_common_recovery_without_frontend(
 
 
 @pytest.mark.asyncio
-async def test_src_missing_frontend_never_blocks_common_recovery(
-    installation, monkeypatch
-):
-    from app.task.SRC import manager
-
-    root, _ = installation
-    marker = script_install.workspace(root) / "src-install.json"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
-    instance = object.__new__(manager.SrcManager)
-    instance.src_root_path = root
-    instance.script_info = SimpleNamespace(
-        script_id="test-script", name="SRC", set_log=AsyncMock()
-    )
-    instance.script_config = SimpleNamespace(
-        Update=SimpleNamespace(TakeoverEnabled=False)
-    )
-    instance.maintenance = False
-    instance.task_info = SimpleNamespace(task_id="task-id", mode="AutoProxy")
-    monkeypatch.setattr(
-        manager, "auto_recover_script_install", AsyncMock(return_value="verified")
-    )
-    assert await instance._recover_unconfirmed_install()
-    assert marker.exists()
-
-
-@pytest.mark.asyncio
 async def test_src_git_head_at_target_does_not_prove_native_dependencies_complete(
     installation, monkeypatch
 ):
@@ -495,35 +476,3 @@ async def test_src_git_head_at_target_does_not_prove_native_dependencies_complet
     # 即使 pip check 成功也不能跳过本提交的原生 installer。
     assert state.pending and not state.updated_confirmed
     assert marker.exists()
-
-
-@pytest.mark.asyncio
-async def test_src_native_completion_record_survives_adapter_recreation(
-    installation, monkeypatch
-):
-    from app.task.SRC.tools.managed_recovery import SRCInstallAdapter
-    from app.services.script_install_backup import ManagedInstallBackup
-
-    root, _ = installation
-    old_commit = git(root, "rev-parse", "HEAD")
-    backup = ManagedInstallBackup(root, script_id="test", script_type="SRC")
-    await backup.create(old_commit)
-    candidate = await update.prepare_update(root)
-    if candidate is None:
-        pytest.skip("SRC 测试代码源无新目标提交")
-    await update.apply_update(root, candidate)
-    # 安装器在夹具中仅写 native-finished，未创建真实 SRC requirements 环境；
-    # 将 pip check 固定为健康，只校验安装完成证据跨 adapter 重建的传递。
-    original_command = update.command
-
-    async def command_with_test_python(*args, **kwargs):
-        if len(args) >= 4 and args[1:4] == ("-m", "pip", "check"):
-            return "No broken requirements found."
-        return await original_command(*args, **kwargs)
-
-    monkeypatch.setattr(update, "command", command_with_test_python)
-    adapter = SRCInstallAdapter(root)
-    state = await adapter.inspect()
-    assert state.updated_confirmed
-    assert state.installed_version == candidate.target_commit
-    assert backup.read()["version"] == old_commit

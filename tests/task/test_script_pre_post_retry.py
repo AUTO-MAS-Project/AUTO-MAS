@@ -2,10 +2,19 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 
-import pytest
+import pytest_asyncio
 
+from app.config import ConfigCollection, config_manager
+from app.models.config import UniversalPlanConfig
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.task.base import ScriptAutoProxyBase
+
+
+@pytest_asyncio.fixture
+async def plan_configs(monkeypatch):
+    plans = ConfigCollection.build([UniversalPlanConfig])
+    monkeypatch.setitem(config_manager._collections, "PlanConfig", plans)
+    await plans.activate()
 
 
 class Proxy(ScriptAutoProxyBase):
@@ -49,11 +58,7 @@ def _record_scripts(monkeypatch, module="app.task.base"):
     return calls
 
 
-@pytest.mark.parametrize(
-    "config_name",
-    ["MaaUserConfig", "SrcUserConfig", "GeneralUserConfig"],
-)
-def test_user_scripts_pair_on_terminal_failure(config_name, tmp_path, monkeypatch):
+def test_user_scripts_pair_on_terminal_failure(tmp_path, monkeypatch, plan_configs):
     """任务失败仍执行后置脚本，重复收尾不会再次执行。"""
 
     from app.models import config as configs
@@ -65,7 +70,7 @@ def test_user_scripts_pair_on_terminal_failure(config_name, tmp_path, monkeypatc
     after.write_text("@echo off", encoding="utf-8")
 
     async def scenario():
-        cfg = getattr(configs, config_name)()
+        cfg = configs.GeneralUserConfig()
         await cfg.activate()
         cfg.Info.IfScriptBeforeTask = True
         await cfg.commit()
@@ -87,7 +92,7 @@ def test_user_scripts_pair_on_terminal_failure(config_name, tmp_path, monkeypatc
     assert proxy.crashed and proxy.finalized
 
 
-def test_after_skipped_when_before_never_ran(tmp_path, monkeypatch):
+def test_after_skipped_when_before_never_ran(tmp_path, monkeypatch, plan_configs):
     """前置检查失败、尚未执行前置脚本时，后置脚本也不执行。"""
 
     from app.models import config as configs

@@ -1,6 +1,5 @@
 """MAA 官方本体失败与资源半更新：统一自动恢复且保持 fail-closed。"""
 
-import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -39,20 +38,6 @@ def maa_root(tmp_path, monkeypatch):
         recovery.process, "is_process_running", AsyncMock(return_value=False)
     )
     return root
-
-
-@pytest.mark.asyncio
-async def test_manual_repair_can_acknowledge_old_official_failure(maa_root):
-    flag = maa_root / "pending-update-failure.txt"
-    flag.write_bytes(b"official install failed")
-    version = await recovery.skip_delegated_failure(
-        maa_root, {"software": flag.read_bytes()}
-    )
-    assert version == "v6.2.0"
-    assert not flag.exists()
-    backup = list(script_install.workspace(maa_root).glob("maa-failure-ack-*.txt"))
-    assert len(backup) == 1
-    assert backup[0].read_bytes() == b"official install failed"
 
 
 @pytest.mark.asyncio
@@ -100,27 +85,6 @@ async def test_updater_running_or_marker_changed_never_skips(maa_root):
     recovery.process.is_process_running.return_value = True
     with pytest.raises(MaaUpdateUnsafeError, match="仍在写盘"):
         await recovery.skip_delegated_failure(maa_root, {"software": flag.read_bytes()})
-    assert flag.exists()
-
-
-@pytest.mark.asyncio
-async def test_maa_managed_recovery_does_not_depend_on_frontend(maa_root, monkeypatch):
-    from app.task.MAA.tools import managed_recovery
-
-    flag = maa_root / "pending-update-failure.txt"
-    flag.write_bytes(b"native installer failed")
-    monkeypatch.setattr(
-        managed_recovery, "read_installed_release", lambda root: ("v6.2.0", "x64")
-    )
-    monkeypatch.setattr(
-        managed_recovery,
-        "read_resource_clock",
-        lambda root: datetime(2026, 10, 1, tzinfo=timezone.utc),
-    )
-    adapter = managed_recovery.MAAInstallAdapter(maa_root)
-    state = await adapter.inspect()
-    assert state.pending
-    assert not state.updated_confirmed
     assert flag.exists()
 
 
@@ -182,7 +146,7 @@ async def test_maa_missing_executable_never_becomes_healthy(maa_root, monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_native_failure_marker_with_package_does_not_fake_automatic_retry(
+async def test_manager_preserves_native_failure_until_manual_repair_is_confirmed(
     maa_root, monkeypatch
 ):
     """真实公共入口必须在原生启动前阻断无效重试，保留原始失败现场。"""
@@ -203,6 +167,9 @@ async def test_native_failure_marker_with_package_does_not_fake_automatic_retry(
         "read_resource_clock",
         lambda root: datetime(2026, 10, 1, tzinfo=timezone.utc),
     )
+    adapter = managed_recovery.MAAInstallAdapter(maa_root)
+    state = await adapter.inspect()
+    assert state.pending and state.healthy and not state.updated_confirmed
     instance = object.__new__(manager.MaaManager)
     instance.maa_set_path = maa_root / "config"
     instance.script_info = SimpleNamespace(script_id="test-script", set_log=AsyncMock())
@@ -218,6 +185,22 @@ async def test_native_failure_marker_with_package_does_not_fake_automatic_retry(
     assert flag.read_bytes() == b"official updater failed"
     assert package.read_bytes() == b"official archive"
     assert not instance._maa_update_checked
+
+    # 用户在官方界面完成修复后，下次启动才有资格确认并归档原失败记录。
+    package.unlink()
+    monkeypatch.setattr(
+        managed_recovery, "read_pending_update", lambda root: ("v6.2.0", "")
+    )
+    await instance._recover_unconfirmed_update()
+    assert instance._maa_update_checked
+    native.assert_not_awaited()
+    assert not flag.exists()
+    backups = list(script_install.workspace(maa_root).glob("maa-failure-ack-*.txt"))
+    assert len(backups) == 1
+    assert backups[0].read_bytes() == b"official updater failed"
+    state = await adapter.inspect()
+    assert not state.pending and state.healthy and state.previous_confirmed
+    assert state.installed_version == "v6.2.0"
 
 
 @pytest.mark.asyncio

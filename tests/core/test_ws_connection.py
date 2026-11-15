@@ -52,31 +52,7 @@ class MainConnectionManagerTest(unittest.IsolatedAsyncioTestCase):
         return task
 
     async def test_second_connection_replaces_first(self):
-        first = FakeWebSocket()
-        first_task = await self._serve(first)
-
-        second = FakeWebSocket()
-        second_task = await self._serve(second)
-
-        # 旧连接被关闭替换，新连接生效
-        await asyncio.wait_for(first_task, timeout=1)
-        self.assertIsNotNone(first.close_args)
-        self.assertTrue(self.manager.is_connected)
-
-        # 旧连接的断开清理不得清掉新连接
-        self.assertTrue(
-            await self.manager.send({"id": "Main", "type": "t", "data": {}})
-        )
-        self.assertEqual(len(second.sent), 1)
-        self.assertEqual(len(first.sent), 0)
-
-        await second.disconnect()
-        await asyncio.wait_for(second_task, timeout=1)
-        self.assertFalse(self.manager.is_connected)
-
-    async def test_replaced_connection_gets_app_close_code(self):
-        # 被替换的旧连接必须收到专用应用级关闭码与机器可读 reason，
-        # 前端据此停止自动重连，而不是当成异常断开反过来踢掉新连接
+        # 被替换的旧连接收到专用应用级关闭码；其清理不得踢掉新连接。
         from app.core.ws.protocol import CLOSE_CODE_REPLACED, CLOSE_REASON_REPLACED
 
         first = FakeWebSocket()
@@ -89,9 +65,19 @@ class MainConnectionManagerTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(4000 <= CLOSE_CODE_REPLACED <= 4999)
         self.assertTrue(CLOSE_REASON_REPLACED.isascii())
         self.assertIsNone(second.close_args)
+        self.assertTrue(self.manager.is_connected)
+        await second.push({"not": "an envelope"})
+        await asyncio.sleep(0.05)
+        self.assertTrue(self.manager.is_connected)
+        self.assertTrue(
+            await self.manager.send({"id": "Main", "type": "t", "data": {}})
+        )
+        self.assertEqual(len(second.sent), 1)
+        self.assertEqual(len(first.sent), 0)
 
         await second.disconnect()
         await asyncio.wait_for(second_task, timeout=1)
+        self.assertFalse(self.manager.is_connected)
 
     async def test_connection_rejected_during_shutdown_keeps_1001(self):
         # 关闭流程中拒绝新连接仍走 1001，与"被替换"关闭码区分
@@ -105,17 +91,6 @@ class MainConnectionManagerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(websocket.close_args[0], 1001)
         self.assertNotEqual(websocket.close_args[0], CLOSE_CODE_REPLACED)
         self.assertFalse(self.manager.is_connected)
-
-    async def test_invalid_inbound_message_does_not_kill_connection(self):
-        websocket = FakeWebSocket()
-        serve_task = await self._serve(websocket)
-
-        await websocket.push({"not": "an envelope"})
-        await asyncio.sleep(0.05)
-        self.assertTrue(self.manager.is_connected)
-
-        await websocket.disconnect()
-        await asyncio.wait_for(serve_task, timeout=1)
 
 
 if __name__ == "__main__":

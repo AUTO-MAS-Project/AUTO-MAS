@@ -78,21 +78,10 @@ def test_partial_write_updates_new_usage_and_preserves_other_choices(settings_io
     assert read(root)["condensedResinUseCount"] == 3
 
 
-@pytest.mark.parametrize("specified", [False, True])
-def test_mode_change_updates_the_active_resin_usage(settings_io, specified):
-    root, segment, path, read, write = settings_io
-    seed(settings_io, usage("Exhaust" if specified else "PerType"))
-
-    write(root, {"specifyResinUse": specified})
-
-    saved = one_dragon.read_file(path)[segment]["resinUsage"]
-    assert saved["mode"] == ("PerType" if specified else "Exhaust")
-    assert saved["counts"] == usage()["counts"]
-    assert saved["allowed"] == usage()["allowed"]
-
-
 @pytest.mark.parametrize("mode", ["Exhaust", "RunCount", "PerType"])
-def test_full_panel_save_preserves_unedited_native_usage(settings_io, mode):
+def test_native_resin_settings_survive_panel_changes_and_runtime_restore(
+    settings_io, mode
+):
     root, segment, path, read, write = settings_io
     original = seed(settings_io, usage(mode))
     panel = read(root)
@@ -103,6 +92,31 @@ def test_full_panel_save_preserves_unedited_native_usage(settings_io, mode):
     saved = one_dragon.read_file(path)[segment]
     assert saved["autoArtifactSalvage"] is True
     assert saved["resinUsage"] == original[segment]["resinUsage"]
+
+    before_runtime = one_dragon.read_file(path)
+    snapshot = one_dragon.snapshot_global_battle_config(root)
+    for specified, expected_mode in (
+        (True, "PerType"),
+        (False, "Exhaust"),
+        (True, "PerType"),
+    ):
+        write(root, {"specifyResinUse": specified})
+        saved = one_dragon.read_file(path)[segment]["resinUsage"]
+        assert saved["mode"] == expected_mode
+        assert saved["counts"] == usage()["counts"]
+        assert saved["allowed"] == usage()["allowed"]
+    write(root, {"condensedResinUseCount": 3})
+    changed = one_dragon.read_file(path)
+    changed[segment]["resinUsage"]["originalTier"] = "Prefer40"
+    changed[segment]["resinUsage"]["futureOption"] = {"external": True}
+    one_dragon.write_file(path, changed)
+
+    one_dragon.restore_global_battle_config(root, snapshot)
+
+    expected = deepcopy(before_runtime)
+    expected[segment]["resinUsage"]["originalTier"] = "Prefer40"
+    expected[segment]["resinUsage"]["futureOption"] = {"external": True}
+    assert one_dragon.read_file(path) == expected
 
 
 @pytest.mark.parametrize("native_usage", [None, usage()])
@@ -115,25 +129,6 @@ def test_runtime_resin_overlay_is_fully_restored(settings_io, native_usage):
     one_dragon.restore_global_battle_config(root, snapshot)
 
     assert one_dragon.read_file(path) == original
-
-
-def test_restore_preserves_unrelated_native_resin_changes(settings_io):
-    root, segment, path, read, write = settings_io
-    original = seed(settings_io, usage())
-    snapshot = one_dragon.snapshot_global_battle_config(root)
-    write(root, {"specifyResinUse": False, "condensedResinUseCount": 3})
-    changed = one_dragon.read_file(path)
-    changed[segment]["resinUsage"]["originalTier"] = "Prefer40"
-    changed[segment]["resinUsage"]["futureOption"] = {"external": True}
-    one_dragon.write_file(path, changed)
-
-    one_dragon.restore_global_battle_config(root, snapshot)
-
-    restored = one_dragon.read_file(path)
-    expected = deepcopy(original)
-    expected[segment]["resinUsage"]["originalTier"] = "Prefer40"
-    expected[segment]["resinUsage"]["futureOption"] = {"external": True}
-    assert restored == expected
 
 
 @pytest.mark.parametrize("initial_usage", [None, {}, "missing"])

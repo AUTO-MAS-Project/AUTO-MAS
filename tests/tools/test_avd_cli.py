@@ -70,46 +70,6 @@ async def test_create_retries_without_timeout_for_v01_usage_error(
 
 
 @pytest.mark.asyncio
-async def test_real_fake_modavd_program_keeps_json_and_stderr_separate(
-    tmp_path: Path,
-) -> None:
-    script = tmp_path / "fake_modavd.py"
-    script.write_text(
-        "import json, sys\n"
-        "print('fake log', file=sys.stderr)\n"
-        "print(json.dumps({'ok': True, 'data': {'instances': []}}, ensure_ascii=False))\n",
-        encoding="utf-8",
-    )
-    exe = Path(sys.executable)
-
-    async def runner(
-        args: Sequence[str],
-        timeout: float,
-        timeout_handler: object,
-        breakaway: bool,
-    ) -> ProcessOutput:
-        del timeout, timeout_handler, breakaway
-        process = await asyncio.create_subprocess_exec(
-            sys.executable,
-            str(script),
-            *list(args)[1:],
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await process.communicate()
-        return ProcessOutput(
-            process.returncode or 0,
-            stdout.decode("utf-8"),
-            stderr.decode("utf-8"),
-        )
-
-    result = await ModAvdCli(tmp_path, exe=exe, runner=runner).list()
-
-    assert result == {"instances": []}
-
-
-@pytest.mark.asyncio
 async def test_run_process_uses_separate_streams_and_devnull_stdin(
     tmp_path: Path,
 ) -> None:
@@ -778,6 +738,7 @@ async def test_old_update_cli_gets_neither_source_nor_cdk(
 async def test_update_streams_progress_and_shows_busy_from_modavd_as_is(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """真实进程的响应、杂乱日志和进度保持分流，更新被拒后仍可读取最终状态。"""
     fake = _FakeModavd(tmp_path, monkeypatch)
     root = _root_with_exe(tmp_path)
     monkeypatch.setattr(cli_module, "CALLER_UPDATE_OPTIONS_PLATFORM", False)
@@ -826,6 +787,11 @@ async def test_update_streams_progress_and_shows_busy_from_modavd_as_is(
     assert (final.stage, final.status) == ("staged", "failed")
     assert "ModAVD.exe 开着" in final.message and "关掉管理器" in final.message
     assert not updater_module.update_in_progress(root)
+    observed = await updater_module.status(str(root), host=host)
+    assert observed["busy"] is False
+    assert observed["progress"]["stage"] == "staged"
+    assert observed["progress"]["status"] == "failed"
+    assert observed["progress"]["message"] == final.message
 
 
 @pytest.mark.asyncio

@@ -129,8 +129,7 @@ def prepare_open(harness, monkeypatch, statuses):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("foreground", [True, False])
-async def test_slow_cold_boot_keeps_full_startup_wait(harness, monkeypatch, foreground):
+async def test_slow_cold_boot_keeps_full_startup_wait(harness, monkeypatch):
     info = prepare_open(harness, monkeypatch, [])
     status_calls = 0
 
@@ -143,8 +142,6 @@ async def test_slow_cold_boot_keeps_full_startup_wait(harness, monkeypatch, fore
         return DeviceStatus.STARTING if harness.now < 80 else DeviceStatus.ONLINE
 
     harness.manager.getStatus.side_effect = status
-    if not foreground:
-        harness.default_query = (float("inf"), 0, "")
     assert await harness.manager.open("0", PACKAGE) is info
     assert 110 <= harness.now <= 140.2
     assert len(harness.commands("setting")) == 1

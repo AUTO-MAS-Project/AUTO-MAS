@@ -95,15 +95,6 @@ async def test_native_switch_not_supported_reports_actionable_error(launch, erro
 
 
 @pytest.mark.asyncio
-async def test_update_allows_worker_to_start_after_sixty_seconds(launch):
-    launch.schedule.extend(
-        [(30, lambda: launch.emit("Downloading package-a")), (100, launch.found.set)]
-    )
-    await launch.run()
-    assert launch.clock.now >= 100
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "message,args",
     [
@@ -171,7 +162,10 @@ async def test_alternating_retries_do_not_extend_stall_deadline(launch):
 
 
 @pytest.mark.asyncio
-async def test_quiet_download_past_repeat_window_survives(launch):
+@pytest.mark.parametrize("repeat_at", [None, 40, 300])
+async def test_worker_start_survives_quiet_download_and_isolated_repeat(
+    launch, repeat_at
+):
     # 非 tty 下 pip 输出「Downloading 包名」一行后静默下载：大包慢速下载期
     # 可超过 5 分钟无完整新行，不应被判为停滞而提前中止。
     launch.schedule.extend(
@@ -180,34 +174,10 @@ async def test_quiet_download_past_repeat_window_survives(launch):
             (400, launch.found.set),
         ]
     )
-    await launch.run()
-    assert launch.clock.now >= 400
-
-
-@pytest.mark.asyncio
-async def test_single_repeat_then_silence_survives(launch):
-    # 下载重试打印一次旧进展后转入静默下载是真实路径：单次重复不应让刷屏
-    # 判定永久武装，静默窗口须继续生效。
-    launch.schedule.extend(
-        [
-            (30, lambda: launch.emit("Downloading large-package")),
-            (40, lambda: launch.emit("Downloading large-package")),
-            (400, launch.found.set),
-        ]
-    )
-    await launch.run()
-    assert launch.clock.now >= 400
-
-
-@pytest.mark.asyncio
-async def test_late_single_repeat_then_silence_survives(launch):
-    launch.schedule.extend(
-        [
-            (30, lambda: launch.emit("Downloading large-package")),
-            (300, lambda: launch.emit("Downloading large-package")),
-            (400, launch.found.set),
-        ]
-    )
+    if repeat_at is not None:
+        launch.schedule.append(
+            (repeat_at, lambda: launch.emit("Downloading large-package"))
+        )
     await launch.run()
     assert launch.clock.now >= 400
 

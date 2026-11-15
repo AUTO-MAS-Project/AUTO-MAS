@@ -13,6 +13,10 @@ CLICK_MODULES = (
     "app.task.MaaEnd.tools.login",
     "app.task.BetterGI.tools.account_switch_native",
 )
+SCROLL_MODULES = (
+    "app.task.OkNte.tools.account_switch",
+    "app.task.BetterGI.tools.account_switch_native",
+)
 
 
 @pytest.fixture
@@ -65,7 +69,9 @@ def desktop(monkeypatch):
 
 
 @pytest.mark.parametrize("module_name", CLICK_MODULES)
-def test_click_uses_physical_coordinates_after_scale_change(module_name, desktop):
+def test_pointer_actions_keep_physical_coordinates_after_scale_change(
+    module_name, desktop
+):
     state, prepare = desktop
     module = import_module(module_name)
     prepare(module)
@@ -75,13 +81,6 @@ def test_click_uses_physical_coordinates_after_scale_change(module_name, desktop
     assert state.clicks == [(1000, 500)]
     assert state.cursor == (300, 200)
 
-
-@pytest.mark.parametrize("module_name", (CLICK_MODULES[1], CLICK_MODULES[6]))
-def test_account_list_scroll_uses_physical_coordinates(module_name, desktop):
-    state, prepare = desktop
-    module = import_module(module_name)
-    prepare(module)
-
-    module._scroll_list(1)
-
-    assert state.scrolls == [(module._LIST_SCROLL_POINT, -3)]
+    if module_name in SCROLL_MODULES:
+        module._scroll_list(1)
+        assert state.scrolls == [(module._LIST_SCROLL_POINT, -3)]

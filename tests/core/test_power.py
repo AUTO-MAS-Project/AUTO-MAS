@@ -14,8 +14,8 @@ from app.core.power import _PowerManager
 from app.core.ws import protocol
 from app.models.task import TaskMode, TaskTriggerReason
 from app.utils.contracts.power import PowerSignal
-from tests.core.test_maintenance_cycle_review import make_queue
-from tests.core.test_task_tree_dispatch import scheduler as scheduler
+from tests.support.queue import make_queue
+from tests.support.scheduler import scheduler as scheduler
 
 
 @pytest.mark.parametrize(
@@ -117,25 +117,6 @@ async def test_signal_overwrite_applies_only_before_a_power_task_exists(controll
 
 
 @pytest.mark.asyncio
-async def test_api_reports_rejected_overwrite_without_cancelling_countdown(
-    controller, monkeypatch
-):
-    from app.api import dispatch
-
-    monkeypatch.setattr(dispatch, "Power", controller)
-    assert (
-        await dispatch.set_power(dispatch.PowerIn(signal=PowerSignal.SLEEP))
-    ).code == 200
-    await controller.start_power_task()
-    task = controller.power_task
-    response = await dispatch.set_power(dispatch.PowerIn(signal=PowerSignal.SHUTDOWN))
-    assert response.code == 409
-    assert controller.power_task is task and not task.cancelling()
-    assert (await dispatch.cancel_power_task()).code == 200
-    assert task.done()
-
-
-@pytest.mark.asyncio
 async def test_queue_signal_precedes_completion_and_power_sees_unregistered_task(
     scheduler, monkeypatch
 ):
@@ -166,13 +147,13 @@ async def test_queue_signal_precedes_completion_and_power_sees_unregistered_task
 
 
 @pytest.mark.asyncio
-async def test_busy_scheduler_skips_power_until_the_last_task_ends(
+async def test_last_task_starts_countdown_which_blocks_new_work_until_cancelled(
     scheduler, monkeypatch
 ):
-    manager, _, _, sid = scheduler
+    manager, _, queues, sid = scheduler
     controller = core.Power
     entered, release = asyncio.Event(), asyncio.Event()
-    from tests.core.test_task_tree_dispatch import Builtin
+    from tests.support.scheduler import Builtin
 
     class Waiting(Builtin):
         async def main_task(self):
@@ -180,8 +161,14 @@ async def test_busy_scheduler_skips_power_until_the_last_task_ends(
             await release.wait()
 
     manager.manager_factories = {type(scheduler[1][sid]): Waiting}
-    await controller.set_signal(PowerSignal.SLEEP, overwrite=True)
-    start = AsyncMock(return_value=True)
+    from app.api import dispatch
+
+    monkeypatch.setattr(dispatch, "Power", controller)
+    monkeypatch.setattr(dispatch, "TaskManager", manager)
+    assert (
+        await dispatch.set_power(dispatch.PowerIn(signal=PowerSignal.SLEEP))
+    ).code == 200
+    start = AsyncMock(wraps=controller.start_power_task)
     monkeypatch.setattr(controller, "start_power_task", start)
     request = {0: {"uid": "-", "children": {0: {"uid": str(sid)}}}}
     first = await manager.start(TaskMode.AUTO_PROXY, request)
@@ -194,6 +181,44 @@ async def test_busy_scheduler_skips_power_until_the_last_task_ends(
     await asyncio.wait_for(asyncio.gather(*(r.accomplish.wait() for r in runs)), 2)
     assert start.await_count == 1
     assert manager.get_task(first) and manager.get_task(second)
+    task = controller.power_task
+    assert task is not None
+    response = await dispatch.set_power(dispatch.PowerIn(signal=PowerSignal.SHUTDOWN))
+    assert response.code == 409
+    assert controller.power_task is task and not task.cancelling()
+    _, queue = await make_queue(
+        queues, sid, now=datetime.now().astimezone(), startup="Always", timed=True
+    )
+    before = queue.model_dump(context={"audience": "persist"})
+    recent = dict(manager._recent)
+    core.Publisher.send.reset_mock()
+    for kind in [*TaskTriggerReason, "config", "maintenance"]:
+        with pytest.raises(RuntimeError):
+            if kind == "maintenance":
+                await manager.start_maintenance(str(sid))
+            elif kind == "config":
+                await manager.start(TaskMode.SCRIPT_CONFIG, {0: {"uid": str(sid)}})
+            else:
+                await manager.start(
+                    TaskMode.AUTO_PROXY, {0: {"uid": str(queue.uid)}}, trigger=kind
+                )
+        assert not manager._running and manager._recent == recent
+        assert queue.model_dump(context={"audience": "persist"}) == before
+        assert controller.power_task is task and not task.cancelling()
+    response = await dispatch.add_task(
+        dispatch.TaskCreateIn.model_validate({"mode": "AutoProxy", "tasks": request})
+    )
+    assert response.code == 409 and response.taskId == ""
+    assert not manager._running
+    assert all(
+        call.kwargs["type"] != protocol.TASK_CREATED
+        for call in core.Publisher.send.await_args_list
+    )
+    assert (await dispatch.cancel_power_task()).code == 200
+    assert task.done()
+    assert controller.power_task is None
+    uid = await manager.start(TaskMode.AUTO_PROXY, {0: {"uid": str(queue.uid)}})
+    await asyncio.wait_for(manager.task_handler[uid].accomplish.wait(), 2)
 
 
 @pytest.mark.asyncio
@@ -321,61 +346,6 @@ async def test_cancelling_countdown_leaves_background_work_running(controller):
     assert not handle.done()
     release.set()
     assert await registry.shutdown(timeout=2)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("kind", [*TaskTriggerReason, "config", "maintenance"])
-async def test_countdown_ends_new_requests_before_registration_or_clock_updates(
-    scheduler, kind
-):
-    manager, _, queues, sid = scheduler
-    _, queue = await make_queue(
-        queues, sid, now=datetime.now().astimezone(), startup="Always", timed=True
-    )
-    before = queue.model_dump(context={"audience": "persist"})
-    await core.Power.set_signal(PowerSignal.SLEEP, overwrite=True)
-    await core.Power.start_power_task()
-    power_task = core.Power.power_task
-    with pytest.raises(RuntimeError):
-        if kind == "maintenance":
-            await manager.start_maintenance(str(sid))
-        elif kind == "config":
-            await manager.start(TaskMode.SCRIPT_CONFIG, {0: {"uid": str(sid)}})
-        else:
-            await manager.start(
-                TaskMode.AUTO_PROXY, {0: {"uid": str(queue.uid)}}, trigger=kind
-            )
-    assert not manager._running and not manager._recent
-    assert queue.model_dump(context={"audience": "persist"}) == before
-    assert core.Power.power_task is power_task and not power_task.cancelling()
-    assert all(
-        call.kwargs["type"] != protocol.TASK_CREATED
-        for call in core.Publisher.send.await_args_list
-    )
-    await core.Power.cancel_power_task()
-    assert core.Power.power_task is None
-    uid = await manager.start(TaskMode.AUTO_PROXY, {0: {"uid": str(queue.uid)}})
-    await manager.task_handler[uid].accomplish.wait()
-
-
-@pytest.mark.asyncio
-async def test_creation_api_reports_busy_during_countdown(scheduler, monkeypatch):
-    from app.api import dispatch
-
-    manager, _, _, sid = scheduler
-    monkeypatch.setattr(dispatch, "TaskManager", manager)
-    await core.Power.set_signal(PowerSignal.SLEEP, overwrite=True)
-    await core.Power.start_power_task()
-    response = await dispatch.add_task(
-        dispatch.TaskCreateIn.model_validate(
-            {
-                "mode": "AutoProxy",
-                "tasks": {"0": {"uid": "-", "children": {"0": {"uid": str(sid)}}}},
-            }
-        )
-    )
-    assert response.code == 409 and response.taskId == ""
-    assert not manager._running
 
 
 @pytest.mark.asyncio

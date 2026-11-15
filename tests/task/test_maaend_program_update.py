@@ -436,20 +436,37 @@ def installation(tmp_path, monkeypatch, isolated_app_paths):
 
 
 @pytest.mark.asyncio
-async def test_official_package_installs_and_preserves_native_interface(installation):
-    root, config = installation
+async def test_official_package_installs_and_preserves_native_interface(
+    installation, monkeypatch
+):
+    root, _ = installation
     old_pipeline = root / "resource/pipeline/old.json"
     old_pipeline.parent.mkdir(parents=True)
     old_pipeline.write_bytes(b'{"OldNode": {}}')
+    webview = root / "cache" / "webview_data"
+    webview.mkdir(parents=True)
+    (webview / "Preferences").write_text("persistent")
+    old = _cached_mxu_zip(root, "MaaEnd-win-x86_64-v2.0.0.zip", "v2.0.0")
+    same = _cached_mxu_zip(root, "MaaEnd-win-x86_64-v2.2.0.zip", "v2.2.0")
+    future = _cached_mxu_zip(root, "MaaEnd-win-x86_64-v2.3.0.zip", "v2.3.0")
+    different = _cached_mxu_zip(root, "MaaEnd-win-x86_64-test.zip", "v2.0.0", "Other")
+    unknown = _cached_mxu_zip(root, "user-backup.zip", "v2.0.0")
+    preserved = {path: path.read_bytes() for path in (future, different, unknown)}
     archive = root.parent / "official.zip"
     with zipfile.ZipFile(archive, "a") as package:
         package.writestr("resource/pipeline/nodes.json", '{"NewNode": {}}')
     asset = update.request_release.return_value["assets"][0]
     asset["size"] = archive.stat().st_size
     asset["digest"] = "sha256:" + hashlib.sha256(archive.read_bytes()).hexdigest()
-    await update.update_before_run(root, config)
+    instance, _, _ = await _start_real_maaend_manager_for_repair(root, monkeypatch)
+    try:
+        await instance.main_task()
+    finally:
+        await instance.final_task()
     assert update.read_install(root) == (Version("2.2.0"), "x86_64")
-    assert not list((root.parent / "data/maaend_update").glob("download-*"))
+    assert script_install.verify_installed_files(root, threading.Event())
+    cache = Path.cwd() / "data/maaend_update"
+    assert cache.is_dir() and not list(cache.glob("download-*"))
     assert (root / "data/AutoDelivery/catalog.json").is_file()
     assert not old_pipeline.exists()
     assert (root / "resource/pipeline/nodes.json").read_bytes() == b'{"NewNode": {}}'
@@ -458,6 +475,9 @@ async def test_official_package_installs_and_preserves_native_interface(installa
     )
     assert len(backups) == 1
     assert backups[0].read_bytes() == b'{"OldNode": {}}'
+    assert not old.exists() and not same.exists()
+    assert all(path.read_bytes() == content for path, content in preserved.items())
+    assert (webview / "Preferences").read_text() == "persistent"
     assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
     assert update.download_file.await_args.kwargs["downloader"] == "fluxdown"
     assert (
@@ -607,26 +627,6 @@ def _cached_mxu_zip(
     return path
 
 
-def test_discard_old_mxu_package_preserves_cache_and_newer_archives(installation):
-    root, _ = installation
-    webview = root / "cache" / "webview_data"
-    webview.mkdir(parents=True)
-    (webview / "Preferences").write_text("persistent")
-    old = _cached_mxu_zip(root, "MaaEnd-win-x86_64-v2.0.0.zip", "v2.0.0")
-    same = _cached_mxu_zip(root, "MaaEnd-win-x86_64-v2.1.0.zip", "v2.1.0")
-    future = _cached_mxu_zip(root, "MaaEnd-win-x86_64-v2.2.0.zip", "v2.2.0")
-    different = _cached_mxu_zip(root, "MaaEnd-win-x86_64-test.zip", "v2.0.0", "Other")
-    unknown = _cached_mxu_zip(root, "user-backup.zip", "v2.0.0")
-    removed = update.discard_obsolete_mxu_packages(root, threading.Event())
-    assert set(removed) == {old.name, same.name}
-    assert not old.exists() and not same.exists()
-    assert future.is_file() and different.is_file() and unknown.is_file()
-    assert (webview / "Preferences").read_text() == "persistent"
-    assert (
-        json.loads((root / "interface.json").read_text())["mirrorchyan_rid"] == "MaaEnd"
-    )
-
-
 def test_reparse_cache_is_rejected(installation, monkeypatch):
     root, _ = installation
     target = _cached_mxu_zip(root, "MaaEnd-win-x86_64-v2.0.0.zip", "v2.0.0")
@@ -735,16 +735,7 @@ async def test_prefetched_candidate_preserves_native_upgrade_during_archive_veri
 ):
     root, config = installation
     candidate = await update.prepare_update(root, config)
-    native = root.parent / "native.zip"
-    with zipfile.ZipFile(root.parent / "official.zip") as original:
-        with zipfile.ZipFile(native, "w") as archive:
-            for name in original.namelist():
-                content = original.read(name)
-                if name == "interface.json":
-                    payload = json.loads(content)
-                    payload["version"] = "v2.3.0"
-                    content = json.dumps(payload).encode()
-                archive.writestr(name, content)
+    native, _ = _official_release_for_test(root.parent, "v2.3.0")
     size = native.stat().st_size
     digest = hashlib.sha256(native.read_bytes()).hexdigest()
     verify = script_install.verify_archive
@@ -771,6 +762,8 @@ async def test_prefetched_candidate_preserves_native_upgrade_during_archive_veri
             await update.apply_update(root, candidate)
         assert update.read_install(root)[0] == Version("2.3.0")
         assert script_install.verify_installed_files(root, threading.Event())
+        assert (root / "resource/data.json").read_bytes() == b'{"native": true}'
+        assert (root / "agent/service.exe").read_bytes() == b"native agent"
         assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
         assert not (script_install.workspace(root) / "transaction.json").exists()
     finally:
@@ -1119,58 +1112,6 @@ def _official_release_for_test(tmp_path: Path, tag: str) -> tuple[Path, dict]:
 
 
 @pytest.mark.asyncio
-async def test_native_beta_newer_than_stable_uses_exact_official_package(
-    installation, tmp_path, monkeypatch
-):
-    root, config = installation
-    await update.update_before_run(root, config)
-    assert script_install.verify_installed_files(root, threading.Event())
-
-    # MXU 在 MAS 两次运行之间独立升级，版本高于 MAS 当前选用的 stable。
-    native_tag = "v2.3.0-beta.1"
-    (root / "interface.json").write_text(
-        json.dumps(
-            {"name": "MaaEnd", "version": native_tag, "mirrorchyan_rid": "MaaEnd"}
-        )
-    )
-    assert not script_install.verify_installed_files(root, threading.Event())
-    archive, official = _official_release_for_test(tmp_path, native_tag)
-    exact = AsyncMock(return_value=official)
-    monkeypatch.setattr(update, "request_release_for_version", exact)
-
-    async def download_native(_url, destination, **_kwargs):
-        shutil.copyfile(archive, destination)
-
-    downloader = AsyncMock(side_effect=download_native)
-    monkeypatch.setattr(update, "download_file", downloader)
-    mirror = AsyncMock()
-    monkeypatch.setattr(update, "request_mirror_resource", mirror)
-    config.Update.MirrorChyanCDK = "test-cdk"
-    update.Config.setting.Update.MirrorChyanCDK = "global-cdk"
-
-    result = await update.update_before_run(root, config)
-    assert "已更新" in result
-    assert update.read_install(root) == (Version(native_tag), "x86_64")
-    assert script_install.verify_installed_files(root, threading.Event())
-    exact.assert_awaited_once_with(Version(native_tag), native_tag)
-    assert downloader.await_args.kwargs["source"] == "GitHub"
-    assert downloader.await_args.args[0].endswith(
-        f"/releases/download/{native_tag}/MaaEnd-win-x86_64-{native_tag}.zip"
-    )
-    mirror.assert_not_awaited()
-    identity = json.loads(
-        (script_install.record_directory(root) / "program-identity.json").read_text()
-    )
-    assert identity == {"arch": "x86_64", "version": str(Version(native_tag))}
-    assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
-
-    # 回执已经重新建立；再运行时不得重复下载安装，也不得回退 stable。
-    assert "高于所选通道" in await update.update_before_run(root, config)
-    assert downloader.await_count == 1
-    exact.assert_awaited_once()
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "lookup_error",
     [ValueError("unknown official tag"), httpx.ConnectError("offline")],
@@ -1282,7 +1223,11 @@ async def test_maaend_stale_journal_verified_by_public_native_adapter(installati
     assert state.pending and state.healthy and state.updated_confirmed
     await adapter.acknowledge()
     assert not marker.exists()
-    assert list(work.glob("maaend-transaction-ack-*.json"))
+    archives = list(work.glob("maaend-transaction-ack-*.json"))
+    assert len(archives) == 1
+    assert archives[0].read_bytes() == b"stale-journal"
+    state = await adapter.inspect()
+    assert not state.pending and state.healthy and state.previous_confirmed
 
 
 @pytest.mark.asyncio
@@ -1420,7 +1365,11 @@ async def test_manager_repairs_damaged_exe_with_no_native_journal_via_common_ent
     assert update.read_install(root) == (Version("2.2.0"), "x86_64")
     assert script_install.verify_installed_files(root, threading.Event())
     assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
-    assert not (script_install.workspace(root) / "ready").exists()
+    work = script_install.workspace(root)
+    assert not any(
+        (work / name).exists()
+        for name in ("ready", "package", "transaction.json", "previous")
+    )
     assert any(
         "reinstalled" in str(call)
         for call in instance.script_info.set_log.await_args_list
@@ -1436,12 +1385,15 @@ async def test_manager_repairs_native_upgrade_receipt_at_exact_newer_version(
 ):
     root, existing_config = installation
     await update.update_before_run(root, existing_config)
+    assert script_install.verify_installed_files(root, threading.Event())
+    # MXU 在 MAS 两次运行之间独立升级，版本高于 MAS 当前选用的 stable。
     native_tag = "v2.3.0-beta.1"
     (root / "interface.json").write_text(
         json.dumps(
             {"name": "MaaEnd", "version": native_tag, "mirrorchyan_rid": "MaaEnd"}
         )
     )
+    assert not script_install.verify_installed_files(root, threading.Event())
     archive, release = _official_release_for_test(tmp_path, native_tag)
     exact = AsyncMock(return_value=release)
     monkeypatch.setattr(update, "request_release_for_version", exact)
@@ -1449,15 +1401,40 @@ async def test_manager_repairs_native_upgrade_receipt_at_exact_newer_version(
     async def download_exact(_url, destination, **_kwargs):
         shutil.copyfile(archive, destination)
 
-    monkeypatch.setattr(update, "download_file", AsyncMock(side_effect=download_exact))
+    downloader = AsyncMock(side_effect=download_exact)
+    monkeypatch.setattr(update, "download_file", downloader)
+    mirror = AsyncMock()
+    monkeypatch.setattr(update, "request_mirror_resource", mirror)
+    update.Config.setting.Update.MirrorChyanCDK = "global-cdk"
     await _interrupt_native_install_after_ready(root, monkeypatch)
     instance, _, _ = await _start_real_maaend_manager_for_repair(root, monkeypatch)
-    await instance.main_task()
-    assert not (script_install.workspace(root) / "ready").exists()
-    assert update.read_install(root) == (Version(native_tag), "x86_64")
-    assert script_install.verify_installed_files(root, threading.Event())
+    config = next(iter(manager.Config.ScriptConfig.values()))
+    config.Update.MirrorChyanCDK = "test-cdk"
+    await config.commit()
+    try:
+        await instance.main_task()
+        assert not (script_install.workspace(root) / "ready").exists()
+        assert update.read_install(root) == (Version(native_tag), "x86_64")
+        assert script_install.verify_installed_files(root, threading.Event())
+        assert (root / "resource/data.json").read_bytes() == b'{"native": true}'
+        assert (root / "agent/service.exe").read_bytes() == b"native agent"
+        assert downloader.await_args.kwargs["source"] == "GitHub"
+        assert downloader.await_args.args[0].endswith(
+            f"/releases/download/{native_tag}/MaaEnd-win-x86_64-{native_tag}.zip"
+        )
+        identity = json.loads(
+            script_install.record_path(root, "program-identity.json").read_text()
+        )
+        assert identity == {"arch": "x86_64", "version": str(Version(native_tag))}
+        assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
+
+        # 回执已经重新建立；再运行时不得重复下载安装，也不得回退 stable。
+        assert "高于所选通道" in await update.update_before_run(root, config)
+    finally:
+        await instance.final_task()
+    downloader.assert_awaited_once()
+    mirror.assert_not_awaited()
     exact.assert_awaited_once_with(Version(native_tag), native_tag)
-    await instance.final_task()
 
 
 @pytest.mark.asyncio

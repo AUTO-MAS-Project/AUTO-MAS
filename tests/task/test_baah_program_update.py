@@ -8,7 +8,6 @@ import threading
 import uuid
 import zipfile
 from contextlib import ExitStack
-from tests.runtime_support import RuntimeStub as SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -17,6 +16,7 @@ from packaging.version import Version
 from app.services import script_install
 from app.task.BAAH import manager
 from app.task.BAAH.tools import program_update as update
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 REAL_ASSERT_IDLE = update.assert_idle
 
@@ -76,30 +76,6 @@ def installation(tmp_path, monkeypatch, isolated_app_paths):
         update, "download_script_package", AsyncMock(side_effect=download)
     )
     return root, config, archive, release
-
-
-@pytest.mark.asyncio
-async def test_prepare_can_run_while_installation_is_reserved_then_apply_preserves_configs(
-    installation,
-):
-    root, config, _, _ = installation
-    with script_install.installation_access(root):
-        prepared = await update.prepare_update(root, config)
-    assert (root / "BAAH.exe").read_bytes() == pe()
-    with script_install.installation_access(root):
-        await update.apply_update(root, prepared)
-    assert (root / "BAAH.exe").read_bytes() == pe(b"new")
-    assert (
-        json.loads((root / "DATA/CONFIGS/software_config.json").read_text())["custom"]
-        is True
-    )
-    assert (root / "BAAH_CONFIGS/account.json").read_text() == '{"opaque": true}'
-    assert update.read_version(root) == Version("2.5.7")
-    assert (script_install.record_directory(root) / "installed.json").is_file()
-    assert (script_install.record_directory(root) / "baah-version.json").is_file()
-    assert not script_install.workspace(root).exists()
-    await update.confirm_current_install(root)
-    assert await update.prepare_update(root, config) is None
 
 
 @pytest.mark.asyncio
@@ -171,33 +147,6 @@ async def test_download_cancellation_cannot_modify_installation(installation):
     with pytest.raises(asyncio.CancelledError):
         await update.prepare_update(root, config)
     assert (root / "BAAH.exe").read_bytes() == pe()
-
-
-@pytest.mark.asyncio
-async def test_existing_install_allows_toolkit_adb_but_update_remains_strict(
-    installation, monkeypatch
-):
-    root, config, _, _ = installation
-    prepared = await update.prepare_update(root, config)
-    assert prepared is not None
-    adb = root / "tools" / "adb" / "adb.exe"
-    adb.parent.mkdir(parents=True)
-    adb.write_bytes(pe())
-    monkeypatch.setattr(
-        update.psutil,
-        "process_iter",
-        lambda fields: [SimpleNamespace(info={"exe": str(adb), "name": "adb.exe"})],
-    )
-
-    def check_idle(root, *, allow_background_adb=False):
-        if not allow_background_adb:
-            raise script_install.InstallUnsafeError("adb is still running")
-
-    monkeypatch.setattr(update, "assert_idle", check_idle)
-    # A non-mutating confirmation tolerates a server, but applying a package does not.
-    await update.confirm_current_install(root)
-    with pytest.raises(script_install.InstallUnsafeError, match="adb"):
-        await update.apply_update(root, prepared)
 
 
 @pytest.mark.asyncio
@@ -285,36 +234,45 @@ def test_real_idle_whitelist_rejects_baah_but_allows_known_adb(
 
 
 @pytest.mark.asyncio
-async def test_explicit_repair_can_reinstall_missing_baah_exe(installation):
+@pytest.mark.parametrize("damage", ["missing_exe", "changed_receipt"])
+async def test_baah_install_preserves_configs_and_requires_current_receipt_for_repair(
+    installation, damage
+):
     root, config, _, _ = installation
-    original = await update.prepare_update(root, config)
-    await update.apply_update(root, original)
+    with script_install.installation_access(root):
+        prepared = await update.prepare_update(root, config)
+    assert (root / "BAAH.exe").read_bytes() == pe()
+    with script_install.installation_access(root):
+        await update.apply_update(root, prepared)
+    assert (root / "BAAH.exe").read_bytes() == pe(b"new")
+    assert update.read_version(root) == Version("2.5.7")
     receipt = script_install.record_path(root, "installed.json")
     assert receipt.is_file()
-    snapshot = receipt.read_bytes()
-    (root / "BAAH.exe").unlink()
-    with pytest.raises(script_install.InstallUnsafeError):
-        await update.confirm_current_install(root)
-    with pytest.raises(OSError):
-        await update.prepare_update(root, config)
-    result = await update.update_before_run(root, config, recovery_receipt=snapshot)
-    assert "校验通过" in result
-    assert (root / "BAAH.exe").read_bytes() == pe(b"new")
-    assert not (script_install.workspace(root) / "transaction.json").exists()
+    assert (script_install.record_directory(root) / "baah-version.json").is_file()
+    assert not script_install.workspace(root).exists()
     await update.confirm_current_install(root)
-
-
-@pytest.mark.asyncio
-async def test_repair_refuses_changed_receipt(installation):
-    root, config, _, _ = installation
-    candidate = await update.prepare_update(root, config)
-    await update.apply_update(root, candidate)
-    receipt = script_install.record_path(root, "installed.json")
-    previous = receipt.read_bytes()
-    receipt.write_text('{"files":{}}')
-    with pytest.raises(script_install.InstallUnsafeError, match="已改变"):
-        await update.update_before_run(root, config, recovery_receipt=previous)
-    assert (root / "BAAH.exe").is_file()
+    assert await update.prepare_update(root, config) is None
+    snapshot = receipt.read_bytes()
+    if damage == "missing_exe":
+        (root / "BAAH.exe").unlink()
+        with pytest.raises(script_install.InstallUnsafeError):
+            await update.confirm_current_install(root)
+        with pytest.raises(OSError):
+            await update.prepare_update(root, config)
+        result = await update.update_before_run(root, config, recovery_receipt=snapshot)
+        assert "校验通过" in result
+        assert not (script_install.workspace(root) / "transaction.json").exists()
+        await update.confirm_current_install(root)
+    else:
+        receipt.write_text('{"files":{}}')
+        with pytest.raises(script_install.InstallUnsafeError, match="已改变"):
+            await update.update_before_run(root, config, recovery_receipt=snapshot)
+    assert (root / "BAAH.exe").read_bytes() == pe(b"new")
+    assert (
+        json.loads((root / "DATA/CONFIGS/software_config.json").read_text())["custom"]
+        is True
+    )
+    assert (root / "BAAH_CONFIGS/account.json").read_text() == '{"opaque": true}'
 
 
 @pytest.mark.asyncio

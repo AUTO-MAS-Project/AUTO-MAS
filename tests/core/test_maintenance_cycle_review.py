@@ -1,7 +1,6 @@
 """timer 统一派发启动、定时和循环；执行与收尾不参与循环计时。"""
 
 import asyncio
-from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
@@ -13,79 +12,11 @@ from app.config.errors import ConfigAggregateError
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config
 from app.core.timer import _MainTimer
-from app.models.config import QueueConfig, QueueItem, TimeSet
+from app.models.config import QueueConfig, TimeSet
 from app.models.task import TaskMode, TaskTriggerReason
-from tests.core.test_task_tree_dispatch import Builtin
-from tests.core.test_task_tree_dispatch import scheduler as scheduler
-
-
-@contextmanager
-def creation_time(now):
-    with patch("app.core.task_manager.datetime") as clock:
-        clock.now.return_value = now
-        yield
-
-
-async def make_queue(queues, sid, *, now, startup="Never", timed=False, cycle=True):
-    qid = queues.add(
-        QueueConfig,
-        payload={
-            "Info": {
-                "StartUpMode": startup,
-                "TimeEnabled": timed,
-                "CycleEnabled": cycle,
-            },
-            "Cycle": {"IntervalMinutes": 60, "LastRunAt": now - timedelta(hours=1)},
-        },
-    )
-    await queues.commit()
-    queues[qid].QueueItem.add(QueueItem, payload={"Info": {"ScriptId": str(sid)}})
-    await queues[qid].QueueItem.commit()
-    if timed:
-        queues[qid].TimeSet.add(
-            TimeSet,
-            payload={
-                "Info": {
-                    "Time": now.replace(second=0, microsecond=0),
-                    "Days": [now.strftime("%A")],
-                }
-            },
-        )
-        await queues[qid].TimeSet.commit()
-    return qid, queues[qid]
-
-
-@pytest.mark.asyncio
-async def test_timer_dispatches_each_reason_independently_and_records_on_acceptance(
-    scheduler,
-):
-    manager, _, queues, sid = scheduler
-    now = datetime.now().astimezone().replace(second=10, microsecond=0)
-    qid, queue = await make_queue(queues, sid, now=now, startup="Always", timed=True)
-    timer = _MainTimer()
-    with (
-        patch("app.core.timer._local_now", return_value=now),
-        creation_time(now),
-        patch("app.core.timer.TaskManager", manager),
-        patch.object(manager, "start", AsyncMock(wraps=manager.start)) as start,
-    ):
-        await timer.timed_start(startup=True)
-        await timer.timed_start()
-    assert start.await_count == 3
-    assert [call.kwargs["trigger"] for call in start.await_args_list] == [
-        TaskTriggerReason.STARTUP,
-        TaskTriggerReason.TIMED,
-        TaskTriggerReason.CYCLE,
-    ]
-    for call in start.await_args_list:
-        mode, tasks = call.args
-        assert mode is TaskMode.AUTO_PROXY
-        assert tasks == {0: {"uid": str(qid)}}
-    assert queue.Data.LastTimedStart == queue.Cycle.LastRunAt == now
-    assert queue.Data.LastStartupTime.date() == now.date()
-    assert queue.Cycle.NextRunAt == now.replace(second=0, microsecond=0) + timedelta(
-        hours=1
-    )
+from tests.support.queue import creation_time, make_queue
+from tests.support.scheduler import Builtin
+from tests.support.scheduler import scheduler as scheduler
 
 
 @pytest.mark.asyncio

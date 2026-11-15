@@ -102,33 +102,6 @@ async def test_script_channel_and_global_downloader_are_independent(
 
 
 @pytest.mark.asyncio
-async def test_prefetch_is_outside_install_and_registers_only_when_consumed(
-    installation, monkeypatch
-):
-    root, _, downloader = installation
-    monkeypatch.chdir(root.parent)
-    config = script_config(channel="stable")
-    candidate = await update.prepare_maa_fluxdown_update(
-        root, config=config, config_dir=root / "config", download_only=True
-    )
-    assert isinstance(candidate, update.PreparedUpdate)
-    assert not candidate.package.is_relative_to(root)
-    assert update.read_pending_update(root) == ("", "")
-    assert (
-        await update.prepare_maa_fluxdown_update(
-            root, config=config, config_dir=root / "config", prepared=candidate
-        )
-        == "v6.1.0"
-    )
-    downloader.assert_awaited_once()
-    version, package = update.read_pending_update(root)
-    assert version == "v6.1.0"
-    assert update.Path(package).is_relative_to(root)
-    update.discard_prepared_update(candidate)
-    assert update.Path(package).is_file()
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["changed-source", "interrupted-copy"])
 async def test_prefetched_package_handoff_preserves_verified_destination(
     installation, monkeypatch, failure
@@ -165,42 +138,11 @@ async def test_prefetched_package_handoff_preserves_verified_destination(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("change", ["pending", "failure"])
-async def test_prefetched_maa_package_preserves_new_native_update_state(
-    installation, monkeypatch, change
-):
-    root, _, _ = installation
-    monkeypatch.chdir(root.parent)
-    config = script_config()
-    candidate = await update.prepare_maa_fluxdown_update(
-        root, config=config, config_dir=root / "config", download_only=True
-    )
-    native = root / "native-update.zip"
-    if change == "pending":
-        native.write_bytes(b"native update")
-        update.write_pending_update(root, version="v6.2.0", package=str(native))
-    else:
-        (root / "pending-update-failure.txt").write_text("native install failed")
-    before = update.read_pending_update(root)
-    try:
-        with pytest.raises(RuntimeError):
-            await update.prepare_maa_fluxdown_update(
-                root, config=config, config_dir=root / "config", prepared=candidate
-            )
-        assert update.read_pending_update(root) == before
-        assert not (root / candidate.package.name).exists()
-        if change == "pending":
-            assert native.read_bytes() == b"native update"
-    finally:
-        update.discard_prepared_update(candidate)
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "change,same_name", [("pending", False), ("pending", True), ("failure", False)]
 )
 @pytest.mark.parametrize("prefetched", [False, True])
-async def test_maa_package_handoff_preserves_native_state_created_during_io(
+async def test_maa_package_handoff_rechecks_native_state_before_and_after_io(
     installation, monkeypatch, change, same_name, prefetched
 ):
     root, _, downloader = installation
@@ -224,6 +166,21 @@ async def test_maa_package_handoff_preserves_native_state_created_during_io(
             )
         else:
             (root / "pending-update-failure.txt").write_text("native install failed")
+
+    native_update_finished()
+    before = update.read_pending_update(root)
+    with pytest.raises(RuntimeError):
+        await update.prepare_maa_fluxdown_update(
+            root, config=config, config_dir=root / "config", prepared=candidate
+        )
+    assert update.read_pending_update(root) == before
+    if change == "pending":
+        assert native.read_bytes() == b"native update"
+        native.unlink()
+        update.write_pending_update(root, version="", package="")
+    else:
+        assert update.has_delegated_update_failure(root)
+        (root / "pending-update-failure.txt").unlink()
 
     if prefetched:
         copy = update.shutil.copyfile
@@ -294,7 +251,7 @@ async def test_prefetched_maa_package_rechecks_source_after_copy(
 
 
 @pytest.mark.asyncio
-async def test_prefetched_maa_package_is_consumed_once_when_release_advances(
+async def test_manager_hands_off_prefetch_once_and_rechecks_advancing_release(
     installation, monkeypatch
 ):
     root, release, downloader = installation
@@ -306,6 +263,10 @@ async def test_prefetched_maa_package_is_consumed_once_when_release_advances(
     candidate = await update.prepare_maa_fluxdown_update(
         root, config=config, config_dir=root / "config", download_only=True
     )
+    assert isinstance(candidate, update.PreparedUpdate)
+    assert not candidate.package.is_relative_to(root)
+    assert update.read_pending_update(root) == ("", "")
+    downloader.assert_awaited_once()
     scheduler = object.__new__(manager.MaaManager)
     scheduler.script_config = config
     scheduler.script_info = SimpleNamespace(log="", script_id="test-script")
@@ -318,10 +279,18 @@ async def test_prefetched_maa_package_is_consumed_once_when_release_advances(
     monkeypatch.setattr(manager, "latest_resource_clock", AsyncMock(return_value=clock))
     monkeypatch.setattr(manager, "prepare_install_resources", AsyncMock())
 
+    installed_versions = []
+
     async def install_pending(install, **_kwargs):
         nonlocal installed
         installed, archive = update.read_pending_update(install)
-        update.Path(archive).unlink()
+        archive = update.Path(archive)
+        assert archive.is_relative_to(root)
+        assert archive.read_bytes() == b"opaque official package"
+        assert not candidate.package.exists(), "清理候选不能删除交给本体的归档"
+        installed_versions.append(installed)
+        assert downloader.await_count == len(installed_versions)
+        archive.unlink()
         update.write_pending_update(install, version="", package="")
         # 下载完成与安装后核对之间，上游又发布了一版。
         release.return_value["version"] = "v6.2.0"
@@ -332,6 +301,7 @@ async def test_prefetched_maa_package_is_consumed_once_when_release_advances(
             SimpleNamespace(update_config_dir=root / "config")
         )
         assert installed == "v6.2.0"
+        assert installed_versions == ["v6.1.0", "v6.2.0"]
         assert downloader.await_count == 2
         assert not candidate.package.exists()
     finally:
