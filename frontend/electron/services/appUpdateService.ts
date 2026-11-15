@@ -22,6 +22,8 @@ import type { BackendService } from './backendService'
 
 type ChangelogData = Record<string, Record<string, string[]>>
 
+const SWITCH_SOURCE = Symbol('switch-source')
+
 const VERSION = /^v?\d+\.\d+\.\d+(?:-beta\.\d+)?$/
 export function normalizeAppVersion(value: string): string {
   // 校验正式或 beta 应用版本号，并统一补齐 v 前缀用于发行资源定位。
@@ -118,13 +120,15 @@ export async function checkAppUpdate(input: AppUpdateSettings): Promise<AppUpdat
 export async function precheckAppVersion(
   baseUrl: string,
   version: string,
-  commit?: string
+  commit?: string,
+  signal?: AbortSignal
 ): Promise<void> {
-  // 读取目标版本项目依赖并调用后端插件兼容性预检，存在冲突时阻止本次前端更新流程。
+  // 读取目标版本依赖并执行兼容性预检；取消信号贯通网络请求和后端解析进程。
+  signal?.throwIfAborted()
   const revision = commit && /^[a-f0-9]{40}$/i.test(commit) ? commit : normalizeAppVersion(version)
   const settings = await backendRequest<{
     data: { Update: { ProxyAddress?: string | null; Source?: string | null } }
-  }>(baseUrl, '/api/setting/get', {})
+  }>(baseUrl, '/api/setting/get', {}, signal)
   const network = session.fromPartition(`app-update-precheck:${randomUUID()}`)
   if (settings.data.Update.ProxyAddress)
     await network.setProxy({ proxyRules: settings.data.Update.ProxyAddress })
@@ -140,7 +144,11 @@ export async function precheckAppVersion(
   let lastError: unknown
   for (const url of sources) {
     try {
-      const response = await network.fetch(url, { signal: AbortSignal.timeout(20_000) })
+      signal?.throwIfAborted()
+      const timeout = AbortSignal.timeout(20_000)
+      const response = await network.fetch(url, {
+        signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      })
       if (!response.ok) throw new Error(`读取目标版本依赖失败 (${response.status})`)
       const document = parse(await response.text())
       const project = document.project as { dependencies?: unknown; version?: unknown } | undefined
@@ -159,14 +167,18 @@ export async function precheckAppVersion(
       dependencies = project.dependencies
       break
     } catch (error) {
+      signal?.throwIfAborted()
       lastError = error
     }
   }
+  signal?.throwIfAborted()
   if (!dependencies) throw lastError ?? new Error('无法读取目标版本依赖')
-  const result = await backendRequest<CoreUpgradePrecheckOut>(baseUrl, '/api/update/precheck', {
-    version,
-    dependencies,
-  })
+  const result = await backendRequest<CoreUpgradePrecheckOut>(
+    baseUrl,
+    '/api/update/precheck',
+    { version, dependencies },
+    signal
+  )
   if (!result.compatible)
     throw new Error(
       (result.conflicts ?? [])
@@ -188,8 +200,8 @@ const initial = (): AppUpdateSnapshot => /* 创建独立的空更新快照，作
 export class AppUpdateService {
   snapshot = initial()
   private abort: AbortController | null = null
+  private downloadAbort: AbortController | null = null
   private running: Promise<void> | null = null
-  private input: AppUpdateSettings | null = null
   private downloader: 'builtin' | 'fluxdown' | undefined
   private directory: string | null = null
   constructor(
@@ -211,7 +223,6 @@ export class AppUpdateService {
     // 拒绝并行更新，冻结本次版本与设置，建立取消信号并等待下载流程结束。
     if (this.running) throw new Error('已有更新下载正在执行')
     const target = normalizeAppVersion(version)
-    this.input = input
     this.downloader = downloader
     this.abort = new AbortController()
     this.snapshot = {
@@ -224,6 +235,7 @@ export class AppUpdateService {
       // 下载流程结束后释放在途任务和取消控制器，允许下一次更新操作。
       this.running = null
       this.abort = null
+      this.downloadAbort = null
     })
     await this.running
   }
@@ -232,48 +244,78 @@ export class AppUpdateService {
     input: AppUpdateSettings,
     signal: AbortSignal
   ): Promise<void> {
-    // 先执行版本兼容预检，再按来源申请统一下载并复制更新包，更新进度与成功、取消或失败状态。
+    // 同一次更新持有整体取消信号；换源只中断当前下载，收尾后在原流程内继续。
+    let current = input
     try {
-      await precheckAppVersion(this.backendUrl(), version)
-      signal.throwIfAborted()
-      const source = input.settings.Source ?? 'CNB'
-      const asset = `AUTO-MAS-Setup-${version}-x64.zip`
-      let url =
-        source === 'GitHub'
-          ? `https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/${version}/${asset}`
-          : source === 'CNB'
-            ? `https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/${version}/${asset}`
-            : `https://data.auto-mas.top/api/v1/files/auto-mas/Release/${version.includes('beta') ? 'beta' : 'stable'}/download`
-      if (source === 'MirrorChyan') {
-        const release = await queryRelease(input)
-        if (
-          typeof release.version_name !== 'string' ||
-          normalizeAppVersion(release.version_name) !== version
-        )
-          throw new Error('所选更新版本已变化，请重新检查更新')
-        if (typeof release.url === 'string' && release.url) url = release.url
-      }
-      this.directory = await fs.mkdtemp(path.join(await this.stageRoot(), 'package-'))
-      const file = path.join(this.directory, asset)
-      await downloadAndCopy(
-        this.backendUrl(),
-        { url, rid: version, downloader: this.downloader },
-        file,
-        {
-          signal,
-          progress: value => {
-            // 将后端下载字节、总量和速度写入前端更新快照并发布进度事件。
-            Object.assign(this.snapshot, {
-              downloaded_size: value.downloaded ?? 0,
-              file_size: value.total ?? 0,
-              speed: value.speed ?? 0,
-            })
+      while (true) {
+        signal.throwIfAborted()
+        const download = new AbortController()
+        this.downloadAbort = download
+        const currentSignal = AbortSignal.any([signal, download.signal])
+        try {
+          if (this.snapshot.status === 'switchingSource') {
+            await backendRequest(
+              this.backendUrl(),
+              '/api/setting/update',
+              {
+                data: { Update: { Source: 'CNB' } },
+              },
+              currentSignal
+            )
+            current = { ...current, settings: { ...current.settings, Source: 'CNB' } }
+            this.snapshot = { ...initial(), status: 'switchingSource', version, source: 'CNB' }
             this.emit('progress')
-          },
+          }
+          await precheckAppVersion(this.backendUrl(), version, undefined, currentSignal)
+          currentSignal.throwIfAborted()
+          const source = current.settings.Source ?? 'CNB'
+          this.snapshot.status = 'downloading'
+          this.emit('progress')
+          const asset = `AUTO-MAS-Setup-${version}-x64.zip`
+          let url =
+            source === 'GitHub'
+              ? `https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/${version}/${asset}`
+              : source === 'CNB'
+                ? `https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/${version}/${asset}`
+                : `https://data.auto-mas.top/api/v1/files/auto-mas/Release/${version.includes('beta') ? 'beta' : 'stable'}/download`
+          if (source === 'MirrorChyan') {
+            const release = await queryRelease(current)
+            if (
+              typeof release.version_name !== 'string' ||
+              normalizeAppVersion(release.version_name) !== version
+            )
+              throw new Error('所选更新版本已变化，请重新检查更新')
+            if (typeof release.url === 'string' && release.url) url = release.url
+          }
+          this.directory = await fs.mkdtemp(path.join(await this.stageRoot(), 'package-'))
+          const file = path.join(this.directory, asset)
+          await downloadAndCopy(
+            this.backendUrl(),
+            { url, rid: version, downloader: this.downloader },
+            file,
+            {
+              signal: currentSignal,
+              progress: value => {
+                // 将后端下载字节、总量和速度写入前端更新快照并发布进度事件。
+                Object.assign(this.snapshot, {
+                  downloaded_size: value.downloaded ?? 0,
+                  file_size: value.total ?? 0,
+                  speed: value.speed ?? 0,
+                })
+                this.emit('progress')
+              },
+            }
+          )
+          this.snapshot = { ...this.snapshot, status: 'completed', file, speed: 0 }
+          this.emit('completed')
+          return
+        } catch (error) {
+          // 未确认停写时保持失败；用户取消优先，不能在旧源收尾后重新启动下载。
+          if (error instanceof DownloadWriterUnconfirmed) throw error
+          signal.throwIfAborted()
+          if (download.signal.reason !== SWITCH_SOURCE) throw error
         }
-      )
-      this.snapshot = { ...this.snapshot, status: 'completed', file, speed: 0 }
-      this.emit('completed')
+      }
     } catch (error) {
       const cancelled = signal.aborted && !(error instanceof DownloadWriterUnconfirmed)
       this.snapshot = {
@@ -301,20 +343,17 @@ export class AppUpdateService {
     })
   }
   async switchToCnb(): Promise<void> {
-    // 仅为 GitHub 在途版本执行来源切换，完成取消后保存 CNB 设置并重新申请下载。
-    const version = this.snapshot.version
-    const input = this.input
-    if (!version || !input || this.snapshot.source !== 'GitHub')
-      throw new Error('没有可切换的更新下载')
-    await this.cancel()
-    await backendRequest(this.backendUrl(), '/api/setting/update', {
-      data: { Update: { Source: 'CNB' } },
-    })
-    await this.start(
-      version,
-      { ...input, settings: { ...input.settings, Source: 'CNB' as typeof input.settings.Source } },
-      this.downloader
+    // 换源仅停止当前下载阶段；同一在途流程负责保存来源、重新预检及最终结果。
+    if (
+      !this.running ||
+      this.snapshot.status !== 'downloading' ||
+      this.snapshot.source !== 'GitHub'
     )
+      throw new Error('没有可切换的更新下载')
+    this.snapshot = { ...this.snapshot, status: 'switchingSource', speed: 0 }
+    this.emit('progress')
+    this.downloadAbort!.abort(SWITCH_SOURCE)
+    await this.running
   }
   async install(backend: BackendService): Promise<void> {
     // 再次预检目标版本，提取安装程序，停止所属后端并启动安装；启动失败时恢复后端。

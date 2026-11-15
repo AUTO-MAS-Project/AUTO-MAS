@@ -427,3 +427,43 @@ async def test_mirror_incremental_uses_baseline_and_falls_back_on_corruption(
     assert software_cache_dir(
         "win", "x64", "beta", base_version="v6.0.0"
     ) != software_cache_dir("win", "x64", "beta", base_version="v5.0.0")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("package_mode", ["full", "incremental"])
+async def test_mirror_prefetch_selects_the_package_used_by_update(
+    software_install, package_mode
+):
+    install = software_install
+    install.config.Update.PackageMode = package_mode
+
+    async def request(rid, *, params, **kwargs):
+        incremental = params.get("current_version") == "v6.0.0"
+        return {
+            "data": {
+                "version_name": "v6.1.0",
+                "url": "https://example.invalid/"
+                + ("delta" if incremental else "full"),
+                "update_type": "incremental" if incremental else "full",
+            }
+        }
+
+    async def download(url, path, **kwargs):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(path, "w") as package:
+            if url.endswith("delta"):
+                package.writestr("changes.json", '{"deleted": []}')
+                package.writestr("resource/change.json", "new")
+            else:
+                package.writestr("MAA.exe", "exe")
+                package.writestr("MAA.dll", "dll")
+
+    install.request.side_effect = request
+    install.downloader.side_effect = download
+    downloads = await software.check_software_download(install.root, install.config)
+    expected_url = "https://example.invalid/" + (
+        "delta" if package_mode == "incremental" else "full"
+    )
+    assert downloads[0].url == expected_url
+    assert await prepare_software(install) == "v6.1.0"
+    assert install.downloader.await_args.args[0] == expected_url

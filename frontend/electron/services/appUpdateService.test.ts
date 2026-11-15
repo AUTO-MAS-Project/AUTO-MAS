@@ -200,3 +200,194 @@ it('手动同版本更新按远端提交预检，冲突在停机和材料准备�
   ).rejects.toThrow('plugin conflict')
   expect(native.runtimeStop).toHaveBeenCalledTimes(1)
 })
+
+it.each([
+  ['manual', 'metadata'],
+  ['manual', 'solver'],
+  ['application', 'metadata'],
+  ['application', 'solver'],
+] as const)(
+  '取消 %s 更新的 %s 预检时，不继续下载或进入停机',
+  async (entry, stage) => {
+    const controller = new AbortController()
+    const entered = Promise.withResolvers<void>()
+    const pending = (_url: unknown, options?: RequestInit) => {
+      // 模拟真实 fetch 的取消语义，缺少 signal 时在途请求会一直占用流程。
+      entered.resolve()
+      return new Promise<Response>((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), {
+          once: true,
+        })
+      })
+    }
+    if (entry === 'manual')
+      native.runtimeRun.mockResolvedValueOnce({
+        success: true,
+        result: { details: { version: 'v5.8.0' } },
+      })
+    native.fetch.mockImplementation(
+      stage === 'metadata'
+        ? pending
+        : async () => new Response('[project]\nversion="5.9.0"\ndependencies=["pydantic>=2"]\n')
+    )
+    const endpoints: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: URL, options?: RequestInit) => {
+        endpoints.push(url.pathname)
+        if (url.pathname === '/api/setting/get')
+          return Promise.resolve(Response.json({ code: 200, data: { Update: {} } }))
+        if (url.pathname === '/api/update/precheck') return pending(url, options)
+        throw new Error(`Unexpected endpoint: ${url.pathname}`)
+      })
+    )
+    const service = new AppUpdateService(
+      'test-root',
+      () => 'http://127.0.0.1:36163',
+      () => {}
+    )
+    const preparation =
+      entry === 'manual'
+        ? prepareCoreUpgrade(
+            {
+              runtimePath: 'runtime.exe',
+              appRoot: 'test-root',
+              dataRoot: 'test-root',
+              mode: 'managed',
+            },
+            'http://127.0.0.1:36163',
+            'v5.9.0',
+            controller.signal
+          )
+        : service.start('v5.9.0', { currentVersion: 'v5.8.0', settings: { Source: 'CNB' } })
+    const cancelled = expect(preparation).rejects.toMatchObject({ name: 'AbortError' })
+    await entered.promise
+    if (entry === 'manual') controller.abort()
+    else await service.cancel()
+    await cancelled
+    if (entry === 'application') expect(service.snapshot.status).toBe('cancelled')
+    expect(endpoints).toEqual(
+      stage === 'metadata' ? ['/api/setting/get'] : ['/api/setting/get', '/api/update/precheck']
+    )
+    expect(native.fetch).toHaveBeenCalledTimes(1)
+    expect(native.runtimeRun).toHaveBeenCalledTimes(entry === 'manual' ? 1 : 0)
+  },
+  2000
+)
+
+it.each(['success', 'settings', 'precheck', 'unconfirmed', 'release-offline', 'cancel'] as const)(
+  '换源作为同一下载流程执行，%s 路径不丢失终态或提前启动新源',
+  async outcome => {
+    // 在 HTTP 边界控制旧下载、引用释放和新下载，运行真实换源与复制流程。
+    const root = await mkdtemp(join(tmpdir(), 'mas-source-switch-'))
+    const shared = join(root, 'shared.zip')
+    await writeFile(shared, 'package')
+    const entered = Promise.withResolvers<void>()
+    const releasing = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const requests: string[] = []
+    const terminals: string[] = []
+    let checks = 0
+    let saves = 0
+    let source = 'GitHub'
+    native.fetch.mockImplementation(
+      async () => new Response('[project]\nversion="5.9.0"\ndependencies=["pydantic>=2"]\n')
+    )
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: URL, options: RequestInit) => {
+        // 旧源的查询保持在途，直到换源或用户取消；释放确认前不允许开始新源。
+        const body = JSON.parse(options.body as string)
+        if (url.pathname === '/api/setting/get')
+          return Response.json({ code: 200, data: { Update: { Source: source } } })
+        if (url.pathname === '/api/setting/update') {
+          saves++
+          if (outcome === 'settings')
+            return Response.json({ code: 500, message: 'settings failed' })
+          source = body.data.Update.Source
+          return Response.json({ code: 200 })
+        }
+        if (url.pathname === '/api/update/precheck') {
+          checks++
+          const compatible = outcome !== 'precheck' || checks === 1
+          return Response.json({
+            code: 200,
+            compatible,
+            conflicts: compatible ? [] : [{ message: 'incompatible plugin' }],
+          })
+        }
+        if (url.pathname === '/api/download/request') {
+          requests.push(body.request.url)
+          return Response.json({ code: 200, accepted: true })
+        }
+        if (url.pathname === '/api/download/query') {
+          if (body.url.includes('github.com'))
+            return new Promise<Response>((_resolve, reject) => {
+              options.signal?.addEventListener('abort', () => reject(options.signal?.reason), {
+                once: true,
+              })
+              entered.resolve()
+            })
+          return Response.json({ code: 200, data: { state: 'succeeded', path: shared } })
+        }
+        if (url.pathname === '/api/download/release') {
+          if (body.url.includes('github.com')) {
+            releasing.resolve()
+            await release.promise
+            if (outcome === 'unconfirmed')
+              return Response.json({ code: 409, message: 'download_writer_unconfirmed' })
+            if (outcome === 'release-offline') throw new TypeError('release disconnected')
+          }
+          return Response.json({ code: 200 })
+        }
+        throw new Error(`Unexpected endpoint: ${url.pathname}`)
+      })
+    )
+    const service = new AppUpdateService(
+      root,
+      () => 'http://127.0.0.1:36163',
+      event => {
+        // 切源只有中间进度，整个更新下载只产生一次完成、失败或用户取消终态。
+        if (event.type !== 'progress') terminals.push(event.type)
+      }
+    )
+    const original = service
+      .start('v5.9.0', { currentVersion: 'v5.8.0', settings: { Source: 'GitHub' } })
+      .catch(error => error)
+    let switching: Promise<unknown> | undefined
+    try {
+      await entered.promise
+      switching = service.switchToCnb().catch(error => error)
+      await releasing.promise
+      expect(requests).toHaveLength(1)
+      expect(saves).toBe(0)
+      if (outcome === 'cancel') {
+        const cancelled = service.cancel()
+        release.resolve()
+        await cancelled
+      } else release.resolve()
+      await switching
+      await original
+      expect(terminals).toEqual([
+        outcome === 'success' ? 'completed' : outcome === 'cancel' ? 'cancelled' : 'failed',
+      ])
+      if (outcome === 'success') {
+        expect(requests).toHaveLength(2)
+        expect(requests[1]).toContain('cnb.cool')
+        expect(service.snapshot.source).toBe('CNB')
+        expect(await readFile(service.snapshot.file!, 'utf8')).toBe('package')
+      } else {
+        expect(requests).toHaveLength(1)
+        if (outcome === 'cancel' || outcome === 'unconfirmed' || outcome === 'release-offline')
+          expect(saves).toBe(0)
+        if (outcome !== 'cancel') expect(service.snapshot.message).toBeTruthy()
+      }
+    } finally {
+      release.resolve()
+      await service.cancel().catch(() => {})
+      await Promise.all([original, switching])
+      await rm(root, { recursive: true, force: true })
+    }
+  },
+  3000
+)

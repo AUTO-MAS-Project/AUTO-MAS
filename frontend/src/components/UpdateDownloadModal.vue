@@ -66,12 +66,7 @@
           </div>
 
           <div class="download-actions">
-            <a-button
-              danger
-              :loading="status === 'cancelling'"
-              :disabled="status === 'switchingSource'"
-              @click="confirmCancel"
-            >
+            <a-button danger :loading="status === 'cancelling'" @click="confirmCancel">
               {{ t('core.comp.cancelDownload') }}
             </a-button>
             <a-button type="primary" ghost @click="background">{{

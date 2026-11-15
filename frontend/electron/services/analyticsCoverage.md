@@ -72,7 +72,7 @@
 | T038 | plan_edit_finished：简单/复杂视图与轮换计划是否好用 | 已接入，持续复核 |
 | T039 | update_check_finished：手动检查更新能否得到结果 | 已接入，持续复核 |
 | T040 | update_download_started：用户选择更新后的进入率 | 已接入，持续复核 |
-| T041 | update_download_finished：本体下载成功、失败和取消 | 已接入，持续复核 |
+| T041 | update_download_finished：本体下载成功、失败和取消 | 已接入，换源内部停旧不结束整次观察 |
 | T042 | update_source_changed：低速后换源能否改善 | 已接入，持续复核 |
 | T043 | update_install_requested：下载后启动安装器还是稍后安装 | 已接入，持续复核 |
 | T044 | emulator_discovery_finished：搜索、导入模拟器是否顺利 | 已接入，持续复核 |

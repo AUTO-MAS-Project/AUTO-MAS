@@ -972,14 +972,21 @@ async def cancel_maa_software_update_precheck(maa_root: Path) -> None:
 
 
 async def check_software_download(root: Path, config: MaaConfig) -> list:
-    """只查询完整包，不启动旧预检查工作或写入取包状态。"""
+    """按更新包模式查询下载地址，不启动旧预检查工作或写入取包状态。"""
     from auto_mas_core import DownloadRequest
 
     enabled, cdk = resolve_takeover_credentials(config)
     release = read_installed_release(root)
     if not enabled or cdk is None or release is None or config.Update.Channel is None:
         return []
-    latest = await _fetch_latest(config.Update.Channel, release[1], cdk)
+    latest = await _fetch_latest(
+        config.Update.Channel,
+        release[1],
+        cdk,
+        current_version=release[0]
+        if config.Update.PackageMode == "incremental"
+        else "",
+    )
     if latest.version == release[0]:
         return []
     return [DownloadRequest(url=latest.url, downloader="builtin")]

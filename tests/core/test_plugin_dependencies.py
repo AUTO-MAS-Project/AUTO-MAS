@@ -79,3 +79,41 @@ async def test_solver_tries_next_source_when_release_is_not_mirrored(monkeypatch
     assert result.ok
     assert attempted == mirrors
     mark_ok.assert_awaited_once_with(mirrors[1])
+
+
+@pytest.mark.asyncio
+async def test_removed_local_plugin_stays_visible_without_becoming_remote_dependency(
+    isolated_app_paths, monkeypatch
+):
+    """本地工程删除后保留插件中心记录，但不再向 PyPI 请求未发布的包。"""
+    from app.models.config import PluginRecord, PluginRegistryCollection
+    from app.plugin.runtime import discover
+    from app.plugin.types import PluginCodeDrift, SourceChange
+
+    registry = PluginRegistryCollection.build([PluginRecord])
+    await registry.activate()
+    monkeypatch.setattr(isolated_app_paths, "plugin_registry", registry)
+    uid = registry.add(
+        PluginRecord,
+        payload={
+            "info": {
+                "plugin_name": "unpublished-local",
+                "package_name": "unpublished-local",
+                "version": "1.0",
+                "source": "local",
+                "enabled": False,
+            }
+        },
+    )
+    await registry.commit()
+    project = isolated_app_paths.plugins_path / "unpublished-local"
+    registry[uid]._project_dir = project / "src"
+    # 磁盘上工程已被删除，由真实发现流程将旧登记转换为仅展示的移除记录。
+    await discover.refresh(
+        scope=discover.RefreshScope(changes=(SourceChange(str(project)),))
+    )
+    record = registry[uid]
+    assert record.info.code_drift == PluginCodeDrift.PACKAGE_REMOVED
+    assert record._project_dir is None
+    assert precheck.plugin_targets(registry.values()) == []
+    assert registry.by_name("unpublished-local") is record

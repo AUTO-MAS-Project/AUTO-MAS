@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata as importlib_metadata
 import sys
 import tempfile
 import tomllib
@@ -17,7 +18,7 @@ from app.utils import ProcessRunner
 from app.utils.common.tools import to_pep440
 
 from ..errors import PluginError, VersionConflict
-from ..types import CORE_DISTRIBUTION_NAME, CORE_PLUGIN_NAME
+from ..types import CORE_DISTRIBUTION_NAME, CORE_PLUGIN_NAME, PluginCodeDrift
 from .ops import candidates, ensure, mark_ok
 
 
@@ -49,7 +50,12 @@ def plugin_targets(plugins: Iterable, *, replacing: str | None = None) -> list[s
             and canonicalize_name(package) == canonicalize_name(replacing)
         ):
             continue
-        if record.info.source == "local" and record._project_dir is not None:
+        if record.info.source == "local":
+            # 源码移除后只保留展示记录，不能将未发布的本地工程转成远端发行包。
+            if record._project_dir is None:
+                if record.info.code_drift == PluginCodeDrift.PACKAGE_REMOVED:
+                    continue
+                raise PluginError(f"插件缺少本地源码：{record.info.plugin_name}")
             path = record._project_dir
             if not (path / "pyproject.toml").is_file():
                 path = path.parent
@@ -66,9 +72,16 @@ def plugin_targets(plugins: Iterable, *, replacing: str | None = None) -> list[s
             ):
                 raise PluginError(f"插件未声明 SDK 依赖：{record.info.plugin_name}")
             targets.append(str(path.resolve()))
-        elif package and record.info.version:
-            targets.append(f"{package}=={record.info.version}")
-        elif record.info.code_drift.value != "package_removed":
+        elif package:
+            # 导入失败不代表已经卸载，以发行元数据确认共享环境中实际保留的版本。
+            try:
+                version = importlib_metadata.version(package)
+            except importlib_metadata.PackageNotFoundError as error:
+                if record.info.code_drift == PluginCodeDrift.PACKAGE_REMOVED:
+                    continue
+                raise PluginError(f"插件缺少已安装的发行元数据：{package}") from error
+            targets.append(f"{package}=={version}")
+        elif record.info.code_drift != PluginCodeDrift.PACKAGE_REMOVED:
             raise PluginError(f"插件无法确定保留的发行版本：{record.info.plugin_name}")
     return targets
 
@@ -140,7 +153,9 @@ async def resolve_environment(
             ]
             if destination is None:
                 args.append("--dry-run")
-            result = await ProcessRunner.run_process(*args, timeout=600)
+            result = await ProcessRunner.run_process(
+                *args, timeout=600, kill_tree_on_cancel=True
+            )
             if result.returncode == 0:
                 await mark_ok(mirror)
                 return CoreCompat(ok=True)

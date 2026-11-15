@@ -129,20 +129,36 @@ logger = get_logger("软件更新 API")
 
 
 @router.post("/precheck", response_model=CoreUpgradePrecheckOut, tags=["Get"])
-async def precheck_core_upgrade(body: CoreUpgradePrecheckIn) -> CoreUpgradePrecheckOut:
+async def precheck_core_upgrade(
+    body: CoreUpgradePrecheckIn, request: Request
+) -> CoreUpgradePrecheckOut:
     """在插件状态锁内检查目标 core 版本与插件依赖是否兼容，返回准入结论和冲突明细供前端决策。"""
     from dataclasses import asdict
 
     from app.core import Plugin
     from app.plugin.uv import precheck_core_bump
 
-    async with Plugin._hold():
-        # 导入失败的包仍保留在共享环境中，预检不能只使用成功加载的运行时列表。
-        conflicts = await precheck_core_bump(
-            body.version,
-            plugins=Config.plugin_registry.values(),
-            dependencies=body.dependencies,
-        )
+    owner = asyncio.current_task()
+    assert owner is not None
+
+    async def cancel_on_disconnect() -> None:
+        """请求断开时取消所属预检，让锁等待和解析进程沿原调用栈完成回收。"""
+        while not await request.is_disconnected():
+            await asyncio.sleep(0.1)
+        owner.cancel()
+
+    watcher = asyncio.create_task(cancel_on_disconnect())
+    try:
+        async with Plugin._hold():
+            # 导入失败的包仍保留在共享环境中，预检不能只使用成功加载的运行时列表。
+            conflicts = await precheck_core_bump(
+                body.version,
+                plugins=Config.plugin_registry.values(),
+                dependencies=body.dependencies,
+            )
+    finally:
+        watcher.cancel()
+        await asyncio.gather(watcher, return_exceptions=True)
     return CoreUpgradePrecheckOut(
         compatible=not conflicts,
         conflicts=[CoreUpgradeConflict(**asdict(item)) for item in conflicts],

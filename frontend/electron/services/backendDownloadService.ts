@@ -100,6 +100,14 @@ export async function downloadAndCopy(
     }
   } finally {
     // 申请响应丢失也可能已计数；幂等释放 owner 可以同时覆盖该边界。
-    await backendRequest<OutBase>(baseUrl, '/api/download/release', { owner, url: request.url })
+    await backendRequest<OutBase>(baseUrl, '/api/download/release', {
+      owner,
+      url: request.url,
+    }).catch(error => {
+      // 释放响应丢失时无法确认引用及写入者已收敛，不能把普通网络错误当作可安全重启下载。
+      throw error instanceof DownloadWriterUnconfirmed
+        ? error
+        : new DownloadWriterUnconfirmed('无法确认下载收尾，请稍后重试', { cause: error })
+    })
   }
 }

@@ -117,7 +117,11 @@ const ensureSubscription = () => {
     if (event.type === 'completed') receiveCompleted()
     else if (event.type === 'cancelled') receiveCancelled()
     else if (event.type === 'failed') receiveFailed(snapshot.message || '下载失败')
-    else
+    else if (snapshot.status === 'switchingSource') {
+      invalidateSnapshot()
+      status.value = 'switchingSource'
+      speed.value = 0
+    } else
       receiveProgress({
         downloaded_size: snapshot.downloaded_size,
         file_size: snapshot.file_size,
@@ -361,7 +365,7 @@ const settleCancelFailure = async (): Promise<void> => {
 }
 
 const cancel = async () => {
-  if (status.value !== 'downloading') return
+  if (status.value !== 'downloading' && status.value !== 'switchingSource') return
 
   const operationGeneration = invalidateSnapshot()
   status.value = 'cancelling'

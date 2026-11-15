@@ -1,7 +1,7 @@
 """主程序插件系统入口：全局 Manager 单例。
 
 五操作范式：锁 → 预检 → 标记 ×× 中 → 上下游 DFS → 本项（先用户后系统）
-→（仅重载再依赖）→ 返回依赖字典；失败上抛，``finally`` 走失败分支。
+→（重载按本次拆卸树逐层恢复）→ 返回依赖字典；失败上抛，``finally`` 走失败分支。
 其它模块只依赖 ``from app.core import Plugin``。
 
 名单权威 = ``Config.plugin_registry``（由 ``discover.refresh`` 按本地发现增改删）；
@@ -626,7 +626,7 @@ class _PluginManager:
         dep_path: list[str] | None = None,
         ctx: LifecycleContext = LifecycleContext.NORMAL,
     ) -> dict[str, Any]:
-        """DFS 禁用。"""
+        """递归禁用仍启用的下游，返回本次实际拆卸的完整级联树。"""
         if not held:
             async with self._pause_operations(record), self._hold():
                 return await self.disable(record, held=True, dep_path=dep_path, ctx=ctx)
@@ -682,9 +682,11 @@ class _PluginManager:
             await record.commit()
         deps: dict[str, Any] = {}
         try:
-            # ── 下游 DFS ──
+            # ── 下游 DFS：只记录本次实际禁用的节点，供重载原样恢复 ──
             path = [*path_list, uid_s]
             for dep_record in downs:
+                if dep_record.info.state != PluginState.ENABLED:
+                    continue
                 dep_id = dep_record.info.plugin_name
                 deps[dep_id] = await self.disable(
                     dep_record, held=True, dep_path=path, ctx=ctx
@@ -829,7 +831,7 @@ class _PluginManager:
         held: bool = False,
         dep_path: list[str] | None = None,
     ) -> dict[str, Any]:
-        """拆下依赖方 → 重载本项 → 按依赖字典恢复。"""
+        """拆下启用中的下游并保存完整树，重载本项后按树先父后子恢复。"""
         if not held:
             async with self._pause_operations(record), self._hold():
                 return await self.reload(record, held=True, dep_path=dep_path)
@@ -906,28 +908,33 @@ class _PluginManager:
                     ctx=LifecycleContext.RELOAD,
                 )
 
-            # ── 按 tear 字典恢复下游 ──
-            restore: dict[str, Any] = {}
-            for dep_id in tear:
-                restored_record = self._record_by_plugin_id(dep_id)
-                if restored_record is None or restored_record._plugin_cls is None:
-                    continue
-                assert restored_record is not None
-                try:
-                    restore[dep_id] = await self.enable(
-                        restored_record,
-                        held=True,
-                        dep_path=path_list,
-                        ctx=LifecycleContext.RELOAD_CASCADE,
-                    )
-                except Exception as exc:
-                    logger.exception(f"重载后恢复下游失败: {dep_id}")
-                    restored_record.info.state = PluginState.FAULT_RUNTIME
-                    restored_record.info.enabled = False
-                    restored_record.info.last_error = str(exc)
-                    await restored_record.commit()
-                    restore[dep_id] = {"error": str(exc)}
-            deps["restore"] = restore
+            # ── 沿实际拆卸树恢复；enable 自身的上游求解不能代替下游树遍历 ──
+            async def restore_cascade(tree: dict[str, Any]) -> dict[str, Any]:
+                """先恢复树中节点再恢复其子树；单点失败保留故障并继续其他分支。"""
+                restored: dict[str, Any] = {}
+                for dep_id, children in tree.items():
+                    restored_record = self._record_by_plugin_id(dep_id)
+                    if restored_record is None or restored_record._plugin_cls is None:
+                        continue
+                    try:
+                        await self.enable(
+                            restored_record,
+                            held=True,
+                            dep_path=path_list,
+                            ctx=LifecycleContext.RELOAD_CASCADE,
+                        )
+                    except Exception as exc:
+                        logger.exception(f"重载后恢复下游失败: {dep_id}")
+                        restored_record.info.state = PluginState.FAULT_RUNTIME
+                        restored_record.info.enabled = False
+                        restored_record.info.last_error = str(exc)
+                        await restored_record.commit()
+                        # 子节点仍缺少此提供者，不能借恢复子树再次启用失败分支。
+                        continue
+                    restored[dep_id] = await restore_cascade(children)
+                return restored
+
+            deps["restore"] = await restore_cascade(tear)
 
             if was_enabled:
                 record.info.state = PluginState.ENABLED

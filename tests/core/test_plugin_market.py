@@ -38,6 +38,11 @@ async def test_data_station_success_never_scans_package_indexes(
 ):
     """有效数据站目录直接完成刷新，包括明确空目录；重复读取保持已有条目身份。"""
     document = published_catalog(empty=empty)
+    # 命中的完整目录可以覆盖本地更高版本，也可以明确清空，均不进行跨源新旧比较。
+    previous = market.parse_to_plugin_meta(project(version="99.0"))
+    assert previous is not None
+    catalog.add(PluginMeta, payload={"info": previous.info.model_dump()})
+    await catalog.commit()
     monkeypatch.setenv("AUTO_MAS_PLUGIN_INDEX_URL", "https://catalog.test/plugins.json")
     requests = []
 
@@ -312,11 +317,11 @@ async def test_refresh_recovers_from_transient_connection_failure(catalog, monke
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("format", ["sidecar", "range", "whole", "stale-pypi"])
+@pytest.mark.parametrize("format", ["sidecar", "range", "whole"])
 async def test_refresh_reads_mirror_metadata_when_pypi_is_unreachable(
     catalog, monkeypatch, format
 ):
-    """官方断线或索引滞后时从镜像读取真实元数据，不执行候选代码。"""
+    """官方来源不可用时读取单个镜像的完整元数据，不执行候选代码。"""
     info = project()["info"]
     metadata = (
         "Metadata-Version: 2.3\nName: auto-mas-demo\nVersion: 0.1.1\n"
@@ -340,11 +345,6 @@ async def test_refresh_reads_mirror_metadata_when_pypi_is_unreachable(
     def handler(request):
         nonlocal transferred
         if request.url.host == "pypi.org":
-            if format == "stale-pypi":
-                return httpx.Response(
-                    200 if request.url.path == "/simple/" else 404,
-                    text="<html><body></body></html>",
-                )
             raise httpx.ConnectError("TLS connection interrupted", request=request)
         if request.url.path.endswith("/simple/"):
             return httpx.Response(
@@ -353,13 +353,9 @@ async def test_refresh_reads_mirror_metadata_when_pypi_is_unreachable(
                 '<a href="auto-mas-unidentified/">auto-mas-unidentified</a>',
             )
         if request.url.path.endswith("/auto-mas-unidentified/"):
-            return httpx.Response(403)
+            return httpx.Response(404)
         if request.url.path.endswith("/auto-mas-demo/"):
-            attribute = (
-                'data-core-metadata="true"'
-                if format in {"sidecar", "stale-pypi"}
-                else ""
-            )
+            attribute = 'data-core-metadata="true"' if format == "sidecar" else ""
             return httpx.Response(
                 200,
                 text=f'<a href="../../files/auto_mas_demo-0.1.1-py3-none-any.whl" {attribute}>wheel</a>'
@@ -399,3 +395,123 @@ async def test_refresh_reads_mirror_metadata_when_pypi_is_unreachable(
     assert saved.author == "Demo Team"
     assert saved.license == "AGPL-3.0-or-later"
     assert saved.requires_dist == ["auto-mas-core>=5.8,<5.9"]
+
+
+@pytest.mark.asyncio
+async def test_known_package_query_survives_official_index_failure(
+    catalog, monkeypatch
+):
+    """总索引不可用时仍查询全部已知包，单包查询成功后不降到缺包镜像。"""
+    draft = market.parse_to_plugin_meta(project(version="0.1.0"))
+    catalog.add(PluginMeta, payload={"info": draft.info.model_dump()})
+    await catalog.commit()
+    requests = []
+
+    def handler(request):
+        """仅官方总索引失败，官方单包接口仍提供完整的新元信息。"""
+        requests.append(str(request.url))
+        assert request.url.host == "pypi.org"
+        if request.url.path == "/simple/":
+            return httpx.Response(503)
+        return httpx.Response(200, json=project())
+
+    serve(monkeypatch, handler)
+    await market.refresh()
+    assert [item.info.version for item in catalog.values()] == ["0.1.1"]
+    assert "https://pypi.org/pypi/auto-mas-demo/json" in requests
+
+
+@pytest.mark.asyncio
+async def test_complete_empty_official_result_does_not_consult_mirrors(
+    catalog, monkeypatch
+):
+    """官方已完整确认候选均不存在时采用空结果，不再混入镜像残留版本。"""
+    draft = market.parse_to_plugin_meta(project())
+    catalog.add(PluginMeta, payload={"info": draft.info.model_dump()})
+    await catalog.commit()
+
+    def handler(request):
+        """官方完整读取成功，禁止向较低优先级来源补充目录。"""
+        assert request.url.host == "pypi.org"
+        return (
+            httpx.Response(200, text="<html></html>")
+            if request.url.path == "/simple/"
+            else httpx.Response(404)
+        )
+
+    serve(monkeypatch, handler)
+    await market.refresh()
+    assert len(catalog) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("second_complete", [True, False])
+async def test_incomplete_mirror_is_discarded_before_next_source(
+    catalog, monkeypatch, second_complete
+):
+    """任一候选失败则放弃整级结果，全部不完整时旧目录保持不变。"""
+    previous = market.parse_to_plugin_meta(project(version="0.1.0"))
+    assert previous is not None
+    catalog.add(PluginMeta, payload={"info": previous.info.model_dump()})
+    await catalog.commit()
+    before = catalog.model_dump()
+    monkeypatch.setattr(
+        market,
+        "candidates",
+        lambda: ["https://first.test/simple/", "https://second.test/simple/"],
+    )
+    requests = []
+
+    def handler(request):
+        """第一镜像只能完整读取一个包，第二镜像提供自洽的两个包。"""
+        requests.append(str(request.url))
+        if request.url.host == "pypi.org":
+            return httpx.Response(503)
+        if request.url.path == "/simple/":
+            return httpx.Response(
+                200,
+                text='<a href="auto-mas-demo/">auto-mas-demo</a><a href="auto-mas-other/">auto-mas-other</a>',
+            )
+        name = "auto-mas-other" if "other" in request.url.path else "auto-mas-demo"
+        if name == "auto-mas-other" and (
+            request.url.host == "first.test" or not second_complete
+        ):
+            return httpx.Response(503)
+        version = (
+            "2.0.0"
+            if request.url.host == "first.test"
+            else "0.2.0"
+            if name == "auto-mas-other"
+            else "0.1.1"
+        )
+        if request.url.path.endswith("/"):
+            filename = f"{name.replace('-', '_')}-{version}-py3-none-any.whl"
+            return httpx.Response(
+                200,
+                text=f'<a href="/files/{filename}" data-core-metadata="true">wheel</a>',
+            )
+        assert request.url.path.endswith(".metadata")
+        info = project(name, version)["info"]
+        identity = name.removeprefix("auto-mas-") + "_adapter"
+        metadata = (
+            f"Metadata-Version: 2.3\nName: {name}\nVersion: {version}\n"
+            f"Keywords: auto-mas-plugin,auto-mas-id:{identity}\n"
+            "Requires-Dist: auto-mas-core>=5.8,<5.9\n\n" + info["description"]
+        )
+        return httpx.Response(200, text=metadata)
+
+    serve(monkeypatch, handler)
+    if second_complete:
+        await market.refresh()
+        assert {
+            item.info.package_name: item.info.version for item in catalog.values()
+        } == {
+            "auto-mas-demo": "0.1.1",
+            "auto-mas-other": "0.2.0",
+        }
+    else:
+        with pytest.raises(RuntimeError):
+            await market.refresh()
+        assert catalog.model_dump() == before
+    assert any("first.test" in url for url in requests)
+    assert any("second.test" in url for url in requests)

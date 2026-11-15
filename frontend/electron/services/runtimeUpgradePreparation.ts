@@ -132,10 +132,10 @@ export async function prepareCoreUpgrade(
       const commit = remote.result.details.remoteCommit
       if (typeof commit !== 'string' || !/^[a-f0-9]{40}$/i.test(commit))
         throw new Error('Runtime 未返回有效的更新提交，无法检查插件兼容性')
-      await precheckAppVersion(baseUrl, version, commit)
+      await precheckAppVersion(baseUrl, version, commit, signal)
       // TODO(plugin-migration): Runtime 支持固定目标提交后，对齐预检与实际更新对象。
     } else {
-      await precheckAppVersion(baseUrl, version)
+      await precheckAppVersion(baseUrl, version, undefined, signal)
     }
     signal?.throwIfAborted()
     return await prepareRuntimeBinary(config, baseUrl, version, signal)

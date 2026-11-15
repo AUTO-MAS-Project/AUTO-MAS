@@ -101,12 +101,23 @@ async def test_script_channel_and_global_downloader_are_independent(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("package_mode", ["full", "incremental"])
 async def test_prefetch_is_outside_install_and_registers_only_when_consumed(
-    installation, monkeypatch
+    installation, monkeypatch, package_mode
 ):
-    root, _, downloader = installation
+    root, release, downloader = installation
     monkeypatch.chdir(root.parent)
-    config = script_config(channel="stable")
+    release.return_value["details"]["assets"] = [
+        {"name": "MAAComponent-OTA-v6.0.0_v6.1.0-win-x64.zip"}
+    ]
+    config = script_config(channel="stable", package_mode=package_mode)
+    downloads = await update.check_update_download(root, config)
+    filename = (
+        "MAAComponent-OTA-v6.0.0_v6.1.0-win-x64.zip"
+        if package_mode == "incremental"
+        else "MAA-v6.1.0-win-x64.zip"
+    )
+    assert downloads[0].url.endswith("/" + filename)
     candidate = await update.prepare_maa_fluxdown_update(
         root, config=config, config_dir=root / "config", download_only=True
     )
@@ -120,6 +131,7 @@ async def test_prefetch_is_outside_install_and_registers_only_when_consumed(
         == "v6.1.0"
     )
     downloader.assert_awaited_once()
+    assert downloader.await_args.args[0] == downloads[0].url
     version, package = update.read_pending_update(root)
     assert version == "v6.1.0"
     assert update.Path(package).is_relative_to(root)

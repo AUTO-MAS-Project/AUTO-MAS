@@ -10,7 +10,6 @@ import asyncio
 import html
 import os
 import re
-from email.message import Message
 from typing import Any
 from zipfile import BadZipFile
 
@@ -24,7 +23,7 @@ from app.plugin.uv.ops import candidates
 from app.utils import get_logger
 
 from . import catalog, market_index
-from .catalog_protocol import ENTRY_FIELDS, package_key
+from .catalog_protocol import ENTRY_FIELDS, package_key, validate_entries
 
 logger = get_logger("插件市场")
 
@@ -37,13 +36,8 @@ _CATALOG_URL = "https://data.auto-mas.top/api/v1/files/auto-mas/Client/plugins/d
 _ATTEMPTS = 3
 
 
-def _norm(name: str) -> str:
-    """规范化发行包名称的大小写和分隔符，供市场条目去重与匹配。"""
-    return str(name or "").strip().lower().replace("_", "-")
-
-
 async def refresh() -> None:
-    """优先读取数据站完整目录；未配置或读取失败时才扫描 PyPI 与镜像。"""
+    """依次读取数据站、官方源和镜像源，首个完整结果作为本次目录的唯一依据。"""
     url = os.environ.get("AUTO_MAS_PLUGIN_INDEX_URL", _CATALOG_URL).strip()
     if url:
         cache = Config.data_path / "plugin-market-cache.json"
@@ -85,12 +79,10 @@ async def _replace_catalog(drafts: list[PluginMeta]) -> None:
 
 
 async def _refresh_pypi() -> None:
-    """从 PyPI 或镜像索引枚举候选，完整读取元数据成功后再替换目录。
+    """逐级读取官方源及候选镜像，任一候选读取失败便放弃本级结果。
 
-    安装镜像仅提供 Simple 下载索引，不要求实现 PyPI 专用的 JSON 元数据接口。
-    已知插件读取失败或全部候选读取失败时保留旧目录并报错；未知候选失败记录后跳过。
-    404 或有效但非插件的包不入目录。
-    写回不做字段白名单、不 ``update`` 旧实例（避开刷新字段限制）。
+    总索引只补充新包名；失败后仍独立查询已知包。全部来源失败才保留旧目录，
+    首个查询完整的来源直接替换目录，包括空结果，不与其他来源或旧版本混合。
     """
     col = Config.plugin_catalog
     # 已有目录 + 已装包名作种子（simple 启发扫不到时仍能刷新）
@@ -98,13 +90,13 @@ async def _refresh_pypi() -> None:
     for meta in col.values():
         text = str(meta.info.package_name or "").strip()
         if text:
-            seed.add(_norm(text))
+            seed.add(package_key(text))
     for record in Config.plugin_registry.values():
         if record.info.is_core:
             continue
         text = str(record.info.package_name or "").strip()
         if text:
-            seed.add(_norm(text))
+            seed.add(package_key(text))
 
     timeout = httpx.Timeout(_SIMPLE_TIMEOUT)
     proxy = Config.proxy
@@ -135,7 +127,7 @@ async def _refresh_pypi() -> None:
                             for match in _SIMPLE_ANCHOR.finditer(line):
                                 name = html.unescape(match.group("name")).strip()
                                 name = name.rstrip("/").split("/")[-1]
-                                key = _norm(name)
+                                key = package_key(name)
                                 if (
                                     not name
                                     or key in seen
@@ -172,88 +164,73 @@ async def _refresh_pypi() -> None:
                         data.get("info"), dict
                     ):
                         raise ValueError(f"{package}: PyPI 响应缺少 info 元数据")
+                    if package_key(str(data["info"].get("name", ""))) != package:
+                        raise ValueError(f"{package}: PyPI 返回的发行包身份不一致")
                     return data
             return None
 
-        hinted: set[str] = set()
-        index_errors: list[Exception] = []
-        use_pypi_json = False
-        mirror_index_read = False
-        # 官方与镜像可能各自缓存旧索引，合并官方及一个可用镜像的候选，不能只取首个成功源。
+        last_error: Exception | None = None
         for source in [f"{_PYPI}/simple/", *mirrors]:
             try:
-                hinted.update(await list_simple(source))
-                if source == f"{_PYPI}/simple/":
-                    use_pypi_json = True
-                else:
-                    mirror_index_read = True
-                    break
-            except (httpx.HTTPError, ValueError) as exc:
-                index_errors.append(exc)
-                logger.debug(f"市场索引暂不可用：{source}: {type(exc).__name__}")
-        if not use_pypi_json and not mirror_index_read:
-            index_error = index_errors[-1]
-            raise RuntimeError(
-                f"插件市场索引读取失败，已保留原目录：{type(index_error).__name__}: "
-                f"{str(index_error) or repr(index_error.__cause__)}"
-            ) from index_error
-
-        async def fetch_info(package: str) -> dict[str, Any] | Message[Any, Any] | None:
-            """官方 JSON 不可用时读取镜像真实发行元数据，不臆造镜像的 JSON API。"""
-            error: Exception | None = None
-            if use_pypi_json:
                 try:
-                    payload = await fetch_pypi(package)
-                    if payload is not None:
-                        return payload
-                except (httpx.HTTPError, ValueError) as exc:
-                    error = exc
-            for simple in mirrors:
-                try:
-                    metadata = await market_index.fetch_metadata(
-                        client, simple, package, proxy=proxy
-                    )
-                    if metadata is not None:
-                        return metadata
-                except (httpx.HTTPError, ValueError, BadZipFile, EOFError) as exc:
-                    error = exc
-            if error is not None:
-                raise error
-            return None
+                    hinted = await list_simple(source)
+                except (httpx.HTTPError, ValueError) as error:
+                    # 发现新包失败不等于单包接口失效；无已知候选时才无法继续本级查询。
+                    logger.debug(f"市场索引暂不可用：{source}: {type(error).__name__}")
+                    if not seed:
+                        raise
+                    hinted = []
+                names = sorted(seed | {package_key(name) for name in hinted})
+                sem = asyncio.Semaphore(_FETCH_CONCURRENCY)
 
-        pkgs = sorted({*seed, *(_norm(name) for name in hinted)})
-        sem = asyncio.Semaphore(_FETCH_CONCURRENCY)
-        drafts: dict[str, PluginMeta] = {}
+                async def one(name: str) -> PluginMeta | None:
+                    """仅从本级来源读取候选元数据，明确不存在或不符合市场门禁的包不入目录。"""
+                    async with sem:
+                        payload = (
+                            await fetch_pypi(name)
+                            if source == f"{_PYPI}/simple/"
+                            else await market_index.fetch_metadata(
+                                client, source, name, proxy=proxy
+                            )
+                        )
+                    if payload is None:
+                        return None
+                    return parse_to_plugin_meta(payload)
 
-        async def one(name: str) -> None:
-            """在并发限制内读取单个发行包，将通过市场声明校验的元数据加入候选结果。"""
-            async with sem:
-                payload = await fetch_info(name)
-            if payload is None:
-                return
-            draft = parse_to_plugin_meta(payload)
-            if draft is None or not draft.info.package_name:
-                return
-            drafts[_norm(draft.info.package_name)] = draft
+                # 收齐本级结果再切源，避免遗留请求或复用较高优先级来源的半份目录。
+                results = await asyncio.gather(
+                    *(one(name) for name in names), return_exceptions=True
+                )
+                drafts: list[PluginMeta] = []
+                for result in results:
+                    if isinstance(result, BaseException):
+                        raise result
+                    if result is not None:
+                        drafts.append(result)
+                validate_entries(
+                    [
+                        {key: getattr(item.info, key) for key in ENTRY_FIELDS}
+                        for item in drafts
+                    ]
+                )
+            except (
+                httpx.HTTPError,
+                ValueError,
+                BadZipFile,
+                EOFError,
+                OSError,
+            ) as error:
+                last_error = error
+                logger.warning(
+                    f"市场来源读取未完成，尝试下一来源：{source}: {type(error).__name__}"
+                )
+                continue
 
-        # 收齐结果再关闭客户端，避免一个请求失败时中断其他仍在执行的请求。
-        results = await asyncio.gather(
-            *[one(name) for name in pkgs], return_exceptions=True
-        )
-        errors = [
-            (name, result)
-            for name, result in zip(pkgs, results, strict=True)
-            if isinstance(result, BaseException)
-        ]
-        if errors and (not drafts or any(name in seed for name, _ in errors)):
-            error = errors[0][1]
-            raise RuntimeError(
-                f"插件市场元数据读取失败（{len(errors)} 个包），已保留原目录："
-                f"{type(error).__name__}: {str(error) or repr(error.__cause__)}"
-            ) from error
-        for name, error in errors:
-            logger.warning(f"未能识别市场候选 {name}，暂时跳过：{type(error).__name__}")
+            # 来源读取与提交分开：提交失败直接上抛，不能伪装成来源不可用再覆盖一次。
+            await _replace_catalog(drafts)
+            logger.info(f"插件市场刷新完成：{len(drafts)} 个插件，来源：{source}")
+            return
 
-    # 仅完整读取成功才发布结果；提交失败时由配置事务恢复旧目录。
-    await _replace_catalog(list(drafts.values()))
-    logger.info(f"插件市场刷新完成：{len(drafts)} 个插件")
+    raise RuntimeError(
+        f"插件市场全部来源读取失败，已保留原目录：{last_error}"
+    ) from last_error

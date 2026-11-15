@@ -374,8 +374,12 @@ async def check_update_download(root: Path, config: MaaConfig) -> list:
         raise ValueError("无法比较 MAA 版本")
     if compare_versions(target_version, current_version) <= 0:
         return []
-    filename = await _select_package(current, latest, arch, channel)
     tag = latest if latest.startswith("v") else f"v{latest}"
+    filename = (
+        await _select_package(current, latest, arch, channel)
+        if config.Update.PackageMode == "incremental"
+        else f"MAA-{tag}-win-{arch}.zip"
+    )
     return [
         DownloadRequest(
             url=f"https://github.com/MaaAssistantArknights/MaaAssistantArknights/releases/download/{tag}/{filename}"
