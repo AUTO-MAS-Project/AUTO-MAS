@@ -22,6 +22,7 @@ from app.utils import MIRROR_ERROR_INFO
 from ..file_lockers import describe_lockers_async
 from ..interface.models import MaaFWInterface
 from ..log_redact import mask_home_path
+from ..worker_protocol import DETAIL_LOG_PREFIX
 from .apply import (
     InvalidPackageArchive,
     UpdateApplyError,
@@ -559,9 +560,11 @@ async def update_maafw_project_if_needed(
         if base_version and version_newer(base_version, current_version):
             send_update_log(f"本项目已登记 {base_version}，以它为基准检查更新")
             current_version = base_version
-    send_update_log("start checking MaaFW project update")
-    send_update_log(f"current version: {current_version}")
-    send_update_log(f"update channel: {update_channel}")
+    # 每次运行前都会走到这里：只进后端日志（详情行），不往账号日志里复述状态。
+    send_update_log(
+        f"{DETAIL_LOG_PREFIX}开始检查 MaaFW 项目更新：当前版本 {current_version}，"
+        f"渠道 {update_channel}"
+    )
     del project_lock_already_held, project_lock_timeout, projection
 
     merged_source_config = dict(source_config or {})
@@ -595,6 +598,7 @@ async def update_maafw_project_if_needed(
         native_residue = False
         runtime_incomplete = False
         base_missing = ""
+        imported = True
         if payload is not None:
             try:
                 base_manifest = payload.manifest()
@@ -602,7 +606,8 @@ async def update_maafw_project_if_needed(
                 base_manifest = {}
                 base_missing = str(exc)
             source_kind = str((base_manifest.get("source") or {}).get("kind") or "")
-            prefer_full = source_kind != "update" or prefetch_full_package
+            imported = source_kind != "update"
+            prefer_full = imported or prefetch_full_package
             # 按旧投影规则建、漏装的文件又没补上的载荷：差量包只动包里那几个文件，套上去
             # 新版本照样缺；全量包的条目全部按当前规则投影。
             stale_projection = (
@@ -663,21 +668,24 @@ async def update_maafw_project_if_needed(
                 send_update_log(
                     "当前版本自带的 MaaFramework 缺依赖的 DLL，改为请求全量包"
                 )
+        # 为什么要全量包：只在确实有新版本要下时才写（见下面 ``package_notes`` 的出口），
+        # 已是最新、被跳过的每次运行不复述。预下载过整包而要全量的不是「本地导入」。
+        package_notes: list[str] = []
         if (
-            prefer_full
+            imported
             and not damaged
             and not stale_projection
             and not native_residue
             and not runtime_incomplete
             and not base_missing
         ):
-            send_update_log("当前版本是本地导入的，改为请求全量包")
+            package_notes.append("当前版本是本地导入的，改为请求全量包")
         force_full = (
             force_full_package() or (source_config or {}).get("package_mode") == "full"
         )
         if force_full:
             prefer_full = True
-            send_update_log("已选择全量更新：请求全量包、不按区间差量")
+            package_notes.append("已选择全量更新：请求全量包、不按区间差量")
         gate = precheck_gate
         if base_missing:
             # 新载荷要以当前载荷为基准建，它的清单不在本机就一定建不成（以前要等下载、
@@ -828,6 +836,9 @@ async def update_maafw_project_if_needed(
             skipped_reason=reason,
             **cdk_fields,
         )
+
+    for note in package_notes:
+        send_update_log(note)
 
     candidate = discovery.candidate
     if candidate is None:

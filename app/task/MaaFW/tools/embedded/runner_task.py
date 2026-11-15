@@ -2356,7 +2356,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             writer = _FrameworkLogWriter(worker_log_path)
             await asyncio.to_thread(writer.start)
             framework_log_writer = writer
-            self._append_log(f"MaaFW worker 日志写入中: {worker_log_path}")
+            # 临时目录收尾就删，文件以附件归档进历史记录：路径只进后端日志，不进账号日志
+            logger.info(f"MaaFW worker 日志写入中: {worker_log_path}")
         except Exception as exc:
             if framework_log_writer is not None:
                 with suppress(Exception):
@@ -2567,7 +2568,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self._append_log(f"MaaFW 原生日志复制失败: {exc}")
             else:
                 if copied:
-                    self._append_log(f"MaaFW 原生日志已保存: {native_log_path}")
+                    logger.info(f"MaaFW 原生日志已保存: {native_log_path}")
             # 资源包加载失败时找原因用：原生日志副本是 UTF-8、已打码，优先用它；worker stdout
             # 里同一行按控制台代码页转过，非 ASCII 的节点名 / 路径可能已成了「?」。
             native_errors = (
@@ -2592,7 +2593,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self._append_log(f"MaaFW 项目日志保存失败: {exc}")
             else:
                 if project_logs.segments:
-                    self._append_log(
+                    logger.info(
                         f"MaaFW 项目日志已保存: {project_log_path}"
                         f"（{len(project_logs.segments)} 个文件，"
                         f"{project_logs.written_bytes} 字节）"
@@ -3728,14 +3729,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def run_incident_notice(self) -> str:
         """本次运行里被原地打转检测或单任务时限停下的任务：进用户与脚本两份报告。
 
-        只在最后没成功时列出（各次尝试的都列）；后面的重试成功了就不写，免得一份
-        「全部完成」的报告里还挂着前面尝试的问题。"""
+        只在最后没成功时列出；后面的重试成功了就不写，免得一份「全部完成」的报告里
+        还挂着前面尝试的问题。最后一次尝试的不列：时间线和结果行里已经说过，代理结果
+        里账号那一行也是它，再单列一遍就是同一件事说两次。"""
 
         if self.run_complete:
             return ""
         return (
             self._run_record_call(
-                lambda: format_incident_lines(self._run_record.incidents())
+                lambda: format_incident_lines(
+                    self._run_record.incidents(include_last=False)
+                )
             )
             or ""
         )
@@ -4255,7 +4259,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _build_task_details(self) -> str:
         """账号级统计报告的任务详情：最后一次尝试的逐任务时间线（见 ``run_report``）。
 
-        最后没成功时另起一段列各次尝试里的原地打转 / 单任务超时（每类一行），队列里有
+        最后没成功时另起一段列之前各次尝试里的原地打转 / 单任务超时（每类一行），队列里有
         失效任务时末尾再附一行。整次运行一个任务都没开始时没有时间线，原因在运行结果那行。
         """
 
