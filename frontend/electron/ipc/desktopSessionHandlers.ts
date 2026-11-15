@@ -21,6 +21,29 @@ import desktopSessionMessages from '../services/desktopSessionMessages.json'
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+const MODES: readonly DesktopSessionRequest['mode'][] = ['proxy', 'native']
+const RESOLUTIONS: readonly DesktopSessionRequest['resolution'][] = ['1080p', 'primary']
+
+/** 入口与启动都走同一份校验；区别只在非法请求怎么报告，由调用方决定。 */
+function normalizeRequest(input: unknown): DesktopSessionRequest | null {
+  if (!input || typeof input !== 'object') return null
+  const request = input as Partial<DesktopSessionRequest>
+  if (
+    !Array.isArray(request.queueIds) ||
+    request.queueIds.length > 100 ||
+    request.queueIds.some(id => typeof id !== 'string' || !uuid.test(id)) ||
+    !MODES.includes(request.mode as DesktopSessionRequest['mode']) ||
+    !RESOLUTIONS.includes(request.resolution as DesktopSessionRequest['resolution'])
+  ) {
+    return null
+  }
+  return {
+    queueIds: [...new Set(request.queueIds.map(id => id.toLowerCase()))],
+    mode: request.mode as DesktopSessionRequest['mode'],
+    resolution: request.resolution as DesktopSessionRequest['resolution'],
+  }
+}
+
 function supportsDesktopSession(): boolean {
   return process.platform === 'win32' && process.arch === 'x64' && getBackendOwnership() === 'owned'
 }
@@ -186,28 +209,16 @@ export function registerDesktopSession(
       isApplicationWindowSender(event, getMainWindow(), { allowDevelopment: true }) &&
       supportsDesktopSession()
   )
-  ipcMain.handle('desktop-session:open', (event, input: DesktopSessionRequest) => {
+  ipcMain.handle('desktop-session:open', (event, input: unknown) => {
     if (!isApplicationWindowSender(event, getMainWindow(), { allowDevelopment: true })) {
       throw new Error('entry_unavailable')
     }
     if (!supportsDesktopSession()) {
       throw new Error('unsupported_environment')
     }
-    if (
-      !input ||
-      !Array.isArray(input.queueIds) ||
-      input.queueIds.length > 100 ||
-      input.queueIds.some(id => typeof id !== 'string' || !uuid.test(id)) ||
-      !['proxy', 'native'].includes(input.mode) ||
-      !['1080p', 'primary'].includes(input.resolution)
-    ) {
-      throw new Error('invalid_selection')
-    }
-    pending.push({
-      queueIds: [...new Set(input.queueIds.map(id => id.toLowerCase()))],
-      mode: input.mode,
-      resolution: input.resolution,
-    })
+    const request = normalizeRequest(input)
+    if (!request) throw new Error('invalid_selection')
+    pending.push(request)
     showPreview()
   })
   ipcMain.handle('desktop-session:check', event => (fromPreview(event) ? service.check() : null))
@@ -215,28 +226,19 @@ export function registerDesktopSession(
     if (!fromPreview(event)) return null
     return pending.shift() ?? null
   })
-  ipcMain.handle('desktop-session:start', (event, input: DesktopSessionRequest) => {
+  ipcMain.handle('desktop-session:start', (event, input: unknown) => {
+    // 先确认来源，再做任何解析：fromPreview 之外的调用方拿不到校验细节。
+    if (!fromPreview(event) || !preview) return { code: 'invalid_request', queues: [] }
+    const request = normalizeRequest(input)
+    const password = (input as Partial<DesktopSessionRequest> | null)?.password
     if (
-      !fromPreview(event) ||
-      !preview ||
-      !input ||
-      !Array.isArray(input.queueIds) ||
-      input.queueIds.length > 100 ||
-      input.queueIds.some(id => typeof id !== 'string' || !uuid.test(id)) ||
-      !['proxy', 'native'].includes(input.mode) ||
-      !['1080p', 'primary'].includes(input.resolution) ||
-      (input.password !== undefined &&
-        (typeof input.password !== 'string' || input.password.length > 512))
+      !request ||
+      (password !== undefined && (typeof password !== 'string' || password.length > 512))
     ) {
       return { code: 'invalid_request', queues: [] }
     }
     return service.start(
-      {
-        queueIds: [...new Set(input.queueIds.map(id => id.toLowerCase()))],
-        password: input.password,
-        mode: input.mode,
-        resolution: input.resolution,
-      },
+      { ...request, password },
       preview.getNativeWindowHandle().readBigUInt64LE(),
       physicalBounds()
     )

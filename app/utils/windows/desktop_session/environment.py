@@ -76,7 +76,7 @@ def probe() -> tuple[list[dict[str, object]], int]:
 
     result: list[dict[str, object]] = []
 
-    def check(code, operation, *, required=True):
+    def check(code, operation, *, required=True) -> dict[str, object]:
         try:
             ok, value = operation()
         except (
@@ -87,9 +87,9 @@ def probe() -> tuple[list[dict[str, object]], int]:
             Win32Error,
         ) as exc:
             ok, value = False, getattr(exc, "winerror", None)
-        result.append(
-            {"code": code, "ok": bool(ok), "required": required, "value": value}
-        )
+        row = {"code": code, "ok": bool(ok), "required": required, "value": value}
+        result.append(row)
+        return row
 
     version = sys.getwindowsversion()
     check(
@@ -150,12 +150,14 @@ def probe() -> tuple[list[dict[str, object]], int]:
         ) == os.path.normcase(expected)
         return native, "missing" if service is None else None
 
-    check("service_dll", native_service)
-    if result[-1]["value"] == "missing":
-        result[-1]["code"] = "service_dll_config_missing"
-    if result[-1]["ok"]:
-        check("service_dll_missing", lambda: ((system / "termsrv.dll").is_file(), None))
-        if result[-1]["ok"]:
+    service_dll = check("service_dll", native_service)
+    if service_dll["value"] == "missing":
+        service_dll["code"] = "service_dll_config_missing"
+    if service_dll["ok"]:
+        service_dll_missing = check(
+            "service_dll_missing", lambda: ((system / "termsrv.dll").is_file(), None)
+        )
+        if service_dll_missing["ok"]:
             check("service_signature", lambda: (windows_signature(system), None))
 
     def service_state(name):
@@ -188,8 +190,7 @@ def probe() -> tuple[list[dict[str, object]], int]:
             win32service.CloseServiceHandle(scm)
 
     for code, name in (("term_service", "TermService"), ("task_scheduler", "Schedule")):
-        check(code, lambda: service_state(name))
-        row = result[-1]
+        row = check(code, lambda: service_state(name))
         if not row["ok"]:
             reason = row["value"]
             if reason == 1060:  # ERROR_SERVICE_DOES_NOT_EXIST
@@ -202,12 +203,12 @@ def probe() -> tuple[list[dict[str, object]], int]:
         enabled = child_sessions_enabled()
         return enabled, enabled
 
-    check("child_enabled", child_state)
+    child_enabled = check("child_enabled", child_state)
     # 已确认关闭时允许用户启动，由宿主尝试启用。读取失败仍阻止启动。
-    if result[-1]["value"] is False:
-        result[-1]["required"] = False
-    elif not result[-1]["ok"]:
-        result[-1]["code"] = "child_query_failed"
+    if child_enabled["value"] is False:
+        child_enabled["required"] = False
+    elif not child_enabled["ok"]:
+        child_enabled["code"] = "child_query_failed"
 
     def host_policy():
         policy = registry_value(TERM_POLICY, "fDenyTSConnections")
@@ -220,9 +221,9 @@ def probe() -> tuple[list[dict[str, object]], int]:
             local if policy is None else policy
         ) != 1, "local" if policy is None else "policy"
 
-    check("rdp_policy", host_policy)
-    if not result[-1]["ok"] and result[-1]["value"] in ("local", "policy"):
-        result[-1]["code"] = f"rdp_{result[-1]['value']}_disabled"
+    rdp_policy = check("rdp_policy", host_policy)
+    if not rdp_policy["ok"] and rdp_policy["value"] in ("local", "policy"):
+        rdp_policy["code"] = f"rdp_{rdp_policy['value']}_disabled"
     try:
         hello_setting = registry_value(HELLO, "DevicePasswordLessBuildVersion")
     except OSError:
@@ -243,7 +244,7 @@ def probe() -> tuple[list[dict[str, object]], int]:
         with socket.create_connection(("localhost", port), timeout=1):
             return True, port
 
-    check("rdp_listener", listener)
-    if result[-1]["value"] == "invalid_port":
-        result[-1]["code"] = "rdp_port_invalid"
+    rdp_listener = check("rdp_listener", listener)
+    if rdp_listener["value"] == "invalid_port":
+        rdp_listener["code"] = "rdp_port_invalid"
     return result, port

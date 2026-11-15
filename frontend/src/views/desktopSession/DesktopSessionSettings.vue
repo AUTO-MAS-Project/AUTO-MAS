@@ -28,7 +28,6 @@ const starting = ref(false)
 const mode = ref<DesktopSessionRequest['mode']>('proxy')
 const resolution = ref<DesktopSessionRequest['resolution']>('1080p')
 const supported = ref<boolean>()
-let saves = Promise.resolve<unknown>(undefined)
 
 async function loadQueues() {
   loading.value = true
@@ -44,11 +43,10 @@ async function loadQueues() {
 
 function saveSelection(ids: string[]) {
   selected.value = ids
-  saves = saves
-    .then(() => saveConfig({ desktopSessionQueueIds: ids }))
-    .catch(() => {
-      message.error(t('bootstrap.desktopSession.saveFailed'))
-    })
+  // saveConfig 内部已按提交顺序串行落盘，这里不必再排一次队。
+  void saveConfig({ desktopSessionQueueIds: ids }).catch(() => {
+    message.error(t('bootstrap.desktopSession.saveFailed'))
+  })
 }
 
 async function open() {

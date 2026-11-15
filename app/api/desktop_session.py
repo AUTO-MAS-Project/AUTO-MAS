@@ -36,6 +36,20 @@ class QueueDispatchResult(BaseModel):
     results: list[QueueResult]
 
 
+class RuntimeDescriptionOut(BaseModel):
+    python: str
+    source: str
+    root: str
+
+
+class ScopeUpdateOut(BaseModel):
+    updated: bool
+
+
+class SessionStateOut(BaseModel):
+    idle: bool
+
+
 router = APIRouter(prefix="/internal/desktop-session", include_in_schema=False)
 
 
@@ -53,46 +67,44 @@ def authorize(request: Request) -> None:
         raise HTTPException(status_code=403)
 
 
-@router.post("/describe")
-async def describe(request: Request) -> dict[str, str]:
+@router.post("/describe", response_model=RuntimeDescriptionOut)
+async def describe(request: Request) -> RuntimeDescriptionOut:
     from app.core import Config
 
     authorize(request)
-    return {
-        "python": sys.executable,
-        "source": str(Config.source_path),
-        "root": str(Config.work_path),
-    }
+    return RuntimeDescriptionOut(
+        python=sys.executable,
+        source=str(Config.source_path),
+        root=str(Config.work_path),
+    )
 
 
-@router.post("/process-scope")
-async def process_scope(request: Request, scope: ParentProcessScope) -> dict[str, bool]:
+@router.post("/process-scope", response_model=ScopeUpdateOut)
+async def process_scope(request: Request, scope: ParentProcessScope) -> ScopeUpdateOut:
     authorize(request)
     DesktopSessionLifecycle.set_process_scope(
         session_id=scope.sessionId, connecting=scope.connecting
     )
-    return {"updated": True}
+    return ScopeUpdateOut(updated=True)
 
 
 @router.post("/queues", response_model=QueueDispatchResult)
-async def queues(
-    request: Request, selection: QueueSelection
-) -> dict[str, list[dict[str, str]]]:
+async def queues(request: Request, selection: QueueSelection) -> QueueDispatchResult:
     authorize(request)
     try:
         results = await DesktopSessionLifecycle.start_queues(selection.queueIds)
     except DesktopSessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return {"results": results}
+    return QueueDispatchResult(results=[QueueResult(**item) for item in results])
 
 
-@router.post("/state")
-async def state(request: Request) -> dict[str, bool]:
+@router.post("/state", response_model=SessionStateOut)
+async def state(request: Request) -> SessionStateOut:
     authorize(request)
-    return {"idle": await DesktopSessionLifecycle.idle()}
+    return SessionStateOut(idle=await DesktopSessionLifecycle.idle())
 
 
-@router.post("/stop")
-async def stop(request: Request) -> dict[str, bool]:
+@router.post("/stop", response_model=SessionStateOut)
+async def stop(request: Request) -> SessionStateOut:
     authorize(request)
-    return {"idle": await DesktopSessionLifecycle.stop_tasks()}
+    return SessionStateOut(idle=await DesktopSessionLifecycle.stop_tasks())

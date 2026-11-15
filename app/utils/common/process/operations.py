@@ -27,14 +27,38 @@ def processes_in_scope(processes: Iterable[psutil.Process]) -> Iterator[psutil.P
     )
 
 
-def managed_process(pid: int) -> psutil.Process | None:
-    """只打开当前管理范围内的进程。"""
-    return psutil.Process(pid) if process_in_scope(pid) else None
+def managed_process(
+    pid: int, *, expected_create_time: float | None = None
+) -> psutil.Process | None:
+    """打开当前管理范围内的进程。
+
+    原进程已退出或 PID 已复用时返回 ``None``。存活进程无法确认属于当前范围时
+    抛 ``ProcessLookupError``。
+    """
+
+    try:
+        process = psutil.Process(pid)
+        create_time = process.create_time()
+    except psutil.NoSuchProcess:
+        return None
+    if expected_create_time is not None and abs(create_time - expected_create_time) > 1:
+        return None
+    if process_in_scope(pid):
+        return process
+    if not process.is_running():
+        return None
+    raise ProcessLookupError(f"无法确认进程属于当前范围: {pid}")
 
 
 def terminate_process(process: psutil.Process, *, force: bool = False) -> bool:
-    """核验范围后发送终止请求，返回是否发送。"""
+    """核验范围后发送终止请求，返回是否真的发出了终止请求。
+
+    越界（不属于当前桌面分身会话）意味着「这个进程不归我们管」，与「已经结束」是两件
+    不同的事。调用方必须把 ``False`` 当成「没能结束」，不要据此当作清理完成。
+    """
+
     if not process_in_scope(process.pid):
+        logger.warning(f"跳过不属于当前范围的进程: pid={process.pid}")
         return False
     if force:
         process.kill()

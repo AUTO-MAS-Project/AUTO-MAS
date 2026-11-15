@@ -4635,17 +4635,19 @@ def _end_processes(
     failed: list[_ProcessSnapshot] = []
     for target in targets:
         try:
-            proc = managed_process(target.pid)
+            proc = managed_process(target.pid, expected_create_time=target.create_time)
             if proc is None:
                 continue
-            if (
-                target.create_time is not None
-                and abs(proc.create_time() - target.create_time) > 1
-            ):
-                continue
             if not terminate_process(proc):
+                if proc.is_running():
+                    logger.warning(f"MaaFW 未能结束进程: {target.label}")
+                    failed.append(target)
                 continue
         except psutil.NoSuchProcess:
+            continue
+        except ProcessLookupError:
+            logger.warning(f"MaaFW 结束进程时无法确认目标归属: {target.label}")
+            failed.append(target)
             continue
         except (psutil.AccessDenied, OSError) as exc:
             logger.warning(f"MaaFW 结束进程失败 {target.label}: {exc}")

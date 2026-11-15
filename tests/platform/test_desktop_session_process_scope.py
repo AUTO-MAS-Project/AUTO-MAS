@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from unittest.mock import Mock
 
+import psutil
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -69,3 +70,37 @@ def test_process_operations_filter_and_recheck_scope(monkeypatch):
         session.desktop_process_target.reset(token)
     assert not operations.terminate_process(process, force=True)
     process.kill.assert_not_called()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")
+def test_managed_process_separates_exited_from_out_of_scope(monkeypatch):
+    from app.utils.windows.desktop_session import native
+
+    monkeypatch.setattr(native, "process_session", lambda pid: 2)
+    monkeypatch.setattr(session, "_parent_scope", None)
+
+    exited = Mock()
+    exited.create_time.side_effect = psutil.NoSuchProcess(100)
+    monkeypatch.setattr(operations.psutil, "Process", lambda pid: exited)
+    # 自己退出：调用方按「无事可做」处理。
+    assert operations.managed_process(100) is None
+
+    alive = Mock(pid=100)
+    alive.create_time.return_value = 20
+    alive.is_running.return_value = True
+    monkeypatch.setattr(operations.psutil, "Process", lambda pid: alive)
+    session.configure_parent_scope(lambda: 1)
+    # 仍在运行但不归本会话管：不能当成已结束。
+    with pytest.raises(ProcessLookupError):
+        operations.managed_process(100)
+
+    # PID 在另一会话被复用，旧快照对应的进程已退出。
+    assert operations.managed_process(100, expected_create_time=10) is None
+
+    # 打开进程后自然退出，WTS 已无法查询该 PID。
+    def session_after_exit(pid):
+        raise OSError(87, "进程已退出")
+
+    monkeypatch.setattr(native, "process_session", session_after_exit)
+    alive.is_running.return_value = False
+    assert operations.managed_process(100, expected_create_time=20) is None

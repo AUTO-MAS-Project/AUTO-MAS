@@ -77,7 +77,9 @@ class _DesktopSessionLifecycle:
                 get_logger("桌面分身").warning(f"连接前无法读取 Windows 子会话: {exc}")
         self.scope_state = (session_id, connecting, baseline)
 
-    def active_tasks(self) -> tuple[UUID, ...]:
+    def prune_and_list_tasks(self) -> tuple[UUID, ...]:
+        """丢弃已结束的分身任务登记，返回仍在运行的任务。"""
+
         from app.core import TaskManager
 
         self.task_ids.intersection_update(TaskManager.task_info)
@@ -85,16 +87,16 @@ class _DesktopSessionLifecycle:
 
     async def idle(self) -> bool:
         async with self.lock:
-            return not self.active_tasks()
+            return not self.prune_and_list_tasks()
 
     async def stop_tasks(self) -> bool:
         from app.core import TaskManager
 
         async with self.lock:
             await asyncio.gather(
-                *(TaskManager.stop(uid) for uid in self.active_tasks())
+                *(TaskManager.stop(uid) for uid in self.prune_and_list_tasks())
             )
-            return not self.active_tasks()
+            return not self.prune_and_list_tasks()
 
     async def start_queues(self, queue_ids: list[UUID]) -> list[dict[str, str]]:
         from app.core import Config, TaskManager
@@ -125,7 +127,7 @@ class _DesktopSessionLifecycle:
             desktop = DesktopProcessTarget(
                 session_id, Config.source_path, Config.work_path
             )
-            self.active_tasks()
+            self.prune_and_list_tasks()
             for uid in dict.fromkeys(queue_ids):
                 queue = Config.QueueConfig.get(uid)
                 script = Config.ScriptConfig.get(uid) if queue is None else None
