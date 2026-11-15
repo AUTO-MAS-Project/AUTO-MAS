@@ -40,7 +40,7 @@ function atlas(columns, rows, colors) {
 
 app
   .whenReady()
-  .then(() => {
+  .then(async () => {
     fs.mkdirSync(app.getPath('userData'), { recursive: true })
     const images = {
       'assets/pet.png': atlas(1, 1, [[36, 160, 100]]),
@@ -88,7 +88,7 @@ app
         archive.addFile(asset, images[asset])
       const archivePath = path.join(app.getPath('userData'), `${kind}.zip`)
       archive.writeZip(archivePath)
-      imports.push(importMascotPackage(app.getPath('userData'), archivePath))
+      imports.push(await importMascotPackage(app.getPath('userData'), archivePath))
     }
     if (imports.some(result => !result.success)) throw new Error(JSON.stringify(imports))
     let kind = 'full'

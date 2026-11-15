@@ -1,3 +1,4 @@
+import { finishAssetPackageJobs } from './services/assetPackageProcess'
 import { detachPromptVirtualDisplay } from './services/virtualDisplayPromptActions'
 import { observeDiagnosticExport, observeDataBackup } from './services/diagnosticAnalytics'
 import { beginMainFeature } from './services/featureAnalytics'
@@ -611,7 +612,9 @@ function cancelQuitRequest(token?: number): void {
   showMainWindow()
 }
 
-function finishCoordinatedQuit(): void {
+async function finishCoordinatedQuit(): Promise<void> {
+  if (coordinatedQuit) return
+  await finishAssetPackageJobs()
   if (coordinatedQuit) return
   closeTelemetry?.finish({
     close_kind: forceQuitInProgress ? 'force' : closeTelemetryKind,
@@ -639,7 +642,7 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
   try {
     await forceKillRelatedProcesses()
     // Runtime 终态确认后才允许 Electron 退出。
-    finishCoordinatedQuit()
+    await finishCoordinatedQuit()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     closeTelemetry?.finish({ close_kind: 'force', outcome: 'failure' })
@@ -1939,9 +1942,7 @@ ipcMain.on('app-backend-close-observed', (event, request: unknown) => {
   closeTelemetryKind = 'backend'
 })
 
-ipcMain.handle('app-quit', () => {
-  finishCoordinatedQuit()
-})
+ipcMain.handle('app-quit', () => finishCoordinatedQuit())
 
 // renderer 已响应关闭请求，但用户尚未批准退出；保留请求锁，暂停强制清理。
 ipcMain.handle('app-wait-for-quit-confirmation', () => {

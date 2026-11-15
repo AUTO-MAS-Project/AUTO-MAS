@@ -87,7 +87,7 @@
 | T058 | settings_change_finished：设置修改成功率及主要功能采用情况（含关闭确认开关） | 已接入，持续复核 |
 | T059 | appearance_preference_changed：主题、语言、低性能模式和自定义光标需求 | 已接入，持续复核 |
 | T060 | appearance_package_finished：本地外观导入、启用、删除是否顺利 | 已接入，持续复核 |
-| T061 | appearance_store_install_finished：主题商店发现到安装的转化 | 已接入，持续复核 |
+| T061 | appearance_store_install_finished：主题商店发现到安装的转化 | 安装入口覆盖下载准备和实际安装结果；详情与切换版本不采集安装结果 |
 | T062 | appearance_share_finished：外观上传与分享是否顺利 | 已接入，持续复核 |
 | T063 | mascot_preference_changed：桌宠采用率和性能档位选择 | 已接入，持续复核 |
 | T064 | home_activity_load_finished：首页活动信息在哪类来源不可用 | 已接入，持续复核 |
