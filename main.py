@@ -353,9 +353,9 @@ def main():
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        from app.core.startup import StartupActivation
+        from app.core import Startup
 
-        app.state.startup_activation = StartupActivation(
+        Startup.prepare(
             deferred=is_supervised()
             and os.getenv("AUTO_MAS_DEFER_BUSINESS_START") == "1"
         )
@@ -508,7 +508,7 @@ def main():
                 await run_optional_step("ModAVD 更新恢复", init_avd_update)
 
                 async def start_main_timer() -> None:
-                    await MainTimer.start(activation=app.state.startup_activation)
+                    await MainTimer.start()
 
                 timer_error = await run_step("主业务定时器", start_main_timer)
                 startup_mark("后端/主定时器启动结束")
@@ -574,7 +574,7 @@ def main():
                 Updater,
             )
 
-            app.state.startup_activation.close()
+            Startup.close()
 
             # 同步封禁新加载，独立回收 MCP；不能让不可取消线程挡住停止主业务。
             mcp_shutdown = asyncio.create_task(MCP.shutdown(), name="mcp-shutdown")

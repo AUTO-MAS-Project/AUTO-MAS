@@ -10,13 +10,19 @@ from app.core import Config
 from app.core.startup import StartupActivation
 
 
+@pytest.fixture(autouse=True)
+def startup(monkeypatch: pytest.MonkeyPatch) -> StartupActivation:
+    activation = StartupActivation(deferred=False)
+    monkeypatch.setattr(core_api, "Startup", activation)
+    return activation
+
+
 def _make_request(
     background_status: str = "ready", background_error: str | None = None
 ) -> MagicMock:
     request = MagicMock()
     request.app.state.background_status = background_status
     request.app.state.background_error = background_error
-    request.app.state.startup_activation = StartupActivation(deferred=False)
     return request
 
 
@@ -61,13 +67,15 @@ def test_unsupervised_falls_back_to_local_version_and_empty_commit(
 
 
 @pytest.mark.asyncio
-async def test_runtime_activation_is_idempotent_and_not_an_mcp_tool() -> None:
+async def test_runtime_activation_is_idempotent_and_not_an_mcp_tool(
+    startup: StartupActivation,
+) -> None:
     app = FastAPI()
     app.include_router(core_api.router)
     app.state.background_status = "starting"
     app.state.background_error = None
     app.state.background_warnings = []
-    app.state.startup_activation = StartupActivation(deferred=True)
+    startup.prepare(deferred=True)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -80,6 +88,6 @@ async def test_runtime_activation_is_idempotent_and_not_an_mcp_tool() -> None:
             response = await client.post("/api/core/startup/activate")
             assert response.status_code == 200
             assert response.json()["startupActivation"] == "active"
-        app.state.startup_activation.close()
+        startup.close()
         assert (await client.post("/api/core/startup/activate")).status_code == 409
     assert "/api/core/startup/activate" not in app.openapi()["paths"]

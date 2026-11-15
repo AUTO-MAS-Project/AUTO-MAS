@@ -8,16 +8,22 @@ class StartupActivation:
     """拥有一个后端进程内自动业务的放行状态。"""
 
     def __init__(self, *, deferred: bool) -> None:
-        self.status: Literal["pending", "active", "closed"] = (
-            "pending" if deferred else "active"
-        )
+        self.status: Literal["pending", "active", "closed"] = "closed"
         self._ready = asyncio.Event()
+        self.prepare(deferred=deferred)
+
+    def prepare(self, *, deferred: bool) -> None:
+        """准备本次启动，旧生命周期的等待者按取消结束。"""
+        self.close()
+        self._ready = asyncio.Event()
+        self.status = "pending" if deferred else "active"
         if not deferred:
             self._ready.set()
 
     async def wait(self) -> None:
-        await self._ready.wait()
-        if self.status == "closed":
+        ready = self._ready
+        await ready.wait()
+        if ready is not self._ready or self.status == "closed":
             raise asyncio.CancelledError
 
     def activate(self) -> None:
@@ -29,3 +35,6 @@ class StartupActivation:
     def close(self) -> None:
         self.status = "closed"
         self._ready.set()
+
+
+Startup = StartupActivation(deferred=False)

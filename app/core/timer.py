@@ -28,7 +28,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from app.core import Community, Notify
+from app.core import Community, Notify, Startup
 from app.models.notification.community import community_notification_results
 from app.models.task import TaskMode, TaskTriggerReason
 from app.services import telemetry as _service_telemetry
@@ -42,7 +42,6 @@ from .community.scheduling import (
 )
 from .config import Config
 from .game_calendar import CALENDAR_REFRESH_INTERVAL_SECONDS, GameCalendar
-from .startup import StartupActivation
 from .task_manager import TaskManager
 
 logger = get_logger("主业务定时器")
@@ -239,7 +238,7 @@ class _MainTimer:
         self._wakeup_signature = signature
         logger.info(f"定时唤醒已同步：{len(times)} 个每周触发时间")
 
-    async def start(self, *, activation: StartupActivation | None = None) -> None:
+    async def start(self) -> None:
         """启动定时器"""
 
         if self.started:
@@ -247,12 +246,11 @@ class _MainTimer:
             return
 
         self.started = True
-        self.startup_task = asyncio.create_task(self._start_automatic_work(activation))
+        self.startup_task = asyncio.create_task(self._start_automatic_work())
         logger.info("主业务定时器启动")
 
-    async def _start_automatic_work(self, activation: StartupActivation | None) -> None:
-        if activation is not None:
-            await activation.wait()
+    async def _start_automatic_work(self) -> None:
+        await Startup.wait()
         self.second_timer = asyncio.create_task(self.second_task())
         self.wakeup_timer = asyncio.create_task(self.wakeup_task())
         self.hour_timer = asyncio.create_task(self.hour_task())

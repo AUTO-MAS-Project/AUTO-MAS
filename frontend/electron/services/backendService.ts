@@ -177,8 +177,16 @@ export class BackendService {
 
   private async startBackendInternal(options?: BackendStartOptions): Promise<BackendStartResult> {
     if (this.runtimeHandle) {
-      if (this.activationPending)
-        return this.activationUnconfirmed('自动业务放行状态尚未确认，请先停止后端')
+      if (this.activationPending) {
+        try {
+          await this.confirmAutomaticWork(this.runtimeHandle, 'status')
+          this.activationPending = false
+          scheduledWakeupBackendReady()
+          return { success: true }
+        } catch (error) {
+          return this.activationUnconfirmed(error instanceof Error ? error.message : String(error))
+        }
+      }
       logger.info('Runtime 已在监督后端，跳过重复启动')
       return { success: true }
     }
@@ -488,7 +496,7 @@ export class BackendService {
       if (outcome.deferred) {
         this.activationPending = true
         try {
-          await this.activateAutomaticWork(handle)
+          await this.confirmAutomaticWork(handle, 'activate')
           this.activationPending = false
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
@@ -519,45 +527,53 @@ export class BackendService {
     return this.buildRuntimeStartFailure(reason, stdoutLines, stderrLines)
   }
 
-  /** 放行请求后只查询同一实例，不因响应丢失重新创建后端。 */
-  private async activateAutomaticWork(handle: RuntimeSuperviseHandle): Promise<void> {
+  /** 确认同一实例；人工重试先查询，pending 时才重发幂等放行。 */
+  private async confirmAutomaticWork(
+    handle: RuntimeSuperviseHandle,
+    command: 'activate' | 'status'
+  ): Promise<void> {
     if (this.runtimeStopping) throw new Error('后端正在关闭')
     if (!handle.capabilities.includes('stdin.activate'))
       throw new Error('Runtime 不支持自动业务放行')
-    let confirmed: () => void = () => undefined
-    const activated = new Promise<void>(resolve => {
+    let confirmed: (state: 'pending' | 'active') => void = () => undefined
+    const activated = new Promise<'pending' | 'active'>(resolve => {
       confirmed = resolve
     })
     const unsubscribe = handle.onEvent(event => {
-      if (
-        event.type === 'state' &&
-        event.stage === 'backend.run' &&
-        event.status === 'running' &&
-        event.details.startupActivation === 'active'
-      )
-        confirmed()
+      if (event.type === 'state' && event.stage === 'backend.run' && event.status === 'running') {
+        const activation = event.details.startupActivation
+        if (activation === 'active' || (command === 'status' && activation === 'pending'))
+          confirmed(activation)
+      }
     })
     let timer: NodeJS.Timeout | undefined
     let queryTimer: NodeJS.Timeout | undefined
+    let activation: 'pending' | 'active'
     try {
-      handle.sendControl('activate')
-      queryTimer = setTimeout(() => {
-        if (!this.runtimeStopping) handle.status()
-      }, 5_000)
-      await Promise.race([
+      handle.sendControl(command)
+      if (command === 'activate')
+        queryTimer = setTimeout(() => {
+          if (!this.runtimeStopping) handle.status()
+        }, 5_000)
+      activation = await Promise.race([
         activated,
         handle.closed.then(() => {
           throw new Error('Runtime 在业务放行确认前结束')
         }),
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error('自动业务放行确认超时')), 10_000)
+          timer = setTimeout(
+            () => reject(new Error('自动业务放行确认超时')),
+            command === 'activate' ? 10_000 : 5_000
+          )
         }),
       ])
+      if (this.runtimeStopping || this.runtimeHandle !== handle) throw new Error('后端正在关闭')
     } finally {
       unsubscribe()
       if (timer) clearTimeout(timer)
       if (queryTimer) clearTimeout(queryTimer)
     }
+    if (activation === 'pending') await this.confirmAutomaticWork(handle, 'activate')
   }
 
   private activationUnconfirmed(error: string, logs?: string): BackendStartResult {

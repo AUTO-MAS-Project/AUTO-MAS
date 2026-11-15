@@ -53,3 +53,18 @@ async def test_close_after_activation_cancels_an_already_woken_waiter() -> None:
     activation.close()
     with pytest.raises(asyncio.CancelledError):
         await waiter
+
+
+@pytest.mark.asyncio
+async def test_prepare_reuses_owner_without_releasing_old_waiters() -> None:
+    activation = StartupActivation(deferred=True)
+    old_waiter = asyncio.create_task(activation.wait())
+    await asyncio.sleep(0)
+    activation.prepare(deferred=True)
+    with pytest.raises(asyncio.CancelledError):
+        await old_waiter
+    current_waiter = asyncio.create_task(activation.wait())
+    await asyncio.sleep(0)
+    assert not current_waiter.done()
+    activation.activate()
+    await current_waiter

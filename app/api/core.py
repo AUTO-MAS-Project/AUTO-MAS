@@ -44,6 +44,7 @@ from app.core import (
     Power,
     Publisher,
     ShutdownCoordinator,
+    Startup,
     TaskManager,
 )
 from app.core.ws import protocol
@@ -116,7 +117,6 @@ async def get_health(request: Request) -> BackendHealthOut:
     与空字符串；commit 不通过 Git 推断，只能来自监督器注入。
     """
 
-    activation = getattr(request.app.state, "startup_activation", None)
     return BackendHealthOut(
         ready=True,
         backgroundStatus=getattr(request.app.state, "background_status", "starting"),
@@ -128,7 +128,7 @@ async def get_health(request: Request) -> BackendHealthOut:
         version=_resolve_injected_identity("AUTO_MAS_EXPECTED_VERSION")
         or Config.VERSION,
         commit=_resolve_injected_identity("AUTO_MAS_EXPECTED_COMMIT") or "",
-        startupActivation=activation.status if activation is not None else None,
+        startupActivation=Startup.status,
     )
 
 
@@ -140,9 +140,8 @@ async def activate_startup(request: Request) -> BackendHealthOut:
 
     if request.app.state.background_status != "ready":
         raise HTTPException(status_code=409, detail="后端尚未就绪")
-    activation = request.app.state.startup_activation
     try:
-        activation.activate()
+        Startup.activate()
     except RuntimeError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     return await get_health(request)

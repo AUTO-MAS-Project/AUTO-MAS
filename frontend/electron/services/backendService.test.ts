@@ -1627,6 +1627,87 @@ describe('主进程拥有两种模式的启动生命周期', () => {
     }
   })
 
+  it.each(['active', 'pending'] as const)(
+    '放行确认超时后，失败页重试从 %s 接回同一个进程',
+    async activation => {
+      process.env[RUNTIME_MODE_ENV] = 'development'
+      process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+      mockSpawn()
+      vi.resetModules()
+      ipcHandlers.clear()
+      const handlers = await import('../ipc/initializationHandlers')
+      const window = new BrowserWindow()
+      handlers.registerInitializationHandlers(window)
+      const initial = handlers.startDesktopStartup({ version: '5.5.0-beta.3', autoUpdate: false })
+      const backend = await passEnvironmentEnsure()
+      vi.useFakeTimers()
+      try {
+        backend.stdout.feed(
+          helloLine.replace('"stdin.status"', '"stdin.status","stdin.activate"') +
+            line({
+              ...base,
+              type: 'state',
+              sequence: 3,
+              stage: 'backend.run',
+              status: 'running',
+              message: 'ready',
+              details: { baseUrl: 'http://127.0.0.1:36163', startupActivation: 'pending' },
+            })
+        )
+        await vi.waitFor(() =>
+          expect(backend.stdin.chunks.join('')).toContain('"command":"activate"')
+        )
+        await vi.advanceTimersByTimeAsync(10_000)
+        expect(await initial).toMatchObject({ success: false, code: 'BACKEND_ACTIVATION_UNKNOWN' })
+        const statusCount = () =>
+          backend.stdin.chunks.filter(chunk => chunk.includes('"command":"status"')).length
+        const previousQueries = statusCount()
+        const retry = ipcHandlers.get('backend-start')?.({ sender: window.webContents }, true)
+        await vi.advanceTimersByTimeAsync(0)
+        expect(statusCount()).toBe(previousQueries + 1)
+        if (activation === 'pending') {
+          backend.stdout.feed(
+            line({
+              ...base,
+              type: 'state',
+              sequence: 4,
+              stage: 'backend.run',
+              status: 'running',
+              message: 'pending',
+              details: { baseUrl: 'http://127.0.0.1:36163', startupActivation: 'pending' },
+            })
+          )
+          await vi.waitFor(() =>
+            expect(
+              backend.stdin.chunks.filter(chunk => chunk.includes('"command":"activate"'))
+            ).toHaveLength(2)
+          )
+        }
+        backend.stdout.feed(
+          line({
+            ...base,
+            type: 'state',
+            sequence: 5,
+            stage: 'backend.run',
+            status: 'running',
+            message: 'active',
+            details: { baseUrl: 'http://127.0.0.1:36163', startupActivation: 'active' },
+          })
+        )
+        expect(await retry).toMatchObject({ success: true })
+        expect(handlers.getBackendService().getStatus().pid).toBe(backend.pid)
+        expect(spawnMock).toHaveBeenCalledTimes(2)
+        expect(
+          backend.stdin.chunks.filter(chunk => chunk.includes('"command":"activate"'))
+        ).toHaveLength(activation === 'active' ? 1 : 2)
+        backend.stdout.feed(stoppedResultLine)
+        backend.close(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    }
+  )
+
   it('无法确认放行时，普通启动请求不能把保留的进程冒充启动成功', async () => {
     process.env[RUNTIME_MODE_ENV] = 'development'
     process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
@@ -1653,7 +1734,9 @@ describe('主进程拥有两种模式的启动生命周期', () => {
       )
       await vi.advanceTimersByTimeAsync(10_000)
       expect(await startup).toMatchObject({ success: false, code: 'BACKEND_ACTIVATION_UNKNOWN' })
-      expect(await service.getBackendService().startBackend()).toMatchObject({
+      const repeatedStart = service.getBackendService().startBackend()
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(await repeatedStart).toMatchObject({
         success: false,
         code: 'BACKEND_ACTIVATION_UNKNOWN',
       })
