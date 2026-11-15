@@ -1,5 +1,4 @@
 <template>
-  <!-- 队列框里置顶的「全局选项」：不是任务，不能拖、不能删、没有红绿灯，也不进右键菜单 -->
   <button
     type="button"
     class="task-row global-options-row"
@@ -7,6 +6,7 @@
     :aria-pressed="selected"
     @click="emit('select')"
   >
+    <!-- 队列框里置顶的「全局选项」：不是任务，不能拖、不能删、没有红绿灯，也不进右键菜单 -->
     <ControlOutlined class="global-options-icon" aria-hidden="true" />
     <div class="task-main">
       <span class="task-title">{{ t('core.edit.maafwGlobalOptions') }}</span>

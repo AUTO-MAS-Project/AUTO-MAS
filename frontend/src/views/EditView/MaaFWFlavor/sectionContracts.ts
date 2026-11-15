@@ -282,8 +282,9 @@ export type PresetTemplate = {
 export type MaaFWQueueTemplateView = { name: string } & MaaFWQueueSource
 
 /**
- * 用户页 `taskQueue`：上方是全局选项（项目声明了才有，每个用户一份、所有任务共用，值在
- * `taskSnapshot.globalOptions`），下面是任务队列两栏（左：队列与添加；右：选中任务的选项）
+ * 用户页 `taskQueue`：任务队列两栏（左：队列与添加；右：选中任务的选项）。全局选项（项目
+ * 声明了才有，每个用户一份、所有任务共用，值在 `taskSnapshot.globalOptions`）是左栏队列框
+ * 置顶的一行，选中它时右栏换成全局选项编辑器
  */
 export interface MaaFWUserTaskQueueSectionProps {
   interfaceLoading: boolean
