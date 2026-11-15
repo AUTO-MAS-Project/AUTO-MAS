@@ -521,6 +521,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
 
   // API 端点获取
   getApiEndpoint: (key: ElectronApiEndpointKey) => Promise<string>
+  desktopSessionSupported?: () => Promise<boolean>
   desktopSessionOpen?: (input: DesktopSessionRequest) => Promise<void>
   desktopSessionCheck?: () => Promise<DesktopSessionSnapshot | null>
   desktopSessionPending?: () => Promise<DesktopSessionRequest | null>

@@ -7,6 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.api.desktop_session import install_control
 from app.core.desktop_session import lifecycle
 from app.utils.common.process import operations, session
 
@@ -26,8 +27,9 @@ def test_parent_scope_tracks_only_the_registered_child(monkeypatch, restored):
     monkeypatch.setattr(lifecycle, "_parent_child_session", "7" if restored else "")
 
     app = FastAPI()
-    lifecycle.install_control(app)
+    install_control(app)
     path = "/internal/desktop-session/process-scope"
+    assert path not in app.openapi()["paths"]
     headers = {lifecycle.CONTROL_HEADER: "test-control-token"}
     with TestClient(app, client=("127.0.0.1", 12345)) as client:
         assert session.process_in_scope(100) is (not restored)

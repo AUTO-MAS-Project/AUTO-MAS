@@ -257,8 +257,10 @@ def _resolve_supervised_port() -> int:
 
 @logger.catch(reraise=True)
 def main(*, port: int | None = None):
-    from app.core.desktop_session.lifecycle import executor_session, install_control
-    from app.core.desktop_session.ownership import RESUME
+    from contextlib import nullcontext
+
+    from app.core.desktop_session.lifecycle import executor_session
+    from app.core.desktop_session.ownership import RESUME, data_owner
     from app.utils.common.asyncio_compat import install_windows_connection_cleanup
 
     install_windows_connection_cleanup()
@@ -288,6 +290,23 @@ def main(*, port: int | None = None):
 
     # 先完成提权判断，避免创建临时目录的权限错误阻断重启。
     startup_mark("后端/环境与权限检查完成")
+    # 子执行器在启动后端之前已经持有同一工作目录的锁。
+    with nullcontext() if desktop_executor else data_owner(Path.cwd()):
+        run_backend(
+            port=port,
+            desktop_executor=desktop_executor,
+            resume=resume,
+            development_environment=development_environment,
+        )
+
+
+def run_backend(
+    *,
+    port: int | None,
+    desktop_executor: bool,
+    resume: bool,
+    development_environment: bool,
+) -> None:
     with startup_stage("后端/临时目录"):
         configure_temporary_directory(Path.cwd())
 
@@ -505,7 +524,10 @@ def main(*, port: int | None = None):
                 # 要在主定时器之前：定时器可能马上拉起实例，而 sdk\emulator 可能正停在换到一半
                 await run_optional_step("ModAVD 更新恢复", init_avd_update)
                 timer_error = await run_step(
-                    "主业务定时器", lambda: MainTimer.start(resume=resume)
+                    "主业务定时器",
+                    (lambda: MainTimer.start(resume=True))
+                    if resume
+                    else MainTimer.start,
                 )
                 startup_mark("后端/主定时器启动结束")
 
@@ -672,6 +694,8 @@ def main(*, port: int | None = None):
             lifespan=lifespan,
         )
         if IS_WINDOWS:
+            from app.api.desktop_session import install_control
+
             install_control(app)
         app.state.baah_config_service = baah_config_service
         app.state.maaend_config_service = maaend_config_service
@@ -712,7 +736,9 @@ def main(*, port: int | None = None):
         )
 
     async def run_server():
-        http_port = port if port is not None else resolve_http_port(development_environment)
+        http_port = (
+            port if port is not None else resolve_http_port(development_environment)
+        )
         logger.info(f"后端监听端口: {http_port}")
         # 主 WebSocket 心跳依赖协议层 ping/pong，显式配置底层参数
         config = uvicorn.Config(
@@ -736,7 +762,4 @@ def main(*, port: int | None = None):
 
 
 if __name__ == "__main__":
-    from app.core.desktop_session.ownership import data_owner
-
-    with data_owner(Path.cwd()):
-        main()
+    main()

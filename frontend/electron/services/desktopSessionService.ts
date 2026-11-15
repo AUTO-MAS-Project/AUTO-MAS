@@ -77,9 +77,9 @@ export class DesktopSessionService {
   private endpoint: string | null = null
   private token = ''
   private transferred = false
+  private parentStopped = false
   private launchPending = false
   private executorReleased = false
-  private readonly runningTaskIds = new Set<string>()
   private recoveryRequired = false
   private monitor: NodeJS.Timeout | undefined
   private volume = 0
@@ -240,15 +240,13 @@ export class DesktopSessionService {
     } else if (event.event === 'executor_released') {
       this.executorReleased = true
       this.launchPending = false
-      this.runningTaskIds.clear()
     } else if (event.event === 'executor_error' && !this.endpoint && event.started !== true) {
       this.launchPending = false
     } else if (event.event === 'executor_interrupted') {
       this.executorReleased = true
       this.launchPending = false
-      this.log('tasks_interrupted', { taskIds: [...this.runningTaskIds] })
-      this.patch({ code: 'executor_interrupted', interruptedTaskIds: [...this.runningTaskIds] })
-      this.runningTaskIds.clear()
+      this.log('executor_interrupted')
+      this.patch({ code: 'executor_interrupted' })
       this.scheduleMonitor()
     } else if (event.event === 'credential_warning') {
       this.patch({ code: 'credential_save_failed' })
@@ -327,7 +325,7 @@ export class DesktopSessionService {
     ) {
       return Promise.resolve({ code: 'busy', queues: [] })
     }
-    this.patch({ busy: true, code: undefined, interruptedTaskIds: undefined })
+    this.patch({ busy: true, code: undefined })
     this.startOperation = this.startInternal(input, owner, bounds).finally(() => {
       this.startOperation = null
       this.patch({ busy: false })
@@ -351,6 +349,7 @@ export class DesktopSessionService {
       this.snapshot.state !== 'connected'
         ? beginMainFeature('desktop_session_connection_finished')
         : null
+    const dispatches = new Map<string, ReturnType<typeof beginMainFeature<'task_start_result'>>>()
     let publishingConnection = false
     try {
       await this.ensureHost()
@@ -387,6 +386,9 @@ export class DesktopSessionService {
         connection?.finish({ outcome: 'success', reason_kind: 'none' })
       }
       if (!input.queueIds.length) return { queues: [] }
+      for (const id of input.queueIds) {
+        dispatches.set(id, beginMainFeature('task_start_result'))
+      }
       if (!this.transferred) await this.transfer()
       if (this.snapshot.state !== 'connected' || !this.endpoint) {
         throw new DesktopSessionError('session_changed')
@@ -398,6 +400,13 @@ export class DesktopSessionService {
         { queueIds: input.queueIds }
       )
       for (const queue of result.results) {
+        dispatches.get(queue.queueId)?.finish({
+          source: 'desktop_session',
+          mode: 'AutoProxy',
+          target_kind: queue.targetKind,
+          outcome: queue.taskId ? 'accepted' : 'failure',
+        })
+        dispatches.delete(queue.queueId)
         this.log('queue_admission', {
           queueId: queue.queueId,
           taskId: queue.taskId,
@@ -405,7 +414,6 @@ export class DesktopSessionService {
         })
       }
       const accepted = result.results.filter(target => target.taskId)
-      accepted.forEach(target => this.runningTaskIds.add(target.taskId))
       if (accepted.length) this.tasksStarted(accepted)
       this.scheduleMonitor()
       return { queues: result.results }
@@ -432,6 +440,14 @@ export class DesktopSessionService {
       if (this.transferred) this.scheduleMonitor()
       return { code, queues: [] }
     } finally {
+      for (const operation of dispatches.values()) {
+        operation.finish({
+          source: 'desktop_session',
+          mode: 'AutoProxy',
+          target_kind: 'unknown',
+          outcome: 'failure',
+        })
+      }
       delete input.password
     }
   }
@@ -470,6 +486,7 @@ export class DesktopSessionService {
     this.transferred = true
     const stopped = await getBackendService().stopBackend()
     if (!stopped.success) throw new DesktopSessionError('handoff_unconfirmed')
+    this.parentStopped = true
     this.token = randomBytes(32).toString('hex')
     const childEndpoint = `http://127.0.0.1:${port}`
     this.executorReleased = false
@@ -593,6 +610,12 @@ export class DesktopSessionService {
         setDesktopSessionEndpoint(null)
       }
       if (this.launchPending) throw new DesktopSessionError('handoff_unconfirmed')
+      if (!this.parentStopped) {
+        // 交接请求可能已停止主后端受理。必须确认旧 Runtime 退出后才能恢复。
+        const stopped = await getBackendService().stopBackend()
+        if (!stopped.success) throw new DesktopSessionError('handoff_unconfirmed')
+        this.parentStopped = true
+      }
       if (closing) {
         this.transition(false)
       } else {
@@ -601,6 +624,7 @@ export class DesktopSessionService {
         this.transition(false, true)
       }
       this.transferred = false
+      this.parentStopped = false
       this.recoveryRequired = false
       this.log('handoff_released', { durationMs: Date.now() - started })
       this.patch({ executing: false })
@@ -644,7 +668,6 @@ export class DesktopSessionService {
         await this.closeViewer()
         this.executorReleased = true
         this.launchPending = false
-        this.runningTaskIds.clear()
       }
       await this.finish(closing)
       if (!needsRecovery) await this.closeViewer(!parentWillStayStopped)

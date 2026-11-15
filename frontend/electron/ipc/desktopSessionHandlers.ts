@@ -21,6 +21,10 @@ import desktopSessionMessages from '../services/desktopSessionMessages.json'
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+function supportsDesktopSession(): boolean {
+  return process.platform === 'win32' && process.arch === 'x64' && getBackendOwnership() === 'owned'
+}
+
 export function registerDesktopSession(
   getMainWindow: () => BrowserWindow | null,
   icon: string,
@@ -35,7 +39,7 @@ export function registerDesktopSession(
   }
   let preview: BrowserWindow | null = null
   let viewport: Rectangle | null = null
-  let pending: DesktopSessionRequest | null = null
+  const pending: DesktopSessionRequest[] = []
   let hidden = false
   let closeFlight: Promise<boolean> | null = null
 
@@ -136,7 +140,7 @@ export function registerDesktopSession(
       if (preview.isMinimized()) preview.restore()
       preview.show()
       preview.focus()
-      if (pending) preview.webContents.send('desktop-session:pending')
+      if (pending.length) preview.webContents.send('desktop-session:pending')
       return
     }
     viewport = null
@@ -167,7 +171,10 @@ export function registerDesktopSession(
       void confirmClose(false)
     })
     window.on('closed', () => {
-      if (preview === window) preview = null
+      if (preview === window) {
+        preview = null
+        pending.length = 0
+      }
     })
     window.on('move', updateBounds)
     window.on('resize', updateBounds)
@@ -184,15 +191,17 @@ export function registerDesktopSession(
       })
   }
 
+  ipcMain.handle(
+    'desktop-session:supported',
+    event =>
+      isApplicationWindowSender(event, getMainWindow(), { allowDevelopment: true }) &&
+      supportsDesktopSession()
+  )
   ipcMain.handle('desktop-session:open', (event, input: DesktopSessionRequest) => {
     if (!isApplicationWindowSender(event, getMainWindow(), { allowDevelopment: true })) {
       throw new Error('entry_unavailable')
     }
-    if (
-      process.platform !== 'win32' ||
-      process.arch !== 'x64' ||
-      getBackendOwnership() !== 'owned'
-    ) {
+    if (!supportsDesktopSession()) {
       throw new Error('unsupported_environment')
     }
     if (
@@ -205,19 +214,17 @@ export function registerDesktopSession(
     ) {
       throw new Error('invalid_selection')
     }
-    pending = {
-      queueIds: [...new Set(input.queueIds)],
+    pending.push({
+      queueIds: [...new Set(input.queueIds.map(id => id.toLowerCase()))],
       mode: input.mode,
       resolution: input.resolution,
-    }
+    })
     showPreview()
   })
   ipcMain.handle('desktop-session:check', event => (fromPreview(event) ? service.check() : null))
   ipcMain.handle('desktop-session:pending', event => {
     if (!fromPreview(event)) return null
-    const request = pending
-    pending = null
-    return request
+    return pending.shift() ?? null
   })
   ipcMain.handle('desktop-session:start', (event, input: DesktopSessionRequest) => {
     if (
@@ -236,7 +243,7 @@ export function registerDesktopSession(
     }
     return service.start(
       {
-        queueIds: [...new Set(input.queueIds)],
+        queueIds: [...new Set(input.queueIds.map(id => id.toLowerCase()))],
         password: input.password,
         mode: input.mode,
         resolution: input.resolution,

@@ -27,7 +27,7 @@ const loading = ref(false)
 const starting = ref(false)
 const mode = ref<DesktopSessionRequest['mode']>('proxy')
 const resolution = ref<DesktopSessionRequest['resolution']>('1080p')
-const supported = Boolean(window.electronAPI?.desktopSessionOpen)
+const supported = ref<boolean>()
 let saves = Promise.resolve<unknown>(undefined)
 
 async function loadQueues() {
@@ -65,7 +65,8 @@ async function open() {
 }
 
 onMounted(async () => {
-  if (!supported) return
+  supported.value = (await window.electronAPI?.desktopSessionSupported?.()) ?? false
+  if (!supported.value) return
   try {
     const saved = (await getConfig()).desktopSessionQueueIds
     if (Array.isArray(saved)) selected.value = saved.filter(id => typeof id === 'string')
@@ -80,8 +81,12 @@ onMounted(async () => {
   <a-card :title="t('bootstrap.desktopSession.title')" class="settings-card">
     <a-flex vertical gap="middle">
       <a-alert type="warning" show-icon :message="t('bootstrap.desktopSession.experimental')" />
-      <a-alert v-if="!supported" type="info" :message="t('bootstrap.desktopSession.unsupported')" />
-      <template v-else>
+      <a-alert
+        v-if="supported === false"
+        type="info"
+        :message="t('bootstrap.desktopSession.unsupported')"
+      />
+      <template v-else-if="supported">
         <a-select
           :value="selected"
           :options="options"

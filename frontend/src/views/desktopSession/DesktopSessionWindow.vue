@@ -13,6 +13,7 @@ const { t, te } = useI18n()
 const preview = ref<HTMLElement | null>(null)
 const snapshot = shallowRef<DesktopSessionSnapshot | null>(null)
 const pending = shallowRef<DesktopSessionRequest | null>(null)
+const readingPending = ref(false)
 const results = shallowRef<DesktopQueueResult[]>([])
 const mode = ref<DesktopSessionRequest['mode']>('proxy')
 const resolution = ref<DesktopSessionRequest['resolution']>('1080p')
@@ -48,6 +49,8 @@ const canStart = computed(
     !checking.value &&
     !blocked.value &&
     !starting.value &&
+    !readingPending.value &&
+    !passwordDialog.value &&
     !snapshot.value?.busy &&
     !snapshot.value?.closing
 )
@@ -88,16 +91,18 @@ async function check() {
   } finally {
     checking.value = false
   }
+  await readPending()
 }
 
 async function start(secret?: string) {
   if (!canStart.value) return
+  const request = pending.value
   starting.value = true
   results.value = []
   reportBounds()
   try {
     const response = await api?.desktopSessionStart?.({
-      queueIds: pending.value?.queueIds ?? [],
+      queueIds: request?.queueIds ?? [],
       mode: mode.value,
       resolution: resolution.value,
       password: secret,
@@ -111,6 +116,7 @@ async function start(secret?: string) {
     message.error(t('bootstrap.desktopSession.startFailed'))
   } finally {
     starting.value = false
+    if (!pending.value) void readPending()
   }
 }
 
@@ -122,12 +128,18 @@ function submitPassword() {
 }
 
 async function readPending() {
-  const request = await api?.desktopSessionPending?.()
-  if (!request) return
-  pending.value = request
-  if (!running.value) {
-    mode.value = request.mode
-    resolution.value = request.resolution
+  if (readingPending.value || checking.value || starting.value || pending.value) return
+  readingPending.value = true
+  try {
+    const request = await api?.desktopSessionPending?.()
+    if (!request) return
+    pending.value = request
+    if (!running.value) {
+      mode.value = request.mode
+      resolution.value = request.resolution
+    }
+  } finally {
+    readingPending.value = false
   }
   if (canStart.value) void start()
 }
@@ -146,7 +158,6 @@ onMounted(async () => {
   }
   reportBounds()
   await check()
-  await readPending()
 })
 onBeforeUnmount(() => {
   observer?.disconnect()
@@ -253,13 +264,7 @@ onBeforeUnmount(() => {
       show-icon
       :message="t('bootstrap.desktopSession.closingHint')"
     />
-    <a-alert
-      v-else-if="errorText"
-      type="warning"
-      show-icon
-      :message="errorText"
-      :description="snapshot?.interruptedTaskIds?.join(' · ')"
-    />
+    <a-alert v-else-if="errorText" type="warning" show-icon :message="errorText" />
     <div ref="preview" class="desktop-viewport">
       <a-flex
         v-if="!running || snapshot?.windowState !== 'visible'"

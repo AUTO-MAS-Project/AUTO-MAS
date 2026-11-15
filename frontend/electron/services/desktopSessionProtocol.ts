@@ -23,12 +23,12 @@ export interface DesktopSessionSnapshot {
   executing: boolean
   closing?: boolean
   audioSessions?: number
-  interruptedTaskIds?: string[]
 }
 
 export interface DesktopQueueResult {
   queueId: string
   taskId: string
+  targetKind: 'queue' | 'script' | 'unknown'
   code: string
   label: string
 }

@@ -345,6 +345,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // API 端点获取
   getApiEndpoint: (key: string) => ipcRenderer.invoke('get-api-endpoint', key),
+  desktopSessionSupported: () => ipcRenderer.invoke('desktop-session:supported'),
   desktopSessionOpen: (input: import('./services/desktopSessionProtocol').DesktopSessionRequest) =>
     ipcRenderer.invoke('desktop-session:open', input),
   desktopSessionCheck: () => ipcRenderer.invoke('desktop-session:check'),
