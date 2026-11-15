@@ -748,7 +748,9 @@ async def update_maafw_project_if_needed(
             )
             raise
         message = f"MaaFW project update failed: {_exception_detail(exc)}"
-        send_update_log(message)
+        # 只进后端日志：运行前更新由管理器写一行中文结论，手动更新的面板看下面的失败
+        # 事件与接口回复，这里再写一行就是同一次失败说两遍。
+        send_update_log(f"{DETAIL_LOG_PREFIX}{message}")
         _report_progress(
             progress,
             "failed",
