@@ -15,7 +15,8 @@ from .native import SYSTEM32, bind, child_sessions_enabled, process_session, use
 TERM_SERVER = r"SYSTEM\CurrentControlSet\Control\Terminal Server"
 TERM_POLICY = r"SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
 TERM_SERVICE = r"SYSTEM\CurrentControlSet\Services\TermService\Parameters"
-HELLO = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\PasswordLess\Device"
+WINDOWS_VERSION = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+HELLO = WINDOWS_VERSION + r"\PasswordLess\Device"
 
 
 def registry_value(key: str, name: str):
@@ -26,6 +27,25 @@ def registry_value(key: str, name: str):
             return winreg.QueryValueEx(handle, name)[0]
     except FileNotFoundError:
         return None
+
+
+def version_details() -> dict[str, str | int | None]:
+    """读取可用于本地诊断的系统版本字段。"""
+
+    def read(name: str):
+        try:
+            return registry_value(WINDOWS_VERSION, name)
+        except OSError:
+            return None
+
+    edition = read("EditionID")
+    release = read("DisplayVersion") or read("ReleaseId")
+    revision = read("UBR")
+    return {
+        "windowsEdition": edition if isinstance(edition, str) else None,
+        "windowsDisplayVersion": release if isinstance(release, str) else None,
+        "windowsBuildRevision": revision if type(revision) is int else None,
+    }
 
 
 def windows_signature(system: Path) -> bool:
@@ -91,13 +111,11 @@ def probe() -> tuple[list[dict[str, object]], int]:
     )
 
     def home_edition():
-        edition = registry_value(
-            r"SOFTWARE\Microsoft\Windows NT\CurrentVersion", "EditionID"
-        )
+        edition = registry_value(WINDOWS_VERSION, "EditionID")
         if not isinstance(edition, str) or not edition:
             return True, "unknown"
         is_home = edition.startswith("Core")
-        return not is_home, "home" if is_home else "other"
+        return not is_home, edition
 
     check("home_edition", home_edition, required=False)
 
@@ -205,11 +223,14 @@ def probe() -> tuple[list[dict[str, object]], int]:
     check("rdp_policy", host_policy)
     if not result[-1]["ok"] and result[-1]["value"] in ("local", "policy"):
         result[-1]["code"] = f"rdp_{result[-1]['value']}_disabled"
-    check(
-        "hello_only",
-        lambda: (registry_value(HELLO, "DevicePasswordLessBuildVersion") != 2, None),
-        required=False,
-    )
+    try:
+        hello_setting = registry_value(HELLO, "DevicePasswordLessBuildVersion")
+    except OSError:
+        hello_setting = None
+    if hello_setting == 2:
+        result.append(
+            {"code": "hello_only", "ok": False, "required": False, "value": None}
+        )
     port = 0
 
     def listener():

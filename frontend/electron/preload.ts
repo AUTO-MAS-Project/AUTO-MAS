@@ -354,7 +354,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('desktop-session:start', input),
   desktopSessionBounds: (bounds: Electron.Rectangle) =>
     ipcRenderer.send('desktop-session:bounds', bounds),
-  desktopSessionWindow: (action: string) => ipcRenderer.send('desktop-session:window', action),
+  desktopSessionWindow: (action: 'show' | 'hide') =>
+    ipcRenderer.send('desktop-session:window', action),
   desktopSessionVolume: (volume: number) => ipcRenderer.send('desktop-session:volume', volume),
   desktopSessionLogs: () => ipcRenderer.invoke('desktop-session:logs'),
   onDesktopSessionState: (

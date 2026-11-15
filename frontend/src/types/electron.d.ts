@@ -527,7 +527,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   desktopSessionPending?: () => Promise<DesktopSessionRequest | null>
   desktopSessionStart?: (request: DesktopSessionRequest) => Promise<DesktopSessionStartResult>
   desktopSessionBounds?: (bounds: { x: number; y: number; width: number; height: number }) => void
-  desktopSessionWindow?: (action: 'show' | 'hide' | 'minimize') => void
+  desktopSessionWindow?: (action: 'show' | 'hide') => void
   desktopSessionVolume?: (volume: number) => void
   desktopSessionLogs?: () => Promise<string>
   onDesktopSessionState?: (callback: (state: DesktopSessionSnapshot) => void) => () => void

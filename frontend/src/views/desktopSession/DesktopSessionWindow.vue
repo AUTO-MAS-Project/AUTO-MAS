@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { EyeOutlined, EyeInvisibleOutlined, MinusOutlined } from '@ant-design/icons-vue'
+import { EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons-vue'
 import type {
   DesktopSessionRequest,
   DesktopSessionSnapshot,
@@ -54,7 +54,7 @@ const canStart = computed(
     !snapshot.value?.busy &&
     !snapshot.value?.closing
 )
-const canConfigure = computed(() => !running.value && !starting.value && !snapshot.value?.busy)
+const failedChecks = computed(() => snapshot.value?.checks.filter(check => !check.ok) ?? [])
 
 const credentialErrors = new Set([
   'password_required',
@@ -213,47 +213,22 @@ onBeforeUnmount(() => {
           <template #icon><EyeOutlined /></template>
           {{ t('bootstrap.desktopSession.show') }}
         </a-button>
-        <a-button v-else :disabled="!running" @click="api?.desktopSessionWindow?.('hide')">
+        <a-button v-else-if="running" @click="api?.desktopSessionWindow?.('hide')">
           <template #icon><EyeInvisibleOutlined /></template>
           {{ t('bootstrap.desktopSession.hide') }}
-        </a-button>
-        <a-button
-          :aria-label="t('bootstrap.desktopSession.minimize')"
-          @click="api?.desktopSessionWindow?.('minimize')"
-        >
-          <template #icon><MinusOutlined /></template>
         </a-button>
         <a-button @click="api?.desktopSessionLogs?.()">
           {{ t('bootstrap.desktopSession.viewLogs') }}</a-button
         >
       </a-space>
     </header>
-    <div class="desktop-options">
+    <div v-if="running" class="desktop-options">
       <a-space wrap>
-        <a-select
-          v-model:value="resolution"
-          :aria-label="t('bootstrap.desktopSession.resolution')"
-          :disabled="!canConfigure"
-          :options="[
-            { value: '1080p', label: '1920 × 1080' },
-            { value: 'primary', label: t('bootstrap.desktopSession.primaryResolution') },
-          ]"
-        />
-        <a-select
-          v-model:value="mode"
-          :aria-label="t('bootstrap.desktopSession.minimizeMode')"
-          :disabled="!canConfigure"
-          :options="[
-            { value: 'proxy', label: t('bootstrap.desktopSession.proxy') },
-            { value: 'native', label: t('bootstrap.desktopSession.native') },
-          ]"
-        />
-        <label for="desktop-volume"> {{ t('bootstrap.desktopSession.volume') }}</label>
+        <label for="desktop-volume">{{ t('bootstrap.desktopSession.volume') }}</label>
         <a-slider
           id="desktop-volume"
           v-model:value="volume"
           class="volume"
-          :disabled="!running"
           @change="(value: number) => api?.desktopSessionVolume?.(value)"
         />
       </a-space>
@@ -283,17 +258,19 @@ onBeforeUnmount(() => {
           <a-typography-text v-if="!checking && blocked" type="secondary">
             {{ t('bootstrap.desktopSession.recheckHint') }}
           </a-typography-text>
-          <a-typography-text
-            v-for="item in snapshot?.checks.filter(check => !check.ok)"
-            :key="item.code"
-            :type="item.required ? 'danger' : 'secondary'"
-          >
-            {{
-              te(`bootstrap.desktopSession.diagnostics.${item.code}`)
-                ? t(`bootstrap.desktopSession.diagnostics.${item.code}`)
-                : item.code
-            }}
-          </a-typography-text>
+          <a-flex v-if="!checking && failedChecks.length" vertical gap="small">
+            <a-typography-text
+              v-for="item in failedChecks"
+              :key="item.code"
+              :type="item.required || item.code === 'hello_only' ? 'danger' : 'secondary'"
+            >
+              {{
+                te(`bootstrap.desktopSession.diagnostics.${item.code}`)
+                  ? t(`bootstrap.desktopSession.diagnostics.${item.code}`)
+                  : item.code
+              }}
+            </a-typography-text>
+          </a-flex>
         </template>
         <a-typography-text v-else type="secondary">
           {{ t('bootstrap.desktopSession.hiddenHint') }}</a-typography-text
@@ -350,6 +327,7 @@ onBeforeUnmount(() => {
 }
 .desktop-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;

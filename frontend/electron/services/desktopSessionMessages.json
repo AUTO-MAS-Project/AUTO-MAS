@@ -8,7 +8,7 @@
     "resolution": "分身分辨率",
     "primaryResolution": "同步主屏分辨率",
     "minimizeMode": "最小化模式",
-    "proxy": "后台最小化",
+    "proxy": "后台最小化（推荐）",
     "native": "原生最小化",
     "emptySelection": "留空时只打开分身桌面。",
     "openWithTasks": "打开分身并启动任务",
@@ -30,7 +30,6 @@
     "start": "启动",
     "show": "显示",
     "hide": "隐藏",
-    "minimize": "最小化",
     "viewLogs": "查看分身日志",
     "volume": "分身音量",
     "closingHint": "正在关闭桌面分身，请等待任务收尾和会话注销。",
@@ -99,7 +98,7 @@
       "task_scheduler": "任务计划程序未运行，请在 Windows 服务中检查。",
       "child_enabled": "Windows 子会话未就绪。若检测确认开关已关闭，启动分身时会尝试启用。",
       "rdp_policy": "远程桌面已被关闭。请检查 Windows 设置或联系策略管理员。",
-      "hello_only": "系统可能只允许 Windows Hello 登录。遇到密码验证失败时请检查登录选项。",
+      "hello_only": "检测到 Windows 已启用仅允许 Microsoft 帐户使用 Windows Hello 登录的选项。若密码验证失败，请检查登录选项。",
       "rdp_listener": "找不到预期的本机 RDP 监听。请检查远程桌面相关服务与设置。"
     }
   },
@@ -112,7 +111,7 @@
     "resolution": "Session resolution",
     "primaryResolution": "Match primary display",
     "minimizeMode": "Minimize mode",
-    "proxy": "Minimize to background",
+    "proxy": "Minimize to background (recommended)",
     "native": "Native minimize",
     "emptySelection": "Leave empty to open the desktop without starting tasks.",
     "openWithTasks": "Open session and start tasks",
@@ -134,7 +133,6 @@
     "start": "Start",
     "show": "Show",
     "hide": "Hide",
-    "minimize": "Minimize",
     "viewLogs": "View session logs",
     "volume": "Session volume",
     "closingHint": "Waiting for tasks to stop and the desktop session to sign out.",
@@ -203,7 +201,7 @@
       "task_scheduler": "Task Scheduler is not running. Check Windows Services.",
       "child_enabled": "Windows child sessions are unavailable. If they are confirmed to be disabled, starting Desktop Session will try to enable them.",
       "rdp_policy": "Remote Desktop is disabled. Check Windows settings or contact your administrator.",
-      "hello_only": "Windows may require Windows Hello. Check sign-in options if password verification fails.",
+      "hello_only": "Windows Hello-only sign-in is enabled for Microsoft accounts. Check sign-in options if password verification fails.",
       "rdp_listener": "Could not find the expected local RDP listener. Check Remote Desktop services and settings."
     }
   },
@@ -216,7 +214,7 @@
     "resolution": "セッションの解像度",
     "primaryResolution": "メインディスプレイに合わせる",
     "minimizeMode": "最小化モード",
-    "proxy": "バックグラウンドに最小化",
+    "proxy": "バックグラウンドに最小化（推奨）",
     "native": "通常の最小化",
     "emptySelection": "空欄のままにすると、タスクを開始せずデスクトップだけを開きます。",
     "openWithTasks": "セッションを開いてタスクを開始",
@@ -238,7 +236,6 @@
     "start": "起動",
     "show": "表示",
     "hide": "非表示",
-    "minimize": "最小化",
     "viewLogs": "セッションログを表示",
     "volume": "セッションの音量",
     "closingHint": "タスクの終了とセッションのサインアウトを待っています。",
@@ -307,7 +304,7 @@
       "task_scheduler": "タスクスケジューラが停止しています。Windows サービスを確認してください。",
       "child_enabled": "Windows の子セッションを利用できません。無効と確認できた場合は、デスクトップ分身の起動時に有効化を試みます。",
       "rdp_policy": "リモートデスクトップが無効です。Windows の設定を確認するか、管理者に連絡してください。",
-      "hello_only": "Windows Hello が必須の可能性があります。パスワード確認に失敗する場合はサインインオプションを確認してください。",
+      "hello_only": "Microsoft アカウントに対して Windows Hello のみのサインインが有効です。パスワードを確認できない場合は、サインイン オプションを確認してください。",
       "rdp_listener": "ローカル RDP リスナーが見つかりません。リモートデスクトップのサービスと設定を確認してください。"
     }
   }

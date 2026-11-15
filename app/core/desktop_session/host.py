@@ -18,7 +18,7 @@ from uuid import uuid4
 import comtypes.client
 
 from app.utils.windows.desktop_session import audio, credentials
-from app.utils.windows.desktop_session.environment import probe
+from app.utils.windows.desktop_session.environment import probe, version_details
 from app.utils.windows.desktop_session.native import (
     SYSTEM32,
     bind,
@@ -72,12 +72,17 @@ class Host:
                 self.commands.put({"action": "invalid"})
         self.commands.put({"action": "eof"})
 
-    def start(self, command: dict) -> None:
-        password = command.pop("password", None)
+    def report_environment(self, action: str) -> None:
         windows = sys.getwindowsversion()
         architecture = platform.machine().upper()
         self.report(
             "startup_environment",
+            action=action,
+            windowsClientRelease=(
+                ("Windows 11" if windows.build >= 22000 else "Windows 10")
+                if windows.product_type == 1 and windows.major == 10
+                else None
+            ),
             windowsVersion=[windows.major, windows.minor, windows.build],
             windowsProductType=windows.product_type,
             architecture=architecture
@@ -86,7 +91,12 @@ class Host:
             pythonVersion=list(sys.version_info[:3]),
             pythonBits=C.sizeof(C.c_void_p) * 8,
             elevated=IS_ELEVATED,
+            **version_details(),
         )
+
+    def start(self, command: dict) -> None:
+        password = command.pop("password", None)
+        self.report_environment("connect")
         if self.viewer is not None:
             raise RuntimeError("already_started")
         checks, port = probe()
@@ -187,6 +197,7 @@ class Host:
     def command(self, command: dict) -> None:
         action = command["action"]
         if action == "check":
+            self.report_environment("check")
             checks, _ = probe()
             self.report("diagnostics", checks=checks)
         elif action == "connect":

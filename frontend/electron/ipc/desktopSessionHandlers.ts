@@ -259,8 +259,7 @@ export function registerDesktopSession(
   })
   ipcMain.on('desktop-session:window', (event, command: unknown) => {
     if (!fromPreview(event)) return
-    if (command === 'minimize') preview?.minimize()
-    else if (command === 'show' || command === 'hide') {
+    if (command === 'show' || command === 'hide') {
       hidden = command === 'hide'
       service.changeWindow(hidden ? 'hidden' : 'visible')
     }
