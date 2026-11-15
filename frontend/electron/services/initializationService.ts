@@ -68,6 +68,7 @@ export interface InitializationResult {
   completedStages: string[]
   failedStage?: string
   failureOrigin?: 'runtime_binary'
+  networkUnavailable?: true
   /** 失败时按需透传 Runtime 的结构化详情。 */
   code?: string
   retryable?: boolean
@@ -480,6 +481,7 @@ export class InitializationService {
       completedStages,
       failedStage: outcome.failedStage,
       failureOrigin: outcome.failureOrigin,
+      networkUnavailable: outcome.networkUnavailable,
       code: outcome.code,
       retryable: outcome.retryable,
       remediation: outcome.remediation,

@@ -30,6 +30,7 @@ interface StartupFailure {
   retryable?: boolean
   remediation?: RuntimeRemediation[]
   runtimeFailure?: StartupFailureContext
+  networkUnavailable?: true
 }
 
 /** 只重放已有准备与启动操作，不将普通重试升级为重建或权限修复。 */
@@ -45,8 +46,9 @@ export function canRetryStartup(result: StartupFailure): boolean {
     return false
   }
   switch (result.code) {
-    case 'RUNTIME_BINARY_ALIGN_ERROR':
-      return result.remediation?.includes('retry') === true
+    case 'RUNTIME_LATEST_UNAVAILABLE':
+    case 'RUNTIME_BINARY_DOWNLOAD_FAILED':
+      return result.networkUnavailable === true
     case 'RUNTIME_HANDSHAKE_TIMEOUT':
       return ['workspace check', 'bootstrap', 'environment ensure', 'dependencies sync'].includes(
         context?.command ?? ''

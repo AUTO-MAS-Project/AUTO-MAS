@@ -22,6 +22,14 @@ export interface DownloadProgress {
 
 export type ProgressCallback = (progress: DownloadProgress) => void
 
+export interface DownloadResult {
+  success: boolean
+  error?: string
+  networkUnavailable?: true
+}
+
+class DownloadNetworkError extends Error {}
+
 interface DownloadChunk {
   start: number
   end: number
@@ -43,7 +51,7 @@ export class SmartDownloader {
     url: string,
     savePath: string,
     onProgress?: ProgressCallback
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<DownloadResult> {
     logger.info('=== 开始智能下载 ===')
     logger.info(`URL: ${url}`)
     logger.info(`保存路径: ${savePath}`)
@@ -72,7 +80,11 @@ export class SmartDownloader {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`❌ 下载失败: ${errorMsg}`)
-      return { success: false, error: errorMsg }
+      return {
+        success: false,
+        error: errorMsg,
+        ...(error instanceof DownloadNetworkError ? { networkUnavailable: true as const } : {}),
+      }
     }
   }
 
@@ -113,10 +125,10 @@ export class SmartDownloader {
         })
       })
 
-      req.on('error', reject)
+      req.on('error', error => reject(new DownloadNetworkError(error.message)))
       req.on('timeout', () => {
         req.destroy()
-        reject(new Error('获取文件信息超时'))
+        reject(new DownloadNetworkError('获取文件信息超时'))
       })
       req.end()
     })
@@ -130,7 +142,7 @@ export class SmartDownloader {
     savePath: string,
     totalSize: number,
     onProgress?: ProgressCallback
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<DownloadResult> {
     return new Promise(resolve => {
       const client = url.startsWith('https') ? https : http
       const file = fs.createWriteStream(savePath)
@@ -199,7 +211,7 @@ export class SmartDownloader {
           if (fs.existsSync(savePath)) {
             fs.unlinkSync(savePath)
           }
-          resolve({ success: false, error: `网络错误: ${err.message}` })
+          resolve({ success: false, error: `网络错误: ${err.message}`, networkUnavailable: true })
         })
 
         file.on('finish', () => {
@@ -240,7 +252,7 @@ export class SmartDownloader {
         if (fs.existsSync(savePath)) {
           fs.unlinkSync(savePath)
         }
-        resolve({ success: false, error: `网络连接错误: ${err.message}` })
+        resolve({ success: false, error: `网络连接错误: ${err.message}`, networkUnavailable: true })
       })
 
       req.on('timeout', () => {
@@ -250,7 +262,7 @@ export class SmartDownloader {
         if (fs.existsSync(savePath)) {
           fs.unlinkSync(savePath)
         }
-        resolve({ success: false, error: '下载超时' })
+        resolve({ success: false, error: '下载超时', networkUnavailable: true })
       })
     })
   }
@@ -264,7 +276,7 @@ export class SmartDownloader {
     totalSize: number,
     onProgress?: ProgressCallback,
     threadCount: number = 4
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<DownloadResult> {
     try {
       // 计算每个分片的大小
       const chunkSize = Math.ceil(totalSize / threadCount)
@@ -374,7 +386,11 @@ export class SmartDownloader {
         fs.unlinkSync(savePath)
       }
 
-      return { success: false, error: errorMsg }
+      return {
+        success: false,
+        error: errorMsg,
+        ...(error instanceof DownloadNetworkError ? { networkUnavailable: true as const } : {}),
+      }
     }
   }
 
@@ -423,19 +439,19 @@ export class SmartDownloader {
         response.on('error', err => {
           logger.error(`分片 ${chunk.index} 响应错误: ${err.message}`)
           req.destroy()
-          reject(new Error(`分片 ${chunk.index} 网络错误: ${err.message}`))
+          reject(new DownloadNetworkError(`分片 ${chunk.index} 网络错误: ${err.message}`))
         })
       })
 
       req.on('error', err => {
         logger.error(`分片 ${chunk.index} 请求错误: ${err.message}`)
-        reject(new Error(`分片 ${chunk.index} 网络连接错误: ${err.message}`))
+        reject(new DownloadNetworkError(`分片 ${chunk.index} 网络连接错误: ${err.message}`))
       })
 
       req.on('timeout', () => {
         logger.warn(`分片 ${chunk.index} 请求超时`)
         req.destroy()
-        reject(new Error(`分片 ${chunk.index} 下载超时`))
+        reject(new DownloadNetworkError(`分片 ${chunk.index} 下载超时`))
       })
     })
   }

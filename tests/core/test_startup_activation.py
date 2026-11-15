@@ -33,12 +33,8 @@ async def test_closed_start_cannot_be_activated() -> None:
     activation.close()
     with pytest.raises(RuntimeError, match="关闭"):
         activation.activate()
-    waiter = asyncio.create_task(activation.wait())
-    await asyncio.sleep(0)
-    assert not waiter.done()
-    waiter.cancel()
     with pytest.raises(asyncio.CancelledError):
-        await waiter
+        await activation.wait()
 
 
 @pytest.mark.asyncio
@@ -46,3 +42,14 @@ async def test_standalone_start_is_already_active() -> None:
     activation = StartupActivation(deferred=False)
     await activation.wait()
     assert activation.status == "active"
+
+
+@pytest.mark.asyncio
+async def test_close_after_activation_cancels_an_already_woken_waiter() -> None:
+    activation = StartupActivation(deferred=True)
+    waiter = asyncio.create_task(activation.wait())
+    await asyncio.sleep(0)
+    activation.activate()
+    activation.close()
+    with pytest.raises(asyncio.CancelledError):
+        await waiter

@@ -17,6 +17,8 @@ class StartupActivation:
 
     async def wait(self) -> None:
         await self._ready.wait()
+        if self.status == "closed":
+            raise asyncio.CancelledError
 
     def activate(self) -> None:
         if self.status == "closed":
@@ -26,3 +28,4 @@ class StartupActivation:
 
     def close(self) -> None:
         self.status = "closed"
+        self._ready.set()
