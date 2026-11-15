@@ -336,83 +336,14 @@ def _sra_activity_stage_options(
     return result
 
 
-_SRA_SECTION_CLASSES = {
-    "trailblazePower": "TrailblazePowerConfig",
-    "receiveRewards": "ReceiveRewardsConfig",
-    "cosmicStrife": "CosmicStrifeConfig",
-}
-_SRA_FIELD_DOC = re.compile(r"alias=\"([^\"]+)\",\s*description=(['\"])(.*?)\2\)")
-_SRA_ENUM = re.compile(r"(\d+)\s*-\s*([^，,；。\s]+)")
-
-
-def _load_sra_field_docs(script_config: Any) -> dict[str, dict[str, str]]:
-    """读 SRA 自带的字段说明：``{节名: {键: 说明}}``。
-
-    SRA 改成带源码分发后，安装目录里有由 C# 模型生成的
-    ``SRACore/models/tasks_config.py``，每个键都带 ``description``。旧的编译版
-    没有这个文件，返回空表，文案退回手写词表。
-    """
-
-    raw_root = _script_path(script_config, "SRA")
-    if not raw_root:
-        return {}
-    path = Path(raw_root) / "SRACore" / "models" / "tasks_config.py"
-    try:
-        text = path.read_text(encoding="utf-8-sig")
-    except (OSError, UnicodeDecodeError):
-        return {}
-    blocks = {
-        block.split("(", 1)[0].strip(): block
-        for block in re.split(r"^class ", text, flags=re.MULTILINE)[1:]
-    }
-    return {
-        section: {
-            match.group(1): match.group(3)
-            for match in _SRA_FIELD_DOC.finditer(blocks.get(class_name, ""))
-        }
-        for section, class_name in _SRA_SECTION_CLASSES.items()
-    }
-
-
-def _sra_texts(doc: str) -> tuple[str, str, tuple[HSRManagedFieldOption, ...]]:
-    """把 SRA 的字段说明拆成（名称, 补充说明, 下拉选项）。
-
-    说明的惯例是「是否XX」「XX，0-甲，1-乙」「XX：补充」；取值枚举变成下拉选项，
-    不再留在说明里。
-    """
-
-    options = tuple(
-        HSRManagedFieldOption(int(value), label)
-        for value, label in _SRA_ENUM.findall(doc)
-        if not label.isdigit()
-    )
-    if len(options) < 2:
-        options = ()
-    clauses = [
-        clause.strip()
-        for clause in re.split(r"[，：；。]", doc)
-        if clause.strip() and not _SRA_ENUM.fullmatch(clause.strip())
-    ]
-    if not clauses:
-        return "", "", options
-    label = clauses[0].removeprefix("是否")
-    rest = clauses[1:]
-    if len(label) < 4 and rest:
-        # 「启用后，……」这类开头撑不起一个名称，整句当名称
-        return "，".join(clauses), "", options
-    return label, ("，".join(rest) + "。" if rest else ""), options
-
-
 def list_sra_managed_modules(
     script_config: Any, user_config: Any | None = None
 ) -> tuple[HSRManagedModule, ...]:
     source, _payload = load_sra_native_config(script_config)
     activity_stage_options = _sra_activity_stage_options(script_config)
-    field_docs = _load_sra_field_docs(script_config)
     result: list[HSRManagedModule] = []
     for module_key in ("Daily", "ReceiveRewards", "DivergentUniverse", "CurrencyWars"):
-        values, section_name = discover_sra_managed_options(module_key, script_config)
-        docs = field_docs.get(section_name, {})
+        values, _section = discover_sra_managed_options(module_key, script_config)
         table_specs = managed_field_specs("SRA", module_key)
         listed = {spec.key for spec in table_specs}
         # 字段表之外、按规则自动跟进的新键接在后面
@@ -433,12 +364,6 @@ def list_sra_managed_modules(
                 continue
             native = values[key]
             value = effective.get(key, native)
-            doc_label, doc_description, doc_options = _sra_texts(docs.get(key, ""))
-            # SRA 自带的取值枚举优先于手写的，新版本加的取值不用等 MAS 跟；
-            # 当前值不在枚举里（说明解析岔了）就不用它。
-            if not any(option.value == native for option in doc_options):
-                doc_options = ()
-            hand_label = _SRA_LABELS.get(key)
             if key == _SRA_USERNAME_KEY:
                 # 运行时没填覆盖值就用 MAS 账号名，不用原生 profile 里的名字；
                 # 表单显示为空，与说明「留空时使用 MAS 账号名」一致。单项恢复后
@@ -456,20 +381,15 @@ def list_sra_managed_modules(
                         if key.startswith("rewards.")
                         and key.removeprefix("rewards.").isdigit()
                         and int(key.removeprefix("rewards.")) < len(SRA_REWARD_LABELS)
-                        else hand_label or doc_label or key
+                        # 自动跟进的新键没有手写名称，先显示原始键名
+                        else _SRA_LABELS.get(key, key)
                     ),
                     description=(
                         _SRA_ACTIVITY_STAGE_DESCRIPTION
                         if key in _SRA_ACTIVITY_STAGE_CATEGORIES
-                        # 手写了名称的字段沿用手写说明，不混进 SRA 的原文
-                        else _SRA_DESCRIPTIONS.get(
-                            key, "" if hand_label else doc_description
-                        )
+                        else _SRA_DESCRIPTIONS.get(key, "")
                     ),
-                    options=activity_stage_options.get(
-                        key,
-                        doc_options or _SRA_SELECTS.get(key, ()),
-                    ),
+                    options=activity_stage_options.get(key, _SRA_SELECTS.get(key, ())),
                     minimum=_SRA_RANGES.get(key, (None, None))[0],
                     maximum=_SRA_RANGES.get(key, (None, None))[1],
                     overridden=key in overridden_keys,

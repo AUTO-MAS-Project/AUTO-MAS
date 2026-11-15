@@ -355,6 +355,8 @@ _M7A_AUTO_EXCLUDED: frozenset[str] = frozenset(
         "currencywars_remembrance_trailblazer_name",
         # 手动跑差分宇宙用的模式；周常读 weekly_divergent_type
         "divergent_type",
+        # 外置 ASU 路径的队伍类型；MAS 跑的 divergent 命令选队时不读它
+        "divergent_team_type",
     }
 )
 _M7A_AUTO_EXCLUDED_SUFFIXES: tuple[str, ...] = ("_timestamp", "_completed_count")
