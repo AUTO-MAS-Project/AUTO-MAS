@@ -1,21 +1,10 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
-import { createServer } from 'node:net'
-import { setTimeout as sleep } from 'node:timers/promises'
 import { createInterface } from 'node:readline'
-import { once } from 'node:events'
 import { mkdirSync, appendFileSync, renameSync, statSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { session } from 'electron'
-import { getBackendService, getLocalApiEndpoint } from '../ipc/initializationHandlers'
-import { getApplicationEnvironment } from './instanceConfig'
+import { getLocalApiEndpoint } from '../ipc/initializationHandlers'
 import { beginMainFeature } from './featureAnalytics'
-import {
-  desktopSessionControlToken,
-  setDesktopSessionChildId,
-  setDesktopSessionEndpoint,
-  setDesktopSessionTransition,
-} from './desktopSessionControl'
+import { desktopSessionControlToken, setDesktopSessionChildId } from './desktopSessionControl'
 import type {
   DesktopQueueResult,
   DesktopSessionRequest,
@@ -48,17 +37,6 @@ async function request<T>(
   return (await response.json()) as T
 }
 
-async function freePort(): Promise<number> {
-  const socket = createServer()
-  socket.listen(0, '127.0.0.1')
-  await once(socket, 'listening')
-  const address = socket.address()
-  socket.close()
-  await once(socket, 'close')
-  if (!address || typeof address === 'string') throw new DesktopSessionError('port_unavailable')
-  return address.port
-}
-
 export class DesktopSessionService {
   snapshot: DesktopSessionSnapshot = {
     state: 'idle',
@@ -73,14 +51,7 @@ export class DesktopSessionService {
   private orphanedSessionId: number | undefined
   private hostEvents = new EventTarget()
   private startOperation: Promise<DesktopSessionStartResult> | null = null
-  private finishOperation: Promise<void> | null = null
-  private endpoint: string | null = null
-  private token = ''
-  private transferred = false
-  private parentStopped = false
-  private launchPending = false
-  private executorReleased = false
-  private recoveryRequired = false
+  private stopOperation: Promise<void> | null = null
   private monitor: NodeJS.Timeout | undefined
   private volume = 0
   private logsRoot: string | undefined
@@ -88,16 +59,14 @@ export class DesktopSessionService {
 
   constructor(
     private readonly changed: (snapshot: DesktopSessionSnapshot) => void,
-    private readonly endpointChanged: (transition: boolean, reconnect: boolean) => void,
     private readonly requested: (action: 'minimize' | 'close') => void,
-    private readonly isApplicationRenderer: (webContentsId: number | undefined) => boolean,
     private readonly tasksStarted: (tasks: DesktopQueueResult[]) => void
   ) {}
 
   get active(): boolean {
     return (
       this.snapshot.busy ||
-      this.transferred ||
+      this.snapshot.executing ||
       this.orphanedSessionId !== undefined ||
       this.snapshot.sessionId !== undefined ||
       this.snapshot.state === 'connecting' ||
@@ -109,24 +78,9 @@ export class DesktopSessionService {
     return this.logsRoot
   }
 
-  stopAllTasks(endpoint: string): Promise<Response> | undefined {
-    if (endpoint !== this.endpoint) return
-    return fetch(`${endpoint}/api/dispatch/stop`, {
-      method: 'POST',
-      redirect: 'error',
-      headers: { 'Content-Type': 'application/json', [header]: this.token },
-      body: JSON.stringify({ taskId: 'ALL' }),
-    })
-  }
-
   private patch(patch: Partial<DesktopSessionSnapshot>): void {
     this.snapshot = { ...this.snapshot, ...patch }
     this.changed(this.snapshot)
-  }
-
-  private transition(active: boolean, reconnect = false): void {
-    setDesktopSessionTransition(active)
-    this.endpointChanged(active, reconnect)
   }
 
   private log(event: string, fields: Record<string, unknown> = {}): void {
@@ -197,9 +151,7 @@ export class DesktopSessionService {
       this.log('host_exited', { exitCode: child.exitCode })
       this.hostEvents.dispatchEvent(new Event('exit'))
       this.patch({ state: this.active ? 'disconnected' : 'idle', code: 'host_exited' })
-      if (this.transferred && !this.startOperation && this.orphanedSessionId === undefined) {
-        void this.finish(false).catch(() => undefined)
-      }
+      this.scheduleMonitor()
     }
     child.once('error', exited)
     child.once('exit', exited)
@@ -230,24 +182,11 @@ export class DesktopSessionService {
             ? undefined
             : ((event.size as [number, number] | undefined) ?? this.snapshot.size),
       })
-      if (state === 'disconnected' && this.transferred && !this.startOperation) {
-        void this.finish(false).catch(() => undefined)
-      }
+      if (state === 'disconnected') this.scheduleMonitor()
     } else if (event.event === 'window') {
       this.patch({ windowState: event.state as DesktopSessionSnapshot['windowState'] })
     } else if (event.event === 'audio') {
       this.patch({ audioSessions: event.sessions as number })
-    } else if (event.event === 'executor_released') {
-      this.executorReleased = true
-      this.launchPending = false
-    } else if (event.event === 'executor_error' && !this.endpoint && event.started !== true) {
-      this.launchPending = false
-    } else if (event.event === 'executor_interrupted') {
-      this.executorReleased = true
-      this.launchPending = false
-      this.log('executor_interrupted')
-      this.patch({ code: 'executor_interrupted' })
-      this.scheduleMonitor()
     } else if (event.event === 'credential_warning') {
       this.patch({ code: 'credential_save_failed' })
     } else if (event.event === 'close_requested') {
@@ -319,8 +258,7 @@ export class DesktopSessionService {
     if (
       this.snapshot.busy ||
       this.snapshot.closing ||
-      this.finishOperation ||
-      this.recoveryRequired ||
+      this.stopOperation ||
       this.orphanedSessionId !== undefined
     ) {
       return Promise.resolve({ code: 'busy', queues: [] })
@@ -329,13 +267,7 @@ export class DesktopSessionService {
     this.startOperation = this.startInternal(input, owner, bounds).finally(() => {
       this.startOperation = null
       this.patch({ busy: false })
-      if (
-        this.transferred &&
-        this.snapshot.state !== 'connected' &&
-        this.orphanedSessionId === undefined
-      ) {
-        void this.finish(false).catch(() => undefined)
-      }
+      this.scheduleMonitor()
     })
     return this.startOperation
   }
@@ -389,14 +321,12 @@ export class DesktopSessionService {
       for (const id of input.queueIds) {
         dispatches.set(id, beginMainFeature('task_start_result'))
       }
-      if (!this.transferred) await this.transfer()
-      if (this.snapshot.state !== 'connected' || !this.endpoint) {
-        throw new DesktopSessionError('session_changed')
-      }
+      if (this.snapshot.state !== 'connected') throw new DesktopSessionError('session_changed')
+      this.patch({ executing: true })
       const result = await request<{ results: DesktopQueueResult[] }>(
-        this.endpoint,
+        getLocalApiEndpoint(),
         internal + 'queues',
-        this.token,
+        desktopSessionControlToken,
         { queueIds: input.queueIds }
       )
       for (const queue of result.results) {
@@ -415,7 +345,6 @@ export class DesktopSessionService {
       }
       const accepted = result.results.filter(target => target.taskId)
       if (accepted.length) this.tasksStarted(accepted)
-      this.scheduleMonitor()
       return { queues: result.results }
     } catch (error) {
       if (publishingConnection) {
@@ -437,7 +366,6 @@ export class DesktopSessionService {
       connection?.finish({ outcome: 'failure', reason_kind: reason })
       this.patch({ code })
       this.log('start_failed', { code })
-      if (this.transferred) this.scheduleMonitor()
       return { code, queues: [] }
     } finally {
       for (const operation of dispatches.values()) {
@@ -454,7 +382,7 @@ export class DesktopSessionService {
 
   private async updateParentScope(sessionId: number | null, connecting = false): Promise<void> {
     setDesktopSessionChildId(sessionId)
-    if (this.transferred || !this.runtime) return
+    if (!this.runtime) return
     await request(
       getLocalApiEndpoint(),
       internal + 'process-scope',
@@ -467,180 +395,57 @@ export class DesktopSessionService {
     )
   }
 
-  private async transfer(): Promise<void> {
-    const endpoint = getLocalApiEndpoint()
-    const port = await freePort()
-    this.transition(true)
-    this.log('handoff_requested')
-    try {
-      await request(endpoint, internal + 'handoff', desktopSessionControlToken)
-    } catch (error) {
-      if (error instanceof DesktopSessionError && error.message === 'http_409') {
-        this.transition(false)
-        throw new DesktopSessionError('main_busy')
-      }
-      // 端点可能已进入收尾，需确认原进程退出后才可再打开数据。
-      this.transferred = true
-      throw new DesktopSessionError('handoff_unconfirmed')
-    }
-    this.transferred = true
-    const stopped = await getBackendService().stopBackend()
-    if (!stopped.success) throw new DesktopSessionError('handoff_unconfirmed')
-    this.parentStopped = true
-    this.token = randomBytes(32).toString('hex')
-    const childEndpoint = `http://127.0.0.1:${port}`
-    this.executorReleased = false
-    this.launchPending = true
-    const host = await this.exchange(
-      { action: 'execute', environment: getApplicationEnvironment(), token: this.token, port },
-      event =>
-        event.event === 'executor_ready' ||
-        event.event === 'executor_error' ||
-        (event.event === 'command_error' && event.action === 'execute'),
-      35000
-    )
-    if (host.event !== 'executor_ready') {
-      if (host.started !== true) this.launchPending = false
-      throw new DesktopSessionError('executor_failed')
-    }
-    this.endpoint = childEndpoint
-    const readyAt = Date.now() + 30000
-    for (;;) {
-      try {
-        await request(childEndpoint, internal + 'state', this.token, undefined, 500)
-        break
-      } catch {
-        if (Date.now() >= readyAt) throw new DesktopSessionError('executor_timeout')
-        await sleep(200)
-      }
-    }
-    const token = this.token
-    session.defaultSession.webRequest.onBeforeSendHeaders(
-      {
-        urls: [`${childEndpoint}/*`, `ws://127.0.0.1:${port}/*`],
-      },
-      (details, callback) => {
-        const headers = details.requestHeaders
-        if (this.isApplicationRenderer(details.webContentsId)) headers[header] = token
-        callback({ requestHeaders: headers })
-      }
-    )
-    setDesktopSessionEndpoint(childEndpoint)
-    this.transition(true, true)
-    this.log('handoff_complete', { sessionId: this.snapshot.sessionId })
-    this.patch({ executing: true })
-  }
-
   private scheduleMonitor(): void {
     clearTimeout(this.monitor)
-    if (this.transferred) this.monitor = setTimeout(() => void this.monitorExecution(), 1000)
+    if (this.snapshot.executing && !this.snapshot.closing) {
+      this.monitor = setTimeout(() => void this.monitorExecution(), 1000)
+    }
   }
 
   private async monitorExecution(): Promise<void> {
-    if (!this.transferred || this.recoveryRequired || this.orphanedSessionId !== undefined) return
-    if (this.startOperation || this.finishOperation) {
-      this.scheduleMonitor()
-      return
-    }
-
+    if (this.startOperation || this.stopOperation || this.snapshot.closing) return
     const monitor = this.monitor
-    let shouldFinish =
-      !this.endpoint || this.executorReleased || this.snapshot.state !== 'connected'
-    if (!shouldFinish && this.endpoint) {
-      try {
-        const state = await request<{ idle: boolean }>(
-          this.endpoint,
+    try {
+      if (this.snapshot.state === 'disconnected') {
+        await this.stopTasks()
+        this.patch({ code: 'executor_interrupted' })
+      } else {
+        const { idle } = await request<{ idle: boolean }>(
+          getLocalApiEndpoint(),
           internal + 'state',
-          this.token,
+          desktopSessionControlToken,
           undefined,
           2000
         )
-        shouldFinish = state.idle
-      } catch {
-        if (this.monitor === monitor && this.transferred && !this.finishOperation) {
-          this.scheduleMonitor()
+        if (idle && this.monitor === monitor && !this.startOperation) {
+          this.patch({ executing: false })
         }
-        return
       }
-    }
-
-    if (this.monitor !== monitor || !this.transferred || this.finishOperation) return
-    if (this.startOperation || !shouldFinish) {
-      this.scheduleMonitor()
-      return
-    }
-    try {
-      await this.finish(false)
     } catch {
-      // restoreMain 已记录明确的恢复失败状态。
-    }
-  }
-
-  private finish(closing: boolean): Promise<void> {
-    if (this.finishOperation) return this.finishOperation
-    this.finishOperation = this.restoreMain(closing).finally(() => {
-      this.finishOperation = null
-    })
-    return this.finishOperation
-  }
-
-  private async restoreMain(closing: boolean): Promise<void> {
-    clearTimeout(this.monitor)
-    this.monitor = undefined
-    if (!this.transferred) return
-    this.patch({ busy: true })
-    const started = Date.now()
-    try {
-      if (this.endpoint) {
-        if (!this.executorReleased) {
-          const released = this.wait(
-            event => event.event === 'executor_released' || event.event === 'executor_interrupted',
-            75000
-          )
-          void released.catch(() => undefined)
-          try {
-            await request(this.endpoint, internal + 'exit', this.token)
-          } catch (error) {
-            if (!this.executorReleased) throw error
-          }
-          await released
-        }
-        this.endpoint = null
-        session.defaultSession.webRequest.onBeforeSendHeaders(null)
-        setDesktopSessionEndpoint(null)
-      }
-      if (this.launchPending) throw new DesktopSessionError('handoff_unconfirmed')
-      if (!this.parentStopped) {
-        // 交接请求可能已停止主后端受理。必须确认旧 Runtime 退出后才能恢复。
-        const stopped = await getBackendService().stopBackend()
-        if (!stopped.success) throw new DesktopSessionError('handoff_unconfirmed')
-        this.parentStopped = true
-      }
-      if (closing) {
-        this.transition(false)
-      } else {
-        const result = await getBackendService().startBackend({ resumeDesktopSession: true })
-        if (!result.success) throw new DesktopSessionError('main_resume_failed')
-        this.transition(false, true)
-      }
-      this.transferred = false
-      this.parentStopped = false
-      this.recoveryRequired = false
-      this.log('handoff_released', { durationMs: Date.now() - started })
-      this.patch({ executing: false })
-    } catch (error) {
-      this.recoveryRequired = true
-      this.patch({
-        code: error instanceof DesktopSessionError ? error.message : 'handoff_unconfirmed',
-      })
-      this.log('handoff_release_failed', { durationMs: Date.now() - started })
-      throw error
+      // 后端暂时不可用时保留执行状态，重试确认任务是否已收尾。
     } finally {
-      this.patch({ busy: false })
+      this.scheduleMonitor()
     }
   }
 
-  private async closeViewer(updateParent = true): Promise<void> {
+  private stopTasks(): Promise<void> {
+    if (this.stopOperation) return this.stopOperation
+    this.stopOperation = request<{ idle: boolean }>(
+      getLocalApiEndpoint(),
+      internal + 'stop',
+      desktopSessionControlToken
+    )
+      .then(({ idle }) => {
+        if (!idle) throw new DesktopSessionError('executor_failed')
+        this.patch({ executing: false })
+      })
+      .finally(() => {
+        this.stopOperation = null
+      })
+    return this.stopOperation
+  }
+
+  private async closeViewer(): Promise<void> {
     const orphanedSessionId = this.orphanedSessionId
     if (orphanedSessionId !== undefined) await this.ensureHost()
     if (!this.host) return
@@ -653,30 +458,22 @@ export class DesktopSessionService {
     )
     if (result.event === 'command_error') throw new DesktopSessionError('logoff_failed')
     this.orphanedSessionId = undefined
-    if (updateParent) await this.updateParentScope(null)
-    else setDesktopSessionChildId(null)
+    await this.updateParentScope(null)
   }
 
-  async close(closing: boolean): Promise<void> {
+  async close(): Promise<void> {
     this.patch({ closing: true })
     try {
       if (this.startOperation) await this.startOperation
-      const needsRecovery = this.orphanedSessionId !== undefined
-      const parentWillStayStopped = closing && this.transferred
-      if (needsRecovery) {
-        // 原宿主已退出，由新宿主核验并注销后才能恢复配置写入。
-        await this.closeViewer()
-        this.executorReleased = true
-        this.launchPending = false
-      }
-      await this.finish(closing)
-      if (!needsRecovery) await this.closeViewer(!parentWillStayStopped)
+      if (this.snapshot.executing) await this.stopTasks()
+      await this.closeViewer()
       this.host?.stdin.end()
       this.host = null
       this.volume = 0
       this.patch({ state: 'idle', windowState: 'visible' })
     } finally {
       this.patch({ closing: false })
+      this.scheduleMonitor()
     }
   }
 

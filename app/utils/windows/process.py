@@ -24,7 +24,7 @@ class WindowsTaskProcessJob:
     # 先挂起创建，加入任务 Job 后再恢复，避免短命包装器抢先派生并退出。
     creation_flags = 0x00000004  # CREATE_SUSPENDED
 
-    def __init__(self) -> None:
+    def __init__(self, *, kill_on_close: bool = False) -> None:
         self._lock = Lock()
         self._closed = False
         self._stopping = False
@@ -37,6 +37,21 @@ class WindowsTaskProcessJob:
         # 脱离 Runtime 的进程不能与继承 Runtime 的进程共用同一个嵌套 Job。
         self._handles = {False: inherited, True: detached}
         self._adopted: list[Any] = []
+        if kill_on_close:
+            try:
+                for job in self._handles.values():
+                    limits = win32job.QueryInformationJobObject(
+                        job, win32job.JobObjectExtendedLimitInformation
+                    )
+                    limits["BasicLimitInformation"]["LimitFlags"] |= (
+                        win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+                    )
+                    win32job.SetInformationJobObject(
+                        job, win32job.JobObjectExtendedLimitInformation, limits
+                    )
+            except BaseException:
+                self.close()
+                raise
 
     def assign(self, pid: int, *, suspended: bool, breakaway: bool) -> None:
         # 安装线程与任务停止共用这把锁，强杀开始后不得再分配或恢复新进程。

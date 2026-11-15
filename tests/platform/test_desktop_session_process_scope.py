@@ -1,6 +1,7 @@
 """主后端通过桌面分身控制入口登记进程管理范围。"""
 
 import os
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -59,5 +60,12 @@ def test_process_operations_filter_and_recheck_scope(monkeypatch):
 
     session.configure_parent_scope(lambda: 1)
     assert list(operations.iter_processes(["pid"])) == []
+    token = session.desktop_process_target.set(
+        session.DesktopProcessTarget(7, Path.cwd(), Path.cwd())
+    )
+    try:
+        assert list(operations.iter_processes(["pid"])) == [process]
+    finally:
+        session.desktop_process_target.reset(token)
     assert not operations.terminate_process(process, force=True)
     process.kill.assert_not_called()

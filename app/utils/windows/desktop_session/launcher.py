@@ -69,10 +69,17 @@ def connect_executor_pipe(name: str, parent_pid: int):
 
 
 def run_executor(
-    session_id: int, *, source: Path, root: Path, account: str, pipe_name: str
+    session_id: int,
+    *,
+    source: Path,
+    root: Path,
+    account: str,
+    pipe_name: str,
 ):
     import pythoncom
     import win32com.client
+
+    from app.utils.windows.host import IS_ELEVATED
 
     from .credentials import current_identity
 
@@ -88,8 +95,8 @@ def run_executor(
     task = scheduler.NewTask(0)
     task.Principal.UserId = account
     task.Principal.LogonType = 3  # TASK_LOGON_INTERACTIVE_TOKEN
-    # 执行器与管理员主进程同级，才能跟踪由托管配置提权启动的脚本。
-    task.Principal.RunLevel = 1  # TASK_RUNLEVEL_HIGHEST
+    # 控制端需要持有执行器的等待和终止句柄，双方使用同级权限。
+    task.Principal.RunLevel = int(IS_ELEVATED)
     task.Settings.AllowDemandStart = True
     task.Settings.DisallowStartIfOnBatteries = False
     task.Settings.StopIfGoingOnBatteries = False
@@ -102,7 +109,7 @@ def run_executor(
     action.Arguments = subprocess.list2cmdline(
         [
             "-m",
-            "app.core.desktop_session.executor",
+            "app.utils.windows.desktop_session.process_worker",
             "--session-id",
             str(session_id),
             "--pipe",

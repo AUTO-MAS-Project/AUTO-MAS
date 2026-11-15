@@ -7,11 +7,9 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { validateAnalyticsEvent } from './analyticsPolicy'
 import { DesktopSessionService } from './desktopSessionService'
 
-const backend = vi.hoisted(() => ({ startBackend: vi.fn(), stopBackend: vi.fn() }))
 const analytics = vi.hoisted(() => ({ getContext: vi.fn(), recordMainEvent: vi.fn() }))
 
 vi.mock('../ipc/initializationHandlers', () => ({
-  getBackendService: () => backend,
   getLocalApiEndpoint: () => 'http://127.0.0.1:36164',
 }))
 vi.mock('electron', () => ({ session: {} }))
@@ -45,41 +43,41 @@ afterEach(() => {
   vi.resetAllMocks()
 })
 
-it('reconnects only after stopping a parent whose handoff response was lost', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'mas-desktop-handoff-'))
-  let parentState: 'ready' | 'draining' | 'stopped' = 'ready'
-  backend.stopBackend.mockImplementation(async () => {
-    parentState = 'stopped'
-    return { success: true }
-  })
-  backend.startBackend.mockImplementation(async () => {
-    // A live Runtime reports success from startBackend without restarting the draining process.
-    if (parentState === 'stopped') parentState = 'ready'
-    return { success: true }
-  })
+it('dispatches and stops tasks through the same main backend', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'mas-desktop-dispatch-'))
+  const queueId = '00000000-0000-4000-8000-000000000001'
+  const taskId = '00000000-0000-4000-8000-000000000002'
+  const requests: string[] = []
   vi.stubGlobal('fetch', async (url: string) => {
-    switch (new URL(url).pathname) {
+    const endpoint = new URL(url)
+    expect(endpoint.origin).toBe('http://127.0.0.1:36164')
+    requests.push(endpoint.pathname)
+    switch (endpoint.pathname) {
       case '/internal/desktop-session/describe':
         return Response.json({ python: 'python', root, source: root })
       case '/internal/desktop-session/process-scope':
         return Response.json({ updated: true })
-      case '/internal/desktop-session/handoff':
-        parentState = 'draining'
-        throw new DOMException('Handoff response timed out', 'TimeoutError')
+      case '/internal/desktop-session/queues':
+        return Response.json({
+          results: [{ queueId, taskId, targetKind: 'script', label: 'Probe', code: '' }],
+        })
+      case '/internal/desktop-session/stop':
+        return Response.json({ idle: true })
       default:
         throw new Error(`Unexpected request to ${url}`)
     }
   })
 
-  const transitions = vi.fn()
-  const service = new DesktopSessionService(vi.fn(), transitions, vi.fn(), () => false, vi.fn())
+  const tasksStarted = vi.fn()
+  const service = new DesktopSessionService(vi.fn(), vi.fn(), tasksStarted)
   try {
     const result = await service.start(
-      { queueIds: ['00000000-0000-4000-8000-000000000001'], mode: 'proxy', resolution: '1080p' },
+      { queueIds: [queueId], mode: 'proxy', resolution: '1080p' },
       1n,
       [0, 0, 100, 100]
     )
-    expect(result.code).toBe('handoff_unconfirmed')
+    expect(result.queues[0]?.taskId).toBe(taskId)
+    expect(tasksStarted).toHaveBeenCalledWith(result.queues)
     const dispatchEvents = analytics.recordMainEvent.mock.calls
       .map(([, event]) => event)
       .filter(event => event.name === 'task_start_result')
@@ -89,21 +87,19 @@ it('reconnects only after stopping a parent whose handoff response was lost', as
         props: {
           source: 'desktop_session',
           mode: 'AutoProxy',
-          target_kind: 'unknown',
-          outcome: 'failure',
+          target_kind: 'script',
+          outcome: 'accepted',
           duration_bucket: expect.any(String),
         },
       },
     ])
     expect(validateAnalyticsEvent(dispatchEvents[0], false)).toEqual(dispatchEvents[0])
     expect(validateAnalyticsEvent(dispatchEvents[0], true)).toBeNull()
-    await vi.waitFor(() => expect(transitions).toHaveBeenCalledWith(false, true), { timeout: 3000 })
-    expect(parentState).toBe('ready')
+    await service.close()
+    expect(requests).toContain('/internal/desktop-session/stop')
+    expect(requests).not.toContain('/internal/desktop-session/handoff')
+    expect(service.snapshot.executing).toBe(false)
   } finally {
-    try {
-      await service.close(true)
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
+    rmSync(root, { recursive: true, force: true })
   }
 })

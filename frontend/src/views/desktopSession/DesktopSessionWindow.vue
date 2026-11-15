@@ -314,7 +314,9 @@ onBeforeUnmount(() => {
               ? t('bootstrap.desktopSession.targetMissing')
               : result.code === 'power_action'
                 ? t('bootstrap.desktopSession.powerAction')
-                : t('bootstrap.desktopSession.dispatchFailed')
+                : result.code === 'unsupported_target'
+                  ? t('bootstrap.desktopSession.unsupportedTarget')
+                  : t('bootstrap.desktopSession.dispatchFailed')
         }}
       </a-typography-text>
     </a-flex>

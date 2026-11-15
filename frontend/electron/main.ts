@@ -205,12 +205,11 @@ async function stopAllTasksByShortcut(source: 'shortcut' | 'tray' = 'shortcut'):
 
   try {
     const endpoint = getLocalApiEndpoint()
-    const response = await (desktopSession?.stopAllTasks(endpoint) ??
-      fetch(`${endpoint}/api/dispatch/stop`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskId: 'ALL' }),
-      }))
+    const response = await fetch(`${endpoint}/api/dispatch/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId: 'ALL' }),
+    })
 
     if (!response.ok) {
       telemetry.finish({ source, outcome: 'rejected' })

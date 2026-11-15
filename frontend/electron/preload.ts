@@ -370,14 +370,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('desktop-session:pending', listener)
     return () => ipcRenderer.removeListener('desktop-session:pending', listener)
   },
-  onDesktopSessionEndpoint: (
-    callback: (state: { transition: boolean; reconnect: boolean }) => void
-  ) => {
-    const listener = (_event: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]) =>
-      callback(state)
-    ipcRenderer.on('desktop-session:endpoint', listener)
-    return () => ipcRenderer.removeListener('desktop-session:endpoint', listener)
-  },
   onDesktopSessionTasksStarted: (
     callback: (tasks: import('./services/desktopSessionProtocol').DesktopQueueResult[]) => void
   ) => {

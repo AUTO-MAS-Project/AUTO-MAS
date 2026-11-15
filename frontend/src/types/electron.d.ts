@@ -532,9 +532,6 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   desktopSessionLogs?: () => Promise<string>
   onDesktopSessionState?: (callback: (state: DesktopSessionSnapshot) => void) => () => void
   onDesktopSessionPending?: (callback: () => void) => () => void
-  onDesktopSessionEndpoint?: (
-    callback: (state: { transition: boolean; reconnect: boolean }) => void
-  ) => () => void
   onDesktopSessionTasksStarted?: (callback: (tasks: DesktopQueueResult[]) => void) => () => void
 
   // Runtime 完整初始化流程

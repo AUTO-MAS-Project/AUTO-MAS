@@ -238,14 +238,14 @@ class _MainTimer:
         self._wakeup_signature = signature
         logger.info(f"定时唤醒已同步：{len(times)} 个每周触发时间")
 
-    async def start(self, *, resume: bool = False):
+    async def start(self):
         """启动定时器"""
 
         if self.started:
             logger.warning("主业务定时器仅能启动一次，无法重复启动")
             return
 
-        if not self._startup_dispatched and not resume:
+        if not self._startup_dispatched:
             self._startup_dispatched = True
             self.startup_task = asyncio.create_task(
                 self._run_loop_step(
@@ -259,8 +259,7 @@ class _MainTimer:
         self.started = True
 
         if (
-            not resume
-            and Config.ToolsConfig.GameSign.Enabled
+            Config.ToolsConfig.GameSign.Enabled
             and Config.ToolsConfig.GameSign.RunOnStartup
         ):
             self.schedule_community_for_startup()

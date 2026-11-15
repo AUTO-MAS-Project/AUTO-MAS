@@ -55,6 +55,8 @@ from app.utils import (
 )
 from app.utils import io as _utils_io
 from app.utils.common.log_box.hooks import make_line_hook
+from app.utils.common.process.manager import is_process_alive
+from app.utils.common.process.session import desktop_process_target
 
 from .log_protocol import parse_marker
 
@@ -136,6 +138,12 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         self.check_result = "-"
 
     async def check(self) -> str:
+        if desktop_process_target.get() is not None and (
+            self.cur_user_config.Info.IfScriptBeforeTask
+            or self.cur_user_config.Info.IfScriptAfterTask
+        ):
+            await self.cur_user_item.set_state(status="异常")
+            return "桌面分身暂不支持账号的前后置命令"
 
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
         if (
@@ -381,9 +389,12 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                             if self.game_path is None:
                                 raise ValueError("游戏路径未配置，请检查路径设置")
                             game_process_name = self.game_path.name
-                            if game_process_name and is_process_running(
-                                game_process_name
-                            ):
+                            is_game_running = (
+                                is_process_alive
+                                if desktop_process_target.get() is not None
+                                else is_process_running
+                            )
+                            if game_process_name and is_game_running(game_process_name):
                                 logger.info(
                                     f"检测到游戏进程已在运行，跳过由 MAS 重复启动游戏: {game_process_name}"
                                 )

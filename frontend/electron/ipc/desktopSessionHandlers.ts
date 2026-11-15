@@ -48,21 +48,10 @@ export function registerDesktopSession(
       if (preview && !preview.isDestroyed())
         preview.webContents.send('desktop-session:state', snapshot)
     },
-    (transition, reconnect) => {
-      const main = getMainWindow()
-      if (main && !main.isDestroyed()) {
-        main.webContents.send('desktop-session:endpoint', { transition, reconnect })
-      }
-    },
     action => {
-      if (action === 'close') void confirmClose(false)
+      if (action === 'close') void confirmClose()
       else preview?.minimize()
     },
-    id =>
-      id !== undefined &&
-      [getMainWindow(), preview].some(
-        window => window && !window.isDestroyed() && window.webContents.id === id
-      ),
     tasks => {
       const main = getMainWindow()
       if (main && !main.isDestroyed()) main.webContents.send('desktop-session:tasks-started', tasks)
@@ -93,7 +82,7 @@ export function registerDesktopSession(
     if (preview && viewport) service.position(physicalBounds())
   }
 
-  function confirmClose(closingApp: boolean): Promise<boolean> {
+  function confirmClose(): Promise<boolean> {
     if (closeFlight) return closeFlight
     closeFlight = (async () => {
       const window = preview
@@ -118,7 +107,7 @@ export function registerDesktopSession(
         }
       }
       try {
-        await service.close(closingApp)
+        await service.close()
       } catch {
         await dialog.showMessageBox(window, {
           type: 'error',
@@ -168,7 +157,7 @@ export function registerDesktopSession(
     window.on('ready-to-show', () => window.show())
     window.on('close', event => {
       event.preventDefault()
-      void confirmClose(false)
+      void confirmClose()
     })
     window.on('closed', () => {
       if (preview === window) {
@@ -294,7 +283,6 @@ export function registerDesktopSession(
     get active() {
       return service.active
     },
-    stopAllTasks: (endpoint: string) => service.stopAllTasks(endpoint),
-    closeForAppQuit: () => confirmClose(true),
+    closeForAppQuit: confirmClose,
   }
 }

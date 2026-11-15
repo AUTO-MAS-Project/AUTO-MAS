@@ -401,7 +401,7 @@ class AppConfig:
                 self._repo = None
         return self._repo
 
-    async def init_config(self, *, desktop_executor: bool = False) -> None:
+    async def init_config(self) -> None:
         """初始化配置管理"""
 
         with startup_stage("后端/配置/数据检查与加载"):
@@ -510,9 +510,6 @@ class AppConfig:
             Community.connect_community_activity_cache(
                 self.ToolsConfig, setting=self.setting
             )
-        if desktop_executor:
-            self.loop = asyncio.get_running_loop()
-            return
         # 注册自启动会读写注册表, 不阻塞初始化; 持有引用避免被 GC 且异常不被静默吞掉
         self_start_task = asyncio.create_task(
             set_self_start(self.setting.Start.IfSelfStart)

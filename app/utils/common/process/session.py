@@ -1,20 +1,23 @@
 """Windows 进程会话的归属核验。"""
 
-import os
 from collections.abc import Callable
+from contextvars import ContextVar
+from dataclasses import dataclass
+from pathlib import Path
 
-_expected: int | None = None
 _parent_scope: Callable[[], int | None] | None = None
 
 
-def bind_process_session(session_id: int) -> None:
-    """执行器只允许管理当前子会话的应用进程。"""
-    global _expected
-    from app.utils.windows.desktop_session.native import process_session
+@dataclass(frozen=True)
+class DesktopProcessTarget:
+    session_id: int
+    source: Path
+    root: Path
 
-    if session_id <= 0 or session_id != process_session(os.getpid()):
-        raise RuntimeError("桌面分身进程会话不匹配")
-    _expected = session_id
+
+desktop_process_target: ContextVar[DesktopProcessTarget | None] = ContextVar(
+    "desktop_process_target", default=None
+)
 
 
 def configure_parent_scope(resolve: Callable[[], int | None]) -> None:
@@ -23,8 +26,9 @@ def configure_parent_scope(resolve: Callable[[], int | None]) -> None:
 
 
 def restricted_session() -> int | None:
-    if _expected is not None:
-        return _expected
+    target = desktop_process_target.get()
+    if target is not None:
+        return target.session_id
     return _parent_scope() if _parent_scope is not None else None
 
 

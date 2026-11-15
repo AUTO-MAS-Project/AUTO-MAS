@@ -97,15 +97,11 @@ class _WSCommandRegistry:
         Returns:
             Dict[str, Any]: 归一化结果 {"success", "data", "message", "code"}。
         """
-        from app.core.desktop_session.lifecycle import admit_command, release_command
-
         command = self._commands.get(endpoint)
         if command is None:
             logger.warning(f"未找到命令: {endpoint}")
             return {"success": False, "message": f"未找到命令: {endpoint}", "code": 404}
 
-        if not admit_command():
-            return {"success": False, "message": "桌面分身正在执行或交接队列", "code": 409}
         try:
             if command.params_model is None:
                 result = await command.func()
@@ -147,5 +143,3 @@ class _WSCommandRegistry:
                 "message": f"执行失败: {type(e).__name__}: {str(e)}",
                 "code": 500,
             }
-        finally:
-            release_command()

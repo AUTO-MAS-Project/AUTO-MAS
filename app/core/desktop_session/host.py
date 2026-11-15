@@ -1,4 +1,4 @@
-"""Electron 持有的父会话进程，负责预览、凭据和子执行器启动。"""
+"""Electron 持有的父会话进程，负责预览和凭据。"""
 
 import ctypes as C
 import json
@@ -16,20 +16,9 @@ from pathlib import Path
 from uuid import uuid4
 
 import comtypes.client
-import win32api
-import win32con
-import win32event
-from pywintypes import error as Win32Error
 
 from app.utils.windows.desktop_session import audio, credentials
 from app.utils.windows.desktop_session.environment import probe
-from app.utils.windows.desktop_session.launcher import (
-    client_pid,
-    create_executor_pipe,
-    receive,
-    run_executor,
-    send,
-)
 from app.utils.windows.desktop_session.native import (
     SYSTEM32,
     bind,
@@ -45,18 +34,11 @@ from app.utils.windows.host import IS_ELEVATED
 
 
 class Host:
-    def __init__(self, root: Path, source: Path) -> None:
+    def __init__(self, root: Path) -> None:
         self.root = root
-        self.source = source
         self.commands: queue.SimpleQueue[dict] = queue.SimpleQueue()
         self.viewer: RdpViewer | None = None
         self.session_id: int | None = None
-        self.executor_request: dict | None = None
-        self.executor_pipe = None
-        self.executor_registration = None
-        self.executor_pid: int | None = None
-        self.executor_process = None
-        self.executor_deadline = 0.0
         self.next_sample = 0.0
         self.next_audio = 0.0
         self.volume = 0
@@ -176,132 +158,7 @@ class Host:
             self.viewer = None
             raise
 
-    def launch(self, command: dict) -> None:
-        if (
-            self.executor_pipe is not None
-            or self.viewer is None
-            or self.viewer.phase != "connected"
-        ):
-            raise RuntimeError("executor_unavailable")
-        assert self.session_id is not None
-        self.executor_request = command
-        name, self.executor_pipe = create_executor_pipe()
-        try:
-            self.executor_registration = run_executor(
-                self.session_id,
-                source=self.source,
-                root=self.root,
-                account=credentials.current_identity()[0],
-                pipe_name=name,
-            )
-        except BaseException:
-            self.executor_pipe.Close()
-            self.executor_pipe = None
-            self.executor_request = None
-            raise
-        self.executor_deadline = time.monotonic() + 30
-        self.report("executor_launch", sessionId=self.session_id)
-
-    def clear_registration(self) -> None:
-        if self.executor_registration is None:
-            return
-        folder, name = self.executor_registration
-        self.executor_registration = None
-        try:
-            folder.DeleteTask(name, 0)
-        except Exception as exc:
-            self.report(
-                "registration_cleanup_failed", nativeCode=getattr(exc, "hresult", None)
-            )
-
-    def poll_executor(self) -> None:
-        import win32pipe
-
-        pipe = self.executor_pipe
-        if pipe is None:
-            process = self.executor_process
-            if process is not None and win32event.WaitForSingleObject(process, 0) == 0:
-                process.Close()
-                self.executor_process = None
-                self.report("executor_interrupted", sessionId=self.session_id)
-            return
-        assert self.session_id is not None
-        try:
-            if self.executor_request is not None and self.executor_pid is None:
-                try:
-                    win32pipe.ConnectNamedPipe(pipe, None)
-                except Win32Error as exc:
-                    if (
-                        exc.winerror in (231, 536)
-                        and time.monotonic() < self.executor_deadline
-                    ):
-                        return
-                    if exc.winerror != 535:  # ERROR_PIPE_CONNECTED
-                        raise
-                self.executor_pid = client_pid(pipe, self.session_id)
-                self.executor_process = win32api.OpenProcess(
-                    win32con.SYNCHRONIZE, False, self.executor_pid
-                )
-            if (
-                self.executor_request is not None
-                and time.monotonic() >= self.executor_deadline
-            ):
-                raise TimeoutError("executor_handshake_timeout")
-            if not win32pipe.PeekNamedPipe(pipe, 0)[1]:
-                return
-            message = receive(pipe)
-            if self.executor_request is not None:
-                if (
-                    message.get("pid") != self.executor_pid
-                    or message.get("sessionId") != self.session_id
-                ):
-                    raise RuntimeError("executor_session_mismatch")
-                if (
-                    self.viewer is None
-                    or tuple(message.get("size", ())) != self.viewer.size
-                ):
-                    raise RuntimeError("desktop_size_changed")
-                request, self.executor_request = self.executor_request, None
-                send(
-                    pipe,
-                    {key: request[key] for key in ("environment", "token", "port")}
-                    | {"root": str(self.root)},
-                )
-                self.report(
-                    "executor_ready",
-                    pid=self.executor_pid,
-                    sessionId=self.session_id,
-                    size=message["size"],
-                )
-                self.clear_registration()
-            elif (
-                message.get("released") is True
-                and message.get("sessionId") == self.session_id
-            ):
-                pipe.Close()
-                self.executor_pipe = self.executor_pid = None
-                if self.executor_process is not None:
-                    self.executor_process.Close()
-                    self.executor_process = None
-                self.report("executor_released", sessionId=self.session_id)
-        except (OSError, RuntimeError, Win32Error) as exc:
-            self.report(
-                "executor_error",
-                code=type(exc).__name__,
-                started=self.executor_request is None,
-                nativeCode=getattr(exc, "winerror", None),
-                location=[
-                    f"{frame.name}:{frame.lineno}"
-                    for frame in traceback.extract_tb(exc.__traceback__)[-5:]
-                ],
-            )
-            pipe.Close()
-            self.executor_pipe = self.executor_pid = self.executor_request = None
-            self.clear_registration()
-
     def close(self, orphaned_session: int | None = None) -> None:
-        if self.executor_pipe is not None or self.executor_process is not None:
-            raise RuntimeError("executor_running")
         session = self.session_id if orphaned_session is None else orphaned_session
         if self.viewer and session is None:
             # 连接期间可能在最后一次轮询后产生会话。只注销连接发起后观察到的分身。
@@ -334,8 +191,6 @@ class Host:
             self.report("diagnostics", checks=checks)
         elif action == "connect":
             self.start(command)
-        elif action == "execute":
-            self.launch(command)
         elif action == "close":
             self.close(command.get("orphanedSessionId"))
         elif action == "eof":
@@ -378,7 +233,6 @@ class Host:
         if self.dead:
             bind(user32, "PostQuitMessage", None, C.c_int)(0)
             return
-        self.poll_executor()
         if self.viewer is None:
             return
         now = time.monotonic()
@@ -405,11 +259,6 @@ class Host:
                 time.sleep(0.05)
                 continue
             viewer.pump_until(lambda: self.viewer is not viewer)
-        if self.executor_pipe is not None:
-            self.executor_pipe.Close()
-        if self.executor_process is not None:
-            self.executor_process.Close()
-        self.clear_registration()
         if self.viewer is not None:
             self.viewer.close()
 
@@ -421,7 +270,7 @@ def main() -> None:
     ole = C.WinDLL("ole32", winmode=SYSTEM32)
     bind(ole, "OleInitialize", C.HRESULT, W.LPVOID)(None)
     try:
-        Host(root, Path(__file__).resolve().parents[3]).run()
+        Host(root).run()
     finally:
         bind(ole, "OleUninitialize", None)()
 

@@ -40,6 +40,8 @@ from app.models.task import (
 from app.task.registration import ManagerFactory
 from app.task.script_expander import ScriptExpander
 from app.utils import get_logger
+from app.utils.common.process.session import desktop_process_target
+from app.utils.contracts.power import PowerSignal
 
 logger = get_logger("任务调度")
 _selection = TypeAdapter(dict[int, TaskSelectionNode])
@@ -50,6 +52,10 @@ if TYPE_CHECKING:
     from app.task.user_expander import UserExpander
 
 type PluginExpander = Callable[[TaskScriptItem, ScriptConfigType], UserExpander | None]
+
+
+class UnsupportedDesktopTask(ValueError):
+    """所选任务包含尚不能在桌面分身执行的操作。"""
 
 
 class _TaskManager:
@@ -70,7 +76,6 @@ class _TaskManager:
         self._running: dict[UUID, ScriptExpander] = {}
         self._recent: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
         self._stopping_all = False
-        self._admission_paused = False
         self._creating = 0
         self._idle = asyncio.Event()
         self._idle.set()
@@ -115,18 +120,12 @@ class _TaskManager:
         """创建前检查停止全部、电源倒计时，并确认宿主已提供执行能力。"""
         from app.core import Power
 
-        if self._admission_paused:
-            raise RuntimeError("桌面分身正在交接调度")
         if self._stopping_all:
             raise RuntimeError("正在停止全部任务，暂不接受新任务")
         if Power.power_task is not None:
             raise RuntimeError("电源任务已进入倒计时，本次任务不再创建")
         if not self._factories_bound and self.plugin_expander is None:
             raise RuntimeError("宿主尚未绑定专项执行工厂")
-
-    def pause_admission(self) -> None:
-        """关闭本进程的任务入口，直到数据所有权交接完成并重启。"""
-        self._admission_paused = True
 
     async def start(
         self,
@@ -177,6 +176,7 @@ class _TaskManager:
             raise ValueError("一次任务必须且只能指定一个顶层入口")
         node = _selection.validate_python(raw)[0]
         info = run.task_info
+        desktop = desktop_process_target.get() is not None
         queue: QueueConfig | None = None
 
         def select(
@@ -215,6 +215,18 @@ class _TaskManager:
                 queue = Config.QueueConfig.get(queue_id) if queue_id else None
                 if queue_id and queue is None:
                     raise ValueError(f"队列不存在：{queue_id}")
+                if (
+                    desktop
+                    and queue is not None
+                    and (
+                        queue.Info.IfScriptBeforeTask
+                        or queue.Info.IfScriptAfterTask
+                        or queue.Info.AfterAccomplish != PowerSignal.NO_ACTION
+                    )
+                ):
+                    raise UnsupportedDesktopTask(
+                        "桌面分身暂不支持队列的前后置命令及电源操作"
+                    )
                 if not session and queue is None and not node.children:
                     raise ValueError("不选择队列时必须显式指定托管")
                 selections = (
@@ -237,6 +249,13 @@ class _TaskManager:
                     entry = Config.ScriptConfig.get(script_id)
                     if entry is None:
                         raise ValueError(f"托管不存在：{script_id}")
+                    if desktop:
+                        from app.task.general.manager import supports_desktop_session
+
+                        if not supports_desktop_session(entry):
+                            raise UnsupportedDesktopTask(
+                                "此托管的启动方式暂不支持桌面分身"
+                            )
                     sid = info.scripts.add(
                         TaskScriptItem,
                         payload={
