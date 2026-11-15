@@ -331,7 +331,10 @@ export interface MaaFWFlavor {
   scriptConfigType: string
   /** 后端用户配置类名（用户索引里的 type） */
   userConfigType: string
-  /** 后端新建脚本时给的默认名（配置类的 DEFAULT_SCRIPT_NAME）：还是这个名字时导入后自动改成项目名 */
+  /**
+   * 后端新建托管时给的默认名（与后端配置类 Info.Name 的默认值一致，改一边要改另一边）：
+   * 还是这个名字时导入后自动改成项目名
+   */
   defaultScriptName: string
   /** 脚本页卡片右上角、脚本列表的类型标签文字与颜色 */
   typeTagLabel: string

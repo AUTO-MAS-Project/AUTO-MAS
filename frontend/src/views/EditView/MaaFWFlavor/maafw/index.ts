@@ -10,7 +10,7 @@ export const MAAFW_FLAVOR: MaaFWFlavor = {
   type: 'MaaFW',
   scriptConfigType: 'MaaFWConfig',
   userConfigType: 'MaaFWUserConfig',
-  defaultScriptName: '新 MFW 脚本',
+  defaultScriptName: '新 MFW 托管',
   typeTagLabel: metadata.label,
   typeTagColor: metadata.typeTagColor,
   logo: metadata.logo,

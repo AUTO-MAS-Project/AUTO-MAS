@@ -11,7 +11,7 @@ export const MSS_FLAVOR = defineMaaFWFlavor({
   type: 'MSS',
   scriptConfigType: 'MSSConfig',
   userConfigType: 'MSSUserConfig',
-  defaultScriptName: '新 MSS 脚本',
+  defaultScriptName: '新 MSS 托管',
   typeTagLabel: metadata.label,
   typeTagColor: metadata.typeTagColor,
   logo: metadata.logo,

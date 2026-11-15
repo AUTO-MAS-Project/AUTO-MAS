@@ -11,7 +11,7 @@ export const M9A_FLAVOR = defineMaaFWFlavor({
   type: 'M9A',
   scriptConfigType: 'M9AConfig',
   userConfigType: 'M9AUserConfig',
-  defaultScriptName: '新 M9A 脚本',
+  defaultScriptName: '新 M9A 托管',
   typeTagLabel: metadata.label,
   typeTagColor: metadata.typeTagColor,
   logo: metadata.logo,
