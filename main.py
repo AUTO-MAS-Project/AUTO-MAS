@@ -369,6 +369,9 @@ def main():
 
         with startup_stage("后端/必要配置初始化"):
             await Config.init_config()
+        from app.core import MCP
+
+        MCP.configure(enabled=Config.setting.Function.IfEnableMCP)
         startup_mark("后端/必要配置就绪")
         with startup_stage("后端/历史组件导入"):
             from app.core import History
@@ -394,7 +397,7 @@ def main():
 
         with startup_stage("后端/后台服务组件导入"):
             from app.config import config_manager
-            from app.core import MCP, BackgroundTaskManager
+            from app.core import BackgroundTaskManager
 
         async def preload_maaend_resources() -> None:
             with startup_stage("后端/MaaEnd 资源预热（后台）"):

@@ -24,6 +24,7 @@ from app.core.lifecycle import _ShutdownCoordinator
         (False, True, False),
         ("timer", False, False),
         (False, False, True),
+        ("disabled", False, True),
     ],
 )
 def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
@@ -68,7 +69,9 @@ def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
         "setting",
         SimpleNamespace(
             Replay=SimpleNamespace(VideoStorageLimitMiB=0),
-            Function=SimpleNamespace(HistoryRetentionTime=1),
+            Function=SimpleNamespace(
+                HistoryRetentionTime=1, IfEnableMCP=failure != "disabled"
+            ),
         ),
     )
     monkeypatch.setattr(core.Config, "bind_script_config_handler", lambda *args: None)
@@ -128,6 +131,28 @@ def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
             release_task = None
             async with self.app.router.lifespan_context(self.app):
                 try:
+                    if failure == "disabled":
+                        async with asyncio.timeout(2):
+                            while self.app.state.background_status in {
+                                "starting",
+                                "running",
+                            }:
+                                await asyncio.sleep(0)
+                        async with httpx.AsyncClient(
+                            transport=httpx.ASGITransport(app=self.app),
+                            base_url="http://localhost",
+                        ) as client:
+                            await client.post("/api/core/mcp/home-painted")
+                            assert not (
+                                await client.post("/api/core/mcp/retry")
+                            ).json()["accepted"]
+                            assert (await client.get("/mcp")).status_code == 404
+                        assert self.app.state.background_status == "ready"
+                        assert calls == ["timer"]
+                        assert service.status().state == "skipped"
+                        assert service._task is None
+                        assert not entered.is_set()
+                        return
                     if failure == "timer":
                         async with asyncio.timeout(2):
                             while self.app.state.background_status == "starting":
@@ -189,7 +214,9 @@ def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
 
     monkeypatch.setattr(uvicorn, "Server", Server)
     main.main.__wrapped__()
-    assert service.status().state == "cancelled"
+    assert service.status().state == (
+        "skipped" if failure == "disabled" else "cancelled"
+    )
     core.MainTimer.stop.assert_awaited_once()
     core.Notify.close.assert_awaited_once()
     core.MainConnection.begin_shutdown.assert_awaited_once()
