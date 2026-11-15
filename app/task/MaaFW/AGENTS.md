@@ -598,7 +598,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
       - 这一条只为挡编译。星铁 logo / 健康提示页本身有 48~60 帧，加载页等网络时有 60 帧，出帧判据
         都挡不住（阈值取 20 时 logo 页那轮被挡住，是因为碰巧有一秒只有 17.9 帧）。
     - 出帧数的来源：ModAVD 读截图共享内存里的帧号，其他模拟器读 SurfaceFlinger 的帧时间戳。
-    通用默认等待时间因此是 120s（`MaaFWConfig.DEFAULT_GAME_WAIT_TIME`），M9A 特调 15s。
+    通用默认等待时间因此是 120s（`MaaFWConfig` 的 `Game.WaitTime` 默认值），M9A 特调 15s。
 - **连上控制器后先截一张图**（`runner._prime_first_screencap`，每次连接一次，在启动画面判定与
   首个任务之前），不是多余代码：控制器没截过图时 binding 的 `cached_image` 抛
   `Failed to get cached image.`、`resolution` 是 (0, 0)，而有的项目的 agent 在 tasker sink 里于
@@ -726,8 +726,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   组同源，改一处要同步另一处。只对 `github.com/<owner>/<repo>/releases/download/...` 生效，
   Mirror 酱的一次性签名地址套前缀会把签名打坏，所以按源分流而不是按地址。
   **没有 sha256 摘要时核心包整个忽略镜像**：经第三方转发的字节必须能校验。
-- **一个组只更新一次**（`tools/embedded/view_update.run_view_update`，运行前 / 运行后 / 手动三条路
-  共用）：谱系锁（进程内）内先把触发脚本同步到组的 latest，再发现（`current` = 组版本）→ 下载一次
+- **一个组只更新一次**（`tools/embedded/view_update.run_view_update`，运行前自动更新与手动更新
+  共用；旧配置的「运行后」已按运行前执行）：谱系锁（进程内）内先把触发脚本同步到组的 latest，再发现（`current` = 组版本）→ 下载一次
   （取消令牌、GitHub 镜像、按触发脚本解析的代理、进度全部透传）→ 在 `.staging/payload-*` 里从当前
   载荷 + 包建新载荷（`payloads.build_from_package`）→ 在 staging 上预检一次（钉回 binding 也在这里，
   写的是 staging）→ `finalize` 并入共用库 → `register` 登记 → 切触发脚本的视图 → 同组空闲脚本立即切

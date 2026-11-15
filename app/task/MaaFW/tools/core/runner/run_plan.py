@@ -198,7 +198,7 @@ def build_maafw_run_plan(
 
     ``secret_inputs``：值是从密文解出来的 input 字段 ``[[option 名, 字段名], …]``，下发失败的
     提示按密码字段处理、不带原值；不给时取 ``task_snapshot`` 里宿主写的
-    ``SECRET_INPUTS_SNAPSHOT_KEY``（走 ``task_ids`` 的调用方要自己传）。
+    ``SECRET_INPUTS_SNAPSHOT_KEY``（给了 ``task_ids`` 时同样从这份快照取）。
 
     ``no_default_fallback_inputs``：字符串字段没填时不回落 default 的 input 字段
     ``[(option 名, 字段名), …]``，特调声明的例外（宿主按脚本的特调传；不传就没有例外）。

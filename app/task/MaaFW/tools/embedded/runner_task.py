@@ -77,9 +77,6 @@ from app.task.MaaFW.tools.core.runner.models import (
     MaaFWRunResult,
     MaaFWSkippedTaskPlan,
 )
-from app.task.MaaFW.tools.core.runner.pipeline_override import (
-    SECRET_INPUTS_SNAPSHOT_KEY,
-)
 from app.task.MaaFW.tools.core.runner.run_events import (
     CATEGORY_ENVIRONMENT,
     CATEGORY_GAME_UPDATE_REQUIRED,
@@ -1402,14 +1399,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 controller_name=controller_name,
                 resource_name=resource_name,
                 # 特调路径把已选任务拆成 task_ids 交给核心；仍带上原始快照，
-                # 让核心把用户显式设为跳过的实例写进 skippedTasks。
+                # 让核心把用户显式设为跳过的实例写进 skippedTasks，并从它取
+                # 从密文解出来的字段（下发失败的提示按密码处理）。
                 task_snapshot=task_snapshot,
                 task_ids=task_ids,
                 task_options=task_options,
                 global_options=global_options,
                 script_hotkeys=script_hotkeys,
-                # 从密文解出来的字段单独交过去，保留特调路径的密码处理口径
-                secret_inputs=(task_snapshot or {}).get(SECRET_INPUTS_SNAPSHOT_KEY),
                 # 特调声明不回落 default 的字符串字段（M9A 的自定义兑换码）
                 no_default_fallback_inputs=no_default_fallback_inputs(flavor),
                 excluded_task_reasons=dict.fromkeys(off_day_extra, off_day_reason),
@@ -1720,7 +1716,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     async def _ensure_logged_in(self, address: str, adb_path: str | None) -> None:
         """模拟器启动后、第一个任务下发前，调特调的运行前登录钩子（契约见 flavor.py）。
 
-        每个账号每次运行只调一次，紧跟游戏更新检查之后。钩子判定本次无法继续时抛
+        紧跟游戏更新检查之后。登录成功后同一客户端会话里不再调；失败时下一次尝试重新调，
+        重试关闭游戏 / 模拟器（客户端重启）后也重新调。钩子判定本次无法继续时抛
         ``MaaFWLoginRequired``，按普通失败结算、照常重试；钩子实现里的其它异常同样按失败
         处理，原因附在异常原文后面。没实现钩子（通用 MaaFW）时什么都不做。
         """

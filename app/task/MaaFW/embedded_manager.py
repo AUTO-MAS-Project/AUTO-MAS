@@ -1502,7 +1502,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 updated_project_path=project_path,
                 previous_version=previous_version,
             )
-            # interface.json 已经变了：不刷新缓存，本轮用户仍按旧版任务表跑。
+            # interface.json 已经变了：强制刷新缓存，否则本轮用户仍按旧版任务表跑。
             try:
                 interface_model = await asyncio.to_thread(
                     self._load_interface_model, project_path, force_reload=True
