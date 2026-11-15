@@ -51,6 +51,7 @@ from app.task.MaaFW.tools.core.interface.task_config import (
     normalize_global_options,
     normalize_snapshot,
     normalize_task_execution_payload,
+    unchecked_task_ids,
 )
 from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     path_without_host_venv,
@@ -1108,14 +1109,9 @@ def _select_tasks(
     """``(勾选的实例 id, 各实例自己的选项, 用户的全局表, 特调给各实例写的只属于全局的选项)``。"""
 
     if task_ids is not None:
-        raw = _normalize_raw_snapshot(task_snapshot)
-        if raw["keepUnchecked"]:
-            # 特调自动补入的实例也必须尊重用户这轮显式设的红灯。
-            skipped_ids = {
-                task_id
-                for task_id in raw["taskOrder"]
-                if raw["taskChecked"].get(task_id) is False
-            }
+        # 特调自动补入的实例也必须尊重用户这轮显式设的红灯。
+        skipped_ids = set(unchecked_task_ids(task_snapshot))
+        if skipped_ids:
             task_ids = [task_id for task_id in task_ids if task_id not in skipped_ids]
         selected_ids, selected_options = normalize_task_execution_payload(
             task_ids,

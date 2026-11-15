@@ -19,11 +19,14 @@
      有活动就挪到悬赏试炼前，确实没有就摘掉，取不到数据就原样跑。
    - entry `星塔_入口_agent`（新版爬塔）挪到队尾。每周一次靠 MaaFW 通用的 `Run.WeeklyOnceTasks`，这里不记周。
    按 entry 找不到就写一行账号日志跳过。**不重写**重试 / 周期 / 超时 / 更新 / 游戏启停。
+   自动加入（悬赏试炼、活动）不补回引擎判定本轮不跑的实例（红灯、今天不在运行日），这份集合取
+   `context.excluded_task_ids`，不自己解析快照；核心建计划时还会按红灯再滤一遍。
+   钩子抛异常就是该账号本次建计划失败（记「异常」、不跑、不重试），取不到数据一律按「说不准」处理。
 3. `skip_on_retry_entries`：按公开 task entry 声明已确认的日常与挑战任务，复用 MaaFW 的
    「前面的尝试已完成」过滤。本次运行成功过的任务不再补跑，失败、超时和未执行的任务保留；
    登录不在声明内，每次尝试仍执行。同名重复任务沿用引擎的保守重跑策略，不额外推断完成的是哪份。
 
-配置类在 `app/models/config.py`：`MSSConfig(MaaFWConfig)` 同形，只改 `DEFAULT_SCRIPT_NAME`、
+配置类在 `app/models/config/script.py`（计划表类在 `app/models/config/plan.py`）：`MSSConfig(MaaFWConfig)` 同形，只改 `DEFAULT_SCRIPT_NAME`、
 `USER_CONFIG_CLASS`、`FLAVOR`；`MSSUserConfig(MaaFWUserConfig)` 多一项 `Info.PlanMode`（计划表消费方
 `mss`，`PLAN_BOOK` 的 `MSSPlanConfig`）与 `Info.IfActivityFirst`（活动优先）。
 `app/task/MaaFW/registration.py` 的家族声明显式把 `MSSConfig` 登记到 `MaaFWEmbeddedManager`，宿主生成的运行索引按类型精确匹配。
