@@ -28,6 +28,10 @@ export type OkwwUserConfig_Task = {
      */
     WhichToFarm?: ('Tacet Suppression' | 'Forgery Challenge' | 'Simulation Challenge' | null);
     /**
+     * 4C 声骸原生配置覆写，空值继承来源配置
+     */
+    FarmEchoConfig?: (Record<string, (string | number | boolean)> | null);
+    /**
      * 启用自定义启动参数
      */
     IfCustomArguments?: (boolean | null);

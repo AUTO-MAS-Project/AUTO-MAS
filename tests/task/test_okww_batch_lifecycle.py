@@ -527,7 +527,9 @@ async def test_stop_preserves_success_written_since_last_log_poll(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scenario", ["normal", "invalid", "duplicate", "cancel"])
+@pytest.mark.parametrize(
+    "scenario", ["normal", "invalid", "duplicate", "cancel", "echo"]
+)
 async def test_batch_arguments_grouping_preserves_user_order(tmp_path, scenario):
     (tmp_path / "ok-ww.exe").touch()
     app_json = tmp_path / "data/apps/ok-ww/app.json"
@@ -569,6 +571,8 @@ async def test_batch_arguments_grouping_preserves_user_order(tmp_path, scenario)
         )
         for i, (uid, draft) in enumerate(zip(ids, drafts))
     }
+    if scenario == "echo":
+        manager.user_config[ids[2]].Task.FarmEchoConfig = {"Repeat Farm Count": 5}
     if scenario == "duplicate":
         manager.user_config[ids[1]].Info.Id = manager.user_config[ids[0]].Info.Id
     manager.game_manager = None
@@ -601,19 +605,24 @@ async def test_batch_arguments_grouping_preserves_user_order(tmp_path, scenario)
         assert manager.notify_user_check_failure.await_count == 5
         return
     default = ["-t", "MultiAccountConfigTask", "-e"]
-    assert dispatched == [
+    expected = [
         ([str(ids[0])], default),
         (
-            [str(ids[1])] if scenario == "invalid" else [str(ids[1]), str(ids[2])],
+            [str(ids[1])]
+            if scenario in ("invalid", "echo")
+            else [str(ids[1]), str(ids[2])],
             ["-t", "OtherTask"],
         ),
-        ([str(ids[3]), str(ids[4])], default),
     ]
+    if scenario == "echo":
+        expected.append(([str(ids[2])], ["-t", "OtherTask"]))
+    expected.append(([str(ids[3]), str(ids[4])], default))
+    assert dispatched == expected
     if scenario == "invalid":
         manager.notify_user_check_failure.assert_awaited_once()
     else:
         manager.notify_user_check_failure.assert_not_awaited()
-    assert manager._restore_script_config_from_temp.await_count == 3
+    assert manager._restore_script_config_from_temp.await_count == len(expected)
 
 
 @pytest.mark.asyncio

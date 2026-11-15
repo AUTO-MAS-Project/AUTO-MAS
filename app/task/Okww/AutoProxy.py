@@ -494,6 +494,14 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         )
         from .tools.plan import task_config
 
+        if (
+            self.cur_user_config.Info.IfQuickConfig
+            and self.cur_user_config.Task.FarmEchoConfig
+        ):
+            _update_json(
+                self.script_config_path / "FarmEchoTask.json",
+                self.cur_user_config.Task.FarmEchoConfig,
+            )
         task = task_config(self.cur_user_config)
         if task:
             _update_json(self.script_config_path / "DailyTask.json", task)

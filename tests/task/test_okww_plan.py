@@ -160,3 +160,25 @@ def test_custom_start_arguments_are_not_daily_plan_fields():
     assert "CustomArguments" not in OkwwPlanKey.model_fields
     assert "IfCustomArguments" not in values
     assert "CustomArguments" not in values
+
+
+@pytest.mark.parametrize("quick", [True, False])
+def test_echo_override_preserves_source_and_respects_quick_config(tmp_path, quick):
+    from app.task.Okww.AutoProxy import AutoProxyTask
+
+    user = OkwwUserConfig()
+    user.Info.IfQuickConfig = quick
+    user.Task.FarmEchoConfig = {
+        "Teleport to Boss": "Boss Challenge",
+        "Repeat Farm Count": 5,
+    }
+    target = tmp_path / "FarmEchoTask.json"
+    target.write_text(json.dumps({"Repeat Farm Count": 100, "unknown": "preserved"}))
+    proxy = AutoProxyTask.__new__(AutoProxyTask)
+    proxy.cur_user_config = user
+    proxy.script_config_path = tmp_path
+    proxy._apply_mas_overrides()
+    values = json.loads(target.read_text(encoding="utf-8"))
+    assert values["Repeat Farm Count"] == (5 if quick else 100)
+    assert values["unknown"] == "preserved"
+    assert user.Task.FarmEchoConfig["Repeat Farm Count"] == 5

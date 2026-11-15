@@ -14,7 +14,6 @@
       @cancel="handleCancel"
     />
 
-    <!-- 原生 GUI 会话遮罩（配置会话 / 查看会话，公用组件对齐 ok-nte） -->
     <GuiSessionMask
       :open="showOkwwConfigMask"
       :icon="SettingOutlined"
@@ -136,29 +135,23 @@
         </a-form>
       </a-card>
 
-      <!-- 配置文件来源：base 三态 ⊕ overlay 两态，与 MaaEnd / MAA 共用同一套面板 -->
       <a-card class="config-card config-source-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
               <h3>{{ t('core.edit.configurationSource') }}</h3>
             </div>
-            <a-row :gutter="24">
-              <a-col :span="24">
-                <GeneralConfigModeSelector
-                  :model-value="formData.Info.Base"
-                  :options="okwwConfigModeOptions"
-                  :disabled="configActionsDisabled"
-                  :saving="isSaving"
-                  :quick-config="formData.Info.IfQuickConfig"
-                  :quick-config-disabled="configActionsDisabled || isInitializing"
-                  :alert-message="t('core.edit.configSourceHintBase')"
-                  :show-gui-hint="false"
-                  @change="handleConfigModeChange"
-                  @quick-config-change="handleQuickConfigChange"
-                />
-              </a-col>
-            </a-row>
+            <OkwwConfigSource
+              :script-id="scriptId"
+              :user-id="userId"
+              :info="formData.Info"
+              :disabled="configActionsDisabled"
+              :saving="isSaving"
+              :initializing="isInitializing"
+              @plan-change="formData.Info.PlanMode = $event"
+              @base-change="handleConfigModeChange"
+              @quick-change="handleQuickConfigChange"
+            />
             <a-row :gutter="24">
               <a-col :span="24" class="config-actions-tail">
                 <ConfigActionsSection
@@ -186,6 +179,7 @@
         :disabled="configActionsDisabled"
         @save="saveTaskConfig"
         @restore="openRestoreModal"
+        @configure="handleOkwwConfig"
       />
 
       <a-card class="config-card" style="margin-top: 24px">
@@ -211,7 +205,6 @@
       </a-card>
     </ConfigLockPanel>
 
-    <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、ok-ww 原生配置在后）══ -->
     <ConfigRestoreSection
       v-model:open="restoreOpen"
       :disabled="configLocked"
@@ -222,7 +215,6 @@
       :on-restored="handleRestored"
       :on-detail="handleRestoreView"
     >
-      <!-- ok-ww 备份摘要为文件集结构，用插槽完全接管预览区 -->
       <template #preview="{ raw }">
         <NoData
           v-if="!previewFiles(raw).length"
@@ -244,6 +236,7 @@
 </template>
 
 <script setup lang="ts">
+import OkwwConfigSource from './components/OkwwConfigSource.vue'
 import OkwwAccountPlan from './components/OkwwAccountPlan.vue'
 import { getDefaultOkwwTaskConfig } from './components/okwwTaskConfig'
 
@@ -270,7 +263,6 @@ import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import { buildRestoreConfirm } from '@/utils/configRestoreMode'
-import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 import ConfigActionsSection from './ConfigActionsSection.vue'
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
@@ -326,36 +318,6 @@ const pushLogModeOptions = [
   { label: t('core.edit.pushLogModeOff'), value: '关闭' },
   { label: t('core.edit.pushLogModeList'), value: '逐条' },
   { label: t('core.edit.pushLogModeSummary'), value: '汇总' },
-]
-
-const okwwConfigModeOptions: Array<{
-  label: string
-  value: 'shared' | 'independent' | 'native'
-  title: string
-  description: string
-  icon: 'file' | 'database' | 'setting'
-}> = [
-  {
-    label: t('core.edit.script'),
-    value: 'shared',
-    title: t('core.edit.script'),
-    description: t('core.edit.useSharedScriptLevel'),
-    icon: 'file',
-  },
-  {
-    label: t('core.edit.user'),
-    value: 'independent',
-    title: t('core.edit.user'),
-    description: t('core.edit.useThisUserS'),
-    icon: 'database',
-  },
-  {
-    label: t('core.edit.directControl'),
-    value: 'native',
-    title: t('core.edit.directControl'),
-    description: t('core.edit.useExistingOkwwConfiguration'),
-    icon: 'setting',
-  },
 ]
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }

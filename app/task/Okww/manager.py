@@ -306,7 +306,13 @@ class OkwwManager(ScriptManagerBase):
                     result = await candidate.check()
                     if result == "Pass":
                         participants.append(user)
-                        arguments = candidate._build_run_arguments()
+                        config = self.user_config[uuid.UUID(user.user_id)]
+                        arguments = (
+                            candidate._build_run_arguments(),
+                            config.Task.FarmEchoConfig
+                            if config.Info.IfQuickConfig
+                            else {},
+                        )
                         if not argument_groups or arguments != previous_arguments:
                             argument_groups.append([])
                         argument_groups[-1].append(user)

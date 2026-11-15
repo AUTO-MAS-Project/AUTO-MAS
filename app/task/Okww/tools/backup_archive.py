@@ -130,6 +130,7 @@ _OVERLAY_PREVIEW_ONLY_KEYS = {"Base"}
 恢复时以当前值为准，回填旧值会静默翻转 shared/independent 来源。"""
 
 _OVERLAY_TASK_KEYS = (
+    "FarmEchoConfig",
     "IfCustomArguments",
     "CustomArguments",
     "WhichToFarm",
@@ -498,6 +499,7 @@ _FILE_TO_OVERLAY_KEY = {
 """DailyTask.json 文件字段名 → MAS 账号配置 Task 键名（同一概念的两种 owner）"""
 
 _OVERLAY_FIELD_LABELS = {
+    "FarmEchoConfig": "4C 声骸配置",
     "IfCustomArguments": "自定义启动参数",
     "CustomArguments": "启动参数",
     "Id": "账号",
