@@ -21,6 +21,7 @@ from .m7a_config import (
     overlay_m7a_managed_options,
 )
 from .managed_fields import (
+    AUTO_FIELD_GROUP,
     SRA_REWARD_LABELS,
     SRA_REWARD_NAMED_KEYS,
     HSRFieldGroup,
@@ -161,6 +162,7 @@ _SRA_LABELS = {
     "replenish.way": "补充方式",
     "useAssistant": "使用支援角色",
     "useBuildTarget": "使用培养目标",
+    "materialPriority": "培养目标材料优先",
     "activity.enabled": "体力活动检测",
     "activity.gardenOfPlenty.level1": "花藏繁生：拟造花萼（金）",
     "activity.gardenOfPlenty.level2": "花藏繁生：拟造花萼（赤）",
@@ -169,12 +171,13 @@ _SRA_LABELS = {
     "redeemCodes": "兑换码",
     "pointRewards.enabled": "领取积分奖励",
     "divergentUniverse.enabled": "执行差分宇宙",
-    "divergentUniverse.mode": "演算类别",
+    "divergentUniverse.mode": "运行方式",
     "divergentUniverse.runtimes": "运行次数",
     "divergentUniverse.useTechnique": "使用秘技",
     "currencyWars.enabled": "执行货币战争",
     "currencyWars.mode": "博弈类别",
     "currencyWars.difficulty": "难度",
+    "currencyWars.pointRewards": "积分奖励已满时跳过",
     "currencyWars.policy": "策略来源",
     "currencyWars.reroll.bossAffixes": "刷开局：首领词条条件",
     "currencyWars.reroll.bossNames": "刷开局：首领名称条件",
@@ -201,9 +204,13 @@ _SRA_DESCRIPTIONS = {
         "开启后由 SRA 按游戏内「培养目标」自动决定要刷的副本，"
         "本模块「刷取副本」里选择的副本将被忽略。"
     ),
+    "materialPriority": (
+        "识别到材料型副本时跳过饰品提取与侵蚀隧洞；没识别到材料型副本时照常刷。"
+    ),
     "activity.enabled": (
         "检测到双倍活动时改刷下方指定的活动关卡；开启后即使未选择体力副本也会运行。"
     ),
+    "divergentUniverse.mode": "旧版 SRA 不读取此项。",
     "redeemCodes": "多个兑换码用空格分隔。",
     "currencyWars.mode": (
         "标准博弈、超频博弈会打完整局；「刷开局」只按下方四个重开条件反复重开，"
@@ -252,7 +259,8 @@ _SRA_RANGES: dict[str, tuple[float | None, float | None]] = {
     "currencyWars.strategyIndex": (0, None),
 }
 # 选项含义按 SRA 源码：TrailblazePowerTask.replenish 里 way 0/1/2 依次为
-# 后备开拓力 / 燃料 / 星琼；CosmicStrifeTask 里 mode 0/1/2 依次为标准 / 超频 / 刷开局。
+# 后备开拓力 / 燃料 / 星琼；CosmicStrifeTask 里 mode 0/1/2 依次为标准 / 超频 / 刷开局；
+# divergentUniverse.mode 与 currencyWars.difficulty 按 TasksConfig 的字段说明（v2.25.5）。
 _SRA_SELECTS = {
     "replenish.way": (
         HSRManagedFieldOption(0, "后备开拓力"),
@@ -260,8 +268,8 @@ _SRA_SELECTS = {
         HSRManagedFieldOption(2, "星琼"),
     ),
     "divergentUniverse.mode": (
-        HSRManagedFieldOption(0, "常规演算"),
-        HSRManagedFieldOption(1, "周期演算"),
+        HSRManagedFieldOption(0, "刷单层"),
+        HSRManagedFieldOption(1, "完整对局"),
     ),
     "currencyWars.mode": (
         HSRManagedFieldOption(0, "标准博弈"),
@@ -271,6 +279,7 @@ _SRA_SELECTS = {
     "currencyWars.difficulty": (
         HSRManagedFieldOption(0, "最低难度"),
         HSRManagedFieldOption(1, "最高难度"),
+        HSRManagedFieldOption(2, "当前难度"),
     ),
 }
 
@@ -327,26 +336,109 @@ def _sra_activity_stage_options(
     return result
 
 
+_SRA_SECTION_CLASSES = {
+    "trailblazePower": "TrailblazePowerConfig",
+    "receiveRewards": "ReceiveRewardsConfig",
+    "cosmicStrife": "CosmicStrifeConfig",
+}
+_SRA_FIELD_DOC = re.compile(r"alias=\"([^\"]+)\",\s*description=(['\"])(.*?)\2\)")
+_SRA_ENUM = re.compile(r"(\d+)\s*-\s*([^，,；。\s]+)")
+
+
+def _load_sra_field_docs(script_config: Any) -> dict[str, dict[str, str]]:
+    """读 SRA 自带的字段说明：``{节名: {键: 说明}}``。
+
+    SRA 改成带源码分发后，安装目录里有由 C# 模型生成的
+    ``SRACore/models/tasks_config.py``，每个键都带 ``description``。旧的编译版
+    没有这个文件，返回空表，文案退回手写词表。
+    """
+
+    raw_root = _script_path(script_config, "SRA")
+    if not raw_root:
+        return {}
+    path = Path(raw_root) / "SRACore" / "models" / "tasks_config.py"
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError):
+        return {}
+    blocks = {
+        block.split("(", 1)[0].strip(): block
+        for block in re.split(r"^class ", text, flags=re.MULTILINE)[1:]
+    }
+    return {
+        section: {
+            match.group(1): match.group(3)
+            for match in _SRA_FIELD_DOC.finditer(blocks.get(class_name, ""))
+        }
+        for section, class_name in _SRA_SECTION_CLASSES.items()
+    }
+
+
+def _sra_texts(doc: str) -> tuple[str, str, tuple[HSRManagedFieldOption, ...]]:
+    """把 SRA 的字段说明拆成（名称, 补充说明, 下拉选项）。
+
+    说明的惯例是「是否XX」「XX，0-甲，1-乙」「XX：补充」；取值枚举变成下拉选项，
+    不再留在说明里。
+    """
+
+    options = tuple(
+        HSRManagedFieldOption(int(value), label)
+        for value, label in _SRA_ENUM.findall(doc)
+        if not label.isdigit()
+    )
+    if len(options) < 2:
+        options = ()
+    clauses = [
+        clause.strip()
+        for clause in re.split(r"[，：；。]", doc)
+        if clause.strip() and not _SRA_ENUM.fullmatch(clause.strip())
+    ]
+    if not clauses:
+        return "", "", options
+    label = clauses[0].removeprefix("是否")
+    rest = clauses[1:]
+    if len(label) < 4 and rest:
+        # 「启用后，……」这类开头撑不起一个名称，整句当名称
+        return "，".join(clauses), "", options
+    return label, ("，".join(rest) + "。" if rest else ""), options
+
+
 def list_sra_managed_modules(
     script_config: Any, user_config: Any | None = None
 ) -> tuple[HSRManagedModule, ...]:
     source, _payload = load_sra_native_config(script_config)
     activity_stage_options = _sra_activity_stage_options(script_config)
+    field_docs = _load_sra_field_docs(script_config)
     result: list[HSRManagedModule] = []
     for module_key in ("Daily", "ReceiveRewards", "DivergentUniverse", "CurrencyWars"):
-        values, _section_name = discover_sra_managed_options(module_key, script_config)
+        values, section_name = discover_sra_managed_options(module_key, script_config)
+        docs = field_docs.get(section_name, {})
+        table_specs = managed_field_specs("SRA", module_key)
+        listed = {spec.key for spec in table_specs}
+        # 字段表之外、按规则自动跟进的新键接在后面
+        specs = table_specs + tuple(
+            ManagedFieldSpec(key, AUTO_FIELD_GROUP)
+            for key in values
+            if key not in listed
+        )
         effective, dropped = overlay_sra_managed_options(
             module_key, script_config, user_config
         )
         overrides = _sra_user_managed_options(user_config, module_key)
         overridden_keys = _effective_override_keys(overrides, dropped)
         fields: list[HSRManagedField] = []
-        for spec in managed_field_specs("SRA", module_key):
+        for spec in specs:
             key = spec.key
             if key not in values:
                 continue
             native = values[key]
             value = effective.get(key, native)
+            doc_label, doc_description, doc_options = _sra_texts(docs.get(key, ""))
+            # SRA 自带的取值枚举优先于手写的，新版本加的取值不用等 MAS 跟；
+            # 当前值不在枚举里（说明解析岔了）就不用它。
+            if not any(option.value == native for option in doc_options):
+                doc_options = ()
+            hand_label = _SRA_LABELS.get(key)
             if key == _SRA_USERNAME_KEY:
                 # 运行时没填覆盖值就用 MAS 账号名，不用原生 profile 里的名字；
                 # 表单显示为空，与说明「留空时使用 MAS 账号名」一致。单项恢复后
@@ -364,16 +456,19 @@ def list_sra_managed_modules(
                         if key.startswith("rewards.")
                         and key.removeprefix("rewards.").isdigit()
                         and int(key.removeprefix("rewards.")) < len(SRA_REWARD_LABELS)
-                        else _SRA_LABELS.get(key, key)
+                        else hand_label or doc_label or key
                     ),
                     description=(
                         _SRA_ACTIVITY_STAGE_DESCRIPTION
                         if key in _SRA_ACTIVITY_STAGE_CATEGORIES
-                        else _SRA_DESCRIPTIONS.get(key, "")
+                        # 手写了名称的字段沿用手写说明，不混进 SRA 的原文
+                        else _SRA_DESCRIPTIONS.get(
+                            key, "" if hand_label else doc_description
+                        )
                     ),
                     options=activity_stage_options.get(
                         key,
-                        _SRA_SELECTS.get(key, ()),
+                        doc_options or _SRA_SELECTS.get(key, ()),
                     ),
                     minimum=_SRA_RANGES.get(key, (None, None))[0],
                     maximum=_SRA_RANGES.get(key, (None, None))[1],
@@ -414,11 +509,23 @@ _M7A_SELECTS = {
         HSRManagedFieldOption("current", "当前职级"),
         HSRManagedFieldOption("highest", "最高职级"),
     ),
-    # 三月七 GUI（setting_interface.py 货币战争策略）：默认 / 阿格莱雅 / 希儿【测试版】
+    # 三月七 v2026.11 之前的策略；之后的取值从样例配置的注释里解析
     "currencywars_strategy": (
         HSRManagedFieldOption("default", "默认策略"),
         HSRManagedFieldOption("aglaea", "阿格莱雅策略"),
         HSRManagedFieldOption("seele", "希儿策略（测试版）"),
+    ),
+    "currencywars_unfinished_match": (
+        HSRManagedFieldOption("restart", "结算后重新开局"),
+        HSRManagedFieldOption("resume", "按所选策略继续"),
+    ),
+    "currencywars_investment_priority": (
+        HSRManagedFieldOption("strategy", "按策略选"),
+        HSRManagedFieldOption("catalog", "优先图鉴未收录的"),
+    ),
+    "weekly_relic_cleanup_day_of_week": tuple(
+        HSRManagedFieldOption(number, f"周{name}")
+        for number, name in enumerate("一二三四五六日", start=1)
     ),
     # 三月七 GUI 的默认队伍是 1–12 的 SpinBox，存成字符串（"6"）
     "instance_team_number": tuple(
@@ -433,6 +540,69 @@ _M7A_SELECTS = {
         HSRManagedFieldOption("拟造花萼（赤）", "拟造花萼（赤）"),
     ),
 }
+_M7A_PAREN = re.compile(r"（([^（）]*)）")
+_M7A_PAREN_HEAD = re.compile(r"[^，、。；：:\s\"“”）]+$")
+_M7A_IDENT = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
+_M7A_LOWER_IDENT = re.compile(r"[a-z][a-z0-9_]*")
+_M7A_QUOTED_OPTION = re.compile(
+    r"\"([A-Za-z][A-Za-z0-9_]*)\"\s*([^，。；\"（\s][^，。；\"（]*)"
+)
+
+
+def _m7a_comment_options(comment: str) -> dict[str, str]:
+    """从样例配置的注释里解析取值枚举：``{取值: 名称}``，按注释里的顺序。
+
+    认三种写法：``normal（标准博弈）``（引号可有可无）、``连击那刻夏（S2，s2_anaxa）``
+    （名称在前、取值在括号里）、``"restart" 结算后重新开局``。
+    """
+
+    options: dict[str, str] = {}
+    for match in _M7A_PAREN.finditer(comment):
+        before = comment[: match.start()].rstrip().rstrip('"”')
+        head_match = _M7A_PAREN_HEAD.search(before)
+        if head_match is None:
+            continue
+        head = head_match.group()
+        for prefix in ("可选值", "可选", "或"):
+            head = head.removeprefix(prefix)
+        parts = [part.strip() for part in match.group(1).split("，") if part.strip()]
+        if _M7A_IDENT.fullmatch(head):
+            options.setdefault(head, parts[0] if parts else head)
+            continue
+        values = [part for part in parts if _M7A_LOWER_IDENT.fullmatch(part)]
+        if not head or not values:
+            continue
+        rest = [part for part in parts if part != values[-1]]
+        options.setdefault(
+            values[-1], head + (f"（{'，'.join(rest)}）" if rest else "")
+        )
+    if len(options) < 2:
+        options = {
+            value: label.strip() for value, label in _M7A_QUOTED_OPTION.findall(comment)
+        }
+    return options
+
+
+def _m7a_select_options(
+    key: str, comment: str, native: Any
+) -> tuple[HSRManagedFieldOption, ...]:
+    """下拉选项：三月七注释里列的取值优先，新版本增删取值不用等 MAS 跟。
+
+    手写表给名称兜底，也是注释解析不出来时的选项来源；当前值不在解析结果里
+    （注释写法岔了，或用户留着已下线的取值）时整组退回手写表。
+    """
+
+    hand = _M7A_SELECTS.get(key, ())
+    parsed = _m7a_comment_options(comment) if isinstance(native, str) else {}
+    if len(parsed) < 2 or native not in parsed:
+        return hand
+    hand_labels = {option.value: option.label for option in hand}
+    return tuple(
+        HSRManagedFieldOption(value, hand_labels.get(value, label))
+        for value, label in parsed.items()
+    )
+
+
 # 上界来自 config.example.yaml 注释或三月七 GUI 控件写明的取值范围。
 _M7A_RANGES: dict[str, tuple[float | None, float | None]] = {
     "build_target_ornament_weekly_count": (0, 7),
@@ -486,12 +656,25 @@ def _m7a_texts(key: str, comment: str) -> tuple[str, str]:
     ]
     label, extra = "", []
     if sentences:
-        clauses = [clause.strip() for clause in sentences[0].split("，")]
+        first = sentences[0]
+        head, colon, tail = first.partition("：")
+        enumerated = bool(colon and _M7A_PAREN.search(tail))
+        if enumerated:
+            # 「XX：a（甲）、b（乙）」：冒号后面全是取值枚举，已经变成下拉
+            first = head
+        clauses = [clause.strip() for clause in first.split("，")]
         cut = next(
             (i for i, clause in enumerate(clauses) if _M7A_VALUE_CLAUSE.match(clause)),
             len(clauses),
         )
         label = "，".join(clauses[:cut]).replace("是否", "")
+        if cut < len(clauses) and clauses[cut].startswith("可选"):
+            # 「XX，可选 a（甲）、b（乙）……」：枚举从这里一直写到句末，连同后面
+            # 交代旧取值去向的句子都不留
+            enumerated = True
+            clauses = clauses[:cut]
+        if enumerated:
+            sentences = sentences[:1]
         rest = "，".join(
             clause for clause in clauses[cut:] if not _M7A_VALUE_CLAUSE.match(clause)
         )
@@ -534,7 +717,8 @@ def list_m7a_managed_modules(
         overridden_keys = _effective_override_keys(
             _m7a_user_managed_options(user_config, module_key), dropped
         )
-        for spec in managed_field_specs("M7A", module_key):
+        # 给了 payload，字段表之外按规则自动跟进的新键接在后面
+        for spec in managed_field_specs("M7A", module_key, payload):
             key = spec.key
             if key not in payload:
                 continue
@@ -547,7 +731,7 @@ def list_m7a_managed_modules(
                     effective.get(key, value),
                     label=label,
                     description=description,
-                    options=_M7A_SELECTS.get(key, ()),
+                    options=_m7a_select_options(key, comments.get(key, ""), value),
                     minimum=_M7A_RANGES.get(key, (None, None))[0],
                     maximum=_M7A_RANGES.get(key, (None, None))[1],
                     overridden=key in overridden_keys,
