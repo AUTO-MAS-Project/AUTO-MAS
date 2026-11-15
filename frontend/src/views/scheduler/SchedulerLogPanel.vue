@@ -209,6 +209,7 @@ watch(
 
 // Monaco Editor 实例
 let editorInstance: import('monaco-editor').editor.IStandaloneCodeEditor | null = null
+let layoutListener: import('monaco-editor').IDisposable | null = null
 
 // Monaco Editor 配置
 const editorOptions = computed(() => ({
@@ -247,6 +248,11 @@ const editorOptions = computed(() => ({
 // 处理编辑器挂载
 const handleEditorMount = (editor: import('monaco-editor').editor.IStandaloneCodeEditor) => {
   editorInstance = editor
+  layoutListener?.dispose()
+  layoutListener = editor.onDidLayoutChange(() => {
+    // 标题状态换行会改变日志高度，保持最新模式仍需跟随到底部。
+    if (logMode.value === 'follow') nextTick(scrollToBottom)
+  })
   // 初始滚动到底部
   if (logMode.value === 'follow' && renderedLog.value) {
     nextTick(() => scrollToBottom())
@@ -287,6 +293,7 @@ watch(renderedLog, () => {
 })
 
 onUnmounted(() => {
+  layoutListener?.dispose()
   if (renderTimer !== undefined) window.clearTimeout(renderTimer)
   editorInstance = null
   monacoInstance = null
