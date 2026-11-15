@@ -72,6 +72,8 @@ export interface MaaFWScriptBasicInfoSectionProps {
   sourceDirectoryLabel?: string
   sourceHint?: string
   sourcePlaceholder?: string
+  /** 新建后的引导形态：环境准备失败的提示不指向本页后面步骤里的设置 */
+  isWizard?: boolean
 }
 
 export interface MaaFWScriptBasicInfoSectionEmits {

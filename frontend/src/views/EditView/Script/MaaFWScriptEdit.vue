@@ -53,6 +53,7 @@
             :env-logs="envLogs"
             :env-agents="envAgents"
             :env-outcome="envOutcome"
+            :is-wizard="isWizard"
             @change="handleChange"
             @select-path="selectMaaFWPath"
             @preview-interface="handlePreviewInterface"

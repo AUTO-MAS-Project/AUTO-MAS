@@ -32,14 +32,12 @@
         </a-button>
       </div>
     </div>
-    <!-- 日志框一直在：面板高度不随「有没有开始更新」跳动；结论作为最后一行用强调色写出来 -->
-    <div ref="logBoxRef" class="update-log-box maafw-log-box">
-      <div
-        v-if="updateProgress.phase === 'idle'"
-        class="update-log-line maafw-log-line maafw-log-line--empty"
-      >
-        {{ t('core.edit.updateProcessPlaceholder') }}
-      </div>
+    <!-- 空闲时只留标题行与按钮；检查 / 更新开始后才出现日志框，结论作为最后一行用强调色写出来 -->
+    <div
+      v-if="updateProgress.phase !== 'idle'"
+      ref="logBoxRef"
+      class="update-log-box maafw-log-box"
+    >
       <div
         v-for="(line, index) in updateProgress.logs"
         :key="index"
@@ -48,11 +46,7 @@
       >
         {{ line.text }}
       </div>
-      <div
-        v-if="updateProgress.phase !== 'idle'"
-        class="update-log-status maafw-log-status"
-        :class="`maafw-log-status--${summaryTone}`"
-      >
+      <div class="update-log-status maafw-log-status" :class="`maafw-log-status--${summaryTone}`">
         <LoadingOutlined v-if="summaryTone === 'running'" spin class="update-log-status-icon" />
         <CheckCircleOutlined v-else-if="summaryTone === 'success'" class="update-log-status-icon" />
         <CloseCircleOutlined v-else class="update-log-status-icon" />
@@ -182,15 +176,16 @@ const packageKindLabel = computed(() => {
 })
 
 // 新日志进来时贴到底部，用户手动往上翻时不打扰
+// （日志框刚出现时还没挂上，等它渲染出来再贴底）
 const logBoxRef = ref<HTMLElement | null>(null)
 watch(
   () => [props.updateProgress.logs.length, props.updateProgress.phase, statusText.value],
   async () => {
     const box = logBoxRef.value
-    if (!box) return
-    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40
+    const nearBottom = !box || box.scrollHeight - box.scrollTop - box.clientHeight < 40
     await nextTick()
-    if (nearBottom) box.scrollTop = box.scrollHeight
+    const current = logBoxRef.value
+    if (current && nearBottom) current.scrollTop = current.scrollHeight
   }
 )
 </script>
