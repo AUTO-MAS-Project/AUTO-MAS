@@ -84,7 +84,8 @@ export interface MaaFWScriptBasicInfoSectionEmits {
 
 /**
  * 脚本页 `control`：控制器、资源、模拟器 / 桌面窗口、游戏启动。另有具名 slot `besidePackageName`
- * （与游戏包名并排，有内容时两列），页面在当前特调登记了同名插入点时才填它；替换这个分节要保留它。
+ * （ADB 下排在包名、等待时间之后，slot 的每个顶层节点一格），页面在当前特调登记了同名插入点时
+ * 才填它、并按组件逐个渲染；替换这个分节要保留它。
  */
 export interface MaaFWScriptControlSectionProps {
   /** 脚本 ID：键位映射弹窗「从项目导入」按它读外壳配置实例 */

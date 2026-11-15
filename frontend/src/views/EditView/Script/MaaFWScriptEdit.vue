@@ -104,12 +104,16 @@
             @select-launch-path="selectLaunchPath"
             @select-launcher-path="selectLauncherPath"
           >
-            <template v-if="hasBesidePackageName" #besidePackageName>
+            <!-- 逐个组件渲染：control 分节给每个顶层节点单独一格 -->
+            <template v-if="besidePackageNameCount > 0" #besidePackageName>
               <MaaFWFlavorSlot
+                v-for="index in besidePackageNameCount"
+                :key="index"
                 part="scriptPage"
                 name="besidePackageName"
                 :flavor="flavor"
                 :context="flavorSlotContext"
+                :index="index - 1"
                 @change="handleChange"
               />
             </template>
@@ -336,9 +340,9 @@ const headerLogo = computed(() =>
 // 各分节：默认用 MFW 的，当前特调替换了哪节就换成它的（契约见 MaaFWFlavor/sectionContracts）
 const sections = useMaaFWSections(flavor, 'scriptPage', MAAFW_SCRIPT_PAGE_SECTIONS)
 
-// 包名旁的插入点在 control 分节里面：只有当前特调登记了组件才填这个 slot，否则包名独占一行
-const hasBesidePackageName = computed(
-  () => resolveMaaFWFlavorSlot(flavor.value, 'scriptPage', 'besidePackageName').length > 0
+// 包名旁的插入点在 control 分节里面：只有当前特调登记了组件才填这个 slot
+const besidePackageNameCount = computed(
+  () => resolveMaaFWFlavorSlot(flavor.value, 'scriptPage', 'besidePackageName').length
 )
 </script>
 

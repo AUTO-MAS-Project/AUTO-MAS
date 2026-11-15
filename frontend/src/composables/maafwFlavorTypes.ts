@@ -30,7 +30,7 @@ export interface MaaFWFlavorSlotContextMap {
     /** 控制方式一步顶部、控制方式分节之前（如 MSS 的控制方式提示）；引导第 2 步 */
     beforeControl: MaaFWScriptSlotContext
     /**
-     * 控制方式分节里与「游戏包名」并排的位置（宽屏两列、窄屏上下排）；没有组件时包名独占一行。
+     * 控制方式分节里「游戏包名」「等待时间」之后、截图 / 输入策略表之前，每个组件单独一格。
      * 由 control 分节的同名 slot 提供：特调替换 control 分节时要自己留这个 slot。引导第 2 步
      */
     besidePackageName: MaaFWScriptSlotContext

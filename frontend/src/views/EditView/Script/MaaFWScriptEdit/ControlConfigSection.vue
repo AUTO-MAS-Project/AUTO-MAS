@@ -1,8 +1,8 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <MaaFWFormSection :title="t('core.edit.controlModeGameResource')">
+  <MaaFWFormSection :title="t('core.edit.controlConfiguration')">
     <!-- 模拟器依次排：控制方式、模拟器、实例、游戏资源、包名、等待时间、特调插槽
-         besidePackageName、截图 / 输入策略表，格宽见脚本里的 adbCol。
+         besidePackageName（每个组件一格）、截图 / 输入策略表，格宽见脚本里的 adbCol。
          其余控制器这一行只有控制方式 | 游戏资源两格，各占半行 -->
     <a-row :gutter="24" align="stretch" class="controller-resource-row">
       <a-col v-bind="isAdbController ? adbCol('controller') : HALF_COL">
@@ -165,8 +165,13 @@
             />
           </a-form-item>
         </a-col>
-        <a-col v-if="$slots.besidePackageName" v-bind="adbCol('beside')">
-          <slot name="besidePackageName" />
+        <!-- 插入点里每个组件各占一格（不叠在同一格里把旁边的策略表拉高） -->
+        <a-col
+          v-for="(node, index) in besideNodes()"
+          :key="`beside-${index}`"
+          v-bind="adbCol(`beside${index}`)"
+        >
+          <component :is="node" />
         </a-col>
         <!-- 策略表：截图 / 输入两行，与同一行的表单项（标签 + 输入框）等高 -->
         <a-col v-bind="adbCol('strategy')" class="control-strategy-col">
@@ -194,7 +199,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, useSlots } from 'vue'
+import { Comment, computed, Fragment, useSlots, type VNode } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { isDirectControllerType } from '@/composables/useMaaFWScriptConfig'
 import type {
@@ -216,8 +221,12 @@ const slots = useSlots()
 
 const HALF_COL = { span: 12 } as const
 
+// 每行格数换成每格的栅格宽度
+const spansOf = (rows: number[]): number[] =>
+  rows.flatMap(size => Array<number>(size).fill(24 / size))
+
 // 宽屏每行最多三格，最后一行不留单格：余两格时最后一行两格（8 格 = 3 / 3 / 2），余一格时
-// 最后两行各两格（7 格 = 3 / 2 / 2）。返回每格的栅格宽度
+// 最后两行各两格（7 格 = 3 / 2 / 2）
 const wideRowSpans = (count: number): number[] => {
   const rows: number[] = []
   let rest = count
@@ -226,7 +235,19 @@ const wideRowSpans = (count: number): number[] => {
     rows.push(size)
     rest -= size
   }
-  return rows.flatMap(size => Array<number>(size).fill(24 / size))
+  return spansOf(rows)
+}
+
+// 中等宽度每行两格，单数格时最后一行三格（7 格 = 2 / 2 / 3，9 格 = 2 / 2 / 2 / 3），同样不留单格
+const mediumRowSpans = (count: number): number[] => {
+  const rows: number[] = []
+  let rest = count
+  while (rest > 0) {
+    const size = rest === 3 ? 3 : Math.min(rest, 2)
+    rows.push(size)
+    rest -= size
+  }
+  return spansOf(rows)
 }
 
 type AdbField =
@@ -236,10 +257,24 @@ type AdbField =
   | 'resource'
   | 'packageName'
   | 'waitTime'
-  | 'beside'
+  | `beside${number}`
   | 'strategy'
 
-// 模拟器各格按模板顺序排；插槽不是响应式的，写成函数在渲染时取
+// 插入点 besidePackageName 的内容：页面按组件逐个渲染，每个顶层节点算一格（v-for 的片段展开，
+// 注释节点不算）。插槽不是响应式的，写成函数在渲染时取
+const besideNodes = (): VNode[] => {
+  const flatten = (nodes: VNode[]): VNode[] =>
+    nodes.flatMap(node => {
+      if (node.type === Comment) return []
+      if (node.type === Fragment && Array.isArray(node.children)) {
+        return flatten(node.children as VNode[])
+      }
+      return [node]
+    })
+  return flatten(slots.besidePackageName?.() ?? [])
+}
+
+// 模拟器各格按模板顺序排
 const adbFields = (): AdbField[] => [
   'controller',
   'emulator',
@@ -247,14 +282,19 @@ const adbFields = (): AdbField[] => [
   'resource',
   'packageName',
   'waitTime',
-  ...(slots.besidePackageName ? (['beside'] as const) : []),
+  ...besideNodes().map((_, index): AdbField => `beside${index}`),
   'strategy',
 ]
 
-// 中等宽度两列、窄屏一列，宽屏按 wideRowSpans
+// 窄屏一列，中等宽度按 mediumRowSpans，宽屏按 wideRowSpans
 const adbCol = (field: AdbField) => {
   const fields = adbFields()
-  return { xs: 24, md: 12, xl: wideRowSpans(fields.length)[fields.indexOf(field)] }
+  const position = fields.indexOf(field)
+  return {
+    xs: 24,
+    md: mediumRowSpans(fields.length)[position],
+    xl: wideRowSpans(fields.length)[position],
+  }
 }
 
 // 模拟器 / 实例下拉的「未选择」（值为 -）由后端列表自带，这里不再另加一项。列表还没到时
