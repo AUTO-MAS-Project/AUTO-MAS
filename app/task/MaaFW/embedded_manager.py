@@ -1476,6 +1476,15 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 self._append_update_log(text)
                 await self._notify_update("warning", text)
                 return
+            if getattr(exc, "check_unreachable", False):
+                # 查版本时连不上更新源：与只看 GitHub 的项目同一口径，只记一行日志、
+                # 不弹错误——否则断网期间每次运行都报一次。下载、应用阶段的失败与
+                # CDK 之类要用户处理的错误不走这里。
+                logger.warning(f"MFW 项目{phase_zh}更新检查失败，已跳过：{reason}")
+                self._append_update_log(
+                    f"MFW 项目更新检查失败，已跳过本次更新：{reason}"
+                )
+                return
             logger.opt(exception=True).warning(
                 f"MFW 项目{phase_zh}更新失败，任务继续：{reason}"
             )

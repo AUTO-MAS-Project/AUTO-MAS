@@ -85,6 +85,10 @@ HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 # api.github.com 常常不通，时限给长了每次运行都白等；补查查不到就沿用 Mirror 酱的版本。
 GITHUB_VERSION_CHECK_TIMEOUT = 10.0
 GITHUB_VERSION_CHECK_PAGE_SIZE = 20
+# Mirror 酱查询的总时限（秒）：查版本挡在每次运行前面、排在 GitHub 之前，给 15 秒；
+# 带 CDK 换下载地址只在确认要下载时问一次，宽一些。
+MIRRORCHYAN_VERSION_CHECK_TIMEOUT = 15.0
+MIRRORCHYAN_DOWNLOAD_URL_TIMEOUT = 45.0
 
 # 带这个前缀的更新日志行要用户留意：手动更新的「更新过程」面板去掉前缀、整行标红
 # （``api_service/update.py``）。只在手动更新（``allow_misnumbered_rollback``）时发，
@@ -286,6 +290,9 @@ class MaaFWProjectUpdateError(RuntimeError):
     ``project_lock_busy``：限时内没拿到项目锁（另一次更新 / 预检在跑）。
     ``cancelled``：调用方置位了 ``cancel_event``，本次更新是被用户停掉的，
     不是失败——调用方据此换文案，别把「已中止」说成「更新失败」。
+    ``check_unreachable``：查版本这一步连不上更新源（网络出错、超时、5xx），不是
+    更新源明确拒绝（CDK、资源不存在这类要用户处理的错误码不算）。运行前自动更新据此
+    与只看 GitHub 的项目同一口径：只记日志、不弹错误；手动检查 / 更新照常报错。
     """
 
     def __init__(
@@ -297,6 +304,7 @@ class MaaFWProjectUpdateError(RuntimeError):
         post_validate_rejected: bool = False,
         project_lock_busy: bool = False,
         cancelled: bool = False,
+        check_unreachable: bool = False,
     ) -> None:
         super().__init__(message)
         self.provider_error_code = provider_error_code
@@ -304,6 +312,7 @@ class MaaFWProjectUpdateError(RuntimeError):
         self.post_validate_rejected = post_validate_rejected
         self.project_lock_busy = project_lock_busy
         self.cancelled = cancelled
+        self.check_unreachable = check_unreachable
 
 
 def _stale_projection_message(manifest: Mapping[str, Any]) -> str:
@@ -2171,17 +2180,43 @@ async def _query_mirrorchyan_latest(
     params["arch"] = target.mirrorchyan_arch
 
     url = f"https://mirrorchyan.com/api/resources/{rid}/latest"
+    # 不带 CDK 的这次就是查版本（discovery 里查版本一律不带 CDK），挡在每次运行前面；
+    # 带 CDK 的是确认要下载后换一次性下载地址。两者都套总时限：httpx 的超时只管单次
+    # 读写，响应一点点往回滴时可以远超它（与 GitHub 查询同一做法）。
+    version_query = not mirror_cdk
+    total_timeout = (
+        MIRRORCHYAN_VERSION_CHECK_TIMEOUT
+        if version_query
+        else MIRRORCHYAN_DOWNLOAD_URL_TIMEOUT
+    )
     try:
-        async with httpx.AsyncClient(
-            proxy=proxy, follow_redirects=True, timeout=30.0
-        ) as client:
-            response = await client.get(url, params=params, headers=HTTP_HEADERS)
+        async with asyncio.timeout(total_timeout):
+            async with httpx.AsyncClient(
+                proxy=proxy, follow_redirects=True, timeout=30.0
+            ) as client:
+                response = await client.get(url, params=params, headers=HTTP_HEADERS)
+    except TimeoutError:
+        raise MaaFWProjectUpdateError(
+            f"MirrorChyan update check timed out after {total_timeout:g}s",
+            check_unreachable=version_query,
+        ) from None
     except httpx.HTTPError as exc:
         raise MaaFWProjectUpdateError(
-            f"MirrorChyan update check failed: {_exception_detail(exc)}"
+            f"MirrorChyan update check failed: {_exception_detail(exc)}",
+            check_unreachable=version_query,
         ) from None
 
-    result = _load_response_json(response)
+    # 5xx 是服务端那边出了问题（网关页、维护），与连不上同一类。
+    server_down = version_query and response.status_code >= 500
+    try:
+        result = _load_response_json(response)
+    except MaaFWProjectUpdateError:
+        if not server_down:
+            raise
+        raise MaaFWProjectUpdateError(
+            f"MirrorChyan returned HTTP {response.status_code}",
+            check_unreachable=True,
+        ) from None
     raw_error_code = result.get("code", 0)
     try:
         error_code: int | None = int(raw_error_code)
@@ -2226,7 +2261,8 @@ async def _query_mirrorchyan_latest(
                 provider_error_code=error_code,
             )
         raise MaaFWProjectUpdateError(
-            f"MirrorChyan returned HTTP {response.status_code}"
+            f"MirrorChyan returned HTTP {response.status_code}",
+            check_unreachable=server_down,
         )
 
     if not data:
