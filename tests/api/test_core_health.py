@@ -2,9 +2,12 @@ import asyncio
 from unittest.mock import MagicMock
 
 import pytest
+from fastapi import FastAPI
+import httpx
 
 import app.api.core as core_api
 from app.core import Config
+from app.core.startup import StartupActivation
 
 
 def _make_request(
@@ -13,6 +16,7 @@ def _make_request(
     request = MagicMock()
     request.app.state.background_status = background_status
     request.app.state.background_error = background_error
+    request.app.state.startup_activation = StartupActivation(deferred=False)
     return request
 
 
@@ -54,3 +58,28 @@ def test_unsupervised_falls_back_to_local_version_and_empty_commit(
     assert result.protocol == 1
     assert result.version == Config.VERSION
     assert result.commit == ""
+
+
+@pytest.mark.asyncio
+async def test_runtime_activation_is_idempotent_and_not_an_mcp_tool() -> None:
+    app = FastAPI()
+    app.include_router(core_api.router)
+    app.state.background_status = "starting"
+    app.state.background_error = None
+    app.state.background_warnings = []
+    app.state.startup_activation = StartupActivation(deferred=True)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        assert (await client.post("/api/core/startup/activate")).status_code == 409
+        assert (await client.get("/api/core/health")).json()[
+            "startupActivation"
+        ] == "pending"
+        app.state.background_status = "ready"
+        for _ in range(2):
+            response = await client.post("/api/core/startup/activate")
+            assert response.status_code == 200
+            assert response.json()["startupActivation"] == "active"
+        app.state.startup_activation.close()
+        assert (await client.post("/api/core/startup/activate")).status_code == 409
+    assert "/api/core/startup/activate" not in app.openapi()["paths"]

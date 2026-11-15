@@ -42,6 +42,7 @@ from .community.scheduling import (
 )
 from .config import Config
 from .game_calendar import CALENDAR_REFRESH_INTERVAL_SECONDS, GameCalendar
+from .startup import StartupActivation
 from .task_manager import TaskManager
 
 logger = get_logger("主业务定时器")
@@ -238,25 +239,24 @@ class _MainTimer:
         self._wakeup_signature = signature
         logger.info(f"定时唤醒已同步：{len(times)} 个每周触发时间")
 
-    async def start(self):
+    async def start(self, *, activation: StartupActivation | None = None) -> None:
         """启动定时器"""
 
         if self.started:
             logger.warning("主业务定时器仅能启动一次，无法重复启动")
             return
 
-        if not self._startup_dispatched:
-            self._startup_dispatched = True
-            self.startup_task = asyncio.create_task(
-                self._run_loop_step(
-                    "启动队列检查", partial(self.timed_start, startup=True)
-                )
-            )
+        self.started = True
+        self.startup_task = asyncio.create_task(self._start_automatic_work(activation))
+        logger.info("主业务定时器启动")
+
+    async def _start_automatic_work(self, activation: StartupActivation | None) -> None:
+        if activation is not None:
+            await activation.wait()
         self.second_timer = asyncio.create_task(self.second_task())
         self.wakeup_timer = asyncio.create_task(self.wakeup_task())
         self.hour_timer = asyncio.create_task(self.hour_task())
         self.calendar_timer = asyncio.create_task(self.calendar_task())
-        self.started = True
 
         if (
             Config.ToolsConfig.GameSign.Enabled
@@ -264,7 +264,11 @@ class _MainTimer:
         ):
             self.schedule_community_for_startup()
 
-        logger.info("主业务定时器启动")
+        if not self._startup_dispatched:
+            self._startup_dispatched = True
+            await self._run_loop_step(
+                "启动队列检查", partial(self.timed_start, startup=True)
+            )
 
     async def stop(self):
         """停止定时器"""
