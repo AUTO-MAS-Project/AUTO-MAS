@@ -83,9 +83,10 @@ export interface MaaFWScriptBasicInfoSectionEmits {
 }
 
 /**
- * 脚本页 `control`：控制器、资源、模拟器 / 桌面窗口、游戏启动。另有具名 slot `besidePackageName`
- * （ADB 下排在包名、等待时间之后，slot 的每个顶层节点一格），页面在当前特调登记了同名插入点时
- * 才填它、并按组件逐个渲染；替换这个分节要保留它。
+ * 脚本页 `control`：控制器、资源、模拟器 / 桌面窗口、游戏启动。另有具名作用域 slot
+ * `besidePackageName`（ADB 下排在包名、等待时间之后，每个组件一格）：页面在当前特调登记了同名
+ * 插入点时才填它，并用 `besidePackageNameCount` 传组件数；分节按这个数每格转发一次 slot、带上
+ * `{ index }`，页面渲染第 index 个组件。替换这个分节要保留它。
  */
 export interface MaaFWScriptControlSectionProps {
   /** 脚本 ID：键位映射弹窗「从项目导入」按它读外壳配置实例 */
@@ -110,6 +111,8 @@ export interface MaaFWScriptControlSectionProps {
   adbControlStrategyItems: Array<{ label: string; value: string }>
   selectedEmulatorLabel: string
   interfaceDependentDisabled: boolean
+  /** 插入点 besidePackageName 登记了几个组件；不传或为 0 时不留这一格 */
+  besidePackageNameCount?: number
 }
 
 export interface MaaFWScriptControlSectionEmits {

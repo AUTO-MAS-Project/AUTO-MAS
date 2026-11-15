@@ -165,13 +165,14 @@
             />
           </a-form-item>
         </a-col>
-        <!-- 插入点里每个组件各占一格（不叠在同一格里把旁边的策略表拉高） -->
+        <!-- 插入点里每个组件各占一格（不叠在同一格里把旁边的策略表拉高）：页面传来组件数，每格用
+             <slot> 转发一次并带上下标，页面渲染第 index 个组件 -->
         <a-col
-          v-for="(node, index) in besideNodes()"
+          v-for="index in besideIndexes"
           :key="`beside-${index}`"
           v-bind="adbCol(`beside${index}`)"
         >
-          <component :is="node" />
+          <slot name="besidePackageName" :index="index" />
         </a-col>
         <!-- 策略表：截图 / 输入两行，与同一行的表单项（标签 + 输入框）等高 -->
         <a-col v-bind="adbCol('strategy')" class="control-strategy-col">
@@ -199,7 +200,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { Comment, computed, Fragment, useSlots, type VNode } from 'vue'
+import { computed } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { isDirectControllerType } from '@/composables/useMaaFWScriptConfig'
 import type {
@@ -216,8 +217,6 @@ const { t } = useI18n()
 const props = defineProps<MaaFWScriptControlSectionProps>()
 
 const emit = defineEmits<MaaFWScriptControlSectionEmits>()
-
-const slots = useSlots()
 
 const HALF_COL = { span: 12 } as const
 
@@ -260,19 +259,10 @@ type AdbField =
   | `beside${number}`
   | 'strategy'
 
-// 插入点 besidePackageName 的内容：页面按组件逐个渲染，每个顶层节点算一格（v-for 的片段展开，
-// 注释节点不算）。插槽不是响应式的，写成函数在渲染时取
-const besideNodes = (): VNode[] => {
-  const flatten = (nodes: VNode[]): VNode[] =>
-    nodes.flatMap(node => {
-      if (node.type === Comment) return []
-      if (node.type === Fragment && Array.isArray(node.children)) {
-        return flatten(node.children as VNode[])
-      }
-      return [node]
-    })
-  return flatten(slots.besidePackageName?.() ?? [])
-}
+// 插入点 besidePackageName 各格的下标：组件数由页面按特调注册表传来（是 prop，变了 a-row 跟着更新）
+const besideIndexes = computed(() =>
+  Array.from({ length: props.besidePackageNameCount ?? 0 }, (_, index) => index)
+)
 
 // 模拟器各格按模板顺序排
 const adbFields = (): AdbField[] => [
@@ -282,7 +272,7 @@ const adbFields = (): AdbField[] => [
   'resource',
   'packageName',
   'waitTime',
-  ...besideNodes().map((_, index): AdbField => `beside${index}`),
+  ...besideIndexes.value.map((index): AdbField => `beside${index}`),
   'strategy',
 ]
 
