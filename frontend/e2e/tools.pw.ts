@@ -13,6 +13,18 @@ test.describe('@tools MCP service', () => {
       .filter({ has: page.getByText('Tools', { exact: true }) })
     await expect(menu).toHaveClass(/ant-menu-item-selected/)
     await expect(card).toContainText('/mcp')
+    const prompt = card.getByRole('textbox', { name: 'Prompt for your agent' })
+    await expect(prompt).toHaveValue(/Transport: Streamable HTTP/)
+    const connectionAddress = await card.locator('.ant-typography-copy').locator('..').innerText()
+    expect(await prompt.inputValue()).toContain(connectionAddress.trim())
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+    await card.getByRole('button', { name: 'Copy prompt', exact: true }).click()
+    // Windows 剪贴板会使用 CRLF，统一换行后核对完整内容。
+    await expect
+      .poll(() =>
+        page.evaluate(async () => (await navigator.clipboard.readText()).replaceAll('\r\n', '\n'))
+      )
+      .toBe(await prompt.inputValue())
     await expect(card.locator('.ant-progress')).toHaveCount(0)
     await app.evidence('mcp-real-ready')
     await page.reload()

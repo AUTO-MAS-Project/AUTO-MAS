@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { OpenAPI } from '@/api'
 import { useMcpApi } from '@/composables/useMcpApi'
 import McpStartupSwitch from './components/McpStartupSwitch.vue'
+import McpAgentPrompt from './components/McpAgentPrompt.vue'
 
 const { t } = useI18n()
 const { status, loading, retrying, error, refresh, retry, dispose } = useMcpApi()
@@ -106,6 +107,7 @@ onUnmounted(() => {
                 :message="t(`core.tools.mcp.errors.${status.error}`)"
                 :description="t('core.tools.mcp.seeLogs')"
               />
+              <McpAgentPrompt :address="address" />
             </template>
           </div>
         </a-tab-pane>
