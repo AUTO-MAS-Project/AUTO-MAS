@@ -63,6 +63,7 @@ from app.task.MaaFW.tools.core.interface.service import (
 from app.task.MaaFW.tools.core.interface.task_config import (
     excluded_task_ids_for_weekday,
     find_missing_task_names,
+    unchecked_task_ids,
 )
 from app.task.MaaFW.tools.core.runner.environment import (
     AGENT_PIP_CONSTRAINT_DIR_ENV,
@@ -75,9 +76,6 @@ from app.task.MaaFW.tools.core.runner.models import (
     MaaFWRunPlan,
     MaaFWRunResult,
     MaaFWSkippedTaskPlan,
-)
-from app.task.MaaFW.tools.core.runner.pipeline_override import (
-    SECRET_INPUTS_SNAPSHOT_KEY,
 )
 from app.task.MaaFW.tools.core.runner.run_events import (
     CATEGORY_ENVIRONMENT,
@@ -135,11 +133,14 @@ from app.utils.common.process.scope import (
 from .embedded_project import resolve_maafw_project_root
 from .flavor import (
     MaaFWLoginRequired,
+    MaaFWSelectionContext,
+    abort_round_entries,
     no_default_fallback_inputs,
-    off_day_scope,
+    nonfatal_entries,
     resolve_flavor,
     resolve_game_update_hook,
     resolve_login_hook,
+    skip_on_retry_entries,
     unselectable_entries,
 )
 from .game_package import resolve_game_package
@@ -1374,24 +1375,29 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 今天不在运行日的实例不交给装饰钩子：钩子看到的是今天真要跑的队列（剔空了 M9A
             # 就不补启动 / 关闭游戏）。钩子自己按固定规则补回的同一实例（受管任务）照常跑，
             # 不受运行日影响；其余的仍按原位置交给核心，由核心在建计划前排除、记成跳过
-            # （不校验选项），全被排除时计划为空。引擎判出的集合经 off_day_scope 交给钩子，
-            # 钩子另读快照自动补任务时用它，不必自己再判一次星期。
+            # （不校验选项），全被排除时计划为空。红灯与今天不跑的实例经上下文交给钩子，
+            # 钩子另读账号配置自动补任务时用它，不必自己再解析快照、再判一次星期。
             off_day_set = set(off_day_ids) & set(task_ids)
-            with off_day_scope(off_day_ids):
-                decorated_ids, decorated_options = flavor.decorate_selection(
-                    interface_model,
-                    [task_id for task_id in task_ids if task_id not in off_day_set],
-                    {
-                        key: value
-                        for key, value in task_options.items()
-                        if key not in off_day_set
-                    },
-                    script_config=self.script_config,
-                    user_config=self.cur_user_config,
-                    resource_name=resource_name,
-                    # 本方法在工作线程里跑：没给线程安全的回调就只进后端日志。
-                    send_log=send_log if send_log is not None else logger.info,
-                )
+            context = MaaFWSelectionContext(
+                script_config=self.script_config,
+                user_config=self.cur_user_config,
+                resource_name=resource_name,
+                excluded_task_ids=frozenset(
+                    [*unchecked_task_ids(task_snapshot), *off_day_ids]
+                ),
+                # 本方法在工作线程里跑：没给线程安全的回调就只进后端日志。
+                log=send_log if send_log is not None else logger.info,
+            )
+            decorated_ids, decorated_options = flavor.decorate_selection(
+                interface_model,
+                [task_id for task_id in task_ids if task_id not in off_day_set],
+                {
+                    key: value
+                    for key, value in task_options.items()
+                    if key not in off_day_set
+                },
+                context=context,
+            )
             off_day_set -= set(decorated_ids)
             off_day_extra = [task_id for task_id in task_ids if task_id in off_day_set]
             task_ids = [*decorated_ids, *off_day_extra]
@@ -1409,14 +1415,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 controller_name=controller_name,
                 resource_name=resource_name,
                 # 特调路径把已选任务拆成 task_ids 交给核心；仍带上原始快照，
-                # 让核心把用户显式设为跳过的实例写进 skippedTasks。
+                # 让核心把用户显式设为跳过的实例写进 skippedTasks，并从它取
+                # 从密文解出来的字段（下发失败的提示按密码处理）。
                 task_snapshot=task_snapshot,
                 task_ids=task_ids,
                 task_options=task_options,
                 global_options=global_options,
                 script_hotkeys=script_hotkeys,
-                # 从密文解出来的字段单独交过去，保留特调路径的密码处理口径
-                secret_inputs=(task_snapshot or {}).get(SECRET_INPUTS_SNAPSHOT_KEY),
                 # 特调声明不回落 default 的字符串字段（M9A 的自定义兑换码）
                 no_default_fallback_inputs=no_default_fallback_inputs(flavor),
                 excluded_task_reasons=dict.fromkeys(off_day_extra, off_day_reason),
@@ -1727,7 +1732,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     async def _ensure_logged_in(self, address: str, adb_path: str | None) -> None:
         """模拟器启动后、第一个任务下发前，调特调的运行前登录钩子（契约见 flavor.py）。
 
-        每个账号每次运行只调一次，紧跟游戏更新检查之后。钩子判定本次无法继续时抛
+        紧跟游戏更新检查之后。登录成功后同一客户端会话里不再调；失败时下一次尝试重新调，
+        重试关闭游戏 / 模拟器（客户端重启）后也重新调。钩子判定本次无法继续时抛
         ``MaaFWLoginRequired``，按普通失败结算、照常重试；钩子实现里的其它异常同样按失败
         处理，原因附在异常原文后面。没实现钩子（通用 MaaFW）时什么都不做。
         """
@@ -3060,7 +3066,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         """
 
         flavor = resolve_flavor(self.script_config)
-        entries = set(getattr(flavor, "skip_on_retry_entries", None) or ())
+        entries = skip_on_retry_entries(flavor)
         if not entries:
             return plan
         remaining = Counter(self._completed_this_run)
@@ -5697,7 +5703,7 @@ def _mark_abort_round_tasks(plan: MaaFWRunPlan, flavor: Any) -> MaaFWRunPlan:
     runner 据此在这些任务失败或超时时直接结束本轮，见 ``MaaFWTaskRunPlan.abortRoundMessage``。
     """
 
-    entries: dict[str, str] = getattr(flavor, "abort_round_entries", None) or {}
+    entries = abort_round_entries(flavor)
     if not entries:
         return plan
     tasks = [
@@ -5716,7 +5722,7 @@ def _mark_nonfatal_tasks(plan: MaaFWRunPlan, flavor: Any) -> MaaFWRunPlan:
     ``MaaFWTaskRunPlan.nonFatalMessage``。
     """
 
-    entries: dict[str, str] = getattr(flavor, "nonfatal_entries", None) or {}
+    entries = nonfatal_entries(flavor)
     if not entries:
         return plan
     tasks = [

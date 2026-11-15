@@ -51,6 +51,7 @@ from app.task.MaaFW.tools.core.interface.task_config import (
     normalize_global_options,
     normalize_snapshot,
     normalize_task_execution_payload,
+    unchecked_task_ids,
 )
 from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     path_without_host_venv,
@@ -197,7 +198,7 @@ def build_maafw_run_plan(
 
     ``secret_inputs``：值是从密文解出来的 input 字段 ``[[option 名, 字段名], …]``，下发失败的
     提示按密码字段处理、不带原值；不给时取 ``task_snapshot`` 里宿主写的
-    ``SECRET_INPUTS_SNAPSHOT_KEY``（走 ``task_ids`` 的调用方要自己传）。
+    ``SECRET_INPUTS_SNAPSHOT_KEY``（给了 ``task_ids`` 时同样从这份快照取）。
 
     ``no_default_fallback_inputs``：字符串字段没填时不回落 default 的 input 字段
     ``[(option 名, 字段名), …]``，特调声明的例外（宿主按脚本的特调传；不传就没有例外）。
@@ -1108,14 +1109,9 @@ def _select_tasks(
     """``(勾选的实例 id, 各实例自己的选项, 用户的全局表, 特调给各实例写的只属于全局的选项)``。"""
 
     if task_ids is not None:
-        raw = _normalize_raw_snapshot(task_snapshot)
-        if raw["keepUnchecked"]:
-            # 特调自动补入的实例也必须尊重用户这轮显式设的红灯。
-            skipped_ids = {
-                task_id
-                for task_id in raw["taskOrder"]
-                if raw["taskChecked"].get(task_id) is False
-            }
+        # 特调自动补入的实例也必须尊重用户这轮显式设的红灯。
+        skipped_ids = set(unchecked_task_ids(task_snapshot))
+        if skipped_ids:
             task_ids = [task_id for task_id in task_ids if task_id not in skipped_ids]
         selected_ids, selected_options = normalize_task_execution_payload(
             task_ids,
