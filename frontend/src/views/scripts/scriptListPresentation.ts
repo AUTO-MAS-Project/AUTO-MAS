@@ -41,10 +41,11 @@ export const isMaaEndPresetSupported = (script: ScriptListItem) => {
 }
 
 export const getConfigSource = (script: ScriptListItem, user: ScriptListUser): string => {
+  // MaaFW 家族只有账号配置一种来源，每个账号都写同一句没有意义，不显示。
+  if (isMaaFWFamily(script.type)) return ''
   let mode = user.Info.Base
-  // MaaFW 始终使用账号配置；BAAH 始终使用账号绑定的脚本原生配置。
-  if (isMaaFWFamily(script.type)) mode = 'independent'
-  else if (script.type === 'BAAH') mode = 'native'
+  // BAAH 始终使用账号绑定的脚本原生配置。
+  if (script.type === 'BAAH') mode = 'native'
   // 这些专项没有共享配置来源，共享来源一律按账号配置运行。
   else if (['General', 'ZzzOd', 'Whimbox'].includes(script.type) && mode === 'shared')
     mode = 'independent'

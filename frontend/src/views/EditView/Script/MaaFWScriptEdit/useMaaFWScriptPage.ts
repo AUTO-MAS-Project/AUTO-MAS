@@ -134,6 +134,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     scriptId,
     maafwConfig,
     previewData: previewData.value,
+    effectiveControllerType: control.effectiveControllerType.value,
     interfaceDisabled: control.interfaceDependentDisabled.value,
     loading: pageLoading.value,
     isWizard: wizard.isWizard.value,
@@ -145,7 +146,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     { label: t('core.edit.controller'), value: previewData.value?.controllers.length ?? 0 },
     { label: t('core.edit.resource'), value: previewData.value?.resources.length ?? 0 },
     { label: t('core.edit.maafwImportFiles'), value: previewData.value?.importCount ?? 0 },
-    { label: 'Agent', value: previewData.value?.agentCount ?? 0 },
+    { label: t('core.edit.maafwAgentCount'), value: previewData.value?.agentCount ?? 0 },
   ])
 
   // 最近一次读 interface 失败的原因：读不到时基础信息区落到引导卡片，原因留在卡片上，

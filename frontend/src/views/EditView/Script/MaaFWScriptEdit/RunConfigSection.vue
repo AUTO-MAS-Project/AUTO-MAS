@@ -3,7 +3,7 @@
   <MaaFWFormSection :title="t('core.edit.runConfiguration')">
     <a-row :gutter="24">
       <a-col :span="8">
-        <a-form-item :label="t('core.edit.runsPerDayThis')">
+        <a-form-item :label="t('core.edit.maafwRunsPerDayLimit')">
           <a-input-number
             v-model:value="maafwConfig.Run.ProxyTimesLimit"
             :min="0"
