@@ -18,8 +18,8 @@ async function render(
         labels,
         values,
         disabled,
-        labelPrefix: 'label',
-        optionPrefix: 'option',
+        labelPrefix: 'label.',
+        optionPrefix: 'option.',
       }),
   })
   app.use(Antd)

@@ -106,10 +106,10 @@ const visibleFields = computed(() =>
   )
 )
 function label(name: string) {
-  return props.labels[name] || t(`${props.labelPrefix}.${name}`, name)
+  return props.labels[name] || t(`${props.labelPrefix}${name}`, name)
 }
 function optionLabel(value: string) {
-  return props.labels[value] || t(`${props.optionPrefix}.${value}`, value)
+  return props.labels[value] || t(`${props.optionPrefix}${value}`, value)
 }
 function saveJson(name: string) {
   if (!(name in drafts)) return

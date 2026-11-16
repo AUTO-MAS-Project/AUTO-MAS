@@ -14,8 +14,8 @@
       :hints="hints"
       :values="displayValues"
       :disabled="disabled || initialLoading"
-      label-prefix="core.edit.okwwEcho"
-      option-prefix="core.edit.okwwEchoOption"
+      :label-prefix="labelPrefix"
+      :option-prefix="optionPrefix"
       @change="change"
     />
   </a-spin>
@@ -40,6 +40,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ saved: []; busy: [value: boolean] }>()
 const { t, locale } = useI18n()
+const labelPrefix = 'core.edit.okwwEcho.'
+const optionPrefix = 'core.edit.okwwEchoOption.'
 const forcedExit = computed(() => props.kind === 'daily' && !props.customArguments)
 const hints = computed((): Record<string, string> => {
   if (props.kind === 'daily')
