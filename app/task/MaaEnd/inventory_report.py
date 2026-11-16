@@ -5,12 +5,16 @@
 """
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from html import unescape
+from pathlib import Path
 
-from app.task.MaaEnd.push_log import _parse_line_ts, _strip_emoji, maaend_plain_text
-from app.utils import LOG_TYPE_NORMAL
+from app.task.MaaEnd.push_log import _parse_line_ts, maaend_plain_text
+from app.utils import LOG_TYPE_NORMAL, get_logger
+from app.utils.common.io import ConfigCorruptedError, read_dict_file
 from app.utils.common.log_box.results import LogEntry
+
+logger = get_logger("MaaEnd 奖励统计")
 
 INVENTORY_REPORT_RULE = (r"^(?:本次获得|上游报告)：", "")
 _SCAN_TITLES = (
@@ -34,18 +38,76 @@ _GAIN_PREFIX = "本次获得："
 _GAIN_SEPARATORS_RE = re.compile(r"[、，；;]|,(?![0-9]{3}(?:[,\s]|$))")
 _GAIN_ITEM_RE = re.compile(r"(?P<name>[^、，,；;×]+?)\s*×\s*(?P<count>\d+(?:,\d{3})*)")
 _TASK_LINE_RE = re.compile(r"^\[([^\]]+)\]\s*(.+)$")
+_CONSUMABLES = "🧪 消耗品"
+_OTHER_REWARDS = "📦 其他"
+_REWARD_GROUPS = {
+    "🧬 培养材料": ("Nurturance", "SpecialItem"),
+    _CONSUMABLES: ("Usable",),
+    "✨ 经验": ("AdventureExp", "BPExp"),
+    "💰 货币": (
+        "Diamond",
+        "DomainGold",
+        "Gold",
+        "Originium",
+        "SpaceshipGold",
+        "WeaponGold",
+    ),
+    "🌿 采集材料": ("Doodad", "Ore", "Plant"),
+    "🏭 工业物资": ("Producer", "Product"),
+    "⚔️ 装备": ("PortableDevice", "Weapon"),
+    "🎫 贵重物品": ("CommercialItem",),
+    _OTHER_REWARDS: (),
+}
+_GROUP_BY_CATEGORY_TYPE = {
+    kind: group for group, kinds in _REWARD_GROUPS.items() for kind in kinds
+}
+
+
+def load_reward_groups(
+    root: Path | None, item_labels: Mapping[str, str]
+) -> dict[str, str]:
+    """用上游公开物品目录和本轮词表将日志中的物品名映射到报告分组。"""
+
+    if root is None:
+        return {}
+    try:
+        catalog = read_dict_file(root / "data/IconRecognition/recognition_items.json")
+    except (ConfigCorruptedError, OSError) as error:
+        logger.warning(f"读取 MaaEnd 物品目录失败，奖励仍会计入其他：{error}")
+        return {}
+
+    names: dict[str, set[str]] = {}
+    for item_id, metadata in catalog.items():
+        if not isinstance(metadata, dict):
+            continue
+        category = metadata.get("categoryType")
+        if item_id == "item_bp_double_reward" or item_id.startswith(
+            ("ap_supply_", "item_ap_supply_")
+        ):
+            group = _CONSUMABLES
+        elif isinstance(category, str):
+            group = _GROUP_BY_CATEGORY_TYPE.get(category, _OTHER_REWARDS)
+        else:
+            group = _OTHER_REWARDS
+        for name in (metadata.get("name"), item_labels.get(item_id)):
+            if isinstance(name, str) and name:
+                names.setdefault(name, set()).add(group)
+    return {
+        name: next(iter(groups)) for name, groups in names.items() if len(groups) == 1
+    }
 
 
 class TaskRewardReport:
-    """按上游任务边界汇总各阶段已获得的物品。"""
+    """按奖励种类汇总各阶段已获得的物品。"""
 
-    def __init__(self) -> None:
+    def __init__(self, groups: Mapping[str, str]) -> None:
+        self.groups = groups
         self.rewards: dict[str, tuple[float | None, dict[str, int]]] = {}
 
     def add_stage(self, lines: Iterable[str]) -> None:
         """消费单次进程日志，每个阶段重新识别任务和奖励区块。"""
 
-        task = ""
+        in_task = False
         in_rewards = False
         for line in lines:
             match = _TASK_LINE_RE.match(maaend_plain_text(line).strip())
@@ -54,12 +116,12 @@ class TaskRewardReport:
                 continue
             timestamp, text = match.groups()
             if text.startswith("任务开始:"):
-                task = text.removeprefix("任务开始:").strip()
+                in_task = True
                 in_rewards = False
             elif text.startswith(("任务完成:", "任务失败:")):
-                task = ""
+                in_task = False
                 in_rewards = False
-            elif task:
+            elif in_task:
                 heading = next(
                     (title for title in _GAIN_TITLES if text.startswith(title)), ""
                 )
@@ -74,22 +136,28 @@ class TaskRewardReport:
                 if not items:
                     in_rewards = False
                     continue
-                if task not in self.rewards:
-                    self.rewards[task] = (_parse_line_ts(timestamp, None), {})
-                _, totals = self.rewards[task]
                 for item, count in items:
+                    group = self.groups.get(item, _OTHER_REWARDS)
+                    if group not in self.rewards:
+                        self.rewards[group] = (_parse_line_ts(timestamp, None), {})
+                    _, totals = self.rewards[group]
                     totals[item] = totals.get(item, 0) + count
 
     def entries(self) -> list[LogEntry]:
-        return [
-            LogEntry(
-                log_type=LOG_TYPE_NORMAL,
-                text=f"🎁 {_strip_emoji(task) or task}："
-                + "、".join(f"{item} ×{count}" for item, count in totals.items()),
-                timestamp=timestamp,
+        entries = []
+        for group in _REWARD_GROUPS:
+            if group not in self.rewards:
+                continue
+            timestamp, totals = self.rewards[group]
+            items = "、".join(f"{item} ×{count}" for item, count in totals.items())
+            entries.append(
+                LogEntry(
+                    log_type=LOG_TYPE_NORMAL,
+                    text=f"{group}：{items}",
+                    timestamp=timestamp,
+                )
             )
-            for task, (timestamp, totals) in self.rewards.items()
-        ]
+        return entries
 
 
 class InventoryReport:

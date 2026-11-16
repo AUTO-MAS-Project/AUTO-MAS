@@ -83,6 +83,7 @@ from .inventory_report import (
     InventoryReport,
     TaskRewardReport,
     inventory_resolve,
+    load_reward_groups,
     merge_gain_entries,
 )
 from .push_log import MAAEND_PUSH_RULES, maaend_plain_text, maaend_resolve
@@ -472,6 +473,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         # 账号级「节点详情推送」开关（Notify.PushLogMode），prepare 时按配置启用
         self.push_log_enabled = False
         self.inventory_status_messages: set[str] = set()
+        self.reward_item_labels: dict[str, str] = {}
         self.mode = "Routine"
         self.run_book: dict[str, bool] = {mode: False for mode in MAAEND_RUN_MOOD_BOOK}
         self.task_dict: dict[str, dict[str, bool]] | None = None
@@ -2441,6 +2443,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             self.maaend_root_path,
             str(settings["language"]),
         )
+        self.reward_item_labels.update(
+            (key.removeprefix("iconRecognition.name."), label)
+            for key, label in maaend_interface_i18n.items()
+            if key.startswith("iconRecognition.name.")
+        )
         self.inventory_status_messages.update(
             re.sub(r"<[^>]*>", "", message).strip()
             for key, message in maaend_interface_i18n.items()
@@ -3441,7 +3448,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         def read() -> list[log_box.LogEntry]:
             pipeline = log_box.LogPipeline()
-            rewards = TaskRewardReport()
+            rewards = TaskRewardReport(
+                load_reward_groups(self.maaend_root_path, self.reward_item_labels)
+            )
             pipeline.preprocessors.append(maaend_plain_text)
             for rule in MAAEND_PUSH_RULES:
                 pipeline.add_rule(*rule)
