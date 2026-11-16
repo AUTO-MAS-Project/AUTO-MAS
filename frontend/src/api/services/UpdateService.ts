@@ -9,6 +9,7 @@ import type { PlanUpdateIn } from '../models/PlanUpdateIn';
 import type { QueueItemReorderIn } from '../models/QueueItemReorderIn';
 import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
 import type { QueueUpdateIn } from '../models/QueueUpdateIn';
+import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
 import type { ScriptReorderIn } from '../models/ScriptReorderIn';
 import type { ScriptTemplateImportIn } from '../models/ScriptTemplateImportIn';
 import type { ScriptUpdateIn } from '../models/ScriptUpdateIn';
@@ -21,13 +22,13 @@ import type { UserInfrastPlanSelectOut } from '../models/UserInfrastPlanSelectOu
 import type { UserReorderIn } from '../models/UserReorderIn';
 import type { UserSetIn } from '../models/UserSetIn';
 import type { UserUpdateIn } from '../models/UserUpdateIn';
-import type { WebhookUpdateIn } from '../models/WebhookUpdateIn';
+import type { WebhookUpdateIn_WebhookInput_ } from '../models/WebhookUpdateIn_WebhookInput_';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class UpdateService {
     /**
-     * 更新脚本配置信息
+     * 更新托管配置信息
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -46,7 +47,7 @@ export class UpdateService {
         });
     }
     /**
-     * 重新排序脚本
+     * 重新排序托管
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -65,26 +66,7 @@ export class UpdateService {
         });
     }
     /**
-     * 从配置中心导入脚本配置
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static importScriptFromWebApiScriptsImportWebPost(
-        requestBody: ScriptTemplateImportIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/import/web',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 更新用户配置信息
+     * 更新账号配置信息
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -103,7 +85,7 @@ export class UpdateService {
         });
     }
     /**
-     * 重新排序用户
+     * 重新排序账号
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -114,6 +96,44 @@ export class UpdateService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 更新webhook项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updateWebhookApiScriptsWebhookUpdatePost(
+        requestBody: WebhookUpdateIn_WebhookInput_,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/webhook/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 从配置中心导入托管配置
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static importScriptFromWebApiScriptsImportWebPost(
+        requestBody: ScriptTemplateImportIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/import/web',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -160,17 +180,17 @@ export class UpdateService {
         });
     }
     /**
-     * 更新webhook项
+     * 手动刷新 MAA 养成材料数据与干员目录
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static updateWebhookApiScriptsWebhookUpdatePost(
-        requestBody: WebhookUpdateIn,
+    public static refreshMaaCultivateDataApiScriptsMaaCultivateRefreshPost(
+        requestBody: ScriptDeleteIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/scripts/webhook/update',
+            url: '/api/scripts/maa/cultivate/refresh',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -377,7 +397,7 @@ export class UpdateService {
      * @throws ApiError
      */
     public static updateWebhookApiSettingWebhookUpdatePost(
-        requestBody: WebhookUpdateIn,
+        requestBody: WebhookUpdateIn_WebhookInput_,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',

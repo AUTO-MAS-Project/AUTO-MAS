@@ -6,7 +6,7 @@
  * ```typescript
  * import { InitializationService } from './services'
  *
- * const initService = new InitializationService(appRoot, 'dev')
+ * const initService = new InitializationService(appRoot)
  *
  * const result = await initService.initialize((progress) => {
  *   console.log(`[${progress.stage}] ${progress.message} - ${progress.progress}%`)
@@ -20,115 +20,92 @@
  * ```
  */
 
-// 镜像源服务
-export { MirrorService, MirrorSource, MirrorConfig, CloudMirrorConfig } from './mirrorService'
-
 // 下载服务
-export { SmartDownloader, DownloadProgress, ProgressCallback } from './downloadService'
-
-// 镜像源轮替服务
-export {
-  MirrorRotationService,
-  NetworkOperationProgress,
-  NetworkOperationCallback,
-  MirrorRotationProgress,
-  MirrorRotationProgressCallback,
-} from './mirrorRotationService'
-
-// 环境安装服务
-export {
-  PythonInstaller,
-  PipInstaller,
-  GitInstaller,
-  EnvironmentCheckResult,
-  InstallProgress,
-  InstallProgressCallback,
-} from './environmentService'
-
-// 仓库服务
-export {
-  RepositoryService,
-  RepositoryCheckResult,
-  RepositoryProgress,
-  RepositoryProgressCallback,
-} from './repositoryService'
-
-// 依赖服务
-export {
-  DependencyService,
-  DependencyCheckResult,
-  DependencyProgress,
-  DependencyProgressCallback,
-} from './dependencyService'
+export { SmartDownloader, type DownloadProgress, type ProgressCallback } from './downloadService'
 
 // 初始化总流程服务
 export {
   InitializationService,
-  InitializationProgress,
-  InitializationProgressCallback,
-  InitializationResult,
+  type InitializationProgress,
+  type InitializationProgressCallback,
+  type InitializationResult,
 } from './initializationService'
 
-// Runtime 初始化链路（灰度开关打开后顶掉五步安装链）
+// Runtime 初始化与失败恢复
 export {
   BootstrapProgressBridge,
-  BootstrapProgressUpdate,
-  CriticalFilesCheck,
-  InitializationRunStage,
-  InitializationStage,
-  InitializationStageStatus,
-  RuntimeDoctorCheck,
+  type BootstrapProgressUpdate,
+  type CriticalFilesCheck,
+  type InitializationRunStage,
+  type InitializationStage,
+  type InitializationStageStatus,
+  type RuntimeDoctorCheck,
   RuntimeInitializationService,
-  RuntimeRetryMode,
-  RuntimeStageOutcome,
+  type RuntimeRetryMode,
+  type RuntimeStageOutcome,
   mapDoctorChecksToCriticalFiles,
-  mapMirrorSelection,
   mapRuntimeStage,
   toRuntimeVersion,
 } from './runtimeInitializationService'
 
-// Runtime 可执行文件随本体钉扎更新
+// Runtime 线上最新版本解析
+export {
+  RUNTIME_RELEASE_CACHE_TTL_MS,
+  RUNTIME_RELEASE_FETCH_TIMEOUT_MS,
+  RUNTIME_RELEASE_REPO,
+  RUNTIME_VERSION_PATTERN,
+  type LatestRuntimeVersionLookup,
+  type ResolveLatestRuntimeVersionOptions,
+  type RuntimeReleaseChannel,
+  type RuntimeReleaseFetcher,
+  type RuntimeReleaseSource,
+  buildRuntimeReleaseSources,
+  isNewerRuntimeVersion,
+  parseRuntimeReleaseList,
+  resetLatestRuntimeVersionCache,
+  resolveLatestRuntimeVersion,
+  resolveLatestRuntimeVersionCached,
+  resolveRuntimeReleaseChannel,
+  selectLatestRuntimeVersion,
+} from './runtimeReleaseService'
+
+// Runtime 可执行文件对齐到线上最新版
 export {
   RUNTIME_BINARY_ALIGN_ERROR,
   RUNTIME_BINARY_CANCELLED,
   RUNTIME_BINARY_DOWNLOAD_FAILED,
   RUNTIME_BINARY_REPLACE_FAILED,
-  RUNTIME_PIN_RELATIVE_PATH,
-  RUNTIME_PIN_UNAVAILABLE,
+  RUNTIME_LATEST_UNAVAILABLE,
   RUNTIME_TEXT_FETCH_TIMEOUT_MS,
-  RemoteRuntimePinLookup,
-  RuntimeBinaryAlignOptions,
-  RuntimeBinaryAlignResult,
-  RuntimeBinaryAlignStatus,
-  RuntimeBinaryPin,
-  RuntimeBinarySource,
-  RuntimeBinarySyncOptions,
-  RuntimeBinarySyncProgress,
-  RuntimeBinarySyncResult,
-  RuntimeBinarySyncStatus,
-  RuntimeTextSource,
-  TrustedRuntimeHashLookup,
-  alignRuntimeBinaryWithVersion,
+  type LatestRuntimeVersionResolver,
+  type RuntimeBinaryAlignOptions,
+  type RuntimeBinaryAlignResult,
+  type RuntimeBinaryAlignStatus,
+  type RuntimeBinarySource,
+  type RuntimeBinarySyncOptions,
+  type RuntimeBinarySyncProgress,
+  type RuntimeBinarySyncResult,
+  type RuntimeBinarySyncStatus,
+  type RuntimeBinaryTarget,
+  type RuntimeTextSource,
+  type TrustedRuntimeHashLookup,
+  alignRuntimeBinaryWithLatest,
   buildRuntimeBinarySources,
-  buildRuntimePinSources,
   buildRuntimeSumsSources,
-  fetchRemoteRuntimeBinaryPin,
   fetchTrustedRuntimeHash,
   hashFileSha256,
-  readRuntimeBinaryPin,
-  runtimeReleaseBranch,
   syncRuntimeBinary,
 } from './runtimeBinaryService'
 
 // Runtime 后端更新链路（停机 → bootstrap → 重新监督）
 export {
-  BackendUpdateController,
-  RuntimeUpdateDependencies,
-  RuntimeUpdateOutcome,
-  RuntimeUpdatePhase,
-  RuntimeUpdateProgress,
-  RuntimeUpdateRetryAction,
-  RuntimeUpdateStage,
+  type BackendUpdateController,
+  type RuntimeUpdateDependencies,
+  type RuntimeUpdateOutcome,
+  type RuntimeUpdatePhase,
+  type RuntimeUpdateProgress,
+  type RuntimeUpdateRetryAction,
+  type RuntimeUpdateStage,
   cancelBackendUpdate,
   describeRetryAction,
   normalizeRuntimeUpdateVersion,
@@ -141,27 +118,27 @@ export {
 // 后端服务
 export {
   BackendService,
-  BackendStatus,
-  BackendStartOptions,
-  BackendStatusCallback,
+  type BackendStatus,
+  type BackendStartOptions,
+  type BackendStatusCallback,
 } from './backendService'
 
 // AUTO-MAS Runtime 客户端（NDJSON 协议 v1）
 export {
   RuntimeClient,
   RuntimeClientError,
-  RuntimeClientErrorCode,
-  RuntimeClientOptions,
-  RuntimeEvent,
-  RuntimeHelloEvent,
-  RuntimeLogsByOperation,
-  RuntimeProgressEvent,
-  RuntimeResultEvent,
-  RuntimeRunOptions,
-  RuntimeRunResult,
-  RuntimeStateEvent,
-  RuntimeSuperviseHandle,
-  RuntimeSuperviseOptions,
+  type RuntimeClientErrorCode,
+  type RuntimeClientOptions,
+  type RuntimeEvent,
+  type RuntimeHelloEvent,
+  type RuntimeLogsByOperation,
+  type RuntimeProgressEvent,
+  type RuntimeResultEvent,
+  type RuntimeRunOptions,
+  type RuntimeRunResult,
+  type RuntimeStateEvent,
+  type RuntimeSuperviseHandle,
+  type RuntimeSuperviseOptions,
   formatStartupLogs,
   isRuntimeClientError,
 } from './runtime'

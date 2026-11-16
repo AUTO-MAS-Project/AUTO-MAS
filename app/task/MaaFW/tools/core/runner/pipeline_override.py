@@ -471,7 +471,7 @@ class MaaFWPipelineOverrideBuilder:
                 )
             raw_value = fallback
         if normalized_type in {"bool", "boolean"}:
-            # 先 strip 再比，与用户页的开关显示（maafwOptionValues 的 isMaaFWTruthyInputText）同口径：
+            # 先 strip 再比，与账号页的开关显示（maafwOptionValues 的 isMaaFWTruthyInputText）同口径：
             # 存量或外壳导入的「 true 」页面上显示「是」，运行时也得是 true
             typed_value = raw_value.strip().lower() in {"true", "1", "yes", "y", "on"}
             return typed_value, "true" if typed_value else "false"
@@ -716,7 +716,7 @@ class MaaFWPipelineOverrideBuilder:
                 )
             except MaaFWHotkeyError as exc:
                 # 快照 / 预设 / 外壳导入里的键位映射不了：这一个字段改用项目默认键位，同一
-                # 选项的其余字段（含叠上来的脚本级键位）照常下发；默认键位也用不了时才跳过
+                # 选项的其余字段（含叠上来的托管级键位）照常下发；默认键位也用不了时才跳过
                 # 整个选项的覆盖（半替换会把字面量 "{K}" 塞进 pipeline），任务按项目原始
                 # pipeline 跑。两种情况都不让整轮失败。
                 fallback = hotkey_item.default or ""

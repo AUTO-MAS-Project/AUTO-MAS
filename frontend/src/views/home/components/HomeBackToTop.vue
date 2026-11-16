@@ -3,7 +3,7 @@
     <button
       v-if="visible"
       class="back-to-top"
-      :aria-label="t('home.backToTop')"
+      :aria-label="t('core.home.backToTop')"
       @click="scrollToTop"
     >
       <UpOutlined class="back-to-top-icon" />

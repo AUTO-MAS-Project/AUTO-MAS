@@ -15,34 +15,41 @@
 #
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 import asyncio
 import uuid
 from contextlib import suppress
 from pathlib import Path
 
-from app.core.ws import Publisher, protocol
+from app.config import ConfigCollection
+from app.core import Publisher
+from app.core.ws import protocol
 from app.models.config import OkwwConfig, OkwwUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
-from app.services import System
-from app.utils import ProcessManager, get_logger
-from app.utils.constants import BASE_INDEPENDENT, BASE_NATIVE, BASE_SHARED
-from app.utils.io import mark_native_config_injected, swap_in_dir
+from app.utils import (
+    BASE_INDEPENDENT,
+    BASE_NATIVE,
+    BASE_SHARED,
+    ProcessManager,
+    get_logger,
+    process,
+)
+from app.utils import io as _utils_io
 
 from .AutoProxy import (
-    _OKWW_REL_CONFIG_DIR,
     _OKWW_REL_EXE,
     _OKWW_REL_PYTHONW,
     _configure_okww_launcher,
-    _okww_config_base,
-    _okww_mas_config_dir,
 )
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
     owner_for_mode,
     read_overlay_values,
+)
+from .tools.config_paths import (
+    _OKWW_REL_CONFIG_DIR,
+    _okww_config_base,
+    _okww_mas_config_dir,
 )
 
 logger = get_logger("OK-WW 脚本设置")
@@ -51,8 +58,8 @@ logger = get_logger("OK-WW 脚本设置")
 class ScriptConfigTask(TaskExecuteBase):
     """无参数启动 OK-WW 本体，供用户修改程序设置。
 
-    view_only=True 时为查看会话：只读预览（如「查看历史备份」）——用户级
-    会话下发的 MAS 目录即刚恢复的备份（所见即备份），脚本级会话跳过下发
+    view_only=True 时为查看会话：只读预览（如「查看历史备份」）——账号级
+    会话下发的 MAS 目录即刚恢复的备份（所见即备份），托管级会话跳过下发
     （原生目录即备份）；结束不回写 MAS 配置，原生目录由 manager 的任务前
     快照还原（临时注入，看完还原）。
     """
@@ -61,7 +68,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self,
         script_info: ScriptItem,
         script_config: OkwwConfig,
-        user_config: MultipleConfig[OkwwUserConfig],
+        user_config: ConfigCollection[OkwwUserConfig],
         view_only: bool = False,
     ):
         super().__init__()
@@ -77,20 +84,23 @@ class ScriptConfigTask(TaskExecuteBase):
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.crashed = False
-        self.root_path = Path(self.script_config.get("Info", "RootPath"))
+        root_path = self.script_config.Info.RootPath
+        if root_path is None:
+            raise ValueError("RootPath未配置，请检查路径设置")
+        self.root_path = root_path
         self.exe_path = self.root_path / _OKWW_REL_EXE
         self.script_config_path = self.root_path / _OKWW_REL_CONFIG_DIR
         target_user_id = self.cur_user_item.user_id
         mode = BASE_SHARED
         if target_user_id != "Default":
             target_user_config = self.user_config[uuid.UUID(target_user_id)]
-            mode = _okww_config_base(target_user_config.get("Info", "Base"))
+            mode = _okww_config_base(target_user_config.Info.Base)
         self.use_mas_config = mode != BASE_NATIVE
         # MAS 配置目录 owner（shared 共享 Default、independent 独立目录；native 无 MAS 配置）
         self.mas_owner = (
             owner_for_mode(mode, target_user_id) if self.use_mas_config else None
         )
-        # 本会话涉及用户的覆盖层字段（脚本级 Default 入口无单一用户，不带侧车）
+        # 本会话涉及用户的覆盖层字段（托管级 Default 入口无单一用户，不带侧车）
         self.mas_overlay = (
             read_overlay_values(self.user_config[uuid.UUID(target_user_id)])
             if self.use_mas_config and target_user_id != "Default"
@@ -106,7 +116,7 @@ class ScriptConfigTask(TaskExecuteBase):
         await self._kill_processes()
         _configure_okww_launcher(self.root_path)
 
-        # 下发前归档 MAS 配置到用户池（下发源，会话保存会覆盖它；指纹去重，
+        # 下发前归档 MAS 配置到账号池（下发源，会话保存会覆盖它；指纹去重，
         # 失败不阻断会话）。native 池由 manager.prepare 在任务级一次性归档
         if self.use_mas_config and self.mas_owner and self.mas_config_dir:
             archive_mas_runtime_backup(
@@ -122,7 +132,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 ),
             )
 
-        # 查看会话的脚本级入口：原生目录即所选备份，跳过下发
+        # 查看会话的托管级入口：原生目录即所选备份，跳过下发
         if self.view_only and self.cur_user_item.user_id == "Default":
             logger.info("OK-WW 查看会话跳过配置下发: 原生目录即所选备份")
         elif (
@@ -131,14 +141,14 @@ class ScriptConfigTask(TaskExecuteBase):
             and self.mas_config_dir.is_dir()
             and any(item.is_file() for item in self.mas_config_dir.rglob("*"))
         ):
-            swap_in_dir(self.mas_config_dir, self.script_config_path)
-            mark_native_config_injected(
+            _utils_io.swap_in_dir(self.mas_config_dir, self.script_config_path)
+            _utils_io.mark_native_config_injected(
                 Path.cwd() / f"data/{self.script_info.script_id}/Temp",
                 self.script_config_path,
                 script_id=self.script_info.script_id,
             )
         logger.info(f"启动 OK-WW 设置: {self.exe_path}")
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
         await self.process_manager.open_process(self.exe_path)
         await self.wait_event.wait()
 
@@ -150,7 +160,7 @@ class ScriptConfigTask(TaskExecuteBase):
         # 的任务前快照还原）；GUI 内的改动一律丢弃
         if self.view_only:
             logger.success("OK-WW 查看结束（只读，不回写配置）")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             return
 
         if not self.crashed and self.use_mas_config and self.mas_config_dir:
@@ -164,16 +174,16 @@ class ScriptConfigTask(TaskExecuteBase):
             # 字段永久固化进 base。运行期由 AutoProxy._apply_mas_overrides 覆盖，
             # 任务结束由整目录快照还原，base 只保留用户在 ok-ww GUI 里的设置。
             self.mas_config_dir.parent.mkdir(parents=True, exist_ok=True)
-            swap_in_dir(self.script_config_path, self.mas_config_dir)
+            _utils_io.swap_in_dir(self.script_config_path, self.mas_config_dir)
             logger.success(f"OK-WW 配置已保存到: {self.mas_config_dir}")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
         elif not self.crashed:
             logger.success("OK-WW 原生来源配置已由脚本原生 GUI 保存")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
 
     async def on_crash(self, e: Exception) -> None:
         self.crashed = True
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"OK-WW 设置任务出现异常: {e}")
         with suppress(Exception):
             await self._kill_processes()
@@ -193,6 +203,6 @@ class ScriptConfigTask(TaskExecuteBase):
 
         for path in (self.exe_path, self.root_path / _OKWW_REL_PYTHONW):
             try:
-                await System.kill_process(path)
+                await process.kill_process(path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 OK-WW 进程失败 ({path}): {e}")

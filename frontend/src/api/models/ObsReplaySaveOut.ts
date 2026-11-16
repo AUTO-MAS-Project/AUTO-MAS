@@ -2,7 +2,6 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { ReplayRecord } from './ReplayRecord';
 export type ObsReplaySaveOut = {
     /**
      * 状态码
@@ -16,6 +15,6 @@ export type ObsReplaySaveOut = {
      * 操作消息
      */
     message?: string;
-    replay?: (ReplayRecord | null);
+    capture_path?: (string | null);
 };
 

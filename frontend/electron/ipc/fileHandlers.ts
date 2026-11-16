@@ -3,6 +3,7 @@
  */
 
 import { ipcMain } from 'electron'
+import { createReadStream } from 'fs'
 import { promises as fsPromises } from 'fs'
 import path from 'path'
 import { getLogger } from '../services/logger'
@@ -62,6 +63,41 @@ export function registerFileHandlers() {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`检查文件存在性失败 ${filePath}: ${errorMsg}`)
       return false
+    }
+  })
+
+  // ==================== 读取文件（base64） ====================
+  // read-file 按 utf-8 读，音频这类二进制会被读坏；这条是给需要当 data URL 用的场景。
+  // maxBytes 是给调用方挡大文件的：超了只回大小、不读内容，免得为了拒绝一个几百 MB 的
+  // 文件把它整份读进主进程内存、再编码一份 base64 传过去。
+  ipcMain.handle('read-file-base64', async (event, filePath: string, maxBytes?: number) => {
+    try {
+      const resolvedPath = path.resolve(filePath)
+
+      const stats = await fsPromises.stat(resolvedPath)
+      if (!stats.isFile()) {
+        throw new Error('指定路径不是文件')
+      }
+      if (maxBytes !== undefined && stats.size > maxBytes) {
+        return { base64: '', size: stats.size }
+      }
+
+      const chunks: Buffer[] = []
+      let size = 0
+      for await (const chunk of createReadStream(resolvedPath, { highWaterMark: 64 * 1024 })) {
+        size += chunk.length
+        if (maxBytes !== undefined && size > maxBytes) {
+          return { base64: '', size }
+        }
+        chunks.push(chunk)
+      }
+
+      const buffer = Buffer.concat(chunks)
+      return { base64: buffer.toString('base64'), size }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`读取文件（base64）失败 ${filePath}: ${errorMsg}`)
+      throw error
     }
   })
 }

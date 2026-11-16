@@ -8,11 +8,11 @@ export type HistorySearchIn = {
      */
     mode: HistorySearchIn.mode;
     /**
-     * 开始日期, 格式YYYY-MM-DD
+     * 开始日期，包含当天
      */
     start_date: string;
     /**
-     * 结束日期, 格式YYYY-MM-DD
+     * 结束日期，包含当天
      */
     end_date: string;
 };

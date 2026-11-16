@@ -5,11 +5,14 @@ import { connectWithRetry, initializeAppLifecycle } from '@/composables/useAppLi
 import { startTitlebarVersionCheck } from '@/composables/useVersionService'
 import { readUpdatePauseState, useUpdateChecker } from '@/composables/useUpdateChecker'
 import { markAsInitialized } from '@/composables/useAppInitialization'
+import { useBackendI18nStore } from '@/stores/backendI18n'
+import { measureStartup } from '@/utils/startupTiming'
 
 const logger = window.electronAPI.getLogger('应用入口')
 
 // 标记版本服务是否已启动，避免重复启动
 let versionServicesStarted = false
+let pendingEntryReason: string | null = null
 
 /**
  * 启动所有版本检查服务
@@ -79,7 +82,7 @@ export async function enterApp(
 
   try {
     // 尝试建立WebSocket连接
-    wsConnected = await connectWithRetry()
+    wsConnected = await measureStartup('主 WebSocket 连接', connectWithRetry)
     if (wsConnected) {
       logger.info(`${reason}：WebSocket连接建立成功`)
     } else {
@@ -96,21 +99,9 @@ export async function enterApp(
       logger.warn(`${reason}：WebSocket连接失败，但强制进入应用`)
     }
 
-    // 标记应用已初始化完成
-    markAsInitialized()
-
-    // 预加载调度中心
-    preloadSchedulerView(reason)
-
-    // 跳转到主页
-    if (router.currentRoute.value.path !== '/home') {
-      router.push('/home')
-    }
-    logger.info(`${reason}：已进入应用`)
-
-    // 启动版本检查服务
-    startVersionServices()
-
+    pendingEntryReason = reason
+    if (!(await measureStartup('业务词表加载', () => useBackendI18nStore().ensure()))) return false
+    resumePendingEntry()
     return true
   } else {
     logger.error(`${reason}：WebSocket连接失败且不允许强制进入`)
@@ -118,65 +109,35 @@ export async function enterApp(
   }
 }
 
-/**
- * 跳过初始化（忽略WebSocket连接状态）
- * @param reason 进入原因
- */
-export async function forceEnterApp(reason: string = '强行进入'): Promise<void> {
-  logger.info(`${reason}：跳过初始化流程开始`)
-  logger.info(`${reason}：尝试建立WebSocket连接...`)
-
-  bootstrapRealtimeResidents()
-  initializeAppLifecycle()
-
-  try {
-    const wsConnected = await connectWithRetry()
-    if (wsConnected) {
-      logger.info(`${reason}：WebSocket连接成功！`)
-    } else {
-      logger.warn(`${reason}：WebSocket连接失败，但继续进入应用`)
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`${reason}：WebSocket连接异常: ${errorMsg}`)
-  }
-
-  // 无论WebSocket是否成功，都进入应用
-  logger.info(`${reason}：跳转到主页...`)
-
-  // 标记应用已初始化完成
-  markAsInitialized()
-
-  if (router.currentRoute.value.path !== '/home') {
-    router.push('/home')
-  }
-  logger.info(`${reason}：已跳过初始化`)
-
-  // 启动版本检查服务
-  startVersionServices()
-
-  // 预加载调度中心
-  preloadSchedulerView(reason)
+/** 只重试资源请求，不重新启动后端或安装环境。 */
+export async function retryAppEntry(): Promise<boolean> {
+  const hadPendingEntry = pendingEntryReason !== null
+  if (!(await useBackendI18nStore().refresh())) return false
+  if (hadPendingEntry) resumePendingEntry()
+  else
+    completeAppEntry('语言资源重试完成', {
+      navigateHome: router.currentRoute.value.name === 'Initialization',
+    })
+  return true
 }
 
-/**
- * 预加载调度中心
- * 静默加载调度中心逻辑
- */
-async function preloadSchedulerView(reason: string) {
-  logger.info(`${reason}：调度中心初始化...`)
+/** 资源在重连后恢复时，续接此前失败的进入请求。 */
+export function resumePendingEntry(): void {
+  if (pendingEntryReason === null || !useBackendI18nStore().ready) return
+  const reason = pendingEntryReason
+  pendingEntryReason = null
+  completeAppEntry(reason, { navigateHome: true })
+}
 
-  try {
-    // 动态导入并初始化调度中心逻辑
-    const { useSchedulerLogic } = await import('../views/scheduler/useSchedulerLogic')
-    const { initialize } = useSchedulerLogic()
+export function cancelAppEntry(): void {
+  pendingEntryReason = null
+}
 
-    if (initialize) {
-      initialize()
-      logger.info(`${reason}：调度中心就绪`)
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`${reason}：调度中心初始化失败: ${errorMsg}`)
+function completeAppEntry(reason: string, { navigateHome }: { navigateHome: boolean }): void {
+  markAsInitialized()
+  if (navigateHome && router.currentRoute.value.path !== '/home') {
+    void router.push('/home')
   }
+  logger.info(`${reason}：语言资源就绪，已进入应用`)
+  startVersionServices()
 }

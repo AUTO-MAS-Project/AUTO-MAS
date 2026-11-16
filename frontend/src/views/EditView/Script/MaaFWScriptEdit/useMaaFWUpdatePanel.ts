@@ -2,15 +2,49 @@ import { computed, onScopeDispose, ref, type Ref } from 'vue'
 import { GetService } from '@/api'
 import { subscribe, unsubscribe } from '@/composables/useWebSocket'
 import { WS_MAAFW_PROJECT_UPDATE_PROGRESS } from '@/services/websocket/types'
-import { useMaaFWUpdateApi, type MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
+import {
+  useMaaFWUpdateApi,
+  type MaaFWUpdateJobSnapshot,
+  type MaaFWUpdateResult,
+} from '@/composables/useMaaFWUpdateApi'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/script'
+import type { WSMaaFWProjectUpdateProgressData } from '@/services/websocket/types'
 import {
   createUpdateProgressState,
   finishUpdateProgress,
   reduceUpdateProgress,
+  replayUpdateProgress,
   type MaaFWUpdateProgressState,
 } from './updateProgress'
 import type { MaaFWScriptChangeHandler } from './useMaaFWScriptDraft'
+
+// 手动更新的结果在这台机器上显示过一次就不再接回：后端把最近一次结果留到下次更新或重启，
+// 不记的话几小时前的一条失败每次打开编辑页都会标红。按脚本记最后显示过的那次的作业 ID，
+// 与「添加任务」的 NEW 一样只是本机提示状态，存在 localStorage，不进配置。
+const seenUpdateStorageKey = (scriptId: string) => `maafw-seen-update:${scriptId}`
+
+const readSeenUpdate = (scriptId: string): string | null => {
+  try {
+    return localStorage.getItem(seenUpdateStorageKey(scriptId))
+  } catch {
+    return null
+  }
+}
+
+const markUpdateSeen = (scriptId: string, jobId: string) => {
+  if (!jobId) return
+  try {
+    localStorage.setItem(seenUpdateStorageKey(scriptId), jobId)
+  } catch {
+    // 本机存不下只是下次打开会再显示一遍
+  }
+}
+
+/** 本页这次应用最后显示的结论：成功显示 `updateResult.message`，失败显示 `updateError` */
+interface ShownUpdateOutcome {
+  success: boolean
+  message: string
+}
 
 interface MaaFWUpdatePanelOptions {
   scriptId: string
@@ -30,7 +64,7 @@ export function useMaaFWUpdatePanel({
   runPreview,
 }: MaaFWUpdatePanelOptions) {
   const logger = window.electronAPI.getLogger('MaaFW 脚本编辑')
-  const { checkMaaFWUpdate, applyMaaFWUpdate } = useMaaFWUpdateApi()
+  const { checkMaaFWUpdate, applyMaaFWUpdate, getMaaFWUpdateJob } = useMaaFWUpdateApi()
 
   // 与后端 can_check_project_update 同一口径：没声明 version 判断不了新旧；没有
   // mirrorchyan_rid 时，只有下载源选 GitHub、interface 又声明了 github 仓库才查得到版本
@@ -47,18 +81,28 @@ export function useMaaFWUpdatePanel({
   // 折叠成一份面板状态交给「项目更新」区块显示。
   const updateProgress = ref<MaaFWUpdateProgressState>(createUpdateProgressState())
   let updateSubscriptionId: string | null = null
+  // 接回后台更新时，取快照期间到的推送先攒在这里，快照回来后再接上
+  let pendingEvents: WSMaaFWProjectUpdateProgressData[] | null = null
+  // 每次从头显示过程（点检查 / 更新、接回）加一；晚回来的接回结果按它丢掉
+  let progressSession = 0
+  let disposed = false
 
   const ensureUpdateSubscription = () => {
     if (updateSubscriptionId) return
     updateSubscriptionId = subscribe(
       { id: scriptId, type: WS_MAAFW_PROJECT_UPDATE_PROGRESS },
       wsMessage => {
+        if (pendingEvents) {
+          pendingEvents.push(wsMessage.data)
+          return
+        }
         updateProgress.value = reduceUpdateProgress(updateProgress.value, wsMessage.data)
       }
     )
   }
 
   onScopeDispose(() => {
+    disposed = true
     if (updateSubscriptionId) {
       unsubscribe(updateSubscriptionId)
       updateSubscriptionId = null
@@ -73,6 +117,8 @@ export function useMaaFWUpdatePanel({
   // 每次点「检查更新」或「更新」都从头显示过程；订阅要在请求发出前就挂上，
   // 否则后端最先推的那几条（检查中 / 首行日志）会漏掉。
   const beginUpdateProgress = () => {
+    progressSession += 1
+    pendingEvents = null
     ensureUpdateSubscription()
     updateProgress.value = createUpdateProgressState('checking')
   }
@@ -103,17 +149,153 @@ export function useMaaFWUpdatePanel({
     updateApplying.value = true
     updateError.value = ''
     beginUpdateProgress()
+    const session = progressSession
+    // 页面卸载（应用内切走）后原请求照样会回来；面板换成别的过程（重新接回等）后这份结果也不再显示
+    const isStale = () => disposed || session !== progressSession
+    let appliedJobId = ''
+    let shown: ShownUpdateOutcome
     try {
       updateResult.value = await applyMaaFWUpdate(scriptId)
+      appliedJobId = updateResult.value.jobId ?? ''
       settleUpdateProgress(true, updateResult.value.message)
+      shown = { success: true, message: updateResult.value.message }
       if (updateResult.value.updated && maafwConfig.Info.Path) {
         await runPreview()
       }
     } catch (error) {
+      if (error && typeof error === 'object' && 'jobId' in error) {
+        const jobId = error.jobId
+        if (typeof jobId === 'string') appliedJobId = jobId
+      }
       updateError.value = error instanceof Error ? error.message : String(error)
       settleUpdateProgress(false, updateError.value)
+      shown = { success: false, message: updateError.value }
     } finally {
       updateApplying.value = false
+    }
+    // 结果已经在这一页上显示了：记下这一次，之后再打开不必接回
+    await rememberShownUpdate(appliedJobId, shown, isStale)
+  }
+
+  const queryUpdateJobQuietly = async (): Promise<MaaFWUpdateJobSnapshot | null> => {
+    try {
+      return await getMaaFWUpdateJob(scriptId)
+    } catch {
+      return null
+    }
+  }
+
+  // 只记本页真正显示出来、且确是本页这次应用对应的那一次：页面已卸载或面板已换掉时不记；
+  // 查询回来的是别的手动更新、还在跑的、结果与显示的不同，也不记，下次打开照常接回。
+  const rememberShownUpdate = async (
+    jobId: string,
+    shown: ShownUpdateOutcome,
+    isStale: () => boolean
+  ) => {
+    if (!jobId || isStale()) return
+    const after = await queryUpdateJobQuietly()
+    // 查不到只是下次打开会再显示一遍
+    if (!after || isStale() || after.state !== 'finished' || after.jobId !== jobId) {
+      if (after && after.jobId !== jobId) {
+        logger.info(
+          `最近一次手动更新（${after.startedAt} 开始）不是本页显示的这次，不记为已看过，下次打开再接回`
+        )
+      }
+      return
+    }
+    const sameOutcome = shown.success
+      ? after.result?.message === shown.message
+      : !after.result && after.error === shown.message
+    if (!sameOutcome) {
+      logger.info(
+        `最近一次手动更新（${after.startedAt} 开始）不是本页显示的这次，不记为已看过，下次打开再接回`
+      )
+      return
+    }
+    markUpdateSeen(scriptId, after.jobId)
+  }
+
+  // 页面打开时接回手动更新要先问一次后端。问清之前，别的流程（读到 interface 后自动准备运行环境）
+  // 先等它：更新还占着项目时去准备环境，后端必然拒绝，平白弹一条失败。没接回过就是已问清。
+  let resumeChecked: Promise<void> = Promise.resolve()
+  const whenResumeChecked = () => resumeChecked
+
+  // 手动更新在后端后台跑，切走页面、刷新、关掉前端都不打断。页面打开时接回这个脚本当前或
+  // 最近一次手动更新：先挂订阅（推送先攒着）再取快照，重放出面板后接上攒下的推送；
+  // 还在跑就等它结束取结果，与自己点「更新」时收尾一样。
+  const resumeManualUpdate = async () => {
+    let markChecked: () => void = () => {}
+    resumeChecked = new Promise<void>(resolve => {
+      markChecked = resolve
+    })
+    try {
+      await resumeManualUpdateInner(markChecked)
+    } finally {
+      markChecked()
+    }
+  }
+
+  const resumeManualUpdateInner = async (markChecked: () => void) => {
+    if (updateChecking.value || updateApplying.value) return
+    const session = ++progressSession
+    const isStale = () => disposed || session !== progressSession
+    pendingEvents = []
+    ensureUpdateSubscription()
+    let snapshot: MaaFWUpdateJobSnapshot
+    try {
+      snapshot = await getMaaFWUpdateJob(scriptId)
+    } catch (error) {
+      if (!isStale()) pendingEvents = null
+      logger.warn(`查询手动更新状态失败: ${error instanceof Error ? error.message : String(error)}`)
+      return
+    }
+    if (isStale()) return
+    const pending = pendingEvents ?? []
+    pendingEvents = null
+    if (snapshot.state === 'idle') return
+    if (
+      snapshot.state === 'finished' &&
+      snapshot.jobId &&
+      readSeenUpdate(scriptId) === snapshot.jobId
+    )
+      return
+    logger.info(
+      `接回手动更新: state=${snapshot.state} 已有事件 ${snapshot.events.length} 条，取快照期间推送 ${pending.length} 条`
+    )
+    updateProgress.value = replayUpdateProgress(
+      snapshot.events,
+      snapshot.state === 'running' ? pending : []
+    )
+    // 打开页面时已经结束的，页面加载本来就会读一次 interface；等到结束的才要重读
+    const waited = snapshot.state === 'running'
+    if (waited) {
+      updateApplying.value = true
+      updateError.value = ''
+      markChecked()
+      try {
+        snapshot = await getMaaFWUpdateJob(scriptId, true)
+      } catch (error) {
+        if (isStale()) return
+        updateApplying.value = false
+        updateError.value = error instanceof Error ? error.message : String(error)
+        settleUpdateProgress(false, updateError.value)
+        return
+      }
+      if (isStale()) return
+      updateApplying.value = false
+    }
+    if (snapshot.result) {
+      updateResult.value = snapshot.result
+      updateError.value = ''
+      settleUpdateProgress(true, snapshot.result.message)
+      markUpdateSeen(scriptId, snapshot.jobId)
+      if (waited && snapshot.result.updated && maafwConfig.Info.Path) {
+        await runPreview()
+      }
+    } else if (snapshot.error) {
+      updateError.value = snapshot.error
+      settleUpdateProgress(false, snapshot.error)
+      markUpdateSeen(scriptId, snapshot.jobId)
     }
   }
 
@@ -148,6 +330,8 @@ export function useMaaFWUpdatePanel({
     updateProgress,
     runUpdateCheck,
     runUpdateApply,
+    resumeManualUpdate,
+    whenResumeChecked,
     cdkPrefilled,
     prefillMirrorChyanCdk,
   }

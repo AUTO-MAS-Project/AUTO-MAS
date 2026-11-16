@@ -2,8 +2,8 @@
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { ToolsConfig, ToolsConfig_GameSign } from '@/api'
-import { useToolsApi } from '@/composables/useToolsApi'
+import type { ToolsConfig_GameSign } from '@/api'
+import { useToolsApi, type ToolsViewConfig } from '@/composables/useToolsApi'
 import { useToolsStatusPolling } from '@/composables/useToolsStatusPolling'
 import { useWebSocket } from '@/composables/useWebSocket'
 import {
@@ -28,26 +28,26 @@ const { loading, getTools, updateTools } = useToolsApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
 // 工具数据（保留完整 ToolsConfig，避免更新时覆盖其它工具的配置）
-const toolsConfig = reactive<ToolsConfig>({
+const toolsConfig = reactive<ToolsViewConfig>({
   GameSign: {
     Enabled: false,
     NotifyEnabled: false,
     ActivityEnabled: true,
     RunOnStartup: false,
-    LastSignDate: '2000-01-01',
+    LastSignDate: '2000-01-01T00:00:00+08:00',
     Status: '-',
     Result: '{}',
   },
 })
 
 // 本地编辑状态
-const editingConfig = reactive<ToolsConfig>({
+const editingConfig = reactive<ToolsViewConfig>({
   GameSign: {
     Enabled: false,
     NotifyEnabled: false,
     ActivityEnabled: true,
     RunOnStartup: false,
-    LastSignDate: '2000-01-01',
+    LastSignDate: '2000-01-01T00:00:00+08:00',
     Status: '-',
     Result: '{}',
   },
@@ -92,11 +92,19 @@ const { updateStatus, startStatusPolling, stopStatusPolling } = useToolsStatusPo
     if (data.GameSign?.Status) {
       toolsConfig.GameSign!.Status = data.GameSign.Status
     }
+    // 「上次签到」是只读展示字段，必须跟随轮询刷新：手动签到或凭据变更后
+    // 后端会重写甚至重置该日期，只在挂载时读一次会一直显示旧值。
+    if (data.GameSign?.LastSignDate) {
+      toolsConfig.GameSign!.LastSignDate = data.GameSign.LastSignDate
+      if (editingConfig.GameSign) {
+        editingConfig.GameSign.LastSignDate = data.GameSign.LastSignDate
+      }
+    }
     syncGameSignResult(data.GameSign?.Result)
   },
   isActive: () => toolsConfig.GameSign?.Enabled === true,
   enabled: () => activeTab.value === 'sign',
-  invalidMessage: () => t('gamesign.statusInvalid'),
+  invalidMessage: () => t('core.gamesign.statusInvalid'),
   logger,
 })
 
@@ -113,7 +121,7 @@ const loadTools = async () => {
         NotifyEnabled: false,
         ActivityEnabled: true,
         RunOnStartup: false,
-        LastSignDate: '2000-01-01',
+        LastSignDate: '2000-01-01T00:00:00+08:00',
         Status: '-',
         Result: '{}',
       }
@@ -198,11 +206,11 @@ onUnmounted(() => {
 <template>
   <div class="gamesign-container">
     <div class="gamesign-header">
-      <h1 class="page-title">{{ t('gamesign.title') }}</h1>
+      <h1 class="page-title">{{ t('core.gamesign.title') }}</h1>
     </div>
     <div class="gamesign-content">
       <a-tabs :active-key="activeTab" type="card" class="community-tabs" @change="handleTabChange">
-        <a-tab-pane key="sign" :tab="t('gamesign.nav.sign')">
+        <a-tab-pane key="sign" :tab="t('core.gamesign.nav.sign')">
           <TabGameSign
             v-if="editingConfig.GameSign"
             :config="editingConfig.GameSign"
@@ -211,7 +219,7 @@ onUnmounted(() => {
             :on-refresh-config="refreshGameSignConfig"
           />
         </a-tab-pane>
-        <a-tab-pane v-if="activityEnabled" key="activity" :tab="t('gamesign.nav.activity')">
+        <a-tab-pane v-if="activityEnabled" key="activity" :tab="t('core.gamesign.nav.activity')">
           <CommunityActivityView />
         </a-tab-pane>
       </a-tabs>
@@ -243,7 +251,7 @@ onUnmounted(() => {
   margin: 0;
   font-size: 32px;
   font-weight: 700;
-  color: var(--ant-color-text);
+  color: var(--app-page-title-color, var(--ant-color-text));
 }
 
 .gamesign-content {

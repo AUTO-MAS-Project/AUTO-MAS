@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 魔改 AVD 开机前电脑检查的一项。拦截项不满足时开机直接被拒绝, 原因同 reason + advice。
+ * ModAVD 开机前电脑检查的一项。拦截项不满足时开机直接被拒绝, 原因同 reason + advice。
  */
 export type Emulator2AvdPrecheckItem = {
     /**

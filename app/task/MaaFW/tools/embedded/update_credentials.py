@@ -22,7 +22,7 @@
 参数的翻译只在这里做一次；API 侧直接复用本函数，保证手动更新与运行时自动更新
 的行为一致。
 
-三项全部只看脚本级，**不做全局兜底**：
+三项全部只看托管级，**不做全局兜底**：
 
 - ``source``：``Update.Source``，``MirrorChyan`` / ``GitHub``（默认 GitHub）
 - ``cdk``：``Update.MirrorChyanCDK`` 明文，用户自己填，空就是空
@@ -67,7 +67,7 @@ PACKAGE_SOURCE_BY_UPDATE_SOURCE: dict[str, str] = {
 
 @dataclass(frozen=True)
 class MaaFWUpdateCredentials:
-    """脚本级更新凭据。不做全局兜底，所见即所得。"""
+    """托管级更新凭据。不做全局兜底，所见即所得。"""
 
     source: UpdateSource
     cdk: str
@@ -84,13 +84,13 @@ def _read_text(config: Any, group: str, name: str) -> str:
     """读一个字符串配置项；配置项不存在或读取失败一律当空串。"""
 
     try:
-        return str(config.get(group, name) or "").strip()
+        return str(getattr(getattr(config, group), name) or "").strip()
     except Exception:  # noqa: BLE001 - 旧配置对象缺项不该挡住运行
         return ""
 
 
 def resolve_update_credentials(script_config: Any) -> MaaFWUpdateCredentials:
-    """只读脚本级配置，得到传给核心更新包的下载源、明文 CDK 与渠道。"""
+    """只读托管级配置，得到传给核心更新包的下载源、明文 CDK 与渠道。"""
 
     source = _read_text(script_config, "Update", "Source")
     if source not in UPDATE_SOURCES:
@@ -101,9 +101,11 @@ def resolve_update_credentials(script_config: Any) -> MaaFWUpdateCredentials:
 
 
 def resolve_auto_update_mode(script_config: Any) -> AutoUpdateMode:
-    """读脚本的更新时机；非法值按默认值处理。"""
+    """更新统一在运行前执行；兼容旧版的运行后选项，关闭仍保持关闭。"""
 
     mode = _read_text(script_config, "Update", "AutoUpdateMode")
+    if mode == "AfterRun":
+        return "BeforeRun"
     if mode in AUTO_UPDATE_MODES:
         return mode  # type: ignore[return-value]
     return DEFAULT_AUTO_UPDATE_MODE
@@ -112,15 +114,15 @@ def resolve_auto_update_mode(script_config: Any) -> AutoUpdateMode:
 def _script_proxy_url(script_config: Any) -> str | None:
     """脚本自己填的代理地址，归一成带协议的字符串；没填回 None。"""
 
-    # ``app.core.config`` 会拉起整份全局配置，接缝层按需导入即可，
+    # ``app.core.config.manager`` 会拉起整份全局配置，接缝层按需导入即可，
     # 也避免和 ``app.models.config`` 的加载顺序纠缠。
-    from app.core.config import normalize_proxy_address
+    from app.core.config.manager import normalize_proxy_address
 
     return normalize_proxy_address(_read_text(script_config, "Update", "ProxyAddress"))
 
 
 def resolve_update_proxy_url(script_config: Any) -> str | None:
-    """这个脚本更新时要用的代理地址：脚本级优先，留空跟随全局，都空回 None。
+    """这个脚本更新时要用的代理地址：托管级优先，留空跟随全局，都空回 None。
 
     返回的是带协议、保留 ``user:pw@`` 的字符串（``httpx.Proxy`` 会把凭据剥到
     ``.auth``，``str(proxy.url)`` 会丢），调用方自己按需要造 ``httpx.Proxy``
@@ -130,7 +132,7 @@ def resolve_update_proxy_url(script_config: Any) -> str | None:
     「使用代理: <地址>」，地址里可能有账号密码。
     """
 
-    from app.core.config import Config
+    from app.core import Config
 
     return _script_proxy_url(script_config) or Config.proxy_url
 
@@ -138,10 +140,10 @@ def resolve_update_proxy_url(script_config: Any) -> str | None:
 def describe_proxy(script_config: Any) -> str:
     """给日志用的代理描述：只说来自哪一层，地址一个字符都不露。"""
 
-    from app.core.config import Config
+    from app.core import Config
 
     if _script_proxy_url(script_config):
-        return "脚本级"
+        return "托管级"
     return "全局" if Config.proxy_url else "未配置"
 
 

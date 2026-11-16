@@ -1,0 +1,25 @@
+.scheduler-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.scheduler-panel-header {
+  min-height: var(--app-page-card-header-height);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: var(--app-page-card-header-padding-block) var(--app-page-content-padding);
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+  flex-shrink: 0;
+}
+
+.scheduler-panel-header h3 {
+  margin: 0;
+  font-size: var(--app-page-card-title-size);
+  font-weight: var(--app-page-card-title-weight);
+  line-height: var(--app-page-card-title-line-height);
+  color: var(--ant-color-text-heading);
+}

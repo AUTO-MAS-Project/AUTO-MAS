@@ -1,4 +1,6 @@
 import type { AppLocale } from '@/i18n'
+import { beginAnalyticsOperation } from '@/utils/analytics'
+import type { AnalyticsEventProps } from '@/types/analytics'
 
 export const MAS_QQ_GROUP_URL = 'https://qm.qq.com/q/bd9fISNoME'
 
@@ -7,6 +9,7 @@ export const MAS_DOC_URLS = {
   emulator: 'https://doc.auto-mas.top/docs/advanced-features/emulator.html',
   scripts: 'https://doc.auto-mas.top/docs/script-guide/',
   gameSign: 'https://doc.auto-mas.top/docs/advanced-features/game-sign.html',
+  appearance: 'https://doc.auto-mas.top/docs/advanced-features/appearance.html',
   scriptTypes: {
     MAA: 'https://doc.auto-mas.top/docs/script-guide/maa.html',
     SRC: 'https://doc.auto-mas.top/docs/script-guide/general.html',
@@ -49,6 +52,18 @@ export async function openExternalUrl(url: string): Promise<boolean> {
     window.electronAPI?.getLogger('外部链接').error(`打开链接失败: ${String(error)}`)
     return false
   }
+}
+
+/** 仅供明确的内置帮助入口调用；普通外链函数不参与采集。 */
+export async function openHelpLink(
+  url: string,
+  link_kind: AnalyticsEventProps['help_link_requested']['link_kind'],
+  entry_source: AnalyticsEventProps['help_link_requested']['entry_source'] = 'other'
+): Promise<boolean> {
+  const telemetry = beginAnalyticsOperation('help_link_requested')
+  const result = await openExternalUrl(url)
+  telemetry.finish({ link_kind, entry_source, outcome: result ? 'accepted' : 'failure' })
+  return result
 }
 
 /**

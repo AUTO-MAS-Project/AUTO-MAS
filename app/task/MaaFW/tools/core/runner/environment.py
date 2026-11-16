@@ -1,22 +1,30 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import re
+import subprocess
 import sys
 import sysconfig
 import threading
+import tomllib
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from packaging.requirements import InvalidRequirement, Requirement
-from packaging.utils import canonicalize_name
+from packaging.utils import (
+    InvalidWheelFilename,
+    canonicalize_name,
+    parse_wheel_filename,
+)
 from packaging.version import InvalidVersion, Version
 
+from app.task.MaaFW.tools.core.offline_dependencies import offline_dependency_files
 from app.task.MaaFW.tools.core.runtime_pool import (
     ExtraPackagesInstaller,
     MaaFWRuntimePool,
@@ -82,8 +90,8 @@ BASE_RUNTIME_PACKAGES = (
     "json5==0.14.0",
     "json-with-comments",
     # worker 子进程自身要用：runner 与 worker 看门狗用 psutil，
-    # runtime_pool 用 packaging。插件形态下它们由插件目录经 PYTHONPATH
-    # 提供，树内没有那层，必须装进 runner venv。
+    # runtime_pool 用 packaging。worker 的 PYTHONPATH 只有 binding 与源码根、
+    # 不带宿主的依赖（见 build_runner_environment），它们必须装进 runner venv。
     "psutil",
     "packaging",
     # maafw binding（maa/**）的 import 期依赖：8 个官方 wheel 的 Requires-Dist 都是这三个。
@@ -640,21 +648,6 @@ def release_runner_environment(
     return pool.release_lease(runtime_id, lease_id)
 
 
-def build_runner_packages(
-    project_path: str | Path | None = None,
-    *,
-    maafw_requirement: str | None = None,
-) -> list[str]:
-    """base venv 的包集合：常量，与项目无关。
-
-    ``project_path`` / ``maafw_requirement`` 保留在签名里给旧调用方对齐：maafw 不再
-    进 venv，按版本存在 ``<pool>/bindings/``（见 runtime_pool/binding.py）。
-    """
-
-    del project_path, maafw_requirement
-    return list(BASE_RUNTIME_PACKAGES)
-
-
 def _select_project_maafw_requirement(
     project: Path,
     *,
@@ -1055,6 +1048,248 @@ def detect_pe_architecture(path: Path) -> str | None:
     return _PE_MACHINE_ARCHITECTURES.get(machine)
 
 
+#: 导入表里这些名字不在原生库目录里也不算缺：API set 由系统解析，VC / UCRT 运行库装在系统里
+#: （运行 MAS 的 Python 自己也带一份）。缺了它们重下发行包也补不回来。
+_SYSTEM_IMPORT_PREFIXES = (
+    "api-ms-",
+    "ext-ms-",
+    "msvcp",
+    "vcruntime",
+    "concrt",
+    "vccorlib",
+    "vcomp",
+    "ucrtbase",
+)
+#: 导入表条目数的上限：超过就当这个文件读得不对，不下结论。
+_MAX_PE_IMPORTS = 4096
+
+
+def _pe_imported_dlls(path: Path) -> list[str] | None:
+    """PE 文件导入表里的 DLL 名（只读文件头与导入表，**不映射也不执行**）。
+
+    只看普通导入（数据目录第 1 项）：延迟加载的依赖缺了 ``LoadLibrary`` 照样成功。
+    不是 PE 文件或读不出来时 None。
+    """
+
+    def u16(raw: bytes, at: int) -> int:
+        return int.from_bytes(raw[at : at + 2], "little")
+
+    def u32(raw: bytes, at: int) -> int:
+        return int.from_bytes(raw[at : at + 4], "little")
+
+    try:
+        with path.open("rb") as stream:
+            head = stream.read(4096)
+            if head[:2] != b"MZ" or len(head) < 0x40:
+                return None
+            pe = u32(head, 0x3C)
+            stream.seek(pe)
+            coff = stream.read(24)
+            if coff[:4] != _PE_SIGNATURE:
+                return None
+            section_count = u16(coff, 6)
+            optional_size = u16(coff, 20)
+            optional = stream.read(optional_size)
+            magic = u16(optional, 0)
+            if magic == 0x20B:  # PE32+
+                directories = 112
+            elif magic == 0x10B:  # PE32
+                directories = 96
+            else:
+                return None
+            import_rva = u32(optional, directories + 8)
+            if not import_rva:
+                return []
+            table = stream.read(40 * section_count)
+            sections = [
+                (
+                    u32(table, 40 * i + 12),
+                    max(u32(table, 40 * i + 8), u32(table, 40 * i + 16)),
+                    u32(table, 40 * i + 20),
+                )
+                for i in range(section_count)
+            ]
+
+            def offset(rva: int) -> int | None:
+                for address, size, raw in sections:
+                    if address <= rva < address + size:
+                        return rva - address + raw
+                return None
+
+            descriptor = offset(import_rva)
+            if descriptor is None:
+                return None
+            names: list[str] = []
+            while len(names) <= _MAX_PE_IMPORTS:
+                stream.seek(descriptor)
+                entry = stream.read(20)
+                if len(entry) < 20:
+                    return None
+                if entry == bytes(20):
+                    return names
+                name_at = offset(u32(entry, 12))
+                if name_at is None:
+                    return None
+                stream.seek(name_at)
+                name = stream.read(260).split(b"\0", 1)[0]
+                names.append(name.decode("ascii", errors="replace"))
+                descriptor += 20
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def runtime_missing_dependencies(runtime_path: Path) -> list[str] | None:
+    """原生库目录里 ``MaaFramework.dll`` 顺着导入表要用、目录里又没有的 DLL。
+
+    从主库出发，只沿着目录里有的那些 DLL 往下查；系统目录里有的、API set 与 VC 运行库
+    （:data:`_SYSTEM_IMPORT_PREFIXES`）不算缺。差量更新把 runner 换到只有几个 DLL 的目录时
+    （MAA_bbb v1.13.20），这里会列出 ``opencv_world4_maa.dll`` 之类。
+
+    Returns:
+        缺的 DLL 名（空表即完整）；不是 Windows、没有主库、导入表读不出时 None（不下结论）。
+    """
+
+    if sys.platform != "win32":
+        return None
+    try:
+        present = {
+            item.name.casefold(): item
+            for item in Path(runtime_path).iterdir()
+            if item.is_file()
+        }
+    except OSError:
+        return None
+    if PROJECT_MAAFW_DLL_NAME.casefold() not in present:
+        return None
+    system_dirs = [
+        Path(os.environ.get("SystemRoot") or r"C:\Windows") / "System32",
+        Path(sys.executable).parent,
+    ]
+    pending = [PROJECT_MAAFW_DLL_NAME.casefold()]
+    seen: set[str] = set()
+    missing: set[str] = set()
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        imports = _pe_imported_dlls(present[name])
+        if imports is None:
+            return None
+        for dependency in imports:
+            key = dependency.casefold()
+            if key in present:
+                pending.append(key)
+            elif not key.startswith(_SYSTEM_IMPORT_PREFIXES) and not any(
+                (directory / dependency).is_file() for directory in system_dirs
+            ):
+                missing.add(dependency)
+    return sorted(missing, key=str.casefold)
+
+
+# 子进程里只做一件事：按 runner 的 ``Library.open`` 同样的方式（绝对路径的 WinDLL，
+# 依赖从 DLL 所在目录找）加载主库。加载失败退出码 3，并把原因打到 stdout。
+_NATIVE_LOAD_PROBE = (
+    "import ctypes, sys\n"
+    "try:\n"
+    "    ctypes.WinDLL(sys.argv[1])\n"
+    "except OSError as error:\n"
+    "    print(error)\n"
+    "    sys.exit(3)\n"
+)
+_NATIVE_LOAD_FAILED_EXIT = 3
+_NATIVE_LOAD_TIMEOUT_SECONDS = 60
+
+NATIVE_LOAD_OK = "ok"
+NATIVE_LOAD_FAILED = "failed"
+NATIVE_LOAD_UNKNOWN = "unknown"
+
+
+def probe_native_runtime_load(runtime_path: Path) -> tuple[str, str]:
+    """在独立子进程里真加载一次 ``runtime_path`` 下的 ``MaaFramework.dll``。
+
+    不在本进程里加载：载进来就卸不掉，还会锁住文件。
+
+    Returns:
+        ``(结论, 说明)``：结论是 :data:`NATIVE_LOAD_OK` / :data:`NATIVE_LOAD_FAILED`（子进程
+        明确报加载失败，说明是系统给的原因）/ :data:`NATIVE_LOAD_UNKNOWN`（不是 Windows、
+        子进程起不来、超时、异常退出——不下结论）。
+    """
+
+    if sys.platform != "win32":
+        return NATIVE_LOAD_UNKNOWN, "不是 Windows"
+    dll = Path(runtime_path) / PROJECT_MAAFW_DLL_NAME
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-I", "-c", _NATIVE_LOAD_PROBE, str(dll)],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=_NATIVE_LOAD_TIMEOUT_SECONDS,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return NATIVE_LOAD_UNKNOWN, f"{type(exc).__name__}: {exc}"
+    if completed.returncode == _NATIVE_LOAD_FAILED_EXIT:
+        reason = (completed.stdout or "").strip().rstrip("。.") or "原因未知"
+        return NATIVE_LOAD_FAILED, reason
+    if completed.returncode != 0:
+        return (
+            NATIVE_LOAD_UNKNOWN,
+            f"退出码 {completed.returncode}：{(completed.stderr or '').strip()[-500:]}",
+        )
+    return NATIVE_LOAD_OK, ""
+
+
+def project_runtime_broken(project_path: Path) -> bool:
+    """runner 要用的那份原生库**确定**用不了：依赖缺了（:func:`runtime_missing_dependencies`），
+    而且在子进程里真加载也失败。
+
+    导入表的判断只用来挑出可疑的副本（几毫秒）；真加载（一两秒）只在可疑时才做，用来排除
+    误判——否则一次误判就会让更新器每次运行都按全量包重装一遍。判断不了一律 False。
+    """
+
+    runtime = project_maafw_runtime_path(project_path)
+    if runtime is None or not runtime_missing_dependencies(runtime):
+        return False
+    verdict, _detail = probe_native_runtime_load(runtime)
+    return verdict == NATIVE_LOAD_FAILED
+
+
+def project_runtime_complete(project_path: Path) -> bool | None:
+    """runner 要用的那份原生库依赖齐不齐（见 :func:`runtime_missing_dependencies`）。
+
+    Returns:
+        True / False；没自带原生库或判断不了时 None（不猜）。
+    """
+
+    runtime = project_maafw_runtime_path(project_path)
+    if runtime is None:
+        return None
+    missing = runtime_missing_dependencies(runtime)
+    if missing is None:
+        return None
+    return not missing
+
+
+def project_runtime_usable_on_host(project_path: Path) -> bool | None:
+    """项目自带的 MaaFramework 在本机能不能用：架构对得上**而且**依赖齐。
+
+    任一项确定不行就是 False；都判断不了时 None。同版本载荷谁顶替谁（``payloads``）按它判。
+    """
+
+    loadable = project_runtime_loadable_on_host(project_path)
+    if loadable is False:
+        return False
+    complete = project_runtime_complete(project_path)
+    if complete is False:
+        return False
+    if loadable is None and complete is None:
+        return None
+    return True
+
+
 # 架构不符报错（describe_runtime_architecture_mismatch 的各种文案、「只支持 x64」提示）
 # 里一定有其一；宿主侧靠它认出「重试也没用」，别只改文案不改这里。
 ARCHITECTURE_MISMATCH_MARKERS = (
@@ -1101,19 +1336,19 @@ def describe_runtime_architecture_mismatch(
         return (
             f"项目副本里只带了 {found} 架构的 MaaFramework，本机是 {expected}"
             "（旧版 MAS 在来源目录同时带多种架构时选错了）。来源目录里有 "
-            f"{expected} 版，请在脚本页重新导入项目"
+            f"{expected} 版，请在托管页重新导入项目"
         )
     if source_loadable is False:
         return (
             f"项目自带的 MaaFramework 是 {found} 架构，本机是 {expected}，来源目录里"
-            f"也只有 {found} 版——请换成 {expected} 的发行包，再在脚本页重新导入"
+            f"也只有 {found} 版——请换成 {expected} 的发行包，再在托管页重新导入"
         )
     if project_path is not None and _is_relative_to(
         runtime_path, project_path / "runtimes"
     ):
         return (
             f"项目副本里只带了 {found} 架构的 MaaFramework，本机是 {expected}"
-            "（旧版 MAS 在来源目录同时带多种架构时会选错），请在脚本页重新导入项目；"
+            "（旧版 MAS 在来源目录同时带多种架构时会选错），请在托管页重新导入项目；"
             f"若来源目录本身只有 {found} 版，请换成 {expected} 的发行包"
         )
     return (
@@ -1301,6 +1536,184 @@ def pin_agent_maafw_requirement(
         pinned.append(requirement)
         replaced = True
     return pinned
+
+
+#: 宿主经 worker 的环境告诉 worker 把 agent 运行期 pip 约束文件写在哪（AUTO-MAS 自己的
+#: ``data/maafw_agent_constraints``）。没设（本地直接跑 runner、测试）就不注入。
+AGENT_PIP_CONSTRAINT_DIR_ENV = "AUTO_MAS_MAAFW_AGENT_CONSTRAINT_DIR"
+#: 注入给 agent 子进程的约束变量：pip 认 ``PIP_CONSTRAINT``，``uv pip`` 认 ``UV_CONSTRAINT``。
+AGENT_PIP_CONSTRAINT_ENV_KEYS: tuple[str, ...] = ("PIP_CONSTRAINT", "UV_CONSTRAINT")
+
+
+@dataclass(frozen=True)
+class AgentMaaFWPipConstraint:
+    """agent 运行期 pip 约束的判定结果。``version`` 为 None 时不注入，``reason`` 说明为什么。"""
+
+    version: str | None
+    reason: str
+
+
+def _project_declared_maafw(project: Path) -> list[tuple[str, str]]:
+    """项目自己声明 / 自带的 maafw：``[(来源, requirement 文本), ...]``。
+
+    三处都是 agent 首次启动自己装依赖时 pip 的输入：``requirements.txt``（与运行池同一套解析，
+    ``_load_requirements``）、``pyproject.toml`` 的 ``[project].dependencies``（MaaStarResonance
+    ``pip install <项目根>``）、离线依赖目录里的 ``maafw-*.whl``（与准备运行环境同一套判据，
+    ``offline_dependency_files``；带着确切版本的 wheel 等于自己钉了版本）。
+    """
+
+    declared: list[tuple[str, str]] = [
+        ("requirements.txt", requirement)
+        for requirement in _load_requirements(project)
+        if requirement_distribution_name(requirement) == "maafw"
+    ]
+    pyproject = project / "pyproject.toml"
+    if pyproject.is_file():
+        try:
+            data = tomllib.loads(pyproject.read_text(encoding="utf-8-sig"))
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+            # 读不了就当它声明了什么都可能：调用方按「项目自己管」处理，不注入。
+            declared.append(("pyproject.toml", f"<无法解析: {exc}>"))
+        else:
+            project_table = data.get("project")
+            dependencies = (
+                project_table.get("dependencies")
+                if isinstance(project_table, dict)
+                else None
+            )
+            if isinstance(dependencies, list):
+                declared.extend(
+                    ("pyproject.toml", str(item))
+                    for item in dependencies
+                    if requirement_distribution_name(str(item)) == "maafw"
+                )
+    for relative in offline_dependency_files(project):
+        name = relative.rsplit("/", 1)[-1]
+        if not name.casefold().endswith(".whl"):
+            continue
+        try:
+            dist, version, _build, _tags = parse_wheel_filename(name)
+        except (InvalidWheelFilename, InvalidVersion):
+            continue
+        if dist == "maafw":
+            declared.append((relative, f"maafw=={version}"))
+    return declared
+
+
+def agent_maafw_pip_constraint(
+    project_path: Path, *, runner_maafw_version: str | None = None
+) -> AgentMaaFWPipConstraint:
+    """agent 子进程运行期自己跑 pip 时，maafw 该被约束在哪个版本。
+
+    准备运行环境时已经把 agent 的 maafw 钉成与 runner 同一版本（``pin_agent_maafw_requirement``
+    与自带解释器的钉回），但项目的部署脚本会在 agent 启动后自己 ``pip install --upgrade``
+    （MAA_bbb：``python -m pip install --upgrade -i <镜像> MaaFw``，requirements.txt 里是无版本的
+    ``MaaFw``），升到 PyPI 最新：runner 那侧的原生库与 agent 里新的 ``maa`` 包混用，自定义动作
+    静默失败。约束文件让 pip 在这种升级里停在钉住的版本。
+
+    版本与准备运行环境同一个来源（``resolve_project_maafw_requirement``：自带原生库的实测版本 →
+    runner 实际加载的 binding 版本）。**项目自己钉了 maafw 就不注入**（M9A requirements.txt
+    ``maafw==5.12.3``、MaaStarResonance pyproject ``maafw==5.12.1`` + 离线 wheel）：项目的自装命令
+    里带着它自己的确切版本，再叠一条不同版本的约束 pip 直接 ResolutionImpossible、自装失败。
+    声明的是范围、而钉住的版本不在范围里也不注入，理由相同。
+    """
+
+    project = Path(project_path)
+    requirement = resolve_project_maafw_requirement(
+        project, runner_maafw_version=runner_maafw_version
+    )
+    version = exact_version_of(requirement) if requirement else None
+    if version is None:
+        return AgentMaaFWPipConstraint(
+            None,
+            f"定不出 agent 该用的确切 maafw 版本（{requirement or '项目未声明且 runner 版本未知'}）",
+        )
+    for source, declared in _project_declared_maafw(project):
+        label = f"{source}: {declared}"
+        try:
+            parsed = Requirement(declared.split(";", 1)[0].strip())
+        except InvalidRequirement:
+            return AgentMaaFWPipConstraint(
+                None, f"项目的 maafw 声明读不懂，按项目自己管处理（{label}）"
+            )
+        if parsed.url or exact_version_of(str(parsed)) is not None:
+            return AgentMaaFWPipConstraint(None, f"项目自己钉了 maafw 版本（{label}）")
+        if parsed.specifier and not parsed.specifier.contains(
+            version, prereleases=True
+        ):
+            return AgentMaaFWPipConstraint(
+                None,
+                f"项目声明的 maafw 范围不含 {version}，注入约束会让项目自装失败（{label}）",
+            )
+    if probe_bundled_maafw_version(project):
+        source = "项目自带原生库的版本"
+    else:
+        source = "runner 实际加载的版本"
+    return AgentMaaFWPipConstraint(version, source)
+
+
+def agent_pip_constraint_file(directory: Path, project_path: Path) -> Path:
+    """某个项目的约束文件路径：按项目路径哈希命名（与隔离 venv 同一种键），一个项目一份。"""
+
+    key = str(Path(project_path).resolve())
+    if os.name == "nt":
+        key = key.lower()
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
+    return Path(directory) / f"maafw_agent_{digest}.txt"
+
+
+def write_agent_pip_constraint(
+    directory: Path, project_path: Path, version: str
+) -> Path:
+    """写（或复用）约束文件，返回路径。内容只用 ASCII：pip 读约束文件时没有 BOM 就按本机代码页
+    解码，中文 Windows 上 UTF-8 的中文注释会读坏。"""
+
+    path = agent_pip_constraint_file(directory, project_path)
+    content = (
+        "# Written by AUTO-MAS for the MaaFW agent of this project: keeps maafw on the\n"
+        "# version the runner loaded, so the agent's own pip --upgrade cannot move it.\n"
+        f"maafw=={version}\n"
+    )
+    try:
+        if path.read_text(encoding="ascii") == content:
+            return path
+    except (OSError, UnicodeDecodeError):
+        pass
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
+    try:
+        temp.write_text(content, encoding="ascii")
+        os.replace(temp, path)
+    finally:
+        if temp.exists():
+            temp.unlink(missing_ok=True)
+    return path
+
+
+def apply_agent_pip_constraint(
+    env: MutableMapping[str, str],
+    constraint_file: Path,
+) -> list[str]:
+    """把约束文件挂到 ``env`` 的 ``PIP_CONSTRAINT`` / ``UV_CONSTRAINT`` 上，返回设了的变量名。
+
+    值写成 ``file:`` URI：pip 与 uv 都按空格把这两个变量拆成多个文件，AUTO-MAS 装在带空格的
+    目录里时裸路径会被拆断、项目的 pip 直接报找不到文件；URI 里空格与中文都是百分号编码，
+    两者都能读（本机 pip 25.0.1 / uv 0.11.26 实测）。环境里已有值（用户自己设的）就追加在后面，
+    pip 会同时遵守。PI v2 的 agent 声明没有 env 字段（``piEnv`` 只有 ``PI_*`` 键），项目没有
+    渠道经 interface 自设这两个变量，所以这里不做「项目自设就跳过」的判断。
+    """
+
+    uri = Path(constraint_file).resolve().as_uri()
+    applied: list[str] = []
+    for key in AGENT_PIP_CONSTRAINT_ENV_KEYS:
+        existing = str(env.get(key) or "").strip()
+        if not existing:
+            env[key] = uri
+        elif uri not in existing.split():
+            env[key] = f"{existing} {uri}"
+        # 已经挂过就原样保留，别把前面用户自己的约束冲掉
+        applied.append(key)
+    return applied
 
 
 def _normalize_maafw_requirement(

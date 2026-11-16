@@ -5,19 +5,19 @@
       :open="showMaaEndConfigMask"
       :icon="SettingOutlined"
       :title="maaEndConfigMaskTitle"
-      :description="`${maaEndConfigMaskDesc}\n${t('edit.clickSaveConfigurationWhen')}`"
+      :description="`${maaEndConfigMaskDesc}\n${t('core.edit.clickSaveConfigurationWhen')}`"
     >
       <template #actions>
         <a-button v-if="maaEndTaskId" type="primary" size="large" @click="handleSaveMaaEndConfig">
-          {{ t('edit.saveConfiguration') }}
+          {{ t('core.edit.saveConfiguration') }}
         </a-button>
       </template>
     </GuiSessionMask>
     <GuiSessionMask
       :open="showMaaEndViewMask"
       :icon="EyeOutlined"
-      :title="t('edit.maaendViewingTitle')"
-      :description="`${t('edit.maaendViewingDesc')}\n${t('edit.maaendViewingDesc2')}`"
+      :title="t('core.edit.maaendViewingTitle')"
+      :description="`${t('core.edit.maaendViewingDesc')}\n${t('core.edit.maaendViewingDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -27,7 +27,7 @@
           :loading="stoppingMaaEndConfig"
           @click="handleCloseMaaEndView"
         >
-          {{ t('edit.maaendViewClose') }}
+          {{ t('core.edit.maaendViewClose') }}
         </a-button>
       </template>
     </GuiSessionMask>
@@ -37,31 +37,26 @@
       :script-name="scriptName"
       :is-edit="isEdit"
       :user-id="userId"
-      @handle-cancel="handleCancel"
+      @cancel="handleCancel"
     />
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-      <div class="page-layout">
+      <a-spin :spinning="loading">
         <a-form
           ref="formRef"
           :model="formData"
           :rules="rules"
           layout="vertical"
-          class="config-form sections-column"
+          class="config-form"
         >
-          <a-card id="section-basic" class="section-card">
-            <template #title>{{ t('edit.basicInfo') }}</template>
-            <BasicInfoSection
-              v-model:form-data="formData"
-              :loading="loading"
-              :resource-options="resourceOptions"
-              :show-resource="controllerProtocol === 'Adb' && controllerType !== 'CloudADB'"
-              @save="handleFieldSave"
-            />
-          </a-card>
-
           <a-card id="section-source" class="section-card">
-            <template #title>{{ t('edit.configurationSource') }}</template>
+            <template #title>{{ t('core.edit.configurationSource') }}</template>
+            <template #extra>
+              <a-button @click="openRestoreModal">
+                <template #icon><HistoryOutlined /></template>
+                {{ t('core.edit.configRestoreTitle') }}
+              </a-button>
+            </template>
             <ConfigSourceSection
               v-model:form-data="formData"
               :loading="loading"
@@ -80,16 +75,19 @@
             />
           </a-card>
 
-          <a-flex id="section-task" justify="space-between" align="center" wrap="wrap" gap="small">
-            <h3>{{ t('edit.taskConfiguration') }}</h3>
-            <a-space>
-              <a-button size="small" @click="openRestoreModal">
-                <template #icon><HistoryOutlined /></template>
-                {{ t('edit.configRestoreTitle') }}
-              </a-button>
-            </a-space>
-          </a-flex>
-          <a-card v-if="formData.Info.IfQuickConfig" class="section-card">
+          <a-card id="section-basic" class="section-card">
+            <BasicInfoSection
+              :heading="{ isEdit, saveStatus: isSaving ? 'saving' : 'idle' }"
+              v-model:form-data="formData"
+              :loading="loading"
+              :resource-options="resourceOptions"
+              :show-resource="resourceOptions.length > 0 && controllerType !== 'CloudADB'"
+              @save="handleFieldSave"
+            />
+          </a-card>
+
+          <section v-if="formData.Info.IfQuickConfig" id="section-tasks">
+            <h2 class="section-heading">{{ t('core.edit.taskConfiguration') }}</h2>
             <TaskConfigSection
               :form-data="formData"
               :loading="loading"
@@ -97,40 +95,39 @@
               @save="handleFieldSave"
               @save-batch="handleFieldsSave"
             />
-          </a-card>
 
-          <a-card v-if="formData.Info.IfQuickConfig" id="section-sanity" class="section-card">
-            <template #title>{{ t('edit.maaEndSanitySection') }}</template>
-            <template #extra>
-              <a-button
-                v-if="formData.Task.IfSanity && isSanityPlanMode"
-                type="link"
-                class="plans-button"
-                @click="handleGoToPlans"
-              >
-                <template #icon><CalendarOutlined /></template>
-                {{ t('edit.goPlan') }}
-              </a-button>
-            </template>
-            <SanityConfigSection
-              :form-data="formData"
-              :loading="loading"
-              :if-quick-config="formData.Info.IfQuickConfig"
-              :essence-location-options="essenceLocationOptions"
-              :essence-menu-options="essenceMenuOptions"
-              :essence-target-weapon-groups="essenceTargetWeaponGroups"
-              :options-loading="maaEndOptionsLoading"
-              :options-loaded="maaEndOptionsLoaded"
-              :is-plan-mode="isSanityPlanMode"
-              :sanity-mode-options="sanityModeOptions"
-              :plan-mode-config="planModeConfig"
-              @save="handleFieldSave"
-              @save-batch="handleFieldsSave"
-            />
-          </a-card>
+            <a-collapse id="section-limits" class="optional-section" :bordered="false">
+              <a-collapse-panel key="limits" :header="t('core.edit.maaEndDailyOnceTasks')">
+                <DailyOnceSection
+                  :value="formData.Task.DailyOnceTasks"
+                  :loading="loading"
+                  @save="handleFieldSave('Task.DailyOnceTasks', $event)"
+                />
+              </a-collapse-panel>
+            </a-collapse>
+          </section>
+
+          <MaaEndSanitySection
+            v-if="formData.Info.IfQuickConfig"
+            :form-data="formData"
+            :loading="loading"
+            :inventory="inventoryOptions"
+            :crisis-drills-options="crisisDrillsOptions"
+            :essence-location-options="essenceLocationOptions"
+            :essence-menu-options="essenceMenuOptions"
+            :essence-target-weapon-groups="essenceTargetWeaponGroups"
+            :options-loading="maaEndOptionsLoading"
+            :options-loaded="maaEndOptionsLoaded"
+            :config-loading="maaEndConfigLoading"
+            :show-config-mask="showMaaEndConfigMask"
+            @save="handleFieldSave"
+            @save-batch="handleFieldsSave"
+            @configure="handleMaaEndConfig"
+            @reload="loadMaaEndOptions"
+          />
 
           <a-card v-if="formData.Info.IfQuickConfig" id="section-collect" class="section-card">
-            <template #title>{{ t('edit.maaEndAutoCollectConfig') }}</template>
+            <template #title>{{ t('core.edit.maaEndAutoCollectConfig') }}</template>
             <AutoCollectConfigSection
               :groups="autoCollectGroups"
               :options-loading="maaEndOptionsLoading"
@@ -141,7 +138,7 @@
           </a-card>
 
           <a-card v-if="formData.Info.IfQuickConfig" id="section-delivery" class="section-card">
-            <template #title>{{ t('edit.maaEndDeliveryConfig') }}</template>
+            <template #title>{{ t('core.edit.maaEndDeliveryConfig') }}</template>
             <DeliveryConfigSection
               :form-data="formData"
               :loading="loading"
@@ -149,23 +146,8 @@
             />
           </a-card>
 
-          <a-collapse
-            v-if="formData.Info.IfQuickConfig"
-            id="section-limits"
-            class="optional-section"
-            :bordered="false"
-          >
-            <a-collapse-panel key="limits" :header="t('edit.maaEndDailyOnceTasks')">
-              <DailyOnceSection
-                :value="formData.Task.DailyOnceTasks"
-                :loading="loading"
-                @save="handleFieldSave('Task.DailyOnceTasks', $event)"
-              />
-            </a-collapse-panel>
-          </a-collapse>
-
           <a-collapse id="section-script" class="optional-section" :bordered="false">
-            <a-collapse-panel key="script" :header="t('comp.extraScripts')">
+            <a-collapse-panel key="script" :header="t('core.comp.extraScripts')">
               <ExtraScriptSection
                 v-model:form-data="formData"
                 :loading="loading"
@@ -176,30 +158,20 @@
           </a-collapse>
 
           <a-collapse id="section-notify" class="optional-section" :bordered="false">
-            <a-collapse-panel key="notify" :header="t('edit.notificationSettings')">
+            <a-collapse-panel key="notify" :header="t('core.edit.notificationSettings')">
               <UserNotifyConfig
                 v-model="formData.Notify"
                 :loading="loading"
                 :script-id="scriptId"
                 :user-id="userId"
                 hide-section-header
+                show-inventory
                 @save="handleFieldSave"
               />
             </a-collapse-panel>
           </a-collapse>
         </a-form>
-
-        <aside class="anchor-sidebar">
-          <!-- 页内目录只滚动内容，避免锚点覆盖应用的 hash 路由。 -->
-          <a-anchor
-            :items="anchorItems"
-            :affix="false"
-            :offset-top="96"
-            :get-container="getAnchorContainer"
-            @click.prevent
-          />
-        </aside>
-      </div>
+      </a-spin>
     </ConfigLockPanel>
 
     <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、MaaEnd 原生配置在后）══ -->
@@ -209,15 +181,15 @@
       :script-name="MAAEND_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
-      :script-desc="t('edit.maaendConfigRestoreScriptDesc')"
+      :script-desc="t('core.edit.maaendConfigRestoreScriptDesc')"
       :on-restored="handleRestored"
       :on-detail="handleRestoreView"
     >
       <!-- mas 备份为快速配置侧车、native 备份为 mxu 配置摘要，共用文件集插槽 -->
       <template #preview="{ raw }">
-        <a-empty
+        <NoData
           v-if="!previewFiles(raw).length"
-          :description="t('edit.configRestorePreviewEmpty')"
+          :description="t('core.edit.configRestorePreviewEmpty')"
         />
         <div v-else>
           <template v-for="f in previewFiles(raw)" :key="f.name">
@@ -238,32 +210,14 @@
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
-import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import {
-  CalendarOutlined,
-  EyeOutlined,
-  HistoryOutlined,
-  SettingOutlined,
-} from '@ant-design/icons-vue'
+import { EyeOutlined, HistoryOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
-import type { ComboBoxItem } from '@/api'
-import { Service } from '@/api'
-import { PlanComboxIn } from '@/api/models/PlanComboxIn'
-import { navigateTo } from '@/router'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useMaaEndGuiSession } from '@/composables/useMaaEndGuiSession'
-import { usePlanApi } from '@/composables/usePlanApi'
-import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
-import {
-  MAAEND_PLAN_WEEKDAY_KEYS,
-  maaEndPlanKeyToSanityConfig,
-  type MaaEndEssenceTargetGroup,
-  type MaaEndSanityConfig,
-} from '@/utils/maaEndProtocolSpace'
-import { getWeekdayInTimezone } from '@/utils/dateUtils'
 import { buildRestoreConfirm } from '@/utils/configRestoreMode'
 
 import MaaEndUserEditHeader from '@/views/MaaEndUserEdit/MaaEndUserEditHeader.vue'
@@ -271,14 +225,16 @@ import BasicInfoSection from '@/views/MaaEndUserEdit/BasicInfoSection.vue'
 import DailyOnceSection from '@/views/MaaEndUserEdit/DailyOnceSection.vue'
 import ConfigSourceSection from '@/views/MaaEndUserEdit/ConfigSourceSection.vue'
 import DeliveryConfigSection from '@/views/MaaEndUserEdit/DeliveryConfigSection.vue'
-import type { MaaEndAutoCollectGroup } from '@/api'
 import AutoCollectConfigSection from '@/views/MaaEndUserEdit/AutoCollectConfigSection.vue'
+import { getDefaultMaaEndUserData } from '@/views/MaaEndUserEdit/userDefaults'
+import { useMaaEndUserOptions } from '@/views/MaaEndUserEdit/useMaaEndUserOptions'
+import MaaEndSanitySection from '@/views/MaaEndUserEdit/MaaEndSanitySection.vue'
 import TaskConfigSection from '@/views/MaaEndUserEdit/TaskConfigSection.vue'
-import SanityConfigSection from '@/views/MaaEndUserEdit/SanityConfigSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
 
@@ -287,8 +243,7 @@ const logger = window.electronAPI.getLogger('MaaEnd用户编辑')
 const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, error: userError } = useUserApi()
-const { getScript, getMaaEndOptions, importScriptConfigFile } = useScriptApi()
-const { getPlans } = usePlanApi()
+const { getScript, importScriptConfigFile } = useScriptApi()
 const {
   maaEndConfigLoading,
   maaEndTaskId,
@@ -305,121 +260,34 @@ const isInitializing = ref(true)
 const isSaving = ref(false)
 // 保存请求不再驱动整页 loading，避免每次自动保存都让表单快速闪动。
 const loading = computed(() => isInitializing.value)
-const maaEndOptionsLoading = ref(false)
-const maaEndOptionsLoaded = ref(false)
 
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId)
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId }))
 const scriptName = ref('')
 const scriptPath = ref('')
 const controllerType = ref<string | null>(null)
-const controllerProtocol = ref<string | null>(null)
-const presetSupported = ref(true)
+const {
+  maaEndOptionsLoading,
+  maaEndOptionsLoaded,
+  controllerProtocol,
+  presetSupported,
+  resourceOptions,
+  crisisDrillsOptions,
+  essenceLocationOptions,
+  essenceMenuOptions,
+  autoCollectGroups,
+  inventoryOptions,
+  essenceTargetWeaponGroups,
+  loadMaaEndOptions,
+} = useMaaEndUserOptions(
+  scriptId,
+  () => scriptPath.value,
+  () => controllerType.value
+)
 
 const maaEndImportLoading = ref(false)
-const resourceOptions = [{ label: '官服', value: '官服' }]
-const essenceLocationOptions = ref<ComboBoxItem[]>([])
-const essenceMenuOptions = ref<ComboBoxItem[]>([])
-const autoCollectGroups = ref<MaaEndAutoCollectGroup[]>([])
-const essenceTargetWeaponGroups = ref<MaaEndEssenceTargetGroup[]>([])
-const sanityModeOptions = ref<Array<{ label: string; value: string }>>([
-  { label: t('edit.fixed'), value: 'Fixed' },
-])
-const planModeConfig = ref<MaaEndSanityConfig | null>(null)
-// 计划表切换版本号：loadSanityPlan 每次调用自增，用于丢弃过期的异步响应
-let sanityPlanLoadVersion = 0
-const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
-
-const getAnchorContainer = () => document.querySelector<HTMLElement>('.content-area') ?? window
-
-const anchorItems = computed(() => {
-  const items = [{ key: 'basic', href: '#section-basic', title: t('edit.basicInfo') }]
-  items.push({ key: 'source', href: '#section-source', title: t('edit.configurationSource') })
-  items.push({ key: 'task', href: '#section-task', title: t('edit.taskConfiguration') })
-  if (formData.Info.IfQuickConfig) {
-    items.push(
-      { key: 'sanity', href: '#section-sanity', title: t('edit.maaEndSanitySection') },
-      { key: 'collect', href: '#section-collect', title: t('edit.maaEndAutoCollectConfig') },
-      { key: 'delivery', href: '#section-delivery', title: t('edit.maaEndDeliveryConfig') },
-      { key: 'limits', href: '#section-limits', title: t('edit.maaEndDailyOnceTasks') }
-    )
-  }
-  items.push(
-    { key: 'script', href: '#section-script', title: t('comp.extraScripts') },
-    { key: 'notify', href: '#section-notify', title: t('edit.notificationSettings') }
-  )
-  return items
-})
-
-const getDefaultMaaEndUserData = () => ({
-  Info: {
-    Name: '',
-    Status: true,
-    Id: '',
-    Password: '',
-    Base: 'shared',
-    IfQuickConfig: true,
-    SanityMode: 'Fixed',
-    Resource: '官服',
-    RemainedDay: -1,
-    IfScriptBeforeTask: false,
-    ScriptBeforeTask: '',
-    IfScriptAfterTask: false,
-    ScriptAfterTask: '',
-    Notes: '',
-    Tag: '',
-  },
-  Task: {
-    SanityTaskType: 'OperatorProgression',
-    OperatorProgression: 'OperatorEXP',
-    WeaponProgression: 'WeaponEXP',
-    CrisisDrills: 'AdvancedProgression1',
-    RewardsSetOption: 'RewardsSetA',
-    AutoEssenceSpecifiedLocation: '',
-    AutoEssenceMenu: 'Location',
-    AutoEssenceTargetWeapons: [],
-    SeizeDeliveryJobsReward: 15.9,
-    SeizeDeliveryJobsCommissionSource: 'Unlimited',
-    AutoCollectMode: 'Distributed',
-    AutoCollectRoutes: null,
-    AutoCollectCommonRoutes: null,
-    IfSanity: true,
-    IfAutoUseSpMedication: true,
-    IfDijiangRewards: true,
-    IfDeliveryJobs: true,
-    IfSellProduct: true,
-    IfAutoStockpile: true,
-    IfAutoStockStaple: true,
-    IfVisitFriends: true,
-    IfCreditShoppingN2: true,
-    IfSeizeDeliveryJobs: true,
-    IfAutoEcoFarm: true,
-    IfAutoSell: true,
-    IfEnvironmentMonitoring: true,
-    IfAutoCollect: true,
-    IfTrialOfSwordmancy: true,
-    IfDailyRewards: true,
-    IfResourceRecycleStation: true,
-    IfPullCountCalculator: false,
-    DailyOnceTasks: '[ ]',
-  },
-  Notify: {
-    Enabled: false,
-    PushLogMode: '汇总',
-    IfSendStatistic: false,
-    IfSendMail: false,
-    ToAddress: '',
-    IfServerChan: false,
-    ServerChanKey: '',
-  },
-  Data: {
-    LastProxyDate: '',
-    ProxyTimes: 0,
-    PeriodTaskRecords: '{ }',
-  },
-})
 
 interface FieldChange {
   key: string
@@ -441,8 +309,8 @@ const restoreFailedFieldSaves = (changes: Array<[string, any]>) => {
 
 const reportFieldSaveFailure = () => {
   const errorMsg = userError.value
-  if (!errorMsg || errorMsg.includes('HTTP error')) {
-    message.error(t('edit.couldNotSaveUser'))
+  if (!errorMsg) {
+    message.error(t('core.edit.couldNotSaveUser'))
   }
   logger.error(`保存用户字段失败: ${errorMsg || '用户 API 未返回成功'}`)
 }
@@ -456,20 +324,20 @@ const formData = reactive({
 // 原生来源直接用 MaaEnd 原有配置，在 MaaEnd 里改，MAS 不给配置入口，走不到这里。
 const maaEndConfigMaskTitle = computed(() =>
   formData.Info.Base === 'independent'
-    ? t('scripts.mask.maaEndUserTitle')
-    : t('scripts.mask.maaEndScriptTitle')
+    ? t('core.scripts.mask.maaEndUserTitle')
+    : t('core.scripts.mask.maaEndScriptTitle')
 )
 
 const maaEndConfigMaskDesc = computed(() =>
   formData.Info.Base === 'independent'
-    ? t('scripts.mask.maaEndUserDesc', { name: formData.Info.Name || '' })
-    : t('scripts.mask.maaEndScriptDesc')
+    ? t('core.scripts.mask.maaEndUserDesc', { name: formData.Info.Name || '' })
+    : t('core.scripts.mask.maaEndScriptDesc')
 )
 
 const rules = computed<Record<string, Rule[]>>(() => ({
   userName: [
-    { required: true, message: t('edit.enterUsername'), trigger: 'blur' },
-    { min: 1, max: 50, message: t('edit.usernameMustBe12'), trigger: 'blur' },
+    { required: true, message: t('core.edit.enterUsername'), trigger: 'blur' },
+    { min: 1, max: 50, message: t('core.edit.usernameMustBe12'), trigger: 'blur' },
   ],
 }))
 
@@ -575,83 +443,12 @@ const handleScriptConfig = () => {
   router.push(`/scripts/${scriptId}/edit/maaend`)
 }
 
-const handleGoToPlans = () => {
-  navigateTo('/plans', { query: { planId: formData.Info.SanityMode } })
-}
-
 const loadScriptInfo = async () => {
   const scriptDetail = await getScript(scriptId)
   if (scriptDetail) {
     scriptName.value = scriptDetail.name
     scriptPath.value = (scriptDetail.config as { Info?: { Path?: string } }).Info?.Path ?? ''
     controllerType.value = (scriptDetail.config as any).Game?.ControllerType ?? null
-  }
-}
-
-const loadMaaEndOptions = async () => {
-  if (!scriptPath.value.trim()) return
-  maaEndOptionsLoading.value = true
-  try {
-    const response = await getMaaEndOptions(scriptId)
-    if (response?.code === 200) {
-      autoCollectGroups.value = response.autoCollectGroups ?? []
-      essenceLocationOptions.value = response.essenceLocations
-      essenceMenuOptions.value = response.essenceMenus ?? []
-      essenceTargetWeaponGroups.value = response.essenceTargetWeaponGroups ?? []
-      controllerProtocol.value = response.controllerTypes[controllerType.value ?? ''] ?? null
-      presetSupported.value = controllerProtocol.value === 'Win32'
-      maaEndOptionsLoaded.value = true
-    }
-  } finally {
-    maaEndOptionsLoading.value = false
-  }
-}
-
-const loadSanityModeOptions = async () => {
-  try {
-    const response = await Service.getPlanComboxApiInfoComboxPlanPost({
-      consumer: PlanComboxIn.consumer.MAAEND,
-    })
-    if (response?.code === 200 && response.data) {
-      sanityModeOptions.value = response.data
-        .filter((item): item is ComboBoxItem & { value: string } => item.value !== null)
-        .map(item => ({ label: item.label, value: item.value }))
-    }
-  } catch (error) {
-    logger.error(`加载理智任务计划失败: ${error instanceof Error ? error.message : String(error)}`)
-  }
-}
-
-const loadSanityPlan = async (planId: string) => {
-  const version = ++sanityPlanLoadVersion
-
-  if (!planId || planId === 'Fixed') {
-    planModeConfig.value = null
-    return
-  }
-
-  try {
-    const response = await getPlans(planId)
-    // 已切换到其他计划表：丢弃过期响应，避免旧数据覆盖当前 UI
-    if (version !== sanityPlanLoadVersion || formData.Info.SanityMode !== planId) {
-      return
-    }
-    const planData = response.data?.[planId] as unknown as Record<string, unknown> | undefined
-    const planIndex = response.index?.find(item => item.uid === planId)
-    if (planIndex?.type !== PLAN_CONFIG_TYPES.MAA_END || !planData) {
-      planModeConfig.value = null
-      return
-    }
-    const dayKey = MAAEND_PLAN_WEEKDAY_KEYS[(getWeekdayInTimezone(4) + 6) % 7]
-    const info = planData.Info as Record<string, unknown> | undefined
-    const dayConfig = info?.Mode === 'Weekly' ? planData[dayKey] : planData.ALL
-    planModeConfig.value = maaEndPlanKeyToSanityConfig(dayConfig)
-  } catch (error) {
-    if (version !== sanityPlanLoadVersion) {
-      return
-    }
-    planModeConfig.value = null
-    logger.error(`加载理智任务计划失败: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
@@ -674,17 +471,17 @@ const loadUserData = async () => {
   try {
     const userResponse = await getUsers(scriptId, userId)
     if (!userResponse || userResponse.code !== 200) {
-      throw new Error('加载用户失败')
+      throw new Error('加载账号失败')
     }
 
     const userIndex = userResponse.index.find((index: any) => index.uid === userId)
     if (!userIndex || !userResponse.data[userId]) {
-      throw new Error('用户不存在')
+      throw new Error('账号不存在')
     }
 
     const userData = userResponse.data[userId] as any
     if (userIndex.type !== 'MaaEndUserConfig') {
-      throw new Error('用户类型不匹配')
+      throw new Error('账号类型不匹配')
     }
 
     Object.assign(formData, {
@@ -697,7 +494,8 @@ const loadUserData = async () => {
     await nextTick()
     formData.userName = formData.Info.Name || ''
   } catch (error) {
-    message.error(error instanceof Error ? error.message : '加载用户失败')
+    if (!userError.value)
+      message.error(error instanceof Error ? error.message : t('core.apiErrors.userListFailed'))
     router.push('/scripts')
   }
 }
@@ -705,7 +503,9 @@ const loadUserData = async () => {
 const handleMaaEndConfig = async () => {
   if (configLocked.value) return
   if (!userId) return
-  await startSession(userId)
+  // 先完成自动保存，确保配置会话沿用界面当前选择的来源。
+  if (!(await handleFieldSave('Info.Base', formData.Info.Base))) return
+  await startSession(userId, false, 'user')
 }
 
 const handleSaveMaaEndConfig = () => {
@@ -731,7 +531,7 @@ const handleImportMaaEndConfig = async () => {
       throw new Error(response.message || '导入脚本配置文件失败')
     }
     const importTarget = formData.Info.Base === 'shared' ? '共享配置' : '独立配置'
-    message.success(t('edit.importedP0ConfigurationFile', { p0: importTarget }))
+    message.success(t('core.edit.importedP0ConfigurationFile', { p0: importTarget }))
   } catch (error) {
     message.error(error instanceof Error ? error.message : '导入脚本配置文件失败')
   } finally {
@@ -756,21 +556,11 @@ const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
 ]
 
 // 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
-const restoreApi = {
-  list: async (target: string) =>
-    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
-  preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
-  restore: async (target: string, time: string) =>
-    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-      scriptId,
-      userId,
-      time,
-      target,
-    }),
-  readFile: async (target: string, time: string, path: string) =>
-    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
-}
+const { restoreApi, ensureBackup } = useConfigBackupApi({
+  scriptId,
+  userId: () => userId,
+  logger,
+})
 
 const openRestoreModal = () => {
   restoreOpen.value = true
@@ -812,8 +602,8 @@ const handleRestoreView = (
     const { title, paragraphs } = buildRestoreConfirm(
       t,
       {
-        title: t('edit.configRestoreDetailView'),
-        desc: t('edit.configRestoreDetailConfirm', { script: MAAEND_DISPLAY_NAME }),
+        title: t('core.edit.configRestoreDetailView'),
+        desc: t('core.edit.configRestoreDetailConfirm', { script: MAAEND_DISPLAY_NAME }),
       },
       item.base,
       currentMode
@@ -827,39 +617,34 @@ const handleRestoreView = (
         )
       ),
       okType: 'danger',
-      okText: t('edit.configRestoreConfirmOk'),
-      cancelText: t('edit.cancel'),
+      okText: t('core.edit.configRestoreConfirmOk'),
+      cancelText: t('core.edit.cancel'),
       onOk: async () => {
         if (configLocked.value) {
-          message.error(t('edit.configLocked'))
+          message.error(t('core.edit.configLocked'))
           resolve(false)
           return
         }
 
         try {
-          const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-            scriptId,
-            userId,
-            time: item.time,
-            target,
-          })
+          const resp = await restoreApi.restore(target, item.time)
           // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
           // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
           if (resp.code !== 200) {
-            throw new Error(resp.message || t('edit.configRestoreFailed'))
+            throw new Error(resp.message || t('core.edit.configRestoreFailed'))
           }
           restoreOpen.value = false
           if (target === 'mas') {
             // 恢复后重拉表单：后端 UserData 已回填，不重拉会让旧表单值在
             // 下次保存时整块写回、覆盖恢复结果（对齐一键恢复 handleRestored）
             await loadUserData()
-            await startSession(userId, true)
+            await startSession(userId, true, 'user')
           } else {
-            await startSession(scriptId, true)
+            await startSession(scriptId, true, 'script')
           }
           resolve(true)
         } catch (e) {
-          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
           resolve(false)
         }
       },
@@ -871,25 +656,11 @@ const handleRestoreView = (
 // 编辑会话归档（进入/退出时机，指纹去重）：与运行/会话下发前的双池归档
 // 配合——进入归档原生配置当前状态（MAS 触碰前原始态），退出归档 MAS 配置
 // 终态（编辑会话包络）
-const ensureMaaEndBackup = async (target: 'mas' | 'native') => {
-  if (!userId) return
-  try {
-    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
-      scriptId,
-      userId,
-      target,
-    })
-    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-    message.warning(t('edit.configRestoreEnsureFailed'))
-  }
-}
+const ensureMaaEndBackup = ensureBackup
 
 onMounted(async () => {
   await loadScriptInfo()
   await loadMaaEndOptions()
-  await loadSanityModeOptions()
 
   if (!isEdit.value && configLocked.value) {
     isInitializing.value = false
@@ -906,7 +677,7 @@ onMounted(async () => {
       isEdit.value = true
       await normalizeQuickConfig()
     } else {
-      message.error(t('edit.couldNotCreateUser'))
+      if (!userError.value) message.error(t('core.edit.couldNotCreateUser'))
       router.push('/scripts')
       return
     }
@@ -918,16 +689,8 @@ onMounted(async () => {
   void ensureMaaEndBackup('native')
 
   await nextTick()
-  await loadSanityPlan(formData.Info.SanityMode)
   isInitializing.value = false
 })
-
-watch(
-  () => formData.Info.SanityMode,
-  value => {
-    void loadSanityPlan(value)
-  }
-)
 
 onUnmounted(() => {
   // 退出编辑页：先停会话再归档 MAS 侧终态——并行会与 final_task 的
@@ -942,95 +705,45 @@ onUnmounted(() => {
 
 <style scoped>
 .user-edit-container {
-  padding: 24px;
-  background: var(--ant-color-bg-layout);
+  padding-bottom: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
 }
-
 .user-edit-content {
   width: 100%;
   min-width: 0;
 }
-
-.page-layout {
-  display: grid;
-  grid-template-columns: 144px minmax(0, 1fr);
-  gap: 24px;
-  align-items: start;
-}
-
-.sections-column {
-  width: 100%;
-  max-width: none;
-  grid-column: 2;
-  grid-row: 1;
-  min-width: 0;
+.config-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 24px;
 }
-
+.section-heading {
+  margin: 0 0 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
 .section-card {
   border-radius: 8px;
-  scroll-margin-top: 32px;
 }
-
 .section-card :deep(.ant-card-body) {
   padding: 24px;
 }
-
 .optional-section {
   background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
-  scroll-margin-top: 32px;
 }
-
-.daily-once-title {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.plans-button {
-  padding-inline: 0;
-}
-
-.anchor-sidebar {
-  grid-column: 1;
-  grid-row: 1;
-  position: sticky;
-  top: 32px;
-}
-
 .maaend-preview-title {
   margin: 0 0 8px;
 }
-
 .maaend-preview-box {
   margin-bottom: 16px;
 }
-
-@media (max-width: 1100px) {
-  .page-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .sections-column {
-    grid-column: 1;
-  }
-
-  .anchor-sidebar {
-    display: none;
-  }
-}
-
 @media (max-width: 768px) {
-  .user-edit-container {
-    padding: 16px;
-  }
-
   .section-card :deep(.ant-card-body) {
-    padding: 20px;
+    padding: 16px;
   }
 }
 </style>

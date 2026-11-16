@@ -25,7 +25,7 @@ import asyncio
 from typing import Awaitable, Callable, Dict, List, Set, Tuple, Union
 
 from app.models.schema import WSEnvelope
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 logger = get_logger("WS分发器")
 
@@ -153,6 +153,3 @@ class _WSDispatcher:
                 )
 
         task.add_done_callback(_on_done)
-
-
-Dispatcher = _WSDispatcher()

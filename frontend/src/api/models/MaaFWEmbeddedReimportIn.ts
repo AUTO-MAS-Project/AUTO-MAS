@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type MaaFWEmbeddedReimportIn = {
     /**
-     * MFW 脚本 ID
+     * MFW 托管 ID
      */
     scriptId: string;
     /**

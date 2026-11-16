@@ -3,6 +3,9 @@ import { useI18n } from 'vue-i18n'
 import { ref, computed } from 'vue'
 import { QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { useLogHighlight, type LogHighlightColors } from '@/composables/useLogHighlight'
+import SettingRow from '@/components/ui/SettingRow.vue'
+import LogHighlightPreview from './LogHighlightPreview.vue'
+import DownloadLogStyleSettings from './DownloadLogStyleSettings.vue'
 import { useTheme } from '@/composables/useTheme'
 import { message } from 'ant-design-vue'
 
@@ -37,87 +40,115 @@ const colorGroups: {
   items: { key: keyof LogHighlightColors; label: string; description: string }[]
 }[] = [
   {
-    title: t('comp.time'),
+    title: t('core.comp.time'),
     items: [
-      { key: 'timestamp', label: t('comp.timestamp'), description: t('comp.fullDateTime') },
-      { key: 'date', label: t('comp.date'), description: t('comp.standaloneDate') },
+      {
+        key: 'timestamp',
+        label: t('core.comp.timestamp'),
+        description: t('core.comp.fullDateTime'),
+      },
+      { key: 'date', label: t('core.comp.date'), description: t('core.comp.standaloneDate') },
     ],
   },
   {
-    title: t('comp.logLevel'),
+    title: t('core.comp.logLevel'),
     items: [
-      { key: 'error', label: t('comp.error'), description: t('comp.errorFatalCriticalLevel') },
-      { key: 'warning', label: t('comp.warning'), description: t('comp.warnWarningLevel') },
-      { key: 'info', label: t('comp.info'), description: t('comp.infoNoticeLevel') },
-      { key: 'debug', label: t('comp.debug'), description: t('comp.debugLevel') },
-      { key: 'trace', label: t('comp.trace'), description: t('comp.traceVerboseLevel') },
+      {
+        key: 'error',
+        label: t('core.comp.error'),
+        description: t('core.comp.errorFatalCriticalLevel'),
+      },
+      {
+        key: 'warning',
+        label: t('core.comp.warning'),
+        description: t('core.comp.warnWarningLevel'),
+      },
+      { key: 'info', label: t('core.comp.info'), description: t('core.comp.infoNoticeLevel') },
+      { key: 'debug', label: t('core.comp.debug'), description: t('core.comp.debugLevel') },
+      { key: 'trace', label: t('core.comp.trace'), description: t('core.comp.traceVerboseLevel') },
     ],
   },
   {
-    title: t('comp.structure'),
+    title: t('core.comp.structure'),
     items: [
-      { key: 'module', label: t('comp.moduleName'), description: t('comp.moduleThreadNameSquare') },
+      {
+        key: 'module',
+        label: t('core.comp.moduleName'),
+        description: t('core.comp.moduleThreadNameSquare'),
+      },
       {
         key: 'bracket',
-        label: t('comp.bracketedContent'),
-        description: t('comp.textInsideParentheses'),
+        label: t('core.comp.bracketedContent'),
+        description: t('core.comp.textInsideParentheses'),
       },
     ],
   },
   {
-    title: t('comp.network'),
+    title: t('core.comp.network'),
     items: [
-      { key: 'ip', label: t('comp.ipAddress'), description: t('comp.ipv4Address') },
-      { key: 'url', label: 'URL', description: t('comp.httpHttpsLinks') },
-      { key: 'port', label: t('comp.port'), description: t('comp.portNumber') },
+      { key: 'ip', label: t('core.comp.ipAddress'), description: t('core.comp.ipv4Address') },
+      { key: 'url', label: 'URL', description: t('core.comp.httpHttpsLinks') },
+      { key: 'port', label: t('core.comp.port'), description: t('core.comp.portNumber') },
     ],
   },
   {
-    title: t('comp.fileSystem'),
+    title: t('core.comp.fileSystem'),
     items: [
-      { key: 'path', label: t('comp.filePath'), description: t('comp.fullFilePath') },
-      { key: 'filename', label: t('comp.fileName'), description: t('comp.fileNameExtension') },
+      { key: 'path', label: t('core.comp.filePath'), description: t('core.comp.fullFilePath') },
+      {
+        key: 'filename',
+        label: t('core.comp.fileName'),
+        description: t('core.comp.fileNameExtension'),
+      },
     ],
   },
   {
-    title: t('comp.dataType'),
+    title: t('core.comp.dataType'),
     items: [
       {
         key: 'number',
-        label: t('comp.number'),
-        description: t('comp.integersDecimalsScientificNotation'),
+        label: t('core.comp.number'),
+        description: t('core.comp.integersDecimalsScientificNotation'),
       },
-      { key: 'string', label: t('comp.string'), description: t('comp.quotedString') },
-      { key: 'boolean', label: t('comp.boolean'), description: 'true/false/null' },
-      { key: 'uuid', label: 'UUID', description: t('comp.uuidFormattedIdentifiers') },
+      { key: 'string', label: t('core.comp.string'), description: t('core.comp.quotedString') },
+      { key: 'boolean', label: t('core.comp.boolean'), description: 'true/false/null' },
+      { key: 'uuid', label: 'UUID', description: t('core.comp.uuidFormattedIdentifiers') },
     ],
   },
   {
-    title: t('comp.keyword'),
+    title: t('core.comp.keyword'),
     items: [
       {
         key: 'errorKeyword',
-        label: t('comp.errorKeyword'),
-        description: t('comp.exceptionErrorFailedSimilar'),
+        label: t('core.comp.errorKeyword'),
+        description: t('core.comp.exceptionErrorFailedSimilar'),
       },
       {
         key: 'success',
-        label: t('comp.successKeyword'),
-        description: t('comp.successCompleteDoneSimilar'),
+        label: t('core.comp.successKeyword'),
+        description: t('core.comp.successCompleteDoneSimilar'),
       },
     ],
   },
   {
-    title: t('comp.specialContent'),
+    title: t('core.comp.specialContent'),
     items: [
       {
         key: 'stackTrace',
-        label: t('comp.stackTrace'),
-        description: t('comp.javaPythonStackTraces'),
+        label: t('core.comp.stackTrace'),
+        description: t('core.comp.javaPythonStackTraces'),
       },
-      { key: 'json', label: 'JSON', description: t('comp.jsonObjectsArrays') },
-      { key: 'variable', label: t('comp.variable'), description: t('comp.keyValueVariableNames') },
-      { key: 'operator', label: t('comp.operator'), description: t('comp.otherOperators') },
+      { key: 'json', label: 'JSON', description: t('core.comp.jsonObjectsArrays') },
+      {
+        key: 'variable',
+        label: t('core.comp.variable'),
+        description: t('core.comp.keyValueVariableNames'),
+      },
+      {
+        key: 'operator',
+        label: t('core.comp.operator'),
+        description: t('core.comp.otherOperators'),
+      },
     ],
   },
 ]
@@ -135,7 +166,7 @@ const updateColor = (key: keyof LogHighlightColors, value: string) => {
 // 重置为默认
 const handleReset = () => {
   resetToDefaults()
-  message.success(t('comp.resetDefaults'))
+  message.success(t('core.comp.resetDefaults'))
 }
 
 // 重置单个颜色
@@ -157,101 +188,89 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
 
 <template>
   <div class="log-highlight-settings">
-    <a-row :gutter="24">
-      <a-col :span="12">
-        <div class="form-item-vertical">
-          <div class="form-label-wrapper">
-            <span class="form-label">{{ t('comp.fontSize') }}</span>
-          </div>
-          <a-select
-            :value="editorConfig.fontSize"
-            size="large"
-            style="width: 100%"
-            @change="(v: number) => setEditorConfig({ fontSize: v })"
-          >
-            <a-select-option v-for="size in fontSizeOptions" :key="size" :value="size">
-              {{ size }}px
-            </a-select-option>
-          </a-select>
-        </div>
-      </a-col>
-      <a-col :span="12">
-        <div class="form-item-vertical">
-          <div class="form-label-wrapper">
-            <span class="form-label">{{ t('comp.lineHeight') }}</span>
-          </div>
-          <a-select
-            :value="editorConfig.lineHeight"
-            size="large"
-            style="width: 100%"
-            @change="(v: number) => setEditorConfig({ lineHeight: v })"
-          >
-            <a-select-option v-for="h in lineHeightOptions" :key="h" :value="h">
-              {{ h }}
-            </a-select-option>
-          </a-select>
-        </div>
-      </a-col>
-      <a-col :span="24">
-        <div class="form-item-vertical text-style-item">
-          <div class="form-label-wrapper">
-            <span class="form-label">{{ t('comp.boldText') }}</span>
-          </div>
-          <div class="checkbox-row">
-            <a-checkbox
-              :checked="styles.timestampBold"
-              @change="(e: any) => setStyles({ timestampBold: e.target.checked })"
-            >
-              {{ t('comp.boldTimestamps') }}
-            </a-checkbox>
-            <a-checkbox
-              :checked="styles.levelBold"
-              @change="(e: any) => setStyles({ levelBold: e.target.checked })"
-            >
-              {{ t('comp.boldLogLevels') }}
-            </a-checkbox>
-            <a-checkbox
-              :checked="styles.keywordBold"
-              @change="(e: any) => setStyles({ keywordBold: e.target.checked })"
-            >
-              {{ t('comp.boldKeywords') }}
-            </a-checkbox>
-            <a-checkbox
-              :checked="styles.urlUnderline"
-              @change="(e: any) => setStyles({ urlUnderline: e.target.checked })"
-            >
-              {{ t('comp.urlUnderline') }}
-            </a-checkbox>
-          </div>
-        </div>
-      </a-col>
-    </a-row>
+    <!-- 编辑器排版：三行，全部行内控件 -->
+    <SettingRow :label="t('core.comp.fontSize')">
+      <a-select
+        class="log-select"
+        :value="editorConfig.fontSize"
+        :aria-label="t('core.comp.fontSize')"
+        @change="(v: number) => setEditorConfig({ fontSize: v })"
+      >
+        <a-select-option v-for="size in fontSizeOptions" :key="size" :value="size">
+          {{ size }}px
+        </a-select-option>
+      </a-select>
+    </SettingRow>
+
+    <SettingRow :label="t('core.comp.lineHeight')">
+      <a-select
+        class="log-select"
+        :value="editorConfig.lineHeight"
+        :aria-label="t('core.comp.lineHeight')"
+        @change="(v: number) => setEditorConfig({ lineHeight: v })"
+      >
+        <a-select-option v-for="h in lineHeightOptions" :key="h" :value="h">
+          {{ h }}
+        </a-select-option>
+      </a-select>
+    </SettingRow>
+
+    <SettingRow stacked :label="t('core.comp.boldText')">
+      <div class="checkbox-row">
+        <a-checkbox
+          :checked="styles.timestampBold"
+          @change="(e: any) => setStyles({ timestampBold: e.target.checked })"
+        >
+          {{ t('core.comp.boldTimestamps') }}
+        </a-checkbox>
+        <a-checkbox
+          :checked="styles.levelBold"
+          @change="(e: any) => setStyles({ levelBold: e.target.checked })"
+        >
+          {{ t('core.comp.boldLogLevels') }}
+        </a-checkbox>
+        <a-checkbox
+          :checked="styles.keywordBold"
+          @change="(e: any) => setStyles({ keywordBold: e.target.checked })"
+        >
+          {{ t('core.comp.boldKeywords') }}
+        </a-checkbox>
+        <a-checkbox
+          :checked="styles.urlUnderline"
+          @change="(e: any) => setStyles({ urlUnderline: e.target.checked })"
+        >
+          {{ t('core.comp.urlUnderline') }}
+        </a-checkbox>
+      </div>
+    </SettingRow>
 
     <a-collapse class="advanced-settings" :bordered="false">
       <a-collapse-panel key="highlight">
         <template #header>
           <div class="advanced-settings-header">
-            <span class="advanced-settings-title">{{ t('comp.highlightColorsPreview') }}</span>
+            <span class="advanced-settings-title">{{ t('core.comp.highlightColorsPreview') }}</span>
           </div>
         </template>
 
         <!-- 颜色配置 -->
         <div class="config-section">
           <div class="log-section-header">
-            <div class="section-title">{{ t('comp.colors') }}</div>
+            <div class="section-title">{{ t('core.comp.colors') }}</div>
             <div class="section-actions">
               <a-radio-group v-model:value="editingTheme" button-style="solid" size="small">
-                <a-radio-button value="light">{{ t('comp.lightTheme') }}</a-radio-button>
-                <a-radio-button value="dark">{{ t('comp.darkTheme') }}</a-radio-button>
+                <a-radio-button value="light">{{ t('core.comp.lightTheme') }}</a-radio-button>
+                <a-radio-button value="dark">{{ t('core.comp.darkTheme') }}</a-radio-button>
               </a-radio-group>
               <a-button size="small" @click="handleReset">
                 <template #icon>
                   <ReloadOutlined />
                 </template>
-                {{ t('comp.resetEverything') }}
+                {{ t('core.comp.resetEverything') }}
               </a-button>
             </div>
           </div>
+
+          <DownloadLogStyleSettings :editing-theme="editingTheme" />
 
           <div v-for="group in colorGroups" :key="group.title" class="color-group">
             <div class="group-title">{{ group.title }}</div>
@@ -276,7 +295,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
                   <a-button
                     size="small"
                     type="text"
-                    :title="t('comp.resetThisColor')"
+                    :title="t('core.comp.resetThisColor')"
                     @click="resetSingleColor(item.key)"
                   >
                     <template #icon>
@@ -291,144 +310,8 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
 
         <!-- 预览 -->
         <div class="config-section">
-          <div class="section-title">{{ t('comp.preview') }}</div>
-          <div
-            class="preview-content"
-            :class="editingTheme === 'dark' ? 'preview-dark' : 'preview-light'"
-            :style="{
-              fontSize: editorConfig.fontSize + 'px',
-              lineHeight: editorConfig.lineHeight,
-            }"
-          >
-            <div class="preview-line">
-              <span
-                :style="{
-                  color: '#' + currentColors.timestamp,
-                  fontWeight: styles.timestampBold ? 'bold' : 'normal',
-                }"
-                >2024-12-09 10:30:45.123</span
-              >
-              <span
-                :style="{
-                  color: '#' + currentColors.info,
-                  fontWeight: styles.levelBold ? 'bold' : 'normal',
-                }"
-              >
-                INFO
-              </span>
-              <span :style="{ color: '#' + currentColors.module }">[MainModule]</span>
-              <span>{{ t('comp.appStartedPort') }}</span>
-              <span :style="{ color: '#' + currentColors.port }">:8080</span>
-            </div>
-            <div class="preview-line">
-              <span
-                :style="{
-                  color: '#' + currentColors.timestamp,
-                  fontWeight: styles.timestampBold ? 'bold' : 'normal',
-                }"
-                >2024-12-09 10:30:46.456</span
-              >
-              <span
-                :style="{
-                  color: '#' + currentColors.warning,
-                  fontWeight: styles.levelBold ? 'bold' : 'normal',
-                }"
-              >
-                WARN
-              </span>
-              <span :style="{ color: '#' + currentColors.module }">[Network]</span>
-              <span>{{ t('comp.connectionTimedOutIp') }}</span>
-              <span :style="{ color: '#' + currentColors.ip }">192.168.1.100</span>
-              <span :style="{ color: '#' + currentColors.variable }"> retries</span>
-              <span :style="{ color: '#' + currentColors.operator }">=</span>
-              <span :style="{ color: '#' + currentColors.number }">3</span>
-            </div>
-            <div class="preview-line">
-              <span
-                :style="{
-                  color: '#' + currentColors.timestamp,
-                  fontWeight: styles.timestampBold ? 'bold' : 'normal',
-                }"
-                >2024-12-09 10:30:47.789</span
-              >
-              <span
-                :style="{
-                  color: '#' + currentColors.error,
-                  fontWeight: styles.levelBold ? 'bold' : 'normal',
-                }"
-              >
-                ERROR
-              </span>
-              <span :style="{ color: '#' + currentColors.module }">[Database]</span>
-              <span
-                :style="{
-                  color: '#' + currentColors.errorKeyword,
-                  fontWeight: styles.keywordBold ? 'bold' : 'normal',
-                }"
-              >
-                Exception</span
-              >
-              <span>{{ t('comp.connectionFailed') }}</span>
-              <span :style="{ color: '#' + currentColors.string }">"Connection refused"</span>
-            </div>
-            <div class="preview-line">
-              <span :style="{ color: '#' + currentColors.stackTrace }">
-                at com.example.Database.connect(Database.java:42)</span
-              >
-            </div>
-            <div class="preview-line">
-              <span
-                :style="{
-                  color: '#' + currentColors.timestamp,
-                  fontWeight: styles.timestampBold ? 'bold' : 'normal',
-                }"
-                >2024-12-09 10:30:48.000</span
-              >
-              <span :style="{ color: '#' + currentColors.debug }"> DEBUG </span>
-              <span :style="{ color: '#' + currentColors.module }">[Task]</span>
-              <span> UUID: </span>
-              <span :style="{ color: '#' + currentColors.uuid }"
-                >550e8400-e29b-41d4-a716-446655440000</span
-              >
-            </div>
-            <div class="preview-line">
-              <span
-                :style="{
-                  color: '#' + currentColors.timestamp,
-                  fontWeight: styles.timestampBold ? 'bold' : 'normal',
-                }"
-                >2024-12-09 10:30:49.123</span
-              >
-              <span :style="{ color: '#' + currentColors.trace }"> TRACE </span>
-              <span :style="{ color: '#' + currentColors.module }">[HTTP]</span>
-              <span>{{ t('comp.request') }}</span>
-              <span
-                :style="{
-                  color: '#' + currentColors.url,
-                  textDecoration: styles.urlUnderline ? 'underline' : 'none',
-                }"
-                >https://api.example.com/data</span
-              >
-              <span
-                :style="{
-                  color: '#' + currentColors.success,
-                  fontWeight: styles.keywordBold ? 'bold' : 'normal',
-                }"
-              >
-                Success</span
-              >
-            </div>
-            <div class="preview-line">
-              <span :style="{ color: '#' + currentColors.trace }"> TRACE </span>
-              <span>{{ t('comp.response') }}</span>
-              <span :style="{ color: '#' + currentColors.json }"
-                >{"status": "ok", "count": 42}</span
-              >
-              <span> enabled</span>
-              <span :style="{ color: '#' + currentColors.operator }">=</span>
-              <span :style="{ color: '#' + currentColors.boolean }">true</span>
-            </div>
-          </div>
+          <div class="section-title">{{ t('core.comp.preview') }}</div>
+          <LogHighlightPreview :editing-theme="editingTheme" />
         </div>
       </a-collapse-panel>
     </a-collapse>
@@ -438,6 +321,10 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
 <style scoped>
 .log-highlight-settings {
   padding: 0;
+}
+
+.log-select {
+  width: 140px;
 }
 
 .config-section {
@@ -455,6 +342,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   margin-bottom: 12px;
 }
 
@@ -478,8 +366,8 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
 .advanced-settings {
   overflow: hidden;
   margin-top: 4px;
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border);
+  background: var(--ant-color-fill-quaternary);
+  border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
 }
 
@@ -518,16 +406,10 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
   color: var(--ant-color-text);
 }
 
-.advanced-settings-description {
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
-}
-
 .checkbox-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  min-height: 40px;
   gap: 8px 24px;
 }
 
@@ -535,120 +417,6 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
   font-size: 14px;
   margin-inline-start: 0;
 }
-
-/* 原有颜色配置样式 */
-.config-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.config-label {
-  font-size: 12px;
-  color: var(--ant-color-text-secondary);
-}
-
-.color-group {
-  margin-bottom: 16px;
-}
-
-.color-group:last-child {
-  margin-bottom: 0;
-}
-
-.group-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ant-color-text-secondary);
-  margin-bottom: 8px;
-  padding-left: 4px;
-}
-
-.color-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 8px;
-}
-
-.color-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 10px;
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 4px;
-}
-
-.color-info {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.color-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ant-color-text);
-}
-
-.help-icon {
-  color: var(--ant-color-text-secondary);
-  font-size: 11px;
-}
-
-.color-controls {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.color-picker {
-  width: 28px;
-  height: 20px;
-  padding: 0;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 3px;
-  cursor: pointer;
-  background: transparent;
-}
-
-.color-picker::-webkit-color-swatch-wrapper {
-  padding: 1px;
-}
-
-.color-picker::-webkit-color-swatch {
-  border: none;
-  border-radius: 2px;
-}
-
-.color-value {
-  font-family: monospace;
-  font-size: 11px;
-  color: var(--ant-color-text-secondary);
-  min-width: 55px;
-}
-
-.preview-content {
-  padding: 12px;
-  border-radius: 6px;
-  overflow-x: auto;
-  font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, Courier, monospace;
-}
-
-.preview-light {
-  background: #ffffff;
-  color: #333333;
-  border: 1px solid #d9d9d9;
-}
-
-.preview-dark {
-  background: #1e1e1e;
-  color: #d4d4d4;
-  border: 1px solid #424242;
-}
-
-.preview-line {
-  white-space: nowrap;
-}
 </style>
+
+<style scoped src="./logHighlightColors.css"></style>

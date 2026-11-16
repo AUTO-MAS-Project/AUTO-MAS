@@ -3,14 +3,14 @@
     <template #icon>
       <ImportOutlined />
     </template>
-    {{ t('edit.shellQueueImport') }}
+    {{ t('core.edit.shellQueueImport') }}
   </a-button>
 
   <a-modal
     v-model:open="modalOpen"
-    :title="t('edit.shellQueueImportTitle')"
-    :ok-text="t('edit.shellQueueImportOk')"
-    :cancel-text="t('common.cancel')"
+    :title="t('core.edit.shellQueueImportTitle')"
+    :ok-text="t('core.edit.shellQueueImportOk')"
+    :cancel-text="t('core.common.cancel')"
     :ok-button-props="{ disabled: !canApply }"
     :confirm-loading="applying"
     @ok="apply"
@@ -20,43 +20,46 @@
       block
       class="queue-import-switch"
       :options="sourceKindOptions"
+      @change="autoPickSourceKind = false"
     />
 
     <!-- 本脚本的其他用户：单选卡片，选中的那份队列覆盖当前用户的 -->
     <template v-if="sourceKind === 'users'">
       <a-spin :spinning="userLoading" :class="{ 'queue-import-spin': userLoading }">
-        <div v-if="userCandidates.length > 0" class="queue-import-users" role="radiogroup">
-          <div
+        <a-radio-group
+          v-if="userCandidates.length > 0"
+          v-model:value="pickedUserId"
+          :name="userGroupName"
+          class="queue-import-users"
+          role="radiogroup"
+          :aria-label="t('core.edit.queueImportFromUsers')"
+        >
+          <a-radio
             v-for="candidate in userCandidates"
             :key="candidate.userId"
-            role="radio"
-            tabindex="0"
-            :aria-checked="pickedUserId === candidate.userId"
+            :value="candidate.userId"
             class="queue-import-user"
             :class="{ 'queue-import-user-selected': pickedUserId === candidate.userId }"
-            @click="pickedUserId = candidate.userId"
-            @keydown.enter.prevent="pickedUserId = candidate.userId"
-            @keydown.space.prevent="pickedUserId = candidate.userId"
           >
             <div class="queue-import-user-head">
               <span class="queue-import-user-name">{{ candidate.name }}</span>
               <span class="queue-import-user-count">
-                {{ t('edit.queueTaskCount', { count: candidate.chips.length }) }}
+                {{ t('core.edit.queueTaskCount', { count: candidate.chips.length }) }}
               </span>
               <span v-if="candidate.invalidCount > 0" class="queue-invalid-tag">
-                {{ t('edit.queueInvalidCount', { count: candidate.invalidCount }) }}
+                {{ t('core.edit.queueInvalidCount', { count: candidate.invalidCount }) }}
               </span>
               <span v-if="candidate.passwordCount > 0" class="queue-password-tag">
-                {{ t('edit.queueImportPasswordCount', { count: candidate.passwordCount }) }}
+                {{ t('core.edit.queueImportPasswordCount', { count: candidate.passwordCount }) }}
               </span>
             </div>
             <MaaFWQueueChips :chips="candidate.chips" />
-          </div>
-        </div>
-        <a-empty
+          </a-radio>
+        </a-radio-group>
+        <NoData
           v-else-if="!userLoading"
           class="shell-queue-import-empty"
-          :description="t('edit.queueImportNoUsers')"
+          :description="t('core.edit.queueImportNoUsers')"
         />
       </a-spin>
     </template>
@@ -66,10 +69,10 @@
            用户把脚本位置挪了、或者平时用的是另一份外壳时用得上 -->
       <div class="shell-queue-import-source">
         <span class="shell-queue-import-dir" :title="shownDir">
-          {{ t('edit.shellQueueImportDir', { dir: shownDir }) }}
+          {{ t('core.edit.shellQueueImportDir', { dir: shownDir }) }}
         </span>
         <a-button type="link" size="small" @click="pickDirectory">
-          {{ t('edit.mfwHotkeyImportPickDir') }}
+          {{ t('core.edit.mfwHotkeyImportPickDir') }}
         </a-button>
       </div>
 
@@ -80,20 +83,20 @@
           class="shell-queue-import-select"
           :options="instanceOptions"
         />
-        <a-empty
+        <NoData
           v-else-if="!shellLoading"
           class="shell-queue-import-empty"
-          :description="t('edit.shellQueueImportNone')"
+          :description="t('core.edit.shellQueueImportNone')"
         />
       </a-spin>
     </template>
 
-    <a-alert type="warning" show-icon :message="t('edit.shellQueueImportNote')" />
+    <a-alert type="warning" show-icon :message="t('core.edit.shellQueueImportNote')" />
   </a-modal>
 </template>
 
 <script setup lang="ts">
-import { computed, h, ref, watch } from 'vue'
+import { computed, h, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { message, notification } from 'ant-design-vue'
@@ -136,6 +139,7 @@ const emit = defineEmits<{
 type SourceKind = 'users' | 'shell'
 
 const { t } = useI18n()
+const userGroupName = useId()
 const route = useRoute()
 const scriptId = route.params.scriptId as string
 const userId = route.params.userId as string
@@ -153,8 +157,8 @@ const sourceKind = ref<SourceKind>('users')
 const pickedUserId = ref('')
 
 const sourceKindOptions = computed(() => [
-  { value: 'users', label: t('edit.queueImportFromUsers') },
-  { value: 'shell', label: t('edit.queueImportFromShell') },
+  { value: 'users', label: t('core.edit.queueImportFromUsers') },
+  { value: 'shell', label: t('core.edit.queueImportFromShell') },
 ])
 
 const pickedUser = computed(
@@ -179,7 +183,7 @@ const shownDir = computed(
   () =>
     pickedDir.value ||
     instances.value.find(item => item.sourceDir)?.sourceDir ||
-    t('edit.shellQueueImportDefaultDir')
+    t('core.edit.shellQueueImportDefaultDir')
 )
 
 /** 下拉里带上外壳名、是否当前使用中与**外壳里**的任务数：光一个「配置 1」看不出哪份是哪个 */
@@ -189,8 +193,8 @@ const instanceOptions = computed(() =>
     label: [
       item.name,
       item.source,
-      item.active ? t('edit.shellImportActive') : '',
-      t('edit.shellQueueImportTaskCount', { count: item.taskCount }),
+      item.active ? t('core.edit.shellImportActive') : '',
+      t('core.edit.shellQueueImportTaskCount', { count: item.taskCount }),
     ]
       .filter(Boolean)
       .join(' · '),
@@ -217,16 +221,35 @@ const loadShellInstances = async () => {
   } catch (error) {
     if (request !== shellListRequest) return
     showInstances([])
-    message.error(error instanceof Error ? error.message : t('edit.shellQueueImportFailed'))
+    message.error(error instanceof Error ? error.message : t('core.edit.shellQueueImportFailed'))
   } finally {
     if (request === shellListRequest) shellLoading.value = false
   }
 }
 
+// 打开后两边都读完、用户还没自己切过页签时定一次默认页签：本托管没有可导入的其他账号、外壳里
+// 又读到了实例，就落到外壳页签，省得先看到「没有可导入的账号」再点一次
+let autoPickSourceKind = false
+watch(
+  () =>
+    [
+      props.userLoading,
+      shellLoading.value,
+      props.userCandidates.length,
+      instances.value.length,
+    ] as const,
+  ([usersBusy, shellBusy, userCount, shellCount]) => {
+    if (!autoPickSourceKind || usersBusy || shellBusy) return
+    autoPickSourceKind = false
+    if (userCount === 0 && shellCount > 0) sourceKind.value = 'shell'
+  }
+)
+
 const openDialog = () => {
   sourceKind.value = 'users'
   pickedUserId.value = ''
   pickedDir.value = ''
+  autoPickSourceKind = true
   emit('load-users')
   // 先开弹窗（默认页签是本脚本其他用户），外壳实例在后台读，外壳页签里转圈。
   // 默认目录里一份都没有、读失败也照样开着：弹窗里能改指别的目录，那正是「脚本挪过位置」时的出路
@@ -244,10 +267,10 @@ const pickDirectory = async () => {
     showInstances(found.instances)
     pickedDir.value = found.dir
     if (found.instances.length === 0) {
-      message.warning(t('edit.shellQueueImportNone'))
+      message.warning(t('core.edit.shellQueueImportNone'))
     }
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('edit.shellQueueImportFailed'))
+    message.error(error instanceof Error ? error.message : t('core.edit.shellQueueImportFailed'))
   }
 }
 
@@ -270,19 +293,19 @@ const apply = async () => {
       pickedDir.value || undefined
     )
     if (!snapshot) {
-      message.error(t('edit.shellQueueImportFailed'))
+      message.error(t('core.edit.shellQueueImportFailed'))
       return
     }
     // 父级是同步的：换本地状态而已，写库那次请求后端已经做完了
     emit('imported', snapshot, info)
     modalOpen.value = false
-    message.success(t('edit.shellQueueImportDone', { count: result.importedTaskCount ?? 0 }))
+    message.success(t('core.edit.shellQueueImportDone', { count: result.importedTaskCount ?? 0 }))
     const skipped = result.skipped ?? []
     if (skipped.length > 0) {
       // 覆盖会冲掉原队列，漏掉的任务必须**全部**列出来、而且不能自己消失——
       // 只提示前几条再自动收起，用户永远不知道少的是哪几个
       notification.warning({
-        message: t('edit.shellQueueImportSkippedTitle', { count: skipped.length }),
+        message: t('core.edit.shellQueueImportSkippedTitle', { count: skipped.length }),
         description: h(
           'ul',
           skipped.map(item => h('li', item))
@@ -291,7 +314,7 @@ const apply = async () => {
       })
     }
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('edit.shellQueueImportFailed'))
+    message.error(error instanceof Error ? error.message : t('core.edit.shellQueueImportFailed'))
   } finally {
     applying.value = false
   }
@@ -340,15 +363,14 @@ const apply = async () => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 360px;
   margin-bottom: 12px;
-  overflow-y: auto;
 }
 
 .queue-import-user {
   display: flex;
-  flex-direction: column;
+  align-items: flex-start;
   gap: 8px;
+  margin-inline-end: 0;
   padding: 12px;
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
@@ -357,6 +379,11 @@ const apply = async () => {
   transition:
     border-color 0.2s ease,
     background-color 0.2s ease;
+}
+
+.queue-import-users .queue-import-user :deep(.ant-radio + span) {
+  flex: 1;
+  min-width: 0;
 }
 
 .queue-import-user:hover {
@@ -370,6 +397,7 @@ const apply = async () => {
 }
 
 .queue-import-user-head {
+  margin-bottom: 8px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -391,7 +419,7 @@ const apply = async () => {
   font-size: 13px;
 }
 
-/* 「N 个已失效」：虚线灰标签 */
+/* 「N 个不可用」：虚线灰标签 */
 .queue-invalid-tag {
   flex: none;
   padding: 0 7px;

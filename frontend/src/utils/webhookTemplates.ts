@@ -12,7 +12,7 @@ interface WebhookTemplate {
 export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
   {
     name: 'Bark (iOS推送)',
-    descriptionKey: 'misc.barkPushNotificationApp',
+    descriptionKey: 'core.misc.barkPushNotificationApp',
     template: '{"title": "{title}", "body": "{content}", "sound": "default"}',
     method: 'POST',
     example: 'https://api.day.app/your_key/',
@@ -22,7 +22,7 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
   },
   {
     name: 'Server酱 (微信推送)',
-    descriptionKey: 'misc.serverchanWechatPushService',
+    descriptionKey: 'core.misc.serverchanWechatPushService',
     template: '{"title": "{title}", "desp": "{content}"}',
     method: 'POST',
     example: 'https://sctapi.ftqq.com/your_key.send',
@@ -32,7 +32,7 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
   },
   {
     name: '企业微信机器人',
-    descriptionKey: 'misc.wecomGroupBot',
+    descriptionKey: 'core.misc.wecomGroupBot',
     template: '{"msgtype": "markdown", "markdown": {"content": "**{title}**\\n{content}"}}',
     method: 'POST',
     example: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_key',
@@ -42,7 +42,7 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
   },
   {
     name: 'DingTalk (钉钉机器人)',
-    descriptionKey: 'misc.dingtalkGroupBot',
+    descriptionKey: 'core.misc.dingtalkGroupBot',
     template: '{"msgtype": "text", "text": {"content": "{title}\\n{content}"}}',
     method: 'POST',
     example: 'https://oapi.dingtalk.com/robot/send?access_token=your_token',
@@ -52,7 +52,7 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
   },
   {
     name: 'Telegram Bot',
-    descriptionKey: 'misc.telegramBot',
+    descriptionKey: 'core.misc.telegramBot',
     template: '{"chat_id": "your_chat_id", "text": "{title}\\n{content}"}',
     method: 'POST',
     example: 'https://api.telegram.org/bot{your_bot_token}/sendMessage',
@@ -62,7 +62,7 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
   },
   {
     name: 'Discord Webhook',
-    descriptionKey: 'misc.discordChannelWebhook',
+    descriptionKey: 'core.misc.discordChannelWebhook',
     template: '{"content": "**{title}**\\n{content}"}',
     method: 'POST',
     example: 'https://discord.com/api/webhooks/your_webhook_url',
@@ -72,7 +72,7 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
   },
   {
     name: 'Slack Webhook',
-    descriptionKey: 'misc.slackChannelWebhook',
+    descriptionKey: 'core.misc.slackChannelWebhook',
     template: '{"text": "{title}\\n{content}"}',
     method: 'POST',
     example: 'https://hooks.slack.com/services/your/webhook/url',
@@ -82,7 +82,7 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
   },
   {
     name: 'PushPlus (微信推送)',
-    descriptionKey: 'misc.pushplusWechatPushService',
+    descriptionKey: 'core.misc.pushplusWechatPushService',
     template: '{"token": "your_token", "title": "{title}", "content": "{content}"}',
     method: 'POST',
     example: 'http://www.pushplus.plus/send',
@@ -92,7 +92,7 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
   },
   {
     name: 'OneBot 私聊',
-    descriptionKey: 'misc.qqDirectMessageOver',
+    descriptionKey: 'core.misc.qqDirectMessageOver',
     template:
       '{"user_id": "YOUR_QQ_NUMBER", "message": [{"type": "text", "data": {"text": "{title}\\n{content}"}}]}',
     method: 'POST',
@@ -103,7 +103,7 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
   },
   {
     name: 'OneBot 私聊（图片）',
-    descriptionKey: 'misc.qqDirectMessageOverImage',
+    descriptionKey: 'core.misc.qqDirectMessageOverImage',
     template:
       '{"user_id": "YOUR_QQ_NUMBER", "message": [{"type": "image", "data": {"file": "base64://{image_base64}"}}]}',
     method: 'POST',
@@ -114,7 +114,7 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
   },
   {
     name: 'OneBot 私聊（文本+图片）',
-    descriptionKey: 'misc.qqDirectMessageOverTextImage',
+    descriptionKey: 'core.misc.qqDirectMessageOverTextImage',
     template:
       '{"user_id": "YOUR_QQ_NUMBER", "message": [{"type": "text", "data": {"text": "{title}\\n{content}"}}, {"type": "image", "data": {"file": "base64://{image_base64}"}}]}',
     method: 'POST',
@@ -125,7 +125,7 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
   },
   {
     name: '自定义JSON',
-    descriptionKey: 'misc.customJsonPayload',
+    descriptionKey: 'core.misc.customJsonPayload',
     template: '{"message": "{title}: {content}", "timestamp": "{datetime}"}',
     method: 'POST',
     example: 'https://your-api.com/webhook',
@@ -135,7 +135,7 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
   },
   {
     name: '自定义GET请求',
-    descriptionKey: 'misc.notifyGetRequest',
+    descriptionKey: 'core.misc.notifyGetRequest',
     template: 'title={title}&content={content}&time={datetime}',
     method: 'GET',
     example: 'https://your-api.com/notify',

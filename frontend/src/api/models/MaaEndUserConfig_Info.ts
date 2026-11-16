@@ -4,64 +4,68 @@
 /* eslint-disable */
 export type MaaEndUserConfig_Info = {
     /**
-     * 用户名
-     */
-    Name?: (string | null);
-    /**
-     * 用户状态
-     */
-    Status?: (boolean | null);
-    /**
-     * 用户ID
-     */
-    Id?: (string | null);
-    /**
-     * 密码
-     */
-    Password?: (string | null);
-    /**
-     * base 来源（shared=共享、independent=独立、native=脚本原生配置）
+     * base 来源（shared=共享/independent=独立/native=原生）
      */
     Base?: ('shared' | 'independent' | 'native' | null);
     /**
-     * 是否启用快速配置
+     * 账号ID
+     */
+    Id?: (string | null);
+    /**
+     * 是否启用覆写常规配置
      */
     IfQuickConfig?: (boolean | null);
     /**
-     * 理智任务配置模式
-     */
-    SanityMode?: (string | null);
-    /**
-     * 资源名称
-     */
-    Resource?: (string | null);
-    /**
-     * 剩余天数
-     */
-    RemainedDay?: (number | null);
-    /**
-     * 是否在任务前执行脚本
-     */
-    IfScriptBeforeTask?: (boolean | null);
-    /**
-     * 任务前脚本路径
-     */
-    ScriptBeforeTask?: (string | null);
-    /**
-     * 是否在任务后执行脚本
+     * 任务后执行脚本
      */
     IfScriptAfterTask?: (boolean | null);
     /**
-     * 任务后脚本路径
+     * 任务前执行脚本
      */
-    ScriptAfterTask?: (string | null);
+    IfScriptBeforeTask?: (boolean | null);
+    /**
+     * 账号名称
+     */
+    Name?: (string | null);
     /**
      * 备注
      */
     Notes?: (string | null);
     /**
-     * 用户标签信息
+     * 密码
      */
-    Tag?: (string | null);
+    Password?: (string | null);
+    /**
+     * 剩余天数
+     */
+    RemainedDay?: (number | null);
+    /**
+     * MaaEnd 启动服务器选项原值，官服为旧配置兼容值
+     */
+    Resource?: (string | null);
+    /**
+     * 理智任务策略：指定任务、原生策略或库存目标
+     */
+    SanityStrategy?: ('MAS' | 'Native' | 'Inventory' | null);
+    /**
+     * 理智任务配置模式
+     */
+    SanityMode?: (string | null);
+    /**
+     * 任务后脚本路径
+     */
+    ScriptAfterTask?: (string | null);
+    /**
+     * 任务前脚本路径
+     */
+    ScriptBeforeTask?: (string | null);
+    /**
+     * 是否启用
+     */
+    Status?: (boolean | null);
+    /**
+     * 账号标签信息
+     */
+    readonly Tag?: (string | null);
 };
 

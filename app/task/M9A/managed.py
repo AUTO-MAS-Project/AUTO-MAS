@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""M9A 受管任务：「启动游戏」「切换账号」「关闭游戏」由 MAS 全权控制，不在用户队列里。
+"""M9A 受管任务：「启动游戏」「切换账号」「关闭游戏」由 MAS 全权控制，不在账号队列里。
 
 运行期由特调按固定顺序补（启动 → 切号 → …… → 关闭），账号取用户的 ``Info.Account``。
 队列里残留的这三类任务（beta.1 迁移留下的、#1012 补回的、预设带进来的、手加的、通用 MaaFW
@@ -25,7 +25,7 @@
 - 运行前装饰（``flavor.decorate_selection``）；
 - 每次启动对全部 M9A 用户的整理（``migration.normalize_m9a_managed_entries``）；
 - 旧版专项迁移与 beta.1 补救（``migration.py``）；
-- 保存用户配置、导入外壳配置、恢复备份时写 ``Task.TaskSnapshot`` 的入口（经引擎的可选钩子
+- 保存账号配置、导入外壳配置、恢复备份时写 ``Task.TaskSnapshot`` 的入口（经引擎的可选钩子
   ``sanitize_task_snapshot``，见 ``flavor.py``）。
 
 规则（按 entry 判，不按任务名）：
@@ -36,11 +36,14 @@
    - 恰好 1 个：账号进 ``Info.Account``，从队列移除。``Info.Account`` 原来非空且不同时以
      队列里的为准（旧版与之前的运行实际切的都是它），原值记进备注。
    - 0 个（未勾选或账号为空）：直接移除，不动 ``Info.Account``。
-   - 2 个及以上、脚本资源是官服：队列原样保留（切号连同选项一个不动），备注与通知里写明要拆成
-     几个用户；运行期拒绝运行该用户。M9A 一个用户对应一个账号，这种队列 MAS 没法替用户拆。
-   - 2 个及以上、资源不是官服：切号任务只在官服生效，它们从来没跑过，直接移除。
+   - 2 个及以上、脚本资源支持切号：队列原样保留（切号连同选项一个不动），备注与通知里写明要拆成
+     几个账号；运行期拒绝运行该账号。M9A 一个账号对应一个账号，这种队列 MAS 没法替用户拆。
+   - 2 个及以上、资源不支持切号：切号任务从来没跑过，直接移除。
 
-这份保留状态的判据是**队列内容本身**（有效切号 ≥ 2 且官服），不是某个标记：普通保存把同一份
+「资源支持切号」的口径见 :func:`supports_account_switch`：官服沿用原有规则；``Run.LoginMode``
+为 ``Mas``（B 服登录由 MAS 完成，见 ``login.py``）时切号不再下发，所有切换账号按「不支持」处理。
+
+这份保留状态的判据是**队列内容本身**（有效切号 ≥ 2 且资源支持切号），不是某个标记：普通保存把同一份
 队列交回来，照样判成保留，不会被抹掉；用户删到只剩 1 个时下一次保存就把它收进「账号」。
 """
 
@@ -53,16 +56,33 @@ from typing import Any
 STARTUP_ENTRY = "StartUp"
 SWITCH_ACCOUNT_ENTRY = "SwitchAccount"
 CLOSE_ENTRY = "Close1999"
-#: 由 MAS 控制、不许留在用户队列里的三类任务（按 entry）。
+#: 由 MAS 控制、不许留在账号队列里的三类任务（按 entry）。
 MANAGED_ENTRIES = frozenset({STARTUP_ENTRY, SWITCH_ACCOUNT_ENTRY, CLOSE_ENTRY})
 OFFICIAL_RESOURCE_NAME = "官服"
+#: ``Run.LoginMode`` 的两种取值；``Mas`` 表示 B 服登录由 MAS 完成（见 ``login.py``）。
+LOGIN_MODE_PROJECT = "Project"
+LOGIN_MODE_MAS = "Mas"
 #: 写进用户备注的前缀，备注里有同一句就不再追加（启动整理幂等靠它）。
 NOTE_TAG = "[M9A]"
 _EMPTY_NOTES = ("", "无")
 
 
+def supports_account_switch(
+    resource: str | None, *, login_mode: str | None = None
+) -> bool:
+    """这个资源下 M9A 的切号任务能不能跑。
+
+    官服沿用原有规则；``Run.LoginMode`` 为 ``Mas`` 时登录（含选号）由 MAS 完成，
+    切号任务不再下发，队列里残留的切号按「资源不支持切号」的既有规则处理。
+    """
+
+    if str(login_mode or "").strip() == LOGIN_MODE_MAS:
+        return False
+    return str(resource or "").strip() == OFFICIAL_RESOURCE_NAME
+
+
 class M9ASplitRequiredError(ValueError):
-    """用户队列里有多个有效切号：M9A 一个用户对应一个账号，要先拆成多个用户。"""
+    """账号队列里有多个有效切号：M9A 一个账号对应一个账号，要先拆成多个账号。"""
 
 
 def split_message(accounts: list[str]) -> str:
@@ -70,9 +90,9 @@ def split_message(accounts: list[str]) -> str:
 
     count = len(accounts)
     return (
-        f"该用户队列里有 {count} 个切换账号（账号 {'、'.join(accounts)}），"
-        f"M9A 一个用户对应一个账号，请拆成 {count} 个用户"
-        "（每个用户在上方「账号」填一个）后才能正常运行"
+        f"该账号队列里有 {count} 个切换账号（账号 {'、'.join(accounts)}），"
+        f"M9A 一个账号对应一个账号，请拆成 {count} 个账号"
+        "（每个账号在上方「账号」填一个）后才能正常运行"
     )
 
 
@@ -106,12 +126,13 @@ def settle_snapshot(
     *,
     entry_of: Callable[[str], str],
     account_of: Callable[[str, Any], str],
-    official: bool,
+    supports_switch: bool,
 ) -> Settlement:
     """按模块说明的规则整理一份 ``{taskOrder, taskChecked, taskOptions}``，不改入参。
 
     ``entry_of(task_id)`` 给出实例的 entry（重复实例 id 由调用方还原成任务名）；
-    ``account_of(task_id, 该实例的选项)`` 给出切号实例的目标账号。
+    ``account_of(task_id, 该实例的选项)`` 给出切号实例的目标账号；
+    ``supports_switch`` 见 :func:`supports_account_switch`。
     """
 
     order = [str(task_id) for task_id in snapshot.get("taskOrder") or []]
@@ -130,7 +151,7 @@ def settle_snapshot(
         if account:
             switches.append((task_id, account))
 
-    keep_switches = official and len(switches) >= 2
+    keep_switches = supports_switch and len(switches) >= 2
     removed = [
         task_id
         for task_id in order
@@ -150,15 +171,27 @@ def settle_snapshot(
 
     new_checked = {key: value for key, value in checked.items() if keep_key(key)}
     new_options = {key: value for key, value in options.items() if keep_key(key)}
-    changed = bool(removed) or new_checked != checked or new_options != options
+    raw_schedules = snapshot.get("taskSchedules")
+    schedules = raw_schedules if isinstance(raw_schedules, dict) else {}
+    # 运行日只认整理后队列里的实例，每次都剪：实例 id 以后可能被重新入队（首份就是裸任务名），
+    # 不在队列里的旧限制不能跟着回来
+    new_schedules = {
+        key: value for key, value in schedules.items() if str(key) in kept_set
+    }
+    changed = (
+        bool(removed)
+        or new_checked != checked
+        or new_options != options
+        or new_schedules != schedules
+    )
 
     settled = dict(snapshot)
     if changed:
         settled["taskOrder"] = kept_order
         settled["taskChecked"] = new_checked
         settled["taskOptions"] = new_options
-        # 实例显示名跟着实例走：移出队列的受管任务连名字一起清掉，其余原样保留；
-        # 清完一条不剩就不写这个键（与前端一致，没有显示名的快照不带空表）
+        # 实例显示名跟着实例走：移出队列的受管任务连同它一起清掉，其余原样保留；
+        # 清完一条不剩就不写这个键（与前端一致，没有显示名 / 运行日的快照不带空表）
         raw_labels = snapshot.get("taskLabels")
         if isinstance(raw_labels, dict):
             kept_labels = {
@@ -170,6 +203,10 @@ def settle_snapshot(
                 settled["taskLabels"] = kept_labels
             else:
                 settled.pop("taskLabels", None)
+        if new_schedules:
+            settled["taskSchedules"] = new_schedules
+        else:
+            settled.pop("taskSchedules", None)
     return Settlement(
         snapshot=settled,
         changed=changed,
@@ -181,7 +218,7 @@ def settle_snapshot(
 
 @dataclass
 class InfoChange:
-    """整理结果落到用户 ``Info`` 上的改动。"""
+    """整理结果落到账号 ``Info`` 上的改动。"""
 
     account: str | None = None
     notes: str | None = None
@@ -263,6 +300,8 @@ def first_text_value(value: Any) -> str:
 __all__ = [
     "CLOSE_ENTRY",
     "InfoChange",
+    "LOGIN_MODE_MAS",
+    "LOGIN_MODE_PROJECT",
     "M9ASplitRequiredError",
     "MANAGED_ENTRIES",
     "NOTE_TAG",
@@ -277,4 +316,5 @@ __all__ = [
     "settle_snapshot",
     "settle_user_info",
     "split_message",
+    "supports_account_switch",
 ]

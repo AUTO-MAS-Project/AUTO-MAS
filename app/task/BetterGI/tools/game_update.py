@@ -19,17 +19,17 @@
 """BetterGI 的原神客户端更新。
 
 原神客户端由 BetterGI 自己启停，MAS 这边只经 ``game_info`` 拿到生效的游戏程序路径
-（用户级 ``Switch.GamePath`` 优先，否则透传 BGI 全局配置），**不读 BGI 的其他私有
+（账号级 ``Switch.GamePath`` 优先，否则透传 BGI 全局配置），**不读 BGI 的其他私有
 状态**。
 
 本文件只做「取生效路径 → 判渠道 → 推调度台 → 决定本次任务是否继续」，查版本、下载、
-打补丁与落盘都在 :mod:`app.services.genshin_updater`；**更新过程的所有叙述都由编排层
+打补丁与落盘都在 :mod:`app.services.common.gi_updater.genshin`；**更新过程的所有叙述都由编排层
 写进 app.log**，这里只把影响本轮任务命运的少数几行推到调度台，免得刷掉专项自己的日志。
 两种入口共用同一条判定链：
 
 - **自动入口**（:func:`ensure_game_updated` 默认）：任务启动游戏前按 ``Game.IfAutoUpdate``
   开关检查，查不到 / 环境不允许就放行，确知需要更新却做不了才阻断；
-- **手动入口**（``manual=True``）：用户页「检查更新」由用户主动触发，跳过开关，凡 MAS
+- **手动入口**（``manual=True``）：账号页「检查更新」由用户主动触发，跳过开关，凡 MAS
   无法自动完成的都直接抛错，由用户自己决定后续处理。
 
 两种入口共同的行为策略：
@@ -48,7 +48,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from app.models.config import BetterGIConfig, BetterGIUserConfig
-from app.services.genshin_updater import UpdateKind, update_genshin_client
+from app.services.common.gi_updater import genshin as _service_genshin_updater
 from app.task.BetterGI.tools import game_info
 from app.utils import get_logger
 
@@ -95,7 +95,7 @@ async def ensure_game_updated(
     """接管原神客户端更新，返回本次任务能否继续。
 
     Args:
-        manual: 是否为用户页「检查更新」手动触发。``True`` 时忽略
+        manual: 是否为账号页「检查更新」手动触发。``True`` 时忽略
             ``Game.IfAutoUpdate`` 开关，且凡 MAS 无法自动完成的都抛
             ``RuntimeError``——用户主动发起就该得到明确的失败原因，而不是像自动
             流程那样静默放行。
@@ -108,12 +108,12 @@ async def ensure_game_updated(
         RuntimeError: ``manual=True`` 且无法自动完成时（路径 / 渠道不可用、游戏运行中、
             问不出结论、只能全量更新、更新失败）。
     """
-    if not manual and not script_config.get("Game", "IfAutoUpdate"):
+    if not manual and (not script_config.Game.IfAutoUpdate):
         # 开关没开是常态，什么都不写：否则每次无关任务都要刷一行
         return True
 
-    root_path = Path(str(script_config.get("Info", "RootPath") or "."))
-    user_game_path = str(user_config.get("Switch", "GamePath") or "")
+    root_path = Path(str(script_config.Info.RootPath or "."))
+    user_game_path = str(user_config.Switch.GamePath or "")
     try:
         game_exe = game_info.resolve_game_exe(root_path, user_game_path)
     except Exception as error:  # noqa: BLE001
@@ -154,14 +154,14 @@ async def ensure_game_updated(
         """只进调度台：更新过程的日志由编排层统一写 app.log，这里不再复述。"""
         await _report(on_log, line)
 
-    result = await update_genshin_client(
+    result = await _service_genshin_updater.update_genshin_client(
         str(game_exe.parent),
         resource=resource,
         on_progress=report,
         should_abort=should_abort,
     )
 
-    if result.kind == UpdateKind.Unknown.value:
+    if result.kind == _service_genshin_updater.UpdateKind.Unknown.value:
         # 问不出结论：自动流程已由编排层放行并留了 app.log，手动入口是用户当面来问的，
         # 查不出就是查不出，要把原因摊开而不是回一句「已是最新」
         if manual:

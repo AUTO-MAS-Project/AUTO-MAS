@@ -2,55 +2,25 @@
   <a-form-item class="config-mode-form-item">
     <template #label>
       <span class="config-mode-label">
-        {{ t('edit.configurationManagement') }}
+        {{ t('core.edit.configurationManagement') }}
         <span v-if="saving" class="config-mode-saving">
           <LoadingOutlined spin />
-          {{ t('edit.saving') }}
+          {{ t('core.edit.saving') }}
         </span>
       </span>
     </template>
 
-    <a-radio-group
-      :value="modelValue"
+    <ConfigModeOptions
+      :model-value="modelValue"
       :disabled="disabled || saving"
-      class="config-mode-options"
-      :style="{ gridTemplateColumns: `repeat(${Math.min(options.length, 3)}, minmax(0, 1fr))` }"
-      :aria-label="t('edit.configurationManagement')"
+      :options="sourceOptions"
+      :label="t('core.edit.configurationManagement')"
       @change="handleChange"
-    >
-      <a-tooltip
-        v-for="option in options"
-        :key="String(option.value)"
-        :title="option.disabled ? option.disabledReason : undefined"
-      >
-        <label
-          :class="[
-            'config-mode-option',
-            { selected: modelValue === option.value, disabled: isOptionDisabled(option) },
-          ]"
-          :aria-disabled="option.disabled || undefined"
-        >
-          <a-radio
-            :value="option.value"
-            class="config-mode-radio"
-            :disabled="isOptionDisabled(option)"
-          />
-          <span class="config-mode-icon">
-            <DatabaseOutlined v-if="option.icon === 'database'" />
-            <SettingOutlined v-else-if="option.icon === 'setting'" />
-            <FileTextOutlined v-else />
-          </span>
-          <span class="config-mode-copy">
-            <span class="config-mode-title">{{ option.title }}</span>
-            <span class="config-mode-description">{{ option.description }}</span>
-          </span>
-        </label>
-      </a-tooltip>
-    </a-radio-group>
+    />
 
     <!-- 调用方显式传空串表示卡片描述已够用、不挂来源提示（HSR）；不传仍用默认文案 -->
     <a-alert
-      v-if="alertMessage"
+      v-if="alertMessage && !compact"
       class="config-mode-alert"
       type="info"
       show-icon
@@ -63,46 +33,25 @@
       形态与上面的 base 三态卡片同构；BetterGI 的 overlay 由配置来源派生（原生来源 = 关、
       共享 / 独立 = 开），传 quickConfigReadonly 只读展示派生结果，避免出现可点却无效的卡片。
     -->
-    <a-form-item v-if="quickConfig !== undefined" class="overlay-config-form-item">
+    <a-form-item v-if="quickConfig !== undefined && !compact" class="overlay-config-form-item">
       <template #label>
         <span class="config-mode-label">
-          {{ t('edit.enableQuickConfiguration') }}
-          <a-tooltip :title="t('edit.overridesCurrentScriptConfiguration')">
+          {{ t('core.edit.enableQuickConfiguration') }}
+          <a-tooltip :title="t('core.edit.overridesCurrentScriptConfiguration')">
             <QuestionCircleOutlined class="help-icon" />
           </a-tooltip>
           <span v-if="quickConfigReadonly" class="config-mode-derived">
-            {{ t('edit.quickConfigDerivedHint') }}
+            {{ t('core.edit.quickConfigDerivedHint') }}
           </span>
         </span>
       </template>
-      <a-radio-group
-        :value="quickConfig"
+      <ConfigModeOptions
+        :model-value="quickConfig"
         :disabled="overlayDisabled"
-        class="config-mode-options"
-        :style="{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }"
-        :aria-label="t('edit.enableQuickConfiguration')"
+        :options="overlayOptions"
+        :label="t('core.edit.enableQuickConfiguration')"
         @change="handleOverlayChange"
-      >
-        <label
-          v-for="option in overlayOptions"
-          :key="String(option.value)"
-          :class="[
-            'config-mode-option',
-            { selected: quickConfig === option.value, disabled: overlayDisabled },
-          ]"
-          :aria-disabled="overlayDisabled || undefined"
-        >
-          <a-radio :value="option.value" class="config-mode-radio" :disabled="overlayDisabled" />
-          <span class="config-mode-icon">
-            <SettingOutlined v-if="option.icon === 'setting'" />
-            <FileTextOutlined v-else />
-          </span>
-          <span class="config-mode-copy">
-            <span class="config-mode-title">{{ option.title }}</span>
-            <span class="config-mode-description">{{ option.description }}</span>
-          </span>
-        </label>
-      </a-radio-group>
+      />
     </a-form-item>
 
     <!--
@@ -110,11 +59,18 @@
       developer/config-semantics.html）。未接入 overlay 的专项没有子态可讲，整块不渲染。
     -->
     <div v-if="semantics.formula" class="config-effective" role="status" aria-live="polite">
-      <span class="config-effective-title">{{ t('edit.configSemanticsTitle') }}</span>
+      <span class="config-effective-title">{{ t('core.edit.configSemanticsTitle') }}</span>
       <p class="config-effective-formula">{{ semantics.formula }}</p>
       <p v-if="semantics.effect" class="config-effective-effect">{{ semantics.effect }}</p>
-      <p v-if="semantics.note" class="config-effective-note">{{ semantics.note }}</p>
-      <p v-if="showGuiHint && semantics.gui" class="config-effective-gui">{{ semantics.gui }}</p>
+      <details v-if="compact && (semantics.note || (showGuiHint && semantics.gui))">
+        <summary>{{ t('core.edit.configModeShowDescriptions') }}</summary>
+        <p v-if="semantics.note" class="config-effective-note">{{ semantics.note }}</p>
+        <p v-if="showGuiHint && semantics.gui" class="config-effective-gui">{{ semantics.gui }}</p>
+      </details>
+      <template v-else>
+        <p v-if="semantics.note" class="config-effective-note">{{ semantics.note }}</p>
+        <p v-if="showGuiHint && semantics.gui" class="config-effective-gui">{{ semantics.gui }}</p>
+      </template>
     </div>
   </a-form-item>
 </template>
@@ -122,28 +78,13 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
-import {
-  DatabaseOutlined,
-  FileTextOutlined,
-  LoadingOutlined,
-  SettingOutlined,
-} from '@ant-design/icons-vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { LoadingOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { RadioChangeEvent } from 'ant-design-vue/es/radio/interface'
 import { composeConfigSemantics } from './configSemantics'
+import ConfigModeOptions from './ConfigModeOptions.vue'
+import type { ConfigModeOption } from './configModeOptions'
 
 const { t } = useI18n()
-
-type ConfigModeOption = {
-  value: boolean | string
-  title: string
-  description: string
-  icon?: 'database' | 'file' | 'setting'
-  /** 该选项不可选（如该专项运行时不存在脚本级共享配置）：置灰且不可勾选 */
-  disabled?: boolean
-  /** 不可选原因（悬停该选项时的提示文案） */
-  disabledReason?: string
-}
 
 const props = withDefaults(
   defineProps<{
@@ -169,6 +110,8 @@ const props = withDefaults(
      * 免得同一句既挂在配置来源下、又挂在配置操作下，反而看不清「选什么就改什么」。
      */
     showGuiHint?: boolean
+    /** 只展示配置结论，详细规则按需展开。 */
+    compact?: boolean
   }>(),
   {
     options: undefined,
@@ -176,6 +119,7 @@ const props = withDefaults(
     quickConfig: undefined,
     quickConfigDisabled: undefined,
     quickConfigReadonly: undefined,
+    compact: false,
     showGuiHint: true,
   }
 )
@@ -186,37 +130,51 @@ const props = withDefaults(
 const defaultOptions = computed<ConfigModeOption[]>(() => [
   {
     value: true,
-    title: t('edit.perUserConfiguration'),
-    description: t('edit.saveSeparateConfigurationThis'),
+    title: t('core.edit.perUserConfiguration'),
+    description: t('core.edit.saveSeparateConfigurationThis'),
     icon: 'database',
   },
   {
     value: false,
-    title: t('edit.scriptDirectConfiguration'),
-    description: t('edit.useScriptSCurrent'),
+    title: t('core.edit.scriptDirectConfiguration'),
+    description: t('core.edit.useScriptSCurrent'),
     icon: 'file',
   },
 ])
 
 const options = computed(() => props.options ?? defaultOptions.value)
-const alertMessage = computed(() => props.alertMessage ?? t('edit.configSourceHint'))
+const alertMessage = computed(() => props.alertMessage ?? t('core.edit.configSourceHint'))
 
-/** 整组禁用（页面加载/保存中）或该选项声明 disabled 时，选项置灰不可勾选 */
-const isOptionDisabled = (option: ConfigModeOption): boolean =>
-  props.disabled === true || props.saving === true || option.disabled === true
+const sourceOptions = computed(() => {
+  const independent = t('core.edit.configModeSummaryIndependent')
+  const native = t('core.edit.configModeSummaryNative')
+  const summaries: Record<string, string> = {
+    shared: t('core.edit.configModeSummaryShared'),
+    independent,
+    native,
+    true: independent,
+    false: native,
+  }
+  return options.value.map(option => ({
+    ...option,
+    summary: option.summary ?? summaries[String(option.value)],
+  }))
+})
 
 /** overlay 的两态卡片，与 base 的三态卡片同构（同一套样式类） */
 const overlayOptions = computed(() => [
   {
     value: true,
-    title: t('edit.overlayConfigEnabled'),
-    description: t('edit.overlayConfigEnabledDesc'),
+    title: t('core.edit.overlayConfigEnabled'),
+    summary: t('core.edit.configModeSummaryOverlayEnabled'),
+    description: t('core.edit.overlayConfigEnabledDesc'),
     icon: 'setting' as const,
   },
   {
     value: false,
-    title: t('edit.overlayConfigDisabled'),
-    description: t('edit.overlayConfigDisabledDesc'),
+    title: t('core.edit.overlayConfigDisabled'),
+    summary: t('core.edit.configModeSummaryOverlayDisabled'),
+    description: t('core.edit.overlayConfigDisabledDesc'),
     icon: 'file' as const,
   },
 ])
@@ -253,6 +211,7 @@ const handleOverlayChange = (event: RadioChangeEvent) => {
 
 .config-mode-label {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   font-weight: 600;
@@ -271,88 +230,6 @@ const handleOverlayChange = (event: RadioChangeEvent) => {
   color: var(--ant-color-text-secondary);
   font-size: 12px;
   font-weight: 400;
-}
-
-.config-mode-options {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  width: 100%;
-}
-
-.config-mode-option {
-  display: grid;
-  grid-template-columns: auto 32px minmax(0, 1fr);
-  align-items: start;
-  gap: 12px;
-  min-width: 0;
-  min-height: 96px;
-  padding: 16px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  background: var(--ant-color-bg-container);
-  cursor: pointer;
-  transition:
-    border-color 0.2s ease,
-    background 0.2s ease,
-    box-shadow 0.2s ease;
-}
-
-.config-mode-option:hover:not(.disabled) {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.config-mode-option.selected {
-  border-color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-  box-shadow: 0 0 0 1px var(--ant-color-primary);
-}
-
-.config-mode-option.disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.config-mode-radio {
-  margin-top: 5px;
-}
-
-.config-mode-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  background: var(--ant-color-bg-layout);
-  color: var(--ant-color-text-secondary);
-  font-size: 17px;
-}
-
-.config-mode-option.selected .config-mode-icon {
-  color: var(--ant-color-primary);
-}
-
-.config-mode-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.config-mode-title {
-  color: var(--ant-color-text);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.5;
-}
-
-.config-mode-description {
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
-  line-height: 1.5;
-  /* 描述文案可能含 \n 换行（如 ZZZ-OD 原生来源的约束说明），按原文换行渲染 */
-  white-space: pre-line;
 }
 
 .config-mode-alert {
@@ -412,11 +289,5 @@ const handleOverlayChange = (event: RadioChangeEvent) => {
   color: var(--ant-color-text-secondary);
   font-size: 13px;
   line-height: 1.5;
-}
-
-@media (max-width: 760px) {
-  .config-mode-options {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

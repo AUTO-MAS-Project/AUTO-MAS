@@ -15,21 +15,18 @@
 #
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 import asyncio
 import uuid
 from contextlib import suppress
-from pathlib import Path
 
-from app.core.ws import Publisher, protocol
+from app.config import ConfigCollection
+from app.core import Publisher
+from app.core.ws import protocol
 from app.models.config import BetterGIConfig, BetterGIUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
-from app.services import System
 from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
-from app.utils import ProcessManager, get_logger
-from app.utils.platform import IS_ELEVATED
+from app.utils import IS_ELEVATED, ProcessManager, get_logger, process
 
 from .AutoProxy import _BGI_REL_EXE, _BGI_UNKILLABLE_HINT, _wait_bgi_exit
 from .tools import one_dragon
@@ -44,7 +41,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self,
         script_info: ScriptItem,
         script_config: BetterGIConfig,
-        user_config: MultipleConfig[BetterGIUserConfig],
+        user_config: ConfigCollection[BetterGIUserConfig],
         *,
         view_only: bool = False,
     ):
@@ -61,17 +58,20 @@ class ScriptConfigTask(TaskExecuteBase):
         # 与配置会话共享同一打开路径，无需额外分支
         self.view_only = view_only
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
-        # 脚本级配置（"Default"）强制使用 MAS 配置；真实用户按配置来源决定。
+        # 托管级配置（"Default"）强制使用 MAS 配置；实际账号按配置来源决定。
         self.use_mas_config = True
         if self.cur_user_item.user_id != "Default":
-            user_config = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
-            # 原生来源 = 用 BGI 原生配置，MAS 不接管（与 AutoProxy 同口径；快速配置不参与）
-            base = read_config_base(user_config)
+            current_user = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
+            # 原生来源 = 用 BGI 原生配置，MAS 不接管（与 AutoProxy 同口径；覆写常规配置不参与）
+            base = read_config_base(current_user)
             self.use_mas_config = base != CONFIG_BASE_NATIVE
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.crashed = False
-        self.root_path = Path(self.script_config.get("Info", "RootPath"))
+        root_path = self.script_config.Info.RootPath
+        if root_path is None:
+            raise ValueError("RootPath未配置，请检查路径设置")
+        self.root_path = root_path
         self.exe_path = self.root_path / _BGI_REL_EXE
 
     def _cleanup_leftover_slot(self) -> None:
@@ -79,7 +79,7 @@ class ScriptConfigTask(TaskExecuteBase):
         if not self.use_mas_config:
             return
         with suppress(Exception):
-            # 按用户短 id 前缀扫描删除历史残留物化组（只命中 MAS-{短id}-自定义配置组*，不碰 BGI 本体）
+            # 按账号短 id 前缀扫描删除历史残留物化组（只命中 MAS-{短id}-自定义配置组*，不碰 BGI 本体）
             one_dragon.cleanup_leftover_mas_groups(
                 self.root_path, self.script_info.script_id, self.cur_user_item.user_id
             )
@@ -92,14 +92,14 @@ class ScriptConfigTask(TaskExecuteBase):
     async def main_task(self) -> None:
         await self._kill_processes()
         logger.info(f"启动 BetterGI 设置: {self.exe_path}")
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
         # 任务配置以 MAS 前端为准：GUI 原生来源只打开 BGI 供查看游戏/程序环境，
         # 不再预置一条龙槽位，也不在结束后回读（MAS 前端是唯一编辑入口）。
         self._cleanup_leftover_slot()
         # 仅当 MAS 自身未提权时才走 runas 触发 UAC；已提权时子进程自动继承
         await self.process_manager.open_process(
             self.exe_path,
-            elevated=self.script_config.get("Run", "UseAdmin") and not IS_ELEVATED,
+            elevated=self.script_config.Run.UseAdmin and (not IS_ELEVATED),
         )
         await self.wait_event.wait()
 
@@ -116,12 +116,12 @@ class ScriptConfigTask(TaskExecuteBase):
             )
         if not self.crashed:
             logger.success("BetterGI 原生来源配置已打开（任务配置请以 MAS 前端为准）")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
         self._cleanup_leftover_slot()
 
     async def on_crash(self, e: Exception) -> None:
         self.crashed = True
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"BetterGI 设置任务出现异常: {e}")
         with suppress(Exception):
             await self._kill_processes()
@@ -147,7 +147,7 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.opt(exception=True).warning(f"通过进程管理器中止 BetterGI 失败: {e}")
 
         try:
-            await System.kill_process(self.exe_path)
+            await process.kill_process(self.exe_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止 BetterGI 进程失败: {e}")
 

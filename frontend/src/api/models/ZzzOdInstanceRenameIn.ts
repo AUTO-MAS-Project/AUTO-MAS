@@ -7,7 +7,7 @@
  */
 export type ZzzOdInstanceRenameIn = {
     /**
-     * 所属脚本ID
+     * 所属托管ID
      */
     scriptId: string;
     /**

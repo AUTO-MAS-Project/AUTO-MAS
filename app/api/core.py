@@ -24,18 +24,32 @@
 import asyncio
 import os
 from contextlib import suppress
-from typing import Optional
+from typing import (
+    Literal,
+    Optional,
+)
 
-from fastapi import APIRouter, Request, WebSocket
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Request, WebSocket
+from pydantic import (
+    BaseModel,
+    Field,
+)
 
-from app.api.ws_command import ws_command
-from app.core import Config, TaskManager
-from app.core.lifecycle import ShutdownCoordinator
-from app.core.ws import MainConnection, Publisher, protocol
-from app.models.schema import *
-from app.services import System
-from app.utils import get_logger, is_backend_dev_mode, is_supervised
+from app.core import (
+    MCP,
+    Commands,
+    Config,
+    MainConnection,
+    Notify,
+    Power,
+    Publisher,
+    ShutdownCoordinator,
+    Startup,
+    TaskManager,
+)
+from app.core.ws import protocol
+from app.models.schema import McpStatusData, OutBase
+from app.utils import get_logger, is_supervised, should_preserve_backend
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
 logger = get_logger("DEV")
@@ -44,8 +58,16 @@ logger = get_logger("DEV")
 class WebSocketMetaOut(BaseModel):
     """前端协商主 WebSocket 链接时使用的元信息。"""
 
-    devMode: bool = Field(description="后端当前是否处于开发模式")
+    devMode: bool = Field(description="退出前端时是否保留非托管的开发后端")
     wsPath: str = Field(default="/api/core/ws", description="主 WebSocket 路径")
+
+
+class McpStatusOut(OutBase):
+    data: McpStatusData
+
+
+class McpRetryOut(McpStatusOut):
+    accepted: bool = Field(description="仅表示已受理加载，成功以 data.state=ready 为准")
 
 
 # AUTO-MAS-Runtime 健康检查协议版本：固定返回后端自身支持的版本，不回显监督器注入值，
@@ -66,6 +88,9 @@ class BackendHealthOut(BaseModel):
     protocol: int = Field(description="后端自身支持的健康检查协议版本")
     version: str = Field(description="后端版本号")
     commit: str = Field(description="后端所在提交哈希，未受监督或监督器未注入时为空")
+    startupActivation: Literal["pending", "active", "closed"] | None = Field(
+        default=None, description="自动业务是否已由监督器放行"
+    )
 
 
 def _resolve_injected_identity(env_name: str) -> str | None:
@@ -103,6 +128,47 @@ async def get_health(request: Request) -> BackendHealthOut:
         version=_resolve_injected_identity("AUTO_MAS_EXPECTED_VERSION")
         or Config.VERSION,
         commit=_resolve_injected_identity("AUTO_MAS_EXPECTED_COMMIT") or "",
+        startupActivation=Startup.status,
+    )
+
+
+@router.post(
+    "/startup/activate", response_model=BackendHealthOut, include_in_schema=False
+)
+async def activate_startup(request: Request) -> BackendHealthOut:
+    """监督器完成就绪与身份校验后幂等放行；不进入 MCP 工具目录。"""
+
+    if request.app.state.background_status != "ready":
+        raise HTTPException(status_code=409, detail="后端尚未就绪")
+    try:
+        Startup.activate()
+    except RuntimeError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return await get_health(request)
+
+
+@router.get("/mcp/status", summary="获取 MCP 服务状态", response_model=McpStatusOut)
+async def get_mcp_status() -> McpStatusOut:
+    return McpStatusOut(data=MCP.status())
+
+
+@router.post("/mcp/home-painted", summary="通知首页首帧已渲染", response_model=OutBase)
+async def notify_mcp_home_painted() -> OutBase:
+    MCP.notify_home_painted()
+    return OutBase()
+
+
+@router.post(
+    "/mcp/retry", summary="重新加载失败的 MCP 服务", response_model=McpRetryOut
+)
+async def retry_mcp() -> McpRetryOut:
+    accepted = MCP.retry()
+    return McpRetryOut(
+        code=200 if accepted else 409,
+        status="success" if accepted else "error",
+        message="" if accepted else "MCP 当前状态不允许重新加载",
+        accepted=accepted,
+        data=MCP.status(),
     )
 
 
@@ -116,15 +182,13 @@ async def get_ws_meta() -> WebSocketMetaOut:
     """返回前端建立主 WebSocket 连接需要的元信息。"""
 
     return WebSocketMetaOut(
-        devMode=is_backend_dev_mode(),
+        devMode=should_preserve_backend(),
         wsPath="/api/core/ws",
     )
 
 
-# 主连接建立后触发启动时调度队列
-MainConnection.on_connect(TaskManager.start_startup_queue)
 # 启动期的系统通知（配置迁移结果之类）等主连接建立后再发，否则没人收。
-MainConnection.on_connect(Config.flush_startup_notices)
+MainConnection.on_connect(Notify.flush_startup_notices)
 
 
 @router.websocket("/ws")
@@ -143,11 +207,11 @@ async def _shutdown_backend() -> None:
 
     # 开发模式：后端保持存活以复用（定时器等服务不拆除），
     # 只做轻量任务清理后即通知前端可退出
-    if is_backend_dev_mode():
+    if should_preserve_backend():
         try:
             await TaskManager.stop_task("ALL")
             with suppress(RuntimeError):
-                await System.cancel_power_task()
+                await Power.cancel_power_task()
         except Exception as error:
             logger.opt(exception=True).error(
                 "开发模式轻量清理失败，取消发送退出信号: "
@@ -175,7 +239,7 @@ async def _shutdown_backend() -> None:
         Config.server.should_exit = True
 
 
-@ws_command("core.close")
+@Commands.register("core.close")
 @router.post(
     "/close",
     summary="关闭后端程序",

@@ -1,0 +1,7 @@
+interface:
+  display_name: "AUTO-MAS 遥测接入"
+  short_description: "新增业务时主动接入匿名统计，核对结果、隐私与去重边界"
+  default_prompt: "Use $mas-telemetry when adding or changing an AUTO-MAS user workflow; reuse existing events and implement missing anonymous telemetry with verified outcomes."
+
+policy:
+  allow_implicit_invocation: true

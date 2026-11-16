@@ -3,9 +3,9 @@ import type { ReportLogger } from './useIssueReport'
 import { translate as t } from '@/i18n'
 
 const ERROR_KEYS = {
-  'no-installation': 'misc.maaIssueReportNoInstallation',
-  'no-files': 'misc.maaIssueReportNoFiles',
-  'export-failed': 'misc.maaIssueReportFailed',
+  'no-installation': 'core.misc.maaIssueReportNoInstallation',
+  'no-files': 'core.misc.maaIssueReportNoFiles',
+  'export-failed': 'core.misc.maaIssueReportFailed',
 } as const
 
 export function useMaaIssueReport(logger: ReportLogger) {
@@ -14,15 +14,17 @@ export function useMaaIssueReport(logger: ReportLogger) {
     fallbackName: 'MAA-logs-*.zip',
     exportFn: async () => {
       const result = await window.electronAPI?.exportMaaIssueReport?.({
-        title: t('setting.advanced.exportMaa'),
-        zipFilterName: t('misc.zipArchive'),
+        title: t('core.setting.advanced.exportMaa'),
+        zipFilterName: t('core.misc.zipArchive'),
       })
       if (!result || result.error === '用户取消') return result
       if (result.success)
         return {
           ...result,
           message: t(
-            result.incompleteCount ? 'misc.maaIssueReportIncomplete' : 'misc.maaIssueReportSuccess',
+            result.incompleteCount
+              ? 'core.misc.maaIssueReportIncomplete'
+              : 'core.misc.maaIssueReportSuccess',
             { count: result.collectedCount, incompleteCount: result.incompleteCount }
           ),
         }

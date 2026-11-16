@@ -47,8 +47,6 @@ import ctypes
 import re
 import time
 from collections.abc import Callable
-from contextlib import contextmanager
-from functools import lru_cache
 from pathlib import Path
 
 import cv2
@@ -56,10 +54,10 @@ import numpy as np
 import psutil
 from PIL import Image
 
-from app.tools.error_screenshot import save_error_screenshot
-from app.tools.ocr import Box, OCRItem, ocr_image
-from app.utils import get_logger
-from app.utils.platform import IS_WINDOWS
+from app.tools import error_screenshot as _tool_error_screenshot
+from app.tools import ocr as _tool_ocr
+from app.utils import IS_WINDOWS, get_logger
+from app.utils import display as _utils_display
 
 if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
@@ -69,6 +67,7 @@ if IS_WINDOWS:
     import win32con
     import win32gui
     import win32process
+    import win32ui
 
 logger = get_logger("OK-NTE 启动器启动")
 
@@ -87,6 +86,8 @@ _AUTOPLAY_PROGRESS_SECONDS = 15.0
 # 截图基准分辨率（16:9），OCR 与点击均在此坐标空间计算后再映射回真实窗口
 _FRAME_WIDTH = 1920
 _FRAME_HEIGHT = 1080
+# 主按钮位于右下角；左侧新闻可能含「更新」等文字。
+_ACTION_ROI = (1240, 820, 1920, 1080)
 
 # 首次找到按钮的等待；点击「开始游戏」后等游戏起窗；点「更新」后等更新完成
 _FIND_BUTTON_TIMEOUT = 120
@@ -129,26 +130,6 @@ _START_CLICK_LIMIT = 8
 _START_CLICK_INTERVAL_SECONDS = 12.0
 
 
-@lru_cache(maxsize=1)
-def _user32_dpi_api():
-    user32 = ctypes.windll.user32
-    user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
-    user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
-    return user32
-
-
-@contextmanager
-def _per_monitor_dpi():
-    """切换到 per-monitor DPI 感知，保证窗口坐标换算在跨 DPI 显示器下正确。"""
-    user32 = _user32_dpi_api()
-    previous = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
-    try:
-        yield
-    finally:
-        if previous:
-            user32.SetThreadDpiAwarenessContext(previous)
-
-
 # ── 窗口 / 进程定位 ─────────────────────────────────────────────────────
 
 
@@ -168,7 +149,9 @@ def _window_area(hwnd: int) -> int:
         return 0
 
 
-def _find_process_hwnd(process_name: str) -> int | None:
+def _find_process_hwnd(
+    process_name: str, *, exe_path: Path | None = None
+) -> int | None:
     """按所属进程名找最大可见窗口；不存在返回 None（区别于切号的必存抛错）。"""
     candidates: list[int] = []
 
@@ -179,7 +162,18 @@ def _find_process_hwnd(process_name: str) -> int | None:
         except Exception:
             return True
         _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        if pid and _process_name(pid) == process_name:
+        name = _process_name(pid) if pid else None
+        if name is not None and name.casefold() == process_name.casefold():
+            if exe_path is not None:
+                try:
+                    if Path(psutil.Process(pid).exe()) != exe_path:
+                        return True
+                except (
+                    psutil.NoSuchProcess,
+                    psutil.AccessDenied,
+                    psutil.ZombieProcess,
+                ):
+                    return True
             candidates.append(hwnd)
         return True
 
@@ -189,6 +183,25 @@ def _find_process_hwnd(process_name: str) -> int | None:
 
 def _find_game_hwnd() -> int | None:
     return _find_process_hwnd(_GAME_PROCESS)
+
+
+def launcher_process_paths(launcher_path: Path) -> tuple[Path, ...]:
+    """返回所选安装内可能承载启动器窗口的程序路径。"""
+    if launcher_path.name.casefold() == "ntegloballauncher.exe":
+        window_dir = launcher_path.parent
+        if window_dir.name.casefold() != "nteglobal":
+            window_dir = window_dir / "NTEGlobal"
+        return (launcher_path, window_dir / "NTEGlobalGame.exe")
+    if launcher_path.name.casefold() in {name.casefold() for name in LAUNCHER_EXES}:
+        return (
+            launcher_path,
+            *(
+                launcher_path.parent / name
+                for name in LAUNCHER_EXES
+                if name.casefold() != launcher_path.name.casefold()
+            ),
+        )
+    return (launcher_path,)
 
 
 def _wait_launcher_hwnd(
@@ -201,12 +214,11 @@ def _wait_launcher_hwnd(
     """
     deadline = time.monotonic() + (timeout or _LAUNCHER_WINDOW_TIMEOUT)
     while True:
-        hwnd = _find_process_hwnd(launcher_path.name)
-        if hwnd is None:
-            for exe in LAUNCHER_EXES:
-                hwnd = _find_process_hwnd(exe)
-                if hwnd is not None:
-                    break
+        hwnd = None
+        for path in launcher_process_paths(launcher_path):
+            hwnd = _find_process_hwnd(path.name, exe_path=path)
+            if hwnd is not None:
+                break
         if hwnd is not None or time.monotonic() >= deadline:
             return hwnd
         time.sleep(2)
@@ -260,7 +272,7 @@ def _client_size(hwnd: int) -> tuple[int, int]:
 
 
 def _capture_window_image(hwnd: int, *, activate: bool = True) -> Image.Image:
-    with _per_monitor_dpi():
+    with _utils_display.per_monitor_dpi():
         if activate:
             _activate_window(hwnd)
         width, height = _client_size(hwnd)
@@ -285,15 +297,15 @@ def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
     return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
 
 
-def _read_texts(hwnd: int) -> list[OCRItem]:
-    return ocr_image(_capture_window(hwnd, activate=False))
+def _read_texts(hwnd: int) -> list[_tool_ocr.OCRItem]:
+    return _tool_ocr.ocr_image(_capture_window(hwnd, activate=False))
 
 
 def _click_box(
-    hwnd: int, box: Box, *, activate: bool = False, after_sleep: float = 0.3
+    hwnd: int, box: _tool_ocr.Box, *, activate: bool = False, after_sleep: float = 0.3
 ) -> None:
     """点击 1080p 坐标空间中的一个文字框中心。"""
-    with _per_monitor_dpi():
+    with _utils_display.per_monitor_dpi():
         if activate:
             _activate_window(hwnd)
         width, height = _client_size(hwnd)
@@ -302,27 +314,130 @@ def _click_box(
         client_y = round((y + box_height / 2) * height / _FRAME_HEIGHT)
         screen_x, screen_y = win32gui.ClientToScreen(hwnd, (client_x, client_y))
 
-    original_position = pyautogui.position()
-    try:
-        pyautogui.moveTo(screen_x, screen_y)
-        time.sleep(0.3)
-        pyautogui.click()
-        time.sleep(after_sleep)
-    finally:
-        pyautogui.moveTo(*original_position)
+        original_position = pyautogui.position()
+        try:
+            pyautogui.moveTo(screen_x, screen_y)
+            time.sleep(0.3)
+            pyautogui.click()
+            time.sleep(after_sleep)
+        finally:
+            pyautogui.moveTo(*original_position)
 
 
 # ── OCR 文本判定辅助 ─────────────────────────────────────────────────────
 
 
-def _find_text(items: list[OCRItem], keywords: tuple[str, ...]) -> Box | None:
+def _find_text(
+    items: list[_tool_ocr.OCRItem], keywords: tuple[str, ...]
+) -> _tool_ocr.Box | None:
     for text, box in items:
         if any(keyword in text for keyword in keywords):
             return box
     return None
 
 
-def _download_progress_texts(items: list[OCRItem]) -> tuple[str, ...]:
+def _action_items(items: list[_tool_ocr.OCRItem]) -> list[_tool_ocr.OCRItem]:
+    """只保留文字框中心在启动器主按钮区域内的识别结果。"""
+    left, top, right, bottom = _ACTION_ROI
+    return [
+        (text, (x, y, width, height))
+        for text, (x, y, width, height) in items
+        if left <= x + width / 2 <= right and top <= y + height / 2 <= bottom
+    ]
+
+
+# ── 游戏画面维护检测（公告通道的兜底）────────────────────────────────────
+
+# 维护弹窗特征文本：正式弹窗为「服务器维护中，预计N点开启！」，取两段子串
+# 防 OCR 断句；标题界面等正常画面不含这些词
+_GAME_MAINTENANCE_TEXTS = ("服务器维护", "维护中")
+
+# PrintWindow 的 PW_RENDERFULLCONTENT：DWM 合成下重绘窗口完整内容，
+# 窗口被遮挡也能拿到自身画面（Win 8.1+；独占全屏等场景可能失败，失败放行）
+_PW_RENDERFULLCONTENT = 0x00000002
+
+
+def _capture_game_window_frame(hwnd: int) -> np.ndarray | None:
+    """PrintWindow 抓取游戏窗口自身画面并缩放到 OCR 坐标空间。
+
+    与桌面截图裁剪不同：窗口被其他窗口遮挡时拿到的仍是游戏自己的画面，
+    不会把遮挡窗口的文字误认成游戏弹窗；不激活窗口、不抢前台。
+    抓取失败（独占全屏等）返回 None，由调用方按未命中放行。
+    """
+    try:
+        with _utils_display.per_monitor_dpi():
+            width, height = _client_size(hwnd)
+            if width <= 0 or height <= 0:
+                return None
+            hwnd_dc = win32gui.GetWindowDC(hwnd)
+            try:
+                source_dc = win32ui.CreateDCFromHandle(hwnd_dc)
+                try:
+                    memory_dc = source_dc.CreateCompatibleDC()
+                    try:
+                        bitmap = win32ui.CreateBitmap()
+                        try:
+                            bitmap.CreateCompatibleBitmap(source_dc, width, height)
+                            # SelectObject 返回被替换的旧位图：删除我们的位图前
+                            # 必须先把它从 memory_dc 选出（仍选在 DC 里的 GDI
+                            # 对象删不掉，会随每次捕获泄漏）
+                            original_bitmap = memory_dc.SelectObject(bitmap)
+                            try:
+                                if not ctypes.windll.user32.PrintWindow(
+                                    hwnd, memory_dc.GetSafeHdc(), _PW_RENDERFULLCONTENT
+                                ):
+                                    return None
+                                bitmap_info = bitmap.GetInfo()
+                                bitmap_bits = bitmap.GetBitmapBits(True)
+                            finally:
+                                memory_dc.SelectObject(original_bitmap)
+                        finally:
+                            win32gui.DeleteObject(bitmap.GetHandle())
+                    finally:
+                        memory_dc.DeleteDC()
+                finally:
+                    source_dc.DeleteDC()
+            finally:
+                win32gui.ReleaseDC(hwnd, hwnd_dc)
+        frame = Image.frombuffer(
+            "RGB",
+            (bitmap_info["bmWidth"], bitmap_info["bmHeight"]),
+            bitmap_bits,
+            "raw",
+            "BGRX",
+            0,
+            1,
+        )
+        frame = frame.resize((_FRAME_WIDTH, _FRAME_HEIGHT), Image.Resampling.LANCZOS)
+        return cv2.cvtColor(np.asarray(frame), cv2.COLOR_RGB2BGR)
+    except Exception as error:
+        logger.debug(f"PrintWindow 抓取游戏窗口画面失败（忽略，继续正常流程）: {error}")
+        return None
+
+
+def detect_game_maintenance_text() -> str | None:
+    """OCR 游戏窗口画面，命中维护弹窗文本时返回命中的原文，否则返回 None。
+
+    旁路判定：窗口不存在、抓取或 OCR 失败一律返回 None 放行，不抛错、不
+    激活窗口（PrintWindow 不依赖前台）。只覆盖游戏窗口已存在的场景（MAS
+    拉起或客户端已在运行）；启动前的判定由维护公告通道（ScriptManagerBase）
+    负责。
+    """
+    if not IS_WINDOWS:
+        return None
+    hwnd = _find_game_hwnd()
+    if hwnd is None:
+        return None
+    frame = _capture_game_window_frame(hwnd)
+    if frame is None:
+        return None
+    for text, _ in _tool_ocr.ocr_image(frame):
+        if any(needle in text for needle in _GAME_MAINTENANCE_TEXTS):
+            return text
+    return None
+
+
+def _download_progress_texts(items: list[_tool_ocr.OCRItem]) -> tuple[str, ...]:
     """取百分比/体积/速度文本并剥离计时，供下载进度签名使用。
 
     启动器常把剩余时间倒计时和百分比放在同一行；只包含「剩余时间」及
@@ -376,7 +491,7 @@ def _save_error_screenshot(launcher_hwnd: int | None) -> None:
         target = launcher_hwnd if launcher_hwnd is not None else _find_game_hwnd()
         if target is None:
             return
-        save_error_screenshot(
+        _tool_error_screenshot.save_error_screenshot(
             _capture_window_image(target, activate=False),
             "oknte-launcher-start",
             "launcher-error",
@@ -643,8 +758,9 @@ def start_game_via_launcher(
             # 不重置停滞计时与 went_busy，见上）
             busy_since = None
 
-            start_box = _find_text(items, ("开始游戏",))
-            update_box = None if start_box else _find_text(items, ("更新",))
+            action_items = _action_items(items)
+            start_box = _find_text(action_items, ("开始游戏",))
+            update_box = None if start_box else _find_text(action_items, ("更新",))
             if update_clicked and start_box is not None:
                 # 「开始游戏」已取代「更新」：停止补点，进入启动流程。
                 start_button_gone = True

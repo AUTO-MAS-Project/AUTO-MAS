@@ -29,10 +29,12 @@ from typing import Awaitable, Callable, Dict, List, Optional, Set
 from fastapi import WebSocket, WebSocketDisconnect
 from pydantic import JsonValue
 
-from app.utils.logger import get_logger
-
-from .dispatcher import Dispatcher
-from .protocol import CLOSE_CODE_REPLACED, CLOSE_REASON_REPLACED, parse_envelope
+from app.core.ws.protocol import (
+    CLOSE_CODE_REPLACED,
+    CLOSE_REASON_REPLACED,
+    parse_envelope,
+)
+from app.utils import get_logger
 
 logger = get_logger("WS连接管理器")
 
@@ -80,6 +82,8 @@ class _MainConnectionManager:
         Args:
             websocket (WebSocket): FastAPI 路由传入的连接对象。
         """
+        from app.core import Dispatcher
+
         await websocket.accept()
 
         reject_new_connection = False
@@ -200,7 +204,7 @@ class _MainConnectionManager:
     async def cancel_hook_tasks(self) -> None:
         """取消并等待所有在途连接建立回调任务。
 
-        关闭流程中在业务 teardown 前调用，确保 start_startup_queue 等回调
+        关闭流程中在业务 teardown 前调用，确保启动通知等回调
         不会与后端清理并发执行。
         """
         await self.begin_shutdown()
@@ -225,6 +229,8 @@ class _MainConnectionManager:
 
     async def _receive_loop(self, websocket: WebSocket, generation: int) -> None:
         """接收循环：解析统一信封并交给 Dispatcher，非法消息丢弃。"""
+        from app.core import Dispatcher
+
         while True:
             try:
                 raw = await websocket.receive_json()
@@ -273,6 +279,3 @@ class _MainConnectionManager:
                     logger.error(f"连接回调执行异常: {type(exc).__name__}: {exc}")
 
             task.add_done_callback(_on_done)
-
-
-MainConnection = _MainConnectionManager()

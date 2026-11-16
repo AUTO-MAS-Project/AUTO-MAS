@@ -1,9 +1,9 @@
+import { requestMaintenanceStart } from '@/composables/useTaskApi'
 import { onUnmounted, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { Service, TaskCreateIn } from '@/api'
+import { Service } from '@/api'
 import { useWebSocket } from '@/composables/useWebSocket'
-import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
 import {
   WS_TASK_COMPLETED,
   WS_TASK_LOG_UPDATED,
@@ -53,11 +53,6 @@ export function useBetterGIUpdate(getUserId: () => string) {
     timeout: null as number | null,
   })
 
-  // 任务日志增量协议：append 为假 → 整体替换并记 seq；append 为真且 seq 连续 → 追加；
-  // 否则视为失步（订阅登记前已经错过首条整体替换、或漏了消息）：丢弃本条，拉一次运行
-  // 快照用它的 log/logSeq 重建，重建期间到达的增量一并丢弃。
-  let logSeq: number | null = null
-  let logResyncing = false
   // 报错后任务随即也会走完成事件，用它抑制紧随其后的「任务已结束」成功提示
   let errored = false
 
@@ -82,7 +77,7 @@ export function useBetterGIUpdate(getUserId: () => string) {
     try {
       const response = await Service.stopTaskApiDispatchStopPost({ taskId })
       if (response.code !== 200) {
-        throw new Error(response.message || t('edit.bettergiUpdateStopFailed'))
+        throw new Error(response.message || t('core.edit.bettergiUpdateStopFailed'))
       }
       return true
     } catch (e) {
@@ -99,7 +94,7 @@ export function useBetterGIUpdate(getUserId: () => string) {
       window.clearTimeout(updateSession.timeout)
     }
     updateSession.timeout = window.setTimeout(() => {
-      message.error(t('edit.bettergiUpdateTimed'))
+      message.error(t('core.edit.bettergiUpdateTimed'))
       // 状态一定要落回不运行，否则弹窗会一直停在「进行中」出不来
       updateModal.running = false
       updateModal.done = true
@@ -107,45 +102,16 @@ export function useBetterGIUpdate(getUserId: () => string) {
     }, UPDATE_IDLE_MS)
   }
 
-  const resyncLog = async () => {
-    if (logResyncing || !updateSession.taskId) return
-    logResyncing = true
-    try {
-      const snapshot = await realtimeSnapshotApi.getRuntimeTasks()
-      const item = (snapshot.tasks ?? []).find(task => task.taskId === updateSession.taskId)
-      if (!item) return
-      updateModal.log = item.log ?? ''
-      logSeq = item.logSeq ?? null
-    } catch (e) {
-      logger.warn(`重建原神更新日志失败: ${e instanceof Error ? e.message : String(e)}`)
-    } finally {
-      logResyncing = false
-    }
-  }
-
-  const applyLog = (data: { log: string; seq?: number; append?: boolean }) => {
-    if (!data.append) {
-      updateModal.log = data.log
-      logSeq = data.seq ?? null
-    } else if (logSeq !== null && data.seq === logSeq + 1) {
-      updateModal.log += data.log
-      logSeq = data.seq
-    } else {
-      logSeq = null
-      void resyncLog()
-      return
-    }
+  const applyLog = (data: WSTaskLogUpdatedData) => {
+    // TODO(插件迁移，#1845)：当前全文覆盖会丢失增量前文；迁入后统一适配 append/seq 与快照恢复。
+    updateModal.log = data.log.slice(-UPDATE_LOG_MAX_CHARS)
     armIdleTimer()
-    if (updateModal.log.length > UPDATE_LOG_MAX_CHARS) {
-      updateModal.log = updateModal.log.slice(-UPDATE_LOG_MAX_CHARS)
-    }
   }
 
   const handleCheckUpdate = () => {
     if (updateModal.running || !getUserId()) return
     updateModal.log = ''
     updateModal.done = false
-    logSeq = null
     updateModal.open = true
   }
 
@@ -154,12 +120,9 @@ export function useBetterGIUpdate(getUserId: () => string) {
     if (!userId) return
     updateModal.starting = true
     try {
-      const response = await Service.addTaskApiDispatchStartPost({
-        taskId: userId,
-        mode: TaskCreateIn.mode.UPDATE,
-      })
+      const response = await requestMaintenanceStart(userId)
       if (response.code !== 200 || !response.taskId) {
-        throw new Error(response.message || t('edit.bettergiUpdateStartFailed'))
+        throw new Error(response.message || t('core.edit.bettergiUpdateStartFailed'))
       }
       updateModal.running = true
       updateModal.done = false
@@ -167,15 +130,13 @@ export function useBetterGIUpdate(getUserId: () => string) {
       errored = false
       updateSession.subscriptionIds = [
         subscribe({ id: response.taskId, type: WS_TASK_LOG_UPDATED }, wsMessage => {
-          applyLog(
-            wsMessage.data as unknown as WSTaskLogUpdatedData & { seq?: number; append?: boolean }
-          )
+          applyLog(wsMessage.data)
         }),
         subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
           const data = wsMessage.data as unknown as WSTaskNoticeData
           if (data.level === 'error') {
             errored = true
-            message.error(t('edit.bettergiUpdateFailed', { p0: data.message }))
+            message.error(t('core.edit.bettergiUpdateFailed', { p0: data.message }))
             updateModal.running = false
             updateModal.done = true
             // 弹窗留着：具体原因就在里面那几行日志里
@@ -184,7 +145,7 @@ export function useBetterGIUpdate(getUserId: () => string) {
         }),
         subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
           if (!errored) {
-            message.success(t('edit.bettergiUpdateTask'))
+            message.success(t('core.edit.bettergiUpdateTask'))
           }
           updateModal.running = false
           updateModal.done = true
@@ -196,7 +157,7 @@ export function useBetterGIUpdate(getUserId: () => string) {
       armIdleTimer()
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
-      message.error(e instanceof Error ? e.message : t('edit.bettergiUpdateStartFailed'))
+      message.error(e instanceof Error ? e.message : t('core.edit.bettergiUpdateStartFailed'))
     } finally {
       updateModal.starting = false
     }

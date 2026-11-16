@@ -399,6 +399,7 @@ async def _github_asset(
     from .updater import (
         MaaFWProjectUpdateError,
         _check_github_release_update,
+        _exception_detail,
         _normalize_github_repo,
     )
 
@@ -416,7 +417,8 @@ async def _github_asset(
             timeout=API_TIMEOUT_SECONDS,
         )
     except (MaaFWProjectUpdateError, httpx.HTTPError) as exc:
-        raise HealSkip(f"查询 GitHub Release 失败：{exc}") from exc
+        # 超时类 httpx 异常 str 为空，不补类名就只剩「查询 GitHub Release 失败：」
+        raise HealSkip(f"查询 GitHub Release 失败：{_exception_detail(exc)}") from exc
     candidate = discovery.candidate if discovery is not None else None
     if candidate is None or not candidate.download_url:
         raise HealSkip(f"GitHub 上没有 {version} 的发行包", permanent=True)
@@ -482,7 +484,7 @@ def _check_limits(missing: list[str], sizes: Mapping[str, int]) -> None:
     if len(missing) > MAX_HEAL_FILES or total > MAX_HEAL_BYTES:
         raise HealSkip(
             f"缺 {len(missing)} 个文件、共 {format_size(total)}，超过自动补齐上限，"
-            "请在脚本页重新导入或更新一次",
+            "请在托管页重新导入或更新一次",
             permanent=True,
             notify=True,
         )
@@ -1359,7 +1361,7 @@ async def heal_payload(
                 logger.warning("MaaFW 补齐文件直接放进视图也失败：%s", fallback_error)
         log(
             f"{found}，但生成补齐后的版本失败（{reason}）"
-            + ("，已直接放进本脚本的项目目录" if written else "")
+            + ("，已直接放进本托管的项目目录" if written else "")
             + f"，本次照常运行，用时 {format_duration(time.monotonic() - started)}"
         )
         return HealOutcome(

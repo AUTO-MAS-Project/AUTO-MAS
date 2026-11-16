@@ -16,18 +16,18 @@
 #   You should have received a copy of the GNU Affero General Public
 #   License along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""MAA 配置恢复服务：MAS 用户配置池 / MAA 原生配置池（声明式池）。
+"""MAA 配置恢复服务：MAS 账号配置池 / MAA 原生配置池（声明式池）。
 
 池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
 ``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底预览全部由基座
-（``app.utils.config_restore``）从 ``files`` + ``backup_root`` 声明派生。
+（``app.utils.common.config.restore``）从 ``files`` + ``backup_root`` 声明派生。
 备份文件级原语见同目录 ``backup_archive``。
 
-mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 目录副本 + 页面核心
+mas 池 = 「MAS 为该账号维护的全部配置」：ConfigFile 目录副本 + 页面核心
 字段侧车（Info/Task 两段，覆盖 MAS 编辑页全部可配置核心内容）。这些字段
-运行时注入 gui.json、不落盘在 ConfigFile——备份/恢复两端都带上侧车（恢复
+运行时注入 gui.new.json、不落盘在 ConfigFile——备份/恢复两端都带上侧车（恢复
 后按段分组回填表单，对齐 ZzzOd / ok-ww 字段回填模式），预览与页面认知才
-一致。池恒按用户分桶（侧车是用户级的，shared 来源多用户共享 Default 目录时
+一致。池恒按账号分桶（侧车是账号级的，shared 来源多账号共享 Default 目录时
 各自快照仍需隔离）；两态 owner（脚本=Default 共享目录、用户=独立目录）
 只决定归档/恢复目标路径，与运行下发（AutoProxy ``set_maa``）同一套来源
 规则。
@@ -37,6 +37,7 @@ import shutil
 import uuid
 from pathlib import Path
 
+from app.models.config import migrate_maa_stamina_pipeline
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_NATIVE,
@@ -44,7 +45,7 @@ from app.task.proxy_helpers import (
     read_config_base,
 )
 from app.utils import get_logger
-from app.utils.config_restore import ConfigRestorePool, RestoreContext
+from app.utils.common.config import restore as _utils_config_restore
 
 from .backup_archive import (
     build_backup_file_summary,
@@ -66,14 +67,14 @@ from .backup_archive import (
 logger = get_logger("MAA 配置恢复")
 
 
-def _user_guard(ctx: RestoreContext) -> None:
-    """恢复守卫：目标用户必须存在，避免把配置恢复进孤儿目录。"""
+def _user_guard(ctx: _utils_config_restore.RestoreContext) -> None:
+    """恢复守卫：目标账号必须存在，避免把配置恢复进孤儿目录。"""
 
     if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
-        raise ValueError("MAA 用户不存在，请刷新后重试")
+        raise ValueError("MAA 账号不存在，请刷新后重试")
 
 
-async def _set_base(ctx: RestoreContext, base: str) -> None:
+async def _set_base(ctx: _utils_config_restore.RestoreContext, base: str) -> None:
     """跨来源恢复确认后把 ``Info.Base`` 写回备份时点（tri_state 必须）。
 
     基座校验到备份 base ≠ 当前 base 时回调；写回后 restore 按当前 base
@@ -82,15 +83,15 @@ async def _set_base(ctx: RestoreContext, base: str) -> None:
     """
 
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
-    await user.update({"Info": {"Base": base}})
+    await user.update(type(user).model_validate({"Info": {"Base": base}}))
 
 
-def _mas_owner(ctx: RestoreContext) -> str | None:
-    """当前用户的 MAS 配置目录 owner；原生来源/无法解析时返回 ``None``。
+def _mas_owner(ctx: _utils_config_restore.RestoreContext) -> str | None:
+    """当前账号的 MAS 配置目录 owner；原生来源/无法解析时返回 ``None``。
 
     共享来源共享 ``Default``、独立来源用当前用户目录，与 AutoProxy ``set_maa``
-    的下发源同一套来源规则；原生来源用户没有 MAS 托管配置目录（对齐 MaaEnd
-    的「原生来源无 mas 池」），mas 池列表/预览为空；用户不存在时无法判态，
+    的下发源同一套来源规则；原生来源账号没有 MAS 托管配置目录（对齐 MaaEnd
+    的「原生来源无 mas 池」），mas 池列表/预览为空；账号不存在时无法判态，
     同样返回 ``None``（恢复/归档另有用户守卫）。
     """
 
@@ -104,27 +105,27 @@ def _mas_owner(ctx: RestoreContext) -> str | None:
     return ctx.user_id if base == CONFIG_BASE_INDEPENDENT else "Default"
 
 
-def _native_config_path(ctx: RestoreContext) -> Path | None:
+def _native_config_path(ctx: _utils_config_restore.RestoreContext) -> Path | None:
     """MAA 安装目录 config/；未配置脚本路径返回 ``None``。"""
 
-    raw = str(ctx.script_config.get("Info", "Path") or "").strip()
+    raw = str(ctx.script_config.Info.Path or "").strip()
     return Path(raw) / "config" if raw else None
 
 
-def _mas_dir_for_owner(ctx: RestoreContext, owner: str) -> Path:
+def _mas_dir_for_owner(ctx: _utils_config_restore.RestoreContext, owner: str) -> Path:
     """按两态 owner 求 MAS 配置目录（归档/恢复目标路径）。"""
 
     return mas_config_dir(ctx.script_id, owner)
 
 
-def _seed_mas_dir(ctx: RestoreContext, mas_dir: Path) -> None:
+def _seed_mas_dir(ctx: _utils_config_restore.RestoreContext, mas_dir: Path) -> None:
     """MAS 配置目录缺失时从 MAA 安装目录 config/ 播种。
 
     对齐 ok-ww 的 owner 目录初始化（add_user 时播种）：MAA 的配置目录历史
     上只在老版本迁移或一次完成的配置会话后才存在，缺失时退出归档会静默
     跳过（mas 池永远为空，「改了配置也不生产备份」）。播种让「进入编辑页
     → 退出」的包络自第一次退出起就有现场可归档。不在 add_user 时播种：
-    MAA 路径可以晚于用户配置，播种失败不该挡建用户。
+    MAA 路径可以晚于账号配置，播种失败不该挡建用户。
     """
 
     if mas_dir.is_dir() and any(mas_dir.iterdir()):
@@ -143,7 +144,9 @@ def _seed_mas_dir(ctx: RestoreContext, mas_dir: Path) -> None:
 # ══════════════════ mas 池（声明式 + 定制预览/恢复） ══════════════════
 
 
-async def _mas_files(ctx: RestoreContext) -> dict[str, "Path | str"] | None:
+async def _mas_files(
+    ctx: _utils_config_restore.RestoreContext,
+) -> dict[str, "Path | str"] | None:
     """归档内容 = owner 目录 ConfigFile 副本 + 页面核心字段侧车（内存 JSON）。
 
     归档前播种 owner 目录（缺失时从 MAA 本体 config/ 回灌）；原生来源/无法
@@ -166,7 +169,7 @@ async def _mas_files(ctx: RestoreContext) -> dict[str, "Path | str"] | None:
     )
 
 
-async def _mas_root(ctx: RestoreContext) -> Path:
+async def _mas_root(ctx: _utils_config_restore.RestoreContext) -> Path:
     return mas_backup_root(ctx.script_id, ctx.user_id)
 
 
@@ -190,17 +193,17 @@ def _overlay_preview_payload(backup: Path | None, ts: str) -> dict:
     return {"fileCards": build_overlay_summary(overlay) + file_cards}
 
 
-async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
+async def _preview_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> dict:
     return _overlay_preview_payload(
         get_mas_backup_dir(ctx.script_id, ctx.user_id, ts), ts
     )
 
 
-async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
+async def _restore_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> None:
     _user_guard(ctx)
     owner = _mas_owner(ctx)
     if owner is None:
-        raise ValueError("无法确定该用户的 MAS 配置目录，请刷新后重试")
+        raise ValueError("无法确定该账号的 MAS 配置目录，请刷新后重试")
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     restored_overlay = restore_mas_backup(
         ctx.script_id,
@@ -215,13 +218,44 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
         # 侧车字段回填（对齐 ZzzOd / ok-ww 字段回填模式）：按配置段分组写回
         # （Info/Task），页面配置随文件一起回到备份时点，否则旧表单值下次
         # 保存会静默覆盖回滚结果
-        await user.update(group_overlay(restored_overlay))
+        restored = group_overlay(restored_overlay)
+        # 旧备份缺少全部托管开关时恢复为关闭，不继承当前的自动扩充意图。
+        restored.setdefault("Task", {}).setdefault("CultivateAllOwned", False)
+        if task := restored.get("Task"):
+            # 三段理智的药石额度各自独立、留空即沿用 MAA；旧备份缺字段补 None，
+            # 不能拿一个字段的值去填另一个，否则会把库存额度当成养成额度。
+            for key in (
+                "DepotMaintainMedicineNumb",
+                "DepotMaintainStoneNumb",
+                "CultivateMedicineNumb",
+                "CultivateStoneNumb",
+                "EventDepotMaintainMedicineNumb",
+                "EventDepotMaintainStoneNumb",
+            ):
+                task.setdefault(key, None)
+        if "StaminaPipelineVersion" not in restored.get("Data", {}):
+            # 历史侧车没有新字段：只从该备份恢复旧意图，不能继承当前轮生成的计划。
+            task = restored.setdefault("Task", {})
+            task.setdefault("IfEventDepotMaintain", False)
+            task.setdefault("EventDepotMaintainPlans", "[]")
+            task.setdefault("IfActivityFirst", True)
+            task.setdefault("ActivityStageIndex", 1)
+            task.setdefault("ActivityMedicineNumb", 0)
+            task.setdefault("IfCultivate", False)
+            task.setdefault("CultivateTargets", "[]")
+            task.setdefault("CultivateAutoRaise", False)
+            task.setdefault("IfDepotMaintain", False)
+            task.setdefault("DepotMaintainPlans", "[]")
+            restored, _ = migrate_maa_stamina_pipeline(restored)
+        await user.update(type(user).model_validate(restored))
 
 
 # ══════════════════ native 池（声明式 + 定制预览/恢复） ══════════════════
 
 
-async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
+async def _native_files(
+    ctx: _utils_config_restore.RestoreContext,
+) -> dict[str, Path] | None:
     """归档内容 = MAA 安装目录 config/ 整目录（缺失/为空返回 ``None``）。"""
 
     config_path = _native_config_path(ctx)
@@ -230,14 +264,16 @@ async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
     return collect_native_files(config_path) or None
 
 
-async def _native_root(ctx: RestoreContext) -> Path | None:
+async def _native_root(ctx: _utils_config_restore.RestoreContext) -> Path | None:
     config_path = _native_config_path(ctx)
     if config_path is None:
         return None
     return native_backup_root(config_path)
 
 
-def _preview_payload(ctx: RestoreContext, ts: str, backup: Path | None) -> dict:
+def _preview_payload(
+    ctx: _utils_config_restore.RestoreContext, ts: str, backup: Path | None
+) -> dict:
     """预览载荷：MAA 配置文件摘要（与 MAS 侧同口径的稳定字段），其余经
     「查看详细配置」恢复后在 MAA GUI 里查看。
 
@@ -251,14 +287,14 @@ def _preview_payload(ctx: RestoreContext, ts: str, backup: Path | None) -> dict:
     return {"fileCards": build_backup_file_summary(backup)}
 
 
-async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
+async def _preview_native(ctx: _utils_config_restore.RestoreContext, ts: str) -> dict:
     config_path = _native_config_path(ctx)
     if config_path is None:
         return {"fileCards": []}
     return _preview_payload(ctx, ts, get_native_backup_dir(config_path, ts))
 
 
-async def _restore_native(ctx: RestoreContext, ts: str) -> None:
+async def _restore_native(ctx: _utils_config_restore.RestoreContext, ts: str) -> None:
     config_path = _native_config_path(ctx)
     if config_path is None:
         raise ValueError("请先设置 MAA 脚本路径")
@@ -266,7 +302,7 @@ async def _restore_native(ctx: RestoreContext, ts: str) -> None:
 
 
 RESTORE_POOLS = [
-    ConfigRestorePool(
+    _utils_config_restore.ConfigRestorePool(
         key="mas",
         kind="user",
         mas_base="tri_state",
@@ -276,7 +312,7 @@ RESTORE_POOLS = [
         preview=_preview_mas,
         restore=_restore_mas,
     ),
-    ConfigRestorePool(
+    _utils_config_restore.ConfigRestorePool(
         key="native",
         kind="script",
         files=_native_files,

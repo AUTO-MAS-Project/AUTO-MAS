@@ -35,37 +35,46 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from app.core import Config
-from app.core.ws import Publisher, protocol
-from app.log_box import LogCollect, LogType, log_box
+from app.config import ConfigCollection
+from app.core import Config, Notify, Publisher
+from app.core.notify.task_content import (
+    build_script_statistics_payload as build_script_statistics_payload,
+)
+from app.core.ws import protocol
 from app.models.config import BAAHConfig, BAAHPlanConfig, BAAHUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
-from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem
-from app.services import Notify, System
+from app.models.notification import LocalNotice
+from app.models.schema import HistoryWrite, WSTaskNoticeData
+from app.models.task import LogRecord, ScriptItem, UserItem
 from app.task.base import ScriptAutoProxyBase
-from app.task.proxy_helpers import append_push_log
-from app.tools.bluearchive_activity import BlueArchiveLineType, has_running_activity
-from app.utils import LogMonitor, ProcessManager, compile_log_signs, get_logger
-from app.utils.constants import UTC4
+from app.tools.common.game_calendar import bluearchive as _tool_bluearchive_activity
+from app.utils import (
+    LOG_TYPE_NORMAL,
+    UTC4,
+    LogMonitor,
+    ProcessManager,
+    compile_log_signs,
+    get_logger,
+    log_box,
+    process,
+)
+from app.utils import update_files as _utils_update_files
+from app.utils.common.log import sources as log_source
 
 from .tools import (
-    BAAH_PUSH_RULES,
     CONFIG_DIR_NAME,
     LOG_DIR_RELATIVE,
     SOFTWARE_CONFIG_RELATIVE,
     ManagedConfigBackup,
     apply_managed_config,
-    baah_resolve,
     latest_log_file,
-    push_notification,
     read_json,
     resolve_config_name,
     resolve_log_time_range,
     resolve_user_config_path,
     restore_managed_config,
 )
+from .tools import push_log as _push_log
 
 logger = get_logger("BAAH 自动代理")
 
@@ -99,10 +108,10 @@ _PROCESS_GRACE_SECONDS = 60
 ## BAAH 的「活动关卡」任务名（上游 modules/AllTask/myAllTask.py 的 TaskName.EVENT）
 BAAH_EVENT_TASK_NAME = "活动关卡"
 
-## 计划表六类关卡字段与 BAAH 配置项的对应关系。键名沿用上游既有拼写
+## 计划表五类关卡字段与 BAAH 配置项的对应关系。活动关卡沿用 BAAH 原生配置。
+## 键名沿用上游既有拼写
 ## （SPECIAL_HIGHTEST_LEVEL 少一个 E），不要照着拼写习惯改。
 BAAH_STAGE_OPTIONS: dict[str, str] = {
-    "Event": "EVENT_QUEST_LEVEL",
     "Wanted": "WANTED_HIGHEST_LEVEL",
     "Special": "SPECIAL_HIGHTEST_LEVEL",
     "Exchange": "EXCHANGE_HIGHEST_LEVEL",
@@ -110,11 +119,23 @@ BAAH_STAGE_OPTIONS: dict[str, str] = {
     "Normal": "NORMAL",
 }
 
+## 活动期间关闭其他扫荡入口，咖啡馆、签到等日常任务保持原有开关。
+BAAH_NON_EVENT_RAID_TASKS = {
+    "悬赏通缉",
+    "特殊任务",
+    "学园交流会",
+    "困难关卡",
+    "普通关卡",
+    "一键扫荡",
+}
+
 
 def prioritize_event_quest(
     task_order_group: object,
+    *,
+    enabled: bool = True,
 ) -> tuple[dict[str, Any] | None, str]:
-    """把激活任务线里的「活动关卡」整体挪到最前并打开。
+    """有活动时只启用活动扫荡，无活动时关闭活动入口、保留其他任务开关。
 
     只动激活那条线的 ``TASK_PIPELINE`` 与 ``TASK_ONOFF``：这两个数组按下标严格
     配对（同一个下标是同一个任务与它的开关），所以 **务必成对搬动**，只挪一边
@@ -125,7 +146,8 @@ def prioritize_event_quest(
     没有任何效果。
 
     Args:
-        task_order_group: 用户配置里的 ``TASK_ORDER_GROUP`` 取值。
+        task_order_group: 账号配置里的 ``TASK_ORDER_GROUP`` 取值。
+        enabled: 是否处于活动期间。
 
     Returns:
         tuple[dict[str, Any] | None, str]: 新的 ``TASK_ORDER_GROUP`` 与一句说明；
@@ -172,15 +194,18 @@ def prioritize_event_quest(
     rest_onoff: list[Any] = []
     for index in range(pair_count):
         task = task_pipeline[index]
-        if task == BAAH_EVENT_TASK_NAME:
+        if task == BAAH_EVENT_TASK_NAME and enabled:
             head_tasks.append(task)
             ## 排到最前的前提是它会被执行，开关必须同时打开
             head_onoff.append(True)
         else:
             rest_tasks.append(task)
-            rest_onoff.append(task_onoff[index])
+            disable = task == BAAH_EVENT_TASK_NAME or (
+                enabled and task in BAAH_NON_EVENT_RAID_TASKS
+            )
+            rest_onoff.append(False if disable else task_onoff[index])
 
-    if not head_tasks:
+    if enabled and not head_tasks:
         ## 一条都没有就地插入：只补任务名不补开关，等于插了个不执行的任务
         head_tasks.append(BAAH_EVENT_TASK_NAME)
         head_onoff.append(True)
@@ -194,17 +219,18 @@ def prioritize_event_quest(
     new_all_pipelines = list(all_pipelines)
     new_all_pipelines[activate_ind] = new_pipeline
     new_order_group["ALL_PIPELINES"] = new_all_pipelines
-    return new_order_group, "已把「活动关卡」排到激活任务线最前" + note
+    action = "已启用活动关卡并关闭其他扫荡任务" if enabled else "已关闭活动关卡任务"
+    return new_order_group, action + note
 
 
-class AutoProxyTask(ScriptAutoProxyBase):
+class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
     """自动代理模式"""
 
     def __init__(
         self,
         script_info: ScriptItem,
         script_config: BAAHConfig,
-        user_config: MultipleConfig[BAAHUserConfig],
+        user_config: ConfigCollection[BAAHUserConfig],
         emulator_manager: DeviceBase | None,
     ):
         super().__init__()
@@ -231,10 +257,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
         ## 本次活动使用的配置文件名：check() 里确定，prepare() 复用
         self.effective_config_name: str | None = None
         ## log_box：任务节点采集（受「推送任务节点详情」开关控制，关闭时不创建）
-        self.log_collect: LogCollect | None = None
+        self._log_source: log_source.LogSource | None = None
+        self._log_pipeline: log_box.LogPipeline | None = None
+        self._log_user: UserItem | None = None
+        self._log_failed = False
+        self._log_close_task: asyncio.Task[None] | None = None
         self.script_log_path: Path | None = None
         self.emulator_adb_address: str = ""
-        ## 本用户的开始时刻，用于统计信息通知
+        ## 本账号的开始时刻，用于统计信息通知
         self.user_start_time = datetime.now()
 
         self._resolve_paths()
@@ -247,7 +277,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         项写进 BAAH 根本不读的文件，或每次都等满 60 秒「未找到日志文件」。
         """
 
-        self.baah_path = Path(self.script_config.get("Script", "BAAHPath"))
+        baah_path = self.script_config.Script.BAAHPath
+        if baah_path is None:
+            raise ValueError("BAAH路径未配置，请检查路径设置")
+        self.baah_path = baah_path
         self.root_path = self.baah_path.parent
         self.config_dir = self.root_path / CONFIG_DIR_NAME
         self.log_dir = self.root_path / LOG_DIR_RELATIVE
@@ -256,7 +289,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
     async def _resolve_effective_config_name(self) -> str:
         """决定本次运行使用哪份 BAAH 配置文件。
 
-        只看用户配置里的 ``Info.ConfigName``：活动相关的那份「换配置文件」逻辑已经
+        只看账号配置里的 ``Info.ConfigName``：活动相关的那份「换配置文件」逻辑已经
         拆掉，用哪份配置不再随时间变化。
 
         Returns:
@@ -271,25 +304,25 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         ## or "" 兜住 None：str(None) 会得到 "None"，被当成配置名去找 None.json
         self.effective_config_name = resolve_config_name(
-            str(self.cur_user_config.get("Info", "ConfigName") or "")
+            str(self.cur_user_config.Info.ConfigName or "")
         )
         return self.effective_config_name
 
     async def check(self) -> str:
-        """校验 BAAH 运行所需的路径与用户配置"""
+        """校验 BAAH 运行所需的路径与账号配置"""
 
         if not self.baah_path.is_file():
-            self.cur_user_item.status = "异常"
-            return "未找到 BAAH 主程序, 请检查脚本配置中的主程序路径设置！"
+            await self.cur_user_item.set_state(status="异常")
+            return "未找到 BAAH 主程序, 请检查托管配置中的主程序路径设置！"
 
         try:
             config_name = await self._resolve_effective_config_name()
         except ValueError as e:
-            self.cur_user_item.status = "异常"
-            return f"{e}, 请在用户配置中填写 BAAH 配置文件名称！"
+            await self.cur_user_item.set_state(status="异常")
+            return f"{e}, 请在账号配置中填写 BAAH 配置文件名称！"
 
         if not resolve_user_config_path(self.config_dir, config_name).is_file():
-            self.cur_user_item.status = "异常"
+            await self.cur_user_item.set_state(status="异常")
             return (
                 f"未找到 BAAH 配置文件 {config_name}.json, "
                 "请先在 BAAH 界面中创建同名配置！"
@@ -302,7 +335,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
-        self.log_start_time = datetime.now()
+        self.log_start_time = datetime.now().astimezone()
         self.log_start_at = time.monotonic()
 
         ## 成功与失败关键字固定：成功文本只出现在 BAAH 的成功路径，
@@ -316,40 +349,34 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.log_monitor = None
 
         ## 配置托管总开关：关闭时照常启动 BAAH，但不改动它的任何配置文件
-        self.if_manage_config = bool(self.script_config.get("Script", "IfManageConfig"))
-        ## BAAH 没有用户快速配置面板，模拟器等托管项只受脚本级总开关控制。
+        self.if_manage_config = bool(self.script_config.Script.IfManageConfig)
+        ## BAAH 没有账号覆写常规配置面板，模拟器等托管项只受托管级总开关控制。
         ## 推送任务节点详情开关：关闭时**不创建 log_box**（不读日志、不匹配），
-        ## 该用户 push_log 保持为空，报告自然不含 BAAH 的任务节点；任务日志记录
+        ## 该账号 push_log 保持为空，报告自然不含 BAAH 的任务节点；任务日志记录
         ## 与结果判定都不受它影响，照常进行
-        self.push_log_enabled = bool(self.script_config.get("Script", "PushLogEnabled"))
-        self.log_collect = None
+        self.push_log_enabled = bool(self.script_config.Script.PushLogEnabled)
+        self._log_source = None
+        self._log_pipeline = None
+        self._log_user = None
+        self._log_close_task = None
 
         ## 配置文件名在 check() 里已解析并缓存，这里复用同一结果
         config_name = await self._resolve_effective_config_name()
         self.user_config_path = resolve_user_config_path(self.config_dir, config_name)
-
-        ## 运行前归档该用户的 BAAH 配置（按用户分桶，指纹去重，失败不阻断
-        ## 任务）：此刻配置文件尚未被托管项改写，是「本轮动手前」的完整现场
-        from .tools.backup_archive import archive_native_backup
-
-        try:
-            archive_native_backup(self.config_dir, config_name, str(self.cur_user_uid))
-        except Exception:
-            logger.opt(exception=True).warning(
-                "BAAH 运行前配置归档失败，已跳过（不阻断任务）"
-            )
 
     async def main_task(self):
         """自动代理模式主逻辑"""
 
         self.user_start_time = datetime.now()
 
-        ## 每日重置：跨天后代理次数归零，用户标签里的「任务」状态才会重新变成
+        ## 每日重置：跨天后代理次数归零，账号标签里的「任务」状态才会重新变成
         ## 「未代理」（通用脚本同一套口径）
         curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
-        if self.cur_user_config.get("Data", "LastProxyDate") != curdate:
-            await self.cur_user_config.set("Data", "LastProxyDate", curdate)
-            await self.cur_user_config.set("Data", "ProxyTimes", 0)
+        if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") != curdate:
+            self.cur_user_config.Data.LastProxyDate = datetime.now(tz=UTC4)
+            await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = 0
+            await self.cur_user_config.commit()
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
@@ -359,41 +386,41 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 type=protocol.TASK_NOTICE,
                 data=WSTaskNoticeData(
                     level="error",
-                    message=f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}",
+                    message=f"账号 {self.cur_user_item.name} 检查未通过: {self.check_result}",
                 ),
             )
             return
 
         await self.prepare()
 
-        logger.info(f"开始代理用户: {self.cur_user_uid}")
-        self.cur_user_item.status = "运行"
+        logger.info(f"开始代理账号: {self.cur_user_uid}")
+        await self.cur_user_item.set_state(status="运行")
 
-        for i in range(self.script_config.get("Run", "RunTimesLimit")):
+        for i in range(self.script_config.Run.RunTimesLimit):
             if self.run_book:
                 break
 
             logger.info(
-                f"用户 {self.cur_user_item.name} - 尝试次数: "
-                f"{i + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
+                f"账号 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
             )
-            self.log_start_time = datetime.now()
+            self.log_start_time = datetime.now().astimezone()
             self.log_start_at = time.monotonic()
-            self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = (
-                LogRecord()
+            self.cur_user_log = LogRecord()
+            self.cur_user_log = await self.cur_user_item.add_log_record(
+                self.log_start_time, self.cur_user_log
             )
 
             await self.run_once()
 
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
-                self.cur_user_item.status = "完成"
-                logger.success(f"用户: {self.cur_user_uid} - BAAH 完成代理任务")
+                await self.cur_user_item.set_state(status="完成")
+                logger.success(f"账号: {self.cur_user_uid} - BAAH 完成代理任务")
                 break
 
-            self.cur_user_item.status = "异常"
+            await self.cur_user_item.set_state(status="异常")
             logger.warning(
-                f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
+                f"账号: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
             )
             await asyncio.sleep(3)
 
@@ -407,14 +434,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if self.emulator_manager is None:
             return True
 
-        self.script_info.log = "正在启动模拟器"
+        await self.script_info.set_log("正在启动模拟器")
         ## 状态必须落在后端既有枚举（等待/运行/完成/异常）里：调度台与前端
         ## 都用 `=== '运行'` 判断任务是否在跑，自造后缀会让这些比较全部失效
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
 
         try:
             device_info = await self.emulator_manager.open(
-                str(self.script_config.get("Emulator", "Index"))
+                str(self.script_config.Emulator.Index)
             )
         except Exception as e:
             logger.opt(exception=True).warning(f"启动模拟器失败: {e}")
@@ -452,17 +479,17 @@ class AutoProxyTask(ScriptAutoProxyBase):
         }
 
     def _plan_stage_runtime_values(self) -> dict[str, Any]:
-        """按用户选的关卡计划表覆盖 BAAH 的六类关卡配置。
+        """按账号选的关卡计划表覆盖 BAAH 的五类非活动关卡配置。
 
         ``Info.StageMode`` 为 ``Fixed`` 时**一个字节都不动**，用户在 BAAH 界面里自己配的
         多天轮换原样保留；选了计划表才用计划表当天那一格的 key 覆盖。
 
-        计划表一天的 key 里，六个字段各有三种状态，写进 BAAH 的方式也不同：
+        计划表一天的 key 里，五个字段各有三种状态，写进 BAAH 的方式也不同：
         缺席（字段不在 key 里）＝这一项根本不写，BAAH 沿用自己配置里的关卡与开关；
-        空数组＝今天这一类不打，直接写空数组（BAAH 六类都用「数组长度不为 0」判断
+        空数组＝今天这一类不打，直接写空数组（BAAH 用「数组长度不为 0」判断
         要不要做，空数组会被它跳过）；有值＝按下面的单元素数组写。
 
-        **有值时这六个字段都必须写成单元素数组**：BAAH 取槽位的方式是
+        **有值时这些字段都必须写成单元素数组**：BAAH 取槽位的方式是
         ``time.localtime().tm_mday % len(数组)``（本月第几天对数组长度取模）。数组长度
         为 1 时 ``today % 1 == 0``，永远命中第 0 项，「今天打什么」就完全由计划表决定；
         若照抄计划表那套多天数组，1~31 号会与计划表的「周几」整体错位，每天都在打别的
@@ -470,7 +497,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         关卡列表去跑，而不是「今天不打」。
         """
 
-        stage_mode = str(self.cur_user_config.get("Info", "StageMode"))
+        stage_mode = str(self.cur_user_config.Info.StageMode)
         if stage_mode == "Fixed":
             return {}
 
@@ -521,44 +548,55 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         return runtime_values
 
-    async def _event_first_runtime_values(self) -> dict[str, Any]:
-        """活动关优先：碧蓝档案有进行中的活动时，把「活动关卡」排到任务线最前。
+    async def _stage_runtime_values(self) -> dict[str, Any]:
+        """活动优先开启时，有活动只刷活动关，无活动使用计划表。
 
-        只有 ``Info.IfEventFirst`` 为真、且 ``Info.ActivityLineType`` 所指的服**确实**
-        有进行中的活动才动手。取不到排期（None）与确实没有活动（False）都必须一个字节
-        都不改：把「取不到」当成「没有活动」会顺手删掉用户已经排好的活动关任务。
+        活动关的具体关卡与次数由 BAAH 配置维护，不再从 MAS 计划表下发。
+        排期获取失败保留原有计划下发行为，不将未知状态当成没有活动。
         """
 
-        if not bool(self.cur_user_config.get("Info", "IfEventFirst")):
-            return {}
+        if not bool(self.cur_user_config.Info.IfEventFirst):
+            return self._plan_stage_runtime_values()
 
-        line_type: BlueArchiveLineType = self.cur_user_config.get(
-            "Info", "ActivityLineType"
+        line_type: _tool_bluearchive_activity.BlueArchiveLineType = (
+            self.cur_user_config.Info.ActivityLineType
         )
-        running = await has_running_activity(line_type)
+        running = await _tool_bluearchive_activity.has_running_activity(line_type)
         if running is None:
-            logger.warning("未取到碧蓝档案活动排期, 本次不调整活动关卡顺序")
-            return {}
+            logger.warning("未取到碧蓝档案活动排期, 本次沿用计划表或 BAAH 原生配置")
+            return self._plan_stage_runtime_values()
 
-        if not running:
-            logger.info("碧蓝档案当前没有进行中的活动, 本次不调整活动关卡顺序")
-            return {}
+        if running:
+            runtime_values: dict[str, Any] = {}
+        else:
+            runtime_values = {
+                **self._plan_stage_runtime_values(),
+                "EVENT_QUEST_LEVEL": [],
+            }
+            logger.info("碧蓝档案当前没有活动, 本次使用计划表或 BAAH 原生配置")
 
         try:
             user_config = read_json(self.user_config_path)
         except Exception as e:
             logger.opt(exception=True).warning(
-                f"读取 BAAH 配置失败, 本次不调整活动关卡顺序: {e}"
+                f"读取 BAAH 配置失败, 本次沿用计划表或 BAAH 原生配置: {e}"
             )
-            return {}
+            return self._plan_stage_runtime_values() if running else runtime_values
 
-        updated, note = prioritize_event_quest(user_config.get("TASK_ORDER_GROUP"))
+        updated, note = prioritize_event_quest(
+            user_config.get("TASK_ORDER_GROUP"), enabled=running
+        )
         if updated is None:
-            logger.warning(f"活动关优先已跳过: {note}")
-            return {}
+            logger.warning(f"活动关优先已跳过，沿用计划表或 BAAH 原生配置: {note}")
+            return self._plan_stage_runtime_values() if running else runtime_values
 
-        logger.info(f"碧蓝档案当前有进行中的活动, {note}")
-        return {"TASK_ORDER_GROUP": updated}
+        # 确认活动任务能够启用后，才关闭其他扫荡，避免任务线异常时一项都不打。
+        if running:
+            runtime_values = {option: [] for option in BAAH_STAGE_OPTIONS.values()}
+            logger.info("碧蓝档案当前有活动, 跳过计划表并仅执行活动扫荡")
+        logger.info(note)
+        runtime_values["TASK_ORDER_GROUP"] = updated
+        return runtime_values
 
     async def run_once(self) -> None:
         """执行一次 BAAH 运行。
@@ -567,16 +605,39 @@ class AutoProxyTask(ScriptAutoProxyBase):
         最后无论成功失败都恢复托管配置。
         """
 
+        # manager 持有从更新准备到全体账号收尾的目录锁；独立调用的
+        # AutoProxyTask 仍然自己获取锁，避免同一 BAAH 安装中的配置被并发写入。
+        if getattr(self, "directory_reserved", False):
+            await self._run_once_locked()
+        else:
+            async with _utils_update_files.directory_lock(self.root_path.resolve()):
+                await self._run_once_locked()
+
+    async def _run_once_locked(self) -> None:
+        """持有安装目录锁时执行，归档、读取和最终还原均不与其他任务交错。"""
+
         self.wait_event.clear()
 
         if not await self._ensure_emulator_online():
             return
 
-        ## 关卡计划表与活动关优先是用户在用户页单独打开的开关，与「托管 BAAH
+        ## 运行前归档该账号的 BAAH 配置（按账号分桶，指纹去重，失败不阻断
+        ## 任务）：锁内归档，确保不会把另一个任务的托管取值当成用户原配置。
+        from .tools.backup_archive import archive_native_backup
+
+        try:
+            archive_native_backup(
+                self.config_dir, self.user_config_path.stem, str(self.cur_user_uid)
+            )
+        except Exception:
+            logger.opt(exception=True).warning(
+                "BAAH 运行前配置归档失败，已跳过（不阻断任务）"
+            )
+
+        ## 关卡计划表与活动关优先是用户在账号页单独打开的开关，与「托管 BAAH
         ## 运行配置」无关：托管没开时它们照样要在本次运行生效。两者都只在这一次
         ## 运行里成立，所以仍然走托管项写盘、跑完由 restore_managed_config 还原
-        runtime_values = self._plan_stage_runtime_values()
-        runtime_values.update(await self._event_first_runtime_values())
+        runtime_values = await self._stage_runtime_values()
 
         if self.if_manage_config:
             ## 模拟器地址属于「接管」范畴，只在开了托管时注入
@@ -605,8 +666,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
             ## 先于配置恢复执行，是因为恢复失败会向上抛出，采集不能因此漏掉；
             ## 放在 finally 里则是因为 BAAH 每次运行各有自己的日志文件，采集
             ## 会话必须随着本次运行一起收尾（close 幂等）
-            self._close_log_collect()
-            await self._restore_managed_config()
+            try:
+                await self._close_log_collect()
+            finally:
+                await self._restore_managed_config()
 
     async def _restore_managed_config(self) -> None:
         """恢复托管配置，并把恢复失败明确告知用户。
@@ -648,7 +711,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             await self.handle_pre_script_error("启动 BAAH 进程失败", e)
             return
 
-        self.script_info.log = "正在等待 BAAH 日志文件生成"
+        await self.script_info.set_log("正在等待 BAAH 日志文件生成")
         log_path: Path | None = None
         wait_started_at = time.monotonic()
         deadline = wait_started_at + _LOG_FILE_WAIT_SECONDS
@@ -658,7 +721,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 break
             ## 状态带上已等待秒数：否则界面在整个等待窗口里都是一句静止的
             ## 文案，用户无法区分「正在等」与「已经卡死」
-            self.script_info.log = (
+            await self.script_info.set_log(
                 f"正在等待 BAAH 日志文件生成（已等待 "
                 f"{int(time.monotonic() - wait_started_at)} 秒）"
             )
@@ -675,7 +738,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self._start_log_collect()
         ## 定位成功后立刻改写状态：日志监控要等 BAAH 写出首批日志行才会回调，
         ## 不改写的话界面会继续停在「正在等待日志文件生成」，看起来像没进展
-        self.script_info.log = f"已定位 BAAH 日志文件 {log_path.name}, 正在读取日志"
+        await self.script_info.set_log(
+            f"已定位 BAAH 日志文件 {log_path.name}, 正在读取日志"
+        )
 
         ## 时间戳区间按首行实际排版推算；监控器也在这里才构造，让它补齐 %M:%S
         ## 缺失小时所用的基准落在日志真正出现之后，跨整点时不会把首行算成上个小时
@@ -738,43 +803,20 @@ class AutoProxyTask(ScriptAutoProxyBase):
         在报告里重复出现，而报告要呈现的是最终一次运行的流程。
         """
 
-        self.cur_user_item.push_log.clear()
+        self.user_state(self.cur_user_item).push_log.clear()
         if not self.push_log_enabled or self.script_log_path is None:
             return
 
-        self.log_collect = log_box.get_collect(
-            paths=[self.script_log_path],
-            sink=self._append_push_log,
-            start_from_end=True,
+        self._prepare_log_details(
+            self.script_log_path,
+            mode=self.user_state(self.cur_user_item).push_log_mode,
+            enabled=self.push_log_enabled,
+            rotated_name=None,
         )
-        self.log_collect.open()
-        for rule in BAAH_PUSH_RULES:
-            self.log_collect.collect(*rule)
 
-    def _append_push_log(self, log_type: str, text: str, ts: float) -> None:
-        """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
-
-        append_push_log(self.cur_user_item, log_type, text, ts)
-
-    def _close_log_collect(self) -> None:
-        """结束采集会话：冲刷本次运行剩余日志、解析任务节点并写入推送日志。
-
-        采集失败时既记日志也写入报告，避免节点详情缺失却仍呈现为正常结果；
-        ``close`` 幂等，收尾与异常路径都可以重复调用，未创建会话时直接返回。
-        """
-
-        if self.log_collect is None:
-            return
-
-        try:
-            self.log_collect.close(baah_resolve)
-        except Exception:
-            logger.opt(exception=True).warning(
-                "BAAH log_box 收尾推送失败（baah_resolve）"
-            )
-            self.cur_user_item.push_log.append(
-                (LogType.NORMAL, "⚠️ 节点采集失败", time.time())
-            )
+    async def _close_log_collect(self) -> None:
+        """本轮与崩溃兜底共用幂等收尾，返回前节点已交付。"""
+        await self._close_log_details()
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调：判定本次运行的结果"""
@@ -782,24 +824,24 @@ class AutoProxyTask(ScriptAutoProxyBase):
         log = "".join(log_content)
         ## 日志内容始终写入任务记录：结果判定与任务记录都是基础能力，
         ## 与「是否推送任务节点详情」无关，开关只决定要不要采集节点
-        self.cur_user_log.content = log_content
-        self.script_info.log = log
+        await self.cur_user_log.set_state(content=log_content)
+        await self.script_info.set_log(log)
 
         if self.success_log.search(log) is not None:
-            self.cur_user_log.status = "Success!"
+            await self.cur_user_log.set_state(status="Success!")
         elif self.is_log_stalled(
-            latest_time, minutes=self.script_config.get("Run", "RunTimeLimit")
+            latest_time, minutes=self.script_config.Run.RunTimeLimit
         ):
-            self.cur_user_log.status = "脚本进程超时"
+            await self.cur_user_log.set_state(status="脚本进程超时")
         elif self.error_log.search(log) is not None:
-            self.cur_user_log.status = "BAAH 运行出错"
+            await self.cur_user_log.set_state(status="BAAH 运行出错")
         elif (
             self.process_manager is not None and await self.process_manager.is_running()
         ):
-            self.cur_user_log.status = "BAAH 正常运行中"
+            await self.cur_user_log.set_state(status="BAAH 正常运行中")
         else:
             ## 进程已退出但未命中成功标记：不能确认任务完成
-            self.cur_user_log.status = "BAAH 在完成任务前退出"
+            await self.cur_user_log.set_state(status="BAAH 在完成任务前退出")
 
         logger.debug(f"BAAH 日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "BAAH 正常运行中":
@@ -815,7 +857,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         try:
             logger.info(f"中止 BAAH 进程: {self.baah_path}")
             await self.process_manager.kill()
-            await System.kill_process(self.baah_path)
+            await process.kill_process(self.baah_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止 BAAH 进程失败: {e}")
 
@@ -825,7 +867,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         """处理运行前的准备阶段错误"""
 
         if e is None:
-            logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
+            logger.warning(f"账号: {self.cur_user_uid} - {error_message}")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -833,7 +875,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
         else:
             logger.opt(exception=True).warning(
-                f"用户: {self.cur_user_uid} - {error_message}: {e}"
+                f"账号: {self.cur_user_uid} - {error_message}: {e}"
             )
             await Publisher.send(
                 id=self.task_info.task_id,
@@ -841,24 +883,34 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
             )
 
-        self.cur_user_log.content = [f"{error_message}, 无日志记录"]
-        self.cur_user_log.status = error_message
+        await self.cur_user_log.set_state(content=[f"{error_message}, 无日志记录"])
+        await self.cur_user_log.set_state(status=error_message)
 
         await self.kill_managed_process()
 
-        await Notify.push_plyer(
-            "用户自动代理出现异常！",
-            f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
-            f"{self.cur_user_item.name}的自动代理出现异常",
-            3,
+        await Notify.send_notice(
+            LocalNotice(
+                title="账号自动代理出现异常！",
+                message=f"账号 {self.cur_user_item.name} 自动代理时{error_message}",
+                ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                duration_seconds=3,
+            )
         )
 
     async def final_task(self):
         """运行结束后的收尾工作"""
 
         if self.check_result != "Pass":
-            self.cur_user_item.status = "异常"
+            await self.cur_user_item.set_state(status="异常")
             return
+
+        self.history.begin_user_history_capture(
+            self.script_info,
+            self.cur_user_item,
+            failed=bool(self.cur_user_item.log_record)
+            and not self.run_book
+            and not self.stopped_manually,
+        )
 
         if self.log_monitor is not None:
             await self.log_monitor.stop()
@@ -867,46 +919,74 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         await self._restore_managed_config()
 
-        for t, log_item in self.cur_user_item.log_record.items():
-            log_path = Config.build_history_log_path(
-                script_name=self.script_info.name,
-                user_name=self.cur_user_item.name,
-                log_time=t.astimezone(UTC4),
-            )
-
-            if log_item.status == "BAAH 正常运行中":
-                log_item.status = "任务被用户手动中止"
-
-            if len(log_item.content) == 0:
-                log_item.content = ["未捕获到任何日志内容"]
-                log_item.status = "未捕获到日志"
-
-            await Config.save_general_log(log_path, log_item.content, log_item.status)
-
         if self.run_book:
             ## 与通用脚本同一套口径：当天首次成功才递减剩余天数，代理次数始终累加。
-            ## 不更新的话用户标签会一直停在「任务：未代理」、剩余天数也不减
+            ## 不更新的话账号标签会一直停在「任务：未代理」、剩余天数也不减
             if (
-                self.cur_user_config.get("Data", "ProxyTimes") == 0
-                and self.cur_user_config.get("Info", "RemainedDay") != -1
+                self.cur_user_config.Data.ProxyTimes == 0
+                and self.cur_user_config.Info.RemainedDay != -1
             ):
-                await self.cur_user_config.set(
-                    "Info",
-                    "RemainedDay",
-                    self.cur_user_config.get("Info", "RemainedDay") - 1,
+                self.cur_user_config.Info.RemainedDay = (
+                    self.cur_user_config.Info.RemainedDay - 1
                 )
-            await self.cur_user_config.set(
-                "Data",
-                "ProxyTimes",
-                self.cur_user_config.get("Data", "ProxyTimes") + 1,
+                await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = (
+                self.cur_user_config.Data.ProxyTimes + 1
+            )
+            await self.cur_user_config.commit()
+
+        await self.run_user_scripts_after()
+
+        history_records = []
+        for t, log_item in self.cur_user_item.iter_history_logs():
+            if log_item.status == "BAAH 正常运行中" or (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "未开始监看日志"
+            ):
+                await log_item.set_state(status="任务被用户手动中止")
+
+            was_cancelled = (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "任务被用户手动中止"
+            )
+            if len(log_item.content) == 0:
+                await log_item.set_state(content=["未捕获到任何日志内容"])
+                if not was_cancelled:
+                    await log_item.set_state(status="未捕获到日志")
+
+            history_records.append(
+                HistoryWrite(
+                    time=t.astimezone(UTC4),
+                    username=self.cur_user_item.name,
+                    script_name=self.script_info.name,
+                    status=(
+                        "success"
+                        if log_item.status == "Success!"
+                        else "cancelled"
+                        if was_cancelled
+                        else "error"
+                    ),
+                    message=log_item.status,
+                    logs="".join(log_item.content),
+                )
+            )
+
+        if history_records:
+            await self.history.save_user_history(
+                history_records,
+                script=self.script_info,
+                user=self.cur_user_item,
+                log_warning=logger.opt(exception=True).warning,
             )
 
         await self._push_statistic()
 
     async def _push_statistic(self) -> None:
-        """推送本用户的统计信息通知。
+        """推送本账号的统计信息通知。
 
-        渠道由该用户的 ``Notify`` 配置决定（邮件 / Server 酱 / 自定义 Webhook），
+        渠道由该账号的 ``Notify`` 配置决定（邮件 / Server 酱 / 自定义 Webhook），
         未开启通知时整条链路直接返回，不发任何内容。
         """
 
@@ -925,14 +1005,20 @@ class AutoProxyTask(ScriptAutoProxyBase):
         )
 
         try:
-            await push_notification("统计信息", title, statistics, self.cur_user_config)
+            await Notify.push_statistics_report(
+                payload=build_script_statistics_payload(
+                    title=title, message=statistics, result_label="BAAH 执行结果"
+                ),
+                user_config=self.cur_user_config,
+                task_info=self.task_info,
+            )
         except Exception as e:
             logger.opt(exception=True).warning(f"推送统计信息时出现异常: {e}")
 
     async def on_crash(self, e: Exception):
         """任务异常时的清理"""
 
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"BAAH 任务出现异常: {e}")
 
         try:
@@ -954,10 +1040,86 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
 
         ## 异常可能发生在 run_once 的 finally 之前，这里兜底收尾采集（close 幂等）
-        self._close_log_collect()
+        await self._close_log_collect()
 
         await Publisher.send(
             id=self.task_info.task_id,
             type=protocol.TASK_NOTICE,
             data=WSTaskNoticeData(level="error", message=f"BAAH 任务出现异常: {e}"),
         )
+
+    def _prepare_log_details(
+        self, path: Path, *, mode: str, enabled: bool, rotated_name: str | None
+    ) -> None:
+        """本专项固定来源与账号；读取和交付时机由自身生命周期控制。"""
+        self._log_user = self.cur_user_item
+        self.user_state(self._log_user).push_log_mode = mode
+        self._log_source = None
+        self._log_pipeline = None
+        self._log_close_task = None
+        self._log_failed = False
+        if not enabled:
+            return
+        try:
+            pipeline = log_box.LogPipeline()
+
+            for rule in _push_log.BAAH_PUSH_RULES:
+                pipeline.add_rule(*rule)
+            pipeline.postprocessors.append(_push_log.baah_resolve)
+            source = log_source.LogSource(
+                path, start_from_end=True, rotated_name=rotated_name
+            )
+            source.open()
+            self._log_source = source
+            self._log_pipeline = pipeline
+        except Exception:
+            self._log_failed = True
+            logger.opt(exception=True).warning("BAAH 节点采集初始化失败")
+
+    async def _close_log_details(self) -> None:
+        """本专项只交付一次；取消先等待交付完成再继续传播。"""
+        if self._log_user is None:
+            return
+        if self._log_close_task is None:
+            self._log_close_task = asyncio.create_task(self._collect_log_details())
+        cancelled = None
+        while not self._log_close_task.done():
+            try:
+                await asyncio.shield(self._log_close_task)
+            except asyncio.CancelledError as error:
+                cancelled = error
+        self._log_close_task.result()
+        if cancelled is not None:
+            raise cancelled
+
+    async def _collect_log_details(self) -> None:
+        user = self._log_user
+        source = self._log_source
+        pipeline = self._log_pipeline
+        if user is None or (source is None and not self._log_failed):
+            return
+        if not self._log_failed:
+            try:
+                assert source is not None and pipeline is not None
+
+                def read():
+                    for line in source.read_new():
+                        pipeline.feed(line, timestamp=time.time())
+                    return pipeline.finish()
+
+                entries = await asyncio.to_thread(read)
+                for entry in entries:
+                    await self.user_state(user).append_push_log(
+                        (entry.log_type, entry.text, entry.timestamp)
+                    )
+            except Exception:
+                self._log_failed = True
+                logger.opt(exception=True).warning("节点采集或交付失败")
+
+        if self._log_failed:
+            try:
+                await self.user_state(user).append_push_log(
+                    (LOG_TYPE_NORMAL, "⚠️ 节点采集失败", time.time())
+                )
+            except Exception:
+                logger.opt(exception=True).warning("节点采集失败提示无法交付")

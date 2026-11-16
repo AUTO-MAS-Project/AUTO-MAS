@@ -147,10 +147,13 @@ def _resolve_leyline_target(
 
         def pick(row_key: str, step_key: str) -> str:
             # 每周行的键与步骤级不同：行内是 country / type，步骤级是 country /
-            # leyLineOutcropType（见 one_dragon_plan._leyline_weekly_plan_key 与 main.js）
+            # leyLineOutcropType（见 one_dragon_plan._leyline_weekly_plan_key 与 main.js）。
+            # 空串与 main.js 的 ``||`` 同口径按「未填写」处理，否则当天行留空会挡住
+            # 默认行与步骤级字段，目标解析失败、队伍配置也就命中不了。
             for holder in (today, default):
-                if holder.get(row_key) is not None:
-                    return _clean(holder.get(row_key))
+                value = _clean(holder.get(row_key))
+                if value:
+                    return value
             return _clean(settings.get(step_key))
 
         country = pick("country", "country")
@@ -274,7 +277,7 @@ def apply_teams_to_steps(
     """就地为一组 Plan 战斗步骤写入选队结果，返回命中步骤数。
 
     只写 ``masTeamOverride`` / ``masStrategyOverride`` 两个新增字段，不改动任何既有
-    字段，用户配置零改写（override 随运行时 Plan 副本一起丢弃）。
+    字段，账号配置零改写（override 随运行时 Plan 副本一起丢弃）。
     """
     if not steps or not teams:
         return 0

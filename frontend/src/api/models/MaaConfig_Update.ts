@@ -4,12 +4,28 @@
 /* eslint-disable */
 export type MaaConfig_Update = {
     /**
+     * 更新方式：全量或优先增量；增量依赖完整且匹配的基线，必要时回退全量。
+     */
+    PackageMode?: ('full' | 'incremental' | null);
+    /**
+     * 更新接管一次性迁移版本
+     */
+    TakeoverMigrationVersion?: (number | null);
+    /**
+     * 本托管的 Mirror 酱 CDK（加密存储，留空回退 MAS 全局配置）
+     */
+    MirrorChyanCDK?: (string | null);
+    /**
      * 是否接管 MAA 本体与资源更新（关=完全由 MAA 自行处理）
      */
     TakeoverEnabled?: (boolean | null);
     /**
-     * 本脚本的 Mirror 酱 CDK（留空回退 MAS 全局配置）
+     * MAA 更新通道：正式版或公测版
      */
-    MirrorChyanCDK?: (string | null);
+    Channel?: ('stable' | 'beta' | null);
+    /**
+     * 更新通道一次性迁移版本
+     */
+    ChannelMigrationVersion?: (number | null);
 };
 

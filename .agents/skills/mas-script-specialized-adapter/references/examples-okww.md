@@ -8,23 +8,23 @@ Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -
 
 - **只支持官方资源与官方启动器，不接管 WeGame 侧**。Electron 发现、前端保存、后端解析都不得回退到 WeGame 路径。这是产品决定，不是尚未实现。
 - 前端只存**官方启动器完整路径**，由后端读启动器缓存解析真实客户端 exe——**启动器路径与游戏进程路径职责分离**，不要在前端直接存客户端路径。
-- MAS 任务只开放 `1`（DailyTask）与 `7`（MultiAccountDailyTask）；旧值 `2` 读取时纠正为 `7`。
+- 托管级 `Game.AccountSwitchMethod` 选择 MAS（推荐）、OKWW_SINGLE 逐账号原生切换、OKWW 批次或旧配置兼容 NONE。逐账号原生模式每次只传当前用户，沿用逐用户检查、重试和配置恢复，某账号失败后继续下一个；OKWW 仍保持批量语义。用户明确授权临时依赖上游多账号配置和结果格式；待上游提供稳定批次接口后替换。OKWW 只打包本轮参与用户，以本轮结果排除成功账号再补跑；原始参与名单和节点保留至收尾。手机号输入支持完整大陆手机号、前三后四的星号形式或七位标识，下发前统一转为登录列表去星号后的键；邮箱和显示名沿用上游匹配规则。只填后四位及转换后重复须在启动前报错。
 
-## 三态来源与独立快速配置
+## 三态来源与独立覆写常规配置
 
-`Info.Mode` 三态只决定**脚本配置 owner**：
+`Info.Base` 三态只决定**基础配置 owner**：
 
 | 来源 | 配置归属 |
 | --- | --- |
-| 脚本 | `data/{scriptId}/Default/ConfigFile`，所有用户共用 |
-| 用户 | `data/{scriptId}/{userId}/ConfigFile`，用户独立 |
-| 直控 | 直接读取脚本原有 working 配置，由原生 GUI 维护，**不另建全量 MAS 配置**（仍有一处运行时必需写入，见下节） |
+| 共享 | `data/{scriptId}/Default/ConfigFile`，所有账号共用 |
+| 独立 | `data/{scriptId}/{userId}/ConfigFile`，账号独立 |
+| 原生 | 直接读取脚本原有 working 配置，由原生 GUI 维护，**不另建全量 MAS 配置**（仍有一处运行时必需写入，见下节） |
 
-`Info.IfQuickConfig` 是独立的用户级快速配置开关，三种来源均可使用：开启时用该用户快速配置面板的高频字段覆盖当前原生配置；关闭时使用来源配置中的完整任务设置。直控+关闭只使用脚本原生配置（不含 MAS 侧全量配置，仅有运行时必需写入，见下节）；直控+开启则任务前注入、任务后按快照策略恢复。
+`Info.IfQuickConfig` 是独立的账号级覆写常规配置开关，三种来源均可使用：开启时用该账号覆写常规配置面板的高频字段覆盖当前原生配置；关闭时使用来源配置中的完整任务设置。原生+关闭只使用脚本原生配置（不含 MAS 侧全量配置，仅有运行时必需写入，见下节）；原生+开启则任务前注入、任务后按快照策略恢复。
 
-旧值 `简洁` / `详细` 读取时迁移为 `脚本` / `用户`，**迁移不得改变用户实际生效的来源**。
+旧值 `简洁` / `详细` 与 `脚本` / `用户` 读取时归一为 `shared` / `independent`，**迁移不得改变用户实际生效的来源**。
 
-配置初始化、AutoProxy、ScriptConfig 三处必须用**同一套来源规则**；直控不得为了"字段齐全"复制脚本全量配置。
+配置初始化、AutoProxy、ScriptConfig 三处必须用**同一套来源规则**；原生来源不得为了"字段齐全"复制脚本全量配置。
 
 ## 原生配置写入：overlay 覆盖一律可还原
 
@@ -40,9 +40,9 @@ Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -
 | `working/configs/Basic Options.json` | `Exit App when Game Exits: True` | **overlay 覆盖**（非面板字段，但运行期需要） | 整目录快照 |
 | `working/configs/DailyTask.json` | 面板任务字段 | **overlay 覆盖**（面板子集） | 整目录快照，由 `Info.IfQuickConfig` 守卫 |
 
-- `current_profile` 是**发行/更新渠道**（`China`=阿里云+腾讯CNB、`Global`=GitHub+PyPi 更新源，见上游 `pyappify.yml` 与 `build.yml` 发行说明），**与游戏区服（官服/国际服）无关**——ok-ww 本体不消费它（仅 ok-script 用于窗口标题）。MAS 不写它、不接管：用户安装哪个包就保持哪个更新渠道，避免静默改指向另一 git 源。真正按区服区分的是 MAS 自己的鸣潮更新器（`app/services/wuthering_waves.py` 两个官方 index.json）。
+- `current_profile` 是**发行/更新渠道**（`China`=阿里云+腾讯CNB、`Global`=GitHub+PyPi 更新源，见上游 `pyappify.yml` 与 `build.yml` 发行说明），**与游戏区服（官服/国际服）无关**——ok-ww 本体不消费它（仅 ok-script 用于窗口标题）。MAS 不写它、不接管：用户安装哪个包就保持哪个更新渠道，避免静默改指向另一 git 源。真正按区服区分的是 MAS 自己的鸣潮更新器（`app/services/common/wuthering_waves/__init__.py` 两个官方 index.json）。
 - `auto_start` / `update_method` 是「缺省才补」的启动器默认值，无事零写入、不需要还原。
-- `Basic Options.json` 与 `DailyTask.json` 都在换入后的 working 目录里，**三态一律覆盖**（直控同样覆盖），任务结束由整目录快照还原——因此不会固化进任何来源的 base。
+- `Basic Options.json` 与 `DailyTask.json` 都在换入后的 working 目录里，**三态一律覆盖**（原生来源同样覆盖），任务结束由整目录快照还原——因此不会固化进任何来源的 base。
 - **配置会话（`ScriptConfig`）不得注入 overlay 值**：会话结束时原生目录会整目录回写 base，且会话没有还原路径，写进去就是永久固化。base 只保留用户在 ok-ww GUI 里的设置。
 
 ## 哨兵契约
@@ -53,29 +53,42 @@ Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -
 
 ## 判态与清理
 
-判态顺序：内置 fatal 日志（游戏更新、`info_set 错误`）→ `Daily Task Completed`（ok-ww 的 DailyTask 跑完才打印）视为成功 → `connected:0`/`connected:False` 视为未连接异常 → 未见成功标记而进程退出视为异常 → 日志停滞超 `RunTimeLimit` 视为超时。
+判态顺序：内置 fatal 日志（游戏更新、`info_set 错误`）→ 任一成功标记（见下段）视为成功 → `connected:0`/`connected:False` 视为未连接异常 → 未见成功标记而进程退出视为异常 → 日志停滞超 `RunTimeLimit` 视为超时。
 
 `Window closed exit_event.is_set` 是关窗日志，任何退出路径都会打，不能作完成依据。`connected:0` 也不能进内置 fatal：ok-ww 成功后按 `-e` 关游戏同样会打它（只比完成日志晚约 5s），日志监控若跨过这 5s，两行会落进同一批——所以未连接只在没有完成日志时判定。
 
-判据依赖上游契约：成功标记 `Daily Task Completed`（ok-ww `src/task/DailyTask.py` 的 `run()` 末尾）与 `-t 1` 指向的 `onetime_tasks[0]` 都归上游所有，而 ok-ww 走 `AUTO_UPDATE`（MAS 不钉版本）：上游改名或调整任务顺序会让本专项静默退化（永不判成功，每轮等到超时）。改判据前先核对这两个上游事实。
+日常任务成功标记有两个、任一命中即成功；原生多账号任务只认框架退出语，单账号日常完成不能提前结束整批。这些判据均归上游所有（ok-ww 走 `AUTO_UPDATE`，MAS 不钉版本），改判据前先核对上游事实：
+
+- **框架退出语** `Successfully Executed Task, Exiting Game and App!`（ok-script 框架 `ok/task/TaskExecutor.py`）：`DailyTask.run()` 正常返回后才打印，失败路径走异常分支不打印；logger 硬编码英文、不走 gettext，是唯一不受 ok-ww 界面语言影响的成功标志。MAS 固定传 `-e`（exit_after_task），成功后必打，比关游戏的 `connected:0` 早约 5 秒。
+- **旧版英文完成日志** `Daily Task Completed`（`src/task/DailyTask.py` 的 `run()` 末尾）：v3.7.4 源码核实为硬编码英文（其框架 ok-script 2.0.8 已有退出语，双判据均命中），保留既有判据兜底以覆盖更早无法核实的版本。新版起该文案走 gettext（中文环境输出「每日任务已完成」），不要用翻译文案当标记——「每日任务已完成，开始传送并刷取4C声骸」是 farm 4C 追加阶段预告，子串命中会在中途误判成功杀进程；退出语已覆盖全部语言。
+
+上游改判据措辞或调整任务顺序（`-t 1` 指向的 `onetime_tasks[0]`）会让本专项静默退化（永不判成功，每轮等到超时）。完成文案 gettext 化（v3.7.5–v3.7.12 间）就触发过一次：中文环境已完成的任务被判断连、重试到次数耗尽。
 
 「游戏更新成功, 游戏即将重启」是环境变更而非脚本错误：命中后照常杀进程收尾，但本轮运行次数用尽也要把次数延长一轮保底重跑——重试时游戏已是新版，预期成功。每个任务只延长一次（总轮次封顶 `RunTimesLimit + 1`）：再命中说明更新根本没应用成功，属持久性环境问题，按异常收尾。这是唯一允许突破 `RunTimesLimit` 的 fatal；MAS 的鸣潮前置更新器只镜像官方启动器通道（index.json + state 记账），客户端自身的游戏内更新检查是另一条通道，前置判「无需更新」时它仍可能弹框，此标记是唯一的兜底网。其他专项未实测出游戏内自更新通道前，不要预加同类标记，交给通用兜底 + 默认次数承接。
 
 进程清理至少覆盖：ProcessManager 管理的进程、`ok-ww.exe`、`data/apps/ok-ww/python/pythonw.exe`、`Game.Enabled` 时解析出的客户端进程。**每步独立捕获异常**，一个失败不阻断后续。
 
-## 账号切换（MAS 强制切号）
+## 账号切换（MAS 运行前切号）
 
-游戏配置区 `Game.AccountSwitch`（是/否，默认否）控制游戏启动后是否由 MAS 按
-用户手机号后 4 位强制切换登录账号；开关依赖 `Game.Enabled`（未启用游戏配置
+游戏配置区 `Game.AccountSwitchMethod=MAS` 控制游戏启动后是否由 MAS 按
+用户手机号后 4 位切换登录账号（原生多账号任务不走此逻辑）；该方式依赖 `Game.Enabled`（未启用游戏配置
 则不生效），用户未填写手机号时跳过不切换。
 
-OCR 走共享工具 `app/tools/ocr.py`（用法见 [ocr-tools.md](./ocr-tools.md)），
+OCR 走共享工具 `app/tools/common/ocr/__init__.py`（用法见 [ocr-tools.md](./ocr-tools.md)），
 交互层在 `app/task/Okww/tools/account_switch.py`：
 
 - 判据要点：弹窗「确认登出」按钮按文本精确定位，**排除说明文本「确认登出账号？」**，
   且不认裸「退出」（主菜单右侧有退出游戏按钮）。
 - 切换失败留 OCR 文本 + 原图截图到 `debug/okww-account-switch/`，经
   `handle_pre_okww_error` 走调度台报错 + 通知 + 重试，不回退静默。
+
+## 节点详情规则（log_box）
+
+- **不读上游 ok.po、不做前置翻译**：上游 `log_info` 按界面语言翻译，`info_set` 行始终是英文键；规则必须直接同时覆盖英文源文案与当前中文译文，节点名由提取表达式固定输出中文。读 ok.po 会把节点详情绑到上游私有资源布局，译文一变规则就静默失效。
+- **不要用 traceback 回显的源码行当指纹**（如 `if self.click_dialog_left_button():`）：那是依赖上游内部实现，上游改写法即失效，且违反黑箱边界。只认上游公开日志；异常路径没有公开信号时按失败呈现，需要更精确的结果就向上游要日志/结果入口。
+- 规则改动后用日志样本同时覆盖中文界面、英文界面与 `info_set` 原始键；`tests/task/test_okww_push_log_rules.py` 是对应回归入口。
+- **任务级失败要认上游直接 return 的错误行**：`MergeEchoTask` 开包失败只打 `can not open bag with hotkey` 后直接 return，不进入 DailyTask 的 `MergeEchoTask Failed` 分支；漏认会把失败显示成成功。
+- `nightmare nest unreachable` / `nightmare nest: died ... skip this run` 是**单巢跳过**，不是任务级跳过；直接映射成节点跳过会在其它巢成功时误报。
 
 ## 陷阱
 
@@ -91,22 +104,22 @@ OCR 走共享工具 `app/tools/ocr.py`（用法见 [ocr-tools.md](./ocr-tools.md
 ok-ww 已接入通用配置恢复（`ConfigRestoreSection`），mas 池形态与其他专项不同：
 
 - **mas 池 = ConfigFile 副本 + 覆盖层字段侧车**：页面任务配置卡片的字段存在
-  MAS 用户配置（`UserData.Task`）、运行时才覆盖进 DailyTask.json，不在
+  MAS 账号配置（`UserData.Task`）、运行时才覆盖进 DailyTask.json，不在
   ConfigFile 中。备份/恢复两端都带侧车，预览展示侧车（与页面认知同源），
   恢复时文件回滚 + 侧车回填 UserData + 前端重拉表单（对齐 ZzzOd 字段回填）。
-- **池恒按用户分桶**（`OkwwBackups/mas/{user_id}`），三态 owner 只决定归档/
-  恢复目标路径（脚本=Default 共享目录、用户=独立目录、直控=无）——脚本态多
-  用户若共享一个 Default 池，各自的侧车会混池、跨用户污染。通用教训见
-  [config-restore.md §1.1](config-restore.md#111-池分桶必须按用户恢复目标才按三态-ownerokww-教训)。
+- **池恒按账号分桶**（`OkwwBackups/mas/{user_id}`），三态 owner 只决定归档/
+  恢复目标路径（共享=Default 共享目录、独立=账号目录、原生=无）——共享来源多
+  账号若共享一个 Default 池，各自的侧车会混池、跨账号污染。通用教训见
+  [config-restore.md §1.1](config-restore.md#111-池分桶必须按账号恢复目标才按三态-ownerokww-教训)。
 - **原生池恒为 working/configs 整目录**（ok-ww 无 Folder/File 双模式），项目级
   按物理路径指纹分桶。
 
 ## 审查清单
 
-- [ ] Manager 同时支持 `AutoProxy` 与 `ScriptConfig`；脚本级与用户级入口传对目标 ID
+- [ ] Manager 同时支持 `AutoProxy` 与 `ScriptConfig`；托管级与账号级入口传对目标 ID
 - [ ] 三态映射到正确 owner；旧简洁/详细迁移不改变实际来源
-- [ ] 快速配置开关真实控制是否覆盖高频字段
-- [ ] 直控直接读脚本原配置，任务前后保留原配置快照
+- [ ] 覆写常规配置开关真实控制是否覆盖高频字段
+- [ ] 原生来源直接读脚本原配置，任务前后保留原配置快照
 - [ ] 原生配置写入一律可还原：`working/configs` 内靠整目录快照，`app.json` 靠键级快照；只有「缺省才补」的启动器默认值可无快照
 - [ ] `app.json` 的 `current_profile` 覆盖后，任务结束（含异常/崩溃）必须回到任务前原值；任务期外部改动不被回滚
 - [ ] 配置会话（`ScriptConfig`）不注入 overlay 值（会话回写 base 且无还原路径）
@@ -117,3 +130,5 @@ ok-ww 已接入通用配置恢复（`ConfigRestoreSection`），mas 池形态与
 - [ ] 「游戏更新成功」命中后至少再跑一轮：`RunTimesLimit=1` 不终局，状态文案「即将重启任务」与实际行为一致
 - [ ] 配置会话离开页面或超时会停止任务并释放锁
 - [ ] schema、表单、运行时三者无虚假功能分支
+
+- 批次切号失败按上游公开日志归属：`当前账号` 开始切号，账号登录成功后进入任务阶段；`状态 执行失败` 按阶段记失败节点与账号原因。ComboBox 回退 OCR 仅是警告，不提前判失败；新轮次开始清空日志账号归属，关闭节点采集仍保留失败原因。

@@ -1,0 +1,94 @@
+.log-rule-config {
+  width: 100%;
+}
+
+.log-rule-config-title {
+  cursor: pointer;
+  color: inherit;
+  transition: color 0.2s ease;
+}
+
+.log-rule-config-title:hover {
+  color: var(--ant-color-primary);
+}
+
+.log-rule-config-title-arrow {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+  vertical-align: middle;
+  transition: transform 0.2s ease;
+}
+
+.log-rule-config-title-arrow.collapsed {
+  transform: rotate(-90deg);
+}
+
+/* 折叠时正文隐藏、底部 24px 留白随之消失，这里补回，避免与下一配置区贴太近 */
+.log-rule-config.collapsed .log-rule-config-header {
+  margin-bottom: 24px;
+}
+
+.log-rule-config-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.log-rule-config-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 24px;
+}
+
+.log-rule-config-disabled-tip {
+  padding: 10px 14px;
+  background: var(--ant-color-fill-quaternary);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 6px;
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+}
+
+.log-rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.log-rule-item {
+  position: relative;
+}
+
+.log-rule-ghost {
+  opacity: 0.5;
+  background: var(--ant-color-primary-bg);
+  border: 1px dashed var(--ant-color-primary);
+  border-radius: 8px;
+}
+
+.log-rule-chosen {
+  cursor: grabbing;
+}
+
+.log-rule-drag {
+  opacity: 0.8;
+}
+
+.log-rule-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.add-log-rule-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.log-rule-count {
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+}

@@ -30,10 +30,13 @@ from typing import Any
 import json5
 
 from .models import (
+    MAAFW_INPUT_TYPES,
     MAX_TASK_REPEAT_COUNT,
     SUPPORTED_OPTION_TYPES,
     MaaFWInterface,
     MaaFWOption,
+    MaaFWPreset,
+    MaaFWPresetPretask,
     MaaFWPretask,
     build_pretask_task_name,
     coerce_option_count,
@@ -61,7 +64,11 @@ _USER_WARNING_PREFIX = "MaaFW ProjectInterface "
 
 # 4：加载器开始改写模型（password 字段丢 default、checkbox 选择数放宽），旧缓存没经过这一步。
 # 5：缓存里带上加载告警（``warnings``），旧缓存命中会丢掉它们。
-DISK_CACHE_VERSION = 5
+# 6：加载器开始校验 ``preset.pretask``（PI v2.10.3，丢对不上的条目、按 case 校验选项值），
+#    旧缓存里它是没经校验的原样字段。
+# 7：加载告警多了 ``preset.controller`` 写错（PI v2.10.4）与 ``input_type`` 不认识（v2.10.5），
+#    旧缓存里的告警没有这两类。
+DISK_CACHE_VERSION = 7
 DISK_CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 DISK_CACHE_CLEANUP_INTERVAL_SECONDS = 24 * 60 * 60
 _interface_cache: dict[
@@ -597,11 +604,41 @@ def _scan_scan_select_cases(
             f"scan_select 选项 {option_name} 的 scan_filter 必须是非空字符串"
         )
 
-    resolved_scan_dir = _resolve_project_relative_path(
-        base_dir,
-        scan_dir,
-        field_name=f"scan_select 选项 {option_name} 的 scan_dir",
-    )
+    try:
+        resolved_scan_dir = _resolve_project_relative_path(
+            base_dir,
+            scan_dir,
+            field_name=f"scan_select 选项 {option_name} 的 scan_dir",
+        )
+    except OSError as exc:
+        if not _is_untrusted_mount_point(exc):
+            raise
+        # 项目运行期自建的装入点（线上见过视图里的 BBchannel\settings）被系统判为不受信任，
+        # 解析不了就没法做越界判断：不读它，按没有可选项处理，别让整份 interface 读不出来。
+        logger.warning(
+            "MaaFW ProjectInterface scan_select 选项 %s 的 scan_dir 含不受信任的装入点，"
+            "无法解析：%s（%s）；按没有可选项处理",
+            option_name,
+            exc.filename or (base_dir / scan_dir),
+            exc,
+        )
+        if context is not None:
+            # 照样登记进缓存依赖（用未解析的路径，只拿来 stat / glob 算签名）：装入点被删掉
+            # 或变成可信后签名会变，缓存自动失效，不会一直空着。
+            context.scan_select_specs.add(
+                (
+                    base_dir
+                    / _normalize_project_relative_path(
+                        scan_dir,
+                        field_name=f"scan_select 选项 {option_name} 的 scan_dir",
+                    ),
+                    _normalize_project_relative_path(
+                        scan_filter,
+                        field_name=f"scan_select 选项 {option_name} 的 scan_filter",
+                    ),
+                )
+            )
+        return []
     normalized_scan_filter = _normalize_project_relative_path(
         scan_filter,
         field_name=f"scan_select 选项 {option_name} 的 scan_filter",
@@ -626,7 +663,7 @@ def _scan_scan_select_cases(
             {
                 file_path.relative_to(resolved_scan_dir).as_posix()
                 for file_path in resolved_scan_dir.glob(normalized_scan_filter)
-                if file_path.is_file()
+                if _is_scannable_file(file_path, option_name)
             }
         )
     except Exception as exc:
@@ -635,6 +672,29 @@ def _scan_scan_select_cases(
         ) from exc
 
     return [{"name": path, "label": path} for path in matched_paths]
+
+
+def _is_untrusted_mount_point(exc: BaseException) -> bool:
+    """Windows 拒绝穿过不受信任的装入点（ERROR_UNTRUSTED_MOUNT_POINT，WinError 448）。"""
+
+    return isinstance(exc, OSError) and getattr(exc, "winerror", None) == 448
+
+
+def _is_scannable_file(file_path: Path, option_name: str) -> bool:
+    """scan_select 扫到的条目是不是文件；穿不过不受信任装入点的条目跳过并告警。"""
+
+    try:
+        return file_path.is_file()
+    except OSError as exc:
+        if not _is_untrusted_mount_point(exc):
+            raise
+        logger.warning(
+            "MaaFW ProjectInterface scan_select 选项 %s 跳过含不受信任装入点的条目：%s（%s）",
+            option_name,
+            file_path,
+            exc,
+        )
+        return False
 
 
 def _expand_scan_select_options(
@@ -699,10 +759,44 @@ def _warn_preset_value_coercions(data: dict[str, Any]) -> None:
     for preset in presets:
         if not isinstance(preset, dict):
             continue
-        for preset_task in preset.get("task") or []:
+        # PI v2.10.4：controller 必须是字符串数组；写错时模型按「不限」处理，这里告警，
+        # 免得作者的限制被悄悄放宽
+        raw_controllers = preset.get("controller")
+        if raw_controllers is not None and (
+            not isinstance(raw_controllers, list)
+            or any(not isinstance(item, str) for item in raw_controllers)
+        ):
+            logger.warning(
+                "MaaFW ProjectInterface preset %s.controller 不是字符串数组，"
+                "非字符串的部分已忽略（整项不是数组时按不限控制器处理）：%s",
+                preset.get("name"),
+                json.dumps(raw_controllers, ensure_ascii=False, default=str),
+            )
+        raw_pretasks = preset.get("pretask")
+        if raw_pretasks is not None and not isinstance(raw_pretasks, list):
+            logger.warning(
+                "MaaFW ProjectInterface preset %s.pretask 不是数组，按未声明处理",
+                preset.get("name"),
+            )
+        preset_entries = [("task", item) for item in preset.get("task") or []] + [
+            ("pretask", item)
+            for item in (raw_pretasks if isinstance(raw_pretasks, list) else [])
+        ]
+        for kind, preset_task in preset_entries:
+            if kind == "pretask" and (
+                not isinstance(preset_task, dict)
+                or not isinstance(preset_task.get("name"), str)
+            ):
+                logger.warning(
+                    "MaaFW ProjectInterface preset %s.pretask 里有一条不是带 name 的对象，"
+                    "已忽略：%s",
+                    preset.get("name"),
+                    json.dumps(preset_task, ensure_ascii=False, default=str),
+                )
+                continue
             if not isinstance(preset_task, dict):
                 continue
-            location = f"preset {preset.get('name')}.task {preset_task.get('name')}"
+            location = f"preset {preset.get('name')}.{kind} {preset_task.get('name')}"
             raw_options = preset_task.get("option")
             if raw_options is None:
                 continue
@@ -735,6 +829,20 @@ def _warn_input_default_coercions(data: dict[str, Any]) -> None:
         for input_item in option["inputs"]:
             if not isinstance(input_item, dict):
                 continue
+            # PI v2.10.5：input_type 只认 text / file / directory，其余按 text（普通文本框）
+            raw_input_type = input_item.get("input_type")
+            # 写成数组 / 对象时不能直接查 frozenset（不可哈希会抛 TypeError，整份读不出来）
+            if raw_input_type is not None and (
+                not isinstance(raw_input_type, str)
+                or raw_input_type not in MAAFW_INPUT_TYPES
+            ):
+                logger.warning(
+                    "MaaFW ProjectInterface option %s 的输入字段 %s 的 input_type 不认识，"
+                    "已按 text 处理：%s",
+                    option_name,
+                    input_item.get("name"),
+                    json.dumps(raw_input_type, ensure_ascii=False, default=str),
+                )
             raw = input_item.get("default")
             if raw is None or isinstance(raw, str):
                 continue
@@ -877,6 +985,17 @@ def _validate_task_context_constraints(interface_model: MaaFWInterface) -> None:
                     "（不会匹配任何资源）：%s",
                     task_ref,
                     resource_name,
+                )
+
+    # 预设的 controller（PI v2.10.4）同一口径：告警、原样保留
+    for preset in interface_model.preset:
+        for controller_name in preset.controller or []:
+            if controller_name not in controller_names:
+                logger.warning(
+                    "MaaFW ProjectInterface 预设 %s 引用了不存在的 controller"
+                    "（不会匹配任何控制器）：%s",
+                    preset.name,
+                    controller_name,
                 )
 
 
@@ -1179,6 +1298,16 @@ def _validate_presets(interface_model: MaaFWInterface) -> None:
         _collect_reachable_option_names(task.option or [], option_map, collected)
         reachable_options_by_task[task.name] = collected
 
+    # 前置任务没有全局层：只有它自己声明的选项及其子选项。preset.pretask 按 name 引用，
+    # 没有 name 的前置任务引用不到
+    pretask_options_by_name: dict[str, set[str]] = {}
+    for pretask in iter_pretasks(interface_model):
+        if not pretask.name or pretask.name in pretask_options_by_name:
+            continue
+        collected = set()
+        _collect_reachable_option_names(pretask.option or [], option_map, collected)
+        pretask_options_by_name[pretask.name] = collected
+
     for preset in interface_model.preset:
         # 同一任务在 preset 里出现多次是合法的（MRA 周常配置把「自动出征」排了 9 次），
         # 消费端 build_interface_preset_snapshot 把后续出现展开成重复任务实例，所以每一次
@@ -1207,6 +1336,50 @@ def _validate_presets(interface_model: MaaFWInterface) -> None:
                 if sanitized is not None:
                     sanitized_options[option_name] = sanitized
             preset_task.option = sanitized_options
+
+        if preset.pretask is not None:
+            preset.pretask = _validate_preset_pretasks(
+                preset, pretask_options_by_name, option_map
+            )
+
+
+def _validate_preset_pretasks(
+    preset: MaaFWPreset,
+    pretask_options_by_name: dict[str, set[str]],
+    option_map: dict[str, MaaFWOption],
+) -> list[MaaFWPresetPretask]:
+    """``preset.pretask``（PI v2.10.3）：名字对不上顶层 ``pretask[].name`` 的条目告警后丢掉
+    （协议：找不到对应预任务的条目应忽略），选项值与预设任务同一口径校验。"""
+
+    kept: list[MaaFWPresetPretask] = []
+    for preset_pretask in preset.pretask or []:
+        reachable_options = pretask_options_by_name.get(preset_pretask.name)
+        if reachable_options is None:
+            logger.warning(
+                "MaaFW ProjectInterface preset %s 引用的前置任务 %s 不存在，应用该预设时忽略它",
+                preset.name,
+                preset_pretask.name,
+            )
+            continue
+        kept.append(preset_pretask)
+        if not preset_pretask.option:
+            continue
+        sanitized_options: dict[str, Any] = {}
+        for option_name, option_value in preset_pretask.option.items():
+            option = option_map.get(option_name)
+            if option_name not in reachable_options or option is None:
+                sanitized_options[option_name] = option_value
+                continue
+            sanitized = _sanitize_option_case_values(
+                option_name,
+                option,
+                option_value,
+                location=f"preset {preset.name}.pretask {preset_pretask.name}",
+            )
+            if sanitized is not None:
+                sanitized_options[option_name] = sanitized
+        preset_pretask.option = sanitized_options
+    return kept
 
 
 def _build_common_option_names(interface_model: MaaFWInterface) -> list[str]:
@@ -1435,8 +1608,13 @@ def _build_signature(
             continue
 
         for file in scan_files:
-            if file.is_file():
-                signature_parts.append(_file_signature(file.resolve()))
+            try:
+                if file.is_file():
+                    signature_parts.append(_file_signature(file.resolve()))
+            except OSError as exc:
+                if not _is_untrusted_mount_point(exc):
+                    raise
+                signature_parts.append(("untrusted-mount", str(file)))
 
     return tuple(signature_parts)
 

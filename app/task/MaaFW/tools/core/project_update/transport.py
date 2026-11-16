@@ -10,12 +10,13 @@ import os
 import re
 import threading
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any, AsyncIterator, Callable, Sequence
 from urllib.parse import urljoin, urlsplit
+from weakref import WeakValueDictionary
 
-import aiofiles
 import httpx
 
 from .contracts import artifact_id_for, normalise_sha256
@@ -26,6 +27,81 @@ from .state import (
     redact_text,
     redact_url,
 )
+
+# An asyncio.Lock must be held in addition to the thread-reentrant process lock:
+# two download coroutines share one thread and must not write the same .partial.
+# Weak values avoid retaining old pytest/event loops or unused artifact locks.
+_ASYNC_ARTIFACT_LOCKS: WeakValueDictionary[tuple[int, str, str], asyncio.Lock] = (
+    WeakValueDictionary()
+)
+_ASYNC_ARTIFACT_LOCK_GUARD = threading.Lock()
+
+
+def _artifact_async_lock(root: Path, stable_id: str) -> asyncio.Lock:
+    key = (id(asyncio.get_running_loop()), str(root.resolve()), stable_id)
+    with _ASYNC_ARTIFACT_LOCK_GUARD:
+        lock = _ASYNC_ARTIFACT_LOCKS.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _ASYNC_ARTIFACT_LOCKS[key] = lock
+        return lock
+
+
+@asynccontextmanager
+async def _artifact_download_access(
+    root: Path,
+    stable_id: str,
+    *,
+    cancel_event: threading.Event | None = None,
+) -> AsyncIterator[None]:
+    async_lock = _artifact_async_lock(root, stable_id)
+    while True:
+        if cancel_event is not None and cancel_event.is_set():
+            raise UpdateDownloadCancelled(CANCELLED_MESSAGE)
+        try:
+            async with asyncio.timeout(
+                CANCEL_POLL_SECONDS if cancel_event is not None else None
+            ):
+                await async_lock.acquire()
+            break
+        except TimeoutError:
+            continue
+    try:
+        # 跨进程/线程的持有者不能让事件循环同步等锁，否则停止也无法响应。
+        lock = artifact_lock(root, stable_id, timeout=0)
+        while True:
+            if cancel_event is not None and cancel_event.is_set():
+                raise UpdateDownloadCancelled(CANCELLED_MESSAGE)
+            try:
+                lock.acquire()
+                break
+            except TimeoutError:
+                await asyncio.sleep(0.05)
+        try:
+            yield
+        finally:
+            lock.release()
+    finally:
+        async_lock.release()
+
+
+async def _run_cache_worker[T](operation: Callable[..., T], *args: Any) -> T:
+    """Keep artifact ownership until an offloaded file operation actually exits."""
+    worker = asyncio.create_task(asyncio.to_thread(operation, *args))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        while not worker.done():
+            try:
+                await asyncio.shield(worker)
+            except (asyncio.CancelledError, Exception):
+                if worker.done():
+                    break
+        # 线程已退出后仍传播取消；磁盘异常不能把停止变成下载重试。
+        if not worker.cancelled():
+            worker.exception()
+        raise
+
 
 CHUNK_SIZE = 64 * 1024
 MAX_REDIRECTS = 10
@@ -51,6 +127,25 @@ class UpdateDownloadCancelled(RuntimeError):
     这不是网络错误，**绝不能进重试循环**：用户点的是停止。``.partial`` 与
     checkpoint 元数据原样留着，下次运行按既有的 Range 逻辑续传。
     """
+
+
+@asynccontextmanager
+async def _download_sink(path: Path, mode: str) -> AsyncIterator[Any]:
+    # 句柄同步取得，避免取消打开操作时丢失句柄；关闭也必须等线程收敛。
+    handle = path.open(mode)
+    cancelled = False
+    try:
+        yield handle
+    except (asyncio.CancelledError, UpdateDownloadCancelled):
+        cancelled = True
+        raise
+    finally:
+        try:
+            await _run_cache_worker(handle.close)
+        except Exception:
+            # flush/close 的磁盘错误不能覆盖已经发生的停止、让外层继续重试。
+            if not cancelled:
+                raise
 
 
 @dataclass(frozen=True)
@@ -371,7 +466,7 @@ async def download_resumable(
     send_update_log = send_log or (lambda _message: None)
     emit = progress or (lambda _event: None)
 
-    with artifact_lock(root, stable_id):
+    async with _artifact_download_access(root, stable_id, cancel_event=cancel_event):
         metadata = _read_json(metadata_path)
         metadata.update(
             {
@@ -396,7 +491,7 @@ async def download_resumable(
             expected_total = None
         complete_path = _existing_complete_path(directory, metadata, expected)
         if complete_path is not None:
-            actual = await asyncio.to_thread(_calculate_sha256, complete_path)
+            actual = await _run_cache_worker(_calculate_sha256, complete_path)
             if expected and actual != expected:
                 complete_path.unlink(missing_ok=True)
                 metadata.update({"complete": False, "completePath": None})
@@ -866,19 +961,21 @@ async def _download_attempt(
                         "operation_id": operation.operation_id,
                     }
                 )
-                async with aiofiles.open(partial_path, mode) as handle:
+                # 文件句柄由协程持有，write/flush 的线程也必须收敛后才能关文件、
+                # 释放 artifact 锁；aiofiles 的取消只会取消等待，不会停掉文件线程。
+                async with _download_sink(partial_path, mode) as handle:
                     async for chunk in response.aiter_bytes(chunk_size=CHUNK_SIZE):
                         if not chunk:
                             continue
                         downloaded += len(chunk)
                         if downloaded > max_bytes:
                             raise RuntimeError("update package exceeds size limit")
-                        await handle.write(chunk)
+                        await _run_cache_worker(handle.write, chunk)
                         if downloaded % (CHUNK_SIZE * 16) < len(chunk):
                             # 每 1MB 落一次断点：fsync 与元数据原子改写都是同步
                             # IO，放到线程里，别每兆一次卡住事件循环。
-                            await handle.flush()
-                            await asyncio.to_thread(
+                            await _run_cache_worker(handle.flush)
+                            await _run_cache_worker(
                                 _write_checkpoint,
                                 partial_path,
                                 metadata_path,
@@ -899,9 +996,9 @@ async def _download_attempt(
                             # 先把这一刻的字节数落盘再抛，否则 ``.partial`` 的
                             # 大小和元数据里的 downloadedBytes 对不上，下次续传
                             # 的 Range 就从错误的位置要起。
-                            await handle.flush()
+                            await _run_cache_worker(handle.flush)
                             metadata["downloadedBytes"] = downloaded
-                            await asyncio.to_thread(
+                            await _run_cache_worker(
                                 _write_checkpoint,
                                 partial_path,
                                 metadata_path,
@@ -939,7 +1036,7 @@ async def _finalize_partial(
 ) -> DownloadOutcome:
     if not partial_path.is_file() or partial_path.stat().st_size == 0:
         raise RuntimeError("update package is empty")
-    actual = await asyncio.to_thread(_calculate_sha256, partial_path)
+    actual = await _run_cache_worker(_calculate_sha256, partial_path)
     if expected_sha256 and actual != expected_sha256:
         # 坏断点必须删：留着的话下一次请求带 ``Range: bytes=<全长>-``，服务端回 416，
         # 上面的 416 分支又把同一个坏文件交回来校验，之后每次运行都失败（缓存的 7 天回收

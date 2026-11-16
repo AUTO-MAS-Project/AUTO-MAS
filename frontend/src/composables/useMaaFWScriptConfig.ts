@@ -2,8 +2,8 @@ import { translate as t } from '@/i18n'
 import { computed, ref, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Emulator20Service, Service, type ComboBoxItem } from '@/api'
+import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/script'
-import { markModAvdOptions } from '@/views/Emulator/avdLogic'
 
 const logger = window.electronAPI.getLogger('MaaFW脚本编辑')
 
@@ -11,10 +11,10 @@ export type EmulatorType = 'general' | 'mumu' | 'ldplayer' | 'emulator2'
 
 // 词表 key：显示时再取，界面语言变了跟着变
 const EMULATOR_TYPE_LABEL_KEYS: Record<EmulatorType, string> = {
-  general: 'edit.maafwEmulatorTypeGeneral',
-  mumu: 'edit.maafwEmulatorTypeMumu',
-  ldplayer: 'edit.maafwEmulatorTypeLdplayer',
-  emulator2: 'edit.maafwEmulatorTypeEmulator2',
+  general: 'core.edit.maafwEmulatorTypeGeneral',
+  mumu: 'core.edit.maafwEmulatorTypeMumu',
+  ldplayer: 'core.edit.maafwEmulatorTypeLdplayer',
+  emulator2: 'core.edit.maafwEmulatorTypeEmulator2',
 }
 
 // Emulator 2.0 一条配置纳管多个模拟器安装，配置上的类型不等于某台设备的真实类型，
@@ -48,13 +48,13 @@ const UPDATE_CHANNELS = ['stable', 'beta'] as const satisfies readonly MaaFWProj
 
 // 下拉选项的文案随界面语言变，所以是 computed
 export const updateSourceOptions = computed(() => [
-  { label: t('edit.sourceMirrorChyan'), value: 'MirrorChyan' },
-  { label: t('edit.sourceGithub'), value: 'GitHub' },
+  { label: t('core.edit.sourceMirrorChyan'), value: 'MirrorChyan' },
+  { label: t('core.edit.sourceGithub'), value: 'GitHub' },
 ])
 
 export const updateChannelOptions = computed(() => [
-  { label: t('edit.maafwUpdateChannelStable'), value: 'stable' },
-  { label: t('edit.maafwUpdateChannelBeta'), value: 'beta' },
+  { label: t('core.edit.maafwUpdateChannelStable'), value: 'stable' },
+  { label: t('core.edit.maafwUpdateChannelBeta'), value: 'beta' },
 ])
 
 export const isMaaFWUpdateSource = (value: unknown): value is MaaFWProjectUpdateSource =>
@@ -95,13 +95,17 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
   Game: {
     LaunchMode: 'DirectExe',
     LaunchPath: '',
+    LauncherPath: '',
+    URL: '',
+    CloseMode: 'OnFailure',
     PackageName: '',
     Arguments: '',
-    WaitTime: 60,
+    WaitTime: 120,
     UnityResolution: 'Off',
     Hotkeys: '{}',
   },
   Update: {
+    PackageMode: 'incremental',
     AutoUpdateMode: 'BeforeRun',
     Source: 'GitHub',
     Channel: 'stable',
@@ -110,7 +114,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
   },
   Embedded: {
     SourceVersion: '',
-    ImportedAt: '',
+    ImportedAt: null,
     Report: '{ }',
     FollowSource: false,
   },
@@ -123,7 +127,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     MonthlyOnceTasks: '[ ]',
     TaskTimeLimit: 45,
     TaskTimeLimitOverrides: '{ }',
-    LoopGuard: false,
+    LoopGuard: true,
     GameUpdateMode: 'Off',
   },
 })
@@ -141,23 +145,23 @@ type PersistFn = (
  * 加载与 ADB 控制策略提示部分，去掉 managed / agent-env / progress-socket
  * 依赖，供 ControlConfigSection.vue 使用。
  *
- * ``allowModAvd``：这个脚本能不能用魔改 AVD（目前只有 M9A）。不能时设备下拉里的魔改 AVD 实例置灰。
+ * ModAVD 对所有 MFW 脚本（通用项目与各特调）放行，设备下拉原样列出它的实例。
  */
 export function useMaaFWControlConfig(
   maafwConfig: MaaFWScriptConfig,
   previewData: Ref<MaaFWInterfacePreviewData | null>,
   interfaceLoading: Ref<boolean>,
-  handleChange: PersistFn,
-  allowModAvd: () => boolean = () => false
+  handleChange: PersistFn
 ) {
-  const emulatorLoading = ref(false)
-  const emulatorOptionsReady = ref(false)
+  const {
+    emulatorLoading,
+    emulatorOptionsReady,
+    emulatorOptions,
+    emulatorTypeById,
+    loadEmulatorOptions,
+  } = useEmulatorOptions({ includeTypes: true })
   const emulatorDeviceLoading = ref(false)
-  const emulatorOptions = ref<ComboBoxItem[]>([])
   const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
-  const emulatorTypeById = ref<Record<string, EmulatorType>>({})
-  let emulatorOptionsLoaded = false
-  let emulatorOptionsPromise: Promise<void> | null = null
   const emulatorDeviceOptionsCache = new Map<string, ComboBoxItem[]>()
   const emulatorDeviceRequests = new Map<string, Promise<ComboBoxItem[] | null>>()
   // Emulator 2.0：设备号 → 该设备的真实模拟器类型（ldplayer / mumu）。配置本身没有类型，
@@ -268,12 +272,12 @@ export function useMaaFWControlConfig(
 
   const selectedEmulatorLabel = computed(() => {
     if (!maafwConfig.Emulator.Id || maafwConfig.Emulator.Id === '-') {
-      return t('edit.maafwEmulatorNotSelected')
+      return t('core.edit.maafwEmulatorNotSelected')
     }
     const emulatorType = selectedEmulatorType.value
     return emulatorType
       ? t(EMULATOR_TYPE_LABEL_KEYS[emulatorType])
-      : t('edit.maafwEmulatorTypeLoading')
+      : t('core.edit.maafwEmulatorTypeLoading')
   })
 
   // 配置纳管多个模拟器安装时，能力只能按设备判定，这里不做配置级判断
@@ -288,16 +292,6 @@ export function useMaaFWControlConfig(
     if (!slot || slot === '-') return null
     return emulator2DeviceTypeBySlot.value[slot] ?? null
   })
-
-  // MaaFW 里魔改 AVD 只支持 M9A：别的脚本里它的实例置灰并写明原因（保存与运行时后端还会再拦）
-  const emulatorDeviceSelectOptions = computed(() =>
-    markModAvdOptions(
-      emulatorDeviceOptions.value,
-      value => value !== null && emulator2DeviceTypeBySlot.value[value] === 'avd',
-      allowModAvd(),
-      t('emulator2.avd.unsupportedScript')
-    )
-  )
 
   const selectedCapabilityType = computed(() =>
     isMultiEmulatorConfig.value ? selectedDeviceRealType.value : selectedEmulatorType.value
@@ -316,70 +310,22 @@ export function useMaaFWControlConfig(
     const inputWithExtras = Boolean(capability?.input)
 
     // 只列截图与输入两行，值只给一个词：模拟器是上面刚选的，不必再重复；集合怎么组的不解释
-    // 魔改 AVD 的 EmulatorExtras（AVDExtras）截图走共享内存，不是 adb，不能套雷电 / MuMu 那句
+    // ModAVD 的 EmulatorExtras（AVDExtras）截图走共享内存，不是 adb，不能套雷电 / MuMu 那句
     const extrasText =
       selectedCapabilityType.value === 'avd'
-        ? t('edit.adbStrategyAvdExtras')
-        : t('edit.adbStrategyEmulatorExtras')
+        ? t('core.edit.adbStrategyAvdExtras')
+        : t('core.edit.adbStrategyEmulatorExtras')
     const pick = (withExtras: boolean) =>
       perDevice
-        ? t('edit.adbStrategyPerDevice')
+        ? t('core.edit.adbStrategyPerDevice')
         : withExtras
           ? extrasText
-          : t('edit.adbStrategyDefault')
+          : t('core.edit.adbStrategyDefault')
     return [
-      { label: t('misc.screenshot'), value: pick(screencapWithExtras) },
-      { label: t('misc.input'), value: pick(inputWithExtras) },
+      { label: t('core.misc.screenshot'), value: pick(screencapWithExtras) },
+      { label: t('core.misc.input'), value: pick(inputWithExtras) },
     ]
   })
-
-  const loadEmulatorOptions = async () => {
-    if (emulatorOptionsLoaded) {
-      emulatorOptionsReady.value = true
-      return
-    }
-    if (emulatorOptionsPromise) return emulatorOptionsPromise
-
-    const request = (async () => {
-      emulatorLoading.value = true
-      emulatorOptionsReady.value = false
-      let comboLoaded = false
-      let detailLoaded = false
-      try {
-        const [response, detailResponse] = await Promise.all([
-          Service.getEmulatorComboxApiInfoComboxEmulatorPost(),
-          Service.getEmulatorApiEmulatorGetPost({}),
-        ])
-        if (response?.code === 200) {
-          emulatorOptions.value = response.data || []
-          comboLoaded = true
-        }
-        if (detailResponse?.code === 200) {
-          const typeMap: Record<string, EmulatorType> = {}
-          Object.entries(detailResponse.data || {}).forEach(([emulatorId, config]) => {
-            const emulatorType = config.Info?.Type
-            if (emulatorType) typeMap[emulatorId] = emulatorType
-          })
-          emulatorTypeById.value = typeMap
-          detailLoaded = true
-        }
-        emulatorOptionsLoaded = comboLoaded && detailLoaded
-        emulatorOptionsReady.value = emulatorOptionsLoaded
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.error(`加载模拟器选项失败: ${errorMsg}`)
-        emulatorOptionsReady.value = false
-      } finally {
-        emulatorLoading.value = false
-      }
-    })()
-    emulatorOptionsPromise = request
-    try {
-      await request
-    } finally {
-      if (emulatorOptionsPromise === request) emulatorOptionsPromise = null
-    }
-  }
 
   const loadEmulatorDeviceOptions = async (emulatorId: string) => {
     if (!emulatorId || emulatorId === '-') {
@@ -464,7 +410,8 @@ export function useMaaFWControlConfig(
     await loadEmulatorDeviceOptions(emulatorId)
   }
 
-  const selectLaunchPath = async () => {
+  // 游戏 exe 与启动器 exe 共用同一个选择流程，只差写回哪个字段
+  const selectGameExePath = async (key: 'LaunchPath' | 'LauncherPath') => {
     try {
       const paths = await window.electronAPI?.selectFile([
         {
@@ -477,25 +424,28 @@ export function useMaaFWControlConfig(
 
       const fileName = path.split(/[\\/]/).pop() || ''
       if (!fileName.toLowerCase().endsWith('.exe')) {
-        message.error(t('misc.pickExeFile'))
+        message.error(t('core.misc.pickExeFile'))
         return
       }
 
-      maafwConfig.Game.LaunchPath = path
-      await handleChange('Game', 'LaunchPath', path)
+      maafwConfig.Game[key] = path
+      await handleChange('Game', key, path)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`选择启动 exe 失败: ${errorMsg}`)
-      message.error(t('misc.couldNotPickLaunch'))
+      logger.error(`选择 ${key} exe 失败: ${errorMsg}`)
+      message.error(t('core.misc.couldNotPickLaunch'))
     }
   }
+
+  const selectLaunchPath = () => selectGameExePath('LaunchPath')
+  const selectLauncherPath = () => selectGameExePath('LauncherPath')
 
   return {
     emulatorLoading,
     emulatorOptionsReady,
     emulatorDeviceLoading,
     emulatorOptions,
-    emulatorDeviceOptions: emulatorDeviceSelectOptions,
+    emulatorDeviceOptions,
     emulatorTypeById,
     isMultiEmulatorConfig,
     controllerOptions,
@@ -517,5 +467,6 @@ export function useMaaFWControlConfig(
     loadEmulatorDeviceOptions,
     handleEmulatorSelectChange,
     selectLaunchPath,
+    selectLauncherPath,
   }
 }

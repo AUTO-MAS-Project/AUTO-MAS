@@ -16,9 +16,9 @@ export type MaaEndProtocolSpacePlanKey = {
      */
     WeaponProgression?: MaaEndProtocolSpacePlanKey.WeaponProgression;
     /**
-     * 危境预演任务
+     * 危境预演任务，由 MaaEnd 声明
      */
-    CrisisDrills?: MaaEndProtocolSpacePlanKey.CrisisDrills;
+    CrisisDrills?: string;
     /**
      * 奖励组选项
      */
@@ -48,16 +48,6 @@ export namespace MaaEndProtocolSpacePlanKey {
     export enum WeaponProgression {
         WEAPON_EXP = 'WeaponEXP',
         WEAPON_TUNE = 'WeaponTune',
-    }
-    /**
-     * 危境预演任务
-     */
-    export enum CrisisDrills {
-        ADVANCED_PROGRESSION1 = 'AdvancedProgression1',
-        ADVANCED_PROGRESSION2 = 'AdvancedProgression2',
-        ADVANCED_PROGRESSION3 = 'AdvancedProgression3',
-        ADVANCED_PROGRESSION4 = 'AdvancedProgression4',
-        ADVANCED_PROGRESSION5 = 'AdvancedProgression5',
     }
     /**
      * 奖励组选项

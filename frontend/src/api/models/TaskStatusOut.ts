@@ -2,6 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { TaskMode } from './TaskMode';
+import type { TaskTriggerReason } from './TaskTriggerReason';
 /**
  * 按 taskId 单点查询一个任务的状态, 不携带日志。
  */
@@ -33,15 +35,11 @@ export type TaskStatusOut = {
     /**
      * 任务模式
      */
-    mode?: ('AutoProxy' | 'ScriptConfig' | 'Update' | null);
+    mode?: (TaskMode | null);
     /**
-     * 是否为循环运行任务
+     * 任务触发原因
      */
-    isCycle?: boolean;
-    /**
-     * 调度队列 ID
-     */
-    queueId?: (string | null);
+    trigger?: TaskTriggerReason;
     /**
      * 脚本 ID
      */

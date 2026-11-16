@@ -16,11 +16,11 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""奇想盒配置恢复服务：MAS 用户字段侧车池 / 上游原生配置池。
+"""奇想盒配置恢复服务：MAS 账号字段侧车池 / 上游原生配置池。
 
 池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
 ``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底全部由基座
-（``app.utils.config_restore``）从 ``files`` + ``backup_root`` 声明派生。
+（``app.utils.common.config.restore``）从 ``files`` + ``backup_root`` 声明派生。
 
 - ``mas`` 池（账号级，#879 语义）：奇想盒没有 per-account ConfigFile 目录，
   MAS 面板的一条龙覆盖集与流程开关都是**账号配置字段**（运行时才物化进上游
@@ -47,15 +47,9 @@ import json
 import uuid
 from pathlib import Path
 
-from app.utils import get_logger
-from app.utils.config_archive import (
-    OVERLAY_SIDECAR_NAME,
-    archive_files,
-    get_backup_dir,
-    read_overlay_sidecar,
-)
-from app.utils.config_restore import ConfigRestorePool, RestoreContext
-from app.utils.constants import BASE_SOURCE_LABELS
+from app.utils import BASE_SOURCE_LABELS, get_logger
+from app.utils.common.config import archive as _utils_config_archive
+from app.utils.common.config import restore as _utils_config_restore
 
 from .upstream import WheelAssetsConfigSurface, parse_override_map
 
@@ -65,16 +59,18 @@ _INFO_SECTION = "Info"
 """侧车里只作来源标注的配置段（Mode 只预览不回填）"""
 
 
-def _surface(ctx: RestoreContext) -> WheelAssetsConfigSurface:
+def _surface(ctx: _utils_config_restore.RestoreContext) -> WheelAssetsConfigSurface:
     """从脚本配置取安装根构造配置面；根路径未配置时报可操作错误。"""
 
-    raw = str(ctx.script_config.get("Info", "RootPath") or "").strip()
+    raw = str(ctx.script_config.Info.RootPath or "").strip()
     if not raw:
         raise ValueError("请先在脚本设置中填入奇想盒安装目录")
     return WheelAssetsConfigSurface(Path(raw))
 
 
-def _surface_or_none(ctx: RestoreContext) -> WheelAssetsConfigSurface | None:
+def _surface_or_none(
+    ctx: _utils_config_restore.RestoreContext,
+) -> WheelAssetsConfigSurface | None:
     """只读回调用的静默降级版本：未配置安装目录返回 ``None``。
 
     与基座 ``backup_root`` 返回 ``None`` 的 None 防御语义对齐——用户未配置
@@ -82,29 +78,27 @@ def _surface_or_none(ctx: RestoreContext) -> WheelAssetsConfigSurface | None:
     那是显式用户操作，报错合理）。
     """
 
-    raw = str(ctx.script_config.get("Info", "RootPath") or "").strip()
+    raw = str(ctx.script_config.Info.RootPath or "").strip()
     return WheelAssetsConfigSurface(Path(raw)) if raw else None
 
 
-def _user_guard(ctx: RestoreContext) -> None:
-    """恢复守卫：目标用户必须存在，避免把字段回填进孤儿目录。"""
+def _user_guard(ctx: _utils_config_restore.RestoreContext) -> None:
+    """恢复守卫：目标账号必须存在，避免把字段回填进孤儿目录。"""
 
     if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
-        raise ValueError("奇想盒用户不存在，请刷新后重试")
+        raise ValueError("奇想盒账号不存在，请刷新后重试")
 
 
-def _read_overlay(ctx: RestoreContext) -> dict:
+def _read_overlay(ctx: _utils_config_restore.RestoreContext) -> dict:
     """读 MAS 页面字段（会注入原生配置的部分 + 来源标注）。"""
 
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     return {
-        _INFO_SECTION: {"Base": user.get("Info", "Base")},
-        "OneDragon": {
-            "IfRunAllAccounts": bool(user.get("OneDragon", "IfRunAllAccounts")),
-        },
+        _INFO_SECTION: {"Base": user.Info.Base},
+        "OneDragon": {"IfRunAllAccounts": bool(user.OneDragon.IfRunAllAccounts)},
         "Task": {
-            "Tasks": str(user.get("Task", "Tasks") or "{}"),
-            "Options": str(user.get("Task", "Options") or "{}"),
+            "Tasks": str(user.Task.Tasks or "{}"),
+            "Options": str(user.Task.Options or "{}"),
         },
     }
 
@@ -169,35 +163,41 @@ def _on_off(value: object) -> str:
     return "开启" if value else "关闭"
 
 
-# ══ mas 池：MAS 用户字段侧车（纯字段，恒按用户分桶） ══════════════════════
+# ══ mas 池：MAS 账号字段侧车（纯字段，恒按账号分桶） ══════════════════════
 
 
-def _mas_root(ctx: RestoreContext) -> Path:
+def _mas_root(ctx: _utils_config_restore.RestoreContext) -> Path:
     """MAS 池归档根：``data/{script_id}/WhimboxBackups/mas/{user_id}``。"""
 
     return Path.cwd() / "data" / ctx.script_id / "WhimboxBackups" / "mas" / ctx.user_id
 
 
-async def _mas_files(ctx: RestoreContext) -> dict[str, str] | None:
+async def _mas_files(
+    ctx: _utils_config_restore.RestoreContext,
+) -> dict[str, str] | None:
     """归档内容 = MAS 页面字段侧车（内存 JSON，免临时文件）。"""
 
     _user_guard(ctx)
     overlay = _read_overlay(ctx)
     overlay["Display"] = _build_display(overlay, _surface_or_none(ctx))
-    return {OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)}
+    return {
+        _utils_config_archive.OVERLAY_SIDECAR_NAME: json.dumps(
+            overlay, ensure_ascii=False, indent=2
+        )
+    }
 
 
-async def _mas_backup_root(ctx: RestoreContext) -> Path:
+async def _mas_backup_root(ctx: _utils_config_restore.RestoreContext) -> Path:
     return _mas_root(ctx)
 
 
-async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
+async def _preview_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> dict:
     """预览载荷：来源标注 + 流程开关 + 覆盖集（展示快照，可读性优先）。"""
 
-    backup_dir = get_backup_dir(_mas_root(ctx), ts)
+    backup_dir = _utils_config_archive.get_backup_dir(_mas_root(ctx), ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
-    overlay = read_overlay_sidecar(backup_dir)
+    overlay = _utils_config_archive.read_overlay_sidecar(backup_dir)
     if overlay is None:
         return {"sections": []}
 
@@ -267,41 +267,47 @@ async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
     return {"sections": sections}
 
 
-async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
+async def _restore_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> None:
     _user_guard(ctx)
     # 恢复前把当前字段终态存底（force），误恢复可找回
     overlay = _read_overlay(ctx)
     overlay["Display"] = _build_display(overlay, _surface_or_none(ctx))
-    archive_files(
-        {OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)},
+    _utils_config_archive.archive_files(
+        {
+            _utils_config_archive.OVERLAY_SIDECAR_NAME: json.dumps(
+                overlay, ensure_ascii=False, indent=2
+            )
+        },
         _mas_root(ctx),
         force=True,
     )
 
-    backup_dir = get_backup_dir(_mas_root(ctx), ts)
+    backup_dir = _utils_config_archive.get_backup_dir(_mas_root(ctx), ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
-    restored = read_overlay_sidecar(backup_dir)
+    restored = _utils_config_archive.read_overlay_sidecar(backup_dir)
     if not restored:
         return
 
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     # 回填后前端重拉表单，否则旧表单值下次保存会静默覆盖恢复结果
-    await user.update(_group_restore(restored))
-    logger.info(f"用户 {ctx.user_id} 的 MAS 字段已恢复备份 {ts}")
+    await user.update(type(user).model_validate(_group_restore(restored)))
+    logger.info(f"账号 {ctx.user_id} 的 MAS 字段已恢复备份 {ts}")
 
 
 # ══ native 池：上游 config.json（文件清单与 read_file 由基座派生） ═════════
 
 
-async def _native_root(ctx: RestoreContext) -> Path | None:
+async def _native_root(ctx: _utils_config_restore.RestoreContext) -> Path | None:
     """归档根按 config.json 物理路径指纹分桶；未配置安装目录返回 ``None``。"""
 
     surface = _surface_or_none(ctx)
     return surface.backup_root() if surface is not None else None
 
 
-async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
+async def _native_files(
+    ctx: _utils_config_restore.RestoreContext,
+) -> dict[str, Path] | None:
     """归档内容 = 安装根 ``configs/config.json``（不存在返回 ``None``）。"""
 
     surface = _surface_or_none(ctx)
@@ -310,13 +316,13 @@ async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
     return {surface.config_path.name: surface.config_path}
 
 
-async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
+async def _preview_native(ctx: _utils_config_restore.RestoreContext, ts: str) -> dict:
     """预览载荷：config.json 的节/键数摘要（文件清单由基座注入，不在此拼装）。"""
 
     surface = _surface_or_none(ctx)
     if surface is None:
         return {"sections": []}
-    backup_dir = get_backup_dir(surface.backup_root(), ts)
+    backup_dir = _utils_config_archive.get_backup_dir(surface.backup_root(), ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
 
@@ -324,7 +330,7 @@ async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
     for name, path in sorted(surface.backup_dir_files(ts).items()):
         summary = ""
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8").removeprefix("\ufeff"))
             if isinstance(data, dict):
                 sections = sum(1 for v in data.values() if isinstance(v, dict) and v)
                 keys = sum(len(v) for v in data.values() if isinstance(v, dict))
@@ -335,12 +341,12 @@ async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
     return {"sections": [{"name": "config", "label": "奇想盒原生配置", "rows": rows}]}
 
 
-async def _restore_native(ctx: RestoreContext, ts: str) -> None:
+async def _restore_native(ctx: _utils_config_restore.RestoreContext, ts: str) -> None:
     _surface(ctx).restore_entry(ts)
 
 
 RESTORE_POOLS = [
-    ConfigRestorePool(
+    _utils_config_restore.ConfigRestorePool(
         key="mas",
         kind="user",
         mas_base="sidecar_only",
@@ -349,7 +355,7 @@ RESTORE_POOLS = [
         preview=_preview_mas,
         restore=_restore_mas,
     ),
-    ConfigRestorePool(
+    _utils_config_restore.ConfigRestorePool(
         key="native",
         kind="script",
         files=_native_files,

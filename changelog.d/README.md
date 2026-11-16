@@ -64,7 +64,7 @@ python scripts/changelog.py add fix maa "修复理智不足时剿灭被误记为
 
 - 虚拟显示器、界面语言 / 文案、帮助入口 → `settings`
 - 游戏社区（签到、社区活动）、日志页 / 打包日志 → `tools`
-- 历史记录、脚本 / 用户的增删改、配置备份恢复、运行中锁配置 → 对应专项；跨全部专项的配置来源、
+- 历史记录、托管 / 账号的增删改、配置备份恢复、运行中锁配置 → 对应专项；跨全部专项的配置来源、
   快速配置、配置恢复能力 → `scheduler`
 - 调度中心、调度队列、计划管理 → `scheduler`
 - 启动界面、初始化、依赖安装 → `runtime`
@@ -95,7 +95,7 @@ python scripts/changelog.py add fix maa "修复理智不足时剿灭被误记为
   （或打 `skip-changelog`）。
 - 碎片必须有 `project:` 且键在项目表里（`dev` 除外），正文不超过 50 字。
 - 普通 PR 不得改 `CHANGELOG.md`、`res/version.json`，也不得改动 `pyproject.toml`、
-  `frontend/package.json`、`app/core/config.py`、`uv.lock` 里的版本号。
+  `frontend/package.json`、`app/core/config/manager.py`、`uv.lock` 里的版本号。
 - 不要修改或删除别人的碎片（加减 `highlight:` / `beta-only:` 除外）。
 - 维护者整理历史更新日志时给 PR 打 `changelog-maintenance` 标签，上述限制放开。
 

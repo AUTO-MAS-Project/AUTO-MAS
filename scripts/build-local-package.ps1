@@ -29,7 +29,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $frontendRoot = Join-Path $repoRoot "frontend"
 $versionFile = Join-Path $repoRoot "res\version.json"
 $frontendPackageFile = Join-Path $frontendRoot "package.json"
-$backendConfigFile = Join-Path $repoRoot "app\core\config.py"
+$backendConfigFile = Join-Path $repoRoot "app\core\config\manager.py"
 $pyprojectFile = Join-Path $repoRoot "pyproject.toml"
 $uvLockFile = Join-Path $repoRoot "uv.lock"
 $runtimeVersionFile = Join-Path $repoRoot "res\runtime-version.txt"
@@ -51,7 +51,7 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     throw "未找到 Node.js，请先安装项目要求的 Node.js 环境。"
 }
 if (-not (Get-Command yarn -ErrorAction SilentlyContinue)) {
-    throw "未找到 Yarn，请先执行：corepack prepare yarn@4.9.1 --activate"
+    throw "未找到 Yarn，请先执行：corepack prepare yarn@4.18.1 --activate"
 }
 
 # 版本一致性由 scripts/changelog.py 判定，这里需要一个可用的 Python。
@@ -107,9 +107,10 @@ try {
         $localRuntime = (Resolve-Path -LiteralPath $LocalRuntimePath -ErrorAction Stop).Path
         $expectedRuntimeHash = (Get-FileHash -LiteralPath $localRuntime -Algorithm SHA256).Hash
         Copy-Item -LiteralPath $localRuntime -Destination $runtimePath
-        # 桌面端按 repo/res/runtime-version.txt 的钉扎核对 exe 自报版本，本地构建的 Runtime 对不上就会
-        # 在首次 managed 启动时被发布版覆盖；安装包不带钉扎文件，这里改不了它，只能提醒。
-        Write-Warning "本地 Runtime 与 res/runtime-version.txt 钉扎的 $runtimeVersion 不同：运行打出来的包之前必须设置 AUTO_MAS_RUNTIME_EXE=$localRuntime，否则桌面端会在首次启动时把它换成 $runtimeVersion（见 scripts/README.md）。"
+        # 桌面端在完整初始化时会解析线上最新 Runtime 并替换 exe；本地构建的 Runtime 自报 dev，
+        # 不设置 AUTO_MAS_RUNTIME_EXE 就会被线上最新版覆盖（安装包内置的 pin 只决定兜底版本），
+        # 运行打出来的包之前必须设置它。
+        Write-Warning "正在使用本地构建的 Runtime（自报 dev，与内置的 $runtimeVersion 无关）：运行打出来的包之前必须设置 AUTO_MAS_RUNTIME_EXE=$localRuntime，否则桌面端会在下次完整初始化时把它换成线上最新版（见 scripts/README.md）。"
     } else {
         Write-Host "正在下载 Runtime……"
         Invoke-WebRequest -Uri "$releaseBaseUrl/$runtimeAssetName" -OutFile $runtimePath
@@ -136,12 +137,20 @@ try {
     }
     $runtimeVersionOutput | ForEach-Object { Write-Host $_ }
 
-    $runtimeHello = $runtimeVersionOutput |
-        ForEach-Object { $_ | ConvertFrom-Json } |
+    $runtimeVersionEvents = @($runtimeVersionOutput | ForEach-Object { $_ | ConvertFrom-Json -AsHashtable })
+    $runtimeHello = $runtimeVersionEvents |
         Where-Object { $_.type -eq "hello" } |
         Select-Object -First 1
     if (-not $runtimeHello -or (-not $LocalRuntimePath -and $runtimeHello.runtimeVersion -ne $runtimeVersion)) {
         throw "Runtime 实际版本与 $runtimeVersion 不一致。"
+    }
+
+    $runtimeDetails = $runtimeVersionEvents |
+        Where-Object { $_.type -eq 'result' } |
+        ForEach-Object { $_.details } |
+        Select-Object -Last 1
+    if (-not $runtimeDetails -or $runtimeDetails['alphaBackend'] -ne 'dev') {
+        throw 'Runtime 不支持从 dev 更新后端，请使用支持 alpha 后端的 Runtime。'
     }
 
     # 用非法版本做只读协议探测，避免旧 Runtime 与新桌面包组合后无法启动。
@@ -185,6 +194,9 @@ try {
 
         New-Item -ItemType Directory -Path (Split-Path -Parent $runtimeTarget) -Force | Out-Null
         Copy-Item -LiteralPath $runtimePath -Destination $runtimeTarget -Force
+        # 本地测试包由 Electron 将 alpha 目标交给 Runtime，跟踪主仓库 dev。
+        New-Item -ItemType File -Path (Join-Path $unpackedDirectory "resources\auto-mas-backend-dev") -Force |
+            Out-Null
 
         $packagedRuntimeHash = (Get-FileHash -LiteralPath $runtimeTarget -Algorithm SHA256).Hash
         if ($packagedRuntimeHash -ne $expectedRuntimeHash) {
@@ -222,11 +234,10 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "无法检查安装程序内容（退出码 $LASTEXITCODE）。"
     }
-    $installerContainsRuntime = $installerListing |
-        Where-Object { $_ -eq 'Path = resources\auto-mas-runtime.exe' } |
-        Select-Object -First 1
-    if (-not $installerContainsRuntime) {
-        throw "安装程序中未找到 resources\auto-mas-runtime.exe。"
+    foreach ($resource in @('auto-mas-runtime.exe', 'auto-mas-backend-dev')) {
+        if ($installerListing -notcontains "Path = resources\$resource") {
+            throw "安装程序中未找到 resources\$resource。"
+        }
     }
 
     $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -262,7 +273,7 @@ try {
     Write-Host "安装包 SHA-256：$installerHash"
     Write-Host "Runtime SHA-256：$expectedRuntimeHash"
     if ($LocalRuntimePath) {
-        Write-Warning "运行前请先设置 AUTO_MAS_RUNTIME_EXE=$localRuntime，否则本地 Runtime 会在首次启动时被换成钉扎的 $runtimeVersion。"
+        Write-Warning "运行前请先设置 AUTO_MAS_RUNTIME_EXE=$localRuntime，否则本地 Runtime 会在下次完整初始化时被换成线上最新版。"
     }
 } finally {
     foreach ($name in $savedEnvironment.Keys) {

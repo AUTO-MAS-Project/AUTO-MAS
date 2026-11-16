@@ -6,6 +6,8 @@ import { message } from 'ant-design-vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import type { ChangelogData } from '@/utils/changelog'
 import { isUpdatePaused } from '@/composables/updatePause'
+import { beginAnalyticsOperation } from '@/utils/analytics'
+import type { AnalyticsEventProps } from '@/types/analytics'
 
 const logger = window.electronAPI.getLogger('更新检查器')
 
@@ -26,23 +28,65 @@ let startPollingRequest: Promise<void> | null = null
 const isPolling = ref(false)
 
 type UpdateCheckPromise = ReturnType<typeof Service.checkUpdateApiUpdateCheckPost>
-const updateCheckRequests = new Map<boolean, UpdateCheckPromise>()
+type CheckTrigger = AnalyticsEventProps['update_check_finished']['trigger_kind']
+const updateCheckRequests = new Map<
+  boolean,
+  {
+    request: UpdateCheckPromise
+    observed: Set<CheckTrigger>
+  }
+>()
+let automaticCheckObserved = false
 
 // 防止重复弹出的状态
 let lastShownVersion: string | null = null
 
-export const requestUpdateCheck = (forceCheck = false): UpdateCheckPromise => {
+export const requestUpdateCheck = (
+  forceCheck = false,
+  trigger: CheckTrigger = 'automatic'
+): UpdateCheckPromise => {
   const inFlightRequest = updateCheckRequests.get(forceCheck)
-  if (inFlightRequest) return inFlightRequest
+  const shouldObserve =
+    !inFlightRequest?.observed.has(trigger) && (trigger !== 'automatic' || !automaticCheckObserved)
+  const operation = shouldObserve ? beginAnalyticsOperation('update_check_finished') : null
+  if (operation && trigger === 'automatic') automaticCheckObserved = true
 
-  const request = Service.checkUpdateApiUpdateCheckPost({
-    current_version: version,
-    if_force: forceCheck,
-  })
-  updateCheckRequests.set(forceCheck, request)
+  const finishFailure = () =>
+    operation?.finish({ trigger_kind: trigger, outcome: 'failure', update_available: 'unknown' })
+  let request: UpdateCheckPromise
+  try {
+    request =
+      inFlightRequest?.request ??
+      Service.checkUpdateApiUpdateCheckPost({
+        current_version: version,
+        if_force: forceCheck,
+      })
+  } catch (error) {
+    finishFailure()
+    throw error
+  }
+  if (inFlightRequest) inFlightRequest.observed.add(trigger)
+  else {
+    updateCheckRequests.set(forceCheck, { request, observed: new Set([trigger]) })
+    const clearRequest = () => updateCheckRequests.delete(forceCheck)
+    void request.then(clearRequest, clearRequest)
+  }
 
-  const clearRequest = () => updateCheckRequests.delete(forceCheck)
-  void request.then(clearRequest, clearRequest)
+  if (operation)
+    void request.then(response => {
+      operation.finish({
+        trigger_kind: trigger,
+        outcome: response.code === 200 ? 'success' : 'failure',
+        update_available:
+          response.code !== 200
+            ? 'unknown'
+            : response.if_need_update === true
+              ? 'yes'
+              : response.if_need_update === false
+                ? 'no'
+                : 'unknown',
+      })
+    }, finishFailure)
 
   return request
 }
@@ -133,7 +177,7 @@ export function useUpdateChecker() {
   const checkUpdate = async (silent = false, forceCheck = false) => {
     const { playSound } = useAudioPlayer()
     try {
-      const response = await requestUpdateCheck(forceCheck)
+      const response = await requestUpdateCheck(forceCheck, 'manual')
 
       if (response.code === 200) {
         if (response.if_need_update) {
@@ -144,7 +188,7 @@ export function useUpdateChecker() {
           // 播放无新版本音频
           if (!silent) {
             await playSound('no_new_version')
-            message.success(t('misc.noUpdates'))
+            message.success(t('core.misc.noUpdates'))
           }
         }
       } else {
@@ -156,7 +200,7 @@ export function useUpdateChecker() {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`手动更新检查失败: ${errorMsg}`)
       if (!silent) {
-        message.error(t('misc.couldNotCheckUpdates'))
+        message.error(t('core.misc.couldNotCheckUpdates'))
       }
     }
   }

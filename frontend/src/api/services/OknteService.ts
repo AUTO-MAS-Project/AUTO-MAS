@@ -3,6 +3,9 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
+import type { Body_save_oknte_plan_configs_api_scripts_oknte_plan_save_post } from '../models/Body_save_oknte_plan_configs_api_scripts_oknte_plan_save_post';
+import type { OkNtePlanConfigsOut } from '../models/OkNtePlanConfigsOut';
+import type { OutBase } from '../models/OutBase';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -10,11 +13,11 @@ export class OknteService {
     /**
      * 获取 OK-NTE 配置文件列表及 schema
      * 获取 OK-NTE 配置文件列表及 schema 定义。
-     * 读写用户快速配置目录，首次从已有来源初始化，不修改来源文件。
+     * 读写用户覆写常规配置目录，首次从已有来源初始化，不修改来源文件。
      *
      * Args:
-     * script_id: OK-NTE 脚本 ID
-     * user_id: 用户 ID
+     * script_id: OK-NTE 托管 ID
+     * user_id: 账号 ID
      *
      * Returns:
      * dict: 包含配置文件列表和 schema 的响应
@@ -44,8 +47,8 @@ export class OknteService {
      * 批量更新 OK-NTE 配置文件
      *
      * Args:
-     * script_id: OK-NTE 脚本 ID
-     * user_id: 用户 ID
+     * script_id: OK-NTE 托管 ID
+     * user_id: 账号 ID
      * configs: { filename: data } 格式的配置数据
      *
      * Returns:
@@ -60,6 +63,48 @@ export class OknteService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/oknte/configs/batch-update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Oknte Plan Configs
+     * @param planId
+     * @param day
+     * @returns OkNtePlanConfigsOut Successful Response
+     * @throws ApiError
+     */
+    public static getOkntePlanConfigsApiScriptsOkntePlanConfigsPost(
+        planId: string,
+        day: string,
+    ): CancelablePromise<OkNtePlanConfigsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/oknte/plan/configs',
+            query: {
+                'plan_id': planId,
+                'day': day,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Save Oknte Plan Configs
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static saveOkntePlanConfigsApiScriptsOkntePlanSavePost(
+        requestBody: Body_save_oknte_plan_configs_api_scripts_oknte_plan_save_post,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/oknte/plan/save',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

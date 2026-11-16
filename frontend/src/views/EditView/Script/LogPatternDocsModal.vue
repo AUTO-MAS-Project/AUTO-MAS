@@ -148,29 +148,36 @@ watch(
 <template>
   <a-modal
     v-model:open="open"
-    :title="t('edit.extractionPatternReference')"
+    :title="t('core.edit.extractionPatternReference')"
     width="1000px"
     :footer="null"
+    :body-style="{
+      height: '65vh',
+      minHeight: 0,
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+    }"
     :destroy-on-close="false"
     wrap-class-name="log-pattern-docs-modal"
   >
     <template #title>
       <span class="modal-title">
         <BookOutlined />
-        {{ t('edit.extractionPatternReference') }}
+        {{ t('core.edit.extractionPatternReference') }}
       </span>
     </template>
 
     <a-tabs v-model:active-key="activeKey" size="small" class="docs-tabs">
-      <a-tab-pane key="split" :tab="t('edit.stringSplittingGuide')" />
-      <a-tab-pane key="regex" :tab="t('edit.regexGuide')" />
-      <a-tab-pane key="expression" :tab="t('edit.expressionGuide')" />
-      <a-tab-pane key="multiline" :tab="t('edit.multiLineAggregationGuide')" />
+      <a-tab-pane key="split" :tab="t('core.edit.stringSplittingGuide')" />
+      <a-tab-pane key="regex" :tab="t('core.edit.regexGuide')" />
+      <a-tab-pane key="expression" :tab="t('core.edit.expressionGuide')" />
+      <a-tab-pane key="multiline" :tab="t('core.edit.multiLineAggregationGuide')" />
     </a-tabs>
 
     <div class="docs-body">
       <aside class="docs-toc">
-        <div class="docs-toc-title">{{ t('edit.directory') }}</div>
+        <div class="docs-toc-title">{{ t('core.edit.directory') }}</div>
         <ul class="docs-toc-list">
           <li
             v-for="item in tocItems"
@@ -194,19 +201,16 @@ watch(
   gap: 6px;
 }
 
-.log-pattern-docs-modal :deep(.ant-modal-body) {
-  padding: 0 16px 16px;
-}
-
 .docs-tabs {
+  flex-shrink: 0;
   margin-bottom: 8px;
 }
 
 .docs-body {
   display: flex;
   gap: 16px;
-  height: 65vh;
-  min-height: 400px;
+  flex: 1;
+  min-height: 0;
 }
 
 .docs-toc {

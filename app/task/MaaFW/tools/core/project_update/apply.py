@@ -342,34 +342,64 @@ def _package_resource_directories(
         return set()
     if not isinstance(data, Mapping):
         return set()
-    entries = data.get("resource")
-    if not isinstance(entries, list):
-        return set()
 
     directories: set[str] = set()
-    for entry in entries:
+    entries = data.get("resource")
+    for entry in entries if isinstance(entries, list) else []:
         if not isinstance(entry, Mapping):
             continue
         raw = entry.get("path")
         for candidate in raw if isinstance(raw, list) else [raw]:
-            if not isinstance(candidate, str):
-                continue
-            text = candidate.strip().replace("\\", "/").replace("{PROJECT_DIR}", "")
-            while text.startswith("./"):
-                text = text[2:]
-            text = text.strip("/")
-            if not text:
-                continue
-            # 中间带 ``.`` / ``..`` 却没逃出项目的写法（``resource/../resource_pack/base``）
-            # 投影层归一后放行，这里也归一；逃出项目或绝对路径的跳过这一条声明。
-            text = posixpath.normpath(text)
-            try:
-                directories.add(safe_relative_path(text))
-            except (ValueError, UpdateApplyError):
-                # ``safe_relative_path`` 抛的是 ValueError：只跳过这一条声明，不让整次
-                # 更新失败。
-                continue
+            directory = _declared_directory(candidate)
+            if directory is not None:
+                directories.add(directory)
+    return directories | _attached_resource_directories(data)
+
+
+def _attached_resource_directories(interface: Mapping[str, Any]) -> set[str]:
+    """控制器的 ``attach_resource_path``（PI v2）：MaaFramework 同样当资源包加载的目录。
+
+    只看 ``resource[].path`` 会漏掉它：MAA_Punish v3.12.7 的 ``resource/pgr_win32`` 正是挂在
+    Win32 控制器的 ``attach_resource_path`` 上（2026-10-26 对真包核实），上游删掉的
+    ``pgr_win32/pipeline/auto_battle.jsonc`` 在全量更新里一直清不掉，节点重名让整包拒收。
+    写法与投影（``projection`` 的 ``attach_resource_path`` / ``attachResourcePath``）同一口径。
+    """
+
+    directories: set[str] = set()
+    controllers = interface.get("controller")
+    for controller in controllers if isinstance(controllers, list) else []:
+        if not isinstance(controller, Mapping):
+            continue
+        raw = controller.get("attach_resource_path")
+        if raw is None:
+            raw = controller.get("attachResourcePath")
+        for candidate in raw if isinstance(raw, list) else [raw]:
+            directory = _declared_directory(candidate)
+            if directory is not None:
+                directories.add(directory)
     return directories
+
+
+def _declared_directory(candidate: Any) -> str | None:
+    """interface 里声明的一个资源目录 → 项目相对 posix 路径；写法不合规返回 None。"""
+
+    if not isinstance(candidate, str):
+        return None
+    text = candidate.strip().replace("\\", "/").replace("{PROJECT_DIR}", "")
+    while text.startswith("./"):
+        text = text[2:]
+    text = text.strip("/")
+    if not text:
+        return None
+    # 中间带 ``.`` / ``..`` 却没逃出项目的写法（``resource/../resource_pack/base``）
+    # 投影层归一后放行，这里也归一；逃出项目或绝对路径的跳过这一条声明。
+    text = posixpath.normpath(text)
+    try:
+        return safe_relative_path(text)
+    except (ValueError, UpdateApplyError):
+        # ``safe_relative_path`` 抛的是 ValueError：只跳过这一条声明，不让整次
+        # 更新失败。
+        return None
 
 
 def _import_origin_orphans(
@@ -411,18 +441,34 @@ def _import_origin_orphans(
             # 「这个目录本该是空的」的依据。
             continue
         directory = _project_target(project_path, relative_dir)
-        if directory.is_symlink() or not directory.is_dir():
+        if _is_link(directory) or not directory.is_dir():
             continue
-        for path in directory.rglob("*"):
-            if path.is_symlink() or not path.is_file():
-                continue
-            relative = safe_relative_path(path.relative_to(project_path).as_posix())
-            if relative in plan.files or _is_bytecode_artifact(relative):
-                continue
-            if any(part.startswith(".auto_mas") for part in relative.split("/")):
-                continue
-            orphans.add(relative)
+        # 不跟随链接：链接指到的是项目树外的内容，算成残留就会被清掉。Windows 的目录联接
+        # （junction）不算 symlink，rglob / os.walk(followlinks=False) 照样会走进去，要自己剪掉。
+        for current_raw, directory_names, file_names in os.walk(
+            directory, followlinks=False
+        ):
+            current = Path(current_raw)
+            directory_names[:] = [
+                name for name in directory_names if not _is_link(current / name)
+            ]
+            for file_name in file_names:
+                path = current / file_name
+                if path.is_symlink() or not path.is_file():
+                    continue
+                relative = safe_relative_path(path.relative_to(project_path).as_posix())
+                if relative in plan.files or _is_bytecode_artifact(relative):
+                    continue
+                if any(part.startswith(".auto_mas") for part in relative.split("/")):
+                    continue
+                orphans.add(relative)
     return orphans
+
+
+def _is_link(path: Path) -> bool:
+    """符号链接或 Windows 目录联接（junction）：扫描时都不跟进去。"""
+
+    return path.is_symlink() or path.is_junction()
 
 
 def _is_bytecode_artifact(relative: str) -> bool:

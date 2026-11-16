@@ -10,6 +10,9 @@ type PlanCreateType = PlanCreateIn.type
 export type PlanConfigData = PlanGetOut['data'][string]
 
 export const PLAN_CONFIG_TYPES = {
+  OKWW: PlanIndexItem.type.OKWW_PLAN_CONFIG,
+  OKNTE: PlanIndexItem.type.OK_NTE_PLAN_CONFIG,
+  UNIVERSAL: PlanIndexItem.type.UNIVERSAL_PLAN_CONFIG,
   MAA: PlanIndexItem.type.MAA_PLAN_CONFIG,
   MAA_END: PlanIndexItem.type.MAA_END_PLAN_CONFIG,
   BAAH: PlanIndexItem.type.BAAHPLAN_CONFIG,
@@ -17,8 +20,12 @@ export const PLAN_CONFIG_TYPES = {
 } as const
 
 export interface PlanChangeOptions {
+  /** 批量编辑由外层汇总一次，内部逐日写入不重复计数。 */
+  analyticsBatch?: boolean
   refresh?: boolean
   forceCustomStages?: boolean
+  /** 弹出编辑保留草稿时，展示服务端提供的保存失败原因。 */
+  onError?: (_reason: string) => void
 }
 
 export type PlanChangeHandler = (
@@ -37,62 +44,86 @@ interface PlanTypeDescriptor {
   reloadAfterSave: boolean
   /** 是否提供「简化视图」；没提供的类型隐藏视图切换，避免留下点了没反应的控件 */
   supportsSimpleView: boolean
-  /** 是否提供「关卡安排」（多类混打 / 每天一类）；只有 BAAH 的 key 分这两种排法 */
-  supportsLayoutMode: boolean
   tableComponent: Component
 }
 
 // ==================== 注册表 ====================
 
 export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
+  [PLAN_CONFIG_TYPES.OKWW]: {
+    configType: PLAN_CONFIG_TYPES.OKWW,
+    createType: PlanCreateIn.type.OKWW_PLAN,
+    displayNameKey: 'core.plan.type.okww',
+    defaultName: '新 Okww 计划表',
+    selectorTag: 'Okww',
+    reloadAfterSave: false,
+    supportsSimpleView: false,
+    tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/OkwwPlanTable.vue')),
+  },
+  [PLAN_CONFIG_TYPES.OKNTE]: {
+    configType: PLAN_CONFIG_TYPES.OKNTE,
+    createType: PlanCreateIn.type.OK_NTE_PLAN,
+    displayNameKey: 'core.plan.type.oknte',
+    defaultName: '新 OkNte 计划表',
+    selectorTag: 'OkNte',
+    reloadAfterSave: false,
+    supportsSimpleView: false,
+    tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/OkNtePlanTable.vue')),
+  },
+  [PLAN_CONFIG_TYPES.UNIVERSAL]: {
+    configType: PLAN_CONFIG_TYPES.UNIVERSAL,
+    createType: PlanCreateIn.type.UNIVERSAL_PLAN,
+    displayNameKey: 'core.plan.type.universal',
+    defaultName: '新通用脚本计划表',
+    selectorTag: '通用',
+    reloadAfterSave: false,
+    supportsSimpleView: false,
+    tableComponent: defineAsyncComponent(
+      () => import('@/views/plan/tables/UniversalPlanTable.vue')
+    ),
+  },
   [PLAN_CONFIG_TYPES.MAA]: {
     configType: PLAN_CONFIG_TYPES.MAA,
     createType: PlanCreateIn.type.MAA_PLAN,
-    displayNameKey: 'plan.type.maa',
+    displayNameKey: 'core.plan.type.maa',
     // defaultName 会被写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
     defaultName: '新 MAA 计划表',
     selectorTag: 'MAA',
     reloadAfterSave: true,
     supportsSimpleView: true,
-    supportsLayoutMode: false,
     tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/MaaPlanTable.vue')),
   },
   [PLAN_CONFIG_TYPES.MAA_END]: {
     configType: PLAN_CONFIG_TYPES.MAA_END,
     createType: PlanCreateIn.type.MAA_END_PLAN,
-    displayNameKey: 'plan.type.maaEnd',
+    displayNameKey: 'core.plan.type.maaEnd',
     defaultName: '新 MaaEnd 计划表',
     selectorTag: 'MaaEnd',
     reloadAfterSave: false,
     supportsSimpleView: true,
-    supportsLayoutMode: false,
     tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/MaaEndPlanTable.vue')),
   },
   [PLAN_CONFIG_TYPES.BAAH]: {
     configType: PLAN_CONFIG_TYPES.BAAH,
     createType: PlanCreateIn.type.BAAHPLAN,
-    displayNameKey: 'plan.type.baah',
+    displayNameKey: 'core.plan.type.baah',
     // defaultName 会被写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
     defaultName: '新 BAAH 计划表',
     selectorTag: 'BAAH',
     reloadAfterSave: false,
     // BAAH 两种排法都是一格一个控件，但要按行说明每一位是什么，转置成简化视图只会更难读
     supportsSimpleView: false,
-    // BAAH 的 key 有两种排法：六类都填（多类混打）或每天只选一类
-    supportsLayoutMode: true,
     tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/BAAHPlanTable.vue')),
   },
   [PLAN_CONFIG_TYPES.MSS]: {
     configType: PLAN_CONFIG_TYPES.MSS,
     createType: PlanCreateIn.type.MSSPLAN,
-    displayNameKey: 'plan.type.mss',
+    displayNameKey: 'core.plan.type.mss',
     // 同上：defaultName 会写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
     defaultName: '新 MSS 计划表',
     selectorTag: 'MSS',
     reloadAfterSave: false,
     supportsSimpleView: true,
-    // 「关卡安排」只有 BAAH 的 key 分多类混打与每天一类
-    supportsLayoutMode: false,
     tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/MSSPlanTable.vue')),
   },
 }

@@ -1,6 +1,10 @@
 <template>
-  <section class="overview-grid" :aria-label="t('home.proxy.aria')">
-    <a-card class="proxy-card" :title="t('home.proxy.title')" :loading="loading">
+  <section class="overview-grid" :aria-label="t('core.home.proxy.aria')">
+    <a-card
+      class="proxy-card app-page-surface"
+      :title="t('core.home.proxy.title')"
+      :loading="loading"
+    >
       <div v-if="Object.keys(proxyData).length > 0" class="proxy-list">
         <a-row :gutter="[16, 16]">
           <a-col v-for="(proxy, username) in proxyData" :key="username" :xs="24" :lg="12" :xl="8">
@@ -15,14 +19,14 @@
               <div class="proxy-stats">
                 <div class="stat-item full-width">
                   <a-statistic
-                    :title="t('home.proxy.lastTime')"
+                    :title="t('core.home.proxy.lastTime')"
                     :value="formatProxyDisplay(proxy.LastProxyDate)"
                   />
                 </div>
                 <div class="stat-pair">
-                  <a-statistic :title="t('home.proxy.times')" :value="proxy.ProxyTimes" />
+                  <a-statistic :title="t('core.home.proxy.times')" :value="proxy.ProxyTimes" />
                   <a-statistic
-                    :title="t('home.proxy.errors')"
+                    :title="t('core.home.proxy.errors')"
                     :value="proxy.ErrorTimes"
                     :value-style="{
                       color: proxy.ErrorTimes > 0 ? 'var(--ant-color-error)' : undefined,
@@ -36,7 +40,7 @@
       </div>
 
       <div v-else-if="!loading" class="empty-state">
-        <img src="@/assets/NoData.png" :alt="t('home.empty.noData')" class="empty-image" />
+        <NoData :image-style="{ height: '120px' }" :description="false" />
       </div>
     </a-card>
   </section>
@@ -45,7 +49,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { UserOutlined } from '@ant-design/icons-vue'
-import { formatBackendDateTime } from '@/utils/dateDisplay'
+import { formatHistoryDateTime } from '@/utils/dateDisplay'
 import type { ProxyInfo } from '@/types/home'
 
 defineOptions({
@@ -63,9 +67,9 @@ const { t } = useI18n()
 
 const formatProxyDisplay = (dateString: string) => {
   if (dateString === '暂无代理数据') {
-    return t('home.proxy.noData')
+    return t('core.home.proxy.noData')
   }
-  return formatBackendDateTime(dateString)
+  return formatHistoryDateTime(dateString)
 }
 </script>
 
@@ -79,24 +83,11 @@ const formatProxyDisplay = (dateString: string) => {
 
 .proxy-card {
   width: 100%;
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
-}
-
-.proxy-card :deep(.ant-card-head-title) {
-  font-size: 18px;
-  font-weight: 600;
 }
 
 .empty-state {
   padding: 40px 0;
   text-align: center;
-}
-
-.empty-image {
-  width: 48%;
-  max-width: 180px;
-  opacity: 0.82;
 }
 
 .proxy-list .proxy-item {

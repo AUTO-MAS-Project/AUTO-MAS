@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type CultivatePreviewIn = {
     /**
-     * 脚本ID
+     * 托管ID
      */
     scriptId: string;
     /**
-     * 用户ID
+     * 账号ID
      */
     userId: string;
     /**

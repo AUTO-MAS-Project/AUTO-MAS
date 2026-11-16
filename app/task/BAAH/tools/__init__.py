@@ -32,7 +32,6 @@ from .config_manager import (
     resolve_user_config_path,
     restore_managed_config,
 )
-from .notify import push_notification
 from .push_log import BAAH_PUSH_RULES, baah_resolve
 
 __all__ = [
@@ -45,7 +44,6 @@ __all__ = [
     "baah_resolve",
     "latest_log_file",
     "list_config_names",
-    "push_notification",
     "read_json",
     "resolve_config_name",
     "resolve_log_time_range",

@@ -234,10 +234,10 @@ def build_managed_config(
 ) -> dict[str, Any]:
     """Discover managed forms and merge script/user engine assignments.
 
-    表单值与引擎分配按该用户的计划 owner 取：shared 来源（以及未指定用户）
+    表单值与引擎分配按该账号的计划 owner 取：shared 来源（以及未指定账号）
     读脚本配置上的共享计划，independent 来源读该用户自己的计划。原生来源
     用户没有 MAS 计划，这里按 independent 返回其残留字段，编辑页不渲染它们。响应里的
-    ``plan_owner`` 告诉前端当前表单应保存到脚本配置还是用户配置。
+    ``plan_owner`` 告诉前端当前表单应保存到脚本配置还是账号配置。
     """
 
     from app.task.HSR.task_mapping import (

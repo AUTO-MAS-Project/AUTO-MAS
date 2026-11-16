@@ -1,6 +1,6 @@
 [project]
 name = "auto-mas"
-version = "5.7.0b3"
+version = "5.9.0b1"
 description = "AUTO-MAS 多脚本、多配置管理与自动化软件"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -8,19 +8,19 @@ license = { file = "LICENSE" }
 authors = [{ name = "AUTO-MAS Team" }]
 dependencies = [
     "loguru==0.7.3",
-    "fastapi==0.116.1",
+    "fastapi==0.133.1",
+    "starlette==1.9.0",
     "pydantic==2.11.7",
     "uvicorn==0.35.0",
     "websockets==15.0.1",
     "aiofiles==24.1.0",
-    "aiohttp==3.13.3",
     "httpx[socks]==0.28.1",
     "gitpython==3.1.45",
     "plyer==2.1.0",
+    "windows-toasts==1.3.1; sys_platform == 'win32'",
     "psutil==7.0.0",
     "jinja2==3.1.6",
     "pywin32==310; sys_platform == 'win32'",
-    "keyboard==0.13.5; sys_platform == 'win32'",
     "comtypes==1.4.17; sys_platform == 'win32'",
     "pycaw==20260927; sys_platform == 'win32'",
     "pycryptodome==3.23.0",
@@ -28,14 +28,13 @@ dependencies = [
     "pillow==12.1.1",
     "packaging==25.0",
     "rapidocr_onnxruntime==1.2.3",
-    "pygetwindow==0.0.9",
     "pyautogui==0.9.54",
-    "pynput==1.8.1",
     "numpy==2.3.4",
     "opencv-python==4.10.0.84",
     "maafw>=5.12,<6.0",
     "mss==9.0.2",
     "fastapi-mcp==0.4.0",
+    "mcp==1.30.0",
     "json5==0.14.0",
     "protobuf==7.36.1",
     "pyyaml==6.0.3",
@@ -44,6 +43,8 @@ dependencies = [
     "tzdata==2026.3",
     "zstandard==0.25.0",
     "pyzipper==0.4.0",
+    "blinker>=1.9.0",
+    "python-socks[asyncio]==3.1.1",
 ]
 
 [project.urls]
@@ -52,6 +53,7 @@ Repository = "https://github.com/AUTO-MAS-Project/AUTO-MAS"
 [dependency-groups]
 # 仅开发/回归测试使用，生产安装不需要
 dev = [
+    "mypy==2.4.1",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "ruff==0.16.8",

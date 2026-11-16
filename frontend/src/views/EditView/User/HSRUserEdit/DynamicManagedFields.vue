@@ -25,7 +25,7 @@
         <!-- 标记与恢复放在复选框外面，点它们不会顺带切换勾选 -->
         <span v-if="isFieldOverridden(field)" class="override-actions">
           <a-tooltip :title="overrideTooltip(field)">
-            <a-tag color="blue" class="override-tag">{{ t('edit.hsrFieldOverridden') }}</a-tag>
+            <a-tag color="blue" class="override-tag">{{ t('core.edit.hsrFieldOverridden') }}</a-tag>
           </a-tooltip>
           <a-button
             v-if="canResetField(field)"
@@ -35,7 +35,7 @@
             :disabled="disabled"
             @click="emit('reset', field.key)"
           >
-            {{ t('edit.hsrFieldReset') }}
+            {{ t('core.edit.hsrFieldReset') }}
           </a-button>
         </span>
       </div>
@@ -48,7 +48,9 @@
           </a-tooltip>
           <template v-if="isFieldOverridden(field)">
             <a-tooltip :title="overrideTooltip(field)">
-              <a-tag color="blue" class="override-tag">{{ t('edit.hsrFieldOverridden') }}</a-tag>
+              <a-tag color="blue" class="override-tag">{{
+                t('core.edit.hsrFieldOverridden')
+              }}</a-tag>
             </a-tooltip>
             <a-button
               v-if="canResetField(field)"
@@ -58,7 +60,7 @@
               :disabled="disabled"
               @click="emit('reset', field.key)"
             >
-              {{ t('edit.hsrFieldReset') }}
+              {{ t('core.edit.hsrFieldReset') }}
             </a-button>
           </template>
         </div>
@@ -182,11 +184,11 @@ const formatJson = (value: unknown) => JSON.stringify(value ?? null, null, 2)
 const overrideTooltip = (field: HSRManagedField) =>
   field.native_value === undefined
     ? undefined
-    : t('edit.hsrFieldNativeValue', {
+    : t('core.edit.hsrFieldNativeValue', {
         value: formatManagedValue(field, field.native_value, {
-          on: t('edit.hsrValueOn'),
-          off: t('edit.hsrValueOff'),
-          empty: t('edit.hsrValueEmpty'),
+          on: t('core.edit.hsrValueOn'),
+          off: t('core.edit.hsrValueOff'),
+          empty: t('core.edit.hsrValueEmpty'),
         }),
       })
 
@@ -207,7 +209,7 @@ const handleJsonBlur = (field: HSRManagedField, event: FocusEvent) => {
     emitValue(field, parsed)
   } catch {
     // 保留草稿，让用户在原文上继续修正而不是丢失已输入的内容
-    message.error(t('edit.p0NotValidJson', { p0: field.label }))
+    message.error(t('core.edit.p0NotValidJson', { p0: field.label }))
   }
 }
 </script>

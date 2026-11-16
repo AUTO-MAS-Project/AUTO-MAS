@@ -1,16 +1,17 @@
+import { beginMainFeature } from './featureAnalytics'
 /**
  * Runtime 链路的后端更新
  *
- * 灰度开关打开后，后端更新不再由 Python 侧自己下载 `UpdatePack_<版本>.zip` 再拉起
+ * 受管模式下，后端更新不再由 Python 侧自己下载 `UpdatePack_<版本>.zip` 再拉起
  * Inno Setup 安装器整包替换，而是由 Electron 做停机与更新编排者，严格按三步走：
  *
  * 1. 向当前 `backend supervise` 的 stdin 发 `shutdown`，等最终 `result` 与进程退出
  *    （backendService 的 `stopBackend()` 已封装）——`workspace sync` 发现后端仍在跑会
  *    直接返回 `BACKEND_STILL_RUNNING`，所以这一步必须真的等到退出；
  * 2. `bootstrap --version v<新版本>`：临时目录浅克隆 `release/<新版本>`、校验通过后整体
- *    替换 `repo/`，再同步 Python 与依赖。编排器在跑这条命令之前会先按目标版本的发布分支
- *    把 `auto-mas-runtime.exe` 换成配套的那一版（第 0 步，见 `runtimeBinaryService`），
- *    这时旧监督进程已退出、新的还没起来，是唯一能安全替换 exe 的窗口；
+ *    替换 `repo/`，再同步 Python 与依赖。编排器在跑这条命令之前会先把 `auto-mas-runtime.exe`
+ *    对齐到线上最新版（第 0 步，见 `runtimeBinaryService`），这时旧监督进程已退出、新的还没
+ *    起来，是唯一能安全替换 exe 的窗口；
  * 3. 重新 `backend supervise`（backendService 的 `startBackend()`）。
  *
  * 三步各自的失败后果完全不同，所以失败结果里带 `phase`，界面据此给出不同的处置入口，
@@ -20,13 +21,13 @@
 
 import type { BackendStartResult, BackendStopResult } from './backendService'
 import { getLogger } from './logger'
-import { MirrorService } from './mirrorService'
+import { RUNTIME_STOP_TIMEOUT_MS, waitForSettle } from './runtime/shutdown'
 import type { RuntimeLaunchConfig, RuntimeRemediation } from './runtime'
 import {
   RUNTIME_BINARY_ALIGN_ERROR,
   RUNTIME_BINARY_DOWNLOAD_FAILED,
   RUNTIME_BINARY_REPLACE_FAILED,
-  RUNTIME_PIN_UNAVAILABLE,
+  RUNTIME_LATEST_UNAVAILABLE,
 } from './runtimeBinaryService'
 import {
   InitializationRunStage,
@@ -95,9 +96,9 @@ const RETRY_ACTION_MAP: Readonly<
   repair: { stage: 'python', mode: 'rebuild' },
 }
 
-/** 第 0 步（Runtime 对齐）的失败码：它们发生在源码被动之前。 */
+/** 第 0 步（Runtime 对齐到线上最新版）的失败码：它们发生在源码被动之前。 */
 const RUNTIME_BINARY_FAILURE_CODES: ReadonlySet<string> = new Set([
-  RUNTIME_PIN_UNAVAILABLE,
+  RUNTIME_LATEST_UNAVAILABLE,
   RUNTIME_BINARY_DOWNLOAD_FAILED,
   RUNTIME_BINARY_REPLACE_FAILED,
   RUNTIME_BINARY_ALIGN_ERROR,
@@ -127,7 +128,7 @@ export interface RuntimeUpdateOutcome {
   supportRequired?: boolean
   /** 用户主动取消。 */
   cancelled?: boolean
-  /** 当前模式根本不支持自动更新（development 或灰度开关关闭）。 */
+  /** 当前模式根本不支持自动更新（development）。 */
   unsupported?: boolean
 }
 
@@ -209,14 +210,14 @@ interface RuntimeUpdateAbortResult {
 }
 
 /** 退出清场默认等在途命令落地的上限。 */
-const RUNTIME_UPDATE_ABORT_TIMEOUT_MS = 5000
+const RUNTIME_UPDATE_ABORT_TIMEOUT_MS = RUNTIME_STOP_TIMEOUT_MS
 
 /**
  * 应用退出时中止更新。
  *
  * 只置空会话不够：bootstrap 子进程会跑成孤儿，下次启动撞 `MUTATION_IN_PROGRESS`。
  * 这里先对在途命令下发 cancel，等它在时限内落地（Runtime 收到 cancel 会以
- * `OPERATION_CANCELLED` 收尾），再置空；超时也置空，不拖住退出。
+ * `OPERATION_CANCELLED` 收尾），超时结束并确认命令进程退出后才清理会话。
  */
 export async function abortRuntimeUpdateForShutdown(
   timeoutMs = RUNTIME_UPDATE_ABORT_TIMEOUT_MS
@@ -227,30 +228,20 @@ export async function abortRuntimeUpdateForShutdown(
   current.cancelRequested = true
   current.abortedForShutdown = true
   const forwarded = current.runtimeService.cancel()
+  const deadline = Date.now() + timeoutMs
+  await current.runtimeService.shutdown(timeoutMs)
 
   let settled = true
   const inFlight = current.inFlight
   if (inFlight) {
     logger.info(`应用退出，等待在途更新命令落地（上限 ${timeoutMs}ms）`)
-    settled = await waitForSettle(inFlight, timeoutMs)
-    if (!settled) logger.warn('在途更新命令未在时限内落地，放弃等待')
+    settled = await waitForSettle(inFlight, Math.max(0, deadline - Date.now()))
+    if (!settled) throw new Error('无法确认后端更新已结束，请重试退出。')
   }
 
   if (session === current) session = null
   logger.info(`更新会话已因应用退出清场${forwarded ? '，并已通知在途步骤取消' : ''}`)
   return { hadSession: true, forwarded, settled }
-}
-
-/** 等一个 promise 落地（无论成败），超时返回 false。 */
-function waitForSettle(target: Promise<unknown>, timeoutMs: number): Promise<boolean> {
-  return new Promise(resolve => {
-    const timer = setTimeout(() => resolve(false), timeoutMs)
-    const done = (): void => {
-      clearTimeout(timer)
-      resolve(true)
-    }
-    target.then(done, done)
-  })
 }
 
 const defaultRuntimeServiceFactory = (
@@ -277,12 +268,15 @@ export async function updateBackendViaRuntime(
   onProgress: (update: RuntimeUpdateProgress) => void,
   deps: RuntimeUpdateDependencies
 ): Promise<RuntimeUpdateOutcome> {
-  const { launchConfig } = deps
+  return observeBackendUpdate('start', () => runBackendUpdate(targetVersion, onProgress, deps))
+}
 
-  if (launchConfig.mode === 'off') {
-    logger.info('灰度开关关闭，Runtime 更新链路不可用')
-    return unsupported('灰度开关关闭时后端更新仍走原有的下载安装包流程')
-  }
+async function runBackendUpdate(
+  targetVersion: string,
+  onProgress: (update: RuntimeUpdateProgress) => void,
+  deps: RuntimeUpdateDependencies
+): Promise<RuntimeUpdateOutcome> {
+  const { launchConfig } = deps
 
   if (launchConfig.mode === 'development') {
     // 开发检出是开发者自己的源码，Runtime 只监督它，绝不替换。
@@ -307,11 +301,9 @@ export async function updateBackendViaRuntime(
   const runtimeService = (deps.createRuntimeService ?? defaultRuntimeServiceFactory)({
     launchConfig,
     targetVersion: version,
-    // 更新流程不按段重试，这里的镜像查找只为满足构造契约；镜像配置与初始化流程同源。
-    mirrorService: new MirrorService(launchConfig.appRoot),
   })
   const current: UpdateSession = {
-    version,
+    version: runtimeService.targetVersion,
     runtimeService,
     backend: deps.backend,
     cancelRequested: false,
@@ -320,7 +312,7 @@ export async function updateBackendViaRuntime(
   }
   session = current
 
-  logger.info(`开始经 Runtime 更新后端到 ${version}`)
+  logger.info(`开始经 Runtime 更新后端到 ${current.version}`)
 
   // ---------- 1. 停机 ----------
   onProgress({ stage: 'shutdown', status: 'started', progress: 0, message: STOP_MESSAGE })
@@ -375,6 +367,13 @@ export async function retryBackendUpdate(
   action: RuntimeUpdateRetryAction,
   onProgress: (update: RuntimeUpdateProgress) => void
 ): Promise<RuntimeUpdateOutcome> {
+  return observeBackendUpdate('retry', () => runBackendUpdateRetry(action, onProgress))
+}
+
+async function runBackendUpdateRetry(
+  action: RuntimeUpdateRetryAction,
+  onProgress: (update: RuntimeUpdateProgress) => void
+): Promise<RuntimeUpdateOutcome> {
   const current = session
   if (!current) {
     const message = '没有进行中的更新会话，请重新发起更新'
@@ -407,12 +406,7 @@ export async function retryBackendUpdate(
 
   const outcome = await trackInFlight(
     current,
-    current.runtimeService.retryStage(
-      mapped.stage,
-      update => onProgress(update),
-      undefined,
-      mapped.mode
-    )
+    current.runtimeService.retryStage(mapped.stage, update => onProgress(update), mapped.mode)
   )
   if (!outcome.success) {
     // 单步重试时源码可能已是新版本，取消后不能再拉旧后端；保留重试入口让用户接着修。
@@ -516,6 +510,14 @@ async function restartBackend(
   current: UpdateSession,
   onProgress: (update: RuntimeUpdateProgress) => void
 ): Promise<RuntimeUpdateOutcome> {
+  if (current.abortedForShutdown) {
+    return {
+      success: false,
+      phase: 'restart',
+      cancelled: true,
+      error: '运行环境已准备完成，退出期间不再启动后端',
+    }
+  }
   onProgress({ stage: 'restart', status: 'started', progress: 0, message: RESTART_MESSAGE })
 
   const startResult = await current.backend.startBackend()
@@ -573,8 +575,8 @@ function buildBootstrapFailure(
 /**
  * 失败段到重试入口。
  *
- * 第 0 步（Runtime 对齐）失败时什么都还没动，整条重来即可；仓库段失败时旧 `repo/` 仍在，
- * 只要重跑 `workspace sync`；依赖段失败时源码已经是新版本而环境标记为
+ * 第 0 步（Runtime 对齐到线上最新版）失败时什么都还没动，整条重来即可；仓库段失败时旧
+ * `repo/` 仍在，只要重跑 `workspace sync`；依赖段失败时源码已经是新版本而环境标记为
  * `environment_broken`，退不回去，只能重试同步、重建依赖或整体修复。
  */
 export function resolveRetryActions(
@@ -589,5 +591,30 @@ export function resolveRetryActions(
       return ['dependencies-sync', 'dependencies-rebuild', 'repair']
     default:
       return ['repair']
+  }
+}
+
+async function observeBackendUpdate(
+  trigger_kind: 'start' | 'retry',
+  run: () => Promise<RuntimeUpdateOutcome>
+): Promise<RuntimeUpdateOutcome> {
+  const telemetry = beginMainFeature('backend_update_finished')
+  try {
+    const result = await run()
+    telemetry.finish({
+      trigger_kind,
+      phase: result.phase ?? (result.success ? 'complete' : 'unknown'),
+      outcome: result.cancelled
+        ? 'cancelled'
+        : result.success
+          ? 'success'
+          : result.code === 'RUNTIME_UPDATE_UNSUPPORTED'
+            ? 'unsupported'
+            : 'failure',
+    })
+    return result
+  } catch (error) {
+    telemetry.finish({ trigger_kind, phase: 'unknown', outcome: 'unknown' })
+    throw error
   }
 }

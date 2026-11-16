@@ -1,12 +1,12 @@
 <!-- eslint-disable vue/no-mutating-props -- Slot components edit the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <!-- M9A 的后端特调有游戏客户端更新钩子（官服版本落后时提示或自动下载安装），挂在控制方式分节里与
-       游戏包名并排（插入点 besidePackageName） -->
+  <!-- M9A 的后端特调有游戏客户端更新钩子（官服版本落后时提示或自动下载安装），挂在控制方式分节里，
+       排在游戏包名、等待时间之后，单独一格（插入点 besidePackageName） -->
   <a-form-item>
     <template #label>
-      <a-tooltip :title="t('edit.m9aFlavorGameUpdateHint')">
+      <a-tooltip :title="t('core.edit.m9aFlavorGameUpdateHint')">
         <span class="form-label">
-          {{ t('edit.gameUpdate') }}
+          {{ t('core.edit.gameUpdate') }}
           <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
         </span>
       </a-tooltip>
@@ -40,9 +40,9 @@ const emit = defineEmits<{
 
 // 三项与后端 MaaFWConfig.Run.GameUpdateMode 的 OptionsValidator 一致
 const gameUpdateModeOptions = computed<Array<{ label: string; value: MaaFWGameUpdateMode }>>(() => [
-  { label: t('edit.mfwGameUpdateOff'), value: 'Off' },
-  { label: t('edit.mfwGameUpdateCheck'), value: 'Check' },
-  { label: t('edit.mfwGameUpdateAutoInstall'), value: 'AutoInstall' },
+  { label: t('core.edit.mfwGameUpdateOff'), value: 'Off' },
+  { label: t('core.edit.mfwGameUpdateCheck'), value: 'Check' },
+  { label: t('core.edit.mfwGameUpdateAutoInstall'), value: 'AutoInstall' },
 ])
 </script>
 

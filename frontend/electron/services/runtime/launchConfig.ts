@@ -1,21 +1,9 @@
+import { isDevelopmentEnvironment } from '../instanceConfig'
 /**
- * Runtime 后端监督链路的灰度开关与可执行文件定位
+ * Runtime 启动模式与可执行文件定位。
  *
- * 灰度期同时存在两条后端启动链路：
- * - `off`（源码开发默认）：Electron 自己 spawn `python.exe`，就绪靠健康检查，停止靠 scoped taskkill；
- * - `development` / `managed`：交给 `auto-mas-runtime.exe backend supervise` 监督。
- *
- * 一次生命周期只走一条链路：模式非 `off` 却找不到可执行文件时，按 `RUNTIME_NOT_FOUND`
- * 失败并展示，绝不静默回退旧链路——否则用户会在不知情的情况下拿到另一套端口与关闭语义。
- *
- * 灰度开关的来源分三级，优先级从高到低：
- * 1. 环境变量 `AUTO_MAS_RUNTIME_MODE`；
- * 2. 设置界面持久化的用户选择（`<appRoot>/config/frontend_config.json` 的
- *    `Runtime.LaunchMode`，与 `main.ts` 的 `loadConfig()/saveConfig()` 同一份文件）；
- * 3. 构建默认值：打包安装默认 `managed`，源码开发默认 `off`。Runtime 文件缺失不改变
- *    启动模式，避免自动恢复时启动安装根目录残留的旧后端。
- *
- * 任一级取值非法都记 warning 后落到下一级，不再像早前只有环境变量一级时那样直接判 `off`。
+ * 源码默认 development，安装版默认 managed。环境变量可覆盖构建默认值；
+ * 旧版保存的启动方式不再参与判定。
  */
 
 import { app } from 'electron'
@@ -29,7 +17,7 @@ const logger = getLogger('Runtime启动配置')
 /** 捆绑在安装包 resources 目录下的 Runtime 文件名。 */
 export const RUNTIME_EXECUTABLE_NAME = 'auto-mas-runtime.exe'
 
-/** 灰度开关的环境变量名。 */
+/** 启动模式的环境变量名。 */
 export const RUNTIME_MODE_ENV = 'AUTO_MAS_RUNTIME_MODE'
 
 /** 手动指定 Runtime 可执行文件路径的环境变量名。 */
@@ -41,20 +29,12 @@ export const RUNTIME_EXE_ENV = 'AUTO_MAS_RUNTIME_EXE'
  * `development` 监督开发者自己的源码检出（要求 `<repo>/main.py`、`<repo>/pyproject.toml`
  * 与已存在的 `<repo>/.venv`，Runtime 不创建它们）；`managed` 监督 Runtime 自己维护的受管工作区。
  */
-export type RuntimeLaunchMode = 'off' | 'development' | 'managed'
+export type RuntimeLaunchMode = 'development' | 'managed'
 
-const RUNTIME_LAUNCH_MODES: readonly RuntimeLaunchMode[] = ['off', 'development', 'managed']
+const RUNTIME_LAUNCH_MODES: readonly RuntimeLaunchMode[] = ['development', 'managed']
 
-/** 持久化设置比运行时开关多一个哨兵值：`auto` 表示不覆盖，跟随构建默认值。 */
-export type PersistedRuntimeLaunchMode = RuntimeLaunchMode | 'auto'
-
-const PERSISTED_RUNTIME_LAUNCH_MODES: readonly PersistedRuntimeLaunchMode[] = [
-  'auto',
-  ...RUNTIME_LAUNCH_MODES,
-]
-
-/** 最终生效值来自哪一级，供设置界面展示「当前由环境变量强制」之类的说明。 */
-export type RuntimeLaunchModeSource = 'env' | 'setting' | 'default'
+/** 最终生效值的来源，供运行诊断使用。 */
+export type RuntimeLaunchModeSource = 'env' | 'default'
 
 /** 一次解析的完整结果：生效模式 + 来源。 */
 export interface RuntimeLaunchModeResolution {
@@ -62,16 +42,9 @@ export interface RuntimeLaunchModeResolution {
   source: RuntimeLaunchModeSource
 }
 
-/** 灰度开关关闭时的定位信息：不去找可执行文件。 */
-export interface RuntimeDisabledLaunchConfig {
-  mode: 'off'
-  runtimePath: null
-  appRoot: string
-}
-
 /** 走 Runtime 监督链路时的定位信息。 */
-export interface RuntimeSupervisedLaunchConfig {
-  mode: Exclude<RuntimeLaunchMode, 'off'>
+export interface RuntimeLaunchConfig {
+  mode: RuntimeLaunchMode
   /** 找不到可执行文件时为 null，由调用方按 `RUNTIME_NOT_FOUND` 处理。 */
   runtimePath: string | null
   /**
@@ -89,65 +62,17 @@ export interface RuntimeSupervisedLaunchConfig {
   dataRoot: string
 }
 
-/** 一次启动所需的全部定位信息，按 `mode` 判别。 */
-export type RuntimeLaunchConfig = RuntimeDisabledLaunchConfig | RuntimeSupervisedLaunchConfig
-
 function isRuntimeLaunchMode(value: string): value is RuntimeLaunchMode {
   return (RUNTIME_LAUNCH_MODES as readonly string[]).includes(value)
 }
 
-/** 供 IPC 校验渲染进程传入值使用。 */
-export function isPersistedRuntimeLaunchMode(value: unknown): value is PersistedRuntimeLaunchMode {
-  return (
-    typeof value === 'string' &&
-    (PERSISTED_RUNTIME_LAUNCH_MODES as readonly string[]).includes(value)
-  )
-}
-
-/** 持久化设置文件路径，须与 `main.ts` 的 `loadConfig()`/`saveConfig()` 保持一致。 */
-function resolveSettingsPath(appRoot: string): string {
-  return path.join(appRoot, 'config', 'frontend_config.json')
-}
-
-/**
- * 读取持久化设置里的启动方式。
- *
- * 文件不存在、字段缺失、类型不对或 JSON 损坏都视为「未设置」而不是报错——设置文件在用户
- * 从未碰过这一项时本就可能没有 `Runtime` 节点，这不是异常情况。
- */
-function readPersistedLaunchMode(appRoot: string): string | undefined {
-  try {
-    const settingsPath = resolveSettingsPath(appRoot)
-    if (!fs.existsSync(settingsPath)) return undefined
-
-    const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) as {
-      Runtime?: { LaunchMode?: unknown }
-    }
-    const value = parsed.Runtime?.LaunchMode
-    return typeof value === 'string' ? value : undefined
-  } catch (error) {
-    logger.warn(
-      `读取持久化的 Runtime 启动方式设置失败，改按构建默认值处理: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    )
-    return undefined
-  }
-}
-
-/** 构建默认值只由打包状态决定，Runtime 缺失由启动流程报错，不能切换到旧链路。 */
+/** 构建默认值只由打包状态决定，Runtime 缺失由启动流程显式报错。 */
 function resolveBuildDefaultLaunchMode(): RuntimeLaunchMode {
-  return app?.isPackaged ? 'managed' : 'off'
+  return isDevelopmentEnvironment() ? 'development' : 'managed'
 }
 
-/**
- * 解析灰度开关，并带上生效来源。
- *
- * 优先级：环境变量 `AUTO_MAS_RUNTIME_MODE` > 持久化的用户设置 > 构建默认值。任一级取值
- * 非法都记 warning 后落到下一级，而不是直接判 `off`——最终结果永远来自某一级的合法取值，
- * 不会因为拼错一个单词就整体失效。
- */
-export function resolveRuntimeLaunchModeDetail(appRoot: string): RuntimeLaunchModeResolution {
+/** 环境变量可覆盖构建默认值；存量界面设置不再参与启动模式判定。 */
+export function resolveRuntimeLaunchModeDetail(): RuntimeLaunchModeResolution {
   const rawEnv = process.env[RUNTIME_MODE_ENV]
   if (rawEnv !== undefined && rawEnv.trim() !== '') {
     const normalizedEnv = rawEnv.trim().toLowerCase()
@@ -155,28 +80,16 @@ export function resolveRuntimeLaunchModeDetail(appRoot: string): RuntimeLaunchMo
       return { mode: normalizedEnv, source: 'env' }
     }
     logger.warn(
-      `${RUNTIME_MODE_ENV} 取值非法：${rawEnv}，改按持久化设置处理（可选值：off/development/managed）`
+      `${RUNTIME_MODE_ENV} 取值非法：${rawEnv}，改按构建默认值处理（可选值：development/managed）`
     )
-  }
-
-  const rawSetting = readPersistedLaunchMode(appRoot)
-  if (rawSetting !== undefined && rawSetting.trim() !== '') {
-    const normalizedSetting = rawSetting.trim().toLowerCase()
-    if (normalizedSetting !== 'auto') {
-      if (isRuntimeLaunchMode(normalizedSetting)) {
-        return { mode: normalizedSetting, source: 'setting' }
-      }
-      logger.warn(`持久化的 Runtime 启动方式设置非法：${rawSetting}，改按构建默认值处理`)
-    }
-    // normalizedSetting === 'auto'：用户显式选择跟随构建默认值，直接走下一级。
   }
 
   return { mode: resolveBuildDefaultLaunchMode(), source: 'default' }
 }
 
 /** 只要最终生效模式时用这个；需要在界面上展示来源时用 `resolveRuntimeLaunchModeDetail`。 */
-export function resolveRuntimeLaunchMode(appRoot: string): RuntimeLaunchMode {
-  return resolveRuntimeLaunchModeDetail(appRoot).mode
+export function resolveRuntimeLaunchMode(): RuntimeLaunchMode {
+  return resolveRuntimeLaunchModeDetail().mode
 }
 
 function isExistingFile(candidate: string): boolean {
@@ -188,7 +101,7 @@ function isExistingFile(candidate: string): boolean {
 }
 
 /**
- * Runtime 随本体更新时给旧 exe 让路用的备份后缀（`runtimeBinaryService`）。
+ * Runtime 更新（替换线上最新版）时给旧 exe 让路用的备份后缀（`runtimeBinaryService`）。
  *
  * 定义在这里而不是那边：定位 exe 的人要认识它才能在 exe 缺失时把备份找回来，而
  * `runtimeBinaryService` 依赖本模块，反向引用会成环。
@@ -198,7 +111,7 @@ export const RUNTIME_BACKUP_SUFFIX = '.old'
 /**
  * exe 缺失而备份 `<exe>.old` 还在时，把备份改回正式路径。
  *
- * 只有一种情形会留下这个状态：随本体更新替换 exe 时，旧文件已改名让路、新文件没挪进来、
+ * 只有一种情形会留下这个状态：更新 Runtime 替换 exe 时，旧文件已改名让路、新文件没挪进来、
  * 把旧文件改回去也失败（多半是安全软件正抓着它）。此时目录里没有 `auto-mas-runtime.exe`，
  * 任何依赖定位的路径（启动、第 0 步）都进不去，只有定位这一步能救——所以恢复放在这里，
  * 而不是等同步逻辑再来清理。返回是否真的恢复了。
@@ -225,7 +138,7 @@ export function recoverRuntimeBackup(runtimePath: string): boolean {
  * 定位 `auto-mas-runtime.exe`。
  *
  * 优先用环境变量显式指定的路径，其次查安装包捆绑位置 `process.resourcesPath`；捆绑位置
- * 缺失但留有随本体更新的备份时先把备份改回来（见 {@link recoverRuntimeBackup}）。
+ * 缺失但留有上次更新 Runtime 的备份时先把备份改回来（见 {@link recoverRuntimeBackup}）。
  * 尚未捆绑时返回 null，由调用方转成 `RUNTIME_NOT_FOUND`。
  */
 export function resolveRuntimeExecutable(): string | null {
@@ -259,8 +172,8 @@ export const RUNTIME_DEVELOPMENT_ROOT_DIRNAME = 'auto-mas-runtime'
  * `reason=runtime_root_inside_development_repo`），而 Electron 开发态的 `getAppRoot()` 恰好就是
  * 源码仓根；源码仓也不该被 Runtime 的 `runtime/`、`runtime-state/`、`debug/runtime/` 污染。
  * 所以 Runtime 根目录放到仓外：
- * - Electron 环境：`<userData>/auto-mas-runtime`。开发态的 userData 已由 `applyInstanceIdentity()`
- *   与正式版分开（`<appData>/<name>-dev`），两版各自一份 Runtime 布局，互不干扰；
+ * - Electron 环境：`<userData>/auto-mas-runtime`。开发态的 userData 与正式版分开
+ *   （`<appData>/AUTO-MAS-dev`），两版各自一份 Runtime 布局，互不干扰；
  * - 非 Electron 环境（单元测试、脚本）：源码根的同级目录 `<父目录>/<源码根目录名>-runtime`，
  *   与源码根一一对应且可预测，不依赖任何全局状态。
  *
@@ -283,11 +196,7 @@ export function resolveDevelopmentRuntimeRoot(dataRoot: string): string {
  * 另取仓外位置（见 `resolveDevelopmentRuntimeRoot`）。
  */
 export function resolveRuntimeLaunchConfig(appRoot: string): RuntimeLaunchConfig {
-  const mode = resolveRuntimeLaunchMode(appRoot)
-  if (mode === 'off') {
-    return { mode, runtimePath: null, appRoot }
-  }
-
+  const mode = resolveRuntimeLaunchMode()
   if (mode === 'development') {
     return {
       mode,

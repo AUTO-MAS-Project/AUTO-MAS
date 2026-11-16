@@ -43,5 +43,19 @@ export type MaaFWOptionInputInfo = {
      * 是否为密码 / 密钥字段（界面掩码，配置加密存储）
      */
     password?: boolean;
+    /**
+     * 编辑控件类型（PI v2.10.5）：text 文本框，file / directory 为路径框加系统选择对话框
+     */
+    inputType?: MaaFWOptionInputInfo.inputType;
 };
+export namespace MaaFWOptionInputInfo {
+    /**
+     * 编辑控件类型（PI v2.10.5）：text 文本框，file / directory 为路径框加系统选择对话框
+     */
+    export enum inputType {
+        TEXT = 'text',
+        FILE = 'file',
+        DIRECTORY = 'directory',
+    }
+}
 

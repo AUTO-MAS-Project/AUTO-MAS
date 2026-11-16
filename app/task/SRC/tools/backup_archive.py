@@ -18,13 +18,13 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""SRC 配置备份归档：MAS 用户配置（ConfigFile + 页面字段侧车）/ SRC 原生配置。
+"""SRC 配置备份归档：MAS 账号配置（ConfigFile + 页面字段侧车）/ SRC 原生配置。
 
 备份时机（MAS「动手前」，此时 SRC 配置尚未被触碰）：
 
 - 任务 / 配置会话启动（manager ``prepare``）：``native`` 归档 SRC 安装
-  目录 ``config/`` 当前状态（整目录）——安装配置物理上跨用户共享，只在
-  任务级归档一次；下发处按用户归档会把上一轮下发的 MAS 配置误当原生
+  目录 ``config/`` 当前状态（整目录）——安装配置物理上跨账号共享，只在
+  任务级归档一次；下发处按账号归档会把上一轮下发的 MAS 配置误当原生
   内容挤进保留池；
 - 运行 / 配置会话下发前（AutoProxy / ScriptConfig 的 ``set_src``）：
   ``mas`` 归档本轮下发源（shared 来源共享 Default 目录、independent 来源当前用户目录，
@@ -34,11 +34,11 @@
 
 ``mas`` 池的内容 = ConfigFile 整目录 + **页面核心字段侧车**（Stage 段 +
 Info 的 Server/Mode）：Stage 字段与 Server（注入 PackageName）运行时才写进
-src.json、不落盘在 ConfigFile——侧车让「MAS 用户配置备份」与页面认知一致，
+src.json、不落盘在 ConfigFile——侧车让「MAS 账号配置备份」与页面认知一致，
 恢复时随文件一起回滚并按段分组回填表单。Base（配置文件来源）决定恢复目标
 目录，只进侧车与预览、不回填；Id/Password/前后置脚本/通知由 MAS 自己消费
-（登录与执行域），不属于 SRC 配置内容，不进备份。池恒按用户分桶
-（``mas/{user_id}``），shared 来源多用户共享同一份 Default 目录时各自持有快照、
+（登录与执行域），不属于 SRC 配置内容，不进备份。池恒按账号分桶
+（``mas/{user_id}``），shared 来源多账号共享同一份 Default 目录时各自持有快照、
 互不混淆。
 
 ``native`` 池 = SRC 安装目录 ``config/`` 整目录（src.json + deploy.yaml +
@@ -48,7 +48,7 @@ src.json、不落盘在 ConfigFile——侧车让「MAS 用户配置备份」与
 一次任务。
 
 时间戳快照、指纹去重、保留清理与整目录恢复由公共模块
-``app.utils.config_archive`` 提供（默认每池保留 10 份），本模块只保留
+``app.utils.common.config.archive`` 提供（默认每池保留 10 份），本模块只保留
 SRC 特有的目录布局、侧车、恢复语义（恢复前强制归档当前）、Temp 快照
 守卫与预览摘要。
 """
@@ -56,24 +56,18 @@ SRC 特有的目录布局、侧车、恢复语义（恢复前强制归档当前�
 import json
 from pathlib import Path
 
+from app.services import script_install
 from app.task.SRC.tools.config import is_src_config_available
-from app.utils import get_logger
-from app.utils.config_archive import (
-    OVERLAY_SIDECAR_NAME,
-    archive_files,
-    config_root_key,
-    dir_files,
-    get_backup_dir,
-    list_times,
-    read_overlay_sidecar,
-    restore_dir,
-    write_backup_base,
-)
-from app.utils.constants import BASE_SOURCE_LABELS, STARRAIL_STAGE_BOOK
+from app.utils import BASE_SOURCE_LABELS, STARRAIL_STAGE_BOOK, get_logger
+from app.utils.common.config import archive as _utils_config_archive
+
+OVERLAY_SIDECAR_NAME = _utils_config_archive.OVERLAY_SIDECAR_NAME
+
+read_overlay_sidecar = _utils_config_archive.read_overlay_sidecar
 
 logger = get_logger("SRC 配置备份")
 
-# ══════════════════ MAS 用户配置（池按用户，目标路径按 owner） ══════════════════
+# ══════════════════ MAS 账号配置（池按账号，目标路径按 owner） ══════════════════
 
 _OVERLAY_STAGE_KEYS = (
     "Channel",
@@ -134,7 +128,7 @@ def read_overlay_values(config) -> dict:
     values: dict = {}
     for group, keys in _OVERLAY_KEY_GROUPS.items():
         for key in keys:
-            if (value := config.get(group, key)) is not None:
+            if (value := getattr(getattr(config, group), key)) is not None:
                 values[key] = value
     return values
 
@@ -155,7 +149,7 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
 
 
 def backup_root(script_id: str) -> Path:
-    """某脚本的备份归档根目录（MAS 用户池用）：``data/{script_id}/SrcBackups``。"""
+    """某脚本的备份归档根目录（MAS 账号池用）：``data/{script_id}/SrcBackups``。"""
 
     return Path.cwd() / "data" / script_id / "SrcBackups"
 
@@ -163,7 +157,7 @@ def backup_root(script_id: str) -> Path:
 def mas_backup_root(script_id: str, user_id: str) -> Path:
     """MAS 池归档根：``data/{script_id}/SrcBackups/mas/{user_id}``。
 
-    **恒按用户分桶**——shared 来源多用户共享 Default 下发源，但每个用户要
+    **恒按账号分桶**——shared 来源多账号共享 Default 下发源，但每个账号要
     看到、恢复自己的备份；池与恢复目标解耦（目标路径见
     :func:`mas_config_dir`，由 Info.Base 决定 Default 或用户目录）。
     """
@@ -187,7 +181,7 @@ def collect_mas_files(mas_dir: Path) -> dict[str, Path]:
     mas_dir = Path(mas_dir)
     if not mas_dir.is_dir() or not any(mas_dir.iterdir()):
         return {}
-    return dir_files(mas_dir)
+    return _utils_config_archive.dir_files(mas_dir)
 
 
 def archive_mas_backup(
@@ -198,9 +192,9 @@ def archive_mas_backup(
     force: bool = False,
     base: str | None = None,
 ) -> Path | None:
-    """归档 MAS 配置整份 + 页面核心字段侧车到用户池（指纹去重，无变化跳过）。
+    """归档 MAS 配置整份 + 页面核心字段侧车到账号池（指纹去重，无变化跳过）。
 
-    ``user_id`` 是池归属（恒按用户分桶）；``mas_dir`` 是归档/恢复目标
+    ``user_id`` 是池归属（恒按账号分桶）；``mas_dir`` 是归档/恢复目标
     路径，由调用方按三态 owner 解析（shared 来源共享 Default 目录、independent 来源
     独立目录）——池与目标解耦。侧车参与指纹：只改页面配置、未动
     ConfigFile 时同样新建归档（内存 JSON 写入，免临时文件）。
@@ -216,26 +210,28 @@ def archive_mas_backup(
         files[OVERLAY_SIDECAR_NAME] = json.dumps(overlay, ensure_ascii=False, indent=2)
     if not files:
         return None
-    dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, mas_backup_root(script_id, user_id), force=force
+    )
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
     if base:
-        write_backup_base(dest, base)
-    logger.info(f"用户 {user_id} 的 MAS 配置已归档: {dest.name}")
+        _utils_config_archive.write_backup_base(dest, base)
+    logger.info(f"账号 {user_id} 的 MAS 配置已归档: {dest.name}")
     return dest
 
 
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
-    """用户池的全部归档时间戳（倒序，最新在前）。"""
+    """账号池的全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(mas_backup_root(script_id, user_id))
+    return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
-    """取用户池指定时间戳的归档目录；不存在返回 None。"""
+    """取账号池指定时间戳的归档目录；不存在返回 None。"""
 
-    return get_backup_dir(mas_backup_root(script_id, user_id), ts)
+    return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
 
 def restore_mas_backup(
@@ -246,11 +242,11 @@ def restore_mas_backup(
     overlay: dict | None = None,
     base: str | None = None,
 ) -> dict | None:
-    """把用户池归档恢复到 MAS 配置目录（恢复前自动归档当前，误恢复可找回）。
+    """把账号池归档恢复到 MAS 配置目录（恢复前自动归档当前，误恢复可找回）。
 
-    ``user_id`` 是池归属（与归档一致按用户分桶）；``mas_dir`` 是恢复目标
-    路径，由调用方按三态 owner 解析。``overlay`` 为当前用户的页面核心
-    字段，随恢复前存底一起归档。返回该备份的侧车（供调用方回填 MAS 用户
+    ``user_id`` 是池归属（与归档一致按账号分桶）；``mas_dir`` 是恢复目标
+    路径，由调用方按三态 owner 解析。``overlay`` 为当前账号的页面核心
+    字段，随恢复前存底一起归档。返回该备份的侧车（供调用方回填 MAS 账号
     配置；旧版备份无侧车返回 ``None``），侧车文件随即从目录中分离删除，
     不留在 ConfigFile 里。
     """
@@ -266,11 +262,11 @@ def restore_mas_backup(
     archive_mas_backup(
         script_id, user_id, mas_dir, overlay=overlay, force=True, base=base
     )
-    restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
+    _utils_config_archive.restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
     restored_overlay = read_overlay_sidecar(mas_dir)
     if restored_overlay is not None:
         (mas_dir / OVERLAY_SIDECAR_NAME).unlink(missing_ok=True)
-    logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
+    logger.info(f"账号 {user_id} 的 MAS 配置已恢复备份 {ts}")
     return restored_overlay
 
 
@@ -281,13 +277,13 @@ def archive_mas_runtime_backup(
     overlay: dict | None = None,
     base: str | None = None,
 ) -> None:
-    """运行 / 配置会话下发前归档 MAS 配置（下发源）到用户池。
+    """运行 / 配置会话下发前归档 MAS 配置（下发源）到账号池。
 
     运行回写与会话保存会覆盖它，下发前存底；指纹去重，失败只记日志，
     绝不中止随后的运行或会话（归档是现场保护，不是前置条件）。
-    ``mas_dir`` 由调用方按当前用户三态解析（shared 来源=Default 共享目录、
-    independent 来源=独立目录）。``overlay`` 为当前用户的页面核心字段。native 池
-    与此处无关：原生配置跨用户共享，由 manager ``prepare`` 在任务级
+    ``mas_dir`` 由调用方按当前账号三态解析（shared 来源=Default 共享目录、
+    independent 来源=独立目录）。``overlay`` 为当前账号的页面核心字段。native 池
+    与此处无关：原生配置跨账号共享，由 manager ``prepare`` 在任务级
     一次性归档。
     """
 
@@ -307,7 +303,7 @@ def project_backup_root() -> Path:
 
     native（脚本原生配置）池挂在这里而不是脚本目录下——同一份物理安装
     可被多个脚本实例引用，原生备份按物理配置根指纹分桶、跨脚本共享、
-    不随脚本删除（mas 用户池仍按脚本，见 :func:`mas_backup_root`）。
+    不随脚本删除（mas 账号池仍按脚本，见 :func:`mas_backup_root`）。
     """
 
     return Path.cwd() / "data" / "SrcBackups"
@@ -320,7 +316,11 @@ def native_backup_root(config_path: str | Path) -> Path:
     配置无论被哪个脚本引用都归同一个池；跨脚本共享、不随脚本删除。
     """
 
-    return project_backup_root() / "native" / config_root_key(config_path)
+    return (
+        project_backup_root()
+        / "native"
+        / _utils_config_archive.config_root_key(config_path)
+    )
 
 
 def collect_native_files(config_path: str | Path) -> dict[str, Path]:
@@ -333,7 +333,7 @@ def collect_native_files(config_path: str | Path) -> dict[str, Path]:
     config_path = Path(config_path)
     if not config_path.is_dir() or not is_src_config_available(config_path):
         return {}
-    return dir_files(config_path)
+    return _utils_config_archive.dir_files(config_path)
 
 
 def archive_native_backup(config_path: Path, force: bool = False) -> Path | None:
@@ -347,7 +347,9 @@ def archive_native_backup(config_path: Path, force: bool = False) -> Path | None
     files = collect_native_files(config_path)
     if not files:
         return None
-    dest = archive_files(files, native_backup_root(config_path), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, native_backup_root(config_path), force=force
+    )
     if dest is None:
         logger.info("SRC 原生配置无变化，跳过归档")
         return None
@@ -358,13 +360,13 @@ def archive_native_backup(config_path: Path, force: bool = False) -> Path | None
 def list_native_backups(config_path: str | Path) -> list[str]:
     """SRC 原生配置全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(native_backup_root(config_path))
+    return _utils_config_archive.list_times(native_backup_root(config_path))
 
 
 def get_native_backup_dir(config_path: str | Path, ts: str) -> Path | None:
     """取指定时间戳的原生配置归档目录；不存在返回 None。"""
 
-    return get_backup_dir(native_backup_root(config_path), ts)
+    return _utils_config_archive.get_backup_dir(native_backup_root(config_path), ts)
 
 
 def restore_native_backup(config_path: Path, ts: str, script_id: str) -> None:
@@ -375,19 +377,23 @@ def restore_native_backup(config_path: Path, ts: str, script_id: str) -> None:
     快照回滚覆盖 config/——此时拒绝恢复，避免恢复结果被冲掉。
     """
 
-    backup_dir = get_native_backup_dir(config_path, ts)
-    if backup_dir is None:
-        raise ValueError(f"备份不存在: {ts}")
-    temp_ready_path = Path.cwd() / "data" / script_id / "Temp.ready"
-    if temp_ready_path.exists():
-        raise ValueError(
-            "检测到 SRC 待恢复的配置快照，请先完成一次 SRC 任务后再恢复配置"
-        )
     config_path = Path(config_path)
-    # 恢复前强制归档当前——「恢复前的配置」在列表里有明确的时间戳条目
-    archive_native_backup(config_path, force=True)
-    restore_dir(native_backup_root(config_path), ts, config_path)
-    logger.info(f"SRC 原生配置已恢复备份 {ts}")
+    # 任务已收尾时，原生安装器仍可能持有目录；恢复全过程共用安装锁。
+    with script_install.installation_access(config_path.parent):
+        backup_dir = get_native_backup_dir(config_path, ts)
+        if backup_dir is None:
+            raise ValueError(f"备份不存在: {ts}")
+        temp_ready_path = Path.cwd() / "data" / script_id / "Temp.ready"
+        if temp_ready_path.exists():
+            raise ValueError(
+                "检测到 SRC 待恢复的配置快照，请先完成一次 SRC 任务后再恢复配置"
+            )
+        # 恢复前强制归档当前——「恢复前的配置」在列表里有明确的时间戳条目
+        archive_native_backup(config_path, force=True)
+        _utils_config_archive.restore_dir(
+            native_backup_root(config_path), ts, config_path
+        )
+        logger.info(f"SRC 原生配置已恢复备份 {ts}")
 
 
 # ══════════════════ 备份预览摘要 ══════════════════

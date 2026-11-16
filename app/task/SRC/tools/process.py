@@ -25,9 +25,8 @@ from pathlib import Path
 
 import psutil
 
-from app.services import System
-from app.utils import ProcessManager, get_logger
-from app.utils.io import read_file, write_file
+from app.utils import ProcessManager, get_logger, process
+from app.utils import io as _utils_io
 
 from .config import (
     is_src_config_available,
@@ -149,7 +148,7 @@ def read_src_process_state(
     if not state_path.exists():
         return None
 
-    state = read_file(state_path)
+    state = _utils_io.read_file(state_path)
     if (
         not isinstance(state, dict)
         or "script_id" not in state
@@ -162,7 +161,7 @@ def read_src_process_state(
     if not isinstance(script_id, str) or not script_id.strip():
         raise ValueError(f"SRC 进程状态脚本无效: {script_id}")
     if expected_script_id is not None and script_id != expected_script_id:
-        raise ValueError(f"SRC 进程状态所属脚本无效: {script_id}")
+        raise ValueError(f"SRC 进程状态所属托管无效: {script_id}")
 
     src_root_path = state["src_root_path"]
     if not isinstance(src_root_path, str) or not src_root_path.strip():
@@ -222,7 +221,7 @@ def write_src_process_state(
         installation_id = read_src_installation_id(src_root_path)
     elif not isinstance(installation_id, str) or not installation_id.strip():
         raise ValueError(f"SRC 进程状态安装标识无效: {installation_id}")
-    write_file(
+    _utils_io.write_file(
         state_path,
         {
             "script_id": script_id,
@@ -337,7 +336,7 @@ async def _kill_src_toolkit_processes(
                     f"中止 SRC toolkit 后端进程: {resolved_process_path}, "
                     f"PID: {process_pid}"
                 )
-                if not await System.kill_process_by_pid(process_pid):
+                if not await process.kill_process_by_pid(process_pid):
                     success = False
             except Exception as e:
                 success = False
@@ -417,7 +416,7 @@ async def _kill_src_processes(
     if tracked_pid is not None:
         try:
             if await process_manager.is_running():
-                tracked_tree_killed = await System.kill_process_by_pid(tracked_pid)
+                tracked_tree_killed = await process.kill_process_by_pid(tracked_pid)
                 if not tracked_tree_killed:
                     success = False
         except Exception as e:
@@ -456,7 +455,7 @@ async def _kill_src_processes(
         logger.warning(f"扫描 SRC toolkit 可执行文件失败: {e}")
 
     try:
-        if not await System.kill_process(src_exe_path):
+        if not await process.kill_process(src_exe_path):
             success = False
     except Exception as e:
         success = False
@@ -582,7 +581,7 @@ async def kill_src_webui_process(
                 logger.info(
                     f"中止 SRC WebUI 端口进程: {process_path}, 端口: {webui_port}"
                 )
-                if not await System.kill_process_by_pid(connection.pid):
+                if not await process.kill_process_by_pid(connection.pid):
                     success = False
             except Exception as e:
                 success = False

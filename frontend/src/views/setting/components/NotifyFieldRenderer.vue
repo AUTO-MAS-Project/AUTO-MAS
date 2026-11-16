@@ -55,12 +55,14 @@ const onInputSave = (event: FocusEvent) => {
 
     <a-switch
       v-if="control === 'bool'"
+      :aria-label="t(field.labelKey)"
       :checked="value === true"
       :disabled="disabled"
       @change="(checked: boolean | string | number) => emit('save', Boolean(checked))"
     />
     <a-select
       v-else-if="control === 'select'"
+      :aria-label="t(field.labelKey)"
       :value="(value as string | undefined) ?? undefined"
       :options="selectOptions"
       :disabled="disabled"
@@ -70,6 +72,7 @@ const onInputSave = (event: FocusEvent) => {
     />
     <a-textarea
       v-else-if="control === 'json'"
+      :aria-label="t(field.labelKey)"
       :value="(value as string | undefined) ?? ''"
       :disabled="disabled"
       :placeholder="placeholder"
@@ -78,6 +81,7 @@ const onInputSave = (event: FocusEvent) => {
     />
     <a-input-password
       v-else-if="control === 'password'"
+      :aria-label="t(field.labelKey)"
       :value="(value as string | undefined) ?? ''"
       :disabled="disabled"
       :placeholder="placeholder"
@@ -87,6 +91,7 @@ const onInputSave = (event: FocusEvent) => {
     />
     <a-input
       v-else
+      :aria-label="t(field.labelKey)"
       :value="(value as string | undefined) ?? ''"
       :disabled="disabled"
       :placeholder="placeholder"
@@ -124,13 +129,13 @@ const onInputSave = (event: FocusEvent) => {
 }
 
 .field-label {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--ant-color-text);
   font-size: 14px;
 }
 
 .help-icon {
-  color: #8c8c8c;
+  color: var(--ant-color-text-secondary);
   font-size: 14px;
 }
 </style>

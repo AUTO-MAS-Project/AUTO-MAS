@@ -1,4 +1,5 @@
-import type { WSTaskCompletedData, WSTaskScriptInfoData } from '@/services/websocket/types'
+import type { WSTaskScriptInfoData } from '@/services/websocket/types'
+import type { TaskCompletionView } from '@/composables/taskTreeProjection'
 
 /** 任务总览里算作失败的脚本 / 用户状态 */
 export const FAILED_TASK_STATUSES: ReadonlySet<string> = new Set(['异常'])
@@ -41,11 +42,10 @@ export type TaskCompletionFeedback =
   | { kind: 'partialFailure'; failures: TaskFailureCount }
 
 /**
- * 调度台收尾时该怎么提示。后端的 outcome 只反映任务级错误（用户 / 脚本跑失败时仍是
- * success），这里再看一眼 task_info：有失败的脚本或用户就不报「任务完成」。
+ * 调度台收尾先消费机器终态，再检查树投影中的异常用户/托管，保留各专项汇总口径。
  */
 export function resolveTaskCompletionFeedback(
-  data: Pick<WSTaskCompletedData, 'outcome' | 'task_info'>
+  data: Pick<TaskCompletionView, 'outcome' | 'task_info'>
 ): TaskCompletionFeedback {
   if (data.outcome === 'error') return { kind: 'error' }
   if (data.outcome === 'cancelled') return { kind: 'cancelled' }

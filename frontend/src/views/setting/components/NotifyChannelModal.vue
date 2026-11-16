@@ -13,28 +13,18 @@ const props = withDefaults(
   defineProps<{
     open: boolean
     channel: NotifyChannelOut | null
-    /** 取哪组字段；也决定 Webhook 走全局还是用户接口 */
-    scope?: 'global' | 'user'
-    /** 扁平取值源（settings.Notify / 用户配置的 Notify 组） */
+    /** 全局通知配置的扁平取值源（settings.Notify） */
     values: Record<string, unknown>
-    /** 保存函数，签名固定 (group, name, value)；用户级宿主自行包一层 */
+    /** 保存函数，签名固定 (group, name, value) */
     save: (group: string, name: string, value: unknown) => unknown
-    /** 预留：用户级 Notify.Enabled 总开关会禁用每一个控件 */
-    controlsDisabled?: boolean
     /** Claw 渠道的提升绑定状态；非 Claw 渠道传 null */
     clawBinding?: ClawBindingState | null
     /** 嵌套浮层容器；弹窗场景传弹窗 wrap 节点，让浮层整体压在标题栏之下 */
     getPopupContainer?: () => HTMLElement
-    scriptId?: string | null
-    userId?: string | null
   }>(),
   {
-    scope: 'global',
-    controlsDisabled: false,
     clawBinding: null,
     getPopupContainer: undefined,
-    scriptId: null,
-    userId: null,
   }
 )
 
@@ -50,10 +40,10 @@ const icon = computed(() => channelIcon(props.channel?.icon))
 const iconColor = computed(() => channelIconColor(props.channel?.icon))
 const groupTag = computed(() =>
   props.channel && normalizeGroup(props.channel.group) === 'custom'
-    ? t('setting.notify.customGroup')
-    : t('setting.notify.channelsGroup')
+    ? t('core.setting.notify.customGroup')
+    : t('core.setting.notify.channelsGroup')
 )
-const fields = computed(() => (props.channel ? scopeFields(props.channel, props.scope) : []))
+const fields = computed(() => (props.channel ? scopeFields(props.channel, 'global') : []))
 const enableGroup = computed(() => props.channel?.enableField?.[0] ?? null)
 const enableName = computed(() => props.channel?.enableField?.[1] ?? null)
 const enabled = computed(() => {
@@ -62,15 +52,17 @@ const enabled = computed(() => {
 })
 const isClaw = computed(() => (props.channel?.customBlock ?? '').startsWith('claw:'))
 const clawConnected = computed(() => !!props.clawBinding?.status?.connected)
+const switchChecked = computed(() => enabled.value && (!isClaw.value || clawConnected.value))
+const stateText = computed(() =>
+  t(switchChecked.value ? 'core.setting.notify.stateEnabled' : 'core.setting.notify.stateDisabled')
+)
 // 未绑定时开关不可点（沿用 ClawBinding 原逻辑：未连接 / 查询中 / 解绑中都禁用）
 const switchDisabled = computed(() => {
-  if (props.controlsDisabled) return true
   if (isClaw.value && props.clawBinding) {
     return !clawConnected.value || props.clawBinding.statusLoading || props.clawBinding.unbinding
   }
   return false
 })
-const webhookMode = computed(() => (props.scope === 'user' ? 'user' : 'global'))
 
 const saving = ref(false)
 const setEnabled = async (value: boolean | string | number) => {
@@ -127,12 +119,12 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
             class="doc-link"
             @click="handleExternalLink"
           >
-            {{ t('common.doc') }}
+            {{ t('core.common.doc') }}
           </a>
           <button
             type="button"
             class="close"
-            :aria-label="t('common.close')"
+            :aria-label="t('core.common.close')"
             @click="emit('close')"
           >
             ✕
@@ -144,18 +136,18 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
       <div class="modal-body">
         <div v-if="enableName" class="modal-state">
           <div class="state-main">
-            <span class="switch-label">{{ t('setting.notify.stateEnabled') }}</span>
+            <span class="switch-label">{{ stateText }}</span>
             <a-switch
-              :checked="enabled && (!isClaw || clawConnected)"
+              :checked="switchChecked"
               :loading="saving"
               :disabled="switchDisabled"
-              :aria-label="t('setting.notify.stateEnabled')"
+              :aria-label="stateText"
               @change="setEnabled"
             />
           </div>
-          <div class="state-hint">{{ t('setting.notify.instantHint') }}</div>
+          <div class="state-hint">{{ t('core.setting.notify.instantHint') }}</div>
         </div>
-        <div v-else class="body-hint">{{ t('setting.notify.instantHint') }}</div>
+        <div v-else class="body-hint">{{ t('core.setting.notify.instantHint') }}</div>
 
         <ClawBinding
           v-if="isClaw && clawBinding"
@@ -165,9 +157,7 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
         <WebhookManager
           v-else-if="channel.customBlock === 'webhook_list'"
           compact
-          :mode="webhookMode"
-          :script-id="scriptId"
-          :user-id="userId"
+          mode="global"
           :get-popup-container="getPopupContainer"
           @listed="onWebhookListed"
         />
@@ -177,7 +167,6 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
           :key="field.name"
           :field="field"
           :value="values[field.name]"
-          :disabled="controlsDisabled"
           :get-popup-container="getPopupContainer"
           @save="value => saveField(field.group, field.name, value)"
         />
@@ -185,6 +174,8 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
     </div>
   </a-modal>
 </template>
+
+<style scoped src="./notifyChannel.css"></style>
 
 <style scoped>
 .modal-inner {
@@ -209,7 +200,7 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
   width: 30px;
   height: 30px;
   flex: 0 0 30px;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius-sm);
   display: grid;
   place-items: center;
   font-size: 17px;
@@ -220,15 +211,6 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
   font-size: 16px;
   font-weight: 600;
   color: var(--ant-color-text);
-}
-
-.tag {
-  font-size: 12px;
-  line-height: 18px;
-  padding: 0 7px;
-  border-radius: 4px;
-  background: var(--ant-color-fill-tertiary);
-  color: var(--ant-color-text-secondary);
 }
 
 .doc-link {
@@ -248,7 +230,7 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
   color: var(--ant-color-text-tertiary);
   font-size: 15px;
   padding: 2px 6px;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius-sm);
   cursor: pointer;
 }
 
@@ -280,7 +262,7 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
   gap: 4px;
   background: var(--ant-color-fill-quaternary);
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   padding: 8px 14px;
 }
 

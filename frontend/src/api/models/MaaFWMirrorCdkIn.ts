@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type MaaFWMirrorCdkIn = {
     /**
-     * MaaFW 脚本 ID
+     * MaaFW 托管 ID
      */
     scriptId: string;
     /**

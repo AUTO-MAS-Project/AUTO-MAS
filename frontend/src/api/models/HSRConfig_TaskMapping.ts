@@ -4,20 +4,20 @@
 /* eslint-disable */
 export type HSRConfig_TaskMapping = {
     /**
+     * 货币战争模块执行脚本
+     */
+    CurrencyWars?: ('M7A' | 'SRA' | null);
+    /**
      * 日常模块执行脚本
      */
     Daily?: ('M7A' | 'SRA' | null);
-    /**
-     * 领取奖励模块执行脚本
-     */
-    ReceiveRewards?: ('M7A' | 'SRA' | null);
     /**
      * 差分宇宙模块执行脚本
      */
     DivergentUniverse?: ('M7A' | 'SRA' | null);
     /**
-     * 货币战争模块执行脚本
+     * 领取奖励模块执行脚本
      */
-    CurrencyWars?: ('M7A' | 'SRA' | null);
+    ReceiveRewards?: ('M7A' | 'SRA' | null);
 };
 

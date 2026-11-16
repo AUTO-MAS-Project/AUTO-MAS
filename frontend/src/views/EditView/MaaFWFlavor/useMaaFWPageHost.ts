@@ -39,7 +39,7 @@ export function useMaaFWPageHost(
   const logger = window.electronAPI.getLogger('MaaFW 页面宿主')
   const route = useRoute()
   const router = useRouter()
-  const { getScript } = useScriptApi()
+  const { getScript, error: scriptLoadError } = useScriptApi()
 
   // 宿主实例只对应一个地址（路径一变 AppLayout 就重建），这里取下当时的路由快照
   const mode: MaaFWPageKind = route.meta.maafwPage ?? 'script'
@@ -64,6 +64,7 @@ export function useMaaFWPageHost(
     scriptType,
     mode,
     wizardStep,
+    scriptLoadError,
     takeInitialScript: () => {
       const script = initialScript
       initialScript = undefined

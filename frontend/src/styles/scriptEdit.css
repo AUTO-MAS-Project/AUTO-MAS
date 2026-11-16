@@ -1,0 +1,260 @@
+/* MAA / SRC / General 的编辑表单增强样式；通过 scoped 样式引入，不向其他页面广播。 */
+/* 内容区域 */
+
+.config-card {
+  border-radius: 16px;
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.08),
+    0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--ant-color-border-secondary);
+}
+
+.config-card :deep(.ant-card-head) {
+  border-bottom: 2px solid var(--ant-color-border-secondary);
+}
+
+.config-card :deep(.ant-card-head-title) {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ant-color-text);
+}
+
+.config-card :deep(.ant-card-body) {
+  background: var(--ant-color-bg-container);
+}
+
+.type-tag {
+  border: none;
+}
+
+/* 表单样式 */
+.config-form {
+  max-width: none;
+}
+
+.form-section:last-child {
+  margin-bottom: 0;
+}
+
+/* 表单标签 */
+.form-label {
+  color: var(--ant-color-text);
+  font-size: 14px;
+}
+
+.help-icon {
+  font-size: 14px;
+  transition: color 0.3s ease;
+}
+
+.help-icon:hover {
+  color: var(--ant-color-primary);
+}
+
+.modern-input {
+  border-radius: 8px;
+  border: 2px solid var(--ant-color-border);
+  background: var(--ant-color-bg-container);
+  transition: all 0.3s ease;
+}
+
+.modern-input:hover {
+  border-color: var(--ant-color-primary-hover);
+}
+
+.modern-input:focus,
+.modern-input.ant-input-focused {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+}
+
+.modern-select :deep(.ant-select-selector) {
+  border: 2px solid var(--ant-color-border) !important;
+  border-radius: 8px !important;
+  background: var(--ant-color-bg-container) !important;
+  transition: all 0.3s ease;
+}
+
+.modern-select:hover :deep(.ant-select-selector) {
+  border-color: var(--ant-color-primary-hover) !important;
+}
+
+.modern-select.ant-select-focused :deep(.ant-select-selector) {
+  border-color: var(--ant-color-primary) !important;
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1) !important;
+}
+
+.modern-number-input {
+  border-radius: 8px;
+}
+
+.modern-number-input :deep(.ant-input-number) {
+  border: 2px solid var(--ant-color-border);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+  transition: all 0.3s ease;
+}
+
+.modern-number-input :deep(.ant-input-number:hover) {
+  border-color: var(--ant-color-primary-hover);
+}
+
+.modern-number-input :deep(.ant-input-number-focused) {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+}
+
+/* 路径输入组 */
+.path-input-group {
+  border-radius: 8px;
+  border: 2px solid var(--ant-color-border);
+  transition: all 0.3s ease;
+}
+
+.path-input-group:hover {
+  border-color: var(--ant-color-primary-hover);
+}
+
+.path-input-group:focus-within {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+}
+
+.path-input {
+  background: var(--ant-color-bg-container) !important;
+}
+
+.path-input:focus {
+  box-shadow: none !important;
+}
+
+.path-button {
+  transition: all 0.3s ease;
+}
+
+.path-button:hover {
+  background: var(--ant-color-primary);
+  color: white;
+  transform: none;
+}
+
+/* 表单项间距 */
+
+.config-form :deep(.ant-form-item-label) {
+  padding-bottom: 8px;
+}
+
+.config-form :deep(.ant-form-item-label > label) {
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+/* 深色模式适配（跟随应用主题 html.dark，不用系统媒体查询） */
+html.dark .config-card {
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.3),
+    0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+html.dark .path-input-group:focus-within {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
+}
+
+html.dark .modern-input:focus,
+html.dark .modern-input.ant-input-focused {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
+}
+
+html.dark .modern-select.ant-select-focused :deep(.ant-select-selector) {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
+}
+
+html.dark .modern-number-input :deep(.ant-input-number-focused) {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
+}
+
+/* 响应式设计 */
+@media (max-width: 1200px) {
+  .config-card :deep(.ant-card-body) {
+    padding: 24px;
+  }
+
+  .form-section {
+    margin-bottom: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  /* 继续覆盖上面的 1200px 留白规则；公共表单中的窄屏规则先于本文件加载。 */
+  .config-card :deep(.ant-card-body) {
+    padding: 20px;
+  }
+
+  .config-card :deep(.ant-card-head) {
+    padding: 16px 20px;
+  }
+
+  .config-card :deep(.ant-card-head-title) {
+    font-size: 20px;
+  }
+
+  .section-header h3 {
+    font-size: 18px;
+  }
+
+  .form-section {
+    margin-bottom: 12px;
+  }
+
+  .path-button {
+    padding: 0 16px;
+    font-size: 14px;
+  }
+}
+
+/* 动画效果 */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.form-section {
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.form-section:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.form-section:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+.form-section:nth-child(4) {
+  animation-delay: 0.3s;
+}
+
+/* Tooltip样式优化 */
+:deep(.ant-tooltip-inner) {
+  background: var(--ant-color-bg-elevated);
+  color: var(--ant-color-text);
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 300px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+:deep(.ant-tooltip-arrow::before) {
+  background: var(--ant-color-bg-elevated);
+  border: 1px solid var(--ant-color-border);
+}

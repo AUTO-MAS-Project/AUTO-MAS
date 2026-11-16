@@ -146,7 +146,7 @@ def resource_paths_for(
 ) -> list[Path]:
     """``interface.resource[name].path`` 解析成项目内的目录列表，保持声明顺序。
 
-    给脚本编辑页用：那里还没有运行计划，只知道用户选了哪个 resource。
+    给托管编辑页用：那里还没有运行计划，只知道用户选了哪个 resource。
     找不到该 resource 返回空列表；越界（跳出项目目录）与不存在的条目直接跳过——
     这里只是推包名，不是在校验项目。
     """

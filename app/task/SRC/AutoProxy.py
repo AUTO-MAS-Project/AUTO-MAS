@@ -1,25 +1,18 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025-2026 AUTO-MAS Team
-
 #   This file is part of AUTO-MAS.
-
 #   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU Affero General Public License as
 #   published by the Free Software Foundation, either version 3 of
 #   the License, or (at your option) any later version.
-
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU Affero General Public License for more details.
-
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 #   Contact: DLmaster_361@163.com
-
-
 import asyncio
 import re
 import time
@@ -28,14 +21,19 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
-from app.core import Config
-from app.core.ws import Publisher, protocol
+from app import core
+from app.config import ConfigCollection
+from app.core import Config, Notify, Publisher
+from app.core.history import aggregate_data
+from app.core.notify.task_content import (
+    build_script_statistics_payload as build_script_statistics_payload,
+)
+from app.core.ws import protocol
 from app.models.config import SrcConfig, SrcUserConfig
-from app.models.ConfigBase import MultipleConfig
-from app.models.emulator import DeviceBase, DeviceInfo
-from app.models.schema import WSTaskNoticeData
+from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
+from app.models.notification import LocalNotice
+from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
-from app.services import Notify
 from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
 from app.task.proxy_helpers import (
@@ -43,9 +41,15 @@ from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
     resolve_config_base,
 )
-from app.utils import LogMonitor, ProcessManager, get_logger, strptime
-from app.utils.constants import STARRAIL_PACKAGE_NAME, UTC4
-from app.utils.io import read_file, write_file
+from app.utils import (
+    STARRAIL_PACKAGE_NAME,
+    UTC4,
+    LogMonitor,
+    ProcessManager,
+    get_logger,
+    strptime,
+)
+from app.utils import io as _utils_io
 
 from .tools import (
     archive_mas_runtime_backup,
@@ -55,7 +59,6 @@ from .tools import (
     poor_yaml_read,
     poor_yaml_write,
     promote_src_config_update,
-    push_notification,
     read_overlay_values,
     read_src_webui_port,
     recover_src_user_config,
@@ -79,16 +82,14 @@ def _has_structured_src_log(log_content: list[str], message: str) -> bool:
     )
 
 
-class AutoProxyTask(ScriptAutoProxyBase):
+class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
     """自动代理模式"""
-
-    wait_for_finalizer_on_cancel = True
 
     def __init__(
         self,
         script_info: ScriptItem,
         script_config: SrcConfig,
-        user_config: MultipleConfig[SrcUserConfig],
+        user_config: ConfigCollection[SrcUserConfig],
         emulator_manager: DeviceBase,
         *,
         src_installation_id: str,
@@ -114,8 +115,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.process_cleanup_success = True
         self.prepared = False
         self._src_injected_config: dict | None = None
-        # 配置来源三态与独立的快速配置开关：来源决定是否下发 MAS 托管配置，
-        # 快速配置决定是否把面板值写进 SRC 原生配置（两段互不替代）。
+        self._src_injected_deploy: dict | None = None
+        # 配置来源三态与独立的覆写常规配置开关：来源决定是否下发 MAS 托管配置，
+        # 覆写常规配置决定是否把面板值写进 SRC 原生配置（两段互不替代）。
         self.config_base, self.native_base = resolve_config_base(
             self.cur_user_config, CONFIG_BASE_SHARED
         )
@@ -125,23 +127,25 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
         if (
             self.task_info.is_queue_task
-            and self.script_config.get("Run", "ProxyTimesLimit") != 0
-            and self.cur_user_config.get("Data", "ProxyTimes")
-            >= self.script_config.get("Run", "ProxyTimesLimit")
+            and self.script_config.Run.ProxyTimesLimit != 0
+            and (
+                self.cur_user_config.Data.ProxyTimes
+                >= self.script_config.Run.ProxyTimesLimit
+            )
         ):
-            self.cur_user_item.status = "跳过"
-            return "今日代理次数已达上限, 跳过该用户"
+            await self.cur_user_item.set_state(status="跳过")
+            return "今日代理次数已达上限, 跳过该账号"
 
-        if self.cur_user_config.get("Info", "Base") == CONFIG_BASE_INDEPENDENT:
+        if self.cur_user_config.Info.Base == CONFIG_BASE_INDEPENDENT:
             config_path = (
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
             )
             recover_src_user_config(config_path)
             if not config_path.exists():
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
                 return (
-                    "未找到用户的 SRC 配置文件，请先在用户配置页完成 「SRC配置」 步骤"
+                    "未找到用户的 SRC 配置文件，请先在账号配置页完成 「SRC配置」 步骤"
                 )
         return "Pass"
 
@@ -153,9 +157,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
         )
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
-        self.log_start_time = datetime.now()
+        self.log_start_time = datetime.now().astimezone()
 
-        self.src_root_path = Path(self.script_config.get("Info", "Path"))
+        src_root_path = self.script_config.Info.Path
+        if src_root_path is None:
+            raise ValueError("Path未配置，请检查路径设置")
+        self.src_root_path = src_root_path
         self.src_exe_path = self.src_root_path / "src.exe"
         self.src_set_path = self.src_root_path / "config"
         self.src_log_path = self.src_root_path / "log/2000-01-01_src.txt"
@@ -174,9 +181,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         # 初始化每日代理状态
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
-        if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
-            await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
-            await self.cur_user_config.set("Data", "ProxyTimes", 0)
+        if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") != self.curdate:
+            self.cur_user_config.Data.LastProxyDate = datetime.now(tz=UTC4)
+            await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = 0
+            await self.cur_user_config.commit()
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
@@ -186,67 +195,75 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     type=protocol.TASK_NOTICE,
                     data=WSTaskNoticeData(
                         level="error",
-                        message=f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}",
+                        message=f"账号 {self.cur_user_item.name} 检查未通过: {self.check_result}",
                     ),
                 )
             return
 
         await self.prepare()
-        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
+        # 任务前脚本每账号一次，先于全部重试；后置脚本由收尾阶段成对执行
         await self.run_user_scripts_before()
 
-        logger.info(f"开始代理用户: {self.cur_user_uid}")
-        self.cur_user_item.status = "运行"
+        logger.info(f"开始代理账号: {self.cur_user_uid}")
+        await self.cur_user_item.set_state(status="运行")
 
-        for i in range(self.script_config.get("Run", "RunTimesLimit")):
+        for i in range(self.script_config.Run.RunTimesLimit):
             if self.run_book:
                 break
             logger.info(
-                f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
+                f"账号 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
             )
-            self.log_start_time = datetime.now()
-            self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = (
-                LogRecord()
+            self.log_start_time = datetime.now().astimezone()
+            self.cur_user_log = LogRecord()
+            self.cur_user_log = await self.cur_user_item.add_log_record(
+                self.log_start_time, self.cur_user_log
             )
 
-            self.script_info.log = "正在启动模拟器..."
+            await self.script_info.set_log("正在启动模拟器...")
             # 启动模拟器
             try:
-                logger.info(
-                    f"启动模拟器: {self.script_config.get('Emulator', 'Index')}"
-                )
+                logger.info(f"启动模拟器: {self.script_config.Emulator.Index}")
                 emulator_info = await self.emulator_manager.open(
-                    self.script_config.get("Emulator", "Index"),
-                    STARRAIL_PACKAGE_NAME[self.cur_user_config.get("Info", "Server")],
+                    self.script_config.Emulator.Index,
+                    STARRAIL_PACKAGE_NAME[self.cur_user_config.Info.Server],
                 )
             except Exception as e:
                 if not await self.handle_pre_src_error("模拟器启动失败", e):
                     return
                 continue
 
-            self.script_info.log = (
+            await self.script_info.set_log(
                 "正在启动模拟器...\n模拟器启动成功\n正在登录「崩坏·星穹铁道」..."
             )
 
             # 需要用户手动更新游戏时重试无意义，直接结束本模式的重试
-            if self.script_config.get(
-                "Run", "IfCheckGameUpdate"
-            ) and not await self.handle_game_update(emulator_info):
+            if self.script_config.Run.IfCheckGameUpdate and (
+                not await self.handle_game_update(emulator_info)
+            ):
                 break
 
+            # 在线时先初始化宿主，初始化异常继续上抛，不归入登录失败重试。
+            if emulator_info.status == DeviceStatus.ONLINE:
+                _ = core.MaaFWManager
+
             if await login(
-                emulator_info,
-                STARRAIL_PACKAGE_NAME[self.cur_user_config.get("Info", "Server")],
-                self.cur_user_config.get("Info", "Id"),
-                self.cur_user_config.get("Info", "Password"),
+                emulator_info=emulator_info,
+                package_name=STARRAIL_PACKAGE_NAME[self.cur_user_config.Info.Server],
+                id=self.cur_user_config.Info.Id,
+                password=self.cur_user_config.Info.Password,
+                get_agree_bilibili=lambda: Config.setting.Function.IfAgreeBilibili,
+                get_adb_tasker=lambda device: core.MaaFWManager.get_adb_tasker(device),
+                do_job=lambda job: core.MaaFWManager.do_job(job),
             ):
-                logger.info(f"用户 {self.cur_user_item.user_id} 登录成功")
+                logger.info(f"账号 {self.cur_user_item.user_id} 登录成功")
             else:
                 if not await self.handle_pre_src_error("「崩坏·星穹铁道」登录失败"):
                     return
                 continue
 
-            self.script_info.log = "正在启动模拟器...\n模拟器启动成功\n正在登录「崩坏·星穹铁道」\n「崩坏·星穹铁道」登录成功"
+            await self.script_info.set_log(
+                "正在启动模拟器...\n模拟器启动成功\n正在登录「崩坏·星穹铁道」\n「崩坏·星穹铁道」登录成功"
+            )
 
             await self.set_src(emulator_info)
             self.src_webui_port = read_src_webui_port(self.src_set_path)
@@ -271,7 +288,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
 
             # 静默模式隐藏 SRC 窗口
-            if Config.get("Function", "IfSilence"):
+            if Config.setting.Function.IfSilence:
                 deadline = time.monotonic() + 60
                 while time.monotonic() < deadline:
                     if await self.src_process_manager.is_visible():
@@ -280,7 +297,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     await asyncio.sleep(0.1)
 
             # 等待日志文件生成
-            self.script_info.log = "正在启动模拟器...\n模拟器启动成功\n正在登录「崩坏·星穹铁道」\n「崩坏·星穹铁道」登录成功\n正在等待 SRC 日志文件生成"
+            await self.script_info.set_log(
+                "正在启动模拟器...\n模拟器启动成功\n正在登录「崩坏·星穹铁道」\n「崩坏·星穹铁道」登录成功\n正在等待 SRC 日志文件生成"
+            )
             if_get_file = False
             deadline = time.monotonic() + 60
             while time.monotonic() < deadline:
@@ -312,8 +331,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
-                logger.info(f"用户: {self.cur_user_uid} - SRC 脚本进程完成代理任务")
-                self.script_info.log = (
+                logger.info(f"账号: {self.cur_user_uid} - SRC 脚本进程完成代理任务")
+                await self.script_info.set_log(
                     "检测到 SRC 脚本进程完成代理任务\n正在等待相关程序结束"
                 )
 
@@ -332,9 +351,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
             else:
                 logger.warning(
-                    f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
+                    f"账号: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                 )
-                self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
+                await self.script_info.set_log(
+                    f"{self.cur_user_log.status}\n正在中止相关程序"
+                )
 
                 # 中止相关程序
                 cleanup_success = await self.kill_managed_process()
@@ -342,11 +363,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     await self._handle_process_cleanup_failure()
 
                 try:
-                    await Notify.push_plyer(
-                        "用户自动代理出现异常！",
-                        f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
-                        f"{self.cur_user_item.name}的自动代理出现异常",
-                        3,
+                    await Notify.send_notice(
+                        LocalNotice(
+                            title="账号自动代理出现异常！",
+                            message=f"账号 {self.cur_user_item.name} 的自动代理出现一次异常",
+                            ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                            duration_seconds=3,
+                        )
                     )
                 except Exception:
                     pass
@@ -354,14 +377,15 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     return
 
             await asyncio.sleep(10)
-            # 更新脚本配置文件
-            if self.cur_user_config.get("Info", "Base") == CONFIG_BASE_INDEPENDENT:
+            # 回写 MAS 基础配置
+            if self.cur_user_config.Info.Base == CONFIG_BASE_INDEPENDENT:
                 save_src_user_config(
                     self.src_set_path,
                     Path.cwd()
                     / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
                     expected_installation_id=self.src_installation_id,
                     runtime_baseline=self._src_injected_config,
+                    runtime_deploy_baseline=self._src_injected_deploy,
                 )
                 logger.success("SRC 脚本配置文件已更新")
 
@@ -379,7 +403,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         """
 
         if e is None:
-            logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
+            logger.warning(f"账号: {self.cur_user_uid} - {error_message}")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -387,26 +411,28 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
         else:
             logger.opt(exception=True).warning(
-                f"用户: {self.cur_user_uid} - {error_message}: {e}"
+                f"账号: {self.cur_user_uid} - {error_message}: {e}"
             )
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
                 data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
             )
-        self.cur_user_log.content = [f"{error_message}, 无日志记录"]
-        self.cur_user_log.status = error_message
+        await self.cur_user_log.set_state(content=[f"{error_message}, 无日志记录"])
+        await self.cur_user_log.set_state(status=error_message)
 
         cleanup_success = await self.kill_managed_process()
         if not cleanup_success:
             await self._handle_process_cleanup_failure()
 
         try:
-            await Notify.push_plyer(
-                "用户自动代理出现异常！",
-                f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
-                f"{self.cur_user_item.name}的自动代理出现异常",
-                3,
+            await Notify.send_notice(
+                LocalNotice(
+                    title="账号自动代理出现异常！",
+                    message=f"账号 {self.cur_user_item.name} 自动代理时{error_message}",
+                    ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                    duration_seconds=3,
+                )
             )
         except Exception:
             pass
@@ -419,22 +445,20 @@ class AutoProxyTask(ScriptAutoProxyBase):
             bool: 是否可以继续本次代理；``False`` 表示需要用户手动更新游戏。
         """
 
-        self.script_info.log = "正在检查游戏更新"
+        await self.script_info.set_log("正在检查游戏更新")
 
         async def report(text: str) -> None:
-            self.script_info.log = text
+            await self.script_info.set_log(text)
 
         try:
             result = await ensure_game_updated(
                 adb_path=self.emulator_manager.get_adb_path(),
                 adb_address=emulator_info.adb_address,
-                server=self.cur_user_config.get("Info", "Server"),
-                package_name=STARRAIL_PACKAGE_NAME[
-                    self.cur_user_config.get("Info", "Server")
-                ],
+                server=self.cur_user_config.Info.Server,
+                package_name=STARRAIL_PACKAGE_NAME[self.cur_user_config.Info.Server],
                 apk_dir=Path.cwd() / "data/GameApk",
-                if_auto_install=self.script_config.get("Run", "IfAutoInstallGameApk"),
-                time_limit=self.script_config.get("Run", "GameUpdateTimeLimit"),
+                if_auto_install=self.script_config.Run.IfAutoInstallGameApk,
+                time_limit=self.script_config.Run.GameUpdateTimeLimit,
                 progress=report,
             )
         except Exception as e:
@@ -447,9 +471,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if result.status != "NeedManualUpdate":
             return True
 
-        self.cur_user_log.content = [result.message]
-        self.cur_user_log.status = "游戏需要手动更新"
-        self.script_info.log = result.message
+        await self.cur_user_log.set_state(content=[result.message])
+        await self.cur_user_log.set_state(status="游戏需要手动更新")
+        await self.script_info.set_log(result.message)
 
         await Publisher.send(
             id=self.task_info.task_id,
@@ -458,11 +482,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
         )
         await close_emulator(self)
 
-        await Notify.push_plyer(
-            "游戏需要手动更新！",
-            result.message,
-            f"{self.cur_user_item.name}的游戏需要手动更新",
-            3,
+        await Notify.send_notice(
+            LocalNotice(
+                title="游戏需要手动更新！",
+                message=result.message,
+                ticker=f"{self.cur_user_item.name}的游戏需要手动更新",
+                duration_seconds=3,
+            )
         )
         return False
 
@@ -525,7 +551,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 overlay_path = native
         if overlay_path is not None:
             recover_src_user_config(overlay_path)
-            # 下发前归档下发源到用户池（运行回写会覆盖它；带页面核心字段
+            # 下发前归档下发源到账号池（运行回写会覆盖它；带页面核心字段
             # 侧车，指纹去重，失败不阻断运行）。native 池由 manager.prepare
             # 在任务级一次性归档。原生来源无 MAS 配置目录：Temp 是安装 config/
             # 快照、不属于 mas 池内容，跳过归档——归进 mas 池会在切到independent 来源
@@ -548,8 +574,18 @@ class AutoProxyTask(ScriptAutoProxyBase):
             overlay_path=overlay_path,
         )
 
-        src_set = read_file(staging_path / "src.json")
+        src_set = _utils_io.read_file(staging_path / "src.json")
         deploy_set = poor_yaml_read(staging_path / "deploy.yaml")
+
+        # 运行期更新覆盖与 Run 一同处于现有配置快照范围，最终恢复原生配置。
+        self._src_injected_deploy = None
+        if self.script_config.Update.TakeoverEnabled:
+            self._src_injected_deploy = {
+                key: False
+                for key in ("AutoUpdate", "EnableReload", "AppAsarUpdate")
+                if key in deploy_set
+            }
+            deploy_set.update(self._src_injected_deploy)
 
         # 直接运行任务
         deploy_set["Run"] = ["src"]
@@ -558,9 +594,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if emulator_info.adb_address != "Unknown":
             src_set["Alas"]["Emulator"]["Serial"] = emulator_info.adb_address
         src_set["Alas"]["Emulator"]["GameClient"] = "android"
-        src_set["Alas"]["Emulator"]["PackageName"] = self.cur_user_config.get(
-            "Info", "Server"
-        )
+        src_set["Alas"]["Emulator"]["PackageName"] = self.cur_user_config.Info.Server
         src_set["Alas"]["Emulator"]["GameLanguage"] = "cn"
         src_set["Alas"]["Emulator"]["AdbRestart"] = True
 
@@ -570,10 +604,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 任务间切换方式
         src_set["Alas"]["Optimization"]["WhenTaskQueueEmpty"] = "close_game"
 
-        if self.cur_user_config.get("Info", "IfQuickConfig"):
+        if self.cur_user_config.Info.IfQuickConfig:
             self._apply_src_quick_config(src_set)
 
-        write_file(staging_path / "src.json", src_set)
+        _utils_io.write_file(staging_path / "src.json", src_set)
         poor_yaml_write(
             deploy_set,
             staging_path / "deploy.yaml",
@@ -589,7 +623,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             expected_installation_id=self.src_installation_id,
         )
         self._src_injected_config = (
-            src_set if self.cur_user_config.get("Info", "IfQuickConfig") else None
+            src_set if self.cur_user_config.Info.IfQuickConfig else None
         )
         logger.info("脚本运行参数配置完成: 自动代理")
 
@@ -601,33 +635,29 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         # 后备开拓力与燃料
         trailblaze_power = {
-            "ExtractReservedTrailblazePower": self.cur_user_config.get(
-                "Stage", "ExtractReservedTrailblazePower"
-            ),
-            "UseFuel": self.cur_user_config.get("Stage", "UseFuel"),
+            "ExtractReservedTrailblazePower": self.cur_user_config.Stage.ExtractReservedTrailblazePower,
+            "UseFuel": self.cur_user_config.Stage.UseFuel,
             "FuelOnlyPlanner": False,
-            "FuelReserve": self.cur_user_config.get("Stage", "FuelReserve"),
+            "FuelReserve": self.cur_user_config.Stage.FuelReserve,
         }
         src_set["Dungeon"]["TrailblazePower"] = trailblaze_power
         src_set["Ornament"]["TrailblazePower"] = trailblaze_power
 
         # 每日副本关卡配置
         src_set["Dungeon"]["Scheduler"]["Enable"] = True
-        main_stage = self.cur_user_config.get(
-            "Stage", self.cur_user_config.get("Stage", "Channel")
+        main_stage = getattr(
+            self.cur_user_config.Stage, self.cur_user_config.Stage.Channel
         )
-        relic_stage = self.cur_user_config.get("Stage", "Relic")
-        materials_stage = self.cur_user_config.get("Stage", "Materials")
-        ornament_stage = self.cur_user_config.get("Stage", "Ornament")
+        relic_stage = self.cur_user_config.Stage.Relic
+        materials_stage = self.cur_user_config.Stage.Materials
+        ornament_stage = self.cur_user_config.Stage.Ornament
         if (
-            self.cur_user_config.get("Stage", "Channel") in ("Relic", "Materials")
+            self.cur_user_config.Stage.Channel in ("Relic", "Materials")
             and main_stage != "-"
         ):
             src_set["Dungeon"]["Dungeon"]["Name"] = main_stage
         if (
-            not str(self.cur_user_config.get("Stage", "Materials")).startswith(
-                "Stagnant_Shadow"
-            )
+            not str(self.cur_user_config.Stage.Materials).startswith("Stagnant_Shadow")
             and materials_stage != "-"
         ):
             src_set["Dungeon"]["Dungeon"]["NameAtDoubleCalyx"] = materials_stage
@@ -635,7 +665,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             src_set["Dungeon"]["Dungeon"]["NameAtDoubleRelic"] = relic_stage
 
         # 饰品提取关卡配置
-        if self.cur_user_config.get("Stage", "Channel") == "Ornament":
+        if self.cur_user_config.Stage.Channel == "Ornament":
             src_set["Ornament"]["Scheduler"]["Enable"] = True
             src_set["Ornament"]["Ornament"]["UseStamina"] = True
         else:
@@ -644,51 +674,51 @@ class AutoProxyTask(ScriptAutoProxyBase):
             src_set["Ornament"]["Ornament"]["Dungeon"] = ornament_stage
 
         # 历战余响关卡配置
-        if self.cur_user_config.get("Stage", "EchoOfWar") == "-":
+        if self.cur_user_config.Stage.EchoOfWar == "-":
             src_set["Weekly"]["Scheduler"]["Enable"] = False
         else:
             src_set["Weekly"]["Scheduler"]["Enable"] = True
-            src_set["Weekly"]["Weekly"]["Name"] = self.cur_user_config.get(
-                "Stage", "EchoOfWar"
-            )
+            src_set["Weekly"]["Weekly"]["Name"] = self.cur_user_config.Stage.EchoOfWar
 
         # 模拟宇宙关卡配置
-        if self.cur_user_config.get("Stage", "SimulatedUniverseWorld") == "-":
+        if self.cur_user_config.Stage.SimulatedUniverseWorld == "-":
             src_set["Rogue"]["Scheduler"]["Enable"] = False
         else:
             src_set["Rogue"]["Scheduler"]["Enable"] = True
-            src_set["Rogue"]["RogueWorld"]["World"] = self.cur_user_config.get(
-                "Stage", "SimulatedUniverseWorld"
+            src_set["Rogue"]["RogueWorld"]["World"] = (
+                self.cur_user_config.Stage.SimulatedUniverseWorld
             )
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""
 
         log = "".join(log_content)
-        self.cur_user_log.content = log_content
-        self.script_info.log = log
+        await self.cur_user_log.set_state(content=log_content)
+        await self.script_info.set_log(log)
 
         if _has_structured_src_log(log_content, "Request human takeover"):
-            self.cur_user_log.status = "SRC 无法继续执行任务, 需要用户接管"
+            await self.cur_user_log.set_state(
+                status="SRC 无法继续执行任务, 需要用户接管"
+            )
         elif _has_structured_src_log(log_content, "Close game during wait"):
-            self.cur_user_log.status = "Success!"
+            await self.cur_user_log.set_state(status="Success!")
         elif (
             _has_structured_src_log(log_content, "[src] exited")
             or not await self.src_process_manager.is_running()
         ):
-            self.cur_user_log.status = "SRC 在完成任务前中止"
+            await self.cur_user_log.set_state(status="SRC 在完成任务前中止")
         elif _has_structured_src_log(
             log_content, "Please switch to a supported page before starting SRC"
         ):
-            self.cur_user_log.status = "SRC 启动时游戏停留在不支持的页面"
+            await self.cur_user_log.set_state(status="SRC 启动时游戏停留在不支持的页面")
         elif _has_structured_src_log(log_content, "CRITICAL"):
-            self.cur_user_log.status = "SRC 发生严重错误"
+            await self.cur_user_log.set_state(status="SRC 发生严重错误")
         elif self.is_log_stalled(
-            latest_time, minutes=self.script_config.get("Run", "RunTimeLimit")
+            latest_time, minutes=self.script_config.Run.RunTimeLimit
         ):
-            self.cur_user_log.status = "SRC 进程超时"
+            await self.cur_user_log.set_state(status="SRC 进程超时")
         else:
-            self.cur_user_log.status = "SRC 正常运行中"
+            await self.cur_user_log.set_state(status="SRC 正常运行中")
 
         logger.debug(f"SRC 脚本日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "SRC 正常运行中":
@@ -699,6 +729,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         if self.check_result != "Pass" or not self.prepared:
             return
+
+        self.history.begin_user_history_capture(
+            self.script_info,
+            self.cur_user_item,
+            failed=bool(self.cur_user_item.log_record)
+            and not self.run_book
+            and not self.stopped_manually,
+        )
 
         # 结束各子任务
         try:
@@ -720,33 +758,103 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.process_cleanup_success = cleanup_success
         if not cleanup_success:
             await self._handle_process_cleanup_failure()
-        if self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator":
-            logger.info("用户任务结束, 关闭模拟器")
+        if self.script_config.Run.TaskTransitionMethod == "ExitEmulator":
+            logger.info("账号任务结束, 关闭模拟器")
             await close_emulator(self, timeout=_FINAL_CLEANUP_TIMEOUT_SECONDS)
 
         del self.src_process_manager
         del self.src_log_monitor
 
-        user_logs_list = []
-        for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.astimezone(UTC4)
-            log_path = Config.build_history_log_path(
-                script_name=self.script_info.name,
-                user_name=self.cur_user_item.name,
-                log_time=dt,
+        if self.run_book:
+            if (
+                self.cur_user_config.Data.ProxyTimes == 0
+                and self.cur_user_config.Info.RemainedDay != -1
+            ):
+                self.cur_user_config.Info.RemainedDay = (
+                    self.cur_user_config.Info.RemainedDay - 1
+                )
+                await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = (
+                self.cur_user_config.Data.ProxyTimes + 1
             )
-            user_logs_list.append(log_path.with_suffix(".json"))
+            await self.cur_user_config.commit()
+            await self.cur_user_item.set_state(status="完成")
+            logger.success(f"账号 {self.cur_user_uid} 的自动代理任务已完成")
+        else:
+            logger.warning(f"账号 {self.cur_user_uid} 的自动代理任务未完成")
+            await self.cur_user_item.set_state(status="异常")
 
-            if log_item.status == "SRC 正常运行中":
-                log_item.status = "任务被用户手动中止"
+        await self.run_user_scripts_after()
 
+        history_records = []
+        for t, log_item in self.cur_user_item.iter_history_logs():
+            if log_item.status == "SRC 正常运行中" or (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "未开始监看日志"
+            ):
+                await log_item.set_state(status="任务被用户手动中止")
+
+            was_cancelled = (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "任务被用户手动中止"
+            )
             if len(log_item.content) == 0:
-                log_item.content = ["未捕获到任何日志内容"]
-                log_item.status = "未捕获到日志"
+                await log_item.set_state(content=["未捕获到任何日志内容"])
+                if not was_cancelled:
+                    await log_item.set_state(status="未捕获到日志")
 
-            await Config.save_src_log(log_path, log_item.content, log_item.status)
+            history_records.append(
+                HistoryWrite(
+                    time=t.astimezone(UTC4),
+                    username=self.cur_user_item.name,
+                    script_name=self.script_info.name,
+                    status=(
+                        "success"
+                        if log_item.status == "Success!"
+                        else "cancelled"
+                        if was_cancelled
+                        else "error"
+                    ),
+                    message=log_item.status,
+                    logs="".join(log_item.content),
+                )
+            )
 
-        statistics = await Config.merge_statistic_info(user_logs_list)
+        if history_records:
+            await self.history.save_user_history(
+                history_records,
+                script=self.script_info,
+                user=self.cur_user_item,
+                log_warning=logger.opt(exception=True).warning,
+            )
+
+        if self.run_book:
+            try:
+                await asyncio.wait_for(
+                    Notify.send_notice(
+                        LocalNotice(
+                            title="成功完成一个自动代理任务！",
+                            message=f"已完成账号 {self.cur_user_item.name} 的自动代理任务",
+                            ticker=f"已完成 {self.cur_user_item.name} 的自动代理任务",
+                            duration_seconds=3,
+                        )
+                    ),
+                    timeout=_FINAL_NOTIFICATION_TIMEOUT_SECONDS,
+                )
+            except Exception as e:
+                logger.opt(exception=True).warning(f"推送系统通知时出现异常: {e}")
+
+        statistics = {
+            key: value.value
+            for key, value in aggregate_data(
+                [
+                    HistoryAggregationItem(time=record.time, data=record.data)
+                    for record in history_records
+                ]
+            ).data.items()
+        }
         statistics["user_info"] = self.cur_user_item.name
         statistics["start_time"] = self.user_start_time.strftime("%Y-%m-%d %H:%M:%S")
         statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -759,11 +867,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         try:
             await asyncio.wait_for(
-                push_notification(
-                    "统计信息",
-                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
-                    statistics,
-                    self.cur_user_config,
+                Notify.push_statistics_report(
+                    payload=build_script_statistics_payload(
+                        title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
+                        message=statistics,
+                        result_label="SRC脚本执行结果",
+                    ),
+                    user_config=self.cur_user_config,
+                    task_info=self.task_info,
                 ),
                 timeout=_FINAL_NOTIFICATION_TIMEOUT_SECONDS,
             )
@@ -785,50 +896,17 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     f"上报 SRC 通知异常失败: {report_error}"
                 )
 
-        if self.run_book:
-            if (
-                self.cur_user_config.get("Data", "ProxyTimes") == 0
-                and self.cur_user_config.get("Info", "RemainedDay") != -1
-            ):
-                await self.cur_user_config.set(
-                    "Info",
-                    "RemainedDay",
-                    self.cur_user_config.get("Info", "RemainedDay") - 1,
-                )
-            await self.cur_user_config.set(
-                "Data",
-                "ProxyTimes",
-                self.cur_user_config.get("Data", "ProxyTimes") + 1,
-            )
-            self.cur_user_item.status = "完成"
-            logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
-            try:
-                await asyncio.wait_for(
-                    Notify.push_plyer(
-                        "成功完成一个自动代理任务！",
-                        f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
-                        f"已完成 {self.cur_user_item.name} 的自动代理任务",
-                        3,
-                    ),
-                    timeout=_FINAL_NOTIFICATION_TIMEOUT_SECONDS,
-                )
-            except Exception as e:
-                logger.opt(exception=True).warning(f"推送系统通知时出现异常: {e}")
-        else:
-            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
-            self.cur_user_item.status = "异常"
-
     async def _handle_process_cleanup_failure(self) -> None:
         """记录 SRC 进程清理失败，并确保任务不会被标记为完成。"""
 
         self.run_book = False
         self.process_cleanup_success = False
-        self.cur_user_item.status = "异常"
-        self.cur_user_log.status = "SRC 进程清理失败"
+        await self.cur_user_item.set_state(status="异常")
+        await self.cur_user_log.set_state(status="SRC 进程清理失败")
         if not self.cur_user_log.content:
-            self.cur_user_log.content = ["未能完全中止 SRC 进程"]
+            await self.cur_user_log.set_state(content=["未能完全中止 SRC 进程"])
 
-        logger.warning(f"用户 {self.cur_user_uid} 的 SRC 进程未能完全中止")
+        logger.warning(f"账号 {self.cur_user_uid} 的 SRC 进程未能完全中止")
         if self._process_cleanup_failure_reported:
             return
 
@@ -849,7 +927,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             logger.opt(exception=True).warning(f"上报 SRC 进程清理失败时出现异常: {e}")
 
     async def on_crash(self, e: Exception):
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
         try:
             await asyncio.wait_for(

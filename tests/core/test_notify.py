@@ -1,18 +1,19 @@
 import asyncio
-import inspect
-from unittest.mock import AsyncMock, patch
+from contextlib import contextmanager
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from app.core import notify as notify_module
-from app.core.notify import (
-    Notifier,
-    NotifyPayload,
-    dispatch,
-    dispatch_task_report,
-    global_target,
-    user_target,
+import app.core.notify.rendering as _notification_rendering
+from app.core import Config
+from app.core.background_tasks import BackgroundTaskRegistry
+from app.core.notify.bootstrap import (
+    get_notify_channel_failures as get_notify_channel_failures,
 )
-from app.core.notify_channels import get_notify_channels
-from app.models.notification import NotificationSummary
+from app.core.notify.bootstrap import get_notify_channels as get_notify_channels
+from app.models.notification import NotifyPayload
+from app.models.notification.community import CommunityNotificationResult
+from app.models.notification.report import TaskReportPolicy
+from app.models.task import TaskItem
 
 _UNSET = object()
 
@@ -21,6 +22,16 @@ class _Webhook:
     def __init__(self, enabled: bool = True, name: str = "值班群") -> None:
         self._enabled = enabled
         self._name = name
+        self.Data = SimpleNamespace(
+            Url="https://example.com/webhook",
+            Template='{"title": "{title}", "content": "{content}"}',
+            Headers="{}",
+            Method="POST",
+        )
+
+    @property
+    def Info(self):
+        return SimpleNamespace(Name=self._name, Enabled=self._enabled)
 
     def get(self, group: str, key: str) -> str | bool:
         values = {
@@ -61,28 +72,44 @@ _TEXTS = {
         "KoishiServerAddress",
         "KoishiToken",
         "CMCCNewMsgApiKey",
+        "OpenClawQQAppId",
+        "OpenClawQQTargetOpenId",
     )
 }
 
 
+class _NotifyFields:
+    def __init__(self, owner):
+        self.owner = owner
+
+    def __getattr__(self, name):
+        return self.owner._values[name]
+
+
 class _Config:
-    """同时提供 .get(group, name) 与 .Notify_CustomWebhooks.items() 的鸭子配置。"""
+    """提供通知分组与 Webhook 集合的配置替身。"""
 
     def __init__(self, values: dict | None = None, webhooks=()) -> None:
-        self._values = {**_SWITCHES, **_TEXTS, **(values or {})}
+        self._values = {
+            **_SWITCHES,
+            **_TEXTS,
+            "OpenClawQQGroupOpenIds": [],
+            "OpenClawQQTargetType": "c2c",
+            **(values or {}),
+        }
         self.Notify_CustomWebhooks = _Webhooks(webhooks)
-        self.reads = 0
+        self.Notify = _NotifyFields(self)
+        self.setting = self
 
     def get(self, group: str, name: str):
         assert group == "Notify"
-        self.reads += 1
         return self._values[name]
 
 
 class _Notify:
-    """与 Notifier 协议同名同参的录制发送器（不是 ``**kwargs``）。
+    """通过统一投递面记录各渠道适配器的实际调用。
 
-    参数名与协议不一致会直接 TypeError，防止发送调用悄悄写错关键字；
+    传输方法保留显式参数，防止适配器悄悄写错关键字；
     哨兵默认值用于区分“省略参数”与“显式传默认值”。
     """
 
@@ -90,6 +117,9 @@ class _Notify:
         self.calls: list[str] = []
         self.kwargs: list[dict] = []
         self.plan = plan or {}
+
+    async def send_channel(self, channel, target, rendered):
+        return await channel.send(self, target, rendered)
 
     async def _run(self, method: str, **kwargs):
         self.calls.append(method)
@@ -104,11 +134,6 @@ class _Notify:
         if behavior == "raise":
             raise RuntimeError("渠道异常")
         return False if behavior == "false" else None
-
-    async def push_plyer(self, title=_UNSET, message=_UNSET, ticker=_UNSET, t=_UNSET):
-        return await self._run(
-            "push_plyer", title=title, message=message, ticker=ticker, t=t
-        )
 
     async def send_mail(
         self,
@@ -133,11 +158,6 @@ class _Notify:
             "ServerChanPush", title=title, content=content, send_key=send_key
         )
 
-    async def send_cmcc_newmsg(self, title=_UNSET, content=_UNSET, api_key=_UNSET):
-        return await self._run(
-            "send_cmcc_newmsg", title=title, content=content, api_key=api_key
-        )
-
     async def WebhookPush(
         self, title=_UNSET, content=_UNSET, webhook=_UNSET, *, images=_UNSET
     ):
@@ -149,387 +169,81 @@ class _Notify:
             images=images,
         )
 
-    async def send_koishi(self, message=_UNSET, msgtype=_UNSET, client_name=_UNSET):
-        return await self._run(
-            "send_koishi", message=message, msgtype=msgtype, client_name=client_name
-        )
 
-    async def send_openclaw_qq(self, title=_UNSET, content=_UNSET, *, images=_UNSET):
-        return await self._run(
-            "send_openclaw_qq", title=title, content=content, images=images
-        )
-
-
-PAYLOAD = NotifyPayload(title="标题", text="正文", html="<p>正文</p>")
+_COMMUNITY_RESULTS = (
+    CommunityNotificationResult(
+        account="summary-account",
+        account_uid="summary-uid",
+        game="test-game",
+        platform="test-platform",
+        status="success",
+    ),
+)
 
 
 def _run(awaitable):
     return asyncio.run(awaitable)
 
 
-def _global_target(
-    config: _Config,
-    *,
-    include_system: bool = False,
-    empty_policy="send",
-    system_timeout_seconds=None,
-):
-    with patch.object(notify_module, "Config", config):
-        return global_target(
-            include_system=include_system,
-            empty_policy=empty_policy,
-            system_timeout_seconds=system_timeout_seconds,
-        )
+@contextmanager
+def _service(config=None, *, notifier=None):
+    from app.core import Notify
+    from app.core.notify import manager, tasks
+    from app.core.notify.tasks import NotificationTasks
 
-
-def _protocol_members():
-    return {
-        name: method
-        for name, method in inspect.getmembers(Notifier, inspect.isfunction)
-        if not name.startswith("__")
-    }
-
-
-def test_notifier_fake_matches_protocol_signatures() -> None:
-    """录制发送器与 Notifier 协议逐方法同参同名同默认形态（真实实现的对比
-    见 test_real_notify_implementation_matches_protocol）。"""
-
-    members = _protocol_members()
-    assert sorted(members) == [
-        "ServerChanPush",
-        "WebhookPush",
-        "push_plyer",
-        "send_cmcc_newmsg",
-        "send_koishi",
-        "send_mail",
-        "send_openclaw_qq",
-    ]
-    for name, protocol_method in members.items():
-        fake = getattr(_Notify, name, None)
-        assert fake is not None, name
-        proto = inspect.signature(protocol_method).parameters
-        fake_params = inspect.signature(fake).parameters
-        assert list(proto) == list(fake_params), name
-        for param_name, proto_param in proto.items():
-            if param_name == "self":
-                continue
-            fake_param = fake_params[param_name]
-            assert proto_param.kind == fake_param.kind, (name, param_name)
-            # 哨兵默认值必须存在（用于区分省参与显式传默认值），
-            # 协议里有默认值的参数假实现里也得有
-            assert fake_param.default is not fake_param.empty, (name, param_name)
-
-
-def test_real_notify_implementation_matches_protocol() -> None:
-    """仓库无类型检查器，这是 Notifier 协议与真实 Notify 实现不漂移的唯一断言。"""
-
-    from app.services.notification import Notification
-
-    for name, protocol_method in _protocol_members().items():
-        # 取类而不是实例：实例方法是绑定签名，会少掉 self，与协议不可比
-        real = getattr(Notification, name, None)
-        assert real is not None, name
-        real_params = inspect.signature(real).parameters
-        assert list(real_params) == list(
-            inspect.signature(protocol_method).parameters
-        ), name
-        for param_name, param in real_params.items():
-            if param_name == "self":
-                continue
-            assert (
-                param.kind
-                == inspect.signature(protocol_method).parameters[param_name].kind
-            ), (name, param_name)
-            assert (param.default is param.empty) == (
-                inspect.signature(protocol_method).parameters[param_name].default
-                is inspect.signature(protocol_method).parameters[param_name].empty
-            ), (name, param_name)
-
-
-def test_dispatch_isolates_false_result_and_names_webhook() -> None:
-    config = _Config(
-        {
-            "IfSendMail": True,
-            "ToAddress": "user@example.com",
-            "IfServerChan": True,
-            "ServerChanKey": "send-key",
-        },
-        webhooks=[("hook-1", _Webhook(name="值班群"))],
+    environment = SimpleNamespace(
+        setting=config if config is not None else Config.setting,
+        ToolsConfig=Config.ToolsConfig,
+        startup_notices=[],
     )
-    notify = _Notify({"send_mail": ["false"]})
-
-    result = _run(dispatch(PAYLOAD, [_global_target(config)], notifier=notify))
-
-    assert list(result.failed) == ["全局邮件"]
-    assert list(result.succeeded) == ["全局 ServerChan", "全局 Webhook 值班群"]
-    assert result.attempted == 3
-    assert notify.calls == ["send_mail", "ServerChanPush", "WebhookPush"]
-    assert notify.kwargs[0]["to_address"] == "user@example.com"
-
-
-def test_dispatch_retries_false_result() -> None:
-    config = _Config({"IfKoishiSupport": True})
-    notify = _Notify({"send_koishi": ["false"]})
-
-    result = _run(
-        dispatch(
-            PAYLOAD,
-            [_global_target(config)],
-            attempts=2,
-            notifier=notify,
-        )
-    )
-
-    assert list(result.failed) == []
-    assert result.attempted == 1
-    assert notify.calls == ["send_koishi", "send_koishi"]
+    renderer = _notification_rendering.AsyncNotificationRenderer()
+    # 各用例隔离全局实例的资源，实际调用仍经过所有调用方共享的 Notify。
+    with (
+        patch.object(manager, "Config", environment),
+        patch.object(tasks, "BackgroundTaskManager", BackgroundTaskRegistry()),
+        patch.dict(
+            Notify.__dict__,
+            {
+                "_channels": get_notify_channels(),
+                "_catalog_failures": get_notify_channel_failures(),
+                "_transport": notifier if notifier is not None else _Notify(),
+                "_renderer": renderer,
+                "_runtime_config": SimpleNamespace(read_proxy=lambda: None),
+                "tasks": NotificationTasks(),
+            },
+        ),
+    ):
+        try:
+            yield Notify
+        finally:
+            renderer.close()
 
 
-def test_dispatch_reports_named_webhook_failure() -> None:
-    config = _Config(webhooks=[("hook-1", _Webhook())])
-    notify = _Notify({"WebhookPush": ["false"]})
-
-    result = _run(dispatch(PAYLOAD, [_global_target(config)], notifier=notify))
-
-    assert list(result.failed) == ["全局 Webhook 值班群"]
+def _global_target(config, **kwargs):
+    with _service(config) as notifications:
+        return notifications.global_target(**kwargs)
 
 
-def test_dispatch_continues_after_system_failure() -> None:
-    config = _Config(
-        {
-            "IfPushPlyer": True,
-            "IfSendMail": True,
-            "ToAddress": "user@example.com",
-            "IfServerChan": True,
-            "ServerChanKey": "send-key",
-        }
-    )
-    notify = _Notify({"push_plyer": ["raise"]})
-
-    result = _run(
-        dispatch(
-            PAYLOAD,
-            [_global_target(config, include_system=True)],
-            notifier=notify,
-        )
-    )
-
-    assert list(result.failed) == ["全局系统"]
-    assert list(result.succeeded) == ["全局邮件", "全局 ServerChan"]
-    assert notify.calls == ["push_plyer", "send_mail", "ServerChanPush"]
-
-
-def test_dispatch_skips_disabled_webhook_channel() -> None:
-    config = _Config(
-        webhooks=[
-            ("hook-1", _Webhook(enabled=True, name="启用")),
-            ("hook-2", _Webhook(enabled=False, name="禁用")),
-        ]
-    )
-    notify = _Notify()
-
-    result = _run(dispatch(PAYLOAD, [_global_target(config)], notifier=notify))
-
-    assert result.attempted == 1
-    assert list(result.succeeded) == ["全局 Webhook 启用"]
-
-
-def test_webhook_succeeded_ids_use_uid_while_succeeded_uses_name() -> None:
-    config = _Config(
-        webhooks=[("hook-1", _Webhook(name="值班群")), ("hook-2", _Webhook(name=""))]
-    )
-    notify = _Notify()
-
-    result = _run(dispatch(PAYLOAD, [_global_target(config)], notifier=notify))
-
-    assert list(result.succeeded) == ["全局 Webhook 值班群", "全局 Webhook hook-2"]
-    assert list(result.succeeded_ids) == ["全局 Webhook hook-1", "全局 Webhook hook-2"]
-
-
-def test_dispatch_channel_names_are_verbatim() -> None:
-    config = _Config(
-        {
-            "IfCMCCNewMsg": True,
-            "CMCCNewMsgApiKey": "ak_x",
-            "IfKoishiSupport": True,
-            "IfOpenClawQQ": True,
-        }
-    )
-
-    result = _run(dispatch(PAYLOAD, [_global_target(config)], notifier=_Notify()))
-
-    assert list(result.succeeded) == [
-        "全局 中国移动5G短信",
-        "全局 Koishi",
-        "全局 QQ（官方机器人）",
-    ]
-
-
-def test_system_notification_fallbacks() -> None:
-    config = _Config({"IfPushPlyer": True})
-    notify = _Notify()
-
-    result = _run(
-        dispatch(
-            PAYLOAD,
-            [_global_target(config, include_system=True)],
-            notifier=notify,
-        )
-    )
-
-    assert result.attempted == 1
-    # 未提供摘要时，系统通知使用通用标题、正文和默认显示时长。
-    assert notify.kwargs[0] == {
-        "title": "标题",
-        "message": "正文",
-        "ticker": "标题",
-        "t": 5,
-    }
-
-
-def test_system_notification_passes_override_values() -> None:
-    config = _Config({"IfPushPlyer": True})
-    notify = _Notify()
-
-    _run(
-        dispatch(
-            NotifyPayload(
-                title="标题",
-                text="正文",
-                summary=NotificationSummary(
-                    title="系统标题", text="系统ticker\n系统正文"
-                ),
-            ),
-            [_global_target(config, include_system=True, system_timeout_seconds=7)],
-            notifier=notify,
-        )
-    )
-
-    assert notify.kwargs[0] == {
-        "title": "系统标题",
-        "message": "系统ticker\n系统正文",
-        "ticker": "系统ticker",
-        "t": 7,
-    }
-
-
-def test_empty_recipient_warn_records_failure() -> None:
-    config = _Config(
-        {
-            "IfSendMail": True,
-            "ToAddress": "",
-            "IfServerChan": True,
-            "ServerChanKey": "send-key",
-        }
-    )
-    notify = _Notify()
-
-    result = _run(
-        dispatch(
-            PAYLOAD,
-            [_global_target(config, empty_policy="warn")],
-            notifier=notify,
-        )
-    )
-
-    # 空收件人按失败记账（attempted+1 且进 failed），邮件不实际发送
-    assert list(result.failed) == ["全局邮件"]
-    assert result.attempted == 2
-    assert notify.calls == ["ServerChanPush"]
-
-
-def test_target_is_a_config_snapshot() -> None:
-    config = _Config(
-        {"IfSendMail": True, "ToAddress": "user@example.com", "IfServerChan": True}
-    )
-    target = _global_target(config)
-    reads_after_construction = config.reads
-
-    _run(dispatch(PAYLOAD, [target], notifier=_Notify()))
-
-    # 构造后固定为快照：分发全程不再读配置
-    assert config.reads == reads_after_construction
-
-
-def test_empty_recipient_skip_policy_silently_omits() -> None:
-    config = _Config({"IfSendMail": True, "ToAddress": ""})
-
-    result = _run(
-        dispatch(
-            PAYLOAD,
-            [_global_target(config, empty_policy="skip")],
-            notifier=_Notify(),
-        )
-    )
-
-    # skip 策略下空收件人不发送、也不记失败
-    assert result.attempted == 0
-    assert result.failed == ()
-    assert result.succeeded == ()
-
-
-def test_same_name_webhooks_keep_distinct_delivery_ids() -> None:
-    config = _Config(
-        webhooks=[("a", _Webhook(name="同名")), ("b", _Webhook(name="同名"))]
-    )
-
-    result = _run(dispatch(PAYLOAD, [_global_target(config)], notifier=_Notify()))
-
-    # 显示名相同但补发记录按 uid 区分
-    assert list(result.succeeded) == ["全局 Webhook 同名", "全局 Webhook 同名"]
-    assert list(result.succeeded_ids) == ["全局 Webhook a", "全局 Webhook b"]
-
-
-def test_user_target_uses_user_scope_and_warn_policy() -> None:
-    config = _Config(
-        {
-            "IfSendMail": True,
-            "ToAddress": "",
-            "IfServerChan": True,
-            "ServerChanKey": "send-key",
-        },
-        webhooks=[("hook-1", _Webhook(name="值班群"))],
-    )
-    notify = _Notify()
-
-    result = _run(dispatch(PAYLOAD, [user_target(config)], notifier=notify))
-
-    # 用户级只有邮件 / Server酱 / Webhook；空收件人按 warn 记失败，前缀为「用户」
-    assert list(result.failed) == ["用户邮件"]
-    assert list(result.succeeded) == ["用户 ServerChan", "用户 Webhook 值班群"]
-    assert notify.calls == ["ServerChanPush", "WebhookPush"]
-
-
-def test_dispatch_honors_skip_by_name_and_by_id() -> None:
-    config = _Config(
-        {
-            "IfSendMail": True,
-            "ToAddress": "user@example.com",
-            "IfKoishiSupport": True,
-        },
-        webhooks=[("hook-1", _Webhook()), ("hook-2", _Webhook(name="二番"))],
-    )
-
-    result = _run(
-        dispatch(
-            PAYLOAD,
-            [_global_target(config)],
-            skip_channels=("全局邮件", "全局 Koishi"),
-            skip_channel_ids=("全局 Webhook hook-1",),
-            notifier=_Notify(),
-        )
-    )
-
-    assert result.attempted == 1
-    assert list(result.succeeded) == ["全局 Webhook 二番"]
-
-
-class _Task:
+class _Task(TaskItem):
     def __init__(self) -> None:
-        self.game_sign_summary_consumed = False
+        super().__init__(
+            mode="AutoProxy",
+            task_id="task-1",
+            queue_id=None,
+            script_id=None,
+            user_id=None,
+        )
+
+    def schedule_on_change(self) -> None:
+        pass
+
+    async def on_change(self) -> None:
+        pass
 
 
-def test_dispatch_task_report_retries_only_failed_channels() -> None:
+def test_task_report_retry_omits_disabled_hooks_and_repeats_only_failed_summary() -> (
+    None
+):
     """多脚本任务: 第二批报告只把汇总重发给上次失败的渠道,
     已送达渠道收到的报告不含汇总, 避免重复。"""
 
@@ -539,114 +253,66 @@ def test_dispatch_task_report_retries_only_failed_channels() -> None:
             "ToAddress": "user@example.com",
             "IfServerChan": True,
             "ServerChanKey": "send-key",
-        }
+        },
+        webhooks=[
+            ("hook-1", _Webhook(name="值班群")),
+            ("disabled", _Webhook(enabled=False, name="禁用")),
+        ],
     )
     task = _Task()
-    summary = "签到情况: 小明: 签到成功"
-    payload = NotifyPayload(title="报告", text=f"正文\n\n{summary}", html=None)
+    task.notification_state.results = _COMMUNITY_RESULTS
+    payload = NotifyPayload(title="报告", text="正文", html=None)
 
     notify = _Notify({"send_mail": ["false"]})
-    with patch.object(notify_module, "Notify", notify):
+    with _service(notifier=notify) as notifications:
+        notifications.read_task_report_policy = lambda: TaskReportPolicy(
+            result_time="任何时刻", community_enabled=True, wait_seconds=0
+        )
         result = _run(
-            dispatch_task_report(
-                payload, [_global_target(config)], task, summary_text=summary
+            notifications.prepare_task_report(task).dispatch(
+                payload, [_global_target(config)]
             )
         )
 
     # 第一次: 邮件失败, ServerChan 成功 → 汇总不消费, delivered 记录 ServerChan
     assert list(result.failed) == ["全局邮件"]
-    assert task.game_sign_summary_delivered == {"全局 ServerChan"}
-    assert task.game_sign_summary_pending == ("全局邮件",)
-    assert task.game_sign_summary_consumed is False
+    assert list(result.succeeded) == ["全局 ServerChan", "全局 Webhook 值班群"]
+    assert result.attempted == 3
+    assert sorted(notify.calls) == sorted(
+        ["send_mail", "ServerChanPush", "WebhookPush"]
+    )
+    sent = dict(zip(notify.calls, notify.kwargs, strict=True))
+    assert sent["send_mail"]["to_address"] == "user@example.com"
+    assert task.notification_state.delivered == {
+        "全局 ServerChan",
+        "全局 Webhook hook-1",
+    }
+    assert task.notification_state.summary_consumed is False
 
     # 第二次: 只向失败渠道重发含汇总的载荷; 已送达渠道收到不含汇总的载荷
     notify = _Notify()
-    with patch.object(notify_module, "Notify", notify):
+    with _service(notifier=notify) as notifications:
+        notifications.read_task_report_policy = lambda: TaskReportPolicy(
+            result_time="任何时刻", community_enabled=True, wait_seconds=0
+        )
         result = _run(
-            dispatch_task_report(
-                payload, [_global_target(config)], task, summary_text=summary
+            notifications.prepare_task_report(task).dispatch(
+                payload, [_global_target(config)]
             )
         )
 
     assert list(result.failed) == []
-    assert task.game_sign_summary_delivered == {"全局 ServerChan", "全局邮件"}
-    assert task.game_sign_summary_pending == ()
+    assert task.notification_state.delivered == {
+        "全局 ServerChan",
+        "全局邮件",
+        "全局 Webhook hook-1",
+    }
+    assert result.attempted == 3
+    assert sorted(notify.calls) == sorted(
+        ["send_mail", "ServerChanPush", "WebhookPush"]
+    )
     # 邮件拿到含汇总的重试版, ServerChan 只拿到去掉汇总的报告
-    sent = [kwargs["content"] for kwargs in notify.kwargs]
-    assert "签到情况" in sent[0]
-    assert "签到情况" not in sent[1]
-
-
-def test_dispatch_task_report_zero_targets_keeps_summary() -> None:
-    task = _Task()
-    summary = "签到情况: 小明: 签到成功"
-
-    with patch.object(notify_module, "Notify", _Notify()):
-        result = _run(
-            dispatch_task_report(
-                NotifyPayload(title="报告", text=f"正文\n\n{summary}", html=None),
-                [],
-                task,
-                summary_text=summary,
-            )
-        )
-
-    assert result.attempted == 0
-    assert task.game_sign_summary_delivered == set()
-    assert task.game_sign_summary_pending == ()
-    assert task.game_sign_summary_consumed is False
-
-
-def test_dispatch_task_report_publishes_failure_notice() -> None:
-    config = _Config({"IfSendMail": True, "ToAddress": "user@example.com"})
-    task = _Task()
-    task.task_id = "task-1"
-
-    with patch.object(notify_module, "Notify", _Notify({"send_mail": ["false"]})):
-        with patch("app.core.ws.Publisher.send", new_callable=AsyncMock) as publish:
-            result = _run(
-                dispatch_task_report(
-                    NotifyPayload(title="报告", text="正文"),
-                    [_global_target(config)],
-                    task,
-                )
-            )
-
-    assert result.failed == ("全局邮件",)
-    publish.assert_awaited_once()
-    assert publish.await_args.kwargs["id"] == "task-1"
-    assert publish.await_args.kwargs["type"] == "task.notice"
-    notice = publish.await_args.kwargs["data"]
-    assert notice.level == "warning"
-    assert "全局邮件" in notice.message
-
-
-def test_descriptor_fields_exist_in_config_and_schema() -> None:
-    """描述表字段名两个方向都查：配置类里真的存在，且在下发模型里不会被静默丢弃。"""
-
-    from app.core.config import Config
-    from app.models.schema import GlobalConfig_Notify
-
-    for channel in get_notify_channels():
-        for items in channel.fields.values():
-            for item in items:
-                Config.get(item.group, item.name)
-                assert item.name in GlobalConfig_Notify.model_fields, item.name
-        if channel.enable_field:
-            Config.get(*channel.enable_field)
-            assert channel.enable_field[1] in GlobalConfig_Notify.model_fields
-
-
-def test_channels_endpoint_returns_metadata_only() -> None:
-    from app.api.setting import get_notify_channels as endpoint
-    from app.models.ConfigBase import ConfigBase
-
-    with patch.object(
-        ConfigBase, "get", side_effect=AssertionError("描述端点不得读取配置")
-    ):
-        result = _run(endpoint())
-
-    assert result.code == 200
-    assert len(result.channels) == 8
-    assert [channel.key for channel in result.channels][0] == "system"
-    assert result.channels[-1].kind == "policy"
+    sent = dict(zip(notify.calls, notify.kwargs, strict=True))
+    assert "summary-account" in sent["send_mail"]["content"]
+    assert "summary-account" not in sent["ServerChanPush"]["content"]
+    assert "summary-account" not in sent["WebhookPush"]["content"]

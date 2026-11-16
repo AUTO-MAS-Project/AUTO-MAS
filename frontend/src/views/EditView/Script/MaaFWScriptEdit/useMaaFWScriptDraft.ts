@@ -1,7 +1,6 @@
 import { reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useScriptApi } from '@/composables/useScriptApi'
-import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import {
   getDefaultMaaFWScriptConfig,
   isMaaFWUpdateChannel,
@@ -27,12 +26,11 @@ export type MaaFWScriptChangeHandler = (
 export function useMaaFWScriptDraft(scriptId: string) {
   const { t } = useI18n()
   const logger = window.electronAPI.getLogger('MaaFW 脚本编辑')
-  const { updateScript } = useScriptApi()
 
   const pageLoading = ref(false)
   const isInitializing = ref(true)
   // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-  const { enqueue } = useSaveQueue()
+  const { enqueue, saveField } = useScriptSaveMutation({ scriptId, isInitializing, logger })
 
   const previewLoading = ref(false)
   const previewData = ref<MaaFWInterfacePreviewData | null>(null)
@@ -46,13 +44,13 @@ export function useMaaFWScriptDraft(scriptId: string) {
   })
 
   const rules = {
-    name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
+    name: [{ required: true, message: t('core.edit.enterScriptName'), trigger: 'blur' }],
     path: [
       {
         validator: () =>
           maafwConfig.Info.Path
             ? Promise.resolve()
-            : Promise.reject(new Error(t('edit.pickActualMfwProject'))),
+            : Promise.reject(new Error(t('core.edit.pickActualMfwProject'))),
         trigger: 'blur',
       },
     ],
@@ -64,18 +62,7 @@ export function useMaaFWScriptDraft(scriptId: string) {
     if (category === 'Info' && key === 'Name' && typeof value === 'string') {
       maafwConfig.Info.Name = value
     }
-    if (isInitializing.value) return
-    await enqueue(
-      async () => {
-        try {
-          const success = await updateScript(scriptId, { [category]: { [key]: value } })
-          if (success) logger.info(`配置已保存: ${String(category)}.${key}`)
-        } catch (error) {
-          logger.error(`保存失败: ${error instanceof Error ? error.message : String(error)}`)
-        }
-      },
-      `${String(category)}.${key}`
-    )
+    await saveField(category, key, value)
   }
 
   /**
@@ -91,7 +78,7 @@ export function useMaaFWScriptDraft(scriptId: string) {
         (config?.[section] as Record<string, unknown>) ?? {}
       )
     })
-    // 旧配置只有 IfAutoUpdate 时映射到新的自动更新时机；只改本地草稿，不回写后端。
+    // AutoUpdateMode 不是合法值时按默认的运行前显示；只改本地草稿，不回写后端。
     maafwConfig.Update.AutoUpdateMode = resolveAutoUpdateMode(config?.Update)
     // 旧配置里 Source / Channel 可能是空串（曾表示「自动」/「跟随全局」），现在都不是
     // 合法选项，下拉框会显示空白；同样只修正本地草稿，用户改动前不回写。

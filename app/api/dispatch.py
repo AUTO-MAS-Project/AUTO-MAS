@@ -22,11 +22,75 @@
 
 
 from fastapi import APIRouter, Body
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+)
 
-from app.core import Config, TaskManager
-from app.models.schema import *
-from app.services import System
+from app.core import Power, TaskManager
+from app.models.schema import (
+    OutBase,
+    PowerCountdownSnapshot,
+    TaskRuntimeSnapshot,
+    TaskSelectionNode,
+    TaskStatusOut,
+    TaskTreeData,
+)
+from app.models.task import TaskMode
 from app.utils import get_logger
+from app.utils.contracts.power import PowerSignal
+
+
+class DispatchIn(BaseModel):
+    taskId: str = Field(
+        ...,
+        description="目标任务ID, 设置类任务可选对应托管ID或账号ID, 代理类任务可选对应队列ID或托管ID",
+    )
+
+
+class TaskCreateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: TaskMode
+    tasks: dict[int, TaskSelectionNode] = Field(
+        ...,
+        min_length=1,
+        max_length=1,
+        description="单入口任务要求树，顶层仅包含索引 0",
+    )
+
+    @field_validator("tasks", mode="before")
+    @classmethod
+    def validate_indices(cls, value):
+        return TaskSelectionNode.validate_indices(value)
+
+
+class TaskGetIn(BaseModel):
+    taskId: str | None = None
+
+
+class TaskIndexItem(BaseModel):
+    uid: str
+
+
+class TaskGetOut(OutBase):
+    index: list[TaskIndexItem] = Field(default_factory=list)
+    # Config 框架在运行时生成完整树的契约类，静态检查器无法把工厂结果作为类型。
+    data: dict[str, TaskTreeData] = Field(default_factory=dict)  # type: ignore[valid-type]  # pyright: ignore[reportInvalidTypeForm]
+
+
+class TaskCreateOut(OutBase):
+    taskId: str = Field(..., description="新创建的任务ID")
+
+
+class PowerIn(BaseModel):
+    signal: PowerSignal = Field(..., description="电源操作信号")
+
+
+class PowerOut(OutBase):
+    signal: PowerSignal = Field(..., description="电源操作信号")
+
 
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
 logger = get_logger("任务调度 API")
@@ -66,6 +130,20 @@ async def get_task_status(task_id: str) -> TaskStatusOut:
     return result
 
 
+@router.post("/get", tags=["Get"], response_model=TaskGetOut)
+async def get_tasks(body: TaskGetIn = Body(...)) -> TaskGetOut:
+    ids = [body.taskId] if body.taskId else [str(uid) for uid in TaskManager.task_info]
+    try:
+        data = {
+            uid: tree for uid in ids if (tree := TaskManager.get_task(uid)) is not None
+        }
+    except ValueError:
+        return TaskGetOut(code=400, status="error", message="任务 ID 格式错误")
+    if body.taskId and not data:
+        return TaskGetOut(code=404, status="error", message="任务不存在")
+    return TaskGetOut(index=[TaskIndexItem(uid=uid) for uid in data], data=data)
+
+
 @router.get(
     "/power/countdown-snapshot",
     tags=["Get"],
@@ -76,7 +154,7 @@ async def get_task_status(task_id: str) -> TaskStatusOut:
 async def get_power_countdown_snapshot() -> PowerCountdownSnapshot:
     """返回当前倒计时；WS 只承载后续逐秒更新与取消事件。"""
 
-    return System.get_power_countdown_snapshot()
+    return Power.get_power_countdown_snapshot()
 
 
 @router.post(
@@ -89,16 +167,9 @@ async def get_power_countdown_snapshot() -> PowerCountdownSnapshot:
 async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
 
     try:
-        task_id = await TaskManager.add_task(
-            mode=task.mode,
-            id=task.taskId,
-            resume_from_script_id=task.resumeFromScriptId,
-            user_id=task.userId,
-            user_ids=task.userIds,
-            queue_user_ids=task.queueUserIds,
-            view_only=task.viewOnly,
-            instance_idx=task.instanceIdx,
-        )
+        task_id = await TaskManager.start(task.mode, task.tasks)
+    except RuntimeError as error:
+        return TaskCreateOut(code=409, status="error", message=str(error), taskId="")
     except Exception as e:
         logger.opt(exception=True).warning(f"add_task失败: {type(e).__name__}: {e}")
         return TaskCreateOut(
@@ -137,16 +208,16 @@ async def get_power() -> PowerOut:
 
     try:
         # 电源任务启动后标志已清空, 等待期间要回报任务实际待执行的操作
-        signal = System.current_power_operation or Config.power_sign
+        signal = Power.current_power_operation or Power.signal
     except Exception as e:
         logger.opt(exception=True).warning(f"get_power失败: {type(e).__name__}: {e}")
         return PowerOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
-            signal="NoAction",
+            signal=PowerSignal.NO_ACTION,
         )
-    return PowerOut(signal=signal)
+    return PowerOut.model_validate({"signal": signal})
 
 
 @router.post(
@@ -159,12 +230,10 @@ async def get_power() -> PowerOut:
 async def set_power(task: PowerIn = Body(...)) -> OutBase:
 
     try:
-        Config.power_sign = task.signal
-        # 手动选择的电源操作不带延时, 同时清掉队列可能残留的延时
-        Config.power_delay = 0
-        # 已在等待的电源任务持有旧操作, 延时期间又没有倒计时窗口提示,
-        # 因此手动改选一律撤销它, 新选择留给下一次任务结束时生效
-        await System.cancel_pending_power_task()
+        if not await Power.set_signal(task.signal, overwrite=True):
+            return OutBase(
+                code=409, status="error", message="已有电源任务，未覆盖当前操作"
+            )
     except Exception as e:
         logger.opt(exception=True).warning(f"set_power失败: {type(e).__name__}: {e}")
         return OutBase(
@@ -183,7 +252,7 @@ async def set_power(task: PowerIn = Body(...)) -> OutBase:
 async def cancel_power_task() -> OutBase:
 
     try:
-        await System.cancel_power_task()
+        await Power.cancel_power_task()
     except Exception as e:
         logger.opt(exception=True).warning(
             f"cancel_power_task失败: {type(e).__name__}: {e}"

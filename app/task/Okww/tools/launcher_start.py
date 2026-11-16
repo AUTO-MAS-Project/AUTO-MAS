@@ -16,11 +16,12 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""OK-WW（鸣潮）通过官方启动器拉起游戏。
+"""OK-WW（鸣潮）通过官方启动器更新、拉起游戏。
 
 本模块是「启动器启动」方式（``Game.Type = Launcher``）的实现：由 MAS 拉起官方
 启动器（launcher.exe）并点「进入游戏」。另一种「直接启动」方式（``Client``，默认）
-由 AutoProxy 的 _launch_game_direct 直接拉起客户端 exe，不经过本模块。
+由 AutoProxy 的 _launch_game_direct 直接拉起客户端 exe；其前置更新复用本模块，
+仅更新模式在启动器确认可进入游戏时结束，不点击启动。
 交互与截图采用与账号切换一致的前台 pyautogui + DPI 适配模式，OCR 复用通用工具集
 `app.tools.ocr`。
 
@@ -38,7 +39,7 @@
   版本目录随启动器自更新变化）。窗口定位与进程清理都按「launcher.exe /
   launcher_main.exe + exe 位于启动器安装根目录树内」双重限定——``launcher.exe``
   是通用进程名，单按名匹配会误伤无关程序。
-- 启动器左侧有用户信息卡与活动公告等富文本干扰，且下载进度行的速度/总量并不
+- 启动器左侧有账号信息卡与活动公告等富文本干扰，且下载进度行的速度/总量并不
   一直显示（可能只剩计时与百分比），因此状态判定与点击只认右下角动作区，
   下载卡死签名只取百分比/体积/速度并剥离计时文本。
 - 启动器其它弹窗状态（自更新、公告等）待实测后按既有分支模式补充。
@@ -49,20 +50,25 @@ import ctypes
 import re
 import time
 from collections.abc import Callable
-from contextlib import contextmanager
 from datetime import datetime
-from functools import lru_cache
 from pathlib import Path
+from threading import Event
 
 import cv2
 import numpy as np
 import psutil
 from PIL import Image
 
-from app.tools.error_screenshot import save_error_screenshot
-from app.tools.ocr import Box, OCRItem, ocr_image
-from app.utils import get_logger
-from app.utils.platform import IS_WINDOWS
+from app.services.common.wuthering_waves import (
+    LauncherSelectionReadError,
+    read_wuthering_waves_launcher_selection,
+)
+from app.tools import error_screenshot as _tool_error_screenshot
+from app.tools import ocr as _tool_ocr
+from app.utils import IS_WINDOWS, get_logger
+from app.utils import display as _utils_display
+
+from .maintenance import find_game_maintenance_text
 
 if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
@@ -72,8 +78,21 @@ if IS_WINDOWS:
     import win32con
     import win32gui
     import win32process
+    import win32ui
 
 logger = get_logger("OK-WW 启动器启动")
+
+
+class _LaunchCancelled(Exception):
+    """内部停止信号；取消不作为启动失败截图或重试。"""
+
+
+def _pause(seconds: float, stop_event: Event | None = None) -> None:
+    if stop_event is None:
+        time.sleep(seconds)
+    elif stop_event.wait(seconds):
+        raise _LaunchCancelled()
+
 
 # 诊断文件（debug/okww-launcher-start/launcher-detail-*.log）：记录窗口定位结果
 # 与各轮 OCR 全量条目，供启动器按钮未被点击时排查窗口错抓/截图偏移/文本漂移；
@@ -91,7 +110,7 @@ def _write_diagnostic(text: str) -> None:
             pass
 
 
-def _dump_ocr_items(items: list[OCRItem]) -> None:
+def _dump_ocr_items(items: list[_tool_ocr.OCRItem]) -> None:
     """诊断旁路：把一次 OCR 的全部识别文本写入诊断文件。"""
     if _DIAGNOSTIC_PATH is None:
         return
@@ -128,7 +147,7 @@ _FRAME_HEIGHT = 1080
 
 # 右下角动作区（相对 1080p 帧）：启动器按钮与下载进度都在此区域，左侧用户
 # 信息卡/活动公告/新闻列表含大量富文本，不参与判定与点击，避免干扰误触
-_ACTION_ROI: Box = (1240, 820, 1920, 1080)
+_ACTION_ROI: _tool_ocr.Box = (1240, 820, 1920, 1080)
 
 # 首次找到按钮的等待；点击「进入游戏」后等游戏起窗；点「更新」后等下载完成
 _FIND_BUTTON_TIMEOUT = 120
@@ -167,26 +186,10 @@ _START_CLICK_INTERVAL_SECONDS = 12.0
 # 以按钮长时间停留原状（未被下载/进度 UI 取代）为被吞判据
 _UPDATE_CLICK_RETRY_SECONDS = 15.0
 _UPDATE_CLICK_RETRY_LIMIT = 3
-
-
-@lru_cache(maxsize=1)
-def _user32_dpi_api():
-    user32 = ctypes.windll.user32
-    user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
-    user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
-    return user32
-
-
-@contextmanager
-def _per_monitor_dpi():
-    """切换到 per-monitor DPI 感知，保证窗口坐标换算在跨 DPI 显示器下正确。"""
-    user32 = _user32_dpi_api()
-    previous = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
-    try:
-        yield
-    finally:
-        if previous:
-            user32.SetThreadDpiAwarenessContext(previous)
+# 启动器首帧可能仍显示缓存的「进入游戏」，等待按钮连续稳定后再结束更新检查。
+_UPDATE_READY_STABLE_SECONDS = 10.0
+# 非原子写盘期间不点击；持续不可读仍响亮失败，不能当作旧启动器跳过身份确认。
+_SELECTION_READ_RETRY_SECONDS = 6.0
 
 
 # ── 窗口 / 进程定位 ─────────────────────────────────────────────────────
@@ -216,8 +219,14 @@ def _window_area(hwnd: int) -> int:
         return 0
 
 
-def _find_hwnd(process_name: str, window_class: str | None = None) -> int | None:
-    """按所属进程名（可选加窗口类）找最大可见窗口；不存在返回 None。"""
+def _find_hwnd(
+    process_name: str, window_class: str | None = None, *, pids: set[int] | None = None
+) -> int | None:
+    """按所属进程名（可选加窗口类）找最大可见窗口；不存在返回 None。
+
+    ``pids`` 给定时只认这些进程的窗口：``Client-Win64-Shipping.exe`` 是虚幻
+    通用进程名，同机可能有其它同名游戏，单按名取最大窗口会认错对象。
+    """
     candidates: list[int] = []
 
     def _enum(hwnd: int, _lparam: int) -> bool:
@@ -229,6 +238,8 @@ def _find_hwnd(process_name: str, window_class: str | None = None) -> int | None
         except Exception:
             return True
         _, pid = win32process.GetWindowThreadProcessId(hwnd)
+        if pids is not None and pid not in pids:
+            return True
         if pid and _process_name(pid) == process_name:
             candidates.append(hwnd)
         return True
@@ -240,15 +251,17 @@ def _find_hwnd(process_name: str, window_class: str | None = None) -> int | None
 def _is_launcher_process(pid: int, root_prefix: str) -> bool:
     """判定 pid 是否属于启动器进程家族（进程名 + exe 位于安装根目录树内）。
 
-    exe 路径读取被拒（如提权进程）时退回仅进程名判定——MAS 通常自己拉起
-    启动器，等待窗口期内的同名兜底可以接受。
+    exe 路径不可读时无法确认安装归属，跳过同名窗口，避免在其它启动器上操作。
     """
     name = _process_name(pid)
     if name is None or name.casefold() not in _LAUNCHER_PROCESS_NAMES:
         return False
     exe = _process_exe(pid)
     if exe is None:
-        return True
+        logger.debug(
+            f"无法读取同名启动器进程路径（进程已退出或权限不足），跳过窗口: pid={pid}"
+        )
+        return False
     return exe.casefold().startswith(root_prefix)
 
 
@@ -275,8 +288,8 @@ def _find_launcher_hwnd(launcher_path: Path) -> int | None:
 def find_launcher_pids(launcher_path: Path) -> list[int]:
     """按启动器进程家族找 pid（顶层引导器 + 版本目录下的主程序）。
 
-    供任务清理使用：launcher.exe 是通用进程名，kill 误杀不可恢复，口径比窗口
-    定位更保守——必须「exe 可读且位于启动器安装根目录树内」双条件同时满足；
+    供任务清理使用：launcher.exe 是通用进程名，kill 误杀不可恢复，与窗口定位
+    同样要求「exe 可读且位于启动器安装根目录树内」双条件同时满足；
     exe 读取被拒的同名进程跳过并打警告（多为提权进程，普通权限下本就杀不动）。
     """
     root_prefix = str(launcher_path.parent).casefold().rstrip("\\/") + "\\"
@@ -332,6 +345,33 @@ def find_game_pids(launcher_path: Path) -> list[int]:
     return pids
 
 
+def find_client_pids(client_exe: Path | None, launcher_path: Path | None) -> set[int]:
+    """当前专项运行客户端的 PID 集合（维护检测的窗口归属判据）。
+
+    两路合并：启动器安装根目录树内的同名游戏进程（find_game_pids），以及与
+    已配置客户端 exe 路径精确匹配的进程。两路都读不到时返回空集合，调用方
+    按「无法确认归属」放行，不以全局最大窗口代替。
+    """
+
+    pids: set[int] = set()
+    if launcher_path is not None:
+        pids.update(find_game_pids(launcher_path))
+    if client_exe is None:
+        return pids
+    target = str(client_exe).casefold()
+    for process in psutil.process_iter(["name", "exe"]):
+        try:
+            name = (process.info["name"] or "").casefold()
+            if name != _GAME_PROCESS.casefold():
+                continue
+            exe = process.info["exe"]
+            if exe is not None and exe.casefold() == target:
+                pids.add(process.pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    return pids
+
+
 def has_launcher_window(launcher_path: Path) -> bool:
     """清理后复核启动器窗口是否仍存在。
 
@@ -342,12 +382,12 @@ def has_launcher_window(launcher_path: Path) -> bool:
     return _find_launcher_hwnd(launcher_path) is not None
 
 
-def _find_game_hwnd() -> int | None:
-    return _find_hwnd(_GAME_PROCESS, _GAME_WINDOW_CLASS)
+def _find_game_hwnd(pids: set[int] | None = None) -> int | None:
+    return _find_hwnd(_GAME_PROCESS, _GAME_WINDOW_CLASS, pids=pids)
 
 
 def _wait_launcher_hwnd(
-    launcher_path: Path, *, timeout: int | None = None
+    launcher_path: Path, *, timeout: int | None = None, stop_event: Event | None = None
 ) -> int | None:
     """轮询等待启动器窗口创建。
 
@@ -357,16 +397,18 @@ def _wait_launcher_hwnd(
     """
     deadline = time.monotonic() + (timeout or _LAUNCHER_WINDOW_TIMEOUT)
     while True:
+        _pause(0, stop_event)
         hwnd = _find_launcher_hwnd(launcher_path)
         if hwnd is not None or time.monotonic() >= deadline:
             return hwnd
-        time.sleep(2)
+        _pause(2, stop_event)
 
 
 # ── 截图 / 交互（前台 pyautogui + DPI 适配）─────────────────────────────
 
 
-def _activate_window(hwnd: int) -> None:
+def _activate_window(hwnd: int, *, stop_event: Event | None = None) -> None:
+    _pause(0, stop_event)
     if not win32gui.IsWindow(hwnd):
         raise RuntimeError("鸣潮启动器窗口已失效")
     show_command = (
@@ -378,7 +420,7 @@ def _activate_window(hwnd: int) -> None:
     )
     if show_command is not None:
         win32gui.ShowWindow(hwnd, show_command)
-        time.sleep(0.15)
+        _pause(0.15, stop_event)
     try:
         if win32gui.GetForegroundWindow() != hwnd:
             # Windows 前台锁：后台进程不能直接抢占前台。先附着当前前台窗口线程
@@ -400,7 +442,7 @@ def _activate_window(hwnd: int) -> None:
             win32gui.SetForegroundWindow(hwnd)
     except win32gui.error:
         logger.debug("鸣潮启动器窗口焦点请求被系统忽略，继续按前置窗口处理")
-    time.sleep(0.1)
+    _pause(0.1, stop_event)
 
 
 def _client_size(hwnd: int) -> tuple[int, int]:
@@ -411,7 +453,7 @@ def _client_size(hwnd: int) -> tuple[int, int]:
 
 
 def _capture_window_image(hwnd: int, *, activate: bool = True) -> Image.Image:
-    with _per_monitor_dpi():
+    with _utils_display.per_monitor_dpi():
         if activate:
             _activate_window(hwnd)
         width, height = _client_size(hwnd)
@@ -436,47 +478,145 @@ def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
     return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
 
 
-def _read_texts(hwnd: int) -> list[OCRItem]:
-    return ocr_image(_capture_window(hwnd, activate=False))
+def _read_texts(hwnd: int) -> list[_tool_ocr.OCRItem]:
+    return _tool_ocr.ocr_image(_capture_window(hwnd, activate=False))
 
 
 def _click_box(
-    hwnd: int, box: Box, *, activate: bool = False, after_sleep: float = 0.3
+    hwnd: int,
+    box: _tool_ocr.Box,
+    *,
+    activate: bool = False,
+    after_sleep: float = 0.3,
+    stop_event: Event | None = None,
 ) -> None:
     """点击 1080p 坐标空间中的一个文字框中心。"""
-    with _per_monitor_dpi():
+    _pause(0, stop_event)
+    with _utils_display.per_monitor_dpi():
         if activate:
-            _activate_window(hwnd)
+            _activate_window(hwnd, stop_event=stop_event)
         width, height = _client_size(hwnd)
         x, y, box_width, box_height = box
         client_x = round((x + box_width / 2) * width / _FRAME_WIDTH)
         client_y = round((y + box_height / 2) * height / _FRAME_HEIGHT)
         screen_x, screen_y = win32gui.ClientToScreen(hwnd, (client_x, client_y))
 
-    original_position = pyautogui.position()
-    try:
-        pyautogui.moveTo(screen_x, screen_y)
-        time.sleep(0.3)
-        pyautogui.click()
-        time.sleep(after_sleep)
-    finally:
-        pyautogui.moveTo(*original_position)
+        original_position = pyautogui.position()
+        try:
+            _pause(0, stop_event)
+            pyautogui.moveTo(screen_x, screen_y)
+            _pause(0.3, stop_event)
+            pyautogui.click()
+            _pause(after_sleep, stop_event)
+        finally:
+            pyautogui.moveTo(*original_position)
 
 
 # ── OCR 文本判定辅助 ─────────────────────────────────────────────────────
 
 
-def _find_text(items: list[OCRItem], keywords: tuple[str, ...]) -> Box | None:
+def _find_text(
+    items: list[_tool_ocr.OCRItem], keywords: tuple[str, ...]
+) -> _tool_ocr.Box | None:
     for text, box in items:
         if any(keyword in text for keyword in keywords):
             return box
     return None
 
 
-def _items_in_action_roi(items: list[OCRItem]) -> list[OCRItem]:
+# ── 游戏画面维护检测 ─────────────────────────────────────────────────────
+
+# PrintWindow 的 PW_RENDERFULLCONTENT：DWM 合成下重绘窗口完整内容，
+# 窗口被遮挡也能拿到自身画面（Win 8.1+；独占全屏等场景可能失败，失败放行）
+_PW_RENDERFULLCONTENT = 0x00000002
+
+
+def _capture_game_window_frame(hwnd: int) -> np.ndarray | None:
+    """PrintWindow 抓取游戏窗口自身画面并缩放到 OCR 坐标空间。
+
+    与桌面截图裁剪不同：窗口被其他窗口遮挡时拿到的仍是游戏自己的画面，
+    不会把遮挡窗口的文字误认成游戏弹窗；不激活窗口、不抢前台。
+    抓取失败（独占全屏等）返回 None，由调用方按未命中放行。
+    """
+    try:
+        with _utils_display.per_monitor_dpi():
+            width, height = _client_size(hwnd)
+            if width <= 0 or height <= 0:
+                return None
+            hwnd_dc = win32gui.GetWindowDC(hwnd)
+            try:
+                source_dc = win32ui.CreateDCFromHandle(hwnd_dc)
+                try:
+                    memory_dc = source_dc.CreateCompatibleDC()
+                    try:
+                        bitmap = win32ui.CreateBitmap()
+                        try:
+                            bitmap.CreateCompatibleBitmap(source_dc, width, height)
+                            # SelectObject 返回被替换的旧位图：删除我们的位图前
+                            # 必须先把它从 memory_dc 选出（仍选在 DC 里的 GDI
+                            # 对象删不掉，会随每次捕获泄漏）
+                            original_bitmap = memory_dc.SelectObject(bitmap)
+                            try:
+                                if not ctypes.windll.user32.PrintWindow(
+                                    hwnd, memory_dc.GetSafeHdc(), _PW_RENDERFULLCONTENT
+                                ):
+                                    return None
+                                bitmap_info = bitmap.GetInfo()
+                                bitmap_bits = bitmap.GetBitmapBits(True)
+                            finally:
+                                memory_dc.SelectObject(original_bitmap)
+                        finally:
+                            win32gui.DeleteObject(bitmap.GetHandle())
+                    finally:
+                        memory_dc.DeleteDC()
+                finally:
+                    source_dc.DeleteDC()
+            finally:
+                win32gui.ReleaseDC(hwnd, hwnd_dc)
+        frame = Image.frombuffer(
+            "RGB",
+            (bitmap_info["bmWidth"], bitmap_info["bmHeight"]),
+            bitmap_bits,
+            "raw",
+            "BGRX",
+            0,
+            1,
+        )
+        frame = frame.resize((_FRAME_WIDTH, _FRAME_HEIGHT), Image.Resampling.LANCZOS)
+        return cv2.cvtColor(np.asarray(frame), cv2.COLOR_RGB2BGR)
+    except Exception as error:
+        logger.debug(f"PrintWindow 抓取游戏窗口画面失败（忽略，继续正常流程）: {error}")
+        return None
+
+
+def detect_game_maintenance_text(pids: set[int] | None = None) -> str | None:
+    """OCR 游戏窗口画面，命中维护弹窗文本时返回命中的原文，否则返回 None。
+
+    ``pids`` 为当前专项运行客户端的 PID 集合（``find_client_pids``）：只认
+    这些进程的窗口，避免读到同机其它同名虚幻游戏的窗口——维护命中会直接
+    跳过当前账号并终止重试，认错对象代价高。为空或窗口不属于这些进程时
+    返回 None 放行，不以全局最大窗口代替。
+
+    旁路判定：窗口不存在、抓取或 OCR 失败一律返回 None 放行，不抛错、不
+    激活窗口（PrintWindow 不依赖前台）。只覆盖游戏窗口已存在的场景（MAS
+    拉起或客户端已在运行）；启动前的判定由维护公告通道（ScriptManagerBase）
+    负责。
+    """
+    if not IS_WINDOWS:
+        return None
+    hwnd = _find_game_hwnd(pids)
+    if hwnd is None:
+        return None
+    frame = _capture_game_window_frame(hwnd)
+    if frame is None:
+        return None
+    return find_game_maintenance_text(text for text, _ in _tool_ocr.ocr_image(frame))
+
+
+def _items_in_action_roi(items: list[_tool_ocr.OCRItem]) -> list[_tool_ocr.OCRItem]:
     """按文字框中心过滤出右下角动作区内的条目（排除左侧卡片等富文本干扰）。"""
     left, top, right, bottom = _ACTION_ROI
-    selected: list[OCRItem] = []
+    selected: list[_tool_ocr.OCRItem] = []
     for text, (x, y, width, height) in items:
         center_x = x + width / 2
         center_y = y + height / 2
@@ -485,7 +625,7 @@ def _items_in_action_roi(items: list[OCRItem]) -> list[OCRItem]:
     return selected
 
 
-def _download_progress_texts(items: list[OCRItem]) -> tuple[str, ...]:
+def _download_progress_texts(items: list[_tool_ocr.OCRItem]) -> tuple[str, ...]:
     """取百分比/体积/速度相关文本并剥离计时（见常量说明），供进度签名使用。"""
     texts = []
     for text, _ in items:
@@ -494,7 +634,7 @@ def _download_progress_texts(items: list[OCRItem]) -> tuple[str, ...]:
     return tuple(texts)
 
 
-def _find_busy_box(items: list[OCRItem]) -> Box | None:
+def _find_busy_box(items: list[_tool_ocr.OCRItem]) -> _tool_ocr.Box | None:
     """识别启动器忙碌态按钮（下载中/校验解压）；「预下载」不算忙碌。
 
     预下载开放且游戏可玩是官方预期状态，此时按钮区可能并存「进入游戏」与
@@ -521,7 +661,7 @@ def _screensaver_running() -> bool:
     return bool(running.value)
 
 
-def dismiss_screensaver() -> None:
+def dismiss_screensaver(*, stop_event: Event | None = None) -> None:
     """屏保运行时轻推鼠标将其退出（旁路：失败仅记日志，不阻断启动流程）。
 
     屏保全屏覆盖会让窗口截图变成黑屏，OCR 找不到任何按钮；挂机定时任务几乎
@@ -535,10 +675,13 @@ def dismiss_screensaver() -> None:
         deadline = time.monotonic() + 10
         offset = 50
         while _screensaver_running() and time.monotonic() < deadline:
+            _pause(0, stop_event)
             pyautogui.moveTo(x + offset, y)
             offset = -offset
-            time.sleep(1)
+            _pause(1, stop_event)
         pyautogui.moveTo(x, y)
+    except _LaunchCancelled:
+        raise
     except Exception as error:
         logger.warning(f"退出屏幕保护程序失败（忽略，继续启动流程）: {error}")
 
@@ -549,7 +692,7 @@ def _save_error_screenshot(launcher_hwnd: int | None) -> None:
         target = launcher_hwnd if launcher_hwnd is not None else _find_game_hwnd()
         if target is None:
             return
-        save_error_screenshot(
+        _tool_error_screenshot.save_error_screenshot(
             _capture_window_image(target, activate=False),
             "okww-launcher-start",
             "launcher-error",
@@ -563,9 +706,13 @@ def _save_error_screenshot(launcher_hwnd: int | None) -> None:
 
 
 def start_game_via_launcher(
-    launcher_path: Path, *, on_log: Callable[[str], None] | None = None
+    launcher_path: Path,
+    *,
+    on_log: Callable[[str], None] | None = None,
+    update_only: bool = False,
+    stop_event: Event | None = None,
 ) -> bool:
-    """通过官方启动器拉起鸣潮，直到客户端窗口出现（停在标题界面）。
+    """通过官方启动器更新鸣潮，并按需启动客户端。
 
     启动器按钮有概率是「更新」而非「进入游戏」（游戏有新版本时）：点「更新」
     后不再重复点击，等下载完成、按钮变回后再点。下载完成后启动器自动进入
@@ -577,9 +724,11 @@ def start_game_via_launcher(
     Args:
         launcher_path: 启动器 exe 路径（鸣潮官方启动器 launcher.exe）。
         on_log: 流程进度回调（供 MAS 推送调度台日志），默认仅写日志。
+        update_only: 只检查并更新，启动器显示可进入游戏时结束，不启动客户端。
+        stop_event: 异步任务取消时置位，交互线程在下一次操作前退出。
 
     Returns:
-        游戏窗口就绪返回 True；失败抛出带原因描述的 RuntimeError。
+        游戏窗口就绪（仅更新时为启动器显示可启动）返回 True；失败抛 RuntimeError。
 
     Raises:
         RuntimeError: 未找到启动器窗口 / 按钮点击失败 / 等待游戏窗口超时。
@@ -600,11 +749,11 @@ def start_game_via_launcher(
         f"launcher-detail-{datetime.now():%Y%m%d-%H%M%S-%f}.log"
     )
 
-    # 挂机定时任务几乎必然带屏保运行：先退出屏保，避免截图全黑导致 OCR 全盲
-    dismiss_screensaver()
-
     try:
-        hwnd = _wait_launcher_hwnd(launcher_path)
+        # 挂机定时任务几乎必然带屏保运行：先退出屏保，避免截图全黑导致 OCR 全盲
+        _pause(0, stop_event)
+        dismiss_screensaver(stop_event=stop_event)
+        hwnd = _wait_launcher_hwnd(launcher_path, stop_event=stop_event)
         if hwnd is None:
             raise RuntimeError(
                 f"等待启动器窗口超时（{_LAUNCHER_WINDOW_TIMEOUT}s 未找到 "
@@ -615,7 +764,7 @@ def start_game_via_launcher(
             f"{_describe_window(hwnd)}\n"
         )
         on_log("已定位启动器窗口，正在识别启动器按钮...")
-        _activate_window(hwnd)
+        _activate_window(hwnd, stop_event=stop_event)
 
         start_clicks = 0
         last_start_click: float | None = None
@@ -634,10 +783,13 @@ def start_game_via_launcher(
         last_download_sig: int | None = None
         last_download_progress = time.monotonic()
         busy_since: float | None = None
+        ready_since: float | None = None
+        selection_unavailable_since: float | None = None
         iter_count = 0
         deadline = time.monotonic() + _FIND_BUTTON_TIMEOUT
         while time.monotonic() < deadline:
-            if _find_game_hwnd() is not None:
+            _pause(0, stop_event)
+            if not update_only and _find_game_hwnd() is not None:
                 on_log("已检测到鸣潮游戏窗口")
                 return True
 
@@ -651,9 +803,24 @@ def start_game_via_launcher(
                         on_log("启动器已退出，正在等待游戏窗口出现...")
                     elif exit_wait_polls % 5 == 0:
                         on_log("仍在等待游戏窗口出现...")
-                    time.sleep(2)
+                    _pause(2, stop_event)
                     continue
                 raise
+
+            # 新版统一启动器可切换游戏；每轮操作前确认仍在鸣潮页，避免更新其它游戏。
+            try:
+                read_wuthering_waves_launcher_selection(launcher_path)
+            except LauncherSelectionReadError:
+                ready_since = None
+                now = time.monotonic()
+                if selection_unavailable_since is None:
+                    selection_unavailable_since = now
+                    on_log("启动器选择记录暂不可读，等待写入完成...")
+                elif now - selection_unavailable_since >= _SELECTION_READ_RETRY_SECONDS:
+                    raise
+                _pause(2, stop_event)
+                continue
+            selection_unavailable_since = None
 
             # 每 5 轮（≈10s）落一次 OCR 全量条目，空转时可从诊断文件定位
             if iter_count % 5 == 0:
@@ -667,17 +834,18 @@ def start_game_via_launcher(
             # 弹窗，本轮不再处理按钮（对齐 ok-nte launcher_popup_close 的
             # 防护顺序；其余弹窗状态待实测后补充）
             if any(text.strip() == "提示" for text, _ in items):
+                ready_since = None
                 popup_box = _find_text(items, ("确定",)) or _find_text(items, ("忽略",))
                 if popup_box is not None:
                     on_log("检测到启动器「提示」弹窗，点击关闭...")
-                    _click_box(hwnd, popup_box, after_sleep=2)
+                    _click_box(hwnd, popup_box, after_sleep=2, stop_event=stop_event)
                     # 遮罩期「进入游戏」点击会被吞掉：关掉弹窗后重置点击计数
                     # 与间隔，立即可重试（耗尽提示标志一并重置，恢复后再次耗尽
                     # 仍能提示）
                     start_clicks = 0
                     last_start_click = None
                     start_click_exhausted_logged = False
-                    time.sleep(1)
+                    _pause(1, stop_event)
                     continue
 
             # 状态判定与点击只认右下角动作区，排除左侧富文本干扰
@@ -686,10 +854,14 @@ def start_game_via_launcher(
             # 游戏下载/校验解压进行中：基于忙碌态动态续延等待，并以进度签名
             # 检测卡死（校验解压阶段进度行为「过程不消耗流量 88.08%」）
             if _find_busy_box(action_items) is not None:
+                ready_since = None
                 if update_clicked:
                     update_went_busy = True
                 if busy_since is None:
                     busy_since = now
+                    _write_diagnostic("\n状态：下载或校验游戏资源\n")
+                    _dump_ocr_items(items)
+                    on_log("官方启动器正在下载或校验游戏资源")
                 elif now - busy_since >= _BUSY_WAIT_HARD_LIMIT_SECONDS:
                     raise RuntimeError(
                         "启动器下载/校验解压超出"
@@ -711,7 +883,7 @@ def start_game_via_launcher(
                             f"（{_DOWNLOAD_STALL_SECONDS:g}s 内百分比/体积/速度无变化，"
                             "疑似卡住），请人工确认下载状态"
                         )
-                time.sleep(2)
+                _pause(2, stop_event)
                 continue
             # 离开忙碌态：清掉忙碌基准，避免下次进入时用到过期时刻
             busy_since = None
@@ -719,6 +891,18 @@ def start_game_via_launcher(
 
             start_box = _find_text(action_items, ("进入游戏",))
             update_box = None if start_box else _find_text(action_items, ("更新",))
+            if update_only and start_box is not None:
+                if ready_since is None:
+                    ready_since = now
+                    on_log("启动器显示可进入游戏，正在等待更新检查状态稳定...")
+                elif now - ready_since >= _UPDATE_READY_STABLE_SECONDS:
+                    _write_diagnostic("\n状态：官方启动器已确认游戏可启动\n")
+                    _dump_ocr_items(items)
+                    on_log("官方启动器已确认游戏可启动，更新检查完成")
+                    return True
+                _pause(2, stop_event)
+                continue
+            ready_since = None
             if start_box is not None and update_clicked:
                 # 「进入游戏」出现即更新流程已结束（无论更新是否真正执行过）：
                 # 清理更新标记，避免残留污染超时报错文案与补点日志措辞
@@ -762,13 +946,13 @@ def start_game_via_launcher(
                         f"第 {start_clicks + 1} 次点击「进入游戏」"
                         "（此前点击未生效，可能被遮挡）"
                     )
-                _click_box(hwnd, start_box, after_sleep=3)
+                _click_box(hwnd, start_box, after_sleep=3, stop_event=stop_event)
                 start_clicks += 1
                 last_start_click = now
                 deadline = max(deadline, now + _START_GAME_TIMEOUT)
             elif update_box is not None and not update_clicked:
                 on_log("检测到启动器「更新」按钮，正在更新游戏，等待时间将延长...")
-                _click_box(hwnd, update_box, after_sleep=3)
+                _click_box(hwnd, update_box, after_sleep=3, stop_event=stop_event)
                 update_clicked = True
                 last_update_click = now
                 deadline = max(deadline, now + _UPDATE_TIMEOUT)
@@ -784,7 +968,7 @@ def start_game_via_launcher(
                 # 判定点击被吞，按间隔补点
                 if update_click_retries < _UPDATE_CLICK_RETRY_LIMIT:
                     on_log("「更新」点击未生效，补点一次...")
-                    _click_box(hwnd, update_box, after_sleep=3)
+                    _click_box(hwnd, update_box, after_sleep=3, stop_event=stop_event)
                     update_click_retries += 1
                     last_update_click = now
                 elif not update_exhausted_logged:
@@ -800,15 +984,22 @@ def start_game_via_launcher(
                 )
                 on_log(f"仍在等待启动器按钮，动作区识别: {sample}")
             iter_count += 1
-            time.sleep(2)
+            _pause(2, stop_event)
 
-        if _find_game_hwnd() is not None:
+        _pause(0, stop_event)
+        if not update_only and _find_game_hwnd() is not None:
             on_log("已检测到鸣潮游戏窗口")
             return True
         raise RuntimeError(
-            "等待鸣潮游戏窗口超时"
+            (
+                "等待鸣潮启动器确认更新完成超时"
+                if update_only
+                else "等待鸣潮游戏窗口超时"
+            )
             + ("（游戏更新可能未完成，请人工确认启动器状态）" if update_clicked else "")
         )
+    except _LaunchCancelled:
+        raise
     except Exception:
         # 失败留启动器/游戏原图，供排查 OCR 文本漂移
         try:
@@ -821,9 +1012,38 @@ def start_game_via_launcher(
 
 
 async def async_start_game_via_launcher(
-    launcher_path: Path, *, on_log: Callable[[str], None] | None = None
+    launcher_path: Path,
+    *,
+    on_log: Callable[[str], None] | None = None,
+    update_only: bool = False,
 ) -> bool:
     """async 版本：在后台线程执行启动器交互，避免阻塞事件循环。"""
-    return await asyncio.to_thread(
-        start_game_via_launcher, launcher_path, on_log=on_log
+    stop_event = Event()
+    worker = asyncio.create_task(
+        asyncio.to_thread(
+            start_game_via_launcher,
+            launcher_path,
+            on_log=on_log,
+            update_only=update_only,
+            stop_event=stop_event,
+        )
     )
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        stop_event.set()
+        # 线程退出前不交还桌面；再次取消也不能跳过这一步。
+        while not worker.done():
+            try:
+                await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                break
+        try:
+            worker.result()
+        except _LaunchCancelled:
+            pass
+        except Exception as error:
+            logger.debug(f"启动器交互中止时退出: {error}")
+        raise

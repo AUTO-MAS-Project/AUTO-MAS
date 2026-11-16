@@ -25,13 +25,13 @@ const icon = computed(() => channelIcon(props.channel.icon))
 const iconColor = computed(() => channelIconColor(props.channel.icon))
 const groupTag = computed(() =>
   normalizeGroup(props.channel.group) === 'custom'
-    ? t('setting.notify.customGroup')
-    : t('setting.notify.channelsGroup')
+    ? t('core.setting.notify.customGroup')
+    : t('core.setting.notify.channelsGroup')
 )
 const hintText = computed(() =>
   props.channel.customBlock === 'webhook_list'
-    ? t('setting.notify.manage')
-    : t('setting.notify.configure')
+    ? t('core.setting.notify.manage')
+    : t('core.setting.notify.configure')
 )
 </script>
 
@@ -57,29 +57,31 @@ const hintText = computed(() =>
       <span class="chan-icon" :style="{ '--c': iconColor, color: iconColor }">
         <component :is="icon" />
       </span>
+      <span class="chan-name">{{ t(channel.nameKey) }}</span>
       <span class="state" :class="{ idle: !stateActive }">
         <i class="dot" :class="{ off: !stateActive }" />{{ stateText }}
       </span>
     </div>
-    <div class="chan-name">
-      {{ t(channel.nameKey) }}<span class="tag">{{ groupTag }}</span>
-    </div>
+    <span v-if="normalizeGroup(channel.group) === 'custom'" class="tag">{{ groupTag }}</span>
+    <div v-if="channel.descKey" class="chan-description">{{ t(channel.descKey) }}</div>
     <div v-if="summary" class="chan-summary" :title="summary">{{ summary }}</div>
     <div class="chan-hint">{{ hintText }} ›</div>
   </button>
 </template>
+
+<style scoped src="./notifyChannel.css"></style>
 
 <style scoped>
 .chan-card {
   text-align: left;
   border: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
-  border-radius: 8px;
-  padding: 14px 16px 12px;
+  border-radius: var(--ant-border-radius-lg);
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  min-height: 116px;
+  gap: 8px;
+  min-height: 148px;
   cursor: pointer;
   color: inherit;
   font: inherit;
@@ -96,19 +98,19 @@ const hintText = computed(() =>
 
 .chan-card-top {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
 .chan-icon {
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
-  border-radius: 9px;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: var(--ant-border-radius-sm);
   display: grid;
   place-items: center;
-  font-size: 20px;
+  font-size: 16px;
   background: color-mix(in srgb, var(--c) 12%, transparent);
 }
 
@@ -116,7 +118,7 @@ const hintText = computed(() =>
   width: 26px;
   height: 26px;
   flex: 0 0 26px;
-  border-radius: 7px;
+  border-radius: var(--ant-border-radius-sm);
   font-size: 15px;
 }
 
@@ -148,6 +150,8 @@ const hintText = computed(() =>
 
 .chan-name {
   display: flex;
+  flex: 1;
+  min-width: 0;
   align-items: center;
   gap: 8px;
   font-size: 14px;
@@ -156,17 +160,10 @@ const hintText = computed(() =>
 }
 
 .tag {
-  font-size: 12px;
-  line-height: 18px;
-  padding: 0 7px;
-  border-radius: 4px;
-  background: var(--ant-color-fill-tertiary);
-  color: var(--ant-color-text-secondary);
   font-weight: 400;
 }
 
 .chan-summary {
-  margin-top: auto;
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
   overflow: hidden;
@@ -174,16 +171,16 @@ const hintText = computed(() =>
   white-space: nowrap;
 }
 
-.chan-hint {
+.chan-description {
+  color: var(--ant-color-text-secondary);
   font-size: 12px;
-  color: var(--ant-color-primary);
-  opacity: 0;
-  transition: opacity 0.16s ease;
+  line-height: 19px;
 }
 
-.chan-card:hover .chan-hint,
-.chan-card:focus-visible .chan-hint {
-  opacity: 1;
+.chan-hint {
+  margin-top: auto;
+  font-size: 12px;
+  color: var(--ant-color-primary);
 }
 
 .chan-row {
@@ -192,7 +189,7 @@ const hintText = computed(() =>
   gap: 10px;
   border: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius-lg);
   padding: 8px 12px;
   min-height: 44px;
   cursor: pointer;

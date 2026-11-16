@@ -10,6 +10,6 @@
   max-height: min(180px, 25vh);
   object-fit: contain;
   margin-bottom: 12px;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-bg-layout);
 }

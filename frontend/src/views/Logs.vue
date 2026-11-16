@@ -4,8 +4,9 @@ import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { FileZipOutlined, SyncOutlined } from '@ant-design/icons-vue'
-import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
+import VueMonacoEditor from '@/components/LocalMonacoEditor'
 import { useLogHighlight } from '@/composables/useLogHighlight'
+import { useLogExport } from '@/composables/useLogExport'
 const logger = window.electronAPI.getLogger('日志查看')
 const route = useRoute()
 const { t } = useI18n()
@@ -26,7 +27,7 @@ const selectedLogFile = ref<'app' | 'frontend'>(
   route.query.file === 'frontend' ? 'frontend' : 'app'
 )
 const realTimeEnabled = ref(true)
-const exportingLogs = ref(false)
+const { exportingLogs, packageLogs } = useLogExport()
 let editorInstance: any = null
 let refreshInterval: ReturnType<typeof setInterval> | null = null
 // 已拿到的日志字节数，下一次只读这之后的新增部分；整份重载时归零
@@ -38,8 +39,8 @@ const REFRESH_INTERVAL_MS = 2000
 // 文件不存在时主进程返回空串。直接把空串塞进编辑器只会得到一片白，说一句人话。
 const emptyHint = computed(() =>
   selectedLogFile.value === 'app'
-    ? '后端日志还是空的。后端这一程可能还没启动起来，先看「前端日志」。'
-    : '前端日志还是空的。'
+    ? t('bootstrap.logs.emptyBackendHint')
+    : t('bootstrap.logs.emptyFrontendHint')
 )
 
 // Monaco Editor 配置
@@ -157,7 +158,7 @@ const loadLogs = async (silent = false) => {
     if (!silent) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`加载日志失败: ${errorMsg}`)
-      message.error('加载日志失败')
+      message.error(t('bootstrap.logs.loadFailed'))
     }
   } finally {
     if (!silent && seq === loadSeq) {
@@ -195,47 +196,6 @@ const toggleRealTime = () => {
   } else {
     stopRealTimeRefresh()
     message.info('已停止自动更新')
-  }
-}
-
-// 打包当前应用日志目录
-const packageLogs = async () => {
-  if (exportingLogs.value) return
-
-  exportingLogs.value = true
-  try {
-    const result = await window.electronAPI.exportLogs?.()
-    if (!result) {
-      message.error(t('logs.toast.packageNoResponse'))
-      logger.error('打包日志失败: 未收到响应')
-      return
-    }
-    if (result.success) {
-      message.success(t('logs.toast.packageExported'))
-      logger.info(`日志打包成功: ${result.zipPath}`)
-      if (result.zipPath) {
-        try {
-          await window.electronAPI.showItemInFolder?.(result.zipPath)
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error)
-          logger.error(`打开压缩包所在文件夹失败: ${errorMsg}`)
-          message.error(t('logs.toast.openFolderFailed'))
-        }
-      }
-    } else if (result.error === '用户取消') {
-      // 主进程对保存对话框取消统一返回该中文文案，静默即可
-      logger.info('用户取消了日志打包')
-    } else {
-      logger.error(`打包日志失败: ${result.error}`)
-      const errorMsg = result.error || t('logs.toast.packageFailed')
-      message.error(errorMsg)
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`打包日志失败: ${errorMsg}`)
-    message.error(t('logs.toast.packageError', { error: errorMsg }))
-  } finally {
-    exportingLogs.value = false
   }
 }
 
@@ -287,7 +247,7 @@ onUnmounted(() => {
 <template>
   <div class="logs-container">
     <div class="logs-header">
-      <h1 class="page-title">{{ t('logs.pageTitle') }}</h1>
+      <h1 class="page-title app-page-title">{{ t('bootstrap.logs.pageTitle') }}</h1>
       <div class="header-actions">
         <a-space :size="12" wrap>
           <a-radio-group
@@ -295,35 +255,41 @@ onUnmounted(() => {
             button-style="solid"
             @change="onLogFileChange"
           >
-            <a-radio-button value="app">{{ t('logs.backendLog') }}</a-radio-button>
-            <a-radio-button value="frontend">{{ t('logs.frontendLog') }}</a-radio-button>
+            <a-radio-button value="app">{{ t('bootstrap.logs.backendLog') }}</a-radio-button>
+            <a-radio-button value="frontend">{{ t('bootstrap.logs.frontendLog') }}</a-radio-button>
           </a-radio-group>
 
           <a-button :type="logMode === 'follow' ? 'primary' : 'default'" @click="toggleLogMode">
-            {{ logMode === 'follow' ? t('logs.followLatest') : t('logs.freeBrowse') }}
+            {{
+              logMode === 'follow'
+                ? t('bootstrap.logs.followLatest')
+                : t('bootstrap.logs.freeBrowse')
+            }}
           </a-button>
 
           <a-button :type="realTimeEnabled ? 'primary' : 'default'" @click="toggleRealTime">
             <template #icon>
               <SyncOutlined :spin="realTimeEnabled" />
             </template>
-            {{ realTimeEnabled ? '自动更新' : '停止更新' }}
+            {{ realTimeEnabled ? t('bootstrap.logs.autoUpdate') : t('bootstrap.logs.stopUpdate') }}
           </a-button>
 
           <a-button :loading="exportingLogs" @click="packageLogs">
             <template #icon>
               <FileZipOutlined />
             </template>
-            {{ t('logs.package') }}
+            {{ t('bootstrap.logs.package') }}
           </a-button>
         </a-space>
       </div>
     </div>
 
     <div class="logs-content">
-      <a-spin :spinning="loading" tip="加载日志中...">
+      <a-spin :spinning="loading" :tip="t('bootstrap.logs.loading')">
         <div class="editor-container" :class="{ 'log-locked': logMode === 'follow' }">
-          <p v-if="!loading && !logs" class="log-empty">{{ emptyHint }}</p>
+          <div v-if="!loading && !logs" class="log-empty">
+            <NoData :description="emptyHint" />
+          </div>
           <vue-monaco-editor
             v-else
             :value="logs"
@@ -360,12 +326,6 @@ onUnmounted(() => {
 
 .page-title {
   margin: 0;
-  font-size: 32px;
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .header-actions {

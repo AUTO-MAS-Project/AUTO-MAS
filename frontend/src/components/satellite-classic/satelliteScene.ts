@@ -1,4 +1,6 @@
 import * as THREE from 'three'
+import { watchEffect, type WatchStopHandle } from 'vue'
+import { translate as t } from '@/i18n'
 import type { SatelliteModuleStatus } from '@/composables/useSatelliteStatus'
 import type { ScriptType } from '@/types/script'
 import { createRainbowIcon, type RainbowIcon } from '../satellite/centerRainbow'
@@ -50,7 +52,7 @@ export interface SatelliteSceneModule {
 /** 指针下是什么：中心图标、第几颗卫星，或者什么都没点到 */
 export type SatellitePick = 'center' | number | null
 
-const IDLE_STATUS: SatelliteModuleStatus = { queued: false, running: false, lastFailed: false }
+const IDLE_STATUS: SatelliteModuleStatus = { scheduled: false, lastFailed: false }
 
 // ==================== 资源 ====================
 
@@ -191,6 +193,7 @@ export class SatelliteScene {
   /** 中心图标原图；炫彩版以它为底，关掉炫彩时也从它还原，不用重新加载 */
   private centerIconCanvas: HTMLCanvasElement | null = null
   private centerRainbow: RainbowIcon | null = null
+  private stopLabelWatch: WatchStopHandle | null = null
   private centerGlowMode: CenterGlowMode = 'green'
   private centerPressed = false
   private centerScaleX = 1
@@ -505,6 +508,7 @@ export class SatelliteScene {
   }
 
   dispose(): void {
+    this.stopLabelWatch?.()
     this.clearExplosions()
     disposeSceneResources(this.glowScene)
     disposeSceneResources(this.orbitScene)
@@ -533,7 +537,9 @@ export class SatelliteScene {
     renderer.setSize(Math.max(1, this.host.clientWidth), C.containerHeight)
 
     const canvas = renderer.domElement
-    canvas.setAttribute('aria-label', '脚本卫星互动区域')
+    this.stopLabelWatch = watchEffect(() =>
+      canvas.setAttribute('aria-label', t('core.home.satelliteArea'))
+    )
     canvas.style.position = 'absolute'
     canvas.style.top = '0'
     canvas.style.left = '0'
@@ -567,7 +573,7 @@ export class SatelliteScene {
       const anchor = satellite.card.position
       applyGlow(
         satellite.activityGlow,
-        getActivityGlow(satellite.status, time),
+        getActivityGlow(satellite.status),
         anchor,
         C.activityGlowZOffset
       )

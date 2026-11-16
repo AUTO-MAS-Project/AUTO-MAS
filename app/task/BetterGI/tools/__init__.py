@@ -35,10 +35,8 @@ from .backup_archive import (
     restore_mas_backup,
     restore_native_backup,
 )
-from .notify import push_notification
 
 __all__ = [
-    "push_notification",
     "archive_mas_backup",
     "archive_mas_runtime_backup",
     "archive_native_backup",

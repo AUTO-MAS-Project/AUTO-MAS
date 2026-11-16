@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type MaaFWShellInstanceApplyIn = {
     /**
-     * MFW 脚本 ID
+     * MFW 托管 ID
      */
     scriptId: string;
     /**
-     * 要覆盖任务队列的用户 ID
+     * 要覆盖任务队列的账号 ID
      */
     userId: string;
     /**

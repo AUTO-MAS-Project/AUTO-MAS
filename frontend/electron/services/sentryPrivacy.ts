@@ -45,7 +45,21 @@ const sanitizeData = (data: Record<string, unknown>) => {
 
 export const sanitizeMainSentryEvent = <T extends Event>(event: T): T => {
   delete event.user
+  const extra = event.extra
   delete event.extra
+  // 恢复诊断只放行明确的数值，detail、路径和任意嵌套对象仍整体丢弃。
+  if (event.tags?.component === 'electron-main' && event.tags.renderer_gone_reason && extra) {
+    const diagnostics: Record<string, number> = {}
+    for (const key of ['exitCode', 'crashCount', 'durationMs', 'loadErrorCode'] as const) {
+      const value = extra[key]
+      if (typeof value !== 'number' || !Number.isSafeInteger(value)) continue
+      if (key === 'exitCode' || key === 'loadErrorCode') {
+        if (value < -0x80000000 || value > 0xffffffff) continue
+      } else if (value < 0) continue
+      diagnostics[key] = value
+    }
+    if (Object.keys(diagnostics).length) event.extra = diagnostics
+  }
   delete event.server_name
 
   if (typeof event.message === 'string') event.message = maskUserDirs(event.message)

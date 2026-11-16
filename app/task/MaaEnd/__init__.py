@@ -18,6 +18,19 @@
 
 #   Contact: DLmaster_361@163.com
 
-from .manager import MaaEndManager
+from importlib import import_module
 
 __all__ = ["MaaEndManager"]
+
+
+# 路由注册只加载 HTTP 契约；执行入口仍按需导入。
+def __getattr__(name: str):
+    if name != "MaaEndManager":
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(".manager", __name__), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | {"MaaEndManager"})

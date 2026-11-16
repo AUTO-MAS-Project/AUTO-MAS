@@ -6,11 +6,17 @@ import type {
   MaaFWOptionInfo,
   MaaFWTaskInfo,
   MaaFWTaskOptionValue,
+  MaaFWTaskSchedule,
   MaaFWTaskSnapshot,
 } from '@/types/script'
 import { buildPresetAppliedSnapshot, type MaaFWPresetQueueEntry } from './maafwPresetQueue'
 import { maafwMissingTaskName } from './maafwTaskChanges'
-import { pickMaaFWTaskLabels, taskLabelsField } from './MaaFWUserEdit/maafwTaskSnapshot'
+import {
+  pickMaaFWTaskLabels,
+  pickMaaFWTaskSchedules,
+  taskLabelsField,
+  taskSchedulesField,
+} from './MaaFWUserEdit/maafwTaskSnapshot'
 
 type TaskOptionMap = Record<string, Record<string, MaaFWTaskOptionValue>>
 
@@ -44,8 +50,12 @@ export type MaaFWQueueSource = {
   passwordCount: number
   /** 来源的选项表（只含能导入的项，未去密码） */
   taskOptions: TaskOptionMap
+  /** 可导入实例的运行 / 跳过状态 */
+  taskChecked: Record<string, boolean>
   /** 来源的实例显示名（只含能导入的项） */
   taskLabels?: Record<string, string>
+  /** 来源的实例运行日（只含能导入的项） */
+  taskSchedules?: Record<string, MaaFWTaskSchedule>
 }
 
 export type MaaFWQueueSourceContext = {
@@ -146,7 +156,11 @@ export const describeMaaFWQueueSource = (
     invalidCount: chips.length - entries.length,
     passwordCount: countMaaFWPasswordValues(taskOptions, context.passwordFields),
     taskOptions,
+    taskChecked: Object.fromEntries(
+      entries.map(entry => [entry.id, snapshot.taskChecked[entry.id] !== false])
+    ),
     ...taskLabelsField(pickMaaFWTaskLabels(snapshot.taskLabels, entryIds)),
+    ...taskSchedulesField(pickMaaFWTaskSchedules(snapshot.taskSchedules, entryIds)),
   }
 }
 
@@ -167,10 +181,14 @@ export const countMaaFWQueueReplacementImports = (
 
 /**
  * 用来源的可用项替换当前队列，与套用预设同一套：当前队列里的前置任务留在最前（带着自己的选项
- * 与显示名），其余换成来源的各个实例，每个实例带来源的那套选项（密码字段的值去掉）与显示名。
+ * 与显示名），其余换成来源的各个实例，每个实例带来源的那套选项（密码字段的值去掉）、显示名与
+ * 运行日（前置任务不受运行日影响，不带）。
  */
 export const buildMaaFWQueueReplacement = (
-  source: Pick<MaaFWQueueSource, 'entries' | 'taskOptions' | 'taskLabels'>,
+  source: Pick<
+    MaaFWQueueSource,
+    'entries' | 'taskOptions' | 'taskLabels' | 'taskChecked' | 'taskSchedules'
+  >,
   current: MaaFWTaskSnapshot,
   isPretaskId: (taskId: string) => boolean,
   passwordFields: MaaFWPasswordFields
@@ -196,6 +214,16 @@ export const buildMaaFWQueueReplacement = (
     { ...sourceOptions, ...currentPretaskOptions },
     current.taskOrder,
     isPretaskId,
-    { ...sourceLabels, ...pickMaaFWTaskLabels(current.taskLabels, currentPretaskIds) }
+    { ...sourceLabels, ...pickMaaFWTaskLabels(current.taskLabels, currentPretaskIds) },
+    {
+      ...source.taskChecked,
+      ...Object.fromEntries(
+        [...currentPretaskIds].map(taskId => [taskId, current.taskChecked[taskId] !== false])
+      ),
+    },
+    pickMaaFWTaskSchedules(
+      source.taskSchedules,
+      source.entries.map(entry => entry.id).filter(taskId => !currentPretaskIds.has(taskId))
+    )
   )
 }

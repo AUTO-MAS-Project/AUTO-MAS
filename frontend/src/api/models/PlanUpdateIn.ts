@@ -2,10 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { BAAHPlanConfig } from './BAAHPlanConfig';
-import type { MaaEndPlanConfig } from './MaaEndPlanConfig';
-import type { MaaPlanConfig } from './MaaPlanConfig';
-import type { MSSPlanConfig } from './MSSPlanConfig';
+import type { PlanConfigDataInput } from './PlanConfigDataInput';
 export type PlanUpdateIn = {
     /**
      * 计划ID
@@ -14,6 +11,6 @@ export type PlanUpdateIn = {
     /**
      * 计划更新数据
      */
-    data: (MaaPlanConfig | MaaEndPlanConfig | BAAHPlanConfig | MSSPlanConfig);
+    data: PlanConfigDataInput;
 };
 

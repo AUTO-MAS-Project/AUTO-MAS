@@ -1,6 +1,7 @@
 import { computed, nextTick, onBeforeUnmount, onUnmounted, ref, type Ref } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { registerAppCloseGuard } from '@/composables/appCloseGuards'
+import type { TaskTargetKind } from '@/composables/useTaskApi'
 
 interface EditorLifecycleOptions {
   pageRef: Ref<HTMLElement | undefined>
@@ -10,7 +11,11 @@ interface EditorLifecycleOptions {
   flushImmediateEdits: () => void
   hasPendingEdits: () => boolean
   disposeEdits: () => void
-  startSession: (taskId: string, viewOnly?: boolean) => Promise<boolean>
+  startSession: (
+    taskId: string,
+    viewOnly?: boolean,
+    targetKind?: TaskTargetKind
+  ) => Promise<boolean>
   stopSession: (keepOnFailure?: boolean) => Promise<boolean>
   backup: () => Promise<void>
   onSaveError: (error: unknown) => void
@@ -60,9 +65,14 @@ export function useMAAEditorLifecycle(options: EditorLifecycleOptions) {
 
   const isCurrent = (version: number) => active && version === generation && options.canStart()
 
-  const startPreparedSession = async (taskId: string, viewOnly: boolean, version: number) => {
+  const startPreparedSession = async (
+    taskId: string,
+    viewOnly: boolean,
+    version: number,
+    targetKind: TaskTargetKind = 'unknown'
+  ) => {
     if (!isCurrent(version)) return false
-    const started = await options.startSession(taskId, viewOnly)
+    const started = await options.startSession(taskId, viewOnly, targetKind)
     // 不能撤销已发出的启动请求，迟到会话必须停止；停止请求由会话层共享。
     if (!active || version !== generation) {
       if (!(await options.stopSession(true))) options.onStopFailure()
@@ -71,14 +81,17 @@ export function useMAAEditorLifecycle(options: EditorLifecycleOptions) {
     return started
   }
 
-  const startConfiguration = (taskId: string): Promise<boolean> => {
+  const startConfiguration = (
+    taskId: string,
+    targetKind: TaskTargetKind = 'unknown'
+  ): Promise<boolean> => {
     if (!active || editorBusy.value || !options.canStart()) return Promise.resolve(false)
     preparingSession.value = true
     const version = ++generation
     operationPromise = (async () => {
       try {
         if (!(await flushPendingEdits())) return false
-        return await startPreparedSession(taskId, false, version)
+        return await startPreparedSession(taskId, false, version, targetKind)
       } finally {
         preparingSession.value = false
         operationPromise = null
@@ -89,7 +102,8 @@ export function useMAAEditorLifecycle(options: EditorLifecycleOptions) {
 
   const restoreConfiguration = (
     restore: () => Promise<boolean>,
-    viewTaskId?: string
+    viewTaskId?: string,
+    targetKind: TaskTargetKind = 'unknown'
   ): Promise<boolean> => {
     if (!active || editorBusy.value || !options.canStart()) return Promise.resolve(false)
     restoringConfig.value = true
@@ -99,7 +113,7 @@ export function useMAAEditorLifecycle(options: EditorLifecycleOptions) {
         // 必须在恢复请求前保存旧编辑；恢复以后绝不能再冲刷旧队列。
         if (!(await flushPendingEdits()) || !isCurrent(version)) return false
         if (!(await restore())) return false
-        if (viewTaskId) return await startPreparedSession(viewTaskId, true, version)
+        if (viewTaskId) return await startPreparedSession(viewTaskId, true, version, targetKind)
         return true
       } finally {
         restoringConfig.value = false

@@ -7,52 +7,46 @@
     :mask-closable="!submitting"
     :confirm-loading="submitting"
     :z-index="900"
-    :footer="null"
+    :body-style="{ height: '500px', minHeight: 0, overflowY: 'auto' }"
     class="script-create-dialog"
-    :title="t('scripts.create.title')"
+    :title="t('core.scripts.create.title')"
     @cancel="handleCancel"
   >
     <div class="create-layout">
       <section class="step-content">
         <template v-if="currentStep === 'type'">
           <StepHeading
-            :title="t('scripts.create.typeHeading')"
-            :description="t('scripts.create.typeHeadingDesc')"
+            :title="t('core.scripts.create.typeHeading')"
+            :description="t('core.scripts.create.typeHeadingDesc')"
           />
           <div class="list-toolbar single">
             <a-input
               v-model:value="typeKeyword"
               allow-clear
-              :placeholder="t('scripts.create.typeSearch')"
+              :placeholder="t('core.scripts.create.typeSearch')"
             >
               <template #prefix><SearchOutlined /></template>
             </a-input>
           </div>
-          <a-radio-group
-            v-if="filteredTypes.length"
-            v-model:value="selectedType"
-            class="type-sections"
-          >
+          <SelectableOptionList v-if="filteredTypes.length" v-model="selectedType">
             <section v-if="typeSections.general.length" class="type-section">
               <div class="type-section-heading">
-                <span class="type-section-title">{{ t('scripts.create.groupGeneral') }}</span>
+                <span class="type-section-title">{{ t('core.scripts.create.groupGeneral') }}</span>
               </div>
               <div class="type-grid">
-                <label
+                <SelectableOptionCard
                   v-for="option in typeSections.general"
                   :key="option.value"
-                  :class="[
-                    'type-row general-type-row',
-                    { selected: selectedType === option.value },
-                  ]"
+                  :value="option.value"
+                  :title="option.title"
+                  :description="option.description"
+                  :selected="selectedType === option.value"
+                  radio-position="end"
                 >
-                  <img :src="option.icon" :alt="option.title" class="type-icon" />
-                  <span class="choice-copy">
-                    <span class="choice-title">{{ option.title }}</span>
-                    <span class="choice-description">{{ option.description }}</span>
-                  </span>
-                  <a-radio :value="option.value" />
-                </label>
+                  <template #icon>
+                    <img :src="option.icon" :alt="option.title" class="selectable-option-image" />
+                  </template>
+                </SelectableOptionCard>
               </div>
             </section>
             <section
@@ -60,37 +54,37 @@
               class="type-section specialized-section"
             >
               <div class="type-section-heading">
-                <span class="type-section-title">{{ t('scripts.create.groupSpecialized') }}</span>
+                <span class="type-section-title">{{
+                  t('core.scripts.create.groupSpecialized')
+                }}</span>
               </div>
               <div class="type-grid">
-                <label
+                <SelectableOptionCard
                   v-for="option in typeSections.specialized"
                   :key="option.value"
-                  :class="['type-row', { selected: selectedType === option.value }]"
+                  :value="option.value"
+                  :title="option.title"
+                  :description="option.description"
+                  :selected="selectedType === option.value"
+                  radio-position="end"
                 >
-                  <img :src="option.icon" :alt="option.title" class="type-icon" />
-                  <span class="choice-copy">
-                    <span class="choice-title">{{ option.title }}</span>
-                    <span class="choice-description">{{ option.description }}</span>
-                  </span>
-                  <a-radio :value="option.value" />
-                </label>
+                  <template #icon>
+                    <img :src="option.icon" :alt="option.title" class="selectable-option-image" />
+                  </template>
+                </SelectableOptionCard>
               </div>
             </section>
-          </a-radio-group>
-          <a-empty v-else :description="t('scripts.create.noTypeMatch')">
-            <a-button @click="clearTypeFilters">{{ t('scripts.clearSearch') }}</a-button>
-          </a-empty>
+          </SelectableOptionList>
+          <NoData v-else :description="t('core.scripts.create.noTypeMatch')">
+            <a-button @click="clearTypeFilters">{{ t('core.scripts.clearSearch') }}</a-button>
+          </NoData>
         </template>
 
         <!-- MFW 家族第二步：项目从哪来（新建一个别的项目 / 复用已导入的同类型项目）。
              选项列表是可由特调替换的分节 create.source，选中状态留在这里；
              之后是特调的插入点 create.afterSourceStep -->
         <template v-else-if="currentStep === 'config' && isMfwFamily(selectedType)">
-          <StepHeading
-            :title="t('scripts.create.mfwSourceHeading')"
-            :description="t('scripts.create.mfwSourceHeadingDesc')"
-          />
+          <StepHeading :title="t('core.scripts.create.mfwSourceHeading')" />
           <component
             :is="createSections.source"
             v-model:value="selectedMfwChoice"
@@ -111,46 +105,50 @@
         <template v-else-if="currentStep === 'config'">
           <template v-if="configView === 'choice'">
             <StepHeading
-              :title="t('scripts.create.sourceHeading')"
-              :description="t('scripts.create.sourceHeadingDesc')"
+              :title="t('core.scripts.create.sourceHeading')"
+              :description="t('core.scripts.create.sourceHeadingDesc')"
             />
-            <a-radio-group v-model:value="selectedConfigMode" class="choice-list">
-              <label :class="['choice-row', { selected: selectedConfigMode === 'template' }]">
-                <a-radio value="template" />
-                <span class="choice-icon"><DatabaseOutlined /></span>
-                <span class="choice-copy">
-                  <span class="choice-title">{{ t('scripts.create.fromTemplate') }}</span>
-                  <span class="choice-description">{{ t('scripts.create.fromTemplateDesc') }}</span>
-                </span>
-              </label>
-              <label :class="['choice-row', { selected: selectedConfigMode === 'custom' }]">
-                <a-radio value="custom" />
-                <span class="choice-icon"><SettingOutlined /></span>
-                <span class="choice-copy">
-                  <span class="choice-title">{{ t('scripts.create.custom') }}</span>
-                  <span class="choice-description">{{ t('scripts.create.customDesc') }}</span>
-                </span>
-              </label>
-            </a-radio-group>
+            <SelectableOptionList v-model="selectedConfigMode">
+              <SelectableOptionCard
+                value="template"
+                :title="t('core.scripts.create.fromTemplate')"
+                :description="t('core.scripts.create.fromTemplateDesc')"
+                :selected="selectedConfigMode === 'template'"
+              >
+                <template #icon>
+                  <span class="selectable-option-icon"><DatabaseOutlined /></span>
+                </template>
+              </SelectableOptionCard>
+              <SelectableOptionCard
+                value="custom"
+                :title="t('core.scripts.create.custom')"
+                :description="t('core.scripts.create.customDesc')"
+                :selected="selectedConfigMode === 'custom'"
+              >
+                <template #icon>
+                  <span class="selectable-option-icon"><SettingOutlined /></span>
+                </template>
+              </SelectableOptionCard>
+            </SelectableOptionList>
           </template>
 
           <template v-else>
             <StepHeading
-              :title="t('scripts.create.templateHeading')"
-              :description="t('scripts.create.templateHeadingDesc')"
+              :title="t('core.scripts.create.templateHeading')"
+              :description="t('core.scripts.create.templateHeadingDesc')"
             />
             <div class="list-toolbar single">
               <a-input
                 v-model:value="templateKeyword"
                 allow-clear
-                :placeholder="t('scripts.create.templateSearch')"
+                :placeholder="t('core.scripts.create.templateSearch')"
                 @update:value="scheduleTemplateSearch"
                 @press-enter="requestTemplates(1)"
               >
                 <template #prefix><SearchOutlined /></template>
               </a-input>
               <a-button :loading="templateLoading" @click="requestTemplates(templatePage)">{{
-                t('scripts.create.reload')
+                t('core.scripts.create.reload')
               }}</a-button>
             </div>
             <a-alert
@@ -162,41 +160,44 @@
             >
               <template #action>
                 <a-button size="small" @click="requestTemplates(templatePage)">{{
-                  t('scripts.create.retry')
+                  t('core.scripts.create.retry')
                 }}</a-button>
               </template>
             </a-alert>
             <div v-if="templateLoading" class="template-loading-state">
-              <a-spin size="large" :tip="t('scripts.create.templateLoading')" />
+              <a-spin size="large" :tip="t('core.scripts.create.templateLoading')" />
             </div>
             <template v-else-if="templates.length">
-              <a-radio-group v-model:value="selectedTemplateKey" class="entity-list template-list">
-                <label
+              <SelectableOptionList v-model="selectedTemplateKey">
+                <SelectableOptionCard
                   v-for="template in templates"
                   :key="template.configKey"
-                  :class="[
-                    'entity-row template-row',
-                    { selected: selectedTemplateKey === template.configKey },
-                  ]"
+                  :value="template.configKey"
+                  :title="template.displayName"
+                  :selected="selectedTemplateKey === template.configKey"
+                  align="start"
+                  radio-position="end"
                 >
-                  <span class="choice-copy">
-                    <span class="choice-title">{{ template.displayName }}</span>
+                  <template #meta>
                     <span class="template-meta">
                       <span
                         ><UserOutlined />
-                        {{ template.ownerUsername || t('scripts.template.unknownAuthor') }}</span
+                        {{
+                          template.ownerUsername || t('core.scripts.template.unknownAuthor')
+                        }}</span
                       >
                       <span
                         ><ClockCircleOutlined /> {{ formatPublishedAt(template.publishedAt) }}</span
                       >
                     </span>
+                  </template>
+                  <template #description>
                     <span class="template-description">{{
-                      template.description || t('scripts.noDescription')
+                      template.description || t('core.scripts.noDescription')
                     }}</span>
-                  </span>
-                  <a-radio :value="template.configKey" />
-                </label>
-              </a-radio-group>
+                  </template>
+                </SelectableOptionCard>
+              </SelectableOptionList>
               <div v-if="templateTotal > templatePageSize" class="template-pagination">
                 <a-pagination
                   size="small"
@@ -209,44 +210,44 @@
                 />
               </div>
             </template>
-            <a-empty
+            <NoData
               v-else
               :description="
                 templateKeyword
-                  ? t('scripts.create.noTemplateMatch')
-                  : t('scripts.create.noTemplates')
+                  ? t('core.scripts.create.noTemplateMatch')
+                  : t('core.scripts.create.noTemplates')
               "
             >
               <a-button v-if="templateKeyword" @click="clearTemplateKeyword">{{
-                t('scripts.clearSearch')
+                t('core.scripts.clearSearch')
               }}</a-button>
               <a-button v-else @click="chooseCustomConfig">{{
-                t('scripts.create.switchToCustom')
+                t('core.scripts.create.switchToCustom')
               }}</a-button>
-            </a-empty>
+            </NoData>
           </template>
         </template>
 
         <template v-else>
           <StepHeading
-            :title="t('scripts.create.confirmHeading')"
-            :description="t('scripts.create.confirmHeadingDesc')"
+            :title="t('core.scripts.create.confirmHeading')"
+            :description="t('core.scripts.create.confirmHeadingDesc')"
           />
           <a-descriptions bordered :column="1" class="confirm-summary">
-            <a-descriptions-item :label="t('scripts.create.labelMode')">
-              {{ t('scripts.create.modeNew') }}
+            <a-descriptions-item :label="t('core.scripts.create.labelMode')">
+              {{ t('core.scripts.create.modeNew') }}
             </a-descriptions-item>
-            <a-descriptions-item :label="t('scripts.create.labelType')">
+            <a-descriptions-item :label="t('core.scripts.create.labelType')">
               {{ t(getTypeOption(selectedType).titleKey) }}
             </a-descriptions-item>
             <a-descriptions-item
               v-if="selectedType === 'General'"
-              :label="t('scripts.create.labelSource')"
+              :label="t('core.scripts.create.labelSource')"
             >
               {{
                 selectedConfigMode === 'custom'
-                  ? t('scripts.create.custom')
-                  : t('scripts.create.sourceTemplate', { name: selectedTemplate?.displayName })
+                  ? t('core.scripts.create.custom')
+                  : t('core.scripts.create.sourceTemplate', { name: selectedTemplate?.displayName })
               }}
             </a-descriptions-item>
           </a-descriptions>
@@ -254,18 +255,27 @@
       </section>
     </div>
 
-    <div class="dialog-footer">
-      <a-button :disabled="!canGoBack || submitting" @click="handleBack">
-        <template #icon><ArrowLeftOutlined /></template>
-        {{ t('scripts.create.back') }}
-      </a-button>
-      <a-space>
-        <a-button :disabled="submitting" @click="handleCancel">{{ t('common.cancel') }}</a-button>
-        <a-button type="primary" :loading="submitting" :disabled="nextDisabled" @click="handleNext">
-          {{ primaryButtonText }}
+    <template #footer>
+      <div class="dialog-footer">
+        <a-button :disabled="!canGoBack || submitting" @click="handleBack">
+          <template #icon><ArrowLeftOutlined /></template>
+          {{ t('core.scripts.create.back') }}
         </a-button>
-      </a-space>
-    </div>
+        <a-space>
+          <a-button :disabled="submitting" @click="handleCancel">{{
+            t('core.common.cancel')
+          }}</a-button>
+          <a-button
+            type="primary"
+            :loading="submitting"
+            :disabled="nextDisabled"
+            @click="handleNext"
+          >
+            {{ primaryButtonText }}
+          </a-button>
+        </a-space>
+      </div>
+    </template>
   </a-modal>
 </template>
 
@@ -292,6 +302,8 @@ import {
 } from '@/composables/useMaaFWFlavor'
 import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 import { openExternalUrl } from '@/utils/openExternal'
+import SelectableOptionCard from '@/components/SelectableOptionCard.vue'
+import SelectableOptionList from '@/components/SelectableOptionList.vue'
 import MaaFWSourceStep from './MaaFWSourceStep.vue'
 import {
   buildCreateRequest,
@@ -302,18 +314,18 @@ import {
   splitScriptTypeOptions,
   type ConfigMode,
   type CreateStepKey,
-  buildMfwReuseChoices,
   type ScriptCreateRequest,
   type TemplateRequest,
 } from './scriptCreateFlow'
+import { useMfwCreateSource } from './useMfwCreateSource'
 
 const { t } = useI18n()
 
 const StepHeading = defineComponent({
-  props: { title: { type: String, required: true }, description: { type: String, required: true } },
+  props: { title: { type: String, required: true }, description: { type: String, default: '' } },
   setup(props) {
-    return () =>
-      h('div', { class: 'step-heading' }, [h('h3', props.title), h('p', props.description)])
+    const text = () => (props.description ? [h('p', props.description)] : [])
+    return () => h('div', { class: 'step-heading' }, [h('h3', props.title), ...text()])
   },
 })
 
@@ -348,8 +360,15 @@ const selectedType = ref<ScriptType>('MAA')
 const selectedConfigMode = ref<ConfigMode>('template')
 const selectedTemplateKey = ref<string | null>(null)
 const configView = ref<'choice' | 'templates'>('choice')
-/** 'new' = 新建一个别的项目（进引导页选目录）；否则是要复用的项目所属脚本的 id */
-const selectedMfwChoice = ref<string>('new')
+const { selectedMfwChoice, mfwReuseChoices, selectedMfwReuse, skipMfwSourceStep, resetMfwSource } =
+  useMfwCreateSource({
+    selectedType,
+    isOpen: () => props.open,
+    sources: () => props.mfwSources,
+    sourcesLoading: () => props.mfwSourcesLoading,
+    sourcesError: () => props.mfwSourcesError,
+    requestSources: () => emit('request-mfw-sources'),
+  })
 const typeKeyword = ref('')
 const templateKeyword = ref('')
 let searchTimer: ReturnType<typeof setTimeout> | null = null
@@ -389,21 +408,6 @@ const createSlotContext = computed<MaaFWCreateSlotContext>(() => ({
   type: createFlavor.value.type,
   selection: selectedMfwChoice.value,
 }))
-// 可复用的项目只列与入口同类型的，同一项目多个脚本并成一行
-const mfwReuseChoices = computed(() => buildMfwReuseChoices(props.mfwSources, selectedType.value))
-// 选中的源以当前列表为准：返回再进来时列表会重新拉，源可能已在运行（busy）或已被删，
-// 残留的 id 不能直接拿去提交——那会先建出脚本再被后端拒绝，留下一个没项目的空脚本。
-const selectedMfwReuse = computed(
-  () =>
-    mfwReuseChoices.value.find(
-      choice => choice.scriptId === selectedMfwChoice.value && !choice.busy
-    ) ?? null
-)
-watch(mfwReuseChoices, () => {
-  if (selectedMfwChoice.value !== 'new' && !selectedMfwReuse.value) {
-    selectedMfwChoice.value = 'new'
-  }
-})
 const nextDisabled = computed(() => {
   if (props.submitting) return true
   if (isMfwStep.value) {
@@ -416,22 +420,22 @@ const nextDisabled = computed(() => {
 })
 const primaryButtonText = computed(() => {
   if (currentStep.value === 'type') {
-    return steps.value.length > 1
-      ? t('scripts.create.next')
-      : t('scripts.create.createAndConfigure')
+    return steps.value.length > 1 && !skipMfwSourceStep.value
+      ? t('core.scripts.create.next')
+      : t('core.scripts.create.createAndConfigure')
   }
   if (isMfwStep.value) {
     return selectedMfwChoice.value !== 'new'
-      ? t('scripts.create.createAndReuse')
-      : t('scripts.create.createAndConfigure')
+      ? t('core.scripts.create.createAndReuse')
+      : t('core.scripts.create.createAndConfigure')
   }
   if (currentStep.value === 'config' && selectedConfigMode.value === 'custom') {
-    return t('scripts.create.createAndConfigure')
+    return t('core.scripts.create.createAndConfigure')
   }
   if (currentStep.value === 'config' && configView.value === 'templates') {
-    return t('scripts.create.createFromTemplate')
+    return t('core.scripts.create.createFromTemplate')
   }
-  return t('scripts.create.next')
+  return t('core.scripts.create.next')
 })
 
 watch(
@@ -448,7 +452,7 @@ const resetDialog = () => {
   selectedConfigMode.value = 'template'
   selectedTemplateKey.value = null
   configView.value = 'choice'
-  selectedMfwChoice.value = 'new'
+  resetMfwSource()
   typeKeyword.value = ''
   templateKeyword.value = ''
 }
@@ -478,7 +482,7 @@ const clearTemplateKeyword = () => {
 
 // 发布时间来自配置中心，按本机时区展示
 const formatPublishedAt = (publishedAt: string | undefined) =>
-  publishedAt ? formatBackendDateTime(publishedAt) : t('scripts.template.unknownTime')
+  publishedAt ? formatBackendDateTime(publishedAt) : t('core.scripts.template.unknownTime')
 
 onBeforeUnmount(cancelScheduledSearch)
 
@@ -497,7 +501,7 @@ const handleBack = () => {
 
 const handleNext = () => {
   if (currentStep.value === 'type') {
-    if (steps.value.length > 1) {
+    if (steps.value.length > 1 && !skipMfwSourceStep.value) {
       currentStep.value = 'config'
       if (isMfwFamily(selectedType.value)) {
         emit('request-mfw-sources')
@@ -556,29 +560,15 @@ const chooseCustomConfig = () => {
 }
 
 :global(.script-create-dialog .ant-modal-content) {
+  display: flex;
+  flex-direction: column;
   max-height: calc(100vh - 128px);
   overflow: hidden;
 }
 
-.create-layout {
-  height: min(500px, calc(100vh - 192px));
-  min-height: 0;
-  margin: -8px -24px 0;
-  overflow: hidden;
-}
-
-.choice-copy {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-}
-
 .step-content {
-  height: 100%;
   min-width: 0;
-  padding: 24px 28px;
-  overflow-y: auto;
+  padding: 16px 4px;
   background: var(--ant-color-bg-elevated);
 }
 
@@ -591,74 +581,6 @@ const chooseCustomConfig = () => {
 :deep(.step-heading p) {
   margin: 6px 0 20px;
   color: var(--ant-color-text-secondary);
-}
-
-.choice-list,
-.entity-list {
-  display: flex;
-  width: 100%;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.choice-row,
-.entity-row,
-.type-row {
-  display: flex;
-  min-width: 0;
-  gap: 12px;
-  align-items: center;
-  padding: 14px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  color: var(--ant-color-text);
-  background: var(--ant-color-bg-container);
-  cursor: pointer;
-}
-
-.choice-row:hover,
-.entity-row:hover,
-.type-row:hover,
-.choice-row.selected,
-.entity-row.selected,
-.type-row.selected {
-  border-color: var(--ant-color-primary);
-}
-
-.choice-row.selected,
-.entity-row.selected,
-.type-row.selected {
-  background: var(--ant-color-primary-bg);
-}
-
-.entity-row.disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.choice-icon {
-  display: inline-flex;
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-  font-size: 19px;
-}
-
-.choice-title {
-  color: var(--ant-color-text);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.choice-description {
-  margin-top: 3px;
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
 }
 
 .list-toolbar {
@@ -710,32 +632,11 @@ const chooseCustomConfig = () => {
   border-top: 1px solid var(--ant-color-border-secondary);
 }
 
-.general-type-row {
-  background: var(--ant-color-bg-container);
-}
-
-.type-icon {
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
-  border-radius: 6px;
-  object-fit: contain;
-}
-
-.entity-list,
-.template-list {
-  width: 100%;
-}
-
 .ellipsis {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.template-row {
-  align-items: flex-start;
 }
 
 .template-meta {
@@ -785,9 +686,6 @@ const chooseCustomConfig = () => {
 .dialog-footer {
   display: flex;
   justify-content: space-between;
-  margin: 0 -24px -20px;
-  padding: 14px 24px;
-  border-top: 1px solid var(--ant-color-border-secondary);
 }
 
 @media (max-width: 760px) {

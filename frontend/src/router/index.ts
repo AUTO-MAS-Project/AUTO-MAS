@@ -1,9 +1,13 @@
+import { isDevelopmentEnvironment as isDev, managesBackendProcess } from '@/utils/environment'
 import { createRouter, createWebHashHistory, type LocationQueryRaw } from 'vue-router'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
 import { MAAFW_FLAVORS } from '@/composables/useMaaFWFlavor'
 import { buildMaaFWRoutes } from './maafwFlavorRoutes'
+import { buildScriptEditorRoutes, MAA_CULTIVATE_ROUTE } from './scriptEditorRoutes'
+import { registerRouterAnalytics } from './analytics'
+import { measureStartup } from '@/utils/startupTiming'
 const logger = window.electronAPI.getLogger('路由管理')
 
 // MaaFW 与各特调的路由（每个类型：脚本编辑 / 引导 / 加用户 / 编辑用户）按特调注册表生成；
@@ -20,30 +24,37 @@ let needInitLanding = true
 
 // 调试页仅在开发环境注册。import.meta.env.DEV 是编译期常量，
 // 生产构建时整个数组会被判定为死代码，这几个页面不会进入产物。
-const devRoutes = import.meta.env.DEV
-  ? [
-      {
-        path: '/TestRouter',
-        name: 'TestRouter',
-        component: () => import('../views/TestRouter.vue'),
-        meta: { title: '测试路由' },
-      },
-      {
-        path: '/OCRdev',
-        name: 'OCRdev',
-        component: () => import('../views/OCRdev.vue'),
-        meta: { title: 'OCR测试' },
-      },
-      {
-        path: '/OverlayMaskDev',
-        name: 'OverlayMaskDev',
-        component: () => import('../views/OverlayMaskDev.vue'),
-        meta: { title: '遮罩彩蛋测试' },
-      },
-    ]
-  : []
+const devRoutes =
+  import.meta.env.DEV && isDev
+    ? [
+        {
+          path: '/TestRouter',
+          name: 'TestRouter',
+          component: () => import('../views/TestRouter.vue'),
+          meta: { title: '测试路由' },
+        },
+        {
+          path: '/OCRdev',
+          name: 'OCRdev',
+          component: () => import('../views/OCRdev.vue'),
+          meta: { title: 'OCR测试' },
+        },
+        {
+          path: '/OverlayMaskDev',
+          name: 'OverlayMaskDev',
+          component: () => import('../views/OverlayMaskDev.vue'),
+          meta: { title: '遮罩彩蛋测试' },
+        },
+      ]
+    : []
 
 const routes = [
+  {
+    path: '/tools',
+    name: 'Tools',
+    component: () => import('@/views/tools/index.vue'),
+    meta: { title: '工具' },
+  },
   {
     path: '/',
     redirect: () => '/initialization',
@@ -57,7 +68,7 @@ const routes = [
   {
     path: '/home',
     name: 'Home',
-    component: () => import('../views/Home.vue'),
+    component: () => measureStartup('首页模块加载', () => import('../views/Home.vue')),
     meta: { title: '主页' },
   },
   {
@@ -66,208 +77,17 @@ const routes = [
     component: () => import('../views/Scripts.vue'),
     meta: { title: '脚本管理' },
   },
-  {
-    path: '/scripts/:id/edit/maa',
-    name: 'MAAScriptEdit',
-    component: () => import('../views/EditView/Script/MAAScriptEdit.vue'),
-    meta: { title: '编辑MAA脚本' },
-  },
-  {
-    path: '/scripts/:id/edit/src',
-    name: 'SRCScriptEdit',
-    component: () => import('../views/EditView/Script/SRCScriptEdit.vue'),
-    meta: { title: '编辑SRC脚本' },
-  },
-  {
-    path: '/scripts/:id/edit/maaend',
-    name: 'MaaEndScriptEdit',
-    component: () => import('../views/EditView/Script/MaaEndScriptEdit.vue'),
-    meta: { title: '编辑MaaEnd脚本' },
-  },
-  // MaaFW 家族的脚本页：编辑形态与新建后的分步引导（按注册表生成）
+  ...buildScriptEditorRoutes(),
   ...maafwRoutes.script,
   ...maafwRoutes.setup,
-  {
-    path: '/scripts/:id/edit/hsr',
-    name: 'HSRScriptEdit',
-    component: () => import('../views/EditView/Script/HSRScriptEdit.vue'),
-    meta: { title: '编辑HSR脚本' },
-  },
-  {
-    path: '/scripts/:id/edit/general',
-    name: 'GeneralScriptEdit',
-    component: () => import('../views/EditView/Script/GeneralScriptEdit.vue'),
-    meta: { title: '编辑通用脚本' },
-  },
-  {
-    path: '/scripts/:id/edit/baah',
-    name: 'BAAHScriptEdit',
-    component: () => import('../views/EditView/Script/BAAHScriptEdit.vue'),
-    meta: { title: '编辑BAAH脚本' },
-  },
-  {
-    path: '/scripts/:id/edit/okww',
-    name: 'OkwwScriptEdit',
-    component: () => import('../views/EditView/Script/OkwwScriptEdit.vue'),
-    meta: { title: '编辑ok-ww脚本' },
-  },
-  {
-    path: '/scripts/:id/edit/oknte',
-    name: 'OkNteScriptEdit',
-    component: () => import('../views/EditView/Script/OkNteScriptEdit.vue'),
-    meta: { title: '编辑ok-nte脚本' },
-  },
-  {
-    path: '/scripts/:id/edit/bettergi',
-    name: 'BetterGIScriptEdit',
-    component: () => import('../views/EditView/Script/BetterGIScriptEdit.vue'),
-    meta: { title: '编辑BetterGI脚本' },
-  },
-  {
-    path: '/scripts/:id/edit/zzzod',
-    name: 'ZzzOdScriptEdit',
-    component: () => import('../views/EditView/Script/ZzzOdScriptEdit.vue'),
-    meta: { title: '编辑ZZZ-OD脚本' },
-  },
-  {
-    path: '/scripts/:id/edit/whimbox',
-    name: 'WhimboxScriptEdit',
-    component: () => import('../views/EditView/Script/WhimboxScriptEdit.vue'),
-    meta: { title: '编辑奇想盒脚本' },
-  },
-  {
-    path: '/scripts/:scriptId/users/add/zzzod',
-    name: 'ZzzOdUserAdd',
-    component: () => import('../views/EditView/User/ZzzOdUserEdit.vue'),
-    meta: { title: '添加ZZZ-OD用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/:userId/edit/zzzod',
-    name: 'ZzzOdUserEdit',
-    component: () => import('../views/EditView/User/ZzzOdUserEdit.vue'),
-    meta: { title: '编辑ZZZ-OD用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/add/maa',
-    name: 'MAAUserAdd',
-    component: () => import('../views/EditView/User/MAAUserEdit.vue'),
-    meta: { title: '添加MAA用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/:userId/edit/maa',
-    name: 'MAAUserEdit',
-    component: () => import('../views/EditView/User/MAAUserEdit.vue'),
-    meta: { title: '编辑MAA用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/add/src',
-    name: 'SRCUserAdd',
-    component: () => import('../views/EditView/User/SRCUserEdit.vue'),
-    meta: { title: '添加SRC用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/add/maaend',
-    name: 'MaaEndUserAdd',
-    component: () => import('../views/EditView/User/MaaEndUserEdit.vue'),
-    meta: { title: '添加MaaEnd用户' },
-  },
   ...maafwRoutes.userAdd,
-  {
-    path: '/scripts/:scriptId/users/add/hsr',
-    name: 'HSRUserAdd',
-    component: () => import('../views/EditView/User/HSRUserEdit.vue'),
-    meta: { title: '添加HSR用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/:userId/edit/src',
-    name: 'SRCUserEdit',
-    component: () => import('../views/EditView/User/SRCUserEdit.vue'),
-    meta: { title: '编辑SRC用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/:userId/edit/maaend',
-    name: 'MaaEndUserEdit',
-    component: () => import('../views/EditView/User/MaaEndUserEdit.vue'),
-    meta: { title: '编辑MaaEnd用户' },
-  },
   ...maafwRoutes.userEdit,
+  MAA_CULTIVATE_ROUTE,
   {
-    path: '/scripts/:scriptId/users/:userId/edit/hsr',
-    name: 'HSRUserEdit',
-    component: () => import('../views/EditView/User/HSRUserEdit.vue'),
-    meta: { title: '编辑HSR用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/add/general',
-    name: 'GeneralUserAdd',
-    component: () => import('../views/EditView/User/GeneralUserEdit.vue'),
-    meta: { title: '添加通用用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/:userId/edit/general',
-    name: 'GeneralUserEdit',
-    component: () => import('../views/EditView/User/GeneralUserEdit.vue'),
-    meta: { title: '编辑通用用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/add/baah',
-    name: 'BAAHUserAdd',
-    component: () => import('../views/EditView/User/BAAHUserEdit.vue'),
-    meta: { title: '添加BAAH用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/:userId/edit/baah',
-    name: 'BAAHUserEdit',
-    component: () => import('../views/EditView/User/BAAHUserEdit.vue'),
-    meta: { title: '编辑BAAH用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/add/okww',
-    name: 'OkwwUserAdd',
-    component: () => import('../views/EditView/User/OkwwUserEdit.vue'),
-    meta: { title: '添加ok-ww用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/:userId/edit/okww',
-    name: 'OkwwUserEdit',
-    component: () => import('../views/EditView/User/OkwwUserEdit.vue'),
-    meta: { title: '编辑ok-ww用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/add/oknte',
-    name: 'OkNteUserAdd',
-    component: () => import('../views/EditView/User/OkNteUserEdit.vue'),
-    meta: { title: '添加ok-nte用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/:userId/edit/oknte',
-    name: 'OkNteUserEdit',
-    component: () => import('../views/EditView/User/OkNteUserEdit.vue'),
-    meta: { title: '编辑ok-nte用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/add/bettergi',
-    name: 'BetterGIUserAdd',
-    component: () => import('../views/EditView/User/BetterGIUserEdit.vue'),
-    meta: { title: '添加BetterGI用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/:userId/edit/bettergi',
-    name: 'BetterGIUserEdit',
-    component: () => import('../views/EditView/User/BetterGIUserEdit.vue'),
-    meta: { title: '编辑BetterGI用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/add/whimbox',
-    name: 'WhimboxUserAdd',
-    component: () => import('../views/EditView/User/WhimboxUserEdit.vue'),
-    meta: { title: '添加奇想盒用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/:userId/edit/whimbox',
-    name: 'WhimboxUserEdit',
-    component: () => import('../views/EditView/User/WhimboxUserEdit.vue'),
-    meta: { title: '编辑奇想盒用户' },
+    path: '/plans/:planId/oknte/:day',
+    name: 'OkNtePlanDetail',
+    component: () => import('@/views/plan/OkNtePlanDetail.vue'),
+    meta: { title: 'core.plan.oknte.detail' },
   },
   {
     path: '/plans',
@@ -304,6 +124,12 @@ const routes = [
     meta: { title: '历史记录' },
   },
   {
+    path: '/taskboard',
+    name: 'Taskboard',
+    component: () => import('@/views/taskboard/index.vue'),
+    meta: { title: '任务台' },
+  },
+  {
     path: '/gamesign',
     name: 'GameSign',
     component: () => import('../views/gamesign/index.vue'),
@@ -323,12 +149,6 @@ const routes = [
       query: { tab: 'activity' },
     },
     meta: { title: '游戏社区' },
-  },
-  {
-    path: '/tools',
-    name: 'Tools',
-    component: () => import('../views/tools/index.vue'),
-    meta: { title: '工具' },
   },
   {
     path: '/theme-store',
@@ -352,7 +172,7 @@ const routes = [
         path: 'tokens',
         name: 'MysteryTokens',
         component: () => import('../views/mystery/tokens/index.vue'),
-        meta: { title: 'Token 获取', mysteryTitleKey: 'mystery.tokens.title' },
+        meta: { title: 'Token 获取', mysteryTitleKey: 'core.mystery.tokens.title' },
       },
     ],
   },
@@ -389,7 +209,7 @@ router.beforeEach(async (to, from, next) => {
 
   if (to.path === '/initialization') {
     if (!isInitialized.value && !isBootstrapping.value) {
-      const decision = await getInitializationDecision()
+      const decision = await measureStartup('初始化决策', getInitializationDecision)
       if (decision.mode === 'skip-home') {
         needInitLanding = false
         logger.info(`命中跳过初始化条件，直接进入主页: ${JSON.stringify(decision)}`)
@@ -405,9 +225,8 @@ router.beforeEach(async (to, from, next) => {
     return
   }
 
-  const isDev = import.meta.env.DEV
-  if (isDev) {
-    // 开发模式免初始化门禁，但直达内页（如刷新后落在 /scripts）时仍需
+  if (!managesBackendProcess()) {
+    // 只连接入口免安装门禁，但直达内页（如刷新后落在 /scripts）时仍需
     // 建立主 WebSocket 连接并标记初始化，否则 isAppReady 恒为 false 导致整窗空白。
     // 旧版由 useWebSocket 单体的全局自动连接掩盖了这一缺口。
     if (!isInitialized.value && !isBootstrapping.value) {
@@ -416,13 +235,16 @@ router.beforeEach(async (to, from, next) => {
       void (async () => {
         try {
           const { connectWithRetry } = await import('@/composables/useAppLifecycle')
-          await connectWithRetry()
+          await measureStartup('主 WebSocket 连接', connectWithRetry)
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error)
           logger.error(`开发模式直达内页启动失败: ${errorMsg}`)
         } finally {
-          // 开发模式容错：连接失败也进入应用，由生命周期协调器继续重连
-          markAsInitialized()
+          // 开发模式仍须准备界面词表；失败时由本地资源恢复界面承接。
+          const { useBackendI18nStore } = await import('@/stores/backendI18n')
+          if (await measureStartup('业务词表加载', () => useBackendI18nStore().ensure())) {
+            markAsInitialized()
+          }
           finishBootstrap()
         }
       })()
@@ -466,5 +288,7 @@ export function navigateTo(
   if (replace) return router.replace({ path, query })
   return router.push({ path, query })
 }
+
+registerRouterAnalytics(router)
 
 export default router

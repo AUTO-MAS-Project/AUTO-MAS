@@ -25,9 +25,21 @@ import ctypes
 import logging
 import os
 import sys
+import tempfile
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+
+def configure_temporary_directory(work_path: Path) -> None:
+    """将当前进程及子进程的默认临时目录统一到应用工作目录。"""
+    temp_path = (work_path / "temp").resolve()
+    temp_path.mkdir(parents=True, exist_ok=True)
+    tempfile.tempdir = str(temp_path)
+    for name in ("TEMP", "TMP", "TMPDIR"):
+        os.environ[name] = str(temp_path)
+
 
 current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
@@ -35,16 +47,27 @@ if str(current_dir) not in sys.path:
 if __name__ == "__main__" and os.getenv("AUTO_MAS_SUPERVISED") != "1":
     # 受监督时由监督器决定工作目录（app-root），源码在 repo/ 子目录，不能 chdir 进去；
     # 判据与 app.utils.is_supervised() 相同，此处不能先导入 app.utils（见下方
-    # app.utils.logger 会在导入时以 Path.cwd() 建 debug/ 目录，导入必须留在 chdir 之后）
+    # app.utils.common.log.logger 会在导入时以 Path.cwd() 建 debug/ 目录，导入必须留在 chdir 之后）
     os.chdir(current_dir)
 
-from app.utils import (  # noqa: E402
-    get_logger,
-    is_supervised,
-    resource_path,
-    sanitize_log_message,
+from app.utils.common.startup_timing import (  # noqa: E402
+    startup_mark,
+    startup_stage,
 )
-from app.utils.platform import IS_WINDOWS, is_admin  # noqa: E402
+
+startup_mark("后端/基础日志导入")
+with startup_stage("后端/基础工具导入"):
+    from app.utils import (
+        IS_WINDOWS,
+        get_logger,
+        is_admin,
+        is_supervised,
+        sanitize_log_message,
+    )
+    from app.utils import environment as _utils_environment
+
+is_development_environment = _utils_environment.is_development_environment
+get_application_environment = _utils_environment.get_application_environment
 
 logger = get_logger("主程序")
 
@@ -91,16 +114,26 @@ BACKGROUND_WARNINGS_MAX = 20
 
 class InterceptHandler(logging.Handler):
     def emit(self, record):
+        message = record.getMessage()
         # 获取对应 loguru 的 level
         try:
             level = logger.level(record.levelname).name
         except ValueError:
             level = record.levelno
+        # 过滤 httpcore 正常阶段流水，失败事件提为 WARNING，保留到 app.log
+        if record.levelno == logging.DEBUG and (
+            record.name == "httpcore" or record.name.startswith("httpcore.")
+        ):
+            event = message.partition(" ")[0]
+            if event.endswith((".started", ".complete")):
+                return
+            if event.endswith(".failed"):
+                level = "WARNING"
         # 访问日志降到 DEBUG: 不进 app.log (INFO), 开发时 stderr (DEBUG) 仍可见
         if record.name == "uvicorn.access":
             level = "DEBUG"
         # 过滤敏感信息并转发日志
-        sanitized_message = sanitize_log_message(record.getMessage())
+        sanitized_message = sanitize_log_message(message)
         logger.opt(depth=6, exception=record.exc_info).log(level, sanitized_message)
 
 
@@ -131,20 +164,6 @@ def restart_as_admin():
                 None, "runas", executable, os.path.realpath(sys.argv[0]), None, 1
             )
             sys.exit(result)
-
-
-def is_development_environment() -> bool:
-    """识别开发环境：前端传入的环境变量，或仓库根目录的 .env 标记文件。
-
-    .env 不纳入版本库，模板见 .env.example；更新器也不会把它复制到
-    用户安装目录，因此用户直接启动后端时仍按生产环境上报。
-    """
-
-    raw = str(os.getenv("AUTO_MAS_ENV", "")).strip().lower()
-    if raw in {"dev", "development"}:
-        return True
-
-    return (current_dir / ".env").is_file()
 
 
 def is_hosted_launch() -> bool:
@@ -184,7 +203,7 @@ def resolve_http_port(development_environment: bool) -> int:
     受 AUTO-MAS-Runtime 监督时只认监督器注入的 AUTO_MAS_SUPERVISED_PORT：
     监督器按实例类型自行选定端口（managed 缺省 36163、development 缺省 36164）
     并据此做健康检查与关闭请求。后端若钉死 36163，受监督的开发版就会撞上同机
-    正在运行的正式版。该变量缺失或非法时回退 36163 并记 warning；.env、
+    正在运行的正式版。该变量缺失或非法时回退 36163 并记 warning；
     AUTO_MAS_HTTP_PORT 与开发环境判据在受监督时一律忽略，优先级低于注入值。
 
     Args:
@@ -236,11 +255,18 @@ def _resolve_supervised_port() -> int:
     return DEFAULT_HTTP_PORT
 
 
-@logger.catch
+@logger.catch(reraise=True)
 def main():
-    development_environment = is_development_environment()
-    if development_environment:
-        os.environ["AUTO_MAS_ENV"] = "development"
+    from app.utils.common.asyncio_compat import install_windows_connection_cleanup
+
+    install_windows_connection_cleanup()
+
+    raw_environment = os.getenv("AUTO_MAS_ENV", "").strip().lower()
+    if raw_environment not in {"", "dev", "development", "production"}:
+        logger.warning("AUTO_MAS_ENV 取值无效，按开发环境启动")
+    os.environ["AUTO_MAS_ENV"] = _utils_environment.get_application_environment()
+    development_environment = _utils_environment.is_development_environment()
+    logger.info(f"应用运行环境: {_utils_environment.get_application_environment()}")
 
     supervised = is_supervised()
     admin = is_admin()
@@ -256,43 +282,140 @@ def main():
             "受监督模式下不自行提权，当前非管理员，依赖模拟器/窗口操作的功能可能受限"
         )
 
-    from app.core import Config
-    from app.services.telemetry import (
-        init_sentry,
-        is_telemetry_enabled,
-        resolve_sentry_dist,
-    )
+    # 先完成提权判断，避免创建临时目录的权限错误阻断重启。
+    startup_mark("后端/环境与权限检查完成")
+    with startup_stage("后端/临时目录"):
+        configure_temporary_directory(Path.cwd())
+
+    with startup_stage("后端/配置组件导入与构造"):
+        from app.core import Config
+    with startup_stage("后端/模拟器组件导入与构造"):
+        from app.core import EmulatorManager
+    with startup_stage("后端/通知组件导入与构造"):
+        from app.core import Notify
+    with startup_stage("后端/专项能力导入"):
+        from app.services import telemetry as _service_telemetry
+        from app.task.BAAH.api_service import BAAHConfigService
+        from app.task.builtin_registration import build_builtin_script_capabilities
+        from app.task.MaaEnd.api_service import MaaEndConfigService
+        from app.task.MaaFW.tools.embedded.game_resolution import (
+            read_unity_display_type,
+            read_unity_resolution,
+        )
+        from app.task.ZzzOd.config_context import ZzzOdContext
+        from app.task.ZzzOd.recovery import ZzzOdRecovery
+
+    with startup_stage("后端/专项能力绑定"):
+        with startup_stage("后端/专项能力绑定/BAAH 服务"):
+            baah_config_service = BAAHConfigService(
+                get_script=lambda script_id: Config.ScriptConfig[script_id],
+            )
+        with startup_stage("后端/专项能力绑定/MaaEnd 服务"):
+            maaend_config_service = MaaEndConfigService(
+                scripts=Config.ScriptConfig,
+                read_resolution=read_unity_resolution,
+                read_display_type=read_unity_display_type,
+            )
+        with startup_stage("后端/专项能力绑定/构建能力注册表"):
+            script_capabilities = build_builtin_script_capabilities(
+                maaend=maaend_config_service,
+                zzzod=ZzzOdRecovery(
+                    ZzzOdContext(
+                        Config.ScriptConfig,
+                        flush=Config.flush,
+                        add_user=Config.add_user,
+                    )
+                ),
+            )
+
+        for entry_type, handler in script_capabilities.config_handlers:
+            Config.bind_script_config_handler(entry_type, handler)
+        Config.set_restore_pool_resolver(script_capabilities.resolve_restore_pools)
 
     # 开发环境不上报遥测数据
-    init_sentry(
-        release=Config.VERSION,
-        development=development_environment,
-        enabled=is_telemetry_enabled(Path.cwd() / "config" / "Config.json"),
-        dist=resolve_sentry_dist(current_dir),
-    )
+    with startup_stage("后端/遥测初始化"):
+        _service_telemetry.init_sentry(
+            release=Config.VERSION,
+            development=development_environment,
+            enabled=_service_telemetry.is_telemetry_enabled(
+                Config.config_path / "setting.yaml"
+            ),
+            dist=_service_telemetry.resolve_sentry_dist(current_dir),
+        )
 
-    import asyncio
-    from contextlib import asynccontextmanager, suppress
+    with startup_stage("后端/Web 框架导入"):
+        import asyncio
+        from contextlib import asynccontextmanager, suppress
 
-    import uvicorn
-    from fastapi import FastAPI
-    from fastapi.staticfiles import StaticFiles
+        import uvicorn
+        from fastapi import FastAPI
+        from fastapi.staticfiles import StaticFiles
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        from app.core import Startup
+
+        Startup.prepare(
+            deferred=is_supervised()
+            and os.getenv("AUTO_MAS_DEFER_BUSINESS_START") == "1"
+        )
         # 预热共享 SSL 上下文：truststore 全量加载证书库较慢，放线程执行避免首个请求卡死
         import ssl
 
-        from app.core import Config, MainTimer, TaskManager
+        with startup_stage("后端/任务与定时器组件导入"):
+            from app.core import Config, MainTimer, TaskManager
 
-        asyncio.create_task(asyncio.to_thread(ssl.create_default_context))
+        TaskManager.bind_manager_factories(script_capabilities.manager_factories)
 
-        await Config.init_config()
+        async def warm_ssl() -> None:
+            with startup_stage("后端/SSL 上下文预热（后台）"):
+                await asyncio.to_thread(ssl.create_default_context)
 
+        asyncio.create_task(warm_ssl())
+
+        with startup_stage("后端/必要配置初始化"):
+            await Config.init_config()
+        from app.core import MCP
+
+        MCP.configure(enabled=Config.setting.Function.IfEnableMCP)
+        startup_mark("后端/必要配置就绪")
+        with startup_stage("后端/历史组件导入"):
+            from app.core import History
+            from app.utils import UTC4
+
+        # 升级与历史存储是任务启动的前置条件，失败不进入后台可选初始化。
+        with startup_stage("后端/历史存储初始化"):
+            await History.initialize(
+                video_limit_bytes=Config.setting.Replay.VideoStorageLimitMiB
+                * 1024
+                * 1024
+            )
+        with startup_stage("后端/历史保留期维护"):
+            await History.prune(
+                today=datetime.now(tz=UTC4).date(),
+                retention_days=Config.setting.Function.HistoryRetentionTime,
+            )
+
+        from app.services import obs_replay as _service_obs_replay
+
+        with startup_stage("后端/录像临时文件清理"):
+            await _service_obs_replay.ObsReplay.cleanup_temporary()
+
+        with startup_stage("后端/后台服务组件导入"):
+            from app.config import config_manager
+            from app.core import BackgroundTaskManager
+
+        async def preload_maaend_resources() -> None:
+            with startup_stage("后端/MaaEnd 资源预热（后台）"):
+                await maaend_config_service.preload_resources()
+
+        BackgroundTaskManager.register_group(
+            "maaend-resource-preload", max_running=1, max_retained=1
+        ).spawn(preload_maaend_resources, retain_result=False)
         background_task: asyncio.Task | None = None
 
         async def initialize_background_services() -> None:
-            """后台完成重活初始化：MCP 挂载、活动关卡、历史清理、诊断文件清理、ArknightWin32、主定时器。
+            """后台完成主业务初始化，就绪后独立启动可选 MCP 服务。
 
             lifespan 提前 yield 后 uvicorn 立即打印 "Uvicorn running"，
             让前端等待就绪的耗时只包含核心配置初始化。
@@ -310,7 +433,8 @@ def main():
                 """执行一个初始化步骤，失败时返回「步骤名（异常）」，成功返回 None。"""
 
                 try:
-                    await step()
+                    with startup_stage(f"后端/后台服务/{name}"):
+                        await step()
                 except asyncio.CancelledError:
                     raise
                 except Exception as error:
@@ -329,47 +453,24 @@ def main():
                 if failure is not None:
                     warnings.append(failure)
 
-            async def mount_mcp() -> None:
-                from app.api.mcp import mount_mcp as mount_mcp_server
-
-                await mount_mcp_server(app)
-
-            async def init_arknight_win32() -> None:
-                # 只接管开关、启用时在后台发起加载，不在这里导入：导入会整套载入
-                # MaaFramework 原生库，新装环境首次能拖过监督器的 60 秒健康预算
-                from app.MaaFW import arknights_pc
-
-                await arknights_pc.start()
-
             async def start_desktop_guard() -> None:
-                from app.core.desktop_guard import DesktopGuard
+                from app.core import DesktopGuard
 
                 await DesktopGuard.start()
 
+            async def init_avd_update() -> None:
+
+                # 每个纳管的根目录跑一次 modavd update status（不联网），上次换上被打断的再 recover
+                await EmulatorManager.startup_avd_update()
+
             async def init_stage_info() -> None:
+                from app.task.MAA.stage import maa_stage_service
+
                 # 启动不等待远端检查：缓存过期时后台拉取，页面打开时再等结果
-                await Config.get_stage(wait_stale=False)
-
-            async def start_openclaw_qq() -> None:
-                from app.services.openclaw_qq import openclaw_qq_manager
-
-                await openclaw_qq_manager.start()
-
-            async def start_koishi() -> None:
-                # 初始化 Koishi 系统客户端（如果已启用）
-                if not Config.get("Notify", "IfKoishiSupport"):
-                    return
-
-                from app.api.ws_command import execute_ws_command
-                from app.utils.websocket import ws_client_manager
-
-                # 出站客户端不再反射导入 API，命令执行器需显式注入
-                ws_client_manager.set_command_executor(execute_ws_command)
-                await ws_client_manager.init_system_client_koishi()
+                await maa_stage_service.get_stage(wait_stale=False)
 
             app.state.background_status = "running"
             try:
-                await run_optional_step("MCP 服务挂载", mount_mcp)
                 await run_optional_step("活动关卡信息获取", init_stage_info)
 
                 async def _maafw_startup_maintenance() -> None:
@@ -377,13 +478,19 @@ def main():
                     # 各项回收一起放到后台，不挡主定时器（队列定时按分钟精确匹配，挡住就
                     # 被静默跳过）。期间撞上的 MFW 运行在运行前检查里按「正在切换版本」跳过。
                     try:
-                        await Config.migrate_maafw_embedded_copies_to_payloads()
-                        await Config.clean_maafw_agent_venvs()
-                        await Config.clean_maafw_embedded_copies()
-                        await Config.clean_maafw_runtime_blobs()
-                        await Config.clean_maafw_update_cache()
+                        with startup_stage("后端/MFW 后台维护/旧副本迁移"):
+                            await Config.maafw_maintenance.migrate_embedded_copies_to_payloads()
+                        with startup_stage("后端/MFW 后台维护/Agent 环境清理"):
+                            await Config.maafw_maintenance.clean_agent_venvs()
+                        with startup_stage("后端/MFW 后台维护/副本清理"):
+                            await Config.maafw_maintenance.clean_embedded_copies()
+                        with startup_stage("后端/MFW 后台维护/Runtime 文件清理"):
+                            await Config.maafw_maintenance.clean_runtime_blobs()
+                        with startup_stage("后端/MFW 后台维护/更新缓存清理"):
+                            await Config.maafw_maintenance.clean_update_cache()
                         # 副本清理之后：副本没了，它的 binding / runtime 才会变成无人引用
-                        await Config.clean_maafw_runtime_pool()
+                        with startup_stage("后端/MFW 后台维护/Runtime 池清理"):
+                            await Config.maafw_maintenance.clean_runtime_pool()
                     except asyncio.CancelledError:
                         raise
                     except Exception:
@@ -393,20 +500,20 @@ def main():
                     _maafw_startup_maintenance()
                 )
 
-                if IS_WINDOWS:
-                    await run_optional_step(
-                        "明日方舟 PC 工具初始化", init_arknight_win32
-                    )
-
                 # 显示输出守卫要早于主定时器：定时器可能立刻拉起一轮任务，而任务开跑前
                 # 会要求守卫强制巡检一次，守卫没起来那次巡检就是空转。守卫失败不拦定时器：
                 # 空转一次巡检远比定时任务整夜不触发轻。
                 await run_optional_step("桌面显示输出守卫", start_desktop_guard)
-                timer_error = await run_step("主业务定时器", MainTimer.start)
+                # 要在主定时器之前：定时器可能马上拉起实例，而 sdk\emulator 可能正停在换到一半
+                await run_optional_step("ModAVD 更新恢复", init_avd_update)
 
-                # QQ 维持官方网关连接以完成扫码绑定。
-                await run_optional_step("QQ 通知通道", start_openclaw_qq)
-                await run_optional_step("Koishi 客户端", start_koishi)
+                async def start_main_timer() -> None:
+                    await MainTimer.start()
+
+                timer_error = await run_step("主业务定时器", start_main_timer)
+                startup_mark("后端/主定时器启动结束")
+
+                await run_optional_step("通知渠道", Notify.start)
 
                 if (Path.cwd() / "AUTO-MAS-Setup.exe").exists():
                     try:
@@ -438,6 +545,7 @@ def main():
                     app.state.background_status = "ready"
                     if not warnings:
                         logger.info("后端后台初始化完成")
+                    startup_mark("后端/主业务就绪")
             except asyncio.CancelledError:
                 app.state.background_status = "cancelled"
                 raise
@@ -445,6 +553,10 @@ def main():
                 app.state.background_status = "failed"
                 app.state.background_error = f"{type(error).__name__}: {error}"
                 logger.exception(f"后台初始化失败: {app.state.background_error}")
+            # 不属于上面的主业务失败边界；MCP 错误只由专属组件记录。
+            if app.state.background_status == "ready":
+                with startup_stage("后端/MCP 启动任务提交"):
+                    MCP.start(app)
 
         app.state.background_status = "starting"
         app.state.background_error = None
@@ -454,9 +566,18 @@ def main():
         async def shutdown_services() -> None:
             """完整的非 WS teardown，供 /close 与 lifespan 收尾共用（幂等）。"""
 
-            from app.core.ws import Dispatcher, MainConnection
-            from app.runtime_tasks import RuntimeTasks
-            from app.services import Matomo, System, Updater
+            from app.core import (
+                BackgroundTaskManager,
+                Dispatcher,
+                MainConnection,
+                Power,
+                Updater,
+            )
+
+            Startup.close()
+
+            # 同步封禁新加载，独立回收 MCP；不能让不可取消线程挡住停止主业务。
+            mcp_shutdown = asyncio.create_task(MCP.shutdown(), name="mcp-shutdown")
 
             # 先停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
             if background_task is not None and not background_task.done():
@@ -478,109 +599,120 @@ def main():
 
             # 取消待执行的电源操作（无任务在跑属正常）
             with suppress(RuntimeError):
-                await System.cancel_power_task()
+                await Power.cancel_power_task()
 
-            await MainTimer.stop()
-            from app.services.openclaw_qq import openclaw_qq_manager
-
-            await openclaw_qq_manager.stop()
-            await TaskManager.stop_task("ALL")
+            stop_timer = asyncio.create_task(MainTimer.stop())
+            stop_tasks = asyncio.create_task(TaskManager.stop_task("ALL"))
+            try:
+                # 正常用户收尾仍可归档；只有存储操作阻塞才提前触达关闭期限。
+                await History.close(after=stop_tasks)
+            finally:
+                await asyncio.gather(stop_timer, stop_tasks)
             # 排在停任务之后：还有任务在收尾时把它脚下的屏拆掉没有意义。后端退出后没人
             # 会再来收尾这块屏，所以这一步不能省。
-            from app.core.desktop_guard import DesktopGuard
+            from app.core import DesktopGuard
 
             await DesktopGuard.stop()
             # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
             with suppress(RuntimeError):
-                await System.cancel_power_task()
-            await Updater.cancel_download(notify=False)
-            from app.services.obs_replay import ObsReplay
+                await Power.cancel_power_task()
+            # 取消时若无法确认 FluxDown 任务已停止会抛 FluxdownCancelUnconfirmed，
+            # 关停流程不因此中断后续清理
+            with suppress(RuntimeError):
+                await Updater.cancel_download(notify=False)
+            from app.services import obs_replay as _service_obs_replay
 
-            await ObsReplay.stop()
-            await RuntimeTasks.shutdown()
-            await Matomo.close()
+            await _service_obs_replay.ObsReplay.stop()
+            # 已托管通知随运行时任务一起回收，完成后再关闭渲染器和渠道。
+            await BackgroundTaskManager.shutdown()
+            await Notify.close()
+
+            await config_manager.flush()
+            try:
+                await mcp_shutdown
+            except Exception:
+                # MCP 是可选服务，清理失败不能跳过主业务的任何收尾步骤。
+                logger.exception("MCP 服务收尾失败，详见后端日志")
             logger.info("AUTO-MAS 后端服务清理完成")
 
-        from app.core.lifecycle import ShutdownCoordinator
+        from app.core import ShutdownCoordinator
 
         ShutdownCoordinator.set_teardown(shutdown_services)
         try:
+            startup_mark("后端/ASGI 初始化完成，交还服务器监听")
             yield
         finally:
             # 覆盖 taskkill 等未经 /close 的退出路径；已由 /close 执行过则跳过
             await ShutdownCoordinator.run_teardown()
             logger.info("AUTO-MAS 后端程序关闭")
 
-    from fastapi.middleware.cors import CORSMiddleware
+    with startup_stage("后端/API 路由导入"):
+        from fastapi.middleware.cors import CORSMiddleware
 
-    from app.api import (
-        core_router,
-        dispatch_router,
-        emulator2_router,
-        emulator_router,
-        history_router,
-        info_router,
-        mystery_router,
-        ocr_router,
-        openclaw_qq_router,
-        plan_router,
-        qr_login_router,
-        queue_router,
-        scripts_router,
-        setting_router,
-        share_router,
-        skland_qr_router,
-        tools_router,
-        update_router,
-    )
+        from app.api import (
+            community_router,
+            core_router,
+            dispatch_router,
+            emulator_router,
+            history_router,
+            i18n_router,
+            info_router,
+            mystery_router,
+            ocr_router,
+            openclaw_qq_router,
+            plan_router,
+            queue_router,
+            scripts_router,
+            setting_router,
+            share_router,
+            update_router,
+        )
 
-    app = FastAPI(
-        title="AUTO-MAS",
-        description="API for managing automation scripts, plans, and tasks",
-        version="1.0.0",
-        lifespan=lifespan,
-    )
+    with startup_stage("后端/API 路由与静态资源注册"):
+        app = FastAPI(
+            title="AUTO-MAS",
+            description="API for managing automation scripts, plans, and tasks",
+            version="1.0.0",
+            lifespan=lifespan,
+        )
+        app.state.baah_config_service = baah_config_service
+        app.state.maaend_config_service = maaend_config_service
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],  # 允许所有域名跨域访问
-        allow_credentials=True,
-        allow_methods=["*"],  # 允许所有请求方法, 如 GET、POST、PUT、DELETE
-        allow_headers=["*"],  # 允许所有请求头
-    )
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],  # 允许所有域名跨域访问
+            allow_credentials=True,
+            allow_methods=["*"],  # 允许所有请求方法, 如 GET、POST、PUT、DELETE
+            allow_headers=["*"],  # 允许所有请求头
+        )
 
-    app.include_router(core_router)
-    app.include_router(info_router)
-    app.include_router(mystery_router)
-    app.include_router(scripts_router)
-    app.include_router(plan_router)
-    app.include_router(emulator_router)
-    app.include_router(emulator2_router)
-    app.include_router(queue_router)
-    app.include_router(dispatch_router)
-    app.include_router(history_router)
-    app.include_router(tools_router)
-    app.include_router(setting_router)
-    app.include_router(share_router)
-    app.include_router(update_router)
-    app.include_router(ocr_router)
-    app.include_router(openclaw_qq_router)
-    app.include_router(qr_login_router)
+        app.include_router(core_router)
+        app.include_router(info_router)
+        app.include_router(mystery_router)
+        app.include_router(scripts_router)
+        app.include_router(plan_router)
+        app.include_router(emulator_router)
+        app.include_router(queue_router)
+        app.include_router(dispatch_router)
+        app.include_router(history_router)
+        app.include_router(i18n_router)
+        app.include_router(community_router)
+        app.include_router(setting_router)
+        app.include_router(share_router)
+        app.include_router(update_router)
+        app.include_router(ocr_router)
+        app.include_router(openclaw_qq_router)
 
-    # 可选补丁：森空岛扫码登录
-    if skland_qr_router is not None:
-        app.include_router(skland_qr_router)
-
-    app.mount(
-        "/api/res/materials",
-        StaticFiles(directory=str(resource_path("images", "materials"))),
-        name="materials",
-    )
-    app.mount(
-        "/api/res/sounds",
-        StaticFiles(directory=str(resource_path("sounds"))),
-        name="sounds",
-    )
+        app.mount(
+            "/api/res/materials",
+            StaticFiles(directory=str(Config.resource_path / "images" / "materials")),
+            name="materials",
+        )
+        app.mount(
+            "/api/res/sounds",
+            StaticFiles(directory=str(Config.resource_path / "sounds")),
+            name="sounds",
+        )
 
     async def run_server():
         http_port = resolve_http_port(development_environment)
@@ -600,6 +732,7 @@ def main():
         from app.core import Config
 
         Config.server = server
+        startup_mark("后端/进入服务器启动")
         await server.serve()
 
     asyncio.run(run_server())

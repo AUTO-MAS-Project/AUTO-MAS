@@ -81,7 +81,7 @@ export function useShareAccount(
     try {
       const next = await startShareAuth()
       if (!next) {
-        options.onError?.(error.value ?? t('themeStore.account.startFailed'))
+        options.onError?.(error.value ?? t('core.themeStore.account.startFailed'))
         return
       }
       state.value = next

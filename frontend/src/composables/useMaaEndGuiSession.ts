@@ -5,14 +5,14 @@ export function useMaaEndGuiSession() {
   const session = useNativeGuiSession({
     loggerName: 'MaaEnd配置会话',
     keys: {
-      stopFailed: 'edit.maaendSessionStopFailed',
-      startFailed: 'edit.maaendSessionStartFailed',
-      setupFailed: 'edit.maaendConfigurationErrorP0',
-      opened: 'edit.maaendSessionOpened',
-      viewOpened: 'edit.maaendViewOpened',
-      timeoutWarn: 'edit.maaendSessionTimeoutWarn',
-      saved: 'edit.maaendConfigurationSaved',
-      saveFailed: 'edit.maaendSessionSaveFailed',
+      stopFailed: 'core.edit.maaendSessionStopFailed',
+      startFailed: 'core.edit.maaendSessionStartFailed',
+      setupFailed: 'core.edit.maaendConfigurationErrorP0',
+      opened: 'core.edit.maaendSessionOpened',
+      viewOpened: 'core.edit.maaendViewOpened',
+      timeoutWarn: 'core.edit.maaendSessionTimeoutWarn',
+      saved: 'core.edit.maaendConfigurationSaved',
+      saveFailed: 'core.edit.maaendSessionSaveFailed',
     },
   })
   return {

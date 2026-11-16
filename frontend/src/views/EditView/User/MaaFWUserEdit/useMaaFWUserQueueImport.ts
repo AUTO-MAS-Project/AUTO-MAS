@@ -75,7 +75,7 @@ export function useMaaFWUserQueueImport({
     if (!candidate || candidate.entries.length === 0) return null
     const importedCount = await queue.replaceQueueWith(candidate)
     if (importedCount !== null) {
-      message.success(t('edit.shellQueueImportDone', { count: importedCount }))
+      message.success(t('core.edit.shellQueueImportDone', { count: importedCount }))
     }
     return importedCount
   }

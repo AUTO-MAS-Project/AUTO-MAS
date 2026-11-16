@@ -4,12 +4,12 @@
 /* eslint-disable */
 export type HSRUserConfig_Managed = {
     /**
-     * 托管任务映射 JSON
-     */
-    TaskMapping?: (string | null);
-    /**
      * 托管任务选项 JSON
      */
     Options?: (string | null);
+    /**
+     * 托管任务映射 JSON
+     */
+    TaskMapping?: (string | null);
 };
 

@@ -20,22 +20,25 @@
 #   Contact: DLmaster_361@163.com
 
 import asyncio
-from collections.abc import Awaitable, Callable
-from datetime import date, datetime, timedelta, timezone
+import os
+import time as monotonic_time
+from collections.abc import Awaitable, Callable, Iterator
+from datetime import date, datetime, time, timedelta, timezone
 from functools import partial
+from pathlib import Path
 from typing import Any
 
-from app.services import Matomo
-from app.services.telemetry import record_daily_active
-from app.utils import get_logger
-from app.utils.constants import UTC8
-from app.utils.platform import IS_WINDOWS
+from app.core import Community, Notify, Startup
+from app.models.notification.community import community_notification_results
+from app.models.task import TaskMode, TaskTriggerReason
+from app.services import telemetry as _service_telemetry
+from app.utils import UTC4, UTC8, get_logger, startup
+from app.utils import environment as _utils_environment
+from app.utils.common.process.scope import detached_process_context
 
-from .community_scheduler import (
+from .community.scheduling import (
     TASK_COMMUNITY_SOURCES,
     CommunityTriggerSource,
-    all_community_accounts_signed,
-    should_run_community_for_source,
 )
 from .config import Config
 from .game_calendar import CALENDAR_REFRESH_INTERVAL_SECONDS, GameCalendar
@@ -46,6 +49,7 @@ logger = get_logger("主业务定时器")
 # 定时错过后的补跑宽限：计划时刻过去不超过这么久（按真实流逝时间）才补跑一次。
 # 只兜住短暂的睡眠 / 卡顿与春季跳表，不补长时间关机或整夜睡眠错过的定时。
 TIMED_START_GRACE = timedelta(minutes=10)
+_COMMUNITY_POWER_DRAIN_SECONDS = 30.0
 
 
 def _local_now() -> datetime:
@@ -55,7 +59,7 @@ def _local_now() -> datetime:
 
 
 def _timed_slots_in_window(
-    prev_wall: datetime, now_wall: datetime, time_str: str
+    prev_wall: datetime, now_wall: datetime, time_str: str | time | datetime
 ) -> list[datetime]:
     """列出本地墙钟区间 ``(prev_wall, now_wall]`` 内的 ``HH:MM`` 计划时刻。
 
@@ -63,7 +67,12 @@ def _timed_slots_in_window(
     """
 
     try:
-        slot_time = datetime.strptime(time_str, "%H:%M").time()
+        if isinstance(time_str, datetime):
+            slot_time = time_str.time()
+        else:
+            slot_time = (
+                time_str if isinstance(time_str, time) else time.fromisoformat(time_str)
+            )
     except (TypeError, ValueError):
         return []
 
@@ -80,6 +89,18 @@ def _timed_slots_in_window(
 class _MainTimer:
     def __init__(self):
         self.started = False
+        self._wakeup_signature: tuple[Path, tuple[tuple[int, int, int], ...]] | None = (
+            None
+        )
+        self._wakeup_attempt: tuple[Path, tuple[tuple[int, int, int], ...]] | None = (
+            None
+        )
+        self._wakeup_retry_at = 0.0
+        self._wakeup_notice_sent = False
+        self._resume_wakeup: bool | None = None
+        self.startup_task: asyncio.Task[None] | None = None
+        self._startup_dispatched = False
+        self.wakeup_timer: asyncio.Task[None] | None = None
         self.second_timer: asyncio.Task[None] | None = None
         self.hour_timer: asyncio.Task[None] | None = None
         self.calendar_timer: asyncio.Task[None] | None = None
@@ -94,35 +115,168 @@ class _MainTimer:
         # 定时循环里各步骤最近一次的异常摘要，用于同一错误只记一次日志
         self._loop_errors: dict[str, str] = {}
 
-    async def start(self):
+    def is_scheduled_wakeup(self) -> bool:
+        """明确的唤醒启动，或恢复时仍有前五分钟至补跑宽限内的有效定时。"""
+        if os.getenv("AUTO_MAS_SCHEDULED_WAKEUP") == "1":
+            return True
+        resumed_at = os.getenv("AUTO_MAS_SYSTEM_RESUME")
+        if not resumed_at:
+            return False
+        # 两个消费者共享启动时的判定，不能因初始化耗时、派发或重连而改变。
+        if self._resume_wakeup is not None:
+            return self._resume_wakeup
+        self._resume_wakeup = self.has_pending_wakeup_schedule(
+            datetime.fromisoformat(resumed_at).astimezone()
+        )
+        return self._resume_wakeup
+
+    def has_pending_wakeup_schedule(self, at: datetime) -> bool:
+        """是否有已进入提前唤醒或补跑窗口、且尚未派发的队列定时。"""
+        now_wall = at.replace(tzinfo=None)
+        return any(
+            planned.replace(second=0, microsecond=0) - timedelta(minutes=5)
+            <= now_wall
+            <= planned + timedelta(minutes=10)
+            for planned in self._pending_wakeup_slots(at)
+        )
+
+    def _pending_wakeup_slots(self, at: datetime) -> Iterator[datetime]:
+        """枚举补跑窗口及未来一周内尚未派发的有效定时。"""
+        if not Config.setting.Start.IfScheduledWakeUp:
+            return
+        now_wall = at.replace(tzinfo=None)
+        for queue in Config.QueueConfig.values():
+            if not queue.Info.TimeEnabled:
+                continue
+            last_run = queue.Data.LastTimedStart.replace(tzinfo=None)
+            for slot in queue.TimeSet.values():
+                if not slot.Info.Enabled:
+                    continue
+                for day_offset in range(-1, 8):
+                    day = now_wall.date() + timedelta(days=day_offset)
+                    planned = datetime.combine(day, slot.Info.Time.time())
+                    if planned > last_run and planned.strftime("%A") in slot.Info.Days:
+                        yield planned
+
+    async def sync_scheduled_wakeup(self, *, force: bool = False) -> None:
+        """把已提交的队列定时同步到系统；开发环境不改系统任务。"""
+        if _utils_environment.is_development_environment() or not startup.supported:
+            return
+        times: set[tuple[int, int, int]] = set()
+        weekdays = (
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        )
+        if Config.setting.Start.IfScheduledWakeUp:
+            for queue in Config.QueueConfig.values():
+                if not queue.Info.TimeEnabled:
+                    continue
+                for slot in queue.TimeSet.values():
+                    if not slot.Info.Enabled:
+                        continue
+                    for day in slot.Info.Days:
+                        planned = datetime(2000, 1, 3) + timedelta(
+                            days=weekdays.index(day),
+                            hours=slot.Info.Time.hour,
+                            minutes=slot.Info.Time.minute,
+                        )
+                        wake = planned - timedelta(minutes=5)
+                        times.add((wake.weekday(), wake.hour, wake.minute))
+        executable = Config.work_path / "AUTO-MAS.exe"
+        signature = (executable, tuple(sorted(times)))
+        if signature == self._wakeup_signature:
+            return
+        if (
+            not force
+            and signature == self._wakeup_attempt
+            and monotonic_time.monotonic() < self._wakeup_retry_at
+        ):
+            return
+        if signature != self._wakeup_attempt:
+            self._wakeup_notice_sent = False
+        report_failure = Config.setting.Start.IfScheduledWakeUp or bool(
+            self._wakeup_attempt and self._wakeup_attempt[1]
+        )
+        self._wakeup_attempt = signature
+        self._wakeup_retry_at = monotonic_time.monotonic() + 60
+        # 注册可能只完成一部分后被取消；此后不能再把旧缓存当作系统现状。
+        self._wakeup_signature = None
+        # 冷启动会重读磁盘；配置未落盘时不能先更新系统任务。
+        try:
+            await Config.flush()
+            if times and not executable.is_file():
+                raise FileNotFoundError(f"找不到定时唤醒启动程序：{executable}")
+            await startup.sync_wakeup(
+                executable=executable,
+                times=signature[1],
+                name_prefix="AUTO-MAS_Wakeup",
+                description="AUTO-MAS 定时前五分钟唤醒并启动",
+                arguments="--scheduled-wakeup",
+            )
+        except Exception as exc:
+            if not report_failure:
+                # 首次关闭状态仍尝试清理旧任务；系统服务不可用时安静地等待重试。
+                logger.debug(f"定时唤醒未启用，清理旧任务失败，稍后重试: {exc}")
+                return
+            if not self._wakeup_notice_sent:
+                from app.core import Notify
+
+                await Notify.push_system_notice(
+                    level="warning",
+                    title="定时唤醒同步失败",
+                    lines=["请检查日志和 Windows 任务计划程序，修正后将自动重试。"],
+                    title_key="core.setting.func.scheduledWakeupFailure",
+                    line_keys=["core.setting.func.scheduledWakeupFailureTip"],
+                )
+                self._wakeup_notice_sent = True
+            raise
+        self._wakeup_signature = signature
+        logger.info(f"定时唤醒已同步：{len(times)} 个每周触发时间")
+
+    async def start(self) -> None:
         """启动定时器"""
 
         if self.started:
             logger.warning("主业务定时器仅能启动一次，无法重复启动")
             return
 
+        self.started = True
+        self.startup_task = asyncio.create_task(self._start_automatic_work())
+        logger.info("主业务定时器启动")
+
+    async def _start_automatic_work(self) -> None:
+        await Startup.wait()
         self.second_timer = asyncio.create_task(self.second_task())
+        self.wakeup_timer = asyncio.create_task(self.wakeup_task())
         self.hour_timer = asyncio.create_task(self.hour_task())
         self.calendar_timer = asyncio.create_task(self.calendar_task())
-        self.started = True
 
-        if Config.ToolsConfig.get("GameSign", "Enabled") and (
-            Config.ToolsConfig.get("GameSign", "RunOnStartup")
+        if (
+            Config.ToolsConfig.GameSign.Enabled
+            and Config.ToolsConfig.GameSign.RunOnStartup
         ):
             self.schedule_community_for_startup()
 
-        logger.info("主业务定时器启动")
+        if not self._startup_dispatched:
+            self._startup_dispatched = True
+            await self._run_loop_step(
+                "启动队列检查", partial(self.timed_start, startup=True)
+            )
 
     async def stop(self):
         """停止定时器"""
 
-        if not self.started:
-            return
-
         tasks = [
             task
             for task in (
+                self.startup_task,
                 self.second_timer,
+                self.wakeup_timer,
                 self.hour_timer,
                 self.calendar_timer,
                 self.calendar_send_task,
@@ -136,6 +290,13 @@ class _MainTimer:
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
                 logger.info("主业务定时器已关闭")
+            if self.started:
+                # 最后一次修改后立即退出时，也要把新计划或取消结果同步完。
+
+                async def final_wakeup_sync() -> None:
+                    await self.sync_scheduled_wakeup(force=True)
+
+                await self._run_loop_step("定时唤醒同步", final_wakeup_sync)
         finally:
             self.started = False
 
@@ -143,26 +304,20 @@ class _MainTimer:
         """每秒定期任务"""
         logger.info("每秒定期任务启动")
 
-        async def arknights_pc_tick() -> None:
-            if IS_WINDOWS and Config.ToolsConfig.get("ArknightsPC", "Enabled"):
-                # 懒导入：启动期导入失败（如更新后端撞上 app/ 重拷窗口）时这里会再抛，
-                # 不能让它把整个每秒循环带走，否则定时队列跟着停摆（#738）
-                from app.MaaFW import arknights_pc
-
-                toolkit = arknights_pc.loaded_toolkit()
-                if toolkit is None:
-                    # 还没加载（或上次加载失败）：后台发起加载，本秒跳过，
-                    # 不在这里等导入，免得卡住定时启动检查
-                    arknights_pc.ensure_loading()
-                    return
-                await toolkit.scheduled_task()
-
+        if self.startup_task is not None:
+            await self.startup_task
         while True:
             await self._run_loop_step("定时启动检查", self.timed_start)
-            await self._run_loop_step("明日方舟 PC 工具巡检", arknights_pc_tick)
             await self._run_loop_step(
                 "游戏日历日程派发", self.schedule_calendar_notifications
             )
+            await asyncio.sleep(1)
+
+    async def wakeup_task(self) -> None:
+        """独立对账，不让系统任务注册阻塞原有定时启动检查。"""
+
+        while True:
+            await self._run_loop_step("定时唤醒同步", self.sync_scheduled_wakeup)
             await asyncio.sleep(1)
 
     async def hour_task(self):
@@ -170,51 +325,47 @@ class _MainTimer:
 
         logger.info("每小时定期任务启动")
 
-        async def upload_statistics() -> None:
-            if (
-                datetime.strptime(
-                    Config.get("Data", "LastStatisticsUpload"), "%Y-%m-%d %H:%M:%S"
-                ).date()
-                != datetime.now().date()
-            ):
-                await Matomo.send_event(
-                    "App",
-                    "Version",
-                    Config.VERSION,
-                    1 if "beta" in Config.VERSION else 0,
-                )
-                await Config.set(
-                    "Data",
-                    "LastStatisticsUpload",
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                )
-
         async def record_telemetry_active() -> None:
             # 按 UTC 日期去重：Sentry 按 UTC 自然日聚合，跨日最多晚一小时记上
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            if Config.get("Data", "LastTelemetryActive") == today:
+            if Config.setting.Data.LastTelemetryActive.strftime("%Y-%m-%d") == today:
                 return
-            if record_daily_active():
-                await Config.set("Data", "LastTelemetryActive", today)
+            if _service_telemetry.record_daily_active():
+                await Config.setting.update(
+                    type(Config.setting).model_validate(
+                        {"Data": {"LastTelemetryActive": datetime.now(timezone.utc)}}
+                    ),
+                    check_visibility=False,
+                )
 
         async def clean_expired_data() -> None:
             # 每天一轮：把过期的历史记录、诊断文件与 MFW 原生日志备份清掉。
-            # 清理本身幂等（只删超期的），守卫用内存日期即可，不必像统计上报那样
+            # 清理本身幂等（只删超期的），守卫用内存日期即可，不必像遥测日活那样
             # 为跨重启去重而落持久化配置；重启后首轮重跑一次无害。
             today = datetime.now().strftime("%Y-%m-%d")
             if self._last_cleanup_date == today:
                 return
             self._last_cleanup_date = today
-            for name, clean in (
-                ("历史记录清理", Config.clean_old_history),
-                ("诊断文件清理", Config.clean_debug_diagnostics),
-                ("MaaFW 原生日志清理", Config.clean_maafw_native_debug_logs),
-            ):
-                # 三个清理函数是纯同步文件 IO，丢工作线程执行，别占用事件循环
-                await self._run_loop_step(name, partial(asyncio.to_thread, clean))
+            from app.core import History
+
+            await self._run_loop_step(
+                "历史记录清理",
+                partial(
+                    History.prune,
+                    today=datetime.now(tz=UTC4).date(),
+                    retention_days=Config.setting.Function.HistoryRetentionTime,
+                ),
+            )
+            await self._run_loop_step(
+                "诊断文件清理",
+                partial(asyncio.to_thread, Config.clean_debug_diagnostics),
+            )
+            await self._run_loop_step(
+                "MaaFW 原生日志清理",
+                Config.maafw_maintenance.clean_native_debug_logs,
+            )
 
         while True:
-            await self._run_loop_step("统计上报", upload_statistics)
             await self._run_loop_step("遥测日活", record_telemetry_active)
             await self._run_loop_step("日志清理", clean_expired_data)
             await asyncio.sleep(3600)
@@ -261,7 +412,7 @@ class _MainTimer:
                 logger.info(f"{name}已恢复正常")
 
     @logger.catch()
-    async def timed_start(self):
+    async def timed_start(self, *, startup: bool = False):
         """定时启动代理任务
 
         以「上次检查 → 本次检查」的本地墙钟区间判定到点：计划时刻落在
@@ -278,9 +429,15 @@ class _MainTimer:
             microseconds=1
         )
         prev = self._last_timed_check
+        first_wakeup_check = prev is None and self.is_scheduled_wakeup()
         if prev is None:
-            prev_wall = minute_floor
-            real_elapsed = now_wall - minute_floor
+            # 唤醒后的初始化可能超过五分钟；只为该启动来源补跑宽限内的定时。
+            prev_wall = (
+                now_wall - TIMED_START_GRACE - timedelta(microseconds=1)
+                if first_wakeup_check
+                else minute_floor
+            )
+            real_elapsed = now_wall - prev_wall
         else:
             prev_wall = min(prev.replace(tzinfo=None), minute_floor)
             real_elapsed = now.astimezone(timezone.utc) - prev.astimezone(timezone.utc)
@@ -293,44 +450,57 @@ class _MainTimer:
             if key[2].date() >= now_wall.date() - timedelta(days=1)
         }
 
-        for uid, queue in Config.QueueConfig.items():
-            # 检查区间已前移，一个队列的配置读不出来不能连带丢掉其余队列的到点
+        for uid, queue in list(Config.QueueConfig.items()):
             try:
+                check_start = prev_wall
+                if first_wakeup_check:
+                    # 冷启动不保留本轮去重集合，不能重跑持久化记录之前的旧槽。
+                    check_start = max(
+                        check_start, queue.Data.LastTimedStart.replace(tzinfo=None)
+                    )
                 due = self._due_timed_slots(
-                    uid, queue, prev_wall, now_wall, real_elapsed
+                    uid, queue, check_start, now_wall, real_elapsed
                 )
-            except Exception as e:
-                logger.opt(exception=e).error(f"读取队列定时设置失败：{uid}")
-                continue
-
-            if not due:
-                continue
-
-            # 同一队列一次检查内只唤起一次，多个到点的时间槽一并记为已触发
-            for time_set_id, planned in due:
-                self._timed_fired.add((str(uid), time_set_id, planned))
-            planned = max(planned for _, planned in due)
-
-            if now_wall - planned >= timedelta(minutes=1):
-                logger.info(f"补跑错过的定时 {planned:%Y-%m-%d %H:%M}：{uid}")
-            logger.info(f"定时唤起任务：{uid}")
-            # 检查区间已前移，一个队列唤起失败不能连带跳过其余队列
-            try:
-                await TaskManager.add_task(
-                    "AutoProxy",
-                    str(uid),
-                    new_task_info={
-                        "queueId": str(uid),
-                        "taskName": f"队列 - {queue.get('Info', 'Name')}",
-                        "taskType": "定时代理",
-                    },
-                    trigger_source="scheduled_task",
+                startup_due = (
+                    startup
+                    and not self.is_scheduled_wakeup()
+                    and (
+                        queue.Info.StartUpMode == "Always"
+                        or (
+                            queue.Info.StartUpMode == "DailyFirst"
+                            and queue.Data.LastStartupTime.astimezone(now.tzinfo).date()
+                            != now.date()
+                        )
+                    )
                 )
-                await queue.set(
-                    "Data", "LastTimedStart", planned.strftime("%Y-%m-%d %H:%M")
+                next_cycle = queue.Cycle.NextRunAt
+                cycle_due = queue.Info.CycleEnabled and (
+                    next_cycle is None or next_cycle <= now
                 )
-            except Exception as e:
-                logger.opt(exception=e).error(f"定时唤起任务失败：{uid}")
+                # 各触发条件独立创建普通任务；每项任务只有一个原因，不合并派发。
+                for reason, matched in (
+                    (TaskTriggerReason.STARTUP, startup_due),
+                    (TaskTriggerReason.TIMED, bool(due)),
+                    (TaskTriggerReason.CYCLE, cycle_due),
+                ):
+                    if not matched:
+                        continue
+                    try:
+                        await TaskManager.start(
+                            TaskMode.AUTO_PROXY,
+                            {0: {"uid": str(uid)}},
+                            trigger=reason,
+                        )
+                    except Exception as error:
+                        logger.opt(exception=error).error(
+                            f"队列 {reason.value} 触发失败：{uid}"
+                        )
+                        continue
+                    if reason == TaskTriggerReason.TIMED:
+                        for time_set_id, planned in due:
+                            self._timed_fired.add((str(uid), time_set_id, planned))
+            except Exception as error:
+                logger.opt(exception=error).error(f"队列触发失败：{uid}")
 
     def _due_timed_slots(
         self,
@@ -342,32 +512,26 @@ class _MainTimer:
     ) -> list[tuple[str, datetime]]:
         """列出队列在本次检查区间内到点、且仍在补跑窗口内的 (时间槽, 计划时刻)。"""
 
-        # 循环队列由队列项各自的周期驱动，定时设置对它不生效
-        if queue.get("Info", "CycleEnabled"):
+        if not queue.Info.TimeEnabled:
             return []
 
-        if not queue.get("Info", "TimeEnabled"):
-            return []
-
-        last_timed_start = queue.get("Data", "LastTimedStart")
+        last_timed_start = queue.Data.LastTimedStart.replace(tzinfo=None)
         due: list[tuple[str, datetime]] = []
 
         for time_set_id, time_set in queue.TimeSet.items():
-            if not time_set.get("Info", "Enabled"):
+            if not time_set.Info.Enabled:
                 continue
 
             for planned in _timed_slots_in_window(
-                prev_wall, now_wall, time_set.get("Info", "Time")
+                prev_wall, now_wall, time_set.Info.Time
             ):
-                if planned.strftime("%A") not in time_set.get("Info", "Days"):
+                if planned.strftime("%A") not in time_set.Info.Days:
                     continue
 
                 key = (str(uid), str(time_set_id), planned)
                 # 避免重复调起任务：本次运行内按时间槽与计划时刻去重（当天改了时间的
-                # 槽按新时刻照常触发），重启后靠持久化的 LastTimedStart 兜住同一分钟
-                if key in self._timed_fired or (
-                    planned.strftime("%Y-%m-%d %H:%M") == last_timed_start
-                ):
+                # 槽按新时刻照常触发），重启后由专属 LastTimedStart 去重，其他原因不占用定时槽。
+                if key in self._timed_fired or planned <= last_timed_start:
                     continue
 
                 # 迟到时长按真实流逝时间封顶：春季跳表时墙钟跨过一小时，真实只过了一瞬
@@ -388,8 +552,8 @@ class _MainTimer:
         """Schedule one background community sign-in after application startup."""
 
         if not (
-            Config.ToolsConfig.get("GameSign", "Enabled")
-            and (Config.ToolsConfig.get("GameSign", "RunOnStartup"))
+            Config.ToolsConfig.GameSign.Enabled
+            and Config.ToolsConfig.GameSign.RunOnStartup
         ):
             return
 
@@ -397,7 +561,10 @@ class _MainTimer:
             logger.debug("游戏社区签到后台任务正在执行，跳过重复派发")
             return
 
-        task = asyncio.create_task(self.try_community_for_task(source="startup"))
+        task = asyncio.create_task(
+            self.try_community_for_task(source="startup"),
+            context=detached_process_context(),
+        )
         self.community_sign_task = task
         task.add_done_callback(self._on_community_sign_done)
 
@@ -414,54 +581,120 @@ class _MainTimer:
         except Exception as e:
             logger.opt(exception=e).error("游戏社区签到后台任务异常")
 
+    def schedule_community_for_task(
+        self,
+        *,
+        source: CommunityTriggerSource,
+        on_completed: Callable[[list[dict[str, object]] | None], None],
+    ) -> None:
+        """与脚本并行签到，通过完成回调交付结果，复用现有后台任务所有权。"""
+
+        if not self._has_pending_community_sign(source=source):
+            on_completed([])
+            return
+        if self.community_sign_task is not None and not self.community_sign_task.done():
+            logger.info("游戏社区签到正在执行，跳过本次触发")
+            on_completed([])
+            return
+
+        task = asyncio.create_task(
+            self.try_community_for_task(source=source),
+            context=detached_process_context(),
+        )
+        self.community_sign_task = task
+        task.add_done_callback(self._on_community_sign_done)
+
+        def receive_result(done_task: asyncio.Task) -> None:
+            # 异常由原有回调记录；None 表示无法确认结果，[] 保留正常跳过语义。
+            results: list[dict[str, object]] | None = []
+            if not done_task.cancelled() and done_task.exception() is not None:
+                results = None
+            elif not done_task.cancelled():
+                results = done_task.result()
+            on_completed(results)
+
+        task.add_done_callback(receive_result)
+
+    async def drain_community_tasks(
+        self, timeout: float = _COMMUNITY_POWER_DRAIN_SECONDS
+    ) -> bool:
+        """电源动作前结清后台签到及补发；超时不取消仍在进行的工作。"""
+
+        deadline = asyncio.get_running_loop().time() + timeout
+        while True:
+            signing = self.community_sign_task
+            if signing is not None:
+                # 即使已完成也统一等待，让结果回调先登记待补发通知。
+                _, pending = await asyncio.wait(
+                    {signing},
+                    timeout=max(0, deadline - asyncio.get_running_loop().time()),
+                )
+                if pending:
+                    return False
+            if not await Notify.tasks.drain_notifications(
+                max(0, deadline - asyncio.get_running_loop().time())
+            ):
+                return False
+            if not await Notify.community.drain(
+                max(0, deadline - asyncio.get_running_loop().time())
+            ):
+                return False
+            # 补发期间新的定时任务（如跨零点）可能又启动签到，共用原截止时间。
+            if self.community_sign_task is None:
+                return True
+
     async def _execute_community_sign(
         self, *, source: CommunityTriggerSource = "scheduled"
     ) -> list[dict[str, object]]:
         """执行游戏社区签到并按触发来源决定通知方式。"""
-        from app.core.community_sign import (
-            CommunitySignInProgressError,
-            community_sign_flow,
-            run_community_sign_in,
-        )
-        from app.tools.community import format_community_sign_results
+        from app.core.community.sign import CommunitySignInProgressError
+        from app.tools import community as _tool_community
 
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
         try:
             # 流程锁覆盖签到和结果落盘，通知在锁外发送。
-            async with community_sign_flow():
+            async with Community.community_sign_flow():
                 logger.info("开始执行游戏社区签到")
-                results = await run_community_sign_in(force=False)
+                results = await Community.run_community_sign_in(force=False)
 
                 # 如果所有用户都已签到（无新结果），保留已有结果
                 if not results:
                     logger.info("所有用户今日已签到，跳过")
-                    if all_community_accounts_signed(
+                    if Community.all_community_accounts_signed(
                         Config.ToolsConfig.GameSign_Accounts, today
                     ):
-                        await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
+                        await Config.ToolsConfig.update(
+                            type(Config.ToolsConfig).model_validate(
+                                {"GameSign": {"LastSignDate": datetime.now(tz=UTC8)}}
+                            ),
+                            check_visibility=False,
+                        )
                     return []
 
                 # 格式化并合并结果
-                formatted = format_community_sign_results(results)
+                formatted = _tool_community.format_community_sign_results(results)
                 await Config.update_community_results(formatted)
 
                 # 检查是否所有用户都已签到，更新全局 LastSignDate
-                if all_community_accounts_signed(
+                if Community.all_community_accounts_signed(
                     Config.ToolsConfig.GameSign_Accounts, today
                 ):
-                    await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
+                    await Config.ToolsConfig.update(
+                        type(Config.ToolsConfig).model_validate(
+                            {"GameSign": {"LastSignDate": datetime.now(tz=UTC8)}}
+                        ),
+                        check_visibility=False,
+                    )
 
             logger.success("游戏社区签到执行完成")
 
             # 任务触发的结果由任务完成通知消费；其它自动来源单独发送。
-            if source not in TASK_COMMUNITY_SOURCES and Config.ToolsConfig.get(
-                "GameSign", "NotifyEnabled"
-            ):
-                from app.tools.community_notify import push_community_notification
-
+            if source not in TASK_COMMUNITY_SOURCES:
                 try:
-                    failed_channels = await push_community_notification(results)
+                    failed_channels = await Notify.community.send(
+                        community_notification_results(results)
+                    )
                 except Exception as exc:
                     logger.warning(f"游戏社区签到完成，但通知服务异常: {exc}")
                 else:
@@ -474,6 +707,9 @@ class _MainTimer:
         except CommunitySignInProgressError:
             logger.info("游戏社区签到正在执行，跳过本次触发")
         except Exception as e:
+            if source in TASK_COMMUNITY_SOURCES:
+                # 交给后台任务完成回调记录并交付异常终态，不能混同正常空结果。
+                raise
             logger.error(f"游戏社区签到执行失败: {e}")
             # 保留已有结果，不覆盖为错误信息
             logger.exception("游戏社区签到执行异常堆栈")
@@ -485,24 +721,33 @@ class _MainTimer:
         """执行 MAS 自动签到并返回结果。
 
         ``task`` 结果由任务完成通知汇总，``startup`` 结果独立通知。
+        任务来源的异常由后台完成回调交付，正常跳过仍返回空结果。
         """
         if source is None:
             source = "task_manual"
 
-        if not should_run_community_for_source(
-            enabled=Config.ToolsConfig.get("GameSign", "Enabled"),
-            run_on_startup=Config.ToolsConfig.get("GameSign", "RunOnStartup"),
+        if not self._has_pending_community_sign(source=source):
+            return []
+        return await self._execute_community_sign(source=source)
+
+    def _has_pending_community_sign(self, *, source: CommunityTriggerSource) -> bool:
+        """共享后台派发和直接执行的触发条件，未启用或今日已完成时立即跳过。"""
+
+        if not Community.should_run_community_for_source(
+            enabled=Config.ToolsConfig.GameSign.Enabled,
+            run_on_startup=Config.ToolsConfig.GameSign.RunOnStartup,
             source=source,
         ):
-            return []
+            return False
 
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
-        # 快速检查：是否没有待处理账号
-        if all_community_accounts_signed(Config.ToolsConfig.GameSign_Accounts, today):
-            return []
-
-        return await self._execute_community_sign(source=source)
+        return not Community.all_community_accounts_signed(
+            Config.ToolsConfig.GameSign_Accounts, today
+        )
 
 
 MainTimer = _MainTimer()
+
+
+__all__ = ["MainTimer"]

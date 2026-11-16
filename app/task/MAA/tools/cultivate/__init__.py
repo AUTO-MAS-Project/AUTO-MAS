@@ -50,8 +50,10 @@ from .providers import (
 )
 from .service import (
     DepotCultivateService,
+    append_owned_cultivate_targets,
     depot_cultivate_service,
     dump_cultivate_targets,
+    filter_observed_cultivate_targets,
     get_certifying_chain,
     get_inventory_chain,
     get_progression_chain,
@@ -95,6 +97,7 @@ from .yituliu import (
 )
 
 __all__ = [
+    "append_owned_cultivate_targets",
     "Achievement",
     "SklandAccountRef",
     "SklandProgressionProvider",
@@ -130,6 +133,7 @@ __all__ = [
     "dataset_to_json",
     "download_dataset",
     "dump_cultivate_targets",
+    "filter_observed_cultivate_targets",
     "get_dataset_cached",
     "get_certifying_chain",
     "get_inventory_chain",

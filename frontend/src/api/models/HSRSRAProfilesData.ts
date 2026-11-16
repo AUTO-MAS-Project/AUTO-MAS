@@ -21,7 +21,7 @@ export type HSRSRAProfilesData = {
      */
     unavailable_reason?: (string | null);
     /**
-     * 脚本配置的档案 id；空串表示自动
+     * 托管配置的档案 id；空串表示自动
      */
     configured?: string;
     /**

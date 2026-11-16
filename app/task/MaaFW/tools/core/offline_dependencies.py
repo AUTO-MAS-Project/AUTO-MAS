@@ -87,16 +87,15 @@ def _offline_dependency_files(directory: Path, relative: PurePath) -> list[str]:
     return sorted(found)
 
 
-def describe_self_install_materials(project_root: str | Path) -> str | None:
-    """项目带着「首次启动自己装依赖」的材料时返回一句说明（列出找到的文件），否则 None。
+def offline_dependency_files(project_root: str | Path) -> list[str]:
+    """项目根下各顶层目录里（深度以内）的离线依赖包（相对项目根，posix）。
 
-    认三样：项目根上的 ``requirements.txt`` / ``pyproject.toml``；顶层目录里（深度以内）的
-    ``*.whl``；``get-pip.py``。与投影不同，项目自带的解释器目录里的 ``get-pip.py``（MaaFgo 把它
-    放在 ``python/`` 下）也算：这里问的是「项目会不会自己装」，不是「要不要整棵带走」。
+    与 :func:`describe_self_install_materials` 同一套判据：项目自带的解释器目录里的
+    ``get-pip.py`` 也算。
     """
 
     root = Path(project_root)
-    found = [name for name in DEPENDENCY_MANIFEST_NAMES if (root / name).is_file()]
+    found: list[str] = []
     try:
         entries = sorted(root.iterdir())
     except OSError:
@@ -107,6 +106,20 @@ def describe_self_install_materials(project_root: str | Path) -> str | None:
                 found.extend(_offline_dependency_files(entry, PurePath(entry.name)))
         except OSError:
             continue
+    return found
+
+
+def describe_self_install_materials(project_root: str | Path) -> str | None:
+    """项目带着「首次启动自己装依赖」的材料时返回一句说明（列出找到的文件），否则 None。
+
+    认三样：项目根上的 ``requirements.txt`` / ``pyproject.toml``；顶层目录里（深度以内）的
+    ``*.whl``；``get-pip.py``。与投影不同，项目自带的解释器目录里的 ``get-pip.py``（MaaFgo 把它
+    放在 ``python/`` 下）也算：这里问的是「项目会不会自己装」，不是「要不要整棵带走」。
+    """
+
+    root = Path(project_root)
+    found = [name for name in DEPENDENCY_MANIFEST_NAMES if (root / name).is_file()]
+    found.extend(offline_dependency_files(root))
     if not found:
         return None
     shown = found[:5]
@@ -120,4 +133,5 @@ __all__ = [
     "describe_self_install_materials",
     "is_cpython_bundled_file",
     "is_offline_dependency_file",
+    "offline_dependency_files",
 ]

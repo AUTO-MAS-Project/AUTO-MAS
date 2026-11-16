@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type UserGetIn = {
     /**
-     * 所属脚本ID
+     * 所属托管ID
      */
     scriptId: string;
     /**
-     * 用户ID, 未携带时表示获取所有用户数据
+     * 账号ID, 未携带时表示获取所有账号数据
      */
     userId?: (string | null);
 };

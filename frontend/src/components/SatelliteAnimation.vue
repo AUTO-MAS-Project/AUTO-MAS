@@ -9,7 +9,7 @@
     @pointercancel="cancelPress"
     @pointerleave="handlePointerLeave"
   >
-    <div v-if="loading" class="loading-spinner"></div>
+    <a-spin v-if="loading" size="large" class="loading-spinner" />
     <img v-if="staticImage" class="satellite-static" :src="staticImage" alt="" />
     <SatelliteHoverLabel
       ref="hoverLabel"
@@ -55,15 +55,18 @@ import { useSatelliteEggs } from './satellite/useSatelliteEggs'
 import { useSatellitePointer } from './satellite/useSatellitePointer'
 import { useSatelliteStill } from './satellite/useSatelliteStill'
 import SatelliteEffectsPausedChip from './satellite/SatelliteEffectsPausedChip.vue'
+import { usePressSound } from './satellite/usePressSound'
 
-/** 主 WS 没开着时，按这个间隔拉运行快照兜底 */
+/** 前台按此间隔刷新配置与持久化历史，后台暂停。 */
 const STATUS_POLL_INTERVAL = 10000
 
 const logger = window.electronAPI.getLogger('卫星动画')
 const { isDark } = useTheme()
 const { getScripts } = useScriptApi()
 const performanceStore = usePerformanceStore()
-// 卫星状态来自任务运行时常驻订阅（WS 增量 + HTTP 快照兜底）
+// 中心图标的按压音效：经典卫星与 3D 星系共用同一套设置与播放逻辑
+const { playPress: playCenterPressSound, playRelease: playCenterReleaseSound } = usePressSound()
+// 卫星提示来自配置与持久化历史查询，由组件已有轮询刷新
 const {
   statuses: satelliteStatuses,
   setScriptKeys: setSatelliteScriptKeys,
@@ -136,6 +139,8 @@ const {
   spawnText,
   requestRender,
   onCenterTap: eggs.pokeCenter,
+  onCenterPress: playCenterPressSound,
+  onCenterRelease: playCenterReleaseSound,
   onSatelliteTap: handleSatelliteTap,
   onEmptyPress: eggs.tryCatchMeteor,
 })
@@ -157,10 +162,9 @@ watch(isDark, dark => {
   scheduleStill()
 })
 
-// 常驻订阅推送新状态时同步刷新展示
+// 配置／历史查询更新后同步刷新展示
 watch(satelliteStatuses, statuses => {
   scene?.setStatuses(statuses)
-  eggs.onStatusesChange(statuses)
   requestRender()
   scheduleStill()
 })
@@ -170,17 +174,6 @@ watch(
   () => performanceStore.lowPerformanceMode,
   () => void applyMode()
 )
-
-// WS 打开时事件推送足够，停掉 HTTP 轮询（运行态资源在 onConnected 里已重拉一次快照）；
-// 掉线期间再靠轮询兜底
-watch(connectionState(), state => {
-  if (isUnmounted || performanceStore.isBackgrounded) return
-  if (state === 'open') {
-    stopStatusPolling()
-  } else {
-    startStatusPolling()
-  }
-})
 
 watch(
   () => performanceStore.isBackgrounded,
@@ -271,7 +264,7 @@ onUnmounted(() => {
 // ==================== 场景 ====================
 
 // 后端未就绪（主 WS 未 open）时不发请求：启动遮罩期间立即初始化会把脚本列表与
-// 运行快照打向尚未监听的端口，请求直接以 "Network Error" 弹错，卫星也会整场不渲染。
+// 配置查询打向尚未监听的端口，请求直接以 "Network Error" 弹错，卫星也会整场不渲染。
 function waitBackendReady(): Promise<void> {
   if (connectionState().value === 'open') return Promise.resolve()
   return new Promise(resolve => {
@@ -345,7 +338,6 @@ async function startLive(): Promise<void> {
   // 挂载时已在暂停中就别放背景流星（watcher 只在变化时触发，这里补初始状态）
   scene.setMeteorsEnabled(!effectsPaused.value)
   // 记下此刻已经在跑的脚本：之后看着它开跑才喊「启动」
-  eggs.onStatusesChange(satelliteStatuses.value)
 
   const now = Date.now()
   if (performanceStore.isBackgrounded || effectsPaused.value) {
@@ -372,7 +364,7 @@ function teardownLive(): void {
   scene = null
 }
 
-/** 实时场景逐帧连续画；脚本运行暂停期间只把在飞的动效放完，闲置就停，状态推送时补一帧 */
+/** 实时场景逐帧连续画；脚本运行暂停期间只把在飞的动效放完，闲置就停，查询结果变化时补一帧 */
 function drawFrame(): void {
   if (isUnmounted || !scene || performanceStore.isBackgrounded) return
 
@@ -408,15 +400,11 @@ function stopStatusPolling(): void {
 }
 
 function startStatusPolling(): void {
-  if (
-    performanceStore.isBackgrounded ||
-    statusPollTimer !== null ||
-    connectionState().value === 'open'
-  ) {
+  if (performanceStore.isBackgrounded || statusPollTimer !== null) {
     return
   }
 
-  // 周期性 HTTP 快照兜底：只在主 WS 没开着时轮询；WS 开着靠 task.* 事件推送
+  // 配置与历史不由 task.* 推送，WS 连通时也正常刷新。
   statusPollTimer = setInterval(() => void refreshSatelliteStatuses(), STATUS_POLL_INTERVAL)
 }
 
@@ -495,18 +483,6 @@ function spawnText(point: ScreenPoint, text: string, variant: FloatTextVariant):
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 32px;
-  height: 32px;
-  margin: -16px 0 0 -16px;
-  border: 2px solid var(--ant-color-border);
-  border-top-color: var(--ant-color-primary);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  transform: translate(-50%, -50%);
 }
 </style>

@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type MaaFWShellInstanceImportIn = {
     /**
-     * MFW 脚本 ID
+     * MFW 托管 ID
      */
     scriptId: string;
     /**
-     * 要导入的实例 ID，每个建一个用户
+     * 要导入的实例 ID，每个建一个账号
      */
     instanceIds: Array<string>;
 };

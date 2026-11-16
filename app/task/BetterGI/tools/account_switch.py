@@ -22,7 +22,7 @@
 MAS 内置冻结副本：MAS 只写订阅清单，由 BetterGI 把脚本更新到
 ``User/JsScript/SwitchAccountMultipleMode``。切号/一条龙的「运行前先同步更新、更新完成
 再执行」特性当前已冻结停用（仅保留后台自动更新与误删恢复）。
-MAS 按当前用户配置生成一个独立的配置组 ``MAS切换账号``，供
+MAS 按当前账号配置生成一个独立的配置组 ``MAS切换账号``，供
 ``BetterGI.exe --startGroups MAS切换账号`` 单独执行。
 
 - 订阅清单: ``{RootPath}/User/Subscriptions/bettergi-scripts-list.json`` = 路径数组
@@ -35,7 +35,7 @@ MAS 按当前用户配置生成一个独立的配置组 ``MAS切换账号``，�
   ``record_switch_checkout_result``），下一轮才删除中央仓库副本
   ``{RootPath}/Repos/bettergi-scripts-list`` 强制完整重建；首次启用不会删用户已有仓库。
 
-账号密码来源：MAS 用户配置 ``Info.Id`` / ``Info.Password``（密码已加密存储），
+账号密码来源：MAS 账号配置 ``Info.Id`` / ``Info.Password``（密码已加密存储），
 下拉列表模式下由 MAS 负责把完整手机号/邮箱转换为游戏下拉列表显示的打码形式。
 """
 
@@ -44,8 +44,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from app.utils import get_logger, resource_path
-from app.utils.io import read_file, write_file
+from app.core import Config
+from app.utils import get_logger
+from app.utils import io as _utils_io
 
 from .one_dragon import GLOBAL_CONFIG_LOCK
 
@@ -59,7 +60,7 @@ _JS_SCRIPT_REL_DIR = Path("User") / "JsScript"
 _SCRIPT_GROUP_REL_DIR = Path("User") / "ScriptGroup"
 
 # 内置资源目录（随 MAS 版本同步；含配置组模板，脚本本体不再内置）
-_RES_TEMPLATE_DIR = resource_path("templates", "BetterGI")
+_RES_TEMPLATE_DIR = Config.resource_path / "templates" / "BetterGI"
 
 # 切换账号脚本在 BetterGI 脚本仓库中的相对路径（repo 下），"js" 前缀映射到 User/JsScript
 _SCRIPT_REPO_PATH = "js/SwitchAccountMultipleMode"
@@ -178,11 +179,11 @@ def _ensure_script_subscription(root_path: Path) -> Path:
     保留用户已订阅的其他脚本；由 BetterGI ScriptRepoUpdater 据此拉取/更新。
     """
     sub_path = root_path / _SUBSCRIPTION_REL_DIR / f"{_REPO_FOLDER_NAME}.json"
-    data = read_file(sub_path)
+    data = _utils_io.read_file(sub_path)
     subscribed = [str(x) for x in data] if isinstance(data, list) else []
     if _SCRIPT_REPO_PATH not in subscribed:
         subscribed.append(_SCRIPT_REPO_PATH)
-    write_file(sub_path, subscribed)
+    _utils_io.write_file(sub_path, subscribed)
     logger.info(f"已订阅切换账号脚本: {_SCRIPT_REPO_PATH} -> {sub_path}")
     return sub_path
 
@@ -203,7 +204,7 @@ def _ensure_auto_update_on_cli(root_path: Path, sync_update: bool = False) -> Pa
     """
     config_path = root_path / _BGI_CONFIG_REL_PATH
     with GLOBAL_CONFIG_LOCK:
-        config = read_file(config_path)
+        config = _utils_io.read_file(config_path)
         if not isinstance(config, dict):
             config = {}
         # 统一写到 camelCase 键（BetterGI JsonOptions 以 CamelCase 读写，PascalCase 键读取时会被忽略）
@@ -216,7 +217,7 @@ def _ensure_auto_update_on_cli(root_path: Path, sync_update: bool = False) -> Pa
         script_cfg["selectedChannelName"] = "CNB"
         config.pop("ScriptConfig", None)
         config["scriptConfig"] = script_cfg
-        write_file(config_path, config)
+        _utils_io.write_file(config_path, config)
     logger.info(
         "已配置 BetterGI 脚本仓库自动更新(运行时预更新=已冻结)，渠道 CNB: "
         f"{config_path}"
@@ -315,12 +316,12 @@ def write_switch_group(
     """生成（覆盖）BetterGI 切换账号配置组 ``MAS切换账号``。
 
     ``folderName`` 固定指向脚本仓库检出目录 ``SwitchAccountMultipleMode``，与
-    ``ensure_switch_subscription`` 对齐；``jsScriptSettingsObject`` 按用户注入。
+    ``ensure_switch_subscription`` 对齐；``jsScriptSettingsObject`` 按账号注入。
     Returns:
         写入的配置组 JSON 文件路径。
     """
     template_path = _RES_TEMPLATE_DIR / f"{GROUP_NAME}.json"
-    template = read_file(template_path)
+    template = _utils_io.read_file(template_path)
     if not isinstance(template, dict) or not isinstance(template.get("projects"), list):
         raise RuntimeError(f"切换账号配置组模板无效: {template_path}")
 
@@ -333,7 +334,7 @@ def write_switch_group(
     )
 
     out_path = root_path / _SCRIPT_GROUP_REL_DIR / f"{GROUP_NAME}.json"
-    write_file(out_path, template)
+    _utils_io.write_file(out_path, template)
     logger.info(f"已生成切换账号配置组: {out_path} (账号 {mask_account(account)})")
     return out_path
 
@@ -346,7 +347,7 @@ def scrub_switch_group(root_path: Path) -> None:
     ``username`` 还原为打码（下拉列表模式本已是打码，OCR 模式的完整账号被抹掉）。
     """
     out_path = root_path / _SCRIPT_GROUP_REL_DIR / f"{GROUP_NAME}.json"
-    data = read_file(out_path)
+    data = _utils_io.read_file(out_path)
     if not isinstance(data, dict):
         return
     for proj in data.get("projects") or []:
@@ -357,5 +358,5 @@ def scrub_switch_group(root_path: Path) -> None:
             continue
         settings["password"] = ""
         settings["username"] = mask_account(str(settings.get("username") or ""))
-    write_file(out_path, data)
+    _utils_io.write_file(out_path, data)
     logger.info(f"已脱敏切换账号配置组: {out_path}")

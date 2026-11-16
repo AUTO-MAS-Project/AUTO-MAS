@@ -8,24 +8,24 @@ export type GeneralUserConfig_Notify = {
      */
     Enabled?: (boolean | null);
     /**
+     * 是否发送邮件
+     */
+    IfSendMail?: (boolean | null);
+    /**
      * 是否发送统计信息
      */
     IfSendStatistic?: (boolean | null);
     /**
-     * 是否发送邮件通知
-     */
-    IfSendMail?: (boolean | null);
-    /**
-     * 邮件接收地址
-     */
-    ToAddress?: (string | null);
-    /**
-     * 是否使用Server酱推送
+     * 是否启用 Server 酱
      */
     IfServerChan?: (boolean | null);
     /**
-     * ServerChanKey
+     * Server 酱密钥
      */
     ServerChanKey?: (string | null);
+    /**
+     * 收件地址
+     */
+    ToAddress?: (string | null);
 };
 

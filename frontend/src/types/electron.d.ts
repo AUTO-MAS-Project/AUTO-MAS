@@ -1,4 +1,12 @@
-import type { GlobalConfig_UI, GlobalConfig_Update } from '@/api'
+import type { FluxdownInstallOut, GlobalConfig_UI, GlobalConfig_Update } from '@/api'
+import type { AnalyticsContext, RendererAnalyticsEvent } from '@/types/analytics'
+import type { FrontendCloseRequest } from '@/types/appLifecycle'
+import type { AppearanceCategory, MascotImportResult, MascotSummary } from '@/types/mascotPack'
+import type {
+  DesktopMascotHostAPI,
+  DesktopMascotSelection,
+  DesktopMascotTaskHostAPI,
+} from '@/types/desktopMascot'
 import type {
   AppearanceCleanupResult,
   AppearanceImportResult,
@@ -34,6 +42,8 @@ export interface RelatedProcess {
 }
 
 export interface ElectronConfig {
+  confirmBeforeClose?: boolean
+  lastCloseAction?: 'quit' | 'tray'
   UI?: GlobalConfig_UI & {
     TrayItems?: unknown[]
     [key: string]: unknown
@@ -49,20 +59,38 @@ export interface MysteryAccessContext {
   backendHash: string
 }
 
-export interface ElectronMirrorSource {
-  name: string
-  url: string
-  type: 'official' | 'mirror'
-  description: string
-}
-
-export type ElectronMirrorType = 'python' | 'get_pip' | 'git' | 'repo' | 'pip_mirror'
 export type ElectronApiEndpointKey = 'local' | 'websocket'
 
 // ==================== Runtime 后端更新 ====================
 
-/** 后端启动链路：`off` 走原有的自行启动 python.exe，其余两种由 Runtime 监督。 */
-export type RuntimeLaunchMode = 'off' | 'development' | 'managed'
+/** 后端启动模式：开发源码或受管工作区，均由 Runtime 监督。 */
+export type RuntimeLaunchMode = 'development' | 'managed'
+
+export interface RuntimeBinaryUpdateResult {
+  status: 'upgraded' | 'current' | 'skipped' | 'cancelled' | 'failed'
+  target?: { version: string }
+  error?: string
+}
+
+export interface RuntimeBinaryUpdateCheck {
+  status: 'available' | 'current' | 'skipped' | 'unavailable'
+  currentVersion?: string | null
+  target?: { version: string }
+  error?: string
+}
+
+export interface RuntimeBinaryProgress {
+  /** Electron 更新器提供的目标版本与当前下载尝试；旧事件可缺省。 */
+  targetVersion?: string
+  sourceName?: string
+  sourceIndex?: number
+  sourceCount?: number
+  source?: string
+  /** Electron 更新器的正常阶段；旧事件缺失时保留原文。 */
+  phase?: 'check' | 'download' | 'complete'
+  progress: number
+  message: string
+}
 
 /** 更新失败的三类结局，界面据此决定给什么按钮。 */
 export type RuntimeUpdatePhase = 'shutdown' | 'bootstrap' | 'restart'
@@ -110,21 +138,14 @@ export interface RuntimeUpdateOutcome {
 
 // ==================== Runtime 初始化界面 ====================
 
-/**
- * Runtime 灰度开关的三态。
- *
- * `off` 是原有的自装 Python / pip / Git 链路，另外两态由 auto-mas-runtime.exe 接管；
- * 主进程没给这个字段时（旧版本主进程、旧链路进度）界面一律按 `off` 处理。
- */
-export type RuntimeInitMode = 'off' | 'development' | 'managed'
+/** Runtime 初始化模式。 */
+export type RuntimeInitMode = 'development' | 'managed'
 
 /** 初始化界面开局问一次的 Runtime 上下文。 */
 export interface RuntimeInitContext {
   mode: RuntimeInitMode
   /** Runtime 没给 logPath 时「打开日志」退回的文件。 */
   fallbackLogPath: string
-  /** 各段在 Runtime 链路下可选的镜像键；空数组表示该段不展示镜像选择。 */
-  mirrorKeys: Record<string, string[]>
 }
 
 /** Runtime doctor 的单项检查结果。 */
@@ -140,10 +161,12 @@ export interface RuntimeDoctorCheck {
 /**
  * Runtime 链路失败时随结果一起给出的结构化字段。
  *
- * 旧链路一律缺省，所以全是可选的；界面按这些机器字段决定给哪些按钮，
+ * 启动前失败可能没有结构化字段；界面按可用的机器字段决定给哪些按钮，
  * 绝不解析 `error` 里的中文文案。
  */
 export interface RuntimeFailureFields {
+  /** Runtime 第 0 步失败的实际来源；界面仍沿用 failedStage。 */
+  failureOrigin?: 'runtime_binary'
   /** Runtime 结果码，如 `MIRROR_EXHAUSTED` / `INTERNAL_ERROR`。 */
   code?: string
   retryable?: boolean
@@ -155,18 +178,17 @@ export interface RuntimeFailureFields {
   logPath?: string
 }
 
-/** 单步安装与重试的返回形状：旧链路只有前两项，Runtime 链路额外带结构化字段。 */
+/** 单步准备与重试的返回形状，失败时携带 Runtime 结构化字段。 */
 export type InstallStageResult = {
   success: boolean
   error?: string
+  failedStage?: string
 } & RuntimeFailureFields
 
-// ==================== Runtime 灰度开关 ====================
+// ==================== Runtime 启动模式 ====================
 
-/** Runtime 灰度开关的持久化设置取值；`auto` 表示跟随构建默认值。 */
-export type RuntimeLaunchModeSetting = 'auto' | 'off' | 'development' | 'managed'
 /** 最终生效值来自哪一级。 */
-export type RuntimeLaunchModeSource = 'env' | 'setting' | 'default'
+export type RuntimeLaunchModeSource = 'env' | 'default'
 
 /** 日志页增量读取的返回，与主进程 electron/services/logFileReader.ts 一致 */
 export interface LogIncrement {
@@ -189,10 +211,8 @@ export interface BackendStatus {
 }
 
 export interface RuntimeLaunchModeState {
-  /** 持久化设置里存的原始值，用于回填选择控件。 */
-  persisted: RuntimeLaunchModeSetting
-  /** 本次实际生效的模式（`auto` 已被解析成具体值）。 */
-  mode: 'off' | 'development' | 'managed'
+  /** 本次实际生效的模式。 */
+  mode: 'development' | 'managed'
   source: RuntimeLaunchModeSource
 }
 
@@ -202,27 +222,53 @@ export interface VirtualDisplayPromptPayload {
   monitor?: { left: number; top: number; right: number; bottom: number } | null
 }
 
-export interface ElectronAPI {
+export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHostAPI {
+  analytics?: {
+    getContext: () => Promise<AnalyticsContext>
+    trackEvent: (context: number, event: RendererAnalyticsEvent) => void
+  }
+  isMacOS: boolean
+  installFluxdown: (mirror: string) => Promise<FluxdownInstallOut>
+  listMascots?: () => Promise<MascotSummary[]>
+  importMascot?: (zipPath: string, replace?: boolean) => Promise<MascotImportResult>
+  removeMascot?: (id: string) => Promise<{ success: boolean; error?: string }>
+  /** 不带选择状态时表示资源列表变化。 */
+  onMascotChanged?: (callback: (selection?: DesktopMascotSelection) => void) => () => void
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
   selectFile: (filters?: unknown[]) => Promise<string[]>
+  saveTextFile: (
+    defaultName: string,
+    content: string,
+    filters?: unknown[],
+    dialogOptions?: { dialogTitle?: string; buttonLabel?: string }
+  ) => Promise<{ success: boolean; filePath?: string; error?: string }>
   openUrl: (url: string) => Promise<{ success: boolean; error?: string }>
   discoverOkwwPath: () => Promise<PathDiscoveryResult>
   discoverWutheringWavesPath: () => Promise<PathDiscoveryResult>
 
   // 窗口控制
-  windowMinimize: () => Promise<void>
+  windowMinimize: () => Promise<boolean>
   windowMaximize: () => Promise<void>
   windowClose: () => Promise<void>
+  windowHideToTray: () => Promise<boolean>
+  notifyRendererReady?: () => void
+  notifyNativeCloseHandlerReady?: () => void
   appRestart: () => Promise<void>
+  /** 只标记「这次退出后重新拉起」，退出本身仍走 appQuit；后端请求的重启用它 */
+  appRestartOnQuit?: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
   onWindowMaximizedChange: (callback: (maximized: boolean) => void) => () => void
   windowFocus: () => Promise<void>
+  onNativeWindowCloseRequested?: (callback: () => void) => () => void
   /** 电源操作倒计时开始：把窗口拉到最前并临时置顶 */
   powerWarningStart?: () => Promise<void>
   /** 倒计时结束或取消：撤回置顶 */
   powerWarningEnd?: () => Promise<void>
   appQuit: () => Promise<void>
+  appObserveBackendClose?: (request?: FrontendCloseRequest) => void
+  /** 等待用户确认期间暂停退出兜底，保留关闭请求锁。 */
+  appWaitForQuitConfirmation?: () => Promise<boolean>
   /** 保存前领取退出凭证；准备超时不会强制关闭后端。 */
   appPrepareQuit?: () => Promise<number | null>
   /** 保存完成后确认凭证仍有效，开始关闭后端的兜底计时。 */
@@ -232,7 +278,7 @@ export interface ElectronAPI {
 
   // 系统休眠恢复与主进程关闭请求（生命周期协调器消费）
   onSystemResume?: (callback: () => void) => () => void
-  onAppCloseRequested?: (callback: () => void) => () => void
+  onAppCloseRequested?: (callback: (confirmRunningTasks: boolean) => void) => () => void
 
   // 窗口可见性/后台状态
   getWindowActivity?: () => Promise<'visible' | 'background'>
@@ -264,28 +310,25 @@ export interface ElectronAPI {
   getInitializedVersion: () => Promise<string | null>
   setInitializedVersion: (version: string) => Promise<boolean>
 
-  // Runtime 灰度开关：持久化设置 + 当前生效值与来源，重启后生效。
+  // Runtime 当前生效模式与来源（只读）。
   // `mode` 同时是标题栏更新入口走哪条链路的判据。
   getRuntimeLaunchMode: () => Promise<RuntimeLaunchModeState>
-  setRuntimeLaunchMode: (mode: RuntimeLaunchModeSetting) => Promise<RuntimeLaunchModeState>
 
   // 托盘设置
   updateTraySettings: (uiSettings: unknown) => Promise<boolean>
   updateTrayConfig: (trayItems: unknown) => Promise<boolean>
   onTrayActionRequest: (
-    callback: (request: {
-      action: 'quit' | 'restart' | 'startTask'
-      taskId?: string
-      label?: string
-    }) => void
+    callback: (request: { action: 'quit' | 'startTask'; taskId?: string; label?: string }) => void
   ) => () => void
   syncBackendConfig: (backendSettings: unknown) => Promise<boolean>
 
   // 日志文件操作
-  exportLogs: () => Promise<{
+  exportLogs: (dialogLabels?: { title: string; zipFilterName: string }) => Promise<{
     success: boolean
     message?: string
     zipPath?: string
+    skippedPaths?: string[]
+    errorCode?: 'window-unavailable' | 'directory-missing' | 'no-files'
     error?: string
   }>
   exportMaaIssueReport: (dialogLabels?: { title: string; zipFilterName: string }) => Promise<{
@@ -300,7 +343,8 @@ export interface ElectronAPI {
   exportMaaEndIssueReport: () => Promise<{
     success: boolean
     message?: string
-    zipPath?: string
+    directoryPaths?: string[]
+    incompleteCount?: number
     error?: string
   }>
   exportOkwwIssueReport: () => Promise<{
@@ -333,16 +377,19 @@ export interface ElectronAPI {
     zipPath?: string
     error?: string
   }>
-  /** configTypes：要列出的脚本配置类名（MaaFW 特调注册表的 scriptConfigType） */
-  listMaaFWIssueReportScripts: (configTypes: string[]) => Promise<
+  /** configTypes：要列出的脚本配置类名（MaaFW 特调注册表的 scriptConfigType）；同项目的脚本合成一组 */
+  listMaaFWIssueReportProjects: (configTypes: string[]) => Promise<
     Array<{
-      uid: string
-      type: string
-      name: string
-      projectLabel: string
+      /** 组键，原样传给 exportMaaFWIssueReport */
+      key: string
+      label: string
+      scriptCount: number
+      /** 现存脚本里已经没有、只在运行历史里出现的项目 */
+      deletedOnly: boolean
+      types: string[]
     }>
   >
-  exportMaaFWIssueReport: (scriptId: string) => Promise<{
+  exportMaaFWIssueReport: (projectKey: string) => Promise<{
     success: boolean
     message?: string
     zipPath?: string
@@ -355,6 +402,12 @@ export interface ElectronAPI {
     error?: string
   }>
   exportMSSIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
+  exportHSRIssueReport: () => Promise<{
     success: boolean
     message?: string
     zipPath?: string
@@ -381,6 +434,8 @@ export interface ElectronAPI {
   showVirtualDisplayPrompt?: (
     payload: VirtualDisplayPromptPayload
   ) => Promise<{ success: boolean; error?: string }>
+  observeVirtualDisplayPrompt?: () => void
+  detachVirtualDisplayFromPrompt: () => Promise<import('@/api').VirtualDisplayDetachOut | null>
   closeVirtualDisplayPrompt?: () => Promise<void>
   /** 弹窗页面挂载后自己来取当前那一份数据；没有待处理的提示时为 null */
   getVirtualDisplayPrompt?: () => Promise<VirtualDisplayPromptPayload | null>
@@ -401,6 +456,8 @@ export interface ElectronAPI {
   showItemInFolder: (filePath: string) => Promise<void>
   fileExists: (filePath: string) => Promise<boolean>
   readFile: (filePath: string) => Promise<string>
+  /** 按 base64 读二进制文件（音频等）；渲染进程用它拼 data URL */
+  readFileBase64: (filePath: string, maxBytes?: number) => Promise<{ base64: string; size: number }>
 
   getAppPath: (name: string) => Promise<string>
   verifyMysteryAccessCode: (accessCode: string, context: MysteryAccessContext) => Promise<boolean>
@@ -411,22 +468,37 @@ export interface ElectronAPI {
   importAppearance?: (zipPath: string, replace?: boolean) => Promise<AppearanceImportResult>
   removeAppearance?: (id: string) => Promise<{ success: boolean; error?: string }>
   clearInvalidAppearance?: (expectedId: string) => Promise<AppearanceCleanupResult>
-  listOnlineAppearances?: (query?: OnlineAppearanceQuery) => Promise<OnlineAppearanceListResult>
-  getOnlineAppearance?: (fileKey: string) => Promise<OnlineAppearanceDetailResult>
+  listOnlineAppearances?: (
+    query?: OnlineAppearanceQuery,
+    category?: AppearanceCategory
+  ) => Promise<OnlineAppearanceListResult>
+  getOnlineAppearance?: (
+    fileKey: string,
+    category?: AppearanceCategory
+  ) => Promise<OnlineAppearanceDetailResult>
   prepareOnlineAppearance?: (
     fileKey: string,
-    versionNo: number
+    versionNo: number,
+    category?: AppearanceCategory
   ) => Promise<OnlineAppearancePrepareResult>
   installOnlineAppearance?: (
     token: string,
-    replace?: boolean
+    replace?: boolean,
+    category?: AppearanceCategory
   ) => Promise<OnlineAppearanceInstallResult>
-  discardOnlineAppearance?: (token: string) => Promise<{ success: boolean }>
+  discardOnlineAppearance?: (
+    token: string,
+    category?: AppearanceCategory
+  ) => Promise<{ success: boolean }>
   getOnlineAppearanceCover?: (
     fileKey: string,
-    versionNo?: number
+    versionNo?: number,
+    category?: AppearanceCategory
   ) => Promise<OnlineAppearanceCoverResult>
-  inspectLocalAppearance?: (zipPath: string) => Promise<LocalAppearanceInspectResult>
+  inspectLocalAppearance?: (
+    zipPath: string,
+    category?: AppearanceCategory
+  ) => Promise<LocalAppearanceInspectResult>
   inspectAppearanceCover?: (
     imagePath: string
   ) => Promise<{ success: boolean; dataUrl?: string; error?: string }>
@@ -436,28 +508,21 @@ export interface ElectronAPI {
   // ==================== 初始化 API ====================
 
   // 单步初始化API
-  initMirrors: () => Promise<{ success: boolean; error?: string }>
-  // rebuild 对应失败态的「重建环境」按钮，只在 Runtime 链路下有意义
-  installPython: (selectedMirror?: string, rebuild?: boolean) => Promise<InstallStageResult>
-  installPip: (selectedMirror?: string, rebuild?: boolean) => Promise<InstallStageResult>
-  installGit: (selectedMirror?: string, rebuild?: boolean) => Promise<InstallStageResult>
-  pullRepository: (
-    targetBranch?: string,
-    selectedMirror?: string,
-    rebuild?: boolean
-  ) => Promise<InstallStageResult>
-  installDependencies: (
-    selectedMirror?: string,
-    rebuild?: boolean
-  ) => Promise<InstallStageResult & { skipped?: boolean }>
-  getMirrors: (type: ElectronMirrorType) => Promise<ElectronMirrorSource[]>
-  /** 初始化界面开局问一次：走没走 Runtime、回退日志文件、各段可用镜像键。 */
-  getRuntimeInitContext?: () => Promise<RuntimeInitContext>
+  // rebuild 对应失败态的「重建环境」按钮。
+  installPython: (rebuild?: boolean) => Promise<InstallStageResult>
+  pullRepository: (rebuild?: boolean) => Promise<InstallStageResult>
+  installDependencies: (rebuild?: boolean) => Promise<InstallStageResult & { skipped?: boolean }>
+  /** 初始化界面的运行模式与回退日志文件。 */
+  getRuntimeInitContext: () => Promise<RuntimeInitContext>
+  updateRuntimeBinary: () => Promise<RuntimeBinaryUpdateResult>
+  checkRuntimeBinaryUpdate: () => Promise<RuntimeBinaryUpdateCheck>
+  onRuntimeBinaryProgress: (callback: (progress: RuntimeBinaryProgress) => void) => void
+  removeRuntimeBinaryProgressListener: () => void
 
   // API 端点获取
   getApiEndpoint: (key: ElectronApiEndpointKey) => Promise<string>
 
-  // 完整初始化流程（Runtime 首次初始化与旧链路共用）
+  // Runtime 完整初始化流程
   initialize: (
     targetBranch?: string,
     startBackend?: boolean
@@ -470,9 +535,26 @@ export interface ElectronAPI {
     } & RuntimeFailureFields
   >
 
+  waitDesktopStartup: () => Promise<
+    ({ success: boolean; error?: string; failedStage?: string } & RuntimeFailureFields) | null
+  >
+  desktopStartupStatus: () => Promise<{
+    runtimeMode: RuntimeInitMode
+    flowKind: 'startup' | 'first-run' | 'update'
+    fullInitialization: boolean
+    state: 'running' | 'ready' | 'failed'
+    progress: Array<{
+      stage: string
+      progress: number
+      message: string
+      status?: 'started' | 'running' | 'completed' | 'failed'
+    }>
+  } | null>
+  cancelDesktopStartup: () => Promise<void>
+
   // 后端服务管理
-  backendStart: () => Promise<InstallStageResult>
-  backendRestart: () => Promise<InstallStageResult>
+  backendStart: (retry?: boolean) => Promise<InstallStageResult>
+  backendRestart: (reason?: 'manual' | 'recovery') => Promise<InstallStageResult>
   backendStatus: () => Promise<BackendStatus>
   checkRuntimeBackendUpdate: () => Promise<{
     updateAvailable: boolean
@@ -490,18 +572,6 @@ export interface ElectronAPI {
   onBackendUpdateProgress: (callback: (progress: RuntimeUpdateProgress) => void) => void
   removeBackendUpdateProgressListener?: () => void
 
-  // 监听单步进度
-  onPythonProgress: (callback: (progress: unknown) => void) => void
-  removePythonProgressListener?: () => void
-  onPipProgress: (callback: (progress: unknown) => void) => void
-  removePipProgressListener?: () => void
-  onGitProgress: (callback: (progress: unknown) => void) => void
-  removeGitProgressListener?: () => void
-  onRepositoryProgress: (callback: (progress: unknown) => void) => void
-  removeRepositoryProgressListener?: () => void
-  onDependencyProgress: (callback: (progress: unknown) => void) => void
-  removeDependencyProgressListener?: () => void
-
   // 监听完整初始化进度
   onInitializationProgress: (
     callback: (progress: {
@@ -510,20 +580,25 @@ export interface ElectronAPI {
       totalStages: number
       progress: number
       message: string
-      /** Runtime 链路给出的机器可读段状态；旧链路不产生。 */
+      /** Runtime 链路给出的机器可读段状态。 */
       status?: 'started' | 'running' | 'completed' | 'failed'
-      /** 本条进度来自哪条链路；旧链路不产生，按 off 处理。 */
+      /** 本条进度对应的 Runtime 模式。 */
       runtimeMode?: RuntimeInitMode
       /** 当前阶段没有可靠总量，应展示持续活动状态而不是精确百分比。 */
       indeterminate?: boolean
-      /** 产生本条进度的 Runtime stage 原文（`network.probe` / `uv.download` …）；旧链路不产生。 */
+      /** 产生本条进度的 Runtime stage 原文（`network.probe` / `uv.download` …）。 */
       runtimeStage?: string
-      /** 产生本条进度的 Runtime progress.status 原文；旧链路不产生。 */
+      /** 产生本条进度的 Runtime progress.status 原文。 */
       runtimeStatus?: string
       /** 当前条目：正在下载的文件名，或测速时的源 key。 */
       item?: string
       /** 当前字节来自哪个源的 key。 */
       source?: string
+      /** Runtime 下载的目标版本与当前源尝试；旧事件可缺省。 */
+      targetVersion?: string
+      sourceName?: string
+      sourceIndex?: number
+      sourceCount?: number
       /** 最近 1 秒窗口的吞吐（字节/秒）。 */
       bytesPerSecond?: number
       /** 已下载字节数。 */

@@ -1,6 +1,6 @@
 <template>
-  <a-card class="command-card">
-    <section class="command-panel" :aria-label="t('home.command.aria')">
+  <a-card class="command-card app-page-surface">
+    <section class="command-panel" :aria-label="t('core.home.command.aria')">
       <div class="command-main">
         <ParticlesBg
           class="command-particles"
@@ -14,7 +14,7 @@
         </div>
         <div v-if="!isBootstrapping" class="command-footer">
           <a-tooltip
-            :title="t('home.command.refresh')"
+            :title="t('core.home.command.refresh')"
             :open="refreshTipOpen"
             @open-change="refreshTipOpen = $event"
           >
@@ -22,7 +22,7 @@
               type="text"
               size="small"
               class="command-refresh"
-              :aria-label="t('home.command.refresh')"
+              :aria-label="t('core.home.command.refresh')"
               @click="onRefreshGreeting"
             >
               <template #icon>
@@ -30,7 +30,7 @@
               </template>
             </a-button>
           </a-tooltip>
-          <span class="command-author">—— {{ commandAuthor }}</span>
+          <span v-if="commandAuthor" class="command-author">—— {{ commandAuthor }}</span>
         </div>
       </div>
 
@@ -45,7 +45,7 @@
         <div class="scheduler-content">
           <div class="launcher-header">
             <div>
-              <div class="launcher-title">{{ t('home.command.title') }}</div>
+              <div class="launcher-title">{{ t('core.home.command.title') }}</div>
             </div>
           </div>
 
@@ -58,12 +58,14 @@
               :loading="schedulerTasksLoading"
               size="large"
               :max-tag-count="'responsive'"
-              :placeholder="t('home.command.placeholder')"
+              :placeholder="t('core.home.command.placeholder')"
               @dropdown-visible-change="$emit('dropdown-visible-change', $event)"
             >
               <!-- 拉取失败时列表为空：说明原因，展开下拉本身就会重试 -->
               <template v-if="schedulerTasksUnavailable" #notFoundContent>
-                <span class="launcher-select-hint">{{ t('home.quickStart.listUnavailable') }}</span>
+                <span class="launcher-select-hint">{{
+                  t('core.home.quickStart.listUnavailable')
+                }}</span>
               </template>
             </a-select>
             <a-button
@@ -77,7 +79,7 @@
               <template #icon>
                 <PlayCircleOutlined />
               </template>
-              {{ t('home.command.start') }}
+              {{ t('core.home.command.start') }}
             </a-button>
           </div>
         </div>
@@ -152,15 +154,6 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
 </script>
 
 <style scoped>
-.command-card {
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
-}
-
-.command-card :deep(.ant-card-body) {
-  padding: 24px;
-}
-
 .command-panel {
   min-height: 148px;
   display: grid;
@@ -312,10 +305,6 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
 }
 
 @media (max-width: 800px) {
-  .command-card :deep(.ant-card-body) {
-    padding: 18px;
-  }
-
   .command-title {
     font-size: 24px;
   }

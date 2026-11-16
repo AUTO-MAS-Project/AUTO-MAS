@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type GlobalConfig_Voice = {
     /**
-     * 语音功能是否启用
+     * 是否启用语音
      */
     Enabled?: (boolean | null);
     /**
-     * 语音类型, simple为简洁, noisy为聒噪
+     * 语音类型
      */
     Type?: ('simple' | 'noisy' | null);
 };

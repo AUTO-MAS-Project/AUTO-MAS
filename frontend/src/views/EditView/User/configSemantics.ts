@@ -30,16 +30,22 @@ const SEMANTICS_KEYS: Record<
   { off: readonly [string, string]; on: readonly [string, string] }
 > = {
   shared: {
-    off: ['edit.configSemanticsSharedOffTitle', 'edit.configSemanticsSharedOffDesc'],
-    on: ['edit.configSemanticsSharedOnTitle', 'edit.configSemanticsSharedOnDesc'],
+    off: ['core.edit.configSemanticsSharedOffTitle', 'core.edit.configSemanticsSharedOffDesc'],
+    on: ['core.edit.configSemanticsSharedOnTitle', 'core.edit.configSemanticsSharedOnDesc'],
   },
   independent: {
-    off: ['edit.configSemanticsIndependentOffTitle', 'edit.configSemanticsIndependentOffDesc'],
-    on: ['edit.configSemanticsIndependentOnTitle', 'edit.configSemanticsIndependentOnDesc'],
+    off: [
+      'core.edit.configSemanticsIndependentOffTitle',
+      'core.edit.configSemanticsIndependentOffDesc',
+    ],
+    on: [
+      'core.edit.configSemanticsIndependentOnTitle',
+      'core.edit.configSemanticsIndependentOnDesc',
+    ],
   },
   native: {
-    off: ['edit.configSemanticsNativeOffTitle', 'edit.configSemanticsNativeOffDesc'],
-    on: ['edit.configSemanticsNativeOnTitle', 'edit.configSemanticsNativeOnDesc'],
+    off: ['core.edit.configSemanticsNativeOffTitle', 'core.edit.configSemanticsNativeOffDesc'],
+    on: ['core.edit.configSemanticsNativeOnTitle', 'core.edit.configSemanticsNativeOnDesc'],
   },
 }
 
@@ -48,9 +54,9 @@ const SEMANTICS_KEYS: Record<
  * 后端 owner 规则决定这一点随来源变化（如 MaaEnd 共享来源写 Default 共享目录、独立来源写该账号目录、原生来源不回写）。
  */
 const SEMANTICS_GUI_KEYS: Record<ConfigBaseKind, string> = {
-  shared: 'edit.configSemanticsSharedGui',
-  independent: 'edit.configSemanticsIndependentGui',
-  native: 'edit.configSemanticsNativeGui',
+  shared: 'core.edit.configSemanticsSharedGui',
+  independent: 'core.edit.configSemanticsIndependentGui',
+  native: 'core.edit.configSemanticsNativeGui',
 }
 
 /**
@@ -58,9 +64,9 @@ const SEMANTICS_GUI_KEYS: Record<ConfigBaseKind, string> = {
  * 与「配置操作」块的落点复用同一套说法，两处指的是同一个东西。
  */
 const SEMANTICS_TARGET_KEYS: Record<ConfigBaseKind, string> = {
-  shared: 'edit.configActionsTargetShared',
-  independent: 'edit.configActionsTargetIndependent',
-  native: 'edit.configSemanticsTargetNative',
+  shared: 'core.edit.configActionsTargetShared',
+  independent: 'core.edit.configActionsTargetIndependent',
+  native: 'core.edit.configSemanticsTargetNative',
 }
 
 export type Translate = (key: string, named?: Record<string, unknown>) => string
@@ -93,7 +99,9 @@ export const composeConfigSemantics = (
   const [titleKey, descKey] = SEMANTICS_KEYS[kind][quickConfig === true ? 'on' : 'off']
   // 覆写层开关决定「改了什么」：开 = 任务期间临时覆写这份配置、结束自动恢复；关 = 压根不动它。
   const effectKey =
-    quickConfig === true ? 'edit.configSemanticsEffectOn' : 'edit.configSemanticsEffectOff'
+    quickConfig === true
+      ? 'core.edit.configSemanticsEffectOn'
+      : 'core.edit.configSemanticsEffectOff'
   return {
     formula: t(titleKey),
     effect: t(effectKey, { target: t(SEMANTICS_TARGET_KEYS[kind]) }),

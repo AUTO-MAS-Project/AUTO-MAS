@@ -9,14 +9,6 @@
     "license": "AGPL-3.0",
     "controller": [
         {
-            "name": "明日方舟PC端",
-            "type": "Win32",
-            "permission_required": true,
-            "win32": {
-                "window_regex": "明日方舟"
-            }
-        },
-        {
             "name": "终末地PC端",
             "type": "Win32",
             "permission_required": true,
@@ -67,34 +59,6 @@
         }
     ],
     "task": [
-        {
-            "name": "明日方舟PC端-选中已部署干员",
-            "entry": "选中已部署干员[ArknightsPC]",
-            "controller": [
-                "明日方舟PC端"
-            ]
-        },
-        {
-            "name": "明日方舟PC端-释放技能",
-            "entry": "释放技能[ArknightsPC]",
-            "controller": [
-                "明日方舟PC端"
-            ]
-        },
-        {
-            "name": "明日方舟PC端-撤退干员",
-            "entry": "撤退干员[ArknightsPC]",
-            "controller": [
-                "明日方舟PC端"
-            ]
-        },
-        {
-            "name": "明日方舟PC端-下一帧",
-            "entry": "下一帧[ArknightsPC]",
-            "controller": [
-                "明日方舟PC端"
-            ]
-        },
         {
             "name": "星穹铁道模拟器-切换账号",
             "entry": "切换账号[StarRailEmulator]",

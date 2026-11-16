@@ -46,10 +46,19 @@ jobs:
         with:
           node-version: '24'
 
+      - name: 检查组件尺寸
+        working-directory: frontend
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          node --test scripts/audit-baseline.check.mjs
+          node scripts/audit-baseline.mjs --check "$BASE_SHA"
+
       - name: 设置 Yarn
         run: |
           corepack enable
-          corepack prepare yarn@4.9.1 --activate
+          corepack prepare yarn@4.18.1 --activate
 
       - name: 安装前端依赖
         working-directory: frontend
@@ -66,3 +75,19 @@ jobs:
       - name: 检查前端格式
         working-directory: frontend
         run: yarn format:check
+
+      - name: 运行前端单元测试
+        working-directory: frontend
+        run: yarn test
+
+      # 词表门禁：缺译、占位符差异、源码在用但没有的 key、死词条、模板硬编码中文，
+      # 全部按 0 判定；口径见 frontend/scripts/i18n-audit.mjs。
+      - name: 检查词表完整性
+        working-directory: frontend
+        run: yarn audit:i18n --check
+
+      # E2E 浏览器流程不在 CI 跑；这里只守基础设施契约（数据根隔离、配置种子白名单、
+      # 启动参数），一秒内跑完，且不需要装依赖或启动服务。
+      - name: 检查 E2E 基础设施契约
+        working-directory: frontend
+        run: node --test e2e/harness.check.mjs

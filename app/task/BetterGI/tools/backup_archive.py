@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""BetterGI 配置备份归档：MAS 用户配置（per-user 副本 + 字段侧车）/ BetterGI 原生配置。
+"""BetterGI 配置备份归档：MAS 账号配置（per-user 副本 + 字段侧车）/ BetterGI 原生配置。
 
 备份时机（MAS「动手前」，此时 BetterGI 配置尚未被触碰）：
 
@@ -28,7 +28,7 @@
   实配** ``{RootPath}/User/OneDragon/*.json``——用户在 BGI GUI 里直接
   编辑的配置，改坏无 MAS 侧找回点（用户实测场景）；
 - 运行物化前（AutoProxy ``_write_one_dragon_config`` 前）：``mas`` 归档
-  本用户 per-user 副本（运行会把字段物化进副本与 BGI 槽位）；
+  本账号 per-user 副本（运行会把字段物化进副本与 BGI 槽位）；
 - 编辑界面进入 / 退出（前端 ensure）：进入时归档 ``native``、退出时归档
   ``mas``（编辑会话包络的 MAS 侧终态）。
 
@@ -38,7 +38,7 @@
   （一条龙配置副本）、``ScriptGroup/``（配置组副本）、``GlobalDomain/``
   （秘境刷取配置副本）——前端端点直接读写、就是页面编辑对象（对齐
   OkNte「ConfigFile 即页面编辑对象」）；shared/independent/native 都走 per-user
-  副本（副本与来源无关，原生来源下前端编辑同样落盘），池**恒按用户分桶**，
+  副本（副本与来源无关，原生来源下前端编辑同样落盘），池**恒按账号分桶**，
   无 owner 解耦（对齐 General）。
 - 字段侧车：OneDragon 段全部字段 + Task.OneDragonConfigName + Switch.
   Resource（运行时物化进副本/原生或注入切号脚本）+ Info.Base（仅预览：
@@ -49,12 +49,12 @@
 ``native`` 池 = BetterGI 全局主配置 ``{RootPath}/User/config.json`` +
 **BGI 一条龙实配**（``{RootPath}/User/OneDragon/*.json``，排除 MAS 运行时
 临时槽位「MAS独立配置.json」——运行物化、结束删除，不是用户实配），按
-物理安装根指纹分桶、跨脚本共享、不随脚本删除。一条龙实配在用户独立配置
+物理安装根指纹分桶、跨脚本共享、不随脚本删除。一条龙实配在独立配置
 模式下 MAS 零接触，但它是用户在 BGI GUI 里的直接编辑对象（原生来源/手工编辑
 场景），纳入备份提供改坏找回点。
 
 时间戳快照、指纹去重、保留清理与文件/目录恢复由公共模块
-``app.utils.config_archive`` 提供（默认每池保留 10 份），本模块只保留
+``app.utils.common.config.archive`` 提供（默认每池保留 10 份），本模块只保留
 BetterGI 特有的副本布局、字段侧车、恢复语义（恢复前强制归档当前）与
 预览摘要。
 """
@@ -62,23 +62,15 @@ BetterGI 特有的副本布局、字段侧车、恢复语义（恢复前强制�
 import json
 from pathlib import Path
 
-from app.utils import get_logger
-from app.utils.config_archive import (
-    META_FILE_NAMES,
-    OVERLAY_SIDECAR_NAME,
-    archive_files,
-    config_root_key,
-    dir_files,
-    get_backup_dir,
-    list_times,
-    read_overlay_sidecar,
-    restore_files,
-)
-from app.utils.constants import BASE_SOURCE_LABELS
+from app.utils import BASE_SOURCE_LABELS, get_logger
+from app.utils.common.config import archive as _utils_config_archive
+
+OVERLAY_SIDECAR_NAME = _utils_config_archive.OVERLAY_SIDECAR_NAME
+read_overlay_sidecar = _utils_config_archive.read_overlay_sidecar
 
 logger = get_logger("BetterGI 配置备份")
 
-# ══════════════════ MAS 用户配置（per-user 副本 + 字段侧车） ══════════════════
+# ══════════════════ MAS 账号配置（per-user 副本 + 字段侧车） ══════════════════
 
 _OVERLAY_KEY_GROUPS = {
     "Info": ("Base",),
@@ -158,7 +150,7 @@ def read_overlay_values(config) -> dict:
     values: dict = {}
     for group, keys in _OVERLAY_KEY_GROUPS.items():
         for key in keys:
-            if (value := config.get(group, key)) is not None:
+            if (value := getattr(getattr(config, group), key)) is not None:
                 values[key] = value
     return values
 
@@ -191,7 +183,7 @@ def mas_user_dir(script_id: str, user_id: str) -> Path:
 
 
 def mas_backup_root(script_id: str, user_id: str) -> Path:
-    """MAS 池归档根：``data/{script_id}/BetterGIBackups/mas/{user_id}``（恒按用户）。"""
+    """MAS 池归档根：``data/{script_id}/BetterGIBackups/mas/{user_id}``（恒按账号）。"""
 
     return Path.cwd() / "data" / script_id / "BetterGIBackups" / "mas" / user_id
 
@@ -209,7 +201,7 @@ def _collect_mas_files(script_id: str, user_id: str) -> dict[str, Path]:
         sub_dir = user_root / sub
         if not sub_dir.is_dir():
             continue
-        for rel, path in dir_files(sub_dir).items():
+        for rel, path in _utils_config_archive.dir_files(sub_dir).items():
             files[f"{sub}/{rel}"] = path
     return files
 
@@ -220,7 +212,7 @@ def archive_mas_backup(
     overlay: dict | None = None,
     force: bool = False,
 ) -> Path | None:
-    """归档 per-user 副本 + 页面字段侧车到用户池（指纹去重，无变化跳过）。
+    """归档 per-user 副本 + 页面字段侧车到账号池（指纹去重，无变化跳过）。
 
     副本与侧车都参与指纹：只改页面字段、未动副本时同样新建归档。副本
     全部缺失（用户从未保存过配置组/秘境刷取且未运行过任务）时无可恢复
@@ -232,30 +224,32 @@ def archive_mas_backup(
         files[OVERLAY_SIDECAR_NAME] = overlay_sidecar_content(overlay)
     if not files:
         return None
-    dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, mas_backup_root(script_id, user_id), force=force
+    )
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
-    logger.info(f"用户 {user_id} 的 MAS 配置已归档: {dest.name}")
+    logger.info(f"账号 {user_id} 的 MAS 配置已归档: {dest.name}")
     return dest
 
 
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
-    """用户池的全部归档时间戳（倒序，最新在前）。"""
+    """账号池的全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(mas_backup_root(script_id, user_id))
+    return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
-    """取用户池指定时间戳的归档目录；不存在返回 None。"""
+    """取账号池指定时间戳的归档目录；不存在返回 None。"""
 
-    return get_backup_dir(mas_backup_root(script_id, user_id), ts)
+    return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
 
 def restore_mas_backup(
     script_id: str, user_id: str, ts: str, overlay: dict | None = None
 ) -> dict | None:
-    """把用户池归档恢复到 per-user 副本（恢复前自动归档当前，误恢复可找回）。
+    """把账号池归档恢复到 per-user 副本（恢复前自动归档当前，误恢复可找回）。
 
     恢复走基座 ``restore_files`` 的 replace 语义：受管副本子目录
     （OneDragon/ScriptGroup/GlobalDomain）整棵替换为备份时点内容，副本内
@@ -263,7 +257,7 @@ def restore_mas_backup(
     内容（切号脚本残留等）原样保留。侧车与模式标注不写回副本，侧车读回
     供调用方回填 UserData 后即分离删除。
     归档只含侧车（用户只有页面字段、尚未产生任何副本文件的首个
-    independent 来源用户）时
+    independent 来源账号）时
     无副本可写回，跳过文件恢复只回填侧车——此时强行调用会因受管键为空
     抛「备份内容为空」。
 
@@ -278,18 +272,20 @@ def restore_mas_backup(
     # 把归档内副本文件（按 OneDragon/… 相对键）写回 per-user 根目录
     managed = [
         rel
-        for rel in dir_files(backup_dir)
-        if rel not in META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
+        for rel in _utils_config_archive.dir_files(backup_dir)
+        if rel not in _utils_config_archive.META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
     ]
     if managed:
-        restore_files(backup_dir, mas_user_dir(script_id, user_id), rel_keys=managed)
+        _utils_config_archive.restore_files(
+            backup_dir, mas_user_dir(script_id, user_id), rel_keys=managed
+        )
     restored_overlay = read_overlay_sidecar(backup_dir)
-    logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
+    logger.info(f"账号 {user_id} 的 MAS 配置已恢复备份 {ts}")
     return restored_overlay
 
 
 def archive_mas_runtime_backup(script_id: str, user_id: str, overlay: dict) -> None:
-    """运行物化前归档 per-user 副本 + 页面字段到用户池。
+    """运行物化前归档 per-user 副本 + 页面字段到账号池。
 
     运行会把字段物化进副本与 BGI 槽位、覆盖副本内容，物化前存底；指纹
     去重，失败只记日志，绝不中止随后的运行或会话（归档是现场保护，不是
@@ -324,7 +320,11 @@ def native_backup_root(root_path: str | Path) -> Path:
     """
 
     return (
-        Path.cwd() / "data" / "BetterGIBackups" / "native" / config_root_key(root_path)
+        Path.cwd()
+        / "data"
+        / "BetterGIBackups"
+        / "native"
+        / _utils_config_archive.config_root_key(root_path)
     )
 
 
@@ -349,7 +349,7 @@ def collect_native_files(root_path: Path) -> dict[str, Path]:
         files[config_path.name] = config_path
     dragon_dir = root_path / _BGI_ONE_DRAGON_REL_DIR
     if dragon_dir.is_dir():
-        for rel, path in dir_files(dragon_dir).items():
+        for rel, path in _utils_config_archive.dir_files(dragon_dir).items():
             if Path(rel).name == f"{_BGI_ONE_DRAGON_SLOT_NAME}.json":
                 continue
             files[f"OneDragon/{rel}"] = path
@@ -366,7 +366,9 @@ def archive_native_backup(root_path: str | Path, force: bool = False) -> Path | 
     files = collect_native_files(root_path)
     if not files:
         return None
-    dest = archive_files(files, native_backup_root(root_path), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, native_backup_root(root_path), force=force
+    )
     if dest is None:
         logger.info("BetterGI 原生配置无变化，跳过归档")
         return None
@@ -377,13 +379,13 @@ def archive_native_backup(root_path: str | Path, force: bool = False) -> Path | 
 def list_native_backups(root_path: str | Path) -> list[str]:
     """BetterGI 原生配置全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(native_backup_root(root_path))
+    return _utils_config_archive.list_times(native_backup_root(root_path))
 
 
 def get_native_backup_dir(root_path: str | Path, ts: str) -> Path | None:
     """取指定时间戳的原生配置归档目录；不存在返回 None。"""
 
-    return get_backup_dir(native_backup_root(root_path), ts)
+    return _utils_config_archive.get_backup_dir(native_backup_root(root_path), ts)
 
 
 def restore_native_backup(root_path: str | Path, ts: str) -> None:
@@ -403,7 +405,7 @@ def restore_native_backup(root_path: str | Path, ts: str) -> None:
         raise ValueError(f"备份不存在: {ts}")
     root_path = Path(root_path)
     archive_native_backup(root_path, force=True)
-    restore_files(
+    _utils_config_archive.restore_files(
         backup_dir,
         root_path / _BGI_GLOBAL_CONFIG_REL.parent,
         dir_map={_BGI_ONE_DRAGON_REL_DIR.name: root_path / _BGI_ONE_DRAGON_REL_DIR},
@@ -541,14 +543,14 @@ def build_mas_preview(backup_dir: Path, overlay: dict | None) -> dict:
     sections = build_overlay_preview(overlay or {})["sections"]
     files = {
         rel: path.stat().st_size
-        for rel, path in dir_files(backup_dir).items()
-        if rel not in META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
+        for rel, path in _utils_config_archive.dir_files(backup_dir).items()
+        if rel not in _utils_config_archive.META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
     }
     if files:
         file_rows = [
             {"key": rel, "value": f"{size} B"} for rel, size in sorted(files.items())
         ]
-        sections.append({"name": "copies", "label": "用户配置副本", "rows": file_rows})
+        sections.append({"name": "copies", "label": "账号配置副本", "rows": file_rows})
     return {"sections": sections}
 
 
@@ -608,7 +610,7 @@ def build_native_preview(root_path: str | Path, ts: str) -> dict:
     backup_dir = get_native_backup_dir(root_path, ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
-    files = dir_files(backup_dir)
+    files = _utils_config_archive.dir_files(backup_dir)
     if not files:
         raise ValueError(f"备份内容为空: {ts}")
 

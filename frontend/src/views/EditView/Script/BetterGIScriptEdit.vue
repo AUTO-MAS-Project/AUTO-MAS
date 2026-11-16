@@ -1,33 +1,14 @@
 <template>
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img src="@/assets/bettergi.ico" alt="BetterGI" class="breadcrumb-logo" />
-            {{ t('edit.editScript') }}
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <DocLink :url="MAS_DOC_URLS.scripts" />
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        {{ t('edit.back') }}
-      </a-button>
-    </a-space>
-  </div>
+  <ScriptEditHeader
+    script-type="BetterGI"
+    :title="t('core.edit.editScript')"
+    :doc-url="MAS_DOC_URLS.scripts"
+    @cancel="handleCancel"
+  />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card
-      :title="t('edit.bettergiScriptConfiguration')"
+      :title="t('core.edit.bettergiScriptConfiguration')"
       :loading="pageLoading"
       class="config-card"
     >
@@ -38,22 +19,21 @@
       <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ t('core.edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.scriptName') }}
-                    <a-tooltip :title="t('edit.bettergiInstanceNameHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.scriptName')"
+                    :hint="t('core.edit.bettergiInstanceNameHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  :placeholder="t('edit.enterScriptName')"
+                  :placeholder="t('core.edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -63,52 +43,44 @@
             <a-col :span="16">
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.bettergiPath') }}
-                    <a-tooltip :title="t('edit.bettergiPickExeDir')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.path"
-                    :placeholder="t('edit.bettergiPickExeDirPlaceholder')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('core.edit.bettergiPath')"
+                    :hint="t('core.edit.bettergiPickExeDir')"
+                    variant="form"
                   />
-                  <a-button
-                    size="large"
-                    class="path-button"
-                    :disabled="isSaving"
-                    @click="selectRootPath"
-                  >
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickDirectory') }}
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="formData.path"
+                  mode="folder"
+                  :placeholder="t('core.edit.bettergiPickExeDirPlaceholder')"
+                  :pick-label="t('core.edit.pickDirectory')"
+                  :disabled="isSaving"
+                  @pick="selectRootPath"
+                />
               </a-form-item>
             </a-col>
           </a-row>
         </div>
 
+        <BetterGIProgramUpdateSettings
+          v-model:update="bettergiConfig.Update"
+          :ready="!pageLoading && !isSaving"
+          @save="(key, value) => handleChange('Update', key, value)"
+        />
+
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.gameConfiguration') }}</h3>
+            <h3>{{ t('core.edit.gameConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.controller') }}
-                    <a-tooltip :title="t('edit.bettergiControllerHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.controller')"
+                    :hint="t('core.edit.bettergiControllerHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="bettergiConfig.Game.Controller"
@@ -117,13 +89,13 @@
                   @change="handleChange('Game', 'Controller', bettergiConfig.Game.Controller)"
                 >
                   <a-select-option value="电脑端-前台">
-                    {{ t('edit.bettergiControllerForeground') }}
+                    {{ t('core.edit.bettergiControllerForeground') }}
                   </a-select-option>
                   <a-select-option value="电脑端-云原神" disabled>
-                    {{ t('edit.bettergiControllerCloud') }}
+                    {{ t('core.edit.bettergiControllerCloud') }}
                   </a-select-option>
                   <a-select-option value="电脑端-桌面分身" disabled>
-                    {{ t('edit.bettergiControllerDesktopClone') }}
+                    {{ t('core.edit.bettergiControllerDesktopClone') }}
                   </a-select-option>
                 </a-select>
               </a-form-item>
@@ -131,12 +103,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.bettergiCloseGameOnFinish') }}
-                    <a-tooltip :title="t('edit.bettergiCloseGameOnFinishHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.bettergiCloseGameOnFinish')"
+                    :hint="t('core.edit.bettergiCloseGameOnFinishHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="bettergiConfig.Game.CloseOnFinish"
@@ -144,8 +115,8 @@
                   style="width: 100%"
                   @change="handleChange('Game', 'CloseOnFinish', bettergiConfig.Game.CloseOnFinish)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -155,12 +126,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.genshinUpdateAuto') }}
-                    <a-tooltip :title="t('edit.genshinUpdateAutoHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.genshinUpdateAuto')"
+                    :hint="t('core.edit.genshinUpdateAutoHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="bettergiConfig.Game.IfAutoUpdate"
@@ -168,20 +138,19 @@
                   style="width: 100%"
                   @change="handleChange('Game', 'IfAutoUpdate', bettergiConfig.Game.IfAutoUpdate)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.bettergiAccountSwitchMethod') }}
-                    <a-tooltip :title="t('edit.bettergiAccountSwitchMethodHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.bettergiAccountSwitchMethod')"
+                    :hint="t('core.edit.bettergiAccountSwitchMethodHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="bettergiConfig.Run.AccountSwitchMethod"
@@ -190,13 +159,13 @@
                   @change="handleAccountSwitchMethodChange"
                 >
                   <a-select-option value="BGI">
-                    {{ t('edit.bettergiAccountSwitchMethodBgi') }}
+                    {{ t('core.edit.bettergiAccountSwitchMethodBgi') }}
                   </a-select-option>
                   <a-select-option value="MAS">
-                    {{ t('edit.bettergiAccountSwitchMethodMas') }}
+                    {{ t('core.edit.bettergiAccountSwitchMethodMas') }}
                   </a-select-option>
                 </a-select>
-                <span class="control-hint">{{ t('edit.accountSwitch16x9Only') }}</span>
+                <span class="control-hint">{{ t('core.edit.accountSwitch16x9Only') }}</span>
               </a-form-item>
             </a-col>
           </a-row>
@@ -204,74 +173,17 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.runConfiguration') }}</h3>
+            <h3>{{ t('core.edit.runConfiguration') }}</h3>
           </div>
-          <ScriptHardTimeoutField
-            v-model:value="bettergiConfig.Run.HardTimeLimit"
-            @save="handleChange('Run', 'HardTimeLimit', bettergiConfig.Run.HardTimeLimit)"
+          <ScriptRunLimitsSection
+            v-model:hard-time-limit="bettergiConfig.Run.HardTimeLimit"
+            v-model:daily-limit="bettergiConfig.Run.ProxyTimesLimit"
+            v-model:retry-limit="bettergiConfig.Run.RunTimesLimit"
+            v-model:timeout="bettergiConfig.Run.RunTimeLimit"
+            :retry-hint="t('core.edit.bettergiRetryLimitHint')"
+            :timeout-hint="t('core.edit.bettergiRunTimeoutHint')"
+            @save="key => handleChange('Run', key, bettergiConfig.Run[key])"
           />
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runsPerDay') }}
-                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="bettergiConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', bettergiConfig.Run.ProxyTimesLimit)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.retryLimit2') }}
-                    <a-tooltip :title="t('edit.bettergiRetryLimitHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="bettergiConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', bettergiConfig.Run.RunTimesLimit)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.bettergiRunTimeoutHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="bettergiConfig.Run.RunTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', bettergiConfig.Run.RunTimeLimit)"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
         </div>
       </a-form>
     </a-card>
@@ -279,33 +191,36 @@
 </template>
 
 <script setup lang="ts">
-import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
+import BetterGIProgramUpdateSettings from './components/BetterGIProgramUpdateSettings.vue'
+import type { BetterGIConfig_Update } from '@/api'
+import ScriptRunLimitsSection from './components/ScriptRunLimitsSection.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
-import DocLink from '@/components/DocLink.vue'
+import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
+import PathPickerField from '@/components/PathPickerField.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
-import {
-  ArrowLeftOutlined,
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('BetterGI脚本编辑')
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript } = useScriptApi()
+const { getScript, updateScript, error: scriptApiError } = useScriptApi()
 
 const scriptId = route.params.id as string
 const pageLoading = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { isSaving, enqueue } = useSaveQueue()
 const isInitializing = ref(true)
+const {
+  isSaving,
+  enqueue,
+  saveField: handleChange,
+} = useScriptSaveMutation({ scriptId, isInitializing, logger })
 
 // ══ BetterGI 项目结构常量（需与 app/task/BetterGI/AutoProxy.py 中的 _BGI_REL_* 保持同步）══
 const BGI_EXE_NAME = 'BetterGI.exe'
@@ -334,6 +249,7 @@ interface BetterGIScriptConfigForm {
   Info: BetterGIInfoForm
   Run: BetterGIRunForm
   Game: BetterGIGameForm
+  Update: BetterGIConfig_Update
 }
 
 const formData = reactive({
@@ -348,6 +264,7 @@ const formData = reactive({
 
 const bettergiConfig = reactive<BetterGIScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
+  Update: { TakeoverEnabled: false, Channel: 'stable', MirrorChyanCDK: '' },
   Run: {
     HardTimeLimit: 120,
     ProxyTimesLimit: 0,
@@ -364,27 +281,11 @@ const bettergiConfig = reactive<BetterGIScriptConfigForm>({
 })
 
 const rules = computed(() => ({
-  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
-  path: [{ required: true, message: t('edit.bettergiPathRequired'), trigger: 'blur' }],
+  name: [{ required: true, message: t('core.edit.enterScriptName'), trigger: 'blur' }],
+  path: [{ required: true, message: t('core.edit.bettergiPathRequired'), trigger: 'blur' }],
 }))
 
 const handleCancel = () => router.push('/scripts')
-
-const handleChange = async (category: string, key: string, value: unknown) => {
-  if (isInitializing.value) return
-  await enqueue(async () => {
-    try {
-      const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
-      const success = await updateScript(scriptId, updateData)
-      if (success) {
-        logger.info(`配置已保存: ${category}.${key}`)
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      logger.error(msg)
-    }
-  }, `${category}.${key}`)
-}
 
 const handleAccountSwitchMethodChange = async (
   value: BetterGIScriptConfigForm['Run']['AccountSwitchMethod']
@@ -394,7 +295,7 @@ const handleAccountSwitchMethodChange = async (
 
 const applyRootPathDefaults = async (rootPath: string) => {
   if (!rootPath || rootPath === '.') {
-    message.warning(t('edit.pickScriptRootDirectory'))
+    message.warning(t('core.edit.pickScriptRootDirectory'))
     return false
   }
   const norm = rootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
@@ -407,7 +308,7 @@ const applyRootPathDefaults = async (rootPath: string) => {
         Info: { RootPath: norm },
       })
       if (success) {
-        message.success(t('edit.bettergiRootPathSaved'))
+        message.success(t('core.edit.bettergiRootPathSaved'))
         return true
       }
       bettergiConfig.Info.RootPath = previousPath
@@ -425,12 +326,12 @@ const loadScript = async () => {
   try {
     const detail = await getScript(scriptId)
     if (!detail) {
-      message.error(t('edit.scriptDoesNotExist'))
+      if (!scriptApiError.value) message.error(t('core.edit.scriptDoesNotExist'))
       handleCancel()
       return
     }
     if (detail.type !== 'BetterGI') {
-      message.error(t('edit.bettergiNotBettergiScript'))
+      message.error(t('core.edit.bettergiNotBettergiScript'))
       handleCancel()
       return
     }
@@ -439,8 +340,9 @@ const loadScript = async () => {
     Object.assign(bettergiConfig.Info, config.Info || {})
     Object.assign(bettergiConfig.Run, config.Run || {})
     Object.assign(bettergiConfig.Game, config.Game || {})
+    Object.assign(bettergiConfig.Update, config.Update || {})
   } catch {
-    message.error(t('edit.couldNotLoadScript'))
+    if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript'))
   } finally {
     isInitializing.value = false
     pageLoading.value = false
@@ -455,9 +357,9 @@ const selectRootPath = async () => {
   const exists = await window.electronAPI.fileExists(exePath)
   if (!exists) {
     Modal.error({
-      title: t('edit.bettergiInvalidDirectory'),
-      content: t('edit.bettergiExeNotFound', { p0: BGI_EXE_NAME }),
-      okText: t('edit.gotIt'),
+      title: t('core.edit.bettergiInvalidDirectory'),
+      content: t('core.edit.bettergiExeNotFound', { p0: BGI_EXE_NAME }),
+      okText: t('core.edit.gotIt'),
     })
     return
   }
@@ -468,143 +370,10 @@ const selectRootPath = async () => {
 onMounted(loadScript)
 </script>
 
+<style scoped src="@/styles/scriptEditForm.css"></style>
+
 <style scoped>
-.script-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.breadcrumb-link {
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
-}
-
-.breadcrumb-current {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text);
-  font-weight: 600;
-}
-
-.breadcrumb-logo {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-}
-
-.script-edit-content {
-  flex: 1;
-}
-
-.config-card {
-  overflow: hidden;
-}
-
-.config-card :deep(.ant-card-head) {
-  background: var(--ant-color-bg-container);
-  padding: 24px 32px;
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
-}
-
-.type-tag {
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 16px;
-  border-radius: 8px;
-}
-
-.form-section {
-  margin-bottom: 12px;
-}
-
 .section-header {
-  margin-bottom: 6px;
-  padding-bottom: 8px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-}
-
-.control-hint {
-  display: block;
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ant-color-text-tertiary);
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  cursor: help;
-}
-
-.path-input-group {
-  display: flex;
-  overflow: hidden;
-  border: 1px solid var(--ant-color-border);
-}
-
-.path-input {
-  flex: 1;
-  min-width: 0;
-  border: none !important;
-  border-radius: 0 !important;
-}
-
-.path-button {
-  flex-shrink: 0;
-  border: none;
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-  padding: 0 20px;
-  border-left: 1px solid var(--ant-color-border-secondary);
-}
-
-.config-form :deep(.ant-form-item) {
-  margin-bottom: 24px;
-}
-
-@media (max-width: 768px) {
-  .script-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
-  }
-
-  .config-card :deep(.ant-card-body) {
-    padding: 20px;
-  }
 }
 </style>

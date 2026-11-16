@@ -9,6 +9,7 @@ import starRailNoteImage from '@/assets/community-notes/star-rail.jpg'
 import zenlessNoteImage from '@/assets/community-notes/zenless.jpg'
 import type { ActivitySnapshot } from '@/views/gamesign/useCommunityActivityApi'
 import { presentActivity } from '@/views/gamesign/communityActivityPresentation'
+import { isCommunityGame, type CommunityGame } from '@/views/gamesign/communityGames'
 
 const props = defineProps<{ snapshot: ActivitySnapshot; loading: boolean }>()
 defineEmits<{ refresh: [] }>()
@@ -16,8 +17,9 @@ const { t, locale } = useI18n()
 const presentation = computed(() => presentActivity(props.snapshot))
 const otherMetrics = computed(() => presentation.value.groups.flatMap(group => group.metrics))
 
-// 复用游戏社区便笺卡的本地图标；中文键为后端游戏枚举。
-const NOTE_IMAGES: Record<string, string> = {
+// 复用游戏社区便笺卡的本地图标；键绑定在 communityGames 的清单上，
+// 新增游戏漏映射会直接是类型错误。
+const NOTE_IMAGES: Record<CommunityGame, string> = {
   明日方舟: arknightsNoteImage,
   终末地: endfieldNoteImage,
   原神: genshinNoteImage,
@@ -25,13 +27,17 @@ const NOTE_IMAGES: Record<string, string> = {
   绝区零: zenlessNoteImage,
 }
 
-const NOTE_ACCENTS: Record<string, string> = {
+const NOTE_ACCENTS: Record<CommunityGame, string> = {
   明日方舟: 'var(--ant-color-primary)',
   终末地: 'var(--ant-color-success)',
   原神: '#8fe3b0',
   星穹铁道: '#62c4e7',
   绝区零: '#ffd24a',
 }
+
+const noteImage = (game: string) => (isCommunityGame(game) ? NOTE_IMAGES[game] : '')
+const noteAccent = (game: string) =>
+  isCommunityGame(game) ? NOTE_ACCENTS[game] : 'var(--ant-color-primary)'
 
 const formatTime = (value: string) => {
   if (!value) return ''
@@ -44,8 +50,8 @@ const formatTime = (value: string) => {
 }
 
 const platformLabel = (platform: string) => {
-  if (platform === '森空岛') return t('gamesign.activity.platform.skland')
-  if (platform === '米游社') return t('gamesign.activity.platform.miyoushe')
+  if (platform === '森空岛') return t('core.gamesign.activity.platform.skland')
+  if (platform === '米游社') return t('core.gamesign.activity.platform.miyoushe')
   return platform
 }
 
@@ -58,7 +64,7 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 const statusMeta = (snapshot: ActivitySnapshot) => ({
-  label: t(`gamesign.activity.status.${snapshot.status}`),
+  label: t(`core.gamesign.activity.status.${snapshot.status}`),
   color: STATUS_COLORS[snapshot.status] ?? 'default',
 })
 
@@ -69,7 +75,7 @@ const alertType = (snapshot: ActivitySnapshot) => {
 }
 
 const stripStyle = (snapshot: ActivitySnapshot): CSSProperties => ({
-  '--note-accent': NOTE_ACCENTS[snapshot.game] ?? 'var(--ant-color-primary)',
+  '--note-accent': noteAccent(snapshot.game),
 })
 </script>
 
@@ -78,16 +84,16 @@ const stripStyle = (snapshot: ActivitySnapshot): CSSProperties => ({
     <header class="note-strip-header">
       <span class="note-game-mark">
         <img
-          v-if="NOTE_IMAGES[snapshot.game]"
+          v-if="noteImage(snapshot.game)"
           class="note-game-image"
-          :src="NOTE_IMAGES[snapshot.game]"
+          :src="noteImage(snapshot.game)"
           alt=""
         />
         <AppstoreOutlined v-else aria-hidden="true" />
       </span>
       <div class="note-strip-title">
         <strong>{{ snapshot.game }}</strong>
-        <span>{{ t('home.activityNotes.title') }}</span>
+        <span>{{ t('core.home.activityNotes.title') }}</span>
       </div>
       <span class="note-strip-identity">
         <slot name="identity">
@@ -98,13 +104,13 @@ const stripStyle = (snapshot: ActivitySnapshot): CSSProperties => ({
       <a-tag :color="statusMeta(snapshot).color">
         {{ statusMeta(snapshot).label }}
       </a-tag>
-      <a-tooltip :title="t('gamesign.activity.refresh')">
+      <a-tooltip :title="t('core.gamesign.activity.refresh')">
         <a-button
           type="text"
           size="small"
           shape="circle"
           :loading="loading"
-          :aria-label="t('gamesign.activity.refresh')"
+          :aria-label="t('core.gamesign.activity.refresh')"
           @click="$emit('refresh')"
         >
           <ReloadOutlined />
@@ -145,7 +151,7 @@ const stripStyle = (snapshot: ActivitySnapshot): CSSProperties => ({
       class="note-strip-reason"
     />
     <footer v-if="formatTime(snapshot.updatedAt)" class="note-strip-footer">
-      {{ t('gamesign.activity.queriedAt', { time: formatTime(snapshot.updatedAt) }) }}
+      {{ t('core.gamesign.activity.queriedAt', { time: formatTime(snapshot.updatedAt) }) }}
     </footer>
   </article>
 </template>

@@ -12,7 +12,7 @@
         <a-input
           ref="inputRef"
           v-model:value="customStageName"
-          :placeholder="t('edit.enterCustomStageE')"
+          :placeholder="t('core.edit.enterCustomStageE')"
           style="flex: 1"
           size="small"
           @keyup.enter="addCustomStage"
@@ -21,7 +21,7 @@
           <template #icon>
             <PlusOutlined />
           </template>
-          {{ t('edit.addStage') }}
+          {{ t('core.edit.addStage') }}
         </a-button>
       </a-space>
     </template>
@@ -40,7 +40,7 @@
           size="small"
           style="margin-left: 8px"
         >
-          {{ t('edit.custom') }}
+          {{ t('core.edit.custom') }}
         </a-tag>
       </template>
     </a-select-option>
@@ -99,7 +99,7 @@ const validateStageName = (stageName: string): boolean => {
 // 添加自定义关卡
 const addCustomStage = () => {
   if (!validateStageName(customStageName.value)) {
-    message.error(t('edit.enterValidStageName'))
+    message.error(t('core.edit.enterValidStageName'))
     return
   }
 
@@ -108,7 +108,7 @@ const addCustomStage = () => {
   // 检查是否已存在
   const exists = props.options.find((option: any) => option.value === trimmedName)
   if (exists) {
-    message.warning(t('edit.stageP0AlreadyExists', { p0: trimmedName }))
+    message.warning(t('core.edit.stageP0AlreadyExists', { p0: trimmedName }))
     return
   }
 

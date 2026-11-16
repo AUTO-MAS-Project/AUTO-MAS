@@ -22,7 +22,7 @@
 """各专项自动代理共用的日志推送与进程查询小工具。
 
 BAAH / Okww / OkNte / BetterGI / ZzzOd 在调度台日志与 log_box 采集上做的是同一
-件事（向调度台追加一行、把采集节点写进当前用户推送日志），此前每家各存一份逐字
+件事（向调度台追加一行、把采集节点写进当前账号推送日志），此前每家各存一份逐字
 相同的实现；Okww / OkNte / ZzzOd 还各自复制了启动参数拆分与按进程名查 PID。这里
 按统一语义各留一份。
 
@@ -39,14 +39,9 @@ from collections.abc import Callable, Iterable
 
 import psutil
 
-from app.services import System
+from app.utils import constants as _utils_constants
 from app.utils import get_logger
-from app.utils.constants import (
-    BASE_INDEPENDENT,
-    BASE_NATIVE,
-    BASE_SHARED,
-    normalize_base_source,
-)
+from app.utils import process as process_tools
 
 logger = get_logger("专项进程清理")
 
@@ -104,7 +99,7 @@ async def kill_pids(pids: Iterable[int]) -> int:
     failed = 0
     for pid in pids:
         try:
-            if not await System.kill_process_by_pid(pid):
+            if not await process_tools.kill_process_by_pid(pid):
                 failed += 1
         except Exception as exc:
             failed += 1
@@ -119,38 +114,40 @@ async def kill_pids_by_name(process_name: str) -> int:
 
 
 async def push_dispatch_log(script_info: object, line: str) -> None:
-    """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
+    """[兼容旧专项] 旧托管流程日志入口；新代码写当前 LogRecord，流程日志通过 current.log 提交。"""
 
     prev = script_info.log
-    script_info.log = f"{prev}\n{line}" if prev else line
+    await script_info.set_log(f"{prev}\n{line}" if prev else line)
     # 让出事件循环：WebSocket 推送由赋值触发，不等待可能把多行攒成一次推送
     await asyncio.sleep(0)
 
 
-def append_push_log(cur_user_item: object, log_type: str, text: str, ts: float) -> None:
-    """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
+def append_push_log(
+    callbacks, cur_user_item: object, log_type: str, text: str, ts: float
+) -> None:
+    """[兼容旧专项] 旧同步日志 sink 与通知素材桥；新代码按日志模型和通知业务各自的入口处理。"""
 
-    cur_user_item.push_log.append((log_type, text, ts))
+    callbacks.submit(cur_user_item.append_push_log((log_type, text, ts)))
 
 
-# ── base 来源三态（shared / independent / native）与快速配置 ───────────────
-# 来源决定「谁拥有本次运行的配置」：shared=脚本级共享配置，independent=MAS 侧
-# 按用户独立配置，native=直接用脚本安装目录里的原生配置。快速配置
-# （Info.IfQuickConfig）是**独立于来源**的用户级开关：按用户保存、不随来源派生，
-# 任何来源下都可开关。开启时把该用户面板值覆盖到所选 base，关闭时保留 base 配置；
-# 必要的启动、模拟器与恢复流程不属于快速配置。写入和恢复仍由各专项按自身架构负责。
+# ── base 来源三态（shared / independent / native）与覆写常规配置 ───────────────
+# 来源决定「谁拥有本次运行的配置」：shared=托管级共享配置，independent=MAS 侧
+# 按账号独立配置，native=直接用脚本安装目录里的原生配置。覆写常规配置
+# （Info.IfQuickConfig）是**独立于来源**的账号级开关：按账号保存、不随来源派生，
+# 任何来源下都可开关。开启时把该账号面板值覆盖到所选 base，关闭时保留 base 配置；
+# 必要的启动、模拟器与恢复流程不属于覆写常规配置。写入和恢复仍由各专项按自身架构负责。
 # （旧字面量 脚本/用户/直控 与更早的「简洁/详细/自定义」由模型层
-# BaseSourceValidator 加载时归一，见 app/models/config.py。）
+# Base 字段声明加载时归一，见 app/models/config/script.py。）
 #
-# 例外：BetterGI 用户页已隐藏该开关，改由 Info.Base 派生（native=关，
+# 例外：BetterGI 账号页已隐藏该开关，改由 Info.Base 派生（native=关，
 # shared/independent=开），见 app/models/config.py 的 BetterGIUserConfig.load。
 # 即 native 下它恒为关 ⇒ AutoProxy 的 writes_native_config 不可达
 # （保留实现，将来恢复开关可直接复用）。
 
 # 取值只在 app.utils.constants 定义一处，这里按专项层习惯名再导出
-CONFIG_BASE_SHARED = BASE_SHARED
-CONFIG_BASE_INDEPENDENT = BASE_INDEPENDENT
-CONFIG_BASE_NATIVE = BASE_NATIVE
+CONFIG_BASE_SHARED = _utils_constants.BASE_SHARED
+CONFIG_BASE_INDEPENDENT = _utils_constants.BASE_INDEPENDENT
+CONFIG_BASE_NATIVE = _utils_constants.BASE_NATIVE
 
 
 def read_config_base(config: object, default: str = CONFIG_BASE_INDEPENDENT) -> str:
@@ -162,11 +159,11 @@ def read_config_base(config: object, default: str = CONFIG_BASE_INDEPENDENT) -> 
     if config is None:
         return default
     try:
-        raw = config.get("Info", "Base")  # type: ignore[attr-defined]
+        raw = config.Info.Base  # type: ignore[attr-defined]
     except (AttributeError, KeyError, TypeError):
         return default
     # 存量配置里可能还是旧来源字面量（脚本/用户/直控），一并归一
-    base = normalize_base_source(raw)
+    base = _utils_constants.normalize_base_source(raw)
     if base in (CONFIG_BASE_SHARED, CONFIG_BASE_INDEPENDENT, CONFIG_BASE_NATIVE):
         return base
     return default
@@ -182,13 +179,13 @@ def resolve_config_base(
 
 
 def user_uses_native_base(config: object) -> bool:
-    """该用户是否使用外侧原生配置作为 base。"""
+    """该账号是否使用外侧原生配置作为 base。"""
 
     return read_config_base(config, CONFIG_BASE_SHARED) == CONFIG_BASE_NATIVE
 
 
 def user_uses_quick_config(config: object, default: bool = True) -> bool:
-    """读取用户级快速配置开关（Info.IfQuickConfig），与配置来源完全独立。
+    """读取账号级覆写常规配置开关（Info.IfQuickConfig），与配置来源完全独立。
 
     按用户保存的独立布尔字段，不随来源派生；默认开启（与模型层
     BoolValidator 默认一致）。这里只判定开关本身，来源导入由各专项负责。
@@ -197,7 +194,7 @@ def user_uses_quick_config(config: object, default: bool = True) -> bool:
     if config is None:
         return default
     try:
-        raw = config.get("Info", "IfQuickConfig")  # type: ignore[attr-defined]
+        raw = config.Info.IfQuickConfig  # type: ignore[attr-defined]
     except (AttributeError, KeyError, TypeError):
         return default
     return bool(raw) if raw is not None else default

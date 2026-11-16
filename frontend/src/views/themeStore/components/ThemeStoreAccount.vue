@@ -18,26 +18,26 @@ const { state, starting, authorized, pending, accountName, login, cancel, openVe
     <template v-if="authorized">
       <span class="store-account-name">
         <UserOutlined />
-        {{ t('themeStore.account.signedInAs', { name: accountName }) }}
+        {{ t('core.themeStore.account.signedInAs', { name: accountName }) }}
       </span>
       <a-button type="link" size="small" :loading="starting" @click="login">
-        {{ t('themeStore.account.switch') }}
+        {{ t('core.themeStore.account.switch') }}
       </a-button>
     </template>
     <template v-else-if="pending">
-      <span class="store-account-hint">{{ t('themeStore.account.pending') }}</span>
+      <span class="store-account-hint">{{ t('core.themeStore.account.pending') }}</span>
       <span class="store-account-code">{{ state.userCode }}</span>
       <a-button size="small" @click="openVerificationPage">
-        {{ t('themeStore.account.reopen') }}
+        {{ t('core.themeStore.account.reopen') }}
       </a-button>
       <a-button size="small" type="text" @click="cancel">
-        {{ t('themeStore.account.cancel') }}
+        {{ t('core.themeStore.account.cancel') }}
       </a-button>
     </template>
     <template v-else>
       <span v-if="state.message" class="store-account-hint">{{ state.message }}</span>
       <a-button :loading="starting" @click="login">
-        {{ t('themeStore.account.login') }}
+        {{ t('core.themeStore.account.login') }}
       </a-button>
     </template>
   </div>

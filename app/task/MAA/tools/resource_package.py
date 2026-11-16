@@ -41,10 +41,12 @@ import time
 import zipfile
 from pathlib import Path
 
-from app.utils.io import force_rmtree
+from app.utils import io as _utils_io
 
 _COMMIT_FILE = "version.json"
 _CHUNK = 1024 * 1024
+_MAX_ARCHIVE_ENTRIES = 100_000
+_MAX_EXTRACTED_BYTES = 4 * 1024**3
 _UTF8_FLAG = 0x800
 
 
@@ -83,11 +85,20 @@ def extract_zip(zip_path: Path, dest_dir: Path) -> None:
     zip 损坏或条目路径越界（绝对路径 / ``..``）时抛异常，由调用方兜底。
     """
     if dest_dir.exists():
-        force_rmtree(dest_dir)
+        _utils_io.force_rmtree(dest_dir)
     dest_dir.mkdir(parents=True)
     root = dest_dir.resolve()
     with zipfile.ZipFile(zip_path) as archive:
-        for info in archive.infolist():
+        entries = archive.infolist()
+        if len(entries) > _MAX_ARCHIVE_ENTRIES:
+            raise ValueError("资源包条目过多，拒绝解压")
+        total = sum(info.file_size for info in entries)
+        if total > _MAX_EXTRACTED_BYTES:
+            raise ValueError("资源包展开后过大，拒绝解压")
+        if total > shutil.disk_usage(dest_dir).free:
+            raise ValueError("磁盘空间不足，无法解压资源包")
+        written = 0
+        for info in entries:
             if info.is_dir():
                 continue
             target = (dest_dir / _fix_zip_name(info)).resolve(strict=False)
@@ -95,10 +106,14 @@ def extract_zip(zip_path: Path, dest_dir: Path) -> None:
                 raise ValueError(f"资源包内路径越界: {info.filename}")
             target.parent.mkdir(parents=True, exist_ok=True)
             with archive.open(info) as src, target.open("wb") as dst:
-                shutil.copyfileobj(src, dst, _CHUNK)
+                while chunk := src.read(_CHUNK):
+                    written += len(chunk)
+                    if written > _MAX_EXTRACTED_BYTES:
+                        raise ValueError("资源包展开后过大，已停止解压")
+                    dst.write(chunk)
 
 
-def count_zip_entries(zip_path: Path) -> int:
+def count_zip_entries(zip_path: Path, *, prefix: str = "resource/") -> int:
     """zip 内位于 ``resource/`` 下的非目录条目数。
 
     供换位前后的暂存树核账：任何原因（并发清理、AV 删文件）造成的残缺树
@@ -108,7 +123,7 @@ def count_zip_entries(zip_path: Path) -> int:
         return sum(
             1
             for info in archive.infolist()
-            if not info.is_dir() and _fix_zip_name(info).startswith("resource/")
+            if not info.is_dir() and _fix_zip_name(info).startswith(prefix)
         )
 
 

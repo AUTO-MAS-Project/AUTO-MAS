@@ -2,7 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { EmulatorConfig } from './EmulatorConfig';
+import type { EmulatorConfigInput } from './EmulatorConfigInput';
 export type EmulatorUpdateIn = {
     /**
      * 模拟器 ID
@@ -11,6 +11,6 @@ export type EmulatorUpdateIn = {
     /**
      * 模拟器更新数据
      */
-    data: EmulatorConfig;
+    data: EmulatorConfigInput;
 };
 

@@ -231,8 +231,13 @@ def process_issue(
         policy_started_at, now - CATCH_UP
     )
     previous_body = event.get("changes", {}).get("body", {}).get("from")
+    # 评论编辑的 changes.body 是旧评论，不参与 Issue 正文的勾选比较。
     newly_checked = (
-        checked and previous_body is not None and not unread_checked(previous_body)
+        action == "edited"
+        and "comment" not in event
+        and checked
+        and previous_body is not None
+        and not unread_checked(previous_body)
     )
     enroll = new_issue or newly_labeled or include_history
     # 巡检补回丢失的 opened 事件，历史 Issue 只在新操作或手动启用时登记。
@@ -343,6 +348,7 @@ def main() -> None:
     if event.get("issue"):
         numbers = [event["issue"]["number"]]
     else:
+        # 列表已包含正文和标签；无关反馈无需再读取详情与评论。
         numbers = [
             issue["number"]
             for page in github_api(
@@ -350,6 +356,7 @@ def main() -> None:
             )
             for issue in page
             if "pull_request" not in issue
+            and (is_bug(issue) or unread_checked(issue.get("body") or ""))
         ]
     failed = []
     for number in numbers:

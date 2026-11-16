@@ -1,11 +1,7 @@
 <template>
   <div class="task-tree-container">
     <div v-if="taskData.length === 0" class="empty-state">
-      <div class="empty-content">
-        <div class="empty-image-container">
-          <img src="@/assets/NoData.png" :alt="t('comp.noData2')" class="empty-image" />
-        </div>
-      </div>
+      <NoData :image-style="{ height: '80px' }" :description="false" />
     </div>
     <div v-else class="task-tree">
       <div v-for="script in taskData" :key="`script-${script.script_id}`" class="script-card">
@@ -17,7 +13,7 @@
               <CaretRightOutlined v-else class="expand-icon" />
               <span class="script-name">{{ script.name }}</span>
               <span v-if="script.user_list && script.user_list.length > 0" class="user-count">
-                ({{ script.user_list.length }}个用户)
+                {{ t('core.comp.scriptUserCount', { n: script.user_list.length }) }}
               </span>
             </div>
             <a-tag :color="getStatusColor(script.status)" size="small" class="status-tag">
@@ -30,15 +26,15 @@
         <div v-show="expandedScripts.has(script.script_id)" class="user-list">
           <div v-if="isWaitingWithoutUsers(script)" class="user-item last-item">
             <div class="user-content">
-              <span class="user-name">{{ t('scheduler.overview.userNotLoaded') }}</span>
+              <span class="user-name">{{ t('core.scheduler.overview.userNotLoaded') }}</span>
               <a-tag :color="getStatusColor('等待')" size="small" class="status-tag">
-                {{ statusLabel('等待') }}
+                {{ t('core.status.waiting') }}
               </a-tag>
             </div>
           </div>
           <div v-else-if="!script.user_list || script.user_list.length === 0" class="no-users">
             <div class="no-users-content">
-              <span class="no-users-text">{{ t('comp.noUsersYet') }}</span>
+              <span class="no-users-text">{{ t('core.comp.noUsersYet') }}</span>
             </div>
           </div>
           <div
@@ -380,34 +376,5 @@ defineExpose({
   height: 100%;
   min-height: 200px;
   text-align: center;
-}
-
-.empty-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.empty-image-container {
-  margin-bottom: 16px;
-}
-
-.empty-image {
-  width: 80px;
-  height: auto;
-  opacity: 0.6;
-}
-
-.empty-title {
-  font-size: 16px;
-  font-weight: 500;
-  margin: 0 0 4px 0;
-  color: var(--ant-color-text);
-}
-
-.empty-description {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0;
 }
 </style>

@@ -30,7 +30,7 @@ export type Emulator2AvdStatusOut = {
      */
     components?: Array<Emulator2AvdComponentItem>;
     /**
-     * 缺着的必需组件名称 (含不合格的模拟器); 要用完整的模拟器内测包
+     * 缺着的必需组件名称 (含不合格的模拟器); adb 和系统镜像用包里的「补全组件.bat」补齐
      */
     missing?: Array<string>;
     /**

@@ -1,3 +1,5 @@
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
+import type { DesktopMascotTaskHostAPI } from '@/types/desktopMascot'
 import type { ElectronAPI } from '@/types/electron'
 import { getDefaultHttpEndpoint, getDefaultWebSocketEndpoint } from '@/utils/backendEndpoint'
 
@@ -41,7 +43,24 @@ const getLogger = (moduleName: string): Logger => {
   }
 }
 
+// 浏览器预览没有原生桌宠：菜单桥接整体空实现。useDesktopMascotTaskActions 在 setup 阶段无条件调用这三个
+// 监听器（:141-151），缺成员会抛 TypeError 使整页白屏；satisfies 保证接口新增成员而这里没补时 typecheck 失败。
+const desktopMascotTaskBridge = {
+  onDesktopMascotTaskMenuRequest: () => () => undefined,
+  onDesktopMascotTaskAction: () => () => undefined,
+  onDesktopMascotTaskMenuClosed: () => () => undefined,
+  setDesktopMascotTaskMenu: async () => undefined,
+  setDesktopMascotTaskActionResult: async () => undefined,
+} satisfies DesktopMascotTaskHostAPI
+
+const windowStateBridge = {
+  windowIsMaximized: async () => false,
+  onWindowMaximizedChange: () => () => undefined,
+} satisfies Pick<ElectronAPI, 'windowIsMaximized' | 'onWindowMaximizedChange'>
+
 const browserDevElectronAPI = {
+  ...desktopMascotTaskBridge,
+  ...windowStateBridge,
   getLogger,
   getApiEndpoint: async (key: string) =>
     key === 'websocket' ? BACKEND_WS_ENDPOINT : BACKEND_HTTP_ENDPOINT,
@@ -50,6 +69,13 @@ const browserDevElectronAPI = {
     return { success: true }
   },
   windowFocus: async () => window.focus(),
+  windowMinimize: async () => true,
+  windowMaximize: async () => undefined,
+  windowIsMaximized: async () => false,
+  onWindowMaximizedChange: () => () => undefined,
+  windowHideToTray: async () => false,
+  notifyNativeCloseHandlerReady: () => undefined,
+  onNativeWindowCloseRequested: () => () => undefined,
   selectFolder: async () => null,
   selectFile: async () => [],
   saveConfig: async (config: Record<string, unknown>, defaults?: Record<string, unknown>) => {
@@ -97,7 +123,7 @@ const browserDevElectronAPI = {
   backendStatus: async () => ({ isRunning: true, runtimeSupervised: false }),
 } as unknown as ElectronAPI
 
-if (import.meta.env.DEV && !window.electronAPI) {
+if (isDev && !window.electronAPI) {
   ;(window as BrowserDevWindow).__AUTO_MAS_BROWSER_DEV_MODE__ = true
   window.electronAPI = browserDevElectronAPI
 }

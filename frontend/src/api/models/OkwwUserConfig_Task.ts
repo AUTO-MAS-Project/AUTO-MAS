@@ -4,28 +4,36 @@
 /* eslint-disable */
 export type OkwwUserConfig_Task = {
     /**
-     * 每日任务体力用途
+     * 每日任务后运行的附加任务
      */
-    WhichToFarm?: ('Tacet Suppression' | 'Forgery Challenge' | 'Simulation Challenge' | null);
+    AdditionalTasks?: (Array<'Check Weekly Garden' | 'Auto Farm all Nightmare Nest' | 'Merge Echo If discarded > 1000' | 'Teleport and Farm 4C Echo'> | null);
     /**
-     * F2 列表中的无音区序号
+     * 使用梦魇巢穴完成日常声骸
      */
-    WhichTacetSuppressionToFarm?: (number | null);
-    /**
-     * F2 列表中的凝素领域序号
-     */
-    WhichForgeryChallengeToFarm?: (number | null);
+    FarmNightmareNestForDailyEcho?: (boolean | null);
     /**
      * 模拟领域材料
      */
     MaterialSelection?: ('Resonator EXP' | 'Weapon EXP' | 'Shell Credit' | null);
     /**
-     * 需要时使用梦魇巢穴完成日常声骸
+     * 凝素领域序号
      */
-    FarmNightmareNestForDailyEcho?: (boolean | null);
+    WhichForgeryChallengeToFarm?: (number | null);
     /**
-     * 每日任务后运行的附加任务
+     * 无音区序号
      */
-    AdditionalTasks?: (Array<'Check Weekly Garden' | 'Auto Farm all Nightmare Nest' | 'Merge Echo If discarded > 1000' | 'Teleport and Farm 4C Echo'> | null);
+    WhichTacetSuppressionToFarm?: (number | null);
+    /**
+     * 每日任务体力用途（日常任务按账号覆写或绑定计划生效）
+     */
+    WhichToFarm?: ('Tacet Suppression' | 'Forgery Challenge' | 'Simulation Challenge' | null);
+    /**
+     * 启用自定义启动参数
+     */
+    IfCustomArguments?: (boolean | null);
+    /**
+     * 自定义启动参数，开启后原样传递给 ok-ww
+     */
+    CustomArguments?: (string | null);
 };
 

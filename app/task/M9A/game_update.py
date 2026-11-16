@@ -36,16 +36,9 @@ from pathlib import Path
 
 import httpx
 
+from app.utils import game_apk as _utils_game_apk
+from app.utils import game_update as _utils_game_update
 from app.utils import get_logger
-from app.utils.game_apk import (
-    cleanup_apk_leftovers,
-    download_apk,
-    fetch_remote_apk_version,
-    get_apk_update_lock,
-    get_installed_client_info,
-    install_apk,
-)
-from app.utils.game_update import GameUpdateResult, is_client_outdated
 
 logger = get_logger("M9A 游戏更新")
 
@@ -130,7 +123,7 @@ async def ensure_game_updated(
     apk_dir: Path,
     if_auto_install: bool,
     progress: Callable[[str], Awaitable[None]] | None = None,
-) -> GameUpdateResult:
+) -> _utils_game_update.GameUpdateResult:
     """在下发第一个任务前确认官服客户端版本，必要时接管更新。
 
     Args:
@@ -152,43 +145,51 @@ async def ensure_game_updated(
             await progress(text)
 
     if str(resource_name or "").strip() != official_resource_name:
-        return GameUpdateResult(
+        return _utils_game_update.GameUpdateResult(
             "Skipped", f"资源不是{official_resource_name}，跳过游戏版本检查"
         )
     if package_name != OFFICIAL_PACKAGE_NAME:
-        return GameUpdateResult(
+        return _utils_game_update.GameUpdateResult(
             "Skipped",
             f"本次启动的游戏包名不是官服（{package_name or '未启动游戏'}），跳过游戏版本检查",
         )
     if adb_address in ("", "Unknown"):
-        return GameUpdateResult("Skipped", "未取到模拟器 adb 地址，跳过游戏版本检查")
+        return _utils_game_update.GameUpdateResult(
+            "Skipped", "未取到模拟器 adb 地址，跳过游戏版本检查"
+        )
 
     download_url = await fetch_download_url()
     if download_url is None:
-        return GameUpdateResult("Skipped", "未能从官网取到安装包直链，跳过游戏版本检查")
+        return _utils_game_update.GameUpdateResult(
+            "Skipped", "未能从官网取到安装包直链，跳过游戏版本检查"
+        )
 
-    remote = await fetch_remote_apk_version(download_url)
+    remote = await _utils_game_apk.fetch_remote_apk_version(download_url)
     if remote is None:
-        return GameUpdateResult(
+        return _utils_game_update.GameUpdateResult(
             "Skipped", "未能读取官网安装包的版本号，跳过游戏版本检查"
         )
     if remote.package != OFFICIAL_PACKAGE_NAME:
-        return GameUpdateResult(
+        return _utils_game_update.GameUpdateResult(
             "Skipped",
             f"官网安装包的包名是 {remote.package}，与官服不符，跳过游戏版本检查",
         )
 
-    installed_info = await get_installed_client_info(
+    installed_info = await _utils_game_apk.get_installed_client_info(
         adb_path, adb_address, package_name
     )
     if installed_info is None:
         # 读不到已安装版本可能是游戏未安装，也可能是 adb 临时异常，
         # 一律不阻断本次代理，交回 M9A 原有流程判定
-        return GameUpdateResult("Skipped", "未能读取模拟器内的游戏版本，跳过更新检查")
+        return _utils_game_update.GameUpdateResult(
+            "Skipped", "未能读取模拟器内的游戏版本，跳过更新检查"
+        )
     installed, installed_code = installed_info
 
-    if not is_client_outdated(installed, remote.version_name):
-        return GameUpdateResult("UpToDate", f"游戏客户端已是最新版本 {installed}")
+    if not _utils_game_update.is_client_outdated(installed, remote.version_name):
+        return _utils_game_update.GameUpdateResult(
+            "UpToDate", f"游戏客户端已是最新版本 {installed}"
+        )
 
     outdated_text = (
         f"游戏客户端版本落后（已安装 {installed}，最新 {remote.version_name}）"
@@ -204,40 +205,44 @@ async def ensure_game_updated(
     ):
         # Android 不允许 versionCode 降级：其他渠道（如模拟器自带的应用中心）装的客户端
         # versionCode 比官网包高时，官网包永远装不上，下了也白下
-        return GameUpdateResult(
+        return _utils_game_update.GameUpdateResult(
             "NeedManualUpdate",
             f"{outdated_text}。本机客户端来自其他渠道（如模拟器自带的应用中心），"
             "官网安装包无法覆盖安装，请在原渠道更新游戏后重试",
         )
 
     if not if_auto_install:
-        return GameUpdateResult(
+        return _utils_game_update.GameUpdateResult(
             "NeedManualUpdate",
             f"{outdated_text}，未开启自动安装，请手动更新游戏后重试",
         )
 
     time_limit = GAME_UPDATE_TIME_LIMIT_MINUTES * 60
     apk_path = apk_dir / f"reverse1999-{remote.version_name}.apk"
-    async with get_apk_update_lock(package_name):
-        cleanup_apk_leftovers(apk_dir, "reverse1999-")
+    async with _utils_game_apk.get_apk_update_lock(package_name):
+        _utils_game_apk.cleanup_apk_leftovers(apk_dir, "reverse1999-")
         # 并行任务可能刚装完同一个安装包：锁内复读版本，已是最新就直接复用结果
-        installed_now = await get_installed_client_info(
+        installed_now = await _utils_game_apk.get_installed_client_info(
             adb_path, adb_address, package_name
         )
-        if installed_now is not None and not is_client_outdated(
+        if installed_now is not None and not _utils_game_update.is_client_outdated(
             installed_now[0], remote.version_name
         ):
-            return GameUpdateResult(
+            return _utils_game_update.GameUpdateResult(
                 "UpToDate", f"游戏客户端已是最新版本 {installed_now[0]}"
             )
         try:
             await report(f"{outdated_text}，正在下载游戏安装包")
-            await download_apk(download_url, apk_path, progress, timeout=time_limit)
+            await _utils_game_apk.download_apk(
+                download_url, apk_path, progress, timeout=time_limit
+            )
             await report("正在安装游戏安装包（保留游戏数据）")
-            await install_apk(adb_path, adb_address, apk_path, timeout=time_limit)
+            await _utils_game_apk.install_apk(
+                adb_path, adb_address, apk_path, timeout=time_limit
+            )
         except Exception as e:
             logger.opt(exception=True).warning(f"接管游戏更新失败: {e}")
-            return GameUpdateResult(
+            return _utils_game_update.GameUpdateResult(
                 "NeedManualUpdate",
                 f"{outdated_text}，MAS 自动更新失败（{e}），请手动更新游戏后重试",
             )
@@ -247,13 +252,19 @@ async def ensure_game_updated(
             with suppress(OSError):
                 apk_path.unlink(missing_ok=True)
 
-    current_info = await get_installed_client_info(adb_path, adb_address, package_name)
+    current_info = await _utils_game_apk.get_installed_client_info(
+        adb_path, adb_address, package_name
+    )
     current = current_info[0] if current_info is not None else None
-    if current is None or is_client_outdated(current, remote.version_name):
-        return GameUpdateResult(
+    if current is None or _utils_game_update.is_client_outdated(
+        current, remote.version_name
+    ):
+        return _utils_game_update.GameUpdateResult(
             "NeedManualUpdate",
             f"安装后版本仍未达到 {remote.version_name}（当前 {current or '未知'}），"
             "请手动更新游戏后重试",
         )
 
-    return GameUpdateResult("Updated", f"MAS 已将游戏客户端更新至 {current}")
+    return _utils_game_update.GameUpdateResult(
+        "Updated", f"MAS 已将游戏客户端更新至 {current}"
+    )

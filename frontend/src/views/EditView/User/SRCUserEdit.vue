@@ -4,8 +4,8 @@
     <GuiSessionMask
       :open="showSrcConfigMask"
       :icon="SettingOutlined"
-      :title="t('edit.srcConfigurationProgress')"
-      :description="`${t('edit.srcConfigurationThisUser')}\n${t('edit.clickSaveConfigurationWhen2')}`"
+      :title="t('core.edit.srcConfigurationProgress')"
+      :description="`${t('core.edit.srcConfigurationThisUser')}\n${t('core.edit.clickSaveConfigurationWhen2')}`"
     >
       <template #actions>
         <a-button
@@ -15,15 +15,15 @@
           :loading="stoppingSrcConfig"
           @click="handleSaveSRCConfig"
         >
-          {{ t('edit.saveConfiguration') }}
+          {{ t('core.edit.saveConfiguration') }}
         </a-button>
       </template>
     </GuiSessionMask>
     <GuiSessionMask
       :open="showSrcViewMask"
       :icon="EyeOutlined"
-      :title="t('edit.srcViewingTitle')"
-      :description="`${t('edit.srcViewingDesc')}\n${t('edit.srcViewingDesc2')}`"
+      :title="t('core.edit.srcViewingTitle')"
+      :description="`${t('core.edit.srcViewingDesc')}\n${t('core.edit.srcViewingDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -32,11 +32,10 @@
           :loading="stoppingSrcConfig"
           @click="handleSaveSRCConfig"
         >
-          {{ t('edit.srcViewClose') }}
+          {{ t('core.edit.srcViewClose') }}
         </a-button>
       </template>
     </GuiSessionMask>
-    <!-- 头部组件 -->
     <SRCUserEditHeader
       :script-id="scriptId"
       :script-name="scriptName"
@@ -44,11 +43,10 @@
       :user-mode="formData.Info.Base"
       :src-config-loading="srcConfigLoading"
       :show-src-config-mask="showSrcConfigMask"
-      :loading="loading"
       :config-locked="configLocked"
       :user-id="userId"
-      @handle-s-r-c-config="startConfigSession(false)"
-      @handle-cancel="handleCancel"
+      @config="startConfigSession(false)"
+      @cancel="handleCancel"
     />
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
@@ -62,6 +60,7 @@
         >
           <!-- 基本信息组件 -->
           <BasicInfoSection
+            :heading="{ isEdit }"
             v-model:form-data="formData"
             :loading="loading"
             :server-options="serverOptions"
@@ -80,13 +79,13 @@
             wrap="wrap"
             gap="small"
           >
-            <h3>{{ t('edit.stageConfiguration') }}</h3>
+            <h3>{{ t('core.edit.stageConfiguration') }}</h3>
             <a-space>
               <a-button size="small" @click="restoreOpen = true">
                 <template #icon>
                   <HistoryOutlined />
                 </template>
-                {{ t('edit.configRestoreTitle') }}
+                {{ t('core.edit.configRestoreTitle') }}
               </a-button>
             </a-space>
           </a-flex>
@@ -123,16 +122,16 @@
       :script-name="SRC_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
-      :user-desc="t('edit.srcConfigRestoreUserDesc')"
-      :script-desc="t('edit.srcConfigRestoreScriptDesc')"
+      :user-desc="t('core.edit.srcConfigRestoreUserDesc')"
+      :script-desc="t('core.edit.srcConfigRestoreScriptDesc')"
       :on-restored="handleRestored"
       :on-detail="handleRestoreView"
     >
       <!-- mas 备份为字段侧车分区、native 备份为关键字段反读分区 -->
       <template #preview="{ raw }">
-        <a-empty
+        <NoData
           v-if="!previewSections(raw).length"
-          :description="t('edit.configRestorePreviewEmpty')"
+          :description="t('core.edit.configRestorePreviewEmpty')"
         />
         <div v-else>
           <template v-for="s in previewSections(raw)" :key="s.name">
@@ -156,6 +155,7 @@
 </template>
 
 <script setup lang="ts">
+import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
@@ -165,6 +165,7 @@ import { message, Modal } from 'ant-design-vue'
 import { EyeOutlined, HistoryOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
+import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
@@ -175,7 +176,6 @@ import {
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import { Service } from '@/api'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import { buildRestoreConfirm } from '@/utils/configRestoreMode'
@@ -188,12 +188,13 @@ import BasicInfoSection from '@/views/SRCUserEdit/BasicInfoSection.vue'
 import StageConfigSection from '@/views/SRCUserEdit/StageConfigSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
 
 const router = useRouter()
 const route = useRoute()
-const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
+const { addUser, updateUser, getUsers, loading: userLoading, error: userApiError } = useUserApi()
 const { getScript } = useScriptApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
@@ -218,7 +219,7 @@ let srcConfigTimeout: number | null = null
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId }))
 
 // 脚本信息
 const scriptName = ref('')
@@ -264,7 +265,7 @@ const getDefaultSRCUserData = () => ({
     SimulatedUniverseWorld: '-',
   },
   Data: {
-    LastProxyDate: '2000-01-01',
+    LastProxyDate: '2000-01-01T00:00:00+04:00',
     ProxyTimes: 0,
   },
   Notify: {
@@ -287,8 +288,8 @@ const formData = reactive({
 const rules = computed(() => {
   const baseRules: Record<string, Rule[]> = {
     userName: [
-      { required: true, message: t('edit.enterUsername'), trigger: 'blur' },
-      { min: 1, max: 50, message: t('edit.usernameMustBe1'), trigger: 'blur' },
+      { required: true, message: t('core.edit.enterUsername'), trigger: 'blur' },
+      { min: 1, max: 50, message: t('core.edit.usernameMustBe1'), trigger: 'blur' },
     ],
   }
   return baseRules
@@ -318,16 +319,7 @@ const handleFieldSave = async (key: string, value: any) => {
 
   return await enqueue(async () => {
     try {
-      const parts = key.split('.')
-      let userData: Record<string, any> = {}
-      let current = userData
-
-      // 构建嵌套结构
-      for (let i = 0; i < parts.length - 1; i++) {
-        current[parts[i]] = {}
-        current = current[parts[i]]
-      }
-      current[parts[parts.length - 1]] = value
+      const userData = buildFieldPatch(key, value)
 
       logger.debug(`保存字段: ${key} = ${JSON.stringify(value)}`)
       const success = await updateUser(scriptId, userId, userData)
@@ -370,21 +362,11 @@ const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
 ]
 
 // 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
-const restoreApi = {
-  list: async (target: string) =>
-    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
-  preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
-  restore: async (target: string, time: string) =>
-    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-      scriptId,
-      userId,
-      time,
-      target,
-    }),
-  readFile: async (target: string, time: string, path: string) =>
-    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
-}
+const { restoreApi, ensureBackup } = useConfigBackupApi({
+  scriptId,
+  userId: () => userId,
+  logger,
+})
 
 interface SrcPreviewRow {
   key: string
@@ -426,8 +408,8 @@ const handleRestoreView = (
     const { title, paragraphs } = buildRestoreConfirm(
       t,
       {
-        title: t('edit.configRestoreDetailView'),
-        desc: t('edit.configRestoreDetailConfirm', { script: SRC_DISPLAY_NAME }),
+        title: t('core.edit.configRestoreDetailView'),
+        desc: t('core.edit.configRestoreDetailConfirm', { script: SRC_DISPLAY_NAME }),
       },
       item.base,
       currentMode
@@ -441,26 +423,21 @@ const handleRestoreView = (
         )
       ),
       okType: 'danger',
-      okText: t('edit.configRestoreConfirmOk'),
-      cancelText: t('edit.cancel'),
+      okText: t('core.edit.configRestoreConfirmOk'),
+      cancelText: t('core.edit.cancel'),
       onOk: async () => {
         if (configLocked.value) {
-          message.error(t('edit.configLocked'))
+          message.error(t('core.edit.configLocked'))
           resolve(false)
           return
         }
 
         try {
-          const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-            scriptId,
-            userId,
-            time: item.time,
-            target,
-          })
+          const resp = await restoreApi.restore(target, item.time)
           // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
           // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
           if (resp.code !== 200) {
-            throw new Error(resp.message || t('edit.configRestoreFailed'))
+            throw new Error(resp.message || t('core.edit.configRestoreFailed'))
           }
           restoreOpen.value = false
           if (target === 'mas') {
@@ -473,7 +450,7 @@ const handleRestoreView = (
           }
           resolve(true)
         } catch (e) {
-          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
           resolve(false)
         }
       },
@@ -497,20 +474,7 @@ const startScriptLevelViewSession = async () => {
 // 编辑会话归档（进入/退出时机，指纹去重）：与运行/会话下发前的双池归档
 // （AutoProxy/ScriptConfig 的 set_src）配合——进入归档原生配置当前状态
 // （MAS 触碰前原始态），退出归档 MAS 配置终态（编辑会话包络）
-const ensureSrcBackup = async (target: 'mas' | 'native') => {
-  if (!userId) return
-  try {
-    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
-      scriptId,
-      userId,
-      target,
-    })
-    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-    message.warning(t('edit.configRestoreEnsureFailed'))
-  }
-}
+const ensureSrcBackup = ensureBackup
 
 // 初始化
 onMounted(async () => {
@@ -560,21 +524,21 @@ const loadUserData = async () => {
           await nextTick()
           formData.userName = formData.Info.Name || ''
         } else {
-          message.error(t('edit.userTypeDoesNot'))
+          message.error(t('core.edit.userTypeDoesNot'))
           router.push('/scripts')
         }
       } else {
-        message.error(t('edit.userDoesNotExist'))
+        message.error(t('core.edit.userDoesNotExist'))
         router.push('/scripts')
       }
     } else {
-      message.error(t('edit.couldNotLoadUser'))
+      if (!userApiError.value) message.error(t('core.edit.couldNotLoadUser'))
       router.push('/scripts')
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadUser'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotLoadUser'))
     router.push('/scripts')
   }
 }
@@ -612,11 +576,7 @@ const startConfigSession = async (viewOnly: boolean) => {
     }
 
     // 调用后端启动任务接口，传入 userId 作为 taskId 与设置模式
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: userId,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-      viewOnly,
-    })
+    const response = await requestScriptConfigStart(userId, viewOnly, 'user')
 
     if (response && response.taskId) {
       const wsId = response.taskId
@@ -630,7 +590,7 @@ const startConfigSession = async (viewOnly: boolean) => {
             logger.error(
               `用户 ${formData.Info?.Name || formData.userName} SRC会话异常:${data.message}`
             )
-            message.error(t('edit.srcConfigurationFailedP0', { p0: data.message }))
+            message.error(t('core.edit.srcConfigurationFailedP0', { p0: data.message }))
           }
         }),
         // 处理任务结束消息
@@ -639,7 +599,9 @@ const startConfigSession = async (viewOnly: boolean) => {
           logger.info(`用户 ${formData.Info?.Name || formData.userName} SRC会话任务已结束`)
           if (data.outcome === 'success' && !viewOnly) {
             message.success(
-              t('edit.configurationUserP0Done', { p0: formData.Info?.Name || formData.userName })
+              t('core.edit.configurationUserP0Done', {
+                p0: formData.Info?.Name || formData.userName,
+              })
             )
           }
           closeSessionUi()
@@ -650,11 +612,11 @@ const startConfigSession = async (viewOnly: boolean) => {
       srcTaskId.value = wsId
       if (viewOnly) {
         showSrcViewMask.value = true
-        message.success(t('edit.srcViewOpened'))
+        message.success(t('core.edit.srcViewOpened'))
       } else {
         showSrcConfigMask.value = true
         message.success(
-          t('edit.startedSrcSetupUser', { p0: formData.Info?.Name || formData.userName })
+          t('core.edit.startedSrcSetupUser', { p0: formData.Info?.Name || formData.userName })
         )
       }
 
@@ -666,14 +628,14 @@ const startConfigSession = async (viewOnly: boolean) => {
           if (taskId) {
             void (async () => {
               try {
-                await Service.stopTaskApiDispatchStopPost({ taskId })
+                await stopNativeConfig(taskId, 'timeout')
               } catch (e) {
                 logger.error(e instanceof Error ? e.message : String(e))
               }
               closeSessionUi()
               if (!viewOnly) {
                 message.info(
-                  t('edit.configurationSessionUserP0', {
+                  t('core.edit.configurationSessionUserP0', {
                     p0: formData.Info?.Name || formData.userName,
                   })
                 )
@@ -686,13 +648,14 @@ const startConfigSession = async (viewOnly: boolean) => {
       )
     } else {
       message.error(
-        response?.message || (viewOnly ? t('edit.srcViewStartFailed') : t('edit.couldNotStartSrc'))
+        response?.message ||
+          (viewOnly ? t('core.edit.srcViewStartFailed') : t('core.edit.couldNotStartSrc'))
       )
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`启动SRC会话失败: ${errorMsg}`)
-    message.error(viewOnly ? t('edit.srcViewStartFailed') : t('edit.couldNotStartSrc'))
+    message.error(viewOnly ? t('core.edit.srcViewStartFailed') : t('core.edit.couldNotStartSrc'))
   } finally {
     srcConfigLoading.value = false
   }
@@ -704,26 +667,26 @@ const handleSaveSRCConfig = async () => {
   try {
     const taskId = srcTaskId.value
     if (!taskId) {
-      message.error(t('edit.noActiveConfigurationSession'))
+      message.error(t('core.edit.noActiveConfigurationSession'))
       return
     }
 
     stoppingSrcConfig.value = true
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+    const response = await stopNativeConfig(taskId, viewOnly ? 'close' : 'save')
     if (response && response.code === 200) {
       closeSessionUi()
       if (!viewOnly) {
         message.success(
-          t('edit.configurationUserP0Was', { p0: formData.Info?.Name || formData.userName })
+          t('core.edit.configurationUserP0Was', { p0: formData.Info?.Name || formData.userName })
         )
       }
     } else {
-      message.error(response?.message || t('edit.couldNotSaveSrc'))
+      message.error(response?.message || t('core.edit.couldNotSaveSrc'))
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`结束SRC会话失败: ${errorMsg}`)
-    message.error(t('edit.couldNotSaveSrc'))
+    message.error(t('core.edit.couldNotSaveSrc'))
   } finally {
     stoppingSrcConfig.value = false
   }
@@ -746,7 +709,7 @@ if (!userId) {
       isEdit.value = true
       logger.info(`新建用户，获取userId: ${userId}`)
     } else {
-      message.error(t('edit.couldNotCreateUser'))
+      if (!userApiError.value) message.error(t('core.edit.couldNotCreateUser'))
       router.push('/scripts')
     }
     // 标记初始化完成
@@ -763,7 +726,7 @@ onUnmounted(() => {
     const taskId = srcTaskId.value
     if (taskId) {
       try {
-        await Service.stopTaskApiDispatchStopPost({ taskId })
+        await stopNativeConfig(taskId)
       } catch (e) {
         logger.error(e instanceof Error ? e.message : String(e))
       }
@@ -774,42 +737,9 @@ onUnmounted(() => {
 })
 </script>
 
+<style scoped src="@/styles/userEditForm.css"></style>
+
 <style scoped>
-.user-edit-container {
-  padding: 32px;
-  min-height: 100vh;
-  background: var(--ant-color-bg-layout);
-}
-
-.user-edit-content {
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.config-card {
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
-}
-
-.config-form {
-  max-width: none;
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .user-edit-container {
-    padding: 16px;
-  }
-
-  .user-edit-content {
-    max-width: 100%;
-  }
-}
-
 /* 配置恢复预览（分区行；弹窗内滚动由通用组件负责） */
 .src-preview-title {
   font-size: 15px;

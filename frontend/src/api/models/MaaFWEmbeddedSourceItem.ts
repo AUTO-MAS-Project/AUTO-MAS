@@ -4,15 +4,15 @@
 /* eslint-disable */
 export type MaaFWEmbeddedSourceItem = {
     /**
-     * 可作为克隆来源的 MFW 脚本 ID
+     * 可作为克隆来源的 MFW 托管 ID
      */
     scriptId: string;
     /**
-     * 脚本名
+     * 托管名
      */
     name?: string;
     /**
-     * 脚本类型（MaaFW / M9A / MSS）
+     * 托管类型（MaaFW / M9A / MSS）
      */
     type?: string;
     /**
@@ -24,7 +24,7 @@ export type MaaFWEmbeddedSourceItem = {
      */
     version?: string;
     /**
-     * 源脚本正在运行，此刻不能克隆
+     * 源托管正在运行，此刻不能克隆
      */
     busy?: boolean;
 };

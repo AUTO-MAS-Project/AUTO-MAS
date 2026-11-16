@@ -30,6 +30,8 @@ const props = defineProps<{
   name: N
   flavor: MaaFWFlavor
   context: MaaFWFlavorSlotContextMap[P][N]
+  /** 只渲染这个插入点的第几个组件（外层要给每个组件单独排版时用）；不传渲染全部 */
+  index?: number
 }>()
 
 const emit = defineEmits<{
@@ -37,7 +39,10 @@ const emit = defineEmits<{
   save: MaaFWFlavorSlotEmitMap['userPage']['save']
 }>()
 
-const entries = computed(() => resolveMaaFWFlavorSlot(props.flavor, props.part, props.name))
+const entries = computed(() => {
+  const all = resolveMaaFWFlavorSlot(props.flavor, props.part, props.name)
+  return props.index === undefined ? all : all.slice(props.index, props.index + 1)
+})
 
 const listeners = computed(() => {
   switch (props.part) {

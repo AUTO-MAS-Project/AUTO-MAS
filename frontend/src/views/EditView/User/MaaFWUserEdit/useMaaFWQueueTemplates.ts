@@ -126,7 +126,7 @@ export function useMaaFWQueueTemplates({
     })
 
   const rejectDuplicate = (next: MaaFWQueueTemplate[] | null) => {
-    if (!next) message.error(t('edit.queueTemplateNameExists'))
+    if (!next) message.error(t('core.edit.queueTemplateNameExists'))
     return next
   }
 
@@ -136,7 +136,9 @@ export function useMaaFWQueueTemplates({
       queue.templateDraftEntries.value,
       taskSnapshot.value.taskOptions,
       queue.passwordFields.value,
-      taskSnapshot.value.taskLabels
+      taskSnapshot.value.taskLabels,
+      taskSnapshot.value.taskChecked,
+      taskSnapshot.value.taskSchedules
     )
     if (snapshot.taskOrder.length === 0) return false
     return await writeTemplates(latest =>

@@ -18,14 +18,14 @@
 
 """旧版 M9A 专项配置 → MaaFW 形状，一次性、在 ``ScriptConfig.connect()`` 之前改原始 JSON。
 
-必须在加载前做：``ConfigBase.load`` 只认类里声明的条目，旧键（``Run.IfPsychubeDailyOnce``、
+必须在加载前做：``ConfigEntry.load`` 只认类里声明的条目，旧键（``Run.IfPsychubeDailyOnce``、
 ``Task.Queue``、``Data.LastPsychubeDate``…）在按新类加载的那一刻就会被丢弃并写回盘，
 之后再想迁就没有原料了。
 
 一趟做两件事：
 
 1. ``type == "M9AConfig"`` 且带旧形状键的脚本 → 按 §3 / §4 逐字段翻译成 MaaFW 形状
-   （类型标签不变，用户标签不变，只有数据变）；
+   （类型标签不变，账号标签不变，只有数据变）；
 2. ``type == "MaaFWConfig"`` 的脚本若项目被识别为 M9A（``flavor.is_m9a_project``）→ 只把
    ``instances[].type`` 换成 ``M9AConfig`` / ``M9AUserConfig``，数据一个字段不动（两类同形）。
 
@@ -37,7 +37,7 @@ v5.6.0-beta.1 的迁移把所有等于 interface default 的输入值都清空�
 关卡号 6 也在内），还丢了实例文件里勾选的「切换账号」。已经按那版迁过的配置由
 ``repair_m9a_migration_losses`` 按上面的备份补回一次。
 
-「启动游戏」「切换账号」「关闭游戏」由 MAS 控制、不留在用户队列里（规则见 ``managed.py``）：
+「启动游戏」「切换账号」「关闭游戏」由 MAS 控制、不留在账号队列里（规则见 ``managed.py``）：
 迁移与补救按同一规则落地，另有 ``normalize_m9a_managed_entries`` 在每次启动时对全部 M9A 用户
 整理一遍（beta.1 迁移留下的、#1012 补回的、手加的、通用 MaaFW 脚本换成 M9A 带过来的），幂等。
 这几段都在文件末尾。
@@ -60,7 +60,6 @@ from app.task.M9A.flavor import (
     CLOSE_ENTRY,
     FALLBACK_TASK_NAMES,
     LEGACY_ENTRY_ALIASES,
-    OFFICIAL_RESOURCE_NAME,
     STARTUP_ENTRY,
     SWITCH_ACCOUNT_ENTRY,
     is_m9a_project,
@@ -72,15 +71,11 @@ from app.task.M9A.managed import (
     settle_snapshot,
     settle_user_info,
     split_message,
+    supports_account_switch,
 )
 from app.task.MaaFW.tools.core.interface.models import resolve_task_instance_name
+from app.utils import constants as _utils_constants
 from app.utils import get_logger
-from app.utils.constants import (
-    BASE_INDEPENDENT,
-    BASE_NATIVE,
-    BASE_SHARED,
-    normalize_base_source,
-)
 
 logger = get_logger("M9A 迁移")
 
@@ -122,13 +117,13 @@ class MigrationReport:
     degraded_scripts: list[str] = field(default_factory=list)
     #: 关了快速配置、但找不到 MFAA 实例文件，退回任务队列的用户。
     instance_file_fallbacks: list[str] = field(default_factory=list)
-    #: 关了快速配置的用户：旧版不读「账号」，迁移后特调会拿它切号。
+    #: 关了快速配置的账号：旧版不读「账号」，迁移后特调会拿它切号。
     account_switch_users: list[str] = field(default_factory=list)
-    #: 实例文件里恰好一个切号：目标账号进了「账号」（``用户（账号 a）``）。
+    #: 实例文件里恰好一个切号：目标账号进了「账号」（``账号（账号 a）``）。
     imported_accounts: list[str] = field(default_factory=list)
-    #: 上一项里原「账号」非空且不同、被切号账号取代的（``用户（原 c → 现 a）``）。
+    #: 上一项里原「账号」非空且不同、被切号账号取代的（``账号（原 c → 现 a）``）。
     replaced_accounts: list[str] = field(default_factory=list)
-    #: 实例文件里有多个切号、照搬进队列等用户拆分的（``用户：拆分提示``）。
+    #: 实例文件里有多个切号、照搬进队列等用户拆分的（``账号：拆分提示``）。
     split_users: list[str] = field(default_factory=list)
     backup_path: Path | None = None
     #: 迁移函数自己抛了异常：原文件已另存，后续 connect() 会按新类加载。
@@ -169,7 +164,7 @@ class MigrationReport:
             )
         if self.disabled_users:
             lines.append(
-                "服务器与脚本资源不一致、已停用的用户："
+                "服务器与脚本资源不一致、已停用的账号："
                 + "、".join(self.disabled_users)
             )
         if self.account_switch_users:
@@ -179,7 +174,7 @@ class MigrationReport:
             )
         if self.instance_file_fallbacks:
             lines.append(
-                "关闭了快速配置但找不到 MFAA 实例文件、已改用任务队列的用户："
+                "关闭了快速配置但找不到 MFAA 实例文件、已改用任务队列的账号："
                 + "、".join(self.instance_file_fallbacks)
             )
         lines.extend(
@@ -214,7 +209,7 @@ def migrate_legacy_m9a_scripts(
     if not path.is_file():
         return report
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8").removeprefix("\ufeff")
         data = json.loads(text) if text.strip() else {}
     except (OSError, ValueError) as exc:
         logger.warning(f"M9A 迁移跳过：ScriptConfig.json 读取失败：{exc}")
@@ -341,7 +336,7 @@ def _project_is_m9a(payload: dict[str, Any], uid: str) -> bool:
 def _project_root_for_detection(
     payload: dict[str, Any], uid: str, *, prefer_source: bool = False
 ) -> Path | None:
-    """识别用的项目根：副本在就读副本（路径由脚本 ID 推出），否则读来源目录。
+    """识别用的项目根：副本在就读副本（路径由托管 ID 推出），否则读来源目录。
 
     ``prefer_source`` 反过来先读来源目录：补救要用迁移当时读的那份 interface 重算。
     """
@@ -372,8 +367,10 @@ def _script_label(payload: dict[str, Any], uid: str) -> str:
 
 
 def _user_data_of(payload: dict[str, Any]) -> dict[str, Any] | None:
-    """脚本数据块里的用户表：``ConfigBase.toDict`` 把子配置放在 ``SubConfigsInfo`` 下。"""
+    """脚本数据块里的账号表：``ConfigEntry.toDict`` 把子配置放在 ``SubConfigsInfo`` 下。"""
 
+    if isinstance(payload.get("UserData"), dict):
+        return payload["UserData"]
     sub = payload.get("SubConfigsInfo")
     user_data = sub.get("UserData") if isinstance(sub, dict) else None
     return user_data if isinstance(user_data, dict) else None
@@ -381,13 +378,13 @@ def _user_data_of(payload: dict[str, Any]) -> dict[str, Any] | None:
 
 def _iter_users(payload: dict[str, Any]) -> list[dict[str, Any]]:
     user_data = _user_data_of(payload)
-    if user_data is None or not isinstance(user_data.get("instances"), list):
+    if user_data is None:
         return []
     users: list[dict[str, Any]] = []
-    for instance in user_data.get("instances") or []:
+    for instance in user_data.get("order", user_data.get("instances")) or []:
         if not isinstance(instance, dict):
             continue
-        user = user_data.get(str(instance.get("uid") or ""))
+        user = user_data.get("data", user_data).get(str(instance.get("uid") or ""))
         if isinstance(user, dict):
             users.append(user)
     return users
@@ -571,7 +568,7 @@ def migrate_legacy_script(
 
 
 def _choose_script_resource(users: list[dict[str, Any]], index: _InterfaceIndex) -> str:
-    """启用用户里出现最多的服务器；没有启用用户取全部；并列取先出现的。"""
+    """启用账号里出现最多的服务器；没有启用账号取全部；并列取先出现的。"""
 
     def resource_of(user: dict[str, Any]) -> str:
         info = user.get("Info")
@@ -647,7 +644,7 @@ def _migrate_user(
     info = user.get("Info") if isinstance(user.get("Info"), dict) else {}
     data = user.get("Data") if isinstance(user.get("Data"), dict) else {}
     notify = user.get("Notify") if isinstance(user.get("Notify"), dict) else {}
-    name = str(info.get("Name") or "新用户")
+    name = str(info.get("Name") or "新账号")
     status = _truthy(info.get("Status", True))
     notes = str(info.get("Notes") or "无")
 
@@ -661,7 +658,7 @@ def _migrate_user(
         status = False
         notes = (
             f"[迁移] 原服务器「{raw_resource}」与脚本资源「{script_resource}」不一致，已停用；"
-            f"请新建 M9A 脚本（资源选 {raw_resource}）后重建该用户。"
+            f"请新建 M9A 脚本（资源选 {raw_resource}）后重建该账号。"
             + ("" if notes in ("", "无") else f" {notes}")
         )
         report.disabled_users.append(f"{script_label} / {name}")
@@ -670,19 +667,22 @@ def _migrate_user(
         user, index, script_payload, script_uid, user_uid, script_label, report
     )
     account = str(info.get("Account") or "")
-    # 关了快速配置时旧版原样跑实例文件、不读「账号」；迁移后特调只看账号非空、资源是官服就补切号。
+    switch_supported = supports_account_switch(
+        script_resource, login_mode=_login_mode(script_payload)
+    )
+    # 关了快速配置时旧版原样跑实例文件、不读「账号」；迁移后特调只看账号非空、资源支持切号就补切号。
     # 实例文件里本来就勾了切号的，目标账号下面会收进「账号」，行为不变；没勾的要提醒一句。
     if (
         status
         and account.strip()
         and not _truthy(info.get("IfQuickConfig", True))
-        and script_resource == OFFICIAL_RESOURCE_NAME
+        and switch_supported
         and not _has_switch_account(snapshot["taskOrder"], index)
     ):
         report.account_switch_users.append(f"{script_label} / {name}")
     if settle_switches:
         settlement = _settle_with_index(
-            snapshot, index, official=script_resource == OFFICIAL_RESOURCE_NAME
+            snapshot, index, supports_switch=switch_supported
         )
         snapshot = settlement.snapshot
         change = settle_user_info(
@@ -885,7 +885,7 @@ def _has_switch_account(task_order: list[str], index: _InterfaceIndex) -> bool:
 
 
 def _settle_with_index(
-    snapshot: dict[str, Any], index: _InterfaceIndex, *, official: bool
+    snapshot: dict[str, Any], index: _InterfaceIndex, *, supports_switch: bool
 ) -> Settlement:
     """按 ``managed.py`` 的规则整理一份快照（interface 是字典形状的迁移索引）。"""
 
@@ -906,7 +906,10 @@ def _settle_with_index(
         return first_text_value(options)
 
     return settle_snapshot(
-        snapshot, entry_of=entry_of, account_of=account_of, official=official
+        snapshot,
+        entry_of=entry_of,
+        account_of=account_of,
+        supports_switch=supports_switch,
     )
 
 
@@ -986,15 +989,16 @@ def _instance_file_items(
 
     info = user.get("Info") if isinstance(user.get("Info"), dict) else {}
     base = (
-        normalize_base_source(info.get("Base") or info.get("Mode")) or BASE_INDEPENDENT
+        _utils_constants.normalize_base_source(info.get("Base") or info.get("Mode"))
+        or _utils_constants.BASE_INDEPENDENT
     )
     source_path = str((script_payload.get("Info") or {}).get("Path") or "").strip()
     candidates: list[Path] = []
-    if base == BASE_SHARED and script_uid:
+    if base == _utils_constants.BASE_SHARED and script_uid:
         candidates.append(
             Path.cwd() / "data" / script_uid / "Default" / "ConfigFile" / "default.json"
         )
-    elif base == BASE_NATIVE and source_path:
+    elif base == _utils_constants.BASE_NATIVE and source_path:
         instances_dir = Path(source_path) / "config" / "instances"
         candidates.append(instances_dir / "default.json")
         if instances_dir.is_dir():
@@ -1009,7 +1013,9 @@ def _instance_file_items(
         if not candidate.is_file():
             continue
         try:
-            content = json.loads(candidate.read_text(encoding="utf-8"))
+            content = json.loads(
+                candidate.read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except (OSError, ValueError):
             continue
         task_items = content.get("TaskItems") if isinstance(content, dict) else None
@@ -1152,7 +1158,9 @@ def _seed_update_source(source_path: str, global_mirror_cdk: str) -> tuple[str, 
     if source_path:
         config_path = Path(source_path) / "config" / "config.json"
         try:
-            content = json.loads(config_path.read_text(encoding="utf-8"))
+            content = json.loads(
+                config_path.read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except (OSError, ValueError):
             content = None
         if isinstance(content, dict):
@@ -1219,13 +1227,13 @@ class RepairReport:
     """一次补救的结果，给启动通知与日志用。"""
 
     restored_inputs: list[str] = field(default_factory=list)
-    #: 实例文件里恰好一个切号：目标账号找回进了「账号」（``用户（账号 a）``）。
+    #: 实例文件里恰好一个切号：目标账号找回进了「账号」（``账号（账号 a）``）。
     restored_accounts: list[str] = field(default_factory=list)
-    #: 上一项里原「账号」非空且不同、被切号账号取代的（``用户（原 c → 现 a）``）。
+    #: 上一项里原「账号」非空且不同、被切号账号取代的（``账号（原 c → 现 a）``）。
     replaced_accounts: list[str] = field(default_factory=list)
     #: 实例文件里有多个切号：原样补回任务队列，等用户拆分（拆分提示由启动整理写）。
     restored_switches: list[str] = field(default_factory=list)
-    #: 升级后改过任务列表或「账号」、切号不自动找回的用户（带原来的目标账号）。
+    #: 升级后改过任务列表或「账号」、切号不自动找回的账号（带原来的目标账号）。
     manual_switches: list[str] = field(default_factory=list)
     account_switch_users: list[str] = field(default_factory=list)
     #: 来源目录与内嵌副本都读不到 interface、没法按备份核对的脚本。
@@ -1262,7 +1270,7 @@ class RepairReport:
         )
         if self.restored_switches:
             lines.append(
-                "升级时丢掉的多个「切换账号」已原样补回任务队列，需要拆成多个用户才能运行"
+                "升级时丢掉的多个「切换账号」已原样补回任务队列，需要拆成多个账号才能运行"
                 "（见「M9A 任务队列已按新规则整理」通知）："
                 + "、".join(self.restored_switches)
             )
@@ -1339,7 +1347,7 @@ def repair_m9a_migration_losses(
 
     tmp = path.with_name(f"{path.name}.m9a-repairing")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8").removeprefix("\ufeff"))
         legacy_scripts = {
             uid: payload
             for uid, payload in _collect_legacy_scripts(backups).items()
@@ -1388,7 +1396,9 @@ def _collect_legacy_scripts(backups: list[Path]) -> dict[str, dict[str, Any]]:
     legacy: dict[str, dict[str, Any]] = {}
     for backup in backups:
         try:
-            content = json.loads(backup.read_text(encoding="utf-8"))
+            content = json.loads(
+                backup.read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except (OSError, ValueError):
             continue
         if not isinstance(content, dict):
@@ -1414,7 +1424,7 @@ def repair_script_config_payload(
 ) -> bool:
     """按迁移前的旧数据块就地补 ``data``，返回有没有改动。
 
-    用修好的迁移把旧数据块重算一遍当答案，逐个用户与现状比，只动两类地方：
+    用修好的迁移把旧数据块重算一遍当答案，逐个账号与现状比，只动两类地方：
 
     1. input 字段：答案里的值等于 interface default（beta.1 就是清的这种）、现状是空的 → 填回；
        用户升级后自己填过的不动。
@@ -1451,7 +1461,9 @@ def repair_script_config_payload(
         )
         answer_users = _user_data_of(answer) or {}
         legacy_users = _user_data_of(legacy) or {}
-        official = (payload.get("Info") or {}).get("Resource") == OFFICIAL_RESOURCE_NAME
+        supports_switch = supports_account_switch(
+            (payload.get("Info") or {}).get("Resource"), login_mode=_login_mode(payload)
+        )
         for user_uid, user in user_data.items():
             answer_user = answer_users.get(user_uid)
             if not isinstance(user, dict) or not isinstance(answer_user, dict):
@@ -1470,7 +1482,7 @@ def repair_script_config_payload(
                 answer_user,
                 index,
                 keep_account=bool(account and account_changed),
-                official=official,
+                supports_switch=supports_switch,
                 label=label,
                 report=report,
             ):
@@ -1480,7 +1492,7 @@ def repair_script_config_payload(
             # 自己改过账号的，是有意要切，不提醒；实例文件里本来就配了切号的，「账号」
             # 已经是（或该是）那个切号的目标账号，也不提醒
             if (
-                official
+                supports_switch
                 and _truthy(info.get("Status", True))
                 and account
                 and not account_changed
@@ -1499,11 +1511,11 @@ def _repair_user_snapshot(
     index: _InterfaceIndex,
     *,
     keep_account: bool,
-    official: bool,
+    supports_switch: bool,
     label: str,
     report: RepairReport,
 ) -> bool:
-    """单个用户的两类补救；队列有改动就写回 ``user`` 的 ``Task.TaskSnapshot``，账号写 ``Info``。
+    """单个账号的两类补救；队列有改动就写回 ``user`` 的 ``Task.TaskSnapshot``，账号写 ``Info``。
 
     ``keep_account`` 为真（用户升级后自己改了「账号」）时切号不自动找回，只提醒。
     """
@@ -1559,7 +1571,7 @@ def _repair_user_snapshot(
         and isinstance(current_order, list)
         and not _has_switch_account(current_order, index)
     ):
-        settlement = _settle_with_index(answer, index, official=official)
+        settlement = _settle_with_index(answer, index, supports_switch=supports_switch)
         accounts = [
             str(value)
             for task_id in switch_ids
@@ -1626,7 +1638,7 @@ def _load_snapshot(raw: Any) -> dict[str, Any] | None:
 
 
 # ---------------------------------------------------------------------------
-# 每次启动：受管任务整理（启动游戏 / 切换账号 / 关闭游戏不留在用户队列里）
+# 每次启动：受管任务整理（启动游戏 / 切换账号 / 关闭游戏不留在账号队列里）
 # ---------------------------------------------------------------------------
 
 MANAGED_BACKUP_SUFFIX = ".m9a-managed-"
@@ -1641,7 +1653,7 @@ class ManagedEntriesReport:
     cleaned_users: list[str] = field(default_factory=list)
     imported_accounts: list[str] = field(default_factory=list)
     replaced_accounts: list[str] = field(default_factory=list)
-    #: 新写了拆分提示的用户（整行文案）。
+    #: 新写了拆分提示的账号（整行文案）。
     split_users: list[str] = field(default_factory=list)
     backup_path: Path | None = None
 
@@ -1691,9 +1703,11 @@ def normalize_m9a_managed_entries(
     tmp = path.with_name(f"{path.name}.m9a-normalizing")
     try:
         raw = path.read_bytes()
-        if b'"M9AConfig"' not in raw:
+        if b"M9AConfig" not in raw:
             return report  # 没有 M9A 脚本就不读 interface
-        data = json.loads(raw.decode("utf-8"))
+        from app.utils import io as _utils_io
+
+        data = _utils_io.read_dict_file(path)
         if not isinstance(data, dict) or not normalize_script_config_payload(
             data, report
         ):
@@ -1703,7 +1717,7 @@ def normalize_m9a_managed_entries(
         shutil.copyfile(path, backup)
         report.backup_path = backup
         _prune_managed_backups(path)
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8")
+        _utils_io.write_file(tmp, data, format=path.suffix)
         os.replace(tmp, path)
     except Exception as exc:  # noqa: BLE001 - 整理失败不该挡住启动，运行期照样按规则跑
         logger.opt(exception=True).warning(f"M9A 受管任务整理失败，下次启动再试：{exc}")
@@ -1715,6 +1729,13 @@ def normalize_m9a_managed_entries(
     for line in report.summary_lines():
         logger.info(f"M9A 受管任务整理：{line}")
     return report
+
+
+def _login_mode(payload: dict[str, Any]) -> str:
+    """脚本的 ``Run.LoginMode``（原始 JSON 版）；缺省按项目自登录处理。"""
+
+    run = payload.get("Run") if isinstance(payload.get("Run"), dict) else {}
+    return str(run.get("LoginMode") or "").strip()
 
 
 def _run_resource(model: Any, payload: dict[str, Any]) -> str | None:
@@ -1753,11 +1774,11 @@ def normalize_script_config_payload(
     """对整份 ``ScriptConfig.json`` 字典就地整理全部 M9A 用户；返回有没有改动。"""
 
     changed = False
-    for instance in data.get("instances") or []:
+    for instance in data.get("order", data.get("instances")) or []:
         if not isinstance(instance, dict) or instance.get("type") != "M9AConfig":
             continue
         uid = str(instance.get("uid") or "")
-        payload = data.get(uid)
+        payload = data.get("data", data).get(uid)
         user_data = _user_data_of(payload) if isinstance(payload, dict) else None
         if not isinstance(payload, dict) or user_data is None:
             continue
@@ -1765,7 +1786,7 @@ def normalize_script_config_payload(
             _load_snapshot((user.get("Task") or {}).get("TaskSnapshot"))
             for user in _iter_users(payload)
         ):
-            continue  # 没有一个用户有队列：不必读 interface
+            continue  # 没有一个账号有队列：不必读 interface
         root = _project_root_for_detection(payload, uid)
         model = _read_interface_model(root) if root else None
         index = _InterfaceIndex(_dump_interface(model))
@@ -1775,17 +1796,19 @@ def normalize_script_config_payload(
             )
             continue
         script_label = _script_label(payload, uid)
-        official = _run_resource(model, payload) == OFFICIAL_RESOURCE_NAME
+        switch_supported = supports_account_switch(
+            _run_resource(model, payload), login_mode=_login_mode(payload)
+        )
         for user_uid in [
             str(item.get("uid") or "")
-            for item in user_data.get("instances") or []
+            for item in user_data.get("order", user_data.get("instances")) or []
             if isinstance(item, dict)
         ]:
-            user = user_data.get(user_uid)
+            user = user_data.get("data", user_data).get(user_uid)
             if isinstance(user, dict) and _normalize_user(
                 user,
                 index,
-                official=official,
+                supports_switch=switch_supported,
                 label=f"{script_label} / {str((user.get('Info') or {}).get('Name') or user_uid[:8])}",
                 report=report,
             ):
@@ -1797,7 +1820,7 @@ def _normalize_user(
     user: dict[str, Any],
     index: _InterfaceIndex,
     *,
-    official: bool,
+    supports_switch: bool,
     label: str,
     report: ManagedEntriesReport,
 ) -> bool:
@@ -1810,7 +1833,7 @@ def _normalize_user(
     info = user.get("Info")
     if not isinstance(info, dict):
         info = {}
-    settlement = _settle_with_index(snapshot, index, official=official)
+    settlement = _settle_with_index(snapshot, index, supports_switch=supports_switch)
     change = settle_user_info(
         settlement,
         account=str(info.get("Account") or ""),

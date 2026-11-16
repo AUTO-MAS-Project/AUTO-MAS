@@ -23,7 +23,8 @@ MaaEnd v2.29.0 打包了 MaaFramework v5.14.0-beta.1，binding 被钉成
 所以新载荷在 staging 里建好、登记之前先**真建**一次运行环境（不 dry-run；把自带
 Python 里的 binding 钉回原生库版本也就发生在这一步，写的是 staging）：建不出来
 就丢掉 staging、所有视图继续跑当前版本，并按谱系 + 目标版本写备忘
-（``precheck_memo.py``），之后每次运行前由 ``precheck_gate.py`` 轻探一次再决定要不要重试。
+（``precheck_memo.py``），之后每次运行前由 ``precheck_gate.py`` 按失败类别决定要不要重试
+（缺 binding 轻探一次；网络类与其它原因各自冷却一段时间后再试）。
 
 环境建好之后再对 Python agent 做一次导入静态检查（``agent_env/import_check.py``）：
 MaaFgo v2.0.03 漏装了 ``agent/battle/runtime/``，解释器能 ``import maa``，agent 一启动却
@@ -37,6 +38,8 @@ MaaFgo v2.0.03 漏装了 ``agent/battle/runtime/``，解释器能 ``import maa``
 
 from __future__ import annotations
 
+import hashlib
+import os
 import shutil
 import threading
 from collections.abc import Callable, MutableMapping
@@ -50,9 +53,6 @@ from app.task.MaaFW.tools.core.agent_env.import_check import (
     describe_missing_agent_modules,
     log_agent_import_reports,
 )
-from app.task.MaaFW.tools.core.agent_env.planner import (
-    compute_isolated_venv_path,
-)
 from app.task.MaaFW.tools.core.project_update.precheck_memo import (
     classify_precheck_failure,
     write_runtime_precheck,
@@ -65,6 +65,9 @@ logger = get_logger("MFW 更新预检")
 # ``prepare_agent_envs`` 对隔离 venv 是先 rmtree 再重装，直接建在正式根会把
 # 旧版本还能用的 venv 先删掉——预检失败后旧版本就没 agent 了。
 PRECHECK_AGENT_ROOT_NAME = "precheck_agent_venvs"
+# 预检根下每个 staging 一个子目录（见 ``precheck_staging_agent_root``）；名字取短，
+# venv 里的 site-packages 路径本来就深，别为它多吃 Windows 的路径长度。
+PRECHECK_STAGING_DIR_PREFIX = "s"
 
 
 class PrepareProjectEnvironment(Protocol):
@@ -83,11 +86,36 @@ def precheck_agent_root(pool_root: str | Path) -> Path:
     return Path(pool_root) / PRECHECK_AGENT_ROOT_NAME
 
 
-def cleanup_precheck_agent_venv(project_path: Path, agent_root: Path) -> None:
-    """删掉预检根下本项目那份隔离 venv（成功失败都删）；根空了就顺手去掉。"""
+def precheck_staging_agent_root(
+    agent_root: str | Path, project_path: str | Path
+) -> Path:
+    """预检根下这一份 staging 专用的子目录，本次预检的隔离 venv 建在它里面。
 
-    venv_path = compute_isolated_venv_path(project_path, managed_env_root=agent_root)
-    shutil.rmtree(venv_path, ignore_errors=True)
+    正式根里的隔离 venv 按依赖清单 + maafw 版本 + 宿主身份跨视图共用（``venv_share``），
+    预检不参与共用：staging 路径每次都带新的 uuid，按它分子目录，预检 venv 就和以前按
+    staging 路径命名时一样每次都是新的——上次预检中途被杀、或没删干净留下的同依赖残留
+    碰不到这次（那份残留在正式根的规则下会被判「要重建」，而预检根下的拒绝重建会让预检
+    直接失败、这个版本的自动更新从此停住）；两个同依赖的预检同时跑，先结束的那个也删
+    不到另一个正在用的那份。
+    """
+
+    key = str(Path(project_path).resolve())
+    if os.name == "nt":
+        key = key.lower()
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:10]
+    return Path(agent_root) / f"{PRECHECK_STAGING_DIR_PREFIX}{digest}"
+
+
+def cleanup_precheck_agent_venv(project_path: Path, agent_root: Path) -> None:
+    """删掉预检根下本项目那份隔离 venv（成功失败都删）；根空了就顺手去掉。
+
+    本次预检的隔离 venv、引用记录、锁文件都在这份 staging 专用的子目录里
+    （``precheck_staging_agent_root``），整个删掉即可，不会碰到别的预检。
+    """
+
+    shutil.rmtree(
+        precheck_staging_agent_root(agent_root, project_path), ignore_errors=True
+    )
     try:
         agent_root.rmdir()
     except OSError:
@@ -107,6 +135,54 @@ def _resolve_requirement(project_path: Path) -> str | None:
         return resolve_project_maafw_requirement(project_path)
     except Exception:  # noqa: BLE001 - 解析不出来就记 "maafw"，不盖住预检原因
         return None
+
+
+class MaaFWNativeLoadError(RuntimeError):
+    """新版本里 runner 要用的 MaaFramework 原生库在干净进程里都加载不了。"""
+
+
+def check_staging_native_runtime(root: Path, send_log: Callable[[str], None]) -> None:
+    """在独立子进程里加载一次 staging 里 runner 会用的 ``MaaFramework.dll``；确定加载不了
+    就 raise。
+
+    agent 那一侧的检查用的是项目自带 Python 里的 maafw，碰不到 runner 用的这份原生库：
+    MAA_bbb v1.13.20 的差量更新把 runner 换到了只有几个 DLL 的 ``runtimes/win-x64``，预检
+    照样通过，切过去以后每次运行都报 ``Could not find module ... (or one of its
+    dependencies)``。只在 Windows 上查；找不到原生库、子进程起不来或超时都放行
+    （宁可漏报，不可误拒），只有子进程明确报「加载失败」才拒。
+    """
+
+    if os.name != "nt":
+        return
+    try:
+        from app.task.MaaFW.tools.core.runner.environment import (
+            NATIVE_LOAD_FAILED,
+            NATIVE_LOAD_OK,
+            probe_native_runtime_load,
+            project_maafw_runtime_path,
+        )
+
+        runtime = project_maafw_runtime_path(root)
+    except Exception as exc:  # noqa: BLE001 - 定位不了就不下结论
+        logger.warning(f"定位新版本的 MaaFramework 原生库失败，放行：{exc}")
+        return
+    if runtime is None:
+        return
+    verdict, detail = probe_native_runtime_load(runtime)
+    try:
+        location = runtime.relative_to(root).as_posix()
+    except ValueError:
+        location = str(runtime)
+    if verdict == NATIVE_LOAD_FAILED:
+        raise MaaFWNativeLoadError(
+            f"新版本自带的 MaaFramework（{location}/）加载不了：{detail}。"
+            "多半是这个目录里缺了依赖的 DLL"
+        )
+    if verdict != NATIVE_LOAD_OK:
+        logger.warning(f"MaaFramework 原生库加载检查没能完成，放行：{detail}")
+        send_log("[原生库检查] 没能完成，跳过")
+        return
+    send_log(f"[原生库检查] {location}/MaaFramework.dll 加载正常")
 
 
 def check_staging_agent_imports(
@@ -165,19 +241,23 @@ def build_precheck_validator(
 
     def validate(root: Path) -> bool:
         send_log("正在检查新版本的运行环境（准备不出来就放弃这次更新，继续用当前版本）")
+        # 预检 venv 不参与跨视图共用：建在这份 staging 专用的子目录里
+        staging_agent_root = precheck_staging_agent_root(agent_env_root, root)
         try:
+            # 原生库加载只要一两秒，放在建环境前面：加载不了就不必再建
+            check_staging_native_runtime(root, send_log)
             prepare(
                 root,
                 cancel_event,
                 send_log,
-                agent_env_root=agent_env_root,
+                agent_env_root=staging_agent_root,
                 store_cache=False,
             )
             # 已取消就不必再查：核心包随后按取消收尾
             if not cancel_event.is_set():
                 check_staging_agent_imports(
                     root,
-                    agent_env_root,
+                    staging_agent_root,
                     send_log,
                     previous_version=previous_version,
                 )
@@ -188,7 +268,7 @@ def build_precheck_validator(
                 root, exc, requirement=_resolve_requirement(root)
             )
             if isinstance(exc, MaaFWAgentImportMissingError):
-                # 备忘里仍按 other 记（不自动重试），这里只给文案分支用
+                # 备忘里仍按 other 记（冷却一天才自动再试），这里只给文案分支用
                 info["kind"] = KIND_AGENT_MODULE_MISSING
             if previous_version:
                 info["previousVersion"] = str(previous_version)
@@ -214,9 +294,12 @@ def build_precheck_validator(
 
 __all__ = [
     "PRECHECK_AGENT_ROOT_NAME",
+    "MaaFWNativeLoadError",
     "PrepareProjectEnvironment",
     "build_precheck_validator",
     "check_staging_agent_imports",
+    "check_staging_native_runtime",
     "cleanup_precheck_agent_venv",
     "precheck_agent_root",
+    "precheck_staging_agent_root",
 ]

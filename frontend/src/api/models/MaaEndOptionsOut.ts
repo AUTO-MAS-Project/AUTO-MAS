@@ -5,6 +5,7 @@
 import type { ComboBoxItem } from './ComboBoxItem';
 import type { MaaEndAutoCollectGroup } from './MaaEndAutoCollectGroup';
 import type { MaaEndEssenceTargetGroup } from './MaaEndEssenceTargetGroup';
+import type { MaaEndInventoryOptions } from './MaaEndInventoryOptions';
 export type MaaEndOptionsOut = {
     /**
      * 状态码
@@ -18,6 +19,26 @@ export type MaaEndOptionsOut = {
      * 操作消息
      */
     message?: string;
+    /**
+     * MaaEnd 原生 PC 启动服务器选项
+     */
+    servers?: Array<ComboBoxItem>;
+    /**
+     * 当前 MaaEnd 支持的危境预演任务
+     */
+    crisisDrills?: Array<ComboBoxItem>;
+    /**
+     * 上游库存目标选项，旧版不支持时为空
+     */
+    inventory?: (MaaEndInventoryOptions | null);
+    /**
+     * 支持 MaaEnd 原生启动的控制器
+     */
+    launchGameControllers?: Array<string>;
+    /**
+     * 支持独立游戏显示设置的控制器
+     */
+    gameSettingControllers?: Array<string>;
     /**
      * MaaEnd 资源声明的项目名称
      */

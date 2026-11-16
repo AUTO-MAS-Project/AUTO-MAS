@@ -31,6 +31,7 @@ from .models import (
     MaaFWOption,
     MaaFWPreset,
     MaaFWPresetOptionValue,
+    MaaFWPresetPretask,
     MaaFWTask,
     MaaFWTaskOptionsByTask,
     MaaFWTaskOptionValue,
@@ -49,12 +50,19 @@ class MaaFWTaskPresetSnapshot(BaseModel):
     taskOrder: list[str] = Field(default_factory=list)
     taskChecked: dict[str, bool] = Field(default_factory=dict)
     taskOptions: MaaFWTaskOptionsByTask = Field(default_factory=dict)
-    # 全局选项（interface 的 global_option 及其 case 下挂的子选项）每个用户只存一份，
+    # 全局选项（interface 的 global_option 及其 case 下挂的子选项）每个账号只存一份，
     # 所有任务共用；taskOptions 里不再有它们。
     globalOptions: dict[str, MaaFWTaskOptionValue] = Field(default_factory=dict)
     # 用户在队列里给某一份实例起的显示名 ``{实例 id: 名字}``：只影响界面显示，
     # 运行与项目更新匹配仍按实例 id / 任务 name。
     taskLabels: dict[str, str] = Field(default_factory=dict)
+    # 用户给某一份实例设的运行日 ``{实例 id: {"weekdays": [ISO 星期, …]}}``（1=周一 … 7=周日，
+    # 升序去重）。七天全选就是不限制、不写这一项；空表、非法值、超范围同样当不限制丢掉，
+    # 绝不变成「永远不跑」。运行时按本机今天的星期判，见 ``excluded_task_ids_for_weekday``。
+    taskSchedules: dict[str, dict[str, list[int]]] = Field(default_factory=dict)
+    # ``true`` 表示快照来自新账号队列语义：队列中显式保留的 false 实例是
+    # 用户本轮主动跳过的任务。旧快照缺少此键，前端继续隐藏 false 实例。
+    keepUnchecked: bool = False
 
 
 class MaaFWTaskConfig(BaseModel):
@@ -163,6 +171,11 @@ def normalize_snapshot(
         for task_id, label in raw_snapshot["taskLabels"].items()
         if task_id in normalized_order_set
     }
+    normalized_schedules = {
+        task_id: schedule
+        for task_id, schedule in raw_snapshot["taskSchedules"].items()
+        if task_id in normalized_order_set
+    }
     return MaaFWTaskPresetSnapshot(
         taskOrder=normalized_order,
         taskChecked=normalized_checked,
@@ -172,6 +185,9 @@ def normalize_snapshot(
             interface_model,
         ),
         taskLabels=normalized_labels,
+        taskSchedules=normalized_schedules,
+        # 不带 keepUnchecked：这里按 interface 补齐了全部任务（未勾选），已不是用户的
+        # 显式队列；红灯判断与跳过记录只认调用方给的原始快照。
     )
 
 
@@ -348,14 +364,14 @@ def mirror_global_options_to_tasks(
 ) -> Any:
     """保存前的降级兼容双写：只属于全局的选项把全局表的值抄一份到每个任务实例上。
 
-    旧版本（全局选项按任务存）读这份快照时，运行期直接用任务上的副本；旧版用户页保存一次
+    旧版本（全局选项按任务存）读这份快照时，运行期直接用任务上的副本；旧版账号页保存一次
     会把 ``globalOptions`` 丢掉，再升级回来时 ``_migrate_global_option_values`` 从副本把值
-    找回。新版运行期与用户页对这类选项只看全局表，副本不生效、不显示（归一时丢掉）。
+    找回。新版运行期与账号页对这类选项只看全局表，副本不生效、不显示（归一时丢掉）。
 
     只在快照带 ``globalOptions`` 时做（没有全局表的是旧形状，任务上的值本来就是迁移的来源，
     原样不动）。对 ``taskOrder`` 里每个 interface 认得的非前置任务实例：对它只属于全局的
     选项，全局表里有合法值就写成那个值，没有就去掉副本——副本永远与全局表一致（从别的用户
-    导入的队列带来的副本，保存一次就换成本用户的值）。任务 / 资源 / 控制器自己也引用的选项
+    导入的队列带来的副本，保存一次就换成本账号的值）。任务 / 资源 / 控制器自己也引用的选项
     是任务自己的值，不碰。密码字段原样抄（之后的加密一并处理任务上的副本）。
 
     接受 JSON 字符串或 dict，返回同一种；没有改动时原样返回入参。
@@ -423,7 +439,7 @@ def extract_task_global_overrides(
 ) -> MaaFWTaskOptionsByTask:
     """各任务实例的选项里写着的、对它来说「只属于全局」的选项值（合法的、已归一）。
 
-    ``{实例: {选项: 值}}``，只收这一实例的选项表里没有、全局表里有的选项。用户快照归一后的
+    ``{实例: {选项: 值}}``，只收这一实例的选项表里没有、全局表里有的选项。账号快照归一后的
     任务选项里不会有这种值（``normalize_task_options_by_task`` 把它们丢掉了），出现了就是
     特调在 ``decorate_selection`` 里写进去的：建计划时这一实例用它盖过用户的全局表，不让
     特调的改写被全局表静默顶掉。
@@ -473,7 +489,7 @@ def find_missing_task_names(
     snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
     interface_model: MaaFWInterface,
 ) -> list[str]:
-    """用户快照里勾选了、但当前 interface 已没有的任务名（按队列顺序，每份实例一项）。
+    """账号快照里勾选了、但当前 interface 已没有的任务名（按队列顺序，每份实例一项）。
 
     项目更新改了任务 ``name`` 时旧 id 就对不上了。归一化会把它从执行列表里滤掉，
     界面把它留成虚影；这里把它找出来，建计划时记成跳过，运行日志里才看得到。
@@ -500,7 +516,17 @@ def build_interface_preset_snapshot(
     task_order: list[str] | None = None,
     task_option_maps: dict[str, dict[str, MaaFWOption]] | None = None,
     include_default_options: bool = True,
+    include_pretasks: bool = False,
 ) -> MaaFWTaskPresetSnapshot:
+    """项目预设展开成任务快照。
+
+    ``include_pretasks``：预设声明了 ``pretask``（PI v2.10.3）时，把 interface 的全部前置
+    任务按顶层顺序排在队列最前，列出的按 ``enabled`` 勾选、带预设给的选项值，未列出的不勾选；
+    预设没声明时不带前置任务。只有用户手动「应用预设」那条路（``/maafw/preview`` 给账号页的
+    预设快照）要它；空队列回落成的默认队列与外壳配置导入不带，前置任务（多是拉起游戏的启动器）
+    不在用户没点过的情况下替他勾上。
+    """
+
     task_order = task_order or _build_default_task_order(interface_model)
     task_checked = {task_name: False for task_name in task_order}
     task_option_maps = task_option_maps or _build_task_option_maps(interface_model)
@@ -588,6 +614,16 @@ def build_interface_preset_snapshot(
     normalized_order = ordered_preset_tasks + [
         task_name for task_name in task_order if task_name not in seen_task_names
     ]
+    if include_pretasks and preset.pretask is not None:
+        pretask_order = _apply_preset_pretasks(
+            interface_model,
+            preset,
+            task_option_maps,
+            task_checked,
+            task_options_by_task,
+            include_default_options=include_default_options,
+        )
+        normalized_order = [*pretask_order, *normalized_order]
     return MaaFWTaskPresetSnapshot(
         taskOrder=normalized_order,
         taskChecked=task_checked,
@@ -598,6 +634,48 @@ def build_interface_preset_snapshot(
             else global_options
         ),
     )
+
+
+def _apply_preset_pretasks(
+    interface_model: MaaFWInterface,
+    preset: MaaFWPreset,
+    task_option_maps: dict[str, dict[str, MaaFWOption]],
+    task_checked: dict[str, bool],
+    task_options_by_task: MaaFWTaskOptionsByTask,
+    *,
+    include_default_options: bool,
+) -> list[str]:
+    """预设的 ``pretask``（PI v2.10.3）写进快照，返回前置任务的队列顺序。
+
+    顺序是顶层 ``pretask`` 合并后的顺序（``preset.pretask`` 的顺序不影响执行顺序）；按
+    ``name`` 对上顶层 ``pretask[].name``，对不上的条目忽略（加载器已告警），同名条目以第一条
+    为准。前置任务没有全局层，选项只认它自己声明的（及其子选项）。
+    """
+
+    declared: dict[str, MaaFWPresetPretask] = {}
+    for item in preset.pretask or []:
+        declared.setdefault(item.name, item)
+    order: list[str] = []
+    for pretask in iter_pretasks(interface_model):
+        task_id = build_pretask_task_name(pretask)
+        if task_id in order:
+            continue
+        order.append(task_id)
+        option_map = task_option_maps.get(task_id, {})
+        if include_default_options:
+            defaults, _ = _build_option_defaults(option_map)
+            task_options_by_task[task_id] = defaults
+        entry = declared.get(pretask.name) if pretask.name else None
+        # 预设声明了 pretask 时，未列出的前置任务视为不勾选
+        task_checked[task_id] = entry is not None and entry.enabled is not False
+        if entry is None:
+            continue
+        target_options = task_options_by_task.setdefault(task_id, {})
+        for option_name, option_value in (entry.option or {}).items():
+            _apply_preset_option_value(
+                option_name, option_value, option_map, target_options
+            )
+    return order
 
 
 def _normalize_raw_snapshot(snapshot: Any) -> dict[str, Any]:
@@ -612,6 +690,8 @@ def _normalize_raw_snapshot(snapshot: Any) -> dict[str, Any]:
             "taskOptions": _normalize_raw_task_options(snapshot.taskOptions),
             "globalOptions": _normalize_raw_option_values(snapshot.globalOptions),
             "taskLabels": _normalize_raw_task_labels(snapshot.taskLabels),
+            "taskSchedules": _normalize_raw_task_schedules(snapshot.taskSchedules),
+            "keepUnchecked": snapshot.keepUnchecked is True,
         }
 
     if not isinstance(snapshot, dict):
@@ -621,6 +701,8 @@ def _normalize_raw_snapshot(snapshot: Any) -> dict[str, Any]:
             "taskOptions": {},
             "globalOptions": {},
             "taskLabels": {},
+            "taskSchedules": {},
+            "keepUnchecked": False,
         }
 
     task_order = snapshot.get("taskOrder")
@@ -643,6 +725,8 @@ def _normalize_raw_snapshot(snapshot: Any) -> dict[str, Any]:
         "taskOptions": _normalize_raw_task_options(snapshot.get("taskOptions")),
         "globalOptions": _normalize_raw_option_values(snapshot.get("globalOptions")),
         "taskLabels": _normalize_raw_task_labels(snapshot.get("taskLabels")),
+        "taskSchedules": _normalize_raw_task_schedules(snapshot.get("taskSchedules")),
+        "keepUnchecked": snapshot.get("keepUnchecked") is True,
     }
 
 
@@ -656,6 +740,91 @@ def _normalize_raw_task_labels(value: Any) -> dict[str, str]:
         for task_id, label in value.items()
         if isinstance(task_id, str) and isinstance(label, str) and label.strip()
     }
+
+
+#: 一周七天的 ISO 星期（1=周一 … 7=周日）。
+ALL_WEEKDAYS = (1, 2, 3, 4, 5, 6, 7)
+
+
+def normalize_task_weekdays(value: Any) -> list[int] | None:
+    """一份实例的运行日：升序去重的 ISO 星期；不限制时返回 None。
+
+    七天全选是不限制。不是列表、空列表、有一项不是 1~7 的整数（布尔不算整数）都当不限制，
+    整项丢掉——宁可多跑，也不能让一份坏值把任务变成永远不跑。
+    """
+
+    if not isinstance(value, list) or not value:
+        return None
+    if any(
+        isinstance(item, bool) or not isinstance(item, int) or item not in ALL_WEEKDAYS
+        for item in value
+    ):
+        return None
+    weekdays = sorted(set(value))
+    if len(weekdays) == len(ALL_WEEKDAYS):
+        return None
+    return weekdays
+
+
+def _normalize_raw_task_schedules(value: Any) -> dict[str, dict[str, list[int]]]:
+    """实例运行日只留键是字符串、``weekdays`` 归一后确有限制的。"""
+
+    if not isinstance(value, dict):
+        return {}
+    schedules: dict[str, dict[str, list[int]]] = {}
+    for task_id, schedule in value.items():
+        if not isinstance(task_id, str) or not isinstance(schedule, dict):
+            continue
+        weekdays = normalize_task_weekdays(schedule.get("weekdays"))
+        if weekdays is not None:
+            schedules[task_id] = {"weekdays": weekdays}
+    return schedules
+
+
+def unchecked_task_ids(
+    snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
+) -> list[str]:
+    """快照里用户显式设成红灯的实例 id（队列顺序，去重）。
+
+    只有 ``keepUnchecked`` 的快照才有红灯：队列里留着、``taskChecked`` 为假的实例这一轮不跑。
+    没带 ``keepUnchecked`` 的快照按勾选选任务、没有红灯的说法，返回空表。
+    """
+
+    raw_snapshot = _normalize_raw_snapshot(snapshot)
+    if not raw_snapshot["keepUnchecked"]:
+        return []
+    checked = raw_snapshot["taskChecked"]
+    return [
+        task_id
+        for task_id in dict.fromkeys(raw_snapshot["taskOrder"])
+        if checked.get(task_id) is False
+    ]
+
+
+def excluded_task_ids_for_weekday(
+    snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
+    iso_weekday: int,
+) -> list[str]:
+    """快照队列里勾选了、设了运行日、且运行日不含 ``iso_weekday`` 的实例 id（队列顺序，去重）。
+
+    按实例判，不按任务名：同一任务重复入队的几份各看各的。前置任务（pretask）不受运行日
+    影响，即使快照里有也不算。没勾选（红灯）的实例本来就不跑，不算「今天不在运行日」，
+    免得特调把它当成运行日跳过的实例处理。今天是星期几由调用方按本机时间给。
+    """
+
+    raw_snapshot = _normalize_raw_snapshot(snapshot)
+    schedules = raw_snapshot["taskSchedules"]
+    if not schedules:
+        return []
+    checked = raw_snapshot["taskChecked"]
+    return [
+        task_id
+        for task_id in dict.fromkeys(raw_snapshot["taskOrder"])
+        if not is_pretask_task_name(task_id)
+        and checked.get(task_id) is True
+        and task_id in schedules
+        and iso_weekday not in schedules[task_id]["weekdays"]
+    ]
 
 
 def _normalize_raw_task_options(
@@ -801,7 +970,7 @@ def build_task_option_maps(
 def build_global_option_map(interface_model: MaaFWInterface) -> dict[str, MaaFWOption]:
     """全局选项表 ``{选项名: 定义}``：``global_option`` 加上各 case 下挂的子选项，逐层展开。
 
-    这些选项的值每个用户只存一份（快照的 ``globalOptions``），参与所有任务的覆盖；不按当前
+    这些选项的值每个账号只存一份（快照的 ``globalOptions``），参与所有任务的覆盖；不按当前
     controller / resource 过滤（换了控制方式值也还在），适用性在建覆盖时判断。
     """
 

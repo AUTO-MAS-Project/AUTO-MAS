@@ -14,6 +14,8 @@ export interface MaaFWPageHostContext {
   mode: MaaFWPageKind
   /** 引导当前步骤：放在宿主里，换页面后新页面接着这一步走 */
   wizardStep: Ref<number>
+  /** 宿主初次读取已提示的失败；子页不为同一次失败重复弹出提示。 */
+  scriptLoadError: Readonly<Ref<string | null>>
   /**
    * 宿主已经读到的脚本详情，只交给第一个来取的页面（之后返回 undefined）：
    * - 脚本详情：直接用，不再请求一次；

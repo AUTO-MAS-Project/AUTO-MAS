@@ -28,12 +28,8 @@ import threading
 from collections.abc import Sequence
 from pathlib import Path
 
-from app.services import System
-from app.utils.update_files import (
-    file_md5,
-    file_size,
-    resolve_within,
-)
+from app.utils import process
+from app.utils import update_files as _utils_update_files
 
 from .common import (
     _APPLY_STEP,
@@ -53,7 +49,9 @@ def _resolve_within(root: Path, name: str) -> Path:
     本身，而不是报错。
     """
     try:
-        return resolve_within(root, name, resolve_links=False, reject_links=True)
+        return _utils_update_files.resolve_within(
+            root, name, resolve_links=False, reject_links=True
+        )
     except ValueError as error:
         raise EndfieldUpdateError(str(error)) from error
 
@@ -66,10 +64,10 @@ async def _release_install_dir(game_exe: Path) -> str | None:
     被关掉，也不会被当成占用者；游戏目录下别的进程挡路时由落地的 PermissionError 说。
     """
 
-    if not await System.is_process_running(game_exe):
+    if not await process.is_process_running(game_exe):
         return None
     logger.info(f"终末地客户端正在运行，先请求退出: {game_exe}")
-    if await System.kill_process(game_exe):
+    if await process.kill_process(game_exe):
         return None
     return "终末地客户端没能退出，请手动退出游戏后重试"
 
@@ -93,7 +91,9 @@ def _landing_need(
     peak = 0
     net_growth = 0
     for job in (*patches, *moves):
-        old = max(file_size(_resolve_within(install_dir, job.path)), 0)
+        old = max(
+            _utils_update_files.file_size(_resolve_within(install_dir, job.path)), 0
+        )
         peak = max(peak, net_growth + job.size)
         net_growth += job.size - old
     return peak + expanded
@@ -159,9 +159,9 @@ async def _check_baselines(
         if abort.is_set():
             break
         target = _resolve_within(install_dir, path)
-        if md5 and file_size(target) == size:
+        if md5 and _utils_update_files.file_size(target) == size:
             try:
-                if await asyncio.to_thread(file_md5, target) == md5:
+                if await asyncio.to_thread(_utils_update_files.file_md5, target) == md5:
                     done.add(path)
                     if progress is not None and (
                         index % _APPLY_STEP == 0 or index == total
@@ -172,11 +172,11 @@ async def _check_baselines(
                 pass
         if base_path is not None:
             base = _resolve_within(install_dir, base_path)
-            if file_size(base) != base_size:
+            if _utils_update_files.file_size(base) != base_size:
                 bad.append(base_path)
             else:
                 try:
-                    digest = await asyncio.to_thread(file_md5, base)
+                    digest = await asyncio.to_thread(_utils_update_files.file_md5, base)
                 except OSError:
                     digest = ""
                 if digest != base_md5:

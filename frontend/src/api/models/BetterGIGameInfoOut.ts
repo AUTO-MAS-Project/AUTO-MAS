@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * BetterGI 游戏客户端信息（用户页透传展示）
+ * BetterGI 游戏客户端信息（账号页透传展示）
  */
 export type BetterGIGameInfoOut = {
     /**
@@ -19,7 +19,7 @@ export type BetterGIGameInfoOut = {
      */
     message?: string;
     /**
-     * 生效游戏路径（用户级优先，否则 BGI 全局配置）
+     * 生效游戏路径（账号级优先，否则 BGI 全局配置）
      */
     installPath?: (string | null);
     /**

@@ -1,16 +1,16 @@
 <template>
   <div class="daily-once-section">
-    <p class="daily-once-hint">{{ t('edit.maaEndDailyOnceTasksHint') }}</p>
+    <p class="daily-once-hint">{{ t('core.edit.maaEndDailyOnceTasksHint') }}</p>
     <a-select
       :value="dailyOnceTaskValues"
       mode="multiple"
       :options="dailyOnceTaskOptions"
       :disabled="loading"
-      :aria-label="t('edit.maaEndDailyOnceTasks')"
+      :aria-label="t('core.edit.maaEndDailyOnceTasks')"
       option-filter-prop="label"
       show-search
       max-tag-count="responsive"
-      :placeholder="t('edit.maaEndDailyOnceTasksPlaceholder')"
+      :placeholder="t('core.edit.maaEndDailyOnceTasksPlaceholder')"
       @change="handleChange"
     />
   </div>

@@ -5,7 +5,7 @@
 
 契约由 ``scripts/hsr_update_contract_check.py`` 实测核对过：Mirror 酱两个 rid
 都是单平台（带 ``os``/``arch`` 一律 404），M7A 的 ``update.7z`` 是单根
-``update/`` 且不含任何用户状态，SRA 发行包是扁平布局。改这里之前先把那份脚本
+``update/`` 且不含任何账号状态，SRA 发行包是扁平布局。改这里之前先把那份脚本
 跑一遍。
 """
 
@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from app.utils.common.process.runner import run_process_sync
+
 from ...task_mapping import ENGINE_DISPLAY_NAMES
 
 HSREngine = Literal["M7A", "SRA"]
@@ -25,7 +27,10 @@ HSREngine = Literal["M7A", "SRA"]
 # 选项字符串一一对应，顺序即 OptionsValidator 的选项顺序（首项是回退值）。
 SourceId = Literal["AutoSite", "GitHub", "MirrorChyan"]
 
-_STATION_BASE = "https://download.auto-mas.top/d"
+_STATION_CONTENT = (
+    "https://data2.auto-mas.top/api/v1/files/"
+    "starrailassistant/Release/beta/download/content"
+)
 
 # ``SRA-cli.exe --version`` 输出裸版本号（实测 0.09 秒返回、rc=0、不触发 UAC），
 # 但也可能带上程序名前缀，取最后一个像版本号的 token。
@@ -46,14 +51,12 @@ class EngineSpec:
     #: GitHub 资产名匹配。M7A 的资产名不带版本号，SRA 的带，故用模板函数。
     _asset_patterns: tuple[tuple[str, str], ...]
 
-    def station_url(self, tag: str) -> str | None:
+    def station_url(self) -> str | None:
         """自建站直链。只有 SRA 上了站。"""
 
         if "AutoSite" not in self.sources:
             return None
-        return (
-            f"{_STATION_BASE}/{self.mirrorchyan_rid}/{self.mirrorchyan_rid}-{tag}.zip"
-        )
+        return _STATION_CONTENT
 
     def asset_patterns(self, tag: str) -> tuple[tuple[str, str], ...]:
         """返回 ``(kind, 资产名)`` 候选，按优先级排列。
@@ -87,7 +90,7 @@ SRA = EngineSpec(
     mirrorchyan_rid="StarRailAssistant",
     github_repo="Shasnow/StarRailAssistant",
     executable="SRA-cli.exe",
-    # 自建站免 CDK、不限流、字节与 GitHub 一致，故排首位作默认值。
+    # 自建站免 CDK，下载前核对发布记录的版本和 sha256。
     sources=("AutoSite", "GitHub", "MirrorChyan"),
     # 只取 Full：它是三个源唯一共有的变体，也是唯一不制造混合版本的选择。
     _asset_patterns=(("zip", "StarRailAssistant_{tag}.zip"),),
@@ -160,7 +163,7 @@ def _probe_sra_version(executable: Path) -> str | None:
     if not executable.is_file():
         return None
     try:
-        completed = subprocess.run(
+        completed = run_process_sync(
             [str(executable), "--version"],
             capture_output=True,
             text=True,

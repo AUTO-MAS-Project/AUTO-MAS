@@ -3,10 +3,10 @@
     <button
       v-if="visible"
       class="scroll-hint"
-      :aria-label="t('home.scrollHint.aria')"
+      :aria-label="t('core.home.scrollHint.aria')"
       @click="scrollDown"
     >
-      <span class="scroll-hint-text">{{ t('home.scrollHint.text') }}</span>
+      <span class="scroll-hint-text">{{ t('core.home.scrollHint.text') }}</span>
       <DownOutlined class="scroll-hint-arrow" />
     </button>
   </Transition>
@@ -67,7 +67,7 @@ onBeforeUnmount(() => {
   padding: 16px 24px 20px;
   border: none;
   cursor: pointer;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.2) 100%);
+  background: transparent;
   border-radius: 12px 12px 0 0;
   transition: opacity 0.3s;
 }
@@ -83,7 +83,6 @@ onBeforeUnmount(() => {
 
 .scroll-hint-text {
   color: var(--ant-color-primary);
-  text-shadow: 0px 0px 10px white;
   font-size: 14px;
   letter-spacing: 0.05em;
   white-space: nowrap;

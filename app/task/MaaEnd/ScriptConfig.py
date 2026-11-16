@@ -1,51 +1,33 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
-
 #   This file is part of AUTO-MAS.
-
 #   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU Affero General Public License as
 #   published by the Free Software Foundation, either version 3 of
 #   the License, or (at your option) any later version.
-
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU Affero General Public License for more details.
-
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 #   Contact: DLmaster_361@163.com
-
-
 import asyncio
 import shutil
 import uuid
 from pathlib import Path
 from typing import Any
 
-from app.core.ws import Publisher, protocol
+from app.config import ConfigCollection
+from app.core import Publisher
+from app.core.ws import protocol
 from app.models.config import MaaEndConfig, MaaEndUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
-from app.services import System
-from app.utils import ProcessManager, get_logger
-from app.utils.constants import (
-    BASE_NATIVE,
-    BASE_SHARED,
-    BASE_SOURCE_LABELS,
-    normalize_base_source,
-)
-from app.utils.io import (
-    mark_native_config_injected,
-    read_file,
-    replace_dir,
-    swap_in_dir,
-    write_file,
-)
+from app.utils import ProcessManager, get_logger, process
+from app.utils import constants as _utils_constants
+from app.utils import io as _utils_io
 
 from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 
@@ -55,16 +37,16 @@ logger = get_logger("MaaEnd 脚本设置")
 def maaend_config_base(raw: object) -> str:
     """读取 MaaEnd 配置来源（base 三态），并兼容旧版字面量。"""
 
-    return normalize_base_source(raw) or BASE_SHARED
+    return _utils_constants.normalize_base_source(raw) or _utils_constants.BASE_SHARED
 
 
 def maaend_mas_config_dir(script_id: str, user_id: str, base: str) -> Path:
-    """返回脚本共享或用户独立配置目录。"""
+    """返回脚本共享或独立配置目录。"""
 
     base = maaend_config_base(base)
-    if base == BASE_NATIVE:
+    if base == _utils_constants.BASE_NATIVE:
         raise ValueError("原生来源配置不使用 MAS 配置目录")
-    owner = "Default" if base == BASE_SHARED else user_id
+    owner = "Default" if base == _utils_constants.BASE_SHARED else user_id
     return Path.cwd() / "data" / script_id / owner / "ConfigFile"
 
 
@@ -117,8 +99,8 @@ class ScriptConfigTask(TaskExecuteBase):
 
     会话包络（下发源 + 回写目标）与运行下发同一套 owner 规则
     （:func:`maaend_mas_config_dir`：shared 来源=Default 共享、independent 来源=独立目录）。
-    view_only=True 时为查看会话：只读预览（如「查看历史备份」）——用户级
-    会话下发的 owner 目录即刚恢复的备份（所见即备份），脚本级会话跳过
+    view_only=True 时为查看会话：只读预览（如「查看历史备份」）——账号级
+    会话下发的 owner 目录即刚恢复的备份（所见即备份），托管级会话跳过
     下发（原生目录即备份）；结束不回写 MAS 配置，安装 config/ 由 manager
     的任务前快照还原（临时注入，看完还原）。
     """
@@ -127,7 +109,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self,
         script_info: ScriptItem,
         script_config: MaaEndConfig,
-        user_config: MultipleConfig[MaaEndUserConfig],
+        user_config: ConfigCollection[MaaEndUserConfig],
         emulator_manager: DeviceBase | None,
         view_only: bool = False,
     ):
@@ -145,12 +127,12 @@ class ScriptConfigTask(TaskExecuteBase):
         # 查看会话：只读预览（如「查看历史备份」），结束不回写 MAS 配置
         self.view_only = view_only
         target_user_id = self.cur_user_item.user_id
-        self.config_base = BASE_SHARED
+        self.config_base = _utils_constants.BASE_SHARED
         if target_user_id != "Default":
             self.config_base = maaend_config_base(
-                self.user_config[uuid.UUID(target_user_id)].get("Info", "Base")
+                self.user_config[uuid.UUID(target_user_id)].Info.Base
             )
-        self.use_mas_config = self.config_base != BASE_NATIVE
+        self.use_mas_config = self.config_base != _utils_constants.BASE_NATIVE
         self.config_file_path = (
             maaend_mas_config_dir(
                 self.script_info.script_id,
@@ -166,7 +148,10 @@ class ScriptConfigTask(TaskExecuteBase):
         self.maaend_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
 
-        self.maaend_root_path = Path(self.script_config.get("Info", "Path"))
+        maaend_root_path = self.script_config.Info.Path
+        if maaend_root_path is None:
+            raise ValueError("Path未配置，请检查路径设置")
+        self.maaend_root_path = maaend_root_path
         self.maaend_set_path = self.maaend_root_path / "config"
         self.maaend_exe_path = self.maaend_root_path / "MaaEnd.exe"
 
@@ -183,17 +168,17 @@ class ScriptConfigTask(TaskExecuteBase):
     async def set_maaend(self):
         """配置 MaaEnd 运行参数"""
 
-        logger.info(f"开始配置 MaaEnd 运行参数: 设置脚本 {self.cur_user_item.user_id}")
+        logger.info(f"开始配置 MaaEnd 运行参数: 设置账号 {self.cur_user_item.user_id}")
 
         await self.maaend_process_manager.kill()
-        await System.kill_process(self.maaend_exe_path)
+        await process.kill_process(self.maaend_exe_path)
 
         maaend_set_path = self.maaend_set_path / "mxu-MaaEnd.json"
 
-        # 查看会话的脚本级入口：原生目录即所选备份，跳过下发与注入
+        # 查看会话的托管级入口：原生目录即所选备份，跳过下发与注入
         if self.view_only and self.cur_user_item.user_id == "Default":
             if maaend_set_path.exists():
-                maaend_set = read_file(maaend_set_path)
+                maaend_set = _utils_io.read_file(maaend_set_path)
                 if not isinstance(maaend_set, dict):
                     raise ValueError("MaaEnd 配置文件不是有效对象")
                 settings = maaend_set.get("settings")
@@ -201,7 +186,7 @@ class ScriptConfigTask(TaskExecuteBase):
                     settings = {}
                     maaend_set["settings"] = settings
                 settings["autoRunOnLaunch"] = False
-                write_file(maaend_set_path, maaend_set)
+                _utils_io.write_file(maaend_set_path, maaend_set)
             logger.info("MaaEnd 查看会话跳过配置下发: 原生目录即所选备份")
             return
 
@@ -210,8 +195,8 @@ class ScriptConfigTask(TaskExecuteBase):
             and self.config_file_path
             and (self.config_file_path / "mxu-MaaEnd.json").exists()
         ):
-            replace_dir(self.config_file_path, self.maaend_set_path)
-            mark_native_config_injected(
+            _utils_io.replace_dir(self.config_file_path, self.maaend_set_path)
+            _utils_io.mark_native_config_injected(
                 Path.cwd() / f"data/{self.script_info.script_id}/Temp",
                 self.maaend_set_path,
                 script_id=self.script_info.script_id,
@@ -227,7 +212,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 dirs_exist_ok=True,
             )
 
-        # 下发前归档 MAS 配置到用户池（下发源，会话保存会覆盖它；带快速
+        # 下发前归档 MAS 配置到账号池（下发源，会话保存会覆盖它；带快速
         # 配置覆盖层字段侧车，指纹去重，失败不阻断会话）。native 池由
         # manager.prepare 在任务级一次性归档
         if self.use_mas_config and self.config_file_path:
@@ -251,35 +236,34 @@ class ScriptConfigTask(TaskExecuteBase):
                 "未找到 MaaEnd 配置文件, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成"
             )
 
-        maaend_set = read_file(maaend_set_path)
+        maaend_set = _utils_io.read_file(maaend_set_path)
         if not isinstance(maaend_set, dict):
             raise ValueError("MaaEnd 配置文件不是有效对象")
         if self.use_mas_config:
             maaend_set = normalize_maaend_config(
-                maaend_set,
-                self.script_config.get("Game", "ControllerType"),
+                maaend_set, self.script_config.Game.ControllerType
             )
         settings = maaend_set.get("settings")
         if not isinstance(settings, dict):
             settings = {}
             maaend_set["settings"] = settings
         settings["autoRunOnLaunch"] = False
-        write_file(maaend_set_path, maaend_set)
+        _utils_io.write_file(maaend_set_path, maaend_set)
         logger.success(
             f"MaaEnd 运行参数配置完成: "
-            f"{BASE_SOURCE_LABELS.get(self.config_base, self.config_base)}配置"
+            f"{_utils_constants.BASE_SOURCE_LABELS.get(self.config_base, self.config_base)}配置"
         )
 
     async def final_task(self):
 
         await self.maaend_process_manager.kill()
-        await System.kill_process(self.maaend_exe_path)
+        await process.kill_process(self.maaend_exe_path)
 
         # 查看会话：只读预览，不把安装 config/ 回写 MAS 目录（安装现场由
         # manager 的任务前快照还原）；GUI 内的改动一律丢弃
         if self.view_only:
             logger.success("MaaEnd 查看结束（只读，不回写配置）")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             return
 
         # 配置会话没有自然结束点: main_task 里的 wait_event 没有任何设置方,
@@ -288,22 +272,22 @@ class ScriptConfigTask(TaskExecuteBase):
         # 但 main_task 已经失败(如 MaaEnd 配置目录不存在)时没有任何可回写的
         # 内容, 再换入只会把不存在的目录当源头再报一次错, 盖住真正的原因。
         if not self.crashed and self.use_mas_config and self.config_file_path:
-            swap_in_dir(self.maaend_set_path, self.config_file_path)
+            _utils_io.swap_in_dir(self.maaend_set_path, self.config_file_path)
             config_path = self.config_file_path / "mxu-MaaEnd.json"
-            maaend_set = read_file(config_path)
+            maaend_set = _utils_io.read_file(config_path)
             maaend_set = normalize_maaend_config(
-                maaend_set, self.script_config.get("Game", "ControllerType")
+                maaend_set, self.script_config.Game.ControllerType
             )
-            write_file(config_path, maaend_set)
+            _utils_io.write_file(config_path, maaend_set)
             logger.success(f"MaaEnd 配置已保存到: {self.config_file_path}")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
         elif not self.crashed:
             logger.success("MaaEnd 原生来源配置已由脚本原生 GUI 保存")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
 
     async def on_crash(self, e: Exception):
         self.crashed = True
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
         await Publisher.send(
             id=self.task_info.task_id,

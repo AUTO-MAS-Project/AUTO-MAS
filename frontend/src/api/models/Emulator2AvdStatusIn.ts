@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type Emulator2AvdStatusIn = {
     /**
-     * 魔改 AVD 根目录 (解压好的模拟器内测包)
+     * ModAVD 根目录 (解压好的模拟器内测包)
      */
     root: string;
     /**

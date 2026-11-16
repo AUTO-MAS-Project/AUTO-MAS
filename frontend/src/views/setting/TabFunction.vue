@@ -1,17 +1,22 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, onMounted, ref } from 'vue'
+import { computed } from 'vue'
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
+  ControlOutlined,
+  DesktopOutlined,
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
-import { message } from 'ant-design-vue'
-import type { GlobalConfig, VirtualDisplayCheckOut } from '@/api'
-import { ActionService, GetService } from '@/api'
+import type { GlobalConfig } from '@/api'
+import type { SettingChangeHandler } from './settingTypes'
+import { useVirtualDisplaySettings } from './useVirtualDisplaySettings'
 import { openExternalUrl } from '@/utils/openExternal'
 import { navigateTo } from '@/router'
+import SectionCard from '@/components/ui/SectionCard.vue'
+import SettingRow from '@/components/ui/SettingRow.vue'
 import FailureReplaySettings from './components/FailureReplaySettings.vue'
+import VoiceSettings from './components/VoiceSettings.vue'
 
 const { t } = useI18n()
 
@@ -23,502 +28,357 @@ const VDD_DOWNLOAD_URL = 'https://github.com/nomi-san/parsec-vdd/releases/latest
 // 游戏窗口又要面对 DPI 虚拟化——而虚拟屏本来就是为了绕开这类问题。所以这里只让用户
 // 选刷新率。驱动的刷新率表是 24/30/60/144/240，写 120 会被 BADMODE 拒绝。
 // 选项放在 computed 里，t() 是响应式的。
-const virtualDisplayModeOptions = computed(() => [
-  { label: `60 Hz（${t('setting.display.refreshDefault')}）`, value: '1920x1080@60' },
-  { label: `30 Hz（${t('setting.display.refreshLowPower')}）`, value: '1920x1080@30' },
+type VirtualDisplayMode = NonNullable<NonNullable<GlobalConfig['Display']>['VirtualDisplayMode']>
+const virtualDisplayModeOptions = computed<{ label: string; value: VirtualDisplayMode }[]>(() => [
+  { label: `60 Hz（${t('core.setting.display.refreshDefault')}）`, value: '1920x1080@60' },
+  { label: `30 Hz（${t('core.setting.display.refreshLowPower')}）`, value: '1920x1080@30' },
 ])
 
-// 驱动状态在打开设置页时实时探测一次（只跑前两段，不动桌面拓扑，实测 0.2ms）。
-// 刻意不缓存也不持久化：存下来的状态只会变陈旧——驱动可能被卸载、被显卡驱动更新搞坏、
-// 或者配置被同步到另一台机器，而实时问一次永远是对的。
-const vddDriverReady = ref<boolean | null>(null)
-const vddDriverMessage = ref('')
-// 守卫此刻挂着的那块屏（设备名与模式），没挂时为 null。只是打开设置页时的一次快照，
-// 「立即拆除」按钮不按它禁用——守卫几秒一轮，快照很快就旧了，点了没挂后端会说没挂。
-const vddHolding = ref<string | null>(null)
-
-async function refreshVirtualDisplayStatus() {
-  try {
-    const res = await GetService.virtualDisplayStatusApiSettingVirtualDisplayStatusPost()
-    vddDriverReady.value = (res.results ?? []).every(item => item.passed)
-    vddDriverMessage.value = res.message ?? ''
-    vddHolding.value = res.holding ?? null
-  } catch {
-    // 探测不出来就不拦——宁可让用户开着不生效，也不要因为一次查询失败把功能锁死。
-    vddDriverReady.value = null
-    vddDriverMessage.value = ''
-    vddHolding.value = null
-  }
-}
-
-onMounted(refreshVirtualDisplayStatus)
-
-// 驱动不可用时禁用开关，避免「开了但永远不生效」的假保障。
-// 但**已经开着**的时候必须留出关掉的余地，否则用户连关都关不掉。
-const vddSwitchDisabled = computed(
-  () => vddDriverReady.value === false && !settings.Display?.IfEnableVirtualDisplay
-)
-
-const vddWarning = computed(() => {
-  if (vddDriverReady.value !== false) return ''
-  return settings.Display?.IfEnableVirtualDisplay
-    ? t('setting.display.enabledButUnavailable', { reason: vddDriverMessage.value })
-    : t('setting.display.driverUnavailable', { reason: vddDriverMessage.value })
-})
-
-const vddChecking = ref(false)
-const vddResult = ref<VirtualDisplayCheckOut | null>(null)
-// 结论这一行由前端出：后端文案是中文的，紧挨着英文标签太刺眼。明细仍用后端原文，
-// 那里带着版本号、实际模式、错误详情这些动态内容，与全站其它后端文案一致。
-const vddAllPassed = computed(() => (vddResult.value?.results ?? []).every(item => item.passed))
-
-async function runVirtualDisplayCheck() {
-  vddChecking.value = true
-  try {
-    vddResult.value = await GetService.checkVirtualDisplayApiSettingVirtualDisplayCheckPost()
-    await refreshVirtualDisplayStatus()
-  } catch (error) {
-    vddResult.value = null
-    message.error(t('setting.display.checkFailed'))
-  } finally {
-    vddChecking.value = false
-  }
-}
-
-// 手动拆除：真实显示器回来时的询问弹窗之外的兜底入口——弹窗被关掉、或者用户想在任务
-// 结束前把屏拆掉，都从这里走。任务在不在跑都照拆，那是用户的决定。
-const vddDetaching = ref(false)
-
-async function runVirtualDisplayDetach() {
-  vddDetaching.value = true
-  try {
-    const res = await ActionService.detachVirtualDisplayApiSettingVirtualDisplayDetachPost()
-    if (res.code !== 200) {
-      message.error(`${t('setting.display.detachFailed')}: ${res.message}`)
-      return
-    }
-    if (res.detached) {
-      message.success(t('setting.display.detachDone'))
-    } else {
-      message.info(t('setting.display.detachNothing'))
-    }
-    await refreshVirtualDisplayStatus()
-  } catch {
-    message.error(t('setting.display.detachFailed'))
-  } finally {
-    vddDetaching.value = false
-  }
-}
+const {
+  vddDriverReady,
+  vddDriverMessage,
+  vddHolding,
+  vddSwitchDisabled,
+  vddWarning,
+  vddChecking,
+  vddResult,
+  vddAllPassed,
+  runVirtualDisplayCheck,
+  vddDetaching,
+  runVirtualDisplayDetach,
+} = useVirtualDisplaySettings(() => settings)
 
 function openVddDownload() {
   openExternalUrl(VDD_DOWNLOAD_URL)
 }
 
-const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange } = defineProps<{
+const { settings, handleSettingChange } = defineProps<{
   settings: GlobalConfig
-  historyRetentionOptions: { label: string; value: number }[]
-  voiceTypeOptions: { label: string; value: string }[]
-  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<void>
+  handleSettingChange: SettingChangeHandler
 }>()
+
+type HistoryRetentionTime = NonNullable<
+  NonNullable<GlobalConfig['Function']>['HistoryRetentionTime']
+>
+const historyRetentionOptions = computed<{ label: string; value: HistoryRetentionTime }[]>(() => [
+  { label: t('core.setting.retention.d7'), value: 7 },
+  { label: t('core.setting.retention.d15'), value: 15 },
+  { label: t('core.setting.retention.d30'), value: 30 },
+  { label: t('core.setting.retention.d60'), value: 60 },
+  { label: t('core.setting.retention.d90'), value: 90 },
+  { label: t('core.setting.retention.d180'), value: 180 },
+  { label: t('core.setting.retention.d365'), value: 365 },
+  { label: t('core.setting.retention.forever'), value: 0 },
+])
+
+const handleHistoryRetentionChange = (value: unknown) => {
+  const option = historyRetentionOptions.value.find(option => option.value === value)
+  if (option) void handleSettingChange('Function', 'HistoryRetentionTime', option.value)
+}
+
+const handleVirtualDisplayModeChange = (value: unknown) => {
+  const option = virtualDisplayModeOptions.value.find(option => option.value === value)
+  if (option) void handleSettingChange('Display', 'VirtualDisplayMode', option.value)
+}
 </script>
 <template>
-  <div class="tab-content">
-    <div class="form-section">
-      <div class="section-header">
-        <h3>{{ t('setting.func.startupSection') }}</h3>
-      </div>
-      <a-row :gutter="24">
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.autoStart') }}</span>
-              <a-tooltip :title="t('setting.func.autoStartTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.Start?.IfSelfStart"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Start', 'IfSelfStart', checked)"
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.startMinimized') }}</span>
-              <a-tooltip :title="t('setting.func.startMinimizedTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.Start?.IfMinimizeDirectly"
-              size="large"
-              style="width: 100%"
-              @change="
-                (checked: any) => handleSettingChange('Start', 'IfMinimizeDirectly', checked)
-              "
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-      </a-row>
-    </div>
+  <div class="tab-content function-settings">
+    <!-- 功能：历史保留时长 + 四个全局开关，一项一行 -->
+    <SectionCard :title="t('core.setting.func.featureSection')" :icon="ControlOutlined">
+      <SettingRow
+        :label="t('core.setting.func.retention')"
+        :hint="t('core.setting.func.retentionTip')"
+      >
+        <a-select
+          :value="settings.Function?.HistoryRetentionTime"
+          :options="historyRetentionOptions"
+          class="retention-select"
+          :aria-label="t('core.setting.func.retention')"
+          @change="handleHistoryRetentionChange"
+        />
+      </SettingRow>
 
-    <div class="form-section">
-      <div class="section-header">
-        <h3>{{ t('setting.func.featureSection') }}</h3>
-      </div>
-      <a-row :gutter="24">
-        <a-col :span="8">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.retention') }}</span>
-              <a-tooltip :title="t('setting.func.retentionTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.Function?.HistoryRetentionTime"
-              :options="historyRetentionOptions"
-              size="large"
-              style="width: 100%"
-              @change="
-                (value: any) => handleSettingChange('Function', 'HistoryRetentionTime', value)
-              "
-            />
-          </div>
-        </a-col>
-        <a-col :span="8">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.silent') }}</span>
-              <a-tooltip :title="t('setting.func.silentTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.Function?.IfSilence"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Function', 'IfSilence', checked)"
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-        <a-col :span="8">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.preventSleep') }}</span>
-              <a-tooltip :title="t('setting.func.preventSleepTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.Function?.IfAllowSleep"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Function', 'IfAllowSleep', checked)"
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-      </a-row>
-      <a-row :gutter="24">
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.telemetry') }}</span>
-              <a-tooltip :title="t('setting.func.telemetryTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.Function?.IfEnableTelemetry !== false"
-              size="large"
-              style="width: 100%"
-              @change="
-                (checked: any) => handleSettingChange('Function', 'IfEnableTelemetry', checked)
-              "
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.blockAds') }}</span>
-              <a-tooltip>
-                <template #title>
-                  <div style="max-width: 300px">
-                    <p>{{ t('setting.func.blockAdsIntro') }}</p>
-                    <ul style="margin: 8px 0; padding-left: 16px">
-                      <li>
-                        <strong>{{ t('emulator.type.mumu') }}</strong
-                        >: {{ t('setting.func.blockAdsMumu') }}
-                      </li>
-                      <li>
-                        <strong>{{ t('emulator.type.ldplayer') }}</strong
-                        >: {{ t('setting.func.blockAdsLd') }}
-                      </li>
-                    </ul>
-                  </div>
-                </template>
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.Function?.IfBlockAd"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Function', 'IfBlockAd', checked)"
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-      </a-row>
-    </div>
+      <SettingRow :label="t('core.setting.func.silent')" :hint="t('core.setting.func.silentTip')">
+        <a-switch
+          :checked="settings.Function?.IfSilence === true"
+          :aria-label="t('core.setting.func.silent')"
+          @change="
+            (checked: boolean | string | number) =>
+              handleSettingChange('Function', 'IfSilence', !!checked)
+          "
+        />
+      </SettingRow>
 
-    <div class="form-section">
-      <div class="section-header">
-        <h3>{{ t('setting.func.voiceSection') }}</h3>
-      </div>
-      <a-row :gutter="24">
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.voiceEnable') }}</span>
-              <a-tooltip :title="t('setting.func.voiceEnableTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.Voice?.Enabled"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Voice', 'Enabled', checked)"
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.voiceType') }}</span>
-              <a-tooltip :title="t('setting.func.voiceTypeTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.Voice?.Type"
-              :options="voiceTypeOptions"
-              :disabled="!settings.Voice?.Enabled"
-              size="large"
-              style="width: 100%"
-              @change="(value: any) => handleSettingChange('Voice', 'Type', value)"
-            />
-          </div>
-        </a-col>
-      </a-row>
-    </div>
+      <SettingRow
+        :label="t('core.setting.func.preventSleep')"
+        :hint="t('core.setting.func.preventSleepTip')"
+      >
+        <a-switch
+          :checked="settings.Function?.IfAllowSleep === true"
+          :aria-label="t('core.setting.func.preventSleep')"
+          @change="
+            (checked: boolean | string | number) =>
+              handleSettingChange('Function', 'IfAllowSleep', !!checked)
+          "
+        />
+      </SettingRow>
+
+      <SettingRow
+        :label="t('core.setting.func.telemetry')"
+        :hint="t('core.setting.func.telemetryTip')"
+      >
+        <a-switch
+          :checked="settings.Function?.IfEnableTelemetry !== false"
+          :aria-label="t('core.setting.func.telemetry')"
+          @change="
+            (checked: boolean | string | number) =>
+              handleSettingChange('Function', 'IfEnableTelemetry', !!checked)
+          "
+        />
+      </SettingRow>
+
+      <!-- 拦广告的支持范围带列表，ⓘ 里放富文本，其余说明仍走 SettingRow 的 hint -->
+      <SettingRow>
+        <template #label>
+          <span class="row-label">
+            {{ t('core.setting.func.blockAds') }}
+            <a-tooltip :trigger="['hover', 'focus']">
+              <template #title>
+                <div style="max-width: 300px">
+                  <p>{{ t('core.setting.func.blockAdsIntro') }}</p>
+                  <ul style="margin: 8px 0; padding-left: 16px">
+                    <li>
+                      <strong>{{ t('core.emulator.type.mumu') }}</strong
+                      >: {{ t('core.setting.func.blockAdsMumu') }}
+                    </li>
+                    <li>
+                      <strong>{{ t('core.emulator.type.ldplayer') }}</strong
+                      >: {{ t('core.setting.func.blockAdsLd') }}
+                    </li>
+                  </ul>
+                </div>
+              </template>
+              <QuestionCircleOutlined
+                class="help-icon"
+                tabindex="0"
+                :aria-label="t('core.setting.func.blockAds')"
+              />
+            </a-tooltip>
+          </span>
+        </template>
+        <a-switch
+          :checked="settings.Function?.IfBlockAd === true"
+          :aria-label="t('core.setting.func.blockAds')"
+          @change="
+            (checked: boolean | string | number) =>
+              handleSettingChange('Function', 'IfBlockAd', !!checked)
+          "
+        />
+      </SettingRow>
+    </SectionCard>
+
+    <VoiceSettings :settings="settings.Voice" :handle-setting-change="handleSettingChange" />
 
     <FailureReplaySettings :settings="settings" :handle-setting-change="handleSettingChange" />
 
-    <div class="form-section">
-      <div class="section-header">
-        <h3>{{ t('setting.display.section') }}</h3>
-      </div>
-      <a-alert type="info" show-icon class="vdd-alert">
-        <template #message>
-          <i18n-t keypath="setting.display.intro" tag="span" scope="global">
-            <template #driverLink>
-              <a href="#" @click.prevent="openVddDownload">{{
-                t('setting.display.introDriverLink')
-              }}</a>
+    <!-- 虚拟显示器：驱动下载入口收进卡片头部，操作按钮与检测结果留在卡片内 -->
+    <SectionCard :title="t('core.setting.display.section')" :icon="DesktopOutlined">
+      <template #actions>
+        <a-button type="link" size="small" class="header-link" @click="openVddDownload">
+          {{ t('core.setting.display.download') }}
+        </a-button>
+      </template>
+
+      <!-- 原 intro 是一整段告警，正文只留驱动这一句，来龙去脉收进 ⓘ -->
+      <p class="card-note">
+        <span class="card-note-hint">
+          {{ t('core.setting.display.introDriverLink') }}
+          <a-tooltip :trigger="['hover', 'focus']">
+            <template #title>
+              <i18n-t keypath="core.setting.display.intro" tag="span" scope="global">
+                <template #driverLink>{{ t('core.setting.display.introDriverLink') }}</template>
+              </i18n-t>
             </template>
-          </i18n-t>
+            <QuestionCircleOutlined
+              class="help-icon"
+              tabindex="0"
+              :aria-label="t('core.setting.display.introDriverLink')"
+            />
+          </a-tooltip>
+        </span>
+      </p>
+
+      <SettingRow
+        :label="t('core.setting.display.enable')"
+        :hint="t('core.setting.display.enableTip')"
+      >
+        <a-switch
+          :checked="settings.Display?.IfEnableVirtualDisplay === true"
+          :disabled="vddSwitchDisabled"
+          :aria-label="t('core.setting.display.enable')"
+          @change="
+            (checked: boolean | string | number) =>
+              handleSettingChange('Display', 'IfEnableVirtualDisplay', !!checked)
+          "
+        />
+      </SettingRow>
+
+      <SettingRow :label="t('core.setting.display.mode')" :hint="t('core.setting.display.modeTip')">
+        <a-segmented
+          :value="settings.Display?.VirtualDisplayMode"
+          :options="virtualDisplayModeOptions"
+          :disabled="!settings.Display?.IfEnableVirtualDisplay"
+          :aria-label="t('core.setting.display.mode')"
+          @change="handleVirtualDisplayModeChange"
+        />
+      </SettingRow>
+
+      <div class="display-actions">
+        <a-tooltip :title="t('core.setting.display.checkTip')">
+          <a-button :loading="vddChecking" @click="runVirtualDisplayCheck">
+            {{ t('core.setting.display.checkAction') }}
+          </a-button>
+        </a-tooltip>
+        <a-tooltip :title="t('core.setting.display.detachTip')">
+          <a-button
+            danger
+            :disabled="!settings.Display?.IfEnableVirtualDisplay"
+            :loading="vddDetaching"
+            @click="runVirtualDisplayDetach"
+          >
+            {{ t('core.setting.display.detachAction') }}
+          </a-button>
+        </a-tooltip>
+      </div>
+
+      <p v-if="settings.Display?.IfEnableVirtualDisplay" class="vdd-holding card-note">
+        {{
+          vddHolding
+            ? t('core.setting.display.holdingNow', { holding: vddHolding })
+            : t('core.setting.display.holdingNone')
+        }}
+      </p>
+
+      <a-alert v-if="vddWarning" type="warning" show-icon class="vdd-result">
+        <template #message>{{ vddWarning }}</template>
+        <template #description>
+          <a href="#" @click.prevent="openVddDownload">
+            {{ t('core.setting.display.download') }}
+          </a>
         </template>
       </a-alert>
-      <a-row :gutter="24">
-        <a-col :span="6">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.display.enable') }}</span>
-              <a-tooltip :title="t('setting.display.enableTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.Display?.IfEnableVirtualDisplay"
-              :disabled="vddSwitchDisabled"
-              size="large"
-              style="width: 100%"
-              @change="
-                (checked: any) => handleSettingChange('Display', 'IfEnableVirtualDisplay', checked)
-              "
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-        <a-col :span="6">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.display.mode') }}</span>
-              <a-tooltip :title="t('setting.display.modeTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.Display?.VirtualDisplayMode"
-              :options="virtualDisplayModeOptions"
-              :disabled="!settings.Display?.IfEnableVirtualDisplay"
-              size="large"
-              style="width: 100%"
-              @change="(value: any) => handleSettingChange('Display', 'VirtualDisplayMode', value)"
-            />
-          </div>
-        </a-col>
-        <a-col :span="6">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.display.check') }}</span>
-              <a-tooltip :title="t('setting.display.checkTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-button
-              size="large"
-              style="width: 100%"
-              :loading="vddChecking"
-              @click="runVirtualDisplayCheck"
-            >
-              {{ t('setting.display.checkAction') }}
-            </a-button>
-          </div>
-        </a-col>
-        <a-col :span="6">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.display.detach') }}</span>
-              <a-tooltip :title="t('setting.display.detachTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-button
-              danger
-              size="large"
-              style="width: 100%"
-              :disabled="!settings.Display?.IfEnableVirtualDisplay"
-              :loading="vddDetaching"
-              @click="runVirtualDisplayDetach"
-            >
-              {{ t('setting.display.detachAction') }}
-            </a-button>
-          </div>
-        </a-col>
-      </a-row>
-      <a-row v-if="settings.Display?.IfEnableVirtualDisplay" :gutter="24" class="vdd-result-row">
-        <a-col :span="24">
-          <p class="vdd-holding">
-            {{
-              vddHolding
-                ? t('setting.display.holdingNow', { holding: vddHolding })
-                : t('setting.display.holdingNone')
-            }}
-          </p>
-        </a-col>
-      </a-row>
-      <a-row v-if="vddWarning" :gutter="24" class="vdd-result-row">
-        <a-col :span="24">
-          <a-alert type="warning" show-icon :message="vddWarning">
-            <template #description>
-              <a href="#" @click.prevent="openVddDownload">
-                {{ t('setting.display.download') }}
-              </a>
-            </template>
-          </a-alert>
-        </a-col>
-      </a-row>
 
-      <a-row v-if="vddResult" :gutter="24" class="vdd-result-row">
-        <a-col :span="24">
-          <a-alert :type="vddAllPassed ? 'success' : 'warning'" show-icon>
-            <template #message>
-              {{
-                vddAllPassed ? t('setting.display.checkPassed') : t('setting.display.checkIssue')
-              }}
-            </template>
-            <template #description>
-              <p v-if="!vddAllPassed && vddResult.message" class="vdd-summary">
-                {{ vddResult.message }}
-              </p>
-              <ul class="vdd-result-list">
-                <li v-for="item in vddResult.results ?? []" :key="item.stage">
-                  <CheckCircleOutlined v-if="item.passed" class="vdd-ok" />
-                  <CloseCircleOutlined v-else class="vdd-fail" />
-                  {{ t(`setting.display.stage.${item.stage}`) }} — {{ item.message }}
-                </li>
-              </ul>
-              <p v-if="vddResult.monitors" class="vdd-monitors">
-                {{ t('setting.display.monitors') }}: {{ vddResult.monitors }}
-              </p>
-              <p v-if="!(vddResult.results ?? []).some(item => item.stage === 'openable')">
-                <a href="#" @click.prevent="openVddDownload">
-                  {{ t('setting.display.download') }}
-                </a>
-              </p>
-            </template>
-          </a-alert>
-        </a-col>
-      </a-row>
-    </div>
+      <a-alert
+        v-if="vddResult"
+        :type="vddAllPassed ? 'success' : 'warning'"
+        show-icon
+        class="vdd-result"
+      >
+        <template #message>
+          {{
+            vddAllPassed
+              ? t('core.setting.display.checkPassed')
+              : t('core.setting.display.checkIssue')
+          }}
+        </template>
+        <template #description>
+          <p v-if="!vddAllPassed && vddResult.message" class="vdd-summary">
+            {{ vddResult.message }}
+          </p>
+          <ul class="vdd-result-list">
+            <li v-for="item in vddResult.results ?? []" :key="item.stage">
+              <CheckCircleOutlined v-if="item.passed" class="vdd-ok" />
+              <CloseCircleOutlined v-else class="vdd-fail" />
+              {{ t(`core.setting.display.stage.${item.stage}`) }} — {{ item.message }}
+            </li>
+          </ul>
+          <p v-if="vddResult.monitors" class="vdd-monitors">
+            {{ t('core.setting.display.monitors') }}: {{ vddResult.monitors }}
+          </p>
+          <p v-if="!(vddResult.results ?? []).some(item => item.stage === 'openable')">
+            <a href="#" @click.prevent="openVddDownload">
+              {{ t('core.setting.display.download') }}
+            </a>
+          </p>
+        </template>
+      </a-alert>
+    </SectionCard>
+
     <!-- 个人版编排的「并非神秘入口」已移入神秘入口，这里只留群友的「神秘入口」一个入口 -->
     <div class="flavor-entries">
-      <div class="mystery-entry">
-        <a-button type="text" size="small" @click="navigateTo('/settings/mystery')">
-          {{ t('mystery.entry') }}
-        </a-button>
-      </div>
+      <a-button
+        type="text"
+        size="small"
+        class="mystery-entry"
+        @click="navigateTo('/settings/mystery')"
+      >
+        <span class="mystery-entry-label">{{ t('core.mystery.entry') }}</span>
+      </a-button>
     </div>
   </div>
 </template>
 
 <style scoped>
-.flavor-entries {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+.retention-select {
+  width: 220px;
 }
 
-.flavor-entries :deep(.ant-btn) {
+/* 行标签沿用 SettingRow 的 form 级排版，供富文本 ⓘ 的行使用 */
+.row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ant-color-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.help-icon:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 2px;
+}
+
+.help-icon {
+  flex: 0 0 auto;
+  color: var(--ant-color-text-tertiary);
+  font-size: 14px;
+  cursor: help;
+}
+
+.card-note {
+  margin: 0 0 8px;
   color: var(--ant-color-text-tertiary);
   font-size: 12px;
+  line-height: 1.6;
 }
 
-.vdd-alert {
-  margin-bottom: 16px;
+.card-note-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.vdd-result-row {
-  margin-top: 16px;
+.header-link {
+  padding: 0;
+  height: auto;
+}
+
+.display-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 0 8px;
+}
+
+.vdd-holding {
+  margin: 0;
+}
+
+.vdd-result {
+  margin-top: 12px;
 }
 
 .vdd-summary {
@@ -549,9 +409,63 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
   color: var(--ant-color-text-secondary);
 }
 
-.vdd-holding {
-  margin: 0;
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
+.flavor-entries {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.flavor-entries :deep(.ant-btn) {
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+}
+
+.mystery-entry {
+  opacity: 0;
+}
+
+.mystery-entry:hover,
+.mystery-entry:focus {
+  opacity: 1;
+}
+
+.mystery-entry-label {
+  background-image: linear-gradient(
+    90deg,
+    var(--ant-color-primary),
+    var(--ant-color-error),
+    var(--ant-color-warning),
+    var(--ant-color-success),
+    var(--ant-color-primary)
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: mystery-entry-flow 3s linear infinite paused;
+}
+
+.mystery-entry:hover .mystery-entry-label,
+.mystery-entry:focus .mystery-entry-label {
+  animation-play-state: running;
+}
+
+@keyframes mystery-entry-flow {
+  to {
+    background-position: 200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mystery-entry-label {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .mystery-entry-label {
+    background: none;
+    -webkit-text-fill-color: currentColor;
+    animation: none;
+  }
 }
 </style>

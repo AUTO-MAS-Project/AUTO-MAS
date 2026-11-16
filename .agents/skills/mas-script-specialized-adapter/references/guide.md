@@ -30,7 +30,7 @@
 | --- | --- | --- |
 | P0 | Hub + 路由 + Script/User Edit + Section 最小集 | 模型 + Manager + 注册表 |
 | P1 | 计划表 / 队列 UI | plan / queue 分支 |
-| P2 | 体验优化、预设、虚拟用户 | 可仅前端 |
+| P2 | 体验优化、预设、虚拟账号 | 可仅前端 |
 
 ## 参考 PR
 

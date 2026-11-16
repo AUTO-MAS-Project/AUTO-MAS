@@ -1,3 +1,5 @@
+import { describePackageError } from '@/utils/resourcePackageError'
+import { beginAnalyticsOperation } from '@/utils/analytics'
 import { computed, h, ref } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import type { SelectValue } from 'ant-design-vue/es/select'
@@ -10,11 +12,10 @@ import type {
   InstalledAppearance,
   OnlineAppearanceInstallResult,
 } from '@/types/appearance'
-import {
-  describeOnlineAppearanceError,
-  type OnlineAppearanceInstallOutcome,
-} from '@/views/themeStore/useOnlineAppearance'
+import { type OnlineAppearanceInstallOutcome } from '@/views/themeStore/useOnlineAppearance'
 import './appearance.css'
+import type { AppearanceCategory } from '@/types/mascotPack'
+import { saveConfig } from '@/utils/config'
 
 export function useAppearanceSettings() {
   const { t } = useI18n()
@@ -30,17 +31,18 @@ export function useAppearanceSettings() {
     activeAppearance,
     setThemeMode,
     setThemeColor,
+    resetTheme,
     setAppearance,
     importAppearance,
     installOnlineAppearance,
     removeAppearance,
   } = useTheme()
   const appearanceBusy = ref(false)
-
+  const themeResetting = ref(false)
   const themeModeOptions = computed(() => [
-    { label: t('setting.themeMode.system'), value: 'system' },
-    { label: t('setting.themeMode.light'), value: 'light' },
-    { label: t('setting.themeMode.dark'), value: 'dark' },
+    { label: t('core.setting.themeMode.system'), value: 'system' },
+    { label: t('core.setting.themeMode.light'), value: 'light' },
+    { label: t('core.setting.themeMode.dark'), value: 'dark' },
   ])
 
   const appearanceValue = computed(() =>
@@ -57,7 +59,7 @@ export function useAppearanceSettings() {
 
   const themeColorOptions = computed(() =>
     Object.entries(themeColors).map(([key, color]) => ({
-      label: t(`setting.color.${key}`),
+      label: t(`core.setting.color.${key}`),
       value: key,
       color,
     }))
@@ -68,7 +70,20 @@ export function useAppearanceSettings() {
     try {
       await setThemeMode(value as ThemeMode)
     } catch {
-      message.error(t('setting.basic.appearanceApplyFailed'))
+      message.error(t('core.setting.basic.appearanceApplyFailed'))
+    }
+  }
+
+  const handleThemeReset = async (): Promise<void> => {
+    if (appearanceBusy.value || themeResetting.value) return
+    themeResetting.value = true
+    try {
+      await resetTheme()
+      message.success(t('core.setting.basic.themeReset'))
+    } catch {
+      message.error(t('core.setting.basic.themeResetFailed'))
+    } finally {
+      themeResetting.value = false
     }
   }
 
@@ -77,7 +92,7 @@ export function useAppearanceSettings() {
     try {
       await setThemeColor(value as ThemeColor)
     } catch {
-      message.error(t('setting.basic.appearanceApplyFailed'))
+      message.error(t('core.setting.basic.appearanceApplyFailed'))
     }
   }
 
@@ -95,29 +110,38 @@ export function useAppearanceSettings() {
           : null,
         appearance.description ? h('p', appearance.description) : null,
       ]),
-      okText: t('setting.basic.applyAppearance'),
-      cancelText: t('common.cancel'),
+      okText: t('core.setting.basic.applyAppearance'),
+      cancelText: t('core.common.cancel'),
       onOk: async () => {
         try {
           await setAppearance(appearance.id)
-          message.success(t('setting.basic.appearanceApplied'))
+          message.success(t('core.setting.basic.appearanceApplied'))
         } catch (error) {
           logger.error(`应用外观失败: ${error instanceof Error ? error.message : String(error)}`)
-          message.error(t('setting.basic.appearanceApplyFailed'))
+          message.error(t('core.setting.basic.appearanceApplyFailed'))
           throw error
         }
       },
     })
   }
 
-  const confirmReplace = (name: string): Promise<boolean> =>
+  const confirmReplace = (name: string, category: AppearanceCategory): Promise<boolean> =>
     new Promise(resolve => {
       modal.confirm({
         ...modalOptions,
-        title: t('setting.basic.appearanceReplaceTitle'),
-        content: t('setting.basic.appearanceReplaceContent', { name }),
-        okText: t('setting.basic.replaceAppearance'),
-        cancelText: t('common.cancel'),
+        title: t(
+          category === 'mascot'
+            ? 'core.setting.basic.mascotReplaceTitle'
+            : 'core.setting.basic.appearanceReplaceTitle'
+        ),
+        content: t(
+          category === 'mascot'
+            ? 'core.setting.basic.mascotReplaceContent'
+            : 'core.setting.basic.appearanceReplaceContent',
+          { name }
+        ),
+        okText: t('core.setting.basic.replaceAppearance'),
+        cancelText: t('core.common.cancel'),
         onOk: () => resolve(true),
         onCancel: () => resolve(false),
       })
@@ -126,12 +150,14 @@ export function useAppearanceSettings() {
   // 本地导入与在线安装共用：同 ID 先确认覆盖，成功后进入预览与应用。
   const runAppearanceInstall = async (
     install: (replace: boolean) => Promise<AppearanceImportResult | OnlineAppearanceInstallResult>,
-    describeFailure: (result: AppearanceImportResult | OnlineAppearanceInstallResult) => string
+    describeFailure: (result: AppearanceImportResult | OnlineAppearanceInstallResult) => string,
+    category: AppearanceCategory = 'theme'
   ): Promise<OnlineAppearanceInstallOutcome> => {
     let result = await install(false)
     if (!result.success && result.code === 'DUPLICATE_ID') {
       const replace = await confirmReplace(
-        result.existing?.name ?? result.existing?.id ?? t('setting.basic.appearance')
+        result.existing?.name ?? result.existing?.id ?? t('core.setting.basic.appearance'),
+        category
       )
       if (!replace) return 'cancelled'
       result = await install(true)
@@ -141,16 +167,29 @@ export function useAppearanceSettings() {
       return 'failed'
     }
     if (result.appearance) showAppearancePreview(result.appearance)
+    if ('mascot' in result && result.mascot) {
+      try {
+        await saveConfig({ desktopMascotId: result.mascot.id })
+      } catch (error) {
+        // 资源已经安装，保存选择失败不会撤销安装。
+        logger.error(`安装在线外观失败: ${error instanceof Error ? error.message : String(error)}`)
+        message.error(t('core.themeStore.installFailed'))
+        return 'partial'
+      }
+      message.success(t('core.setting.basic.mascotImported'))
+    }
     return 'installed'
   }
 
-  const importAppearanceFromPath = async (zipPath: string): Promise<void> => {
-    if (appearanceBusy.value) return
+  const importAppearanceFromPath = async (
+    zipPath: string
+  ): Promise<OnlineAppearanceInstallOutcome> => {
+    if (appearanceBusy.value) return 'cancelled'
     appearanceBusy.value = true
     try {
-      await runAppearanceInstall(
+      return await runAppearanceInstall(
         replace => importAppearance(zipPath, replace),
-        result => result.error || t('setting.basic.appearanceImportFailed')
+        result => describePackageError(result, 'core.setting.basic.appearanceImportFailed')
       )
     } finally {
       appearanceBusy.value = false
@@ -158,18 +197,24 @@ export function useAppearanceSettings() {
   }
 
   const installPreparedOnlineAppearance = async (
-    token: string
+    token: string,
+    category: AppearanceCategory = 'theme'
   ): Promise<OnlineAppearanceInstallOutcome> => {
     if (appearanceBusy.value) return 'cancelled'
     appearanceBusy.value = true
     try {
       return await runAppearanceInstall(
-        replace => installOnlineAppearance(token, replace),
-        result => describeOnlineAppearanceError(result, 'themeStore.installFailed')
+        replace =>
+          category === 'mascot'
+            ? (window.electronAPI.installOnlineAppearance?.(token, replace, category) ??
+              Promise.resolve({ success: false, code: 'UNSUPPORTED' as const }))
+            : installOnlineAppearance(token, replace),
+        result => describePackageError(result, 'core.themeStore.installFailed', category),
+        category
       )
     } catch (error) {
       logger.error(`安装在线外观失败: ${error instanceof Error ? error.message : String(error)}`)
-      message.error(t('themeStore.installFailed'))
+      message.error(t('core.themeStore.installFailed'))
       return 'failed'
     } finally {
       appearanceBusy.value = false
@@ -177,15 +222,31 @@ export function useAppearanceSettings() {
   }
 
   const handleAppearanceImport = async (): Promise<void> => {
+    if (appearanceBusy.value) return
+    const telemetry = beginAnalyticsOperation('appearance_package_finished')
+    let outcome: 'success' | 'partial' | 'failure' | 'cancelled' | 'unknown' = 'unknown'
     try {
       const paths = await window.electronAPI.selectFile([
-        { name: t('setting.basic.importAppearance'), extensions: ['zip'] },
+        { name: t('core.setting.basic.importAppearance'), extensions: ['zip'] },
       ])
-      if (!paths[0]) return
-      await importAppearanceFromPath(paths[0])
+      if (!paths[0]) {
+        outcome = 'cancelled'
+        return
+      }
+      const result = await importAppearanceFromPath(paths[0])
+      outcome =
+        result === 'installed'
+          ? 'success'
+          : result === 'partial'
+            ? 'partial'
+            : result === 'cancelled'
+              ? 'cancelled'
+              : 'failure'
     } catch (error) {
       logger.error(`导入外观失败: ${error instanceof Error ? error.message : String(error)}`)
-      message.error(t('setting.basic.appearanceImportFailed'))
+      message.error(t('core.setting.basic.appearanceImportFailed'))
+    } finally {
+      telemetry.finish({ package_kind: 'theme', action: 'import', outcome })
     }
   }
 
@@ -196,7 +257,7 @@ export function useAppearanceSettings() {
       else await setThemeMode(value as ThemeMode)
     } catch (error) {
       logger.error(`切换外观失败: ${error instanceof Error ? error.message : String(error)}`)
-      message.error(t('setting.basic.appearanceApplyFailed'))
+      message.error(t('core.setting.basic.appearanceApplyFailed'))
     }
   }
 
@@ -207,21 +268,21 @@ export function useAppearanceSettings() {
     const appearance = appearances.value.find(item => item.id === id)
     modal.confirm({
       ...modalOptions,
-      title: t('setting.basic.removeAppearanceTitle'),
-      content: t('setting.basic.removeAppearanceContent', { name: appearance?.name ?? id }),
-      okText: t('setting.basic.removeAppearance'),
+      title: t('core.setting.basic.removeAppearanceTitle'),
+      content: t('core.setting.basic.removeAppearanceContent', { name: appearance?.name ?? id }),
+      okText: t('core.setting.basic.removeAppearance'),
       okButtonProps: { danger: true },
-      cancelText: t('common.cancel'),
+      cancelText: t('core.common.cancel'),
       onOk: async () => {
         appearanceBusy.value = true
         try {
           const result = await removeAppearance(id)
           if (!result.success) {
-            message.error(result.error || t('setting.basic.appearanceRemoveFailed'))
+            message.error(result.error || t('core.setting.basic.appearanceRemoveFailed'))
           }
         } catch (error) {
           logger.error(`移除外观失败: ${error instanceof Error ? error.message : String(error)}`)
-          message.error(t('setting.basic.appearanceRemoveFailed'))
+          message.error(t('core.setting.basic.appearanceRemoveFailed'))
         } finally {
           appearanceBusy.value = false
         }
@@ -238,12 +299,14 @@ export function useAppearanceSettings() {
     activeAppearance,
     modalContextHolder,
     appearanceBusy,
+    themeResetting,
     themeModeOptions,
     appearanceValue,
     appearanceOptions,
     themeColorOptions,
     handleThemeModeChange,
     handleThemeColorChange,
+    handleThemeReset,
     handleAppearanceChange,
     handleAppearanceImport,
     handleAppearanceRemove,

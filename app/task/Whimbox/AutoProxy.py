@@ -20,13 +20,13 @@
 
 执行链（对齐 BetterGI 线）：
 1. ``check()``：安装哨兵三件 + 上游进程占用 + 今日次数/剩余天数；
-2. 运行前：强制归档 ``configs/config.json`` → 若接管配置，把用户覆盖集按当前
+2. 运行前：强制归档 ``configs/config.json`` → 若接管配置，把账号覆盖集按当前
    模板键集过滤后原子合并写入 → spawn 嵌入式 Python 无头一条龙；
 3. 运行中：``IRunEventFeed`` 盯当日日志，实时把步骤/账号进展推调度台，
    判定交给 ``IRunResultParser``（管理员致命 / 收尾行 + 完成行结果块头 /
    中止 / 早退 / 停滞超时）；
 4. 结束（final_task / on_crash 全覆盖）：停监控、清进程、还原运行前归档、
-   写历史、落用户状态、推通知（结果块原文透传 + 未完成原因原文）。
+   写历史、落账号状态、推通知（结果块原文透传 + 未完成原因原文）。
 
 成败判定全部取自上游结果面（日志收尾行与结果块），不自造判定信号；
 多账号循环归上游 ``change_account``，MAS 不做账号定向。重试也只救「没有上游结论」
@@ -41,21 +41,22 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
-from app.core import Config
-from app.core.ws import Publisher, protocol
+import app.core.notify.formats.whimbox as _format_whimbox
+from app.config import ConfigCollection
+from app.core import Notify, Publisher
+from app.core.history import aggregate_data
+from app.core.ws import protocol
 from app.models.config import WhimboxConfig, WhimboxUserConfig
-from app.models.ConfigBase import MultipleConfig
-from app.models.schema import WSTaskNoticeData
+from app.models.notification import LocalNotice
+from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
-from app.services import Notify
 from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     push_dispatch_log,
     read_config_base,
 )
-from app.utils import get_logger
-from app.utils.constants import UTC4
+from app.utils import UTC4, get_logger
 
 from .contracts import (
     IProcessLauncher,
@@ -67,7 +68,7 @@ from .contracts import (
 from .tools.feed import LoguruFileFeed, build_log_path_resolver
 from .tools.launcher import EmbeddedPythonLauncher, find_upstream_pids
 from .tools.marker import WhimboxMarkerParser, is_benign_marker
-from .tools.notify import push_notification
+from .tools.update import RECOVERY_HINT, pending_marker
 from .tools.upstream import WheelAssetsConfigSurface, parse_override_map
 
 logger = get_logger("奇想盒 自动代理")
@@ -112,8 +113,8 @@ def _should_retry(
     return True
 
 
-class AutoProxyTask(ScriptAutoProxyBase):
-    """奇想盒自动代理任务（每用户一轮）。
+class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
+    """奇想盒自动代理任务（每账号一轮）。
 
     四边界经构造注入，默认实现就地兜底构造（L1 组合，零容器）；单测经构造
     参数注入假实现，不经过 manager。
@@ -123,7 +124,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self,
         script_info: ScriptItem,
         script_config: WhimboxConfig,
-        user_config: MultipleConfig[WhimboxUserConfig],
+        user_config: ConfigCollection[WhimboxUserConfig],
         *,
         config_surface: IUpstreamConfigSurface | None = None,
         launcher: IProcessLauncher | None = None,
@@ -146,16 +147,16 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.cur_user_config: WhimboxUserConfig = self.user_config[self.cur_user_uid]
         # base 来源三态（共享/独立/原生）：shared/independent=把面板值写入上游 config.json
         # （运行时物化）；原生来源=用上游原生配置、MAS 零写入——除非开启覆写层
-        # （快速配置，overlay：任务前物化面板覆盖集、结束还原，与家族「原生+开启」语义一致）
+        # （覆写常规配置，overlay：任务前物化面板覆盖集、结束还原，与家族「原生+开启」语义一致）
         self.config_base = read_config_base(self.cur_user_config)
         self.use_mas_config = self.config_base != CONFIG_BASE_NATIVE or bool(
-            self.cur_user_config.get("Info", "IfQuickConfig")
+            self.cur_user_config.Info.IfQuickConfig
         )
 
-        self.root_path = Path(str(self.script_config.get("Info", "RootPath") or ""))
+        self.root_path = Path(str(self.script_config.Info.RootPath or ""))
         self.config_surface = config_surface or WheelAssetsConfigSurface(self.root_path)
         self.launcher = launcher or EmbeddedPythonLauncher(
-            self.root_path, bool(self.script_config.get("Run", "UseAdmin"))
+            self.root_path, bool(self.script_config.Run.UseAdmin)
         )
         # 只有默认实现启用增量扩展；注入判定器保持原 evaluate 全文契约。
         self._incremental_parser: WhimboxMarkerParser | None = None
@@ -188,14 +189,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self._config_took_over = False
         # 实时进展已推送的行数（避免重复转述）
         self._dispatch_pushed_lines = 0
-        self._log_tail: str = ""
-        self._log_first_line: int = 1
         self._log_consumed_lines: int = 0
         self._use_incremental_log: bool = False
         # 进程静默退出看门狗（无日志行时事件流不会回调，靠轮询兜底）
         self._exit_watchdog_task: asyncio.Task | None = None
 
     async def check(self) -> str:
+        if pending_marker(self.root_path).exists():
+            return RECOVERY_HINT
         # 安装哨兵三件（分场景报错，覆盖首启未完成/弱网下载失败场景）
         install_error = self.config_surface.check_install()
         if install_error:
@@ -208,16 +209,22 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if running_pids:
             return "奇想盒正在运行，请先关闭奇想盒 app 再执行任务"
 
-        if self.script_config.get(
-            "Run", "ProxyTimesLimit"
-        ) != 0 and self.cur_user_config.get(
-            "Data", "ProxyTimes"
-        ) >= self.script_config.get("Run", "ProxyTimesLimit"):
-            self.cur_user_item.status = "跳过"
-            return "今日代理次数已达上限, 跳过该用户"
-        if self.cur_user_config.get("Info", "RemainedDay") == 0:
-            self.cur_user_item.status = "跳过"
-            return "用户剩余天数为 0, 跳过该用户"
+        # 启动检查早于每日重置，旧日期的次数不参与今日上限判断。
+        curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        proxy_times = (
+            self.cur_user_config.Data.ProxyTimes
+            if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") == curdate
+            else 0
+        )
+        if (
+            self.script_config.Run.ProxyTimesLimit != 0
+            and proxy_times >= self.script_config.Run.ProxyTimesLimit
+        ):
+            await self.cur_user_item.set_state(status="跳过")
+            return "今日代理次数已达上限, 跳过该账号"
+        if self.cur_user_config.Info.RemainedDay == 0:
+            await self.cur_user_item.set_state(status="跳过")
+            return "账号剩余天数为 0, 跳过该账号"
 
         return "Pass"
 
@@ -226,7 +233,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.user_start_time = datetime.now()
 
     def _takeover_config(self) -> None:
-        """快照 → 物化：接管配置时把用户覆盖集写入上游 config.json。
+        """快照 → 物化：接管配置时把账号覆盖集写入上游 config.json。
 
         归档无条件执行（运行前安全网）；物化与还原只在接管时——原生态未开
         覆写层时 MAS 零写入，上游运行期的自我迁移（合并默认键等）属其内部
@@ -238,14 +245,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self._config_took_over = self.use_mas_config
         if not self.use_mas_config:
             return
-        tasks = parse_override_map(self.cur_user_config.get("Task", "Tasks"))
-        options = parse_override_map(self.cur_user_config.get("Task", "Options"))
+        tasks = parse_override_map(self.cur_user_config.Task.Tasks)
+        options = parse_override_map(self.cur_user_config.Task.Options)
         self.config_surface.materialize_overrides(
             {str(k): bool(v) for k, v in tasks.items()},
             options,
-            run_all_accounts=bool(
-                self.cur_user_config.get("OneDragon", "IfRunAllAccounts")
-            ),
+            run_all_accounts=bool(self.cur_user_config.OneDragon.IfRunAllAccounts),
         )
 
     def _restore_config(self) -> None:
@@ -262,32 +267,32 @@ class AutoProxyTask(ScriptAutoProxyBase):
     async def main_task(self):
         await self.prepare()
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
-        if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
-            await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
-            await self.cur_user_config.set("Data", "ProxyTimes", 0)
+        if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") != self.curdate:
+            self.cur_user_config.Data.LastProxyDate = datetime.now(tz=UTC4)
+            await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = 0
+            await self.cur_user_config.commit()
 
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
 
         self._takeover_config()
-        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
+        # 任务前脚本每账号一次，先于全部重试；后置脚本由收尾阶段成对执行
         await self.run_user_scripts_before()
 
-        run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
+        run_limit = int(self.script_config.Run.RunTimesLimit)
         for i in range(run_limit):
             if self.run_book:
                 break
             logger.info(
-                f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
+                f"账号 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
             )
-            self.cur_user_item.status = "运行"
+            await self.cur_user_item.set_state(status="运行")
             self.last_verdict_status = None
-            log_start_time = datetime.now()
-            self.cur_user_item.log_record[log_start_time] = LogRecord()
+            log_start_time = datetime.now().astimezone()
+            await self.cur_user_item.add_log_record(log_start_time, LogRecord())
             self.cur_user_log = self.cur_user_item.log_record[log_start_time]
-            self.script_info.log = ""
+            await self.script_info.set_log("")
             self._dispatch_pushed_lines = 0
-            self._log_tail = ""
-            self._log_first_line = 1
             self._log_consumed_lines = 0
             self._use_incremental_log = False
             if self._incremental_parser is not None:
@@ -310,23 +315,27 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
-                self.script_info.log = (
+                await self.script_info.set_log(
                     "检测到奇想盒已完成一条龙序列\n正在等待奇想盒自行退出"
                 )
                 await asyncio.sleep(3)
                 break
 
             logger.warning(
-                f"用户 {self.cur_user_item.name} - 奇想盒代理异常: {self.cur_user_log.status}"
+                f"账号 {self.cur_user_item.name} - 奇想盒代理异常: {self.cur_user_log.status}"
             )
-            self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
+            await self.script_info.set_log(
+                f"{self.cur_user_log.status}\n正在中止相关程序"
+            )
             await self.launcher.terminate()
             try:
-                await Notify.push_plyer(
-                    "奇想盒自动代理出现异常！",
-                    f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
-                    f"{self.cur_user_item.name}的自动代理出现异常",
-                    3,
+                await Notify.send_notice(
+                    LocalNotice(
+                        title="奇想盒自动代理出现异常！",
+                        message=f"账号 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                        duration_seconds=3,
+                    )
                 )
             except Exception:
                 pass
@@ -339,18 +348,20 @@ class AutoProxyTask(ScriptAutoProxyBase):
             if not _should_retry(
                 self.last_verdict_status, same_reason_as_last=same_reason
             ):
-                self.script_info.log += (
+                await self.script_info.append_log(
                     f"\n{reason}\n不再自动重试（同一失败原因已连续出现）"
                     "\n请按提示处理后重新运行"
                 )
                 logger.warning(
-                    f"用户 {self.cur_user_item.name} - 判定 {self.last_verdict_status}"
+                    f"账号 {self.cur_user_item.name} - 判定 {self.last_verdict_status}"
                     f"（{reason}），跳过自动重试"
                 )
                 break
 
             if i + 1 < run_limit:
-                self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
+                await self.script_info.append_log(
+                    f"\n将在稍后重试 ({i + 1}/{run_limit})"
+                )
                 await asyncio.sleep(10)
 
     async def _exit_watchdog(self) -> None:
@@ -375,7 +386,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     return
                 if self._run_event_context_ready():
                     assert self.feed is not None
-                    time_limit = self.script_config.get("Run", "RunTimeLimit")
+                    time_limit = self.script_config.Run.RunTimeLimit
                     if self.is_log_stalled(self.feed.latest_time, minutes=time_limit):
                         await self._evaluate_and_release(refresh_pending=True)
 
@@ -402,13 +413,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if event.log_delta is None:
             # 旧 feed 在首个事件前已暴露整批历史，保留其预读和全文判定契约。
             log = self.feed.log_text
-            self.cur_user_log.content = log.splitlines(keepends=True)
-            self._log_first_line = log[:-4000].count("\n") + 1
-            self._log_tail = log[-4000:]
+            await self.cur_user_log.set_state(content=log.splitlines(keepends=True))
             if isinstance(self.feed, LoguruFileFeed):
                 self._log_consumed_lines = self.feed.revision
             if self._incremental_parser is not None:
-                # 快照与增量切换时，短尾缓存也须对应完整快照。
+                # 快照与增量切换时，marker 缓存也须对应完整快照。
                 self._incremental_parser.reset()
                 self._incremental_parser.feed(log)
         else:
@@ -418,8 +427,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if delta:
             # 先确认历史消费，再推实时进展；推送抛错不会重复历史和 marker。
             self._append_log_delta(delta, log_offset=event.log_offset)
-        self.script_info.log_first_line = self._log_first_line
-        self.script_info.log = self._log_tail
+
+        await self.script_info.set_log("".join(self.cur_user_log.content))
 
         # 实时进展：步骤进入/异常/账号切换行的消息段转述到调度台（只推一次）。
         # loguru 行 = 「时间 | 级别 | 模块 - 消息」，emoji 前缀在消息段而非行首；
@@ -456,7 +465,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         await self._evaluate_and_release()
 
     def _append_log_delta(self, delta: tuple[str, ...], *, log_offset: int) -> None:
-        """追加尚未消费的行，同时维护历史、展示尾部和 marker 缓存。"""
+        """追加尚未消费的完整日志行，同时维护历史和 marker 缓存。"""
 
         assert self.cur_user_log is not None
 
@@ -464,9 +473,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
         text = "".join(delta)
         if self._incremental_parser is not None:
             self._incremental_parser.feed(text)
-        tail = self._log_tail + text
-        self._log_first_line += tail[:-4000].count("\n")
-        self._log_tail = tail[-4000:]
 
         # readlines 可能返回尚未换行的末段；只合并该段，保留全文 splitlines 语义。
         content = self.cur_user_log.content
@@ -510,7 +516,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             delta = feed.get_log_delta(self._log_consumed_lines)
             if delta:
                 self._append_log_delta(delta, log_offset=self._log_consumed_lines)
-        time_limit = self.script_config.get("Run", "RunTimeLimit")
+        time_limit = self.script_config.Run.RunTimeLimit
         stalled = self.is_log_stalled(feed.latest_time, minutes=time_limit)
         if self._incremental_parser is not None and self._use_incremental_log:
             verdict = self._incremental_parser.evaluate_incremental(
@@ -529,17 +535,17 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
 
         if verdict.status == "running":
-            self.cur_user_log.status = "奇想盒正常运行中"
+            await self.cur_user_log.set_state(status="奇想盒正常运行中")
             return
 
         self.last_verdict_status = verdict.status
         if verdict.status == "success":
-            self.cur_user_log.status = "Success!"
-            self.cur_user_item.status = "完成"
+            await self.cur_user_log.set_state(status="Success!")
+            await self.cur_user_item.set_state(status="完成")
             self.result_block = verdict.result_block
         else:
-            self.cur_user_log.status = verdict.message
-            self.cur_user_item.status = "异常"
+            await self.cur_user_log.set_state(status=verdict.message)
+            await self.cur_user_item.set_state(status="异常")
 
         logger.info(f"奇想盒任务结果: {self.cur_user_log.status}, 释放日志等待")
         self.wait_event.set()
@@ -555,33 +561,79 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 await self.feed.stop()
 
     async def final_task(self):
+        self.history.begin_user_history_capture(
+            self.script_info,
+            self.cur_user_item,
+            failed=bool(self.cur_user_item.log_record)
+            and not self.run_book
+            and not self.stopped_manually,
+        )
+
         # 结束时先清理监控、看门狗与进程
         await self._stop_monitoring()
         await self.launcher.terminate()
 
         # 写入历史记录（对齐 General/BetterGI 行为）
-        statistic_paths: list[Path] = []
-        for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.astimezone(UTC4)
-            log_path = Config.build_history_log_path(
-                script_name=self.script_info.name,
-                user_name=self.cur_user_item.name,
-                log_time=dt,
+        await self._persist_user_run_result()
+        self._restore_config()
+
+        await self.run_user_scripts_after()
+
+        history_records = []
+        for t, log_item in self.cur_user_item.iter_history_logs():
+            if log_item.status == "奇想盒正常运行中" or (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "未开始监看日志"
+            ):
+                await log_item.set_state(status="任务被用户手动中止")
+
+            was_cancelled = (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "任务被用户手动中止"
+            )
+            if len(log_item.content) == 0:
+                await log_item.set_state(content=["未捕获到任何日志内容"])
+                if not was_cancelled:
+                    await log_item.set_state(status="未捕获到日志")
+
+            history_records.append(
+                HistoryWrite(
+                    time=t.astimezone(UTC4),
+                    username=self.cur_user_item.name,
+                    script_name=self.script_info.name,
+                    status=(
+                        "success"
+                        if log_item.status == "Success!"
+                        else "cancelled"
+                        if was_cancelled
+                        else "error"
+                    ),
+                    message=log_item.status,
+                    logs="".join(log_item.content),
+                )
             )
 
-            if log_item.status == "奇想盒正常运行中":
-                log_item.status = "任务被用户手动中止"
+        if history_records:
+            await self.history.save_user_history(
+                history_records,
+                script=self.script_info,
+                user=self.cur_user_item,
+                log_warning=logger.opt(exception=True).warning,
+            )
 
-            if len(log_item.content) == 0:
-                log_item.content = ["未捕获到任何日志内容"]
-                log_item.status = "未捕获到日志"
-
-            await Config.save_general_log(log_path, log_item.content, log_item.status)
-            statistic_paths.append(log_path.with_suffix(".json"))
-
-        if statistic_paths:
+        if history_records:
             try:
-                statistics = await Config.merge_statistic_info(statistic_paths)
+                statistics = {
+                    key: value.value
+                    for key, value in aggregate_data(
+                        [
+                            HistoryAggregationItem(time=record.time, data=record.data)
+                            for record in history_records
+                        ]
+                    ).data.items()
+                }
                 if self.result_block:
                     # 上游「任务结果如下」块原样透传（多账号天然按「账号N：」分组）
                     statistics["result_block"] = self.result_block
@@ -596,24 +648,21 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     "一条龙任务已完成" if self.run_book else self.cur_user_item.result
                 )
                 success_symbol = "√" if self.run_book else "X"
-                await push_notification(
-                    "统计信息",
-                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  "
-                    f"{self.cur_user_item.name} 的奇想盒自动代理统计报告",
-                    statistics,
-                    self.cur_user_config,
+                await Notify.push_statistics_report(
+                    payload=_format_whimbox.build_statistics_payload(
+                        title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的奇想盒自动代理统计报告",
+                        message=statistics,
+                    ),
+                    user_config=self.cur_user_config,
+                    task_info=self.task_info,
+                    compact_summary=True,
                 )
             except Exception as e:
                 # 失败不再静默：既记 ERROR 日志，也推到调度台实时日志
-                await push_dispatch_log(self.script_info, f"推送用户统计通知失败: {e}")
+                await push_dispatch_log(self.script_info, f"推送账号统计通知失败: {e}")
                 logger.opt(exception=True).error(
-                    f"推送奇想盒用户统计通知时出现异常: {e}"
+                    f"推送奇想盒账号统计通知时出现异常: {e}"
                 )
-
-        await self._persist_user_run_result()
-
-        # 还原运行前配置（异常路径同样覆盖，见 on_crash）
-        self._restore_config()
 
     async def _persist_user_run_result(self) -> None:
         if self.cur_user_config is None:
@@ -621,31 +670,31 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         if self.run_book:
             if (
-                self.cur_user_config.get("Data", "ProxyTimes") == 0
-                and self.cur_user_config.get("Info", "RemainedDay") != -1
+                self.cur_user_config.Data.ProxyTimes == 0
+                and self.cur_user_config.Info.RemainedDay != -1
             ):
-                await self.cur_user_config.set(
-                    "Info",
-                    "RemainedDay",
-                    self.cur_user_config.get("Info", "RemainedDay") - 1,
+                self.cur_user_config.Info.RemainedDay = (
+                    self.cur_user_config.Info.RemainedDay - 1
                 )
-            await self.cur_user_config.set(
-                "Data",
-                "ProxyTimes",
-                self.cur_user_config.get("Data", "ProxyTimes") + 1,
+                await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = (
+                self.cur_user_config.Data.ProxyTimes + 1
             )
-            await self.cur_user_config.set("Data", "LastProxyStatus", "成功")
-            self.cur_user_item.status = "完成"
-            logger.success(f"用户 {self.cur_user_uid} 的奇想盒自动代理任务已完成")
+            await self.cur_user_config.commit()
+            self.cur_user_config.Data.LastProxyStatus = "成功"
+            await self.cur_user_config.commit()
+            await self.cur_user_item.set_state(status="完成")
+            logger.success(f"账号 {self.cur_user_uid} 的奇想盒自动代理任务已完成")
         else:
-            await self.cur_user_config.set("Data", "LastProxyStatus", "失败")
+            self.cur_user_config.Data.LastProxyStatus = "失败"
+            await self.cur_user_config.commit()
             if self.cur_user_item.status != "完成":
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
 
     async def on_crash(self, e: Exception):
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         if self.cur_user_log is not None:
-            self.cur_user_log.status = f"奇想盒运行异常: {e}"
+            await self.cur_user_log.set_state(status=f"奇想盒运行异常: {e}")
         logger.opt(exception=True).warning(f"奇想盒自动代理任务出现异常: {e}")
         if self.wait_event is not None:
             self.wait_event.set()
@@ -677,11 +726,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 and self.cur_user_log.status
                 and self.cur_user_log.status != "Success!"
             ):
-                await Notify.push_plyer(
-                    "奇想盒运行异常",
-                    f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
-                    "异常",
-                    3,
+                await Notify.send_notice(
+                    LocalNotice(
+                        title="奇想盒运行异常",
+                        message=f"账号 {self.cur_user_item.name}：{self.cur_user_log.status}",
+                        ticker="异常",
+                        duration_seconds=3,
+                    )
                 )
         except Exception:
             pass

@@ -13,6 +13,11 @@ from typing import Any
 from app.task.MaaFW.tools.core.agent_env import (
     build_maafw_agent_command_plans,
 )
+from app.task.MaaFW.tools.core.interface.agent_entry import (
+    bundled_python_escape_path,
+    describe_pretask_exec_outside,
+    describe_pretask_python_fallback,
+)
 from app.task.MaaFW.tools.core.interface.loader import parse_json_text
 from app.task.MaaFW.tools.core.interface.models import (
     SUPPORTED_OPTION_TYPES,
@@ -46,6 +51,7 @@ from app.task.MaaFW.tools.core.interface.task_config import (
     normalize_global_options,
     normalize_snapshot,
     normalize_task_execution_payload,
+    unchecked_task_ids,
 )
 from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     path_without_host_venv,
@@ -70,12 +76,9 @@ from .pipeline_override import (
 
 # 本模块会被运行池隔离 venv 里的 worker 进程导入（``runner``
 # 的 ``__init__`` 连带 import 它），那个 venv 只装了 maafw 与项目依赖，没有
-# 宿主的第三方包。所以这里**不能** ``from app.utils import resource_path``：
-# ``app.utils`` 的包初始化会连锁拉起 ``app.utils.logger`` 里的 loguru，worker
-# 一启动就 ``ModuleNotFoundError``；就算补上依赖，那个模块还会在导入期往
-# ``Path.cwd()/debug`` 挂一份 app.log 的 sink，让 worker 变成第二个写同一份
-# 轮转日志的进程。数法与 ``app/utils/paths.py`` 的 SOURCE_ROOT 同源，只是从
-# 本文件自己的位置往上数六层。守卫见 tests/task/test_maafw_core.py。
+# 宿主的第三方包。所以这里不能导入宿主的 Config 或 utils，避免拉起配置、
+# 日志器等宿主状态。独立 worker 只读取随本模块源码分发的客户端版本元数据，
+# 不访问宿主配置和用户数据目录。守卫见 tests/task/test_maafw_core.py。
 _SOURCE_ROOT = Path(__file__).resolve().parents[6]
 
 logger = logging.getLogger("automas.maafw.runner.run_plan")
@@ -95,8 +98,20 @@ _WARNED_LANGUAGE_FILES: set[str] = set()
 # - v2.10.1：checkbox 的 min_count / max_count——界面限制勾选数，运行前不满足就报错。
 # - v2.10.2：welcome 字符串数组——能解析、投影带上每一条；「按数组顺序展示」是「应」级
 #   的界面行为，与 v2.8.0 那条一样不妨碍声明（单字符串的 welcome 也从未展示）。
-# 所以声明 v2.10.2（协议版本表截至 2026-09-08 的最新版本）。
-PI_INTERFACE_VERSION = "v2.10.2"
+# - v2.10.3：preset.pretask——账号页应用预设时按它设前置任务的勾选与选项值，未列出的
+#   不勾选；预设没声明时保持用户当前的前置任务不变（task_config._apply_preset_pretasks、
+#   前端 maafwPresetQueue.ts）。
+# - v2.10.4：preset.controller——加载器解析（interface.models.MaaFWPreset.controller，写错的
+#   名字告警、原样保留），经预览的 MaaFWPresetInfo.controller 给账号页；当前控制器不满足的
+#   预设置灰、不让应用（前端 maafwPresetQueue.isPresetAvailableForController），协议允许的
+#   「隐藏或禁用」取禁用。已选中的预设不因此改掉，运行期不拦截。
+# - v2.10.5：inputs[].input_type——file / directory 在账号页（含前置任务的选项）渲染成可编辑
+#   的路径框加系统选择对话框，选中后原样写入原生绝对路径，verify / pattern_msg 照常校验；
+#   没有原生对话框（浏览器预览）时退化为普通文本框（前端 MaaFWTaskOptionEditor.vue）。
+#   取值语义不变，运行计划不看它。
+# - v2.11.0：PI_USER_DATA_DIR——见 _build_pi_env，取项目根（agent / pretask 的工作目录）。
+# 所以声明 v2.11.0。
+PI_INTERFACE_VERSION = "v2.11.0"
 PI_CLIENT_LANGUAGE = "zh_cn"
 PI_CLIENT_NAME = "AUTO-MAS"
 PROJECT_RUNTIME_MANIFEST_NAME = ".auto_mas_maafw_project.json"
@@ -131,8 +146,15 @@ class MaaFWRunPlanError(ValueError):
     """Raised when a MaaFW project cannot be converted into a runnable plan."""
 
 
+class _PretaskOutsideProjectError(MaaFWRunPlanError):
+    """pretask 的 exec 解析到项目目录之外（``..`` 上跳过头、绝对路径）。"""
+
+
 #: 选中的任务一个都跑不了时的报错；宿主据此判断要不要补上「interface 内已无」的任务名。
 NO_RUNNABLE_TASKS_MESSAGE = "当前 controller/resource 下没有可执行任务"
+#: 新版队列明确保留了 false 实例、且所有非前置任务都被用户设为跳过时的报错。
+ALL_TASKS_SKIPPED_MESSAGE = "任务队列里的任务都设为了跳过，没有要运行的任务"
+QUEUE_SKIPPED_TASK_REASON = "队列里设为跳过"
 
 
 def _secret_input_pairs(raw: Any) -> list[tuple[str, str]]:
@@ -166,12 +188,17 @@ def build_maafw_run_plan(
     script_hotkeys: dict[str, dict[str, str]] | None = None,
     secret_inputs: Any = None,
     no_default_fallback_inputs: Any = None,
+    excluded_task_reasons: dict[str, str] | None = None,
 ) -> MaaFWRunPlan:
-    """``script_hotkeys``：脚本级键位 ``{option 名: {字段名: 组合键}}``（``Game.Hotkeys``）。
+    """``script_hotkeys``：托管级键位 ``{option 名: {字段名: 组合键}}``（``Game.Hotkeys``）。
+
+    ``excluded_task_reasons``：``{实例 id: 跳过原因}``，宿主判定这次不跑的实例（如今天不在运行日）。
+    与红灯一样在建覆盖之前排除、不校验它们的选项，按原因记进 ``skippedTasks``；勾选的普通任务
+    全被它排除时返回没有任务的计划（宿主按「计划为空」跳过），不报「没有可执行任务」。
 
     ``secret_inputs``：值是从密文解出来的 input 字段 ``[[option 名, 字段名], …]``，下发失败的
     提示按密码字段处理、不带原值；不给时取 ``task_snapshot`` 里宿主写的
-    ``SECRET_INPUTS_SNAPSHOT_KEY``（走 ``task_ids`` 的调用方要自己传）。
+    ``SECRET_INPUTS_SNAPSHOT_KEY``（给了 ``task_ids`` 时同样从这份快照取）。
 
     ``no_default_fallback_inputs``：字符串字段没填时不回落 default 的 input 字段
     ``[(option 名, 字段名), …]``，特调声明的例外（宿主按脚本的特调传；不传就没有例外）。
@@ -180,7 +207,7 @@ def build_maafw_run_plan(
     的值；叠加的是副本，``selected_task_options`` 不动。interface 未声明的 option / 字段
     静默忽略；映射不了的值告警后丢弃，回落到快照 / 默认值。
 
-    全局选项（``global_option`` 及其子选项）的值每个用户一份：走快照 / 预设时取其中的
+    全局选项（``global_option`` 及其子选项）的值每个账号一份：走快照 / 预设时取其中的
     ``globalOptions``，给了 ``task_ids`` 时取 ``global_options``（不给按默认值）。建覆盖时
     全局组按全局表、资源 / 控制器 / 任务组按任务自己的值（PI 顺序，任务的盖住全局的）。
     ``task_ids`` 路径上任务选项里出现的「只属于全局」的选项是特调写的，这一实例以它为准
@@ -188,6 +215,8 @@ def build_maafw_run_plan(
     """
 
     interface = _coerce_interface(interface_model)
+    if _all_explicit_common_tasks_skipped(task_snapshot):
+        raise MaaFWRunPlanError(ALL_TASKS_SKIPPED_MESSAGE)
     resolved_base_dir = Path(base_dir).resolve()
     controller = _select_controller(interface, controller_name)
     resource = _select_resource(interface, resource_name, controller)
@@ -213,6 +242,16 @@ def build_maafw_run_plan(
         task_id for task_id in selected_task_ids if not is_pretask_task_name(task_id)
     ]
     task_map = {task.name: task for task in interface.task}
+    excluded_ids = [
+        task_id
+        for task_id in selected_common_task_ids
+        if task_id in (excluded_task_reasons or {})
+    ]
+    selected_common_task_ids = [
+        task_id
+        for task_id in selected_common_task_ids
+        if task_id not in (excluded_task_reasons or {})
+    ]
     controller_names = {controller.name}
     if secret_inputs is None and isinstance(task_snapshot, dict):
         secret_inputs = task_snapshot.get(SECRET_INPUTS_SNAPSHOT_KEY)
@@ -224,6 +263,9 @@ def build_maafw_run_plan(
         no_default_fallback_inputs=_secret_input_pairs(no_default_fallback_inputs),
     )
     i18n_mapping = _load_i18n_mapping(resolved_base_dir, interface)
+    queue_skipped_tasks = _build_queue_skipped_tasks(
+        task_snapshot, interface, i18n_mapping
+    )
     option_defaults, _ = _build_option_defaults(interface.option)
     resource_bundle = _build_resource_bundle_plan(
         resolved_base_dir, resource, controller
@@ -244,17 +286,23 @@ def build_maafw_run_plan(
         )
 
     runnable_tasks: list[MaaFWTaskRunPlan] = []
-    skipped_tasks: list[MaaFWSkippedTaskPlan] = []
+    skipped_tasks: list[MaaFWSkippedTaskPlan] = _build_excluded_skipped_tasks(
+        excluded_ids,
+        excluded_task_reasons or {},
+        task_snapshot,
+        task_map,
+        i18n_mapping,
+    )
     input_warnings: list[str] = []
     hotkey_warnings: list[str] = []
-    # 脚本级键位只对 Win32 生效；按 option 名缓存校验后的字段，告警每个 option 只出一次。
+    # 托管级键位只对 Win32 生效；按 option 名缓存校验后的字段，告警每个 option 只出一次。
     apply_script_hotkeys = (
         isinstance(script_hotkeys, dict)
         and bool(script_hotkeys)
         and controller.type == "Win32"
     )
     script_hotkey_cache: dict[str, dict[str, str]] = {}
-    # 全局表叠上脚本级键位只做一次（全局组的取值与任务无关）
+    # 全局表叠上托管级键位只做一次（全局组的取值与任务无关）
     global_values = selected_global_options
     if apply_script_hotkeys and script_hotkeys:
         global_values = _overlay_script_hotkeys(
@@ -293,7 +341,7 @@ def build_maafw_run_plan(
             )
             continue
 
-        # 全局组按用户的全局表（特调给这个实例写了只属于全局的选项时，这一实例以它为准），
+        # 全局组按账号的全局表（特调给这个实例写了只属于全局的选项时，这一实例以它为准），
         # 资源 / 控制器 / 任务组按任务自己的值；同一选项两边都有时按 PI 顺序任务的盖住全局的
         task_global_options = {
             **global_values,
@@ -370,10 +418,27 @@ def build_maafw_run_plan(
             )
         )
 
-    if not runnable_tasks:
+    # 勾选的普通任务全被宿主排除（今天都不在运行日）：交回空计划，由宿主按「计划为空」跳过
+    if not runnable_tasks and not (excluded_ids and not selected_common_task_ids):
         raise MaaFWRunPlanError(NO_RUNNABLE_TASKS_MESSAGE)
 
-    builder_warnings = [*pipeline_builder.warnings, *input_warnings, *hotkey_warnings]
+    pretask_warnings: list[str] = []
+    pretask_plans = _build_pretask_plans(
+        resolved_base_dir,
+        interface,
+        controller,
+        resource,
+        selected_pretask_ids,
+        selected_task_options,
+        i18n_mapping,
+        warnings=pretask_warnings,
+    )
+    builder_warnings = [
+        *pipeline_builder.warnings,
+        *input_warnings,
+        *hotkey_warnings,
+        *pretask_warnings,
+    ]
     for warning in builder_warnings:
         logger.warning("MaaFW 运行计划：%s", warning)
     # 加载 interface 时的告警（preset 引用不存在的 case、缺 import 文件……）以前只进后端
@@ -397,22 +462,127 @@ def build_maafw_run_plan(
             interface.agent,
             managed_env_root=managed_env_root,
         ),
-        pretasks=_build_pretask_plans(
-            resolved_base_dir,
-            interface,
-            controller,
-            resource,
-            selected_pretask_ids,
-            selected_task_options,
-            i18n_mapping,
+        pretasks=pretask_plans,
+        piEnv=_build_pi_env(
+            interface, controller, resource, i18n_mapping, resolved_base_dir
         ),
-        piEnv=_build_pi_env(interface, controller, resource, i18n_mapping),
         tasks=runnable_tasks,
-        skippedTasks=skipped_tasks,
+        skippedTasks=[*queue_skipped_tasks, *skipped_tasks],
         globalOptions=copy.deepcopy(global_values),
         warnings=plan_warnings,
         i18n=i18n_mapping,
     )
+
+
+def _all_explicit_common_tasks_skipped(
+    task_snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
+) -> bool:
+    """新版队列里有非前置任务、但全被显式设为跳过。
+
+    只看原始顺序，不能把运行归一化补齐的 false 当作用户设的红灯。
+    """
+
+    raw = _normalize_raw_snapshot(task_snapshot)
+    if not raw["keepUnchecked"]:
+        return False
+    common_task_ids = [
+        task_id
+        for task_id in raw["taskOrder"]
+        if isinstance(task_id, str) and not is_pretask_task_name(task_id)
+    ]
+    return bool(common_task_ids) and all(
+        raw["taskChecked"].get(task_id) is False for task_id in common_task_ids
+    )
+
+
+def _build_queue_skipped_tasks(
+    task_snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
+    interface: MaaFWInterface,
+    i18n_mapping: dict[str, Any],
+) -> list[MaaFWSkippedTaskPlan]:
+    """把新版队列里显式保留的红灯实例记进计划的跳过项。
+
+    不读归一化补齐的实例；interface 已没有的任务仍由 missing_skips 处理。
+    """
+
+    raw = _normalize_raw_snapshot(task_snapshot)
+    if not raw["keepUnchecked"]:
+        return []
+
+    task_map = {task.name: task for task in interface.task}
+    valid_task_names = {
+        *task_map,
+        *(build_pretask_task_name(pretask) for pretask in iter_pretasks(interface)),
+    }
+    labels = raw["taskLabels"]
+    skipped: list[MaaFWSkippedTaskPlan] = []
+    seen_ids: set[str] = set()
+    for task_id in raw["taskOrder"]:
+        if not isinstance(task_id, str) or raw["taskChecked"].get(task_id) is not False:
+            continue
+        # 同一实例 id 重复出现只记一次（运行归一化同样按实例 id 去重）
+        if task_id in seen_ids:
+            continue
+        seen_ids.add(task_id)
+        task_name = resolve_task_instance_name(task_id, valid_task_names)
+        if task_name not in valid_task_names:
+            continue
+        label_override = labels.get(task_id)
+        label = label_override.strip() if isinstance(label_override, str) else ""
+        task = task_map.get(task_name)
+        if task is not None:
+            label = label or _resolve_i18n_label(task.label, task.name, i18n_mapping)
+            entry = task.entry
+        else:
+            pretask = find_pretask_by_task_name(interface, task_name)
+            if pretask is None:
+                continue
+            label = label or _resolve_i18n_label(
+                pretask.label,
+                pretask.name or pretask.exec,
+                i18n_mapping,
+            )
+            entry = None
+        skipped.append(
+            MaaFWSkippedTaskPlan(
+                name=task_name,
+                label=label,
+                entry=entry,
+                reason=QUEUE_SKIPPED_TASK_REASON,
+            )
+        )
+    return skipped
+
+
+def _build_excluded_skipped_tasks(
+    excluded_ids: list[str],
+    reasons: dict[str, str],
+    task_snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
+    task_map: dict[str, MaaFWTask],
+    i18n_mapping: dict[str, Any],
+) -> list[MaaFWSkippedTaskPlan]:
+    """宿主排除的实例（``excluded_task_reasons``）记成跳过项，按队列顺序，不碰它们的选项。
+
+    显示名用户给这一份改过就用它（同一任务的几份分得清），否则是任务的 label。
+    """
+
+    labels = _normalize_raw_snapshot(task_snapshot)["taskLabels"]
+    skipped: list[MaaFWSkippedTaskPlan] = []
+    for task_id in excluded_ids:
+        task_name = resolve_task_instance_name(task_id, task_map)
+        task = task_map.get(task_name)
+        if task is None:
+            continue
+        skipped.append(
+            MaaFWSkippedTaskPlan(
+                name=task.name,
+                label=labels.get(task_id)
+                or _resolve_i18n_label(task.label, task.name, i18n_mapping),
+                entry=task.entry,
+                reason=reasons[task_id],
+            )
+        )
+    return skipped
 
 
 def _describe_checkbox_count_error(
@@ -439,7 +609,7 @@ def _describe_checkbox_count_error(
         requirement = f"需要选择 {exc.min_count}~{exc.max_count} 项"
     return (
         f"任务「{task_label}」的选项「{option_label}」{requirement}，"
-        f"当前选了 {exc.selected} 项，请在用户配置的任务队列里调整后再运行"
+        f"当前选了 {exc.selected} 项，请在账号配置的任务队列里调整后再运行"
     )
 
 
@@ -484,7 +654,7 @@ def _describe_input_value_error(
         # default 是空串）：只跳过这一个选项，说清去哪填。
         return (
             f"任务「{task_label}」的选项「{option_label}」需要填一个{kind}，"
-            f"但没有填写、项目也没有给默认值，{skipped}；请在用户配置的任务队列里填写"
+            f"但没有填写、项目也没有给默认值，{skipped}；请在账号配置的任务队列里填写"
         )
     if getattr(exc, "secret", False):
         # password 字段：原值不进日志（PI v2.10.0），只说哪一项填得不对。
@@ -563,7 +733,7 @@ def _overlay_script_hotkeys(
     warnings: list[str],
     i18n_mapping: dict[str, Any],
 ) -> dict[str, Any]:
-    """把脚本级键位叠到实际生效的 hotkey 选项上，返回新的选项字典（不改入参）。
+    """把托管级键位叠到实际生效的 hotkey 选项上，返回新的选项字典（不改入参）。
 
     ``options`` 是一组取值（用户的全局表，或一个任务自己的值），``active_option_names``
     是按这组取值实际生效的选项（``active_global_option_names`` /
@@ -600,7 +770,7 @@ def _overlay_script_hotkeys(
                         warnings.append(warning)
                     continue
                 # 修饰键比项目 pipeline 用到的多：值照常下发，多出的修饰键不会按下，说一声。
-                # 脚本页录制时已按同一口径拦住，这里兜住导入或手改的值。
+                # 托管页录制时已按同一口径拦住，这里兜住导入或手改的值。
                 needed = hotkey_modifier_count(option, field_name)
                 if len(resolve_hotkey(value, "Win32").modifiers) > needed:
                     target = _hotkey_labels(
@@ -745,7 +915,7 @@ def resolve_run_selection(
     """运行时用哪个 controller / resource：``(交给建计划的 controller 名, 实际生效的 resource 名)``。
 
     这是「脚本资源留空时到底跑哪个资源」的唯一口径：运行前检查、特调装饰，以及特调在
-    保存与启动期整理用户配置时都按它判断，别再各自回落到 ``interface.resource[0]``。
+    保存与启动期整理账号配置时都按它判断，别再各自回落到 ``interface.resource[0]``。
 
     - controller：脚本上选的且 interface 里有 → 它；否则配了模拟器 → 第一个 Adb；否则原值
       （可能是 None，建计划时回落到第一个 Adb / Win32）。
@@ -795,12 +965,15 @@ def select_snapshot_tasks(
     selected_preset: str | None,
     task_snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
 ) -> tuple[list[str], dict[str, Any], dict[str, MaaFWTaskOptionValue]]:
-    """把用户快照（或预设）归一化成「勾选的任务实例 id 列表 + 各自选项 + 全局选项表」。
+    """把账号快照（或预设）归一化成「勾选的任务实例 id 列表 + 各自选项 + 全局选项表」。
 
     与 ``build_maafw_run_plan`` 走快照时的第一步完全相同；特调钩子在这一步之后、
     建计划之前装饰列表，再以 ``task_ids`` / ``task_options`` / ``global_options`` 建计划。
     """
 
+    # 特调会自动补任务；全红必须在装饰前停下，不能被补入的任务掩盖。
+    if _all_explicit_common_tasks_skipped(task_snapshot):
+        raise MaaFWRunPlanError(ALL_TASKS_SKIPPED_MESSAGE)
     snapshot = _resolve_snapshot(
         interface_model,
         selected_preset=selected_preset,
@@ -814,12 +987,29 @@ def select_snapshot_tasks(
     return selected_ids, dict(snapshot.taskOptions), dict(snapshot.globalOptions)
 
 
+def resolve_default_snapshot(
+    interface_model: MaaFWInterface,
+    *,
+    selected_preset: str | None,
+) -> MaaFWTaskPresetSnapshot:
+    """账号快照为空时运行会跑的队列：选了预设就是那个预设，否则项目第一个预设，没有预设
+    才按各任务的 default_check。
+
+    与建计划时快照为空走的是同一个函数（``_resolve_snapshot``）。宿主据此把新账号的空快照
+    写成实打实的队列，账号页上看到的就是要跑的。预设名找不到时抛 ``MaaFWRunPlanError``。
+    """
+
+    return _resolve_snapshot(
+        interface_model, selected_preset=selected_preset, task_snapshot=None
+    )
+
+
 def describe_stale_option_values(
     base_dir: str | Path,
     interface_model: MaaFWInterface | dict[str, Any],
     task_snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
 ) -> list[str]:
-    """用户快照里保存的 select / switch / checkbox 取值在当前 interface 里已没有对应 case 时，
+    """账号快照里保存的 select / switch / checkbox 取值在当前 interface 里已没有对应 case 时，
     给运行日志的提示（每条一句）。
 
     项目改了 case 名（开发者模式下改 interface 尤其常见）后，归一化会把这样的值静默换回默认
@@ -919,6 +1109,10 @@ def _select_tasks(
     """``(勾选的实例 id, 各实例自己的选项, 用户的全局表, 特调给各实例写的只属于全局的选项)``。"""
 
     if task_ids is not None:
+        # 特调自动补入的实例也必须尊重用户这轮显式设的红灯。
+        skipped_ids = set(unchecked_task_ids(task_snapshot))
+        if skipped_ids:
+            task_ids = [task_id for task_id in task_ids if task_id not in skipped_ids]
         selected_ids, selected_options = normalize_task_execution_payload(
             task_ids,
             task_options,
@@ -1028,7 +1222,11 @@ def _build_pretask_plans(
     selected_ids: list[str],
     task_options: MaaFWTaskOptionsByTask,
     i18n_mapping: dict[str, Any],
+    *,
+    warnings: list[str] | None = None,
 ) -> list[MaaFWPretaskRunPlan]:
+    """``warnings`` 收集降级处理的项（越界的 pretask 被跳过或改用项目自带 Python）。"""
+
     plans: list[MaaFWPretaskRunPlan] = []
     pretask_names = {
         build_pretask_task_name(pretask) for pretask in iter_pretasks(interface_model)
@@ -1048,6 +1246,31 @@ def _build_pretask_plans(
             pretask.name or pretask.exec,
             i18n_mapping,
         )
+        try:
+            executable = _resolve_pretask_executable(base_dir, pretask.exec)
+        except _PretaskOutsideProjectError as exc:
+            # 与投影同一口径（``projection.build_projection_rules`` 的 pretask exec）：指向项目
+            # 自带 Python 的越界写法映射回项目里，其余越界的程序不运行、跳过这一项，整个运行
+            # 照常（以前整份计划失败，投影又因同一条拒绝更新）。
+            mapped = bundled_python_escape_path(pretask.exec)
+            fallback = (base_dir / mapped).resolve() if mapped is not None else None
+            if (
+                fallback is None
+                or not _is_within_base_dir(fallback, base_dir)
+                or not fallback.is_file()
+            ):
+                if warnings is not None:
+                    warnings.append(
+                        f"运行前设置「{pretask_label}」（项目 {interface_model.name}）："
+                        f"{describe_pretask_exec_outside(pretask.exec)}（{exc}）"
+                    )
+                continue
+            executable = str(fallback)
+            if warnings is not None:
+                warnings.append(
+                    f"运行前设置「{pretask_label}」（项目 {interface_model.name}）："
+                    f"{describe_pretask_python_fallback(pretask.exec, str(fallback))}"
+                )
         try:
             serialized_options = _collect_pretask_option_values(
                 pretask,
@@ -1075,7 +1298,7 @@ def _build_pretask_plans(
             MaaFWPretaskRunPlan(
                 name=task_name,
                 label=pretask_label,
-                executable=_resolve_pretask_executable(base_dir, pretask.exec),
+                executable=executable,
                 # 并入自 mfwa：pretask 参数里的 {PROJECT_DIR} 也要展开，
                 # 否则声明 args: ["{PROJECT_DIR}/x.json"] 的项目会拿到字面量
                 args=[arg.replace("{PROJECT_DIR}", str(base_dir)) for arg in args],
@@ -1172,7 +1395,11 @@ def _is_bare_command(raw_exec: str) -> bool:
 
 
 def _resolve_pretask_executable(base_dir: Path, raw_exec: str) -> str:
-    resolved = _resolve_project_path(base_dir, raw_exec)
+    try:
+        resolved = _resolve_project_path(base_dir, raw_exec)
+    except MaaFWRunPlanError as exc:
+        # 只有越界这一种失败；单独的类型让调用方降级处理，报错文字不变。
+        raise _PretaskOutsideProjectError(str(exc)) from exc
     candidate = Path(resolved.resolved)
     # 并入自 mfwa：补 .exe 仅在 Windows 上进行，且越界判定用 resolve 后的路径，
     # 避免 symlink 绕过 _is_within_base_dir
@@ -1418,7 +1645,20 @@ def _build_pi_env(
     controller: MaaFWController,
     resource: MaaFWResource,
     i18n_mapping: dict[str, Any],
+    project_root: Path,
 ) -> dict[str, str]:
+    """注入给 agent 与 pretask 子进程的 ``PI_*`` 环境变量（runner 与宿主跑 pretask 共用这一份）。
+
+    ``PI_USER_DATA_DIR``（PI v2.11.0）取项目根 ``project_root``，即计划的 ``path``——内嵌运行
+    时就是视图 ``data/mfw/<托管 uuid 前 12 位>/``。协议的语义是「通用 UI 与子进程共同读写
+    config / debug 的目录，便携布局下就是工作目录」，在 MAS 里与它重合的只有这个目录：
+    agent 与 pretask 子进程的 cwd 都是它（``planner`` 的 ``cwd=base_dir``、``runner_task._run_pretasks``
+    的 ``cwd=self.run_plan.path``），runner 的 ``Toolkit.init_option`` 也以它为用户路径，
+    MaaFramework 的 ``config/maa_option.json`` 与 ``debug/maafw.log`` 都落在它下面；项目自己
+    读写的 ``config/``、``debug/`` 是视图私有文件，换版本时随视图带走。MAS 自己的工作目录
+    （后端 cwd）与 ``data/maafw_project_state`` 都不是子进程会去读写的地方，不取它们。
+    """
+
     controller_payload = _resolve_i18n_value(
         controller.model_dump(mode="json", exclude_none=True), i18n_mapping
     )
@@ -1432,6 +1672,7 @@ def _build_pi_env(
         "PI_CLIENT_LANGUAGE": PI_CLIENT_LANGUAGE,
         "PI_CLIENT_MAAFW_VERSION": _load_maafw_version(),
         "PI_VERSION": interface_model.version or "",
+        "PI_USER_DATA_DIR": str(Path(project_root).resolve()),
         "PI_CONTROLLER": json.dumps(
             controller_payload, ensure_ascii=False, separators=(",", ":")
         ),

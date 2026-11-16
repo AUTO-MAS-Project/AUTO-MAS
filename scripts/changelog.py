@@ -34,7 +34,7 @@
 
 - `res/version.json`   —— 整份生成（前端编译期注入、发布 CI 生成 Release 正文都读它）
 - `frontend/package.json`
-- `app/core/config.py`
+- `app/core/config/manager.py`
 - `pyproject.toml`     —— PEP 440 写法，如 5.5.0b3
 - `uv.lock`            —— 其中 auto-mas 包自身的版本，同样是 PEP 440 写法
 
@@ -83,7 +83,7 @@ DEVELOPMENT_BRANCH = "dev"
 CHANGELOG_PATH = REPO_ROOT / "CHANGELOG.md"
 VERSION_JSON_PATH = REPO_ROOT / "res" / "version.json"
 PACKAGE_JSON_PATH = REPO_ROOT / "frontend" / "package.json"
-APP_CONFIG_PATH = REPO_ROOT / "app" / "core" / "config.py"
+APP_CONFIG_PATH = REPO_ROOT / "app" / "core" / "config" / "manager.py"
 PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 UV_LOCK_PATH = REPO_ROOT / "uv.lock"
 FRAGMENT_DIR = REPO_ROOT / "changelog.d"
@@ -1130,7 +1130,7 @@ UV_LOCK_VERSION = re.compile(
 # (相对路径, 正则)：普通 PR 不许改动这四处的版本号取值
 VERSION_FIELDS = (
     ("frontend/package.json", PACKAGE_JSON_VERSION),
-    ("app/core/config.py", APP_CONFIG_VERSION),
+    ("app/core/config/manager.py", APP_CONFIG_VERSION),
     ("pyproject.toml", PYPROJECT_VERSION),
     ("uv.lock", UV_LOCK_VERSION),
 )
@@ -1162,7 +1162,7 @@ def build_expected() -> Dict[Path, str]:
             read_text(APP_CONFIG_PATH),
             APP_CONFIG_VERSION,
             current_version,
-            "app/core/config.py",
+            "app/core/config/manager.py",
         ),
         PYPROJECT_PATH: substitute_once(
             read_text(PYPROJECT_PATH),

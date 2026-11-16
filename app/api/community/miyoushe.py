@@ -1,0 +1,197 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+#   GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+"""
+米游社扫码登录 API 路由（可选补丁）
+
+可安全删除本文件，不会影响任何已有功能。
+删除后同时移除 main.py 中的 include_router 调用。
+
+流程（Passport App 优先，Passport Web 兼容回退；旧 GameToken ticket 仅兼容）:
+  1. /create  → 生成二维码 (ticket, qr_url, device)
+  2. /check   → 轮询状态 (Init/Scanned/Confirmed)，确认后返回完整 cookies_str
+  3. /save    → 将 cookies 保存到账号配置
+"""
+
+from fastapi import APIRouter, Body
+from pydantic import (
+    BaseModel,
+    Field,
+)
+
+from app.core import Config
+from app.models.schema import OutBase
+from app.tools.common.community.accounts import is_known_community_account
+from app.utils import format_exception_reason, get_logger
+
+router = APIRouter(prefix="/api/tools/sign/miyoushe/qr", tags=["扫码登录"])
+logger = get_logger("米游社扫码登录 API")
+
+
+def _log_qr_error(stage: str, error: Exception) -> None:
+    """记录脱敏诊断，二维码接口不向前端透传异常细节。"""
+
+    logger.warning(format_exception_reason(error, stage=stage, include_message=False))
+
+
+# ---- 请求/响应模型 ----
+
+
+class QrCreateOut(OutBase):
+    ticket: str = Field(default="", description="二维码 ticket")
+    qr_url: str = Field(default="")
+    device: str = Field(default="")
+
+
+class QrCheckIn(BaseModel):
+    ticket: str
+    device: str
+
+
+class QrCheckOut(OutBase):
+    status: str = Field(
+        default="", description="Init/Scanned/Confirmed/Expired/Canceled/Error"
+    )
+    cookies_str: str = Field(default="", description="确认后返回的完整 cookie 字符串")
+
+
+class QrSaveIn(BaseModel):
+    account_uid: str = Field(..., description="MAS 账号组 UUID")
+    cookie: str
+
+
+# ---- 端点 ----
+
+
+@router.post("/create", summary="创建二维码", response_model=QrCreateOut)
+async def qr_create() -> QrCreateOut:
+    try:
+        from app.tools.common.community.providers import (
+            miyoushe_qr as _tool_miyoushe_qr,
+        )
+
+        result = await _tool_miyoushe_qr.create_qr_login()
+    except Exception as e:
+        _log_qr_error("创建米游社二维码失败", e)
+        return QrCreateOut(
+            code=500,
+            status="error",
+            message="二维码创建失败，请稍后重试",
+        )
+    if not isinstance(result, dict):
+        return QrCreateOut(code=500, status="error", message="二维码服务返回格式无效")
+    error = result.get("error")
+    if error:
+        return QrCreateOut(
+            code=500,
+            status="error",
+            message="二维码创建失败，请稍后重试",
+        )
+    if not all(
+        isinstance(result.get(key), str) and result[key]
+        for key in ("ticket", "qr_url", "device")
+    ):
+        return QrCreateOut(code=500, status="error", message="二维码服务返回数据不完整")
+    return QrCreateOut(
+        ticket=result["ticket"], qr_url=result["qr_url"], device=result["device"]
+    )
+
+
+@router.post("/check", summary="轮询扫码状态", response_model=QrCheckOut)
+async def qr_check(body: QrCheckIn = Body(...)) -> QrCheckOut:
+    """轮询状态，确认后返回 Passport App 或 Web 链路的完整 cookies。"""
+    try:
+        from app.tools.common.community.providers import (
+            miyoushe_qr as _tool_miyoushe_qr,
+        )
+
+        result = await _tool_miyoushe_qr.check_qr_status(body.ticket, body.device)
+    except Exception as e:
+        _log_qr_error("查询米游社二维码状态失败", e)
+        return QrCheckOut(
+            code=500,
+            status="error",
+            message="二维码状态查询失败，请稍后重试",
+        )
+    if not isinstance(result, dict):
+        return QrCheckOut(code=500, status="error", message="二维码状态响应格式无效")
+    error = result.get("error")
+    if error:
+        error_status = result.get("status")
+        if not isinstance(error_status, str) or not error_status:
+            error_status = "error"
+        return QrCheckOut(
+            code=500,
+            status=error_status,
+            message=(
+                "二维码已失效，请重新获取"
+                if error_status == "expired"
+                else "二维码状态查询失败，请稍后重试"
+            ),
+        )
+    status = result.get("status")
+    if not isinstance(status, str):
+        status = ""
+    cookies_str = result.get("cookies_str")
+    if not isinstance(cookies_str, str):
+        cookies_str = ""
+    message = result.get("message")
+    if not isinstance(message, str):
+        message = ""
+    return QrCheckOut(
+        status=status,
+        cookies_str=cookies_str,
+        message=message,
+    )
+
+
+@router.post("/save", summary="保存 cookie 到账号配置", response_model=OutBase)
+async def qr_save(body: QrSaveIn = Body(...)) -> OutBase:
+    try:
+        from app.tools.common.community.providers import miyoushe as _tool_miyoushe
+
+        # 全量 Cookie 可能包含服务端兼容字段，保存路径不得重建或裁剪。
+        cookie = body.cookie
+        _tool_miyoushe.validate_miyoushe_cookie(cookie)
+        accounts = Config.ToolsConfig.GameSign_Accounts
+        if not is_known_community_account(accounts.keys(), body.account_uid):
+            return OutBase(
+                code=400,
+                status="error",
+                message="账号组不存在，请刷新页面后重试",
+            )
+        data = {"GameSignAccount": {"MiyousheToken": cookie}}
+        await Config.update_game_sign_account(body.account_uid, data)
+    except ValueError as e:
+        _log_qr_error("保存米游社 Token 校验失败", e)
+        return OutBase(
+            code=400,
+            status="error",
+            message="米游社 Token 格式无效，请检查后重试",
+        )
+    except Exception as e:
+        _log_qr_error("保存米游社 Token 失败", e)
+        return OutBase(
+            code=500,
+            status="error",
+            message="米游社 Token 保存失败，请稍后重试",
+        )
+    return OutBase(message="米游社 Token 已保存")

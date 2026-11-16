@@ -24,6 +24,17 @@ Before editing UI:
 5. Check both light and dark mode for readability when UI colors, borders, backgrounds, or status colors change.
 6. Keep the UI inside the existing Electron desktop business-product language.
 
+## Concept Preview Before Implementation
+
+Every frontend UI change requires a Playwright concept preview and explicit user approval before editing application UI source, regardless of the change's size.
+
+1. Build the proposed appearance in an isolated temporary prototype. Reuse the project's Ant Design Vue components, layout patterns, and theme tokens with representative data; keep prototype changes separate from application source and live user configuration.
+2. Render the prototype with Playwright and capture actual screenshots of the proposed UI at representative desktop sizes and affected states. Include light and dark previews when changing theme-dependent styling.
+3. Show the screenshots to the user and wait for explicit approval of that concept's visual result. A request to implement or open a PR, the agent's own visual review, or a successful screenshot command does not count as concept approval.
+4. Implement the approved concept, then use Playwright screenshots of the application to compare the result with it and run the verification below. If the visual direction changes, update the concept screenshots and obtain approval before implementing that direction.
+
+If Playwright cannot render or capture the concept, report the blocker and pause UI implementation. Reporting an unchecked visual result at delivery does not waive this gate. Concept screenshots establish design approval; they do not prove the implemented UI or its interactions work.
+
 ## Visual Direction
 
 1. Treat pages as desktop operational tools, not marketing pages.
@@ -71,6 +82,7 @@ When overriding Ant Design Vue internals:
 5. Reference only `--ant-*` names defined by `useTheme.updateCSSVariables()`. Every `--ant-*` definition must map to the matching `antTokens.<token>` value derived from the same Ant Design algorithm and seed used by `ConfigProvider`; never approximate Ant Design tokens with hand-written light/dark values. Use a literal name in each `setProperty` call so the variable stays greppable.
 6. Reserve `--app-*` for project-specific shared values that have no Ant Design token equivalent. Derive those values from the app theme in `useTheme.ts`, with explicit light/dark behavior where needed.
 7. When adding theme-aware styles, verify both themes with the app's own theme switch, not the OS setting.
+8. New or renamed page surfaces and tabs must also match the shared [appearance surface rules](../../../frontend/src/styles/appearanceSurfaces.css). Reuse the outer surface color/opacity, transparent nested content, and active-tab treatment; extend the existing selector groups only where the new classes are not covered. Using `--ant-color-bg-container` alone does not provide custom-background compatibility. Preserve the shared exclusions for modals, drawers, dropdowns, and other overlays, and leave input and selection states intact.
 
 ## CSS Variable Audit
 
@@ -179,7 +191,7 @@ For WebSocket, scheduler, download, backend startup, and other process flows, di
 
 Before declaring UI work complete:
 
-1. Check light mode and dark mode when visual styling changes.
+1. Check light mode and dark mode when visual styling changes. For page backgrounds, surfaces, or tabs, also check a custom background with partial surface opacity in both themes, compare with an existing user-facing page, and verify that clearing the custom background restores the normal surface.
 2. Confirm text does not overlap, clip important actions, or overflow containers at common desktop widths.
 3. Confirm loading, empty, error, disabled, success, and failure states affected by the task.
 4. Run the relevant project verification from `mas-frontend-standards`.
@@ -212,3 +224,4 @@ For UI tasks, report:
 3. State handling touched by the task.
 4. Light/dark mode checks or why they were not run.
 5. Verification commands and results.
+6. Concept screenshots, the user's approval, and implementation screenshots compared with the approved concept.

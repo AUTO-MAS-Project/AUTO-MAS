@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 import threading
@@ -181,6 +180,7 @@ class MaaFWRunnerService:
         script_hotkeys: dict[str, dict[str, str]] | None = None,
         secret_inputs: Any = None,
         no_default_fallback_inputs: Any = None,
+        excluded_task_reasons: dict[str, str] | None = None,
     ) -> MaaFWRunPlan:
         return build_maafw_run_plan(
             project_path,
@@ -196,6 +196,7 @@ class MaaFWRunnerService:
             script_hotkeys=script_hotkeys,
             secret_inputs=secret_inputs,
             no_default_fallback_inputs=no_default_fallback_inputs,
+            excluded_task_reasons=excluded_task_reasons,
         )
 
     def create_job_payload(
@@ -206,6 +207,7 @@ class MaaFWRunnerService:
         failure_screenshot_dir: str | Path | None = None,
         failure_screenshot_prefix: str = "",
         task_start_not_before: float | None = None,
+        task_start_gate_mode: str = "screen",
         run_deadline_at: float | None = None,
         task_time_limit_seconds: int = 0,
         task_time_limit_overrides: dict[str, int] | None = None,
@@ -234,6 +236,7 @@ class MaaFWRunnerService:
             ),
             failureScreenshotPrefix=failure_screenshot_prefix,
             taskStartNotBefore=task_start_not_before,
+            taskStartGateMode=task_start_gate_mode,
             runDeadlineAt=run_deadline_at,
             taskTimeLimitSeconds=task_time_limit_seconds,
             taskTimeLimitOverrides=task_time_limit_overrides,
@@ -443,23 +446,6 @@ class MaaFWRunnerService:
         finally:
             if environment is not None:
                 self.release_environment(environment, runtime_pool=runtime_pool)
-
-    def write_job_file(
-        self,
-        payload: MaaFWRunnerJobPayload,
-        work_dir: str | Path,
-        *,
-        job_name: str | None = None,
-    ) -> Path:
-        path = Path(work_dir).resolve()
-        path.mkdir(parents=True, exist_ok=True)
-        name = job_name or f"maafw-runner-job-{uuid.uuid4().hex}.json"
-        job_path = path / name
-        job_path.write_text(
-            json.dumps(payload.model_dump(mode="json"), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        return job_path
 
     @staticmethod
     def _coerce_interface(interface: MaaFWInterface | dict[str, Any]) -> MaaFWInterface:

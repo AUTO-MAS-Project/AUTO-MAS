@@ -30,9 +30,8 @@ from inspect import isawaitable
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from app.utils import ProcessManager, decode_bytes, get_logger
-from app.utils.io import atomic_write, migrate_legacy_dir
-from app.utils.platform import is_admin
+from app.utils import ProcessManager, decode_bytes, get_logger, is_admin
+from app.utils import io as _utils_io
 
 from .log_detect import (
     HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT,
@@ -77,10 +76,10 @@ SRA_REWARD_REDEEM_CODE_LEGACY_KEY = "rewards.6"
 
 
 def _managed_options(user_config: Any, module_key: str) -> dict[str, Any]:
-    """读取 ConfigBase JSONValidator 的 Managed.Options（字符串或对象）。"""
+    """读取 ConfigEntry JSONValidator 的 Managed.Options（字符串或对象）。"""
 
     try:
-        raw = user_config.get("Managed", "Options")
+        raw = user_config.Managed.Options
     except (AttributeError, KeyError, TypeError):
         raw = {}
     if isinstance(raw, str):
@@ -118,8 +117,8 @@ def discover_sra_managed_options(
 ) -> tuple[dict[str, Any], str]:
     """Discover native fields for one HSR module without applying overrides.
 
-    只返回 :data:`SRA_MANAGED_FIELDS` 里列出、且原生 profile 里确实存在的键，
-    顺序同字段表：表单露出什么，运行时就套用什么。
+    只返回 :data:`SRA_MANAGED_FIELDS` 里列出（或按规则自动跟进）、且原生 profile
+    里确实存在的键，顺序同字段表：表单露出什么，运行时就套用什么。
     """
 
     if module_key == "Daily":
@@ -138,14 +137,10 @@ def discover_sra_managed_options(
         if isinstance(rewards, list):
             for index, value in enumerate(rewards):
                 available.setdefault(f"rewards.{index}", value)
-    keys = select_sra_reward_keys(
-        frozenset(managed_field_keys("SRA", module_key)) & available.keys()
-    )
-    options = {
-        key: available[key]
-        for key in managed_field_keys("SRA", module_key)
-        if key in keys
-    }
+    # 字段表之外，新版 SRA 在本节新增的设置按 managed_fields 的规则自动跟进
+    field_keys = managed_field_keys("SRA", module_key, available)
+    keys = select_sra_reward_keys(frozenset(field_keys) & available.keys())
+    options = {key: available[key] for key in field_keys if key in keys}
     return options, section_name
 
 
@@ -232,7 +227,7 @@ def write_sra_temp_config(
     """写出 SRA 运行 JSON，避免 SRA CLI 按 ANSI 读取时编码炸裂。"""
 
     target_path = _sra_temp_path(script_uid, user_uid, module_key)
-    atomic_write(
+    _utils_io.atomic_write(
         target_path,
         json.dumps(config, ensure_ascii=True, indent=4).encode("utf-8"),
     )
@@ -291,7 +286,7 @@ def build_sra_start_game_config(
     config = _build_sra_base_config(name)
     config["startGame"]["enabled"] = True
     config["startGame"]["game.channel"] = SRA_GAME_CHANNEL_CLIENT
-    config["startGame"]["game.path"] = str(script_config.get("Game", "Path"))
+    config["startGame"]["game.path"] = str(script_config.Game.Path or "")
     config["startGame"]["game.useGlobalPath"] = False
 
     if mode == "remembered":
@@ -301,10 +296,10 @@ def build_sra_start_game_config(
 
     def _cipher(key: str) -> str:
         try:
-            item = user_config._config_item_index["Info"][key]
+            value = user_config.model_dump(context={"audience": "persist"})["Info"][key]
         except (AttributeError, KeyError):
             return ""
-        return str(item.getValue(if_decrypt=False) or "")
+        return str(value.removeprefix("DPAPI:") if isinstance(value, str) else "")
 
     username_cipher = _cipher("Id")
     password_cipher = _cipher("Password")
@@ -326,7 +321,7 @@ def build_sra_module_config(
 ) -> dict:
     """构造只启用一个目标模块的 SRA TasksConfig。
 
-    副本与托管覆盖读 ``plan``（该用户生效的任务计划，缺省即 ``user_config``），
+    副本与托管覆盖读 ``plan``（该账号生效的任务计划，缺省即 ``user_config``），
     货币战争的开拓者名称读 ``user_config``。
     """
 
@@ -436,7 +431,7 @@ def build_sra_module_config(
         config["cosmicStrife"]["currencyWars.enabled"] = True
         # SRA 靠开拓者名称认出自己的角色。必须在套用原生值之后写，否则多账号
         # 全用原生 profile 里同一个名字；用户在托管表单里显式填了的以它为准。
-        username = str(user_config.get("Info", "Name") or "").strip()
+        username = str(user_config.Info.Name or "").strip()
         if username and not _managed_options(plan, module.key).get(
             "currencyWars.username"
         ):
@@ -446,7 +441,7 @@ def build_sra_module_config(
 
 
 def get_sra_app_data_dir() -> Path:
-    """定位 SRA 与前端共用的用户配置目录。"""
+    """定位 SRA 与前端共用的账号配置目录。"""
 
     appdata = os.environ.get("APPDATA")
     if appdata:
@@ -455,7 +450,7 @@ def get_sra_app_data_dir() -> Path:
 
 
 def _script_sra_profile_setting(script_config: Any) -> str:
-    """读脚本 ``Info.SRAProfile``；兼容 ConfigBase 与测试里的普通字典。"""
+    """读脚本 ``Info.SRAProfile``；兼容 ConfigEntry 与测试里的普通字典。"""
 
     if script_config is None:
         return ""
@@ -464,7 +459,7 @@ def _script_sra_profile_setting(script_config: Any) -> str:
         value = section.get("SRAProfile") if isinstance(section, dict) else None
     else:
         try:
-            value = script_config.get("Info", "SRAProfile")
+            value = script_config.Info.SRAProfile
         except (AttributeError, KeyError, TypeError):
             value = None
     return str(value or "").strip()
@@ -592,7 +587,7 @@ def disable_sra_windows_notifications() -> Path:
         return settings_path
 
     notification[SRA_SETTINGS_SYSTEM_NOTIFY_KEY] = False
-    atomic_write(
+    _utils_io.atomic_write(
         settings_path,
         json.dumps(settings, ensure_ascii=True, indent=2).encode("utf-8"),
     )
@@ -883,7 +878,9 @@ def _sra_temp_path(script_uid: str, user_uid: str, module_key: str) -> Path:
 
     app_root = Config.config_path.parent
     sra_config_dir = app_root / "data" / "hsr" / "sra-config"
-    migrate_legacy_dir(app_root / "runtime" / "hsr" / "sra-config", sra_config_dir)
+    _utils_io.migrate_legacy_dir(
+        app_root / "runtime" / "hsr" / "sra-config", sra_config_dir
+    )
     return sra_config_dir / script_uid / user_uid / f"{module_key}.json"
 
 
@@ -979,7 +976,7 @@ def _build_sra_trailblaze_tasklist(
     user_config,
     eow_enabled: bool = False,
 ) -> list[dict]:
-    """按 HSR 用户配置构造 SRA trailblazePower.tasklist。"""
+    """按 HSR 账号配置构造 SRA trailblazePower.tasklist。"""
 
     tasklist: list[dict] = []
     main_item: dict | None = None
@@ -1039,8 +1036,8 @@ def build_sra_echo_of_war_config(
     单独跑一次手动副本，不依赖培养目标内容与 SRA 版本。
 
     Args:
-        script_config: HSR 脚本配置，用于沿用用户的原生体力选项。
-        user_config: HSR 用户配置，提供历战余响关卡。
+        script_config: HSR 托管配置，用于沿用用户的原生体力选项。
+        user_config: HSR 账号配置，提供历战余响关卡。
         name: 写入 SRA 临时配置的配置名。
 
     Returns:
@@ -1073,7 +1070,7 @@ def build_sra_echo_of_war_config(
 def _resolve_sra_currency_wars_strategy(script_config) -> str:
     """优先使用 SRA 本地货币战争攻略 json。"""
 
-    raw_path = str(script_config.get("Info", "SRAPath") or "").strip()
+    raw_path = str(script_config.Info.SRAPath or "").strip()
     if not raw_path:
         return SRA_CURRENCY_WARS_STRATEGY
     path = Path(raw_path)

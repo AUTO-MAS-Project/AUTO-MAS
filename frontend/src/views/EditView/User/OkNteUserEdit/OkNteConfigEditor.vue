@@ -1,33 +1,12 @@
 <template>
   <div class="oknte-config-editor">
-    <a-spin :spinning="loading" :tip="t('edit.loadingConfiguration')">
+    <a-spin :spinning="loading" :tip="t('core.edit.loadingConfiguration')">
       <a-row :gutter="24" class="editor-layout">
-        <!-- 左侧：配置文件列表 -->
-        <a-col :span="8" class="left-panel">
-          <div class="config-groups">
-            <div v-for="(group, groupName) in groupedConfigs" :key="groupName" class="config-group">
-              <div class="group-header">{{ groupName }}</div>
-              <div class="group-items">
-                <div
-                  v-for="config in group"
-                  :key="config.filename"
-                  class="config-item"
-                  :class="{
-                    'config-item--active': selectedFilename === config.filename,
-                  }"
-                  @click="selectConfig(config.filename)"
-                >
-                  <div class="config-item-info">
-                    <span class="config-item-name">{{ config.displayName }}</span>
-                    <span v-if="config.taskIndex" class="config-item-badge">
-                      -t {{ config.taskIndex }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </a-col>
+        <OkNteConfigNavigation
+          :groups="groupedConfigs"
+          :selected="selectedFilename"
+          @select="selectConfig"
+        />
 
         <!-- 右侧：配置表单 -->
         <a-col :span="16" class="right-panel">
@@ -50,9 +29,9 @@
                 <!-- object 类型：子任务配置组 -->
                 <template v-if="field.type === 'object'">
                   <div class="object-field">
-                    <a-empty
+                    <NoData
                       v-if="!field.children || field.children.length === 0"
-                      :description="t('edit.thisSubtaskHasNo')"
+                      :description="t('core.edit.thisSubtaskHasNo')"
                     />
                     <a-form-item
                       v-for="child in field.children || []"
@@ -92,7 +71,7 @@
                         :value="getNestedFieldValue(selectedConfigFilename, field.name, child)"
                         mode="multiple"
                         style="width: 100%"
-                        :placeholder="t('edit.pleaseChoose')"
+                        :placeholder="t('core.edit.pleaseChoose')"
                         @change="
                           (val: string[]) =>
                             setNestedFieldValue(selectedConfigFilename, field.name, child, val)
@@ -180,7 +159,7 @@
                         <a-button
                           size="small"
                           :disabled="index === 0"
-                          :aria-label="t('edit.moveDailySubtaskUp')"
+                          :aria-label="t('core.edit.moveDailySubtaskUp')"
                           @click="moveRoutineItem(selectedConfigFilename, field, index, -1)"
                         >
                           <template #icon>
@@ -192,7 +171,7 @@
                           :disabled="
                             index === getRoutineItemValues(selectedConfigFilename, field).length - 1
                           "
-                          :aria-label="t('edit.moveDailySubtaskDown')"
+                          :aria-label="t('core.edit.moveDailySubtaskDown')"
                           @click="moveRoutineItem(selectedConfigFilename, field, index, 1)"
                         >
                           <template #icon>
@@ -229,7 +208,7 @@
                   :value="getFieldValue(selectedConfigFilename, field.name, field.value)"
                   mode="multiple"
                   style="width: 100%"
-                  :placeholder="t('edit.pleaseChoose')"
+                  :placeholder="t('core.edit.pleaseChoose')"
                   @change="
                     (val: string[]) => setFieldValue(selectedConfigFilename, field.name, val)
                   "
@@ -300,13 +279,13 @@
               </a-form-item>
 
               <div v-if="selectedConfig.fields.length === 0" class="empty-fields">
-                <a-empty :description="t('edit.thisConfigurationFileHas')" />
+                <NoData :description="t('core.edit.thisConfigurationFileHas')" />
               </div>
             </a-form>
           </div>
 
           <div v-else class="no-selection">
-            <a-empty :description="t('edit.pickConfigurationFileLeft')" />
+            <NoData :description="t('core.edit.pickConfigurationFileLeft')" />
           </div>
         </a-col>
       </a-row>
@@ -320,7 +299,8 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons-vue'
-import { OknteService } from '@/api/services/OknteService'
+import OkNteConfigNavigation from './OkNteConfigNavigation.vue'
+import { OkNteSetupService as OknteService } from '@/composables/useAdapterSetupApi'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 
 const { t } = useI18n()
@@ -373,7 +353,7 @@ const emit = defineEmits<{
 }>()
 
 const logger = window.electronAPI.getLogger('OK-NTE配置编辑')
-const { configLocked } = useScriptConfigLock(() => props.scriptId)
+const { configLocked } = useScriptConfigLock(props)
 
 const loading = ref(false)
 const saving = ref(false)
@@ -604,7 +584,7 @@ const loadConfigs = async () => {
     }
   } catch (e) {
     logger.error(`加载配置失败: ${e instanceof Error ? e.message : String(e)}`)
-    message.error(t('edit.couldNotLoadOk'))
+    message.error(t('core.edit.couldNotLoadOk'))
   } finally {
     loading.value = false
   }
@@ -614,7 +594,7 @@ const loadConfigs = async () => {
 const persistChanges = async (silent: boolean): Promise<boolean> => {
   if (configLocked.value) {
     if (!hasChanges.value) return true
-    message.error(t('edit.configLocked'))
+    message.error(t('core.edit.configLocked'))
     return false
   }
   if (!hasChanges.value) return true
@@ -631,7 +611,7 @@ const persistChanges = async (silent: boolean): Promise<boolean> => {
       if (!(await loadConfigs())) return false
       emit('saved')
       if (!silent) {
-        message.success(t('edit.configurationSaved'))
+        message.success(t('core.edit.configurationSaved'))
       }
       return true
     } else {
@@ -639,7 +619,7 @@ const persistChanges = async (silent: boolean): Promise<boolean> => {
     }
   } catch (e) {
     logger.error(`保存配置失败: ${e instanceof Error ? e.message : String(e)}`)
-    message.error(t('edit.couldNotSaveConfiguration'))
+    message.error(t('core.edit.couldNotSaveConfiguration'))
   } finally {
     saving.value = false
     emit('savingChange', false)

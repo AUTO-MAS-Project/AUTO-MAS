@@ -1,0 +1,8 @@
+{
+  "interface_version": 1,
+  "id": "serverchan",
+  "entrypoint": "app.core.notify.channels.serverchan:register",
+  "requires": [
+    "httpx"
+  ]
+}

@@ -1,18 +1,19 @@
 <template>
   <div>
-    <div class="sanity-task-toggle" :class="{ 'sanity-task-enabled': showSanityDetail }">
-      <span>{{ t('edit.maaEndEnableSanity') }}</span>
-      <a-switch
-        v-model:checked="formData.Task.IfSanity"
-        :disabled="controlsDisabled"
-        :aria-label="t('edit.maaEndEnableSanity')"
-        @change="emitSave('Task.IfSanity', formData.Task.IfSanity)"
-      />
-    </div>
-
-    <a-row v-if="showSanityDetail" :gutter="24">
+    <SanityStrategySection
+      :enabled="formData.Task.IfSanity"
+      :show-detail="showSanityDetail"
+      :strategy="formData.Info.SanityStrategy"
+      :disabled="controlsDisabled"
+      :config-loading="configLoading"
+      :show-config-mask="showConfigMask"
+      @enable="value => emitSave('Task.IfSanity', value)"
+      @save="value => emitSave('Info.SanityStrategy', value)"
+      @configure="emit('configure')"
+    />
+    <a-row v-if="showSanityDetail && isMasStrategy" :gutter="24">
       <a-col :xs="24" :sm="12">
-        <a-form-item :label="t('edit.sanityTaskConfigurationMode')">
+        <a-form-item :label="t('core.edit.sanityTaskConfigurationMode')">
           <a-select
             v-model:value="formData.Info.SanityMode"
             :options="resolvedSanityModeOptions"
@@ -26,16 +27,15 @@
       <a-col :xs="24" :sm="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.pickSanityTaskType')">
-              <span class="form-label">
-                {{ t('edit.sanityTask') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('core.edit.sanityTask')"
+              :hint="t('core.edit.pickSanityTaskType')"
+              variant="form"
+            />
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displaySanityTaskType }}</span>
-            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
+            <span class="plan-source">{{ t('core.edit.fromPlan') }}</span>
           </div>
           <a-select
             v-else
@@ -49,10 +49,10 @@
       </a-col>
 
       <a-col v-if="effectiveSanityTaskType === 'Essence'" :xs="24" :sm="12">
-        <a-form-item :label="t('edit.maaEndEssenceFarmMode')">
+        <a-form-item :label="t('core.edit.maaEndEssenceFarmMode')">
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displayEssenceMenu }}</span>
-            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
+            <span class="plan-source">{{ t('core.edit.fromPlan') }}</span>
           </div>
           <a-select
             v-else
@@ -68,16 +68,11 @@
       <a-col :xs="24" :sm="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="taskOptionTooltip">
-              <span class="form-label">
-                {{ taskOptionLabel }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint :text="taskOptionLabel" :hint="taskOptionTooltip" variant="form" />
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displayCurrentTask }}</span>
-            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
+            <span class="plan-source">{{ t('core.edit.fromPlan') }}</span>
           </div>
           <a-select
             v-else
@@ -94,16 +89,15 @@
       <a-col v-if="showRewardGroupSelect" :xs="24" :sm="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.rewardGroupsProtocolSpace')">
-              <span class="form-label">
-                {{ t('edit.rewardGroup') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('core.edit.rewardGroup')"
+              :hint="t('core.edit.rewardGroupsProtocolSpace')"
+              variant="form"
+            />
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displayRewardsSet }}</span>
-            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
+            <span class="plan-source">{{ t('core.edit.fromPlan') }}</span>
           </div>
           <a-select
             v-else
@@ -120,9 +114,10 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, watch } from 'vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import SanityStrategySection from './SanityStrategySection.vue'
 import type { ComboBoxItem } from '@/api'
 import {
   PROTOCOL_SPACE_TASK_FIELD_MAP,
@@ -134,6 +129,7 @@ import {
   SANITY_TASK_TYPE_OPTIONS,
   SANITY_TASK_TYPE_LABEL_MAP,
   getSanityTaskDisplayValue,
+  getEssenceTargetWeaponOptions,
   isProtocolSpaceRewardEnabled,
   normalizeMaaEndSanityConfig,
   AUTO_ESSENCE_MENU_OPTIONS,
@@ -156,12 +152,15 @@ const props = withDefaults(
     formData: any
     loading?: boolean
     ifQuickConfig?: boolean
+    crisisDrillsOptions: ComboBoxItem[]
     essenceLocationOptions: ComboBoxItem[]
     essenceMenuOptions?: ComboBoxItem[]
     essenceTargetWeaponGroups?: MaaEndEssenceTargetGroup[]
     optionsLoading?: boolean
     optionsLoaded?: boolean
     isPlanMode?: boolean
+    configLoading?: boolean
+    showConfigMask?: boolean
     // 默认值不写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
     // 引用不到 useI18n() 的 t。兜底见下方 resolvedSanityModeOptions。
     // oxlint-disable-next-line vue/require-default-prop
@@ -174,6 +173,8 @@ const props = withDefaults(
     optionsLoading: false,
     optionsLoaded: false,
     isPlanMode: false,
+    configLoading: false,
+    showConfigMask: false,
     essenceMenuOptions: () => [],
     essenceTargetWeaponGroups: () => [],
     planModeConfig: null,
@@ -183,20 +184,24 @@ const props = withDefaults(
 // 默认值不能写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
 // 引用不到 useI18n() 返回的 t，编译期直接报错。改成在这里兜底。
 const resolvedSanityModeOptions = computed(
-  () => props.sanityModeOptions ?? [{ label: t('edit.fixed'), value: 'Fixed' }]
+  () => props.sanityModeOptions ?? [{ label: t('core.edit.fixed'), value: 'Fixed' }]
 )
 
 const emit = defineEmits<{
   save: [key: string, value: any]
   saveBatch: [changes: FieldChange[]]
+  configure: []
 }>()
 
 const formData = props.formData
+const isMasStrategy = computed(() => (formData.Info.SanityStrategy ?? 'MAS') === 'MAS')
 const controlsDisabled = computed(() => {
   return props.loading || !props.ifQuickConfig
 })
 
-const optionControlsDisabled = computed(() => controlsDisabled.value || props.optionsLoading)
+const optionControlsDisabled = computed(
+  () => controlsDisabled.value || props.optionsLoading || !isMasStrategy.value
+)
 const displayPlanConfig = computed(() =>
   props.planModeConfig ? normalizeMaaEndSanityConfig(props.planModeConfig) : null
 )
@@ -207,7 +212,11 @@ const displaySanityTaskType = computed(() =>
 )
 const displayCurrentTask = computed(() =>
   displayPlanConfig.value
-    ? getSanityTaskDisplayValue(displayPlanConfig.value, props.essenceLocationOptions)
+    ? getSanityTaskDisplayValue(
+        displayPlanConfig.value,
+        props.essenceLocationOptions,
+        props.crisisDrillsOptions
+      )
     : '未读取到计划表配置'
 )
 const displayEssenceMenu = computed(() => {
@@ -246,24 +255,12 @@ const resolvedEssenceMenuOptions = computed(() => {
   }))
 })
 
-const essenceTargetWeaponOptions = computed<ComboBoxItem[]>(() => {
-  const options = props.essenceTargetWeaponGroups.flatMap(group =>
-    group.options.map(option => ({
-      label: `${group.label} · ${option.label}`,
-      value: option.value,
-    }))
+const essenceTargetWeaponOptions = computed(() =>
+  getEssenceTargetWeaponOptions(
+    props.essenceTargetWeaponGroups,
+    formData.Task.AutoEssenceTargetWeapons ?? []
   )
-  const values = new Set(options.map(option => option.value))
-  const selected = Array.isArray(formData.Task.AutoEssenceTargetWeapons)
-    ? formData.Task.AutoEssenceTargetWeapons
-    : []
-  for (const value of selected) {
-    if (typeof value === 'string' && value && !values.has(value)) {
-      options.unshift({ label: value, value })
-    }
-  }
-  return options
-})
+)
 
 const effectiveEssenceMenu = computed<AutoEssenceMenu>(() => {
   const value = displayPlanConfig.value?.AutoEssenceMenu ?? formData.Task.AutoEssenceMenu
@@ -296,13 +293,15 @@ const currentTaskSaveKey = computed(() =>
     : `Task.${currentField.value}`
 )
 
-const currentTaskOptions = computed(() => {
+const currentTaskOptions = computed<readonly (ComboBoxItem & { rewards?: boolean })[]>(() => {
   if (normalizedSanityTaskType.value === 'Essence') {
     return isTargetEssenceMode.value
       ? essenceTargetWeaponOptions.value
       : props.essenceLocationOptions
   }
-  return PROTOCOL_SPACE_TASK_OPTIONS_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ?? []
+  return normalizedSanityTaskType.value === 'CrisisDrills'
+    ? props.crisisDrillsOptions
+    : PROTOCOL_SPACE_TASK_OPTIONS_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab]
 })
 
 const currentTaskValue = computed({
@@ -327,17 +326,10 @@ const currentTaskValue = computed({
   },
 })
 
-const currentTaskOption = computed(() =>
-  currentTaskOptions.value.find(option => option.value === currentTaskValue.value)
-)
-
 const rewardGroupEnabled = computed(() => {
   if (normalizedSanityTaskType.value === 'Essence') return false
-  return Boolean(
-    currentTaskOption.value &&
-    'rewards' in currentTaskOption.value &&
-    currentTaskOption.value.rewards
-  )
+  const option = currentTaskOptions.value.find(option => option.value === currentTaskValue.value)
+  return Boolean(option && 'rewards' in option && option.rewards)
 })
 
 const taskOptionLabel = computed(() =>
@@ -406,6 +398,7 @@ const ensureCurrentTaskValue = (): FieldChange | null => {
     return { key: currentTaskSaveKey.value, value: normalized }
   }
   if (options.some(option => option.value === currentTaskValue.value)) return null
+  if (normalizedSanityTaskType.value === 'CrisisDrills' && currentTaskValue.value) return null
 
   currentTaskValue.value = options[0].value
   return { key: currentTaskSaveKey.value, value: currentTaskValue.value }
@@ -453,7 +446,9 @@ watch(
   [
     () => props.loading,
     () => props.optionsLoading,
+    () => formData.Info.SanityStrategy,
     () => formData.Task.SanityTaskType,
+    () => props.crisisDrillsOptions,
     () => props.essenceLocationOptions,
     () => props.essenceMenuOptions,
     () => props.essenceTargetWeaponGroups,
@@ -483,17 +478,6 @@ watch(
 </script>
 
 <style scoped>
-.sanity-task-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 44px;
-}
-
-.sanity-task-enabled {
-  margin-bottom: 24px;
-}
-
 .plan-mode-display {
   min-height: 40px;
   padding: 8px 12px;
@@ -510,25 +494,5 @@ watch(
   flex-shrink: 0;
   color: var(--ant-color-primary);
   font-size: 12px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 500;
-  color: var(--ant-color-text);
-  font-size: 14px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-  cursor: help;
-  transition: color 0.3s ease;
-}
-
-.help-icon:hover {
-  color: var(--ant-color-primary);
 }
 </style>

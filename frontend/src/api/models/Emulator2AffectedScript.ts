@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type Emulator2AffectedScript = {
     /**
-     * 脚本ID
+     * 托管ID
      */
     scriptId: string;
     /**
-     * 脚本名称
+     * 托管名称
      */
     name: string;
     /**

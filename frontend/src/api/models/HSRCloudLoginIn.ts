@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type HSRCloudLoginIn = {
     /**
-     * HSR 脚本配置 ID
+     * HSR 托管配置 ID
      */
     scriptId: string;
     /**
-     * 要登录云·星穹铁道的用户 ID
+     * 要登录云·星穹铁道的账号 ID
      */
     userId: string;
 };

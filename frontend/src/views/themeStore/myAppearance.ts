@@ -85,6 +85,7 @@ export function isCoverReady(
 /** 「在商店查看」时先用自己的条目垫一份详情，打开后会被分享站的公开详情替换。 */
 export function toStoreItem(item: MyAppearanceItem, ownerUsername: string): OnlineAppearanceItem {
   return {
+    ...(item.categoryKey ? { categoryKey: item.categoryKey } : {}),
     fileKey: item.fileKey,
     displayName: item.displayName,
     description: item.description,

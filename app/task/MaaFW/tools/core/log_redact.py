@@ -1,7 +1,7 @@
 """MFW 日志脱敏：用户主目录换成 ``<HOME>``。
 
 app.log 会随日志包、问题包、Runtime 抓下的后端输出被发出去，``C:\\Users\\<Windows 用户名>``
-不该原样留在里面。全局的 ``app.utils.security.sanitize_log_message`` 只管参数名式的令牌与
+不该原样留在里面。全局的 ``app.utils.common.security.sanitize_log_message`` 只管参数名式的令牌与
 推送地址，不管用户目录；前端导出时（``issueReportCore.ts`` 的 ``sanitizeText``）才把
 ``os.homedir()`` 换成 ``<HOME>``，这里与它同一个记号。
 

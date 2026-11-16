@@ -4,13 +4,14 @@
     :script-name="scriptName"
     :is-edit="isEdit"
     @restore="openRestoreModal"
-    @back="handleCancel"
+    @cancel="handleCancel"
   />
 
   <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
     <a-card class="config-card">
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <BasicInfoSection
+          :heading="{ isEdit }"
           :form-data="formData"
           :loading="loading"
           @save="handleFieldSave"
@@ -47,42 +48,30 @@
     :script-name="WHIMBOX_DISPLAY_NAME"
     :targets="restoreTargets"
     :api="restoreApi"
-    :user-desc="t('edit.whimboxConfigRestoreUserDesc')"
-    :script-desc="t('edit.whimboxConfigRestoreScriptDesc')"
+    :user-desc="t('core.edit.whimboxConfigRestoreUserDesc')"
+    :script-desc="t('core.edit.whimboxConfigRestoreScriptDesc')"
     :on-restored="handleRestored"
   >
     <!-- 两池同构：预览载荷为分区行（文件清单由基座在预览区最下方统一渲染） -->
     <template #preview="{ raw }">
-      <a-empty
-        v-if="!previewSections(raw).length"
-        :description="t('edit.configRestorePreviewEmpty')"
-      />
-      <template v-else>
-        <template v-for="section in previewSections(raw)" :key="section.name">
-          <h4 class="whimbox-preview-section">{{ section.label }}</h4>
-          <a-descriptions :column="1" size="small" bordered class="whimbox-preview-box">
-            <a-descriptions-item v-for="row in section.rows" :key="row.key" :label="row.key">
-              {{ row.value }}
-            </a-descriptions-item>
-          </a-descriptions>
-        </template>
-      </template>
+      <BasicInfoRestorePreview :raw="raw" />
     </template>
   </ConfigRestoreSection>
 </template>
 
 <script setup lang="ts">
+import BasicInfoRestorePreview from '@/views/WhimboxUserEdit/BasicInfoRestorePreview.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
+import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useWhimboxTaskCatalog } from '@/composables/useWhimboxTaskCatalog'
-import { Service } from '@/api'
 import type { WhimboxOptionCatalogItem, WhimboxTaskCatalogItem } from '@/api'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
@@ -92,6 +81,7 @@ import TaskConfigSection from '@/views/WhimboxUserEdit/TaskConfigSection.vue'
 import WhimboxUserEditHeader from '@/views/WhimboxUserEdit/WhimboxUserEditHeader.vue'
 import { WHIMBOX_CONFIG_MODES } from '@/views/WhimboxUserEdit/modes'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
 
@@ -99,8 +89,8 @@ const logger = window.electronAPI.getLogger('奇想盒用户编辑')
 
 const router = useRouter()
 const route = useRoute()
-const { addUser, updateUser, getUsers } = useUserApi()
-const { getScript } = useScriptApi()
+const { addUser, updateUser, getUsers, error: userApiError } = useUserApi()
+const { getScript, error: scriptApiError } = useScriptApi()
 const {
   loading: catalogLoading,
   error: catalogError,
@@ -120,7 +110,7 @@ const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
 // 任务运行期锁定配置编辑（保存门禁在 useUserApi 内，这里只做界面提示与禁用）
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId }))
 
 // 脚本信息
 const scriptName = ref('')
@@ -159,7 +149,7 @@ const getDefaultWhimboxUserData = () => ({
     Options: '{ }',
   },
   Data: {
-    LastProxyDate: '2000-01-01',
+    LastProxyDate: '2000-01-01T00:00:00+04:00',
     ProxyTimes: 0,
     LastProxyStatus: '未知',
   },
@@ -185,8 +175,8 @@ const formData = reactive({
 const rules = computed(() => {
   const baseRules: Record<string, Rule[]> = {
     userName: [
-      { required: true, message: t('edit.enterUsername'), trigger: 'blur' },
-      { min: 1, max: 50, message: t('edit.usernameMustBe1'), trigger: 'blur' },
+      { required: true, message: t('core.edit.enterUsername'), trigger: 'blur' },
+      { min: 1, max: 50, message: t('core.edit.usernameMustBe1'), trigger: 'blur' },
     ],
   }
   return baseRules
@@ -271,16 +261,7 @@ const handleTaskConfigSave = async (key: string, value: unknown) => {
 const handleFieldSave = async (key: string, value: any) => {
   if (isInitializing.value || !userId) return
 
-  // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
-  const parts = key.split('.')
-  let userData: Record<string, any> = {}
-  let current = userData
-
-  for (let i = 0; i < parts.length - 1; i++) {
-    current[parts[i]] = {}
-    current = current[parts[i]]
-  }
-  current[parts[parts.length - 1]] = value
+  let userData = buildFieldPatch(key, value)
 
   // 特殊处理：userName 需要同步到 Info.Name
   if (key === 'userName') {
@@ -289,7 +270,7 @@ const handleFieldSave = async (key: string, value: any) => {
 
   await enqueue(async () => {
     try {
-      await updateUser(scriptId, userId, userData)
+      if (!(await updateUser(scriptId, userId, userData))) return
       logger.info(`用户配置已保存: ${key}`)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -307,48 +288,14 @@ const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
   { key: 'native', kind: 'script' },
 ]
 
-const restoreApi = {
-  list: async (target: string) =>
-    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
-  preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
-  restore: async (target: string, time: string) =>
-    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-      scriptId,
-      userId,
-      time,
-      target,
-    }),
-  readFile: async (target: string, time: string, path: string) =>
-    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
-}
+const { restoreApi, ensure: ensureConfigBackup } = useConfigBackupApi({
+  scriptId,
+  userId: () => userId,
+  logger,
+})
 
 const openRestoreModal = () => {
   restoreOpen.value = true
-}
-
-// 预览响应原文收敛为分区视图（两池同构：sections[].rows[]；文件清单由基座渲染）
-interface WhimboxPreviewSection {
-  name: string
-  label: string
-  rows: Array<{ key: string; value: string }>
-}
-const previewSections = (raw: unknown): WhimboxPreviewSection[] => {
-  if (!raw || typeof raw !== 'object') return []
-  const sections = (raw as { sections?: unknown }).sections
-  if (!Array.isArray(sections)) return []
-  return sections
-    .filter((s): s is Record<string, unknown> => Boolean(s && typeof s === 'object'))
-    .map(s => ({
-      name: String(s.name ?? ''),
-      label: String(s.label ?? ''),
-      rows: Array.isArray(s.rows)
-        ? s.rows
-            .filter((r): r is Record<string, unknown> => Boolean(r && typeof r === 'object'))
-            .map(r => ({ key: String(r.key ?? ''), value: String(r.value ?? '') }))
-        : [],
-    }))
-    .filter(s => s.rows.length > 0)
 }
 
 const handleRestored = async (target: string) => {
@@ -370,20 +317,16 @@ const handleRestored = async (target: string) => {
 const ensureBackup = async (target: 'mas' | 'native') => {
   if (!userId) return
   try {
-    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
-      scriptId,
-      userId,
-      target,
-    })
+    const resp = await ensureConfigBackup(target)
     if (resp.code !== 200) {
-      const detail = resp.message || t('edit.configRestoreEnsureFailed')
+      const detail = resp.message || t('core.edit.configRestoreEnsureFailed')
       logger.warn(`编辑页归档失败（不阻断编辑）: ${detail}`)
       message.warning(detail)
     }
   } catch (error) {
     // 传输层失败没有可透传的业务文案，退回通用提示
     logger.warn(`编辑页归档失败（不阻断编辑）: ${String(error)}`)
-    message.warning(t('edit.configRestoreEnsureFailed'))
+    message.warning(t('core.edit.configRestoreEnsureFailed'))
   }
 }
 
@@ -394,7 +337,7 @@ const loadScriptInfo = async () => {
     if (script) {
       scriptName.value = script.name
       if (script.type !== 'Whimbox') {
-        message.error(t('edit.whimboxNotWhimboxScript'))
+        message.error(t('core.edit.whimboxNotWhimboxScript'))
         handleCancel()
         return
       }
@@ -410,13 +353,13 @@ const loadScriptInfo = async () => {
         await createUserImmediately()
       }
     } else {
-      message.error(t('edit.scriptDoesNotExist2'))
+      if (!scriptApiError.value) message.error(t('core.edit.scriptDoesNotExist2'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadScript2'))
+    if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript2'))
     // 复位初始化标志：否则 loading 恒真、整页控件永久禁用（对齐 loadUserData 的 catch）
     isInitializing.value = false
   }
@@ -438,13 +381,13 @@ const createUserImmediately = async () => {
       // 加载新创建用户的数据
       await loadUserData()
     } else {
-      message.error(t('edit.couldNotCreateUser'))
+      if (!userApiError.value) message.error(t('core.edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    message.error(t('edit.couldNotCreateUser'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -494,17 +437,17 @@ const loadUserData = async () => {
         // 数据加载完成，允许自动保存
         isInitializing.value = false
       } else {
-        message.error(t('edit.userDoesNotExist'))
+        message.error(t('core.edit.userDoesNotExist'))
         handleCancel()
       }
     } else {
-      message.error(t('edit.couldNotFetchUser'))
+      if (!userApiError.value) message.error(t('core.edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadUser2'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotLoadUser2'))
     // 复位初始化标志：否则 loading 恒真、整页控件永久禁用（只能刷新页面）
     isInitializing.value = false
   }
@@ -516,7 +459,7 @@ const handleCancel = () => {
 
 onMounted(() => {
   if (!scriptId) {
-    message.error(t('edit.missingScriptIdParameter'))
+    message.error(t('core.edit.missingScriptIdParameter'))
     handleCancel()
     return
   }
@@ -530,44 +473,4 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped>
-.user-edit-content {
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.config-card {
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
-}
-
-.config-form {
-  max-width: none;
-}
-
-.whimbox-preview-box {
-  margin-top: 8px;
-}
-
-.whimbox-preview-section {
-  margin: 12px 0 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.whimbox-preview-section:first-child {
-  margin-top: 0;
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .user-edit-content {
-    max-width: 100%;
-  }
-}
-</style>
+<style scoped src="@/styles/userEditForm.css"></style>

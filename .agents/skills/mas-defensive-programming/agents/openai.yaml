@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAS Defensive Programming"
+  short_description: "Keep MAS failure handling tied to reachable contracts"
+  default_prompt: "Use $mas-defensive-programming to trace callers and existing guarantees, remove redundant guards, and preserve necessary failure handling."

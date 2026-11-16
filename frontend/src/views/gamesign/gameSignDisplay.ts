@@ -1,9 +1,8 @@
 /**
  * 游戏社区标签云的纯展示逻辑。
  *
- * 这里全部是纯函数，不依赖 Vue 响应式和后端接口，方便单测覆盖。
- * TabGameSign 的标签云（各社区已签/失败/风控状态）完全由这些函数推导，
- * 所以改动时请同步维护 gameSignDisplay.test.ts。
+ * 这里全部是纯函数，不依赖 Vue 响应式和后端接口。
+ * TabGameSign 的标签云（各社区已签/失败/风控状态）完全由这些函数推导。
  */
 
 /** 单个游戏的签到结果 */
@@ -120,9 +119,15 @@ export const parseTaygedoCredential = (raw?: string | null): TaygedoCredential =
   if (!trimmed) return { taygedo: false, cloud: false }
   try {
     const parsed = JSON.parse(trimmed) as Record<string, unknown>
+    // 后端 parse_taygedo_credential 同时接受 camelCase 与 snake_case 别名，
+    // 这里必须一致，否则 snake_case 凭据会被判成「无凭据」而整块隐藏标签。
     return {
-      taygedo: Boolean(parsed.refreshToken || parsed.accessToken),
-      cloud: Boolean(parsed.cloudToken && parsed.cloudUserId),
+      taygedo: Boolean(
+        parsed.refreshToken || parsed.accessToken || parsed.refresh_token || parsed.access_token
+      ),
+      cloud: Boolean(
+        (parsed.cloudToken || parsed.cloud_token) && (parsed.cloudUserId || parsed.cloud_user_id)
+      ),
     }
   } catch {
     // 老版裸 Token
@@ -247,10 +252,10 @@ export const getSignDetailAlias = (
 
 /** Tooltip 里单行游戏的状态文案对应的词表 key */
 export const getSignStatusKey = (status: string): string => {
-  if (SIGNED_STATUSES.includes(status)) return 'gamesign.signStatus.signed'
-  if (status === '风控') return 'gamesign.signStatus.risk'
-  if (status === '失败') return 'gamesign.signStatus.failed'
-  return 'gamesign.signStatus.unsigned'
+  if (SIGNED_STATUSES.includes(status)) return 'core.gamesign.signStatus.signed'
+  if (status === '风控') return 'core.gamesign.signStatus.risk'
+  if (status === '失败') return 'core.gamesign.signStatus.failed'
+  return 'core.gamesign.signStatus.unsigned'
 }
 
 /** Tooltip 里单行游戏的状态样式类 */

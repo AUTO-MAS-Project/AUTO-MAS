@@ -1,4 +1,8 @@
+export type { WSTaskPrefetchData } from '@/api'
+import type { PowerSignal, TaskItemDocument, TaskTriggerReason } from '@/api'
 // WebSocket 统一消息协议类型
+import type { McpStatusData } from '../../api'
+import type { FrontendCloseRequest } from '../../types/appLifecycle'
 // 与后端 app/core/ws/protocol.py、app/models/schema.py 保持一致
 
 // ==================== 信封 ====================
@@ -21,11 +25,14 @@ export interface WSEnvelope<T = WSJsonObject> {
 // ==================== 固定路由 ID ====================
 
 export const WS_ID_MAIN = 'Main'
+export const WS_ID_MCP = 'MCP'
+export const WS_MCP_STATUS_UPDATED = 'mcp.status.updated'
+export const WS_ID_I18N = 'I18n'
+export const WS_I18N_UPDATED = 'i18n.updated'
 export const WS_ID_TASK_MANAGER = 'TaskManager'
 export const WS_ID_UPDATE = 'Update'
 export const WS_ID_GAME_SIGN = 'GameSign'
 export const WS_ID_EMULATOR_MANAGER = 'EmulatorManager'
-export const WS_ID_ARKNIGHTS_PC_TOOLKIT = 'ArknightsPCToolkit'
 
 // ==================== 消息类别 ====================
 
@@ -39,16 +46,22 @@ export const WS_TASK_CONFIG_DISCARDED = 'task.config.discarded'
 
 // 任务创建通知（id=TaskManager）
 export const WS_TASK_CREATED = 'task.created'
+// 每次脚本执行（含循环中的每轮），不随快照重放（id=TaskManager）。
+export const WS_TASK_SCRIPT_STARTED = 'task.script.started'
+export const WS_TASK_SCRIPT_FINISHED = 'task.script.finished'
 
 // 应用生命周期与电源（id=Main）
 export const WS_BACKEND_SHUTDOWN_READY = 'backend.shutdown.ready'
 export const WS_FRONTEND_CLOSE_REQUESTED = 'frontend.close.requested'
+// 与上一条同理，只是收尾后由 Electron 重新拉起：队列的「完成后操作」选了重启软件
+export const WS_FRONTEND_RESTART_REQUESTED = 'frontend.restart.requested'
 export const WS_POWER_COUNTDOWN_UPDATED = 'power.countdown.updated'
 export const WS_POWER_COUNTDOWN_CANCELLED = 'power.countdown.cancelled'
 export const WS_POWER_SIGN_UPDATED = 'power.sign.updated'
 
 // 更新下载（id=Update）
 export const WS_UPDATE_PROGRESS = 'update.progress'
+export const WS_FLUXDOWN_INSTALL_PROGRESS = 'fluxdown.install.progress'
 export const WS_UPDATE_COMPLETED = 'update.completed'
 export const WS_UPDATE_FAILED = 'update.failed'
 export const WS_UPDATE_CANCELLED = 'update.cancelled'
@@ -61,12 +74,14 @@ export const WS_MAAFW_PROJECT_UPDATE_PROGRESS = 'maafw.project-update.progress'
 // 游戏签到结果（id=GameSign）
 export const WS_GAMESIGN_RESULT_UPDATED = 'gamesign.result.updated'
 
-// 通用错误提示（id=EmulatorManager / ArknightsPCToolkit）
+// 通用错误提示（id=EmulatorManager）
 export const WS_EMULATOR_NOTICE = 'emulator.notice'
-export const WS_TOOLKIT_NOTICE = 'toolkit.notice'
 
 // 模拟器启动 / 关闭 / 显示 / 隐藏这类后台操作结束（id=EmulatorManager）
 export const WS_EMULATOR_OPERATION_FINISHED = 'emulator.operation.finished'
+
+// ModAVD 更新（下载 / 解包 / 核对 / 换上）的进度（id=EmulatorManager，data 里带根目录）
+export const WS_AVD_UPDATE_PROGRESS = 'emulator2.avd-update.progress'
 
 // 虚拟显示器（id=Main）：真实显示器回来了但有任务在跑，问用户要不要拆；以及提示已作废
 export const WS_DISPLAY_DETACH_PROMPT = 'display.detach.prompt'
@@ -89,84 +104,81 @@ export interface WSTaskConfigDiscardedData {
   reason: 'structure' | 'unreadable' | 'not_written'
 }
 
+/** 用户正在跑的任务进度（目前只有 MFW 给） */
 export interface WSTaskUserInfoData {
+  config_id?: string
   user_id: string
   name: string
   status: string
 }
 
+/** 任务树在前端的展示投影；不作为后端传输载荷。 */
 export interface WSTaskScriptInfoData {
+  config_id?: string
   script_id: string
   name: string
   status: string
   userList: WSTaskUserInfoData[]
 }
 
-export type WSTaskMode = 'AutoProxy' | 'ScriptConfig' | 'Update' | 'CycleRun'
+export type WSTaskMode = 'AutoProxy' | 'ScriptConfig' | 'ScriptView'
 
 export interface WSTaskScriptIdentityData {
   scriptId: string
   scriptType: string
 }
 
-/** 循环运行的一个待运行条目 */
-export interface WSTaskCyclePreviewData {
-  queueItemId: string
-  scriptId: string
-  scriptName: string
-  nextRunAt: string
-  isDue: boolean
-  isRunning: boolean
-}
-
 /** 任务信息快照 (type=task.info.updated) */
-export interface WSTaskInfoUpdatedData {
-  task_info: WSTaskScriptInfoData[]
-  /** 循环运行的待运行条目，仅循环任务非空 */
-  cycleNextList?: WSTaskCyclePreviewData[]
-}
+export type WSTaskInfoUpdatedData = TaskItemDocument
 
-/**
- * 当前任务日志 (type=task.log.updated)
- *
- * append 为 true 时 log 是相对上一次推送的差量；为 false 时 log 是尾部完整日志（≤200,000 字符）。
- * seq 每个任务独立、从 1 起单调递增，订阅方据此判断是否漏了消息。
- */
+/** 当前日志全文，每条消息整体替换。 */
 export interface WSTaskLogUpdatedData {
   log: string
   seq: number
   append: boolean
-  /** log 第一行在完整日志里的行号；append 为 true 时忽略，界面接着已有行号往后数 */
-  firstLine?: number
+  firstLine: number
 }
 
 /** 任务完成消息数据 (type=task.completed) */
 export interface WSTaskCompletedData {
+  task: TaskItemDocument
   result: string
   outcome: 'success' | 'error' | 'cancelled'
   error?: string | null
-  task_info: WSTaskScriptInfoData[]
+}
+
+/** 一次脚本执行边界，关联字段仅用于本机订阅 (id=TaskManager)。 */
+export interface WSTaskScriptStartedData {
+  taskId: string
+  runId: string
+  scriptType: string
+  mode: 'AutoProxy' | 'CycleRun'
+}
+
+export interface WSTaskScriptFinishedData extends WSTaskScriptStartedData {
+  outcome: 'success' | 'failed' | 'skipped' | 'no_user' | 'incomplete' | 'error' | 'cancelled'
+  partialFailure?: 'yes' | 'no' | 'unknown'
 }
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */
 export interface WSTaskCreatedData {
+  trigger?: TaskTriggerReason
   taskId: string
   mode: WSTaskMode
   scripts: WSTaskScriptIdentityData[]
-  queueId?: string | null
   taskName?: string | null
   taskType?: string | null
 }
 
 /** 电源倒计时更新数据 (id=Main, type=power.countdown.updated) */
 export interface WSPowerCountdownData {
-  operation: string
+  operation: PowerSignal
   remaining: number
 }
 
 /** 电源标志更新数据 (id=Main, type=power.sign.updated) */
 interface WSPowerSignData {
-  signal: string
+  signal: PowerSignal
 }
 
 /** MFW 运行环境准备进度 (id=<scriptId>, type=maafw.env-prepare.progress) */
@@ -190,6 +202,8 @@ export interface WSMaaFWProjectUpdateProgressData {
   message: string
   /** 本次事件附带的新增日志行 */
   log?: string | null
+  /** 新增日志行的级别：alert 为要用户留意的行（面板标红），普通行为 null */
+  logLevel?: string | null
   /** 当前阶段进度百分比（下载 / 解压 / 覆盖），未知时为 null */
   percent?: number | null
   downloadedBytes?: number | null
@@ -214,6 +228,14 @@ export interface WSUpdateProgressData {
   file_size: number
   speed: number
   source: string
+}
+
+export interface WSFluxdownInstallProgressData {
+  stage: 'check' | 'download' | 'verify' | 'extract' | 'install' | 'save' | 'done' | 'failed'
+  name: string
+  downloaded: number
+  total: number
+  speed: number
 }
 
 interface WSUpdateCompletedData {
@@ -245,6 +267,24 @@ export interface WSEmulatorOperationData {
   message: string
 }
 
+/**
+ * ModAVD 更新进度 (id=EmulatorManager, type=emulator2.avd-update.progress)
+ *
+ * status 为 success / failed / idle 时这一次操作结束，界面据此重新取一次状态快照。
+ */
+export interface WSAvdUpdateProgressData {
+  root: string
+  /** downloading / extracting / verifying / staged / installing / installed / failed */
+  stage: string
+  /** running / success / failed / idle */
+  status: string
+  message: string
+  percent?: number | null
+  downloadedBytes?: number | null
+  totalBytes?: number | null
+  speedBytesPerSec?: number | null
+}
+
 /** 一块显示器的工作区（去掉任务栏），物理像素、桌面坐标 */
 export interface WSDisplayMonitorRectData {
   left: number
@@ -271,24 +311,32 @@ export interface WSSystemNoticeData {
   title: string
   /** 正文，每项一行 */
   lines: string[]
+  titleKey?: string | null
+  lineKeys?: string[]
 }
 
 type WSEmptyData = Record<string, never>
 
 /** 已知关键消息的 type → data 映射。未知消息回退到 WSJsonObject。 */
 interface WSMessageDataMap {
+  [WS_MCP_STATUS_UPDATED]: McpStatusData
+  [WS_I18N_UPDATED]: { revision: string }
   [WS_TASK_INFO_UPDATED]: WSTaskInfoUpdatedData
   [WS_TASK_LOG_UPDATED]: WSTaskLogUpdatedData
   [WS_TASK_NOTICE]: WSTaskNoticeData
   [WS_TASK_COMPLETED]: WSTaskCompletedData
   [WS_TASK_CONFIG_DISCARDED]: WSTaskConfigDiscardedData
   [WS_TASK_CREATED]: WSTaskCreatedData
+  [WS_TASK_SCRIPT_STARTED]: WSTaskScriptStartedData
+  [WS_TASK_SCRIPT_FINISHED]: WSTaskScriptFinishedData
   [WS_BACKEND_SHUTDOWN_READY]: WSEmptyData
-  [WS_FRONTEND_CLOSE_REQUESTED]: WSEmptyData
+  [WS_FRONTEND_CLOSE_REQUESTED]: FrontendCloseRequest
+  [WS_FRONTEND_RESTART_REQUESTED]: FrontendCloseRequest
   [WS_POWER_COUNTDOWN_UPDATED]: WSPowerCountdownData
   [WS_POWER_COUNTDOWN_CANCELLED]: WSEmptyData
   [WS_POWER_SIGN_UPDATED]: WSPowerSignData
   [WS_UPDATE_PROGRESS]: WSUpdateProgressData
+  [WS_FLUXDOWN_INSTALL_PROGRESS]: WSFluxdownInstallProgressData
   [WS_UPDATE_COMPLETED]: WSUpdateCompletedData
   [WS_UPDATE_FAILED]: WSUpdateFailedData
   [WS_UPDATE_CANCELLED]: WSEmptyData
@@ -296,8 +344,8 @@ interface WSMessageDataMap {
   [WS_MAAFW_PROJECT_UPDATE_PROGRESS]: WSMaaFWProjectUpdateProgressData
   [WS_GAMESIGN_RESULT_UPDATED]: WSGameSignResultData
   [WS_EMULATOR_NOTICE]: WSTaskNoticeData
-  [WS_TOOLKIT_NOTICE]: WSTaskNoticeData
   [WS_EMULATOR_OPERATION_FINISHED]: WSEmulatorOperationData
+  [WS_AVD_UPDATE_PROGRESS]: WSAvdUpdateProgressData
   [WS_DISPLAY_DETACH_PROMPT]: WSDisplayDetachPromptData
   [WS_DISPLAY_DETACH_PROMPT_CLOSED]: WSEmptyData
   [WS_SYSTEM_NOTICE]: WSSystemNoticeData

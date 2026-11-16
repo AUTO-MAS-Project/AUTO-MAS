@@ -8,7 +8,7 @@ export type MaaFWAgentEnvPrepareIn = {
      */
     path?: string;
     /**
-     * 脚本 ID；内嵌脚本按它解析副本目录，此时 path 可留空
+     * 托管 ID；托管项目按它解析副本目录，此时 path 可留空
      */
     scriptId?: (string | null);
     /**

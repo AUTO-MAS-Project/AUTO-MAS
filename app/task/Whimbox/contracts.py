@@ -174,7 +174,7 @@ class IRunResultParser(Protocol):
 
 
 class IUpstreamConfigSurface(Protocol):
-    """上游配置面：三件套元数据 + 用户覆盖集合并写入 + 快照/还原。
+    """上游配置面：三件套元数据 + 账号覆盖集合并写入 + 快照/还原。
 
     实现只透传上游格式：写入键集派生自当前模板（天然落在白名单内），
     值按模板默认值类型回写（布尔字符串语义归一），不建字段映射表。
@@ -195,7 +195,7 @@ class IUpstreamConfigSurface(Protocol):
         *,
         run_all_accounts: bool,
     ) -> None:
-        """把用户覆盖集按当前模板键集过滤后原子合并写入上游 config.json。"""
+        """把账号覆盖集按当前模板键集过滤后原子合并写入上游 config.json。"""
         ...
 
     def snapshot_pre_run(self) -> str | None:

@@ -3,12 +3,12 @@
     <div class="failure-body">
       <h2 class="failure-title">
         <i class="failure-dot" aria-hidden="true"></i>
-        {{ t('init.step.failed', { title }) }}
+        {{ t('bootstrap.init.step.failed', { title }) }}
       </h2>
 
       <p v-if="message" class="failure-message">{{ message }}</p>
       <p v-if="noticeText" class="failure-notice">{{ noticeText }}</p>
-      <p class="failure-message">{{ t('init.failure.joinGroupHint') }}</p>
+      <p v-if="updateHint" class="failure-message">{{ updateHint }}</p>
 
       <div class="failure-actions">
         <a-button
@@ -16,38 +16,30 @@
           :key="action.kind"
           :type="index === 0 ? 'primary' : 'text'"
           :loading="action.kind === 'run-doctor' && doctorRunning"
+          :disabled="updating && action.kind !== 'open-log'"
           @click="emit('action', action.kind)"
         >
           {{ t(action.labelKey) }}
         </a-button>
-        <a-button v-if="docsUrl" type="text" @click="emit('open-docs')">
-          {{ t('init.backend.viewDocs') }}
+        <a-button
+          v-if="runtimeMode === 'managed' && canUpdateRuntime"
+          :loading="updating"
+          :disabled="doctorRunning"
+          @click="updateRuntime"
+        >
+          {{ t('bootstrap.init.failure.updateRuntime') }}
         </a-button>
-        <a-button class="failure-help" @click="handleJoinGroup">
-          <template #icon><TeamOutlined /></template>
-          {{ t('init.failure.joinGroup') }}
+        <a-button v-if="docsUrl" type="text" @click="emit('open-docs')">
+          {{ t('bootstrap.init.backend.viewDocs') }}
         </a-button>
       </div>
 
-      <div v-if="showMirrorSelection && mirrors.length > 0" class="failure-mirrors">
-        <p class="mirrors-title">{{ t('init.failure.mirrorTitle') }}</p>
-        <button
-          v-for="mirror in mirrors"
-          :key="mirror.key"
-          type="button"
-          class="mirror-option"
-          :class="{ selected: selectedMirror === mirror.key }"
-          role="radio"
-          :aria-checked="selectedMirror === mirror.key"
-          @click="emit('update:selected-mirror', mirror.key)"
-        >
-          <span class="mirror-radio" aria-hidden="true"></span>
-          <span class="mirror-name">{{ mirror.name }}</span>
-          <span class="mirror-note">
-            {{ mirror.recommended ? t('init.failure.mirrorRecommended') : mirror.description }}
-          </span>
-        </button>
-      </div>
+      <p v-if="updateMessage" class="failure-message" role="status">{{ updateMessage }}</p>
+      <a-progress
+        v-if="updating && updateProgress !== undefined"
+        :percent="updateProgress"
+        size="small"
+      />
 
       <details
         v-if="hasDetails"
@@ -55,9 +47,11 @@
         :open="detailsOpen"
         @toggle="detailsOpen = ($event.target as HTMLDetailsElement).open"
       >
-        <summary>{{ t('init.failure.details') }}</summary>
+        <summary>{{ t('bootstrap.init.failure.details') }}</summary>
 
-        <div v-if="doctorRunning" class="details-line">{{ t('init.failure.doctorRunning') }}</div>
+        <div v-if="doctorRunning" class="details-line">
+          {{ t('bootstrap.init.failure.doctorRunning') }}
+        </div>
         <template v-else-if="doctorChecks">
           <div v-if="doctorChecks.length > 0" class="doctor-checks">
             <span v-for="check in doctorChecks" :key="check.id" class="doctor-check">
@@ -65,27 +59,44 @@
               <b :class="{ bad: check.status !== 'ok' }">{{ check.message || check.status }}</b>
             </span>
           </div>
-          <div v-else class="details-line">{{ t('init.failure.doctorEmpty') }}</div>
+          <div v-else class="details-line">{{ t('bootstrap.init.failure.doctorEmpty') }}</div>
         </template>
 
         <pre v-if="failureLogs" class="failure-log">{{ failureLogs }}</pre>
       </details>
 
+      <div class="failure-support">
+        <p class="support-hint">{{ t('bootstrap.init.failure.exportLogsHint') }}</p>
+        <a-space wrap>
+          <a-button :loading="exportingLogs" @click="packageLogs">
+            <template #icon><FileZipOutlined /></template>
+            {{ t('bootstrap.logs.package') }}
+          </a-button>
+          <a-button class="failure-help" @click="handleJoinGroup">
+            <template #icon><TeamOutlined /></template>
+            {{ t('bootstrap.init.failure.joinGroup') }}
+          </a-button>
+        </a-space>
+      </div>
+
       <p v-if="showSkipButton" class="failure-skip">
-        <button type="button" @click="emit('skip')">{{ t('init.step.skip') }}</button>
-        {{ t('init.step.skipConsequence') }}
+        <button type="button" :disabled="updating" @click="emit('skip')">
+          {{ t('bootstrap.init.step.skip') }}
+        </button>
+        {{ t('bootstrap.init.step.skipConsequence') }}
       </p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message as feedback } from 'ant-design-vue'
-import { TeamOutlined } from '@ant-design/icons-vue'
-import type { RuntimeDoctorCheck } from '@/types/electron'
-import type { MirrorConfig } from '@/types/mirror'
+import { FileZipOutlined, TeamOutlined } from '@ant-design/icons-vue'
+import { useLogExport } from '@/composables/useLogExport'
+import type { RuntimeDoctorCheck, RuntimeInitMode } from '@/types/electron'
+import { useRuntimeBinaryUpdate } from '../useRuntimeBinaryUpdate'
 import type {
   FailureAction,
   FailureActionKind,
@@ -102,11 +113,9 @@ interface Props {
   failureActions?: FailureAction[]
   failureNotice?: FailureNoticeKind | null
   failureLogs?: string
-  showMirrorSelection?: boolean
-  mirrors?: MirrorConfig[]
-  selectedMirror?: string
   doctorChecks?: RuntimeDoctorCheck[] | null
   doctorRunning?: boolean
+  runtimeMode?: RuntimeInitMode
   showSkipButton?: boolean
   /** 有排障文档可看时给出链接，目前只有后端启动段有。 */
   docsUrl?: string
@@ -117,31 +126,39 @@ const props = withDefaults(defineProps<Props>(), {
   failureActions: () => [],
   failureNotice: null,
   failureLogs: '',
-  showMirrorSelection: false,
-  mirrors: () => [],
-  selectedMirror: '',
   doctorChecks: null,
   doctorRunning: false,
+  runtimeMode: 'managed',
   showSkipButton: false,
   docsUrl: '',
 })
 
 const emit = defineEmits<{
   action: [kind: FailureActionKind]
-  'update:selected-mirror': [value: string]
   skip: []
   'open-docs': []
+  'runtime-updated': []
 }>()
 
 const { t } = useI18n()
+const { exportingLogs, packageLogs } = useLogExport()
+const {
+  updating,
+  updateMessage,
+  updateProgress,
+  updateHint,
+  canUpdateRuntime,
+  checkForUpdate,
+  updateRuntime,
+} = useRuntimeBinaryUpdate(() => emit('runtime-updated'))
 const SUPPORT_GROUP_URL = 'https://qm.qq.com/q/DEG4a3p0FG'
 
 const noticeText = computed(() => {
   switch (props.failureNotice) {
     case 'internal-error':
-      return t('init.failure.internalErrorNotice')
+      return t('bootstrap.init.failure.internalErrorNotice')
     case 'contact-support':
-      return t('init.failure.contactSupportNotice')
+      return t('bootstrap.init.failure.contactSupportNotice')
     default:
       return ''
   }
@@ -154,6 +171,10 @@ const hasDetails = computed(
 
 const detailsOpen = ref(false)
 
+onMounted(() => {
+  if (props.runtimeMode === 'managed') void checkForUpdate()
+})
+
 async function handleJoinGroup() {
   const logger = window.electronAPI.getLogger('初始化求助')
   try {
@@ -161,7 +182,7 @@ async function handleJoinGroup() {
     if (!result.success) throw new Error(String(result.error))
   } catch (error) {
     logger.error(`打开初始化求助群失败: ${error instanceof Error ? error.message : String(error)}`)
-    feedback.error(t('comp.couldNotOpenLink'))
+    feedback.error(t('bootstrap.comp.couldNotOpenLink'))
   }
 }
 
@@ -241,6 +262,19 @@ watch(
   border-color: var(--ant-color-primary-border);
 }
 
+.failure-support {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
+.support-hint {
+  margin: 0 0 12px;
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+  line-height: 1.75;
+}
+
 .launch-failure .failure-help:hover,
 .launch-failure .failure-help:focus-visible {
   color: var(--ant-color-primary-hover);
@@ -253,65 +287,9 @@ watch(
   border-color: var(--ant-color-primary);
 }
 
-.failure-mirrors {
-  margin-top: 18px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.mirrors-title {
-  margin: 0;
-  padding: 9px 14px;
-  background: var(--ant-color-fill-quaternary);
-  color: var(--ant-color-text-tertiary);
-  font-size: 12px;
-}
-
-.mirror-option {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 14px;
-  border: 0;
-  border-top: 1px solid var(--ant-color-border-secondary);
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.mirror-option:hover {
-  background: var(--ant-color-fill-quaternary);
-}
-
-.mirror-radio {
-  flex: none;
-  width: 13px;
-  height: 13px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 50%;
-}
-
-.mirror-option.selected .mirror-radio {
-  border: 4px solid var(--ant-color-primary);
-}
-
-.mirror-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.mirror-note {
-  margin-left: auto;
-  padding-left: 12px;
-  color: var(--ant-color-text-tertiary);
-  font-size: 12px;
-  white-space: nowrap;
+.failure-skip button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .failure-details {

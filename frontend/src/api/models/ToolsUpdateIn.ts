@@ -2,11 +2,11 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { ToolsConfig } from './ToolsConfig';
+import type { ToolsConfigInput } from './ToolsConfigInput';
 export type ToolsUpdateIn = {
     /**
      * 工具配置需要更新的数据
      */
-    data: ToolsConfig;
+    data: ToolsConfigInput;
 };
 

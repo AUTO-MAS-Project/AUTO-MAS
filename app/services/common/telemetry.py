@@ -1,0 +1,712 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+
+from __future__ import annotations
+
+import asyncio
+import re
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, cast
+from urllib.parse import urlsplit
+
+import sentry_sdk
+from sentry_sdk import metrics
+from sentry_sdk.integrations.logging import LoggingIntegration
+from sentry_sdk.integrations.loguru import LoguruIntegration
+
+from app.utils import get_logger
+
+if TYPE_CHECKING:
+    from sentry_sdk._types import EventProcessor, TransactionProcessor
+    from sentry_sdk.integrations import Integration
+
+    from app.models.schema import WSTaskScriptStartedData
+    from app.models.task import ScriptItem, TaskItem, TaskMode, TaskTriggerReason
+
+logger = get_logger("遥测")
+
+SENTRY_DSN = (
+    "https://eae490f602916b04f2f51f49f0fb5155@"
+    "o4511881138733056.ingest.us.sentry.io/4511902512644096"
+)
+PRIVATE_REQUEST_FIELDS = {
+    "cookies",
+    "data",
+    "env",
+    "headers",
+    "query_string",
+}
+PRIVATE_DATA_MARKERS = {
+    "body",
+    "cookie",
+    "cookies",
+    "header",
+    "headers",
+    "query",
+    "query_string",
+    "statement",
+}
+
+PATH_DATA_MARKERS = {"file", "filename", "path", "uri", "url"}
+
+# Loguru 会把 traceback 与局部变量渲染进日志正文，其中含形如
+# ``C:\Users\<用户名>\...`` 的本机绝对路径；结构化字段的清洗覆盖不到正文，
+# 需在此按用户目录段单独遮蔽。局部变量以 repr 形式渲染，分隔符会是转义后的
+# ``C:\\Users\\<用户名>``，故分隔符按一个或多个匹配。
+USER_DIR_PATTERN = re.compile(
+    r"((?:[A-Za-z]:)?[\\/]+(?:Users|home)[\\/]+)([^\\/\r\n\"'<>|]+)",
+    re.IGNORECASE,
+)
+
+_sentry_release: str | None = None
+_sentry_dist: str | None = None
+_sentry_started = False
+_mcp_loaded = False
+
+NOISY_TRANSACTIONS = {
+    "/api/core/health",
+    "/api/core/ws_meta",
+}
+
+# 逐条都不可行动的异常：前两类是客户端断开时本地 socket 拆除的正常表现，
+# 后一类是正常退出路径。它们既不代表缺陷也无从修复，不必占用事件配额。
+NON_ACTIONABLE_ERRORS = {
+    "BrokenPipeError",
+    "CancelledError",
+    "ClientDisconnect",
+    "ConnectionAbortedError",
+    "ConnectionResetError",
+    "KeyboardInterrupt",
+    "LocalProtocolError",
+    "SystemExit",
+}
+
+
+def _strip_url_query(url: str) -> str:
+    """移除 URL 中可能包含隐私数据的查询参数和片段。"""
+
+    return url.split("?", 1)[0].split("#", 1)[0]
+
+
+def _sanitize_path(value: str) -> str:
+    """移除路径查询信息，并将本机路径缩减为文件名。"""
+
+    sanitized = _strip_url_query(value)
+    is_windows_path = (
+        len(sanitized) >= 3 and sanitized[1] == ":" and sanitized[2] in {"\\", "/"}
+    )
+    if not sanitized.lower().startswith("file://") and not is_windows_path:
+        return sanitized
+
+    normalized = sanitized.replace("\\", "/")
+    return normalized.rsplit("/", 1)[-1] or "<local-file>"
+
+
+def _sanitize_data(data: Any) -> None:
+    """清理 Breadcrumb 和 Span 中可能包含隐私的数据。"""
+
+    if not isinstance(data, dict):
+        return
+
+    for key, value in list(data.items()):
+        if not isinstance(key, str):
+            continue
+        markers = set(key.lower().replace("-", ".").replace("_", ".").split("."))
+        if markers & PRIVATE_DATA_MARKERS:
+            data.pop(key, None)
+        elif markers & PATH_DATA_MARKERS and isinstance(value, str):
+            data[key] = _sanitize_path(value)
+
+
+def _sanitize_stacktrace(stacktrace: Any) -> None:
+    """从堆栈帧中移除本机绝对路径。"""
+
+    if not isinstance(stacktrace, dict):
+        return
+
+    frames = stacktrace.get("frames")
+    if not isinstance(frames, list):
+        return
+
+    for frame in frames:
+        if isinstance(frame, dict):
+            if isinstance(frame.get("filename"), str):
+                frame["filename"] = _sanitize_path(frame["filename"])
+            frame.pop("abs_path", None)
+            frame.pop("vars", None)
+            frame.pop("context_line", None)
+            frame.pop("pre_context", None)
+            frame.pop("post_context", None)
+            frame.pop("module_metadata", None)
+
+
+def _is_non_actionable(event: dict[str, Any]) -> bool:
+    """判断事件是否整体由不可行动的异常构成。
+
+    异常链中只要有一个类型不在名单内就保留，避免误伤把真实缺陷包在
+    ExceptionGroup 或 ``raise ... from ...`` 里的情况。
+    """
+
+    container = event.get("exception")
+    if not isinstance(container, dict):
+        return False
+
+    values = container.get("values")
+    if not isinstance(values, list) or not values:
+        return False
+
+    types = [value.get("type") for value in values if isinstance(value, dict)]
+    if not types or any(name is None for name in types):
+        return False
+
+    return all(name in NON_ACTIONABLE_ERRORS for name in types)
+
+
+def _mask_user_dirs(value: str) -> str:
+    """遮蔽路径中的用户名段，保留路径结构以便定位问题。"""
+
+    return USER_DIR_PATTERN.sub(r"\1<user>", value)
+
+
+def _sanitize_text_fields(event: dict[str, Any]) -> None:
+    """清洗日志正文与异常描述中的本机用户名。"""
+
+    logentry = event.get("logentry")
+    if isinstance(logentry, dict):
+        for field in ("message", "formatted"):
+            text = logentry.get(field)
+            if isinstance(text, str):
+                logentry[field] = _mask_user_dirs(text)
+        params = logentry.get("params")
+        if isinstance(params, list):
+            logentry["params"] = [
+                _mask_user_dirs(param) if isinstance(param, str) else param
+                for param in params
+            ]
+
+    message = event.get("message")
+    if isinstance(message, str):
+        event["message"] = _mask_user_dirs(message)
+
+
+def sanitize_event(
+    event: dict[str, Any], hint: dict[str, Any]
+) -> dict[str, Any] | None:
+    """在发送前移除用户、请求内容和本机绝对路径。"""
+
+    log_record = hint.get("log_record")
+    if log_record is not None and not getattr(log_record, "exc_info", None):
+        return None
+
+    if _is_non_actionable(event):
+        return None
+
+    event.pop("user", None)
+    event.pop("extra", None)
+
+    _sanitize_text_fields(event)
+
+    request = event.get("request")
+    if isinstance(request, dict):
+        for field in PRIVATE_REQUEST_FIELDS:
+            request.pop(field, None)
+        if isinstance(request.get("url"), str):
+            request["url"] = _sanitize_path(request["url"])
+
+    _sanitize_stacktrace(event.get("stacktrace"))
+    for container_name in ("exception", "threads"):
+        container = event.get(container_name)
+        if not isinstance(container, dict):
+            continue
+        values = container.get("values")
+        if not isinstance(values, list):
+            continue
+        for value in values:
+            if isinstance(value, dict):
+                _sanitize_stacktrace(value.get("stacktrace"))
+                if isinstance(value.get("value"), str):
+                    value["value"] = _mask_user_dirs(value["value"])
+
+    breadcrumbs = event.get("breadcrumbs")
+    if isinstance(breadcrumbs, dict) and isinstance(breadcrumbs.get("values"), list):
+        for breadcrumb in breadcrumbs["values"]:
+            if not isinstance(breadcrumb, dict):
+                continue
+            data = breadcrumb.get("data")
+            if not isinstance(data, dict):
+                continue
+            for field in PRIVATE_REQUEST_FIELDS:
+                data.pop(field, None)
+            _sanitize_data(data)
+
+    spans = event.get("spans")
+    if isinstance(spans, list):
+        for span in spans:
+            if isinstance(span, dict):
+                _sanitize_data(span.get("data"))
+
+    return event
+
+
+def is_telemetry_enabled(config_path: Path) -> bool:
+    """读取遥测开关；缺失的旧配置按默认开启处理，损坏的配置按关闭处理。"""
+
+    from app.utils.common.config import document as _utils_config_document
+
+    try:
+        data = _utils_config_document.read_bootstrap_setting(config_path)
+        value = data.get("Function", {}).get("IfEnableTelemetry", True)
+    except OSError:
+        return True
+    except (ValueError, AttributeError, TypeError):
+        logger.warning(f"配置文件 {config_path.name} 损坏, 遥测按关闭处理")
+        return False
+    return value if isinstance(value, bool) else True
+
+
+def resolve_sentry_dist(source_root: Path) -> str | None:
+    """读取当前源码提交短哈希，缺少 Git 元数据时返回空。"""
+
+    try:
+        git_dir = source_root / ".git"
+        if git_dir.is_file():
+            git_dir_value = git_dir.read_text(encoding="utf-8").strip()
+            if not git_dir_value.startswith("gitdir:"):
+                return None
+            git_dir = (
+                source_root / git_dir_value.removeprefix("gitdir:").strip()
+            ).resolve()
+
+        head = (git_dir / "HEAD").read_text(encoding="utf-8").strip()
+        if head.startswith("ref:"):
+            ref_name = head.removeprefix("ref:").strip()
+            ref_path = git_dir / ref_name
+            if ref_path.is_file():
+                revision = ref_path.read_text(encoding="utf-8").strip()
+            else:
+                revision = ""
+                for line in (
+                    (git_dir / "packed-refs").read_text(encoding="utf-8").splitlines()
+                ):
+                    if line.endswith(f" {ref_name}"):
+                        revision = line.split(" ", 1)[0]
+                        break
+        else:
+            revision = head
+    except (OSError, UnicodeError):
+        return None
+
+    if not re.fullmatch(r"[0-9a-fA-F]{7,64}", revision):
+        return None
+    return revision[:12].lower()
+
+
+def _start_sentry(release: str, dist: str | None = None) -> None:
+    """使用固定的脱敏策略启动 Sentry。"""
+
+    global _sentry_started
+
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.httpx import HttpxIntegration
+    from sentry_sdk.integrations.starlette import StarletteIntegration
+
+    # 保留现有 Web 与日志采集，避免自动探测在监听前导入可选 MCP 服务。
+    integrations: list[Integration] = [
+        LoggingIntegration(level=None, event_level=None, sentry_logs_level=None),
+        LoguruIntegration(level=None, event_level=30, sentry_logs_level=None),
+        FastApiIntegration(),
+        StarletteIntegration(),
+        HttpxIntegration(),
+    ]
+    if _mcp_loaded:
+        from sentry_sdk.integrations.mcp import MCPIntegration
+
+        integrations.append(MCPIntegration())
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        release=f"auto-mas@{release}",
+        dist=dist,
+        environment="production",
+        send_default_pii=False,
+        include_local_variables=False,
+        include_source_context=False,
+        max_request_body_size="never",
+        server_name="AUTO-MAS",
+        auto_enabling_integrations=False,
+        integrations=integrations,
+        traces_sampler=sample_trace,
+        # 脱敏原地处理 SDK 的 JSON 事件；TypedDict 回调与通用字典实现共用同一对象。
+        before_send=cast("EventProcessor", sanitize_event),
+        before_send_transaction=cast("TransactionProcessor", sanitize_event),
+    )
+    _sentry_started = True
+
+
+def enable_mcp_integration() -> None:
+    """MCP 实际加载后安装诊断集成，遥测关闭时只记住已加载状态。"""
+    global _mcp_loaded
+
+    _mcp_loaded = True
+    if not _sentry_started:
+        return
+
+    from sentry_sdk.integrations import setup_integrations
+    from sentry_sdk.integrations.mcp import MCPIntegration
+
+    client = sentry_sdk.get_client()
+    client.integrations.update(
+        setup_integrations(
+            [MCPIntegration()], with_defaults=False, options=client.options
+        )
+    )
+
+
+def _resolve_transaction_path(
+    sampling_context: dict[str, Any], name: Any
+) -> str | None:
+    """取出事务对应的请求路径。
+
+    采样发生在路由匹配之前，此时事务名仍是完整 URL（如
+    ``http://127.0.0.1:36199/api/core/health``），路由模板要到 FastAPI 集成层
+    才写入，直接拿事务名比对会永远匹配不上。
+    """
+
+    scope = sampling_context.get("asgi_scope")
+    if isinstance(scope, dict):
+        path = scope.get("path")
+        if isinstance(path, str):
+            return path
+
+    if isinstance(name, str):
+        return urlsplit(name).path or name
+
+    return None
+
+
+def sample_trace(sampling_context: dict[str, Any]) -> float:
+    """优先保留任务链路，跳过高频探活，并限制普通请求的配额占用。"""
+
+    transaction_context = sampling_context.get("transaction_context")
+    if not isinstance(transaction_context, dict):
+        return 0.02
+
+    name = transaction_context.get("name")
+    op = transaction_context.get("op")
+    if _resolve_transaction_path(sampling_context, name) in NOISY_TRANSACTIONS:
+        return 0.0
+    if op == "auto_mas.task.run":
+        return 0.25
+
+    parent_sampled = sampling_context.get("parent_sampled")
+    if isinstance(parent_sampled, bool):
+        return 1.0 if parent_sampled else 0.0
+    return 0.02
+
+
+def set_telemetry_enabled(enabled: bool) -> None:
+    """立即启用或停用后端遥测；开发环境下恒为空操作。"""
+
+    global _sentry_started
+
+    if not enabled:
+        if _sentry_started:
+            sentry_sdk.get_client().close(timeout=0)
+            sentry_sdk.init(dsn=None, auto_enabling_integrations=False)
+            _sentry_started = False
+        return
+
+    if not _sentry_started and _sentry_release is not None:
+        if _sentry_dist is None:
+            _start_sentry(_sentry_release)
+        else:
+            _start_sentry(_sentry_release, _sentry_dist)
+
+
+def record_count(
+    name: str,
+    value: float = 1,
+    *,
+    attributes: Mapping[str, str | int | float | bool] | None = None,
+) -> None:
+    """记录低基数计数指标；遥测关闭或 SDK 异常时保持空操作。"""
+
+    if not _sentry_started:
+        return
+
+    try:
+        metrics.count(name, value, attributes=dict(attributes or {}))
+    except Exception:
+        pass
+
+
+def record_daily_active() -> bool:
+    """记一次客户端日活，返回是否已记录；遥测关闭或 SDK 报错时不记。
+
+    不带任何机器标识：由调用方保证每台机器每个 UTC 自然日只记一次，
+    这样 Sentry 里一天的计数之和就是当天活跃的客户端数。返回 False 时
+    调用方不会记下日期，下次再试。
+    """
+
+    if not _sentry_started:
+        return False
+
+    try:
+        metrics.count("auto_mas.app.daily_active", 1, attributes={})
+    except Exception:
+        return False
+    return True
+
+
+def record_distribution(
+    name: str,
+    value: float,
+    *,
+    unit: str | None = None,
+    attributes: Mapping[str, str | int | float | bool] | None = None,
+) -> None:
+    """记录低基数分布指标；遥测失败不能影响业务流程。"""
+
+    if not _sentry_started:
+        return
+
+    try:
+        metrics.distribution(
+            name,
+            value,
+            unit=unit,
+            attributes=dict(attributes or {}),
+        )
+    except Exception:
+        pass
+
+
+@contextmanager
+def observe_span(
+    *,
+    name: str,
+    op: str,
+    attributes: Mapping[str, str | int | float | bool] | None = None,
+    force_transaction: bool = False,
+) -> Iterator[None]:
+    """在遥测开启时创建 Span，关闭时保持相同调用语义。"""
+
+    if not _sentry_started:
+        yield
+        return
+
+    start_observation = (
+        sentry_sdk.start_span
+        if not force_transaction and sentry_sdk.get_current_span() is not None
+        else sentry_sdk.start_transaction
+    )
+    with start_observation(name=name, op=op) as span:
+        for key, value in (attributes or {}).items():
+            span.set_data(key, value)
+        yield
+
+
+def init_sentry(
+    release: str,
+    development: bool,
+    enabled: bool = True,
+    dist: str | None = None,
+) -> None:
+    """按运行环境和用户配置初始化后端 Sentry。
+
+    Args:
+        release: 当前主程序版本号。
+        development: 是否为开发环境，开发环境不上报任何数据。
+        enabled: 用户配置的匿名遥测开关。
+        dist: 当前源码提交或构建标识。
+    """
+
+    global _sentry_dist, _sentry_release
+
+    # 开发环境不记录版本号，后续遥测开关变更同样不会启动 Sentry
+    if development:
+        return
+
+    _sentry_release = release
+    _sentry_dist = dist
+    set_telemetry_enabled(enabled)
+
+
+__all__ = [
+    "init_sentry",
+    "is_telemetry_enabled",
+    "observe_span",
+    "observe_script_run",
+    "record_count",
+    "record_daily_active",
+    "record_distribution",
+    "resolve_sentry_dist",
+    "sample_trace",
+    "sanitize_event",
+    "set_telemetry_enabled",
+    "task_trigger_category",
+]
+
+
+# 专项运行观察：本地关联消息不进入匿名指标属性。
+# BetterGI 跳过失败步骤后的“部分失败”，沿用专项约定计为执行完成。
+_SUCCESS_USER_STATUSES = ("完成", "部分失败")
+
+
+@dataclass
+class _ScriptObservation:
+    sent: bool = False
+    completed: asyncio.Event = field(default_factory=asyncio.Event)
+
+
+def _publish_script_observation(
+    *,
+    message_type: str,
+    data: WSTaskScriptStartedData,
+    after: _ScriptObservation | None = None,
+) -> _ScriptObservation | None:
+    """有界、可丢弃的本地统计消息，不进入脚本的执行或收尾等待链。"""
+
+    observation = _ScriptObservation()
+
+    async def send() -> None:
+        try:
+            if after is not None:
+                await after.completed.wait()
+                if not after.sent:
+                    return
+            observation.sent = await Publisher.send(
+                id=protocol.ID_TASK_MANAGER, type=message_type, data=data
+            )
+        finally:
+            observation.completed.set()
+
+    from app.core import BackgroundTaskManager, Publisher
+    from app.core.ws import protocol
+
+    group = BackgroundTaskManager.get_group("script-run-observation")
+    if group is None:
+        group = BackgroundTaskManager.register_group(
+            "script-run-observation", max_running=32, max_retained=32
+        )
+    handle = group.spawn(send, retain_result=False)
+    return observation if handle is not None else None
+
+
+def task_trigger_category(
+    trigger: TaskTriggerReason,
+) -> Literal["manual_task", "startup_task", "scheduled_task"]:
+    """在统计边界将触发原因归入既有分类，保持统计口径。"""
+    from app.models.task import TaskTriggerReason
+
+    if trigger == TaskTriggerReason.MANUAL:
+        return "manual_task"
+    if trigger == TaskTriggerReason.STARTUP:
+        return "startup_task"
+    return "scheduled_task"
+
+
+@contextmanager
+def observe_script_run(
+    task: TaskItem,
+    script_item: ScriptItem,
+    *,
+    mode: TaskMode | Literal["Update"] | None = None,
+) -> Iterator[None]:
+    """按专项记一次脚本运行；顺序执行与循环运行共用。
+
+    结果只看用户状态：MAA、通用脚本等专项无论成败都把脚本状态收成「完成」，
+    拿脚本状态判会把全员失败也记成成功，各专项之间没法比。
+    """
+
+    from app.core.ws import protocol
+    from app.models.schema import WSTaskScriptFinishedData, WSTaskScriptStartedData
+
+    outcome: Literal[
+        "success",
+        "failed",
+        "skipped",
+        "no_user",
+        "incomplete",
+        "error",
+        "cancelled",
+    ] = "error"
+    partial_failure: Literal["yes", "no", "unknown"] = "unknown"
+    run = (
+        WSTaskScriptStartedData(
+            taskId=task.task_id,
+            runId=str(script_item.uid),
+            scriptType=script_item.script_type or "unknown",
+            mode="AutoProxy",
+        )
+        if task.mode == "AutoProxy"
+        else None
+    )
+    started = (
+        _publish_script_observation(message_type=protocol.TASK_SCRIPT_STARTED, data=run)
+        if run is not None
+        else None
+    )
+    try:
+        yield
+        user_statuses = [
+            user.status for user in script_item.user_list if user.status != "跳过"
+        ]
+        if script_item.status == "异常":
+            outcome = "failed"
+        elif script_item.user_list and not user_statuses:
+            outcome = "skipped"
+        elif not user_statuses:
+            # 运行前检查没过时还没加载用户，脚本状态是「异常」
+            outcome = "failed" if script_item.status == "异常" else "no_user"
+        elif all(status in _SUCCESS_USER_STATUSES for status in user_statuses):
+            outcome = "success"
+            partial_failure = "yes" if "部分失败" in user_statuses else "no"
+        elif "异常" in user_statuses:
+            outcome = "failed"
+        else:
+            outcome = "incomplete"
+    except asyncio.CancelledError:
+        outcome = "cancelled"
+        raise
+    finally:
+        record_count(
+            "auto_mas.script.runs",
+            attributes={
+                "script_type": script_item.script_type or "unknown",
+                "mode": mode if mode is not None else task.mode,
+                "outcome": outcome,
+            },
+        )
+        if run is not None and started is not None:
+            _publish_script_observation(
+                message_type=protocol.TASK_SCRIPT_FINISHED,
+                data=WSTaskScriptFinishedData(
+                    **run.model_dump(),
+                    outcome=outcome,
+                    partialFailure=partial_failure,
+                ),
+                after=started,
+            )

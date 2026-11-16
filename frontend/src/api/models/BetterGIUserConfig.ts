@@ -9,29 +9,11 @@ import type { BetterGIUserConfig_OneDragon } from './BetterGIUserConfig_OneDrago
 import type { BetterGIUserConfig_Switch } from './BetterGIUserConfig_Switch';
 import type { BetterGIUserConfig_Task } from './BetterGIUserConfig_Task';
 export type BetterGIUserConfig = {
-    /**
-     * 用户信息
-     */
-    Info?: (BetterGIUserConfig_Info | null);
-    /**
-     * 任务配置
-     */
-    Task?: (BetterGIUserConfig_Task | null);
-    /**
-     * 切换账号配置
-     */
-    Switch?: (BetterGIUserConfig_Switch | null);
-    /**
-     * 一条龙配置
-     */
-    OneDragon?: (BetterGIUserConfig_OneDragon | null);
-    /**
-     * 用户数据
-     */
     Data?: (BetterGIUserConfig_Data | null);
-    /**
-     * 单独通知
-     */
+    Info?: (BetterGIUserConfig_Info | null);
     Notify?: (BetterGIUserConfig_Notify | null);
+    OneDragon?: (BetterGIUserConfig_OneDragon | null);
+    Switch?: (BetterGIUserConfig_Switch | null);
+    Task?: (BetterGIUserConfig_Task | null);
 };
 

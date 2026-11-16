@@ -1,21 +1,32 @@
 <template>
   <div class="launch-page">
     <div class="launch-wash" aria-hidden="true"></div>
+    <div v-if="!resources.requested || resources.ready" class="launch-language">
+      <BootstrapLanguageSelect />
+    </div>
 
+    <I18nResourceGate
+      v-if="resources.requested && !resources.ready"
+      @retry="handleLocalEnterApp(true)"
+      @recover="recoverInitialization"
+    />
     <RuntimeBackendStartPanel
-      v-if="isBackendStep"
+      v-else-if="isBackendStep"
       :retrying="flowKind === 'startup'"
+      :runtime-mode="runtimeMode"
       :show-skip-button="currentStep.canSkip"
       @update:status="handleBackendStatusChange"
       @complete="handleBackendComplete"
       @error="handleBackendError"
+      @recovery-action="handleBackendRecoveryAction"
+      @runtime-updated="handleRuntimeUpdated"
       @skip="handleSkip"
     />
     <LaunchFailure
       v-else-if="hasFailed"
       v-bind="failureProps"
       @action="handleFailureAction"
-      @update:selected-mirror="handleMirrorSelect"
+      @runtime-updated="handleRuntimeUpdated"
       @skip="handleSkip"
     />
     <LaunchStatus
@@ -25,7 +36,7 @@
       :progress="statusProgress"
       :details="statusDetails"
       :steps="launchSteps"
-      :action-label="t('launch.viewLog')"
+      :action-label="t('bootstrap.launch.viewLog')"
       @action="openLaunchLogWindow('初始化流程')"
     />
   </div>
@@ -38,23 +49,37 @@ import { openLaunchLogWindow } from '@/utils/launch'
 import LaunchFailure from './components/LaunchFailure.vue'
 import RuntimeBackendStartPanel from './components/RuntimeBackendStartPanel.vue'
 import { useInitializationFlow } from './useInitializationFlow'
+import BootstrapLanguageSelect from '@/components/BootstrapLanguageSelect.vue'
+import I18nResourceGate from '@/components/I18nResourceGate.vue'
+import { useBackendI18nStore } from '@/stores/backendI18n'
+import { cancelAppEntry } from '@/utils/appEntry'
+import { managesBackendProcess } from '@/utils/environment'
 
 defineOptions({ name: 'RuntimeInitializationPage' })
 
 const { t } = useI18n()
+const resources = useBackendI18nStore()
+const recoverInitialization = async () => {
+  cancelAppEntry()
+  resources.cancelEntry()
+  if (!managesBackendProcess()) await handleLocalEnterApp(true)
+}
 const {
   currentStep,
   failureProps,
   flowKind,
   handleBackendComplete,
   handleBackendError,
+  handleBackendRecoveryAction,
   handleBackendStatusChange,
   handleFailureAction,
-  handleMirrorSelect,
+  handleRuntimeUpdated,
   handleSkip,
+  handleLocalEnterApp,
   hasFailed,
   isBackendStep,
   launchSteps,
+  runtimeMode,
   statusDetails,
   statusHint,
   statusProgress,
@@ -71,6 +96,13 @@ const {
   min-height: 100%;
   background: var(--ant-color-bg-layout);
   color: var(--ant-color-text);
+}
+
+.launch-language {
+  position: absolute;
+  top: 16px;
+  right: 24px;
+  z-index: 1;
 }
 
 /* 与标题栏 logo 的主题色晕开同一套语言，给空屏一点纵深。 */

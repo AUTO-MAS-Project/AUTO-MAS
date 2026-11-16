@@ -11,37 +11,13 @@ import type { HSRUserConfig_Stage } from './HSRUserConfig_Stage';
 import type { HSRUserConfig_TaskOpt } from './HSRUserConfig_TaskOpt';
 import type { HSRUserConfig_TaskSwitch } from './HSRUserConfig_TaskSwitch';
 export type HSRUserConfig = {
-    /**
-     * 基础信息
-     */
-    Info?: (HSRUserConfig_Info | null);
-    /**
-     * 用户数据
-     */
-    Data?: (HSRUserConfig_Data | null);
-    /**
-     * 模块执行开关
-     */
-    TaskSwitch?: (HSRUserConfig_TaskSwitch | null);
-    /**
-     * 关卡配置
-     */
-    Stage?: (HSRUserConfig_Stage | null);
-    /**
-     * 模块执行参数
-     */
-    TaskOpt?: (HSRUserConfig_TaskOpt | null);
-    /**
-     * 单独通知
-     */
-    Notify?: (HSRUserConfig_Notify | null);
-    /**
-     * 控制配置
-     */
     Control?: (HSRUserConfig_Control | null);
-    /**
-     * 托管配置
-     */
+    Data?: (HSRUserConfig_Data | null);
+    Info?: (HSRUserConfig_Info | null);
     Managed?: (HSRUserConfig_Managed | null);
+    Notify?: (HSRUserConfig_Notify | null);
+    Stage?: (HSRUserConfig_Stage | null);
+    TaskOpt?: (HSRUserConfig_TaskOpt | null);
+    TaskSwitch?: (HSRUserConfig_TaskSwitch | null);
 };
 

@@ -1,6 +1,5 @@
 <template>
   <a-layout
-    :class="mascotLayoutClass"
     style="
       position: relative;
       z-index: 1;
@@ -13,10 +12,8 @@
     <a-layout-sider
       :width="SIDER_WIDTH"
       :theme="isDark ? 'dark' : 'light'"
-      :style="{
-        background: 'var(--app-appearance-elevated-surface-bg, var(--ant-color-bg-elevated))',
-        borderRight: '1px solid var(--ant-color-border)',
-      }"
+      class="app-sider"
+      :class="{ 'app-sider--appearance': activeAppearance }"
     >
       <div class="sider-content">
         <a-menu
@@ -47,11 +44,28 @@
       </div>
     </a-layout-sider>
 
-    <a-layout style="flex: 1; min-width: 0; background: transparent">
+    <a-layout
+      class="app-body"
+      :class="{ 'app-body--glow': isDark && !activeAppearance }"
+      style="flex: 1; min-width: 0; background: transparent"
+    >
       <a-layout-content class="content-area">
+        <a-alert
+          v-if="languageResources.error"
+          type="warning"
+          show-icon
+          :message="t('bootstrap.i18n.failed')"
+          :description="languageResources.error"
+        >
+          <template #action>
+            <a-button :loading="languageResources.loading" @click="languageResources.refresh()">
+              {{ t('bootstrap.i18n.retry') }}
+            </a-button>
+          </template>
+        </a-alert>
         <router-view v-slot="{ Component, route: currentRoute }">
           <keep-alive :include="['SchedulerPage']">
-            <component :is="Component" :key="currentRoute.path" />
+            <component :is="Component" :key="currentRoute.path" @vue:mounted="onPageMounted" />
           </keep-alive>
         </router-view>
       </a-layout-content>
@@ -60,6 +74,7 @@
 </template>
 
 <script lang="ts" setup>
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import { useI18n } from 'vue-i18n'
 import {
   BugOutlined,
@@ -72,10 +87,10 @@ import {
   HomeOutlined,
   SettingOutlined,
   SkinOutlined,
-  ToolOutlined,
   UnorderedListOutlined,
+  ToolOutlined,
 } from '@ant-design/icons-vue'
-import { computed } from 'vue'
+import { computed, nextTick, onUnmounted, watch } from 'vue'
 import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme.ts'
@@ -83,56 +98,76 @@ import { useRouteLock } from '../composables/useRouteLock.ts'
 import type { MenuProps } from 'ant-design-vue'
 import type { AppearanceMenuIconKey } from '@/types/appearance'
 import { createAppearanceMenuIcon } from './appearanceMenuIcon'
+import { useBackendI18nStore } from '@/stores/backendI18n'
+import { cancelMcpPaint, scheduleMcpAfterPaint } from '@/composables/useMcpApi'
+
+const emit = defineEmits<{ pageReady: [] }>()
 
 const { t } = useI18n()
+const languageResources = useBackendI18nStore()
 
 const SIDER_WIDTH = 160
 
 const router = useRouter()
 const route = useRoute()
 const { isDark, activeAppearance } = useTheme()
-const mascotLayoutClass = computed(() => {
-  if (!activeAppearance.value?.mascotUrl) return undefined
-  const position = activeAppearance.value.mascot?.position ?? 'bottom-right'
-  return position.endsWith('left') ? 'appearance-mascot-left' : 'appearance-mascot-right'
-})
 const { isRouteLocked, triggerBlockCallback } = useRouteLock()
 
-// 菜单图标可由外观包按固定键替换；缺少资源时继续使用内置图标。
+// 首页等布局就绪；若用户提前切页，由当前业务页的首帧接续启动放行。
+function onPageMounted(): void {
+  emit('pageReady')
+  if (route.name !== 'Home') scheduleMcpAfterPaint()
+}
+watch(() => route.path, cancelMcpPaint, { flush: 'pre' })
+onUnmounted(cancelMcpPaint)
+
+// 内容区滚动复位：滚动容器是 .content-area（div），路由 scrollBehavior 管不到。
+// 路径变化（页面切换）时回顶，避免旧页面的滚动位置被带到新页面；
+// 仅查询参数变化（如页签切换）不重置。取容器沿用 .content-area 查询惯例。
+watch(
+  () => route.path,
+  () =>
+    void nextTick(() => {
+      document.querySelector<HTMLElement>('.content-area')?.scrollTo({ top: 0 })
+    })
+)
+
+// 菜单图标依次使用外观包的专属图标、默认图标和内置图标。
 const icon =
   (key: AppearanceMenuIconKey, Comp: Component, menuIcons = activeAppearance.value?.menuIconUrls) =>
   () =>
     createAppearanceMenuIcon(key, Comp, menuIcons)
 
-// 判断是否为开发环境。必须与 router/index.ts 里注册调试路由的条件保持一致，
-// 否则菜单项会指向未注册的路由。之前这里还额外判断了 hostname === 'localhost'，
-// 生产环境走 loadFile（file:// 协议，hostname 为空）不会命中，但用 vite preview
-// 预览生产构建时会命中，导致菜单显示了实际不存在的路由。
-const isDevelopment = computed(() => import.meta.env.DEV)
+// 调试入口与路由同时要求开发构建和开发环境，避免指向已裁剪的页面。
+const isDevelopment = import.meta.env.DEV && isDev
 
 const mainMenuItems = computed(() => [
-  { key: '/home', label: t('comp.home'), icon: icon('home', HomeOutlined) },
-  { key: '/scripts', label: t('comp.scripts'), icon: icon('scripts', FileTextOutlined) },
-  { key: '/plans', label: t('comp.plans'), icon: icon('plans', CalendarOutlined) },
-  { key: '/emulators', label: t('comp.emulators'), icon: icon('emulators', DatabaseOutlined) },
-  { key: '/queue', label: t('comp.queue'), icon: icon('queue', UnorderedListOutlined) },
-  { key: '/scheduler', label: t('comp.scheduler'), icon: icon('scheduler', ControlOutlined) },
+  { key: '/home', label: t('core.comp.home'), icon: icon('home', HomeOutlined) },
+  { key: '/scripts', label: t('core.comp.scripts'), icon: icon('scripts', FileTextOutlined) },
+  { key: '/plans', label: t('core.comp.plans'), icon: icon('plans', CalendarOutlined) },
+  { key: '/emulators', label: t('core.comp.emulators'), icon: icon('emulators', DatabaseOutlined) },
+  { key: '/queue', label: t('core.comp.queue'), icon: icon('queue', UnorderedListOutlined) },
+  { key: '/scheduler', label: t('core.comp.scheduler'), icon: icon('scheduler', ControlOutlined) },
 ])
 
 // 开发环境专用菜单项
 const devMenuItems = computed(() => [
-  { key: '/TestRouter', label: t('comp.testRoute'), icon: icon('testRouter', SettingOutlined) },
-  { key: '/OCRdev', label: t('comp.ocrTest'), icon: icon('ocrDev', SettingOutlined) },
+  {
+    key: '/TestRouter',
+    label: t('core.comp.testRoute'),
+    icon: icon('testRouter', SettingOutlined),
+  },
+  { key: '/OCRdev', label: t('core.comp.ocrTest'), icon: icon('ocrDev', SettingOutlined) },
   {
     key: '/OverlayMaskDev',
-    label: t('comp.overlayEasterEggTest'),
+    label: t('core.comp.overlayEasterEggTest'),
     icon: icon('overlayMaskDev', SettingOutlined),
   },
-  ...(import.meta.env.DEV
+  ...(isDevelopment
     ? [
         {
           key: '/update-download-dev',
-          label: t('comp.updateDownloadTest'),
+          label: t('core.comp.updateDownloadTest'),
           icon: icon('updateDownloadDev', BugOutlined),
         },
       ]
@@ -140,11 +175,11 @@ const devMenuItems = computed(() => [
 ])
 
 const bottomMenuItems = computed(() => [
-  { key: '/gamesign', label: t('comp.checkIns'), icon: icon('gameSign', CarryOutOutlined) },
-  { key: '/history', label: t('comp.history'), icon: icon('history', HistoryOutlined) },
-  { key: '/tools', label: t('comp.tools'), icon: icon('tools', ToolOutlined) },
-  { key: '/theme-store', label: t('comp.themeStore'), icon: icon('themeStore', SkinOutlined) },
-  { key: '/settings', label: t('comp.settings'), icon: icon('settings', SettingOutlined) },
+  { key: '/tools', label: t('core.tools.title'), icon: icon('tools', ToolOutlined) },
+  { key: '/gamesign', label: t('core.comp.checkIns'), icon: icon('gameSign', CarryOutOutlined) },
+  { key: '/history', label: t('core.comp.history'), icon: icon('history', HistoryOutlined) },
+  { key: '/theme-store', label: t('core.comp.themeStore'), icon: icon('themeStore', SkinOutlined) },
+  { key: '/settings', label: t('core.comp.settings'), icon: icon('settings', SettingOutlined) },
 ])
 
 type MenuEntry = NonNullable<MenuProps['items']>[number]
@@ -167,7 +202,7 @@ const flattenMenuItems = (items: readonly MenuEntry[]): MenuEntry[] => {
 
 const allItems = computed(() => [
   ...mainMenuItems.value,
-  ...(isDevelopment.value ? devMenuItems.value : []),
+  ...(isDevelopment ? devMenuItems.value : []),
   ...bottomMenuItems.value,
 ])
 
@@ -197,15 +232,16 @@ const onMenuClick: MenuProps['onClick'] = info => {
   }
 
   if (
-    target === '/update-download-dev' &&
     import.meta.env.DEV &&
+    target === '/update-download-dev' &&
+    isDevelopment &&
     !router.hasRoute('UpdateDownloadDev')
   ) {
     router.addRoute({
       path: '/update-download-dev',
       name: 'UpdateDownloadDev',
       component: () => import('@/views/UpdateDownloadDev.vue'),
-      meta: { title: t('comp.updateDownloadTest'), skipGuard: true },
+      meta: { title: t('core.comp.updateDownloadTest'), skipGuard: true },
     })
   }
 
@@ -214,19 +250,19 @@ const onMenuClick: MenuProps['onClick'] = info => {
 </script>
 
 <style scoped>
-.appearance-mascot-left {
-  margin-left: calc(min(var(--app-appearance-mascot-width), 35vw) + 32px);
+/* 侧栏与卡片同为表面层，不跟随主题色；外观包和自定义背景保留各自的表面色。 */
+.app-sider {
+  background: var(--app-sider-bg, var(--ant-color-bg-container));
+  border-right: 1px solid var(--app-sider-border-color, var(--ant-color-border-secondary));
 }
 
-.appearance-mascot-right {
-  margin-right: calc(min(var(--app-appearance-mascot-width), 35vw) + 32px);
+.app-sider--appearance {
+  border-right-color: var(--ant-color-border);
 }
 
-@media (max-width: 800px) {
-  .appearance-mascot-left,
-  .appearance-mascot-right {
-    margin-inline: 0;
-  }
+.app-sider--appearance,
+html.appearance-background-custom .app-sider {
+  background: var(--app-appearance-elevated-surface-bg);
 }
 
 .sider-content {
@@ -248,7 +284,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
   /* 水平居中 */
   width: calc(100% - 16px);
   /* 两侧各留 8px 空隙 */
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 5px 16px !important;
   /* 左右内边距 */
   line-height: 36px;
@@ -267,7 +303,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
 .sider-content :deep(.ant-menu .ant-menu-submenu) {
   width: calc(100% - 16px);
   margin: 2px auto;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 
 .sider-content :deep(.ant-menu .ant-menu-submenu-title) {
@@ -275,7 +311,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
   margin: 0;
   padding: 5px 16px !important;
   line-height: 30px;
-  border-radius: 6px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -363,12 +399,49 @@ const onMenuClick: MenuProps['onClick'] = info => {
   margin-top: auto;
 }
 
+.app-body {
+  position: relative;
+  isolation: isolate;
+}
+
+.app-body::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(
+      ellipse 75% 65% at 10% 0%,
+      color-mix(in srgb, var(--ant-color-primary) 20%, transparent),
+      transparent 75%
+    ),
+    radial-gradient(
+      ellipse 65% 75% at 100% 100%,
+      color-mix(in srgb, var(--ant-color-primary) 10%, transparent),
+      transparent 75%
+    );
+  transition: opacity var(--app-theme-transition-duration) ease;
+}
+
+.app-body--glow::before {
+  opacity: 1;
+}
+
+/* 背景图片自行提供氛围，避免再叠加主题光晕。 */
+html.appearance-background-custom .app-body::before {
+  opacity: 0;
+}
+
 .content-area {
+  position: relative;
+  z-index: 1;
   min-height: 0;
   overflow: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  padding: 32px;
+  padding: var(--app-page-gutter);
 }
 
 .content-area::-webkit-scrollbar {

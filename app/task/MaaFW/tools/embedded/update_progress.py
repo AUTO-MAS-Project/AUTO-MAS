@@ -19,7 +19,8 @@
 """MaaFW 项目手动更新过程 → WS 进度数据的翻译。
 
 核心包（``updater`` / ``transport`` / ``apply``）各自发裸 dict 事件，阶段名与
-字段名并不统一；编辑页「更新过程」面板要的是一份稳定的
+字段名并不统一（入口先经 ``UpdateProgressEvent.of`` 转成类型化模型，字段口径在
+``core/project_update/progress.py``）；编辑页「更新过程」面板要的是一份稳定的
 :class:`WSMaaFWProjectUpdateProgressData`。翻译只在这里做一次，检查与应用
 两条路径共用。
 
@@ -42,8 +43,9 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from app.models.schema import WSMaaFWProjectUpdateProgressData
+from app.task.MaaFW.tools.core.project_update.progress import UpdateProgressEvent
 from app.task.MaaFW.tools.core.project_update.timing import format_duration
-from app.utils.security import sanitize_log_message
+from app.utils import sanitize_log_message
 
 STATUS_RUNNING = "running"
 STATUS_SUCCESS = "success"
@@ -51,6 +53,9 @@ STATUS_FAILED = "failed"
 
 PACKAGE_KIND_FULL = "full"
 PACKAGE_KIND_INCREMENTAL = "incremental"
+
+# 日志行级别：要用户留意的行（如项目发错版本号），面板整行标红；普通行不带级别。
+LOG_LEVEL_ALERT = "alert"
 
 _FINAL_STAGES = frozenset({"completed", "failed"})
 # 核心包以 ``completed`` 收尾、但其实没装上也没法确认已是最新的子状态：点了「更新」却
@@ -128,16 +133,6 @@ def normalize_package_kind(raw_value: Any) -> str | None:
     return None
 
 
-def _optional_int(value: Any) -> int | None:
-    if isinstance(value, bool) or value is None:
-        return None
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number >= 0 else None
-
-
 def _percent(done: int | None, total: int | None) -> float | None:
     if done is None or not total or total <= 0:
         return None
@@ -147,14 +142,14 @@ def _percent(done: int | None, total: int | None) -> float | None:
 _ExtractCounts = tuple[int | None, int | None, int | None, int | None]
 
 
-def _extract_counts(event: Mapping[str, Any]) -> _ExtractCounts:
+def _extract_counts(event: UpdateProgressEvent) -> _ExtractCounts:
     """解压事件的 (已解压文件, 文件总数, 已解压字节, 展开总字节)。"""
 
     return (
-        _optional_int(event.get("extractedFiles")),
-        _optional_int(event.get("extractTotalFiles")),
-        _optional_int(event.get("extractedBytes")),
-        _optional_int(event.get("extractTotalBytes")),
+        event.extracted_files,
+        event.extract_total_files,
+        event.extracted_bytes,
+        event.extract_total_bytes,
     )
 
 
@@ -267,11 +262,15 @@ class MaaFWUpdateProgressTracker:
 
     # ------------------------------------------------------------------ 入口
 
-    def log(self, line: str) -> WSMaaFWProjectUpdateProgressData:
-        """一行更新日志；调用方已打码也无妨，这里再过一遍。"""
+    def log(
+        self, line: str, *, alert: bool = False
+    ) -> WSMaaFWProjectUpdateProgressData:
+        """一行更新日志；调用方已打码也无妨，这里再过一遍。``alert``：面板里整行标红。"""
 
         text = sanitize_log_message(str(line))
-        return self._data("log", message=text, log=text)
+        return self._data(
+            "log", message=text, log=text, logLevel=LOG_LEVEL_ALERT if alert else None
+        )
 
     def checking(self, message: str = "") -> WSMaaFWProjectUpdateProgressData:
         return self._data("checking", message=message or _STAGE_MESSAGES["checking"])
@@ -294,7 +293,7 @@ class MaaFWUpdateProgressTracker:
         )
 
     def events(
-        self, event: Mapping[str, Any]
+        self, event: UpdateProgressEvent | Mapping[str, Any]
     ) -> list[WSMaaFWProjectUpdateProgressData]:
         """同 :meth:`event`，但返回要发的全部 WS 消息（被节流吞掉时为空）。
 
@@ -311,19 +310,19 @@ class MaaFWUpdateProgressTracker:
         return [data]
 
     def event(
-        self, event: Mapping[str, Any]
+        self, event: UpdateProgressEvent | Mapping[str, Any]
     ) -> WSMaaFWProjectUpdateProgressData | None:
-        """翻译一条核心包进度事件；被节流吞掉时返回 ``None``。"""
+        """翻译一条核心包进度事件（dict 或已转好的模型）；被节流吞掉时返回 ``None``。"""
 
-        stage = str(event.get("stage") or "").strip()
+        event = UpdateProgressEvent.of(event)
+        stage = event.stage
         if not stage:
             return None
 
-        for key in ("package_type", "packageType"):
-            if key in event:
-                kind = normalize_package_kind(event.get(key))
-                if kind is not None:
-                    self.package_kind = kind
+        for raw_kind in event.package_types:
+            kind = normalize_package_kind(raw_kind)
+            if kind is not None:
+                self.package_kind = kind
 
         if stage in _FINAL_STAGES:
             return self._final(stage, event)
@@ -338,13 +337,10 @@ class MaaFWUpdateProgressTracker:
     # ------------------------------------------------------------------ 各阶段
 
     def _final(
-        self, stage: str, event: Mapping[str, Any]
+        self, stage: str, event: UpdateProgressEvent
     ) -> WSMaaFWProjectUpdateProgressData:
-        message = str(event.get("message") or "")
-        if (
-            stage == "failed"
-            or str(event.get("status") or "") in _UNSUCCESSFUL_COMPLETED_STATUSES
-        ):
+        message = event.message
+        if stage == "failed" or event.status in _UNSUCCESSFUL_COMPLETED_STATUSES:
             return self._data(
                 "failed", status=STATUS_FAILED, message=message or "更新失败"
             )
@@ -353,14 +349,14 @@ class MaaFWUpdateProgressTracker:
         )
 
     def _plain(
-        self, stage: str, event: Mapping[str, Any]
+        self, stage: str, event: UpdateProgressEvent
     ) -> WSMaaFWProjectUpdateProgressData:
-        message = str(event.get("message") or "")
+        message = event.message
         if stage == "checking":
             # 核心包这一步的 message 是英文流水（"checking for project updates"），
             # 面板上统一用中文阶段文案；发现版本时把版本号带上。
-            if str(event.get("status") or "") == "version_discovered":
-                version = str(event.get("version") or "").strip()
+            if event.status == "version_discovered":
+                version = event.version.strip()
                 message = f"发现新版本 {version}" if version else "发现新版本"
             else:
                 message = _STAGE_MESSAGES["checking"]
@@ -368,10 +364,10 @@ class MaaFWUpdateProgressTracker:
         return self._data(stage, message=message or _STAGE_MESSAGES.get(stage, ""))
 
     def _download(
-        self, stage: str, event: Mapping[str, Any]
+        self, stage: str, event: UpdateProgressEvent
     ) -> WSMaaFWProjectUpdateProgressData | None:
-        downloaded = _optional_int(event.get("downloaded_bytes"))
-        total = _optional_int(event.get("total_bytes"))
+        downloaded = event.downloaded_bytes
+        total = event.total_bytes
         now = self._clock()
         finished = stage == "downloaded" or (
             downloaded is not None and total is not None and downloaded >= total
@@ -401,7 +397,7 @@ class MaaFWUpdateProgressTracker:
         )
 
     def _extracting(
-        self, event: Mapping[str, Any]
+        self, event: UpdateProgressEvent
     ) -> WSMaaFWProjectUpdateProgressData | None:
         files, total_files, done_bytes, total_bytes = _extract_counts(event)
         now = self._clock()
@@ -422,10 +418,10 @@ class MaaFWUpdateProgressTracker:
         )
 
     def _applying(
-        self, event: Mapping[str, Any]
+        self, event: UpdateProgressEvent
     ) -> WSMaaFWProjectUpdateProgressData | None:
-        applied = _optional_int(event.get("appliedFiles"))
-        total = _optional_int(event.get("totalFiles"))
+        applied = event.applied_files
+        total = event.total_files
         now = self._clock()
         finished = applied is not None and total is not None and applied >= total
         # 首个 applying（appliedFiles=0）与最后一个必发；中间按时间节流。
@@ -476,8 +472,9 @@ class MaaFWUpdateTaskLogTranslator:
         self._apply_bucket: int | None = None
         self._apply_done = False
 
-    def event(self, event: Mapping[str, Any]) -> str | None:
-        stage = str(event.get("stage") or "").strip()
+    def event(self, event: UpdateProgressEvent | Mapping[str, Any]) -> str | None:
+        event = UpdateProgressEvent.of(event)
+        stage = event.stage
         if not stage or stage in _TASK_LOG_SKIPPED_STAGES:
             return None
         if stage in {"downloading", "downloaded"}:
@@ -491,9 +488,9 @@ class MaaFWUpdateTaskLogTranslator:
 
     # ------------------------------------------------------------------ 下载
 
-    def _download(self, stage: str, event: Mapping[str, Any]) -> str | None:
-        downloaded = _optional_int(event.get("downloaded_bytes"))
-        total = _optional_int(event.get("total_bytes"))
+    def _download(self, stage: str, event: UpdateProgressEvent) -> str | None:
+        downloaded = event.downloaded_bytes
+        total = event.total_bytes
         finished = stage == "downloaded" or (
             downloaded is not None
             and total is not None
@@ -545,7 +542,7 @@ class MaaFWUpdateTaskLogTranslator:
 
     # ------------------------------------------------------------------ 解压
 
-    def _extracting(self, event: Mapping[str, Any]) -> str | None:
+    def _extracting(self, event: UpdateProgressEvent) -> str | None:
         """每跨 10% 一行，带文件数、MB 与已用时。
 
         开始（「正在解压更新包：N 个文件，解压后约 X MB」）与结束（「解压完成：…，用时 …」）
@@ -582,9 +579,9 @@ class MaaFWUpdateTaskLogTranslator:
 
     # ------------------------------------------------------------------ 覆盖
 
-    def _applying(self, event: Mapping[str, Any]) -> str | None:
-        applied = _optional_int(event.get("appliedFiles"))
-        total = _optional_int(event.get("totalFiles"))
+    def _applying(self, event: UpdateProgressEvent) -> str | None:
+        applied = event.applied_files
+        total = event.total_files
         if applied is None or not total or total <= 0:
             if self._apply_bucket is not None:
                 return None

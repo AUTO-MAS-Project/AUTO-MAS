@@ -31,11 +31,11 @@ export type ScriptGetOut = {
      */
     message?: string;
     /**
-     * 脚本索引列表
+     * 托管索引列表
      */
     index: Array<ScriptIndexItem>;
     /**
-     * 脚本数据字典, key来自于index列表的uid
+     * 托管数据字典, key来自于index列表的uid
      */
     data: Record<string, (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig | MaaFWConfig | HSRConfig | BetterGIConfig | ZzzOdConfig | BAAHConfig | WhimboxConfig | MSSConfig)>;
 };

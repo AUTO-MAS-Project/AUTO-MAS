@@ -1,8 +1,9 @@
+import { TaskMode } from '@/api'
+import { beginAnalyticsOperation } from '@/utils/analytics'
 import { translate as t } from '@/i18n'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
-import { Service } from '@/api/services/Service'
+import { configuredTaskRequest, fetchTaskTargets } from '@/composables/useTaskOptions'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { getConfig, saveConfig } from '@/utils/config'
 import { navigateTo } from '@/router'
@@ -13,23 +14,20 @@ import {
   toHomeTaskOptions,
   type HomeTaskOption,
 } from '@/views/home/homeQuickStartTasks'
-import { pickHomeGreeting } from '@/views/home/homeGreeting'
-import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
+import { useHomeGreetingStore } from '@/stores/homeGreeting'
+import { useSchedulerStore } from '@/stores/scheduler'
+import { useTaskApi } from '@/composables/useTaskApi'
 
 export const useHomeQuickStart = () => {
   const logger = window.electronAPI.getLogger('首页')
   const { playSound } = useAudioPlayer()
-  const { trackStartedTask } = useSchedulerLogic()
+  const { trackStartedTask } = useSchedulerStore()
+  const { startTask } = useTaskApi()
 
-  const homeGreeting = pickHomeGreeting()
-  const commandTitle = ref(homeGreeting.text)
-  const commandAuthor = ref(homeGreeting.author)
-
-  const refreshGreeting = () => {
-    const nextGreeting = pickHomeGreeting(commandTitle.value)
-    commandTitle.value = nextGreeting.text
-    commandAuthor.value = nextGreeting.author
-  }
+  const homeGreeting = useHomeGreetingStore()
+  const commandTitle = computed(() => homeGreeting.greeting.text)
+  const commandAuthor = computed(() => homeGreeting.greeting.author)
+  const refreshGreeting = homeGreeting.refreshGreeting
 
   const schedulerTasksLoading = ref(false)
   // 任务列表拉取失败：下拉里给一句提示，重新展开下拉即重试
@@ -38,7 +36,7 @@ export const useHomeQuickStart = () => {
 
   const schedulerTaskOptions = ref<HomeTaskOption[]>([])
   const selectedHomeTaskIds = ref<string[]>([])
-  const selectedHomeMode = ref<TaskCreateIn.mode>(TaskCreateIn.mode.AUTO_PROXY)
+  const selectedHomeMode = ref<TaskMode>(TaskMode.AUTO_PROXY)
   let savedSelectedTaskIds: string[] = []
   let selectionTouched = false
   let selectionSaveQueue = Promise.resolve()
@@ -52,10 +50,16 @@ export const useHomeQuickStart = () => {
     logger.warn(`${warning}: ${errorMessage}`)
   }
 
-  const queueSelectionSave = (taskIds: string[]) => {
+  const queueSelectionSave = (taskIds: string[], userInitiated = false) => {
+    const telemetry = userInitiated ? beginAnalyticsOperation('home_layout_changed') : null
     const normalizedTaskIds = normalizeHomeQuickStartSelection(taskIds)
     const saveTask = selectionSaveQueue.then(() =>
       saveConfig({ homeQuickStartSelectedTaskIds: normalizedTaskIds })
+    )
+    void saveTask.then(
+      () =>
+        telemetry?.finish({ action: 'quick_task', layout_preset: 'custom', outcome: 'success' }),
+      () => telemetry?.finish({ action: 'quick_task', layout_preset: 'custom', outcome: 'unknown' })
     )
     selectionSaveQueue = saveTask.catch(error => {
       logWarning('保存首页快速启动选择失败', error)
@@ -79,7 +83,7 @@ export const useHomeQuickStart = () => {
     selectionTouched = true
     savedSelectedTaskIds = normalizedTaskIds
     selectedHomeTaskIds.value = [...normalizedTaskIds]
-    void queueSelectionSave(normalizedTaskIds)
+    void queueSelectionSave(normalizedTaskIds, true)
   }
 
   const applyRealTaskOptions = (taskOptions: HomeTaskOption[]) => {
@@ -105,23 +109,23 @@ export const useHomeQuickStart = () => {
     schedulerTasksLoading.value = true
 
     try {
-      const response = await Service.getTaskComboxApiInfoComboxTaskPost()
-      if (response.code === 200 && Array.isArray(response.data)) {
+      const targets = await fetchTaskTargets()
+      if (Array.isArray(targets)) {
         schedulerTasksUnavailable.value = false
-        applyRealTaskOptions(toHomeTaskOptions(response.data))
+        applyRealTaskOptions(toHomeTaskOptions(targets))
         return
       }
 
       schedulerTasksUnavailable.value = true
       if (!options?.quiet) {
-        message.warning(t('home.quickStart.listUnavailable'))
+        message.warning(t('core.home.quickStart.listUnavailable'))
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.warn(`获取首页任务列表失败: ${errorMsg}`)
       schedulerTasksUnavailable.value = true
       if (!options?.quiet) {
-        message.warning(t('home.quickStart.listUnavailable'))
+        message.warning(t('core.home.quickStart.listUnavailable'))
       }
     } finally {
       schedulerTasksLoading.value = false
@@ -139,7 +143,7 @@ export const useHomeQuickStart = () => {
 
     const taskIds = retainSelectedTaskIds(selectedHomeTaskIds.value, schedulerTaskOptions.value)
     if (!taskIds.length) {
-      message.error(t('home.quickStart.selectTask'))
+      message.error(t('core.home.quickStart.selectTask'))
       return
     }
 
@@ -148,12 +152,11 @@ export const useHomeQuickStart = () => {
       const outcome = await launchHomeTasks({
         taskIds,
         options: schedulerTaskOptions.value,
-        fallbackLabel: t('home.quickStart.fallbackLabel'),
-        failureReason: t('home.quickStart.startFailed'),
-        startTask: taskId =>
-          Service.addTaskApiDispatchStartPost({
-            taskId,
-            mode: selectedHomeMode.value,
+        fallbackLabel: t('core.home.quickStart.fallbackLabel'),
+        failureReason: t('core.home.quickStart.startFailed'),
+        startTask: async taskId =>
+          startTask(await configuredTaskRequest(taskId, selectedHomeMode.value), {
+            source: 'home',
           }),
         onTaskStarted: result => {
           trackStartedTask({
@@ -172,7 +175,7 @@ export const useHomeQuickStart = () => {
 
       if (outcome.started.length) {
         message.success(
-          t('home.quickStart.startedCount', {
+          t('core.home.quickStart.startedCount', {
             p0: outcome.started.length,
             p1: taskIds.length,
           })
@@ -182,7 +185,7 @@ export const useHomeQuickStart = () => {
         const failureSummary = outcome.failed
           .map(failure => `${failure.taskLabel}: ${failure.reason}`)
           .join('; ')
-        message.error(t('home.quickStart.startFailedItems', { p0: failureSummary }))
+        message.error(t('core.home.quickStart.startFailedItems', { p0: failureSummary }))
       }
       if (outcome.started.length) {
         await navigateTo('/scheduler')
@@ -191,7 +194,7 @@ export const useHomeQuickStart = () => {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`首页开始任务失败: ${errorMsg}`)
-      message.error(t('home.quickStart.startError'))
+      message.error(t('core.home.quickStart.startError'))
     } finally {
       startingHomeTask.value = false
     }

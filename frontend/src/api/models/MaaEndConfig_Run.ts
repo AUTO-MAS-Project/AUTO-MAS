@@ -4,25 +4,33 @@
 /* eslint-disable */
 export type MaaEndConfig_Run = {
     /**
+     * 账号切换方式（默认使用 MAAEND，MAS 为兼容入口）
+     */
+    AccountSwitchMethod?: ('MAS' | 'MAAEND' | null);
+    /**
      * 单账号运行总时限（分钟），包含等待和全部重试
      */
     HardTimeLimit?: (number | null);
     /**
-     * 运行时间限制（分钟）
+     * 任务失败时是否按 MaaEnd 的导出规则打包运行日志
      */
-    RunTimeLimit?: (number | null);
+    IfSaveLogBundle?: (boolean | null);
+    /**
+     * 任务失败时保存日志包的目录，留空使用 MAS 目录下的 debug/maaend
+     */
+    LogBundlePath?: (string | null);
     /**
      * 每日代理次数限制
      */
     ProxyTimesLimit?: (number | null);
     /**
-     * 重试次数限制
+     * 运行超时阈值
+     */
+    RunTimeLimit?: (number | null);
+    /**
+     * 运行次数限制
      */
     RunTimesLimit?: (number | null);
-    /**
-     * 账号切换方式
-     */
-    AccountSwitchMethod?: ('MAS' | 'MAAEND' | null);
     /**
      * 任务切换方式
      */

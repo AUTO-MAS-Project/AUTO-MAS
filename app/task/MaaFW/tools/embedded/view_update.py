@@ -19,9 +19,11 @@
 """MFW 项目更新的宿主侧编排：谱系锁 → 组同步 → 核心更新（下载 / 构建 / 预检 / 登记）→
 切触发脚本 → 同步同组空闲脚本 → 它们的运行环境确认。
 
-组 = 谱系 + ``Update.Channel``，同组永远挂同一个载荷。运行前 / 运行后自动更新
+组 = 谱系 + ``Update.Channel``，同组永远挂同一个载荷。运行前自动更新
 （``embedded_manager``）与手动 ``/maafw/update`` 共用这里；两边只在「触发脚本的视图
-预约是谁拿着」「核心更新怎么调」上不同（``core_call`` 由调用方给）。
+预约是谁拿着」「核心更新怎么调」上不同（``core_call`` 由调用方给）。投影补齐与发行包核对
+也挂在这里。四个调用方都经 ``update_session.UpdateSession`` 组装参数再调
+:func:`run_view_update`。
 
 遍历 ``Config.ScriptConfig`` 只能在事件循环线程上做：同组候选（``GroupMember``）由
 调用方算好传进来，这里只收列表。
@@ -49,6 +51,7 @@ from app.task.MaaFW.tools.core.project_update.timing import format_duration
 from app.task.MaaFW.tools.core.project_update.updater import (
     MaaFWProjectUpdateError,
 )
+from app.task.MaaFW.tools.embedded import env_confirm
 from app.task.MaaFW.tools.embedded.embedded_project import (
     SKIP_UNADOPTED,
     STAGING_DIR_NAME,
@@ -192,11 +195,11 @@ def latest_entry(
         return None
     if not entry:
         return None
-    try:
-        directory = payloads.payload_dir(payloads_root(base), lineage, str(entry["id"]))
-    except payloads.PayloadError:
+    # 只剩目录、清单没了或读不出的 latest 切不过去，也当不了更新基准（建新载荷要读它的清单）：
+    # 与丢了同等对待，组同步不去切、更新以视图自己挂的载荷为准。
+    if not payloads.payload_complete(payloads_root(base), lineage, str(entry["id"])):
         return None
-    return entry if directory.is_dir() else None
+    return entry
 
 
 def public_source(entry: dict[str, Any] | None) -> str | None:
@@ -249,7 +252,7 @@ async def sync_view_to_group(
     """§3.1 第 9 步：视图挂的载荷 ≠ ``latest[channel]`` 就切过去（升级、被动 pending、
     改渠道后的降级都是这一条）。该渠道还没有载荷就留在原地。返回切换结果，没切为 None。
 
-    ``switched_by``：不是本脚本自己的运行切的（启动期迁移）时记进标记，见
+    ``switched_by``：不是本托管自己的运行切的（启动期迁移）时记进标记，见
     :func:`embedded_project.switch_or_confirm_in_progress`。
     """
 
@@ -329,7 +332,8 @@ def confirm_environments_in_background(
 ) -> None:
     """被传播切换的脚本各起一个后台线程确认一次运行环境（持各自的视图预约）。
 
-    切换只把文件摆好：``interfaceHash`` / ``requirementsHash`` 一变，isolated_venv 型
+    确认走 ``env_confirm.resolve_prepare_environment`` 取到的宿主实现（缺省严格）。切换只把文件摆好：
+    ``interfaceHash`` / ``requirementsHash`` 一变，isolated_venv 型
     项目的 venv 会整个重建（分钟级、要联网）。不在这里做就会落进它下次运行的 worker 里、
     游戏已经起来了。确认成功会在视图标记里记 ``envConfirmedFor``；失败或没做成，下次
     运行前检查按标记补。
@@ -356,9 +360,9 @@ def confirm_environments_in_background(
             if key is None:
                 return
             try:
-                from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
-
-                MaaFWEmbeddedManager._prepare_project_environment_sync(
+                # 每个托管一条专用后台线程（不进线程池），宿主实现在这里取。
+                prepare = env_confirm.resolve_prepare_environment()
+                prepare(
                     view,
                     threading.Event(),
                     lambda line: logger.debug(f"[{member.script_id[:8]}] {line}"),
@@ -444,7 +448,7 @@ async def run_view_update(
     新版本）。
 
     ``reservation_held``：调用方是否整段持有 S 视图的项目预约（手动更新持有；运行前 /
-    运行后自动更新不持有，这里切 S 时自己拿，拿不到就本轮不切、记一行日志——载荷已登记，
+    自动更新不持有，这里切 S 时自己拿，拿不到就本轮不切、记一行日志——载荷已登记，
     下次运行前的组同步会补上）。``lock_timeout``：等谱系锁的上限（手动更新给几秒，
     拿不到抛 ``project_lock_busy``；自动路径不限时）。``core_call(视图, 目标, 登记钩子)``
     调核心更新，返回它的结果。
@@ -452,7 +456,7 @@ async def run_view_update(
     ``members``：同组候选，或返回候选的函数。给函数时在登记之后（已持谱系锁、在事件
     循环线程上）才调，拿到的是切换那一刻的运行状态，而不是等锁之前的快照。
 
-    ``cancel_event``：用户停止时置位的令牌（运行前 / 运行后自动更新传）。等谱系锁时、
+    ``cancel_event``：用户停止时置位的令牌（运行前自动更新传）。等谱系锁时、
     拿到锁之后组同步之前、调核心更新之前各看一次，置位就抛 ``cancelled=True`` 的
     ``MaaFWProjectUpdateError``；核心更新里面怎么停由 ``core_call`` 自己把令牌交下去。
     """
@@ -487,7 +491,7 @@ async def run_view_update(
     )
     _LINEAGE_HOLDERS[lineage] = script_name or script_id[:8]
     # 持谱系锁这段把 S 的视图登记为「正在更新」：手动更新拿不到预约时据此说「正在更新」，
-    # 而不是「脚本正在运行」（运行前 / 运行后自动更新都走这里）。
+    # 而不是「托管正在运行」（运行前自动更新也走这里）。
     updating_key = begin_project_updating(view)
     try:
         # 等锁期间被停止、锁恰好同时空出来：不再往下做。
@@ -498,7 +502,7 @@ async def run_view_update(
         )
         if synced is not None:
             outcome.group_synced = True
-            log(f"已切换到 {synced.version}，与同项目、同更新通道的其他脚本一致")
+            log(f"已切换到 {synced.version}，与同项目、同更新通道的其他托管一致")
             marker = await asyncio.to_thread(read_view_marker, view) or marker
         base_marker = marker
         entry = await asyncio.to_thread(latest_entry, lineage, channel, base)
@@ -518,7 +522,7 @@ async def run_view_update(
             }
             newer = entry.get("version") or entry["id"]
             log(
-                f"本脚本当前是 {marker.get('version') or '旧版本'}，同项目其他脚本已更新到 "
+                f"本托管当前是 {marker.get('version') or '旧版本'}，同项目其他托管已更新到 "
                 f"{newer}，以 {newer} 为准检查更新"
             )
         target = await asyncio.to_thread(
@@ -611,7 +615,7 @@ def _normalize_result(
                 if getattr(result, "updated", False)
                 else (
                     f"已切换到 {outcome.version_after}"
-                    "（同项目其他脚本已下载过这一版本）"
+                    "（同项目其他托管已下载过这一版本）"
                 )
             ),
         )
@@ -619,7 +623,7 @@ def _normalize_result(
         return dataclasses.replace(
             result,
             updated=False,
-            message=f"新版本已准备好；{outcome.s_skipped_reason or '本脚本尚未切换'}",
+            message=f"新版本已准备好；{outcome.s_skipped_reason or '本托管尚未切换'}",
         )
     return result
 

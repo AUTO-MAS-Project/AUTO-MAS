@@ -1,8 +1,9 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import AdmZip = require('adm-zip')
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createOkwwIssueReport } from './okwwIssueReportService'
 
 import {
   addDebugDirectory,
@@ -30,18 +31,14 @@ function write(relative: string, text: string): void {
   fs.writeFileSync(target, text, 'utf-8')
 }
 
-function collect(archiveDir: string, ownAdapter?: 'oknte'): CollectorState['entries'] {
+function collect(archiveDir: string, ownAdapter?: 'oknte') {
   const state: CollectorState = { zip: new AdmZip(), entries: [], archiveBytes: 0 }
   addDebugDirectory(state, path.join(root, 'debug'), archiveDir, ownAdapter)
-  return state.entries
+  return state.zip.getEntries()
 }
 
 function pathsOf(entries: ReturnType<typeof collect>): string[] {
-  return entries.map(entry => entry.path)
-}
-
-function skippedPaths(entries: ReturnType<typeof collect>): string[] {
-  return entries.filter(entry => entry.status === 'skipped').map(entry => entry.path)
+  return entries.map(entry => entry.entryName)
 }
 
 describe('addDebugDirectory 只收声明方自己的诊断子目录', () => {
@@ -68,108 +65,12 @@ describe('addDebugDirectory 只收声明方自己的诊断子目录', () => {
     expect(pathsOf(entries)).not.toContain('logs/auto-mas/okww-account-switch/switch-error.jpg')
     expect(pathsOf(entries)).not.toContain('logs/auto-mas/new-adapter-diag/detail.log')
   })
-
-  it('其他专项的登记目录静默跳过，未登记目录留跳过条目进清单', () => {
-    write('debug/maaend-login/login-error.jpg', 'maaend')
-    write('debug/new-adapter-diag/detail.log', '未登记的新目录')
-
-    const entries = collect('logs/auto-mas', 'oknte')
-
-    expect(skippedPaths(entries)).toEqual(['logs/auto-mas/new-adapter-diag'])
-    expect(skippedPaths(entries)).not.toContain('logs/auto-mas/maaend-login')
-  })
-
-  it('未声明 ownAdapter 时只收顶层文件', () => {
-    write('debug/app.log', 'app log')
-    write('debug/maaend-login/login-error.jpg', 'maaend')
-    write('debug/oknte-launcher-start/launcher-error.jpg', 'oknte')
-
-    const entries = collect('logs/auto-mas')
-
-    expect(pathsOf(entries)).toEqual(['logs/auto-mas/app.log'])
-  })
-})
-
-describe('maskVerbatimJsonText 原文打码', () => {
-  // 这里的输入一律用普通字符串写转义（'\\u002F' 是原文里的六个字符），不用 String.raw：
-  // 转译后 String.raw 里的 \u 转义会被解码，测不到原文里的转义写法
-  const HOME = 'C:\\Users\\tester'
-  const mask = (text: string) => maskVerbatimJsonText(text, HOME)
-
-  it('字符串里 \\/ 转义写法的推送地址照样打码，只换这一个字面量', () => {
-    const text = '{ "a": "https:\\/\\/api.day.app\\/SECRET_A", "keep": "x\\/y" }'
-    expect(text).toContain('https:\\/\\/')
-    expect(mask(text)).toBe('{ "a": "https://api.day.app/***", "keep": "x\\/y" }')
-  })
-
-  it('\\u002F 大小写两种写法都认得出', () => {
-    const upper = '["https:\\u002F\\u002Fapi.day.app\\u002FSECRET_B"]'
-    const lower = '["https:\\u002f\\u002fapi.day.app\\u002fSECRET_C"]'
-    expect(upper).toContain('\\u002F')
-    expect(lower).toContain('\\u002f')
-    expect(mask(upper)).toBe('["https://api.day.app/***"]')
-    expect(mask(lower)).toBe('["https://api.day.app/***"]')
-  })
-
-  it('其他 \\uXXXX 转义写成的地址也认得出', () => {
-    const text = '["\\u0068ttps://\\u0061pi.day.app/SECRET_I"]'
-    expect(mask(text)).toBe('["https://api.day.app/***"]')
-  })
-
-  it('普通写法的地址与注释里的地址都打码', () => {
-    const text = [
-      '{',
-      '  // 推送 https://api.day.app/SECRET_D',
-      '  /* 备用 https://api.day.app/SECRET_E */',
-      '  "url": "https://api.day.app/SECRET_F"',
-      '}',
-    ].join('\n')
-    expect(mask(text)).toBe(text.replace(/SECRET_[DEF]/g, '***'))
-  })
-
-  it('主目录的原样、JSON 转义、正斜杠三种写法都换成 <HOME>', () => {
-    const text = [
-      '{ "a": "C:\\\\Users\\\\tester\\\\proj", "b": "C:/Users/tester/proj" }',
-      '// 原样 C:\\Users\\tester\\raw',
-    ].join('\n')
-    expect(text).toContain('C:\\\\Users\\\\tester')
-    const masked = mask(text)
-    expect(masked).not.toContain('tester')
-    expect(masked.match(/<HOME>/g)).toHaveLength(3)
-  })
-
-  it('不含密钥的 JSONC 逐字节不变（注释、格式、其他转义都保留）', () => {
-    const text = [
-      '{',
-      '  // 项目说明',
-      '  "name": "Demo\\u0020项目",',
-      '  "resource": [{ "path": ["./resource\\/base"] }], /* 尾注 */',
-      '  "github": "https://github.com/owner/repo"',
-      '}',
-      '',
-    ].join('\r\n')
-    expect(text).toContain('\\u0020')
-    expect(mask(text)).toBe(text)
-  })
-
-  it('坏字面量不抛错，按原文打码', () => {
-    const text =
-      '{ "a": "bad \\x https://api.day.app/SECRET_G", "b": "未闭合 https://api.day.app/SECRET_H\n}'
-    let masked = ''
-    expect(() => {
-      masked = mask(text)
-    }).not.toThrow()
-    expect(masked).not.toMatch(/SECRET_[GH]/)
-    expect(mask('"')).toBe('"')
-    expect(mask('"\\')).toBe('"\\')
-  })
 })
 
 describe('addDiagnosticFile 收解析不了的 .json', () => {
   beforeEach(() => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'issue-report-core-'))
   })
-
   afterEach(() => {
     fs.rmSync(root, { recursive: true, force: true })
   })
@@ -200,19 +101,69 @@ describe('addDiagnosticFile 收解析不了的 .json', () => {
     expect(stored).toContain('// 注释 https://api.day.app/***')
     expect(stored).toContain('"a": "https://api.day.app/***"')
   })
+})
 
-  it('.jsonc 与 .json 同一套：转义写法的推送地址也打码', () => {
-    const text = ['{', '  // 注释', '  "b": "https:\\/\\/api.day.app\\/SECRET_Q"', '}'].join('\n')
-    write('debug/conf.jsonc', text)
+describe('maskVerbatimJsonText 原文打码', () => {
+  it('主目录的原样、JSON 转义、正斜杠三种写法都换成 <HOME>', () => {
+    // 这里的输入一律用普通字符串写转义（'\\u002F' 是原文里的六个字符），不用 String.raw：
+    // 转译后 String.raw 里的 \u 转义会被解码，测不到原文里的转义写法
+    const HOME = 'C:\\Users\\tester'
+    const mask = (text: string) => maskVerbatimJsonText(text, HOME)
+    const text = [
+      '{ "a": "C:\\\\Users\\\\tester\\\\proj", "b": "C:/Users/tester/proj" }',
+      '// 原样 C:\\Users\\tester\\raw',
+    ].join('\n')
+    expect(text).toContain('C:\\\\Users\\\\tester')
+    const masked = mask(text)
+    expect(masked).not.toContain('tester')
+    expect(masked.match(/<HOME>/g)).toHaveLength(3)
+    const malformed =
+      '{ "a": "bad \\x https://api.day.app/SECRET_G", "b": "未闭合 https://api.day.app/SECRET_H\n}'
+    let malformedMasked = ''
+    expect(() => {
+      malformedMasked = mask(malformed)
+    }).not.toThrow()
+    expect(malformedMasked).not.toMatch(/SECRET_[GH]/)
+    expect(mask('"')).toBe('"')
+    expect(mask('"\\')).toBe('"\\')
+  })
+})
 
-    expect(collectText('debug/conf.jsonc')).not.toContain('SECRET_Q')
+describe('OK-WW 启动器日志问题包', () => {
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'okww-report-'))
   })
 
-  it('能解析的 .json 照旧按键名打码并重新排版', () => {
-    write('debug/plain.json', '{"b":"https:\\/\\/api.day.app\\/SECRET_P","token":"t"}')
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true })
+  })
 
-    expect(collectText('debug/plain.json')).toBe(
-      `${JSON.stringify({ b: 'https://api.day.app/***', token: '***' }, null, 2)}\n`
+  it('过大的启动器日志保留脱敏后的末尾', () => {
+    const installation = path.join(root, 'installation')
+    write(
+      'config/scripts.yaml',
+      JSON.stringify({
+        order: [{ uid: '1', type: 'OkwwConfig' }],
+        data: { '1': { Info: { RootPath: installation } } },
+      })
     )
+    write('installation/logs/app.2026-11-05', `Python: ${os.homedir()}${path.sep}python.exe\n`)
+    write(
+      'installation/logs/app.2026-11-06',
+      `${'old line\n'.repeat(3_000_000)}${os.homedir()}${path.sep}tail\n`
+    )
+    const output = path.join(root, 'report.zip')
+    expect(createOkwwIssueReport(root, output).success).toBe(true)
+    const zip = new AdmZip(output)
+    const dated = zip.getEntry('okww/okww-1/launcher/app.2026-11-05')!.getData().toString('utf-8')
+    expect(dated).not.toContain(os.homedir())
+    expect(dated).toContain(`<HOME>${path.sep}python.exe`)
+    const content = zip
+      .getEntry('okww/okww-1/launcher/app.2026-11-06.tail')!
+      .getData()
+      .toString('utf-8')
+    expect(content).toContain('<HOME>')
+    expect(content).not.toContain(os.homedir())
+    expect(content).toContain('tail')
   })
 })

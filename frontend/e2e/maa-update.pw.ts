@@ -1,0 +1,174 @@
+import type { APIRequestContext } from '@playwright/test'
+import type { WSTaskCompletedData } from '../src/services/websocket/types'
+import { projectTaskTree } from '../src/composables/taskTreeProjection'
+import { expect, test } from './fixtures'
+
+const backend = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? 36174}`
+const post = async (request: APIRequestContext, path: string, data: unknown) => {
+  const response = await request.post(`${backend}${path}`, { data })
+  expect(response.ok()).toBeTruthy()
+  const body = await response.json()
+  expect(body.code).toBe(200)
+  return body
+}
+
+// Authors may use an installed Chromium without downloading another browser.
+if (process.env.AUTO_MAS_E2E_CHROMIUM_PATH) {
+  test.use({ launchOptions: { executablePath: process.env.AUTO_MAS_E2E_CHROMIUM_PATH } })
+}
+
+test.describe('@maa-update configuration and dispatch', () => {
+  test('keeps form labels separate from focusable hints', async ({ app, page }) => {
+    const created = await post(page.request, '/api/scripts/add', { type: 'MAA' })
+    await app.goto(`/scripts/${created.scriptId}/edit/maa`)
+
+    const name = page.getByPlaceholder('Enter a managed script name', { exact: true })
+    await expect(name).toHaveAccessibleName('* Managed script name')
+    await expect(
+      page.getByPlaceholder('Pick the folder holding MAA.exe', { exact: true })
+    ).toHaveAccessibleName('* MAA path')
+
+    const hint = 'Give the managed script a name you will recognize'
+    const icon = page.getByRole('img', { name: hint, exact: true })
+    await name.focus()
+    await page.keyboard.press('Shift+Tab')
+    await expect(icon).toBeFocused()
+    await expect(page.getByRole('tooltip')).toHaveText(hint)
+    await page.keyboard.press('Tab')
+    await expect(name).toBeFocused()
+    await expect(page.getByRole('tooltip')).toBeHidden()
+    await app.evidence('maa-form-label-accessible-name')
+  })
+
+  test('persists beta selection and reports an unconfigured MAA task as failed', async ({
+    app,
+    page,
+  }) => {
+    const completed = new Map<string, WSTaskCompletedData>()
+    page.on('websocket', socket => {
+      if (new URL(socket.url()).pathname !== '/api/core/ws') return
+      socket.on('framereceived', ({ payload }) => {
+        const message = JSON.parse(typeof payload === 'string' ? payload : payload.toString()) as {
+          type?: string
+          id?: string
+          data?: WSTaskCompletedData
+        }
+        if (message.type === 'task.completed' && message.id && message.data) {
+          completed.set(message.id, message.data)
+        }
+      })
+    })
+    const created = await post(page.request, '/api/scripts/add', { type: 'MAA' })
+    const scriptId: string = created.scriptId
+    await post(page.request, '/api/scripts/update', {
+      scriptId,
+      data: { Info: { Name: 'PR1730 MAA' } },
+    })
+    const user = await post(page.request, '/api/scripts/user/add', { scriptId })
+    await post(page.request, '/api/scripts/user/update', {
+      scriptId,
+      userId: user.userId,
+      data: { Info: { Name: 'isolated account', Status: true, RemainedDay: -1 } },
+    })
+
+    await app.goto(`/scripts/${scriptId}/edit/maa`)
+    const updatePanel = page
+      .locator('.form-section')
+      .filter({ has: page.getByRole('heading', { name: 'Update takeover', exact: true }) })
+    await expect(updatePanel).toBeVisible()
+    await updatePanel.locator('.ant-select-selector').first().click()
+    const save = page.waitForResponse(
+      response =>
+        response.url().endsWith('/api/scripts/update') &&
+        response.request().postDataJSON()?.data?.Update?.Channel === 'beta'
+    )
+    await page.locator('.ant-select-dropdown:visible').getByText('Beta', { exact: true }).click()
+    expect((await (await save).json()).code).toBe(200)
+    const enable = page.waitForResponse(
+      response =>
+        response.url().endsWith('/api/scripts/update') &&
+        response.request().postDataJSON()?.data?.Update?.TakeoverEnabled === true
+    )
+    await updatePanel.getByRole('switch').click()
+    expect((await (await enable).json()).code).toBe(200)
+    await page.reload()
+    await expect(updatePanel.locator('.ant-select-selection-item').first()).toHaveText('Beta')
+    await expect(updatePanel.getByRole('switch')).toBeChecked()
+    await updatePanel.scrollIntoViewIfNeeded()
+    await app.evidence('maa-update-channel-persisted')
+
+    await app.goto('/scheduler')
+    const control = page.locator('.task-control').first()
+    await control.locator('.ant-select-selector').first().click()
+    await page
+      .locator('.ant-select-dropdown:visible')
+      .locator('.ant-select-item-option-content')
+      .filter({ hasText: 'PR1730 MAA' })
+      .click()
+    const started = page.waitForResponse(
+      response =>
+        response.url().endsWith('/api/dispatch/start') && response.request().method() === 'POST'
+    )
+    await control.getByRole('button', { name: /Run$/ }).click()
+    const accepted = await (await started).json()
+    expect(accepted.code).toBe(200)
+    expect(accepted.taskId).toBeTruthy()
+    // This isolated profile has no MAA or emulator. It must not claim an upgrade or run succeeded.
+    await expect
+      .poll(
+        () => {
+          const task = completed.get(accepted.taskId)?.task
+          return task
+            ? projectTaskTree(task).find(script => script.config_id === scriptId)?.status
+            : undefined
+        },
+        { timeout: 30_000 }
+      )
+      .toBe('异常')
+    await expect(page.locator('.ant-tabs-tab')).toHaveCount(1)
+    await expect(
+      page.locator('.overview-panel').getByText('PR1730 MAA', { exact: true })
+    ).toBeVisible()
+    const saved = await post(page.request, '/api/scripts/get', { scriptId })
+    expect(saved.data[scriptId].Update.Channel).toBe('beta')
+    expect(saved.data[scriptId].Update.TakeoverEnabled).toBe(true)
+    await app.evidence('maa-update-unconfigured-task-failed')
+  })
+})
+
+for (const script of [
+  { type: 'MAA', route: 'maa', heading: 'Update takeover' },
+  { type: 'MaaEnd', route: 'maaend', heading: 'MaaEnd program updates' },
+]) {
+  test(`@maa-update ${script.type} package mode persists with a risk notice and no CDK`, async ({
+    app,
+    page,
+  }) => {
+    const created = await post(page.request, '/api/scripts/add', { type: script.type })
+    await app.goto(`/scripts/${created.scriptId}/edit/${script.route}`)
+    const panel = page.locator('.form-section').filter({
+      has: page.getByRole('heading', { name: script.heading, exact: true }),
+    })
+    const mode = panel.getByRole('combobox', { name: 'Update method', exact: true })
+    await expect(mode).toBeDisabled()
+    await panel.getByRole('switch').click()
+    await expect(mode).toBeEnabled()
+    await mode.locator('xpath=ancestor::*[contains(@class, "ant-select-selector")]').click()
+    const saved = page.waitForResponse(
+      response =>
+        response.url().endsWith('/api/scripts/update') &&
+        response.request().postDataJSON()?.data?.Update?.PackageMode === 'incremental'
+    )
+    await page
+      .locator('.ant-select-dropdown:visible')
+      .getByText('Incremental update', { exact: true })
+      .click()
+    expect((await (await saved).json()).code).toBe(200)
+    await expect(panel.getByText('Incremental updates carry risks', { exact: false })).toBeVisible()
+    await page.reload()
+    await expect(panel.getByText('Incremental update', { exact: true })).toBeVisible()
+    await expect(panel.getByText('Incremental updates carry risks', { exact: false })).toBeVisible()
+    await panel.scrollIntoViewIfNeeded()
+    await app.evidence('incremental-update-risk-and-persistence')
+  })
+}

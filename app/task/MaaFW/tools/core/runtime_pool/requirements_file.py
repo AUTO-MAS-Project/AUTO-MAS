@@ -135,22 +135,6 @@ def _parse_lines(text: str, where: str):
             yield "option", name
 
 
-def parse_requirements_text(text: str) -> RequirementsFile:
-    """只解析一段文本：``-r`` 引用无处可解析，报错（读文件请用 :func:`read_requirements_file`）。"""
-
-    result = RequirementsFile()
-    for kind, value in _parse_lines(text, "requirements 清单"):
-        if kind == "req":
-            result.requirements.append(value)
-        elif kind == "include":
-            raise RequirementsFileError(
-                f"requirements 清单引用了 {value}，只解析文本时无法展开"
-            )
-        else:
-            result.ignored_options.append(value)
-    return result
-
-
 def scan_top_level_requirements(path: Path) -> list[str]:
     """只读这一份清单顶层的依赖行，跳过所有选项与 ``-r`` / ``-c`` / ``-e`` 指令，不展开、不报指令错。
 
@@ -266,7 +250,6 @@ def read_requirements_file(
 __all__ = [
     "RequirementsFile",
     "RequirementsFileError",
-    "parse_requirements_text",
     "read_requirements_file",
     "scan_top_level_requirements",
 ]

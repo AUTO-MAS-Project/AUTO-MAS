@@ -1,7 +1,7 @@
 <template>
   <aside class="board" @click.stop>
-    <header>{{ t('home.satelliteEgg.rocketBoardTitle') }}</header>
-    <small>{{ t('home.satelliteEgg.rocketBoardLive', { time: fetchedAt }) }}</small>
+    <header>{{ t('core.home.satelliteEgg.rocketBoardTitle') }}</header>
+    <small>{{ t('core.home.satelliteEgg.rocketBoardLive', { time: fetchedAt }) }}</small>
     <ol>
       <li v-for="(item, index) in list.slice(0, 10)" :key="item.login">
         <span class="board-rank">{{ index + 1 }}</span>

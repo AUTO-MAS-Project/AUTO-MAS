@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type SrcConfig_Info = {
     /**
-     * SRC脚本名称
+     * SRC 托管名称
      */
     Name?: (string | null);
     /**
-     * SRC路径
+     * SRC 路径
      */
     Path?: (string | null);
 };

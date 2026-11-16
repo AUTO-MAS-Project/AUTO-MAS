@@ -4,6 +4,7 @@ import { SkinOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 
 import type { MyAppearanceItem } from '@/composables/useShareApi'
+import type { AppearanceCategory } from '@/types/mascotPack'
 import { getMyAppearanceState, isInStore, type MyAppearanceState } from '../myAppearance'
 import { formatOnlineAppearanceTime } from '../useOnlineAppearance'
 import type { MyAppearanceStore } from '../useMyAppearances'
@@ -14,7 +15,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (event: 'upload-version', fileId: number): void
+  (event: 'upload-version', fileId: number, category?: AppearanceCategory): void
   (event: 'view-in-store', item: MyAppearanceItem): void
 }>()
 
@@ -34,18 +35,18 @@ const editOpen = ref(false)
 const stateLabel = (state: MyAppearanceState): string => {
   switch (state.kind) {
     case 'published':
-      return t('themeStore.mine.published', { version: state.published })
+      return t('core.themeStore.mine.published', { version: state.published })
     case 'publishedPending':
-      return t('themeStore.mine.publishedPending', {
+      return t('core.themeStore.mine.publishedPending', {
         published: state.published,
         latest: state.latest,
       })
     case 'pending':
-      return t('themeStore.mine.pending', { version: state.latest })
+      return t('core.themeStore.mine.pending', { version: state.latest })
     case 'rejected':
       return state.published === null
-        ? t('themeStore.mine.rejected', { version: state.latest })
-        : t('themeStore.mine.publishedRejected', {
+        ? t('core.themeStore.mine.rejected', { version: state.latest })
+        : t('core.themeStore.mine.publishedRejected', {
             published: state.published,
             latest: state.latest,
           })
@@ -54,8 +55,8 @@ const stateLabel = (state: MyAppearanceState): string => {
 
 // 正常状态不标；归档、停用的文件不在商店里，要让作者知道
 const fileStatusLabel = (status: string): string | null => {
-  if (status === 'archived') return t('themeStore.mine.archived')
-  if (status === 'disabled') return t('themeStore.mine.disabled')
+  if (status === 'archived') return t('core.themeStore.mine.archived')
+  if (status === 'disabled') return t('core.themeStore.mine.disabled')
   return null
 }
 
@@ -67,22 +68,23 @@ const editDescription = (item: MyAppearanceItem): void => {
 
 <template>
   <div class="mine-toolbar">
+    <slot name="filters" />
     <a-button :loading="loading" @click="load">
-      {{ t('themeStore.refresh') }}
+      {{ t('core.themeStore.refresh') }}
     </a-button>
   </div>
   <div v-if="loading && items.length === 0" class="mine-state">
-    <a-spin size="large" :tip="t('themeStore.loading')" />
+    <a-spin size="large" :tip="t('core.themeStore.loading')" />
   </div>
   <div v-else-if="error" class="mine-state">
-    <a-result status="warning" :title="t('themeStore.mine.loadFailed')" :sub-title="error">
+    <a-result status="warning" :title="t('core.themeStore.mine.loadFailed')" :sub-title="error">
       <template #extra>
-        <a-button type="primary" @click="load">{{ t('themeStore.retry') }}</a-button>
+        <a-button type="primary" @click="load">{{ t('core.themeStore.retry') }}</a-button>
       </template>
     </a-result>
   </div>
   <div v-else-if="items.length === 0" class="mine-state">
-    <a-empty :description="t('themeStore.mine.empty')" />
+    <NoData :description="t('core.themeStore.mine.empty')" />
   </div>
   <div v-else class="mine-grid">
     <div v-for="item in items" :key="item.fileId" class="mine-card">
@@ -106,21 +108,28 @@ const editDescription = (item: MyAppearanceItem): void => {
           </a-tag>
         </span>
         <span class="mine-meta">{{ formatOnlineAppearanceTime(item.updatedAt) }}</span>
+        <span v-if="item.categoryKey" class="mine-meta">{{
+          t(`core.themeStore.categories.${item.categoryKey}`)
+        }}</span>
         <span class="mine-description">
-          {{ item.description || t('themeStore.noDescription') }}
+          {{ item.description || t('core.themeStore.noDescription') }}
         </span>
         <span
           v-if="getMyAppearanceState(item).kind === 'rejected' && item.latestReviewComment.trim()"
           class="mine-reject-reason"
         >
-          {{ t('themeStore.mine.rejectReason', { reason: item.latestReviewComment.trim() }) }}
+          {{ t('core.themeStore.mine.rejectReason', { reason: item.latestReviewComment.trim() }) }}
         </span>
         <div class="mine-actions">
-          <a-button size="small" type="primary" @click="emit('upload-version', item.fileId)">
-            {{ t('themeStore.mine.uploadVersion') }}
+          <a-button
+            size="small"
+            type="primary"
+            @click="emit('upload-version', item.fileId, item.categoryKey)"
+          >
+            {{ t('core.themeStore.mine.uploadVersion') }}
           </a-button>
           <a-button size="small" @click="editDescription(item)">
-            {{ t('themeStore.mine.editDescription') }}
+            {{ t('core.themeStore.mine.editDescription') }}
           </a-button>
           <a-button
             v-if="isInStore(item)"
@@ -128,7 +137,7 @@ const editDescription = (item: MyAppearanceItem): void => {
             type="link"
             @click="emit('view-in-store', item)"
           >
-            {{ t('themeStore.mine.viewInStore') }}
+            {{ t('core.themeStore.mine.viewInStore') }}
           </a-button>
         </div>
       </div>
@@ -141,6 +150,7 @@ const editDescription = (item: MyAppearanceItem): void => {
 .mine-toolbar {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   margin-bottom: 16px;
 }
 

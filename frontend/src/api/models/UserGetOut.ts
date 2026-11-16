@@ -31,11 +31,11 @@ export type UserGetOut = {
      */
     message?: string;
     /**
-     * 用户索引列表
+     * 账号索引列表
      */
     index: Array<UserIndexItem>;
     /**
-     * 用户数据字典, key来自于index列表的uid
+     * 账号数据字典, key来自于index列表的uid
      */
     data: Record<string, (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | BetterGIUserConfig | ZzzOdUserConfig | BAAHUserConfig | WhimboxUserConfig | MSSUserConfig)>;
 };

@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import type { AppearanceFilter } from '@/types/mascotPack'
 
 import { useShareApi, type MyAppearanceItem } from '@/composables/useShareApi'
 import { createCoverLoader, type CoverTask } from './coverLoader'
@@ -12,7 +13,13 @@ const UNAUTHORIZED = 401
  * 当前账号在分享站上的外观（「我的主题」页、上传对话框和详情页共用一份）。
  * 封面取的是最新版本的，待审核、被驳回的版本也能看到。
  */
-export function useMyAppearances(options: { onUnauthorized?: () => void } = {}) {
+export function useMyAppearances(
+  options: {
+    onUnauthorized?: () => void
+    onChanged?: () => void
+    categoryKey?: AppearanceFilter
+  } = {}
+) {
   const logger = window.electronAPI.getLogger('主题商店')
   const { listMyAppearances, getMyAppearanceCover, updateMyAppearanceDescription } = useShareApi()
 
@@ -45,12 +52,34 @@ export function useMyAppearances(options: { onUnauthorized?: () => void } = {}) 
   const coverFor = (item: MyAppearanceItem): string | undefined =>
     item.latestHasCover ? coverLoader.get(coverKey(item)) : undefined
 
+  const listItems = async () => {
+    if (options.categoryKey !== 'all') {
+      return options.categoryKey ? listMyAppearances(options.categoryKey) : listMyAppearances()
+    }
+    const results = await Promise.all(
+      (['theme', 'mascot'] as const).map(async categoryKey => {
+        const result = await listMyAppearances(categoryKey)
+        return result.ok
+          ? { ...result, data: result.data.map(item => ({ ...item, categoryKey })) }
+          : result
+      })
+    )
+    const failed = results.find(result => !result.ok)
+    if (failed) return failed
+    return {
+      ok: true as const,
+      data: results
+        .flatMap(result => (result.ok ? result.data : []))
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    }
+  }
+
   const run = async (): Promise<void> => {
     const current = ++revision
     loading.value = true
     error.value = null
     try {
-      const result = await listMyAppearances()
+      const result = await listItems()
       if (current !== revision) return
       if (!result.ok) {
         items.value = []
@@ -70,9 +99,12 @@ export function useMyAppearances(options: { onUnauthorized?: () => void } = {}) 
 
   /** 重新拉一次；并发调用共用同一次请求。 */
   const load = (): Promise<void> => {
-    pending ??= run().finally(() => {
-      pending = null
-    })
+    if (!pending) {
+      const request = run().finally(() => {
+        if (pending === request) pending = null
+      })
+      pending = request
+    }
     return pending
   }
 
@@ -98,7 +130,12 @@ export function useMyAppearances(options: { onUnauthorized?: () => void } = {}) 
       if (result.code === UNAUTHORIZED) options.onUnauthorized?.()
       return { ok: false, message: result.message }
     }
-    items.value = items.value.map(item => (item.fileId === fileId ? result.data : item))
+    items.value = items.value.map(item =>
+      item.fileId === fileId
+        ? { ...result.data, ...(item.categoryKey ? { categoryKey: item.categoryKey } : {}) }
+        : item
+    )
+    options.onChanged?.()
     return { ok: true }
   }
 

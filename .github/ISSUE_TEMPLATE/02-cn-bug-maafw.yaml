@@ -47,7 +47,7 @@ body:
     id: controller
     attributes:
       label: 控制链路
-      description: 在 MaaFW 脚本编辑页里选择的控制器类型
+      description: 在 MaaFW 托管编辑页里选择的控制器类型
       options:
         - ADB 模拟器
         - Win32 PC 游戏

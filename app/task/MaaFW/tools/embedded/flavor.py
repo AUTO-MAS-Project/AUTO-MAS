@@ -18,29 +18,62 @@
 
 """特调类型钩子：MaaFW 引擎认识的唯一一种"专项差异"。
 
-某些 MaaFW 项目值得给一个自己的脚本类型（图标、创建卡、默认名，以及一点点运行前的
+某些 MaaFW 项目值得给一个自己的托管类型（图标、创建卡、默认名，以及一点点运行前的
 队列装饰——比如 M9A 的首尾任务与切号绑定）。这些类型是 ``MaaFWConfig`` 的同形子类，
 用类属性 ``FLAVOR = "模块路径:属性名"`` 指向一个满足 ``MaaFWFlavor`` 协议的对象。
 
-引擎这一侧只做五件事：按需导入并缓存那个对象、在建运行计划前调一次
-``decorate_selection``、在导入项目后用 ``matches_project`` 决定脚本类型（换了类型时取可选的
-换类型说明发通知）、在模拟器启动后调一次可选的游戏更新钩子、在写用户任务快照前调一次可选的
-快照整理钩子。这里不出现任何具体专项的名字；专项自己的逻辑全在它自己的包里。
+引擎这一侧只负责：按需导入并缓存那个对象，在约定的时机调协议里的两个方法与下面这些可选钩子，
+按约定读取可选声明（读取一律经本模块的同名函数，形状不对的声明当作没声明）。这里不出现任何
+具体专项的名字；专项自己的逻辑全在它自己的包里。
 
-可选钩子 ``sanitize_task_snapshot``（写用户任务快照前整理）的契约：
+``decorate_selection``（运行前装饰）的契约：
+
+- **何时调**：每个账号建运行计划时调一次（重试从这份计划重建，不再调），在工作线程里跑。
+  交进来的列表已剔掉不可选任务与今天不在运行日的实例；钩子按自己的规则补回的同一实例照常运行。
+- **签名**：``decorate_selection(self, interface_model, task_ids, task_options, *, context)
+  -> tuple[list[str], dict]``，``context`` 是只读的 :class:`MaaFWSelectionContext`：脚本与账号配置、
+  ``resource_name``（运行时实际生效的资源，特调不要自己再回落）、``excluded_task_ids``（引擎判定本轮
+  不跑的实例：红灯与今天不在运行日的）、``log``（写账号运行日志）。不改入参。
+- **排除的实例**：钩子另读账号配置自动补任务时，不要补回 ``excluded_task_ids`` 里的实例，也不要
+  自己再解析快照判红灯或星期。核心建计划时还会按红灯再滤一遍装饰结果，补回的红灯实例照样不跑。
+- **异常**：钩子抛任何异常都是本账号本次建计划失败：账号记「异常」、不跑、不重试，异常原文接在
+  「无法构建 MaaFW 运行计划」后面给用户看。有意拒跑时文案要能直接给用户看。
+
+可选钩子 ``ensure_logged_in``（运行前登录）的契约：
+
+- **可选**：不进 ``MaaFWFlavor`` 协议，``resolve_login_hook`` 按 ``getattr`` 探测；没实现的特调
+  与通用 MaaFW 行为完全不变。
+- **何时调**：本次 controller 是 ADB、MAS 启动模拟器（连带拉起游戏）之后、第一个任务下发之前，
+  紧跟在 ``ensure_game_updated`` 之后。登录**成功**后才记完成；失败时下一次尝试会重新调用，
+  重试关闭游戏 / 模拟器（客户端重启）后也会重新验证，不允许带着未登录状态下发任务。
+  在事件循环里 ``await``。要不要真正做事由钩子自己按配置判断（返回空串表示没做事）。
+- **签名**：``async def ensure_logged_in(self, *, script_config, user_config, resource_name,
+  package_name, adb_path, adb_address, progress, host_adb=None) -> str | StartupTask``。``user_config`` 是本次运行的账号配置
+  （账号字段在 ``Info.Account``）；``package_name`` 是这次随模拟器拉起的包名（空串表示没拉起，
+  钩子可自行按包名拉起）；``host_adb`` 非空时截图与命令必须使用该私有通道；否则按 ``adb_path`` 连接；``progress`` 是写
+  用户运行日志的异步回调。返回值是写进运行日志的一句话，空串表示不写。
+- Win32 控制器以空 ``adb_address`` 调用，供钩子拒绝不支持的登录模式。
+- **失败**：抛 :class:`MaaFWLoginRequired`，文案直接给用户看；本账号本次尝试判失败，按普通失败
+  走重试（不特殊处理退出条件）。抛其它异常同样按失败处理，原因会附在异常原文后面。
+- **取消**：用户停止（``CancelledError``）必须照常向上抛，不能吞掉。
+
+选号后需要启动游戏时返回 ``StartupTask``，指定首项公开任务及剩余登录时限。
+宿主将首项标为失败即结束本轮，完整计划仍由一个 worker 执行，不做启动后核验。
+
+可选钩子 ``sanitize_task_snapshot``（写账号任务快照前整理）的契约：
 
 - **可选**：同样不进协议，``resolve_snapshot_sanitizer`` 按 ``getattr`` 探测。
-- **何时调**：``Config.update_user``（用户页保存、导入外壳配置建用户都走它）与配置恢复回填
-  用户字段时，只要这次写入带 ``Task.TaskSnapshot``，就在加密密码字段之前经
+- **何时调**：``Config.update_user``（账号页保存、导入外壳配置建用户都走它）与配置恢复回填
+  账号字段时，只要这次写入带 ``Task.TaskSnapshot``，就在加密密码字段之前经
   ``sanitize_user_task_update`` 调一次。读不到 interface（视图还没建）时不调、原样写入。
 - **签名**：``sanitize_task_snapshot(self, interface_model, snapshot, *, script_config,
   resource_name, user_info) -> tuple[dict, dict]``。``snapshot`` 是解析好的 ``{taskOrder,
   taskChecked, taskOptions}``；``resource_name`` 是运行时实际生效的资源（与建运行计划同一个
   ``resolve_run_selection``，脚本资源留空时按控制器回落，特调不要自己再回落）；``user_info`` 是
-  这次写入之后该用户 ``Info`` 的样子（``Account`` / ``Notes``）。返回整理后的快照与要一并写进
+  这次写入之后该账号 ``Info`` 的样子（``Account`` / ``Notes``）。返回整理后的快照与要一并写进
   ``Info`` 的字段（没有就空字典）。不改入参。
 - **用途**：特调把某些任务收归自己管（队列里不该有它们）时，保存入口据此把它们剔掉或换算
-  成用户字段，与运行期、启动整理同一口径。
+  成账号字段，与运行期、启动整理同一口径。
 
 可选钩子 ``ensure_game_updated``（游戏客户端更新）的契约：
 
@@ -48,15 +81,15 @@
   不满足协议、整个退回通用 MaaFW。引擎用 ``resolve_game_update_hook`` 按 ``getattr`` 探测，
   没实现的特调与通用 MaaFW 行为完全不变。
 - **何时调**：脚本 ``Run.GameUpdateMode`` 不是 ``Off``、特调实现了钩子、本次 controller 是
-  ADB 时，在 MAS 启动模拟器（连带拉起游戏）之后、第一个任务下发之前，每个用户每次运行只调
+  ADB 时，在 MAS 启动模拟器（连带拉起游戏）之后、第一个任务下发之前，每个账号每次运行只调
   一次（重试重新开模拟器时不再调）。在事件循环里 ``await``，不在工作线程里。
 - **签名**：``async def ensure_game_updated(self, *, script_config, resource_name,
   package_name, adb_path, adb_address, if_auto_install, progress) -> GameUpdateResult``。
   ``resource_name`` 是运行计划的资源名；``package_name`` 是这次随模拟器拉起的包名（空串
   表示没拉起游戏）；``adb_path`` 为 ``None`` 时由钩子自己回退系统 adb；``if_auto_install``
   对应 ``AutoInstall``（``Check`` 为 False）；``progress`` 是写用户运行日志的异步回调。
-  返回 ``app.utils.game_update.GameUpdateResult``。
-- **结果**：``NeedManualUpdate`` → 本用户本次运行判失败，失败原因就是 ``message``，发错误
+  返回 ``app.utils.common.game_update.GameUpdateResult``。
+- **结果**：``NeedManualUpdate`` → 本账号本次运行判失败，失败原因就是 ``message``，发错误
   通知，**不走重试**（客户端不更新，重试多少次都一样）；其余状态照常继续，``message`` 进日志。
 - **异常**：钩子抛任何 ``Exception`` 都只记警告、照常继续，不能挡住代理；``CancelledError``
   （用户停止）必须照常向上传——钩子里的下载 / 安装都要能被取消打断，不能在线程里死等。
@@ -108,10 +141,10 @@
   （M9A 没有自动导航）」）。同样按 ``getattr`` 探测，不进协议；没声明等于空表，行为完全不变。
 - **用途**：项目里有、但 MAS 无人值守跑不了的任务（要用户先手动停在某个页面之类）。
 - **界面**：``/maafw/preview`` 按脚本的特调（没有脚本时按项目认领的特调）给这些任务填
-  ``unselectableReason``（就是这里的原因），其余任务为 ``None``；用户页据此把它们挡在「添加任务」
-  与预设模板之外，已在队列里的照常显示、可删，并提示一次运行时会跳过。不改写用户配置。
+  ``unselectableReason``（就是这里的原因），其余任务为 ``None``；账号页据此把它们挡在「添加任务」
+  与预设模板之外，已在队列里的照常显示、可删，并提示一次运行时会跳过。不改写账号配置。
 - **运行**：``runner_task`` 归一化队列之后、``decorate_selection`` 之前按 entry 剔掉它们（连同选项），
-  按原因合并写一行用户日志（「已跳过「任务甲」「任务乙」：原因」，同名任务只列一次，顺序按队列）。
+  按原因合并写一行账号日志（「已跳过「任务甲」「任务乙」：原因」，同名任务只列一次，顺序按队列）。
   剔完为空就是普通的空队列：特调不补首尾，引擎照常报「没有可执行任务」。
 - **优先级**：被剔掉的任务不进计划，所以优先于 ``abort_round_entries`` / ``nonfatal_entries`` /
   ``skip_on_retry_entries``——同一个 entry 也写在那三处里时，那三处对它不起作用。
@@ -124,7 +157,7 @@
   （``runner/pipeline_override._string_input_fallback``）。列在这里的字段不回落，没填就下发空串。
   ``runner_task`` 两条建计划的路（快照路与特调的 ``task_ids`` 路）都按脚本的特调传，通用 MaaFW
   没有例外。``/maafw/preview`` 按同一个特调把这些字段的 ``default`` 置成 null（与补
-  ``unselectableReason`` 同一处）：用户页把没填的字段显示成 default，不置空就会显示一个运行时
+  ``unselectableReason`` 同一处）：账号页把没填的字段显示成 default，不置空就会显示一个运行时
   并不下发的值。
 - **该列什么**：default 是项目留下的字面量占位、真下发会出错的字段（如 M9A 自定义兑换码的
   「占位」）。能跑的 default 别列。
@@ -135,18 +168,14 @@
 - **何时调**：导入 / 复用项目后脚本按项目换了类型（``api_service.embedded._apply_project_flavor``），
   换入的特调以 ``entering=True``、换出的特调以 ``entering=False`` 各调一次。
 - **签名**：``retype_notice_lines(self, *, entering: bool, has_users: bool) -> list[str]``；
-  ``has_users`` 是脚本此刻有没有用户——只对已有用户说的话（「把账号栏改掉」之类）没有用户时
+  ``has_users`` 是脚本此刻有没有用户——只对已有账号说的话（「把账号栏改掉」之类）没有用户时
   不要返回。
 - **效果**：返回的行接在系统通知「已按项目识别为 …」下面；引擎自己不写任何专项的行为说明，
   标题里的类型名取 ``type_key``。
 
-可选属性 ``supports_mod_avd``（能不能用魔改 AVD）的契约：
-
-- **形状**：``bool``，按 ``getattr`` 探测，不进协议；没声明当 ``False``。
-- **效果**：魔改 AVD（Emulator 2.0 的 ``avd`` 后端）在 MaaFW 这一侧只对声明了它的特调放行（M9A；
-  MaaFW 之外另有 MAA 专项）。``runner_task`` 据此给门面 ``open`` 传 ``allow_mod_avd``、决定能不能构造
-  AVDExtras 截图配置；脚本保存时 ``app.utils.emulator2.service.mod_avd_binding_error`` 用它拦下其它
-  脚本绑定魔改 AVD 设备。通用 MaaFW 与没声明的特调一律拒绝（「魔改 AVD 目前只支持 M9A 和 MAA」）。
+ModAVD（Emulator 2.0 的 ``avd`` 后端）不是特调声明：所有 MaaFW 脚本（通用项目与各特调）一律放行，
+``runner_task`` 给门面 ``open`` 传 ``allow_mod_avd=True``、按设备构造 AVDExtras 截图配置；脚本保存时
+``app.core.EmulatorManager.mod_avd_binding_error`` 读取宿主登记的设备能力，MaaFW 特调继承引擎声明。
 """
 
 from __future__ import annotations
@@ -154,12 +183,18 @@ from __future__ import annotations
 import importlib
 import json
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+from app.task.MaaFW.tools.core.interface import loader as _interface_loader
 from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
+from app.task.MaaFW.tools.core.runner import run_plan as _run_plan
+from app.utils import game_update as _utils_game_update
 from app.utils import get_logger
-from app.utils.game_update import GameUpdateResult
+
+from . import embedded_project as _embedded_project
+from .flavor_support import MaaFWSelectionContext, config_value, task_name_for_entry
 
 logger = get_logger("MaaFW 特调")
 
@@ -171,10 +206,10 @@ class MaaFWFlavor(Protocol):
     """一个特调类型要提供的全部东西。"""
 
     type_key: str
-    """脚本类型键（``CLASS_BOOK`` 的键），日志与通知里用。"""
+    """托管类型键（``CLASS_BOOK`` 的键），日志与通知里用。"""
 
     def matches_project(self, interface_model: MaaFWInterface) -> bool:
-        """这个 interface 是不是本特调对应的项目（导入后据此决定脚本类型）。"""
+        """这个 interface 是不是本特调对应的项目（导入后据此决定托管类型）。"""
 
     def decorate_selection(
         self,
@@ -182,12 +217,9 @@ class MaaFWFlavor(Protocol):
         task_ids: list[str],
         task_options: dict[str, Any],
         *,
-        script_config: Any,
-        user_config: Any,
-        resource_name: str | None,
-        send_log: Callable[[str], None] | None,
+        context: MaaFWSelectionContext,
     ) -> tuple[list[str], dict[str, Any]]:
-        """在用户勾选的任务实例列表上做装饰，返回新的列表与选项。"""
+        """在用户勾选的任务实例列表上做装饰，返回新的列表与选项（契约见模块说明）。"""
 
 
 def _load_flavor(spec: str) -> Any | None:
@@ -250,6 +282,49 @@ def no_default_fallback_inputs(flavor: Any) -> frozenset[tuple[str, str]]:
     )
 
 
+def _entry_messages(flavor: Any, attribute: str) -> dict[str, str]:
+    """``dict[entry, 一句话]`` 形状的声明：不是 dict 当空表，去掉空 entry 与空说明。
+
+    空说明的条目原来也不起作用（引擎按说明是否为空判断要不要特殊处理），这里直接去掉。
+    """
+
+    declared = getattr(flavor, attribute, None) if flavor is not None else None
+    if not isinstance(declared, dict):
+        return {}
+    messages = {
+        str(entry): str(message or "").strip()
+        for entry, message in declared.items()
+        if str(entry or "").strip()
+    }
+    return {entry: message for entry, message in messages.items() if message}
+
+
+def abort_round_entries(flavor: Any) -> dict[str, str]:
+    """特调声明的关键任务：entry → 失败时报的话，契约见模块说明。没声明（或不是特调）返回空表。"""
+
+    return _entry_messages(flavor, "abort_round_entries")
+
+
+def nonfatal_entries(flavor: Any) -> dict[str, str]:
+    """特调声明的收尾任务：entry → 失败时接在日志后的说明，契约见模块说明。没声明返回空表。"""
+
+    return _entry_messages(flavor, "nonfatal_entries")
+
+
+def skip_on_retry_entries(flavor: Any) -> frozenset[str]:
+    """特调声明的重试不补跑任务的 entry，契约见模块说明。没声明（或不是特调）返回空集。
+
+    只认集合 / 列表 / 元组：写成单个字符串时不会被拆成一个个字符，当作没声明。
+    """
+
+    declared = (
+        getattr(flavor, "skip_on_retry_entries", None) if flavor is not None else None
+    )
+    if not isinstance(declared, (set, frozenset, list, tuple)):
+        return frozenset()
+    return frozenset(str(entry) for entry in declared if str(entry or "").strip())
+
+
 def retype_notice_lines(flavor: Any, *, entering: bool, has_users: bool) -> list[str]:
     """特调声明的换类型说明，契约见模块说明。没实现、不是特调或钩子出错都返回空表。"""
 
@@ -272,8 +347,32 @@ def flavor_for_project(interface_model: MaaFWInterface) -> MaaFWFlavor | None:
     return _load_flavor(str(spec)) if spec else None
 
 
-GameUpdateHook = Callable[..., Awaitable[GameUpdateResult]]
+GameUpdateHook = Callable[..., Awaitable[_utils_game_update.GameUpdateResult]]
 """特调可选的游戏更新钩子，契约见模块说明"""
+
+
+class MaaFWLoginRequired(RuntimeError):
+    """特调的运行前登录钩子判定本次无法继续运行（如 B 服登录失败）；文案直接给用户看。"""
+
+
+@dataclass(frozen=True)
+class StartupTask:
+    """选号后的公开启动任务；由同一 worker 执行，失败时结束本轮。"""
+
+    deadline: float
+    entry: str
+
+
+LoginHook = Callable[..., Awaitable[str | StartupTask]]
+"""特调可选的运行前登录钩子，契约见模块说明"""
+
+
+def resolve_login_hook(script_config: Any) -> LoginHook | None:
+    """脚本对应特调的运行前登录钩子；通用 MaaFW 或特调没实现时返回 None。"""
+
+    flavor = resolve_flavor(script_config)
+    hook = getattr(flavor, "ensure_logged_in", None) if flavor is not None else None
+    return hook if callable(hook) else None
 
 
 def resolve_game_update_hook(script_config: Any) -> GameUpdateHook | None:
@@ -304,7 +403,7 @@ def sanitize_user_task_update(
     user_config: Any,
     data: dict[str, Any],
 ) -> bool:
-    """写用户配置前：``data`` 带 ``Task.TaskSnapshot`` 时交给特调整理，原地改 ``data``。
+    """写账号配置前：``data`` 带 ``Task.TaskSnapshot`` 时交给特调整理，原地改 ``data``。
 
     ``data`` 是 ``{分组: {字段: 值}}``（``update_user`` 与配置恢复的形状）。快照是 JSON 串就写回
     JSON 串、是字典就写回字典；特调要求一并改的 ``Info`` 字段并进 ``data["Info"]``。
@@ -324,36 +423,29 @@ def sanitize_user_task_update(
         return False
 
     try:
-        from app.task.MaaFW.tools.core.interface.loader import (
-            load_interface_model_cached,
+        root = Path(
+            _embedded_project.resolve_maafw_project_root(script_id, script_config)
         )
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            resolve_maafw_project_root,
-        )
-
-        root = Path(resolve_maafw_project_root(script_id, script_config))
         if not root.is_dir():
             return False
-        interface_model = load_interface_model_cached(root)
+        interface_model = _interface_loader.load_interface_model_cached(root)
     except Exception as exc:  # noqa: BLE001 - 读不出 interface 不该挡住保存
         logger.debug(f"保存任务配置时读取 interface 失败，未按特调整理：{exc}")
         return False
 
-    from app.task.MaaFW.tools.core.runner.run_plan import resolve_run_selection
-
-    _, resource_name = resolve_run_selection(
+    _, resource_name = _run_plan.resolve_run_selection(
         interface_model,
         configured_controller=str(
-            _config_value(script_config, "Info", "Controller") or ""
+            config_value(script_config, "Info", "Controller") or ""
         ),
-        emulator_selected=_config_value(script_config, "Emulator", "Id") != "-",
-        configured_resource=str(_config_value(script_config, "Info", "Resource") or ""),
+        emulator_selected=config_value(script_config, "Emulator", "Id") != "-",
+        configured_resource=str(config_value(script_config, "Info", "Resource") or ""),
     )
     incoming_info = data.get("Info") if isinstance(data.get("Info"), dict) else {}
     user_info = {
         name: incoming_info[name]
         if name in incoming_info
-        else _config_value(user_config, "Info", name)
+        else config_value(user_config, "Info", name)
         for name in ("Account", "Notes")
     }
     try:
@@ -383,13 +475,6 @@ def sanitize_user_task_update(
     return changed
 
 
-def _config_value(config: Any, group: str, name: str) -> Any:
-    try:
-        return config.get(group, name)
-    except Exception:  # noqa: BLE001 - 假配置对象缺项时按空处理
-        return None
-
-
 def flavored_config_classes() -> list[tuple[type, MaaFWFlavor]]:
     """``CLASS_BOOK`` 里所有声明了特调的 MaaFW 子类，按登记顺序。"""
 
@@ -411,7 +496,7 @@ def flavored_config_classes() -> list[tuple[type, MaaFWFlavor]]:
 
 
 def decide_project_config_class(interface_model: MaaFWInterface) -> type:
-    """按项目决定脚本类型：第一个认领它的特调，否则通用 ``MaaFWConfig``。"""
+    """按项目决定托管类型：第一个认领它的特调，否则通用 ``MaaFWConfig``。"""
 
     from app.models.config import MaaFWConfig
 
@@ -425,7 +510,7 @@ def decide_project_config_class(interface_model: MaaFWInterface) -> type:
 
 
 def user_config_type_transform(config_class: type) -> Callable[[dict], dict]:
-    """``MultipleConfig.retype`` 用的字典改写：把用户子配置的类型名换成新脚本类的用户类。
+    """``ConfigCollection.replace_type`` 用的字典改写：把账号子配置的类型名换成新托管类的用户类。
 
     顺带补上新类自带的按任务时限：数据整表搬过去，旧类的空覆盖表会盖掉新类的默认值
     （通用 MaaFW 脚本导入 M9A 目录变成 M9A 时就拿不到 M9A 内置的那几条）。覆盖表还是
@@ -436,10 +521,9 @@ def user_config_type_transform(config_class: type) -> Callable[[dict], dict]:
     default_overrides = getattr(config_class, "DEFAULT_TASK_TIME_LIMIT_OVERRIDES", "")
 
     def transform(payload: dict) -> dict:
-        # ConfigBase.toDict 把子配置放在 SubConfigsInfo 下，用户表是其中的 UserData。
-        user_data = (payload.get("SubConfigsInfo") or {}).get("UserData")
+        user_data = payload.get("UserData")
         if isinstance(user_data, dict):
-            for instance in user_data.get("instances") or []:
+            for instance in user_data.get("order") or []:
                 if isinstance(instance, dict):
                     instance["type"] = user_type_name
         run = payload.get("Run")
@@ -467,17 +551,27 @@ def _is_empty_json_object(value: Any) -> bool:
 
 __all__ = [
     "GameUpdateHook",
+    "LoginHook",
     "MaaFWFlavor",
+    "MaaFWLoginRequired",
+    "MaaFWSelectionContext",
     "SnapshotSanitizer",
+    "abort_round_entries",
+    "config_value",
     "no_default_fallback_inputs",
+    "nonfatal_entries",
     "decide_project_config_class",
     "flavor_for_project",
     "flavored_config_classes",
     "resolve_flavor",
     "resolve_game_update_hook",
+    "resolve_login_hook",
+    "StartupTask",
     "resolve_snapshot_sanitizer",
     "retype_notice_lines",
     "sanitize_user_task_update",
+    "skip_on_retry_entries",
+    "task_name_for_entry",
     "unselectable_entries",
     "user_config_type_transform",
 ]

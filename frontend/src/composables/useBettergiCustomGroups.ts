@@ -60,9 +60,9 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
   })
 
   const columns = computed<TableColumnsType>(() => [
-    { title: t('edit.bettergiGroupNameColumn'), dataIndex: 'name', key: 'name' },
+    { title: t('core.edit.bettergiGroupNameColumn'), dataIndex: 'name', key: 'name' },
     {
-      title: t('edit.bettergiGroupEnabledColumn'),
+      title: t('core.edit.bettergiGroupEnabledColumn'),
       dataIndex: 'enabled',
       key: 'enabled',
       width: 120,
@@ -166,11 +166,11 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
   const confirmAdd = async () => {
     const name = modal.name.trim()
     if (!name) {
-      message.warning(t('edit.bettergiEnterGroupName'))
+      message.warning(t('core.edit.bettergiEnterGroupName'))
       return
     }
     if (table.value.some(r => r.name === name)) {
-      message.warning(t('edit.bettergiGroupExists'))
+      message.warning(t('core.edit.bettergiGroupExists'))
       return
     }
     modal.saving = true

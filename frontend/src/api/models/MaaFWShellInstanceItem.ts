@@ -12,7 +12,7 @@ export type MaaFWShellInstanceItem = {
      */
     name: string;
     /**
-     * 导入后的用户名（与已有用户、同名实例重名时带「 (2)」这类后缀）
+     * 导入后的账号名（与已有账号、同名实例重名时带「 (2)」这类后缀）
      */
     userName: string;
     /**

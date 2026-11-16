@@ -108,7 +108,7 @@ export interface ScreenPoint {
   y: number
 }
 
-const IDLE_STATUS: SatelliteModuleStatus = { queued: false, running: false, lastFailed: false }
+const IDLE_STATUS: SatelliteModuleStatus = { scheduled: false, lastFailed: false }
 
 const OVERCLOCK_MS = 10000
 const DIZZY_MS = 4200
@@ -964,7 +964,7 @@ export class SatelliteScene {
 
     applyGlow(
       satellite.activityGlow,
-      getActivityGlow(satellite.status, time),
+      getActivityGlow(satellite.status),
       root.position,
       satellite.fade
     )

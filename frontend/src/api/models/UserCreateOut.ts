@@ -30,11 +30,11 @@ export type UserCreateOut = {
      */
     message?: string;
     /**
-     * 新创建的用户ID
+     * 新创建的账号ID
      */
     userId: string;
     /**
-     * 用户配置数据
+     * 账号配置数据
      */
     data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | BetterGIUserConfig | ZzzOdUserConfig | BAAHUserConfig | WhimboxUserConfig | MSSUserConfig);
 };

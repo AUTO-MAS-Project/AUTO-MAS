@@ -1,8 +1,6 @@
 import { ref } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { message } from 'ant-design-vue'
-import { Service } from '@/api'
 import type { MaaFWUserIdHolder } from './useMaaFWUserPersistence'
+import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 interface MaaFWPreviewRow {
   key: string
@@ -29,7 +27,6 @@ export function useMaaFWUserConfigRestore({
   loadUserData,
   reloadInterface,
 }: MaaFWUserConfigRestoreOptions) {
-  const { t } = useI18n()
   const logger = window.electronAPI.getLogger('MaaFW用户编辑')
 
   // ══ 配置恢复（通用组件 props 供给：双目标 MAS 在前脚本在后）══
@@ -42,32 +39,11 @@ export function useMaaFWUserConfigRestore({
     { key: 'native', kind: 'script' },
   ]
 
-  const restoreApi = {
-    list: async (target: string) =>
-      Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userIdHolder.value, target),
-    preview: async (target: string, time: string) =>
-      Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
-        scriptId,
-        userIdHolder.value,
-        time,
-        target
-      ),
-    restore: async (target: string, time: string) =>
-      Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-        scriptId,
-        userId: userIdHolder.value,
-        time,
-        target,
-      }),
-    readFile: async (target: string, time: string, path: string) =>
-      Service.getConfigBackupFileApiApiScriptsBackupFileGet(
-        scriptId,
-        userIdHolder.value,
-        time,
-        target,
-        path
-      ),
-  }
+  const { restoreApi, ensureBackup } = useConfigBackupApi({
+    scriptId,
+    userId: () => userIdHolder.value,
+    logger,
+  })
 
   const previewSections = (raw: unknown): MaaFWPreviewSection[] =>
     (raw as { sections?: MaaFWPreviewSection[] } | null)?.sections ?? []
@@ -85,20 +61,7 @@ export function useMaaFWUserConfigRestore({
 
   // 编辑会话归档（进入/退出时机，指纹去重）：进入归档 MaaFW 项目配置当前状态
   // （MAS 触碰前原始态），退出归档 MAS 用户字段侧车终态（编辑会话包络）
-  const ensureMaaFWBackup = async (target: 'mas' | 'native') => {
-    if (!userIdHolder.value) return
-    try {
-      const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
-        scriptId,
-        userId: userIdHolder.value,
-        target,
-      })
-      if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
-    } catch (e) {
-      logger.error(e instanceof Error ? e.message : String(e))
-      message.warning(t('edit.configRestoreEnsureFailed'))
-    }
-  }
+  const ensureMaaFWBackup = ensureBackup
 
   return {
     MAAFW_DISPLAY_NAME,

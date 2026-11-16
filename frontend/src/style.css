@@ -77,31 +77,7 @@ a:hover {
   color: var(--ant-color-primary-hover);
 }
 
-/* 滚动条样式 */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--ant-color-bg-layout);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--ant-color-border);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--ant-color-border-secondary);
-}
-
-/* Electron 基于 Chromium，仅需 WebKit 滚动条隐藏 */
-*::-webkit-scrollbar {
-  width: 0 !important;
-  height: 0 !important;
-  display: none !important;
-}
+/* 滚动条统一由 styles/scrollbar.css 提供，避免旧规则覆盖主题样式。 */
 
 /* 全局统一 Tag 边框样式 */
 .ant-tag {

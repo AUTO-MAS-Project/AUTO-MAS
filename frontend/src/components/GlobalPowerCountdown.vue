@@ -20,15 +20,15 @@
         v-if="powerCountdownDisconnected"
         type="warning"
         show-icon
-        :message="t('comp.powerCountdownConnectionLost')"
+        :message="t('core.comp.powerCountdownConnectionLost')"
         class="countdown-disconnected"
       />
       <div class="countdown-timer">
         <span class="countdown-number">{{ remaining }}</span>
-        <span class="countdown-unit">{{ t('comp.seconds') }}</span>
+        <span class="countdown-unit">{{ t('core.comp.seconds') }}</span>
       </div>
       <a-progress
-        :percent="Math.max(0, Math.min(100, ((60 - remaining) / 60) * 100))"
+        :percent="progress"
         :show-info="false"
         :stroke-color="remaining <= 10 ? '#ff4d4f' : '#1890ff'"
         :stroke-width="8"
@@ -36,7 +36,7 @@
       />
       <div class="countdown-actions">
         <a-button type="primary" size="large" class="cancel-button" @click="handleCancel">
-          {{ t('comp.cancel2') }}
+          {{ t('core.comp.cancel2') }}
         </a-button>
       </div>
     </div>
@@ -59,13 +59,24 @@ const POWER_OPERATION_LABEL: Record<string, string> = {
   Hibernate: '休眠',
   Sleep: '睡眠',
   KillSelf: '关闭软件',
+  RestartSelf: '重启软件',
   Logoff: '注销',
 }
 
 const { powerCountdown, powerCountdownDisconnected, cancelPowerCountdown } = useAppLifecycle()
 
 const visible = ref(false)
+// 协议提供剩余秒数；以本次观察起点为基准，刷新后从当时的剩余时间继续展示。
+const initialRemaining = ref(0)
 const remaining = computed(() => powerCountdown.value?.remaining ?? 0)
+const progress = computed(() =>
+  initialRemaining.value > 0
+    ? Math.max(
+        0,
+        Math.min(100, ((initialRemaining.value - remaining.value) / initialRemaining.value) * 100)
+      )
+    : 0
+)
 const operationLabel = computed(() => {
   const operation = powerCountdown.value?.operation || ''
   return POWER_OPERATION_LABEL[operation] || operation || '电源操作'
@@ -78,6 +89,8 @@ const message = computed(() => `程序将在倒计时结束后执行 ${operation
 watch(
   () => powerCountdown.value,
   (current, previous) => {
+    if (current && (!previous || current.remaining > previous.remaining))
+      initialRemaining.value = current.remaining
     if (current && !previous) {
       logger.info(`收到电源倒计时: ${current.operation}, 剩余 ${current.remaining} 秒`)
       visible.value = true
@@ -126,7 +139,9 @@ const handleCancel = async () => {
 }
 
 .countdown-content .warning-icon {
+  width: fit-content;
   font-size: 64px;
+  margin-inline: auto;
   margin-bottom: 24px;
   display: block;
   animation: pulse 2s infinite;
@@ -174,6 +189,7 @@ const handleCancel = async () => {
 }
 
 .countdown-progress {
+  margin-inline-end: 0;
   margin-bottom: 32px;
 }
 

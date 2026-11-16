@@ -1,9 +1,7 @@
 import { useI18n } from 'vue-i18n'
-import type { SatelliteModuleStatus } from '@/composables/useSatelliteStatus'
 import type { ScriptType } from '@/types/script'
 import { createCenterPokeCounter } from './centerPoke'
 import {
-  consumeFirstLaunch,
   createCodeMatcher,
   createDizzyDetector,
   createKonamiMatcher,
@@ -56,7 +54,7 @@ const WISH_LINES = 4
 /**
  * 主页卫星的彩蛋。点卫星攒保底出金、MAA 点满 325 下周哥出场、BGI 连点 5 下原神启动、
  * 星铁连点 7 下三月七拍照、绝区零每点一下邦布回话、鼠标停在 MAA 上阿米娅催你干活、
- * 脚本开跑时喊一句启动、中心连点炫彩、点流星许愿、键盘口令（科乐美秘技、648、1999、
+ * 中心连点炫彩、点流星许愿、键盘口令（科乐美秘技、648、1999、
  * 666、520、404、233、mas）、来回猛搓转晕。长按星核放冲击波是指针手势的一部分，留在组件里。
  */
 export function useSatelliteEggs(options: SatelliteEggsOptions) {
@@ -72,8 +70,6 @@ export function useSatelliteEggs(options: SatelliteEggsOptions) {
   const timers = new Set<number>()
   let amiyaTimer: number | null = null
   let lastAmiyaAt = -Infinity
-  /** 上一次看到在跑的卫星键 */
-  let runningKeys: Set<string> | null = null
 
   function later(callback: () => void, ms: number): number {
     const timer = window.setTimeout(() => {
@@ -126,7 +122,7 @@ export function useSatelliteEggs(options: SatelliteEggsOptions) {
       // 邦布只会说「嗯呢」
       spawnNearSatellite(
         index,
-        t(`home.satelliteEgg.bangboo${1 + Math.floor(Math.random() * BANGBOO_LINES)}`),
+        t(`core.home.satelliteEgg.bangboo${1 + Math.floor(Math.random() * BANGBOO_LINES)}`),
         'hint'
       )
     }
@@ -146,7 +142,7 @@ export function useSatelliteEggs(options: SatelliteEggsOptions) {
     const snapshot = getScene()?.captureSnapshot()
     if (!snapshot) return
     getStage()?.showPolaroid(snapshot)
-    spawnNearSatellite(index, t('home.satelliteEgg.shutter'), 'hint')
+    spawnNearSatellite(index, t('core.home.satelliteEgg.shutter'), 'hint')
     logger.info('卫星彩蛋触发：星铁连点 7 下，三月七拍照')
   }
 
@@ -156,7 +152,7 @@ export function useSatelliteEggs(options: SatelliteEggsOptions) {
     if (!scene || !event) return
 
     if (event.kind === 'hint') {
-      spawnNearSatellite(index, t(`home.satelliteEgg.${event.key}`), 'hint')
+      spawnNearSatellite(index, t(`core.home.satelliteEgg.${event.key}`), 'hint')
       return
     }
     if (event.kind === 'countdown') {
@@ -167,13 +163,13 @@ export function useSatelliteEggs(options: SatelliteEggsOptions) {
     if (event.reward === 'zhouge') {
       void scene.revealZhouge(index)
       // 等脸飞到镜头前再出大字
-      spawnBanner(t('home.satelliteEgg.zhouge'), 650)
+      spawnBanner(t('core.home.satelliteEgg.zhouge'), 650)
       logger.info('卫星彩蛋触发：MAA 点满 325 下，周哥出场')
       return
     }
 
     scene.playGoldPull(index, Date.now(), REWARD_COLORS[event.reward], event.reward === 'spark')
-    spawnBanner(t(`home.satelliteEgg.${event.reward}`), GOLD_IMPACT_MS)
+    spawnBanner(t(`core.home.satelliteEgg.${event.reward}`), GOLD_IMPACT_MS)
     requestRender()
     logger.info(`卫星彩蛋触发：${type} 攒满保底，出金`)
   }
@@ -186,7 +182,7 @@ export function useSatelliteEggs(options: SatelliteEggsOptions) {
     if (!point) return false
     spawnText(
       point,
-      t(`home.satelliteEgg.wish${1 + Math.floor(Math.random() * WISH_LINES)}`),
+      t(`core.home.satelliteEgg.wish${1 + Math.floor(Math.random() * WISH_LINES)}`),
       'hint'
     )
     requestRender()
@@ -210,34 +206,9 @@ export function useSatelliteEggs(options: SatelliteEggsOptions) {
       const now = performance.now()
       if (now - lastAmiyaAt < AMIYA_COOLDOWN_MS) return
       lastAmiyaAt = now
-      spawnNearSatellite(index, t('home.satelliteEgg.amiya'), 'speech')
+      spawnNearSatellite(index, t('core.home.satelliteEgg.amiya'), 'speech')
       logger.info('卫星彩蛋触发：阿米娅')
     }, AMIYA_HOVER_MS)
-  }
-
-  /**
-   * 脚本开跑时在它的卫星旁喊一句「××，启动！」（BGI 是「原神，启动！」）；
-   * 每个脚本每次启动应用只喊一次。刚挂载时已经在跑的不算，只认看着它开跑的那一下。
-   */
-  function onStatusesChange(statuses: ReadonlyMap<string, SatelliteModuleStatus>): void {
-    const scene = getScene()
-    const running = new Set(
-      [...statuses].filter(([, status]) => status.running).map(([key]) => key)
-    )
-    const previous = runningKeys
-    runningKeys = running
-    if (!scene || !previous) return
-
-    for (const key of running) {
-      if (previous.has(key) || !consumeFirstLaunch(key)) continue
-      const index = scene.findSatellite(key)
-      if (index === null) continue
-      const text =
-        scene.satelliteType(index) === 'BetterGI'
-          ? t('home.satelliteEgg.genshinLaunch')
-          : t('home.satelliteEgg.launch', { name: scene.satelliteLabel(index) })
-      spawnNearSatellite(index, text, 'hint')
-    }
   }
 
   // ==================== 键盘 ====================
@@ -257,7 +228,7 @@ export function useSatelliteEggs(options: SatelliteEggsOptions) {
     const key = keyOfEvent(event)
     if (konami.feed(key)) {
       scene.startOverclock(Date.now())
-      spawnText(scene.projectCenter(), t('home.satelliteEgg.overclock'), 'huge')
+      spawnText(scene.projectCenter(), t('core.home.satelliteEgg.overclock'), 'huge')
       logger.info('卫星彩蛋触发：科乐美秘技超频')
       requestRender()
       return
@@ -280,13 +251,13 @@ export function useSatelliteEggs(options: SatelliteEggsOptions) {
     switch (code) {
       case '648':
         scene.playCrystalRain(now)
-        spawnBanner(t('home.satelliteEgg.topUp'))
+        spawnBanner(t('core.home.satelliteEgg.topUp'))
         break
       case '1999':
         scene.startStorm(now)
         options.setStormTint(true)
         later(() => options.setStormTint(false), STORM_TINT_MS)
-        spawnBanner(t('home.satelliteEgg.storm'))
+        spawnBanner(t('core.home.satelliteEgg.storm'))
         break
       case '666':
         scene.playFireworks(now)
@@ -298,7 +269,7 @@ export function useSatelliteEggs(options: SatelliteEggsOptions) {
         break
       case '404':
         scene.vanish(now)
-        spawnBanner(t('home.satelliteEgg.notFound'), 450)
+        spawnBanner(t('core.home.satelliteEgg.notFound'), 450)
         break
       case '233':
         for (let i = 0; i < 6; i++) {
@@ -310,7 +281,7 @@ export function useSatelliteEggs(options: SatelliteEggsOptions) {
                 x: size.width * (0.2 + Math.random() * 0.6),
                 y: size.height * (0.35 + Math.random() * 0.4),
               },
-              pick(['233', '2333', '233333', t('home.satelliteEgg.laugh')]),
+              pick(['233', '2333', '233333', t('core.home.satelliteEgg.laugh')]),
               'hint'
             )
           }, i * 140)
@@ -330,7 +301,7 @@ export function useSatelliteEggs(options: SatelliteEggsOptions) {
     if (!scene || !dizzyDetector.feed(scene.spinSpeed, dt, now)) return
 
     scene.startDizzy(now)
-    spawnText(scene.projectCenter(), t('home.satelliteEgg.dizzy'), 'hint')
+    spawnText(scene.projectCenter(), t('core.home.satelliteEgg.dizzy'), 'hint')
     logger.info('卫星彩蛋触发：转晕')
   }
 
@@ -346,7 +317,6 @@ export function useSatelliteEggs(options: SatelliteEggsOptions) {
     pokeSatellite,
     tryCatchMeteor,
     onHoverChange,
-    onStatusesChange,
     handleKeydown,
     checkDizzy,
     dispose,

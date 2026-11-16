@@ -127,28 +127,28 @@ export const FALLBACK_POLICY_FIELDS: NotifyChannelFieldOut[] = [
   {
     group: 'Notify',
     name: 'SendTaskResultTime',
-    labelKey: 'setting.notify.resultTime',
+    labelKey: 'core.setting.notify.resultTime',
     control: 'select',
     options: [
-      { value: '不推送', labelKey: 'setting.pushTime.never' },
-      { value: '任何时刻', labelKey: 'setting.pushTime.always' },
-      { value: '仅失败时', labelKey: 'setting.pushTime.failOnly' },
+      { value: '不推送', labelKey: 'core.setting.pushTime.never' },
+      { value: '任何时刻', labelKey: 'core.setting.pushTime.always' },
+      { value: '仅失败时', labelKey: 'core.setting.pushTime.failOnly' },
     ],
-    tipKey: 'setting.notify.resultTimeTip',
+    tipKey: 'core.setting.notify.resultTimeTip',
   },
   {
     group: 'Notify',
     name: 'IfSendStatistic',
-    labelKey: 'setting.notify.statistics',
+    labelKey: 'core.setting.notify.statistics',
     control: 'bool',
-    tipKey: 'setting.notify.statisticsTip',
+    tipKey: 'core.setting.notify.statisticsTip',
   },
   {
     group: 'Notify',
     name: 'IfSendSixStar',
-    labelKey: 'setting.notify.recruit',
+    labelKey: 'core.setting.notify.recruit',
     control: 'bool',
-    tipKey: 'setting.notify.recruitTip',
+    tipKey: 'core.setting.notify.recruitTip',
   },
 ]
 

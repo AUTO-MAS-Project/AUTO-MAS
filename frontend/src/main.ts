@@ -1,29 +1,42 @@
 import '@/utils/browserDevElectronAPI'
-import { createApp } from 'vue'
+import { createApp, nextTick, watch } from 'vue'
 import { createPinia } from 'pinia'
-import '@/styles/inspira.css'
+import { VueQueryPlugin } from '@tanstack/vue-query'
 import App from './App.vue'
+import NoData from '@/components/NoData.vue'
 import router from './router/index.ts'
 import { OpenAPI } from '@/api'
 import { configureLocalMonaco } from '@/utils/monaco'
 import { getConfig } from '@/utils/config'
 import { configureSentry, recordRendererStartup } from '@/utils/sentry'
+import { captureAnalyticsContext, recordRendererReady } from '@/utils/analytics'
 import { getDefaultHttpEndpoint } from '@/utils/backendEndpoint'
 import { i18n } from '@/i18n'
 import { useLocale } from '@/composables/useLocale'
 import { useTheme } from '@/composables/useTheme'
+import { useAppInitialization } from '@/composables/useAppInitialization'
+import { queryClient } from '@/services/queryClient'
+import { finishStartupStage, measureStartup } from '@/utils/startupTiming'
 
 import Antd, { message } from 'ant-design-vue'
 import 'ant-design-vue/dist/reset.css'
 import '@/styles/scrollbar.css'
+import '@/styles/sliders.css'
 import '@/styles/formSection.css'
+import '@/styles/pageTokens.css'
+import '@/styles/pageTitle.css'
+import '@/styles/pageSurface.css'
 import '@/styles/appearanceCursor.css'
 import '@/styles/appearanceSurfaces.css'
+import '@/styles/themeTransition.css'
 import '@/styles/appOverlays.css'
+import '@/styles/taskboardTokens.css'
 
 const TITLE_BAR_HEIGHT = 32
 const MESSAGE_TOP_GAP = 8
 const rendererStartedAt = performance.now()
+// 从导航起点计时，包含静态 import 执行前的网络、转换和模块求值。
+finishStartupStage('文档与静态依赖加载', 0)
 
 // 静态 message 默认从窗口顶部 8px 开始，会覆盖无边框窗口的标题栏。
 message.config({ top: `${TITLE_BAR_HEIGHT + MESSAGE_TOP_GAP}px` })
@@ -54,13 +67,10 @@ if (
 import { bootstrapRealtimeResidents } from '@/bootstrap/realtimeResidents'
 import { initializeAppLifecycle } from '@/composables/useAppLifecycle'
 
-// 应用级常驻订阅与生命周期协调器必须早于首个主 WebSocket 连接注册（幂等）
-bootstrapRealtimeResidents()
-initializeAppLifecycle()
-
 // 从 Electron 获取 API 端点并设置 OpenAPI.BASE
+let apiEndpointReady: Promise<void> = Promise.resolve()
 if (window.electronAPI?.getApiEndpoint) {
-  window.electronAPI
+  apiEndpointReady = window.electronAPI
     .getApiEndpoint('local')
     .then(endpoint => {
       OpenAPI.BASE = endpoint
@@ -81,13 +91,20 @@ if (window.electronAPI?.getApiEndpoint) {
 }
 
 // 创建应用实例
+const pluginsStartedAt = performance.now()
 const app = createApp(App)
 
 // 注册插件
 app.use(createPinia())
+app.use(VueQueryPlugin, { queryClient })
 app.use(Antd)
-app.use(router)
+app.component('NoData', NoData)
 app.use(i18n)
+
+// Pinia 先就绪，常驻订阅仍早于路由首次进入时建立的主 WebSocket 连接。
+bootstrapRealtimeResidents()
+initializeAppLifecycle()
+finishStartupStage('应用插件与常驻订阅', pluginsStartedAt)
 
 // 全局错误处理
 app.config.errorHandler = (err, instance, info) => {
@@ -96,17 +113,48 @@ app.config.errorHandler = (err, instance, info) => {
 }
 
 const bootstrap = async () => {
-  const frontendConfig = await getConfig()
+  await measureStartup('等待 API 端点', () => apiEndpointReady)
+  const analyticsContext = captureAnalyticsContext()
+  const frontendConfig = await measureStartup('读取本地配置', getConfig)
 
   // 外观必须在首次挂载前恢复，避免独立窗口和主窗口先显示默认主题后再跳变。
-  await useTheme().initTheme(frontendConfig)
+  await measureStartup('恢复主题', () => useTheme().initTheme(frontendConfig))
 
   // 语言必须在挂载前定好，否则首帧会闪一次默认语言；复用上面已读的配置，避免重复 IPC
-  await useLocale().initLocale(frontendConfig)
+  await measureStartup('恢复语言', () => useLocale().initLocale(frontendConfig))
+  const sentryStartedAt = performance.now()
   configureSentry(app, router, frontendConfig.Function?.IfEnableTelemetry !== false)
+  finishStartupStage('错误收集初始化', sentryStartedAt)
+
+  // 首次路由进入前，端点与本地语言必须已确定，避免按默认语言提前请求业务词表。
+  const routeStartedAt = performance.now()
+  app.use(router)
+
+  const { isInitialized } = useAppInitialization()
+  const stopReadyWatch = watch(
+    isInitialized,
+    ready => {
+      if (!ready) return
+      finishStartupStage('业务初始化就绪', rendererStartedAt)
+      stopReadyWatch()
+    },
+    { immediate: false }
+  )
+  // 旁路观察，不把首路由/绘制等待加进现有挂载流程。
+  void router.isReady().then(async () => {
+    finishStartupStage('首路由加载', routeStartedAt)
+    await nextTick()
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => finishStartupStage('首路由绘制后', routeStartedAt))
+    })
+  })
 
   // 挂载应用
+  const mountStartedAt = performance.now()
   app.mount('#app')
+  finishStartupStage('根组件挂载', mountStartedAt)
+  window.electronAPI?.notifyRendererReady?.()
+  recordRendererReady(analyticsContext, performance.now() - rendererStartedAt)
   recordRendererStartup(performance.now() - rendererStartedAt)
 
   logger.info('前端应用初始化完成')

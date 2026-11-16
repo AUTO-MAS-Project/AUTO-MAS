@@ -6,7 +6,7 @@
       :is-edit="isEdit"
       script-edit-segment="okww"
       :user-id="userId"
-      :config-label="t('edit.configureOkww')"
+      :config-label="t('core.edit.configureOkww')"
       :config-loading="okwwConfigLoading"
       :config-active="showOkwwConfigMask"
       :config-disabled="configActionsDisabled"
@@ -18,20 +18,20 @@
     <GuiSessionMask
       :open="showOkwwConfigMask"
       :icon="SettingOutlined"
-      :title="t('edit.okWwSetupProgress')"
-      :description="`${t('edit.finishSetupOkWw')}\n${t('edit.clickSaveSettingsWhen')}`"
+      :title="t('core.edit.okWwSetupProgress')"
+      :description="`${t('core.edit.finishSetupOkWw')}\n${t('core.edit.clickSaveSettingsWhen')}`"
     >
       <template #actions>
         <a-button v-if="okwwTaskId" type="primary" size="large" @click="handleSaveOkwwConfig">
-          {{ t('edit.saveSettings') }}
+          {{ t('core.edit.saveSettings') }}
         </a-button>
       </template>
     </GuiSessionMask>
     <GuiSessionMask
       :open="showOkwwViewMask"
       :icon="EyeOutlined"
-      :title="t('edit.okwwViewingTitle')"
-      :description="`${t('edit.okwwViewingDesc')}\n${t('edit.okwwViewingDesc2')}`"
+      :title="t('core.edit.okwwViewingTitle')"
+      :description="`${t('core.edit.okwwViewingDesc')}\n${t('core.edit.okwwViewingDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -41,7 +41,7 @@
           :loading="stoppingOkwwConfig"
           @click="handleCloseOkwwView"
         >
-          {{ t('edit.okwwViewClose') }}
+          {{ t('core.edit.okwwViewClose') }}
         </a-button>
       </template>
     </GuiSessionMask>
@@ -50,58 +50,36 @@
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
+            <UserAccountHeading
+              :user-name="formData.userName"
+              :options="{ isEdit, logoSrc: accountIcon }"
+            />
             <div class="section-header">
-              <h3>{{ t('edit.basicInfo') }}</h3>
+              <h3>{{ t('core.edit.basicInfo') }}</h3>
             </div>
 
-            <a-row :gutter="24">
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.username') }}
-                      <a-tooltip :title="t('edit.nameUsedTellUsers')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-input
-                    v-model:value="formData.userName"
-                    :placeholder="t('edit.enterUsername')"
-                    size="large"
-                    @blur="saveField('Info.Name', formData.userName)"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.enabled') }}
-                      <a-tooltip :title="t('edit.whetherThisUserEnabled')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-select
-                    v-model:value="formData.Info.Status"
-                    size="large"
-                    @change="saveField('Info.Status', formData.Info.Status)"
-                  >
-                    <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                    <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-            </a-row>
+            <UserBasicInfoFields
+              v-model:user-name="formData.userName"
+              v-model:status="formData.Info.Status"
+              v-model:remained-day="formData.Info.RemainedDay"
+              v-model:notes="formData.Info.Notes"
+              :disabled="pageLoading"
+              @save-name="saveField('Info.Name', formData.userName)"
+              @save-status="saveField('Info.Status', formData.Info.Status)"
+              @save-days="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
+              @save-notes="saveField('Info.Notes', formData.Info.Notes)"
+            />
 
             <a-row :gutter="24">
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      {{ t('edit.collectNodeDetails') }}
-                      <a-tooltip mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
+                      {{ t('core.edit.collectNodeDetails') }}
+                      <a-tooltip
+                        mouse-enter-delay="0.5"
+                        :title="t('core.edit.collectsKeyMomentsFrom')"
+                      >
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -121,16 +99,15 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">
-                      {{ t('edit.account') }}
-                      <a-tooltip :title="t('edit.usedSwitchAccountsLeave')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.okwwLoginAccount')"
+                      :hint="t('core.edit.okwwLoginAccountHint')"
+                      variant="form"
+                    />
                   </template>
                   <a-input
                     v-model:value="formData.Info.Id"
-                    :placeholder="t('edit.enterAccount')"
+                    :placeholder="t('core.edit.okwwLoginAccountPlaceholder')"
                     size="large"
                     @blur="saveField('Info.Id', formData.Info.Id)"
                   />
@@ -139,60 +116,22 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">
-                      {{ t('edit.gameResource') }}
-                      <a-tooltip :title="t('edit.pickGameResourceThis')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.gameResource')"
+                      :hint="t('core.edit.pickGameResourceThis')"
+                      variant="form"
+                    />
                   </template>
                   <a-select
                     v-model:value="formData.Info.Resource"
-                    :placeholder="t('edit.pickResource')"
+                    :placeholder="t('core.edit.pickResource')"
                     size="large"
                     :options="resourceOptions"
                     @change="saveField('Info.Resource', formData.Info.Resource)"
                   />
                 </a-form-item>
               </a-col>
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.daysLeft') }}
-                      <a-tooltip :title="t('edit.daysLeftAccount1')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-input-number
-                    v-model:value="formData.Info.RemainedDay"
-                    :min="-1"
-                    :max="9999"
-                    size="large"
-                    style="width: 100%"
-                    @blur="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
-                  />
-                </a-form-item>
-              </a-col>
             </a-row>
-
-            <a-form-item>
-              <template #label>
-                <span class="form-label">
-                  {{ t('edit.note') }}
-                  <a-tooltip :title="t('edit.addNoteAboutThis')">
-                    <QuestionCircleOutlined class="help-icon" />
-                  </a-tooltip>
-                </span>
-              </template>
-              <a-textarea
-                v-model:value="formData.Info.Notes"
-                :placeholder="t('edit.enterNote')"
-                :rows="4"
-                @blur="saveField('Info.Notes', formData.Info.Notes)"
-              />
-            </a-form-item>
           </div>
         </a-form>
       </a-card>
@@ -202,7 +141,7 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
-              <h3>{{ t('edit.configurationSource') }}</h3>
+              <h3>{{ t('core.edit.configurationSource') }}</h3>
             </div>
             <a-row :gutter="24">
               <a-col :span="24">
@@ -213,7 +152,7 @@
                   :saving="isSaving"
                   :quick-config="formData.Info.IfQuickConfig"
                   :quick-config-disabled="configActionsDisabled || isInitializing"
-                  :alert-message="t('edit.configSourceHintBase')"
+                  :alert-message="t('core.edit.configSourceHintBase')"
                   :show-gui-hint="false"
                   @change="handleConfigModeChange"
                   @quick-config-change="handleQuickConfigChange"
@@ -239,98 +178,15 @@
         </a-form>
       </a-card>
 
-      <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
-        <h3>{{ t('edit.taskConfiguration') }}</h3>
-        <a-space>
-          <a-button size="small" @click="openRestoreModal">
-            <template #icon><HistoryOutlined /></template>
-            {{ t('edit.configRestoreTitle') }}
-          </a-button>
-        </a-space>
-      </a-flex>
-      <a-card v-if="formData.Info.IfQuickConfig" class="config-card">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <a-row :gutter="24">
-              <a-col :span="24">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.currentLaunchArguments') }}
-                      <a-tooltip :title="t('edit.argumentsGeneratedFromTask')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-input :value="currentStartupArguments" size="large" readonly />
-                </a-form-item>
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24">
-              <a-col :span="12">
-                <a-form-item :label="t('edit.spendSanityFarm')">
-                  <a-select
-                    v-model:value="formData.Task.WhichToFarm"
-                    size="large"
-                    :options="farmOptions"
-                    @change="saveTaskConfig"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col v-if="formData.Task.WhichToFarm === 'Tacet Suppression'" :span="12">
-                <a-form-item :label="t('edit.sonanceCasketNumberF2')">
-                  <a-input-number
-                    v-model:value="formData.Task.WhichTacetSuppressionToFarm"
-                    :min="1"
-                    :max="99"
-                    style="width: 100%"
-                    size="large"
-                    @blur="saveTaskConfig"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col v-else-if="formData.Task.WhichToFarm === 'Forgery Challenge'" :span="12">
-                <a-form-item :label="t('edit.echoDomainNumberF2')">
-                  <a-input-number
-                    v-model:value="formData.Task.WhichForgeryChallengeToFarm"
-                    :min="1"
-                    :max="99"
-                    style="width: 100%"
-                    size="large"
-                    @blur="saveTaskConfig"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col v-else :span="12">
-                <a-form-item :label="t('edit.simulatedUniverseMaterials')">
-                  <a-select
-                    v-model:value="formData.Task.MaterialSelection"
-                    size="large"
-                    :options="materialOptions"
-                    @change="saveTaskConfig"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-
-            <a-form-item :label="t('edit.useNightmareNestDaily')">
-              <a-switch
-                v-model:checked="formData.Task.FarmNightmareNestForDailyEcho"
-                @change="saveTaskConfig"
-              />
-            </a-form-item>
-
-            <a-form-item :label="t('edit.extraTasksThatRun')">
-              <a-checkbox-group
-                v-model:value="formData.Task.AdditionalTasks"
-                :options="additionalTaskOptions"
-                @change="saveTaskConfig"
-              />
-            </a-form-item>
-          </div>
-        </a-form>
-      </a-card>
+      <OkwwAccountPlan
+        v-model="formData"
+        :script-id="scriptId"
+        :user-id="userId"
+        :save-task="saveTaskConfig"
+        :disabled="configActionsDisabled"
+        @save="saveTaskConfig"
+        @restore="openRestoreModal"
+      />
 
       <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
@@ -362,15 +218,15 @@
       :script-name="OKWW_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
-      :script-desc="t('edit.okwwConfigRestoreScriptDesc')"
+      :script-desc="t('core.edit.okwwConfigRestoreScriptDesc')"
       :on-restored="handleRestored"
       :on-detail="handleRestoreView"
     >
       <!-- ok-ww 备份摘要为文件集结构，用插槽完全接管预览区 -->
       <template #preview="{ raw }">
-        <a-empty
+        <NoData
           v-if="!previewFiles(raw).length"
-          :description="t('edit.configRestorePreviewEmpty')"
+          :description="t('core.edit.configRestorePreviewEmpty')"
         />
         <div v-else>
           <template v-for="f in previewFiles(raw)" :key="f.name">
@@ -388,20 +244,23 @@
 </template>
 
 <script setup lang="ts">
+import OkwwAccountPlan from './components/OkwwAccountPlan.vue'
+import { getDefaultOkwwTaskConfig } from './components/okwwTaskConfig'
+
+import UserAccountHeading from '@/components/UserAccountHeading.vue'
+import accountIcon from '@/assets/ok-ww.ico'
+import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import {
-  EyeOutlined,
-  HistoryOutlined,
-  QuestionCircleOutlined,
-  SettingOutlined,
-} from '@ant-design/icons-vue'
-import { Service, type OkwwUserConfig } from '@/api'
+import { EyeOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import type { OkwwUserConfig } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
+import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useOkwwGuiSession } from '@/composables/useOkwwGuiSession'
 import { useSaveQueue } from '@/composables/useSaveQueue'
@@ -413,6 +272,7 @@ import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestore
 import { buildRestoreConfirm } from '@/utils/configRestoreMode'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 import ConfigActionsSection from './ConfigActionsSection.vue'
+import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
 
@@ -420,7 +280,7 @@ const logger = window.electronAPI.getLogger('ok-ww用户编辑')
 const route = useRoute()
 const router = useRouter()
 const { addUser, getUsers, updateUser, error: userApiError, addUserErrorCode } = useUserApi()
-const { getScript, importScriptConfigFile } = useScriptApi()
+const { getScript, importScriptConfigFile, error: scriptApiError } = useScriptApi()
 const {
   okwwConfigLoading,
   okwwTaskId,
@@ -436,7 +296,7 @@ const okwwImportLoading = ref(false)
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId: userId.value }))
 const scriptName = ref('ok-ww脚本')
 
 const pageLoading = ref(true)
@@ -463,9 +323,9 @@ const resourceOptions = [
 
 // 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
 const pushLogModeOptions = [
-  { label: t('edit.pushLogModeOff'), value: '关闭' },
-  { label: t('edit.pushLogModeList'), value: '逐条' },
-  { label: t('edit.pushLogModeSummary'), value: '汇总' },
+  { label: t('core.edit.pushLogModeOff'), value: '关闭' },
+  { label: t('core.edit.pushLogModeList'), value: '逐条' },
+  { label: t('core.edit.pushLogModeSummary'), value: '汇总' },
 ]
 
 const okwwConfigModeOptions: Array<{
@@ -476,45 +336,26 @@ const okwwConfigModeOptions: Array<{
   icon: 'file' | 'database' | 'setting'
 }> = [
   {
-    label: t('edit.script'),
+    label: t('core.edit.script'),
     value: 'shared',
-    title: t('edit.script'),
-    description: t('edit.useSharedScriptLevel'),
+    title: t('core.edit.script'),
+    description: t('core.edit.useSharedScriptLevel'),
     icon: 'file',
   },
   {
-    label: t('edit.user'),
+    label: t('core.edit.user'),
     value: 'independent',
-    title: t('edit.user'),
-    description: t('edit.useThisUserS'),
+    title: t('core.edit.user'),
+    description: t('core.edit.useThisUserS'),
     icon: 'database',
   },
   {
-    label: t('edit.directControl'),
+    label: t('core.edit.directControl'),
     value: 'native',
-    title: t('edit.directControl'),
-    description: t('edit.useExistingOkwwConfiguration'),
+    title: t('core.edit.directControl'),
+    description: t('core.edit.useExistingOkwwConfiguration'),
     icon: 'setting',
   },
-]
-
-const farmOptions = [
-  { label: '无音区', value: 'Tacet Suppression' },
-  { label: '凝素领域', value: 'Forgery Challenge' },
-  { label: '模拟领域', value: 'Simulation Challenge' },
-]
-
-const materialOptions = [
-  { label: '共鸣者经验', value: 'Resonator EXP' },
-  { label: '武器经验', value: 'Weapon EXP' },
-  { label: '贝币', value: 'Shell Credit' },
-]
-
-const additionalTaskOptions = [
-  { label: '检查每周乐园', value: 'Check Weekly Garden' },
-  { label: '自动刷所有梦魇巢穴', value: 'Auto Farm all Nightmare Nest' },
-  { label: '已弃置声骸超过 1000 时融合', value: 'Merge Echo If discarded > 1000' },
-  { label: '传送并刷取 4C 声骸', value: 'Teleport and Farm 4C Echo' },
 ]
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
@@ -534,9 +375,9 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Name: '',
     Status: true,
     Id: '',
-    IfUseMasConfig: true,
     Base: 'shared',
     IfQuickConfig: true,
+    PlanMode: 'Fixed',
     Resource: '官服',
     RemainedDay: -1,
     IfScriptBeforeTask: false,
@@ -546,14 +387,7 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Notes: '',
     Tag: '',
   },
-  Task: {
-    WhichToFarm: 'Tacet Suppression',
-    WhichTacetSuppressionToFarm: 1,
-    WhichForgeryChallengeToFarm: 1,
-    MaterialSelection: 'Shell Credit',
-    FarmNightmareNestForDailyEcho: true,
-    AdditionalTasks: ['Check Weekly Garden'],
-  },
+  Task: getDefaultOkwwTaskConfig(),
   Notify: {
     Enabled: false,
     PushLogMode: '汇总',
@@ -564,10 +398,11 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     ServerChanKey: '',
   },
   Data: {
-    LastProxyDate: '',
+    LastProxyDate: '2000-01-01T00:00:00+04:00',
     ProxyTimes: 0,
-    LastProxyStatus: '',
+    LastProxyStatus: '未知',
     LastTaskIndex: 0,
+    LastTaskName: '',
   },
 })
 
@@ -575,9 +410,6 @@ const formData = reactive<OkwwUserFormData>({
   userName: '',
   ...getDefaultUserData(),
 })
-
-// ok-ww 只调度日常任务（-t 1 = DailyTask）；账号切换由 MAS 侧实现
-const currentStartupArguments = '-t 1 -e'
 
 const handleConfigModeChange = async (value: boolean | string) => {
   if (configActionsDisabled.value) return
@@ -597,12 +429,12 @@ const createUserImmediately = async (): Promise<boolean> => {
 
   const resp = await addUser(scriptId, { showError: false })
   if (!resp?.userId) {
-    const errorMessage = userApiError.value || '创建用户失败'
+    const errorMessage = userApiError.value || '创建账号失败'
     if (addUserErrorCode.value === 409) {
       Modal.warning({
-        title: t('edit.noOkWwSettings'),
-        content: t('edit.currentOkWwInstall'),
-        okText: t('edit.backScriptList'),
+        title: t('core.edit.noOkWwSettings'),
+        content: t('core.edit.currentOkWwInstall'),
+        okText: t('core.edit.backScriptList'),
         onOk: handleCancel,
       })
       return false
@@ -623,14 +455,7 @@ const createUserImmediately = async (): Promise<boolean> => {
 const saveField = async (key: string, value: unknown) => {
   if (isInitializing.value || !userId.value) return
 
-  const parts = key.split('.')
-  const patch: Record<string, any> = {}
-  let current = patch
-  for (let i = 0; i < parts.length - 1; i += 1) {
-    current[parts[i]] = {}
-    current = current[parts[i]]
-  }
-  current[parts[parts.length - 1]] = value
+  const patch = buildFieldPatch(key, value)
 
   if (key === 'Info.Name') {
     formData.userName = String(value || '')
@@ -653,42 +478,32 @@ const handleQuickConfigChange = async (value: boolean) => {
   }
 }
 
-const saveTaskConfig = async () => {
-  if (isInitializing.value || !userId.value) return
-  await enqueue(() =>
-    updateUser(scriptId, userId.value, {
-      Task: {
-        WhichToFarm: formData.Task.WhichToFarm,
-        WhichTacetSuppressionToFarm: formData.Task.WhichTacetSuppressionToFarm,
-        WhichForgeryChallengeToFarm: formData.Task.WhichForgeryChallengeToFarm,
-        MaterialSelection: formData.Task.MaterialSelection,
-        FarmNightmareNestForDailyEcho: formData.Task.FarmNightmareNestForDailyEcho,
-        AdditionalTasks: formData.Task.AdditionalTasks,
-      },
-    })
-  )
+const saveTaskConfig = async (): Promise<boolean> => {
+  if (isInitializing.value || !userId.value) return false
+  const Task = { ...formData.Task, AdditionalTasks: [...formData.Task.AdditionalTasks] }
+  return await enqueue(() => updateUser(scriptId, userId.value, { Task }))
 }
 
 const handleOkwwConfig = async () => {
   if (configActionsDisabled.value) return
-  await startSession(userId.value)
+  await startSession(userId.value, false, 'user')
 }
 
 const handleImportOkwwConfig = async () => {
   if (configActionsDisabled.value) return
   okwwImportLoading.value = true
   try {
-    if (formData.Info.Base === 'native') throw new Error(t('edit.nativeConfigNoImport'))
+    if (formData.Info.Base === 'native') throw new Error(t('core.edit.nativeConfigNoImport'))
     const response = await importScriptConfigFile(scriptId, userId.value)
     if (response.code !== 200)
-      throw new Error(response.message || t('edit.importScriptConfigFailed'))
+      throw new Error(response.message || t('core.edit.importScriptConfigFailed'))
     const importTarget =
       formData.Info.Base === 'shared'
-        ? t('comp.configSourceShared')
-        : t('comp.configSourceIndependent')
-    message.success(t('edit.importedP0ConfigurationFile', { p0: importTarget }))
+        ? t('core.comp.configSourceShared')
+        : t('core.comp.configSourceIndependent')
+    message.success(t('core.edit.importedP0ConfigurationFile', { p0: importTarget }))
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('edit.importScriptConfigFailed'))
+    message.error(error instanceof Error ? error.message : t('core.edit.importScriptConfigFailed'))
   } finally {
     okwwImportLoading.value = false
   }
@@ -712,7 +527,7 @@ const handleCloseOkwwView = () => {
 const loadScriptInfo = async (): Promise<boolean> => {
   const detail = await getScript(scriptId)
   if (!detail || detail.type !== 'Okww') {
-    message.error(t('edit.okWwScriptDoes'))
+    if (!scriptApiError.value) message.error(t('core.edit.okWwScriptDoes'))
     handleCancel()
     return false
   }
@@ -746,7 +561,7 @@ const loadUser = async () => {
     formData.userName = formData.Info.Name || ''
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    message.error(t('edit.couldNotLoadUser'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotLoadUser'))
     handleCancel()
   } finally {
     isInitializing.value = false
@@ -766,32 +581,11 @@ const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
 ]
 
 // 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
-const restoreApi = {
-  list: async (target: string) =>
-    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId.value, target),
-  preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
-      scriptId,
-      userId.value,
-      time,
-      target
-    ),
-  restore: async (target: string, time: string) =>
-    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-      scriptId,
-      userId: userId.value,
-      time,
-      target,
-    }),
-  readFile: async (target: string, time: string, path: string) =>
-    Service.getConfigBackupFileApiApiScriptsBackupFileGet(
-      scriptId,
-      userId.value,
-      time,
-      target,
-      path
-    ),
-}
+const { restoreApi, ensureBackup } = useConfigBackupApi({
+  scriptId,
+  userId: () => userId.value,
+  logger,
+})
 
 const openRestoreModal = () => {
   restoreOpen.value = true
@@ -833,8 +627,8 @@ const handleRestoreView = (
     const { title, paragraphs } = buildRestoreConfirm(
       t,
       {
-        title: t('edit.configRestoreDetailView'),
-        desc: t('edit.configRestoreDetailConfirm', { script: OKWW_DISPLAY_NAME }),
+        title: t('core.edit.configRestoreDetailView'),
+        desc: t('core.edit.configRestoreDetailConfirm', { script: OKWW_DISPLAY_NAME }),
       },
       item.base,
       currentMode
@@ -848,39 +642,34 @@ const handleRestoreView = (
         )
       ),
       okType: 'danger',
-      okText: t('edit.configRestoreConfirmOk'),
-      cancelText: t('edit.cancel'),
+      okText: t('core.edit.configRestoreConfirmOk'),
+      cancelText: t('core.edit.cancel'),
       onOk: async () => {
         if (configLocked.value) {
-          message.error(t('edit.configLocked'))
+          message.error(t('core.edit.configLocked'))
           resolve(false)
           return
         }
 
         try {
-          const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-            scriptId,
-            userId: userId.value,
-            time: item.time,
-            target,
-          })
+          const resp = await restoreApi.restore(target, item.time)
           // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
           // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
           if (resp.code !== 200) {
-            throw new Error(resp.message || t('edit.configRestoreFailed'))
+            throw new Error(resp.message || t('core.edit.configRestoreFailed'))
           }
           restoreOpen.value = false
           if (target === 'mas') {
             // 恢复后重拉表单：后端 UserData 已回填，不重拉会让旧表单值在
             // 下次保存时整块写回、覆盖恢复结果（对齐一键恢复 handleRestored）
             await loadUser()
-            await startSession(userId.value, true)
+            await startSession(userId.value, true, 'user')
           } else {
-            await startSession(scriptId, true)
+            await startSession(scriptId, true, 'script')
           }
           resolve(true)
         } catch (e) {
-          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
           resolve(false)
         }
       },
@@ -892,20 +681,7 @@ const handleRestoreView = (
 // 编辑会话归档（进入/退出时机，指纹去重）：与运行/会话下发前的双池归档
 // （AutoProxy/ScriptConfig 下发处）配合——进入归档原生配置当前状态（MAS
 // 触碰前原始态），退出归档 MAS 配置终态（编辑会话包络）
-const ensureOkwwBackup = async (target: 'mas' | 'native') => {
-  if (!userId.value) return
-  try {
-    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
-      scriptId,
-      userId: userId.value,
-      target,
-    })
-    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-    message.warning(t('edit.configRestoreEnsureFailed'))
-  }
-}
+const ensureOkwwBackup = ensureBackup
 
 onMounted(async () => {
   if (await loadScriptInfo()) {
@@ -927,8 +703,6 @@ onUnmounted(() => {
 
 <style scoped>
 .user-edit-container {
-  padding: 32px;
-  min-height: 100vh;
   background: var(--ant-color-bg-layout);
 }
 
@@ -955,10 +729,7 @@ onUnmounted(() => {
 }
 
 .section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
+  border-bottom-width: 1px;
 }
 
 .form-label {
@@ -989,10 +760,6 @@ onUnmounted(() => {
 }
 
 @media (max-width: 768px) {
-  .user-edit-container {
-    padding: 16px;
-  }
-
   .config-card :deep(.ant-card-body) {
     padding: 20px;
   }

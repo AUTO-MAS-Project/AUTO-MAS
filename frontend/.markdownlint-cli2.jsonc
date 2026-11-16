@@ -10,5 +10,12 @@
     "no-space-in-code": false,
     "no-trailing-punctuation": false,
   },
-  "ignores": ["node_modules/**", "dist/**", "dist-electron/**", "src/api/**"],
+  "ignores": [
+    "node_modules/**",
+    "dist/**",
+    "dist-electron/**",
+    "src/api/**",
+    "playwright-report/**",
+    "test-results/**",
+  ],
 }

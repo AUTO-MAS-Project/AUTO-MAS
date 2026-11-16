@@ -24,6 +24,10 @@ export type Emulator2AvdInstanceOptionsOut = {
      */
     cpu?: (number | null);
     /**
+     * 帧率 (hw.lcd.vsync), 下次开机生效
+     */
+    fps?: (number | null);
+    /**
      * 数据盘上限 GB
      */
     dataPartitionGb?: (number | null);

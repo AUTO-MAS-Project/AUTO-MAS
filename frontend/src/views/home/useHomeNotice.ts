@@ -48,15 +48,15 @@ export const useHomeNotice = () => {
           noticeVisible.value = true
           await playSound('announcement_display')
         } else {
-          message.info(t('home.notice.empty'))
+          message.info(t('core.home.notice.empty'))
         }
       } else {
-        message.error(response.message || t('home.notice.failed'))
+        message.error(response.message || t('core.home.notice.failed'))
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`显示公告失败: ${errorMsg}`)
-      message.error(t('home.notice.showFailed'))
+      message.error(t('core.home.notice.showFailed'))
     } finally {
       noticeLoading.value = false
     }

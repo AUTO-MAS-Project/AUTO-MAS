@@ -1,8 +1,9 @@
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import { useUpdateDownload, type UpdateDownloadStatus } from './useUpdateDownload'
 import { useUpdateModal } from './useUpdateChecker'
 
 const assertDevelopment = () => {
-  if (!import.meta.env.DEV) {
+  if (!isDev) {
     throw new Error('更新下载调试工具仅可在开发模式使用')
   }
 }

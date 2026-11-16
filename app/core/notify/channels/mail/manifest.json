@@ -1,0 +1,6 @@
+{
+  "interface_version": 1,
+  "id": "mail",
+  "entrypoint": "app.core.notify.channels.mail:register",
+  "requires": []
+}

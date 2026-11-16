@@ -26,11 +26,11 @@
 
 ### Nature
 
-This software is a management tool for automation scripts. It enables centralized management of numerous scripts, stores multiple user configurations, designs automated task workflows, monitors script logs, and enhances the efficiency and stability of automated proxy operations.
+This software is a management tool for automation scripts. It centrally manages multiple managed scripts and their account configurations, designs automated task workflows, monitors script logs, and enhances the efficiency and stability of automated proxy operations.
 
-- **Centralized Management**: Manage multiple scripts and user configurations in one place—say goodbye to messy, scattered script windows!
+- **Centralized Management**: Manage multiple managed scripts and account configurations in one place—say goodbye to messy, scattered script windows!
 - **Unattended Operation**: Monitor script logs and automatically handle errors—no more worries about tasks freezing while you're away from your computer!
-- **Flexible Configuration**: Combine scheduling queues with scripts to freely implement any scheduling logic you can imagine!
+- **Flexible Configuration**: Combine scheduling queues with managed scripts to freely implement any scheduling logic you can imagine!
 - **Proxy Logging**: Record all proxy sessions and log snippets for faster, more accurate, and convenient troubleshooting!
 
 ### Working Principle
@@ -39,7 +39,7 @@ The software stores multiple configurations for multiple scripts and implements 
 
 1. **Configuration**: Generate configuration files based on user settings and inject them into the corresponding scripts.
 2. **Monitoring**: After the script starts proxying, continuously read its logs to assess runtime status. If an anomaly is detected, the software restarts the script to ensure task continuity.
-3. **Looping**: Repeat the above steps to allow scripts to sequentially fulfill automated proxy tasks for all users.
+3. **Looping**: Repeat the above steps to allow scripts to sequentially fulfill automated proxy tasks for all accounts.
 
 ## Important Notice
 

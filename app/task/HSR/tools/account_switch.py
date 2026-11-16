@@ -25,8 +25,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Literal
 
-from app.services.system import System
-from app.utils import ProcessInfo, get_logger, is_process_running
+from app.utils import ProcessInfo, get_logger, is_process_running, process
 
 from ..task_mapping import engine_label
 from .cloud_browser import (
@@ -72,14 +71,14 @@ HSR_CLOUD_BROWSER_START_ATTEMPTS = 2
 def _script_path(script_config: Any, engine: str) -> str:
     """Resolve the old-dev engine root from ``Info`` only."""
 
-    return str(script_config.get("Info", f"{engine}Path") or "").strip()
+    return str(getattr(script_config.Info, f"{engine}Path") or "").strip()
 
 
 def resolve_game_platform(script_config: Any) -> HSRGamePlatform:
     """读取脚本的游戏平台；缺字段或非法值按客户端处理。"""
 
     try:
-        value = script_config.get("Game", "Platform")
+        value = script_config.Game.Platform
     except (AttributeError, KeyError, TypeError):
         value = None
     return "Cloud" if value == "Cloud" else "Client"
@@ -92,20 +91,20 @@ def is_cloud_platform(script_config: Any) -> bool:
 
 
 def resolve_cloud_profile_root(script_id: str) -> Path:
-    """本脚本所有云浏览器 profile 的根目录（相对后端 cwd 的 ``data/{script_id}``）。"""
+    """本托管所有云浏览器 profile 的根目录（相对后端 cwd 的 ``data/{script_id}``）。"""
 
     return Path.cwd() / f"data/{script_id}"
 
 
 def resolve_cloud_profile_dir(script_id: str, user_id: str) -> Path:
-    """一个 MAS 用户的云浏览器 profile：登录态就存在这里，用户之间互不相干。"""
+    """一个 MAS 账号的云浏览器 profile：登录态就存在这里，账号之间互不相干。"""
 
     return resolve_cloud_profile_root(script_id) / user_id / HSR_CLOUD_PROFILE_DIRNAME
 
 
 def _cloud_int(script_config: Any, key: str, default: int) -> int:
     try:
-        return max(1, int(script_config.get("Cloud", key) or default))
+        return max(1, int(getattr(script_config.Cloud, key) or default))
     except (AttributeError, KeyError, TypeError, ValueError):
         return default
 
@@ -114,7 +113,7 @@ def cloud_use_paid_time(script_config: Any) -> bool:
     """是否允许三月七消耗付费时长走快速排队（花钱的开关，默认关）。"""
 
     try:
-        return bool(script_config.get("Cloud", "UsePaidTime"))
+        return bool(script_config.Cloud.UsePaidTime)
     except (AttributeError, KeyError, TypeError):
         return False
 
@@ -134,7 +133,7 @@ def cloud_login_timeout_minutes(script_config: Any) -> int:
 def build_platform_m7a_patch(
     script_config: Any, *, debug_port: int | None = None
 ) -> dict[str, Any]:
-    """本轮三月七 config.yaml 的平台字段；云平台的端口取当前用户的云浏览器。"""
+    """本轮三月七 config.yaml 的平台字段；云平台的端口取当前账号的云浏览器。"""
 
     cloud = is_cloud_platform(script_config)
     return build_m7a_platform_patch(
@@ -178,7 +177,7 @@ def configure_m7a_runner(
 
 
 def check_cloud_prerequisites(script_config: Any) -> str:
-    """云·星穹铁道的脚本级前置；通过返回空串。
+    """云·星穹铁道的托管级前置；通过返回空串。
 
     云模式只用三月七：三月七路径与可执行文件、发行包内置的 Chrome 与
     chromedriver 都是硬条件；再探一次 MAS 托管浏览器能用的调试端口。
@@ -203,7 +202,7 @@ def read_cloud_last_login(script_config: Any) -> dict[str, str]:
     """``Cloud.LastLogin``：user_id → 最近一次确认已登录的 ISO 时间。"""
 
     try:
-        raw = script_config.get("Cloud", "LastLogin")
+        raw = script_config.Cloud.LastLogin
     except (AttributeError, KeyError, TypeError):
         return {}
     if isinstance(raw, str):
@@ -217,13 +216,12 @@ def read_cloud_last_login(script_config: Any) -> dict[str, str]:
 
 
 async def merge_cloud_last_login(script_config: Any, updates: dict[str, str]) -> None:
-    """把若干用户的登录时间合并写回 ``Cloud.LastLogin``（配置须已解锁）。"""
+    """把若干用户的登录时间合并写回 ``Cloud.LastLogin``（须持有配置 X 锁）。"""
 
     merged = read_cloud_last_login(script_config)
     merged.update(updates)
-    await script_config.set(
-        "Cloud", "LastLogin", json.dumps(merged, ensure_ascii=False)
-    )
+    script_config.Cloud.LastLogin = json.dumps(merged, ensure_ascii=False)
+    await script_config.commit()
 
 
 def _cloud_auto_battle_enabled(script_config: Any) -> bool:
@@ -246,7 +244,7 @@ async def close_cloud_browser(
 ) -> None:
     """关闭当前云浏览器，再按命令行标记兜底清理。
 
-    给了 ``script_id`` 时清理本脚本 profile 下的残留；``include_m7a_started`` 时再
+    给了 ``script_id`` 时清理本托管 profile 下的残留；``include_m7a_started`` 时再
     清掉三月七自己新建的浏览器（见 :func:`cleanup_cloud_leftovers`）。
     """
 
@@ -272,7 +270,7 @@ async def cleanup_cloud_leftovers(
 ) -> None:
     """按命令行标记清理残留云浏览器；绝不碰不带三月七标记的浏览器。
 
-    - 本脚本 MAS profile（``data/{script_id}``）下的：上一轮崩溃等留下的；
+    - 本托管 MAS profile（``data/{script_id}``）下的：上一轮崩溃等留下的；
     - ``include_m7a_started`` 时，三月七自己新建的（profile 缺失或最后一级不是
       ``cloud-profile``）：它的启动重试会先杀掉所有带标记的浏览器，再找不到 MAS
       的就自建一个。
@@ -303,27 +301,36 @@ async def cleanup_cloud_leftovers(
 def is_game_management_enabled(script_config: Any) -> bool:
     """读取 MAS 游戏管理开关；旧配置缺少该字段时默认开启。"""
 
-    value = script_config.get("Game", "Enabled")
+    value = script_config.Game.Enabled
     return True if value is None else bool(value)
 
 
 def _user_credential(user_config: Any, key: str) -> str:
     """Read the old-dev account credential from ``Info``."""
 
-    return str(user_config.get("Info", key) or "")
+    return str(getattr(user_config.Info, key) or "")
 
 
 def _is_config_value_readable(user_config: Any, group: str, key: str) -> bool:
     """检查配置项当前存储值是否能通过自身 validator。"""
 
-    item = user_config._config_item_index[group][key]
-    return item.validator.validate(item.value)
+    from app.config import EncryptedValue
+    from app.utils import dpapi_decrypt
+
+    value = getattr(user_config.effective, group).__dict__.get(key)
+    if not isinstance(value, EncryptedValue) or not value.ciphertext():
+        return True
+    try:
+        dpapi_decrypt(value.ciphertext().removeprefix("DPAPI:"))
+    except Exception:
+        return False
+    return True
 
 
 def resolve_game_executable_path(script_config: Any) -> Path:
     """从配置解析实际要启动的 StarRail.exe 路径。"""
 
-    raw_path = str(script_config.get("Game", "Path") or "").strip()
+    raw_path = str(script_config.Game.Path or "").strip()
     path = Path(raw_path) if raw_path else Path(HSR_GAME_PROCESS_NAME)
     if path.suffix.lower() == ".exe":
         return path
@@ -331,9 +338,9 @@ def resolve_game_executable_path(script_config: Any) -> Path:
 
 
 def _force_resolution_enabled(script_config: Any) -> bool:
-    """读取脚本页的临时 1920×1080 开关；旧配置缺字段时保持关闭。"""
+    """读取托管页的临时 1920×1080 开关；旧配置缺字段时保持关闭。"""
 
-    return bool(script_config.get("Game", "ForceResolution1920x1080"))
+    return bool(script_config.Game.ForceResolution1920x1080)
 
 
 def prepare_game_resolution_if_needed(
@@ -391,7 +398,7 @@ def resolve_sra_start_mode_from_credentials(
         return "switch"
 
     logger.warning(
-        f"用户「{user_name}」未配置账号或密码，"
+        f"账号「{user_name}」未配置账号或密码，"
         f"SRA StartGame 将使用当前已记住账号进入游戏；"
         f"若客户端停在登录页，需要手动登录，否则任务会失败。"
     )
@@ -421,29 +428,29 @@ def check_user_credentials(user_config: Any, user_name: str) -> str:
 
     if not _is_config_value_readable(user_config, "Info", "Id"):
         return (
-            f"用户「{user_name}」的账号密文损坏或当前 Windows 用户无法解密，"
+            f"账号「{user_name}」的账号密文损坏或当前 Windows 用户无法解密，"
             "请重新设置账号"
         )
     decrypted_id = _user_credential(user_config, "Id")
     if not decrypted_id or not decrypted_id.strip():
         logger.warning(
-            f"用户「{user_name}」的账号为空，SRA StartGame 将使用当前已记住账号进入游戏"
+            f"账号「{user_name}」的账号为空，SRA StartGame 将使用当前已记住账号进入游戏"
         )
         return "Pass"
 
     if not _is_config_value_readable(user_config, "Info", "Password"):
         return (
-            f"用户「{user_name}」的密码密文损坏或当前 Windows 用户无法解密，"
+            f"账号「{user_name}」的密码密文损坏或当前 Windows 用户无法解密，"
             "请重新设置密码"
         )
     decrypted_pw = _user_credential(user_config, "Password")
     if not decrypted_pw or not decrypted_pw.strip():
         logger.warning(
-            f"用户「{user_name}」的密码为空，SRA StartGame 将使用当前已记住账号进入游戏"
+            f"账号「{user_name}」的密码为空，SRA StartGame 将使用当前已记住账号进入游戏"
         )
         return "Pass"
 
-    logger.debug(f"用户「{user_name}」的账号密码校验通过（已确认可解密）")
+    logger.debug(f"账号「{user_name}」的账号密码校验通过（已确认可解密）")
     return "Pass"
 
 
@@ -476,7 +483,7 @@ async def stop_external_processes(
         if m7a_path:
             m7a_exe_path = Path(m7a_path) / "March7th Assistant.exe"
             try:
-                await System.kill_process(m7a_exe_path)
+                await process.kill_process(m7a_exe_path)
                 path_checked = True
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"按路径清理三月七进程失败：{m7a_exe_path} - {e}")
@@ -486,7 +493,7 @@ async def stop_external_processes(
         if sra_path:
             sra_exe_path = Path(sra_path) / "SRA-cli.exe"
             try:
-                await System.kill_process(sra_exe_path)
+                await process.kill_process(sra_exe_path)
                 path_checked = True
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"按路径清理 SRA 进程失败：{sra_exe_path} - {e}")
@@ -527,7 +534,7 @@ async def close_game_if_needed(
     game_exe_path = runtime.game_exe_path or resolve_game_executable_path(script_config)
     append_log("任务结束，正在关闭由 MAS 启动的游戏")
     try:
-        await System.kill_process(game_exe_path)
+        await process.kill_process(game_exe_path)
         await runtime.game_process_manager.clear()
         append_log("游戏进程已关闭")
     except Exception as e:  # noqa: BLE001
@@ -550,7 +557,7 @@ class HSRAccountSwitcher:
         self.script_config = script_config
         self.runtime = runtime
         self._append_log = append_log
-        # 云平台按用户分浏览器 profile，需要知道本切换器服务的是谁。
+        # 云平台按账号分浏览器 profile，需要知道本切换器服务的是谁。
         self.script_id = script_id
         self.user_id = user_id
         self._last_sra_window_recovery_at: datetime | None = None
@@ -562,15 +569,15 @@ class HSRAccountSwitcher:
     async def ensure_cloud_browser(
         self, *, fixed_port: int | None = None
     ) -> CloudBrowser:
-        """确保**当前用户**的云浏览器在跑：换用户关旧起新，死了就重起。
+        """确保**当前账号**的云浏览器在跑：换用户关旧起新，死了就重起。
 
-        同一用户的模块之间浏览器保持不动，下一个三月七进程连回去时已在游戏
+        同一账号的模块之间浏览器保持不动，下一个三月七进程连回去时已在游戏
         画面里，不重新登录也不重新排队。连续
         ``HSR_CLOUD_BROWSER_START_ATTEMPTS`` 次起不来才判失败（不可重试）。
 
         Args:
             fixed_port: 原生来源用：必须用这个调试端口（来自用户的三月七配置，
-                MAS 不改用户配置），被占直接报错；托管时为 None，由 MAS 从
+                MAS 不改账号配置），被占直接报错；托管时为 None，由 MAS 从
                 9222 起探测空闲端口，再写进本轮三月七 patch。
         """
 
@@ -580,7 +587,7 @@ class HSRAccountSwitcher:
             browser.user_id != self.user_id
             or (fixed_port is not None and browser.port not in (None, fixed_port))
         ):
-            self._append_log("切换用户：正在关闭上一个用户的云浏览器")
+            self._append_log("切换账号：正在关闭上一个账号的云浏览器")
             await close_cloud_browser(runtime, self._append_log)
             browser = None
 
@@ -589,7 +596,7 @@ class HSRAccountSwitcher:
             return browser
 
         m7a_root = _script_path(self.script_config, "M7A")
-        # 兜底：上一轮崩溃留下的本脚本云浏览器、三月七启动重试时自建的浏览器
+        # 兜底：上一轮崩溃留下的本托管云浏览器、三月七启动重试时自建的浏览器
         # 一律先关，保证起来之后只有一个带三月七标记的浏览器、且是 MAS 的。
         await cleanup_cloud_leftovers(
             self._append_log, script_id=self.script_id, include_m7a_started=True
@@ -682,7 +689,7 @@ class HSRAccountSwitcher:
         if not is_game_management_enabled(self.script_config):
             self.runtime.last_external_script = None
             self._append_log(
-                f"用户「{user_name}」外部脚本切换，MAS 未管理游戏，跳过游戏重启"
+                f"账号「{user_name}」外部脚本切换，MAS 未管理游戏，跳过游戏重启"
             )
             return
 
@@ -690,7 +697,7 @@ class HSRAccountSwitcher:
         process_name = HSR_GAME_PROCESS_NAME
 
         self._append_log(
-            f"用户「{user_name}」外部脚本切换，正在由 MAS 关闭并重新启动游戏"
+            f"账号「{user_name}」外部脚本切换，正在由 MAS 关闭并重新启动游戏"
         )
 
         self.runtime.game_exe_path = game_exe_path
@@ -701,7 +708,7 @@ class HSRAccountSwitcher:
         self.runtime.game_transitioning = True
 
         try:
-            await System.kill_process(game_exe_path)
+            await process.kill_process(game_exe_path)
             await self.runtime.game_process_manager.clear()
             self._append_log(
                 f"已请求关闭游戏，等待 {HSR_GAME_READY_DELAY_SECONDS}s 后重新启动"
@@ -723,7 +730,7 @@ class HSRAccountSwitcher:
             self.runtime.game_transitioning = False
 
     async def ensure_game_started_by_mas(self) -> None:
-        """按开关在 SRA/M7A 接手前准备游戏状态；云平台确保当前用户的浏览器在跑。"""
+        """按开关在 SRA/M7A 接手前准备游戏状态；云平台确保当前账号的浏览器在跑。"""
 
         if self.cloud:
             self.runtime.game_launch_checked = True
@@ -756,7 +763,7 @@ class HSRAccountSwitcher:
             await self._wait_after_game_process_detected(process_name)
             return
 
-        wait_time = max(0, int(self.script_config.get("Game", "WaitTime") or 60))
+        wait_time = max(0, int(self.script_config.Game.WaitTime or 60))
 
         if not game_exe_path.exists():
             raise RuntimeError(f"游戏启动文件不存在：{game_exe_path}")
@@ -779,7 +786,7 @@ class HSRAccountSwitcher:
     async def prepare_game_for_account_switch(self, user_name: str) -> None:
         """需要切换账号前按开关准备游戏重启链路。
 
-        云平台的「切号」就是换浏览器：关上一个用户的、起本用户的。
+        云平台的「切号」就是换浏览器：关上一个账号的、起本账号的。
         """
 
         if self.cloud:
@@ -797,7 +804,7 @@ class HSRAccountSwitcher:
             self.runtime.last_external_script = None
             self.runtime.game_transitioning = False
             self._append_log(
-                f"用户「{user_name}」需要登录/切号，MAS 未管理游戏，跳过游戏重启"
+                f"账号「{user_name}」需要登录/切号，MAS 未管理游戏，跳过游戏重启"
             )
             return
 
@@ -814,11 +821,11 @@ class HSRAccountSwitcher:
         try:
             if process_name and is_process_running(process_name):
                 self._append_log(
-                    f"用户「{user_name}」需要登录/切号，检测到游戏正在运行，"
+                    f"账号「{user_name}」需要登录/切号，检测到游戏正在运行，"
                     f"正在关闭游戏并等待 {HSR_GAME_READY_DELAY_SECONDS}s 后重启"
                 )
                 try:
-                    await System.kill_process(game_exe_path)
+                    await process.kill_process(game_exe_path)
                     await self.runtime.game_process_manager.clear()
                     await asyncio.sleep(HSR_GAME_READY_DELAY_SECONDS)
                 except Exception as e:  # noqa: BLE001
@@ -850,7 +857,7 @@ class HSRAccountSwitcher:
             track_last_script=track_script_switch,
         )
         self._append_log(
-            f"用户「{user_name}」开始执行 SRA {module_name}（{task_class}）"
+            f"账号「{user_name}」开始执行 SRA {module_name}（{task_class}）"
         )
         result = await run_sra_single_task(
             sra_exe_path,
@@ -863,9 +870,9 @@ class HSRAccountSwitcher:
             module_key=module_key,
         )
         if result.success:
-            self._append_log(f"用户「{user_name}」SRA {module_name} 执行完成")
+            self._append_log(f"账号「{user_name}」SRA {module_name} 执行完成")
         else:
-            self._append_log(f"用户「{user_name}」SRA {module_name} 执行失败")
+            self._append_log(f"账号「{user_name}」SRA {module_name} 执行失败")
         return result
 
     async def run_start_game(

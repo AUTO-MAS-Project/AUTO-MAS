@@ -8,24 +8,24 @@ export type SrcUserConfig_Notify = {
      */
     Enabled?: (boolean | null);
     /**
-     * 是否发送统计信息
-     */
-    IfSendStatistic?: (boolean | null);
-    /**
      * 是否发送邮件
      */
     IfSendMail?: (boolean | null);
     /**
-     * 收件地址
+     * 是否发送统计信息
      */
-    ToAddress?: (string | null);
+    IfSendStatistic?: (boolean | null);
     /**
-     * 是否启用Server酱
+     * 是否启用 Server 酱
      */
     IfServerChan?: (boolean | null);
     /**
-     * Server酱密钥
+     * Server 酱密钥
      */
     ServerChanKey?: (string | null);
+    /**
+     * 收件地址
+     */
+    ToAddress?: (string | null);
 };
 

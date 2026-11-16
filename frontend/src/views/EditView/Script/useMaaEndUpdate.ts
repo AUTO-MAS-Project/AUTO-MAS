@@ -1,7 +1,8 @@
+import { requestMaintenanceStart } from '@/composables/useTaskApi'
 import { onScopeDispose, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Modal, message } from 'ant-design-vue'
-import { Service, TaskCreateIn } from '@/api'
+import { Service } from '@/api'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
 import {
@@ -49,10 +50,6 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     retries: [] as number[],
   })
 
-  // 任务日志增量协议：append 为假 → 整体替换并记 seq；append 为真且 seq 连续 → 追加；
-  // 否则视为失步（订阅登记前已经错过首条整体替换、或漏了消息）：丢弃本条，拉一次运行
-  // 快照用它的 log/logSeq 重建，重建期间到达的增量一并丢弃。
-  let logSeq: number | null = null
   let logResyncing = false
   // 连续拉失败的对账次数，拉到一次成功就归零
   let resyncRetries = 0
@@ -104,7 +101,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     try {
       const response = await Service.stopTaskApiDispatchStopPost({ taskId })
       if (response.code !== 200) {
-        throw new Error(response.message || t('edit.endfieldUpdateStopFailed'))
+        throw new Error(response.message || t('core.edit.endfieldUpdateStopFailed'))
       }
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
@@ -139,6 +136,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
   }
 
   /** 重扫一次日志快照；返回这个任务是否还在运行列表里 */
+  // TODO(插件迁移，#1845)：普通快照排除维护任务，当前可能提前判定结束；本轮暂不改造对账。
   const resyncLog = async (): Promise<boolean> => {
     if (logResyncing || !updateSession.taskId) return true
     // 快照属于「发起请求那一刻」的世界：把当时的口径先记下，回来对不上就整条丢弃，
@@ -158,7 +156,6 @@ export function useMaaEndUpdate(getScriptId: () => string) {
       // 期间已有更新的日志就不拿这份旧的覆盖
       if (revision === logRevision) {
         updateModal.log = item.log ?? ''
-        logSeq = item.logSeq ?? null
       }
     } catch (e) {
       logger.warn(`重建终末地更新日志失败: ${e instanceof Error ? e.message : String(e)}`)
@@ -179,7 +176,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     if (await resyncLog()) return true
     updateModal.running = false
     updateModal.done = true
-    updateModal.log ||= t('edit.endfieldUpdateAlreadyFinished')
+    updateModal.log ||= t('core.edit.endfieldUpdateAlreadyFinished')
     clearSession()
     return false
   }
@@ -192,33 +189,17 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     if ((await settleIfFinished()) && updateModal.running) armIdleTimer()
   }
 
-  const applyLog = (data: { log: string; seq?: number; append?: boolean }) => {
-    if (!data.append) {
-      updateModal.log = data.log
-      logSeq = data.seq ?? null
-    } else if (logSeq !== null && data.seq === logSeq + 1) {
-      updateModal.log += data.log
-      logSeq = data.seq
-    } else {
-      // 序号对不上（丢包或重连）就整段重扫，期间不追加半截行。表必须先续上：重扫一旦
-      // 失败，这一段就没有下一次对账了
-      logSeq = null
-      armIdleTimer()
-      void settleIfFinished()
-      return
-    }
+  const applyLog = (data: WSTaskLogUpdatedData) => {
+    // TODO(插件迁移，#1845)：当前全文覆盖会丢失增量前文；迁入后统一适配 append/seq 与快照恢复。
+    updateModal.log = data.log.slice(-UPDATE_LOG_MAX_CHARS)
     logRevision += 1
     armIdleTimer()
-    if (updateModal.log.length > UPDATE_LOG_MAX_CHARS) {
-      updateModal.log = updateModal.log.slice(-UPDATE_LOG_MAX_CHARS)
-    }
   }
 
   const handleCheckUpdate = () => {
     if (updateModal.running || !getScriptId()) return
     updateModal.log = ''
     updateModal.done = false
-    logSeq = null
     updateModal.open = true
   }
 
@@ -227,12 +208,9 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     if (!scriptId) return
     updateModal.starting = true
     try {
-      const response = await Service.addTaskApiDispatchStartPost({
-        taskId: scriptId,
-        mode: TaskCreateIn.mode.UPDATE,
-      })
+      const response = await requestMaintenanceStart(scriptId)
       if (response.code !== 200 || !response.taskId) {
-        throw new Error(response.message || t('edit.endfieldUpdateStartFailed'))
+        throw new Error(response.message || t('core.edit.endfieldUpdateStartFailed'))
       }
       updateModal.running = true
       updateModal.done = false
@@ -244,22 +222,20 @@ export function useMaaEndUpdate(getScriptId: () => string) {
         // 留着 taskId，让他离开这一页时那条 stopSession 还能追上这一轮
         const stopped = await stopSession(disposed)
         updateModal.running = false
-        if (!disposed && !stopped) message.error(t('edit.endfieldUpdateStopFailed'))
+        if (!disposed && !stopped) message.error(t('core.edit.endfieldUpdateStopFailed'))
         return
       }
       errored = false
       aborted = false
       updateSession.subscriptionIds = [
         subscribe({ id: response.taskId, type: WS_TASK_LOG_UPDATED }, wsMessage => {
-          applyLog(
-            wsMessage.data as unknown as WSTaskLogUpdatedData & { seq?: number; append?: boolean }
-          )
+          applyLog(wsMessage.data)
         }),
         subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
           const data = wsMessage.data as unknown as WSTaskNoticeData
           if (data.level === 'error') {
             errored = true
-            message.error(t('edit.endfieldUpdateFailed', { p0: data.message }))
+            message.error(t('core.edit.endfieldUpdateFailed', { p0: data.message }))
             updateModal.running = false
             updateModal.done = true
             // 弹窗留着：具体原因就在里面那几行日志里。任务已经报错收尾，会话可以清干净
@@ -268,7 +244,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
         }),
         subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
           if (!errored && !aborted) {
-            message.success(t('edit.endfieldUpdateTask'))
+            message.success(t('core.edit.endfieldUpdateTask'))
           }
           updateModal.running = false
           updateModal.done = true
@@ -294,7 +270,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
       logger.error(e instanceof Error ? e.message : String(e))
       // 页面已经销毁就别再往别处弹提示：那条错误属于一个用户已经离开的页面
       if (!disposed) {
-        message.error(e instanceof Error ? e.message : t('edit.endfieldUpdateStartFailed'))
+        message.error(e instanceof Error ? e.message : t('core.edit.endfieldUpdateStartFailed'))
       }
     } finally {
       updateModal.starting = false
@@ -309,7 +285,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     if (running && !stopped) {
       // 后端没答应停止，就还在写游戏目录。这时把弹窗收起来、会话清掉，用户就只剩一句
       // 三秒即散的提示，连再按一次「仍要关闭」的入口都没有了——保持打开让他能重试
-      message.error(t('edit.endfieldUpdateStopFailed'))
+      message.error(t('core.edit.endfieldUpdateStopFailed'))
       return
     }
     updateModal.running = false
@@ -321,10 +297,10 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     // 中止会白下这一轮已下载的部分（下一轮能续传，但这一轮到此为止），先问一句
     if (updateModal.running) {
       Modal.confirm({
-        title: t('edit.endfieldUpdateAbortTitle'),
-        content: t('edit.endfieldUpdateCloseConfirm'),
-        okText: t('edit.endfieldUpdateAbortConfirm'),
-        cancelText: t('edit.cancel'),
+        title: t('core.edit.endfieldUpdateAbortTitle'),
+        content: t('core.edit.endfieldUpdateCloseConfirm'),
+        okText: t('core.edit.endfieldUpdateAbortConfirm'),
+        cancelText: t('core.edit.cancel'),
         onOk: closeAndStop,
       })
       return

@@ -51,18 +51,17 @@ import json
 import os
 import time
 from contextlib import suppress
-from pathlib import Path
 
 from app.core import Config
-from app.utils import get_logger
-from app.utils.platform import IS_WINDOWS
+from app.utils import IS_WINDOWS, get_logger
+from app.utils.common.process.scope import detached_process_context
 
 logger = get_logger("桌面保障")
 
 # 目标客户区。取脚本侧常见的最低要求：够放下一个 1280x720 的窗口就算够用。
 DESKTOP_MIN_CLIENT = (1280, 720)
 # 记账文件。落在受保护的 data/ 下，和 MaaFW job 文件同级。
-STATE_FILE = Path("data") / "virtual_display.json"
+STATE_FILE = Config.data_path / "virtual_display.json"
 
 # 轮询间隔（秒）。
 POLL_INTERVAL = 5.0
@@ -151,9 +150,9 @@ def cleanup_orphan_display() -> None:
         # 还活着说明不是孤儿——可能是同一台机器上另一个 MAS 实例正在用。
         return
 
-    from app.utils.platform.vdd import remove_display_index
+    from app.utils import vdd as _utils_vdd
 
-    if remove_display_index(index):
+    if _utils_vdd.remove_display_index(index):
         logger.info(f"已清理上次遗留的虚拟显示器（index={index}, pid={pid}）")
     _clear_state()
 
@@ -161,10 +160,10 @@ def cleanup_orphan_display() -> None:
 def _has_real_output() -> bool:
     """桌面上有没有真实输出。查不到信息时按「有」处理，宁可不插屏也不乱动拓扑。"""
 
-    from app.utils.platform.display import has_real_display
+    from app.utils import display as _utils_display
 
     try:
-        return has_real_display()
+        return _utils_display.has_real_display()
     except Exception as exc:
         _warn_once(f"查询显示输出失败，按有真实输出处理: {exc}")
         return True
@@ -177,10 +176,10 @@ def _real_devices() -> set[str] | None:
     好好的屏拆掉再重挂一遍。查不到就什么都别做。
     """
 
-    from app.utils.platform.display import real_display_devices
+    from app.utils import display as _utils_display
 
     try:
-        return real_display_devices()
+        return _utils_display.real_display_devices()
     except Exception as exc:
         _warn_once(f"枚举显示设备失败: {exc}")
         return None
@@ -200,9 +199,7 @@ def _task_running() -> bool:
     try:
         from app.core import TaskManager
 
-        return any(
-            info.mode != "ScriptConfig" for info in TaskManager.task_info.values()
-        )
+        return any(info.mode == "AutoProxy" for info in TaskManager.task_info.values())
     except Exception as exc:
         _warn_once(f"查询任务状态失败，按有任务在跑处理: {exc}")
         return True
@@ -216,10 +213,10 @@ def _monitor_work_rect(devices: set[str]):
     """
 
     from app.models.schema import WSDisplayMonitorRectData
-    from app.utils.platform.display import list_monitors
+    from app.utils import display as _utils_display
 
     try:
-        for monitor in list_monitors():
+        for monitor in _utils_display.list_monitors():
             if monitor.device in devices:
                 left, top, right, bottom = monitor.work
                 return WSDisplayMonitorRectData(
@@ -233,20 +230,20 @@ def _monitor_work_rect(devices: set[str]):
 def _desktop_has_room() -> bool:
     """插屏之后用：新挂的屏放不放得下目标窗口。"""
 
-    from app.utils.platform.display import find_host_monitor
+    from app.utils import display as _utils_display
 
     try:
-        return find_host_monitor(*DESKTOP_MIN_CLIENT) is not None
+        return _utils_display.find_host_monitor(*DESKTOP_MIN_CLIENT) is not None
     except Exception as exc:
         logger.warning(f"查询显示器失败，按可用处理: {exc}")
         return True
 
 
 def _describe() -> str:
-    from app.utils.platform.display import describe_monitors
+    from app.utils import display as _utils_display
 
     try:
-        return describe_monitors()
+        return _utils_display.describe_monitors()
     except Exception as exc:
         return f"（读取失败: {exc}）"
 
@@ -257,7 +254,7 @@ def parse_mode(text: str) -> tuple[int, int, int]:
     解析失败时回落到默认模式而不是抛错：这一层不该因为一个配置字符串把任务打掉。
     """
 
-    from app.utils.platform.vdd import DEFAULT_VDD_MODE
+    from app.utils import vdd as _utils_vdd
 
     try:
         size, _, refresh = text.partition("@")
@@ -265,7 +262,7 @@ def parse_mode(text: str) -> tuple[int, int, int]:
         return int(width), int(height), int(refresh)
     except (AttributeError, ValueError):
         logger.warning(f"虚拟显示器模式配置无法解析，按默认处理: {text!r}")
-        return DEFAULT_VDD_MODE
+        return _utils_vdd.DEFAULT_VDD_MODE
 
 
 def decide(
@@ -324,6 +321,8 @@ class _DesktopGuard:
         self._prompt_delivered = False
         # 弹窗挂着期间连续几轮没再看到回来的屏。收回和弹出一样要判据连续成立。
         self._prompt_idle_ticks = 0
+        # 挂着虚拟屏期间的「保持显示开启」请求，见 `_sync_display_hold`。
+        self._display_hold = None
 
     @property
     def lock(self) -> asyncio.Lock:
@@ -355,7 +354,9 @@ class _DesktopGuard:
         # 巡检判据会一路放行。清理只动自己记账过、且记录进程已死的 index。
         with suppress(Exception):
             await asyncio.to_thread(cleanup_orphan_display)
-        self._task = asyncio.create_task(self._loop(), name="desktop-guard")
+        self._task = asyncio.create_task(
+            self._loop(), name="desktop-guard", context=detached_process_context()
+        )
         logger.info("桌面显示输出守卫已启动")
 
     async def stop(self) -> None:
@@ -392,6 +393,8 @@ class _DesktopGuard:
             try:
                 async with self._lock:
                     await self._tick(confirm=True)
+                    # MAS 执行睡眠 / 休眠前会撤掉所有请求，醒来后屏还挂着就在这里补回。
+                    self._sync_display_hold()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -401,7 +404,7 @@ class _DesktopGuard:
             await asyncio.sleep(POLL_INTERVAL)
 
     async def _tick(self, *, confirm: bool) -> None:
-        enabled = bool(Config.get("Display", "IfEnableVirtualDisplay"))
+        enabled = bool(Config.setting.Display.IfEnableVirtualDisplay)
         holding = self.device
 
         has_real = True
@@ -478,7 +481,8 @@ class _DesktopGuard:
         为止——这个弹窗是用户此刻唯一看得见的东西，漏掉等于回到静默推迟的老样子。
         """
 
-        from app.core.ws import Publisher, protocol
+        from app.core import Publisher
+        from app.core.ws import protocol
         from app.models.schema import WSDisplayDetachPromptData
 
         key = frozenset(returned)
@@ -511,7 +515,8 @@ class _DesktopGuard:
         self._prompt_idle_ticks = 0
         if not delivered:
             return
-        from app.core.ws import Publisher, protocol
+        from app.core import Publisher
+        from app.core.ws import protocol
 
         await Publisher.send(
             id=protocol.ID_MAIN, type=protocol.DISPLAY_DETACH_PROMPT_CLOSED
@@ -551,10 +556,10 @@ class _DesktopGuard:
         if time.monotonic() < self._quiet_until:
             return
 
-        from app.utils.platform.vdd import VddStatus, probe
+        from app.utils import vdd as _utils_vdd
 
-        result = await asyncio.to_thread(probe)
-        if result.status is not VddStatus.OK:
+        result = await asyncio.to_thread(_utils_vdd.probe)
+        if result.status is not _utils_vdd.VddStatus.OK:
             self._fail(
                 f"无法挂载虚拟显示器（{_probe_hint(result)}）。"
                 "没有真实显示输出时 Windows 只保留一块占位的幻影屏，游戏渲染与截图都可能不可靠；"
@@ -568,7 +573,7 @@ class _DesktopGuard:
             f"{reason}，当前只有系统占位的幻影屏: {await asyncio.to_thread(_describe)}"
         )
 
-        mode = parse_mode(Config.get("Display", "VirtualDisplayMode"))
+        mode = parse_mode(Config.setting.Display.VirtualDisplayMode)
         # 挂屏跑在守卫自己的任务里，用 shield 隔开调用方的取消。
         #
         # 任务开跑前的强制巡检是从 `TaskManager` 里 await 的，用户点「停止」会 cancel 掉
@@ -576,14 +581,16 @@ class _DesktopGuard:
         # `__enter__` 照常把屏插上（光是 settle 就要 1.5 秒）。若让取消把 `_attach` 打断，
         # `self._display` 永远赋不上、记账也不写，桌面上就留下一块守卫不认、下次启动的
         # 孤儿清理也捡不到的屏，而且它本身算「真实输出」，此后每轮巡检都会放行。
-        self._attaching = asyncio.create_task(self._insert(display_mode=mode))
+        self._attaching = asyncio.create_task(
+            self._insert(display_mode=mode), context=detached_process_context()
+        )
         await asyncio.shield(self._attaching)
 
     async def _insert(self, *, display_mode: tuple[int, int, int]) -> None:
-        from app.utils.platform.vdd import VirtualDisplay
+        from app.utils import vdd as _utils_vdd
 
         mode = display_mode
-        display = VirtualDisplay(mode=mode)
+        display = _utils_vdd.VirtualDisplay(mode=mode)
         try:
             await asyncio.to_thread(display.__enter__)
         except Exception as exc:
@@ -619,11 +626,31 @@ class _DesktopGuard:
         self._quiet_until = 0.0
         self._last_failure = ""
         logger.info(f"已挂载虚拟显示器: {await asyncio.to_thread(_describe)}")
+        self._sync_display_hold()
+
+    def _sync_display_hold(self) -> None:
+        """挂着虚拟屏期间保持显示开启，拆掉就撤销。
+
+        Windows 到点熄屏是整机状态，虚拟屏照样跟着熄；熄屏时鹰角启动器这类网页界面不出
+        画面，MaaEnd「🚀启动游戏（PC）」在里面什么都认不出（2026-10-17/18 生产两晚失败，
+        亮屏 5 秒即过）。挂着虚拟屏说明没有真实显示器亮着，保持开启不会点亮任何东西。
+        """
+
+        from app.utils import power
+
+        hold = self._display_hold
+        if self._display is not None:
+            if hold is None or not hold.active:
+                self._display_hold = power.hold_display("虚拟显示器")
+        elif hold is not None:
+            self._display_hold = None
+            hold.release()
 
     async def _teardown(self, reason: str) -> None:
         # 屏都要没了，问用户拆不拆的弹窗自然作废，先收掉。
         await self._close_prompt()
         display, self._display = self._display, None
+        self._sync_display_hold()
         if display is None:
             return
         with suppress(Exception):
@@ -645,21 +672,19 @@ class _DesktopGuard:
             logger.warning(message)
 
 
-DesktopGuard = _DesktopGuard()
-
-
 async def ensure_desktop_available() -> None:
     """任务开跑前强制巡检一次。守卫没启动时也能安全调用。"""
+    from app.core import DesktopGuard
 
     await DesktopGuard.ensure_now()
 
 
 def _probe_hint(result) -> str:
-    from app.utils.platform.vdd import VddStatus
+    from app.utils import vdd as _utils_vdd
 
-    if result.status is VddStatus.NOT_INSTALLED:
+    if result.status is _utils_vdd.VddStatus.NOT_INSTALLED:
         return "未安装 Parsec 虚拟显示驱动"
-    if result.status is VddStatus.ACCESS_DENIED:
+    if result.status is _utils_vdd.VddStatus.ACCESS_DENIED:
         # 与「未安装」是两种完全不同的故障，提示必须分开。
         return "驱动已安装但当前权限打不开设备"
     return f"驱动异常: {result.detail}"
@@ -672,7 +697,7 @@ async def probe_virtual_display_driver():
     不持久化**：存下来的状态只会变陈旧（驱动可能被卸载、被显卡驱动更新搞坏、或者配置
     被同步到另一台机器），而实时问一次永远是对的。
     """
-
+    from app.core import DesktopGuard
     from app.models.schema import (
         VirtualDisplayCheckOut,
         VirtualDisplayCheckResultItem,
@@ -689,15 +714,15 @@ async def probe_virtual_display_driver():
             results=[item("installed", False, "当前系统不支持")],
         )
 
-    from app.utils.platform.vdd import VddStatus, probe
+    from app.utils import vdd as _utils_vdd
 
-    result = await asyncio.to_thread(probe)
-    if result.status is VddStatus.NOT_INSTALLED:
+    result = await asyncio.to_thread(_utils_vdd.probe)
+    if result.status is _utils_vdd.VddStatus.NOT_INSTALLED:
         return VirtualDisplayCheckOut(
             message="未安装 Parsec 虚拟显示驱动",
             results=[item("installed", False, "未找到驱动，请先安装")],
         )
-    if result.status is not VddStatus.OK:
+    if result.status is not _utils_vdd.VddStatus.OK:
         return VirtualDisplayCheckOut(
             message=_probe_hint(result),
             results=[
@@ -727,7 +752,7 @@ async def check_virtual_display_driver():
     守卫此刻正挂着屏时不再插第二块：那既是多余的拓扑变更，又会让「除自己以外还有没有
     真实输出」的判据在检测期间成立，守卫紧接着就把自己那块拆了。直接拿现挂的那块报结果。
     """
-
+    from app.core import DesktopGuard
     from app.models.schema import (
         VirtualDisplayCheckOut,
         VirtualDisplayCheckResultItem,
@@ -744,19 +769,19 @@ async def check_virtual_display_driver():
             results=[item("installed", False, "当前系统不支持")],
         )
 
-    from app.utils.platform.vdd import VddStatus, VirtualDisplay, probe
+    from app.utils import vdd as _utils_vdd
 
     async with DesktopGuard.lock:
-        result = await asyncio.to_thread(probe)
+        result = await asyncio.to_thread(_utils_vdd.probe)
         monitors = await asyncio.to_thread(_describe)
 
-        if result.status is VddStatus.NOT_INSTALLED:
+        if result.status is _utils_vdd.VddStatus.NOT_INSTALLED:
             return VirtualDisplayCheckOut(
                 message="未安装 Parsec 虚拟显示驱动",
                 monitors=monitors,
                 results=[item("installed", False, "未找到驱动，请先安装后再检测")],
             )
-        if result.status is not VddStatus.OK:
+        if result.status is not _utils_vdd.VddStatus.OK:
             return VirtualDisplayCheckOut(
                 message=_probe_hint(result),
                 monitors=monitors,
@@ -783,8 +808,8 @@ async def check_virtual_display_driver():
                 results=results,
             )
 
-        mode = parse_mode(Config.get("Display", "VirtualDisplayMode"))
-        display = VirtualDisplay(mode=mode)
+        mode = parse_mode(Config.setting.Display.VirtualDisplayMode)
+        display = _utils_vdd.VirtualDisplay(mode=mode)
         try:
             await asyncio.to_thread(display.__enter__)
         except Exception as exc:
@@ -829,3 +854,8 @@ async def check_virtual_display_driver():
         monitors=monitors,
         results=results,
     )
+
+
+DesktopGuard = _DesktopGuard()
+
+__all__ = ["DesktopGuard"]

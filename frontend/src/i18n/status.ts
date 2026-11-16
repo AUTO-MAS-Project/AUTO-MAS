@@ -34,6 +34,6 @@ export function useStatusLabel(): (raw: string | null | undefined) => string {
   return (raw: string | null | undefined): string => {
     if (!raw) return ''
     const key = STATUS_KEY[raw]
-    return key ? t(`status.${key}`) : raw
+    return key ? t(`core.status.${key}`) : raw
   }
 }

@@ -12,41 +12,14 @@ import type { MaaFWConfig_Selection } from './MaaFWConfig_Selection';
 import type { MaaFWConfig_Task } from './MaaFWConfig_Task';
 import type { MaaFWConfig_Update } from './MaaFWConfig_Update';
 export type MaaFWConfig = {
-    /**
-     * 脚本基础信息
-     */
-    Info?: (MaaFWConfig_Info | null);
-    /**
-     * 模拟器配置
-     */
-    Emulator?: (MaaFWConfig_Emulator | null);
-    /**
-     * 设备配置
-     */
     Device?: (MaaFWConfig_Device | null);
-    /**
-     * 游戏生命周期配置
-     */
-    Game?: (MaaFWConfig_Game | null);
-    /**
-     * 项目更新配置
-     */
-    Update?: (MaaFWConfig_Update | null);
-    /**
-     * 内嵌副本
-     */
     Embedded?: (MaaFWConfig_Embedded | null);
-    /**
-     * 脚本运行配置
-     */
+    Emulator?: (MaaFWConfig_Emulator | null);
+    Game?: (MaaFWConfig_Game | null);
+    Info?: (MaaFWConfig_Info | null);
     Run?: (MaaFWConfig_Run | null);
-    /**
-     * controller、resource 与 task 选择
-     */
     Selection?: (MaaFWConfig_Selection | null);
-    /**
-     * 任务队列模板
-     */
     Task?: (MaaFWConfig_Task | null);
+    Update?: (MaaFWConfig_Update | null);
 };
 

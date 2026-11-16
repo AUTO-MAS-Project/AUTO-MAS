@@ -2,7 +2,7 @@
   <!-- 加载状态 -->
   <div>
     <div v-if="loading" class="loading-container">
-      <a-spin size="large" :tip="t('plan.loading')" />
+      <a-spin size="large" :tip="t('core.plan.loading')" />
     </div>
 
     <!-- 主要内容 -->
@@ -11,22 +11,12 @@
       <PlanHeader
         :plan-list="planList"
         :active-plan-id="activePlanId"
+        :creating="planOperationPending"
         @add-plan="handleAddPlan"
         @remove-plan="handleRemovePlan"
       />
 
-      <!-- 空状态 -->
-      <div v-if="!planList.length || !currentPlanData" class="empty-state">
-        <div class="empty-content">
-          <div class="empty-image-container">
-            <img src="@/assets/NoData.png" :alt="t('plan.noData')" class="empty-image" />
-          </div>
-          <div class="empty-text-content">
-            <h3 class="empty-title">{{ t('plan.emptyTitle') }}</h3>
-            <p class="empty-description">{{ t('plan.emptyDesc') }}</p>
-          </div>
-        </div>
-      </div>
+      <PlanEmptyState v-if="!planList.length || !currentPlanData" />
 
       <!-- 计划内容 -->
       <div v-else class="plans-content">
@@ -44,26 +34,31 @@
           v-if="currentPlanDescriptor"
           :current-plan-name="currentPlanName"
           :current-mode="currentMode"
+          :rotate-days="currentRotateDays"
           :view-mode="viewMode"
           :supports-simple-view="currentPlanDescriptor.supportsSimpleView"
-          :supports-layout-mode="currentPlanDescriptor.supportsLayoutMode"
-          :baah-layout="baahLayout"
           :is-editing-plan-name="isEditingPlanName"
+          :compact="currentPlan?.type === PLAN_CONFIG_TYPES.BAAH"
+          :disabled="planOperationPending"
           @update:current-plan-name="currentPlanName = $event"
-          @update:current-mode="currentMode = $event"
+          @update:current-mode="onModeChange"
+          @update:rotate-days="handleRotateDaysChange"
           @update:view-mode="viewMode = $event"
-          @update:baah-layout="baahLayout = $event"
           @start-edit-plan-name="startEditPlanName"
           @finish-edit-plan-name="finishEditPlanName"
-          @mode-change="onModeChange"
         >
           <!-- 动态渲染不同类型的表格 -->
           <component
             :is="currentPlanDescriptor.tableComponent"
+            ref="planTable"
+            v-bind="
+              currentPlan?.type === PLAN_CONFIG_TYPES.BAAH
+                ? { interactionDisabled: planOperationPending }
+                : {}
+            "
             :table-data="tableData"
             :current-mode="currentMode"
             :view-mode="viewMode"
-            :baah-layout="baahLayout"
             :plan-id="activePlanId"
             :handle-plan-change="handlePlanChange"
           />
@@ -74,9 +69,10 @@
 </template>
 
 <script setup lang="ts">
+import { usePlanFieldSave } from './usePlanFieldSave'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { usePlanApi } from '@/composables/usePlanApi'
 import type { PlanIndexItem } from '@/api'
@@ -88,12 +84,15 @@ import {
 import {
   DEFAULT_PLAN_CONFIG_TYPE,
   PLAN_TYPE_REGISTRY,
+  PLAN_CONFIG_TYPES,
   isKnownPlanType,
   type PlanChangeOptions,
   type PlanConfigData,
   type PlanConfigType,
 } from '@/utils/planTypeRegistry'
+import { PLAN_ROTATE_DAYS_DEFAULT, clampRotateDays, type PlanMode } from '@/utils/planDays'
 import PlanHeader from './components/PlanHeader.vue'
+import PlanEmptyState from './components/PlanEmptyState.vue'
 import PlanSelector from './components/PlanSelector.vue'
 import PlanConfig from './components/PlanConfig.vue'
 
@@ -119,16 +118,23 @@ const activePlanId = ref<string>('')
 const planDataMap = ref<Record<string, PlanConfigData>>({})
 
 const currentPlanName = ref<string>('')
-const currentMode = ref<'ALL' | 'Weekly'>('ALL')
+const currentMode = ref<PlanMode>('ALL')
+const currentRotateDays = ref<number>(PLAN_ROTATE_DAYS_DEFAULT)
 const viewMode = ref<'config' | 'simple'>('config')
-// BAAH 计划表的关卡安排：每天一类（默认，三行各管一件事）或多类混打（六类都填）。
-// 与 viewMode 一样只是当前页面的显示状态，各计划表共用同一个选择
-const baahLayout = ref<'mixed' | 'single'>('single')
 
 const isEditingPlanName = ref<boolean>(false)
 const loading = ref(true)
 
 const tableData = ref<Record<string, any>>({})
+const planTable = ref<{ beforeLeave?: () => boolean } | null>(null)
+const planOperationPending = ref(false)
+const canLeaveTable = () => planTable.value?.beforeLeave?.() ?? true
+
+onBeforeRouteLeave(() => canLeaveTable())
+onBeforeRouteUpdate(
+  (to, from) =>
+    to.query.planId === from.query.planId || (!planOperationPending.value && canLeaveTable())
+)
 
 const currentPlan = computed(
   () => planList.value.find(plan => plan.id === activePlanId.value) || null
@@ -167,6 +173,7 @@ const syncCurrentPlan = (planId: string, forceCustomStages = false) => {
   }
 
   currentMode.value = planData.Info?.Mode || 'ALL'
+  currentRotateDays.value = clampRotateDays(planData.Info?.RotateDays)
   tableData.value = { ...clonePlanData(planData), _isInitialLoad: forceCustomStages }
   return true
 }
@@ -194,9 +201,15 @@ const applyLocalPlanChange = (planId: string, path: string, value: any) => {
   }
 }
 
-const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE) => {
+const handleAddPlan = async (
+  planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE,
+  owner?: { scriptId: string }
+) => {
+  if (planOperationPending.value || !canLeaveTable()) return
+  planOperationPending.value = true
   try {
-    const response = await createPlan(planType)
+    const response = await createPlan(planType, owner)
+    if (response.code !== 200) throw new Error(response.message)
     const uniqueName = getDefaultPlanName(planType)
     const newPlan: PlanListItem = { id: response.planId, name: uniqueName, type: planType }
     planDataMap.value = {
@@ -214,7 +227,7 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
     // 如果生成的名称包含数字，说明有重名，提示用户
     if (uniqueName.match(/\s\d+$/)) {
       message.info(
-        t('plan.toast.createdHint', {
+        t('core.plan.toast.createdHint', {
           type: t(getPlanTypeLabelKey(planType)),
           name: uniqueName,
         }),
@@ -222,7 +235,7 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
       )
     } else {
       message.success(
-        t('plan.toast.created', {
+        t('core.plan.toast.created', {
           type: t(getPlanTypeLabelKey(planType)),
           name: uniqueName,
         })
@@ -231,10 +244,14 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`添加计划失败: ${errorMsg}`)
+  } finally {
+    planOperationPending.value = false
   }
 }
 
 const handleRemovePlan = async (planId: string) => {
+  if (planOperationPending.value || !canLeaveTable()) return
+  planOperationPending.value = true
   try {
     await deletePlan(planId)
     const nextPlanData = { ...planDataMap.value }
@@ -257,25 +274,15 @@ const handleRemovePlan = async (planId: string) => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`删除计划失败: ${errorMsg}`)
+  } finally {
+    planOperationPending.value = false
   }
 }
 
 // 使用即时保存 - 只发送修改的字段（遵循最小原则）
-const savePlanField = async (planId: string, changes: Record<string, any>): Promise<boolean> => {
-  if (!planId) {
-    return false
-  }
-
-  try {
-    logger.debug(`保存字段 (${planId}): ${JSON.stringify(changes)}`)
-    await updatePlan(planId, changes)
-    return true
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存计划字段失败: ${errorMsg}`)
-    return false
-  }
-}
+const savePlanField = usePlanFieldSave(updatePlan, () =>
+  viewMode.value === 'simple' ? 'simple' : 'complex'
+)
 
 const fetchPlanData = async (planId: string): Promise<PlanConfigData | null> => {
   const response = await getPlans(planId)
@@ -310,7 +317,7 @@ const handlePlanChange = async (
     typeof reloadOrOptions === 'boolean'
       ? reloadOrOptions
       : (options?.refresh ?? currentPlanDescriptor.value?.reloadAfterSave ?? true)
-  const success = await savePlanField(planId, changes)
+  const success = await savePlanField(planId, changes, options)
 
   if (!success) {
     return false
@@ -352,6 +359,7 @@ const buildNestedObject = (path: string, value: any): Record<string, any> => {
 // 优化计划切换逻辑
 const onPlanChange = async (planId: string) => {
   if (planId === activePlanId.value) return
+  if (planOperationPending.value || !canLeaveTable()) return
 
   try {
     // 立即切换到新计划
@@ -404,7 +412,9 @@ const renamePlan = async (planId: string, newName: string): Promise<boolean> => 
   const validation = validatePlanName(newName, existingNames, plan.name)
 
   if (!validation.isValid) {
-    message.error(validation.messageKey ? t(validation.messageKey) : t('plan.toast.nameInvalid'))
+    message.error(
+      validation.messageKey ? t(validation.messageKey) : t('core.plan.toast.nameInvalid')
+    )
     return false
   }
 
@@ -455,9 +465,32 @@ const finishEditPlanName = async () => {
   }
 }
 
-const onModeChange = async () => {
-  // 只发送修改的字段
-  await handlePlanChange('Info.Mode', currentMode.value)
+const onModeChange = async (mode: PlanMode) => {
+  if (mode === currentMode.value || planOperationPending.value || !canLeaveTable()) return
+  const previous = currentMode.value
+  planOperationPending.value = true
+  currentMode.value = mode
+  try {
+    const saved = await handlePlanChange('Info.Mode', mode)
+    if (!saved) currentMode.value = previous
+  } finally {
+    planOperationPending.value = false
+  }
+}
+
+/** 改轮换天数：先落到界面让列数立刻跟着变，保存失败再退回原来的天数 */
+const handleRotateDaysChange = async (days: number) => {
+  if (days === currentRotateDays.value || planOperationPending.value || !canLeaveTable()) return
+  const previous = currentRotateDays.value
+  planOperationPending.value = true
+  currentRotateDays.value = days
+
+  try {
+    const saved = await handlePlanChange('Info.RotateDays', days)
+    if (!saved) currentRotateDays.value = previous
+  } finally {
+    planOperationPending.value = false
+  }
 }
 
 const loadPlanData = async (planId: string, force = false, forceCustomStages = false) => {
@@ -492,7 +525,7 @@ const initPlans = async () => {
   try {
     const response = await getPlans()
     if (response.code !== 200) {
-      throw new Error(response.message || t('plan.toast.fetchFailed'))
+      throw new Error(response.message || t('core.plan.toast.fetchFailed'))
     }
 
     const nextPlanDataMap: Record<string, PlanConfigData> = {}
@@ -566,8 +599,7 @@ watch(
     if (!newPlanId) return
     const target = planList.value.find(p => p.id === newPlanId)
     if (target && target.id !== activePlanId.value) {
-      activePlanId.value = target.id
-      await loadPlanData(activePlanId.value)
+      await onPlanChange(target.id)
     }
   }
 )
@@ -590,108 +622,9 @@ onMounted(() => {
 }
 
 /* 空状态样式 */
-.empty-state {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 500px;
-  padding: 60px 20px;
-  background: var(--ant-color-fill-quaternary);
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 12px;
-  margin: 20px 0;
-}
-
-.empty-content {
-  text-align: center;
-  max-width: 480px;
-  animation: fadeInUp 0.8s ease-out;
-}
-
-.empty-image-container {
-  position: relative;
-  margin-bottom: 32px;
-  display: inline-block;
-}
-
-.empty-image-container::before {
-  content: '';
-  position: absolute;
-  top: -20px;
-  left: -20px;
-  right: -20px;
-  bottom: -20px;
-  background: radial-gradient(circle, var(--ant-color-primary-bg) 0%, transparent 70%);
-  border-radius: 50%;
-  animation: pulse 3s ease-in-out infinite;
-}
-
-.empty-image {
-  max-width: 200px;
-  height: auto;
-  opacity: 0.9;
-  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.1));
-  transition: all 0.3s ease;
-  position: relative;
-  z-index: 1;
-}
-
-.empty-image:hover {
-  transform: translateY(-4px);
-  filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.15));
-}
-
-.empty-text-content {
-  margin-top: 16px;
-}
-
-.empty-title {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  margin: 0 0 12px 0;
-  background: linear-gradient(135deg, var(--ant-color-text), var(--ant-color-text-secondary));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.empty-description {
-  font-size: 16px;
-  color: var(--ant-color-text-secondary);
-  line-height: 1.6;
-  margin: 0;
-  opacity: 0.8;
-}
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(30px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 0.6;
-    transform: scale(1);
-  }
-
-  50% {
-    opacity: 0.8;
-    transform: scale(1.05);
-  }
-}
-
 .plans-content {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: var(--app-page-content-gap);
 }
 </style>

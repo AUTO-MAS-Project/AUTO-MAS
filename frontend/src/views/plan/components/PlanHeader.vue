@@ -1,7 +1,7 @@
 <template>
-  <div class="plans-header">
+  <div class="plans-header app-page-header">
     <div class="header-left">
-      <h1 class="page-title">{{ t('plan.title') }}</h1>
+      <h1 class="page-title app-page-title">{{ t('core.plan.title') }}</h1>
     </div>
     <div class="header-actions">
       <a-space size="middle">
@@ -10,39 +10,51 @@
           <template #overlay>
             <a-menu @click="onAddPlanMenu">
               <a-menu-item v-for="planType in PLAN_TYPE_DESCRIPTORS" :key="planType.configType">
-                {{ t('plan.createTyped', { name: t(planType.displayNameKey) }) }}
+                {{ t('core.plan.createTyped', { name: t(planType.displayNameKey) }) }}
               </a-menu-item>
             </a-menu>
           </template>
           <a-button type="primary" size="large">
-            {{ t('plan.create') }}
+            {{ t('core.plan.create') }}
             <DownOutlined />
           </a-button>
         </a-dropdown>
 
         <a-popconfirm
           v-if="planList.length > 0"
-          :title="t('plan.deleteConfirm')"
-          :ok-text="t('common.confirm')"
-          :cancel-text="t('common.cancel')"
+          :title="t('core.plan.deleteConfirm')"
+          :ok-text="t('core.common.confirm')"
+          :cancel-text="t('core.common.cancel')"
           @confirm="$emit('remove-plan', activePlanId)"
         >
           <a-button danger size="large" :disabled="!activePlanId">
             <template #icon>
               <DeleteOutlined />
             </template>
-            {{ t('plan.deleteCurrent') }}
+            {{ t('core.plan.deleteCurrent') }}
           </a-button>
         </a-popconfirm>
       </a-space>
     </div>
   </div>
+  <UniversalPlanCreateDialog
+    ref="universalDialog"
+    :active-plan-id="activePlanId"
+    :creating="creating"
+    @create="emit('add-plan', PLAN_CONFIG_TYPES.UNIVERSAL, { scriptId: $event })"
+  />
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
+import UniversalPlanCreateDialog from './UniversalPlanCreateDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { DeleteOutlined, DownOutlined } from '@ant-design/icons-vue'
-import { PLAN_TYPE_DESCRIPTORS, type PlanConfigType } from '@/utils/planTypeRegistry'
+import {
+  PLAN_CONFIG_TYPES,
+  PLAN_TYPE_DESCRIPTORS,
+  type PlanConfigType,
+} from '@/utils/planTypeRegistry'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 
@@ -57,42 +69,32 @@ interface Plan {
 interface Props {
   planList: Plan[]
   activePlanId: string
+  creating?: boolean
 }
 
 defineProps<Props>()
 const emit = defineEmits<{
-  'add-plan': [planType: PlanConfigType]
+  'add-plan': [planType: PlanConfigType, owner?: { scriptId: string }]
   'remove-plan': [planId: string]
 }>()
 
+const universalDialog = ref<InstanceType<typeof UniversalPlanCreateDialog> | null>(null)
 const onAddPlanMenu = ({ key }: { key: string }) => {
+  if (key === PLAN_CONFIG_TYPES.UNIVERSAL) {
+    void universalDialog.value?.show()
+    return
+  }
   emit('add-plan', key as PlanConfigType)
 }
 </script>
 
 <style scoped>
-.plans-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 24px;
-  padding: 0 4px;
-}
-
 .header-left {
   flex: 1;
   min-width: 0; /* 防止文字溢出 */
 }
 
 .page-title {
-  margin: 0 0 8px 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
   white-space: nowrap; /* 防止标题换行 */
   overflow: hidden;
   text-overflow: ellipsis; /* 长标题时显示省略号 */
@@ -100,20 +102,5 @@ const onAddPlanMenu = ({ key }: { key: string }) => {
 
 .header-actions {
   flex-shrink: 0;
-  margin-left: 16px; /* 添加间距防止太紧密 */
-}
-
-@media (max-width: 768px) {
-  .page-title {
-    font-size: 24px;
-  }
-
-  .plans-header {
-    padding: 0 2px; /* 减少边距给内容更多空间 */
-  }
-
-  .header-actions {
-    margin-left: 8px; /* 小屏幕时减少间距 */
-  }
 }
 </style>

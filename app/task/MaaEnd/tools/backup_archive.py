@@ -16,12 +16,12 @@
 #   You should have received a copy of the GNU Affero General Public
 #   License along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""MaaEnd 配置备份归档：MAS 用户配置 / 脚本原生配置，两类独立快照。
+"""MaaEnd 配置备份归档：MAS 账号配置 / 脚本原生配置，两类独立快照。
 
 备份时机（MAS「动手前」，此时 MaaEnd 尚未被触碰）：
 
 - 任务 / 配置会话启动（manager ``prepare``）：``native`` 归档 MaaEnd 安装
-  目录 ``config/`` 当前状态（整目录）——安装配置物理上跨用户共享，只在
+  目录 ``config/`` 当前状态（整目录）——安装配置物理上跨账号共享，只在
   任务级归档一次；
 - 运行 / 配置会话下发前（AutoProxy / ScriptConfig 的 ``set_maaend``）：
   ``mas`` 归档本轮下发源（shared 来源共享 Default 目录、independent 来源当前用户目录，
@@ -29,14 +29,14 @@
 - 编辑界面进入 / 退出（前端 ensure）：进入时归档 ``native``（MAS 触碰前
   原始态）、退出时归档 ``mas``（编辑会话包络的 MAS 侧终态）。
 
-``mas`` 池的内容 = ConfigFile 整目录 + **快速配置覆盖层字段侧车**：页面
-任务配置卡片（快速配置）的字段存在 MAS 用户配置里、运行时才覆盖进
-mxu-MaaEnd.json 的任务开关与选项，不在 ConfigFile 中——侧车让「MAS 用户
+``mas`` 池的内容 = ConfigFile 整目录 + **覆写常规配置覆盖层字段侧车**：页面
+任务配置卡片（覆写常规配置）的字段存在 MAS 账号配置里、运行时才覆盖进
+mxu-MaaEnd.json 的任务开关与选项，不在 ConfigFile 中——侧车让「MAS 账号
 配置备份」真正覆盖用户在 MAS 页面配的东西，恢复时随文件一起回滚并回填
 表单（对齐 ok-ww 覆盖层模式）。MAS 配置目录 owner 由用户当前的
 ``Info.Base`` 决定（shared=Default 共享、independent=独立目录、native=无 MAS 配置），
 解析逻辑见 ``restore_service``。时间戳快照、指纹去重、保留清理与整目录
-恢复的通用逻辑由公共模块 ``app.utils.config_archive`` 提供（默认每池保留
+恢复的通用逻辑由公共模块 ``app.utils.common.config.archive`` 提供（默认每池保留
 10 份），本模块只保留 MaaEnd 特有的 owner 目录布局、覆盖层侧车、恢复
 语义（恢复前强制归档当前）与归档目录布局。
 """
@@ -44,33 +44,24 @@ mxu-MaaEnd.json 的任务开关与选项，不在 ConfigFile 中——侧车让�
 import json
 from pathlib import Path
 
-from app.utils import get_logger
-from app.utils.config_archive import (
-    META_FILE_NAMES,
-    OVERLAY_SIDECAR_NAME,
-    archive_files,
-    config_root_key,
-    dir_files,
-    get_backup_dir,
-    list_times,
-    mask_account,
-    read_overlay_sidecar,
-    restore_dir,
-    write_backup_base,
-)
-from app.utils.constants import (
+from app.config import ConfigEntry
+from app.utils import (
     BASE_SOURCE_LABELS,
     MAAEND_AUTO_COLLECT_TASK,
     MAAEND_DELIVERY_TASK,
     MAAEND_TASK_GROUPS,
     MAAEND_TASKS,
+    get_logger,
 )
+from app.utils.common.config import archive as _utils_config_archive
+
+read_overlay_sidecar = _utils_config_archive.read_overlay_sidecar
 
 logger = get_logger("MaaEnd 配置备份")
 
 
 def backup_root(script_id: str) -> Path:
-    """某脚本的备份归档根目录（MAS 用户池用）：``data/{script_id}/MaaEndBackups``。"""
+    """某脚本的备份归档根目录（MAS 账号池用）：``data/{script_id}/MaaEndBackups``。"""
 
     return Path.cwd() / "data" / script_id / "MaaEndBackups"
 
@@ -80,7 +71,7 @@ def project_backup_root() -> Path:
 
     native（脚本原生配置）池挂在这里而不是脚本目录下——同一份物理安装
     可被多个脚本实例引用，原生备份按物理配置根指纹分桶、跨脚本共享、
-    不随脚本删除（mas 用户池仍按脚本，见 :func:`mas_backup_root`）。
+    不随脚本删除（mas 账号池仍按脚本，见 :func:`mas_backup_root`）。
     """
 
     return Path.cwd() / "data" / "MaaEndBackups"
@@ -89,9 +80,9 @@ def project_backup_root() -> Path:
 def mas_backup_root(script_id: str, user_id: str) -> Path:
     """MAS 池归档根：``data/{script_id}/MaaEndBackups/mas/{user_id}``。
 
-    **恒按用户分桶**——备份内容（ConfigFile 快照 + 快速配置覆盖层侧车）
-    的侧车是用户级的，按用户分桶才能保证每个用户只看到、只恢复自己的
-    备份。池与恢复目标解耦：shared 来源用户的下发源是共享 Default 目录，但
+    **恒按账号分桶**——备份内容（ConfigFile 快照 + 覆写常规配置覆盖层侧车）
+    的侧车是账号级的，按账号分桶才能保证每个账号只看到、只恢复自己的
+    备份。池与恢复目标解耦：shared 来源账号的下发源是共享 Default 目录，但
     其池仍是 ``mas/{user_id}``。
     """
 
@@ -105,7 +96,11 @@ def native_backup_root(config_path: str | Path) -> Path:
     配置无论被哪个脚本引用都归同一个池；跨脚本共享、不随脚本删除。
     """
 
-    return project_backup_root() / "native" / config_root_key(config_path)
+    return (
+        project_backup_root()
+        / "native"
+        / _utils_config_archive.config_root_key(config_path)
+    )
 
 
 def mas_config_dir(script_id: str, owner: str) -> Path:
@@ -114,15 +109,16 @@ def mas_config_dir(script_id: str, owner: str) -> Path:
     return Path.cwd() / "data" / script_id / owner / "ConfigFile"
 
 
-# ══════════════════ MAS 配置（池按用户，目标路径按 owner） ══════════════════
+# ══════════════════ MAS 配置（池按账号，目标路径按 owner） ══════════════════
 
 _OVERLAY_INFO_KEYS = (
     "Base",
     "Id",
     "IfQuickConfig",
+    "SanityStrategy",
     "SanityMode",
 )
-"""MAS 页面基础字段（UserData.Info）：来源仅预览，账号/快速配置/理智模式参与回填"""
+"""MAS 页面基础字段（UserData.Info）：来源仅预览，账号/覆写常规配置/理智模式参与回填"""
 
 _OVERLAY_SANITY_KEYS = (
     "SanityTaskType",
@@ -133,8 +129,10 @@ _OVERLAY_SANITY_KEYS = (
     "AutoEssenceSpecifiedLocation",
     "AutoEssenceMenu",
     "AutoEssenceTargetWeapons",
+    "SupplyPlanLimits",
+    "ProtocolSpaceObtainModeClaim",
 )
-"""理智任务选项字段（UserData.Task，快速配置开启时运行时写入任务选项）"""
+"""理智任务选项字段（UserData.Task，覆写常规配置开启时运行时写入任务选项）"""
 
 _OVERLAY_TASK_KEYS = (
     *(f"If{task}" for task in MAAEND_TASKS),
@@ -148,7 +146,7 @@ _OVERLAY_TASK_KEYS = (
     "DailyOnceTasks",
     *_OVERLAY_SANITY_KEYS,
 )
-"""快速配置覆盖层字段（UserData.Task，运行时覆盖进 mxu-MaaEnd.json 任务开关与选项）"""
+"""覆写常规配置覆盖层字段（UserData.Task，运行时覆盖进 mxu-MaaEnd.json 任务开关与选项）"""
 
 _OVERLAY_KEY_GROUPS = {"Info": _OVERLAY_INFO_KEYS, "Task": _OVERLAY_TASK_KEYS}
 """侧车字段的配置段归属（两组键名无交集，侧车内平铺存储）"""
@@ -198,12 +196,13 @@ _TASK_LABELS.update(
 )
 """MaaEnd 任务中文名（含独立送货/采集阶段与本体其余任务；不依赖本体运行时）"""
 
-# 快速配置开关覆盖的任务（mas 池「任务启用」罗列行）
+# 覆写常规配置开关覆盖的任务（mas 池「任务启用」罗列行）
 _QUICK_CONFIG_TASKS = (*MAAEND_TASKS, MAAEND_DELIVERY_TASK, MAAEND_AUTO_COLLECT_TASK)
 
 _OVERLAY_FIELD_LABELS = {
     "Base": "配置文件来源",
     "Id": "账号",
+    "SanityStrategy": "理智任务执行策略",
     "SanityMode": "理智任务配置模式",
     "IfSeizeDeliveryJobs": "抢委托送货",
     "SeizeDeliveryJobsReward": "送货最低接取价格（万）",
@@ -218,7 +217,7 @@ _OVERLAY_FIELD_LABELS = {
     # IfSanity 的开关用分组名「理智作战」，与合成的「理智任务」行区分
     "IfSanity": "理智作战",
 }
-"""侧车字段中文标签（对齐 MaaEnd 用户编辑页词表）"""
+"""侧车字段中文标签（对齐 MaaEnd 账号编辑页词表）"""
 
 _SANITY_TASK_TYPE_LABELS = {
     "OperatorProgression": "干员养成",
@@ -286,16 +285,21 @@ _REWARDS_OPTION_REWARDS_FLAG = {
 }
 
 
-def read_overlay_values(config) -> dict:
-    """读取配置对象的快速配置覆盖层字段（鸭子类型，仅需 ``get(group, key)``）。
+def read_overlay_values(config: ConfigEntry) -> dict:
+    """按配置分组的 JSON 导出规则读取覆写常规配置字段，UUID 引用导出为字符串。
 
     值为 ``None``（配置项不存在）的键不纳入侧车。
     """
 
+    # 与属性读取一致，事务内从当前任务的生效工作区导出。
+    config = config.effective
     values: dict = {}
     for group, keys in _OVERLAY_KEY_GROUPS.items():
+        fields = getattr(config, group).model_dump(
+            mode="json", include=set(keys), context={"audience": "export"}
+        )
         for key in keys:
-            if (value := config.get(group, key)) is not None:
+            if (value := fields[key]) is not None:
                 values[key] = value
     return values
 
@@ -318,10 +322,10 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
 def collect_mas_files(
     mas_dir: str | Path, overlay: dict | None = None
 ) -> dict[str, "Path | str"]:
-    """收集 MAS 配置目录文件集 + 快速配置覆盖层字段侧车（相对键 → 路径/内存内容）。
+    """收集 MAS 配置目录文件集 + 覆写常规配置覆盖层字段侧车（相对键 → 路径/内存内容）。
 
     侧车为内存 JSON（:func:`archive_files` 支持内存内容），免临时文件；
-    目录缺失或为空时仅归档侧车——用户级目录要等首次运行/播种物化，页面
+    目录缺失或为空时仅归档侧车——账号级目录要等首次运行/播种物化，页面
     字段不能因目录未建而一起丢（否则从未运行的用户切来源、改配置后退出，
     mas 池永远为空）。
     """
@@ -329,9 +333,11 @@ def collect_mas_files(
     mas_dir = Path(mas_dir)
     files: dict[str, "Path | str"] = {}
     if mas_dir.is_dir():
-        files.update(dir_files(mas_dir))
+        files.update(_utils_config_archive.dir_files(mas_dir))
     if overlay:
-        files[OVERLAY_SIDECAR_NAME] = json.dumps(overlay, ensure_ascii=False, indent=2)
+        files[_utils_config_archive.OVERLAY_SIDECAR_NAME] = json.dumps(
+            overlay, ensure_ascii=False, indent=2
+        )
     return files
 
 
@@ -343,9 +349,9 @@ def archive_mas_backup(
     force: bool = False,
     base: str | None = None,
 ) -> Path | None:
-    """归档 MAS 配置整份 + 快速配置覆盖层字段侧车到用户池（指纹去重，无变化跳过）。
+    """归档 MAS 配置整份 + 覆写常规配置覆盖层字段侧车到账号池（指纹去重，无变化跳过）。
 
-    ``user_id`` 是池归属（恒按用户分桶，见 :func:`mas_backup_root`）；
+    ``user_id`` 是池归属（恒按账号分桶，见 :func:`mas_backup_root`）；
     ``mas_dir`` 是归档/恢复目标路径，由调用方按 owner 解析（shared 来源共享
     Default 目录、independent 来源用独立目录）——池与目标解耦。
     侧车参与指纹：只改表单覆盖层字段、未动 ConfigFile 时同样新建归档
@@ -361,26 +367,28 @@ def archive_mas_backup(
     files = collect_mas_files(mas_dir, overlay)
     if not files:
         return None
-    dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, mas_backup_root(script_id, user_id), force=force
+    )
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
     if base:
-        write_backup_base(dest, base)
-    logger.info(f"用户 {user_id} 的 MAS 配置已归档: {dest.name}")
+        _utils_config_archive.write_backup_base(dest, base)
+    logger.info(f"账号 {user_id} 的 MAS 配置已归档: {dest.name}")
     return dest
 
 
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
-    """用户池的全部归档时间戳（倒序，最新在前）。"""
+    """账号池的全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(mas_backup_root(script_id, user_id))
+    return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
-    """取用户池指定时间戳的归档目录；不存在返回 None。"""
+    """取账号池指定时间戳的归档目录；不存在返回 None。"""
 
-    return get_backup_dir(mas_backup_root(script_id, user_id), ts)
+    return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
 
 def restore_mas_backup(
@@ -391,12 +399,12 @@ def restore_mas_backup(
     overlay: dict | None = None,
     base: str | None = None,
 ) -> dict | None:
-    """把用户池归档恢复到 MAS 配置目录（恢复前自动归档当前，误恢复可找回）。
+    """把账号池归档恢复到 MAS 配置目录（恢复前自动归档当前，误恢复可找回）。
 
-    ``user_id`` 是池归属（与归档一致按用户分桶）；``mas_dir`` 是恢复目标
+    ``user_id`` 是池归属（与归档一致按账号分桶）；``mas_dir`` 是恢复目标
     路径，由调用方按 owner 解析（shared 来源共享 Default 目录、independent 来源用独立目
-    录）。``overlay`` 为当前用户的覆盖层字段，随恢复前存底一起归档。
-    返回该备份的覆盖层字段（供调用方回填 MAS 用户配置；旧版备份无侧车
+    录）。``overlay`` 为当前账号的覆盖层字段，随恢复前存底一起归档。
+    返回该备份的覆盖层字段（供调用方回填 MAS 账号配置；旧版备份无侧车
     返回 ``None``），侧车文件随即从目录中分离删除，不留在 ConfigFile 里。
     """
 
@@ -415,17 +423,23 @@ def restore_mas_backup(
     # restore_dir 会把目标清空再写回元数据、随后 unlink 侧车，只剩空目录
     managed = [
         rel
-        for rel in dir_files(backup_dir)
-        if rel not in META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
+        for rel in _utils_config_archive.dir_files(backup_dir)
+        if rel
+        not in _utils_config_archive.META_FILE_NAMES
+        | {_utils_config_archive.OVERLAY_SIDECAR_NAME}
     ]
     if managed:
-        restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
+        _utils_config_archive.restore_dir(
+            mas_backup_root(script_id, user_id), ts, mas_dir
+        )
         restored_overlay = read_overlay_sidecar(mas_dir)
         if restored_overlay is not None:
-            (mas_dir / OVERLAY_SIDECAR_NAME).unlink(missing_ok=True)
+            (mas_dir / _utils_config_archive.OVERLAY_SIDECAR_NAME).unlink(
+                missing_ok=True
+            )
     else:
         restored_overlay = read_overlay_sidecar(backup_dir)
-    logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
+    logger.info(f"账号 {user_id} 的 MAS 配置已恢复备份 {ts}")
     return restored_overlay
 
 
@@ -436,13 +450,13 @@ def archive_mas_runtime_backup(
     overlay: dict | None = None,
     base: str | None = None,
 ) -> None:
-    """运行 / 配置会话下发前归档 MAS 配置（下发源）到用户池。
+    """运行 / 配置会话下发前归档 MAS 配置（下发源）到账号池。
 
     会话保存会覆盖它，下发前存底；指纹去重，失败只记日志，绝不中止随后
     的运行或会话（归档是现场保护，不是前置条件）。
-    ``user_id`` 是池归属；``mas_dir`` 是下发源目录，由调用方按当前用户
-    owner 解析（shared 来源=Default 共享目录、independent 来源=独立目录；原生来源用户无 MAS
-    配置，调用方不调用本函数）。native 池与此处无关：原生配置跨用户
+    ``user_id`` 是池归属；``mas_dir`` 是下发源目录，由调用方按当前账号
+    owner 解析（shared 来源=Default 共享目录、independent 来源=独立目录；原生来源账号无 MAS
+    配置，调用方不调用本函数）。native 池与此处无关：原生配置跨账号
     共享，由 manager ``prepare`` 在任务级一次性归档
     （见 :func:`archive_native_backup`）。
     """
@@ -467,7 +481,7 @@ def collect_native_files(config_path: str | Path) -> dict[str, Path]:
     config_path = Path(config_path)
     if not config_path.is_dir() or not any(config_path.iterdir()):
         return {}
-    return dir_files(config_path)
+    return _utils_config_archive.dir_files(config_path)
 
 
 def archive_native_backup(config_path: Path, force: bool = False) -> Path | None:
@@ -480,7 +494,9 @@ def archive_native_backup(config_path: Path, force: bool = False) -> Path | None
     files = collect_native_files(config_path)
     if not files:
         return None
-    dest = archive_files(files, native_backup_root(config_path), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, native_backup_root(config_path), force=force
+    )
     if dest is None:
         logger.info("MaaEnd 原生配置无变化，跳过归档")
         return None
@@ -491,13 +507,13 @@ def archive_native_backup(config_path: Path, force: bool = False) -> Path | None
 def list_native_backups(config_path: str | Path) -> list[str]:
     """MaaEnd 原生配置全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(native_backup_root(config_path))
+    return _utils_config_archive.list_times(native_backup_root(config_path))
 
 
 def get_native_backup_dir(config_path: str | Path, ts: str) -> Path | None:
     """取指定时间戳的原生配置归档目录；不存在返回 None。"""
 
-    return get_backup_dir(native_backup_root(config_path), ts)
+    return _utils_config_archive.get_backup_dir(native_backup_root(config_path), ts)
 
 
 def restore_native_backup(config_path: Path, ts: str) -> None:
@@ -512,7 +528,7 @@ def restore_native_backup(config_path: Path, ts: str) -> None:
     config_path = Path(config_path)
     # 恢复前强制归档当前——「恢复前的配置」在列表里有明确的时间戳条目
     archive_native_backup(config_path, force=True)
-    restore_dir(native_backup_root(config_path), ts, config_path)
+    _utils_config_archive.restore_dir(native_backup_root(config_path), ts, config_path)
     logger.info(f"MaaEnd 原生配置已恢复备份 {ts}")
 
 
@@ -565,7 +581,7 @@ def _select_instance(config: dict) -> dict | None:
 def _native_task_display_name(task: dict) -> str:
     """TaskQueue 任务条目 → 展示名（customName → MAS 词表 → 原任务名）。
 
-    MAS 词表与 mas 池快速配置开关共用（同口径规则：同一任务概念在两池
+    MAS 词表与 mas 池覆写常规配置开关共用（同口径规则：同一任务概念在两池
     同标签）；词表外的任务（上游新增/用户自建）回退 customName 或原名。
     """
 
@@ -728,11 +744,13 @@ def build_backup_file_summary(backup_dir: Path) -> list[dict]:
     """
 
     files: list[dict] = []
-    for rel in sorted(dir_files(backup_dir)):
+    for rel in sorted(_utils_config_archive.dir_files(backup_dir)):
         if "/" in rel or rel != NATIVE_CONFIG_FILE:
             continue
         try:
-            data = json.loads((backup_dir / rel).read_text(encoding="utf-8"))
+            data = json.loads(
+                (backup_dir / rel).read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except Exception:
             continue
         if not isinstance(data, dict):
@@ -748,7 +766,9 @@ def _overlay_value(key: str, value) -> str:
     """覆盖层字段值转展示文本（枚举词表、账号脱敏、布尔转是否、超长截断）。"""
 
     if key == "Id":
-        return mask_account(value)  # 账号脱敏展示；侧车原值仍完整保存（恢复需要）
+        return _utils_config_archive.mask_account(
+            value
+        )  # 账号脱敏展示；侧车原值仍完整保存（恢复需要）
     if isinstance(value, bool):
         return "是" if value else "否"
     enum = {
@@ -763,6 +783,26 @@ def _overlay_value(key: str, value) -> str:
     }.get(key)
     if enum is not None:
         text = enum.get(str(value), str(value))
+    elif key == "SanityStrategy":
+        text = {"Native": "MaaEnd 原生策略", "Inventory": "IMS 库存计划"}.get(
+            str(value), "MAS 指定任务"
+        )
+    elif key == "ProtocolSpaceObtainModeClaim":
+        text = {"ObtainScaling1": "单倍领取", "ObtainScaling2": "优先双倍领取"}.get(
+            str(value), str(value)
+        )
+    elif key == "SupplyPlanLimits":
+        try:
+            limits = json.loads(value)
+            if not isinstance(limits, dict):
+                raise ValueError("库存目标不是对象")
+            count = sum(
+                isinstance(item, str) and item.isdecimal() and int(item) > 0
+                for item in limits.values()
+            )
+            text = f"维护 {count} 项材料目标" if count else "未设置目标"
+        except (TypeError, ValueError):
+            text = "库存目标格式无法读取"
     elif key == "SanityMode":
         # 计划表 UID 无意义，restore_service 会尽力补计划名称
         text = "固定" if str(value) == "Fixed" else "计划表"
@@ -865,11 +905,11 @@ def build_overlay_summary(
     返回三个分区（前端按文件集逐区渲染）：**任务启用**用罗列行（启用了
     哪些），**配置内容**用表单行（具体刷本等细节），二者按**概念是否有
     MaaEnd GUI 对应**归入 MaaEnd 对应区；MaaEnd GUI 无对应概念的调度类
-    字段（配置文件来源/快速配置/每日仅执行一次）归 MAS 独有区。
+    字段（配置文件来源/覆写常规配置/每日仅执行一次）归 MAS 独有区。
 
-    快速配置关闭时，覆盖层字段运行时不生效（任务启用以 mxu 配置原值为
+    覆写常规配置关闭时，覆盖层字段运行时不生效（任务启用以 mxu 配置原值为
     准），任务启用与配置内容区随门控隐藏（账号除外——登录与账号切换
-    不受快速配置影响）。分区无行时整体省略（旧版备份可能只有部分字段）。
+    不受覆写常规配置影响）。分区无行时整体省略（旧版备份可能只有部分字段）。
     """
 
     quick_config_on = bool(overlay.get("IfQuickConfig"))
@@ -907,14 +947,46 @@ def build_overlay_summary(
             {"key": "账号", "value": _overlay_value("Id", overlay["Id"])}
         )
     if quick_config_on:
+        if "SanityStrategy" in overlay:
+            config_rows.append(
+                {
+                    "key": "理智任务执行策略",
+                    "value": _overlay_value(
+                        "SanityStrategy", overlay["SanityStrategy"]
+                    ),
+                }
+            )
         if "SanityMode" in overlay:
             config_rows.append(
                 {
-                    "key": "理智任务配置模式",
+                    "key": (
+                        "理智任务配置模式（未应用）"
+                        if overlay.get("SanityStrategy") in ("Native", "Inventory")
+                        else "理智任务配置模式"
+                    ),
                     "value": _overlay_value("SanityMode", overlay["SanityMode"]),
                 }
             )
-        config_rows.extend(_sanity_rows(overlay))
+        if overlay.get("SanityStrategy", "MAS") == "MAS":
+            config_rows.extend(_sanity_rows(overlay))
+        elif overlay.get("SanityStrategy") == "Inventory":
+            config_rows.append(
+                {
+                    "key": "库存目标",
+                    "value": _overlay_value(
+                        "SupplyPlanLimits", overlay.get("SupplyPlanLimits", "{}")
+                    ),
+                }
+            )
+            config_rows.append(
+                {
+                    "key": "库存领取方式",
+                    "value": _overlay_value(
+                        "ProtocolSpaceObtainModeClaim",
+                        overlay.get("ProtocolSpaceObtainModeClaim", "ObtainScaling2"),
+                    ),
+                }
+            )
         if "SeizeDeliveryJobsReward" in overlay:
             config_rows.append(
                 {

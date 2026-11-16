@@ -1,7 +1,11 @@
+import { managesBackendProcess } from '@/utils/environment'
 import { translate as t } from '@/i18n'
 import { message } from 'ant-design-vue'
 import { useAppInitialization } from '@/composables/useAppInitialization'
+import { navigateTo } from '@/router'
 import { enterApp } from '@/utils/appEntry'
+import { beginAnalyticsOperation } from '@/utils/analytics'
+import { connectionState } from '@/services/websocket/connection'
 
 const logger = window.electronAPI.getLogger('跳过初始化启动')
 
@@ -14,18 +18,21 @@ export function startSkippedInitializationStartup(): Promise<void> {
 
   const { beginBootstrap, finishBootstrap, resetInitializationStatus } = useAppInitialization()
   beginBootstrap()
+  const operation = beginAnalyticsOperation('initialization_finished_v2')
 
   startupPromise = (async () => {
     const api = window.electronAPI
+    let failureOutcome: 'failure' | 'cancelled' = 'failure'
 
     try {
-      if (!import.meta.env.DEV) {
+      if (managesBackendProcess()) {
         const backendStatus = await api.backendStatus?.().catch(() => null)
 
         if (!backendStatus?.isRunning) {
           logger.info('检测到后端未运行，开始后台启动')
           const result = await api.backendStart?.()
           if (!result?.success) {
+            if (result?.code === 'OPERATION_CANCELLED') failureOutcome = 'cancelled'
             throw new Error(result?.error || '后端启动失败')
           }
         } else {
@@ -35,18 +42,35 @@ export function startSkippedInitializationStartup(): Promise<void> {
 
       const success = await enterApp('跳过初始化直接进入首页', true)
       if (!success) {
-        throw new Error('进入应用失败')
+        operation.finish({
+          flow_kind: 'skip',
+          runtime_mode: 'unknown',
+          failed_stage: 'unknown',
+          outcome: 'failure',
+        })
+        return
       }
+      operation.finish({
+        flow_kind: 'skip',
+        runtime_mode: 'unknown',
+        failed_stage: 'none',
+        outcome: connectionState().value === 'open' ? 'success' : 'unconfirmed',
+      })
     } catch (error) {
+      operation.finish({
+        flow_kind: 'skip',
+        runtime_mode: 'unknown',
+        failed_stage: 'backend',
+        outcome: failureOutcome,
+      })
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`跳过初始化启动失败: ${errorMsg}`)
-      resetInitializationStatus()
       sessionStorage.setItem('disableInitializationSkip', 'true')
-      message.error(t('misc.backendFailedStartSwitching'))
+      message.error(t('bootstrap.misc.backendFailedStartSwitching'))
 
-      if (window.location.hash !== '#/initialization') {
-        window.location.hash = '#/initialization'
-      }
+      // 取消尚未完成的主页跳转，初始化页落地前保留启动遮罩。
+      await navigateTo('/initialization', { replace: true })
+      resetInitializationStatus()
     } finally {
       finishBootstrap()
       startupPromise = null

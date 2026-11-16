@@ -1,226 +1,115 @@
 <script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { onMounted, onUnmounted, reactive, ref } from 'vue'
-import { useEventListener } from '@vueuse/core'
-import type { ToolsConfig, ToolsConfig_ArknightsPC } from '@/api'
-import { useToolsApi } from '@/composables/useToolsApi'
-import { useToolsStatusPolling } from '@/composables/useToolsStatusPolling'
-import { useStatusTag, createStatusTag } from '@/composables/useStatusTag'
-import TabArknightsPC from './TabArknightsPC.vue'
+import { OpenAPI } from '@/api'
+import { useMcpApi } from '@/composables/useMcpApi'
+import McpStartupSwitch from './components/McpStartupSwitch.vue'
+import McpAgentPrompt from './components/McpAgentPrompt.vue'
 
 const { t } = useI18n()
-
-defineOptions({ name: 'ToolsPage' })
-
-const logger = window.electronAPI.getLogger('工具')
-
-const { loading, getTools, updateTools } = useToolsApi()
-
-// 活动标签
-const activeKey = ref('arknightspc')
-
-// 工具数据
-const toolsConfig = reactive<ToolsConfig>({
-  ArknightsPC: {
-    Enabled: false,
-    PauseKey: 'f10',
-    SelectDeployedKey: 'w',
-    UseSkillKey: 'r',
-    RetreatKey: 't',
-    NextFrameKey: 'f',
-    AnotherQuitKey: 'space',
-    Status: '-',
-  },
+const { status, loading, retrying, error, refresh, retry, dispose } = useMcpApi()
+const tick = ref(0)
+const observedAt = ref(performance.now())
+let timer: ReturnType<typeof setInterval> | undefined
+const running = computed(() => status.value?.state === 'running')
+const description = computed(() => {
+  const snapshot = status.value
+  if (!snapshot) return ''
+  return t(`core.tools.mcp.${snapshot.state === 'running' ? snapshot.stage : snapshot.state}`)
+})
+const elapsed = computed(() => {
+  const snapshot = status.value
+  if (!snapshot) return '—'
+  const extra = running.value ? Math.max(0, tick.value - observedAt.value) : 0
+  return `${((snapshot.elapsedMs + extra) / 1000).toFixed(1)} s`
+})
+const address = computed(() => `${OpenAPI.BASE.replace(/\/+$/, '')}/mcp`)
+const statusColor = computed(() => {
+  if (status.value?.state === 'ready') return 'success'
+  if (status.value?.state === 'failed') return 'error'
+  return running.value ? 'processing' : 'default'
 })
 
-// 本地编辑状态
-const editingConfig = reactive<ToolsConfig>({
-  ArknightsPC: {
-    Enabled: false,
-    PauseKey: 'f10',
-    SelectDeployedKey: 'w',
-    UseSkillKey: 'r',
-    RetreatKey: 't',
-    NextFrameKey: 'f',
-    AnotherQuitKey: 'space',
-    Status: '-',
-  },
+// 用浏览器单调时钟累计收到快照后的时长，不受两端墙钟偏差影响。
+watch(status, () => {
+  observedAt.value = performance.now()
+  tick.value = observedAt.value
 })
-
-// 使用通用的状态标签解析
-const arknightsPCStatusTag = useStatusTag(
-  () => toolsConfig.ArknightsPC?.Status,
-  createStatusTag(t('tools.statusDisabled'), 'default')
-)
-
-// 状态轮询：工具已启用 5 s 一次，否则 30 s
-const { startStatusPolling, stopStatusPolling } = useToolsStatusPolling({
-  applyStatus: data => {
-    if (data.ArknightsPC?.Status) {
-      // 只更新 toolsConfig 的状态，不更新 editingConfig
-      // 这样轮询只影响状态标签显示，不会触发编辑表单重新渲染
-      toolsConfig.ArknightsPC!.Status = data.ArknightsPC.Status
-    }
-  },
-  isActive: () => toolsConfig.ArknightsPC?.Enabled === true,
-  invalidMessage: () => t('tools.statusInvalid'),
-  logger,
+onMounted(() => {
+  void refresh()
+  timer = setInterval(() => {
+    tick.value = performance.now()
+  }, 250)
 })
-
-// 加载配置
-const loadTools = async () => {
-  try {
-    const data = await getTools()
-    // 确保 ArknightsPC 配置存在
-    if (!data.ArknightsPC) {
-      data.ArknightsPC = {
-        Enabled: false,
-        PauseKey: 'f10',
-        SelectDeployedKey: 'w',
-        UseSkillKey: 'r',
-        RetreatKey: 't',
-        NextFrameKey: 'f',
-        AnotherQuitKey: 'space',
-        Status: '-',
-      }
-    }
-    // 游戏社区由侧边栏独立页面单独维护，工具页只接管明日方舟 PC 配置。
-    Object.assign(toolsConfig, { ArknightsPC: data.ArknightsPC })
-    Object.assign(editingConfig, {
-      ArknightsPC: JSON.parse(JSON.stringify(data.ArknightsPC)),
-    })
-    logger.info('工具加载完成')
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载工具失败: ${errorMsg}`)
-  }
-}
-
-// 保存单个字段的变更（实时保存）
-type ArknightsPCFieldKey = keyof ToolsConfig_ArknightsPC
-type ArknightsPCKeyField = Exclude<ArknightsPCFieldKey, 'Enabled' | 'Status'>
-
-const handleFieldChange = async <K extends ArknightsPCFieldKey>(
-  key: K,
-  value: ToolsConfig_ArknightsPC[K]
-) => {
-  const editingArknightsPC = editingConfig.ArknightsPC
-  if (!editingArknightsPC) return
-
-  const previousValue = editingArknightsPC[key]
-  try {
-    // 更新编辑状态
-    editingArknightsPC[key] = value
-
-    // 只提交当前字段，避免旧状态覆盖运行中的工具配置。
-    await updateTools({
-      ArknightsPC: { [key]: value },
-    })
-
-    // 保存成功后只同步修改的字段到 toolsConfig，不触碰 Status
-    if (toolsConfig.ArknightsPC && key !== 'Status') {
-      toolsConfig.ArknightsPC[key] = value
-    }
-
-    logger.info(`${key} 已保存`)
-  } catch (error) {
-    // 并发保存时只回滚仍保持本次值的字段，避免覆盖用户后续输入。
-    if (editingArknightsPC[key] === value) {
-      editingArknightsPC[key] = previousValue
-    }
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存 ${key} 失败: ${errorMsg}`)
-  }
-}
-
-// 键位录制状态
-const recordingKeyField = ref<ArknightsPCKeyField | null>(null)
-
-// 开始录制键位
-const startRecordKey = (fieldName: ArknightsPCKeyField) => {
-  recordingKeyField.value = fieldName
-  logger.info(`开始录制键位: ${fieldName}`)
-}
-
-// 停止录制键位
-const stopRecordKey = () => {
-  recordingKeyField.value = null
-}
-
-// 键盘事件处理 - 捕获单个键
-const handleKeyDown = async (event: KeyboardEvent) => {
-  if (!recordingKeyField.value) return
-
-  event.preventDefault()
-  event.stopPropagation()
-
-  // 获取按键名称
-  let keyName: string
-
-  // 特殊键处理
-  if (event.key === ' ') {
-    keyName = 'space'
-  } else if (event.key.length === 1) {
-    // 单字符键，转为小写
-    keyName = event.key.toLowerCase()
-  } else {
-    // 功能键（如 F1-F12, Escape, Enter 等）
-    keyName = event.key.toLowerCase()
-  }
-
-  const fieldName = recordingKeyField.value
-
-  // 停止录制
-  stopRecordKey()
-
-  // 立即保存
-  if (fieldName) await handleFieldChange(fieldName, keyName)
-}
-
-// 使用 VueUse 的 useEventListener 管理键盘事件
-useEventListener(document, 'keydown', handleKeyDown)
-
-// 生命周期：加载配置并启动轮询
-onMounted(async () => {
-  await loadTools()
-  startStatusPolling()
-})
-
-// 生命周期：停止轮询
 onUnmounted(() => {
-  stopStatusPolling()
+  clearInterval(timer)
+  dispose()
 })
 </script>
 
 <template>
-  <div class="settings-container">
-    <div class="settings-header">
-      <h1 class="page-title">{{ t('tools.title') }}</h1>
+  <div class="tools-page">
+    <div class="tools-header">
+      <h1 class="page-title app-page-title">{{ t('core.tools.title') }}</h1>
     </div>
-    <div class="settings-content">
-      <a-tabs v-model:active-key="activeKey" type="card" :loading="loading" class="settings-tabs">
-        <a-tab-pane key="arknightspc">
-          <template #tab>
-            <span style="display: flex; align-items: center; gap: 8px">
-              <span>{{ t('tools.arknightsPC') }}</span>
-              <a-tag
-                v-if="arknightsPCStatusTag"
-                :color="arknightsPCStatusTag.color"
-                style="margin: 0; font-size: 12px"
-              >
-                {{ arknightsPCStatusTag.text }}
-              </a-tag>
-            </span>
-          </template>
-          <TabArknightsPC
-            v-if="editingConfig.ArknightsPC"
-            :config="editingConfig.ArknightsPC"
-            :disabled="loading"
-            :on-field-change="handleFieldChange"
-            :recording-key-field="recordingKeyField"
-            :start-record-key="startRecordKey"
-            :stop-record-key="stopRecordKey"
-          />
+    <div class="tools-content">
+      <a-tabs active-key="mcp" type="card" class="tools-tabs">
+        <a-tab-pane key="mcp" :tab="t('core.tools.mcp.title')">
+          <div class="tools-panel">
+            <a-alert v-if="error" type="error" show-icon :message="error" class="tools-error">
+              <template #action>
+                <a-button size="small" :loading="loading" @click="refresh">{{
+                  t('core.tools.mcp.refresh')
+                }}</a-button>
+              </template>
+            </a-alert>
+            <div v-if="!status" class="tools-initial-loading">
+              <a-spin v-if="loading" />
+              <a-empty v-else :description="t('core.tools.mcp.noStatus')" />
+            </div>
+            <template v-else>
+              <McpStartupSwitch :status="status" />
+              <div class="tools-service-header">
+                <a-space>
+                  <a-spin v-if="running" size="small" />
+                  <a-tag :color="statusColor">{{ description }}</a-tag>
+                </a-space>
+                <a-button
+                  v-if="status.state === 'failed'"
+                  type="primary"
+                  :loading="retrying"
+                  :disabled="retrying || status.error === 'cleanup_failed'"
+                  @click="retry"
+                  >{{ t('core.tools.mcp.retry') }}</a-button
+                >
+              </div>
+              <a-descriptions :column="1" size="small">
+                <a-descriptions-item :label="t('core.tools.mcp.elapsed')">{{
+                  elapsed
+                }}</a-descriptions-item>
+                <a-descriptions-item
+                  v-if="status.state === 'ready'"
+                  :label="t('core.tools.mcp.toolCount')"
+                >
+                  {{ status.toolCount }}
+                </a-descriptions-item>
+                <a-descriptions-item
+                  v-if="status.state === 'ready'"
+                  :label="t('core.tools.mcp.address')"
+                >
+                  <a-typography-text copyable>{{ address }}</a-typography-text>
+                </a-descriptions-item>
+              </a-descriptions>
+              <a-alert
+                v-if="status.error"
+                type="error"
+                show-icon
+                :message="t(`core.tools.mcp.errors.${status.error}`)"
+                :description="t('core.tools.mcp.seeLogs')"
+              />
+              <McpAgentPrompt :address="address" />
+            </template>
+          </div>
         </a-tab-pane>
       </a-tabs>
     </div>
@@ -228,20 +117,14 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* 统一样式，使用 :deep 作用到子组件内部 */
-.settings-container {
-  /* Allow the settings page to expand with the window width */
+.tools-page {
   width: 100%;
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-  /* Use full viewport min-height so the page can grow and scroll */
+  min-height: 100%;
   display: flex;
   flex-direction: column;
-  min-height: 100%;
 }
 
-.settings-header {
+.tools-header {
   margin-bottom: 16px;
   padding: 0 4px;
 }
@@ -250,136 +133,73 @@ onUnmounted(() => {
   margin: 0;
   font-size: 32px;
   font-weight: 700;
-  color: var(--ant-color-text);
+  color: var(--app-page-title-color, var(--ant-color-text));
 }
 
-.settings-content {
-  background: var(--ant-color-bg-container);
-  border-radius: 8px;
+.tools-content {
   width: 100%;
   flex: 1;
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
 }
 
-.settings-tabs {
+.tools-tabs {
   margin: 0;
   padding: 12px;
 }
 
-.settings-tabs :deep(.ant-tabs-nav) {
-  padding: 0;
+.tools-tabs :deep(.ant-tabs-nav) {
   margin: 0;
+  padding: 0;
 }
 
-.settings-tabs :deep(.ant-tabs-content-holder) {
+.tools-tabs :deep(.ant-tabs-content-holder) {
   overflow: visible;
 }
 
-.settings-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab) {
+.tools-tabs :deep(.ant-tabs-nav .ant-tabs-tab) {
+  margin-right: 8px;
   background: transparent;
   border: 1px solid var(--ant-color-border);
   border-radius: 8px 8px 0 0;
-  margin-right: 8px;
 }
 
-.settings-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active) {
+.tools-tabs :deep(.ant-tabs-nav .ant-tabs-tab-active) {
   background: var(--ant-color-bg-container);
   border-bottom-color: var(--ant-color-bg-container);
 }
 
-:deep(.tab-content) {
-  padding: 24px;
+.tools-panel {
   width: 100%;
+  padding: 24px;
 }
 
-:deep(.form-section) {
-  margin-bottom: 32px;
-}
-
-:deep(.form-section:last-child) {
-  margin-bottom: 0;
-}
-
-:deep(.section-header) {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
+.tools-service-header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 24px;
 }
 
-:deep(.section-header h3) {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-:deep(.section-header h3::before) {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: var(--ant-color-primary);
-  border-radius: 2px;
-}
-
-:deep(.section-description) {
-  margin: 4px 0 0;
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
-}
-
-:deep(.form-item-vertical) {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.tools-error {
   margin-bottom: 16px;
 }
 
-:deep(.form-label-wrapper) {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-:deep(.form-label) {
-  font-weight: 600;
-  color: var(--ant-color-text);
-  font-size: 14px;
-}
-
-:deep(.help-icon) {
-  color: #8c8c8c;
-  font-size: 14px;
-}
-
-/* Tab 标签中的状态标签样式 - 与脚本管理页统一 */
-.settings-tabs :deep(.ant-tabs-tab) {
-  .ant-tag {
-    font-size: 11px;
-    font-weight: 500;
-    border-radius: 4px;
-    margin: 0;
-    border: 1px solid rgba(0, 0, 0, 0.15);
-  }
+.tools-initial-loading {
+  min-height: 160px;
+  display: grid;
+  place-items: center;
 }
 
 @media (max-width: 860px) {
-  .settings-tabs {
+  .tools-tabs {
     padding: 8px;
   }
 
-  :deep(.tab-content) {
+  .tools-panel {
     padding: 16px;
-  }
-
-  :deep(.section-header) {
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 12px;
   }
 }
 </style>

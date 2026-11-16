@@ -2,7 +2,7 @@
   <div>
     <div v-show="viewMode === 'config'" class="config-table-wrapper">
       <a-table
-        :key="`maaend-config-table-${currentMode}`"
+        :key="`maaend-config-table-${currentMode}-${columnKeys.length}`"
         :columns="configColumns"
         :data-source="configRows"
         :pagination="false"
@@ -23,8 +23,8 @@
               size="small"
               class="config-select"
               :bordered="false"
-              :disabled="isColumnDisabled(asTimeKey(column.key))"
-              @update:value="handleSanityTaskTypeChange(asTimeKey(column.key), $event)"
+              :disabled="isColumnDisabled(column.key)"
+              @update:value="handleSanityTaskTypeChange(column.key, $event)"
             >
               <a-select-option
                 v-for="option in sanityTaskTypeOptions"
@@ -43,10 +43,10 @@
               :bordered="false"
               :options="essenceMenuOptions"
               :disabled="
-                isColumnDisabled(asTimeKey(column.key)) ||
-                getDayConfig(asTimeKey(column.key)).SanityTaskType !== 'Essence'
+                isColumnDisabled(column.key) ||
+                getDayConfig(column.key).SanityTaskType !== 'Essence'
               "
-              @update:value="handleEssenceMenuChange(asTimeKey(column.key), $event)"
+              @update:value="handleEssenceMenuChange(column.key, $event)"
             />
 
             <a-select
@@ -55,13 +55,13 @@
               size="small"
               class="config-select"
               :bordered="false"
-              :loading="isEssenceLocationLoading(asTimeKey(column.key))"
-              :disabled="isColumnDisabled(asTimeKey(column.key))"
-              :mode="isTargetEssenceMode(asTimeKey(column.key)) ? 'multiple' : undefined"
-              @update:value="handleTaskChange(asTimeKey(column.key), $event)"
+              :loading="isEssenceLocationLoading(column.key)"
+              :disabled="isColumnDisabled(column.key)"
+              :mode="isTargetEssenceMode(column.key) ? 'multiple' : undefined"
+              @update:value="handleTaskChange(column.key, $event)"
             >
               <a-select-option
-                v-for="option in getCurrentTaskOptions(asTimeKey(column.key))"
+                v-for="option in getCurrentTaskOptions(column.key)"
                 :key="option.value"
                 :value="option.value"
               >
@@ -75,11 +75,8 @@
               size="small"
               class="config-select"
               :bordered="false"
-              :disabled="
-                isColumnDisabled(asTimeKey(column.key)) ||
-                !isRewardGroupEnabledForTime(asTimeKey(column.key))
-              "
-              @update:value="handleRewardChange(asTimeKey(column.key), $event)"
+              :disabled="isColumnDisabled(column.key) || !isRewardGroupEnabledForTime(column.key)"
+              @update:value="handleRewardChange(column.key, $event)"
             >
               <a-select-option
                 v-for="option in REWARD_OPTIONS"
@@ -96,7 +93,7 @@
 
     <div v-show="viewMode === 'simple'" class="simple-table-wrapper">
       <a-table
-        :key="`maaend-simple-table-${currentMode}`"
+        :key="`maaend-simple-table-${currentMode}-${columnKeys.length}`"
         :columns="simpleColumns"
         :data-source="simpleRows"
         :pagination="false"
@@ -184,37 +181,40 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, onMounted, ref, watch } from 'vue'
-import type { ComboBoxItem, MaaEndConfig } from '@/api'
-import { useScriptApi } from '@/composables/useScriptApi'
+import { computed, ref, watch } from 'vue'
+import { useMaaEndPlanOptions } from './useMaaEndPlanOptions'
 import {
-  MAAEND_PLAN_TIME_KEYS,
-  MAAEND_PLAN_TIME_LABELS,
   AUTO_ESSENCE_MENU_OPTIONS,
   PROTOCOL_SPACE_TASK_FIELD_MAP,
   PROTOCOL_SPACE_TASK_OPTIONS_MAP,
   REWARD_OPTIONS,
   SANITY_TASK_TYPE_OPTIONS,
   getCurrentTaskValue,
+  getEssenceTargetWeaponOptions,
   isProtocolSpaceRewardEnabled,
   maaEndPlanKeyToSanityConfig,
   normalizeMaaEndPlanKey,
   normalizeMaaEndSanityConfig,
   type CurrentTaskValue,
-  type MaaEndEssenceTargetGroup,
   type MaaEndSanityConfig,
-  type PlanTimeKey,
   type ProtocolSpaceTab,
   type RewardSetOption,
   type SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
+import {
+  planColumnKeys,
+  planColumnPath,
+  planDayLabel,
+  readPlanColumn,
+  type PlanMode,
+} from '@/utils/planDays'
 import type { PlanChangeHandler } from '@/utils/planTypeRegistry'
 
 const { t } = useI18n()
 
 interface Props {
   tableData: Record<string, any> | null
-  currentMode: 'ALL' | 'Weekly'
+  currentMode: PlanMode
   viewMode: 'config' | 'simple'
   planId?: string
   handlePlanChange: PlanChangeHandler
@@ -222,13 +222,15 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const { getScripts, getMaaEndOptions } = useScriptApi()
-const localTableData = ref<Partial<Record<PlanTimeKey, MaaEndSanityConfig>>>({})
-const essenceLocationOptions = ref<ComboBoxItem[]>([])
-const essenceMenuOptions = ref<ComboBoxItem[]>([])
-const essenceTargetWeaponGroups = ref<MaaEndEssenceTargetGroup[]>([])
-const essenceOptionsLoading = ref(false)
-const essenceOptionsLoaded = ref(false)
+const localTableData = ref<Record<string, MaaEndSanityConfig>>({})
+const {
+  crisisDrillsOptions,
+  essenceLocationOptions,
+  essenceMenuOptions,
+  essenceTargetWeaponGroups,
+  essenceOptionsLoading,
+  essenceOptionsLoaded,
+} = useMaaEndPlanOptions()
 
 const sanityTaskTypeOptions = computed(() =>
   SANITY_TASK_TYPE_OPTIONS.filter(
@@ -241,120 +243,48 @@ const sanityTaskTypeOptions = computed(() =>
   )
 )
 
-const loadEssenceLocationOptions = async () => {
-  essenceOptionsLoading.value = true
-  try {
-    const scripts = await getScripts(false)
-    const configuredMaaEndScripts = scripts.filter(script => {
-      if (script.type !== 'MaaEnd') return false
-      const config = script.config as MaaEndConfig
-      return Boolean(config.Info?.Path?.trim())
-    })
-    const responses = await Promise.all(
-      configuredMaaEndScripts.map(script => getMaaEndOptions(script.uid))
-    )
-    const optionsByValue = new Map<string, ComboBoxItem>()
-    const menusByValue = new Map<string, ComboBoxItem>()
-    const groupsByValue = new Map<string, MaaEndEssenceTargetGroup>()
-    responses.forEach(response => {
-      response?.essenceLocations.forEach(option => {
-        if (option.value && !optionsByValue.has(option.value)) {
-          optionsByValue.set(option.value, option)
-        }
-      })
-      response?.essenceMenus?.forEach(option => {
-        if (option.value && !menusByValue.has(option.value)) {
-          menusByValue.set(option.value, option)
-        }
-      })
-      response?.essenceTargetWeaponGroups?.forEach(group => {
-        const current = groupsByValue.get(group.value)
-        if (!current) {
-          groupsByValue.set(group.value, { ...group, options: [...group.options] })
-          return
-        }
-        const values = new Set(current.options.map(option => option.value))
-        current.options.push(
-          ...group.options.filter(option => option.value && !values.has(option.value))
-        )
-      })
-    })
-    essenceLocationOptions.value = [...optionsByValue.values()]
-    essenceMenuOptions.value = menusByValue.size
-      ? [...menusByValue.values()]
-      : [{ label: '指定地点', value: 'Location' }]
-    essenceTargetWeaponGroups.value = [...groupsByValue.values()]
-  } finally {
-    essenceOptionsLoading.value = false
-    essenceOptionsLoaded.value = true
-  }
-}
+/** 列键：ALL 加当天的天键；周计划是星期名，多天轮换是 "1"~"N" */
+const columnKeys = computed(() =>
+  planColumnKeys(props.currentMode, props.tableData?.Info?.RotateDays)
+)
 
-onMounted(loadEssenceLocationOptions)
+const columnTitle = (key: string) =>
+  key === 'ALL' ? t('core.plan.week.ALL') : t(planDayLabel(key).key, planDayLabel(key).params)
 
 const syncLocalTableData = (tableData: Record<string, any> | null) => {
   localTableData.value = Object.fromEntries(
-    MAAEND_PLAN_TIME_KEYS.map(timeKey => [
-      timeKey,
-      maaEndPlanKeyToSanityConfig(tableData?.[timeKey]),
-    ])
-  ) as Partial<Record<PlanTimeKey, MaaEndSanityConfig>>
+    columnKeys.value.map(key => [key, maaEndPlanKeyToSanityConfig(readPlanColumn(tableData, key))])
+  ) as Record<string, MaaEndSanityConfig>
 }
 
+// 列键同时取决于模式与轮换天数，任何一个变了都要重读一遍
 watch(
-  () => props.tableData,
-  tableData => {
-    syncLocalTableData(tableData)
-  },
+  () => [props.tableData, props.currentMode, props.tableData?.Info?.RotateDays] as const,
+  () => syncLocalTableData(props.tableData),
   { immediate: true }
 )
 
 const configColumns = computed(() => [
   {
-    title: t('plan.table.field'),
+    title: t('core.plan.table.field'),
     dataIndex: 'fieldName',
     key: 'fieldName',
     width: 120,
     fixed: 'left',
     align: 'center',
   },
-  { title: t('plan.week.ALL'), dataIndex: 'ALL', key: 'ALL', width: 160, align: 'center' },
-  { title: t('plan.week.Monday'), dataIndex: 'Monday', key: 'Monday', width: 160, align: 'center' },
-  {
-    title: t('plan.week.Tuesday'),
-    dataIndex: 'Tuesday',
-    key: 'Tuesday',
+  ...columnKeys.value.map(key => ({
+    title: columnTitle(key),
+    dataIndex: key,
+    key,
     width: 160,
-    align: 'center',
-  },
-  {
-    title: t('plan.week.Wednesday'),
-    dataIndex: 'Wednesday',
-    key: 'Wednesday',
-    width: 160,
-    align: 'center',
-  },
-  {
-    title: t('plan.week.Thursday'),
-    dataIndex: 'Thursday',
-    key: 'Thursday',
-    width: 160,
-    align: 'center',
-  },
-  { title: t('plan.week.Friday'), dataIndex: 'Friday', key: 'Friday', width: 160, align: 'center' },
-  {
-    title: t('plan.week.Saturday'),
-    dataIndex: 'Saturday',
-    key: 'Saturday',
-    width: 160,
-    align: 'center',
-  },
-  { title: t('plan.week.Sunday'), dataIndex: 'Sunday', key: 'Sunday', width: 160, align: 'center' },
+    align: 'center' as const,
+  })),
 ])
 
 const simpleColumns = computed(() => [
   {
-    title: t('plan.table.time'),
+    title: t('core.plan.table.time'),
     dataIndex: 'timeLabel',
     key: 'timeLabel',
     width: 120,
@@ -362,7 +292,7 @@ const simpleColumns = computed(() => [
     align: 'center',
   },
   {
-    title: t('plan.table.taskType'),
+    title: t('core.plan.table.taskType'),
     dataIndex: 'SanityTaskType',
     key: 'SanityTaskType',
     width: 140,
@@ -376,14 +306,14 @@ const simpleColumns = computed(() => [
     align: 'center',
   },
   {
-    title: t('plan.table.currentTask'),
+    title: t('core.plan.table.currentTask'),
     dataIndex: 'CurrentTask',
     key: 'CurrentTask',
     width: 220,
     align: 'center',
   },
   {
-    title: t('plan.table.rewardsSet'),
+    title: t('core.plan.table.rewardsSet'),
     dataIndex: 'RewardsSetOption',
     key: 'RewardsSetOption',
     width: 160,
@@ -391,32 +321,22 @@ const simpleColumns = computed(() => [
   },
 ])
 
-const asTimeKey = (value: string): PlanTimeKey => value as PlanTimeKey
-
-const isColumnDisabled = (timeKey: PlanTimeKey) => {
-  if (props.currentMode === 'ALL') return timeKey !== 'ALL'
-  return timeKey === 'ALL'
+const isColumnDisabled = (key: string) => {
+  if (props.currentMode === 'ALL') return key !== 'ALL'
+  return key === 'ALL'
 }
 
-const getDayConfig = (timeKey: PlanTimeKey): MaaEndSanityConfig =>
-  normalizeMaaEndSanityConfig(localTableData.value?.[timeKey])
+const getDayConfig = (key: string): MaaEndSanityConfig =>
+  normalizeMaaEndSanityConfig(localTableData.value?.[key])
 
-const getCurrentTaskOptions = (timeKey: PlanTimeKey) => {
-  const dayConfig = getDayConfig(timeKey)
+const getCurrentTaskOptions = (key: string) => {
+  const dayConfig = getDayConfig(key)
   if (dayConfig.SanityTaskType === 'Essence') {
     if (dayConfig.AutoEssenceMenu === 'Target') {
-      const options = essenceTargetWeaponGroups.value.flatMap(group =>
-        group.options.map(option => ({
-          label: `${group.label} · ${option.label}`,
-          value: option.value,
-        }))
+      return getEssenceTargetWeaponOptions(
+        essenceTargetWeaponGroups.value,
+        dayConfig.AutoEssenceTargetWeapons
       )
-      for (const value of dayConfig.AutoEssenceTargetWeapons) {
-        if (!options.some(option => option.value === value)) {
-          options.unshift({ label: value, value })
-        }
-      }
-      return options
     }
     const options = [...essenceLocationOptions.value]
     if (
@@ -430,21 +350,28 @@ const getCurrentTaskOptions = (timeKey: PlanTimeKey) => {
     }
     return options
   }
+  if (dayConfig.SanityTaskType === 'CrisisDrills') {
+    const options = [...crisisDrillsOptions.value]
+    if (!options.some(option => option.value === dayConfig.CrisisDrills)) {
+      options.unshift({ label: dayConfig.CrisisDrills, value: dayConfig.CrisisDrills })
+    }
+    return options
+  }
   return PROTOCOL_SPACE_TASK_OPTIONS_MAP[dayConfig.SanityTaskType as ProtocolSpaceTab]
 }
 
-const isTargetEssenceMode = (timeKey: PlanTimeKey) => {
-  const dayConfig = getDayConfig(timeKey)
+const isTargetEssenceMode = (key: string) => {
+  const dayConfig = getDayConfig(key)
   return dayConfig.SanityTaskType === 'Essence' && dayConfig.AutoEssenceMenu === 'Target'
 }
 
-const getEssenceMenu = (timeKey: PlanTimeKey) => getDayConfig(timeKey).AutoEssenceMenu
+const getEssenceMenu = (key: string) => getDayConfig(key).AutoEssenceMenu
 
-const isEssenceLocationLoading = (timeKey: PlanTimeKey) =>
-  essenceOptionsLoading.value && getDayConfig(timeKey).SanityTaskType === 'Essence'
+const isEssenceLocationLoading = (key: string) =>
+  essenceOptionsLoading.value && getDayConfig(key).SanityTaskType === 'Essence'
 
-const isRewardGroupEnabledForTime = (timeKey: PlanTimeKey) => {
-  const dayConfig = getDayConfig(timeKey)
+const isRewardGroupEnabledForTime = (key: string) => {
+  const dayConfig = getDayConfig(key)
   if (dayConfig.SanityTaskType === 'Essence') return false
   return isProtocolSpaceRewardEnabled(dayConfig)
 }
@@ -452,43 +379,36 @@ const isRewardGroupEnabledForTime = (timeKey: PlanTimeKey) => {
 const configRows = computed(() => [
   {
     rowKey: 'SanityTaskType',
-    fieldName: t('plan.table.sanityTask'),
-    ...Object.fromEntries(
-      MAAEND_PLAN_TIME_KEYS.map(timeKey => [timeKey, getDayConfig(timeKey).SanityTaskType])
-    ),
+    fieldName: t('core.plan.table.sanityTask'),
+    ...Object.fromEntries(columnKeys.value.map(key => [key, getDayConfig(key).SanityTaskType])),
   },
   {
     rowKey: 'EssenceMenu',
     fieldName: '基质模式',
-    ...Object.fromEntries(MAAEND_PLAN_TIME_KEYS.map(timeKey => [timeKey, getEssenceMenu(timeKey)])),
+    ...Object.fromEntries(columnKeys.value.map(key => [key, getEssenceMenu(key)])),
   },
   {
     rowKey: 'CurrentTask',
-    fieldName: t('plan.table.currentTask'),
+    fieldName: t('core.plan.table.currentTask'),
     ...Object.fromEntries(
-      MAAEND_PLAN_TIME_KEYS.map(timeKey => [timeKey, getCurrentTaskValue(getDayConfig(timeKey))])
+      columnKeys.value.map(key => [key, getCurrentTaskValue(getDayConfig(key))])
     ),
   },
   {
     rowKey: 'RewardsSetOption',
-    fieldName: t('plan.table.rewardsSet'),
-    ...Object.fromEntries(
-      MAAEND_PLAN_TIME_KEYS.map(timeKey => [timeKey, getDayConfig(timeKey).RewardsSetOption])
-    ),
+    fieldName: t('core.plan.table.rewardsSet'),
+    ...Object.fromEntries(columnKeys.value.map(key => [key, getDayConfig(key).RewardsSetOption])),
   },
 ])
 
 const simpleRows = computed(() => {
-  const timeKeys =
-    props.currentMode === 'ALL'
-      ? (['ALL'] as PlanTimeKey[])
-      : MAAEND_PLAN_TIME_KEYS.filter(timeKey => timeKey !== 'ALL')
+  const keys = props.currentMode === 'ALL' ? ['ALL'] : columnKeys.value.filter(key => key !== 'ALL')
 
-  return timeKeys.map(timeKey => {
-    const dayConfig = getDayConfig(timeKey)
+  return keys.map(key => {
+    const dayConfig = getDayConfig(key)
     return {
-      key: timeKey,
-      timeLabel: MAAEND_PLAN_TIME_LABELS[timeKey],
+      key,
+      timeLabel: columnTitle(key),
       SanityTaskType: dayConfig.SanityTaskType,
       CurrentTask: getCurrentTaskValue(dayConfig),
       EssenceMenu: dayConfig.AutoEssenceMenu,
@@ -497,70 +417,70 @@ const simpleRows = computed(() => {
   })
 })
 
-const saveDayConfig = async (timeKey: PlanTimeKey, config: Partial<MaaEndSanityConfig>) => {
+const saveDayConfig = async (key: string, config: Partial<MaaEndSanityConfig>) => {
   const normalized = normalizeMaaEndSanityConfig(config)
-  const previous = localTableData.value[timeKey]
+  const previous = localTableData.value[key]
 
   localTableData.value = {
     ...localTableData.value,
-    [timeKey]: normalized,
+    [key]: normalized,
   }
 
   const saved = await props.handlePlanChange(
-    `${timeKey}.Key`,
+    planColumnPath(key, 'Key'),
     normalizeMaaEndPlanKey(normalized),
     false
   )
   if (!saved) {
     localTableData.value = {
       ...localTableData.value,
-      [timeKey]: previous ?? normalizeMaaEndSanityConfig(),
+      [key]: previous ?? normalizeMaaEndSanityConfig(),
     }
   }
 }
 
-const handleSanityTaskTypeChange = async (timeKey: PlanTimeKey, value: SanityTaskType) => {
-  await saveDayConfig(timeKey, {
-    ...getDayConfig(timeKey),
+const handleSanityTaskTypeChange = async (key: string, value: SanityTaskType) => {
+  await saveDayConfig(key, {
+    ...getDayConfig(key),
     SanityTaskType: value,
   })
 }
 
-const handleTaskChange = async (timeKey: PlanTimeKey, value: CurrentTaskValue) => {
-  const currentConfig = getDayConfig(timeKey)
+const handleTaskChange = async (key: string, value: CurrentTaskValue) => {
+  const currentConfig = getDayConfig(key)
   if (currentConfig.SanityTaskType === 'Essence') {
     if (currentConfig.AutoEssenceMenu === 'Target') {
-      await saveDayConfig(timeKey, {
+      await saveDayConfig(key, {
         ...currentConfig,
         AutoEssenceTargetWeapons: Array.isArray(value) ? value : [],
       })
       return
     }
-    await saveDayConfig(timeKey, {
+    await saveDayConfig(key, {
       ...currentConfig,
       AutoEssenceSpecifiedLocation: value as MaaEndSanityConfig['AutoEssenceSpecifiedLocation'],
     })
     return
   }
 
-  await saveDayConfig(timeKey, {
+  await saveDayConfig(key, {
     ...currentConfig,
     [PROTOCOL_SPACE_TASK_FIELD_MAP[currentConfig.SanityTaskType as ProtocolSpaceTab]]:
       value as MaaEndSanityConfig['OperatorProgression'],
   })
 }
 
-const handleEssenceMenuChange = async (timeKey: PlanTimeKey, value: string) => {
+const handleEssenceMenuChange = async (key: string, value: string) => {
   if (!AUTO_ESSENCE_MENU_OPTIONS.some(option => option.value === value)) return
-  await saveDayConfig(timeKey, {
-    ...getDayConfig(timeKey),
+  await saveDayConfig(key, {
+    ...getDayConfig(key),
     AutoEssenceMenu: value as MaaEndSanityConfig['AutoEssenceMenu'],
   })
 }
 
-const handleRewardChange = async (timeKey: PlanTimeKey, value: RewardSetOption) => {
-  await saveDayConfig(timeKey, {
-    ...getDayConfig(timeKey),
+const handleRewardChange = async (key: string, value: RewardSetOption) => {
+  await saveDayConfig(key, {
+    ...getDayConfig(key),
     RewardsSetOption: value,
   })
 }

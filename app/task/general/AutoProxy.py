@@ -1,25 +1,18 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025-2026 AUTO-MAS Team
-
 #   This file is part of AUTO-MAS.
-
 #   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU Affero General Public License as
 #   published by the Free Software Foundation, either version 3 of
 #   the License, or (at your option) any later version.
-
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU Affero General Public License for more details.
-
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 #   Contact: DLmaster_361@163.com
-
-
 import asyncio
 import re
 import shlex
@@ -31,19 +24,23 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from app.core import Config
-from app.core.ws import Publisher, protocol
-from app.log_box.hooks import make_line_hook
-from app.log_box.markers import parse_marker
+from app.config import ConfigCollection
+from app.core import Notify, Publisher
+from app.core.history import aggregate_data
+from app.core.notify.task_content import (
+    build_script_statistics_payload as build_script_statistics_payload,
+)
+from app.core.ws import protocol
 from app.models.config import GeneralConfig, GeneralUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
-from app.models.schema import WSTaskNoticeData
+from app.models.notification import LocalNotice
+from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
-from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
 from app.utils import (
+    LOG_TYPE_NORMAL,
+    UTC4,
     LogMonitor,
     ProcessInfo,
     ProcessManager,
@@ -53,13 +50,13 @@ from app.utils import (
     get_logger,
     is_process_running,
     load_patterns,
+    process,
     strptime,
 )
-from app.utils.constants import UTC4
-from app.utils.io import mark_native_config_injected, swap_in_dir
-from app.utils.LogPatternExtractor import LOG_TYPE_NORMAL
+from app.utils import io as _utils_io
+from app.utils.common.log_box.hooks import make_line_hook
 
-from .tools import push_notification
+from .log_protocol import parse_marker
 
 logger = get_logger("通用脚本自动代理")
 
@@ -110,14 +107,14 @@ def _format_to_prefix_regex(fmt: str) -> re.Pattern[str]:
     return re.compile("^" + "".join(parts))  # 不加 $ → re.match 做前缀匹配
 
 
-class AutoProxyTask(ScriptAutoProxyBase):
+class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
     """自动代理模式"""
 
     def __init__(
         self,
         script_info: ScriptItem,
         script_config: GeneralConfig,
-        user_config: MultipleConfig[GeneralUserConfig],
+        user_config: ConfigCollection[GeneralUserConfig],
         game_manager: ProcessManager | DeviceBase | None,
     ):
         super().__init__()
@@ -143,12 +140,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
         if (
             self.task_info.is_queue_task
-            and self.script_config.get("Run", "ProxyTimesLimit") != 0
-            and self.cur_user_config.get("Data", "ProxyTimes")
-            >= self.script_config.get("Run", "ProxyTimesLimit")
+            and self.script_config.Run.ProxyTimesLimit != 0
+            and (
+                self.cur_user_config.Data.ProxyTimes
+                >= self.script_config.Run.ProxyTimesLimit
+            )
         ):
-            self.cur_user_item.status = "跳过"
-            return "今日代理次数已达上限, 跳过该用户"
+            await self.cur_user_item.set_state(status="跳过")
+            return "今日代理次数已达上限, 跳过该账号"
 
         if (
             self.use_mas_config
@@ -157,13 +156,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
             ).is_dir()
         ):
-            # MAS 侧还没为该用户存过配置（新建用户后直接跑自动代理）：不判异常、
+            # MAS 侧还没为该账号存过配置（新建账号后直接跑自动代理）：不判异常、
             # 不阻断任务，只提示。下发环节会跳过、让脚本用它自己已有的配置，与
             # ScriptConfig.set_general 同口径 —— 这里一旦 return，跳过逻辑就永远
             # 走不到，用户看到的仍是「未找到配置文件」的死结。
             logger.warning(
-                "MAS 中尚未保存该用户的通用脚本配置，本次将使用脚本自身已有配置；"
-                "如需由 MAS 下发配置，请先在用户配置页完成 「通用配置」 步骤"
+                "MAS 中尚未保存该账号的通用脚本配置，本次将使用脚本自身已有配置；"
+                "如需由 MAS 下发配置，请先在账号配置页完成 「通用配置」 步骤"
             )
         return "Pass"
 
@@ -172,17 +171,20 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.general_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
-        self.log_start_time = datetime.now()
+        self.log_start_time = datetime.now().astimezone()
         self.log_start_at = time.monotonic()
 
-        self.script_path = Path(self.script_config.get("Script", "ScriptPath"))
+        script_path = self.script_config.Script.ScriptPath
+        if script_path is None:
+            raise ValueError("ScriptPath未配置，请检查路径设置")
+        self.script_path = script_path
 
         arguments_list = []
         path_list = []
 
         for argument in [
             part.strip()
-            for part in str(self.script_config.get("Script", "Arguments")).split("|")
+            for part in str(self.script_config.Script.Arguments).split("|")
             if part.strip()
         ]:
             arg_parts = [
@@ -203,21 +205,27 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         self.script_target_process_info = (
             ProcessInfo(
-                name=self.script_config.get("Script", "TrackProcessName") or None,
-                exe=self.script_config.get("Script", "TrackProcessExe") or None,
+                name=self.script_config.Script.TrackProcessName or None,
+                exe=self.script_config.Script.TrackProcessExe or None,
                 cmdline=shlex.split(
-                    self.script_config.get("Script", "TrackProcessCmdline"), posix=False
+                    self.script_config.Script.TrackProcessCmdline, posix=False
                 )
                 or None,
             )
-            if self.script_config.get("Script", "IfTrackProcess")
+            if self.script_config.Script.IfTrackProcess
             else None
         )
 
-        self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
+        script_config_path = self.script_config.Script.ConfigPath
+        if script_config_path is None:
+            raise ValueError("ConfigPath未配置，请检查路径设置")
+        self.script_config_path = script_config_path
 
-        self.script_log_path = Path(self.script_config.get("Script", "LogPath"))
-        self.log_format = self.script_config.get("Script", "LogPathFormat")
+        script_log_path = self.script_config.Script.LogPath
+        if script_log_path is None:
+            raise ValueError("LogPath未配置，请检查路径设置")
+        self.script_log_path = script_log_path
+        self.log_format = self.script_config.Script.LogPathFormat
         self.log_use_prefix = bool(self.log_format) and self.log_format.endswith(
             _PREFIX_SENTINEL
         )
@@ -236,37 +244,36 @@ class AutoProxyTask(ScriptAutoProxyBase):
         else:
             self.log_format = self.script_log_path.name
 
-        self.game_path = Path(self.script_config.get("Game", "Path"))
-        self.game_url = self.script_config.get("Game", "URL")
-        self.game_process_name = self.script_config.get("Game", "ProcessName")
+        self.game_path = self.script_config.Game.Path
+        self.game_url = self.script_config.Game.URL
+        self.game_process_name = self.script_config.Game.ProcessName
         self.log_time_range = (
-            self.script_config.get("Script", "LogTimeStart") - 1,
-            self.script_config.get("Script", "LogTimeEnd"),
+            self.script_config.Script.LogTimeStart - 1,
+            self.script_config.Script.LogTimeEnd,
         )
         # 成功/失败标志：按显式模式编译，Split 为存量「|」分隔关键字子串包含，
         # Regex 为整条正则；非法正则视为已配置但永不命中，不中断任务执行
         self.success_log = compile_log_signs(
-            self.script_config.get("Script", "SuccessLog"),
-            self.script_config.get("Script", "SuccessLogMode"),
+            self.script_config.Script.SuccessLog,
+            self.script_config.Script.SuccessLogMode,
         )
         self.error_log = compile_log_signs(
-            self.script_config.get("Script", "ErrorLog"),
-            self.script_config.get("Script", "ErrorLogMode"),
+            self.script_config.Script.ErrorLog, self.script_config.Script.ErrorLogMode
         )
         for name, matcher in (("成功", self.success_log), ("失败", self.error_log)):
             if matcher.invalid:
                 logger.warning(f"通用脚本{name}日志正则语法错误，该标志将不会命中")
         # 日志预处理：受 LogHookEnabled 总开关控制，关闭时保留规则但不挂接
         self.log_line_hook = (
-            make_line_hook(self.script_config.get("Script", "LogHookRules"))
-            if self.script_config.get("Script", "LogHookEnabled")
+            make_line_hook(self.script_config.Script.LogHookRules)
+            if self.script_config.Script.LogHookEnabled
             else None
         )
         # 推送日志采集：受 PushLogEnabled 总开关控制，关闭时保留配置但不采集；
         # 仅使用高级模式（PushLogPatterns，JSON）进行采集，供任务结束后追加到推送报告
-        self.push_log_enabled = bool(self.script_config.get("Script", "PushLogEnabled"))
+        self.push_log_enabled = bool(self.script_config.Script.PushLogEnabled)
         self.push_log_patterns_compiled = (
-            load_patterns(self.script_config.get("Script", "PushLogPatterns"))
+            load_patterns(self.script_config.Script.PushLogPatterns)
             if self.push_log_enabled
             else []
         )
@@ -277,7 +284,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self._process_seen = False
         self.general_log_monitor = LogMonitor(
             self.log_time_range,
-            self.script_config.get("Script", "LogTimeFormat"),
+            self.script_config.Script.LogTimeFormat,
             self.check_log,
             line_hook=self.log_line_hook,
         )
@@ -290,7 +297,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
     def _note_launch_arguments_skipped(self) -> None:
         """游戏已在运行时不会重复启动，配了启动参数的用户要知道这轮没生效。"""
 
-        arguments = str(self.script_config.get("Game", "Arguments") or "").strip()
+        arguments = str(self.script_config.Game.Arguments or "").strip()
         if arguments:
             logger.info(f"检测到游戏已在运行，本轮不会应用启动参数（{arguments}）")
 
@@ -299,9 +306,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         # 初始化每日代理状态
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
-        if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
-            await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
-            await self.cur_user_config.set("Data", "ProxyTimes", 0)
+        if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") != self.curdate:
+            self.cur_user_config.Data.LastProxyDate = datetime.now(tz=UTC4)
+            await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = 0
+            await self.cur_user_config.commit()
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
@@ -311,28 +320,29 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     type=protocol.TASK_NOTICE,
                     data=WSTaskNoticeData(
                         level="error",
-                        message=f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}",
+                        message=f"账号 {self.cur_user_item.name} 检查未通过: {self.check_result}",
                     ),
                 )
             return
 
         await self.prepare()
-        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
+        # 任务前脚本每账号一次，先于全部重试；后置脚本由收尾阶段成对执行
         await self.run_user_scripts_before()
 
-        logger.info(f"开始代理用户: {self.cur_user_uid}")
-        self.cur_user_item.status = "运行"
+        logger.info(f"开始代理账号: {self.cur_user_uid}")
+        await self.cur_user_item.set_state(status="运行")
 
-        for i in range(self.script_config.get("Run", "RunTimesLimit")):
+        for i in range(self.script_config.Run.RunTimesLimit):
             if self.run_book:
                 break
             logger.info(
-                f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
+                f"账号 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
             )
-            self.log_start_time = datetime.now()
+            self.log_start_time = datetime.now().astimezone()
             self.log_start_at = time.monotonic()
-            self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = (
-                LogRecord()
+            self.cur_user_log = LogRecord()
+            self.cur_user_log = await self.cur_user_item.add_log_record(
+                self.log_start_time, self.cur_user_log
             )
             # 重置推送日志采集状态：每次重试只保留当次尝试采集的进程信息
             self.push_log_buffer.clear()
@@ -344,12 +354,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 if _reset is not None:
                     _reset()
 
-            self.script_info.log = "正在启动游戏 / 模拟器"
+            await self.script_info.set_log("正在启动游戏 / 模拟器")
             # 启动游戏/模拟器
             if self.game_manager is not None:
                 try:
                     if isinstance(self.game_manager, ProcessManager):
-                        if self.script_config.get("Game", "Type") == "URL":
+                        if self.script_config.Game.Type == "URL":
                             if self.game_process_name and is_process_running(
                                 self.game_process_name
                             ):
@@ -368,6 +378,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
                                 )
                                 await asyncio.sleep(2)
                         else:
+                            if self.game_path is None:
+                                raise ValueError("游戏路径未配置，请检查路径设置")
                             game_process_name = self.game_path.name
                             if game_process_name and is_process_running(
                                 game_process_name
@@ -376,30 +388,26 @@ class AutoProxyTask(ScriptAutoProxyBase):
                                     f"检测到游戏进程已在运行，跳过由 MAS 重复启动游戏: {game_process_name}"
                                 )
                                 self._note_launch_arguments_skipped()
-                                await asyncio.sleep(
-                                    self.script_config.get("Game", "WaitTime")
-                                )
+                                await asyncio.sleep(self.script_config.Game.WaitTime)
                             else:
                                 logger.info(
-                                    f"启动游戏: {self.game_path}, 参数: {self.script_config.get('Game', 'Arguments')}"
+                                    f"启动游戏: {self.game_path}, 参数: {self.script_config.Game.Arguments}"
                                 )
                                 await self.game_manager.open_process(
                                     self.game_path,
-                                    *str(
-                                        self.script_config.get("Game", "Arguments")
-                                    ).split(" "),
+                                    *str(self.script_config.Game.Arguments).split(" "),
                                     breakaway=True,
                                 )
-                                self.script_info.log = f"正在等待游戏完成启动\n请等待{self.script_config.get('Game', 'WaitTime')}s"
-                                await asyncio.sleep(
-                                    self.script_config.get("Game", "WaitTime")
+                                await self.script_info.set_log(
+                                    f"正在等待游戏完成启动\n请等待{self.script_config.Game.WaitTime}s"
                                 )
+                                await asyncio.sleep(self.script_config.Game.WaitTime)
                     elif isinstance(self.game_manager, DeviceBase):
                         logger.info(
-                            f"启动模拟器: {self.script_config.get('Game', 'EmulatorIndex')}"
+                            f"启动模拟器: {self.script_config.Game.EmulatorIndex}"
                         )
                         await self.game_manager.open(
-                            self.script_config.get("Game", "EmulatorIndex")
+                            self.script_config.Game.EmulatorIndex
                         )
                 except Exception as e:
                     await self.handle_pre_script_error("游戏/模拟器启动失败", e)
@@ -419,7 +427,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
 
             # 等待日志文件生成
-            self.script_info.log = "正在等待脚本日志文件生成"
+            await self.script_info.set_log("正在等待脚本日志文件生成")
             if_get_file = False
             target_suffix: int | None = None  # None = 未锁定
             deadline = time.monotonic() + 60
@@ -462,7 +470,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         if_get_file = True
                         break
 
-                    self.script_info.log = (
+                    await self.script_info.set_log(
                         f"正在等待脚本日志文件生成（按日期前缀，"
                         f"目标后缀 -{target_suffix}）"
                     )
@@ -495,8 +503,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
-                logger.info(f"用户: {self.cur_user_uid} - 通用脚本进程完成代理任务")
-                self.script_info.log = (
+                logger.info(f"账号: {self.cur_user_uid} - 通用脚本进程完成代理任务")
+                await self.script_info.set_log(
                     "检测到通用脚本进程完成代理任务\n正在等待相关程序结束"
                 )
 
@@ -504,34 +512,32 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
                 await asyncio.sleep(10)
 
-                # 更新脚本配置文件
-                if self.script_config.get("Script", "UpdateConfigMode") in (
-                    "Success",
-                    "Always",
-                ):
+                # 回写 MAS 配置副本
+                if self.script_config.Script.UpdateConfigMode in ("Success", "Always"):
                     await self.update_config()
 
             else:
                 logger.warning(
-                    f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
+                    f"账号: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                 )
-                self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
+                await self.script_info.set_log(
+                    f"{self.cur_user_log.status}\n正在中止相关程序"
+                )
 
                 await self.kill_managed_process()
 
-                await Notify.push_plyer(
-                    "用户自动代理出现异常！",
-                    f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
-                    f"{self.cur_user_item.name}的自动代理出现异常",
-                    3,
+                await Notify.send_notice(
+                    LocalNotice(
+                        title="账号自动代理出现异常！",
+                        message=f"账号 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                        duration_seconds=3,
+                    )
                 )
 
                 await asyncio.sleep(10)
-                # 更新脚本配置文件
-                if self.script_config.get("Script", "UpdateConfigMode") in (
-                    "Failure",
-                    "Always",
-                ):
+                # 回写 MAS 配置副本
+                if self.script_config.Script.UpdateConfigMode in ("Failure", "Always"):
                     await self.update_config()
 
             await asyncio.sleep(3)
@@ -541,7 +547,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
     ):
 
         if e is None:
-            logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
+            logger.warning(f"账号: {self.cur_user_uid} - {error_message}")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -549,32 +555,34 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
         else:
             logger.opt(exception=True).warning(
-                f"用户: {self.cur_user_uid} - {error_message}: {e}"
+                f"账号: {self.cur_user_uid} - {error_message}: {e}"
             )
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
                 data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
             )
-        self.cur_user_log.content = [f"{error_message}, 无日志记录"]
-        self.cur_user_log.status = error_message
+        await self.cur_user_log.set_state(content=[f"{error_message}, 无日志记录"])
+        await self.cur_user_log.set_state(status=error_message)
 
         await self.kill_managed_process()
 
-        await Notify.push_plyer(
-            "用户自动代理出现异常！",
-            f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
-            f"{self.cur_user_item.name}的自动代理出现异常",
-            3,
+        await Notify.send_notice(
+            LocalNotice(
+                title="账号自动代理出现异常！",
+                message=f"账号 {self.cur_user_item.name} 自动代理时{error_message}",
+                ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                duration_seconds=3,
+            )
         )
 
     async def update_config(self):
 
         if not self.use_mas_config:
-            logger.info("脚本原生配置：跳过回写用户独立配置")
+            logger.info("脚本原生配置：跳过回写独立配置")
             return
 
-        config_path_mode = self.script_config.get("Script", "ConfigPathMode")
+        config_path_mode = self.script_config.Script.ConfigPathMode
         mas_config_dir = (
             Path.cwd()
             / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
@@ -621,7 +629,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         try:
             logger.info(f"中止通用脚本进程: {self.script_exe_path}")
             await self.general_process_manager.kill()
-            await System.kill_process(self.script_exe_path)
+            await process.kill_process(self.script_exe_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止通用脚本进程失败: {e}")
         if self.game_manager is not None:
@@ -629,14 +637,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
             try:
                 if isinstance(self.game_manager, ProcessManager):
                     await self.game_manager.kill()
-                    if self.script_config.get(
-                        "Game", "Type"
-                    ) == "Client" and self.script_config.get("Game", "IfForceClose"):
-                        await System.kill_process(self.game_path)
+                    if (
+                        self.script_config.Game.Type == "Client"
+                        and self.script_config.Game.IfForceClose
+                    ):
+                        if self.game_path is not None:
+                            await process.kill_process(self.game_path)
                 elif isinstance(self.game_manager, DeviceBase):
-                    await self.game_manager.close(
-                        self.script_config.get("Game", "EmulatorIndex"),
-                    )
+                    await self.game_manager.close(self.script_config.Game.EmulatorIndex)
             except Exception as e:
                 logger.opt(exception=True).warning(f"关闭游戏/模拟器失败: {e}")
 
@@ -645,14 +653,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
         logger.info("开始配置脚本运行参数: 自动代理")
 
         # 配置前关闭可能未正常退出的脚本进程
-        await System.kill_process(self.script_exe_path)
+        await process.kill_process(self.script_exe_path)
 
         if not self.use_mas_config:
             logger.info("脚本原生来源配置：跳过写入脚本配置")
             return
 
-        # 下发前归档 MAS 配置到用户池（下发源，运行回写 update_config 会覆盖
-        # 它；指纹去重，失败不阻断运行）。General 的 ConfigFile 恒按用户
+        # 下发前归档 MAS 配置到账号池（下发源，运行回写 update_config 会覆盖
+        # 它；指纹去重，失败不阻断运行）。General 的 ConfigFile 恒按账号
         from .tools.backup_archive import archive_mas_runtime_backup
 
         archive_mas_runtime_backup(
@@ -666,15 +674,15 @@ class AutoProxyTask(ScriptAutoProxyBase):
             Path.cwd()
             / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
         )
-        config_path_mode = self.script_config.get("Script", "ConfigPathMode")
+        config_path_mode = self.script_config.Script.ConfigPathMode
 
-        # 导入配置文件。MAS 侧还没为这个用户存过配置时（新建用户后直接跑自动代理）
+        # 导入配置文件。MAS 侧还没为这个账号存过配置时（新建账号后直接跑自动代理）
         # 跳过下发、让脚本用它自己的配置 —— 与 ScriptConfig.set_general 同口径，
         # 否则 swap_in_dir / copy 会直接抛异常，把任务判成失败。源与目标都按
         # ConfigPathMode 校验类型：源不存在或类型不符即跳过，不阻断任务。
         if config_path_mode == "Folder":
             if not mas_config_dir.is_dir():
-                logger.warning("MAS 中尚无该用户的配置, 跳过配置下发")
+                logger.warning("MAS 中尚无该账号的配置, 跳过配置下发")
                 return
             if (
                 self.script_config_path.exists()
@@ -685,11 +693,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     "无法按 「目录」 模式换入"
                 )
                 return
-            swap_in_dir(
+            _utils_io.swap_in_dir(
                 mas_config_dir,
                 self.script_config_path,
             )
-            mark_native_config_injected(
+            _utils_io.mark_native_config_injected(
                 Path.cwd() / f"data/{self.script_info.script_id}/Temp",
                 self.script_config_path,
                 script_id=self.script_info.script_id,
@@ -697,7 +705,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         elif config_path_mode == "File":
             mas_config_file = mas_config_dir / self.script_config_path.name
             if not mas_config_file.is_file():
-                logger.warning("MAS 中尚无该用户的配置文件, 跳过配置下发")
+                logger.warning("MAS 中尚无该账号的配置文件, 跳过配置下发")
                 return
             if self.script_config_path.is_dir():
                 logger.warning(
@@ -729,7 +737,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         try:
             parsed = strptime(
                 line[self.log_time_range[0] : self.log_time_range[1]],
-                self.script_config.get("Script", "LogTimeFormat"),
+                self.script_config.Script.LogTimeFormat,
                 latest_time,
             )
             time_text = parsed.strftime("%H:%M")
@@ -754,8 +762,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         """日志回调"""
 
         log = "".join(log_content)
-        self.cur_user_log.content = log_content
-        self.script_info.log = log
+        await self.cur_user_log.set_state(content=log_content)
+        await self.script_info.set_log(log)
 
         # 采集推送日志：先嗅探脚本宿主 @@LOGBOX@@ 回传标记，再按高级模式规则采集
         # 日志轮转/截断时监控器会把 log_contents 重置为更短/全新的列表，
@@ -798,33 +806,33 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         # 成功/失败标志按配置模式（子串包含 / 正则）在日志全文中查找
         if self.success_log.search(log) is not None:
-            self.cur_user_log.status = "Success!"
+            await self.cur_user_log.set_state(status="Success!")
         elif self.is_log_stalled(
-            latest_time, minutes=self.script_config.get("Run", "RunTimeLimit")
+            latest_time, minutes=self.script_config.Run.RunTimeLimit
         ):
-            self.cur_user_log.status = "脚本进程超时"
+            await self.cur_user_log.set_state(status="脚本进程超时")
         else:
             error_sign = self.error_log.search(log)
             if error_sign is not None:
-                self.cur_user_log.status = f"异常日志: {error_sign}"
+                await self.cur_user_log.set_state(status=f"异常日志: {error_sign}")
             elif await self.general_process_manager.is_running():
                 self._process_seen = True
-                self.cur_user_log.status = "通用脚本正常运行中"
+                await self.cur_user_log.set_state(status="通用脚本正常运行中")
             elif (
                 not self._process_seen
                 and time.monotonic() - self.log_start_at < _PROCESS_START_GRACE_SECONDS
             ):
                 # 进程启动宽限期内：可能是启动器拉起工作进程的延迟，或残留进程
                 # 收尾日志触发了回调，不据此判定任务结束
-                self.cur_user_log.status = "通用脚本正常运行中"
+                await self.cur_user_log.set_state(status="通用脚本正常运行中")
             elif self.success_log.configured:
                 # 配置了成功标记但进程退出时未命中（不能确认成功）
-                self.cur_user_log.status = "脚本在完成任务前退出"
+                await self.cur_user_log.set_state(status="脚本在完成任务前退出")
             else:
                 # 未配置成功标记：进程已退出即视为任务完成。快速结束的脚本可能
                 # 在首次日志回调前就已退出（未被进程轮询观测到），不能仅凭
                 # _process_seen 判失败，否则会误报「脚本在完成任务前退出」
-                self.cur_user_log.status = "Success!"
+                await self.cur_user_log.set_state(status="Success!")
 
         logger.debug(f"通用脚本日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "通用脚本正常运行中":
@@ -836,30 +844,76 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if self.check_result != "Pass":
             return
 
+        self.history.begin_user_history_capture(
+            self.script_info,
+            self.cur_user_item,
+            failed=bool(self.cur_user_item.log_record)
+            and not self.run_book
+            and not self.stopped_manually,
+        )
+
         # 结束各子任务
         await self.general_log_monitor.stop()
         await self.kill_managed_process()
         del self.general_process_manager
         del self.general_log_monitor
 
-        user_logs_list = []
-        for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.astimezone(UTC4)
-            log_path = Config.build_history_log_path(
-                script_name=self.script_info.name,
-                user_name=self.cur_user_item.name,
-                log_time=dt,
+        if self.run_book:
+            if (
+                self.cur_user_config.Data.ProxyTimes == 0
+                and self.cur_user_config.Info.RemainedDay != -1
+            ):
+                self.cur_user_config.Info.RemainedDay = (
+                    self.cur_user_config.Info.RemainedDay - 1
+                )
+                await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = (
+                self.cur_user_config.Data.ProxyTimes + 1
             )
-            user_logs_list.append(log_path.with_suffix(".json"))
+            await self.cur_user_config.commit()
+            await self.cur_user_item.set_state(status="完成")
+            logger.success(f"账号 {self.cur_user_uid} 的自动代理任务已完成")
+        else:
+            logger.warning(f"账号 {self.cur_user_uid} 的自动代理任务未完成")
+            await self.cur_user_item.set_state(status="异常")
 
-            if log_item.status == "通用脚本正常运行中":
-                log_item.status = "任务被用户手动中止"
+        await self.run_user_scripts_after()
 
+        history_records = []
+        for t, log_item in self.cur_user_item.iter_history_logs():
+            if log_item.status == "通用脚本正常运行中" or (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "未开始监看日志"
+            ):
+                await log_item.set_state(status="任务被用户手动中止")
+
+            was_cancelled = (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "任务被用户手动中止"
+            )
             if len(log_item.content) == 0:
-                log_item.content = ["未捕获到任何日志内容"]
-                log_item.status = "未捕获到日志"
+                await log_item.set_state(content=["未捕获到任何日志内容"])
+                if not was_cancelled:
+                    await log_item.set_state(status="未捕获到日志")
 
-            await Config.save_general_log(log_path, log_item.content, log_item.status)
+            history_records.append(
+                HistoryWrite(
+                    time=t.astimezone(UTC4),
+                    username=self.cur_user_item.name,
+                    script_name=self.script_info.name,
+                    status=(
+                        "success"
+                        if log_item.status == "Success!"
+                        else "cancelled"
+                        if was_cancelled
+                        else "error"
+                    ),
+                    message=log_item.status,
+                    logs="".join(log_item.content),
+                )
+            )
 
         # 日志处理结束：强制关闭多行聚合等有状态匹配器的残留窗口，逐条追加
         if self.push_log_enabled and self.push_log_patterns_compiled:
@@ -875,10 +929,34 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     )
                 )
 
-        # 将本次采集的推送日志回写到用户项，供调度器聚合到推送报告
-        self.cur_user_item.push_log = self.push_log_buffer
+        # 将本次采集的推送日志回写到账号项，供调度器聚合到推送报告
+        self.user_state(self.cur_user_item).push_log = list(self.push_log_buffer)
 
-        statistics = await Config.merge_statistic_info(user_logs_list)
+        if history_records:
+            await self.history.save_user_history(
+                history_records,
+                script=self.script_info,
+                user=self.cur_user_item,
+                log_warning=logger.opt(exception=True).warning,
+            )
+
+        if self.run_book:
+            await Notify.send_notice(
+                LocalNotice(
+                    title="成功完成一个自动代理任务！",
+                    message=f"已完成账号 {self.cur_user_item.name} 的自动代理任务",
+                    ticker=f"已完成 {self.cur_user_item.name} 的自动代理任务",
+                    duration_seconds=3,
+                )
+            )
+
+        aggregate = aggregate_data(
+            [
+                HistoryAggregationItem(time=record.time, data=record.data)
+                for record in history_records
+            ]
+        )
+        statistics = {key: value.value for key, value in aggregate.data.items()}
         statistics["user_info"] = self.cur_user_item.name
         statistics["start_time"] = self.user_start_time.strftime("%Y-%m-%d %H:%M:%S")
         statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -890,11 +968,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
         success_symbol = "√" if self.run_book else "X"
 
         try:
-            await push_notification(
-                "统计信息",
-                f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
-                statistics,
-                self.cur_user_config,
+            await Notify.push_statistics_report(
+                payload=build_script_statistics_payload(
+                    title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
+                    message=statistics,
+                    result_label="通用脚本执行结果",
+                ),
+                user_config=self.cur_user_config,
+                task_info=self.task_info,
             )
         except Exception as e:
             logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
@@ -906,35 +987,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 ),
             )
 
-        if self.run_book:
-            if (
-                self.cur_user_config.get("Data", "ProxyTimes") == 0
-                and self.cur_user_config.get("Info", "RemainedDay") != -1
-            ):
-                await self.cur_user_config.set(
-                    "Info",
-                    "RemainedDay",
-                    self.cur_user_config.get("Info", "RemainedDay") - 1,
-                )
-            await self.cur_user_config.set(
-                "Data",
-                "ProxyTimes",
-                self.cur_user_config.get("Data", "ProxyTimes") + 1,
-            )
-            self.cur_user_item.status = "完成"
-            logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
-            await Notify.push_plyer(
-                "成功完成一个自动代理任务！",
-                f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
-                f"已完成 {self.cur_user_item.name} 的自动代理任务",
-                3,
-            )
-        else:
-            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
-            self.cur_user_item.status = "异常"
-
     async def on_crash(self, e: Exception):
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
         await Publisher.send(
             id=self.task_info.task_id,

@@ -2,7 +2,7 @@
   <div class="date-sidebar">
     <div class="sidebar-header">
       <CalendarOutlined />
-      <span>{{ t('history.dateList') }}</span>
+      <span>{{ t('core.history.dateList') }}</span>
     </div>
     <div class="date-list">
       <a-collapse
@@ -19,44 +19,50 @@
           </template>
 
           <div class="user-list">
-            <div
-              v-for="{ username, userData, successCount, failureCount } in dateGroup.users"
-              :key="username"
-              class="user-item"
-              :class="{ active: selectedUser === `${dateGroup.date}-${username}` }"
-              @click="$emit('select-user', dateGroup.date, username, userData)"
-            >
-              <UserOutlined class="user-icon" />
-              <span class="username">{{ username }}</span>
-              <span class="result-counts">
-                <span
-                  class="result-count success-count"
-                  role="img"
-                  :aria-label="t('history.successCount', { count: successCount })"
-                  :title="t('history.successCount', { count: successCount })"
-                >
-                  <CheckCircleOutlined aria-hidden="true" />
-                  <span aria-hidden="true">{{ successCount }}</span>
+            <template v-for="group in dateGroup.groups" :key="group.script">
+              <div v-if="dateGroup.groups.length > 1" class="script-label" :title="group.label">
+                {{ group.label }}
+              </div>
+              <div
+                v-for="row in group.rows"
+                :key="row.key"
+                class="user-item"
+                :class="{ active: selectedUser === row.key }"
+                @click="$emit('select-user', row.key, row.userData)"
+              >
+                <UserOutlined class="user-icon" />
+                <span class="username">{{ row.username }}</span>
+                <span class="result-counts">
+                  <span
+                    class="result-count success-count"
+                    :class="{ 'is-zero': !row.successCount }"
+                    role="img"
+                    :aria-label="t('core.history.successCount', { count: row.successCount })"
+                    :title="t('core.history.successCount', { count: row.successCount })"
+                  >
+                    <CheckOutlined aria-hidden="true" />
+                    <span class="count-value" aria-hidden="true">{{ row.successCount }}</span>
+                  </span>
+                  <span
+                    class="result-count failure-count"
+                    :class="{ 'is-zero': !row.failureCount }"
+                    role="img"
+                    :aria-label="t('core.history.failureCount', { count: row.failureCount })"
+                    :title="t('core.history.failureCount', { count: row.failureCount })"
+                  >
+                    <CloseOutlined aria-hidden="true" />
+                    <span class="count-value" aria-hidden="true">{{ row.failureCount }}</span>
+                  </span>
                 </span>
-                <span
-                  class="result-count failure-count"
-                  role="img"
-                  :aria-label="t('history.failureCount', { count: failureCount })"
-                  :title="t('history.failureCount', { count: failureCount })"
-                >
-                  <CloseCircleOutlined aria-hidden="true" />
-                  <span aria-hidden="true">{{ failureCount }}</span>
-                </span>
-              </span>
-              <RightOutlined class="arrow-icon" />
-            </div>
+                <RightOutlined class="arrow-icon" />
+              </div>
+            </template>
           </div>
         </a-collapse-panel>
       </a-collapse>
 
       <div v-if="historyData.length === 0" class="empty-sidebar">
-        <img src="@/assets/NoData.png" :alt="t('history.noData')" class="empty-image" />
-        <span class="empty-text">{{ t('history.empty') }}</span>
+        <NoData :image-style="{ height: '80px' }" :description="t('core.history.empty')" />
       </div>
     </div>
   </div>
@@ -64,11 +70,11 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { type HistoryData, HistoryIndexItem } from '@/api'
+import type { HistoryBucket } from '@/api'
 import {
   CalendarOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
+  CheckOutlined,
+  CloseOutlined,
   RightOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
@@ -88,23 +94,28 @@ const props = defineProps<Props>()
 
 const emit = defineEmits<{
   (e: 'update:activeKeys', value: string[]): void
-  (e: 'select-user', date: string, username: string, userData: HistoryData): void
+  (e: 'select-user', key: string, userData: HistoryBucket): void
 }>()
 
 const localActiveKeys = ref(props.activeKeys)
 
+// 日期和用户名沿用后端分组；托管名称在记录元数据中展示。
 const dateGroups = computed(() =>
   props.historyData.map(dateGroup => ({
     date: dateGroup.date,
-    users: Object.entries(dateGroup.users).map(([username, userData]) => {
-      let successCount = 0
-      let failureCount = 0
-      for (const record of userData.index ?? []) {
-        if (record.status === HistoryIndexItem.status.DONE) successCount++
-        else if (record.status === HistoryIndexItem.status.ERROR) failureCount++
-      }
-      return { username, userData, successCount, failureCount }
-    }),
+    groups: [
+      {
+        script: '',
+        label: '',
+        rows: Object.entries(dateGroup.users).map(([username, userData]) => ({
+          key: JSON.stringify([dateGroup.date, username]),
+          username,
+          userData,
+          successCount: (userData.index ?? []).filter(record => record.status === 'success').length,
+          failureCount: (userData.index ?? []).filter(record => record.status === 'error').length,
+        })),
+      },
+    ],
   }))
 )
 
@@ -154,24 +165,6 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
   padding: 8px;
 }
 
-/* 滚动条样式 - 浅色 */
-.date-list::-webkit-scrollbar {
-  width: 8px;
-}
-
-.date-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.date-list::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 4px;
-}
-
-.date-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
-}
-
 .date-panel {
   margin-bottom: 4px;
 }
@@ -208,6 +201,18 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
   flex-direction: column;
   gap: 4px;
   padding: 0 4px;
+}
+
+/* 托管分组标题：只在同一天里出现多个托管时才渲染，纯文字、不可点，不新增菜单层级 */
+.script-label {
+  padding: 8px 12px 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--ant-color-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .user-item {
@@ -250,20 +255,28 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
   white-space: nowrap;
 }
 
+/* 结果计数：✓/✗ 的形状本身说明成败，数字用正文色加粗，先看到数字再看图标 */
 .result-counts {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .result-count {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-width: 34px;
   font-size: 12px;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.count-value {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ant-color-text);
 }
 
 .success-count {
@@ -272,6 +285,16 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
 
 .failure-count {
   color: var(--ant-color-error);
+}
+
+/* 零值不参与扫读，整体退为最弱的灰 */
+.result-count.is-zero {
+  color: var(--ant-color-text-quaternary);
+}
+
+.result-count.is-zero .count-value {
+  font-weight: 500;
+  color: inherit;
 }
 
 .arrow-icon {
@@ -297,27 +320,5 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
   justify-content: center;
   padding: 40px 20px;
   gap: 12px;
-}
-
-.empty-image {
-  width: 80px;
-  height: auto;
-  opacity: 0.6;
-}
-
-.empty-text {
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
-}
-</style>
-
-<style>
-/* 深色模式滚动条 */
-.dark .date-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15) !important;
-}
-
-.dark .date-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25) !important;
 }
 </style>

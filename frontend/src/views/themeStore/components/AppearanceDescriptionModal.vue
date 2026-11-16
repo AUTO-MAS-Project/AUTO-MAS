@@ -34,10 +34,10 @@ const save = async (): Promise<void> => {
   try {
     const result = await props.store.updateDescription(item.fileId, description.value.trim())
     if (!result.ok) {
-      message.error(result.message || t('themeStore.mine.descriptionFailed'))
+      message.error(result.message || t('core.themeStore.mine.descriptionFailed'))
       return
     }
-    message.success(t('themeStore.mine.descriptionSaved'))
+    message.success(t('core.themeStore.mine.descriptionSaved'))
     emit('update:open', false)
   } finally {
     saving.value = false
@@ -57,13 +57,13 @@ watch(
     :open="open"
     :width="520"
     :z-index="90"
-    :title="t('themeStore.mine.editDescription')"
+    :title="t('core.themeStore.mine.editDescription')"
     :closable="!saving"
     :keyboard="!saving"
     :mask-closable="!saving"
     :confirm-loading="saving"
-    :ok-text="t('common.confirm')"
-    :cancel-text="t('common.cancel')"
+    :ok-text="t('core.common.confirm')"
+    :cancel-text="t('core.common.cancel')"
     @ok="save"
     @cancel="close"
   >

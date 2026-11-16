@@ -36,7 +36,7 @@ from urllib.parse import unquote
 import httpx
 from Crypto.Cipher import AES
 
-from app.utils.constants import ENDFIELD_SERVER_PRESETS
+from app.utils import ENDFIELD_SERVER_PRESETS
 
 from .common import (
     _CONFIG_MEMBER,

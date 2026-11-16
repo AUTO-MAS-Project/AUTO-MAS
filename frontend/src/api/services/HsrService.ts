@@ -18,7 +18,7 @@ export class HsrService {
      * 获取 HSR 体力副本动态选项
      * 返回 M7A/SRA 原生副本字段。
      *
-     * ``userId`` 仅用于校验用户归属；``slot`` 是兼容参数，动态选项当前
+     * ``userId`` 仅用于校验账号归属；``slot`` 是兼容参数，动态选项当前
      * 按引擎统一返回，不按 slot 生成不同结果。
      * @param scriptId
      * @param engine
@@ -92,8 +92,8 @@ export class HsrService {
         });
     }
     /**
-     * 为 HSR 用户登录云·星穹铁道
-     * 起该用户的云浏览器并用三月七的 ``game`` 任务等用户在窗口里登录。
+     * 为 HSR 账号登录云·星穹铁道
+     * 起该账号的云浏览器并用三月七的 ``game`` 任务等用户在窗口里登录。
      *
      * 阻塞到三月七退出为止（最长为登录等待 + 最长排队 + 余量），与正在运行的
      * 任务互斥：脚本运行中或三月七目录被占用时返回 409。成功后写
@@ -119,9 +119,9 @@ export class HsrService {
      * 获取 HSR 托管配置字段
      * 返回原生动态托管字段。
      *
-     * 传了用户 ID 时先做归属校验，再按该用户的配置来源决定表单读哪份计划：
-     * 「脚本」读脚本共享计划，「用户」读该用户自己的计划；不传用户 ID 时读
-     * 脚本共享计划。响应的 ``plan_owner`` 指明保存目标。
+     * 传了账号 ID 时先做归属校验，再按该账号的配置来源决定表单读哪份计划：
+     * 「脚本」读托管共享计划，「用户」读该用户自己的计划；不传账号 ID 时读
+     * 托管共享计划。响应的 ``plan_owner`` 指明保存目标。
      * @param scriptId
      * @param userId
      * @returns HSRManagedConfigOut Successful Response

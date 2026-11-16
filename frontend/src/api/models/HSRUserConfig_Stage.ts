@@ -8,12 +8,12 @@ export type HSRUserConfig_Stage = {
      */
     Channel?: ('CalyxGolden' | 'CalyxCrimson' | 'Relic' | 'Ornament' | null);
     /**
-     * 主刷关卡脚本原生字段 JSON
-     */
-    ScriptStage?: (string | null);
-    /**
      * 历战余响脚本原生字段 JSON
      */
     ScriptEchoOfWar?: (string | null);
+    /**
+     * 主刷关卡脚本原生字段 JSON
+     */
+    ScriptStage?: (string | null);
 };
 

@@ -19,22 +19,20 @@
 import uuid
 from contextlib import suppress
 from datetime import datetime
-from pathlib import Path
 
-from app.core import Config
-from app.core.ws import Publisher, protocol
+import app.core.notify.report as _node_report
+from app.config import ConfigCollection, config_manager
+from app.core import Config, Notify, Publisher
+from app.core.ws import protocol
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
-from app.models.ConfigBase import MultipleConfig
+from app.models.notification.report import TaskResultReport, UserReportText
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
-from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
-from app.utils import get_logger
-from app.utils.constants import BASE_NATIVE, TASK_MODE_ZH
+from app.utils import BASE_NATIVE, LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, log_box
 
 from .AutoProxy import AutoProxyTask, find_launcher_exe
 from .ScriptConfig import ScriptConfigTask
-from .tools import push_notification
 
 logger = get_logger("ZZZ-OD 调度器")
 
@@ -51,17 +49,19 @@ class ZzzOdManager(ScriptManagerBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
-        self.user_config: MultipleConfig[ZzzOdUserConfig] | None = None
+        self.user_config: ConfigCollection[ZzzOdUserConfig] | None = None
 
     async def check(self) -> str:
-        if self.task_info.mode not in ("AutoProxy", "ScriptConfig"):
+        if self.execution_mode not in ("AutoProxy", "ScriptConfig"):
             return "不支持的任务模式, 请检查任务配置！"
 
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         if not isinstance(script_config, ZzzOdConfig):
-            return "脚本配置类型错误, 不是 ZZZ-OD 类型"
+            return "托管配置类型错误, 不是 ZZZ-OD 类型"
 
-        root_path = Path(script_config.get("Info", "RootPath"))
+        if not script_config.Info.RootPath:
+            return "请先设置有效的绝区零一条龙安装目录"
+        root_path = script_config.Info.RootPath
         if not root_path.is_dir():
             return "请先设置有效的绝区零一条龙安装目录"
         try:
@@ -69,65 +69,68 @@ class ZzzOdManager(ScriptManagerBase):
         except ValueError as e:
             return str(e)
 
-        if self.task_info.mode == "ScriptConfig":
+        if self.execution_mode == "ScriptConfig":
             target_user_id = self.task_info.user_id or "Default"
             if target_user_id != "Default":
                 try:
                     target_user_uid = uuid.UUID(target_user_id)
                 except ValueError:
-                    return "ZZZ-OD 用户不存在，请刷新后重试"
+                    return "ZZZ-OD 账号不存在，请刷新后重试"
                 if target_user_uid not in script_config.UserData:
-                    return "ZZZ-OD 用户不存在，请刷新后重试"
+                    return "ZZZ-OD 账号不存在，请刷新后重试"
 
-        # AutoProxy 模式只做用户列表可用性校验；逐用户实例绑定检查放到 AutoProxyTask.check()
-        if self.task_info.mode == "AutoProxy":
+        # AutoProxy 模式只做账号列表可用性校验；逐账号实例绑定检查放到 AutoProxyTask.check()
+        if self.execution_mode == "AutoProxy":
             script_uid = uuid.UUID(self.script_info.script_id)
             if not self.script_info.user_list:
-                self.script_info.user_list = self.build_proxy_user_list(
-                    Config.ScriptConfig[script_uid].UserData.items()
+                await self.script_info.set_users(
+                    self.build_proxy_user_list(
+                        Config.ScriptConfig[script_uid].UserData.items()
+                    )
                 )
             if not self.script_info.user_list:
-                return "当前没有可执行的用户，请先添加并启用用户"
+                return "当前没有可执行的账号，请先添加并启用账号"
 
         return "Pass"
 
     async def prepare(self):
         script_uid = uuid.UUID(self.script_info.script_id)
-        await Config.ScriptConfig[script_uid].lock()
+        self.config_locks[
+            Config.ScriptConfig[script_uid].uid
+        ] = await self.lock_script_config(Config.ScriptConfig[script_uid])
         self.script_config = Config.ScriptConfig[script_uid]
-        # 任务期使用独立副本，避免在 ScriptConfig 已锁时写 UserData（对齐 General）
-        self.user_config = MultipleConfig([ZzzOdUserConfig])
-        await self.user_config.load(await self.script_config.UserData.toDict())
-        logger.success(f"{self.script_info.script_id} 已锁定，ZZZ-OD 用户配置已提取")
-
         if not isinstance(self.script_config, ZzzOdConfig):
-            raise TypeError("脚本配置类型错误")
+            raise TypeError("托管配置类型错误")
 
-        if self.task_info.mode == "ScriptConfig":
+        # X 锁覆盖账号集合，运行时直接修改原配置。
+        self.user_config = self.script_config.UserData
+        logger.success(f"{self.script_info.script_id} 已锁定，ZZZ-OD 账号配置已提取")
+
+        if self.execution_mode == "ScriptConfig":
             target_user_id = self.task_info.user_id or "Default"
             target_user_name = "ZZZ-OD 设置"
             with suppress(ValueError):
                 target_user_uid = uuid.UUID(target_user_id)
                 if target_user_uid in self.user_config:
-                    target_user_name = self.user_config[target_user_uid].get(
-                        "Info", "Name"
+                    target_user_name = self.user_config[target_user_uid].Info.Name
+            await self.script_info.set_users(
+                [
+                    UserItem(
+                        user_id=target_user_id,
+                        name=target_user_name,
+                        status="等待",
                     )
-            self.script_info.user_list = [
-                UserItem(
-                    user_id=target_user_id,
-                    name=target_user_name,
-                    status="等待",
-                )
-            ]
+                ]
+            )
         else:
-            self.script_info.user_list = self.build_proxy_user_list(
-                self.user_config.items()
+            await self.script_info.set_users(
+                self.build_proxy_user_list(self.user_config.items())
             )
 
     async def main_task(self):
         self.check_result = await self.check()
         if self.check_result != "Pass":
-            self.script_info.status = "异常"
+            await self.script_info.set_state(status="异常")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -137,9 +140,10 @@ class ZzzOdManager(ScriptManagerBase):
 
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await self.prepare()
+        assert self.user_config is not None
 
-        if self.task_info.mode == "ScriptConfig":
-            self.script_info.current_index = 0
+        if self.execution_mode == "ScriptConfig":
+            await self.script_info.set_current_index(0)
             await self.spawn(
                 ScriptConfigTask(
                     self.script_info,
@@ -152,28 +156,24 @@ class ZzzOdManager(ScriptManagerBase):
             return
 
         # 按 base 来源分派：shared/independent → 注入运行；native → 原生裸跑。
-        # 原生来源用户绝不进入注入名单（原生来源=MAS 零注入零干涉）
+        # 原生来源账号绝不进入注入名单（原生来源=MAS 零注入零干涉）
         inject_users = [
             user
             for user in self.script_info.user_list
-            if self.user_config[uuid.UUID(user.user_id)].get("Info", "Base")
-            != BASE_NATIVE
+            if self.user_config[uuid.UUID(user.user_id)].Info.Base != BASE_NATIVE
         ]
         direct_users = [
             user
             for user in self.script_info.user_list
-            if self.user_config[uuid.UUID(user.user_id)].get("Info", "Base")
-            == BASE_NATIVE
+            if self.user_config[uuid.UUID(user.user_id)].Info.Base == BASE_NATIVE
         ]
-        account_switch = str(
-            self.script_config.get("Game", "AccountSwitch") or "单实例切换"
-        )
+        account_switch = str(self.script_config.Game.AccountSwitch or "单实例切换")
 
         # 「多实例切换」（不推荐）：注入模式用户合并为一轮多账号注入运行
-        # （一条龙内部切换账号），原生来源用户在其后逐个原生裸跑。
+        # （一条龙内部切换账号），原生来源账号在其后逐个原生裸跑。
         # 失败域耦合：单槽失败/切换失败会终止整轮并全量重走（已完成任务按
         # 运行记录跳过，不重复执行，但会话重启与重新登录的代价仍在）
-        if self.script_config.get("Game", "AccountSwitch") == "多实例切换":
+        if self.script_config.Game.AccountSwitch == "多实例切换":
             inject_users = [
                 user
                 for user in inject_users
@@ -190,7 +190,7 @@ class ZzzOdManager(ScriptManagerBase):
             ]
             ran_any = False
             if inject_users:
-                self.script_info.current_index = 0
+                await self.script_info.set_current_index(0)
                 method = AutoProxyTask(
                     script_info=self.script_info,
                     script_config=self.script_config,
@@ -201,7 +201,7 @@ class ZzzOdManager(ScriptManagerBase):
                 if sub_check != "Pass":
                     for user in inject_users:
                         if user.status == "等待":
-                            user.status = "异常"
+                            await user.set_state(status="异常")
                     await Publisher.send(
                         id=self.task_info.task_id,
                         type=protocol.TASK_NOTICE,
@@ -213,7 +213,7 @@ class ZzzOdManager(ScriptManagerBase):
                         self.record_user_run_start(user)
                     await self.run_user_task(inject_users[0], method)
             for direct_user in direct_users:
-                self.script_info.current_index = 0
+                await self.script_info.set_current_index(0)
                 method = AutoProxyTask(
                     script_info=self.script_info,
                     script_config=self.script_config,
@@ -227,8 +227,8 @@ class ZzzOdManager(ScriptManagerBase):
                 ran_any = True
                 await self.run_user_task(direct_user, method)
             if not ran_any:
-                self.check_result = "当前没有可执行的用户"
-                self.script_info.status = "异常"
+                self.check_result = "当前没有可执行的账号"
+                await self.script_info.set_state(status="异常")
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
@@ -239,7 +239,7 @@ class ZzzOdManager(ScriptManagerBase):
         # 「MAS切换」（MAS 侧 OCR 操控游戏切号后交一条龙运行）暂未开放
         if account_switch == "MAS切换":
             self.check_result = "MAS切换暂未开放, 请改用单实例切换或多实例切换"
-            self.script_info.status = "异常"
+            await self.script_info.set_state(status="异常")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -247,14 +247,15 @@ class ZzzOdManager(ScriptManagerBase):
             )
             return
 
-        # 「单实例切换」（默认，推荐）：逐用户独立会话——注入该用户配置 →
-        # 单实例运行（仅运行当前，无槽间切换）→ 跑完关闭 → 下一个用户。
-        # 失败域隔离：某用户失败只重启该用户，不影响已完成的用户
+        # 「单实例切换」（默认，推荐）：逐账号独立会话——注入该账号配置 →
+        # 单实例运行（仅运行当前，无槽间切换）→ 跑完关闭 → 下一个账号。
+        # 失败域隔离：某账号失败只重启该账号，不影响已完成的用户
         ran_any = False
-        for self.script_info.current_index in range(len(self.script_info.user_list)):
+        for _runtime_user_index in range(len(self.script_info.user_list)):
+            await self.script_info.set_current_index(_runtime_user_index)
             current_user = self.script_info.user_list[self.script_info.current_index]
             if (
-                self.task_info.mode == "AutoProxy"
+                self.execution_mode == "AutoProxy"
                 and not await self.check_user_before_run(
                     current_user, self.user_config[uuid.UUID(current_user.user_id)]
                 )
@@ -276,8 +277,8 @@ class ZzzOdManager(ScriptManagerBase):
             await self.run_user_task(current_user, method)
 
         if not ran_any:
-            self.check_result = "当前没有可执行的用户"
-            self.script_info.status = "异常"
+            self.check_result = "当前没有可执行的账号"
+            await self.script_info.set_state(status="异常")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -285,58 +286,51 @@ class ZzzOdManager(ScriptManagerBase):
             )
 
     async def final_task(self):
-        script_uid = uuid.UUID(self.script_info.script_id)
-        script_cfg = Config.ScriptConfig[script_uid]
-
         try:
-            # 先解锁，再写回 UserData（load() 在锁定状态下会抛异常）
-            if script_cfg.is_locked:
-                await script_cfg.unlock()
-
             if self.check_result != "Pass" and not any(
                 user.status in ("完成", "跳过") for user in self.script_info.user_list
             ):
                 # ScriptConfig 会话也可能产生绑定槽（Info.SlotIdx）写回
                 if self.user_config is not None:
-                    await script_cfg.UserData.load(await self.user_config.toDict())
-                    await Config.ScriptConfig.save()
-                self.script_info.status = "异常"
+                    await config_manager.flush()
+                await self.script_info.set_state(status="异常")
                 return
 
             if self.user_config is not None:
-                await script_cfg.UserData.load(await self.user_config.toDict())
-                await Config.ScriptConfig.save()
+                await config_manager.flush()
 
             if any(user.status == "异常" for user in self.script_info.user_list):
-                self.script_info.status = "异常"
+                await self.script_info.set_state(status="异常")
             else:
-                self.script_info.status = "完成"
+                await self.script_info.set_state(status="完成")
 
-            if self.task_info.mode == "AutoProxy":
+            if self.execution_mode == "AutoProxy":
                 summary = self.collect_user_results()
-                task_mode = TASK_MODE_ZH[self.task_info.mode]
+                task_mode = TASK_MODE_ZH[self.execution_mode]
                 title = (
                     f"{datetime.now().strftime('%m-%d')} | "
                     f"{self.script_info.name or '空白'}的{task_mode}任务报告"
                 )
-                # 按用户交错组装「用户结果行 + 任务节点详情」进报告正文
+                # 按账号交错组装「账号结果行 + 任务节点详情」进报告正文
                 # （ScriptItem.result 是只读计算属性，报告正文用局部变量承载）
-                user_result_text = build_user_result_text(
-                    self.script_info.user_list,
-                    has_uncompleted=summary.uncompleted_count > 0,
+                user_result_text = self._render_user_results(
+                    has_uncompleted=summary.uncompleted_count > 0
                 )
                 # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
-                mirror_report_to_dispatch(self.script_info, user_result_text)
+                if user_result_text:
+                    await self.script_info.set_log(
+                        f"{self.script_info.log}\n{user_result_text}"
+                        if self.script_info.log
+                        else user_result_text
+                    )
                 result = self.build_proxy_report(result_text=user_result_text)
 
-                # 系统通知由 push_notification 内部的全局目标统一发送
+                # 系统通知由宿主代理结果服务的全局目标统一发送。
                 # （include_system=True），此处不再直接 push_plyer 以免重复
                 try:
-                    await push_notification(
-                        mode="代理结果",
+                    await Notify.push_proxy_result(
                         title=title,
-                        message=result,
-                        user_config=None,
+                        report=TaskResultReport.from_message(result),
                         task_info=self.task_info,
                     )
                 except Exception as e:
@@ -350,12 +344,14 @@ class ZzzOdManager(ScriptManagerBase):
                         ),
                     )
         finally:
-            if script_cfg.is_locked:
-                with suppress(Exception):
-                    await script_cfg.unlock()
+            script_config = getattr(self, "script_config", None)
+            if script_config is not None:
+                ticket = self.config_locks.pop(script_config.uid, None)
+                if ticket is not None:
+                    await script_config.unlock(ticket)
 
     async def on_crash(self, e: Exception):
-        self.script_info.status = "异常"
+        await self.script_info.set_state(status="异常")
         logger.opt(exception=True).warning(f"ZZZ-OD 任务出现异常: {e}")
         script_uid = uuid.UUID(self.script_info.script_id)
 
@@ -365,18 +361,11 @@ class ZzzOdManager(ScriptManagerBase):
             script_cfg = None
 
         if script_cfg is not None:
-            if script_cfg.is_locked:
-                with suppress(Exception):
-                    await script_cfg.unlock()
-
             try:
-                if self.task_info.mode == "AutoProxy" and self.user_config is not None:
-                    await script_cfg.UserData.load(await self.user_config.toDict())
-                    await Config.ScriptConfig.save()
+                if self.execution_mode == "AutoProxy" and self.user_config is not None:
+                    await config_manager.flush()
             except Exception:
-                logger.opt(exception=True).warning(
-                    "on_crash 写回 UserConfig 失败，放弃本次状态变更"
-                )
+                logger.opt(exception=True).warning("on_crash 保存账号配置失败")
 
         with suppress(Exception):
             await Publisher.send(
@@ -386,3 +375,32 @@ class ZzzOdManager(ScriptManagerBase):
                     level="error", message=f"ZZZ-OD 任务出现异常: {e}"
                 ),
             )
+
+    def _render_user_results(self, *, has_uncompleted: bool) -> str:
+        """本专项选择报告条目和展示模式，公共服务只负责排版。"""
+        _report_rows = []
+        for _report_user in self.script_info.user_list:
+            _entries = [
+                item
+                if isinstance(item, log_box.LogEntry)
+                else log_box.LogEntry.from_legacy(item)
+                for item in self.user_state(_report_user).push_log
+                if (item.log_type if isinstance(item, log_box.LogEntry) else item[0])
+                != LOG_TYPE_ERROR
+                or has_uncompleted
+            ]
+            _mode = self.user_state(_report_user).push_log_mode
+            if _mode == "关闭":
+                _details = []
+            elif _mode == "汇总":
+                _details = _node_report.render_aggregate_push_log(_entries)
+            else:
+                _details = _node_report.render_scatter_push_log(_entries)
+            _report_rows.append(
+                UserReportText(
+                    name=_report_user.name,
+                    result=_report_user.result,
+                    detail_lines=tuple(_details),
+                )
+            )
+        return _node_report.render_user_result_text(_report_rows)

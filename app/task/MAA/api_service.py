@@ -22,7 +22,7 @@
 
 """MAA 专项的 API 业务实现。
 
-app/api/scripts.py 中的 MAA 端点只做三件事：解析请求参数、调用本模块的一个函数、
+本目录 api.py 中的 MAA 端点只做三件事：解析请求参数、调用本模块的一个函数、
 把返回值装进响应模型；需要 MAA 领域知识的逻辑（配置来源判定、原生配置读写、排班表
 解析、物品资源解析、森空岛绑定）都在这里实现。
 
@@ -30,32 +30,138 @@ app/api/scripts.py 中的 MAA 端点只做三件事：解析请求参数、调�
 app.task.MAA.tools 的导入留在各函数内惰性进行。
 """
 
+import asyncio
 import json
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping
+from typing import Any, Awaitable, Callable, Literal, Mapping
 
 from app.core import Config
-from app.models.config import (
-    MaaConfig,
-    infrast_format_problem,
-    infrast_plan_state,
-    load_infrast_plans,
-    maa_scheme_name,
-    maa_task_queue,
-    read_maa_config,
-)
+from app.models.config import MaaConfig
+from app.services import maa_copilot as _service_maa_copilot
+from app.services.common.update import transport as _service_update_transport
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     CONFIG_BASE_SHARED,
     read_config_base,
 )
+from app.utils import constants as _utils_constants
 from app.utils import get_logger
-from app.utils.constants import MAA_DEPOT_EXCLUDED_ITEM_IDS, game_now
-from app.utils.io import write_file
+from app.utils import io as _utils_io
 
-logger = get_logger("脚本管理 API")
+from .constants import MAA_DEPOT_EXCLUDED_ITEM_IDS
+
+logger = get_logger("托管管理 API")
+
+_copilot_repository: _service_maa_copilot.CopilotRepository | None = None
+
+
+async def query_mirror_cdk(
+    cdk: str,
+) -> tuple[_service_update_transport.MirrorCdkStatus, bool]:
+    """校验编辑草稿，并返回是否使用全局凭据；查询失败沿用错误状态。"""
+    from app.task.MAA.tools.update_credentials import query_takeover_cdk
+
+    using_global = not cdk.strip()
+    try:
+        result = await query_takeover_cdk(cdk)
+    except Exception as error:
+        logger.warning(f"脚本 Mirror 酱 CDK 查询失败: {type(error).__name__}")
+        result = _service_update_transport.MirrorCdkStatus(status="error")
+    return result, using_global
+
+
+def _get_copilot_repository() -> _service_maa_copilot.CopilotRepository:
+    global _copilot_repository
+    if _copilot_repository is None:
+        _copilot_repository = _service_maa_copilot.CopilotRepository(
+            Path.cwd() / "data/cache/maa-copilot"
+        )
+    return _copilot_repository
+
+
+async def get_copilot_source(
+    source: _service_maa_copilot.CopilotScope,
+    query: str,
+    *,
+    action: Literal["load", "refresh", "status"],
+) -> dict[str, Any]:
+    from app.services import maa_copilot as _service_maa_copilot
+
+    query = _service_maa_copilot.normalize_source(source, query)
+    repository = _get_copilot_repository()
+    if action == "status":
+        return repository.status(source, query)
+    return await repository.load(
+        source, query, refresh=action == "refresh", proxy=Config.proxy
+    )
+
+
+async def search_copilot_authors(keyword: str) -> list[dict[str, str]]:
+    import httpx
+
+    from app.services import maa_copilot as _service_maa_copilot
+
+    async with httpx.AsyncClient(proxy=Config.proxy or None, timeout=20) as client:
+        users = await _service_maa_copilot.request_data(
+            client, "/user/search", userName=keyword.strip(), page=1, size=20
+        )
+    return [
+        {"value": str(user["id"]), "label": str(user["user_name"])} for user in users
+    ]
+
+
+async def analyze_copilot_training(
+    script_id: str,
+    user_id: str,
+    *,
+    source: _service_maa_copilot.CopilotScope,
+    query: str,
+    coverage: int,
+    require_modules: bool,
+    binding_key: str = "",
+    ignore_level_gaps: bool = False,
+) -> dict[str, Any]:
+    from app.services import maa_copilot as _service_maa_copilot
+    from app.task.MAA.tools.cultivate import depot_cultivate_service
+    from app.task.MAA.tools.cultivate.copilot import analyze_copilots
+
+    script_config = _maa_script_config(script_id)
+    binding = _cultivate_skland_ref(script_config, user_id)
+    actual_binding_key = "|".join(binding) if binding else ""
+    if binding_key and binding_key != actual_binding_key:
+        raise ValueError("森空岛角色绑定尚未保存或已变更，请保存后重新分析")
+    snapshot = _get_copilot_repository().cached(
+        source, _service_maa_copilot.normalize_source(source, query)
+    )
+    if snapshot is None:
+        raise ValueError("请先完成作业数据同步")
+    skland = await get_cultivate_skland_progression(script_id, user_id, force=True)
+    if skland is None:
+        raise ValueError("未能读取森空岛练度，请先绑定角色或重新登录后重试")
+    # 不用已过滤满练干员的编辑器选择器：分析需要完整目录与整表练度。
+    catalog = await depot_cultivate_service.operator_catalog(
+        config_path=Config.config_path, proxy=Config.proxy
+    )
+    result = await asyncio.to_thread(
+        analyze_copilots,
+        snapshot["assignments"],
+        catalog,
+        skland[0],
+        coverage=coverage,
+        require_modules=require_modules,
+        ignore_level_gaps=ignore_level_gaps,
+    )
+    if binding != _cultivate_skland_ref(script_config, user_id):
+        raise ValueError("分析期间森空岛角色已变更，请重新分析")
+    return {
+        **result,
+        "bindingKey": actual_binding_key,
+        "capturedAt": skland[1],
+        "updatedAt": snapshot["updatedAt"],
+    }
+
 
 # MAA 的 resource/item_index.json 约 220 KB，编辑页与预览每次都要用；
 # 按文件 mtime 缓存解析结果，选择器与名称映射共用这一份
@@ -67,14 +173,17 @@ def _maa_script_config(script_id: str) -> MaaConfig:
 
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
     if not isinstance(script_config, MaaConfig):
-        raise TypeError(f"脚本 {script_id} 不是 MAA 脚本")
+        raise TypeError(f"托管 {script_id} 不是 MAA 脚本")
     return script_config
 
 
 def _load_item_index(script_config: MaaConfig) -> dict[str, Any]:
     """读 MAA 物品资源表 resource/item_index.json（按文件 mtime 缓存）。"""
 
-    path = Path(script_config.get("Info", "Path")) / "resource" / "item_index.json"
+    root_path = script_config.Info.Path
+    if root_path is None:
+        raise ValueError("Path未配置，请检查路径设置")
+    path = root_path / "resource" / "item_index.json"
     if not path.exists():
         raise FileNotFoundError(f"未找到 MAA 物品资源: {path}，请更新 MAA 后重试")
     mtime_ns = path.stat().st_mtime_ns
@@ -89,6 +198,8 @@ def _load_item_index(script_config: MaaConfig) -> dict[str, Any]:
 
 
 async def set_infrastructure(script_id: str, user_id: str, jsonFile: str) -> None:
+    from .tools.native_config import infrast_format_problem
+
     logger.info(f"{script_id} - {user_id} 设置基建配置: {jsonFile}")
 
     script_uid = uuid.UUID(script_id)
@@ -99,10 +210,12 @@ async def set_infrastructure(script_id: str, user_id: str, jsonFile: str) -> Non
         raise FileNotFoundError(f"文件未找到: {json_path}")
 
     if not isinstance(Config.ScriptConfig[script_uid], MaaConfig):
-        raise TypeError(f"脚本 {script_id} 不是 MAA 脚本, 无法设置基建配置")
+        raise TypeError(f"托管 {script_id} 不是 MAA 脚本, 无法设置基建配置")
 
     try:
-        infrast_data = json.loads(json_path.read_text(encoding="utf-8"))
+        infrast_data = json.loads(
+            json_path.read_text(encoding="utf-8").removeprefix("\ufeff")
+        )
     except json.JSONDecodeError as e:
         raise ValueError("排班表不是有效的 JSON") from e
 
@@ -117,7 +230,16 @@ async def set_infrastructure(script_id: str, user_id: str, jsonFile: str) -> Non
     await (
         Config.ScriptConfig[script_uid]
         .UserData[user_uid]
-        .set("Data", "CustomInfrast", json.dumps(infrast_data, ensure_ascii=False))
+        .update(
+            type(Config.ScriptConfig[script_uid].UserData[user_uid]).model_validate(
+                {
+                    "Data": {
+                        "CustomInfrast": json.dumps(infrast_data, ensure_ascii=False)
+                    }
+                }
+            ),
+            check_visibility=False,
+        )
     )
 
 
@@ -136,26 +258,38 @@ def _infrast_config_dir(script_id: str, user_id: str) -> Path:
         if base == CONFIG_BASE_SHARED:
             return Path.cwd() / f"data/{script_id}/Default/ConfigFile"
         if base == CONFIG_BASE_NATIVE:
-            return Path(script_config.get("Info", "Path")) / "config"
+            root_path = script_config.Info.Path
+            if root_path is None:
+                raise ValueError("Path未配置，请检查路径设置")
+            return root_path / "config"
     return Path.cwd() / f"data/{script_id}/{user_id}/ConfigFile"
 
 
 def _infrast_plans(script_id: str, user_id: str) -> tuple[list[dict], str | None, str]:
     """生效排班表 (plans, problem, state), 与运行时使用的那份同源。
 
-    原生来源且关闭快速配置时 set_maa 跳过注入, 运行时直接用 MAA 原生配置,
+    原生来源且关闭覆写常规配置时 set_maa 跳过注入, 运行时直接用 MAA 原生配置,
     排班表只存在原生的 Infrast 任务里(InfrastPlan 不落盘, 事实源是
-    Filename 指向的排班文件); 其余组合(托管 / 原生来源+快速配置)都由 MAS
-    注入存档排班表。若不加区分地对原生来源读 MAS 存档, 原生来源用户的班次会被
-    空存档误拒; 反过来在原生来源+快速配置下读原生配置, 又会与运行时不一致。
+    Filename 指向的排班文件); 其余组合(托管 / 原生来源+覆写常规配置)都由 MAS
+    注入存档排班表。若不加区分地对原生来源读 MAS 存档, 原生来源账号的班次会被
+    空存档误拒; 反过来在原生来源+覆写常规配置下读原生配置, 又会与运行时不一致。
     """
+
+    from .tools.native_config import (
+        infrast_plan_state,
+        load_infrast_plans,
+        maa_scheme_name,
+        maa_task_queue,
+        read_maa_config,
+    )
 
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
     user_config = script_config.UserData[uuid.UUID(user_id)]
-    if read_config_base(user_config) != CONFIG_BASE_NATIVE or user_config.get(
-        "Info", "IfQuickConfig"
+    if (
+        read_config_base(user_config) != CONFIG_BASE_NATIVE
+        or user_config.Info.IfQuickConfig
     ):
-        raw = user_config.get("Data", "CustomInfrast")
+        raw = user_config.Data.CustomInfrast
         plans, problem = load_infrast_plans(raw)
         return plans, problem, infrast_plan_state(raw)
 
@@ -163,7 +297,7 @@ def _infrast_plans(script_id: str, user_id: str) -> tuple[list[dict], str | None
     data = read_maa_config(config_dir / "gui.new.json")
     if data is None:
         return [], "未找到或无法读取 MAA 原生配置", "empty"
-    queue = maa_task_queue(data, maa_scheme_name(config_dir, data))
+    queue = maa_task_queue(data, maa_scheme_name(data))
     if not isinstance(queue, list):
         return [], "MAA 原生配置缺少任务队列", "empty"
     for task in queue:
@@ -178,7 +312,7 @@ def _infrast_plans(script_id: str, user_id: str) -> tuple[list[dict], str | None
         if not path.is_file():
             return [], f"MAA 原生排班文件不存在: {path.name}", "empty"
         try:
-            text = path.read_text(encoding="utf-8")
+            text = path.read_text(encoding="utf-8").removeprefix("\ufeff")
         except OSError:
             logger.opt(exception=True).warning(f"读取 MAA 原生排班文件失败: {path}")
             return [], f"MAA 原生排班文件无法读取: {path.name}", "empty"
@@ -188,36 +322,42 @@ def _infrast_plans(script_id: str, user_id: str) -> tuple[list[dict], str | None
 
 
 def _infrast_plan_owned_by_mas(script_id: str, user_id: str) -> bool:
-    """班次指针是否由 MAS 用户字段管理, 与 set_maa 的注入判定同源。
+    """班次指针是否由 MAS 账号字段管理, 与 set_maa 的注入判定同源。
 
-    快速配置开着时 MAS 注入排班表, 班次由 MAS 决定: 带时段表一律交 MAA 按
+    覆写常规配置开着时 MAS 注入排班表, 班次由 MAS 决定: 带时段表一律交 MAA 按
     时段选班, 无时段表注入用户自己的 ``Data.InfrastPlanIndex``。关着时 MAS
     不注入, MAA 跑的是来源配置自己的队列, 班次仍在那份配置的 PlanSelect 里。
     """
 
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
     user_config = script_config.UserData[uuid.UUID(user_id)]
-    return bool(user_config.get("Info", "IfQuickConfig"))
+    return bool(user_config.Info.IfQuickConfig)
 
 
 async def set_infrast_plan_select(script_id: str, user_id: str, index: int) -> int:
-    """把用户选定的基建班次写入该用户的事实源。
+    """把用户选定的基建班次写入该账号的事实源。
 
     index 与 MAA 原生语义一致: -1=自动, 0..n-1=从该班开始顺序轮换。MAS 注入
-    的组合下事实源是用户配置的 ``Data.InfrastPlanIndex``(每用户一份, 推进由
-    MAS 在基建换班完成后做), 带时段表只接受 -1; 原生来源且关快速配置时写 MAA
+    的组合下事实源是账号配置的 ``Data.InfrastPlanIndex``(每账号一份, 推进由
+    MAS 在基建换班完成后做), 带时段表只接受 -1; 原生来源且关覆写常规配置时写 MAA
     原生配置。写不进去时抛异常(而不是返回入参假装成功), 由接口层转成错误响应。
     """
+
+    from .tools.native_config import (
+        maa_scheme_name,
+        maa_task_queue,
+        read_maa_config,
+    )
 
     script_uid = uuid.UUID(script_id)
     user_uid = uuid.UUID(user_id)
     script_config = Config.ScriptConfig[script_uid]
     if not isinstance(script_config, MaaConfig):
-        raise TypeError(f"脚本 {script_id} 不是 MAA 脚本, 无法设置基建班次")
+        raise TypeError(f"托管 {script_id} 不是 MAA 脚本, 无法设置基建班次")
     if index < -1:
         raise ValueError("基建班次索引不能小于 -1")
     if user_uid not in script_config.UserData:
-        raise ValueError(f"脚本 {script_id} 下不存在用户 {user_id}")
+        raise ValueError(f"托管 {script_id} 下不存在账号 {user_id}")
 
     # 显式班次要落在 -1..班次数-1 内: MAA 侧只会把越界值静默修正成第一班
     # 或直接报错, 与其静默改掉用户的选择不如在入口拒绝; -1 是默认值无需校验
@@ -239,16 +379,19 @@ async def set_infrast_plan_select(script_id: str, user_id: str, index: int) -> i
             return -1
         # 无时段表: -1(自动)即从第一班起, 指针只存 0..n-1
         next_index = max(index, 0)
-        await script_config.UserData[user_uid].set(
-            "Data", "InfrastPlanIndex", next_index
+        await script_config.UserData[user_uid].update(
+            type(script_config.UserData[user_uid]).model_validate(
+                {"Data": {"InfrastPlanIndex": next_index}}
+            ),
+            check_visibility=False,
         )
         return next_index
 
     config_dir = _infrast_config_dir(script_id, user_id)
     data = read_maa_config(config_dir / "gui.new.json")
     if data is None:
-        raise ValueError("未找到或无法读取该用户的 MAA 配置, 无法设置基建班次")
-    scheme = maa_scheme_name(config_dir, data)
+        raise ValueError("未找到或无法读取该账号的 MAA 配置, 无法设置基建班次")
+    scheme = maa_scheme_name(data)
     queue = maa_task_queue(data, scheme)
     if not isinstance(queue, list):
         raise ValueError(f"MAA 配置的方案「{scheme}」缺少任务队列, 无法设置基建班次")
@@ -263,16 +406,22 @@ async def set_infrast_plan_select(script_id: str, user_id: str, index: int) -> i
         return index
     for task in tasks:
         task["PlanSelect"] = index
-    write_file(config_dir / "gui.new.json", data)
+    _utils_io.write_file(config_dir / "gui.new.json", data)
     return index
 
 
 async def get_infrast_plan_select(script_id: str, user_id: str) -> int:
     """读取当前基建班次索引; 带时段表 / 未设置过时返回 -1(自动)。
 
-    MAS 注入的组合下, 无时段表返回用户字段里的指针(下次从该班开始);
-    原生来源且关快速配置时读 MAA 原生配置。
+    MAS 注入的组合下, 无时段表返回账号字段里的指针(下次从该班开始);
+    原生来源且关覆写常规配置时读 MAA 原生配置。
     """
+
+    from .tools.native_config import (
+        maa_scheme_name,
+        maa_task_queue,
+        read_maa_config,
+    )
 
     script_uid = uuid.UUID(script_id)
     if script_uid not in Config.ScriptConfig:
@@ -287,14 +436,12 @@ async def get_infrast_plan_select(script_id: str, user_id: str) -> int:
         plans, problem, state = _infrast_plans(script_id, user_id)
         if problem is not None or state != "rotate":
             return -1
-        return int(
-            script_config.UserData[user_uid].get("Data", "InfrastPlanIndex")
-        ) % len(plans)
+        return int(script_config.UserData[user_uid].Data.InfrastPlanIndex) % len(plans)
     config_dir = _infrast_config_dir(script_id, user_id)
     data = read_maa_config(config_dir / "gui.new.json")
     if data is None:
         return -1
-    queue = maa_task_queue(data, maa_scheme_name(config_dir, data))
+    queue = maa_task_queue(data, maa_scheme_name(data))
     if not isinstance(queue, list):
         return -1
     for task in queue:
@@ -312,16 +459,16 @@ async def get_user_combox_infrastructure(script_id: str, user_id: str) -> dict:
 
     script_config = Config.ScriptConfig[script_uid]
 
-    # 根据脚本类型选择添加对应用户配置
+    # 根据托管类型选择添加对应账号配置
     if not isinstance(script_config, MaaConfig):
-        raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
+        raise TypeError(f"不支持的托管配置类型: {type(script_config)}")
 
     logger.info("开始获取用户自定义基建排班下拉框信息")
 
     user_config = script_config.UserData[user_uid]
     plans, problem, state = _infrast_plans(script_id, user_id)
     # 仅自定义模式下不可用才值得提醒; 普通模式空排班表是正常状态
-    if problem is not None and user_config.get("Task", "InfrastMode") == "Custom":
+    if problem is not None and user_config.Task.InfrastMode == "Custom":
         logger.warning(f"自定义基建排班不可用, 下拉选项按空返回: {problem}")
     data = []
     for i, plan in enumerate(plans):
@@ -383,13 +530,27 @@ async def get_depot_stage_candidates(
     )
 
 
+async def get_depot_stage_candidates_batch(
+    *, script_id: str, item_ids: list[str]
+) -> dict[str, list[dict[str, str]]]:
+    """一次返回编辑页所需材料的关卡候选。"""
+
+    _maa_script_config(script_id)
+
+    from app.task.MAA.tools.cultivate import depot_cultivate_service
+
+    return await depot_cultivate_service.stage_candidates_batch(
+        config_path=Config.config_path, item_ids=item_ids, proxy=Config.proxy
+    )
+
+
 async def get_depot_inventory(
     script_id: str, user_id: str
 ) -> tuple[list[dict[str, str]], str | None]:
-    """获取当前用户档案的仓库库存（label=数量，value=物品ID）与识别时间。
+    """获取当前账号档案的仓库库存（label=数量，value=物品ID）与识别时间。
 
-    查询链只读用户档案（决策 31）：多用户共用 MAA 安装时不再可能读到
-    他人数字；档案由运行期识别采集写入（T1.17），缺失 = 该用户未识别。
+    查询链只读用户档案（决策 31）：多账号共用 MAA 安装时不再可能读到
+    他人数字；档案由运行期识别采集写入（T1.17），缺失 = 该账号未识别。
     """
 
     _maa_script_config(script_id)
@@ -416,6 +577,34 @@ async def get_depot_inventory(
     return items, recognized_iso
 
 
+async def refresh_cultivate_data(script_id: str) -> None:
+    """刷新共享养成数据与托管内已绑定角色的练度，练度失败沿用旧快照。"""
+
+    from app.task.MAA.tools.cultivate.skland import (
+        SklandAccountRef,
+        fetch_skland_progression,
+    )
+    from app.task.MAA.tools.cultivate.yituliu import refresh_data
+
+    script_config = _maa_script_config(script_id)
+    await refresh_data(Config.config_path, Config.proxy)
+    bindings = {
+        binding
+        for user_id in script_config.UserData.keys()
+        if (binding := _cultivate_skland_ref(script_config, str(user_id))) is not None
+    }
+    load_credential, save_credential = _cultivate_skland_callbacks()
+    for account_uid, game_uid in bindings:
+        await fetch_skland_progression(
+            SklandAccountRef(account_uid=account_uid, game_uid=game_uid),
+            load_credential=load_credential,
+            save_credential=save_credential,
+            proxy=Config.proxy,
+            force=True,
+            fallback_to_cached=True,
+        )
+
+
 async def get_cultivate_operators(
     script_id: str, user_id: str
 ) -> list[dict[str, object]]:
@@ -439,8 +628,7 @@ async def get_cultivate_operators(
     # 来源，被过滤掉的干员会让已存目标显示成内部 ID（决策 40）
     try:
         raw_targets = json.loads(
-            script_config.UserData[uuid.UUID(user_id)].get("Task", "CultivateTargets")
-            or "[]"
+            script_config.UserData[uuid.UUID(user_id)].Task.CultivateTargets or "[]"
         )
     except (KeyError, TypeError, ValueError):
         raw_targets = []
@@ -456,7 +644,7 @@ async def get_cultivate_operators(
 
 
 async def parse_cultivate_import(script_id: str, content: str) -> dict[str, Any]:
-    """转换剪贴板目标，不写用户配置；完整目录避免过滤掉已满级干员。"""
+    """转换剪贴板目标，不写账号配置；完整目录避免过滤掉已满级干员。"""
 
     from app.task.MAA.tools.cultivate import (
         depot_cultivate_service,
@@ -506,7 +694,7 @@ def _cultivate_skland_callbacks() -> tuple[
             account = Config.ToolsConfig.GameSign_Accounts[uuid.UUID(account_uid)]
         except (KeyError, ValueError):
             return None
-        raw = account.get("GameSignAccount", "SklandToken")
+        raw = account.GameSignAccount.SklandToken
         return str(raw) if raw else None
 
     async def save_credential(account_uid: str, serialized: str) -> None:
@@ -514,7 +702,12 @@ def _cultivate_skland_callbacks() -> tuple[
             account = Config.ToolsConfig.GameSign_Accounts[uuid.UUID(account_uid)]
         except (KeyError, ValueError):
             return
-        await account.set("GameSignAccount", "SklandToken", serialized)
+        await account.update(
+            type(account).model_validate(
+                {"GameSignAccount": {"SklandToken": serialized}}
+            ),
+            check_visibility=False,
+        )
 
     return load_credential, save_credential
 
@@ -525,8 +718,8 @@ def _cultivate_skland_ref(
     """读用户配置的森空岛绑定；未绑定时返回 None。"""
 
     user_config = script_config.UserData[uuid.UUID(user_id)]
-    account_uid = str(user_config.get("Task", "CultivateSklandAccount") or "").strip()
-    game_uid = str(user_config.get("Task", "CultivateSklandUid") or "").strip()
+    account_uid = str(user_config.Task.CultivateSklandAccount or "").strip()
+    game_uid = str(user_config.Task.CultivateSklandUid or "").strip()
     if not account_uid or not game_uid:
         return None
     return account_uid, game_uid
@@ -535,7 +728,7 @@ def _cultivate_skland_ref(
 async def get_cultivate_skland_progression(
     script_id: str, user_id: str, *, force: bool = False
 ) -> tuple[Mapping[str, Any], int] | None:
-    """取当前用户绑定的森空岛练度快照（带 TTL 缓存）；未绑定返回 None。
+    """取当前账号绑定的森空岛练度快照（带 TTL 缓存）；未绑定返回 None。
 
     预览走缓存（force=False），注入前强刷（force=True，决策 38）；
     拉取失败由驱动层降级为 None，绝不影响注入/预览主流程。
@@ -574,7 +767,7 @@ async def get_cultivate_skland_bindings() -> list[dict[str, str]]:
     load_credential, save_credential = _cultivate_skland_callbacks()
     candidates: list[str] = []
     for account_uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-        raw = str(account.get("GameSignAccount", "SklandToken") or "")
+        raw = str(account.GameSignAccount.SklandToken or "")
         if raw:
             candidates.append(str(account_uid))
     if not candidates:
@@ -631,17 +824,13 @@ async def get_cultivate_preview(
     archive_dir = Path.cwd() / f"data/{uuid.UUID(script_id)}/{uuid.UUID(user_id)}"
     # 森空岛练度走 TTL 缓存（预览不打网络；决策 38），未绑定/失败降级 None
     skland = await get_cultivate_skland_progression(script_id, user_id)
-    (
-        plan,
-        availability,
-        progressions,
-    ) = await depot_cultivate_service.preview_cultivate(
+    plan, availability, progressions = await depot_cultivate_service.preview_cultivate(
         targets=parse_cultivate_targets(raw_targets),
         maa_data_dir=archive_dir,
         config_path=Config.config_path,
         proxy=Config.proxy,
-        today=game_now(
-            script_config.UserData[uuid.UUID(user_id)].get("Info", "Server")
+        today=_utils_constants.game_now(
+            script_config.UserData[uuid.UUID(user_id)].Info.Server
         ).date(),
         skland=skland,
     )
@@ -688,10 +877,11 @@ async def get_cultivate_preview(
             item["expectedSanity"] = expected_sanity
         return item
 
-    # 固定产出关（龙门币 ← CE-6 等）单次产量未知，内核保持 0.0 中性值，
-    # 展示层按"不可估算"处理（None），不计入合计
+    # 副产物已能满足的条目显示 0；单次产量未知的固定资源关保持空值。
     computable_sanity = [
-        entry.expected_sanity for entry in plan.entries if entry.expected_sanity > 0
+        entry.expected_sanity
+        for entry in plan.entries
+        if entry.expected_sanity is not None
     ]
 
     return {
@@ -700,7 +890,7 @@ async def get_cultivate_preview(
                 entry.item_id,
                 entry.amount,
                 entry.stage_code,
-                entry.expected_sanity or None,
+                entry.expected_sanity,
             )
             for entry in plan.entries
         ],

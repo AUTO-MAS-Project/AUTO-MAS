@@ -1,62 +1,17 @@
 <template>
-  <div class="user-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts">{{ t('edit.scripts') }}</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <router-link :to="`/scripts/${scriptId}/edit/general`" class="breadcrumb-link">
-            {{ scriptName }}
-          </router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          {{ isEdit ? '编辑用户' : '添加用户' }}
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <a-button v-if="!!userId" size="large" :loading="folderLoading" @click="handleOpenFolder">
-        <template #icon>
-          <FolderOpenOutlined />
-        </template>
-        {{ t('comp.openConfigFolder') }}
-      </a-button>
-      <a-button
-        v-if="!showGeneralConfigMask"
-        type="primary"
-        ghost
-        size="large"
-        :loading="generalConfigLoading"
-        :disabled="configLocked"
-        @click="handleGeneralConfig()"
-      >
-        <template #icon>
-          <SettingOutlined />
-        </template>
-        {{ t('edit.generalConfiguration') }}
-      </a-button>
-      <a-button
-        v-if="showGeneralConfigMask"
-        type="default"
-        size="large"
-        disabled
-        style="color: #52c41a; border-color: #52c41a"
-      >
-        <template #icon>
-          <SettingOutlined />
-        </template>
-        {{ t('edit.configuring') }}
-      </a-button>
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        {{ t('edit.back') }}
-      </a-button>
-    </a-space>
-  </div>
+  <UserEditHeader
+    :script-id="scriptId"
+    :script-name="scriptName"
+    :is-edit="isEdit"
+    script-edit-segment="general"
+    :user-id="userId"
+    :config-label="t('core.edit.generalConfiguration')"
+    :config-loading="generalConfigLoading"
+    :config-active="showGeneralConfigMask"
+    :config-disabled="configLocked"
+    @config="handleGeneralConfig()"
+    @cancel="handleCancel"
+  />
 
   <!-- 通用配置遮罩层（配置会话 / 查看会话双形态） -->
   <teleport to="body">
@@ -70,19 +25,19 @@
           <SettingOutlined v-else :style="{ fontSize: '48px', color: '#1890ff' }" />
         </div>
         <template v-if="generalSessionViewOnly">
-          <h2 class="mask-title">{{ t('edit.generalViewingTitle') }}</h2>
+          <h2 class="mask-title">{{ t('core.edit.generalViewingTitle') }}</h2>
           <p class="mask-description">
-            {{ t('edit.generalViewingDesc') }}
+            {{ t('core.edit.generalViewingDesc') }}
             <br />
-            {{ t('edit.generalViewingDesc2') }}
+            {{ t('core.edit.generalViewingDesc2') }}
           </p>
         </template>
         <template v-else>
-          <h2 class="mask-title">{{ t('edit.generalConfigurationProgress') }}</h2>
+          <h2 class="mask-title">{{ t('core.edit.generalConfigurationProgress') }}</h2>
           <p class="mask-description">
-            {{ t('edit.generalConfigurationThisUser') }}
+            {{ t('core.edit.generalConfigurationThisUser') }}
             <br />
-            配置完成后，请点击"保存配置"按钮来结束配置会话。
+            {{ t('core.edit.clickSaveConfigurationWhen2') }}
           </p>
         </template>
         <div class="mask-actions">
@@ -92,7 +47,11 @@
             size="large"
             @click="handleSaveGeneralConfig"
           >
-            {{ generalSessionViewOnly ? t('edit.generalViewClose') : t('edit.saveConfiguration') }}
+            {{
+              generalSessionViewOnly
+                ? t('core.edit.generalViewClose')
+                : t('core.edit.saveConfiguration')
+            }}
           </a-button>
         </div>
       </div>
@@ -104,108 +63,43 @@
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <!-- 基本信息 -->
         <div class="form-section">
+          <UserAccountHeading
+            :user-name="formData.userName"
+            :options="{ isEdit, logoSrc: accountIcon }"
+          />
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ t('core.edit.basicInfo') }}</h3>
             <div class="section-header-actions">
               <a-button size="small" @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
-                {{ t('edit.configRestoreTitle') }}
+                {{ t('core.edit.configRestoreTitle') }}
               </a-button>
             </div>
           </div>
+          <UserBasicInfoFields
+            v-model:user-name="formData.userName"
+            v-model:status="formData.Info.Status"
+            v-model:remained-day="formData.Info.RemainedDay"
+            v-model:notes="formData.Info.Notes"
+            :disabled="loading"
+            @save-name="handleFieldSave('userName', formData.userName)"
+            @save-status="handleFieldSave('Info.Status', formData.Info.Status)"
+            @save-days="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
+            @save-notes="handleFieldSave('Info.Notes', formData.Info.Notes)"
+          />
           <a-row :gutter="24">
-            <a-col :span="12">
-              <a-form-item name="userName" required>
-                <template #label>
-                  <a-tooltip :title="t('edit.displayNameUsedIdentify')">
-                    <span class="form-label">
-                      {{ t('edit.username') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input
-                  v-model:value="formData.userName"
-                  :placeholder="t('edit.enterUsername')"
-                  :disabled="loading"
-                  size="large"
-                  class="modern-input"
-                  @blur="handleFieldSave('userName', formData.userName)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item name="status">
-                <template #label>
-                  <a-tooltip :title="t('edit.whetherThisUserEnabled')">
-                    <span class="form-label">
-                      {{ t('edit.enabled') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-select
-                  v-model:value="formData.Info.Status"
-                  size="large"
-                  @change="handleFieldSave('Info.Status', formData.Info.Status)"
-                >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item name="remainedDay">
-                <template #label>
-                  <a-tooltip :title="t('edit.daysLeftAccount1')">
-                    <span class="form-label">
-                      {{ t('edit.daysLeft') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-number
-                  v-model:value="formData.Info.RemainedDay"
-                  :min="-1"
-                  :max="9999"
-                  placeholder="-1"
-                  :disabled="loading"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
-                />
-              </a-form-item>
-            </a-col>
             <a-col :span="24">
-              <GeneralConfigModeSelector
+              <GeneralUserConfigurationSection
                 :model-value="formData.Info.Base ?? 'independent'"
-                :options="generalConfigModeOptions"
+                :plan-mode="formData.Info.PlanMode"
+                :owner="{ scriptId, userId }"
                 :disabled="loading"
                 :saving="configModeSaving"
-                :alert-message="t('edit.configSourceHintBase')"
                 @change="handleConfigModeChange"
+                @plan-change="formData.Info.PlanMode = $event"
               />
             </a-col>
           </a-row>
-
-          <a-form-item name="notes">
-            <template #label>
-              <a-tooltip :title="t('edit.addNoteAboutThis')">
-                <span class="form-label">
-                  {{ t('edit.note') }}
-                  <QuestionCircleOutlined class="help-icon" />
-                </span>
-              </a-tooltip>
-            </template>
-            <a-textarea
-              v-model:value="formData.Info.Notes"
-              :placeholder="t('edit.enterNote3')"
-              :rows="4"
-              :disabled="loading"
-              class="modern-input"
-              @blur="handleFieldSave('Info.Notes', formData.Info.Notes)"
-            />
-          </a-form-item>
         </div>
 
         <!-- 额外脚本 -->
@@ -233,30 +127,29 @@
     :script-name="GENERAL_DISPLAY_NAME"
     :targets="restoreTargets"
     :api="restoreApi"
-    :user-desc="t('edit.generalConfigRestoreUserDesc')"
-    :script-desc="t('edit.generalConfigRestoreScriptDesc')"
+    :user-desc="t('core.edit.generalConfigRestoreUserDesc')"
+    :script-desc="t('core.edit.generalConfigRestoreScriptDesc')"
     :on-restored="handleRestored"
     :on-detail="handleRestoreView"
   />
 </template>
 
 <script setup lang="ts">
+import UserAccountHeading from '@/components/UserAccountHeading.vue'
+import accountIcon from '@/assets/AUTO-MAS.ico'
+import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
+import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import UserEditHeader from '@/components/UserEditHeader.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import {
-  ArrowLeftOutlined,
-  EyeOutlined,
-  FolderOpenOutlined,
-  HistoryOutlined,
-  QuestionCircleOutlined,
-  SettingOutlined,
-} from '@ant-design/icons-vue'
+import { EyeOutlined, HistoryOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
+import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
@@ -267,11 +160,11 @@ import {
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import { Service } from '@/api'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
-import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
+import GeneralUserConfigurationSection from './GeneralUserConfigurationSection.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
 
@@ -279,15 +172,8 @@ const logger = window.electronAPI.getLogger('通用用户编辑')
 
 const router = useRouter()
 const route = useRoute()
-const {
-  addUser,
-  updateUser,
-  getUsers,
-  loading: userLoading,
-  openUserConfigFolder,
-  loading: folderLoading,
-} = useUserApi()
-const { getScript } = useScriptApi()
+const { addUser, updateUser, getUsers, loading: userLoading, error: userApiError } = useUserApi()
+const { getScript, error: scriptApiError } = useScriptApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
@@ -299,13 +185,9 @@ const { enqueue } = useSaveQueue()
 // 路由参数
 const scriptId = route.params.scriptId as string
 
-const handleOpenFolder = async () => {
-  if (!userId) return
-  await openUserConfigFolder(scriptId, userId)
-}
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId }))
 
 // 脚本信息
 const scriptName = ref('')
@@ -329,6 +211,8 @@ const getDefaultGeneralUserData = () => ({
     RemainedDay: -1,
     // 配置来源三态（shared/independent/native）
     Base: 'independent',
+    // 固定配置，或按日轮换的通用计划 ID
+    PlanMode: 'Fixed',
     IfUseMasConfig: true,
     IfScriptBeforeTask: false,
     IfScriptAfterTask: false,
@@ -346,7 +230,7 @@ const getDefaultGeneralUserData = () => ({
     ServerChanTag: '',
   },
   Data: {
-    LastProxyDate: '2000-01-01',
+    LastProxyDate: '2000-01-01T00:00:00+04:00',
     ProxyTimes: 0,
   },
 })
@@ -363,8 +247,8 @@ const formData = reactive({
 const rules = computed(() => {
   const baseRules: Record<string, Rule[]> = {
     userName: [
-      { required: true, message: t('edit.enterUsername'), trigger: 'blur' },
-      { min: 1, max: 50, message: t('edit.usernameMustBe1'), trigger: 'blur' },
+      { required: true, message: t('core.edit.enterUsername'), trigger: 'blur' },
+      { min: 1, max: 50, message: t('core.edit.usernameMustBe1'), trigger: 'blur' },
     ],
   }
   return baseRules
@@ -396,23 +280,14 @@ const handleFieldSave = async (key: string, value: any) => {
 
   await enqueue(async () => {
     try {
-      // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
-      const parts = key.split('.')
-      let userData: Record<string, any> = {}
-      let current = userData
-
-      for (let i = 0; i < parts.length - 1; i++) {
-        current[parts[i]] = {}
-        current = current[parts[i]]
-      }
-      current[parts[parts.length - 1]] = value
+      let userData = buildFieldPatch(key, value)
 
       // 特殊处理：userName 需要同步到 Info.Name
       if (key === 'userName') {
         userData = { Info: { Name: value } }
       }
 
-      await updateUser(scriptId, userId, userData)
+      if (!(await updateUser(scriptId, userId, userData))) return
       logger.info(`用户配置已保存: ${key}`)
       // 任务前后脚本路径会被后端规范化（相对转绝对、解析 .lnk 等），保存后回读该字段
       if (key === 'Info.ScriptBeforeTask' || key === 'Info.ScriptAfterTask') {
@@ -426,41 +301,6 @@ const handleFieldSave = async (key: string, value: any) => {
 }
 
 // 配置来源三态卡片（value 为后端 Info.Base 取值，驱动逻辑需保持原样；文案走词表）
-// 「共享」置灰：通用脚本运行/配置始终按 per-user 目录（AutoProxy/ScriptConfig 均不区分共享来源），
-// 选了也不生效——禁用并悬停说明原因
-const generalConfigModeOptions: Array<{
-  label: string
-  value: 'shared' | 'independent' | 'native'
-  title: string
-  description: string
-  icon: 'database' | 'setting'
-  disabled?: boolean
-  disabledReason?: string
-}> = [
-  {
-    label: t('edit.script'),
-    value: 'shared',
-    title: t('edit.script'),
-    description: t('edit.useScriptS'),
-    icon: 'database',
-    disabled: true,
-    disabledReason: t('edit.scriptModeDisabled'),
-  },
-  {
-    label: t('edit.user'),
-    value: 'independent',
-    title: t('edit.user'),
-    description: t('edit.useThisUserS'),
-    icon: 'database',
-  },
-  {
-    label: t('edit.directControl'),
-    value: 'native',
-    title: t('edit.directControl'),
-    description: t('edit.useScriptSCurrent'),
-    icon: 'setting',
-  },
-]
 
 // 配置来源切换：校验 value ∈ 三态 → 赋值 Info.Base → 真实保存
 // 注意：IfUseMasConfig 是旧的两态字段，仍被 BetterGI 槽位逻辑消费，故保留并与之对齐写入。
@@ -513,13 +353,13 @@ const loadScriptInfo = async () => {
         await createUserImmediately()
       }
     } else {
-      message.error(t('edit.scriptDoesNotExist2'))
+      if (!scriptApiError.value) message.error(t('core.edit.scriptDoesNotExist2'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadScript2'))
+    if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript2'))
   }
 }
 
@@ -541,13 +381,13 @@ const createUserImmediately = async () => {
       // 加载新创建用户的数据
       await loadUserData()
     } else {
-      message.error(t('edit.couldNotCreateUser'))
+      if (!userApiError.value) message.error(t('core.edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    message.error(t('edit.couldNotCreateUser'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -591,21 +431,21 @@ const loadUserData = async () => {
         // 数据加载完成，允许自动保存
         isInitializing.value = false
       } else {
-        message.error(t('edit.userDoesNotExist'))
+        message.error(t('core.edit.userDoesNotExist'))
         handleCancel()
       }
     } else {
-      message.error(t('edit.couldNotFetchUser'))
+      if (!userApiError.value) message.error(t('core.edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadUser2'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotLoadUser2'))
   }
 }
 
-const handleGeneralConfig = async (viewOnly = false, targetId?: string) => {
+const handleGeneralConfig = async (viewOnly = false, target = 'mas') => {
   if (configLocked.value) return
   try {
     generalConfigLoading.value = true
@@ -632,11 +472,11 @@ const handleGeneralConfig = async (viewOnly = false, targetId?: string) => {
     // 调用后端启动任务接口，传入 userId 作为 taskId 与设置模式
     // 查看会话（viewOnly）：mas 备份传 userId（目录副本型下发），native
     // 备份传 scriptId（脚本级，原生配置即备份）
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: targetId ?? userId,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+    const response = await requestScriptConfigStart(
+      target === 'mas' ? userId : scriptId,
       viewOnly,
-    })
+      target === 'mas' ? 'user' : target === 'native' ? 'script' : 'unknown'
+    )
 
     logger.debug(`通用配置 start 接口返回: ${response}`)
     if (response && response.taskId) {
@@ -651,7 +491,7 @@ const handleGeneralConfig = async (viewOnly = false, targetId?: string) => {
           const data = wsMessage.data as unknown as WSTaskNoticeData
           if (data.level === 'error') {
             logger.error(`用户 ${formData.userName} 通用配置异常: ${data.message}`)
-            message.error(t('edit.generalConfigurationFailedP0', { p0: data.message }))
+            message.error(t('core.edit.generalConfigurationFailedP0', { p0: data.message }))
           }
         }),
         // 处理任务结束消息
@@ -660,7 +500,7 @@ const handleGeneralConfig = async (viewOnly = false, targetId?: string) => {
           logger.info(`用户 ${formData.userName} 通用配置任务已结束`)
           // 根据结果显示不同消息（查看会话只读不保存，不打扰用户）
           if (data.outcome === 'success' && !generalSessionViewOnly.value) {
-            message.success(t('edit.configurationUserP0Done', { p0: formData.userName }))
+            message.success(t('core.edit.configurationUserP0Done', { p0: formData.userName }))
           }
           // 清理连接
           for (const subscriptionId of generalSubscriptionIds.value) {
@@ -681,14 +521,14 @@ const handleGeneralConfig = async (viewOnly = false, targetId?: string) => {
       generalTaskId.value = wsId
       showGeneralConfigMask.value = true
       configTimedOut.value = false
-      message.success(t('edit.startedGeneralSetupUser', { p0: formData.userName }))
+      message.success(t('core.edit.startedGeneralSetupUser', { p0: formData.userName }))
 
       // 设置 30 分钟超时自动断开（查看会话静默关闭；配置会话提醒 + 自动保存）
       generalConfigTimeout = window.setTimeout(
         async () => {
           if (generalSubscriptionIds.value.length > 0 && generalTaskId.value) {
             const taskId = generalTaskId.value
-            const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+            const response = await stopNativeConfig(taskId, 'timeout')
 
             if (response && response.code === 200) {
               for (const subscriptionId of generalSubscriptionIds.value) {
@@ -701,7 +541,7 @@ const handleGeneralConfig = async (viewOnly = false, targetId?: string) => {
               if (generalSessionViewOnly.value) {
                 logger.info('通用脚本查看会话已超时，静默关闭')
               } else {
-                message.success(t('edit.configurationSessionTimedOut'))
+                message.success(t('core.edit.configurationSessionTimedOut'))
               }
             } else if (generalSessionViewOnly.value) {
               logger.error(response?.message || '查看会话超时关闭失败')
@@ -722,7 +562,7 @@ const handleGeneralConfig = async (viewOnly = false, targetId?: string) => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`启动通用配置失败: ${errorMsg}`)
-    message.error(t('edit.couldNotStartGeneral'))
+    message.error(t('core.edit.couldNotStartGeneral'))
     showGeneralConfigMask.value = false
   } finally {
     generalConfigLoading.value = false
@@ -733,11 +573,11 @@ const handleSaveGeneralConfig = async () => {
   try {
     const taskId = generalTaskId.value
     if (!taskId) {
-      message.error(t('edit.noActiveConfigurationSession'))
+      message.error(t('core.edit.noActiveConfigurationSession'))
       return
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+    const response = await stopNativeConfig(taskId, generalSessionViewOnly.value ? 'close' : 'save')
     if (response && response.code === 200) {
       for (const subscriptionId of generalSubscriptionIds.value) {
         unsubscribe(subscriptionId)
@@ -754,7 +594,7 @@ const handleSaveGeneralConfig = async () => {
       if (wasViewOnly) {
         logger.info('通用脚本查看会话已关闭，配置保持原状')
       } else {
-        message.success(t('edit.generalConfigurationThisUser2'))
+        message.success(t('core.edit.generalConfigurationThisUser2'))
       }
     } else {
       message.error(response.message || '保存配置失败')
@@ -762,7 +602,7 @@ const handleSaveGeneralConfig = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存通用配置失败: ${errorMsg}`)
-    message.error(t('edit.couldNotSaveGeneral'))
+    message.error(t('core.edit.couldNotSaveGeneral'))
   }
 }
 
@@ -795,21 +635,11 @@ const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
 ]
 
 // 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
-const restoreApi = {
-  list: async (target: string) =>
-    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
-  preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
-  restore: async (target: string, time: string) =>
-    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-      scriptId,
-      userId,
-      time,
-      target,
-    }),
-  readFile: async (target: string, time: string, path: string) =>
-    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
-}
+const { restoreApi, ensureBackup } = useConfigBackupApi({
+  scriptId,
+  userId: () => userId,
+  logger,
+})
 
 const openRestoreModal = () => {
   restoreOpen.value = true
@@ -829,43 +659,34 @@ const handleRestoreView = (target: string, item: { time: string }) => {
 
   return new Promise<boolean>(resolve => {
     Modal.confirm({
-      title: t('edit.configRestoreDetailView'),
+      title: t('core.edit.configRestoreDetailView'),
       content: h(
         'p',
         { style: { color: 'var(--ant-color-error)', margin: 0 } },
-        t('edit.configRestoreDetailConfirm', { script: GENERAL_DISPLAY_NAME })
+        t('core.edit.configRestoreDetailConfirm', { script: GENERAL_DISPLAY_NAME })
       ),
-      okText: t('edit.configRestoreConfirmOk'),
+      okText: t('core.edit.configRestoreConfirmOk'),
       okType: 'danger',
-      cancelText: t('edit.cancel'),
+      cancelText: t('core.edit.cancel'),
       onOk: async () => {
         if (configLocked.value) {
-          message.error(t('edit.configLocked'))
+          message.error(t('core.edit.configLocked'))
           resolve(false)
           return
         }
 
         try {
-          const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-            scriptId,
-            userId,
-            time: item.time,
-            target,
-          })
+          const resp = await restoreApi.restore(target, item.time)
           // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
           // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
           if (resp.code !== 200) {
-            throw new Error(resp.message || t('edit.configRestoreFailed'))
+            throw new Error(resp.message || t('core.edit.configRestoreFailed'))
           }
           restoreOpen.value = false
-          if (target === 'mas') {
-            await handleGeneralConfig(true, userId)
-          } else {
-            await handleGeneralConfig(true, scriptId)
-          }
+          await handleGeneralConfig(true, target)
           resolve(true)
         } catch (e) {
-          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
           resolve(false)
         }
       },
@@ -877,27 +698,14 @@ const handleRestoreView = (target: string, item: { time: string }) => {
 // 编辑界面归档（进入/退出时机，指纹去重）：进入归档脚本原生配置当前状态
 // （MAS 触碰前原始态，用户可能刚在脚本 GUI 里改过），退出归档该用户
 // ConfigFile 副本终态；运行/会话下发前归档挂在 AutoProxy/ScriptConfig
-const ensureGeneralBackup = async (target: 'mas' | 'native') => {
-  if (!userId) return
-  try {
-    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
-      scriptId,
-      userId,
-      target,
-    })
-    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-    message.warning(t('edit.configRestoreEnsureFailed'))
-  }
-}
+const ensureGeneralBackup = ensureBackup
 
 // 停止当前配置/查看会话（清理订阅与任务），供离开页面时兜底
 const stopGeneralSession = async () => {
   const taskId = generalTaskId.value
   if (!taskId || generalSubscriptionIds.value.length === 0) return
   try {
-    await Service.stopTaskApiDispatchStopPost({ taskId })
+    await stopNativeConfig(taskId)
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
   }
@@ -916,7 +724,7 @@ const stopGeneralSession = async () => {
 
 onMounted(async () => {
   if (!scriptId) {
-    message.error(t('edit.missingScriptIdParameter'))
+    message.error(t('core.edit.missingScriptIdParameter'))
     handleCancel()
     return
   }
@@ -938,41 +746,9 @@ onUnmounted(() => {
 })
 </script>
 
+<style scoped src="@/styles/userEditForm.css"></style>
+
 <style scoped>
-.user-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.user-edit-content {
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.config-card {
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
-}
-
-.config-form {
-  max-width: none;
-}
-
 .form-section {
   margin-bottom: 12px;
 }
@@ -983,89 +759,12 @@ onUnmounted(() => {
 
 .section-header {
   margin-bottom: 6px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.section-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  font-size: 14px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-  cursor: help;
-  transition: color 0.3s ease;
-}
-
-.help-icon:hover {
-  color: var(--ant-color-primary);
-}
-
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
-}
-
-.modern-input:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.modern-input:focus,
-.modern-input.ant-input-focused {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
 }
 
 .switch-description {
   margin-left: 12px;
   font-size: 13px;
   color: var(--ant-color-text-secondary);
-}
-
-.cancel-button {
-  border: 1px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-}
-
-.cancel-button:hover {
-  border-color: var(--ant-color-primary);
-  color: var(--ant-color-primary);
 }
 
 .save-button {
@@ -1081,19 +780,6 @@ onUnmounted(() => {
 .float-button {
   width: 60px;
   height: 60px;
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .user-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
-  }
-
-  .user-edit-content {
-    max-width: 100%;
-  }
 }
 
 /* 通用/MAA 配置遮罩样式（用于全局覆盖） */

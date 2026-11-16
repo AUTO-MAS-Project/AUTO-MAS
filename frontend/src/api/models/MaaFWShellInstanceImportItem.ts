@@ -16,11 +16,11 @@ export type MaaFWShellInstanceImportItem = {
      */
     success?: boolean;
     /**
-     * 用户 ID：建成新用户时就是它，覆盖已有用户时是那个用户
+     * 账号 ID：建成新账号时就是它，覆盖已有账号时是那个账号
      */
     userId?: string;
     /**
-     * 用户名
+     * 账号名
      */
     name?: string;
     /**

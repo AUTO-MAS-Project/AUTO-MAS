@@ -1,0 +1,102 @@
+/* 工具面板的 portal 独立命名；保留 Electron 标题栏与窗口控制区。 */
+.mas-devtools.ant-drawer {
+  top: 32px;
+  height: calc(100% - 32px);
+}
+
+.mas-devtools .ant-drawer-header {
+  padding: 16px 20px;
+}
+.mas-devtools .ant-drawer-body {
+  padding: 0 20px 20px;
+}
+
+.mas-devtools .devtools-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mas-devtools .devtools-heading > .anticon {
+  color: var(--ant-color-primary);
+  font-size: 22px;
+}
+
+.mas-devtools .devtools-caption {
+  display: block;
+  margin-top: 4px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  font-weight: normal;
+}
+
+.mas-devtools .devtools-shortcut {
+  padding: 3px 6px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 4px;
+  color: var(--ant-color-text-tertiary);
+  font-family: var(--font-monospace);
+  font-size: 11px;
+}
+
+.mas-devtools .devtools-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.mas-devtools .devtools-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mas-devtools .devtools-muted {
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+}
+.mas-devtools .devtools-code {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+}
+
+.mas-devtools .devtools-section {
+  padding: 16px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+}
+
+.mas-devtools .devtools-section h3 {
+  margin: 0 0 12px;
+  color: var(--ant-color-text-heading);
+  font-size: 14px;
+}
+
+.mas-devtools .devtools-route-button {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ant-color-primary);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .mas-devtools .devtools-shortcut {
+    display: none;
+  }
+  .mas-devtools .ant-drawer-body {
+    padding-inline: 12px;
+  }
+}

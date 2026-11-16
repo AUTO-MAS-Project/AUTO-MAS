@@ -16,12 +16,36 @@ export interface RendererCrashInput {
   isQuitting: boolean
   /** 窗口已销毁时没有可重载的目标。 */
   isWindowDestroyed: boolean
+  /** 取消系统关机后，即使原进程正常退出，也须重建页面。 */
+  recoverCleanExit?: boolean
   now: number
   /** 此前若干次崩溃的时间戳（毫秒）。 */
   previousCrashes: readonly number[]
 }
 
-type RendererRecoveryAction = 'ignore' | 'reload' | 'give-up'
+export type RendererRecoveryAction = 'ignore' | 'reload' | 'give-up'
+
+export interface RendererCrashDetails {
+  reason: string
+  exitCode: number
+  crashCount: number
+  action: RendererRecoveryAction
+}
+
+export interface RendererReloadResult {
+  outcome: 'success' | 'failure' | 'unknown' | 'cancelled'
+  resultKind:
+    | 'ready'
+    | 'load_failed'
+    | 'renderer_gone'
+    | 'reload_threw'
+    | 'timeout'
+    | 'window_closed'
+    | 'app_quitting'
+    | 'session_end'
+  durationMs: number
+  loadErrorCode?: number
+}
 
 interface RendererCrashDecision {
   action: RendererRecoveryAction
@@ -43,7 +67,7 @@ export function decideRendererRecovery(input: RendererCrashInput): RendererCrash
   const kept = input.previousCrashes.filter(at => input.now - at < CRASH_WINDOW_MS)
 
   // 正常退出不计入崩溃统计，否则退出流程会污染下一次启动的判断。
-  if (input.reason === 'clean-exit') {
+  if (input.reason === 'clean-exit' && !input.recoverCleanExit) {
     return {
       action: 'ignore',
       detail: '渲染进程正常退出（clean-exit）',

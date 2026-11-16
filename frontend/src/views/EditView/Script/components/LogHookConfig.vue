@@ -56,8 +56,12 @@ const onEnabledChange = (value: boolean) => {
 }
 
 const addMenuItems = [
-  { key: 'drop', label: t('edit.dropLine'), title: t('edit.dropWholeLineWhen') },
-  { key: 'replace', label: t('edit.rewriteLine'), title: t('edit.rewriteLineMatchPattern') },
+  { key: 'drop', label: t('core.edit.dropLine'), title: t('core.edit.dropWholeLineWhen') },
+  {
+    key: 'replace',
+    label: t('core.edit.rewriteLine'),
+    title: t('core.edit.rewriteLineMatchPattern'),
+  },
 ]
 
 const onAddMenuClick = ({ key }: { key: string }) => {
@@ -80,24 +84,26 @@ const onDragEnd = () => {
 </script>
 
 <template>
-  <div class="log-hook-config" :class="{ collapsed }">
-    <div class="hook-config-header sub-section-header">
+  <div class="log-rule-config" :class="{ collapsed }">
+    <div class="log-rule-config-header sub-section-header">
       <h3>
-        <a-tooltip :title="collapsed ? t('edit.expandRulesArea') : t('edit.collapseRulesArea')">
-          <span class="hook-config-title-text" @click="toggleCollapsed">
-            {{ t('edit.logHooks') }}
-            <DownOutlined class="hook-config-title-arrow" :class="{ collapsed }" />
+        <a-tooltip
+          :title="collapsed ? t('core.edit.expandRulesArea') : t('core.edit.collapseRulesArea')"
+        >
+          <span class="log-rule-config-title" @click="toggleCollapsed">
+            {{ t('core.edit.logHooks') }}
+            <DownOutlined class="log-rule-config-title-arrow" :class="{ collapsed }" />
           </span>
         </a-tooltip>
-        <a-tooltip :title="t('edit.whenScriptLogPreprocessed')">
+        <a-tooltip :title="t('core.edit.whenScriptLogPreprocessed')">
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
       </h3>
-      <div class="hook-config-actions">
+      <div class="log-rule-config-actions">
         <span v-if="collapsed && hookRules.length > 0" class="hook-config-summary">
-          {{ t('edit.ruleCountSummary', { n: hookRules.length, m: activeRuleCount }) }}
+          {{ t('core.edit.ruleCountSummary', { n: hookRules.length, m: activeRuleCount }) }}
         </span>
-        <a-tooltip :title="t('edit.rulesApplyOnlyWhen')">
+        <a-tooltip :title="t('core.edit.rulesApplyOnlyWhen')">
           <a-switch
             :checked="enabled"
             :checked-children="'启用'"
@@ -108,9 +114,9 @@ const onDragEnd = () => {
       </div>
     </div>
 
-    <div v-show="!collapsed" class="hook-config-body">
-      <div v-if="!enabled" class="hook-config-disabled-tip">
-        {{ t('edit.logHooksOffRules') }}
+    <div v-show="!collapsed" class="log-rule-config-body">
+      <div v-if="!enabled" class="log-rule-config-disabled-tip">
+        {{ t('core.edit.logHooksOffRules') }}
       </div>
 
       <draggable
@@ -118,14 +124,14 @@ const onDragEnd = () => {
         item-key="_uid"
         handle=".drag-handle"
         :animation="200"
-        ghost-class="hook-ghost"
-        chosen-class="hook-chosen"
-        drag-class="hook-drag"
-        class="hook-rules-list"
+        ghost-class="log-rule-ghost"
+        chosen-class="log-rule-chosen"
+        drag-class="log-rule-drag"
+        class="log-rule-list"
         @end="onDragEnd"
       >
         <template #item="{ element, index }">
-          <div class="hook-rule-item">
+          <div class="log-rule-item">
             <LogHookRule
               :model-value="element"
               :index="index"
@@ -137,11 +143,11 @@ const onDragEnd = () => {
         </template>
       </draggable>
 
-      <div class="hook-rules-footer">
+      <div class="log-rule-footer">
         <a-dropdown :trigger="['click']">
-          <a-button type="dashed" class="add-hook-btn">
+          <a-button type="dashed" class="add-log-rule-btn">
             <PlusOutlined />
-            {{ t('edit.addRule') }}
+            {{ t('core.edit.addRule') }}
             <DownOutlined />
           </a-button>
           <template #overlay>
@@ -153,116 +159,23 @@ const onDragEnd = () => {
           </template>
         </a-dropdown>
 
-        <span class="hook-rules-count">
-          {{ t('edit.ruleCountFooter', { n: hookRules.length, m: activeRuleCount }) }}
+        <span class="log-rule-count">
+          {{ t('core.edit.ruleCountFooter', { n: hookRules.length, m: activeRuleCount }) }}
         </span>
       </div>
     </div>
   </div>
 </template>
 
-<style scoped>
-.log-hook-config {
-  width: 100%;
-}
+<style scoped src="./logRuleConfig.css"></style>
 
+<style scoped>
 .help-icon {
   color: var(--ant-color-text-tertiary);
   font-size: 14px;
 }
 
-.hook-config-title-text {
-  cursor: pointer;
-  color: inherit;
-  transition: color 0.2s ease;
-}
-
-.hook-config-title-text:hover {
-  color: var(--ant-color-primary);
-}
-
-.hook-config-title-arrow {
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-  vertical-align: middle;
-  transition: transform 0.2s ease;
-}
-
-.hook-config-title-arrow.collapsed {
-  transform: rotate(-90deg);
-}
-
-/* 折叠时正文隐藏、底部 24px 留白随之消失，这里补回，避免与下一配置区贴太近 */
-.log-hook-config.collapsed .hook-config-header {
-  margin-bottom: 24px;
-}
-
-.hook-config-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
 .hook-config-summary {
-  font-size: 12px;
-  color: var(--ant-color-text-secondary);
-}
-
-.hook-config-body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding-bottom: 24px;
-}
-
-.hook-config-disabled-tip {
-  padding: 10px 14px;
-  background: var(--ant-color-fill-quaternary);
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 6px;
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
-}
-
-.hook-rules-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.hook-rule-item {
-  position: relative;
-}
-
-.hook-ghost {
-  opacity: 0.5;
-  background: var(--ant-color-primary-bg);
-  border: 1px dashed var(--ant-color-primary);
-  border-radius: 8px;
-}
-
-.hook-chosen {
-  cursor: grabbing;
-}
-
-.hook-drag {
-  opacity: 0.8;
-}
-
-.hook-rules-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.add-hook-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.hook-rules-count {
   font-size: 12px;
   color: var(--ant-color-text-secondary);
 }

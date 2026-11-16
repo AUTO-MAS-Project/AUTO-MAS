@@ -7,10 +7,10 @@
     @pointermove="handlePointerMove"
     @pointerleave="handlePointerLeave"
     @pointerdown="handlePointerDown"
-    @pointerup="releaseCenter"
+    @pointerup="handlePointerUp"
     @pointercancel="releaseCenter"
   >
-    <div v-if="loading" class="loading-spinner"></div>
+    <a-spin v-if="loading" size="large" class="loading-spinner" />
     <!-- 低性能模式下动效本来就停着，恢复按钮恢复不了它 -->
     <SatelliteEffectsPausedChip
       v-if="effectsPaused && !performanceStore.lowPerformanceMode"
@@ -35,10 +35,11 @@ import { usePerformanceStore } from '@/stores/performance'
 import { connectionState, onConnected } from '@/services/websocket/connection'
 import { createCenterPokeCounter } from './satellite/centerPoke'
 import { createAnimationFrameScheduler } from './satellite/frameScheduler'
+import { usePressSound } from './satellite/usePressSound'
 import { SatelliteScene, type SatellitePick } from './satellite-classic/satelliteScene'
 import SatelliteEffectsPausedChip from './satellite/SatelliteEffectsPausedChip.vue'
 
-/** 主 WS 没开着时，按这个间隔拉运行快照兜底 */
+/** 前台按此间隔刷新配置与持久化历史，后台暂停。 */
 const STATUS_POLL_INTERVAL = 10000
 /** 同时在飞的浮字上限；快速连点时先到的先让位，免得 DOM 和合成层无限堆 */
 const MAX_STAR_BURSTS = 12
@@ -48,7 +49,9 @@ const logger = window.electronAPI.getLogger('卫星动画')
 const { isDark } = useTheme()
 const { getScripts } = useScriptApi()
 const performanceStore = usePerformanceStore()
-// 卫星状态来自任务运行时常驻订阅（WS 增量 + HTTP 快照兜底）
+// 中心图标的按压音效：与 3D 星系共用同一套设置与播放逻辑
+const { playPress, playRelease } = usePressSound()
+// 卫星提示来自配置与持久化历史查询，由组件已有轮询刷新
 const {
   statuses: satelliteStatuses,
   setScriptKeys: setSatelliteScriptKeys,
@@ -66,6 +69,8 @@ const effectsPaused = computed(
 
 let scene: SatelliteScene | null = null
 let isUnmounted = false
+/** 这一轮按下是不是落在中心图标上：决定松手时要不要响松开音 */
+let pressedOnCenter = false
 let statusPollTimer: ReturnType<typeof setInterval> | null = null
 let disposeBackendReadyListener: (() => void) | null = null
 const frameScheduler = createAnimationFrameScheduler(requestAnimationFrame, cancelAnimationFrame)
@@ -79,7 +84,7 @@ watch(isDark, dark => {
   requestRender()
 })
 
-// 常驻订阅推送新状态时同步刷新展示
+// 配置／历史查询更新后同步刷新展示
 watch(satelliteStatuses, statuses => {
   scene?.setStatuses(statuses)
   requestRender()
@@ -100,17 +105,6 @@ watch(
     requestRender()
   }
 )
-
-// WS 打开时事件推送足够，停掉 HTTP 轮询（运行态资源在 onConnected 里已重拉一次快照）；
-// 掉线期间再靠轮询兜底
-watch(connectionState(), state => {
-  if (isUnmounted || performanceStore.isBackgrounded) return
-  if (state === 'open') {
-    stopStatusPolling()
-  } else {
-    startStatusPolling()
-  }
-})
 
 watch(
   () => performanceStore.isBackgrounded,
@@ -192,7 +186,7 @@ onUnmounted(() => {
 // ==================== 场景 ====================
 
 // 后端未就绪（主 WS 未 open）时不发请求：启动遮罩期间立即初始化会把脚本列表与
-// 运行快照打向尚未监听的端口，请求直接以 "Network Error" 弹错，卫星也会整场不渲染。
+// 配置查询打向尚未监听的端口，请求直接以 "Network Error" 弹错，卫星也会整场不渲染。
 function waitBackendReady(): Promise<void> {
   if (connectionState().value === 'open') return Promise.resolve()
   return new Promise(resolve => {
@@ -272,15 +266,11 @@ function stopStatusPolling(): void {
 }
 
 function startStatusPolling(): void {
-  if (
-    performanceStore.isBackgrounded ||
-    statusPollTimer !== null ||
-    connectionState().value === 'open'
-  ) {
+  if (performanceStore.isBackgrounded || statusPollTimer !== null) {
     return
   }
 
-  // 周期性 HTTP 快照兜底：只在主 WS 没开着时轮询；WS 开着靠 task.* 事件推送
+  // 配置与历史不由 task.* 推送，WS 连通时也正常刷新。
   statusPollTimer = setInterval(() => void refreshSatelliteStatuses(), STATUS_POLL_INTERVAL)
 }
 
@@ -300,16 +290,26 @@ function handlePointerLeave(): void {
   releaseCenter()
 }
 
-/** 按在中心图标上时给它一个压扁的形变，松开还原 */
+/** 按在中心图标上时给它一个压扁的形变、响一下按压音，松开还原 */
 function handlePointerDown(event: PointerEvent): void {
   // 低性能模式下动画循环是停的，按压形变和浮字都不会动，这俩干脆别做；
   // 只认主键，右键 / 中键不会产生 click，冒了字也不算连点
   if (event.button !== 0 || performanceStore.isLowPower || pickAt(event) !== 'center') return
   scene?.setCenterPressed(true)
+  pressedOnCenter = true
+  playPress()
   spawnStarBurst(event.clientX, event.clientY)
 }
 
+/** 只有真的在中心图标上松手才响松开音；pointercancel 与指针移出画布只还原形变 */
+function handlePointerUp(): void {
+  const pressed = pressedOnCenter
+  releaseCenter()
+  if (pressed) playRelease()
+}
+
 function releaseCenter(): void {
+  pressedOnCenter = false
   scene?.setCenterPressed(false)
 }
 
@@ -355,7 +355,7 @@ function spawnStarBurst(clientX: number, clientY: number): void {
   const bounds = container.value.getBoundingClientRect()
   const element = document.createElement('span')
   element.className = scene?.isCenterRainbow ? 'star-burst star-burst-rainbow' : 'star-burst'
-  element.textContent = t('home.satelliteEgg.star')
+  element.textContent = t('core.home.satelliteEgg.star')
   element.style.left = `${clientX - bounds.left}px`
   element.style.top = `${clientY - bounds.top}px`
   container.value.appendChild(element)
@@ -413,19 +413,7 @@ function spawnStarBurst(clientX: number, clientY: number): void {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 32px;
-  height: 32px;
-  margin: -16px 0 0 -16px;
-  border: 2px solid var(--ant-color-border);
-  border-top-color: var(--ant-color-primary);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  transform: translate(-50%, -50%);
 }
 
 /* 浮字是运行时创建的，不在模板里，scoped 的选择器要用 :deep 才管得到 */

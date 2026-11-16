@@ -34,7 +34,7 @@ import yaml
 
 from app.utils import get_logger
 
-from .managed_fields import M7A_MANAGED_FIELDS, managed_field_keys
+from .managed_fields import M7A_MANAGED_FIELDS, auto_managed_keys, managed_field_keys
 from .managed_overlay import (
     DroppedOverride,
     log_dropped_overrides,
@@ -58,39 +58,43 @@ M7A_MANAGED_STAGE_KEYS: frozenset[str] = frozenset(
         # 这里挡住 _apply_managed_patch 用 native config.yaml 的值把它们覆盖回去。
         "weekly_divergent_timestamp",
         "currencywars_timestamp",
-        # 差分宇宙低性能模式以脚本级 Run.LowPerformanceMode 为准，不让原生值或
-        # 残留的用户覆盖把 build_divergent_universe_patch 写的值盖回去。
+        # 差分宇宙低性能模式以托管级 Run.LowPerformanceMode 为准，不让原生值或
+        # 残留的账号覆盖把 build_divergent_universe_patch 写的值盖回去。
         "weekly_divergent_stable_mode",
     }
 )
 
 
-def managed_modules_for_key(key: str) -> tuple[str, ...]:
-    """Map a native M7A key to the MAS module that may override it.
+def m7a_managed_keys(
+    module_key: str, native_config: Mapping[str, Any] | None = None
+) -> frozenset[str]:
+    """某模块 MAS 允许覆盖的三月七原生键（即该模块托管表单的全部字段）。
 
-    以 :data:`M7A_MANAGED_FIELDS` 为准：字段表里没有的键不归任何模块。
+    给了 ``native_config`` 时含按规则自动跟进的新键，不给时只有字段表。
     """
 
-    if key in M7A_MANAGED_STAGE_KEYS:
-        return ()
-    return tuple(
-        module_key
-        for module_key, specs in M7A_MANAGED_FIELDS.items()
-        if any(spec.key == key for spec in specs)
+    return (
+        frozenset(managed_field_keys("M7A", module_key, native_config))
+        - M7A_MANAGED_STAGE_KEYS
     )
 
 
-def m7a_managed_keys(module_key: str) -> frozenset[str]:
-    """某模块 MAS 允许覆盖的三月七原生键（即该模块托管表单的全部字段）。"""
+def m7a_auto_patch_keys(native_config: Mapping[str, Any]) -> frozenset[str]:
+    """各模块自动跟进的键：静态 patch 白名单不认识它们，写 config.yaml 时要补进去。"""
 
-    return frozenset(managed_field_keys("M7A", module_key)) - M7A_MANAGED_STAGE_KEYS
+    return frozenset().union(
+        *(
+            auto_managed_keys("M7A", module_key, native_config)
+            for module_key in M7A_MANAGED_FIELDS
+        )
+    )
 
 
 def _user_managed_options(user_config: Any, module_key: str) -> dict[str, Any]:
     if user_config is None:
         return {}
     try:
-        raw = user_config.get("Managed", "Options")
+        raw = user_config.Managed.Options
     except (AttributeError, KeyError, TypeError):
         raw = {}
     if isinstance(raw, str):
@@ -118,7 +122,7 @@ def overlay_m7a_managed_options(
     第二个返回值交给表单与运行日志，不再整体抛错。
     """
 
-    managed = m7a_managed_keys(module_key)
+    managed = m7a_managed_keys(module_key, native_config)
     native = {
         str(key): value for key, value in native_config.items() if str(key) in managed
     }
@@ -196,9 +200,11 @@ M7A_NOTIFICATION_DISABLE_PATCH: dict[str, Any] = {
     "notify_bark_enable": False,
     "notify_smtp_enable": False,
     "notify_onebot_enable": False,
+    "notify_qqbot_enable": False,
     "notify_gocqhttp_enable": False,
     "notify_dingtalk_enable": False,
     "notify_pushplus_enable": False,
+    "notify_qmsg_enable": False,
     "notify_wechatworkapp_enable": False,
     "notify_wechatworkbot_enable": False,
     "notify_gotify_enable": False,
@@ -351,7 +357,7 @@ def build_m7a_daily_patch(
         )
 
     eow_start_weekday = _echo_of_war_weekday_to_iso(
-        user_config.get("TaskOpt", "EchoOfWarWeekday")
+        user_config.TaskOpt.EchoOfWarWeekday
     )
 
     patch: dict = {
@@ -519,7 +525,6 @@ M7A_WEEKLY_DIVERGENT_STABLE_MODE_DEFAULT: bool = False
 M7A_CURRENCY_WARS_TYPE: str = "normal"  # 标准博弈
 M7A_CURRENCY_WARS_RANK_DIFFICULTY: str = "lowest"  # 最低职级
 M7A_CURRENCY_WARS_STRATEGY: str = "aglaea"  # 阿格莱雅策略
-M7A_CURRENCY_WARS_STRATEGY_RESTART_ON_SPECIAL_TAGS: bool = True  # 特定词条接受重开
 M7A_CURRENCY_WARS_FAST_MODE: bool = False
 M7A_CURRENCY_WARS_BONUS_ENABLE: bool = True  # 积分奖励启用
 
@@ -552,7 +557,7 @@ def load_m7a_yaml(text: str) -> dict[str, Any]:
     return yaml.load(text, Loader=_M7AYamlLoader) or {}
 
 
-# config.yaml 解析缓存: 路径 -> (mtime_ns, 解析结果); 每用户一轮会读同一份十余次
+# config.yaml 解析缓存: 路径 -> (mtime_ns, 解析结果); 每账号一轮会读同一份十余次
 _NATIVE_CONFIG_CACHE: dict[Path, tuple[int, dict[str, Any]]] = {}
 
 
@@ -563,9 +568,9 @@ def load_m7a_native_config(script_config: Any) -> dict[str, Any]:
     """
 
     if script_config is None:
-        raise ValueError("缺少 HSR 脚本配置")
+        raise ValueError("缺少 HSR 托管配置")
     try:
-        raw_root = script_config.get("Info", "M7APath")
+        raw_root = script_config.Info.M7APath
     except (AttributeError, KeyError, TypeError):
         raw_root = ""
     root = str(raw_root or "").strip()
@@ -618,8 +623,9 @@ def _apply_managed_patch(
     effective, dropped = overlay_m7a_managed_options(native, user_config, module_key)
     log_dropped_overrides(logger, "M7A", module_key, dropped)
     protected = M7A_MANAGED_STAGE_KEYS
+    auto_keys = frozenset(auto_managed_keys("M7A", module_key, native))
     for key, value in effective.items():
-        if key in whitelist and key not in protected:
+        if (key in whitelist or key in auto_keys) and key not in protected:
             patch[key] = value
     return patch
 
@@ -737,7 +743,7 @@ def build_divergent_universe_patch(
     native_options = resolve_m7a_managed_options(
         script_config, user_config, "DivergentUniverse"
     )
-    low_perf_value = script_config.get("Run", "LowPerformanceMode")
+    low_perf_value = script_config.Run.LowPerformanceMode
     low_perf_mode = (
         M7A_WEEKLY_DIVERGENT_STABLE_MODE_DEFAULT
         if low_perf_value is None
@@ -760,9 +766,9 @@ def build_divergent_universe_patch(
             )
         ),
         "weekly_divergent_stable_mode": low_perf_mode,
-        # M7A 的周常时间戳按安装目录存、不按游戏账号存：上一个用户打满后写进共享的
-        # config.yaml，下一个用户的 patch 以这份文件为底合并，M7A 就跳过积分复核、
-        # 不再打印 MAS 唯一认的完成 marker，于是第二个用户起永远记不到完成、天天重跑。
+        # M7A 的周常时间戳按安装目录存、不按游戏账号存：上一个账号打满后写进共享的
+        # config.yaml，下一个账号的 patch 以这份文件为底合并，M7A 就跳过积分复核、
+        # 不再打印 MAS 唯一认的完成 marker，于是第二个账号起永远记不到完成、天天重跑。
         # 与日常 patch 归零 echo_of_war_timestamp 是同一口径。
         "weekly_divergent_timestamp": 0,
     }
@@ -788,12 +794,12 @@ def build_currency_wars_patch(
 ) -> dict[str, Any]:
     """构建 M7A 货币战争 patch。
 
-    托管覆盖读 ``plan``（该用户生效的任务计划，缺省即 ``user_config``），
+    托管覆盖读 ``plan``（该账号生效的任务计划，缺省即 ``user_config``），
     开拓者名称读 ``user_config``。
     """
     if plan is None:
         plan = user_config
-    username = str(user_config.get("Info", "Name") or "").strip()
+    username = str(user_config.Info.Name or "").strip()
     native_options = resolve_m7a_managed_options(script_config, plan, "CurrencyWars")
 
     patch = {
@@ -810,12 +816,6 @@ def build_currency_wars_patch(
         "currencywars_strategy": str(
             native_options.get("currencywars_strategy", M7A_CURRENCY_WARS_STRATEGY)
         ),
-        "currencywars_strategy_restart_on_special_tags": bool(
-            native_options.get(
-                "currencywars_strategy_restart_on_special_tags",
-                M7A_CURRENCY_WARS_STRATEGY_RESTART_ON_SPECIAL_TAGS,
-            )
-        ),
         "currencywars_fast_mode": bool(
             native_options.get("currencywars_fast_mode", M7A_CURRENCY_WARS_FAST_MODE)
         ),
@@ -826,7 +826,7 @@ def build_currency_wars_patch(
             )
         ),
         # 同 weekly_divergent_timestamp：按安装目录存的时间戳会让共用一套 M7A 的
-        # 第二个用户起永远记不到完成。
+        # 第二个账号起永远记不到完成。
         "currencywars_timestamp": 0,
     }
     if patch["currencywars_bonus_enable"] and ornament_stage_name:

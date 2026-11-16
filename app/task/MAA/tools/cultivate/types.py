@@ -116,8 +116,8 @@ class FarmEntry:
     amount: int  # 净缺口：按库存抵扣后还需刷取的数量
     stage_code: str  # 推荐关卡码；auto 语义由构建时的最新数据解析
     held: int = 0  # 档案现存：MAA 保有量目标 = amount + held（构建器叠加）
-    expected_runs: float = 0.0  # 期望次数（概率期望，非保证值）
-    expected_sanity: float = 0.0  # 期望理智
+    expected_runs: float = 0.0  # 按平均掉落估算的额外整场次数，非保证值
+    expected_sanity: float | None = None  # 额外预计理智；None 表示无法估算
     sources: tuple[GoalRef, ...] = ()
 
 
@@ -128,6 +128,7 @@ class CultivatePlan:
     entries: tuple[FarmEntry, ...]  # 已按刷取优先级排序（见 engine 排序不变量）
     demands: tuple[Requirement, ...] = ()  # 完整材料清单（含不可直刷/不可获取，供 UI）
     unobtainable: tuple[Requirement, ...] = ()  # 不可获取类子集（UI 单列"需另行获取"）
+    reservations: tuple[Requirement, ...] = ()  # 完整培养消耗，含合成时将消耗的原料
 
 
 @dataclass(frozen=True)

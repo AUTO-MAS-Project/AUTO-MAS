@@ -1,23 +1,29 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
-import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { VideoCameraOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig } from '@/api'
+import type { SettingChangeHandler } from '../settingTypes'
 import { useObsReplayApi } from '@/composables/useObsReplayApi'
 import type { ObsReplayCheckResult } from '@/types/replay'
+import SectionCard from '@/components/ui/SectionCard.vue'
+import SettingRow from '@/components/ui/SettingRow.vue'
+import StatusChip from '@/components/ui/StatusChip.vue'
 
 const { t } = useI18n()
 
 const props = defineProps<{
   settings: GlobalConfig
-  handleSettingChange: (category: keyof GlobalConfig, key: string, value: unknown) => Promise<void>
+  handleSettingChange: SettingChangeHandler
 }>()
 
 const replaySettings = computed(() => props.settings.Replay ?? null)
 const replayEnabled = computed(() => replaySettings.value?.Enabled ?? false)
 const replayPort = computed(() => replaySettings.value?.Port ?? 4455)
-const maxReplayCount = computed(() => replaySettings.value?.MaxReplayCount ?? 3)
+const videoStorageLimit = computed(() => replaySettings.value?.VideoStorageLimitMiB ?? 1024)
+const videoStorageLimitDraft = ref<number | null>(videoStorageLimit.value)
+const capturePath = ref<string | null>(null)
 const passwordConfiguredOverride = ref<boolean | null>(null)
 const passwordConfigured = computed(
   () => passwordConfiguredOverride.value ?? replaySettings.value?.PasswordConfigured ?? false
@@ -27,10 +33,30 @@ const password = ref('')
 const savingPassword = ref(false)
 const checking = ref(false)
 const savingReplay = ref(false)
+const savingVideoStorageLimit = ref(false)
 const checkResult = ref<ObsReplayCheckResult | null>(null)
-const { checkObsReplay, saveObsReplay, listObsReplays } = useObsReplayApi()
+const { checkObsReplay, saveObsReplay } = useObsReplayApi()
 
-const updateReplaySetting = async (key: string, value: unknown) => {
+const canSaveVideoStorageLimit = computed(
+  () =>
+    videoStorageLimitDraft.value !== null &&
+    Number.isInteger(videoStorageLimitDraft.value) &&
+    videoStorageLimitDraft.value >= 1 &&
+    videoStorageLimitDraft.value <= 1048576 &&
+    videoStorageLimitDraft.value !== videoStorageLimit.value
+)
+
+watch(videoStorageLimit, (value, previousValue) => {
+  // 设置刷新只同步未修改的输入，保留尚未保存或保存失败的容量草稿。
+  if (videoStorageLimitDraft.value === previousValue) videoStorageLimitDraft.value = value
+})
+
+type ReplayConfig = NonNullable<GlobalConfig['Replay']>
+
+const updateReplaySetting = async <Key extends keyof ReplayConfig>(
+  key: Key,
+  value: ReplayConfig[Key]
+) => {
   try {
     await props.handleSettingChange('Replay', key, value)
     if (key === 'Port' || key === 'Password' || key === 'Enabled') checkResult.value = null
@@ -41,10 +67,22 @@ const updateReplaySetting = async (key: string, value: unknown) => {
   }
 }
 
+const saveVideoStorageLimit = async () => {
+  if (savingVideoStorageLimit.value || !canSaveVideoStorageLimit.value) return
+
+  savingVideoStorageLimit.value = true
+  try {
+    // 调整容量会立即回收视频，仅在用户明确保存后提交最终值。
+    await updateReplaySetting('VideoStorageLimitMiB', videoStorageLimitDraft.value)
+  } finally {
+    savingVideoStorageLimit.value = false
+  }
+}
+
 const savePassword = async () => {
   const value = password.value
   if (!value) {
-    message.warning(t('setting.replay.passwordEmpty'))
+    message.warning(t('core.setting.replay.passwordEmpty'))
     return
   }
 
@@ -53,7 +91,7 @@ const savePassword = async () => {
     if (!(await updateReplaySetting('Password', value))) return
     password.value = ''
     passwordConfiguredOverride.value = true
-    message.success(t('setting.replay.passwordSaved'))
+    message.success(t('core.setting.replay.passwordSaved'))
   } finally {
     savingPassword.value = false
   }
@@ -63,17 +101,17 @@ const clearPassword = () => {
   Modal.confirm({
     // 与 a-modal 的 :z-index="900" 同理：遮罩整体压在标题栏（1000）之下，窗口控制按钮不被挡住
     zIndex: 900,
-    title: t('setting.replay.clearPasswordTitle'),
-    content: t('setting.replay.clearPasswordContent'),
-    okText: t('setting.replay.clearPassword'),
-    cancelText: t('common.cancel'),
+    title: t('core.setting.replay.clearPasswordTitle'),
+    content: t('core.setting.replay.clearPasswordContent'),
+    okText: t('core.setting.replay.clearPassword'),
+    cancelText: t('core.common.cancel'),
     okButtonProps: { danger: true },
     onOk: async () => {
       if (!(await updateReplaySetting('Password', '')))
-        throw new Error(t('setting.toast.saveFailed'))
+        throw new Error(t('core.setting.toast.saveFailed'))
       password.value = ''
       passwordConfiguredOverride.value = false
-      message.success(t('setting.replay.passwordCleared'))
+      message.success(t('core.setting.replay.passwordCleared'))
     },
   })
 }
@@ -83,251 +121,230 @@ const runConnectionCheck = async () => {
   try {
     checkResult.value = await checkObsReplay()
     if (checkResult.value.connected && checkResult.value.replayActive) {
-      message.success(t('setting.replay.checkDone'))
+      message.success(t('core.setting.replay.checkDone'))
     }
   } catch (error) {
     checkResult.value = null
-    message.error(error instanceof Error ? error.message : t('setting.replay.checkFailed'))
+    message.error(error instanceof Error ? error.message : t('core.setting.replay.checkFailed'))
   } finally {
     checking.value = false
   }
 }
 
+// 开启前才需要读一次的说明，收进卡片副标题，不占正文一行
+const replayIntro = computed(() =>
+  [
+    t('core.setting.replay.intro'),
+    t('core.setting.replay.obsGuide'),
+    t('core.setting.replay.durationGuide'),
+  ].join('')
+)
+
 const runSaveReplay = async () => {
   savingReplay.value = true
   try {
+    capturePath.value = null
     const response = await saveObsReplay()
-    if (response.replay) {
-      message.success(t('setting.replay.saveDone'))
+    capturePath.value = response.capture_path ?? null
+    if (response.capture_path) {
+      message.success(t('core.setting.replay.saveDone'))
     } else {
-      message.warning(t('setting.replay.saveEmpty'))
+      message.warning(t('core.setting.replay.saveEmpty'))
     }
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('setting.replay.saveFailed'))
+    message.error(error instanceof Error ? error.message : t('core.setting.replay.saveFailed'))
   } finally {
     savingReplay.value = false
-  }
-}
-
-const openReplayDirectory = async () => {
-  try {
-    if (!window.electronAPI?.openFile) {
-      message.error(t('history.replays.openDirectoryUnsupported'))
-      return
-    }
-    const directory = checkResult.value?.directory || (await listObsReplays()).directory
-    if (!directory) throw new Error(t('setting.replay.directoryUnavailable'))
-    const result = await window.electronAPI.openFile(directory)
-    if (!result.success) message.error(result.error || t('setting.replay.openDirectoryFailed'))
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('setting.replay.openDirectoryFailed'))
   }
 }
 </script>
 
 <template>
-  <div class="form-section replay-settings">
-    <div class="section-header">
-      <h3>{{ t('setting.replay.section') }}</h3>
-    </div>
+  <SectionCard
+    :title="t('core.setting.replay.section')"
+    :subtitle="replayIntro"
+    :icon="VideoCameraOutlined"
+  >
+    <SettingRow :label="t('core.setting.replay.enable')" :hint="t('core.setting.replay.enableTip')">
+      <a-switch
+        :checked="replayEnabled"
+        :aria-label="t('core.setting.replay.enable')"
+        @change="(checked: boolean | string | number) => updateReplaySetting('Enabled', !!checked)"
+      />
+    </SettingRow>
 
-    <a-alert type="info" show-icon class="replay-intro">
-      <template #message>{{ t('setting.replay.intro') }}</template>
-      <template #description>
-        <p>{{ t('setting.replay.obsGuide') }}</p>
-        <p>{{ t('setting.replay.durationGuide') }}</p>
-      </template>
-    </a-alert>
+    <SettingRow :label="t('core.setting.replay.port')" :hint="t('core.setting.replay.portTip')">
+      <a-input-number
+        :value="replayPort"
+        :min="1"
+        :max="65535"
+        :precision="0"
+        :disabled="!replayEnabled"
+        class="number-input"
+        @change="(value: number | null) => value !== null && updateReplaySetting('Port', value)"
+      />
+    </SettingRow>
 
-    <a-row :gutter="24">
-      <a-col :span="8">
-        <div class="form-item-vertical">
-          <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.replay.enable') }}</span>
-            <a-tooltip :title="t('setting.replay.enableTip')">
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </div>
-          <a-select
-            :value="replayEnabled"
-            size="large"
-            style="width: 100%"
-            @change="(value: any) => updateReplaySetting('Enabled', value)"
+    <SettingRow
+      :label="t('core.setting.replay.videoLimit')"
+      :hint="t('core.setting.replay.videoLimitTip')"
+    >
+      <a-input-number
+        v-model:value="videoStorageLimitDraft"
+        :min="1"
+        :max="1048576"
+        :precision="0"
+        :disabled="savingVideoStorageLimit"
+        class="number-input"
+      />
+      <a-button
+        :disabled="!canSaveVideoStorageLimit"
+        :loading="savingVideoStorageLimit"
+        @click="saveVideoStorageLimit"
+      >
+        {{ t('core.setting.replay.saveVideoLimit') }}
+      </a-button>
+    </SettingRow>
+
+    <SettingRow
+      :label="t('core.setting.replay.password')"
+      :hint="t('core.setting.replay.passwordTip')"
+    >
+      <div class="password-control">
+        <div class="password-control-main">
+          <a-input-password
+            v-model:value="password"
+            :disabled="!replayEnabled"
+            :placeholder="t('core.setting.replay.passwordPlaceholder')"
+            class="password-input"
+            autocomplete="off"
+            @press-enter="savePassword"
+          />
+          <a-button
+            :disabled="!replayEnabled || !password"
+            :loading="savingPassword"
+            @click="savePassword"
           >
-            <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-          </a-select>
-        </div>
-      </a-col>
-      <a-col :span="8">
-        <div class="form-item-vertical">
-          <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.replay.port') }}</span>
-            <a-tooltip :title="t('setting.replay.portTip')">
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </div>
-          <a-input-number
-            :value="replayPort"
-            :min="1"
-            :max="65535"
-            :precision="0"
+            {{ t('core.setting.replay.savePassword') }}
+          </a-button>
+          <a-button
+            v-if="passwordConfigured"
+            type="link"
+            danger
+            size="small"
+            class="clear-password-button"
             :disabled="!replayEnabled"
-            size="large"
-            style="width: 100%"
-            @change="(value: number | null) => value !== null && updateReplaySetting('Port', value)"
-          />
+            @click="clearPassword"
+          >
+            {{ t('core.setting.replay.clearPassword') }}
+          </a-button>
         </div>
-      </a-col>
-      <a-col :span="8">
-        <div class="form-item-vertical">
-          <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.replay.maxCount') }}</span>
-            <a-tooltip :title="t('setting.replay.maxCountTip')">
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </div>
-          <a-input-number
-            :value="maxReplayCount"
-            :min="1"
-            :max="20"
-            :precision="0"
-            :disabled="!replayEnabled"
-            size="large"
-            style="width: 100%"
-            @change="
-              (value: number | null) =>
-                value !== null && updateReplaySetting('MaxReplayCount', value)
-            "
-          />
-        </div>
-      </a-col>
-    </a-row>
+        <StatusChip :tone="passwordConfigured ? 'success' : 'neutral'" :dot="false">
+          {{
+            passwordConfigured
+              ? t('core.setting.replay.passwordConfigured')
+              : t('core.setting.replay.passwordNotConfigured')
+          }}
+        </StatusChip>
+      </div>
+    </SettingRow>
 
-    <a-row :gutter="24">
-      <a-col :span="12">
-        <div class="form-item-vertical">
-          <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.replay.password') }}</span>
-            <a-tooltip :title="t('setting.replay.passwordTip')">
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </div>
-          <a-input-group compact>
-            <a-input-password
-              v-model:value="password"
-              :disabled="!replayEnabled"
-              :placeholder="t('setting.replay.passwordPlaceholder')"
-              style="width: calc(100% - 160px)"
-              @press-enter="savePassword"
-            />
-            <a-button
-              :disabled="!replayEnabled || !password"
-              :loading="savingPassword"
-              @click="savePassword"
-            >
-              {{ t('setting.replay.savePassword') }}
-            </a-button>
-          </a-input-group>
-          <div class="replay-password-status">
-            <a-tag :color="passwordConfigured ? 'success' : 'default'">
-              {{
-                passwordConfigured
-                  ? t('setting.replay.passwordConfigured')
-                  : t('setting.replay.passwordNotConfigured')
-              }}
-            </a-tag>
-            <a-button
-              v-if="passwordConfigured"
-              type="link"
-              danger
-              size="small"
-              :disabled="!replayEnabled"
-              @click="clearPassword"
-            >
-              {{ t('setting.replay.clearPassword') }}
-            </a-button>
-          </div>
-        </div>
-      </a-col>
-      <a-col :span="12">
-        <div class="form-item-vertical">
-          <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.replay.actions') }}</span>
-          </div>
-          <a-space wrap>
-            <a-button :disabled="!replayEnabled" :loading="checking" @click="runConnectionCheck">
-              {{ t('setting.replay.check') }}
-            </a-button>
-            <a-button :disabled="!replayEnabled" :loading="savingReplay" @click="runSaveReplay">
-              {{ t('setting.replay.saveTest') }}
-            </a-button>
-            <a-button @click="openReplayDirectory">
-              <template #icon><FolderOpenOutlined /></template>
-              {{ t('setting.replay.openDirectory') }}
-            </a-button>
-          </a-space>
-        </div>
-      </a-col>
-    </a-row>
+    <SettingRow :label="t('core.setting.replay.actions')">
+      <a-button :disabled="!replayEnabled" :loading="checking" @click="runConnectionCheck">
+        {{ t('core.setting.replay.check') }}
+      </a-button>
+      <a-button :disabled="!replayEnabled" :loading="savingReplay" @click="runSaveReplay">
+        {{ t('core.setting.replay.saveTest') }}
+      </a-button>
+    </SettingRow>
 
+    <a-alert
+      v-if="capturePath"
+      type="info"
+      show-icon
+      class="replay-result"
+      :message="t('core.setting.replay.capturePath')"
+      :description="capturePath"
+    />
     <a-alert
       v-if="checkResult"
       :type="checkResult.connected && checkResult.replayActive ? 'success' : 'warning'"
       show-icon
-      class="replay-check-result"
+      class="replay-result"
     >
       <template #message>
         {{
           checkResult.connected && checkResult.replayActive
-            ? t('setting.replay.checkPassed')
-            : t('setting.replay.checkIssue')
+            ? t('core.setting.replay.checkPassed')
+            : t('core.setting.replay.checkIssue')
         }}
       </template>
       <template #description>
-        <div>
-          {{ t('setting.replay.connection') }}:
-          {{ checkResult.connected ? t('common.yes') : t('common.no') }}
+        <div class="result-lines">
+          <div>
+            {{ t('core.setting.replay.connection') }}:
+            {{ checkResult.connected ? t('core.common.yes') : t('core.common.no') }}
+          </div>
+          <div>
+            {{ t('core.setting.replay.buffer') }}:
+            {{
+              checkResult.replayActive
+                ? t('core.setting.replay.active')
+                : t('core.setting.replay.inactive')
+            }}
+          </div>
+          <div v-if="checkResult.version">
+            {{ t('core.setting.replay.version') }}: {{ checkResult.version }}
+          </div>
+          <div v-if="checkResult.directory" class="replay-path">{{ checkResult.directory }}</div>
         </div>
-        <div>
-          {{ t('setting.replay.buffer') }}:
-          {{ checkResult.replayActive ? t('setting.replay.active') : t('setting.replay.inactive') }}
-        </div>
-        <div v-if="checkResult.version">
-          {{ t('setting.replay.version') }}: {{ checkResult.version }}
-        </div>
-        <div v-if="checkResult.directory" class="replay-path">{{ checkResult.directory }}</div>
       </template>
     </a-alert>
-  </div>
+  </SectionCard>
 </template>
 
 <style scoped>
-.replay-intro {
-  margin-bottom: 16px;
+.number-input {
+  width: 140px;
 }
 
-.replay-intro p {
-  margin: 0 0 4px;
-}
-
-.replay-intro p:last-child {
-  margin-bottom: 0;
-}
-
-.replay-password-status {
+.password-control {
   display: flex;
-  align-items: center;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 8px;
-  margin-top: 8px;
 }
 
-.replay-check-result {
-  margin-top: 4px;
+.password-control-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.password-input {
+  width: 220px;
+}
+
+.clear-password-button {
+  padding: 0;
+  height: auto;
+}
+
+.replay-result {
+  margin-top: 12px;
+}
+
+.result-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .replay-path {
-  margin-top: 4px;
   color: var(--ant-color-text-secondary);
   overflow-wrap: anywhere;
 }

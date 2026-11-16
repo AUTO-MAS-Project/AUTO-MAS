@@ -28,8 +28,6 @@ OK-NTE 配置文件 Schema 定义
 from __future__ import annotations
 
 import json
-import re
-import struct
 from copy import deepcopy
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -39,6 +37,7 @@ from typing import Any
 from xml.etree import ElementTree
 
 from app.utils import get_logger
+from app.utils import i18n as _utils_i18n
 
 logger = get_logger("OK-NTE 配置 Schema")
 
@@ -46,64 +45,21 @@ logger = get_logger("OK-NTE 配置 Schema")
 
 _OKNTE_CONFIG_WRITE_LOCK = Lock()
 
-_PO_ENTRY_RE = re.compile(
-    r'^msgid\s+"((?:[^"\\]|\\.)*)"\s*\nmsgstr\s+"((?:[^"\\]|\\.)*)"',
-    re.MULTILINE,
-)
-
 
 def _parse_po_file(po_path: Path) -> dict[str, str]:
     """解析 .po 翻译文件，返回 {msgid: msgstr} 映射。"""
-    labels: dict[str, str] = {}
     try:
-        text = po_path.read_text(encoding="utf-8")
-        for match in _PO_ENTRY_RE.finditer(text):
-            msgid = match.group(1)
-            msgstr = match.group(2)
-            if msgid and msgstr:
-                labels[msgid] = msgstr
+        return _utils_i18n.parse_po(po_path)
     except Exception as e:
         logger.warning(f"解析 OK-NTE 翻译文件失败，选项将显示英文: {po_path} ({e})")
-    return labels
+        return {}
 
 
 def _parse_mo_file(mo_path: Path) -> dict[str, str]:
     """解析 .mo 编译翻译文件，返回 {msgid: msgstr} 映射。"""
-    labels: dict[str, str] = {}
-    try:
-        data = mo_path.read_bytes()
-        if len(data) < 20:
-            return labels
-
-        magic, _rev, n_strings, orig_off, trans_off = struct.unpack_from(
-            "<IIIII", data, 0
-        )
-
-        if magic not in (0x950412DE, 0xDE120495):
-            return labels
-
-        le = magic == 0x950412DE
-        fmt = "<II" if le else ">II"
-
-        def read_strings(table_offset: int) -> list[str]:
-            strings: list[str] = []
-            for i in range(n_strings):
-                length, offset = struct.unpack_from(fmt, data, table_offset + i * 8)
-                if length > 0:
-                    s = data[offset : offset + length]
-                    strings.append(s.decode("utf-8", errors="replace"))
-                else:
-                    strings.append("")
-            return strings
-
-        orig_strings = read_strings(orig_off)
-        trans_strings = read_strings(trans_off)
-
-        for orig, trans in zip(orig_strings, trans_strings):
-            if orig and trans:
-                labels[orig] = trans
-    except Exception as e:
-        logger.warning(f"解析 OK-NTE 翻译文件失败，选项将显示英文: {mo_path} ({e})")
+    labels = _utils_i18n.parse_mo(mo_path)
+    if not labels:
+        logger.warning(f"解析 OK-NTE 翻译文件失败，选项将显示英文: {mo_path}")
     return labels
 
 
@@ -132,24 +88,15 @@ def _translation_candidates(root: Path) -> tuple[list[Path], list[Path]]:
     """按优先级返回 gettext 与 ok-script 框架 .ts 翻译文件候选路径。"""
     app_root = root / "data" / "apps" / "ok-nte"
     gettext_candidates: list[Path] = []
-    for i18n_dir in (
-        root / "i18n",
-        root / "_internal" / "i18n",
-        app_root / "repo" / "i18n",
-        app_root / "working" / "i18n",
-    ):
-        lc_messages = i18n_dir / "zh_CN" / "LC_MESSAGES"
-        gettext_candidates.append(lc_messages / "ok.mo")
-        gettext_candidates.append(lc_messages / "ok.po")
-
-    ts_candidates = [
-        root / "ok" / "gui" / "i18n" / "zh_CN.ts",
-        root / "_internal" / "ok" / "gui" / "i18n" / "zh_CN.ts",
-        app_root / "repo" / "ok" / "gui" / "i18n" / "zh_CN.ts",
-        app_root / "repo" / "ok" / "ui" / "qt" / "i18n" / "zh_CN.ts",
-        app_root / "working" / "ok" / "gui" / "i18n" / "zh_CN.ts",
-        app_root / "working" / "ok" / "ui" / "qt" / "i18n" / "zh_CN.ts",
-    ]
+    ts_candidates: list[Path] = []
+    # 冻结包资源在本体旁和 _internal 中；源码安装保留 repo / working 两处。
+    for base in (root, app_root / "working", app_root / "repo"):
+        for resource_root in (base, base / "_internal"):
+            lc_messages = resource_root / "i18n" / "zh_CN" / "LC_MESSAGES"
+            gettext_candidates.append(lc_messages / "ok.mo")
+            gettext_candidates.append(lc_messages / "ok.po")
+            for framework_dir in ("ok/gui/i18n", "ok/ui/qt/i18n"):
+                ts_candidates.append(resource_root / framework_dir / "zh_CN.ts")
     return gettext_candidates, ts_candidates
 
 
@@ -393,7 +340,7 @@ def _read_json_object(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
 
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8").removeprefix("\ufeff"))
     if not isinstance(data, dict):
         raise ValueError(f"OK-NTE 配置文件必须是 JSON 对象: {path}")
     return data
@@ -770,9 +717,10 @@ def build_fields_for_config(
             json_data,
         )
         fields: list[dict[str, Any]] = []
-        for item in DAILY_ROUTINE_ITEMS:
-            task_id = item["id"]
-            value = json_data.get(task_id, {})
+        known = {item["id"]: item["label"] for item in DAILY_ROUTINE_ITEMS}
+        for task_id, value in json_data.items():
+            if task_id.startswith("_"):
+                continue
             child_fields = build_fields_for_config(
                 f"{DAILY_ROUTINE_CONFIGS_FILE}::{task_id}",
                 value if isinstance(value, dict) else {},
@@ -784,7 +732,7 @@ def build_fields_for_config(
                 {
                     "name": task_id,
                     "type": "object",
-                    "label": item["label"],
+                    "label": known.get(task_id, _translate(task_id, option_labels)),
                     "description": "",
                     "value": value,
                     "options": None,
@@ -801,7 +749,7 @@ def build_fields_for_config(
     default_data = DEFAULT_CONFIG_DATA.get(filename, {})
 
     def _is_internal(name: str) -> bool:
-        """OK-NTE 框架内部字段（_enabled 等），不暴露给 MAS 用户编辑。"""
+        """OK-NTE 框架内部字段（_enabled 等），不暴露给 MAS 账号编辑。"""
         return name.startswith("_")
 
     def make_field(name: str, raw_value: Any) -> dict[str, Any]:
@@ -811,6 +759,22 @@ def build_fields_for_config(
 
         if real_filename == DAILY_ROUTINE_TASK_FILE and name == "Routine Items":
             value = _normalize_daily_routine_items(raw_value)
+            definitions = list(DAILY_ROUTINE_ITEM_DEFINITIONS)
+            known_ids = {item["id"] for item in definitions}
+            for item in raw_value if isinstance(raw_value, list) else []:
+                if (
+                    isinstance(item, dict)
+                    and isinstance(item.get("id"), str)
+                    and item["id"] not in known_ids
+                ):
+                    definitions.append(
+                        {
+                            "id": item["id"],
+                            "label": _translate(item["id"], option_labels),
+                        }
+                    )
+                    value.append(item)
+                    known_ids.add(item["id"])
             return {
                 "name": name,
                 "type": "routine_items",
@@ -819,7 +783,7 @@ def build_fields_for_config(
                 "value": value,
                 "options": None,
                 "children": None,
-                "itemDefinitions": DAILY_ROUTINE_ITEM_DEFINITIONS,
+                "itemDefinitions": definitions,
                 "min": None,
                 "max": None,
                 "step": None,
@@ -851,7 +815,11 @@ def build_fields_for_config(
             "description": "",
             "value": raw_value,
             "options": None,
-            "children": None,
+            "children": build_fields_for_config(
+                f"{filename}::{name}", raw_value, option_labels
+            )
+            if isinstance(raw_value, dict)
+            else None,
             "itemDefinitions": None,
             "min": None,
             "max": None,

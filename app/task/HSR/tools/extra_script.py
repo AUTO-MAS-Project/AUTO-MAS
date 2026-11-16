@@ -19,10 +19,8 @@
 #   Contact: DLmaster_361@163.com
 
 
-from pathlib import Path
-
 from app.models.config import HSRUserConfig
-from app.task.general.tools import execute_script_task
+from app.services import execute_script_task
 
 
 async def run_script_before_task(user_config: HSRUserConfig) -> None:
@@ -32,29 +30,23 @@ async def run_script_before_task(user_config: HSRUserConfig) -> None:
     内联同样的两行。
 
     Args:
-        user_config (HSRUserConfig): 当前用户配置。
+        user_config (HSRUserConfig): 当前账号配置。
     """
 
-    if not user_config.get("Info", "IfScriptBeforeTask"):
+    if not user_config.Info.IfScriptBeforeTask:
         return
 
-    await execute_script_task(
-        Path(user_config.get("Info", "ScriptBeforeTask")),
-        "脚本前任务",
-    )
+    await execute_script_task(user_config.Info.ScriptBeforeTask, "脚本前任务")
 
 
 async def run_script_after_task(user_config: HSRUserConfig) -> None:
     """执行用户配置的任务后脚本，未开启时直接返回。
 
     Args:
-        user_config (HSRUserConfig): 当前用户配置。
+        user_config (HSRUserConfig): 当前账号配置。
     """
 
-    if not user_config.get("Info", "IfScriptAfterTask"):
+    if not user_config.Info.IfScriptAfterTask:
         return
 
-    await execute_script_task(
-        Path(user_config.get("Info", "ScriptAfterTask")),
-        "脚本后任务",
-    )
+    await execute_script_task(user_config.Info.ScriptAfterTask, "脚本后任务")

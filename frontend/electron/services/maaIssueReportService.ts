@@ -115,7 +115,7 @@ export async function createMaaIssueReport(
       }
     }
     addRecentAdapterHistoryLogs(state, dataRoots, {
-      resultKey: 'maa_result',
+      adapter: 'maa',
       fallbackLatest: true,
       includeJson: false,
     })

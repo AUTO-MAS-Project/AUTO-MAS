@@ -3,9 +3,9 @@
     <div v-if="visible" class="backend-startup-overlay">
       <div class="startup-card">
         <LaunchStatus
-          :title="t('launch.starting')"
-          :hint="slow ? t('launch.slowHint') : ''"
-          :action-label="slow ? t('launch.viewLog') : ''"
+          :title="t('bootstrap.launch.starting')"
+          :hint="slow ? t('bootstrap.launch.slowHint') : ''"
+          :action-label="slow ? t('bootstrap.launch.viewLog') : ''"
           @action="openLaunchLogWindow('后端启动遮罩')"
         />
       </div>

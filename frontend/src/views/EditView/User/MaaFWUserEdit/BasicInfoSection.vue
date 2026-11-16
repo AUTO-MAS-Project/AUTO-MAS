@@ -1,66 +1,40 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
   <div class="form-section">
+    <UserAccountHeading v-if="heading" :user-name="formData.userName" :options="heading" />
     <div class="section-header">
-      <h3>{{ t('edit.basicInfo') }}</h3>
+      <h3>{{ t('core.edit.basicInfo') }}</h3>
     </div>
+
+    <UserBasicInfoFields
+      v-model:user-name="formData.userName"
+      v-model:status="formData.Info.Status"
+      v-model:remained-day="formData.Info.RemainedDay"
+      v-model:notes="formData.Info.Notes"
+      @save-name="emitSave('Info.Name', formData.Info.Name)"
+      @save-days="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
+      @save-notes="emitSave('Info.Notes', formData.Info.Notes)"
+      @save-status="emitSave('Info.Status', formData.Info.Status)"
+    />
 
     <a-row :gutter="24">
       <a-col :xs="24" :md="8">
-        <a-form-item name="userName">
+        <!-- 「仅本地记录」只写在占位里；特调把账号派了用场（M9A 切号 / 选号）时，作用写在标签的问号里 -->
+        <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.giveThisConfigurationName')">
+            <a-tooltip v-if="accountRecordTooltip" :title="accountRecordTooltip">
               <span class="form-label">
-                {{ t('edit.userName') }}
+                {{ t('core.edit.account') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
-          </template>
-          <a-input
-            v-model:value="formData.userName"
-            :placeholder="t('edit.enterUserName')"
-            size="large"
-            @blur="emitSave('Info.Name', formData.Info.Name)"
-          />
-        </a-form-item>
-      </a-col>
-      <a-col :xs="12" :md="8">
-        <a-form-item :label="t('edit.enabled2')">
-          <!-- 和同一行的其他控件一样用下拉，别一个开关孤零零地矮一截 -->
-          <a-select
-            v-model:value="statusValue"
-            size="large"
-            style="width: 100%"
-            :options="statusOptions"
-          />
-        </a-form-item>
-      </a-col>
-      <a-col :xs="12" :md="8">
-        <a-form-item :label="t('edit.daysLeft')">
-          <a-input-number
-            v-model:value="formData.Info.RemainedDay"
-            :min="-1"
-            :max="9999"
-            size="large"
-            style="width: 100%"
-            @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
-          />
-        </a-form-item>
-      </a-col>
-    </a-row>
-
-    <a-row :gutter="24">
-      <a-col :xs="24" :md="8">
-        <!-- 账号 / 密码的说明只在下面的提示框里写一次，标签上不再挂同一句的问号 -->
-        <a-form-item>
-          <template #label>
-            <span class="form-label">{{ t('edit.account') }}</span>
+            <span v-else class="form-label">{{ t('core.edit.account') }}</span>
           </template>
           <a-input
             v-model:value="formData.Info.Account"
             size="large"
             autocomplete="off"
-            :placeholder="accountPlaceholder || t('edit.localNoteOnly')"
+            :placeholder="accountPlaceholder || t('core.edit.localNoteOnly')"
             @blur="emitSave('Info.Account', formData.Info.Account)"
           />
         </a-form-item>
@@ -68,36 +42,25 @@
       <a-col :xs="24" :md="8">
         <a-form-item>
           <template #label>
-            <span class="form-label">{{ t('edit.password') }}</span>
+            <span class="form-label">{{ t('core.edit.password') }}</span>
           </template>
           <a-input-password
             v-model:value="formData.Info.Password"
             size="large"
             autocomplete="off"
-            :placeholder="t('edit.localNoteOnly')"
+            :placeholder="t('core.edit.localNoteOnly')"
             @blur="emitSave('Info.Password', formData.Info.Password)"
           />
         </a-form-item>
       </a-col>
-      <a-col :xs="24" :md="8">
-        <a-form-item :label="t('edit.note')">
-          <a-input
-            v-model:value="formData.Info.Notes"
-            allow-clear
-            :placeholder="t('edit.enterNote2')"
-            size="large"
-            @blur="emitSave('Info.Notes', formData.Info.Notes)"
-          />
-        </a-form-item>
-      </a-col>
     </a-row>
-    <a-alert class="account-record-alert" type="info" show-icon :message="accountRecordTooltip" />
   </div>
 </template>
 
 <script setup lang="ts">
+import UserAccountHeading from '@/components/UserAccountHeading.vue'
+import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import { useI18n } from 'vue-i18n'
-import { computed } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type {
   MaaFWUserBasicInfoSectionEmits,
@@ -107,26 +70,13 @@ import type {
 const { t } = useI18n()
 
 // props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
-const props = defineProps<MaaFWUserBasicInfoSectionProps>()
+defineProps<MaaFWUserBasicInfoSectionProps>()
 
 const emit = defineEmits<MaaFWUserBasicInfoSectionEmits>()
 
 const emitSave = (key: string, value: unknown) => {
   emit('save', key, value)
 }
-
-// 启用状态用下拉表达；a-select 的值只认字符串 / 数字，这里和布尔互转
-const statusOptions = computed(() => [
-  { label: t('edit.enabled3'), value: 'on' },
-  { label: t('edit.disabled'), value: 'off' },
-])
-const statusValue = computed({
-  get: () => (props.formData.Info.Status ? 'on' : 'off'),
-  set: (value: string) => {
-    props.formData.Info.Status = value === 'on'
-    emitSave('Info.Status', props.formData.Info.Status)
-  },
-})
 </script>
 
 <style scoped>
@@ -135,36 +85,7 @@ const statusValue = computed({
 }
 
 .section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 20px;
-  background: var(--ant-color-primary);
-  border-radius: 2px;
 }
 
 .form-label {
@@ -172,10 +93,6 @@ const statusValue = computed({
   align-items: center;
   gap: 8px;
   font-weight: 600;
-}
-
-.account-record-alert {
-  margin-bottom: 16px;
 }
 
 .help-icon {

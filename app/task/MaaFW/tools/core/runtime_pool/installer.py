@@ -13,6 +13,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -77,6 +78,21 @@ class MaaFWRuntimeInstallCancelled(Exception):
 # 取消令牌按线程保存：安装整段跑在一个 ``asyncio.to_thread`` 工作线程里，
 # 各步骤只需从这里取当前令牌，不用把 ``cancel_event`` 一路穿过每个签名。
 _INSTALL_CANCEL_STATE = threading.local()
+INSTALL_PROCESS_FACTORY: ContextVar[Callable[..., subprocess.Popen[str]] | None] = (
+    ContextVar("install_process_factory", default=None)
+)
+
+
+@contextmanager
+def install_process_factory_scope(
+    factory: Callable[..., subprocess.Popen[str]] | None,
+) -> Iterator[None]:
+    """宿主可提供安装进程工厂；核心不依赖宿主任务和进程管理器。"""
+    token = INSTALL_PROCESS_FACTORY.set(factory)
+    try:
+        yield
+    finally:
+        INSTALL_PROCESS_FACTORY.reset(token)
 
 
 @contextmanager
@@ -108,7 +124,7 @@ def _resolve_injected_pool_directory(
     relative_default: Path,
     label: str,
 ) -> tuple[Path, bool]:
-    """解析一个可能被 Runtime 注入覆盖的池托管目录。
+    """解析一个可能被 Runtime 注入覆盖的池脚本目录。
 
     非空且为绝对路径、父目录存在时采用注入值（返回的 ``injected`` 为
     ``True``）；未设置该变量时按池本地默认目录静默回退（未受监督的今天没有
@@ -1450,7 +1466,7 @@ def _install_requirements_with_uv(
             "install",
             "--python",
             str(python_executable),
-            # 用户级 / 项目级 uv.toml（额外 [[index]]、offline、exclude-newer …）
+            # 账号级 / 项目级 uv.toml（额外 [[index]]、offline、exclude-newer …）
             # 不得参与池的解析，索引与镜像只由本文件的候选逻辑决定。
             "--no-config",
             "--cache-dir",
@@ -1657,7 +1673,8 @@ def _run_subprocess(
             env.get("NO_PROXY") or env.get("no_proxy") or "",
         )
     cancel_event = current_install_cancel_event()
-    if cancel_event is None:
+    factory = INSTALL_PROCESS_FACTORY.get()
+    if cancel_event is None and factory is None:
         return subprocess.run(
             command,
             capture_output=True,
@@ -1670,7 +1687,7 @@ def _run_subprocess(
         )
 
     raise_if_install_cancelled()
-    process = subprocess.Popen(
+    process = (factory or subprocess.Popen)(
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -1689,7 +1706,7 @@ def _run_subprocess(
                 timeout=_INSTALL_CANCEL_POLL_INTERVAL_SECONDS
             )
         except subprocess.TimeoutExpired:
-            if cancel_event.is_set():
+            if cancel_event is not None and cancel_event.is_set():
                 _kill_and_reap(process)
                 raise MaaFWRuntimeInstallCancelled(
                     f"MaaFW runtime 安装已取消: {command[:3]}"

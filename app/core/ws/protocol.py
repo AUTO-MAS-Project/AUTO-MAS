@@ -32,7 +32,7 @@ from typing import Dict, Mapping, Optional
 from pydantic import JsonValue, ValidationError
 
 from app.models.schema import WSEnvelope
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 logger = get_logger("WS协议")
 
@@ -40,11 +40,14 @@ logger = get_logger("WS协议")
 # ==================== 固定路由 ID ====================
 
 ID_MAIN = "Main"
+ID_I18N = "I18n"
+I18N_UPDATED = "i18n.updated"
 ID_TASK_MANAGER = "TaskManager"
 ID_UPDATE = "Update"
 ID_GAME_SIGN = "GameSign"
 ID_EMULATOR_MANAGER = "EmulatorManager"
-ID_ARKNIGHTS_PC_TOOLKIT = "ArknightsPCToolkit"
+ID_MCP = "MCP"
+MCP_STATUS_UPDATED = "mcp.status.updated"
 
 
 # ==================== 消息类别（后端 → 前端） ====================
@@ -59,22 +62,28 @@ TASK_CONFIG_DISCARDED = "task.config.discarded"
 
 # 任务创建通知（id=TaskManager）
 TASK_CREATED = "task.created"
+# 逐脚本、逐轮的执行边界（id=TaskManager），不随任务快照重放。
+TASK_SCRIPT_STARTED = "task.script.started"
+TASK_SCRIPT_FINISHED = "task.script.finished"
 
 # 应用生命周期与电源（id=Main）
 BACKEND_SHUTDOWN_READY = "backend.shutdown.ready"
 # 启动期攒下来、主连接建立后一次性发出的系统通知（id=Main）：配置迁移结果之类。
 SYSTEM_NOTICE = "system.notice"
 FRONTEND_CLOSE_REQUESTED = "frontend.close.requested"
+# 与上一条同理，只是收尾后由 Electron 重新拉起：队列的「完成后操作」选了重启软件
+FRONTEND_RESTART_REQUESTED = "frontend.restart.requested"
 POWER_COUNTDOWN_UPDATED = "power.countdown.updated"
 POWER_COUNTDOWN_CANCELLED = "power.countdown.cancelled"
 POWER_SIGN_UPDATED = "power.sign.updated"
 
 # 更新下载（id=Update）
 UPDATE_PROGRESS = "update.progress"
+FLUXDOWN_INSTALL_PROGRESS = "fluxdown.install.progress"
 
-# MFW 运行环境准备（下载 MaaFramework、建 agent 环境），id 用脚本 ID
+# MFW 运行环境准备（下载 MaaFramework、建 agent 环境），id 用托管 ID
 MAAFW_ENV_PREPARE_PROGRESS = "maafw.env-prepare.progress"
-# MFW 项目手动更新过程（检查 / 下载 / 覆盖 / 校验与逐行日志），id 用脚本 ID
+# MFW 项目手动更新过程（检查 / 下载 / 覆盖 / 校验与逐行日志），id 用托管 ID
 MAAFW_PROJECT_UPDATE_PROGRESS = "maafw.project-update.progress"
 UPDATE_COMPLETED = "update.completed"
 UPDATE_FAILED = "update.failed"
@@ -83,12 +92,14 @@ UPDATE_CANCELLED = "update.cancelled"
 # 游戏签到结果（id=GameSign）
 GAMESIGN_RESULT_UPDATED = "gamesign.result.updated"
 
-# 通用错误提示（id=EmulatorManager / ArknightsPCToolkit）
+# 通用错误提示（id=EmulatorManager）
 EMULATOR_NOTICE = "emulator.notice"
-TOOLKIT_NOTICE = "toolkit.notice"
 
 # 模拟器启动 / 关闭 / 显示 / 隐藏这类后台操作结束（id=EmulatorManager）
 EMULATOR_OPERATION_FINISHED = "emulator.operation.finished"
+
+# ModAVD 更新（下载 / 解包 / 核对 / 换上）的进度（id=EmulatorManager，data 里带根目录）
+AVD_UPDATE_PROGRESS = "emulator2.avd-update.progress"
 
 # 虚拟显示器（id=Main）：真实显示器回来了但有任务在跑，问用户要不要拆；以及提示已作废
 DISPLAY_DETACH_PROMPT = "display.detach.prompt"

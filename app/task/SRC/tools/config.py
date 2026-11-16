@@ -25,7 +25,7 @@ from pathlib import Path
 import yaml
 
 from app.utils import get_logger
-from app.utils.io import read_file, write_file
+from app.utils import io as _utils_io
 
 logger = get_logger("SRC 配置持久化")
 
@@ -90,15 +90,15 @@ def read_src_config_snapshot_state(
 ) -> SrcConfigSnapshotState:
     """读取并校验已提交 SRC 配置快照的归属信息。"""
 
-    state = read_file(state_path, format=".json")
+    state = _utils_io.read_file(state_path, format=".json")
     if not isinstance(state, dict):
         raise ValueError(f"SRC 配置快照状态无效: {state_path}")
 
     script_id = state.get("script_id")
     if not isinstance(script_id, str) or not script_id.strip():
-        raise ValueError(f"SRC 配置快照所属脚本无效: {script_id}")
+        raise ValueError(f"SRC 配置快照所属托管无效: {script_id}")
     if expected_script_id is not None and script_id != expected_script_id:
-        raise ValueError(f"SRC 配置快照所属脚本无效: {script_id}")
+        raise ValueError(f"SRC 配置快照所属托管无效: {script_id}")
 
     src_root_path = state.get("src_root_path")
     if not isinstance(src_root_path, str) or not src_root_path.strip():
@@ -136,7 +136,7 @@ def write_src_config_snapshot_state(
     """原子记录 SRC 配置快照的根目录和设置会话归属。"""
 
     if not isinstance(script_id, str) or not script_id.strip():
-        raise ValueError(f"SRC 配置快照所属脚本无效: {script_id}")
+        raise ValueError(f"SRC 配置快照所属托管无效: {script_id}")
     if config_user_id is not None and (
         not isinstance(config_user_id, str) or not config_user_id.strip()
     ):
@@ -145,7 +145,7 @@ def write_src_config_snapshot_state(
         installation_id = read_src_installation_id(src_root_path)
     elif not isinstance(installation_id, str) or not installation_id.strip():
         raise ValueError(f"SRC 配置快照安装标识无效: {installation_id}")
-    write_file(
+    _utils_io.write_file(
         state_path,
         {
             "script_id": script_id,
@@ -175,18 +175,18 @@ def is_src_config_available(path: Path) -> bool:
             return False
         if deploy_path.exists():
             if not deploy_path.is_file() or not isinstance(
-                read_file(deploy_path), dict
+                _utils_io.read_file(deploy_path), dict
             ):
                 return False
         elif deploy_template_path.exists():
             if not deploy_template_path.is_file() or not isinstance(
-                read_file(deploy_template_path), dict
+                _utils_io.read_file(deploy_template_path), dict
             ):
                 return False
         else:
             return False
         for json_path in json_paths:
-            read_file(json_path)
+            _utils_io.read_file(json_path)
     except (OSError, UnicodeError, ValueError, yaml.YAMLError):
         return False
     return True
@@ -195,7 +195,7 @@ def is_src_config_available(path: Path) -> bool:
 def _quarantine_directory(path: Path) -> None:
     quarantine_path = path.with_name(f"{path.name}.untrusted-{uuid.uuid4().hex}")
     path.rename(quarantine_path)
-    logger.warning(f"已隔离不完整的 SRC 用户配置: {quarantine_path}")
+    logger.warning(f"已隔离不完整的 SRC 账号配置: {quarantine_path}")
 
 
 def _remove_directory(path: Path) -> None:
@@ -204,7 +204,7 @@ def _remove_directory(path: Path) -> None:
 
 
 def has_committed_src_user_config_transaction(config_path: Path) -> bool:
-    """判断用户配置替换事务是否已有可恢复的提交副本。"""
+    """判断账号配置替换事务是否已有可恢复的提交副本。"""
 
     staging_path, staging_ready_path, _ = _transaction_paths(config_path)
     if staging_ready_path.exists():
@@ -219,7 +219,7 @@ def recover_src_user_config(
     *,
     preserve_commit_marker: bool = False,
 ) -> None:
-    """恢复上一次用户配置目录替换留下的中间状态。"""
+    """恢复上一次账号配置目录替换留下的中间状态。"""
 
     staging_path, staging_ready_path, backup_path = _transaction_paths(config_path)
 
@@ -259,7 +259,7 @@ def recover_src_user_config(
             backup_path.rename(config_path)
             staging_ready_path.unlink(missing_ok=True)
             return
-        raise RuntimeError(f"SRC 用户配置事务无可恢复副本: {config_path}")
+        raise RuntimeError(f"SRC 账号配置事务无可恢复副本: {config_path}")
 
     if config_path.exists():
         if is_src_config_available(config_path):
@@ -269,11 +269,11 @@ def recover_src_user_config(
             _quarantine_directory(config_path)
             backup_path.rename(config_path)
             return
-        raise RuntimeError(f"SRC 新旧用户配置均不完整: {config_path}, {backup_path}")
+        raise RuntimeError(f"SRC 新旧账号配置均不完整: {config_path}, {backup_path}")
 
     if backup_path.exists():
         if not is_src_config_available(backup_path):
-            raise RuntimeError(f"SRC 用户配置备份不完整: {backup_path}")
+            raise RuntimeError(f"SRC 账号配置备份不完整: {backup_path}")
         backup_path.rename(config_path)
 
 
@@ -305,8 +305,9 @@ def save_src_user_config(
     preserve_commit_marker: bool = False,
     expected_installation_id: str | None = None,
     runtime_baseline: dict | None = None,
+    runtime_deploy_baseline: dict | None = None,
 ) -> None:
-    """以可恢复的目录替换事务保存一次 SRC 用户配置。"""
+    """以可恢复的目录替换事务保存一次 SRC 账号配置。"""
 
     recover_src_user_config(config_path)
     staging_path, staging_ready_path, backup_path = _transaction_paths(config_path)
@@ -319,18 +320,32 @@ def save_src_user_config(
     config_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src_set_path, staging_path)
     if not is_src_config_available(staging_path):
-        raise RuntimeError(f"SRC 用户配置内容不完整: {staging_path}")
+        raise RuntimeError(f"SRC 账号配置内容不完整: {staging_path}")
     if runtime_baseline is not None:
-        current = read_file(staging_path / "src.json")
-        source = read_file(config_path / "src.json")
+        current = _utils_io.read_file(staging_path / "src.json")
+        source = _utils_io.read_file(config_path / "src.json")
         _restore_unchanged_source_values(current, runtime_baseline, source)
-        write_file(staging_path / "src.json", current)
+        _utils_io.write_file(staging_path / "src.json", current)
+    if runtime_deploy_baseline:
+        # 在拷贝回账号独立配置前剔除 MAS 暂时关闭的原生更新开关。
+        # 只恢复仍等于注入值的键，避免覆盖用户在原生 GUI 中主动修改的设置。
+        from .poor_yaml import poor_yaml_read, poor_yaml_write
+
+        deployed = poor_yaml_read(staging_path / "deploy.yaml")
+        source = poor_yaml_read(config_path / "deploy.yaml")
+        restore = {
+            key: source[key]
+            for key, injected in runtime_deploy_baseline.items()
+            if key in source and deployed.get(key) == injected
+        }
+        if restore:
+            poor_yaml_write(restore, staging_path / "deploy.yaml")
     if expected_installation_id is not None:
         validate_src_installation(
             src_set_path.parent,
             expected_installation_id,
         )
-    write_file(staging_ready_path, {"ready": True}, format=".json")
+    _utils_io.write_file(staging_ready_path, {"ready": True}, format=".json")
 
     if config_path.exists():
         config_path.rename(backup_path)

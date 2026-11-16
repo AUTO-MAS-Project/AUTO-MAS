@@ -4,12 +4,12 @@
 /* eslint-disable */
 export type Webhook_Info = {
     /**
-     * Webhook名称
-     */
-    Name?: (string | null);
-    /**
      * 是否启用
      */
     Enabled?: (boolean | null);
+    /**
+     * Webhook 名称
+     */
+    Name?: (string | null);
 };
 

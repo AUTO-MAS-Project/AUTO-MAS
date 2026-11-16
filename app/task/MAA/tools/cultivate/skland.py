@@ -38,21 +38,8 @@ from typing import Awaitable, Callable, Mapping
 
 import httpx
 
-from app.tools.community_activity_roles import (
-    CommunityActivityRole,
-    normalize_skland_roles,
-)
-from app.tools.skland import (
-    SklandCredentialExpiredError,
-    create_skland_client,
-    fetch_skland_binding_payload,
-    fetch_skland_player_info,
-    get_cached_device_id,
-    prepare_skland_session_credential,
-    refresh_skland_session_credential,
-    serialize_skland_credential,
-    skland_sign_lock,
-)
+from app.tools.common.community.activity import roles as _tool_community_activity_roles
+from app.tools.common.community.providers import skland as _tool_skland
 from app.utils import get_logger
 
 from .providers import parse_player_info_payload
@@ -76,16 +63,24 @@ class SklandAccountRef:
 CredentialLoader = Callable[[str], Awaitable[str | None]]
 CredentialSaver = Callable[[str, str], Awaitable[None]]
 
-# 进程级缓存：键 (账号组 uid, 游戏 uid) → (过期时刻, 快照或 None)。
+
+@dataclass(frozen=True)
+class _ProgressionCacheEntry:
+    expires_at: float
+    snapshot: tuple[Mapping[str, Progression], int] | None
+    retain_on_failure: bool = False
+
+
+# 进程级缓存：键 (账号组 uid, 游戏 uid) → 快照与刷新策略。
 # None 为失败负缓存，避免凭据失效/断网期间每次预览都打外部接口。
-_cache: dict[
-    tuple[str, str], tuple[float, tuple[Mapping[str, Progression], int] | None]
-] = {}
+_cache: dict[tuple[str, str], _ProgressionCacheEntry] = {}
 
 # 角色列表缓存：键 账号组 uid → (过期时刻, 角色元组)。绑定端点每次展开都
 # 遍历全部账号组刷新凭据，代价高；只缓存非空成功结果——凭据缺失的空元组
 # 零网络成本不缓存，失败路径保持原语义（调用方逐组记日志跳过）。
-_role_entries_cache: dict[str, tuple[float, tuple[CommunityActivityRole, ...]]] = {}
+_role_entries_cache: dict[
+    str, tuple[float, tuple[_tool_community_activity_roles.CommunityActivityRole, ...]]
+] = {}
 
 
 async def fetch_skland_progression(
@@ -95,47 +90,71 @@ async def fetch_skland_progression(
     save_credential: CredentialSaver | None = None,
     proxy: str | None = None,
     force: bool = False,
+    fallback_to_cached: bool = False,
     now: float | None = None,
 ) -> tuple[Mapping[str, Progression], int] | None:
-    """取绑定角色的整表练度（带 TTL 缓存）；不可用时返回 None（fail-open）。
+    """取绑定角色的整表练度，带 TTL 缓存及可选的失败回退。
 
     Args:
         ref: 绑定引用（账号组 UUID + 游戏 uid）。
         load_credential: 按账号组 uid 取 SklandToken 原文（解密后）。
         save_credential: token 轮换后回写账号组（不传则只跳过回写）。
         proxy: 出网代理；force=True 跳过缓存强拉（注入前用）；now 仅测试注入。
+        fallback_to_cached: 手动刷新失败时保留并返回上次成功快照；执行前不用。
 
     Returns:
-        (练度映射, 拉取时刻 epoch 秒)；凭据缺失/失效/网络失败返回 None，
-        由调用方决定降级（provider 链短路落 local）。
+        (练度映射, 拉取时刻 epoch 秒)；失败时可返回上次成功快照，
+        否则返回 None，由调用方决定降级（provider 链短路落 local）。
     """
 
     current = time.time() if now is None else now
     key = (ref.account_uid, ref.game_uid)
     if not force:
         cached = _cache.get(key)
-        if cached is not None and cached[0] > current:
-            return cached[1]
+        if cached is not None and cached.expires_at > current:
+            return cached.snapshot
 
-    def put(value: tuple[Mapping[str, Progression], int] | None) -> None:
+    def put(
+        value: tuple[Mapping[str, Progression], int] | None,
+    ) -> tuple[Mapping[str, Progression], int] | None:
         ttl = (
             SKLAND_CACHE_TTL_SECONDS
             if value is not None
             else SKLAND_FAILURE_TTL_SECONDS
         )
-        _cache[key] = (current + ttl, value)
+        cached = _cache.get(key)
+        retain_on_failure = False
+        if (
+            value is None
+            and cached is not None
+            and cached.snapshot is not None
+            and (fallback_to_cached or (not force and cached.retain_on_failure))
+        ):
+            value = cached.snapshot
+            retain_on_failure = True
+            logger.warning("森空岛练度刷新失败，继续使用上次成功获取的练度")
+        # 回退快照过期后仍可重试；预览重试失败不丢旧值，执行前强刷不回退。
+        completed_at = time.time() if now is None else now
+        _cache[key] = _ProgressionCacheEntry(
+            expires_at=completed_at + ttl,
+            snapshot=value,
+            retain_on_failure=retain_on_failure,
+        )
+        return value
 
     # 与签到流程共用同一把流程锁：签名 token 存在两个独立轮换写者（签到
     # 编排与本驱动层），并发刷新会把对方刚回写的 token 作废（评审备忘）
-    async with skland_sign_lock:
+    async with _tool_skland.skland_sign_lock:
         try:
             raw = await load_credential(ref.account_uid)
             if not raw:
-                put(None)
-                return None
+                logger.warning("森空岛登录凭据不可用，无法刷新练度")
+                return put(None)
 
-            async with create_skland_client(proxy=proxy) as client:
-                device_id = await get_cached_device_id(proxy, client=client)
+            async with _tool_skland.create_skland_client(proxy=proxy) as client:
+                device_id = await _tool_skland.get_cached_device_id(
+                    proxy, client=client
+                )
                 credential = await _prepare_and_refresh_credential(
                     client,
                     raw=raw,
@@ -143,7 +162,7 @@ async def fetch_skland_progression(
                     device_id=device_id,
                     save_credential=save_credential,
                 )
-                payload = await fetch_skland_player_info(
+                payload = await _tool_skland.fetch_skland_player_info(
                     client,
                     cred=credential["cred"],
                     sign_token=credential["token"],
@@ -151,31 +170,23 @@ async def fetch_skland_progression(
                     device_id=device_id,
                     proxy=proxy,
                 )
-        except SklandCredentialExpiredError:
-            logger.warning(
-                f"森空岛凭据已失效，练度源降级为本地档案（{ref.account_uid}）"
-            )
-            put(None)
-            return None
-        except Exception as e:  # fail-open 契约：任何失败（含设备 ID 接口的裸
-            # Exception）一律降级 None，调用方链短路落 local，绝不炸注入/预览
-            logger.warning(f"森空岛练度拉取/凭据回写失败，降级为本地档案: {e}")
-            put(None)
-            return None
+            progressions = parse_player_info_payload(payload)
+        except _tool_skland.SklandCredentialExpiredError:
+            logger.warning(f"森空岛凭据已失效（{ref.account_uid}）")
+            return put(None)
+        except Exception as e:  # 外部接口失败由本层隔离；手动刷新可沿用旧快照，
+            # 执行前强刷返回 None，交给调用方决定降级或暂停执行。
+            logger.warning(f"森空岛练度拉取/凭据回写失败: {e}")
+            return put(None)
 
-        progressions = parse_player_info_payload(payload)
         if not progressions:
             # 接口 code==0 但解析不出任何干员：形状漂移或数据异常。按失败
             # 负缓存处理，避免空练度被当成功缓存后静默短路成 local，与
             # "新号无练度"不可区分、无从排查
-            logger.warning(
-                f"森空岛练度数据为空，按拉取失败降级本地档案（{ref.account_uid}）"
-            )
-            put(None)
-            return None
+            logger.warning(f"森空岛练度数据为空（{ref.account_uid}）")
+            return put(None)
         captured_at = int(current)
-        put((progressions, captured_at))
-        return progressions, captured_at
+        return put((progressions, captured_at))
 
 
 async def _prepare_and_refresh_credential(
@@ -192,9 +203,13 @@ async def _prepare_and_refresh_credential(
     与刷新结果序列化不同即视为轮换、执行回写。
     """
 
-    credential = await prepare_skland_session_credential(client, raw, device_id)
-    credential = await refresh_skland_session_credential(client, credential, device_id)
-    serialized = serialize_skland_credential(credential)
+    credential = await _tool_skland.prepare_skland_session_credential(
+        client, raw, device_id
+    )
+    credential = await _tool_skland.refresh_skland_session_credential(
+        client, credential, device_id
+    )
+    serialized = _tool_skland.serialize_skland_credential(credential)
     if save_credential is not None and serialized != raw:
         await save_credential(account_uid, serialized)
     return credential
@@ -207,7 +222,7 @@ async def fetch_skland_role_entries(
     save_credential: CredentialSaver | None = None,
     proxy: str | None = None,
     now: float | None = None,
-) -> tuple[CommunityActivityRole, ...]:
+) -> tuple[_tool_community_activity_roles.CommunityActivityRole, ...]:
     """拉取账号组在明日方舟的角色条目（绑定下拉用，方案 T4.4）。
 
     只需账号组引用，不需要已选游戏 uid——角色列表正是 uid 的来源。
@@ -228,13 +243,13 @@ async def fetch_skland_role_entries(
     if cached is not None and cached[0] > current:
         return cached[1]
 
-    async with skland_sign_lock:
+    async with _tool_skland.skland_sign_lock:
         raw = await load_credential(account_uid)
         if not raw:
             return ()
 
-        async with create_skland_client(proxy=proxy) as client:
-            device_id = await get_cached_device_id(proxy, client=client)
+        async with _tool_skland.create_skland_client(proxy=proxy) as client:
+            device_id = await _tool_skland.get_cached_device_id(proxy, client=client)
             credential = await _prepare_and_refresh_credential(
                 client,
                 raw=raw,
@@ -243,14 +258,16 @@ async def fetch_skland_role_entries(
                 save_credential=save_credential,
             )
             # 复用便签的角色归一化：覆盖无 appCode 分组等响应变体（评审跟进项）
-            payload = await fetch_skland_binding_payload(
+            payload = await _tool_skland.fetch_skland_binding_payload(
                 client,
                 cred=credential["cred"],
                 sign_token=credential["token"],
                 device_id=device_id,
                 proxy=proxy,
             )
-            roles = normalize_skland_roles(payload).roles_for_game("明日方舟")
+            roles = _tool_community_activity_roles.normalize_skland_roles(
+                payload
+            ).roles_for_game("明日方舟")
             if roles:
                 _role_entries_cache[account_uid] = (
                     current + SKLAND_ROLE_TTL_SECONDS,

@@ -1,0 +1,47 @@
+/* generated using openapi-typescript-codegen -- do not edit */
+/* istanbul ignore file */
+/* tslint:disable */
+/* eslint-disable */
+import type { PowerSignal } from './PowerSignal';
+export type QueueConfig_InfoInput = {
+    /**
+     * 完成后操作
+     */
+    AfterAccomplish?: (PowerSignal | null);
+    /**
+     * 完成后操作倒计时，单位分钟，最少 1 分钟，不叠加其他等待
+     */
+    AfterAccomplishDelay?: (number | null);
+    /**
+     * 是否启用队列循环触发，可与定时和软件启动触发同时启用
+     */
+    CycleEnabled?: (boolean | null);
+    /**
+     * 队列级运行后脚本: 运行结束后执行一次, 先于「完成后操作」
+     */
+    IfScriptAfterTask?: (boolean | null);
+    /**
+     * 队列级运行前脚本: 每次任务快照开始时执行一次
+     */
+    IfScriptBeforeTask?: (boolean | null);
+    /**
+     * 队列名称
+     */
+    Name?: (string | null);
+    /**
+     * 队列运行后脚本路径
+     */
+    ScriptAfterTask?: (string | null);
+    /**
+     * 队列运行前脚本路径
+     */
+    ScriptBeforeTask?: (string | null);
+    /**
+     * 是否在启动时自动运行
+     */
+    StartUpMode?: ('Never' | 'Always' | 'DailyFirst' | null);
+    /**
+     * 是否启用定时启动
+     */
+    TimeEnabled?: (boolean | null);
+};

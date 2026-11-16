@@ -48,7 +48,7 @@ export function useMaaFWProjectIdentity({
   // 卡片右上角的类型标签：有项目名就显示项目名，没有才显示 MFW / M9A
   const typeTagLabel = computed(() => projectName.value || flavor.value.typeTagLabel)
 
-  // 新建脚本时后端给的默认名（MaaFWConfig 及各特调配置类的 DEFAULT_SCRIPT_NAME，登记在特调注册表）
+  // 新建托管时后端给的默认名（各配置类 Info.Name 的默认值，登记在特调注册表；含改名前的旧默认名）
   const DEFAULT_SCRIPT_NAMES = maafwDefaultScriptNames()
 
   // 读到 interface 后把项目名记进 Info.ProjectLabel（脚本列表的类型标签用它）；
@@ -73,13 +73,13 @@ export function useMaaFWProjectIdentity({
     }
   }
 
-  // 引导一律「<项目名> 项目引导」；编辑页通用 MaaFW 用「<项目名> 项目配置」，特调（M9A）用它自己那句
-  // 标题——特调那句是「编辑…」，放在引导里与所处步骤不符
+  // 引导一律「<项目名> 项目引导」；编辑页默认「<项目名> 项目配置」（三种类型都用这句），特调声明了
+  // titleKey 时用它自己那句——那句只用于编辑页，放在引导里与所处步骤不符
   const pageTitle = computed(() => {
     const name = projectDisplayName.value
-    if (isWizard.value) return t('edit.maafwPageTitleSetup', { name })
+    if (isWizard.value) return t('core.edit.maafwPageTitleSetup', { name })
     const titleKey = flavor.value.scriptPage.text.titleKey
-    return titleKey ? t(titleKey) : t('edit.maafwPageTitleConfig', { name })
+    return titleKey ? t(titleKey) : t('core.edit.maafwPageTitleConfig', { name })
   })
 
   return { previewProjectTitle, typeTagLabel, pageTitle, syncProjectName }

@@ -1,3 +1,17 @@
+import { finishAssetPackageJobs } from './services/assetPackageProcess'
+import { detachPromptVirtualDisplay } from './services/virtualDisplayPromptActions'
+import { observeDiagnosticExport, observeDataBackup } from './services/diagnosticAnalytics'
+import { beginMainFeature } from './services/featureAnalytics'
+import { analyticsDuration } from './services/analyticsPolicy'
+import {
+  isScheduledWakeupLaunch,
+  keepAwakeForScheduledWakeup,
+  observeScheduledWakeupQuit,
+  cancelScheduledWakeupQuit,
+  finishScheduledWakeupQuit,
+  prepareSystemResumeRecovery,
+} from './services/scheduledWakeup'
+import { readBackendDocument } from './services/backendConfig'
 import {
   app,
   BrowserWindow,
@@ -21,13 +35,37 @@ import * as path from 'path'
 import { getAppRoot } from './services/environmentService'
 import {
   registerInitializationHandlers,
+  startDesktopStartup,
+  stopDesktopStartup,
   checkCriticalFilesViaRuntime,
-  getBackendService,
   getLocalApiEndpoint,
   resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
+import { registerFluxdownInstallHandlers } from './ipc/fluxdownInstallHandlers'
+import {
+  isAnalyticsSender,
+  isApplicationWindowSender,
+  registerAnalyticsHandlers,
+} from './ipc/analyticsHandlers'
+import {
+  analyticsService,
+  disposeAnalytics,
+  refreshAnalyticsPreference,
+  syncAnalyticsPreference,
+} from './services/analyticsService'
 import { registerAppearanceHandlers } from './ipc/appearanceHandlers'
+import { registerMascotHandlers } from './ipc/mascotHandlers'
+import {
+  createDesktopMascotHost,
+  type DesktopMascotHostPreferences,
+} from './services/desktopMascotHost'
+import { DesktopMascotService } from './services/desktopMascotService'
+import { DesktopMascotMenuService } from './services/desktopMascotMenuService'
+import { createMasDesktopMascotCapabilities } from './services/masDesktopMascotCapabilities'
+import { DEFAULT_MASCOT_MENU } from './services/mascotMenuDefinition'
+import { getAppearance } from './services/appearanceService'
+import { getMascot } from './services/mascotPackageService'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
 import { registerMysteryHandlers } from './ipc/mysteryHandlers'
 import {
@@ -35,48 +73,89 @@ import {
   canRequestRendererClose,
   markForceQuitFailed,
 } from './quitCoordinationState'
-import { decideRendererRecovery } from './rendererCrashRecovery'
+import { attachRendererRecovery } from './services/rendererRecoveryService'
+import { promptLowPageZoom } from './services/pageZoomPrompt'
 import { patchConfigFile } from './utils/configFile'
 
 import { getLogger, initializeLogger } from './services/logger'
 import { readLogContent, readLogIncrement } from './services/logFileReader'
-import { CollectorState, addDiagnosticFile, addDirectory } from './services/issueReportCore'
+import { CollectorState, addDirectory } from './services/issueReportCore'
 import { createBetterGIIssueReport } from './services/bettergiIssueReportService'
-import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
+import { openMaaEndLogBundles } from './services/maaEndIssueReportService'
 import { createMaaIssueReport } from './services/maaIssueReportService'
 import {
   createM9AIssueReport,
   createMSSIssueReport,
   createMaaFWIssueReport,
-  listMaaFWIssueReportScripts,
+  listMaaFWIssueReportProjects,
   maafwIssueReportFileNamePrefix,
 } from './services/maafwIssueReportService'
 import { createOkwwIssueReport } from './services/okwwIssueReportService'
 import { createOkNteIssueReport } from './services/okNteIssueReportService'
 import { createZzzOdIssueReport } from './services/zzzOdIssueReportService'
 import { createWhimboxIssueReport } from './services/whimboxIssueReportService'
+import { createHSRIssueReport } from './services/hsrIssueReportService'
 import {
-  captureMainRendererCrash,
   configureMainSentry,
   recordMainCount,
   recordMainStartup,
   setMainTelemetryEnabled,
 } from './services/sentry'
-import { applyInstanceIdentity, resolveStopAllTasksShortcut } from './services/instanceConfig'
 import {
-  PersistedRuntimeLaunchMode,
-  isPersistedRuntimeLaunchMode,
-  resolveRuntimeLaunchModeDetail,
-} from './services/runtime'
+  applyInstanceIdentity,
+  resolveStopAllTasksShortcut,
+  isDevelopmentEnvironment,
+  getDevelopmentServerUrl,
+  getRendererEnvironmentArguments,
+  getBackendOwnership,
+} from './services/instanceConfig'
+import { resolveRuntimeLaunchModeDetail } from './services/runtime'
 import AdmZip = require('adm-zip')
+import { migrateUserData, selectUserDataLock } from './services/userDataMigration'
+import { recordDesktopStartup } from './services/startupTiming'
 
-// 开发环境切换到独立的 userData 目录（必须在 app ready 之前）
+// 开发版目录必须在 app ready 之前确定。
 applyInstanceIdentity()
 
 // 初始化日志系统（必须在创建 logger 之前）
 initializeLogger()
-
+recordDesktopStartup('主进程模块加载')
 const logger = getLogger('主进程')
+
+const targetUserDataPath = app.getPath('userData')
+const legacyUserDataPath = path.join(
+  app.getPath('appData'),
+  isDevelopmentEnvironment() ? 'frontend-dev' : 'frontend'
+)
+let lockPath: string
+try {
+  lockPath = selectUserDataLock(legacyUserDataPath, targetUserDataPath)
+} catch (error) {
+  // 标记不可读时无法确定另一实例持有哪把锁，停止启动以免并发写入。
+  logger.error('读取用户数据迁移标记失败', error)
+  app.quit()
+  process.exit(1)
+}
+if (lockPath !== targetUserDataPath) app.setPath('userData', lockPath)
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+  process.exit(0)
+}
+
+const userDataMigration = migrateUserData(legacyUserDataPath, targetUserDataPath, lockPath)
+if (userDataMigration.path !== app.getPath('userData')) {
+  app.setPath('userData', userDataMigration.path)
+}
+app.setPath('sessionData', userDataMigration.path)
+
+if (userDataMigration.error) {
+  logger.warn(`用户数据迁移失败: ${userDataMigration.error}`)
+  if (lockPath === targetUserDataPath) {
+    app.quit()
+    process.exit(1)
+  }
+}
 const STOP_ALL_TASKS_SHORTCUT = resolveStopAllTasksShortcut()
 let isStoppingAllTasks = false
 
@@ -86,7 +165,8 @@ interface ApiResult {
 }
 
 // 托盘菜单项类型
-type TrayAction = 'show' | 'hide' | 'startTask' | 'stopAll' | 'restartApp' | 'quit'
+const TRAY_ACTIONS = ['show', 'hide', 'startTask', 'stopAll', 'quit'] as const
+type TrayAction = (typeof TRAY_ACTIONS)[number]
 
 interface TrayItem {
   id: string
@@ -103,18 +183,25 @@ const DEFAULT_TRAY_ITEMS: TrayItem[] = [
   { id: 'quit', label: '退出', action: 'quit' },
 ]
 
+// 旧配置中已移除的动作不再显示；全部失效时恢复默认菜单。
+function normalizeTrayItems(items: TrayItem[]): TrayItem[] {
+  const supportedItems = items.filter(item => TRAY_ACTIONS.includes(item.action))
+  return supportedItems.length ? supportedItems : DEFAULT_TRAY_ITEMS
+}
+
 function showShortcutNotification(title: string, body: string): void {
   if (Notification.isSupported()) {
     new Notification({ title, body }).show()
   }
 }
 
-async function stopAllTasksByShortcut(): Promise<void> {
+async function stopAllTasksByShortcut(source: 'shortcut' | 'tray' = 'shortcut'): Promise<void> {
   if (isStoppingAllTasks) {
     logger.info('全部任务正在停止中，忽略重复快捷键')
     return
   }
 
+  const telemetry = beginMainFeature('stop_all_requested')
   isStoppingAllTasks = true
   logger.info(`触发全局快捷键 ${STOP_ALL_TASKS_SHORTCUT}，开始停止所有任务`)
 
@@ -129,19 +216,23 @@ async function stopAllTasksByShortcut(): Promise<void> {
     })
 
     if (!response.ok) {
+      telemetry.finish({ source, outcome: 'rejected' })
       throw new Error(`停止请求返回错误: ${response.status}`)
     }
 
     const result = (await response.json()) as ApiResult
     if (result.code !== undefined && result.code !== 200) {
+      telemetry.finish({ source, outcome: 'rejected' })
       throw new Error(result.message || `停止请求失败: ${result.code}`)
     }
 
+    telemetry.finish({ source, outcome: 'accepted' })
     logger.info('所有任务已停止')
     showShortcutNotification('AUTO-MAS', '所有任务已停止')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`全局快捷键停止所有任务失败: ${errorMsg}`)
+    telemetry.finish({ source, outcome: 'unknown' })
     showShortcutNotification('AUTO-MAS', `停止所有任务失败: ${errorMsg}`)
   } finally {
     isStoppingAllTasks = false
@@ -167,20 +258,8 @@ let forceKillPromise: Promise<void> | null = null
 async function forceKillRelatedProcesses(): Promise<void> {
   if (forceKillPromise) return forceKillPromise
   forceKillPromise = (async () => {
-    const backendService = getBackendService()
-
-    // Runtime 监督链路：只向监督进程发 shutdown（有上限，超时才 kill Runtime 进程本身），
-    // 后端进程树由 Runtime 的 Job Object 收走，不再走 processManager 的全局清理。
-    if (backendService.isRuntimeSupervised()) {
-      const result = await backendService.stopBackend()
-      if (!result.success) throw new Error(result.error || '未知错误')
-      logger.info('Runtime 监督的后端已关闭')
-      return
-    }
-
-    const result = await backendService.forceStopBackend()
-    if (!result.success) throw new Error(result.error || '未知错误')
-    logger.info('所有相关进程已清理')
+    await stopDesktopStartup(true)
+    logger.info('本次桌面启动的后端资源已释放')
   })().finally(() => {
     forceKillPromise = null
   })
@@ -208,9 +287,14 @@ function isRunningAsAdmin(): boolean {
 }
 
 let tray: Tray | null = null
+let forceTrayVisibleUntilWindowShown = false
+let nativeCloseHandlerReady = false
 let coordinatedQuit = false
 let forceQuitInProgress = false
+let closeTelemetry: ReturnType<typeof beginMainFeature<'app_close_finished'>> | null = null
+let closeTelemetryKind: 'user' | 'backend' = 'user'
 let quitRequestInFlight = false
+let quitConfirmationPending = false
 let relaunchAfterQuit = false
 let quitFallbackTimer: NodeJS.Timeout | null = null
 let quitPreparationSequence = 0
@@ -218,15 +302,18 @@ let activeQuitPreparation: number | null = null
 let quitPreparationExpired = false
 const RENDERER_QUIT_FALLBACK_MS = 25000
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
-let rendererCrashes: number[] = []
+let mainRendererRecovery: ReturnType<typeof attachRendererRecovery> | null = null
+const rendererCrashes: number[] = []
 let isInitialStartup = true // 标记是否为初次启动
-const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
+const isScheduledWakeup = isScheduledWakeupLaunch(process.argv)
+const isAutoStart = process.argv.includes('--auto-start') || isScheduledWakeup
 
 // 配置接口
-interface AppConfig {
+interface AppConfig extends DesktopMascotHostPreferences {
+  confirmBeforeClose: boolean
+  lastCloseAction: 'quit' | 'tray'
   UI: {
     IfShowTray: boolean
-    IfToTray: boolean
     IfHideCloseButton: boolean
     location: string
     maximized: boolean
@@ -243,19 +330,16 @@ interface AppConfig {
   Function: {
     IfEnableTelemetry: boolean
   }
-  // Runtime 灰度开关的持久化设置，见 services/runtime/launchConfig.ts 的三级优先级说明。
-  Runtime: {
-    LaunchMode: PersistedRuntimeLaunchMode
-  }
 
   [key: string]: unknown
 }
 
 // 默认配置
 const defaultConfig: AppConfig = {
+  confirmBeforeClose: true,
+  lastCloseAction: 'quit',
   UI: {
     IfShowTray: false,
-    IfToTray: false,
     IfHideCloseButton: false,
     location: '100,100',
     maximized: false,
@@ -271,9 +355,8 @@ const defaultConfig: AppConfig = {
   Function: {
     IfEnableTelemetry: true,
   },
-  Runtime: {
-    LaunchMode: 'auto',
-  },
+  customBackgroundPath: '',
+  customSurfaceOpacity: 1,
 }
 
 //加载配置
@@ -288,10 +371,15 @@ function loadConfig(): AppConfig {
       config = { ...config, ...JSON.parse(configData) }
     }
 
-    const backendConfigPath = path.join(appRoot, 'config', 'Config.json')
-    if (fs.existsSync(backendConfigPath)) {
-      const backendConfig = JSON.parse(fs.readFileSync(backendConfigPath, 'utf8'))
-      const enabled = backendConfig.Function?.IfEnableTelemetry
+    if (Array.isArray(config.UI?.TrayItems)) {
+      config.UI.TrayItems = normalizeTrayItems(config.UI.TrayItems)
+    }
+
+    {
+      const backendConfig = readBackendDocument(appRoot, 'setting.yaml', 'Config.json') as
+        | { Function?: { IfEnableTelemetry?: boolean } }
+        | undefined
+      const enabled = backendConfig?.Function?.IfEnableTelemetry
       if (typeof enabled === 'boolean') {
         config.Function = { ...config.Function, IfEnableTelemetry: enabled }
       }
@@ -304,7 +392,7 @@ function loadConfig(): AppConfig {
 }
 
 // 保存配置
-function saveConfig(config: AppConfig) {
+function saveConfig(config: AppConfig): boolean {
   try {
     const appRoot = getAppRoot()
     const configDir = path.join(appRoot, 'config')
@@ -315,16 +403,18 @@ function saveConfig(config: AppConfig) {
     }
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
+    return true
   } catch {
     logger.error('保存配置失败')
+    return false
   }
 }
 
 configureMainSentry(loadConfig().Function?.IfEnableTelemetry !== false)
 
 // 创建托盘
-function createTray() {
-  if (tray) return
+function createTray(): boolean {
+  if (tray) return !tray.isDestroyed()
 
   // 尝试多个可能的图标路径
   const iconPaths = [
@@ -348,17 +438,23 @@ function createTray() {
       }
     }
 
-    // 如果所有路径都失败，创建一个默认图标
+    // 不创建空图标托盘，避免窗口隐藏后用户找不到恢复入口。
     if (!trayIcon || trayIcon.isEmpty()) {
-      logger.warn('无法加载托盘图标，使用默认图标')
-      trayIcon = nativeImage.createEmpty()
+      logger.error('无法加载托盘图标')
+      return false
     }
   } catch {
     logger.error('加载托盘图标失败')
-    trayIcon = nativeImage.createEmpty()
+    return false
   }
 
-  tray = new Tray(trayIcon)
+  try {
+    tray = new Tray(trayIcon)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`创建托盘失败: ${errorMsg}`)
+    return false
+  }
   tray.setToolTip('AUTO-MAS')
 
   // 从配置读取托盘菜单项，未配置时回落到默认菜单
@@ -367,44 +463,62 @@ function createTray() {
   const items = trayItems?.length ? trayItems : DEFAULT_TRAY_ITEMS
   rebuildTrayMenu(items)
 
-  // 双击托盘图标显示/隐藏窗口
-  tray.on('double-click', () => {
+  // 单击托盘图标显示/隐藏窗口
+  tray.on('click', () => {
     if (!mainWindow) return
     if (mainWindow.isVisible()) {
-      hideMainWindow()
+      hideMainWindowToTray()
     } else {
       showMainWindow()
     }
   })
+
+  return true
 }
 
 // 显示主窗口
 function showMainWindow(): void {
   if (!mainWindow) return
+  forceTrayVisibleUntilWindowShown = false
   if (mainWindow.isMinimized()) {
     mainWindow.restore()
   }
   mainWindow.setSkipTaskbar(false) // 恢复任务栏图标
   mainWindow.show()
   mainWindow.focus()
+  updateTrayVisibility(loadConfig())
 }
 
-// 隐藏主窗口
-function hideMainWindow(): void {
-  if (!mainWindow) return
-  const currentConfig = loadConfig()
-  if (currentConfig.UI.IfToTray) {
-    mainWindow.setSkipTaskbar(true) // 隐藏任务栏图标
+function hideMainWindowToTray(): boolean {
+  if (!mainWindow || mainWindow.isDestroyed()) return false
+
+  try {
+    forceTrayVisibleUntilWindowShown = true
+    if (!createTray()) {
+      forceTrayVisibleUntilWindowShown = false
+      return false
+    }
+
+    mainWindow.setSkipTaskbar(true)
+    mainWindow.hide()
+    updateTrayVisibility(loadConfig())
+    return true
+  } catch (error) {
+    forceTrayVisibleUntilWindowShown = false
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`最小化到托盘失败: ${errorMsg}`)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      showMainWindow()
+    }
+    return false
   }
-  mainWindow.hide()
 }
 
 // 重建托盘右键菜单
 function rebuildTrayMenu(items: TrayItem[]): void {
   if (!tray) return
 
-  // 空列表时回落到默认菜单，避免托盘右键菜单为空
-  const effectiveItems = items.length ? items : DEFAULT_TRAY_ITEMS
+  const effectiveItems = normalizeTrayItems(items)
 
   const menuItems: MenuItemConstructorOptions[] = []
   effectiveItems.forEach((item, index) => {
@@ -423,15 +537,19 @@ function rebuildTrayMenu(items: TrayItem[]): void {
 
 // 执行托盘菜单项动作
 function handleTrayAction(item: TrayItem): void {
+  beginMainFeature('tray_action_requested').finish({
+    action_kind: item.action,
+    outcome: 'accepted',
+  })
   switch (item.action) {
     case 'show':
       showMainWindow()
       break
     case 'hide':
-      hideMainWindow()
+      hideMainWindowToTray()
       break
     case 'stopAll':
-      void stopAllTasksByShortcut()
+      void stopAllTasksByShortcut('tray')
       break
     case 'startTask':
       // 一键启动指定任务：需携带任务 ID 转发给渲染进程，由调度台新建任务并启动
@@ -441,30 +559,22 @@ function handleTrayAction(item: TrayItem): void {
         logger.warn('托盘启动任务缺少 taskId，忽略')
       }
       break
-    case 'restartApp':
     case 'quit':
-      // 退出/重启转发给渲染进程，与窗口关闭按钮走同一套确认流程
-      requestTrayAction(item.action === 'restartApp' ? 'restart' : 'quit')
+      // 退出转发给渲染进程，按任务运行状态确认。
+      requestTrayAction('quit')
       break
   }
 }
 
-// 请求渲染进程处理托盘动作：启动需读取任务 ID 新建调度台，退出/重启由渲染进程按运行状态弹统一确认窗
-function requestTrayAction(
-  action: 'quit' | 'restart' | 'startTask',
-  taskId?: string,
-  label?: string
-): void {
+// 请求渲染进程处理托盘动作：启动任务或按运行状态确认退出。
+function requestTrayAction(action: 'quit' | 'startTask', taskId?: string, label?: string): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('tray-action-request', { action, taskId, label })
   } else {
-    // 无主窗口时无法弹确认窗/新建调度台，仅退出与重启可直接执行；
+    // 无主窗口时无法弹确认窗/新建调度台，仅退出可直接执行；
     // renderer 不可用时 requestRendererClose 自动落入最终强杀兜底
-    logger.warn('无主窗口，无法处理托盘动作，仅可执行退出/重启')
-    if (action === 'restart') {
-      relaunchAfterQuit = true
-      requestRendererClose('托盘重启（无主窗口）')
-    } else if (action === 'quit') {
+    logger.warn('无主窗口，无法处理托盘动作，仅可执行退出')
+    if (action === 'quit') {
       requestRendererClose('托盘退出（无主窗口）')
     }
     // startTask 依赖渲染进程新建调度台，无窗口时忽略
@@ -492,15 +602,27 @@ function cancelQuitRequest(token?: number): void {
   if (coordinatedQuit || forceQuitInProgress) return
   if (token !== undefined && token !== activeQuitPreparation) return
   clearQuitFallback()
+  closeTelemetry?.finish({ close_kind: closeTelemetryKind, outcome: 'cancelled' })
+  closeTelemetry = null
+  closeTelemetryKind = 'user'
   activeQuitPreparation = null
+  quitConfirmationPending = false
   quitPreparationExpired = false
   quitRequestInFlight = false
   relaunchAfterQuit = false
+  cancelScheduledWakeupQuit()
   showMainWindow()
 }
 
-function finishCoordinatedQuit(): void {
+async function finishCoordinatedQuit(): Promise<void> {
   if (coordinatedQuit) return
+  await finishAssetPackageJobs()
+  if (coordinatedQuit) return
+  closeTelemetry?.finish({
+    close_kind: forceQuitInProgress ? 'force' : closeTelemetryKind,
+    outcome: 'accepted',
+  })
+  closeTelemetry = null
   coordinatedQuit = true
   quitRequestInFlight = false
   clearQuitFallback()
@@ -509,39 +631,24 @@ function finishCoordinatedQuit(): void {
     saveWindowStateTimeout = null
   }
   destroyTray()
-  if (relaunchAfterQuit) app.relaunch()
   app.quit()
-}
-
-async function shouldPreserveBackendForDevMode(): Promise<boolean> {
-  // 受 Runtime 监督的后端归 Runtime 生命周期管，即便是 development 模式也必须随之关闭，
-  // 否则 Electron 退出后会遗留一个没人负责的监督进程。
-  if (getBackendService().isRuntimeSupervised()) return false
-
-  const backendDevMode = await getBackendService().getBackendDevMode()
-  if (backendDevMode !== null) return backendDevMode
-  return Boolean(process.env.VITE_DEV_SERVER_URL) || !app.isPackaged
 }
 
 async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
   if (forceQuitInProgress || coordinatedQuit) return
+  closeTelemetry ??= beginMainFeature('app_close_finished')
   forceQuitInProgress = true
   clearQuitFallback()
   logger.error(`renderer 未完成协调退出，执行最终强制清理: ${reason}`)
 
-  // Electron 开发进程可能复用由开发者单独启动的后端；renderer 失联时也不能误杀。
-  if (await shouldPreserveBackendForDevMode()) {
-    logger.info('开发模式最终兜底：保留后端，仅关闭 Electron 前端')
-    finishCoordinatedQuit()
-    return
-  }
-
   try {
     await forceKillRelatedProcesses()
-    // forceStopBackend 只有在 scoped taskkill 已复查全部 PID 后才返回 success。
-    finishCoordinatedQuit()
+    // Runtime 终态确认后才允许 Electron 退出。
+    await finishCoordinatedQuit()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
+    closeTelemetry?.finish({ close_kind: 'force', outcome: 'failure' })
+    closeTelemetry = null
     logger.error(`最终强制清理失败: ${errorMsg}`)
     const retryableState = markForceQuitFailed({
       coordinatedQuit,
@@ -552,6 +659,7 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
     forceQuitInProgress = retryableState.forceQuitInProgress
     quitRequestInFlight = retryableState.quitRequestInFlight
     relaunchAfterQuit = retryableState.relaunchAfterQuit
+    cancelScheduledWakeupQuit()
     if (mainWindow && !mainWindow.isDestroyed()) {
       showMainWindow()
     } else if (app.isReady()) {
@@ -570,9 +678,11 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
   }
 }
 
-function requestRendererClose(reason: string): void {
+function requestRendererClose(reason: string, confirmRunningTasks = false): void {
   if (!canRequestRendererClose({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight }))
     return
+  observeScheduledWakeupQuit({ automatic: false })
+  closeTelemetry ??= beginMainFeature('app_close_finished')
   const win = mainWindow
   if (!win || win.isDestroyed()) {
     void forceQuitAfterRendererTimeout(`${reason}（renderer 不可用）`)
@@ -584,7 +694,7 @@ function requestRendererClose(reason: string): void {
   win.setSkipTaskbar(true)
   win.hide()
   logger.info(`请求 renderer 执行协调退出: ${reason}`)
-  win.webContents.send('app-close-requested')
+  win.webContents.send('app-close-requested', confirmRunningTasks)
   quitFallbackTimer = setTimeout(() => {
     void forceQuitAfterRendererTimeout(`${reason}（等待 ${RENDERER_QUIT_FALLBACK_MS}ms 超时）`)
   }, RENDERER_QUIT_FALLBACK_MS)
@@ -592,32 +702,15 @@ function requestRendererClose(reason: string): void {
 
 // 更新托盘状态
 function updateTrayVisibility(config: AppConfig) {
-  // 根据需求逻辑判断是否应该显示托盘
-  let shouldShowTray = false
-
-  if (config.UI.IfShowTray && config.UI.IfToTray) {
-    // 勾选常驻显示托盘和最小化到托盘，就一直展示托盘
-    shouldShowTray = true
-  } else if (config.UI.IfShowTray && !config.UI.IfToTray) {
-    // 勾选常驻显示托盘但没有最小化到托盘，就一直展示托盘
-    shouldShowTray = true
-  } else if (!config.UI.IfShowTray && config.UI.IfToTray) {
-    // 没有常驻显示托盘但勾选最小化到托盘，有窗口时就只有窗口，最小化后任务栏消失，只有托盘
-    shouldShowTray = !mainWindow || !mainWindow.isVisible()
-  } else {
-    // 没有常驻显示托盘也没有最小化到托盘，托盘一直不展示
-    shouldShowTray = false
-  }
-
-  // 特殊情况：如果没有窗口显示且没有托盘，强制显示托盘避免程序成为幽灵
-  if (!shouldShowTray && (!mainWindow || !mainWindow.isVisible()) && !tray) {
-    shouldShowTray = true
-    logger.warn('防幽灵机制：强制显示托盘图标')
-  }
+  // 普通最小化保留任务栏入口；隐藏到托盘后必须保留托盘恢复入口。
+  const shouldShowTray =
+    config.UI.IfShowTray ||
+    forceTrayVisibleUntilWindowShown ||
+    !mainWindow ||
+    (!mainWindow.isVisible() && !mainWindow.isMinimized())
 
   if (shouldShowTray && !tray) {
-    createTray()
-    logger.info('托盘图标已创建')
+    if (createTray()) logger.info('托盘图标已创建')
   } else if (!shouldShowTray && tray) {
     destroyTray()
     logger.info('托盘图标已销毁')
@@ -627,6 +720,31 @@ function updateTrayVisibility(config: AppConfig) {
 let mainWindow: Electron.BrowserWindow | null = null
 let logWindow: Electron.BrowserWindow | null = null
 let virtualDisplayPromptWindow: Electron.BrowserWindow | null = null
+const saveMascotPreferences = (patch: Partial<DesktopMascotHostPreferences>): void => {
+  patchConfigFile(path.join(getAppRoot(), 'config', 'frontend_config.json'), patch, defaultConfig)
+}
+const mascotCapabilities = createMasDesktopMascotCapabilities({
+  readPreferences: loadConfig,
+  savePreferences: saveMascotPreferences,
+  getMainWindow: () => mainWindow,
+  onPreferencesChanged: () => desktopMascot.syncPreferences(),
+})
+const desktopMascot = createDesktopMascotHost({
+  createRuntime: options => new DesktopMascotService(options),
+  createMenuRuntime: options => new DesktopMascotMenuService(options),
+  capabilities: mascotCapabilities,
+  defaultMenu: DEFAULT_MASCOT_MENU,
+  registerHandlers: mascotCapabilities.register,
+  readPreferences: loadConfig,
+  savePreferences: saveMascotPreferences,
+  getMainWindow: () => mainWindow,
+  resolveAssets: ({ desktopMascotId, appearanceId }) =>
+    desktopMascotId
+      ? getMascot(app.getPath('userData'), desktopMascotId)
+      : appearanceId
+        ? getAppearance(app.getPath('userData'), appearanceId)
+        : null,
+})
 /** 日志窗打开时选中的那一份：后端的 app.log 或主进程的 frontend.log。 */
 type LogWindowFile = 'app' | 'frontend'
 type WindowActivity = 'visible' | 'background'
@@ -693,8 +811,8 @@ function parseConfigInteger(value: string | undefined, fallback: number): number
  * 打包分发不受影响（由 vite 产出的静态资源在 dist/ 中，正常读取）。
  */
 function assertDevelopmentRuntime(): void {
-  if (app.isPackaged) return
-  if (process.env.VITE_DEV_SERVER_URL) return
+  if (!isDevelopmentEnvironment()) return
+  if (getDevelopmentServerUrl()) return
 
   const message =
     '开发环境未设置 VITE_DEV_SERVER_URL：前端必须由 vite 开发服务器提供，' +
@@ -707,6 +825,7 @@ function assertDevelopmentRuntime(): void {
 }
 
 function createWindow() {
+  const windowStartedAt = performance.now()
   logger.info('开始创建主窗口')
 
   const config = loadConfig()
@@ -774,6 +893,7 @@ function createWindow() {
     show: false, // 改为 false，等待页面加载完成后再显示
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#000000' : '#ffffff', // 根据系统主题设置背景色
     webPreferences: {
+      additionalArguments: getRendererEnvironmentArguments(),
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
@@ -782,54 +902,64 @@ function createWindow() {
   })
 
   // 把局部的 win 赋值给模块级（供其他模块/函数用）
+  recordDesktopStartup('主窗口构造', windowStartedAt)
   mainWindow = win
+  nativeCloseHandlerReady = false
+  desktopMascot.attachMainWindow(win)
   lastWindowActivity = null
+
+  // 页面拒绝关闭时撤销唤醒重启义务，不忽略 beforeunload 的阻止。
+  win.webContents.on('will-prevent-unload', cancelScheduledWakeupQuit)
+
+  win.webContents.on('did-start-loading', () => {
+    nativeCloseHandlerReady = false
+  })
 
   // 崩溃时窗口若在托盘里，恢复后保持隐藏，不要自己弹出来打断用户。
   let keepHiddenAfterRecovery = false
-
-  // 渲染进程崩溃恢复。Electron 不会自动重建崩掉的渲染进程：BrowserWindow 还在，
-  // 托盘和显示/隐藏都正常，但里面的 frame 已经没了，用户看到的是一个永远黑着的
-  // 窗口，只能从任务管理器强杀。没有这个监听时日志里也不会留下任何记录。
-  win.webContents.on('render-process-gone', (_event, details) => {
-    // 保存准备期间 renderer 消失就取消退出并按通常崩溃流程恢复，不能等一个永远不会完成的守卫。
-    if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
-    const decision = decideRendererRecovery({
-      reason: details.reason,
-      exitCode: details.exitCode,
-      isQuitting: coordinatedQuit || forceQuitInProgress || quitRequestInFlight,
-      isWindowDestroyed: win.isDestroyed(),
-      now: Date.now(),
-      previousCrashes: rendererCrashes,
-    })
-    rendererCrashes = decision.crashes
-
-    if (decision.action === 'ignore') {
-      logger.info(decision.detail)
-      return
-    }
-
-    logger.error(decision.detail)
-    captureMainRendererCrash({
-      reason: details.reason,
-      exitCode: details.exitCode,
-      crashCount: decision.crashCount,
-      action: decision.action,
-      detail: decision.detail,
-    })
-
-    if (decision.action === 'give-up') return
-
-    keepHiddenAfterRecovery = !win.isVisible()
-    win.webContents.reload()
+  let hasLoadedMainWindow = false
+  win.webContents.once('did-finish-load', () => {
+    hasLoadedMainWindow = true
   })
 
+  // 主框架重载或导航后旧确认窗已销毁，撤销等待；同文档路由切换不触发此事件。
+  win.webContents.on('did-navigate', () => {
+    if (quitConfirmationPending) cancelQuitRequest()
+  })
+
+  mainRendererRecovery = attachRendererRecovery(win, {
+    crashHistory: rendererCrashes,
+    isQuitting: () => coordinatedQuit || forceQuitInProgress || quitRequestInFlight,
+    onRendererGone: () => {
+      nativeCloseHandlerReady = false
+      // 等待确认或保存期间 renderer 消失就取消退出，按通常崩溃流程恢复。
+      if (quitConfirmationPending) cancelQuitRequest()
+      else if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
+    },
+    onReload: () => {
+      // 首次加载失败仍按启动偏好恢复；加载后进入托盘的窗口继续保持隐藏。
+      keepHiddenAfterRecovery = hasLoadedMainWindow && !win.isVisible()
+    },
+  })
+
+  let responseIncident: ReturnType<
+    typeof beginMainFeature<'renderer_responsiveness_changed'>
+  > | null = null
   win.on('unresponsive', () => {
+    if (!responseIncident) {
+      responseIncident = beginMainFeature('renderer_responsiveness_changed')
+      beginMainFeature('renderer_responsiveness_changed').finish({
+        state: 'unresponsive',
+        outcome: 'accepted',
+      })
+    }
     logger.warn('渲染进程无响应（主线程卡住），等待其自行恢复')
     recordMainCount('auto_mas.app.renderer.unresponsive', { component: 'electron-main' })
   })
 
   win.on('responsive', () => {
+    responseIncident?.finish({ state: 'responsive', outcome: 'success' })
+    responseIncident = null
     logger.info('渲染进程已恢复响应')
   })
 
@@ -856,17 +986,22 @@ function createWindow() {
     if (keepHiddenAfterRecovery) {
       keepHiddenAfterRecovery = false
       notifyWindowActivity('background')
-      logger.info('渲染进程已恢复，窗口保持托盘隐藏状态')
+      logger.info('重载页面已加载，窗口保持托盘隐藏状态')
       return
     }
 
-    // 仅开机自启动且开启"启动后直接最小化"时才隐藏窗口，手动双击启动始终显示
-    if (!(isAutoStart && config.Start.IfMinimizeDirectly)) {
+    // 沿用旧启动字段保存用户偏好，静默自启始终直接进入托盘。
+    if (
+      isAutoStart &&
+      isInitialStartup &&
+      config.Start.IfMinimizeDirectly &&
+      hideMainWindowToTray()
+    ) {
+      notifyWindowActivity('background')
+      logger.info('静默启动，窗口已进入托盘')
+    } else {
       win.show()
       logger.info('页面加载完成，窗口已显示')
-    } else {
-      notifyWindowActivity('background')
-      logger.info('页面加载完成，窗口保持后台状态')
     }
   })
 
@@ -939,14 +1074,23 @@ function createWindow() {
   screen.on('display-metrics-changed', handleDisplayConfigurationChanged)
   screen.on('display-removed', handleDisplayConfigurationChanged)
 
-  // 最大化配置
-  if (config.UI.maximized) {
-    win.maximize()
-  }
-
   win.setMenuBarVisibility(false)
   assertDevelopmentRuntime()
-  const devServer = process.env.VITE_DEV_SERVER_URL
+  const pageLoadStartedAt = performance.now()
+  win.webContents.once('dom-ready', () => recordDesktopStartup('页面 DOM 就绪', pageLoadStartedAt))
+  win.once('ready-to-show', () => recordDesktopStartup('窗口可绘制', pageLoadStartedAt))
+  win.webContents.once('did-finish-load', () => {
+    recordDesktopStartup('页面加载完成', pageLoadStartedAt)
+    const checkPageZoom = () => {
+      void promptLowPageZoom(win, config.language).catch(error =>
+        logger.warn('检查或恢复界面缩放失败', error)
+      )
+    }
+    // 静默启动时等到用户打开主窗口，再显示缩放提示。
+    if (win.isVisible()) checkPageZoom()
+    else win.once('show', checkPageZoom)
+  })
+  const devServer = getDevelopmentServerUrl()
   if (devServer) {
     logger.info(`加载开发服务器: ${devServer}`)
     win.loadURL(devServer)
@@ -958,25 +1102,25 @@ function createWindow() {
 
   // 窗口事件处理
   win.on('close', (event: Electron.Event) => {
-    const currentConfig = loadConfig()
     const quitState = { coordinatedQuit, forceQuitInProgress, quitRequestInFlight }
 
-    if (!canElectronExitImmediately(quitState)) {
+    if (!mainRendererRecovery?.isSessionEnding() && !canElectronExitImmediately(quitState)) {
       event.preventDefault()
       if (forceQuitInProgress) {
         logger.warn('强制清理仍在进行，暂不允许窗口提前关闭')
         return
       }
-      if (currentConfig.UI.IfToTray && !quitRequestInFlight) {
-        win.hide()
-        win.setSkipTaskbar(true)
-        updateTrayVisibility(currentConfig)
-        logger.info('窗口已最小化到托盘，任务栏图标已隐藏')
+      if (
+        win.webContents.isDestroyed() ||
+        win.webContents.isCrashed() ||
+        !nativeCloseHandlerReady
+      ) {
+        requestRendererClose('窗口关闭（renderer 不可用或尚未就绪）', true)
       } else {
-        requestRendererClose('窗口关闭')
+        win.webContents.send('native-window-close-requested')
       }
     } else {
-      // 仅在 renderer 已完成协调退出后允许真实关闭窗口，并立即保存窗口状态
+      // 协调退出和系统会话结束均直接关闭，并立即保存窗口状态。
       if (!win.isDestroyed()) {
         try {
           const config = loadConfig()
@@ -1002,6 +1146,8 @@ function createWindow() {
 
   win.on('closed', () => {
     logger.info('主窗口已关闭')
+    mainRendererRecovery = null
+    nativeCloseHandlerReady = false
     closeVirtualDisplayPrompt()
     // 清理监听（可选）
     screen.removeListener('display-metrics-changed', handleDisplayConfigurationChanged)
@@ -1012,13 +1158,6 @@ function createWindow() {
 
   win.on('minimize', () => {
     notifyWindowActivity('background')
-    const currentConfig = loadConfig()
-    if (currentConfig.UI.IfToTray) {
-      win.hide()
-      win.setSkipTaskbar(true)
-      updateTrayVisibility(currentConfig)
-      logger.info('窗口已最小化到托盘，任务栏图标已隐藏')
-    }
   })
 
   win.on('show', () => {
@@ -1034,12 +1173,7 @@ function createWindow() {
 
   win.on('hide', () => {
     notifyWindowActivity('background')
-    const currentConfig = loadConfig()
-    if (currentConfig.UI.IfToTray) {
-      win.setSkipTaskbar(true)
-      logger.info('窗口已隐藏，任务栏图标已隐藏')
-    }
-    updateTrayVisibility(currentConfig)
+    updateTrayVisibility(loadConfig())
   })
 
   // 窗口尺寸/位置变化时防抖保存
@@ -1087,6 +1221,7 @@ function createWindow() {
 
   // 初始托盘配置（使用文件配置）
   updateTrayVisibility(config)
+  recordDesktopStartup('主窗口与 IPC 装配', windowStartedAt)
 
   // 等待窗口准备完成后再初始化托盘和处理启动配置
   win.webContents.once('did-finish-load', () => {
@@ -1097,19 +1232,6 @@ function createWindow() {
 
     // 根据配置初始化托盘
     updateTrayVisibility(currentConfig)
-
-    // 处理启动后直接最小化（仅开机自启动时执行）
-    if (isAutoStart && isInitialStartup && currentConfig.Start.IfMinimizeDirectly) {
-      if (currentConfig.UI.IfToTray) {
-        win.hide()
-        win.setSkipTaskbar(true)
-        logger.info('应用初次启动后直接最小化到托盘')
-      } else {
-        win.minimize()
-        logger.info('应用初次启动后直接最小化')
-      }
-      updateTrayVisibility(currentConfig)
-    }
 
     // 标记初次启动已完成
     isInitialStartup = false
@@ -1135,6 +1257,7 @@ function createLogWindow(file?: LogWindowFile) {
     height: 800,
     title: '日志查看 - AUTO-MAS',
     webPreferences: {
+      additionalArguments: getRendererEnvironmentArguments(),
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
@@ -1144,7 +1267,7 @@ function createLogWindow(file?: LogWindowFile) {
   })
 
   const hash = file ? `/logs?file=${file}` : '/logs'
-  const devServer = process.env.VITE_DEV_SERVER_URL
+  const devServer = getDevelopmentServerUrl()
   if (devServer) {
     logWindow.loadURL(`${devServer}#${hash}`)
   } else {
@@ -1166,7 +1289,7 @@ function createLogWindow(file?: LogWindowFile) {
 // 真实显示器回来了但有任务在跑，后端不拆虚拟屏、改为问用户。此时虚拟屏是主显示器，
 // 主窗口和任务栏都留在看不见的那块上，所以这个弹窗必须另开窗口、放到回来的那块屏
 // 右下角，而不是画在主窗口里。它只是一个壳：数据由主窗口渲染进程从后端消息转来，
-// 拆不拆由弹窗自己调后端接口。
+// 用户选择由弹窗发出，拆除请求由主进程持有直到接口返回。
 
 interface VirtualDisplayPromptPayload {
   /** 回来的真实显示设备名 */
@@ -1176,6 +1299,25 @@ interface VirtualDisplayPromptPayload {
 }
 
 let virtualDisplayPromptPayload: VirtualDisplayPromptPayload | null = null
+let virtualPromptAnalytics: ReturnType<
+  typeof beginMainFeature<'virtual_display_prompt_answered'>
+> | null = null
+ipcMain.on('vdd-prompt:observe', (event, choice: unknown) => {
+  if (!isApplicationWindowSender(event, virtualDisplayPromptWindow, { allowDevelopment: true }))
+    return
+  if (choice !== 'keep') return
+  virtualPromptAnalytics?.finish({ choice: 'keep', outcome: 'success' })
+  virtualPromptAnalytics = null
+})
+
+// 拆除会先广播关闭弹窗再返回 HTTP；请求与终态由主进程持有，避免窗口销毁后漏记。
+ipcMain.handle('vdd-prompt:detach', async event => {
+  if (!isApplicationWindowSender(event, virtualDisplayPromptWindow, { allowDevelopment: true }))
+    return null
+  virtualPromptAnalytics?.finish({ choice: 'remove', outcome: 'accepted' })
+  virtualPromptAnalytics = null
+  return detachPromptVirtualDisplay(getLocalApiEndpoint())
+})
 
 const VDD_PROMPT_WIDTH = 460
 const VDD_PROMPT_HEIGHT = 240
@@ -1243,6 +1385,7 @@ function showVirtualDisplayPrompt(payload: VirtualDisplayPromptPayload): void {
     `创建虚拟显示器询问弹窗：回来的显示器 ${payload.returned.join(', ')}，落在显示器 ${display.id} 的 ${JSON.stringify(bounds)}`
   )
 
+  virtualPromptAnalytics = beginMainFeature('virtual_display_prompt_answered')
   const win = new BrowserWindow({
     ...bounds,
     frame: false,
@@ -1255,6 +1398,7 @@ function showVirtualDisplayPrompt(payload: VirtualDisplayPromptPayload): void {
     show: false,
     title: '虚拟显示器 - AUTO-MAS',
     webPreferences: {
+      additionalArguments: getRendererEnvironmentArguments(),
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
@@ -1265,7 +1409,7 @@ function showVirtualDisplayPrompt(payload: VirtualDisplayPromptPayload): void {
   win.setMenuBarVisibility(false)
 
   const hash = '/vdd-prompt'
-  const devServer = process.env.VITE_DEV_SERVER_URL
+  const devServer = getDevelopmentServerUrl()
   if (devServer) {
     win.loadURL(`${devServer}#${hash}`)
   } else {
@@ -1284,6 +1428,7 @@ function showVirtualDisplayPrompt(payload: VirtualDisplayPromptPayload): void {
     if (virtualDisplayPromptWindow === win) {
       virtualDisplayPromptWindow = null
       virtualDisplayPromptPayload = null
+      virtualPromptAnalytics = null
     }
     logger.info('虚拟显示器询问弹窗已关闭')
   })
@@ -1293,6 +1438,7 @@ function closeVirtualDisplayPrompt(): void {
   const win = virtualDisplayPromptWindow
   virtualDisplayPromptWindow = null
   virtualDisplayPromptPayload = null
+  virtualPromptAnalytics = null
   if (win && !win.isDestroyed()) {
     win.close()
   }
@@ -1354,88 +1500,93 @@ ipcMain.handle(
   }
 )
 
-ipcMain.handle('log:export', async () => {
-  try {
-    if (!mainWindow) return { success: false, error: '窗口未初始化' }
+ipcMain.handle('log:export', async (_event, rawDialogLabels?: unknown) => {
+  return observeDiagnosticExport('log:export', async () => {
+    try {
+      if (!mainWindow)
+        return { success: false, error: '窗口未初始化', errorCode: 'window-unavailable' }
 
-    const appRoot = getAppRoot()
-    const debugDir = path.join(appRoot, 'debug')
+      const dialogLabels =
+        rawDialogLabels && typeof rawDialogLabels === 'object'
+          ? (rawDialogLabels as { title?: unknown; zipFilterName?: unknown })
+          : undefined
+      const appRoot = getAppRoot()
+      const debugDir = path.join(appRoot, 'debug')
 
-    if (!fs.existsSync(debugDir)) {
-      return { success: false, error: '日志目录不存在' }
-    }
+      if (!fs.existsSync(debugDir)) {
+        return { success: false, error: '日志目录不存在', errorCode: 'directory-missing' }
+      }
 
-    // 选择保存位置
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: '导出日志',
-      defaultPath: `logs-${new Date().toISOString().slice(0, 10)}.zip`,
-      filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
-    })
+      // 选择保存位置
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title: typeof dialogLabels?.title === 'string' ? dialogLabels.title : '导出日志',
+        defaultPath: `logs-${new Date().toISOString().slice(0, 10)}.zip`,
+        filters: [
+          {
+            name:
+              typeof dialogLabels?.zipFilterName === 'string'
+                ? dialogLabels.zipFilterName
+                : 'ZIP文件',
+            extensions: ['zip'],
+          },
+        ],
+      })
 
-    if (result.canceled || !result.filePath) {
-      return { success: false, error: '用户取消' }
-    }
+      if (result.canceled || !result.filePath) {
+        return { success: false, error: '用户取消' }
+      }
 
-    const zipPath = result.filePath
+      const zipPath = result.filePath
 
-    // 与问题包同一套脱敏（日志里的推送密钥、家目录等），但不设大小上限：这里要的就是全部日志
-    const zip = new AdmZip()
-    const state: CollectorState = {
-      zip,
-      entries: [],
-      archiveBytes: 0,
-      maxEntryBytes: Number.POSITIVE_INFINITY,
-      maxArchiveBytes: Number.POSITIVE_INFINITY,
-    }
+      // 与问题包同一套脱敏（日志里的推送密钥、家目录等），但不设大小上限：这里要的就是全部日志
+      const zip = new AdmZip()
+      const state: CollectorState = {
+        zip,
+        entries: [],
+        archiveBytes: 0,
+        maxEntryBytes: Number.POSITIVE_INFINITY,
+        maxArchiveBytes: Number.POSITIVE_INFINITY,
+      }
 
-    // 读取 debug 目录下的所有文件
-    const files = fs.readdirSync(debugDir)
+      // 递归收集 debug 目录，沿用脱敏并跳过符号链接；覆盖已有压缩包时不把自身再装进去。
+      const hasFiles = addDirectory(state, debugDir, '', {
+        includeFile: sourcePath => path.relative(sourcePath, zipPath) !== '',
+      })
+      if (!hasFiles) {
+        return { success: false, error: '日志目录为空，没有可导出的文件', errorCode: 'no-files' }
+      }
 
-    if (files.length === 0) {
-      return { success: false, error: '日志目录为空，没有可导出的文件' }
-    }
+      // 读不出来、解不开的文件不会原样放进包（那样就把没打码的内容发出去了），要让人知道少了哪些
+      const skipped = state.entries.filter(entry => entry.status === 'skipped')
+      for (const entry of state.entries) {
+        if (entry.status === 'skipped') {
+          logger.warn(`未能导出: ${entry.path}（${entry.reason}）`)
+        } else {
+          logger.info(`添加文件到压缩包: ${entry.path}`)
+        }
+      }
 
-    // 将所有日志文件添加到 ZIP
-    for (const file of files) {
-      const filePath = path.join(debugDir, file)
-      const stat = fs.statSync(filePath)
+      // 保存 ZIP 文件
+      zip.writeZip(zipPath)
+      logger.info(`日志压缩包已导出: ${zipPath}`)
 
-      if (stat.isFile()) {
-        addDiagnosticFile(state, filePath, file)
-      } else if (stat.isDirectory() && ['maaend-login', 'runtime'].includes(file)) {
-        addDirectory(state, filePath, file)
+      return {
+        success: true,
+        message:
+          skipped.length > 0
+            ? `日志压缩包导出成功，${skipped.map(entry => entry.path).join('、')} 未能导出`
+            : '日志压缩包导出成功',
+        skippedPaths: skipped.map(entry => entry.path),
+        zipPath: zipPath,
+      }
+    } catch (error) {
+      logger.error('导出日志失败:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
       }
     }
-
-    // 读不出来、解不开的文件不会原样放进包（那样就把没打码的内容发出去了），要让人知道少了哪些
-    const skipped = state.entries.filter(entry => entry.status === 'skipped')
-    for (const entry of state.entries) {
-      if (entry.status === 'skipped') {
-        logger.warn(`未能导出: ${entry.path}（${entry.reason}）`)
-      } else {
-        logger.info(`添加文件到压缩包: ${entry.path}`)
-      }
-    }
-
-    // 保存 ZIP 文件
-    zip.writeZip(zipPath)
-    logger.info(`日志压缩包已导出: ${zipPath}`)
-
-    return {
-      success: true,
-      message:
-        skipped.length > 0
-          ? `日志压缩包导出成功，${skipped.map(entry => entry.path).join('、')} 未能导出`
-          : '日志压缩包导出成功',
-      zipPath: zipPath,
-    }
-  } catch (error) {
-    logger.error('导出日志失败:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    }
-  }
+  })
 })
 
 interface IssueReportResult {
@@ -1457,43 +1608,45 @@ function registerIssueReportExporter(
   ) => IssueReportResult | Promise<IssueReportResult>
 ): void {
   ipcMain.handle(ipcChannel, async (_event, rawScriptId?: unknown, rawDialogLabels?: unknown) => {
-    try {
-      if (!mainWindow) return { success: false, error: '窗口未初始化' }
+    return observeDiagnosticExport(ipcChannel, async () => {
+      try {
+        if (!mainWindow) return { success: false, error: '窗口未初始化' }
 
-      const scriptId = typeof rawScriptId === 'string' ? rawScriptId : ''
-      const dialogLabels =
-        rawDialogLabels && typeof rawDialogLabels === 'object'
-          ? (rawDialogLabels as { title?: unknown; zipFilterName?: unknown })
-          : undefined
-      const appRoot = getAppRoot()
-      const prefix =
-        typeof fileNamePrefix === 'function' ? fileNamePrefix(appRoot, scriptId) : fileNamePrefix
-      const result = await dialog.showSaveDialog(mainWindow, {
-        title: typeof dialogLabels?.title === 'string' ? dialogLabels.title : title,
-        defaultPath: `${prefix}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
-        filters: [
-          {
-            name:
-              typeof dialogLabels?.zipFilterName === 'string'
-                ? dialogLabels.zipFilterName
-                : 'ZIP文件',
-            extensions: ['zip'],
-          },
-        ],
-      })
+        const scriptId = typeof rawScriptId === 'string' ? rawScriptId : ''
+        const dialogLabels =
+          rawDialogLabels && typeof rawDialogLabels === 'object'
+            ? (rawDialogLabels as { title?: unknown; zipFilterName?: unknown })
+            : undefined
+        const appRoot = getAppRoot()
+        const prefix =
+          typeof fileNamePrefix === 'function' ? fileNamePrefix(appRoot, scriptId) : fileNamePrefix
+        const result = await dialog.showSaveDialog(mainWindow, {
+          title: typeof dialogLabels?.title === 'string' ? dialogLabels.title : title,
+          defaultPath: `${prefix}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
+          filters: [
+            {
+              name:
+                typeof dialogLabels?.zipFilterName === 'string'
+                  ? dialogLabels.zipFilterName
+                  : 'ZIP文件',
+              extensions: ['zip'],
+            },
+          ],
+        })
 
-      if (result.canceled || !result.filePath) {
-        return { success: false, error: '用户取消' }
+        if (result.canceled || !result.filePath) {
+          return { success: false, error: '用户取消' }
+        }
+
+        return await create(appRoot, result.filePath, scriptId)
+      } catch (error) {
+        logger.error(`${title}失败:`, error)
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        }
       }
-
-      return await create(appRoot, result.filePath, scriptId)
-    } catch (error) {
-      logger.error(`${title}失败:`, error)
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      }
-    }
+    })
   })
 }
 
@@ -1503,11 +1656,25 @@ registerIssueReportExporter(
   'MAA-logs',
   createMaaIssueReport
 )
-registerIssueReportExporter(
-  'maaend:exportIssueReport',
-  '导出 MaaEnd 问题包',
-  'MaaEnd-logs',
-  (appRoot, zipPath) => createMaaEndIssueReport(appRoot, zipPath, getLocalApiEndpoint())
+ipcMain.handle('maaend:exportIssueReport', async () =>
+  observeDiagnosticExport('maaend:exportIssueReport', async () => {
+    try {
+      if (!mainWindow) return { success: false, error: '窗口未初始化' }
+      return await openMaaEndLogBundles(getLocalApiEndpoint(), {
+        selectDirectory: async () => {
+          const result = await dialog.showOpenDialog(mainWindow!, {
+            title: '选择 MaaEnd 日志保存目录',
+            properties: ['openDirectory', 'createDirectory'],
+          })
+          return result.canceled ? null : (result.filePaths[0] ?? null)
+        },
+        openDirectory: directory => shell.openPath(directory),
+      })
+    } catch (error) {
+      logger.error('打开或保存 MaaEnd 日志失败:', error)
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
 )
 registerIssueReportExporter(
   'okww:exportIssueReport',
@@ -1557,74 +1724,82 @@ registerIssueReportExporter(
   'MSS-logs',
   createMSSIssueReport
 )
+registerIssueReportExporter(
+  'hsr:exportIssueReport',
+  '导出 HSR 问题包',
+  'HSR-logs',
+  createHSRIssueReport
+)
 
-ipcMain.handle('maafw:listIssueReportScripts', (_event, configTypes?: unknown) => {
+ipcMain.handle('maafw:listIssueReportProjects', (_event, configTypes?: unknown) => {
   const types = Array.isArray(configTypes)
     ? configTypes.filter((type): type is string => typeof type === 'string')
     : []
-  return listMaaFWIssueReportScripts(getAppRoot(), types)
+  return listMaaFWIssueReportProjects(getAppRoot(), types)
 })
 
 ipcMain.handle('data:backup', async () => {
-  let partialPath: string | undefined
+  return observeDataBackup(async () => {
+    let partialPath: string | undefined
 
-  try {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return { success: false, error: '窗口未初始化' }
-    }
-
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: '导出数据备份',
-      defaultPath: `AUTO-MAS-backup-${new Date().toISOString().slice(0, 10)}.zip`,
-      filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
-    })
-
-    if (result.canceled || !result.filePath) {
-      return { success: false, error: '用户取消' }
-    }
-
-    const zipPath = result.filePath
-    partialPath = `${zipPath}.part-${process.pid}-${Date.now()}`
-    const response = await fetch(`${getLocalApiEndpoint()}/api/setting/backup`, {
-      method: 'GET',
-    })
-
-    if (!response.ok) {
-      throw new Error(
-        `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`
-      )
-    }
-    if (!response.body) {
-      throw new Error('后端未返回备份文件内容')
-    }
-
-    const file = await fs.promises.open(partialPath, 'wx')
     try {
-      for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-        await file.write(chunk)
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return { success: false, error: '窗口未初始化' }
       }
-    } finally {
-      await file.close()
-    }
 
-    await fs.promises.rename(partialPath, zipPath)
-    partialPath = undefined
-    logger.info(`数据备份已导出: ${zipPath}`)
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title: '导出数据备份',
+        defaultPath: `AUTO-MAS-backup-${new Date().toISOString().slice(0, 10)}.zip`,
+        filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
+      })
 
-    return {
-      success: true,
-      message: '数据备份导出成功',
-      zipPath,
-    }
-  } catch (error) {
-    if (partialPath) {
-      await fs.promises.unlink(partialPath).catch(() => undefined)
-    }
+      if (result.canceled || !result.filePath) {
+        return { success: false, error: '用户取消' }
+      }
 
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`导出数据备份失败: ${errorMsg}`)
-    return { success: false, error: errorMsg }
-  }
+      const zipPath = result.filePath
+      partialPath = `${zipPath}.part-${process.pid}-${Date.now()}`
+      const response = await fetch(`${getLocalApiEndpoint()}/api/setting/backup`, {
+        method: 'GET',
+      })
+
+      if (!response.ok) {
+        throw new Error(
+          `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`
+        )
+      }
+      if (!response.body) {
+        throw new Error('后端未返回备份文件内容')
+      }
+
+      const file = await fs.promises.open(partialPath, 'wx')
+      try {
+        for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+          await file.write(chunk)
+        }
+      } finally {
+        await file.close()
+      }
+
+      await fs.promises.rename(partialPath, zipPath)
+      partialPath = undefined
+      logger.info(`数据备份已导出: ${zipPath}`)
+
+      return {
+        success: true,
+        message: '数据备份导出成功',
+        zipPath,
+      }
+    } catch (error) {
+      if (partialPath) {
+        await fs.promises.unlink(partialPath).catch(() => undefined)
+      }
+
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`导出数据备份失败: ${errorMsg}`)
+      return { success: false, error: errorMsg }
+    }
+  })
 })
 
 // 传了 fromOffset 走增量形态，返回 { content, size, reset }；否则沿用整份字符串
@@ -1667,9 +1842,10 @@ ipcMain.handle('open-dev-tools', () => {
 
 // 窗口控制
 ipcMain.handle('window-minimize', () => {
-  if (mainWindow) {
-    mainWindow.minimize()
-  }
+  if (!mainWindow || mainWindow.isDestroyed()) return false
+
+  mainWindow.minimize()
+  return true
 })
 
 ipcMain.handle('window-maximize', () => {
@@ -1686,6 +1862,23 @@ ipcMain.handle('window-close', () => {
   requestRendererClose('renderer 请求关闭窗口')
 })
 
+// 页面加载事件不能证明 Vue 已挂载；只接受当前主窗口主 frame 的就绪信号。
+ipcMain.on('renderer-ready', event => {
+  if (!isApplicationWindowSender(event, mainWindow, { allowDevelopment: true })) return
+  recordDesktopStartup('Vue 根组件就绪')
+  if (event.senderFrame) mainRendererRecovery?.rendererReady(event.senderFrame)
+})
+
+ipcMain.on('native-window-close-handler-ready', event => {
+  if (mainWindow && event.sender === mainWindow.webContents) {
+    nativeCloseHandlerReady = true
+  }
+})
+
+ipcMain.handle('window-hide-to-tray', () => {
+  return hideMainWindowToTray()
+})
+
 ipcMain.handle('get-window-activity', () => {
   if (lastWindowActivity) {
     return lastWindowActivity
@@ -1700,18 +1893,7 @@ ipcMain.handle('get-window-activity', () => {
 
 // 窗口聚焦（从托盘/最小化状态恢复并激活到前台）
 ipcMain.handle('window-focus', () => {
-  if (mainWindow) {
-    // 如果窗口最小化，先恢复
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore()
-    }
-    // 恢复任务栏图标
-    mainWindow.setSkipTaskbar(false)
-    // 显示窗口
-    mainWindow.show()
-    // 聚焦窗口
-    mainWindow.focus()
-  }
+  showMainWindow()
 })
 
 // 电源操作倒计时警示：把窗口从托盘/最小化拉到最前并临时置顶。
@@ -1754,15 +1936,45 @@ ipcMain.handle('app-restart', () => {
   requestRendererClose('应用重启')
 })
 
+// 后端请求的重启：只置「这次退出后重新拉起」，退出本身仍走 app-quit 那条已协调好的路。
+// 这里不调 requestRendererClose：调用它的收尾流程已经把连接关了，再发一次窗口关闭请求
+// 只会等渲染进程确认，等不到就落进强制退出兜底，反而把重启变成超时。
+ipcMain.handle('app-restart-on-quit', () => {
+  logger.info('已标记退出后重新启动应用')
+  relaunchAfterQuit = true
+})
+
 // renderer 仅在后端优雅关闭或超时兜底完成后调用，作为最终退出确认。
-ipcMain.handle('app-quit', () => {
-  finishCoordinatedQuit()
+ipcMain.on('app-backend-close-observed', (event, request: unknown) => {
+  if (!isAnalyticsSender(event)) return
+  observeScheduledWakeupQuit(request)
+  closeTelemetry ??= beginMainFeature('app_close_finished')
+  closeTelemetryKind = 'backend'
+})
+
+ipcMain.handle('app-quit', () => finishCoordinatedQuit())
+
+// renderer 已响应关闭请求，但用户尚未批准退出；保留请求锁，暂停强制清理。
+ipcMain.handle('app-wait-for-quit-confirmation', () => {
+  if (
+    !quitRequestInFlight ||
+    activeQuitPreparation !== null ||
+    coordinatedQuit ||
+    forceQuitInProgress
+  )
+    return false
+  clearQuitFallback()
+  quitConfirmationPending = true
+  return true
 })
 
 ipcMain.handle('app-prepare-quit', () => {
   if (coordinatedQuit || forceQuitInProgress) return null
   if (activeQuitPreparation !== null) return activeQuitPreparation
+  observeScheduledWakeupQuit({ automatic: false })
+  closeTelemetry ??= beginMainFeature('app_close_finished')
   clearQuitFallback()
+  quitConfirmationPending = false
   quitRequestInFlight = true
   const token = ++quitPreparationSequence
   activeQuitPreparation = token
@@ -1802,7 +2014,7 @@ ipcMain.handle('app-cancel-quit', (_event, token?: number) => {
 // 添加进程管理相关的 IPC 处理器
 ipcMain.handle('get-related-processes', async () => {
   try {
-    const { getRelatedProcesses } = await import('./utils/processManager')
+    const { getRelatedProcesses } = await import('./utils/processManager.js')
     return await getRelatedProcesses()
   } catch {
     logger.error('获取进程信息失败')
@@ -1842,6 +2054,35 @@ ipcMain.handle('select-file', async (event, filters = []) => {
   })
   return result.canceled ? [] : result.filePaths
 })
+
+// 保存文本内容到用户选择的位置（用于导出下载日志等小体积文本）
+ipcMain.handle(
+  'save-text-file',
+  async (
+    _event,
+    defaultName: string,
+    content: string,
+    filters = [],
+    dialogOptions: { dialogTitle?: string; buttonLabel?: string } = {}
+  ) => {
+    if (!mainWindow) return { success: false, error: '窗口未就绪' }
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: dialogOptions.dialogTitle ?? '导出日志',
+      defaultPath: defaultName,
+      filters: filters.length > 0 ? filters : [{ name: '所有文件', extensions: ['*'] }],
+      ...(dialogOptions.buttonLabel ? { buttonLabel: dialogOptions.buttonLabel } : {}),
+    })
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: '用户取消' }
+    }
+    try {
+      await fs.promises.writeFile(result.filePath, content, 'utf-8')
+      return { success: true, filePath: result.filePath }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+)
 
 // 在系统默认浏览器中打开URL
 ipcMain.handle('open-url', async (_event, url: string) => {
@@ -1887,43 +2128,14 @@ ipcMain.handle('show-item-in-folder', async (_event, filePath: string) => {
   }
 })
 
-// Runtime 上下文 - 初始化界面开局问一次：走没走 Runtime、回退日志文件、可用镜像键
+// Runtime 上下文 - 初始化界面的运行模式与回退日志文件
 ipcMain.handle('get-runtime-init-context', async () => resolveRuntimeInitContext())
 
 // 关键文件检查 - 每次都重新检查exe文件是否存在
 ipcMain.handle('check-critical-files', async () => {
   try {
     // Runtime 链路不再有 environment/python 这套目录，改问 Runtime doctor 要受管布局。
-    const runtimeCheck = await checkCriticalFilesViaRuntime()
-    if (runtimeCheck) return runtimeCheck
-
-    const appRoot = getAppRoot()
-
-    // 检查Python可执行文件
-    const pythonPath = path.join(appRoot, 'environment', 'python', 'python.exe')
-    const pythonExists = fs.existsSync(pythonPath)
-
-    // 检查pip（通常与Python一起安装）
-    const pipPath = path.join(appRoot, 'environment', 'python', 'Scripts', 'pip.exe')
-    const pipExists = fs.existsSync(pipPath)
-
-    // 检查Git可执行文件
-    const gitPath = path.join(appRoot, 'environment', 'git', 'bin', 'git.exe')
-    const gitExists = fs.existsSync(gitPath)
-
-    // 检查后端主文件
-    const mainPyPath = path.join(appRoot, 'main.py')
-    const mainPyExists = fs.existsSync(mainPyPath)
-
-    const result = {
-      pythonExists,
-      pipExists,
-      gitExists,
-      mainPyExists,
-    }
-
-    logger.info('关键文件检查结果')
-    return result
+    return await checkCriticalFilesViaRuntime()
   } catch {
     logger.error('检查关键文件失败')
     return {
@@ -1955,7 +2167,7 @@ ipcMain.handle('get-app-path', async (_event, name: Parameters<typeof app.getPat
 // 这些 IPC 处理器已在 initializationHandlers.ts 中实现
 
 // 配置文件操作
-ipcMain.handle('save-config', (_event, patch, defaults) => {
+ipcMain.handle('save-config', (event, patch, defaults) => {
   try {
     const appRoot = getAppRoot()
     const configDir = path.join(appRoot, 'config')
@@ -1964,24 +2176,42 @@ ipcMain.handle('save-config', (_event, patch, defaults) => {
     const config = patchConfigFile(configPath, patch, defaults) as AppConfig
     logger.info(`配置已保存到: ${configPath}`)
 
-    if (
-      patch &&
-      typeof patch === 'object' &&
-      ['themeMode', 'themeColor', 'appearanceId'].some(key => key in patch)
-    ) {
-      for (const window of BrowserWindow.getAllWindows()) {
-        if (!window.isDestroyed()) {
+    desktopMascot.configChanged(patch)
+
+    if (patch && typeof patch === 'object') {
+      const themeChanged = [
+        'themeMode',
+        'themeColor',
+        'appearanceId',
+        'customBackgroundPath',
+        'customSurfaceOpacity',
+      ].some(key => key in patch)
+      const cursorSizeChanged = 'cursorSizePx' in patch
+      if (themeChanged || cursorSizeChanged) {
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (window.isDestroyed()) continue
           window.webContents.send('theme-config-changed', {
-            themeMode: config.themeMode,
-            themeColor: config.themeColor,
-            appearanceId: config.appearanceId ?? null,
+            ...(themeChanged
+              ? {
+                  themeMode: config.themeMode,
+                  themeColor: config.themeColor,
+                  appearanceId: config.appearanceId ?? null,
+                  customBackgroundPath: config.customBackgroundPath ?? '',
+                  customBackgroundUpdated:
+                    'customBackgroundPath' in patch && window.webContents.id !== event.sender.id,
+                  customSurfaceOpacityUpdated:
+                    'customSurfaceOpacity' in patch && window.webContents.id !== event.sender.id,
+                  customSurfaceOpacity: config.customSurfaceOpacity ?? 1,
+                }
+              : {}),
+            ...(cursorSizeChanged ? { cursorSizePx: config.cursorSizePx ?? null } : {}),
           })
         }
       }
     }
 
     // 如果是UI配置更新，需要更新托盘状态
-    if (config.UI) {
+    if (patch && typeof patch === 'object' && 'UI' in patch && config.UI) {
       updateTrayVisibility(config)
       if (Array.isArray(config.UI.TrayItems) && config.UI.TrayItems.length) {
         rebuildTrayMenu(config.UI.TrayItems)
@@ -2014,10 +2244,14 @@ ipcMain.handle('update-tray-settings', async (_event, uiSettings) => {
 
 // 更新托盘自定义菜单项
 ipcMain.handle('update-tray-config', async (_event, trayItems: TrayItem[]) => {
+  const telemetryContext = analyticsService.getContext()
+  const startedAt = performance.now()
+  let saved = false
   try {
     const currentConfig = loadConfig()
-    currentConfig.UI = { ...currentConfig.UI, TrayItems: trayItems }
-    saveConfig(currentConfig)
+    currentConfig.UI = { ...currentConfig.UI, TrayItems: normalizeTrayItems(trayItems) }
+    saved = saveConfig(currentConfig)
+    if (!saved) return false
 
     // 销毁并重建托盘，强制右键菜单即时刷新为新配置；刷新失败不应导致配置保存失败
     try {
@@ -2032,12 +2266,26 @@ ipcMain.handle('update-tray-config', async (_event, trayItems: TrayItem[]) => {
   } catch (error) {
     logger.error('更新托盘菜单项失败')
     throw error
+  } finally {
+    analyticsService.recordMainEvent(telemetryContext, {
+      name: 'config_write_finished',
+      props: {
+        owner_kind: 'settings',
+        section_kind: 'ui',
+        script_type: 'none',
+        outcome: saved ? 'success' : 'failure',
+        duration_bucket: analyticsDuration(performance.now() - startedAt),
+      },
+    })
   }
 })
 
 // 新增：同步后端配置的IPC处理器
-ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
+ipcMain.handle('sync-backend-config', async (event, backendSettings) => {
   try {
+    if (isAnalyticsSender(event) && backendSettings.Function) {
+      syncAnalyticsPreference(backendSettings.Function.IfEnableTelemetry)
+    }
     const currentConfig = loadConfig()
 
     // 同步UI配置
@@ -2133,61 +2381,14 @@ ipcMain.handle('set-initialized-version', async (_event, version: string) => {
   }
 })
 
-// Runtime 灰度开关：持久化设置 + 当前生效值（供设置界面展示来源与效果，重启后生效）
-ipcMain.handle('get-runtime-launch-mode', async () => {
-  try {
-    const config = loadConfig()
-    const persisted = isPersistedRuntimeLaunchMode(config.Runtime?.LaunchMode)
-      ? config.Runtime.LaunchMode
-      : 'auto'
-    const resolution = resolveRuntimeLaunchModeDetail(getAppRoot())
-    return { persisted, mode: resolution.mode, source: resolution.source }
-  } catch (error) {
-    logger.error('读取 Runtime 启动方式失败', error)
-    return { persisted: 'auto', mode: 'off', source: 'default' }
-  }
-})
-
-ipcMain.handle('set-runtime-launch-mode', async (_event, mode: unknown) => {
-  if (!isPersistedRuntimeLaunchMode(mode)) {
-    throw new TypeError(`不支持的 Runtime 启动方式: ${String(mode)}`)
-  }
-
-  try {
-    const config = loadConfig()
-    config.Runtime = { ...config.Runtime, LaunchMode: mode }
-    saveConfig(config)
-    logger.info(`Runtime 启动方式已设置为: ${mode}`)
-
-    const resolution = resolveRuntimeLaunchModeDetail(getAppRoot())
-    return { persisted: mode, mode: resolution.mode, source: resolution.source }
-  } catch (error) {
-    logger.error('保存 Runtime 启动方式失败', error)
-    throw error
-  }
-})
+// 只读运行模式供后端更新和诊断页面使用。
+ipcMain.handle('get-runtime-launch-mode', () => resolveRuntimeLaunchModeDetail())
 
 // 应用生命周期
-// 保证应用单例运行
-const gotTheLock = app.requestSingleInstanceLock()
-
-if (!gotTheLock) {
-  app.quit()
-  process.exit(0)
-}
-
-// 在沙箱环境下运行会导致无法启动子进程，强制禁用沙箱
-app.commandLine.appendSwitch('no-sandbox')
-
-app.on('second-instance', () => {
+app.on('second-instance', (_event, argv) => {
+  if (keepAwakeForScheduledWakeup(argv)) return
   if (mainWindow) {
-    // 如果窗口最小化，先恢复
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore()
-    }
-    mainWindow.setSkipTaskbar(false)
-    mainWindow.show()
-    mainWindow.focus()
+    showMainWindow()
   }
 })
 
@@ -2200,10 +2401,14 @@ app.on('child-process-gone', (_event, details) => {
 })
 
 app.on('will-quit', () => {
+  finishScheduledWakeupQuit({ restart: relaunchAfterQuit })
+  disposeAnalytics()
+  desktopMascot.dispose()
   globalShortcut.unregisterAll()
 })
 
 app.on('before-quit', event => {
+  if (mainRendererRecovery?.isSessionEnding()) return
   if (canElectronExitImmediately({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight })) {
     return
   }
@@ -2216,6 +2421,29 @@ app.on('before-quit', event => {
 })
 
 app.whenReady().then(async () => {
+  keepAwakeForScheduledWakeup(process.argv)
+  recordDesktopStartup('Electron 就绪')
+  const startupConfig = loadConfig()
+  void startDesktopStartup({
+    version: app.getVersion(),
+    initializedVersion:
+      typeof startupConfig.initializedVersion === 'string'
+        ? startupConfig.initializedVersion
+        : undefined,
+    autoUpdate: startupConfig.Update.IfAutoUpdate,
+  }).then(result => {
+    if (!result.success) logger.warn(`桌面启动未完成: ${result.error ?? result.code}`)
+  })
+  const handlersStartedAt = performance.now()
+  registerAnalyticsHandlers(() => mainWindow)
+  registerFluxdownInstallHandlers(() => mainWindow, getLocalApiEndpoint)
+  refreshAnalyticsPreference()
+  analyticsService.recordAppStarted({
+    launch_kind: isScheduledWakeup ? 'scheduled_wakeup' : isAutoStart ? 'auto_start' : 'manual',
+    runtime_mode:
+      getBackendOwnership() === 'owned' ? resolveRuntimeLaunchModeDetail().mode : 'unknown',
+    release_channel: app.getVersion().includes('-beta.') ? 'beta' : 'stable',
+  })
   logger.info(`应用版本: ${app.getVersion()}`)
   logger.info(`Electron版本: ${process.versions.electron}`)
   logger.info(`Node版本: ${process.versions.node}`)
@@ -2225,7 +2453,9 @@ app.whenReady().then(async () => {
   registerFileHandlers()
   logger.info('文件操作处理器已注册')
 
-  registerAppearanceHandlers()
+  registerAppearanceHandlers({ onChanged: desktopMascot.sync })
+  registerMascotHandlers(desktopMascot.sync)
+  desktopMascot.mount()
   logger.info('外观包处理器已注册')
 
   // 注册 OK-WW 与鸣潮安装路径发现处理器
@@ -2245,12 +2475,14 @@ app.whenReady().then(async () => {
   }
 
   powerMonitor.on('resume', () => {
+    prepareSystemResumeRecovery()
     logger.info('主进程检测到系统恢复，通知 renderer 检查后端连接')
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('system-resumed')
     }
   })
 
+  recordDesktopStartup('就绪后处理器与桌面能力注册', handlersStartedAt)
   createWindow()
 })
 

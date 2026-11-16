@@ -17,9 +17,9 @@ export const sourceTagColor = (base: string): string => {
 
 /** 来源 → 展示词条 key（未知值按独立兜底） */
 export const sourceLabelKey = (base: string): string => {
-  if (base === 'shared') return 'edit.configRestoreModeScript'
-  if (base === 'native') return 'edit.configRestoreModeDirect'
-  return 'edit.configRestoreModeUser'
+  if (base === 'shared') return 'core.edit.configRestoreModeScript'
+  if (base === 'native') return 'core.edit.configRestoreModeDirect'
+  return 'core.edit.configRestoreModeUser'
 }
 
 /** 是否跨配置来源恢复（两侧都已标注且不一致；未声明来源侧为 null 即不跨） */
@@ -39,15 +39,18 @@ export const buildRestoreConfirm = (
     return { title: base.title, paragraphs: [base.desc] }
   }
   const paragraphs = [
-    t('edit.configRestoreCrossSourceDesc', {
+    t('core.edit.configRestoreCrossSourceDesc', {
       backup: t(sourceLabelKey(backupMode as string)),
       current: t(sourceLabelKey(currentMode as string)),
     }),
   ]
   if (backupMode === 'shared') {
-    paragraphs.push(t('edit.configRestoreCrossSourceShared'))
+    paragraphs.push(t('core.edit.configRestoreCrossSourceShared'))
   }
-  return { title: t('edit.configRestoreCrossSourceTitle'), paragraphs: [base.desc, ...paragraphs] }
+  return {
+    title: t('core.edit.configRestoreCrossSourceTitle'),
+    paragraphs: [base.desc, ...paragraphs],
+  }
 }
 
 /** 强制恢复确认弹窗的文案（标题/损坏位置/风险/按钮）：各恢复入口共用同一份说法 */
@@ -55,10 +58,10 @@ export const buildCorruptedForceConfirm = (
   t: (key: string, named?: Record<string, string>) => string,
   detail: string
 ): { title: string; detail: string; desc: string; okText: string } => ({
-  title: t('edit.configRestoreCorruptedTitle'),
+  title: t('core.edit.configRestoreCorruptedTitle'),
   detail,
-  desc: t('edit.configRestoreCorruptedDesc'),
-  okText: t('edit.configRestoreForceAction'),
+  desc: t('core.edit.configRestoreCorruptedDesc'),
+  okText: t('core.edit.configRestoreForceAction'),
 })
 
 /** 强制恢复确认弹窗内容：第一段红字标明损坏位置，第二段写风险（与文案同源，渲染也共用） */

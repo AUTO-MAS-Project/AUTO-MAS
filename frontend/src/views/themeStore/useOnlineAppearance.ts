@@ -1,14 +1,18 @@
+import { describePackageError } from '@/utils/resourcePackageError'
+import { beginAnalyticsOperation } from '@/utils/analytics'
+import { appearanceCategory } from '@/utils/preferenceAnalytics'
 import { computed, ref, shallowRef } from 'vue'
+import type { AppearanceCategory, AppearanceFilter } from '@/types/mascotPack'
 
 import { translate as t } from '@/i18n'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
 import type {
-  OnlineAppearanceErrorCode,
   OnlineAppearanceItem,
   OnlineAppearancePreview,
   OnlineAppearanceVersion,
 } from '@/types/appearance'
 import { createCoverLoader, type CoverTask } from './coverLoader'
+import { loadAppearanceCatalog } from './appearanceCatalog'
 
 export const ONLINE_APPEARANCE_PAGE_SIZE = 12
 export const ONLINE_APPEARANCE_SEARCH_DEBOUNCE = 400
@@ -16,11 +20,12 @@ export const ONLINE_APPEARANCE_COVER_CACHE_LIMIT = 48
 export const ONLINE_APPEARANCE_COVER_CONCURRENCY = 3
 
 /** 设置页的覆盖确认、失败提示和安装后预览都在 useAppearanceSettings 里，这里只关心结局。 */
-export type OnlineAppearanceInstallOutcome = 'installed' | 'cancelled' | 'failed'
+export type OnlineAppearanceInstallOutcome = 'installed' | 'partial' | 'cancelled' | 'failed'
 
 export type OnlineAppearanceStatus = 'none' | 'installed' | 'outdated'
 
 export interface PreparedOnlineAppearance {
+  categoryKey?: AppearanceCategory
   token: string
   fileKey: string
   versionNo: number
@@ -28,29 +33,7 @@ export interface PreparedOnlineAppearance {
   existing: { id: string; name: string } | null
 }
 
-const ERROR_KEYS: Record<OnlineAppearanceErrorCode, string> = {
-  NETWORK: 'themeStore.error.network',
-  NOT_FOUND: 'themeStore.error.notFound',
-  BAD_RESPONSE: 'themeStore.error.badResponse',
-  TOO_LARGE: 'themeStore.error.tooLarge',
-  CHECKSUM_MISMATCH: 'themeStore.error.checksum',
-  EXPIRED: 'themeStore.error.expired',
-  UNSUPPORTED: 'themeStore.error.unsupported',
-}
-
 const UNSUPPORTED = { code: 'UNSUPPORTED' } as const
-
-/** 站端与下载类失败用本地文案；外观包校验失败沿用主进程给出的具体原因。 */
-export function describeOnlineAppearanceError(
-  result: { code?: string; error?: string } | undefined,
-  fallbackKey: string
-): string {
-  const code = result?.code
-  if (code && Object.prototype.hasOwnProperty.call(ERROR_KEYS, code)) {
-    return t(ERROR_KEYS[code as OnlineAppearanceErrorCode])
-  }
-  return result?.error || t(fallbackKey)
-}
 
 export function getOnlineAppearanceStatus(item: OnlineAppearanceItem): OnlineAppearanceStatus {
   if (!item.installed) return 'none'
@@ -69,7 +52,7 @@ export function formatAppearanceFileSize(bytes: number): string {
 
 // 时间来自分享站，按本机时区展示
 export function formatOnlineAppearanceTime(value: string): string {
-  return value ? formatBackendDateTime(value) : t('themeStore.unknownTime')
+  return value ? formatBackendDateTime(value) : t('core.themeStore.unknownTime')
 }
 
 export function pickDefaultVersion(
@@ -83,10 +66,15 @@ export function pickDefaultVersion(
 }
 
 export function useOnlineAppearance(options: {
-  install: (token: string) => Promise<OnlineAppearanceInstallOutcome>
+  install: (token: string, category?: AppearanceCategory) => Promise<OnlineAppearanceInstallOutcome>
+  categoryKey?: AppearanceFilter
 }) {
   const logger = window.electronAPI.getLogger('在线外观')
   const api = () => window.electronAPI
+  const categoryArgs = (category?: AppearanceCategory): [] | [AppearanceCategory] => {
+    if (category) return [category]
+    return options.categoryKey && options.categoryKey !== 'all' ? [options.categoryKey] : []
+  }
 
   const view = ref<'list' | 'detail'>('list')
 
@@ -122,18 +110,31 @@ export function useOnlineAppearance(options: {
     limit: ONLINE_APPEARANCE_COVER_CACHE_LIMIT,
     concurrency: ONLINE_APPEARANCE_COVER_CONCURRENCY,
   })
-  const coverKey = (fileKey: string, versionNo: number): string => `${fileKey}@${versionNo}`
+  const coverKey = (fileKey: string, versionNo: number, category?: AppearanceCategory): string =>
+    `${category ?? ''}:${fileKey}@${versionNo}`
 
-  const coverFor = (fileKey: string, versionNo: number | null): string | undefined =>
-    versionNo === null ? undefined : coverLoader.get(coverKey(fileKey, versionNo))
+  const coverFor = (
+    fileKey: string,
+    versionNo: number | null,
+    category?: AppearanceCategory
+  ): string | undefined =>
+    versionNo === null ? undefined : coverLoader.get(coverKey(fileKey, versionNo, category))
 
-  const coverTask = (fileKey: string, versionNo: number): CoverTask => {
-    const key = coverKey(fileKey, versionNo)
+  const coverTask = (
+    fileKey: string,
+    versionNo: number,
+    category?: AppearanceCategory
+  ): CoverTask => {
+    const key = coverKey(fileKey, versionNo, category)
     return {
       key,
       run: async () => {
         try {
-          const result = await api().getOnlineAppearanceCover?.(fileKey, versionNo)
+          const result = await api().getOnlineAppearanceCover?.(
+            fileKey,
+            versionNo,
+            ...categoryArgs(category)
+          )
           if (result?.success && result.dataUrl) return result.dataUrl
           if (result && result.code !== 'NOT_FOUND') {
             logger.warn(`加载外观封面失败: ${key}，${result.error ?? result.code ?? '未知错误'}`)
@@ -148,15 +149,19 @@ export function useOnlineAppearance(options: {
     }
   }
 
-  const ensureCover = (fileKey: string, versionNo: number | null): void => {
-    if (versionNo !== null) coverLoader.request(coverTask(fileKey, versionNo))
+  const ensureCover = (
+    fileKey: string,
+    versionNo: number | null,
+    category?: AppearanceCategory
+  ): void => {
+    if (versionNo !== null) coverLoader.request(coverTask(fileKey, versionNo, category))
   }
 
   const loadCovers = (list: OnlineAppearanceItem[]): void => {
     coverLoader.load(
       list.flatMap(item =>
         item.hasCover && item.publishedVersionNo !== null
-          ? [coverTask(item.fileKey, item.publishedVersionNo)]
+          ? [coverTask(item.fileKey, item.publishedVersionNo, item.categoryKey)]
           : []
       )
     )
@@ -166,17 +171,19 @@ export function useOnlineAppearance(options: {
     const item = detailItem.value
     const version = selectedVersion.value
     if (!item || !version?.hasCover) return undefined
-    return coverFor(item.fileKey, version.versionNo)
+    return coverFor(item.fileKey, version.versionNo, item.categoryKey)
   })
 
-  const discardToken = (token: string): void => {
-    void Promise.resolve(api().discardOnlineAppearance?.(token)).catch(() => undefined)
+  const discardToken = (token: string, category?: AppearanceCategory): void => {
+    void Promise.resolve(api().discardOnlineAppearance?.(token, ...categoryArgs(category))).catch(
+      () => undefined
+    )
   }
 
   const discardPrepared = (): void => {
-    const token = prepared.value?.token
+    const ready = prepared.value
     prepared.value = null
-    if (token) discardToken(token)
+    if (ready) discardToken(ready.token, ready.categoryKey)
   }
 
   const cancelScheduledSearch = (): void => {
@@ -193,19 +200,25 @@ export function useOnlineAppearance(options: {
     listError.value = null
     try {
       const query = keyword.value.trim()
-      const result = await api().listOnlineAppearances?.({
+      const request = {
         page: targetPage,
         pageSize: ONLINE_APPEARANCE_PAGE_SIZE,
         ...(query ? { keyword: query } : {}),
-      })
+      }
+      const result =
+        options.categoryKey === 'all'
+          ? await loadAppearanceCatalog(
+              request,
+              (next, category) =>
+                api().listOnlineAppearances?.(next, category) ??
+                Promise.resolve({ success: false, ...UNSUPPORTED })
+            )
+          : await api().listOnlineAppearances?.(request, ...categoryArgs())
       if (revision !== listRevision) return
       if (!result?.success) {
         items.value = []
         total.value = 0
-        listError.value = describeOnlineAppearanceError(
-          result ?? UNSUPPORTED,
-          'themeStore.listFailed'
-        )
+        listError.value = describePackageError(result ?? UNSUPPORTED, 'core.themeStore.listFailed')
         logger.warn(`加载在线外观列表失败: ${result?.error ?? result?.code ?? '不支持'}`)
         return
       }
@@ -217,7 +230,7 @@ export function useOnlineAppearance(options: {
       if (revision !== listRevision) return
       items.value = []
       total.value = 0
-      listError.value = t('themeStore.listFailed')
+      listError.value = t('core.themeStore.listFailed')
       logger.error(
         `加载在线外观列表失败: ${error instanceof Error ? error.message : String(error)}`
       )
@@ -250,16 +263,21 @@ export function useOnlineAppearance(options: {
     preparing.value = true
     prepareError.value = null
     try {
-      const result = await api().prepareOnlineAppearance?.(item.fileKey, versionNo)
+      const result = await api().prepareOnlineAppearance?.(
+        item.fileKey,
+        versionNo,
+        ...categoryArgs(item.categoryKey)
+      )
       if (revision !== prepareRevision) {
-        if (result?.token) discardToken(result.token)
+        if (result?.token) discardToken(result.token, item.categoryKey)
         return null
       }
       if (!result?.success || !result.token || !result.appearance) {
-        if (result?.token) discardToken(result.token)
-        prepareError.value = describeOnlineAppearanceError(
+        if (result?.token) discardToken(result.token, item.categoryKey)
+        prepareError.value = describePackageError(
           result ?? UNSUPPORTED,
-          'themeStore.prepareFailed'
+          'core.themeStore.prepareFailed',
+          item.categoryKey ?? (options.categoryKey === 'mascot' ? 'mascot' : 'theme')
         )
         logger.warn(
           `下载在线外观失败: ${item.fileKey} v${versionNo}，${result?.error ?? result?.code ?? '不支持'}`
@@ -267,6 +285,7 @@ export function useOnlineAppearance(options: {
         return null
       }
       prepared.value = {
+        ...(item.categoryKey ? { categoryKey: item.categoryKey } : {}),
         token: result.token,
         fileKey: item.fileKey,
         versionNo,
@@ -276,7 +295,7 @@ export function useOnlineAppearance(options: {
       return prepared.value
     } catch (error) {
       if (revision !== prepareRevision) return null
-      prepareError.value = t('themeStore.prepareFailed')
+      prepareError.value = t('core.themeStore.prepareFailed')
       logger.error(
         `下载在线外观失败: ${item.fileKey} v${versionNo}，${error instanceof Error ? error.message : String(error)}`
       )
@@ -307,19 +326,26 @@ export function useOnlineAppearance(options: {
     detailItem.value = item
     detailLoading.value = true
     try {
-      const result = await api().getOnlineAppearance?.(item.fileKey)
+      const result = await api().getOnlineAppearance?.(
+        item.fileKey,
+        ...categoryArgs(item.categoryKey)
+      )
       if (revision !== detailRevision) return
       if (!result?.success) {
-        detailError.value = describeOnlineAppearanceError(
+        detailError.value = describePackageError(
           result ?? UNSUPPORTED,
-          'themeStore.detailFailed'
+          'core.themeStore.detailFailed'
         )
         logger.warn(
           `加载在线外观详情失败: ${item.fileKey}，${result?.error ?? result?.code ?? '不支持'}`
         )
         return
       }
-      if (result.item) detailItem.value = result.item
+      if (result.item)
+        detailItem.value = {
+          ...result.item,
+          ...(item.categoryKey ? { categoryKey: item.categoryKey } : {}),
+        }
       versions.value = result.versions ?? []
       selectedVersionNo.value = pickDefaultVersion(
         versions.value,
@@ -327,7 +353,7 @@ export function useOnlineAppearance(options: {
       )
     } catch (error) {
       if (revision !== detailRevision) return
-      detailError.value = t('themeStore.detailFailed')
+      detailError.value = t('core.themeStore.detailFailed')
       logger.error(
         `加载在线外观详情失败: ${item.fileKey}，${error instanceof Error ? error.message : String(error)}`
       )
@@ -337,9 +363,8 @@ export function useOnlineAppearance(options: {
     }
     if (revision !== detailRevision || selectedVersionNo.value === null) return
     if (selectedVersion.value?.hasCover && detailItem.value) {
-      ensureCover(detailItem.value.fileKey, selectedVersionNo.value)
+      ensureCover(detailItem.value.fileKey, selectedVersionNo.value, detailItem.value.categoryKey)
     }
-    await prepareSelected()
   }
 
   const retryDetail = (): void => {
@@ -352,22 +377,43 @@ export function useOnlineAppearance(options: {
     const version = versions.value.find(item => item.versionNo === versionNo)
     if (!version) return
     selectedVersionNo.value = versionNo
-    if (version.hasCover && detailItem.value) ensureCover(detailItem.value.fileKey, versionNo)
-    void prepareSelected()
+    if (version.hasCover && detailItem.value)
+      ensureCover(detailItem.value.fileKey, versionNo, detailItem.value.categoryKey)
+    discardPrepared()
+    prepareError.value = null
   }
 
   const install = async (): Promise<OnlineAppearanceInstallOutcome> => {
     if (installing.value || preparing.value) return 'cancelled'
+    const telemetry = beginAnalyticsOperation('appearance_store_install_finished')
+    let category_kind = appearanceCategory(options.categoryKey ?? 'theme')
     installing.value = true
     let outcome: OnlineAppearanceInstallOutcome = 'failed'
     try {
       const ready = await prepareSelected()
       if (!ready) return outcome
-      outcome = await options.install(ready.token)
+      category_kind = appearanceCategory(
+        ready.categoryKey ??
+          (options.categoryKey === 'all' ? undefined : (options.categoryKey ?? 'theme'))
+      )
+      outcome = await (options.categoryKey === 'all'
+        ? options.install(ready.token, ready.categoryKey)
+        : options.install(ready.token))
       // 用户拒绝覆盖时主进程保留临时包，换别的结局都已经用掉或删掉了。
       if (outcome !== 'cancelled' && prepared.value?.token === ready.token) discardPrepared()
       return outcome
     } finally {
+      telemetry.finish({
+        category_kind,
+        outcome:
+          outcome === 'installed'
+            ? 'success'
+            : outcome === 'partial'
+              ? 'partial'
+              : outcome === 'cancelled'
+                ? 'cancelled'
+                : 'failure',
+      })
       installing.value = false
       // 装好后回到列表并重新拉一次，「已安装 / 有新版本」标记才会跟上。
       if (outcome === 'installed') {

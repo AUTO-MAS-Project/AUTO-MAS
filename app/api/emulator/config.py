@@ -1,0 +1,259 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 MoeSnowyFox
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+
+import asyncio
+from typing import (
+    Dict,
+    List,
+    Literal,
+    Optional,
+)
+
+from fastapi import APIRouter, Body
+from pydantic import (
+    BaseModel,
+    Field,
+)
+
+import app.models.config as _config_models
+from app.config.wire import ConfigInput, ConfigPayload
+from app.core import Config, EmulatorManager
+from app.models.schema import DeviceInfo, EmulatorDeleteIn, OutBase
+from app.utils import emulator as _utils_emulator
+from app.utils import get_logger
+
+EmulatorConfig = ConfigPayload[_config_models.EmulatorConfig]
+EmulatorConfigInput = ConfigInput[_config_models.EmulatorConfig]
+
+
+class EmulatorConfigIndexItem(BaseModel):
+    uid: str = Field(..., description="唯一标识符")
+    type: Literal["EmulatorConfig"] = Field(..., description="配置类型")
+
+
+class EmulatorGetIn(BaseModel):
+    emulatorId: Optional[str] = Field(
+        default=None, description="模拟器ID, 未携带时表示获取所有模拟器数据"
+    )
+
+
+class EmulatorGetOut(OutBase):
+    index: List[EmulatorConfigIndexItem] = Field(..., description="模拟器索引列表")
+    data: Dict[str, EmulatorConfig] = Field(
+        ..., description="模拟器数据字典, key来自于index列表的uid"
+    )
+
+
+class EmulatorCreateOut(OutBase):
+    emulatorId: str = Field(..., description="新创建的模拟器 ID")
+    data: EmulatorConfig = Field(..., description="模拟器配置数据")
+
+
+class EmulatorUpdateIn(BaseModel):
+    emulatorId: str = Field(..., description="模拟器 ID")
+    data: EmulatorConfigInput = Field(..., description="模拟器更新数据")
+
+
+class EmulatorOperateIn(BaseModel):
+    emulatorId: str = Field(..., description="模拟器 ID")
+    operate: Literal["open", "close", "show", "hide"] = Field(
+        ..., description="操作类型"
+    )
+    index: str = Field(..., description="模拟器索引")
+
+
+class EmulatorStatusOut(OutBase):
+    data: Dict[str, Dict[str, DeviceInfo]] = Field(
+        ...,
+        description="模拟器状态信息, 外层key为模拟器ID, 内层key为设备索引, value为设备信息",
+    )
+
+
+class EmulatorSearchResult(BaseModel):
+    type: str = Field(..., description="模拟器类型")
+    path: str = Field(..., description="模拟器路径")
+    name: str = Field(..., description="模拟器名称")
+
+
+class EmulatorSearchOut(OutBase):
+    emulators: List[EmulatorSearchResult] = Field(
+        default_factory=list, description="搜索到的模拟器列表"
+    )
+
+
+router = APIRouter(prefix="/api/emulator", tags=["模拟器管理"])
+logger = get_logger("模拟器 API")
+
+
+@router.post(
+    "/get",
+    tags=["Get"],
+    summary="查询模拟器配置",
+    response_model=EmulatorGetOut,
+    status_code=200,
+)
+async def get_emulator(emulator: EmulatorGetIn = Body(...)) -> EmulatorGetOut:
+    try:
+        index, data = await Config.get_emulator(emulator.emulatorId)
+        index = [EmulatorConfigIndexItem(**_) for _ in index]
+        data = {uid: EmulatorConfig(**cfg) for uid, cfg in data.items()}
+    except Exception as e:
+        logger.opt(exception=True).warning(f"get_emulator失败: {type(e).__name__}: {e}")
+        return EmulatorGetOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            index=[],
+            data={},
+        )
+    return EmulatorGetOut(index=index, data=data)
+
+
+@router.post(
+    "/add",
+    tags=["Add"],
+    summary="添加模拟器项",
+    response_model=EmulatorCreateOut,
+    status_code=200,
+)
+async def add_emulator() -> EmulatorCreateOut:
+    try:
+        uid, config = await Config.add_emulator()
+        data = EmulatorConfig(**config.model_dump(context={"audience": "api"}))
+    except Exception as e:
+        logger.opt(exception=True).warning(f"add_emulator失败: {type(e).__name__}: {e}")
+        return EmulatorCreateOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            emulatorId="",
+            data=EmulatorConfig(**{}),
+        )
+    return EmulatorCreateOut(emulatorId=str(uid), data=data)
+
+
+@router.post(
+    "/update",
+    tags=["Update"],
+    summary="更新模拟器项",
+    response_model=OutBase,
+    status_code=200,
+)
+async def update_emulator(emulator: EmulatorUpdateIn = Body(...)) -> OutBase:
+    try:
+        await Config.update_emulator(
+            emulator.emulatorId, emulator.data.model_dump(exclude_unset=True)
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"update_emulator失败: {type(e).__name__}: {e}"
+        )
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return OutBase()
+
+
+@router.post(
+    "/delete",
+    tags=["Delete"],
+    summary="删除模拟器项",
+    response_model=OutBase,
+    status_code=200,
+)
+async def delete_emulator(emulator: EmulatorDeleteIn = Body(...)) -> OutBase:
+    try:
+        await Config.del_emulator(emulator.emulatorId)
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"delete_emulator失败: {type(e).__name__}: {e}"
+        )
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return OutBase()
+
+
+@router.post(
+    "/operate",
+    tags=["Action"],
+    summary="操作模拟器",
+    response_model=OutBase,
+    status_code=200,
+)
+async def operation_emulator(emulator: EmulatorOperateIn = Body(...)) -> OutBase:
+    try:
+        await EmulatorManager.operate_emulator(
+            emulator.operate, emulator.emulatorId, emulator.index
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"operation_emulator失败: {type(e).__name__}: {e}"
+        )
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return OutBase()
+
+
+@router.post(
+    "/status",
+    tags=["Get"],
+    summary="查询模拟器状态",
+    response_model=EmulatorStatusOut,
+    status_code=200,
+)
+async def get_status(emulator: EmulatorGetIn = Body(...)) -> EmulatorStatusOut:
+    try:
+        data = await EmulatorManager.get_status(emulator.emulatorId)
+    except Exception as e:
+        logger.opt(exception=True).warning(f"get_status失败: {type(e).__name__}: {e}")
+        return EmulatorStatusOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data={}
+        )
+    return EmulatorStatusOut(data=data)
+
+
+@router.post(
+    "/emulator/search",
+    tags=["Get"],
+    summary="搜索已安装的模拟器",
+    response_model=EmulatorSearchOut,
+    status_code=200,
+)
+async def search_emulators() -> EmulatorSearchOut:
+    """枚举卸载表并解析主管理器路径（不依赖 ADB 设备枚举）。"""
+    try:
+        emulators = await asyncio.to_thread(_utils_emulator.tools.search_all_emulators)
+        results = [EmulatorSearchResult(**emulator) for emulator in emulators]
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"search_emulators失败: {type(e).__name__}: {e}"
+        )
+        return EmulatorSearchOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            emulators=[],
+        )
+    return EmulatorSearchOut(emulators=results)

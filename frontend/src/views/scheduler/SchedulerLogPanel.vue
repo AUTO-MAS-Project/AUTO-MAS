@@ -1,25 +1,32 @@
 <template>
-  <div class="log-panel">
+  <div class="scheduler-panel log-panel app-page-section">
     <div class="scheduler-panel-header">
-      <h3>{{ t('scheduler.log.title') }}</h3>
+      <h3>{{ t('core.scheduler.log.title') }}</h3>
+      <DownloadLogLine
+        v-if="renderedPrefetch"
+        :data="renderedPrefetch"
+        class="prefetch-status"
+        :class="downloadClasses"
+        :style="{ ...downloadVariables, fontSize: `${editorConfig.fontSize}px` }"
+      />
       <div class="log-controls">
         <a-space size="small">
           <a-select
             v-model:value="logThemeMode"
             size="small"
             class="log-theme-select"
-            :aria-label="t('scheduler.log.theme')"
+            :aria-label="t('core.scheduler.log.theme')"
           >
-            <a-select-option value="theme">{{ t('scheduler.log.followTheme') }}</a-select-option>
-            <a-select-option value="dark">{{ t('comp.darkTheme') }}</a-select-option>
-            <a-select-option value="light">{{ t('comp.lightTheme') }}</a-select-option>
+            <a-select-option value="theme">{{
+              t('core.scheduler.log.followTheme')
+            }}</a-select-option>
+            <a-select-option value="dark">{{ t('core.comp.darkTheme') }}</a-select-option>
+            <a-select-option value="light">{{ t('core.comp.lightTheme') }}</a-select-option>
           </a-select>
-          <a-button
-            size="small"
-            :type="logMode === 'follow' ? 'primary' : 'default'"
-            @click="toggleLogMode"
-          >
-            {{ logMode === 'follow' ? t('scheduler.log.follow') : t('scheduler.log.browse') }}
+          <a-button size="small" :aria-pressed="logMode === 'follow'" @click="toggleLogMode">
+            {{
+              logMode === 'follow' ? t('core.scheduler.log.follow') : t('core.scheduler.log.browse')
+            }}
           </a-button>
         </a-space>
       </div>
@@ -30,16 +37,12 @@
       :class="{ 'log-locked': logMode === 'follow', 'log-dark': logIsDark }"
       :style="{ backgroundColor: logBackground, color: logForeground }"
     >
-      <div v-if="!logContent" class="empty-state">
-        <div class="empty-content">
-          <div class="empty-image-container">
-            <img src="@/assets/NoData.png" :alt="t('scheduler.log.empty')" class="empty-image" />
-          </div>
-        </div>
+      <div v-if="!renderedLog" class="empty-state">
+        <NoData :image-style="{ height: '80px' }" :description="false" />
       </div>
       <div v-else class="monaco-container">
         <vue-monaco-editor
-          :value="logContent"
+          :value="renderedLog"
           language="logfile"
           :theme="editorTheme"
           :options="editorOptions"
@@ -54,16 +57,22 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { useLogHighlight } from '@/composables/useLogHighlight'
+import { useDownloadLogStyle } from '@/composables/useDownloadLogStyle'
+import type { WSTaskPrefetchData } from '@/services/websocket/types'
 import { useTheme } from '@/composables/useTheme'
-import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
+import VueMonacoEditor from '@/components/LocalMonacoEditor'
+import DownloadLogLine from '@/components/DownloadLogLine.vue'
 import { useLocalStorage } from '@vueuse/core'
 import { message, theme } from 'ant-design-vue'
-import { computed, nextTick, onUnmounted, ref, toRefs, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, shallowRef, watch } from 'vue'
 
 const { t } = useI18n()
 
 interface Props {
   logContent: string
+  prefetch?: WSTaskPrefetchData | null
+  active?: boolean
+  runId?: string | null
   externalLogMode?: 'follow' | 'browse' // 外部控制的日志模式
   // 日志首行在完整日志里的行号。后端只推最近一段日志，行号得接着完整日志排。
   // 调用方（scheduler/index.vue）保证一定给值，这里不再做第二层兜底。
@@ -77,7 +86,61 @@ type LogThemeMode = 'theme' | 'dark' | 'light'
 const props = defineProps<Props>()
 
 // 解构 props 以便在模板中直接使用（保持响应性）
-const { logContent } = toRefs(props)
+const renderedLog = shallowRef('')
+const renderedPrefetch = shallowRef<WSTaskPrefetchData | null>(null)
+const displayFirstLine = ref(props.firstLine)
+let renderTimer: number | undefined
+let displayedRunId: string | null | undefined
+let wasActive = false
+const flushLog = () => {
+  displayedRunId = props.runId
+  renderedPrefetch.value = props.prefetch ?? null
+  const content = props.logContent
+  const dropped = Math.max(0, content.length - 120000)
+  let offset = dropped ? content.indexOf('\n', dropped) + 1 : 0
+  if (offset <= 0) offset = dropped
+  const notice = dropped ? t('core.scheduler.log.truncated') + '\n\n' : ''
+  renderedLog.value = notice + content.slice(offset)
+  displayFirstLine.value =
+    props.firstLine + content.slice(0, offset).split('\n').length - 1 - (dropped ? 2 : 0)
+}
+watch(
+  () => [
+    props.logContent,
+    props.prefetch,
+    props.firstLine,
+    props.active,
+    props.externalLogMode,
+    props.runId,
+  ],
+  () => {
+    if (renderTimer !== undefined && props.active === false) {
+      window.clearTimeout(renderTimer)
+      renderTimer = undefined
+    }
+    if (props.active === false) {
+      wasActive = false
+      return
+    }
+    const immediate =
+      !wasActive ||
+      props.runId !== displayedRunId ||
+      !renderedLog.value ||
+      props.externalLogMode === 'browse'
+    wasActive = true
+    if (immediate) {
+      if (renderTimer !== undefined) window.clearTimeout(renderTimer)
+      renderTimer = undefined
+      flushLog()
+    } else if (renderTimer === undefined) {
+      renderTimer = window.setTimeout(() => {
+        renderTimer = undefined
+        flushLog()
+      }, 200)
+    }
+  },
+  { immediate: true }
+)
 
 const { isDark } = useTheme()
 const { token } = theme.useToken()
@@ -90,7 +153,7 @@ const logThemeMode = useLocalStorage<LogThemeMode>('auto-mas.scheduler.log-theme
   },
   onError: error => {
     logger.error(`保存日志主题失败: ${String(error)}`)
-    message.error(t('scheduler.log.saveThemeFailed'))
+    message.error(t('core.scheduler.log.saveThemeFailed'))
   },
 })
 const logIsDark = computed(() =>
@@ -109,6 +172,9 @@ const editorColors = computed(() => ({
   'editor.foreground': logForeground.value,
   'editorGutter.background': logBackground.value,
 }))
+
+// 状态位于标题栏，配色跟随标题栏所在的应用主题。
+const { downloadClasses, downloadVariables } = useDownloadLogStyle(isDark)
 
 // 使用独立主题名，保留其他日志页面的配色。
 const { registerLogLanguage, editorTheme, editorConfig, lightColors, darkColors, styles } =
@@ -142,7 +208,8 @@ watch(
 )
 
 // Monaco Editor 实例
-let editorInstance: any = null
+let editorInstance: import('monaco-editor').editor.IStandaloneCodeEditor | null = null
+let layoutListener: import('monaco-editor').IDisposable | null = null
 
 // Monaco Editor 配置
 const editorOptions = computed(() => ({
@@ -154,7 +221,7 @@ const editorOptions = computed(() => ({
   lineHeight: editorConfig.value.lineHeight * editorConfig.value.fontSize,
   // 显示真实行号：后端只推最近一段日志，但编号要接着完整日志往下排，
   // 否则每轮都从 1 重数，和存下来的日志对不上
-  lineNumbers: (lineNumber: number) => String(lineNumber + props.firstLine - 1),
+  lineNumbers: (lineNumber: number) => String(lineNumber + displayFirstLine.value - 1),
   wordWrap: 'on' as const,
   automaticLayout: true,
   scrollbar: {
@@ -179,10 +246,15 @@ const editorOptions = computed(() => ({
 }))
 
 // 处理编辑器挂载
-const handleEditorMount = (editor: any) => {
+const handleEditorMount = (editor: import('monaco-editor').editor.IStandaloneCodeEditor) => {
   editorInstance = editor
+  layoutListener?.dispose()
+  layoutListener = editor.onDidLayoutChange(() => {
+    // 标题状态换行会改变日志高度，保持最新模式仍需跟随到底部。
+    if (logMode.value === 'follow') nextTick(scrollToBottom)
+  })
   // 初始滚动到底部
-  if (logMode.value === 'follow' && props.logContent) {
+  if (logMode.value === 'follow' && renderedLog.value) {
     nextTick(() => scrollToBottom())
   }
 }
@@ -213,55 +285,44 @@ const scrollToBottom = () => {
 }
 
 // 只监听日志内容变化
-watch(
-  () => props.logContent,
-  () => {
-    if (logMode.value === 'follow') {
-      // 使用简单的延迟，避免nextTick可能导致的递归
-      setTimeout(scrollToBottom, 10)
-    }
+watch(renderedLog, () => {
+  if (logMode.value === 'follow') {
+    // 使用简单的延迟，避免nextTick可能导致的递归
+    setTimeout(scrollToBottom, 10)
   }
-)
+})
 
 onUnmounted(() => {
+  layoutListener?.dispose()
+  if (renderTimer !== undefined) window.clearTimeout(renderTimer)
   editorInstance = null
   monacoInstance = null
 })
 </script>
 
+<style src="@/components/downloadLog.css"></style>
+<style scoped src="./schedulerPanel.css"></style>
+
 <style scoped>
 .log-panel {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid var(--ant-color-border-secondary);
-  overflow: hidden;
+  container-type: inline-size;
+  container-name: scheduler-log;
 }
 
 .scheduler-panel-header {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 8px;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  flex-shrink: 0;
 }
 
-.scheduler-panel-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ant-color-text-heading);
+.prefetch-status {
+  min-width: 0;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  text-align: right;
 }
 
 .log-controls {
-  flex-shrink: 0;
+  grid-column: 3;
 }
 
 .log-theme-select {
@@ -311,15 +372,23 @@ onUnmounted(() => {
   height: 100%;
 }
 
-@media (max-width: 768px) {
-  .log-panel {
-    border-radius: 8px;
-  }
-
+@container scheduler-log (max-width: 640px) {
   .scheduler-panel-header {
-    padding: 12px;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
+  .prefetch-status {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .log-controls {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+@media (max-width: 768px) {
   .log-content {
     padding: 12px;
   }
@@ -333,34 +402,5 @@ onUnmounted(() => {
   height: 100%;
   min-height: 200px;
   text-align: center;
-}
-
-.empty-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.empty-image-container {
-  margin-bottom: 16px;
-}
-
-.empty-image {
-  width: 80px;
-  height: auto;
-  opacity: 0.6;
-}
-
-.empty-title {
-  font-size: 16px;
-  font-weight: 500;
-  margin: 0 0 4px 0;
-  color: var(--ant-color-text);
-}
-
-.empty-description {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0;
 }
 </style>

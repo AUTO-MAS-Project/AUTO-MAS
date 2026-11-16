@@ -2,9 +2,6 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-/**
- * OK-NTE 运行配置（复用通用字段）
- */
 export type OkNteConfig_Run = {
     /**
      * 单账号运行总时限（分钟），包含等待和全部重试
@@ -15,12 +12,12 @@ export type OkNteConfig_Run = {
      */
     ProxyTimesLimit?: (number | null);
     /**
-     * 重试次数限制
-     */
-    RunTimesLimit?: (number | null);
-    /**
      * 日志超时限制
      */
     RunTimeLimit?: (number | null);
+    /**
+     * 重试次数限制
+     */
+    RunTimesLimit?: (number | null);
 };
 

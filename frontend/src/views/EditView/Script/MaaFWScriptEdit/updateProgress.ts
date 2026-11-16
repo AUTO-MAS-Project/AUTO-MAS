@@ -22,6 +22,12 @@ export type MaaFWUpdateProgressPhase =
 
 export type MaaFWUpdatePackageKind = 'full' | 'incremental'
 
+/** 日志框里的一行；`alert` 是要用户留意的行（如项目发错版本号），整行标红。 */
+export interface MaaFWUpdateLogLine {
+  text: string
+  alert: boolean
+}
+
 export interface MaaFWUpdateProgressState {
   phase: MaaFWUpdateProgressPhase
   /** 后端原始阶段名，调试与日志用；面板文案看 phase。 */
@@ -39,7 +45,7 @@ export interface MaaFWUpdateProgressState {
   extractTotalFiles: number | null
   extractedBytes: number | null
   extractTotalBytes: number | null
-  logs: string[]
+  logs: MaaFWUpdateLogLine[]
 }
 
 /** 日志框最多留这么多行；更新日志一般几十行，留有余量即可。 */
@@ -112,7 +118,12 @@ export function reduceUpdateProgress(
   state: MaaFWUpdateProgressState,
   data: WSMaaFWProjectUpdateProgressData
 ): MaaFWUpdateProgressState {
-  const logs = data.log ? [...state.logs.slice(-(MAX_UPDATE_LOG_LINES - 1)), data.log] : state.logs
+  const logs = data.log
+    ? [
+        ...state.logs.slice(-(MAX_UPDATE_LOG_LINES - 1)),
+        { text: data.log, alert: data.logLevel === 'alert' },
+      ]
+    : state.logs
   if (data.stage === 'log') {
     return logs === state.logs ? state : { ...state, logs }
   }
@@ -154,6 +165,50 @@ export function reduceUpdateProgress(
     next.percent = 100
   }
   return next
+}
+
+const EVENT_KEY_FIELDS = [
+  'stage',
+  'status',
+  'message',
+  'log',
+  'logLevel',
+  'percent',
+  'downloadedBytes',
+  'totalBytes',
+  'speedBytesPerSec',
+  'packageKind',
+  'appliedFiles',
+  'totalFiles',
+  'extractedFiles',
+  'extractTotalFiles',
+  'extractedBytes',
+  'extractTotalBytes',
+] as const satisfies ReadonlyArray<keyof WSMaaFWProjectUpdateProgressData>
+
+function eventKey(data: WSMaaFWProjectUpdateProgressData): string {
+  return JSON.stringify(EVENT_KEY_FIELDS.map(name => data[name] ?? null))
+}
+
+/**
+ * 页面打开时接回后台的手动更新：按顺序重放后端登记的过程（`/maafw/update/job` 的 events），
+ * 再接上取快照期间已经推过来的事件（`pending`）。
+ *
+ * 后端先登记再推送，所以 `pending` 里靠前的那些可能已在快照里：与快照末尾若干条逐条相同的跳过，
+ * 免得日志行重复；其余照常折叠（同阶段的进度以后到的为准，终态之后的 running 事件照旧忽略）。
+ */
+export function replayUpdateProgress(
+  events: readonly WSMaaFWProjectUpdateProgressData[],
+  pending: readonly WSMaaFWProjectUpdateProgressData[] = []
+): MaaFWUpdateProgressState {
+  let state = createUpdateProgressState('checking')
+  for (const data of events) state = reduceUpdateProgress(state, data)
+  const seen = new Set((pending.length ? events.slice(-pending.length) : []).map(eventKey))
+  for (const data of pending) {
+    if (seen.has(eventKey(data))) continue
+    state = reduceUpdateProgress(state, data)
+  }
+  return state
 }
 
 /**

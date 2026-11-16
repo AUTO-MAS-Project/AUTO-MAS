@@ -1,0 +1,17 @@
+.script-drag * {
+  cursor: all-scroll !important;
+}
+
+.user-drag * {
+  cursor: all-scroll !important;
+}
+
+.script-drag-dots {
+  width: 10px;
+  height: 16px;
+  display: block;
+  background-image: radial-gradient(currentColor 1.2px, transparent 1.2px);
+  background-size: 5px 5px;
+  background-position: 0 0;
+  opacity: 0.65;
+}

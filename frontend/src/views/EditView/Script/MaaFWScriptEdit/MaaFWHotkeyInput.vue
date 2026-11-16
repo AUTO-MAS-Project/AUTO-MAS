@@ -10,7 +10,7 @@
     @keydown="handleKeydown"
     @blur="setRecording(false)"
   >
-    <span v-if="recording" class="hotkey-placeholder">{{ t('edit.mfwHotkeyPressKeys') }}</span>
+    <span v-if="recording" class="hotkey-placeholder">{{ t('core.edit.mfwHotkeyPressKeys') }}</span>
     <template v-else>
       <template v-for="(key, index) in keys" :key="index">
         <span v-if="index > 0" class="hotkey-plus">+</span>

@@ -1,32 +1,27 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025-2026 AUTO-MAS Team
-
 #   This file is part of AUTO-MAS.
-
 #   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU Affero General Public License as
 #   published by the Free Software Foundation, either version 3 of
 #   the License, or (at your option) any later version.
-
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU Affero General Public License for more details.
-
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 #   Contact: DLmaster_361@163.com
-
 import asyncio
 import uuid
 from contextlib import suppress
 from pathlib import Path
 
-from app.core.ws import Publisher, protocol
+from app.config import ConfigCollection
+from app.core import Publisher
+from app.core.ws import protocol
 from app.models.config import SrcConfig, SrcUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
@@ -37,7 +32,7 @@ from app.task.proxy_helpers import (
     read_config_base,
 )
 from app.utils import ProcessManager, get_logger
-from app.utils.io import read_file, write_file
+from app.utils import io as _utils_io
 
 from .tools import (
     archive_mas_runtime_backup,
@@ -62,13 +57,11 @@ logger = get_logger("SRC 脚本设置")
 class ScriptConfigTask(TaskExecuteBase):
     """脚本设置模式"""
 
-    wait_for_finalizer_on_cancel = True
-
     def __init__(
         self,
         script_info: ScriptItem,
         script_config: SrcConfig,
-        user_config: MultipleConfig[SrcUserConfig],
+        user_config: ConfigCollection[SrcUserConfig],
         emulator_manager: DeviceBase,
         *,
         src_installation_id: str,
@@ -85,7 +78,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self.user_config = user_config
         self.src_installation_id = src_installation_id
         # view_only=True 时为查看会话：只读预览（如「查看历史备份」）——
-        # 用户级照常下发（目录副本即备份）但结束不回写，脚本级跳过下发
+        # 账号级照常下发（目录副本即备份）但结束不回写，托管级跳过下发
         self.view_only = view_only
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.src_webui_port: int | None = None
@@ -97,8 +90,8 @@ class ScriptConfigTask(TaskExecuteBase):
         """本会话的 MAS 配置目录 owner；原生来源时返回 ``None``。
 
         与运行下发（AutoProxy ``set_src``）同一套来源规则。会话的下发与
-        回写此前硬编码用户目录，shared 来源用户的会话改动运行时根本不读（改了
-        白改），配置备份也因此采不到会话现场；现对齐运行态。原生来源用户没有
+        回写此前硬编码用户目录，shared 来源账号的会话改动运行时根本不读（改了
+        白改），配置备份也因此采不到会话现场；现对齐运行态。原生来源账号没有
         MAS 托管配置目录，返回 ``None``。
         """
 
@@ -117,7 +110,10 @@ class ScriptConfigTask(TaskExecuteBase):
         self.src_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
 
-        self.src_root_path = Path(self.script_config.get("Info", "Path"))
+        src_root_path = self.script_config.Info.Path
+        if src_root_path is None:
+            raise ValueError("Path未配置，请检查路径设置")
+        self.src_root_path = src_root_path
         self.src_set_path = self.src_root_path / "config"
         self.src_exe_path = self.src_root_path / "src.exe"
         self.src_process_state_path = (
@@ -176,7 +172,7 @@ class ScriptConfigTask(TaskExecuteBase):
     async def set_src(self):
         """配置SRC运行参数"""
 
-        logger.info(f"开始配置SRC运行参数: 设置脚本 {self.cur_user_item.user_id}")
+        logger.info(f"开始配置SRC运行参数: 设置账号 {self.cur_user_item.user_id}")
 
         cleanup_success = await kill_src_processes(
             self.src_process_manager,
@@ -195,7 +191,7 @@ class ScriptConfigTask(TaskExecuteBase):
             self.src_installation_id,
         )
 
-        # 查看会话的脚本级入口：原生目录即所选备份，跳过下发与注入
+        # 查看会话的托管级入口：原生目录即所选备份，跳过下发与注入
         if self.view_only and self.cur_user_item.user_id == "Default":
             logger.info("SRC 查看会话跳过配置下发: 原生目录即所选备份")
             return
@@ -210,8 +206,8 @@ class ScriptConfigTask(TaskExecuteBase):
         config_path = mas_config_dir(self.script_info.script_id, owner)
         recover_src_user_config(config_path)
 
-        # 下发前归档下发源到用户池（会话保存会覆盖它；带页面核心字段侧车，
-        # 指纹去重，失败不阻断会话）。池归属是当前真实用户（shared 来源多用户
+        # 下发前归档下发源到账号池（会话保存会覆盖它；带页面核心字段侧车，
+        # 指纹去重，失败不阻断会话）。池归属是当前真实账号（shared 来源多账号
         # 各自持有共享 Default 目录的快照），目标路径才按 owner 解析。
         # native 池由 manager.prepare 在任务级一次性归档
         overlay = (
@@ -239,7 +235,7 @@ class ScriptConfigTask(TaskExecuteBase):
             overlay_path=config_path if config_path.exists() else None,
         )
 
-        src_set = read_file(staging_path / "src.json")
+        src_set = _utils_io.read_file(staging_path / "src.json")
         deploy_set = poor_yaml_read((staging_path / "deploy.yaml"))
 
         # 不直接运行任务
@@ -259,7 +255,7 @@ class ScriptConfigTask(TaskExecuteBase):
         # 养成规划
         src_set["Dungeon"]["PlannerTarget"]["Enable"] = False
 
-        write_file(staging_path / "src.json", src_set)
+        _utils_io.write_file(staging_path / "src.json", src_set)
         poor_yaml_write(
             deploy_set,
             staging_path / "deploy.yaml",
@@ -274,7 +270,7 @@ class ScriptConfigTask(TaskExecuteBase):
             staging_path,
             expected_installation_id=self.src_installation_id,
         )
-        logger.success(f"SRC运行参数配置完成: 设置脚本 {self.cur_user_item.user_id}")
+        logger.success(f"SRC运行参数配置完成: 设置账号 {self.cur_user_item.user_id}")
 
     async def final_task(self):
 
@@ -306,14 +302,14 @@ class ScriptConfigTask(TaskExecuteBase):
         # manager 的任务前快照还原）；webui 内的改动一律丢弃
         if self.view_only:
             logger.success("SRC 查看结束（只读，不回写配置）")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             return
 
         # 原生来源会话：MAS 零写入，安装目录配置由本体保存并保留，不回写 MAS 目录
         owner = self._mas_owner()
         if owner is None:
             logger.success("SRC 原生来源会话: 配置由脚本原生 GUI 保存")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             return
 
         config_path = mas_config_dir(self.script_info.script_id, owner)
@@ -336,7 +332,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self.process_cleanup_success = True
 
     async def on_crash(self, e: Exception):
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
         try:
             await asyncio.wait_for(

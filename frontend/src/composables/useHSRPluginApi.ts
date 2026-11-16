@@ -1,3 +1,5 @@
+import { adapterUpdateOutcome } from '@/utils/adapterAnalytics'
+import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
 import { ApiError, HsrService, HSRUpdateIn } from '@/api'
 
 /** Engines exposed by the built-in HSR adapter. */
@@ -350,11 +352,21 @@ export function useHSRPluginApi() {
     action: HSRUpdateAction
   ): Promise<HSRUpdateResult> => {
     return requestPluginData<HSRUpdateResult>(
-      HsrService.postHsrUpdateApiApiScriptsHsrUpdatePost({
-        scriptId,
-        engine: HSRUpdateIn.engine[engine],
-        action: action === 'check' ? HSRUpdateIn.action.CHECK : HSRUpdateIn.action.APPLY,
-      })
+      observeFeature(
+        'adapter_setup_finished',
+        {
+          script_type: 'HSR',
+          operation_kind: action === 'check' ? 'update_check' : 'update',
+          engine_kind: engine,
+        },
+        () =>
+          HsrService.postHsrUpdateApiApiScriptsHsrUpdatePost({
+            scriptId,
+            engine: HSRUpdateIn.engine[engine],
+            action: action === 'check' ? HSRUpdateIn.action.CHECK : HSRUpdateIn.action.APPLY,
+          }),
+        result => adapterUpdateOutcome(result, action)
+      )
     )
   }
 
@@ -364,7 +376,19 @@ export function useHSRPluginApi() {
    */
   const cloudLogin = async (scriptId: string, userId: string): Promise<HSRCloudLoginResult> => {
     return requestPluginData<HSRCloudLoginResult>(
-      HsrService.postHsrCloudLoginApiApiScriptsHsrCloudLoginPost({ scriptId, userId })
+      observeFeature(
+        'adapter_setup_finished',
+        { script_type: 'HSR', operation_kind: 'login', engine_kind: 'M7A' },
+        () => HsrService.postHsrCloudLoginApiApiScriptsHsrCloudLoginPost({ scriptId, userId }),
+        result =>
+          result.code !== 200
+            ? apiOutcome(result)
+            : result.data?.logged_in === true
+              ? 'success'
+              : result.data?.logged_in === false
+                ? 'failure'
+                : 'unknown'
+      )
     )
   }
 

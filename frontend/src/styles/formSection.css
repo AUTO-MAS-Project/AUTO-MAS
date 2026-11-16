@@ -46,6 +46,28 @@
   background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
 }
 
+.section-header--compact {
+  justify-content: flex-start;
+  margin-bottom: 12px;
+  border-bottom-width: 1px;
+}
+
+.section-header--compact h3 {
+  gap: 10px;
+  font-size: 18px;
+}
+
+.section-header--compact h3::before {
+  height: 20px;
+  background: var(--ant-color-primary);
+}
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* 嵌在表单分区内部的子配置块标题（如 日志预处理）：
    级别介于 .section-header（20px + 通栏分隔线）与表单标签（14px）之间；
    不带通栏分隔线——子块后面紧跟着普通表单行时，不会被误读进子块的范围 */
@@ -76,4 +98,14 @@
   margin-left: 12px;
   font-size: 13px;
   color: var(--ant-color-text-secondary);
+}
+
+/* 用户编辑卡片的末项由卡片内边距留白，避免叠加分区和表单尾距。 */
+.user-edit-content .config-form > .form-section:last-child,
+.user-edit-content .config-form > .form-section:last-child > .ant-row:last-child .ant-form-item {
+  margin-bottom: 0;
+}
+
+.user-edit-content > .config-card + .section-header {
+  margin-top: 24px;
 }

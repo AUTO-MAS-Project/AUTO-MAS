@@ -24,6 +24,8 @@ The clearest file-level samples from those commits and surrounding `dev` code ar
 
 The initialization refactor introduced in commit `30eb8504` is still a useful secondary reference for Electron service style, but the three commits above should take precedence for this skill.
 
+Paths and APIs in these commit snapshots describe historical style examples. Current config declarations and caller behavior follow [the configuration framework reference](../../mas-data-model/references/config-framework.md); endpoint/shared contract placement follows the API skill. Historical samples are not a reason to restore old config APIs or duplicate configuration schemas.
+
 ## Commit Lenses
 
 ### `e541fa5f` - Small Refactor Lens

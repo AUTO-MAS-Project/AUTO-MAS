@@ -1,7 +1,7 @@
 <template>
   <a-modal
     v-model:open="openModel"
-    :title="t('edit.queueTemplate')"
+    :title="t('core.edit.queueTemplate')"
     :footer="null"
     width="720px"
     class="preset-template-modal"
@@ -23,7 +23,7 @@
         <template #icon>
           <PlusOutlined />
         </template>
-        {{ t('edit.queueTemplateSaveCurrent') }}
+        {{ t('core.edit.queueTemplateSaveCurrent') }}
       </a-button>
     </div>
 
@@ -44,10 +44,10 @@
               :disabled="template.entries.length === 0"
               @click="emit('applyQueueTemplate', template.name)"
             >
-              {{ t('edit.queueTemplateApply') }}
+              {{ t('core.edit.queueTemplateApply') }}
             </a-button>
             <a-dropdown :trigger="['click']">
-              <a-button :aria-label="t('comp.more')">
+              <a-button :aria-label="t('core.comp.more')">
                 <template #icon>
                   <EllipsisOutlined />
                 </template>
@@ -55,10 +55,10 @@
               <template #overlay>
                 <a-menu>
                   <a-menu-item key="rename" @click="openRenameDialog(template.name)">
-                    {{ t('edit.queueTemplateRename') }}
+                    {{ t('core.edit.queueTemplateRename') }}
                   </a-menu-item>
                   <a-menu-item key="delete" danger @click="confirmDelete(template.name)">
-                    {{ t('edit.queueTemplateDelete') }}
+                    {{ t('core.edit.queueTemplateDelete') }}
                   </a-menu-item>
                 </a-menu>
               </template>
@@ -66,7 +66,7 @@
           </template>
         </MaaFWQueueCard>
       </div>
-      <a-empty v-else :description="t('edit.queueTemplateEmpty')" />
+      <NoData v-else :description="t('core.edit.queueTemplateEmpty')" />
     </template>
 
     <div v-else class="preset-section-modal">
@@ -77,15 +77,25 @@
         :title="template.preset.label || template.preset.name"
         :description="template.preset.description"
         :base-path="basePath"
-        :chips="presetChips(template)"
+        :chips="presetTemplateChips(template)"
+        :disabled="template.unavailable"
       >
         <template #actions>
+          <!-- 不支持当前控制器的预设（PI v2.10.4）：置灰、悬停说明，不隐藏 -->
+          <a-tooltip
+            v-if="template.unavailable"
+            :title="t('core.edit.presetControllerUnavailable')"
+          >
+            <span class="preset-apply-disabled">
+              <a-button type="primary" disabled>{{ t('core.edit.applyPreset2') }}</a-button>
+            </span>
+          </a-tooltip>
           <a-button
+            v-else
             type="primary"
-            :disabled="template.entries.length === 0"
             @click="emit('applyPresetTemplate', template.preset.name)"
           >
-            {{ t('edit.applyPreset2') }}
+            {{ t('core.edit.applyPreset2') }}
           </a-button>
         </template>
       </MaaFWQueueCard>
@@ -96,15 +106,17 @@
   <a-modal
     v-model:open="nameDialogOpen"
     :title="
-      nameDialogMode === 'save' ? t('edit.queueTemplateSaveTitle') : t('edit.queueTemplateRename')
+      nameDialogMode === 'save'
+        ? t('core.edit.queueTemplateSaveTitle')
+        : t('core.edit.queueTemplateRename')
     "
     width="480px"
-    :ok-text="t('edit.queueTemplateSave')"
-    :cancel-text="t('common.cancel')"
+    :ok-text="t('core.edit.queueTemplateSave')"
+    :cancel-text="t('core.common.cancel')"
     :ok-button-props="{ disabled: !canSubmitName }"
     @ok="submitName"
   >
-    <div class="queue-template-name-label">{{ t('edit.queueTemplateName') }}</div>
+    <div class="queue-template-name-label">{{ t('core.edit.queueTemplateName') }}</div>
     <!-- antd 受控输入只绑 :value 会被重渲染清空，必须 v-model:value -->
     <a-input
       v-model:value="nameDraft"
@@ -112,11 +124,11 @@
       @press-enter="submitName"
     />
     <div v-if="nameProblem === 'duplicate'" class="queue-template-name-error">
-      {{ t('edit.queueTemplateNameExists') }}
+      {{ t('core.edit.queueTemplateNameExists') }}
     </div>
     <template v-if="nameDialogMode === 'save'">
       <div class="queue-template-draft-title">
-        {{ t('edit.queueTemplateCurrentCount', { count: draft.length }) }}
+        {{ t('core.edit.queueTemplateCurrentCount', { count: draft.length }) }}
       </div>
       <MaaFWQueueChips :chips="draft" />
     </template>
@@ -130,6 +142,7 @@ import { Modal } from 'ant-design-vue'
 import { EllipsisOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import type { MaaFWQueueSourceChip } from '../maafwQueueSource'
 import { checkMaaFWQueueTemplateName } from '../maafwQueueTemplates'
+import { presetTemplateChips } from '../maafwPresetQueue'
 import type { MaaFWQueueTemplateView, PresetTemplate } from '../../MaaFWFlavor/sectionContracts'
 import MaaFWQueueCard from './MaaFWQueueCard.vue'
 import MaaFWQueueChips from './MaaFWQueueChips.vue'
@@ -169,8 +182,8 @@ const openModel = computed({
 
 const activeTab = ref<TemplateTab>('mine')
 const tabOptions = computed(() => [
-  { value: 'mine', label: t('edit.queueTemplateMine') },
-  { value: 'presets', label: t('edit.queueTemplatePresets') },
+  { value: 'mine', label: t('core.edit.queueTemplateMine') },
+  { value: 'presets', label: t('core.edit.queueTemplatePresets') },
 ])
 
 // 每次打开都回到「我的模板」；项目预设没了（换了 interface）也退回去
@@ -180,12 +193,6 @@ watch(
     if ((open && !previous?.[0]) || presetCount === 0) activeTab.value = 'mine'
   }
 )
-
-const presetChips = (template: PresetTemplate) =>
-  template.entries.map(entry => ({
-    id: entry.id,
-    label: entry.task.label || entry.task.name,
-  }))
 
 const nameDialogOpen = ref(false)
 const nameDialogMode = ref<'save' | 'rename'>('save')
@@ -234,10 +241,10 @@ const submitName = () => {
 
 const confirmDelete = (name: string) => {
   Modal.confirm({
-    title: t('edit.queueTemplateDeleteConfirm', { name }),
-    okText: t('edit.queueTemplateDelete'),
+    title: t('core.edit.queueTemplateDeleteConfirm', { name }),
+    okText: t('core.edit.queueTemplateDelete'),
     okType: 'danger',
-    cancelText: t('common.cancel'),
+    cancelText: t('core.common.cancel'),
     onOk: () => emit('deleteQueueTemplate', name),
   })
 }
@@ -257,12 +264,20 @@ const confirmDelete = (name: string) => {
   margin-left: auto;
 }
 
+/* 禁用的按钮收不到鼠标事件：提示挂在外层 span 上 */
+.preset-apply-disabled {
+  display: inline-block;
+  cursor: not-allowed;
+}
+
+.preset-apply-disabled :deep(.ant-btn) {
+  pointer-events: none;
+}
+
 .preset-section-modal {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 60vh;
-  overflow: auto;
 }
 
 .queue-template-name-label {

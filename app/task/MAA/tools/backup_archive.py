@@ -16,13 +16,13 @@
 #   You should have received a copy of the GNU Affero General Public
 #   License along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""MAA 配置备份归档：MAS 用户配置 / 脚本原生配置，两类独立快照。
+"""MAA 配置备份归档：MAS 账号配置 / 脚本原生配置，两类独立快照。
 
 备份时机（MAS「动手前」，此时 MAA 配置尚未被触碰）：
 
 - 任务 / 配置会话启动（manager ``prepare``）：``native`` 归档 MAA 安装
-  目录 ``config/`` 当前状态（整目录）——安装配置物理上跨用户共享，只在
-  任务级归档一次；下发处按用户归档会把上一轮下发的 MAS 配置误当原生
+  目录 ``config/`` 当前状态（整目录）——安装配置物理上跨账号共享，只在
+  任务级归档一次；下发处按账号归档会把上一轮下发的 MAS 配置误当原生
   内容挤进保留池；
 - 运行 / 配置会话下发前（AutoProxy / ScriptConfig 的 ``set_maa``）：
   ``mas`` 归档本轮下发源（shared 来源共享 Default 目录、independent 来源当前用户目录，
@@ -31,34 +31,26 @@
   原始态）、退出时归档 ``mas``（编辑会话包络的 MAS 侧终态）。
 
 ``mas`` 池的内容 = ConfigFile 整目录 + **页面核心字段侧车**（Info / Task
-两段，覆盖 MAS 编辑页全部可配置核心内容）：这些字段运行时注入 gui.json、
-  不落盘在 ConfigFile——侧车让「MAS 用户配置备份」与页面认知一致，恢复时
+两段，覆盖 MAS 编辑页全部可配置核心内容）：这些字段运行时注入 gui.new.json、
+  不落盘在 ConfigFile——侧车让「MAS 账号配置备份」与页面认知一致，恢复时
   随文件一起回滚并按段分组回填表单（对齐 ZzzOd / ok-ww 字段回填模式）。
-  池恒按用户分桶（``mas/{user_id}``），多用户共享同一份 Default 目录时各自
+  池恒按账号分桶（``mas/{user_id}``），多账号共享同一份 Default 目录时各自
   持有快照、互不混淆（教训见 config-restore.md §1.1.1）。时间戳快照、指纹
   去重、保留清理与整目录恢复的通用逻辑由公共模块
-  ``app.utils.config_archive`` 提供（默认每池保留 10 份），本模块只保留
+  ``app.utils.common.config.archive`` 提供（默认每池保留 10 份），本模块只保留
   MAA 特有的目录布局、侧车、恢复语义（恢复前强制归档当前）与归档目录布局。
 """
 
 import json
 from pathlib import Path
 
-from app.utils import get_logger
-from app.utils.config_archive import (
-    META_FILE_NAMES,
-    OVERLAY_SIDECAR_NAME,
-    archive_files,
-    config_root_key,
-    dir_files,
-    get_backup_dir,
-    list_times,
-    mask_account,
-    read_overlay_sidecar,
-    restore_dir,
-    write_backup_base,
-)
-from app.utils.constants import BASE_SOURCE_LABELS, MAA_TASKS, MAA_TASKS_ZH
+from app.config import ConfigEntry
+from app.utils import BASE_SOURCE_LABELS, get_logger
+from app.utils.common.config import archive as _utils_config_archive
+
+from ..constants import MAA_TASKS, MAA_TASKS_ZH
+
+read_overlay_sidecar = _utils_config_archive.read_overlay_sidecar
 
 logger = get_logger("MAA 配置备份")
 
@@ -67,7 +59,7 @@ _MAA_CONFIG_FILES = ("gui.json", "gui.new.json")
 
 
 def backup_root(script_id: str) -> Path:
-    """某脚本的备份归档根目录（MAS 用户池用）：``data/{script_id}/MaaBackups``。"""
+    """某脚本的备份归档根目录（MAS 账号池用）：``data/{script_id}/MaaBackups``。"""
 
     return Path.cwd() / "data" / script_id / "MaaBackups"
 
@@ -77,7 +69,7 @@ def project_backup_root() -> Path:
 
     native（脚本原生配置）池挂在这里而不是脚本目录下——同一份物理安装
     可被多个脚本实例引用，原生备份按物理配置根指纹分桶、跨脚本共享、
-    不随脚本删除（mas 用户池仍按脚本，见 :func:`mas_backup_root`）。
+    不随脚本删除（mas 账号池仍按脚本，见 :func:`mas_backup_root`）。
     """
 
     return Path.cwd() / "data" / "MaaBackups"
@@ -86,7 +78,7 @@ def project_backup_root() -> Path:
 def mas_backup_root(script_id: str, user_id: str) -> Path:
     """MAS 池归档根：``data/{script_id}/MaaBackups/mas/{user_id}``。
 
-    **恒按用户分桶**——shared 来源多用户共享 Default 下发源，但每个用户要
+    **恒按账号分桶**——shared 来源多账号共享 Default 下发源，但每个账号要
     看到、恢复自己的备份；池与恢复目标解耦（目标路径见
     :func:`mas_config_dir`，由 Info.Base 决定 Default 或用户目录）。
     """
@@ -101,7 +93,11 @@ def native_backup_root(config_path: str | Path) -> Path:
     配置无论被哪个脚本引用都归同一个池；跨脚本共享、不随脚本删除。
     """
 
-    return project_backup_root() / "native" / config_root_key(config_path)
+    return (
+        project_backup_root()
+        / "native"
+        / _utils_config_archive.config_root_key(config_path)
+    )
 
 
 def mas_config_dir(script_id: str, owner: str) -> Path:
@@ -110,7 +106,7 @@ def mas_config_dir(script_id: str, owner: str) -> Path:
     return Path.cwd() / "data" / script_id / owner / "ConfigFile"
 
 
-# ══════════════════ MAS 配置（池按用户，目标路径按 owner） ══════════════════
+# ══════════════════ MAS 配置（池按账号，目标路径按 owner） ══════════════════
 
 _OVERLAY_INFO_KEYS = (
     "Server",
@@ -118,7 +114,7 @@ _OVERLAY_INFO_KEYS = (
     "Base",
     "IfQuickConfig",
 )
-"""MAS 页面账号身份与配置文件来源字段（UserData.Info，运行时注入 gui.json）"""
+"""MAS 页面账号身份与配置文件来源字段（UserData.Info，运行时注入 gui.new.json）"""
 
 _OVERLAY_STAGE_KEYS = (
     "StageMode",
@@ -129,7 +125,7 @@ _OVERLAY_STAGE_KEYS = (
     "Stage_2",
     "Stage_3",
 )
-"""MAS 页面关卡与理智参数（UserData.Stage，运行时注入 gui.json）"""
+"""MAS 页面关卡与理智参数（UserData.Stage，运行时注入 gui.new.json）"""
 
 _OVERLAY_TASK_KEYS = (
     "IfStartUp",
@@ -141,15 +137,22 @@ _OVERLAY_TASK_KEYS = (
     "IfSwitchTheme",
     "IfDepotMaintain",
     "DepotMaintainPlans",
+    "DepotMaintainMedicineNumb",
+    "DepotMaintainStoneNumb",
     "IfEventDepotMaintain",
     "EventDepotMaintainPlans",
+    "EventDepotMaintainMedicineNumb",
+    "EventDepotMaintainStoneNumb",
     "IfGreenTicketStore",
     "IfActivityFirst",
     "ActivityStageIndex",
     "ActivityMedicineNumb",
     "IfCultivate",
     "CultivateTargets",
+    "CultivateMedicineNumb",
+    "CultivateStoneNumb",
     "CultivateAutoRaise",
+    "CultivateAllOwned",
     "CultivateSkipDuringActivity",
     "CultivateSkipDuringResourceCollection",
     "Annihilation",
@@ -157,12 +160,13 @@ _OVERLAY_TASK_KEYS = (
     "InfrastMode",
     "InfrastName",
 )
-"""MAS 页面任务开关与参数（UserData.Task，运行时注入 gui.json）"""
+"""MAS 页面任务开关与参数（UserData.Task，运行时注入 gui.new.json）"""
 
 _OVERLAY_KEY_GROUPS = {
     "Info": _OVERLAY_INFO_KEYS,
     "Stage": _OVERLAY_STAGE_KEYS,
     "Task": _OVERLAY_TASK_KEYS,
+    "Data": ("StaminaPipelineVersion", "StaminaPipelineBackup"),
 }
 """侧车字段的配置段归属（各段键名无交集，侧车内平铺存储）"""
 
@@ -200,15 +204,22 @@ _OVERLAY_MAS_ONLY_ORDER = (
     "AnnihilationStartWeekday",
     "IfEventDepotMaintain",
     "EventDepotMaintainPlans",
+    "EventDepotMaintainMedicineNumb",
+    "EventDepotMaintainStoneNumb",
     "IfActivityFirst",
     "ActivityStageIndex",
     "ActivityMedicineNumb",
     "IfCultivate",
     "CultivateTargets",
+    "CultivateMedicineNumb",
+    "CultivateStoneNumb",
     "CultivateAutoRaise",
+    "CultivateAllOwned",
     "CultivateSkipDuringActivity",
     "CultivateSkipDuringResourceCollection",
     "DepotMaintainPlans",
+    "DepotMaintainMedicineNumb",
+    "DepotMaintainStoneNumb",
     "IfGreenTicketStore",
 )
 
@@ -226,8 +237,14 @@ _OVERLAY_FIELD_LABELS = {
     "IfSwitchTheme": "更换主题",
     "IfDepotMaintain": "库存保持",
     "DepotMaintainPlans": "库存保持计划",
-    "IfEventDepotMaintain": "活动库存保持",
-    "EventDepotMaintainPlans": "活动库存保持计划",
+    "DepotMaintainMedicineNumb": "普通库存保持理智药数量",
+    "DepotMaintainStoneNumb": "普通库存保持源石数量",
+    "CultivateMedicineNumb": "干员养成理智药数量",
+    "CultivateStoneNumb": "干员养成源石数量",
+    "IfEventDepotMaintain": "活动关均衡理智",
+    "EventDepotMaintainPlans": "活动库存目标",
+    "EventDepotMaintainMedicineNumb": "活动库存保持理智药数量",
+    "EventDepotMaintainStoneNumb": "活动库存保持源石数量",
     "IfGreenTicketStore": "绿票商店",
     "IfActivityFirst": "活动关优先",
     "ActivityStageIndex": "活动关卡序号",
@@ -235,6 +252,7 @@ _OVERLAY_FIELD_LABELS = {
     "IfCultivate": "干员养成",
     "CultivateTargets": "养成目标",
     "CultivateAutoRaise": "自动培养干员",
+    "CultivateAllOwned": "全部已有干员培养托管",
     "CultivateSkipDuringActivity": "活动期间跳过",
     "CultivateSkipDuringResourceCollection": "资源收集期间跳过",
     "MedicineNumb": "吃理智药",
@@ -275,17 +293,26 @@ _INFRAST_MODE_LABELS = {"Normal": "标准", "Rotation": "轮换", "Custom": "自
 """枚举字段取值中文词表（对齐编辑页选项；未知取值显示原文）"""
 
 
-def read_overlay_values(config) -> dict:
-    """读取配置对象的 MAS 页面核心字段（鸭子类型，仅需 ``get(group, key)``）。
+def read_overlay_values(config: ConfigEntry) -> dict:
+    """按配置分组的 JSON 导出规则读取 MAS 页面核心字段，UUID 引用导出为字符串。
 
     覆盖 Info / Stage / Task 三段的全部 MAS 可配置核心内容；值为 ``None``（配置项
     不存在）的键不纳入侧车。
     """
 
+    # 与属性读取一致，事务内从当前任务的生效工作区导出。
+    config = config.effective
     values: dict = {}
     for group, keys in _OVERLAY_KEY_GROUPS.items():
+        group_config = getattr(config, group)
+        fields = group_config.model_dump(
+            mode="json", include=set(keys), context={"audience": "export"}
+        )
+        if group == "Task":
+            # export 排除虚拟字段，备份预览仍需保留基建方案名称。
+            fields["InfrastName"] = group_config.InfrastName
         for key in keys:
-            if (value := config.get(group, key)) is not None:
+            if (value := fields[key]) is not None:
                 values[key] = value
     return values
 
@@ -317,7 +344,7 @@ def collect_mas_files(
     """收集 MAS 配置目录文件集 + 页面核心字段侧车（相对键 → 路径/内存内容）。
 
     侧车为内存 JSON（:func:`archive_files` 支持内存内容），免临时文件；
-    目录缺失或为空时仅归档侧车——用户级目录要等首次运行/播种物化，页面
+    目录缺失或为空时仅归档侧车——账号级目录要等首次运行/播种物化，页面
     字段不能因目录未建而一起丢（否则从未运行的用户切来源、改配置后退出，
     mas 池永远为空）。
     """
@@ -325,9 +352,14 @@ def collect_mas_files(
     mas_dir = Path(mas_dir)
     files: dict[str, "Path | str"] = {}
     if mas_dir.is_dir():
-        files.update(dir_files(mas_dir))
+        files.update(_utils_config_archive.dir_files(mas_dir))
     if overlay:
-        files[OVERLAY_SIDECAR_NAME] = json.dumps(overlay, ensure_ascii=False, indent=2)
+        files[_utils_config_archive.OVERLAY_SIDECAR_NAME] = json.dumps(
+            overlay, ensure_ascii=False, indent=2
+        )
+        old_config = overlay.get("StaminaPipelineBackup")
+        if old_config and old_config != "{}":
+            files["_mas_stamina_before_upgrade.json"] = old_config
     return files
 
 
@@ -339,9 +371,9 @@ def archive_mas_backup(
     force: bool = False,
     base: str | None = None,
 ) -> Path | None:
-    """归档 MAS 配置整份 + 页面核心字段侧车到用户池（指纹去重，无变化跳过）。
+    """归档 MAS 配置整份 + 页面核心字段侧车到账号池（指纹去重，无变化跳过）。
 
-    ``user_id`` 是池归属（恒按用户分桶，见 :func:`mas_backup_root`）；
+    ``user_id`` 是池归属（恒按账号分桶，见 :func:`mas_backup_root`）；
     ``mas_dir`` 是归档/恢复目标路径，由调用方按两态 owner 解析（共享来源
     共享 Default 目录、独立来源独立目录）——池与目标解耦。
     侧车参与指纹：只改页面配置、未动 ConfigFile 时同样新建归档（内存
@@ -357,26 +389,28 @@ def archive_mas_backup(
     files = collect_mas_files(mas_dir, overlay)
     if not files:
         return None
-    dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, mas_backup_root(script_id, user_id), force=force
+    )
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
     if base:
-        write_backup_base(dest, base)
-    logger.info(f"用户 {user_id} 的 MAS 配置已归档: {dest.name}")
+        _utils_config_archive.write_backup_base(dest, base)
+    logger.info(f"账号 {user_id} 的 MAS 配置已归档: {dest.name}")
     return dest
 
 
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
-    """用户池的全部归档时间戳（倒序，最新在前）。"""
+    """账号池的全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(mas_backup_root(script_id, user_id))
+    return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
-    """取用户池指定时间戳的归档目录；不存在返回 None。"""
+    """取账号池指定时间戳的归档目录；不存在返回 None。"""
 
-    return get_backup_dir(mas_backup_root(script_id, user_id), ts)
+    return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
 
 def restore_mas_backup(
@@ -387,12 +421,12 @@ def restore_mas_backup(
     overlay: dict | None = None,
     base: str | None = None,
 ) -> dict | None:
-    """把用户池归档恢复到 MAS 配置目录（恢复前自动归档当前，误恢复可找回）。
+    """把账号池归档恢复到 MAS 配置目录（恢复前自动归档当前，误恢复可找回）。
 
-    ``user_id`` 是池归属（与归档一致按用户分桶）；``mas_dir`` 是恢复目标
+    ``user_id`` 是池归属（与归档一致按账号分桶）；``mas_dir`` 是恢复目标
     路径，由调用方按两态 owner 解析（共享来源共享 Default 目录、独立来源
-    独立目录）。``overlay`` 为当前用户的页面核心字段，随恢复前存底一起归档。
-    返回该备份的侧车（供调用方回填 MAS 用户配置；旧版备份无侧车返回
+    独立目录）。``overlay`` 为当前账号的页面核心字段，随恢复前存底一起归档。
+    返回该备份的侧车（供调用方回填 MAS 账号配置；旧版备份无侧车返回
     ``None``），侧车文件随即从目录中分离删除，不留在 ConfigFile 里。
     """
 
@@ -411,17 +445,27 @@ def restore_mas_backup(
     # restore_dir 会把目标清空再写回元数据、随后 unlink 侧车，只剩空目录
     managed = [
         rel
-        for rel in dir_files(backup_dir)
-        if rel not in META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
+        for rel in _utils_config_archive.dir_files(backup_dir)
+        if rel
+        not in _utils_config_archive.META_FILE_NAMES
+        | {
+            _utils_config_archive.OVERLAY_SIDECAR_NAME,
+            "_mas_stamina_before_upgrade.json",
+        }
     ]
     if managed:
-        restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
+        _utils_config_archive.restore_dir(
+            mas_backup_root(script_id, user_id), ts, mas_dir
+        )
         restored_overlay = read_overlay_sidecar(mas_dir)
         if restored_overlay is not None:
-            (mas_dir / OVERLAY_SIDECAR_NAME).unlink(missing_ok=True)
+            (mas_dir / _utils_config_archive.OVERLAY_SIDECAR_NAME).unlink(
+                missing_ok=True
+            )
+        (mas_dir / "_mas_stamina_before_upgrade.json").unlink(missing_ok=True)
     else:
         restored_overlay = read_overlay_sidecar(backup_dir)
-    logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
+    logger.info(f"账号 {user_id} 的 MAS 配置已恢复备份 {ts}")
     return restored_overlay
 
 
@@ -432,13 +476,13 @@ def archive_mas_runtime_backup(
     overlay: dict | None = None,
     base: str | None = None,
 ) -> None:
-    """运行 / 配置会话下发前归档 MAS 配置（下发源）到用户池。
+    """运行 / 配置会话下发前归档 MAS 配置（下发源）到账号池。
 
     运行回写与会话保存会覆盖它，下发前存底；指纹去重，失败只记日志，
     绝不中止随后的运行或会话（归档是现场保护，不是前置条件）。
-    ``user_id`` 是池归属；``mas_dir`` 是下发源目录，由调用方按当前用户
+    ``user_id`` 是池归属；``mas_dir`` 是下发源目录，由调用方按当前账号
     两态解析（共享来源=Default 共享目录、独立来源=独立目录）。``overlay``
-    为当前用户的页面核心字段。native 池与此处无关：原生配置跨用户共享，
+    为当前账号的页面核心字段。native 池与此处无关：原生配置跨账号共享，
     由 manager ``prepare`` 在任务级一次性归档（见
     :func:`archive_native_backup`）。
     """
@@ -463,7 +507,7 @@ def collect_native_files(config_path: str | Path) -> dict[str, Path]:
     config_path = Path(config_path)
     if not config_path.is_dir() or not any(config_path.iterdir()):
         return {}
-    return dir_files(config_path)
+    return _utils_config_archive.dir_files(config_path)
 
 
 def archive_native_backup(config_path: Path, force: bool = False) -> Path | None:
@@ -476,7 +520,9 @@ def archive_native_backup(config_path: Path, force: bool = False) -> Path | None
     files = collect_native_files(config_path)
     if not files:
         return None
-    dest = archive_files(files, native_backup_root(config_path), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, native_backup_root(config_path), force=force
+    )
     if dest is None:
         logger.info("MAA 原生配置无变化，跳过归档")
         return None
@@ -487,13 +533,13 @@ def archive_native_backup(config_path: Path, force: bool = False) -> Path | None
 def list_native_backups(config_path: str | Path) -> list[str]:
     """MAA 原生配置全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(native_backup_root(config_path))
+    return _utils_config_archive.list_times(native_backup_root(config_path))
 
 
 def get_native_backup_dir(config_path: str | Path, ts: str) -> Path | None:
     """取指定时间戳的原生配置归档目录；不存在返回 None。"""
 
-    return get_backup_dir(native_backup_root(config_path), ts)
+    return _utils_config_archive.get_backup_dir(native_backup_root(config_path), ts)
 
 
 def restore_native_backup(config_path: Path, ts: str) -> None:
@@ -508,7 +554,7 @@ def restore_native_backup(config_path: Path, ts: str) -> None:
     config_path = Path(config_path)
     # 恢复前强制归档当前——「恢复前的配置」在列表里有明确的时间戳条目
     archive_native_backup(config_path, force=True)
-    restore_dir(native_backup_root(config_path), ts, config_path)
+    _utils_config_archive.restore_dir(native_backup_root(config_path), ts, config_path)
     logger.info(f"MAA 原生配置已恢复备份 {ts}")
 
 
@@ -592,6 +638,7 @@ _TASK_SWITCH_LABELS = {
 """TaskQueue 任务类型 → 开关标签（与 MAS 侧侧车词表一致）"""
 
 _TASK_ZH_TO_TYPE = {zh: en for en, zh in zip(MAA_TASKS, MAA_TASKS_ZH)}
+_TASK_ZH_TO_TYPE.update({"库存保持": "DepotMaintain", "理智作战": "Fight"})
 """MAA 任务中文名 → 任务类型（GUI 存的任务可能缺 TaskType，按名兜底）"""
 
 
@@ -667,7 +714,12 @@ def _task_queue_rows(queue) -> list[dict]:
             label = _TASK_SWITCH_LABELS[task_type]
             rows.append({"key": label, "value": _bool_text(task["IsEnable"])})
         if task_type == "StartUp" and task.get("AccountName"):
-            rows.append({"key": "账号", "value": mask_account(task["AccountName"])})
+            rows.append(
+                {
+                    "key": "账号",
+                    "value": _utils_config_archive.mask_account(task["AccountName"]),
+                }
+            )
         if task_type == "Fight":
             rows.extend(_fight_task_rows(task))
         if task_type == "Infrast" and task.get("Mode") is not None:
@@ -731,11 +783,13 @@ def build_backup_file_summary(backup_dir: Path) -> list[dict]:
     """
 
     files: list[dict] = []
-    for rel in sorted(dir_files(backup_dir)):
+    for rel in sorted(_utils_config_archive.dir_files(backup_dir)):
         if "/" in rel or rel not in _MAA_CONFIG_FILES:
             continue
         try:
-            data = json.loads((backup_dir / rel).read_text(encoding="utf-8"))
+            data = json.loads(
+                (backup_dir / rel).read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except Exception:
             continue
         if not isinstance(data, dict):
@@ -757,7 +811,9 @@ def _overlay_value(key: str, value) -> str:
     """侧车字段值转展示文本（枚举词表、账号脱敏、布尔转是否、超长截断）。"""
 
     if key == "Id":
-        return mask_account(value)  # 账号脱敏展示；侧车原值仍完整保存（恢复需要）
+        return _utils_config_archive.mask_account(
+            value
+        )  # 账号脱敏展示；侧车原值仍完整保存（恢复需要）
     if isinstance(value, bool):
         return "是" if value else "否"
     enum = {

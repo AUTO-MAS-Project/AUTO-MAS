@@ -1,29 +1,14 @@
 <template>
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img :src="flavor.logo" :alt="flavor.typeTagLabel" class="breadcrumb-logo" />
-            {{ pageTitle }}
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <DocLink :url="flavor.docUrl" />
-      <a-button size="large" class="cancel-button" :disabled="shellImporting" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        {{ t('edit.back') }}
-      </a-button>
-    </a-space>
-  </div>
+  <ScriptEditHeader
+    :script-type="flavor.type"
+    :title="pageTitle"
+    :doc-url="flavor.docUrl"
+    :logo-src="headerLogo"
+    :logo-alt="flavor.typeTagLabel"
+    :logo-fallback-src="flavor.logo"
+    :cancel-disabled="shellImporting"
+    @cancel="handleCancel"
+  />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card :title="pageTitle" :loading="pageLoading" class="config-card">
@@ -112,18 +97,22 @@
             :adb-control-strategy-items="adbControlStrategyItems"
             :selected-emulator-label="selectedEmulatorLabel"
             :interface-dependent-disabled="interfaceDependentDisabled"
+            :beside-package-name-count="besidePackageNameCount"
             @change="handleChange"
             @controller-change="handleControllerChange"
             @resource-change="handleResourceChangeWithPackage"
             @emulator-select-change="handleEmulatorSelectChange"
             @select-launch-path="selectLaunchPath"
+            @select-launcher-path="selectLauncherPath"
           >
-            <template v-if="hasBesidePackageName" #besidePackageName>
+            <!-- control 分节按组件数每格转发一次，这里渲染第 index 个组件 -->
+            <template v-if="besidePackageNameCount > 0" #besidePackageName="{ index }">
               <MaaFWFlavorSlot
                 part="scriptPage"
                 name="besidePackageName"
                 :flavor="flavor"
                 :context="flavorSlotContext"
+                :index="index"
                 @change="handleChange"
               />
             </template>
@@ -204,7 +193,7 @@
           :disabled="shellImporting"
           @click="currentStep -= 1"
         >
-          {{ t('edit.previousStep') }}
+          {{ t('core.edit.previousStep') }}
         </a-button>
         <a-button
           v-if="currentStep < stepItems.length - 1"
@@ -213,7 +202,7 @@
           :disabled="!canLeaveCurrentStep"
           @click="currentStep += 1"
         >
-          {{ t('edit.next') }}
+          {{ t('core.edit.next') }}
         </a-button>
         <a-button
           v-else
@@ -231,14 +220,18 @@
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
-import DocLink from '@/components/DocLink.vue'
+import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import { useI18n } from 'vue-i18n'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
-import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 import { updateChannelOptions, updateSourceOptions } from '@/composables/useMaaFWScriptConfig'
-import { resolveMaaFWFlavorSlot, useMaaFWSections } from '@/composables/useMaaFWFlavor'
+import {
+  resolveMaaFWFlavorSlot,
+  useMaaFWSections,
+  usesMaaFWProjectIcon,
+} from '@/composables/useMaaFWFlavor'
+import { buildMaaFWScriptIconUrl } from '@/utils/maafwProjectIcon'
 import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 // MFW 默认分节静态引入：通用 MFW 打开不闪；特调的替换分节由注册表按需加载
 import { MAAFW_SCRIPT_PAGE_SECTIONS, useMaaFWScriptPage } from './MaaFWScriptEdit/pageKit'
@@ -281,6 +274,7 @@ const {
   handleResourceChangeWithPackage,
   handleEmulatorSelectChange,
   selectLaunchPath,
+  selectLauncherPath,
   dailyOnceTasks,
   weeklyOnceTasks,
   monthlyOnceTasks,
@@ -329,12 +323,25 @@ const {
   flavorSlotContext,
 } = useMaaFWScriptPage({ scriptId })
 
+// 面包屑图标：特调用自己声明的；通用 MaaFW 与脚本列表同一个口径取项目图标（不等预览），
+// 取不到由 ScriptEditHeader 回退到 MaaFW 图标。每读到一次 interface 换一次地址：
+// 老脚本首次打开时预览才顺手导入、向导里刚导入、更新换了图标，都会重新取一次。
+const projectIconRevision = ref(0)
+watch(previewData, data => {
+  if (data) projectIconRevision.value += 1
+})
+const headerLogo = computed(() =>
+  usesMaaFWProjectIcon(flavor.value)
+    ? buildMaaFWScriptIconUrl(scriptId, projectIconRevision.value)
+    : flavor.value.logo
+)
+
 // 各分节：默认用 MFW 的，当前特调替换了哪节就换成它的（契约见 MaaFWFlavor/sectionContracts）
 const sections = useMaaFWSections(flavor, 'scriptPage', MAAFW_SCRIPT_PAGE_SECTIONS)
 
-// 包名旁的插入点在 control 分节里面：只有当前特调登记了组件才填这个 slot，否则包名独占一行
-const hasBesidePackageName = computed(
-  () => resolveMaaFWFlavorSlot(flavor.value, 'scriptPage', 'besidePackageName').length > 0
+// 包名旁的插入点在 control 分节里面：组件数传给分节（每个组件一格），有组件时才填这个 slot
+const besidePackageNameCount = computed(
+  () => resolveMaaFWFlavorSlot(flavor.value, 'scriptPage', 'besidePackageName').length
 )
 </script>
 
@@ -350,44 +357,6 @@ const hasBesidePackageName = computed(
   margin-top: 8px;
   padding-top: 20px;
   border-top: 1px solid var(--ant-color-border-secondary);
-}
-
-.script-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.breadcrumb-link {
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
-  transition: color 0.3s ease;
-}
-
-.breadcrumb-current {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text);
-  font-weight: 600;
-}
-
-.breadcrumb-logo {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
 }
 
 .script-edit-content {
@@ -415,9 +384,5 @@ const hasBesidePackageName = computed(
 
 .config-form :deep(.ant-form-item) {
   margin-bottom: 20px;
-}
-
-.cancel-button {
-  height: 40px;
 }
 </style>

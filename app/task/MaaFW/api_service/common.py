@@ -48,8 +48,8 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
 )
 from app.utils import get_logger
 
-# 这些日志原先由 API 层记录，模块名沿用「脚本管理 API」：搬家不改日志上的模块名。
-logger = get_logger("脚本管理 API")
+# 这些日志原先由 API 层记录，模块名沿用「托管管理 API」：搬家不改日志上的模块名。
+logger = get_logger("托管管理 API")
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +63,8 @@ class MaaFWApiReply:
     code: int = 200
     message: str | None = None
     data: Any = None
+    # 后台手动更新的身份标识；其它 MaaFW 端点不设置，不会出现在响应里。
+    job_id: str | None = None
 
     @classmethod
     def error(cls, code: int, message: str, data: Any = None) -> MaaFWApiReply:
@@ -77,6 +79,8 @@ class MaaFWApiReply:
             fields["message"] = self.message
         if self.data is not None:
             fields["data"] = self.data
+        if self.job_id is not None:
+            fields["jobId"] = self.job_id
         return fields
 
 
@@ -85,7 +89,7 @@ def maafw_script_config(script_id: str) -> RuntimeMaaFWConfig:
 
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
     if not isinstance(script_config, RuntimeMaaFWConfig):
-        raise TypeError("脚本配置类型错误, 不是 MFW 类型")
+        raise TypeError("托管配置类型错误, 不是 MFW 类型")
     return script_config
 
 
@@ -109,10 +113,9 @@ def maafw_group_members(script_id: str) -> list[GroupMember]:
         members.append(
             GroupMember(
                 script_id=str(uid),
-                # 各自所在的组：开发者模式的脚本是它的私有渠道，别人的导入 / 更新切不到它
                 channel=effective_channel(str(uid), config),
                 busy=bool(getattr(config, "is_locked", False)),
-                name=str(config.get("Info", "Name") or ""),
+                name=str(config.Info.Name or ""),
                 proxy_url=resolve_update_proxy_url(config) or None,
             )
         )
@@ -139,7 +142,7 @@ async def maafw_effective_root(
             copy_dir = resolve_maafw_project_root(script_id, script_config)
             if copy_dir.is_dir():
                 return copy_dir.resolve(), ""
-            return None, "该 MFW 脚本正在运行或更新，稍后再试"
+            return None, "该 MFW 托管正在运行或更新，稍后再试"
         try:
             rebuilt = await asyncio.to_thread(
                 ensure_embedded_copy,
@@ -151,8 +154,7 @@ async def maafw_effective_root(
             logger.warning(
                 mask_home_path(
                     redact_text(
-                        f"MFW 脚本 {script_id} 准备副本失败"
-                        f"（来源 {script_config.get('Info', 'Path') or '未设置'}）：{exc}"
+                        f"MFW 托管 {script_id} 准备副本失败（来源 {script_config.Info.Path or '未设置'}）：{exc}"
                     )
                 )
             )
@@ -161,8 +163,7 @@ async def maafw_effective_root(
             logger.opt(exception=True).warning(
                 mask_home_path(
                     redact_text(
-                        f"MFW 项目导入失败（{script_id}，来源 "
-                        f"{script_config.get('Info', 'Path') or '未设置'}）：{exc}"
+                        f"MFW 项目导入失败（{script_id}，来源 {script_config.Info.Path or '未设置'}）：{exc}"
                     )
                 )
             )

@@ -12,10 +12,10 @@ import { Modal } from 'ant-design-vue'
 
 /** 丢弃原因 → 正文词条（未知原因按通用文案兜底） */
 export const configDiscardReasonKey = (reason: string): string => {
-  if (reason === 'structure') return 'edit.configSessionDiscardedStructure'
-  if (reason === 'unreadable') return 'edit.configSessionDiscardedUnreadable'
-  if (reason === 'not_written') return 'edit.configSessionDiscardedNotWritten'
-  return 'edit.configSessionDiscardedUnknown'
+  if (reason === 'structure') return 'core.edit.configSessionDiscardedStructure'
+  if (reason === 'unreadable') return 'core.edit.configSessionDiscardedUnreadable'
+  if (reason === 'not_written') return 'core.edit.configSessionDiscardedNotWritten'
+  return 'core.edit.configSessionDiscardedUnknown'
 }
 
 /** 丢弃提示的正文节点（role=alert；保留文案里的换行，每条都给出恢复路径） */
@@ -31,9 +31,9 @@ export const showConfigDiscardWarning = (
   reason: string
 ): void => {
   Modal.warning({
-    title: t('edit.configSessionDiscardedTitle'),
+    title: t('core.edit.configSessionDiscardedTitle'),
     content: configDiscardContent(t, reason),
-    okText: t('misc.gotIt'),
+    okText: t('core.misc.gotIt'),
     zIndex: 999,
   })
 }

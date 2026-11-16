@@ -7,7 +7,7 @@
  */
 export type WebSocketMetaOut = {
     /**
-     * 后端当前是否处于开发模式
+     * 退出前端时是否保留非托管的开发后端
      */
     devMode: boolean;
     /**

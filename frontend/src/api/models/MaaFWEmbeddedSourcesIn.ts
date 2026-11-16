@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type MaaFWEmbeddedSourcesIn = {
     /**
-     * 要排除的脚本 ID（给已有脚本列候选时传；新建脚本对话框里还没有脚本，不传）
+     * 要排除的托管 ID（给已有托管列候选时传；新建托管对话框里还没有托管，不传）
      */
     scriptId?: (string | null);
 };

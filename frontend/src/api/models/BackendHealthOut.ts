@@ -34,5 +34,9 @@ export type BackendHealthOut = {
      * 后端所在提交哈希，未受监督或监督器未注入时为空
      */
     commit: string;
+    /**
+     * 自动业务是否已由监督器放行
+     */
+    startupActivation?: ('pending' | 'active' | 'closed' | null);
 };
 

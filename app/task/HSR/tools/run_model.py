@@ -30,8 +30,8 @@ from .sra_runtime import SRAProcessRegistry
 
 HSRPhase = Literal["daily", "weekly"]
 HSRScriptRunner = Literal["M7A", "SRA"]
-# cloud：云·星穹铁道。不走 SRA StartGame，按「切号」处理——关上一个用户的
-# 云浏览器、起本用户的（每个用户一份 profile，登录态就在里面）。
+# cloud：云·星穹铁道。不走 SRA StartGame，按「切号」处理——关上一个账号的
+# 云浏览器、起本账号的（每个账号一份 profile，登录态就在里面）。
 HSRLoginMode = Literal["sra_switch", "sra_remembered", "m7a_fallback", "cloud"]
 HSRModuleResultStatus = Literal["completed", "failed", "incomplete", "skipped"]
 
@@ -58,7 +58,7 @@ class HSRLoginPlan:
 
 @dataclass
 class CompletionWriteback:
-    """真实执行成功后需要写回用户 Data 的完成态"""
+    """真实执行成功后需要写回账号 Data 的完成态"""
 
     user_id: str
     user_name: str
@@ -68,7 +68,7 @@ class CompletionWriteback:
 
 @dataclass
 class HSRModuleResult:
-    """单用户单模块的最终执行结果，用于调度台日志和通知汇总。"""
+    """单账号单模块的最终执行结果，用于调度台日志和通知汇总。"""
 
     user_id: str
     user_name: str
@@ -121,7 +121,7 @@ class HSRGameExitedError(HSRRetryableTaskError):
 
 
 class HSRNonRetryableTaskError(RuntimeError):
-    """补跑也不会变好的失败：该用户本轮直接判失败，不进 ``RunTimesLimit`` 补跑。
+    """补跑也不会变好的失败：该账号本轮直接判失败，不进 ``RunTimesLimit`` 补跑。
 
     与 ``HSRRetryableTaskError`` 是兄弟而不是子类：云·星穹铁道的登录超时、
     排队超时、时长耗尽、云浏览器起不来都属于这一类，补跑只会再等一遍。
@@ -139,7 +139,7 @@ class HSRNonRetryableTaskError(RuntimeError):
 
 @dataclass
 class HSRRuntimeState:
-    """HSR 单次运行中跨用户共享的外部脚本状态。"""
+    """HSR 单次运行中跨账号共享的外部脚本状态。"""
 
     log_lines: list[str]
     completion_writebacks: list[CompletionWriteback]
@@ -156,15 +156,15 @@ class HSRRuntimeState:
     last_external_script: HSRScriptRunner | None = None
     game_session_clean: bool = False
     game_transitioning: bool = False
-    # 云平台下当前用户的 MAS 托管浏览器；任一时刻只有一个（三月七只认标记不认
+    # 云平台下当前账号的 MAS 托管浏览器；任一时刻只有一个（三月七只认标记不认
     # 账号），换用户时关旧起新，final_task 全关。
     cloud_browser: CloudBrowser | None = None
     # 本轮确认已登录的时刻（user_id → ISO 时间）。运行期脚本配置锁定，等
     # final_task 解锁后再合并进 Cloud.LastLogin。
     cloud_login_times: dict[str, str] = field(default_factory=dict)
-    # 本轮已为「需要手动登录」推过通知的用户，同一用户不重复推。
+    # 本轮已为「需要手动登录」推过通知的用户，同一账号不重复推。
     cloud_login_notified: set[str] = field(default_factory=set)
-    # 本轮出现过「三月七自建浏览器」的用户：登录态可能落在三月七的临时 profile
+    # 本轮出现过「三月七自建浏览器」的账号：登录态可能落在三月七的临时 profile
     # 而不是 MAS 的，本轮不写 LastLogin。
     cloud_login_suppressed: set[str] = field(default_factory=set)
     # 当前这条三月七命令里是否拦下过它自建浏览器；每条命令开跑前清零。
@@ -173,7 +173,7 @@ class HSRRuntimeState:
     cloud_remaining: dict[str, tuple[int, int, int]] = field(default_factory=dict)
 
     def record_module_result(self, result: HSRModuleResult) -> None:
-        """记录模块最终态；同一用户同一模块以后写入为准。"""
+        """记录模块最终态；同一账号同一模块以后写入为准。"""
 
         self.module_results = [
             item

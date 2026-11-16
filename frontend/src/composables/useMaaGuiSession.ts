@@ -5,14 +5,14 @@ export function useMaaGuiSession() {
   const session = useNativeGuiSession({
     loggerName: 'MAA配置会话',
     keys: {
-      stopFailed: 'edit.maaSessionStopFailed',
-      startFailed: 'edit.maaSessionStartFailed',
-      setupFailed: 'edit.maaConfigurationFailedP0',
-      opened: 'edit.maaSessionOpened',
-      viewOpened: 'edit.maaViewOpened',
-      timeoutWarn: 'edit.maaSessionTimeoutWarn',
-      saved: 'edit.configurationThisUserWas',
-      saveFailed: 'edit.couldNotSaveMaa',
+      stopFailed: 'core.edit.maaSessionStopFailed',
+      startFailed: 'core.edit.maaSessionStartFailed',
+      setupFailed: 'core.edit.maaConfigurationFailedP0',
+      opened: 'core.edit.maaSessionOpened',
+      viewOpened: 'core.edit.maaViewOpened',
+      timeoutWarn: 'core.edit.maaSessionTimeoutWarn',
+      saved: 'core.edit.configurationThisUserWas',
+      saveFailed: 'core.edit.couldNotSaveMaa',
     },
   })
   return {

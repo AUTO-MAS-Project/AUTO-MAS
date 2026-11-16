@@ -1,21 +1,23 @@
 <template>
   <LaunchFailure
     v-if="status === 'failed'"
-    :title="t('init.steps.backend')"
+    :title="t('bootstrap.init.steps.backend')"
     :message="errorMessage"
     :failure-actions="BACKEND_FAILURE_ACTIONS"
     :failure-logs="backendLogs"
+    :runtime-mode="runtimeMode"
     :show-skip-button="showSkipButton"
     :docs-url="BACKEND_START_FAILURE_DOC_URL"
     @action="handleFailureAction"
     @open-docs="handleOpenDocumentation"
     @skip="emit('skip')"
+    @runtime-updated="emit('runtime-updated')"
   />
   <LaunchStatus
     v-else
-    :title="retrying ? t('launch.retrying') : t('launch.starting')"
+    :title="retrying ? t('bootstrap.launch.retrying') : t('bootstrap.launch.starting')"
     :hint="hintText"
-    :action-label="slow ? t('launch.viewLog') : ''"
+    :action-label="slow ? t('bootstrap.launch.viewLog') : ''"
     @action="openLaunchLogWindow('后端启动步骤')"
   />
 </template>
@@ -29,7 +31,7 @@ import { connectWithRetry, initializeAppLifecycle } from '@/composables/useAppLi
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import { SLOW_LAUNCH_THRESHOLD_MS, openLaunchLogWindow } from '@/utils/launch'
 import LaunchFailure from './LaunchFailure.vue'
-import type { RuntimeFailureFields } from '@/types/electron'
+import type { RuntimeFailureFields, RuntimeInitMode } from '@/types/electron'
 import type { FailureAction, FailureActionKind } from '@/utils/initializationDecision'
 
 defineOptions({ name: 'RuntimeBackendStartPanel' })
@@ -38,11 +40,13 @@ interface Props {
   showSkipButton?: boolean
   /** 静默启动失败后回落到本页时为真，文案要说明是在重试而不是首次启动。 */
   retrying?: boolean
+  runtimeMode?: RuntimeInitMode
 }
 
 const props = withDefaults(defineProps<Props>(), {
   showSkipButton: false,
   retrying: false,
+  runtimeMode: 'managed',
 })
 
 const emit = defineEmits<{
@@ -50,18 +54,20 @@ const emit = defineEmits<{
   complete: []
   error: [error: string, failure: RuntimeFailureFields]
   skip: []
+  'recovery-action': [kind: FailureActionKind]
+  'runtime-updated': []
 }>()
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('后端启动步骤')
 const { startPolling } = useUpdateChecker()
 
-// 后端起不来时能做的只有重试，换源和重建环境都轮不到这一段。
+// 后端启动失败可重试或单独更新 Runtime，换源和重建环境都轮不到这一段。
 // 加一个查看日志：这一段的失败结果不带 logPath，spawn 之前就失败时连日志正文都没有，
 // 「详细信息」折叠整块不出现，不给入口的话这一屏一个日志出口都没有。
 const BACKEND_FAILURE_ACTIONS: FailureAction[] = [
-  { kind: 'retry', labelKey: 'init.step.retry' },
-  { kind: 'open-log', labelKey: 'launch.viewLog' },
+  { kind: 'retry', labelKey: 'bootstrap.init.step.retry' },
+  { kind: 'open-log', labelKey: 'bootstrap.launch.viewLog' },
 ]
 
 const BACKEND_START_FAILURE_DOC_URL =
@@ -71,13 +77,11 @@ const status = ref<'waiting' | 'starting' | 'running' | 'success' | 'failed'>('w
 const errorMessage = ref('')
 const backendLogs = ref('')
 const slow = ref(false)
-let startTimer: ReturnType<typeof setTimeout> | null = null
-let completeTimer: ReturnType<typeof setTimeout> | null = null
 let slowTimer: ReturnType<typeof setTimeout> | null = null
 
 const hintText = computed(() => {
-  if (slow.value) return t('launch.slowHint')
-  return props.retrying ? t('launch.retryingHint') : ''
+  if (slow.value) return t('bootstrap.launch.slowHint')
+  return props.retrying ? t('bootstrap.launch.retryingHint') : ''
 })
 
 function clearSlowTimer() {
@@ -104,7 +108,7 @@ async function handleOpenDocumentation() {
   }
 }
 
-async function startBackend() {
+async function startBackend(retry = false) {
   status.value = 'starting'
   emit('update:status', 'starting')
   backendLogs.value = ''
@@ -115,12 +119,12 @@ async function startBackend() {
   let pollingStarted = false
 
   try {
-    const result = await window.electronAPI.backendStart()
+    const result = await window.electronAPI.backendStart(retry)
 
     if (!result.success) {
       failure = result
       backendLogs.value = result.logs || ''
-      throw new Error(result.error || t('init.backend.failedTitle'))
+      throw new Error(result.error || t('bootstrap.init.backend.failedTitle'))
     }
 
     const backendStatus = await window.electronAPI.backendStatus()
@@ -139,7 +143,7 @@ async function startBackend() {
 
     try {
       const finalStatus = await window.electronAPI.backendStatus()
-      if (!finalStatus.isRunning) throw new Error(t('init.backend.notRunning'))
+      if (!finalStatus.isRunning) throw new Error(t('bootstrap.init.backend.notRunning'))
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       logger.warn(`后端连接验证失败，但继续执行: ${message}`)
@@ -152,7 +156,7 @@ async function startBackend() {
       `后端服务启动完成 - PID: ${backendStatus.pid}, WebSocket: ${wsConnected ? '已连接' : '未连接'}, 版本检查: ${pollingStarted ? '已启动' : '未启动'}`
     )
 
-    completeTimer = setTimeout(() => emit('complete'), 300)
+    emit('complete')
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     logger.error(`后端启动失败: ${message}`)
@@ -165,11 +169,14 @@ async function startBackend() {
 }
 
 async function handleFailureAction(kind: FailureActionKind) {
+  // 恢复选择交给父流程观察记录；重试与查看日志仍在本面板执行，
+  // 父流程的 retry 语义是重跑安装步骤，不会重启后端。
+  emit('recovery-action', kind)
   if (kind === 'open-log') {
     await openLaunchLogWindow('后端启动步骤')
     return
   }
-  await startBackend()
+  await startBackend(true)
 }
 
 onMounted(() => {
@@ -177,14 +184,10 @@ onMounted(() => {
     logger.debug(`收到后端状态: ${JSON.stringify(backendStatus)}`)
   })
 
-  startTimer = setTimeout(() => {
-    void startBackend()
-  }, 400)
+  void startBackend()
 })
 
 onUnmounted(() => {
-  if (startTimer) clearTimeout(startTimer)
-  if (completeTimer) clearTimeout(completeTimer)
   clearSlowTimer()
   window.electronAPI.removeBackendStatusListener?.()
 })

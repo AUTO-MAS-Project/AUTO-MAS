@@ -47,6 +47,9 @@ DUPLICATE_TASK_SUFFIX_SEPARATOR = "__MAS_DUP__"
 SUPPORTED_OPTION_TYPES = frozenset(
     {"select", "checkbox", "input", "hotkey", "switch", "scan_select"}
 )
+#: PI v2.10.5 ``inputs[].input_type`` 的取值。
+MaaFWInputType = Literal["text", "file", "directory"]
+MAAFW_INPUT_TYPES: frozenset[str] = frozenset({"text", "file", "directory"})
 
 
 class MaaFWAdbController(BaseModel):
@@ -191,7 +194,7 @@ class MaaFWTask(BaseModel):
 
 #: repeat_count 展开的上限（前端 ``maafwTaskInstance.ts`` 的
 #: ``MAAFW_MAX_TASK_REPEAT_COUNT`` 同值）。真实项目最多写到 10（MaaYuan）；每份都是
-#: 队列里一个独立实例，写成几万会把用户配置撑爆，超过的按上限展开并由加载器告警。
+#: 队列里一个独立实例，写成几万会把账号配置撑爆，超过的按上限展开并由加载器告警。
 MAX_TASK_REPEAT_COUNT = 99
 
 
@@ -258,6 +261,17 @@ class MaaFWInputCase(BaseModel):
     # PI v2.10.0：密码 / 密钥字段。界面掩码、配置加密存储、不进日志；与 default 互斥
     # （两者同时出现时由加载器告警并丢掉 default）。
     password: bool = False
+    # PI v2.10.5：编辑控件类型，只影响界面（文件 / 文件夹选择器），取值语义不变。
+    input_type: MaaFWInputType = "text"
+
+    @field_validator("input_type", mode="before")
+    @classmethod
+    def coerce_input_type(cls, value: Any) -> MaaFWInputType:
+        # 协议默认 text；写错或不认识的值按 text（降级成普通文本框），不让整份读不出来。
+        # 告警由加载器按原始值写。
+        if isinstance(value, str) and value in MAAFW_INPUT_TYPES:
+            return value  # type: ignore[return-value]
+        return "text"
 
     @field_validator("default", mode="before")
     @classmethod
@@ -565,6 +579,14 @@ class MaaFWPresetTask(BaseModel):
         return coerced
 
 
+class MaaFWPresetPretask(MaaFWPresetTask):
+    """预设里的一条前置任务设置（PI v2.10.3 ``preset.pretask[]``）。
+
+    ``name`` 对应顶层 ``pretask[].name``（``import`` 合并后），``enabled`` 缺省为 true，
+    ``option`` 的键与值类型同 ``preset.task[].option``，与预设任务同形。
+    """
+
+
 class MaaFWPreset(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -572,7 +594,36 @@ class MaaFWPreset(BaseModel):
     label: str | None = None
     description: str | None = None
     icon: str | None = None
+    # PI v2.10.4：预设适用的控制器名，语义同 ``task.controller``；没写或空数组 = 不限。
+    # 只给界面判「当前控制器下能不能应用」，运行期不据它拦截。
+    controller: list[str] | None = None
     task: list[MaaFWPresetTask] | None = None
+    # PI v2.10.3：声明了（哪怕是空数组）就按它设前置任务的勾选，未列出的不勾选；
+    # 没声明（None）时应用预设不动用户的前置任务。
+    pretask: list[MaaFWPresetPretask] | None = None
+
+    @field_validator("controller", mode="before")
+    @classmethod
+    def drop_invalid_controllers(cls, value: Any) -> Any:
+        # 宽松解析：不是数组按没写处理，数组里不是字符串的元素丢掉。名字写错的照
+        # task.controller 的口径原样保留（加载器告警），删掉会把限制放宽成「不限」。
+        if not isinstance(value, list):
+            return None
+        return [item for item in value if isinstance(item, str)]
+
+    @field_validator("pretask", mode="before")
+    @classmethod
+    def drop_invalid_pretasks(cls, value: Any) -> Any:
+        # 宽松解析：这是新字段，写错一条不该让整份 interface 读不出来（告警由加载器写）。
+        # 不是数组按没声明处理；数组里不是对象、没有字符串 name 的条目丢掉。
+        if not isinstance(value, list):
+            return None
+        return [
+            item
+            for item in value
+            if isinstance(item, MaaFWPresetPretask)
+            or (isinstance(item, dict) and isinstance(item.get("name"), str))
+        ]
 
 
 class MaaFWInterface(BaseModel):

@@ -1,43 +1,18 @@
 <template>
   <div class="depot-plan-editor">
-    <!-- 养成接管提示：接管发生时本任务整条不注入（方案决策 20/28），与养成编辑器共用后端写入的提示字段 -->
-    <a-alert
-      v-if="!eventMode && formData.Data?.CultivateNotice"
-      :message="formData.Data.CultivateNotice"
-      type="warning"
-      show-icon
-      class="takeover-alert"
-    />
     <a-alert v-if="itemOptionsError" :message="itemOptionsError" type="warning" show-icon />
-    <a-alert
-      v-if="eventMode"
-      :message="t('eventDepotPreview.scopeHint')"
-      type="info"
-      show-icon
-      class="takeover-alert"
-    />
     <div class="plan-actions">
       <a-space wrap>
-        <a-button
-          v-if="eventMode"
-          type="dashed"
-          size="small"
-          :disabled="loading || activityUnavailable || eligibleStages.length === 0"
-          @click="importEventPresets"
-        >
-          <template #icon><AppstoreAddOutlined /></template>
-          {{ t('eventDepotPreview.addPresets') }}
-        </a-button>
-        <a-dropdown v-else :disabled="loading" :trigger="['click']">
+        <a-dropdown :disabled="loading" :trigger="['click']">
           <a-button type="dashed" size="small" :disabled="loading">
             <template #icon><AppstoreAddOutlined /></template>
-            {{ t('edit.addPreset') }}
+            {{ t('core.edit.addPreset') }}
             <DownOutlined />
           </a-button>
           <template #overlay>
             <a-menu>
               <a-menu-item key="all" @click="importPreset('all')">{{
-                t('edit.allPresets')
+                t('core.edit.allPresets')
               }}</a-menu-item>
               <a-menu-divider />
               <a-menu-item
@@ -50,26 +25,26 @@
             </a-menu>
           </template>
         </a-dropdown>
-        <a-button v-if="!eventMode" type="dashed" size="small" :disabled="loading" @click="addPlan">
+        <a-button type="dashed" size="small" :disabled="loading" @click="addPlan">
           <template #icon><PlusOutlined /></template>
-          {{ t('edit.addItem') }}
+          {{ t('core.edit.addItem') }}
         </a-button>
         <a-popconfirm
-          :title="t('edit.depotDeleteSelectedConfirm', { n: selectedRowKeys.length })"
-          :ok-text="t('edit.ok')"
-          :cancel-text="t('edit.cancel')"
+          :title="t('core.edit.depotDeleteSelectedConfirm', { n: selectedRowKeys.length })"
+          :ok-text="t('core.edit.ok')"
+          :cancel-text="t('core.edit.cancel')"
           @confirm="removeSelectedPlans"
         >
           <a-button danger size="small" :disabled="loading || selectedRowKeys.length === 0">
             <template #icon><DeleteOutlined /></template>
-            {{ t('edit.deleteSelected') }}
+            {{ t('core.edit.deleteSelected') }}
           </a-button>
         </a-popconfirm>
       </a-space>
     </div>
     <!-- 行顺序即 MAA 执行顺序：vuedraggable 拖拽排序（QueueItemManager 先例：
-         a-table 不支持行拖拽，用可拖拽列表承载表格外观）。列对齐由 header 与
-         行共用的 grid 模板保证，窄屏整块横向滚动等价原 :scroll="{ x: 780 }" -->
+           a-table 不支持行拖拽，用可拖拽列表承载表格外观）。列对齐由 header 与
+           行共用的 grid 模板保证，窄屏整块横向滚动等价原 :scroll="{ x: 780 }" -->
     <div v-if="plans.length" class="plan-scroll">
       <div class="plan-grid-header">
         <span />
@@ -78,16 +53,16 @@
             :checked="allSelected"
             :indeterminate="someSelected"
             :disabled="loading"
-            :aria-label="t('edit.selectPlanRows')"
+            :aria-label="t('core.edit.selectPlanRows')"
             @change="toggleAll($event.target.checked)"
           />
         </span>
-        <span>{{ eventMode ? t('eventDepotPreview.stageColumn') : t('edit.stage') }}</span>
-        <span>{{ t('edit.item') }}</span>
-        <span>{{ t('edit.targetStock') }}</span>
+        <span>{{ t('core.edit.stage') }}</span>
+        <span>{{ t('core.edit.item') }}</span>
+        <span>{{ t('core.edit.targetStock') }}</span>
         <span>
           <a-tooltip :title="stockColumnTitle">
-            <span>{{ t('edit.stock') }}</span>
+            <span>{{ t('core.edit.stock') }}</span>
           </a-tooltip>
         </span>
         <span />
@@ -106,8 +81,8 @@
           <div class="plan-row" :class="{ 'row-selected': selectedKeys.has(record.key) }">
             <span
               class="depot-drag-handle"
-              :title="t('edit.maaDepotDragSortHint')"
-              :aria-label="t('edit.maaDepotDragSortHint')"
+              :title="t('core.edit.maaDepotDragSortHint')"
+              :aria-label="t('core.edit.maaDepotDragSortHint')"
             >
               <span class="drag-dots" aria-hidden="true"></span>
             </span>
@@ -115,56 +90,48 @@
               <a-checkbox
                 :checked="selectedKeys.has(record.key)"
                 :disabled="loading"
-                :aria-label="t('edit.selectPlanRow')"
+                :aria-label="t('core.edit.selectPlanRow')"
                 @change="toggleRow(record.key, $event.target.checked)"
               />
             </span>
-            <EventDepotPlanFields
-              v-if="eventMode"
-              :stage-index="record.StageIndex"
-              :stages="eligibleStages"
-              :loading="loading || activityUnavailable"
-              :item-options="itemOptions"
+            <a-select
+              v-model:value="record.Stage"
+              :options="stageOptionsFor(record)"
+              :loading="isStageLoading(record)"
+              :disabled="loading"
+              allow-clear
+              show-search
+              option-filter-prop="label"
+              :virtual="false"
               :get-popup-container="getPopupContainer"
               :list-height="popupListHeight"
-              @change="onEventStageChange(record, $event)"
+              :popup-match-select-width="false"
+              :placeholder="t('core.edit.pickStage')"
+              @change="onStageChange(record)"
+              @dropdown-visible-change="
+                (open: boolean) => open && record.DropId && loadStageCandidates(record.DropId)
+              "
             />
-            <template v-else>
-              <a-select
-                v-model:value="record.Stage"
-                :options="stageOptionsFor(record)"
-                :loading="isStageLoading(record)"
-                :disabled="loading"
-                allow-clear
-                show-search
-                option-filter-prop="label"
-                :virtual="false"
-                :get-popup-container="getPopupContainer"
-                :list-height="popupListHeight"
-                :popup-match-select-width="false"
-                :placeholder="t('edit.pickStage')"
-                @change="onStageChange(record)"
-              />
-              <a-select
-                v-model:value="record.DropId"
-                :options="itemOptions"
-                :disabled="loading || itemOptionsLoading"
-                :loading="itemOptionsLoading"
-                allow-clear
-                show-search
-                option-filter-prop="label"
-                :virtual="false"
-                :get-popup-container="getPopupContainer"
-                :list-height="popupListHeight"
-                :placeholder="t('edit.pickItem')"
-                @change="onItemChange(record)"
-              />
-            </template>
+            <a-select
+              v-model:value="record.DropId"
+              :options="itemOptions"
+              :disabled="loading || itemOptionsLoading"
+              :loading="itemOptionsLoading"
+              allow-clear
+              show-search
+              option-filter-prop="label"
+              :virtual="false"
+              :get-popup-container="getPopupContainer"
+              :list-height="popupListHeight"
+              :placeholder="t('core.edit.pickItem')"
+              @change="onItemChange(record)"
+            />
             <a-input-number
               v-model:value="record.DropCount"
               :disabled="loading"
               :min="1"
               :precision="0"
+              :aria-label="t('core.edit.targetStock')"
               @change="queueSave"
             />
             <span class="stock-value">{{ stockOf(record) }}</span>
@@ -173,7 +140,7 @@
               <a-button
                 type="text"
                 size="small"
-                :aria-label="t('edit.maaDepotMoveUp')"
+                :aria-label="t('core.edit.maaDepotMoveUp')"
                 :disabled="loading || index === 0"
                 @click="moveRow(index, -1)"
               >
@@ -182,7 +149,7 @@
               <a-button
                 type="text"
                 size="small"
-                :aria-label="t('edit.maaDepotMoveDown')"
+                :aria-label="t('core.edit.maaDepotMoveDown')"
                 :disabled="loading || index === plans.length - 1"
                 @click="moveRow(index, 1)"
               >
@@ -191,7 +158,7 @@
               <a-button
                 type="text"
                 danger
-                :aria-label="t('edit.deleteStockKeepingPlan')"
+                :aria-label="t('core.edit.deleteStockKeepingPlan')"
                 :disabled="loading"
                 @click="removePlan(record.key)"
               >
@@ -202,31 +169,19 @@
         </template>
       </draggable>
     </div>
-    <a-empty
+    <NoData
       v-else
-      :description="
-        eventMode && !eligibleStages.length
-          ? t('eventDepotPreview.noActivity')
-          : t('edit.noStockKeepingPlans')
-      "
+      :description="t('core.edit.noStockKeepingPlans')"
       :image-style="{ height: '48px' }"
     />
-    <p v-if="eventMode" class="data-source-note">{{ t('eventDepotPreview.mergeHint') }}</p>
-    <a-alert
-      v-if="eventMode && !activityUnavailable && eligibleStages.length === 0 && plans.length"
-      :message="t('eventDepotPreview.expiredHint')"
-      type="warning"
-      show-icon
-    />
     <a-typography-link
-      v-if="!eventMode"
       class="data-source-note"
       href="https://ark.yituliu.cn"
       target="_blank"
       rel="noreferrer"
       @click="handleExternalLink"
     >
-      {{ t('edit.maaDataSourceYituliu') }}
+      {{ t('core.edit.maaDataSourceYituliu') }}
     </a-typography-link>
   </div>
 </template>
@@ -234,8 +189,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { handleExternalLink } from '@/utils/openExternal'
-import { computed } from 'vue'
-import { message } from 'ant-design-vue'
+import { computed, onMounted } from 'vue'
 import draggable from 'vuedraggable'
 import {
   AppstoreAddOutlined,
@@ -246,11 +200,7 @@ import {
   PlusOutlined,
 } from '@ant-design/icons-vue'
 import { DEPOT_MAINTAIN_PRESETS } from './depotMaintainPresets'
-import EventDepotPlanFields from './EventDepotPlanFields.vue'
-import { getEventDepotStages, getEventDepotPresets } from './eventDepotMaintainPresets'
-import { resolveActivityStage } from './activityStages'
 import { usePlanSelectPopup } from './usePlanSelectPopup'
-import type { ActivityItem } from '@/types/home'
 import type {
   DepotMaintainPlanEditorState,
   DepotMaintainPlanRow as DepotMaintainPlan,
@@ -274,35 +224,22 @@ const props = defineProps<{
   inventory: Record<string, number>
   /** 库存档案的最近识别时间（本地格式；空串=未识别） */
   depotInventoryTime: string
-  /** 提供活动列表时，编辑范围限制为其中的材料掉落关卡。 */
-  activityStages?: ActivityItem[]
-  activityLoading?: boolean
-  activityError?: string
 }>()
 
 type SelectOption = { label: string; value: string; disabled?: boolean }
 
 const stockColumnTitle = computed(() =>
   props.depotInventoryTime
-    ? t('edit.stockRecognizedAt', { time: props.depotInventoryTime })
-    : t('edit.stock')
+    ? t('core.edit.stockRecognizedAt', { time: props.depotInventoryTime })
+    : t('core.edit.stock')
 )
-
-const eventMode = computed(() => props.activityStages !== undefined)
-const eligibleStages = computed(() => getEventDepotStages(props.activityStages ?? []))
-const activityUnavailable = computed(() => !!props.activityLoading || !!props.activityError)
-const importEventPresets = () => {
-  const added = props.editor.appendPlans(getEventDepotPresets(props.activityStages ?? []))
-  message.info(
-    added ? t('eventDepotPreview.added', { n: added }) : t('eventDepotPreview.alreadyAdded')
-  )
-}
 
 const {
   plans,
   selectedRowKeys,
   savePlans,
   queueSave,
+  loadStageCandidates,
   onItemChange,
   onStageChange,
   importPreset,
@@ -311,11 +248,15 @@ const {
   removePlan,
   removeSelectedPlans,
 } = props.editor
+
+onMounted(() => {
+  // 面板重开时补查失败项；缓存与在途请求由页面统一复用。
+  for (const itemId of new Set(plans.value.map(plan => plan.DropId).filter(Boolean))) {
+    void loadStageCandidates(itemId)
+  }
+})
+
 const selectedKeys = computed(() => new Set(selectedRowKeys.value))
-const onEventStageChange = (record: DepotMaintainPlan, index: number) => {
-  record.StageIndex = index
-  onStageChange(record)
-}
 const allSelected = computed(
   () => plans.value.length > 0 && selectedRowKeys.value.length === plans.value.length
 )
@@ -362,12 +303,8 @@ const stageOptionsFor = (record: DepotMaintainPlan): SelectOption[] => {
 const isStageLoading = (record: DepotMaintainPlan): boolean =>
   !!record.DropId && (props.stageCandidatesLoading ?? []).includes(record.DropId)
 
-const stockOf = (record: DepotMaintainPlan): number | string => {
-  const itemId = eventMode.value
-    ? resolveActivityStage(eligibleStages.value, record.StageIndex)?.Drop
-    : record.DropId
-  return itemId ? (props.inventory?.[itemId] ?? '—') : '—'
-}
+const stockOf = (record: DepotMaintainPlan): number | string =>
+  record.DropId ? (props.inventory?.[record.DropId] ?? '—') : '—'
 
 const { getPopupContainer, listHeight: popupListHeight } = usePlanSelectPopup()
 </script>
@@ -403,10 +340,10 @@ const { getPopupContainer, listHeight: popupListHeight } = usePlanSelectPopup()
 .plan-grid-header,
 .plan-row {
   display: grid;
-  grid-template-columns: 24px 32px minmax(0, 1fr) minmax(0, 1.3fr) 110px 88px 104px;
+  grid-template-columns: 24px 32px minmax(0, 1fr) minmax(0, 1.3fr) 116px 88px 104px;
   gap: 8px;
   align-items: center;
-  min-width: 810px;
+  min-width: 816px;
 }
 
 .plan-grid-header {

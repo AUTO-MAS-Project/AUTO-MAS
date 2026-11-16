@@ -15,20 +15,6 @@
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="loading">
-        <template #title>
-          <div class="card-title">
-            <img
-              :src="projectIconUrl || flavor.logo"
-              :alt="flavor.typeTagLabel"
-              width="22"
-              height="22"
-              class="title-logo"
-              @error="handleProjectIconError"
-            />
-            <span>{{ scriptName || 'MFW' }}</span>
-          </div>
-        </template>
-
         <a-form
           v-if="isEdit"
           ref="formRef"
@@ -39,6 +25,13 @@
         >
           <component
             :is="sections.basicInfo"
+            :heading="{
+              isEdit,
+              logoSrc: projectIconUrl || flavor.logo,
+              saveStatus,
+              saveErrorMessage,
+              onIconError: handleProjectIconError,
+            }"
             :form-data="formData"
             :interface-dependent-disabled="interfaceDependentDisabled"
             :account-record-tooltip="accountRecordTooltip"
@@ -94,6 +87,7 @@
             :task-snapshot="taskSnapshot"
             :effective-controller-name="effectiveControllerName"
             :effective-resource-name="effectiveResourceName"
+            :managed-task-entries="managedTaskEntries"
             @reorder-tasks="applyQueuedTaskIds"
             @add-task-cascader-change="handleAddTaskCascaderChange"
             @apply-preset-template="applyPresetTemplate"
@@ -102,6 +96,7 @@
             @rename-queue-template="renameQueueTemplate"
             @delete-queue-template="deleteQueueTemplate"
             @select-task="selectTask"
+            @toggle-task-checked="toggleTaskChecked"
             @move-task="moveTask"
             @task-drag-end="handleTaskDragEnd"
             @task-option-update="handleTaskOptionUpdate"
@@ -110,6 +105,7 @@
             @delete-task="deleteTask"
             @duplicate-task="duplicateTask"
             @rename-task="renameTask"
+            @task-weekdays-update="updateTaskWeekdays"
           />
           <MaaFWFlavorSlot
             part="userPage"
@@ -143,15 +139,15 @@
       :script-name="MAAFW_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
-      :user-desc="t('edit.maafwConfigRestoreUserDesc')"
-      :script-desc="t('edit.maafwConfigRestoreScriptDesc')"
+      :user-desc="t('core.edit.maafwConfigRestoreUserDesc')"
+      :script-desc="t('core.edit.maafwConfigRestoreScriptDesc')"
       :on-restored="handleRestored"
     >
       <!-- mas 备份为字段侧车分区、native 备份为 interface 概览分区 -->
       <template #preview="{ raw }">
-        <a-empty
+        <NoData
           v-if="!previewSections(raw).length"
-          :description="t('edit.configRestorePreviewEmpty')"
+          :description="t('core.edit.configRestorePreviewEmpty')"
         />
         <div v-else>
           <template v-for="s in previewSections(raw)" :key="s.name">
@@ -221,6 +217,7 @@ const {
   taskByName,
   effectiveControllerName,
   effectiveResourceName,
+  managedTaskEntries,
   interfaceDependentDisabled,
   handleFieldSave,
   showPresetModal,
@@ -231,11 +228,13 @@ const {
   selectedTask,
   applyQueuedTaskIds,
   selectTask,
+  toggleTaskChecked,
   applyPresetTemplate,
   deleteSelectedTask,
   deleteTask,
   duplicateTask,
   renameTask,
+  updateTaskWeekdays,
   handleTaskOptionUpdate,
   handleGlobalOptionUpdate,
   moveTask,
@@ -285,8 +284,6 @@ const handleShellImported = (snapshot: Record<string, unknown>, info: Record<str
 
 <style scoped>
 .user-edit-container {
-  padding: 32px;
-  min-height: 100vh;
   background: var(--ant-color-bg-layout);
 }
 
@@ -304,18 +301,6 @@ const handleShellImported = (snapshot: Record<string, unknown>, info: Record<str
   padding: 24px;
 }
 
-.card-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.title-logo {
-  width: 22px;
-  height: 22px;
-  object-fit: contain;
-}
-
 /* 配置恢复预览（分区行；弹窗内滚动由通用组件负责） */
 .maafw-preview-title {
   font-size: 15px;
@@ -326,11 +311,5 @@ const handleShellImported = (snapshot: Record<string, unknown>, info: Record<str
 
 .maafw-preview-box {
   margin-bottom: 8px;
-}
-
-@media (max-width: 768px) {
-  .user-edit-container {
-    padding: 16px;
-  }
 }
 </style>

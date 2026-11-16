@@ -1,3 +1,4 @@
+import type { UserAccountHeadingOptions } from '@/types/userEditor'
 // MFW 页面分节的契约：每个分节收什么 props、发什么事件。MFW 的默认分节直接用这里的接口
 // defineProps / defineEmits，所以这里就是唯一的事实来源；特调替换某个分节时（descriptor 的
 // scriptPage.sections / userPage.sections / create.sections，用 defineMaaFWSection 声明），替换组件
@@ -82,8 +83,10 @@ export interface MaaFWScriptBasicInfoSectionEmits {
 }
 
 /**
- * 脚本页 `control`：控制器、资源、模拟器 / 桌面窗口、游戏启动。另有具名 slot `besidePackageName`
- * （与游戏包名并排，有内容时两列），页面在当前特调登记了同名插入点时才填它；替换这个分节要保留它。
+ * 脚本页 `control`：控制器、资源、模拟器 / 桌面窗口、游戏启动。另有具名作用域 slot
+ * `besidePackageName`（ADB 下排在包名、等待时间之后，每个组件一格）：页面在当前特调登记了同名
+ * 插入点时才填它，并用 `besidePackageNameCount` 传组件数；分节按这个数每格转发一次 slot、带上
+ * `{ index }`，页面渲染第 index 个组件。替换这个分节要保留它。
  */
 export interface MaaFWScriptControlSectionProps {
   /** 脚本 ID：键位映射弹窗「从项目导入」按它读外壳配置实例 */
@@ -95,7 +98,6 @@ export interface MaaFWScriptControlSectionProps {
   emulatorOptionsReady: boolean
   emulatorDeviceLoading: boolean
   emulatorOptions: ComboBoxItem[]
-  /** 魔改 AVD 实例在非 M9A 脚本里 ``disabled``（MaaFW 里魔改 AVD 只支持 M9A） */
   emulatorDeviceOptions: EmulatorDeviceOption[]
   emulatorTypeById: Record<string, EmulatorType>
   controllerOptions: MaaFWControllerInfo[]
@@ -109,6 +111,8 @@ export interface MaaFWScriptControlSectionProps {
   adbControlStrategyItems: Array<{ label: string; value: string }>
   selectedEmulatorLabel: string
   interfaceDependentDisabled: boolean
+  /** 插入点 besidePackageName 登记了几个组件；不传或为 0 时不留这一格 */
+  besidePackageNameCount?: number
 }
 
 export interface MaaFWScriptControlSectionEmits {
@@ -117,6 +121,8 @@ export interface MaaFWScriptControlSectionEmits {
   'resource-change': []
   'emulator-select-change': [emulatorId: string]
   'select-launch-path': []
+  /** 由脚本控制游戏时选启动器 exe（MAS 兜底关闭时一并关它） */
+  'select-launcher-path': []
 }
 
 /** 脚本页 `update`：项目更新来源、渠道、CDK 与检查 / 应用 */
@@ -187,7 +193,7 @@ export interface MaaFWScriptSectionContracts {
 
 // ════════════════════════════ 用户页 ════════════════════════════
 
-/** 用户页 `header`：面包屑、保存状态、打开配置目录、返回 */
+/** 用户页 `header`：面包屑、打开配置目录、返回（保留既有保存状态入参） */
 export interface MaaFWUserHeaderSectionProps {
   saveStatus: 'idle' | 'saving' | 'saved' | 'error'
   saveErrorMessage: string
@@ -205,10 +211,12 @@ export interface MaaFWUserHeaderSectionEmits {
   cancel: []
 }
 
-/** 用户页 `basicInfo`：用户名、启用状态、账号密码、备注 */
+/** 用户页 `basicInfo`：账号标题、用户名、启用状态、账号密码、备注 */
 export interface MaaFWUserBasicInfoSectionProps {
+  heading?: UserAccountHeadingOptions
   formData: MaaFWUserFormData
   interfaceDependentDisabled: boolean
+  /** 账号标签上的问号提示；空串不挂问号 */
   accountRecordTooltip: string
   /** 账号字段占位：特调类型可能把账号绑成切号任务，文案不再是「仅本地记录」 */
   accountPlaceholder?: string
@@ -251,15 +259,26 @@ export type AddTaskCascaderOption = {
   value: string
   /** 带 NEW 标记时是 VNode；搜索按 searchText 匹配 */
   label: string | VNode
+  /** 任务项含显示名、任务名与入口名（换行分隔），分组项是显示文字 */
   searchText: string
   children?: AddTaskCascaderOption[]
 }
 
-/** 预设模板：预设本身 + 其中当前可用的各项 */
+/**
+ * 预设模板：预设本身 + 其中当前可用的各项。除 `unavailable` 的以外列出来的都能应用；
+ * `entries` 可以为空（只有前置任务设置的预设）
+ */
 export type PresetTemplate = {
   preset: MaaFWPresetInfo
   /** 预设里当前可用的各项，重复任务是各自的实例 id */
   entries: MaaFWPresetQueueEntry[]
+  /** 预设启用的前置任务里当前可用的项（预设声明了 `pretask` 才有） */
+  pretaskEntries?: MaaFWPresetQueueEntry[]
+  /**
+   * 预设限定了控制器（PI v2.10.4）且不含当前控制器：照样列出、置灰不让应用。此时
+   * `entries` / `pretaskEntries` 按预设自己的控制器算，只用来显示它包含哪些任务
+   */
+  unavailable?: boolean
 }
 
 /** 自定义模板（脚本级，同一脚本的用户共用）：名称 + 它在当前项目下的样子 */
@@ -292,6 +311,8 @@ export interface MaaFWUserTaskQueueSectionProps {
   taskSnapshot: MaaFWTaskSnapshot
   effectiveControllerName: string
   effectiveResourceName: string
+  /** 特调的受管任务（按 entry）：右栏不给它们显示「运行日」，运行时也不受运行日影响 */
+  managedTaskEntries?: ReadonlySet<string>
 }
 
 export interface MaaFWUserTaskQueueSectionEmits {
@@ -307,6 +328,7 @@ export interface MaaFWUserTaskQueueSectionEmits {
   deleteQueueTemplate: [name: string]
   reorderTasks: [taskIds: string[]]
   selectTask: [taskId: string]
+  toggleTaskChecked: [taskId: string]
   moveTask: [taskId: string, direction: -1 | 1]
   taskDragEnd: []
   taskOptionUpdate: [taskId: string, payload: { optionName: string; value: MaaFWTaskOptionValue }]
@@ -318,6 +340,8 @@ export interface MaaFWUserTaskQueueSectionEmits {
   duplicateTask: [taskId: string]
   /** 队列行右键「重命名」：改这一份实例的显示名（清空或改回原名即恢复默认） */
   renameTask: [taskId: string, name: string]
+  /** 右栏「运行日」改完后的勾选（ISO 星期，1=周一）：空 = 红灯，否则绿灯且只在这几天运行 */
+  taskWeekdaysUpdate: [taskId: string, weekdays: number[]]
 }
 
 /** 用户页分节键 → props 契约 */

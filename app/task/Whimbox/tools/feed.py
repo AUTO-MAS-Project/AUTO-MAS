@@ -40,8 +40,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app.task.Whimbox.contracts import WhimboxRunEvent
-from app.utils import get_logger
-from app.utils.LogMonitor import LogMonitor, strptime
+from app.utils import LogMonitor, get_logger, strptime
 
 logger = get_logger("奇想盒 日志流")
 

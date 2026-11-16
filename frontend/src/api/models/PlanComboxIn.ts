@@ -17,6 +17,9 @@ export namespace PlanComboxIn {
         MAAEND = 'maaend',
         BAAH = 'baah',
         MSS = 'mss',
+        UNIVERSAL = 'universal',
+        OKNTE = 'oknte',
+        OKWW = 'okww',
     }
 }
 

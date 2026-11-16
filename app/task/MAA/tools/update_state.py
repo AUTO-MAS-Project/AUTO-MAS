@@ -33,7 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.utils import get_logger
-from app.utils.io import read_dict_file
+from app.utils import io as _utils_io
 
 logger = get_logger("MAA 更新状态")
 
@@ -41,7 +41,7 @@ logger = get_logger("MAA 更新状态")
 def load_state(path: Path) -> dict[str, object]:
     """读更新模块的状态文件；缺失或损坏按无状态处理（自愈语义）。"""
     try:
-        return read_dict_file(path)
+        return _utils_io.read_dict_file(path)
     except Exception:
         logger.warning(f"MAA 更新状态: 状态文件损坏，按无状态处理: {path}")
         return {}

@@ -54,8 +54,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from app.utils.io import read_dict_file, write_file
-from app.utils.logger import get_logger
+from app.utils import get_logger
+from app.utils import io as _utils_io
 
 from .zzz_od_config import _YAML_LOCK
 
@@ -929,7 +929,7 @@ def restore_plan_run_times(
                         item["run_times"] = runs[plan_id]
                         changed = True
                 if changed:
-                    write_file(app_config_path(root, slot_idx, app_id), data)
+                    _utils_io.write_file(app_config_path(root, slot_idx, app_id), data)
         except Exception as exc:  # noqa: BLE001 - 坏档只丢该 app 进度，不阻断恢复
             logger.warning(f"计划进度回写失败，跳过该任务：{app_id}: {exc}")
 
@@ -949,7 +949,7 @@ def read_app_config(
     ``.sanitized.yaml`` 才能容错读回（见 ``app.utils.io``），否则严格解析会抛异常。
     """
 
-    return read_dict_file(
+    return _utils_io.read_dict_file(
         app_config_path(root, slot_idx, app_id), format=format, allow_empty=True
     )
 
@@ -961,7 +961,7 @@ def write_app_config(
 
     path = app_config_path(root, slot_idx, app_id)
     with _YAML_LOCK:
-        data = read_dict_file(path, allow_empty=True)
+        data = _utils_io.read_dict_file(path, allow_empty=True)
         data.update(values)
-        write_file(path, data)
+        _utils_io.write_file(path, data)
         return data

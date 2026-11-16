@@ -17,14 +17,14 @@ import type { ScriptCreateOut } from '../models/ScriptCreateOut';
 import type { TimeSetCreateOut } from '../models/TimeSetCreateOut';
 import type { UserCreateOut } from '../models/UserCreateOut';
 import type { UserInBase } from '../models/UserInBase';
-import type { WebhookCreateOut } from '../models/WebhookCreateOut';
+import type { WebhookCreateOut_Webhook_ } from '../models/WebhookCreateOut_Webhook_';
 import type { WebhookInBase } from '../models/WebhookInBase';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class AddService {
     /**
-     * 添加脚本
+     * 添加托管
      * @param requestBody
      * @returns ScriptCreateOut Successful Response
      * @throws ApiError
@@ -43,7 +43,7 @@ export class AddService {
         });
     }
     /**
-     * 添加用户
+     * 添加账号
      * @param requestBody
      * @returns UserCreateOut Successful Response
      * @throws ApiError
@@ -64,12 +64,12 @@ export class AddService {
     /**
      * 添加webhook项
      * @param requestBody
-     * @returns WebhookCreateOut Successful Response
+     * @returns WebhookCreateOut_Webhook_ Successful Response
      * @throws ApiError
      */
     public static addWebhookApiScriptsWebhookAddPost(
         requestBody: WebhookInBase,
-    ): CancelablePromise<WebhookCreateOut> {
+    ): CancelablePromise<WebhookCreateOut_Webhook_> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/webhook/add',
@@ -206,10 +206,10 @@ export class AddService {
     }
     /**
      * 添加webhook项
-     * @returns WebhookCreateOut Successful Response
+     * @returns WebhookCreateOut_Webhook_ Successful Response
      * @throws ApiError
      */
-    public static addWebhookApiSettingWebhookAddPost(): CancelablePromise<WebhookCreateOut> {
+    public static addWebhookApiSettingWebhookAddPost(): CancelablePromise<WebhookCreateOut_Webhook_> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/add',

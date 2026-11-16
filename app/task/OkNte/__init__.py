@@ -16,6 +16,19 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-from .manager import OkNteManager
+from importlib import import_module
 
 __all__ = ["OkNteManager"]
+
+
+# 路由注册只加载 HTTP 契约；执行入口仍按需导入。
+def __getattr__(name: str):
+    if name != "OkNteManager":
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(".manager", __name__), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | {"OkNteManager"})

@@ -8,7 +8,7 @@ metadata:
     organisation: Humanlayer
 ---
 
-本仓库 PR 正文的格式以文档站为准（[PR 正文规范](https://doc.auto-mas.top/developer/agent-and-repository-rules.html)）：`## 摘要` 下通常 1 到 4 条要点，有关联 Issue 时补一行 `Closes #n`（没有就删掉），用户可见变更要提醒更新 `res/version.json`。下面的模板只是在写这几条摘要时的取景技巧，与文档站冲突时以文档站为准。
+本仓库 PR 正文的格式以文档站为准（[PR 正文规范](https://doc.auto-mas.top/developer/agent-and-repository-rules.html)）：`## 摘要` 下通常 1 到 4 条要点，有关联 Issue 时补一行 `Closes #n`（没有就删掉），用户可见变更按项目规范新增更新日志碎片；普通 PR 不修改 `CHANGELOG.md`、`res/version.json` 或版本号。下面的模板只是在写这几条摘要时的取景技巧，与文档站冲突时以文档站为准。
 
 ```markdown
 ## 摘要
@@ -173,3 +173,15 @@ function expandSkill(command: string): string {
 说明它是单向门还是双向门。双向门可以走回去，单向门不能。回滚代价低的 PR 风险更低。涉及破坏性操作或难以逆转的决策的变更，是单向门。
 
 Blast radius（爆炸半径）是这个 PR 引入变更的潜在影响或波及范围。把所有可能性都考虑一遍。例如：布局偏移、对使用方的破坏、移动端响应性等。
+
+## 开完 PR 之后
+
+正文写完、PR 开出来不是终点。在等 review 的这段时间里别默默等着，按 `mas-e2e` 的「After opening a PR」把测试入口交出去：
+
+1. 先判断这个 PR 改了哪条用户路径，只列相关的那几条命令（`yarn e2e --grep '<tag>'`、`yarn e2e:real`、`yarn e2e:real:all --only <专项>`），不要甩一句「跑一下 e2e」。
+2. 说明每条会产出什么（截图、HTML 报告、`real-e2e-summary.json`），以及怎么用它补正文的「证据」章节。
+3. 直接问「要我现在跑哪条」，非真实的命令可以立刻由你执行并把结果贴回来。
+4. 明确哪些只有作者本机能跑（`@real` 需要他的模拟器、游戏和账号），不要替他跑，也不要声称跑过。
+5. 改了 `app/task/**`、专项适配、调度或模拟器却还没贴 `@real` 证据时，点明还缺这一条。
+
+之后再 push 且改动路径变了，就再交一次。

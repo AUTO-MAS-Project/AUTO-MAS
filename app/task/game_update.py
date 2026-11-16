@@ -8,7 +8,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from app.models.ConfigBase import ConfigBase
+from app.models.config import MaaConfig, SrcConfig
 from app.models.emulator import DeviceBase, DeviceStatus
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.task.emulator_core import (
@@ -16,45 +16,43 @@ from app.task.emulator_core import (
     mod_avd_open_kwargs,
     resolve_host_adb,
 )
+from app.utils import game_apk as _utils_game_apk
+from app.utils import game_update as _utils_game_update
 from app.utils import get_logger
-from app.utils.game_apk import adb_runner_scope
-from app.utils.game_update import GameUpdateResult
 
 logger = get_logger("游戏更新任务")
 
 
 class EmulatorGameUpdateTask(TaskExecuteBase):
-    wait_for_finalizer_on_cancel = True
-
     def __init__(
         self,
         *,
         script_info: ScriptItem,
-        script_config: ConfigBase,
+        script_config: MaaConfig | SrcConfig,
         emulator_manager: DeviceBase,
         server: str,
         package_name: str,
-        checker: Callable[..., Awaitable[GameUpdateResult]],
+        checker: Callable[..., Awaitable[_utils_game_update.GameUpdateResult]],
         allow_mod_avd: bool = False,
     ) -> None:
-        """``allow_mod_avd``：调用方的脚本能用魔改 AVD（目前是 MAA）；不能时设备是魔改 AVD 就不开机。"""
+        """``allow_mod_avd``：调用方的脚本能用 ModAVD（目前是 MAA）；不能时设备是 ModAVD 就不开机。"""
         super().__init__()
         self.script_info = script_info
         self.script_config = script_config
         # 更新可能早于代理配置锁；清理必须始终指向本次实际启动的设备。
-        self.emulator_index = script_config.get("Emulator", "Index")
-        self.time_limit = script_config.get("Run", "GameUpdateTimeLimit")
-        self.if_auto_install = script_config.get("Run", "IfAutoInstallGameApk")
+        self.emulator_index = script_config.Emulator.Index
+        self.time_limit = script_config.Run.GameUpdateTimeLimit
+        self.if_auto_install = script_config.Run.IfAutoInstallGameApk
         self.emulator_manager = emulator_manager
         self.server = server
         self.package_name = package_name
         self.checker = checker
         self.allow_mod_avd = allow_mod_avd
-        self.result: GameUpdateResult | None = None
+        self.result: _utils_game_update.GameUpdateResult | None = None
         self.owns_emulator = False
 
     async def _report(self, message: str) -> None:
-        self.script_info.log = message
+        await self.script_info.set_log(message)
         logger.info(message)
 
     async def main_task(self) -> None:
@@ -70,9 +68,9 @@ class EmulatorGameUpdateTask(TaskExecuteBase):
                     self.emulator_manager, allowed=self.allow_mod_avd
                 ),
             )
-            # 魔改 AVD 实例：宿主的 adb 走 MAS 私有 server，不落到 5037；其余模拟器不接管
+            # ModAVD 实例：宿主的 adb 走 ``modavd adb``（ModAVD 的私有 server），不落到 5037；其余模拟器不接管
             host_adb = await resolve_host_adb(self, index=self.emulator_index)
-            with adb_runner_scope(host_adb):
+            with _utils_game_apk.adb_runner_scope(host_adb):
                 self.result = await self.checker(
                     adb_path=self.emulator_manager.get_adb_path(),
                     adb_address=info.adb_address,
@@ -97,4 +95,4 @@ class EmulatorGameUpdateTask(TaskExecuteBase):
 
     async def on_crash(self, error: Exception) -> None:
         logger.opt(exception=True).warning(f"游戏更新检查异常，沿用原代理流程: {error}")
-        self.script_info.log = f"游戏更新检查异常: {error}"
+        await self.script_info.set_log(f"游戏更新检查异常: {error}")

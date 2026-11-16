@@ -164,6 +164,7 @@ export type RuntimeKnownCapability =
   | 'log.stream'
   | 'stdin.shutdown'
   | 'stdin.status'
+  | 'stdin.activate'
 
 export type RuntimeCapability = OpenUnion<RuntimeKnownCapability>
 
@@ -173,6 +174,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeKnownCapability[] = [
   'log.stream',
   'stdin.shutdown',
   'stdin.status',
+  'stdin.activate',
 ]
 
 /** 稳定的处置动作标识（errors.go: Remediation）。 */
@@ -249,6 +251,9 @@ export type RuntimeKnownErrorCode =
   | 'PYTHON_VERSION_MISMATCH'
   | 'LOCKFILE_MISSING'
   | 'LOCKFILE_OUTDATED'
+  | 'LOCKFILE_INVALID'
+  | 'LOCKFILE_CHECK_FAILED'
+  | 'WORKSPACE_RESTORE_FAILED'
   | 'DEPENDENCY_SYNC_FAILED'
   | 'ENVIRONMENT_BROKEN'
   | 'ENVIRONMENT_REBUILD_FAILED'
@@ -572,6 +577,27 @@ const ERROR_DEFINITION_LIST: readonly RuntimeErrorDefinition[] = [
     summary: 'uv.lock 与 pyproject.toml 不同步',
   },
   {
+    code: 'LOCKFILE_INVALID',
+    exitCode: 20,
+    retryable: false,
+    remediation: ['contact-support'],
+    summary: '项目锁文件格式损坏',
+  },
+  {
+    code: 'LOCKFILE_CHECK_FAILED',
+    exitCode: 50,
+    retryable: true,
+    remediation: ['retry-sync', 'open-log'],
+    summary: '项目锁文件检查失败',
+  },
+  {
+    code: 'WORKSPACE_RESTORE_FAILED',
+    exitCode: 40,
+    retryable: true,
+    remediation: ['retry-sync', 'open-log'],
+    summary: '程序文件恢复失败',
+  },
+  {
     code: 'DEPENDENCY_SYNC_FAILED',
     exitCode: 50,
     retryable: true,
@@ -854,7 +880,7 @@ export interface RuntimeWarningSummary {
 // ==================== 标准输入控制命令 ====================
 
 /** stdin 控制命令类型。`shutdown` 与 `status` 只对 `backend supervise` 有意义。 */
-export type RuntimeControlKind = 'cancel' | 'shutdown' | 'status'
+export type RuntimeControlKind = 'cancel' | 'shutdown' | 'status' | 'activate'
 
 /**
  * 一条 stdin 控制命令。
@@ -912,6 +938,10 @@ export function isRuntimeResultEvent(event: RuntimeEvent): event is RuntimeResul
 // ==================== 调用侧错误 ====================
 
 export interface RuntimeClientErrorDetails {
+  /** 不含参数的命令类型，用于调用方区分可恢复的只读检查。 */
+  command?: string
+  /** 只有收到实际 close 才为 true；Promise 失败或发送 kill 不代表已退出。 */
+  processExited?: boolean
   /** Runtime 进程退出码，未退出时为 undefined。 */
   exitCode?: number | null
   /** 结束进程的信号。 */

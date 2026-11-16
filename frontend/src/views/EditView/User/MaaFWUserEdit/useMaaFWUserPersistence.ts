@@ -1,6 +1,7 @@
 import type { Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUserApi } from '@/composables/useUserApi'
+import { buildFieldPatch } from '@/utils/fieldPatch'
 import type { MaaFWInterfacePreviewData, MaaFWTaskSnapshot, MaaFWUserConfig } from '@/types/script'
 import { normalizeTaskSnapshot } from './maafwTaskSnapshot'
 import type { MaaFWUserFormState } from './useMaaFWUserForm'
@@ -55,15 +56,7 @@ export function useMaaFWUserPersistence({
     if (isInitializing.value || !userIdHolder.value) return
 
     return await enqueueSave(async () => {
-      const parts = key.split('.')
-      let userData: Record<string, unknown> = {}
-      let current = userData
-
-      for (let i = 0; i < parts.length - 1; i++) {
-        current[parts[i]] = {}
-        current = current[parts[i]] as Record<string, unknown>
-      }
-      current[parts[parts.length - 1]] = value
+      let userData = buildFieldPatch(key, value)
 
       if (key === 'userName') {
         userData = { Info: { Name: value } }
@@ -71,7 +64,7 @@ export function useMaaFWUserPersistence({
 
       const success = await updateUser(scriptId, userIdHolder.value, userData)
       // 这句会进页头的保存失败提示，不带内部字段键名；键名只进日志
-      if (!success) throw new Error(t('edit.couldNotSaveUser'))
+      if (!success) throw new Error(t('core.edit.couldNotSaveUser'))
       logger.info(`用户配置已保存: ${key}`)
       // 失败按字段记账：只有这个字段后来存成功才算补上（userName 写的就是 Info.Name）
     }, saveItemKey(key))
@@ -87,6 +80,14 @@ export function useMaaFWUserPersistence({
   const savePresetAndSnapshot = async (): Promise<boolean> => {
     if (isInitializing.value || !userIdHolder.value) return false
 
+    // 选项、移动、预设等也直接走这里：每次真正保存都进入新队列语义。
+    taskSnapshot.value.keepUnchecked = true
+    taskSnapshot.value.taskChecked = Object.fromEntries(
+      taskSnapshot.value.taskOrder.map(taskId => [
+        taskId,
+        taskSnapshot.value.taskChecked[taskId] !== false,
+      ])
+    )
     const taskSnapshotValue = JSON.stringify(taskSnapshot.value)
     const selectedPreset = formData.Task.SelectedPreset || ''
     // 队列里还有受管任务时，后端保存会按特调规则改写（M9A：只剩一个切换账号就收进「账号」），
@@ -100,7 +101,7 @@ export function useMaaFWUserPersistence({
           TaskSnapshot: taskSnapshotValue,
         },
       })
-      if (!success) throw new Error(t('edit.couldNotSaveUser'))
+      if (!success) throw new Error(t('core.edit.couldNotSaveUser'))
       // 后面还排着保存时不拉：拉回来的是这次的结果，会盖掉页面上还没存的改动
       if (hasManagedTasks && pendingCount() === 1) await reloadManagedUserFields()
       // 每次都写整份队列快照：任一次存成功就补上了之前失败的那次

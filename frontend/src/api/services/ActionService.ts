@@ -8,6 +8,8 @@ import type { ClickTextIn } from '../models/ClickTextIn';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { Emulator2AvdApkInstallIn } from '../models/Emulator2AvdApkInstallIn';
 import type { Emulator2AvdApkInstallOut } from '../models/Emulator2AvdApkInstallOut';
+import type { Emulator2AvdUpdateActionOut } from '../models/Emulator2AvdUpdateActionOut';
+import type { Emulator2AvdUpdateIn } from '../models/Emulator2AvdUpdateIn';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2GuardCaptureOut } from '../models/Emulator2GuardCaptureOut';
 import type { Emulator2SettingsApplyAllIn } from '../models/Emulator2SettingsApplyAllIn';
@@ -18,6 +20,8 @@ import type { Emulator2StableModeIn } from '../models/Emulator2StableModeIn';
 import type { Emulator2StoreOpenIn } from '../models/Emulator2StoreOpenIn';
 import type { Emulator2StoreOpenOut } from '../models/Emulator2StoreOpenOut';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
+import type { MaaEndLogBundleIn } from '../models/MaaEndLogBundleIn';
+import type { MaaEndLogBundleOut } from '../models/MaaEndLogBundleOut';
 import type { ObsReplaySaveOut } from '../models/ObsReplaySaveOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
@@ -50,7 +54,26 @@ export class ActionService {
         });
     }
     /**
-     * 分享脚本配置到配置中心
+     * 从脚本目录导入配置文件
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static importScriptConfigFileApiScriptsConfigImportPost(
+        requestBody: ScriptConfigImportIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/config/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 分享托管配置到配置中心
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -69,17 +92,17 @@ export class ActionService {
         });
     }
     /**
-     * 从脚本目录导入配置文件
+     * 打开已有 MaaEnd 日志包或保存当前日志
      * @param requestBody
-     * @returns OutBase Successful Response
+     * @returns MaaEndLogBundleOut Successful Response
      * @throws ApiError
      */
-    public static importScriptConfigFileApiScriptsConfigImportPost(
-        requestBody: ScriptConfigImportIn,
-    ): CancelablePromise<OutBase> {
+    public static resolveMaaendLogBundleApiScriptsMaaendLogBundlePost(
+        requestBody: MaaEndLogBundleIn,
+    ): CancelablePromise<MaaEndLogBundleOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/scripts/config/import',
+            url: '/api/scripts/maaend/log-bundle',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -222,7 +245,7 @@ export class ActionService {
         });
     }
     /**
-     * 在魔改 AVD 实例里安装 APK
+     * 在 ModAVD 实例里安装 APK
      * ``adb install -r`` 本机的一个 .apk，实例必须已开机；装完才返回。.xapk / 拆分安装包不支持。
      * @param requestBody
      * @returns Emulator2AvdApkInstallOut Successful Response
@@ -234,6 +257,29 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/avd/instance/apk/install',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 更新 ModAVD
+     * 一键更新：查最新版本，下载（Mirror 酱或 GitHub，整包或增量）并核对，再换上。
+     * 有实例开着或正在开机时什么都不动，返回 ``instances_running``；开始后到结束这个根目录不许开机。
+     * 换上前发现还有程序开着模拟器文件时停在「已下载好」，下次直接换上。
+     * 立刻返回，进度经 WebSocket ``emulator2.avd-update.progress`` 推送。
+     * @param requestBody
+     * @returns Emulator2AvdUpdateActionOut Successful Response
+     * @throws ApiError
+     */
+    public static avdUpdateApiEmulator2AvdUpdatePost(
+        requestBody: Emulator2AvdUpdateIn,
+    ): CancelablePromise<Emulator2AvdUpdateActionOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/update',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -465,17 +511,20 @@ export class ActionService {
     /**
      * 下载更新
      * @param version
+     * @param downloader
      * @returns OutBase Successful Response
      * @throws ApiError
      */
     public static downloadUpdateApiUpdateDownloadPost(
         version?: (string | null),
+        downloader?: (string | null),
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/update/download',
             query: {
                 'version': version,
+                'downloader': downloader,
             },
             errors: {
                 422: `Validation Error`,

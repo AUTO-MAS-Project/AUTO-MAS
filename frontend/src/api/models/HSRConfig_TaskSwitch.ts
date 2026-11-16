@@ -4,20 +4,20 @@
 /* eslint-disable */
 export type HSRConfig_TaskSwitch = {
     /**
+     * 货币战争模块开关
+     */
+    CurrencyWars?: (boolean | null);
+    /**
      * 日常模块开关
      */
     Daily?: (boolean | null);
-    /**
-     * 领取奖励模块开关
-     */
-    ReceiveRewards?: (boolean | null);
     /**
      * 差分宇宙模块开关
      */
     DivergentUniverse?: (boolean | null);
     /**
-     * 货币战争模块开关
+     * 领取奖励模块开关
      */
-    CurrencyWars?: (boolean | null);
+    ReceiveRewards?: (boolean | null);
 };
 

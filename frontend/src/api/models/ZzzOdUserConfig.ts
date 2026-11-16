@@ -8,25 +8,10 @@ import type { ZzzOdUserConfig_Info } from './ZzzOdUserConfig_Info';
 import type { ZzzOdUserConfig_Notify } from './ZzzOdUserConfig_Notify';
 import type { ZzzOdUserConfig_OneDragon } from './ZzzOdUserConfig_OneDragon';
 export type ZzzOdUserConfig = {
-    /**
-     * 用户信息
-     */
-    Info?: (ZzzOdUserConfig_Info | null);
-    /**
-     * 游戏账号配置
-     */
-    Game?: (ZzzOdUserConfig_Game | null);
-    /**
-     * 一条龙任务编排
-     */
-    OneDragon?: (ZzzOdUserConfig_OneDragon | null);
-    /**
-     * 用户数据
-     */
     Data?: (ZzzOdUserConfig_Data | null);
-    /**
-     * 单独通知
-     */
+    Game?: (ZzzOdUserConfig_Game | null);
+    Info?: (ZzzOdUserConfig_Info | null);
     Notify?: (ZzzOdUserConfig_Notify | null);
+    OneDragon?: (ZzzOdUserConfig_OneDragon | null);
 };
 

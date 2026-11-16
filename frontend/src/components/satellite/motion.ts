@@ -126,70 +126,32 @@ export interface GlowAppearance {
 
 const SATELLITE_GLOW_SIZE = C.satelliteSize * C.glowSizeMultiplier
 
-/** 运行中呼吸、排队常亮；上次失败时让给失败光晕。返回 null 表示不亮 */
-export function getActivityGlow(
-  status: SatelliteModuleStatus,
-  time: number
-): GlowAppearance | null {
-  if (status.lastFailed) {
-    return null
-  }
-
-  if (status.running) {
-    const breathe = 0.5 + 0.5 * Math.sin(time * 0.003)
-    return {
-      color: SATELLITE_COLORS.active,
-      opacity: 0.4 + breathe * 0.55,
-      size: SATELLITE_GLOW_SIZE * (1 + breathe * 0.12),
-    }
-  }
-
-  if (status.queued) {
-    return { color: SATELLITE_COLORS.active, opacity: 0.62, size: SATELLITE_GLOW_SIZE }
-  }
-
-  return null
+/** 已安排时常亮；最近失败时使用失败光晕。 */
+export function getActivityGlow(status: SatelliteModuleStatus): GlowAppearance | null {
+  if (status.lastFailed || !status.scheduled) return null
+  return { color: SATELLITE_COLORS.active, opacity: 0.62, size: SATELLITE_GLOW_SIZE }
 }
 
-/** 上次失败：平时红色微弱起伏，又在跑时换成琥珀色、按运行节奏呼吸。返回 null 表示不亮 */
+/** 最近持久化记录失败时显示红色光晕。 */
 export function getErrorGlow(status: SatelliteModuleStatus, time: number): GlowAppearance | null {
-  if (!status.lastFailed) {
-    return null
-  }
-
+  if (!status.lastFailed) return null
   const size = SATELLITE_GLOW_SIZE * 1.08
-  if (status.running) {
-    const pulse = 0.5 + 0.5 * Math.sin(time * 0.003)
-    return {
-      color: SATELLITE_COLORS.failedRunning,
-      opacity: 0.4 + pulse * 0.32,
-      size: size * (1 + pulse * 0.12),
-    }
-  }
-
   const pulse = 0.5 + 0.5 * Math.sin(time * 0.0016)
   return { color: SATELLITE_COLORS.failed, opacity: 0.42, size: size * (1 + pulse * 0.04) }
 }
 
-/** 卫星状态的五种表现：空闲、排队、运行中、上次失败、失败后又在跑 */
-export type StatusKind = 'idle' | 'queued' | 'running' | 'failed' | 'retrying'
+/** 卫星配置与历史的三种展示状态。 */
+export type StatusKind = 'idle' | 'scheduled' | 'failed'
 
 export function getStatusKind(status: SatelliteModuleStatus): StatusKind {
-  if (status.lastFailed) return status.running ? 'retrying' : 'failed'
-  if (status.running) return 'running'
-  if (status.queued) return 'queued'
-  return 'idle'
+  if (status.lastFailed) return 'failed'
+  return status.scheduled ? 'scheduled' : 'idle'
 }
 
-/** 彗尾颜色跟着状态走：失败红、失败重跑琥珀、运行或排队绿，空闲时为 null（用主题色） */
+/** 最近失败用红色，已安排用绿色，其余使用主题色。 */
 export function getTrailStatusColor(status: SatelliteModuleStatus): number | null {
-  if (status.lastFailed) {
-    return status.running ? SATELLITE_COLORS.failedRunning : SATELLITE_COLORS.failed
-  }
-  if (status.running || status.queued) {
-    return SATELLITE_COLORS.active
-  }
-  return null
+  if (status.lastFailed) return SATELLITE_COLORS.failed
+  return status.scheduled ? SATELLITE_COLORS.active : null
 }
 
 /** 中心光晕：有新版本时彩虹闪烁，平时绿色常亮 */

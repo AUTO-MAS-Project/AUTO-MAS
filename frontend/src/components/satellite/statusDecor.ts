@@ -8,13 +8,11 @@ import { RENDER_ORDER } from './sceneParts'
 type BadgeKind = Exclude<StatusKind, 'idle'>
 
 const BADGE_COLORS: Record<BadgeKind, string> = {
-  queued: '#7f9c90',
-  running: '#3fbf6e',
+  scheduled: '#7f9c90',
   failed: '#ff4d57',
-  retrying: '#ffad33',
 }
 
-/** 圆底白字的小徽标：▶ 运行、⋯ 排队、! 失败、↻ 重跑；全用路径画，不依赖字体 */
+/** 已安排用圆点、最近失败用叹号；全用路径画，不依赖字体。 */
 function drawBadge(kind: BadgeKind): THREE.CanvasTexture {
   const size = 64
   const canvas = document.createElement('canvas')
@@ -36,14 +34,7 @@ function drawBadge(kind: BadgeKind): THREE.CanvasTexture {
   ctx.fillStyle = '#ffffff'
   ctx.strokeStyle = '#ffffff'
   ctx.lineCap = 'round'
-  if (kind === 'running') {
-    ctx.beginPath()
-    ctx.moveTo(c - 7, c - 11)
-    ctx.lineTo(c + 12, c)
-    ctx.lineTo(c - 7, c + 11)
-    ctx.closePath()
-    ctx.fill()
-  } else if (kind === 'queued') {
+  if (kind === 'scheduled') {
     for (const dx of [-10, 0, 10]) {
       ctx.beginPath()
       ctx.arc(c + dx, c, 3.6, 0, Math.PI * 2)
@@ -57,17 +48,6 @@ function drawBadge(kind: BadgeKind): THREE.CanvasTexture {
     ctx.stroke()
     ctx.beginPath()
     ctx.arc(c, c + 12, 3.4, 0, Math.PI * 2)
-    ctx.fill()
-  } else {
-    ctx.lineWidth = 5
-    ctx.beginPath()
-    ctx.arc(c, c, 11, -Math.PI * 0.15, Math.PI * 1.45)
-    ctx.stroke()
-    ctx.beginPath()
-    ctx.moveTo(c + 15, c - 9)
-    ctx.lineTo(c + 9, c + 1)
-    ctx.lineTo(c + 4, c - 9)
-    ctx.closePath()
     ctx.fill()
   }
 
@@ -85,10 +65,8 @@ export interface StatusTextures {
 
 export function createBadgeTextures(): Record<BadgeKind, THREE.Texture> {
   return {
-    queued: drawBadge('queued'),
-    running: drawBadge('running'),
+    scheduled: drawBadge('scheduled'),
     failed: drawBadge('failed'),
-    retrying: drawBadge('retrying'),
   }
 }
 
@@ -100,7 +78,7 @@ interface StatusStyle {
   raysOpacity: number
   raysSpin: number
   /** 外圈：进度弧（转）、整环（呼吸），或者没有 */
-  ring: 'arc' | 'full' | null
+  ring: 'full' | null
   ringSpin: number
   /** 绕着转的小光点 */
   dots: boolean
@@ -115,21 +93,13 @@ const STATUS_STYLES: Record<StatusKind, StatusStyle> = {
     ringSpin: 0,
     dots: false,
   },
-  queued: {
+  scheduled: {
     color: SATELLITE_COLORS.active,
     raysOpacity: 0.34,
     raysSpin: 0.0003,
     ring: null,
     ringSpin: 0,
     dots: true,
-  },
-  running: {
-    color: SATELLITE_COLORS.active,
-    raysOpacity: 0.62,
-    raysSpin: 0.0011,
-    ring: 'arc',
-    ringSpin: 0.0042,
-    dots: false,
   },
   failed: {
     color: SATELLITE_COLORS.failed,
@@ -139,14 +109,6 @@ const STATUS_STYLES: Record<StatusKind, StatusStyle> = {
     ringSpin: 0,
     dots: false,
   },
-  retrying: {
-    color: SATELLITE_COLORS.failedRunning,
-    raysOpacity: 0.66,
-    raysSpin: 0.0016,
-    ring: 'arc',
-    ringSpin: 0.006,
-    dots: false,
-  },
 }
 
 const RING_INNER = C.satelliteSize * 0.78
@@ -154,14 +116,13 @@ const RING_OUTER = C.satelliteSize * 0.84
 const DOT_COUNT = 3
 
 /**
- * 卫星的光芒和状态装饰：背后一圈旋转光芒，外圈进度弧或警示环，排队时绕转的小光点，
+ * 卫星的光芒和状态装饰：背后一圈旋转光芒，外圈警示环，已安排时绕转的小光点，
  * 右上角一个状态徽标。全都正对镜头，跟着卫星走。
  */
 export class SatelliteDecor {
   private readonly scene: THREE.Scene
   private readonly textures: StatusTextures
   private readonly rays: THREE.Sprite
-  private readonly arc: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>
   private readonly fullRing: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>
   private readonly dots: THREE.Sprite[]
   private readonly badge: THREE.Sprite
@@ -197,15 +158,10 @@ export class SatelliteDecor {
         depthWrite: false,
         side: THREE.DoubleSide,
       })
-    this.arc = new THREE.Mesh(
-      new THREE.RingGeometry(RING_INNER, RING_OUTER, 48, 1, 0, Math.PI * 1.35),
-      ringMaterial()
-    )
     this.fullRing = new THREE.Mesh(
       new THREE.RingGeometry(RING_INNER, RING_OUTER, 64),
       ringMaterial()
     )
-    this.arc.renderOrder = RENDER_ORDER.satelliteIcon
     this.fullRing.renderOrder = RENDER_ORDER.satelliteIcon
 
     this.dots = Array.from({ length: DOT_COUNT }, () => {
@@ -225,7 +181,7 @@ export class SatelliteDecor {
 
     this.badge = new THREE.Sprite(
       new THREE.SpriteMaterial({
-        map: textures.badges.running,
+        map: textures.badges.scheduled,
         transparent: true,
         depthWrite: false,
       })
@@ -233,7 +189,7 @@ export class SatelliteDecor {
     this.badge.renderOrder = RENDER_ORDER.satelliteIcon
     this.badge.scale.setScalar(22)
 
-    scene.add(this.rays, this.arc, this.fullRing, this.badge, ...this.dots)
+    scene.add(this.rays, this.fullRing, this.badge, ...this.dots)
     this.applyKind('idle')
   }
 
@@ -261,18 +217,14 @@ export class SatelliteDecor {
 
     // 光芒：空闲时浅色主题再淡一点，免得白底上一片灰
     this.raysRotation += dt * style.raysSpin
-    const pulse =
-      kind === 'running' || kind === 'retrying'
-        ? 0.75 + 0.25 * Math.sin(time * 0.004 + this.phase)
-        : 1
     const flicker =
       kind === 'failed' ? 0.6 + 0.4 * Math.abs(Math.sin(time * 0.0023 + this.phase)) : 1
     this.rays.visible = shown
     this.rays.position.copy(anchor)
     this.rays.material.rotation = this.raysRotation
     this.rays.material.opacity =
-      style.raysOpacity * pulse * flicker * fade * (isDark || kind !== 'idle' ? 1 : 0.5)
-    this.rays.scale.setScalar(C.satelliteSize * 3.1 * scale * (0.92 + 0.08 * pulse))
+      style.raysOpacity * flicker * fade * (isDark || kind !== 'idle' ? 1 : 0.5)
+    this.rays.scale.setScalar(C.satelliteSize * 3.1 * scale)
 
     // 外圈和徽标正对镜头，用镜头的右、上、前方向摆
     this.tmpRight.setFromMatrixColumn(camera.matrixWorld, 0)
@@ -280,15 +232,11 @@ export class SatelliteDecor {
     this.tmpForward.setFromMatrixColumn(camera.matrixWorld, 2)
 
     this.ringRotation += dt * style.ringSpin
-    for (const ring of [this.arc, this.fullRing]) {
-      ring.position.copy(anchor).addScaledVector(this.tmpForward, 2)
-      ring.quaternion.copy(camera.quaternion)
-      ring.rotateZ(-this.ringRotation)
-      ring.scale.setScalar(Math.max(0.001, scale))
-    }
-    this.arc.visible = shown && style.ring === 'arc'
+    this.fullRing.position.copy(anchor).addScaledVector(this.tmpForward, 2)
+    this.fullRing.quaternion.copy(camera.quaternion)
+    this.fullRing.rotateZ(-this.ringRotation)
+    this.fullRing.scale.setScalar(Math.max(0.001, scale))
     this.fullRing.visible = shown && style.ring === 'full'
-    this.arc.material.opacity = 0.9 * fade
     this.fullRing.material.opacity =
       (0.35 + 0.45 * Math.abs(Math.sin(time * 0.003 + this.phase))) * fade
 
@@ -317,9 +265,7 @@ export class SatelliteDecor {
   }
 
   dispose(): void {
-    this.scene.remove(this.rays, this.arc, this.fullRing, this.badge, ...this.dots)
-    this.arc.geometry.dispose()
-    this.arc.material.dispose()
+    this.scene.remove(this.rays, this.fullRing, this.badge, ...this.dots)
     this.fullRing.geometry.dispose()
     this.fullRing.material.dispose()
     this.rays.material.dispose()
@@ -331,7 +277,6 @@ export class SatelliteDecor {
     this.kind = kind
     const style = STATUS_STYLES[kind]
     this.rays.material.color.setHex(style.color)
-    this.arc.material.color.setHex(style.color)
     this.fullRing.material.color.setHex(style.color)
     if (kind !== 'idle') {
       this.badge.material.map = this.textures.badges[kind]

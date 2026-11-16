@@ -3,15 +3,15 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 基于一条龙已有实例快速生成当前用户配置（覆盖本用户账号与任务编排）。
+ * 基于一条龙已有实例快速生成当前账号配置（覆盖本账号账号与任务编排）。
  */
 export type ZzzOdImportIn = {
     /**
-     * 所属脚本ID
+     * 所属托管ID
      */
     scriptId: string;
     /**
-     * 目标用户ID（独立的用户级配置）
+     * 目标账号ID（独立的账号级配置）
      */
     userId: string;
     /**

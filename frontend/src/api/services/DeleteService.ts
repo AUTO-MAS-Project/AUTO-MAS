@@ -27,7 +27,7 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class DeleteService {
     /**
-     * 删除脚本
+     * 删除托管
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -46,7 +46,7 @@ export class DeleteService {
         });
     }
     /**
-     * 删除用户
+     * 删除账号
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -144,10 +144,10 @@ export class DeleteService {
         });
     }
     /**
-     * 把回收池里的槽快照恢复给某个 MAS 用户（现有用户或新建用户，先存底）
+     * 把回收池里的槽快照恢复给某个 MAS 账号（现有用户或新建账号，先存底）
      * 恢复的落点是**用户的绑定槽**（``targetUser`` 指定现有用户，或
-     * ``newUserName`` 新建一个用户）——只物化内容而不建立绑定的恢复没有出口，
-     * MAS 下次运行不会认领它。目标用户已有绑定槽时覆盖其内容，恢复前先存底。
+     * ``newUserName`` 新建一个账号）——只物化内容而不建立绑定的恢复没有出口，
+     * MAS 下次运行不会认领它。目标账号已有绑定槽时覆盖其内容，恢复前先存底。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError

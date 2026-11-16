@@ -8,16 +8,16 @@ export type MaaEndUserConfig_Data = {
      */
     LastProxyDate?: (string | null);
     /**
-     * 代理次数
-     */
-    ProxyTimes?: (number | null);
-    /**
      * 上次代理状态
      */
     LastProxyStatus?: ('未知' | '成功' | '失败' | null);
     /**
-     * MaaEnd 每日任务完成记录
+     * MaaEnd 每日任务完成记录，结构为 daily -> task name -> 日期
      */
     PeriodTaskRecords?: (string | null);
+    /**
+     * 代理次数
+     */
+    ProxyTimes?: (number | null);
 };
 

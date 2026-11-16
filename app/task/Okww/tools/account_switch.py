@@ -39,14 +39,11 @@ OCR 复用通用工具集 `app.tools.ocr`。
 # 上游入口（见 blackbox-boundary.md）。
 
 import asyncio
-import ctypes
 import inspect
 import re
 import time
 from collections.abc import Callable
-from contextlib import contextmanager
 from datetime import datetime
-from functools import lru_cache
 from pathlib import Path
 
 import cv2
@@ -54,10 +51,12 @@ import numpy as np
 import psutil
 from PIL import Image
 
-from app.tools.error_screenshot import save_error_screenshot
-from app.tools.ocr import Box, OCRItem, ocr_image
-from app.utils import get_logger
-from app.utils.platform import IS_WINDOWS
+from app.tools import error_screenshot as _tool_error_screenshot
+from app.tools import ocr as _tool_ocr
+from app.utils import IS_WINDOWS, get_logger, is_process_alive
+from app.utils import display as _utils_display
+
+from .maintenance import GameMaintenanceDetected, find_game_maintenance_text
 
 if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
@@ -95,6 +94,11 @@ _WUWA_PROCESS = "Client-Win64-Shipping.exe"
 _GAME_WINDOW_WAIT_SECONDS = 60.0
 # 窗口轮询间隔。
 _WINDOW_POLL_INTERVAL = 1.0
+# 切号入口的进程消失宽限期：游戏自更新/启动交接会「旧进程退出→数秒后新进程
+# 出现」（_wait_game_restart 等旧窗口退出最长 120s，交接是真实且可达分钟级的
+# 流程），进程消失后不得立即判死。持续消失超过该宽限期仍无进程也无窗口，才判
+# 永久退出快速失败；长交接（>宽限期）原本也会因窗口宽限超时而失败，报错更准确。
+_PROCESS_GONE_GRACE_SECONDS = 30.0
 # 启动界面稳定等待：窗口已出现但尚未进入可执行登录态（仍停在警告/加载/游戏内更新
 # 过渡帧）时，在硬上限内轮询等待「登录页」或「已登录主菜单」出现。鸣潮更新由 MAS
 # 启动前预更新，游戏内更新概率较低，但仍以「进展续延」应答长加载：界面仍在变化时
@@ -137,35 +141,15 @@ _FRAME_WIDTH = 1920
 _FRAME_HEIGHT = 1080
 
 # 登录表单判定区域（相对 1080p 帧，对齐 ok-ww box_of_screen(0.3, 0.3, 0.7, 0.8)）
-_LOGIN_ROI: Box = (576, 324, 1344, 864)
+_LOGIN_ROI: _tool_ocr.Box = (576, 324, 1344, 864)
 # 仅在登录页出现的文本，用于判定「已处于登录界面 / 登录成功」
 _LOGIN_PAGE_TEXTS = ("其他登录方式",)
 # 已登录主菜单判定文本（登录界面但无输入框：退出/公告/工具/账号/设置 + 登录状态）
 _LOGGED_IN_MENU_TEXTS = ("登录状态", "点击连接")
 
-# 掩码账号形如 123****5678
-_MASKED_ACCOUNT = re.compile(r"\d{3}\*+\d{4}")
-_MASKED_SUFFIX = re.compile(r"\d+\*+(\d{4})")
-
-
-@lru_cache(maxsize=1)
-def _user32_dpi_api():
-    user32 = ctypes.windll.user32
-    user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
-    user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
-    return user32
-
-
-@contextmanager
-def _per_monitor_dpi():
-    """切换到 per-monitor DPI 感知，保证窗口坐标换算在跨 DPI 显示器下正确。"""
-    user32 = _user32_dpi_api()
-    previous = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
-    try:
-        yield
-    finally:
-        if previous:
-            user32.SetThreadDpiAwarenessContext(previous)
+# 掩码账号形如 123****5678，OCR 可能识别为半角、全角或混合星号。
+_MASKED_ACCOUNT = re.compile(r"\d{3}[*＊]+\d{4}")
+_MASKED_SUFFIX = re.compile(r"\d+[*＊]+(\d{4})")
 
 
 # ── 窗口定位 ────────────────────────────────────────────────────────────
@@ -187,7 +171,28 @@ def _window_area(hwnd: int) -> int:
         return 0
 
 
-def _find_game_hwnd(*, wait: bool = True) -> int:
+def _probe_game_hwnd() -> int | None:
+    """单次枚举鸣潮主窗口；重启交接期间没有窗口是合法状态。"""
+    candidates: list[int] = []
+
+    def _enum(hwnd: int, _lparam: int) -> bool:
+        try:
+            if not win32gui.IsWindowVisible(hwnd):
+                return True
+            if win32gui.GetClassName(hwnd) != _WUWA_CLASS:
+                return True
+        except Exception:
+            return True
+        _, pid = win32process.GetWindowThreadProcessId(hwnd)
+        if pid and _process_name(pid) == _WUWA_PROCESS:
+            candidates.append(hwnd)
+        return True
+
+    win32gui.EnumWindows(_enum, 0)
+    return max(candidates, key=_window_area) if candidates else None
+
+
+def _find_game_hwnd(*, wait: bool = True, fail_on_exit: bool = False) -> int:
     """按窗口类 + 所属进程名定位鸣潮主窗口。
 
     用 ``EnumWindows + psutil.Process(pid).name()`` 而非 process_iter 的 name 属性，
@@ -196,32 +201,43 @@ def _find_game_hwnd(*, wait: bool = True) -> int:
     Args:
         wait: 为 True 时在宽限期 ``_GAME_WINDOW_WAIT_SECONDS`` 内轮询等待窗口就绪，
             以吸收进程拉起后窗口延迟亮相的启动阶段；为 False 时单次枚举立即返回。
+        fail_on_exit: 切号入口专用。为 True 时，等待期间观察到鸣潮进程先出现后
+            全部消失，且持续 ``_PROCESS_GONE_GRACE_SECONDS`` 仍无进程也无窗口
+            （窗口不会再出现）才抛错；消失宽限期容忍游戏自更新/启动交接的短暂
+            缺席。从未观察到进程（启动延迟）不触发，保持宽限轮询。默认 False：
+            重启换新窗口等进程缺席属预期的调用方维持原语义。
 
     Raises:
-        RuntimeError: 宽限期结束仍未定位到鸣潮游戏窗口。
+        RuntimeError: 宽限期结束仍未定位到鸣潮游戏窗口；或 ``fail_on_exit`` 且
+            鸣潮进程先出现后持续消失超过宽限期。
     """
     deadline = time.monotonic() + _GAME_WINDOW_WAIT_SECONDS
+    seen_alive = False
+    gone_since: float | None = None
     while True:
-        candidates: list[int] = []
-
-        def _enum(hwnd: int, _lparam: int) -> bool:
-            try:
-                if not win32gui.IsWindowVisible(hwnd):
-                    return True
-                if win32gui.GetClassName(hwnd) != _WUWA_CLASS:
-                    return True
-            except Exception:
-                return True
-            _, pid = win32process.GetWindowThreadProcessId(hwnd)
-            if pid and _process_name(pid) == _WUWA_PROCESS:
-                candidates.append(hwnd)
-            return True
-
-        win32gui.EnumWindows(_enum, 0)
-        if candidates:
-            return max(candidates, key=_window_area)
+        hwnd = _probe_game_hwnd()
+        if hwnd is not None:
+            return hwnd
         if not wait or time.monotonic() >= deadline:
             break
+        if fail_on_exit:
+            if is_process_alive(_WUWA_PROCESS):
+                seen_alive = True
+                gone_since = None
+            elif seen_alive:
+                # 进程先出现后消失：先容忍更新/启动交接的短暂缺席（消失期间窗口
+                # 若先回来，下一轮 EnumWindows 会直接命中），持续消失超过宽限期
+                # 仍无进程也无窗口才判永久退出，如实快速失败。从未观察到进程
+                # （启动延迟）与权限不足读不到提权进程名（退化为原宽限轮询）
+                # 都不在此列。
+                now = time.monotonic()
+                if gone_since is None:
+                    gone_since = now
+                elif now - gone_since >= _PROCESS_GONE_GRACE_SECONDS:
+                    raise RuntimeError(
+                        f"鸣潮游戏进程已退出（{_WUWA_PROCESS}），窗口不会再出现，"
+                        "请确认游戏已由 MAS 成功启动"
+                    )
         logger.info(
             f"鸣潮游戏进程已启动但窗口暂未就绪，{_WINDOW_POLL_INTERVAL:g} 秒后重试..."
         )
@@ -281,7 +297,7 @@ def _client_size(hwnd: int) -> tuple[int, int]:
 
 
 def _capture_window_image(hwnd: int, *, activate: bool = True) -> Image.Image:
-    with _per_monitor_dpi():
+    with _utils_display.per_monitor_dpi():
         if activate:
             _activate_window(hwnd)
         width, height = _client_size(hwnd)
@@ -306,7 +322,7 @@ def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
     return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
 
 
-def _dump_ocr_items(items: list[OCRItem]) -> None:
+def _dump_ocr_items(items: list[_tool_ocr.OCRItem]) -> None:
     """诊断旁路：把一次 OCR 的全部识别文本写入诊断文件（标注调用函数）。"""
     if _DIAGNOSTIC_PATH is None:
         return
@@ -320,18 +336,18 @@ def _dump_ocr_items(items: list[OCRItem]) -> None:
         _write_diagnostic(f"  ({x:4},{y:4} {w:3}x{h:3}) {text}\n")
 
 
-def _read_texts(hwnd: int, roi: Box | None = None) -> list[OCRItem]:
+def _read_texts(hwnd: int, roi: _tool_ocr.Box | None = None) -> list[_tool_ocr.OCRItem]:
     frame = _capture_window(hwnd, activate=False)
-    items = ocr_image(frame, roi)
+    items = _tool_ocr.ocr_image(frame, roi)
     _dump_ocr_items(items)
     return items
 
 
 def _click_box(
-    hwnd: int, box: Box, *, activate: bool = False, after_sleep: float = 0.3
+    hwnd: int, box: _tool_ocr.Box, *, activate: bool = False, after_sleep: float = 0.3
 ) -> None:
     """点击 1080p 坐标空间中的一个文字框中心。"""
-    with _per_monitor_dpi():
+    with _utils_display.per_monitor_dpi():
         if activate:
             _activate_window(hwnd)
         width, height = _client_size(hwnd)
@@ -340,14 +356,14 @@ def _click_box(
         client_y = round((y + box_height / 2) * height / _FRAME_HEIGHT)
         screen_x, screen_y = win32gui.ClientToScreen(hwnd, (client_x, client_y))
 
-    original_position = pyautogui.position()
-    try:
-        pyautogui.moveTo(screen_x, screen_y)
-        time.sleep(0.3)
-        pyautogui.click()
-        time.sleep(after_sleep)
-    finally:
-        pyautogui.moveTo(*original_position)
+        original_position = pyautogui.position()
+        try:
+            pyautogui.moveTo(screen_x, screen_y)
+            time.sleep(0.3)
+            pyautogui.click()
+            time.sleep(after_sleep)
+        finally:
+            pyautogui.moveTo(*original_position)
 
 
 def _click_point(hwnd: int, px: int, py: int, *, after_sleep: float = 0.3) -> None:
@@ -363,7 +379,9 @@ def _press_escape(hwnd: int, *, after_sleep: float = 1.5) -> None:
 # ── OCR 文本判定辅助 ─────────────────────────────────────────────────────
 
 
-def _find_text(items: list[OCRItem], keywords: tuple[str, ...]) -> Box | None:
+def _find_text(
+    items: list[_tool_ocr.OCRItem], keywords: tuple[str, ...]
+) -> _tool_ocr.Box | None:
     for text, box in items:
         if any(keyword in text for keyword in keywords):
             return box
@@ -374,9 +392,9 @@ def _wait_ocr_text(
     hwnd: int,
     keywords: tuple[str, ...],
     *,
-    roi: Box | None = None,
+    roi: _tool_ocr.Box | None = None,
     timeout: int,
-) -> Box | None:
+) -> _tool_ocr.Box | None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         box = _find_text(_read_texts(hwnd, roi), keywords)
@@ -395,7 +413,7 @@ def _on_logged_in_menu(hwnd: int) -> bool:
     return _find_text(_read_texts(hwnd), _LOGGED_IN_MENU_TEXTS) is not None
 
 
-def _find_confirm_logout_box(items: list[OCRItem]) -> Box | None:
+def _find_confirm_logout_box(items: list[_tool_ocr.OCRItem]) -> _tool_ocr.Box | None:
     """在 OCR 条目中定位弹窗中的「确认登出」按钮。
 
     只认「登出」，不认裸「退出」——主菜单右侧有「退出」（退出游戏）按钮，
@@ -463,7 +481,7 @@ def _frame_signature(frame: np.ndarray) -> int:
     return hash(small.tobytes())
 
 
-def _find_busy_keyword(items: list[OCRItem]) -> str | None:
+def _find_busy_keyword(items: list[_tool_ocr.OCRItem]) -> str | None:
     """识别游戏内忙碌态（内部下载/编译着色器）的关键词；未识别返回 None。"""
     for text, _ in items:
         for keyword in _IN_GAME_BUSY_TEXTS:
@@ -472,7 +490,7 @@ def _find_busy_keyword(items: list[OCRItem]) -> str | None:
     return None
 
 
-def _find_title_enter_box(items: list[OCRItem]) -> Box | None:
+def _find_title_enter_box(items: list[_tool_ocr.OCRItem]) -> _tool_ocr.Box | None:
     """定位标题界面的「进入游戏」入口（重启后游戏会停在标题界面）。
 
     登录态标题顶部栏为「账号掩码 + 进入游戏」（OCR 可能合并成一条，如
@@ -484,7 +502,7 @@ def _find_title_enter_box(items: list[OCRItem]) -> Box | None:
     return _find_text(items, ("进入游戏",))
 
 
-def _has_restart_prompt(items: list[OCRItem]) -> bool:
+def _has_restart_prompt(items: list[_tool_ocr.OCRItem]) -> bool:
     """重启提示判定：只认高区分度短语「游戏即将重启」，避免误报与漏报。"""
     return _find_text(items, _RESTART_PROMPT_TEXTS) is not None
 
@@ -509,7 +527,7 @@ def _wait_game_restart(hwnd: int, on_log: Callable[[str], None]) -> int:
     # 旧窗口（或其残影）当成重启后的新窗口
     restart_deadline = time.monotonic() + _GAME_WINDOW_WAIT_SECONDS
     while True:
-        new_hwnd = _find_game_hwnd(wait=False)
+        new_hwnd = _probe_game_hwnd()
         if new_hwnd is not None and new_hwnd != hwnd:
             break
         if time.monotonic() >= restart_deadline:
@@ -547,7 +565,7 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
     deadline = time.monotonic() + _IN_GAME_UPDATE_TIMEOUT
     last_progress = time.monotonic()
     last_sig: int | None = None
-    items_full: list[OCRItem] = []
+    items_full: list[_tool_ocr.OCRItem] = []
     on_login_page = False
     busy_seen: tuple[str, float] | None = None
     busy_switches = 0
@@ -560,14 +578,18 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
         sig = _frame_signature(frame)
         if sig != last_sig:
             # 画面有变化才跑 OCR；帧哈希未变时沿用上次识别结果
-            items_full = ocr_image(frame)
+            items_full = _tool_ocr.ocr_image(frame)
             on_login_page = (
-                _find_text(ocr_image(frame, _LOGIN_ROI), _LOGIN_PAGE_TEXTS) is not None
+                _find_text(_tool_ocr.ocr_image(frame, _LOGIN_ROI), _LOGIN_PAGE_TEXTS)
+                is not None
             )
             last_sig = sig
             last_progress = time.monotonic()
         if iter_count % _DIAGNOSTIC_DUMP_EVERY_POLLS == 0:
             _dump_ocr_items(items_full)
+        maintenance_text = find_game_maintenance_text(text for text, _ in items_full)
+        if maintenance_text is not None:
+            raise GameMaintenanceDetected(maintenance_text)
         if on_login_page or _find_text(items_full, _LOGGED_IN_MENU_TEXTS) is not None:
             return hwnd
         # 游戏内更新完成提示重启：点「确认」后游戏自行重启，换新窗口后继续在
@@ -779,7 +801,15 @@ def _wait_login_success(hwnd: int, *, timeout: int = 180) -> None:
     deadline = time.monotonic() + timeout
     absent_count = 0
     while time.monotonic() < deadline:
-        if not _on_login_page(hwnd):
+        frame = _capture_window(hwnd, activate=False)
+        items = _tool_ocr.ocr_image(frame)
+        maintenance_text = find_game_maintenance_text(text for text, _ in items)
+        if maintenance_text is not None:
+            raise GameMaintenanceDetected(maintenance_text)
+        if (
+            _find_text(_tool_ocr.ocr_image(frame, _LOGIN_ROI), _LOGIN_PAGE_TEXTS)
+            is None
+        ):
             absent_count += 1
             if absent_count >= 2:
                 return
@@ -790,7 +820,7 @@ def _wait_login_success(hwnd: int, *, timeout: int = 180) -> None:
 
 
 def _select_and_login(hwnd: int, suffix: str, on_log: Callable[[str], None]) -> None:
-    pattern = re.compile(rf"\d+\*+{re.escape(suffix)}")
+    pattern = re.compile(rf"\d+[*＊]+{re.escape(suffix)}")
     max_retries = 3
     for attempt in range(1, max_retries + 1):
         _activate_window(hwnd)
@@ -831,7 +861,7 @@ def _select_and_login(hwnd: int, suffix: str, on_log: Callable[[str], None]) -> 
 def _save_error_screenshot(hwnd: int) -> None:
     """保存切换失败时的窗口截图，便于排查 OCR 文本漂移。"""
     try:
-        save_error_screenshot(
+        _tool_error_screenshot.save_error_screenshot(
             _capture_window_image(hwnd, activate=False),
             "okww-account-switch",
             "switch-error",
@@ -857,6 +887,7 @@ def account_switch(
         切换成功返回 True；失败抛出带原因描述的 RuntimeError。
 
     Raises:
+        GameMaintenanceDetected: 登录过程中出现维护弹窗。
         RuntimeError: 未找到游戏窗口 / 登录流程失败 / 超时。
     """
     on_log = on_log or (lambda msg: logger.info(msg))
@@ -864,7 +895,7 @@ def account_switch(
         raise RuntimeError("OK-WW 账号切换仅支持 Windows 平台")
     # 关闭四角 fail-safe：MAS 属无人值守托管运行，光标停在主屏四角时任何鼠标/
     # 键盘操作都会在真实移动发生前抛 FailSafeException，重试轮次无法自愈；紧急
-    # 停止由 MAS 的任务停止入口承担（对齐 app/MaaFW/ArknightWin32.py 的先例；
+    # 停止由 MAS 的任务停止入口承担；
     # failSafeCheck 每次调用实时读该全局，赋值即生效）
     pyautogui.FAILSAFE = False
     account_id = str(account_id or "").strip()
@@ -887,7 +918,7 @@ def account_switch(
 
     _on_log(f"开始切换鸣潮账号：****{suffix}")
     try:
-        hwnd = _find_game_hwnd()
+        hwnd = _find_game_hwnd(fail_on_exit=True)
         _activate_window(hwnd)
         hwnd = _switch_to_login(hwnd, _on_log)
         _select_and_login(hwnd, suffix, _on_log)

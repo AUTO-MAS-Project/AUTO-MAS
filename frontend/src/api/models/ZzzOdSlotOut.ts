@@ -12,7 +12,7 @@ export type ZzzOdSlotOut = {
      */
     idx: number;
     /**
-     * 槽类别（native=一条龙原生实例 / mas=有 MAS 用户绑定 / orphan=无主残留）
+     * 槽类别（native=一条龙原生实例 / mas=有 MAS 账号绑定 / orphan=无主残留）
      */
     kind: ZzzOdSlotOut.kind;
     /**
@@ -24,13 +24,13 @@ export type ZzzOdSlotOut = {
      */
     size?: number;
     /**
-     * 绑定该槽的 MAS 用户（可为多个脚本）
+     * 绑定该槽的 MAS 账号（可为多个脚本）
      */
     owners?: Array<ZzzOdSlotOwnerOut>;
 };
 export namespace ZzzOdSlotOut {
     /**
-     * 槽类别（native=一条龙原生实例 / mas=有 MAS 用户绑定 / orphan=无主残留）
+     * 槽类别（native=一条龙原生实例 / mas=有 MAS 账号绑定 / orphan=无主残留）
      */
     export enum kind {
         NATIVE = 'native',

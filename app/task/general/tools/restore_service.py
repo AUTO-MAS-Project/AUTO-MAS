@@ -18,17 +18,17 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""通用脚本配置恢复服务：MAS 用户配置副本池 / 脚本原生配置池（声明式池）。
+"""通用脚本配置恢复服务：MAS 账号配置副本池 / 脚本原生配置池（声明式池）。
 
 池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
 ``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底全部由基座
-（``app.utils.config_restore``）从 ``files`` + ``backup_root`` 声明派生。
+（``app.utils.common.config.restore``）从 ``files`` + ``backup_root`` 声明派生。
 备份文件级原语见同目录 ``backup_archive``。
 
-- ``mas`` 池（用户级）：该用户的 ``ConfigFile`` 目录副本（General 恒按
-  用户隔离，无 MAA 式 owner 解耦），恢复 = 整目录回写；MAS 编辑页字段
+- ``mas`` 池（账号级）：该账号的 ``ConfigFile`` 目录副本（General 恒按
+  账号隔离，无 MAA 式 owner 解耦），恢复 = 整目录回写；MAS 编辑页字段
   不注入原生配置，无侧车、无字段回填。
-- ``native`` 池（脚本级）：用户自填的 ``Script.ConfigPath``（Folder 整
+- ``native`` 池（托管级）：用户自填的 ``Script.ConfigPath``（Folder 整
   目录 / File 单文件两态），按物理配置根指纹分桶，恢复前强制存底当前。
 
 两池均无定制 preview：通用脚本配置格式任意（透传），MAS 不解析内容，
@@ -45,7 +45,7 @@ import uuid
 from pathlib import Path
 
 from app.utils import get_logger
-from app.utils.config_restore import ConfigRestorePool, RestoreContext
+from app.utils.common.config import restore as _utils_config_restore
 
 from .backup_archive import (
     collect_mas_files,
@@ -60,45 +60,49 @@ from .backup_archive import (
 logger = get_logger("通用脚本配置恢复")
 
 
-def _user_guard(ctx: RestoreContext) -> None:
-    """恢复守卫：目标用户必须存在，避免把配置恢复进孤儿目录。"""
+def _user_guard(ctx: _utils_config_restore.RestoreContext) -> None:
+    """恢复守卫：目标账号必须存在，避免把配置恢复进孤儿目录。"""
 
     if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
-        raise ValueError("通用脚本用户不存在，请刷新后重试")
+        raise ValueError("通用脚本账号不存在，请刷新后重试")
 
 
-def _native_config_path(ctx: RestoreContext) -> Path | None:
+def _native_config_path(ctx: _utils_config_restore.RestoreContext) -> Path | None:
     """脚本原生配置路径（``Script.ConfigPath``）；未配置返回 ``None``。"""
 
-    raw = str(ctx.script_config.get("Script", "ConfigPath") or "").strip()
+    raw = str(ctx.script_config.Script.ConfigPath or "").strip()
     return Path(raw) if raw else None
 
 
-def _native_config_mode(ctx: RestoreContext) -> str:
+def _native_config_mode(ctx: _utils_config_restore.RestoreContext) -> str:
     """配置路径模式（``Script.ConfigPathMode``：Folder / File）。"""
 
-    return str(ctx.script_config.get("Script", "ConfigPathMode") or "Folder")
+    return str(ctx.script_config.Script.ConfigPathMode or "Folder")
 
 
-async def _mas_files(ctx: RestoreContext) -> dict[str, Path] | None:
-    """归档内容 = 用户 ConfigFile 目录（恒按用户，无侧车；空目录返回 ``None``）。"""
+async def _mas_files(
+    ctx: _utils_config_restore.RestoreContext,
+) -> dict[str, Path] | None:
+    """归档内容 = 账号 ConfigFile 目录（恒按账号，无侧车；空目录返回 ``None``）。"""
 
     _user_guard(ctx)
     return collect_mas_files(mas_config_dir(ctx.script_id, ctx.user_id)) or None
 
 
-async def _mas_root(ctx: RestoreContext) -> Path:
+async def _mas_root(ctx: _utils_config_restore.RestoreContext) -> Path:
     return mas_backup_root(ctx.script_id, ctx.user_id)
 
 
-async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
+async def _restore_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> None:
     _user_guard(ctx)
     restore_mas_backup(
         ctx.script_id, ctx.user_id, ts, mas_config_dir(ctx.script_id, ctx.user_id)
     )
 
 
-async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
+async def _native_files(
+    ctx: _utils_config_restore.RestoreContext,
+) -> dict[str, Path] | None:
     """归档内容 = ConfigPath 当前状态（Folder 整目录 / File 单文件；缺失返回 ``None``）。"""
 
     config_path = _native_config_path(ctx)
@@ -107,14 +111,14 @@ async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
     return collect_native_files(config_path, _native_config_mode(ctx)) or None
 
 
-async def _native_root(ctx: RestoreContext) -> Path | None:
+async def _native_root(ctx: _utils_config_restore.RestoreContext) -> Path | None:
     config_path = _native_config_path(ctx)
     if config_path is None:
         return None
     return native_backup_root(ctx.script_id, config_path)
 
 
-async def _restore_native(ctx: RestoreContext, ts: str) -> None:
+async def _restore_native(ctx: _utils_config_restore.RestoreContext, ts: str) -> None:
     config_path = _native_config_path(ctx)
     if config_path is None:
         raise ValueError("请先设置脚本配置路径")
@@ -122,7 +126,7 @@ async def _restore_native(ctx: RestoreContext, ts: str) -> None:
 
 
 RESTORE_POOLS = [
-    ConfigRestorePool(
+    _utils_config_restore.ConfigRestorePool(
         key="mas",
         kind="user",
         mas_base="user_only",
@@ -130,7 +134,7 @@ RESTORE_POOLS = [
         backup_root=_mas_root,
         restore=_restore_mas,
     ),
-    ConfigRestorePool(
+    _utils_config_restore.ConfigRestorePool(
         key="native",
         kind="script",
         files=_native_files,

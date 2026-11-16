@@ -43,13 +43,9 @@ from typing import Any
 
 import pyzipper
 
-from app.services import System
-from app.utils.update_files import (
-    file_md5,
-    file_size,
-    native_path,
-    replace_file,
-)
+from app.utils import process
+from app.utils import update_files as _utils_update_files
+from app.utils.common.process.runner import popen_scoped
 
 from .checks import _resolve_within
 from .common import (
@@ -158,7 +154,9 @@ class _SplicedStream(io.RawIOBase):
     def _read_volume(self, index: int, local: int, length: int) -> bytes:
         if self._handle is None or self._handle_index != index:
             self._close_handle()
-            self._handle = open(native_path(self._files[index]), "rb")
+            self._handle = open(
+                _utils_update_files.native_path(self._files[index]), "rb"
+            )
             self._handle_index = index
         self._handle.seek(local)
         data = self._handle.read(length)
@@ -264,7 +262,10 @@ def _write_member(
     try:
         # 包里的目录条目不进成员表，父目录得自己建出来
         temp.parent.mkdir(parents=True, exist_ok=True)
-        with archive.open(info) as source, open(native_path(temp), "wb") as sink:
+        with (
+            archive.open(info) as source,
+            open(_utils_update_files.native_path(temp), "wb") as sink,
+        ):
             while chunk := source.read(4 * _DOWNLOAD_CHUNK):
                 if abort.is_set():
                     raise EndfieldUpdateError(
@@ -306,7 +307,7 @@ def _run_hpatchz(
     取消等待的话，它还攥着输出文件，本次收尾和下一轮都要跟它抢同一个名字。
     """
 
-    child = subprocess.Popen(
+    child = popen_scoped(
         [str(exe), str(base), str(diff), str(out)],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -347,13 +348,13 @@ async def _commit(temp: Path, target: Path, md5: str, size: int) -> None:
     是原子改名，不存在写一半的中间态。
     """
 
-    actual = file_size(temp)
+    actual = _utils_update_files.file_size(temp)
     if actual != size:
         with suppress(OSError):
             temp.unlink(missing_ok=True)
         logger.warning(f"{target} 落地体积不符：期望 {size} 实际 {actual}")
         raise EndfieldUpdateError(f"{target.name} 落地后的体积不对，已停止覆盖")
-    digest = await asyncio.to_thread(file_md5, temp)
+    digest = await asyncio.to_thread(_utils_update_files.file_md5, temp)
     if digest != md5:
         with suppress(OSError):
             temp.unlink(missing_ok=True)
@@ -361,7 +362,7 @@ async def _commit(temp: Path, target: Path, md5: str, size: int) -> None:
         raise EndfieldUpdateError(f"{target.name} 落地校验未通过，已停止覆盖")
     # 改名是单次系统调用，不走线程池：进了线程池，被判定「已中止」之后仍可能在后台
     # 把游戏文件换掉，回报的状态就和磁盘上的实情不一致
-    replace_file(temp, target, clear_readonly=True)
+    _utils_update_files.replace_file(temp, target, clear_readonly=True)
 
 
 async def _commit_verified(temp: Path, target: Path, size: int) -> None:
@@ -372,13 +373,13 @@ async def _commit_verified(temp: Path, target: Path, size: int) -> None:
     复核：从校验到改名之间窗口很短，但把这一步省掉就等于「校验过的东西」不再有下限。
     """
 
-    actual = file_size(temp)
+    actual = _utils_update_files.file_size(temp)
     if actual != size:
         with suppress(OSError):
             temp.unlink(missing_ok=True)
         logger.warning(f"{target} 落地体积不符：期望 {size} 实际 {actual}")
         raise EndfieldUpdateError(f"{target.name} 落地后的体积不对，已停止覆盖")
-    replace_file(temp, target, clear_readonly=True)
+    _utils_update_files.replace_file(temp, target, clear_readonly=True)
 
 
 async def _reusable_output(temp: Path, md5: str, size: int) -> bool:
@@ -394,10 +395,10 @@ async def _reusable_output(temp: Path, md5: str, size: int) -> bool:
 
     if not md5:
         return False
-    if file_size(temp) != size:
+    if _utils_update_files.file_size(temp) != size:
         return False
     try:
-        if await asyncio.to_thread(file_md5, temp) != md5:
+        if await asyncio.to_thread(_utils_update_files.file_md5, temp) != md5:
             return False
     except OSError:
         return False
@@ -460,7 +461,7 @@ async def _apply_delta(
         if now < next_busy_check:
             return
         next_busy_check = now + _APPLY_BUSY_RECHECK_SECONDS
-        if await System.is_process_running(game_exe):
+        if await process.is_process_running(game_exe):
             raise EndfieldUpdateError(
                 "落地期间游戏被重新启动，本轮不再覆盖，请退出游戏后重试"
             )
@@ -558,5 +559,7 @@ async def _apply_delta(
     pending = staging / _PENDING_CONFIG_NAME
     await _unpack(archive.getinfo(_CONFIG_MEMBER), pending)
     # 携带新版本号的这份配置是本轮最后一次写入：单次原子改名，不进线程池
-    replace_file(pending, install_dir / _CONFIG_MEMBER, clear_readonly=True)
+    _utils_update_files.replace_file(
+        pending, install_dir / _CONFIG_MEMBER, clear_readonly=True
+    )
     return done

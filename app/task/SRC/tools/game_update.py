@@ -42,16 +42,13 @@ from urllib.parse import urljoin
 
 import httpx
 
-from app.utils import get_logger
-from app.utils.constants import STARRAIL_UPDATE_LINK_SERVER
-from app.utils.game_apk import (
-    cleanup_apk_leftovers,
-    download_apk,
-    get_apk_update_lock,
-    get_installed_client_version,
-    install_apk,
-)
-from app.utils.game_update import GameUpdateResult, is_client_outdated
+from app.utils import STARRAIL_UPDATE_LINK_SERVER, get_logger
+from app.utils import game_apk as _utils_game_apk
+from app.utils import game_update as _utils_game_update
+
+get_installed_client_version = _utils_game_apk.get_installed_client_version
+GameUpdateResult = _utils_game_update.GameUpdateResult
+is_client_outdated = _utils_game_update.is_client_outdated
 
 logger = get_logger("SRC 游戏更新")
 
@@ -225,8 +222,8 @@ async def ensure_game_updated(
         )
 
     apk_path = apk_dir / f"hkrpg-{remote}.apk"
-    async with get_apk_update_lock(package_name):
-        cleanup_apk_leftovers(apk_dir, "hkrpg-")
+    async with _utils_game_apk.get_apk_update_lock(package_name):
+        _utils_game_apk.cleanup_apk_leftovers(apk_dir, "hkrpg-")
         # 并行任务可能刚装完同一个安装包：锁内复读版本，已是最新就直接复用结果
         installed_now = await get_installed_client_version(
             adb_path, adb_address, package_name
@@ -238,13 +235,15 @@ async def ensure_game_updated(
         try:
             if progress is not None:
                 await progress(f"{outdated_text}\n正在下载游戏安装包")
-            await download_apk(
+            await _utils_game_apk.download_apk(
                 source.download_url, apk_path, progress, timeout=time_limit * 60
             )
 
             if progress is not None:
                 await progress(f"{outdated_text}\n正在安装游戏安装包")
-            await install_apk(adb_path, adb_address, apk_path, timeout=time_limit * 60)
+            await _utils_game_apk.install_apk(
+                adb_path, adb_address, apk_path, timeout=time_limit * 60
+            )
         except Exception as e:
             logger.opt(exception=True).warning(f"接管游戏更新失败: {e}")
             return GameUpdateResult(

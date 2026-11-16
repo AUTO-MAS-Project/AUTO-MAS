@@ -1,11 +1,25 @@
 """神秘入口的申请信息接口。"""
 
+from typing import Literal
+
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
-from app.models.schema import MysteryContextData, MysteryContextOut
+from app.models.schema import OutBase
 from app.mystery.access import MysteryContextError, get_access_context
 from app.utils import get_logger
+
+
+class MysteryContextData(BaseModel):
+    deviceHash: str = Field(pattern=r"^[0-9a-f]{64}$", description="设备指纹")
+    backendHash: str = Field(pattern=r"^[0-9a-f]{64}$", description="当前后端源码指纹")
+
+
+class MysteryContextOut(OutBase):
+    data: MysteryContextData | None = None
+    errorCode: Literal["DEVICE_UNAVAILABLE", "BACKEND_UNAVAILABLE"] | None = None
+
 
 router = APIRouter(prefix="/api/mystery", tags=["Mystery"])
 logger = get_logger("神秘入口")

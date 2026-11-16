@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type GeneralConfig_Info = {
     /**
-     * 脚本名称
+     * 托管名称
      */
     Name?: (string | null);
     /**
-     * 脚本根目录
+     * 根目录路径
      */
     RootPath?: (string | null);
 };

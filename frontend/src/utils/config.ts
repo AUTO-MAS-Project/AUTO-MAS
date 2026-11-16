@@ -1,21 +1,57 @@
 import type { AppLocale } from '@/i18n'
 import type { ThemeMode, ThemeColor } from '@/composables/useTheme'
 import type { CursorEffect } from '@/types/cursorEffect'
+import type { PressSoundPreset } from '@/types/pressSound'
 import type { HomeLayoutConfig } from '@/types/home'
 import type { HomeSatelliteStyle } from '@/types/homeSatellite'
 
 const logger = window.electronAPI.getLogger('配置管理')
 
 export interface FrontendConfig {
+  /** 关闭窗口时是否先显示退出/最小化到托盘确认。 */
+  confirmBeforeClose?: boolean
+  /** 关闭时的默认动作；开启确认后也作为弹窗的默认选择。 */
+  lastCloseAction?: 'quit' | 'tray'
+
+  /** 设置页右侧分区目录的显示偏好。 */
+  settingsShowNavigation?: boolean
+
   // 主题设置
   themeMode: ThemeMode
   themeColor: ThemeColor
   /** 当前自定义外观包 ID；为空时使用内置外观模式。 */
   appearanceId?: string | null
+  /** 为空时跟随主题附带的桌宠；否则固定使用独立桌宠。 */
+  desktopMascotId?: string | null
+  desktopMascotEnabled?: boolean
+  /** 为空时使用动画包的帧率；自定义范围为 1～120 FPS。 */
+  desktopMascotFps?: number | null
+  desktopMascotAnimationPaused?: boolean
+  desktopMascotIdleMessagePaused?: boolean
+  desktopMascotPosition?: { x: number; y: number }
+  cursorSizePx?: number | null
   cursorEffect?: CursorEffect
   lowPerformanceMode?: boolean
   /** 有脚本任务运行时自动暂停主页卫星动效；旧配置缺省按开启算 */
   pauseHomeEffectsWhenRunning?: boolean
+
+  // 主页中心图标（星核）按压音效
+  pressSoundEnabled?: boolean
+  pressSoundPreset?: PressSoundPreset
+  pressSoundVolume?: number
+  /** 用户导入音频的绝对路径（两个文件时是「按下」那个）；preset 为 custom / customPair 时使用 */
+  pressSoundCustomPath?: string
+  /** 用户导入音频的显示名，仅用于界面 */
+  pressSoundCustomName?: string
+  /** 自定义两个文件时「松开」音频的绝对路径，preset 为 customPair 时使用 */
+  pressSoundCustomReleasePath?: string
+  /** 「松开」音频的显示名，仅用于界面 */
+  pressSoundCustomReleaseName?: string
+
+  /** 用户自定义背景的绝对路径；为空时使用内置或外观包背景。 */
+  customBackgroundPath?: string
+  /** 自定义背景下的主界面表面透明度；范围为 0.10～1.00。 */
+  customSurfaceOpacity?: number
 
   // 神秘入口上次解锁的北京时间日期，仅作轻量访问门槛
   mysteryUnlockedDate?: string
@@ -47,11 +83,24 @@ export interface FrontendConfig {
 }
 
 const DEFAULT_CONFIG: FrontendConfig = {
+  confirmBeforeClose: true,
+  lastCloseAction: 'quit',
   themeMode: 'system',
   themeColor: 'blue',
+  settingsShowNavigation: true,
+  desktopMascotFps: null,
   cursorEffect: 'none',
   lowPerformanceMode: false,
   pauseHomeEffectsWhenRunning: true,
+  pressSoundEnabled: false,
+  pressSoundPreset: 'duck',
+  pressSoundVolume: 0.6,
+  pressSoundCustomPath: '',
+  pressSoundCustomName: '',
+  pressSoundCustomReleasePath: '',
+  pressSoundCustomReleaseName: '',
+  customBackgroundPath: '',
+  customSurfaceOpacity: 1,
   selectedGitMirror: 'github',
   selectedPythonMirror: 'tsinghua',
   selectedPipMirror: 'tsinghua',

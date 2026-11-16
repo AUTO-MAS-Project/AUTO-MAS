@@ -46,19 +46,6 @@ export const summarizeAnnihilation = (
   return parts.join(' · ')
 }
 
-export const summarizeActivity = (options: {
-  enabled: boolean
-  loading: boolean
-  optionCount: number
-  stageLabel?: string
-  medicine: number
-}) => {
-  if (!options.enabled) return ''
-  if (options.loading) return '加载中…'
-  if (!options.optionCount) return '当前无可刷活动关'
-  return `${options.stageLabel ?? '未选择'} · 理智药 ${options.medicine}`
-}
-
 export const summarizeCultivate = (
   options: { enabled: boolean; targetsJson: string; autoRaise: boolean },
   t: (key: string, values?: { count: number }) => string
@@ -66,8 +53,10 @@ export const summarizeCultivate = (
   if (!options.enabled) return ''
   const count = parseCultivateTargets(options.targetsJson).length
   return [
-    count ? t('edit.maaCultivateOperatorCount', { count }) : t('edit.maaCultivateEmpty'),
-    t(options.autoRaise ? 'edit.maaCultivateAutoRaiseOn' : 'edit.maaCultivateAutoRaiseOff'),
+    count ? t('core.edit.maaCultivateOperatorCount', { count }) : t('core.edit.maaCultivateEmpty'),
+    t(
+      options.autoRaise ? 'core.edit.maaCultivateAutoRaiseOn' : 'core.edit.maaCultivateAutoRaiseOff'
+    ),
   ].join(' · ')
 }
 
@@ -84,7 +73,7 @@ export const summarizeDepot = (
   } catch {
     count = 0
   }
-  return count ? t('edit.maaDepotPlanCount', { count }) : t('edit.maaDepotEmpty')
+  return count ? t('core.edit.maaDepotPlanCount', { count }) : t('core.edit.maaDepotEmpty')
 }
 
 export const INFRAST_MODE_OPTIONS = [
