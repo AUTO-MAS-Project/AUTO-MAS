@@ -108,6 +108,7 @@ class _PluginManager:
         self.game_types: dict[UUID, GameTypeDecl] = {}
         self._busy = asyncio.Lock()
         self._initialized = False
+        self._restart_installation: UUID | None = None
         self._core_pep440: str | None = None
         self._watcher: SourceWatcher | None = None
         self._source_queue: asyncio.Queue[SourcesChangedPayload] | None = None
@@ -165,6 +166,15 @@ class _PluginManager:
         async with self._hold():
             uv_tool.ensure()
             site = uv_tool.site_dir(activate=False)
+            from app.plugin.uv.environment import apply_pending, read_installation
+
+            installation = read_installation()
+            if installation is not None and installation.progress.state in {
+                "applying",
+                "failed",
+            }:
+                # 未完成发布可能留下部分元数据，先恢复文件再执行发现。
+                await apply_pending()
             # 只发现元数据；旧插件及其依赖在联合升级完成前不能进入导入环境。
             await discover.refresh(installed_path=site)
             await uv_tool.prepare_environment()
@@ -256,6 +266,9 @@ class _PluginManager:
                     logger.exception(f"启动时启用插件失败: {name}")
                     continue
 
+            from app.plugin.uv.environment import finish_installation
+
+            finish_installation()
             self._initialized = True
 
             # ── 源码监视：plugins/*/ 代码变更 → sources_changed → 增量 refresh ──
@@ -343,12 +356,47 @@ class _PluginManager:
     @asynccontextmanager
     async def _hold(self) -> AsyncGenerator[None]:
         """先取得生命周期互斥资格，再暂停调用；忙时拒绝，不能提前取消业务操作。"""
-        if self._busy.locked():
+        if self._busy.locked() or self._restart_installation is not None:
             raise PluginBusyError("插件系统忙，请稍后重试")
         async with self._busy:
             yield
 
     # ==================== 对外生命周期 ====================
+
+    async def prepare_installation_restart(self, installation_id: UUID) -> bool:
+        """确认候选身份，等待业务空闲后封闭新任务和命令，交由前端立即重启。"""
+        from app.core import TaskManager
+        from app.core.plugin.operations import Operations
+        from app.plugin.uv.environment import read_installation
+
+        record = read_installation()
+        if (
+            record is None
+            or record.progress.installationId != installation_id
+            or record.progress.state != "waiting_restart"
+        ):
+            raise PluginPrecheckError("等待重启的插件安装已变化，请重新查询")
+        if self._restart_installation == installation_id:
+            return True
+        async with self._hold():
+            if not TaskManager.prepare_restart():
+                return False
+            if not Operations.prepare_restart():
+                TaskManager.cancel_restart()
+                return False
+            self._restart_installation = installation_id
+            return True
+
+    def cancel_installation_restart(self, installation_id: UUID) -> None:
+        """前端重启失败或放弃时恢复受理；候选环境继续保留，供下次启动应用。"""
+        from app.core import TaskManager
+        from app.core.plugin.operations import Operations
+
+        if self._restart_installation != installation_id:
+            return
+        self._restart_installation = None
+        TaskManager.cancel_restart()
+        Operations.cancel_restart()
 
     async def load(
         self,
@@ -981,6 +1029,23 @@ class _PluginManager:
         """确认只读目录的安装目标及发行元数据，联合装包后核对实际身份，再发现并加载插件。"""
         async with self._hold():
             from app.core.config import Config
+            from app.plugin.uv.environment import finish_installation, read_installation
+
+            pending = read_installation()
+            if pending is not None and pending.progress.state == "waiting_restart":
+                if (
+                    pending.progress.metaId == meta.uid
+                    and canonicalize_name(pending.progress.packageName)
+                    == canonicalize_name(meta.info.package_name)
+                    and pending.progress.pluginName == meta.info.plugin_name
+                    and (
+                        not meta.info.version
+                        or Version(pending.progress.version)
+                        == Version(meta.info.version)
+                    )
+                ):
+                    return {"restart_required": True}
+                raise PluginPrecheckError("已有插件安装等待重启，请先完成该操作")
 
             package = (meta.info.package_name or "").strip()
             plugin_id = (meta.info.plugin_name or "").strip()
@@ -1057,31 +1122,65 @@ class _PluginManager:
             elif meta.activation_state != NodeState.INACTIVE:
                 raise PluginPrecheckError("市场条目缺少版本，请刷新目录后重试")
             # 主程序升级可从内部声明自动求解版本；同样须通过装包后的实际元数据校验。
-            await uv_tool.install(f"{package}=={version}" if version else package)
-            distribution = importlib_metadata.distribution(package)
-            installed_version = validate_install_metadata(
-                distribution.metadata,
-                package_name=package,
-                plugin_name=plugin_id,
-                version=version,
+            pause = (
+                self._pause_operations(existing)
+                if existing is not None and existing._plugin_cls is not None
+                else contextlib.nullcontext(set())
             )
-            await discover.refresh()
-            record = self._record_by_plugin_id(plugin_id)
-            if (
-                record is None
-                or record.info.source != "installed"
-                or canonicalize_name(record.info.package_name)
-                != canonicalize_name(package)
-                or Version(record.info.version) != Version(installed_version)
-                or record._project_dir is None
-                or record._project_dir.resolve()
-                != Path(str(distribution.locate_file(""))).resolve()
-            ):
-                raise PluginPrecheckError("发现的插件与已验证的安装发行包不一致")
-            return await self.load(record, held=True)
+            async with pause as owners:
+                for uid in owners:
+                    plugin = Config.plugin_registry[uid]._plugin
+                    if isinstance(plugin, (ScriptAdapterPlugin, GameAdapterPlugin)):
+                        plugin.precheck_locks()
+                restart_required = await uv_tool.install(
+                    f"{package}=={version}" if version else package,
+                    plugin_name=plugin_id,
+                    meta_id=meta.uid,
+                )
+                if restart_required:
+                    return {"restart_required": True}
+                distribution = importlib_metadata.distribution(package)
+                installed_version = validate_install_metadata(
+                    distribution.metadata,
+                    package_name=package,
+                    plugin_name=plugin_id,
+                    version=version,
+                )
+                await discover.refresh()
+                record = self._record_by_plugin_id(plugin_id)
+                if (
+                    record is None
+                    or record.info.source != "installed"
+                    or canonicalize_name(record.info.package_name)
+                    != canonicalize_name(package)
+                    or Version(record.info.version) != Version(installed_version)
+                    or record._project_dir is None
+                    or record._project_dir.resolve()
+                    != Path(str(distribution.locate_file(""))).resolve()
+                ):
+                    raise PluginPrecheckError("发现的插件与已验证的安装发行包不一致")
+                try:
+                    if record._plugin_cls is not None:
+                        result = await self.reload(record, held=True)
+                    else:
+                        result = await self.load(record, held=True)
+                except BaseException:
+                    from app.plugin.uv.environment import write_installation
+
+                    installation = read_installation()
+                    assert installation is not None
+                    installation.progress.state = "failed"
+                    installation.progress.message = "插件加载失败，请检查插件兼容性"
+                    write_installation(installation)
+                    raise
+                finish_installation()
+                return result
 
     async def uninstall(self, record: PluginRecord) -> dict[str, Any]:
         """取得互斥并等待完整下游后卸包；外部删除失败时保留登记和故障状态供重试。"""
+        from app.plugin.uv.environment import ensure_writable
+
+        ensure_writable()
         async with self._hold(), self._pause_operations(record):
             name = record.info.plugin_name
             package = record.info.package_name or name

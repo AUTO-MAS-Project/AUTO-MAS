@@ -173,6 +173,7 @@ async def test_prestart_cancel_and_non_cancellable_owner_pause():
         assert entry._calls == 0
         uid = dispatcher.submit(entry, group="action", field="fixed", value=True)
         await entry._started.wait()
+        assert not dispatcher.prepare_restart()
         with pytest.raises(OperationUnavailable, match="not_cancellable"):
             await dispatcher.cancel(uid)
         entered = asyncio.Event()
@@ -190,6 +191,12 @@ async def test_prestart_cancel_and_non_cancellable_owner_pause():
         entry._release.set()
         await waiter
         assert dispatcher.get(uid).state == "succeeded"
+        assert dispatcher.prepare_restart()
+        with pytest.raises(OperationUnavailable, match="operation_unavailable"):
+            dispatcher.submit(entry, group="action", field="run", value=True)
+        dispatcher.cancel_restart()
+        uid = dispatcher.submit(entry, group="action", field="run", value=True)
+        assert (await dispatcher.cancel(uid)).state == "cancelled"
     finally:
         await dispatcher.shutdown()
 

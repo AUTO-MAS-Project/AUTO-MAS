@@ -389,7 +389,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 后端服务管理（startBackend/stopBackend 与 backendStart 两套命名都有渲染进程在用，先都保留）
   backendStart: (retry?: boolean) => ipcRenderer.invoke('backend-start', retry),
-  backendRestart: (reason?: 'manual' | 'recovery') => ipcRenderer.invoke('backend-restart', reason),
+  backendRestart: (reason?: 'manual' | 'recovery' | 'update') =>
+    ipcRenderer.invoke('backend-restart', reason),
   backendStatus: () => ipcRenderer.invoke('backend-status'),
   checkRuntimeBackendUpdate: () => ipcRenderer.invoke('check-runtime-backend-update'),
 

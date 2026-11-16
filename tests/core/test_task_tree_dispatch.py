@@ -80,6 +80,7 @@ async def test_stop_all_blocks_new_requests_and_waits_for_inflight_creation(sche
             )
         )
         await asyncio.wait_for(entered.wait(), 3)
+        assert not manager.prepare_restart()
         stopping = asyncio.create_task(manager.stop("ALL"))
         await asyncio.sleep(0)
         try:
@@ -91,6 +92,16 @@ async def test_stop_all_blocks_new_requests_and_waits_for_inflight_creation(sche
         await asyncio.wait_for(creating, 3)
         await asyncio.wait_for(stopping, 3)
     assert not manager.task_handler
+    assert manager.prepare_restart()
+    with pytest.raises(RuntimeError, match="准备重启"):
+        await manager.start(TaskMode.AUTO_PROXY, {})
+    manager.cancel_restart()
+    uid = await manager.start(
+        TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(sid)}}}}
+    )
+    run = manager.task_handler[uid]
+    await asyncio.wait_for(run.accomplish.wait(), 4)
+    assert run.task_info.status == "success"
 
 
 @pytest.mark.asyncio

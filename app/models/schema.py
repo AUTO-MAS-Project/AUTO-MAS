@@ -55,6 +55,18 @@ class DownloadRequest(BaseModel):
         return ("null", None)
 
 
+class PluginInstallation(BaseModel):
+    """插件安装的跨进程结果；准备完成仍须等待新进程加载确认。"""
+
+    installationId: UUID
+    metaId: UUID
+    packageName: str
+    pluginName: str
+    version: str
+    state: Literal["waiting_restart", "applying", "succeeded", "failed"]
+    message: str | None = None
+
+
 class OperationInfo(BaseModel):
     """宿主命令快照，业务参数和插件实例不进入外部契约。"""
 
@@ -1884,6 +1896,7 @@ __all__ = [
     "ConfigBackupPreviewOut",
     "ConfigBackupFileOut",
     "OperationInfo",
+    "PluginInstallation",
     "DownloadRequest",
     "DownloadSnapshot",
     "ScriptDeleteIn",

@@ -357,7 +357,10 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
     })
 
     const result = await getInitService().runEnvironmentOperation(() =>
-      backend.restartBackend(undefined, reason === 'recovery' ? 'recovery' : 'manual')
+      backend.restartBackend(
+        undefined,
+        reason === 'recovery' ? 'recovery' : reason === 'update' ? 'update' : 'manual'
+      )
     )
 
     if (!result.success) {

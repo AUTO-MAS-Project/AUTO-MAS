@@ -63,6 +63,7 @@ class OperationDispatcher:
         self._records: OrderedDict[UUID, OperationInfo] = OrderedDict()
         self._finished: deque[UUID] = deque()
         self._running: dict[UUID, _Execution] = {}
+        self._restart_pending = False
         self._blocked: dict[UUID, int] = {}
         self._group: BackgroundTaskGroup | None = None
         self._background: BackgroundTaskRegistry | None = None
@@ -96,7 +97,7 @@ class OperationDispatcher:
     ) -> UUID:
         """校验触发器可执行性并去重同一请求，将处理函数提交为背景任务，返回可查询的操作标识。"""
         self.check_target(entry)
-        if self._closing:
+        if self._closing or self._restart_pending:
             raise OperationUnavailable("operation_unavailable")
         owner = self._resolve_owner(entry)
         if owner is not None and owner in self._blocked:
@@ -255,6 +256,17 @@ class OperationDispatcher:
                 self._blocked[owner] -= 1
                 if not self._blocked[owner]:
                     del self._blocked[owner]
+
+    def prepare_restart(self) -> bool:
+        """在所有操作连同终态通知结束后暂停新命令，供后端安全重启。"""
+        if self._running:
+            return False
+        self._restart_pending = True
+        return True
+
+    def cancel_restart(self) -> None:
+        """重启未执行时恢复命令受理，不撤销程序退出时的密封状态。"""
+        self._restart_pending = False
 
     def seal(self) -> None:
         """拒绝受理新插件命令，已受理操作继续执行并完成终态通知。"""

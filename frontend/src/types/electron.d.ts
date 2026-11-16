@@ -563,7 +563,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
 
   // 后端服务管理
   backendStart: (retry?: boolean) => Promise<InstallStageResult>
-  backendRestart: (reason?: 'manual' | 'recovery') => Promise<InstallStageResult>
+  backendRestart: (reason?: 'manual' | 'recovery' | 'update') => Promise<InstallStageResult>
   backendStatus: () => Promise<BackendStatus>
   checkRuntimeBackendUpdate: () => Promise<{
     updateAvailable: boolean

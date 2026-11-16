@@ -1,22 +1,38 @@
 import { onScopeDispose } from 'vue'
-import { Service, type OperationStartIn, type PluginConfigUpdateIn, type OutBase } from '@/api'
+import {
+  Service,
+  PluginInstallation,
+  type OperationStartIn,
+  type PluginConfigUpdateIn,
+  type OutBase,
+} from '@/api'
 import { i18n, translate as t } from '@/i18n'
 import { ApiResponseError, requestApi } from '@/utils/apiResult'
 import { beginAnalyticsOperation } from '@/utils/analytics'
+import { managesBackendProcess } from '@/utils/environment'
+import {
+  beginIntentionalBackendRestart,
+  endIntentionalBackendRestart,
+} from '@/composables/useAppLifecycle'
+import { reconnectNow } from '@/services/websocket/connection'
 
 type Action = 'enable' | 'disable' | 'reload' | 'uninstall' | 'install' | 'refresh' | 'config'
 
 class OperationResultError extends Error {
-  constructor(readonly outcome: 'failure' | 'cancelled' | 'unknown') {
+  constructor(
+    readonly outcome: 'failure' | 'cancelled' | 'unknown',
+    reason?: string
+  ) {
     // 用明确的命令结果传递遥测分类，避免根据翻译后的错误文本判断状态。
     super(
-      t(
-        outcome === 'cancelled'
-          ? 'core.plugins.actionCancelled'
-          : outcome === 'failure'
-            ? 'core.plugins.actionFailed'
-            : 'core.plugins.outcomeUnknown'
-      )
+      reason ??
+        t(
+          outcome === 'cancelled'
+            ? 'core.plugins.actionCancelled'
+            : outcome === 'failure'
+              ? 'core.plugins.actionFailed'
+              : 'core.plugins.outcomeUnknown'
+        )
     )
   }
 }
@@ -49,8 +65,82 @@ export function usePluginApi() {
       observation.finish({ action, outcome })
     }
   }
+  const finishInstallation = async (metaId: string, prepared?: PluginInstallation) => {
+    // 下载与候选准备结束后，继续确认跨进程安装；准备受理不计为安装成功。
+    const get = () =>
+      requestApi(
+        () => Service.getPluginInstallationApiPluginInstallationGetPost({ metaId }),
+        t('core.plugins.actionFailed')
+      )
+    const installation = prepared ?? (await get()).data
+    if (!installation || installation.state === PluginInstallation.state.SUCCEEDED) return
+    if (installation.state === PluginInstallation.state.FAILED)
+      throw new OperationResultError('failure')
+    if (!managesBackendProcess() || !window.electronAPI?.backendRestart) {
+      throw new OperationResultError('unknown', installation.message ?? undefined)
+    }
+    const body = { installationId: installation.installationId }
+    let reserved = false
+    let requested = false
+    let restarting = false
+    try {
+      while (!reserved) {
+        if (disposed) throw new OperationResultError('unknown')
+        requested = true
+        const response = await requestApi(
+          () => Service.preparePluginInstallationRestartApiPluginInstallationRestartPost(body),
+          t('core.plugins.actionFailed')
+        )
+        reserved = response.ready === true
+        if (!reserved) await pause()
+      }
+      if (disposed) throw new OperationResultError('unknown')
+      beginIntentionalBackendRestart('插件依赖更新')
+      restarting = true
+      const result = await window.electronAPI.backendRestart('update')
+      if (!result.success) {
+        const progress = (await get()).data
+        if (
+          progress?.state === PluginInstallation.state.FAILED ||
+          progress?.state === PluginInstallation.state.APPLYING
+        ) {
+          // 启动未确认成功时，新进程按既有交接记录恢复旧环境；最多恢复一次。
+          const restored = await window.electronAPI.backendRestart('recovery')
+          if (restored.success) await reconnectNow('插件环境恢复')
+        }
+        throw new OperationResultError('failure')
+      }
+      await reconnectNow('插件环境更新完成')
+      const progress = (await get()).data
+      if (progress?.state === PluginInstallation.state.FAILED)
+        throw new OperationResultError('failure')
+      if (progress?.state !== PluginInstallation.state.SUCCEEDED)
+        throw new OperationResultError('unknown')
+    } finally {
+      if (restarting) endIntentionalBackendRestart('插件安装重启流程结束')
+      if (requested) {
+        try {
+          await Service.resumeAfterPluginInstallationRestartApiPluginInstallationResumePost(body)
+        } catch {
+          window.electronAPI.getLogger('插件安装').warn('重启资格未能归还，请检查后端连接')
+        }
+      }
+    }
+  }
   const runCommand = (action: Action, body: OperationStartIn) =>
     perform(action, async () => {
+      if (action === 'install') {
+        // 页面重建或重启交接响应丢失后，可继续原候选，不重复提交安装命令。
+        const pending = await requestApi(
+          () =>
+            Service.getPluginInstallationApiPluginInstallationGetPost({ metaId: body.configUid }),
+          t('core.plugins.actionFailed')
+        )
+        if (pending.data?.state === PluginInstallation.state.WAITING_RESTART) {
+          await finishInstallation(body.configUid, pending.data)
+          return { code: 200, status: 'success' }
+        }
+      }
       // 命令入口直接返回身份，配置 update 不再承担命令跟踪契约。
       const accepted = await requestApi(
         () => Service.startOperationApiOperationsStartPost(body),
@@ -78,6 +168,7 @@ export function usePluginApi() {
           if (++misses >= 3) throw new OperationResultError('unknown')
         }
       }
+      if (action === 'install') await finishInstallation(body.configUid)
       return accepted
     })
   return {

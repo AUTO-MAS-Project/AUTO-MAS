@@ -70,6 +70,7 @@ class _TaskManager:
         self._running: dict[UUID, ScriptExpander] = {}
         self._recent: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
         self._stopping_all = False
+        self._restart_pending = False
         self._creating = 0
         self._idle = asyncio.Event()
         self._idle.set()
@@ -114,12 +115,25 @@ class _TaskManager:
         """创建前检查停止全部、电源倒计时，并确认宿主已提供执行能力。"""
         from app.core import Power
 
+        if self._restart_pending:
+            raise RuntimeError("后端正在准备重启，暂不接受新任务")
         if self._stopping_all:
             raise RuntimeError("正在停止全部任务，暂不接受新任务")
         if Power.power_task is not None:
             raise RuntimeError("电源任务已进入倒计时，本次任务不再创建")
         if not self._factories_bound and self.plugin_expander is None:
             raise RuntimeError("宿主尚未绑定专项执行工厂")
+
+    def prepare_restart(self) -> bool:
+        """只在所有任务及受理流程结束后封闭新任务入口，不中断已有业务。"""
+        if not self.idle:
+            return False
+        self._restart_pending = True
+        return True
+
+    def cancel_restart(self) -> None:
+        """后端重启未执行时恢复任务受理，原停止全部状态保持不变。"""
+        self._restart_pending = False
 
     async def start(
         self,

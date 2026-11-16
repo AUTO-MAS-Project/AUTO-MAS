@@ -930,7 +930,7 @@ export class BackendService {
    */
   restartBackend(
     options?: BackendStartOptions,
-    reason: 'manual' | 'recovery' = 'manual'
+    reason: 'manual' | 'recovery' | 'update' = 'manual'
   ): Promise<BackendStartResult> {
     if (this.restartFlight) return this.restartFlight
     const telemetry = beginMainFeature('backend_restart_finished')

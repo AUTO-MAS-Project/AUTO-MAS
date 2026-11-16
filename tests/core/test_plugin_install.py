@@ -84,7 +84,7 @@ async def installation(isolated_app_paths, monkeypatch, tmp_path):
         lambda **kwargs: original_client(transport=httpx.MockTransport(response)),
     )
 
-    async def install(package):
+    async def install(package, *, plugin_name, meta_id):
         """在进程边界落地测试发行包，后续读取、发现和加载均使用实际文件。"""
         state.calls.append(package)
         info = site / "auto_mas_install_probe-1.0.dist-info"

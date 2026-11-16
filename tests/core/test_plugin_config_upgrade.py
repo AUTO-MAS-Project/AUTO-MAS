@@ -151,7 +151,7 @@ async def available(path):
         return None
     return await parse_source(path)
 
-async def install(spec, *, dry_run=False):
+async def install(spec, *, plugin_name, meta_id, dry_run=False):
     global visible
     assert spec == "auto-mas-maa-adapter"
     installs.append(spec)

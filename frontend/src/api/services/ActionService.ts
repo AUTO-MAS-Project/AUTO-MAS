@@ -30,6 +30,8 @@ import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
 import type { PatternDebugOut } from '../models/PatternDebugOut';
 import type { PluginCatalogRefreshIn } from '../models/PluginCatalogRefreshIn';
+import type { PluginInstallationOut } from '../models/PluginInstallationOut';
+import type { PluginInstallationRestartIn } from '../models/PluginInstallationRestartIn';
 import type { PowerIn } from '../models/PowerIn';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
@@ -628,6 +630,56 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plugin_catalog/refresh',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Prepare Plugin Installation Restart
+     * 业务忙时保持等待；空闲后取得重启资格并暂停新任务和插件命令。
+     * @param requestBody
+     * @param locale
+     * @returns PluginInstallationOut Successful Response
+     * @throws ApiError
+     */
+    public static preparePluginInstallationRestartApiPluginInstallationRestartPost(
+        requestBody: PluginInstallationRestartIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginInstallationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/restart',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Resume After Plugin Installation Restart
+     * 前端未能重启后端时归还资格，候选环境继续保留。
+     * @param requestBody
+     * @param locale
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static resumeAfterPluginInstallationRestartApiPluginInstallationResumePost(
+        requestBody: PluginInstallationRestartIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/resume',
             query: {
                 'locale': locale,
             },

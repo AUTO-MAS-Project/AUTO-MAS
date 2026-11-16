@@ -25,6 +25,8 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 
 插件管理继续使用 `plugin_action_finished`：由 `usePluginApi` 在配置保存或独立命令查询确认结果后结束。
 命令受理不计为执行成功，失败、取消及无法确认结果分别记录；不发送插件名、配置或操作 ID。
+插件安装还会等待候选环境在新进程中完成加载确认，再记录最终结果；需要换版已加载依赖时，
+后端重启复用 `backend_restart_finished` 的 `update` 原因，失败后的旧环境恢复使用 `recovery`。
 本轮仅调整命令提交与等待接线，沿用既有 action/outcome 词表及开关，不增加采集字段。
 
 定时唤醒复用 `app_started.launch_kind=scheduled_wakeup` 区分启动来源，复用设置保存事件记录开关变更。两者分别表示进入 ready 和配置保存，不代表硬件唤醒成功；后台计划任务对账不额外采集。

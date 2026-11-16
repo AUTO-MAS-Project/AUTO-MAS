@@ -36,6 +36,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
+from packaging.utils import canonicalize_name
+from packaging.version import Version
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.config import CollectionOrderItem
@@ -46,7 +48,7 @@ from app.core import Config
 from app.core.i18n import AppLocale
 from app.core.plugin import Plugin
 from app.models.config import PluginMeta, PluginRecord
-from app.models.schema import ComboBoxItem, ComboBoxOut, OutBase
+from app.models.schema import ComboBoxItem, ComboBoxOut, OutBase, PluginInstallation
 from app.plugin.errors import PluginBusyError
 from app.plugin.http import PLUGIN_GATEWAY_PATH
 from app.plugin.types import PluginState, plugin_locale
@@ -57,6 +59,19 @@ class PluginPlanOptionsIn(BaseModel):
     type: str | None = Field(
         default=None, description="计划配置类型名；缺省返回全部插件计划"
     )
+
+
+class PluginInstallationGetIn(BaseModel):
+    metaId: UUID
+
+
+class PluginInstallationRestartIn(BaseModel):
+    installationId: UUID
+
+
+class PluginInstallationOut(OutBase):
+    data: PluginInstallation | None = None
+    ready: bool = False
 
 
 class PluginGameDevicesIn(BaseModel):
@@ -521,9 +536,75 @@ async def _locale_scope(locale: AppLocale = Query("zh-CN")):
         plugin_locale.reset(token)
 
 
+_installation = APIRouter(prefix="/api/plugin/installation", tags=["插件安装"])
+
+
+@_installation.post("/get", response_model=PluginInstallationOut, tags=["Get"])
+async def get_plugin_installation(
+    body: PluginInstallationGetIn,
+    request: Request,
+) -> PluginInstallationOut:
+    """读取本次市场安装的持久结果，后端业务初始化失败时也允许查询。"""
+    from app.plugin.uv.environment import read_installation
+
+    record = read_installation()
+    if (
+        record is not None
+        and record.progress.metaId == body.metaId
+        and record.progress.state == "waiting_restart"
+        and getattr(request.app.state, "background_status", None) == "ready"
+    ):
+        meta = Config.plugin_catalog.get(body.metaId)
+        if meta is not None and (
+            canonicalize_name(meta.info.package_name)
+            != canonicalize_name(record.progress.packageName)
+            or meta.info.plugin_name != record.progress.pluginName
+            or (
+                meta.info.version
+                and Version(meta.info.version) != Version(record.progress.version)
+            )
+        ):
+            return PluginInstallationOut(
+                code=409,
+                status="error",
+                message="市场条目已变化，请先重启后端完成此前安装",
+            )
+    return PluginInstallationOut(
+        data=record.progress
+        if record is not None and record.progress.metaId == body.metaId
+        else None
+    )
+
+
+@_installation.post("/restart", response_model=PluginInstallationOut, tags=["Action"])
+async def prepare_plugin_installation_restart(
+    body: PluginInstallationRestartIn,
+) -> PluginInstallationOut:
+    """业务忙时保持等待；空闲后取得重启资格并暂停新任务和插件命令。"""
+    from app.plugin.errors import PluginPrecheckError
+
+    try:
+        ready = await Plugin.prepare_installation_restart(body.installationId)
+    except PluginBusyError:
+        return PluginInstallationOut(ready=False)
+    except PluginPrecheckError as error:
+        return PluginInstallationOut(code=409, status="error", message=str(error))
+    return PluginInstallationOut(ready=ready)
+
+
+@_installation.post("/resume", response_model=OutBase, tags=["Action"])
+async def resume_after_plugin_installation_restart(
+    body: PluginInstallationRestartIn,
+) -> OutBase:
+    """前端未能重启后端时归还资格，候选环境继续保留。"""
+    Plugin.cancel_installation_restart(body.installationId)
+    return OutBase()
+
+
 router = APIRouter(dependencies=[Depends(_locale_scope)])
 router.include_router(_registry)
 router.include_router(_catalog)
 router.include_router(_config)
 router.include_router(_runtime)
+router.include_router(_installation)
 router.include_router(_gateway)

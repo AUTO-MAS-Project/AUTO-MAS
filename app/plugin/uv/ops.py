@@ -16,6 +16,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+from uuid import UUID, uuid4
 
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
@@ -112,12 +113,21 @@ async def mark_ok(mirror_url: str) -> None:
     await Config.setting.commit()
 
 
-async def install(package_spec: str, *, dry_run: bool = False) -> None:
-    """安装前后使用同一联合解析：宿主、全部保留插件与目标发行包。"""
+async def install(
+    package_spec: str,
+    *,
+    plugin_name: str,
+    meta_id: UUID | None = None,
+    dry_run: bool = False,
+) -> bool:
+    """联合安装到候选目录；可热加载时发布文件，否则保留候选并返回需重启。"""
     from packaging.requirements import Requirement
 
     from app.core import Config
+    from app.models.schema import PluginInstallation
+    from app.plugin.runtime.metadata import validate_install_metadata
 
+    from . import environment
     from .precheck import (
         host_constraints,
         host_dependencies,
@@ -125,26 +135,99 @@ async def install(package_spec: str, *, dry_run: bool = False) -> None:
         resolve_environment,
     )
 
+    environment.ensure_writable()
     replacing = Requirement(package_spec).name
     targets = [
         *plugin_targets(Config.plugin_registry.values(), replacing=replacing),
         package_spec,
     ]
-    result = await resolve_environment(
-        targets=targets,
-        core_version=Config.VERSION,
-        dependencies=host_dependencies(),
-        constraints=host_constraints(),
-        destination=None if dry_run else site_dir(),
-    )
-    if not result.ok:
-        raise PluginError(
-            "插件与共享环境的依赖无法共同满足", payload={"detail": result.detail}
+    sources = {
+        str(project.resolve()): project.read_text(encoding="utf-8")
+        for item in targets
+        if (project := Path(item) / "pyproject.toml").is_file()
+    }
+    target = site_dir()
+    pins = host_constraints()
+    with tempfile.TemporaryDirectory(
+        prefix=".install-", dir=target.parent
+    ) as temporary:
+        prepared = Path(temporary) / "site-packages"
+        result = await resolve_environment(
+            targets=targets,
+            core_version=Config.VERSION,
+            dependencies=host_dependencies(),
+            constraints=pins,
+            destination=None if dry_run else prepared,
         )
-    if not dry_run:
-        importlib.invalidate_caches()
-        importlib_metadata.MetadataPathFinder.invalidate_caches()
-        (site_dir().parent / "environment.json").unlink(missing_ok=True)
+        if not result.ok:
+            raise PluginError(
+                "插件与共享环境的依赖无法共同满足", payload={"detail": result.detail}
+            )
+        if dry_run:
+            return False
+        if any(
+            not Path(path).is_file()
+            or Path(path).read_text(encoding="utf-8") != declaration
+            for path, declaration in sources.items()
+        ):
+            raise PluginError("本地插件声明在安装准备期间发生变化，请重新安装")
+        installed = environment.distributions(prepared)
+        distribution = installed.get(canonicalize_name(replacing))
+        if distribution is None:
+            raise PluginError("候选环境缺少请求安装的插件")
+        version = validate_install_metadata(
+            distribution.metadata, package_name=replacing, plugin_name=plugin_name
+        )
+        environment.preserve_local_packages(target, prepared)
+        restart_required = bool(
+            environment.changed_loaded_dependencies(prepared, replacing)
+        )
+        existing_record = Config.plugin_registry.by_name(plugin_name)
+        record = environment.InstallationRecord(
+            progress=PluginInstallation(
+                installationId=uuid4(),
+                metaId=meta_id or uuid4(),
+                packageName=replacing,
+                pluginName=plugin_name,
+                version=version,
+                state="waiting_restart" if restart_required else "applying",
+                message="插件依赖已准备，需要重启后端完成安装"
+                if restart_required
+                else None,
+            ),
+            core_version=Config.VERSION,
+            host_constraints=pins,
+            baseline={
+                name: dist.version
+                for name, dist in environment.distributions(target).items()
+            },
+            healthy_plugins=[
+                record.info.plugin_name
+                for record in Config.plugin_registry.values()
+                if record._plugin_cls is not None
+                and record.info.state in {"enabled", "disabled"}
+            ],
+            local_sources=sources,
+            previous_record=existing_record.uid
+            if existing_record is not None
+            else None,
+        )
+        if restart_required:
+            pending = target.with_suffix(".pending")
+            if pending.exists():
+                shutil.rmtree(pending)
+            prepared.rename(pending)
+            environment.write_installation(record)
+            return True
+        environment.write_installation(record)
+        try:
+            environment.publish_hot(prepared, replacing)
+        except BaseException:
+            record.progress.state = "failed"
+            record.progress.message = "插件文件发布未完成，已保留恢复材料，请重启后端"
+            environment.write_installation(record)
+            raise
+        return False
 
 
 async def prepare_environment() -> None:
@@ -154,6 +237,7 @@ async def prepare_environment() -> None:
 
     from ..runtime.metadata import validate_install_metadata
     from ..types import CORE_DISTRIBUTION_NAME, CORE_PLUGIN_NAME
+    from . import environment
     from .precheck import (
         host_constraints,
         host_dependencies,
@@ -163,6 +247,14 @@ async def prepare_environment() -> None:
 
     target = site_dir(activate=False)
     sys.path[:] = [item for item in sys.path if item != str(target.resolve())]
+    installation = environment.read_installation()
+    if await environment.apply_pending():
+        return
+    if installation is not None and installation.progress.state != "succeeded":
+        from app.plugin.runtime import discover
+
+        # 回滚可能移除了新插件；刷新实际发行状态后才生成保留依赖。
+        await discover.refresh(installed_path=target)
     pins = host_constraints()
     records = list(Config.plugin_registry.values())
     targets = plugin_targets(records, installed_path=target)
@@ -223,31 +315,7 @@ async def prepare_environment() -> None:
             raise PluginError(f"插件自动升级失败：{result.detail}")
 
         # 源码覆盖只选择当前实现，不能顺带卸载被覆盖的发行包；源码移除后仍可回落。
-        local_packages = {
-            canonicalize_name(record.info.package_name)
-            for record in records
-            if record.info.source == "local"
-            and record._project_dir is not None
-            and record.info.plugin_name != CORE_PLUGIN_NAME
-        }
-        for distribution in importlib_metadata.distributions(path=[str(target)]):
-            if canonicalize_name(distribution.name) not in local_packages:
-                continue
-            files = distribution.files
-            if files is None:
-                raise PluginError(
-                    f"发行包缺少文件清单，无法保留本地覆盖副本：{distribution.name}"
-                )
-            for file in files:
-                source = Path(str(distribution.locate_file(file))).resolve()
-                relative = source.relative_to(target.resolve())
-                destination = prepared / relative
-                if destination.exists():
-                    raise PluginError(
-                        f"被本地源码覆盖的发行包与新环境文件冲突：{relative}"
-                    )
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, destination)
+        environment.preserve_local_packages(target, prepared)
 
         installed = {
             canonicalize_name(dist.name): dist

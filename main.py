@@ -729,6 +729,7 @@ def main():
                 "/api/core/health",
                 "/api/core/close",
                 "/api/core/startup/activate",
+                "/api/plugin/installation/get",
                 "/openapi.json",
             ):
                 return JSONResponse(

@@ -3,19 +3,27 @@
 import importlib
 import importlib.metadata
 import json
+import os
 import platform
+import shutil
+import subprocess
 import sys
+import textwrap
+from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
 import tomli_w
 
-from app.models.config import PluginRecord, PluginRegistryCollection
+from app.core.plugin.manager import _PluginManager
+from app.models.config import PluginMeta, PluginRecord, PluginRegistryCollection
 from app.plugin.errors import PluginError
 from app.plugin.uv import ops, precheck
 
 
-def wheel(directory, *, name, version, requires=(), module="", content=""):
+def wheel(
+    directory, *, name, version, requires=(), module="", content="", plugin_id=None
+):
     """生成标准离线 wheel，供真实 uv 求解与安装，不替换依赖算法。"""
     safe = name.replace("-", "_")
     info = f"{safe}-{version}.dist-info"
@@ -28,8 +36,8 @@ def wheel(directory, *, name, version, requires=(), module="", content=""):
                     "Metadata-Version: 2.1",
                     f"Name: {name}",
                     f"Version: {version}",
-                    "Keywords: auto-mas-plugin, auto-mas-id:startup_probe"
-                    if module == "startup_probe"
+                    f"Keywords: auto-mas-plugin, auto-mas-id:{plugin_id or 'startup_probe'}"
+                    if plugin_id is not None or module == "startup_probe"
                     else "",
                     *(f"Requires-Dist: {item}" for item in requires),
                     "",
@@ -59,6 +67,287 @@ def wheel(directory, *, name, version, requires=(), module="", content=""):
             ),
         )
     return path
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mode", ["hot", "hot_reload", "restart", "failed_start", "hot_io_failure"]
+)
+async def test_runtime_install_keeps_loaded_dependencies_until_new_process(
+    isolated_app_paths, monkeypatch, tmp_path, mode
+):
+    """真实 uv 安装验证热导入、新进程换版及启动失败后的原环境恢复。"""
+    config = isolated_app_paths
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "pyproject.toml").write_text(
+        '[project]\nname="auto-mas"\nversion="5.9.0b1"\ndependencies=[]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config, "source_path", source)
+    registry = PluginRegistryCollection.build([PluginRecord])
+    await registry.activate()
+    monkeypatch.setattr(config, "plugin_registry", registry)
+    target = ops.site_dir(activate=False)
+    monkeypatch.syspath_prepend(str(target))
+    wheels = tmp_path / "wheels"
+    wheels.mkdir()
+    shared = wheel(
+        wheels,
+        name="probe-shared",
+        version="1.0",
+        module="probe_shared",
+        content='VERSION="1.0"\n',
+    )
+    existing = wheel(
+        wheels,
+        name="startup-probe",
+        version="1.0",
+        module="startup_probe",
+        requires=["auto-mas-core>=5,<6", "probe-shared>=1,<3"],
+        content="from app.plugin.base import BasePlugin\nclass Plugin(BasePlugin): pass\nPLUGIN=Plugin\n",
+    )
+    for path in (shared, existing):
+        with ZipFile(path) as archive:
+            archive.extractall(target)
+    uid = registry.add(
+        PluginRecord,
+        payload={
+            "info": {
+                "plugin_name": "startup_probe",
+                "package_name": "startup-probe",
+                "version": "1.0",
+                "source": "installed",
+                "state": "disabled",
+            }
+        },
+    )
+    await registry.commit()
+    registry[uid]._project_dir = target
+    wheel(
+        wheels,
+        name="probe-shared",
+        version="2.0",
+        module="probe_shared",
+        content='VERSION="2.0"\nADDED="new API"\n',
+    )
+    candidate = wheel(
+        wheels,
+        name="install-probe",
+        version="1.0",
+        module="install_probe",
+        plugin_id="install_probe",
+        requires=["auto-mas-core>=5,<6", "probe-shared>=2,<3"],
+        content="from probe_shared import ADDED\nfrom app.plugin.base import BasePlugin\nclass Plugin(BasePlugin): pass\nPLUGIN=Plugin\n",
+    )
+    if mode == "hot_reload":
+        candidate = wheel(
+            wheels,
+            name="startup-probe",
+            version="2.0",
+            module="startup_probe",
+            requires=["auto-mas-core>=5,<6", "probe-shared>=2,<3"],
+            content="from probe_shared import ADDED\nfrom app.plugin.base import BasePlugin\nclass Plugin(BasePlugin): MARKER=ADDED\nPLUGIN=Plugin\n",
+        )
+    monkeypatch.setattr(precheck, "candidates", lambda: ["https://offline.test/simple"])
+    execute = precheck.ProcessRunner.run_process
+
+    async def offline(*args, **kwargs):
+        """只替换包索引边界，保留生产 uv 求解、完整安装及结果校验。"""
+        args = list(args)
+        index = args.index("--index-url")
+        args[index : index + 2] = ["--no-index", "--find-links", str(wheels)]
+        return await execute(*args, **kwargs)
+
+    monkeypatch.setattr(precheck.ProcessRunner, "run_process", offline)
+    from email.parser import Parser
+
+    from app.core.i18n import I18n
+    from app.plugin.runtime import market_index
+
+    previous_sources = dict(I18n._plugin_sources)
+    with ZipFile(candidate) as archive:
+        declaration = Parser().parsestr(
+            archive.read(
+                next(
+                    path
+                    for path in archive.namelist()
+                    if path.endswith(".dist-info/METADATA")
+                )
+            ).decode()
+        )
+
+    async def fetch_metadata(*args, **kwargs):
+        """以真实 wheel 声明替代远端索引，保留安装入口的身份校验。"""
+        return declaration
+
+    monkeypatch.setattr(market_index, "fetch_metadata", fetch_metadata)
+    old = (
+        importlib.import_module("probe_shared")
+        if mode in {"restart", "failed_start"}
+        else None
+    )
+    try:
+        meta = PluginMeta.build(
+            info={
+                "package_name": "install-probe",
+                "plugin_name": "install_probe",
+                "version": "1.0",
+            }
+        )
+        manager = _PluginManager()
+        previous_class = None
+        if mode == "hot_reload":
+            await manager.load(registry[uid])
+            previous_class = registry[uid]._plugin_cls
+            meta = PluginMeta.build(
+                info={
+                    "package_name": "startup-probe",
+                    "plugin_name": "startup_probe",
+                    "version": "2.0",
+                }
+            )
+        if mode == "hot_io_failure":
+            replace, copy = Path.replace, shutil.copy2
+
+            def fail_publish(path, destination):
+                """在新版依赖已发布后模拟后续元数据文件替换失败。"""
+                if Path(destination) == target / "probe_shared-2.0.dist-info/RECORD":
+                    raise OSError("publication failed")
+                return replace(path, destination)
+
+            def fail_restore(source, destination, *args, **kwargs):
+                """模拟即时恢复仍受磁盘故障影响，验证恢复原件不会被回收。"""
+                if (
+                    "original" in Path(source).parts
+                    and Path(destination) == target / "probe_shared/__init__.py"
+                ):
+                    raise OSError("restore failed")
+                return copy(source, destination, *args, **kwargs)
+
+            with monkeypatch.context() as failure:
+                failure.setattr(Path, "replace", fail_publish)
+                failure.setattr(shutil, "copy2", fail_restore)
+                with pytest.raises(OSError, match="restore failed"):
+                    await manager.install(meta)
+            assert list(target.parent.glob(".publish-*/files.json"))
+        else:
+            result = await manager.install(meta)
+            assert bool(result.get("restart_required")) is (
+                mode in {"restart", "failed_start"}
+            )
+        if mode in {"hot", "hot_reload"}:
+            installed = importlib.import_module(
+                "startup_probe" if mode == "hot_reload" else "install_probe"
+            )
+            assert installed.ADDED == "new API"
+            assert importlib.metadata.version("probe-shared") == "2.0"
+            if mode == "hot_reload":
+                assert registry.by_name("startup_probe") is registry[uid]
+                assert registry[uid]._plugin_cls is not previous_class
+                assert registry[uid]._plugin_cls.MARKER == "new API"
+            from app.plugin.uv.environment import read_installation
+
+            assert read_installation().progress.state == "succeeded"
+            return
+        if old is not None:
+            assert sys.modules["probe_shared"] is old
+            assert old.VERSION == "1.0"
+            assert not (target / "install_probe").exists()
+            assert importlib.metadata.version("probe-shared") == "1.0"
+        child = tmp_path / "verify_new_process.py"
+        child.write_text(
+            textwrap.dedent("""
+            import asyncio, importlib, sys
+            from pathlib import Path
+            from app.core import Config
+            from app.models.config import PluginRecord, PluginRegistryCollection
+            from app.plugin.uv import ops, environment
+            Config.source_path = Path(sys.argv[1])
+            Config.plugins_path = Path(sys.argv[2])
+            async def verify():
+                registry = PluginRegistryCollection.build([PluginRecord])
+                await registry.activate()
+                Config.plugin_registry = registry
+                if sys.argv[3].startswith("rollback"):
+                    if sys.argv[3] == "rollback_loaded":
+                        registry.add(PluginRecord, payload={"info": {
+                            "plugin_name": "install_probe", "package_name": "install-probe",
+                            "source": "installed", "version": "1.0", "state": "fault_load",
+                        }})
+                        await registry.commit()
+                    assert not await environment.apply_pending()
+                    ops.site_dir()
+                    assert importlib.import_module("probe_shared").VERSION == "1.0"
+                    assert not (ops.site_dir() / "install_probe/__init__.py").exists()
+                    try:
+                        importlib.metadata.distribution("install-probe")
+                    except importlib.metadata.PackageNotFoundError:
+                        pass
+                    else:
+                        raise AssertionError("failed installation retained distribution metadata")
+                    assert environment.read_installation().progress.state == "failed"
+                    assert registry.by_name("install_probe") is None
+                    return
+                await ops.prepare_environment()
+                ops.site_dir()
+                plugin = importlib.import_module("install_probe")
+                assert plugin.ADDED == "new API"
+                uid = registry.add(PluginRecord, payload={"info": {
+                    "plugin_name": "install_probe", "version": "1.0",
+                    "state": "fault_load" if sys.argv[3] == "failed_start" else "disabled",
+                }})
+                await registry.commit()
+                environment.finish_installation()
+                assert environment.read_installation().progress.state == "succeeded"
+                assert not ops.site_dir().with_suffix(".previous").exists()
+            asyncio.run(verify())
+        """),
+            encoding="utf-8",
+        )
+        env = dict(
+            os.environ,
+            PYTHONPATH=str(Path(__file__).resolve().parents[2]),
+            AUTO_MAS_ENV="development",
+        )
+        args = [
+            sys.executable,
+            "-X",
+            "utf8",
+            str(child),
+            str(source),
+            str(config.plugins_path),
+        ]
+        result = subprocess.run(
+            [*args, "rollback" if mode == "hot_io_failure" else mode],
+            cwd=tmp_path,
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=30,
+        )
+        assert (result.returncode != 0) is (mode == "failed_start"), (
+            result.stdout + result.stderr
+        )
+        if mode == "failed_start":
+            assert "新插件环境加载失败" in result.stderr
+            result = subprocess.run(
+                [*args, "rollback_loaded"],
+                cwd=tmp_path,
+                env=env,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=30,
+            )
+            assert result.returncode == 0, result.stdout + result.stderr
+        if old is not None:
+            assert old.VERSION == "1.0"
+    finally:
+        I18n.set_plugin_sources(previous_sources)
+        for name in ("probe_shared", "startup_probe", "install_probe"):
+            sys.modules.pop(name, None)
 
 
 @pytest.mark.asyncio
