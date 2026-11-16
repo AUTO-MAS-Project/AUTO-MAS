@@ -7,6 +7,7 @@
 import asyncio
 from collections.abc import Callable
 from contextvars import ContextVar
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -52,6 +53,48 @@ async def _write_history(record: _utils_fluxdown_cli.FluxdownDownloadRecord) -> 
         )
 
 
+async def _merge_download_diagnostic(
+    record: _utils_fluxdown_cli.FluxdownDownloadRecord,
+) -> None:
+    """Enrich one recent terminal record; create one for builtin httpx only."""
+    async with config_manager.transaction():
+        history = [
+            FluxdownRecord(
+                **_utils_fluxdown_cli.FluxdownDownloadRecord(
+                    **item.model_dump()
+                ).to_dict()
+            )
+            for item in (Config.setting.Update.LastUpdateHistory or [])
+        ]
+        recent = datetime.now()
+        for existing in reversed(history):
+            if existing.destination != record.destination or not existing.timestamp:
+                continue
+            try:
+                age = abs(
+                    (recent - datetime.strptime(existing.timestamp, "%Y-%m-%d %H:%M:%S"))
+                    .total_seconds()
+                )
+            except ValueError:
+                continue
+            if age > 60 or safe_origin(existing.url or "") != record.url:
+                continue
+            if existing.status not in {"success", "failed", "checksum_fail", "interrupted"}:
+                continue
+            existing.diagnostic = record.diagnostic
+            # Do not expose the short-lived signed update URL in history exports.
+            existing.url = record.url
+            break
+        else:
+            history.append(FluxdownRecord(**record.to_dict()))
+        await Config.setting.update(
+            type(Config.setting).model_validate(
+                {"Update": {"LastUpdateHistory": history[-50:]}}
+            ),
+            check_visibility=False,
+        )
+
+
 async def _write_package_diagnostic(
     destination: Path,
     url: str,
@@ -60,11 +103,7 @@ async def _write_package_diagnostic(
     downloader: str | None,
     failure: str | None = None,
 ) -> None:
-    """Best-effort central evidence for both FluxDown and httpx downloads.
-
-    Diagnostic records are separate from downloader terminal records: their
-    success status never implies the package was installed or validated.
-    """
+    """Best-effort evidence for builtin and FluxDown; never claim install success."""
     try:
         details = (
             await asyncio.to_thread(describe_package, destination)
@@ -78,20 +117,19 @@ async def _write_package_diagnostic(
                 "phase": "download",
             }
         )
-        await _write_history(
+        await _merge_download_diagnostic(
             _utils_fluxdown_cli.FluxdownDownloadRecord(
                 url=safe_origin(url),
                 destination=str(destination),
                 size=int(details.get("bytes") or 0),
-                status="diagnostic" if failure is None else "failed",
+                status="success" if failure is None else "failed",
                 error=failure,
                 diagnostic=details,
             )
         )
     except Exception:
-        # History/inspection failure must never turn a valid download into a failure.
+        # A history/inspection failure must never alter the download result.
         pass
-
 
 async def download_file(
     url: str,
@@ -164,13 +202,19 @@ async def download_file(
             write_history=_write_history,
         )
     except Exception as exc:
-        await _write_package_diagnostic(
-            destination,
-            url,
-            source=source,
-            downloader=downloader,
-            failure=type(exc).__name__,
-        )
+        # An unsafe FluxDown writer must keep its original exception and ownership.
+        # Cancellation during optional history I/O cannot replace that exception.
+        if not isinstance(exc, _service_update_fluxdown.FluxdownWriterUnconfirmed):
+            try:
+                await _write_package_diagnostic(
+                    destination,
+                    url,
+                    source=source,
+                    downloader=downloader,
+                    failure=type(exc).__name__,
+                )
+            except asyncio.CancelledError:
+                pass
         raise
     await _write_package_diagnostic(
         destination, url, source=source, downloader=downloader
