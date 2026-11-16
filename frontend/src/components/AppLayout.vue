@@ -101,6 +101,8 @@ import { createAppearanceMenuIcon } from './appearanceMenuIcon'
 import { useBackendI18nStore } from '@/stores/backendI18n'
 import { cancelMcpPaint, scheduleMcpAfterPaint } from '@/composables/useMcpApi'
 
+const emit = defineEmits<{ pageReady: [] }>()
+
 const { t } = useI18n()
 const languageResources = useBackendI18nStore()
 
@@ -113,6 +115,7 @@ const { isRouteLocked, triggerBlockCallback } = useRouteLock()
 
 // 首页等布局就绪；若用户提前切页，由当前业务页的首帧接续启动放行。
 function onPageMounted(): void {
+  emit('pageReady')
   if (route.name !== 'Home') scheduleMcpAfterPaint()
 }
 watch(() => route.path, cancelMcpPaint, { flush: 'pre' })
