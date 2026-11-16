@@ -222,7 +222,9 @@ class TaskProcessScope:
         suspended: bool = False,
         writer: bool = False,
         breakaway: bool = False,
+        adopt: bool = True,
     ) -> None:
+        """登记清理归属；跨权限目标可保留外部跟踪，不交给 Job 接管。"""
         if self.closed:
             raise asyncio.CancelledError
         pid = handle.pid
@@ -244,7 +246,7 @@ class TaskProcessScope:
         self._processes[id(handle)] = (handle, process)
         if writer:
             self._writers[id(handle)] = handle
-        if self._job is None:
+        if self._job is None or not adopt:
             self._external_processes[id(handle)] = (handle, process)
             return
         # 登记失败仍保留已知身份供停止清理；成功标记后由 Job 接管。

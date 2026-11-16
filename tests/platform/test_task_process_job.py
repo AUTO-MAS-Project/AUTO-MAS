@@ -459,6 +459,113 @@ async def test_lookup_of_existing_process_does_not_take_stop_ownership():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "backend_admin,finish", [(False, "exit"), (False, "denied"), (True, "kill")]
+)
+async def test_uac_launch_preserves_session_and_reports_external_cleanup(
+    monkeypatch, backend_admin, finish
+):
+    import psutil
+    import pywintypes
+    import win32api
+    import win32con
+
+    from app.utils.common.process import manager as module
+    from app.utils.common.process.scope import TaskProcessScope, current_process_scope
+
+    command = [
+        sys._base_executable,
+        "-I",
+        "-c",
+        "import sys; print('ready', flush=True); sys.stdin.readline()",
+        f"mas-uac-session-{uuid.uuid4().hex}",
+    ]
+    processes = []
+
+    def launch(program, args, cwd):
+        process = subprocess.Popen(
+            [program, *args],
+            cwd=cwd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        processes.append(process)
+        assert process.stdout.readline() == b"ready\r\n"
+
+    open_process = win32api.OpenProcess
+
+    def open_with_integrity_boundary(access, inherit, pid):
+        if (
+            not backend_admin
+            and processes
+            and pid == processes[0].pid
+            and access & (win32con.PROCESS_SET_QUOTA | win32con.PROCESS_TERMINATE)
+        ):
+            raise pywintypes.error(5, "OpenProcess", "injected UAC integrity boundary")
+        return open_process(access, inherit, pid)
+
+    scope = TaskProcessScope()
+    token = current_process_scope.set(scope)
+    try:
+        with monkeypatch.context() as native:
+            # 仅替换 UAC 启动和权限边界；进程扫描、会话跟踪与清理使用真实实现。
+            native.setattr(module, "is_admin", lambda: backend_admin, raising=False)
+            native.setattr(
+                module.process_platform.platform_process,
+                "prepare_elevated",
+                lambda: launch,
+            )
+            native.setattr(win32api, "OpenProcess", open_with_integrity_boundary)
+            manager = module.ProcessManager()
+            await manager.open_process(
+                command[0],
+                *command[1:],
+                elevated=True,
+                target_process=module.ProcessInfo(cmdline=command),
+            )
+            assert await manager.is_running(), "UAC 启动成功后配置会话应继续等待用户"
+            assert not scope.cleanup_failed
+            process = processes[0]
+            if finish == "exit":
+                process.stdin.write(b"\n")
+                process.stdin.flush()
+                await asyncio.to_thread(process.wait, timeout=3)
+                assert not await manager.is_running()
+                await scope.force_close()
+                assert not scope.cleanup_failed
+            elif finish == "denied":
+                kill = psutil.Process.kill
+
+                def deny_external_stop(target):
+                    if target.pid == process.pid:
+                        raise psutil.AccessDenied(target.pid)
+                    return kill(target)
+
+                native.setattr(psutil.Process, "kill", deny_external_stop)
+                with pytest.raises(RuntimeError, match="部分任务进程未能强制终止"):
+                    await scope.force_close()
+                assert scope.cleanup_failed
+                assert await manager.is_running(), "没有结束权限不能把清理报告为成功"
+            else:
+                await scope.force_close()
+                await asyncio.to_thread(process.wait, timeout=3)
+                assert not await manager.is_running()
+                assert not scope.cleanup_failed
+    finally:
+        current_process_scope.reset(token)
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=3)
+            process.stdin.close()
+            process.stdout.close()
+        if not scope.closed:
+            await scope.force_close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("child_exits", [True, False])
 async def test_adoption_open_failure_distinguishes_exited_and_live_child(
     tmp_path, monkeypatch, child_exits
