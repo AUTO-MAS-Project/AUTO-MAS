@@ -123,6 +123,15 @@ def apply_package(
                     "三月七更新包的安装根目录不明确（未找到顶层可执行文件），"
                     "已拒绝将嵌套目录写入现有安装位置"
                 )
+            # 完整 ZIP 应具备 CLI 与桌面入口。update.7z 为增量发布，
+            # 不要求增量包列出完整安装所需的全部文件。
+            if package.suffix.casefold() == ".zip" and not (
+                source_root / "m7a.exe"
+            ).is_file():
+                raise HSRUpdateError(
+                    "三月七完整 ZIP 缺少必要程序文件 m7a.exe，"
+                    "已拒绝安装可能不完整的更新包"
+                )
             # 预检来源包的版本标记，避免错误目录层级或缺失文件被当作成功。
             packaged_version = read_installed_version(spec, source_root)
             if packaged_version != to_version:
