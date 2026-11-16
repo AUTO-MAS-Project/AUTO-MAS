@@ -72,14 +72,21 @@ async def _merge_download_diagnostic(
                 continue
             try:
                 age = abs(
-                    (recent - datetime.strptime(existing.timestamp, "%Y-%m-%d %H:%M:%S"))
-                    .total_seconds()
+                    (
+                        recent
+                        - datetime.strptime(existing.timestamp, "%Y-%m-%d %H:%M:%S")
+                    ).total_seconds()
                 )
             except ValueError:
                 continue
             if age > 60 or safe_origin(existing.url or "") != record.url:
                 continue
-            if existing.status not in {"success", "failed", "checksum_fail", "interrupted"}:
+            if existing.status not in {
+                "success",
+                "failed",
+                "checksum_fail",
+                "interrupted",
+            }:
                 continue
             existing.diagnostic = record.diagnostic
             # Do not expose the short-lived signed update URL in history exports.
@@ -130,6 +137,7 @@ async def _write_package_diagnostic(
     except Exception:
         # A history/inspection failure must never alter the download result.
         pass
+
 
 async def download_file(
     url: str,
