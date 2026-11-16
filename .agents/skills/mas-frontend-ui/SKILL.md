@@ -24,6 +24,17 @@ Before editing UI:
 5. Check both light and dark mode for readability when UI colors, borders, backgrounds, or status colors change.
 6. Keep the UI inside the existing Electron desktop business-product language.
 
+## Concept Preview Before Implementation
+
+Every frontend UI change requires a Playwright concept preview and explicit user approval before editing application UI source, regardless of the change's size.
+
+1. Build the proposed appearance in an isolated temporary prototype. Reuse the project's Ant Design Vue components, layout patterns, and theme tokens with representative data; keep prototype changes separate from application source and live user configuration.
+2. Render the prototype with Playwright and capture actual screenshots of the proposed UI at representative desktop sizes and affected states. Include light and dark previews when changing theme-dependent styling.
+3. Show the screenshots to the user and wait for explicit approval of that concept's visual result. A request to implement or open a PR, the agent's own visual review, or a successful screenshot command does not count as concept approval.
+4. Implement the approved concept, then use Playwright screenshots of the application to compare the result with it and run the verification below. If the visual direction changes, update the concept screenshots and obtain approval before implementing that direction.
+
+If Playwright cannot render or capture the concept, report the blocker and pause UI implementation. Reporting an unchecked visual result at delivery does not waive this gate. Concept screenshots establish design approval; they do not prove the implemented UI or its interactions work.
+
 ## Visual Direction
 
 1. Treat pages as desktop operational tools, not marketing pages.
@@ -213,3 +224,4 @@ For UI tasks, report:
 3. State handling touched by the task.
 4. Light/dark mode checks or why they were not run.
 5. Verification commands and results.
+6. Concept screenshots, the user's approval, and implementation screenshots compared with the approved concept.
