@@ -91,3 +91,57 @@ def test_misread_nickname_can_recover_on_new_screenshots(monkeypatch):
         )
     )
     assert taps == [target, button]
+
+
+@pytest.mark.parametrize("destination", ["panel", "title", "timeout"])
+def test_home_logout_waits_for_transition(monkeypatch, destination):
+    from types import SimpleNamespace
+
+    frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    clock = 0.0
+    reads = 0
+    taps = []
+    navigation = [
+        [("设置", (100, 500, 50, 20))],
+        [("账户", (50, 200, 50, 20))],
+        [("退出", (820, 510, 50, 20))],
+        [("返回登录", (750, 410, 50, 20))],
+    ]
+
+    class Device:
+        async def tap(self, box):
+            taps.append(box)
+
+    async def ocr(device):
+        nonlocal reads
+        reads += 1
+        if reads <= 4:
+            return frame.copy(), navigation[reads - 1]
+        if clock < 2 or destination == "timeout":
+            return frame.copy(), [("主页", (20, 500, 50, 20))]
+        if destination == "panel":
+            return frame.copy(), [("登录记录", (500, 300, 100, 20))]
+        return frame.copy(), [
+            ("START", (500, 360, 100, 20)),
+            ("V4.1.0", (50, 20, 100, 20)),
+        ]
+
+    async def sleep(seconds):
+        nonlocal clock
+        clock += seconds
+
+    monkeypatch.setattr(login, "_ocr", ocr)
+    monkeypatch.setattr(login, "time", SimpleNamespace(monotonic=lambda: clock))
+    monkeypatch.setattr(login.asyncio, "sleep", sleep)
+    monkeypatch.setattr(login, "_LOGIN_PANEL_SECONDS", 5)
+    monkeypatch.setattr(login, "_POLL_SECONDS", 1)
+    task = login._logout_from_homepage(Device(), progress=None)
+    if destination == "timeout":
+        with pytest.raises(MaaFWLoginRequired, match="退出转场超时"):
+            asyncio.run(task)
+        assert clock == 5
+    else:
+        asyncio.run(task)
+        assert clock == 2
+    assert len(taps) == 4
+    assert reads > 4

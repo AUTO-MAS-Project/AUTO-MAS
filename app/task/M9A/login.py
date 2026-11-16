@@ -695,6 +695,20 @@ async def _logout_from_homepage(device: _Device, *, progress: Progress | None) -
                 f"B 服切号失败：游戏设置中未识别到「{'／'.join(labels)}」"
             )
 
+    # 点击完成不代表退出动画结束；明确看到登录目标画面才交回外层选号。
+    await _progress(progress, "已点击返回登录，等待退出转场完成")
+    while (remaining := deadline - time.monotonic()) > 0:
+        try:
+            frame, items = await asyncio.wait_for(_ocr(device), timeout=remaining)
+        except asyncio.TimeoutError:
+            break
+        if time.monotonic() >= deadline:
+            break
+        if _has(items, _LOGIN_RECORD) or _title_like(items, frame):
+            return
+        await asyncio.sleep(min(_POLL_SECONDS, max(0, deadline - time.monotonic())))
+    raise MaaFWLoginRequired("B 服切号失败：退出转场超时，未出现标题页或登录记录面板")
+
 
 async def _logout_to_login_panel(
     device: _Device,
