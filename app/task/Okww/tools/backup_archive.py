@@ -130,6 +130,8 @@ _OVERLAY_PREVIEW_ONLY_KEYS = {"Base"}
 恢复时以当前值为准，回填旧值会静默翻转 shared/independent 来源。"""
 
 _OVERLAY_TASK_KEYS = (
+    "NativeConfigs",
+    "DailyConfig",
     "FarmEchoConfig",
     "IfCustomArguments",
     "CustomArguments",
@@ -500,6 +502,8 @@ _FILE_TO_OVERLAY_KEY = {
 
 _OVERLAY_FIELD_LABELS = {
     "FarmEchoConfig": "4C 声骸配置",
+    "DailyConfig": "日常任务配置",
+    "NativeConfigs": "高级配置",
     "IfCustomArguments": "自定义启动参数",
     "CustomArguments": "启动参数",
     "Id": "账号",

@@ -984,6 +984,7 @@ export type { OkwwConfig_Info } from './models/OkwwConfig_Info';
 export type { OkwwConfig_InfoInput } from './models/OkwwConfig_InfoInput';
 export type { OkwwConfig_Run } from './models/OkwwConfig_Run';
 export type { OkwwConfig_RunInput } from './models/OkwwConfig_RunInput';
+export { OkwwConfigField } from './models/OkwwConfigField';
 export type { OkwwConfigInput } from './models/OkwwConfigInput';
 export type { OkwwPlanConfig } from './models/OkwwPlanConfig';
 export type { OkwwPlanConfig_ALL } from './models/OkwwPlanConfig_ALL';
@@ -1068,6 +1069,8 @@ export type { OkwwPlanConfig_Wednesday } from './models/OkwwPlanConfig_Wednesday
 export type { OkwwPlanConfig_WednesdayInput } from './models/OkwwPlanConfig_WednesdayInput';
 export type { OkwwPlanConfigInput } from './models/OkwwPlanConfigInput';
 export type { OkwwPlanKey } from './models/OkwwPlanKey';
+export { OkwwTaskConfigIn } from './models/OkwwTaskConfigIn';
+export type { OkwwTaskConfigOut } from './models/OkwwTaskConfigOut';
 export type { OkwwUserConfig } from './models/OkwwUserConfig';
 export type { OkwwUserConfig_Data } from './models/OkwwUserConfig_Data';
 export type { OkwwUserConfig_DataInput } from './models/OkwwUserConfig_DataInput';

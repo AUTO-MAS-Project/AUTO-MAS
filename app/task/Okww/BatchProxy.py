@@ -55,6 +55,31 @@ class BatchProxyTask(AutoProxyTask):
             return super()._build_run_arguments()
         return ["-t", "MultiAccountConfigTask", "-e"]
 
+    def native_config_key(self) -> dict:
+        """批次间接调用的配置必须一致；基础来源差异同样参与分组。"""
+        from app.utils.common.io import read_dict_file
+
+        from .tools.config_fields import PANEL_FILES, panel_values
+
+        config = self.cur_user_config
+        root = (
+            self.script_config.Info.RootPath / "data/apps/ok-ww/working/configs"
+            if config.Info.Base == "native"
+            else _okww_mas_config_dir(
+                self.script_info.script_id, str(self.cur_user_uid), config.Info.Base
+            )
+        )
+        result = {}
+        for kind, filename in PANEL_FILES.items():
+            if kind == "daily":
+                continue
+            path = root / filename
+            values = read_dict_file(path) if path.exists() else {}
+            if config.Info.IfQuickConfig:
+                values.update(panel_values(config, kind))
+            result[filename] = values
+        return result
+
     async def check(self):
         result = await super().check()
         if result != "Pass":
@@ -119,6 +144,8 @@ class BatchProxyTask(AutoProxyTask):
             from .tools.plan import task_config
 
             task = task_config(config)
+            if config.Info.IfQuickConfig:
+                values.update(config.Task.DailyConfig)
             values.update(task)
             key = normalize_account_key(config.Info.Id)
             self.account_users[key] = user

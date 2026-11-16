@@ -528,7 +528,7 @@ async def test_stop_preserves_success_written_since_last_log_poll(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "scenario", ["normal", "invalid", "duplicate", "cancel", "echo"]
+    "scenario", ["normal", "invalid", "duplicate", "cancel", "echo", "advanced"]
 )
 async def test_batch_arguments_grouping_preserves_user_order(tmp_path, scenario):
     (tmp_path / "ok-ww.exe").touch()
@@ -571,6 +571,10 @@ async def test_batch_arguments_grouping_preserves_user_order(tmp_path, scenario)
         )
         for i, (uid, draft) in enumerate(zip(ids, drafts))
     }
+    if scenario == "advanced":
+        manager.user_config[ids[2]].Task.NativeConfigs = {
+            "NightmareNestTask.json": {"Which to Farm": ["Nightmare Purification"]}
+        }
     if scenario == "echo":
         manager.user_config[ids[2]].Task.FarmEchoConfig = {"Repeat Farm Count": 5}
     if scenario == "duplicate":
@@ -609,12 +613,12 @@ async def test_batch_arguments_grouping_preserves_user_order(tmp_path, scenario)
         ([str(ids[0])], default),
         (
             [str(ids[1])]
-            if scenario in ("invalid", "echo")
+            if scenario in ("invalid", "echo", "advanced")
             else [str(ids[1]), str(ids[2])],
             ["-t", "OtherTask"],
         ),
     ]
-    if scenario == "echo":
+    if scenario in ("echo", "advanced"):
         expected.append(([str(ids[2])], ["-t", "OtherTask"]))
     expected.append(([str(ids[3]), str(ids[4])], default))
     assert dispatched == expected

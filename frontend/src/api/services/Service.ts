@@ -121,6 +121,8 @@ import type { OkNtePlanConfigsOut } from '../models/OkNtePlanConfigsOut';
 import type { OkwwArgumentsIn } from '../models/OkwwArgumentsIn';
 import type { OkwwArgumentsOut } from '../models/OkwwArgumentsOut';
 import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
+import type { OkwwTaskConfigIn } from '../models/OkwwTaskConfigIn';
+import type { OkwwTaskConfigOut } from '../models/OkwwTaskConfigOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
 import type { PatternDebugOut } from '../models/PatternDebugOut';
@@ -1209,6 +1211,56 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/Upload/web',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Okww Task Config Api
+     * 读取原生字段及半动态控件描述。
+     * @param scriptId
+     * @param userId
+     * @param kind
+     * @param locale
+     * @returns OkwwTaskConfigOut Successful Response
+     * @throws ApiError
+     */
+    public static getOkwwTaskConfigApiApiScriptsOkwwTaskConfigGet(
+        scriptId: string,
+        userId: string,
+        kind: 'daily' | 'echo' | 'nightmare' | 'combat' | 'character' | 'monthly',
+        locale: 'zh_CN' | 'en_US' | 'ja_JP' = 'zh_CN',
+    ): CancelablePromise<OkwwTaskConfigOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/okww/task-config',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'kind': kind,
+                'locale': locale,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Save Okww Task Config Api
+     * 保存面板及已有日常字段，不修改基础来源。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static saveOkwwTaskConfigApiApiScriptsOkwwTaskConfigPost(
+        requestBody: OkwwTaskConfigIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/okww/task-config',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

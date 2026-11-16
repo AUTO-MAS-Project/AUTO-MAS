@@ -157,6 +157,14 @@
                 <ConfigActionsSection
                   :base="formData.Info.Base"
                   script-label="ok-ww"
+                  :hint-override="
+                    formData.Info.IfQuickConfig
+                      ? {
+                          target: t('core.edit.okwwGuiPanelTarget'),
+                          impact: t('core.edit.okwwGuiPanelImpact'),
+                        }
+                      : undefined
+                  "
                   :disabled="configActionsDisabled"
                   :config-loading="okwwConfigLoading"
                   :configuring="showOkwwConfigMask"
@@ -179,7 +187,8 @@
         :disabled="configActionsDisabled"
         @save="saveTaskConfig"
         @restore="openRestoreModal"
-        @configure="handleOkwwConfig"
+        @refresh="loadUser"
+        @busy="nativeConfigSaving = $event"
       />
 
       <a-card class="config-card" style="margin-top: 24px">
@@ -291,6 +300,7 @@ const isEdit = ref(!!userId.value)
 const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId: userId.value }))
 const scriptName = ref('ok-ww脚本')
 
+const nativeConfigSaving = ref(false)
 const pageLoading = ref(true)
 const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
@@ -298,6 +308,7 @@ const { isSaving, enqueue } = useSaveQueue()
 const configActionsDisabled = computed(
   () =>
     pageLoading.value ||
+    nativeConfigSaving.value ||
     !userId.value ||
     isSaving.value ||
     okwwConfigLoading.value ||
@@ -478,8 +489,9 @@ const handleScriptConfig = async () => {
   await router.push(`/scripts/${scriptId}/edit/okww`)
 }
 
-const handleSaveOkwwConfig = () => {
-  void saveSession()
+const handleSaveOkwwConfig = async () => {
+  await saveSession()
+  await loadUser()
 }
 
 const handleCloseOkwwView = () => {

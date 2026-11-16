@@ -12,14 +12,13 @@
   <OkwwTaskConfigSection
     v-model="form.Task"
     :overlay-enabled="form.Info.IfQuickConfig"
-    :quick-config="
-      form.Info.IfQuickConfig && (!form.Info.PlanMode || form.Info.PlanMode === 'Fixed')
-    "
     :script-id="scriptId"
+    :user-id="userId"
     :save-task="saveTask"
     :disabled="disabled"
     @save="emit('save')"
-    @configure="emit('configure')"
+    @refresh="emit('refresh')"
+    @busy="emit('busy', $event)"
   />
 </template>
 <script setup lang="ts">
@@ -38,5 +37,5 @@ defineProps<{
   saveTask: () => Promise<boolean>
 }>()
 const { t } = useI18n()
-const emit = defineEmits<{ save: []; restore: []; configure: [] }>()
+const emit = defineEmits<{ save: []; restore: []; refresh: []; busy: [value: boolean] }>()
 </script>
