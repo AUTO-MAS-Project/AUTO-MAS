@@ -125,9 +125,10 @@ def apply_package(
                 )
             # 完整 ZIP 应具备 CLI 与桌面入口。update.7z 为增量发布，
             # 不要求增量包列出完整安装所需的全部文件。
-            if package.suffix.casefold() == ".zip" and not (
-                source_root / "m7a.exe"
-            ).is_file():
+            if (
+                package.suffix.casefold() == ".zip"
+                and not (source_root / "m7a.exe").is_file()
+            ):
                 raise HSRUpdateError(
                     "三月七完整 ZIP 缺少必要程序文件 m7a.exe，"
                     "已拒绝安装可能不完整的更新包"
@@ -476,11 +477,13 @@ def _strip_single_root(stage: Path, executable: str, *, engine: str = "") -> Pat
     ignored = {"readme.md", "license", "license.txt", "sha256sums.txt"}
     directories = [entry for entry in entries if entry.is_dir()]
     extra = [
-        entry for entry in entries
+        entry
+        for entry in entries
         if not entry.is_dir() and entry.name.casefold() not in ignored
     ]
     candidates = [
-        directory for directory in directories
+        directory
+        for directory in directories
         if directory.name.casefold() in {"update", "march7thassistant_full"}
         and (directory / executable).is_file()
     ]
@@ -490,9 +493,7 @@ def _strip_single_root(stage: Path, executable: str, *, engine: str = "") -> Pat
             "仅安装该目录下的程序文件"
         )
         return candidates[0]
-    raise HSRUpdateError(
-        "三月七更新包存在无法确定的安装根目录或未知顶层文件，拒绝安装"
-    )
+    raise HSRUpdateError("三月七更新包存在无法确定的安装根目录或未知顶层文件，拒绝安装")
 
 
 def _write_journal(install_root: Path, journal: dict[str, Any]) -> None:
