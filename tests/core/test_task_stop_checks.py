@@ -396,7 +396,9 @@ async def test_task_stop_waits_for_update_then_force_closes_owned_processes(
             raise error
 
     monkeypatch.setattr(
-        ControlledTask, "STOP_CHECK_TIMEOUTS", {"update": 0.1 if times_out else 2}
+        ControlledTask,
+        "STOP_CHECK_TIMEOUTS",
+        {"update": 0.1 if times_out else 2, "finalize": 2},
     )
     uid = uuid.uuid4()
     info = TaskInfo("AutoProxy", str(uid), None, None, None)

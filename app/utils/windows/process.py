@@ -1,12 +1,14 @@
 import asyncio
 import os
 import subprocess
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from threading import Lock
-from typing import Unpack
+from typing import Any, Unpack
 
 import psutil
+import pywintypes
 import win32api
 import win32con
 import win32job
@@ -33,6 +35,7 @@ class WindowsTaskProcessJob:
             raise
         # 脱离 Runtime 的进程不能与继承 Runtime 的进程共用同一个嵌套 Job。
         self._handles = {False: inherited, True: detached}
+        self._adopted: list[Any] = []
 
     def assign(self, pid: int, *, suspended: bool, breakaway: bool) -> None:
         # 安装线程与任务停止共用这把锁，强杀开始后不得再分配或恢复新进程。
@@ -62,17 +65,81 @@ class WindowsTaskProcessJob:
                     finally:
                         handle.Close()
 
+    def adopt(self, pid: int, create_time: float) -> None:
+        """给明确接管的进程及已有后代加 Job 标记，后续后代由系统继承。"""
+        with self._lock:
+            if self._closed or self._stopping:
+                raise asyncio.CancelledError
+            root = psutil.Process(pid)
+            if root.create_time() != create_time:
+                raise psutil.NoSuchProcess(pid, msg="接管进程的 PID 已复用")
+            pending, seen = [root], set()
+            while pending:
+                target = pending.pop()
+                if target.pid in seen:
+                    continue
+                seen.add(target.pid)
+
+                try:
+                    # 先保留已发现的孩子，父进程在接管期间退出也不能丢掉它们。
+                    pending.extend(target.children())
+                    process = win32api.OpenProcess(
+                        win32con.PROCESS_SET_QUOTA
+                        | win32con.PROCESS_TERMINATE
+                        | win32con.PROCESS_QUERY_INFORMATION,
+                        False,
+                        target.pid,
+                    )
+                    try:
+                        # OpenProcess 的句柄固定目标；再用缓存的创建时间核对身份。
+                        if not target.is_running():
+                            continue
+                        jobs = (*self._handles.values(), *self._adopted)
+                        if any(win32job.IsProcessInJob(process, job) for job in jobs):
+                            continue
+                        # 外部进程可能来自不同的系统 Job，不能共用一个嵌套 Job。
+                        job = win32job.CreateJobObject(None, "")
+                        try:
+                            win32job.AssignProcessToJobObject(job, process)
+                        except BaseException:
+                            job.Close()
+                            raise
+                        self._adopted.append(job)
+                        # 标记后新生的孩子自动继承，再补登记期间已有的孩子。
+                        pending.extend(target.children())
+                    finally:
+                        process.Close()
+                except (psutil.NoSuchProcess, pywintypes.error):
+                    # 只容忍已退出或 PID 已复用的旧目标；存活目标的权限等错误仍需上报。
+                    if target.is_running():
+                        raise
+
     def kill(self) -> None:
         with self._lock:
             if self._closed:
                 return
             self._stopping = True
             errors = []
-            for job in self._handles.values():
+            jobs = (*self._handles.values(), *self._adopted)
+            for job in jobs:
                 try:
                     win32job.TerminateJobObject(job, 1)
                 except Exception as error:
                     errors.append(error)
+            # TerminateJobObject 只发起终止；确认组内进程已退出，不等待输出 EOF。
+            deadline = time.monotonic() + 1
+            try:
+                while any(
+                    win32job.QueryInformationJobObject(
+                        job, win32job.JobObjectBasicAccountingInformation
+                    )["ActiveProcesses"]
+                    for job in jobs
+                ):
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("任务进程组强制终止后仍有进程存活")
+                    time.sleep(0.01)
+            except Exception as error:
+                errors.append(error)
             if errors:
                 raise ExceptionGroup("部分任务进程组未能强制终止", errors)
 
@@ -82,7 +149,7 @@ class WindowsTaskProcessJob:
                 return
             self._closed = True
             errors = []
-            for job in self._handles.values():
+            for job in (*self._handles.values(), *self._adopted):
                 try:
                     job.Close()
                 except Exception as error:

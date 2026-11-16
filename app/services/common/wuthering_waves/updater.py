@@ -50,6 +50,7 @@ from app.services.common.wuthering_waves import (
 from app.utils import get_logger
 from app.utils import hpatchz as _utils_hpatchz
 from app.utils import update_files as _utils_update_files
+from app.utils.common.process.runner import create_subprocess
 
 logger = get_logger("鸣潮更新")
 
@@ -592,7 +593,7 @@ async def _run_hpatchz(exe: Path, old_dir: Path, blob: Path, out_dir: Path) -> N
     多余文件既不影响结果也不产生额外开销（已实测）。
     """
 
-    process = await asyncio.create_subprocess_exec(
+    process = await create_subprocess(
         str(exe),
         "-f",
         f"{old_dir}{os.sep}",

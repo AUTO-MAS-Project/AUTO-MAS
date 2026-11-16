@@ -611,7 +611,7 @@ class TaskInfo(TaskItem):
 class Task(TaskExecuteBase):
     wait_for_finalizer_on_cancel = True
     # 每个确认项目独立配置等待时间；超时后标记结束，统一进入强制清理。
-    STOP_CHECK_TIMEOUTS = {"update": 30.0}
+    STOP_CHECK_TIMEOUTS = {"update": 30.0, "finalize": 10.0}
     stop_finalizer_timeout = None  # 顶层收尾等待确认点，不可反过来加入确认点。
 
     def __init__(
@@ -634,6 +634,7 @@ class Task(TaskExecuteBase):
         self._stop_request: asyncio.Task | None = None
         self._execution_root: asyncio.Task | None = None
         self._execution_task: asyncio.Task | None = None
+        self._execution_stopped = asyncio.Event()
         self._finalizer_task: asyncio.Task | None = None
         self._manager_factories = manager_factories
         self.task_info = task_info
@@ -689,11 +690,27 @@ class Task(TaskExecuteBase):
 
     async def _finalize_task(self) -> None:
         self._finalizer_task = asyncio.current_task()
+        # 下层收尾已结清；顶层 final_task 仍需等统一进程清理结束。
+        self._execution_stopped.set()
         await super()._finalize_task()
+
+    async def _confirm_execution_stop(self) -> None:
+        task = self._execution_task
+        if task is None or task.done():
+            return
+        task.cancel()
+        await self._execution_stopped.wait()
 
     async def _stop_after_checks(self) -> None:
         try:
             await self._stop_scope.run_checks()
+            if all(check.status == "passed" for check in self._stop_scope.checks):
+                self._stop_scope.add_check(
+                    "execution_finalize",
+                    self._confirm_execution_stop,
+                    timeout=self.STOP_CHECK_TIMEOUTS["finalize"],
+                )
+                await self._stop_scope.run_checks()
             for check in self._stop_scope.checks:
                 if check.status == "timed_out":
                     logger.warning(f"停止检查 {check.name} 超时，转入强制清理")

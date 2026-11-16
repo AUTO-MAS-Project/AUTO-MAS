@@ -1,10 +1,13 @@
 import asyncio
 import locale
+import subprocess
+import sys
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import psutil
 
@@ -26,6 +29,46 @@ def is_process_cleanup_unconfirmed(error: BaseException) -> bool:
             return False
         error = error.__cause__
     return isinstance(error, ProcessCleanupUnconfirmed)
+
+
+def popen_scoped(*args: Any, **kwargs: Any) -> subprocess.Popen:
+    """工作线程的辅助命令也登记到调用任务；任务外调用保持原有行为。"""
+    scope = current_process_scope.get()
+    return (scope.popen if scope is not None else subprocess.Popen)(*args, **kwargs)
+
+
+def run_process_sync(
+    command: Sequence[str | Path],
+    *,
+    timeout: float,
+    capture_output: bool = False,
+    **kwargs: Any,
+) -> subprocess.CompletedProcess:
+    """运行同步辅助命令；输出、退出码和超时语义与现有调用保持一致。"""
+    scope = current_process_scope.get()
+    if scope is None:
+        return subprocess.run(
+            command, timeout=timeout, capture_output=capture_output, **kwargs
+        )
+    if capture_output:
+        if "stdout" in kwargs or "stderr" in kwargs:
+            raise ValueError("capture_output 不能与 stdout/stderr 同时使用")
+        kwargs.update(stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    process = popen_scoped(command, **kwargs)
+    # 不使用 Popen.__exit__ 的无界等待；停止超时由任务 Job 回收整棵树。
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except BaseException:
+        with suppress(ProcessLookupError):
+            process.kill()
+        try:
+            process.communicate(timeout=1)
+        except (OSError, subprocess.SubprocessError) as error:
+            scope.cleanup_failed = True
+            logger.error(f"同步命令清理未确认（pid {process.pid}），保留资源占用")
+            raise ProcessCleanupUnconfirmed("同步命令进程未确认停止") from error
+        raise
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 def close_process_pipes(process: asyncio.subprocess.Process) -> None:
@@ -66,13 +109,27 @@ def observe_process_exit(
     scope = current_process_scope.get()
 
     async def observe() -> int:
-        while process.returncode is None:
+        started = asyncio.get_running_loop().time()
+        native = process._transport.get_extra_info("subprocess")
+        while (code := process.returncode) is None:
+            if (
+                sys.platform == "win32"
+                and asyncio.get_running_loop().time() - started >= 1
+            ):
+                # 原生 Popen 持有本次进程的系统句柄；poll 不依赖管道 EOF，
+                # 也不会把后来复用同一 PID 的无关进程认成本次进程。
+                code = native.poll()
+                if code is not None:
+                    logger.warning(
+                        f"进程退出通知未更新（pid {process.pid}），原生句柄已确认退出: {code}"
+                    )
+                    break
             await asyncio.sleep(0.01)
         if after_task_cleanup and scope is not None and scope.requested:
             await scope.finished.wait()
             if scope.cleanup_failed:
                 raise ProcessCleanupUnconfirmed("任务强制清理失败，安装目录仍保持占用")
-        return process.returncode
+        return code
 
     return asyncio.create_task(observe(), context=detached_process_context())
 
@@ -433,5 +490,7 @@ __all__ = [
     "is_process_cleanup_unconfirmed",
     "observe_process_exit",
     "stop_process",
+    "popen_scoped",
+    "run_process_sync",
     "wait_for_process_cleanup",
 ]
