@@ -6,7 +6,12 @@ from app.core.download_diagnostics import describe_package, safe_origin
 
 
 def test_signed_urls_are_reduced_to_origin():
-    assert safe_origin("https://person:secret@example.com/updates/file.zip?cdk=secret&token=123") == "https://example.com"
+    assert (
+        safe_origin(
+            "https://person:secret@example.com/updates/file.zip?cdk=secret&token=123"
+        )
+        == "https://example.com"
+    )
     assert safe_origin("invalid") == "(hidden)"
 
 
@@ -19,7 +24,9 @@ def test_m7a_nested_root_and_version_marker(tmp_path):
     assert data["format"] == "zip"
     assert data["root_count"] == 2
     assert data["known_roots"] == ["March7thAssistant"]
-    assert data["version_markers"] == [{"name": "version.txt", "version": "v2026.11.17"}]
+    assert data["version_markers"] == [
+        {"name": "version.txt", "version": "v2026.11.17"}
+    ]
     assert "release-notes.txt" not in str(data)
 
 
