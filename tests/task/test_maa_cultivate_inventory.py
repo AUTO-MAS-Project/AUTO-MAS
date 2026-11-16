@@ -68,7 +68,7 @@ def scenario():
     ("inventory", "remaining", "reserved", "sanity"),
     [
         ({"3302": 2, "3301": 12}, 0, {"3303": 2, "3302": 6, "3301": 12}, 0),
-        ({"3302": 5}, 1, {"3303": 2, "3302": 3}, 15),
+        ({"3302": 5}, 1, {"3303": 2, "3302": 3}, 30),
         ({"3302": 2, "3301": 2}, 2, {"3303": 2}, 30),
     ],
     ids=["two-level-crafting", "partial-whole-books", "incomplete-set"],
@@ -83,12 +83,12 @@ def test_only_complete_inventory_recipes_reduce_farming(
     )
     assert has_material_gap(**scenario, inventory=inventory) is bool(remaining)
     assert {item.item_id: item.amount for item in plan.reservations} == reserved
-    # CA-5 卷3每本15理智；即使补卷2更省，也不利用不足整套的余料改选路线。
+    # CA-5 每场30理智、产两本卷3；缺一本也要刷整场，不用零散余料改选路线。
     assert sum(item.expected_sanity for item in plan.entries) == sanity
     assert inventory == before
 
 
-def test_skill_books_wait_for_resource_stages(scenario):
+def test_closed_resource_stages_remain_in_the_plan(scenario):
     scenario["today"] = date(2026, 11, 16)
     scenario["data"] = replace(
         scenario["data"],
@@ -103,7 +103,8 @@ def test_skill_books_wait_for_resource_stages(scenario):
     plan = build_plan(**scenario, inventory={})
 
     assert [(item.item_id, item.amount, item.stage_code) for item in plan.entries] == [
-        ("30012", 1, "1-7")
+        ("30012", 1, "1-7"),
+        ("3303", 2, "CA-5"),
     ]
     assert {item.item_id: item.amount for item in plan.demands} == {
         "3303": 2,
