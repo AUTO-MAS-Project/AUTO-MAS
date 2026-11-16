@@ -53,6 +53,9 @@ const formatHistorySize = (size?: number | null) =>
 
 const formatHistoryDuration = (ms?: number | null) => (ms ? `${(ms / 1000).toFixed(1)}s` : '-')
 
+const canExportHistory = (item: FluxdownRecord) =>
+  Boolean(item.diagnostic || (item.status && item.status !== 'success'))
+
 // 失败/回退记录可导出：把这条下载记录存成 JSON 文件
 const handleExportHistory = async (item: FluxdownRecord) => {
   try {
@@ -126,7 +129,7 @@ const showUpdateHistory = ref(false)
             {{ formatHistoryDuration(item.duration_ms) }}
             <span v-if="item.error" class="history-item-error"> — {{ item.error }}</span>
             <a-button
-              v-if="item.status && item.status !== 'success' || item.diagnostic"
+              v-if="canExportHistory(item)"
               type="link"
               size="small"
               class="history-export-button"
