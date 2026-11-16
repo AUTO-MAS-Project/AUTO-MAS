@@ -6,6 +6,7 @@ from datetime import date
 import pytest
 
 from app.task.MAA.tools.cultivate import (
+    DemandEntry,
     Goal,
     OperatorTarget,
     Progression,
@@ -26,13 +27,27 @@ def scenario():
                 {"stageId": "wk_fly_5", "itemId": "3302", "times": 2, "quantity": 3},
                 {"stageId": "wk_fly_5", "itemId": "3301", "times": 2, "quantity": 3},
                 {"stageId": "wk_fly_3", "itemId": "3302", "times": 1, "quantity": 3},
+                {"stageId": "main_01-10", "itemId": "3301", "times": 1, "quantity": 2},
+                {"stageId": "main_01-07", "itemId": "30012", "times": 1, "quantity": 1},
             ]
         },
         stage_raw={
-            "data": [{"stageId": "wk_fly_3", "stageCode": "CA-3", "apCost": 20}]
+            "data": [
+                {"stageId": "wk_fly_3", "stageCode": "CA-3", "apCost": 20},
+                {"stageId": "main_01-10", "stageCode": "1-10", "apCost": 9},
+                {"stageId": "main_01-07", "stageCode": "1-7", "apCost": 6},
+            ]
         },
         recipe_raw=[],
         data_version="test",
+    )
+    # CA-1～CA-5 共用开放日，不能把夹具中的 CA-3 当作每天开放。
+    data = replace(
+        data,
+        stages={
+            **data.stages,
+            "wk_fly_3": replace(data.stages["wk_fly_3"], open_weekdays=(1, 2, 4, 6)),
+        },
     )
     snapshot = ProgressionSnapshot(
         source="skland",
@@ -71,6 +86,35 @@ def test_only_complete_inventory_recipes_reduce_farming(
     # CA-5 卷3每本15理智；即使补卷2更省，也不利用不足整套的余料改选路线。
     assert sum(item.expected_sanity for item in plan.entries) == sanity
     assert inventory == before
+
+
+def test_skill_books_wait_for_resource_stages(scenario):
+    scenario["today"] = date(2026, 11, 16)
+    scenario["data"] = replace(
+        scenario["data"],
+        demands={
+            "one": (
+                DemandEntry(
+                    kind="skill", target_id="", level=7, items={"3303": 2, "30012": 1}
+                ),
+            )
+        },
+    )
+    plan = build_plan(**scenario, inventory={})
+
+    assert [(item.item_id, item.amount, item.stage_code) for item in plan.entries] == [
+        ("30012", 1, "1-7")
+    ]
+    assert {item.item_id: item.amount for item in plan.demands} == {
+        "3303": 2,
+        "30012": 1,
+    }
+    scenario["today"] = date(2026, 11, 17)
+    plan = build_plan(**scenario, inventory={})
+    assert [(item.item_id, item.amount, item.stage_code) for item in plan.entries] == [
+        ("30012", 1, "1-7"),
+        ("3303", 2, "CA-5"),
+    ]
 
 
 def test_skill_levels_share_inventory_without_double_counting(scenario):
