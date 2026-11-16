@@ -70,7 +70,9 @@ class FluxdownRecord(BaseModel):
     segments: int | None = Field(default=None, description="分段数")
     proxy: str | None = Field(default=None, description="使用的代理")
     checksum: str | None = Field(default=None, description="校验信息")
-    diagnostic: dict[str, object] | None = Field(default=None, description="统一下载诊断摘要（不包含凭据和原始压缩包）")
+    diagnostic: dict[str, object] | None = Field(
+        default=None, description="统一下载诊断摘要（不包含凭据和原始压缩包）"
+    )
     status: str | None = Field(
         default=None,
         description="状态：success、failed、checksum_fail、fluxdown_fallback",
