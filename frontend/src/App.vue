@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { TaskMode } from '@/api'
-import { computed, defineAsyncComponent, onMounted, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ConfigProvider } from 'ant-design-vue'
 import { renderEmpty } from '@/components/renderEmpty'
@@ -18,6 +18,7 @@ import AppClosingOverlay from './components/AppClosingOverlay.vue'
 import BackendStartupOverlay from './components/BackendStartupOverlay.vue'
 import CursorEffectLayer from './components/CursorEffectLayer.vue'
 import AppearanceDecoration from './components/AppearanceDecoration.vue'
+import NewYearCelebration from './components/NewYearCelebration.vue'
 import ThemeTokenBridge from './components/ThemeTokenBridge'
 import { useCursorEffectStore } from './stores/cursorEffect'
 import { usePerformanceStore } from './stores/performance'
@@ -53,6 +54,7 @@ const { isInitialized, isBootstrapping, isAppReady } = useAppInitialization()
 const cursorEffectStore = useCursorEffectStore()
 const performanceStore = usePerformanceStore()
 const languageResources = useBackendI18nStore()
+const pageReady = ref(false)
 
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
@@ -176,7 +178,10 @@ onMounted(async () => {
     <!-- 其他页面使用带标题栏的应用布局 - 仅在初始化完成后挂载 -->
     <div v-else-if="isAppReady || languageResources.requested" class="app-container">
       <TitleBar />
-      <AppLayout v-if="languageResources.ready && performanceStore.initialized" />
+      <AppLayout
+        v-if="languageResources.ready && performanceStore.initialized"
+        @page-ready="pageReady = true"
+      />
       <I18nResourceGate v-else @retry="retryLanguageResources" @recover="recoverInitialization" />
     </div>
 
@@ -201,6 +206,17 @@ onMounted(async () => {
     <AppClosingOverlay :visible="isClosing" />
     <BackendStartupOverlay :visible="isBootstrapping && !languageResources.requested" />
     <CursorEffectLayer v-if="isAppReady && performanceStore.initialized" />
+    <NewYearCelebration
+      v-if="
+        isInitialized &&
+        pageReady &&
+        languageResources.ready &&
+        performanceStore.initialized &&
+        !isInitializationPage &&
+        !isStandalonePage &&
+        !isClosing
+      "
+    />
   </ConfigProvider>
 </template>
 
