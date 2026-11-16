@@ -27,7 +27,7 @@ interface DownloadOut extends OutBase {
   data: DownloadSnapshot
 }
 export interface CoreUpgradePrecheckOut extends OutBase {
-  compatible: boolean
+  compatible: boolean | null
   conflicts?: { message: string }[]
 }
 

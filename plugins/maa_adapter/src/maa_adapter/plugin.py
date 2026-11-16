@@ -56,7 +56,7 @@ class Plugin(ScriptAdapterPlugin):
         MaaUserConfig.related_config = refs
 
     async def on_enable(self):
-        """启用时绑定本插件配置缓存，并在发布 HTTP 和业务服务前首次获取关卡资源。"""
+        """启用时绑定本插件配置缓存，启动关卡资源后台预热，首次业务读取仍按需等待。"""
         assert isinstance(self.config, MaaPluginConfig)
         self.stage_service = MaaStageService(
             read_cache=self.config.stage_cache.snapshot,
@@ -65,7 +65,7 @@ class Plugin(ScriptAdapterPlugin):
             now=lambda: datetime.now(timezone.utc),
             background_tasks=self.background_tasks,
         )
-        await self.stage_service.get_stage(refresh=True)
+        await self.stage_service.get_stage(wait_stale=False)
 
     async def stage_data(self, *, refresh=False):
         """检查并提供本插件缓存的官方资源，不再读取宿主全局设置。"""

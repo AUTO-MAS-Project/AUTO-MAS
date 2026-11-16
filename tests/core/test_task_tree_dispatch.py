@@ -103,7 +103,7 @@ async def test_prefetch_dispatch_waits_for_real_download_cleanup(
             finally:
                 await scripts[sid].unlock(ticket)
 
-    manager.manager_factories = {GeneralConfig: PrefetchBuiltin}
+    manager.manager_factories = {GeneralConfig: lambda script: PrefetchBuiltin(script)}
     try:
         uid = await manager.start(
             TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(sid)}}}}

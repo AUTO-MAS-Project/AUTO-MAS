@@ -1,9 +1,9 @@
 import asyncio
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 from fastapi import FastAPI
-import httpx
 
 import app.api.core as core_api
 from app.core import Config
@@ -23,6 +23,7 @@ def _make_request(
     request = MagicMock()
     request.app.state.background_status = background_status
     request.app.state.background_error = background_error
+    request.app.state.business_message = None
     return request
 
 
@@ -80,6 +81,9 @@ async def test_runtime_activation_is_idempotent_and_not_an_mcp_tool(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         assert (await client.post("/api/core/startup/activate")).status_code == 409
+        health = (await client.get("/api/core/health")).json()
+        assert health["backgroundStatus"] == "ready"
+        assert health["businessStatus"] == "starting"
         assert (await client.get("/api/core/health")).json()[
             "startupActivation"
         ] == "pending"

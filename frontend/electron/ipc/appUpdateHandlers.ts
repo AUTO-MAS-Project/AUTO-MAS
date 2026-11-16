@@ -4,13 +4,20 @@ import { AppUpdateService, checkAppUpdate } from '../services/appUpdateService'
 import type { BackendService } from '../services/backendService'
 import type { AppUpdateSettings } from '../services/appUpdateTypes'
 
+let updateService: AppUpdateService | null = null
+
+export async function stopAppUpdateForShutdown(exiting = false): Promise<void> {
+  // 退出清场先停止前端下载并释放引用，再由既有流程停止后端。
+  await updateService?.shutdown(exiting)
+}
+
 export function registerAppUpdateHandlers(options: {
   root: string
   window: () => BrowserWindow | null
   backendUrl: () => string
   backend: () => BackendService
   ownsBackend: () => boolean
-  quit: () => void
+  quit: () => Promise<void>
 }): void {
   // 注册应用更新 IPC，绑定主窗口、后端归属与更新服务，并限制请求必须来自应用页面。
   const service = new AppUpdateService(options.root, options.backendUrl, event => {
@@ -18,6 +25,7 @@ export function registerAppUpdateHandlers(options: {
     const window = options.window()
     if (window && !window.isDestroyed()) window.webContents.send('app-update:event', event)
   })
+  updateService = service
   const register = <T extends unknown[]>(name: string, action: (...args: T) => unknown) =>
     /* 为更新操作创建统一的 IPC 注册入口，在调用业务前校验消息发送方。 */ ipcMain.handle(
       name,
@@ -65,7 +73,7 @@ export function registerAppUpdateHandlers(options: {
     // 确认后端归属后执行已准备更新包的安装，并退出当前应用。
     owned()
     await service.install(options.backend())
-    options.quit()
+    await options.quit()
     return { code: 200 }
   })
 }

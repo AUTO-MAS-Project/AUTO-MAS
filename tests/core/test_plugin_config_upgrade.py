@@ -66,8 +66,10 @@ def test_startup_installs_before_loading_and_commits_upgrade(tmp_path, failure, 
     code = r"""
 import asyncio
 import base64
+import shutil
 import sqlite3
 import sys
+import tomllib
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -144,7 +146,8 @@ parse_source = discover._parse_source_package
 installs = []
 
 async def available(path):
-    if path.name == "maa_adapter" and not visible:
+    # 此用例通过安装边界提供发行版，不能借本地源码覆盖安装后的身份检查。
+    if path.name != "auto_mas_core":
         return None
     return await parse_source(path)
 
@@ -154,6 +157,17 @@ async def install(spec, *, dry_run=False):
     installs.append(spec)
     if failure == "install":
         raise OSError("installation unavailable")
+    site = uv.site_dir()
+    shutil.copytree(source / "plugins/maa_adapter/src/maa_adapter", site / "maa_adapter", dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__"))
+    project = tomllib.loads((source / "plugins/maa_adapter/pyproject.toml").read_text(encoding="utf-8"))["project"]
+    info = site / f"auto_mas_maa_adapter-{project['version']}.dist-info"
+    info.mkdir(exist_ok=True)
+    (info / "METADATA").write_text("\n".join([
+        "Metadata-Version: 2.1", "Name: auto-mas-maa-adapter", f"Version: {project['version']}",
+        "Keywords: auto-mas-plugin, auto-mas-id:maa_adapter",
+        *[f"Requires-Dist: {item}" for item in project["dependencies"]], "", "",
+    ]), encoding="utf-8")
+    (info / "RECORD").write_text("maa_adapter/__init__.py,,\n", encoding="utf-8")
     visible = True
     installed_marker.touch()
 
@@ -186,6 +200,10 @@ async def run():
                     assert db.execute("SELECT v FROM version").fetchone()[0] == "v2.1"
                 return
             assert failure == "none"
+            backup = Config.config_path / "legacy-json/pre-upgrade"
+            assert (backup / ("ScriptConfig.json" if legacy else "scripts.yaml")).is_file()
+            with sqlite3.connect(backup / Config.database_path.name) as db:
+                assert db.execute("SELECT v FROM version").fetchone()[0] in ("v1.11", "v2.1")
             assert installs == ([] if installed_before else ["auto-mas-maa-adapter"])
             script = Config.ScriptConfig[sid]
             assert script.Info.Name == "原托管"

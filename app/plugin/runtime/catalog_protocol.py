@@ -7,6 +7,8 @@ from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
+from app.plugin.types import PLUGIN_ID_PATTERN
+
 MAX_BYTES = 8 * 1024 * 1024
 TEXT_FIELDS = (
     "package_name",
@@ -57,9 +59,9 @@ def validate_entries(raw: object) -> list[dict]:
         package, identity = item["package_name"], item["plugin_name"]
         if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?", package):
             raise ValueError("invalid package name")
-        if not identity or "/" in identity or any(char.isspace() for char in identity):
+        if not PLUGIN_ID_PATTERN.fullmatch(identity):
             raise ValueError("invalid plugin identity")
-        if identity == "auto_mas_core" or not item["version"].strip():
+        if identity.casefold() == "auto_mas_core" or not item["version"].strip():
             raise ValueError("core is not a market plugin; version must be nonempty")
         if package_key(package) in packages or identity in identities:
             raise ValueError("duplicate package or plugin identity")

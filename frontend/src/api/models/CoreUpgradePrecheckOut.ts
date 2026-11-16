@@ -16,7 +16,10 @@ export type CoreUpgradePrecheckOut = {
      * 操作消息
      */
     message?: string;
-    compatible: boolean;
+    /**
+     * true 表示兼容，false 表示依赖无解，null 表示检查未完成
+     */
+    compatible: (boolean | null);
     conflicts?: Array<CoreUpgradeConflict>;
 };
 

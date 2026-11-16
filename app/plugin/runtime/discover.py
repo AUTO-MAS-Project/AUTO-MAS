@@ -6,17 +6,21 @@ import asyncio
 import importlib
 import importlib.metadata as importlib_metadata
 import pkgutil
+import site
 from dataclasses import dataclass
 from pathlib import Path
 
+from packaging.utils import canonicalize_name
 from pyproject_metadata import StandardMetadata
 
+from app.config import config_manager
 from app.core.config import Config
 from app.models.config import PluginRecord
 from app.utils import get_logger
 from app.utils.common.io import read_file
 from app.utils.common.tools import to_pep440
 
+from ..errors import PluginPrecheckError
 from ..types import MARKET_GATE_TAG, PluginCodeDrift, SourceChange
 from .metadata import parse_to_plugin_record
 
@@ -46,7 +50,7 @@ refresh_lock = asyncio.Lock()
 
 @dataclass(frozen=True)
 class RefreshScope:
-    """refresh 扫描范围；``None`` 表示全量扫描。"""
+    """变化工程及代码标记；发现始终检查完整候选，避免增量刷新绕过冲突校验。"""
 
     changes: tuple[SourceChange, ...] | None = None
 
@@ -132,6 +136,8 @@ async def _parse_source_package(path: Path) -> PluginRecord | None:
     record = parse_to_plugin_record(
         metadata.as_rfc822(), import_name=tops[0], source="local"
     )
+    if record is not None:
+        record._project_dir = src.resolve()
     # 随宿主交付的专项接替原内置能力；首次发现按包声明启用，之后尊重用户选择。
     if (
         record is not None
@@ -144,147 +150,183 @@ async def _parse_source_package(path: Path) -> PluginRecord | None:
     return record
 
 
-async def refresh(*, scope: RefreshScope | None = None) -> None:
+async def refresh(
+    *, scope: RefreshScope | None = None, installed_path: Path | None = None
+) -> None:
     """发现插件元数据并统一应用到注册表，不导入插件代码。"""
     importlib.invalidate_caches()
+    importlib_metadata.MetadataPathFinder.invalidate_caches()
     scope = scope or RefreshScope()
     async with refresh_lock:
-        drafts: dict[str, tuple[PluginRecord, Path | None, bool]] = {}
-        if scope.changes is None:
-            for dist in importlib_metadata.distributions():
-                try:
-                    draft_record = await _parse_installed_package(dist)
-                    if draft_record is not None:
-                        drafts[draft_record.info.plugin_name] = (
-                            draft_record,
-                            draft_record._project_dir,
-                            False,
-                        )
-                except Exception as exc:
-                    logger.debug(f"扫描已安装发行版失败: {exc}")
-            if Config.plugins_path.is_dir():
-                for child in sorted(
-                    set(Config.plugins_path.iterdir())
-                    | set((Config.source_path / "plugins").iterdir())
-                ):
-                    try:
-                        draft_record = await _parse_source_package(child)
-                        if draft_record is not None:
-                            drafts[draft_record.info.plugin_name] = (
-                                draft_record,
-                                (child / "src").resolve(),
-                                False,
-                            )
-                    except Exception as exc:
-                        logger.debug(f"解析本地插件失败: {child}: {exc}")
-            for record in list(Config.plugin_registry.values()):
-                if record.info.plugin_name and record.info.plugin_name not in drafts:
-                    draft_record = PluginRecord.build(
-                        info=record.info.model_dump(mode="python")
-                    )
-                    draft_record.info.code_drift = PluginCodeDrift.PACKAGE_REMOVED
-                    drafts[record.info.plugin_name] = (draft_record, None, False)
-        else:
-            for change in scope.changes:
-                child, src = (
-                    Path(change.local_dir).resolve(),
-                    Path(change.local_dir).resolve() / "src",
-                )
-                matched = next(
-                    (
-                        item
-                        for item in Config.plugin_registry.values()
-                        if item._project_dir is not None
-                        and item._project_dir.resolve() == src
-                    ),
-                    None,
-                )
-                try:
-                    draft_record = await _parse_source_package(child)
-                except Exception as exc:
-                    logger.debug(f"解析本地插件失败: {child}: {exc}")
-                    draft_record = None
-                if draft_record is not None:
-                    drafts[draft_record.info.plugin_name] = (
-                        draft_record,
-                        src,
-                        change.code_touched,
-                    )
-                    continue
-                if matched is None or not matched.info.package_name:
-                    continue
-                try:
-                    draft_record = await _parse_installed_package(
-                        importlib_metadata.distribution(matched.info.package_name)
-                    )
-                except Exception as exc:
-                    logger.debug(f"已安装发行版回退解析失败: {exc}")
-                    draft_record = None
-                if draft_record is not None:
-                    draft_record.info.code_drift = PluginCodeDrift.NEEDS_RELOAD
-                    drafts[matched.info.plugin_name] = (
-                        draft_record,
-                        draft_record._project_dir,
-                        change.code_touched,
-                    )
-                    continue
-                draft_record = PluginRecord.build(
-                    info=matched.info.model_dump(mode="python")
-                )
-                draft_record.info.code_drift = PluginCodeDrift.PACKAGE_REMOVED
-                drafts[matched.info.plugin_name] = (
-                    draft_record,
-                    None,
-                    change.code_touched,
-                )
-
-        for name, (draft, project_dir, code_touched) in drafts.items():
-            existing = Config.plugin_registry.by_name(name)
-            draft_drift = draft.info.code_drift
-            if existing is None:
-                if draft_drift == PluginCodeDrift.PACKAGE_REMOVED:
-                    continue
-                Config.plugin_registry.add(
-                    PluginRecord,
-                    payload={
-                        "info": {
-                            **{
-                                key: getattr(draft.info, key)
-                                for key in _DISCOVERY_INFO_KEYS
-                            },
-                            "code_drift": PluginCodeDrift.NORMAL,
-                            "enabled": draft.info.enabled,
-                        }
-                    },
-                )
-                await Config.plugin_registry.commit()
-                added = Config.plugin_registry.by_name(name)
-                if added is not None:
-                    added._project_dir = project_dir
-                continue
-            if draft_drift == PluginCodeDrift.PACKAGE_REMOVED:
-                drift = PluginCodeDrift.PACKAGE_REMOVED
-            elif (
-                existing.info.code_drift
-                in (PluginCodeDrift.PACKAGE_REMOVED, PluginCodeDrift.NEEDS_RELOAD)
-                or draft_drift == PluginCodeDrift.NEEDS_RELOAD
-                or code_touched
-            ):
-                drift = PluginCodeDrift.NEEDS_RELOAD
-            else:
-                drift = PluginCodeDrift.NORMAL
-            await existing.update(
-                PluginRecord.build(
-                    info={
-                        **{
-                            key: getattr(draft.info, key)
-                            for key in _DISCOVERY_INFO_KEYS
-                        },
-                        "code_drift": drift,
-                    }
-                )
+        registry = Config.plugin_registry
+        candidates: list[PluginRecord] = []
+        seen: set[tuple[Path | None, str, str, str]] = set()
+        distributions = (
+            importlib_metadata.distributions()
+            if installed_path is None
+            else importlib_metadata.distributions(
+                path=[str(installed_path), *site.getsitepackages()]
             )
-            existing._project_dir = project_dir
+        )
+        for dist in distributions:
+            try:
+                draft = await _parse_installed_package(dist)
+            except Exception as exc:
+                logger.debug(f"扫描已安装发行版失败: {exc}")
+                continue
+            if draft is None:
+                continue
+            # 重复搜索路径可返回同一发行包；不同版本、位置或声明仍属于不同候选。
+            origin = (
+                draft._project_dir,
+                canonicalize_name(draft.info.package_name),
+                draft.info.version,
+                str(dist.metadata),
+            )
+            if origin not in seen:
+                seen.add(origin)
+                candidates.append(draft)
+
+        roots = (Config.plugins_path, Config.source_path / "plugins")
+        projects = {
+            child.resolve()
+            for root in roots
+            if root.is_dir()
+            for child in root.iterdir()
+        }
+        for child in sorted(projects):
+            try:
+                draft = await _parse_source_package(child)
+            except Exception as exc:
+                logger.debug(f"解析本地插件失败: {child}: {exc}")
+                continue
+            if draft is not None:
+                candidates.append(draft)
+
+        # 先检查整次发现结果，不让后扫描来源覆盖先扫描来源。
+        grouped: dict[str, list[PluginRecord]] = {}
+        imports: dict[str, str] = {}
+        packages: dict[str, str] = {}
+        for draft in candidates:
+            name = draft.info.plugin_name
+            package = canonicalize_name(draft.info.package_name)
+            for key, owners, label in (
+                (draft.info.import_name, imports, "导入名"),
+                (package, packages, "发行包"),
+            ):
+                owner = owners.get(key)
+                if owner is not None and owner != name:
+                    raise PluginPrecheckError(
+                        f"插件 `{owner}` 与 `{name}` 使用了相同的{label} `{key}`"
+                    )
+                owners[key] = name
+            grouped.setdefault(name, []).append(draft)
+
+        touched = {
+            Path(change.local_dir).resolve()
+            for change in scope.changes or ()
+            if change.code_touched
+        }
+        drafts: dict[str, tuple[PluginRecord, Path | None, bool]] = {}
+        for name, group in grouped.items():
+            local = [item for item in group if item.info.source == "local"]
+            installed = [item for item in group if item.info.source == "installed"]
+            reason = ""
+            if len({canonicalize_name(item.info.package_name) for item in group}) > 1:
+                reason = "同一身份对应多个发行包"
+            elif len(local) > 1:
+                reason = "同一插件存在多个本地工程"
+            elif len(installed) > 1:
+                reason = "同一插件存在多个安装版本或位置"
+            if reason:
+                origins = "；".join(
+                    f"{item.info.package_name} {item.info.version}: {item._project_dir}"
+                    for item in group
+                )
+                raise PluginPrecheckError(
+                    f"插件 `{name}` 发现冲突：{reason}（{origins}）"
+                )
+            draft = local[0] if local else installed[0]
+            project_dir = draft._project_dir
+            drafts[name] = (
+                draft,
+                project_dir,
+                draft.info.source == "local"
+                and project_dir is not None
+                and project_dir.parent in touched,
+            )
+
+        for record in registry.values():
+            if record.info.plugin_name and record.info.plugin_name not in drafts:
+                draft = PluginRecord.build(info=record.info.model_dump(mode="python"))
+                draft.info.code_drift = PluginCodeDrift.PACKAGE_REMOVED
+                drafts[record.info.plugin_name] = (draft, None, False)
+
+        # 已加载实现即使来源已移除，也在显式卸载/重载前占用原导入名。
+        for record in registry.values():
+            if record._plugin_cls is None:
+                continue
+            namespaces = {
+                record.info.import_name,
+                record._plugin_cls.__module__.split(".", 1)[0],
+            }
+            for namespace in namespaces:
+                owner = imports.get(namespace)
+                if owner is not None and owner != record.info.plugin_name:
+                    raise PluginPrecheckError(
+                        f"导入名 `{namespace}` 仍被已加载插件 `{record.info.plugin_name}` 使用，不能分配给 `{owner}`"
+                    )
+
+        paths: dict[str, Path | None] = {}
+        async with config_manager.transaction():
+            for name, (draft, project_dir, code_touched) in drafts.items():
+                existing = registry.by_name(name)
+                draft_drift = draft.info.code_drift
+                info = {key: getattr(draft.info, key) for key in _DISCOVERY_INFO_KEYS}
+                if existing is None:
+                    registry.add(
+                        PluginRecord,
+                        payload={
+                            "info": {
+                                **info,
+                                "code_drift": PluginCodeDrift.NORMAL,
+                                "enabled": draft.info.enabled,
+                            }
+                        },
+                    )
+                    await registry.commit()
+                    paths[name] = project_dir
+                    continue
+                source_changed = (
+                    existing.info.source != draft.info.source
+                    or existing.info.import_name != draft.info.import_name
+                    or existing.info.version != draft.info.version
+                    or canonicalize_name(existing.info.package_name)
+                    != canonicalize_name(draft.info.package_name)
+                    or existing._project_dir is not None
+                    and existing._project_dir != project_dir
+                )
+                if draft_drift == PluginCodeDrift.PACKAGE_REMOVED:
+                    drift = PluginCodeDrift.PACKAGE_REMOVED
+                elif (
+                    existing.info.code_drift
+                    in (PluginCodeDrift.PACKAGE_REMOVED, PluginCodeDrift.NEEDS_RELOAD)
+                    or draft_drift == PluginCodeDrift.NEEDS_RELOAD
+                    or code_touched
+                    or source_changed
+                ):
+                    drift = PluginCodeDrift.NEEDS_RELOAD
+                else:
+                    drift = PluginCodeDrift.NORMAL
+                await existing.update(
+                    PluginRecord.build(info={**info, "code_drift": drift})
+                )
+                paths[name] = project_dir
+        # 私有运行时路径不参与配置事务，只在整批元数据提交成功后替换。
+        for name, project_dir in paths.items():
+            record = registry.by_name(name)
+            assert record is not None
+            record._project_dir = project_dir
         from app.core.i18n import I18n
 
         I18n.set_plugin_sources(
@@ -292,7 +334,7 @@ async def refresh(*, scope: RefreshScope | None = None) -> None:
                 record.info.plugin_name: record._project_dir
                 / record.info.import_name
                 / "i18n"
-                for record in Config.plugin_registry.values()
+                for record in registry.values()
                 if record._project_dir is not None
                 and record.info.import_name
                 and record.info.code_drift != PluginCodeDrift.PACKAGE_REMOVED

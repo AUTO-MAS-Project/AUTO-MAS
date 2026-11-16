@@ -4,6 +4,7 @@ import asyncio
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 from pydantic import Field, PrivateAttr
 
 from app.config import ConfigEntry, ConfigGroup, Trigger
@@ -11,6 +12,9 @@ from app.config import trigger_field as config_trigger_field
 from app.core.background_tasks import BackgroundTaskRegistry
 from app.core.plugin.operations import OperationDispatcher, OperationUnavailable
 from app.plugin.config import PluginCommandEntry, trigger_field
+from app.plugin.errors import PluginBusyError
+from app.plugin.types import PluginState
+from tests.core.test_plugin_cascade import cascade_plugins as cascade_plugins
 
 
 class PlainConfig(ConfigEntry):
@@ -50,6 +54,76 @@ class CommandConfig(PluginCommandEntry):
     async def fixed_command(self):
         """复用相同业务行为，提供不允许取消的触发器测试入口。"""
         await self.run_command()
+
+
+@pytest_asyncio.fixture
+async def lifecycle_operations(cascade_plugins, monkeypatch):
+    """将真实插件和业务触发器接入同一操作中心，隔离背景组并确保故障探针也能结束。"""
+    from app.core import plugin
+    from app.core.plugin import operations
+
+    manager, records = await cascade_plugins({"lifecycle_probe": ()})
+    record = records["lifecycle_probe"]
+    await manager.enable(record)
+    work = CommandConfig.build()
+    await work.activate()
+    nodes = {record.uid: record, work.uid: work}
+    background = BackgroundTaskRegistry()
+    dispatcher = OperationDispatcher(
+        resolve_node=nodes.get, resolve_owner=lambda _: record.uid
+    )
+    dispatcher.initialize(max_running=3, background=background)
+    monkeypatch.setattr(plugin, "Plugin", manager)
+    monkeypatch.setattr(operations, "Operations", dispatcher)
+    try:
+        yield manager, record, work, dispatcher, background
+    finally:
+        work._release.set()
+        await background.shutdown(timeout=2)
+        await dispatcher.shutdown()
+        if record.info.state == PluginState.ENABLED:
+            await manager.disable(record)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_lifecycle_commands_finish_without_waiting_for_each_other(
+    lifecycle_operations,
+):
+    """同一启用插件先受理禁用和重载，前者完成、后者报告忙，不能互相等待。"""
+    _, record, _, dispatcher, background = lifecycle_operations
+    disable = await dispatcher.start(
+        config_uid=record.uid, group="info", field="disable", value=True
+    )
+    reload = await dispatcher.start(
+        config_uid=record.uid, group="info", field="reload", value=True
+    )
+    assert await background.get_group("operations").drain(2)
+    assert dispatcher.get(disable).state == "succeeded"
+    assert dispatcher.get(reload).state == "failed"
+    assert dispatcher.get(reload).errorCode == "PluginBusyError"
+    assert record.info.state == PluginState.DISABLED
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("action", ["disable", "reload", "unload", "uninstall"])
+async def test_busy_lifecycle_leaves_running_work_and_service_available(
+    lifecycle_operations, action
+):
+    """其他生命周期占用互斥期间，被拒绝的操作不能取消业务触发器或关闭服务准入。"""
+    manager, record, work, dispatcher, background = lifecycle_operations
+    operation = await dispatcher.start(
+        config_uid=work.uid, group="action", field="run", value=True
+    )
+    await work._started.wait()
+    async with manager._hold():
+        with pytest.raises(PluginBusyError):
+            await getattr(manager, action)(record)
+        assert dispatcher.get(operation).state == "running"
+        assert record.info.state == PluginState.ENABLED
+        assert await manager.services.require("lifecycle_probe")() is record._plugin
+    work._release.set()
+    assert await background.get_group("operations").drain(2)
+    assert dispatcher.get(operation).state == "succeeded"
 
 
 @pytest.mark.asyncio

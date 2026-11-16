@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 from dataclasses import dataclass, field, replace
+from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
@@ -12,6 +15,31 @@ if TYPE_CHECKING:
 
 
 PLUGIN_GATEWAY_PATH = "/api/plugin/{plugin_name}/{path:path}"
+
+
+def _async_endpoint(endpoint):
+    """保持同步端点签名，在工作线程执行业务，取消时仍等实际调用退出才释放在途计数。"""
+    from starlette.concurrency import run_in_threadpool
+
+    @wraps(endpoint)
+    async def invoke(*args, **kwargs):
+        """由事件循环持有端点执行；请求取消不会让仍在工作线程使用的插件提前卸载。"""
+        worker = asyncio.create_task(run_in_threadpool(endpoint, *args, **kwargs))
+        try:
+            return await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            while not worker.done():
+                try:
+                    await asyncio.shield(worker)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            if not worker.cancelled():
+                worker.exception()
+            raise
+
+    return invoke
 
 
 @dataclass
@@ -93,7 +121,10 @@ class HttpRegistry:
                 if not isinstance(route, APIRoute):
                     raise TypeError("插件类型化路由只接受 HTTP API 端点")
                 clone = copy(route)
-                clone.endpoint = gate.wrap(route.endpoint)
+                endpoint = route.endpoint
+                if not inspect.iscoroutinefunction(endpoint):
+                    endpoint = _async_endpoint(endpoint)
+                clone.endpoint = gate.wrap(endpoint)
                 guarded.routes.append(clone)
             previous = {id(route) for route in self._app.routes}
             self._app.include_router(guarded)

@@ -5,7 +5,15 @@
 
 from __future__ import annotations
 
-from .ops import candidates, ensure, install, mark_ok, site_dir, uninstall
+from .ops import (
+    candidates,
+    ensure,
+    install,
+    mark_ok,
+    prepare_environment,
+    site_dir,
+    uninstall,
+)
 from .precheck import CoreCompat, check_core, precheck_core_bump
 
 __all__ = [
@@ -16,6 +24,7 @@ __all__ = [
     "install",
     "mark_ok",
     "precheck_core_bump",
+    "prepare_environment",
     "site_dir",
     "uninstall",
 ]

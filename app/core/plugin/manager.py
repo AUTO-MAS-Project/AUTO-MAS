@@ -13,16 +13,23 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib.metadata as importlib_metadata
+import re
 import sys
 import weakref
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID, uuid4
 
+import httpx
 from blinker import Namespace
+from packaging.utils import canonicalize_name
+from packaging.version import Version
 
+from app.config import NodeState
 from app.core.ws import Publisher
 from app.core.ws.protocol import ID_PLUGIN, PLUGIN_CAPABILITIES_UPDATED
 from app.plugin import uv as uv_tool
@@ -39,8 +46,9 @@ from app.plugin.errors import (
     PluginStateError,
 )
 from app.plugin.http import HttpRegistry, collect_route_decls
-from app.plugin.runtime import discover, loader
+from app.plugin.runtime import discover, loader, market_index
 from app.plugin.runtime import market as plugin_market
+from app.plugin.runtime.metadata import validate_install_metadata
 from app.plugin.runtime.watch import SourceWatcher
 from app.plugin.services import ServiceRegistry
 from app.plugin.signals import (
@@ -52,6 +60,7 @@ from app.plugin.types import (
     CORE_DISTRIBUTION_NAME,
     CORE_PLUGIN_NAME,
     MARKET_GATE_TAG,
+    PLUGIN_ID_PATTERN,
     PLUGIN_ID_TAG_PREFIX,
     LifecycleContext,
     PluginCodeDrift,
@@ -120,7 +129,9 @@ class _PluginManager:
             gate.accepting = False
         try:
             async with Operations.pause_owners(owners):
-                await asyncio.gather(*(gate.drain() for gate, _ in gates.values()))
+                # 保留发起调用的任务身份，让 drain 排除自身，避免等待自己返回。
+                for gate, _ in gates.values():
+                    await gate.drain()
                 yield
         finally:
             from app.core import Config
@@ -153,7 +164,11 @@ class _PluginManager:
         """登记 core → discover.refresh → load → 按 ``enabled`` DFS 启用。"""
         async with self._hold():
             uv_tool.ensure()
-            site = uv_tool.site_dir()
+            site = uv_tool.site_dir(activate=False)
+            # 只发现元数据；旧插件及其依赖在联合升级完成前不能进入导入环境。
+            await discover.refresh(installed_path=site)
+            await uv_tool.prepare_environment()
+            uv_tool.site_dir()
             from app.core.config import Config
 
             src = Config.source_path / "plugins" / "auto_mas_core" / "src"
@@ -327,7 +342,7 @@ class _PluginManager:
 
     @asynccontextmanager
     async def _hold(self) -> AsyncGenerator[None]:
-        """互斥保护插件生命周期变更，已有管理操作执行时立即报告插件系统忙。"""
+        """先取得生命周期互斥资格，再暂停调用；忙时拒绝，不能提前取消业务操作。"""
         if self._busy.locked():
             raise PluginBusyError("插件系统忙，请稍后重试")
         async with self._busy:
@@ -616,7 +631,7 @@ class _PluginManager:
             owners.add(current.uid)
             pending.extend(self._downstream(current))
         async with self._pause_owners(owners):
-            yield
+            yield owners
 
     async def disable(
         self,
@@ -628,7 +643,7 @@ class _PluginManager:
     ) -> dict[str, Any]:
         """递归禁用仍启用的下游，返回本次实际拆卸的完整级联树。"""
         if not held:
-            async with self._pause_operations(record), self._hold():
+            async with self._hold(), self._pause_operations(record):
                 return await self.disable(record, held=True, dep_path=dep_path, ctx=ctx)
 
         path_list = list(dep_path or [])
@@ -737,7 +752,7 @@ class _PluginManager:
     ) -> dict[str, Any]:
         """DFS 释放插件运行时；卸包入口可保留注册项，待发行包与配置删除成功后再移除。"""
         if not held:
-            async with self._pause_operations(record), self._hold():
+            async with self._hold(), self._pause_operations(record):
                 return await self.unload(
                     record,
                     held=True,
@@ -833,7 +848,14 @@ class _PluginManager:
     ) -> dict[str, Any]:
         """拆下启用中的下游并保存完整树，重载本项后按树先父后子恢复。"""
         if not held:
-            async with self._pause_operations(record), self._hold():
+            async with self._hold(), self._pause_operations(record) as owners:
+                from app.core import Config
+
+                # 重载会替换整棵实际拆卸树的实例，先检查所有适配器，避免拆到一半才遇到锁。
+                for uid in owners:
+                    plugin = Config.plugin_registry[uid]._plugin
+                    if isinstance(plugin, (ScriptAdapterPlugin, GameAdapterPlugin)):
+                        plugin.precheck_locks()
                 return await self.reload(record, held=True, dep_path=dep_path)
 
         path_list = list(dep_path or [])
@@ -849,11 +871,6 @@ class _PluginManager:
 
         # 钩子只打挂载单例；未挂载则跳过，禁止为钩子静默 new
         hung = record._plugin
-        # 重载会换类：任一实例锁定则系统预检拒绝（设计 §7.2/§7.5）
-        if hung is not None and isinstance(
-            hung, (ScriptAdapterPlugin, GameAdapterPlugin)
-        ):
-            hung.precheck_locks()
         if hung is not None:
             await hung.pre_reload()
 
@@ -959,46 +976,111 @@ class _PluginManager:
             raise PluginOperationError(str(exc), payload={"name": name}) from exc
 
     async def install(self, meta: PluginMeta) -> dict[str, Any]:
-        """uv 装包 → load；成功返回 load 依赖字典。
-
-        包名取自 ``meta.info.package_name``（空则预检失败）；
-        插件 id 优先 ``meta.info.plugin_name``，否则按包名在扫描结果中定位。
-        """
+        """确认只读目录的安装目标及发行元数据，联合装包后核对实际身份，再发现并加载插件。"""
         async with self._hold():
-            package = (meta.info.package_name or "").strip()
-            if not package:
-                raise PluginPrecheckError(
-                    "市场条目缺少 package_name，无法安装",
-                    payload={"plugin_name": meta.info.plugin_name},
-                )
-            await uv_tool.install(package)
-            await discover.refresh()
-
             from app.core.config import Config
 
-            # 定位：市场插件名 → 按包名匹配注册表
+            package = (meta.info.package_name or "").strip()
             plugin_id = (meta.info.plugin_name or "").strip()
-            record = self._record_by_plugin_id(plugin_id) if plugin_id else None
-            if record is None:
-                pkg_key = package.replace("_", "-").lower()
-                for r in Config.plugin_registry.values():
-                    if (r.info.package_name or "").replace("_", "-").lower() == pkg_key:
-                        record = r
-                        break
-            if record is None:
-                raise PluginError(f"安装成功但未发现 auto-mas.plugins 入口: {package}")
+            version = meta.info.version.strip()
+            # 包名仅接受发行身份，不能夹带 URL、路径或任意依赖表达式。
+            if (
+                not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?", package)
+                or canonicalize_name(package)
+                == canonicalize_name(CORE_DISTRIBUTION_NAME)
+                or plugin_id.casefold() == CORE_PLUGIN_NAME.casefold()
+                or not PLUGIN_ID_PATTERN.fullmatch(plugin_id)
+            ):
+                raise PluginPrecheckError("无效的插件安装目标")
+            await discover.refresh()
+            existing = self._record_by_plugin_id(plugin_id)
+            if existing is not None and existing._project_dir is not None:
+                if existing.info.source == "local":
+                    raise PluginPrecheckError(
+                        f"插件 `{plugin_id}` 正在使用本地源码，请先移除该工程后再安装发行包"
+                    )
+                if canonicalize_name(existing.info.package_name) != canonicalize_name(
+                    package
+                ):
+                    raise PluginPrecheckError(
+                        f"插件身份 `{plugin_id}` 已由其他发行包占用"
+                    )
+            if version:
+                version = str(Version(version))
+                # 市场安装固定条目版本；镜像未同步时只换源，不放宽版本或插件身份。
+                last_error: Exception | None = None
+                async with httpx.AsyncClient(
+                    timeout=15, follow_redirects=True, proxy=Config.proxy
+                ) as client:
+                    for source in uv_tool.candidates():
+                        try:
+                            metadata = await market_index.fetch_metadata(
+                                client,
+                                source,
+                                package,
+                                proxy=Config.proxy,
+                                version=version,
+                            )
+                        except (httpx.HTTPError, OSError, ValueError) as error:
+                            last_error = error
+                            continue
+                        if metadata is not None:
+                            validate_install_metadata(
+                                metadata,
+                                package_name=package,
+                                plugin_name=plugin_id,
+                                version=version,
+                            )
+                            break
+                    else:
+                        # 源码包也可安装；Simple 没有 wheel 时从官方精确版本 JSON 核验声明。
+                        try:
+                            response = await client.get(
+                                f"https://pypi.org/pypi/{package}/{version}/json"
+                            )
+                            response.raise_for_status()
+                            payload = response.json()
+                            if not isinstance(payload, dict):
+                                raise ValueError("发行元数据必须是对象")
+                        except (httpx.HTTPError, ValueError) as error:
+                            raise PluginPrecheckError(
+                                f"无法取得插件目标版本的发行元数据：{package}=={version}"
+                            ) from (last_error or error)
+                        validate_install_metadata(
+                            payload,
+                            package_name=package,
+                            plugin_name=plugin_id,
+                            version=version,
+                        )
+            elif meta.activation_state != NodeState.INACTIVE:
+                raise PluginPrecheckError("市场条目缺少版本，请刷新目录后重试")
+            # 主程序升级可从内部声明自动求解版本；同样须通过装包后的实际元数据校验。
+            await uv_tool.install(f"{package}=={version}" if version else package)
+            distribution = importlib_metadata.distribution(package)
+            installed_version = validate_install_metadata(
+                distribution.metadata,
+                package_name=package,
+                plugin_name=plugin_id,
+                version=version,
+            )
+            await discover.refresh()
+            record = self._record_by_plugin_id(plugin_id)
+            if (
+                record is None
+                or record.info.source != "installed"
+                or canonicalize_name(record.info.package_name)
+                != canonicalize_name(package)
+                or Version(record.info.version) != Version(installed_version)
+                or record._project_dir is None
+                or record._project_dir.resolve()
+                != Path(str(distribution.locate_file(""))).resolve()
+            ):
+                raise PluginPrecheckError("发现的插件与已验证的安装发行包不一致")
             return await self.load(record, held=True)
 
     async def uninstall(self, record: PluginRecord) -> dict[str, Any]:
-        """unload + uv 卸包。"""
-        async with self._pause_owners(
-            [record.uid, *(item.uid for item in self._downstream(record))]
-        ):
-            return await self._uninstall(record)
-
-    async def _uninstall(self, record: PluginRecord) -> dict[str, Any]:
-        """释放插件运行时后删除发行包及专属配置；外部删除失败时保留登记和故障状态供重试。"""
-        async with self._hold():
+        """取得互斥并等待完整下游后卸包；外部删除失败时保留登记和故障状态供重试。"""
+        async with self._hold(), self._pause_operations(record):
             name = record.info.plugin_name
             package = record.info.package_name or name
             deps = await self.unload(record, held=True, remove_record=False)
@@ -1254,6 +1336,8 @@ class _PluginManager:
 
     def _assert_allowed(self, record: PluginRecord, op: str) -> None:
         """按插件故障状态限制可执行的生命周期操作，拒绝不适用于当前状态的请求。"""
+        if not PLUGIN_ID_PATTERN.fullmatch(record.info.plugin_name):
+            raise PluginPrecheckError("无效的插件身份，不能用作配置文件名")
         state = record.info.state
         allowed: tuple[str, ...]
         if state == PluginState.FAULT_LOAD:
@@ -1282,14 +1366,14 @@ class _PluginManager:
     def _on_sources_changed(
         self, sender: object, payload: SourcesChangedPayload
     ) -> None:
-        """监视信号（blinker 同步）：调度增量 refresh；忙时跳过，下轮事件再触发。"""
+        """将监视信号加入合并队列，由统一发现流程检查来源及冲突。"""
         queue = self._source_queue
         if not self._initialized or queue is None:
             return
         queue.put_nowait(payload)
 
     async def _source_worker(self) -> None:
-        """把监视载荷转成增量 refresh；不自动 reload。"""
+        """合并源码变化并校验完整候选，仅标记需重载，不自动切换运行实现。"""
         queue = self._source_queue
         if queue is None:
             return

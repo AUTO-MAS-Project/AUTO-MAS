@@ -24,6 +24,7 @@
 import asyncio
 import os
 import secrets
+import tomllib
 from ipaddress import ip_address
 from typing import (
     List,
@@ -46,8 +47,11 @@ from app.utils import get_logger
 
 class CoreUpgradePrecheckIn(BaseModel):
     version: str
-    dependencies: list[str] = Field(
-        min_length=1, description="由前端从拟安装版本的 pyproject.toml 提取的实际依赖"
+    project: str = Field(min_length=1, description="目标版本的完整 pyproject.toml")
+    lockfile: str = Field(min_length=1, description="同一目标版本的 uv.lock")
+    python_version: str = Field(
+        pattern=r"^\d+\.\d+\.\d+$",
+        description="目标版本 .python-version 中的精确 Python 版本",
     )
 
 
@@ -60,7 +64,9 @@ class CoreUpgradeConflict(BaseModel):
 
 
 class CoreUpgradePrecheckOut(OutBase):
-    compatible: bool
+    compatible: bool | None = Field(
+        description="true 表示兼容，false 表示依赖无解，null 表示检查未完成"
+    )
     conflicts: list[CoreUpgradeConflict] = Field(default_factory=list)
 
 
@@ -135,8 +141,13 @@ async def precheck_core_upgrade(
     """在插件状态锁内检查目标 core 版本与插件依赖是否兼容，返回准入结论和冲突明细供前端决策。"""
     from dataclasses import asdict
 
+    from packaging.specifiers import SpecifierSet
+
     from app.core import Plugin
+    from app.plugin.errors import PluginError
     from app.plugin.uv import precheck_core_bump
+    from app.plugin.uv.precheck import locked_dependencies
+    from app.utils.common.tools import to_pep440
 
     owner = asyncio.current_task()
     assert owner is not None
@@ -150,12 +161,31 @@ async def precheck_core_upgrade(
     watcher = asyncio.create_task(cancel_on_disconnect())
     try:
         async with Plugin._hold():
+            project = tomllib.loads(body.project)["project"]
+            if project["version"] != to_pep440(body.version) or not SpecifierSet(
+                project["requires-python"]
+            ).contains(body.python_version):
+                raise ValueError("目标版本或 Python 声明不一致")
+            dependencies = await locked_dependencies(
+                project=body.project,
+                lockfile=body.lockfile,
+                python_version=body.python_version,
+            )
             # 导入失败的包仍保留在共享环境中，预检不能只使用成功加载的运行时列表。
             conflicts = await precheck_core_bump(
                 body.version,
                 plugins=Config.plugin_registry.values(),
-                dependencies=body.dependencies,
+                dependencies=dependencies,
+                python_version=body.python_version,
             )
+    except (PluginError, ValueError, KeyError, TypeError, OSError):
+        logger.exception("目标运行环境兼容性检查未完成")
+        return CoreUpgradePrecheckOut(
+            code=503,
+            status="error",
+            message="兼容性检查未完成，请检查网络、插件文件及目标版本信息后重试",
+            compatible=None,
+        )
     finally:
         watcher.cancel()
         await asyncio.gather(watcher, return_exceptions=True)

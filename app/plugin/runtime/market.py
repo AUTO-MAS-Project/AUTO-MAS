@@ -64,13 +64,17 @@ async def refresh() -> None:
 async def _replace_catalog(drafts: list[PluginMeta]) -> None:
     """完整目录校验后原子替换集合，内容相同时保留条目身份与已有 UI 操作目标。"""
     col = Config.plugin_catalog
-    drafts = sorted(drafts, key=lambda item: package_key(item.info.package_name))
-    current = sorted(col.values(), key=lambda item: package_key(item.info.package_name))
-    if [{key: getattr(item.info, key) for key in ENTRY_FIELDS} for item in current] == [
-        {key: getattr(item.info, key) for key in ENTRY_FIELDS} for item in drafts
-    ]:
-        return
     async with config_manager.transaction():
+        drafts = sorted(drafts, key=lambda item: package_key(item.info.package_name))
+        current = sorted(
+            col.values(), key=lambda item: package_key(item.info.package_name)
+        )
+        if [
+            {key: getattr(item.info, key) for key in ENTRY_FIELDS} for item in current
+        ] == [
+            {key: getattr(item.info, key) for key in ENTRY_FIELDS} for item in drafts
+        ]:
+            return
         for uid in list(col.keys()):
             col.remove(uid)
         for draft in drafts:

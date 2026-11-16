@@ -1,7 +1,7 @@
 import { onScopeDispose } from 'vue'
 import { Service, type OperationStartIn, type PluginConfigUpdateIn, type OutBase } from '@/api'
 import { i18n, translate as t } from '@/i18n'
-import { requestApi } from '@/utils/apiResult'
+import { ApiResponseError, requestApi } from '@/utils/apiResult'
 import { beginAnalyticsOperation } from '@/utils/analytics'
 
 type Action = 'enable' | 'disable' | 'reload' | 'uninstall' | 'install' | 'refresh' | 'config'
@@ -43,6 +43,7 @@ export function usePluginApi() {
       return result
     } catch (error) {
       if (error instanceof OperationResultError) outcome = error.outcome
+      else if (error instanceof ApiResponseError) outcome = 'failure'
       throw error
     } finally {
       observation.finish({ action, outcome })

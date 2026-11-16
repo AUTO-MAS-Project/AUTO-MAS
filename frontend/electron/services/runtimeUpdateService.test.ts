@@ -242,6 +242,7 @@ const alignStub = {
   hold: null as Promise<void> | null,
   /** 顺序断言要看它时打开；缺省不进流水，免得每条既有断言都要改。 */
   logCalls: false,
+  dispose: vi.fn(async () => {}),
   async run(options: RuntimeBinaryAlignOptions): Promise<RuntimeBinaryAlignResult> {
     alignStub.calls.push(options)
     if (alignStub.logCalls) callLog.push('alignRuntime')
@@ -255,18 +256,16 @@ function createDeps(backend: BackendUpdateController, launchConfig: RuntimeLaunc
   return {
     backend,
     launchConfig,
-    prepareUpgrade:
-      async () =>
-      /* 模拟前端准备完成，并返回绑定当前 Runtime 对齐替身的执行入口。 */
-      (options: RuntimeBinaryAlignOptions) =>
-        /* 把二进制对齐请求转给测试替身，保留参数与执行顺序供断言。 */ alignStub.run(options),
+    prepareUpgrade: async () => ({
+      apply: (options: RuntimeBinaryAlignOptions) => alignStub.run(options),
+      dispose: alignStub.dispose,
+    }),
     createRuntimeService: (
       options: ConstructorParameters<typeof RuntimeInitializationService>[0]
     ) =>
       new RuntimeInitializationService({
         ...options,
         createClient: clientOptions => new FakeRuntimeClient(clientOptions) as never,
-        alignRuntimeBinary: alignOptions => alignStub.run(alignOptions),
       }),
   }
 }
@@ -283,6 +282,7 @@ beforeEach(() => {
   alignStub.result = { status: 'current', target: { version: 'v0.1.10' } }
   alignStub.hold = null
   alignStub.logCalls = false
+  alignStub.dispose.mockClear()
   FakeRuntimeClient.scripts = [[helloEvent, okResult()]]
   FakeRuntimeClient.index = 0
   FakeRuntimeClient.gate = null
@@ -333,6 +333,7 @@ describe('停机 → bootstrap → 重新监督', () => {
 
     expect(outcome.success).toBe(true)
     expect(callLog).toEqual(['stopBackend', `run:bootstrap --version ${TARGET}`, 'startBackend'])
+    expect(alignStub.dispose).toHaveBeenCalledTimes(1)
   })
 
   it('停不掉旧后端时结局是 shutdown，bootstrap 根本不跑', async () => {
@@ -352,6 +353,7 @@ describe('停机 → bootstrap → 重新监督', () => {
     })
     expect(callLog).toEqual(['stopBackend'])
     expect(progressUpdates.at(-1)).toMatchObject({ stage: 'shutdown', status: 'failed' })
+    expect(alignStub.dispose).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -409,11 +411,13 @@ describe('bootstrap 失败的两种现场', () => {
     ]
 
     await updateBackendViaRuntime('5.6.0', collect, createDeps(createBackend(), managedConfig()))
+    expect(alignStub.dispose).not.toHaveBeenCalled()
     callLog = []
 
     const retried = await retryBackendUpdate('dependencies-sync', collect)
 
     expect(retried.success).toBe(true)
+    expect(alignStub.dispose).toHaveBeenCalledTimes(1)
     // 上一次失败给了 rebuild-environment，但显式选「重试同步」时不能被改写成 rebuild。
     expect(callLog).toEqual(['run:dependencies sync', 'startBackend'])
   })
@@ -521,5 +525,6 @@ describe('应用退出时中止更新', () => {
     expect(callLog).toEqual(['stopBackend', `run:bootstrap --version ${TARGET}`, 'stdin:cancel'])
     // 会话已清空，后续取消不再受理。
     expect(cancelBackendUpdate()).toEqual({ accepted: false, forwarded: false })
+    expect(alignStub.dispose).toHaveBeenCalled()
   })
 })

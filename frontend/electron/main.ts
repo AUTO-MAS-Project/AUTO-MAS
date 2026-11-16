@@ -43,7 +43,8 @@ import {
   resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
-import { registerAppUpdateHandlers } from './ipc/appUpdateHandlers'
+import { registerAppUpdateHandlers, stopAppUpdateForShutdown } from './ipc/appUpdateHandlers'
+import { recoverUpdateMaterials } from './services/updateStaging'
 import { registerFluxdownInstallHandlers } from './ipc/fluxdownInstallHandlers'
 import {
   isAnalyticsSender,
@@ -616,6 +617,7 @@ function cancelQuitRequest(token?: number): void {
 
 async function finishCoordinatedQuit(): Promise<void> {
   if (coordinatedQuit) return
+  await stopAppUpdateForShutdown(true)
   await finishAssetPackageJobs()
   if (coordinatedQuit) return
   closeTelemetry?.finish({
@@ -2416,6 +2418,7 @@ app.whenReady().then(async () => {
   keepAwakeForScheduledWakeup(process.argv)
   recordDesktopStartup('Electron 就绪')
   const startupConfig = loadConfig()
+  await recoverUpdateMaterials(getAppRoot())
   void startDesktopStartup({
     version: app.getVersion(),
     initializedVersion:

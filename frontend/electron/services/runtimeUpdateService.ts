@@ -23,6 +23,7 @@ import type { BackendStartResult, BackendStopResult } from './backendService'
 import { getLogger } from './logger'
 import { RUNTIME_STOP_TIMEOUT_MS, waitForSettle } from './runtime/shutdown'
 import type { RuntimeLaunchConfig, RuntimeRemediation } from './runtime'
+import type { PreparedRuntimeAlignment } from './runtimeUpgradePreparation'
 import {
   RUNTIME_BINARY_ALIGN_ERROR,
   RUNTIME_BINARY_DOWNLOAD_FAILED,
@@ -144,10 +145,7 @@ export interface RuntimeUpdateDependencies {
   launchConfig: RuntimeLaunchConfig
   /** 省略时用真实的初始化编排器。 */
   createRuntimeService?: (options: RuntimeInitializationOptions) => RuntimeInitializationService
-  prepareUpgrade: (
-    version: string,
-    signal: AbortSignal
-  ) => Promise<RuntimeInitializationOptions['alignRuntimeBinary']>
+  prepareUpgrade: (version: string, signal: AbortSignal) => Promise<PreparedRuntimeAlignment>
 }
 
 // ==================== 版本号 ====================
@@ -196,6 +194,8 @@ interface UpdateSession {
   /** 在途的 bootstrap 或单步重试，退出清场要等它落地。 */
   inFlight: Promise<unknown> | null
   preparation?: AbortController
+  /** 跨单步重试持有预下载材料，最终结束或退出时释放。 */
+  prepared?: PreparedRuntimeAlignment
 }
 
 let session: UpdateSession | null = null
@@ -245,6 +245,9 @@ export async function abortRuntimeUpdateForShutdown(
     settled = await waitForSettle(inFlight, Math.max(0, deadline - Date.now()))
     if (!settled) throw new Error('无法确认后端更新已结束，请重试退出。')
   }
+
+  await current.prepared?.dispose()
+  current.prepared = undefined
 
   if (session === current) session = null
   logger.info(`更新会话已因应用退出清场${forwarded ? '，并已通知在途步骤取消' : ''}`)
@@ -306,15 +309,16 @@ async function runBackendUpdate(
     }
   }
 
-  let preparedAlignment: RuntimeInitializationOptions['alignRuntimeBinary']
+  if (session?.inFlight) throw new Error('已有后端更新正在执行')
+  await session?.prepared?.dispose()
   const preparation = new AbortController()
   const runtimeService = (deps.createRuntimeService ?? defaultRuntimeServiceFactory)({
     launchConfig,
     targetVersion: version,
     alignRuntimeBinary: options => {
       // 向 Runtime 更新过程提供已预检和准备的二进制对齐入口，缺少材料时拒绝执行。
-      if (!preparedAlignment) throw new Error('Runtime 更新尚未准备完成')
-      return preparedAlignment(options)
+      if (!current.prepared) throw new Error('Runtime 更新尚未准备完成')
+      return current.prepared.apply(options)
     },
   })
   const current: UpdateSession = {
@@ -334,7 +338,7 @@ async function runBackendUpdate(
     message: '正在准备更新并检查插件兼容性',
   })
   try {
-    preparedAlignment = await trackInFlight(
+    current.prepared = await trackInFlight(
       current,
       deps.prepareUpgrade(version, preparation.signal)
     )
@@ -349,7 +353,11 @@ async function runBackendUpdate(
   } finally {
     current.preparation = undefined
   }
-  if (current.cancelRequested) return { success: false, phase: 'shutdown', cancelled: true }
+  if (current.cancelRequested) {
+    await current.prepared.dispose()
+    current.prepared = undefined
+    return { success: false, phase: 'shutdown', cancelled: true }
+  }
 
   logger.info(`开始经 Runtime 更新后端到 ${current.version}`)
 
@@ -642,6 +650,16 @@ async function observeBackendUpdate(
   const telemetry = beginMainFeature('backend_update_finished')
   try {
     const result = await run()
+    // 单步重试仍要使用准备材料；最终结束或尚未停机的失败才释放会话持有权。
+    if (
+      result.success ||
+      result.cancelled ||
+      result.phase === 'shutdown' ||
+      result.supportRequired
+    ) {
+      await session?.prepared?.dispose()
+      if (session) session.prepared = undefined
+    }
     telemetry.finish({
       trigger_kind,
       phase: result.phase ?? (result.success ? 'complete' : 'unknown'),
@@ -655,6 +673,8 @@ async function observeBackendUpdate(
     })
     return result
   } catch (error) {
+    await session?.prepared?.dispose()
+    if (session) session.prepared = undefined
     telemetry.finish({ trigger_kind, phase: 'unknown', outcome: 'unknown' })
     throw error
   }

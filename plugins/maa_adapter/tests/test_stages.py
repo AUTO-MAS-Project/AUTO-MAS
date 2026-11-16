@@ -1,5 +1,6 @@
 """插件关卡缓存、启用预热、标准选项声明及 HTTP 装卸契约。"""
 
+import asyncio
 import json
 
 import httpx
@@ -23,15 +24,18 @@ from app.plugin.services import ServiceRegistry
 async def test_enable_fetches_owned_cache_and_mounts_stage_endpoints(
     tmp_path, monkeypatch
 ):
-    """启用即获取并保存多区服资源，接口只读插件缓存，卸载路由后不再对外提供关卡。"""
+    """启用触发后台获取且不等待网络；缓存写入后可被接口读取，卸载路由后不再提供关卡。"""
     import maa_adapter.plugin as module
 
     content = {"Official": {"sideStoryStage": {}}, "YoStarEN": {"sideStoryStage": {}}}
     requests = []
+    started, release = asyncio.Event(), asyncio.Event()
 
     async def fetch(headers):
         """替代官方 HTTP 边界，记录首次获取和 ETag 条件请求。"""
         requests.append(headers)
+        started.set()
+        await release.wait()
         if headers:
             return httpx.Response(304)
         return httpx.Response(200, json=content, headers={"ETag": "stage-v1"})
@@ -44,7 +48,13 @@ async def test_enable_fetches_owned_cache_and_mounts_stage_endpoints(
     group = tasks.register_group("maa-stages", max_running=2, max_retained=2)
     plugin = MaaPlugin(config=config)
     plugin.bind_background_tasks(group)
-    await plugin.on_enable()
+    try:
+        await asyncio.wait_for(plugin.on_enable(), 1)
+        await asyncio.wait_for(started.wait(), 1)
+        assert json.loads(config.stage_cache.content) != content
+    finally:
+        release.set()
+        await group.drain(2)
     assert requests == [{}]
     assert json.loads(config.stage_cache.content) == content
     assert config.stage_cache.etag == "stage-v1"

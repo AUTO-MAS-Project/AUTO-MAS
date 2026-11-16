@@ -27,6 +27,7 @@ type UpdateDownloadProgress = WSUpdateProgressData
 
 const status = ref<UpdateDownloadStatus>('idle')
 const modalVisible = ref(false)
+const installing = ref(false)
 const source = ref('')
 const downloadedSize = ref(0)
 const fileSize = ref(0)
@@ -447,6 +448,8 @@ const retryWithBuiltin = async () => {
 
 const install = async () => {
   // 请求桌面主进程安装已准备更新包，记录请求是否受理并在成功启动安装器后关闭下载界面。
+  if (installing.value) return
+  installing.value = true
   const operation = beginAnalyticsOperation('update_install_requested')
   try {
     const response = await updateDownloadApi.install()
@@ -466,6 +469,8 @@ const install = async () => {
     const errorMessage = error instanceof Error ? error.message : String(error)
     logger.error(`安装失败: ${errorMessage}`)
     message.error(t('bootstrap.misc.couldNotStartInstaller'))
+  } finally {
+    installing.value = false
   }
 }
 
@@ -487,6 +492,7 @@ export function useUpdateDownload() {
   return {
     status,
     modalVisible,
+    installing,
     source,
     sourceLabel,
     downloadHint,

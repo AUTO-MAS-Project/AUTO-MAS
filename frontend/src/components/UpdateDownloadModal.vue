@@ -100,8 +100,12 @@
         >
           <template #extra>
             <div class="success-actions">
-              <a-button type="primary" @click="install">{{ t('core.comp.installNow') }}</a-button>
-              <a-button @click="installLater">{{ t('core.comp.installLater') }}</a-button>
+              <a-button type="primary" :loading="installing" @click="install">{{
+                t('core.comp.installNow')
+              }}</a-button>
+              <a-button :disabled="installing" @click="installLater">{{
+                t('core.comp.installLater')
+              }}</a-button>
             </div>
           </template>
         </a-result>
@@ -121,6 +125,7 @@ const { t } = useI18n()
 const {
   status,
   modalVisible,
+  installing,
   sourceLabel,
   downloadedSize,
   fileSize,

@@ -272,16 +272,32 @@ class PluginMeta(PluginCommandEntry):
     """
 
     class Info(ConfigGroup):
-        package_name: str = Field(default="", description="包名")
-        plugin_name: str = Field(default="", description="插件名")
-        version: str = Field(default="", description="版本")
-        docs_url: str = Field(default="", description="文档 URL")
-        homepage: str = Field(default="", description="主页 URL")
-        repository: str = Field(default="", description="源码仓库 URL")
-        author: str = Field(default="", description="作者")
-        license: str = Field(default="", description="许可证")
-        requires_dist: list[str] = Field(
-            default_factory=list, description="Requires-Dist 列表"
+        package_name: Annotated[str, ui(visibility=UiVisibility.DISABLE)] = Field(
+            default="", description="包名"
+        )
+        plugin_name: Annotated[str, ui(visibility=UiVisibility.DISABLE)] = Field(
+            default="", description="插件名"
+        )
+        version: Annotated[str, ui(visibility=UiVisibility.DISABLE)] = Field(
+            default="", description="版本"
+        )
+        docs_url: Annotated[str, ui(visibility=UiVisibility.DISABLE)] = Field(
+            default="", description="文档 URL"
+        )
+        homepage: Annotated[str, ui(visibility=UiVisibility.DISABLE)] = Field(
+            default="", description="主页 URL"
+        )
+        repository: Annotated[str, ui(visibility=UiVisibility.DISABLE)] = Field(
+            default="", description="源码仓库 URL"
+        )
+        author: Annotated[str, ui(visibility=UiVisibility.DISABLE)] = Field(
+            default="", description="作者"
+        )
+        license: Annotated[str, ui(visibility=UiVisibility.DISABLE)] = Field(
+            default="", description="许可证"
+        )
+        requires_dist: Annotated[list[str], ui(visibility=UiVisibility.DISABLE)] = (
+            Field(default_factory=list, description="Requires-Dist 列表")
         )
         display_name_i18n: Annotated[
             dict[str, str], ui(visibility=UiVisibility.HIDE)
@@ -292,9 +308,11 @@ class PluginMeta(PluginCommandEntry):
         tags_i18n: Annotated[dict[str, list[str]], ui(visibility=UiVisibility.HIDE)] = (
             Field(default_factory=dict, description="标签 i18n 字典")
         )
-        display_name: Virtual[str] = None
-        description: Virtual[str] = None
-        tags: Virtual[list[str]] = None
+        display_name: Annotated[Virtual[str], ui(visibility=UiVisibility.DISABLE)] = (
+            None
+        )
+        description: Annotated[Virtual[str], ui(visibility=UiVisibility.DISABLE)] = None
+        tags: Annotated[Virtual[list[str]], ui(visibility=UiVisibility.DISABLE)] = None
         install: Trigger = Field(default=False, description="安装（写 True 开闸）")
 
     info: Info = Field(default_factory=Info, description="目录项")

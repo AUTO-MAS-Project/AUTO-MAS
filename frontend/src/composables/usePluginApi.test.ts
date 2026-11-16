@@ -100,4 +100,26 @@ describe('plugin commands and settings', () => {
     expect(query).not.toHaveBeenCalled()
     expect(finish).toHaveBeenCalledExactlyOnceWith({ action: 'config', outcome: 'success' })
   })
+
+  it.each(['config', 'refresh'] as const)(
+    'records explicit %s rejection as failure',
+    async action => {
+      // 后端已明确回复失败时不再记录 unknown，只有传输中断才保留未知结果。
+      vi.spyOn(Service, 'updatePluginConfigApiPluginConfigUpdatePost').mockResolvedValue({
+        code: 400,
+        message: 'rejected',
+      })
+      vi.spyOn(Service, 'refreshPluginCatalogApiPluginCatalogRefreshPost').mockResolvedValue({
+        code: 500,
+        message: 'rejected',
+      })
+      const api = createApi()
+      await expect(
+        action === 'config'
+          ? api.updateConfig({ recordId: 'record', data: {} })
+          : api.refreshCatalog()
+      ).rejects.toThrow('rejected')
+      expect(finish).toHaveBeenCalledExactlyOnceWith({ action, outcome: 'failure' })
+    }
+  )
 })

@@ -19,6 +19,7 @@ import {
   DownloadWriterUnconfirmed,
 } from './backendDownloadService'
 import type { BackendService } from './backendService'
+import { UpdateMaterial } from './updateStaging'
 
 type ChangelogData = Record<string, Record<string, string[]>>
 
@@ -132,29 +133,37 @@ export async function precheckAppVersion(
   const network = session.fromPartition(`app-update-precheck:${randomUUID()}`)
   if (settings.data.Update.ProxyAddress)
     await network.setProxy({ proxyRules: settings.data.Update.ProxyAddress })
-  const expectedPythonVersion = normalizeAppVersion(version)
+  const expectedCoreVersion = normalizeAppVersion(version)
     .slice(1)
     .replace(/-beta\.(\d+)$/, 'b$1')
   const sources = [
-    `https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/git/raw/${revision}/pyproject.toml`,
-    `https://raw.githubusercontent.com/AUTO-MAS-Project/AUTO-MAS/${revision}/pyproject.toml`,
+    `https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/git/raw/${revision}/`,
+    `https://raw.githubusercontent.com/AUTO-MAS-Project/AUTO-MAS/${revision}/`,
   ]
   if (settings.data.Update.Source === 'GitHub') sources.reverse()
-  let dependencies: string[] | undefined
+  let target: { project: string; lockfile: string; python_version: string } | undefined
   let lastError: unknown
   for (const url of sources) {
     try {
       signal?.throwIfAborted()
       const timeout = AbortSignal.timeout(20_000)
-      const response = await network.fetch(url, {
-        signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-      })
-      if (!response.ok) throw new Error(`读取目标版本依赖失败 (${response.status})`)
-      const document = parse(await response.text())
+      const responses = await Promise.all(
+        ['pyproject.toml', 'uv.lock', '.python-version'].map(file =>
+          network.fetch(`${url}${file}`, {
+            signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+          })
+        )
+      )
+      for (const response of responses)
+        if (!response.ok) throw new Error(`读取目标版本依赖失败 (${response.status})`)
+      const [projectText, lockfile, pythonText] = await Promise.all(
+        responses.map(response => response.text())
+      )
+      const document = parse(projectText)
       const project = document.project as { dependencies?: unknown; version?: unknown } | undefined
       if (
         !project ||
-        project.version !== expectedPythonVersion ||
+        project.version !== expectedCoreVersion ||
         !Array.isArray(project.dependencies) ||
         !project.dependencies.length ||
         !project.dependencies.every(
@@ -164,7 +173,10 @@ export async function precheckAppVersion(
         )
       )
         throw new Error('目标版本依赖声明无效')
-      dependencies = project.dependencies
+      const python_version = pythonText.trim()
+      if (!/^\d+\.\d+\.\d+$/.test(python_version)) throw new Error('目标 Python 版本声明无效')
+      parse(lockfile)
+      target = { project: projectText, lockfile, python_version }
       break
     } catch (error) {
       signal?.throwIfAborted()
@@ -172,11 +184,11 @@ export async function precheckAppVersion(
     }
   }
   signal?.throwIfAborted()
-  if (!dependencies) throw lastError ?? new Error('无法读取目标版本依赖')
+  if (!target) throw lastError ?? new Error('无法读取目标版本依赖')
   const result = await backendRequest<CoreUpgradePrecheckOut>(
     baseUrl,
     '/api/update/precheck',
-    { version, dependencies },
+    { version, ...target },
     signal
   )
   if (!result.compatible)
@@ -203,7 +215,10 @@ export class AppUpdateService {
   private downloadAbort: AbortController | null = null
   private running: Promise<void> | null = null
   private downloader: 'builtin' | 'fluxdown' | undefined
-  private directory: string | null = null
+  private material: UpdateMaterial | null = null
+  private installing = false
+  private installation: Promise<void> | null = null
+  private closing = false
   constructor(
     private root: string,
     private backendUrl: () => string,
@@ -221,7 +236,7 @@ export class AppUpdateService {
     downloader?: 'builtin' | 'fluxdown'
   ): Promise<void> {
     // 拒绝并行更新，冻结本次版本与设置，建立取消信号并等待下载流程结束。
-    if (this.running) throw new Error('已有更新下载正在执行')
+    if (this.closing || this.running || this.installing) throw new Error('已有更新操作正在执行')
     const target = normalizeAppVersion(version)
     this.downloader = downloader
     this.abort = new AbortController()
@@ -231,7 +246,13 @@ export class AppUpdateService {
       version: target,
       source: input.settings.Source ?? 'CNB',
     }
-    this.running = this.download(target, input, this.abort.signal).finally(() => {
+    const signal = this.abort.signal
+    this.running = (async () => {
+      // 旧会话的完整材料不再复用时先释放，再进入本次下载。
+      await this.material?.dispose()
+      this.material = null
+      await this.download(target, input, signal)
+    })().finally(() => {
       // 下载流程结束后释放在途任务和取消控制器，允许下一次更新操作。
       this.running = null
       this.abort = null
@@ -252,6 +273,8 @@ export class AppUpdateService {
         const download = new AbortController()
         this.downloadAbort = download
         const currentSignal = AbortSignal.any([signal, download.signal])
+        let material: UpdateMaterial | null = null
+        let completed = false
         try {
           if (this.snapshot.status === 'switchingSource') {
             await backendRequest(
@@ -287,12 +310,13 @@ export class AppUpdateService {
               throw new Error('所选更新版本已变化，请重新检查更新')
             if (typeof release.url === 'string' && release.url) url = release.url
           }
-          this.directory = await fs.mkdtemp(path.join(await this.stageRoot(), 'package-'))
-          const file = path.join(this.directory, asset)
+          material = await UpdateMaterial.create(this.root, 'package', version)
+          this.material = material
+          const file = path.join(material.directory, asset)
           await downloadAndCopy(
             this.backendUrl(),
             { url, rid: version, downloader: this.downloader },
-            file,
+            `${file}.part`,
             {
               signal: currentSignal,
               progress: value => {
@@ -306,6 +330,11 @@ export class AppUpdateService {
               },
             }
           )
+          currentSignal.throwIfAborted()
+          await fs.rename(`${file}.part`, file)
+          await material.setPhase('ready')
+          currentSignal.throwIfAborted()
+          completed = true
           this.snapshot = { ...this.snapshot, status: 'completed', file, speed: 0 }
           this.emit('completed')
           return
@@ -314,6 +343,12 @@ export class AppUpdateService {
           if (error instanceof DownloadWriterUnconfirmed) throw error
           signal.throwIfAborted()
           if (download.signal.reason !== SWITCH_SOURCE) throw error
+        } finally {
+          // 复制与后端释放请求均已退出；失败、取消和换源只回收本次前端副本。
+          if (!completed && material) {
+            await material.dispose()
+            if (this.material === material) this.material = null
+          }
         }
       }
     } catch (error) {
@@ -327,12 +362,6 @@ export class AppUpdateService {
       this.emit(cancelled ? 'cancelled' : 'failed')
       throw error
     }
-  }
-  private async stageRoot(): Promise<string> {
-    // 创建并返回前端持有的更新暂存目录，供停止后端前复制安装材料。
-    const root = path.join(this.root, '.frontend-updates')
-    await fs.mkdir(root, { recursive: true })
-    return root
   }
   async cancel(): Promise<void> {
     // 发出下载取消信号并等待收尾，下载器停写未确认时保留错误给调用方。
@@ -356,40 +385,98 @@ export class AppUpdateService {
     await this.running
   }
   async install(backend: BackendService): Promise<void> {
+    // 在第一次等待前取得安装资格，并跟踪整段安装准备供退出流程等待。
+    if (this.closing || this.installing) throw new Error('安装已经开始，请等待安装器启动')
+    this.installing = true
+    this.installation = this.performInstall(backend)
+    try {
+      await this.installation
+    } catch (error) {
+      this.installing = false
+      throw error
+    } finally {
+      this.installation = null
+    }
+  }
+  private async performInstall(backend: BackendService): Promise<void> {
     // 再次预检目标版本，提取安装程序，停止所属后端并启动安装；启动失败时恢复后端。
     const { file, version } = this.snapshot
-    if (!file || !version || this.snapshot.status !== 'completed' || !this.directory)
+    const material = this.material
+    if (!file || !version || this.snapshot.status !== 'completed' || !material)
       throw new Error('请先完成更新下载')
-    await precheckAppVersion(this.backendUrl(), version)
-    const archive = new AdmZip(file)
-    const entry = archive.getEntry('AUTO-MAS-Setup.exe')
-    if (!entry || entry.isDirectory) throw new Error('更新包缺少安装程序')
-    const installer = path.join(this.directory, 'AUTO-MAS-Setup.exe')
-    await fs.writeFile(installer, entry.getData())
-    const stopped = await backend.stopBackend()
-    if (!stopped.success) throw new Error(stopped.error || '后端未能停止')
     try {
-      const child = spawn(
-        installer,
-        [
-          '/SP-',
-          '/SILENT',
-          '/NOCANCEL',
-          '/FORCECLOSEAPPLICATIONS',
-          '/LANG=Chinese',
-          `/DIR=${this.root}`,
-        ],
-        { detached: true, windowsHide: true, stdio: 'ignore' }
-      )
-      await new Promise<void>((resolve, reject) => {
-        // 等待安装器进程确认启动，启动失败则拒绝安装 Promise 进入恢复流程。
-        child.once('spawn', resolve)
-        child.once('error', reject)
-      })
-      child.unref()
+      try {
+        await fs.access(file)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          this.snapshot = {
+            ...this.snapshot,
+            status: 'failed',
+            file: null,
+            message: '更新包已不存在，请重新下载',
+          }
+          this.emit('failed')
+          throw new Error(this.snapshot.message!)
+        }
+        throw error
+      }
+      await precheckAppVersion(this.backendUrl(), version)
+      if (this.closing) throw new Error('应用正在退出，已停止安装准备')
+      const archive = new AdmZip(file)
+      const entry = archive.getEntry('AUTO-MAS-Setup.exe')
+      if (!entry || entry.isDirectory) throw new Error('更新包缺少安装程序')
+      const installer = path.join(material.directory, 'AUTO-MAS-Setup.exe')
+      await fs.writeFile(`${installer}.part`, entry.getData())
+      await fs.rename(`${installer}.part`, installer)
+      if (this.closing) throw new Error('应用正在退出，已停止安装准备')
+      await material.setPhase('handoff')
+      const stopped = await backend.stopBackend()
+      if (!stopped.success) throw new Error(stopped.error || '后端未能停止')
+      try {
+        if (this.closing) throw new Error('应用正在退出，已停止安装准备')
+        const child = spawn(
+          installer,
+          [
+            '/SP-',
+            '/SILENT',
+            '/NOCANCEL',
+            '/FORCECLOSEAPPLICATIONS',
+            '/LANG=Chinese',
+            `/DIR=${this.root}`,
+          ],
+          { detached: true, windowsHide: true, stdio: 'ignore' }
+        )
+        const exited = new Promise<void>(resolve => child.once('exit', () => resolve()))
+        await new Promise<void>((resolve, reject) => {
+          // 等待安装器进程确认启动，启动失败则拒绝安装 Promise 进入恢复流程。
+          child.once('spawn', resolve)
+          child.once('error', reject)
+        })
+        child.unref()
+        await material.recordInstaller(child.pid!)
+        // 交接记录写完后才允许清理，避免安装器很快退出时与身份落盘竞争。
+        void exited.then(() => material.installerExited())
+      } catch (error) {
+        if (!this.closing) await backend.startBackend()
+        throw error
+      }
     } catch (error) {
-      await backend.startBackend()
+      // 未成功交接时恢复可用归属，保留完整压缩包供本次会话重试。
+      await material.setPhase('ready')
+      await fs.rm(path.join(material.directory, 'AUTO-MAS-Setup.exe.part'), { force: true })
       throw error
+    }
+  }
+  async shutdown(exiting = false): Promise<void> {
+    // 先阻止新操作并等待下载和安装准备退出，再释放尚未交给安装器的材料。
+    this.closing = true
+    try {
+      await this.cancel()
+    } finally {
+      await this.installation?.catch(() => {})
+      await this.material?.dispose()
+      // 停止初始化或后端也复用此入口，只有真正退出应用才持续拒绝新更新。
+      this.closing = exiting
     }
   }
 }

@@ -11,6 +11,7 @@ import { analyticsService } from './analyticsService'
 import { BackendService } from './backendService'
 import { getFluxdownInstallEnvironment } from './fluxdownInstallService'
 import { InitializationService } from './initializationService'
+import { RuntimeInitializationService } from './runtimeInitializationService'
 import { createRuntimeClient, RUNTIME_EXE_ENV, RUNTIME_MODE_ENV } from './runtime'
 import {
   captureScheduledWakeupContext,
@@ -22,16 +23,14 @@ import {
 vi.mock(
   './runtimeUpgradePreparation',
   () => /* 隔离真实升级准备和下载，保留后端服务生命周期测试关注的停止与重启行为。 */ ({
-    prepareCoreUpgrade:
-      async () =>
-      /* 模拟 core 升级准备成功，返回无需二进制对齐的执行入口。 */
-      async () => /* 返回 Runtime 对齐跳过结果，避免生命周期测试访问真实发行资源。 */ ({
-        status: 'skipped',
-      }),
-    prepareRuntimeBinary:
-      async () =>
-      /* 模拟 Runtime 二进制准备成功，返回可直接执行的空对齐入口。 */
-      async () => /* 返回受控的二进制跳过结果，供后端服务更新流程继续。 */ ({ status: 'skipped' }),
+    prepareCoreUpgrade: async () => ({
+      apply: async () => ({ status: 'skipped' }),
+      dispose: async () => {},
+    }),
+    prepareRuntimeBinary: async () => ({
+      apply: async () => ({ status: 'skipped' }),
+      dispose: async () => {},
+    }),
   })
 )
 vi.mock('child_process', () => ({ spawn: vi.fn() }))
@@ -298,7 +297,15 @@ beforeEach(() => {
   // health 默认带 version 且与前端 mock 版本（5.5.0-beta.3 归一化后）一致。
   fetchMock.mockImplementation(async (url: unknown) => {
     if (String(url).includes('/api/core/health')) {
-      return { ok: true, json: async () => ({ ready: true, version: 'v5.5.0-beta.3' }) }
+      return {
+        ok: true,
+        json: async () => ({
+          ready: true,
+          version: 'v5.5.0-beta.3',
+          backgroundStatus: 'ready',
+          businessStatus: 'ready',
+        }),
+      }
     }
     throw new Error('connect ECONNREFUSED')
   })
@@ -318,6 +325,31 @@ afterEach(() => {
 })
 
 // ==================== Runtime 监督链路 ====================
+
+it('Runtime 故障修复沿用独立更新入口，不先调用后端材料准备', async () => {
+  // 在 IPC 边界把依赖后端的准备设为离线失败，验证故障页仍进入 dev 原有更新流程。
+  process.env[RUNTIME_MODE_ENV] = 'managed'
+  process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+  const preparation = await import('./runtimeUpgradePreparation')
+  const prepare = vi
+    .spyOn(preparation, 'prepareRuntimeBinary')
+    .mockRejectedValue(new Error('backend offline'))
+  vi.spyOn(InitializationService.prototype, 'runEnvironmentOperation').mockImplementation(
+    async action => action()
+  )
+  const update = vi
+    .spyOn(RuntimeInitializationService.prototype, 'updateRuntimeBinary')
+    .mockResolvedValue({ status: 'current', target: { version: 'v1.2.3' } })
+  const handlers = await import('../ipc/initializationHandlers')
+  ipcHandlers.clear()
+  handlers.registerInitializationHandlers(new BrowserWindow())
+  const result = await ipcHandlers.get('update-runtime-binary')?.({
+    sender: { isDestroyed: () => false, send: vi.fn() },
+  })
+  expect(result).toMatchObject({ status: 'current' })
+  expect(prepare).not.toHaveBeenCalled()
+  expect(update).toHaveBeenCalledExactlyOnceWith(expect.any(Function), expect.any(Function))
+})
 
 it('metadata-only Runtime clients do not retain a healthy resume source', async () => {
   vi.useFakeTimers()
@@ -1602,6 +1634,67 @@ describe('主进程拥有两种模式的启动生命周期', () => {
     backend.close(0)
   })
 
+  it.each(['ready', 'failed'] as const)('插件与业务初始化 %s 后才决定是否放行', async terminal => {
+    process.env[RUNTIME_MODE_ENV] = 'development'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    mockSpawn()
+    const service = createService()
+    let businessStatus: string = 'running'
+    const progress = vi.fn()
+    fetchMock.mockImplementation(async () =>
+      Response.json({
+        version: 'v5.5.0-beta.3',
+        backgroundStatus: 'ready',
+        businessStatus,
+        businessMessage: 'preparing plugin environment',
+        backgroundError: businessStatus === 'failed' ? 'plugin installation failed' : null,
+      })
+    )
+    const startup = service.startBackend({ onProgress: progress })
+    const backend = await passEnvironmentEnsure()
+    backend.stdout.feed(
+      helloLine.replace('"stdin.status"', '"stdin.status","stdin.activate"') +
+        line({
+          ...base,
+          type: 'state',
+          sequence: 3,
+          stage: 'backend.run',
+          status: 'running',
+          message: 'core ready',
+          details: { baseUrl: 'http://127.0.0.1:36163', startupActivation: 'pending' },
+        })
+    )
+    await vi.waitFor(() => expect(progress).toHaveBeenCalledWith('preparing plugin environment'))
+    expect(backend.stdin.chunks.join('')).not.toContain('"command":"activate"')
+    businessStatus = terminal
+    if (terminal === 'ready') {
+      await vi.waitFor(() =>
+        expect(backend.stdin.chunks.join('')).toContain('"command":"activate"')
+      )
+      backend.stdout.feed(
+        line({
+          ...base,
+          type: 'state',
+          sequence: 4,
+          stage: 'backend.run',
+          status: 'running',
+          message: 'active',
+          details: { baseUrl: 'http://127.0.0.1:36163', startupActivation: 'active' },
+        })
+      )
+      expect(await startup).toMatchObject({ success: true })
+    } else {
+      expect(await startup).toMatchObject({
+        success: false,
+        error: expect.stringContaining('plugin installation failed'),
+      })
+      expect(backend.stdin.chunks.join('')).not.toContain('"command":"activate"')
+    }
+    expect(spawnMock).toHaveBeenCalledTimes(2)
+    backend.stdout.feed(stoppedResultLine)
+    backend.close(0)
+  })
+
   it('自动业务放行确认丢失时查询同一实例，不重复创建后端', async () => {
     process.env[RUNTIME_MODE_ENV] = 'development'
     process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
@@ -1959,7 +2052,9 @@ describe('后台后端更新的插件预检', () => {
       let checked = false
       metadataNetwork.fetch.mockImplementation(async (url: string) => {
         // 使用候选提交的真实依赖输入，执行实际前端解析与后端预检请求。
-        expect(url).toContain(`/${commit}/pyproject.toml`)
+        expect(url).toContain(`/${commit}/`)
+        if (url.endsWith('/.python-version')) return new Response('3.12.13\n')
+        if (url.endsWith('/uv.lock')) return new Response('version=1\n')
         return new Response('[project]\nversion="5.5.0b3"\ndependencies=["pydantic>=2"]\n')
       })
       fetchMock.mockImplementation(async (url: URL) => {

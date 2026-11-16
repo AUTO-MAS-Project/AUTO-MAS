@@ -4911,7 +4911,7 @@ export class Service {
         });
     }
     /**
-     * 修改目录项（透传全部字段）
+     * 提交目录项的安装触发器
      * 按目录配置类型校验并保存局部补丁，命令身份由独立操作入口提供。
      * @param requestBody
      * @param locale

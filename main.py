@@ -377,7 +377,7 @@ def main():
 
         async def prepare_plugins() -> None:
             """初始化插件操作与统一下载中心，加载插件并接入专项任务展开器。"""
-            from app.core import BackgroundTaskManager, Downloads, Operations, Plugin
+            from app.core import Downloads, Operations, Plugin
 
             Operations.initialize(max_running=Config.setting.plugin.max_operations)
             options = Config.setting.download
@@ -388,55 +388,22 @@ def main():
                 retry_delay=options.retry_delay,
                 background=BackgroundTaskManager,
             )
+            app.state.business_message = "正在检查并升级插件，完成后加载配置"
             await Plugin.initialize()
+            app.state.business_message = "正在加载业务配置"
             TaskManager.plugin_expander = Plugin.resolve_script_expander
 
-        with startup_stage("后端/必要配置初始化"):
-            await Config.init_config(prepare_plugins=prepare_plugins)
-        from app.core import MCP
-
-        MCP.configure(enabled=Config.setting.Function.IfEnableMCP)
-        startup_mark("后端/必要配置就绪")
-        with startup_stage("后端/历史组件导入"):
-            from app.core import History
-            from app.utils import UTC4
-
-        # 升级与历史存储是任务启动的前置条件，失败不进入后台可选初始化。
-        with startup_stage("后端/历史存储初始化"):
-            await History.initialize(
-                video_limit_bytes=Config.setting.Replay.VideoStorageLimitMiB
-                * 1024
-                * 1024
-            )
-        with startup_stage("后端/历史保留期维护"):
-            await History.prune(
-                today=datetime.now(tz=UTC4).date(),
-                retention_days=Config.setting.Function.HistoryRetentionTime,
-            )
-
+        from app.config import config_manager
+        from app.core import MCP, BackgroundTaskManager, History
         from app.services import obs_replay as _service_obs_replay
 
-        with startup_stage("后端/录像临时文件清理"):
-            await _service_obs_replay.ObsReplay.cleanup_temporary()
-
-        with startup_stage("后端/后台服务组件导入"):
-            from app.config import config_manager
-            from app.core import BackgroundTaskManager
-
-        async def preload_maaend_resources() -> None:
-            with startup_stage("后端/MaaEnd 资源预热（后台）"):
-                await maaend_config_service.preload_resources()
-
-        BackgroundTaskManager.register_group(
-            "maaend-resource-preload", max_running=1, max_retained=1
-        ).spawn(preload_maaend_resources, retain_result=False)
         background_task: asyncio.Task | None = None
 
         async def initialize_background_services() -> None:
             """后台完成主业务初始化，就绪后独立启动可选 MCP 服务。
 
-            lifespan 提前 yield 后 uvicorn 立即打印 "Uvicorn running"，
-            让前端等待就绪的耗时只包含核心配置初始化。
+            lifespan 提前 yield 以开放健康和关闭入口；前端继续等待插件、配置与
+            历史准备完成，再确认主业务就绪和自动任务放行。
             各步骤互不连带：主定时器失败时 background_status 为 failed 并写 background_error；
             其余步骤失败时仍为 ready，失败步骤只写进 background_warnings。
             """
@@ -483,6 +450,37 @@ def main():
 
             app.state.background_status = "running"
             try:
+                with startup_stage("后端/必要配置初始化"):
+                    await Config.init_config(prepare_plugins=prepare_plugins)
+
+                MCP.configure(enabled=Config.setting.Function.IfEnableMCP)
+                startup_mark("后端/必要配置就绪")
+                with startup_stage("后端/历史组件导入"):
+                    from app.utils import UTC4
+
+                # 升级与历史存储是任务启动的前置条件，失败不进入后台可选初始化。
+                with startup_stage("后端/历史存储初始化"):
+                    await History.initialize(
+                        video_limit_bytes=Config.setting.Replay.VideoStorageLimitMiB
+                        * 1024
+                        * 1024
+                    )
+                with startup_stage("后端/历史保留期维护"):
+                    await History.prune(
+                        today=datetime.now(tz=UTC4).date(),
+                        retention_days=Config.setting.Function.HistoryRetentionTime,
+                    )
+
+                with startup_stage("后端/录像临时文件清理"):
+                    await _service_obs_replay.ObsReplay.cleanup_temporary()
+
+                async def preload_maaend_resources() -> None:
+                    with startup_stage("后端/MaaEnd 资源预热（后台）"):
+                        await maaend_config_service.preload_resources()
+
+                BackgroundTaskManager.register_group(
+                    "maaend-resource-preload", max_running=1, max_retained=1
+                ).spawn(preload_maaend_resources, retain_result=False)
 
                 async def _maafw_startup_maintenance() -> None:
                     # 老副本一次性采纳成「载荷 + 视图」要几分钟：连同它后面依赖终态布局的
@@ -554,6 +552,7 @@ def main():
                     logger.error(f"后台初始化失败: {timer_error}")
                 else:
                     app.state.background_status = "ready"
+                    app.state.business_message = None
                     if not warnings:
                         logger.info("后端后台初始化完成")
                     startup_mark("后端/主业务就绪")
@@ -570,6 +569,7 @@ def main():
                     MCP.start(app)
 
         app.state.background_status = "starting"
+        app.state.business_message = "正在初始化配置与插件"
         app.state.background_error = None
         app.state.background_warnings = []
         background_task = asyncio.create_task(initialize_background_services())
@@ -578,7 +578,6 @@ def main():
             """完整的非 WS teardown，供 /close 与 lifespan 收尾共用（幂等）。"""
 
             from app.core import (
-                BackgroundTaskManager,
                 Dispatcher,
                 Downloads,
                 MainConnection,
@@ -633,7 +632,6 @@ def main():
             # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
             with suppress(RuntimeError):
                 await Power.cancel_power_task()
-            from app.services import obs_replay as _service_obs_replay
 
             await _service_obs_replay.ObsReplay.stop()
             from app.core import Downloads, Operations, Plugin
@@ -718,6 +716,30 @@ def main():
             allow_methods=["*"],  # 允许所有请求方法, 如 GET、POST、PUT、DELETE
             allow_headers=["*"],  # 允许所有请求头
         )
+
+        from fastapi import Request
+        from fastapi.responses import JSONResponse
+
+        @app.middleware("http")
+        async def require_business_ready(request: Request, call_next):
+            """初始化期间仅开放健康、关闭和放行入口，避免业务访问未激活配置。"""
+            if getattr(
+                app.state, "background_status", "starting"
+            ) != "ready" and request.url.path not in (
+                "/api/core/health",
+                "/api/core/close",
+                "/api/core/startup/activate",
+                "/openapi.json",
+            ):
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "code": 503,
+                        "message": getattr(app.state, "business_message", None)
+                        or "业务初始化尚未完成",
+                    },
+                )
+            return await call_next(request)
 
         app.include_router(core_router)
         app.include_router(info_router)

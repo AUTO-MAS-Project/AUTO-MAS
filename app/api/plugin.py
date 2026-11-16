@@ -107,7 +107,7 @@ class PluginCatalogGetOut(OutBase):
 class PluginCatalogUpdateIn(BaseModel):
     metaId: str = Field(..., description="PluginMeta.uid")
     data: ConfigInput[PluginMeta] = Field(
-        ..., description="补丁；透传全部字段，不做白名单过滤"
+        ..., description="目录字段只读，仅允许提交安装触发器"
     )
 
 
@@ -251,7 +251,7 @@ async def get_plugin_catalog(
 @_catalog.post(
     "/update",
     tags=["Update"],
-    summary="修改目录项（透传全部字段）",
+    summary="提交目录项的安装触发器",
     response_model=OutBase,
 )
 async def update_plugin_catalog(
@@ -451,13 +451,17 @@ async def dispatch_plugin_http(
     if not Plugin.http.accepting:
         return JSONResponse(
             status_code=503,
-            content={"detail": "插件系统正在退出，已拒绝外部请求"},
+            content=OutBase(
+                code=503, status="error", message="插件系统正在退出，已拒绝请求"
+            ).model_dump(mode="json"),
         )
     mount = Plugin.http.get(plugin_name)
     if mount is None:
         return JSONResponse(
             status_code=404,
-            content={"detail": f"插件未挂载 HTTP: {plugin_name}"},
+            content=OutBase(
+                code=404, status="error", message="插件未挂载接口"
+            ).model_dump(mode="json"),
         )
     rel = "/" + path.strip("/")
     if rel != "/":
@@ -473,7 +477,9 @@ async def dispatch_plugin_http(
     if handler is None:
         return JSONResponse(
             status_code=404,
-            content={"detail": f"未找到路由: {method} {mount.prefix}{rel}"},
+            content=OutBase(
+                code=404, status="error", message="插件接口不存在"
+            ).model_dump(mode="json"),
         )
     try:
         # 参数约定在进入业务前绑定，异常处理不包含任何二次试调用。
@@ -489,12 +495,19 @@ async def dispatch_plugin_http(
             return JSONResponse(content=result)
         return PlainTextResponse(content=str(result))
     except PluginBusyError:
-        return JSONResponse(status_code=503, content={"detail": "插件正在释放"})
-    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content=OutBase(
+                code=503, status="error", message="插件正在释放，请稍后重试"
+            ).model_dump(mode="json"),
+        )
+    except Exception:
         logger.exception(f"插件 HTTP 处理失败: {plugin_name} {rel}")
         return JSONResponse(
             status_code=500,
-            content={"detail": f"{type(exc).__name__}: {exc}"},
+            content=OutBase(
+                code=500, status="error", message="插件请求处理失败，请查看本地日志"
+            ).model_dump(mode="json"),
         )
 
 

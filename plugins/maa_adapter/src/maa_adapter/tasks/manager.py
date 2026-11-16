@@ -55,7 +55,6 @@ from auto_mas_core.host.task_emulator_core import close_emulator
 from auto_mas_core.host.task_game_update import EmulatorGameUpdateTask
 from auto_mas_core.host.task_maintenance import get_user_maintenance
 from auto_mas_core.host.task_proxy_helpers import (
-    CONFIG_BASE_NATIVE,
     CONFIG_BASE_SHARED,
     read_config_base,
 )
@@ -71,7 +70,7 @@ from maa_adapter import stages as stage_service
 from maa_adapter.config import UserConfigType
 from maa_adapter.config.script import MaaConfig
 from maa_adapter.config.user import MaaUserConfig
-from maa_adapter.constants import ARKNIGHTS_PACKAGE_NAME
+from maa_adapter.constants import ARKNIGHTS_PACKAGE_NAME, game_now
 from maa_adapter.native.backup import (
     archive_native_backup,
     collect_native_files,
@@ -172,6 +171,7 @@ class MaaManager(UserExpander[MaaConfig]):
         self._update_config_dir: Path | None = None
         self._pending_update: tuple[str, str] | None = None
         self._active_proxy_task: AutoProxyTask | None = None
+        self._active_config_task: ScriptConfigTask | None = None
         self._updater_running: bool = False
         # 每批任务最多尝试一次更新；新 MaaManager 实例会重新检查。
         self._maa_update_checked = False
@@ -214,10 +214,10 @@ class MaaManager(UserExpander[MaaConfig]):
                                 snapshot_path=self.temp_path,
                                 script_id=self.script_info.info.script_id,
                             )
-                            # 通知、用户收尾异常或中止也必须恢复，再保留尚未安装的登记。
-                            if (
-                                self.temp_path.exists()
-                                and not self._keep_script_config_changes()
+                            # 恢复临时配置；仅原生编辑会话确认保存后保留 GUI 写入，共享、独立及查看会话仍还原。
+                            if self.temp_path.exists() and not (
+                                self._active_config_task is not None
+                                and self._active_config_task.native_config_saved
                             ):
                                 _utils_io.swap_in_dir(self.temp_path, self.maa_set_path)
                             await self._restore_pending_update()
@@ -363,7 +363,7 @@ class MaaManager(UserExpander[MaaConfig]):
         return any(
             read_config_base(config, CONFIG_BASE_SHARED) == CONFIG_BASE_SHARED
             for uid, config in self.script_config.UserData.items()
-            if self.is_user_selected(uid)
+            if self.is_user_selected(uid) and self.can_run_user(config)
         )
 
     async def prepare(self):
@@ -479,37 +479,6 @@ class MaaManager(UserExpander[MaaConfig]):
             logger.warning(
                 "检测到 MAA 原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
             )
-
-    def _keep_script_config_changes(self) -> bool:
-        """原生来源配置会话成功时保留 MAA 原生 GUI 的写回（对齐 MaaEnd 豁免）。
-
-        原生来源会话 MAS 零写入（ScriptConfig ``set_maa`` 原生分支直接 return），
-        安装 config/ 由本体保存；若 final_task 无条件用任务前快照还原，会把
-        用户刚在原生 GUI 里改的配置抹回会话前状态。托管级（Default）与独立
-        来源会话不豁免——它们的 GUI 改动已由 ``set_maa`` 收尾回写 MAS 目
-        录，安装目录现场仍按任务前快照还原。viewOnly 查看会话不保留任何现
-        场改动，结束后也还原任务前快照。
-        """
-
-        if self.execution_mode != "ScriptConfig" or (
-            self.task_info.mode == TaskMode.SCRIPT_VIEW
-        ):
-            return False
-        if not (
-            list(self.script_info.users.values())
-            and list(self.script_info.users.values())[0].status == "完成"
-        ):
-            return False
-        user_id = list(self.script_info.users.values())[0].user_id
-        if user_id == "Default":
-            return False
-        try:
-            base = read_config_base(
-                self.user_config[uuid.UUID(user_id)], CONFIG_BASE_SHARED
-            )
-        except (KeyError, ValueError, TypeError):
-            return False
-        return base == CONFIG_BASE_NATIVE
 
     async def _recover_unconfirmed_update(self) -> None:
         """公共入口核验官方本体和资源标记，自动选择安全恢复路径。"""
@@ -655,9 +624,31 @@ class MaaManager(UserExpander[MaaConfig]):
                     child.user_info, status="异常", reason=result.message
                 )
                 return
+            # L3 已持有账号锁；按账号服务器的游戏日重置，手动运行不受队列上限约束。
+            config = child.user_config
+            assert isinstance(config, MaaUserConfig)
+            now = game_now(config.Info.Server)
+            if config.Data.LastProxyDate.date() != now.date():
+                config.Data.LastProxyDate = now
+                config.Data.ProxyTimes = 0
+                await config.commit()
+            limit = self.script_config.Run.ProxyTimesLimit
+            if (
+                self.task_info.is_queue_task
+                and limit != 0
+                and config.Data.ProxyTimes >= limit
+            ):
+                await self.record_user_state(
+                    child.user_info,
+                    status="跳过",
+                    reason="今日代理次数已达上限, 跳过该账号",
+                )
+                return
             self.has_proxy_run = True
             self._active_proxy_task = child
             await self._prepare_software_update_once(child)
+        elif isinstance(child, ScriptConfigTask):
+            self._active_config_task = child
         try:
             await super().spawn(child)
         finally:

@@ -12,10 +12,17 @@ import string
 from email.message import Message
 from typing import Any, Literal, TypedDict
 
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
+from packaging.version import Version
+
 from app.models.config import PluginMeta, PluginRecord
+from app.plugin.errors import PluginPrecheckError
 from app.plugin.types import (
+    CORE_DISTRIBUTION_NAME,
     CORE_PLUGIN_NAME,
     MARKET_GATE_TAG,
+    PLUGIN_ID_PATTERN,
     PLUGIN_ID_TAG_PREFIX,
     PluginState,
 )
@@ -135,9 +142,13 @@ def _view(
         for item in tokens
         if item.startswith(PLUGIN_ID_TAG_PREFIX)
     ]
-    if len(ids) != 1 or not ids[0] or "/" in ids[0] or " " in ids[0]:
+    if len(ids) != 1 or not PLUGIN_ID_PATTERN.fullmatch(ids[0]):
         return None
     plugin_name = ids[0]
+    if plugin_name.casefold() == CORE_PLUGIN_NAME.casefold() and canonicalize_name(
+        name
+    ) != canonicalize_name(CORE_DISTRIBUTION_NAME):
+        return None
 
     # Project-URL 标签按 PyPA 规范移除 ASCII 标点、空白后转小写，三种来源共用。
     urls: dict[str, str] = {}
@@ -259,4 +270,38 @@ def parse_to_plugin_record(
     )
 
 
-__all__ = ["parse_to_plugin_meta", "parse_to_plugin_record"]
+def validate_install_metadata(
+    metadata: Message[Any, Any] | importlib_metadata.PackageMetadata | dict[str, Any],
+    *,
+    package_name: str,
+    plugin_name: str,
+    version: str = "",
+) -> str:
+    """安装前后核对发行包、插件身份、版本和有效 SDK 依赖，返回确认的发行版本。"""
+    record = parse_to_plugin_record(metadata, import_name="", source="installed")
+    if (
+        record is None
+        or canonicalize_name(record.info.package_name)
+        != canonicalize_name(package_name)
+        or record.info.plugin_name != plugin_name
+        or record.info.is_core
+    ):
+        raise PluginPrecheckError("发行元数据与安装目标的包名或插件身份不一致")
+    actual = Version(record.info.version)
+    if version and actual != Version(version):
+        raise PluginPrecheckError("发行元数据与安装目标的版本不一致")
+    dependencies = [Requirement(item) for item in record.info.requires_dist]
+    if not any(
+        canonicalize_name(item.name) == canonicalize_name(CORE_DISTRIBUTION_NAME)
+        and (item.marker is None or item.marker.evaluate())
+        for item in dependencies
+    ):
+        raise PluginPrecheckError("插件发行包未声明有效的 SDK 依赖")
+    return str(actual)
+
+
+__all__ = [
+    "parse_to_plugin_meta",
+    "parse_to_plugin_record",
+    "validate_install_metadata",
+]

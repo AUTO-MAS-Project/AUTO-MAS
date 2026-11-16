@@ -79,7 +79,13 @@ class PrefetchSession:
         if isinstance(entry, ScriptEntry):
             return await Plugin.check_prefetch(entry)
         factory = self.factories.get(type(entry))
-        callback = getattr(factory, "check_prefetch", None)
+        if factory is None:
+            return []
+        # 旧登记提供的是构造函数；用真实任务节点构造兼容运行器，再读取固定检查入口。
+        script = next(
+            item for item in self.task.script_list if item.script_id == str(entry.uid)
+        )
+        callback = getattr(factory(script), "check_prefetch", None)
         return await callback(entry) if callback is not None else []
 
     async def _requirements(self, script, entry) -> list[DownloadRequest] | None:

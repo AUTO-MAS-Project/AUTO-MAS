@@ -562,6 +562,10 @@ class AppConfig:
         }:
             raise ValueError(f"不支持的数据版本：{version}，配置文件未迁移")
         if version != "v2.2":
+            # 在任何配置框架或插件化转换前保留完整旧数据，重试沿用首次备份。
+            await asyncio.to_thread(
+                preserve_pre_upgrade, self.config_path, database_path=self.database_path
+            )
             required = required_adapter_plugins(self.config_path)
             prepare_runtime = prepare_plugins
 
@@ -574,7 +578,6 @@ class AppConfig:
 
             prepare_plugins = prepare_plugin_upgrade
         if version not in {"v2.0", "v2.1", "v2.2"}:
-            await asyncio.to_thread(preserve_pre_upgrade, self.config_path)
             prepared_early = prepare_plugins is not None and version not in {
                 "v1.11",
                 "v2.0",

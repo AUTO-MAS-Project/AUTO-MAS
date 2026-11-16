@@ -2,6 +2,8 @@
 
 import importlib.metadata
 import json
+import sys
+from pathlib import Path
 
 import pytest
 from packaging.requirements import Requirement
@@ -148,3 +150,50 @@ def test_invalid_readme_is_excluded_from_market_without_hiding_installed_plugin(
     assert record.info.display_name_i18n == {"en": "demo_adapter"}
     assert record.info.description_i18n == {"en": "Demo script adapter"}
     assert record.info.tags_i18n == {}
+
+
+@pytest.mark.parametrize(
+    "identity",
+    ["../outside", "..\\outside", "drive:name", "auto_mas_core", "AUTO_MAS_CORE"],
+)
+def test_unsafe_plugin_identity_is_rejected_in_metadata_and_catalog(identity):
+    """发行元数据和目录都拒绝越界路径、Windows 路径及普通发行包冒充 core。"""
+    from app.plugin.runtime.catalog_protocol import validate_entries
+    from app.plugin.runtime.metadata import parse_to_plugin_record
+
+    assert (
+        parse_to_plugin_record(
+            {
+                "info": {
+                    "name": "demo-package",
+                    "version": "1",
+                    "keywords": f"auto-mas-plugin, auto-mas-id:{identity}",
+                }
+            },
+            import_name="demo",
+            source="installed",
+        )
+        is None
+    )
+    entry = json.loads(
+        (Path(__file__).parents[1] / "fixtures/plugin_catalog_v1.json").read_text(
+            encoding="utf-8"
+        )
+    )["plugins"][0]
+    entry["plugin_name"] = identity
+    with pytest.raises(ValueError):
+        validate_entries([entry])
+
+
+def test_bundled_uv_uses_numeric_release_order(tmp_path, monkeypatch):
+    """宿主从实际目录选择 0.10 而非字典序较大的 0.9，非版本目录不参与选择。"""
+    from app.plugin.uv.ops import ensure
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("AUTO_MAS_UV_EXE", raising=False)
+    name = "uv.exe" if sys.platform == "win32" else "uv"
+    for version in ("0.9.0", "0.10.0", "temporary"):
+        target = tmp_path / "runtime/tools/uv" / version / name
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b"tool-fixture")
+    assert ensure() == str(tmp_path / "runtime/tools/uv/0.10.0" / name)

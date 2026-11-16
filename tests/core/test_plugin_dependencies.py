@@ -10,6 +10,45 @@ from app.plugin.uv import precheck
 
 
 @pytest.mark.asyncio
+async def test_target_lock_uses_future_python_markers_and_rejects_stale_declarations():
+    """读取锁文件不依赖目标解释器已安装，且不能混用其他依赖声明的锁文件。"""
+    project = """[project]
+name="auto-mas"
+version="6.0.0"
+requires-python=">=3.12"
+dependencies=["marker-old; python_version < '3.13'", "marker-new; python_version >= '3.13'"]
+"""
+    lockfile = """version=1
+revision=3
+requires-python=">=3.12"
+[[package]]
+name="auto-mas"
+version="6.0.0"
+source={virtual="."}
+dependencies=[{name="marker-old",marker="python_version < '3.13'"},{name="marker-new",marker="python_version >= '3.13'"}]
+[package.metadata]
+requires-dist=[{name="marker-old",marker="python_version < '3.13'"},{name="marker-new",marker="python_version >= '3.13'"}]
+[[package]]
+name="marker-old"
+version="1.0"
+source={registry="https://pypi.org/simple"}
+[[package]]
+name="marker-new"
+version="2.0"
+source={registry="https://pypi.org/simple"}
+"""
+    assert await precheck.locked_dependencies(
+        project=project, lockfile=lockfile, python_version="3.13.2"
+    ) == ["marker-new==2.0"]
+    with pytest.raises(ValueError, match="依赖声明"):
+        await precheck.locked_dependencies(
+            project=project.replace("marker-new;", "other-package;"),
+            lockfile=lockfile,
+            python_version="3.13.2",
+        )
+
+
+@pytest.mark.asyncio
 async def test_joint_solver_uses_one_environment_for_all_plugins(monkeypatch):
     """验证依赖预检在同一次解析中联合考虑全部插件与目标 core，防止逐包检查漏掉交叉冲突。"""
     invocations = []
@@ -24,7 +63,8 @@ async def test_joint_solver_uses_one_environment_for_all_plugins(monkeypatch):
                 next(name for name in archive.namelist() if name.endswith("/METADATA"))
             ).decode()
         assert "Requires-Dist: shared-lib==2" in metadata
-        assert "plugin-a==1" in args and "plugin-b==2" in args
+        inputs = precheck.Path(args[3]).read_text(encoding="utf-8")
+        assert "plugin-a==1" in inputs and "plugin-b==2" in inputs
         return SimpleNamespace(
             returncode=1, stderr="No solution found: conflicting shared-lib", stdout=""
         )
@@ -43,7 +83,8 @@ async def test_joint_solver_uses_one_environment_for_all_plugins(monkeypatch):
     )
     assert not result.ok
     assert len(invocations) == 2
-    assert "conflicting shared-lib" in result.detail
+    assert result.detail
+    assert "No solution found" not in result.detail
 
 
 @pytest.mark.asyncio
@@ -56,8 +97,9 @@ async def test_solver_tries_next_source_when_release_is_not_mirrored(monkeypatch
         """模拟镜像缺包和官方源已有包，并确认切源不放宽宿主及插件版本。"""
         mirror = args[args.index("--index-url") + 1]
         attempted.append(mirror)
-        assert "auto_mas_core==5.9.0b1" in args
-        assert "plugin-a==1.0" in args
+        inputs = precheck.Path(args[3]).read_text(encoding="utf-8")
+        assert "auto_mas_core-5.9.0b1-py3-none-any.whl" in inputs
+        assert "plugin-a==1.0" in inputs
         return SimpleNamespace(
             returncode=1 if mirror == mirrors[0] else 0,
             stderr="No solution found: there is no version of plugin-a==1.0"
@@ -83,7 +125,7 @@ async def test_solver_tries_next_source_when_release_is_not_mirrored(monkeypatch
 
 @pytest.mark.asyncio
 async def test_removed_local_plugin_stays_visible_without_becoming_remote_dependency(
-    isolated_app_paths, monkeypatch
+    isolated_app_paths, monkeypatch, tmp_path
 ):
     """本地工程删除后保留插件中心记录，但不再向 PyPI 请求未发布的包。"""
     from app.models.config import PluginRecord, PluginRegistryCollection
@@ -93,6 +135,12 @@ async def test_removed_local_plugin_stays_visible_without_becoming_remote_depend
     registry = PluginRegistryCollection.build([PluginRecord])
     await registry.activate()
     monkeypatch.setattr(isolated_app_paths, "plugin_registry", registry)
+    source = tmp_path / "source"
+    (source / "plugins").mkdir(parents=True)
+    monkeypatch.setattr(isolated_app_paths, "source_path", source)
+    monkeypatch.setattr(
+        discover.importlib_metadata, "distributions", lambda **kwargs: []
+    )
     uid = registry.add(
         PluginRecord,
         payload={

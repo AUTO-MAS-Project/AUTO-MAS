@@ -3,14 +3,15 @@
  * 使用新的服务
  */
 
-import { app, ipcMain, BrowserWindow, IpcMainInvokeEvent } from 'electron'
+import { ipcMain, BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import * as path from 'path'
 import { getAppRoot } from '../services/environmentService'
 import { InitializationService } from '../services'
 import { getDefaultApiEndpoints } from '../services/instanceConfig'
 import type { BackendService } from '../services/backendService'
 import { getLogger } from '../services/logger'
-import { prepareCoreUpgrade, prepareRuntimeBinary } from '../services/runtimeUpgradePreparation'
+import { prepareCoreUpgrade } from '../services/runtimeUpgradePreparation'
+import { stopAppUpdateForShutdown } from './appUpdateHandlers'
 import type { RuntimeBinaryAlignResult } from '../services/runtimeBinaryService'
 import type { RuntimeLaunchMode } from '../services/runtime'
 import { resolveRuntimeLaunchConfig, resolveRuntimeLaunchMode } from '../services/runtime'
@@ -109,6 +110,8 @@ export function startDesktopStartup(preferences: {
 }
 
 export async function stopDesktopStartup(shutdown = false) {
+  // 下载释放依赖仍存活的后端，必须在启动和后端清场之前完成。
+  await stopAppUpdateForShutdown(shutdown)
   await Promise.all([
     abortRuntimeUpdateForShutdown(),
     getInitService().stopDesktopStartup(shutdown),
@@ -260,7 +263,7 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
   })
 
   ipcMain.handle('update-runtime-binary', async (event): Promise<RuntimeBinaryAlignResult> => {
-    // 校验受管模式与独占操作状态，准备 Runtime 对齐材料并按进度执行更新。
+    // Runtime 自身更新沿用独立检查、下载和摘要校验，故障恢复不依赖后端接口。
     const init = getInitService()
     if (!init.ownsBackend) return { status: 'failed', error: '当前仅连接外部后端。' }
     const runtime = init.getRuntimeService()
@@ -273,13 +276,8 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
 
     runtimeBinaryUpdating = true
     try {
-      const alignment = await prepareRuntimeBinary(
-        runtime.launchConfig,
-        getLocalApiEndpoint(),
-        app.getVersion()
-      )
       return await init.runEnvironmentOperation(() =>
-        /* 在环境独占操作内更新 Runtime，停止所属后端后再使用已准备的对齐材料。 */ runtime.updateRuntimeBinary(
+        /* 在环境独占操作内更新 Runtime，沿用 dev 的直接下载和校验流程。 */ runtime.updateRuntimeBinary(
           progress => sendToSender(event, 'runtime-binary-progress', progress),
           async () => {
             // 先占用 Runtime 操作，再停止残留后端，避免等待退出时又开始 bootstrap。
@@ -287,8 +285,7 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
             if (!result.success) {
               throw new Error(result.error || '无法停止后端，请重启程序后重试。')
             }
-          },
-          alignment
+          }
         )
       )
     } catch (error) {

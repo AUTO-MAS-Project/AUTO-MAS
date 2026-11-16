@@ -125,8 +125,10 @@ async def fetch_metadata(
     package: str,
     *,
     proxy: httpx.Proxy | None,
+    version: str | None = None,
 ) -> Message[Any, Any] | None:
-    """读取镜像最新非撤回 wheel 的元数据；优先标准 sidecar，否则按区间读取 wheel。"""
+    """读取指定版本或最新非撤回 wheel 的元数据；优先标准 sidecar，否则按区间读取 wheel。"""
+    requested = Version(version) if version is not None else None
     page = await client.get(
         urljoin(simple.rstrip("/") + "/", package + "/"),
         headers={"Accept": "application/vnd.pypi.simple.v1+html"},
@@ -142,13 +144,15 @@ async def fetch_metadata(
         filename = unquote(urlsplit(url).path.rsplit("/", 1)[-1])
         if not filename.endswith(".whl") or "data-yanked" in attributes:
             continue
-        name, version, _, _ = parse_wheel_filename(filename)
-        if name == canonicalize_name(package):
-            wheels.append((version, url, attributes))
+        name, candidate_version, _, _ = parse_wheel_filename(filename)
+        if name == canonicalize_name(package) and (
+            requested is None or candidate_version == requested
+        ):
+            wheels.append((candidate_version, url, attributes))
     if not wheels:
         return None
     stable = [item for item in wheels if not item[0].is_prerelease]
-    version, url, attributes = max(stable or wheels, key=lambda item: item[0])
+    release_version, url, attributes = max(stable or wheels, key=lambda item: item[0])
     declaration = attributes.get("data-core-metadata") or attributes.get(
         "data-dist-info-metadata"
     )
@@ -164,7 +168,7 @@ async def fetch_metadata(
         metadata = await asyncio.to_thread(_read_wheel, url, proxy)
     if (
         canonicalize_name(str(metadata.get("Name", ""))) != canonicalize_name(package)
-        or Version(str(metadata.get("Version", ""))) != version
+        or Version(str(metadata.get("Version", ""))) != release_version
     ):
         raise ValueError("镜像元数据与请求的发行包身份不一致")
     return metadata

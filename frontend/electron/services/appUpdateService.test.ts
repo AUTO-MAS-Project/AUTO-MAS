@@ -1,12 +1,15 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
+import { createHash } from 'node:crypto'
 import AdmZip from 'adm-zip'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { AppUpdateService, normalizeAppVersion, parseUpdateNotes } from './appUpdateService'
-import { prepareCoreUpgrade } from './runtimeUpgradePreparation'
+import { prepareCoreUpgrade, prepareRuntimeBinary } from './runtimeUpgradePreparation'
+import { resetLatestRuntimeVersionCache } from './runtimeReleaseService'
 import type { BackendService } from './backendService'
+import { recoverUpdateMaterials } from './updateStaging'
 
 const native = vi.hoisted(
   () => /* 提前建立网络、代理和进程启动替身，供提升执行的模块 mock 共用。 */ ({
@@ -14,14 +17,22 @@ const native = vi.hoisted(
     setProxy: vi.fn(),
     spawn: vi.fn(),
     runtimeRun: vi.fn(),
-    runtimeStop: vi.fn(),
+    runtimeStop: vi.fn(async () => {}),
   })
 )
+
+function targetFile(url: string, version = '5.9.0'): Response {
+  // 提供同一版本的三个发行文件，验证前端将锁定环境而非当前解释器交给预检。
+  if (url.endsWith('/.python-version')) return new Response('3.13.2\n')
+  if (url.endsWith('/uv.lock')) return new Response('version=1\n')
+  return new Response(`[project]\nversion="${version}"\ndependencies=["pydantic>=2"]\n`)
+}
 vi.mock('./runtime', async importOriginal => ({
   ...(await importOriginal<typeof import('./runtime')>()),
   createRuntimeClient: () => ({ run: native.runtimeRun, stop: native.runtimeStop }),
 }))
 vi.mock('electron', () => /* 替换 Electron 网络分区入口，使更新测试不建立真实桌面网络会话。 */ ({
+  app: { isPackaged: false },
   session: {
     fromPartition: () => /* 向更新服务提供受控的查询和代理替身。 */ ({
       fetch: native.fetch,
@@ -31,11 +42,36 @@ vi.mock('electron', () => /* 替换 Electron 网络分区入口，使更新测�
 }))
 vi.mock('node:child_process', () => /* 替换安装器启动边界，避免测试运行真实安装程序。 */ ({
   spawn: native.spawn,
+  execFile: (
+    _file: string,
+    _args: string[],
+    _options: unknown,
+    callback: (error: Error | null, output: string, stderr: string) => void
+  ) => {
+    // 保留真实文件生命周期，仅将系统进程清单固定为当前测试前端。
+    callback(
+      null,
+      JSON.stringify([
+        {
+          pid: process.pid,
+          name: 'frontend.exe',
+          started: 'frontend-start',
+          executable: process.execPath,
+          command: 'frontend',
+        },
+      ]),
+      ''
+    )
+  },
+}))
+vi.mock('./logger', () => ({
+  getLogger: () => ({ warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
 afterEach(() => {
   // 每个用例结束后恢复全局对象并清空 mock 调用记录。
   vi.unstubAllGlobals()
   vi.clearAllMocks()
+  resetLatestRuntimeVersionCache()
 })
 
 describe('前端版本检查的发行契约', () => {
@@ -85,16 +121,11 @@ describe('前端应用升级编排', () => {
     let compatible = true
     let checks = 0
     let copied: string | null = null
-    native.fetch.mockImplementation(
-      async () =>
-        /* 为目标版本提供受控项目元数据，供验证 Python 包版本与应用标签的对应。 */ new Response(
-          `[project]\nversion="${pythonVersion}"\ndependencies=["pydantic>=2"]\n`
-        )
-    )
+    native.fetch.mockImplementation(async (url: string) => targetFile(url, pythonVersion))
     native.fetch.mockRejectedValueOnce(new TypeError('connection failed'))
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: URL) => {
+      vi.fn(async (url: URL, options: RequestInit) => {
         // 模拟设置、预检与统一下载接口，记录准入次数并返回共享缓存文件。
         switch (url.pathname) {
           case '/api/setting/get':
@@ -103,6 +134,11 @@ describe('前端应用升级编排', () => {
               data: { Update: { ProxyAddress: 'http://127.0.0.1:7890' } },
             })
           case '/api/update/precheck':
+            expect(JSON.parse(options.body as string)).toMatchObject({
+              version,
+              python_version: '3.13.2',
+              lockfile: 'version=1\n',
+            })
             checks++
             return Response.json({
               code: 200,
@@ -131,7 +167,7 @@ describe('前端应用升级编排', () => {
     )
     const stopBackend = vi.fn(async () => {
       // 在模拟后端停止前确认预检次数与复制文件完整，再移除后端缓存模拟进程退出清理。
-      expect(checks).toBe(3)
+      expect(checks).toBeGreaterThanOrEqual(3)
       expect(await readFile(copied!)).toEqual(archive.toBuffer())
       await rm(shared)
       return { success: true }
@@ -140,7 +176,7 @@ describe('前端应用升级编排', () => {
     native.spawn.mockImplementation((installer: string) => {
       // 检查安装器从前端副本目录启动，并返回可确认启动的受控子进程。
       expect(installer).toBe(join(copied!, '..', 'AUTO-MAS-Setup.exe'))
-      const child = Object.assign(new EventEmitter(), { unref: vi.fn() })
+      const child = Object.assign(new EventEmitter(), { pid: 4321, unref: vi.fn() })
       queueMicrotask(() =>
         /* 异步发送安装器已启动事件，完成被测安装启动确认。 */ child.emit('spawn')
       )
@@ -156,12 +192,31 @@ describe('前端应用升级编排', () => {
       await expect(service.install(backend)).rejects.toThrow('plugin version conflict')
       expect(stopBackend).not.toHaveBeenCalled()
       compatible = true
-      await service.install(backend)
+      native.spawn.mockImplementationOnce(() => {
+        const child = new EventEmitter()
+        queueMicrotask(() => child.emit('error', new Error('installer denied')))
+        return child
+      })
+      await expect(service.install(backend)).rejects.toThrow('installer denied')
+      expect(startBackend).toHaveBeenCalledTimes(1)
+      expect(await readFile(copied!)).toEqual(archive.toBuffer())
+      await writeFile(shared, archive.toBuffer())
+      const installing = service.install(backend).catch(error => error)
+      await expect(service.install(backend)).rejects.toThrow('安装已经开始')
+      expect(await installing).toBeUndefined()
+      expect(stopBackend).toHaveBeenCalledTimes(2)
+      expect(checks).toBe(4)
+      expect(native.spawn).toHaveBeenCalledTimes(2)
+      await expect(service.install(backend)).rejects.toThrow('安装已经开始')
       expect(native.setProxy).toHaveBeenCalledWith({ proxyRules: 'http://127.0.0.1:7890' })
       expect(await readFile(join(copied!, '..', 'AUTO-MAS-Setup.exe'), 'utf8')).toBe(
         'installer-boundary-fixture'
       )
-      expect(startBackend).not.toHaveBeenCalled()
+      expect(startBackend).toHaveBeenCalledTimes(1)
+      // 前端正常退出与新版提前启动均不能删除已经交给安装器的材料。
+      await service.shutdown()
+      await recoverUpdateMaterials(root)
+      expect(await readFile(copied!)).toEqual(archive.toBuffer())
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -174,8 +229,8 @@ it('手动同版本更新按远端提交预检，冲突在停机和材料准备�
     .mockResolvedValueOnce({ success: true, result: { details: { version: 'v5.9.0' } } })
     .mockResolvedValueOnce({ success: true, result: { details: { remoteCommit: commit } } })
   native.fetch.mockImplementation(async (url: string) => {
-    expect(url).toContain(`/${commit}/pyproject.toml`)
-    return new Response('[project]\nversion="5.9.0"\ndependencies=["pydantic>=2"]\n')
+    expect(url).toContain(`/${commit}/`)
+    return targetFile(url)
   })
   vi.stubGlobal(
     'fetch',
@@ -226,9 +281,7 @@ it.each([
         result: { details: { version: 'v5.8.0' } },
       })
     native.fetch.mockImplementation(
-      stage === 'metadata'
-        ? pending
-        : async () => new Response('[project]\nversion="5.9.0"\ndependencies=["pydantic>=2"]\n')
+      stage === 'metadata' ? pending : async (url: string) => targetFile(url)
     )
     const endpoints: string[] = []
     vi.stubGlobal(
@@ -269,7 +322,7 @@ it.each([
     expect(endpoints).toEqual(
       stage === 'metadata' ? ['/api/setting/get'] : ['/api/setting/get', '/api/update/precheck']
     )
-    expect(native.fetch).toHaveBeenCalledTimes(1)
+    expect(native.fetch).toHaveBeenCalledTimes(3)
     expect(native.runtimeRun).toHaveBeenCalledTimes(entry === 'manual' ? 1 : 0)
   },
   2000
@@ -290,9 +343,7 @@ it.each(['success', 'settings', 'precheck', 'unconfirmed', 'release-offline', 'c
     let checks = 0
     let saves = 0
     let source = 'GitHub'
-    native.fetch.mockImplementation(
-      async () => new Response('[project]\nversion="5.9.0"\ndependencies=["pydantic>=2"]\n')
-    )
+    native.fetch.mockImplementation(async (url: string) => targetFile(url))
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: URL, options: RequestInit) => {
@@ -376,11 +427,15 @@ it.each(['success', 'settings', 'precheck', 'unconfirmed', 'release-offline', 'c
         expect(requests[1]).toContain('cnb.cool')
         expect(service.snapshot.source).toBe('CNB')
         expect(await readFile(service.snapshot.file!, 'utf8')).toBe('package')
+        expect(await readdir(join(root, '.frontend-updates'))).toHaveLength(1)
+        await service.shutdown()
+        await expect(access(service.snapshot.file!)).rejects.toMatchObject({ code: 'ENOENT' })
       } else {
         expect(requests).toHaveLength(1)
         if (outcome === 'cancel' || outcome === 'unconfirmed' || outcome === 'release-offline')
           expect(saves).toBe(0)
         if (outcome !== 'cancel') expect(service.snapshot.message).toBeTruthy()
+        expect(await readdir(join(root, '.frontend-updates'))).toEqual([])
       }
     } finally {
       release.resolve()
@@ -390,4 +445,178 @@ it.each(['success', 'settings', 'precheck', 'unconfirmed', 'release-offline', 'c
     }
   },
   3000
+)
+
+it('Runtime 预下载校验失败换源清理，释放等待实际对齐结束且不再访问网络', async () => {
+  // 真实执行预取、摘要校验和文件替换，仅在发行 HTTP 与 Runtime 版本进程边界提供样本。
+  const root = await mkdtemp(join(tmpdir(), 'mas-runtime-prepared-'))
+  const runtimePath = join(root, 'auto-mas-runtime.exe')
+  const shared = join(root, 'download-cache.exe')
+  const target = 'v0.2.0'
+  const content = 'new-runtime-binary'
+  const hash = createHash('sha256').update(content).digest('hex')
+  await writeFile(runtimePath, 'old-runtime-binary')
+  await writeFile(shared, 'broken-download')
+  let requests = 0
+  let consuming = false
+  const entered = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  native.runtimeRun.mockImplementation(async () => {
+    if (consuming) {
+      entered.resolve()
+      await release.promise
+    }
+    return {
+      success: true,
+      result: {
+        details: {
+          runtimeVersion: (await readFile(runtimePath, 'utf8')) === content ? target : 'v0.1.0',
+        },
+      },
+    }
+  })
+  const fetcher = vi.fn(async (input: URL | string) => {
+    const url = String(input)
+    if (url.endsWith('/SHA256SUMS.txt'))
+      return new Response(`${hash}  auto-mas-runtime-${target}.exe\n`)
+    if (url.includes('/-/releases?'))
+      return Response.json([{ tag_name: target, draft: false, prerelease: false }])
+    if (url.endsWith('/api/download/request')) {
+      if (++requests === 2) await writeFile(shared, content)
+      return Response.json({ code: 200, accepted: true })
+    }
+    if (url.endsWith('/api/download/query'))
+      return Response.json({ code: 200, data: { state: 'succeeded', path: shared } })
+    if (url.endsWith('/api/download/release')) return Response.json({ code: 200 })
+    throw new Error(`Unexpected URL: ${url}`)
+  })
+  vi.stubGlobal('fetch', fetcher)
+  try {
+    const prepared = await prepareRuntimeBinary(
+      { mode: 'managed', runtimePath, appRoot: root, dataRoot: root },
+      'http://127.0.0.1:36163',
+      'v5.9.0'
+    )
+    expect(requests).toBe(2)
+    expect(await readdir(join(root, '.frontend-updates'))).toHaveLength(1)
+    const downloads = fetcher.mock.calls.length
+    consuming = true
+    const applying = prepared.apply({ runtimePath, appRoot: root, channel: 'stable' })
+    await entered.promise
+    const disposing = prepared.dispose()
+    expect(await readdir(join(root, '.frontend-updates'))).toHaveLength(1)
+    release.resolve()
+    expect(await applying).toMatchObject({ status: 'upgraded' })
+    await disposing
+    expect(await readFile(runtimePath, 'utf8')).toBe(content)
+    expect(await readdir(join(root, '.frontend-updates'))).toEqual([])
+    expect(fetcher.mock.calls.length).toBe(downloads)
+    await prepared.dispose()
+    await expect(prepared.apply({ runtimePath, appRoot: root, channel: 'stable' })).rejects.toThrow(
+      '已释放'
+    )
+  } finally {
+    release.resolve()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+it('已完成的更新包被外部移除时要求重新下载，不停止后端或启动安装器', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mas-missing-package-'))
+  const shared = join(root, 'cache.zip')
+  await writeFile(shared, 'package')
+  native.fetch.mockImplementation(async (url: string) => targetFile(url))
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: URL) => {
+      if (url.pathname === '/api/setting/get')
+        return Response.json({ code: 200, data: { Update: {} } })
+      if (url.pathname === '/api/update/precheck')
+        return Response.json({ code: 200, compatible: true })
+      if (url.pathname === '/api/download/request')
+        return Response.json({ code: 200, accepted: true })
+      if (url.pathname === '/api/download/query')
+        return Response.json({ code: 200, data: { state: 'succeeded', path: shared } })
+      if (url.pathname === '/api/download/release') return Response.json({ code: 200 })
+      throw new Error(`Unexpected endpoint: ${url.pathname}`)
+    })
+  )
+  const service = new AppUpdateService(
+    root,
+    () => 'http://127.0.0.1:36163',
+    () => {}
+  )
+  const stopBackend = vi.fn()
+  try {
+    await service.start('v5.9.0', { currentVersion: 'v5.8.0', settings: { Source: 'CNB' } })
+    await rm(service.snapshot.file!)
+    await expect(service.install({ stopBackend } as unknown as BackendService)).rejects.toThrow(
+      '重新下载'
+    )
+    expect(service.snapshot).toMatchObject({ status: 'failed', file: null })
+    expect(stopBackend).not.toHaveBeenCalled()
+    expect(native.spawn).not.toHaveBeenCalled()
+    await service.shutdown(true)
+    expect(await readdir(join(root, '.frontend-updates'))).toEqual([])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+it.each([null, false])(
+  '预检返回 %s 时阻止下载并显示分类原因，下一次检查通过后可以重试',
+  async compatible => {
+    // 预检未完成和确定冲突都不能继续下载；错误提示和重试沿现有服务入口完成。
+    const root = await mkdtemp(join(tmpdir(), 'mas-precheck-retry-'))
+    const shared = join(root, 'cache.zip')
+    await writeFile(shared, 'package')
+    const message = compatible === null ? '兼容性检查未完成，请稍后重试' : '目标版本依赖冲突'
+    let resolved = false
+    const requests: string[] = []
+    native.fetch.mockImplementation(async (url: string) => targetFile(url))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: URL) => {
+        requests.push(url.pathname)
+        if (url.pathname === '/api/setting/get')
+          return Response.json({ code: 200, data: { Update: {} } })
+        if (url.pathname === '/api/update/precheck')
+          return Response.json(
+            resolved
+              ? { code: 200, compatible: true }
+              : {
+                  code: compatible === null ? 503 : 200,
+                  status: compatible === null ? 'error' : 'success',
+                  message,
+                  compatible,
+                  conflicts: compatible === null ? [] : [{ message }],
+                }
+          )
+        if (url.pathname === '/api/download/request')
+          return Response.json({ code: 200, accepted: true })
+        if (url.pathname === '/api/download/query')
+          return Response.json({ code: 200, data: { state: 'succeeded', path: shared } })
+        if (url.pathname === '/api/download/release') return Response.json({ code: 200 })
+        throw new Error(`Unexpected endpoint: ${url.pathname}`)
+      })
+    )
+    const service = new AppUpdateService(
+      root,
+      () => 'http://127.0.0.1:36163',
+      () => {}
+    )
+    const input = { currentVersion: 'v5.8.0', settings: { Source: 'CNB' } } as const
+    try {
+      await expect(service.start('v5.9.0', input)).rejects.toThrow(message)
+      expect(service.snapshot).toMatchObject({ status: 'failed', message, file: null })
+      expect(requests).toEqual(['/api/setting/get', '/api/update/precheck'])
+      resolved = true
+      await service.start('v5.9.0', input)
+      expect(service.snapshot.status).toBe('completed')
+      expect(await readFile(service.snapshot.file!, 'utf8')).toBe('package')
+    } finally {
+      await service.shutdown(true)
+      await rm(root, { recursive: true, force: true })
+    }
+  }
 )

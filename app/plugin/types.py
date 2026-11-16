@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import Enum
@@ -10,6 +11,8 @@ CORE_PLUGIN_NAME = "auto_mas_core"
 CORE_DISTRIBUTION_NAME = "auto_mas_core"
 MARKET_GATE_TAG = "auto-mas-plugin"
 PLUGIN_ID_TAG_PREFIX = "auto-mas-id:"
+# 插件身份会作为配置文件名，拒绝两种平台的路径及 Windows 文件名控制字符。
+PLUGIN_ID_PATTERN = re.compile(r'(?!\.{1,2}$)[^/\\:*?"<>|\s\x00-\x1f]+')
 # 包顶层 ``__init__.py`` 固定入口符号（取代 entry-points）
 PLUGIN_ATTR = "PLUGIN"
 PLUGIN_API_VERSION = "6"

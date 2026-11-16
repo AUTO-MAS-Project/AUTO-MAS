@@ -186,6 +186,8 @@ class MaaGuiSession(MaaWorkerContext):
         self._stop_scope = None
         self._gui_closed_for_stop = False
         self._session_opened = False
+        # 原生保存确认独立于任务状态，停止会话后的“已取消”不能撤销 GUI 已写盘的修改。
+        self.native_config_saved = False
 
     async def prepare(self):
         """创建配置界面的进程管理器，确认 MAA 安装路径并定位可执行文件与配置目录。"""
@@ -429,6 +431,7 @@ class MaaGuiSession(MaaWorkerContext):
         # 原生来源会话：MAS 零写入，安装目录配置由本体保存并保留，不回写 MAS 目录
         owner = self._mas_owner()
         if owner is None:
+            self.native_config_saved = True
             logger.success("MAA 原生来源配置已由脚本原生 GUI 保存")
             await self.cur_user_item.set_state(status="完成")
             return

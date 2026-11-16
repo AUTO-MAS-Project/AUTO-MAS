@@ -62,35 +62,58 @@ class _SourceFinder(importlib.abc.MetaPathFinder):
 
 
 def clear(record: PluginRecord) -> None:
-    """Remove target package modules that belong to the recorded source path."""
+    """清理当前来源及实际已加载实现的模块，确保来源切换时不残留旧子模块。"""
     import_name = str(record.info.import_name or "").strip()
     if not import_name:
         raise PluginPrecheckError(
             f"插件缺少 import_name: {record.info.plugin_name}",
             payload={"name": record.info.plugin_name},
         )
-    if record._project_dir is None:
+    roots: set[tuple[str, Path]] = set()
+    if record._project_dir is not None:
+        roots.add((import_name, (record._project_dir / import_name).resolve()))
+    cls = record._plugin_cls
+    if cls is not None:
+        for loaded_name in {import_name, cls.__module__.split(".", 1)[0]}:
+            loaded = sys.modules.get(loaded_name)
+            # PLUGIN 必须确实指向本项已加载的类，不能清理 SDK 基类或其他宿主模块。
+            if (
+                isinstance(loaded, ModuleType)
+                and getattr(loaded, PLUGIN_ATTR, None) is cls
+            ):
+                loaded_file = getattr(loaded, "__file__", None)
+                if loaded_file is not None:
+                    roots.add((loaded_name, Path(loaded_file).resolve().parent))
+    if not roots:
         raise PluginPrecheckError(
             f"插件 {import_name} 缺少来源路径",
             payload={"name": record.info.plugin_name},
         )
-    package_dir = record._project_dir / import_name
     for name, module in list(sys.modules.items()):
-        if name != import_name and not name.startswith(f"{import_name}."):
+        directories = [
+            directory
+            for prefix, directory in roots
+            if name == prefix or name.startswith(f"{prefix}.")
+        ]
+        if not directories:
             continue
         if not isinstance(module, ModuleType):
             del sys.modules[name]
             continue
         module_file = getattr(module, "__file__", None)
         if module_file is None:
-            if name == import_name:
+            if any(name == prefix for prefix, _ in roots):
                 del sys.modules[name]
             continue
         try:
-            Path(module_file).resolve().relative_to(package_dir)
+            module_path = Path(module_file).resolve()
+            belongs = any(
+                module_path.is_relative_to(directory) for directory in directories
+            )
         except (OSError, ValueError):
             continue
-        del sys.modules[name]
+        if belongs:
+            del sys.modules[name]
 
 
 def load(record: PluginRecord) -> type[BasePlugin]:

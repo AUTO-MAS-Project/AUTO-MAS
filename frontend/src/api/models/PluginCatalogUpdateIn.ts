@@ -9,7 +9,7 @@ export type PluginCatalogUpdateIn = {
      */
     metaId: string;
     /**
-     * 补丁；透传全部字段，不做白名单过滤
+     * 目录字段只读，仅允许提交安装触发器
      */
     data: PluginMetaInput;
 };

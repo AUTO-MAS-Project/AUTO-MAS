@@ -1,10 +1,14 @@
-"""插件重载根据本次禁用返回的级联树恢复运行状态。"""
+"""插件级联重载恢复状态，卸载等待全部下游的在途调用结束。"""
+
+import asyncio
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
 
 from app.core.plugin.manager import _PluginManager
 from app.models.config import GlobalConfig, PluginRecord, PluginRegistryCollection
+from app.plugin.errors import PluginBusyError
 from app.plugin.runtime import loader
 from app.plugin.types import PluginState
 
@@ -21,20 +25,46 @@ async def cascade_plugins(isolated_app_paths, monkeypatch, tmp_path):
     manager = _PluginManager()
     records = {}
 
-    async def load(dependencies):
+    async def load(dependencies, *, source="local", adapters=()):
         """按给定服务依赖建立普通插件包，每个包记录自己的业务启停次数。"""
         for name, requires in dependencies.items():
             package = tmp_path / name
             package.mkdir()
+            header = "from app.plugin.base import BasePlugin\n"
+            declaration = ""
+            if name in adapters:
+                header = (
+                    "from app.config import ConfigCollection, collection\n"
+                    "from app.models.config import ScriptEntry, UserEntry\n"
+                    "from app.models.task import TaskMode\n"
+                    "from app.task.user_expander import UserExpander\n"
+                    "from app.plugin.base.script import ScriptAdapterPlugin as BasePlugin, ScriptTypeDecl\n"
+                    "class ProbeUser(UserEntry): pass\n"
+                    "class ProbeExpander(UserExpander): pass\n"
+                    "class ProbeScript(ScriptEntry):\n"
+                    "    users: ConfigCollection[ProbeUser] = collection(ProbeUser)\n"
+                )
+                declaration = (
+                    "    script_type_key = 'probe'\n"
+                    "    decl = ScriptTypeDecl(script_type=ProbeScript, user_type=ProbeUser, expander_class=ProbeExpander, supported_modes=(TaskMode.AUTO_PROXY,))\n"
+                )
             (package / "__init__.py").write_text(
-                "from app.plugin.base import BasePlugin\n"
-                "class Adapter(BasePlugin):\n"
-                f"    requires = {tuple(requires)!r}\n"
+                header
+                + "class Adapter(BasePlugin):\n"
+                + declaration
+                + f"    requires = {tuple(requires)!r}\n"
                 f"    provides_services = {{{name!r}: 'value'}}\n"
                 "    events = []\n"
                 "    fail_enable = False\n"
-                "    async def value(self):\n"
-                '        """返回当前实例，供调用者确认服务已经重新挂载。"""\n'
+                "    async def value(self, *, started=None, release=None, disable_self=False):\n"
+                '        """可等待放行或发起自禁用，返回实例以核对调用和资源释放的先后。"""\n'
+                "        if started is not None:\n"
+                "            started.set()\n"
+                "            await release.wait()\n"
+                "            self.events.append('call-finished')\n"
+                "        if disable_self:\n"
+                "            from app.core.plugin import Plugin\n"
+                "            await Plugin.disable(self.record)\n"
                 "        return self\n"
                 "    async def on_enable(self):\n"
                 '        """记录启用并按插件故障开关注入业务失败。"""\n'
@@ -52,7 +82,7 @@ async def cascade_plugins(isolated_app_paths, monkeypatch, tmp_path):
                     "info": {
                         "plugin_name": name,
                         "import_name": name,
-                        "source": "local",
+                        "source": source,
                         "enabled": False,
                     }
                 },
@@ -69,7 +99,8 @@ async def cascade_plugins(isolated_app_paths, monkeypatch, tmp_path):
     finally:
         await manager.shutdown()
         for record in records.values():
-            loader.clear(record)
+            if record._project_dir is not None:
+                loader.clear(record)
 
 
 @pytest.mark.asyncio
@@ -152,3 +183,133 @@ async def test_reload_restore_failure_skips_branch_and_continues_other_branches(
     assert records["cascade_c"]._plugin_cls.events.count("enable") == 1
     assert records["cascade_d"].info.state == PluginState.ENABLED
     assert await manager.services.require("cascade_d")() is records["cascade_d"]._plugin
+
+
+@pytest.mark.asyncio
+async def test_uninstall_waits_for_indirect_downstream_call_before_releasing_resources(
+    cascade_plugins, monkeypatch, isolated_app_paths
+):
+    """卸载 A 时先停止 A→B→C 全部准入，C 的旧调用结束后才释放级联资源并卸包。"""
+    from app.plugin.uv import ops
+
+    manager, records = await cascade_plugins(
+        {"cascade_a": (), "cascade_b": ("cascade_a",), "cascade_c": ("cascade_b",)},
+        source="installed",
+    )
+    await manager.enable(records["cascade_c"])
+    events = {name: record._plugin.events for name, record in records.items()}
+    instance = records["cascade_c"]._plugin
+    service = manager.services.require("cascade_c")
+    started, release = asyncio.Event(), asyncio.Event()
+    commands = []
+
+    async def execute(*args, **kwargs):
+        """隔离 uv 子进程，记录卸包请求而不修改真实安装环境。"""
+        commands.append(args)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(ops, "ensure", lambda: "uv")
+    monkeypatch.setattr(ops.ProcessRunner, "run_process", execute)
+    call = asyncio.create_task(service(started=started, release=release))
+    await started.wait()
+    uninstall = asyncio.create_task(manager.uninstall(records["cascade_a"]))
+    try:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(asyncio.shield(uninstall), timeout=0.1)
+        assert not commands
+        assert all(history == ["enable"] for history in events.values())
+        assert all(record._plugin is not None for record in records.values())
+        with pytest.raises(PluginBusyError):
+            await service()
+
+        release.set()
+        assert await call is instance
+        assert await uninstall == {"cascade_b": {"cascade_c": {}}}
+        assert events["cascade_c"] == ["enable", "call-finished", "disable"]
+        assert all(record._plugin is None for record in records.values())
+        assert not list(isolated_app_paths.plugin_registry.values())
+        assert len(commands) == 1 and commands[0][3] == "cascade_a"
+    finally:
+        release.set()
+        await asyncio.gather(call, uninstall, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_service_disables_itself_after_other_calls_finish(
+    cascade_plugins, monkeypatch
+):
+    """服务内自禁用不等待自己，但必须等待另一服务调用退出，之后才能释放实例。"""
+    from app.core import plugin
+
+    manager, records = await cascade_plugins({"self_disable_probe": ()})
+    monkeypatch.setattr(plugin, "Plugin", manager)
+    record = records["self_disable_probe"]
+    await manager.enable(record)
+    instance = record._plugin
+    service = manager.services.require("self_disable_probe")
+    started, release = asyncio.Event(), asyncio.Event()
+    other = asyncio.create_task(service(started=started, release=release))
+    await started.wait()
+    stopping = asyncio.create_task(service(disable_self=True))
+    try:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(asyncio.shield(stopping), timeout=0.1)
+        assert record._plugin is instance
+        assert instance.events == ["enable"]
+        with pytest.raises(PluginBusyError):
+            await service()
+
+        release.set()
+        assert await asyncio.wait_for(asyncio.gather(other, stopping), timeout=2) == [
+            instance,
+            instance,
+        ]
+        assert instance.events == ["enable", "call-finished", "disable"]
+        assert record.info.state == PluginState.DISABLED
+        assert record._plugin is None
+        with pytest.raises(PluginBusyError):
+            await service()
+    finally:
+        release.set()
+        await asyncio.gather(other, stopping, return_exceptions=True)
+        if record.info.state == PluginState.ENABLED:
+            await manager.disable(record)
+
+
+@pytest.mark.asyncio
+async def test_reload_checks_locked_indirect_adapter_before_tearing_down(
+    cascade_plugins, isolated_app_paths, monkeypatch
+):
+    """最下游适配器的配置仍被任务占用时，重载上游应在拆卸任何实例前拒绝。"""
+    from app.config import ConfigCollection
+    from app.core import plugin
+    from app.models.config import PlanEntry, ScriptEntry
+    from app.plugin.errors import PluginPrecheckError
+
+    scripts = ConfigCollection[ScriptEntry].build([ScriptEntry])
+    plans = ConfigCollection[PlanEntry].build([PlanEntry])
+    await scripts.activate()
+    await plans.activate()
+    monkeypatch.setattr(isolated_app_paths, "ScriptConfig", scripts)
+    monkeypatch.setattr(isolated_app_paths, "PlanConfig", plans)
+    manager, records = await cascade_plugins(
+        {"cascade_a": (), "cascade_b": ("cascade_a",), "cascade_c": ("cascade_b",)},
+        adapters=("cascade_c",),
+    )
+    monkeypatch.setattr(plugin, "Plugin", manager)
+    await manager.enable(records["cascade_c"])
+    uid = scripts.add(records["cascade_c"]._plugin.decl.script_type)
+    await scripts.commit()
+    ticket = await scripts[uid].try_lock_x()
+    before = {name: record._plugin for name, record in records.items()}
+    try:
+        with pytest.raises(PluginPrecheckError, match="已锁定"):
+            await manager.reload(records["cascade_a"])
+        assert all(record._plugin is before[name] for name, record in records.items())
+        assert all(
+            record.info.state == PluginState.ENABLED for record in records.values()
+        )
+        assert all(instance.events == ["enable"] for instance in before.values())
+    finally:
+        await scripts[uid].unlock(ticket)
+        await manager.disable(records["cascade_a"])
