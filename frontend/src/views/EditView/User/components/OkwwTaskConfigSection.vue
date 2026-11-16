@@ -8,6 +8,7 @@
               :script-id="scriptId"
               :user-id="userId"
               kind="daily"
+              :custom-arguments="task.IfCustomArguments"
               :snapshot="task.DailyConfig"
               @busy="setBusy('daily', $event)"
               :disabled="disabled"

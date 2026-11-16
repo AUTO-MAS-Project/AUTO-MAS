@@ -11,7 +11,9 @@
           :label="label(field.name)"
           :validate-status="errors[field.name] ? 'error' : undefined"
           :help="errors[field.name]"
-          :extra="field.disabled ? t('core.edit.okwwPlanManaged') : hints[field.name]"
+          :extra="
+            hints[field.name] ?? (field.disabled ? t('core.edit.okwwPlanManaged') : undefined)
+          "
         >
           <a-switch
             v-if="field.type === 'bool'"

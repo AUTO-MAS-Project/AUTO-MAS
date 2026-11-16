@@ -4,7 +4,7 @@
       ><a-button @click="load">{{ t('core.edit.okwwEchoRetry') }}</a-button></template
     >
   </a-alert>
-  <a-spin :spinning="loading || saving">
+  <a-spin :spinning="initialLoading" :delay="200">
     <a-typography-paragraph v-if="!overlayEnabled" type="secondary">{{
       t('core.edit.okwwEchoOverlayOff')
     }}</a-typography-paragraph>
@@ -12,8 +12,8 @@
       :fields="visibleFields"
       :labels="labels"
       :hints="hints"
-      :values="values"
-      :disabled="disabled || loading || saving"
+      :values="displayValues"
+      :disabled="disabled || initialLoading"
       label-prefix="core.edit.okwwEcho"
       option-prefix="core.edit.okwwEchoOption"
       @change="change"
@@ -33,13 +33,20 @@ const props = defineProps<{
   userId: string
   snapshot: Record<string, unknown>
   kind: OkwwPanelKind
+  customArguments?: boolean
   disabled: boolean
   overlayEnabled: boolean
 }>()
 const emit = defineEmits<{ saved: []; busy: [value: boolean] }>()
 const { t, locale } = useI18n()
+const forcedExit = computed(() => props.kind === 'daily' && !props.customArguments)
 const hints = computed((): Record<string, string> => {
-  if (props.kind === 'daily') return { 'Exit After Task': t('core.edit.okwwDailyExitHint') }
+  if (props.kind === 'daily')
+    return {
+      'Exit After Task': t(
+        forcedExit.value ? 'core.edit.okwwForcedExitHint' : 'core.edit.okwwDailyExitHint'
+      ),
+    }
   if (props.kind === 'monthly')
     return {
       'Check Monthly Card': t('core.edit.okwwMonthlyCheckHint'),
@@ -50,33 +57,58 @@ const hints = computed((): Record<string, string> => {
 
 const { readConfig, saveConfig } = useOkwwNativeConfigApi()
 const { isSaving: saving, enqueue } = useSaveQueue()
-watch(saving, value => emit('busy', value), { flush: 'sync' })
+let needsRefresh = false
+watch(
+  saving,
+  value => {
+    emit('busy', value)
+    if (!value && needsRefresh) {
+      needsRefresh = false
+      emit('saved')
+    }
+  },
+  { flush: 'sync' }
+)
 const loading = ref(false)
 const error = ref('')
 const fields = ref<OkwwConfigField[]>([])
+const initialLoading = computed(() => loading.value && fields.value.length === 0)
 // 每日附加任务不读取4C退出选项，仅隐藏控件，保留原生值。
 const visibleFields = computed(() =>
-  fields.value.filter(field => props.kind !== 'echo' || field.name !== 'Exit After Task')
+  fields.value
+    .filter(field => props.kind !== 'echo' || field.name !== 'Exit After Task')
+    .map(field =>
+      forcedExit.value && field.name === 'Exit After Task' ? { ...field, disabled: true } : field
+    )
 )
 const labels = ref<Record<string, string>>({})
 const values = ref<Record<string, unknown>>({})
+const displayValues = computed(() =>
+  forcedExit.value ? { ...values.value, 'Exit After Task': true } : values.value
+)
 let revision = 0
-watch(() => [props.scriptId, props.userId, props.kind, props.snapshot, locale.value], load, {
-  immediate: true,
-})
+let draftRevision = 0
+watch(
+  () => [props.scriptId, props.userId, props.kind, JSON.stringify(props.snapshot), locale.value],
+  (current, previous) => {
+    if (!previous || current.some((value, index) => value !== previous[index])) void load()
+  },
+  { immediate: true }
+)
 onBeforeUnmount(() => {
   revision++
   emit('busy', false)
 })
 async function load() {
+  if (!props.userId || saving.value) return
   const current = ++revision
-  if (!props.userId) return
+  const draft = draftRevision
   loading.value = true
   error.value = ''
   try {
     const response = await readConfig(props.scriptId, props.userId, props.kind)
     if (current === revision) {
-      values.value = response.values ?? {}
+      if (draft === draftRevision && !saving.value) values.value = response.values ?? {}
       fields.value = response.fields ?? []
       labels.value = response.labels ?? {}
     }
@@ -88,6 +120,7 @@ async function load() {
 }
 async function change(name: string, value: unknown) {
   error.value = ''
+  draftRevision++
   values.value = { ...values.value, [name]: value }
   const snapshot = JSON.parse(JSON.stringify(values.value)) as Record<string, unknown>
   // 不将只读的计划显示值作为账号默认值提交。
@@ -98,7 +131,7 @@ async function change(name: string, value: unknown) {
   await enqueue(async () => {
     try {
       await saveConfig(props.scriptId, props.userId, props.kind, snapshot)
-      if (current === revision) emit('saved')
+      if (current === revision) needsRefresh = true
       return true
     } catch (e) {
       if (current === revision) error.value = e instanceof Error ? e.message : String(e)

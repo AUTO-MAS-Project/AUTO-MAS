@@ -1163,6 +1163,7 @@
   "core.edit.okwwPanelCharacter": "キャラクター設定",
   "core.edit.okwwPanelMonthly": "月間パス設定",
   "core.edit.okwwPlanManaged": "当日のプランで管理されています。プラン表で変更してください",
+  "core.edit.okwwForcedExitHint": "既定の -e により任務後に終了します。",
   "core.edit.okwwDailyExitHint": "複数アカウントではバッチ側が終了を制御します。既定の -e は任務後に終了します。",
   "core.edit.okwwMonthlyCheckHint": "更新時刻の月パスポップアップを処理します。戦闘中は待機せず、購入状態は検出しません。",
   "core.edit.okwwMonthlyTimeHint": "PCのローカル時刻、0～23時。",

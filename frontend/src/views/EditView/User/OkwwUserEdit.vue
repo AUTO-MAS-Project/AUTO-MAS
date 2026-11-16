@@ -184,10 +184,10 @@
         :script-id="scriptId"
         :user-id="userId"
         :save-task="saveTaskConfig"
-        :disabled="configActionsDisabled"
+        :disabled="configEditingDisabled"
         @save="saveTaskConfig"
         @restore="openRestoreModal"
-        @refresh="loadUser"
+        @refresh="loadUser(true)"
         @busy="nativeConfigSaving = $event"
       />
 
@@ -305,10 +305,9 @@ const pageLoading = ref(true)
 const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
 const { isSaving, enqueue } = useSaveQueue()
-const configActionsDisabled = computed(
+const configEditingDisabled = computed(
   () =>
     pageLoading.value ||
-    nativeConfigSaving.value ||
     !userId.value ||
     isSaving.value ||
     okwwConfigLoading.value ||
@@ -317,6 +316,10 @@ const configActionsDisabled = computed(
     showOkwwViewMask.value ||
     stoppingOkwwConfig.value ||
     configLocked.value
+)
+
+const configActionsDisabled = computed(
+  () => configEditingDisabled.value || nativeConfigSaving.value
 )
 
 const resourceOptions = [
@@ -510,8 +513,8 @@ const loadScriptInfo = async (): Promise<boolean> => {
   return true
 }
 
-const loadUser = async () => {
-  pageLoading.value = true
+const loadUser = async (quiet = false) => {
+  if (!quiet) pageLoading.value = true
   try {
     if (!userId.value) {
       if (!(await createUserImmediately())) return

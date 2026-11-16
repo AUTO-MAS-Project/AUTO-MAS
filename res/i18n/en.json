@@ -1163,6 +1163,7 @@
   "core.edit.okwwPanelCharacter": "Character settings",
   "core.edit.okwwPanelMonthly": "Monthly card",
   "core.edit.okwwPlanManaged": "Managed by today’s plan; edit it in the plan table",
+  "core.edit.okwwForcedExitHint": "The default -e argument exits after the task.",
   "core.edit.okwwDailyExitHint": "Batch runs control their own exit. The default -e exits after the task.",
   "core.edit.okwwMonthlyCheckHint": "Handles refresh-time popups; skips waiting during combat. Does not detect ownership.",
   "core.edit.okwwMonthlyTimeHint": "Computer local time, 0–23 hours.",

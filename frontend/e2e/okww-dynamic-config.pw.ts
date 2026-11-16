@@ -41,9 +41,30 @@ test.describe('@okww-dynamic-config', () => {
     const saved = page.waitForResponse(
       r => r.url().endsWith('/api/scripts/okww/task-config') && r.request().method() === 'POST'
     )
+    await page.route(
+      '**/api/scripts/okww/task-config',
+      async route => {
+        // 延迟保存响应，验证等待期间不会整页变成骨架或遮罩。
+        await new Promise(resolve => setTimeout(resolve, 500))
+        await route.continue()
+      },
+      { times: 1 }
+    )
+    await input.fill('22')
+    await input.press('Tab')
+    await expect(input).toBeEnabled()
+    await expect(page.locator('.ant-card-loading')).toHaveCount(0)
+    await expect(page.locator('.ant-spin-blur')).toHaveCount(0)
+    const latestSaved = page.waitForResponse(
+      r =>
+        r.url().endsWith('/api/scripts/okww/task-config') &&
+        r.request().method() === 'POST' &&
+        r.request().postDataJSON().values['New native limit'] === 23
+    )
     await input.fill('23')
     await input.press('Tab')
     expect((await (await saved).json()).code).toBe(200)
+    expect((await (await latestSaved).json()).code).toBe(200)
     await page.reload()
     await page.getByRole('tab', { name: '4C Echo settings', exact: true }).click()
     await expect(input).toHaveValue('23')
@@ -126,7 +147,16 @@ test.describe('@okww-dynamic-config', () => {
     const planned = field('Which to Farm').getByRole('combobox')
     await expect(planned).toBeDisabled()
     const exit = field('Exit After Task').getByRole('switch')
+    await expect(exit).toBeDisabled()
+    await expect(exit).toBeChecked()
+    await post('/api/scripts/user/update', {
+      scriptId,
+      userId,
+      data: { Task: { IfCustomArguments: true } },
+    })
+    await page.reload()
     await expect(exit).toBeEnabled()
+    await expect(exit).not.toBeChecked()
     const accountWrite = page.waitForRequest(
       r => r.url().endsWith('/api/scripts/okww/task-config') && r.method() === 'POST'
     )

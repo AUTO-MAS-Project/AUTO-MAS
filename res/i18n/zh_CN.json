@@ -1163,6 +1163,7 @@
   "core.edit.okwwPanelCharacter": "角色配置",
   "core.edit.okwwPanelMonthly": "月卡配置",
   "core.edit.okwwPlanManaged": "此项由当天计划管理，请前往计划表修改",
+  "core.edit.okwwForcedExitHint": "默认参数 -e 会在任务结束后自动退出。",
   "core.edit.okwwDailyExitHint": "多账号模式由批次控制退出；默认参数 -e 会在任务结束后退出。",
   "core.edit.okwwMonthlyCheckHint": "刷新时段处理月卡弹窗，战斗中跳过等待；不检测购买状态。",
   "core.edit.okwwMonthlyTimeHint": "电脑本地时间，0–23 时。",
