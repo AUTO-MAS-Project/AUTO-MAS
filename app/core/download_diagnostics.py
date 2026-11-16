@@ -48,8 +48,13 @@ def describe_package(path: Path) -> dict[str, object]:
             if len(entries) > _MAX_ENTRIES:
                 result["inspection"] = "entry_limit"
                 return result
-            roots = sorted({i.filename.replace("\\", "/").split("/")[0]
-                            for i in entries if i.filename})
+            roots = sorted(
+                {
+                    i.filename.replace("\\", "/").split("/")[0]
+                    for i in entries
+                    if i.filename
+                }
+            )
             # Use only the count, not raw entry names: they can contain user data.
             result["root_count"] = len(roots)
             # Only whitelist known release root names; arbitrary filenames stay private.
@@ -60,8 +65,12 @@ def describe_package(path: Path) -> dict[str, object]:
                 if len(markers) >= _MAX_MARKERS:
                     break
                 parts = item.filename.replace("\\", "/").lower().split("/")
-                if (item.is_dir() or item.file_size > 256 or
-                        not parts or parts[-1] not in _MARKER_NAMES):
+                if (
+                    item.is_dir()
+                    or item.file_size > 256
+                    or not parts
+                    or parts[-1] not in _MARKER_NAMES
+                ):
                     continue
                 try:
                     with archive.open(item) as reader:
