@@ -65,6 +65,7 @@ from app.task.MaaFW.tools.core.interface.models import (
     MaaFWInterface,
     resolve_task_instance_name,
 )
+from app.task.MaaFW.tools.embedded.flavor import StartupTask
 from app.task.MaaFW.tools.embedded.flavor_support import (
     config_value,
     task_name_for_entry,
@@ -336,7 +337,7 @@ class M9AFlavor:
         adb_address: str,
         progress: Callable[[str], Awaitable[None]] | None,
         host_adb: Any = None,
-    ) -> str:
+    ) -> str | StartupTask:
         """引擎的可选运行前登录钩子：B 服登录由 MAS 完成，契约见 MaaFW 的 ``flavor.py``。"""
 
         # 按需导入：本包在导入期不拉起 OCR / 图像与 adb 相关模块（迁移也会导入 flavor）
