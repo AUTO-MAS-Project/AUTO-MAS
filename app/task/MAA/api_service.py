@@ -877,10 +877,11 @@ async def get_cultivate_preview(
             item["expectedSanity"] = expected_sanity
         return item
 
-    # 固定产出关（龙门币 ← CE-6 等）单次产量未知，内核保持 0.0 中性值，
-    # 展示层按"不可估算"处理（None），不计入合计
+    # 副产物已能满足的条目显示 0；单次产量未知的固定资源关保持空值。
     computable_sanity = [
-        entry.expected_sanity for entry in plan.entries if entry.expected_sanity > 0
+        entry.expected_sanity
+        for entry in plan.entries
+        if entry.expected_sanity is not None
     ]
 
     return {
@@ -889,7 +890,7 @@ async def get_cultivate_preview(
                 entry.item_id,
                 entry.amount,
                 entry.stage_code,
-                entry.expected_sanity or None,
+                entry.expected_sanity,
             )
             for entry in plan.entries
         ],
