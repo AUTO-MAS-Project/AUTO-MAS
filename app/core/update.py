@@ -71,11 +71,13 @@ async def _write_package_diagnostic(
             if failure is None
             else {"schema": 1, "availability": "download_failed"}
         )
-        details.update({
-            "source": str(source or "unknown")[:48],
-            "downloader": str(downloader or "configured")[:24],
-            "phase": "download",
-        })
+        details.update(
+            {
+                "source": str(source or "unknown")[:48],
+                "downloader": str(downloader or "configured")[:24],
+                "phase": "download",
+            }
+        )
         await _write_history(
             _utils_fluxdown_cli.FluxdownDownloadRecord(
                 url=safe_origin(url),
@@ -163,7 +165,10 @@ async def download_file(
         )
     except Exception as exc:
         await _write_package_diagnostic(
-            destination, url, source=source, downloader=downloader,
+            destination,
+            url,
+            source=source,
+            downloader=downloader,
             failure=type(exc).__name__,
         )
         raise
