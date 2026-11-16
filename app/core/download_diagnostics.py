@@ -52,6 +52,9 @@ def describe_package(path: Path) -> dict[str, object]:
                             for i in entries if i.filename})
             # Use only the count, not raw entry names: they can contain user data.
             result["root_count"] = len(roots)
+            # Only whitelist known release root names; arbitrary filenames stay private.
+            known_roots = {"update", "March7thAssistant", "March7thAssistant_full"}
+            result["known_roots"] = sorted(set(roots) & known_roots)
             markers: list[dict[str, str]] = []
             for item in entries:
                 if len(markers) >= _MAX_MARKERS:
