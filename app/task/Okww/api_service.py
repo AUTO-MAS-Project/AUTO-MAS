@@ -57,7 +57,6 @@ def read_task_config(script_id: str, user_id: str, kind: str) -> dict:
     """读取面板快照；首次使用时从所选基础来源初始化。"""
     from copy import deepcopy
 
-    from .tools.config_paths import _OKWW_REL_CONFIG_DIR
     from app.task.Okww.tools.backup_archive import mas_config_dir, owner_for_mode
     from app.task.Okww.tools.config_fields import (
         PANEL_DEFAULTS,
@@ -66,6 +65,8 @@ def read_task_config(script_id: str, user_id: str, kind: str) -> dict:
     )
     from app.task.Okww.tools.plan import DAILY_FIELD_NAMES, task_config
     from app.utils.common.io import read_dict_file
+
+    from .tools.config_paths import _OKWW_REL_CONFIG_DIR
 
     config = Config.ScriptConfig[uuid.UUID(script_id)]
     if not isinstance(config, RuntimeOkwwConfig):

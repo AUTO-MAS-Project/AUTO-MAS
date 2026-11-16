@@ -151,7 +151,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 self.script_config_path,
                 script_id=self.script_info.script_id,
             )
-        if self.cur_user_item.user_id != "Default":
+        if not self.view_only and self.cur_user_item.user_id != "Default":
             user = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
             if user.Info.IfQuickConfig:
                 from .tools.config_fields import PANEL_FILES, runtime_panels

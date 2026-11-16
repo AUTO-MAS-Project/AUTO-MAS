@@ -509,3 +509,52 @@ async def test_batch_arguments_grouping_preserves_user_order(tmp_path, scenario)
     expected.append(([str(ids[3]), str(ids[4])], default))
     assert dispatched == expected
     assert manager._restore_script_config_from_temp.await_count == len(expected)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("view_only", [True, False])
+async def test_gui_preview_keeps_historical_panels_instead_of_live_overrides(
+    tmp_path, monkeypatch, view_only
+):
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from app.task.Okww.ScriptConfig import ScriptConfigTask
+    from app.utils import io
+
+    monkeypatch.chdir(tmp_path)
+    sid, uid = uuid.uuid4(), uuid.uuid4()
+    root = tmp_path / "install"
+    configs = root / "data/apps/ok-ww/working/configs"
+    configs.mkdir(parents=True)
+    historical = b'{"Repeat Farm Count":100}'
+    path = configs / "FarmEchoTask.json"
+    path.write_bytes(historical)
+    io.commit_native_config_snapshot(
+        tmp_path / "data" / str(sid) / "Temp", configs, script_id=str(sid)
+    )
+    user = OkwwUserConfig()
+    user.Task.FarmEchoConfig = {"Repeat Farm Count": 7}
+    task = ScriptConfigTask.__new__(ScriptConfigTask)
+    task._kill_processes = AsyncMock()
+    task.root_path = root
+    task.use_mas_config = False
+    task.view_only = view_only
+    task.cur_user_item = SimpleNamespace(user_id=str(uid), set_state=AsyncMock())
+    task.script_info = SimpleNamespace(script_id=str(sid))
+    task.user_config = {uid: user}
+    task.panel_originals = {}
+    task.panel_user = None
+    task.script_config_path = configs
+    task.exe_path = root / "ok-ww.exe"
+    task.process_manager = SimpleNamespace(open_process=AsyncMock())
+    task.wait_event = asyncio.Event()
+    task.wait_event.set()
+    await task.main_task()
+    if view_only:
+        assert path.read_bytes() == historical
+        assert task.panel_user is None
+    else:
+        import json
+
+        assert json.loads(path.read_text())["Repeat Farm Count"] == 7
