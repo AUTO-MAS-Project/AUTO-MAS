@@ -4,6 +4,7 @@
 
 """装配更新器与下载入口，连接宿主配置和下载历史，后续转交给前端，后端仅抽象出下载逻辑"""
 
+import asyncio
 from collections.abc import Callable
 from contextvars import ContextVar
 from pathlib import Path
@@ -12,6 +13,7 @@ import httpx
 
 from app.config import config_manager
 from app.core import Config
+from app.core.download_diagnostics import describe_package, safe_origin
 from app.models.config.setting import FluxdownRecord
 from app.services import update as _service_update
 from app.services.common.update import fluxdown as _service_update_fluxdown
@@ -48,6 +50,45 @@ async def _write_history(record: _utils_fluxdown_cli.FluxdownDownloadRecord) -> 
             ),
             check_visibility=False,
         )
+
+
+async def _write_package_diagnostic(
+    destination: Path,
+    url: str,
+    *,
+    source: str | None,
+    downloader: str | None,
+    failure: str | None = None,
+) -> None:
+    """Best-effort central evidence for both FluxDown and httpx downloads.
+
+    Diagnostic records are separate from downloader terminal records: their
+    success status never implies the package was installed or validated.
+    """
+    try:
+        details = (
+            await asyncio.to_thread(describe_package, destination)
+            if failure is None
+            else {"schema": 1, "availability": "download_failed"}
+        )
+        details.update({
+            "source": str(source or "unknown")[:48],
+            "downloader": str(downloader or "configured")[:24],
+            "phase": "download",
+        })
+        await _write_history(
+            _utils_fluxdown_cli.FluxdownDownloadRecord(
+                url=safe_origin(url),
+                destination=str(destination),
+                size=int(details.get("bytes") or 0),
+                status="diagnostic" if failure is None else "failed",
+                error=failure,
+                diagnostic=details,
+            )
+        )
+    except Exception:
+        # History/inspection failure must never turn a valid download into a failure.
+        pass
 
 
 async def download_file(
@@ -97,28 +138,39 @@ async def download_file(
 
         http_download = observed_http_download
     update = Config.setting.Update
-    return await _service_update_fluxdown.download_file(
-        url,
-        destination,
-        timeout=timeout,
-        proxy=proxy,
-        progress=progress,
-        downloader=downloader,
-        source=source,
-        http_download=http_download,
-        options=_service_update_fluxdown.FluxdownOptions(
-            downloader=update.Downloader,
-            source=str(update.Source or ""),
-            cli_path=str(update.FluxdownPath or ""),
-            segments=int(update.FluxdownSegments),
-            server_mode=bool(update.FluxdownServerMode),
-            cli_search_dirs=(
-                Config.install_path / "res" / "fluxdown-cli",
-                Config.resource_path / "fluxdown-cli",
+    try:
+        size = await _service_update_fluxdown.download_file(
+            url,
+            destination,
+            timeout=timeout,
+            proxy=proxy,
+            progress=progress,
+            downloader=downloader,
+            source=source,
+            http_download=http_download,
+            options=_service_update_fluxdown.FluxdownOptions(
+                downloader=update.Downloader,
+                source=str(update.Source or ""),
+                cli_path=str(update.FluxdownPath or ""),
+                segments=int(update.FluxdownSegments),
+                server_mode=bool(update.FluxdownServerMode),
+                cli_search_dirs=(
+                    Config.install_path / "res" / "fluxdown-cli",
+                    Config.resource_path / "fluxdown-cli",
+                ),
             ),
-        ),
-        write_history=_write_history,
+            write_history=_write_history,
+        )
+    except Exception as exc:
+        await _write_package_diagnostic(
+            destination, url, source=source, downloader=downloader,
+            failure=type(exc).__name__,
+        )
+        raise
+    await _write_package_diagnostic(
+        destination, url, source=source, downloader=downloader
     )
+    return size
 
 
 Updater = _service_update.UpdateHandler(download=download_file)
