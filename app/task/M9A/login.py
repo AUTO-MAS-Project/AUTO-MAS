@@ -31,7 +31,7 @@
 
    - 「隐私政策提示」弹层：找到唯一的「同意」按钮（中心点限定在屏幕中下部）就点它；
    - 「登录记录」面板：收起态先点右侧箭头展开列表，再按登录记录里显示的完整昵称匹配
-     （含汉字的昵称仅比对汉字，中心点限定在列表区域），唯一命中后点击，
+     （双方只保留汉字、英文字母和数字后完整匹配，中心点限定在列表区域），唯一命中后点击，
      复核「登录」按钮与仍可见的昵称，最后点「登录」；
    - 已登录停在标题页（OCR 到「START」，或标题 logo 下的「REVERSE」副标题——实机常只读到 `ERSE`）：MAS 无法知道当前登录的是哪个
      账号，为了保证切到目标账号，点标题页右下角退出图标 → 唯一的「确认」→ 等「登录记录」面板出现后按
@@ -162,20 +162,36 @@ def _mask(text: str) -> str:
     return f"{value[0]}{'*' * (len(value) - 1)}"
 
 
-def _account_matches(text: str, account: str) -> bool:
-    """含汉字的昵称仅比较汉字，其余昵称精确匹配 OCR 原文。"""
+def _normalize_account(value: str) -> str:
+    """仅保留汉字、ASCII 英文字母及数字，不合并大小写或易混字符。"""
 
-    def han(value: str) -> str:
-        return "".join(
-            char
-            for char in value
-            if unicodedata.name(char, "").startswith(
-                ("CJK UNIFIED IDEOGRAPH-", "CJK COMPATIBILITY IDEOGRAPH-")
-            )
+    return "".join(
+        char
+        for char in value
+        if "a" <= char <= "z"
+        or "A" <= char <= "Z"
+        or "0" <= char <= "9"
+        or unicodedata.name(char, "").startswith(
+            ("CJK UNIFIED IDEOGRAPH-", "CJK COMPATIBILITY IDEOGRAPH-")
         )
+    )
 
-    account_han = han(account)
-    return han(text) == account_han if account_han else text == account
+
+def _account_candidates(
+    items: list[tuple[str, Box]], frame: np.ndarray, account: str
+) -> list[Box]:
+    """双方过滤后完整匹配；过滤为空的昵称不得与其他空昵称匹配。"""
+
+    expected = _normalize_account(account)
+    if not expected:
+        return []
+    return _pick(
+        items,
+        lambda text: _normalize_account(text) == expected,
+        frame,
+        x_range=_ACCOUNT_X_RANGE,
+        y_range=_ACCOUNT_Y_RANGE,
+    )
 
 
 def _center(box: Box) -> tuple[float, float]:
@@ -523,39 +539,48 @@ async def _select_account(
         if _privacy_prompt(items):
             frame, items = await _agree_privacy(device, frame, items, progress=progress)
 
-    matches = _pick(
-        items,
-        lambda text: _account_matches(text, account),
-        frame,
-        x_range=_ACCOUNT_X_RANGE,
-        y_range=_ACCOUNT_Y_RANGE,
-    )
-    if len(matches) != 1:
-        found = len(matches)
-        reason = (
-            "当前页有多个同名账号，无法确定切换哪一个"
-            if found > 1
-            else "当前页未找到该昵称（账号需已保存过登录记录，且列表在可见范围内）"
-        )
+    # 只重新截图，不重复点击；重名立即拒绝，未识别到目标最多看三帧。
+    for attempt in range(3):
+        matches = _account_candidates(items, frame, account)
+        if len(matches) > 1:
+            raise MaaFWLoginRequired(
+                "B 服登录失败：当前页有多个同名账号，无法确定切换哪一个"
+            )
+        if matches:
+            break
+        if attempt < 2:
+            await asyncio.sleep(_POLL_SECONDS)
+            frame, items = await _ocr(device)
+            if _privacy_prompt(items):
+                frame, items = await _agree_privacy(
+                    device, frame, items, progress=progress
+                )
+    else:
         raise MaaFWLoginRequired(
-            f"B 服登录失败：登录记录里未找到唯一的账号「{masked}」——{reason}"
+            f"B 服登录失败：登录记录里未找到账号「{masked}」的完整昵称，"
+            "请确认账号已保存且在可见范围内"
         )
     await device.tap(matches[0])
     await asyncio.sleep(1.0)
 
-    frame, items = await _ocr(device)
-    if _privacy_prompt(items):
-        frame, items = await _agree_privacy(device, frame, items, progress=progress)
-
-    selected = _pick(
-        items,
-        lambda text: _account_matches(text, account),
-        frame,
-        x_range=_ACCOUNT_X_RANGE,
-        y_range=_ACCOUNT_Y_RANGE,
-    )
-    login_buttons = _pick(items, lambda text: bool(_LOGIN_RE.match(text)), frame)
-    if len(selected) != 1 or len(login_buttons) != 1 or not _has(items, _SWITCH_OTHER):
+    # 选中后用新截图按同一过滤规则复核昵称及收起态，再允许点击登录。
+    for attempt in range(3):
+        frame, items = await _ocr(device)
+        if _privacy_prompt(items):
+            frame, items = await _agree_privacy(device, frame, items, progress=progress)
+        selected = _account_candidates(items, frame, account)
+        login_buttons = _pick(items, lambda text: bool(_LOGIN_RE.match(text)), frame)
+        if len(selected) > 1 or len(login_buttons) > 1:
+            raise MaaFWLoginRequired("B 服登录失败：无法确认唯一的所选账号或登录按钮")
+        if (
+            len(selected) == 1
+            and len(login_buttons) == 1
+            and _has(items, _SWITCH_OTHER)
+        ):
+            break
+        if attempt < 2:
+            await asyncio.sleep(_POLL_SECONDS)
+    else:
         raise MaaFWLoginRequired("B 服登录失败：无法确认所选账号，已停止登录")
 
     await device.tap(login_buttons[0])
