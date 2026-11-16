@@ -95,6 +95,9 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
   Game: {
     LaunchMode: 'DirectExe',
     LaunchPath: '',
+    LauncherPath: '',
+    URL: '',
+    CloseMode: 'OnFailure',
     PackageName: '',
     Arguments: '',
     WaitTime: 120,
@@ -102,6 +105,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     Hotkeys: '{}',
   },
   Update: {
+    PackageMode: 'incremental',
     AutoUpdateMode: 'BeforeRun',
     Source: 'GitHub',
     Channel: 'stable',
@@ -406,7 +410,8 @@ export function useMaaFWControlConfig(
     await loadEmulatorDeviceOptions(emulatorId)
   }
 
-  const selectLaunchPath = async () => {
+  // 游戏 exe 与启动器 exe 共用同一个选择流程，只差写回哪个字段
+  const selectGameExePath = async (key: 'LaunchPath' | 'LauncherPath') => {
     try {
       const paths = await window.electronAPI?.selectFile([
         {
@@ -423,14 +428,17 @@ export function useMaaFWControlConfig(
         return
       }
 
-      maafwConfig.Game.LaunchPath = path
-      await handleChange('Game', 'LaunchPath', path)
+      maafwConfig.Game[key] = path
+      await handleChange('Game', key, path)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`选择启动 exe 失败: ${errorMsg}`)
+      logger.error(`选择 ${key} exe 失败: ${errorMsg}`)
       message.error(t('core.misc.couldNotPickLaunch'))
     }
   }
+
+  const selectLaunchPath = () => selectGameExePath('LaunchPath')
+  const selectLauncherPath = () => selectGameExePath('LauncherPath')
 
   return {
     emulatorLoading,
@@ -459,5 +467,6 @@ export function useMaaFWControlConfig(
     loadEmulatorDeviceOptions,
     handleEmulatorSelectChange,
     selectLaunchPath,
+    selectLauncherPath,
   }
 }

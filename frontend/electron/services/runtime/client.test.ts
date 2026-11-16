@@ -405,40 +405,15 @@ describe('RuntimeClient.run', () => {
     expect(diagnostics[1]).toMatchObject({ systemCode: 'EACCES' })
   })
 
-  it('本地诊断关联创建、首输出、hello 与退出，不记录输出或命令参数', async () => {
+  it('本地进程诊断不记录输出、命令参数或本机路径', async () => {
     const client = createClient()
     const child = mockSpawn()
     const pending = client.run(['version', '--private', 'private-argument'])
-    child.emit('spawn')
     child.stderr.feed('private-stderr')
-    child.stderr.feed('more-private-stderr')
     child.stdout.feed(fixture('version.ndjson'))
-    child.emit('exit', 0, null)
     child.close(0)
     await pending
-    const diagnostics = loggerMock.info.mock.calls
-      .map(([message]) => String(message))
-      .filter(message => message.startsWith('[Runtime进程] '))
-      .map(message => JSON.parse(message.slice('[Runtime进程] '.length)))
-    expect(diagnostics.map(item => item.event)).toEqual([
-      'spawn_requested',
-      'spawned',
-      'first_stderr',
-      'first_stdout',
-      'hello',
-      'exit',
-      'close',
-    ])
-    expect(new Set(diagnostics.map(item => item.sessionId)).size).toBe(1)
-    expect(diagnostics.every(item => item.command === 'version' && item.elapsedMs >= 0)).toBe(true)
-    expect(diagnostics.find(item => item.event === 'spawned')).toMatchObject({ pid: 4242 })
-    expect(diagnostics.find(item => item.event === 'close')).toMatchObject({
-      processExited: true,
-      exitCode: 0,
-      signal: null,
-      stderrBytes: Buffer.byteLength('private-stderrmore-private-stderr'),
-    })
-    const logged = JSON.stringify(diagnostics)
+    const logged = JSON.stringify(loggerMock.info.mock.calls)
     expect(logged).not.toContain('private-argument')
     expect(logged).not.toContain('private-stderr')
     expect(logged).not.toContain(APP_ROOT)

@@ -85,9 +85,9 @@ REQUEST_TIMEOUT = 15.0
 # 桌面令牌到期前留出的余量，避免上传到一半才失效
 TOKEN_EXPIRE_MARGIN = timedelta(seconds=30)
 
-# 外观包上传前的轻量校验，上限与 Electron 主进程 appearanceService.ts 的 APPEARANCE_LIMITS 一致；
+# 外观包上传前的轻量校验，上限与数据站分类及 Electron 的 ASSET_CATEGORY_LIMITS 一致；
 # 完整校验（资源声明、图片格式、光标尺寸等）由 Electron 在上传对话框里先做过一遍。
-APPEARANCE_MAX_ARCHIVE_BYTES = 16 * 1024 * 1024
+APPEARANCE_MAX_ARCHIVE_BYTES = {"theme": 100 * 1024 * 1024, "mascot": 50 * 1024 * 1024}
 APPEARANCE_MAX_MANIFEST_BYTES = 256 * 1024
 APPEARANCE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 # 外观封面（主题商店列表里的预览图）上限，与 Electron 主进程取封面时的上限一致
@@ -905,9 +905,9 @@ class ConfigCenterClient:
             raise invalid("选择的路径不是文件")
         if path.suffix.lower() != ".zip":
             raise invalid("请选择 ZIP 外观包")
-        if path.stat().st_size > APPEARANCE_MAX_ARCHIVE_BYTES:
+        if path.stat().st_size > APPEARANCE_MAX_ARCHIVE_BYTES[category_key]:
             raise invalid(
-                f"外观包超过 {APPEARANCE_MAX_ARCHIVE_BYTES // 1024 // 1024} MB, 无法上传"
+                f"外观包超过 {APPEARANCE_MAX_ARCHIVE_BYTES[category_key] // 1024 // 1024} MB, 无法上传"
             )
 
         try:
@@ -993,9 +993,9 @@ class ConfigCenterClient:
 
         content = path.read_bytes()
         # 校验和读取之间文件被换掉时，以实际读到的大小为准再挡一次
-        if len(content) > APPEARANCE_MAX_ARCHIVE_BYTES:
+        if len(content) > APPEARANCE_MAX_ARCHIVE_BYTES[category_key]:
             raise invalid(
-                f"外观包超过 {APPEARANCE_MAX_ARCHIVE_BYTES // 1024 // 1024} MB, 无法上传"
+                f"外观包超过 {APPEARANCE_MAX_ARCHIVE_BYTES[category_key] // 1024 // 1024} MB, 无法上传"
             )
 
         return appearance_id, content, cover

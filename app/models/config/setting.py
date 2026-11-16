@@ -184,6 +184,11 @@ class GlobalConfig(DomainEntry):
             default_factory=lambda: False, description="是否屏蔽模拟器广告"
         )
 
+        IfEnableMCP: bool = Field(
+            default_factory=lambda: True,
+            description="启动时是否启用 MCP 服务，重启后生效",
+        )
+
         IfEnableTelemetry: bool = Field(
             default_factory=lambda: True, description="是否启用匿名遥测"
         )

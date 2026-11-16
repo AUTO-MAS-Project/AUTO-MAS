@@ -23,6 +23,7 @@ export const createMaaScriptDraft = (): MAAScriptConfig => ({
   Update: {
     Channel: 'stable',
     TakeoverEnabled: false,
+    PackageMode: 'full',
     MirrorChyanCDK: '',
   },
 })

@@ -20,6 +20,7 @@
       block
       class="queue-import-switch"
       :options="sourceKindOptions"
+      @change="autoPickSourceKind = false"
     />
 
     <!-- 本脚本的其他用户：单选卡片，选中的那份队列覆盖当前用户的 -->
@@ -226,10 +227,29 @@ const loadShellInstances = async () => {
   }
 }
 
+// 打开后两边都读完、用户还没自己切过页签时定一次默认页签：本托管没有可导入的其他账号、外壳里
+// 又读到了实例，就落到外壳页签，省得先看到「没有可导入的账号」再点一次
+let autoPickSourceKind = false
+watch(
+  () =>
+    [
+      props.userLoading,
+      shellLoading.value,
+      props.userCandidates.length,
+      instances.value.length,
+    ] as const,
+  ([usersBusy, shellBusy, userCount, shellCount]) => {
+    if (!autoPickSourceKind || usersBusy || shellBusy) return
+    autoPickSourceKind = false
+    if (userCount === 0 && shellCount > 0) sourceKind.value = 'shell'
+  }
+)
+
 const openDialog = () => {
   sourceKind.value = 'users'
   pickedUserId.value = ''
   pickedDir.value = ''
+  autoPickSourceKind = true
   emit('load-users')
   // 先开弹窗（默认页签是本脚本其他用户），外壳实例在后台读，外壳页签里转圈。
   // 默认目录里一份都没有、读失败也照样开着：弹窗里能改指别的目录，那正是「脚本挪过位置」时的出路
@@ -399,7 +419,7 @@ const apply = async () => {
   font-size: 13px;
 }
 
-/* 「N 个已失效」：虚线灰标签 */
+/* 「N 个不可用」：虚线灰标签 */
 .queue-invalid-tag {
   flex: none;
   padding: 0 7px;

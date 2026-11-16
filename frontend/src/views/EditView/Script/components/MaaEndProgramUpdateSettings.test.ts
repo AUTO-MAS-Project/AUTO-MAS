@@ -33,6 +33,7 @@ const renderPanel = async (ready: boolean) => {
     TakeoverEnabled: false,
     Channel: 'stable' as 'stable' | 'beta',
     MirrorChyanCDK: '',
+    PackageMode: 'full' as 'full' | 'incremental',
   })
   const saved: unknown[] = []
   const app = createSSRApp({

@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type MaaConfig_UpdateInput = {
     /**
+     * 更新方式：全量或优先增量；增量依赖完整且匹配的基线，必要时回退全量。
+     */
+    PackageMode?: ('full' | 'incremental' | null);
+    /**
      * 更新接管一次性迁移版本
      */
     TakeoverMigrationVersion?: (number | null);

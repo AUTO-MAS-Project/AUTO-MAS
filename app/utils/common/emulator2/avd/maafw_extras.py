@@ -36,6 +36,7 @@ webrtc start`` 拿共享内存名，断开时跑 ``... webrtc stop``。``adb emu
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -65,17 +66,22 @@ def build_maafw_avd_config(
     }
 
 
+_RELEASE_PREFIX_RE = re.compile(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?")
+
+
 def parse_version(text: str | None) -> tuple[int, ...] | None:
-    """``"v5.12.3"`` / ``"5.7.0-beta.1"`` → ``(5, 12, 3)``；认不出返回 ``None``。"""
+    """``"v5.12.3"`` / ``"5.7.0-beta.1"`` / ``"5.16.0b2"`` → 前三段数字；认不出返回 ``None``。
+
+    运行环境给的是 binding 的 PEP 440 版本号（项目自带 ``runtimes/win-x64/native`` 的
+    5.16.0-beta.2 规范化后是 ``5.16.0b2``），预发布段紧贴在第三段数字后面，只取开头的数字。
+    """
     if not text:
         return None
     head = str(text).strip().lstrip("vV").split("-", 1)[0].split("+", 1)[0]
-    parts = head.split(".")
-    try:
-        numbers = tuple(int(part) for part in parts[:3])
-    except ValueError:
+    match = _RELEASE_PREFIX_RE.match(head)
+    if match is None:
         return None
-    return numbers + (0,) * (3 - len(numbers)) if numbers else None
+    return tuple(int(part or 0) for part in match.groups())
 
 
 def avd_extras_supported(version: str | None) -> bool | None:

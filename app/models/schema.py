@@ -69,6 +69,7 @@ class McpStatusData(BaseModel):
     """MCP 的 HTTP 快照与 WS 进度共用契约；revision 在同一进程内单调递增。"""
 
     enabled: bool
+    environmentEnabled: bool = Field(description="启动环境是否允许启用 MCP")
     state: Literal["skipped", "pending", "running", "ready", "failed", "cancelled"]
     stage: Literal["importing", "building", "validating", "mounting"] | None
     startedAt: AwareDatetime | None
@@ -1308,6 +1309,10 @@ class MaaFWOptionInputInfo(BaseModel):
     password: bool = Field(
         default=False, description="是否为密码 / 密钥字段（界面掩码，配置加密存储）"
     )
+    inputType: Literal["text", "file", "directory"] = Field(
+        default="text",
+        description="编辑控件类型（PI v2.10.5）：text 文本框，file / directory 为路径框加系统选择对话框",
+    )
 
 
 class MaaFWOptionHotkeyInfo(BaseModel):
@@ -1375,6 +1380,10 @@ class MaaFWPresetInfo(BaseModel):
     description: Optional[str] = Field(default=None, description="预设描述")
     taskCount: int = Field(default=0, description="预设声明任务数")
     checkedCount: int = Field(default=0, description="转换后勾选任务数")
+    controller: List[str] = Field(
+        default_factory=list,
+        description="适用控制器（PI v2.10.4），为空表示不限；当前控制器不在其中时界面不让应用",
+    )
     snapshot: MaaFWTaskSnapshot = Field(..., description="预设转换后的任务快照")
 
 

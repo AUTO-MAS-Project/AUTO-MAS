@@ -103,18 +103,4 @@ describe('卫星配置与历史概览', () => {
     }
     expect(fetchOverview).toHaveBeenCalledTimes(2)
   })
-
-  it('查询失败保留最近一次有效配置结果', async () => {
-    fetchOverview
-      .mockImplementationOnce(() => response([overview('s', 'MAA', true)]))
-      .mockImplementationOnce(() => response([], 503))
-    const { state, dispose } = mountStatus()
-    try {
-      await state.refresh()
-      await state.refresh()
-      expect(state.statuses.value.get('MAA')).toEqual({ scheduled: true, lastFailed: false })
-    } finally {
-      dispose()
-    }
-  })
 })

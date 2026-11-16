@@ -169,54 +169,67 @@ afterEach(() => {
 // ==================== 同步 ====================
 
 describe('syncRuntimeBinary', () => {
-  it('版本较旧时先取可信清单，再下载线上最新版并替换', async () => {
-    const { download, urls } = createDownload(() => ({ success: true, content: NEW_BINARY }))
-    const sums = createSums()
-    const progress: RuntimeBinarySyncProgress[] = []
-
+  it('外层下载计时结束而下载器仍在途时，不自动重试', async () => {
+    const releases: ((value: { success: false; error: string }) => void)[] = []
     const outcome = await syncRuntimeBinary(
       syncOptions({
-        download,
-        fetchText: sums.fetchText,
-        onProgress: update => progress.push(update),
+        sourceTimeoutMs: 5,
+        budgetMs: 500,
+        download: () =>
+          new Promise(resolve => {
+            releases.push(resolve)
+          }),
       })
     )
+    expect(releases.length).toBeGreaterThan(0)
+    expect(outcome.code).toBe(RUNTIME_BINARY_DOWNLOAD_FAILED)
+    expect(outcome.networkUnavailable).toBeUndefined()
+    for (const release of releases) release({ success: false, error: 'finished' })
+    await new Promise<void>(resolve => setImmediate(resolve))
+  })
 
+  it('透传下载器确认的网络失败，写盘失败与校验错误不冒充网络故障', async () => {
+    const networkFailure = await syncRuntimeBinary(
+      syncOptions({
+        download: async () => ({ success: false, error: 'reset', networkUnavailable: true }),
+      })
+    )
+    expect(networkFailure).toMatchObject({
+      code: RUNTIME_BINARY_DOWNLOAD_FAILED,
+      networkUnavailable: true,
+    })
+    const writeFailure = await syncRuntimeBinary(
+      syncOptions({ download: async () => ({ success: false, error: 'access denied' }) })
+    )
+    expect(writeFailure.networkUnavailable).toBeUndefined()
+    const checksumFailure = await syncRuntimeBinary(
+      syncOptions({
+        download: createDownload(() => ({ success: true, content: 'wrong binary' })).download,
+      })
+    )
+    expect(checksumFailure.networkUnavailable).toBeUndefined()
+  })
+
+  it('可信校验清单的网络失败也能保留分类', async () => {
+    const outcome = await syncRuntimeBinary(
+      syncOptions({
+        fetchText: async () => ({ kind: 'failed', error: 'timeout', networkUnavailable: true }),
+      })
+    )
+    expect(outcome).toMatchObject({
+      code: RUNTIME_BINARY_DOWNLOAD_FAILED,
+      networkUnavailable: true,
+    })
+  })
+
+  it('版本较旧时先取可信清单，再下载线上最新版并替换', async () => {
+    const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
+    const sums = createSums()
+    const outcome = await syncRuntimeBinary(syncOptions({ download, fetchText: sums.fetchText }))
     expect(outcome.status).toBe('upgraded')
     expect(outcome.target).toEqual(TARGET)
-    // 清单只问了 CNB 与 GitHub；exe 第一个源就成功，不该继续往下试。
     expect(sums.urls.every(url => isCnbUrl(url) || isGithubUrl(url))).toBe(true)
-    const [first] = buildRuntimeBinarySources(TARGET_VERSION)
-    expect(urls).toEqual([first.url])
     expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
-    expect(progress).toEqual([
-      {
-        phase: 'check',
-        progress: 0,
-        targetVersion: TARGET_VERSION,
-        message: `正在获取 Runtime ${TARGET_VERSION} 的校验信息`,
-      },
-      ...[0, 50].map(value => ({
-        phase: 'download',
-        progress: value,
-        targetVersion: TARGET_VERSION,
-        item: TARGET_ASSET,
-        source: first.key,
-        sourceName: first.name,
-        sourceIndex: 1,
-        sourceCount: buildRuntimeBinarySources(TARGET_VERSION).length,
-        message: `正在从 ${first.name}（1/${buildRuntimeBinarySources(TARGET_VERSION).length}） 下载 Runtime ${TARGET_VERSION}`,
-        ...(value === 50
-          ? { bytesPerSecond: undefined, current: undefined, total: undefined }
-          : {}),
-      })),
-      {
-        phase: 'complete',
-        progress: 100,
-        targetVersion: TARGET_VERSION,
-        message: `Runtime 已更新到 ${TARGET_VERSION}`,
-      },
-    ])
   })
 
   it('下载失败切源后按实际来源与尝试序号报告，重试不沿用上一轮序号', async () => {

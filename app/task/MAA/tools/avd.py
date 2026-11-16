@@ -50,6 +50,7 @@ MAA v6.19.0 复核过：上面的新键名与取值不变；MaaCore 先找 ``nx_
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 from pathlib import Path
 from typing import Any
@@ -82,13 +83,36 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def ensure_mumu_shim(root: str | Path) -> Path:
-    """确保 ``<根>\\mumu-shim\\shell\\sdk\\external_renderer_ipc.dll`` 是随本体发的那一份。
+#: ``modavd-manifest.json`` 里外壳的路径。ModAVD 0.40.1 起整包自带外壳，就在这里。
+PACKAGE_SHIM_PATH = f"{MUMU_SHIM_DIR}/shell/sdk/external_renderer_ipc.dll"
 
-    随本体更新 DLL 也会变，所以不只看在不在，内容不同就覆盖。正在被 MAA 加载时覆盖会失败，
-    那就留着旧的并记警告——旧的也能用，下次运行前再换。
+
+def _package_ships_shim(root: str | Path) -> bool:
+    """根目录的 ``modavd-manifest.json`` 列了外壳：这份文件归 ModAVD 的包管。"""
+    try:
+        manifest = json.loads(
+            (Path(root) / "modavd-manifest.json").read_text(encoding="utf-8-sig")
+        )
+    except (OSError, ValueError):
+        return False
+    files = manifest.get("files") if isinstance(manifest, dict) else None
+    return isinstance(files, dict) and PACKAGE_SHIM_PATH in files
+
+
+def ensure_mumu_shim(root: str | Path) -> Path:
+    """确保 ``<根>\\mumu-shim\\shell\\sdk\\external_renderer_ipc.dll`` 在，MAA 能当 MuMu 载入。
+
+    ModAVD 0.40.1 起整包自带这份外壳（列在 ``modavd-manifest.json`` 里），这时用包里的，
+    不覆盖：换成本体的那份会和包的清单对不上，ModAVD 用 Mirror 酱增量更新时就核对失败。
+    包里的被删了才补本体这份，下次 ModAVD 更新会换回包里的。
+
+    更早的包不带外壳，照旧放本体发的那一份：随本体更新 DLL 也会变，所以不只看在不在，
+    内容不同就覆盖。正在被 MAA 加载时覆盖会失败，那就留着旧的并记警告——旧的也能用，
+    下次运行前再换。
     """
     target = shim_dll(root)
+    if target.is_file() and _package_ships_shim(root):
+        return target
     if not SHIM_SOURCE.is_file():
         raise FileNotFoundError(f"缺少截图组件 {SHIM_SOURCE}")
     if target.is_file() and _sha256(target) == _sha256(SHIM_SOURCE):

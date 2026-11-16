@@ -66,8 +66,13 @@ from app.task.MaaFW.tools.core.interface.models import (
     resolve_task_instance_name,
 )
 from app.task.MaaFW.tools.embedded.flavor import StartupTask
+from app.task.MaaFW.tools.embedded.flavor_support import (
+    config_value,
+    task_name_for_entry,
+)
 
 if TYPE_CHECKING:
+    from app.task.MaaFW.tools.embedded.flavor_support import MaaFWSelectionContext
     from app.utils import game_update as _utils_game_update
 
 TYPE_KEY = "M9A"
@@ -94,15 +99,6 @@ FALLBACK_TASK_NAMES: dict[str, str] = {
 }
 
 _GITHUB_M9A_RE = re.compile(r"(^|[/:])MAA1999/M9A(\.git)?/?$", re.IGNORECASE)
-
-
-def task_name_for_entry(interface_model: MaaFWInterface, entry: str) -> str | None:
-    """interface 里第一个 ``entry`` 等于给定值的任务名；找不到返回 None。"""
-
-    for task in interface_model.task:
-        if str(task.entry or "") == entry:
-            return task.name
-    return None
 
 
 def is_m9a_project(interface_model: MaaFWInterface | dict[str, Any]) -> bool:
@@ -204,18 +200,14 @@ class M9AFlavor:
         task_ids: list[str],
         task_options: dict[str, Any],
         *,
-        script_config: Any,
-        user_config: Any,
-        resource_name: str | None,
-        send_log: Callable[[str], None] | None,
+        context: MaaFWSelectionContext,
     ) -> tuple[list[str], dict[str, Any]]:
-        def log(message: str) -> None:
-            if send_log is not None:
-                send_log(message)
-
+        log = context.log
         entry_of, account_of = _entry_and_account_readers(interface_model)
-        login_mode = _login_mode(script_config)
-        supported = supports_account_switch(resource_name, login_mode=login_mode)
+        login_mode = _login_mode(context.script_config)
+        supported = supports_account_switch(
+            context.resource_name, login_mode=login_mode
+        )
         queued_accounts = effective_switch_accounts(
             task_ids, task_options, entry_of=entry_of, account_of=account_of
         )
@@ -258,7 +250,7 @@ class M9AFlavor:
         account = (
             queued_accounts[0]
             if len(queued_accounts) == 1
-            else str(_get(user_config, "Info", "Account") or "").strip()
+            else str(config_value(context.user_config, "Info", "Account") or "").strip()
         )
         if account and supported:
             switch = task_name_for_entry(interface_model, SWITCH_ACCOUNT_ENTRY)
@@ -455,17 +447,10 @@ def _entry_and_account_readers(
     return entry_of, account_of
 
 
-def _get(config: Any, group: str, name: str) -> Any:
-    try:
-        return getattr(getattr(config, group), name)
-    except Exception:  # noqa: BLE001 - 假配置对象缺项时按空处理
-        return None
-
-
 def _login_mode(script_config: Any) -> str:
     """``Run.LoginMode``；假配置对象缺项时按项目自登录（``Project``）处理。"""
 
-    return str(_get(script_config, "Run", "LoginMode") or "").strip()
+    return str(config_value(script_config, "Run", "LoginMode") or "").strip()
 
 
 FLAVOR = M9AFlavor()

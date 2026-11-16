@@ -51,6 +51,7 @@ from app.task.MaaFW.tools.core.interface.task_config import (
     normalize_global_options,
     normalize_snapshot,
     normalize_task_execution_payload,
+    unchecked_task_ids,
 )
 from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     path_without_host_venv,
@@ -100,9 +101,17 @@ _WARNED_LANGUAGE_FILES: set[str] = set()
 # - v2.10.3：preset.pretask——账号页应用预设时按它设前置任务的勾选与选项值，未列出的
 #   不勾选；预设没声明时保持用户当前的前置任务不变（task_config._apply_preset_pretasks、
 #   前端 maafwPresetQueue.ts）。
-# 所以声明 v2.10.3。之后的 v2.10.4（preset.controller）、v2.10.5（inputs[].input_type）
-# 还没做，不能再往上声明。
-PI_INTERFACE_VERSION = "v2.10.3"
+# - v2.10.4：preset.controller——加载器解析（interface.models.MaaFWPreset.controller，写错的
+#   名字告警、原样保留），经预览的 MaaFWPresetInfo.controller 给账号页；当前控制器不满足的
+#   预设置灰、不让应用（前端 maafwPresetQueue.isPresetAvailableForController），协议允许的
+#   「隐藏或禁用」取禁用。已选中的预设不因此改掉，运行期不拦截。
+# - v2.10.5：inputs[].input_type——file / directory 在账号页（含前置任务的选项）渲染成可编辑
+#   的路径框加系统选择对话框，选中后原样写入原生绝对路径，verify / pattern_msg 照常校验；
+#   没有原生对话框（浏览器预览）时退化为普通文本框（前端 MaaFWTaskOptionEditor.vue）。
+#   取值语义不变，运行计划不看它。
+# - v2.11.0：PI_USER_DATA_DIR——见 _build_pi_env，取项目根（agent / pretask 的工作目录）。
+# 所以声明 v2.11.0。
+PI_INTERFACE_VERSION = "v2.11.0"
 PI_CLIENT_LANGUAGE = "zh_cn"
 PI_CLIENT_NAME = "AUTO-MAS"
 PROJECT_RUNTIME_MANIFEST_NAME = ".auto_mas_maafw_project.json"
@@ -189,7 +198,7 @@ def build_maafw_run_plan(
 
     ``secret_inputs``：值是从密文解出来的 input 字段 ``[[option 名, 字段名], …]``，下发失败的
     提示按密码字段处理、不带原值；不给时取 ``task_snapshot`` 里宿主写的
-    ``SECRET_INPUTS_SNAPSHOT_KEY``（走 ``task_ids`` 的调用方要自己传）。
+    ``SECRET_INPUTS_SNAPSHOT_KEY``（给了 ``task_ids`` 时同样从这份快照取）。
 
     ``no_default_fallback_inputs``：字符串字段没填时不回落 default 的 input 字段
     ``[(option 名, 字段名), …]``，特调声明的例外（宿主按脚本的特调传；不传就没有例外）。
@@ -454,7 +463,9 @@ def build_maafw_run_plan(
             managed_env_root=managed_env_root,
         ),
         pretasks=pretask_plans,
-        piEnv=_build_pi_env(interface, controller, resource, i18n_mapping),
+        piEnv=_build_pi_env(
+            interface, controller, resource, i18n_mapping, resolved_base_dir
+        ),
         tasks=runnable_tasks,
         skippedTasks=[*queue_skipped_tasks, *skipped_tasks],
         globalOptions=copy.deepcopy(global_values),
@@ -1098,14 +1109,9 @@ def _select_tasks(
     """``(勾选的实例 id, 各实例自己的选项, 用户的全局表, 特调给各实例写的只属于全局的选项)``。"""
 
     if task_ids is not None:
-        raw = _normalize_raw_snapshot(task_snapshot)
-        if raw["keepUnchecked"]:
-            # 特调自动补入的实例也必须尊重用户这轮显式设的红灯。
-            skipped_ids = {
-                task_id
-                for task_id in raw["taskOrder"]
-                if raw["taskChecked"].get(task_id) is False
-            }
+        # 特调自动补入的实例也必须尊重用户这轮显式设的红灯。
+        skipped_ids = set(unchecked_task_ids(task_snapshot))
+        if skipped_ids:
             task_ids = [task_id for task_id in task_ids if task_id not in skipped_ids]
         selected_ids, selected_options = normalize_task_execution_payload(
             task_ids,
@@ -1639,7 +1645,20 @@ def _build_pi_env(
     controller: MaaFWController,
     resource: MaaFWResource,
     i18n_mapping: dict[str, Any],
+    project_root: Path,
 ) -> dict[str, str]:
+    """注入给 agent 与 pretask 子进程的 ``PI_*`` 环境变量（runner 与宿主跑 pretask 共用这一份）。
+
+    ``PI_USER_DATA_DIR``（PI v2.11.0）取项目根 ``project_root``，即计划的 ``path``——内嵌运行
+    时就是视图 ``data/mfw/<托管 uuid 前 12 位>/``。协议的语义是「通用 UI 与子进程共同读写
+    config / debug 的目录，便携布局下就是工作目录」，在 MAS 里与它重合的只有这个目录：
+    agent 与 pretask 子进程的 cwd 都是它（``planner`` 的 ``cwd=base_dir``、``runner_task._run_pretasks``
+    的 ``cwd=self.run_plan.path``），runner 的 ``Toolkit.init_option`` 也以它为用户路径，
+    MaaFramework 的 ``config/maa_option.json`` 与 ``debug/maafw.log`` 都落在它下面；项目自己
+    读写的 ``config/``、``debug/`` 是视图私有文件，换版本时随视图带走。MAS 自己的工作目录
+    （后端 cwd）与 ``data/maafw_project_state`` 都不是子进程会去读写的地方，不取它们。
+    """
+
     controller_payload = _resolve_i18n_value(
         controller.model_dump(mode="json", exclude_none=True), i18n_mapping
     )
@@ -1653,6 +1672,7 @@ def _build_pi_env(
         "PI_CLIENT_LANGUAGE": PI_CLIENT_LANGUAGE,
         "PI_CLIENT_MAAFW_VERSION": _load_maafw_version(),
         "PI_VERSION": interface_model.version or "",
+        "PI_USER_DATA_DIR": str(Path(project_root).resolve()),
         "PI_CONTROLLER": json.dumps(
             controller_payload, ensure_ascii=False, separators=(",", ":")
         ),

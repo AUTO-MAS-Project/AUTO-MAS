@@ -63,7 +63,6 @@ from .AutoProxy import (
 from .constants import ARKNIGHTS_PACKAGE_NAME
 from .ScriptConfig import ScriptConfigTask
 from .tools import update_maa
-from .tools.managed_recovery import MAAInstallAdapter
 from .tools.backup_archive import (
     archive_native_backup,
     collect_native_files,
@@ -75,6 +74,7 @@ from .tools.fluxdown_update import (
     query_latest_maa_version,
 )
 from .tools.game_update import ensure_game_updated
+from .tools.managed_recovery import MAAInstallAdapter
 from .tools.resource_update import (
     _run_write_thread,
     acquire_resource_access_lock,
@@ -652,12 +652,22 @@ class MaaManager(ScriptManagerBase):
             )
             if isinstance(candidate, PreparedUpdate):
                 self._github_update_candidate = candidate
-            await prefetch_resources(root, github=True, cdk=None)
+            await prefetch_resources(
+                root,
+                github=True,
+                cdk=None,
+                incremental=config.Update.PackageMode == "incremental",
+            )
         else:
             enabled, cdk = resolve_takeover_credentials(config)
             if enabled and cdk is not None:
                 await prefetch_maa_software_update(root, config)
-                await prefetch_resources(root, github=False, cdk=cdk)
+                await prefetch_resources(
+                    root,
+                    github=False,
+                    cdk=cdk,
+                    incremental=config.Update.PackageMode == "incremental",
+                )
 
     async def discard_prefetched_update(self) -> None:
         candidate = getattr(self, "_github_update_candidate", None)
@@ -855,6 +865,7 @@ class MaaManager(ScriptManagerBase):
             cdk=cdk,
             github=github,
             progress=resource_progress,
+            incremental=self.script_config.Update.PackageMode == "incremental",
         )
         return True
 

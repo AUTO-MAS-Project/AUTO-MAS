@@ -328,6 +328,8 @@ def select_failure_summary_lines(lines: list[str], limit: int = 8) -> list[str]:
     ERROR 级别行时只保留它们和截图/回溯行，否则退回截尾。
     """
 
+    lines = [strip_ansi(line) for line in lines]
+
     picked = [
         line
         for line in lines

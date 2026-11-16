@@ -353,6 +353,12 @@ def main():
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        from app.core import Startup
+
+        Startup.prepare(
+            deferred=is_supervised()
+            and os.getenv("AUTO_MAS_DEFER_BUSINESS_START") == "1"
+        )
         # 预热共享 SSL 上下文：truststore 全量加载证书库较慢，放线程执行避免首个请求卡死
         import ssl
 
@@ -369,6 +375,9 @@ def main():
 
         with startup_stage("后端/必要配置初始化"):
             await Config.init_config()
+        from app.core import MCP
+
+        MCP.configure(enabled=Config.setting.Function.IfEnableMCP)
         startup_mark("后端/必要配置就绪")
         with startup_stage("后端/历史组件导入"):
             from app.core import History
@@ -394,7 +403,7 @@ def main():
 
         with startup_stage("后端/后台服务组件导入"):
             from app.config import config_manager
-            from app.core import MCP, BackgroundTaskManager
+            from app.core import BackgroundTaskManager
 
         async def preload_maaend_resources() -> None:
             with startup_stage("后端/MaaEnd 资源预热（后台）"):
@@ -497,7 +506,11 @@ def main():
                 await run_optional_step("桌面显示输出守卫", start_desktop_guard)
                 # 要在主定时器之前：定时器可能马上拉起实例，而 sdk\emulator 可能正停在换到一半
                 await run_optional_step("ModAVD 更新恢复", init_avd_update)
-                timer_error = await run_step("主业务定时器", MainTimer.start)
+
+                async def start_main_timer() -> None:
+                    await MainTimer.start()
+
+                timer_error = await run_step("主业务定时器", start_main_timer)
                 startup_mark("后端/主定时器启动结束")
 
                 await run_optional_step("通知渠道", Notify.start)
@@ -560,6 +573,8 @@ def main():
                 Power,
                 Updater,
             )
+
+            Startup.close()
 
             # 同步封禁新加载，独立回收 MCP；不能让不可取消线程挡住停止主业务。
             mcp_shutdown = asyncio.create_task(MCP.shutdown(), name="mcp-shutdown")

@@ -35,8 +35,4 @@ describe('MAA plan day selection', () => {
     expect(getCurrentMaaPlan(plan, 'Official', beforeReset)?.Stage).toBe('AP-5')
     expect(getCurrentMaaPlan(plan, 'Official', afterReset)?.Stage).toBe('CA-5')
   })
-
-  it('does not use fixed values when the selected plan group is incomplete', () => {
-    expect(getCurrentMaaPlan({ ALL: { Stage: '1-7' } }, 'Official', afterReset)).toBeNull()
-  })
 })

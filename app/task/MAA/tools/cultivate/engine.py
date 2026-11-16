@@ -293,8 +293,9 @@ def _best_path(
 ) -> tuple[float, dict[str, float]] | None:
     """计算获得 1 个物品的最低理智成本与对应路径（{可刷材料: 数量}）。
 
-    直刷与合成按每理智成本择优，直刷只计今天实际开放的关卡；不可获取
-    返回 None。返回的路径中数量为浮点倍率，调用方在最终条目上取整。
+    直刷与合成按每理智成本择优，通常只计今天实际开放的关卡。技巧概要
+    选路忽略星期限制，避免 CA 休息日改刷低级卷；实际刷取仍按当天开放性
+    过滤。不可获取返回 None。路径数量为浮点倍率，调用方在最终条目上取整。
     """
 
     if depth > _MAX_PATH_DEPTH:
@@ -308,7 +309,13 @@ def _best_path(
     # 实际刷取与理智估算仍由 acquire/build_plan 的固定产出关分支处理
     if item_id in data.fixed_source_stages:
         candidates.append((0.0, {item_id: 1.0}))
-    direct_cost = _direct_cost(item_id, data, now_ms, weekday, blacklist)
+    direct_cost = _direct_cost(
+        item_id=item_id,
+        data=data,
+        now_ms=now_ms,
+        weekday=None if item_id in {"3301", "3302", "3303"} else weekday,
+        blacklist=blacklist,
+    )
     if direct_cost is not None:
         candidates.append((direct_cost, {item_id: 1.0}))
 
@@ -362,8 +369,9 @@ def synthesize(
     today 提供时直刷可行性按当天开放性评估——直刷关今天没开（限时关
     过期/星期关未开）的材料自动落到合成路径；连合成路径今天也走不通的，
     保留为未展开的刷取需求（recommend_stages 自然不产条目，demands 仍
-    展示缺口）；结构性不可获取（无直掉关且无配方）才进不可获取清单。
-    不提供 today 则不做开放性过滤（仅限测试）。
+    展示缺口）。技巧概要沿用不受星期限制的最省路线，等待资源关开放；
+    结构性不可获取（无直掉关且无配方）才进不可获取清单。不提供 today
+    则不做开放性过滤（仅限测试）。
     """
 
     recipe_map = _build_recipe_map(data)
@@ -632,8 +640,8 @@ def _farm_demand_net(
 
     库存合成只消耗凑齐整套配方的材料，支持逐级合成；未凑齐的原料保留给
     后续需求，不参与选路成本比较。技巧概要低级卷可由每日任务补充，不因
-    零散库存改选刷低级卷。剩余缺口沿用 synthesize 的理智成本选路与当天
-    关卡开放规则。
+    零散库存或 CA 休息日改选刷低级卷。剩余缺口沿用 synthesize 的理智
+    成本选路与当天关卡开放规则。
 
     贪心按需求顺序消耗、不求解最优分配：缺口判定与计划数量都建立在这一份
     结果上，两者不会互相打架。

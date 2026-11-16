@@ -1,5 +1,4 @@
 import * as fs from 'fs'
-import AdmZip = require('adm-zip')
 import type {
   InstalledMascot,
   MascotImportResult,
@@ -7,7 +6,8 @@ import type {
   MascotSummary,
 } from '../../src/types/mascotPack'
 import {
-  ASSET_PACKAGE_LIMITS,
+  detectAssetPackageKind,
+  type ExtractedPackage,
   AssetPackageError,
   AssetPackageStore,
   assertPlainObject,
@@ -38,19 +38,26 @@ const store = new AssetPackageStore<MascotManifest>({
 export const getMascotRoot = (userDataPath: string): string => store.root(userDataPath)
 
 /** 商店只接收纯桌宠包；本地导入仍可从旧主题包提取桌宠。 */
-export function inspectMascotPackage(zipPath: string): {
+export async function inspectMascotPackage(zipPath: string): Promise<{
   manifest: MascotManifest
   previewUrl?: string
-} {
-  const { manifest, files } = store.readArchive(zipPath)
-  const preview = files.find(
-    file => file.path.toLowerCase() === (manifest.preview ?? manifest.mascot.path).toLowerCase()
-  )
-  return {
-    manifest,
-    ...(preview
-      ? { previewUrl: `data:${preview.mime};base64,${preview.data.toString('base64')}` }
-      : {}),
+}> {
+  const pack = await store.readArchive(zipPath)
+  try {
+    const { manifest, files } = pack
+    const preview = files.find(
+      file => file.path.toLowerCase() === (manifest.preview ?? manifest.mascot.path).toLowerCase()
+    )
+    return {
+      manifest,
+      ...(preview
+        ? {
+            previewUrl: `data:${preview.mime};base64,${fs.readFileSync(preview.source).toString('base64')}`,
+          }
+        : {}),
+    }
+  } finally {
+    await fs.promises.rm(pack.directory, { recursive: true, force: true })
   }
 }
 
@@ -83,20 +90,22 @@ function summarizeMascot({ manifest, assets }: LoadedAssetPackage<MascotManifest
 }
 
 /** 旧主题包可直接作为桌宠来源；只安装桌宠图片，不安装主题。 */
-export function importMascotPackage(
+export async function importMascotPackage(
   userDataPath: string,
   zipPath: string,
   replace = false
-): MascotImportResult {
+): Promise<MascotImportResult> {
+  let directory: string | undefined
   try {
-    const stat = fs.statSync(zipPath)
-    if (!stat.isFile() || stat.size > ASSET_PACKAGE_LIMITS.archiveBytes) fail('桌宠 ZIP 无效或过大')
-    const hasMascotManifest = Boolean(new AdmZip(zipPath).getEntry('mascot.json'))
-    let pack: ReturnType<typeof store.readArchive>
-    if (hasMascotManifest) {
-      pack = store.readArchive(zipPath)
+    const kind = await detectAssetPackageKind(zipPath)
+    let pack: ExtractedPackage<MascotManifest>
+    if (kind === 'mascot') {
+      pack = await store.readArchive(zipPath, store.root(userDataPath))
+      directory = pack.directory
     } else {
-      const { manifest: theme, files } = readAppearancePackage(zipPath)
+      const source = await readAppearancePackage(zipPath)
+      directory = source.directory
+      const { manifest: theme, files } = source
       if (!theme.mascot) fail('主题包没有附带桌宠')
       const manifest: MascotManifest = {
         formatVersion: 1,
@@ -108,7 +117,11 @@ export function importMascotPackage(
       const expectedPaths = new Set(
         mascotAssetPaths(manifest.mascot).map(item => item.toLowerCase())
       )
-      pack = { manifest, files: files.filter(file => expectedPaths.has(file.path.toLowerCase())) }
+      pack = {
+        manifest,
+        directory,
+        files: files.filter(file => expectedPaths.has(file.path.toLowerCase())),
+      }
     }
     const { item, existing, ...result } = store.install(userDataPath, pack, replace)
     return {
@@ -121,11 +134,13 @@ export function importMascotPackage(
     return {
       success: false,
       code:
-        error instanceof AssetPackageError && error.code === 'INVALID_ANIMATION'
-          ? 'INVALID_ANIMATION'
+        error instanceof AssetPackageError && error.code !== 'UNSUPPORTED'
+          ? error.code
           : 'INVALID_PACKAGE',
       error: error instanceof Error ? error.message : String(error),
     }
+  } finally {
+    if (directory) await fs.promises.rm(directory, { recursive: true, force: true })
   }
 }
 

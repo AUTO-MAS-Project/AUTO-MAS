@@ -214,6 +214,7 @@ def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, 
         "mirror_cdk": credentials.cdk,
         "channel": credentials.channel,
         "package_source": credentials.package_source,
+        "package_mode": script_config.Update.PackageMode,
     }
     # 副本里没有 MFW.exe / maafw/ 可扫，外壳家族从导入报告取。
     shell_hint = shell_hint_from_report(script_config)

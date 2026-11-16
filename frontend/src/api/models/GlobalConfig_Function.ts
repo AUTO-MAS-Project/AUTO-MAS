@@ -20,6 +20,10 @@ export type GlobalConfig_Function = {
      */
     IfBlockAd?: (boolean | null);
     /**
+     * 启动时是否启用 MCP 服务，重启后生效
+     */
+    IfEnableMCP?: (boolean | null);
+    /**
      * 是否启用匿名遥测
      */
     IfEnableTelemetry?: (boolean | null);

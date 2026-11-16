@@ -26,6 +26,17 @@ const backgroundColor = (page: Page) =>
     return getComputedStyle(body).backgroundColor
   })
 
+const expectCircularSwatches = async (page: Page) => {
+  const swatches = page.locator('.color-swatches .color-swatch')
+  await expect(swatches).toHaveCount(6)
+  for (const swatch of await swatches.all()) {
+    const bounds = await swatch.boundingBox()
+    expect(bounds?.width).toBe(26)
+    expect(bounds?.height).toBe(26)
+    await expect(swatch).toHaveCSS('border-radius', '50%')
+  }
+}
+
 test.describe('@settings user preferences', () => {
   test('anchors question hints to the icon for hover and keyboard focus', async ({ app, page }) => {
     await app.goto('/settings')
@@ -433,6 +444,7 @@ test.describe('@settings user preferences', () => {
       await page.getByRole('button', { name: 'Purple', exact: true }).click()
       await expect(sider).toHaveCSS('background-color', 'rgb(255, 255, 255)')
       await expect(sider).toHaveCSS('border-right-color', 'rgb(238, 238, 240)')
+      await expectCircularSwatches(page)
       await page.locator('.startup-window-settings').scrollIntoViewIfNeeded()
       await app.evidence('settings-close-options-light')
       await chooseSegment(theme, 'Dark')
@@ -446,6 +458,7 @@ test.describe('@settings user preferences', () => {
         'aria-pressed',
         'true'
       )
+      await expectCircularSwatches(page)
       for (const tab of ['Features', 'Notifications', 'Advanced', 'About']) {
         await page.getByRole('tab', { name: tab, exact: true }).click()
         await expect(header.getByRole('button')).toHaveCount(0)
@@ -476,6 +489,7 @@ test.describe('@settings user preferences', () => {
         'aria-pressed',
         'true'
       )
+      await expectCircularSwatches(page)
       await app.evidence('settings-header-narrow-reloaded')
     } finally {
       const prompt = page.locator('.app-close-prompt-modal .ant-modal:visible')

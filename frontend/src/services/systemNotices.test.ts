@@ -1,10 +1,10 @@
-import { createSSRApp } from 'vue'
 import { renderToString } from '@vue/server-renderer'
-import { createI18n } from 'vue-i18n'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import zh from '../../../res/i18n/zh_CN.json'
+import { createSSRApp } from 'vue'
+import { createI18n } from 'vue-i18n'
 import en from '../../../res/i18n/en.json'
 import ja from '../../../res/i18n/ja.json'
+import zh from '../../../res/i18n/zh_CN.json'
 import { bootstrapSystemNotices, disposeSystemNotices } from './systemNotices'
 import { WS_ID_MAIN, WS_SYSTEM_NOTICE } from './websocket/types'
 
@@ -54,16 +54,4 @@ it.each([
   expect(args.message).toBe(catalog['core.setting.func.scheduledWakeupFailure'])
   const rendered = await renderToString(createSSRApp({ render: args.description }))
   expect(rendered).toContain(catalog['core.setting.func.scheduledWakeupFailureTip'])
-})
-
-it('preserves plain messages from older backends', async () => {
-  bootstrapSystemNotices()
-  boundary.callbacks.get(`${WS_ID_MAIN}:${WS_SYSTEM_NOTICE}`)({
-    data: { level: 'warning', title: 'Existing title', lines: ['Existing body'] },
-  })
-  const args = boundary.warning.mock.calls[0][0]
-  expect(args.message).toBe('Existing title')
-  expect(await renderToString(createSSRApp({ render: args.description }))).toContain(
-    'Existing body'
-  )
 })

@@ -1,5 +1,5 @@
-import { ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
 import { getDefaultOkwwTaskConfig } from './okwwTaskConfig'
 import { useOkwwCustomArguments } from './useOkwwCustomArguments'
 
@@ -18,23 +18,22 @@ describe('custom argument confirmation and persistence', () => {
     expect(save).toHaveBeenCalledOnce()
   })
 
-  it('restores the previous draft and switch when enabling fails to save', async () => {
-    const task = ref(getDefaultOkwwTaskConfig())
-    task.value.CustomArguments = '-t PreviousTask'
-    const confirm = vi.fn<(onOk: () => Promise<void>) => void>()
-    const flow = useOkwwCustomArguments(task, ref('-t DailyTask -e'), async () => false, confirm)
-    flow.changeCustomArguments(true)
-    await expect(confirm.mock.calls[0]![0]()).resolves.toBeUndefined()
-    expect(task.value.IfCustomArguments).toBe(false)
-    expect(task.value.CustomArguments).toBe('-t PreviousTask')
-    expect(flow.saving.value).toBe(false)
-  })
-
-  it('restores the enabled switch when disabling fails to save', async () => {
-    const task = ref(getDefaultOkwwTaskConfig())
-    task.value.IfCustomArguments = true
-    const flow = useOkwwCustomArguments(task, ref(''), async () => false, vi.fn())
-    expect(await flow.changeCustomArguments(false)).toBe(false)
-    expect(task.value.IfCustomArguments).toBe(true)
-  })
+  it.each([false, true])(
+    'restores the previous draft and switch when enabled=%s fails to save',
+    async enabled => {
+      const task = ref(getDefaultOkwwTaskConfig())
+      task.value.IfCustomArguments = enabled
+      task.value.CustomArguments = '-t PreviousTask'
+      const confirm = vi.fn<(onOk: () => Promise<void>) => void>()
+      const flow = useOkwwCustomArguments(task, ref('-t DailyTask -e'), async () => false, confirm)
+      if (enabled) await expect(flow.changeCustomArguments(false)).resolves.toBe(false)
+      else {
+        flow.changeCustomArguments(true)
+        await expect(confirm.mock.calls[0]![0]()).resolves.toBeUndefined()
+      }
+      expect(task.value.IfCustomArguments).toBe(enabled)
+      expect(task.value.CustomArguments).toBe('-t PreviousTask')
+      expect(flow.saving.value).toBe(false)
+    }
+  )
 })

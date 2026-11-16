@@ -663,6 +663,10 @@ class MaaConfig(DomainEntry):
     Run: RunFields = Field(default_factory=RunFields)
 
     class UpdateFields(ConfigGroup):
+        PackageMode: Literal["full", "incremental"] = Field(
+            default="full",
+            description="更新方式：全量或优先增量；增量依赖完整且匹配的基线，必要时回退全量。",
+        )
         TakeoverMigrationVersion: Annotated[int, Field(ge=0, le=1)] = Field(
             default=1, description="更新接管一次性迁移版本"
         )
@@ -1283,6 +1287,10 @@ class MaaEndConfig(DomainEntry):
             default_factory=lambda: False,
             description="运行前由 MAS 下载、校验并安装 MaaEnd 官方完整包；不暂停 MXU 自身的更新检查",
         )
+        PackageMode: Literal["full", "incremental"] = Field(
+            default="full",
+            description="全量或优先增量；增量有风险，无可信缓存、匹配增量包或校验失败时回退全量",
+        )
         Channel: Literal["stable", "beta"] = Field(
             default_factory=lambda: "stable", description="MaaEnd 更新通道"
         )
@@ -1531,6 +1539,7 @@ class SrcUserConfig(DomainEntry):
 
         Relic: Literal[
             "-",
+            "Cavern_of_Corrosion_Path_of_the_Secret_Actor",
             "Cavern_of_Corrosion_Path_of_Insight",
             "Cavern_of_Corrosion_Path_of_Possession",
             "Cavern_of_Corrosion_Path_of_Hidden_Salvation",
@@ -2491,7 +2500,13 @@ class MaaFWConfig(DomainEntry):
 
     class GameFields(ConfigGroup):
         Arguments: CliArgumentString = Field(
-            default_factory=lambda: "", description="游戏启动参数"
+            default_factory=lambda: "",
+            description="游戏启动参数，仅 DirectExe 模式使用；URL 模式的参数写进链接",
+        )
+
+        CloseMode: Literal["Script", "OnFailure", "Always"] = Field(
+            default_factory=lambda: "OnFailure",
+            description="AttachOnly 模式下结束后谁关游戏：Script 交给脚本（MAS 不关）；OnFailure 本次运行没正常完成（失败、超时、停止、异常）时由 MAS 关；Always 结束后一律由 MAS 关。MAS 只关本次运行开始之后才出现的进程，重试之间不关。DirectExe 与 URL 模式忽略它",
         )
 
         Hotkeys: JsonDictString = Field(
@@ -2499,13 +2514,19 @@ class MaaFWConfig(DomainEntry):
             description='托管级键位（PI v2.8 hotkey 选项）：``{option 名: {字段名: 组合键字符串}}``， 组合键写成「修饰键+…+主键」（如 ``"Ctrl+E"``）。只存与 interface 默认不同的 字段；运行时叠加到每个任务实际生效的 hotkey 选项上，盖过账号快照 / 预设里的值。 仅 Win32 控制器生效（Adb 等其他控制器不叠加）。interface 里已没有的 option / 字段静默忽略，映射不了的值告警后回落到快照 / 默认值（runner/run_plan.py）。',
         )
 
-        LaunchMode: Literal["DirectExe", "AttachOnly"] = Field(
-            default_factory=lambda: "DirectExe", description="游戏生命周期模式"
+        LaunchMode: Literal["DirectExe", "URL", "AttachOnly"] = Field(
+            default_factory=lambda: "DirectExe",
+            description="游戏生命周期模式：DirectExe 由 MAS 按 exe 启动、结束后关闭；URL 由 MAS 打开链接拉起游戏、结束后关闭；AttachOnly 由脚本或用户自己启动，MAS 只接管窗口，结束后是否由 MAS 关闭见 CloseMode",
         )
 
         LaunchPath: FilePath = Field(
             default_factory=lambda: None,
-            description="DirectExe 模式下 MAS 启动的游戏 exe",
+            description="游戏 exe：DirectExe 模式下 MAS 启动它；URL 模式下必填，用来认出游戏（是否已在运行、等窗口、关闭、Unity 分辨率）；AttachOnly 模式下可选，用来认出要关闭的游戏",
+        )
+
+        LauncherPath: FilePath = Field(
+            default_factory=lambda: None,
+            description="AttachOnly 模式下可选的启动器 exe，MAS 兜底关闭游戏时一并关闭本次运行期间打开的启动器",
         )
 
         PackageName: str = Field(
@@ -2513,9 +2534,14 @@ class MaaFWConfig(DomainEntry):
             description="安卓游戏包名，Adb controller 用：启动模拟器时顺带把游戏拉起来。 留空表示从项目的 pipeline 里自动识别（见 embedded/game_package.py）； 自动识别是启发式的，填了这里就以这里为准。识别不出且没填则不启动游戏。",
         )
 
+        URL: str = Field(
+            default_factory=lambda: "",
+            description="URL 模式下 MAS 打开的链接，如 steam://rungameid/<appid>",
+        )
+
         UnityResolution: Literal["Off", "1920x1080", "1280x720"] = Field(
             default_factory=lambda: "Off",
-            description="DirectExe 模式下，启动游戏前按 exe 路径反查 Unity 注册表，临时把分辨率改成所选 尺寸的窗口模式，游戏关闭后恢复原值（tools/embedded/game_resolution.py）。 只对 Unity 引擎的游戏有效；游戏已在运行时不改。Off 表示不碰。",
+            description="DirectExe 与 URL 模式下，启动游戏前按 exe 路径反查 Unity 注册表，临时把分辨率改成所选 尺寸的窗口模式，游戏关闭后恢复原值（tools/embedded/game_resolution.py）。 只对 Unity 引擎的游戏有效；游戏已在运行时不改。Off 表示不碰。",
         )
 
         WaitTime: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
@@ -2634,6 +2660,13 @@ class MaaFWConfig(DomainEntry):
     Task: TaskFields = Field(default_factory=TaskFields)
 
     class UpdateFields(ConfigGroup):
+        # 默认增量：GitHub 源按区间差量、Mirror 酱源要差量包，失败都回退全量。
+        # 全量的好处只有一条——队列里可以提前预下载（增量依赖开跑时的当前载荷，
+        # 不预下载，见 embedded_manager.prefetch_script_update）。
+        PackageMode: Literal["full", "incremental"] = Field(
+            default="incremental",
+            description="更新方式：全量或优先增量；增量依赖完整且匹配的基线，必要时回退全量。",
+        )
         AutoUpdateMode: Annotated[
             Literal["Off", "BeforeRun", "AfterRun"],
             legacy(
@@ -2677,6 +2710,11 @@ class M9AUserConfig(MaaFWUserConfig):
     """
 
 
+# M9A 内置的按任务时限：只放比全局默认（TaskTimeLimit 45 分钟）更长的任务，和全局相同的不写，
+# 否则用户调大全局时限后这几个任务仍卡在旧值
+_M9A_TASK_TIME_LIMIT_OVERRIDES = '{"自动深眠": 60, "自动醒梦": 60}'
+
+
 class M9AConfig(MaaFWConfig):
     """M9A 托管配置：MaaFW 的特调类型。
 
@@ -2689,9 +2727,7 @@ class M9AConfig(MaaFWConfig):
     DEFAULT_SCRIPT_NAME: ClassVar = "新 M9A 托管"
     USER_CONFIG_CLASS: ClassVar = M9AUserConfig
     FLAVOR: ClassVar = "app.task.M9A.flavor:FLAVOR"
-    DEFAULT_TASK_TIME_LIMIT_OVERRIDES: ClassVar = (
-        '{"智能均衡刷材料": 45, "自动深眠": 60, "自动醒梦": 60}'
-    )
+    DEFAULT_TASK_TIME_LIMIT_OVERRIDES: ClassVar = _M9A_TASK_TIME_LIMIT_OVERRIDES
 
     class InfoFields(MaaFWConfig.InfoFields):
         Name: str = Field(
@@ -2715,9 +2751,7 @@ class M9AConfig(MaaFWConfig):
         )
 
         TaskTimeLimitOverrides: JsonDictString = Field(
-            default_factory=lambda: (
-                '{"智能均衡刷材料": 45, "自动深眠": 60, "自动醒梦": 60}'
-            ),
+            default_factory=lambda: _M9A_TASK_TIME_LIMIT_OVERRIDES,
             description="按任务名覆盖的单任务时限（分钟），键是 MaaFW 任务名；值 0 表示该任务不限。 默认值由类属性 DEFAULT_TASK_TIME_LIMIT_OVERRIDES 决定（特调可内置几条）； 只在配置里没有这个键时生效，用户存过的值（含清空成 {}）原样保留。",
         )
 

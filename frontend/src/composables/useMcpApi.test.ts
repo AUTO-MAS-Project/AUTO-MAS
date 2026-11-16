@@ -50,6 +50,7 @@ vi.mock('@/i18n', () => ({ translate: (key: string) => key }))
 
 const snapshot = (revision = 1, overrides: Partial<McpStatusData> = {}): McpStatusData => ({
   enabled: true,
+  environmentEnabled: true,
   state: McpStatusData.state.RUNNING,
   stage: 'building',
   startedAt: null,

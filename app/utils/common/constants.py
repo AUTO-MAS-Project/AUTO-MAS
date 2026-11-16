@@ -632,6 +632,7 @@ STARRAIL_STAGE_BOOK = {
     "Stagnant_Shadow_Ashes": "晋阶材料：火（大丽花 / 火花）",
     "Stagnant_Shadow_Soundburst": "晋阶材料：雷（狂雷扫弦）",
     "Stagnant_Shadow_Devour": "晋阶材料：量子（嗤笑丑面）",
+    "Cavern_of_Corrosion_Path_of_the_Secret_Actor": "遗器：密伶之径",
     "Cavern_of_Corrosion_Path_of_Insight": "遗器：领航员 & 名冶（观火之径）",
     "Cavern_of_Corrosion_Path_of_Possession": "遗器：魔法少女 & 卜者（魔占之径）",
     "Cavern_of_Corrosion_Path_of_Hidden_Salvation": "遗器：救世主 & 隐士（隐救之径）",
