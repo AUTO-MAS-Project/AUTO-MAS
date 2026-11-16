@@ -137,6 +137,7 @@ class FluxdownDownloadRecord:
     segments: int = 0
     proxy: str | None = None
     checksum: str | None = None
+    diagnostic: dict[str, object] | None = None
     status: str = (
         ""  # success | failed | checksum_fail | interrupted | fluxdown_fallback
     )
@@ -159,6 +160,7 @@ class FluxdownDownloadRecord:
             "segments": self.segments,
             "proxy": proxy,
             "checksum": self.checksum,
+            "diagnostic": self.diagnostic,
             "status": self.status,
             "error": self.error,
             "timestamp": self.timestamp,

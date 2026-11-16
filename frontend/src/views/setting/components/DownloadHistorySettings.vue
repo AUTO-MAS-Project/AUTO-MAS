@@ -38,6 +38,7 @@ const openUpdateHistory = async () => {
 // 历史记录的状态是后端英文枚举，展示时按当前语言映射，未知值原样显示
 const historyStatusLabels = computed<Record<string, string>>(() => ({
   success: t('core.setting.others.historyStatusSuccess'),
+  diagnostic: '下载包诊断',
   failed: t('core.setting.others.historyStatusFailed'),
   checksum_fail: t('core.setting.others.historyStatusChecksumFail'),
   interrupted: t('core.setting.others.historyStatusInterrupted'),
@@ -51,6 +52,9 @@ const formatHistorySize = (size?: number | null) =>
   size ? `${(size / 1024 / 1024).toFixed(1)} MB` : '-'
 
 const formatHistoryDuration = (ms?: number | null) => (ms ? `${(ms / 1000).toFixed(1)}s` : '-')
+
+const canExportHistory = (item: FluxdownRecord) =>
+  Boolean(item.diagnostic || (item.status && item.status !== 'success'))
 
 // 失败/回退记录可导出：把这条下载记录存成 JSON 文件
 const handleExportHistory = async (item: FluxdownRecord) => {
@@ -125,7 +129,7 @@ const showUpdateHistory = ref(false)
             {{ formatHistoryDuration(item.duration_ms) }}
             <span v-if="item.error" class="history-item-error"> — {{ item.error }}</span>
             <a-button
-              v-if="item.status && item.status !== 'success'"
+              v-if="canExportHistory(item)"
               type="link"
               size="small"
               class="history-export-button"

@@ -35,6 +35,10 @@ export type FluxdownRecord = {
      */
     checksum?: (string | null);
     /**
+     * 统一下载诊断摘要
+     */
+    diagnostic?: (Record<string, any> | null);
+    /**
      * 状态：success、failed、checksum_fail、fluxdown_fallback
      */
     status?: (string | null);

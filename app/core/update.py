@@ -4,14 +4,17 @@
 
 """装配更新器与下载入口，连接宿主配置和下载历史，后续转交给前端，后端仅抽象出下载逻辑"""
 
+import asyncio
 from collections.abc import Callable
 from contextvars import ContextVar
+from datetime import datetime
 from pathlib import Path
 
 import httpx
 
 from app.config import config_manager
 from app.core import Config
+from app.core.download_diagnostics import describe_package, safe_origin
 from app.models.config.setting import FluxdownRecord
 from app.services import update as _service_update
 from app.services.common.update import fluxdown as _service_update_fluxdown
@@ -48,6 +51,92 @@ async def _write_history(record: _utils_fluxdown_cli.FluxdownDownloadRecord) -> 
             ),
             check_visibility=False,
         )
+
+
+async def _merge_download_diagnostic(
+    record: _utils_fluxdown_cli.FluxdownDownloadRecord,
+) -> None:
+    """Enrich one recent terminal record; create one for builtin httpx only."""
+    async with config_manager.transaction():
+        history = [
+            FluxdownRecord(
+                **_utils_fluxdown_cli.FluxdownDownloadRecord(
+                    **item.model_dump()
+                ).to_dict()
+            )
+            for item in (Config.setting.Update.LastUpdateHistory or [])
+        ]
+        recent = datetime.now()
+        for existing in reversed(history):
+            if existing.destination != record.destination or not existing.timestamp:
+                continue
+            try:
+                age = abs(
+                    (
+                        recent
+                        - datetime.strptime(existing.timestamp, "%Y-%m-%d %H:%M:%S")
+                    ).total_seconds()
+                )
+            except ValueError:
+                continue
+            if age > 60 or safe_origin(existing.url or "") != record.url:
+                continue
+            if existing.status not in {
+                "success",
+                "failed",
+                "checksum_fail",
+                "interrupted",
+            }:
+                continue
+            existing.diagnostic = record.diagnostic
+            # Do not expose the short-lived signed update URL in history exports.
+            existing.url = record.url
+            break
+        else:
+            history.append(FluxdownRecord(**record.to_dict()))
+        await Config.setting.update(
+            type(Config.setting).model_validate(
+                {"Update": {"LastUpdateHistory": history[-50:]}}
+            ),
+            check_visibility=False,
+        )
+
+
+async def _write_package_diagnostic(
+    destination: Path,
+    url: str,
+    *,
+    source: str | None,
+    downloader: str | None,
+    failure: str | None = None,
+) -> None:
+    """Best-effort evidence for builtin and FluxDown; never claim install success."""
+    try:
+        details = (
+            await asyncio.to_thread(describe_package, destination)
+            if failure is None
+            else {"schema": 1, "availability": "download_failed"}
+        )
+        details.update(
+            {
+                "source": str(source or "unknown")[:48],
+                "downloader": str(downloader or "configured")[:24],
+                "phase": "download",
+            }
+        )
+        await _merge_download_diagnostic(
+            _utils_fluxdown_cli.FluxdownDownloadRecord(
+                url=safe_origin(url),
+                destination=str(destination),
+                size=int(details.get("bytes") or 0),
+                status="success" if failure is None else "failed",
+                error=failure,
+                diagnostic=details,
+            )
+        )
+    except Exception:
+        # A history/inspection failure must never alter the download result.
+        pass
 
 
 async def download_file(
@@ -97,28 +186,48 @@ async def download_file(
 
         http_download = observed_http_download
     update = Config.setting.Update
-    return await _service_update_fluxdown.download_file(
-        url,
-        destination,
-        timeout=timeout,
-        proxy=proxy,
-        progress=progress,
-        downloader=downloader,
-        source=source,
-        http_download=http_download,
-        options=_service_update_fluxdown.FluxdownOptions(
-            downloader=update.Downloader,
-            source=str(update.Source or ""),
-            cli_path=str(update.FluxdownPath or ""),
-            segments=int(update.FluxdownSegments),
-            server_mode=bool(update.FluxdownServerMode),
-            cli_search_dirs=(
-                Config.install_path / "res" / "fluxdown-cli",
-                Config.resource_path / "fluxdown-cli",
+    try:
+        size = await _service_update_fluxdown.download_file(
+            url,
+            destination,
+            timeout=timeout,
+            proxy=proxy,
+            progress=progress,
+            downloader=downloader,
+            source=source,
+            http_download=http_download,
+            options=_service_update_fluxdown.FluxdownOptions(
+                downloader=update.Downloader,
+                source=str(update.Source or ""),
+                cli_path=str(update.FluxdownPath or ""),
+                segments=int(update.FluxdownSegments),
+                server_mode=bool(update.FluxdownServerMode),
+                cli_search_dirs=(
+                    Config.install_path / "res" / "fluxdown-cli",
+                    Config.resource_path / "fluxdown-cli",
+                ),
             ),
-        ),
-        write_history=_write_history,
+            write_history=_write_history,
+        )
+    except Exception as exc:
+        # An unconfirmed FluxDown writer must retain its original ownership error.
+        # Optional history I/O must not mask download failures when cancelled.
+        if not isinstance(exc, _utils_fluxdown_cli.FluxdownCancelUnconfirmed):
+            try:
+                await _write_package_diagnostic(
+                    destination,
+                    url,
+                    source=source,
+                    downloader=downloader,
+                    failure=type(exc).__name__,
+                )
+            except asyncio.CancelledError:
+                pass
+        raise
+    await _write_package_diagnostic(
+        destination, url, source=source, downloader=downloader
     )
+    return size
 
 
 Updater = _service_update.UpdateHandler(download=download_file)
