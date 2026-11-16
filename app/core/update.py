@@ -202,9 +202,9 @@ async def download_file(
             write_history=_write_history,
         )
     except Exception as exc:
-        # An unsafe FluxDown writer must keep its original exception and ownership.
-        # Cancellation during optional history I/O cannot replace that exception.
-        if not isinstance(exc, _service_update_fluxdown.FluxdownWriterUnconfirmed):
+        # An unconfirmed FluxDown writer must retain its original ownership error.
+        # Optional history I/O must not mask download failures when cancelled.
+        if not isinstance(exc, _utils_fluxdown_cli.FluxdownCancelUnconfirmed):
             try:
                 await _write_package_diagnostic(
                     destination,
