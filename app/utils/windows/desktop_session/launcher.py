@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Iterator
 from ctypes import wintypes as W
 from pathlib import Path
 from uuid import uuid4
@@ -26,14 +27,42 @@ from .native import (
     session_state,
 )
 
+_PIPE_CHUNK_SIZE = 32 * 1024
+
+
+def message_chunks(data: dict) -> Iterator[bytes]:
+    payload = json.dumps(data, ensure_ascii=False).encode("utf-8") + b"\n"
+    for offset in range(0, len(payload), _PIPE_CHUNK_SIZE):
+        yield payload[offset : offset + _PIPE_CHUNK_SIZE]
+
+
+def write_chunk(pipe, chunk: bytes) -> bool:
+    status, written = win32file.WriteFile(pipe, chunk)
+    if status or written not in (0, len(chunk)):
+        raise OSError("分身执行器管道写入不完整")
+    return written != 0
+
+
+def read_chunk(pipe) -> bytes:
+    status, chunk = win32file.ReadFile(pipe, _PIPE_CHUNK_SIZE)
+    if status or not chunk:
+        raise OSError("分身执行器管道读取不完整")
+    return chunk
+
 
 def send(pipe, data: dict) -> None:
-    win32file.WriteFile(pipe, json.dumps(data).encode("utf-8"))
+    for chunk in message_chunks(data):
+        if not write_chunk(pipe, chunk):
+            raise OSError("分身执行器管道无法写入")
 
 
 def receive(pipe) -> dict:
-    _, data = win32file.ReadFile(pipe, 65536)
-    return json.loads(data)
+    payload = bytearray()
+    while True:
+        chunk = read_chunk(pipe)
+        payload.extend(chunk)
+        if chunk.endswith(b"\n"):
+            return json.loads(payload)
 
 
 def connect_executor_pipe(name: str, parent_pid: int):

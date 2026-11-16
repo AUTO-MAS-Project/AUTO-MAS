@@ -105,6 +105,7 @@ class RdpViewer:
         self.preview = self.host = None
         self.rdp = self.events = self.active_object = None
         self.login_complete = False
+        self.logon_error: int | None = None
         self.session_id: int | None = None
         self.remote_size: tuple[int, int] | None = None
         self.started = time.monotonic()
@@ -329,7 +330,21 @@ class RdpViewer:
             self.report("rdp_event", name=name, nativeCodes=args)
             if name == "login_complete":
                 self.login_complete = True
+                self.logon_error = None
+            elif name == "logon_error":
+                if args[0] in {
+                    0,
+                    1,
+                    -1,
+                    -1073741715,
+                    -1073741714,
+                    -1073741276,
+                    -1073741260,
+                }:
+                    self.logon_error = args[0]
             elif name == "disconnected":
+                if self.phase == "disconnected":
+                    continue
                 self.login_complete = False
                 self.phase = "disconnected"
                 self.report(
@@ -337,6 +352,7 @@ class RdpViewer:
                     state=self.phase,
                     code="rdp_disconnected",
                     nativeCodes=(*args, int(self.rdp.ExtendedDisconnectReason)),
+                    logonError=self.logon_error,
                     sessionId=self.session_id,
                 )
             elif name == "fatal_error":
@@ -346,6 +362,7 @@ class RdpViewer:
                     "state",
                     state=self.phase,
                     code="rdp_fatal",
+                    logonError=self.logon_error,
                     sessionId=self.session_id,
                 )
             elif name == "remote_size":
@@ -405,6 +422,7 @@ class RdpViewer:
                 "state",
                 state=self.phase,
                 code="connect_timeout",
+                logonError=self.logon_error,
                 sessionId=self.session_id,
             )
 

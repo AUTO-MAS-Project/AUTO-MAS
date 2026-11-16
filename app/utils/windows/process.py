@@ -165,6 +165,15 @@ class WindowsTaskProcessJob:
             if errors:
                 raise ExceptionGroup("部分任务进程组未能强制终止", errors)
 
+    def has_active_processes(self) -> bool:
+        with self._lock:
+            return not self._closed and any(
+                win32job.QueryInformationJobObject(
+                    job, win32job.JobObjectBasicAccountingInformation
+                )["ActiveProcesses"]
+                for job in (*self._handles.values(), *self._adopted)
+            )
+
     def close(self) -> None:
         with self._lock:
             if self._closed:

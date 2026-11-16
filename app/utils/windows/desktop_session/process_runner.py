@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import json
 import time
 from collections.abc import Callable, Mapping
 from contextlib import suppress
@@ -17,22 +18,43 @@ from pywintypes import error as Win32Error
 from app.utils.common.process.session import DesktopProcessTarget
 
 from .credentials import current_identity
-from .launcher import client_pid, create_executor_pipe, receive, run_executor, send
+from .launcher import (
+    client_pid,
+    create_executor_pipe,
+    message_chunks,
+    read_chunk,
+    run_executor,
+    write_chunk,
+)
 
 _action_lock = asyncio.Lock()
 
 
 async def _read(pipe, *, deadline: float | None = None) -> dict:
-    while not win32pipe.PeekNamedPipe(pipe, 0)[1]:
-        if deadline is not None and time.monotonic() >= deadline:
-            raise TimeoutError("等待分身进程响应超时")
-        await asyncio.sleep(0.05)
-    response = receive(pipe)
+    payload = bytearray()
+    while True:
+        while not win32pipe.PeekNamedPipe(pipe, 0)[1]:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("等待分身进程响应超时")
+            await asyncio.sleep(0.05)
+        chunk = read_chunk(pipe)
+        payload.extend(chunk)
+        if chunk.endswith(b"\n"):
+            break
+    response = json.loads(payload)
     if "error" in response:
         raise RuntimeError(
             f"分身进程执行失败：{response['error']} ({response['nativeCode']})"
         )
     return response
+
+
+async def _write(pipe, message: dict, *, deadline: float) -> None:
+    for chunk in message_chunks(message):
+        while not write_chunk(pipe, chunk):
+            if time.monotonic() >= deadline:
+                raise TimeoutError("等待分身进程读取请求超时")
+            await asyncio.sleep(0.05)
 
 
 class DesktopProcess:
@@ -52,7 +74,8 @@ class DesktopProcess:
             while "returnCode" not in (response := await _read(self._pipe)):
                 if "log" in response:
                     if self._on_log is not None:
-                        self._on_log(response["log"])
+                        # 复用本机启动器的回调契约，让回调能同步等主循环交付进度。
+                        await asyncio.to_thread(self._on_log, response["log"])
                 else:
                     name, chunk = next(iter(response.items()))
                     output[name].extend(base64.b64decode(chunk))
@@ -83,8 +106,8 @@ class DesktopProcess:
         if not self._completion.done() and not self._stopping:
             self._stopping = True
             try:
-                send(self._pipe, {"stop": True})
-            except Win32Error:
+                await _write(self._pipe, {"stop": True}, deadline=time.monotonic() + 1)
+            except (OSError, Win32Error):
                 # 执行器可能已经退出，由观察任务确认退出结果。
                 pass
         try:
@@ -197,7 +220,7 @@ async def _launch(
                 False,
                 client_pid(pipe, desktop.session_id),
             )
-            send(pipe, request)
+            await _write(pipe, request, deadline=deadline)
             result = await _read(pipe, deadline=deadline)
         finally:
             with suppress(pythoncom.com_error):

@@ -136,7 +136,7 @@ async def test_login_maintenance_skips_proxy_without_retry(
 
         from app.task import desktop_session_worker
         from app.utils.common.process import session
-        from app.utils.windows.desktop_session import native, process_runner
+        from app.utils.windows.desktop_session import launcher, native, process_runner
 
         frames = deque()
         fake_pipe = Mock()
@@ -146,7 +146,11 @@ async def test_login_maintenance_skips_proxy_without_retry(
         monkeypatch.setattr(
             desktop_session_worker, "send", lambda pipe, frame: frames.append(frame)
         )
-        monkeypatch.setattr(process_runner, "receive", lambda pipe: frames.popleft())
+        monkeypatch.setattr(
+            process_runner,
+            "read_chunk",
+            lambda pipe: next(launcher.message_chunks(frames.popleft())),
+        )
         monkeypatch.setattr(
             process_runner.win32pipe,
             "PeekNamedPipe",
@@ -190,4 +194,7 @@ async def test_login_maintenance_skips_proxy_without_retry(
     assert "服务器未开放" in proxy.cur_user_log.status
     start.assert_not_awaited()
     if desktop:
-        launch_spy.assert_awaited_once()
+        assert [call.args[1]["action"] for call in launch_spy.await_args_list] == [
+            "okww_detect_maintenance",
+            "okww_switch_account",
+        ]

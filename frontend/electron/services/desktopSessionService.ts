@@ -5,8 +5,10 @@ import { join } from 'node:path'
 import { getLocalApiEndpoint } from '../ipc/initializationHandlers'
 import { beginMainFeature } from './featureAnalytics'
 import { desktopSessionControlToken, setDesktopSessionChildId } from './desktopSessionControl'
+import { DESKTOP_SESSION_REPAIRS } from './desktopSessionProtocol'
 import type {
   DesktopQueueResult,
+  DesktopSessionRepair,
   DesktopSessionRequest,
   DesktopSessionSnapshot,
   DesktopSessionStartResult,
@@ -16,6 +18,15 @@ type HostEvent = Record<string, unknown> & { event: string }
 type RuntimeDescription = { python: string; source: string; root: string }
 
 class DesktopSessionError extends Error {}
+
+function isRepairPlan(value: unknown): value is DesktopSessionRepair[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    new Set(value).size === value.length &&
+    value.every(item => DESKTOP_SESSION_REPAIRS.some(repair => repair === item))
+  )
+}
 
 const internal = '/internal/desktop-session/'
 const header = 'x-mas-desktop-session'
@@ -52,6 +63,7 @@ export class DesktopSessionService {
   private hostEvents = new EventTarget()
   private startOperation: Promise<DesktopSessionStartResult> | null = null
   private stopOperation: Promise<void> | null = null
+  private repairOperation: Promise<string | undefined> | null = null
   private monitor: NodeJS.Timeout | undefined
   private volume = 0
   private logsRoot: string | undefined
@@ -135,6 +147,7 @@ export class DesktopSessionService {
     this.host = child
     const reader = createInterface({ input: child.stdout })
     reader.on('line', line => {
+      if (this.host !== child) return
       try {
         this.handleHostEvent(JSON.parse(line) as HostEvent)
       } catch {
@@ -155,7 +168,15 @@ export class DesktopSessionService {
     }
     child.once('error', exited)
     child.once('exit', exited)
-    await this.wait(event => event.event === 'ready', 10000)
+    try {
+      await this.wait(event => event.event === 'ready', 10000)
+    } catch (error) {
+      if (this.host === child) {
+        this.host = null
+        child.kill()
+      }
+      throw error
+    }
   }
 
   private handleHostEvent(event: HostEvent): void {
@@ -164,14 +185,18 @@ export class DesktopSessionService {
       const checks = event.checks as DesktopSessionSnapshot['checks']
       this.patch({
         checks,
-        ...(this.snapshot.state === 'checking'
+        repairPlan: isRepairPlan(event.repairs) ? event.repairs : [],
+        ...(['idle', 'checking', 'blocked'].includes(this.snapshot.state)
           ? { state: checks.some(item => item.required && !item.ok) ? 'blocked' : 'idle' }
           : {}),
       })
     } else if (event.event === 'state') {
       const state = event.state as DesktopSessionSnapshot['state']
       this.patch({
-        state: event.code === 'environment_blocked' ? 'blocked' : state,
+        state:
+          state === 'idle' && this.snapshot.checks.some(item => item.required && !item.ok)
+            ? 'blocked'
+            : state,
         code: event.code as string | undefined,
         sessionId:
           state === 'idle'
@@ -188,7 +213,19 @@ export class DesktopSessionService {
     } else if (event.event === 'audio') {
       this.patch({ audioSessions: event.sessions as number })
     } else if (event.event === 'credential_warning') {
-      this.patch({ code: 'credential_save_failed' })
+      this.patch({ credentialWarning: 'credential_save_failed' })
+    } else if (event.event === 'authentication_failure') {
+      const { time, status, substatus } = event
+      if (
+        typeof time === 'string' &&
+        Number.isFinite(Date.parse(time)) &&
+        typeof status === 'string' &&
+        /^0x[0-9A-F]{8}$/.test(status) &&
+        typeof substatus === 'string' &&
+        /^0x[0-9A-F]{8}$/.test(substatus)
+      ) {
+        this.patch({ authenticationFailure: { time, status, substatus } })
+      }
     } else if (event.event === 'close_requested') {
       this.requested('close')
     } else if (event.event === 'minimize_requested') {
@@ -235,19 +272,75 @@ export class DesktopSessionService {
   }
 
   async check(): Promise<DesktopSessionSnapshot> {
+    if (this.snapshot.closing) return this.snapshot
     if (!this.active || this.snapshot.state === 'blocked') {
       this.patch({ state: 'checking', code: undefined })
     }
     try {
       await this.ensureHost()
-      await this.exchange({ action: 'check' }, event => event.event === 'diagnostics', 20000)
+      if (!this.snapshot.closing) {
+        const event = await this.exchange(
+          { action: 'check' },
+          event =>
+            event.event === 'diagnostics' ||
+            (event.event === 'command_error' && event.action === 'check'),
+          30000
+        )
+        if (event.event === 'command_error') throw new DesktopSessionError('host_unavailable')
+      }
     } catch (error) {
       this.patch({
-        state: 'blocked',
+        state: this.snapshot.state === 'checking' ? 'blocked' : this.snapshot.state,
         code: error instanceof DesktopSessionError ? error.message : 'host_unavailable',
       })
     }
     return this.snapshot
+  }
+
+  repair(approved: unknown): Promise<string | undefined> {
+    const plan = this.snapshot.repairPlan
+    if (this.active || this.snapshot.closing) return Promise.resolve('busy')
+    if (
+      this.snapshot.state !== 'blocked' ||
+      !plan ||
+      !isRepairPlan(approved) ||
+      approved.length !== plan.length ||
+      !plan.every(item => approved.includes(item))
+    ) {
+      return Promise.resolve('environment_changed')
+    }
+    this.patch({ busy: true, code: undefined })
+    this.repairOperation = this.repairInternal(approved).finally(() => {
+      this.repairOperation = null
+      this.patch({ busy: false })
+    })
+    return this.repairOperation
+  }
+
+  private async repairInternal(
+    approvedRepairs: DesktopSessionRepair[]
+  ): Promise<string | undefined> {
+    const operation = beginMainFeature('desktop_session_environment_repair_finished')
+    let code: string | undefined
+    try {
+      await this.ensureHost()
+      const event = await this.exchange(
+        { action: 'repair', approvedRepairs },
+        event =>
+          event.event === 'repair_finished' ||
+          (event.event === 'command_error' && event.action === 'repair'),
+        180000
+      )
+      if (event.event === 'command_error') code = 'environment_repair_failed'
+      else if (typeof event.code === 'string') code = event.code
+    } catch (error) {
+      code = error instanceof DesktopSessionError ? error.message : 'environment_repair_failed'
+    }
+    operation.finish({
+      outcome: code === 'environment_repair_cancelled' ? 'cancelled' : code ? 'failure' : 'success',
+    })
+    if (code) this.patch({ code })
+    return code
   }
 
   start(
@@ -255,15 +348,15 @@ export class DesktopSessionService {
     owner: bigint,
     bounds: [number, number, number, number]
   ): Promise<DesktopSessionStartResult> {
-    if (
-      this.snapshot.busy ||
-      this.snapshot.closing ||
-      this.stopOperation ||
-      this.orphanedSessionId !== undefined
-    ) {
+    if (this.snapshot.busy || this.snapshot.closing || this.stopOperation) {
       return Promise.resolve({ code: 'busy', queues: [] })
     }
-    this.patch({ busy: true, code: undefined })
+    this.patch({
+      busy: true,
+      code: undefined,
+      credentialWarning: undefined,
+      authenticationFailure: undefined,
+    })
     this.startOperation = this.startInternal(input, owner, bounds).finally(() => {
       this.startOperation = null
       this.patch({ busy: false })
@@ -286,7 +379,9 @@ export class DesktopSessionService {
     try {
       await this.ensureHost()
       if (this.snapshot.state !== 'connected') {
-        if (this.snapshot.state === 'disconnected') await this.stopTasksAndCloseViewer()
+        if (this.snapshot.state === 'disconnected' || this.orphanedSessionId !== undefined) {
+          await this.stopTasksAndCloseViewer()
+        }
         publishingConnection = true
         await this.updateParentScope(null, true)
         const event = await this.exchange(
@@ -301,7 +396,7 @@ export class DesktopSessionService {
           event =>
             (event.event === 'state' && event.state !== 'connecting') ||
             (event.event === 'command_error' && event.action === 'connect'),
-          110000
+          120000
         )
         if (event.state !== 'connected') {
           throw new DesktopSessionError(
@@ -347,6 +442,7 @@ export class DesktopSessionService {
       if (accepted.length) this.tasksStarted(accepted)
       return { queues: result.results }
     } catch (error) {
+      const code = error instanceof DesktopSessionError ? error.message : 'desktop_session_failed'
       if (publishingConnection) {
         try {
           await this.closeViewer()
@@ -354,18 +450,17 @@ export class DesktopSessionService {
           this.log('process_scope_cleanup_failed')
         }
       }
-      const code = error instanceof DesktopSessionError ? error.message : 'desktop_session_failed'
-      const reason =
-        code === 'environment_blocked'
-          ? 'environment'
-          : /password|credential|account/.test(code)
-            ? 'credentials'
-            : /rdp|connection|timeout/.test(code)
-              ? 'connection'
-              : 'process'
-      connection?.finish({ outcome: 'failure', reason_kind: reason })
+      const reason = code.startsWith('environment_')
+        ? 'environment'
+        : /password|credential|account|authentication/.test(code)
+          ? 'credentials'
+          : /rdp|connection|timeout/.test(code)
+            ? 'connection'
+            : 'process'
+      const cancelled = code === 'environment_repair_cancelled'
+      connection?.finish({ outcome: cancelled ? 'cancelled' : 'failure', reason_kind: reason })
       this.patch({ code })
-      this.log('start_failed', { code })
+      this.log(cancelled ? 'start_cancelled' : 'start_failed', { code })
       return { code, queues: [] }
     } finally {
       for (const operation of dispatches.values()) {
@@ -456,7 +551,10 @@ export class DesktopSessionService {
         (event.event === 'command_error' && event.action === 'close'),
       45000
     )
-    if (result.event === 'command_error') throw new DesktopSessionError('logoff_failed')
+    if (result.event === 'command_error') {
+      this.patch({ code: 'logoff_failed' })
+      throw new DesktopSessionError('logoff_failed')
+    }
     this.orphanedSessionId = undefined
     await this.updateParentScope(null)
   }
@@ -469,7 +567,9 @@ export class DesktopSessionService {
   async close(): Promise<void> {
     this.patch({ closing: true })
     try {
+      if (this.repairOperation) await this.repairOperation
       if (this.startOperation) await this.startOperation
+      await this.startingHost?.catch(() => undefined)
       await this.stopTasksAndCloseViewer()
       this.host?.stdin.end()
       this.host = null

@@ -11,6 +11,7 @@ from pathlib import Path
 from app.services import wuthering_waves
 from app.task.proxy_helpers import kill_pids
 from app.utils import ProcessManager, get_logger
+from app.utils.common.process.session import desktop_process_target
 
 from . import launcher_start
 
@@ -61,7 +62,18 @@ async def update_game_via_launcher(
 
     try:
         await on_progress("正在通过官方启动器检查鸣潮更新...")
-        if not await asyncio.to_thread(
+        if (desktop := desktop_process_target.get()) is not None:
+            from app.task.desktop_session_worker import run_desktop_action
+
+            if not await run_desktop_action(
+                desktop,
+                "okww_has_launcher_window",
+                {"launcher_path": str(launcher_path)},
+            ):
+                await manager.open_process(
+                    launcher_path, retain_desktop_descendants=True
+                )
+        elif not await asyncio.to_thread(
             launcher_start.has_launcher_window, launcher_path
         ):
             await manager.open_process(launcher_path)

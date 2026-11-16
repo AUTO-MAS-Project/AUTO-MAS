@@ -21,6 +21,7 @@ import time
 import uuid
 from contextlib import suppress
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 
 from app.config import ConfigCollection
@@ -55,6 +56,10 @@ from app.utils import (
 from app.utils import constants as _utils_constants
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
+from app.utils.common.process.session import (
+    DesktopProcessTarget,
+    desktop_process_target,
+)
 
 from . import push_log as _push_log
 from .tools.account_switch import async_switch_account
@@ -756,8 +761,32 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             find_client_pids(self.game_process_path, self.launcher_path)
         )
 
+    async def _desktop_maintenance_detect(
+        self, desktop: DesktopProcessTarget
+    ) -> str | None:
+        from app.task.desktop_session_worker import detect_desktop_maintenance
+
+        return await detect_desktop_maintenance(
+            desktop,
+            "okww_detect_maintenance",
+            {
+                "client_path": str(self.game_process_path)
+                if self.game_process_path
+                else None,
+                "launcher_path": str(self.launcher_path)
+                if self.launcher_path
+                else None,
+            },
+        )
+
     async def main_task(self):
         await self.prepare()
+        desktop = desktop_process_target.get()
+        detect_in_desktop = (
+            partial(self._desktop_maintenance_detect, desktop)
+            if desktop is not None
+            else None
+        )
         self.curdate = datetime.now(tz=_utils_constants.UTC4).strftime("%Y-%m-%d")
         if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") != self.curdate:
             self.cur_user_config.Data.LastProxyDate = datetime.now(
@@ -827,7 +856,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             # 鸣潮尚未接入维护公告源；游戏窗口就绪后按明确维护弹窗跳过当前账号。
             # 登录期间再由切号流程检查同一判据，避免维护被误判为登录失败；
             # 维护不会在重试间隔内结束，不再消耗剩余尝试次数
-            if await self.skip_on_game_maintenance(self._maintenance_detect):
+            if await self.skip_on_game_maintenance(
+                self._maintenance_detect, detect_in_desktop=detect_in_desktop
+            ):
                 break
 
             # 游戏启动成功后、下发脚本配置前，按「运行前由 MAS 切换账号」开关切号。
@@ -916,7 +947,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
             self.wait_event.clear()
             maintenance_watch = asyncio.create_task(
-                self.watch_game_maintenance(self._maintenance_detect, self.wait_event)
+                self.watch_game_maintenance(
+                    self._maintenance_detect,
+                    self.wait_event,
+                    detect_in_desktop=detect_in_desktop,
+                )
             )
             try:
                 await self.wait_event.wait()

@@ -95,6 +95,7 @@ export const featureAnalyticsSchemas = {
   desktop_session_connection_finished: finished({
     reason_kind: ['none', 'environment', 'credentials', 'connection', 'process'] as const,
   }),
+  desktop_session_environment_repair_finished: finished({}),
   virtual_display_prompt_answered: finished({ choice: ['remove', 'cancel', 'keep'] as const }),
   system_resume_recovery_finished: finished({
     recovery_kind: ['reconnect', 'backend_restart', 'skipped'] as const,
@@ -320,6 +321,7 @@ export const mainOnlyFeatureEvents = [
   'tray_action_requested',
   'virtual_display_prompt_answered',
   'desktop_session_connection_finished',
+  'desktop_session_environment_repair_finished',
   'diagnostic_export_finished',
   'data_backup_export_finished',
 ] as const

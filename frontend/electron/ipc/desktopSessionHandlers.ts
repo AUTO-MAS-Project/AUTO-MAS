@@ -10,8 +10,14 @@ import {
   type Rectangle,
 } from 'electron'
 import { join } from 'node:path'
+import { readdir, readFile } from 'node:fs/promises'
+import AdmZip = require('adm-zip')
 import { DesktopSessionService } from '../services/desktopSessionService'
-import type { DesktopSessionRequest } from '../services/desktopSessionProtocol'
+import { beginMainFeature } from '../services/featureAnalytics'
+import {
+  MAX_DESKTOP_SESSION_TARGETS,
+  type DesktopSessionRequest,
+} from '../services/desktopSessionProtocol'
 import {
   getBackendOwnership,
   getDevelopmentServerUrl,
@@ -31,7 +37,7 @@ function normalizeRequest(input: unknown): DesktopSessionRequest | null {
   const request = input as Partial<DesktopSessionRequest>
   if (
     !Array.isArray(request.queueIds) ||
-    request.queueIds.length > 100 ||
+    request.queueIds.length > MAX_DESKTOP_SESSION_TARGETS ||
     request.queueIds.some(id => typeof id !== 'string' || !uuid.test(id)) ||
     !MODES.includes(request.mode as DesktopSessionRequest['mode']) ||
     !RESOLUTIONS.includes(request.resolution as DesktopSessionRequest['resolution'])
@@ -227,6 +233,9 @@ export function registerDesktopSession(
     showPreview()
   })
   ipcMain.handle('desktop-session:check', event => (fromPreview(event) ? service.check() : null))
+  ipcMain.handle('desktop-session:repair', (event, approved: unknown) =>
+    fromPreview(event) ? service.repair(approved) : 'invalid_request'
+  )
   ipcMain.handle('desktop-session:pending', event => {
     if (!fromPreview(event)) return null
     return pending.shift() ?? null
@@ -284,10 +293,38 @@ export function registerDesktopSession(
   ipcMain.handle('desktop-session:logs', event =>
     fromPreview(event) && service.logFolder ? shell.openPath(service.logFolder) : ''
   )
+  ipcMain.handle('desktop-session:export-logs', async event => {
+    const window = preview
+    const folder = service.logFolder
+    if (!fromPreview(event) || !window || !folder) return false
+    const operation = beginMainFeature('diagnostic_export_finished')
+    let outcome: 'success' | 'failure' | 'cancelled' = 'failure'
+    try {
+      const { canceled, filePath } = await dialog.showSaveDialog(window, {
+        title: labels().exportLogs,
+        defaultPath: 'auto-mas-desktop-session-logs.zip',
+        filters: [{ name: 'ZIP', extensions: ['zip'] }],
+      })
+      if (canceled || !filePath) {
+        outcome = 'cancelled'
+        return false
+      }
+      const zip = new AdmZip()
+      const files = (await readdir(folder, { withFileTypes: true })).filter(
+        file => file.isFile() && /^(host|control)\.log(\.[1-4])?$/.test(file.name)
+      )
+      for (const file of files) zip.addFile(file.name, await readFile(join(folder, file.name)))
+      await zip.writeZipPromise(filePath)
+      outcome = 'success'
+      return true
+    } finally {
+      operation.finish({ outcome, bundle_kind: 'logs', script_type: 'none', incomplete: 'unknown' })
+    }
+  })
 
   return {
     get active() {
-      return service.active
+      return preview !== null || service.active
     },
     closeForAppQuit: confirmClose,
   }

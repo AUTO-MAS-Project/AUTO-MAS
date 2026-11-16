@@ -65,7 +65,9 @@ def run_process(pipe, launch: dict, stdout, stderr) -> None:
                 ).start()
         send(pipe, {"pid": process.pid})
         # 允许引导程序退出后，Job 继续持有派生的游戏或被跟踪的脚本。
-        while process.poll() is None or launch["retain"]:
+        while process.poll() is None or (
+            launch["retain"] and job.has_active_processes()
+        ):
             if win32pipe.PeekNamedPipe(pipe, 0)[1] and receive(pipe)["stop"]:
                 break
             time.sleep(0.05)

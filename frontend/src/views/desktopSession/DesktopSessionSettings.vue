@@ -5,24 +5,29 @@ import { PowerSignal } from '@/api'
 import { useI18n } from 'vue-i18n'
 import { fetchTaskTargets, type TaskTarget } from '@/composables/useTaskOptions'
 import { getConfig, saveConfig } from '@/utils/config'
-import type { DesktopSessionRequest } from '../../../electron/services/desktopSessionProtocol'
+import {
+  MAX_DESKTOP_SESSION_TARGETS,
+  type DesktopSessionRequest,
+} from '../../../electron/services/desktopSessionProtocol'
 
 const { t } = useI18n()
 const selected = ref<string[]>([])
 const targets = ref<TaskTarget[]>([])
-const options = computed(() =>
-  targets.value.map(target => {
-    const disabled = Boolean(
+const options = computed(() => {
+  const atLimit = selected.value.length >= MAX_DESKTOP_SESSION_TARGETS
+  const selection = new Set(selected.value)
+  return targets.value.map(target => {
+    const hasPowerAction = Boolean(
       target.afterAccomplish && target.afterAccomplish !== PowerSignal.NO_ACTION
     )
     const label = `${t(`core.scheduler.scope.${target.kind}`)} · ${target.name}`
     return {
       value: target.value,
-      disabled,
-      label: disabled ? `${label} · ${t('bootstrap.desktopSession.powerAction')}` : label,
+      disabled: (hasPowerAction || atLimit) && !selection.has(target.value),
+      label: hasPowerAction ? `${label} · ${t('bootstrap.desktopSession.powerAction')}` : label,
     }
   })
-)
+})
 const loading = ref(false)
 const starting = ref(false)
 const mode = ref<DesktopSessionRequest['mode']>('proxy')
@@ -63,8 +68,10 @@ async function open() {
 }
 
 onMounted(async () => {
-  supported.value = (await window.electronAPI?.desktopSessionSupported?.()) ?? false
-  if (!supported.value) return
+  if (!(await window.electronAPI?.desktopSessionSupported?.())) {
+    supported.value = false
+    return
+  }
   try {
     const saved = (await getConfig()).desktopSessionQueueIds
     if (Array.isArray(saved)) selected.value = saved.filter(id => typeof id === 'string')
@@ -72,6 +79,7 @@ onMounted(async () => {
     message.warning(t('bootstrap.desktopSession.loadSelectionFailed'))
   }
   await loadQueues()
+  supported.value = true
 })
 </script>
 
@@ -118,7 +126,12 @@ onMounted(async () => {
           <a-typography-text type="secondary">{{
             t('bootstrap.desktopSession.emptySelection')
           }}</a-typography-text>
-          <a-button type="primary" :loading="starting" :disabled="loading" @click="open">
+          <a-button
+            type="primary"
+            :loading="starting"
+            :disabled="loading || selected.length > MAX_DESKTOP_SESSION_TARGETS"
+            @click="open"
+          >
             {{
               selected.length
                 ? t('bootstrap.desktopSession.openWithTasks')

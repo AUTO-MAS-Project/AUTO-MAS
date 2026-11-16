@@ -3,6 +3,7 @@ import type { AnalyticsContext, RendererAnalyticsEvent } from '@/types/analytics
 import type { FrontendCloseRequest } from '@/types/appLifecycle'
 import type {
   DesktopSessionRequest,
+  DesktopSessionRepair,
   DesktopSessionSnapshot,
   DesktopSessionStartResult,
   DesktopQueueResult,
@@ -524,6 +525,8 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   desktopSessionSupported?: () => Promise<boolean>
   desktopSessionOpen?: (input: DesktopSessionRequest) => Promise<void>
   desktopSessionCheck?: () => Promise<DesktopSessionSnapshot | null>
+  desktopSessionRepair?: (plan: DesktopSessionRepair[]) => Promise<string | undefined>
+  desktopSessionExportLogs?: () => Promise<boolean>
   desktopSessionPending?: () => Promise<DesktopSessionRequest | null>
   desktopSessionStart?: (request: DesktopSessionRequest) => Promise<DesktopSessionStartResult>
   desktopSessionBounds?: (bounds: { x: number; y: number; width: number; height: number }) => void

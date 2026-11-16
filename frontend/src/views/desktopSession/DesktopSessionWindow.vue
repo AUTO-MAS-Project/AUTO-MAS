@@ -5,6 +5,7 @@ import { message } from 'ant-design-vue'
 import { EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons-vue'
 import type {
   DesktopSessionRequest,
+  DesktopSessionRepair,
   DesktopSessionSnapshot,
   DesktopQueueResult,
 } from '../../../electron/services/desktopSessionProtocol'
@@ -19,6 +20,8 @@ const mode = ref<DesktopSessionRequest['mode']>('proxy')
 const resolution = ref<DesktopSessionRequest['resolution']>('1080p')
 const password = ref('')
 const passwordDialog = ref(false)
+const repairConfirmation = shallowRef<DesktopSessionRepair[] | null>(null)
+const repairing = ref(false)
 const starting = ref(false)
 const checking = ref(true)
 const volume = ref(0)
@@ -28,7 +31,7 @@ const api = window.electronAPI
 const statusText = computed(() => {
   if (snapshot.value?.closing) return t('bootstrap.desktopSession.closing')
   if (checking.value) return t('bootstrap.desktopSession.checking')
-  if (snapshot.value?.state === 'blocked') return t('bootstrap.desktopSession.blocked')
+  if (blocked.value) return t('bootstrap.desktopSession.blocked')
   if (starting.value || snapshot.value?.state === 'connecting')
     return t('bootstrap.desktopSession.starting')
   return snapshot.value?.state === 'connected'
@@ -51,16 +54,32 @@ const canStart = computed(
     !starting.value &&
     !readingPending.value &&
     !passwordDialog.value &&
+    !repairConfirmation.value &&
+    !repairing.value &&
     !snapshot.value?.busy &&
     !snapshot.value?.closing
 )
-const failedChecks = computed(() => snapshot.value?.checks.filter(check => !check.ok) ?? [])
+const diagnosticGroups = computed(() => {
+  const checks = snapshot.value?.checks ?? []
+  const isAccountCheck = (code: string) =>
+    code.startsWith('account_source_') ||
+    code.startsWith('microsoft_internet_') ||
+    code === 'hello_only'
+  return [
+    {
+      title: 'environmentSection',
+      items: checks.filter(check => !check.ok && !isAccountCheck(check.code)),
+    },
+    { title: 'accountSection', items: checks.filter(check => isAccountCheck(check.code)) },
+  ].filter(group => group.items.length)
+})
 
 const credentialErrors = new Set([
   'password_required',
   'password_invalid',
   'credential_unreadable',
   'account_mismatch',
+  'rdp_authentication_failed',
 ])
 const errorText = computed(() => {
   const code = snapshot.value?.code
@@ -68,6 +87,24 @@ const errorText = computed(() => {
     ? te(`bootstrap.desktopSession.errors.${code}`)
       ? t(`bootstrap.desktopSession.errors.${code}`)
       : t('bootstrap.desktopSession.operationFailed', { code })
+    : ''
+})
+const errorSection = computed(() => {
+  const code = snapshot.value?.code
+  if (!code) return undefined
+  if (code === 'rdp_home_compatibility') return t('bootstrap.desktopSession.compatibilitySection')
+  if (credentialErrors.has(code) || code === 'account_locked')
+    return t('bootstrap.desktopSession.accountSection')
+  if (code.startsWith('environment_')) return t('bootstrap.desktopSession.environmentSection')
+  return undefined
+})
+const authenticationDetail = computed(() => {
+  const event = snapshot.value?.authenticationFailure
+  return event
+    ? t('bootstrap.desktopSession.authenticationDetail', {
+        ...event,
+        time: new Date(event.time).toLocaleString(),
+      })
     : ''
 })
 
@@ -92,6 +129,31 @@ async function check() {
     checking.value = false
   }
   await readPending()
+  if (!pending.value && !running.value) void start()
+}
+
+async function repairEnvironment() {
+  const plan = repairConfirmation.value
+  if (!plan || repairing.value) return
+  repairing.value = true
+  repairConfirmation.value = null
+  try {
+    const code = await api?.desktopSessionRepair?.(plan)
+    if (code && snapshot.value) snapshot.value = { ...snapshot.value, code }
+  } catch {
+    message.error(t('bootstrap.desktopSession.errors.environment_repair_failed'))
+  } finally {
+    repairing.value = false
+  }
+  if (!blocked.value && !snapshot.value?.code && !running.value) void start()
+}
+
+async function exportLogs() {
+  try {
+    await api?.desktopSessionExportLogs?.()
+  } catch {
+    message.error(t('bootstrap.desktopSession.exportLogsFailed'))
+  }
 }
 
 async function start(secret?: string) {
@@ -193,7 +255,7 @@ onBeforeUnmount(() => {
       </a-flex>
       <a-space wrap>
         <a-button
-          v-if="!running || pending"
+          v-if="(!running || pending) && !blocked"
           :disabled="!canStart"
           :loading="starting"
           type="primary"
@@ -238,7 +300,19 @@ onBeforeUnmount(() => {
       show-icon
       :message="t('bootstrap.desktopSession.closingHint')"
     />
-    <a-alert v-else-if="errorText" type="warning" show-icon :message="errorText" />
+    <a-alert
+      v-else-if="errorText"
+      type="warning"
+      show-icon
+      :message="errorSection ?? errorText"
+      :description="errorSection ? errorText : undefined"
+    />
+    <a-alert
+      v-if="snapshot?.credentialWarning"
+      type="warning"
+      show-icon
+      :message="t('bootstrap.desktopSession.errors.credential_save_failed')"
+    />
     <div ref="preview" class="desktop-viewport">
       <a-flex
         v-if="!running || snapshot?.windowState !== 'visible'"
@@ -251,31 +325,62 @@ onBeforeUnmount(() => {
           <a-spin />
         </template>
         <template v-else-if="!running">
-          <a-button :loading="checking" :disabled="starting" @click="check">
+          <a-button :loading="checking" :disabled="starting || repairing" @click="check">
             {{ t('bootstrap.desktopSession.recheck') }}</a-button
           >
-          <a-typography-text v-if="!checking && blocked" type="secondary">
-            {{ t('bootstrap.desktopSession.recheckHint') }}
-          </a-typography-text>
-          <a-flex v-if="!checking && failedChecks.length" vertical gap="small">
-            <a-typography-text
-              v-for="item in failedChecks"
-              :key="item.code"
-              :type="item.required || item.code === 'hello_only' ? 'danger' : 'secondary'"
-            >
-              {{
-                te(`bootstrap.desktopSession.diagnostics.${item.code}`)
-                  ? t(`bootstrap.desktopSession.diagnostics.${item.code}`)
-                  : item.code
-              }}
-            </a-typography-text>
-          </a-flex>
+          <a-button
+            v-if="snapshot?.repairPlan?.length"
+            type="primary"
+            :loading="repairing"
+            :disabled="checking || starting"
+            @click="repairConfirmation = [...(snapshot?.repairPlan ?? [])]"
+          >
+            {{ t('bootstrap.desktopSession.tryRepair') }}
+          </a-button>
+          <!-- TODO: 文档站发布环境修复指南后，在此提供链接。 -->
+          <a-alert
+            v-if="!checking && blocked && !snapshot?.repairPlan?.length"
+            type="warning"
+            show-icon
+            :message="t('bootstrap.desktopSession.recheckHint')"
+          />
+          <a-button
+            v-if="
+              snapshot?.code === 'environment_recheck_failed' ||
+              snapshot?.code === 'environment_restore_failed' ||
+              snapshot?.code === 'environment_repair_failed'
+            "
+            @click="exportLogs"
+          >
+            {{ t('bootstrap.desktopSession.exportLogs') }}
+          </a-button>
+          <template v-if="!checking">
+            <a-flex v-for="group in diagnosticGroups" :key="group.title" vertical gap="small">
+              <a-typography-text strong>{{
+                t(`bootstrap.desktopSession.${group.title}`)
+              }}</a-typography-text>
+              <a-typography-text
+                v-for="item in group.items"
+                :key="item.code"
+                :type="item.required || item.code === 'hello_only' ? 'danger' : 'secondary'"
+              >
+                {{
+                  te(`bootstrap.desktopSession.diagnostics.${item.code}`)
+                    ? t(`bootstrap.desktopSession.diagnostics.${item.code}`)
+                    : item.code
+                }}
+              </a-typography-text>
+            </a-flex>
+          </template>
         </template>
         <a-typography-text v-else type="secondary">
           {{ t('bootstrap.desktopSession.hiddenHint') }}</a-typography-text
         >
       </a-flex>
     </div>
+    <a-typography-paragraph v-if="authenticationDetail && !passwordDialog" type="secondary">
+      {{ authenticationDetail }}
+    </a-typography-paragraph>
     <a-flex v-if="results.length" vertical class="dispatch-results">
       <a-typography-text
         v-for="result in results"
@@ -297,6 +402,22 @@ onBeforeUnmount(() => {
       </a-typography-text>
     </a-flex>
     <a-modal
+      :open="repairConfirmation !== null"
+      :title="t('bootstrap.desktopSession.repairTitle')"
+      :ok-text="t('bootstrap.desktopSession.repairContinue')"
+      :cancel-text="t('bootstrap.desktopSession.cancel')"
+      :ok-button-props="{ danger: true }"
+      @ok="repairEnvironment"
+      @cancel="repairConfirmation = null"
+    >
+      <a-alert type="warning" show-icon :message="t('bootstrap.desktopSession.repairConfirm')" />
+      <ul>
+        <li v-for="item in repairConfirmation ?? []" :key="item">
+          {{ t(`bootstrap.desktopSession.repairs.${item}`) }}
+        </li>
+      </ul>
+    </a-modal>
+    <a-modal
       v-model:open="passwordDialog"
       :title="t('bootstrap.desktopSession.passwordTitle')"
       :ok-text="t('bootstrap.desktopSession.connect')"
@@ -305,6 +426,15 @@ onBeforeUnmount(() => {
       @ok="submitPassword"
       @cancel="password = ''"
     >
+      <a-alert
+        v-if="snapshot?.code && snapshot.code !== 'password_required' && errorText"
+        type="error"
+        show-icon
+        :message="errorText"
+      />
+      <a-typography-paragraph v-if="authenticationDetail" type="secondary">
+        {{ authenticationDetail }}
+      </a-typography-paragraph>
       <a-input-password
         v-model:value="password"
         :placeholder="t('bootstrap.desktopSession.password')"

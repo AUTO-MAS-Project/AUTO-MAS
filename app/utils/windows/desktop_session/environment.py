@@ -10,6 +10,7 @@ import winreg
 from ctypes import wintypes as W
 from pathlib import Path
 
+from .credentials import current_identity
 from .native import SYSTEM32, bind, child_sessions_enabled, process_session, user32
 
 TERM_SERVER = r"SYSTEM\CurrentControlSet\Control\Terminal Server"
@@ -17,6 +18,74 @@ TERM_POLICY = r"SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
 TERM_SERVICE = r"SYSTEM\CurrentControlSet\Services\TermService\Parameters"
 WINDOWS_VERSION = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion"
 HELLO = WINDOWS_VERSION + r"\PasswordLess\Device"
+RDP_DENY = "fDenyTSConnections"
+POWERSHELL = (
+    Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+)
+
+REPAIRABLE = frozenset(
+    {
+        "child_enabled",
+        "rdp_local_disabled",
+        "term_service_disabled",
+        "term_service_stopped",
+    }
+)
+
+
+def is_home_edition(edition: object) -> bool:
+    return isinstance(edition, str) and edition.startswith("Core")
+
+
+def repair_plan(checks: list[dict[str, object]]) -> frozenset[str]:
+    failures = {row["code"] for row in checks if not row["ok"] and row["required"]}
+    changes = REPAIRABLE.intersection(failures)
+    if changes and not failures.difference(REPAIRABLE | {"rdp_listener"}):
+        return changes
+    return frozenset()
+
+
+def account_details() -> tuple[str, str]:
+    from pywintypes import error
+
+    try:
+        _, sid = current_identity()
+        output = subprocess.run(
+            [
+                str(POWERSHELL),
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                f"$u=Get-LocalUser -SID '{sid}' -ErrorAction SilentlyContinue;"
+                f"if (!$u) {{ $u=Get-CimInstance Win32_UserAccount -Filter \"SID = '{sid}'\" }};"
+                "if ($u.PrincipalSource -eq 'MicrosoftAccount') {"
+                "'microsoft'; try {"
+                "$n=New-Object -ComObject NetworkListManager -ErrorAction Stop;"
+                "if ($n.IsConnectedToInternet) { 'online' } else { 'offline' }"
+                "} catch { 'unknown' }"
+                "} elseif ($u.PrincipalSource -eq 'Local') { 'local' }"
+                "elseif ($u.PrincipalSource -eq 'ActiveDirectory') { 'active_directory' }"
+                "elseif ($u.PrincipalSource -in 'AzureAD','AzureActiveDirectory') { 'entra' }"
+                "elseif ($u.PrincipalSource -or ($u -and !$u.LocalAccount)) { 'other' }",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        ).stdout.split()
+    except (OSError, subprocess.SubprocessError, error):
+        return "unknown", "unknown"
+    if not output or output[0] not in {
+        "local",
+        "microsoft",
+        "active_directory",
+        "entra",
+        "other",
+    }:
+        return "unknown", "unknown"
+    network = output[1] if output[1:] in (["online"], ["offline"]) else "unknown"
+    return output[0], network
 
 
 def registry_value(key: str, name: str):
@@ -48,11 +117,11 @@ def version_details() -> dict[str, str | int | None]:
     }
 
 
-def windows_signature(system: Path) -> bool:
+def windows_signature() -> bool:
     # Get-AuthenticodeSignature 也验证 Windows 目录签名。
     result = subprocess.run(
         [
-            str(system / "WindowsPowerShell" / "v1.0" / "powershell.exe"),
+            str(POWERSHELL),
             "-NoProfile",
             "-NonInteractive",
             "-Command",
@@ -69,7 +138,7 @@ def windows_signature(system: Path) -> bool:
     return result.returncode == 0
 
 
-def probe() -> tuple[list[dict[str, object]], int]:
+def probe(*, include_account: bool = True) -> tuple[list[dict[str, object]], int]:
     """返回逐项检查结果和 RDP 连接端口，不改变系统配置。"""
     import win32service
     from pywintypes import error as Win32Error
@@ -114,10 +183,9 @@ def probe() -> tuple[list[dict[str, object]], int]:
         edition = registry_value(WINDOWS_VERSION, "EditionID")
         if not isinstance(edition, str) or not edition:
             return True, "unknown"
-        is_home = edition.startswith("Core")
-        return not is_home, edition
+        return True, edition
 
-    check("home_edition", home_edition, required=False)
+    edition = check("home_edition", home_edition, required=False)
 
     def interactive():
         session = process_session(os.getpid())
@@ -158,7 +226,7 @@ def probe() -> tuple[list[dict[str, object]], int]:
             "service_dll_missing", lambda: ((system / "termsrv.dll").is_file(), None)
         )
         if service_dll_missing["ok"]:
-            check("service_signature", lambda: (windows_signature(system), None))
+            check("service_signature", lambda: (windows_signature(), None))
 
     def service_state(name):
         scm = win32service.OpenSCManager(None, None, win32service.SC_MANAGER_CONNECT)
@@ -168,9 +236,7 @@ def probe() -> tuple[list[dict[str, object]], int]:
             )
             try:
                 state = win32service.QueryServiceStatus(service)[1]
-                if state == win32service.SERVICE_RUNNING:
-                    return True, None
-                if state == win32service.SERVICE_STOPPED:
+                if name == "TermService" or state == win32service.SERVICE_STOPPED:
                     config_handle = win32service.OpenService(
                         scm, name, win32service.SERVICE_QUERY_CONFIG
                     )
@@ -178,11 +244,12 @@ def probe() -> tuple[list[dict[str, object]], int]:
                         start_type = win32service.QueryServiceConfig(config_handle)[1]
                     finally:
                         win32service.CloseServiceHandle(config_handle)
-                    return False, (
-                        "disabled"
-                        if start_type == win32service.SERVICE_DISABLED
-                        else "stopped"
-                    )
+                    if start_type == win32service.SERVICE_DISABLED:
+                        return False, "disabled"
+                if state == win32service.SERVICE_RUNNING:
+                    return True, None
+                if state == win32service.SERVICE_STOPPED:
+                    return False, "stopped"
                 return False, "not_running"
             finally:
                 win32service.CloseServiceHandle(service)
@@ -204,19 +271,12 @@ def probe() -> tuple[list[dict[str, object]], int]:
         return enabled, enabled
 
     child_enabled = check("child_enabled", child_state)
-    # 已确认关闭时允许用户启动，由宿主尝试启用。读取失败仍阻止启动。
-    if child_enabled["value"] is False:
-        child_enabled["required"] = False
-    elif not child_enabled["ok"]:
+    if not child_enabled["ok"] and child_enabled["value"] is not False:
         child_enabled["code"] = "child_query_failed"
 
     def host_policy():
-        policy = registry_value(TERM_POLICY, "fDenyTSConnections")
-        local = (
-            registry_value(TERM_SERVER, "fDenyTSConnections")
-            if policy is None
-            else None
-        )
+        policy = registry_value(TERM_POLICY, RDP_DENY)
+        local = registry_value(TERM_SERVER, RDP_DENY) if policy is None else None
         return (
             local if policy is None else policy
         ) != 1, "local" if policy is None else "policy"
@@ -224,14 +284,22 @@ def probe() -> tuple[list[dict[str, object]], int]:
     rdp_policy = check("rdp_policy", host_policy)
     if not rdp_policy["ok"] and rdp_policy["value"] in ("local", "policy"):
         rdp_policy["code"] = f"rdp_{rdp_policy['value']}_disabled"
-    try:
-        hello_setting = registry_value(HELLO, "DevicePasswordLessBuildVersion")
-    except OSError:
-        hello_setting = None
-    if hello_setting == 2:
-        result.append(
-            {"code": "hello_only", "ok": False, "required": False, "value": None}
-        )
+    if include_account:
+        account, internet = account_details()
+        check(f"account_source_{account}", lambda: (True, None), required=False)
+        if account == "microsoft":
+            if internet != "online":
+                check(
+                    f"microsoft_internet_{internet}",
+                    lambda: (False, None),
+                    required=False,
+                )
+            try:
+                hello_setting = registry_value(HELLO, "DevicePasswordLessBuildVersion")
+            except OSError:
+                hello_setting = None
+            if hello_setting == 2:
+                check("hello_only", lambda: (False, None), required=False)
     port = 0
 
     def listener():
@@ -244,7 +312,13 @@ def probe() -> tuple[list[dict[str, object]], int]:
         with socket.create_connection(("localhost", port), timeout=1):
             return True, port
 
-    rdp_listener = check("rdp_listener", listener)
+    # 家庭版缺少常规 RDP 监听时，仍可尝试 ActiveX 的原生子会话连接。
+    rdp_listener = check(
+        "rdp_listener", listener, required=not is_home_edition(edition["value"])
+    )
     if rdp_listener["value"] == "invalid_port":
         rdp_listener["code"] = "rdp_port_invalid"
+        rdp_listener["required"] = True
+    elif not rdp_listener["ok"] and not rdp_listener["required"]:
+        rdp_listener["code"] = "rdp_home_listener"
     return result, port

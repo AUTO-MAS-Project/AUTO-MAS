@@ -106,6 +106,39 @@ def test_managed_process_separates_exited_from_out_of_scope(monkeypatch):
     assert operations.managed_process(100, expected_create_time=20) is None
 
 
+@pytest.mark.skipif(os.name != "nt", reason="需要 Windows 分身进程执行器")
+@pytest.mark.asyncio
+async def test_desktop_process_delivers_launcher_progress_before_completion(
+    monkeypatch,
+):
+    import asyncio
+    from threading import get_ident
+    from unittest.mock import AsyncMock
+
+    from app.utils.windows.desktop_session import process_runner
+
+    monkeypatch.setattr(
+        process_runner,
+        "_read",
+        AsyncMock(side_effect=[{"log": "launcher progress"}, {"returnCode": 0}]),
+    )
+    monkeypatch.setattr(process_runner, "_wait_worker", lambda worker: None)
+    loop = asyncio.get_running_loop()
+    loop_thread = get_ident()
+    reported = []
+
+    async def report(line):
+        reported.append(line)
+
+    def on_log(line):
+        assert get_ident() != loop_thread
+        asyncio.run_coroutine_threadsafe(report(line), loop).result(timeout=5)
+
+    process = process_runner.DesktopProcess(42, Mock(), Mock(), on_log)
+    assert await process.wait() == (0, b"", b"")
+    assert reported == ["launcher progress"]
+
+
 @pytest.mark.skipif(os.name != "nt", reason="需要 Windows Job Object")
 def test_desktop_job_keeps_game_after_launcher_exits(monkeypatch, tmp_path):
     import subprocess

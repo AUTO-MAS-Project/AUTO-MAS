@@ -3,6 +3,8 @@
 - 桌面分身由 Electron 主进程分别记录连接结果（`desktop_session_connection_finished`）
   和各选中目标的调度受理结果（`task_start_result` 的 `desktop_session` 来源）。
   接受派发仅表示创建了任务，不代表任务完成。不发送任务标识、队列名称、凭据或会话信息。
+  用户确认后的环境修复由主进程根据宿主结果记录 `desktop_session_environment_repair_finished`。
+  分身日志导出复用 T067，按 ZIP 保存结果或用户取消记录，不发送路径、附件或日志内容。
 
 - 定时唤醒开关复用设置保存事件的 `scheduled_wakeup` 类别，唤醒启动复用
   `app_started` 的同名来源。只记录配置保存和应用 ready，不推断硬件唤醒结果，

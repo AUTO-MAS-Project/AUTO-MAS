@@ -68,7 +68,8 @@ def validate(credential: Credential) -> None:
                 raise CredentialError("account_mismatch")
     except error as exc:
         # 限制向 IPC 传递的值，异常文本可能含账户信息。
-        raise CredentialError("password_invalid", native_code=exc.winerror) from None
+        code = "account_locked" if exc.winerror == 1909 else "password_invalid"
+        raise CredentialError(code, native_code=exc.winerror) from None
 
 
 def _sid(token) -> str:

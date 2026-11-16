@@ -11,6 +11,7 @@ import threading
 import time
 import traceback
 from ctypes import wintypes as W
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from uuid import uuid4
@@ -18,19 +19,57 @@ from uuid import uuid4
 import comtypes.client
 
 from app.utils.windows.desktop_session import audio, credentials
-from app.utils.windows.desktop_session.environment import probe, version_details
+from app.utils.windows.desktop_session.environment import (
+    is_home_edition,
+    probe,
+    repair_plan,
+    version_details,
+)
+from app.utils.windows.desktop_session.logon_events import recent_failure
 from app.utils.windows.desktop_session.native import (
     SYSTEM32,
     bind,
     child_session,
-    enable_child_sessions,
     logoff_child,
     primary_size,
     set_dpi_awareness,
     user32,
 )
+from app.utils.windows.desktop_session.repair import EnvironmentRepair, RepairError
 from app.utils.windows.desktop_session.viewer import RdpViewer
 from app.utils.windows.host import IS_ELEVATED
+
+
+def connection_failure(
+    code: str, native_codes: tuple[int, ...], logon_error: int | None, *, home: bool
+) -> str:
+    if logon_error == -1073741260:  # STATUS_ACCOUNT_LOCKED_OUT
+        return "account_locked"
+    if code == "rdp_disconnected":
+        reason, extended = native_codes
+        if reason == 3335:  # SSL_ERR_ACCOUNT_LOCKED_OUT
+            return "account_locked"
+        if reason in {
+            2055,
+            2567,
+            2823,
+            3079,
+            3591,
+            3847,
+            4615,
+            6151,
+            7175,
+            8455,
+            8711,
+        } or extended in {9, 10, 768}:
+            return "rdp_authentication_failed"
+        if logon_error is None and (reason in {1, 2} or extended in {1, 2, 11, 12}):
+            return code
+    if logon_error is not None:
+        return "rdp_authentication_failed"
+    if code in {"rdp_disconnected", "rdp_fatal", "connect_timeout"}:
+        return "rdp_home_compatibility" if home else "rdp_connection_failed"
+    return code
 
 
 class Host:
@@ -44,6 +83,8 @@ class Host:
         self.volume = 0
         self.audio_state = None
         self.connection_baseline = None
+        self.home_edition = False
+        self.rdp_logon: tuple[datetime, str, str] | None = None
         self.dead = False
         self.correlation = uuid4().hex
         path = root / "debug" / "desktop-session" / "host.log"
@@ -65,7 +106,7 @@ class Host:
             self.dead = True
 
     def read_commands(self) -> None:
-        for line in sys.stdin:
+        for line in sys.stdin.buffer:
             try:
                 self.commands.put(json.loads(line))
             except ValueError:
@@ -100,80 +141,163 @@ class Host:
         if self.viewer is not None:
             raise RuntimeError("already_started")
         checks, port = probe()
-        if not any(row["required"] and not row["ok"] for row in checks) and any(
-            row["code"] == "child_enabled" and row["value"] is False for row in checks
-        ):
-            try:
-                enable_child_sessions()
-            except (OSError, AttributeError) as exc:
-                self.report(
-                    "child_enable_failed", nativeCode=getattr(exc, "winerror", None)
-                )
-            checks, port = probe()
-        self.report("diagnostics", checks=checks)
-        if any(
-            not row["ok"] and (row["required"] or row["code"] == "child_enabled")
-            for row in checks
-        ):
+        self.report_diagnostics(checks)
+        if self.environment_blocked(checks):
             self.report("state", state="idle", code="environment_blocked")
             return
 
-        account, _ = credentials.current_identity()
+        self.home_edition = any(
+            row["code"] == "home_edition" and is_home_edition(row["value"])
+            for row in checks
+        )
+        try:
+            self.connect(command, password, port)
+        except BaseException:
+            if self.viewer is not None:
+                self.close_session(None)
+            raise
+
+    @staticmethod
+    def environment_blocked(checks: list[dict[str, object]]) -> bool:
+        return any(row["required"] and not row["ok"] for row in checks)
+
+    def report_diagnostics(self, checks: list[dict[str, object]]) -> None:
+        self.report("diagnostics", checks=checks, repairs=sorted(repair_plan(checks)))
+
+    def report_viewer(self, event: str, **fields) -> None:
+        if (
+            event == "state"
+            and fields["state"] == "disconnected"
+            and self.session_id is None
+        ):
+            fields["code"] = connection_failure(
+                fields["code"],
+                fields.get("nativeCodes", ()),
+                fields.get("logonError"),
+                home=self.home_edition,
+            )
+            if self.rdp_logon is not None:
+                failure = recent_failure(*self.rdp_logon, remote=True)
+                if failure:
+                    self.report("authentication_failure", **failure)
+                    codes = {failure["status"], failure["substatus"]}
+                    fields["code"] = (
+                        "account_locked"
+                        if "0xC0000234" in codes
+                        else "rdp_authentication_failed"
+                    )
+        self.report(event, **fields)
+
+    def repair_environment(
+        self, checks: list[dict[str, object]], changes: frozenset[str]
+    ) -> None:
+        repair = EnvironmentRepair()
+        repair.start(changes)
+        try:
+            refreshed, _ = probe(include_account=False)
+        except BaseException:
+            repair.finish(commit=False)
+            raise
+        if self.environment_blocked(refreshed):
+            self.report("repair_recheck_failed", checks=refreshed)
+            try:
+                repair.finish(commit=False)
+            finally:
+                failures = [row for row in refreshed if not row["ok"]]
+                failed_codes = {row["code"] for row in failures}
+                visible_checks = failures + [
+                    row for row in checks if row["code"] not in failed_codes
+                ]
+                self.report("diagnostics", checks=visible_checks, repairs=[])
+            raise RepairError("environment_recheck_failed")
+
+        repair.finish(commit=True)
+        self.report_diagnostics(
+            refreshed
+            + [
+                row
+                for row in checks
+                if str(row["code"]).startswith(
+                    ("account_source_", "microsoft_internet_")
+                )
+                or row["code"] == "hello_only"
+            ]
+        )
+
+    def repair(self, approved: frozenset[str]) -> None:
+        checks, _ = probe()
+        changes = repair_plan(checks)
+        if not changes or changes != approved:
+            self.report_diagnostics(checks)
+            self.report("repair_finished", code="environment_changed")
+            return
+        self.repair_environment(checks, changes)
+        self.report("repair_finished")
+
+    def connect(self, command: dict, password: str | None, port: int) -> None:
+        account, sid = credentials.current_identity()
         path = self.root / "config" / "desktop-session" / "credentials.json"
         credential = (
             credentials.Credential(account, password)
             if password is not None
             else credentials.load(path, account)
         )
-        credentials.validate(credential)
-        # 连接事件只暂存密文，密码随本次调用结束释放引用。
-        encrypted = credentials.encode(credential) if password is not None else None
+        started = datetime.now(UTC)
+        try:
+            credentials.validate(credential)
+        except credentials.CredentialError as exc:
+            if exc.native_code is not None:
+                failure = recent_failure(started, account, sid, remote=False)
+                if failure:
+                    self.report("authentication_failure", **failure)
+            raise
+        if password is not None:
+            try:
+                credentials.save(path, account, credentials.encode(credential))
+            except credentials.CredentialError as exc:
+                self.report(
+                    "credential_warning", code=exc.code, nativeCode=exc.native_code
+                )
 
         def connected() -> None:
             assert self.viewer is not None
             self.session_id = self.viewer.session_id
-            if encrypted is not None:
-                try:
-                    credentials.save(path, account, encrypted)
-                except credentials.CredentialError as exc:
-                    self.report(
-                        "credential_warning", code=exc.code, nativeCode=exc.native_code
-                    )
 
+        self.connection_baseline = child_session()
+        if self.connection_baseline is not None:
+            self.report("existing_child_session", sessionId=self.connection_baseline)
         self.viewer = RdpViewer(
             mode=command["mode"],
             port=port,
             size=primary_size() if command["resolution"] == "primary" else (1920, 1080),
             owner=int(command["owner"]),
             bounds=tuple(command["bounds"]),
-            report=self.report,
+            report=self.report_viewer,
             tick=self.tick,
             on_connected=connected,
         )
-        try:
-            self.connection_baseline = child_session()
-            if self.connection_baseline is not None:
-                self.report(
-                    "existing_child_session", sessionId=self.connection_baseline
-                )
-            self.report(
-                "state",
-                state="connecting",
-                pid=os.getpid(),
-                parentSessionId=self.viewer.parent_session,
-            )
-            self.viewer.open(credential)
-        except BaseException:
-            self.viewer.close()
-            self.viewer = None
-            raise
+        self.report(
+            "state",
+            state="connecting",
+            pid=os.getpid(),
+            parentSessionId=self.viewer.parent_session,
+        )
+        self.rdp_logon = (datetime.now(UTC), account, sid)
+        self.viewer.open(credential)
 
     def close(self, orphaned_session: int | None = None) -> None:
+        self.close_session(orphaned_session)
+        self.report("state", state="idle")
+
+    def close_session(self, orphaned_session: int | None) -> None:
         session = self.session_id if orphaned_session is None else orphaned_session
-        viewer, self.viewer = self.viewer, None
+        viewer = self.viewer
         if viewer is not None:
             # 先断开 ActiveX，避免正在登录的连接在注销检查后又创建分身。
-            viewer.close()
+            try:
+                viewer.close()
+            except comtypes.COMError as exc:
+                self.report("viewer_close_error", nativeCode=exc.hresult)
         if viewer is not None and session is None:
             # 连接期间可能在最后一次轮询后产生会话。只注销连接发起后观察到的分身。
             current = child_session()
@@ -184,6 +308,8 @@ class Host:
                 self.connection_baseline,
             ):
                 session = current
+        self.viewer = None
+        self.rdp_logon = None
         if session is not None:
             self.session_id = session
             start = time.monotonic()
@@ -196,16 +322,17 @@ class Host:
                 durationMs=round((time.monotonic() - start) * 1000),
             )
         self.session_id = None
-        self.report("state", state="idle")
 
     def command(self, command: dict) -> None:
         action = command["action"]
         if action == "check":
             self.report_environment("check")
             checks, _ = probe()
-            self.report("diagnostics", checks=checks)
+            self.report_diagnostics(checks)
         elif action == "connect":
             self.start(command)
+        elif action == "repair":
+            self.repair(frozenset(command["approvedRepairs"]))
         elif action == "close":
             self.close(command.get("orphanedSessionId"))
         elif action == "eof":
@@ -229,6 +356,14 @@ class Host:
                 self.report(
                     "state", state="idle", code=exc.code, nativeCode=exc.native_code
                 )
+            except RepairError as exc:
+                self.report("repair_error", code=str(exc))
+                if action == "repair":
+                    self.report("repair_finished", code=str(exc))
+                elif action != "connect":
+                    self.report("command_error", action=action, code=str(exc))
+                else:
+                    self.report("state", state="idle", code=str(exc))
             except Exception as exc:
                 info = getattr(exc, "excepinfo", None)
                 self.report(

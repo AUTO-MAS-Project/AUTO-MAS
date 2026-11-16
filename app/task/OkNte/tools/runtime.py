@@ -82,7 +82,9 @@ class OkNteProcessManager(ProcessManager):
         track = self.config.Script.IfTrackProcess
         custom = self._custom_target() if track and use_custom_target else None
         started = time.time()
-        await self.open_process(program, *args, target_process=custom)
+        await self.open_process(
+            program, *args, target_process=custom, retain_desktop_descendants=track
+        )
         if track and custom is None:
             await self.search_runtime_process(min_create_time=started)
 
