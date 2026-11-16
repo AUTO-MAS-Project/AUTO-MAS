@@ -3,6 +3,7 @@ import { ref, useTemplateRef, watch } from 'vue'
 import { usePreferredReducedMotion } from '@vueuse/core'
 import { usePerformanceStore } from '@/stores/performance'
 
+const STORAGE_KEY = 'auto-mas:new-year:last-played-year'
 const DURATION_MS = 4200
 const COLORS = ['#ff5978', '#ffcf56', '#54d6bb', '#6c9dff', '#b78bfa', '#ff914d']
 
@@ -18,10 +19,10 @@ watch(
   ([element, lowPower, motion], _, onCleanup) => {
     if (!element || lowPower || motion === 'reduce' || started) return
 
-    const storageKey = `auto-mas:new-year:${new Date().getFullYear()}`
+    const currentYear = String(new Date().getFullYear())
     // 仅在可见主界面准备好播放时领取，静默启动不提前消耗这次彩蛋。
     try {
-      if (localStorage.getItem(storageKey) === 'played') {
+      if (localStorage.getItem(STORAGE_KEY) === currentYear) {
         finished.value = true
         return
       }
@@ -106,7 +107,7 @@ watch(
     }
 
     try {
-      localStorage.setItem(storageKey, 'played')
+      localStorage.setItem(STORAGE_KEY, currentYear)
     } catch (error) {
       // 无法持久保存时不播放，避免每次启动都重复庆祝。
       logger.warn('无法保存新年彩蛋记录，跳过播放', error)
