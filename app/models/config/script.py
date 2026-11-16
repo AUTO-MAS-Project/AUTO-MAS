@@ -82,6 +82,7 @@ from .shared import (
     _tag_remained_days,
     local_timezone,
     migrate_maa_stamina_pipeline,
+    migrate_maaend_sanity_tasks,
     none_as,
     normalize_maaend_plan_key,
 )
@@ -784,7 +785,8 @@ class MaaEndUserConfig(DomainEntry):
         )
 
         SanityStrategy: Literal["MAS", "Native", "Inventory"] = Field(
-            default="MAS", description="理智任务策略：指定任务、原生策略或库存目标"
+            default="Inventory",
+            description="协议空间策略：库存保持、指定任务或原生配置",
         )
 
         SanityMode: Annotated[
@@ -797,6 +799,17 @@ class MaaEndUserConfig(DomainEntry):
                 display_field="Info.Name",
             ),
         ] = Field(default_factory=lambda: "Fixed", description="理智任务配置模式")
+
+        AutoEssenceMode: Annotated[
+            UUID | str,
+            ref(
+                "PlanConfig",
+                default="Fixed",
+                allow_values=("Fixed", "Native"),
+                entry_types=(MaaEndPlanConfig,),
+                display_field="Info.Name",
+            ),
+        ] = Field(default_factory=lambda: "Fixed", description="基质刷取配置模式")
 
         ScriptAfterTask: FilePath = Field(
             description="任务后脚本路径", default_factory=lambda: None
@@ -945,7 +958,11 @@ class MaaEndUserConfig(DomainEntry):
             description="资源回收站", default_factory=lambda: True
         )
 
-        IfSanity: bool = Field(description="理智任务", default_factory=lambda: True)
+        IfProtocolSpace: Annotated[bool, legacy(group="Task", name="IfSanity")] = Field(
+            default=True, description="协议空间（库存保持）"
+        )
+
+        IfAutoEssence: bool = Field(default=False, description="基质刷取")
 
         IfSeizeDeliveryJobs: bool = Field(
             description="抢委托送货", default_factory=lambda: True
@@ -1033,6 +1050,27 @@ class MaaEndUserConfig(DomainEntry):
             raise ValueError("引用的理智任务计划表不存在") from e
         return (plan.get_current_key(), str(mode))
 
+    def get_effective_essence_task_key(self) -> dict[str, Any] | None:
+        """读取独立基质配置，计划表当天为协议空间时不执行基质。"""
+        mode = self.Info.AutoEssenceMode
+        if mode == "Native":
+            return None
+        if mode == "Fixed":
+            return normalize_maaend_plan_key(
+                {
+                    "SanityTaskType": "Essence",
+                    "AutoEssenceMenu": self.Task.AutoEssenceMenu,
+                    "AutoEssenceSpecifiedLocation": self.Task.AutoEssenceSpecifiedLocation,
+                    "AutoEssenceTargetWeapons": self.Task.AutoEssenceTargetWeapons,
+                }
+            )
+        try:
+            plan = self.related_config["PlanConfig"][mode]
+        except (KeyError, ValueError) as error:
+            raise ValueError("引用的基质刷取计划表不存在") from error
+        key = plan.get_current_key()
+        return key if key["SanityTaskType"] == "Essence" else None
+
     def getTags(self) -> str:
         """生成账号标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
@@ -1048,64 +1086,49 @@ class MaaEndUserConfig(DomainEntry):
             tags.append(_tag_notes(self))
             return json.dumps(tags, ensure_ascii=False)
 
-        if self.Task.IfSanity and self.Info.SanityStrategy in ("Native", "Inventory"):
+        if self.Task.IfProtocolSpace and self.Info.SanityStrategy in (
+            "Native",
+            "Inventory",
+        ):
             label = (
                 "库存目标"
                 if self.Info.SanityStrategy == "Inventory"
                 else "MaaEnd 原生策略"
             )
-            tags.append({"text": f"理智任务：{label}", "color": "blue"})
-        elif self.Task.IfSanity:
+            tags.append({"text": f"协议空间：{label}", "color": "blue"})
+        elif self.Task.IfProtocolSpace:
             task_key, _ = self.get_effective_sanity_task_key()
             sanity_task_type = task_key["SanityTaskType"]
-            tags.append(
-                {
-                    "text": f"理智任务：{_utils_constants.MAAEND_SANITY_TASK_LABELS[sanity_task_type]}",
-                    "color": "blue",
-                }
-            )
-            if (
-                sanity_task_type == "Essence"
-                and task_key.get("AutoEssenceMenu") == "Target"
-            ):
-                target_weapons = task_key.get("AutoEssenceTargetWeapons", [])
-                detail_key = "Target"
-                detail_label = (
-                    "目标武器（未限制）"
-                    if not target_weapons
-                    else f"目标武器（{len(target_weapons)} 件）"
-                )
-            else:
-                detail_key = (
-                    task_key["AutoEssenceSpecifiedLocation"]
-                    if sanity_task_type == "Essence"
-                    else task_key[sanity_task_type]
-                )
-                if sanity_task_type == "Essence":
-                    detail_label = self._get_maaend_location_label(detail_key)
-                else:
-                    detail_label = self._maaend_crisis_drills_labels.get(
-                        detail_key,
-                        _utils_constants.MAAEND_SANITY_TASK_DETAIL_LABELS.get(
-                            detail_key, detail_key
-                        ),
-                    )
-            tags.append({"text": f"详细任务：{detail_label}", "color": "blue"})
-            if detail_key in _utils_constants.MAAEND_STAGE_WITH_AB:
+            if sanity_task_type != "Essence":
                 tags.append(
                     {
-                        "text": "奖励组：奖励组 A"
-                        if task_key["RewardsSetOption"] == "RewardsSetA"
-                        else "奖励组：奖励组 B",
+                        "text": f"协议空间：{_utils_constants.MAAEND_SANITY_TASK_LABELS[sanity_task_type]}",
                         "color": "blue",
                     }
                 )
+                detail_key = task_key[sanity_task_type]
+                detail_label = self._maaend_crisis_drills_labels.get(
+                    detail_key,
+                    _utils_constants.MAAEND_SANITY_TASK_DETAIL_LABELS.get(
+                        detail_key, detail_key
+                    ),
+                )
+                tags.append({"text": f"详细任务：{detail_label}", "color": "blue"})
+                if detail_key in _utils_constants.MAAEND_STAGE_WITH_AB:
+                    label = (
+                        "奖励组 A"
+                        if task_key["RewardsSetOption"] == "RewardsSetA"
+                        else "奖励组 B"
+                    )
+                    tags.append({"text": f"奖励组：{label}", "color": "blue"})
+        if self.Task.IfAutoEssence:
+            tags.append({"text": "基质刷取", "color": "blue"})
         tags.append(_tag_notes(self))
         return json.dumps(tags, ensure_ascii=False)
 
     @classmethod
     def normalize_payload(cls, data):
-        data = deepcopy(data)
+        data = migrate_maaend_sanity_tasks(deepcopy(data))
         info_data = data.get("Info")
         if isinstance(info_data, dict):
             legacy_base = str(info_data.get("Mode") or "")

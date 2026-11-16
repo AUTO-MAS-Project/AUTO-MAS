@@ -188,7 +188,8 @@ MAAEND_TASK_GROUPS = {
     "Sanity": {
         "label": "理智作战",
         "tasks": (
-            ("Sanity", "理智任务"),
+            ("ProtocolSpace", "协议空间（库存保持）"),
+            ("AutoEssence", "基质刷取"),
             ("AutoUseSpMedication", "应急理智加强剂"),
         ),
     },
