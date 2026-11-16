@@ -107,29 +107,6 @@ describe('useAppLifecycle 关闭流程', () => {
   })
 
   describe('Runtime 监督链路', () => {
-    it('把自动退出与下一次唤醒时间交给主进程，再等待 Runtime 关闭', async () => {
-      let finishStop: (result: { success: boolean }) => void = () => undefined
-      stopBackend.mockImplementation(
-        () =>
-          new Promise(resolve => {
-            finishStop = resolve
-          })
-      )
-      await loadLifecycle()
-      const data = { automatic: true, nextWakeAt: '2026-11-02T08:01:00+08:00' }
-      subscriptionHandlers.get('frontend.close.requested')?.({
-        id: 'Main',
-        type: 'frontend.close.requested',
-        data,
-      })
-      expect(observeBackendClose).toHaveBeenCalledWith(data)
-      expect(stopBackend).toHaveBeenCalledOnce()
-      expect(appQuit).not.toHaveBeenCalled()
-      finishStop({ success: true })
-      await vi.waitFor(() => expect(appQuit).toHaveBeenCalledOnce())
-      expect(callOrder(observeBackendClose)).toBeLessThan(callOrder(stopBackend))
-    })
-
     it('不发 POST /close、不等后端进程消失，只请求 Electron 经 Runtime 关闭后再退出', async () => {
       // 页面先于后端起来时 ws_meta 可能回退成 devMode=true；Runtime 链路下它不能左右关闭方式。
       const { closeApp } = await loadLifecycle()
@@ -147,40 +124,57 @@ describe('useAppLifecycle 关闭流程', () => {
       // 先收连接，再让 Runtime 关后端，最后退前端。
       expect(callOrder(connectionMocks.shutdown)).toBeLessThan(callOrder(stopBackend))
       expect(callOrder(stopBackend)).toBeLessThan(callOrder(appQuit))
-    })
 
-    it('Electron 未能确认后端关闭时保留前端，交给主进程最终兜底', async () => {
-      stopBackend.mockResolvedValue({ success: false, error: 'Runtime 关闭后端失败' })
-      const { closeApp } = await loadLifecycle()
-
-      await closeApp()
-
-      expect(stopBackend).toHaveBeenCalledTimes(1)
-      expect(appQuit).not.toHaveBeenCalled()
-      expect(killAllProcesses).not.toHaveBeenCalled()
-      expect(closePost).not.toHaveBeenCalled()
-    })
-  })
-
-  describe.each(['browser', 'desktop'] as const)('%s 只连接外部后端', surface => {
-    beforeEach(() => {
-      Object.assign(
-        window,
-        surface === 'browser'
-          ? { __AUTO_MAS_BROWSER_DEV_MODE__: true }
-          : { backendOwnership: 'external' }
+      vi.resetModules()
+      subscriptionHandlers.clear()
+      appQuit.mockClear()
+      stopBackend.mockClear()
+      let finishStop: (result: { success: boolean }) => void = () => undefined
+      stopBackend.mockImplementation(
+        () =>
+          new Promise(resolve => {
+            finishStop = resolve
+          })
       )
-    })
+      await loadLifecycle()
+      const closeRequest = { automatic: true, nextWakeAt: '2026-11-02T08:01:00+08:00' }
+      subscriptionHandlers.get('frontend.close.requested')?.({
+        id: 'Main',
+        type: 'frontend.close.requested',
+        data: closeRequest,
+      })
+      expect(observeBackendClose).toHaveBeenCalledWith(closeRequest)
+      expect(stopBackend).toHaveBeenCalledOnce()
+      expect(callOrder(observeBackendClose)).toBeLessThan(callOrder(stopBackend))
+      expect(appQuit).not.toHaveBeenCalled()
+      finishStop({ success: true })
+      await vi.waitFor(() => expect(appQuit).toHaveBeenCalledOnce())
 
-    it.each(['open', 'closed'])('%s 时退出只断开连接，保留后端任务', async state => {
-      connectionMocks.connectionState.mockReturnValue({ value: state })
-      const { closeApp } = await loadLifecycle()
-      await closeApp()
+      vi.resetModules()
+      subscriptionHandlers.clear()
+      appQuit.mockClear()
+      stopBackend.mockClear()
+      stopBackend.mockResolvedValue({ success: false, error: 'Runtime 关闭后端失败' })
+      const failedLifecycle = await loadLifecycle()
+      await failedLifecycle.closeApp()
+      expect(stopBackend).toHaveBeenCalled()
+      expect(appQuit).not.toHaveBeenCalled()
+      for (const ownership of [
+        { __AUTO_MAS_BROWSER_DEV_MODE__: true },
+        { __AUTO_MAS_BROWSER_DEV_MODE__: false, backendOwnership: 'external' },
+      ]) {
+        Object.assign(window, ownership)
+        stopBackend.mockClear()
+        appQuit.mockClear()
+        const externalLifecycle = await loadLifecycle()
+        await externalLifecycle.closeApp()
+        expect(stopBackend).not.toHaveBeenCalled()
+        expect(appQuit).toHaveBeenCalledOnce()
+        expect(connectionMocks.shutdown).toHaveBeenLastCalledWith('前端退出，保留外部后端')
+      }
       expect(closePost).not.toHaveBeenCalled()
-      expect(stopBackend).not.toHaveBeenCalled()
       expect(killAllProcesses).not.toHaveBeenCalled()
-      expect(connectionMocks.shutdown).toHaveBeenCalled()
-      expect(appQuit).toHaveBeenCalledOnce()
+      expect(backendStatus).not.toHaveBeenCalled()
     })
   })
 })

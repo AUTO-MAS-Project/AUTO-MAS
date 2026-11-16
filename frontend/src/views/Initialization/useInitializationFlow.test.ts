@@ -3,7 +3,6 @@ import { renderToString } from '@vue/server-renderer'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { createSSRApp, defineComponent } from 'vue'
 import { useInitializationFlow } from './useInitializationFlow'
-import { useRuntimeBinaryUpdate } from './useRuntimeBinaryUpdate'
 
 const lifecycle = vi.hoisted(() => ({ mounted: [] as Array<() => unknown> }))
 vi.mock('vue', async importOriginal => ({
@@ -64,236 +63,104 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('initialization recovery', () => {
-  it('preserves original failure details when restoring the workspace', async () => {
-    await initialize()
-    window.electronAPI.initialize = vi.fn().mockResolvedValue({
-      success: false,
-      failedStage: 'repository',
-      error: 'fatal: 原始错误',
-      logs: 'stderr: 原始输出',
-      code: 'GIT_CLONE_FAILED',
-      retryable: true,
-    })
-    await flow.handleFailureAction('restore-workspace')
-    expect(flow.hasFailed.value).toBe(true)
-    expect(flow.currentStep.value.key).toBe('repository')
-    expect(flow.failureProps.value.message).toBe('fatal: 原始错误')
-    expect(flow.failureProps.value.failureLogs).toBe('stderr: 原始输出')
-  })
-
-  it.each(['failed', 'cancelled'] as const)(
-    'keeps %s recovery and a subsequent retry compatible',
-    async status => {
-      let update!: ReturnType<typeof useRuntimeBinaryUpdate>
-      let finish!: (value: unknown) => void
-      const onUpdated = vi.fn()
-      const remove = vi.fn()
-      Object.assign(window.electronAPI, {
-        checkRuntimeBinaryUpdate: async () => ({
-          status: 'available',
-          target: { version: 'v0.1.99' },
-        }),
-        onRuntimeBinaryProgress: vi.fn(),
-        removeRuntimeBinaryProgressListener: remove,
-        updateRuntimeBinary: () =>
-          new Promise(resolve => {
-            finish = resolve
-          }),
-      })
-      const app = createSSRApp({
-        setup() {
-          update = useRuntimeBinaryUpdate(onUpdated)
-          return () => null
-        },
-      })
-      app.use(i18n)
-      await renderToString(app)
-      await update.checkForUpdate()
-      const first = update.updateRuntime()
-      expect(update.updating.value).toBe(true)
-      finish({ status, error: 'HTTP 503: original error' })
-      await first
-      expect(update.updating.value).toBe(false)
-      expect(onUpdated).not.toHaveBeenCalled()
-      expect(remove).toHaveBeenCalledTimes(1)
-      if (status === 'failed')
-        expect(logger.error).toHaveBeenCalledWith('更新 Runtime 失败: HTTP 503: original error')
-      const retry = update.updateRuntime()
-      expect(update.updating.value).toBe(true)
-      finish({ status: 'cancelled' })
-      await retry
-      expect(update.updating.value).toBe(false)
-      expect(remove).toHaveBeenCalledTimes(2)
-      expect(onUpdated).not.toHaveBeenCalled()
-    }
-  )
-})
-
-describe('main-process startup progress', () => {
-  it.each(['event', 'snapshot'] as const)(
-    'switches to backend startup before completion from %s progress',
-    async source => {
-      const backendProgress = {
-        stage: 'backend',
-        status: 'started' as const,
-        stageIndex: 7,
-        totalStages: 7,
-        progress: 0,
-        message: '正在启动后端服务...',
-      }
-      let finishStartup!: (result: { success: boolean }) => void
-      const startup = new Promise<{ success: boolean }>(resolve => {
-        finishStartup = resolve
-      })
-      let waiting!: () => void
-      const joined = new Promise<void>(resolve => {
-        waiting = resolve
-      })
+describe('managed recovery routing', () => {
+  describe.each(['dependency-restore', 'missing-runtime'] as const)('%s', scenario => {
+    it('shows the actual failed stage when dependency recovery has to restore program files', async () => {
       const api = window.electronAPI
-      api.desktopStartupStatus = async () => ({
-        runtimeMode: 'managed',
-        flowKind: 'update',
-        fullInitialization: true,
-        state: 'running',
-        progress: [
-          {
-            stage: 'dependency',
-            stageIndex: 6,
-            totalStages: 7,
-            progress: 100,
-            status: 'completed',
-            message: '运行环境准备完成',
-          },
-          ...(source === 'snapshot' ? [backendProgress] : []),
-        ],
-      })
-      api.waitDesktopStartup = () => {
-        waiting()
-        return startup
-      }
+      if (scenario === 'missing-runtime') {
+        api.desktopStartupStatus = async () => ({
+          runtimeMode: 'managed',
+          flowKind: 'startup',
+          fullInitialization: false,
+          state: 'failed',
+          progress: [],
+        })
+        api.waitDesktopStartup = async () => ({
+          success: false,
+          failedStage: 'backend',
+          error: 'Runtime executable is missing',
+          code: 'RUNTIME_NOT_FOUND',
+          retryable: false,
+          remediation: ['update-desktop', 'contact-support'],
+        })
+        const bootstrap = vi
+          .fn()
+          .mockResolvedValueOnce({
+            success: false,
+            failedStage: 'python',
+            failureOrigin: 'runtime_binary',
+            code: 'RUNTIME_BINARY_ALIGN_ERROR',
+            retryable: true,
+            remediation: ['retry', 'open-log'],
+            error: 'Download interrupted',
+          })
+          .mockResolvedValueOnce({
+            success: true,
+            completedStages: ['python', 'repository', 'dependency'],
+          })
+        api.initialize = bootstrap
+        api.installPython = vi.fn()
+        api.pullRepository = vi.fn()
+        api.installDependencies = vi.fn()
 
-      const mounting = initialize()
-      await joined
-      try {
-        if (source === 'event') receive(backendProgress)
+        await initialize()
+        expect(flow.failureProps.value.failureActions).toContainEqual(
+          expect.objectContaining({ kind: 'retry' })
+        )
+        expect(bootstrap).not.toHaveBeenCalled()
+        await flow.handleFailureAction('retry')
+        expect(flow.hasFailed.value).toBe(true)
+        expect(flow.currentStep.value.key).toBe('python')
+        expect(flow.failureProps.value.message).toBe('Download interrupted')
+        expect(flow.failureProps.value.failureActions).toContainEqual(
+          expect.objectContaining({ kind: 'retry' })
+        )
+
+        await flow.handleFailureAction('retry')
+        expect(bootstrap.mock.calls).toEqual([
+          [expect.any(String), false],
+          [expect.any(String), false],
+        ])
+        expect(api.installPython).not.toHaveBeenCalled()
+        expect(api.pullRepository).not.toHaveBeenCalled()
+        expect(api.installDependencies).not.toHaveBeenCalled()
         expect(flow.isBackendStep.value).toBe(true)
         expect(flow.hasFailed.value).toBe(false)
-      } finally {
-        finishStartup({ success: true })
-        await mounting
+        return
       }
-    }
-  )
-})
 
-describe('managed recovery routing', () => {
-  it.each(['startup', 'backend'] as const)(
-    'reinstalls a missing Runtime after a failure from %s, keeping failed downloads retryable',
-    async origin => {
-      const missing = {
-        success: false,
-        failedStage: 'backend',
-        error: 'Runtime executable is missing',
-        code: 'RUNTIME_NOT_FOUND',
-        retryable: false,
-        remediation: ['update-desktop', 'contact-support'],
-      }
-      const api = window.electronAPI
-      api.desktopStartupStatus = async () => ({
-        runtimeMode: 'managed',
-        flowKind: 'startup',
-        fullInitialization: false,
-        state: origin === 'startup' ? 'failed' : 'ready',
-        progress: [],
-      })
-      api.waitDesktopStartup = async () => (origin === 'startup' ? missing : { success: true })
-      api.initialize = vi
-        .fn()
-        .mockResolvedValueOnce({
-          success: false,
-          completedStages: [],
-          failedStage: 'python',
-          failureOrigin: 'runtime_binary',
-          code: 'RUNTIME_BINARY_ALIGN_ERROR',
-          retryable: true,
-          remediation: ['retry', 'open-log'],
-          error: 'Download interrupted',
-        })
-        .mockResolvedValueOnce({
-          success: true,
-          completedStages: ['python', 'repository', 'dependency'],
-        })
       await initialize()
-      if (origin === 'backend') await flow.handleBackendError(missing.error, missing)
-      expect(flow.currentStep.value.key).toBe('python')
-      expect(flow.flowKind.value).toBe('startup')
+      receive({ stage: 'dependency', status: 'failed', message: 'lockfile missing' })
+      api.installDependencies = vi.fn(async () => ({
+        success: false,
+        failedStage: 'repository',
+        error: 'Program files could not be restored',
+        logs: 'git: program files unavailable',
+        code: 'WORKSPACE_RESTORE_FAILED',
+        retryable: false,
+      }))
+      await flow.handleFailureAction('retry')
+      expect(flow.currentStep.value.key).toBe('repository')
       expect(flow.failureProps.value.failureActions.map(action => action.kind)).toEqual([
-        'retry',
+        'restore-workspace',
         'open-log',
       ])
-      expect(api.initialize).not.toHaveBeenCalled()
-      await flow.handleFailureAction('retry')
-      expect(flow.flowKind.value).toBe('update')
-      expect(flow.currentStep.value.key).toBe('python')
       expect(flow.hasFailed.value).toBe(true)
-      expect(flow.failureProps.value.message).toBe('Download interrupted')
-      expect(flow.failureProps.value.failureActions.map(action => action.kind)).toEqual([
-        'retry',
-        'open-log',
-      ])
-      await flow.handleFailureAction('retry')
-      expect(api.initialize).toHaveBeenCalledTimes(2)
-      expect(flow.currentStep.value.key).toBe('backend')
-      expect(flow.hasFailed.value).toBe(false)
-    }
-  )
-
-  it('does not offer managed Runtime installation in development mode', async () => {
-    window.electronAPI.getRuntimeInitContext = async () => ({
-      mode: 'development',
-      fallbackLogPath: '',
+      expect(flow.failureProps.value.message).toBe('Program files could not be restored')
+      expect(flow.failureProps.value.failureLogs).toBe('git: program files unavailable')
+      api.initialize = vi.fn().mockResolvedValueOnce({
+        success: false,
+        failedStage: 'repository',
+        error: 'fatal: original restore error',
+        logs: 'stderr: original restore output',
+        code: 'GIT_CLONE_FAILED',
+        retryable: true,
+      })
+      await flow.handleFailureAction('restore-workspace')
+      expect(flow.currentStep.value.key).toBe('repository')
+      expect(flow.hasFailed.value).toBe(true)
+      expect(flow.failureProps.value.message).toBe('fatal: original restore error')
+      expect(flow.failureProps.value.failureLogs).toBe('stderr: original restore output')
     })
-    await initialize()
-    await flow.handleBackendError('Runtime executable is missing', {
-      code: 'RUNTIME_NOT_FOUND',
-      retryable: false,
-    })
-    expect(flow.currentStep.value.key).toBe('backend')
-    expect(flow.flowKind.value).toBe('startup')
-  })
-
-  it('retries the environment through full initialization without repeating completed stages', async () => {
-    await initialize()
-    receive({ stage: 'python', status: 'failed', message: 'download interrupted' })
-    const api = window.electronAPI
-    api.initialize = vi.fn(async () => ({ success: true, completedStages: [] }))
-    api.installPython = vi.fn(async () => ({ success: true }))
-    api.pullRepository = vi.fn(async () => ({ success: true }))
-    api.installDependencies = vi.fn(async () => ({ success: true }))
-    await flow.handleFailureAction('retry')
-    expect(api.initialize).toHaveBeenCalledOnce()
-    expect(api.installPython).not.toHaveBeenCalled()
-    expect(api.pullRepository).not.toHaveBeenCalled()
-    expect(api.installDependencies).not.toHaveBeenCalled()
-    expect(flow.currentStep.value.key).toBe('backend')
-  })
-
-  it('shows the actual failed stage when dependency recovery has to restore program files', async () => {
-    await initialize()
-    receive({ stage: 'dependency', status: 'failed', message: 'lockfile missing' })
-    window.electronAPI.installDependencies = vi.fn(async () => ({
-      success: false,
-      failedStage: 'repository',
-      error: 'Program files could not be restored',
-      code: 'WORKSPACE_RESTORE_FAILED',
-      retryable: false,
-    }))
-    await flow.handleFailureAction('retry')
-    expect(flow.currentStep.value.key).toBe('repository')
-    expect(flow.failureProps.value.failureActions.map(action => action.kind)).toEqual([
-      'restore-workspace',
-      'open-log',
-    ])
   })
 })

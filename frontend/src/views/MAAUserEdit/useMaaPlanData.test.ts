@@ -24,7 +24,15 @@ describe('MAA plan display data', () => {
     const mode = ref('a')
     const a = deferred<PlanGetOut>()
     const b = deferred<PlanGetOut>()
-    const fetch = vi.fn((id: string) => (id === 'a' ? a.promise : b.promise))
+    const oldError = deferred<PlanGetOut>()
+    const disposed = deferred<PlanGetOut>()
+    const fetch = vi
+      .fn<(id: string) => Promise<PlanGetOut>>()
+      .mockReturnValueOnce(a.promise)
+      .mockReturnValueOnce(b.promise)
+      .mockReturnValueOnce(oldError.promise)
+      .mockResolvedValueOnce(result('b', '1-7'))
+      .mockReturnValueOnce(disposed.promise)
     const onError = vi.fn()
     const scope = effectScope()
     const state = scope.run(() => useMaaPlanData(() => mode.value, fetch, onError))!
@@ -32,7 +40,16 @@ describe('MAA plan display data', () => {
     mode.value = 'b'
     b.resolve(result('b', '1-7'))
     await nextTick()
-    a.reject(new Error('old request'))
+    a.resolve(result('a', 'AP-5'))
+    await nextTick()
+    expect(state.status.value).toBe('ready')
+    expect(state.data.value).toEqual({ ALL: { Stage: '1-7' } })
+    expect(onError).not.toHaveBeenCalled()
+
+    mode.value = 'a'
+    mode.value = 'b'
+    await nextTick()
+    oldError.reject(new Error('old request'))
     await nextTick()
     expect(state.status.value).toBe('ready')
     expect(state.data.value).toEqual({ ALL: { Stage: '1-7' } })
@@ -40,25 +57,23 @@ describe('MAA plan display data', () => {
 
     mode.value = 'a'
     scope.stop()
+    disposed.resolve(result('a', 'CA-5'))
     await nextTick()
+    expect(fetch.mock.calls.map(([id]) => id)).toEqual(['a', 'b', 'a', 'b', 'a'])
+    expect(state.data.value).toBeNull()
     expect(onError).not.toHaveBeenCalled()
-  })
-
-  it('does not display fixed values when the plan request fails or has no plan', async () => {
-    const mode = ref('plan')
-    const onError = vi.fn()
-    const scope = effectScope()
-    const state = scope.run(() =>
+    const failedScope = effectScope()
+    const failedState = failedScope.run(() =>
       useMaaPlanData(
-        () => mode.value,
+        () => 'plan',
         async () => ({ code: 200, index: [], data: {} }),
         onError
       )
     )!
     await nextTick()
-    expect(state.status.value).toBe('error')
-    expect(state.data.value).toBeNull()
+    expect(failedState.status.value).toBe('error')
+    expect(failedState.data.value).toBeNull()
     expect(onError).toHaveBeenCalledOnce()
-    scope.stop()
+    failedScope.stop()
   })
 })
