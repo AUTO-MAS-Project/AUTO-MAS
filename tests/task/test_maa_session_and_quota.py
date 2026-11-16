@@ -14,6 +14,55 @@ from plugins.maa_adapter.tests.test_runtime import runtime as runtime
 
 
 @pytest.mark.asyncio
+async def test_retry_waits_for_fresh_logs(runtime, monkeypatch):
+    """上一轮监控停止前的晚到日志不得让尚无输出的重试被判失败。"""
+    runtime.script.Run.RunTimesLimit = 2
+    await runtime.script.commit()
+    retry_started = asyncio.Event()
+    monitors = []
+
+    class Process(runtime.process):
+        async def is_running(self):
+            """在日志给出结果前保持进程运行。"""
+            return True
+
+    class Monitor:
+        def __init__(self, interval, fmt, callback, **kwargs):
+            """保存外部日志交付入口，模拟旧监控器停止前最后一批输出。"""
+            self.callback = callback
+            self.round = 0
+            monitors.append(self)
+
+        async def start_monitor_file(self, *args, **kwargs):
+            """第一轮交付失败，第二轮不产生任何新日志。"""
+            self.round += 1
+            if self.round == 1:
+                await self.callback(["未检测到任何模拟器"], datetime.now().astimezone())
+            else:
+                retry_started.set()
+
+        async def stop(self):
+            """回放分析结束与监控完全停止之间到达的旧日志批次。"""
+            if self.round == 1:
+                await self.callback(["未检测到任何模拟器"], datetime.now().astimezone())
+
+    monkeypatch.setattr(auto_proxy, "ProcessManager", Process)
+    monkeypatch.setattr(auto_proxy, "LogMonitor", Monitor)
+    execution = await dispatch(runtime, TaskMode.AUTO_PROXY)
+    try:
+        await asyncio.wait_for(retry_started.wait(), 10)
+        await asyncio.sleep(0.05)
+        assert not execution.accomplish.is_set()
+        user = execution.task_info.script_list[0].user_list[0]
+        assert list(user.logs.values())[-1].status != "MAA 未检测到任何模拟器"
+        await monitors[0].callback(["任务已全部完成！"], datetime.now().astimezone())
+        await asyncio.wait_for(execution.accomplish.wait(), 5)
+        assert user.status == "完成"
+    finally:
+        await execution.stop()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("confirmed", [True, False])
 async def test_native_config_save_survives_task_stop(runtime, monkeypatch, confirmed):
     """保存走停止入口时保留 GUI 已确认写盘的修改；未确认保存仍恢复任务前原件。"""

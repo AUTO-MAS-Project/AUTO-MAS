@@ -501,6 +501,8 @@ class AutoProxyTask(MaaWorkerContext, AutoProxyWorker):
                 )
                 await self.wait_logs(self.check_log)
                 await self.maa_log_monitor.stop()
+                # 监控完全停止后丢弃晚到批次，避免下一轮消费旧的失败或完成日志。
+                self._log_updates = asyncio.Queue(maxsize=1)
 
                 maa_log = "".join(self.cur_user_log.content)
                 managed_tasks = (

@@ -497,6 +497,8 @@ class _PluginManager:
                     f"插件 `{name}` 的 config_class 未实现 build()",
                     payload={"plugin": name, "config_class": config_cls.__name__},
                 )
+            # 上次禁用可能写盘失败；先保存并释放旧根，成功后才从文件重建。
+            await self._release_config(record)
             config = config_cls.build(file=config_path)
             record._config = config
             # activate 在进入 ×× 中之后、登记前完成（与事务同段）

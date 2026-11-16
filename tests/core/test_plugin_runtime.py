@@ -17,7 +17,7 @@ from app.plugin.base import BasePlugin
 from app.plugin.base.game import GameAdapterPlugin
 from app.plugin.base.script import ScriptAdapterPlugin
 from app.plugin.calls import CallGate
-from app.plugin.errors import PluginBusyError
+from app.plugin.errors import PluginBusyError, PluginOperationError
 from app.plugin.types import PluginState
 
 
@@ -138,8 +138,11 @@ async def test_retained_service_method_stops_admission_and_waits_inflight():
 
 
 @pytest.mark.asyncio
-async def test_config_save_failure_keeps_owned_root_registered(tmp_path, monkeypatch):
-    """验证插件配置保存失败时保留配置根归属，避免卸载后丢失尚未保存的数据。"""
+async def test_config_save_failure_keeps_owned_root_registered(
+    isolated_app_paths, monkeypatch
+):
+    """禁用写盘失败后再次启用，须保住内存设置且只保留一个持久化根。"""
+    from app.utils.common import io
 
     class Settings(PluginConfig):
         class Data(ConfigGroup):
@@ -147,20 +150,45 @@ async def test_config_save_failure_keeps_owned_root_registered(tmp_path, monkeyp
 
         data: Data = Field(default_factory=Data)
 
-    record = PluginRecord.build(info={"plugin_name": "example"})
-    root = Settings.build(file=tmp_path / "example.yaml")
-    await root.activate()
-    record._config = root
+    class Example(BasePlugin):
+        config_class = Settings
+
+    record = PluginRecord.build(info={"plugin_name": "example", "state": "disabled"})
+    await record.activate()
+    record._plugin_cls = Example
+    manager = _PluginManager()
+    await manager.enable(record)
+    await config_manager.flush()
+    root = record._config
+    path = isolated_app_paths.config_path / "plugins/example.yaml"
+    write = io.write_file
 
     def fail(*args, **kwargs):
         """模拟磁盘空间不足导致配置写入失败。"""
         raise OSError("disk full")
 
-    monkeypatch.setattr("app.utils.common.io.write_file", fail)
-    with pytest.raises(OSError, match="disk full"):
-        await _PluginManager()._release_config(record)
+    monkeypatch.setattr(io, "write_file", fail)
+    root.data.value = "user unsaved setting"
+    await root.commit()
+    with pytest.raises(PluginOperationError, match="disk full"):
+        await manager.disable(record)
     assert record._config is root
-    assert config_manager.get_file(root) == tmp_path / "example.yaml"
+    assert config_manager.get_file(root) == path
+    monkeypatch.setattr(io, "write_file", write)
+    try:
+        await manager.enable(record)
+        assert record._config.data.value == "user unsaved setting"
+        await config_manager.flush()
+        assert io.read_file(path)["data"]["value"] == "user unsaved setting"
+        assert (
+            sum(
+                config_manager.get_file(item) == path
+                for item in config_manager.iter_persist_roots()
+            )
+            == 1
+        )
+    finally:
+        await manager.disable(record)
 
 
 @pytest.mark.asyncio
