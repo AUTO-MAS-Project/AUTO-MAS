@@ -73,3 +73,17 @@ def test_m7a_postcommit_verification_failure_rolls_back(tmp_path, monkeypatch):
     assert exc.value.rolled_back
     assert marker.read_text(encoding="utf-8") == "v2026.11.8"
     assert (root / "March7th Assistant.exe").read_bytes() == b"old exe"
+
+
+def test_m7a_rejects_nested_folder_with_extra_top_level_entry(tmp_path):
+    root = tmp_path / "install"
+    marker = _install(root)
+    package = tmp_path / "update.zip"
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("March7thAssistant/March7th Assistant.exe", b"new exe")
+        archive.writestr("March7thAssistant/assets/config/version.txt", "v2026.11.17")
+        archive.writestr("release-notes.txt", "notes")
+    with pytest.raises(HSRUpdateError, match="安装根目录不明确"):
+        _apply(package, root)
+    assert marker.read_text(encoding="utf-8") == "v2026.11.8"
+    assert not (root / "March7thAssistant").exists()
