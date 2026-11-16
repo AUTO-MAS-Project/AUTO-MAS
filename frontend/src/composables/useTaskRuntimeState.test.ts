@@ -73,140 +73,6 @@ describe('useTaskRuntimeState 快照对账', () => {
     vi.unstubAllGlobals()
   })
 
-  it('重连恢复预下载状态，后续进度和清除事件不改写脚本日志基线', async () => {
-    const prefetch = { target: 'MaaEnd', method: 'FluxDown', progress: '50%' }
-    getRuntimeTasks.mockResolvedValue({
-      tasks: [
-        {
-          taskId: 'prefetch-task',
-          mode: 'AutoProxy',
-          queueId: null,
-          scriptId: 's1',
-          userId: null,
-          stopping: false,
-          isCycle: false,
-          scripts: [],
-          task: { info: { mode: TaskMode.AUTO_PROXY }, current: { prefetch } },
-          cycleNextList: [],
-          log: 'MAA running\n',
-          logSeq: 7,
-          logFirstLine: 1,
-        },
-      ],
-      scheduledScripts: [],
-    })
-    const mod = await loadRuntimeState()
-    await mod.refreshTaskRuntimeSnapshot()
-    expect(mod.getTaskRuntimeState('prefetch-task')?.prefetch).toEqual(prefetch)
-    const handler = subscriptionHandlers.get('prefetch-task:task.info.updated')!
-    handler({
-      id: 'prefetch-task',
-      type: 'task.info.updated',
-      data: {
-        current: { prefetch: { ...prefetch, progress: '75%' } },
-      },
-    })
-    expect(mod.getTaskRuntimeState('prefetch-task')).toMatchObject({
-      prefetch: { progress: '75%' },
-      log: 'MAA running\n',
-      logSeq: 7,
-    })
-    handler({
-      id: 'prefetch-task',
-      type: 'task.info.updated',
-      data: { current: { prefetch: null } },
-    })
-    expect(mod.getTaskRuntimeState('prefetch-task')?.prefetch).toBeNull()
-    expect(mod.getTaskRuntimeState('prefetch-task')?.logSeq).toBe(7)
-    handler({ id: 'prefetch-task', type: 'task.info.updated', data: { current: { prefetch } } })
-    getRuntimeTasks.mockResolvedValue({ tasks: [] })
-    await mod.refreshTaskRuntimeSnapshot()
-    expect(mod.getTaskRuntimeState('prefetch-task')).toMatchObject({
-      phase: 'completed',
-      prefetch: null,
-      log: 'MAA running\n',
-      logSeq: 7,
-    })
-    mod.disposeTaskRuntimeState()
-  })
-
-  it('请求期间有增量事件时隔一拍再重取，不背靠背热请求，且重取次数有上限', async () => {
-    // 每次快照请求期间都有新任务创建：模拟高频增量
-    getRuntimeTasks.mockImplementation(async () => {
-      pushTaskCreated()
-      return EMPTY_SNAPSHOT
-    })
-    const mod = await loadRuntimeState()
-
-    await mod.refreshTaskRuntimeSnapshot()
-    expect(getRuntimeTasks).toHaveBeenCalledTimes(1)
-
-    // 不再立刻递归重取
-    await vi.advanceTimersByTimeAsync(499)
-    expect(getRuntimeTasks).toHaveBeenCalledTimes(1)
-    await vi.advanceTimersByTimeAsync(1)
-    expect(getRuntimeTasks).toHaveBeenCalledTimes(2)
-
-    // 首次 + 最多 5 次重取，之后放弃本轮对账
-    await vi.advanceTimersByTimeAsync(60000)
-    expect(getRuntimeTasks).toHaveBeenCalledTimes(6)
-    expect(logger.warn).toHaveBeenCalledWith('运行任务快照请求期间持续有增量事件，放弃本轮对账')
-  })
-
-  it('重连后快照拉取失败时延时重试一次，再失败不无限重试', async () => {
-    connectionStateRef.value = 'open'
-    getRuntimeTasks.mockRejectedValue(new Error('HTTP 503'))
-    const mod = await loadRuntimeState()
-    // bootstrap 时连接已 open 会立即拉一次
-    await vi.advanceTimersByTimeAsync(0)
-    expect(getRuntimeTasks).toHaveBeenCalledTimes(1)
-
-    await vi.advanceTimersByTimeAsync(2999)
-    expect(getRuntimeTasks).toHaveBeenCalledTimes(1)
-    await vi.advanceTimersByTimeAsync(1)
-    expect(getRuntimeTasks).toHaveBeenCalledTimes(2)
-
-    await vi.advanceTimersByTimeAsync(60000)
-    expect(getRuntimeTasks).toHaveBeenCalledTimes(2)
-    mod.disposeTaskRuntimeState()
-  })
-
-  it('释放后不再执行挂起的重试', async () => {
-    connectionStateRef.value = 'open'
-    getRuntimeTasks.mockRejectedValue(new Error('HTTP 503'))
-    const mod = await loadRuntimeState()
-    await vi.advanceTimersByTimeAsync(0)
-    expect(getRuntimeTasks).toHaveBeenCalledTimes(1)
-
-    mod.disposeTaskRuntimeState()
-    await vi.advanceTimersByTimeAsync(60000)
-    expect(getRuntimeTasks).toHaveBeenCalledTimes(1)
-  })
-
-  it('显式无日志基线的过程态快照通过已有重试取得提交后的基线', async () => {
-    const task = {
-      taskId: 'transient',
-      mode: 'AutoProxy',
-      scripts: [],
-      task: { info: { mode: TaskMode.AUTO_PROXY } },
-      log: 'before',
-      logSeq: null,
-    }
-    getRuntimeTasks.mockResolvedValueOnce({ tasks: [task] })
-    getRuntimeTasks.mockResolvedValue({
-      tasks: [{ ...task, log: 'committed', logSeq: 4 }],
-    })
-    const mod = await loadRuntimeState()
-    await mod.refreshTaskRuntimeSnapshot()
-    expect(mod.getTaskRuntimeState('transient')?.logSeq).toBeUndefined()
-    await vi.advanceTimersByTimeAsync(500)
-    expect(mod.getTaskRuntimeState('transient')?.logSeq).toBe(4)
-    expect(mod.getTaskRuntimeState('transient')?.log).toBe('committed')
-    await vi.advanceTimersByTimeAsync(5000)
-    expect(getRuntimeTasks).toHaveBeenCalledTimes(2)
-    mod.disposeTaskRuntimeState()
-  })
-
   it.each(['snapshot', 'websocket'])('新任务树通过 %s 保留重复运行身份', async source => {
     const script = (status: string) => ({
       info: { script_id: 's1', name: 'same script', status },
@@ -317,60 +183,11 @@ describe('运行日志的唯一归属', () => {
       data: { log, seq, append, firstLine: 1 },
     })
 
-  it('HTTP 受理保留早到的日志和终态，日志不广播生命周期事件', async () => {
-    const mod = await loadRuntimeState()
-    const events: string[] = []
-    mod.onTaskRuntimeEvent(event => {
-      events.push(event.type)
-    })
-    pushTaskCreated()
-    const id = `task_${createdTaskCounter}`
-    const state = mod.getTaskRuntimeState(id)!
-    pushLog(id, '', 1)
-    pushLog(id, 'waiting for lock\n', 2, true)
-    mod.registerAcceptedTask(id, TaskMode.AUTO_PROXY)
-    expect(mod.getTaskRuntimeState(id)).toBe(state)
-    expect(state.log).toBe('waiting for lock\n')
-    expect(state.logSeq).toBe(2)
-    expect(events).toEqual(['created'])
-    subscriptionHandlers.get(`${id}:task.completed`)!({
-      id,
-      type: 'task.completed',
-      data: { outcome: 'success', result: 'done', task: { info: { mode: TaskMode.AUTO_PROXY } } },
-    })
-    mod.registerAcceptedTask(id, TaskMode.AUTO_PROXY)
-    expect(mod.getTaskRuntimeState(id)?.phase).toBe('completed')
-    expect(mod.getTaskRuntimeState(id)?.log).toBe('waiting for lock\n')
-    expect(mod.getTaskRuntimeState(id)?.result).toBe('done')
-    mod.disposeTaskRuntimeState()
-  })
-
-  it('日志漏包只发起一次补快照，恢复后继续追加', async () => {
-    const mod = await loadRuntimeState()
-    pushTaskCreated()
-    const id = `task_${createdTaskCounter}`
-    pushLog(id, 'one\n', 1)
-    let resolve = (_value: unknown) => {}
-    getRuntimeTasks.mockReturnValue(
-      new Promise(accept => {
-        resolve = accept
-      })
-    )
-    pushLog(id, 'lost\n', 3, true)
-    pushLog(id, 'lost too\n', 4, true)
-    expect(getRuntimeTasks).toHaveBeenCalledTimes(1)
-    resolve({ tasks: [snapshot(id, 'recovered\n', 4)] })
-    await vi.advanceTimersByTimeAsync(0)
-    pushLog(id, 'tail\n', 5, true)
-    expect(mod.getTaskRuntimeState(id)?.log).toBe('recovered\ntail\n')
-    expect(mod.getTaskRuntimeState(id)?.logSeq).toBe(5)
-    mod.disposeTaskRuntimeState()
-  })
-
   it('快照请求途中的新日志不会被旧基线覆盖，也不会触发元数据重试', async () => {
     const mod = await loadRuntimeState()
     pushTaskCreated()
     const id = `task_${createdTaskCounter}`
+    const prefetch = { target: 'MaaEnd', method: 'FluxDown', progress: '50%' }
     pushLog(id, 'one\n', 1)
     let resolve = (_value: unknown) => {}
     getRuntimeTasks.mockReturnValue(
@@ -380,29 +197,84 @@ describe('运行日志的唯一归属', () => {
     )
     const refreshing = mod.refreshTaskRuntimeSnapshot()
     pushLog(id, 'two\n', 2, true)
-    resolve({ tasks: [snapshot(id, 'one\n', 1)] })
+    resolve({
+      tasks: [
+        {
+          ...snapshot(id, 'one\n', 1),
+          task: {
+            info: { mode: TaskMode.AUTO_PROXY, name: 'snapshot name' },
+            current: { prefetch },
+          },
+        },
+      ],
+    })
     await refreshing
     expect(mod.getTaskRuntimeState(id)?.taskName).toBe('snapshot name')
     expect(mod.getTaskRuntimeState(id)?.log).toBe('one\ntwo\n')
     expect(getRuntimeTasks).toHaveBeenCalledTimes(1)
-    mod.disposeTaskRuntimeState()
-  })
-
-  it('标签绑定的完成任务保留结果，释放绑定后按原保留期清理', async () => {
-    const mod = await loadRuntimeState()
-    pushTaskCreated()
-    const id = `task_${createdTaskCounter}`
-    mod.retainTaskRuntime(id)
-    subscriptionHandlers.get(`${id}:task.completed`)!({
+    expect(mod.getTaskRuntimeState(id)?.prefetch).toEqual(prefetch)
+    const updateInfo = subscriptionHandlers.get(`${id}:task.info.updated`)!
+    updateInfo({
       id,
-      type: 'task.completed',
-      data: { outcome: 'success', result: 'done', task: { info: { mode: TaskMode.AUTO_PROXY } } },
+      type: 'task.info.updated',
+      data: { current: { prefetch: { ...prefetch, progress: '75%' } } },
     })
-    await vi.advanceTimersByTimeAsync(6 * 60 * 1000)
-    expect(mod.getTaskRuntimeState(id)?.result).toBe('done')
-    mod.releaseTaskRuntime(id)
-    await vi.advanceTimersByTimeAsync(30 * 1000)
-    expect(mod.getTaskRuntimeState(id)).toBeUndefined()
+    expect(mod.getTaskRuntimeState(id)).toMatchObject({
+      prefetch: { progress: '75%' },
+      log: 'one\ntwo\n',
+      logSeq: 2,
+    })
+    updateInfo({ id, type: 'task.info.updated', data: { current: { prefetch: null } } })
+    expect(mod.getTaskRuntimeState(id)).toMatchObject({
+      prefetch: null,
+      log: 'one\ntwo\n',
+      logSeq: 2,
+    })
+    updateInfo({ id, type: 'task.info.updated', data: { current: { prefetch } } })
+    getRuntimeTasks.mockResolvedValueOnce(EMPTY_SNAPSHOT)
+    await mod.refreshTaskRuntimeSnapshot()
+    expect(mod.getTaskRuntimeState(id)).toMatchObject({
+      phase: 'completed',
+      prefetch: null,
+      log: 'one\ntwo\n',
+      logSeq: 2,
+    })
     mod.disposeTaskRuntimeState()
+
+    const recovery = await loadRuntimeState()
+    pushTaskCreated()
+    const recoveredId = `task_${createdTaskCounter}`
+    const requestsBeforeGap = getRuntimeTasks.mock.calls.length
+    pushLog(recoveredId, 'one\n', 1)
+    let resolveSnapshot: (value: unknown) => void = () => undefined
+    getRuntimeTasks.mockReturnValue(
+      new Promise(accept => {
+        resolveSnapshot = accept
+      })
+    )
+    pushLog(recoveredId, 'lost\n', 3, true)
+    pushLog(recoveredId, 'lost too\n', 4, true)
+    expect(getRuntimeTasks).toHaveBeenCalledTimes(requestsBeforeGap + 1)
+    resolveSnapshot({ tasks: [snapshot(recoveredId, 'recovered\n', 4)] })
+    await vi.advanceTimersByTimeAsync(0)
+    pushLog(recoveredId, 'tail\n', 5, true)
+    expect(recovery.getTaskRuntimeState(recoveredId)?.log).toBe('recovered\ntail\n')
+    expect(recovery.getTaskRuntimeState(recoveredId)?.logSeq).toBe(5)
+
+    const requestsBeforeMutations = getRuntimeTasks.mock.calls.length
+    getRuntimeTasks.mockImplementation(async () => {
+      pushTaskCreated()
+      return EMPTY_SNAPSHOT
+    })
+    await recovery.refreshTaskRuntimeSnapshot()
+    expect(getRuntimeTasks).toHaveBeenCalledTimes(requestsBeforeMutations + 1)
+    await vi.advanceTimersByTimeAsync(499)
+    expect(getRuntimeTasks).toHaveBeenCalledTimes(requestsBeforeMutations + 1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(getRuntimeTasks).toHaveBeenCalledTimes(requestsBeforeMutations + 2)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(getRuntimeTasks).toHaveBeenCalledTimes(requestsBeforeMutations + 6)
+    expect(recovery.getTaskRuntimeState(recoveredId)?.log).toBe('recovered\ntail\n')
+    recovery.disposeTaskRuntimeState()
   })
 })

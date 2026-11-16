@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
-import { RuntimeClient, buildRuntimeArgs } from './client'
+import { RuntimeClient } from './client'
 import { RuntimeClientError } from './protocol'
 
 vi.mock('child_process', () => ({ spawn: vi.fn() }))
@@ -15,9 +15,7 @@ const loggerMock = vi.hoisted(() => ({
   error: vi.fn(),
   warn: vi.fn(),
   info: vi.fn(),
-  verbose: vi.fn(),
   debug: vi.fn(),
-  silly: vi.fn(),
 }))
 vi.mock('../logger', () => ({
   getLogger: () => loggerMock,
@@ -44,12 +42,10 @@ class FakeReadable extends EventEmitter {
 }
 
 class FakeWritable extends EventEmitter {
-  readonly chunks: string[] = []
   destroyed = false
   writableEnded = false
 
-  write(chunk: string): boolean {
-    this.chunks.push(chunk)
+  write(): boolean {
     return true
   }
 }
@@ -107,121 +103,221 @@ afterEach(() => {
 })
 
 describe('一次性命令退出', () => {
-  it('握手超时后等到真实 close 才报告可重新启动', async () => {
-    vi.useFakeTimers()
-    const client = createClient()
-    const child = mockSpawn()
-    child.kill = () => {
-      child.killed = true
-      return true
-    }
-    let finished = false
-    const pending = client.run(['workspace', 'check'], { handshakeTimeoutMs: 20 })
-    void pending.then(
-      () => {
-        finished = true
-      },
-      () => {
-        finished = true
-      }
-    )
-    await vi.advanceTimersByTimeAsync(20)
-    expect(child.killed).toBe(true)
-    const finishedBeforeClose = finished
-    expect(client.hasActiveSessions).toBe(true)
-    child.close(7)
-    await expect(pending).rejects.toMatchObject({
-      code: 'RUNTIME_HANDSHAKE_TIMEOUT',
-      details: { command: 'workspace check', processExited: true, exitCode: 7 },
-    })
-    expect(finishedBeforeClose).toBe(false)
-    expect(client.hasActiveSessions).toBe(false)
-  })
-
   it('无法确认退出时有界失败，迟到 hello 不交出控制权并保留进程供再次清理', async () => {
     vi.useFakeTimers()
-    const client = createClient()
-    const child = mockSpawn()
-    child.kill = () => {
-      child.killed = true
-      return true
+    const versionLines = fixture('version.ndjson').trim().split('\n')
+    const hello = JSON.parse(versionLines[0])
+    for (const kind of ['run', 'supervise'] as const) {
+      const command = kind === 'run' ? 'workspace check' : 'backend supervise'
+      const lateOutput =
+        line({ ...hello, command, capabilities: ['stdin.cancel', 'stdin.shutdown'] }) +
+        line({
+          protocol: 1,
+          type: 'state',
+          operationId: hello.operationId,
+          sequence: 2,
+          timestamp: hello.timestamp,
+          stage: 'backend.run',
+          status: 'running',
+          message: 'ready',
+          details: { baseUrl: 'http://127.0.0.1:37491' },
+        }) +
+        `${versionLines[2]}\n`
+
+      // close 到达前都归客户端持有；有界失败也不能把未退出进程当成可重启。
+      for (const confirmsClose of [true, false]) {
+        const client = createClient()
+        const child = mockSpawn()
+        const terminate = vi.spyOn(child, 'kill').mockImplementation(() => {
+          child.killed = true
+          return true
+        })
+        const spawnsBefore = spawnMock.mock.calls.length
+        const onStarted = vi.fn()
+        const onEvent = vi.fn()
+        const onState = vi.fn()
+        const options = { handshakeTimeoutMs: 20, onStarted, onEvent, onState }
+        let finished = false
+        const pending = (
+          kind === 'run'
+            ? client.run(['workspace', 'check'], options)
+            : client.supervise({ mode: 'managed', ...options })
+        )
+          .catch(error => error)
+          .finally(() => {
+            finished = true
+          })
+        expect(client.hasActiveSessions).toBe(true)
+        await vi.advanceTimersByTimeAsync(20)
+        expect(terminate).toHaveBeenCalledTimes(1)
+        expect(finished).toBe(false)
+        child.stdout.feed(lateOutput)
+        await Promise.resolve()
+        expect(onStarted).not.toHaveBeenCalled()
+        expect(onEvent).not.toHaveBeenCalled()
+        expect(onState).not.toHaveBeenCalled()
+        expect(client.hasActiveSessions).toBe(true)
+
+        if (confirmsClose) {
+          child.close(7)
+          expect(await pending).toMatchObject({
+            code: 'RUNTIME_HANDSHAKE_TIMEOUT',
+            details: { command, processExited: true, exitCode: 7 },
+          })
+        } else {
+          await vi.advanceTimersByTimeAsync(2000)
+          expect(await pending).toMatchObject({
+            code: 'RUNTIME_HANDSHAKE_TIMEOUT',
+            details: { command, processExited: false, exitCode: null },
+          })
+          child.stdout.feed(lateOutput)
+          expect(onStarted).not.toHaveBeenCalled()
+          expect(onEvent).not.toHaveBeenCalled()
+          expect(onState).not.toHaveBeenCalled()
+          expect(client.hasActiveSessions).toBe(true)
+          const firstStop = client.stop(0).catch(error => error)
+          await vi.advanceTimersByTimeAsync(2000)
+          expect(await firstStop).toMatchObject({ code: 'RUNTIME_EXITED_UNEXPECTEDLY' })
+          expect(client.hasActiveSessions).toBe(true)
+          await expect(client.run(['doctor'])).rejects.toBeInstanceOf(Error)
+          await expect(client.supervise({ mode: 'managed' })).rejects.toBeInstanceOf(Error)
+          expect(spawnMock).toHaveBeenCalledTimes(spawnsBefore + 1)
+
+          let stopped = false
+          const secondStop = client.stop(0).then(() => {
+            stopped = true
+          })
+          await vi.advanceTimersByTimeAsync(0)
+          expect(terminate).toHaveBeenCalledTimes(3)
+          expect(stopped).toBe(false)
+          child.close(0)
+          await secondStop
+          await client.stop(0)
+          expect(terminate).toHaveBeenCalledTimes(3)
+        }
+        expect(client.hasActiveSessions).toBe(false)
+        expect(spawnMock).toHaveBeenCalledTimes(spawnsBefore + 1)
+      }
+
+      const client = createClient()
+      const child = mockSpawn()
+      const spawnsBefore = spawnMock.mock.calls.length
+      const pending = (
+        kind === 'run' ? client.run(['bootstrap']) : client.supervise({ mode: 'managed' })
+      ).catch(error => error)
+      expect(client.hasActiveSessions).toBe(true)
+      const stopping = client.stop(20)
+      await vi.advanceTimersByTimeAsync(20)
+      await stopping
+      expect(await pending).toMatchObject({
+        code: 'RUNTIME_EXITED_UNEXPECTEDLY',
+        details: { command: kind === 'run' ? 'bootstrap' : command, processExited: true },
+      })
+      expect(child.killed).toBe(true)
+      expect(client.hasActiveSessions).toBe(false)
+      await expect(client.run(['doctor'])).rejects.toBeInstanceOf(Error)
+      await expect(client.supervise({ mode: 'managed' })).rejects.toBeInstanceOf(Error)
+      expect(spawnMock).toHaveBeenCalledTimes(spawnsBefore + 1)
     }
-    const onStarted = vi.fn()
-    const pending = client
-      .run(['workspace', 'check'], { handshakeTimeoutMs: 20, onStarted })
+
+    const deniedClient = createClient()
+    const deniedChild = mockSpawn()
+    deniedChild.kill = () => true
+    let deniedFinished = false
+    const denied = deniedClient
+      .run(['workspace', 'check'])
       .catch(error => error)
-    await vi.advanceTimersByTimeAsync(2020)
-    expect(await pending).toMatchObject({
-      code: 'RUNTIME_HANDSHAKE_TIMEOUT',
-      details: { command: 'workspace check', processExited: false, exitCode: null },
-    })
-    child.stdout.feed(fixture('version.ndjson'))
-    expect(onStarted).not.toHaveBeenCalled()
-    expect(client.hasActiveSessions).toBe(true)
-    child.close(0)
-    expect(await client.stop()).toBeUndefined()
-    expect(client.hasActiveSessions).toBe(false)
-  })
-
-  it('supervise 握手前同样归客户端持有并在退出时回收', async () => {
-    vi.useFakeTimers()
-    const client = createClient()
-    const child = mockSpawn()
-    const pending = client.supervise({ mode: 'managed' }).catch(error => error)
-    const stopping = client.stop(20)
-    await vi.advanceTimersByTimeAsync(20)
-    await stopping
-    const killedByStop = child.killed
-    if (!killedByStop) child.close(null, 'SIGKILL')
-    expect(await pending).toMatchObject({
-      code: 'RUNTIME_EXITED_UNEXPECTEDLY',
-      details: { command: 'backend supervise', processExited: true },
-    })
-    expect(killedByStop).toBe(true)
-    expect(client.hasActiveSessions).toBe(false)
-    await expect(client.supervise({ mode: 'managed' })).rejects.toBeInstanceOf(Error)
-    expect(spawnMock).toHaveBeenCalledTimes(1)
-  })
-
-  it('supervise 未确认退出时保留同一进程，下一次 stop 继续回收', async () => {
-    vi.useFakeTimers()
-    const client = createClient()
-    const child = mockSpawn()
-    const terminate = vi.spyOn(child, 'kill').mockImplementation(() => {
-      child.killed = true
-      return true
-    })
-    const pending = client
-      .supervise({ mode: 'managed', handshakeTimeoutMs: 1 })
-      .catch(error => error)
-    const firstStop = client.stop(0).catch(error => error)
-    await vi.advanceTimersByTimeAsync(2001)
-    expect(await firstStop).toMatchObject({ code: 'RUNTIME_EXITED_UNEXPECTEDLY' })
-    expect(await pending).toMatchObject({
-      code: 'RUNTIME_HANDSHAKE_TIMEOUT',
-      details: { command: 'backend supervise', processExited: false },
-    })
-    expect(client.hasActiveSessions).toBe(true)
-
-    const secondStop = client.stop(0)
+      .finally(() => {
+        deniedFinished = true
+      })
+    deniedChild.emit('error', Object.assign(new Error('access denied'), { code: 'EACCES' }))
     await vi.advanceTimersByTimeAsync(0)
-    expect(terminate).toHaveBeenCalledTimes(2)
-    child.close(0)
-    await secondStop
-    expect(client.hasActiveSessions).toBe(false)
-    expect(spawnMock).toHaveBeenCalledTimes(1)
-  })
+    expect(deniedFinished).toBe(false)
+    expect(deniedClient.hasActiveSessions).toBe(true)
+    deniedChild.close(-13)
+    expect(await denied).toMatchObject({
+      code: 'RUNTIME_SPAWN_FAILED',
+      cause: { code: 'EACCES' },
+      details: { processExited: true, exitCode: -13 },
+    })
+    expect(deniedClient.hasActiveSessions).toBe(false)
 
-  it('握手前也持有并回收命令进程，关闭后不能再派生命令', async () => {
-    const client = createClient()
-    const child = mockSpawn()
-    const work = client.run(['bootstrap']).catch(() => undefined)
-    await client.stop(20)
-    await work
-    expect(child.killed).toBe(true)
-    expect(client.hasActiveSessions).toBe(false)
-    await expect(client.run(['doctor'])).rejects.toBeInstanceOf(Error)
-    expect(spawnMock).toHaveBeenCalledTimes(1)
+    const exitedClient = createClient()
+    const exitedChild = mockSpawn()
+    const exited = exitedClient.run(['doctor'])
+    exitedChild.stdout.feed(line({ ...hello, command: 'doctor' }))
+    exitedChild.stderr.feed('panic: 崩了\n')
+    exitedChild.close(50)
+    await expect(exited).rejects.toMatchObject({
+      code: 'RUNTIME_EXITED_UNEXPECTEDLY',
+      details: { processExited: true, exitCode: 50 },
+    })
+    expect(exitedClient.hasActiveSessions).toBe(false)
+
+    const { spawn: nativeSpawn } =
+      await vi.importActual<typeof import('child_process')>('child_process')
+    let nativeChild: ReturnType<typeof nativeSpawn> | undefined
+    spawnMock.mockImplementation((_command, _args, options) => {
+      nativeChild = nativeSpawn(
+        process.execPath,
+        ['-e', "process.stderr.write('private diagnostic'); setInterval(() => {}, 1000);"],
+        options
+      )
+      return nativeChild as never
+    })
+    try {
+      const client = createClient()
+      const pending = client
+        .supervise({ mode: 'managed', handshakeTimeoutMs: 20 })
+        .catch(error => error)
+      const closed = once(nativeChild!, 'close')
+      await once(nativeChild!.stderr!, 'data')
+      await vi.advanceTimersByTimeAsync(20)
+      expect(await pending).toMatchObject({
+        code: 'RUNTIME_HANDSHAKE_TIMEOUT',
+        details: { processExited: true },
+      })
+      await closed
+      expect(client.hasActiveSessions).toBe(false)
+    } finally {
+      if (nativeChild && nativeChild.exitCode === null && nativeChild.signalCode === null) {
+        const closed = once(nativeChild, 'close')
+        nativeChild.kill('SIGKILL')
+        await closed
+      }
+    }
+
+    const privateClient = createClient()
+    const privateChild = mockSpawn()
+    const privateRun = privateClient.run(['version', '--private', 'private-argument'])
+    privateChild.stderr.feed('private-stderr')
+    privateChild.stdout.feed(
+      fixture('version.ndjson')
+        .trim()
+        .split('\n')
+        .map(raw => {
+          const event = JSON.parse(raw)
+          return line(event.type === 'progress' ? { ...event, message: 'private-stdout' } : event)
+        })
+        .join('')
+    )
+    privateChild.close(0)
+    expect(await privateRun).toMatchObject({ success: true })
+    const diagnostics = loggerMock.info.mock.calls
+      .map(([message]) => String(message))
+      .filter(message => message.startsWith('[Runtime进程] '))
+      .join('\n')
+    expect(diagnostics).not.toBe('')
+    for (const secret of [
+      'private diagnostic',
+      'private-argument',
+      'private-stderr',
+      'private-stdout',
+      APP_ROOT,
+      RUNTIME_PATH,
+    ]) {
+      expect(diagnostics).not.toContain(JSON.stringify(secret).slice(1, -1))
+    }
   })
 
   it.each(['ignore-cancel', 'finish-commit'])(
@@ -256,18 +352,28 @@ describe('一次性命令退出', () => {
       const ready = new Promise<void>(resolve => {
         started = resolve
       })
-      const work = client.run(['bootstrap'], { onStarted: () => started() }).catch(() => null)
+      const work = client.run(['bootstrap'], { onStarted: () => started() }).catch(error => error)
+      const closed = once(child!, 'close')
       try {
         await ready
         await client.stop(200)
+        await closed
         const outcome = await work
         expect(client.hasActiveSessions).toBe(false)
         expect(child!.exitCode !== null || child!.signalCode !== null).toBe(true)
         if (behavior === 'finish-commit') {
-          expect(outcome).toMatchObject({ success: true })
+          expect(outcome).toMatchObject({
+            success: true,
+            code: 'OK',
+            exitCode: 0,
+            result: { stage: 'bootstrap', status: 'ready_to_start' },
+          })
           expect(child!.killed).toBe(false)
         } else {
-          expect(outcome).toBeNull()
+          expect(outcome).toMatchObject({
+            code: 'RUNTIME_EXITED_UNEXPECTEDLY',
+            details: { command: 'bootstrap', processExited: true },
+          })
           expect(child!.killed).toBe(true)
         }
       } finally {
@@ -282,214 +388,53 @@ describe('一次性命令退出', () => {
   )
 })
 
-// ==================== 参数与工具 ====================
-
-describe('buildRuntimeArgs', () => {
-  it('机器调用固定带上 ndjson 与协议 1，全局选项在子命令之前', () => {
-    const args = buildRuntimeArgs(
-      {
-        runtimePath: RUNTIME_PATH,
-        appRoot: APP_ROOT,
-        mirrors: [
-          { kind: 'git', key: 'ghproxy' },
-          { kind: 'uv', key: 'tuna' },
-        ],
-        mirrorOnly: true,
-        offline: false,
-      },
-      ['bootstrap', '--version', 'v5.5.0-beta.3']
-    )
-
-    expect(args).toEqual([
-      '--app-root',
-      APP_ROOT,
-      '--output',
-      'ndjson',
-      '--protocol',
-      '1',
-      '--mirror',
-      'git=ghproxy',
-      '--mirror',
-      'uv=tuna',
-      '--mirror-only',
-      'bootstrap',
-      '--version',
-      'v5.5.0-beta.3',
-    ])
-  })
-})
-
 // ==================== run ====================
 
 describe('RuntimeClient.run', () => {
-  it.each(['silent', 'stderr'])(
-    '原生子进程 %s 的 hello 超时确认真实退出，并记录首输出是否到达',
-    async behavior => {
-      vi.useFakeTimers()
-      const { spawn: nativeSpawn } =
-        await vi.importActual<typeof import('child_process')>('child_process')
-      let child: ReturnType<typeof nativeSpawn> | undefined
-      spawnMock.mockImplementation((_command, _args, options) => {
-        child = nativeSpawn(
-          process.execPath,
-          [
-            '-e',
-            `
-          if (${JSON.stringify(behavior === 'stderr')}) process.stderr.write('private diagnostic');
-          setInterval(() => {}, 1000);
-        `,
-          ],
-          options
-        )
-        return child as never
+  it('握手后的坏行只记录并回调，不 kill 在途命令', async () => {
+    const [helloLine, progressLine, resultLine] = fixture('version.ndjson').trim().split('\n')
+    for (const invalidLine of [
+      '{"protocol":1,\n',
+      line({ ...JSON.parse(helloLine), protocol: 2 }),
+    ]) {
+      const client = createClient()
+      const child = mockSpawn()
+      const onStarted = vi.fn()
+      const onProtocolError = vi.fn()
+      const pending = client.run(['version'], { onStarted, onProtocolError })
+      child.stdout.feed(invalidLine)
+      const malformed = invalidLine.startsWith('{"protocol":1,')
+      await expect(pending).rejects.toMatchObject({
+        code: malformed ? 'RUNTIME_PROTOCOL_ERROR' : 'RUNTIME_PROTOCOL_MISMATCH',
+        retryable: false,
+        details: malformed
+          ? { line: '{"protocol":1,', processExited: true }
+          : { actualProtocol: 2, expectedProtocol: 1, processExited: true },
       })
-      try {
-        const client = createClient()
-        const pending = client
-          .run(['workspace', 'check'], { handshakeTimeoutMs: 20 })
-          .catch(error => error)
-        // 真实管道或 spawn 事件作同步点，超时由假时钟触发，不依赖机器启动 Node 的速度。
-        await once(
-          behavior === 'stderr' ? child!.stderr! : child!,
-          behavior === 'stderr' ? 'data' : 'spawn'
-        )
-        await vi.advanceTimersByTimeAsync(20)
-        expect(await pending).toMatchObject({
-          code: 'RUNTIME_HANDSHAKE_TIMEOUT',
-          details: { command: 'workspace check', processExited: true },
-        })
-        expect(client.hasActiveSessions).toBe(false)
-        expect(child!.exitCode !== null || child!.signalCode !== null).toBe(true)
-        const diagnostics = loggerMock.info.mock.calls
-          .map(([message]) => String(message))
-          .filter(message => message.startsWith('[Runtime进程] '))
-          .map(message => JSON.parse(message.slice('[Runtime进程] '.length)))
-        const timeout = diagnostics.find(item => item.event === 'handshake_timeout')
-        expect(timeout).toMatchObject({
-          command: 'workspace check',
-          stdoutBytes: 0,
-          timeoutMs: 20,
-        })
-        expect(timeout.stderrBytes > 0).toBe(behavior === 'stderr')
-        expect(timeout.timeoutCallbackDelayMs).toBeGreaterThanOrEqual(0)
-        expect(diagnostics.some(item => item.event === 'spawned' && item.pid === child!.pid)).toBe(
-          true
-        )
-        expect(diagnostics.at(-1)).toMatchObject({ event: 'close', processExited: true })
-      } finally {
-        if (child && child.exitCode === null && child.signalCode === null) {
-          const exited = once(child, 'close')
-          child.kill('SIGKILL')
-          await exited
-        }
-      }
+      expect(onStarted).not.toHaveBeenCalled()
+      expect(onProtocolError).toHaveBeenCalledTimes(malformed ? 1 : 0)
+      expect(child.killed).toBe(true)
+      expect(client.hasActiveSessions).toBe(false)
     }
-  )
 
-  it('创建进程被拒时保留系统错误，并区分 error 与实际 close', async () => {
-    const child = mockSpawn()
-    const client = createClient()
-    const pending = client.run(['workspace', 'check'])
-    child.emit('error', Object.assign(new Error('access denied'), { code: 'EACCES' }))
-    await expect(pending).rejects.toMatchObject({
-      code: 'RUNTIME_SPAWN_FAILED',
-      message: '启动 Runtime 失败：access denied',
-      cause: { code: 'EACCES' },
-      details: { command: 'workspace check', processExited: true },
-    })
-    const diagnostics = loggerMock.info.mock.calls
-      .map(([message]) => String(message))
-      .filter(message => message.startsWith('[Runtime进程] '))
-      .map(message => JSON.parse(message.slice('[Runtime进程] '.length)))
-    expect(diagnostics.map(item => item.event)).toEqual(['spawn_requested', 'spawn_error', 'close'])
-    expect(diagnostics[1]).toMatchObject({ systemCode: 'EACCES' })
-  })
-
-  it('本地进程诊断不记录输出、命令参数或本机路径', async () => {
-    const client = createClient()
-    const child = mockSpawn()
-    const pending = client.run(['version', '--private', 'private-argument'])
-    child.stderr.feed('private-stderr')
-    child.stdout.feed(fixture('version.ndjson'))
-    child.close(0)
-    await pending
-    const logged = JSON.stringify(loggerMock.info.mock.calls)
-    expect(logged).not.toContain('private-argument')
-    expect(logged).not.toContain('private-stderr')
-    expect(logged).not.toContain(APP_ROOT)
-    expect(logged).not.toContain(RUNTIME_PATH)
-  })
-
-  it('跑通真实 version 输出并返回终态 result', async () => {
-    const client = createClient({ env: { AUTO_MAS_TELEMETRY: 'disabled' } })
-    const child = mockSpawn()
-    const progress: string[] = []
-
-    const pending = client.run(['version'], {
-      onProgress: event => progress.push(`${event.stage}:${event.status}`),
-    })
-    child.stdout.feed(fixture('version.ndjson'))
-    child.close(0)
-    const outcome = await pending
-
-    expect(outcome.success).toBe(true)
-    expect(outcome.code).toBe('OK')
-    expect(outcome.hello.command).toBe('version')
-    expect(outcome.hello.capabilities).toEqual([])
-    expect(outcome.result.details.runtimeVersion).toBe('dev')
-    expect(outcome.exitCode).toBe(0)
-    expect(progress).toEqual(['runtime.handshake:succeeded'])
-
-    // 必须用参数数组启动，不能拼 shell 字符串。
-    expect(spawnMock).toHaveBeenCalledTimes(1)
-    const [command, args, options] = spawnMock.mock.calls[0]
-    expect(command).toBe(RUNTIME_PATH)
-    expect(args).toEqual([
-      '--app-root',
-      APP_ROOT,
-      '--output',
-      'ndjson',
-      '--protocol',
-      '1',
-      'version',
-    ])
-    expect(options).toMatchObject({ windowsHide: true })
-    expect((options as { env: NodeJS.ProcessEnv }).env.AUTO_MAS_TELEMETRY).toBe('disabled')
-    expect((options as { shell?: unknown }).shell).toBeUndefined()
-  })
-
-  it('握手前的坏 JSON 行让本次调用失败，并带上原始行', async () => {
     const client = createClient()
     const child = mockSpawn()
     const protocolErrors: RuntimeClientError[] = []
+    const onStarted = vi.fn()
 
     const pending = client.run(['version'], {
+      onStarted,
       onProtocolError: error => protocolErrors.push(error),
     })
-    child.stdout.feed('{"protocol":1,\n')
+    child.stdout.feed(`${helloLine}\n{"protocol":1,\n${progressLine}\n`)
+    await Promise.resolve()
 
-    await expect(pending).rejects.toMatchObject({
+    expect(protocolErrors).toHaveLength(1)
+    expect(protocolErrors[0]).toMatchObject({
       code: 'RUNTIME_PROTOCOL_ERROR',
-      retryable: false,
       details: { line: '{"protocol":1,' },
     })
-    expect(protocolErrors).toHaveLength(1)
-    expect(child.killed).toBe(true)
-  })
-
-  it('握手后的坏行只记录并回调，不 kill 在途命令', async () => {
-    const client = createClient()
-    const child = mockSpawn()
-    const protocolErrors: RuntimeClientError[] = []
-
-    const pending = client.run(['version'], {
-      onProtocolError: error => protocolErrors.push(error),
-    })
-    const [helloLine, progressLine, resultLine] = fixture('version.ndjson').trim().split('\n')
-    child.stdout.feed(`${helloLine}\n{"protocol":1,\n${progressLine}\n`)
-
-    expect(protocolErrors).toHaveLength(1)
-    expect(protocolErrors[0].code).toBe('RUNTIME_PROTOCOL_ERROR')
+    expect(onStarted).toHaveBeenCalledTimes(1)
     expect(child.killed).toBe(false)
 
     child.stdout.feed(`${resultLine}\n`)
@@ -499,173 +444,7 @@ describe('RuntimeClient.run', () => {
     expect(outcome.success).toBe(true)
     expect(outcome.protocolErrors).toHaveLength(1)
     expect(outcome.events.map(event => event.type)).toEqual(['hello', 'progress', 'result'])
-  })
-
-  it('hello 迟迟不来时报 RUNTIME_HANDSHAKE_TIMEOUT', async () => {
-    const client = createClient()
-    const child = mockSpawn()
-
-    const pending = client.run(['version'], { handshakeTimeoutMs: 20 })
-    child.stderr.feed('auto-mas-runtime: 卡住了\n')
-
-    await expect(pending).rejects.toMatchObject({
-      code: 'RUNTIME_HANDSHAKE_TIMEOUT',
-      retryable: true,
-    })
-    expect(child.killed).toBe(true)
-  })
-
-  it('hello.protocol 不是 1 时报 RUNTIME_PROTOCOL_MISMATCH', async () => {
-    const client = createClient()
-    const child = mockSpawn()
-
-    const pending = client.run(['version'])
-    child.stdout.feed(
-      line({
-        protocol: 2,
-        type: 'hello',
-        operationId: '01M1F6K7P71J6TMW6J45CJNS63',
-        sequence: 1,
-        timestamp: '2026-09-01T21:19:35.367+02:00',
-        runtimeVersion: 'dev',
-        command: 'version',
-        capabilities: [],
-      })
-    )
-
-    await expect(pending).rejects.toMatchObject({
-      code: 'RUNTIME_PROTOCOL_MISMATCH',
-      retryable: false,
-      details: { actualProtocol: 2, expectedProtocol: 1 },
-    })
-  })
-
-  it('进程在 result 之前退出时报 RUNTIME_EXITED_UNEXPECTEDLY 并带退出码与 stderr', async () => {
-    const client = createClient()
-    const child = mockSpawn()
-    const [helloLine] = fixture('version.ndjson').trim().split('\n')
-
-    const pending = client.run(['doctor'])
-    child.stdout.feed(`${helloLine}\n`)
-    child.stderr.feed('panic: 崩了\n')
-    child.close(50)
-
-    await expect(pending).rejects.toMatchObject({
-      code: 'RUNTIME_EXITED_UNEXPECTEDLY',
-      retryable: true,
-      details: { exitCode: 50, stderr: 'panic: 崩了\n' },
-    })
-  })
-})
-
-// ==================== supervise ====================
-
-describe('RuntimeClient.supervise', () => {
-  const operationId = '01M1F6M33JFZZ7Y85BE5S849ZN'
-  const base = { protocol: 1, operationId, timestamp: '2026-09-01T21:20:03.442+02:00' }
-
-  // 与 Runtime 侧 backend.go 公告的五项能力一致；早期构建只公告前三项（见 ndjson 夹具）。
-  const capabilities = ['stdin.cancel', 'state.v1', 'log.stream', 'stdin.shutdown', 'stdin.status']
-
-  const helloLine = line({
-    ...base,
-    type: 'hello',
-    sequence: 1,
-    runtimeVersion: 'dev',
-    command: 'backend supervise',
-    capabilities,
-  })
-
-  const stoppedResultLine = line({
-    ...base,
-    type: 'result',
-    sequence: 3,
-    success: true,
-    code: 'OK',
-    stage: 'backend.shutdown',
-    status: 'stopped',
-    message: '后端已停止',
-    retryable: false,
-    remediation: [],
-    details: {},
-  })
-
-  it('握手前的 stop 在 hello 到达后使用 shutdown，句柄接手不重复发送', async () => {
-    const client = createClient()
-    const child = mockSpawn()
-    const pending = client.supervise({ mode: 'managed' })
-    const stopping = client.stop(1000)
-    child.stdout.feed(helloLine)
-    const handle = await pending
-    const handleStop = handle.shutdown({ timeoutMs: 1000 })
-    const commandsBeforeClose = child.stdin.chunks.map(chunk => JSON.parse(chunk).command)
-    child.stdout.feed(stoppedResultLine)
-    child.close(0)
-    await stopping
-    await handleStop
-    expect(commandsBeforeClose).toEqual(['shutdown'])
+    expect(child.killed).toBe(false)
     expect(client.hasActiveSessions).toBe(false)
-  })
-
-  it('shutdown 写出合法控制行，并在收到 result 与进程退出后 resolve', async () => {
-    const client = createClient()
-    const child = mockSpawn()
-
-    const pendingHandle = client.supervise({ mode: 'managed' })
-    child.stdout.feed(helloLine)
-    const handle = await pendingHandle
-
-    const pendingShutdown = handle.shutdown({ timeoutMs: 1_000 })
-
-    expect(child.stdin.chunks).toHaveLength(1)
-    const written = child.stdin.chunks[0]
-    expect(written.endsWith('\n')).toBe(true)
-    const payload = JSON.parse(written.trimEnd())
-    expect(Object.keys(payload).sort()).toEqual(['command', 'commandId', 'protocol'])
-    expect(payload).toMatchObject({ protocol: 1, command: 'shutdown' })
-    expect(payload.commandId).toMatch(/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/)
-
-    child.stdout.feed(stoppedResultLine)
-    child.close(0)
-    const outcome = await pendingShutdown
-
-    expect(outcome.success).toBe(true)
-    expect(outcome.result.status).toBe('stopped')
-    expect(child.killed).toBe(false)
-  })
-
-  it('重复 shutdown 只写一次控制行', async () => {
-    const client = createClient()
-    const child = mockSpawn()
-
-    const pendingHandle = client.supervise({ mode: 'managed' })
-    child.stdout.feed(helloLine)
-    const handle = await pendingHandle
-
-    const first = handle.shutdown({ timeoutMs: 1_000 })
-    const second = handle.shutdown({ timeoutMs: 1_000 })
-
-    expect(child.stdin.chunks).toHaveLength(1)
-
-    child.stdout.feed(stoppedResultLine)
-    child.close(0)
-    await Promise.all([first, second])
-  })
-
-  it('shutdown 超时才 kill，并以 RUNTIME_EXITED_UNEXPECTEDLY 收尾', async () => {
-    const client = createClient()
-    const child = mockSpawn()
-
-    const pendingHandle = client.supervise({ mode: 'managed' })
-    child.stdout.feed(helloLine)
-    const handle = await pendingHandle
-
-    const pendingShutdown = handle.shutdown({ timeoutMs: 20 })
-    expect(child.killed).toBe(false)
-
-    await expect(pendingShutdown).rejects.toMatchObject({
-      code: 'RUNTIME_EXITED_UNEXPECTEDLY',
-    })
-    expect(child.killed).toBe(true)
   })
 })

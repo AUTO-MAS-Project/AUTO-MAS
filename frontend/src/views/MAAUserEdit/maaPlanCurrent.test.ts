@@ -13,18 +13,15 @@ describe('MAA plan day selection', () => {
     Stage_3: '-',
   })
 
-  it('selects the weekly plan using the account game day', () => {
-    const plan = {
+  it('uses the same ordinal-based rotation as the backend', () => {
+    const weekly = {
       Info: { Mode: 'Weekly' as const },
       Sunday: group('AP-5'),
       Monday: group('1-7'),
     }
-    expect(getCurrentMaaPlan(plan, 'Official', beforeReset)?.Stage).toBe('AP-5')
-    expect(getCurrentMaaPlan(plan, 'Official', afterReset)?.Stage).toBe('1-7')
-    expect(getCurrentMaaPlan(plan, 'YoStarEN', afterReset)?.Stage).toBe('AP-5')
-  })
-
-  it('uses the same ordinal-based rotation as the backend', () => {
+    expect(getCurrentMaaPlan(weekly, 'Official', beforeReset)?.Stage).toBe('AP-5')
+    expect(getCurrentMaaPlan(weekly, 'Official', afterReset)?.Stage).toBe('1-7')
+    expect(getCurrentMaaPlan(weekly, 'YoStarEN', afterReset)?.Stage).toBe('AP-5')
     const plan = {
       Info: { Mode: 'Rotate' as const, RotateDays: 3 },
       Day1: group('1-7'),
