@@ -32,9 +32,9 @@ describe('websocket subscriptions', () => {
   })
 
   it('routes messages by id + type', async () => {
-    const { subscribe, dispatchMessage } = await loadSubscriptions()
+    const { subscribe, unsubscribe, dispatchMessage } = await loadSubscriptions()
     const handler = vi.fn()
-    subscribe({ id: 'task-1', type: 'task.notice' }, handler)
+    const subscription = subscribe({ id: 'task-1', type: 'task.notice' }, handler)
 
     dispatchMessage(envelope('task-1', 'task.notice'))
     dispatchMessage(envelope('task-2', 'task.notice'))
@@ -42,23 +42,11 @@ describe('websocket subscriptions', () => {
 
     expect(handler).toHaveBeenCalledTimes(1)
     expect(handler.mock.calls[0][0].id).toBe('task-1')
-  })
-
-  it('does not deliver messages after unsubscribe and stays idempotent', async () => {
-    const { subscribe, unsubscribe, dispatchMessage } = await loadSubscriptions()
-    const handler = vi.fn()
-    const subscriptionId = subscribe({ id: 'task-1', type: 'task.notice' }, handler)
-
-    unsubscribe(subscriptionId)
-    unsubscribe(subscriptionId)
+    unsubscribe(subscription)
+    unsubscribe(subscription)
     unsubscribe('sub_not_exists')
-
     expect(dispatchMessage(envelope('task-1', 'task.notice'))).toBe(false)
-    expect(handler).not.toHaveBeenCalled()
-  })
-
-  it('isolates handler errors from other subscribers', async () => {
-    const { subscribe, dispatchMessage } = await loadSubscriptions()
+    expect(handler).toHaveBeenCalledTimes(1)
     const good = vi.fn()
     subscribe({ id: 'Main', type: 'test.event' }, () => {
       throw new Error('boom')

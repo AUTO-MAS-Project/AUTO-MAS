@@ -21,6 +21,7 @@ import {
 
 // 导入日志服务
 import { getLogger } from './logger'
+import { canRetryStartup } from './startupRecovery'
 const logger = getLogger('初始化服务')
 
 // ==================== 类型定义 ====================
@@ -67,6 +68,7 @@ export interface InitializationResult {
   completedStages: string[]
   failedStage?: string
   failureOrigin?: 'runtime_binary'
+  networkUnavailable?: true
   /** 失败时按需透传 Runtime 的结构化详情。 */
   code?: string
   retryable?: boolean
@@ -144,42 +146,63 @@ export class InitializationService {
     this.desktopStartup = Promise.resolve()
       .then(async () => {
         if (this.closing) return this.cancelledStartup()
-        if (fullInitialization) return this.initialize(publish)
-        for (let attempt = 1; ; attempt += 1) {
+        let prepareEnvironment = fullInitialization
+        for (let attempt = 1; attempt <= 2; attempt += 1) {
           if (this.closing) return this.cancelledStartup()
           const startedAt = performance.now()
           logger.info(`桌面启动尝试 ${attempt}/2 开始`)
           let failedProgress: InitializationProgress | undefined
-          const result = await this.startBackendStage(
-            progress => {
-              // 自动恢复仍属同一次进行中的启动，不向窗口提前发布最终失败。
-              if (progress.status === 'failed') failedProgress = progress
-              else publish(progress)
-            },
-            7,
-            []
-          )
+          const attemptProgress = (progress: InitializationProgress) => {
+            // 自动恢复仍属同一次进行中的启动，不向窗口提前发布最终失败。
+            if (progress.status === 'failed') failedProgress = progress
+            else publish(progress)
+          }
+          const result = prepareEnvironment
+            ? await this.initialize(attemptProgress)
+            : await this.startBackendStage(attemptProgress, 7, [])
           const durationMs = performance.now() - startedAt
           state.attempts.push({ attempt, durationMs, result })
+          if (this.closing) return this.cancelledStartup()
           logger.info(
             `桌面启动尝试 ${attempt}/2 ${result.success ? '完成' : '失败'}，耗时 ${durationMs.toFixed(1)}ms` +
               (result.code ? `，code=${result.code}` : '')
           )
-          // workspace check 是只读命令且先于后端创建；只恢复已确认退出的握手超时。
-          // UV_EXEC_FAILED 的协议分类不能区分权限与竞态，留给用户明确处置。
-          const recover =
-            attempt === 1 &&
-            runtimeMode === 'managed' &&
-            result.code === 'RUNTIME_HANDSHAKE_TIMEOUT' &&
-            result.retryable === true &&
-            result.runtimeFailure?.command === 'workspace check' &&
-            result.runtimeFailure.processExited === true
+          const recover = attempt === 1 && canRetryStartup(result)
           if (result.success || !recover || this.closing) {
             if (failedProgress) publish(failedProgress)
             return result
           }
-          logger.warn('只读工作区检查握手超时且 Runtime 已退出，重新执行一次桌面启动')
+          const deadline = performance.now() + RUNTIME_STOP_TIMEOUT_MS + RUNTIME_KILL_WAIT_MS
+          try {
+            const [stopped] = await Promise.all([
+              this.backendService.stopBackend(),
+              this.runtimeService?.settleFailedAttempt(Math.max(0, deadline - performance.now())),
+            ])
+            if (!stopped.success) throw new Error(stopped.error || '无法确认上一轮后端已结束')
+          } catch (error) {
+            const cleanupError = error instanceof Error ? error.message : String(error)
+            logger.error(`启动恢复前收口失败：${cleanupError}`)
+            if (failedProgress) publish(failedProgress)
+            return {
+              ...result,
+              retryable: false,
+              logs: [result.logs, cleanupError].filter(Boolean).join('\n'),
+            }
+          }
+          if (this.closing) return this.cancelledStartup()
+          prepareEnvironment &&= !result.completedStages.includes('dependency')
+          logger.warn('上一轮启动已收口，自动再试一次')
+          if (failedProgress)
+            publish({
+              ...failedProgress,
+              status: 'running',
+              progress: 0,
+              indeterminate: true,
+              runtimeStatus: 'retrying',
+              message: '正在重新尝试启动',
+            })
         }
+        throw new Error('启动尝试次数已耗尽')
       })
       .catch((error: unknown): InitializationResult => ({
         success: false,
@@ -458,11 +481,13 @@ export class InitializationService {
       completedStages,
       failedStage: outcome.failedStage,
       failureOrigin: outcome.failureOrigin,
+      networkUnavailable: outcome.networkUnavailable,
       code: outcome.code,
       retryable: outcome.retryable,
       remediation: outcome.remediation,
       logs: outcome.logs,
       logPath: outcome.logPath,
+      runtimeFailure: outcome.runtimeFailure,
     }
   }
 

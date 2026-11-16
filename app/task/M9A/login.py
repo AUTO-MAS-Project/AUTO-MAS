@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""B 服（哔哩哔哩渠服）登录：MAS 原生实现，登录完成后交给 M9A 的启动任务进游戏。
+"""B 服（哔哩哔哩渠服）登录：MAS 原生实现，按昵称选号后交给 M9A。
 
 入口是 ``MaaFWFlavor`` 的可选钩子 ``ensure_logged_in``（契约见
 ``app/task/MaaFW/tools/embedded/flavor.py`` 模块说明）：MAS 启动模拟器（连带拉起游戏）之后、
@@ -30,14 +30,13 @@
 2. 循环截图 + OCR：
 
    - 「隐私政策提示」弹层：找到唯一的「同意」按钮（中心点限定在屏幕中下部）就点它；
-   - 「登录记录」面板：收起态先点右侧箭头展开列表，再按登录记录里显示的完整昵称精确匹配
-     （中心点限定在列表区域），唯一命中后点击，复核「登录」按钮与仍可见的昵称，最后点「登录」；
-   - 已登录停在标题页（OCR 到「START」，或标题 logo 下的「REVERSE」副标题——实机常只读到 `ERSE`，
-     或登录成功后顶栏的「<昵称> 欢迎回来」横幅；START 有时太淡读不到）：MAS 无法知道当前登录的是哪个
+   - 「登录记录」面板：收起态先点右侧箭头展开列表，再按登录记录里显示的完整昵称匹配
+     （双方只保留汉字、英文字母和数字后完整匹配，中心点限定在列表区域），唯一命中后点击，
+     复核「登录」按钮与仍可见的昵称，最后点「登录」；
+   - 已登录停在标题页（OCR 到「START」，或标题 logo 下的「REVERSE」副标题——实机常只读到 `ERSE`）：MAS 无法知道当前登录的是哪个
      账号，为了保证切到目标账号，点标题页右下角退出图标 → 唯一的「确认」→ 等「登录记录」面板出现后按
      上一条选号；
-3. 登录后等哔哩哔哩面板消失（游戏回到标题页），把这之后的进游戏与任务执行交给 M9A 的
-   ``StartUp`` 与用户任务队列。
+3. 登录后停在标题页，由 M9A 的公开 StartUp 任务进入主页。
 
 沿用的是哔哩哔哩 SDK 登录面板与标题页的 UI 锚点；布局改版后这里要跟着改。脚本能自己登录的
 项目照旧走 ``Run.LoginMode == "Project"``，本模块只在 MAS 原生登录模式下生效。
@@ -46,12 +45,9 @@
 
 - 自动同意只复用全局 ``Config.setting.Function.IfAgreeBilibili``（默认关闭）：开关没开时
   不点「同意」，提示手动处理并停止本次登录，不新增第二份协议开关；
-- 既认不出登录记录、也认不出标题页（例如游戏停在别的账号的主界面）时，**明确停止**并让用户
-  把游戏放到标题页——不能把"没认出登录页"当成"目标账号已登录"，否则任务会跑在错的账号上；
-  等待时长服从脚本的 `Game.WaitTime`（加载画面同样认不出，不能按固定 60 秒截断慢启动的客户端），
-  总时长仍受登录主循环的 240 秒约束；
-- 登录后必须连续若干帧认出标题页才算完成；过渡黑屏 / 加载 / OCR 漏字只算未知画面，继续
-  有界等待，到点仍未确认就失败；
+- 已在主页时经游戏设置退出，再回到登录面板按昵称重新选号。
+  无法识别画面时按脚本的 Game.WaitTime 等待，受登录总时限约束；
+- 登录后等待面板退出并识别标题页，后续进游戏交给 M9A 的公开 StartUp；
 - 所有循环都先检查总时限，``adb input tap`` 失败直接抛错，不让点击失败被静默吞掉；
 - 只在 `Mas` 模式、资源是「B 服」、且实际要启动的客户端是 B 服包名时干活：配错客户端要立刻
   报错，不能拿官服客户端去走哔哩哔哩登录面板。
@@ -74,15 +70,18 @@ import io
 import re
 import subprocess
 import time
+import unicodedata
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 import cv2
 import numpy as np
 from PIL import Image
 
-from app.task.MaaFW.tools.embedded.flavor import MaaFWLoginRequired
+from app.task.MaaFW.tools.embedded.flavor import MaaFWLoginRequired, StartupTask
 from app.utils import get_logger
 from app.utils.common.process.runner import create_subprocess, stop_process
 
@@ -110,7 +109,7 @@ _CONFIRM_RE = re.compile(r"^确认$")
 #: 标题页可读的 OCR 文字：「START」按钮（允许 OCR 漏掉首字母）与标题 logo 下的「REVERSE」
 #: 副标题（实机常只读到 ERSE）。登录面板与主界面都读不到这两处。
 _TITLE_HINTS = ("START", "TART", "REVERSE", "ERSE")
-#: 标题页右下角的退出图标位置（相对屏幕；实机 2560x1440 验证，点它弹「是否登出当前账号？」）。
+#: 标题页右下角退出图标的中心（2560×1440 实机验证）。
 _EXIT_POINT = (0.956, 0.91)
 
 #: ``dumpsys activity activities`` 里表示 Activity 在前台的几种写法（与模拟器应用启动同一口径）。
@@ -131,8 +130,8 @@ _LOGIN_TIMEOUT = 240.0
 #: 冷启动的加载页（只有版本号）也算认不出；上限由脚本的 ``Game.WaitTime`` 抬到用户愿意
 #: 为启动等的时间（见 ``_unknown_screen_budget``），不能按这个固定值截断慢启动的客户端。
 _UNKNOWN_SCREEN_SECONDS = 60.0
-#: 连续多少帧都认出标题页才判「已回到标题页」，避免过渡帧 / OCR 漏字误判。
-_TITLE_CONFIRM_FRAMES = 2
+#: 连续多少帧未见登录面板才允许 M9A 接手启动。
+_PANEL_CLOSED_FRAMES = 2
 #: 连续多少帧都认成标题页才动手登出，避免偶发误识别点到别处。
 _TITLE_SETTLE_POLLS = 3
 #: 点退出图标后等「确认」弹窗的上限。
@@ -148,7 +147,7 @@ _AGREE_Y_RANGE = (0.60, 0.85)
 #: 登录记录里账号昵称中心点范围（列表区域）。
 _ACCOUNT_X_RANGE = (0.40, 0.57)
 _ACCOUNT_Y_RANGE = (0.37, 0.70)
-#: 收起态「切换其他账号」行右侧展开箭头的位置（相对屏幕）。
+#: 收起态账号卡片右侧的展开箭头（相对游戏画面宽高）。
 _EXPAND_POINT = (0.608, 0.43)
 
 Box = tuple[int, int, int, int]
@@ -161,6 +160,38 @@ def _mask(text: str) -> str:
     if len(value) <= 1:
         return value
     return f"{value[0]}{'*' * (len(value) - 1)}"
+
+
+def _normalize_account(value: str) -> str:
+    """仅保留汉字、ASCII 英文字母及数字，不合并大小写或易混字符。"""
+
+    return "".join(
+        char
+        for char in value
+        if "a" <= char <= "z"
+        or "A" <= char <= "Z"
+        or "0" <= char <= "9"
+        or unicodedata.name(char, "").startswith(
+            ("CJK UNIFIED IDEOGRAPH-", "CJK COMPATIBILITY IDEOGRAPH-")
+        )
+    )
+
+
+def _account_candidates(
+    items: list[tuple[str, Box]], frame: np.ndarray, account: str
+) -> list[Box]:
+    """双方过滤后完整匹配；过滤为空的昵称不得与其他空昵称匹配。"""
+
+    expected = _normalize_account(account)
+    if not expected:
+        return []
+    return _pick(
+        items,
+        lambda text: _normalize_account(text) == expected,
+        frame,
+        x_range=_ACCOUNT_X_RANGE,
+        y_range=_ACCOUNT_Y_RANGE,
+    )
 
 
 def _center(box: Box) -> tuple[float, float]:
@@ -207,16 +238,6 @@ def _privacy_prompt(items: list[tuple[str, Box]]) -> bool:
     return any(_PRIVACY_HINT in text for text, _ in items)
 
 
-def _welcome_like(items: list[tuple[str, Box]]) -> bool:
-    """标题页的「<昵称> 欢迎回来」横幅。
-
-    登录成功后标题页顶部会出现这条横幅，START 有时被它盖住或太淡 OCR 读不到；横幅本身
-    是「已登录并回到标题页」的正向信号。只在标题页出现，登录面板与主界面都读不到。
-    """
-
-    return any(_WELCOME_HINT in text for text, _ in items)
-
-
 def _warning_like(items: list[tuple[str, Box]]) -> bool:
     """冷启动的健康警告页（「警告：请在游戏前阅读」）：点一下继续。
 
@@ -227,10 +248,31 @@ def _warning_like(items: list[tuple[str, Box]]) -> bool:
     return any(_WARNING_HINT in text for text, _ in items)
 
 
-def _title_like(items: list[tuple[str, Box]]) -> bool:
-    """标题页的样子：OCR 读到「START」这类按钮文字（登录面板与主界面都读不到）。"""
+def _title_like(items: list[tuple[str, Box]], frame: np.ndarray) -> bool:
+    """识别标题文字，或用左上版本号和左下适龄标识共同确认标题页。"""
 
-    return any(text.strip().upper() in _TITLE_HINTS for text, _ in items)
+    if any(
+        _WELCOME_HINT in text or "".join(text.upper().split()) in _TITLE_HINTS
+        for text, _ in items
+    ):
+        return True
+    version = _pick(
+        items,
+        lambda text: bool(
+            re.fullmatch(r"[A-Z]?\d+\.\d+\.\d+(?:[-.]\d+)+", text.strip(), re.I)
+        ),
+        frame,
+        x_range=(0.02, 0.25),
+        y_range=(0.0, 0.10),
+    )
+    rating = _pick(
+        items,
+        lambda text: text.strip().upper() in {"CADPA", "适龄提示"},
+        frame,
+        x_range=(0.0, 0.12),
+        y_range=(0.80, 0.98),
+    )
+    return bool(version and rating)
 
 
 def _is_bilibili_resource(resource_name: str | None) -> bool:
@@ -497,39 +539,48 @@ async def _select_account(
         if _privacy_prompt(items):
             frame, items = await _agree_privacy(device, frame, items, progress=progress)
 
-    matches = _pick(
-        items,
-        lambda text: text == account,
-        frame,
-        x_range=_ACCOUNT_X_RANGE,
-        y_range=_ACCOUNT_Y_RANGE,
-    )
-    if len(matches) != 1:
-        found = len(matches)
-        reason = (
-            "当前页有多个同名账号，无法确定切换哪一个"
-            if found > 1
-            else "当前页未找到该昵称（账号需已保存过登录记录，且列表在可见范围内）"
-        )
+    # 只重新截图，不重复点击；重名立即拒绝，未识别到目标最多看三帧。
+    for attempt in range(3):
+        matches = _account_candidates(items, frame, account)
+        if len(matches) > 1:
+            raise MaaFWLoginRequired(
+                "B 服登录失败：当前页有多个同名账号，无法确定切换哪一个"
+            )
+        if matches:
+            break
+        if attempt < 2:
+            await asyncio.sleep(_POLL_SECONDS)
+            frame, items = await _ocr(device)
+            if _privacy_prompt(items):
+                frame, items = await _agree_privacy(
+                    device, frame, items, progress=progress
+                )
+    else:
         raise MaaFWLoginRequired(
-            f"B 服登录失败：登录记录里未找到唯一的账号「{masked}」——{reason}"
+            f"B 服登录失败：登录记录里未找到账号「{masked}」的完整昵称，"
+            "请确认账号已保存且在可见范围内"
         )
     await device.tap(matches[0])
     await asyncio.sleep(1.0)
 
-    frame, items = await _ocr(device)
-    if _privacy_prompt(items):
-        frame, items = await _agree_privacy(device, frame, items, progress=progress)
-
-    selected = _pick(
-        items,
-        lambda text: text == account,
-        frame,
-        x_range=_ACCOUNT_X_RANGE,
-        y_range=_ACCOUNT_Y_RANGE,
-    )
-    login_buttons = _pick(items, lambda text: bool(_LOGIN_RE.match(text)), frame)
-    if len(selected) != 1 or len(login_buttons) != 1 or not _has(items, _SWITCH_OTHER):
+    # 选中后用新截图按同一过滤规则复核昵称及收起态，再允许点击登录。
+    for attempt in range(3):
+        frame, items = await _ocr(device)
+        if _privacy_prompt(items):
+            frame, items = await _agree_privacy(device, frame, items, progress=progress)
+        selected = _account_candidates(items, frame, account)
+        login_buttons = _pick(items, lambda text: bool(_LOGIN_RE.match(text)), frame)
+        if len(selected) > 1 or len(login_buttons) > 1:
+            raise MaaFWLoginRequired("B 服登录失败：无法确认唯一的所选账号或登录按钮")
+        if (
+            len(selected) == 1
+            and len(login_buttons) == 1
+            and _has(items, _SWITCH_OTHER)
+        ):
+            break
+        if attempt < 2:
+            await asyncio.sleep(_POLL_SECONDS)
+    else:
         raise MaaFWLoginRequired("B 服登录失败：无法确认所选账号，已停止登录")
 
     await device.tap(login_buttons[0])
@@ -541,38 +592,122 @@ async def _wait_panel_closed(
     device: _Device,
     *,
     progress: Progress | None,
-) -> str:
-    """登录后等哔哩哔哩面板消失，并用标题页的正向信号确认已回到标题页。
+    deadline: float,
+) -> None:
+    """等待已选号的标题页或游戏主页，由 M9A 接手。"""
 
-    「一帧没有登录记录文字」不算完成：过渡黑屏、加载动画、OCR 漏字都可能满足；
-    只有连续 ``_TITLE_CONFIRM_FRAMES`` 帧认出标题页才算成功，其余画面继续有界等待，
-    等满总时限仍没确认就失败。标题页的正向信号有两种：OCR 读到「START」，或读到登录成功
-    后的「<昵称> 欢迎回来」横幅（横幅有时会盖住或淡化 START）。
-    """
-
-    deadline = time.monotonic() + _LOGIN_TIMEOUT
-    title_frames = 0
+    closed_frames = 0
     while True:
         if time.monotonic() > deadline:
             raise MaaFWLoginRequired(
-                "B 服登录失败：点击登录后未确认回到游戏标题页（等待超时）"
+                "B 服登录失败：点击登录后等待超时，登录面板未关闭或未识别到标题页、游戏主页"
             )
         frame, items = await _ocr(device)
         if _privacy_prompt(items):
             await _agree_privacy(device, frame, items, progress=progress)
-            title_frames = 0
+            closed_frames = 0
             continue
         if _has(items, _LOGIN_RECORD, _SWITCH_OTHER):
-            title_frames = 0
-        elif _title_like(items) or _welcome_like(items):
-            title_frames += 1
-            if title_frames >= _TITLE_CONFIRM_FRAMES:
-                await asyncio.sleep(_TITLE_SETTLE_SECONDS)
-                return "B 服登录完成，已确认回到游戏标题页，交给 M9A 进游戏运行"
+            closed_frames = 0
         else:
-            # 过渡帧（黑屏 / 加载 / OCR 漏字）：不提前判成功，继续有界等待
-            title_frames = 0
+            closed_frames += 1
+            if closed_frames == _PANEL_CLOSED_FRAMES:
+                await asyncio.sleep(_TITLE_SETTLE_SECONDS)
+                continue
+            if closed_frames > _PANEL_CLOSED_FRAMES:
+                if _title_like(items, frame):
+                    await _progress(progress, "B 服选号完成，等待 M9A 启动游戏")
+                    return
+                if _homepage_visible(frame):
+                    await _progress(progress, "B 服登录后已进入游戏主页")
+                    return
         await asyncio.sleep(_POLL_SECONDS)
+
+
+def _homepage_visible(frame: np.ndarray) -> bool:
+    return _find_menu_button(frame, "MainMenuEntry.png", (3, 460, 141, 151)) is not None
+
+
+@lru_cache(maxsize=2)
+def _menu_template(name: str) -> np.ndarray:
+    data = (Path(__file__).with_name("login_assets") / name).read_bytes()
+    return cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+
+
+def _find_menu_button(frame: np.ndarray, name: str, roi: Box) -> Box | None:
+    height, width = frame.shape[:2]
+    x, y, w, h = roi
+    scaled = cv2.resize(frame, (1280, 720))
+    template = _menu_template(name)
+    th, tw = template.shape[:2]
+    if th > h or tw > w:
+        return None
+    scores = cv2.matchTemplate(
+        scaled[y : y + h, x : x + w], template, cv2.TM_CCOEFF_NORMED
+    )
+    _, score, _, (dx, dy) = cv2.minMaxLoc(scores)
+    if score < 0.8:
+        return None
+    return (
+        round((x + dx) * width / 1280),
+        round((y + dy) * height / 720),
+        round(tw * width / 1280),
+        round(th * height / 720),
+    )
+
+
+async def _logout_from_homepage(device: _Device, *, progress: Progress | None) -> None:
+    """按 M9A 的退出导航回到标题页或 B 服登录记录。"""
+
+    await _progress(progress, "当前已在游戏主页，正在退出并重新选号")
+    deadline = time.monotonic() + _LOGIN_PANEL_SECONDS
+    # MAA1999/M9A resource/base/pipeline/switch_account.json (AGPL-3.0).
+    steps = (
+        (("设置",), (33, 457, 515, 214), ("MenuRight.png", (450, 484, 119, 125))),
+        (("账号", "账户"), (22, 78, 177, 630), None),
+        (("退出",), (796, 500, 161, 53), None),
+        (("返回登录",), (739, 404, 126, 33), None),
+    )
+    for index, (labels, (x, y, w, h), fallback) in enumerate(steps):
+        while time.monotonic() < deadline:
+            frame, items = await _ocr(device)
+            matches = _pick(
+                items,
+                lambda text: text.strip() in labels,
+                frame,
+                x_range=(x / 1280, (x + w) / 1280),
+                y_range=(y / 720, (y + h) / 720),
+            )
+            if len(matches) == 1:
+                await device.tap(matches[0])
+                break
+            if index == 0 and not matches:
+                button = _find_menu_button(frame, *fallback) if fallback else None
+                if button is None:
+                    button = _find_menu_button(
+                        frame, "MainMenuEntry.png", (3, 460, 141, 151)
+                    )
+                if button is not None:
+                    await device.tap(button)
+            await asyncio.sleep(_POLL_SECONDS)
+        else:
+            raise MaaFWLoginRequired(
+                f"B 服切号失败：游戏设置中未识别到「{'／'.join(labels)}」"
+            )
+
+    # 点击完成不代表退出动画结束；明确看到登录目标画面才交回外层选号。
+    await _progress(progress, "已点击返回登录，等待退出转场完成")
+    while (remaining := deadline - time.monotonic()) > 0:
+        try:
+            frame, items = await asyncio.wait_for(_ocr(device), timeout=remaining)
+        except asyncio.TimeoutError:
+            break
+        if time.monotonic() >= deadline:
+            break
+        if _has(items, _LOGIN_RECORD) or _title_like(items, frame):
+            return
+        await asyncio.sleep(min(_POLL_SECONDS, max(0, deadline - time.monotonic())))
+    raise MaaFWLoginRequired("B 服切号失败：退出转场超时，未出现标题页或登录记录面板")
 
 
 async def _logout_to_login_panel(
@@ -625,10 +760,10 @@ async def ensure_logged_in(
     adb_address: str,
     progress: Progress | None,
     host_adb: Any = None,
-) -> str:
+) -> str | StartupTask:
     """MAS 原生登录入口（契约见 MaaFW ``flavor.py`` 的 ``ensure_logged_in``）。
 
-    只在 ``Run.LoginMode == "Mas"`` 时做事；返回写进运行日志的一句话，没做事就是空串。
+    只在 ``Run.LoginMode == "Mas"`` 时做事；选号完成返回公开启动任务，没做事就是空串。
     """
 
     mode = ""
@@ -641,7 +776,7 @@ async def ensure_logged_in(
 
     if not adb_address:
         raise MaaFWLoginRequired(
-            "MAS B 服登录仅支持 ADB 控制器，请切换控制器或使用项目登录"
+            "「由 MAS 登录 B 服」仅支持 ADB 控制器，请切换控制器或把登录方式改回「由 M9A 登录」"
         )
 
     account = str(getattr(getattr(user_config, "Info", None), "Account") or "").strip()
@@ -652,27 +787,27 @@ async def ensure_logged_in(
     package = str(package_name or "").strip() or BILIBILI_PACKAGE
     if package != BILIBILI_PACKAGE:
         raise MaaFWLoginRequired(
-            f"B 服登录失败：登录方式选了「Mas」，但要启动的客户端是「{package}」；"
-            f"Mas 登录只能用于 B 服客户端（{BILIBILI_PACKAGE}）。"
-            "请把脚本资源与游戏包名都改成 B 服，或把登录方式改回「Project」"
+            f"B 服登录失败：登录方式选了「由 MAS 登录 B 服」，但要启动的客户端是「{package}」；"
+            f"这种登录方式只能用于 B 服客户端（{BILIBILI_PACKAGE}）。"
+            "请把游戏资源与游戏包名都改成 B 服，或把登录方式改回「由 M9A 登录」"
         )
     if not _is_bilibili_resource(resource_name):
         raise MaaFWLoginRequired(
-            f"B 服登录失败：登录方式选了「Mas」，但脚本资源是「{resource_name or '未选择'}」；"
-            "Mas 登录只支持「B 服」资源，请改选后再运行（或把登录方式改回「Project」）"
+            f"B 服登录失败：登录方式选了「由 MAS 登录 B 服」，但游戏资源是「{resource_name or '未选择'}」；"
+            "这种登录方式只支持「B 服」资源，请改选后再运行（或把登录方式改回「由 M9A 登录」）"
         )
     device = _Device(adb_path, adb_address, host_adb)
 
     await _progress(
         progress, f"B 服登录：使用账号「{_mask(account)}」，客户端 {package}"
     )
-    await _wait_foreground(device, package, progress=progress)
-
     deadline = time.monotonic() + _LOGIN_TIMEOUT
+    await _wait_foreground(device, package, progress=progress)
     unknown_since: float | None = None
     unknown_budget = _unknown_screen_budget(script_config)
     title_polls = 0
     logout_tried = False
+    homepage_logout_tried = False
     while True:
         if time.monotonic() > deadline:
             raise MaaFWLoginRequired(
@@ -682,6 +817,7 @@ async def ensure_logged_in(
         if _privacy_prompt(items):
             await _agree_privacy(device, frame, items, progress=progress)
             unknown_since = None
+            title_polls = 0
             continue
         if _warning_like(items):
             # 冷启动的健康警告页：点一下继续（M9A 的 StartUp 也会处理，但登录跑在它前面）
@@ -690,25 +826,34 @@ async def ensure_logged_in(
             await device.tap_point(width * 0.5, height * 0.5)
             await asyncio.sleep(1.0)
             unknown_since = None
+            title_polls = 0
             continue
         if _has(items, _LOGIN_RECORD):
             await _select_account(device, frame, items, account, progress=progress)
-            return await _wait_panel_closed(device, progress=progress)
+            await _wait_panel_closed(device, progress=progress, deadline=deadline)
+            return StartupTask(deadline, "StartUp")
 
-        # 标题页 = 已登录：MAS 不知道当前是哪个号，为了保证切到目标账号，登出后重选。
-        # 「START」与「<昵称> 欢迎回来」横幅都算标题页已登录。
-        if not logout_tried and (_title_like(items) or _welcome_like(items)):
+        if _homepage_visible(frame):
+            if homepage_logout_tried:
+                raise MaaFWLoginRequired("B 服切号失败：退出后仍停在游戏主页")
+            await _logout_from_homepage(device, progress=progress)
+            homepage_logout_tried = True
+            unknown_since = None
+            title_polls = 0
+            continue
+
+        if not logout_tried and _title_like(items, frame):
             title_polls += 1
             if title_polls >= _TITLE_SETTLE_POLLS:
-                logout_tried = True
                 await _logout_to_login_panel(device, frame, progress=progress)
+                logout_tried = True
                 unknown_since = None
                 title_polls = 0
                 continue
         else:
             title_polls = 0
 
-        # 既不是登录界面、也认不出标题页（例如游戏停在别的账号的主界面）：
+        # 既不是登录界面、也认不出标题页（例如加载中的画面）：
         # 无法确认当前账号，明确停止，不能把「没认出来」当成「目标账号已登录」。
         # 冷启动的加载画面同样落在这里，所以预算服从 Game.WaitTime，不能按固定 60 秒截断。
         if unknown_since is None:

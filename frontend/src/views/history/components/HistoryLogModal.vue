@@ -203,7 +203,7 @@ import {
   InboxOutlined,
   SearchOutlined,
 } from '@ant-design/icons-vue'
-import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
+import VueMonacoEditor from '@/components/LocalMonacoEditor'
 import { computed, ref } from 'vue'
 import type { PullCountStatistics } from '@/types/history'
 import type { HistoryAttachment, HistoryStorageIssue } from '@/api'

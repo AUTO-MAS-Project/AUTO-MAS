@@ -15,6 +15,8 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 
 桌面启动由主进程提前编排；`backend_start_finished` 和 Runtime 阶段事件仍由原服务确认结果，窗口接入已有启动任务不重复上报。完整初始化结果仍在界面词表与应用入口就绪后记录。
 
+自动恢复最多两轮，共用一次桌面启动作业。后端与 Runtime 阶段事件分别保留实际尝试结果，整体初始化只记录最终结局；自动恢复不记录为用户选择恢复动作。自动业务放行未确认时不记录启动成功，不新增命令、路径或日志属性。
+
 初始化恢复继续复用 `initialization_recovery_selected` 与命令结果事件。镜像由 Runtime 自动选择，新客户端不再产生手选镜像动作，`mirror_kind` 固定为 `default`；旧动作枚举仅为历史口径保留。设置页不再提供后端运行方式选择，不新增采集。
 
 日常启动缺失 Runtime 时转入运行环境失败页，补装复用完整初始化的 Runtime 对齐与 bootstrap。恢复选择仍记录 `retry`，补装和命令结果由原有主进程阶段事件确认；转入完整准备后 `flow_kind` 为 `update`，不把下载完成视为应用初始化成功。
@@ -314,7 +316,6 @@ QQ 高级手动配置复用 `notification_binding_finished`，`action=manual_bin
 - MaaEnd 程序更新接管：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；检查、准备回退及安装拦截由现有 `script_run_finished` 观察任务终态。下载进度、哈希和路径不单独采集。
 
 - 奇想盒运行前后端更新：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；更新准备失败继续运行与安装未完成拦截沿用任务终态。后端更新阶段不新增独立事件，不将下载或 pip 受理当作安装成功。
-
 
 任务树迁移沿用 `useTaskApi.ts` 的请求受理观察和 `taskAnalytics.ts` 的创建/完成观察。
 `ScriptView` 是有限模式类别；队列/托管/用户运行 UUID 只用于本地关联，不进入事件属性。

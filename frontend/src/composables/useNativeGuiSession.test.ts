@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => ({
   warning: vi.fn(),
   start: vi.fn(),
   stop: vi.fn(),
-  status: vi.fn(),
   listeners: new Map<string, (frame: unknown) => void>(),
 }))
 vi.mock('ant-design-vue', () => ({ message: mocks }))
@@ -16,9 +15,6 @@ vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 vi.mock('@/composables/useTaskApi', () => ({
   requestScriptConfigStart: mocks.start,
   stopNativeConfig: mocks.stop,
-}))
-vi.mock('@/api/services/Service', () => ({
-  Service: { getTaskStatusApiDispatchTaskTaskIdGet: mocks.status },
 }))
 vi.mock('@/composables/useWebSocket', () => ({
   useWebSocket: () => ({
@@ -40,7 +36,6 @@ const keys = {
   timeoutWarn: 'timeoutWarn',
   saved: 'saved',
   saveFailed: 'saveFailed',
-  saveUnknown: 'saveUnknown',
 }
 
 describe('native configuration session during scheduler migration', () => {

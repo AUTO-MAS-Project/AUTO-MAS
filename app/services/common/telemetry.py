@@ -40,6 +40,7 @@ from app.utils import get_logger
 
 if TYPE_CHECKING:
     from sentry_sdk._types import EventProcessor, TransactionProcessor
+    from sentry_sdk.integrations import Integration
 
     from app.models.schema import WSTaskScriptStartedData
     from app.models.task import ScriptItem, TaskItem, TaskMode, TaskTriggerReason
@@ -82,6 +83,7 @@ USER_DIR_PATTERN = re.compile(
 _sentry_release: str | None = None
 _sentry_dist: str | None = None
 _sentry_started = False
+_mcp_loaded = False
 
 NOISY_TRANSACTIONS = {
     "/api/core/health",
@@ -326,6 +328,23 @@ def _start_sentry(release: str, dist: str | None = None) -> None:
 
     global _sentry_started
 
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.httpx import HttpxIntegration
+    from sentry_sdk.integrations.starlette import StarletteIntegration
+
+    # 保留现有 Web 与日志采集，避免自动探测在监听前导入可选 MCP 服务。
+    integrations: list[Integration] = [
+        LoggingIntegration(level=None, event_level=None, sentry_logs_level=None),
+        LoguruIntegration(level=None, event_level=30, sentry_logs_level=None),
+        FastApiIntegration(),
+        StarletteIntegration(),
+        HttpxIntegration(),
+    ]
+    if _mcp_loaded:
+        from sentry_sdk.integrations.mcp import MCPIntegration
+
+        integrations.append(MCPIntegration())
+
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         release=f"auto-mas@{release}",
@@ -336,16 +355,33 @@ def _start_sentry(release: str, dist: str | None = None) -> None:
         include_source_context=False,
         max_request_body_size="never",
         server_name="AUTO-MAS",
-        integrations=[
-            LoggingIntegration(level=None, event_level=None, sentry_logs_level=None),
-            LoguruIntegration(level=None, event_level=30, sentry_logs_level=None),
-        ],
+        auto_enabling_integrations=False,
+        integrations=integrations,
         traces_sampler=sample_trace,
         # 脱敏原地处理 SDK 的 JSON 事件；TypedDict 回调与通用字典实现共用同一对象。
         before_send=cast("EventProcessor", sanitize_event),
         before_send_transaction=cast("TransactionProcessor", sanitize_event),
     )
     _sentry_started = True
+
+
+def enable_mcp_integration() -> None:
+    """MCP 实际加载后安装诊断集成，遥测关闭时只记住已加载状态。"""
+    global _mcp_loaded
+
+    _mcp_loaded = True
+    if not _sentry_started:
+        return
+
+    from sentry_sdk.integrations import setup_integrations
+    from sentry_sdk.integrations.mcp import MCPIntegration
+
+    client = sentry_sdk.get_client()
+    client.integrations.update(
+        setup_integrations(
+            [MCPIntegration()], with_defaults=False, options=client.options
+        )
+    )
 
 
 def _resolve_transaction_path(
@@ -398,7 +434,7 @@ def set_telemetry_enabled(enabled: bool) -> None:
     if not enabled:
         if _sentry_started:
             sentry_sdk.get_client().close(timeout=0)
-            sentry_sdk.init(dsn=None)
+            sentry_sdk.init(dsn=None, auto_enabling_integrations=False)
             _sentry_started = False
         return
 

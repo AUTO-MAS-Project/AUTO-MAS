@@ -81,7 +81,9 @@ from app.utils.common.log import sources as log_source
 from .inventory_report import (
     INVENTORY_REPORT_RULE,
     InventoryReport,
+    TaskRewardReport,
     inventory_resolve,
+    load_reward_groups,
     merge_gain_entries,
 )
 from .push_log import MAAEND_PUSH_RULES, maaend_plain_text, maaend_resolve
@@ -471,6 +473,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         # 账号级「节点详情推送」开关（Notify.PushLogMode），prepare 时按配置启用
         self.push_log_enabled = False
         self.inventory_status_messages: set[str] = set()
+        self.reward_item_labels: dict[str, str] = {}
         self.mode = "Routine"
         self.run_book: dict[str, bool] = {mode: False for mode in MAAEND_RUN_MOOD_BOOK}
         self.task_dict: dict[str, dict[str, bool]] | None = None
@@ -2440,6 +2443,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             self.maaend_root_path,
             str(settings["language"]),
         )
+        self.reward_item_labels.update(
+            (key.removeprefix("iconRecognition.name."), label)
+            for key, label in maaend_interface_i18n.items()
+            if key.startswith("iconRecognition.name.")
+        )
         self.inventory_status_messages.update(
             re.sub(r"<[^>]*>", "", message).strip()
             for key, message in maaend_interface_i18n.items()
@@ -3183,10 +3191,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         history_records = []
         stage_log_paths = []
         stage_directory = None
-        inventory_notify = (
-            self.cur_user_config.Notify.Enabled
-            and self.cur_user_config.Notify.IfSendInventory
-        )
+        inventory_notify = self.cur_user_config.Notify.IfSendInventory
         if self.push_log_enabled or inventory_notify:
             try:
                 stage_directory = tempfile.TemporaryDirectory(
@@ -3307,29 +3312,48 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         )
 
         success_symbol = "√" if completed else "X"
+        pull_count_notify = self.cur_user_config.Notify.IfSendStatistic and bool(
+            statistics.get("pull_count_statistics")
+        )
+        report_targets = []
+        if history_records and (inventory_notify or pull_count_notify):
+            report_targets.append(Notify.global_target())
+            if self.cur_user_config.Notify.Enabled:
+                report_targets.append(Notify.user_target(self.cur_user_config))
 
         if inventory_notify and history_records:
             try:
-                await Notify.send_user(
+                await Notify.dispatch_task_notification(
                     payload=_format_maaend.build_inventory_payload(
                         title=f"{datetime.now():%m-%d} | {self.cur_user_item.name} 的本轮材料收获",
                         message=statistics,
                     ),
-                    user_config=self.cur_user_config,
+                    targets=report_targets,
+                    task_info=self.task_info,
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"养成材料通知推送失败: {e}")
 
         if history_records:
             try:
-                await Notify.push_statistics_report(
-                    payload=_format_maaend.build_statistics_payload(
-                        title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
-                        message=statistics,
-                    ),
-                    user_config=self.cur_user_config,
-                    task_info=self.task_info,
-                )
+                statistics_targets = Notify.statistic_targets(None)
+                if not statistics_targets:
+                    statistics.pop("matrix_statistics", None)
+                if pull_count_notify:
+                    statistics_targets = report_targets
+                else:
+                    statistics.pop("pull_count_statistics", None)
+                if statistics_targets and (
+                    pull_count_notify or "matrix_statistics" in statistics
+                ):
+                    await Notify.dispatch_task_notification(
+                        payload=_format_maaend.build_statistics_payload(
+                            title=f"{datetime.now():%m-%d} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
+                            message=statistics,
+                        ),
+                        targets=statistics_targets,
+                        task_info=self.task_info,
+                    )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
                 await Publisher.send(
@@ -3390,7 +3414,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         )
 
     def _collect_inventory_report(self, paths: list[Path]) -> list[str]:
-        """采集协议空间材料记录，返回带时间的展示行，并同步写入推送日志。"""
+        """采集独立材料通知的展示行，并将上游状态写入推送日志。"""
 
         report = InventoryReport(
             task_names={
@@ -3404,7 +3428,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         def append_inventory(log_type: str, text: str, ts: float) -> None:
             lines.append(f"[{datetime.fromtimestamp(ts):%H:%M:%S}] {text}")
-            if self.push_log_enabled:
+            if self.push_log_enabled and text.startswith("上游报告："):
                 append_push_log(
                     self.callbacks,
                     self.user_state(self.cur_user_item),
@@ -3440,6 +3464,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         def read() -> list[log_box.LogEntry]:
             pipeline = log_box.LogPipeline()
+            rewards = TaskRewardReport(
+                load_reward_groups(self.maaend_root_path, self.reward_item_labels)
+            )
             pipeline.preprocessors.append(maaend_plain_text)
             for rule in MAAEND_PUSH_RULES:
                 pipeline.add_rule(*rule)
@@ -3447,9 +3474,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             for path in paths:
                 source = log_source.LogSource(path, start_from_end=False)
                 source.open()
-                for line in source.read_new():
+                lines = source.read_new()
+                rewards.add_stage(lines)
+                for line in lines:
                     pipeline.feed(line, timestamp=time())
-            return pipeline.finish()
+            return [*pipeline.finish(), *rewards.entries()]
 
         async def deliver() -> None:
             try:

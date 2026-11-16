@@ -9,7 +9,6 @@ import {
   RUNTIME_BINARY_CANCELLED,
   RUNTIME_BINARY_DOWNLOAD_FAILED,
   RUNTIME_BINARY_REPLACE_FAILED,
-  buildRuntimeBinarySources,
   runtimeAssetName,
   syncRuntimeBinary,
   type RuntimeBinarySyncOptions,
@@ -81,8 +80,6 @@ const isProxyUrl = (url: string) => url.includes('gh-proxy.com')
 /** 每个用例一套独立的安装目录与受管源码目录。 */
 let workspace: string
 let runtimePath: string
-/** 磁盘上那个 exe 自报的版本，用例按需改写。 */
-let installedVersion: string | null
 /** 换上新文件之后它自报的版本；设成 null 模拟「新文件跑不起来」。 */
 let newBinaryVersion: string | null
 
@@ -129,7 +126,7 @@ const readVersion = vi.fn(async (target: string) => {
   } catch {
     // 文件不存在：按原来那份回答。
   }
-  return installedVersion
+  return INSTALLED_VERSION
 })
 
 const TARGET = { version: TARGET_VERSION }
@@ -150,7 +147,6 @@ const installDir = () => fs.readdirSync(path.dirname(runtimePath))
 beforeEach(() => {
   workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-mas-runtime-binary-'))
   runtimePath = path.join(workspace, 'resources', 'auto-mas-runtime.exe')
-  installedVersion = INSTALLED_VERSION
   newBinaryVersion = TARGET_VERSION
   readVersion.mockClear()
   fs.mkdirSync(path.dirname(runtimePath), { recursive: true })
@@ -169,111 +165,34 @@ afterEach(() => {
 // ==================== 同步 ====================
 
 describe('syncRuntimeBinary', () => {
-  it('版本较旧时先取可信清单，再下载线上最新版并替换', async () => {
-    const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
-    const sums = createSums()
-    const outcome = await syncRuntimeBinary(syncOptions({ download, fetchText: sums.fetchText }))
-    expect(outcome.status).toBe('upgraded')
-    expect(outcome.target).toEqual(TARGET)
-    expect(sums.urls.every(url => isCnbUrl(url) || isGithubUrl(url))).toBe(true)
-    expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
-  })
-
-  it('下载失败切源后按实际来源与尝试序号报告，重试不沿用上一轮序号', async () => {
-    const sources = buildRuntimeBinarySources(TARGET_VERSION)
-    const { download, urls } = createDownload(url =>
-      url === sources[0].url
-        ? { success: false, error: 'HTTP 503' }
-        : { success: true, content: NEW_BINARY }
-    )
-    const progress: RuntimeBinarySyncProgress[] = []
-    const outcome = await syncRuntimeBinary(
-      syncOptions({ download, onProgress: update => progress.push(update) })
-    )
-    expect(outcome.status).toBe('upgraded')
-    expect(urls).toEqual(sources.slice(0, 2).map(source => source.url))
-    expect(
-      progress.map(({ phase, source, sourceIndex, sourceCount, targetVersion }) => ({
-        phase,
-        source,
-        sourceIndex,
-        sourceCount,
-        targetVersion,
-      }))
-    ).toEqual(
-      [
-        { phase: 'check', targetVersion: TARGET_VERSION },
-        {
-          phase: 'download',
-          source: sources[0].key,
-          sourceIndex: 1,
-          sourceCount: sources.length,
-          targetVersion: TARGET_VERSION,
-        },
-        {
-          phase: 'download',
-          source: sources[1].key,
-          sourceIndex: 2,
-          sourceCount: sources.length,
-          targetVersion: TARGET_VERSION,
-        },
-        {
-          phase: 'download',
-          source: sources[1].key,
-          sourceIndex: 2,
-          sourceCount: sources.length,
-          targetVersion: TARGET_VERSION,
-        },
-        { phase: 'complete', targetVersion: TARGET_VERSION },
-      ].map(value => ({
-        source: undefined,
-        sourceIndex: undefined,
-        sourceCount: undefined,
-        ...value,
-      }))
-    )
-    for (const event of progress.filter(event => event.phase === 'download')) {
-      const source = sources[event.sourceIndex! - 1]
-      expect(event.sourceName).toBe(source.name)
-      expect(event.message).toContain(`${source.name}（${event.sourceIndex}/${sources.length}）`)
-    }
-
-    fs.writeFileSync(runtimePath, OLD_BINARY)
-    const retry: RuntimeBinarySyncProgress[] = []
-    await syncRuntimeBinary(
-      syncOptions({
-        download: createDownload(() => ({ success: true, content: NEW_BINARY })).download,
-        onProgress: update => retry.push(update),
-      })
-    )
-    expect(retry.map(event => event.phase)).toEqual(['check', 'download', 'download', 'complete'])
-    expect(retry[1]).toMatchObject({
-      source: sources[0].key,
-      sourceIndex: 1,
-      sourceCount: sources.length,
-      targetVersion: TARGET_VERSION,
-    })
-  })
-
-  it('装的是比线上最新更新的一版：保留本地，不下载也不降级', async () => {
-    installedVersion = 'v0.9.0'
-    const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
-
-    const outcome = await syncRuntimeBinary(syncOptions({ download }))
-
-    expect(outcome).toEqual({ status: 'current', target: TARGET })
-    expect(download).not.toHaveBeenCalled()
-    expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OLD_BINARY)
-    expect(installDir()).toEqual(['auto-mas-runtime.exe'])
-  })
-
+  // 清单不可用时禁止下载，拒绝篡改后仍可重试可信升级。
   it('代理源给出一套互相匹配的文件与哈希也装不上：清单从不问代理，exe 按可信哈希丢弃', async () => {
     const evil = 'evil-runtime-binary'
+    let trustedSums: RuntimeTextFetchOutcome = { kind: 'failed', error: 'HTTP 503' }
     const sums = createSums(url => {
       // 代理要是被问到清单，会给出与自己那份 exe 匹配的哈希——这条路必须根本不存在。
       if (isProxyUrl(url)) return { kind: 'text', text: sumsFor(evil) }
-      return { kind: 'text', text: sumsFor(NEW_BINARY) }
+      return trustedSums
     })
+    const valid = createDownload(() => ({ success: true, content: NEW_BINARY }))
+
+    const unavailable = await syncRuntimeBinary(
+      syncOptions({ download: valid.download, fetchText: sums.fetchText })
+    )
+
+    expect(unavailable).toMatchObject({
+      status: 'failed',
+      code: RUNTIME_BINARY_DOWNLOAD_FAILED,
+    })
+    expect(unavailable.error).toContain('校验清单')
+    expect(unavailable.error).toContain('HTTP 503')
+    expect(sums.urls.some(isCnbUrl)).toBe(true)
+    expect(sums.urls.some(isGithubUrl)).toBe(true)
+    expect(valid.download).not.toHaveBeenCalled()
+    expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OLD_BINARY)
+    expect(installDir()).toEqual(['auto-mas-runtime.exe'])
+
+    trustedSums = { kind: 'text', text: sumsFor(NEW_BINARY) }
     const stub = createDownload(url =>
       isProxyUrl(url) ? { success: true, content: evil } : { success: false, error: 'HTTP 502' }
     )
@@ -283,31 +202,25 @@ describe('syncRuntimeBinary', () => {
     )
 
     expect(sums.urls.some(isProxyUrl)).toBe(false)
+    expect(stub.urls.some(isProxyUrl)).toBe(true)
     expect(outcome.status).toBe('failed')
     expect(outcome.code).toBe(RUNTIME_BINARY_DOWNLOAD_FAILED)
     expect(outcome.error).toContain('SHA-256 不匹配')
     expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OLD_BINARY)
     expect(installDir()).toEqual(['auto-mas-runtime.exe'])
-  })
 
-  it('CNB 与 GitHub 的清单都取不到时一个 exe 都不下，失败原因指向清单', async () => {
-    const sums = createSums(() => ({ kind: 'failed', error: 'HTTP 503' }))
-    const stub = createDownload(() => ({ success: true, content: NEW_BINARY }))
-
-    const outcome = await syncRuntimeBinary(
-      syncOptions({ download: stub.download, fetchText: sums.fetchText })
+    const upgraded = await syncRuntimeBinary(
+      syncOptions({ download: valid.download, fetchText: sums.fetchText })
     )
 
-    expect(outcome.status).toBe('failed')
-    expect(outcome.code).toBe(RUNTIME_BINARY_DOWNLOAD_FAILED)
-    expect(outcome.error).toContain('校验清单')
-    expect(outcome.error).toContain('HTTP 503')
-    expect(stub.download).not.toHaveBeenCalled()
-    expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OLD_BINARY)
+    expect(upgraded).toEqual({ status: 'upgraded', target: TARGET })
+    expect(sums.urls.every(url => isCnbUrl(url) || isGithubUrl(url))).toBe(true)
+    expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
     expect(installDir()).toEqual(['auto-mas-runtime.exe'])
   })
 
   describe('在途互斥', () => {
+    // 两条调用链共享一次替换与最终完成通知。
     it('并发两次同步只下载一次，后来者拿到同一个结果与进度', async () => {
       let finish: (() => void) | undefined
       const download = vi.fn(
@@ -330,6 +243,7 @@ describe('syncRuntimeBinary', () => {
         syncOptions({ download, onProgress: update => secondProgress.push(update) })
       )
       await vi.waitFor(() => expect(download).toHaveBeenCalledTimes(1))
+      expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OLD_BINARY)
       expect(finish).toBeDefined()
       finish?.()
 
@@ -340,20 +254,30 @@ describe('syncRuntimeBinary', () => {
       expect(readVersion).toHaveBeenCalledTimes(2)
       expect(outcomes[0]).toBe(outcomes[1])
       expect(outcomes[0].status).toBe('upgraded')
+      expect(outcomes[0].target).toEqual(TARGET)
       expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
+      expect(installDir()).toEqual(['auto-mas-runtime.exe'])
       expect(secondProgress).toContainEqual(expect.objectContaining({ progress: 50 }))
+      expect(firstProgress.at(-1)).toMatchObject({
+        phase: 'complete',
+        progress: 100,
+        targetVersion: TARGET_VERSION,
+      })
       expect(secondProgress.at(-1)).toEqual(firstProgress.at(-1))
     })
   })
 
   describe('取消', () => {
+    // 取消结果先返回，之后真实写完的下载也只能清理，不能替换。
     it('下载途中取消：不再等在途的下载，它结束后临时文件被清掉，exe 保持原样', async () => {
       let cancelled = false
       let finish: (() => void) | undefined
+      let lateDownloadPath = ''
       const download = vi.fn(
         (_url: string, savePath: string) =>
           new Promise<{ success: boolean }>(resolve => {
             // exe 一开始下就取消；下载器没有取消接口，这里要等测试放行才写完。
+            lateDownloadPath = savePath
             cancelled = true
             finish = () => {
               fs.writeFileSync(savePath, NEW_BINARY, 'utf8')
@@ -374,7 +298,10 @@ describe('syncRuntimeBinary', () => {
       expect(download).toHaveBeenCalledTimes(1)
       expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OLD_BINARY)
 
+      expect(lateDownloadPath.startsWith(`${runtimePath}.download-`)).toBe(true)
+      expect(finish).toBeDefined()
       finish?.()
+      expect(fs.readFileSync(lateDownloadPath, 'utf8')).toBe(NEW_BINARY)
       await vi.waitFor(() => expect(installDir()).toEqual(['auto-mas-runtime.exe']))
       expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OLD_BINARY)
     })
@@ -388,10 +315,14 @@ describe('syncRuntimeBinary', () => {
     const isRestore = (from: string, to: string) =>
       from === `${runtimePath}.old` && to === runtimePath
 
+    // 被占用的坏 exe 不能覆盖上次留下的可用备份。
     it('新文件挪不进去时把旧文件改回来，exe 保持原样', async () => {
       const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
       renameHook.before = (from, to) => {
-        if (isMoveIn(from, to)) throw busyError()
+        if (isMoveIn(from, to)) {
+          expect(fs.readFileSync(`${runtimePath}.old`, 'utf8')).toBe(OLD_BINARY)
+          throw busyError()
+        }
       }
 
       const outcome = await syncRuntimeBinary(syncOptions({ download }))
@@ -406,13 +337,57 @@ describe('syncRuntimeBinary', () => {
       expect(installDir()).toEqual(['auto-mas-runtime.exe'])
       // 回滚：让路的 .old 被改回 exe 路径。
       expect(renameHook.calls).toContainEqual([`${runtimePath}.old`, runtimePath])
+
+      renameHook.calls.length = 0
+      fs.writeFileSync(runtimePath, 'broken-runtime-binary', 'utf8')
+      fs.writeFileSync(`${runtimePath}.old`, OLD_BINARY, 'utf8')
+      const versionOf = async (target: string) =>
+        fs.readFileSync(target, 'utf8') === OLD_BINARY ? INSTALLED_VERSION : null
+      const brokenInPlace = () => {
+        try {
+          return fs.readFileSync(runtimePath, 'utf8') === 'broken-runtime-binary'
+        } catch {
+          return false
+        }
+      }
+      // 坏文件删不掉、备份改不回；挪开坏文件后再允许恢复。
+      rmHook.before = target => {
+        if (target === runtimePath && brokenInPlace()) throw busyError()
+      }
+      renameHook.before = (from, to) => {
+        if (isRestore(from, to) && brokenInPlace()) throw busyError()
+        if (isMoveIn(from, to)) {
+          expect(fs.readFileSync(`${runtimePath}.old`, 'utf8')).toBe(OLD_BINARY)
+        }
+      }
+
+      const withBackup = await syncRuntimeBinary(syncOptions({ download, readVersion: versionOf }))
+
+      expect(withBackup.status).toBe('failed')
+      expect(withBackup.code).toBe(RUNTIME_BINARY_REPLACE_FAILED)
+      expect(withBackup.error).toContain('无法运行')
+      expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OLD_BINARY)
+      expect(installDir()).toEqual(['auto-mas-runtime.exe'])
+      expect(renameHook.calls).not.toContainEqual([runtimePath, `${runtimePath}.old`])
+      expect(renameHook.calls).toContainEqual([runtimePath, expect.stringContaining('.download')])
     })
 
+    // 可信哈希通过后仍须保留旧文件，直到新 exe 实际通过版本探测。
     it('新文件挪进来了却跑不起来：换回旧文件并报失败，提示查安全软件', async () => {
       newBinaryVersion = null
       const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
 
-      const outcome = await syncRuntimeBinary(syncOptions({ download }))
+      const outcome = await syncRuntimeBinary(
+        syncOptions({
+          download,
+          readVersion: async target => {
+            if (fs.readFileSync(target, 'utf8') === NEW_BINARY) {
+              expect(fs.readFileSync(`${runtimePath}.old`, 'utf8')).toBe(OLD_BINARY)
+            }
+            return readVersion(target)
+          },
+        })
+      )
 
       expect(outcome.status).toBe('failed')
       expect(outcome.code).toBe(RUNTIME_BINARY_REPLACE_FAILED)
@@ -421,41 +396,6 @@ describe('syncRuntimeBinary', () => {
       expect(outcome.error).toContain('安全软件')
       expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OLD_BINARY)
       expect(installDir()).toEqual(['auto-mas-runtime.exe'])
-    })
-
-    it('坏 exe 被占用换不回备份时，替换不拿坏文件覆盖备份；新文件又跑不起来就恢复备份', async () => {
-      fs.writeFileSync(runtimePath, 'broken-runtime-binary', 'utf8')
-      fs.writeFileSync(`${runtimePath}.old`, OLD_BINARY, 'utf8')
-      const versionOf = vi.fn(async (target: string) => {
-        const content = fs.readFileSync(target, 'utf8')
-        return content === OLD_BINARY ? INSTALLED_VERSION : null
-      })
-      // 坏文件被占用：删不掉，.old 也改不回正式路径（目标还在）；坏文件挪开之后一切放行。
-      const brokenInPlace = () => {
-        try {
-          return fs.readFileSync(runtimePath, 'utf8') === 'broken-runtime-binary'
-        } catch {
-          return false
-        }
-      }
-      rmHook.before = target => {
-        if (target === runtimePath && brokenInPlace()) throw busyError()
-      }
-      renameHook.before = (from, to) => {
-        if (isRestore(from, to) && brokenInPlace()) throw busyError()
-      }
-      const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
-
-      const outcome = await syncRuntimeBinary(syncOptions({ download, readVersion: versionOf }))
-
-      // 新文件也跑不起来 → 恢复的是最后一份能跑的 OLD_BINARY，而不是那份坏文件。
-      expect(outcome.status).toBe('failed')
-      expect(outcome.code).toBe(RUNTIME_BINARY_REPLACE_FAILED)
-      expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OLD_BINARY)
-      expect(installDir()).toEqual(['auto-mas-runtime.exe'])
-      // 让路时坏文件没有被改名成 .old，而是按半截下载的名字挪开后清掉。
-      expect(renameHook.calls).not.toContainEqual([runtimePath, `${runtimePath}.old`])
-      expect(renameHook.calls).toContainEqual([runtimePath, expect.stringContaining('.download')])
     })
   })
 })

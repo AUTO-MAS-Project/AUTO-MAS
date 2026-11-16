@@ -85,23 +85,47 @@ afterEach(() => {
 })
 
 describe('渲染进程恢复结果', () => {
-  it('再次退出先结束旧尝试，连续退出最多重载三次', () => {
+  it('再次退出先结束旧尝试，连续退出最多重载三次', async () => {
     crash()
     crash()
     expect(reports.reload).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ outcome: 'failure', resultKind: 'renderer_gone' })
     )
+    const firstWindow = win
+    win.emit('closed')
+    win = new TestWindow()
+    recovery = attachRendererRecovery(win as unknown as BrowserWindow, {
+      crashHistory,
+      isQuitting: () => quitting,
+      onRendererGone: vi.fn(),
+      onReload: vi.fn(),
+    })
     crash()
     crash()
-    expect(win.webContents.reload).toHaveBeenCalledTimes(3)
+    expect(firstWindow.webContents.reload).toHaveBeenCalledTimes(2)
+    expect(win.webContents.reload).toHaveBeenCalledTimes(1)
     expect(reports.crash).toHaveBeenLastCalledWith(
       expect.objectContaining({ action: 'give-up', crashCount: 4 })
     )
     ready()
     expect(reports.reload).toHaveBeenCalledTimes(3)
-  })
 
-  it('会话结束不制造崩溃或重载，取消关机后重新恢复', async () => {
+    win.emit('closed')
+    win = new TestWindow()
+    const sessionCrashHistory: number[] = []
+    recovery = attachRendererRecovery(win as unknown as BrowserWindow, {
+      crashHistory: sessionCrashHistory,
+      isQuitting: () => quitting,
+      onRendererGone: vi.fn(),
+      onReload: vi.fn(),
+    })
+    reports.crash.mockClear()
+    reports.reload.mockClear()
+    win.webContents.emit('render-process-gone', {}, { reason: 'clean-exit', exitCode: 0 })
+    expect(reports.crash).not.toHaveBeenCalled()
+    expect(win.webContents.reload).not.toHaveBeenCalled()
+    expect(sessionCrashHistory).toEqual([])
+
     win.emit('query-session-end')
     crash()
     expect(recovery.isSessionEnding()).toBe(true)
@@ -110,6 +134,7 @@ describe('渲染进程恢复结果', () => {
     win.hooks.get(0x0016)!(Buffer.alloc(8))
     expect(recovery.isSessionEnding()).toBe(false)
     expect(win.webContents.reload).toHaveBeenCalledTimes(1)
+    expect(reports.crash).toHaveBeenCalledTimes(1)
     win.emit('session-end')
     crash()
     ready()
@@ -117,49 +142,31 @@ describe('渲染进程恢复结果', () => {
       expect.objectContaining({ outcome: 'cancelled', resultKind: 'session_end' })
     )
     expect(reports.crash).toHaveBeenCalledTimes(1)
-    await flushTelemetry()
-    expect(vi.getTimerCount()).toBe(0)
-  })
+    expect(win.webContents.reload).toHaveBeenCalledTimes(1)
 
-  it('取消关机后重建正常退出的 renderer，但不伪造崩溃', () => {
-    win.emit('query-session-end')
     win.webContents.emit('render-process-gone', {}, { reason: 'clean-exit', exitCode: 0 })
     win.hooks.get(0x0016)!(Buffer.alloc(8))
-    expect(win.webContents.reload).toHaveBeenCalledTimes(1)
-    expect(reports.crash).not.toHaveBeenCalled()
+    expect(recovery.isSessionEnding()).toBe(false)
+    expect(win.webContents.reload).toHaveBeenCalledTimes(2)
+    expect(reports.crash).toHaveBeenCalledTimes(1)
     ready()
-    expect(reports.reload).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ outcome: 'success' })
+    expect(reports.reload).toHaveBeenLastCalledWith(
+      expect.objectContaining({ outcome: 'success', resultKind: 'ready' })
     )
-  })
 
-  it('重建主窗口仍共享同一进程的重载预算', () => {
     crash()
-    crash()
-    win.emit('closed')
-    win = new TestWindow()
-    recovery = attachRendererRecovery(win as unknown as BrowserWindow, {
-      crashHistory,
-      isQuitting: () => false,
-      onRendererGone: vi.fn(),
-      onReload: vi.fn(),
-    })
-    crash()
-    crash()
-    expect(win.webContents.reload).toHaveBeenCalledTimes(1)
-    expect(reports.crash).toHaveBeenLastCalledWith(
-      expect.objectContaining({ action: 'give-up', crashCount: 4 })
-    )
-  })
-
-  it('退出期间不重载，正在退出的尝试不记为超时失败', () => {
-    crash()
+    expect(win.webContents.reload).toHaveBeenCalledTimes(3)
     quitting = true
     vi.advanceTimersByTime(RENDERER_RELOAD_TIMEOUT_MS)
     expect(reports.reload).toHaveBeenLastCalledWith(
       expect.objectContaining({ outcome: 'cancelled', resultKind: 'app_quitting' })
     )
     crash()
-    expect(win.webContents.reload).toHaveBeenCalledTimes(1)
+    ready()
+    expect(win.webContents.reload).toHaveBeenCalledTimes(3)
+    expect(reports.crash).toHaveBeenCalledTimes(2)
+    expect(reports.reload).toHaveBeenCalledTimes(3)
+    await flushTelemetry()
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

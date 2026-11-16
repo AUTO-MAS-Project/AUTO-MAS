@@ -13,12 +13,45 @@ test.describe('@tools MCP service', () => {
       .filter({ has: page.getByText('Tools', { exact: true }) })
     await expect(menu).toHaveClass(/ant-menu-item-selected/)
     await expect(card).toContainText('/mcp')
+    const prompt = card.getByRole('textbox', { name: 'Prompt for your agent' })
+    await expect(prompt).toHaveValue(/Transport: Streamable HTTP/)
+    const connectionAddress = await card.locator('.ant-typography-copy').locator('..').innerText()
+    expect(await prompt.inputValue()).toContain(connectionAddress.trim())
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+    await card.getByRole('button', { name: 'Copy prompt', exact: true }).click()
+    // Windows 剪贴板会使用 CRLF，统一换行后核对完整内容。
+    await expect
+      .poll(() =>
+        page.evaluate(async () => (await navigator.clipboard.readText()).replaceAll('\r\n', '\n'))
+      )
+      .toBe(await prompt.inputValue())
     await expect(card.locator('.ant-progress')).toHaveCount(0)
     await app.evidence('mcp-real-ready')
     await page.reload()
     await expect(card).toContainText('MCP service is ready')
     await socket.reconnect()
     await expect(card).toContainText('MCP service is ready')
+
+    const startup = card.getByRole('switch', { name: 'Enable MCP at startup' })
+    await expect(startup).toBeChecked()
+    await page.route('**/api/setting/update', route =>
+      route.fulfill({ json: { code: 500, status: 'error', message: 'Save failed for test' } })
+    )
+    await startup.click()
+    await expect(page.getByText('Save failed for test', { exact: true })).toBeVisible()
+    await expect(startup).toBeChecked()
+    await page.unroute('**/api/setting/update')
+    await startup.click()
+    await expect(startup).not.toBeChecked()
+    await expect(card).toContainText('Takes effect after restart')
+    await expect(card).toContainText('MCP service is ready')
+    await page.reload()
+    await expect(startup).not.toBeChecked()
+    await expect(card).toContainText('Takes effect after restart')
+    await app.evidence('mcp-startup-disabled')
+    await startup.click()
+    await expect(startup).toBeChecked()
+    await expect(card).not.toContainText('Takes effect after restart')
   })
 
   test('restores phases and retries a failure without treating acceptance as success', async ({
@@ -35,6 +68,7 @@ test.describe('@tools MCP service', () => {
     const socket = await observeMainConnection(page)
     let status: McpStatusData = {
       enabled: true,
+      environmentEnabled: true,
       state: McpStatusData.state.PENDING,
       stage: null,
       startedAt: null,

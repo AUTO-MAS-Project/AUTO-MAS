@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { useFluxdownInstallApi } from './useFluxdownInstallApi'
 
-const api = vi.hoisted(() => ({ install: vi.fn(), release: vi.fn() }))
+const api = vi.hoisted(() => ({ install: vi.fn(), httpInstall: vi.fn() }))
 vi.mock('@/api', () => ({
   ApiError: class extends Error {},
-  GetService: { getFluxdownReleaseApiUpdateFluxdownReleaseGet: api.release },
-  Service: { installFluxdownApiUpdateFluxdownInstallPost: api.install },
+  GetService: {},
+  Service: { installFluxdownApiUpdateFluxdownInstallPost: api.httpInstall },
 }))
 vi.mock('@/i18n', () => ({ translate: (key: string) => key }))
 
@@ -23,23 +23,31 @@ describe('FluxDown installation result', () => {
       'core.setting.others.fluxdownInstallDesktopRequired'
     )
     expect(api.install).not.toHaveBeenCalled()
+    expect(api.httpInstall).not.toHaveBeenCalled()
   })
 
   it('rejects partial success when the backend could not persist the path', async () => {
-    api.install.mockResolvedValue({ code: 500, status: 'error', message: 'path not saved' })
+    api.install
+      .mockResolvedValueOnce({ code: 500, status: 'error', message: 'path not saved' })
+      .mockResolvedValueOnce({ code: 200, status: 'error', message: 'path still not saved' })
+      .mockResolvedValueOnce({
+        code: 200,
+        status: 'success',
+        message: '',
+        path: 'C:\\FluxDown',
+      })
     const state = useFluxdownInstallApi()
     await expect(state.installFluxdown('auto')).rejects.toThrow('path not saved')
     expect(state.error.value).toBe('path not saved')
     expect(state.loading.value).toBe(false)
-  })
-
-  it('clears an earlier failure when retrying through another mirror', async () => {
-    api.install.mockRejectedValueOnce(new Error('unreachable'))
-    api.install.mockResolvedValueOnce({ code: 200, path: 'installed' })
-    const state = useFluxdownInstallApi()
-    await expect(state.installFluxdown('github')).rejects.toThrow('unreachable')
-    await expect(state.installFluxdown('official')).resolves.toMatchObject({ code: 200 })
+    await expect(state.installFluxdown('auto')).rejects.toThrow('path still not saved')
+    expect(state.error.value).toBe('path still not saved')
+    await expect(state.installFluxdown('auto')).resolves.toMatchObject({
+      status: 'success',
+      path: 'C:\\FluxDown',
+    })
     expect(state.error.value).toBeNull()
     expect(state.loading.value).toBe(false)
+    expect(api.httpInstall).not.toHaveBeenCalled()
   })
 })

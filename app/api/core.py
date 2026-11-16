@@ -25,10 +25,11 @@ import asyncio
 import os
 from contextlib import suppress
 from typing import (
+    Literal,
     Optional,
 )
 
-from fastapi import APIRouter, Request, WebSocket
+from fastapi import APIRouter, HTTPException, Request, WebSocket
 from pydantic import (
     BaseModel,
     Field,
@@ -43,6 +44,7 @@ from app.core import (
     Power,
     Publisher,
     ShutdownCoordinator,
+    Startup,
     TaskManager,
 )
 from app.core.ws import protocol
@@ -86,6 +88,9 @@ class BackendHealthOut(BaseModel):
     protocol: int = Field(description="后端自身支持的健康检查协议版本")
     version: str = Field(description="后端版本号")
     commit: str = Field(description="后端所在提交哈希，未受监督或监督器未注入时为空")
+    startupActivation: Literal["pending", "active", "closed"] | None = Field(
+        default=None, description="自动业务是否已由监督器放行"
+    )
 
 
 def _resolve_injected_identity(env_name: str) -> str | None:
@@ -123,7 +128,23 @@ async def get_health(request: Request) -> BackendHealthOut:
         version=_resolve_injected_identity("AUTO_MAS_EXPECTED_VERSION")
         or Config.VERSION,
         commit=_resolve_injected_identity("AUTO_MAS_EXPECTED_COMMIT") or "",
+        startupActivation=Startup.status,
     )
+
+
+@router.post(
+    "/startup/activate", response_model=BackendHealthOut, include_in_schema=False
+)
+async def activate_startup(request: Request) -> BackendHealthOut:
+    """监督器完成就绪与身份校验后幂等放行；不进入 MCP 工具目录。"""
+
+    if request.app.state.background_status != "ready":
+        raise HTTPException(status_code=409, detail="后端尚未就绪")
+    try:
+        Startup.activate()
+    except RuntimeError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return await get_health(request)
 
 
 @router.get("/mcp/status", summary="获取 MCP 服务状态", response_model=McpStatusOut)

@@ -26,7 +26,7 @@ Before editing frontend code:
 1. Confirm branch, remote, and working tree status.
 2. Inspect the target page, adjacent pages, related components, composables, API wrappers, router entries, and styles.
 3. Classify the task as new page, fix, refactor, style/UI adjustment, API integration, route change, or documentation-only.
-4. Select `mas-frontend-ui` as a required companion for any UI, layout, component, form, table, modal, feedback, or visual-state change.
+4. Select `mas-frontend-ui` as a required companion for any UI, layout, component, form, table, modal, feedback, or visual-state change. Before editing application UI source, follow its [concept preview and approval gate](../mas-frontend-ui/SKILL.md#concept-preview-before-implementation).
 5. Keep changes limited to files directly required by the task. Before editing a `.vue` file, record its line count at the task base commit and choose the applicable case in [Component Size Policy](#component-size-policy).
 6. For a new or changed user-visible workflow, page, API result or lifecycle operation, load [mas-telemetry](../mas-telemetry/SKILL.md) proactively. Reuse existing observation or add missing telemetry with the feature; document intentional omissions. Do not add a second event merely because a new component calls an already observed wrapper.
 
