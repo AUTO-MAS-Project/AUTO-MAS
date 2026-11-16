@@ -84,10 +84,7 @@
              选项列表是可由特调替换的分节 create.source，选中状态留在这里；
              之后是特调的插入点 create.afterSourceStep -->
         <template v-else-if="currentStep === 'config' && isMfwFamily(selectedType)">
-          <StepHeading
-            :title="t('core.scripts.create.mfwSourceHeading')"
-            :description="t('core.scripts.create.mfwSourceHeadingDesc')"
-          />
+          <StepHeading :title="t('core.scripts.create.mfwSourceHeading')" />
           <component
             :is="createSections.source"
             v-model:value="selectedMfwChoice"
@@ -317,18 +314,18 @@ import {
   splitScriptTypeOptions,
   type ConfigMode,
   type CreateStepKey,
-  buildMfwReuseChoices,
   type ScriptCreateRequest,
   type TemplateRequest,
 } from './scriptCreateFlow'
+import { useMfwCreateSource } from './useMfwCreateSource'
 
 const { t } = useI18n()
 
 const StepHeading = defineComponent({
-  props: { title: { type: String, required: true }, description: { type: String, required: true } },
+  props: { title: { type: String, required: true }, description: { type: String, default: '' } },
   setup(props) {
-    return () =>
-      h('div', { class: 'step-heading' }, [h('h3', props.title), h('p', props.description)])
+    const text = () => (props.description ? [h('p', props.description)] : [])
+    return () => h('div', { class: 'step-heading' }, [h('h3', props.title), ...text()])
   },
 })
 
@@ -363,8 +360,15 @@ const selectedType = ref<ScriptType>('MAA')
 const selectedConfigMode = ref<ConfigMode>('template')
 const selectedTemplateKey = ref<string | null>(null)
 const configView = ref<'choice' | 'templates'>('choice')
-/** 'new' = 新建一个别的项目（进引导页选目录）；否则是要复用的项目所属脚本的 id */
-const selectedMfwChoice = ref<string>('new')
+const { selectedMfwChoice, mfwReuseChoices, selectedMfwReuse, skipMfwSourceStep, resetMfwSource } =
+  useMfwCreateSource({
+    selectedType,
+    isOpen: () => props.open,
+    sources: () => props.mfwSources,
+    sourcesLoading: () => props.mfwSourcesLoading,
+    sourcesError: () => props.mfwSourcesError,
+    requestSources: () => emit('request-mfw-sources'),
+  })
 const typeKeyword = ref('')
 const templateKeyword = ref('')
 let searchTimer: ReturnType<typeof setTimeout> | null = null
@@ -404,21 +408,6 @@ const createSlotContext = computed<MaaFWCreateSlotContext>(() => ({
   type: createFlavor.value.type,
   selection: selectedMfwChoice.value,
 }))
-// 可复用的项目只列与入口同类型的，同一项目多个脚本并成一行
-const mfwReuseChoices = computed(() => buildMfwReuseChoices(props.mfwSources, selectedType.value))
-// 选中的源以当前列表为准：返回再进来时列表会重新拉，源可能已在运行（busy）或已被删，
-// 残留的 id 不能直接拿去提交——那会先建出脚本再被后端拒绝，留下一个没项目的空脚本。
-const selectedMfwReuse = computed(
-  () =>
-    mfwReuseChoices.value.find(
-      choice => choice.scriptId === selectedMfwChoice.value && !choice.busy
-    ) ?? null
-)
-watch(mfwReuseChoices, () => {
-  if (selectedMfwChoice.value !== 'new' && !selectedMfwReuse.value) {
-    selectedMfwChoice.value = 'new'
-  }
-})
 const nextDisabled = computed(() => {
   if (props.submitting) return true
   if (isMfwStep.value) {
@@ -431,7 +420,7 @@ const nextDisabled = computed(() => {
 })
 const primaryButtonText = computed(() => {
   if (currentStep.value === 'type') {
-    return steps.value.length > 1
+    return steps.value.length > 1 && !skipMfwSourceStep.value
       ? t('core.scripts.create.next')
       : t('core.scripts.create.createAndConfigure')
   }
@@ -463,7 +452,7 @@ const resetDialog = () => {
   selectedConfigMode.value = 'template'
   selectedTemplateKey.value = null
   configView.value = 'choice'
-  selectedMfwChoice.value = 'new'
+  resetMfwSource()
   typeKeyword.value = ''
   templateKeyword.value = ''
 }
@@ -512,7 +501,7 @@ const handleBack = () => {
 
 const handleNext = () => {
   if (currentStep.value === 'type') {
-    if (steps.value.length > 1) {
+    if (steps.value.length > 1 && !skipMfwSourceStep.value) {
       currentStep.value = 'config'
       if (isMfwFamily(selectedType.value)) {
         emit('request-mfw-sources')

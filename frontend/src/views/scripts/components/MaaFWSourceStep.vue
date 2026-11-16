@@ -1,7 +1,8 @@
 <!-- 新建对话框 MFW 家族第二步「项目从哪来」的默认分节（契约 create.source，见
      views/EditView/MaaFWFlavor/sectionContracts.ts）。已导入过的项目直接列出来复用（从那个脚本的
      副本克隆，运行时与模型共用、不另占空间，来源目录删了也能建）；只列与入口同类型的项目。
-     第一行永远是「新建一个别的项目」。选中状态归对话框所有，这里只显示并交回选择。 -->
+     第一行永远是「导入新项目」。当前类型一个可复用的项目都没有时对话框跳过这一步。
+     选中状态归对话框所有，这里只显示并交回选择。 -->
 <template>
   <SelectableOptionList
     :model-value="value"

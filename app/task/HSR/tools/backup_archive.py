@@ -821,7 +821,7 @@ _SRA_REPLENISH_WAY_LABELS = {0: "后备开拓力", 1: "燃料", 2: "星琼"}
 """SRA trailblazePower.replenish.way 取值（与托管表单 _SRA_SELECTS 同口径，
 SRA TrailblazePowerTask.replenish）"""
 
-_SRA_DIVERGENT_MODE_LABELS = {0: "常规演算", 1: "周期演算"}
+_SRA_DIVERGENT_MODE_LABELS = {0: "刷单层", 1: "完整对局"}
 """SRA cosmicStrife.divergentUniverse.mode 取值（与托管表单 _SRA_SELECTS 同口径）"""
 
 _SRA_CURRENCY_WARS_MODE_LABELS = {0: "标准博弈", 1: "超频博弈", 2: "刷开局"}

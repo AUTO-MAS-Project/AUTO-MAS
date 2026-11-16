@@ -196,7 +196,12 @@ async def test_prefetched_manager_revalidates_candidate_before_switching_view(
         payload={
             "Info": {"Path": str(source)},
             "Embedded": imported_fields(first),
-            "Update": {"AutoUpdateMode": "BeforeRun", "Source": "GitHub"},
+            # 只有全量才做队列预下载（增量默认不预下载）
+            "Update": {
+                "AutoUpdateMode": "BeforeRun",
+                "Source": "GitHub",
+                "PackageMode": "full",
+            },
         }
     )
     await activate_config(config)

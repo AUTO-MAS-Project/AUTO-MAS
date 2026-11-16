@@ -203,6 +203,7 @@ class HSRM7AControl:
         current_config = m7a.load_m7a_yaml(config_path.read_text(encoding="utf-8-sig"))
         if not isinstance(current_config, dict):
             raise ValueError(f"三月七 config.yaml 顶层必须是对象: {config_path}")
+        effective_whitelist |= m7a.m7a_auto_patch_keys(current_config)
         patched_config = m7a.merge_whitelist(
             current_config,
             effective_patch,

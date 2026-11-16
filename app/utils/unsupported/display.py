@@ -44,3 +44,7 @@ def real_display_devices() -> set[str]:
 
 def describe_monitors() -> str:
     raise UnsupportedPlatformError("display")
+
+
+def input_desktop_unavailable() -> str | None:
+    raise UnsupportedPlatformError("display")
