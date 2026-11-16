@@ -38,6 +38,7 @@ const openUpdateHistory = async () => {
 // 历史记录的状态是后端英文枚举，展示时按当前语言映射，未知值原样显示
 const historyStatusLabels = computed<Record<string, string>>(() => ({
   success: t('core.setting.others.historyStatusSuccess'),
+  diagnostic: '下载包诊断',
   failed: t('core.setting.others.historyStatusFailed'),
   checksum_fail: t('core.setting.others.historyStatusChecksumFail'),
   interrupted: t('core.setting.others.historyStatusInterrupted'),
@@ -125,7 +126,7 @@ const showUpdateHistory = ref(false)
             {{ formatHistoryDuration(item.duration_ms) }}
             <span v-if="item.error" class="history-item-error"> — {{ item.error }}</span>
             <a-button
-              v-if="item.status && item.status !== 'success'"
+              v-if="item.status && item.status !== 'success' || item.diagnostic"
               type="link"
               size="small"
               class="history-export-button"
