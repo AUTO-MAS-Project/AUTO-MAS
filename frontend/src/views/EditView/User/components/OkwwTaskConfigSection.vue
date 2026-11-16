@@ -9,6 +9,7 @@
               :user-id="userId"
               kind="daily"
               :custom-arguments="task.IfCustomArguments"
+              :context-key="contextKey"
               :snapshot="task.DailyConfig"
               @busy="setBusy('daily', $event)"
               :disabled="disabled"
@@ -21,6 +22,7 @@
               :script-id="scriptId"
               :user-id="userId"
               kind="echo"
+              :context-key="contextKey"
               :snapshot="task.FarmEchoConfig"
               @busy="setBusy('echo', $event)"
               :disabled="disabled"
@@ -33,6 +35,7 @@
               :script-id="scriptId"
               :user-id="userId"
               :kind="panel.kind"
+              :context-key="contextKey"
               :snapshot="task.NativeConfigs[panel.filename] ?? emptyConfig"
               :disabled="disabled"
               :overlay-enabled="overlayEnabled"
@@ -70,6 +73,7 @@ import type { OkwwTaskForm } from './okwwTaskConfig'
 const task = defineModel<OkwwTaskForm>({ required: true })
 defineProps<{
   overlayEnabled: boolean
+  contextKey: string
   disabled: boolean
   userId: string
   scriptId: string

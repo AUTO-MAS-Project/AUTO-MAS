@@ -39,6 +39,31 @@ test.describe('@okww-dynamic-config', () => {
       .filter({ has: page.locator('label').filter({ hasText: 'New native limit' }) })
     const input = item.getByRole('spinbutton')
     await expect(input).toHaveValue('17')
+    const repeatCount = page
+      .locator('.ant-form-item')
+      .filter({ has: page.locator('label').filter({ hasText: 'Repeat Farm Count' }) })
+      .getByRole('spinbutton')
+    await expect(repeatCount).toHaveValue('10000')
+    await fs.writeFile(
+      path.join(configs, 'FarmEchoTask.json'),
+      JSON.stringify({
+        'Repeat Farm Count': 99,
+        'New native limit': 17,
+        'Teleport to Boss': 'Weekly Challenge',
+        'Exit After Task': true,
+        _hidden: true,
+      })
+    )
+    await page
+      .locator('.config-mode-option')
+      .filter({ has: page.locator('input[value="native"]') })
+      .click()
+    await expect(repeatCount).toHaveValue('99')
+    await page
+      .locator('.config-mode-option')
+      .filter({ has: page.locator('input[value="shared"]') })
+      .click()
+    await expect(repeatCount).toHaveValue('10000')
     const echoLabels = page.locator('.ant-tabs-tabpane-active .native-config-field label')
     await expect(echoLabels.nth(2)).toHaveText('Which Weekly Boss to Teleport')
     await expect(echoLabels.nth(4)).toHaveText('Boss')
@@ -73,9 +98,49 @@ test.describe('@okww-dynamic-config', () => {
     await input.press('Tab')
     expect((await (await saved).json()).code).toBe(200)
     expect((await (await latestSaved).json()).code).toBe(200)
+    // 一次成功、下一次失败：保留失败草稿和提示，不能被成功后的刷新吞掉。
+    let writes = 0
+    await page.route('**/api/scripts/okww/task-config', async route => {
+      if (route.request().method() !== 'POST') return route.continue()
+      writes++
+      if (writes === 1) {
+        await new Promise(resolve => setTimeout(resolve, 300))
+        return route.continue()
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 400,
+          status: 'error',
+          message: 'Save rejected for regression test',
+        }),
+      })
+    })
+    const firstEdit = page.waitForResponse(
+      r => r.url().endsWith('/api/scripts/okww/task-config') && r.request().method() === 'POST'
+    )
+    await input.fill('24')
+    const rejected = page.waitForResponse(
+      r =>
+        r.url().endsWith('/api/scripts/okww/task-config') &&
+        r.request().method() === 'POST' &&
+        r.request().postDataJSON().values['New native limit'] === 25
+    )
+    await input.fill('25')
+    await firstEdit
+    await rejected
+    await expect(page.getByText('Save rejected for regression test', { exact: true })).toBeVisible()
+    await expect(input).toHaveValue('25')
+    await page.unroute('**/api/scripts/okww/task-config')
     await page.reload()
     await page.getByRole('tab', { name: '4C Echo settings', exact: true }).click()
-    await expect(input).toHaveValue('23')
+    await expect(input).toHaveValue('24')
+    const restoredEdit = page.waitForResponse(
+      r => r.url().endsWith('/api/scripts/okww/task-config') && r.request().method() === 'POST'
+    )
+    await input.fill('23')
+    await restoredEdit
     await expect(input).toBeEnabled()
     await expect(page.locator('.ant-spin-blur')).toHaveCount(0)
     await app.evidence('okww-dynamic-new-field')
@@ -144,14 +209,19 @@ test.describe('@okww-dynamic-config', () => {
     const { planId } = await post('/api/plan/add', { type: 'OkwwPlan' })
     await post('/api/plan/update', {
       planId,
-      data: { Info: { Mode: 'ALL' }, ALL: { Key: { WhichToFarm: 'Forgery Challenge' } } },
+      data: {
+        Info: { Mode: 'ALL', Name: 'Review plan' },
+        ALL: { Key: { WhichToFarm: 'Forgery Challenge' } },
+      },
     })
-    await post('/api/scripts/user/update', {
-      scriptId,
-      userId,
-      data: { Info: { PlanMode: planId } },
-    })
+    await page.getByRole('tab', { name: 'Daily tasks', exact: true }).click()
+    // 重新加载选项后，在同一页面切换计划，字段须立即更新。
     await page.reload()
+    await page.locator('.universal-plan-select').click()
+    await page
+      .locator('.ant-select-dropdown:visible')
+      .getByText('Review plan', { exact: true })
+      .click()
     const planned = field('Which to Farm').getByRole('combobox')
     await expect(planned).toBeDisabled()
     const exit = field('Exit After Task').getByRole('switch')

@@ -1,7 +1,7 @@
 <template>
   <a-alert v-if="error" type="error" show-icon :message="error">
     <template #action
-      ><a-button @click="load">{{ t('core.edit.okwwEchoRetry') }}</a-button></template
+      ><a-button @click="load(true)">{{ t('core.edit.okwwEchoRetry') }}</a-button></template
     >
   </a-alert>
   <a-spin :spinning="initialLoading" :delay="200">
@@ -31,6 +31,7 @@ import type { OkwwConfigField } from '@/api'
 const props = defineProps<{
   scriptId: string
   userId: string
+  contextKey: string
   snapshot: Record<string, unknown>
   kind: OkwwPanelKind
   customArguments?: boolean
@@ -58,6 +59,7 @@ const hints = computed((): Record<string, string> => {
 const { readConfig, saveConfig } = useOkwwNativeConfigApi()
 const { isSaving: saving, enqueue } = useSaveQueue()
 let needsRefresh = false
+let saveFailed = false
 watch(
   saving,
   value => {
@@ -105,7 +107,14 @@ const displayValues = computed(() =>
 let revision = 0
 let draftRevision = 0
 watch(
-  () => [props.scriptId, props.userId, props.kind, JSON.stringify(props.snapshot), locale.value],
+  () => [
+    props.scriptId,
+    props.userId,
+    props.kind,
+    JSON.stringify(props.snapshot),
+    props.contextKey,
+    locale.value,
+  ],
   (current, previous) => {
     if (!previous || current.some((value, index) => value !== previous[index])) void load()
   },
@@ -115,8 +124,9 @@ onBeforeUnmount(() => {
   revision++
   emit('busy', false)
 })
-async function load() {
-  if (!props.userId || saving.value) return
+async function load(discardDraft = false) {
+  if (!props.userId || saving.value || (saveFailed && !discardDraft)) return
+  if (discardDraft) saveFailed = false
   const current = ++revision
   const draft = draftRevision
   loading.value = true
@@ -147,10 +157,17 @@ async function change(name: string, value: unknown) {
   await enqueue(async () => {
     try {
       await saveConfig(props.scriptId, props.userId, props.kind, snapshot)
-      if (current === revision) needsRefresh = true
+      if (current === revision) {
+        saveFailed = false
+        needsRefresh = true
+      }
       return true
     } catch (e) {
-      if (current === revision) error.value = e instanceof Error ? e.message : String(e)
+      if (current === revision) {
+        needsRefresh = false
+        saveFailed = true
+        error.value = e instanceof Error ? e.message : String(e)
+      }
       return false
     }
   })

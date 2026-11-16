@@ -115,26 +115,37 @@ async def save_task_config(
         raise ValueError("托管配置类型错误, 不是 OK-WW 类型")
     if config.is_locked:
         raise ValueError("OK-WW 正在运行，请结束任务后编辑")
+    from app.config import config_manager
+
     from .tools.config_fields import PANEL_FILES
 
-    user = config.UserData[uuid.UUID(user_id)]
-    if kind == "monthly" and "Monthly Card Time" in values:
-        hour = values["Monthly Card Time"]
-        if isinstance(hour, bool) or not isinstance(hour, int) or not 0 <= hour <= 23:
-            raise ValueError("月卡时间应为 0 至 23 的整数")
-    if kind == "daily":
-        patch = daily_panel_patch(user, values)
-    elif kind == "echo":
-        patch = {"FarmEchoConfig": values}
-    else:
-        patch = {
-            "NativeConfigs": {**user.Task.NativeConfigs, PANEL_FILES[kind]: values}
-        }
-    saved = await Config.update_user(
-        script_id, user_id, {"Task": patch}, precondition=lambda: not config.is_locked
-    )
-    if not saved:
-        raise ValueError("配置未保存，请结束任务后重试")
+    # 整个面板映射的读、改、写须与其他配置提交处于同一执行门内。
+    async with config_manager.execution_gate():
+        user = config.UserData[uuid.UUID(user_id)]
+        if kind == "monthly" and "Monthly Card Time" in values:
+            hour = values["Monthly Card Time"]
+            if (
+                isinstance(hour, bool)
+                or not isinstance(hour, int)
+                or not 0 <= hour <= 23
+            ):
+                raise ValueError("月卡时间应为 0 至 23 的整数")
+        if kind == "daily":
+            patch = daily_panel_patch(user, values)
+        elif kind == "echo":
+            patch = {"FarmEchoConfig": values}
+        else:
+            patch = {
+                "NativeConfigs": {**user.Task.NativeConfigs, PANEL_FILES[kind]: values}
+            }
+        saved = await Config.update_user(
+            script_id,
+            user_id,
+            {"Task": patch},
+            precondition=lambda: not config.is_locked,
+        )
+        if not saved:
+            raise ValueError("配置未保存，请结束任务后重试")
 
 
 def read_config_labels(script_id: str, locale: str) -> dict[str, str]:

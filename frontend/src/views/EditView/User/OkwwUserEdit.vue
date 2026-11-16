@@ -390,9 +390,10 @@ const formData = reactive<OkwwUserFormData>({
 const handleConfigModeChange = async (value: boolean | string) => {
   if (configActionsDisabled.value) return
   if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
-  const previous = formData.Info.Base
-  formData.Info.Base = value as 'shared' | 'independent' | 'native'
-  if (!(await saveField('Info.Base', formData.Info.Base))) formData.Info.Base = previous
+  // 等后端切换完成再刷新面板，避免新来源的读取抢在保存之前。
+  if (await saveField('Info.Base', value)) {
+    formData.Info.Base = value as 'shared' | 'independent' | 'native'
+  }
 }
 
 const handleCancel = async () => {

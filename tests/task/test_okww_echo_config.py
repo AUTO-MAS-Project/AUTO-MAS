@@ -354,3 +354,46 @@ async def test_monthly_card_time_accepts_midnight_and_last_hour(monkeypatch, hou
     field = describe_fields({"Monthly Card Time": hour}, "monthly")[0]
     assert field["minimum"] == 0
     assert field["maximum"] == 23
+
+
+@pytest.mark.asyncio
+async def test_concurrent_advanced_saves_preserve_both_panels(monkeypatch):
+    import asyncio
+
+    from app.config import config_manager
+    from app.core.config.manager import AppConfig
+
+    config = OkwwConfig()
+    await config.activate()
+    uid = config.UserData.add(OkwwUserConfig)
+    await config.UserData.commit()
+    sid = uuid.uuid4()
+    owner = SimpleNamespace(
+        ScriptConfig={sid: config}, _get_script_config_handler=lambda _: None
+    )
+
+    async def save(*args, **kwargs):
+        return await AppConfig.update_user(owner, *args, **kwargs)
+
+    monkeypatch.setattr(
+        api_service,
+        "Config",
+        SimpleNamespace(ScriptConfig={sid: config}, update_user=save),
+    )
+    async with config_manager.execution_gate():
+        combat = asyncio.create_task(
+            api_service.save_task_config(
+                str(sid), str(uid), "combat", {"Auto Target": False}
+            )
+        )
+        monthly = asyncio.create_task(
+            api_service.save_task_config(
+                str(sid), str(uid), "monthly", {"Check Monthly Card": False}
+            )
+        )
+        await asyncio.sleep(0)
+    await asyncio.gather(combat, monthly)
+    assert config.UserData[uid].Task.NativeConfigs == {
+        "AutoCombatTask.json": {"Auto Target": False},
+        "Monthly Card Config.json": {"Check Monthly Card": False},
+    }

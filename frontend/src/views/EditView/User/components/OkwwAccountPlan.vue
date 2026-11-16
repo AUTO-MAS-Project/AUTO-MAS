@@ -12,6 +12,7 @@
   <OkwwTaskConfigSection
     v-model="form.Task"
     :overlay-enabled="form.Info.IfQuickConfig"
+    :context-key="`${form.Info.Base}|${form.Info.PlanMode}`"
     :script-id="scriptId"
     :user-id="userId"
     :save-task="saveTask"
@@ -27,7 +28,7 @@ import { useI18n } from 'vue-i18n'
 import OkwwTaskConfigSection from './OkwwTaskConfigSection.vue'
 type Task = InstanceType<typeof OkwwTaskConfigSection>['$props']['modelValue']
 const form = defineModel<{
-  Info: { PlanMode?: string | null; IfQuickConfig: boolean }
+  Info: { Base?: string; PlanMode?: string | null; IfQuickConfig: boolean }
   Task: Task
 }>({ required: true })
 defineProps<{
