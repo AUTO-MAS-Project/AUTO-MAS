@@ -87,7 +87,7 @@
 | T058 | settings_change_finished：设置修改成功率及主要功能采用情况（含关闭确认开关） | 已接入，持续复核 |
 | T059 | appearance_preference_changed：主题、语言、低性能模式和自定义光标需求 | 已接入，持续复核 |
 | T060 | appearance_package_finished：本地外观导入、启用、删除是否顺利 | 已接入，持续复核 |
-| T061 | appearance_store_install_finished：主题商店发现到安装的转化 | 已接入，持续复核 |
+| T061 | appearance_store_install_finished：主题商店发现到安装的转化 | 安装入口覆盖下载准备和实际安装结果；详情与切换版本不采集安装结果 |
 | T062 | appearance_share_finished：外观上传与分享是否顺利 | 已接入，持续复核 |
 | T063 | mascot_preference_changed：桌宠采用率和性能档位选择 | 已接入，持续复核 |
 | T064 | home_activity_load_finished：首页活动信息在哪类来源不可用 | 已接入，持续复核 |
@@ -196,6 +196,7 @@ QQ 官方机器人私聊和群内提及重试托管、启动普通或循环队�
 started 未送达时不发送对应 finished。运行 UUID 只留在本机消息关联中，不进入指标属性。
 任务树快照和完成消息在前端统一生成展示投影，恢复快照不新增执行样本；
 维护派发合并、历史/OBS 会话和临时副本清理不增加统计事件或改变执行成功口径。
+
 - T010 补充：重载结果由主进程窗口恢复服务确认，页面加载完成和 Vue 挂载信号缺一不计成功；
   加载失败、再次退出、异常、超时及退出取消各有有限分类，一次尝试仅结算一次。
   Windows 会话结束不新建恢复尝试；取消关机后重新允许恢复。验证采用隔离窗口事件和本地采集器，
@@ -208,8 +209,11 @@ started 未送达时不发送对应 finished。运行 UUID 只留在本机消息
 通用脚本计划表复用 `plan_manage_finished` 与原生配置会话事件（`task_start_result`、`native_config_action_finished` 的打开与保存）；计划类型新增有限值 `UniversalPlanConfig`，不采集计划、账号、脚本 ID 或配置内容。
 
 OkNte 日常计划的快捷表格与详细编辑共享当天字段覆写。快捷保存复用计划编辑事件，详细编辑按保存接口结果记录；不采集日常参数或计划标识。
+
 - Okww 原生多账号任务：任务选择保存复用 `useUserApi.updateUser` 的 `config_write_finished`；批次仍按 MAS 用户归属结果，运行结局沿用 `taskAnalytics.ts` 的现有观察边界，不拆分或采集上游账号、任务配置及日志。
 
-Okww 日常计划复用计划管理及保存事件，账号绑定复用用户配置写入事件；不采集计划内容。
-- OK-WW 自定义启动参数的账号保存复用 `useUserApi.updateUser` 的 `config_write_finished`；运行复用既有任务启动和终态事件，不采集参数内容或任务名称。
+MAA / MaaEnd / MFW 家族全量与增量更新方式：保存沿用 `useScriptApi.updateScript` 的 `config_write_finished`；运行更新沿用现有脚本终态与手动更新观察入口，不新增逐包或回退事件，不采集基线版本、路径或 CDK。
 
+Okww 日常计划复用计划管理及保存事件，账号绑定复用用户配置写入事件；不采集计划内容。
+
+- OK-WW 自定义启动参数的账号保存复用 `useUserApi.updateUser` 的 `config_write_finished`；运行复用既有任务启动和终态事件，不采集参数内容或任务名称。

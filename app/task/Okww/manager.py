@@ -43,14 +43,13 @@ from app.utils import io as _utils_io
 
 from .AutoProxy import (
     _OKWW_REL_APP_JSON,
-    _OKWW_REL_CONFIG_DIR,
     _OKWW_REL_EXE,
     AutoProxyTask,
-    _okww_config_base,
 )
 from .BatchProxy import BatchProxyTask
 from .ScriptConfig import ScriptConfigTask
 from .tools.backup_archive import archive_native_backup
+from .tools.config_paths import _OKWW_REL_CONFIG_DIR, _okww_config_base
 from .Update import WuwaUpdateTask
 
 logger = get_logger("OK-WW 调度器")

@@ -476,6 +476,21 @@ def _excluded_stage_ids(stage_raw: Mapping[str, Any] | list) -> set[str]:
     return excluded
 
 
+def _filter_skill_summary_drops(
+    drops: tuple[DropEntry, ...], stages: Mapping[str, StageMeta]
+) -> tuple[DropEntry, ...]:
+    """技巧概要固定从 CA-5 刷取，统一约束选路、选关与编辑器候选。"""
+
+    allowed: list[DropEntry] = []
+    for drop in drops:
+        if drop.item_id in {"3301", "3302", "3303"}:
+            stage = stages.get(drop.stage_id)
+            if stage is None or stage.stage_code != "CA-5":
+                continue
+        allowed.append(drop)
+    return tuple(allowed)
+
+
 def normalize_dataset(
     demand_raw: Mapping[str, Any],
     matrix_raw: Mapping[str, Any] | list,
@@ -505,6 +520,8 @@ def normalize_dataset(
     )
     item_value = parse_item_value(item_info_raw) if item_info_raw is not None else {}
     stages = apply_composite(stages, drops, item_value)
+    # 只限制刷取来源，关卡综合效率仍计入真实副产物。
+    drops = _filter_skill_summary_drops(drops, stages)
     return CultivateDataSet(
         demands=demands,
         drops=drops,
@@ -700,6 +717,7 @@ def dataset_from_json(raw: Mapping[str, Any]) -> CultivateDataSet:
         )
         for meta in raw.get("stages", [])
     }
+    drops = _filter_skill_summary_drops(drops, stages)
     recipes = _with_local_recipes(
         tuple(
             Recipe(

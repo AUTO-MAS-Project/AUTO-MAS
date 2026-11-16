@@ -1,3 +1,4 @@
+import { importMascotPackage } from '../services/assetPackageProcess'
 import { observePackageRemoval } from '../services/appearanceAnalytics'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import type { DesktopMascotRuntime } from '../services/desktopMascotTypes'
@@ -13,7 +14,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { getAppRoot } from '../services/environmentService'
 import { getLogger } from '../services/logger'
-import { importMascotPackage, listMascots, removeMascot } from '../services/mascotPackageService'
+import { listMascots, removeMascot } from '../services/mascotPackageService'
 import { patchConfigFile } from '../utils/configFile'
 import { removeAppearanceSource } from '../services/onlineAppearanceService'
 
@@ -42,11 +43,11 @@ export function registerMascotHandlers(onChanged: () => void): void {
     broadcastMascotChange()
   }
   ipcMain.handle('mascot:list', () => listMascots(app.getPath('userData')))
-  ipcMain.handle('mascot:import', (_event, zipPath: unknown, replace: unknown = false) => {
+  ipcMain.handle('mascot:import', async (_event, zipPath: unknown, replace: unknown = false) => {
     if (typeof zipPath !== 'string' || !zipPath.toLowerCase().endsWith('.zip')) {
       return { success: false, code: 'INVALID_PACKAGE', error: '请选择 ZIP 桌宠包' }
     }
-    const result = importMascotPackage(
+    const result = await importMascotPackage(
       app.getPath('userData'),
       path.resolve(zipPath),
       replace === true

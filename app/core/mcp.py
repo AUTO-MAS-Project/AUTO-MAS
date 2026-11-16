@@ -343,6 +343,7 @@ class McpService:
         enabled = os.getenv("AUTO_MAS_ENABLE_MCP", "1") == "1"
         self._status = McpStatusData(
             enabled=enabled,
+            environmentEnabled=enabled,
             state="pending" if enabled else "skipped",
             instanceId=uuid4().hex,
             runId=uuid4().hex,
@@ -364,6 +365,12 @@ class McpService:
         self._instance: FastApiMCP | None = None
         self._client: httpx.AsyncClient | None = None
         self._routes: list[Any] = []
+
+    def configure(self, *, enabled: bool) -> None:
+        """必要配置就绪后固定本次启动策略，不触发加载。"""
+        self._status.enabled = enabled and self._status.environmentEnabled
+        self._status.state = "pending" if self._status.enabled else "skipped"
+        self._status.revision += 1
 
     def status(self) -> McpStatusData:
         snapshot = self._status.model_copy()
@@ -470,6 +477,9 @@ class McpService:
             # 唯一加载流程串行导入，禁用时不会到达这里。
             package = await self._in_thread(importlib.import_module, "fastapi_mcp")
             self._check_open()
+            from app.services.common import telemetry
+
+            telemetry.enable_mcp_integration()
             await self._stage("building")
             import httpx
 

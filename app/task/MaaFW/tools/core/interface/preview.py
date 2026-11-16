@@ -163,6 +163,9 @@ def build_interface_preview_data(
                 "description": tr_description(preset.description),
                 "taskCount": len(preset.task or []),
                 "checkedCount": checked_count,
+                # PI v2.10.4：适用的控制器名（空 = 不限）。账号页对当前控制器不满足的预设
+                # 置灰、不让应用；运行期不据它拦截
+                "controller": preset.controller or [],
                 # 实例显示名与运行日只属于用户自己的队列，项目预设没有；宿主 schema 也不声明它们
                 # 项目预设没有账号队列的跳过标记；不要把内部默认 false
                 # 暴露成预设快照的可选键。
@@ -299,6 +302,8 @@ def build_interface_preview_data(
                         "verifyError": tr_text(input_item.verify_error),
                         "patternMsg": tr_text(input_item.pattern_msg),
                         "password": input_item.password,
+                        # PI v2.10.5：text / file / directory，只决定编辑控件
+                        "inputType": input_item.input_type,
                     }
                     for input_item in option.inputs or []
                 ],

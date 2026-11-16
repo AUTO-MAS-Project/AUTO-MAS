@@ -611,7 +611,7 @@ export type { MaaFWMirrorCdkOut } from './models/MaaFWMirrorCdkOut';
 export type { MaaFWOptionCaseInfo } from './models/MaaFWOptionCaseInfo';
 export type { MaaFWOptionHotkeyInfo } from './models/MaaFWOptionHotkeyInfo';
 export type { MaaFWOptionInfo } from './models/MaaFWOptionInfo';
-export type { MaaFWOptionInputInfo } from './models/MaaFWOptionInputInfo';
+export { MaaFWOptionInputInfo } from './models/MaaFWOptionInputInfo';
 export type { MaaFWPresetInfo } from './models/MaaFWPresetInfo';
 export type { MaaFWProjectInfo } from './models/MaaFWProjectInfo';
 export type { MaaFWProjectUpdateData } from './models/MaaFWProjectUpdateData';

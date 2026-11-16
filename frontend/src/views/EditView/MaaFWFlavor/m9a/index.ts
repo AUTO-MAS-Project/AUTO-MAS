@@ -11,7 +11,7 @@ export const M9A_FLAVOR = defineMaaFWFlavor({
   type: 'M9A',
   scriptConfigType: 'M9AConfig',
   userConfigType: 'M9AUserConfig',
-  defaultScriptName: '新 M9A 脚本',
+  defaultScriptName: '新 M9A 托管',
   typeTagLabel: metadata.label,
   typeTagColor: metadata.typeTagColor,
   logo: metadata.logo,
@@ -24,13 +24,9 @@ export const M9A_FLAVOR = defineMaaFWFlavor({
     },
   },
   scriptPage: {
-    text: {
-      titleKey: 'core.edit.m9aFlavorScriptTitle',
-      sourceDirectoryKey: 'core.edit.m9aFlavorSourceDirectory',
-      sourceHintKey: 'core.edit.m9aFlavorSourceHint',
-      sourcePlaceholderKey: 'core.edit.m9aFlavorSourcePlaceholder',
-    },
-    // 登录方式（MAS 原生完成 B 服登录）与游戏更新下拉：只有 M9A 的后端特调有这两个钩子，与游戏包名并排
+    // 标题、目录标签与占位沿用通用 MFW，只在目录问号里点出是 M9A 项目
+    text: { sourceHintKey: 'core.edit.m9aFlavorSourceHint' },
+    // 登录方式（MAS 原生完成 B 服登录）与游戏更新下拉：只有 M9A 的后端特调有这两个钩子，排在游戏包名之后、各占一格
     slots: {
       besidePackageName: [
         defineMaaFWLazyComponent(() => import('./M9ALoginModeField.vue')),
@@ -42,7 +38,6 @@ export const M9A_FLAVOR = defineMaaFWFlavor({
     text: {
       accountPlaceholderKey: 'core.edit.m9aFlavorAccountPlaceholder',
       accountTooltipKey: 'core.edit.m9aFlavorAccountTooltip',
-      queueHintKey: 'core.edit.m9aFlavorQueueHint',
     },
     managed: {
       // 与后端 app/task/M9A/managed.py 的 MANAGED_ENTRIES 同一组

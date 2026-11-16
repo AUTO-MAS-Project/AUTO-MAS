@@ -81,6 +81,19 @@ export const isMaaFWDecimalInput = (inputItem: MaaFWOptionInputInfo) =>
 export const isMaaFWBooleanInput = (inputItem: MaaFWOptionInputInfo) =>
   ['bool', 'boolean'].includes(pipelineTypeOf(inputItem))
 
+/**
+ * PI v2.10.5 `input_type`：file / directory 渲染成「可编辑的路径框 + 选择按钮」，其余（含缺省的
+ * text）是普通输入框。只影响控件，值照旧是字符串、照旧过 verify；password 字段不受影响。
+ */
+export const maafwInputPathKind = (
+  inputItem: Pick<MaaFWOptionInputInfo, 'inputType' | 'password'>
+): 'file' | 'directory' | null => {
+  if (inputItem.password) return null
+  return inputItem.inputType === 'file' || inputItem.inputType === 'directory'
+    ? inputItem.inputType
+    : null
+}
+
 /** 存下来的 input 字段原值（没存就是空串） */
 export const storedMaaFWInputFieldValue = (
   stored: MaaFWTaskOptionValue | undefined,

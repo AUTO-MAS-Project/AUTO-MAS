@@ -1,10 +1,18 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { computed } from 'vue'
 import type { MaaEndConfig_Update } from '@/api'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import UpdatePackageMode from './UpdatePackageMode.vue'
 
 defineProps<{ ready: boolean }>()
 const update = defineModel<MaaEndConfig_Update>('update', { required: true })
+const packageMode = computed({
+  get: () => update.value.PackageMode ?? 'full',
+  set: (value: 'full' | 'incremental') => {
+    update.value.PackageMode = value
+  },
+})
 const emit = defineEmits<{ save: [key: string, value: boolean | string] }>()
 const { t } = useI18n()
 const handleChannel = (channel: 'stable' | 'beta') => {
@@ -19,7 +27,7 @@ const handleChannel = (channel: 'stable' | 'beta') => {
       <h3>{{ t('core.edit.maaEndProgramUpdate') }}</h3>
     </div>
     <a-row :gutter="24">
-      <a-col :span="8">
+      <a-col :span="6">
         <a-form-item :label="t('core.edit.updateChannel')">
           <a-select
             :value="update.Channel"
@@ -33,7 +41,7 @@ const handleChannel = (channel: 'stable' | 'beta') => {
           />
         </a-form-item>
       </a-col>
-      <a-col :span="8">
+      <a-col :span="6">
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
@@ -49,7 +57,14 @@ const handleChannel = (channel: 'stable' | 'beta') => {
           />
         </a-form-item>
       </a-col>
-      <a-col :span="8">
+      <a-col :span="6">
+        <UpdatePackageMode
+          v-model="packageMode"
+          :disabled="!ready || !update.TakeoverEnabled"
+          @change="emit('save', 'PackageMode', $event)"
+        />
+      </a-col>
+      <a-col :span="6">
         <a-form-item>
           <template #label>
             <FieldLabelWithHint

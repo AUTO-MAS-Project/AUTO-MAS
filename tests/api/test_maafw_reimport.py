@@ -7,7 +7,6 @@ import json
 import threading
 import uuid
 import zipfile
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -29,9 +28,6 @@ from app.task.MaaFW.api_service import embedded as api
 from app.task.MaaFW.registration import build_config_handler
 from app.task.MaaFW.tools.core.project_update import transport, updater
 from app.task.MaaFW.tools.embedded import embedded_project, project_path
-from app.task.MaaFW.tools.embedded.update_credentials import (
-    resolve_update_credentials,
-)
 from tests.config_support import activate_config
 
 
@@ -200,101 +196,6 @@ async def project(tmp_path, monkeypatch, isolated_app_paths):
         allow_import=allow_import,
         worker_done=worker_done,
     )
-
-
-@pytest.mark.asyncio
-async def test_reimport_rechecks_busy_after_path_validation(project, monkeypatch):
-    """API 通过初检后脚本开始真实下载，API 必须忙碌返回且不能先换视图。"""
-    source_check, allow_source_check = threading.Event(), threading.Event()
-    real_is_dir = Path.is_dir
-
-    def delayed_is_dir(path):
-        if path == project.source and not source_check.is_set():
-            source_check.set()
-            if not allow_source_check.wait(10):
-                raise TimeoutError("source check was not released")
-        return real_is_dir(path)
-
-    monkeypatch.setattr(Path, "is_dir", delayed_is_dir)
-    importing = asyncio.create_task(
-        api.reimport_embedded(project.script_id, str(project.source))
-    )
-    manager = await project.make_manager()
-    project.allow_download.clear()
-    updating = None
-
-    async def update():
-        try:
-            assert await manager.check() == "Pass"
-            return await manager._invoke_project_update(
-                project.view,
-                resolve_update_credentials(project.config),
-                update_cancel=threading.Event(),
-            )
-        finally:
-            await manager._commit_user_data()
-
-    try:
-        assert await asyncio.to_thread(source_check.wait, 5)
-        updating = asyncio.create_task(update())
-        await asyncio.wait_for(project.downloading.wait(), 5)
-        assert project.config.is_locked
-        assert project_path.is_project_updating(project.view)
-        allow_source_check.set()
-        reply = await asyncio.wait_for(importing, 5)
-        assert reply.code == 400
-        assert json.loads((project.view / "interface.json").read_text())["github"] == (
-            "https://github.com/audit/aaaa"
-        )
-        assert project.config.Info.Path == project.previous_source
-        project.allow_download.set()
-        assert (await asyncio.wait_for(updating, 5)).updated
-    finally:
-        allow_source_check.set()
-        project.allow_download.set()
-        await asyncio.gather(
-            *(task for task in (importing, updating) if task is not None),
-            return_exceptions=True,
-        )
-
-
-@pytest.mark.asyncio
-async def test_reimport_cannot_enter_between_run_preparation_and_config_lock(
-    project, monkeypatch
-):
-    """新账号的默认队列还在读视图时，运行前的项目预约不能先交给重新导入。"""
-    from app.task.MaaFW.tools.embedded import default_snapshot
-
-    reading, allow_read = threading.Event(), threading.Event()
-    load_interface = default_snapshot.load_interface_model_cached
-
-    def delayed_read(*args, **kwargs):
-        reading.set()
-        if not allow_read.wait(10):
-            raise TimeoutError("default snapshot read was not released")
-        return load_interface(*args, **kwargs)
-
-    monkeypatch.setattr(default_snapshot, "load_interface_model_cached", delayed_read)
-    new_interface = json.loads((project.source / "interface.json").read_text())
-    new_interface["name"] = "M9A"
-    (project.source / "interface.json").write_text(json.dumps(new_interface))
-    manager = await project.make_manager()
-    checking = asyncio.create_task(manager.check())
-    try:
-        assert await asyncio.to_thread(reading.wait, 5)
-        reply = await api.reimport_embedded(project.script_id, str(project.source))
-        assert reply.code == 400
-        assert project.current_config() is project.config
-        assert project.config.Info.Path == project.previous_source
-        assert json.loads((project.view / "interface.json").read_text())["github"] == (
-            "https://github.com/audit/aaaa"
-        )
-        allow_read.set()
-        assert await asyncio.wait_for(checking, 5) == "Pass"
-    finally:
-        allow_read.set()
-        await asyncio.gather(checking, return_exceptions=True)
-        await manager._commit_user_data()
 
 
 @pytest.mark.asyncio

@@ -6,21 +6,25 @@ MaaEnd v2.29.0 打包了 MaaFramework v5.14.0-beta.1 的原生库，binding 被�
 更新又会下包、解压、建池、撞同一个缺包错误，每天白跑一遍。
 
 备忘按**谱系 + 目标版本**记：``data/mfw/.payloads/<谱系>/precheck-<版本>.json``。
-它是整个组共有的——一个成员预检过某版本失败，组里谁也不再为它下包。只由本包和
+它是整个组共有的——一个成员预检过某版本失败，组里暂时都不再为它下包。只由本包和
 宿主侧的 ``tools/embedded/precheck_gate.py`` 读写。结构::
 
     {
       "targetVersion": "v2.29.0",
       "requirement": "maafw==5.14.0b1",
-      "kind": "binding_unavailable" | "other",
+      "kind": "binding_unavailable" | "transient" | "other",
       "failedAt": "<ISO 8601>",
       "reason": "<≤500 字>",
-      "attempts": n
+      "attempts": n,
+      "remindedOn": "<本地日期 YYYY-MM-DD>"
     }
 
 ``kind`` 决定下次运行前怎么处理：``binding_unavailable`` 轻探一下索引和
-GitHub、可得了才重新更新；``other``（磁盘满、解释器坏了……）不探、不自动
-重试，等用户手动更新。本模块只用标准库：它在核心包里，不得 import ``app.*``。
+GitHub、可得了才重新更新；``transient``（连不上索引、超时、离线）与 ``other``
+（磁盘满、解释器坏了……）不探，各自冷却一段时间后自动再试（冷却时长见
+``precheck_gate``），手动更新随时可以强制重试。``remindedOn`` 是最近一次告诉
+用户「这个版本一直没装上」的日期，每天最多提醒一次；没有这个键的旧备忘照常读。
+本模块只用标准库：它在核心包里，不得 import ``app.*``。
 """
 
 from __future__ import annotations
@@ -38,13 +42,24 @@ from .apply import _read_interface_version
 PRECHECK_MEMO_PREFIX = "precheck-"
 _VERSION_UNSAFE_RE = re.compile(r"[^0-9A-Za-z._+-]+")
 KIND_BINDING_UNAVAILABLE = "binding_unavailable"
+KIND_TRANSIENT = "transient"
 KIND_OTHER = "other"
+_KINDS = frozenset({KIND_BINDING_UNAVAILABLE, KIND_TRANSIENT, KIND_OTHER})
 REASON_MAX_CHARS = 500
-_MEMO_KEYS = ("targetVersion", "requirement", "kind", "failedAt", "reason", "attempts")
+_MEMO_KEYS = (
+    "targetVersion",
+    "requirement",
+    "kind",
+    "failedAt",
+    "reason",
+    "attempts",
+    "remindedOn",
+)
 
 # 只认「索引里没有这个版本」的文本。连不上索引（``Request failed after 3
 # retries`` / ``Failed to fetch``）与离线（``was not found in the cache``）都
-# 不算：那是网络问题，下次可能就好了，不该按「binding 不存在」去轻探。
+# 不算：那是网络问题，下次可能就好了，不该按「binding 不存在」去轻探——它们归
+# 下面的 ``transient``。
 # 前三条是 uv 0.11.26 与 pip 的真实 stderr（agent 隔离 venv 仍经 pip 装 maafw）；
 # 后几条是运行池 binding 目录（``runtime_pool/binding.py``）自己的文案：索引可达但
 # 没有这个版本 / 没有满足范围的版本、没自带 DLL 的项目遇到只有源码 binding、映射不到
@@ -58,6 +73,29 @@ _BINDING_UNAVAILABLE_PATTERNS = (
     re.compile(r"映射不到 MaaFramework 的发布 tag"),
     re.compile(r"源码打包的 binding 没有 DLL"),
     re.compile(r"binding 来自源码打包"),
+)
+
+# 网络 / 超时 / 连接类：过一阵自己就好了。前几条是 uv 0.11.26 / pip 的真实 stderr
+# （连不上索引、离线模式），中间是 httpx 与 Windows 套接字的异常文本，后几条是运行池
+# 自己的文案（``runtime_pool/binding.py``：所有索引都连不上 / 列出了版本却都下载失败；
+# ``runtime_pool/installer.py``：安装子进程超时）。先判 binding_unavailable 再判这里。
+_TRANSIENT_PATTERNS = (
+    re.compile(r"Request failed after \d+ retries", re.IGNORECASE),
+    re.compile(r"Failed to fetch", re.IGNORECASE),
+    re.compile(r"was not found in the cache", re.IGNORECASE),
+    re.compile(r"network was disabled", re.IGNORECASE),
+    re.compile(r"Could not fetch URL", re.IGNORECASE),
+    re.compile(r"Max retries exceeded", re.IGNORECASE),
+    re.compile(r"Connect(ion)?(Error|Timeout)", re.IGNORECASE),
+    re.compile(r"(Read|Write|Pool)Timeout", re.IGNORECASE),
+    re.compile(r"timed out", re.IGNORECASE),
+    re.compile(r"Connection (refused|reset|aborted)", re.IGNORECASE),
+    re.compile(r"Temporary failure in name resolution", re.IGNORECASE),
+    re.compile(r"getaddrinfo failed", re.IGNORECASE),
+    re.compile(r"WinError (10051|10054|10060|10061|10065|11001|11002)"),
+    re.compile(r"所有包索引都连不上"),
+    re.compile(r"索引都下载失败"),
+    re.compile(r"安装超时"),
 )
 
 
@@ -95,17 +133,14 @@ def write_runtime_precheck(path: Path, payload: Mapping[str, Any]) -> Path:
     record: dict[str, Any] = {key: payload.get(key) for key in _MEMO_KEYS}
     record["targetVersion"] = str(record.get("targetVersion") or "").strip()
     record["requirement"] = str(record.get("requirement") or "maafw").strip()
-    record["kind"] = (
-        KIND_BINDING_UNAVAILABLE
-        if record.get("kind") == KIND_BINDING_UNAVAILABLE
-        else KIND_OTHER
-    )
+    record["kind"] = record.get("kind") if record.get("kind") in _KINDS else KIND_OTHER
     record["failedAt"] = str(record.get("failedAt") or _now_iso())
     record["reason"] = str(record.get("reason") or "")[:REASON_MAX_CHARS]
     try:
         record["attempts"] = max(1, int(record.get("attempts") or 1))
     except (TypeError, ValueError):
         record["attempts"] = 1
+    record["remindedOn"] = str(record.get("remindedOn") or "")
 
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.tmp")
@@ -146,6 +181,8 @@ def classify_precheck_kind(reason: str) -> str:
     text = str(reason or "")
     if any(pattern.search(text) for pattern in _BINDING_UNAVAILABLE_PATTERNS):
         return KIND_BINDING_UNAVAILABLE
+    if any(pattern.search(text) for pattern in _TRANSIENT_PATTERNS):
+        return KIND_TRANSIENT
     return KIND_OTHER
 
 
@@ -162,6 +199,7 @@ def classify_precheck_failure(
     ``post_validating`` 阶段，此时目录里已经是新版本。``requirement`` 由
     调用方解析（它要读项目自带的 DLL，逻辑在 runner 包里），没有就记
     ``"maafw"``（D4：不做 None 短路，requirement 只进备忘字段）。
+    ``remindedOn`` 记成今天：预检失败当场已经告诉过用户，同一天被备忘挡下时不再提醒。
     """
 
     reason = str(exc).strip() or type(exc).__name__
@@ -177,7 +215,26 @@ def classify_precheck_failure(
         "kind": classify_precheck_kind(reason),
         "failedAt": _now_iso(),
         "reason": reason[:REASON_MAX_CHARS],
+        "remindedOn": local_today(),
     }
+
+
+def memo_failed_at(memo: Mapping[str, Any]) -> datetime | None:
+    """备忘记的失败时刻（带时区）；没有、解析不了都返回 None。"""
+
+    try:
+        failed_at = datetime.fromisoformat(str(memo.get("failedAt") or "").strip())
+    except ValueError:
+        return None
+    if failed_at.tzinfo is None:
+        failed_at = failed_at.astimezone()
+    return failed_at
+
+
+def local_today() -> str:
+    """本机当天日期（``remindedOn`` 用）。"""
+
+    return datetime.now().astimezone().date().isoformat()
 
 
 def _now_iso() -> str:
@@ -187,11 +244,14 @@ def _now_iso() -> str:
 __all__ = [
     "KIND_BINDING_UNAVAILABLE",
     "KIND_OTHER",
+    "KIND_TRANSIENT",
     "PRECHECK_MEMO_PREFIX",
     "REASON_MAX_CHARS",
     "classify_precheck_failure",
     "classify_precheck_kind",
     "clear_runtime_precheck",
+    "local_today",
+    "memo_failed_at",
     "memo_matches_version",
     "precheck_memo_path",
     "read_runtime_precheck",

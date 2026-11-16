@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ProgramUpdateSettings from './ProgramUpdateSettings.vue'
+import UpdatePackageMode from './UpdatePackageMode.vue'
 import { onScopeDispose, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ScriptMirrorCdkData } from '@/api'
@@ -77,6 +78,15 @@ const handleChannel = (channel: 'stable' | 'beta') => {
     @cdk="update = { ...update, MirrorChyanCDK: $event }"
     @save-cdk="handleBlur"
   >
+    <template #package-mode>
+      <a-col :span="6">
+        <UpdatePackageMode
+          v-model="update.PackageMode"
+          :disabled="!ready || !update.TakeoverEnabled"
+          @change="emit('change', 'PackageMode', $event)"
+        />
+      </a-col>
+    </template>
     <template #cdk-status>
       <MirrorCdkStatusHint :state="state" :checking="checking" @retry="refresh" />
     </template>

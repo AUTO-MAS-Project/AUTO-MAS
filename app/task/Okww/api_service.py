@@ -57,7 +57,7 @@ def read_task_config(script_id: str, user_id: str, kind: str) -> dict:
     """读取面板快照；首次使用时从所选基础来源初始化。"""
     from copy import deepcopy
 
-    from app.task.Okww.AutoProxy import _OKWW_REL_CONFIG_DIR
+    from .tools.config_paths import _OKWW_REL_CONFIG_DIR
     from app.task.Okww.tools.backup_archive import mas_config_dir, owner_for_mode
     from app.task.Okww.tools.config_fields import (
         PANEL_DEFAULTS,

@@ -427,18 +427,24 @@ def format_timeline(attempts: Sequence[MaaFWAttemptReport]) -> str:
     return "\n".join(lines)
 
 
+def failure_summary_tasks(record: MaaFWAttemptRecord) -> list[MaaFWTaskRecord]:
+    """:func:`failure_summary` 点名的任务：没成功也没跳过，且计入失败或属于让本轮失败的类别。"""
+
+    return [
+        task
+        for task in record.tasks
+        if task.outcome not in (OUTCOME_SUCCEEDED, OUTCOME_SKIPPED)
+        and (task.counted or task.category in _FATAL_CATEGORIES)
+    ]
+
+
 def failure_summary(attempts: Sequence[MaaFWAttemptReport]) -> str:
     """最后一次失败时的一句话：失败在哪些任务、为什么；一个任务都没开始就说整次为什么没跑成。"""
 
     if not attempts:
         return ""
     last = attempts[-1]
-    failing = [
-        task
-        for task in last.record.tasks
-        if task.outcome not in (OUTCOME_SUCCEEDED, OUTCOME_SKIPPED)
-        and (task.counted or task.category in _FATAL_CATEGORIES)
-    ]
+    failing = failure_summary_tasks(last.record)
     if failing:
         return "；".join(_task_entry(task, last) for task in failing)
     reason = attempt_reason(last)
@@ -453,6 +459,7 @@ __all__ = [
     "MaaFWAttemptReport",
     "attempt_reason",
     "failure_summary",
+    "failure_summary_tasks",
     "format_timeline",
     "human_reason",
     "task_reason",

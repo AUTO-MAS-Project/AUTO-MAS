@@ -397,3 +397,115 @@ async def test_concurrent_advanced_saves_preserve_both_panels(monkeypatch):
         "AutoCombatTask.json": {"Auto Target": False},
         "Monthly Card Config.json": {"Check Monthly Card": False},
     }
+
+
+@pytest.mark.parametrize("quick", [True, False])
+def test_echo_override_preserves_source_and_respects_quick_config(tmp_path, quick):
+    import json
+
+    from app.task.Okww.AutoProxy import AutoProxyTask
+
+    user = OkwwUserConfig()
+    user.Info.IfQuickConfig = quick
+    user.Task.FarmEchoConfig = {
+        "Teleport to Boss": "Boss Challenge",
+        "Repeat Farm Count": 5,
+    }
+    target = tmp_path / "FarmEchoTask.json"
+    target.write_text(json.dumps({"Repeat Farm Count": 100, "unknown": "preserved"}))
+    proxy = AutoProxyTask.__new__(AutoProxyTask)
+    proxy.cur_user_config = user
+    proxy.script_config_path = tmp_path
+    proxy._apply_mas_overrides()
+    values = json.loads(target.read_text(encoding="utf-8"))
+    assert values["Repeat Farm Count"] == (5 if quick else 100)
+    assert values["unknown"] == "preserved"
+    assert user.Task.FarmEchoConfig["Repeat Farm Count"] == 5
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["echo", "advanced"])
+async def test_batch_arguments_grouping_preserves_user_order(tmp_path, scenario):
+    from unittest.mock import AsyncMock
+
+    from app.models.task import UserItem
+    from app.task.Okww.manager import OkwwManager
+
+    (tmp_path / "ok-ww.exe").touch()
+    app_json = tmp_path / "data/apps/ok-ww/app.json"
+    app_json.parent.mkdir(parents=True)
+    app_json.write_text('{"current_version":"unknown"}')
+    native = app_json.parent / "working/configs"
+    native.mkdir(parents=True)
+    (native / "DailyTask.json").write_text("{}")
+    ids = [uuid.uuid4() for _ in range(5)]
+    users = [
+        UserItem(user_id=str(uid), name=str(i), status="等待")
+        for i, uid in enumerate(ids)
+    ]
+    info = SimpleNamespace(
+        task_info=SimpleNamespace(mode="AutoProxy", is_queue_task=False),
+        script_id=str(uuid.uuid4()),
+        user_list=users,
+        current_index=0,
+    )
+
+    async def select_user(index):
+        info.current_index = index
+
+    info.set_current_index = select_user
+    manager = OkwwManager(info)
+    # 下发给任务的是已校验的配置；安装路径在此测试中直接使用临时安装目录。
+    manager.script_config = SimpleNamespace(
+        Info=SimpleNamespace(RootPath=tmp_path),
+        Game=SimpleNamespace(AccountSwitchMethod="OKWW", Enabled=False),
+        Run=SimpleNamespace(ProxyTimesLimit=0),
+    )
+    drafts = [None, "-t OtherTask", "-t OtherTask", None, None]
+    manager.user_config = {
+        uid: OkwwUserConfig.model_validate(
+            {
+                "Info": {"Id": f"1301234000{i}", "Base": "native"},
+                "Task": {
+                    "IfCustomArguments": draft is not None,
+                    "CustomArguments": draft or '"ignored',
+                },
+            }
+        )
+        for i, (uid, draft) in enumerate(zip(ids, drafts))
+    }
+    if scenario == "advanced":
+        manager.user_config[ids[2]].Task.NativeConfigs = {
+            "NightmareNestTask.json": {"Which to Farm": ["Nightmare Purification"]}
+        }
+    if scenario == "echo":
+        manager.user_config[ids[2]].Task.FarmEchoConfig = {"Repeat Farm Count": 5}
+    manager.game_manager = None
+    manager.check = AsyncMock(return_value="Pass")
+    manager.prepare = AsyncMock()
+    manager.check_user_before_run = AsyncMock(return_value=True)
+    manager.notify_user_check_failure = AsyncMock()
+    manager._restore_script_config_from_temp = AsyncMock()
+    manager.record_user_run_start = lambda user: None
+    dispatched = []
+
+    async def run(task):
+        dispatched.append(
+            ([user.user_id for user in task.participants], task._build_run_arguments())
+        )
+
+    manager.spawn = AsyncMock(side_effect=run)
+    await manager.main_task()
+    default = ["-t", "MultiAccountConfigTask", "-e"]
+    expected = [
+        ([str(ids[0])], default),
+        (
+            [str(ids[1])],
+            ["-t", "OtherTask"],
+        ),
+    ]
+    if scenario in ("echo", "advanced"):
+        expected.append(([str(ids[2])], ["-t", "OtherTask"]))
+    expected.append(([str(ids[3]), str(ids[4])], default))
+    assert dispatched == expected
+    assert manager._restore_script_config_from_temp.await_count == len(expected)

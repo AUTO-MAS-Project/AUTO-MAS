@@ -57,6 +57,9 @@ NEWS_HEADERS = {
 ## 活动与最近结束的那批，再多翻也只是更早的历史公告
 NEWS_MAX_PAGES = 6
 CACHE_TTL_SECONDS = 600
+## 活动期判定取数失败后，这么久之内不再联网、直接按「说不准」：断网或官网出错时，
+## 同一轮的每个 MSS 账号建计划不用各等一次超时
+RUNNING_CHECK_FAILURE_TTL_SECONDS = 300
 REQUEST_TIMEOUT_SECONDS = 20
 ## 只留最近结束 14 天以内的，与其它活动源一个口径
 RECENT_WINDOW_DAYS = 14
@@ -129,6 +132,8 @@ MAINTENANCE_RANGE = re.compile(
 )
 
 _cache: tuple[float, dict[str, Any]] | None = None
+## 活动期判定自己取的那份（只有列表、没补封面）；失败时存 None
+_running_check_cache: tuple[float, list[dict[str, Any]] | None] | None = None
 
 
 def _at(year: str, month: str, day: str, hour: str, minute: str) -> datetime:
@@ -282,6 +287,23 @@ async def _fill_covers(
     await asyncio.gather(*(fill(item) for item in activities))
 
 
+async def _fetch_news_rows(client: httpx.AsyncClient) -> list[Mapping[str, Any]]:
+    """按页取公告列表，翻到空页或 ``NEWS_MAX_PAGES`` 为止；请求出错照常抛给调用方。"""
+
+    rows: list[Mapping[str, Any]] = []
+    for index in range(1, NEWS_MAX_PAGES + 1):
+        response = await client.get(
+            NEWS_LIST_URL, params={"index": index}, headers=NEWS_HEADERS
+        )
+        response.raise_for_status()
+        payload = response.json()
+        batch = (payload.get("data") or {}).get("rows")
+        if not isinstance(batch, list) or not batch:
+            break
+        rows.extend(item for item in batch if isinstance(item, Mapping))
+    return rows
+
+
 async def fetch_official_activities(*, force: bool = False) -> dict[str, Any] | None:
     """取回官网的活动一览（带模块级缓存）。
 
@@ -298,20 +320,9 @@ async def fetch_official_activities(*, force: bool = False) -> dict[str, Any] | 
     if not force and _cache is not None and now - _cache[0] < CACHE_TTL_SECONDS:
         return _cache[1]
 
-    rows: list[Mapping[str, Any]] = []
     try:
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
-            for index in range(1, NEWS_MAX_PAGES + 1):
-                response = await client.get(
-                    NEWS_LIST_URL, params={"index": index}, headers=NEWS_HEADERS
-                )
-                response.raise_for_status()
-                payload = response.json()
-                batch = (payload.get("data") or {}).get("rows")
-                if not isinstance(batch, list) or not batch:
-                    break
-                rows.extend(item for item in batch if isinstance(item, Mapping))
-
+            rows = await _fetch_news_rows(client)
             if not rows:
                 logger.warning("星塔旅人官网活动列表为空，按拿不到处理")
                 return None
@@ -330,6 +341,46 @@ async def fetch_official_activities(*, force: bool = False) -> dict[str, Any] | 
     return data
 
 
+async def _activities_for_running_check() -> list[dict[str, Any]] | None:
+    """活动期判定用的活动列表；取数失败为 None。
+
+    判定只要分类和起止时间：首页那份缓存还新鲜就直接用，否则自己只取列表、不补封面，
+    结果单独缓存（成功 ``CACHE_TTL_SECONDS``，失败 ``RUNNING_CHECK_FAILURE_TTL_SECONDS``），
+    不写进首页那份缓存——首页要的封面这里没取。
+    """
+
+    global _running_check_cache
+
+    now = time.time()
+    if _cache is not None and now - _cache[0] < CACHE_TTL_SECONDS:
+        return _cache[1]["activities"]
+    if _running_check_cache is not None:
+        fetched_at, cached = _running_check_cache
+        ttl = (
+            CACHE_TTL_SECONDS
+            if cached is not None
+            else RUNNING_CHECK_FAILURE_TTL_SECONDS
+        )
+        if now - fetched_at < ttl:
+            return cached
+
+    activities: list[dict[str, Any]] | None = None
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
+            rows = await _fetch_news_rows(client)
+        if rows:
+            activities = parse_activities(rows, datetime.now(BEIJING))
+            for item in activities:
+                item.pop("_newsId", None)
+        else:
+            logger.warning("星塔旅人官网活动列表为空，按拿不到处理")
+    except Exception as e:
+        logger.warning(f"获取星塔旅人官网活动失败: {type(e).__name__}: {e}")
+
+    _running_check_cache = (now, activities)
+    return activities
+
+
 async def has_running_official_activity() -> bool | None:
     """当前有没有进行中的「版本活动」。
 
@@ -341,11 +392,11 @@ async def has_running_official_activity() -> bool | None:
         当成「说不准」跳过编排，不能当成「没有活动」。
     """
 
-    data = await fetch_official_activities()
-    if data is None:
+    activities = await _activities_for_running_check()
+    if activities is None:
         return None
 
-    versions = [item for item in data["activities"] if item["kind"] == VERSION_KIND]
+    versions = [item for item in activities if item["kind"] == VERSION_KIND]
     if not versions:
         # 一条版本活动都没认出来：多半是官网换写法、解析跟不上，按「说不准」处理。
         # 报 False 会让调用方把「活动快速战斗」从队列里摘掉，整轮就漏打了

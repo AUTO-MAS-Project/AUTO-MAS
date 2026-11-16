@@ -497,10 +497,28 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   异常用异常原文，同样过 `human_reason` 过滤）与失败类别的固定说法；`errorMessage`（节点链、框架失败
   事件、原生栈）不进推送，仍照旧写进任务日志、history 状态与调度台完成面板。记录是旁路，
   **不参与重试判断**。
-- Win32 下 `Game.LaunchMode` 只有两态：`DirectExe`（默认，MAS 启动、结束后一律关闭）与
-  `AttachOnly`（其他方式启停，MAS 只接管窗口）。关不关只看 `opened_game`，没有开关；
-  DirectExe 下发现游戏已在运行时也只接管、不关。`Game.UnityResolution`（Off / 1920x1080 /
-  1280x720）走
+- Win32 下 `Game.LaunchMode` 三态：`DirectExe`（默认，MAS 按 `Game.LaunchPath` 启动、结束后关闭）、
+  `URL`（MAS 用 ShellExecute 打开 `Game.URL` 拉起游戏，如 `steam://rungameid/<appid>`，结束后关闭）与
+  `AttachOnly`（脚本或用户自己启动，MAS 只接管窗口）。
+  - DirectExe / URL 关不关只看 `opened_game`；发现游戏已在运行（控制器窗口在，或 exe 在跑）时只接管、
+    不关。重试前 `_restart_client_before_retry` 照常关、下一轮重新拉起。
+  - **URL 模式**：`LaunchPath` 必填但不用来启动，只用来认游戏（是否已在运行、等窗口、前置、关闭、Unity
+    分辨率覆盖）；缺 exe 或缺链接在运行前检查就报。打开链接前记下时刻，按 exe +
+    `min_create_time` 找进程，时限 `max(WaitTime, 60)`（Steam 冷启动慢）；链接一打开就置
+    `opened_game`。`Game.Arguments` 不用，参数写进链接（`steam://run/<appid>//<参数>/`）。关闭时
+    `kill()` 跟踪的那个之后，再把 exe 等于游戏 exe、创建时间不早于打开链接时刻（容差 2s）的进程都
+    结束（先 terminate，3s 后 kill）：游戏不是 MAS 的子进程，有的还会自我重启换 PID。
+  - **AttachOnly 兜底关闭**（`Game.CloseMode`，默认 `OnFailure`；DirectExe / URL 忽略它）：`Script`
+    交给脚本、MAS 不关；`OnFailure` 本次运行没正常完成（`run_complete` 为假：失败、超时、停止、维护
+    信号，以及 `on_crash`）时关；`Always` 结束后一律关。**硬规则：只关本次运行期间新出现的进程**——
+    账号运行开始（脚本前任务与第一次尝试的运行前设置之前）记下 `run_started_at`，收尾时候选三路（控制器窗口匹配
+    到的窗口所属进程、exe 等于 `Game.LaunchPath` 的、exe 等于可选 `Game.LauncherPath` 的），只结束
+    创建时间 ≥ `run_started_at − 2s` 的，运行前就在的各写一行「运行开始前就已打开，不关闭」；创建时间
+    读不到的按「运行前就在」处理。控制器没写窗口规则时窗口这一路不参与。**只在最终收尾做**
+    （`_close_game_after_run`：`_finalize_user` 与 `on_crash`），重试之间不关，免得和运行前设置的
+    重跑判定（`_pretasks_need_rerun`）打架；每次运行只做一次。运行前设置超时 / 停止时的清理不变，
+    照旧不碰游戏和启动器。
+- `Game.UnityResolution`（Off / 1920x1080 / 1280x720，DirectExe 与 URL 下生效）走
   `game_resolution.py`：按 `<exe>_Data/app.info` 反查 `HKCU\Software\<公司>\<产品>`，
   只改 Unity 播放器的 `Screenmanager *` 值，不碰游戏自有的那层（星铁的
   `GraphicsSettings_PCResolution`、终末地的 `video_resolution_*`），效果要实机验证。
@@ -508,7 +526,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   游戏自有层由该游戏的特调或专项自己调。
 - **项目的运行前设置（interface `pretask`）在每次尝试里跑**，不像账号级「脚本前任务」只跑一次：
   MaaEnd 的「🚀启动游戏（PC）」就是它，此时 `Game.LaunchMode` 是 AttachOnly、`opened_game` 为假，
-  MAS 既不拉起也不关游戏。第一次尝试照常跑；它自己失败按普通失败重试；成功过之后的重试只在客户端
+  MAS 不拉起游戏、重试之间也不关（结束后按 `Game.CloseMode` 兜底，见上一条）。第一次尝试照常跑；它自己失败按普通失败重试；成功过之后的重试只在客户端
   已经不在时重跑（`_pretasks_need_rerun`：MAS 刚关掉自己起的游戏 / 模拟器——关的时候报错也算，
   `_close_*` 不论成败都清 `opened_*`、下一轮会重新拉起，见 `_reset_client_for_retry`；或 Win32 下
   控制器窗口找不到——队列末尾的「关闭游戏」任务会把它关掉）。游戏还开着不重跑，免得项目的启动脚本
@@ -580,7 +598,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
       - 这一条只为挡编译。星铁 logo / 健康提示页本身有 48~60 帧，加载页等网络时有 60 帧，出帧判据
         都挡不住（阈值取 20 时 logo 页那轮被挡住，是因为碰巧有一秒只有 17.9 帧）。
     - 出帧数的来源：ModAVD 读截图共享内存里的帧号，其他模拟器读 SurfaceFlinger 的帧时间戳。
-    通用默认等待时间因此是 120s（`MaaFWConfig.DEFAULT_GAME_WAIT_TIME`），M9A 特调 15s。
+    通用默认等待时间因此是 120s（`MaaFWConfig` 的 `Game.WaitTime` 默认值），M9A 特调 15s。
 - **连上控制器后先截一张图**（`runner._prime_first_screencap`，每次连接一次，在启动画面判定与
   首个任务之前），不是多余代码：控制器没截过图时 binding 的 `cached_image` 抛
   `Failed to get cached image.`、`resolution` 是 (0, 0)，而有的项目的 agent 在 tasker sink 里于
@@ -708,8 +726,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   组同源，改一处要同步另一处。只对 `github.com/<owner>/<repo>/releases/download/...` 生效，
   Mirror 酱的一次性签名地址套前缀会把签名打坏，所以按源分流而不是按地址。
   **没有 sha256 摘要时核心包整个忽略镜像**：经第三方转发的字节必须能校验。
-- **一个组只更新一次**（`tools/embedded/view_update.run_view_update`，运行前 / 运行后 / 手动三条路
-  共用）：谱系锁（进程内）内先把触发脚本同步到组的 latest，再发现（`current` = 组版本）→ 下载一次
+- **一个组只更新一次**（`tools/embedded/view_update.run_view_update`，运行前自动更新与手动更新
+  共用；旧配置的「运行后」已按运行前执行）：谱系锁（进程内）内先把触发脚本同步到组的 latest，再发现（`current` = 组版本）→ 下载一次
   （取消令牌、GitHub 镜像、按触发脚本解析的代理、进度全部透传）→ 在 `.staging/payload-*` 里从当前
   载荷 + 包建新载荷（`payloads.build_from_package`）→ 在 staging 上预检一次（钉回 binding 也在这里，
   写的是 staging）→ `finalize` 并入共用库 → `register` 登记 → 切触发脚本的视图 → 同组空闲脚本立即切
@@ -791,8 +809,11 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   sha256 可校验）；区间这一路任何一步失败（回 200、区间不符、CRC 错、超时、取回超过资产 40% 或
   3000 个条目……）都丢掉这一批，同一次更新里照常下整包（可走镜像），用户停止照常取消。当前载荷
   damaged、旧投影规则、旧布局原生库残留时不走区间（`updater._range_delta_blocker`，先保守）；
-  本地导入的载荷可以走。环境变量 `AUTO_MAS_MAAFW_FORCE_FULL_PACKAGE=1` 一律下全量包（Mirror 酱
-  也不要差量包），供验收比对与应急，不进配置、不上界面。
+  本地导入的载荷可以走。托管级 `Update.PackageMode`（编辑页「更新方式」，M9A、MSS 继承）默认
+  `incremental`：按上面的规则走区间差量 / Mirror 酱差量包、失败回退全量；选 `full` 时一律下全量包
+  （不走区间、Mirror 酱也不要差量包）。环境变量 `AUTO_MAS_MAAFW_FORCE_FULL_PACKAGE=1` 与选 `full`
+  等效、对所有托管生效，供验收比对与应急。队列预下载（`embedded_manager.prefetch_script_update`）
+  只在 `full` 时做：增量要以开跑时的当前载荷为基准，提前下不了，`incremental` 下直接跳过。
   **直连速度保护**（`range_delta.RangeSpeedGuard`）：只在退回的整包真能走加速镜像时设（镜像没关、
   有镜像、资产有 sha256，与 `transport.download_resumable` 同一判据）——国内直连 GitHub 常年
   100 多 KB/s，40% 预算的上限要十几分钟，不如按镜像下整包；没有更快的路可退时不设。从读文件
@@ -804,7 +825,10 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   链接复制都不算：慢盘不该把区间拖成「太慢」，退回整包也要做同样的本地活），不另设墙钟上限；
   单次读取 30 秒没数据由读取超时兜住。放弃走的是同一条退回路径（先报 full、丢 `rpk-*`、整包走镜像）。
 - 预检备忘按**谱系 + 目标版本**记（`.payloads/<谱系>/precheck-<版本>.json`），组共有：一个成员预检
-  过某版本失败，组里谁也不再为它下包；只有运行前自动更新读它，手动更新等于强制重试。
+  过某版本失败，组里暂时都不再为它下包，什么时候再试看失败的类别：索引里没有这个版本的 binding
+  （`binding_unavailable`）不按时间算，每次运行前轻探一下索引，探到能装了才重试；网络类失败约
+  6 小时、其它原因约一天后自动再试（`precheck_gate.TRANSIENT_RETRY_AFTER` / `OTHER_RETRY_AFTER`）。
+  只有运行前自动更新读它，手动更新等于强制重试。
 - "检查更新"走 `version_only`，不换下载地址——带 CDK 换地址会扣 Mirror 酱当日额度。
 - 所以更新检查从不验证 CDK。编辑页 CDK 输入框下的小字（剩余天数 / CDK 有问题）走单独的
   `/maafw/mirror-cdk` → 宿主通过 `from app.services import update_transport` 调用 `update_transport.query_mirror_cdk_status`：

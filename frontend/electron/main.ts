@@ -1,3 +1,4 @@
+import { finishAssetPackageJobs } from './services/assetPackageProcess'
 import { detachPromptVirtualDisplay } from './services/virtualDisplayPromptActions'
 import { observeDiagnosticExport, observeDataBackup } from './services/diagnosticAnalytics'
 import { beginMainFeature } from './services/featureAnalytics'
@@ -72,6 +73,7 @@ import {
   markForceQuitFailed,
 } from './quitCoordinationState'
 import { attachRendererRecovery } from './services/rendererRecoveryService'
+import { promptLowPageZoom } from './services/pageZoomPrompt'
 import { patchConfigFile } from './utils/configFile'
 
 import { getLogger, initializeLogger } from './services/logger'
@@ -611,7 +613,9 @@ function cancelQuitRequest(token?: number): void {
   showMainWindow()
 }
 
-function finishCoordinatedQuit(): void {
+async function finishCoordinatedQuit(): Promise<void> {
+  if (coordinatedQuit) return
+  await finishAssetPackageJobs()
   if (coordinatedQuit) return
   closeTelemetry?.finish({
     close_kind: forceQuitInProgress ? 'force' : closeTelemetryKind,
@@ -639,7 +643,7 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
   try {
     await forceKillRelatedProcesses()
     // Runtime 终态确认后才允许 Electron 退出。
-    finishCoordinatedQuit()
+    await finishCoordinatedQuit()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     closeTelemetry?.finish({ close_kind: 'force', outcome: 'failure' })
@@ -1074,9 +1078,17 @@ function createWindow() {
   const pageLoadStartedAt = performance.now()
   win.webContents.once('dom-ready', () => recordDesktopStartup('页面 DOM 就绪', pageLoadStartedAt))
   win.once('ready-to-show', () => recordDesktopStartup('窗口可绘制', pageLoadStartedAt))
-  win.webContents.once('did-finish-load', () =>
+  win.webContents.once('did-finish-load', () => {
     recordDesktopStartup('页面加载完成', pageLoadStartedAt)
-  )
+    const checkPageZoom = () => {
+      void promptLowPageZoom(win, config.language).catch(error =>
+        logger.warn('检查或恢复界面缩放失败', error)
+      )
+    }
+    // 静默启动时等到用户打开主窗口，再显示缩放提示。
+    if (win.isVisible()) checkPageZoom()
+    else win.once('show', checkPageZoom)
+  })
   const devServer = getDevelopmentServerUrl()
   if (devServer) {
     logger.info(`加载开发服务器: ${devServer}`)
@@ -1939,9 +1951,7 @@ ipcMain.on('app-backend-close-observed', (event, request: unknown) => {
   closeTelemetryKind = 'backend'
 })
 
-ipcMain.handle('app-quit', () => {
-  finishCoordinatedQuit()
-})
+ipcMain.handle('app-quit', () => finishCoordinatedQuit())
 
 // renderer 已响应关闭请求，但用户尚未批准退出；保留请求锁，暂停强制清理。
 ipcMain.handle('app-wait-for-quit-confirmation', () => {
@@ -2373,9 +2383,6 @@ ipcMain.handle('set-initialized-version', async (_event, version: string) => {
 ipcMain.handle('get-runtime-launch-mode', () => resolveRuntimeLaunchModeDetail())
 
 // 应用生命周期
-// 在沙箱环境下运行会导致无法启动子进程，强制禁用沙箱
-app.commandLine.appendSwitch('no-sandbox')
-
 app.on('second-instance', (_event, argv) => {
   if (keepAwakeForScheduledWakeup(argv)) return
   if (mainWindow) {

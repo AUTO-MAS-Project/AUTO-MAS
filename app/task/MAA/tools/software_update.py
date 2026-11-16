@@ -55,9 +55,9 @@
 传播。同一目标版本按本地日期每天最多尝试一次，出现新版可再次取包，失败
 退避仍生效；先免费查版本与复用有效缓存，再申请带 CDK 的一次性下载地址。
 
-只支持 Mirror 酱完整包：查询不带 current_version（无增量基线，服务端只回
-完整包，对齐上游修复路径语义），响应 update_type 非 full 或包内含 OTA 清单
-一律拒收——上游启动应用路径不校验包基准版本，本模块的拒收是唯一防线。
+默认申请 Mirror 酱完整包；用户选择增量时带实际安装版本作为基线，缓存与
+下载预算按起始版本隔离。增量包下载或校验失败时重新申请全量包，登记前
+复核基线；安装和 OTA 清单解释仍交给官方更新器。
 
 下载与落盘校验全部走异步流式/线程，不阻塞 MAS 主事件循环。
 """
@@ -95,6 +95,7 @@ from .resource_update import _path_key, _run_write_thread, _sp_id
 from .software_package import (
     cache_zip_matches,
     load_cache_manifest,
+    prune_software_caches,
     read_pending_update,
     register_pending_update,
     software_cache_dir,
@@ -408,11 +409,14 @@ _state_lock = asyncio.Lock()
 class _Latest(NamedTuple):
     version: str
     url: str
+    package_type: str = "full"
+    base_version: str = ""
 
 
-async def _fetch_latest(channel: str, arch: str, cdk: str) -> _Latest:
-    """按通道架构查询最新完整包。不带 current_version：无增量基线，服务端
-    只回完整包（上游修复路径同款语义）。"""
+async def _fetch_latest(
+    channel: str, arch: str, cdk: str, *, current_version: str = ""
+) -> _Latest:
+    """按通道架构申请更新包；提供 current_version 时允许匹配基线的增量包。"""
     try:
         async with asyncio.timeout(_QUERY_TIMEOUT):
             payload = await _service_update_transport.request_mirror_resource(
@@ -423,6 +427,7 @@ async def _fetch_latest(channel: str, arch: str, cdk: str) -> _Latest:
                     "os": "win",
                     "arch": arch,
                     "sp_id": _sp_id(),
+                    **({"current_version": current_version} if current_version else {}),
                 },
                 proxy=Config.proxy,
                 timeout=_QUERY_TIMEOUT,
@@ -437,18 +442,21 @@ async def _fetch_latest(channel: str, arch: str, cdk: str) -> _Latest:
     url = str(data.get("url") or "")
     if not version or not url:
         raise _UpdateError("镜像酱响应缺少版本或下载地址")
-    if str(data.get("update_type") or "") != "full":
-        raise _UpdateError(
-            f"镜像酱未返回完整包（update_type={data.get('update_type')!r}），只支持完整包"
-        )
-    return _Latest(version=version, url=url)
+    package_type = str(data.get("update_type") or "")
+    if package_type not in {"full", "incremental"} or (
+        package_type == "incremental" and not current_version
+    ):
+        raise _UpdateError("镜像酱返回了不匹配的更新包类型")
+    if current_version and package_type == "full":
+        logger.info("MAA 无匹配的增量包，使用全量更新")
+    return _Latest(version, url, package_type, current_version)
 
 
 def _store_verified_cache(
     cache_dir: Path, part: Path, latest: _Latest, channel: str, arch: str
 ) -> None:
     """下载完成后的落盘校验与入缓存（线程内执行）。"""
-    validate_software_zip(part)
+    validate_software_zip(part, package_type=latest.package_type)
     with part.open("rb") as fh:
         sha256 = hashlib.file_digest(fh, "sha256").hexdigest()
     store_cache(
@@ -459,13 +467,17 @@ def _store_verified_cache(
             "channel": channel,
             "os": "win",
             "arch": arch,
-            "package_type": "full",
+            "package_type": latest.package_type,
+            "base_version": latest.base_version,
             "source": "mirrorchyan",
             "downloaded_at": datetime.now(timezone.utc).isoformat(),
         },
         sha256,
     )
-    logger.info(f"MAA 本体完整包已缓存: {latest.version}（win/{arch}/{channel}）")
+    logger.info(
+        f"MAA 本体更新包已缓存: {latest.version}（{latest.package_type}，win/{arch}/{channel}）"
+    )
+    prune_software_caches(software_cache_dir("win", arch, channel), keep=cache_dir)
 
 
 async def _ensure_cache(latest: _Latest, channel: str, arch: str) -> None:
@@ -473,7 +485,9 @@ async def _ensure_cache(latest: _Latest, channel: str, arch: str) -> None:
 
     调用方已检查并记账取包额度；下载失败在此记账退避并返回，不外抛。
     """
-    cache_dir = software_cache_dir(os_name="win", arch=arch, channel=channel)
+    cache_dir = software_cache_dir(
+        os_name="win", arch=arch, channel=channel, base_version=latest.base_version
+    )
     manifest = load_cache_manifest(cache_dir)
     if (
         manifest is not None
@@ -482,7 +496,11 @@ async def _ensure_cache(latest: _Latest, channel: str, arch: str) -> None:
     ):
         logger.info(f"MAA 本体更新: 目标版本 {latest.version} 已在缓存，跳过下载")
         return
-    key = _cache_key(arch, channel)
+    key = _cache_key(arch, channel) + (
+        "/" + hashlib.sha256(latest.base_version.encode()).hexdigest()[:16]
+        if latest.base_version
+        else ""
+    )
     part = cache_dir / "package.zip.part"
     try:
         # Mirror 酱临时授权 URL 显式声明来源并锁定内置下载器，不依赖全局
@@ -502,6 +520,8 @@ async def _ensure_cache(latest: _Latest, channel: str, arch: str) -> None:
     except asyncio.CancelledError:
         raise
     except Exception as e:
+        if latest.package_type == "incremental":
+            raise _UpdateError("MAA 增量包下载或校验失败") from e
         async with _state_lock:
             state = load_state(_STATE_FILE)
             state[f"download_fail_until/{key}"] = (
@@ -553,7 +573,13 @@ def _query_key(arch: str, channel: str, cdk: str) -> str:
 
 
 async def _precheck_flow(
-    maa_root: Path, channel: str, arch: str, cdk: str, *, prefetch: bool = False
+    maa_root: Path,
+    channel: str,
+    arch: str,
+    cdk: str,
+    *,
+    prefetch: bool = False,
+    incremental: bool = False,
 ) -> None:
     """预检查主体：查询 → 版本判断 → 取包入缓存。失败语义见各调用。"""
     # 不同安装分别判断当前版本，同一缓存的查询/下载串行，后来的旧安装
@@ -561,7 +587,12 @@ async def _precheck_flow(
     async with _cache_locks.setdefault(_cache_key(arch, channel), asyncio.Lock()):
         try:
             await _precheck_inner(
-                maa_root, channel, arch, cdk, refund_cancelled=prefetch
+                maa_root,
+                channel,
+                arch,
+                cdk,
+                refund_cancelled=prefetch,
+                incremental=incremental,
             )
         except asyncio.CancelledError:
             raise
@@ -587,6 +618,7 @@ async def _precheck_inner(
     *,
     target_version: str | None = None,
     refund_cancelled: bool = False,
+    incremental: bool = False,
 ) -> str | None:
     """持缓存锁检查目标与额度，必要时取包，返回确认的版本供启动入口登记。"""
     release = read_installed_release(maa_root)
@@ -603,7 +635,10 @@ async def _precheck_inner(
     if compare_versions(target, current) <= 0:
         return release[0]
 
-    cache_dir = software_cache_dir(os_name="win", arch=arch, channel=channel)
+    baseline = release[0] if incremental else ""
+    cache_dir = software_cache_dir(
+        os_name="win", arch=arch, channel=channel, base_version=baseline
+    )
     manifest = load_cache_manifest(cache_dir)
     cached = parse_version(manifest["version"]) if manifest else None
     if (
@@ -614,7 +649,9 @@ async def _precheck_inner(
     ):
         return manifest["version"]
 
-    key = _cache_key(arch, channel)
+    key = _cache_key(arch, channel) + (
+        "/" + hashlib.sha256(baseline.encode()).hexdigest()[:16] if baseline else ""
+    )
     query_key = _query_key(arch, channel, cdk)
     attempt_field = f"last_download_attempt_at/{key}"
     version_field = f"last_download_attempt_version/{key}"
@@ -636,7 +673,9 @@ async def _precheck_inner(
             return None
 
     # 每次获准取包都现查一次性地址，不复用上轮已使用或已过期的 URL。
-    latest = await _fetch_latest(channel=channel, arch=arch, cdk=cdk)
+    latest = await _fetch_latest(
+        channel=channel, arch=arch, cdk=cdk, current_version=baseline
+    )
     actual = parse_version(latest.version)
     attempt_stamp = datetime.now(timezone.utc).isoformat()
     attempt_version = (
@@ -654,7 +693,19 @@ async def _precheck_inner(
     try:
         if actual is None or compare_versions(actual, target) < 0:
             raise _UpdateError("MAA 本体包未达到已确认的目标版本，请稍后重试")
-        await _ensure_cache(latest=latest, channel=channel, arch=arch)
+        try:
+            await _ensure_cache(latest=latest, channel=channel, arch=arch)
+        except _UpdateError:
+            if latest.package_type != "incremental":
+                raise
+            logger.warning("MAA 增量更新准备失败，回退全量包")
+            latest = (
+                await _fetch_latest(channel=channel, arch=arch, cdk=cdk)
+            )._replace(base_version=baseline)
+            actual = parse_version(latest.version)
+            if actual is None or compare_versions(actual, target) < 0:
+                raise _UpdateError("回退的全量包未达到目标版本")
+            await _ensure_cache(latest=latest, channel=channel, arch=arch)
     except asyncio.CancelledError:
         if not refund_cancelled:
             raise
@@ -679,7 +730,14 @@ async def prefetch_maa_software_update(maa_root: Path, config: MaaConfig) -> Non
     release = read_installed_release(maa_root)
     channel = config.Update.Channel
     if enabled and cdk is not None and release is not None and channel is not None:
-        await _precheck_flow(maa_root, channel, release[1], cdk, prefetch=True)
+        await _precheck_flow(
+            maa_root,
+            channel,
+            release[1],
+            cdk,
+            prefetch=True,
+            incremental=config.Update.PackageMode == "incremental",
+        )
 
 
 def start_maa_software_update_precheck(
@@ -719,7 +777,13 @@ def start_maa_software_update_precheck(
         if existing is not None and not existing.done():
             return
         _precheck_tasks[key] = asyncio.create_task(
-            _precheck_flow(maa_root, channel, arch, cdk),
+            _precheck_flow(
+                maa_root,
+                channel,
+                arch,
+                cdk,
+                incremental=config.Update.PackageMode == "incremental",
+            ),
             name=f"maa-software-update-{key}",
         )
     except Exception as e:
@@ -756,7 +820,14 @@ async def prepare_maa_software_update(
         if channel is None:
             return
         key = (_path_key(maa_root), _cache_key(arch, channel))
-        cache_dir = software_cache_dir("win", arch, channel)
+        cache_dir = software_cache_dir(
+            "win",
+            arch,
+            channel,
+            base_version=version_text
+            if config.Update.PackageMode == "incremental"
+            else "",
+        )
         task = _precheck_tasks.get(key)
         downloads = [
             pending
@@ -768,6 +839,9 @@ async def prepare_maa_software_update(
             await asyncio.gather(*(asyncio.shield(pending) for pending in downloads))
         if _precheck_tasks.get(key) is task:
             _precheck_tasks.pop(key, None)
+        if read_installed_release(maa_root) != release:
+            logger.warning("MAA 安装在等待下载期间发生变化，请重新检查更新")
+            return
         cache_lock = _cache_locks.setdefault(_cache_key(arch, channel), asyncio.Lock())
         try:
             async with asyncio.timeout(_PRECHECK_GRACE):
@@ -783,6 +857,12 @@ async def prepare_maa_software_update(
             if not await _run_write_thread(cache_zip_matches, cache_dir, manifest):
                 logger.warning("MAA 本体更新: 缓存包与清单不一致，作废缓存等待重建")
                 (cache_dir / "manifest.json").unlink(missing_ok=True)
+                return
+            if (
+                manifest["package_type"] == "incremental"
+                and manifest["base_version"] != version_text
+            ):
+                logger.warning("MAA 增量包基线已变化，拒绝登记")
                 return
             current = parse_version(version_text)
             target = parse_version(manifest["version"])
@@ -812,6 +892,9 @@ async def prepare_maa_software_update(
                 version=manifest["version"],
                 package_zip=cache_dir / "package.zip",
                 package_sha256=manifest["sha256"],
+                base_version=manifest["base_version"]
+                if manifest["package_type"] == "incremental"
+                else "",
             )
             if registered:
                 logger.info(
@@ -843,7 +926,12 @@ async def has_cached_maa_software_update(
     if lock.locked():
         return False
     async with lock:
-        cache_dir = software_cache_dir("win", arch, channel)
+        cache_dir = software_cache_dir(
+            "win",
+            arch,
+            channel,
+            base_version=version if config.Update.PackageMode == "incremental" else "",
+        )
         manifest = load_cache_manifest(cache_dir)
         current = parse_version(version)
         target = parse_version(manifest["version"]) if manifest else None
@@ -883,7 +971,12 @@ async def prepare_maa_software_before_run(
         return current
     async with _cache_locks.setdefault(_cache_key(arch, channel), asyncio.Lock()):
         prepared_version = await _precheck_inner(
-            maa_root, channel=channel, arch=arch, cdk=cdk, target_version=latest_version
+            maa_root,
+            channel=channel,
+            arch=arch,
+            cdk=cdk,
+            target_version=latest_version,
+            incremental=config.Update.PackageMode == "incremental",
         )
         if prepared_version is None:
             raise RuntimeError("MAA 更新版本尚未确认，请检查网络后重试")

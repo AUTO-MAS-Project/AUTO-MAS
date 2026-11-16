@@ -63,54 +63,9 @@
             <a-select-option value="-">{{
               t('core.edit.keepOriginalConfiguration')
             }}</a-select-option>
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Insight">{{
-              t('core.edit.srcStage1')
-            }}</a-select-option>
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Possession">{{
-              t('core.edit.srcStage2')
-            }}</a-select-option>
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Hidden_Salvation">{{
-              t('core.edit.srcStage3')
-            }}</a-select-option>
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Thundersurge">{{
-              t('core.edit.srcStage4')
-            }}</a-select-option>
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Aria">{{
-              t('core.edit.srcStage5')
-            }}</a-select-option>
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Uncertainty">{{
-              t('core.edit.srcStage6')
-            }}</a-select-option>
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Cavalier">{{
-              t('core.edit.srcStage7')
-            }}</a-select-option>
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Dreamdive">{{
-              t('core.edit.srcStage8')
-            }}</a-select-option>
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Darkness">{{
-              t('core.edit.srcStage9')
-            }}</a-select-option>
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Elixir_Seekers">{{
-              t('core.edit.srcStage10')
-            }}</a-select-option>
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Conflagration">{{
-              t('core.edit.srcStage11')
-            }}</a-select-option>
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Holy_Hymn">{{
-              t('core.edit.srcStage12')
-            }}</a-select-option>
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Providence">{{
-              t('core.edit.srcStage13')
-            }}</a-select-option>
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Drifting">{{
-              t('core.edit.srcStage14')
-            }}</a-select-option>
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Jabbing_Punch">{{
-              t('core.edit.srcStage15')
-            }}</a-select-option>
-            <a-select-option value="Cavern_of_Corrosion_Path_of_Gelid_Wind">{{
-              t('core.edit.srcStage16')
-            }}</a-select-option>
+            <a-select-option v-for="(label, value) in relicStageLabels" :key="value" :value="value">
+              {{ label }}
+            </a-select-option>
           </a-select>
         </a-form-item>
       </a-col>
@@ -392,9 +347,12 @@
 </template>
 
 <script setup lang="ts">
+import type { SrcUserConfig_Stage } from '@/api/models/SrcUserConfig_Stage'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
+
+type RelicStage = Exclude<NonNullable<SrcUserConfig_Stage['Relic']>, '-'>
 
 const { t } = useI18n()
 
@@ -410,6 +368,29 @@ const emit = defineEmits<{
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
 }
+
+const relicStageLabels = computed(
+  () =>
+    ({
+      Cavern_of_Corrosion_Path_of_the_Secret_Actor: t('core.edit.srcStageSecretActor'),
+      Cavern_of_Corrosion_Path_of_Insight: t('core.edit.srcStage1'),
+      Cavern_of_Corrosion_Path_of_Possession: t('core.edit.srcStage2'),
+      Cavern_of_Corrosion_Path_of_Hidden_Salvation: t('core.edit.srcStage3'),
+      Cavern_of_Corrosion_Path_of_Thundersurge: t('core.edit.srcStage4'),
+      Cavern_of_Corrosion_Path_of_Aria: t('core.edit.srcStage5'),
+      Cavern_of_Corrosion_Path_of_Uncertainty: t('core.edit.srcStage6'),
+      Cavern_of_Corrosion_Path_of_Cavalier: t('core.edit.srcStage7'),
+      Cavern_of_Corrosion_Path_of_Dreamdive: t('core.edit.srcStage8'),
+      Cavern_of_Corrosion_Path_of_Darkness: t('core.edit.srcStage9'),
+      Cavern_of_Corrosion_Path_of_Elixir_Seekers: t('core.edit.srcStage10'),
+      Cavern_of_Corrosion_Path_of_Conflagration: t('core.edit.srcStage11'),
+      Cavern_of_Corrosion_Path_of_Holy_Hymn: t('core.edit.srcStage12'),
+      Cavern_of_Corrosion_Path_of_Providence: t('core.edit.srcStage13'),
+      Cavern_of_Corrosion_Path_of_Drifting: t('core.edit.srcStage14'),
+      Cavern_of_Corrosion_Path_of_Jabbing_Punch: t('core.edit.srcStage15'),
+      Cavern_of_Corrosion_Path_of_Gelid_Wind: t('core.edit.srcStage16'),
+    }) satisfies Record<RelicStage, string>
+)
 
 // 材料关类别筛选
 const materialCategory = ref('')
@@ -794,23 +775,7 @@ const getStageLabel = (value: string, type: string) => {
   if (!value || value === '-') return t('core.edit.disabled')
 
   const stageMap: Record<string, string> = {
-    // 遗器
-    Cavern_of_Corrosion_Path_of_Insight: t('core.edit.srcStage1'),
-    Cavern_of_Corrosion_Path_of_Possession: t('core.edit.srcStage2'),
-    Cavern_of_Corrosion_Path_of_Hidden_Salvation: t('core.edit.srcStage3'),
-    Cavern_of_Corrosion_Path_of_Thundersurge: t('core.edit.srcStage4'),
-    Cavern_of_Corrosion_Path_of_Aria: t('core.edit.srcStage5'),
-    Cavern_of_Corrosion_Path_of_Uncertainty: t('core.edit.srcStage6'),
-    Cavern_of_Corrosion_Path_of_Cavalier: t('core.edit.srcStage7'),
-    Cavern_of_Corrosion_Path_of_Dreamdive: t('core.edit.srcStage8'),
-    Cavern_of_Corrosion_Path_of_Darkness: t('core.edit.srcStage9'),
-    Cavern_of_Corrosion_Path_of_Elixir_Seekers: t('core.edit.srcStage10'),
-    Cavern_of_Corrosion_Path_of_Conflagration: t('core.edit.srcStage11'),
-    Cavern_of_Corrosion_Path_of_Holy_Hymn: t('core.edit.srcStage12'),
-    Cavern_of_Corrosion_Path_of_Providence: t('core.edit.srcStage13'),
-    Cavern_of_Corrosion_Path_of_Drifting: t('core.edit.srcStage14'),
-    Cavern_of_Corrosion_Path_of_Jabbing_Punch: t('core.edit.srcStage15'),
-    Cavern_of_Corrosion_Path_of_Gelid_Wind: t('core.edit.srcStage16'),
+    ...relicStageLabels.value,
     // 饰品
     Divergent_Universe_Bugs_Incoming: t('core.edit.srcStage17'),
     Divergent_Universe_Gilded_Recollection: t('core.edit.srcStage18'),
