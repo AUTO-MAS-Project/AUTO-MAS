@@ -88,7 +88,7 @@ def test_m7a_rejects_nested_folder_with_extra_top_level_entry(tmp_path):
         archive.writestr("March7thAssistant/March7th Assistant.exe", b"new exe")
         archive.writestr("March7thAssistant/assets/config/version.txt", "v2026.11.17")
         archive.writestr("release-notes.txt", "notes")
-    with pytest.raises(HSRUpdateError, match="安装根目录不明确"):
+    with pytest.raises(HSRUpdateError, match="无法确定的安装根目录"):
         _apply(package, root)
     assert marker.read_text(encoding="utf-8") == "v2026.11.8"
     assert not (root / "March7thAssistant").exists()
