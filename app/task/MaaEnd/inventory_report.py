@@ -1,4 +1,4 @@
-"""从 MXU 用户可见日志采集协议空间材料获得记录，不读取 IMS 缓存。
+"""从 MXU 用户可见日志采集任务奖励和协议空间材料状态。
 
 采集保留上游每一轮的原始记录；展示前由 ``merge_gain_entries`` 把同一材料
 各轮数量相加成一行合计，不据此判断库存目标是否达成。
@@ -8,7 +8,8 @@ import re
 from collections.abc import Iterable
 from html import unescape
 
-from app.task.MaaEnd.push_log import _parse_line_ts
+from app.task.MaaEnd.push_log import _parse_line_ts, _strip_emoji, maaend_plain_text
+from app.utils import LOG_TYPE_NORMAL
 from app.utils.common.log_box.results import LogEntry
 
 INVENTORY_REPORT_RULE = (r"^(?:本次获得|上游报告)：", "")
@@ -30,8 +31,65 @@ _GAIN_TITLES = (
 # 展示合并：「本次获得：材料 ×N」按材料名累加；数量允许千分位逗号，
 # 写法认不出（如夹带说明文字）的整行保持原样，不静默丢内容
 _GAIN_PREFIX = "本次获得："
-_GAIN_SEPARATORS_RE = re.compile(r"[、，,；;]")
-_GAIN_ITEM_RE = re.compile(r"(?P<name>[^、，,；;×]+?)\s*×\s*(?P<count>[\d,]+)")
+_GAIN_SEPARATORS_RE = re.compile(r"[、，；;]|,(?![0-9]{3}(?:[,\s]|$))")
+_GAIN_ITEM_RE = re.compile(r"(?P<name>[^、，,；;×]+?)\s*×\s*(?P<count>\d+(?:,\d{3})*)")
+_TASK_LINE_RE = re.compile(r"^\[([^\]]+)\]\s*(.+)$")
+
+
+class TaskRewardReport:
+    """按上游任务边界汇总各阶段已获得的物品。"""
+
+    def __init__(self) -> None:
+        self.rewards: dict[str, tuple[float | None, dict[str, int]]] = {}
+
+    def add_stage(self, lines: Iterable[str]) -> None:
+        """消费单次进程日志，每个阶段重新识别任务和奖励区块。"""
+
+        task = ""
+        in_rewards = False
+        for line in lines:
+            match = _TASK_LINE_RE.match(maaend_plain_text(line).strip())
+            if match is None:
+                in_rewards = False
+                continue
+            timestamp, text = match.groups()
+            if text.startswith("任务开始:"):
+                task = text.removeprefix("任务开始:").strip()
+                in_rewards = False
+            elif text.startswith(("任务完成:", "任务失败:")):
+                task = ""
+                in_rewards = False
+            elif task:
+                heading = next(
+                    (title for title in _GAIN_TITLES if text.startswith(title)), ""
+                )
+                if heading:
+                    in_rewards = True
+                    text = text.removeprefix(heading).strip()
+                    if not text:
+                        continue
+                if not in_rewards:
+                    continue
+                items = _gain_items(text)
+                if not items:
+                    in_rewards = False
+                    continue
+                if task not in self.rewards:
+                    self.rewards[task] = (_parse_line_ts(timestamp, None), {})
+                _, totals = self.rewards[task]
+                for item, count in items:
+                    totals[item] = totals.get(item, 0) + count
+
+    def entries(self) -> list[LogEntry]:
+        return [
+            LogEntry(
+                log_type=LOG_TYPE_NORMAL,
+                text=f"🎁 {_strip_emoji(task) or task}："
+                + "、".join(f"{item} ×{count}" for item, count in totals.items()),
+                timestamp=timestamp,
+            )
+            for task, (timestamp, totals) in self.rewards.items()
+        ]
 
 
 class InventoryReport:

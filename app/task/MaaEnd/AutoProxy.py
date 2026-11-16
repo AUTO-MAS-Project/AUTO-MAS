@@ -81,6 +81,7 @@ from app.utils.common.log import sources as log_source
 from .inventory_report import (
     INVENTORY_REPORT_RULE,
     InventoryReport,
+    TaskRewardReport,
     inventory_resolve,
     merge_gain_entries,
 )
@@ -3390,7 +3391,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         )
 
     def _collect_inventory_report(self, paths: list[Path]) -> list[str]:
-        """采集协议空间材料记录，返回带时间的展示行，并同步写入推送日志。"""
+        """采集独立材料通知的展示行，并将上游状态写入推送日志。"""
 
         report = InventoryReport(
             task_names={
@@ -3404,7 +3405,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         def append_inventory(log_type: str, text: str, ts: float) -> None:
             lines.append(f"[{datetime.fromtimestamp(ts):%H:%M:%S}] {text}")
-            if self.push_log_enabled:
+            if self.push_log_enabled and text.startswith("上游报告："):
                 append_push_log(
                     self.callbacks,
                     self.user_state(self.cur_user_item),
@@ -3440,6 +3441,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         def read() -> list[log_box.LogEntry]:
             pipeline = log_box.LogPipeline()
+            rewards = TaskRewardReport()
             pipeline.preprocessors.append(maaend_plain_text)
             for rule in MAAEND_PUSH_RULES:
                 pipeline.add_rule(*rule)
@@ -3447,9 +3449,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             for path in paths:
                 source = log_source.LogSource(path, start_from_end=False)
                 source.open()
-                for line in source.read_new():
+                lines = source.read_new()
+                rewards.add_stage(lines)
+                for line in lines:
                     pipeline.feed(line, timestamp=time())
-            return pipeline.finish()
+            return [*pipeline.finish(), *rewards.entries()]
 
         async def deliver() -> None:
             try:
