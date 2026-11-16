@@ -91,3 +91,34 @@ def test_m7a_rejects_nested_folder_with_extra_top_level_entry(tmp_path):
         _apply(package, root)
     assert marker.read_text(encoding="utf-8") == "v2026.11.8"
     assert not (root / "March7thAssistant").exists()
+
+
+def test_m7a_full_zip_single_root_installs_into_existing_root(tmp_path):
+    root = tmp_path / "install"
+    marker = _install(root)
+    package = tmp_path / "mirror.zip"
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("March7thAssistant_full/March7th Assistant.exe", b"new exe")
+        archive.writestr(
+            "March7thAssistant_full/assets/config/version.txt", "v2026.11.17"
+        )
+    result = _apply(package, root)
+    assert result.changed_files == 2
+    assert marker.read_text(encoding="utf-8") == "v2026.11.17"
+    assert not (root / "March7thAssistant_full").exists()
+
+
+def test_m7a_full_zip_with_readme_installs_without_nested_directory(tmp_path):
+    root = tmp_path / "install"
+    marker = _install(root)
+    package = tmp_path / "mirror.zip"
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("March7thAssistant_full/March7th Assistant.exe", b"new exe")
+        archive.writestr(
+            "March7thAssistant_full/assets/config/version.txt", "v2026.11.17"
+        )
+        archive.writestr("README.md", "release notes")
+    result = _apply(package, root)
+    assert result.changed_files == 2
+    assert marker.read_text(encoding="utf-8") == "v2026.11.17"
+    assert not (root / "March7thAssistant_full").exists()
