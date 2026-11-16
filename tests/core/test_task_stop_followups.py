@@ -20,6 +20,8 @@ from app.utils.common.process import runner
 
 def start_task(operation):
     class ControlledTask(Task):
+        STOP_CHECK_TIMEOUTS = {**Task.STOP_CHECK_TIMEOUTS, "finalize": 0.1}
+
         async def _run_main_task(self):
             await operation(self)
 
@@ -265,7 +267,7 @@ async def test_cleanup_deadline_preserves_standard_cancellation(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_force_stopped_modavd_does_not_restart_instance_cleanup(monkeypatch):
+async def test_modavd_cleanup_starts_before_force_stop_and_is_not_repeated(monkeypatch):
     from app.utils.common.emulator2.avd import cli
 
     ready = asyncio.Event()
@@ -280,7 +282,7 @@ async def test_force_stopped_modavd_does_not_restart_instance_cleanup(monkeypatc
         return process
 
     async def blocked_handler(process):
-        cleanup_calls.append(True)
+        cleanup_calls.append(runner.current_process_scope.get().closed)
         await asyncio.Event().wait()
 
     monkeypatch.setattr(runner, "create_subprocess", create)
@@ -297,7 +299,7 @@ async def test_force_stopped_modavd_does_not_restart_instance_cleanup(monkeypatc
         await asyncio.wait_for(ready.wait(), 3)
         task.cancel()
         await asyncio.wait_for(task.accomplish.wait(), 2)
-        assert not cleanup_calls
+        assert cleanup_calls == [False]
         await asyncio.wait_for(created[0].wait(), 2)
     finally:
         task.cancel()

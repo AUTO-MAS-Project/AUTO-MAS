@@ -34,6 +34,50 @@ from app.utils.common.emulator2.avd.manager import _AvdCore
 
 
 @pytest.mark.asyncio
+async def test_started_emulator_survives_task_process_cleanup(tmp_path):
+    import psutil
+
+    from app.utils.common.process.scope import TaskProcessScope, current_process_scope
+
+    script = tmp_path / "start.py"
+    script.write_text(
+        "import json,subprocess,sys\n"
+        "p=subprocess.Popen([sys.executable,'-I','-c','import time; time.sleep(30)'],"
+        "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\n"
+        "print(json.dumps({'ok':True,'data':{'pid':p.pid}}))\n",
+        encoding="utf-8",
+    )
+
+    async def runner(args, timeout, timeout_handler, breakaway):
+        return await _run_process(
+            [sys._base_executable, "-I", str(script)],
+            timeout,
+            timeout_handler,
+            breakaway,
+        )
+
+    cli = ModAvdCli(tmp_path, exe=sys.executable, runner=runner)
+    scope = TaskProcessScope()
+    child = None
+    token = current_process_scope.set(scope)
+    try:
+        result = await cli.start("1")
+        child = psutil.Process(result["pid"])
+        child.create_time()
+        await scope.force_close()
+        assert child.is_running(), "停止任务不能强制结束已经启动的模拟器"
+        with pytest.raises(asyncio.CancelledError):
+            await cli.start("1")
+    finally:
+        current_process_scope.reset(token)
+        if child is not None and child.is_running():
+            child.kill()
+            await asyncio.to_thread(child.wait, timeout=3)
+        if not scope.closed:
+            await scope.force_close()
+
+
+@pytest.mark.asyncio
 async def test_create_retries_without_timeout_for_v01_usage_error(
     tmp_path: Path,
 ) -> None:

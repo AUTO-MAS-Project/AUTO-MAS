@@ -490,7 +490,12 @@ class TaskExecuteBase(ABC):
             try:
                 started_at = time.monotonic()
                 logger.info(f"任务执行结束，开始收尾: {type(self).__name__}")
-                if self.wait_for_finalizer_on_cancel:
+                from app.utils.common.process.scope import current_process_scope
+
+                scope = current_process_scope.get()
+                if self.wait_for_finalizer_on_cancel or (
+                    scope is not None and scope.requested
+                ):
                     await self._run_final_task()
                 else:
                     try:
@@ -510,12 +515,20 @@ class TaskExecuteBase(ABC):
         await self.final_task()
 
     def _start_finalizer(self, operation) -> asyncio.Task:
-        from app.utils.common.process.scope import current_process_scope
-
-        finalizer = asyncio.create_task(
-            operation, name=f"{type(self).__name__}.finalize"
+        from app.utils.common.process.scope import (
+            current_process_scope,
+            current_stop_check,
         )
+
         scope = current_process_scope.get()
+        # 收尾命令属于停止确认，沿原进程入口执行，超时后统一回收。
+        token = current_stop_check.set(scope)
+        try:
+            finalizer = asyncio.create_task(
+                operation, name=f"{type(self).__name__}.finalize"
+            )
+        finally:
+            current_stop_check.reset(token)
         if scope is not None and self.stop_finalizer_timeout is not None:
             scope.watch_finalizer(finalizer, timeout=self.stop_finalizer_timeout)
         return finalizer

@@ -28,7 +28,13 @@ from pathlib import Path
 
 import psutil
 
-from app.utils import UnsupportedPlatformError, get_logger, process_platform, window
+from app.utils import (
+    UnsupportedPlatformError,
+    get_logger,
+    is_admin,
+    process_platform,
+    window,
+)
 
 from .runner import create_subprocess
 from .scope import current_process_scope
@@ -149,6 +155,7 @@ class ProcessManager:
         self.reseek_target = reseek_target
         self._target_info: ProcessInfo | None = None
         self._target_create_time: float | None = None
+        self._adopt_target = True
         self._drain_tasks: list[asyncio.Task[None]] = []
 
     @property
@@ -227,6 +234,9 @@ class ProcessManager:
         await self.clear()
 
         if elevated and process_platform.platform_process.supports_elevation:
+            # 低权限后端不能将 UAC 提权目标加入 Job；仍登记外部归属，
+            # 停止时按实际结束结果确认，不把缺少权限当作清理成功。
+            self._adopt_target = is_admin()
             # 以管理员权限启动进程（触发 UAC），ShellExecute 不返回子进程句柄，
             # 因此无法直接持有 process，仅支持通过 target_process 追踪。
             open_elevated = process_platform.platform_process.prepare_elevated()
@@ -320,6 +330,8 @@ class ProcessManager:
         target_process: ProcessInfo,
         timeout_seconds: float = 60.0,
         min_create_time: float | None = None,
+        *,
+        owned: bool = True,
     ) -> None:
         """查找目标进程
 
@@ -328,6 +340,7 @@ class ProcessManager:
             timeout_seconds: 搜索超时秒数，按单调时钟计量，不受系统时钟跳变影响
             min_create_time: 进程创建时间下限（epoch 秒），早于该时刻创建的同名进程视为
                 启动前的残留实例并跳过，避免错误跟踪旧进程（留 2 秒容差吸收时间戳偏差）
+            owned: 明确接管时登记任务清理归属；仅观察已有窗口时传 False。
         """
 
         def _scan() -> tuple[psutil.Process, float | None] | None:
@@ -352,8 +365,10 @@ class ProcessManager:
                 proc, create_time = found
                 self.target_process = proc
                 scope = current_process_scope.get()
-                if scope is not None:
-                    scope.track(proc)
+                if scope is not None and owned:
+                    scope.track(proc, adopt=self._adopt_target)
+                    if not self._adopt_target:
+                        logger.info("提权进程使用外部跟踪，未加入任务进程组")
                 # 记录目标信息与创建时间, 供 reseek_target 改绑后继进程。
                 # 创建时间取扫描阶段已读到的值, 不重新查询: 进程可能在扫描后
                 # 退出而抛异常, 受保护进程的创建时间也可能读不到
@@ -460,6 +475,7 @@ class ProcessManager:
         self.target_process = None
         self._target_info = None
         self._target_create_time = None
+        self._adopt_target = True
 
     async def is_visible(self) -> bool:
         """检查主进程窗口是否可见

@@ -41,7 +41,10 @@ import psutil
 
 from app.utils import get_logger
 from app.utils.common.process import runner as _utils_process_runner
-from app.utils.common.process.scope import current_process_scope
+from app.utils.common.process.scope import (
+    current_process_scope,
+    detached_process_context,
+)
 
 from .host import AdbPortConflict
 from .instances import config_path, read_ini, resolution_for
@@ -679,11 +682,17 @@ class ModAvdCli:
 
         await _wait_start_turn()
         try:
-            return await self._call(
-                "start",
-                *args,
-                timeout=process_timeout,
-                timeout_handler=stop_started_cli,
+            if (scope := current_process_scope.get()) is not None:
+                scope.ensure_can_start()
+            # 模拟器不属于任务进程组，停止脚本时不能连带强杀它。
+            return await asyncio.create_task(
+                self._call(
+                    "start",
+                    *args,
+                    timeout=process_timeout,
+                    timeout_handler=stop_started_cli,
+                ),
+                context=detached_process_context(),
             )
         except CLIError as error:
             if error.code in _STOP_AFTER_START_ERRORS:
