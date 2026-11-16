@@ -22,7 +22,12 @@ test.describe('@okww-dynamic-config', () => {
     await fs.writeFile(path.join(configs, 'DailyTask.json'), '{}')
     await fs.writeFile(
       path.join(configs, 'FarmEchoTask.json'),
-      JSON.stringify({ 'New native limit': 17, 'Exit After Task': true, _hidden: true })
+      JSON.stringify({
+        'New native limit': 17,
+        'Teleport to Boss': 'Weekly Challenge',
+        'Exit After Task': true,
+        _hidden: true,
+      })
     )
     const { scriptId } = await post('/api/scripts/add', { type: 'Okww' })
     await post('/api/scripts/update', { scriptId, data: { Info: { RootPath: install } } })
@@ -34,6 +39,9 @@ test.describe('@okww-dynamic-config', () => {
       .filter({ has: page.locator('label').filter({ hasText: 'New native limit' }) })
     const input = item.getByRole('spinbutton')
     await expect(input).toHaveValue('17')
+    const echoLabels = page.locator('.ant-tabs-tabpane-active .native-config-field label')
+    await expect(echoLabels.nth(2)).toHaveText('Which Weekly Boss to Teleport')
+    await expect(echoLabels.nth(4)).toHaveText('Boss')
     await expect(
       page.locator('.ant-tabs-tabpane-active label').filter({ hasText: 'Exit After Task' })
     ).toHaveCount(0)

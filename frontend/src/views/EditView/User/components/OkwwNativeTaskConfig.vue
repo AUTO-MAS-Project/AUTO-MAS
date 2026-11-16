@@ -73,10 +73,26 @@ const loading = ref(false)
 const error = ref('')
 const fields = ref<OkwwConfigField[]>([])
 const initialLoading = computed(() => loading.value && fields.value.length === 0)
+// 三种传送序号按当前传送类型显示，共用第三个位置。
+const echoFieldOrder = [
+  'Teleport to Boss',
+  'Boss Level',
+  'Which Weekly Boss to Teleport',
+  'Which Boss Challenge to Teleport',
+  'Which Special Nightmare to Teleport',
+  'Repeat Farm Count',
+  'Boss',
+  'Combat Wait Time',
+]
+const echoPosition = (name: string) => {
+  const index = echoFieldOrder.indexOf(name)
+  return index < 0 ? echoFieldOrder.length : index
+}
 // 每日附加任务不读取4C退出选项，仅隐藏控件，保留原生值。
 const visibleFields = computed(() =>
   fields.value
     .filter(field => props.kind !== 'echo' || field.name !== 'Exit After Task')
+    .sort((a, b) => (props.kind === 'echo' ? echoPosition(a.name) - echoPosition(b.name) : 0))
     .map(field =>
       forcedExit.value && field.name === 'Exit After Task' ? { ...field, disabled: true } : field
     )
