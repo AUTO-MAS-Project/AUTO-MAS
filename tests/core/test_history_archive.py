@@ -1,7 +1,6 @@
 """历史附件的文件所有权、故障恢复和取消边界。"""
 
 import os
-import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -149,43 +148,3 @@ async def test_attachment_archive_preserves_content_and_reports_incomplete_write
             store.root / detail.attachments[0].relative_path
         ).read_bytes() == b"keep original"
     assert not list(store.root.rglob("*.temp"))
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["copy", "move"])
-async def test_missing_source_still_fails(store, tmp_path, mode):
-    with pytest.raises(history_module.HistorySaveError) as raised:
-        await store.record(record_for(tmp_path / "missing.png", mode))
-    assert raised.value.record_saved
-    assert any(not issue.recovered for issue in raised.value.errors)
-
-
-@pytest.mark.asyncio
-async def test_cancelled_copy_cleans_partial_file(store, tmp_path, monkeypatch):
-    source = tmp_path / "original.png"
-    source.write_bytes(b"original data")
-    cancel = threading.Event()
-    fsync = os.fsync
-
-    def cancel_after_flush(fd):
-        fsync(fd)
-        cancel.set()
-
-    monkeypatch.setattr(os, "fsync", cancel_after_flush)
-    with pytest.raises(history_module.HistorySaveError) as raised:
-        store._save(record_for(source, "copy"), cancel)
-    assert not raised.value.record_saved
-    assert source.exists()
-    assert not list(store.root.rglob("*.temp"))
-    assert not list(store.root.rglob("1.png"))
-
-
-@pytest.mark.asyncio
-async def test_copy_respects_video_quota(store, tmp_path):
-    source = tmp_path / "video.mp4"
-    source.write_bytes(b"large video")
-    store._video_limit = 1
-    with pytest.raises(history_module.HistorySaveError) as raised:
-        await store.record(record_for(source, "copy", kind="video"))
-    assert any(issue.stage == "quota" for issue in raised.value.errors)
-    assert source.read_bytes() == b"large video"

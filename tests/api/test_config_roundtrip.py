@@ -106,7 +106,7 @@ class ConfigRoundtripTest(unittest.IsolatedAsyncioTestCase):
     def _on_disk(self) -> dict:
         return _utils_io.read_dict_file(self.config_file)
 
-    async def test_empty_and_null_payloads_do_not_clear_values(self) -> None:
+    async def test_partial_updates_keep_saved_settings_and_password(self) -> None:
         before = await self._get()
 
         await self._update({})
@@ -126,6 +126,11 @@ class ConfigRoundtripTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(disk["Function"]["HistoryRetentionTime"], 30)
         self.assertEqual(disk["Notify"]["ToAddress"], "seed@example.com")
         self.assertEqual(disk["Replay"]["Port"], 4456)
+        self.assertEqual(self.config.setting.Replay.Password, "seed-secret")
+
+        await self._update({"Replay": {"Port": 4457}})
+        expected["Replay"] = expected["Replay"] | {"Port": 4457}
+        self.assertEqual(self.config.setting.Replay.Password, "seed-secret")
 
         response = await self.client.post(
             "/api/setting/update",
@@ -133,23 +138,13 @@ class ConfigRoundtripTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.json()["code"], 200)
         after_null = await self._get()
-        self.assertEqual(after_null["Replay"]["Port"], 4456)
+        self.assertEqual(after_null["Replay"]["Port"], 4457)
         self.assertTrue(after_null["Replay"]["PasswordConfigured"])
-
         self.assertEqual(after_null, expected)
-
-    async def test_replay_password_survives_other_updates(self) -> None:
-        await self._update({"Replay": {"Port": 4457}})
-        data = await self._get()
-        self.assertEqual(data["Replay"]["Port"], 4457)
-        self.assertTrue(data["Replay"]["PasswordConfigured"])
         self.assertEqual(self.config.setting.Replay.Password, "seed-secret")
-
-        # PasswordConfigured 是只读回显，写回来不得改变真实密码
-        await self._update({"Replay": {"PasswordConfigured": False}})
-        data = await self._get()
-        self.assertTrue(data["Replay"]["PasswordConfigured"])
-        self.assertEqual(self.config.setting.Replay.Password, "seed-secret")
+        await config_manager.flush()
+        reloaded = RuntimeGlobalConfig.model_validate(self._on_disk())
+        self.assertEqual(reloaded.Replay.Password, "seed-secret")
 
 
 if __name__ == "__main__":

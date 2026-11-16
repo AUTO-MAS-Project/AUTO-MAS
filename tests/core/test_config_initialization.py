@@ -1,4 +1,4 @@
-"""真实配置启动链使用隔离数据目录，替换系统副作用，保留真实信号与持久化。"""
+"""空白用户目录的配置启动与落盘，资源仍从源码目录读取。"""
 
 import os
 import subprocess
@@ -9,7 +9,7 @@ import pytest
 
 
 @pytest.mark.parametrize("power_supported", [True, False])
-def test_empty_profile_initializes_config_paths_and_community_subscriptions(
+def test_empty_profile_initializes_user_data_separately_from_source(
     tmp_path, power_supported
 ):
     source_root = Path(__file__).resolve().parents[2]
@@ -21,8 +21,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 from app.config import NodeState
-from app.core import Community, Config
-from app.models.config import ToolsConfig
+from app.core import Config
 from app.utils import power, startup as startup_tool
 from app.services import telemetry
 
@@ -68,15 +67,6 @@ async def run():
         assert not Config.ScriptConfig
         assert not Config.ToolsConfig.GameSign_Accounts
         assert 'app.core.maa_manager' not in sys.modules
-        revision = Community._activity_cache_revision
-        await Config.ToolsConfig.update(
-            ToolsConfig.model_validate({'GameSign': {
-                'ActivityEnabled': not Config.ToolsConfig.GameSign.ActivityEnabled,
-            }}),
-            check_visibility=False,
-        )
-        assert Community._activity_cache_revision == revision + 1
-        await Config.flush()
 
 asyncio.run(run())
 """

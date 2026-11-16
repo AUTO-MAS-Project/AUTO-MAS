@@ -8,17 +8,28 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.core.background_tasks import BackgroundTaskRegistry
-from app.models.task import LogRecord, TaskScriptItem, TaskUserItem
+from app.models.task import LogRecord, TaskItem, TaskScriptItem, TaskUserItem
 from app.services.common import obs_replay
 from app.task import history_core
-from tests.runtime_support import create_runtime_tree
 
 
 @pytest.mark.asyncio
 async def test_capture_session_owns_each_run_until_archive_or_cancelled_cleanup(
     tmp_path, monkeypatch
 ):
-    root, script, user = await create_runtime_tree()
+    root = TaskItem()
+    await root.activate()
+    script_id = root.scripts.add(
+        TaskScriptItem, payload={"info": {"script_id": "script", "name": "Script"}}
+    )
+    await root.scripts.commit()
+    script = root.scripts[script_id]
+    user_id = script.users.add(
+        TaskUserItem, payload={"info": {"user_id": "user", "name": "User"}}
+    )
+    await script.users.commit()
+    user = script.users[user_id]
+    await root.set_current_index(0)
     history = history_core.TaskHistorySession(root)
     registry = BackgroundTaskRegistry()
     monkeypatch.setattr(history_core, "BackgroundTaskManager", registry)

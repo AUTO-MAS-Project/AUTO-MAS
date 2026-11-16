@@ -1,17 +1,8 @@
 """Queue config builders shared by scheduler regression tests."""
 
-from contextlib import contextmanager
 from datetime import timedelta
-from unittest.mock import patch
 
 from app.models.config import QueueConfig, QueueItem, TimeSet
-
-
-@contextmanager
-def creation_time(now):
-    with patch("app.core.task_manager.datetime") as clock:
-        clock.now.return_value = now
-        yield
 
 
 async def make_queue(queues, sid, *, now, startup="Never", timed=False, cycle=True):

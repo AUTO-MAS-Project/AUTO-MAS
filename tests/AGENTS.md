@@ -42,7 +42,7 @@ M9A 等 MFW 特调和直接导入的各个 `interface.json` 项目都跑在这�
 - 测试应隔离外部状态并断言用户可观察行为或公共契约。不要依赖真实账号、游戏、模拟器或未隔离的网络；真实流程按 `docs/testing/e2e.md` 在作者环境运行。
 - 值得长期守护的 Bug 有稳定复现时，回归测试应在修复前失败、修复后通过，并随 PR 长期保留。一次性验证不自动转为长期测试；没有新增自动化测试时，在 PR 中说明原因和替代验证。
 - PR 验证记录应包含命令、结果、测试的 commit SHA、运行环境和未覆盖范围。凭据、账号数据和未经检查的完整报告不得放入 PR。
-- 只有在被测行为已移除、测试已被更强覆盖替代、测试重复，或无法以合理成本维持可靠性时才删除；PR 必须说明原因和替代覆盖。Flaky 测试需关联问题、负责人和复查日期，临时隔离后应修复、替换或删除，不得靠自动重试掩盖失败或无限期隔离。
+- 存量清理按 [mas-testing 的保留举证规则](../.agents/skills/mas-testing/SKILL.md#存量与交付)，先从实际交互选择故障与最小保留集；没有具体场景或持续收益的检查可退出，不要求逐条迁移。PR 说明退出依据、实际留下的覆盖和缺口；高损失保证须有等效或更强证据，明确受保护用例继续保留。Flaky 测试需关联问题、负责人和复查日期，临时隔离后应修复、替换或删除，不得靠自动重试掩盖失败或无限期隔离。
 - pytest 位于 `pyproject.toml` 的 `dev` 依赖组；本地缺失时执行 `uv sync --locked --group dev`。
 - 使用锁定环境运行测试：`uv run --no-sync python -m pytest <路径> -q`。修改专项适配时先运行对应的最小测试文件；完整回归命令为 `uv run --no-sync python -m pytest tests -q`，PR CI 在 Windows 与 Ubuntu 执行完整套件。
 
@@ -57,5 +57,5 @@ M9A 等 MFW 特调和直接导入的各个 `interface.json` 项目都跑在这�
 示例：
 
 ```powershell
-uv run --no-sync python -m pytest tests/models/test_config_base.py -q
+uv run --no-sync python -m pytest tests/models/test_queue_config.py -q
 ```

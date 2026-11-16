@@ -4,29 +4,9 @@ import asyncio
 
 from blinker import Signal
 
-from app.models.task import TaskItem, TaskMode, TaskScriptItem, TaskUserItem
+from app.models.task import TaskItem, TaskMode
 from app.task.history_core import TaskHistorySession
 from app.task.legacy import TaskExecuteBase
-
-
-async def add_script(info, script_id, user_id=None):
-    if info.activation_state.value == "inactive":
-        await info.activate()
-    uid = info.scripts.add(
-        TaskScriptItem,
-        payload={"info": {"script_id": script_id, "name": "test", "status": "运行"}},
-    )
-    await info.scripts.commit()
-    script = info.scripts[uid]
-    if user_id is not None:
-        script.users.add(
-            TaskUserItem,
-            payload={"info": {"user_id": user_id, "name": "test", "status": "等待"}},
-        )
-        await script.users.commit()
-        await script.set_current_index(0)
-    await info.set_current_index(0)
-    return script
 
 
 class StopTask(TaskExecuteBase):

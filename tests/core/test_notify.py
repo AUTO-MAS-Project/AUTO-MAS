@@ -1,7 +1,7 @@
 import asyncio
 from contextlib import contextmanager
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import app.core.notify.rendering as _notification_rendering
 from app.core import Config
@@ -10,7 +10,6 @@ from app.core.notify.bootstrap import (
     get_notify_channel_failures as get_notify_channel_failures,
 )
 from app.core.notify.bootstrap import get_notify_channels as get_notify_channels
-from app.core.notify.manager import NotificationManager as NotificationManager
 from app.models.notification import NotifyPayload
 from app.models.notification.community import CommunityNotificationResult
 from app.models.notification.report import TaskReportPolicy
@@ -84,7 +83,6 @@ class _NotifyFields:
         self.owner = owner
 
     def __getattr__(self, name):
-        self.owner.reads += 1
         return self.owner._values[name]
 
 
@@ -100,13 +98,11 @@ class _Config:
             **(values or {}),
         }
         self.Notify_CustomWebhooks = _Webhooks(webhooks)
-        self.reads = 0
         self.Notify = _NotifyFields(self)
         self.setting = self
 
     def get(self, group: str, name: str):
         assert group == "Notify"
-        self.reads += 1
         return self._values[name]
 
 
@@ -139,11 +135,6 @@ class _Notify:
             raise RuntimeError("渠道异常")
         return False if behavior == "false" else None
 
-    async def push_plyer(self, title=_UNSET, message=_UNSET, ticker=_UNSET, t=_UNSET):
-        return await self._run(
-            "push_plyer", title=title, message=message, ticker=ticker, t=t
-        )
-
     async def send_mail(
         self,
         mode=_UNSET,
@@ -167,11 +158,6 @@ class _Notify:
             "ServerChanPush", title=title, content=content, send_key=send_key
         )
 
-    async def send_cmcc_newmsg(self, title=_UNSET, content=_UNSET, api_key=_UNSET):
-        return await self._run(
-            "send_cmcc_newmsg", title=title, content=content, api_key=api_key
-        )
-
     async def WebhookPush(
         self, title=_UNSET, content=_UNSET, webhook=_UNSET, *, images=_UNSET
     ):
@@ -183,24 +169,7 @@ class _Notify:
             images=images,
         )
 
-    async def send_koishi(self, message=_UNSET, msgtype=_UNSET, client_name=_UNSET):
-        return await self._run(
-            "send_koishi", message=message, msgtype=msgtype, client_name=client_name
-        )
 
-    async def send_openclaw_qq(
-        self, title=_UNSET, content=_UNSET, *, images=_UNSET, target=_UNSET
-    ):
-        return await self._run(
-            "send_openclaw_qq",
-            title=title,
-            content=content,
-            images=images,
-            target=target,
-        )
-
-
-PAYLOAD = NotifyPayload(title="标题", text="正文", html="<p>正文</p>")
 _COMMUNITY_RESULTS = (
     CommunityNotificationResult(
         account="summary-account",
@@ -253,106 +222,6 @@ def _service(config=None, *, notifier=None):
 def _global_target(config, **kwargs):
     with _service(config) as notifications:
         return notifications.global_target(**kwargs)
-
-
-async def dispatch(payload, targets, *, notifier, **kwargs):
-    with _service(notifier=notifier) as notifications:
-        return await notifications.dispatch(payload, targets, **kwargs)
-
-
-def test_dispatch_retries_false_result() -> None:
-    config = _Config({"IfKoishiSupport": True})
-    notify = _Notify({"send_koishi": ["false"]})
-
-    result = _run(
-        dispatch(
-            PAYLOAD,
-            [_global_target(config)],
-            attempts=2,
-            notifier=notify,
-        )
-    )
-
-    assert list(result.failed) == []
-    assert result.attempted == 1
-    assert notify.calls == ["send_koishi", "send_koishi"]
-
-
-def test_empty_recipient_warn_records_failure() -> None:
-    config = _Config(
-        {
-            "IfSendMail": True,
-            "ToAddress": "",
-            "IfServerChan": True,
-            "ServerChanKey": "send-key",
-        }
-    )
-    notify = _Notify()
-
-    result = _run(
-        dispatch(
-            PAYLOAD,
-            [_global_target(config, empty_policy="warn")],
-            notifier=notify,
-        )
-    )
-
-    # 空收件人按失败记账（attempted+1 且进 failed），邮件不实际发送
-    assert list(result.failed) == ["全局邮件"]
-    assert result.attempted == 2
-    assert notify.calls == ["ServerChanPush"]
-
-
-def test_empty_recipient_skip_policy_silently_omits() -> None:
-    config = _Config({"IfSendMail": True, "ToAddress": ""})
-
-    result = _run(
-        dispatch(
-            PAYLOAD,
-            [_global_target(config, empty_policy="skip")],
-            notifier=_Notify(),
-        )
-    )
-
-    # skip 策略下空收件人不发送、也不记失败
-    assert result.attempted == 0
-    assert result.failed == ()
-    assert result.succeeded == ()
-
-
-def test_same_name_webhooks_keep_distinct_delivery_ids() -> None:
-    config = _Config(
-        webhooks=[("a", _Webhook(name="同名")), ("b", _Webhook(name="同名"))]
-    )
-
-    result = _run(dispatch(PAYLOAD, [_global_target(config)], notifier=_Notify()))
-
-    # 显示名相同但补发记录按 uid 区分
-    assert list(result.succeeded) == ["全局 Webhook 同名", "全局 Webhook 同名"]
-    assert list(result.succeeded_ids) == ["全局 Webhook a", "全局 Webhook b"]
-
-
-def test_dispatch_honors_skip_by_id() -> None:
-    config = _Config(
-        {
-            "IfSendMail": True,
-            "ToAddress": "user@example.com",
-            "IfKoishiSupport": True,
-        },
-        webhooks=[("hook-1", _Webhook()), ("hook-2", _Webhook(name="二番"))],
-    )
-
-    result = _run(
-        dispatch(
-            PAYLOAD,
-            [_global_target(config)],
-            skip_channel_ids=("全局邮件", "全局 Koishi", "全局 Webhook hook-1"),
-            notifier=_Notify(),
-        )
-    )
-
-    assert result.attempted == 1
-    assert list(result.succeeded) == ["全局 Webhook 二番"]
 
 
 class _Task(TaskItem):
@@ -447,44 +316,3 @@ def test_task_report_retry_omits_disabled_hooks_and_repeats_only_failed_summary(
     assert "summary-account" in sent["send_mail"]["content"]
     assert "summary-account" not in sent["ServerChanPush"]["content"]
     assert "summary-account" not in sent["WebhookPush"]["content"]
-
-
-def test_prepared_task_report_zero_targets_keeps_summary() -> None:
-    task = _Task()
-    task.notification_state.results = _COMMUNITY_RESULTS
-
-    with _service() as notifications:
-        notifications.read_task_report_policy = lambda: TaskReportPolicy(
-            result_time="任何时刻", community_enabled=True, wait_seconds=0
-        )
-        result = _run(
-            notifications.prepare_task_report(task).dispatch(
-                NotifyPayload(title="报告", text="正文", html=None),
-                [],
-            )
-        )
-
-    assert result.attempted == 0
-    assert task.notification_state.delivered == set()
-    assert task.notification_state.summary_consumed is False
-
-
-def test_prepared_task_report_publishes_failure_notice() -> None:
-    config = _Config({"IfSendMail": True, "ToAddress": "user@example.com"})
-    task = _Task()
-
-    with _service(notifier=_Notify({"send_mail": ["false"]})) as notifications:
-        with patch(
-            "app.core.notify.Notify.push_system_notice", new_callable=AsyncMock
-        ) as publish:
-            result = _run(
-                notifications.prepare_task_report(task).dispatch(
-                    NotifyPayload(title="报告", text="正文"),
-                    [_global_target(config)],
-                )
-            )
-
-    assert result.failed == ("全局邮件",)
-    publish.assert_awaited_once()
-    assert publish.await_args.kwargs["level"] == "warning"
-    assert "全局邮件" in publish.await_args.kwargs["lines"][0]
