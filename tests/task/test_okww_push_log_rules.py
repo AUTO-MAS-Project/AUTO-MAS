@@ -42,7 +42,12 @@ NODE_CASES = [
         "✅ 成功: 活跃奖励",
     ),
     ("梦魇巢穴", "已打开残象探寻", "opened gray_book_boss", "✅ 成功: 梦魇巢穴"),
-    ("合并声骸", "检查已弃置声骸", "check discarded echo", "✅ 成功: 合并声骸"),
+    (
+        "合并声骸",
+        "检查已弃置声骸",
+        "check discarded echo",
+        "⏭ 跳过: 合并声骸（未记录合并完成）",
+    ),
     (
         "切换账号",
         "正在返回登录界面",
@@ -136,7 +141,7 @@ def test_insufficient_discarded_echo_is_skip_with_reason():
 
 def test_traceback_source_line_no_longer_infers_skip():
     assert resolve(["检查已弃置声骸", "if self.click_dialog_left_button():"]) == [
-        "✅ 成功: 合并声骸"
+        "⏭ 跳过: 合并声骸（未记录合并完成）"
     ]
 
 
@@ -149,7 +154,118 @@ def test_stamina_after_farming_uses_last_reading():
     ) == ["✅ 成功: 体力刷本", "⚡ 剩余体力: 120"]
 
 
-def test_daily_completion_preview_line_does_not_produce_node():
+def test_daily_preview_produces_echo_but_not_daily_completion():
     """farm 4C 预告行含「每日任务已完成」子串，行尾锚定保证不提前产出节点。"""
-    assert resolve(["每日任务已完成，开始传送并刷取4C声骸"]) == []
-    assert resolve(["Daily task completed, start teleport to farm 4C echo"]) == []
+    assert resolve(["每日任务已完成，开始传送并刷取4C声骸"]) == ["✅ 成功: 4C声骸"]
+    assert resolve(["Daily task completed, start teleport to farm 4C echo"]) == [
+        "✅ 成功: 4C声骸"
+    ]
+
+
+@pytest.mark.parametrize(
+    "start,done",
+    [
+        ("DailyTask:每日任务已完成，开始传送并刷取4C声骸", "DailyTask:每日任务已完成"),
+        (
+            "DailyTask:Daily task completed, start teleport to farm 4C echo",
+            "DailyTask:Daily Task Completed",
+        ),
+    ],
+)
+def test_daily_completion_preserves_extra_echo_node(start, done):
+    assert resolve([start]) == ["✅ 成功: 4C声骸"]
+    assert resolve([start, done]) == ["✅ 成功: 4C声骸", "✅ 成功: 每日完成"]
+    assert resolve([done]) == ["✅ 成功: 每日完成"]
+    assert resolve([start, "ok:OK start", done]) == [
+        "✅ 成功: 4C声骸",
+        "✅ 成功: 启动",
+        "✅ 成功: 每日完成",
+    ]
+
+
+@pytest.mark.parametrize(
+    "message,expected",
+    [
+        ("monthly_card found click", "✅ 成功: 月卡弹窗"),
+        ("检测到月卡奖励，点击领取", "✅ 成功: 月卡弹窗"),
+        ("所有满批次的已弃置声骸均已合成。", "✅ 成功: 合并声骸"),
+        ("All full batches of discarded Echoes have been merged.", "✅ 成功: 合并声骸"),
+        (
+            "nightmare nest unreachable, skip this run",
+            "⚠ 异常: 梦魇巢穴（部分巢穴无法到达）",
+        ),
+        ("梦魇巢穴：阵亡 3 次，跳过本次：nest", "⚠ 异常: 梦魇巢穴（部分巢穴阵亡过多）"),
+        (
+            "nightmare nest: died 3 times, skip this run: nest",
+            "⚠ 异常: 梦魇巢穴（部分巢穴阵亡过多）",
+        ),
+        ("梦魇巢穴无法到达，跳过本次", "⚠ 异常: 梦魇巢穴（部分巢穴无法到达）"),
+    ],
+)
+def test_new_native_result_messages(message, expected):
+    assert resolve([message]) == [expected]
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "四费声骸刷取：超过恢复重试上限（3），停止刷取",
+        "farm 4c: exceeded recovery retries (3), stop farming",
+        "TaskExecutor:📅 Daily Task exception stopped",
+        "TaskExecutor:📅 每日任务 exception stopped",
+    ],
+)
+def test_extra_echo_failure_is_not_hidden_by_daily_completion(failure):
+    output = resolve(
+        [
+            "Daily task completed, start teleport to farm 4C echo",
+            failure,
+            "Daily Task Completed",
+        ]
+    )
+    assert "❌ 失败: 4C声骸" in output
+    assert "✅ 成功: 4C声骸" not in output
+
+
+@pytest.mark.parametrize(
+    "target,name",
+    [
+        ("Teleport to Tacet Suppression", "无音区"),
+        ("Teleport to Forgery Challenge", "凝素领域"),
+        ("Target Simulation Challenge", "模拟领域"),
+    ],
+)
+def test_stamina_target_and_terminal_branches(target, name):
+    start = f"info_set {target} 0"
+    assert resolve([start, "current stamina: 20 not enough to continue"]) == [
+        f"✅ 成功: 体力刷本（{name}）",
+        "⚡ 剩余体力: 20",
+    ]
+    assert resolve(
+        [start, "farm_domain: exceeded recovery retries (3), stop farming"]
+    ) == [f"❌ 失败: 体力刷本（{name}）"]
+
+
+def test_merge_completion_and_failure_override_check_only_result():
+    start = "检查已弃置声骸"
+    assert resolve(
+        [start, "All full batches of discarded Echoes have been merged."]
+    ) == ["✅ 成功: 合并声骸"]
+    assert resolve([start, "MergeEchoTask Failed"]) == ["❌ 失败: 合并声骸"]
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_partial_nest_skips_are_deduplicated_warnings_not_final_results(failed):
+    lines = [
+        "opened gray_book_boss",
+        "nightmare nest unreachable, skip this run: a",
+        "nightmare nest unreachable, skip this run: b",
+        "nightmare nest: died 3 times, skip this run: c",
+    ]
+    if failed:
+        lines.append("NightmareNestTask Failed")
+    assert resolve(lines) == [
+        f"{'❌ 失败' if failed else '✅ 成功'}: 梦魇巢穴",
+        "⚠ 异常: 梦魇巢穴（部分巢穴无法到达）",
+        "⚠ 异常: 梦魇巢穴（部分巢穴阵亡过多）",
+    ]
