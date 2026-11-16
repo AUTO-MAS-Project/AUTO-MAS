@@ -37,7 +37,7 @@ from app.utils.common.process.runner import run_process_sync
 
 from ...task_mapping import engine_label
 from .discover import HSRUpdateError
-from .engines import get_spec
+from .engines import get_spec, read_installed_version
 
 logger = get_logger("HSR 更新应用")
 
@@ -112,7 +112,16 @@ def apply_package(
 
     try:
         _extract(package, stage, seven_zip=seven_zip)
-        source_root = _strip_single_root(stage, get_spec(engine).executable)
+        spec = get_spec(engine)
+        source_root = _strip_single_root(stage, spec.executable)
+        if engine == "M7A":
+            # 预检来源包的版本标记，避免错误目录层级或缺失文件被当作成功。
+            packaged_version = read_installed_version(spec, source_root)
+            if packaged_version != to_version:
+                raise HSRUpdateError(
+                    f"三月七更新包版本标记不匹配：期望 {to_version}，"
+                    f"实际 {packaged_version or '缺失'}"
+                )
         plan = _build_plan(source_root, install_root)
     except HSRUpdateError:
         _cleanup(work)
@@ -122,6 +131,14 @@ def apply_package(
         raise HSRUpdateError(f"解包失败：{exc}") from exc
 
     if not plan:
+        if engine == "M7A":
+            installed_version = read_installed_version(spec, install_root)
+            if installed_version != to_version:
+                _cleanup(work)
+                raise HSRUpdateError(
+                    f"更新包未产生文件变更，但安装版本仍是 "
+                    f"{installed_version or '未知'}（期望 {to_version}）"
+                )
         _cleanup(work)
         return ApplyResult(engine, from_version, to_version, 0)
 
@@ -141,6 +158,14 @@ def apply_package(
 
     try:
         _commit(plan, source_root, install_root, backup)
+        # 在删除备份前回读真实安装版本，失败可使用 journal 事务回滚。
+        if engine == "M7A":
+            installed_version = read_installed_version(spec, install_root)
+            if installed_version != to_version:
+                raise RuntimeError(
+                    f"版本校验失败：期望 {to_version}，"
+                    f"安装目录实际 {installed_version or '未知'}"
+                )
     except Exception as exc:  # noqa: BLE001 - 任何失败都要尝试回滚
         logger.opt(exception=True).error(
             f"HSR 更新：应用{engine_label(engine)}更新失败，开始回滚"
