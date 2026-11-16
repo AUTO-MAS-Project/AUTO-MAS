@@ -70,9 +70,13 @@ class WindowsTaskProcessJob:
         with self._lock:
             if self._closed or self._stopping:
                 raise asyncio.CancelledError
-            root = psutil.Process(pid)
-            if root.create_time() != create_time:
-                raise psutil.NoSuchProcess(pid, msg="接管进程的 PID 已复用")
+            try:
+                root = psutil.Process(pid)
+                if root.create_time() != create_time:
+                    return
+            except psutil.NoSuchProcess:
+                # 原目标已退出，后继由进程管理器重新搜索；不能接管复用的 PID。
+                return
             pending, seen = [root], set()
             while pending:
                 target = pending.pop()

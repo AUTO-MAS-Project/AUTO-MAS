@@ -432,6 +432,110 @@ async def test_failed_adoption_still_reaps_known_process_and_keeps_failure(
 
 
 @pytest.mark.asyncio
+async def test_launcher_exit_before_adoption_keeps_successor_tracking(
+    tmp_path, monkeypatch
+):
+    import psutil
+
+    from app.utils.common.process.manager import ProcessInfo, ProcessManager
+    from app.utils.common.process.scope import TaskProcessScope, current_process_scope
+
+    script, gate, pid_file = (tmp_path / name for name in ("relay.py", "gate", "pid"))
+    script.write_text(
+        "import os,subprocess,sys,time\n"
+        "from pathlib import Path\n"
+        "gate=Path(sys.argv[1])\n"
+        "if not gate.exists():\n"
+        " gate.touch()\n"
+        " print('ready',flush=True)\n"
+        " sys.stdin.readline()\n"
+        " subprocess.Popen([sys.executable,'-I',*sys.argv],stdin=subprocess.DEVNULL,"
+        "stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\n"
+        "else:\n"
+        " Path(sys.argv[2]).write_text(str(os.getpid()))\n"
+        " time.sleep(30)\n",
+        encoding="utf-8",
+    )
+    command = [sys._base_executable, "-I", str(script), str(gate), str(pid_file)]
+    launcher = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    scope = TaskProcessScope()
+    successor = None
+    adopt = scope._job.adopt
+
+    def exit_before_adoption(pid, create_time):
+        if pid == launcher.pid:
+            # 扫描已命中，接管尚未开始：让真实启动器正常退出并交给后继。
+            launcher.stdin.write(b"go\n")
+            launcher.stdin.flush()
+            assert launcher.wait(timeout=3) == 0
+            launcher._handle.Close()
+        return adopt(pid, create_time)
+
+    monkeypatch.setattr(scope._job, "adopt", exit_before_adoption)
+    token = current_process_scope.set(scope)
+    try:
+        assert launcher.stdout.readline() == b"ready\r\n"
+        manager = ProcessManager(reseek_target=True)
+        await manager.search_process(ProcessInfo(cmdline=command), timeout_seconds=3)
+        assert not scope.cleanup_failed
+        assert await manager.is_running(), "短命启动器退出后应继续跟踪接力进程"
+        assert manager.main_pid != launcher.pid
+        async with asyncio.timeout(3):
+            while not pid_file.exists():
+                await asyncio.sleep(0.01)
+        successor = psutil.Process(int(pid_file.read_text()))
+        assert manager.main_pid == successor.pid
+        await scope.force_close()
+        await asyncio.to_thread(successor.wait, timeout=3)
+        assert not successor.is_running()
+        assert not scope.cleanup_failed
+    finally:
+        current_process_scope.reset(token)
+        if launcher.poll() is None:
+            launcher.kill()
+        launcher.wait(timeout=3)
+        launcher.stdin.close()
+        launcher.stdout.close()
+        if successor is None and pid_file.exists():
+            with suppress(psutil.NoSuchProcess):
+                successor = psutil.Process(int(pid_file.read_text()))
+        if successor is not None:
+            with suppress(psutil.NoSuchProcess):
+                successor.kill()
+                successor.wait(timeout=3)
+        if not scope.closed:
+            await scope.force_close()
+
+
+@pytest.mark.asyncio
+async def test_stale_process_identity_does_not_adopt_reused_pid():
+    import psutil
+
+    from app.utils.windows.process import WindowsTaskProcessJob
+
+    process = await asyncio.create_subprocess_exec(
+        sys._base_executable, "-I", "-c", "import time; time.sleep(30)"
+    )
+    job = WindowsTaskProcessJob()
+    try:
+        created = psutil.Process(process.pid).create_time()
+        job.adopt(process.pid, created - 1)
+        job.kill()
+        assert process.returncode is None, "旧身份不能接管并结束复用 PID 的其他进程"
+        assert psutil.pid_exists(process.pid)
+    finally:
+        with suppress(ProcessLookupError):
+            process.kill()
+        await process.wait()
+        job.close()
+
+
+@pytest.mark.asyncio
 async def test_lookup_of_existing_process_does_not_take_stop_ownership():
     from app.utils.common.process.manager import ProcessInfo, ProcessManager
     from app.utils.common.process.scope import TaskProcessScope, current_process_scope
