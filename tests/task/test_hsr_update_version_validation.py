@@ -27,8 +27,12 @@ def _package(path, version=None, exe=b"new exe"):
 
 def _apply(package, root):
     return apply.apply_package(
-        package, root, engine="M7A", from_version="v2026.11.8",
-        to_version="v2026.11.17", seven_zip=None,
+        package,
+        root,
+        engine="M7A",
+        from_version="v2026.11.8",
+        to_version="v2026.11.17",
+        seven_zip=None,
     )
 
 
