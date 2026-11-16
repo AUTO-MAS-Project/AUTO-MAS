@@ -4,6 +4,12 @@
 
 ## 当前接续位置
 
+- 2026-11-16 dev 集成收尾：已逐条复核当前 PR 的 16 条讨论评论，无新增行内评论；本轮范围内有价值的代码问题均已修复，明确延期或排除的内容仍按下文边界记录。
+  已合入最新 origin/dev `96a7be13e` 并解决全部冲突；保留插件化 MAA，移植最新养成选关与理智估算修正，没有恢复 `app/task/MAA`。独立适配器同步提交 `f435eda` 已推送，未发布新 PyPI 包。
+  跟随 dev 的测试精简，保留迁移新增的生命周期、预检、业务就绪、下载清理和 MAA 兼容回归；合并态完整后端 277 passed、1 skipped、3 subtests passed，完整前端 139 passed，独立 MAA 14 passed。
+  Python lint/全仓格式、前端全仓格式、renderer/Electron 类型、组件尺寸、uv lock 与更新日志检查通过；此前 15 项前端格式问题已清理，保留既有 QueueDeleteButton.text lint 警告。
+  i18n 扩展审计被未跟踪的本地 ldplayer 示例缺少日语词表阻断，未改动该示例；实际宿主与 MAA 声明已通过 OpenAPI 生成器重新核对，无生成差异。
+  剩余交付为 MAA 新包发布及真实发行覆盖升级联合验收；Runtime 提交一致性和其他专项迁移仍延期，最新云端 CI 以当前推送结果为准。
 - 2026-11-16 提交收尾：本轮已确认纳入范围的有效审查问题均已实施；此前各阶段的“未提交推送”只记录当时状态，本次统一归入主仓库 PR 分支交付。
   推送前完整后端 2116 passed、2 skipped、22 subtests passed；完整前端 364 passed；独立 MAA 仓库 14 passed，源码修复已推送 master `19337ab`，未发布新 PyPI 版本。
   Python 全仓格式、uv lock、更新日志、renderer/Electron 类型和组件尺寸检查通过；前端保留已在 HEAD 基线复现的 15 项格式问题及 1 项 lint 警告，Python 类型保留已核对的既有诊断。

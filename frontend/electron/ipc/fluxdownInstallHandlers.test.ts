@@ -4,7 +4,7 @@ import { pathToFileURL } from 'url'
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { registerFluxdownInstallHandlers } from './fluxdownInstallHandlers'
 
-const mocks = vi.hoisted(() => ({ handle: vi.fn(), install: vi.fn(), devUrl: '' }))
+const mocks = vi.hoisted(() => ({ handle: vi.fn(), install: vi.fn() }))
 vi.mock('electron', () => ({
   app: { getAppPath: () => resolve('test-app') },
   ipcMain: { handle: mocks.handle },
@@ -13,11 +13,10 @@ vi.mock('../services/analyticsService', () => ({
   analyticsService: {},
   refreshAnalyticsPreference: vi.fn(),
 }))
-vi.mock('../services/instanceConfig', () => ({ getDevelopmentServerUrl: () => mocks.devUrl }))
+vi.mock('../services/instanceConfig', () => ({ getDevelopmentServerUrl: () => '' }))
 vi.mock('../services/fluxdownInstallService', () => ({ installFluxdown: mocks.install }))
 beforeEach(() => {
   vi.clearAllMocks()
-  mocks.devUrl = ''
 })
 
 function bridge() {
@@ -28,7 +27,7 @@ function bridge() {
     () => window,
     () => 'http://127.0.0.1:36164'
   )
-  const handler = mocks.handle.mock.calls[0][1] as (
+  const handler = mocks.handle.mock.lastCall![1] as (
     event: IpcMainInvokeEvent,
     mirror: unknown
   ) => unknown
@@ -39,18 +38,20 @@ function bridge() {
 describe('installation IPC trust boundary', () => {
   it('accepts the packaged application main frame', async () => {
     mocks.install.mockResolvedValue({ code: 200 })
-    const { handler, event } = bridge()
-    await expect(handler(event, 'auto')).resolves.toEqual({ code: 200 })
+    const allowed = bridge()
+    await expect(allowed.handler(allowed.event, 'auto')).resolves.toEqual({ code: 200 })
     expect(mocks.install).toHaveBeenCalledWith('http://127.0.0.1:36164', 'auto')
-  })
-
-  it.each(['remote', 'iframe', 'other-window'])('rejects %s even with the preload API', kind => {
-    const { handler, event, mainFrame } = bridge()
-    if (kind === 'remote') mainFrame.url = 'https://attacker.test/'
-    if (kind === 'iframe')
-      event.senderFrame = { url: mainFrame.url } as IpcMainInvokeEvent['senderFrame']
-    if (kind === 'other-window') event.sender = {} as IpcMainInvokeEvent['sender']
-    expect(() => handler(event, 'auto')).toThrow()
-    expect(mocks.install).not.toHaveBeenCalled()
+    for (const kind of ['remote', 'iframe', 'other-window'] as const) {
+      mocks.install.mockClear()
+      const denied = bridge()
+      if (kind === 'remote') denied.mainFrame.url = 'https://attacker.test/'
+      if (kind === 'iframe')
+        denied.event.senderFrame = {
+          url: denied.mainFrame.url,
+        } as IpcMainInvokeEvent['senderFrame']
+      if (kind === 'other-window') denied.event.sender = {} as IpcMainInvokeEvent['sender']
+      expect(() => denied.handler(denied.event, 'auto'), kind).toThrow()
+      expect(mocks.install, kind).not.toHaveBeenCalled()
+    }
   })
 })

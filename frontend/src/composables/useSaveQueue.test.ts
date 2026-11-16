@@ -3,23 +3,20 @@ import { useSaveQueue } from './useSaveQueue'
 
 const deferred = <T>() => {
   let resolve!: (_value: T) => void
-  let reject!: (_reason: unknown) => void
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+  const promise = new Promise<T>(resolvePromise => {
     resolve = resolvePromise
-    reject = rejectPromise
   })
-  return { promise, resolve, reject }
+  return { promise, resolve }
 }
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 
 describe('useSaveQueue', () => {
-  it('runs saves strictly in enqueue order without dropping any', async () => {
+  it('merges pending saves with the same key and keeps the latest value', async () => {
     const { enqueue, isSaving } = useSaveQueue()
     const first = deferred<string>()
     const second = deferred<string>()
     const started: string[] = []
-
     const firstResult = enqueue(async () => {
       started.push('first')
       return first.promise
@@ -28,25 +25,17 @@ describe('useSaveQueue', () => {
       started.push('second')
       return second.promise
     })
-
     expect(isSaving.value).toBe(true)
     expect(started).toEqual(['first'])
-
     first.resolve('a')
     await flush()
     expect(started).toEqual(['first', 'second'])
-
     second.resolve('b')
     await expect(firstResult).resolves.toBe('a')
     await expect(secondResult).resolves.toBe('b')
-    expect(isSaving.value).toBe(false)
-  })
 
-  it('merges pending saves with the same key and keeps the latest value', async () => {
-    const { enqueue } = useSaveQueue()
     const gate = deferred<void>()
     const sent: unknown[] = []
-
     const blocker = enqueue(() => gate.promise)
     const stale = enqueue(async () => {
       sent.push('stale')
@@ -67,31 +56,23 @@ describe('useSaveQueue', () => {
     await expect(latest).resolves.toBe('latest')
     await expect(other).resolves.toBe('other')
     expect(sent).toEqual(['latest', 'other'])
-  })
 
-  it('does not merge with a save that is already running', async () => {
-    const { enqueue } = useSaveQueue()
-    const gate = deferred<void>()
-    const sent: string[] = []
-
+    const runningGate = deferred<void>()
+    const runningSent: string[] = []
     const running = enqueue(async () => {
-      sent.push('running')
-      await gate.promise
+      runningSent.push('running')
+      await runningGate.promise
       return 'running'
     }, 'Info.Name')
     const next = enqueue(async () => {
-      sent.push('next')
+      runningSent.push('next')
       return 'next'
     }, 'Info.Name')
 
-    gate.resolve()
+    runningGate.resolve()
     await expect(running).resolves.toBe('running')
     await expect(next).resolves.toBe('next')
-    expect(sent).toEqual(['running', 'next'])
-  })
-
-  it('rejects only the failing save and keeps draining the rest', async () => {
-    const { enqueue, isSaving } = useSaveQueue()
+    expect(runningSent).toEqual(['running', 'next'])
 
     const failed = enqueue(async () => {
       throw new Error('boom')

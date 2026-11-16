@@ -8,10 +8,8 @@ import {
   RUNTIME_EXECUTABLE_NAME,
   RUNTIME_EXE_ENV,
   RUNTIME_MODE_ENV,
-  resolveDevelopmentRuntimeRoot,
   resolveRuntimeExecutable,
   resolveRuntimeLaunchConfig,
-  resolveRuntimeLaunchModeDetail,
 } from './launchConfig'
 
 const warn = vi.fn()
@@ -29,21 +27,10 @@ vi.mock('../logger', () => ({
 
 vi.mock('electron', () => ({ app: { isPackaged: false } }))
 
-// vi.mock 的 electron 桩是普通可变对象，isPackaged 直接在测试间改写它来切换构建默认值。
-const { app: electronApp } = await import('electron')
-
-function setPackaged(packaged: boolean): void {
-  ;(electronApp as unknown as { isPackaged: boolean }).isPackaged = packaged
-}
-
-// 一定存在的可执行文件，用来代替尚未捆绑的 auto-mas-runtime.exe。
-const EXISTING_EXE = process.execPath
-
 /** 每个用例一个独立目录，避免真实文件系统读写互相污染。 */
 let appRoot: string
 
 beforeEach(() => {
-  setPackaged(false)
   warn.mockClear()
   delete process.env[RUNTIME_MODE_ENV]
   delete process.env[RUNTIME_EXE_ENV]
@@ -76,69 +63,18 @@ describe('resolveRuntimeExecutable', () => {
       }
     })
 
+    // 恢复真实备份后，后端启动使用的配置也必须能重新定位它。
     it('exe 缺失但上次更新 Runtime 留下的备份还在时，先把备份改回来再用', () => {
       const bundled = path.join(appRoot, 'resources', RUNTIME_EXECUTABLE_NAME)
       fs.writeFileSync(`${bundled}${RUNTIME_BACKUP_SUFFIX}`, 'previous', 'utf8')
+      expect(fs.existsSync(bundled)).toBe(false)
 
       expect(resolveRuntimeExecutable()).toBe(bundled)
+      expect(resolveRuntimeLaunchConfig(appRoot).runtimePath).toBe(bundled)
       expect(fs.readFileSync(bundled, 'utf8')).toBe('previous')
       expect(fs.existsSync(`${bundled}${RUNTIME_BACKUP_SUFFIX}`)).toBe(false)
+      expect(fs.readdirSync(path.dirname(bundled))).toEqual([RUNTIME_EXECUTABLE_NAME])
       expect(warn).toHaveBeenCalledOnce()
     })
-  })
-})
-
-describe('resolveRuntimeLaunchConfig', () => {
-  it('development 模式把传入的源码根作为 --repo 与 dataRoot，--app-root 另取仓外目录', () => {
-    process.env[RUNTIME_MODE_ENV] = 'development'
-    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-
-    const config = resolveRuntimeLaunchConfig(appRoot)
-    expect(config).toEqual({
-      mode: 'development',
-      runtimePath: EXISTING_EXE,
-      appRoot: resolveDevelopmentRuntimeRoot(appRoot),
-      repo: appRoot,
-      dataRoot: appRoot,
-    })
-    // Runtime 拒绝 runtime_root_inside_development_repo：Runtime 根既不能等于源码根，也不能在它里面。
-    expect(config.appRoot).not.toBe(appRoot)
-    expect(config.appRoot.startsWith(appRoot + path.sep)).toBe(false)
-  })
-
-  it('managed 模式不传 --repo，--app-root 就是用户数据根', () => {
-    process.env[RUNTIME_MODE_ENV] = 'managed'
-    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-
-    expect(resolveRuntimeLaunchConfig(appRoot)).toEqual({
-      mode: 'managed',
-      runtimePath: EXISTING_EXE,
-      appRoot,
-      repo: undefined,
-      dataRoot: appRoot,
-    })
-  })
-})
-
-describe('启动模式默认值与存量配置', () => {
-  it('源码与安装版分别默认使用 development 和 managed', () => {
-    expect(resolveRuntimeLaunchModeDetail()).toEqual({
-      mode: 'development',
-      source: 'default',
-    })
-    setPackaged(true)
-    expect(resolveRuntimeLaunchModeDetail()).toEqual({ mode: 'managed', source: 'default' })
-  })
-
-  it('非法环境变量使用构建默认值，合法环境变量仍可覆盖', () => {
-    fs.mkdirSync(path.join(appRoot, 'config'))
-    fs.writeFileSync(
-      path.join(appRoot, 'config', 'frontend_config.json'),
-      JSON.stringify({ Runtime: { LaunchMode: 'managed' } })
-    )
-    process.env[RUNTIME_MODE_ENV] = 'off'
-    expect(resolveRuntimeLaunchModeDetail()).toEqual({ mode: 'development', source: 'default' })
-    process.env[RUNTIME_MODE_ENV] = 'development'
-    expect(resolveRuntimeLaunchModeDetail()).toEqual({ mode: 'development', source: 'env' })
   })
 })

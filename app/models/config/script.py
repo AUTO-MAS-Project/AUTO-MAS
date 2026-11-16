@@ -2048,8 +2048,11 @@ class MaaFWConfig(DomainEntry):
     Task: TaskFields = Field(default_factory=TaskFields)
 
     class UpdateFields(ConfigGroup):
+        # 默认增量：GitHub 源按区间差量、Mirror 酱源要差量包，失败都回退全量。
+        # 全量的好处只有一条——队列里可以提前预下载（增量依赖开跑时的当前载荷，
+        # 不预下载，见 embedded_manager.prefetch_script_update）。
         PackageMode: Literal["full", "incremental"] = Field(
-            default="full",
+            default="incremental",
             description="更新方式：全量或优先增量；增量依赖完整且匹配的基线，必要时回退全量。",
         )
         AutoUpdateMode: Annotated[
@@ -2095,6 +2098,11 @@ class M9AUserConfig(MaaFWUserConfig):
     """
 
 
+# M9A 内置的按任务时限：只放比全局默认（TaskTimeLimit 45 分钟）更长的任务，和全局相同的不写，
+# 否则用户调大全局时限后这几个任务仍卡在旧值
+_M9A_TASK_TIME_LIMIT_OVERRIDES = '{"自动深眠": 60, "自动醒梦": 60}'
+
+
 class M9AConfig(MaaFWConfig):
     """M9A 托管配置：MaaFW 的特调类型。
 
@@ -2107,9 +2115,7 @@ class M9AConfig(MaaFWConfig):
     DEFAULT_SCRIPT_NAME: ClassVar = "新 M9A 托管"
     USER_CONFIG_CLASS: ClassVar = M9AUserConfig
     FLAVOR: ClassVar = "app.task.M9A.flavor:FLAVOR"
-    DEFAULT_TASK_TIME_LIMIT_OVERRIDES: ClassVar = (
-        '{"智能均衡刷材料": 45, "自动深眠": 60, "自动醒梦": 60}'
-    )
+    DEFAULT_TASK_TIME_LIMIT_OVERRIDES: ClassVar = _M9A_TASK_TIME_LIMIT_OVERRIDES
 
     class InfoFields(MaaFWConfig.InfoFields):
         Name: str = Field(
@@ -2133,9 +2139,7 @@ class M9AConfig(MaaFWConfig):
         )
 
         TaskTimeLimitOverrides: JsonDictString = Field(
-            default_factory=lambda: (
-                '{"智能均衡刷材料": 45, "自动深眠": 60, "自动醒梦": 60}'
-            ),
+            default_factory=lambda: _M9A_TASK_TIME_LIMIT_OVERRIDES,
             description="按任务名覆盖的单任务时限（分钟），键是 MaaFW 任务名；值 0 表示该任务不限。 默认值由类属性 DEFAULT_TASK_TIME_LIMIT_OVERRIDES 决定（特调可内置几条）； 只在配置里没有这个键时生效，用户存过的值（含清空成 {}）原样保留。",
         )
 

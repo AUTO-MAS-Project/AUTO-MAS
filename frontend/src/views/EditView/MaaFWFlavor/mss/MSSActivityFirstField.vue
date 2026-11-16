@@ -1,6 +1,7 @@
 <!-- eslint-disable vue/no-mutating-props -- Slot components edit the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <!-- 活动优先是 MSS 自己的取舍。后端缺省是开，所以这里按「不是 false 就算开」显示，
+  <!-- 队列里没有活动任务时，活动期间要不要自动加进来（字段名仍叫 IfActivityFirst；已在队列里的
+       活动任务不看这个开关）。后端缺省是开，所以这里按「不是 false 就算开」显示，
        不必给 MaaFW 用户塞一个它没有的字段 -->
   <a-form-item
     class="flavor-activity-first"

@@ -76,6 +76,7 @@ import {
   markForceQuitFailed,
 } from './quitCoordinationState'
 import { attachRendererRecovery } from './services/rendererRecoveryService'
+import { promptLowPageZoom } from './services/pageZoomPrompt'
 import { patchConfigFile } from './utils/configFile'
 
 import { getLogger, initializeLogger } from './services/logger'
@@ -1081,9 +1082,17 @@ function createWindow() {
   const pageLoadStartedAt = performance.now()
   win.webContents.once('dom-ready', () => recordDesktopStartup('页面 DOM 就绪', pageLoadStartedAt))
   win.once('ready-to-show', () => recordDesktopStartup('窗口可绘制', pageLoadStartedAt))
-  win.webContents.once('did-finish-load', () =>
+  win.webContents.once('did-finish-load', () => {
     recordDesktopStartup('页面加载完成', pageLoadStartedAt)
-  )
+    const checkPageZoom = () => {
+      void promptLowPageZoom(win, config.language).catch(error =>
+        logger.warn('检查或恢复界面缩放失败', error)
+      )
+    }
+    // 静默启动时等到用户打开主窗口，再显示缩放提示。
+    if (win.isVisible()) checkPageZoom()
+    else win.once('show', checkPageZoom)
+  })
   const devServer = getDevelopmentServerUrl()
   if (devServer) {
     logger.info(`加载开发服务器: ${devServer}`)

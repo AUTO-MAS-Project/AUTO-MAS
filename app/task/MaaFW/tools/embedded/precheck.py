@@ -23,7 +23,8 @@ MaaEnd v2.29.0 打包了 MaaFramework v5.14.0-beta.1，binding 被钉成
 所以新载荷在 staging 里建好、登记之前先**真建**一次运行环境（不 dry-run；把自带
 Python 里的 binding 钉回原生库版本也就发生在这一步，写的是 staging）：建不出来
 就丢掉 staging、所有视图继续跑当前版本，并按谱系 + 目标版本写备忘
-（``precheck_memo.py``），之后每次运行前由 ``precheck_gate.py`` 轻探一次再决定要不要重试。
+（``precheck_memo.py``），之后每次运行前由 ``precheck_gate.py`` 按失败类别决定要不要重试
+（缺 binding 轻探一次；网络类与其它原因各自冷却一段时间后再试）。
 
 环境建好之后再对 Python agent 做一次导入静态检查（``agent_env/import_check.py``）：
 MaaFgo v2.0.03 漏装了 ``agent/battle/runtime/``，解释器能 ``import maa``，agent 一启动却
@@ -267,7 +268,7 @@ def build_precheck_validator(
                 root, exc, requirement=_resolve_requirement(root)
             )
             if isinstance(exc, MaaFWAgentImportMissingError):
-                # 备忘里仍按 other 记（不自动重试），这里只给文案分支用
+                # 备忘里仍按 other 记（冷却一天才自动再试），这里只给文案分支用
                 info["kind"] = KIND_AGENT_MODULE_MISSING
             if previous_version:
                 info["previousVersion"] = str(previous_version)

@@ -176,8 +176,8 @@ import type { PlanChangeHandler } from '@/utils/planTypeRegistry'
 /**
  * 悬赏试炼关卡。
  *
- * 取值与顺序都要和后端 `constants.MSS_TRIBULATION_STAGES`、外壳 interface 的
- * `悬赏试炼关卡` cases 一致：写进实例配置的是这个列表里的下标，错位就会刷错关卡。
+ * 取值要和后端 `constants.MSS_TRIBULATION_STAGES`、外壳 interface 的 `悬赏试炼关卡`
+ * cases 一致：计划表里存的、运行时写进任务选项的都是关卡名，名字对不上这一格就不生效。
  * 上游加关卡时三处一起补。
  */
 const TRIBULATION_STAGES = [

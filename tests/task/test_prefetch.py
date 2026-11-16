@@ -12,7 +12,7 @@ from app.core.downloads import DownloadManager
 from app.models.schema import DownloadRequest
 from app.task.prefetch import PREFETCH_PATHS_KEY, PrefetchSession
 from tests.config_support import activate_config
-from tests.runtime_support import create_runtime_tree
+from tests.support.scheduler import create_runtime_tree
 
 
 @pytest.mark.asyncio

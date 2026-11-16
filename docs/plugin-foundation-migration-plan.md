@@ -480,3 +480,12 @@ Ruff/格式、相关插件与 SDK 类型检查、前端 renderer/E2E 类型、�
 - 完整后端 2116 passed、2 skipped、22 subtests passed；完整前端 364 passed；独立 MAA 仓库 14 passed，修复源码已推送 `19337ab`，未发布新包。
 - Python 全仓格式、uv lock、更新日志、前端类型和组件尺寸检查通过；全仓前端格式保留 15 项 HEAD 基线问题，lint 保留原有 QueueDeleteButton.text 警告。
 - 本次提交本轮全部已确认代码修复；尚未合入最新 origin/dev `96a7be13e`，不将已有 PR 合并冲突、发行包发布和真实覆盖更新验收列为完成。
+
+### 最新 dev 合并与复核（2026-11-16，已实施）
+
+- [x] 重新获取并复核 PR 的 16 条讨论评论，无行内评论；本轮有效代码问题已落实，既定延期与存量范围排除保持不变。
+- [x] 合入 origin/dev `96a7be13e`，解决全部冲突；MAA 保持插件实现，移植 CA-5 来源限制、资源本休息日计划保留、整场次数及共享关卡理智估算，并同步独立仓库 `f435eda`。
+- [x] 跟随 dev 精简测试边界，不恢复已删除的旧矩阵；保留迁移独有的生命周期、启动预检与业务就绪、MCP 递归契约、预下载清理及 MAA 保存/次数回归，公共调度辅助迁入现有 tests/support。
+- [x] 合并态完整后端 277 passed、1 skipped、3 subtests passed；完整前端 139 passed；独立 MAA 14 passed，养成合并行为隔离探针通过。
+- [x] Python lint/全仓格式、前端全仓格式、renderer/Electron 类型、组件尺寸、锁文件及更新日志检查通过；清理 PR 自身 15 项既有格式问题，只保留原有 lint 警告。OpenAPI 重新生成无差异。
+- i18n 扩展审计因未跟踪本地 ldplayer 示例缺失日语词表未完成，不改动无关示例；MAA 发包与真实发行覆盖升级验收尚未完成，未扩大为 Runtime 或其他专项迁移。

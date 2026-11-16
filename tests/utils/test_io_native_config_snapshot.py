@@ -17,20 +17,14 @@ def _write_config(path: Path, marker: str) -> None:
     (path / "mxu-MaaEnd.json").write_text(marker, encoding="utf-8")
 
 
-def _commit_snapshot(
-    snapshot: Path, live: Path, *, injected: str | None, script_id: str = "script-1"
-) -> None:
+def _commit_snapshot(snapshot: Path, *, injected: str | None) -> None:
     _utils_io.write_native_config_snapshot(
         snapshot,
-        script_id=script_id,
+        script_id="script-1",
         original_exists=True,
         baseline=_utils_io.dir_fingerprint(snapshot),
         injected=injected,
     )
-    state = _utils_io.read_native_config_snapshot(snapshot)
-    assert state is not None
-    assert state.fingerprint_version == _utils_io.NATIVE_CONFIG_FINGERPRINT_VERSION
-    assert live.exists()
 
 
 def test_restores_when_crashed_after_injection(tmp_path: Path) -> None:
@@ -41,7 +35,7 @@ def test_restores_when_crashed_after_injection(tmp_path: Path) -> None:
     _write_config(snapshot, "original")
     _write_config(live, "injected")
 
-    _commit_snapshot(snapshot, live, injected=_utils_io.dir_fingerprint(live))
+    _commit_snapshot(snapshot, injected=_utils_io.dir_fingerprint(live))
 
     assert _utils_io.recover_native_config(
         snapshot, live, expected_script_id="script-1"
@@ -49,7 +43,7 @@ def test_restores_when_crashed_after_injection(tmp_path: Path) -> None:
     assert (live / "mxu-MaaEnd.json").read_text(encoding="utf-8") == "original"
 
 
-def test_keeps_snapshot_when_restore_swap_fails(
+def test_failed_restore_keeps_original_snapshot_for_successful_retry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """恢复换入失败时保留快照, 供下次任务重试。"""
@@ -58,18 +52,26 @@ def test_keeps_snapshot_when_restore_swap_fails(
     live = tmp_path / "config"
     _write_config(snapshot, "original")
     _write_config(live, "injected")
-    _commit_snapshot(snapshot, live, injected=_utils_io.dir_fingerprint(live))
+    _commit_snapshot(snapshot, injected=_utils_io.dir_fingerprint(live))
 
     def fail_swap(*_args: Path, **_kwargs: object) -> None:
         raise PermissionError("配置目录仍被占用")
 
-    monkeypatch.setattr("app.utils.common.io.swap_in_dir", fail_swap)
-
-    with pytest.raises(PermissionError, match="配置目录仍被占用"):
-        _utils_io.recover_native_config(snapshot, live, expected_script_id="script-1")
+    with monkeypatch.context() as filesystem:
+        filesystem.setattr("app.utils.common.io.swap_in_dir", fail_swap)
+        with pytest.raises(PermissionError, match="配置目录仍被占用"):
+            _utils_io.recover_native_config(
+                snapshot, live, expected_script_id="script-1"
+            )
 
     assert snapshot.exists()
     assert snapshot.with_name(snapshot.name + ".ready.json").exists()
+    assert (snapshot / "mxu-MaaEnd.json").read_text(encoding="utf-8") == "original"
+    assert (
+        _utils_io.recover_native_config(snapshot, live, expected_script_id="script-1")
+        == "restored"
+    )
+    assert (live / "mxu-MaaEnd.json").read_text(encoding="utf-8") == "original"
 
 
 def test_skips_when_user_edited_after_crash(tmp_path: Path) -> None:
@@ -81,7 +83,7 @@ def test_skips_when_user_edited_after_crash(tmp_path: Path) -> None:
     _write_config(live, "injected")
     injected = _utils_io.dir_fingerprint(live)
 
-    _commit_snapshot(snapshot, live, injected=injected)
+    _commit_snapshot(snapshot, injected=injected)
     # 与注入内容等长, 确认指纹确实比较内容而非仅比较大小。
     (live / "mxu-MaaEnd.json").write_text("changed", encoding="utf-8")
 
@@ -89,55 +91,6 @@ def test_skips_when_user_edited_after_crash(tmp_path: Path) -> None:
         snapshot, live, expected_script_id="script-1"
     ) == ("skipped")
     assert (live / "mxu-MaaEnd.json").read_text(encoding="utf-8") == "changed"
-    assert not snapshot.exists()
-
-
-def test_idempotent_when_already_restored(tmp_path: Path) -> None:
-    """已经恢复过一遍: 幂等跳过, 不重复写入。"""
-
-    snapshot = tmp_path / "Temp"
-    live = tmp_path / "config"
-    _write_config(snapshot, "original")
-    _write_config(live, "original")
-
-    _commit_snapshot(snapshot, live, injected=None)
-
-    assert _utils_io.recover_native_config(
-        snapshot, live, expected_script_id="script-1"
-    ) == ("intact")
-    assert (live / "mxu-MaaEnd.json").read_text(encoding="utf-8") == "original"
-
-
-def test_clears_snapshot_of_another_script(tmp_path: Path) -> None:
-    """快照属于别的脚本: 只清理, 绝不恢复。"""
-
-    snapshot = tmp_path / "Temp"
-    live = tmp_path / "config"
-    _write_config(snapshot, "original")
-    _write_config(live, "injected")
-
-    _commit_snapshot(
-        snapshot, live, injected=_utils_io.dir_fingerprint(live), script_id="other"
-    )
-
-    assert _utils_io.recover_native_config(
-        snapshot, live, expected_script_id="script-1"
-    ) == ("cleared")
-    assert (live / "mxu-MaaEnd.json").read_text(encoding="utf-8") == "injected"
-
-
-def test_uncommitted_snapshot_is_discarded(tmp_path: Path) -> None:
-    """只有目录没有 .ready 标记: 说明上次没拷完整, 丢弃而非恢复。"""
-
-    snapshot = tmp_path / "Temp"
-    live = tmp_path / "config"
-    _write_config(snapshot, "half-copied")
-    _write_config(live, "injected")
-
-    assert _utils_io.recover_native_config(
-        snapshot, live, expected_script_id="script-1"
-    ) == ("cleared")
-    assert (live / "mxu-MaaEnd.json").read_text(encoding="utf-8") == "injected"
     assert not snapshot.exists()
 
 
