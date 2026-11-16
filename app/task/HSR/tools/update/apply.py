@@ -115,6 +115,14 @@ def apply_package(
         spec = get_spec(engine)
         source_root = _strip_single_root(stage, spec.executable)
         if engine == "M7A":
+            # M7A 的发布包必须有可识别的安装根。单层目录之外
+            # 混入附加文件时，旧算法会把整个同名文件夹复制进安装目录。
+            # 先拒绝不明确的布局，绝不执行深一层的误安装。
+            if not (source_root / spec.executable).is_file():
+                raise HSRUpdateError(
+                    "三月七更新包的安装根目录不明确（未找到顶层可执行文件），"
+                    "已拒绝将嵌套目录写入现有安装位置"
+                )
             # 预检来源包的版本标记，避免错误目录层级或缺失文件被当作成功。
             packaged_version = read_installed_version(spec, source_root)
             if packaged_version != to_version:
