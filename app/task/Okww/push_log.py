@@ -51,7 +51,6 @@ OKWW_PUSH_RULES: list[tuple[str, str]] = [
         r"每日任务已完成，开始传送并刷取4C声骸|Daily task completed, start teleport to farm 4C echo",
         r'"4C_STARTED"',
     ),
-    (r"monthly_card found click|检测到月卡奖励，点击领取", r'"月卡弹窗"'),
     (
         r"All full batches of discarded Echoes have been merged\.|所有满批次的已弃置声骸均已合成",
         r'"MERGE_DONE"',
@@ -59,6 +58,11 @@ OKWW_PUSH_RULES: list[tuple[str, str]] = [
     (r"info_set Teleport to Tacet Suppression", r'"STAMINA_TARGET:无音区"'),
     (r"info_set Teleport to Forgery Challenge", r'"STAMINA_TARGET:凝素领域"'),
     (r"info_set Target Simulation Challenge", r'"STAMINA_TARGET:模拟领域"'),
+    # 仅采集上游主动通知的明确告警，不把普通战斗探测日志当异常。
+    (
+        r"FarmEchoTask:(?:选择目标失败[!！]|Target enemy failed, please disable Nvidia/AMD Filter or Sharpening!)",
+        r'"⚠ 异常: 4C声骸（选择战斗目标失败）"',
+    ),
     (
         r"(?:farm 4c: exceeded recovery retries|四费声骸刷取：超过恢复重试上限)",
         r'"❌ 失败: 4C声骸"',
@@ -75,7 +79,10 @@ OKWW_PUSH_RULES: list[tuple[str, str]] = [
         r"nightmare nest: died .* times, skip this run|梦魇巢穴：阵亡 .* 次，跳过本次",
         r'"⚠ 异常: 梦魇巢穴（部分巢穴阵亡过多）"',
     ),
-    (r"TaskExecutor:.*(?:每日任务|Daily Task) exception stopped", r'"DAILY_FAILED"'),
+    (
+        r"TaskExecutor:(?:📅\s*)?(?:每日任务|Daily Task) exception stopped",
+        r'"DAILY_FAILED"',
+    ),
     (
         r"current stamina: \d+ not enough to continue",
         r'"体力刷本"; "体力当前:" + $((?:current stamina: )(\d+))',
@@ -222,6 +229,15 @@ def okww_resolve(
                 warnings[marker] = ts
                 continue
             if marker == "启动":
+                # 最终节点只展示最近一次执行，重试历史由账号结果行保留。
+                order.clear()
+                states.clear()
+                ts_of.clear()
+                active_marks.clear()
+                warnings.clear()
+                last_stamina = None
+                last_stamina_ts = 0.0
+                merge_completed = False
                 echo_started = False
                 stamina_node = "体力刷本"
             if marker.startswith("STAMINA_TARGET:"):
@@ -288,9 +304,7 @@ def okww_resolve(
             and states[node][0] < 3
             and node not in forced
         ):
-            status_lines.append(
-                (LOG_TYPE_NORMAL, "⏭ 跳过: 合并声骸（未记录合并完成）", ts_of[node])
-            )
+            status_lines.append((LOG_TYPE_NORMAL, "⏭ 跳过: 合并声骸", ts_of[node]))
         elif node in forced:
             status, reason = forced[node]
             status_lines.append(

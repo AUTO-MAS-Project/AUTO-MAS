@@ -46,7 +46,7 @@ NODE_CASES = [
         "合并声骸",
         "检查已弃置声骸",
         "check discarded echo",
-        "⏭ 跳过: 合并声骸（未记录合并完成）",
+        "⏭ 跳过: 合并声骸",
     ),
     (
         "切换账号",
@@ -141,7 +141,7 @@ def test_insufficient_discarded_echo_is_skip_with_reason():
 
 def test_traceback_source_line_no_longer_infers_skip():
     assert resolve(["检查已弃置声骸", "if self.click_dialog_left_button():"]) == [
-        "⏭ 跳过: 合并声骸（未记录合并完成）"
+        "⏭ 跳过: 合并声骸"
     ]
 
 
@@ -177,7 +177,6 @@ def test_daily_completion_preserves_extra_echo_node(start, done):
     assert resolve([start, done]) == ["✅ 成功: 4C声骸", "✅ 成功: 每日完成"]
     assert resolve([done]) == ["✅ 成功: 每日完成"]
     assert resolve([start, "ok:OK start", done]) == [
-        "✅ 成功: 4C声骸",
         "✅ 成功: 启动",
         "✅ 成功: 每日完成",
     ]
@@ -186,8 +185,6 @@ def test_daily_completion_preserves_extra_echo_node(start, done):
 @pytest.mark.parametrize(
     "message,expected",
     [
-        ("monthly_card found click", "✅ 成功: 月卡弹窗"),
-        ("检测到月卡奖励，点击领取", "✅ 成功: 月卡弹窗"),
         ("所有满批次的已弃置声骸均已合成。", "✅ 成功: 合并声骸"),
         ("All full batches of discarded Echoes have been merged.", "✅ 成功: 合并声骸"),
         (
@@ -269,3 +266,73 @@ def test_partial_nest_skips_are_deduplicated_warnings_not_final_results(failed):
         "⚠ 异常: 梦魇巢穴（部分巢穴无法到达）",
         "⚠ 异常: 梦魇巢穴（部分巢穴阵亡过多）",
     ]
+
+
+@pytest.mark.parametrize(
+    "message", ["monthly_card found click", "检测到月卡奖励，点击领取"]
+)
+def test_monthly_popup_is_not_a_report_node(message):
+    assert resolve([message]) == []
+    assert resolve([message, "TaskExecutor:📅 Daily Task exception stopped"]) == [
+        "❌ 失败: 每日完成"
+    ]
+
+
+def test_retry_success_replaces_previous_attempt_nodes_and_warnings():
+    assert resolve(
+        [
+            "ok:OK start",
+            "opened gray_book_boss",
+            "nightmare nest unreachable, skip this run",
+            "info_set current_stamina 120",
+            "TaskExecutor:📅 Daily Task exception stopped",
+            "ok:OK start",
+            "Daily task completed, start teleport to farm 4C echo",
+            "Daily Task Completed",
+        ]
+    ) == ["✅ 成功: 启动", "✅ 成功: 4C声骸", "✅ 成功: 每日完成"]
+
+
+def test_retry_failure_remains_visible_after_previous_success():
+    assert resolve(
+        [
+            "ok:OK start",
+            "Daily Task Completed",
+            "ok:OK start",
+            "TaskExecutor:📅 Daily Task exception stopped",
+        ]
+    ) == ["✅ 成功: 启动", "❌ 失败: 每日完成"]
+
+
+@pytest.mark.parametrize("name", ["👥 Multi Account Daily Task", "👥 多账号每日任务"])
+def test_full_multi_account_exception_is_not_daily_exception(name):
+    assert resolve([f"TaskExecutor:{name} exception stopped"]) == [
+        "❌ 失败: 多账号每日任务"
+    ]
+
+
+@pytest.mark.parametrize(
+    "warning",
+    [
+        "选择目标失败!请关闭显卡滤镜和锐化!",
+        "Target enemy failed, please disable Nvidia/AMD Filter or Sharpening!",
+    ],
+)
+def test_echo_target_warning_is_extra_deduplicated_and_preserves_success(warning):
+    assert resolve(
+        [
+            "DailyTask:Daily task completed, start teleport to farm 4C echo",
+            f"FarmEchoTask:{warning}",
+            f"FarmEchoTask:{warning}",
+            "DailyTask:Daily Task Completed",
+        ]
+    ) == ["✅ 成功: 4C声骸", "✅ 成功: 每日完成", "⚠ 异常: 4C声骸（选择战斗目标失败）"]
+    assert (
+        resolve(
+            [
+                f"NightmareNestTask:{warning}",
+                "CombatCheck:target_enemy failed, try recheck break out of combat",
+            ]
+        )
+        == []
+    )
