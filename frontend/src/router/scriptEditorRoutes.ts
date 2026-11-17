@@ -1,16 +1,14 @@
 import type { RouteRecordRaw } from 'vue-router'
 import type { MaaFWFlavorType } from '@/composables/maafwFlavorTypes'
 import type { ScriptType } from '@/types/script'
+import { SCRIPT_PLUGIN_EDITORS } from '@/plugins/scriptAdapters'
 import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
 
 type OrdinaryScriptType = Exclude<ScriptType, MaaFWFlavorType>
 type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
 
-const EDITOR_PAGES = {
-  MAA: {
-    script: () => import('@/views/EditView/Script/MAAScriptEdit.vue'),
-    user: () => import('@/views/EditView/User/MAAUserEdit.vue'),
-  },
+const EDITOR_PAGES: Record<string, { script: LazyPage; user: LazyPage }> = {
+  ...SCRIPT_PLUGIN_EDITORS,
   SRC: {
     script: () => import('@/views/EditView/Script/SRCScriptEdit.vue'),
     user: () => import('@/views/EditView/User/SRCUserEdit.vue'),
@@ -51,7 +49,7 @@ const EDITOR_PAGES = {
     script: () => import('@/views/EditView/Script/WhimboxScriptEdit.vue'),
     user: () => import('@/views/EditView/User/WhimboxUserEdit.vue'),
   },
-} satisfies Record<OrdinaryScriptType, { script: LazyPage; user: LazyPage }>
+}
 
 const PAGE_ROUTES = {
   script: { name: 'ScriptEdit', path: (suffix: string) => `/scripts/:id/edit/${suffix}` },
@@ -99,12 +97,3 @@ export const buildScriptEditorRoutes = (): RouteRecordRaw[] =>
       meta: { title: metadata.routeTitles[kind], scriptType: type, scriptPage: kind },
     }))
   })
-
-/** 养成是 MAA 独有入口，保持独立登记和既有页面参数。 */
-export const MAA_CULTIVATE_ROUTE: RouteRecordRaw = {
-  path: '/scripts/:scriptId/users/:userId/cultivate/maa',
-  name: 'MAACultivate',
-  component: () => import('@/views/EditView/User/MAAUserEdit.vue'),
-  props: { cultivationPage: true },
-  meta: { title: 'MAA 干员养成' },
-}

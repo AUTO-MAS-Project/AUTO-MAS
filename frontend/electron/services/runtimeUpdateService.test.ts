@@ -215,6 +215,7 @@ function managedConfig(): RuntimeLaunchConfig {
 /** 隔离联网与磁盘操作，保留更新编排的 Runtime 对齐参数检查。 */
 const alignStub = {
   calls: [] as RuntimeBinaryAlignOptions[],
+  dispose: vi.fn(async () => {}),
   /** 顺序断言要看它时打开；缺省不进流水，免得每条既有断言都要改。 */
   logCalls: false,
   async run(options: RuntimeBinaryAlignOptions): Promise<RuntimeBinaryAlignResult> {
@@ -228,13 +229,16 @@ function createDeps(backend: BackendUpdateController, launchConfig: RuntimeLaunc
   return {
     backend,
     launchConfig,
+    prepareUpgrade: async () => ({
+      apply: (options: RuntimeBinaryAlignOptions) => alignStub.run(options),
+      dispose: alignStub.dispose,
+    }),
     createRuntimeService: (
       options: ConstructorParameters<typeof RuntimeInitializationService>[0]
     ) =>
       new RuntimeInitializationService({
         ...options,
         createClient: () => new FakeRuntimeClient() as never,
-        alignRuntimeBinary: alignOptions => alignStub.run(alignOptions),
       }),
   }
 }
@@ -247,11 +251,35 @@ const collect = (update: RuntimeUpdateProgress): void => {
 beforeEach(() => {
   callLog = []
   progressUpdates.length = 0
+  alignStub.dispose.mockClear()
   alignStub.calls = []
   alignStub.logCalls = false
   FakeRuntimeClient.script = [helloEvent, okResult()]
   FakeRuntimeClient.gate = null
   resetRuntimeUpdateSession()
+})
+
+it('可重试失败期间持有 Runtime 材料，重试完成后释放', async () => {
+  FakeRuntimeClient.script = [
+    helloEvent,
+    ...failResult({
+      stage: 'dependencies.sync',
+      code: 'DEPENDENCY_SYNC_FAILED',
+      message: '依赖同步失败',
+      remediation: ['retry-sync'],
+    }),
+  ]
+  const failed = await updateBackendViaRuntime(
+    '5.6.0',
+    collect,
+    createDeps(createBackend(), managedConfig())
+  )
+  expect(failed).toMatchObject({ success: false, phase: 'bootstrap' })
+  expect(alignStub.dispose).not.toHaveBeenCalled()
+  FakeRuntimeClient.script = [helloEvent, okResult('dependencies.sync')]
+  const retried = await retryBackendUpdate('dependencies-sync', collect)
+  expect(retried.success).toBe(true)
+  expect(alignStub.dispose).toHaveBeenCalledTimes(1)
 })
 
 /** 取消进行中的 bootstrap 时 Runtime 给的收尾脚本。 */

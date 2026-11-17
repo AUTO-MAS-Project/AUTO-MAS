@@ -24,11 +24,12 @@
 from __future__ import annotations
 
 import inspect
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping, cast
 
 from app.config import config_manager
 from app.core import Config
 from app.core.notify.channels.registry import ChannelRegistry
+from app.models.config.plugin_script import UserEntry
 from app.models.notification.channel import (
     SCOPE_GLOBAL,
     NotificationSourceConfig,
@@ -90,20 +91,44 @@ _POLICY = NotifyChannel(
 _registry: ChannelRegistry | None = None
 
 
-class TargetConfigView:
-    """只将 Notify 字段和目标集合暴露给内置渠道。"""
+_USER_NOTIFY_FIELDS = {
+    "Enabled": "enabled",
+    "IfSendStatistic": "if_send_statistic",
+    "IfSendSixStar": "if_send_six_star",
+    "IfSendMail": "if_send_mail",
+    "ToAddress": "to_address",
+    "IfServerChan": "if_server_chan",
+    "ServerChanKey": "server_chan_key",
+}
 
-    def __init__(self, config: NotificationSourceConfig) -> None:
+
+class TargetConfigView:
+    """统一读取新用户和既有 Notify 分组；渠道只接触通知字段。"""
+
+    def __init__(self, config: NotificationSourceConfig | UserEntry) -> None:
+        """绑定通知来源配置，识别实际声明的通知分组，兼容新插件小写字段与旧专项大写字段。"""
         self.__config = config
+        # 迁入的专项若仍声明实际 Notify 分组，继续使用该组的既有配置。
+        self.__lowercase = (
+            isinstance(config, UserEntry) and "Notify" not in type(config).model_fields
+        )
 
     def get(self, group: str, name: str) -> Any:
+        """按统一通知字段名称读取对应配置值，拒绝访问通知分组之外的内容。"""
         if group != "Notify":
             raise ValueError("通知渠道只能读取 Notify 配置")
-        return getattr(self.__config.Notify, name)
+        if self.__lowercase:
+            return getattr(
+                cast(UserEntry, self.__config).notify, _USER_NOTIFY_FIELDS[name]
+            )
+        return getattr(cast(NotificationSourceConfig, self.__config).Notify, name)
 
     @property
     def Notify_CustomWebhooks(self) -> Any:
-        return self.__config.Notify_CustomWebhooks
+        """读取当前通知来源的自定义 Webhook 配置，统一新旧配置字段入口。"""
+        if self.__lowercase:
+            return cast(UserEntry, self.__config).custom_webhooks
+        return cast(NotificationSourceConfig, self.__config).Notify_CustomWebhooks
 
 
 class RuntimeConfigView:

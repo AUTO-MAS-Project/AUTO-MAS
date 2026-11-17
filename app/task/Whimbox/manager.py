@@ -32,19 +32,18 @@ from app.config import ConfigCollection, config_manager
 from app.core import Config, Notify, Publisher
 from app.core.script_update import (
     ScriptUpdateRequest,
-    run_script_update_with_safe_fallback,
     auto_recover_script_install,
     run_managed_script_install,
-    run_script_update,
+    run_script_update_with_safe_fallback,
 )
-from app.services import script_install
-from app.services.script_install_backup import ManagedInstallBackup
 from app.core.script_update_recovery import DownloadRetryFailed, InstallInspection
 from app.core.ws import protocol
 from app.models.config import WhimboxConfig, WhimboxUserConfig
 from app.models.notification.report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
+from app.services import script_install
+from app.services.script_install_backup import ManagedInstallBackup
 from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import push_dispatch_log
 from app.utils import TASK_MODE_ZH, get_logger
@@ -59,7 +58,6 @@ from .tools.update import (
     RECOVERY_HINT,
     WhimboxUpdateUnsafeError,
     confirm_usable_installation,
-    ensure_backend_updated,
     installation_access,
     pending_marker,
 )
@@ -70,6 +68,24 @@ logger = get_logger("奇想盒 调度器")
 
 class WhimboxManager(ScriptManagerBase):
     """奇想盒控制器（无限暖暖，PC 前台原生来源线）"""
+
+    @staticmethod
+    async def check_prefetch(config) -> list:
+        """查询发行版本并比较当前安装，允许接管且确需更新时返回 wheel 下载地址与内容摘要。"""
+        from app.models.schema import DownloadRequest
+
+        root = config.Info.RootPath
+        if not config.Update.TakeoverEnabled or root is None:
+            return []
+        target, _name, url, digest = backend_update.select_wheel(
+            await backend_update.request_release()
+        )
+        if (
+            not backend_update.pending_marker(root).exists()
+            and await backend_update.installed_version(root) >= target
+        ):
+            return []
+        return [DownloadRequest(url=url, content_hash=digest)]
 
     async def prefetch_script_update(self) -> None:
         config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]

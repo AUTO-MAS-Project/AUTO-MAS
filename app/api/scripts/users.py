@@ -21,7 +21,6 @@ import uuid
 from typing import (
     Dict,
     List,
-    Literal,
     Optional,
     Union,
 )
@@ -30,6 +29,7 @@ from fastapi import APIRouter, Body
 from pydantic import (
     BaseModel,
     Field,
+    SerializeAsAny,
     model_validator,
 )
 
@@ -41,6 +41,7 @@ from app.models.schema import (
     UserDeleteIn,
     UserInBase,
 )
+from app.models.script_access import script_users
 from app.utils import get_logger
 
 BAAHUserConfig = ConfigPayload[_config_models.BAAHUserConfig]
@@ -91,12 +92,6 @@ MaaFWUserConfig = ConfigPayload[_config_models.MaaFWUserConfig]
 MaaFWUserConfigInput = ConfigInput[_config_models.MaaFWUserConfig]
 
 
-MaaUserConfig = ConfigPayload[_config_models.MaaUserConfig]
-
-
-MaaUserConfigInput = ConfigInput[_config_models.MaaUserConfig]
-
-
 OkNteUserConfig = ConfigPayload[_config_models.OkNteUserConfig]
 
 
@@ -129,22 +124,27 @@ ZzzOdUserConfigInput = ConfigInput[_config_models.ZzzOdUserConfig]
 
 class UserIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal[
-        "MaaUserConfig",
-        "GeneralUserConfig",
-        "OkwwUserConfig",
-        "OkNteUserConfig",
-        "SrcUserConfig",
-        "MaaEndUserConfig",
-        "M9AUserConfig",
-        "MaaFWUserConfig",
-        "HSRUserConfig",
-        "BetterGIUserConfig",
-        "ZzzOdUserConfig",
-        "BAAHUserConfig",
-        "WhimboxUserConfig",
-        "MSSUserConfig",
-    ] = Field(..., description="配置类型")
+    type: str = Field(
+        json_schema_extra={
+            "enum": [
+                "GeneralUserConfig",
+                "OkwwUserConfig",
+                "OkNteUserConfig",
+                "SrcUserConfig",
+                "MaaEndUserConfig",
+                "M9AUserConfig",
+                "MaaFWUserConfig",
+                "HSRUserConfig",
+                "BetterGIUserConfig",
+                "ZzzOdUserConfig",
+                "BAAHUserConfig",
+                "WhimboxUserConfig",
+                "MSSUserConfig",
+            ]
+        },
+        default=...,
+        description="配置类型",
+    )
 
 
 class UserConfigDirIn(UserInBase):
@@ -166,7 +166,7 @@ class UserGetOut(OutBase):
     data: Dict[
         str,
         Union[
-            MaaUserConfig,
+            SerializeAsAny[BaseModel],
             SrcUserConfig,
             GeneralUserConfig,
             OkwwUserConfig,
@@ -187,7 +187,7 @@ class UserGetOut(OutBase):
 class UserCreateOut(OutBase):
     userId: str = Field(..., description="新创建的账号ID")
     data: Union[
-        MaaUserConfig,
+        SerializeAsAny[BaseModel],
         SrcUserConfig,
         GeneralUserConfig,
         OkwwUserConfig,
@@ -207,7 +207,7 @@ class UserCreateOut(OutBase):
 class UserUpdateIn(UserInBase):
     userId: str = Field(..., description="账号ID")
     data: Union[
-        MaaUserConfigInput,
+        SerializeAsAny[BaseModel],
         SrcUserConfigInput,
         GeneralUserConfigInput,
         OkwwUserConfigInput,
@@ -230,7 +230,9 @@ class UserUpdateIn(UserInBase):
         if not isinstance(value, dict) or not isinstance(value.get("data"), dict):
             return value
         try:
-            target = Config.ScriptConfig[value["scriptId"]].UserData[value["userId"]]
+            target = script_users(Config.ScriptConfig[value["scriptId"]])[
+                value["userId"]
+            ]
         except (KeyError, ValueError, TypeError, AttributeError):
             return value
         payload = config_contract(type(target), mode="input").model_validate(
@@ -259,7 +261,7 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
     try:
         index, data = await Config.get_user(user.scriptId, user.userId)
         index = [UserIndexItem(**_) for _ in index]
-        user_configs = Config.ScriptConfig[uuid.UUID(user.scriptId)].UserData
+        user_configs = script_users(Config.ScriptConfig[uuid.UUID(user.scriptId)])
         data = {
             uid: ConfigPayload[type(user_configs[uuid.UUID(uid)])](**cfg)
             for uid, cfg in data.items()
@@ -273,7 +275,7 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
             index=[],
             data={},
         )
-    return UserGetOut(index=index, data=data)
+    return UserGetOut.model_validate({"index": index, "data": data})
 
 
 @router.post(

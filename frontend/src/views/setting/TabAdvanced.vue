@@ -14,7 +14,7 @@ import type { ScriptType } from '@/types/script'
 
 import { useLogExport } from '@/composables/useLogExport'
 import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
-import { useMaaIssueReport } from '@/composables/useMaaIssueReport'
+import { useMaaIssueReport } from '@maa/composables/useMaaIssueReport'
 import { useOkwwIssueReport } from '@/composables/useOkwwIssueReport'
 import { useOkNteIssueReport } from '@/composables/useOkNteIssueReport'
 import { useZzzOdIssueReport } from '@/composables/useZzzOdIssueReport'

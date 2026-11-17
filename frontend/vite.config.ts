@@ -72,8 +72,20 @@ export default defineConfig(({ command }) => {
     base: './',
     resolve: {
       extensions: ['.js', '.ts', '.vue', '.json'],
+      dedupe: [
+        'vue',
+        'vue-router',
+        'vue-i18n',
+        'ant-design-vue',
+        '@ant-design/icons-vue',
+        '@vueuse/core',
+        'pinyin-pro',
+        'vuedraggable',
+        'dayjs',
+      ],
       alias: {
         '@': path.resolve(__dirname, './src'),
+        '@maa': path.resolve(__dirname, '../plugins/maa_adapter/frontend'),
       },
     },
     define: {
@@ -94,6 +106,7 @@ export default defineConfig(({ command }) => {
     server: {
       // 钉死 IPv4：localhost 解析随环境漂移（本机 vite 曾只绑 ::1，而 wait-on 经 Node 访问
       // IPv6 回环被拒），host 需与 electron-dev 的 wait-on/VITE_DEV_SERVER_URL 同为 127.0.0.1
+      fs: { allow: [path.resolve(__dirname, '..')] },
       host: '127.0.0.1',
       port: DEV_SERVER_PORT,
       // 端口被占用时直接失败，避免静默换端口后 Electron 仍加载另一实例的页面
@@ -127,6 +140,7 @@ export default defineConfig(({ command }) => {
       // dist-electron 是 Electron 主进程的 CJS 编译产物（源测试在 electron/），
       // 编译后的 require('vite-plus/test') 无法运行，不排除会让 yarn test 随构建必然失败
       // debug 是本地日志与临时验证目录，不属于单元测试源。
+      include: ['src/**/*.test.ts', 'electron/**/*.test.ts', '../plugins/*/frontend/**/*.test.ts'],
       exclude: [...configDefaults.exclude, '**/dist-electron/**', '**/debug/**'],
     },
   }
