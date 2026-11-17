@@ -190,6 +190,10 @@ class ProcessManager:
         return None
 
     @property
+    def desktop_process(self) -> "DesktopProcess | None":
+        return self._desktop_process
+
+    @property
     def main_hwnd(self) -> int | None:
         """主进程的主窗口句柄"""
 
@@ -248,9 +252,15 @@ class ProcessManager:
 
         desktop = desktop_process_target.get()
         if desktop is not None:
-            if (elevated and not IS_ELEVATED) or any(
-                stream != asyncio.subprocess.DEVNULL
-                for stream in (stdin, stdout, stderr)
+            if (elevated and not IS_ELEVATED) or (
+                stdin not in (asyncio.subprocess.DEVNULL, asyncio.subprocess.PIPE)
+                or stdout not in (asyncio.subprocess.DEVNULL, asyncio.subprocess.PIPE)
+                or stderr
+                not in (
+                    asyncio.subprocess.DEVNULL,
+                    asyncio.subprocess.PIPE,
+                    asyncio.subprocess.STDOUT,
+                )
             ):
                 raise ValueError("桌面分身暂不支持此进程启动方式")
             from app.utils.windows.desktop_session.process_runner import (
@@ -272,11 +282,21 @@ class ProcessManager:
                 ),
                 drain=null_stream_to_pipe,
                 env=env,
+                stream_limit=(
+                    2**16
+                    if asyncio.subprocess.PIPE in (stdin, stdout, stderr)
+                    else None
+                ),
+                merge=stderr == asyncio.subprocess.STDOUT,
+                interactive=stdin == asyncio.subprocess.PIPE,
             )
             if scope is not None:
-                scope.add_check(
-                    "停止桌面分身进程", self._desktop_process.stop, timeout=12
-                )
+                if retain_desktop_descendants:
+                    scope.retain_desktop_process(self._desktop_process.stop)
+                else:
+                    scope.add_check(
+                        "停止桌面分身进程", self._desktop_process.stop, timeout=12
+                    )
             if target_process is not None:
                 try:
                     await self.search_process(target_process, min_create_time=started)
@@ -509,11 +529,17 @@ class ProcessManager:
 
         await self.clear()
 
-    async def clear(self) -> None:
+    async def clear(self, *, keep_desktop_descendants: bool = False) -> None:
         """清空跟踪的进程信息"""
 
         if self._desktop_process is not None:
-            await self._desktop_process.stop()
+            keep = (
+                keep_desktop_descendants
+                and self._desktop_process.returncode == 0
+                and current_process_scope.get() is not None
+            )
+            if not keep:
+                await self._desktop_process.stop()
             self._desktop_process = None
 
         # 清理残留的排水任务, 避免泄漏
@@ -584,6 +610,8 @@ class ProcessManager:
             bool: 操作是否成功
         """
 
+        if desktop_process_target.get() is not None:
+            return await self._operate_desktop_window("minimize_process_window")
         hwnd = self.main_hwnd
         if hwnd is None:
             return False
@@ -600,6 +628,8 @@ class ProcessManager:
             bool: 操作是否成功
         """
 
+        if desktop_process_target.get() is not None:
+            return await self._operate_desktop_window("activate_process_window")
         hwnd = self.main_hwnd
         if hwnd is None:
             return False
@@ -608,6 +638,27 @@ class ProcessManager:
             return window.activate_window(hwnd)
         except Exception:
             return False
+
+    async def _operate_desktop_window(self, action: str) -> bool:
+        if (
+            desktop := desktop_process_target.get()
+        ) is not None and self.main_pid is not None:
+            from app.utils.windows.desktop_session.process_runner import (
+                run_desktop_action,
+            )
+
+            code, _, _ = await run_desktop_action(
+                desktop,
+                action,
+                {
+                    "pid": str(self.main_pid),
+                    "title": self.window_title,
+                    "class": self.window_class_name,
+                },
+                worker_module="app.utils.windows.desktop_session.process_worker",
+            )
+            return code == 0
+        return False
 
     async def close(self) -> None:
         """请被管理进程自行退出，等它走完退出时的配置保存

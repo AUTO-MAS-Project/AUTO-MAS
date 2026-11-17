@@ -195,3 +195,62 @@ def test_desktop_job_keeps_game_after_launcher_exits(monkeypatch, tmp_path):
         worker.result(timeout=10)
         assert frames.get(timeout=1)["returnCode"] == 0
         game.wait(timeout=10)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="需要 Windows Job Object")
+@pytest.mark.parametrize("interactive", [False, True])
+def test_desktop_job_forwards_stdio_before_exit(monkeypatch, tmp_path, interactive):
+    import base64
+    import sys
+    from concurrent.futures import ThreadPoolExecutor
+    from queue import Queue
+
+    from app.utils.windows.desktop_session import process_worker
+
+    frames = Queue()
+    controls = Queue()
+    payload = base64.b64encode(b"run\n").decode("ascii")
+    controls.put(
+        {
+            "argv": [
+                sys.executable,
+                "-u",
+                "-c",
+                "import sys; print('ready'); print(sys.stdin.readline().strip()); "
+                "print('diagnostic', file=sys.stderr)",
+            ],
+            "cwd": str(tmp_path),
+            "stream": True,
+            "interactive": interactive,
+            "stdin": None if interactive else payload,
+            "merge": False,
+            "env": None,
+            "retain": False,
+            "capture": False,
+        }
+    )
+    monkeypatch.setattr(process_worker, "send", lambda pipe, frame: frames.put(frame))
+    monkeypatch.setattr(process_worker, "receive", lambda pipe: controls.get(timeout=5))
+    monkeypatch.setattr(
+        process_worker.win32pipe,
+        "PeekNamedPipe",
+        lambda pipe, size: (b"", controls.qsize(), 0),
+    )
+
+    with ThreadPoolExecutor(max_workers=1) as thread_pool:
+        worker = thread_pool.submit(process_worker.run, None)
+        try:
+            assert frames.get(timeout=10)["pid"] > 0
+            output = {"stdout": bytearray(), "stderr": bytearray()}
+            while "returnCode" not in (frame := frames.get(timeout=10)):
+                for name in output.keys() & frame.keys():
+                    output[name].extend(base64.b64decode(frame[name]))
+                if interactive and b"ready" in output["stdout"]:
+                    controls.put({"input": payload})
+                    interactive = False
+            assert frame["returnCode"] == 0
+            assert output["stdout"].splitlines() == [b"ready", b"run"]
+            assert output["stderr"].splitlines() == [b"diagnostic"]
+        finally:
+            controls.put({"stop": True})
+        worker.result(timeout=10)

@@ -18,6 +18,9 @@ def supports_task(config: object) -> bool:
     from app.models.config import (
         BetterGIConfig,
         GeneralConfig,
+        HSRConfig,
+        MaaEndConfig,
+        MaaFWConfig,
         OkNteConfig,
         OkwwConfig,
         WhimboxConfig,
@@ -27,7 +30,44 @@ def supports_task(config: object) -> bool:
 
     if isinstance(config, GeneralConfig):
         return not config.Game.Enabled or config.Game.Type != "Emulator"
-    if isinstance(config, (OkNteConfig, OkwwConfig)):
+    if isinstance(config, MaaEndConfig):
+        from app.task.MaaEnd.resource_loader import load_maaend_controller_protocol
+
+        if config.Info.Path is None:
+            return False
+        try:
+            return (
+                load_maaend_controller_protocol(
+                    config.Info.Path, str(config.Game.ControllerType).strip()
+                )
+                == "Win32"
+            )
+        except (OSError, KeyError, ValueError):
+            return False
+    if isinstance(config, MaaFWConfig):
+        from app.task.MaaFW.tools.core.interface.service import MaaFWInterfaceService
+        from app.task.MaaFW.tools.core.runner.run_plan import (
+            _select_controller,
+            resolve_run_selection,
+        )
+        from app.task.MaaFW.tools.embedded.embedded_project import (
+            resolve_maafw_project_root,
+        )
+
+        try:
+            interface = MaaFWInterfaceService().load(
+                resolve_maafw_project_root(str(config.uid), config)
+            )
+            name, _ = resolve_run_selection(
+                interface,
+                configured_controller=str(config.Info.Controller),
+                emulator_selected=config.Emulator.Id != "-",
+                configured_resource=str(config.Info.Resource),
+            )
+            return _select_controller(interface, name).type == "Win32"
+        except (OSError, ValueError):
+            return False
+    if isinstance(config, (HSRConfig, OkNteConfig, OkwwConfig)):
         return True
     if isinstance(config, BetterGIConfig):
         return (

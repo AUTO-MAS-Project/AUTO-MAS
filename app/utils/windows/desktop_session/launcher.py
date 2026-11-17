@@ -136,10 +136,15 @@ def run_executor(
     interpreter = Path(sys.executable).with_name("pythonw.exe")
     action.Path = str(interpreter) if interpreter.is_file() else sys.executable
     action.WorkingDirectory = str(source)
+    executor_module = "app.utils.windows.desktop_session.process_worker"
+    handler_args = (
+        ["--handler-module", worker_module] if worker_module != executor_module else []
+    )
     action.Arguments = subprocess.list2cmdline(
         [
             "-m",
-            worker_module,
+            executor_module,
+            *handler_args,
             "--session-id",
             str(session_id),
             "--pipe",

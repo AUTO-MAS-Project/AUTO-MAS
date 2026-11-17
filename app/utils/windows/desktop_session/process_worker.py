@@ -11,8 +11,10 @@ import time
 import traceback
 from collections.abc import Callable
 from contextlib import closing, suppress
+from importlib import import_module
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from queue import Empty, Queue
 from tempfile import TemporaryFile
 
 import win32pipe
@@ -24,18 +26,50 @@ from .native import handle_scope, process_session
 
 def run(pipe) -> None:
     launch = receive(pipe)
+    if launch.get("action") in {"activate_process_window", "minimize_process_window"}:
+        send(pipe, {"pid": os.getpid()})
+        code = run_window_action(launch["action"], launch["arguments"])
+        send(pipe, {"returnCode": code})
+        return
     if "open" in launch:
         os.startfile(launch["open"])
         send(pipe, {"pid": 0})
         send(pipe, {"returnCode": 0})
         return
 
-    if launch["capture"]:
+    if launch.get("stream"):
+        run_process(pipe, launch, subprocess.PIPE, subprocess.PIPE)
+    elif launch["capture"]:
         with TemporaryFile() as stdout, TemporaryFile() as stderr:
             run_process(pipe, launch, stdout, stderr)
     else:
         stream = subprocess.PIPE if launch.get("drain") else subprocess.DEVNULL
         run_process(pipe, launch, stream, stream)
+
+
+def run_window_action(action: str, arguments: dict) -> int:
+    from app.utils.common.process.manager import get_main_window_handle, window
+    from app.utils.common.process.operations import managed_process
+
+    pid = int(arguments["pid"])
+    if process_session(pid) != process_session(os.getpid()):
+        return 1
+    process = managed_process(pid)
+    hwnd = (
+        get_main_window_handle(
+            process.pid,
+            arguments.get("title") or None,
+            arguments.get("class") or None,
+        )
+        if process is not None
+        else None
+    )
+    operation = (
+        window.activate_window
+        if action == "activate_process_window"
+        else window.minimize_window
+    )
+    return int(not (hwnd and operation(hwnd)))
 
 
 def run_process(pipe, launch: dict, stdout, stderr) -> None:
@@ -46,7 +80,9 @@ def run_process(pipe, launch: dict, stdout, stderr) -> None:
         process = subprocess.Popen(
             launch["argv"],
             cwd=launch["cwd"],
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.PIPE
+            if launch.get("interactive") or launch.get("stdin") is not None
+            else subprocess.DEVNULL,
             stdout=stdout,
             stderr=subprocess.STDOUT if launch["merge"] else stderr,
             env=launch["env"],
@@ -58,29 +94,116 @@ def run_process(pipe, launch: dict, stdout, stderr) -> None:
             process.kill()
             process.wait()
             raise
-        for stream in (process.stdout, process.stderr):
-            if stream is not None:
+        output: Queue[tuple[str, bytes | None]] | None = (
+            Queue(maxsize=64) if launch.get("stream") else None
+        )
+        readers = []
+        for name, stream in (("stdout", process.stdout), ("stderr", process.stderr)):
+            if stream is not None and output is not None:
+                reader = threading.Thread(
+                    target=stream_output, args=(name, stream, output), daemon=True
+                )
+                readers.append(reader)
+                reader.start()
+            elif stream is not None:
                 threading.Thread(
                     target=discard_output, args=(stream,), daemon=True
                 ).start()
         send(pipe, {"pid": process.pid})
+        if process.stdin is not None and launch.get("stdin") is not None:
+            threading.Thread(
+                target=write_input,
+                args=(process.stdin, base64.b64decode(launch["stdin"])),
+                daemon=True,
+            ).start()
+        if output is not None:
+            supervise_streamed_process(pipe, launch, process, job, output, readers)
+            return
         # 允许引导程序退出后，Job 继续持有派生的游戏或被跟踪的脚本。
+        exit_sent = False
         while process.poll() is None or (
             launch["retain"] and job.has_active_processes()
         ):
             if win32pipe.PeekNamedPipe(pipe, 0)[1] and receive(pipe)["stop"]:
                 break
+            if (
+                launch["retain"]
+                and launch["capture"]
+                and not exit_sent
+                and process.poll() is not None
+            ):
+                send_capture(pipe, stdout, stderr)
+                send(pipe, {"exitCode": process.returncode})
+                exit_sent = True
             time.sleep(0.05)
         job.kill()
         code = process.wait()
-        if launch["capture"]:
-            for name, stream in (("stdout", stdout), ("stderr", stderr)):
-                stream.seek(0)
-                while chunk := stream.read(24 * 1024):
-                    send(pipe, {name: base64.b64encode(chunk).decode("ascii")})
+        if launch["capture"] and not exit_sent:
+            send_capture(pipe, stdout, stderr)
         send(pipe, {"returnCode": code})
     finally:
         job.close()
+
+
+def send_capture(pipe, stdout, stderr) -> None:
+    for name, stream in (("stdout", stdout), ("stderr", stderr)):
+        # Windows 子进程可能继承文件句柄，父端读取时保留其写入偏移。
+        offset = stream.tell()
+        remaining = os.fstat(stream.fileno()).st_size
+        stream.seek(0)
+        try:
+            while remaining and (chunk := stream.read(min(remaining, 24 * 1024))):
+                send(pipe, {name: base64.b64encode(chunk).decode("ascii")})
+                remaining -= len(chunk)
+        finally:
+            stream.seek(offset)
+
+
+def supervise_streamed_process(pipe, launch, process, job, output, readers) -> None:
+    exit_sent = False
+    while True:
+        if win32pipe.PeekNamedPipe(pipe, 0)[1]:
+            message = receive(pipe)
+            if message.get("stop"):
+                job.kill()
+            elif "input" in message and process.stdin is not None:
+                with suppress(BrokenPipeError):
+                    process.stdin.write(base64.b64decode(message["input"]))
+                    process.stdin.flush()
+        code = process.poll()
+        if code is not None and not exit_sent:
+            send(pipe, {"exitCode": code})
+            exit_sent = True
+            if not launch["retain"]:
+                job.kill()
+        try:
+            name, chunk = output.get(timeout=0.05)
+        except Empty:
+            if (
+                exit_sent
+                and not job.has_active_processes()
+                and not any(reader.is_alive() for reader in readers)
+                and output.empty()
+            ):
+                break
+        else:
+            if chunk is None:
+                send(pipe, {"eof": name})
+            else:
+                send(pipe, {name: base64.b64encode(chunk).decode("ascii")})
+    send(pipe, {"returnCode": process.wait()})
+
+
+def write_input(stream, data: bytes) -> None:
+    with suppress(BrokenPipeError), stream:
+        stream.write(data)
+
+
+def stream_output(name: str, stream, output: Queue[tuple[str, bytes | None]]) -> None:
+    with stream:
+        while chunk := stream.read1(24 * 1024):
+            output.put((name, chunk))
+    output.put((name, None))
 
 
 def discard_output(stream) -> None:
@@ -95,6 +218,7 @@ def main(handle_request: Callable = run) -> None:
     parser.add_argument("--parent-pid", type=int, required=True)
     parser.add_argument("--pipe", required=True)
     parser.add_argument("--diagnostics", type=Path, required=True)
+    parser.add_argument("--handler-module")
     args = parser.parse_args()
     if sys.stderr is None:
         sys.stderr = open(os.devnull, "w", encoding="utf-8")
@@ -105,6 +229,8 @@ def main(handle_request: Callable = run) -> None:
     try:
         with handle_scope(connect_executor_pipe(args.pipe, args.parent_pid)) as pipe:
             try:
+                if args.handler_module is not None:
+                    handle_request = import_module(args.handler_module).run_action
                 handle_request(pipe)
             except Exception as error:
                 with suppress(OSError, Win32Error):

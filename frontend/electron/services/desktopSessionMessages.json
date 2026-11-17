@@ -47,7 +47,7 @@
     "closeConfirm": "关闭窗口将注销桌面分身并关闭其中运行的软件，未保存的数据会丢失。是否继续？",
     "closeContinue": "继续关闭",
     "closeFailed": "未能确认任务收尾或注销，请查看分身日志后重试。",
-    "unsupportedTarget": "桌面分身支持 PC 通用托管、BetterGI、ok-ww、ok-nte、绝区零一条龙和奇想盒。模拟器托管请在主会话运行。BetterGI 须关闭接管更新，绝区零一条龙需要以管理员身份运行 MAS。请检查队列内的托管配置。",
+    "unsupportedTarget": "此队列或托管的运行方式不支持桌面分身。模拟器任务请在主会话运行；MaaEnd 和 MFW 请选择 PC 控制器，BetterGI 请关闭接管更新。",
     "dispatchFailed": "任务派发失败，请查看分身日志。",
     "targetMissing": "队列或托管任务不存在。",
     "errors": {
@@ -181,7 +181,7 @@
     "closeConfirm": "Closing this window signs out the desktop session and closes its apps. Unsaved changes will be lost. Continue?",
     "closeContinue": "Close session",
     "closeFailed": "Could not confirm task shutdown or sign-out. Check the logs and try again.",
-    "unsupportedTarget": "Desktop sessions support PC General tasks, BetterGI, ok-ww, ok-nte, ZZZ One Dragon, and Whimbox. Run emulator tasks on the main desktop, disable BetterGI update takeover, and run MAS as administrator for ZZZ One Dragon. Check the tasks in the queue.",
+    "unsupportedTarget": "This queue or managed script is configured for a mode that cannot run in a desktop session. Run emulator tasks on the main desktop, select a PC controller for MaaEnd and MFW, and disable update takeover for BetterGI.",
     "dispatchFailed": "Could not dispatch the task. Check the session logs.",
     "targetMissing": "The queue or managed task no longer exists.",
     "errors": {
@@ -315,7 +315,7 @@
     "closeConfirm": "ウィンドウを閉じるとセッションからサインアウトし、実行中のアプリが終了します。未保存の変更は失われます。続行しますか？",
     "closeContinue": "セッションを閉じる",
     "closeFailed": "タスクの終了またはサインアウトを確認できませんでした。ログを確認して再試行してください。",
-    "unsupportedTarget": "デスクトップ分身は PC の汎用タスク、BetterGI、ok-ww、ok-nte、ZZZ One Dragon、Whimbox に対応しています。エミュレーターはメインデスクトップで実行してください。BetterGI の更新管理を無効にし、ZZZ One Dragon では MAS を管理者として実行してください。",
+    "unsupportedTarget": "このキューまたは管理スクリプトの実行方式はデスクトップ分身に対応していません。エミュレーターはメインデスクトップで実行し、MaaEnd と MFW では PC コントローラーを選び、BetterGI の更新管理を無効にしてください。",
     "dispatchFailed": "タスクを開始できませんでした。セッションログを確認してください。",
     "targetMissing": "キューまたは管理タスクが存在しません。",
     "errors": {

@@ -29,6 +29,7 @@ class TaskProcessScope:
         self._base_flags = process_platform.platform_process.creation_flags
         self._breakaway_flags = process_platform.platform_process.breakaway_flags
         self.checks: list[StopCheck] = []
+        self._desktop_stoppers: list[Callable[[], Awaitable[None]]] = []
         self.requested = False
         self.closed = False
         self.cleanup_failed = False
@@ -51,6 +52,15 @@ class TaskProcessScope:
         if timeout <= 0:
             raise ValueError("停止检查超时必须大于 0")
         self.checks.append(StopCheck(name, run, timeout))
+
+    def retain_desktop_process(self, stop: Callable[[], Awaitable[None]]) -> None:
+        self._desktop_stoppers.append(stop)
+        self.add_check("desktop process", stop, timeout=12)
+
+    async def close_desktop_processes(self) -> None:
+        stoppers, self._desktop_stoppers = self._desktop_stoppers, []
+        if stoppers:
+            await asyncio.gather(*(stop() for stop in stoppers))
 
     def retain_worker(self, task: asyncio.Task) -> None:
         """保留反映底层真实完成的句柄，不让统一取消制造假完成。"""

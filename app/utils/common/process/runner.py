@@ -368,6 +368,7 @@ class ProcessRunner:
         env: Mapping[str, str] | None = None,
         deadline: float | None = None,
         cleanup: bool = False,
+        retain_desktop_descendants: bool = False,
     ) -> ProcessResult:
         """运行子进程并等待其结束，返回解码后的输出。
 
@@ -411,12 +412,18 @@ class ProcessRunner:
                     capture=True,
                     merge=if_merge_std,
                     env=env,
+                    retain=retain_desktop_descendants and scope is not None,
                 )
                 try:
                     async with asyncio.timeout(timeout):
-                        code, stdout, stderr = await remote.wait()
-                finally:
+                        code, stdout, stderr = await remote.wait_result()
+                    if code == 0 and retain_desktop_descendants and scope is not None:
+                        scope.retain_desktop_process(remote.stop)
+                    else:
+                        await remote.stop()
+                except BaseException:
                     await remote.stop()
+                    raise
             return ProcessResult(decode_bytes(stdout), decode_bytes(stderr), code)
 
         process = None

@@ -1,10 +1,13 @@
 """在桌面分身执行需要操作窗口的专项动作。"""
 
+import asyncio
 import base64
+import json
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from importlib import import_module
 from pathlib import Path
+from typing import Any
 
 from app.task.Okww.tools.maintenance import GameMaintenanceDetected
 from app.utils.common.process.session import DesktopProcessTarget
@@ -50,6 +53,25 @@ async def detect_desktop_maintenance(
     return stdout.decode("utf-8") if stdout else None
 
 
+async def request_desktop_action(
+    desktop: DesktopProcessTarget,
+    action: str,
+    arguments: dict[str, str],
+    *,
+    on_log: Callable[[str], None] | None = None,
+    on_restart: Callable[[], Awaitable[None]] | None = None,
+) -> tuple[int, Any]:
+    code, stdout, _ = await run_action_in_session(
+        desktop,
+        action,
+        arguments,
+        on_log,
+        worker_module=_WORKER_MODULE,
+        on_restart=on_restart,
+    )
+    return code, json.loads(stdout) if stdout else None
+
+
 def run_action(pipe) -> None:
     request = receive(pipe)
     from app.utils.common.process.session import configure_parent_scope
@@ -82,7 +104,109 @@ def run_action(pipe) -> None:
         send(pipe, {"log": line})
 
     text = None
-    if action == "okww_has_launcher_window":
+    if action == "maaend_game_window":
+        import win32gui
+
+        text = json.dumps(bool(win32gui.FindWindow("UnityWndClass", "Endfield")))
+        code = 0
+    elif action == "maaend_failure_screenshot":
+        from app.services.common.maa_capture import capture_win32
+        from app.task.failure_capture_core import FailureCapture
+        from app.task.MaaEnd.AutoProxy import AutoProxyTask
+
+        hwnd = AutoProxyTask.find_failure_window(Path(arguments["game_path"]))
+        screenshot = None
+        if hwnd is not None:
+            image = asyncio.run(capture_win32(hwnd))
+            screenshot = FailureCapture(stopped=lambda: False).save(
+                image, dir_name="maaend-failure"
+            )
+        text = json.dumps(str(screenshot) if screenshot else None)
+        code = 0
+    elif action == "maaend_direct_launch":
+        from app.task.MaaEnd.tools.game_launcher import launch_game
+
+        launch_game(
+            arguments["launcher_path"],
+            Path(arguments["game_path"]),
+            arguments["game_arguments"],
+        )
+        code = 0
+    elif action == "maaend_launch":
+        from app.task.MaaEnd.tools.launcher_start import start_game_via_launcher
+
+        screenshots = []
+        code = int(
+            not start_game_via_launcher(
+                arguments["launcher_path"],
+                on_log=on_log,
+                on_error_screenshot=lambda path: screenshots.append(str(path)),
+            )
+        )
+        text = json.dumps(screenshots)
+    elif action == "maaend_login":
+        from app.task.MaaEnd.tools.login import LoginNotReadyError, login
+
+        async def restart() -> None:
+            send(pipe, {"restart": True})
+            if not receive(pipe).get("restart"):
+                raise asyncio.CancelledError
+
+        screenshots = []
+        not_ready = None
+        error = None
+        try:
+            asyncio.run(
+                login(
+                    arguments["account"],
+                    restart_game=restart,
+                    on_error_screenshot=lambda path: screenshots.append(str(path)),
+                )
+            )
+        except LoginNotReadyError as exc:
+            not_ready = str(exc)
+        except Exception as exc:
+            error = type(exc).__name__
+        text = json.dumps(
+            {"screenshots": screenshots, "notReady": not_ready, "error": error}
+        )
+        code = int(error is not None)
+    elif action == "maafw_windows":
+        import win32gui
+        import win32process
+
+        from app.task.MaaFW.tools.core.controller_win32.service import (
+            MaaFWWin32ControllerService,
+        )
+
+        service = MaaFWWin32ControllerService()
+        hwnd = arguments.get("hwnd")
+        if hwnd is not None:
+            hwnd = int(hwnd)
+            pid = (
+                win32process.GetWindowThreadProcessId(hwnd)[1]
+                if win32gui.IsWindow(hwnd)
+                else 0
+            )
+            text = json.dumps(bool(pid and process_session(pid) == session_id))
+        else:
+            windows = service.match_controller_windows(
+                json.loads(arguments["controller"])
+            )
+            text = json.dumps(
+                [
+                    [
+                        item.hWnd,
+                        item.className,
+                        item.windowName,
+                        win32process.GetWindowThreadProcessId(item.hWnd)[1],
+                    ]
+                    for item in windows
+                    if win32gui.IsWindow(item.hWnd)
+                ]
+            )
+        code = 0
+    elif action == "okww_has_launcher_window":
         from app.task.Okww.tools.launcher_start import has_launcher_window
 
         code = int(not has_launcher_window(arguments["launcher_path"]))
