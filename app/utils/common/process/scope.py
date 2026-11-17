@@ -271,6 +271,10 @@ class TaskProcessScope:
         self._writers.pop(id(handle), None)
         self._external_processes.pop(id(handle), None)
 
+    def kill_process_tree(self, pid: int) -> bool:
+        """按任务归属清理进程树，保留脚本主动脱离的游戏等子进程。"""
+        return self._job is not None and self._job.kill_tree(pid)
+
     def popen(self, *args: Any, **kwargs: Any) -> subprocess.Popen:
         """供安装线程使用的进程工厂，同样登记到任务进程组。"""
         if self.closed:
