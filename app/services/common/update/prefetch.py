@@ -9,12 +9,12 @@ prefetch_paths: ContextVar[dict[str, str]] = ContextVar("prefetch_paths", defaul
 
 
 async def copy_prefetched(url: str, destination: Path) -> bool:
-    """将当前任务的预下载产物复制到调用方目录，保留共享缓存原文件。
+    """按自定义 key 或原 URL 复制当前任务的预下载产物，保留共享缓存原文件。
 
     收到取消时先等待复制线程停止写入，再向调用方传播取消。
 
     Returns:
-        成功复制返回 True；未登记对应 URL 或缓存文件已不存在时返回 False，
+        成功复制返回 True；未登记对应资源键或缓存文件已不存在时返回 False，
         由调用方继续正常下载。
     """
     source = prefetch_paths.get().get(url)

@@ -196,8 +196,8 @@ def _load_manifest() -> dict[str, object] | None:
         return None
 
 
-def _load_valid_manifest() -> dict[str, object] | None:
-    """线程内复核缓存内容与版本；不一致时作废，读取异常交由调用方处理。"""
+def _load_valid_manifest(*, discard_invalid: bool = True) -> dict[str, object] | None:
+    """线程内复核缓存内容与版本；无锁预检查只读，持锁准备可作废失效清单。"""
     manifest = _load_manifest()
     if manifest is None:
         return None
@@ -209,8 +209,9 @@ def _load_valid_manifest() -> dict[str, object] | None:
             clock = None
         valid = clock is not None and parse_iso(manifest.get("target")) == clock
     if not valid:
-        _MANIFEST_FILE.unlink(missing_ok=True)
-        logger.warning("MAA 资源更新: 暂存内容或版本与清单不一致，作废缓存等待重建")
+        if discard_invalid:
+            _MANIFEST_FILE.unlink(missing_ok=True)
+        logger.warning("MAA 资源更新: 暂存内容或版本与清单不一致，等待重建")
         return None
     return manifest
 
@@ -367,7 +368,7 @@ async def _fetch_latest_version(current: str) -> datetime:
 async def _request_resource_package(
     cdk: str, *, base_clock: datetime | None = None
 ) -> tuple[str, datetime | None, bool]:
-    """申请更新包，返回地址、版本与增量标记；提供基线时允许增量。"""
+    """查询地址、版本与增量标记，查询本身不消耗下载额度；提供基线时允许增量。"""
     try:
         async with asyncio.timeout(_QUERY_TIMEOUT):
             payload = await _service_update_transport.request_mirror_resource(
@@ -416,7 +417,18 @@ def _download_line(downloaded: int, total: int, speed: float) -> str:
     return f"{label} {downloaded / _MB:.1f} MB（{speed_text}）…"
 
 
-async def _stream_download(url: str, progress: _Progress | None) -> None:
+def _download_key(base_clock: datetime | None) -> str:
+    """区分全量资源与不同基线的增量资源，供预检查和实际消费共享下载身份。"""
+    return (
+        f"mirrorchyan:MaaResource:incremental:{_format_clock(base_clock)}"
+        if base_clock is not None
+        else "mirrorchyan:MaaResource:full"
+    )
+
+
+async def _stream_download(
+    url: str, progress: _Progress | None, *, key: str, rid: str
+) -> None:
     """将资源包下载到暂存位置并转发进度，把网络或超时异常转换为资源下载错误。"""
 
     async def report_progress(downloaded: int, total: int, speed: float) -> None:
@@ -430,6 +442,8 @@ async def _stream_download(url: str, progress: _Progress | None) -> None:
         await download_file(
             url,
             _STAGE_ZIP,
+            key=key,
+            rid=rid,
             timeout=_DOWNLOAD_TIMEOUT,
             proxy=Config.proxy,
             progress=report_progress,
@@ -557,7 +571,9 @@ async def _refresh_stage(
     base_clock: datetime | None = None,
 ) -> None:
     """下载已取得地址的资源包并重建暂存；失败抛 _DownloadError。"""
-    await _stream_download(url, progress)
+    await _stream_download(
+        url, progress, key=_download_key(base_clock), rid=target.isoformat()
+    )
     await _report(progress, "校验并暂存资源包…")
     await _run_write_thread(
         _build_stage,
@@ -1293,7 +1309,7 @@ async def prepare_install_resources(
 async def check_resource_download(
     install: Path, *, github: bool, cdk: str | None, incremental: bool = False
 ) -> list:
-    """只读本地资源时钟并确认全量包需求，安装与 staging 仍由正常准备负责。"""
+    """只读确认资源需求，按已验证共享基线选择增量包；返回稳定资源键，不安装或改写暂存。"""
     from auto_mas_core import DownloadRequest
 
     current = read_resource_clock(install)
@@ -1310,9 +1326,19 @@ async def check_resource_download(
             )
         ]
     assert cdk is not None  # 非 GitHub 分支已在入口排除缺失凭证
-    url, actual, _ = await _request_resource_package(
-        cdk, base_clock=current if incremental else None
-    )
+    # 与实际准备使用同一份已验证的共享资源基线，不以任一安装的版本选择增量包。
+    stage = await asyncio.to_thread(_load_valid_manifest, discard_invalid=False)
+    if _stage_reusable(stage, target):
+        return []
+    base_clock = parse_iso(stage.get("target")) if incremental and stage else None
+    url, actual, delta = await _request_resource_package(cdk, base_clock=base_clock)
     if actual is None or actual < target:
         raise _DownloadError("资源包未达到已确认的目标版本")
-    return [DownloadRequest(url=url, rid=actual.isoformat(), downloader="builtin")]
+    return [
+        DownloadRequest(
+            url=url,
+            key=_download_key(base_clock if delta else None),
+            rid=actual.isoformat(),
+            downloader="builtin",
+        )
+    ]

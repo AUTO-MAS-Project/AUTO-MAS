@@ -4785,7 +4785,7 @@ export class Service {
     }
     /**
      * Query Download
-     * 查询指定 URL 与文件身份的下载快照，返回状态、进度及成功产物路径。
+     * 按自定义 key 或 URL 及文件身份查询下载，返回状态、进度及成功产物路径。
      * @param requestBody
      * @returns DownloadOut Successful Response
      * @throws ApiError
@@ -4845,7 +4845,7 @@ export class Service {
     }
     /**
      * Release Download
-     * 释放使用者对 URL 的引用；最后一个使用者释放时取消未完成下载，并反馈停写是否确认。
+     * 释放使用者的资源引用；自定义 key 优先于 URL，最后一次释放等待下载停写。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError

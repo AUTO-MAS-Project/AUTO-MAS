@@ -7,6 +7,7 @@
  */
 export type DownloadSnapshot = {
     url: string;
+    key?: (string | null);
     identity_type: DownloadSnapshot.identity_type;
     identity: (string | null);
     generation?: (string | null);

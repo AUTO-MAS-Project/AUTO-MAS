@@ -43,8 +43,9 @@ async def manager(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("key", [None, "shared-package"])
 async def test_default_transfer_uses_host_download_and_prefetched_copy(
-    monkeypatch, isolated_app_paths, tmp_path
+    monkeypatch, isolated_app_paths, tmp_path, key
 ):
     """通过下载中心默认传输取得文件，再由专项入口复制预下载产物；仅隔离 HTTP 传输和下载器工作目录。"""
     from app.services.common.update.prefetch import prefetch_paths
@@ -54,8 +55,11 @@ async def test_default_transfer_uses_host_download_and_prefetched_copy(
         host._utils_fluxdown_cli, "_server_data_dir", lambda _: tmp_path / "fluxdown"
     )
 
+    transfers = []
+
     async def builtin(url, destination, *, timeout, proxy=None, progress=None):
         """代替远端 HTTP 将已知文件写入真实缓存路径，报告完成进度供下载中心保存结果。"""
+        transfers.append(url)
         destination.write_bytes(b"downloaded package")
         if progress is not None:
             await progress(18, 18, 0)
@@ -64,6 +68,7 @@ async def test_default_transfer_uses_host_download_and_prefetched_copy(
     monkeypatch.setattr(host._service_update_fluxdown, "_httpx_download", builtin)
     registry = BackgroundTaskRegistry()
     manager = DownloadManager()
+    monkeypatch.setattr(host, "Downloads", manager)
     manager.initialize(
         directory=tmp_path / "downloads",
         max_running=1,
@@ -71,16 +76,36 @@ async def test_default_transfer_uses_host_download_and_prefetched_copy(
         retry_delay=0,
         background=registry,
     )
-    request = DownloadRequest(url="https://example.test/package", downloader="builtin")
+    request = DownloadRequest(
+        url="https://example.test/package", key=key, rid="v1", downloader="builtin"
+    )
     try:
         assert manager.request(request, owner="L2")
         result = await manager.wait(request)
         assert result.state == "succeeded", result
         assert result.downloaded == result.total == 18
         destination = tmp_path / "script/package"
-        token = prefetch_paths.set({request.url: result.path})
+        token = prefetch_paths.set({request.cache_key: result.path})
         try:
-            assert await host.download_file(request.url, destination, timeout=10) == 18
+            url = "https://example.test/new-address" if key else request.url
+            assert (
+                await host.download_file(
+                    url, destination, timeout=10, key=key, rid="v1"
+                )
+                == 18
+            )
+            assert transfers == [request.url]
+            if key is not None:
+                # 同一资源换版不能复制本轮交付的旧文件，必须执行新的真实传输。
+                await host.download_file(
+                    url,
+                    tmp_path / "other-version",
+                    timeout=10,
+                    key=key,
+                    rid="v2",
+                    downloader="builtin",
+                )
+                assert transfers == [request.url, url]
         finally:
             prefetch_paths.reset(token)
         assert (
@@ -88,7 +113,25 @@ async def test_default_transfer_uses_host_download_and_prefetched_copy(
             == Path(result.path).read_bytes()
             == b"downloaded package"
         )
-        assert await manager.release(request.url, owner="L2")
+        from fastapi import FastAPI
+
+        from app.api import downloads as downloads_api
+
+        monkeypatch.setattr(downloads_api, "Downloads", manager)
+        app = FastAPI()
+        app.include_router(downloads_api.router)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            reference = {"key": key} if key else {"url": request.url}
+            response = await client.post(
+                "/api/download/release", json={"owner": "L2", **reference}
+            )
+            assert response.json()["code"] == 200
+            assert manager.list(owner="L2") == []
+            assert (
+                await client.post("/api/download/release", json={"owner": "L2"})
+            ).status_code == 422
         assert Path(result.path).is_file()
     finally:
         assert await manager.shutdown_all()
@@ -98,15 +141,17 @@ async def test_default_transfer_uses_host_download_and_prefetched_copy(
 @pytest.mark.asyncio
 async def test_shared_reference_missing_file_and_identity_change(manager):
     """验证同一使用者重复申请不增加引用，多个使用者共享结果，身份变化或文件丢失会产生新下载轮次。"""
-    old = DownloadRequest(url="https://example.test/file", rid="one")
+    old = DownloadRequest(url="https://example.test/file", key="resource", rid="one")
     assert manager.request(old, owner="A")
     assert manager.request(old, owner="A")
-    assert manager.request(old, owner="B")
+    alias = old.model_copy(update={"url": "https://example.test/rotated-address"})
+    assert manager.request(alias, owner="B")
     first = await manager.wait(old)
     assert first.state == "succeeded", first
-    assert await manager.release(old.url, owner="A")
+    assert manager.query(alias).generation == first.generation
+    assert await manager.release(old.cache_key, owner="A")
     assert Path(first.path).is_file()
-    changed = old.model_copy(update={"rid": "two"})
+    changed = alias.model_copy(update={"rid": "two"})
     assert manager.request(changed, owner="B")
     second = await manager.wait(changed)
     assert second.path != first.path
@@ -117,7 +162,7 @@ async def test_shared_reference_missing_file_and_identity_change(manager):
     third = await manager.wait(changed)
     assert third.state == "succeeded"
     assert third.generation != second.generation
-    assert await manager.release(old.url, owner="B")
+    assert await manager.release(old.cache_key, owner="B")
     assert Path(third.path).is_file()
 
 
@@ -163,9 +208,14 @@ async def test_last_release_waits_cleanup_and_waiter_cancel_does_not_cancel_down
             stopped.set()
 
     manager._transfer = transfer
-    request = DownloadRequest(url="https://example.test/pending")
+    request = DownloadRequest(
+        url="https://example.test/pending", key="pending-resource"
+    )
     assert manager.request(request, owner="A")
-    assert manager.request(request, owner="B")
+    alias = request.model_copy(
+        update={"url": "https://example.test/new-pending-address"}
+    )
+    assert manager.request(alias, owner="B")
     await started.wait()
     waiter = asyncio.create_task(manager.wait(request))
     await asyncio.sleep(0)
@@ -173,9 +223,9 @@ async def test_last_release_waits_cleanup_and_waiter_cancel_does_not_cancel_down
     with pytest.raises(asyncio.CancelledError):
         await waiter
     assert manager.query(request).state == "running"
-    assert await manager.release(request.url, owner="A")
+    assert await manager.release(request.cache_key, owner="A")
     assert not stopped.is_set()
-    cleanup = asyncio.create_task(manager.release(request.url, owner="B"))
+    cleanup = asyncio.create_task(manager.release(request.cache_key, owner="B"))
     await asyncio.sleep(0)
     assert not cleanup.done()
     assert manager.query(request).state == "cancelling"

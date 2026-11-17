@@ -17,7 +17,7 @@ PREFETCH_PATHS_KEY = "prefetch_paths"
 
 class PrefetchSession:
     def __init__(self, task, factories, *, downloads=None, check=None):
-        """绑定本次 L2 任务及新旧专项检查入口，为本任务建立下载使用者身份和待释放 URL 记录。"""
+        """绑定本次 L2 及新旧检查入口，建立下载使用者身份和待释放资源键记录。"""
         self.task = task
         self.factories = factories
         self.downloads = downloads or Downloads
@@ -105,8 +105,8 @@ class PrefetchSession:
         for request in requests:
             while not self.downloads.request(request, owner=self.owner):
                 await asyncio.sleep(1)
-            # 被拒绝的申请不计入；同一 URL 复查改变身份仍只保留一份引用。
-            self.requests[request.url] = request
+            # 被拒绝的申请不计入；同一资源复查改变地址或身份仍只保留一份引用。
+            self.requests[request.cache_key] = request
             if self._progress_group is None:
                 self._progress_group = BackgroundTaskManager.register_group(
                     f"prefetch-progress:{self.task.uid}", max_running=1, max_retained=1
@@ -132,7 +132,7 @@ class PrefetchSession:
         await self._acquire(collected)
 
     async def prepare(self, script, entry) -> dict[str, str]:
-        """在调用者已取得 X 锁后执行；不再需要的 URL 留到 L2 final 释放。"""
+        """在调用者已取得 X 锁后复查并等待需求；不再需要的资源引用留到 L2 final 释放。"""
         requirements = await self._requirements(script, entry)
         if requirements is not None:
             await self._acquire(requirements)
@@ -142,7 +142,7 @@ class PrefetchSession:
             if result.writer_unconfirmed:
                 raise FluxdownCancelUnconfirmed("预下载未确认停写，不能继续准备托管")
             if result.state == "succeeded" and result.path:
-                paths[request.url] = result.path
+                paths[request.cache_key] = result.path
             else:
                 await script.set_log(
                     f"预下载未完成（{result.state}），运行时将重新准备"
@@ -158,7 +158,7 @@ class PrefetchSession:
         return paths
 
     async def close(self) -> None:
-        """停止进度汇总并清空任务显示，释放本 L2 取得的所有 URL 引用，停写未确认时保留错误。"""
+        """停止进度汇总并清空显示，按资源键释放本 L2 的全部引用，停写未确认时保留错误。"""
         if self._progress_group is not None:
             await BackgroundTaskManager.unregister_group(self._progress_group)
             self._progress_group = None

@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from datetime import datetime, timezone, tzinfo
 from typing import TYPE_CHECKING, Annotated, Any, Literal, cast

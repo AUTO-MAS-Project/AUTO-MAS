@@ -61,7 +61,11 @@ class PLUGIN(BasePlugin):
 
 游戏和脚本通过 `GameTypeDecl` / `ScriptTypeDecl` 提交真实配置类型、控制器或展开类。宿主注入 `AdapterRuntime`；`GameControl.runtime` 提供当前 `silent` 和 `block_ad` 策略。覆写系统阶段入口时调用 `super()`。
 
-专项 `ScriptTypeDecl.prefetch_check` 接收脚本配置，异步返回 `list[DownloadRequest]`，空列表表示无需预下载。初查不取锁，L3 运行前取得配置锁后再复查。下载交由统一管理器，L3 从任务参数的专用 `prefetch_paths` 键读取完整的 URL 到路径映射；不自动传入 L4。脚本应复制共享文件再使用，L2 收尾释放引用。
+专项 `ScriptTypeDecl.prefetch_check` 接收脚本配置，异步返回 `list[DownloadRequest]`，空列表表示无需预下载。初查不取锁，L3 运行前取得配置锁后再复查。下载交由统一管理器，L3 从任务参数的专用 `prefetch_paths` 键读取资源键到路径的映射；不自动传入 L4。资源键默认是原 URL，`DownloadRequest.key` 可用插件命名空间内的稳定键替代变化的下载地址。
+
+资源键只定位资源；文件身份仍按 `rid`、`content_hash`、空身份的顺序确定。同一键和身份共享下载，URL 更新不会中止在用传输，后续重试使用最新地址；身份变化会另建文件，旧文件继续保留。查询、等待和释放必须使用同一资源键，Python 调用可用 `request.cache_key`，HTTP 释放可传 `key`，原 `url` 输入继续有效。
+
+专项通过 `auto_mas_core.host.core_downloads.download_file()` 消费时传入相同的 `key` 与 `rid`／哈希；宿主只复制本 L2 已交付且身份匹配的缓存文件，文件缺失或身份不匹配则执行正常下载。脚本复制后使用自己的副本，L2 收尾释放引用；最后一次释放取消未完成下载，已完成缓存仍按容量规则回收。
 
 迁移测试插件可通过 `auto_mas_core.host` 复用现有模拟器、MAA 共用工具等真实宿主能力；这些出口不提供独立宿主或旧任务框架。L2 在派发前向 `UserExpander.history` 绑定当前任务的实际 `TaskHistorySession`，供专项归档使用。
 

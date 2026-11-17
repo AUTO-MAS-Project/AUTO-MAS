@@ -1,7 +1,7 @@
 """下载传输管理接口；应用退出 ALL 仅由宿主调用。"""
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.core.downloads import Downloads
 from app.models.schema import DownloadRequest, DownloadSnapshot, OutBase
@@ -15,7 +15,15 @@ class DownloadAcquireIn(BaseModel):
 
 class DownloadReleaseIn(BaseModel):
     owner: str
-    url: str
+    url: str | None = None
+    key: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def require_reference(self) -> "DownloadReleaseIn":
+        """释放必须提供原 URL 或自定义 key，避免把缺失引用视为成功释放。"""
+        if self.key is None and self.url is None:
+            raise ValueError("url_or_key_required")
+        return self
 
 
 class DownloadListIn(BaseModel):
@@ -54,7 +62,7 @@ async def request_download(body: DownloadAcquireIn) -> DownloadAcquireOut:
 
 @router.post("/query", response_model=DownloadOut)
 async def query_download(body: DownloadRequest) -> DownloadOut:
-    """查询指定 URL 与文件身份的下载快照，返回状态、进度及成功产物路径。"""
+    """按自定义 key 或 URL 及文件身份查询下载，返回状态、进度及成功产物路径。"""
     return DownloadOut(data=Downloads.query(body))
 
 
@@ -72,7 +80,9 @@ async def list_downloads(body: DownloadListIn) -> DownloadListOut:
 
 @router.post("/release", response_model=OutBase)
 async def release_download(body: DownloadReleaseIn) -> OutBase:
-    """释放使用者对 URL 的引用；最后一个使用者释放时取消未完成下载，并反馈停写是否确认。"""
-    if not await Downloads.release(body.url, owner=body.owner):
+    """释放使用者的资源引用；自定义 key 优先于 URL，最后一次释放等待下载停写。"""
+    reference = body.key if body.key is not None else body.url
+    assert reference is not None
+    if not await Downloads.release(reference, owner=body.owner):
         return OutBase(code=409, status="error", message="download_writer_unconfirmed")
     return OutBase()

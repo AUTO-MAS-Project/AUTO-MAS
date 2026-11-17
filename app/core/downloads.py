@@ -79,11 +79,25 @@ async def download_file(
     downloader: str | None = None,
     source: str | None = None,
     http_download: _service_update_transport.BuiltinDownload | None = None,
+    key: str | None = None,
+    rid: str | None = None,
+    content_hash: str | None = None,
 ) -> int:
     """复用当前任务的预下载产物，或按宿主配置传输文件；保留来源与下载器覆盖并记录历史和进度。"""
-    from app.services.common.update.prefetch import copy_prefetched
+    from app.services.common.update.prefetch import copy_prefetched, prefetch_paths
 
-    if await copy_prefetched(url, destination):
+    reference = key if key is not None else url
+    prefetched = prefetch_paths.get().get(reference)
+    if prefetched is not None and (
+        key is not None or rid is not None or content_hash is not None
+    ):
+        # 自定义键可跨 URL、跨版本复用；复制前仍须命中本次 L2 交付的具体文件身份。
+        snapshot = Downloads.query(
+            DownloadRequest(url=url, key=key, rid=rid, content_hash=content_hash)
+        )
+        if snapshot.state != "succeeded" or snapshot.path != prefetched:
+            prefetched = None
+    if prefetched is not None and await copy_prefetched(reference, destination):
         size = destination.stat().st_size
         if progress is not None:
             await progress(size, size, 0.0)
@@ -224,12 +238,12 @@ class DownloadManager:
         return self._closing
 
     def request(self, request: DownloadRequest, *, owner: str) -> bool:
-        """按 URL 和文件身份复用或新建下载，成功受理后登记使用者；产物丢失时重新下载，容量忙时返回 False。"""
+        """按自定义 key 或 URL 及文件身份复用下载，成功后登记使用者；文件丢失时补下，容量忙时拒绝。"""
         if self._closing:
             raise RuntimeError("download_manager_closed")
         if self._group is None or self._root is None:
             raise RuntimeError("下载中心未初始化")
-        entry = self._entries.get(request.url)
+        entry = self._entries.get(request.cache_key)
         if entry is not None and any(
             item.snapshot.writer_unconfirmed
             for item in [*entry.artifacts.values(), *entry.retired]
@@ -246,6 +260,10 @@ class DownloadManager:
                 artifact.snapshot.path = None
             if artifact.handle is not None or artifact.snapshot.state == "succeeded":
                 assert entry is not None
+                # 在用传输继续执行；重试或文件丢失后重新下载时使用最新提供的地址。
+                artifact.request = request
+                artifact.snapshot.url = request.url
+                artifact.snapshot.key = request.key
                 entry.owners.add(owner)
                 entry.touched = monotonic()
                 return True
@@ -255,24 +273,27 @@ class DownloadManager:
             return False
         entry.owners.add(owner)
         entry.touched = monotonic()
-        self._entries[request.url] = entry
+        self._entries[request.cache_key] = entry
         return True
 
     def _start(self, request: DownloadRequest, entry: _Entry) -> _Artifact | None:
         """为指定文件身份建立独立下载轮次和路径，提交背景任务；未被受理时不修改现有产物记录。"""
         assert self._root is not None and self._group is not None
         generation = uuid4().hex
-        url_key = hashlib.sha256(request.url.encode()).hexdigest()
+        resource_key = hashlib.sha256(request.cache_key.encode()).hexdigest()
         kind, identity = request.identity
         identity_key = hashlib.sha256(json.dumps(request.identity).encode()).hexdigest()
         path = Path(
-            native_path(self._root / url_key / f"{kind}-{identity_key}-{generation}")
+            native_path(
+                self._root / resource_key / f"{kind}-{identity_key}-{generation}"
+            )
         )
         artifact = _Artifact(
             request,
             path,
             DownloadSnapshot(
                 url=request.url,
+                key=request.key,
                 identity_type=kind,
                 identity=identity,
                 generation=generation,
@@ -354,12 +375,13 @@ class DownloadManager:
 
     def query(self, request: DownloadRequest) -> DownloadSnapshot:
         """返回指定文件身份的状态副本；成功文件已丢失且仍有使用者时，尝试补交下载。"""
-        entry = self._entries.get(request.url)
+        entry = self._entries.get(request.cache_key)
         artifact = entry.artifacts.get(request.identity) if entry else None
         if artifact is None:
             kind, identity = request.identity
             return DownloadSnapshot(
                 url=request.url,
+                key=request.key,
                 identity_type=kind,
                 identity=identity,
                 state="not_found",
@@ -385,7 +407,7 @@ class DownloadManager:
             snapshot = self.query(request)
             if snapshot.state not in {"pending", "running", "retrying", "cancelling"}:
                 return snapshot
-            entry = self._entries[request.url]
+            entry = self._entries[request.cache_key]
             artifact = entry.artifacts[request.identity]
             if artifact.handle is not None:
                 await artifact.handle.wait_done()
@@ -411,7 +433,7 @@ class DownloadManager:
         return [self.query(request) for request in requests]
 
     async def release(self, url: str, *, owner: str) -> bool:
-        """释放使用者的 URL 引用，最后一次释放时取消全部未完成轮次；停写确认后再按容量回收缓存。"""
+        """按自定义 key 或原 URL 释放使用者引用，最后一次释放取消未完成轮次并等待停写。"""
         entry = self._entries.get(url)
         if entry is None:
             return True
@@ -436,7 +458,7 @@ class DownloadManager:
         """直接读取当前配置的 MB 容量上限，超限时按最近使用时间回收零引用且已停写的文件及条目。"""
 
         def size(entry: _Entry) -> int:
-            """统计同一 URL 当前与历史轮次仍存在的缓存文件总字节数。"""
+            """统计同一资源当前与历史轮次仍存在的缓存文件总字节数。"""
             return sum(
                 artifact.path.stat().st_size
                 for artifact in [*entry.artifacts.values(), *entry.retired]

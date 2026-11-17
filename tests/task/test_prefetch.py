@@ -85,8 +85,10 @@ async def test_recheck_retains_old_urls_and_updates_identity_under_lock(
         background=registry,
         transfer=transfer,
     )
-    old = DownloadRequest(url="https://example.test/old", rid="v1")
-    changed = old.model_copy(update={"rid": "v2"})
+    old = DownloadRequest(url="https://example.test/old", key="update", rid="v1")
+    changed = old.model_copy(
+        update={"url": "https://example.test/rotated", "rid": "v2"}
+    )
     added = DownloadRequest(url="https://example.test/new")
     requirements = [old]
 
@@ -113,22 +115,25 @@ async def test_recheck_retains_old_urls_and_updates_identity_under_lock(
         assert root.current.prefetch.package == "0/1 个文件"
         continue_download.set()
         original = await downloads.wait(old)
-        requirements[:] = [changed, added]
+        requirements[:] = [old.model_copy(update={"url": "https://example.test/alias"})]
         ticket = await entry.try_lock_x()
         assert ticket is not None
         try:
+            reused = await session.prepare(script, entry)
+            assert reused[old.cache_key] == original.path
+            requirements[:] = [changed, added]
             paths = await session.prepare(script, entry)
             assert entry.is_locked
+            requirements.clear()
+            assert await session.prepare(script, entry) == {}
         finally:
             await entry.unlock(ticket)
-        assert Path(paths[old.url]).read_text() == "v2"
+        assert Path(paths[old.cache_key]).read_text() == "v2"
         assert Path(original.path).read_text() == "v1"
-        assert set(paths) == {old.url, added.url}
-        assert script.info.params[PREFETCH_PATHS_KEY] == paths
+        assert set(paths) == {old.cache_key, added.cache_key}
+        assert script.info.params[PREFETCH_PATHS_KEY] == {}
         assert PREFETCH_PATHS_KEY not in user.info.params
-        requirements.clear()
-        assert await session.prepare(script, entry) == {}
-        assert set(session.requests) == {old.url, added.url}
+        assert set(session.requests) == {old.cache_key, added.cache_key}
         await session.close()
         assert root.current.prefetch is None
         assert not downloads.list(owner=session.owner)

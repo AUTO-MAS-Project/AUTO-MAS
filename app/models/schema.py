@@ -37,13 +37,19 @@ from app.utils.contracts.power import PowerSignal
 
 
 class DownloadRequest(BaseModel):
-    """文件需求；内容身份按 rid、内容哈希、null 的顺序确定。"""
+    """文件需求；自定义 key 替代 URL 定位资源，内容身份仍按 rid、哈希、null 确定。"""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     url: str
+    key: str | None = Field(default=None, min_length=1)
     rid: str | None = None
     content_hash: str | None = None
     downloader: Literal["builtin", "fluxdown"] | None = None
+
+    @property
+    def cache_key(self) -> str:
+        """返回资源的稳定查找键，未指定自定义 key 时保持按原始 URL 管理。"""
+        return self.key if self.key is not None else self.url
 
     @property
     def identity(self) -> tuple[Literal["rid", "hash", "null"], str | None]:
@@ -87,6 +93,7 @@ class DownloadSnapshot(BaseModel):
     """下载中心的可重复读取快照，不消费背景结果。"""
 
     url: str
+    key: str | None = None
     identity_type: Literal["rid", "hash", "null"]
     identity: str | None
     generation: str | None = None

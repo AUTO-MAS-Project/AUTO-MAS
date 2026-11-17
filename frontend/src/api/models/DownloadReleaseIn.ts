@@ -4,6 +4,7 @@
 /* eslint-disable */
 export type DownloadReleaseIn = {
     owner: string;
-    url: string;
+    url?: (string | null);
+    key?: (string | null);
 };
 

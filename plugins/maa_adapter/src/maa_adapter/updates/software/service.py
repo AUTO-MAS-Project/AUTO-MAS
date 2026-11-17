@@ -368,10 +368,18 @@ class _Latest(NamedTuple):
     base_version: str = ""
 
 
+def _download_key(latest: _Latest, channel: str, arch: str) -> str:
+    """按包型、平台和增量基线标识同一资源，临时下载地址变化不产生新的下载。"""
+    key = f"mirrorchyan:MAA:win:{arch}:{channel}:{latest.package_type}"
+    return (
+        f"{key}:{latest.base_version}" if latest.package_type == "incremental" else key
+    )
+
+
 async def _fetch_latest(
     channel: str, arch: str, cdk: str, *, current_version: str = ""
 ) -> _Latest:
-    """按通道架构申请更新包；提供 current_version 时允许匹配基线的增量包。"""
+    """查询版本、包型和临时地址；提供 current_version 时允许增量，查询本身不消耗下载额度。"""
     try:
         async with asyncio.timeout(_QUERY_TIMEOUT):
             payload = await _service_update_transport.request_mirror_resource(
@@ -464,6 +472,8 @@ async def _ensure_cache(latest: _Latest, channel: str, arch: str) -> None:
         await download_file(
             latest.url,
             part,
+            key=_download_key(latest, channel, arch),
+            rid=latest.version,
             timeout=_DOWNLOAD_TIMEOUT,
             proxy=Config.proxy,
             source="MirrorChyan",
@@ -628,7 +638,7 @@ async def _precheck_inner(
             logger.info("MAA 本体更新: 今日已尝试获取此版本，出现新版或明日再试")
             return None
 
-    # 每次获准取包都现查一次性地址，不复用上轮已使用或已过期的 URL。
+    # 准备实际下载前刷新临时地址；查询本身不消耗下载额度，缓存按稳定键与文件身份复用。
     latest = await _fetch_latest(
         channel=channel, arch=arch, cdk=cdk, current_version=baseline
     )
@@ -987,6 +997,31 @@ async def check_software_download(root: Path, config: MaaConfig) -> list:
         if config.Update.PackageMode == "incremental"
         else "",
     )
-    if latest.version == release[0]:
+    target, current = parse_version(latest.version), parse_version(release[0])
+    if target is None or current is None:
+        raise _UpdateError("MAA 本体版本无法比较")
+    if compare_versions(target, current) <= 0:
         return []
-    return [DownloadRequest(url=latest.url, downloader="builtin")]
+    cache_dir = software_cache_dir(
+        os_name="win",
+        arch=release[1],
+        channel=config.Update.Channel,
+        base_version=latest.base_version,
+    )
+    manifest = load_cache_manifest(cache_dir)
+    cached = parse_version(manifest["version"]) if manifest else None
+    if (
+        manifest is not None
+        and cached is not None
+        and compare_versions(cached, target) >= 0
+        and await _run_write_thread(cache_zip_matches, cache_dir, manifest)
+    ):
+        return []
+    return [
+        DownloadRequest(
+            url=latest.url,
+            key=_download_key(latest, config.Update.Channel, release[1]),
+            rid=latest.version,
+            downloader="builtin",
+        )
+    ]
