@@ -4914,5 +4914,15 @@
   "core.scripts.create.capabilitiesLoadFailed": "Failed to load available script types",
   "core.scripts.optionsLoadFailed": "Failed to load options",
   "core.scripts.unsupportedOptionsEndpoint": "Options endpoint is not available: {endpoint}",
-  "core.scripts.noAssociation": "Not linked"
+  "core.scripts.noAssociation": "Not linked",
+  "core.plugins.checkUpdates": "Check for updates",
+  "core.plugins.updatesChecked": "Plugin updates checked",
+  "core.plugins.availableVersion": "Update to {version}",
+  "core.plugins.installedVersion": "Installed {version}",
+  "core.plugins.upgrade": "Upgrade",
+  "core.plugins.upgraded": "Plugin upgraded",
+  "core.plugins.alreadyInstalled": "Installed",
+  "core.plugins.upgradeProgress.waiting": "Dependencies are ready. Waiting for current tasks to finish, then restarting the backend to complete the plugin upgrade.",
+  "core.plugins.upgradeProgress.restarting": "Restarting the backend to load the plugin and verify the upgrade.",
+  "core.plugins.upgradeProgress.recovering": "The new environment failed to start. Restoring the previous plugin environment."
 }

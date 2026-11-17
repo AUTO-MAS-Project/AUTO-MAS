@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
 import { MoreOutlined, ReloadOutlined, SettingOutlined, ShopOutlined } from '@ant-design/icons-vue'
 import type { PluginRegistryDocument, PluginConfigUi } from '@/api'
+import { usePluginInstallation } from '@/views/plugins/usePluginInstallation'
 import PageHeader from '@/components/PageHeader.vue'
 import PageSurface from '@/components/PageSurface.vue'
 import ApiRetryAlert from '@/components/ApiRetryAlert.vue'
@@ -24,6 +25,12 @@ const { t, te, locale } = useI18n()
 const api = usePluginApi()
 const expandedRowKeys = ref<string[]>([])
 const running = ref(false)
+const checking = ref(false)
+const {
+  installing,
+  install: installPlugin,
+  messageHolder: installationMessageHolder,
+} = usePluginInstallation()
 
 const normalize = (uid: string, value?: PluginRegistryDocument): PluginRow => {
   // 保留后端配置字段和 UI 属性，不再以运行状态推断操作权限。
@@ -92,9 +99,9 @@ const statusColor = (value: string) =>
 
 const {
   data: queryRows,
-  loading,
-  error: loadError,
-  execute: load,
+  loading: registryLoading,
+  error: registryError,
+  execute: loadRegistry,
 } = usePluginQuery(
   () => /* 以当前语言区分已安装插件列表的查询缓存。 */ ['plugins', 'installed', locale.value],
   async () => {
@@ -108,9 +115,51 @@ const rows = computed(
   () => /* 读取注册配置中的插件行，尚无查询结果时返回空列表。 */ queryRows.value ?? []
 )
 
+const catalog = usePluginQuery(
+  () => ['plugins', 'market', locale.value],
+  api.getCatalog,
+  () => t('core.plugins.marketLoadFailed')
+)
+const loading = computed(() => registryLoading.value || catalog.loading.value)
+const loadError = computed(() => registryError.value || catalog.error.value)
+const load = () => {
+  // 同步注册记录与市场投影，让两个页面使用同一份升级目标及操作权限。
+  return Promise.all([loadRegistry(), catalog.execute()])
+}
+const upgradeFor = (row: PluginRow) => {
+  // 按稳定插件身份关联目录，更新资格由后端配置字段计算。
+  return Object.values(catalog.data.value?.data ?? {}).find(
+    meta => meta.info?.plugin_name === row.info.plugin_name && meta.info?.update_available === true
+  )
+}
+const refresh = async () => {
+  // 从发行目录检查更新，再回读当前安装状态和可执行操作。
+  checking.value = true
+  try {
+    await api.refreshCatalog()
+    const results = await load()
+    if (results.every(result => result !== null)) message.success(t('core.plugins.updatesChecked'))
+  } catch (error) {
+    message.error(apiErrorMessage(error, t('core.plugins.actionFailed')))
+  } finally {
+    checking.value = false
+  }
+}
+const upgrade = async (row: PluginRow) => {
+  // 从插件中心提交对应市场条目的原安装命令，升级完成后回读版本。
+  const meta = upgradeFor(row)
+  if (running.value || !meta) return
+  if (await installPlugin(meta)) await load()
+}
+
 const trigger = async (row: PluginRow, action: 'enable' | 'disable' | 'reload' | 'uninstall') => {
   // 互斥提交插件启用、停用、重载或卸载触发器，等待后台结果后提示并刷新列表。
-  if (running.value || pluginActionHint(row.ui, 'info', action)?.editable !== true) return
+  if (
+    running.value ||
+    installing.value ||
+    pluginActionHint(row.ui, 'info', action)?.editable !== true
+  )
+    return
   running.value = true
   try {
     if (action === 'uninstall' || (action === 'disable' && row.disableImpact?.length)) {
@@ -175,10 +224,15 @@ watch(locale, load, { immediate: true })
 
 <template>
   <main class="plugins-page">
+    <installation-message-holder />
     <PageHeader :title="t('core.plugins.title')">
       <template #actions>
-        <a-button :loading="loading" @click="load"
-          ><template #icon><ReloadOutlined /></template>{{ t('core.plugins.refresh') }}</a-button
+        <a-button
+          :loading="checking || loading"
+          :disabled="running || installing !== null"
+          @click="refresh"
+          ><template #icon><ReloadOutlined /></template
+          >{{ t('core.plugins.checkUpdates') }}</a-button
         >
         <a-button type="primary" @click="$router.push({ name: 'PluginMarket' })"
           ><template #icon><ShopOutlined /></template>{{ t('core.plugins.marketButton') }}</a-button
@@ -227,10 +281,15 @@ watch(locale, load, { immediate: true })
             }}</a-tag></template
           ></a-table-column
         >
-        <a-table-column key="version" :title="t('core.plugins.attribute.version')" :width="120"
-          ><template #default="{ record }">{{
-            record.info.version || '-'
-          }}</template></a-table-column
+        <a-table-column key="version" :title="t('core.plugins.attribute.version')" :width="150"
+          ><template #default="{ record }"
+            >{{ record.info.version || '-' }}
+            <div v-if="upgradeFor(record)">
+              <a-typography-text type="secondary">{{
+                t('core.plugins.availableVersion', { version: upgradeFor(record)?.info?.version })
+              }}</a-typography-text>
+            </div></template
+          ></a-table-column
         >
         <a-table-column key="source" :title="t('core.plugins.attribute.source')" :width="120"
           ><template #default="{ record }">{{
@@ -256,6 +315,7 @@ watch(locale, load, { immediate: true })
               :checked="pluginToggleChecked(record.ui, record.info.enabled)"
               :disabled="
                 running ||
+                installing !== null ||
                 pluginActionHint(
                   record.ui,
                   'info',
@@ -274,12 +334,26 @@ watch(locale, load, { immediate: true })
         <a-table-column
           key="actions"
           :title="t('core.plugins.action')"
-          :width="116"
+          :width="160"
           align="right"
           fixed="right"
         >
           <template #default="{ record }"
             ><a-space size="small"
+              ><a-button
+                v-if="
+                  upgradeFor(record) && pluginActionHint(upgradeFor(record)?.ui, 'info', 'install')
+                "
+                type="primary"
+                size="small"
+                :loading="installing === upgradeFor(record)?.uid"
+                :disabled="
+                  running ||
+                  installing !== null ||
+                  pluginActionHint(upgradeFor(record)?.ui, 'info', 'install')?.editable !== true
+                "
+                @click="upgrade(record)"
+                >{{ t('core.plugins.upgrade') }}</a-button
               ><a-button
                 type="text"
                 :aria-label="t('core.plugins.settings')"
@@ -288,7 +362,7 @@ watch(locale, load, { immediate: true })
               ><a-dropdown placement="bottomRight"
                 ><a-button
                   type="text"
-                  :disabled="running"
+                  :disabled="running || installing !== null"
                   :aria-label="t('core.plugins.moreActions')"
                   ><MoreOutlined /></a-button
                 ><template #overlay

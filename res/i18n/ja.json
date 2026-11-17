@@ -4914,5 +4914,15 @@
   "core.plugins.disableConfirmTitle": "プラグインを無効にしますか？",
   "core.plugins.disableConfirmContent": "「{name}」とそれに依存するプラグインを無効にすると、対応する{scopes}の設定がすべて削除されます。この操作は取り消せません。続行しますか？",
   "core.plugins.disableScope.scripts": "管理スクリプト（アカウントと関連プランを含む）",
-  "core.plugins.disableScope.games": "ゲームとデバイス"
+  "core.plugins.disableScope.games": "ゲームとデバイス",
+  "core.plugins.checkUpdates": "更新を確認",
+  "core.plugins.updatesChecked": "プラグインの更新を確認しました",
+  "core.plugins.availableVersion": "{version} に更新可能",
+  "core.plugins.installedVersion": "{version} をインストール済み",
+  "core.plugins.upgrade": "アップグレード",
+  "core.plugins.upgraded": "プラグインをアップグレードしました",
+  "core.plugins.alreadyInstalled": "インストール済み",
+  "core.plugins.upgradeProgress.waiting": "依存関係の準備ができました。実行中のタスクが終了した後、バックエンドを再起動してプラグインのアップグレードを完了します",
+  "core.plugins.upgradeProgress.restarting": "バックエンドを再起動して、プラグインの読み込みとアップグレード結果を確認しています",
+  "core.plugins.upgradeProgress.recovering": "新しい環境の起動に失敗しました。以前のプラグイン環境を復元しています"
 }

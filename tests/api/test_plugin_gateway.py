@@ -127,6 +127,75 @@ async def test_registry_payload_uses_config_wire_projection(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "installed,version,available,editable",
+    [
+        (None, "1.0", False, True),
+        ({"version": "0.1.9"}, "0.1.10", True, True),
+        ({"version": "1.0"}, "1.0.0", False, False),
+        ({"version": "2.0"}, "1.0", False, False),
+        ({"version": "1.0", "source": "local", "is_local": True}, "2.0", False, False),
+        ({"version": "1.0", "state": "reloading"}, "2.0", True, False),
+        ({"version": "1.0", "code_drift": "package_removed"}, "1.0", False, True),
+    ],
+)
+async def test_catalog_reports_upgrade_and_field_permission(
+    isolated_app_paths, monkeypatch, installed, version, available, editable
+):
+    """公共目录投影按发行版本与实现归属开放安装，防止页面错判版本或覆盖本地源码。"""
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    from app.api.plugin import router
+    from app.config import ConfigCollection
+    from app.models.config import PluginMeta, PluginRecord, PluginRegistryCollection
+
+    config = isolated_app_paths
+    registry = PluginRegistryCollection.build([PluginRecord])
+    catalog = ConfigCollection[PluginMeta].build([PluginMeta])
+    await registry.activate()
+    await catalog.activate()
+    monkeypatch.setattr(config, "plugin_registry", registry)
+    monkeypatch.setattr(config, "plugin_catalog", catalog)
+    identity = {"plugin_name": "example", "package_name": "auto-mas-example"}
+    if installed is not None:
+        registry.add(
+            PluginRecord,
+            payload={
+                "info": {
+                    **identity,
+                    "source": "installed",
+                    "state": "disabled",
+                    **installed,
+                }
+            },
+        )
+        await registry.commit()
+    uid = catalog.add(PluginMeta, payload={"info": {**identity, "version": version}})
+    await catalog.commit()
+    app = FastAPI()
+    app.include_router(router)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        result = await client.post("/api/plugin_catalog/get", json={})
+    body = result.json()
+    assert body["code"] == 200, body
+    document = body["data"][str(uid)]
+    assert document["info"]["update_available"] is available
+    expected_version = (
+        installed["version"]
+        if installed is not None and installed.get("code_drift") != "package_removed"
+        else None
+    )
+    assert document["info"]["installed_version"] == expected_version
+    hint = next(
+        item for item in document["ui"]["hints"]["info"] if item["field"] == "install"
+    )
+    assert hint["editable"] is editable
+
+
+@pytest.mark.asyncio
 async def test_catalog_updates_only_submit_install(monkeypatch):
     """原始 HTTP 补丁无法改写市场身份或展示字段，但安装触发器仍通过真实配置更新提交。"""
     from fastapi import FastAPI
