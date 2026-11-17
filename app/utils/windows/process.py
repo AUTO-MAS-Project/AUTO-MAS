@@ -2,7 +2,8 @@ import asyncio
 import os
 import subprocess
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from threading import Lock
 from typing import Any, Unpack
@@ -84,6 +85,51 @@ class WindowsTaskProcessJob:
                     finally:
                         handle.Close()
 
+    @staticmethod
+    @contextmanager
+    def _pause(process: psutil.Process) -> Iterator[None]:
+        """短暂暂停存量进程，始终撤销本次增加的线程暂停计数。"""
+        handles: dict[int, Any] = {}
+        deadline = time.monotonic() + 1
+        try:
+            while True:
+                added = False
+                for thread in process.threads():
+                    if thread.id in handles:
+                        continue
+                    try:
+                        handle = win32api.OpenThread(
+                            win32con.THREAD_SUSPEND_RESUME, False, thread.id
+                        )
+                    except pywintypes.error:
+                        if thread.id not in {item.id for item in process.threads()}:
+                            continue
+                        raise
+                    try:
+                        win32process.SuspendThread(handle)
+                    except BaseException:
+                        handle.Close()
+                        raise
+                    handles[thread.id] = handle
+                    added = True
+                if not added:
+                    break
+                # 首轮暂停期间仍可能出生新线程，收敛后才枚举后代及登记 Job。
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("接管进程时未能及时暂停全部线程")
+            yield
+        finally:
+            errors = []
+            for tid, handle in reversed(handles.items()):
+                try:
+                    win32process.ResumeThread(handle)
+                except pywintypes.error as error:
+                    errors.append(error)
+                finally:
+                    handle.Close()
+            if errors and process.is_running():
+                raise ExceptionGroup("接管后恢复进程线程失败", errors)
+
     def adopt(self, pid: int, create_time: float) -> None:
         """给明确接管的进程及已有后代加 Job 标记，后续后代由系统继承。"""
         with self._lock:
@@ -92,9 +138,7 @@ class WindowsTaskProcessJob:
             root = psutil.Process(pid)
             if root.create_time() != create_time:
                 raise psutil.NoSuchProcess(pid, msg="接管进程的 PID 已复用")
-            # 只补接管前已存在的后代；接管后普通后代自动继承 Job，
-            # 不再扫描并重新接管脚本已主动脱离的新进程。
-            pending, seen = [*root.children(recursive=True), root], set()
+            pending, seen = [root], set()
             while pending:
                 target = pending.pop()
                 if target.pid in seen:
@@ -118,14 +162,18 @@ class WindowsTaskProcessJob:
                             if target.pid == root.pid:
                                 return
                             continue
-                        # 外部进程可能来自不同的系统 Job，不能共用一个嵌套 Job。
-                        job = self._create_job()
-                        try:
-                            win32job.AssignProcessToJobObject(job, process)
-                        except BaseException:
-                            job.Close()
-                            raise
-                        self._adopted.append(job)
+                        with self._pause(target):
+                            # 暂停期间读取后代并登记，避免快照与登记之间漏掉普通
+                            # 子进程；恢复后普通后代自动继承，不重扫已脱离的游戏。
+                            pending.extend(target.children())
+                            # 外部进程可能来自不同的系统 Job，不能共用嵌套 Job。
+                            job = self._create_job()
+                            try:
+                                win32job.AssignProcessToJobObject(job, process)
+                            except BaseException:
+                                job.Close()
+                                raise
+                            self._adopted.append(job)
                     finally:
                         process.Close()
                 except (psutil.NoSuchProcess, pywintypes.error):
