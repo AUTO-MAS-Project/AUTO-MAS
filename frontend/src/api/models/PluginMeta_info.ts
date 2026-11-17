@@ -42,5 +42,7 @@ export type PluginMeta_info = {
     readonly display_name?: (string | null);
     readonly description?: (string | null);
     readonly tags?: (Array<string> | null);
+    readonly installed_version?: (string | null);
+    readonly update_available?: (boolean | null);
 };
 

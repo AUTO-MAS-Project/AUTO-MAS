@@ -1,53 +1,31 @@
 <script setup lang="ts">
-import { computed, watch, ref, onScopeDispose } from 'vue'
+import { computed, watch, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, DownloadOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 
 import { useRouter } from 'vue-router'
-import type { PluginConfigUi } from '@/api'
+import type { PluginCatalogDocument } from '@/api'
 import PageHeader from '@/components/PageHeader.vue'
 import NoData from '@/components/NoData.vue'
 import PageSurface from '@/components/PageSurface.vue'
 import ApiRetryAlert from '@/components/ApiRetryAlert.vue'
 import { usePluginQuery } from '@/views/plugins/usePluginQuery'
-import { usePluginApi, type InstallationStage } from '@/composables/usePluginApi'
-import { useTheme } from '@/composables/useTheme'
+import { usePluginApi } from '@/composables/usePluginApi'
+import { usePluginInstallation } from '@/views/plugins/usePluginInstallation'
 import { pluginActionHint } from '@/views/plugins/configActions'
 import { apiErrorMessage } from '@/utils/apiResult'
 import PluginMetadataDetails from '@/views/plugins/PluginMetadataDetails.vue'
 
-type CatalogRow = { uid: string; info: Record<string, unknown>; ui?: PluginConfigUi }
 const { t, locale } = useI18n()
 const router = useRouter()
 const api = usePluginApi()
 const refreshing = ref(false)
-const installing = ref<string | null>(null)
-const installationStage = ref<InstallationStage | null>(null)
-const { antdTheme } = useTheme()
-// 与主入口的静态消息一致，为 32px 标题栏和 8px 间距留出空间。
-const [installationMessage, installationMessageHolder] = message.useMessage({ top: 40 })
-const installationMessageKey = 'plugin-installation'
-onScopeDispose(() => {
-  // 页面离开后关闭持续提示，后台候选仍由安装流程持有。
-  installationMessage.destroy(installationMessageKey)
-})
-watch(
-  [installationStage, antdTheme, locale],
-  ([stage]) => {
-    // 同一提示持续显示；主题或语言变化后刷新内容与样式，避免保留旧主题的消息样式。
-    if (!stage) {
-      installationMessage.destroy(installationMessageKey)
-      return
-    }
-    installationMessage.loading({
-      key: installationMessageKey,
-      content: t(`core.plugins.installProgress.${stage}`),
-      duration: 0,
-    })
-  },
-  { flush: 'post' }
-)
+const {
+  installing,
+  install: installPlugin,
+  messageHolder: installationMessageHolder,
+} = usePluginInstallation()
 
 const {
   data: queryRows,
@@ -60,32 +38,22 @@ const {
     'market',
     locale.value,
   ],
-  async () => {
-    // 请求市场目录并转换为带唯一标识的列表行，兼容配置投影中的 info 分组。
-    const result = await api.getCatalog()
-    return Object.entries(result.data || {}).map(
-      ([uid, value]) => /* 将一个市场配置条目展开为页面使用的标识和信息对象。 */ ({
-        uid,
-        ui: value.ui,
-        info:
-          value && typeof value === 'object' && 'info' in value
-            ? ((value as Record<string, unknown>).info as Record<string, unknown>)
-            : (value as Record<string, unknown>),
-      })
-    )
-  },
+  api.getCatalog,
   () => /* 为市场查询提供当前语言的加载失败提示。 */ t('core.plugins.marketLoadFailed')
 )
 
-const rows = computed(() => /* 读取市场查询结果，尚无数据时提供空列表。 */ queryRows.value ?? [])
+const rows = computed(() =>
+  /* 读取市场查询结果，尚无数据时提供空列表。 */ Object.values(queryRows.value?.data ?? {}).map(
+    row => ({ ...row, info: row.info ?? {} })
+  )
+)
 
 const refresh = async () => {
   // 互斥执行市场刷新，重新加载目录并显示成功或失败结果，结束时释放刷新状态。
   refreshing.value = true
   try {
     await api.refreshCatalog()
-    await load()
-    message.success(t('core.plugins.marketRefreshed'))
+    if (await load()) message.success(t('core.plugins.marketRefreshed'))
   } catch (error) {
     message.error(apiErrorMessage(error, t('core.plugins.actionFailed')))
   } finally {
@@ -93,32 +61,9 @@ const refresh = async () => {
   }
 }
 
-const install = async (row: CatalogRow) => {
-  // 提交选中市场条目的安装触发器，等待结果后反馈并刷新安装状态。
-  if (installing.value || pluginActionHint(row.ui, 'info', 'install')?.editable !== true) return
-  installing.value = row.uid
-  try {
-    await api.runCommand(
-      'install',
-      {
-        configUid: row.uid,
-        group: 'info',
-        field: 'install',
-        value: true,
-      },
-      stage => {
-        // 展示真实安装阶段，保持安装按钮的加载状态直到结果确认。
-        installationStage.value = stage
-      }
-    )
-    await load()
-    message.success(t('core.plugins.installed'))
-  } catch (error) {
-    message.error(apiErrorMessage(error, t('core.plugins.actionFailed')))
-  } finally {
-    installationStage.value = null
-    installing.value = null
-  }
+const install = async (row: PluginCatalogDocument) => {
+  // 更新完成后重新读取安装版本及操作权限。
+  if (await installPlugin(row)) await load()
 }
 
 watch(locale, load, { immediate: true })
@@ -134,7 +79,7 @@ watch(locale, load, { immediate: true })
           :aria-label="t('core.plugins.back')"
           @click="router.push({ name: 'Plugins' })"
           ><ArrowLeftOutlined /></a-button
-        ><a-button :loading="refreshing" @click="refresh"
+        ><a-button :loading="refreshing || loading" :disabled="installing !== null" @click="refresh"
           ><template #icon><ReloadOutlined /></template>{{ t('core.plugins.refresh') }}</a-button
         ></template
       >
@@ -163,9 +108,14 @@ watch(locale, load, { immediate: true })
           }}</template></a-table-column
         >
         <a-table-column key="version" :title="t('core.plugins.attribute.version')"
-          ><template #default="{ record }">{{
-            record.info.version || '-'
-          }}</template></a-table-column
+          ><template #default="{ record }"
+            >{{ record.info.version || '-' }}
+            <div v-if="record.info.installed_version">
+              <a-typography-text type="secondary">{{
+                t('core.plugins.installedVersion', { version: record.info.installed_version })
+              }}</a-typography-text>
+            </div></template
+          ></a-table-column
         >
         <a-table-column key="tags" :title="t('core.plugins.tags')"
           ><template #default="{ record }">
@@ -188,7 +138,15 @@ watch(locale, load, { immediate: true })
               "
               @click="install(record)"
               ><template #icon><DownloadOutlined /></template
-              >{{ t('core.plugins.install') }}</a-button
+              >{{
+                t(
+                  record.info.update_available
+                    ? 'core.plugins.upgrade'
+                    : record.info.installed_version
+                      ? 'core.plugins.alreadyInstalled'
+                      : 'core.plugins.install'
+                )
+              }}</a-button
             ></template
           ></a-table-column
         >
