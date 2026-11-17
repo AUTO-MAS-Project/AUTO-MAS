@@ -1,19 +1,15 @@
 """MAA 同日新版本取包、额度去重与共享缓存的离线回归。"""
 
 import asyncio
-import hashlib
 import json
 import zipfile
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
-from app.task.MAA.tools import fluxdown_update as github
-from app.task.MAA.tools import resource_update as resource
-from app.task.MAA.tools import software_update as software
+from maa_adapter.updates import fluxdown as github
+from maa_adapter.updates.software import service as software
 
 NOW = datetime(2026, 11, 1, 4, tzinfo=timezone.utc)
 
@@ -22,20 +18,6 @@ class FixedDatetime(datetime):
     @classmethod
     def now(cls, tz=None):
         return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
-
-
-def save_state(path, *, key, version, yesterday=False, backoff=False):
-    state = {
-        f"last_download_attempt_at/{key}": (
-            NOW - timedelta(days=1) if yesterday else NOW
-        ).isoformat(),
-    }
-    if version is not None:
-        state[f"last_download_attempt_version/{key}"] = version
-    if backoff:
-        state[f"download_fail_until/{key}"] = (NOW + timedelta(hours=1)).isoformat()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state))
 
 
 @pytest.fixture
@@ -110,338 +92,305 @@ async def prepare_software(install, root=None):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("previous", ["v6.1.0", "v6.2.0", "6.1.0+build"])
-async def test_software_same_or_older_version_never_requests_another_url(
-    software_install, previous
+@pytest.mark.parametrize("blocked", ["daily", "download_backoff", "query_backoff"])
+async def test_software_prefetch_respects_persisted_download_limits(
+    software_install, blocked
 ):
+    """进程内无下载缓存时，持久化额度或退避记录仍须阻止 L2 申请真实传输。"""
     install = software_install
-    save_state(install.state, key="win/x64/beta", version=previous)
-    with pytest.raises(RuntimeError):
-        await prepare_software(install)
-    install.request.assert_not_awaited()
-    install.downloader.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_software_cache_is_registered_for_other_install_and_cdk_after_restart(
-    software_install,
-):
-    install = software_install
-    assert await prepare_software(install) == "v6.1.0"
-    install.config.Update.MirrorChyanCDK = "other-cdk"
-    for name in ("maa-second", "maa-third"):
-        root = install.installation(name)
-        assert await prepare_software(install, root) == "v6.1.0"
-        version, package = software.read_pending_update(root)
-        assert version == "v6.1.0" and Path(package).is_file()
-    install.request.assert_awaited_once()
-    install.downloader.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_software_new_release_is_downloaded_once_for_other_installs(
-    software_install,
-):
-    install = software_install
-    assert await prepare_software(install) == "v6.1.0"
-    install.query.return_value = "v6.2.0"
-    install.request.return_value["data"]["version_name"] = "v6.2.0"
-    roots = [install.installation("maa-second"), install.installation("maa-third")]
-    assert await asyncio.gather(
-        *(prepare_software(install, root) for root in roots)
-    ) == ["v6.2.0", "v6.2.0"]
-    assert install.request.await_count == install.downloader.await_count == 2
-
-
-@pytest.mark.asyncio
-async def test_software_corrupt_cache_cannot_bypass_version_budget(software_install):
-    install = software_install
-    assert await prepare_software(install) == "v6.1.0"
-    (install.cache / "package.zip").write_bytes(b"corrupt package")
-    root = install.installation("maa-second")
-    with pytest.raises(RuntimeError):
-        await prepare_software(install, root)
-    assert software.read_pending_update(root) == ("", "")
-    install.request.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("failure", ["error", "cancel"])
-async def test_software_records_actual_newer_response_before_failed_download(
-    software_install, failure
-):
-    install = software_install
-    install.request.return_value["data"]["version_name"] = "v6.2.0"
-    install.downloader.side_effect = (
-        OSError("offline") if failure == "error" else asyncio.CancelledError()
-    )
-    with pytest.raises(RuntimeError if failure == "error" else asyncio.CancelledError):
-        await prepare_software(install)
-    saved = json.loads(install.state.read_text())
-    assert saved["last_download_attempt_version/win/x64/beta"] == "v6.2.0"
-    # 日限额本身必须生效，不能只靠失败退避挡住重复取包。
-    saved.pop("download_fail_until/win/x64/beta", None)
-    install.state.write_text(json.dumps(saved))
-    install.query.return_value = "v6.2.0"
-    with pytest.raises(RuntimeError):
-        await prepare_software(install)
-    install.request.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_software_previous_day_allows_retry_but_backoff_still_applies(
-    software_install,
-):
-    install = software_install
-    save_state(
-        install.state,
-        key="win/x64/beta",
-        version="v6.1.0",
-        yesterday=True,
-        backoff=True,
-    )
-    with pytest.raises(RuntimeError):
-        await prepare_software(install)
-    install.request.assert_not_awaited()
-    save_state(install.state, key="win/x64/beta", version="v6.1.0", yesterday=True)
-    assert await prepare_software(install) == "v6.1.0"
-
-
-@pytest.fixture
-def resource_install(tmp_path, monkeypatch, isolated_app_paths):
-    monkeypatch.setattr(resource, "datetime", FixedDatetime)
-    monkeypatch.setattr(resource, "_prepare_install_lock", asyncio.Lock())
-    work = tmp_path / "resource-cache"
-    for name, value in {
-        "_WORK_DIR": work,
-        "_STAGE_DIR": work / "stage",
-        "_STAGE_ZIP": work / "package.zip",
-        "_MANIFEST_FILE": work / "manifest.json",
-        "_STATE_FILE": work / "state.json",
-        "_LOCK_FILE": tmp_path / "resource.lock",
-    }.items():
-        monkeypatch.setattr(resource, name, value)
-    target = NOW - timedelta(hours=1)
-    query = AsyncMock(return_value=target)
-    monkeypatch.setattr(resource, "latest_resource_clock", query)
-    request = AsyncMock(
-        return_value={
-            "data": {
-                "url": "https://example.invalid/resource.zip",
-                "version_name": resource._format_clock(target),
-                "update_type": "full",
-            }
+    key = software._cache_key("x64", "beta")
+    if blocked == "daily":
+        state = {
+            f"last_download_attempt_at/{key}": NOW.isoformat(),
+            f"last_download_attempt_version/{key}": "v6.1.0",
         }
-    )
-    monkeypatch.setattr(
-        resource._service_update_transport, "request_mirror_resource", request
-    )
-
-    async def download(url, path, **kwargs):
-        with zipfile.ZipFile(path, "w") as archive:
-            archive.writestr(
-                "resource/version.json",
-                json.dumps(
-                    {"last_updated": request.return_value["data"]["version_name"]}
-                ),
-            )
-            archive.writestr("resource/tasks.json", "opaque resource")
-
-    downloader = AsyncMock(side_effect=download)
-    monkeypatch.setattr(resource, "download_file", downloader)
-
-    def installation(name):
-        root = tmp_path / name
-        (root / "resource").mkdir(parents=True)
-        (root / "resource/version.json").write_text(
-            '{"last_updated":"2026-10-01 00:00:00.000"}'
+    else:
+        field = (
+            f"query_fail_until/{software._query_key('x64', 'beta', 'test-cdk')}"
+            if blocked == "query_backoff"
+            else f"download_fail_until/{key}"
         )
-        return root
-
-    return SimpleNamespace(
-        root=installation("maa"),
-        installation=installation,
-        target=target,
-        query=query,
-        request=request,
-        downloader=downloader,
-        state=resource._STATE_FILE,
-        key=hashlib.sha256(b"test-cdk").hexdigest()[:16],
-    )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("previous", ["older", "legacy", "yesterday"])
-async def test_resource_new_version_legacy_and_previous_day_allow_download(
-    resource_install, previous
-):
-    install = resource_install
-    version = (
-        None
-        if previous == "legacy"
-        else (
-            install.target - timedelta(hours=1)
-            if previous == "older"
-            else install.target
-        ).isoformat()
-    )
-    save_state(
-        install.state,
-        key=install.key,
-        version=version,
-        yesterday=previous == "yesterday",
-    )
-    await resource.prepare_install_resources(install.root, cdk="test-cdk", github=False)
-    assert resource.read_resource_clock(install.root) == install.target
-    install.request.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("backoff", [False, True])
-async def test_resource_same_version_or_backoff_never_requests_url(
-    resource_install, backoff
-):
-    install = resource_install
-    version = install.target - timedelta(hours=1) if backoff else install.target
-    save_state(
-        install.state, key=install.key, version=version.isoformat(), backoff=backoff
-    )
+        state = {field: (NOW + timedelta(hours=1)).isoformat()}
+    software._utils_io.write_file(install.state, state)
+    assert await software.check_software_download(install.root, install.config) == []
     with pytest.raises(RuntimeError):
-        await resource.prepare_install_resources(
-            install.root, cdk="test-cdk", github=False
-        )
-    install.request.assert_not_awaited()
+        await prepare_software(install)
+    install.downloader.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_resource_new_release_updates_shared_cache_once_for_all_installs(
-    resource_install,
+@pytest.mark.parametrize("blocked", ["daily", "download_backoff"])
+async def test_resource_prefetch_respects_persisted_download_limits(
+    software_install, monkeypatch, blocked
 ):
-    install = resource_install
-    await resource.prepare_install_resources(install.root, cdk="test-cdk", github=False)
-    install.query.return_value += timedelta(minutes=9)
-    install.request.return_value["data"]["version_name"] = resource._format_clock(
-        install.query.return_value
-    )
-    roots = [
-        install.root,
-        install.installation("maa-second"),
-        install.installation("maa-third"),
-    ]
-    await asyncio.gather(
-        *(
-            resource.prepare_install_resources(root, cdk="test-cdk", github=False)
-            for root in roots
-        )
-    )
-    assert all(
-        resource.read_resource_clock(root) == install.query.return_value
-        for root in roots
-    )
-    assert install.request.await_count == install.downloader.await_count == 2
+    """资源检查在没有可复用共享缓存时也遵守实际准备流程的取包限制。"""
+    import hashlib
 
+    from maa_adapter.updates.resources import service as resources
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("failure", ["error", "cancel"])
-async def test_resource_failed_download_keeps_version_budget(resource_install, failure):
-    install = resource_install
-    install.downloader.side_effect = (
-        OSError("offline") if failure == "error" else asyncio.CancelledError()
-    )
-    with pytest.raises(RuntimeError if failure == "error" else asyncio.CancelledError):
-        await resource.prepare_install_resources(
-            install.root, cdk="test-cdk", github=False
-        )
-    saved = json.loads(install.state.read_text())
-    assert (
-        saved[f"last_download_attempt_version/{install.key}"]
-        == install.target.isoformat()
-    )
-    saved.pop(f"download_fail_until/{install.key}", None)
-    install.state.write_text(json.dumps(saved))
-    with pytest.raises(RuntimeError):
-        await resource.prepare_install_resources(
-            install.root, cdk="test-cdk", github=False
-        )
-    install.request.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("response_version", [None, "2026-10-31 00:00:00.000"])
-async def test_resource_invalid_or_older_response_is_accounted_before_rejection(
-    resource_install, response_version
-):
-    install = resource_install
-    install.request.return_value["data"]["version_name"] = response_version
-    with pytest.raises(RuntimeError):
-        await resource.prepare_install_resources(
-            install.root, cdk="test-cdk", github=False
-        )
-    saved = json.loads(install.state.read_text())
-    assert (
-        saved[f"last_download_attempt_version/{install.key}"]
-        == install.target.isoformat()
-    )
-    saved.pop(f"download_fail_until/{install.key}", None)
-    install.state.write_text(json.dumps(saved))
-    with pytest.raises(RuntimeError):
-        await resource.prepare_install_resources(
-            install.root, cdk="test-cdk", github=False
-        )
-    install.request.assert_awaited_once()
-    install.downloader.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("corrupt", [False, True])
-async def test_mirror_incremental_uses_baseline_and_falls_back_on_corruption(
-    software_install, monkeypatch, corrupt
-):
     install = software_install
-    install.config.Update.PackageMode = "incremental"
-    requests = []
+    monkeypatch.setattr(resources, "datetime", FixedDatetime)
+    work = install.root / "resource-cache"
+    for field, relative in {
+        "_WORK_DIR": ".",
+        "_STAGE_DIR": "stage",
+        "_MANIFEST_FILE": "manifest.json",
+        "_STATE_FILE": "state.json",
+    }.items():
+        monkeypatch.setattr(resources, field, work / relative)
+    directory = install.root / "resource"
+    directory.mkdir()
+    (directory / "version.json").write_text(
+        json.dumps({"last_updated": "2026-10-31 00:00:00.000"})
+    )
+    target = NOW.replace(hour=0)
+    key = hashlib.sha256(b"test-cdk").hexdigest()[:16]
+    state = (
+        {
+            f"last_download_attempt_at/{key}": NOW.isoformat(),
+            f"last_download_attempt_version/{key}": target.isoformat(),
+        }
+        if blocked == "daily"
+        else {f"download_fail_until/{key}": (NOW + timedelta(hours=1)).isoformat()}
+    )
+    resources._utils_io.write_file(resources._STATE_FILE, state)
+    install.request.return_value = {
+        "data": {
+            "version_name": "2026-11-01 00:00:00.000",
+            "url": "https://example.invalid/resources.zip",
+            "update_type": "full",
+        }
+    }
+    assert (
+        await resources.check_resource_download(
+            install.root, github=False, cdk="test-cdk"
+        )
+        == []
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("package_mode", ["full", "incremental"])
+async def test_mirror_prefetch_selects_the_package_used_by_update(
+    software_install, package_mode, monkeypatch, tmp_path
+):
+    from app.core import Config
+    from app.core import downloads as host_downloads
+    from app.core.background_tasks import BackgroundTaskRegistry
+    from app.models.config import GlobalConfig
+    from app.services.common.update.prefetch import prefetch_paths
+    from tests.config_support import activate_config
+
+    install = software_install
+    install.config.Update.PackageMode = package_mode
+    addresses = []
+    transfers = []
 
     async def request(rid, *, params, **kwargs):
-        requests.append(params)
-        delta = "current_version" in params
+        """每次元数据查询返回新的临时地址，模拟同一文件在 Mirror 酱上的真实取址行为。"""
+        incremental = params.get("current_version") == "v6.0.0"
+        url = (
+            "https://example.invalid/"
+            + ("delta" if incremental else "full")
+            + f"?ticket={len(addresses)}"
+        )
+        addresses.append(url)
         return {
             "data": {
                 "version_name": "v6.1.0",
-                "url": "https://example.invalid/" + ("delta" if delta else "full"),
-                "update_type": "incremental" if delta else "full",
+                "url": url,
+                "update_type": "incremental" if incremental else "full",
             }
         }
 
     async def download(url, path, **kwargs):
+        """仅替代 HTTP 传输，写入可通过插件真实包校验和登记流程的文件。"""
+        transfers.append(url)
         path.parent.mkdir(parents=True, exist_ok=True)
-        if url.endswith("delta") and corrupt:
-            path.write_bytes(b"bad zip")
-            return
         with zipfile.ZipFile(path, "w") as package:
-            if url.endswith("delta"):
+            if url.split("?")[0].endswith("delta"):
                 package.writestr("changes.json", '{"deleted": []}')
                 package.writestr("resource/change.json", "new")
             else:
                 package.writestr("MAA.exe", "exe")
                 package.writestr("MAA.dll", "dll")
 
+    install.request.side_effect = request
+    monkeypatch.setattr(software, "download_file", host_downloads.download_file)
     monkeypatch.setattr(
-        software._service_update_transport, "request_mirror_resource", request
+        host_downloads._service_update_fluxdown, "_httpx_download", download
     )
-    monkeypatch.setattr(software, "download_file", download)
-    assert await prepare_software(install) == "v6.1.0"
-    assert requests[0]["current_version"] == "v6.0.0"
-    if corrupt:
-        assert len(requests) == 2
-        assert "current_version" not in requests[1]
-    from app.task.MAA.tools.software_package import (
-        load_cache_manifest,
-        software_cache_dir,
+    monkeypatch.setattr(
+        host_downloads._utils_fluxdown_cli,
+        "_server_data_dir",
+        lambda _: tmp_path / "fluxdown",
     )
+    monkeypatch.setattr(Config, "setting", await activate_config(GlobalConfig.build()))
+    background = BackgroundTaskRegistry()
+    manager = host_downloads.DownloadManager()
+    monkeypatch.setattr(host_downloads, "Downloads", manager)
+    manager.initialize(
+        directory=tmp_path / "downloads",
+        max_running=1,
+        attempts=1,
+        retry_delay=0,
+        background=background,
+    )
+    try:
+        first = (await software.check_software_download(install.root, install.config))[
+            0
+        ]
+        assert manager.request(first, owner="L2")
+        ready = await manager.wait(first)
+        second = (await software.check_software_download(install.root, install.config))[
+            0
+        ]
+        assert second.url != first.url and second.cache_key == first.cache_key
+        assert second.rid == first.rid == "v6.1.0"
+        assert manager.request(second, owner="L2")
+        assert (await manager.wait(second)).path == ready.path
+        token = prefetch_paths.set({second.cache_key: ready.path})
+        try:
+            assert await prepare_software(install) == "v6.1.0"
+        finally:
+            prefetch_paths.reset(token)
+        # 查询三次仍只发生一次文件传输，安装登记使用同一份全量或增量预下载包。
+        assert len(addresses) == 3
+        assert transfers == [first.url]
+        assert software.read_pending_update(install.root)[0] == "v6.1.0"
+        assert (
+            await software.check_software_download(install.root, install.config) == []
+        )
+        assert transfers == [first.url]
+        assert await manager.release(first.cache_key, owner="L2")
+    finally:
+        await manager.shutdown_all()
+        await background.shutdown(timeout=2)
 
-    manifest = load_cache_manifest(install.cache)
-    assert manifest["package_type"] == ("full" if corrupt else "incremental")
-    assert manifest["base_version"] == "v6.0.0"
-    assert software_cache_dir(
-        "win", "x64", "beta", base_version="v6.0.0"
-    ) != software_cache_dir("win", "x64", "beta", base_version="v5.0.0")
+
+@pytest.mark.asyncio
+async def test_resource_prefetch_reuses_verified_baseline_and_changed_address(
+    tmp_path, monkeypatch, isolated_app_paths
+):
+    """安装比共享基线旧时仍选同一增量包，多次取址只传输一次，安装后保留未变更资源。"""
+    from maa_adapter.updates.resources import service as resources
+
+    from app.core import Config
+    from app.core import downloads as host_downloads
+    from app.core.background_tasks import BackgroundTaskRegistry
+    from app.models.config import GlobalConfig
+    from app.services.common.update.prefetch import prefetch_paths
+    from tests.config_support import activate_config
+
+    work = tmp_path / "resource-cache"
+    for field, relative in {
+        "_WORK_DIR": ".",
+        "_STAGE_DIR": "stage",
+        "_MANIFEST_FILE": "manifest.json",
+        "_STAGE_ZIP": "package.zip",
+        "_STATE_FILE": "state.json",
+        "_LOCK_FILE": "resource.lock",
+    }.items():
+        monkeypatch.setattr(resources, field, work / relative)
+    monkeypatch.setattr(resources, "_prepare_install_lock", asyncio.Lock())
+    install = tmp_path / "maa"
+    for root, version in (
+        (install, "2026-11-01 00:00:00.000"),
+        (work / "stage", "2026-11-02 00:00:00.000"),
+    ):
+        directory = root / "resource"
+        directory.mkdir(parents=True)
+        (directory / "version.json").write_text(json.dumps({"last_updated": version}))
+        (directory / "unchanged.txt").write_text("keep")
+    baseline = datetime(2026, 11, 2, tzinfo=timezone.utc)
+    target = datetime(2026, 11, 3, tzinfo=timezone.utc)
+    resources._utils_io.write_file(
+        resources._MANIFEST_FILE,
+        {
+            "full": True,
+            "target": baseline.isoformat(),
+            "files": resources.resource_tree_hashes(work / "stage/resource"),
+        },
+    )
+    addresses, transfers = [], []
+
+    async def request(resource_id, *, params, **kwargs):
+        """免费查询只返回版本，取址返回变化的 URL；增量基线必须是已校验共享缓存的版本。"""
+        data = {"version_name": "2026-11-03 00:00:00.000"}
+        if "cdk" in params:
+            assert params.get("current_version") == "2026-11-02 00:00:00.000"
+            data.update(
+                url=f"https://example.invalid/resources?ticket={len(addresses)}",
+                update_type="incremental",
+            )
+            addresses.append(data["url"])
+        return {"data": data}
+
+    async def download(url, destination, **kwargs):
+        """仅隔离 HTTP，保留真实资源包解压、共享基线合并及安装结果核验。"""
+        transfers.append(url)
+        with zipfile.ZipFile(destination, "w") as package:
+            package.writestr(
+                "resource/version.json",
+                json.dumps({"last_updated": "2026-11-03 00:00:00.000"}),
+            )
+            package.writestr("resource/new.txt", "new")
+            package.writestr("changes.json", '{"deleted": []}')
+
+    monkeypatch.setattr(
+        resources._service_update_transport, "request_mirror_resource", request
+    )
+    monkeypatch.setattr(
+        host_downloads._service_update_fluxdown, "_httpx_download", download
+    )
+    monkeypatch.setattr(
+        host_downloads._utils_fluxdown_cli,
+        "_server_data_dir",
+        lambda _: tmp_path / "fluxdown",
+    )
+    monkeypatch.setattr(Config, "setting", await activate_config(GlobalConfig.build()))
+    background = BackgroundTaskRegistry()
+    manager = host_downloads.DownloadManager()
+    monkeypatch.setattr(host_downloads, "Downloads", manager)
+    manager.initialize(
+        directory=tmp_path / "downloads",
+        max_running=1,
+        attempts=1,
+        retry_delay=0,
+        background=background,
+    )
+    try:
+        first = (
+            await resources.check_resource_download(
+                install, github=False, cdk="test", incremental=True
+            )
+        )[0]
+        assert manager.request(first, owner="L2")
+        ready = await manager.wait(first)
+        second = (
+            await resources.check_resource_download(
+                install, github=False, cdk="test", incremental=True
+            )
+        )[0]
+        assert second.url != first.url and second.cache_key == first.cache_key
+        assert second.rid == first.rid == target.isoformat()
+        assert manager.request(second, owner="L2")
+        assert (await manager.wait(second)).path == ready.path
+        token = prefetch_paths.set({second.cache_key: ready.path})
+        access = await resources.acquire_resource_access_lock(install)
+        assert access is not None
+        try:
+            await resources.prepare_install_resources(
+                install, github=False, cdk="test", incremental=True
+            )
+        finally:
+            access.__exit__(None, None, None)
+            prefetch_paths.reset(token)
+        assert resources.read_resource_clock(install) == target
+        assert (install / "resource/unchanged.txt").read_text() == "keep"
+        assert (install / "resource/new.txt").read_text() == "new"
+        assert len(addresses) == 3 and transfers == [first.url]
+        assert await manager.release(first.cache_key, owner="L2")
+    finally:
+        await manager.shutdown_all()
+        await background.shutdown(timeout=2)

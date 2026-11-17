@@ -1,6 +1,12 @@
 name: CI 构建产物
 
 on:
+  workflow_dispatch:
+    inputs:
+      alpha:
+        description: 构建随附 Runtime、后端跟随 dev 的 alpha 测试包
+        type: boolean
+        default: false
   push:
     branches:
       - dev
@@ -32,6 +38,8 @@ jobs:
 
       - name: 生成产物名称
         id: metadata
+        env:
+          ALPHA_BUILD: ${{ inputs.alpha }}
         shell: pwsh
         run: |
           $version = (Get-Content -LiteralPath 'res/version.json' -Raw | ConvertFrom-Json).version
@@ -39,16 +47,68 @@ jobs:
             throw "res/version.json 中的版本号无效：$version"
           }
 
+          if ($env:ALPHA_BUILD -eq 'true') {
+            if ($env:GITHUB_REF_NAME -ne 'dev') {
+              throw '跟随 dev 的 alpha 包须从 dev 分支构建'
+            }
+            $version = ($version -replace '-.*$', '') + "-alpha.$env:GITHUB_RUN_NUMBER"
+            # 仅修改构建工作区的前端版本，后端继续使用 dev 中的版本与锁文件。
+            $env:ALPHA_VERSION = $version
+            node -e "const fs=require('node:fs'); for(const file of ['frontend/package.json','res/version.json']) { const data=JSON.parse(fs.readFileSync(file,'utf8')); data.version=process.env.ALPHA_VERSION; fs.writeFileSync(file,JSON.stringify(data,null,2)+'\n'); }"
+            if ($LASTEXITCODE -ne 0) { throw '注入 alpha 前端版本失败' }
+          }
+
           $shortSha = $env:GITHUB_SHA.Substring(0, 7)
           Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "version_tag=$version"
           Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "short_sha=$shortSha"
           Write-Host "版本 $version，提交 $shortSha；本产物包含本次提交的前端、Electron 与后端源码"
-          Write-Host '本验证包不含 Runtime'
+          if ($env:ALPHA_BUILD -eq 'true') {
+            Write-Host 'alpha 包随附 Runtime，启动时从 dev 准备后端源码'
+          } else {
+            Write-Host '本验证包不含 Runtime'
+          }
 
       - name: 构建并准备 Windows 解压包
         uses: ./.github/actions/build-windows-unpacked
 
+      - name: 为 alpha 包准备 Runtime 与源码说明
+        if: inputs.alpha
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ steps.metadata.outputs.version_tag }}
+        shell: pwsh
+        run: |
+          $runtimeVersion = (Get-Content -LiteralPath 'res/runtime-version.txt' -Raw).Trim()
+          $runtimeDir = Join-Path $env:RUNNER_TEMP 'alpha-runtime'
+          New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
+          $assetName = "auto-mas-runtime-$runtimeVersion.exe"
+          gh release download $runtimeVersion -R AUTO-MAS-Project/AUTO-MAS-Runtime -D $runtimeDir -p $assetName -p SHA256SUMS.txt
+          if ($LASTEXITCODE -ne 0) { throw '下载 alpha Runtime 失败' }
+          $checksums = Get-Content -LiteralPath (Join-Path $runtimeDir 'SHA256SUMS.txt')
+          $line = @($checksums | Where-Object { ($_ -split '\s+')[-1] -eq $assetName })
+          if ($line.Count -ne 1) { throw 'Runtime 校验文件缺少唯一的目标记录' }
+          $runtimePath = Join-Path $runtimeDir $assetName
+          $expected = ($line[0] -split '\s+')[0]
+          $actual = (Get-FileHash -LiteralPath $runtimePath -Algorithm SHA256).Hash
+          if ($actual -ne $expected) { throw 'Runtime SHA-256 校验失败' }
+          $events = @(& $runtimePath --output ndjson --protocol 1 version)
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime 版本检查失败' }
+          $result = $events | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.type -eq 'result' }
+          if (-not $result.success -or $result.details.runtimeVersion -ne $runtimeVersion -or $result.details.alphaBackend -ne 'dev') {
+            throw 'Runtime 未提供预期的 alpha/dev 启动能力'
+          }
+          $packageRoot = Join-Path $env:GITHUB_WORKSPACE 'frontend/dist/win-unpacked'
+          Copy-Item -LiteralPath $runtimePath -Destination (Join-Path $packageRoot 'resources/auto-mas-runtime.exe')
+          @{
+            frontendVersion = $env:APP_VERSION
+            sourceCommit = $env:GITHUB_SHA
+            backendBranch = 'dev'
+            runtimeVersion = $runtimeVersion
+            runtimeSha256 = $actual.ToLowerInvariant()
+          } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $packageRoot 'build-source.json') -Encoding utf8
+
       - name: 预置本次提交的后端仓库
+        if: ${{ !inputs.alpha }}
         env:
           APP_VERSION: ${{ steps.metadata.outputs.version_tag }}
         shell: pwsh

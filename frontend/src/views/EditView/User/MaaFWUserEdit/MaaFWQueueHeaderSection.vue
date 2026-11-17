@@ -21,8 +21,8 @@
       </a-button>
     </a-space>
   </a-flex>
-  <!-- 特调类型（M9A）的受管任务（启动 / 切号 / 关闭）由后端全权控制：「添加任务」与预设里
-       都没有它们；一条提示一个框：挤在一个框里读起来还是一坨 -->
+  <!-- 特调的队列提示（如 MSS 的爬塔排序）与不可选任务的提示；一条提示一个框：挤在一个框里
+       读起来还是一坨 -->
   <a-alert
     v-for="(line, index) in queueHintLines"
     :key="index"
@@ -63,9 +63,5 @@ const emit = defineEmits<MaaFWUserQueueHeaderSectionEmits>()
 /* 每条提示一个框（文案里用 \n 分行），框之间留点空 */
 .flavor-queue-hint {
   margin-bottom: 8px;
-}
-
-.flavor-queue-hint-last {
-  margin-bottom: 16px;
 }
 </style>

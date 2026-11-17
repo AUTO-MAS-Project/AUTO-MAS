@@ -23,9 +23,15 @@ import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
 import type { MaaEndLogBundleIn } from '../models/MaaEndLogBundleIn';
 import type { MaaEndLogBundleOut } from '../models/MaaEndLogBundleOut';
 import type { ObsReplaySaveOut } from '../models/ObsReplaySaveOut';
+import type { OperationGetIn } from '../models/OperationGetIn';
+import type { OperationOut } from '../models/OperationOut';
+import type { OperationStartIn } from '../models/OperationStartIn';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
 import type { PatternDebugOut } from '../models/PatternDebugOut';
+import type { PluginCatalogRefreshIn } from '../models/PluginCatalogRefreshIn';
+import type { PluginInstallationOut } from '../models/PluginInstallationOut';
+import type { PluginInstallationRestartIn } from '../models/PluginInstallationRestartIn';
 import type { PowerIn } from '../models/PowerIn';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
@@ -509,62 +515,6 @@ export class ActionService {
         });
     }
     /**
-     * 下载更新
-     * @param version
-     * @param downloader
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static downloadUpdateApiUpdateDownloadPost(
-        version?: (string | null),
-        downloader?: (string | null),
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/update/download',
-            query: {
-                'version': version,
-                'downloader': downloader,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 取消下载更新
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static cancelUpdateDownloadApiUpdateCancelDownloadPost(): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/update/cancel-download',
-        });
-    }
-    /**
-     * 切换下载源到 CNB
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static switchUpdateDownloadToCnbApiUpdateSwitchToCnbPost(): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/update/switch-to-cnb',
-        });
-    }
-    /**
-     * 安装更新
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static installUpdateApiUpdateInstallPost(): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/update/install',
-        });
-    }
-    /**
      * 点击指定图像位置
      * 截图、查找并点击与图像一致的位置
      *
@@ -618,6 +568,121 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/ocr/click/text',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Start Operation
+     * 校验配置触发器请求并提交后台操作，返回操作记录或当前无法执行的原因。
+     * @param requestBody
+     * @returns OperationOut Successful Response
+     * @throws ApiError
+     */
+    public static startOperationApiOperationsStartPost(
+        requestBody: OperationStartIn,
+    ): CancelablePromise<OperationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/operations/start',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Cancel Operation
+     * 请求取消指定后台操作，返回取消后的记录，并区分不存在与不允许取消的情况。
+     * @param requestBody
+     * @returns OperationOut Successful Response
+     * @throws ApiError
+     */
+    public static cancelOperationApiOperationsCancelPost(
+        requestBody: OperationGetIn,
+    ): CancelablePromise<OperationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/operations/cancel',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 从索引全量刷新目录并写入配置（读列表请再调 get）
+     * 请求插件管理器重新拉取市场目录，将刷新结果转换为统一接口响应。
+     * @param locale
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static refreshPluginCatalogApiPluginCatalogRefreshPost(
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+        requestBody?: PluginCatalogRefreshIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_catalog/refresh',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Prepare Plugin Installation Restart
+     * 业务忙时保持等待；空闲后取得重启资格并暂停新任务和插件命令。
+     * @param requestBody
+     * @param locale
+     * @returns PluginInstallationOut Successful Response
+     * @throws ApiError
+     */
+    public static preparePluginInstallationRestartApiPluginInstallationRestartPost(
+        requestBody: PluginInstallationRestartIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginInstallationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/restart',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Resume After Plugin Installation Restart
+     * 前端未能重启后端时归还资格，候选环境继续保留。
+     * @param requestBody
+     * @param locale
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static resumeAfterPluginInstallationRestartApiPluginInstallationResumePost(
+        requestBody: PluginInstallationRestartIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/resume',
+            query: {
+                'locale': locale,
+            },
             body: requestBody,
             mediaType: 'application/json',
             errors: {

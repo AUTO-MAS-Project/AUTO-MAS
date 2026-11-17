@@ -89,6 +89,7 @@ const normalizePreset = (preset: MaaFWPresetInfo): MaaFWPresetInfo => ({
   ...preset,
   taskCount: preset.taskCount ?? 0,
   checkedCount: preset.checkedCount ?? 0,
+  controller: preset.controller ?? [],
   snapshot: normalizeTaskSnapshot(preset.snapshot),
 })
 

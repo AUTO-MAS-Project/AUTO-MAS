@@ -7,6 +7,10 @@
  */
 export type McpStatusData = {
     enabled: boolean;
+    /**
+     * 启动环境是否允许启用 MCP
+     */
+    environmentEnabled: boolean;
     state: McpStatusData.state;
     stage: ('importing' | 'building' | 'validating' | 'mounting' | null);
     startedAt: (string | null);

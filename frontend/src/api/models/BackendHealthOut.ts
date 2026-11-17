@@ -15,6 +15,14 @@ export type BackendHealthOut = {
      */
     backgroundStatus: string;
     /**
+     * 插件与业务初始化状态；完成前不得放行自动任务
+     */
+    businessStatus: string;
+    /**
+     * 当前插件或配置初始化步骤
+     */
+    businessMessage?: (string | null);
+    /**
      * 后台初始化失败原因
      */
     backgroundError?: (string | null);
@@ -34,5 +42,9 @@ export type BackendHealthOut = {
      * 后端所在提交哈希，未受监督或监督器未注入时为空
      */
     commit: string;
+    /**
+     * 自动业务是否已由监督器放行
+     */
+    startupActivation?: ('pending' | 'active' | 'closed' | null);
 };
 

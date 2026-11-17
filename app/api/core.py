@@ -25,10 +25,11 @@ import asyncio
 import os
 from contextlib import suppress
 from typing import (
+    Literal,
     Optional,
 )
 
-from fastapi import APIRouter, Request, WebSocket
+from fastapi import APIRouter, HTTPException, Request, WebSocket
 from pydantic import (
     BaseModel,
     Field,
@@ -43,6 +44,7 @@ from app.core import (
     Power,
     Publisher,
     ShutdownCoordinator,
+    Startup,
     TaskManager,
 )
 from app.core.ws import protocol
@@ -78,6 +80,12 @@ class BackendHealthOut(BaseModel):
 
     ready: bool = Field(description="核心 API 是否可用")
     backgroundStatus: str = Field(description="后台初始化状态")
+    businessStatus: str = Field(
+        description="插件与业务初始化状态；完成前不得放行自动任务"
+    )
+    businessMessage: str | None = Field(
+        default=None, description="当前插件或配置初始化步骤"
+    )
     backgroundError: str | None = Field(default=None, description="后台初始化失败原因")
     backgroundWarnings: list[str] = Field(
         default_factory=list,
@@ -86,6 +94,9 @@ class BackendHealthOut(BaseModel):
     protocol: int = Field(description="后端自身支持的健康检查协议版本")
     version: str = Field(description="后端版本号")
     commit: str = Field(description="后端所在提交哈希，未受监督或监督器未注入时为空")
+    startupActivation: Literal["pending", "active", "closed"] | None = Field(
+        default=None, description="自动业务是否已由监督器放行"
+    )
 
 
 def _resolve_injected_identity(env_name: str) -> str | None:
@@ -112,9 +123,15 @@ async def get_health(request: Request) -> BackendHealthOut:
     与空字符串；commit 不通过 Git 推断，只能来自监督器注入。
     """
 
+    status = getattr(request.app.state, "background_status", "starting")
+    # deferred 模式先确认核心接口身份，再由桌面等待业务准备并放行；下载插件不占
+    # Runtime 的核心健康期限，业务状态单独报告，不能据此提前启动任务。
+    core_ready = Startup.status == "pending" and status in ("starting", "running")
     return BackendHealthOut(
         ready=True,
-        backgroundStatus=getattr(request.app.state, "background_status", "starting"),
+        backgroundStatus="ready" if core_ready else status,
+        businessStatus=status,
+        businessMessage=getattr(request.app.state, "business_message", None),
         backgroundError=getattr(request.app.state, "background_error", None),
         backgroundWarnings=list(
             getattr(request.app.state, "background_warnings", None) or []
@@ -123,7 +140,23 @@ async def get_health(request: Request) -> BackendHealthOut:
         version=_resolve_injected_identity("AUTO_MAS_EXPECTED_VERSION")
         or Config.VERSION,
         commit=_resolve_injected_identity("AUTO_MAS_EXPECTED_COMMIT") or "",
+        startupActivation=Startup.status,
     )
+
+
+@router.post(
+    "/startup/activate", response_model=BackendHealthOut, include_in_schema=False
+)
+async def activate_startup(request: Request) -> BackendHealthOut:
+    """监督器完成就绪与身份校验后幂等放行；不进入 MCP 工具目录。"""
+
+    if request.app.state.background_status != "ready":
+        raise HTTPException(status_code=409, detail="后端尚未就绪")
+    try:
+        Startup.activate()
+    except RuntimeError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return await get_health(request)
 
 
 @router.get("/mcp/status", summary="获取 MCP 服务状态", response_model=McpStatusOut)
@@ -174,6 +207,9 @@ MainConnection.on_connect(Notify.flush_startup_notices)
 async def connect_websocket(websocket: WebSocket):
     """主 WebSocket 端点，接入后整体交给 MainConnection 管理。"""
 
+    if getattr(websocket.app.state, "background_status", "starting") != "ready":
+        await websocket.close(code=1013, reason="业务初始化尚未完成")
+        return
     await MainConnection.serve(websocket)
 
 

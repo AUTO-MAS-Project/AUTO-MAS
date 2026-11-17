@@ -22,6 +22,7 @@ from app.utils import MIRROR_ERROR_INFO
 from ..file_lockers import describe_lockers_async
 from ..interface.models import MaaFWInterface
 from ..log_redact import mask_home_path
+from ..worker_protocol import DETAIL_LOG_PREFIX
 from .apply import (
     InvalidPackageArchive,
     UpdateApplyError,
@@ -85,6 +86,10 @@ HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 # api.github.com 常常不通，时限给长了每次运行都白等；补查查不到就沿用 Mirror 酱的版本。
 GITHUB_VERSION_CHECK_TIMEOUT = 10.0
 GITHUB_VERSION_CHECK_PAGE_SIZE = 20
+# Mirror 酱查询的总时限（秒）：查版本挡在每次运行前面、排在 GitHub 之前，给 15 秒；
+# 带 CDK 换下载地址只在确认要下载时问一次，宽一些。
+MIRRORCHYAN_VERSION_CHECK_TIMEOUT = 15.0
+MIRRORCHYAN_DOWNLOAD_URL_TIMEOUT = 45.0
 
 # 带这个前缀的更新日志行要用户留意：手动更新的「更新过程」面板去掉前缀、整行标红
 # （``api_service/update.py``）。只在手动更新（``allow_misnumbered_rollback``）时发，
@@ -286,6 +291,10 @@ class MaaFWProjectUpdateError(RuntimeError):
     ``project_lock_busy``：限时内没拿到项目锁（另一次更新 / 预检在跑）。
     ``cancelled``：调用方置位了 ``cancel_event``，本次更新是被用户停掉的，
     不是失败——调用方据此换文案，别把「已中止」说成「更新失败」。
+    ``check_unreachable``：查版本这一步连不上更新源（网络出错、超时、5xx），不是
+    更新源明确拒绝（CDK、资源不存在这类要用户处理的错误码不算；选 GitHub 源时 Mirror
+    酱回资源不存在、GitHub 又连不上，版本无处可查，仍算连不上）。运行前自动更新据此
+    与只看 GitHub 的项目同一口径：只记日志、不弹错误；手动检查 / 更新照常报错。
     """
 
     def __init__(
@@ -297,6 +306,7 @@ class MaaFWProjectUpdateError(RuntimeError):
         post_validate_rejected: bool = False,
         project_lock_busy: bool = False,
         cancelled: bool = False,
+        check_unreachable: bool = False,
     ) -> None:
         super().__init__(message)
         self.provider_error_code = provider_error_code
@@ -304,6 +314,7 @@ class MaaFWProjectUpdateError(RuntimeError):
         self.post_validate_rejected = post_validate_rejected
         self.project_lock_busy = project_lock_busy
         self.cancelled = cancelled
+        self.check_unreachable = check_unreachable
 
 
 def _stale_projection_message(manifest: Mapping[str, Any]) -> str:
@@ -455,6 +466,20 @@ def _report_progress(
         logger.warning("MaaFW 更新进度回调失败: stage=%s", stage, exc_info=True)
 
 
+def _payload_runtime_incomplete(payload: PayloadTarget) -> bool:
+    """当前载荷里 runner 要用的 MaaFramework 原生库缺依赖、真加载也失败（判断不了算没坏）。"""
+
+    try:
+        from app.task.MaaFW.tools.core.runner.environment import (
+            project_runtime_broken,
+        )
+
+        return project_runtime_broken(payload.directory())
+    except Exception:  # noqa: BLE001 - 判断不了就照常按差量 / 全量的原规则走
+        logger.warning("MaaFW 检查当前版本原生库是否完整时出错", exc_info=True)
+        return False
+
+
 async def update_maafw_project_if_needed(
     project_path: Path,
     interface_model: MaaFWInterface,
@@ -477,6 +502,7 @@ async def update_maafw_project_if_needed(
     allow_misnumbered_rollback: bool = False,
     prefetch_full_package: bool = False,
     prefetched: tuple[str, MaaFWProjectUpdateDiscovery] | None = None,
+    download_paths: dict[str, str] | None = None,
 ) -> MaaFWProjectUpdateResult:
     """检查并按需更新项目：发现 → 下载一次 → 在 staging 里从当前载荷 + 包建新载荷 →
     预检 → 并入共用库 → 登记。项目视图在这里一个字节都不动。
@@ -536,9 +562,11 @@ async def update_maafw_project_if_needed(
         if base_version and version_newer(base_version, current_version):
             send_update_log(f"本项目已登记 {base_version}，以它为基准检查更新")
             current_version = base_version
-    send_update_log("start checking MaaFW project update")
-    send_update_log(f"current version: {current_version}")
-    send_update_log(f"update channel: {update_channel}")
+    # 每次运行前都会走到这里：只进后端日志（详情行），不往账号日志里复述状态。
+    send_update_log(
+        f"{DETAIL_LOG_PREFIX}开始检查 MaaFW 项目更新：当前版本 {current_version}，"
+        f"渠道 {update_channel}"
+    )
     del project_lock_already_held, project_lock_timeout, projection
 
     merged_source_config = dict(source_config or {})
@@ -570,7 +598,9 @@ async def update_maafw_project_if_needed(
         damaged = False
         stale_projection = False
         native_residue = False
+        runtime_incomplete = False
         base_missing = ""
+        imported = True
         if payload is not None:
             try:
                 base_manifest = payload.manifest()
@@ -578,7 +608,8 @@ async def update_maafw_project_if_needed(
                 base_manifest = {}
                 base_missing = str(exc)
             source_kind = str((base_manifest.get("source") or {}).get("kind") or "")
-            prefer_full = source_kind != "update" or prefetch_full_package
+            imported = source_kind != "update"
+            prefer_full = imported or prefetch_full_package
             # 按旧投影规则建、漏装的文件又没补上的载荷：差量包只动包里那几个文件，套上去
             # 新版本照样缺；全量包的条目全部按当前规则投影。
             stale_projection = (
@@ -627,20 +658,36 @@ async def update_maafw_project_if_needed(
                     send_update_log(
                         "当前版本里留着新包不再使用的旧布局原生库，改为请求全量包以清掉它"
                     )
+            # runner 要用的原生库依赖不齐（差量更新把它换到了只有几个 DLL 的目录）：差量包
+            # 补不回没改过的文件，只能要全量包；最新版就是当前版本时按全量包重装一遍
+            # （``repair_current``，见发现阶段）。只读本地文件头，不联网。
+            if not base_missing:
+                runtime_incomplete = await asyncio.to_thread(
+                    _payload_runtime_incomplete, payload
+                )
+            if runtime_incomplete:
+                prefer_full = True
+                send_update_log(
+                    "当前版本自带的 MaaFramework 缺依赖的 DLL，改为请求全量包"
+                )
+        # 为什么要全量包：只在确实有新版本要下时才写（见下面 ``package_notes`` 的出口），
+        # 已是最新、被跳过的每次运行不复述。预下载过整包而要全量的不是「本地导入」。
+        package_notes: list[str] = []
         if (
-            prefer_full
+            imported
             and not damaged
             and not stale_projection
             and not native_residue
+            and not runtime_incomplete
             and not base_missing
         ):
-            send_update_log("当前版本是本地导入的，改为请求全量包")
+            package_notes.append("当前版本是本地导入的，改为请求全量包")
         force_full = (
             force_full_package() or (source_config or {}).get("package_mode") == "full"
         )
         if force_full:
             prefer_full = True
-            send_update_log("已选择全量更新：请求全量包、不按区间差量")
+            package_notes.append("已选择全量更新：请求全量包、不按区间差量")
         gate = precheck_gate
         if base_missing:
             # 新载荷要以当前载荷为基准建，它的清单不在本机就一定建不成（以前要等下载、
@@ -655,6 +702,8 @@ async def update_maafw_project_if_needed(
             prefetched is not None
             and prefetched[0] == current_version
             and not base_missing
+            # 预下载的候选是按差量 / 「有新版本」拿的；副本残缺时重新按全量包发现
+            and not runtime_incomplete
             and (
                 not force_full
                 or prefetched[1].candidate is None
@@ -684,6 +733,7 @@ async def update_maafw_project_if_needed(
                 precheck_gate=gate,
                 cancel_event=cancel_event,
                 allow_misnumbered_rollback=allow_misnumbered_rollback,
+                repair_current=runtime_incomplete,
             )
     except Exception as exc:
         if getattr(exc, "cancelled", False):
@@ -699,7 +749,9 @@ async def update_maafw_project_if_needed(
             )
             raise
         message = f"MaaFW project update failed: {_exception_detail(exc)}"
-        send_update_log(message)
+        # 只进后端日志：运行前更新由管理器写一行中文结论，手动更新的面板看下面的失败
+        # 事件与接口回复，这里再写一行就是同一次失败说两遍。
+        send_update_log(f"{DETAIL_LOG_PREFIX}{message}")
         _report_progress(
             progress,
             "failed",
@@ -789,6 +841,9 @@ async def update_maafw_project_if_needed(
             **cdk_fields,
         )
 
+    for note in package_notes:
+        send_update_log(note)
+
     candidate = discovery.candidate
     if candidate is None:
         message = "update discovery is marked installable but has no candidate"
@@ -843,6 +898,7 @@ async def update_maafw_project_if_needed(
             payload=payload,
             after_register=on_register,
             range_delta=range_delta,
+            download_paths=download_paths,
         )
     except Exception as exc:
         if getattr(exc, "cancelled", False):
@@ -1041,6 +1097,7 @@ async def _discover_project_update_detailed(
     precheck_gate: Callable[[str], Awaitable[str | None]] | None = None,
     cancel_event: threading.Event | None = None,
     allow_misnumbered_rollback: bool = False,
+    repair_current: bool = False,
 ) -> tuple[
     MaaFWProjectUpdateDiscovery | None,
     MaaFWMirrorChyanVersionCheck | None,
@@ -1072,6 +1129,9 @@ async def _discover_project_update_detailed(
     :func:`_is_misnumbered_current`）时按权威源的版本返回更新，候选包标
     ``misnumbered_rollback``、日志带 :data:`ALERT_LOG_PREFIX`。不传（自动更新）时
     不回退：记一行说明，返回 ``None``，原因是「自动更新不回退」那句结论。
+
+    ``repair_current``：当前副本的原生库缺依赖（调用方已改要全量包）。最新版就是当前版本时
+    不当「已是最新」，照常返回这一版的全量包，让更新流程把它重装一遍。
     """
 
     def stop_if_cancelled() -> None:
@@ -1159,6 +1219,13 @@ async def _discover_project_update_detailed(
             if mirror_error is not None:
                 # 两边都查不到：按 Mirror 酱的错误报失败，与只看 Mirror 酱时一样。
                 send_update_log(f"GitHub 版本查询也失败: {detail}")
+                if (
+                    isinstance(exc, httpx.HTTPError)
+                    or getattr(exc, "check_unreachable", False)
+                ) and mirror_error.provider_error_code not in MIRROR_CDK_STATUS_BY_CODE:
+                    # 版本只能从 GitHub 来（Mirror 酱那边是 rid 没登记这类业务错误），而
+                    # GitHub 连不上：仍是连不上更新源。CDK 之类要用户处理的错误不降级。
+                    mirror_error.check_unreachable = True
                 raise mirror_error from exc
             # 没声明 rid 的项目原来就是静默跳过；GitHub 连不上时照旧跳过，不让每次
             # 运行都报一次「更新检查失败」。
@@ -1210,10 +1277,24 @@ async def _discover_project_update_detailed(
             version_check.superseded_by = github_latest
 
     misnumbered = False
+    repair = False
     if not _is_remote_newer(latest, current):
         reason = f"已是最新版本: {current or latest}"
-        if not _is_misnumbered_current(latest, current):
+        if (
+            repair_current
+            and latest
+            and _normalize_version(latest) == _normalize_version(current)
+        ):
+            # 版本没变，但当前副本的原生库缺依赖、每次运行都起不来：按全量包把这一版
+            # 重装一遍。登记时靠「latest 加载不了、这份能」的同版本例外顶替坏的那份；
+            # 重装的仍过不了预检时按目标版本记备忘，下次不再重下。
+            repair = True
+            send_update_log(
+                f"当前版本 {current} 自带的 MaaFramework 缺依赖的 DLL，按全量包重装这一版"
+            )
+        elif not _is_misnumbered_current(latest, current):
             return None, version_check, reason
+    if not repair and not _is_remote_newer(latest, current):
         found = f"当前 {current} 主版本号高于 {version_label} 最新 {latest}"
         if not allow_misnumbered_rollback:
             send_update_log(f"{found}，可能是项目发错了版本号")
@@ -1281,14 +1362,18 @@ async def _discover_project_update_detailed(
         # 确认要从 Mirror 酱下载了，才带 CDK 查第二次拿一次性下载地址。
         # 这一次才可能扣今日下载额度，而它对应一次真实下载。
         prefer_full = prefer_full_package
-        if misnumbered and not prefer_full:
+        if (misnumbered or repair) and not prefer_full:
             # 回退只这一次，按全量包整版重建：不带发错的那个 current_version 去问，
             # 不让 Mirror 酱从它往回算差量包。
             prefer_full = True
             send_update_log("按项目发错版本号回退，改为请求全量包")
         # 用户已经停了就别去换地址：那一下会扣今日下载额度，换来的地址也用不上。
         stop_if_cancelled()
-        send_update_log("已确认有新版本，携带 CDK 获取 Mirror酱 下载地址")
+        send_update_log(
+            "要重装当前版本，携带 CDK 获取 Mirror酱 下载地址"
+            if repair
+            else "已确认有新版本，携带 CDK 获取 Mirror酱 下载地址"
+        )
         authorized = await _query_mirrorchyan_latest(
             interface_model,
             current_version=current,
@@ -1330,7 +1415,8 @@ async def _discover_project_update_detailed(
             source_config=config,
             proxy=proxy,
             target_version=latest,
-            misnumbered_rollback=misnumbered,
+            # 同版本重装同样不要求目标比当前版本新
+            misnumbered_rollback=misnumbered or repair,
         )
     except (MaaFWProjectUpdateError, httpx.HTTPError) as exc:
         # 查询失败不阻断任务：报为「有更新但不可安装」，原因留在
@@ -1424,6 +1510,7 @@ async def apply_maafw_project_update(
     payload: PayloadTarget | None = None,
     after_register: Callable[[RegisterResult], Awaitable[Any]] | None = None,
     range_delta: bool = False,
+    download_paths: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """下载一次 → 在 staging 里建新载荷 → 预检 → 并入共用库 → 登记 → ``after_register``。
 
@@ -1546,6 +1633,9 @@ async def apply_maafw_project_update(
                 source=candidate.source,
                 version=target_version,
                 download_url=download_url,
+                prefetched_path=Path(download_paths[download_url])
+                if download_paths and download_url in download_paths
+                else None,
                 expected_sha256=candidate.sha256,
                 artifact_id=candidate.artifact_id,
                 cache_root=DEFAULT_CACHE_ROOT,
@@ -2117,17 +2207,43 @@ async def _query_mirrorchyan_latest(
     params["arch"] = target.mirrorchyan_arch
 
     url = f"https://mirrorchyan.com/api/resources/{rid}/latest"
+    # 不带 CDK 的这次就是查版本（discovery 里查版本一律不带 CDK），挡在每次运行前面；
+    # 带 CDK 的是确认要下载后换一次性下载地址。两者都套总时限：httpx 的超时只管单次
+    # 读写，响应一点点往回滴时可以远超它（与 GitHub 查询同一做法）。
+    version_query = not mirror_cdk
+    total_timeout = (
+        MIRRORCHYAN_VERSION_CHECK_TIMEOUT
+        if version_query
+        else MIRRORCHYAN_DOWNLOAD_URL_TIMEOUT
+    )
     try:
-        async with httpx.AsyncClient(
-            proxy=proxy, follow_redirects=True, timeout=30.0
-        ) as client:
-            response = await client.get(url, params=params, headers=HTTP_HEADERS)
+        async with asyncio.timeout(total_timeout):
+            async with httpx.AsyncClient(
+                proxy=proxy, follow_redirects=True, timeout=30.0
+            ) as client:
+                response = await client.get(url, params=params, headers=HTTP_HEADERS)
+    except TimeoutError:
+        raise MaaFWProjectUpdateError(
+            f"MirrorChyan update check timed out after {total_timeout:g}s",
+            check_unreachable=version_query,
+        ) from None
     except httpx.HTTPError as exc:
         raise MaaFWProjectUpdateError(
-            f"MirrorChyan update check failed: {_exception_detail(exc)}"
+            f"MirrorChyan update check failed: {_exception_detail(exc)}",
+            check_unreachable=version_query,
         ) from None
 
-    result = _load_response_json(response)
+    # 5xx 是服务端那边出了问题（网关页、维护），与连不上同一类。
+    server_down = version_query and response.status_code >= 500
+    try:
+        result = _load_response_json(response)
+    except MaaFWProjectUpdateError:
+        if not server_down:
+            raise
+        raise MaaFWProjectUpdateError(
+            f"MirrorChyan returned HTTP {response.status_code}",
+            check_unreachable=True,
+        ) from None
     raw_error_code = result.get("code", 0)
     try:
         error_code: int | None = int(raw_error_code)
@@ -2172,7 +2288,8 @@ async def _query_mirrorchyan_latest(
                 provider_error_code=error_code,
             )
         raise MaaFWProjectUpdateError(
-            f"MirrorChyan returned HTTP {response.status_code}"
+            f"MirrorChyan returned HTTP {response.status_code}",
+            check_unreachable=server_down,
         )
 
     if not data:
@@ -2561,7 +2678,8 @@ async def _query_github_release_target(
                     )
     except TimeoutError as exc:
         raise MaaFWProjectUpdateError(
-            f"GitHub release lookup timed out after {timeout:g}s"
+            f"GitHub release lookup timed out after {timeout:g}s",
+            check_unreachable=True,
         ) from exc
 
     if latest_response.status_code == 404 and stable_only:
@@ -2619,20 +2737,26 @@ def _is_alpha_or_dev(parsed: version.Version) -> bool:
 
 
 def _github_api_json(response: httpx.Response, what: str) -> Any:
-    """GitHub API 回包转 JSON；非 JSON、4xx/5xx（含 404）一律抛 :class:`MaaFWProjectUpdateError`。"""
+    """GitHub API 回包转 JSON；非 JSON、4xx/5xx（含 404）一律抛 :class:`MaaFWProjectUpdateError`。
 
+    5xx 与 Mirror 酱同一口径，记为连不上（``check_unreachable``）。
+    """
+
+    server_down = response.status_code >= 500
     try:
         data = response.json()
     except Exception as exc:
         raise MaaFWProjectUpdateError(
-            f"{what} did not return JSON: HTTP {response.status_code}"
+            f"{what} did not return JSON: HTTP {response.status_code}",
+            check_unreachable=server_down,
         ) from exc
     if response.status_code >= 400:
         message = (
             str(data.get("message") or "").strip() if isinstance(data, dict) else ""
         )
         raise MaaFWProjectUpdateError(
-            f"{what} failed: HTTP {response.status_code} {message}".rstrip()
+            f"{what} failed: HTTP {response.status_code} {message}".rstrip(),
+            check_unreachable=server_down,
         )
     return data
 

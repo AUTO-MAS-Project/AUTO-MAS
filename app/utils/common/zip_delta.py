@@ -30,11 +30,20 @@ def apply_patch(
         if info.file_size > 16 * 1024**2:
             raise ValueError("增量清单过大")
         metadata = json.loads(archive.read(info))
+        actual_base = file_digest(baseline)
+        bundle = metadata.get("version") == 2
+        if bundle:
+            metadata = {
+                **metadata,
+                "version": 1,
+                "base_sha256": actual_base,
+                "operations": metadata["plans"][actual_base],
+            }
         if (
             metadata.get("version") != 1
             or metadata.get("target_size") != size
             or metadata.get("target_sha256") != digest
-            or metadata.get("base_sha256") != file_digest(baseline)
+            or metadata.get("base_sha256") != actual_base
         ):
             raise ValueError("增量包与官方版本或本地基线不一致")
         operations = metadata["operations"]
@@ -54,7 +63,10 @@ def apply_patch(
                     ):
                         raise ValueError("增量重建区间无效")
                     source = old if kind == "old" else payload
-                    if kind == "new" and offset != payload.tell():
+                    if kind == "new" and (
+                        offset < payload.tell()
+                        or (not bundle and offset != payload.tell())
+                    ):
                         raise ValueError("增量数据顺序无效")
                     source.seek(offset)
                     remaining = length

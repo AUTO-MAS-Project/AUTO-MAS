@@ -54,7 +54,7 @@ describe('settings persistence contract', () => {
   it('applies only the confirmed field and sends cloneable desktop configuration', async () => {
     const settings = reactive<GlobalConfig>({
       Function: { IfSilence: false, IfAllowSleep: true },
-      Notify: { IfSendStatistic: false },
+      Notify: { IfSendStatistic: false, KoishiServerAddress: '' },
     })
     const request = pending<OutBase>()
     const write = vi
@@ -89,39 +89,40 @@ describe('settings persistence contract', () => {
     ).resolves.toBe(true)
     expect(settings.Notify?.IfSendStatistic).toBe(true)
     expect(read).not.toHaveBeenCalled()
-  })
 
-  it('waits for normalized values from the backend before confirming the save', async () => {
-    const settings = reactive<GlobalConfig>({ Notify: { KoishiServerAddress: '' } })
-    vi.spyOn(UpdateService, 'updateScriptApiSettingUpdatePost').mockImplementation(() =>
-      reply(success)
-    )
-    const response = pending<SettingGetOut>()
-    const read = vi
-      .spyOn(GetService, 'getScriptsApiSettingGetPost')
-      .mockReturnValue(response.promise)
-    const persistence = useSettingPersistence(settings, vi.fn())
-    const saved = persistence.handleSettingChange(
+    const normalized = pending<SettingGetOut>()
+    read.mockReturnValueOnce(normalized.promise)
+    const normalizedSave = persistence.handleDynamicSettingChange(
       'Notify',
       'KoishiServerAddress',
       'http://127.0.0.1:5140/'
     )
-    let settled = false
-    void saved.then(() => {
-      settled = true
+    let confirmed = false
+    void normalizedSave.then(() => {
+      confirmed = true
     })
-
     await vi.waitFor(() => expect(read).toHaveBeenCalledOnce())
-    expect(settled).toBe(false)
+    expect(confirmed).toBe(false)
+    expect(persistence.loading.value).toBe(true)
     expect(settings.Notify?.KoishiServerAddress).toBe('')
-    response.resolve({
-      code: 200,
-      data: { Notify: { KoishiServerAddress: 'http://127.0.0.1:5140' } },
+    expect(write).toHaveBeenLastCalledWith({
+      data: { Notify: { KoishiServerAddress: 'http://127.0.0.1:5140/' } },
     })
-
-    await expect(saved).resolves.toBe(true)
-    expect(settings.Notify?.KoishiServerAddress).toBe('http://127.0.0.1:5140')
-    expect(syncBackendConfig).toHaveBeenCalledOnce()
+    normalized.resolve({
+      code: 200,
+      data: {
+        Function: { IfSilence: true, IfAllowSleep: true },
+        Notify: { IfSendStatistic: true, KoishiServerAddress: 'http://127.0.0.1:5140' },
+      },
+    })
+    await expect(normalizedSave).resolves.toBe(true)
+    expect(settings.Notify).toEqual({
+      IfSendStatistic: true,
+      KoishiServerAddress: 'http://127.0.0.1:5140',
+    })
+    expect(settings.Function).toEqual({ IfSilence: true, IfAllowSleep: true })
+    expect(desktopConfigurations.at(-1)).toMatchObject({ Function: settings.Function })
+    expect(persistence.loading.value).toBe(false)
   })
 
   it('preserves saved values on failure, allows retry and keeps replay rejection semantics', async () => {
@@ -154,6 +155,11 @@ describe('settings persistence contract', () => {
     )
     expect(settings.Replay?.Port).toBe(4455)
     expect(write).toHaveBeenCalledTimes(3)
+    expect(write.mock.calls.map(([request]) => request.data)).toEqual([
+      { Function: { IfSilence: true } },
+      { Function: { IfSilence: true } },
+      { Replay: { Port: 4456 } },
+    ])
     expect(read).not.toHaveBeenCalled()
     expect(message.error).toHaveBeenCalledTimes(2)
     expect(persistence.loading.value).toBe(false)

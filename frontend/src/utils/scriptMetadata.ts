@@ -3,7 +3,7 @@ import generalIcon from '@/assets/AUTO-MAS.ico'
 import baahIcon from '@/assets/baah.png'
 import bettergiIcon from '@/assets/bettergi.ico'
 import hsrIcon from '@/assets/hsr.png'
-import maaIcon from '@/assets/MAA.png'
+import { SCRIPT_PLUGIN_METADATA } from '@/plugins/scriptAdapters'
 import maaEndIcon from '@/assets/MaaEnd.png'
 import m9aIcon from '@/assets/M9A.png'
 import okNteIcon from '@/assets/ok-nte.ico'
@@ -124,24 +124,7 @@ export const SCRIPT_METADATA = {
       group: 'specialized',
     },
   },
-  MAA: {
-    logo: maaIcon,
-    label: 'MAA',
-    typeTagColor: 'blue',
-    routeSuffix: 'maa',
-    routeTitles: {
-      script: '编辑MAA脚本',
-      userAdd: '添加MAA用户',
-      userEdit: '编辑MAA用户',
-    },
-    createOrder: 2,
-    create: {
-      titleKey: 'core.scripts.type.MAA',
-      descriptionKey: 'core.scripts.create.typeDesc.MAA',
-      keywords: ['maa', '明日方舟'],
-      group: 'specialized',
-    },
-  },
+  MAA: SCRIPT_PLUGIN_METADATA.MAA,
   MaaEnd: {
     logo: maaEndIcon,
     label: 'MaaEnd',

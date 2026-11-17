@@ -12,6 +12,7 @@ from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceStatus, EmulatorRuntimePolicy
 from app.utils.common.emulator import mumu
 from app.utils.common.emulator.mumu import MumuManager
+from app.utils.common.emulator2.mumu6 import MuMu6Manager
 from app.utils.common.process.runner import ProcessResult
 
 
@@ -54,6 +55,9 @@ class FakeMuMu:
             )
             self.states[idx] = state
             return result
+        if args[:1] == ("control",) and args[3] == "shutdown":
+            self.states[idx] = DeviceStatus.OFFLINE
+            return ok()
         pytest.fail(f"不允许执行其他操作: {args}")
 
     def launches(self, idx="0"):
@@ -372,31 +376,76 @@ async def test_unknown_state_after_error_stops_recovery(harness):
 
 
 @pytest.mark.asyncio
-async def test_close_waits_for_inflight_launch(harness):
+@pytest.mark.parametrize("phase", ["launch", "after_boot"])
+async def test_close_waits_for_inflight_launch(harness, monkeypatch, phase):
     entered, release = asyncio.Event(), asyncio.Event()
     original = harness.fake.run
+    manager = (
+        MuMu6Manager(
+            harness.manager.config, runtime_policy=harness.manager.runtime_policy
+        )
+        if phase == "after_boot"
+        else harness.manager
+    )
 
     async def run(program, *args, **kwargs):
-        if args[:4] == ("control", "-v", "0", "launch"):
+        if (phase == "launch" and args[:4] == ("control", "-v", "0", "launch")) or (
+            phase == "after_boot" and args[0] == "sh"
+        ):
             entered.set()
             await release.wait()
+            if args[0] == "sh":
+                return ok()
         return await original(program, *args, **kwargs)
 
     mumu.ProcessRunner.run_process.side_effect = run
-    from unittest.mock import patch
-
-    with patch.object(
-        harness.manager, "_close_locked", AsyncMock(return_value=DeviceStatus.OFFLINE)
-    ) as close:
-        opening = asyncio.create_task(harness.manager.open("0"))
-        await entered.wait()
-        closing = asyncio.create_task(harness.manager.close("0"))
+    monkeypatch.setattr(mumu, "MUMU_CLOSE_SETTLE_SECONDS", 0)
+    opening = asyncio.create_task(manager.open("0"))
+    await entered.wait()
+    closing = asyncio.create_task(harness.manager.close("0"))
+    try:
         await harness.real_sleep(0)
-        close.assert_not_awaited()
+        assert not closing.done()
+        assert not any(
+            c[:4] == ("control", "-v", "0", "shutdown") for c in harness.fake.calls
+        )
         release.set()
-        await opening
+        assert (await opening).status == DeviceStatus.ONLINE
         assert await closing == DeviceStatus.OFFLINE
-        close.assert_awaited_once_with("0")
+        assert harness.fake.states["0"] == DeviceStatus.OFFLINE
+        assert (
+            sum(c[:4] == ("control", "-v", "0", "shutdown") for c in harness.fake.calls)
+            == 1
+        )
+    finally:
+        release.set()
+        await asyncio.gather(opening, closing, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_mumu6_after_boot_uses_startup_budget(harness):
+    manager = MuMu6Manager(
+        harness.manager.config, runtime_policy=harness.manager.runtime_policy
+    )
+    harness.settings["MaxWaitTime"] = 1
+    harness.fake.states["0"] = DeviceStatus.ONLINE
+    original = harness.fake.run
+
+    async def run(program, *args, **kwargs):
+        if args[0] == "sh":
+            await harness.real_sleep(1.1)
+            return ok()
+        return await original(program, *args, **kwargs)
+
+    mumu.ProcessRunner.run_process.side_effect = run
+    with pytest.raises(RuntimeError, match="启动总时限"):
+        await asyncio.wait_for(manager.open("0"), 2)
+    # 超时后仍在线的实例归属未确认，自动收尾不能关闭它。
+    with pytest.raises(RuntimeError, match="未自动关闭"):
+        await manager.close("0")
+    assert not any(
+        c[:4] == ("control", "-v", "0", "shutdown") for c in harness.fake.calls
+    )
 
 
 @pytest.mark.asyncio

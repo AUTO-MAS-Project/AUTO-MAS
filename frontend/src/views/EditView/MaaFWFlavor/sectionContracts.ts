@@ -83,8 +83,10 @@ export interface MaaFWScriptBasicInfoSectionEmits {
 }
 
 /**
- * 脚本页 `control`：控制器、资源、模拟器 / 桌面窗口、游戏启动。另有具名 slot `besidePackageName`
- * （与游戏包名并排，有内容时两列），页面在当前特调登记了同名插入点时才填它；替换这个分节要保留它。
+ * 脚本页 `control`：控制器、资源、模拟器 / 桌面窗口、游戏启动。另有具名作用域 slot
+ * `besidePackageName`（ADB 下排在包名、等待时间之后，每个组件一格）：页面在当前特调登记了同名
+ * 插入点时才填它，并用 `besidePackageNameCount` 传组件数；分节按这个数每格转发一次 slot、带上
+ * `{ index }`，页面渲染第 index 个组件。替换这个分节要保留它。
  */
 export interface MaaFWScriptControlSectionProps {
   /** 脚本 ID：键位映射弹窗「从项目导入」按它读外壳配置实例 */
@@ -109,6 +111,8 @@ export interface MaaFWScriptControlSectionProps {
   adbControlStrategyItems: Array<{ label: string; value: string }>
   selectedEmulatorLabel: string
   interfaceDependentDisabled: boolean
+  /** 插入点 besidePackageName 登记了几个组件；不传或为 0 时不留这一格 */
+  besidePackageNameCount?: number
 }
 
 export interface MaaFWScriptControlSectionEmits {
@@ -117,6 +121,8 @@ export interface MaaFWScriptControlSectionEmits {
   'resource-change': []
   'emulator-select-change': [emulatorId: string]
   'select-launch-path': []
+  /** 由脚本控制游戏时选启动器 exe（MAS 兜底关闭时一并关它） */
+  'select-launcher-path': []
 }
 
 /** 脚本页 `update`：项目更新来源、渠道、CDK 与检查 / 应用 */
@@ -210,6 +216,7 @@ export interface MaaFWUserBasicInfoSectionProps {
   heading?: UserAccountHeadingOptions
   formData: MaaFWUserFormData
   interfaceDependentDisabled: boolean
+  /** 账号标签上的问号提示；空串不挂问号 */
   accountRecordTooltip: string
   /** 账号字段占位：特调类型可能把账号绑成切号任务，文案不再是「仅本地记录」 */
   accountPlaceholder?: string
@@ -258,8 +265,8 @@ export type AddTaskCascaderOption = {
 }
 
 /**
- * 预设模板：预设本身 + 其中当前可用的各项。列出来的都能应用；`entries` 可以为空
- * （只有前置任务设置的预设）
+ * 预设模板：预设本身 + 其中当前可用的各项。除 `unavailable` 的以外列出来的都能应用；
+ * `entries` 可以为空（只有前置任务设置的预设）
  */
 export type PresetTemplate = {
   preset: MaaFWPresetInfo
@@ -267,6 +274,11 @@ export type PresetTemplate = {
   entries: MaaFWPresetQueueEntry[]
   /** 预设启用的前置任务里当前可用的项（预设声明了 `pretask` 才有） */
   pretaskEntries?: MaaFWPresetQueueEntry[]
+  /**
+   * 预设限定了控制器（PI v2.10.4）且不含当前控制器：照样列出、置灰不让应用。此时
+   * `entries` / `pretaskEntries` 按预设自己的控制器算，只用来显示它包含哪些任务
+   */
+  unavailable?: boolean
 }
 
 /** 自定义模板（脚本级，同一脚本的用户共用）：名称 + 它在当前项目下的样子 */

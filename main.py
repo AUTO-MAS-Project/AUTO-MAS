@@ -257,6 +257,7 @@ def _resolve_supervised_port() -> int:
 
 @logger.catch(reraise=True)
 def main():
+    """准备后端权限、运行目录和应用依赖，装配 FastAPI 服务并启动事件循环。"""
     from app.utils.common.asyncio_compat import install_windows_connection_cleanup
 
     install_windows_connection_cleanup()
@@ -353,7 +354,14 @@ def main():
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        from app.core import Startup
+
+        Startup.prepare(
+            deferred=is_supervised()
+            and os.getenv("AUTO_MAS_DEFER_BUSINESS_START") == "1"
+        )
         # 预热共享 SSL 上下文：truststore 全量加载证书库较慢，放线程执行避免首个请求卡死
+        """按启动阶段装配调度、后台服务和插件，服务退出时统一执行已登记的清理流程。"""
         import ssl
 
         with startup_stage("后端/任务与定时器组件导入"):
@@ -367,49 +375,35 @@ def main():
 
         asyncio.create_task(warm_ssl())
 
-        with startup_stage("后端/必要配置初始化"):
-            await Config.init_config()
-        startup_mark("后端/必要配置就绪")
-        with startup_stage("后端/历史组件导入"):
-            from app.core import History
-            from app.utils import UTC4
+        async def prepare_plugins() -> None:
+            """初始化插件操作与统一下载中心，加载插件并接入专项任务展开器。"""
+            from app.core import Downloads, Operations, Plugin
 
-        # 升级与历史存储是任务启动的前置条件，失败不进入后台可选初始化。
-        with startup_stage("后端/历史存储初始化"):
-            await History.initialize(
-                video_limit_bytes=Config.setting.Replay.VideoStorageLimitMiB
-                * 1024
-                * 1024
+            Operations.initialize(max_running=Config.setting.plugin.max_operations)
+            options = Config.setting.download
+            Downloads.initialize(
+                directory=Config.data_path / "downloads",
+                max_running=options.max_running,
+                attempts=options.attempts,
+                retry_delay=options.retry_delay,
+                background=BackgroundTaskManager,
             )
-        with startup_stage("后端/历史保留期维护"):
-            await History.prune(
-                today=datetime.now(tz=UTC4).date(),
-                retention_days=Config.setting.Function.HistoryRetentionTime,
-            )
+            app.state.business_message = "正在检查并升级插件，完成后加载配置"
+            await Plugin.initialize()
+            app.state.business_message = "正在加载业务配置"
+            TaskManager.plugin_expander = Plugin.resolve_script_expander
 
+        from app.config import config_manager
+        from app.core import MCP, BackgroundTaskManager, History
         from app.services import obs_replay as _service_obs_replay
 
-        with startup_stage("后端/录像临时文件清理"):
-            await _service_obs_replay.ObsReplay.cleanup_temporary()
-
-        with startup_stage("后端/后台服务组件导入"):
-            from app.config import config_manager
-            from app.core import MCP, BackgroundTaskManager
-
-        async def preload_maaend_resources() -> None:
-            with startup_stage("后端/MaaEnd 资源预热（后台）"):
-                await maaend_config_service.preload_resources()
-
-        BackgroundTaskManager.register_group(
-            "maaend-resource-preload", max_running=1, max_retained=1
-        ).spawn(preload_maaend_resources, retain_result=False)
         background_task: asyncio.Task | None = None
 
         async def initialize_background_services() -> None:
             """后台完成主业务初始化，就绪后独立启动可选 MCP 服务。
 
-            lifespan 提前 yield 后 uvicorn 立即打印 "Uvicorn running"，
-            让前端等待就绪的耗时只包含核心配置初始化。
+            lifespan 提前 yield 以开放健康和关闭入口；前端继续等待插件、配置与
+            历史准备完成，再确认主业务就绪和自动任务放行。
             各步骤互不连带：主定时器失败时 background_status 为 failed 并写 background_error；
             其余步骤失败时仍为 ready，失败步骤只写进 background_warnings。
             """
@@ -454,15 +448,39 @@ def main():
                 # 每个纳管的根目录跑一次 modavd update status（不联网），上次换上被打断的再 recover
                 await EmulatorManager.startup_avd_update()
 
-            async def init_stage_info() -> None:
-                from app.task.MAA.stage import maa_stage_service
-
-                # 启动不等待远端检查：缓存过期时后台拉取，页面打开时再等结果
-                await maa_stage_service.get_stage(wait_stale=False)
-
             app.state.background_status = "running"
             try:
-                await run_optional_step("活动关卡信息获取", init_stage_info)
+                with startup_stage("后端/必要配置初始化"):
+                    await Config.init_config(prepare_plugins=prepare_plugins)
+
+                MCP.configure(enabled=Config.setting.Function.IfEnableMCP)
+                startup_mark("后端/必要配置就绪")
+                with startup_stage("后端/历史组件导入"):
+                    from app.utils import UTC4
+
+                # 升级与历史存储是任务启动的前置条件，失败不进入后台可选初始化。
+                with startup_stage("后端/历史存储初始化"):
+                    await History.initialize(
+                        video_limit_bytes=Config.setting.Replay.VideoStorageLimitMiB
+                        * 1024
+                        * 1024
+                    )
+                with startup_stage("后端/历史保留期维护"):
+                    await History.prune(
+                        today=datetime.now(tz=UTC4).date(),
+                        retention_days=Config.setting.Function.HistoryRetentionTime,
+                    )
+
+                with startup_stage("后端/录像临时文件清理"):
+                    await _service_obs_replay.ObsReplay.cleanup_temporary()
+
+                async def preload_maaend_resources() -> None:
+                    with startup_stage("后端/MaaEnd 资源预热（后台）"):
+                        await maaend_config_service.preload_resources()
+
+                BackgroundTaskManager.register_group(
+                    "maaend-resource-preload", max_running=1, max_retained=1
+                ).spawn(preload_maaend_resources, retain_result=False)
 
                 async def _maafw_startup_maintenance() -> None:
                     # 老副本一次性采纳成「载荷 + 视图」要几分钟：连同它后面依赖终态布局的
@@ -497,7 +515,11 @@ def main():
                 await run_optional_step("桌面显示输出守卫", start_desktop_guard)
                 # 要在主定时器之前：定时器可能马上拉起实例，而 sdk\emulator 可能正停在换到一半
                 await run_optional_step("ModAVD 更新恢复", init_avd_update)
-                timer_error = await run_step("主业务定时器", MainTimer.start)
+
+                async def start_main_timer() -> None:
+                    await MainTimer.start()
+
+                timer_error = await run_step("主业务定时器", start_main_timer)
                 startup_mark("后端/主定时器启动结束")
 
                 await run_optional_step("通知渠道", Notify.start)
@@ -530,6 +552,7 @@ def main():
                     logger.error(f"后台初始化失败: {timer_error}")
                 else:
                     app.state.background_status = "ready"
+                    app.state.business_message = None
                     if not warnings:
                         logger.info("后端后台初始化完成")
                     startup_mark("后端/主业务就绪")
@@ -546,6 +569,7 @@ def main():
                     MCP.start(app)
 
         app.state.background_status = "starting"
+        app.state.business_message = "正在初始化配置与插件"
         app.state.background_error = None
         app.state.background_warnings = []
         background_task = asyncio.create_task(initialize_background_services())
@@ -554,12 +578,19 @@ def main():
             """完整的非 WS teardown，供 /close 与 lifespan 收尾共用（幂等）。"""
 
             from app.core import (
-                BackgroundTaskManager,
                 Dispatcher,
+                Downloads,
                 MainConnection,
+                Operations,
+                Plugin,
                 Power,
-                Updater,
             )
+
+            Startup.close()
+            Operations.seal()
+            Downloads.seal()
+            Plugin.seal()
+            await Plugin.stop_watching()
 
             # 同步封禁新加载，独立回收 MCP；不能让不可取消线程挡住停止主业务。
             mcp_shutdown = asyncio.create_task(MCP.shutdown(), name="mcp-shutdown")
@@ -601,13 +632,15 @@ def main():
             # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
             with suppress(RuntimeError):
                 await Power.cancel_power_task()
-            # 取消时若无法确认 FluxDown 任务已停止会抛 FluxdownCancelUnconfirmed，
-            # 关停流程不因此中断后续清理
-            with suppress(RuntimeError):
-                await Updater.cancel_download(notify=False)
-            from app.services import obs_replay as _service_obs_replay
 
             await _service_obs_replay.ObsReplay.stop()
+            from app.core import Downloads, Operations, Plugin
+
+            await Operations.shutdown()
+            await Plugin.shutdown()
+            downloads_clean = await Downloads.shutdown_all()
+            if not downloads_clean:
+                logger.error("下载未确认停写，保留缓存和执行记录")
             # 已托管通知随运行时任务一起回收，完成后再关闭渲染器和渠道。
             await BackgroundTaskManager.shutdown()
             await Notify.close()
@@ -618,6 +651,12 @@ def main():
             except Exception:
                 # MCP 是可选服务，清理失败不能跳过主业务的任何收尾步骤。
                 logger.exception("MCP 服务收尾失败，详见后端日志")
+            if not downloads_clean:
+                from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+
+                raise FluxdownCancelUnconfirmed(
+                    "下载尚未确认停写，不能宣告退出清理完成"
+                )
             logger.info("AUTO-MAS 后端服务清理完成")
 
         from app.core import ShutdownCoordinator
@@ -638,13 +677,16 @@ def main():
             community_router,
             core_router,
             dispatch_router,
+            downloads_router,
             emulator_router,
             history_router,
             i18n_router,
             info_router,
             ocr_router,
             openclaw_qq_router,
+            operations_router,
             plan_router,
+            plugin_router,
             queue_router,
             scripts_router,
             setting_router,
@@ -659,6 +701,11 @@ def main():
             version="1.0.0",
             lifespan=lifespan,
         )
+        from app.core.plugin import Plugin
+        from app.plugin.openapi import bind_openapi
+
+        Plugin.http.bind_app(app)
+        bind_openapi(app)
         app.state.baah_config_service = baah_config_service
         app.state.maaend_config_service = maaend_config_service
 
@@ -669,6 +716,31 @@ def main():
             allow_methods=["*"],  # 允许所有请求方法, 如 GET、POST、PUT、DELETE
             allow_headers=["*"],  # 允许所有请求头
         )
+
+        from fastapi import Request
+        from fastapi.responses import JSONResponse
+
+        @app.middleware("http")
+        async def require_business_ready(request: Request, call_next):
+            """初始化期间仅开放健康、关闭和放行入口，避免业务访问未激活配置。"""
+            if getattr(
+                app.state, "background_status", "starting"
+            ) != "ready" and request.url.path not in (
+                "/api/core/health",
+                "/api/core/close",
+                "/api/core/startup/activate",
+                "/api/plugin/installation/get",
+                "/openapi.json",
+            ):
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "code": 503,
+                        "message": getattr(app.state, "business_message", None)
+                        or "业务初始化尚未完成",
+                    },
+                )
+            return await call_next(request)
 
         app.include_router(core_router)
         app.include_router(info_router)
@@ -685,6 +757,9 @@ def main():
         app.include_router(update_router)
         app.include_router(ocr_router)
         app.include_router(openclaw_qq_router)
+        app.include_router(operations_router)
+        app.include_router(downloads_router)
+        app.include_router(plugin_router)
 
         app.mount(
             "/api/res/materials",

@@ -31,14 +31,14 @@ function write(relative: string, text: string): void {
   fs.writeFileSync(target, text, 'utf-8')
 }
 
-function collect(archiveDir: string, ownAdapter?: 'oknte'): CollectorState['entries'] {
+function collect(archiveDir: string, ownAdapter?: 'oknte') {
   const state: CollectorState = { zip: new AdmZip(), entries: [], archiveBytes: 0 }
   addDebugDirectory(state, path.join(root, 'debug'), archiveDir, ownAdapter)
-  return state.entries
+  return state.zip.getEntries()
 }
 
 function pathsOf(entries: ReturnType<typeof collect>): string[] {
-  return entries.map(entry => entry.path)
+  return entries.map(entry => entry.entryName)
 }
 
 describe('addDebugDirectory 只收声明方自己的诊断子目录', () => {
@@ -67,41 +67,10 @@ describe('addDebugDirectory 只收声明方自己的诊断子目录', () => {
   })
 })
 
-describe('maskVerbatimJsonText 原文打码', () => {
-  // 这里的输入一律用普通字符串写转义（'\\u002F' 是原文里的六个字符），不用 String.raw：
-  // 转译后 String.raw 里的 \u 转义会被解码，测不到原文里的转义写法
-  const HOME = 'C:\\Users\\tester'
-  const mask = (text: string) => maskVerbatimJsonText(text, HOME)
-
-  it('主目录的原样、JSON 转义、正斜杠三种写法都换成 <HOME>', () => {
-    const text = [
-      '{ "a": "C:\\\\Users\\\\tester\\\\proj", "b": "C:/Users/tester/proj" }',
-      '// 原样 C:\\Users\\tester\\raw',
-    ].join('\n')
-    expect(text).toContain('C:\\\\Users\\\\tester')
-    const masked = mask(text)
-    expect(masked).not.toContain('tester')
-    expect(masked.match(/<HOME>/g)).toHaveLength(3)
-  })
-
-  it('坏字面量不抛错，按原文打码', () => {
-    const text =
-      '{ "a": "bad \\x https://api.day.app/SECRET_G", "b": "未闭合 https://api.day.app/SECRET_H\n}'
-    let masked = ''
-    expect(() => {
-      masked = mask(text)
-    }).not.toThrow()
-    expect(masked).not.toMatch(/SECRET_[GH]/)
-    expect(mask('"')).toBe('"')
-    expect(mask('"\\')).toBe('"\\')
-  })
-})
-
 describe('addDiagnosticFile 收解析不了的 .json', () => {
   beforeEach(() => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'issue-report-core-'))
   })
-
   afterEach(() => {
     fs.rmSync(root, { recursive: true, force: true })
   })
@@ -134,6 +103,32 @@ describe('addDiagnosticFile 收解析不了的 .json', () => {
   })
 })
 
+describe('maskVerbatimJsonText 原文打码', () => {
+  it('主目录的原样、JSON 转义、正斜杠三种写法都换成 <HOME>', () => {
+    // 这里的输入一律用普通字符串写转义（'\\u002F' 是原文里的六个字符），不用 String.raw：
+    // 转译后 String.raw 里的 \u 转义会被解码，测不到原文里的转义写法
+    const HOME = 'C:\\Users\\tester'
+    const mask = (text: string) => maskVerbatimJsonText(text, HOME)
+    const text = [
+      '{ "a": "C:\\\\Users\\\\tester\\\\proj", "b": "C:/Users/tester/proj" }',
+      '// 原样 C:\\Users\\tester\\raw',
+    ].join('\n')
+    expect(text).toContain('C:\\\\Users\\\\tester')
+    const masked = mask(text)
+    expect(masked).not.toContain('tester')
+    expect(masked.match(/<HOME>/g)).toHaveLength(3)
+    const malformed =
+      '{ "a": "bad \\x https://api.day.app/SECRET_G", "b": "未闭合 https://api.day.app/SECRET_H\n}'
+    let malformedMasked = ''
+    expect(() => {
+      malformedMasked = mask(malformed)
+    }).not.toThrow()
+    expect(malformedMasked).not.toMatch(/SECRET_[GH]/)
+    expect(mask('"')).toBe('"')
+    expect(mask('"\\')).toBe('"\\')
+  })
+})
+
 describe('OK-WW 启动器日志问题包', () => {
   beforeEach(() => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'okww-report-'))
@@ -141,25 +136,6 @@ describe('OK-WW 启动器日志问题包', () => {
 
   afterEach(() => {
     fs.rmSync(root, { recursive: true, force: true })
-  })
-
-  it('日期日志中的用户主目录被脱敏', () => {
-    const installation = path.join(root, 'installation')
-    write(
-      'config/scripts.yaml',
-      JSON.stringify({
-        order: [{ uid: '1', type: 'OkwwConfig' }],
-        data: { '1': { Info: { RootPath: installation } } },
-      })
-    )
-    write('installation/logs/app.2026-11-06', `Python: ${os.homedir()}${path.sep}python.exe\n`)
-    const output = path.join(root, 'report.zip')
-
-    expect(createOkwwIssueReport(root, output).success).toBe(true)
-    const zip = new AdmZip(output)
-    const content = zip.getEntry('okww/okww-1/launcher/app.2026-11-06')!.getData().toString('utf-8')
-    expect(content).not.toContain(os.homedir())
-    expect(content).toContain('<HOME>')
   })
 
   it('过大的启动器日志保留脱敏后的末尾', () => {
@@ -171,14 +147,17 @@ describe('OK-WW 启动器日志问题包', () => {
         data: { '1': { Info: { RootPath: installation } } },
       })
     )
+    write('installation/logs/app.2026-11-05', `Python: ${os.homedir()}${path.sep}python.exe\n`)
     write(
       'installation/logs/app.2026-11-06',
       `${'old line\n'.repeat(3_000_000)}${os.homedir()}${path.sep}tail\n`
     )
     const output = path.join(root, 'report.zip')
-
     expect(createOkwwIssueReport(root, output).success).toBe(true)
     const zip = new AdmZip(output)
+    const dated = zip.getEntry('okww/okww-1/launcher/app.2026-11-05')!.getData().toString('utf-8')
+    expect(dated).not.toContain(os.homedir())
+    expect(dated).toContain(`<HOME>${path.sep}python.exe`)
     const content = zip
       .getEntry('okww/okww-1/launcher/app.2026-11-06.tail')!
       .getData()

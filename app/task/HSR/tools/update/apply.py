@@ -37,7 +37,7 @@ from app.utils.common.process.runner import run_process_sync
 
 from ...task_mapping import engine_label
 from .discover import HSRUpdateError
-from .engines import get_spec
+from .engines import get_spec, read_installed_version
 
 logger = get_logger("HSR 更新应用")
 
@@ -112,7 +112,34 @@ def apply_package(
 
     try:
         _extract(package, stage, seven_zip=seven_zip)
-        source_root = _strip_single_root(stage, get_spec(engine).executable)
+        spec = get_spec(engine)
+        source_root = _strip_single_root(stage, spec.executable, engine=engine)
+        if engine == "M7A":
+            # M7A 的发布包必须有可识别的安装根。单层目录之外
+            # 混入附加文件时，旧算法会把整个同名文件夹复制进安装目录。
+            # 先拒绝不明确的布局，绝不执行深一层的误安装。
+            if not (source_root / spec.executable).is_file():
+                raise HSRUpdateError(
+                    "三月七更新包的安装根目录不明确（未找到顶层可执行文件），"
+                    "已拒绝将嵌套目录写入现有安装位置"
+                )
+            # 完整 ZIP 应具备 CLI 与桌面入口。update.7z 为增量发布，
+            # 不要求增量包列出完整安装所需的全部文件。
+            if (
+                package.suffix.casefold() == ".zip"
+                and not (source_root / "m7a.exe").is_file()
+            ):
+                raise HSRUpdateError(
+                    "三月七完整 ZIP 缺少必要程序文件 m7a.exe，"
+                    "已拒绝安装可能不完整的更新包"
+                )
+            # 预检来源包的版本标记，避免错误目录层级或缺失文件被当作成功。
+            packaged_version = read_installed_version(spec, source_root)
+            if packaged_version != to_version:
+                raise HSRUpdateError(
+                    f"三月七更新包版本标记不匹配：期望 {to_version}，"
+                    f"实际 {packaged_version or '缺失'}"
+                )
         plan = _build_plan(source_root, install_root)
     except HSRUpdateError:
         _cleanup(work)
@@ -122,6 +149,14 @@ def apply_package(
         raise HSRUpdateError(f"解包失败：{exc}") from exc
 
     if not plan:
+        if engine == "M7A":
+            installed_version = read_installed_version(spec, install_root)
+            if installed_version != to_version:
+                _cleanup(work)
+                raise HSRUpdateError(
+                    f"更新包未产生文件变更，但安装版本仍是 "
+                    f"{installed_version or '未知'}（期望 {to_version}）"
+                )
         _cleanup(work)
         return ApplyResult(engine, from_version, to_version, 0)
 
@@ -141,6 +176,14 @@ def apply_package(
 
     try:
         _commit(plan, source_root, install_root, backup)
+        # 在删除备份前回读真实安装版本，失败可使用 journal 事务回滚。
+        if engine == "M7A":
+            installed_version = read_installed_version(spec, install_root)
+            if installed_version != to_version:
+                raise RuntimeError(
+                    f"版本校验失败：期望 {to_version}，"
+                    f"安装目录实际 {installed_version or '未知'}"
+                )
     except Exception as exc:  # noqa: BLE001 - 任何失败都要尝试回滚
         logger.opt(exception=True).error(
             f"HSR 更新：应用{engine_label(engine)}更新失败，开始回滚"
@@ -411,23 +454,46 @@ def _extract_zip(package: Path, stage: Path) -> None:
     _reject_symlinks(stage)
 
 
-def _strip_single_root(stage: Path, executable: str) -> Path:
-    """脱掉单根文件夹。
+def _strip_single_root(stage: Path, executable: str, *, engine: str = "") -> Path:
+    """Resolve the release's single installation root, not its archive name.
 
-    M7A 的 ``update.7z`` 是单根 ``update/``、``full.zip`` 是
-    ``March7thAssistant_full/``；SRA 是扁平布局，没有根可脱。动态判断而不写死
-    名字，上游改名也不会坏。
-
-    单看「顶层只有一个目录」不足以判定：扁平包若恰好只含一个目录就会被误脱。
-    用可执行文件当锚点消歧——它在顶层就说明这是扁平包。
+    GitHub update.7z uses update/, while MirrorChyan and full.zip may use
+    March7thAssistant_full/. Keep flat archives unchanged. A directory that
+    cannot be uniquely identified must never be copied into the install root.
     """
-
-    if (stage / executable).exists():
+    if (stage / executable).is_file():
         return stage
+
     entries = list(stage.iterdir())
     if len(entries) == 1 and entries[0].is_dir():
         return entries[0]
-    return stage
+
+    if engine != "M7A":
+        return stage
+
+    # Some distributors include release notes alongside the complete build.
+    # Only ignore a tightly bounded set of harmless top-level metadata;
+    # never silently discard an unknown payload or select between two builds.
+    ignored = {"readme.md", "license", "license.txt", "sha256sums.txt"}
+    directories = [entry for entry in entries if entry.is_dir()]
+    extra = [
+        entry
+        for entry in entries
+        if not entry.is_dir() and entry.name.casefold() not in ignored
+    ]
+    candidates = [
+        directory
+        for directory in directories
+        if directory.name.casefold() in {"update", "march7thassistant_full"}
+        and (directory / executable).is_file()
+    ]
+    if len(candidates) == 1 and len(directories) == 1 and not extra:
+        logger.info(
+            f"HSR 更新：识别三月七完整包目录 {candidates[0].name}，"
+            "仅安装该目录下的程序文件"
+        )
+        return candidates[0]
+    raise HSRUpdateError("三月七更新包存在无法确定的安装根目录或未知顶层文件，拒绝安装")
 
 
 def _write_journal(install_root: Path, journal: dict[str, Any]) -> None:

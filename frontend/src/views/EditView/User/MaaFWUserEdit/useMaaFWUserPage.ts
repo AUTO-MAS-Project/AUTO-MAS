@@ -137,7 +137,10 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
       .filter(Boolean)
   )
 
-  const accountRecordTooltip = computed(() => t(flavor.value.userPage.text.accountTooltipKey))
+  const accountRecordTooltip = computed(() => {
+    const key = flavor.value.userPage.text.accountTooltipKey
+    return key ? t(key) : ''
+  })
 
   const context = useMaaFWUserTaskContext({
     previewData,

@@ -19,10 +19,16 @@
 
     <a-row :gutter="24">
       <a-col :xs="24" :md="8">
-        <!-- 账号 / 密码的说明只在下面的提示框里写一次，标签上不再挂同一句的问号 -->
+        <!-- 「仅本地记录」只写在占位里；特调把账号派了用场（M9A 切号 / 选号）时，作用写在标签的问号里 -->
         <a-form-item>
           <template #label>
-            <span class="form-label">{{ t('core.edit.account') }}</span>
+            <a-tooltip v-if="accountRecordTooltip" :title="accountRecordTooltip">
+              <span class="form-label">
+                {{ t('core.edit.account') }}
+                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+              </span>
+            </a-tooltip>
+            <span v-else class="form-label">{{ t('core.edit.account') }}</span>
           </template>
           <a-input
             v-model:value="formData.Info.Account"
@@ -48,7 +54,6 @@
         </a-form-item>
       </a-col>
     </a-row>
-    <a-alert class="account-record-alert" type="info" show-icon :message="accountRecordTooltip" />
   </div>
 </template>
 
@@ -56,6 +61,7 @@
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import { useI18n } from 'vue-i18n'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type {
   MaaFWUserBasicInfoSectionEmits,
   MaaFWUserBasicInfoSectionProps,
@@ -87,10 +93,6 @@ const emitSave = (key: string, value: unknown) => {
   align-items: center;
   gap: 8px;
   font-weight: 600;
-}
-
-.account-record-alert {
-  margin-bottom: 16px;
 }
 
 .help-icon {

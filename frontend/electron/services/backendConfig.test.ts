@@ -25,7 +25,7 @@ beforeEach(() => {
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
 
 describe('配置升级前后的 Electron 文件读取', () => {
-  it('首次升级可读 JSON，并转换嵌套集合索引', () => {
+  it('YAML 优先于旧 JSON，遥测设置传入 Runtime', () => {
     write(
       'ScriptConfig.json',
       JSON.stringify({
@@ -51,24 +51,17 @@ describe('配置升级前后的 Electron 文件读取', () => {
         },
       },
     })
-  })
-
-  it('YAML 优先于旧 JSON，遥测设置传入 Runtime', () => {
     write('Config.json', JSON.stringify({ Function: { IfEnableTelemetry: true } }))
     write('setting.yaml', 'Function:\n  IfEnableTelemetry: false\n')
     expect(buildRuntimeEnv(root)).toMatchObject({
       AUTO_MAS_ENV: 'production',
       AUTO_MAS_TELEMETRY: 'disabled',
     })
-  })
-
-  it('迁移完成后，缺少 YAML 也不重新导入 JSON', () => {
+    fs.rmSync(path.join(root, 'config', 'setting.yaml'))
     write('.config-migration-v2.json', JSON.stringify({ version: 2, complete: true }))
     write('Config.json', JSON.stringify({ Function: { IfEnableTelemetry: false } }))
     expect(readBackendDocument(root, 'setting.yaml', 'Config.json')).toBeUndefined()
-  })
-
-  it('已有 YAML 损坏时不退回旧 JSON', () => {
+    fs.rmSync(path.join(root, 'config', '.config-migration-v2.json'))
     write('setting.yaml', 'Function: [broken')
     write('Config.json', JSON.stringify({ Function: { IfEnableTelemetry: false } }))
     expect(readBackendDocument(root, 'setting.yaml', 'Config.json')).toBeUndefined()

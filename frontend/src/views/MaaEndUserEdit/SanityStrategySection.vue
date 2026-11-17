@@ -1,16 +1,16 @@
 <template>
   <div>
     <div class="sanity-task-toggle" :class="{ 'sanity-task-enabled': showDetail }">
-      <span>{{ t('core.edit.maaEndEnableSanity') }}</span>
+      <span>{{ t('core.edit.maaEndEnableProtocolSpace') }}</span>
       <a-switch
         :checked="enabled"
         :disabled="disabled"
-        :aria-label="t('core.edit.maaEndEnableSanity')"
+        :aria-label="t('core.edit.maaEndEnableProtocolSpace')"
         @change="(value: boolean) => emit('enable', value)"
       />
     </div>
     <template v-if="showDetail">
-      <a-form-item :label="t('core.edit.maaEndSanityStrategy')">
+      <a-form-item :label="t('core.edit.maaEndProtocolSpaceStrategy')">
         <a-radio-group
           :value="strategy"
           :disabled="disabled"
@@ -28,7 +28,7 @@
       </a-form-item>
       <a-form-item v-if="strategy === 'Native'">
         <a-space direction="vertical" size="middle" style="width: 100%">
-          <a-alert type="info" show-icon :message="t('core.edit.maaEndNativeSanityHint')" />
+          <a-alert type="info" show-icon :message="t('core.edit.maaEndNativeProtocolSpaceHint')" />
           <a-button
             :loading="configLoading"
             :disabled="disabled || showConfigMask"

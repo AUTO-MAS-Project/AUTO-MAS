@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { FileZipOutlined, SyncOutlined } from '@ant-design/icons-vue'
-import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
+import VueMonacoEditor from '@/components/LocalMonacoEditor'
 import { useLogHighlight } from '@/composables/useLogHighlight'
 import { useLogExport } from '@/composables/useLogExport'
 const logger = window.electronAPI.getLogger('日志查看')

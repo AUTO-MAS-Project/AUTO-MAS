@@ -457,11 +457,21 @@ class AppLaunchMixin(DeviceBase):
         分清应用是这次冷启动的（``launched``，还在加载），还是进程本来就在（在前台
         ``already-running``、在后台被切回前台 ``resumed``）。
         """
+        return await self._open_with_app(idx, package_name, boot=super().open)
+
+    async def _open_with_app(
+        self,
+        idx: str,
+        package_name: str,
+        *,
+        boot: Callable[[str], Awaitable[DeviceInfo]],
+    ) -> DeviceInfo:
+        """编排启动钩子和应用启动，设备后端决定启动步骤所在的保护范围。"""
         try:
             await self.prepare_launch(idx)
         except Exception as e:  # noqa: BLE001 - 钩子失败不拦启动
             logger.warning(f"启动前钩子失败，实例 {idx} 照常启动: {e}")
-        info = await super().open(idx)
+        info = await boot(idx)
         try:
             await self.after_boot(idx, info)
         except Exception as e:  # noqa: BLE001 - 同上

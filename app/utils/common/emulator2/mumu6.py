@@ -43,6 +43,7 @@ MuMu 这边有三个实测出来的坑，都在本模块里兜住：
 
 import asyncio
 import json
+from functools import partial
 from pathlib import Path
 
 from app.models.config import EmulatorConfig
@@ -196,12 +197,26 @@ def parse_mem_list(raw: str | None) -> list[int]:
 class MuMu6Manager(AppLaunchMixin, _utils_emulator.mumu.MumuManager):
     """一条 MuMu 6 安装的管理器。
 
-    ``AppLaunchMixin`` 必须排在 ``MumuManager`` 前面：带包启动改走
-    「先开模拟器、再用 adb 拉应用」两步，不再依赖 ``control launch -pkg``。
+    带包启动走「先开模拟器、再用 adb 拉应用」，不依赖 ``control launch -pkg``；
+    整段编排由原生管理器的实例锁、总时限和启动失败处理保护。
     """
 
     #: 游戏中心 / 应用商店的包名，供「打开游戏中心」按钮使用。
     store_package = "com.mumu.store"
+
+    async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
+        """先进入 MuMu 启动保护，再执行完整的设备和应用启动流程。"""
+        return await _utils_emulator.mumu.MumuManager.open(
+            self, idx=idx, package_name=package_name
+        )
+
+    async def _open_locked(self, idx: str, package_name: str) -> DeviceInfo:
+        """钩子与应用就绪等待共享同一实例锁和启动预算，不再嵌套启动保护。"""
+        return await self._open_with_app(
+            idx,
+            package_name,
+            boot=partial(super()._open_locked, package_name=""),
+        )
 
     async def _describe_launch_failure(self, idx: str) -> str:
         """把 MuMu 自己对这次启动的诊断拼进父类的失败 / 超时报错，拼不出来返回空串。

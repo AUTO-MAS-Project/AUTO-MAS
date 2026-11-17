@@ -1,3 +1,4 @@
+import { describePackageError } from '@/utils/resourcePackageError'
 import { beginAnalyticsOperation } from '@/utils/analytics'
 import { appearanceCategory } from '@/utils/preferenceAnalytics'
 import { computed, ref, shallowRef } from 'vue'
@@ -6,7 +7,6 @@ import type { AppearanceCategory, AppearanceFilter } from '@/types/mascotPack'
 import { translate as t } from '@/i18n'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
 import type {
-  OnlineAppearanceErrorCode,
   OnlineAppearanceItem,
   OnlineAppearancePreview,
   OnlineAppearanceVersion,
@@ -33,33 +33,7 @@ export interface PreparedOnlineAppearance {
   existing: { id: string; name: string } | null
 }
 
-const ERROR_KEYS: Record<OnlineAppearanceErrorCode, string> = {
-  NETWORK: 'core.themeStore.error.network',
-  NOT_FOUND: 'core.themeStore.error.notFound',
-  BAD_RESPONSE: 'core.themeStore.error.badResponse',
-  TOO_LARGE: 'core.themeStore.error.tooLarge',
-  CHECKSUM_MISMATCH: 'core.themeStore.error.checksum',
-  EXPIRED: 'core.themeStore.error.expired',
-  UNSUPPORTED: 'core.themeStore.error.unsupported',
-}
-
 const UNSUPPORTED = { code: 'UNSUPPORTED' } as const
-
-/** 下载和桌宠包错误使用本地文案；旧主题包校验保留具体诊断。 */
-export function describeOnlineAppearanceError(
-  result: { code?: string; error?: string } | undefined,
-  fallbackKey: string,
-  category?: AppearanceCategory
-): string {
-  const code = result?.code
-  if (code === 'INVALID_ANIMATION') return t('core.setting.basic.appearanceAnimationInvalid')
-  if (code === 'INVALID_PACKAGE' && category === 'mascot')
-    return t('core.setting.basic.mascotImportFailed')
-  if (code && Object.prototype.hasOwnProperty.call(ERROR_KEYS, code)) {
-    return t(ERROR_KEYS[code as OnlineAppearanceErrorCode])
-  }
-  return result?.error || t(fallbackKey)
-}
 
 export function getOnlineAppearanceStatus(item: OnlineAppearanceItem): OnlineAppearanceStatus {
   if (!item.installed) return 'none'
@@ -244,10 +218,7 @@ export function useOnlineAppearance(options: {
       if (!result?.success) {
         items.value = []
         total.value = 0
-        listError.value = describeOnlineAppearanceError(
-          result ?? UNSUPPORTED,
-          'core.themeStore.listFailed'
-        )
+        listError.value = describePackageError(result ?? UNSUPPORTED, 'core.themeStore.listFailed')
         logger.warn(`加载在线外观列表失败: ${result?.error ?? result?.code ?? '不支持'}`)
         return
       }
@@ -303,7 +274,7 @@ export function useOnlineAppearance(options: {
       }
       if (!result?.success || !result.token || !result.appearance) {
         if (result?.token) discardToken(result.token, item.categoryKey)
-        prepareError.value = describeOnlineAppearanceError(
+        prepareError.value = describePackageError(
           result ?? UNSUPPORTED,
           'core.themeStore.prepareFailed',
           item.categoryKey ?? (options.categoryKey === 'mascot' ? 'mascot' : 'theme')
@@ -361,7 +332,7 @@ export function useOnlineAppearance(options: {
       )
       if (revision !== detailRevision) return
       if (!result?.success) {
-        detailError.value = describeOnlineAppearanceError(
+        detailError.value = describePackageError(
           result ?? UNSUPPORTED,
           'core.themeStore.detailFailed'
         )
@@ -394,7 +365,6 @@ export function useOnlineAppearance(options: {
     if (selectedVersion.value?.hasCover && detailItem.value) {
       ensureCover(detailItem.value.fileKey, selectedVersionNo.value, detailItem.value.categoryKey)
     }
-    await prepareSelected()
   }
 
   const retryDetail = (): void => {
@@ -409,7 +379,8 @@ export function useOnlineAppearance(options: {
     selectedVersionNo.value = versionNo
     if (version.hasCover && detailItem.value)
       ensureCover(detailItem.value.fileKey, versionNo, detailItem.value.categoryKey)
-    void prepareSelected()
+    discardPrepared()
+    prepareError.value = null
   }
 
   const install = async (): Promise<OnlineAppearanceInstallOutcome> => {

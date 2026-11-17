@@ -1,0 +1,5 @@
+{
+  "plugins.auto_mas_core.display_name": "AUTO-MAS Core",
+  "plugins.auto_mas_core.description": "AUTO-MAS core system plugin and developer SDK",
+  "plugins.auto_mas_core.tags": "[\"core\", \"SDK\"]"
+}

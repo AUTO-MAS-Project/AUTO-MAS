@@ -94,6 +94,7 @@
     },
     "msg": {
       "execFailed": "Execution failed",
+      "autoRetry": "Retrying startup",
       "initDone": "Setup complete",
       "initFailed": "Setup failed",
       "skippedStep": "Skipped {step}"

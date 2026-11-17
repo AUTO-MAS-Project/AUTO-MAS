@@ -3,6 +3,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { OpenAPI } from '@/api'
 import { useMcpApi } from '@/composables/useMcpApi'
+import McpStartupSwitch from './components/McpStartupSwitch.vue'
+import McpAgentPrompt from './components/McpAgentPrompt.vue'
 
 const { t } = useI18n()
 const { status, loading, retrying, error, refresh, retry, dispose } = useMcpApi()
@@ -66,6 +68,7 @@ onUnmounted(() => {
               <a-empty v-else :description="t('core.tools.mcp.noStatus')" />
             </div>
             <template v-else>
+              <McpStartupSwitch :status="status" />
               <div class="tools-service-header">
                 <a-space>
                   <a-spin v-if="running" size="small" />
@@ -81,9 +84,6 @@ onUnmounted(() => {
                 >
               </div>
               <a-descriptions :column="1" size="small">
-                <a-descriptions-item :label="t('core.tools.mcp.enabled')">
-                  {{ t(status.enabled ? 'core.tools.mcp.yes' : 'core.tools.mcp.no') }}
-                </a-descriptions-item>
                 <a-descriptions-item :label="t('core.tools.mcp.elapsed')">{{
                   elapsed
                 }}</a-descriptions-item>
@@ -107,6 +107,7 @@ onUnmounted(() => {
                 :message="t(`core.tools.mcp.errors.${status.error}`)"
                 :description="t('core.tools.mcp.seeLogs')"
               />
+              <McpAgentPrompt :address="address" />
             </template>
           </div>
         </a-tab-pane>

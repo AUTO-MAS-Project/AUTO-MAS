@@ -781,6 +781,26 @@ def _normalize_raw_task_schedules(value: Any) -> dict[str, dict[str, list[int]]]
     return schedules
 
 
+def unchecked_task_ids(
+    snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
+) -> list[str]:
+    """快照里用户显式设成红灯的实例 id（队列顺序，去重）。
+
+    只有 ``keepUnchecked`` 的快照才有红灯：队列里留着、``taskChecked`` 为假的实例这一轮不跑。
+    没带 ``keepUnchecked`` 的快照按勾选选任务、没有红灯的说法，返回空表。
+    """
+
+    raw_snapshot = _normalize_raw_snapshot(snapshot)
+    if not raw_snapshot["keepUnchecked"]:
+        return []
+    checked = raw_snapshot["taskChecked"]
+    return [
+        task_id
+        for task_id in dict.fromkeys(raw_snapshot["taskOrder"])
+        if checked.get(task_id) is False
+    ]
+
+
 def excluded_task_ids_for_weekday(
     snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
     iso_weekday: int,

@@ -2,74 +2,41 @@
 
 import asyncio
 from unittest.mock import AsyncMock
-from uuid import uuid4
 
 import pytest
 
-from app.core import Publisher
-from app.models.config import GeneralConfig, GeneralUserConfig, MaaConfig, MaaUserConfig
+from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.emulator import EmulatorStartupError
-from app.models.task import TaskItem, TaskMode, TaskScriptItem, TaskUserItem
-from app.task.MAA.AutoProxy import AutoProxyTask
+from app.models.task import TaskMode
+from app.plugin.types import PluginCodeDrift
 from app.task.mode_worker import AutoProxyWorker
 from app.task.user_expander import UserExpander
-from tests.config_support import activate_config
-from tests.core.test_task_tree_dispatch import scheduler as scheduler
+from tests.support.maa_runtime import dispatch
+from tests.support.maa_runtime import runtime as runtime
+from tests.support.scheduler import scheduler as scheduler
 
 
 @pytest.mark.asyncio
 async def test_real_maa_startup_failure_keeps_reason_and_avoids_outer_retry(
-    tmp_path, monkeypatch, isolated_app_paths
+    runtime,
 ):
-    config = await activate_config(
-        MaaConfig.model_validate(
-            {
-                "Info": {"Path": tmp_path},
-                "Run": {"RunTimesLimit": 10},
-                "Emulator": {"Index": "0"},
-            }
-        )
-    )
-    user_id = config.UserData.add(
-        MaaUserConfig,
-        payload={
-            "Info": {
-                "Base": "shared",
-                "IfQuickConfig": False,
-                "Name": "测试账号",
-            }
-        },
-    )
-    await config.UserData.commit()
-    task = await activate_config(TaskItem())
-    script_id = task.scripts.add(
-        TaskScriptItem, payload={"info": {"script_id": str(uuid4())}}
-    )
-    await task.scripts.commit()
-    script = task.scripts[script_id]
-    script.users.add(
-        TaskUserItem, payload={"info": {"user_id": str(user_id), "name": "测试账号"}}
-    )
-    await script.users.commit()
-    await script.set_current_index(0)
-    emulator = AsyncMock()
-    emulator.open.side_effect = EmulatorStartupError(
+    runtime.script.Run.RunTimesLimit = 10
+    await runtime.script.commit()
+    runtime.emulator.open.side_effect = EmulatorStartupError(
         "实例 0 errcode=-503 mainnx connect failed"
     )
-    send = AsyncMock()
-    monkeypatch.setattr(Publisher, "send", send)
-    proxy = AutoProxyTask(
-        script, config, config.UserData, emulator, capture_adb=AsyncMock()
-    )
-    # 保留真实 prepare、main_task 和异常记账；外部命令在模拟器边界失败，MAA 尚未运行。
-    await proxy._run_main_task()
-    emulator.open.assert_awaited_once()
-    emulator.close.assert_not_awaited()
-    assert proxy.cur_user_item.status == "异常"
-    assert "mainnx connect failed" in proxy.cur_user_item.result
-    assert "errcode=-503" in script.current.log
-    assert "正在启动模拟器" not in script.current.log
-    assert any("-503" in call.kwargs["data"].message for call in send.await_args_list)
+    # 通过 dev 的真实插件调度入口验证，不再依赖已删除的旧 MAA 执行器。
+    execution = await dispatch(runtime, TaskMode.AUTO_PROXY)
+    await asyncio.wait_for(execution.accomplish.wait(), 5)
+    runtime.emulator.open.assert_awaited_once()
+    user = execution.task_info.script_list[0].user_list[0]
+    assert user.status == "异常"
+    assert "mainnx connect failed" in user.result
+    assert "errcode=-503" in user.result
+    assert not runtime.opened
+    assert not runtime.script.is_locked and not runtime.user.is_locked
+    for name, original in runtime.original.items():
+        assert (runtime.install / "config" / name).read_bytes() == original
 
 
 @pytest.mark.asyncio
@@ -130,3 +97,70 @@ async def test_scheduler_releases_locks_reports_error_and_runs_following_script(
         for user in config.UserData.values()
     )
     assert not manager.task_handler
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "version,mode,drift,allowed",
+    [
+        ("0.1.3", TaskMode.AUTO_PROXY, PluginCodeDrift.NORMAL, False),
+        ("0.1.4", TaskMode.AUTO_PROXY, PluginCodeDrift.NORMAL, True),
+        ("0.1.3", TaskMode.SCRIPT_VIEW, PluginCodeDrift.NORMAL, True),
+        pytest.param(
+            "0.1.4",
+            TaskMode.AUTO_PROXY,
+            PluginCodeDrift.NEEDS_RELOAD,
+            False,
+            id="stale-installed-metadata",
+        ),
+    ],
+)
+async def test_maa_runtime_version_guard(
+    runtime, monkeypatch, version, mode, drift, allowed
+):
+    """真实分派在创建 MAA 自动代理前拒绝旧插件，查看模式仍可使用。"""
+    from maa_adapter import PLUGIN as MaaPlugin
+
+    from app.core import Config
+    from app.core.plugin.manager import _PluginManager
+    from app.models.config import PluginRecord, PluginRegistryCollection
+    from app.plugin.types import PluginState
+
+    registry = PluginRegistryCollection.build([PluginRecord])
+    await registry.activate()
+    uid = registry.add(
+        PluginRecord,
+        payload={
+            "info": {
+                "plugin_name": "maa_adapter",
+                "package_name": "auto-mas-maa-adapter",
+                "version": version,
+                "source": "installed",
+                "state": PluginState.ENABLED,
+                "code_drift": drift,
+            }
+        },
+    )
+    await registry.commit()
+    registry[uid]._plugin_cls = MaaPlugin
+    monkeypatch.setattr(Config, "plugin_registry", registry)
+    plugins = _PluginManager()
+    plugins.script_types[uid] = MaaPlugin.decl
+    runtime.manager.plugin_expander = plugins.resolve_script_expander
+    runtime.emulator.open.side_effect = EmulatorStartupError("errcode=-503 mainnx")
+
+    execution = await dispatch(runtime, mode)
+    await asyncio.wait_for(execution.accomplish.wait(), 5)
+    script = execution.task_info.script_list[0]
+    if not allowed:
+        assert execution.task_info.info.status == "error"
+        assert "0.1.4" in script.current.log
+        runtime.emulator.open.assert_not_awaited()
+        assert not runtime.opened
+    elif mode == TaskMode.AUTO_PROXY:
+        runtime.emulator.open.assert_awaited_once()
+        assert "errcode=-503" in script.user_list[0].result
+    else:
+        assert execution.task_info.info.status == "success"
+        assert runtime.opened
+    assert not runtime.script.is_locked and not runtime.user.is_locked

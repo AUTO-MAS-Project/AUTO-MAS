@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
 import sysconfig
 import threading
@@ -1045,6 +1046,248 @@ def detect_pe_architecture(path: Path) -> str | None:
     except (OSError, ValueError):
         return None
     return _PE_MACHINE_ARCHITECTURES.get(machine)
+
+
+#: 导入表里这些名字不在原生库目录里也不算缺：API set 由系统解析，VC / UCRT 运行库装在系统里
+#: （运行 MAS 的 Python 自己也带一份）。缺了它们重下发行包也补不回来。
+_SYSTEM_IMPORT_PREFIXES = (
+    "api-ms-",
+    "ext-ms-",
+    "msvcp",
+    "vcruntime",
+    "concrt",
+    "vccorlib",
+    "vcomp",
+    "ucrtbase",
+)
+#: 导入表条目数的上限：超过就当这个文件读得不对，不下结论。
+_MAX_PE_IMPORTS = 4096
+
+
+def _pe_imported_dlls(path: Path) -> list[str] | None:
+    """PE 文件导入表里的 DLL 名（只读文件头与导入表，**不映射也不执行**）。
+
+    只看普通导入（数据目录第 1 项）：延迟加载的依赖缺了 ``LoadLibrary`` 照样成功。
+    不是 PE 文件或读不出来时 None。
+    """
+
+    def u16(raw: bytes, at: int) -> int:
+        return int.from_bytes(raw[at : at + 2], "little")
+
+    def u32(raw: bytes, at: int) -> int:
+        return int.from_bytes(raw[at : at + 4], "little")
+
+    try:
+        with path.open("rb") as stream:
+            head = stream.read(4096)
+            if head[:2] != b"MZ" or len(head) < 0x40:
+                return None
+            pe = u32(head, 0x3C)
+            stream.seek(pe)
+            coff = stream.read(24)
+            if coff[:4] != _PE_SIGNATURE:
+                return None
+            section_count = u16(coff, 6)
+            optional_size = u16(coff, 20)
+            optional = stream.read(optional_size)
+            magic = u16(optional, 0)
+            if magic == 0x20B:  # PE32+
+                directories = 112
+            elif magic == 0x10B:  # PE32
+                directories = 96
+            else:
+                return None
+            import_rva = u32(optional, directories + 8)
+            if not import_rva:
+                return []
+            table = stream.read(40 * section_count)
+            sections = [
+                (
+                    u32(table, 40 * i + 12),
+                    max(u32(table, 40 * i + 8), u32(table, 40 * i + 16)),
+                    u32(table, 40 * i + 20),
+                )
+                for i in range(section_count)
+            ]
+
+            def offset(rva: int) -> int | None:
+                for address, size, raw in sections:
+                    if address <= rva < address + size:
+                        return rva - address + raw
+                return None
+
+            descriptor = offset(import_rva)
+            if descriptor is None:
+                return None
+            names: list[str] = []
+            while len(names) <= _MAX_PE_IMPORTS:
+                stream.seek(descriptor)
+                entry = stream.read(20)
+                if len(entry) < 20:
+                    return None
+                if entry == bytes(20):
+                    return names
+                name_at = offset(u32(entry, 12))
+                if name_at is None:
+                    return None
+                stream.seek(name_at)
+                name = stream.read(260).split(b"\0", 1)[0]
+                names.append(name.decode("ascii", errors="replace"))
+                descriptor += 20
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def runtime_missing_dependencies(runtime_path: Path) -> list[str] | None:
+    """原生库目录里 ``MaaFramework.dll`` 顺着导入表要用、目录里又没有的 DLL。
+
+    从主库出发，只沿着目录里有的那些 DLL 往下查；系统目录里有的、API set 与 VC 运行库
+    （:data:`_SYSTEM_IMPORT_PREFIXES`）不算缺。差量更新把 runner 换到只有几个 DLL 的目录时
+    （MAA_bbb v1.13.20），这里会列出 ``opencv_world4_maa.dll`` 之类。
+
+    Returns:
+        缺的 DLL 名（空表即完整）；不是 Windows、没有主库、导入表读不出时 None（不下结论）。
+    """
+
+    if sys.platform != "win32":
+        return None
+    try:
+        present = {
+            item.name.casefold(): item
+            for item in Path(runtime_path).iterdir()
+            if item.is_file()
+        }
+    except OSError:
+        return None
+    if PROJECT_MAAFW_DLL_NAME.casefold() not in present:
+        return None
+    system_dirs = [
+        Path(os.environ.get("SystemRoot") or r"C:\Windows") / "System32",
+        Path(sys.executable).parent,
+    ]
+    pending = [PROJECT_MAAFW_DLL_NAME.casefold()]
+    seen: set[str] = set()
+    missing: set[str] = set()
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        imports = _pe_imported_dlls(present[name])
+        if imports is None:
+            return None
+        for dependency in imports:
+            key = dependency.casefold()
+            if key in present:
+                pending.append(key)
+            elif not key.startswith(_SYSTEM_IMPORT_PREFIXES) and not any(
+                (directory / dependency).is_file() for directory in system_dirs
+            ):
+                missing.add(dependency)
+    return sorted(missing, key=str.casefold)
+
+
+# 子进程里只做一件事：按 runner 的 ``Library.open`` 同样的方式（绝对路径的 WinDLL，
+# 依赖从 DLL 所在目录找）加载主库。加载失败退出码 3，并把原因打到 stdout。
+_NATIVE_LOAD_PROBE = (
+    "import ctypes, sys\n"
+    "try:\n"
+    "    ctypes.WinDLL(sys.argv[1])\n"
+    "except OSError as error:\n"
+    "    print(error)\n"
+    "    sys.exit(3)\n"
+)
+_NATIVE_LOAD_FAILED_EXIT = 3
+_NATIVE_LOAD_TIMEOUT_SECONDS = 60
+
+NATIVE_LOAD_OK = "ok"
+NATIVE_LOAD_FAILED = "failed"
+NATIVE_LOAD_UNKNOWN = "unknown"
+
+
+def probe_native_runtime_load(runtime_path: Path) -> tuple[str, str]:
+    """在独立子进程里真加载一次 ``runtime_path`` 下的 ``MaaFramework.dll``。
+
+    不在本进程里加载：载进来就卸不掉，还会锁住文件。
+
+    Returns:
+        ``(结论, 说明)``：结论是 :data:`NATIVE_LOAD_OK` / :data:`NATIVE_LOAD_FAILED`（子进程
+        明确报加载失败，说明是系统给的原因）/ :data:`NATIVE_LOAD_UNKNOWN`（不是 Windows、
+        子进程起不来、超时、异常退出——不下结论）。
+    """
+
+    if sys.platform != "win32":
+        return NATIVE_LOAD_UNKNOWN, "不是 Windows"
+    dll = Path(runtime_path) / PROJECT_MAAFW_DLL_NAME
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-I", "-c", _NATIVE_LOAD_PROBE, str(dll)],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=_NATIVE_LOAD_TIMEOUT_SECONDS,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return NATIVE_LOAD_UNKNOWN, f"{type(exc).__name__}: {exc}"
+    if completed.returncode == _NATIVE_LOAD_FAILED_EXIT:
+        reason = (completed.stdout or "").strip().rstrip("。.") or "原因未知"
+        return NATIVE_LOAD_FAILED, reason
+    if completed.returncode != 0:
+        return (
+            NATIVE_LOAD_UNKNOWN,
+            f"退出码 {completed.returncode}：{(completed.stderr or '').strip()[-500:]}",
+        )
+    return NATIVE_LOAD_OK, ""
+
+
+def project_runtime_broken(project_path: Path) -> bool:
+    """runner 要用的那份原生库**确定**用不了：依赖缺了（:func:`runtime_missing_dependencies`），
+    而且在子进程里真加载也失败。
+
+    导入表的判断只用来挑出可疑的副本（几毫秒）；真加载（一两秒）只在可疑时才做，用来排除
+    误判——否则一次误判就会让更新器每次运行都按全量包重装一遍。判断不了一律 False。
+    """
+
+    runtime = project_maafw_runtime_path(project_path)
+    if runtime is None or not runtime_missing_dependencies(runtime):
+        return False
+    verdict, _detail = probe_native_runtime_load(runtime)
+    return verdict == NATIVE_LOAD_FAILED
+
+
+def project_runtime_complete(project_path: Path) -> bool | None:
+    """runner 要用的那份原生库依赖齐不齐（见 :func:`runtime_missing_dependencies`）。
+
+    Returns:
+        True / False；没自带原生库或判断不了时 None（不猜）。
+    """
+
+    runtime = project_maafw_runtime_path(project_path)
+    if runtime is None:
+        return None
+    missing = runtime_missing_dependencies(runtime)
+    if missing is None:
+        return None
+    return not missing
+
+
+def project_runtime_usable_on_host(project_path: Path) -> bool | None:
+    """项目自带的 MaaFramework 在本机能不能用：架构对得上**而且**依赖齐。
+
+    任一项确定不行就是 False；都判断不了时 None。同版本载荷谁顶替谁（``payloads``）按它判。
+    """
+
+    loadable = project_runtime_loadable_on_host(project_path)
+    if loadable is False:
+        return False
+    complete = project_runtime_complete(project_path)
+    if complete is False:
+        return False
+    if loadable is None and complete is None:
+        return None
+    return True
 
 
 # 架构不符报错（describe_runtime_architecture_mismatch 的各种文案、「只支持 x64」提示）

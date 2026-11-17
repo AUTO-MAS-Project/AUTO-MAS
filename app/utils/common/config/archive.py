@@ -169,7 +169,7 @@ def dir_files(source: Path) -> dict[str, Path]:
     return files
 
 
-def file_set_hash(files: dict[str, "Path | str | bytes"]) -> str:
+def file_set_hash(files: Mapping[str, "Path | str | bytes"]) -> str:
     """计算文件集指纹：相对键 + 大小 + 字节内容的组合哈希。
 
     文件集合的变化（增删文件）与内容变化都会使指纹改变；相对键的排序保证
@@ -240,7 +240,7 @@ def _ensure_path_length(target: Path) -> None:
 
 
 def _archive(
-    files: dict[str, "Path | str | bytes"],
+    files: Mapping[str, "Path | str | bytes"],
     store_root: Path,
     *,
     keep: int,
@@ -345,7 +345,7 @@ def _archive(
 
 
 def archive_files(
-    files: dict[str, "Path | str | bytes"],
+    files: Mapping[str, "Path | str | bytes"],
     store_root: Path,
     *,
     keep: int = KEEP_COUNT,

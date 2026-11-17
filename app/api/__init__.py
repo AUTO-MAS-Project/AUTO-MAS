@@ -53,8 +53,14 @@ with startup_stage("后端/API 导入/share"):
     from .share import router as share_router
 with startup_stage("后端/API 导入/update"):
     from .update import router as update_router
+from .downloads import router as downloads_router
+from .operations import router as operations_router
+from .plugin import router as plugin_router
 
 __all__ = [
+    "plugin_router",
+    "operations_router",
+    "downloads_router",
     "community_router",
     "core_router",
     "info_router",
