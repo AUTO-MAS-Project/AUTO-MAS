@@ -373,8 +373,12 @@ HSR_DIVERGENT_FINAL_SUCCESS_SRA: tuple[str | re.Pattern[str], ...] = (
 )
 
 HSR_CURRENCY_WARS_FINAL_SUCCESS_M7A: tuple[str, ...] = (
-    "已达到最高积分 18000，记录时间",  # currency_wars.py:266
-    "「货币战争」积分奖励尚未刷新",  # daily.py:131
+    # v2026.11.19：积分已满，且领奖已确认。
+    "货币战争积分 18000/18000，已领取本次奖励",
+    "货币战争积分 18000/18000，当前无待领奖励",
+    # v2026.11.9-beta：当前最新测试版仍使用这两条完成文案。
+    "已达到最高积分 18000，记录时间",  # currency_wars.py:272
+    "「货币战争」积分奖励尚未刷新",  # daily.py:135
 )
 HSR_CURRENCY_WARS_FINAL_SUCCESS_SRA: tuple[str, ...] = (
     "旷宇纷争任务全部完成",  # CosmicStrifeTask.py:65  ⚠️需配合 sra_overrides
