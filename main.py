@@ -674,6 +674,10 @@ def main():
             version="1.0.0",
             lifespan=lifespan,
         )
+        if IS_WINDOWS:
+            from app.api.desktop_session import install_control
+
+            install_control(app)
         app.state.baah_config_service = baah_config_service
         app.state.maaend_config_service = maaend_config_service
 

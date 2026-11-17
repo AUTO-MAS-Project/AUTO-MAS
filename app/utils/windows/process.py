@@ -15,6 +15,11 @@ import win32job
 import win32process
 
 from app.utils.common.process.runner import ProcessRunner
+from app.utils.common.process.session import (
+    desktop_process_target,
+    process_in_scope,
+    restricted_session,
+)
 
 from ..contracts.process import ElevatedProcess, EmulatorPopenOptions
 
@@ -23,7 +28,7 @@ class WindowsTaskProcessJob:
     # 先挂起创建，加入任务 Job 后再恢复，避免短命包装器抢先派生并退出。
     creation_flags = 0x00000004  # CREATE_SUSPENDED
 
-    def __init__(self) -> None:
+    def __init__(self, *, kill_on_close: bool = False) -> None:
         self._lock = Lock()
         self._closed = False
         self._stopping = False
@@ -36,6 +41,21 @@ class WindowsTaskProcessJob:
         # 脱离 Runtime 的进程不能与继承 Runtime 的进程共用同一个嵌套 Job。
         self._handles = {False: inherited, True: detached}
         self._adopted: list[Any] = []
+        if kill_on_close:
+            try:
+                for job in self._handles.values():
+                    limits = win32job.QueryInformationJobObject(
+                        job, win32job.JobObjectExtendedLimitInformation
+                    )
+                    limits["BasicLimitInformation"]["LimitFlags"] |= (
+                        win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+                    )
+                    win32job.SetInformationJobObject(
+                        job, win32job.JobObjectExtendedLimitInformation, limits
+                    )
+            except BaseException:
+                self.close()
+                raise
 
     def assign(self, pid: int, *, suspended: bool, breakaway: bool) -> None:
         # 安装线程与任务停止共用这把锁，强杀开始后不得再分配或恢复新进程。
@@ -70,13 +90,15 @@ class WindowsTaskProcessJob:
         with self._lock:
             if self._closed or self._stopping:
                 raise asyncio.CancelledError
+            if not process_in_scope(pid):
+                raise ProcessLookupError("进程不属于桌面分身")
             root = psutil.Process(pid)
             if root.create_time() != create_time:
                 raise psutil.NoSuchProcess(pid, msg="接管进程的 PID 已复用")
             pending, seen = [root], set()
             while pending:
                 target = pending.pop()
-                if target.pid in seen:
+                if target.pid in seen or not process_in_scope(target.pid):
                     continue
                 seen.add(target.pid)
 
@@ -143,6 +165,15 @@ class WindowsTaskProcessJob:
             if errors:
                 raise ExceptionGroup("部分任务进程组未能强制终止", errors)
 
+    def has_active_processes(self) -> bool:
+        with self._lock:
+            return not self._closed and any(
+                win32job.QueryInformationJobObject(
+                    job, win32job.JobObjectBasicAccountingInformation
+                )["ActiveProcesses"]
+                for job in (*self._handles.values(), *self._adopted)
+            )
+
     def close(self) -> None:
         with self._lock:
             if self._closed:
@@ -194,12 +225,26 @@ class WindowsProcessPlatform:
     )
 
     async def open_protocol(self, protocol_url: str) -> None:
-        os.startfile(protocol_url)
+        desktop = desktop_process_target.get()
+        if desktop is None:
+            os.startfile(protocol_url)
+            return
+        from app.utils.common.process.scope import current_process_scope
+        from app.utils.windows.desktop_session.process_runner import open_in_desktop
+
+        if (scope := current_process_scope.get()) is not None:
+            scope.ensure_can_start()
+        await open_in_desktop(desktop, protocol_url)
 
     async def kill_process(self, pid: int, kill_tree: bool = False) -> tuple[bool, str]:
         """用 taskkill 终止进程，返回 (是否成功, 失败原因)。"""
 
-        args = ["taskkill", "/F"]
+        if (session_id := restricted_session()) is not None:
+            if not process_in_scope(pid):
+                return False, "进程不属于桌面分身"
+            args = ["taskkill", "/F", "/FI", f"SESSION eq {session_id}"]
+        else:
+            args = ["taskkill", "/F"]
         if kill_tree:
             args.append("/T")
         args.extend(["/PID", str(pid)])

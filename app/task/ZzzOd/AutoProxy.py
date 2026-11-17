@@ -96,6 +96,7 @@ from app.utils import (
 )
 from app.utils.common.log import sources as log_source
 from app.utils.common.process.runner import create_subprocess
+from app.utils.common.process.session import desktop_process_target
 
 from . import push_log as _push_log
 from .launchers import (
@@ -1726,6 +1727,9 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
 
         # 多实例触发者可能被正常跳过，整轮是否成功以实际参与用户的结果为准。
         if self._shutdown_after_success and self.run_book:
+            if desktop_process_target.get() is not None:
+                await self._push_dispatch_log("桌面分身任务已完成，已跳过本机关机")
+                return
             shutdown_error = ""
             try:
                 process = await create_subprocess("shutdown", "/s", "/t", "60")

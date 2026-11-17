@@ -4,7 +4,9 @@ import type { AnalyticsEvent, AnalyticsEventProps } from '../../src/types/analyt
 import type { FeatureAnalyticsEventName } from './analyticsFeaturePolicy'
 
 /** 主进程操作先捕获代次；退出、关闭遥测和旧回调不能补造结果。 */
-export function beginMainFeature<K extends FeatureAnalyticsEventName>(name: K) {
+export function beginMainFeature<K extends FeatureAnalyticsEventName | 'task_start_result'>(
+  name: K
+) {
   const context = analyticsService.getContext()
   const startedAt = performance.now()
   let finished = false

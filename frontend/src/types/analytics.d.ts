@@ -207,7 +207,7 @@ export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
     duration_bucket: AnalyticsDurationBucket
   }
   task_start_result: {
-    source: AnalyticsTaskSource
+    source: AnalyticsTaskSource | 'desktop_session'
     mode: AnalyticsTaskMode
     target_kind: 'script' | 'queue' | 'user' | 'unknown'
     outcome: 'accepted' | 'failure'

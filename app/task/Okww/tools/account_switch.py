@@ -939,4 +939,13 @@ async def async_switch_account(
     account_id: str, *, on_log: Callable[[str], None] | None = None
 ) -> bool:
     """async 版本：在后台线程执行完整切换流程，避免阻塞事件循环。"""
+    from app.utils.common.process.session import desktop_process_target
+
+    if (desktop := desktop_process_target.get()) is not None:
+        from app.task.desktop_session_worker import run_desktop_action
+
+        return await run_desktop_action(
+            desktop, "okww_switch_account", {"account_id": account_id}, on_log
+        )
+
     return await asyncio.to_thread(account_switch, account_id, on_log=on_log)

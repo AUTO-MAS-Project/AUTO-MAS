@@ -345,6 +345,44 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // API 端点获取
   getApiEndpoint: (key: string) => ipcRenderer.invoke('get-api-endpoint', key),
+  desktopSessionSupported: () => ipcRenderer.invoke('desktop-session:supported'),
+  desktopSessionOpen: (input: import('./services/desktopSessionProtocol').DesktopSessionRequest) =>
+    ipcRenderer.invoke('desktop-session:open', input),
+  desktopSessionCheck: () => ipcRenderer.invoke('desktop-session:check'),
+  desktopSessionRepair: (
+    plan: import('./services/desktopSessionProtocol').DesktopSessionRepair[]
+  ) => ipcRenderer.invoke('desktop-session:repair', plan),
+  desktopSessionExportLogs: () => ipcRenderer.invoke('desktop-session:export-logs'),
+  desktopSessionPending: () => ipcRenderer.invoke('desktop-session:pending'),
+  desktopSessionStart: (input: import('./services/desktopSessionProtocol').DesktopSessionRequest) =>
+    ipcRenderer.invoke('desktop-session:start', input),
+  desktopSessionBounds: (bounds: Electron.Rectangle) =>
+    ipcRenderer.send('desktop-session:bounds', bounds),
+  desktopSessionWindow: (action: 'show' | 'hide') =>
+    ipcRenderer.send('desktop-session:window', action),
+  desktopSessionVolume: (volume: number) => ipcRenderer.send('desktop-session:volume', volume),
+  desktopSessionLogs: () => ipcRenderer.invoke('desktop-session:logs'),
+  onDesktopSessionState: (
+    callback: (state: import('./services/desktopSessionProtocol').DesktopSessionSnapshot) => void
+  ) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]) =>
+      callback(state)
+    ipcRenderer.on('desktop-session:state', listener)
+    return () => ipcRenderer.removeListener('desktop-session:state', listener)
+  },
+  onDesktopSessionPending: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('desktop-session:pending', listener)
+    return () => ipcRenderer.removeListener('desktop-session:pending', listener)
+  },
+  onDesktopSessionTasksStarted: (
+    callback: (tasks: import('./services/desktopSessionProtocol').DesktopQueueResult[]) => void
+  ) => {
+    const listener = (_event: Electron.IpcRendererEvent, tasks: Parameters<typeof callback>[0]) =>
+      callback(tasks)
+    ipcRenderer.on('desktop-session:tasks-started', listener)
+    return () => ipcRenderer.removeListener('desktop-session:tasks-started', listener)
+  },
 
   // Runtime 完整初始化流程
   initialize: (targetBranch?: string, startBackend?: boolean) =>
