@@ -180,11 +180,12 @@ async def prepare():
 
 async def run():
     flush = config_manager.flush if failure != "flush" else AsyncMock(side_effect=OSError("save unavailable"))
-    # 只替换平台加解密边界，让非 Windows 子进程也能覆盖非空 CDK 的迁移及回读。
+    # 迁移与生命周期走真实入口；依赖环境、装包传输及平台加解密在各自集成测试中覆盖。
     with (
         patch("app.config.fields.encrypted.dpapi_encrypt", side_effect=lambda value: base64.b64encode(value.encode()).decode()),
         patch("app.config.fields.encrypted.dpapi_decrypt", side_effect=lambda value: base64.b64decode(value).decode()),
         patch.object(uv, "install", install),
+        patch.object(uv, "prepare_environment", AsyncMock()),
         patch.object(httpx.AsyncClient, "get", AsyncMock(return_value=httpx.Response(200, json={}))),
         patch.object(config_manager, "flush", flush),
     ):
