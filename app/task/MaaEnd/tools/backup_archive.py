@@ -117,6 +117,7 @@ _OVERLAY_INFO_KEYS = (
     "IfQuickConfig",
     "SanityStrategy",
     "SanityMode",
+    "AutoEssenceMode",
 )
 """MAS 页面基础字段（UserData.Info）：来源仅预览，账号/覆写常规配置/理智模式参与回填"""
 
@@ -215,6 +216,8 @@ _OVERLAY_FIELD_LABELS = {
     "SanityTaskType": "理智任务",
     **{f"If{task}": zh for task, zh in _TASK_LABELS.items()},
     # IfSanity 的开关用分组名「理智作战」，与合成的「理智任务」行区分
+    "IfProtocolSpace": "协议空间（库存保持）",
+    "IfAutoEssence": "基质刷取",
     "IfSanity": "理智作战",
 }
 """侧车字段中文标签（对齐 MaaEnd 账号编辑页词表）"""
@@ -316,7 +319,9 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
         if key in _OVERLAY_PREVIEW_ONLY_KEYS:
             continue
         grouped.setdefault(_OVERLAY_KEY_GROUP.get(key, "Task"), {})[key] = value
-    return grouped
+    from app.models.config.shared import migrate_maaend_sanity_tasks
+
+    return migrate_maaend_sanity_tasks(grouped)
 
 
 def collect_mas_files(
@@ -803,9 +808,9 @@ def _overlay_value(key: str, value) -> str:
             text = f"维护 {count} 项材料目标" if count else "未设置目标"
         except (TypeError, ValueError):
             text = "库存目标格式无法读取"
-    elif key == "SanityMode":
+    elif key in ("SanityMode", "AutoEssenceMode"):
         # 计划表 UID 无意义，restore_service 会尽力补计划名称
-        text = "固定" if str(value) == "Fixed" else "计划表"
+        text = {"Fixed": "固定", "Native": "MaaEnd 原生配置"}.get(str(value), "计划表")
     else:
         text = str(value)
     if len(text) > _SUMMARY_VALUE_LIMIT:
@@ -968,7 +973,15 @@ def build_overlay_summary(
                 }
             )
         if overlay.get("SanityStrategy", "MAS") == "MAS":
-            config_rows.extend(_sanity_rows(overlay))
+            config_rows.extend(
+                _sanity_rows(
+                    {
+                        key: value
+                        for key, value in overlay.items()
+                        if not key.startswith("AutoEssence")
+                    }
+                )
+            )
         elif overlay.get("SanityStrategy") == "Inventory":
             config_rows.append(
                 {
@@ -986,6 +999,24 @@ def build_overlay_summary(
                         overlay.get("ProtocolSpaceObtainModeClaim", "ObtainScaling2"),
                     ),
                 }
+            )
+        if overlay.get("IfAutoEssence"):
+            config_rows.append(
+                {
+                    "key": "基质配置模式",
+                    "value": _overlay_value(
+                        "AutoEssenceMode", overlay.get("AutoEssenceMode", "Fixed")
+                    ),
+                }
+            )
+            config_rows.extend(
+                _sanity_rows(
+                    {
+                        key: value
+                        for key, value in overlay.items()
+                        if key.startswith("AutoEssence")
+                    }
+                )
             )
         if "SeizeDeliveryJobsReward" in overlay:
             config_rows.append(

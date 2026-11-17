@@ -144,11 +144,10 @@ import { MAAEND_INVENTORY_TARGET_DEFAULTS } from './userDefaults'
 
 const props = defineProps<{
   formData: {
-    Info: { IfQuickConfig: boolean; SanityStrategy: string }
+    Info: { IfQuickConfig: boolean }
     Task: {
       SupplyPlanLimits: string
       ProtocolSpaceObtainModeClaim: string
-      IfSanity: boolean
       IfAutoUseSpMedication: boolean
     }
   }

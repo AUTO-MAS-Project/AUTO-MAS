@@ -1,48 +1,20 @@
 <template>
-  <div class="sanity-section">
-    <a-card v-if="formData.Info.IfQuickConfig" id="section-sanity" class="section-card">
-      <template #title>{{ t('core.edit.maaEndSanitySection') }}</template>
-      <SanityConfigSection
-        :form-data="formData"
-        :loading="loading"
-        :if-quick-config="formData.Info.IfQuickConfig"
-        :crisis-drills-options="crisisDrillsOptions"
-        :essence-location-options="essenceLocationOptions"
-        :essence-menu-options="essenceMenuOptions"
-        :essence-target-weapon-groups="essenceTargetWeaponGroups"
-        :options-loading="optionsLoading"
-        :options-loaded="optionsLoaded"
-        :is-plan-mode="isSanityPlanMode"
-        :sanity-mode-options="sanityModeOptions"
-        :plan-mode-config="planModeConfig"
+  <div v-if="formData.Info.IfQuickConfig" class="sanity-section">
+    <a-card id="section-sanity" class="section-card">
+      <template #title>{{ t('core.edit.maaEndProtocolSpaceTitle') }}</template>
+      <SanityStrategySection
+        :enabled="formData.Task.IfProtocolSpace"
+        :show-detail="formData.Task.IfProtocolSpace"
+        :strategy="formData.Info.SanityStrategy"
+        :disabled="loading"
         :config-loading="configLoading"
         :show-config-mask="showConfigMask"
-        @save="(key, value) => emit('save', key, value)"
-        @save-batch="changes => emit('saveBatch', changes)"
+        @enable="value => emit('save', 'Task.IfProtocolSpace', value)"
+        @save="value => emit('save', 'Info.SanityStrategy', value)"
         @configure="emit('configure')"
       />
-      <a-button
-        v-if="formData.Task.IfSanity && isSanityPlanMode && formData.Info.SanityStrategy === 'MAS'"
-        type="link"
-        class="plans-button"
-        @click="handleGoToPlans"
-      >
-        <template #icon><CalendarOutlined /></template>
-        {{ t('core.edit.goPlan') }}
-      </a-button>
-    </a-card>
-
-    <a-card
-      v-if="
-        formData.Info.IfQuickConfig &&
-        formData.Task.IfSanity &&
-        formData.Info.SanityStrategy === 'Inventory'
-      "
-      id="section-ims"
-      class="section-card"
-    >
-      <template #title>{{ t('core.edit.maaEndImsTitle') }}</template>
       <InventoryConfigSection
+        v-if="formData.Task.IfProtocolSpace && formData.Info.SanityStrategy === 'Inventory'"
         :form-data="formData"
         :inventory="inventory"
         :loading="loading"
@@ -50,6 +22,64 @@
         @save="(key, value) => emit('save', key, value)"
         @reload="emit('reload')"
       />
+      <SanityConfigSection
+        v-if="formData.Task.IfProtocolSpace && formData.Info.SanityStrategy === 'MAS'"
+        :form-data="formData"
+        :loading="loading"
+        :crisis-drills-options="crisisDrillsOptions"
+        :options-loading="optionsLoading"
+        :is-plan-mode="isSanityPlanMode"
+        :sanity-mode-options="sanityModeOptions"
+        :plan-mode-config="planModeConfig"
+        @save="(key, value) => emit('save', key, value)"
+        @save-batch="changes => emit('saveBatch', changes)"
+      />
+      <a-button
+        v-if="
+          formData.Task.IfProtocolSpace &&
+          isSanityPlanMode &&
+          formData.Info.SanityStrategy === 'MAS'
+        "
+        type="link"
+        @click="handleGoToPlans(formData.Info.SanityMode)"
+      >
+        <template #icon><CalendarOutlined /></template>{{ t('core.edit.goPlan') }}
+      </a-button>
+    </a-card>
+    <a-card id="section-essence" class="section-card">
+      <template #title>{{ t('core.edit.maaEndEssenceTitle') }}</template>
+      <template #extra>
+        <a-switch
+          :checked="formData.Task.IfAutoEssence"
+          :disabled="loading"
+          :aria-label="t('core.edit.maaEndEnableEssence')"
+          @change="(value: boolean) => emit('save', 'Task.IfAutoEssence', value)"
+        />
+      </template>
+      <EssenceConfigSection
+        v-if="formData.Task.IfAutoEssence"
+        :form-data="formData"
+        :loading="loading"
+        :options-loading="optionsLoading"
+        :options-loaded="optionsLoaded"
+        :config-loading="configLoading"
+        :show-config-mask="showConfigMask"
+        :essence-location-options="essenceLocationOptions"
+        :essence-menu-options="essenceMenuOptions"
+        :essence-target-weapon-groups="essenceTargetWeaponGroups"
+        :sanity-mode-options="sanityModeOptions"
+        :is-plan-mode="isEssencePlanMode"
+        :plan-mode-config="essencePlanConfig"
+        @save="(key, value) => emit('save', key, value)"
+        @configure="emit('configure')"
+      />
+      <a-button
+        v-if="formData.Task.IfAutoEssence && isEssencePlanMode"
+        type="link"
+        @click="handleGoToPlans(formData.Info.AutoEssenceMode)"
+      >
+        <template #icon><CalendarOutlined /></template>{{ t('core.edit.goPlan') }}
+      </a-button>
     </a-card>
   </div>
 </template>
@@ -64,6 +94,7 @@ import { Service, PlanComboxIn } from '@/api'
 import { usePlanApi } from '@/composables/usePlanApi'
 import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 import { getWeekdayInTimezone } from '@/utils/dateUtils'
+import { clampRotateDays } from '@/utils/planDays'
 import {
   MAAEND_PLAN_WEEKDAY_KEYS,
   maaEndPlanKeyToSanityConfig,
@@ -73,6 +104,8 @@ import {
 import type { MaaEndUserForm } from './userDefaults'
 import InventoryConfigSection from './InventoryConfigSection.vue'
 import SanityConfigSection from './SanityConfigSection.vue'
+import SanityStrategySection from './SanityStrategySection.vue'
+import EssenceConfigSection from './EssenceConfigSection.vue'
 
 const props = defineProps<{
   formData: MaaEndUserForm
@@ -101,12 +134,16 @@ const sanityModeOptions = ref<Array<{ label: string; value: string }>>([
   { label: t('core.edit.fixed'), value: 'Fixed' },
 ])
 const planModeConfig = ref<MaaEndSanityConfig | null>(null)
+const essencePlanConfig = ref<MaaEndSanityConfig | null>(null)
 // 计划表切换版本号：loadSanityPlan 每次调用自增，用于丢弃过期的异步响应
-let sanityPlanLoadVersion = 0
+const planLoadVersion = { protocol: 0, essence: 0 }
 const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
+const isEssencePlanMode = computed(
+  () => !['Fixed', 'Native'].includes(formData.Info.AutoEssenceMode)
+)
 
-const handleGoToPlans = () => {
-  navigateTo('/plans', { query: { planId: formData.Info.SanityMode } })
+const handleGoToPlans = (planId: string) => {
+  navigateTo('/plans', { query: { planId } })
 }
 
 const loadSanityModeOptions = async () => {
@@ -124,35 +161,46 @@ const loadSanityModeOptions = async () => {
   }
 }
 
-const loadSanityPlan = async (planId: string) => {
-  const version = ++sanityPlanLoadVersion
-
-  if (!planId || planId === 'Fixed' || formData.Info.SanityStrategy !== 'MAS') {
-    planModeConfig.value = null
+const loadSanityPlan = async (planId: string, kind: 'protocol' | 'essence') => {
+  const version = ++planLoadVersion[kind]
+  const config = kind === 'protocol' ? planModeConfig : essencePlanConfig
+  const currentMode = () =>
+    kind === 'protocol' ? formData.Info.SanityMode : formData.Info.AutoEssenceMode
+  if (
+    !planId ||
+    ['Fixed', 'Native'].includes(planId) ||
+    (kind === 'protocol' && formData.Info.SanityStrategy !== 'MAS')
+  ) {
+    config.value = null
     return
   }
 
   try {
     const response = await getPlans(planId)
     // 已切换到其他计划表：丢弃过期响应，避免旧数据覆盖当前 UI
-    if (version !== sanityPlanLoadVersion || formData.Info.SanityMode !== planId) {
+    if (version !== planLoadVersion[kind] || currentMode() !== planId) {
       return
     }
     const planData = response.data?.[planId] as unknown as Record<string, unknown> | undefined
     const planIndex = response.index?.find(item => item.uid === planId)
     if (planIndex?.type !== PLAN_CONFIG_TYPES.MAA_END || !planData) {
-      planModeConfig.value = null
+      config.value = null
       return
     }
     const dayKey = MAAEND_PLAN_WEEKDAY_KEYS[(getWeekdayInTimezone(4) + 6) % 7]
     const info = planData.Info as Record<string, unknown> | undefined
-    const dayConfig = info?.Mode === 'Weekly' ? planData[dayKey] : planData.ALL
-    planModeConfig.value = maaEndPlanKeyToSanityConfig(dayConfig)
+    let group = info?.Mode === 'Weekly' ? dayKey : 'ALL'
+    if (info?.Mode === 'Rotate') {
+      const ordinal = Math.floor((Date.now() + 4 * 3600_000) / 86_400_000) + 719163
+      group = `Day${(ordinal % clampRotateDays(info.RotateDays)) + 1}`
+    }
+    const dayConfig = planData[group]
+    config.value = maaEndPlanKeyToSanityConfig(dayConfig)
   } catch (error) {
-    if (version !== sanityPlanLoadVersion) {
+    if (version !== planLoadVersion[kind]) {
       return
     }
-    planModeConfig.value = null
+    config.value = null
     logger.error(`加载理智任务计划失败: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
@@ -160,7 +208,14 @@ const loadSanityPlan = async (planId: string) => {
 watch(
   [() => formData.Info.SanityMode, () => formData.Info.SanityStrategy],
   ([value]) => {
-    void loadSanityPlan(value)
+    void loadSanityPlan(value, 'protocol')
+  },
+  { immediate: true }
+)
+watch(
+  () => formData.Info.AutoEssenceMode,
+  value => {
+    void loadSanityPlan(value, 'essence')
   },
   { immediate: true }
 )
@@ -168,7 +223,8 @@ onMounted(() => {
   void loadSanityModeOptions()
 })
 onUnmounted(() => {
-  sanityPlanLoadVersion++
+  planLoadVersion.protocol++
+  planLoadVersion.essence++
 })
 </script>
 
