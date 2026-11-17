@@ -23,6 +23,14 @@ name: 构建并发布应用程序
 
 on:
   workflow_dispatch:
+    inputs:
+      datacenter_upload_mode:
+        description: 自建源上传方式
+        type: choice
+        default: r2
+        options:
+          - r2
+          - tus
 
 concurrency:
   group: build-app
@@ -81,6 +89,9 @@ jobs:
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
           SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          HAS_DATACENTER_PUBLIC_KEY: ${{ vars.DATACENTER_RELEASE_TOOL_PUBLIC_KEY != '' }}
+          HAS_DATACENTER_R2_CONFIG: ${{ vars.R2_ENDPOINT != '' && vars.R2_BUCKET != '' && secrets.R2_ACCESS_KEY_ID != '' && secrets.R2_SECRET_ACCESS_KEY != '' }}
+          DATACENTER_UPLOAD_MODE: ${{ inputs.datacenter_upload_mode }}
           VERSION_TAG: ${{ steps.generate_version_info.outputs.version_tag }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:SENTRY_AUTH_TOKEN)) {
@@ -94,6 +105,12 @@ jobs:
           }
           if ([string]::IsNullOrWhiteSpace($env:SIGNPATH_API_TOKEN)) {
             throw '缺少 GitHub Actions secret: SIGNPATH_API_TOKEN'
+          }
+          if ($env:HAS_DATACENTER_PUBLIC_KEY -ne 'true') {
+            throw '缺少 GitHub Actions variable: DATACENTER_RELEASE_TOOL_PUBLIC_KEY'
+          }
+          if ($env:DATACENTER_UPLOAD_MODE -eq 'r2' -and $env:HAS_DATACENTER_R2_CONFIG -ne 'true') {
+            throw 'R2 模式需要 variables R2_ENDPOINT、R2_BUCKET 和 secrets R2_ACCESS_KEY_ID、R2_SECRET_ACCESS_KEY'
           }
           python scripts/changelog.py guard
           if ($LASTEXITCODE -ne 0) { throw "发布守门未通过" }
@@ -448,7 +465,6 @@ jobs:
 
     steps:
       - name: 设置上传用 Python
-        id: upload_python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
@@ -459,27 +475,95 @@ jobs:
           name: build-artifacts
           path: .
 
+      - name: 下载并验签自建源发布客户端
+        shell: pwsh
+        env:
+          RELEASE_TOOL_PUBLIC_KEY: ${{ vars.DATACENTER_RELEASE_TOOL_PUBLIC_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:RELEASE_TOOL_PUBLIC_KEY)) {
+            throw '缺少 GitHub Actions variable: DATACENTER_RELEASE_TOOL_PUBLIC_KEY'
+          }
+          $toolsDir = Join-Path $env:RUNNER_TEMP 'datacenter-release-tool'
+          New-Item -ItemType Directory -Path $toolsDir | Out-Null
+          $baseUrl = 'https://data2.auto-mas.top/api/v1/tools'
+          $request = @{
+            UserAgent = 'AUTO-MAS-Release/1.0 (+https://github.com/AUTO-MAS-Project/AUTO-MAS)'
+            MaximumRedirection = 0
+            TimeoutSec = 60
+          }
+          $manifest = Join-Path $toolsDir 'release-manifest.sha256'
+          $signature = Join-Path $toolsDir 'release-manifest.sig'
+          $keyPath = Join-Path $toolsDir 'release-tools-public.pem'
+          Set-Content -LiteralPath $keyPath -Value $env:RELEASE_TOOL_PUBLIC_KEY -Encoding ascii
+          Invoke-WebRequest @request -Uri "$baseUrl/release-manifest.sha256" -OutFile $manifest
+          Invoke-WebRequest @request -Uri "$baseUrl/release-manifest.sig" -OutFile $signature
+          openssl dgst -sha256 -verify $keyPath -signature $signature $manifest
+          if ($LASTEXITCODE -ne 0) {
+            throw '自建源发布客户端清单验签失败'
+          }
+
+          $allowed = @('release_file_update.py', 'file_update.py', 'file_update.requirements.txt')
+          $hashes = @{}
+          foreach ($line in Get-Content -LiteralPath $manifest) {
+            if ($line -cnotmatch '^(?<sha>[0-9a-f]{64})  (?<name>[a-z_.]+)$') {
+              throw '自建源发布客户端清单格式无效'
+            }
+            $name = $Matches['name']
+            if ($allowed -cnotcontains $name -or $hashes.ContainsKey($name)) {
+              throw '自建源发布客户端清单包含未知或重复文件'
+            }
+            $hashes[$name] = $Matches['sha']
+          }
+          foreach ($name in $allowed) {
+            if (-not $hashes.ContainsKey($name)) {
+              throw "自建源发布客户端清单缺少 $name"
+            }
+            $path = Join-Path $toolsDir $name
+            Invoke-WebRequest @request -Uri "$baseUrl/$name" -OutFile $path
+            if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ine $hashes[$name]) {
+              throw "自建源发布客户端文件校验失败：$name"
+            }
+          }
+
+      - name: 安装 tus 上传依赖
+        if: inputs.datacenter_upload_mode == 'tus'
+        shell: pwsh
+        run: |
+          $toolsDir = Join-Path $env:RUNNER_TEMP 'datacenter-release-tool'
+          python -m venv (Join-Path $toolsDir 'venv')
+          if ($LASTEXITCODE -ne 0) { throw '创建 tus 环境失败' }
+          $tusPython = Join-Path $toolsDir 'venv/bin/python'
+          & $tusPython -m pip install --require-hashes --only-binary :all: -r (Join-Path $toolsDir 'file_update.requirements.txt')
+          if ($LASTEXITCODE -ne 0) { throw '安装 tus 依赖失败' }
+
       - name: 推送自建源更新
+        shell: pwsh
         env:
           DATACENTER_STABLE_FILE_ID: ${{ vars.DATACENTER_RELEASE_STABLE_FILE_ID }}
           DATACENTER_BETA_FILE_ID: ${{ vars.DATACENTER_RELEASE_BETA_FILE_ID }}
           VERSION_TAG: ${{ needs.build.outputs.version_tag }}
           IS_PRERELEASE: ${{ needs.build.outputs.is_prerelease }}
-          FILE_UPDATE_SHA256: ${{ vars.DATACENTER_FILE_UPDATE_SHA256 }}
-          FILE_UPDATE_PYTHON: ${{ steps.upload_python.outputs.python-path }}
+          DATACENTER_UPLOAD_MODE: ${{ inputs.datacenter_upload_mode }}
+          AUTOMAS_TOKEN: ${{ secrets.DATACENTER_ACCESS_KEY }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
         run: |
-          set -euo pipefail
-          PKG="AUTO-MAS-Setup-${VERSION_TAG}-x64.zip"
+          $package = "AUTO-MAS-Setup-${env:VERSION_TAG}-x64.zip"
+          $targets = @('--file-id', $env:DATACENTER_BETA_FILE_ID)
+          if ($env:IS_PRERELEASE -ne 'true') {
+            $targets = @('--file-id', $env:DATACENTER_STABLE_FILE_ID) + $targets
+          }
 
-          if [ "$IS_PRERELEASE" = "true" ]; then
-            TARGETS=(--file-id "$DATACENTER_BETA_FILE_ID")
-          else
-            TARGETS=(--file-id "$DATACENTER_STABLE_FILE_ID" --file-id "$DATACENTER_BETA_FILE_ID")
-          fi
-
-          curl -fsSL --proto '=https' --tlsv1.2 -o file_update.sh https://data.auto-mas.top/api/v1/tools/file_update.sh
-          echo "${FILE_UPDATE_SHA256:?vars.DATACENTER_FILE_UPDATE_SHA256 is not set}  file_update.sh" | shasum -a 256 -c -
-          AUTOMAS_TOKEN="${{ secrets.DATACENTER_ACCESS_KEY }}" bash file_update.sh "$PKG" "${TARGETS[@]}" --change-note "$VERSION_TAG"
+          $toolsDir = Join-Path $env:RUNNER_TEMP 'datacenter-release-tool'
+          $python = if ($env:DATACENTER_UPLOAD_MODE -eq 'tus') {
+            Join-Path $toolsDir 'venv/bin/python'
+          } else {
+            'python'
+          }
+          & $python (Join-Path $toolsDir 'release_file_update.py') $package --mode $env:DATACENTER_UPLOAD_MODE @targets --change-note $env:VERSION_TAG
+          if ($LASTEXITCODE -ne 0) { throw '推送自建源更新失败' }
 
       - name: 上传安装包
         uses: MirrorChyan/uploading-action@ea9a0f6f516fafb6b0a3046a1fe4b0dccb29eca8 # v1

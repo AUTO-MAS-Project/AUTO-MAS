@@ -25,6 +25,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, ClassVar
 
+from packaging.utils import canonicalize_name
+from packaging.version import InvalidVersion, Version
 from pydantic import Field, PrivateAttr, field_validator
 
 from app.config import (
@@ -313,6 +315,14 @@ class PluginMeta(PluginCommandEntry):
         )
         description: Annotated[Virtual[str], ui(visibility=UiVisibility.DISABLE)] = None
         tags: Annotated[Virtual[list[str]], ui(visibility=UiVisibility.DISABLE)] = None
+        # 从当前注册记录投影安装版本，随安装结果回读，不写入市场目录。
+        installed_version: Annotated[
+            Virtual[str | None], ui(visibility=UiVisibility.DISABLE)
+        ] = None
+        # 同一市场发行包存在更高版本时允许升级，操作权限另由触发器 UI 属性声明。
+        update_available: Annotated[
+            Virtual[bool], ui(visibility=UiVisibility.DISABLE)
+        ] = None
         install: Trigger = Field(default=False, description="安装（写 True 开闸）")
 
     info: Info = Field(default_factory=Info, description="目录项")
@@ -373,28 +383,76 @@ class PluginMeta(PluginCommandEntry):
         """从市场条目的多语言标签中选择当前请求对应的展示列表。"""
         return self._pick_tags(self.info.tags_i18n)
 
-    @ui_visibility("info.install")
-    def _vis_install(self) -> UiVisibility:
-        """注册表已有同插件名 / 同包名条目时安装按钮不可用。"""
+    def _installed_record(self) -> PluginRecord | None:
+        """按插件或发行身份查找当前实现，已确认移除的记录按待安装处理。"""
         from app.core.config import Config
 
         info = self.effective.info
-        plugin_id = (info.plugin_name or "").strip()
-        if plugin_id and Config.plugin_registry.by_name(plugin_id) is not None:
+        record = Config.plugin_registry.by_name(info.plugin_name)
+        if record is None:
+            package = canonicalize_name(info.package_name)
+            record = next(
+                (
+                    item
+                    for item in Config.plugin_registry.values()
+                    if canonicalize_name(item.info.package_name) == package
+                ),
+                None,
+            )
+        if (
+            record is not None
+            and record.info.code_drift == PluginCodeDrift.PACKAGE_REMOVED
+        ):
+            return None
+        return record
+
+    @virtual_field("info.installed_version")
+    def compute_installed_version(self) -> str | None:
+        """返回当前实现的版本，供市场与插件中心共同展示升级前后的版本。"""
+        record = self._installed_record()
+        return record.info.version if record is not None else None
+
+    @virtual_field("info.update_available")
+    def compute_update_available(self) -> bool:
+        """按 PEP 440 比较同一市场插件的版本，核心与本地实现由各自源码维护。"""
+        record = self._installed_record()
+        if record is None:
+            return False
+        info, installed = self.effective.info, record.effective.info
+        if (
+            installed.is_core
+            or installed.is_local
+            or installed.source != "installed"
+            or info.plugin_name != installed.plugin_name
+            or canonicalize_name(info.package_name)
+            != canonicalize_name(installed.package_name)
+        ):
+            return False
+        try:
+            return Version(info.version) > Version(installed.version)
+        except InvalidVersion:
+            return False
+
+    @ui_visibility("info.install")
+    def _vis_install(self) -> UiVisibility:
+        """允许新装与更新版本安装，生命周期处理中保持安装触发器禁用。"""
+        record = self._installed_record()
+        if record is None:
+            return UiVisibility.SHOW
+        if record._lifecycle_busy():
             return UiVisibility.DISABLE
-        package = (info.package_name or "").strip()
-        if package:
-            pkg_key = package.replace("_", "-").lower()
-            for record in Config.plugin_registry.values():
-                if (record.info.package_name or "").replace(
-                    "_", "-"
-                ).lower() == pkg_key:
-                    return UiVisibility.DISABLE
-        return UiVisibility.SHOW
+        return (
+            UiVisibility.SHOW
+            if self.compute_update_available()
+            else UiVisibility.DISABLE
+        )
 
     @trigger_field("info.install", cancellable=False)
     async def on_install(self) -> None:
-        """将市场条目的安装触发器交给宿主插件管理器，执行依赖预检与安装加载。"""
+        """执行前复查市场条目的安装权限，再复用预检、安装及升级加载流程。"""
         from app.core.plugin import Plugin
+        from app.plugin.errors import PluginPrecheckError
 
+        if self._vis_install() != UiVisibility.SHOW:
+            raise PluginPrecheckError("当前插件不可安装或升级，请刷新市场后重试")
         await Plugin.install(self)

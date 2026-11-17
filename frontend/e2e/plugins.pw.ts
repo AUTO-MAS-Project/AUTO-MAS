@@ -1,6 +1,111 @@
 import { expect, test } from './fixtures'
 
 test.describe('@plugins plugin foundation', () => {
+  test('upgrades market plugins from both pages and preserves retry after rejection', async ({
+    app,
+    page,
+  }) => {
+    // 两页复用市场触发器，防止误用注册 UID，并检查后台失败后仍可重试。
+    const recordId = '47b17e9c-e285-4ef7-9002-676643210881'
+    const metaId = '47b17e9c-e285-4ef7-9002-676643210882'
+    const operationId = '47b17e9c-e285-4ef7-9002-676643210883'
+    let installed = '1.0'
+    let reject = true
+    const info = {
+      plugin_name: 'upgrade_fixture',
+      package_name: 'auto-mas-upgrade-fixture',
+      display_name: 'Upgrade fixture',
+    }
+    for (const resource of ['plugin_registry', 'plugin_catalog']) {
+      await page.route(`**/api/${resource}/get?*`, route => {
+        const market = resource === 'plugin_catalog'
+        const uid = market ? metaId : recordId
+        return route.fulfill({
+          json: {
+            code: 200,
+            order: [{ uid, type: market ? 'PluginMeta' : 'PluginRecord' }],
+            data: {
+              [uid]: {
+                uid,
+                info: market
+                  ? {
+                      ...info,
+                      version: '2.0',
+                      installed_version: installed,
+                      update_available: installed !== '2.0',
+                    }
+                  : {
+                      ...info,
+                      version: installed,
+                      enabled: true,
+                      state: 'enabled',
+                      source: 'installed',
+                    },
+                disableImpact: [],
+                ui: {
+                  hints: {
+                    info: [
+                      {
+                        field: 'install',
+                        component: 'button',
+                        editable: market && installed !== '2.0',
+                      },
+                    ],
+                  },
+                  tables: [],
+                },
+              },
+            },
+          },
+        })
+      })
+    }
+    await page.route('**/api/operations/start', route => {
+      expect(route.request().postDataJSON()).toEqual({
+        configUid: metaId,
+        group: 'info',
+        field: 'install',
+        value: true,
+      })
+      return route.fulfill({
+        json: { code: 200, data: { operationId, configUid: metaId, state: 'queued' } },
+      })
+    })
+    await page.route('**/api/operations/get', route => {
+      if (!reject) installed = '2.0'
+      return route.fulfill({
+        json: {
+          code: 200,
+          data: {
+            operationId,
+            configUid: metaId,
+            state: reject ? 'failed' : 'succeeded',
+            errorCode: reject ? 'PluginPrecheckError' : null,
+          },
+        },
+      })
+    })
+    for (const path of ['/plugins', '/plugins/market']) {
+      installed = '1.0'
+      reject = true
+      await app.goto(path)
+      const upgrade = page.getByRole('button', { name: /Upgrade$/ })
+      await expect(upgrade).toBeEnabled()
+      await upgrade.click()
+      await expect(page.locator('.ant-message')).toContainText('Action failed')
+      await expect(upgrade).toBeEnabled()
+      reject = false
+      await upgrade.click()
+      await expect(upgrade).toHaveCount(0)
+      if (path === '/plugins/market')
+        await expect(page.getByRole('button', { name: /Installed$/ })).toBeDisabled()
+      else
+        await expect(page.getByRole('row').filter({ hasText: 'Upgrade fixture' })).toContainText(
+          '2.0'
+        )
+    }
+  })
+
   test('shows complete metadata and opens documentation from market and installed details', async ({
     app,
     page,
