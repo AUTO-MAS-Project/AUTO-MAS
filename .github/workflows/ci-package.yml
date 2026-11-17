@@ -1,6 +1,7 @@
 name: CI 构建产物
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - dev
