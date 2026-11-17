@@ -1847,7 +1847,10 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             )
         await self._push_dispatch_log("正在由 MAS 启动游戏...")
         await self.game_process_manager.open_process(
-            self.game_exe_path, *split_args(self.script_config.Game.Arguments)
+            self.game_exe_path,
+            *split_args(self.script_config.Game.Arguments),
+            breakaway=True,
+            owned=False,
         )
         wait_time = max(int(self.script_config.Game.WaitTime or 0), 0)
         if wait_time:
