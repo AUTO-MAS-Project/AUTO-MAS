@@ -113,6 +113,18 @@ export const maafwDisplayedTaskWeekdays = (
 ): number[] =>
   snapshot.taskChecked[taskId] === false ? [] : maafwTaskWeekdays(snapshot.taskSchedules, taskId)
 
+/**
+ * 队列行上的运行日摘要：绿灯且不是每天跑时返回那几天（升序 ISO 星期），否则 null。
+ * 红灯本身就是「不跑」，存着的运行日这时不显示。
+ */
+export const maafwRestrictedTaskWeekdays = (
+  snapshot: Pick<MaaFWTaskSnapshot, 'taskChecked' | 'taskSchedules'>,
+  taskId: string
+): number[] | null =>
+  snapshot.taskChecked[taskId] === false
+    ? null
+    : normalizeMaaFWWeekdays(snapshot.taskSchedules?.[taskId]?.weekdays)
+
 /** 「全选」的样子：七天 → 勾上；一到六天 → 半选；一天都没有（红灯）→ 不勾 */
 export const maafwWeekdaysSelectAllState = (days: readonly number[]): 'all' | 'partial' | 'none' =>
   days.length === MAAFW_WEEKDAYS.length ? 'all' : days.length > 0 ? 'partial' : 'none'
