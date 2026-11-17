@@ -418,7 +418,17 @@ export class InitializationService {
       status: 'started',
     })
 
-    const backendResult = await this.backendService.startBackend()
+    const backendResult = await this.backendService.startBackend({
+      onProgress: message =>
+        onProgress?.({
+          stage: 'backend',
+          stageIndex: INITIALIZATION_STAGE_INDEX.backend,
+          totalStages,
+          progress: 0,
+          message,
+          status: 'started',
+        }),
+    })
     if (!backendResult.success) {
       onProgress?.({
         stage: 'backend',

@@ -64,17 +64,17 @@ list/
 /plugins/*
 !/plugins/auto_mas_core/
 !/plugins/auto_mas_core/**
-!/plugins/okww_adapter/
-!/plugins/okww_adapter/**
-!/plugins/ok_script_adapter/
-!/plugins/ok_script_adapter/**
 /plugins/**/__pycache__/
 /plugins/**/*.py[oc]
 /plugins/**/*.egg-info/
+/plugins/*/build/
+/plugins/*/dist/
+/plugins/**/.pytest_cache/
 /app/core/plugins/_generated/
 
 # Test artifacts
 /test-results/
+/.test-plugins/
 
 # Local dev scripts & logs (本地测试用例，与代码逻辑无关)
 /dev.bat

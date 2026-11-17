@@ -81,6 +81,33 @@ class FluxdownRecord(BaseModel):
 class GlobalConfig(DomainEntry):
     "全局配置"
 
+    class PluginHostFields(ConfigGroup):
+        max_operations: int = Field(default=32, ge=1, description="插件命令并发上限")
+
+    class DownloadFields(ConfigGroup):
+        max_running: int = Field(default=4, ge=1, description="统一下载并发上限")
+        cache_mb: int = Field(
+            default=1024,
+            ge=256,
+            le=9999,
+            description="下载缓存容量上限（MB），超限时仅回收零引用文件",
+        )
+        attempts: int = Field(default=3, ge=1, description="网络失败最大尝试次数")
+        retry_delay: float = Field(default=1, ge=0, description="下载重试退避初始秒数")
+
+    class UvFields(ConfigGroup):
+        preferred_mirror: Annotated[str, ui(visibility=UiVisibility.HIDE)] = Field(
+            default="", description="插件安装最近成功的 PyPI 镜像"
+        )
+
+    plugin: PluginHostFields = Field(
+        default_factory=PluginHostFields, description="插件宿主"
+    )
+    download: DownloadFields = Field(
+        default_factory=DownloadFields, description="下载管理"
+    )
+    uv: UvFields = Field(default_factory=UvFields, description="插件安装环境")
+
     class DataFields(ConfigGroup):
         IfShowNotice: bool = Field(
             default_factory=lambda: True, description="是否显示公告"
@@ -101,15 +128,6 @@ class GlobalConfig(DomainEntry):
                     "2000-01-01 00:00:00"
                 ).replace(tzinfo=local_timezone()),
                 description="上次公告更新时间",
-            )
-        )
-
-        LastStageUpdated: Annotated[datetime, tz(local_timezone), ui(format="hms")] = (
-            Field(
-                default_factory=lambda: datetime.fromisoformat(
-                    "2000-01-01 00:00:00"
-                ).replace(tzinfo=local_timezone()),
-                description="上次关卡更新时间",
             )
         )
 
@@ -140,14 +158,6 @@ class GlobalConfig(DomainEntry):
         ShareAppearanceUploads: JsonDictString = Field(
             default_factory=lambda: "{}",
             description="分享站外观上传记录：{用户名: {外观 ID: {fileId, fileKey, displayName, updatedAt}}}",
-        )
-
-        StageData: Annotated[JsonDictString, legacy(group="Data", name="Stage")] = (
-            Field(default_factory=lambda: "{ }", description="关卡信息数据")
-        )
-
-        StageETag: str = Field(
-            default_factory=lambda: "", description="关卡数据的版本标识符"
         )
 
     Data: Annotated[DataFields, ui(visibility=UiVisibility.HIDE)] = Field(

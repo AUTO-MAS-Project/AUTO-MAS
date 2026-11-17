@@ -26,7 +26,6 @@ from app.core.script_update import (
     ScriptUpdateRequest,
     auto_recover_script_install,
     run_managed_script_install,
-    run_script_update,
     run_script_update_with_safe_fallback,
 )
 from app.core.script_update_recovery import DownloadRetryFailed
@@ -37,6 +36,7 @@ from app.models.notification.report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.services import script_install
+from app.services.script_install_backup import ManagedInstallBackup
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import (
@@ -49,8 +49,6 @@ from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
-from .tools.managed_recovery import SRCInstallAdapter
-from app.services.script_install_backup import ManagedInstallBackup
 from .tools import (
     SrcConfigSnapshotState,
     SrcProcessState,
@@ -70,6 +68,7 @@ from .tools import (
     write_src_config_snapshot_state,
     write_src_process_state,
 )
+from .tools.managed_recovery import SRCInstallAdapter
 
 logger = get_logger("SRC 调度器")
 

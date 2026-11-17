@@ -26,7 +26,7 @@
 import asyncio
 import shutil
 import uuid
-from contextlib import ExitStack, suppress
+from contextlib import ExitStack
 from datetime import datetime
 
 import app.core.notify.report as _node_report
@@ -46,6 +46,7 @@ from app.models.notification.report import TaskResultReport, UserReportText
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem
 from app.services import script_install
+from app.services.script_install_backup import ManagedInstallBackup
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
 from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, log_box, update_files
@@ -56,12 +57,11 @@ from .tools import program_update
 from .tools.managed_recovery import (
     BAAHInstallAdapter,
     acknowledge_stale_transaction,
-    inspect_stale_transaction,
-    snapshot_original_receipts,
     cleanup_original_receipts,
+    inspect_stale_transaction,
     receipt_backup_path,
+    snapshot_original_receipts,
 )
-from app.services.script_install_backup import ManagedInstallBackup
 
 logger = get_logger("BAAH 调度器")
 

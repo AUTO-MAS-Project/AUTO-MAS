@@ -58,9 +58,43 @@ const windowStateBridge = {
   onWindowMaximizedChange: () => () => undefined,
 } satisfies Pick<ElectronAPI, 'windowIsMaximized' | 'onWindowMaximizedChange'>
 
+const desktopUpdateUnsupported = async (): Promise<never> => {
+  // 浏览器调试环境缺少桌面安装能力时，明确拒绝应用更新操作并给出原因。
+  throw new Error('应用更新需要桌面应用，请在 Electron 中操作')
+}
+const appUpdateBridge = {
+  appUpdateCheck: desktopUpdateUnsupported,
+  appUpdateStart: desktopUpdateUnsupported,
+  appUpdateInstall: desktopUpdateUnsupported,
+  appUpdateCancel: desktopUpdateUnsupported,
+  appUpdateSwitch: desktopUpdateUnsupported,
+  appUpdateStatus:
+    async () => /* 为浏览器调试提供空闲更新快照，让界面可读取状态而不执行桌面业务。 */ ({
+      status: 'idle' as const,
+      version: null,
+      source: null,
+      downloaded_size: 0,
+      file_size: 0,
+      speed: 0,
+      file: null,
+      message: null,
+    }),
+  onAppUpdate: () => () => undefined,
+} satisfies Pick<
+  ElectronAPI,
+  | 'appUpdateCheck'
+  | 'appUpdateStart'
+  | 'appUpdateInstall'
+  | 'appUpdateCancel'
+  | 'appUpdateSwitch'
+  | 'appUpdateStatus'
+  | 'onAppUpdate'
+>
+
 const browserDevElectronAPI = {
   ...desktopMascotTaskBridge,
   ...windowStateBridge,
+  ...appUpdateBridge,
   getLogger,
   getApiEndpoint: async (key: string) =>
     key === 'websocket' ? BACKEND_WS_ENDPOINT : BACKEND_HTTP_ENDPOINT,

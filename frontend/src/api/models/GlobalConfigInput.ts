@@ -3,14 +3,24 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { GlobalConfig_DisplayInput } from './GlobalConfig_DisplayInput';
+import type { GlobalConfig_downloadInput } from './GlobalConfig_downloadInput';
 import type { GlobalConfig_FunctionInput } from './GlobalConfig_FunctionInput';
 import type { GlobalConfig_NotifyInput } from './GlobalConfig_NotifyInput';
+import type { GlobalConfig_pluginInput } from './GlobalConfig_pluginInput';
 import type { GlobalConfig_ReplayInput } from './GlobalConfig_ReplayInput';
 import type { GlobalConfig_StartInput } from './GlobalConfig_StartInput';
 import type { GlobalConfig_UIInput } from './GlobalConfig_UIInput';
 import type { GlobalConfig_UpdateInput } from './GlobalConfig_UpdateInput';
 import type { GlobalConfig_VoiceInput } from './GlobalConfig_VoiceInput';
 export type GlobalConfigInput = {
+    /**
+     * 插件宿主
+     */
+    plugin?: (GlobalConfig_pluginInput | null);
+    /**
+     * 下载管理
+     */
+    download?: (GlobalConfig_downloadInput | null);
     Display?: (GlobalConfig_DisplayInput | null);
     Function?: (GlobalConfig_FunctionInput | null);
     Notify?: (GlobalConfig_NotifyInput | null);

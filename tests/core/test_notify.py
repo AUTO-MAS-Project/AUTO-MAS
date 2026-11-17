@@ -3,6 +3,8 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 import app.core.notify.rendering as _notification_rendering
 from app.core import Config
 from app.core.background_tasks import BackgroundTaskRegistry
@@ -16,6 +18,7 @@ from app.models.notification.report import TaskReportPolicy
 from app.models.task import TaskItem
 
 _UNSET = object()
+PAYLOAD = NotifyPayload(title="标题", text="正文", html="<p>正文</p>")
 
 
 class _Webhook:
@@ -316,3 +319,77 @@ def test_task_report_retry_omits_disabled_hooks_and_repeats_only_failed_summary(
     assert "summary-account" in sent["send_mail"]["content"]
     assert "summary-account" not in sent["ServerChanPush"]["content"]
     assert "summary-account" not in sent["WebhookPush"]["content"]
+
+
+@pytest.mark.parametrize("kind", ["plugin", "legacy"])
+def test_direct_notify_supports_user_channels_and_subscription_policy(kind):
+    """验证直接使用宿主通知服务仍遵守用户渠道与统计订阅设置。"""
+    from maa_adapter.config.user import MaaUserConfig
+
+    from app.models.config import UserEntry
+    from app.models.config.queue import Webhook
+
+    async def run():
+        """执行当前测试配置下的通知分发并保留结果，供渠道和订阅策略断言使用。"""
+        values = {
+            "Enabled": True,
+            "IfSendStatistic": True,
+            "IfSendSixStar": True,
+            "IfSendMail": True,
+            "ToAddress": "account@example.test",
+            "IfServerChan": True,
+            "ServerChanKey": "test-key",
+        }
+        if kind == "plugin":
+            user = UserEntry.build(
+                notify={
+                    "enabled": True,
+                    "if_send_statistic": True,
+                    "if_send_six_star": True,
+                    "if_send_mail": True,
+                    "to_address": "account@example.test",
+                    "if_server_chan": True,
+                    "server_chan_key": "test-key",
+                }
+            )
+            hooks = user.custom_webhooks
+        else:
+            user = MaaUserConfig.build(Notify=values)
+            hooks = user.Notify_CustomWebhooks
+        await user.activate()
+        hooks.add(
+            Webhook,
+            payload={
+                "Info": {"Enabled": True, "Name": "测试群"},
+                "Data": {
+                    "Url": "https://example.test/webhook",
+                    "Template": "{title}: {content}",
+                },
+            },
+        )
+        await hooks.commit()
+        transport = _Notify()
+        with _service(
+            _Config({"IfSendStatistic": False, "IfSendSixStar": False}),
+            notifier=transport,
+        ) as notify:
+            result = await notify.send_user(PAYLOAD, user)
+            assert result.failed == ()
+            assert set(result.succeeded) == {
+                "用户邮件",
+                "用户 ServerChan",
+                "用户 Webhook 测试群",
+            }
+            assert transport.kwargs[0]["to_address"] == "account@example.test"
+            statistics = await notify.send_statistics(PAYLOAD, user)
+            assert statistics.succeeded == result.succeeded
+            assert len(notify.recruitment_targets(user)) == 1
+            if kind == "plugin":
+                user.notify.enabled = False
+            else:
+                user.Notify.Enabled = False
+            await user.commit()
+            assert (await notify.send_statistics(PAYLOAD, user)).attempted == 0
+            assert notify.recruitment_targets(user) == []
+
+    _run(run())

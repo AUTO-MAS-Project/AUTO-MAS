@@ -15,7 +15,7 @@ test.describe('@maa-plan-display', () => {
     app,
     page,
   }) => {
-    const plan = await post(page.request, '/api/plan/add', { type: 'MaaPlan' })
+    const plan = await post(page.request, '/api/plan/add', { type: 'MaaPlanConfig' })
     await post(page.request, '/api/plan/update', {
       planId: plan.planId,
       data: { Info: { Name: 'Plan display test', Mode: 'ALL' }, ALL: { Stage: '1-7' } },
@@ -44,7 +44,7 @@ test.describe('@maa-plan-display', () => {
       await pendingPlan
       await route.continue()
     })
-    await page.route('**/api/info/combox/plan', async route => {
+    await page.route('**/api/plugin/options/plans*', async route => {
       await pending
       await route.continue()
     })
@@ -65,7 +65,7 @@ test.describe('@maa-plan-display', () => {
     await expect(row.locator('.plan-value').filter({ hasText: '1-7' })).toBeVisible()
     await app.evidence('maa-plan-display-name')
     release()
-    await page.unroute('**/api/info/combox/plan')
+    await page.unroute('**/api/plugin/options/plans*')
     await page.unroute('**/api/plan/get')
     await page.reload()
     await expect(row.locator('.row-summary')).toContainText('Plan display test')
@@ -75,7 +75,7 @@ test.describe('@maa-plan-display', () => {
       if (route.request().postDataJSON()?.planId !== plan.planId) return route.continue()
       await route.fulfill({ status: 200, json: { code: 500, index: [], data: {} } })
     })
-    await page.route('**/api/info/combox/plan', route =>
+    await page.route('**/api/plugin/options/plans*', route =>
       route.fulfill({ status: 200, json: { code: 500, data: [] } })
     )
     await page.reload()
