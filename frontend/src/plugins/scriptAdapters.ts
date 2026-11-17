@@ -1,10 +1,11 @@
 import type { Component } from 'vue'
 import type { RouteRecordRaw } from 'vue-router'
 import type { ScriptMetadata } from '@/utils/scriptMetadata'
+import maa from '@/views/maa/entry'
 
 type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
 
-/** 编译时收集插件自带的编辑入口；业务组件、计划表和专项路由由所属插件维护。 */
+/** 暂随主程序编译的专项页面声明，动态页面上线后移交对应插件。 */
 export interface ScriptFrontendAdapter {
   metadata: ScriptMetadata
   type: string
@@ -21,11 +22,7 @@ export interface ScriptFrontendAdapter {
   }
 }
 
-const modules = import.meta.glob<{ default: ScriptFrontendAdapter }>(
-  '../../../plugins/*/frontend/entry.ts',
-  { eager: true }
-)
-const adapters = Object.values(modules).map(module => module.default)
+const adapters: ScriptFrontendAdapter[] = [maa]
 
 export const SCRIPT_PLUGIN_EDITORS = Object.fromEntries(
   adapters.map(adapter => [adapter.type, adapter.editors])

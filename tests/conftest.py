@@ -3,11 +3,10 @@
 import sys
 from pathlib import Path
 
-# 插件作为独立源码包测试，不重新向宿主 models/task 添加别名。
-for package in ("auto_mas_core", "maa_adapter"):
-    sys.path.insert(
-        0, str(Path(__file__).resolve().parents[1] / "plugins" / package / "src")
-    )
+# SDK 跟随当前宿主源码，专项回归消费已发布发行包，准备过程不污染运行期插件目录。
+root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(root / "plugins/auto_mas_core/src"))
+sys.path.insert(0, str(root / ".test-plugins"))
 
 import pytest  # noqa: E402 - 插件源码路径须在加载测试依赖前登记。
 

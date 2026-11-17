@@ -11,7 +11,7 @@
     "types": ["vite/client"],
     "paths": {
       "@/*": ["./src/*"],
-      "@maa/*": ["../plugins/maa_adapter/frontend/*"],
+      "@maa/*": ["./src/views/maa/*"],
       "vue": ["./node_modules/vue"],
       "vue-router": ["./node_modules/vue-router"],
       "ant-design-vue": ["./node_modules/ant-design-vue"],
@@ -28,13 +28,5 @@
     },
     "noEmit": true
   },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.d.ts",
-    "src/**/*.tsx",
-    "src/**/*.vue",
-    "vite.config.ts",
-    "../plugins/*/frontend/**/*.ts",
-    "../plugins/*/frontend/**/*.vue"
-  ]
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue", "vite.config.ts"]
 }

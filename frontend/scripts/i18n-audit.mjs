@@ -35,6 +35,18 @@ const PLUGIN_CATALOGS = PLUGIN_DIRS.flatMap(directory =>
       prefix: `plugins.${entry.name}`,
     }))
 )
+// 主仓集成审计读取锁定发行包，准备入口与后端回归一致。
+const TEST_PLUGINS_DIR = join(FRONTEND, '..', '.test-plugins')
+if (!existsSync(join(TEST_PLUGINS_DIR, 'maa_adapter', 'i18n'))) {
+  throw new Error('请先运行 uv run --no-sync python scripts/prepare_test_plugins.py')
+}
+const TEST_PLUGIN_SOURCES = readdirSync(TEST_PLUGINS_DIR, { withFileTypes: true })
+  .filter(entry => entry.isDirectory() && existsSync(join(TEST_PLUGINS_DIR, entry.name, 'i18n')))
+  .map(entry => join(TEST_PLUGINS_DIR, entry.name))
+for (const directory of TEST_PLUGIN_SOURCES) {
+  const name = directory.split(/[\\/]/).at(-1)
+  PLUGIN_CATALOGS.push({ directory: join(directory, 'i18n'), prefix: `plugins.${name}` })
+}
 const SOURCE_LOCALE = 'zh-CN'
 const TARGET_LOCALES = ['en-US', 'ja-JP']
 
@@ -178,6 +190,7 @@ const audit = async () => {
     ...files,
     ...walkBackendFiles(BACKEND_DIR),
     ...PLUGIN_DIRS.flatMap(directory => walkBackendFiles(join(directory, 'src'))),
+    ...TEST_PLUGIN_SOURCES.flatMap(directory => walkBackendFiles(directory)),
   ]
   const literalKeys = new Set()
   // 发行元数据按固定字段动态读取，不要求每个插件伪造 t() 调用。

@@ -57,10 +57,19 @@ def test_plugin_upgrade_preserves_documents_and_backup(tmp_path, legacy):
 
 
 @pytest.mark.parametrize(
-    ("failure", "legacy"),
-    [("none", False), ("install", False), ("flush", False), ("none", True)],
+    ("failure", "legacy", "current"),
+    [
+        ("none", False, False),
+        ("install", False, False),
+        ("flush", False, False),
+        ("none", True, False),
+        ("none", False, True),
+        ("install", False, True),
+    ],
 )
-def test_startup_installs_before_loading_and_commits_upgrade(tmp_path, failure, legacy):
+def test_startup_installs_before_loading_and_commits_upgrade(
+    tmp_path, failure, legacy, current
+):
     """真实启动链在安装成功后迁移；失败保留旧版本，重启保留用户后续选择。"""
     source_root = Path(__file__).resolve().parents[2]
     code = r"""
@@ -69,7 +78,7 @@ import base64
 import shutil
 import sqlite3
 import sys
-import tomllib
+from importlib import metadata
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -78,8 +87,8 @@ import httpx
 source = Path(sys.argv[1])
 failure = sys.argv[2]
 legacy = sys.argv[3] == "True"
-for package in ("auto_mas_core", "maa_adapter"):
-    sys.path.insert(0, str(source / "plugins" / package / "src"))
+current = sys.argv[4] == "True"
+sys.path.insert(0, str(source / "plugins/auto_mas_core/src"))
 
 from app.config import NodeState, config_manager
 from app.core import Config, Plugin
@@ -98,17 +107,18 @@ if fresh:
     io.write_file(native / "gui.new.json", {"Update": {"VersionType": "Beta"}})
     io.write_file(Config.config_path / "setting.yaml", {"Update": {"MirrorChyanCDK": "test-cdk"}})
     io.write_file(Config.config_path / "scripts.yaml", {
-        "order": [{"uid": sid, "type": "MaaPluginConfig"}],
+        "order": [{"uid": sid, "type": "MaaConfig" if current else "MaaPluginConfig"}],
         "data": {sid: {
             "Info": {"Name": "原托管", "Path": str(native.parent)},
+            **({"Update": {"TakeoverEnabled": False, "TakeoverMigrationVersion": 1, "Channel": "beta", "ChannelMigrationVersion": 1}} if current else {}),
             "users": {
-                "order": [{"uid": uid, "type": "MaaPluginUserConfig"}],
+                "order": [{"uid": uid, "type": "MaaUserConfig" if current else "MaaPluginUserConfig"}],
                 "data": {uid: {"Info": {"Name": "原账号"}, "Stage": {"StageMode": pid}}},
             },
         }},
     })
     io.write_file(Config.config_path / "plans.yaml", {
-        "order": [{"uid": pid, "type": "MaaPluginPlanConfig"}],
+        "order": [{"uid": pid, "type": "MaaPlanConfig" if current else "MaaPluginPlanConfig"}],
         "data": {pid: {"Info": {"Name": "原计划"}}},
     })
     if legacy:
@@ -121,19 +131,19 @@ if fresh:
                 document[sid]["SubConfigsInfo"] = {"UserData": {"instances": user["order"], **user["data"]}}
             io.write_file(Config.config_path / old, document)
             (Config.config_path / new).unlink()
-    if failure == "install":
-        # 旧注册记录仍在但安装文件缺失，也必须重新安装，不能只重试 load。
+    if failure == "install" or current:
+        # 已升级用户曾使用随附源码，来源移除后也应保留配置并改用发行包。
         rid = "95a9f348-8d8e-4d09-9eb8-d954bfdb4cc3"
         io.write_file(Config.config_path / "plugin_registry.yaml", {
             "order": [{"uid": rid, "type": "PluginRecord"}],
             "data": {rid: {"info": {
                 "plugin_name": "maa_adapter", "package_name": "auto-mas-maa-adapter",
-                "import_name": "maa_adapter", "source": "installed", "enabled": False,
+                "import_name": "maa_adapter", "source": "local" if current else "installed", "enabled": current,
             }}},
         })
     with sqlite3.connect(Config.database_path) as db:
         db.execute("CREATE TABLE version(v text)")
-        db.execute("INSERT INTO version VALUES (?)", ("v1.11" if legacy else "v2.1",))
+        db.execute("INSERT INTO version VALUES (?)", ("v2.2" if current else "v1.11" if legacy else "v2.1",))
 
 script_file = Config.config_path / ("ScriptConfig.json" if fresh and legacy else "scripts.yaml")
 original = script_file.read_bytes()
@@ -142,14 +152,7 @@ visible = installed_marker.exists()
 installed_before = visible
 with sqlite3.connect(Config.database_path) as db:
     pending = db.execute("SELECT v FROM version").fetchone()[0] != "v2.2"
-parse_source = discover._parse_source_package
 installs = []
-
-async def available(path):
-    # 此用例通过安装边界提供发行版，不能借本地源码覆盖安装后的身份检查。
-    if path.name != "auto_mas_core":
-        return None
-    return await parse_source(path)
 
 async def install(spec, *, plugin_name, meta_id, dry_run=False):
     global visible
@@ -158,8 +161,9 @@ async def install(spec, *, plugin_name, meta_id, dry_run=False):
     if failure == "install":
         raise OSError("installation unavailable")
     site = uv.site_dir()
-    shutil.copytree(source / "plugins/maa_adapter/src/maa_adapter", site / "maa_adapter", dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__"))
-    project = tomllib.loads((source / "plugins/maa_adapter/pyproject.toml").read_text(encoding="utf-8"))["project"]
+    shutil.copytree(source / ".test-plugins/maa_adapter", site / "maa_adapter", dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__"))
+    distribution = next(item for item in metadata.distributions(path=[str(source / ".test-plugins")]) if item.metadata["Name"] == "auto-mas-maa-adapter")
+    project = {"version": distribution.version, "dependencies": distribution.requires or []}
     info = site / f"auto_mas_maa_adapter-{project['version']}.dist-info"
     info.mkdir(exist_ok=True)
     (info / "METADATA").write_text("\n".join([
@@ -176,12 +180,12 @@ async def prepare():
 
 async def run():
     flush = config_manager.flush if failure != "flush" else AsyncMock(side_effect=OSError("save unavailable"))
-    # 只替换平台加解密边界，让非 Windows 子进程也能覆盖非空 CDK 的迁移及回读。
+    # 迁移与生命周期走真实入口；依赖环境、装包传输及平台加解密在各自集成测试中覆盖。
     with (
         patch("app.config.fields.encrypted.dpapi_encrypt", side_effect=lambda value: base64.b64encode(value.encode()).decode()),
         patch("app.config.fields.encrypted.dpapi_decrypt", side_effect=lambda value: base64.b64decode(value).decode()),
-        patch.object(discover, "_parse_source_package", available),
         patch.object(uv, "install", install),
+        patch.object(uv, "prepare_environment", AsyncMock()),
         patch.object(httpx.AsyncClient, "get", AsyncMock(return_value=httpx.Response(200, json={}))),
         patch.object(config_manager, "flush", flush),
     ):
@@ -197,13 +201,14 @@ async def run():
                 else:
                     assert str(exc) == "save unavailable"
                 with sqlite3.connect(Config.database_path) as db:
-                    assert db.execute("SELECT v FROM version").fetchone()[0] == "v2.1"
+                    assert db.execute("SELECT v FROM version").fetchone()[0] == ("v2.2" if current else "v2.1")
                 return
             assert failure == "none"
-            backup = Config.config_path / "legacy-json/pre-upgrade"
-            assert (backup / ("ScriptConfig.json" if legacy else "scripts.yaml")).is_file()
-            with sqlite3.connect(backup / Config.database_path.name) as db:
-                assert db.execute("SELECT v FROM version").fetchone()[0] in ("v1.11", "v2.1")
+            if not current:
+                backup = Config.config_path / "legacy-json/pre-upgrade"
+                assert (backup / ("ScriptConfig.json" if legacy else "scripts.yaml")).is_file()
+                with sqlite3.connect(backup / Config.database_path.name) as db:
+                    assert db.execute("SELECT v FROM version").fetchone()[0] in ("v1.11", "v2.1")
             assert installs == ([] if installed_before else ["auto-mas-maa-adapter"])
             script = Config.ScriptConfig[sid]
             assert script.Info.Name == "原托管"
@@ -213,8 +218,9 @@ async def run():
             assert script.Update.TakeoverMigrationVersion == 1
             assert script.Update.ChannelMigrationVersion == 1
             assert script.Update.TakeoverEnabled == pending
-            assert script.Update.Channel == ("beta" if pending else "stable")
+            assert script.Update.Channel == ("beta" if pending or current and not installed_before else "stable")
             assert Config.plugin_registry.by_name("maa_adapter").info.state == PluginState.ENABLED
+            assert Config.plugin_registry.by_name("maa_adapter").info.source == "installed"
             with sqlite3.connect(Config.database_path) as db:
                 assert db.execute("SELECT v FROM version").fetchone()[0] == "v2.2"
             await script.update(type(script).model_validate({"Update": {"TakeoverEnabled": False, "Channel": "stable"}}))
@@ -226,7 +232,15 @@ asyncio.run(run())
 """
     for attempt in ["none", "none"] if failure == "none" else [failure, "none", "none"]:
         result = subprocess.run(
-            [sys.executable, "-c", code, str(source_root), attempt, str(legacy)],
+            [
+                sys.executable,
+                "-c",
+                code,
+                str(source_root),
+                attempt,
+                str(legacy),
+                str(current),
+            ],
             cwd=tmp_path,
             capture_output=True,
             text=True,

@@ -9,6 +9,7 @@ import { buildScriptEditorRoutes } from './scriptEditorRoutes'
 import { SCRIPT_PLUGIN_ROUTES } from '@/plugins/scriptAdapters'
 import { registerRouterAnalytics } from './analytics'
 import { measureStartup } from '@/utils/startupTiming'
+import { fetchScriptCapabilities } from '@/composables/useScriptCapabilities'
 const logger = window.electronAPI.getLogger('路由管理')
 
 // MaaFW 与各特调的路由（每个类型：脚本编辑 / 引导 / 加用户 / 编辑用户）按特调注册表生成；
@@ -305,6 +306,18 @@ router.beforeEach(async (to, from, next) => {
   }
 
   next()
+})
+
+// MAA 页面暂随主程序编译；直达地址也须确认插件当前提供该能力。
+router.beforeResolve(async to => {
+  if (to.meta.scriptType !== 'MAA') return
+  try {
+    const types = await fetchScriptCapabilities()
+    if (types.includes('MAA')) return
+  } catch (error) {
+    logger.warn(`读取 MAA 插件能力失败: ${String(error)}`)
+  }
+  return { path: '/plugins/market' }
 })
 
 export function navigateTo(

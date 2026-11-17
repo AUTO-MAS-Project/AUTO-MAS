@@ -566,17 +566,20 @@ class AppConfig:
             await asyncio.to_thread(
                 preserve_pre_upgrade, self.config_path, database_path=self.database_path
             )
-            required = required_adapter_plugins(self.config_path)
-            prepare_runtime = prepare_plugins
+        # 已升级用户也可能失去此前随主仓交付的专项源码，激活领域配置前补齐所需实现。
+        required = required_adapter_plugins(self.config_path)
+        prepare_runtime = prepare_plugins
 
-            async def prepare_plugin_upgrade() -> None:
-                """先装配插件运行环境，再为旧专项安装实现并转换待激活配置。"""
-                if prepare_runtime is not None:
-                    await prepare_runtime()
+        async def prepare_plugin_upgrade() -> None:
+            """装配运行环境并补齐已有配置所需的插件，旧格式转换只在升级阶段执行。"""
+            if prepare_runtime is not None:
+                await prepare_runtime()
+            if required:
                 await install_adapter_plugins(required)
+            if version != "v2.2":
                 prepare_plugin_documents(self.config_path)
 
-            prepare_plugins = prepare_plugin_upgrade
+        prepare_plugins = prepare_plugin_upgrade
         if version not in {"v2.0", "v2.1", "v2.2"}:
             prepared_early = prepare_plugins is not None and version not in {
                 "v1.11",

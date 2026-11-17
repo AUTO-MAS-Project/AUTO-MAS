@@ -138,15 +138,6 @@ async def _parse_source_package(path: Path) -> PluginRecord | None:
     )
     if record is not None:
         record._project_dir = src.resolve()
-    # 随宿主交付的专项接替原内置能力；首次发现按包声明启用，之后尊重用户选择。
-    if (
-        record is not None
-        and path.parent.resolve() == (Config.source_path / "plugins").resolve()
-    ):
-        declaration = data.get("tool", {}).get("auto-mas", {})
-        record.info.enabled = bool(
-            declaration.get("bundled") and declaration.get("default-enabled")
-        )
     return record
 
 

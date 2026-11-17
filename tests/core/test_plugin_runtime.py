@@ -1,6 +1,8 @@
 """插件引导、配置所有权及公开调用收敛的隔离集成。"""
 
 import asyncio
+import sys
+from pathlib import Path
 
 import pytest
 from pydantic import Field
@@ -58,18 +60,14 @@ async def test_bootstrap_core_with_separate_source_and_user_directories(
     await catalog.activate()
     monkeypatch.setattr(config, "plugin_registry", registry)
     monkeypatch.setattr(config, "plugin_catalog", catalog)
+    # 此场景验证仅有 core 的用户环境；测试发行包留给各专项集成夹具装配，避免引导重载污染已收集的配置类型。
+    test_plugins = Path(__file__).resolve().parents[2] / ".test-plugins"
+    monkeypatch.setattr(
+        sys, "path", [item for item in sys.path if item != str(test_plugins)]
+    )
     monkeypatch.syspath_prepend(
         str(config.source_path / "plugins" / "auto_mas_core" / "src")
     )
-    # 本例验证 core 的独立源码发现；MAA 的完整启停由专项集成验证，避免重载其他用例持有的类。
-    from app.plugin.runtime import discover
-
-    parse_source = discover._parse_source_package
-
-    async def core_source(path):
-        return await parse_source(path) if path.name == "auto_mas_core" else None
-
-    monkeypatch.setattr(discover, "_parse_source_package", core_source)
     manager = _PluginManager()
     try:
         await manager.initialize()

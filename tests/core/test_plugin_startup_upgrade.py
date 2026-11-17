@@ -21,6 +21,15 @@ from app.plugin.errors import PluginError
 from app.plugin.uv import ops, precheck
 
 
+@pytest.fixture(autouse=True)
+def isolated_installed_plugins(monkeypatch):
+    """联合环境用例只发现其临时发行包，专项测试依赖继续由专项夹具装配。"""
+    test_plugins = Path(__file__).resolve().parents[2] / ".test-plugins"
+    monkeypatch.setattr(
+        sys, "path", [item for item in sys.path if item != str(test_plugins)]
+    )
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("enabled", [True, False])
 async def test_installation_confirmation_preserves_backup_on_pre_enable_failure(

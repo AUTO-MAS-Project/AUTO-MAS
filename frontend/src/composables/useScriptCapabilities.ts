@@ -7,6 +7,15 @@ import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import { onConnected } from '@/services/websocket/connection'
 import { WS_ID_PLUGIN, WS_PLUGIN_CAPABILITIES_UPDATED } from '@/services/websocket/types'
 
+export async function fetchScriptCapabilities() {
+  // 创建入口和静态插件页面共用实际后端能力，插件未启用时不开放专项入口。
+  const result = await requestApi(
+    () => GetService.getScriptTypesApiScriptsTypesGet(),
+    t('core.scripts.create.capabilitiesLoadFailed')
+  )
+  return result.types ?? []
+}
+
 export function useScriptCapabilities(open: Ref<boolean>) {
   // 新建窗口读取当前后端能力；插件启停及连接恢复时重新查询，不使用静态列表兜底。
   const client = useQueryClient()
@@ -17,14 +26,7 @@ export function useScriptCapabilities(open: Ref<boolean>) {
     refetchOnMount: 'always',
     staleTime: 0,
     retry: false,
-    queryFn: async () => {
-      // 通过生成接口获取可创建类型，并沿用统一业务响应校验。
-      const result = await requestApi(
-        () => GetService.getScriptTypesApiScriptsTypesGet(),
-        t('core.scripts.create.capabilitiesLoadFailed')
-      )
-      return result.types ?? []
-    },
+    queryFn: fetchScriptCapabilities,
   })
   const refresh = () => {
     // 失效缓存以覆盖窗口打开期间及断线期间发生的插件能力变化。

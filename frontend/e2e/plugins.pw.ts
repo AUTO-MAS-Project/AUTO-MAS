@@ -302,6 +302,12 @@ test.describe('@plugins plugin foundation', () => {
         await page.request.post(`${backend}/api/scripts/get`, { data: {} })
       ).json()
       expect(removed.data[created.scriptId]).toBeUndefined()
+      // 静态 MAA 页面仍随宿主交付，未提供能力时直达路由和计划创建入口均关闭。
+      await page.goto(`/#/scripts/${created.scriptId}/users/missing/cultivate/maa`)
+      await expect(page).toHaveURL(/#\/plugins\/market$/)
+      await app.goto('/plans')
+      await page.getByRole('button', { name: /^New plan/ }).click()
+      await expect(page.getByRole('menuitem', { name: 'New MAA plan', exact: true })).toHaveCount(0)
       await app.goto('/scripts')
       await page.getByRole('button', { name: /New managed script$/ }).click()
       const dialog = page.getByRole('dialog', { name: /New managed script$/ })
@@ -316,6 +322,9 @@ test.describe('@plugins plugin foundation', () => {
       await command('enable')
       await expect(dialog.getByRole('radio', { name: /^MAA / })).toBeVisible()
       await app.evidence('plugins-live-script-capabilities')
+      await app.goto('/plans')
+      await page.getByRole('button', { name: /^New plan/ }).click()
+      await expect(page.getByRole('menuitem', { name: 'New MAA plan', exact: true })).toBeVisible()
     } finally {
       // 还原插件启用状态，避免当前场景影响后续公共流程。
       const current = await (
