@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch, ref } from 'vue'
+import { computed, watch, ref, onScopeDispose } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, DownloadOutlined, ReloadOutlined } from '@ant-design/icons-vue'
@@ -11,7 +11,8 @@ import NoData from '@/components/NoData.vue'
 import PageSurface from '@/components/PageSurface.vue'
 import ApiRetryAlert from '@/components/ApiRetryAlert.vue'
 import { usePluginQuery } from '@/views/plugins/usePluginQuery'
-import { usePluginApi } from '@/composables/usePluginApi'
+import { usePluginApi, type InstallationStage } from '@/composables/usePluginApi'
+import { useTheme } from '@/composables/useTheme'
 import { pluginActionHint } from '@/views/plugins/configActions'
 import { apiErrorMessage } from '@/utils/apiResult'
 import PluginMetadataDetails from '@/views/plugins/PluginMetadataDetails.vue'
@@ -22,6 +23,31 @@ const router = useRouter()
 const api = usePluginApi()
 const refreshing = ref(false)
 const installing = ref<string | null>(null)
+const installationStage = ref<InstallationStage | null>(null)
+const { antdTheme } = useTheme()
+// 与主入口的静态消息一致，为 32px 标题栏和 8px 间距留出空间。
+const [installationMessage, installationMessageHolder] = message.useMessage({ top: 40 })
+const installationMessageKey = 'plugin-installation'
+onScopeDispose(() => {
+  // 页面离开后关闭持续提示，后台候选仍由安装流程持有。
+  installationMessage.destroy(installationMessageKey)
+})
+watch(
+  [installationStage, antdTheme, locale],
+  ([stage]) => {
+    // 同一提示持续显示；主题或语言变化后刷新内容与样式，避免保留旧主题的消息样式。
+    if (!stage) {
+      installationMessage.destroy(installationMessageKey)
+      return
+    }
+    installationMessage.loading({
+      key: installationMessageKey,
+      content: t(`core.plugins.installProgress.${stage}`),
+      duration: 0,
+    })
+  },
+  { flush: 'post' }
+)
 
 const {
   data: queryRows,
@@ -72,17 +98,25 @@ const install = async (row: CatalogRow) => {
   if (installing.value || pluginActionHint(row.ui, 'info', 'install')?.editable !== true) return
   installing.value = row.uid
   try {
-    await api.runCommand('install', {
-      configUid: row.uid,
-      group: 'info',
-      field: 'install',
-      value: true,
-    })
+    await api.runCommand(
+      'install',
+      {
+        configUid: row.uid,
+        group: 'info',
+        field: 'install',
+        value: true,
+      },
+      stage => {
+        // 展示真实安装阶段，保持安装按钮的加载状态直到结果确认。
+        installationStage.value = stage
+      }
+    )
     await load()
     message.success(t('core.plugins.installed'))
   } catch (error) {
     message.error(apiErrorMessage(error, t('core.plugins.actionFailed')))
   } finally {
+    installationStage.value = null
     installing.value = null
   }
 }
@@ -92,6 +126,7 @@ watch(locale, load, { immediate: true })
 
 <template>
   <main class="plugins-page">
+    <installation-message-holder />
     <PageHeader :title="t('core.plugins.marketTitle')">
       <template #actions
         ><a-button

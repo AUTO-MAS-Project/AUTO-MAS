@@ -17,6 +17,7 @@ import {
 import { reconnectNow } from '@/services/websocket/connection'
 
 type Action = 'enable' | 'disable' | 'reload' | 'uninstall' | 'install' | 'refresh' | 'config'
+export type InstallationStage = 'waiting' | 'restarting' | 'recovering'
 
 class OperationResultError extends Error {
   constructor(
@@ -65,7 +66,11 @@ export function usePluginApi() {
       observation.finish({ action, outcome })
     }
   }
-  const finishInstallation = async (metaId: string, prepared?: PluginInstallation) => {
+  const finishInstallation = async (
+    metaId: string,
+    onProgress?: (stage: InstallationStage) => void,
+    prepared?: PluginInstallation
+  ) => {
     // 下载与候选准备结束后，继续确认跨进程安装；准备受理不计为安装成功。
     const get = () =>
       requestApi(
@@ -84,6 +89,8 @@ export function usePluginApi() {
     let requested = false
     let restarting = false
     try {
+      if (disposed) throw new OperationResultError('unknown')
+      onProgress?.('waiting')
       while (!reserved) {
         if (disposed) throw new OperationResultError('unknown')
         requested = true
@@ -95,6 +102,7 @@ export function usePluginApi() {
         if (!reserved) await pause()
       }
       if (disposed) throw new OperationResultError('unknown')
+      onProgress?.('restarting')
       beginIntentionalBackendRestart('插件依赖更新')
       restarting = true
       const result = await window.electronAPI.backendRestart('update')
@@ -105,6 +113,7 @@ export function usePluginApi() {
           progress?.state === PluginInstallation.state.APPLYING
         ) {
           // 启动未确认成功时，新进程按既有交接记录恢复旧环境；最多恢复一次。
+          if (!disposed) onProgress?.('recovering')
           const restored = await window.electronAPI.backendRestart('recovery')
           if (restored.success) await reconnectNow('插件环境恢复')
         }
@@ -127,7 +136,11 @@ export function usePluginApi() {
       }
     }
   }
-  const runCommand = (action: Action, body: OperationStartIn) =>
+  const runCommand = (
+    action: Action,
+    body: OperationStartIn,
+    onProgress?: (stage: InstallationStage) => void
+  ) =>
     perform(action, async () => {
       if (action === 'install') {
         // 页面重建或重启交接响应丢失后，可继续原候选，不重复提交安装命令。
@@ -137,7 +150,7 @@ export function usePluginApi() {
           t('core.plugins.actionFailed')
         )
         if (pending.data?.state === PluginInstallation.state.WAITING_RESTART) {
-          await finishInstallation(body.configUid, pending.data)
+          await finishInstallation(body.configUid, onProgress, pending.data)
           return { code: 200, status: 'success' }
         }
       }
@@ -168,7 +181,7 @@ export function usePluginApi() {
           if (++misses >= 3) throw new OperationResultError('unknown')
         }
       }
-      if (action === 'install') await finishInstallation(body.configUid)
+      if (action === 'install') await finishInstallation(body.configUid, onProgress)
       return accepted
     })
   return {
