@@ -146,6 +146,9 @@ class WindowsTaskProcessJob:
                 seen.add(target.pid)
 
                 try:
+                    # 包装进程可能在 OpenProcess 期间退出，先保存已发现的孩子，
+                    # 父进程消失后仍继续接管；暂停内再补齐登记前出生的后代。
+                    pending.extend(target.children())
                     process = win32api.OpenProcess(
                         win32con.PROCESS_SET_QUOTA
                         | win32con.PROCESS_TERMINATE

@@ -397,14 +397,21 @@ async def test_task_job_inside_runtime_job(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "child_before_registration,intermediate",
-    [(False, False), (True, False), (False, True)],
+    "child_before_registration,intermediate,exit_on_open",
+    [
+        (False, False, False),
+        (True, False, False),
+        (False, True, False),
+        pytest.param(True, False, True, id="parent_exits_during_open"),
+    ],
 )
 async def test_adoption_reaps_descendants_but_never_a_looked_up_foreign_process(
-    tmp_path, monkeypatch, child_before_registration, intermediate
+    tmp_path, monkeypatch, child_before_registration, intermediate, exit_on_open
 ):
     """接管进程的已有及后续子进程都须随任务停止，任务外进程不受影响。"""
     import psutil
+    import win32api
+    import win32con
 
     from app.utils.common.process.manager import ProcessInfo, ProcessManager
     from app.utils.common.process.scope import TaskProcessScope, current_process_scope
@@ -471,6 +478,17 @@ async def test_adoption_reaps_descendants_but_never_a_looked_up_foreign_process(
             async with asyncio.timeout(5):
                 while not pid_file.exists():
                     await asyncio.sleep(0.01)
+        if exit_on_open:
+            open_process = win32api.OpenProcess
+
+            def open_after_parent_exit(access, inherit, pid):
+                if pid == parent.pid and access & win32con.PROCESS_SET_QUOTA:
+                    # 父子都已存在；只在打开父句柄的边界放行包装进程退出。
+                    gate.touch()
+                    known[1].wait(timeout=3)
+                return open_process(access, inherit, pid)
+
+            monkeypatch.setattr(win32api, "OpenProcess", open_after_parent_exit)
         token = current_process_scope.set(scope)
         try:
             observer = ProcessManager()
