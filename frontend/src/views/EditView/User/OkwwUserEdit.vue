@@ -457,8 +457,10 @@ const handleQuickConfigChange = async (value: boolean) => {
 
 const saveTaskConfig = async (): Promise<boolean> => {
   if (isInitializing.value || !userId.value) return false
-  const Task = { ...formData.Task, AdditionalTasks: [...formData.Task.AdditionalTasks] }
-  return await enqueue(() => updateUser(scriptId, userId.value, { Task }))
+  const { IfCustomArguments, CustomArguments } = formData.Task
+  return await enqueue(() =>
+    updateUser(scriptId, userId.value, { Task: { IfCustomArguments, CustomArguments } })
+  )
 }
 
 const handleOkwwConfig = async () => {
@@ -548,7 +550,6 @@ const loadUser = async (quiet = false) => {
 }
 
 // ══ 配置恢复（通用组件 props 供给：双目标 MAS 在前脚本在后）══
-// 专项统一名（文案参数化用）：ok-ww 统一叫「ok-ww」
 const OKWW_DISPLAY_NAME = 'ok-ww'
 const restoreOpen = ref(false)
 
@@ -578,8 +579,7 @@ interface OkwwPreviewFileView {
 const previewFiles = (raw: unknown): OkwwPreviewFileView[] =>
   (raw as { fileCards?: OkwwPreviewFileView[] } | null)?.fileCards ?? []
 
-// 一键恢复成功：mas 恢复含快速配置覆盖层字段回填，重拉表单——否则旧表单
-// 值在下次保存时会静默覆盖回滚结果；native 恢复不影响本页表单
+// mas 恢复后重拉账号覆写，避免旧表单继续覆盖恢复值；native 恢复不影响本页表单。
 const handleRestored = async (target: string) => {
   restoreOpen.value = false
   if (target === 'mas') {

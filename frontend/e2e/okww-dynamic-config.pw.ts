@@ -235,6 +235,34 @@ test.describe('@okww-dynamic-config', () => {
     await page.reload()
     await expect(exit).toBeEnabled()
     await expect(exit).not.toBeChecked()
+    // 面板已经落盘、父页面尚未回读时，参数保存不得覆盖面板新值。
+    let releaseRead!: () => void
+    const readGate = new Promise<void>(resolve => (releaseRead = resolve))
+    let readStarted!: () => void
+    const pendingRead = new Promise<void>(resolve => (readStarted = resolve))
+    await page.route('**/api/scripts/user/get', async route => {
+      readStarted()
+      await readGate
+      await route.continue()
+    })
+    await page.getByRole('tab', { name: '4C Echo settings', exact: true }).click()
+    await saveAction(() => input.fill('31'))
+    await pendingRead
+    await page.getByRole('tab', { name: 'OK-WW launch arguments', exact: true }).click()
+    const argumentsInput = page.locator('.ant-tabs-tabpane-active input').first()
+    await argumentsInput.fill('-t DailyTask -e --debug')
+    const argumentsSaved = page.waitForResponse(
+      r => r.url().endsWith('/api/scripts/user/update') && r.request().method() === 'POST'
+    )
+    await argumentsInput.press('Tab')
+    expect((await (await argumentsSaved).json()).code).toBe(200)
+    const crossed = await post('/api/scripts/user/get', { scriptId, userId })
+    expect(crossed.data[userId].Task.FarmEchoConfig['New native limit']).toBe(31)
+    expect(crossed.data[userId].Task.CustomArguments).toBe('-t DailyTask -e --debug')
+    releaseRead()
+    await page.unroute('**/api/scripts/user/get')
+    await page.reload()
+    await expect(exit).toBeEnabled()
     const accountWrite = page.waitForRequest(
       r => r.url().endsWith('/api/scripts/okww/task-config') && r.method() === 'POST'
     )
@@ -255,7 +283,7 @@ test.describe('@okww-dynamic-config', () => {
     await app.evidence('okww-plan-unmanaged-fields')
     await page.getByRole('tab', { name: '4C Echo settings', exact: true }).click()
     await page.setViewportSize({ width: 760, height: 900 })
-    await expect(input).toBeVisible()
+    await expect(input).toHaveValue('31')
     await input.scrollIntoViewIfNeeded()
     await expect(page.locator('.ant-spin-blur')).toHaveCount(0)
     const width = await page
