@@ -44,6 +44,7 @@ M9A 等 MFW 特调和直接导入的各个 `interface.json` 项目都跑在这�
 - PR 验证记录应包含命令、结果、测试的 commit SHA、运行环境和未覆盖范围。凭据、账号数据和未经检查的完整报告不得放入 PR。
 - 存量清理按 [mas-testing 的保留举证规则](../.agents/skills/mas-testing/SKILL.md#存量与交付)，先从实际交互选择故障与最小保留集；没有具体场景或持续收益的检查可退出，不要求逐条迁移。PR 说明退出依据、实际留下的覆盖和缺口；高损失保证须有等效或更强证据，明确受保护用例继续保留。Flaky 测试需关联问题、负责人和复查日期，临时隔离后应修复、替换或删除，不得靠自动重试掩盖失败或无限期隔离。
 - pytest 位于 `pyproject.toml` 的 `dev` 依赖组；本地缺失时执行 `uv sync --locked --group dev`。
+- 首次运行主仓专项集成测试前，执行 `uv run --no-sync python scripts/prepare_test_plugins.py`，按 `tests/requirements-plugins.txt` 的版本与摘要准备隔离发行包。插件开发及 Runtime 目录边界见 [插件开发说明](../docs/plugin-development.md)。
 - 使用锁定环境运行测试：`uv run --no-sync python -m pytest <路径> -q`。修改专项适配时先运行对应的最小测试文件；完整回归命令为 `uv run --no-sync python -m pytest tests -q`，PR CI 在 Windows 与 Ubuntu 执行完整套件。
 
 ## 测试隔离

@@ -4,6 +4,14 @@
 
 ## 当前接续位置
 
+- 2026-11-17 用户确认插件源码交付边界后，主仓仅跟踪 `plugins/auto_mas_core`，其他源码插件由开发者克隆到忽略目录并在独立仓库提交。
+  MAA 静态页面暂迁至 `frontend/src/views/maa`，按后端插件能力开放入口，动态页面上线后再迁回插件。
+  配置升级在领域集合激活前安装所需发行包，已升级至 v2.2 但失去旧随附源码的用户同样补装；有效的用户源码覆盖仍保留。
+  Runtime 沿用安装根目录 `plugins` 与 `repo/plugins/auto_mas_core` 的既有分离机制。集成回归改用锁定版本及 SHA256 的 PyPI wheel，准备入口与开发发布流程见 [插件开发说明](plugin-development.md)。
+  主仓完整后端 362 passed、1 skipped、3 subtests passed，独立 MAA 14 passed，前端 146 passed；插件中心、能力启停及计划显示浏览器流程 11 passed。
+  已验证 v2.2 遗留本地注册记录补装发行包、失败重试与身份保留，用户插件在隔离源码目录替换后仍可发现和导入；源码插件与测试包均缺席时前端构建通过。
+  类型、格式、组件尺寸、词表和锁文件检查通过，保留既有 QueueDeleteButton.text lint 警告。Runtime 实际升级和版本切换尚待实机验收。
+  本轮在独立分支 `codex/plugin-source-boundary` 实施，MAA 仓库对应 `codex/host-static-maa-frontend`；提交、推送及测试构建状态以交付报告为准。
 - 2026-11-17 用户确认 CallGate 线程支持方案后，已补齐线程安全准入和计数、事件循环唤醒及线程往返调用归属，见设计 37。同步端点消费同步服务不再报错；调用内自禁用保留发起者排除规则，独立子任务仍须等待，请求取消也等实际工作线程退出。
   相关回归 34 passed；完整后端及本地 MAA 插件合计 373 passed、1 skipped、3 subtests passed，Python lint/全仓格式、锁文件与碎片检查通过。前端未改，沿用上轮 146 passed。最新六项 P2 至此均已本地修复；未改 Runtime、SDK 声明、背景任务或 TaskBase，也未增加遥测事件。
   上轮本地提交 `869186c44` 因 GitHub 握手失败未确认推送成功，本轮已恢复连接，将与 CallGate 修正一并交付；最终远端状态以回复和 PR HEAD 为准。独立 MAA 仓库同步发包及真实发行覆盖升级联合验收仍保留。

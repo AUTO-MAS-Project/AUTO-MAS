@@ -9,8 +9,8 @@ from maa_adapter.tasks import auto_proxy, manager, session
 from app.models.config import QueueConfig, QueueItem
 from app.models.task import TaskMode
 from app.utils import constants, io
-from plugins.maa_adapter.tests.test_runtime import dispatch
-from plugins.maa_adapter.tests.test_runtime import runtime as runtime
+from tests.support.maa_runtime import dispatch
+from tests.support.maa_runtime import runtime as runtime
 
 
 @pytest.mark.asyncio

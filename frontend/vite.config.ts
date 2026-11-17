@@ -85,7 +85,7 @@ export default defineConfig(({ command }) => {
       ],
       alias: {
         '@': path.resolve(__dirname, './src'),
-        '@maa': path.resolve(__dirname, '../plugins/maa_adapter/frontend'),
+        '@maa': path.resolve(__dirname, './src/views/maa'),
       },
     },
     define: {
@@ -140,7 +140,7 @@ export default defineConfig(({ command }) => {
       // dist-electron 是 Electron 主进程的 CJS 编译产物（源测试在 electron/），
       // 编译后的 require('vite-plus/test') 无法运行，不排除会让 yarn test 随构建必然失败
       // debug 是本地日志与临时验证目录，不属于单元测试源。
-      include: ['src/**/*.test.ts', 'electron/**/*.test.ts', '../plugins/*/frontend/**/*.test.ts'],
+      include: ['src/**/*.test.ts', 'electron/**/*.test.ts'],
       exclude: [...configDefaults.exclude, '**/dist-electron/**', '**/debug/**'],
     },
   }

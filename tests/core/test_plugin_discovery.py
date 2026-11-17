@@ -94,6 +94,42 @@ async def discovery(isolated_app_paths, monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_user_plugin_survives_source_tree_replacement(discovery):
+    """后端源码目录替换后，根目录的独立插件仓库及其发现身份必须仍然可用。"""
+    state = discovery
+    project = state.config.plugins_path / "root_plugin"
+    write_plugin(project)
+    entry = project / "src/discovery_probe/__init__.py"
+    entry.write_text(
+        "from app.plugin.base import BasePlugin\n"
+        "class Plugin(BasePlugin):\n"
+        "    def value(self): return 42\n"
+        "PLUGIN = Plugin\n",
+        encoding="utf-8",
+    )
+    (project / ".git").mkdir()
+    marker = project / ".git/config"
+    marker.write_text("independent plugin repository", encoding="utf-8")
+    await discover.refresh()
+    record = state.registry.by_name("discovery_probe")
+    uid = record.uid
+    assert loader.load(record)().value() == 42
+    loader.clear(record)
+    old_source = state.config.source_path
+    retired = old_source.with_name("retired-source")
+    old_source.rename(retired)
+    (old_source / "plugins").mkdir(parents=True)
+    shutil.rmtree(retired)
+    await discover.refresh()
+    record = state.registry.by_name("discovery_probe")
+    assert record.uid == uid and record.info.source == "local"
+    assert record._project_dir == project / "src"
+    assert marker.read_text(encoding="utf-8") == "independent plugin repository"
+    assert loader.load(record)().value() == 42
+    loader.clear(record)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "collision", ["local", "identity", "import", "installed", "package"]
 )

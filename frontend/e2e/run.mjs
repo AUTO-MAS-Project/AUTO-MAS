@@ -421,9 +421,9 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
   }
 }
 
-export async function seedBrowserHistory(dataRoot, { real, inPlace }) {
+export async function seedBrowserProfile(dataRoot, { real, inPlace }) {
   if (real || inPlace) return
-  const script = path.join(frontendRoot, 'e2e', 'fixtures', 'seed-history.py')
+  const script = path.join(frontendRoot, 'e2e', 'fixtures', 'seed-profile.py')
   const child = spawn('uv', ['run', '--project', repositoryRoot, '--no-sync', 'python', script], {
     cwd: dataRoot,
     stdio: 'inherit',
@@ -433,7 +433,7 @@ export async function seedBrowserHistory(dataRoot, { real, inPlace }) {
   await new Promise((resolve, reject) => {
     child.once('error', reject)
     child.once('exit', code =>
-      code === 0 ? resolve() : reject(new Error(`历史种子写入失败: ${code}`))
+      code === 0 ? resolve() : reject(new Error(`插件与历史种子写入失败: ${code}`))
     )
   })
 }
@@ -501,7 +501,7 @@ async function main() {
       }
       console.warn(`[e2e] 隔离数据根 ${dataRoot}${keepRoot ? '（跑完保留）' : '（跑完删除）'}`)
     }
-    await seedBrowserHistory(dataRoot, { real, inPlace })
+    await seedBrowserProfile(dataRoot, { real, inPlace })
     // 真实模式以所选配置为准，清空未使用的模拟器变量，避免沿用上次运行的目标。
     const selectedEnv = Object.fromEntries(
       Object.entries({

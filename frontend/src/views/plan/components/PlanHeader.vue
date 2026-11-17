@@ -9,7 +9,7 @@
         <a-dropdown :trigger="['click']">
           <template #overlay>
             <a-menu @click="onAddPlanMenu">
-              <a-menu-item v-for="planType in PLAN_TYPE_DESCRIPTORS" :key="planType.configType">
+              <a-menu-item v-for="planType in availablePlanTypes" :key="planType.configType">
                 {{ t('core.plan.createTyped', { name: t(planType.displayNameKey) }) }}
               </a-menu-item>
             </a-menu>
@@ -46,7 +46,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useScriptCapabilities } from '@/composables/useScriptCapabilities'
 import UniversalPlanCreateDialog from './UniversalPlanCreateDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { DeleteOutlined, DownOutlined } from '@ant-design/icons-vue'
@@ -59,6 +60,13 @@ import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 
 const { t } = useI18n()
+const capabilities = useScriptCapabilities(ref(true))
+const availablePlanTypes = computed(() =>
+  PLAN_TYPE_DESCRIPTORS.filter(
+    descriptor =>
+      descriptor.configType !== PLAN_CONFIG_TYPES.MAA || capabilities.types.value.includes('MAA')
+  )
+)
 
 interface Plan {
   id: string

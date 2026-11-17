@@ -2,7 +2,7 @@ import { defineAsyncComponent } from 'vue'
 import maaIcon from './MAA.png'
 import type { ScriptFrontendAdapter } from '@/plugins/scriptAdapters'
 
-/** MAA 编辑、干员养成及计划表入口与插件业务一起维护，保留原有路由身份。 */
+/** MAA 暂随主程序编译，安装插件后开放入口；动态页面上线后迁入插件。 */
 export default {
   type: 'MAA',
   metadata: {
@@ -33,7 +33,7 @@ export default {
       name: 'MAACultivate',
       component: () => import('./MAAUserEdit.vue'),
       props: { cultivationPage: true },
-      meta: { title: 'MAA 干员养成' },
+      meta: { title: 'MAA 干员养成', scriptType: 'MAA' },
     },
   ],
   plan: {
