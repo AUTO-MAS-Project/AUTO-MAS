@@ -131,8 +131,6 @@ MCP_INCLUDED_OPERATIONS = (
     "import_zzzod_config_api_api_scripts_zzzod_import_post",
     # BAAH 原生配置名称
     "get_baah_config_names_api_api_scripts_baah_config_names_get",
-    # 奇想盒任务目录
-    "get_whimbox_task_catalog_api_api_scripts_whimbox_task_catalog_get",
     # OK-NTE 配置字段与批量编辑
     "get_oknte_configs_list_api_scripts_oknte_configs_list_post",
     "batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post",

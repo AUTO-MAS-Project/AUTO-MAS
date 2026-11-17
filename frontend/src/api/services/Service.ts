@@ -267,7 +267,6 @@ import type { WebhookInBase } from '../models/WebhookInBase';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
 import type { WebhookUpdateIn_WebhookInput_ } from '../models/WebhookUpdateIn_WebhookInput_';
 import type { WebSocketMetaOut } from '../models/WebSocketMetaOut';
-import type { WhimboxTaskCatalogOut } from '../models/WhimboxTaskCatalogOut';
 import type { ZzzOdAppConfigOut } from '../models/ZzzOdAppConfigOut';
 import type { ZzzOdAppConfigSaveIn } from '../models/ZzzOdAppConfigSaveIn';
 import type { ZzzOdCatalogOut } from '../models/ZzzOdCatalogOut';
@@ -2939,30 +2938,6 @@ export class Service {
         });
     }
     /**
-     * 获取奇想盒一条龙任务目录
-     * 下发一条龙任务目录（步骤开关 + 目标/参数字段）。
-     *
-     * 字段定义与值域从上游安装目录三件套（default_config / setting_options /
-     * material）运行时机械转换，MAS 发版不管理；上游升级后下次读取自动生效。
-     * @param scriptId
-     * @returns WhimboxTaskCatalogOut Successful Response
-     * @throws ApiError
-     */
-    public static getWhimboxTaskCatalogApiApiScriptsWhimboxTaskCatalogGet(
-        scriptId?: (string | null),
-    ): CancelablePromise<WhimboxTaskCatalogOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/scripts/whimbox/task-catalog',
-            query: {
-                'scriptId': scriptId,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 获取 OK-NTE 配置文件列表及 schema
      * 获取 OK-NTE 配置文件列表及 schema 定义。
      * 读写用户覆写常规配置目录，首次从已有来源初始化，不修改来源文件。
@@ -5106,6 +5081,81 @@ export class Service {
         });
     }
     /**
+     * Get Plugin Installation
+     * 读取本次市场安装的持久结果，后端业务初始化失败时也允许查询。
+     * @param requestBody
+     * @param locale
+     * @returns PluginInstallationOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginInstallationApiPluginInstallationGetPost(
+        requestBody: PluginInstallationGetIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginInstallationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/get',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Prepare Plugin Installation Restart
+     * 业务忙时保持等待；空闲后取得重启资格并暂停新任务和插件命令。
+     * @param requestBody
+     * @param locale
+     * @returns PluginInstallationOut Successful Response
+     * @throws ApiError
+     */
+    public static preparePluginInstallationRestartApiPluginInstallationRestartPost(
+        requestBody: PluginInstallationRestartIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginInstallationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/restart',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Resume After Plugin Installation Restart
+     * 前端未能重启后端时归还资格，候选环境继续保留。
+     * @param requestBody
+     * @param locale
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static resumeAfterPluginInstallationRestartApiPluginInstallationResumePost(
+        requestBody: PluginInstallationRestartIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/resume',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 导入基建配置文件
      * @param requestBody
      * @returns OutBase Successful Response
@@ -5414,81 +5464,6 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/mirror-cdk',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Get Plugin Installation
-     * 读取本次市场安装的持久结果，后端业务初始化失败时也允许查询。
-     * @param requestBody
-     * @param locale
-     * @returns PluginInstallationOut Successful Response
-     * @throws ApiError
-     */
-    public static getPluginInstallationApiPluginInstallationGetPost(
-        requestBody: PluginInstallationGetIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<PluginInstallationOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin/installation/get',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Prepare Plugin Installation Restart
-     * 业务忙时保持等待；空闲后取得重启资格并暂停新任务和插件命令。
-     * @param requestBody
-     * @param locale
-     * @returns PluginInstallationOut Successful Response
-     * @throws ApiError
-     */
-    public static preparePluginInstallationRestartApiPluginInstallationRestartPost(
-        requestBody: PluginInstallationRestartIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<PluginInstallationOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin/installation/restart',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Resume After Plugin Installation Restart
-     * 前端未能重启后端时归还资格，候选环境继续保留。
-     * @param requestBody
-     * @param locale
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static resumeAfterPluginInstallationRestartApiPluginInstallationResumePost(
-        requestBody: PluginInstallationRestartIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin/installation/resume',
-            query: {
-                'locale': locale,
-            },
             body: requestBody,
             mediaType: 'application/json',
             errors: {

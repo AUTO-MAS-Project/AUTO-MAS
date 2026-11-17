@@ -136,8 +136,8 @@
 </template>
 
 <script setup lang="ts">
-import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
-import WhimboxUpdateSettings from './components/WhimboxUpdateSettings.vue'
+import ScriptRunLimitField from '@/views/EditView/Script/components/ScriptRunLimitField.vue'
+import WhimboxUpdateSettings from './WhimboxUpdateSettings.vue'
 import type { WhimboxConfig_Update } from '@/api'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
@@ -151,7 +151,7 @@ import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
-import { useWhimboxTaskCatalog } from '@/composables/useWhimboxTaskCatalog'
+import { useWhimboxTaskCatalog } from '@/views/whimbox/useWhimboxTaskCatalog'
 import { SCRIPT_LABELS } from '@/utils/scriptLogos'
 
 const { t } = useI18n()

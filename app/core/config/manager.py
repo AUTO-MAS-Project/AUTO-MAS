@@ -108,8 +108,6 @@ from app.models.config import (
     UserConfigType,
     UserEntry,
     Webhook,
-    WhimboxConfig,
-    WhimboxUserConfig,
     ZzzOdConfig,
     ZzzOdUserConfig,
 )
@@ -1165,7 +1163,6 @@ class AppConfig:
         | BetterGIConfig
         | ZzzOdConfig
         | BAAHConfig
-        | WhimboxConfig
         | MSSConfig,
     ]:
         """添加托管配置"""
@@ -1383,7 +1380,6 @@ class AppConfig:
         | BetterGIUserConfig
         | ZzzOdUserConfig
         | BAAHUserConfig
-        | WhimboxUserConfig
         | MSSUserConfig,
     ]:
         """添加账号配置"""
