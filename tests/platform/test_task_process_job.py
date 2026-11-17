@@ -562,12 +562,13 @@ async def test_adoption_reaps_descendants_but_never_a_looked_up_foreign_process(
                     await asyncio.sleep(0.01)
         if exit_on_open:
             open_process = win32api.OpenProcess
+            parent_process = psutil.Process(parent.pid)
 
             def open_after_parent_exit(access, inherit, pid):
                 if pid == parent.pid and access & win32con.PROCESS_SET_QUOTA:
                     # 父子都已存在；只在打开父句柄的边界放行包装进程退出。
                     gate.touch()
-                    known[1].wait(timeout=3)
+                    parent_process.wait(timeout=3)
                 return open_process(access, inherit, pid)
 
             monkeypatch.setattr(win32api, "OpenProcess", open_after_parent_exit)
