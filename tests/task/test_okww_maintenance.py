@@ -132,11 +132,11 @@ async def test_desktop_login_maintenance_skips_proxy_without_retry(
     )
     monkeypatch.setattr(process_runner, "_wait_worker", lambda worker: None)
 
-    async def launch(target, request, *, on_log, worker_module):
+    async def launch(target, request, *, on_log, worker_module, on_restart):
         monkeypatch.setattr(desktop_session_worker, "receive", lambda pipe: request)
         desktop_session_worker.run_action(fake_pipe)
         return process_runner.DesktopProcess(
-            frames.popleft()["pid"], fake_pipe, Mock(), on_log
+            frames.popleft()["pid"], fake_pipe, Mock(), on_log, on_restart=on_restart
         )
 
     launch_spy = AsyncMock(side_effect=launch)
