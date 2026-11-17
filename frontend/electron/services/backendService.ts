@@ -1,5 +1,6 @@
 import { beginMainFeature } from './featureAnalytics'
 import { getFluxdownInstallEnvironment } from './fluxdownInstallService'
+import { precheckAppVersion } from './appUpdateService'
 import { captureScheduledWakeupContext, scheduledWakeupBackendReady } from './scheduledWakeup'
 /**
  * 后端服务管理
@@ -38,6 +39,8 @@ const logger = getLogger('后端服务')
 // Runtime 链路等待 state:running 的兜底上限。正常情况下 Runtime 自己的健康超时会先给出
 // BACKEND_HEALTH_TIMEOUT，这个上限只防止 Runtime 既不就绪也不给终态时把启动流程挂死。
 const RUNTIME_READY_TIMEOUT_MS = 180000
+// 插件镜像解析和安装各有超时；这里等待业务终态，不占 Runtime 的核心健康期限。
+const BUSINESS_READY_TIMEOUT_MS = 30 * 60 * 1000
 // 监督后端统一保留原有 30 秒清理窗口，覆盖旧 off 生产用户迁入 managed 的情况。
 const BACKEND_SHUTDOWN_SECONDS = 30
 // 另留 5 秒等待 Runtime 收口；超时才结束 Runtime，由其 Job Object 回收进程树。
@@ -78,6 +81,7 @@ export interface BackendStatus {
 
 export interface BackendStartOptions {
   timeout?: number // 启动超时时间（毫秒）
+  onProgress?: (message: string) => void
 }
 
 export interface BackendStartResult {
@@ -112,6 +116,7 @@ export interface BackendStopResult {
 
 interface RuntimeBackendUpdateCheck {
   updateAvailable: boolean
+  precheckError?: string
   staged?: boolean
   currentCommit?: string
   remoteCommit?: string
@@ -499,6 +504,36 @@ export class BackendService {
       if (outcome.deferred) {
         this.activationPending = true
         try {
+          const deadline = Date.now() + BUSINESS_READY_TIMEOUT_MS
+          let previousMessage: string | null = null
+          while (true) {
+            if (this.runtimeStopping || this.runtimeHandle !== handle)
+              throw new Error('后端正在关闭')
+            if (Date.now() >= deadline) throw new Error('等待插件与业务初始化超时')
+            const response = await this.fetchWithTimeout(
+              `${outcome.baseUrl}${this.startupHealthPath}`,
+              { method: 'GET' },
+              5000
+            )
+            if (!response.ok) throw new Error(`读取业务初始化状态失败 (${response.status})`)
+            const health = (await response.json()) as {
+              businessStatus?: string
+              backgroundStatus: string
+              backgroundError?: string
+              businessMessage?: string | null
+            }
+            const status = health.businessStatus ?? health.backgroundStatus
+            if (status === 'failed' || status === 'cancelled')
+              throw new Error(health.backgroundError || '插件或业务初始化失败')
+            if (status === 'ready') break
+            if (status !== 'starting' && status !== 'running') throw new Error('业务初始化状态无效')
+            if (health.businessMessage && health.businessMessage !== previousMessage) {
+              logger.info(health.businessMessage)
+              options?.onProgress?.(health.businessMessage)
+              previousMessage = health.businessMessage
+            }
+            await new Promise(resolve => setTimeout(resolve, 500))
+          }
           await this.confirmAutomaticWork(handle, 'activate')
           this.activationPending = false
         } catch (error) {
@@ -898,7 +933,7 @@ export class BackendService {
    */
   restartBackend(
     options?: BackendStartOptions,
-    reason: 'manual' | 'recovery' = 'manual'
+    reason: 'manual' | 'recovery' | 'update' = 'manual'
   ): Promise<BackendStartResult> {
     if (this.restartFlight) return this.restartFlight
     const telemetry = beginMainFeature('backend_restart_finished')
@@ -997,7 +1032,9 @@ export class BackendService {
 
   private async prepareRuntimeBackendUpdate(): Promise<RuntimeBackendUpdateCheck> {
     const config = resolveRuntimeLaunchConfig(this.appRoot)
-    if (config.mode !== 'managed' || !config.runtimePath) return { updateAvailable: false }
+    const baseUrl = this.runtimeBaseUrl
+    if (config.mode !== 'managed' || !config.runtimePath || !baseUrl)
+      return { updateAvailable: false }
     try {
       const client = createRuntimeClient({
         runtimePath: config.runtimePath,
@@ -1022,6 +1059,24 @@ export class BackendService {
             error: 'Runtime 远端检查未返回当前版本',
           }
         }
+        const remoteCommit = typeof details.remoteCommit === 'string' ? details.remoteCommit : ''
+        try {
+          // 按候选提交读取真实依赖；不兼容或无法完成预检时，保留当前后端且不发起暂存。
+          if (!/^[a-f0-9]{40}$/i.test(remoteCommit))
+            throw new Error('Runtime 未返回有效的更新提交，无法检查插件兼容性')
+          await precheckAppVersion(baseUrl, version, remoteCommit)
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error)
+          return {
+            updateAvailable: true,
+            staged: false,
+            currentCommit: typeof details.commit === 'string' ? details.commit : undefined,
+            remoteCommit,
+            precheckError: reason,
+            error: reason,
+          }
+        }
+        // TODO(plugin-migration): Runtime 支持指定期望提交后，将暂存绑定到预检提交；本轮不修改 Runtime。
         const stageOutcome = await this.runRuntimePreparation(client, [
           'workspace',
           'stage',

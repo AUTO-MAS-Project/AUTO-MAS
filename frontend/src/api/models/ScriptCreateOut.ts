@@ -36,6 +36,6 @@ export type ScriptCreateOut = {
     /**
      * 托管配置数据
      */
-    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig | MaaFWConfig | HSRConfig | BetterGIConfig | ZzzOdConfig | BAAHConfig | WhimboxConfig | MSSConfig);
+    data: (SrcConfig | GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig | MaaFWConfig | HSRConfig | BetterGIConfig | ZzzOdConfig | BAAHConfig | WhimboxConfig | MSSConfig | MaaConfig);
 };
 

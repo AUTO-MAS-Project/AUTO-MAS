@@ -35,6 +35,7 @@ import * as path from 'path'
 import { getAppRoot } from './services/environmentService'
 import {
   registerInitializationHandlers,
+  getBackendService,
   startDesktopStartup,
   stopDesktopStartup,
   checkCriticalFilesViaRuntime,
@@ -42,6 +43,8 @@ import {
   resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
+import { registerAppUpdateHandlers, stopAppUpdateForShutdown } from './ipc/appUpdateHandlers'
+import { recoverUpdateMaterials } from './services/updateStaging'
 import { registerFluxdownInstallHandlers } from './ipc/fluxdownInstallHandlers'
 import {
   isAnalyticsSender,
@@ -614,6 +617,7 @@ function cancelQuitRequest(token?: number): void {
 
 async function finishCoordinatedQuit(): Promise<void> {
   if (coordinatedQuit) return
+  await stopAppUpdateForShutdown(true)
   await finishAssetPackageJobs()
   if (coordinatedQuit) return
   closeTelemetry?.finish({
@@ -2432,6 +2436,7 @@ if (process.platform === 'win32') {
 }
 
 app.whenReady().then(async () => {
+  // 在 Electron 就绪后启动桌面运行能力、注册各业务 IPC 与更新服务，并创建应用窗口。
   desktopSession = registerDesktopSession(
     () => mainWindow,
     mainWindowIcon,
@@ -2440,6 +2445,7 @@ app.whenReady().then(async () => {
   keepAwakeForScheduledWakeup(process.argv)
   recordDesktopStartup('Electron 就绪')
   const startupConfig = loadConfig()
+  await recoverUpdateMaterials(getAppRoot())
   void startDesktopStartup({
     version: app.getVersion(),
     initializedVersion:
@@ -2453,6 +2459,16 @@ app.whenReady().then(async () => {
   const handlersStartedAt = performance.now()
   registerAnalyticsHandlers(() => mainWindow)
   registerFluxdownInstallHandlers(() => mainWindow, getLocalApiEndpoint)
+  registerAppUpdateHandlers({
+    root: getAppRoot(),
+    window: () => mainWindow,
+    backendUrl: getLocalApiEndpoint,
+    backend: getBackendService,
+    ownsBackend: () =>
+      /* 向更新服务报告当前应用是否拥有后端进程，以限制需要停机的更新操作。 */ getBackendOwnership() ===
+      'owned',
+    quit: finishCoordinatedQuit,
+  })
   refreshAnalyticsPreference()
   analyticsService.recordAppStarted({
     launch_kind: isScheduledWakeup ? 'scheduled_wakeup' : isAutoStart ? 'auto_start' : 'manual',

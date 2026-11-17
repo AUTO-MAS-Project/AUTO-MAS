@@ -6,6 +6,18 @@
   用户确认后的环境修复由主进程根据宿主结果记录 `desktop_session_environment_repair_finished`。
   分身日志导出复用 T067，按 ZIP 保存结果或用户取消记录，不发送路径、附件或日志内容。
 
+- 启动期插件兼容升级复用 `BackendService.startBackend` 的 `backend_start_finished`：
+  插件与业务初始化完成、自动业务放行确认后才记录成功；升级失败记录启动失败。
+  初始化页面沿用既有阶段结果，不新增逐包或逐次健康轮询事件，不发送插件名称、版本或依赖内容。
+
+- 插件管理复用 `plugin_action_finished`，唯一观察者为 `usePluginApi`。配置保存读取保存结果，
+  插件安装跨重启等待持久结果确认，候选准备完成不计成功；后端重启与恢复沿用主进程的结果观察。
+  独立命令按返回身份查询实际终态；轮询失败耗尽记 unknown，取消记 cancelled，不重复提交命令。
+  受控前端检查覆盖成功、失败、取消、查询故障及纯配置保存；浏览器覆盖命令提交和 UI 属性刷新，
+  不代表市场真实安装或生产事件入库。操作身份仅用于本地查询，不进入上报。
+  发现冲突导致的安装拒绝沿该终态入口记录，启动失败沿 `backend_start_finished` 记录；
+  源码监视刷新不逐次采集，不发送冲突身份、导入名或本地路径。
+
 - 定时唤醒开关复用设置保存事件的 `scheduled_wakeup` 类别，唤醒启动复用
   `app_started` 的同名来源。只记录配置保存和应用 ready，不推断硬件唤醒结果，
   不发送定时时刻、星期、队列或安装路径。
@@ -73,7 +85,7 @@
 | T038 | plan_edit_finished：简单/复杂视图与轮换计划是否好用 | 已接入，持续复核 |
 | T039 | update_check_finished：手动检查更新能否得到结果 | 已接入，持续复核 |
 | T040 | update_download_started：用户选择更新后的进入率 | 已接入，持续复核 |
-| T041 | update_download_finished：本体下载成功、失败和取消 | 已接入，持续复核 |
+| T041 | update_download_finished：本体下载成功、失败和取消 | 已接入，换源内部停旧不结束整次观察 |
 | T042 | update_source_changed：低速后换源能否改善 | 已接入，持续复核 |
 | T043 | update_install_requested：下载后启动安装器还是稍后安装 | 已接入，持续复核 |
 | T044 | emulator_discovery_finished：搜索、导入模拟器是否顺利 | 已接入，持续复核 |
@@ -224,5 +236,11 @@ MAA / MaaEnd / MFW 家族全量与增量更新方式：保存沿用 `useScriptAp
 Okww 日常计划复用计划管理及保存事件，账号绑定复用用户配置写入事件；不采集计划内容。
 
 - OK-WW 自定义启动参数的账号保存复用 `useUserApi.updateUser` 的 `config_write_finished`；运行复用既有任务启动和终态事件，不采集参数内容或任务名称。
+
+后端后台暂存前的插件预检属于定时轮询内部准备，不另行采集；失败原因仅在本地吐司展示，不进入遥测。手动同版本更新的拒绝沿用 backend_update_finished，由更新服务确认失败，不重复记录预检事件。
+
+前端更新暂存材料的创建、交接及回收不单独采集，下载结果继续由 update_download_finished 确认，后端更新及单步重试继续由 backend_update_finished 确认；Runtime 对齐复用既有事件。安装器启动只表示受理，不新增安装完成统计；进程身份、路径、版本和恢复记录仅用于本地清理。
+
+预检未完成和确定不兼容继续由现有更新入口记录失败，原重试作为新的用户操作观察；不新增逐镜像或错误类别事件，不采集 stderr、索引地址和内部路径。插件网关错误信封修正继续复用原有业务结果观察，不把传输响应当作插件任务完成。
 
 MaaEnd 协议空间与基质刷取的独立配置复用 `useUserApi.updateUser` 的 `config_write_finished`，执行及送货失败停止后续任务复用 `taskAnalytics.ts` 的运行终态观察。库存目标、关卡及日志不参与上报。

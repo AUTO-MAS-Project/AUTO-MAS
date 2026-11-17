@@ -44,6 +44,9 @@ const screens = [
   'theme_store',
   'settings',
   'taskboard',
+  'plugins',
+  'plugin_market',
+  'plugin_settings',
 ]
 const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
   ...featureAnalyticsSchemas,

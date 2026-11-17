@@ -9,7 +9,6 @@ from app.models.config import (
     BAAHConfig,
     BetterGIConfig,
     GeneralConfig,
-    MaaConfig,
     MaaEndConfig,
     OkNteConfig,
     OkwwConfig,
@@ -56,8 +55,7 @@ def _running_inflight_detection(script_id: str) -> asyncio.Task | None:
 
 
 type ProxyScriptConfigType = (
-    MaaConfig
-    | MaaEndConfig
+    MaaEndConfig
     | SrcConfig
     | OkwwConfig
     | OkNteConfig

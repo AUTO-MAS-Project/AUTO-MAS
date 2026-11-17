@@ -22,9 +22,19 @@
 
 import time
 
+from packaging.version import Version
+
 from app.utils.common.process import runner as _utils_process_runner
 
 decode_bytes = _utils_process_runner.decode_bytes
+
+
+def to_pep440(version: str) -> str:
+    """将应用版本标签规范化为 Python 包版本，供 SDK 同步和依赖检查使用。
+
+    移除标签的 v 前缀，按与发版脚本一致的 PEP 440 规则转换正式版和预发布号。
+    """
+    return str(Version(version.removeprefix("v")))
 
 
 def busy_wait(ms: float) -> None:

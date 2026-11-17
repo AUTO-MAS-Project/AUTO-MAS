@@ -21,7 +21,6 @@ import uuid
 from typing import (
     Dict,
     List,
-    Literal,
     Optional,
     Union,
 )
@@ -30,6 +29,7 @@ from fastapi import APIRouter, Body
 from pydantic import (
     BaseModel,
     Field,
+    SerializeAsAny,
     model_validator,
 )
 
@@ -42,6 +42,7 @@ from app.models.schema import (
     ScriptDeleteIn,
     UserInBase,
 )
+from app.models.script_access import script_users
 from app.utils import get_logger
 
 BAAHConfig = ConfigPayload[_config_models.BAAHConfig]
@@ -78,12 +79,6 @@ MSSConfig = ConfigPayload[_config_models.MSSConfig]
 
 
 MSSConfigInput = ConfigInput[_config_models.MSSConfig]
-
-
-MaaConfig = ConfigPayload[_config_models.MaaConfig]
-
-
-MaaConfigInput = ConfigInput[_config_models.MaaConfig]
 
 
 MaaEndConfig = ConfigPayload[_config_models.MaaEndConfig]
@@ -130,22 +125,27 @@ ZzzOdConfigInput = ConfigInput[_config_models.ZzzOdConfig]
 
 class ScriptIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal[
-        "MaaConfig",
-        "GeneralConfig",
-        "OkwwConfig",
-        "OkNteConfig",
-        "SrcConfig",
-        "MaaEndConfig",
-        "M9AConfig",
-        "MaaFWConfig",
-        "HSRConfig",
-        "BetterGIConfig",
-        "ZzzOdConfig",
-        "BAAHConfig",
-        "WhimboxConfig",
-        "MSSConfig",
-    ] = Field(..., description="配置类型")
+    type: str = Field(
+        json_schema_extra={
+            "enum": [
+                "GeneralConfig",
+                "OkwwConfig",
+                "OkNteConfig",
+                "SrcConfig",
+                "MaaEndConfig",
+                "M9AConfig",
+                "MaaFWConfig",
+                "HSRConfig",
+                "BetterGIConfig",
+                "ZzzOdConfig",
+                "BAAHConfig",
+                "WhimboxConfig",
+                "MSSConfig",
+            ]
+        },
+        default=...,
+        description="配置类型",
+    )
 
     activityGame: str | None = Field(
         default=None, description="对应的游戏活动标识，无游戏归属时为空"
@@ -153,23 +153,25 @@ class ScriptIndexItem(BaseModel):
 
 
 class ScriptCreateIn(BaseModel):
-    type: Literal[
-        "MAA",
-        "SRC",
-        "General",
-        "Okww",
-        "OkNte",
-        "MaaEnd",
-        "M9A",
-        "MaaFW",
-        "HSR",
-        "BetterGI",
-        "ZzzOd",
-        "BAAH",
-        "Whimbox",
-        "MSS",
-    ] = Field(
-        ...,
+    type: str = Field(
+        json_schema_extra={
+            "enum": [
+                "SRC",
+                "General",
+                "Okww",
+                "OkNte",
+                "MaaEnd",
+                "M9A",
+                "MaaFW",
+                "HSR",
+                "BetterGI",
+                "ZzzOd",
+                "BAAH",
+                "Whimbox",
+                "MSS",
+            ]
+        },
+        default=...,
         description="托管类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, 奇想盒脚本, MSS脚本",
     )
     scriptId: str | None = Field(
@@ -180,7 +182,7 @@ class ScriptCreateIn(BaseModel):
 class ScriptCreateOut(OutBase):
     scriptId: str = Field(..., description="新创建的托管ID")
     data: Union[
-        MaaConfig,
+        SerializeAsAny[BaseModel],
         SrcConfig,
         GeneralConfig,
         OkwwConfig,
@@ -208,7 +210,7 @@ class ScriptGetOut(OutBase):
     data: Dict[
         str,
         Union[
-            MaaConfig,
+            SerializeAsAny[BaseModel],
             SrcConfig,
             GeneralConfig,
             OkwwConfig,
@@ -237,7 +239,7 @@ class ScriptLockOut(OutBase):
 class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="托管ID")
     data: Union[
-        MaaConfigInput,
+        SerializeAsAny[BaseModel],
         SrcConfigInput,
         GeneralConfigInput,
         OkwwConfigInput,
@@ -280,6 +282,18 @@ class ScriptConfigImportIn(UserInBase):
 
 
 router = APIRouter()
+
+
+class ScriptTypesOut(OutBase):
+    types: list[str] = Field(default_factory=list)
+
+
+@router.get("/types", tags=["Get"], response_model=ScriptTypesOut)
+async def get_script_types() -> ScriptTypesOut:
+    """返回当前已启用的内置和插件托管类型，供新建页面实时筛选能力。"""
+    return ScriptTypesOut(types=list(Config.script_classes))
+
+
 logger = get_logger("托管管理 API")
 
 
@@ -321,9 +335,17 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
 
     try:
         index, data = await Config.get_script(script.scriptId)
-        activity_games = {
+        activity_games: dict[str, str | None] = {
             config.__name__: game for config, game in SCRIPT_CALENDAR_GAMES.items()
         }
+        from app.core.plugin import Plugin
+
+        activity_games.update(
+            {
+                decl.script_type.__name__: decl.activity_game
+                for decl in Plugin.script_types.values()
+            }
+        )
         index = [
             ScriptIndexItem(**item, activityGame=activity_games.get(item["type"]))
             for item in index
@@ -352,7 +374,9 @@ async def get_script_lock(target: ScriptLockIn) -> ScriptLockOut:
     script = Config.ScriptConfig.get(target.scriptId)
     if script is None:
         return ScriptLockOut(code=404, status="error", message="托管配置不存在")
-    config = script if target.userId is None else script.UserData.get(target.userId)
+    config = (
+        script if target.userId is None else script_users(script).get(target.userId)
+    )
     if config is None:
         return ScriptLockOut(code=404, status="error", message="用户配置不存在")
     return ScriptLockOut(locked=config.is_locked)

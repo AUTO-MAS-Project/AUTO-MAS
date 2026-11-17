@@ -103,6 +103,9 @@ export type AnalyticsScreen =
   | 'theme_store'
   | 'settings'
   | 'taskboard'
+  | 'plugins'
+  | 'plugin_market'
+  | 'plugin_settings'
 export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
   app_started: {
     launch_kind: 'manual' | 'auto_start' | 'scheduled_wakeup' | 'unknown'
