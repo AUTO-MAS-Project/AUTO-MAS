@@ -38,7 +38,9 @@
         class="override-input"
         :mode="field.type === 'list' ? 'multiple' : undefined"
         :value="selectValue"
-        :options="(field.options ?? []).map(value => ({ value, label: value }))"
+        :options="
+          (field.options ?? []).map(value => ({ value, label: oknteWeeklyLabel(value, t) }))
+        "
         :disabled="disabled"
         @change="(value: unknown) => emit('set', value)"
       />
@@ -63,9 +65,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { oknteWeeklyLabel } from '../oknteWeekly'
 import type { OverrideField } from '../oknteOverrideTypes'
 const props = defineProps<{
   field: OverrideField
+  overrideDefault: unknown
   value: unknown
   overridden: boolean
   disabled: boolean
@@ -84,7 +88,7 @@ watch(
 )
 function toggleOverride() {
   if (props.overridden) emit('inherit')
-  else emit('set', props.field.value)
+  else emit('set', props.overrideDefault)
 }
 function saveJson() {
   try {

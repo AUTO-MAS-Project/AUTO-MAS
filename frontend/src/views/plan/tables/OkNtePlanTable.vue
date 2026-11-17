@@ -7,7 +7,7 @@
     :columns="columns"
     :data-source="days.map(day => ({ day }))"
     :pagination="false"
-    :scroll="{ x: 848 }"
+    :scroll="{ x: 1108 }"
     bordered
   >
     <template v-if="catalogError" #title>
@@ -19,6 +19,14 @@
     </template>
     <template #bodyCell="{ column, record }">
       <span v-if="column.key === 'day'">{{ label(record.day) }}</span>
+      <OkNteWeeklyCell
+        v-else-if="column.key === 'weekly'"
+        :enabled="weeklyEnabled(record.day)"
+        :targets="configs(record.day)['DailyRoutineTaskConfigs.json']?.anomaly_pilgrimage?.['目标']"
+        :options="weeklyOptions"
+        :disabled="isSaving || !catalog.length || Boolean(catalogError)"
+        :save="(targets: string[] | null) => saveWeekly(record.day, targets)"
+      />
       <a-button
         v-else-if="column.key === 'detail'"
         type="link"
@@ -60,8 +68,10 @@ import { useI18n } from 'vue-i18n'
 import { OknteService, type OkNtePlanConfig } from '@/api'
 import type { OverrideField } from '../oknteOverrideTypes'
 import { navigateTo } from '@/router'
-import { planDayKeys, planDayLabel, type PlanMode } from '@/utils/planDays'
+import { planDayKeys, planDayLabel, planColumnGroup, type PlanMode } from '@/utils/planDays'
 import type { PlanChangeHandler } from '@/utils/planTypeRegistry'
+import OkNteWeeklyCell from '../components/OkNteWeeklyCell.vue'
+import { hasExplicitWeekly, withWeeklyDefaults } from '../oknteWeekly'
 const props = defineProps<{
   tableData: OkNtePlanConfig
   currentMode: PlanMode
@@ -118,15 +128,17 @@ const columns = computed(() => [
     { key: '材料序号', width: 88 },
     { key: '追猎目标', width: 112 },
   ].map(column => ({ ...column, title: column.key, align: 'center' as const })),
+  { title: t('core.plan.oknte.weeklyTitle'), key: 'weekly', width: 260, align: 'center' as const },
   { title: t('core.plan.oknte.detail'), key: 'detail', width: 100, align: 'center' as const },
 ])
 function label(day: string) {
+  if (day === 'ALL') return t('core.plan.modeAll')
   const x = planDayLabel(day)
   return t(x.key, x.params)
 }
 function configs(day: string): Record<string, Record<string, any>> {
   if (drafts.value[day]) return drafts.value[day]
-  const group = props.tableData[day as keyof OkNtePlanConfig]
+  const group = props.tableData[planColumnGroup(day) as keyof OkNtePlanConfig]
   return group && 'Key' in group ? (group.Key?.Configs ?? {}) : {}
 }
 function activity(day: string) {
@@ -135,6 +147,41 @@ function activity(day: string) {
     (item: { id: string; enabled: boolean }) =>
       item.enabled && ['daily_anomaly', 'daily_anomaly_hunter'].includes(item.id)
   )?.id as string | undefined
+}
+const weeklyOptions = computed(
+  () =>
+    catalog.value
+      .find(file => file.filename === 'DailyRoutineTaskConfigs.json')
+      ?.fields.find(field => field.name === 'anomaly_pilgrimage')
+      ?.children?.find(field => field.name === '目标')?.options ?? []
+)
+function weeklyEnabled(day: string): boolean | undefined {
+  return configs(day)['DailyRoutineTask.json']?.['Routine Items']?.find(
+    (item: { id: string }) => item.id === 'anomaly_pilgrimage'
+  )?.enabled
+}
+async function saveWeekly(day: string, targets: string[] | null) {
+  const configsForDay = configs(day)
+  let next = JSON.parse(JSON.stringify(configsForDay))
+  const routine = (next['DailyRoutineTask.json'] ??= {})
+  const items = (routine['Routine Items'] ?? []).filter(
+    (item: { id: string }) => item.id !== 'anomaly_pilgrimage'
+  )
+  if (targets !== null) items.unshift({ id: 'anomaly_pilgrimage', enabled: targets.length > 0 })
+  if (items.length) routine['Routine Items'] = items
+  else delete routine['Routine Items']
+  const tasks = next['DailyRoutineTaskConfigs.json']
+  if (targets !== null) {
+    const configs = (next['DailyRoutineTaskConfigs.json'] ??= {})
+    const weekly = (configs.anomaly_pilgrimage ??= {})
+    weekly['目标'] = targets
+    if (!hasExplicitWeekly(configsForDay)) next = withWeeklyDefaults(next, day)
+  } else if (tasks?.anomaly_pilgrimage) {
+    delete tasks.anomaly_pilgrimage['目标']
+    delete tasks.anomaly_pilgrimage['每周开始运行日']
+    delete tasks.anomaly_pilgrimage['轮换起始日期']
+  }
+  if (!(await persist(day, next))) throw new Error(t('core.plan.oknte.weeklySaveFailed'))
 }
 function value(day: string, field: string) {
   const task = activity(day)
@@ -237,9 +284,12 @@ async function save(day: string, field: string, input: unknown) {
       task[key] = Number(input)
     } else task[field] = input
   }
+  await persist(day, next)
+}
+async function persist(day: string, next: Record<string, Record<string, any>>) {
   drafts.value = { ...drafts.value, [day]: next }
   try {
-    await enqueue(() => props.handlePlanChange(`${day}.Key.Configs`, next))
+    return await enqueue(() => props.handlePlanChange(`${planColumnGroup(day)}.Key.Configs`, next))
   } finally {
     if (drafts.value[day] === next) {
       const remaining = { ...drafts.value }
@@ -249,7 +299,7 @@ async function save(day: string, field: string, input: unknown) {
   }
 }
 function detail(day: string) {
-  navigateTo(`/plans/${props.planId}/oknte/${day}`)
+  navigateTo(`/plans/${props.planId}/oknte/${planColumnGroup(day)}`)
 }
 </script>
 

@@ -713,6 +713,10 @@ class UniversalPlanConfig(PlanDaysConfig):
 class OkNtePlanConfig(WeeklyKeyPlan):
     """按日叠加日常体力参数，其他账号配置保持原有来源。"""
 
+    def current_group(self, now: datetime) -> str:
+        # 异环按北京时间凌晨五点切日，周计划和多天轮换使用同一边界。
+        return super().current_group(now.astimezone(_utils_constants.UTC3))
+
     class DayFields(ConfigGroup):
         Key: schema_model.OkNtePlanKey = Field(
             default_factory=schema_model.OkNtePlanKey, description="体力计划参数"
