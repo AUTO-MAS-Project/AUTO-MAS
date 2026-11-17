@@ -1,11 +1,5 @@
 # 匿名统计场景覆盖台账
 
-- 桌面分身由 Electron 主进程分别记录连接结果（`desktop_session_connection_finished`）
-  和各选中目标的调度受理结果（`task_start_result` 的 `desktop_session` 来源）。
-  接受派发仅表示创建了任务，不代表任务完成。不发送任务标识、队列名称、凭据或会话信息。
-  用户确认后的环境修复由主进程根据宿主结果记录 `desktop_session_environment_repair_finished`。
-  分身日志导出复用 T067，按 ZIP 保存结果或用户取消记录，不发送路径、附件或日志内容。
-
 - 启动期插件兼容升级复用 `BackendService.startBackend` 的 `backend_start_finished`：
   插件与业务初始化完成、自动业务放行确认后才记录成功；升级失败记录启动失败。
   初始化页面沿用既有阶段结果，不新增逐包或逐次健康轮询事件，不发送插件名称、版本或依赖内容。
