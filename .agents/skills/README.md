@@ -19,7 +19,7 @@
 
 - `mas-skills`：统一入口，用于按任务类型分发并组合工程规范类 Skill。
 - `mas-frontend-standards`：用于约束 Vue 3、TypeScript、Vite、Electron renderer、路由、API composable、状态、样式、表单与前端验证。
-- `mas-frontend-ui`：用于约束 Ant Design Vue UI、桌面端业务布局、视觉 token、表单、表格、弹窗、反馈、拖拽与深色模式。
+- `mas-frontend-ui`：用于约束 Ant Design Vue UI、桌面端业务布局、视觉 token、表单、表格、弹窗、反馈、拖拽与深色模式；修改 UI 前须用 Playwright 生成概念图，经用户确认视觉效果后再实现。
 - `mas-api-contract`：用于约束 FastAPI 接口与 WebSocket 的请求、响应和错误契约。
 - `mas-data-model`：用于规范后端数据模型及配置声明、调用点、事务、信号、锁、持久化和兼容性演进；配置任务加载其中的[配置框架参考](mas-data-model/references/config-framework.md)。
 - `mas-task-scheduler`：用于任务创建、要求树与运行身份、四级派发、上层持锁、取消收尾、信息推送及队列启动／定时／循环触发；记录已确认的目标设计，旧 manager 行为仅作兼容例外。

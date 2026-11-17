@@ -44,10 +44,17 @@ const dailyOnceTaskValues = computed(() => {
   }
   return []
 })
-const dailyOnceTaskOptions = MAAEND_DAILY_ONCE_TASK_OPTIONS.map(task => ({
-  label: task.label,
-  value: task.name,
-}))
+const dailyOnceTaskOptions = computed(() =>
+  MAAEND_DAILY_ONCE_TASK_OPTIONS.map(task => ({
+    label:
+      task.name === 'ProtocolSpace'
+        ? t('core.edit.maaEndProtocolSpaceTitle')
+        : task.name === 'AutoEssence'
+          ? t('core.edit.maaEndEssenceTitle')
+          : task.label,
+    value: task.name,
+  }))
+)
 
 const isOptionalTask = (name: string) => name !== 'SeizeDeliveryJobs' && name !== 'AutoCollect'
 

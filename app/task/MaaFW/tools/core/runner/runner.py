@@ -1881,7 +1881,7 @@ class MaaFWRunner:
     ) -> Literal["next", "skip_rest"] | None:
         """本任务被原地打转检测停掉时收尾；返回值同 ``_handle_task_deadline``。
 
-        口径与 ``_handle_task_deadline`` 完全一致：计划里的第一个任务或特调声明的关键
+        口径与 ``_handle_task_deadline`` 完全一致：受启动保护的第一个任务或特调声明的关键
         任务（``abortRoundMessage``）结束本轮，收尾任务（``nonFatalMessage``）放过（恰好
         又被脚本侧强停时跳过剩余任务；排在中间且等满仍停不下来时结束本轮并计入失败），
         其余记一条任务失败再继续。必须早于
