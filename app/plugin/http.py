@@ -8,6 +8,8 @@ from dataclasses import dataclass, field, replace
 from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable
 
+from .calls import call_context
+
 if TYPE_CHECKING:
     from fastapi import APIRouter, FastAPI
 
@@ -24,7 +26,13 @@ def _async_endpoint(endpoint):
     @wraps(endpoint)
     async def invoke(*args, **kwargs):
         """由事件循环持有端点执行；请求取消不会让仍在工作线程使用的插件提前卸载。"""
-        worker = asyncio.create_task(run_in_threadpool(endpoint, *args, **kwargs))
+
+        def run():
+            """在线程入口绑定调用归属，返回事件循环执行生命周期时仍可识别原发起者。"""
+            with call_context():
+                return endpoint(*args, **kwargs)
+
+        worker = asyncio.create_task(run_in_threadpool(run))
         try:
             return await asyncio.shield(worker)
         except asyncio.CancelledError:

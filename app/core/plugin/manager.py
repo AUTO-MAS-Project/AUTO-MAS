@@ -36,7 +36,7 @@ from app.plugin import uv as uv_tool
 from app.plugin.base.game import GameAdapterPlugin, GameTypeDecl
 from app.plugin.base.plugin import BasePlugin
 from app.plugin.base.script import ScriptAdapterPlugin, ScriptTypeDecl
-from app.plugin.calls import CallGate
+from app.plugin.calls import CallGate, call_context
 from app.plugin.errors import (
     PluginBusyError,
     PluginError,
@@ -359,7 +359,9 @@ class _PluginManager:
         if self._busy.locked() or self._restart_installation is not None:
             raise PluginBusyError("插件系统忙，请稍后重试")
         async with self._busy:
-            yield
+            # 线程回调进入生命周期时绑定本协程，独立子任务不继承它的自禁用资格。
+            with call_context():
+                yield
 
     # ==================== 对外生命周期 ====================
 

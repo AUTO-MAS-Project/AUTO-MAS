@@ -138,6 +138,37 @@ async def test_retained_service_method_stops_admission_and_waits_inflight():
 
 
 @pytest.mark.asyncio
+async def test_self_drain_does_not_exclude_independent_child_call():
+    """自禁用仍须等待在当前调用中创建的独立任务，不能把继承上下文当作同一调用。"""
+    gate = CallGate()
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def child():
+        """保持独立服务调用在途，供父调用请求排空。"""
+        started.set()
+        await release.wait()
+
+    async def parent():
+        """创建独立调用后请求自排空，必须等子调用退出才能继续。"""
+        task = asyncio.create_task(gate.wrap(child)())
+        try:
+            await started.wait()
+            gate.accepting = False
+            with pytest.raises(TimeoutError):
+                async with asyncio.timeout(0.05):
+                    await gate.drain()
+            release.set()
+            await task
+            async with asyncio.timeout(1):
+                await gate.drain()
+        finally:
+            release.set()
+            await task
+
+    await gate.wrap(parent)()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("action", ["enable", "uninstall"])
 async def test_config_save_failure_keeps_owned_root_registered(
     isolated_app_paths, monkeypatch, action

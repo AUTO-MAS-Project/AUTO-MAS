@@ -53,7 +53,7 @@ async def cascade_plugins(isolated_app_paths, monkeypatch, tmp_path):
                 + "class Adapter(BasePlugin):\n"
                 + declaration
                 + f"    requires = {tuple(requires)!r}\n"
-                f"    provides_services = {{{name!r}: 'value'}}\n"
+                f"    provides_services = {{{name!r}: 'value', '{name}.sync': 'sync_value'}}\n"
                 "    events = []\n"
                 "    fail_enable = False\n"
                 "    async def value(self, *, started=None, release=None, disable_self=False):\n"
@@ -70,6 +70,17 @@ async def cascade_plugins(isolated_app_paths, monkeypatch, tmp_path):
                 '        """记录启用并按插件故障开关注入业务失败。"""\n'
                 "        self.events.append('enable')\n"
                 "        if self.fail_enable: raise RuntimeError('plugin enable failed')\n"
+                "    def sync_value(self):\n"
+                '        """通过标准线程回调发起本插件禁用，验证真实线程往返的调用归属。"""\n'
+                "        from asyncio import timeout\n"
+                "        from anyio import from_thread\n"
+                "        from app.core.plugin import Plugin\n"
+                "        async def disable():\n"
+                '            """给测试回调设置期限，归属回归时也能退出真实工作线程。"""\n'
+                "            async with timeout(2):\n"
+                "                await Plugin.disable(self.record)\n"
+                "        from_thread.run(disable)\n"
+                "        return {'disabled': self.record.info.state == 'disabled'}\n"
                 "    async def on_disable(self):\n"
                 '        """记录资源禁用，供核对共享依赖不会重复启停。"""\n'
                 "        self.events.append('disable')\n"
@@ -235,8 +246,9 @@ async def test_uninstall_waits_for_indirect_downstream_call_before_releasing_res
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("threaded", [False, True])
 async def test_service_disables_itself_after_other_calls_finish(
-    cascade_plugins, monkeypatch
+    cascade_plugins, monkeypatch, threaded
 ):
     """服务内自禁用不等待自己，但必须等待另一服务调用退出，之后才能释放实例。"""
     from app.core import plugin
@@ -247,10 +259,31 @@ async def test_service_disables_itself_after_other_calls_finish(
     await manager.enable(record)
     instance = record._plugin
     service = manager.services.require("self_disable_probe")
+    from fastapi import APIRouter, FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    app, router = FastAPI(), APIRouter()
+    if threaded:
+        router.get("/stop")(manager.services.require("self_disable_probe.sync"))
+        manager.http.bind_app(app)
+        manager.http.mount(
+            "self_disable_probe", [], router=router, gate=manager._calls[record.uid]
+        )
+    client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+
+    async def stop():
+        """分别通过原异步服务或线程端点请求同一真实生命周期禁用。"""
+        if threaded:
+            response = await client.get("/stop")
+            assert response.status_code == 200
+            assert response.json() == {"disabled": True}
+            return instance
+        return await service(disable_self=True)
+
     started, release = asyncio.Event(), asyncio.Event()
     other = asyncio.create_task(service(started=started, release=release))
     await started.wait()
-    stopping = asyncio.create_task(service(disable_self=True))
+    stopping = asyncio.create_task(stop())
     try:
         with pytest.raises(TimeoutError):
             await asyncio.wait_for(asyncio.shield(stopping), timeout=0.1)
@@ -272,6 +305,7 @@ async def test_service_disables_itself_after_other_calls_finish(
     finally:
         release.set()
         await asyncio.gather(other, stopping, return_exceptions=True)
+        await client.aclose()
         if record.info.state == PluginState.ENABLED:
             await manager.disable(record)
 

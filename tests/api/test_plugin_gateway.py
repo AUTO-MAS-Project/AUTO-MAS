@@ -12,6 +12,7 @@ from app.core.plugin import Plugin
 from app.plugin.calls import CallGate
 from app.plugin.errors import PluginBusyError
 from app.plugin.http import HttpRegistry, RouteDecl
+from app.plugin.services import ServiceRegistry
 
 
 @pytest.mark.asyncio
@@ -193,6 +194,13 @@ async def test_typed_sync_endpoint_runs_in_worker_and_releases_admission(failed)
     app = FastAPI()
     router = APIRouter()
     threads = []
+    services = ServiceRegistry()
+
+    def echo(value):
+        """执行跨插件同步服务，返回实际绑定的请求参数。"""
+        return {"value": value}
+
+    services.register("echo", CallGate().wrap(echo), owner="provider")
 
     @router.get("/probe")
     def endpoint(value: int):
@@ -200,7 +208,7 @@ async def test_typed_sync_endpoint_runs_in_worker_and_releases_admission(failed)
         threads.append(threading.get_ident())
         if failed:
             raise ValueError("business failed")
-        return {"value": value}
+        return services.require("echo")(value)
 
     gate = CallGate()
     registry = HttpRegistry()
@@ -227,13 +235,21 @@ async def test_cancelled_sync_http_keeps_admission_until_worker_exits():
 
     app, router = FastAPI(), APIRouter()
     started, release = threading.Event(), threading.Event()
+    provider = CallGate()
+    services = ServiceRegistry()
 
-    @router.get("/probe")
-    def endpoint():
-        """保持一个实际线程调用在途，直到测试释放模拟外部同步工作。"""
+    def service():
+        """保持提供者实际线程调用在途，直到测试放行。"""
         started.set()
         release.wait(5)
         return {"done": True}
+
+    services.register("work", provider.wrap(service), owner="provider")
+
+    @router.get("/probe")
+    def endpoint():
+        """在消费方同步端点中调用另一插件的同步服务。"""
+        return services.require("work")()
 
     gate, registry = CallGate(), HttpRegistry()
     registry.bind_app(app)
@@ -246,13 +262,15 @@ async def test_cancelled_sync_http_keeps_admission_until_worker_exits():
             assert await asyncio.to_thread(started.wait, 2)
             request.cancel()
             gate.accepting = False
+            provider.accepting = False
             with pytest.raises(TimeoutError):
-                await asyncio.wait_for(gate.drain(), 0.05)
+                await asyncio.wait_for(provider.drain(), 0.05)
             assert not request.done()
             release.set()
             with pytest.raises(asyncio.CancelledError):
                 await request
             await asyncio.wait_for(gate.drain(), 1)
+            await asyncio.wait_for(provider.drain(), 1)
         finally:
             release.set()
             await asyncio.gather(request, return_exceptions=True)
