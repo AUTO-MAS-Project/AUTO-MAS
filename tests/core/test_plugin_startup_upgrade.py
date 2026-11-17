@@ -21,6 +21,82 @@ from app.plugin.errors import PluginError
 from app.plugin.uv import ops, precheck
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_installation_confirmation_preserves_backup_on_pre_enable_failure(
+    isolated_app_paths, monkeypatch, enabled
+):
+    """需要启用的插件预检查失败时不能确认安装或删除原件；用户停用的插件仍可确认。"""
+    from uuid import uuid4
+
+    from app.models.schema import PluginInstallation
+    from app.plugin.uv import environment
+
+    config = isolated_app_paths
+    registry = PluginRegistryCollection.build([PluginRecord])
+    await registry.activate()
+    monkeypatch.setattr(config, "plugin_registry", registry)
+    source = config.plugins_path / "enable_probe"
+    source.mkdir(parents=True)
+    (source / "__init__.py").write_text(
+        "from app.plugin.base import BasePlugin\n"
+        "class Plugin(BasePlugin):\n"
+        "    async def pre_enable(self):\n"
+        "        raise RuntimeError('pre-enable rejected')\n"
+        "PLUGIN = Plugin\n",
+        encoding="utf-8",
+    )
+    uid = registry.add(
+        PluginRecord,
+        payload={
+            "info": {
+                "plugin_name": "enable_probe",
+                "import_name": "enable_probe",
+                "enabled": enabled,
+            }
+        },
+    )
+    await registry.commit()
+    record = registry[uid]
+    record._project_dir = config.plugins_path
+    manager = _PluginManager()
+    await manager.load(record)
+    if enabled:
+        with pytest.raises(RuntimeError, match="pre-enable rejected"):
+            await manager.enable(record)
+    assert record.info.state == "disabled"
+    installation_id = uuid4()
+    previous = ops.site_dir(activate=False).with_suffix(".previous")
+    backup = previous.parent / f".publish-{installation_id}"
+    previous.mkdir()
+    backup.mkdir()
+    environment.write_installation(
+        environment.InstallationRecord(
+            progress=PluginInstallation(
+                installationId=installation_id,
+                metaId=uuid4(),
+                packageName="enable-probe",
+                pluginName="enable_probe",
+                version="1.0",
+                state="applying",
+            ),
+            core_version="5.9.0b1",
+            host_constraints=[],
+            baseline={},
+        )
+    )
+    if enabled:
+        with pytest.raises(PluginError):
+            environment.finish_installation()
+        assert environment.read_installation().progress.state == "failed"
+        assert previous.is_dir() and backup.is_dir()
+    else:
+        environment.finish_installation()
+        assert environment.read_installation().progress.state == "succeeded"
+        assert not previous.exists() and not backup.exists()
+    await manager.unload(record)
+
+
 def wheel(
     directory, *, name, version, requires=(), module="", content="", plugin_id=None
 ):

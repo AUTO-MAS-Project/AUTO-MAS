@@ -859,13 +859,14 @@ class _PluginManager:
 
             if plugin is not None:
                 await plugin.on_unload()
+            # 禁用写盘失败可能留下配置根，必须解除所有权后才可卸包并删除配置文件。
+            await self._release_config(record)
             # 发现失败或来源已移除时没有导入路径，仍须允许卸包，不能要求先成功加载。
             if record._project_dir is not None:
                 loader.clear(record)
             # 卸出列表：清运行时 → unloaded → 删注册表行
             record._plugin = None
             record._plugin_cls = None
-            record._config = None
             record._degraded_wants = []
             record._project_dir = None
             record.info.state = PluginState.UNLOADED

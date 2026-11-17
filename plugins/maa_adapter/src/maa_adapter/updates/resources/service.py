@@ -1330,6 +1330,17 @@ async def check_resource_download(
     stage = await asyncio.to_thread(_load_valid_manifest, discard_invalid=False)
     if _stage_reusable(stage, target):
         return []
+    # 只读遵守实际准备的凭据额度，避免共享缓存缺失时由 L2 提前消耗下载次数。
+    state = load_state(_STATE_FILE)
+    now = datetime.now(timezone.utc)
+    credential_key = hashlib.sha256(cdk.encode("utf-8")).hexdigest()[:16]
+    previous = parse_iso(state.get(f"last_download_attempt_version/{credential_key}"))
+    if backoff_active(state, f"download_fail_until/{credential_key}", now) or (
+        attempted_today(state, f"last_download_attempt_at/{credential_key}", now)
+        and previous is not None
+        and target <= previous
+    ):
+        return []
     base_clock = parse_iso(stage.get("target")) if incremental and stage else None
     url, actual, delta = await _request_resource_package(cdk, base_clock=base_clock)
     if actual is None or actual < target:

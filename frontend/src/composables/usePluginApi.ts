@@ -107,10 +107,12 @@ export function usePluginApi() {
       restarting = true
       const result = await window.electronAPI.backendRestart('update')
       if (!result.success) {
-        const progress = (await get()).data
+        // 失败进程可能已退出；读不到 HTTP 状态也须执行这次交接唯一允许的恢复重启。
+        const progress = await get().catch(() => null)
         if (
-          progress?.state === PluginInstallation.state.FAILED ||
-          progress?.state === PluginInstallation.state.APPLYING
+          progress === null ||
+          progress.data?.state === PluginInstallation.state.FAILED ||
+          progress.data?.state === PluginInstallation.state.APPLYING
         ) {
           // 启动未确认成功时，新进程按既有交接记录恢复旧环境；最多恢复一次。
           if (!disposed) onProgress?.('recovering')

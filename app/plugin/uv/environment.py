@@ -379,10 +379,10 @@ def finish_installation() -> None:
         return
     for name in {record.progress.pluginName, *record.healthy_plugins}:
         plugin = Config.plugin_registry.by_name(name)
-        if plugin is None or plugin.info.state not in {
-            PluginState.ENABLED,
-            PluginState.DISABLED,
-        }:
+        # pre_enable 失败会保留 disabled；只有达到用户保存的启用意图才算新环境可用。
+        if plugin is None or plugin.info.state != (
+            PluginState.ENABLED if plugin.info.enabled else PluginState.DISABLED
+        ):
             record.progress.state = "failed"
             record.progress.message = "新插件环境加载失败，下次启动将恢复原环境"
             write_installation(record)

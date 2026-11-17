@@ -1017,6 +1017,28 @@ async def check_software_download(root: Path, config: MaaConfig) -> list:
         and await _run_write_thread(cache_zip_matches, cache_dir, manifest)
     ):
         return []
+    # 与实际准备读取同一份持久化额度；L2 不应绕过退避或当日取包限制先启动传输。
+    baseline = release[0] if config.Update.PackageMode == "incremental" else ""
+    key = _cache_key(release[1], config.Update.Channel) + (
+        "/" + hashlib.sha256(baseline.encode()).hexdigest()[:16] if baseline else ""
+    )
+    query_key = _query_key(release[1], config.Update.Channel, cdk)
+    async with _state_lock:
+        state = load_state(_STATE_FILE)
+        now = datetime.now(timezone.utc)
+        if backoff_active(
+            state, f"query_fail_until/{query_key}", now
+        ) or backoff_active(state, f"download_fail_until/{key}", now):
+            return []
+        previous = parse_version(
+            str(state.get(f"last_download_attempt_version/{key}") or "")
+        )
+        if (
+            attempted_today(state, f"last_download_attempt_at/{key}", now)
+            and previous is not None
+            and compare_versions(target, previous) <= 0
+        ):
+            return []
     return [
         DownloadRequest(
             url=latest.url,

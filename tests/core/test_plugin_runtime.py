@@ -138,10 +138,14 @@ async def test_retained_service_method_stops_admission_and_waits_inflight():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("action", ["enable", "uninstall"])
 async def test_config_save_failure_keeps_owned_root_registered(
-    isolated_app_paths, monkeypatch
+    isolated_app_paths, monkeypatch, action
 ):
-    """禁用写盘失败后再次启用，须保住内存设置且只保留一个持久化根。"""
+    """禁用写盘失败后再次启用保留设置，卸载则解除持久化所有权，防止配置复活。"""
+    from types import SimpleNamespace
+
+    from app.plugin.uv import ops
     from app.utils.common import io
 
     class Settings(PluginConfig):
@@ -153,8 +157,22 @@ async def test_config_save_failure_keeps_owned_root_registered(
     class Example(BasePlugin):
         config_class = Settings
 
-    record = PluginRecord.build(info={"plugin_name": "example", "state": "disabled"})
-    await record.activate()
+    registry = PluginRegistryCollection.build([PluginRecord])
+    await registry.activate()
+    monkeypatch.setattr(isolated_app_paths, "plugin_registry", registry)
+    uid = registry.add(
+        PluginRecord,
+        payload={
+            "info": {
+                "plugin_name": "example",
+                "package_name": "example",
+                "source": "installed",
+                "state": "disabled",
+            }
+        },
+    )
+    await registry.commit()
+    record = registry[uid]
     record._plugin_cls = Example
     manager = _PluginManager()
     await manager.enable(record)
@@ -176,6 +194,20 @@ async def test_config_save_failure_keeps_owned_root_registered(
     assert config_manager.get_file(root) == path
     monkeypatch.setattr(io, "write_file", write)
     try:
+        if action == "uninstall":
+
+            async def execute(*args, **kwargs):
+                """仅隔离 uv 子进程；保留卸载、持久化根释放和删除配置的真实路径。"""
+                return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+            monkeypatch.setattr(ops, "ensure", lambda: "uv")
+            monkeypatch.setattr(ops.ProcessRunner, "run_process", execute)
+            await manager.uninstall(record)
+            await config_manager.flush()
+            assert uid not in registry
+            assert config_manager.get_file(root) is None
+            assert not path.exists()
+            return
         await manager.enable(record)
         assert record._config.data.value == "user unsaved setting"
         await config_manager.flush()
@@ -188,7 +220,8 @@ async def test_config_save_failure_keeps_owned_root_registered(
             == 1
         )
     finally:
-        await manager.disable(record)
+        if uid in registry and record.info.state == PluginState.ENABLED:
+            await manager.disable(record)
 
 
 @pytest.mark.asyncio

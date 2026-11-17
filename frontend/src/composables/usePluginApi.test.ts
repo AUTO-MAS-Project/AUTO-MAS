@@ -109,23 +109,30 @@ describe('插件安装的热加载与重启交接', () => {
     }
   })
 
-  it('新环境启动失败后恢复原环境，安装仍报告失败', async () => {
-    boundary.installation
-      .mockResolvedValueOnce({ code: 200, data: null })
-      .mockResolvedValueOnce(progress('waiting_restart'))
-      .mockResolvedValue(progress('failed'))
-    boundary.restart.mockResolvedValueOnce({ success: false }).mockResolvedValue({ success: true })
-    const scope = effectScope()
-    try {
-      const api = scope.run(usePluginApi)!
-      await expect(api.runCommand('install', request)).rejects.toThrow()
-      expect(boundary.restart).toHaveBeenCalledTimes(2)
-      expect(boundary.resume).toHaveBeenCalled()
-      expect(boundary.finish).toHaveBeenCalledWith({ action: 'install', outcome: 'failure' })
-    } finally {
-      scope.stop()
+  it.each(['failed', 'disconnected'])(
+    '新环境启动失败后恢复原环境，状态为 %s 时安装仍报告失败',
+    async state => {
+      boundary.installation
+        .mockResolvedValueOnce({ code: 200, data: null })
+        .mockResolvedValueOnce(progress('waiting_restart'))
+        .mockResolvedValue(progress('failed'))
+      if (state === 'disconnected')
+        boundary.installation.mockRejectedValue(new Error('disconnected'))
+      boundary.restart
+        .mockResolvedValueOnce({ success: false })
+        .mockResolvedValue({ success: true })
+      const scope = effectScope()
+      try {
+        const api = scope.run(usePluginApi)!
+        await expect(api.runCommand('install', request)).rejects.toThrow()
+        expect(boundary.restart).toHaveBeenCalledTimes(2)
+        expect(boundary.resume).toHaveBeenCalled()
+        expect(boundary.finish).toHaveBeenCalledWith({ action: 'install', outcome: 'failure' })
+      } finally {
+        scope.stop()
+      }
     }
-  })
+  )
 
   it('外部后端保留待重启结果，不误报安装成功', async () => {
     boundary.installation.mockResolvedValue(progress('waiting_restart'))

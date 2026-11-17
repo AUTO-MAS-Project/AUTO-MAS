@@ -171,10 +171,27 @@ async def test_daily_quota_is_checked_under_user_lock(runtime, monkeypatch, case
 @pytest.mark.asyncio
 @pytest.mark.parametrize("inactive", ["disabled", "expired"])
 async def test_inactive_shared_account_does_not_require_default_configuration(
-    runtime, inactive
+    runtime, inactive, monkeypatch
 ):
     """原生账号仍可运行时，运行树里保留的禁用或到期共享账号不应触发全局配置拦截。"""
     from maa_adapter.config.user import MaaUserConfig
+
+    from app.core import Notify
+
+    class Monitor:
+        def __init__(self, interval, fmt, callback, **kwargs):
+            """记录真实日志入口，交付上游定义的完成日志。"""
+            self.callback = callback
+
+        async def start_monitor_file(self, *args, **kwargs):
+            """让实际参与代理的账号正常完成，隔离外部日志源。"""
+            await self.callback(["任务已全部完成！"], datetime.now().astimezone())
+
+        async def stop(self):
+            """结束受控日志源。"""
+            pass
+
+    monkeypatch.setattr(auto_proxy, "LogMonitor", Monitor)
 
     uid = runtime.script.users.add(
         MaaUserConfig,
@@ -212,3 +229,6 @@ async def test_inactive_shared_account_does_not_require_default_configuration(
     script = execution.task_info.script_list[0]
     assert any(user.info.user_id == str(uid) for user in script.users.values())
     assert runtime.opened, script.info.result
+    report = Notify.push_proxy_result.call_args.kwargs["report"]
+    assert report.completed_count == 1
+    assert report.uncompleted_count == 0

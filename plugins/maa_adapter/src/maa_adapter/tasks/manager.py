@@ -666,7 +666,9 @@ class MaaManager(UserExpander[MaaConfig]):
             "start_time": self.begin_time,
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "completed_count": completed,
-            "uncompleted_count": len(users) - completed,
+            "uncompleted_count": sum(
+                user.info.status in {"异常", "等待"} for user in users
+            ),
             "result": "\n".join(
                 f"{user.info.name}: {user.info.result}" for user in users
             ),

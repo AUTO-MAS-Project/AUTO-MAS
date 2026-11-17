@@ -3,7 +3,7 @@
 import asyncio
 import json
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -88,6 +88,84 @@ async def prepare_software(install, root=None):
     root = root or install.root
     return await software.prepare_maa_software_before_run(
         root, config_dir=root / "config", config=install.config
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("blocked", ["daily", "download_backoff", "query_backoff"])
+async def test_software_prefetch_respects_persisted_download_limits(
+    software_install, blocked
+):
+    """进程内无下载缓存时，持久化额度或退避记录仍须阻止 L2 申请真实传输。"""
+    install = software_install
+    key = software._cache_key("x64", "beta")
+    if blocked == "daily":
+        state = {
+            f"last_download_attempt_at/{key}": NOW.isoformat(),
+            f"last_download_attempt_version/{key}": "v6.1.0",
+        }
+    else:
+        field = (
+            f"query_fail_until/{software._query_key('x64', 'beta', 'test-cdk')}"
+            if blocked == "query_backoff"
+            else f"download_fail_until/{key}"
+        )
+        state = {field: (NOW + timedelta(hours=1)).isoformat()}
+    software._utils_io.write_file(install.state, state)
+    assert await software.check_software_download(install.root, install.config) == []
+    with pytest.raises(RuntimeError):
+        await prepare_software(install)
+    install.downloader.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("blocked", ["daily", "download_backoff"])
+async def test_resource_prefetch_respects_persisted_download_limits(
+    software_install, monkeypatch, blocked
+):
+    """资源检查在没有可复用共享缓存时也遵守实际准备流程的取包限制。"""
+    import hashlib
+
+    from maa_adapter.updates.resources import service as resources
+
+    install = software_install
+    monkeypatch.setattr(resources, "datetime", FixedDatetime)
+    work = install.root / "resource-cache"
+    for field, relative in {
+        "_WORK_DIR": ".",
+        "_STAGE_DIR": "stage",
+        "_MANIFEST_FILE": "manifest.json",
+        "_STATE_FILE": "state.json",
+    }.items():
+        monkeypatch.setattr(resources, field, work / relative)
+    directory = install.root / "resource"
+    directory.mkdir()
+    (directory / "version.json").write_text(
+        json.dumps({"last_updated": "2026-10-31 00:00:00.000"})
+    )
+    target = NOW.replace(hour=0)
+    key = hashlib.sha256(b"test-cdk").hexdigest()[:16]
+    state = (
+        {
+            f"last_download_attempt_at/{key}": NOW.isoformat(),
+            f"last_download_attempt_version/{key}": target.isoformat(),
+        }
+        if blocked == "daily"
+        else {f"download_fail_until/{key}": (NOW + timedelta(hours=1)).isoformat()}
+    )
+    resources._utils_io.write_file(resources._STATE_FILE, state)
+    install.request.return_value = {
+        "data": {
+            "version_name": "2026-11-01 00:00:00.000",
+            "url": "https://example.invalid/resources.zip",
+            "update_type": "full",
+        }
+    }
+    assert (
+        await resources.check_resource_download(
+            install.root, github=False, cdk="test-cdk"
+        )
+        == []
     )
 
 
