@@ -96,9 +96,13 @@ export type MaaEndUserConfig_Task = {
      */
     IfResourceRecycleStation?: (boolean | null);
     /**
-     * 理智任务
+     * 协议空间（库存保持）
      */
-    IfSanity?: (boolean | null);
+    IfProtocolSpace?: (boolean | null);
+    /**
+     * 基质刷取
+     */
+    IfAutoEssence?: (boolean | null);
     /**
      * 抢委托送货
      */
