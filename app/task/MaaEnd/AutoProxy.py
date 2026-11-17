@@ -832,7 +832,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 )
                 # 手选 Games.exe 也已解析到稳定入口，始终定位终末地页。
                 await self.game_process_manager.open_process(
-                    launcher_path, "--game=Endfield", "--reason=4"
+                    launcher_path,
+                    "--game=Endfield",
+                    "--reason=4",
+                    breakaway=True,
+                    owned=False,
                 )
             # 启动器交互在后台线程内同步执行，on_log 契约是同步回调；push_dispatch_log
             # 是 async 函数，须经 run_coroutine_threadsafe 调度回事件循环

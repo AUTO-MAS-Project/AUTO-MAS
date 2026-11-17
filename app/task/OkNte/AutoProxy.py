@@ -780,7 +780,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 )
                 logger.info(message)
                 await self._push_dispatch_log(message)
-                await self.game_manager.open_process(launcher_path)
+                await self.game_manager.open_process(
+                    launcher_path, breakaway=True, owned=False
+                )
                 window_ready = bool(
                     await async_start_game_via_launcher(
                         launcher_path, on_log=_push_launch_log
@@ -805,7 +807,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                         raise RuntimeError("无法确认启动器已退出，请手动关闭后重试")
                 # 优先带 /autoplay 静默拉起：启动器自行进游戏，省掉 OCR 找按钮点击
                 # 「开始游戏」这一整段交互（含更新/弹窗等分支）。
-                await self.game_manager.open_process(launcher_path, AUTOPLAY_ARG)
+                await self.game_manager.open_process(
+                    launcher_path, AUTOPLAY_ARG, breakaway=True, owned=False
+                )
                 if await async_wait_autoplay_game(
                     launcher_path, on_log=_push_launch_log
                 ):
