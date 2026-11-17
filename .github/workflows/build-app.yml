@@ -1,4 +1,4 @@
-name: R2 candidate verification and cleanup
+name: R2 正式桶验收（下载站测试条目 #122）
 
 on:
   workflow_dispatch:
@@ -11,102 +11,95 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  recover:
+  smoke:
     if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && github.ref == 'refs/heads/codex/r2-release-smoke-122'
     runs-on: macos-latest
     timeout-minutes: 25
     steps:
-      - name: Diagnose test entry 122 and finish staging cleanup
+      - name: 设置上传用 Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: 下载并校验已发布的测试包
         shell: pwsh
         env:
-          AUTOMAS_TOKEN: ${{ secrets.DATACENTER_ACCESS_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $name = 'AUTO-MAS-Setup-v5.8.0-x64.zip'
+          gh release download v5.8.0 --repo AUTO-MAS-Project/AUTO-MAS --pattern $name --dir $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { throw '下载测试包失败' }
+          $package = Join-Path $env:RUNNER_TEMP $name
+          $expected = 'a9817af1a4df3787479f8f4f39d51285be8982043e6e8d4bdfa2500d0f540214'
+          if ((Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash -ine $expected) {
+            throw '测试包 SHA-256 与发布页不一致'
+          }
+          Write-Host "Test package SHA-256 verified: $expected"
+
+      - name: 下载并验签自建源发布客户端
+        shell: pwsh
+        env:
+          RELEASE_TOOL_PUBLIC_KEY: ${{ vars.DATACENTER_RELEASE_TOOL_PUBLIC_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:RELEASE_TOOL_PUBLIC_KEY)) {
+            throw '缺少 GitHub Actions variable: DATACENTER_RELEASE_TOOL_PUBLIC_KEY'
+          }
+          $toolsDir = Join-Path $env:RUNNER_TEMP 'datacenter-release-tool'
+          New-Item -ItemType Directory -Path $toolsDir | Out-Null
+          $baseUrl = 'https://data2.auto-mas.top/api/v1/tools'
+          $request = @{
+            UserAgent = 'AUTO-MAS-Release/1.0 (+https://github.com/AUTO-MAS-Project/AUTO-MAS)'
+            MaximumRedirection = 0
+            TimeoutSec = 60
+          }
+          $manifest = Join-Path $toolsDir 'release-manifest.sha256'
+          $signature = Join-Path $toolsDir 'release-manifest.sig'
+          $keyPath = Join-Path $toolsDir 'release-tools-public.pem'
+          Set-Content -LiteralPath $keyPath -Value $env:RELEASE_TOOL_PUBLIC_KEY -Encoding ascii
+          Invoke-WebRequest @request -Uri "$baseUrl/release-manifest.sha256" -OutFile $manifest
+          Invoke-WebRequest @request -Uri "$baseUrl/release-manifest.sig" -OutFile $signature
+          openssl dgst -sha256 -verify $keyPath -signature $signature $manifest
+          if ($LASTEXITCODE -ne 0) {
+            throw '自建源发布客户端清单验签失败'
+          }
+
+          $allowed = @('release_file_update.py', 'file_update.py', 'file_update.requirements.txt')
+          $hashes = @{}
+          foreach ($line in Get-Content -LiteralPath $manifest) {
+            if ($line -cnotmatch '^(?<sha>[0-9a-f]{64})  (?<name>[a-z_.]+)$') {
+              throw '自建源发布客户端清单格式无效'
+            }
+            $name = $Matches['name']
+            if ($allowed -cnotcontains $name -or $hashes.ContainsKey($name)) {
+              throw '自建源发布客户端清单包含未知或重复文件'
+            }
+            $hashes[$name] = $Matches['sha']
+          }
+          foreach ($name in $allowed) {
+            if (-not $hashes.ContainsKey($name)) {
+              throw "自建源发布客户端清单缺少 $name"
+            }
+            $path = Join-Path $toolsDir $name
+            Invoke-WebRequest @request -Uri "$baseUrl/$name" -OutFile $path
+            if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ine $hashes[$name]) {
+              throw "自建源发布客户端文件校验失败：$name"
+            }
+          }
+
+      - name: 通过正式 R2 桶更新测试条目 122
+        shell: pwsh
+        env:
+          AUTOMAS_TOKEN: ${{ secrets.DATACENTER_TEST_ACCESS_KEY }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
           R2_BUCKET: ${{ vars.R2_BUCKET }}
         run: |
-          $ErrorActionPreference = 'Stop'
-          $PSNativeCommandUseErrorActionPreference = $false
-          if ($env:R2_BUCKET -cne 'auto-mas-release') { throw 'Unexpected R2 bucket.' }
-
-          $env:AWS_ACCESS_KEY_ID = $env:R2_ACCESS_KEY_ID
-          $env:AWS_SECRET_ACCESS_KEY = $env:R2_SECRET_ACCESS_KEY
-          $env:AWS_PAGER = ''
-          $env:AWS_EC2_METADATA_DISABLED = 'true'
-          $env:AWS_REQUEST_CHECKSUM_CALCULATION = 'when_required'
-          $env:AWS_RESPONSE_CHECKSUM_VALIDATION = 'when_required'
-          $env:AWS_CONFIG_FILE = Join-Path $env:RUNNER_TEMP 'r2-smoke.aws.config'
-          Set-Content -LiteralPath $env:AWS_CONFIG_FILE -Value @('[default]', 's3 =', '    addressing_style = path')
-
-          function Invoke-R2 {
-              $reply = & aws @args --endpoint-url $env:R2_ENDPOINT --region auto --no-cli-pager
-              if ($LASTEXITCODE -ne 0) { throw "R2 command $($args[0]) $($args[1]) failed." }
-              $reply
+          if ($env:R2_BUCKET -cne 'auto-mas-release') {
+            throw 'R2_BUCKET 必须为 auto-mas-release'
           }
-
-          $after = [DateTimeOffset]'2026-11-17T09:19:41Z'
-          $before = [DateTimeOffset]'2026-11-17T09:19:53Z'
-          $size = 127565533
-          $sha = 'a9817af1a4df3787479f8f4f39d51285be8982043e6e8d4bdfa2500d0f540214'
-          $objects = Invoke-R2 s3api list-objects-v2 --bucket $env:R2_BUCKET --prefix 'release-staging/' --output json | ConvertFrom-Json
-          $candidates = @($objects.Contents | Where-Object {
-              $_.Key -cmatch '^release-staging/[0-9a-f]{32}\.zip$' -and $_.Size -eq $size -and
-              [DateTimeOffset]$_.LastModified -ge $after -and [DateTimeOffset]$_.LastModified -le $before
-          })
-          if ($candidates.Count -ne 1) { throw "Expected one exact staging candidate, found $($candidates.Count). No object was changed." }
-          $uri = "s3://$env:R2_BUCKET/$($candidates[0].Key)"
-          $local = Join-Path $env:RUNNER_TEMP 'earlier-r2-staging.zip'
-          Invoke-R2 s3 cp $uri $local --only-show-errors --no-progress
-          if ((Get-FileHash -LiteralPath $local -Algorithm SHA256).Hash -ine $sha) { throw 'Staging object SHA-256 does not match the test package.' }
-          Write-Output 'Identified the earlier test staging object by upload window, size, and SHA-256.'
-
-          $signedUrl = Invoke-R2 s3 presign $uri --expires-in 1200
-          $endpoint = 'https://data2.auto-mas.top/api/v1/release-imports'
-          $request = @{ Authorization = "Bearer $env:AUTOMAS_TOKEN" }
-          $payload = @{
-              source_url = $signedUrl
-              filename = 'AUTO-MAS-Setup-v5.8.0-x64.zip'
-              size = $size
-              sha256 = $sha
-              file_ids = @(122)
-              version_tag = 'v0.0.0-beta.44054506857'
-          } | ConvertTo-Json -Compress
-          $response = Invoke-WebRequest -Uri $endpoint -Method Post -Headers $request -ContentType 'application/json' -Body $payload -SkipHttpErrorCheck -MaximumRedirection 0 -TimeoutSec 25
-          Write-Output "Download site returned HTTP $($response.StatusCode)."
-          $blocker = $null
-          if ($response.StatusCode -eq 202) {
-              $import = ($response.Content | ConvertFrom-Json).data
-              if ($import.id -cnotmatch '^r2\.[0-9a-f]{61}$') { throw 'Unexpected import ID.' }
-              $elapsed = [Diagnostics.Stopwatch]::StartNew()
-              while ($import.status -eq 'uploading' -and $elapsed.Elapsed.TotalMinutes -lt 15) {
-                  Start-Sleep -Seconds 3
-                  $import = (Invoke-RestMethod -Uri "$endpoint/$($import.id)" -Headers $request -MaximumRedirection 0 -TimeoutSec 25).data
-              }
-              if ($import.status -eq 'completed' -and @($import.versions).Count -eq 1 -and $import.versions[0].file_id -eq 122) {
-                  Write-Output "Download site file 122 published as version $($import.versions[0].version_no) in $([math]::Round($elapsed.Elapsed.TotalSeconds, 1))s."
-              } elseif ($import.status -eq 'failed') {
-                  $blocker = 'Download site marked the test import as failed.'
-              } else {
-                  throw 'Unexpected or unfinished import state. The object was retained.'
-              }
-          } elseif ($response.StatusCode -in 400, 401, 403, 404, 413, 422) {
-              $blocker = "Download site rejected the request (HTTP $($response.StatusCode))."
-              if ([string]$response.Headers['Content-Type'] -match 'application/json') {
-                  $body = $response.Content | ConvertFrom-Json -ErrorAction SilentlyContinue
-                  if ($body.message -ceq 'This access key cannot upload to file 122.') {
-                      $blocker = $body.message
-                  } else {
-                      Write-Output 'The rejection was a JSON response.'
-                  }
-              } else {
-                  Write-Output 'The rejection was not a JSON response.'
-              }
-          } else {
-              throw 'The response did not establish whether the server accepted the request. The object was retained.'
-          }
-
-          Invoke-R2 s3 rm $uri --only-show-errors
-          $rangeRequest = Invoke-WebRequest -Uri $signedUrl -Headers @{ Range = 'bytes=0-0' } -SkipHttpErrorCheck -MaximumRedirection 0 -TimeoutSec 25
-          if ($rangeRequest.StatusCode -ne 404) { throw "Expected HTTP 404 after cleanup; got $($rangeRequest.StatusCode)." }
-          Write-Output 'Verified HTTP 404 on the staging URL after deletion.'
-          if ($blocker) { throw $blocker }
+          $toolsDir = Join-Path $env:RUNNER_TEMP 'datacenter-release-tool'
+          $package = Join-Path $env:RUNNER_TEMP 'AUTO-MAS-Setup-v5.8.0-x64.zip'
+          $testTag = "v0.0.0-beta.$env:GITHUB_RUN_ID"
+          python (Join-Path $toolsDir 'release_file_update.py') $package --mode r2 --file-id 122 --change-note $testTag
+          if ($LASTEXITCODE -ne 0) { throw 'R2 验收失败' }
