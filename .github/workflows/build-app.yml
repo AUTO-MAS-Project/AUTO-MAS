@@ -16,6 +16,63 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 25
     steps:
+      - name: 清理上一次重复内容测试的 R2 对象
+        shell: pwsh
+        env:
+          AUTOMAS_TOKEN: ${{ secrets.DATACENTER_TEST_ACCESS_KEY }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          if ($env:R2_BUCKET -cne 'auto-mas-release') { throw 'Unexpected R2 bucket.' }
+
+          $env:AWS_ACCESS_KEY_ID = $env:R2_ACCESS_KEY_ID
+          $env:AWS_SECRET_ACCESS_KEY = $env:R2_SECRET_ACCESS_KEY
+          $env:AWS_PAGER = ''
+          $env:AWS_EC2_METADATA_DISABLED = 'true'
+          $env:AWS_REQUEST_CHECKSUM_CALCULATION = 'when_required'
+          $env:AWS_RESPONSE_CHECKSUM_VALIDATION = 'when_required'
+          $env:AWS_CONFIG_FILE = Join-Path $env:RUNNER_TEMP 'r2-smoke.aws.config'
+          Set-Content -LiteralPath $env:AWS_CONFIG_FILE -Value @('[default]', 's3 =', '    addressing_style = path')
+
+          function Invoke-R2 {
+              $reply = & aws @args --endpoint-url $env:R2_ENDPOINT --region auto --no-cli-pager
+              if ($LASTEXITCODE -ne 0) { throw "R2 command $($args[0]) $($args[1]) failed." }
+              $reply
+          }
+
+          $after = [DateTimeOffset]'2026-11-17T10:52:41Z'
+          $before = [DateTimeOffset]'2026-11-17T10:52:51Z'
+          $size = 127565533
+          $sha = 'a9817af1a4df3787479f8f4f39d51285be8982043e6e8d4bdfa2500d0f540214'
+          $objects = Invoke-R2 s3api list-objects-v2 --bucket $env:R2_BUCKET --prefix 'release-staging/' --output json | ConvertFrom-Json
+          $candidates = @($objects.Contents | Where-Object {
+              $_.Key -cmatch '^release-staging/[0-9a-f]{32}\.zip$' -and $_.Size -eq $size -and
+              [DateTimeOffset]$_.LastModified -ge $after -and [DateTimeOffset]$_.LastModified -le $before
+          })
+          if ($candidates.Count -ne 1) { throw "Expected one exact staging candidate, found $($candidates.Count). No object was changed." }
+          $uri = "s3://$env:R2_BUCKET/$($candidates[0].Key)"
+          $local = Join-Path $env:RUNNER_TEMP 'earlier-r2-staging.zip'
+          Invoke-R2 s3 cp $uri $local --only-show-errors --no-progress
+          if ((Get-FileHash -LiteralPath $local -Algorithm SHA256).Hash -ine $sha) { throw 'Staging object SHA-256 does not match the test package.' }
+          Write-Output 'Identified the earlier test staging object by upload window, size, and SHA-256.'
+
+          $signedUrl = Invoke-R2 s3 presign $uri --expires-in 1200
+          $endpoint = 'https://data2.auto-mas.top/api/v1/release-imports'
+          $request = @{ Authorization = "Bearer $env:AUTOMAS_TOKEN" }
+          $taskId = 'r2.4688f2858b260a83de8c4f7016aa8ee3a37b36b49a62e08676a499658ca44'
+          $task = (Invoke-RestMethod -Uri "$endpoint/$taskId" -Headers $request -MaximumRedirection 0 -TimeoutSec 25).data
+          if ($task.status -ne 'failed' -or $task.error -ne 'File content is unchanged.') {
+              throw 'Earlier test import is not in the expected terminal state. The object was retained.'
+          }
+          Invoke-R2 s3 rm $uri --only-show-errors
+          $rangeRequest = Invoke-WebRequest -Uri $signedUrl -Headers @{ Range = 'bytes=0-0' } -SkipHttpErrorCheck -MaximumRedirection 0 -TimeoutSec 25
+          if ($rangeRequest.StatusCode -ne 404) { throw "Expected HTTP 404 after cleanup; got $($rangeRequest.StatusCode)." }
+          Write-Output 'Verified HTTP 404 after cleaning the earlier duplicate test object.'
+
       - name: 设置上传用 Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -26,11 +83,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $name = 'AUTO-MAS-Setup-v5.8.0-x64.zip'
-          gh release download v5.8.0 --repo AUTO-MAS-Project/AUTO-MAS --pattern $name --dir $env:RUNNER_TEMP
+          $name = 'AUTO-MAS-Setup-v5.7.0-x64.zip'
+          gh release download v5.7.0 --repo AUTO-MAS-Project/AUTO-MAS --pattern $name --dir $env:RUNNER_TEMP
           if ($LASTEXITCODE -ne 0) { throw '下载测试包失败' }
           $package = Join-Path $env:RUNNER_TEMP $name
-          $expected = 'a9817af1a4df3787479f8f4f39d51285be8982043e6e8d4bdfa2500d0f540214'
+          $expected = '12f08c4b29ff03a3a87495e8f609f99b6270ef8f33e79700426ecdaf1f090667'
           if ((Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash -ine $expected) {
             throw '测试包 SHA-256 与发布页不一致'
           }
@@ -99,7 +156,7 @@ jobs:
             throw 'R2_BUCKET 必须为 auto-mas-release'
           }
           $toolsDir = Join-Path $env:RUNNER_TEMP 'datacenter-release-tool'
-          $package = Join-Path $env:RUNNER_TEMP 'AUTO-MAS-Setup-v5.8.0-x64.zip'
+          $package = Join-Path $env:RUNNER_TEMP 'AUTO-MAS-Setup-v5.7.0-x64.zip'
           $testTag = "v0.0.0-beta.$env:GITHUB_RUN_ID"
           python (Join-Path $toolsDir 'release_file_update.py') $package --mode r2 --file-id 122 --change-note $testTag
           if ($LASTEXITCODE -ne 0) { throw 'R2 验收失败' }
