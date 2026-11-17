@@ -257,7 +257,7 @@ def save_native_launch_args(root, slot_idx: int, values: dict[str, Any]) -> None
 def read_native_tasks(root, slot_idx: int, catalog: list[dict]) -> list[dict]:
     """读取实例原生任务编排并合并应用目录可选项（供前端渲染任务卡片）。
 
-    原生 ``app_list`` 的项按原顺序返回（enabled 保持原样）；其后追加目录中
+    原生 ``app_list`` 的项按原顺序返回（enabled 保持原样）；其前加入目录中
     未加入编排的默认组任务（enabled=False），让「未加入」也一屏可见。
     """
 
@@ -281,11 +281,12 @@ def read_native_tasks(root, slot_idx: int, catalog: list[dict]) -> list[dict]:
                 "priority": int(meta.get("priority", 9999)),
             }
         )
+    new_tasks: list[dict] = []
     for item in catalog:
         app_id = str(item.get("app_id") or "").strip()
         if not app_id or not item.get("default_group") or app_id in known:
             continue
-        tasks.append(
+        new_tasks.append(
             {
                 "app_id": app_id,
                 "enabled": False,
@@ -296,7 +297,7 @@ def read_native_tasks(root, slot_idx: int, catalog: list[dict]) -> list[dict]:
                 "priority": int(item.get("priority", 9999)),
             }
         )
-    return tasks
+    return new_tasks + tasks
 
 
 def save_native_tasks(root, slot_idx: int, tasks: list[dict]) -> None:
