@@ -68,6 +68,12 @@ def assert_no_pending_process(root: Path) -> None:
             raise InstallUnsafeError(message)
 
 
+def retain_installation_until_restart(root: Path) -> None:
+    """没有可靠的进程退出信号时，将当前安装占用保留到 MAS 退出。"""
+    with _process_lock:
+        _pending_processes[_key(root)] = None
+
+
 def _release_access(handle: BinaryIO) -> None:
     try:
         if os.name == "nt":
