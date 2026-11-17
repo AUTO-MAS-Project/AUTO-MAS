@@ -18,7 +18,7 @@ import {
   confirmCloseIfRunningTasks,
   hasRunningTasks,
 } from '@/composables/useQueueCloseConfirmation'
-import { clearStageOptionsCache } from '@/composables/usePlanDataCoordinator'
+import { clearStageOptionsCache } from '@maa/plan/usePlanDataCoordinator'
 import { cancelBackgroundInitCheck, checkBackgroundInit } from '@/services/backgroundInitNotice'
 import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
 import {

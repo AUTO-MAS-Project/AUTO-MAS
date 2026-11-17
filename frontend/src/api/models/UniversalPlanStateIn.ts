@@ -5,3 +5,4 @@
 export type UniversalPlanStateIn = {
     planId: string;
 };
+

@@ -7,8 +7,8 @@
 import asyncio
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any
 
-from app.models.config import MaaConfig, SrcConfig
 from app.models.emulator import DeviceBase, DeviceStatus
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.task.emulator_core import (
@@ -28,7 +28,7 @@ class EmulatorGameUpdateTask(TaskExecuteBase):
         self,
         *,
         script_info: ScriptItem,
-        script_config: MaaConfig | SrcConfig,
+        script_config: Any,
         emulator_manager: DeviceBase,
         server: str,
         package_name: str,
@@ -62,6 +62,8 @@ class EmulatorGameUpdateTask(TaskExecuteBase):
                 == DeviceStatus.OFFLINE
             )
             # 不传游戏包名，只启动设备供版本检查和 APK 安装使用。
+            # 更新检查可能先于账号代理启动设备，必须在真正开启之前提交可见提示。
+            await self._report("正在启动模拟器\n")
             info = await self.emulator_manager.open(
                 self.emulator_index,
                 **mod_avd_open_kwargs(
@@ -93,6 +95,6 @@ class EmulatorGameUpdateTask(TaskExecuteBase):
         if self.stopped_manually or self.result is None:
             await self.close_owned_emulator()
 
-    async def on_crash(self, error: Exception) -> None:
-        logger.opt(exception=True).warning(f"游戏更新检查异常，沿用原代理流程: {error}")
-        await self.script_info.set_log(f"游戏更新检查异常: {error}")
+    async def on_crash(self, exc: BaseException) -> None:
+        logger.opt(exception=True).warning(f"游戏更新检查异常，沿用原代理流程: {exc}")
+        await self.script_info.set_log(f"游戏更新检查异常: {exc}")

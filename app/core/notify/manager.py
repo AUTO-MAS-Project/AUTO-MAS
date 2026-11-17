@@ -75,6 +75,7 @@ from app.utils import get_logger
 
 if TYPE_CHECKING:
     from app.core.notify.task_report import PreparedTaskReport
+    from app.models.config import UserEntry
     from app.models.task import TaskItem
 
 logger = get_logger("通知编排")
@@ -242,7 +243,7 @@ class NotificationManager:
         self,
         *,
         payload: NotifyPayload,
-        user_config: UserNotificationConfig | None,
+        user_config: UserNotificationConfig | UserEntry | None,
         task_info: TaskItem,
         compact_summary: bool = False,
     ) -> DispatchResult:
@@ -303,11 +304,12 @@ class NotificationManager:
     async def send_user(
         self,
         payload: NotifyPayload,
-        user_config: NotificationSourceConfig,
+        user_config: NotificationSourceConfig | UserEntry,
         *,
         attempts: int = 1,
         retry_delay: float = 0,
     ) -> DispatchResult:
+        """将通知发送到指定用户配置所确定的目标，并按调用方给定次数和间隔重试，返回分发结果。"""
         return await self.dispatch(
             payload,
             [self.user_target(user_config)],
@@ -318,13 +320,14 @@ class NotificationManager:
     async def send_statistics(
         self,
         payload: NotifyPayload,
-        user_config: UserNotificationConfig | None,
+        user_config: UserNotificationConfig | UserEntry | None,
         *,
         global_empty_policy: EmptyPolicy = "send",
         compact_summary: bool = False,
         attempts: int = 1,
         retry_delay: float = 0,
     ) -> DispatchResult:
+        """按用户与全局统计通知策略构造目标，执行统计消息分发并返回各目标结果。"""
         return await self.dispatch(
             payload,
             self.statistic_targets(
@@ -353,7 +356,9 @@ class NotificationManager:
             system_timeout_seconds=system_timeout_seconds,
         )
 
-    def user_target(self, user_config: NotificationSourceConfig) -> NotifyTarget:
+    def user_target(
+        self, user_config: NotificationSourceConfig | UserEntry
+    ) -> NotifyTarget:
         """按账号配置构造独立通知目标。"""
         return self._resolve_target(
             config=user_config, scope="user", empty_policy="warn"
@@ -362,7 +367,7 @@ class NotificationManager:
     def _resolve_target(
         self,
         *,
-        config: NotificationSourceConfig,
+        config: NotificationSourceConfig | UserEntry,
         scope: str,
         empty_policy: EmptyPolicy,
         include_system: bool = False,
@@ -408,33 +413,34 @@ class NotificationManager:
 
     def user_statistic_targets(
         self,
-        user_config: UserNotificationConfig | None,
+        user_config: UserNotificationConfig | UserEntry | None,
     ) -> list[NotifyTarget]:
         """返回已启用统计通知的用户目标。"""
 
-        if (
-            user_config is None
-            or not user_config.Notify.Enabled
-            or not user_config.Notify.IfSendStatistic
+        if user_config is None:
+            return []
+        policy = TargetConfigView(user_config)
+        if not policy.get("Notify", "Enabled") or not policy.get(
+            "Notify", "IfSendStatistic"
         ):
             return []
         return [self.user_target(user_config)]
 
     def recruitment_targets(
         self,
-        user_config: RecruitmentNotificationConfig | None,
+        user_config: RecruitmentNotificationConfig | UserEntry | None,
     ) -> list[NotifyTarget]:
         """按全局和个人订阅准备喜报目标，不识别具体传输渠道。"""
 
         targets = []
         if Config.setting.Notify.IfSendSixStar:
             targets.append(self.global_target())
-        if (
-            user_config is not None
-            and user_config.Notify.Enabled
-            and user_config.Notify.IfSendSixStar
-        ):
-            targets.append(self.user_target(user_config))
+        if user_config is not None:
+            policy = TargetConfigView(user_config)
+            if policy.get("Notify", "Enabled") and policy.get(
+                "Notify", "IfSendSixStar"
+            ):
+                targets.append(self.user_target(user_config))
         return targets
 
     def failure_targets(
@@ -448,7 +454,7 @@ class NotificationManager:
 
     def statistic_targets(
         self,
-        user_config: UserNotificationConfig | None,
+        user_config: UserNotificationConfig | UserEntry | None,
         *,
         global_empty_policy: EmptyPolicy = "send",
         compact_summary: bool = False,

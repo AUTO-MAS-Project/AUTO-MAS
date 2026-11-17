@@ -17,13 +17,13 @@ const treeFiles = ref => git('ls-tree', '-r', '-z', '--name-only', ref).split('\
 const files = ref
   ? treeFiles(ref)
   : git('ls-files', '-z', '--cached', '--others', '--exclude-standard').split('\0').filter(Boolean)
+const isFrontendSource = file =>
+  file.startsWith('frontend/') || /^plugins\/[^/]+\/frontend\//.test(file)
 const lineCount = source =>
   source ? source.split(/\r\n|\r|\n/).length - Number(/[\r\n]$/.test(source)) : 0
 const readSources = (ref, files) => {
   const sources = new Map()
-  const selected = files.filter(
-    file => file.startsWith('frontend/') && /\.(ts|vue|css)$/.test(file)
-  )
+  const selected = files.filter(file => isFrontendSource(file) && /\.(ts|vue|css)$/.test(file))
   if (!selected.length) return sources
   const batch = execFileSync('git', ['cat-file', '--batch', '-z'], {
     cwd: root,
@@ -48,10 +48,21 @@ if (check) {
     console.error(`无法读取基线提交：${args[1]}`)
     process.exit(1)
   }
-  const isVue = file => file.startsWith('frontend/src/') && file.endsWith('.vue')
+  const isVue = file =>
+    (file.startsWith('frontend/src/') || /^plugins\/[^/]+\/frontend\//.test(file)) &&
+    file.endsWith('.vue')
   const baseSources = readSources(base, treeFiles(base).filter(isVue))
   const renames = new Map()
-  const changes = git('diff', '--name-status', '-z', '--find-renames', base, '--', 'frontend/src')
+  const changes = git(
+    'diff',
+    '--name-status',
+    '-z',
+    '--find-renames',
+    base,
+    '--',
+    'frontend/src',
+    'plugins'
+  )
     .split('\0')
     .filter(Boolean)
   for (let index = 0; index < changes.length;) {
@@ -81,11 +92,7 @@ const vueFiles = []
 const sources = ref ? readSources(ref, files) : new Map()
 for (const file of new Set(files)) {
   if (!ref && !existsSync(path.join(root, file))) continue
-  if (
-    !file.startsWith('frontend/') ||
-    !/\.(ts|vue|css)$/.test(file) ||
-    /\.(test|spec)\./.test(file)
-  )
+  if (!isFrontendSource(file) || !/\.(ts|vue|css)$/.test(file) || /\.(test|spec)\./.test(file))
     continue
   const group = file.startsWith('frontend/src/api/')
     ? 'generatedApi'
@@ -95,14 +102,17 @@ for (const file of new Set(files)) {
         ? 'electron'
         : file.startsWith('frontend/src/')
           ? 'renderer'
-          : undefined
+          : /^plugins\/[^/]+\/frontend\//.test(file)
+            ? 'pluginFrontend'
+            : undefined
   if (!group) continue
   const source = ref ? sources.get(file) : readFileSync(path.join(root, file), 'utf8')
   const lines = lineCount(source)
   const total = (groups[group] ??= { files: 0, lines: 0 })
   total.files++
   total.lines += lines
-  if (file.endsWith('.vue') && group === 'renderer') vueFiles.push({ file, lines })
+  if (file.endsWith('.vue') && (group === 'renderer' || group === 'pluginFrontend'))
+    vueFiles.push({ file, lines })
 }
 console.log(
   JSON.stringify(

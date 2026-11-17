@@ -15,6 +15,14 @@ export type BackendHealthOut = {
      */
     backgroundStatus: string;
     /**
+     * 插件与业务初始化状态；完成前不得放行自动任务
+     */
+    businessStatus: string;
+    /**
+     * 当前插件或配置初始化步骤
+     */
+    businessMessage?: (string | null);
+    /**
      * 后台初始化失败原因
      */
     backgroundError?: (string | null);

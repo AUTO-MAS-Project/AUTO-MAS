@@ -23,6 +23,7 @@ import type { BackendStartResult, BackendStopResult } from './backendService'
 import { getLogger } from './logger'
 import { RUNTIME_STOP_TIMEOUT_MS, waitForSettle } from './runtime/shutdown'
 import type { RuntimeLaunchConfig, RuntimeRemediation } from './runtime'
+import type { PreparedRuntimeAlignment } from './runtimeUpgradePreparation'
 import {
   RUNTIME_BINARY_ALIGN_ERROR,
   RUNTIME_BINARY_DOWNLOAD_FAILED,
@@ -144,6 +145,7 @@ export interface RuntimeUpdateDependencies {
   launchConfig: RuntimeLaunchConfig
   /** 省略时用真实的初始化编排器。 */
   createRuntimeService?: (options: RuntimeInitializationOptions) => RuntimeInitializationService
+  prepareUpgrade: (version: string, signal: AbortSignal) => Promise<PreparedRuntimeAlignment>
 }
 
 // ==================== 版本号 ====================
@@ -191,6 +193,9 @@ interface UpdateSession {
   abortedForShutdown: boolean
   /** 在途的 bootstrap 或单步重试，退出清场要等它落地。 */
   inFlight: Promise<unknown> | null
+  preparation?: AbortController
+  /** 跨单步重试持有预下载材料，最终结束或退出时释放。 */
+  prepared?: PreparedRuntimeAlignment
 }
 
 let session: UpdateSession | null = null
@@ -222,10 +227,12 @@ const RUNTIME_UPDATE_ABORT_TIMEOUT_MS = RUNTIME_STOP_TIMEOUT_MS
 export async function abortRuntimeUpdateForShutdown(
   timeoutMs = RUNTIME_UPDATE_ABORT_TIMEOUT_MS
 ): Promise<RuntimeUpdateAbortResult> {
+  // 应用退出时取消更新准备与在途 Runtime 操作，并在期限内等待当前更新会话收尾。
   const current = session
   if (!current) return { hadSession: false, forwarded: false, settled: true }
 
   current.cancelRequested = true
+  current.preparation?.abort()
   current.abortedForShutdown = true
   const forwarded = current.runtimeService.cancel()
   const deadline = Date.now() + timeoutMs
@@ -238,6 +245,9 @@ export async function abortRuntimeUpdateForShutdown(
     settled = await waitForSettle(inFlight, Math.max(0, deadline - Date.now()))
     if (!settled) throw new Error('无法确认后端更新已结束，请重试退出。')
   }
+
+  await current.prepared?.dispose()
+  current.prepared = undefined
 
   if (session === current) session = null
   logger.info(`更新会话已因应用退出清场${forwarded ? '，并已通知在途步骤取消' : ''}`)
@@ -276,6 +286,7 @@ async function runBackendUpdate(
   onProgress: (update: RuntimeUpdateProgress) => void,
   deps: RuntimeUpdateDependencies
 ): Promise<RuntimeUpdateOutcome> {
+  // 校验模式与目标版本，先执行前端升级准备和依赖预检，再协调后端停止、Runtime 更新及后端重启。
   const { launchConfig } = deps
 
   if (launchConfig.mode === 'development') {
@@ -298,9 +309,17 @@ async function runBackendUpdate(
     }
   }
 
+  if (session?.inFlight) throw new Error('已有后端更新正在执行')
+  await session?.prepared?.dispose()
+  const preparation = new AbortController()
   const runtimeService = (deps.createRuntimeService ?? defaultRuntimeServiceFactory)({
     launchConfig,
     targetVersion: version,
+    alignRuntimeBinary: options => {
+      // 向 Runtime 更新过程提供已预检和准备的二进制对齐入口，缺少材料时拒绝执行。
+      if (!current.prepared) throw new Error('Runtime 更新尚未准备完成')
+      return current.prepared.apply(options)
+    },
   })
   const current: UpdateSession = {
     version: runtimeService.targetVersion,
@@ -309,8 +328,36 @@ async function runBackendUpdate(
     cancelRequested: false,
     abortedForShutdown: false,
     inFlight: null,
+    preparation,
   }
   session = current
+  onProgress({
+    stage: 'repository',
+    status: 'started',
+    progress: 0,
+    message: '正在准备更新并检查插件兼容性',
+  })
+  try {
+    current.prepared = await trackInFlight(
+      current,
+      deps.prepareUpgrade(version, preparation.signal)
+    )
+  } catch (error) {
+    return {
+      success: false,
+      phase: 'shutdown',
+      cancelled: current.cancelRequested,
+      error: error instanceof Error ? error.message : String(error),
+      retryable: !current.cancelRequested,
+    }
+  } finally {
+    current.preparation = undefined
+  }
+  if (current.cancelRequested) {
+    await current.prepared.dispose()
+    current.prepared = undefined
+    return { success: false, phase: 'shutdown', cancelled: true }
+  }
 
   logger.info(`开始经 Runtime 更新后端到 ${current.version}`)
 
@@ -432,10 +479,12 @@ export function describeRetryAction(action: RuntimeUpdateRetryAction): string[] 
  * 仓库，提交点之后的迟到取消不会把已激活的现场伪装成取消，结局仍以它的 `result` 为准。
  */
 export function cancelBackendUpdate(): { accepted: boolean; forwarded: boolean } {
+  // 标记当前更新会话取消，中止前端准备并向在途 Runtime 操作转发取消请求。
   const current = session
   if (!current) return { accepted: false, forwarded: false }
 
   current.cancelRequested = true
+  current.preparation?.abort()
   const forwarded = current.runtimeService.cancel()
   logger.info(`已受理更新取消请求${forwarded ? '，并已通知在途步骤取消' : ''}`)
   return { accepted: true, forwarded }
@@ -601,6 +650,16 @@ async function observeBackendUpdate(
   const telemetry = beginMainFeature('backend_update_finished')
   try {
     const result = await run()
+    // 单步重试仍要使用准备材料；最终结束或尚未停机的失败才释放会话持有权。
+    if (
+      result.success ||
+      result.cancelled ||
+      result.phase === 'shutdown' ||
+      result.supportRequired
+    ) {
+      await session?.prepared?.dispose()
+      if (session) session.prepared = undefined
+    }
     telemetry.finish({
       trigger_kind,
       phase: result.phase ?? (result.success ? 'complete' : 'unknown'),
@@ -614,6 +673,8 @@ async function observeBackendUpdate(
     })
     return result
   } catch (error) {
+    await session?.prepared?.dispose()
+    if (session) session.prepared = undefined
     telemetry.finish({ trigger_kind, phase: 'unknown', outcome: 'unknown' })
     throw error
   }

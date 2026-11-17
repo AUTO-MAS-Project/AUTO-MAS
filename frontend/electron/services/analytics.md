@@ -23,6 +23,12 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 
 ## 当前采集范围
 
+插件管理继续使用 `plugin_action_finished`：由 `usePluginApi` 在配置保存或独立命令查询确认结果后结束。
+命令受理不计为执行成功，失败、取消及无法确认结果分别记录；不发送插件名、配置或操作 ID。
+插件安装还会等待候选环境在新进程中完成加载确认，再记录最终结果；需要换版已加载依赖时，
+后端重启复用 `backend_restart_finished` 的 `update` 原因，失败后的旧环境恢复使用 `recovery`。
+本轮仅调整命令提交与等待接线，沿用既有 action/outcome 词表及开关，不增加采集字段。
+
 定时唤醒复用 `app_started.launch_kind=scheduled_wakeup` 区分启动来源，复用设置保存事件记录开关变更。两者分别表示进入 ready 和配置保存，不代表硬件唤醒成功；后台计划任务对账不额外采集。
 
 静默启动保存复用 `settings_change_finished`，改用 `silent_start` 区分旧的 `start_minimized` 类别；开机自启仍为 `auto_start`。关闭至托盘的 `close_to_tray` 类别改由 `useAppClosePreferences` 在前端关闭偏好写入成功或失败时确认，设置页和关闭确认框共用同一入口；不再以旧的 `UI.IfToTray` 写入推断关闭行为。窗口最小化和静默隐藏不新增事件，启动来源与正常退出继续复用原主进程观察者。
@@ -233,7 +239,8 @@ MAA 的改动丢弃消息单独记为 `discard/discarded`，只取固定分类�
 因此这些高级报表仍需后续补展示或分析能力，当前不宣称已有自动成功率看板。
 旧版本只有整任务事件，不能从历史 `multi` 或整轮循环汇总反推出逐脚本次数。
 下载只观察本地启动的操作，取消 API 与 WS 共用一次终态；快照只对账，超时或网络结果不明记
-`observation_unknown`，不推断后台失败。主动关闭、计划内重启和被其他窗口接管不算断线事故；
+`observation_unknown`，不推断后台失败。换源沿同一次前端下载继续，内部停止旧源不结束下载观察；
+用户取消或最终完成/失败才结束一次，来源切换仍由 `update_source_changed` 记录。主动关闭、计划内重启和被其他窗口接管不算断线事故；
 自动恢复达到上限标记 `recovery_stopped`，不是后端最终结局。观察中途退出直接丢弃。
 
 主进程最多 4 个并发请求，每分钟总计最多 120 条，每事件族最多接受 60 次调用。
@@ -341,5 +348,7 @@ Sentry 重载结果也绑定开始时的开关代次，关闭再开启不补发�
 通用脚本计划表按原有计划管理与原生配置会话边界观察；仅新增计划类型分类 `UniversalPlanConfig`。
 
 OK-WW 动态日常、4C、梦魇、战斗、角色及月卡面板保存复用 `adapter_setup_finished`（`script_type=Okww`、`operation_kind=save`），由 `useOkwwNativeConfigApi` 按保存响应确认结果；字段读取、表单渲染不额外采集，配置内容不进入事件。
+
+后端后台暂存前的插件预检属于定时轮询内部准备，不另行采集；失败原因仅在本地吐司展示，不进入遥测。手动同版本更新的拒绝沿用 backend_update_finished，由更新服务确认失败，不重复记录预检事件。
 
 MaaEnd 协议空间与基质刷取的独立配置复用 `useUserApi.updateUser` 的 `config_write_finished`，执行及送货失败停止后续任务复用 `taskAnalytics.ts` 的运行终态观察。库存目标、关卡及日志不参与上报。

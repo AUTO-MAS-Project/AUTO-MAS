@@ -19,7 +19,7 @@ from pydantic import TypeAdapter
 from app.config import ConfigEntry, ConfigNode, config_manager
 from app.core import Config, Publisher
 from app.core.ws import protocol
-from app.models.config import CLASS_BOOK
+from app.models.config import CLASS_BOOK, ScriptEntry, UserEntry
 from app.models.schema import (
     TaskRequirements,
     TaskRuntimeSnapshot,
@@ -70,6 +70,7 @@ class _TaskManager:
         self._running: dict[UUID, ScriptExpander] = {}
         self._recent: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
         self._stopping_all = False
+        self._restart_pending = False
         self._creating = 0
         self._idle = asyncio.Event()
         self._idle.set()
@@ -114,12 +115,25 @@ class _TaskManager:
         """创建前检查停止全部、电源倒计时，并确认宿主已提供执行能力。"""
         from app.core import Power
 
+        if self._restart_pending:
+            raise RuntimeError("后端正在准备重启，暂不接受新任务")
         if self._stopping_all:
             raise RuntimeError("正在停止全部任务，暂不接受新任务")
         if Power.power_task is not None:
             raise RuntimeError("电源任务已进入倒计时，本次任务不再创建")
         if not self._factories_bound and self.plugin_expander is None:
             raise RuntimeError("宿主尚未绑定专项执行工厂")
+
+    def prepare_restart(self) -> bool:
+        """只在所有任务及受理流程结束后封闭新任务入口，不中断已有业务。"""
+        if not self.idle:
+            return False
+        self._restart_pending = True
+        return True
+
+    def cancel_restart(self) -> None:
+        """后端重启未执行时恢复任务受理，原停止全部状态保持不变。"""
+        self._restart_pending = False
 
     async def start(
         self,
@@ -241,9 +255,11 @@ class _TaskManager:
                                         for name, cls in CLASS_BOOK.items()
                                         if type(entry) is cls
                                     ),
-                                    "unknown",
+                                    type(entry).__name__,
                                 ),
-                                "name": entry.Info.Name,
+                                "name": entry.info.name
+                                if isinstance(entry, ScriptEntry)
+                                else entry.Info.Name,
                                 "params": deepcopy(selected.params),
                             }
                         },
@@ -252,16 +268,21 @@ class _TaskManager:
                     script = info.scripts[sid]
                     script._config_ref = ref(entry)
                     script._run_days = tuple(item.Schedule.Days) if item else None
+                    user_configs = (
+                        entry.users
+                        if isinstance(entry, ScriptEntry)
+                        else entry.UserData
+                    )
                     users = (
                         selected.children.values()
                         if session
-                        else select(selected.children, entry.UserData.keys())
+                        else select(selected.children, user_configs.keys())
                     )
                     for user in users:
                         if user.children:
                             raise ValueError("用户节点不能包含子项")
                         shared = session and user.uid == "default"
-                        config = None if shared else entry.UserData.get(UUID(user.uid))
+                        config = None if shared else user_configs.get(UUID(user.uid))
                         if not shared and config is None:
                             raise ValueError(f"用户不属于托管：{user.uid}")
                         uid = script.users.add(
@@ -271,7 +292,11 @@ class _TaskManager:
                                     "user_id": "default"
                                     if shared
                                     else str(UUID(user.uid)),
-                                    "name": config.Info.Name
+                                    "name": (
+                                        config.info.name
+                                        if isinstance(config, UserEntry)
+                                        else config.Info.Name
+                                    )
                                     if config is not None
                                     else "共享配置",
                                     "params": deepcopy(user.params),

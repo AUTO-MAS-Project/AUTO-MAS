@@ -1,17 +1,8 @@
 import { translate as t } from '@/i18n'
 import { computed, ref } from 'vue'
 import { Modal, message } from 'ant-design-vue'
-import { Service } from '@/api/services/Service'
-import { subscribe, unsubscribe } from '@/composables/useWebSocket'
 import { connectionState, onConnected } from '@/services/websocket/connection'
-import {
-  WS_ID_UPDATE,
-  WS_UPDATE_CANCELLED,
-  WS_UPDATE_COMPLETED,
-  WS_UPDATE_FAILED,
-  WS_UPDATE_PROGRESS,
-  type WSUpdateProgressData,
-} from '@/services/websocket/types'
+import type { WSUpdateProgressData } from '@/services/websocket/types'
 import { createLowSpeedDetector } from '@/composables/updateDownloadSpeed'
 import { formatBytes, formatSpeed } from '@/utils/byteFormat'
 import { updateDownloadApi, type UpdateDownloadSnapshot } from '@/services/updateDownloadApi'
@@ -36,6 +27,7 @@ type UpdateDownloadProgress = WSUpdateProgressData
 
 const status = ref<UpdateDownloadStatus>('idle')
 const modalVisible = ref(false)
+const installing = ref(false)
 const source = ref('')
 const downloadedSize = ref(0)
 const fileSize = ref(0)
@@ -44,7 +36,7 @@ const failureReason = ref('')
 const latestVersion = ref('')
 const updateData = ref<ChangelogData>({})
 
-let subscriptionIds: string[] = []
+let disposeUpdateEvents: (() => void) | null = null
 let disposeConnectedListener: (() => void) | null = null
 let snapshotGeneration = 0
 let mutationGeneration = 0
@@ -117,18 +109,27 @@ const stopRuntimeMonitoring = () => {
 }
 
 const ensureSubscription = () => {
-  if (subscriptionIds.length > 0) return
-  subscriptionIds = [
-    subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_PROGRESS }, wsMessage =>
-      receiveProgress(wsMessage.data)
-    ),
-    subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_CANCELLED }, () => receiveCancelled()),
-    subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_COMPLETED }, () => receiveCompleted()),
-    subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_FAILED }, wsMessage =>
-      receiveFailed(wsMessage.data.message || '下载失败')
-    ),
-  ]
-  logger.debug(`WebSocket 订阅已创建: ${subscriptionIds.join(', ')}`)
+  // 按需建立唯一的桌面更新事件订阅，避免多个调用者重复监听同一下载。
+  if (disposeUpdateEvents) return
+  disposeUpdateEvents = window.electronAPI.onAppUpdate(event => {
+    // 把主进程更新快照分派到完成、取消、失败或进度处理，并同步实际下载来源。
+    const snapshot = event.snapshot
+    source.value = snapshot.source ?? ''
+    if (event.type === 'completed') receiveCompleted()
+    else if (event.type === 'cancelled') receiveCancelled()
+    else if (event.type === 'failed') receiveFailed(snapshot.message || '下载失败')
+    else if (snapshot.status === 'switchingSource') {
+      invalidateSnapshot()
+      status.value = 'switchingSource'
+      speed.value = 0
+    } else
+      receiveProgress({
+        downloaded_size: snapshot.downloaded_size,
+        file_size: snapshot.file_size,
+        speed: snapshot.speed,
+        source: snapshot.source ?? '',
+      })
+  })
 }
 
 const startRuntimeMonitoring = () => {
@@ -151,10 +152,9 @@ const startRuntimeMonitoring = () => {
 }
 
 const clearSubscription = () => {
-  for (const subscriptionId of subscriptionIds) {
-    unsubscribe(subscriptionId)
-  }
-  subscriptionIds = []
+  // 解除桌面更新事件订阅并清空释放函数，允许后续重新订阅。
+  disposeUpdateEvents?.()
+  disposeUpdateEvents = null
 }
 
 const resetState = () => {
@@ -326,6 +326,7 @@ export function disposeUpdateDownloadSubscriptions(): void {
 }
 
 const start = async (version: string, data: ChangelogData, downloader?: 'builtin' | 'fluxdown') => {
+  // 初始化本次版本下载的界面和观测状态，订阅主进程事件后提交下载，并隔离过期响应。
   logger.info(`开始下载: ${version}${downloader ? ` (指定下载器: ${downloader})` : ''}`)
   const operationGeneration = invalidateSnapshot()
   resetState()
@@ -340,10 +341,7 @@ const start = async (version: string, data: ChangelogData, downloader?: 'builtin
   startRuntimeMonitoring()
 
   try {
-    const response = await Service.downloadUpdateApiUpdateDownloadPost(
-      version || undefined,
-      downloader
-    )
+    const response = await updateDownloadApi.start(version, downloader)
     if (downloadAnalytics === attempt) attempt.started(source.value)
     if (!isCurrentOperation(operationGeneration)) return
     if (response.code !== 200) {
@@ -368,7 +366,7 @@ const settleCancelFailure = async (): Promise<void> => {
 }
 
 const cancel = async () => {
-  if (status.value !== 'downloading') return
+  if (status.value !== 'downloading' && status.value !== 'switchingSource') return
 
   const operationGeneration = invalidateSnapshot()
   status.value = 'cancelling'
@@ -449,9 +447,12 @@ const retryWithBuiltin = async () => {
 }
 
 const install = async () => {
+  // 请求桌面主进程安装已准备更新包，记录请求是否受理并在成功启动安装器后关闭下载界面。
+  if (installing.value) return
+  installing.value = true
   const operation = beginAnalyticsOperation('update_install_requested')
   try {
-    const response = await Service.installUpdateApiUpdateInstallPost()
+    const response = await updateDownloadApi.install()
     operation.finish({
       choice: 'install_now',
       request_outcome: response.code === 200 ? 'accepted' : 'rejected',
@@ -468,6 +469,8 @@ const install = async () => {
     const errorMessage = error instanceof Error ? error.message : String(error)
     logger.error(`安装失败: ${errorMessage}`)
     message.error(t('bootstrap.misc.couldNotStartInstaller'))
+  } finally {
+    installing.value = false
   }
 }
 
@@ -489,6 +492,7 @@ export function useUpdateDownload() {
   return {
     status,
     modalVisible,
+    installing,
     source,
     sourceLabel,
     downloadHint,

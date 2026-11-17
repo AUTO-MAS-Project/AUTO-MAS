@@ -36,3 +36,4 @@ export type Emulator2InstanceCreateIn = {
      */
     dataPartitionGb?: (number | null);
 };
+
