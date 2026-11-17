@@ -78,6 +78,19 @@ yarn e2e --grep '@plugins'
 真实与就地模式沿用所选用户环境。插件自身回归在独立仓库内执行，具体命令见插件 README。
 升级集成测试使用的发行包时，同时更新版本与 PyPI wheel 的 SHA256 摘要。
 
+## dev alpha 测试包
+
+合入 dev 后，可以手动运行现有构建工作流生成跟随 dev 的前端测试包。
+
+```powershell
+gh workflow run ci-package.yml --repo AUTO-MAS-Project/AUTO-MAS --ref dev -f alpha=true
+```
+
+alpha 构建在构建工作区写入前端 alpha 版本，并随包交付经过摘要及能力校验的 Runtime。
+首次启动由 Runtime 从 dev 准备后端源码，之后继续跟随 dev。
+包内 `build-source.json` 记录前端版本、源码提交、后端分支及 Runtime 版本和摘要。
+构建产物保存在对应 Actions 运行的附件中。
+
 ## 发布与用户安装
 
 MAA 包名为 `auto-mas-maa-adapter`。插件仓库完成构建、元数据校验和版本发布后，
