@@ -118,6 +118,12 @@ const routes = [
     meta: { title: 'core.plan.oknte.detail' },
   },
   {
+    path: '/plans/:planId/okww/:day',
+    name: 'OkwwPlanDetail',
+    component: () => import('@/views/plan/OkwwPlanDetail.vue'),
+    meta: { title: 'core.plan.oknte.detail' },
+  },
+  {
     path: '/plans',
     name: 'Plans',
     component: () => import('../views/plan/index.vue'),

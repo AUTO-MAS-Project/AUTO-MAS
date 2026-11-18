@@ -36,11 +36,19 @@ class BatchProxyTask(AutoProxyTask):
         return super().run_timeout_seconds * len(self.participants)
 
     def __init__(
-        self, script_info, script_config, user_config, game_manager, *, participants
+        self,
+        script_info,
+        script_config,
+        user_config,
+        game_manager,
+        *,
+        participants,
+        panel_snapshots: dict[str, dict[str, dict]] | None = None,
     ):
         super().__init__(script_info, script_config, user_config, game_manager)
         # 准入检查始终保留真实账号节点；运行节点在 prepare 中另建。
         self.participants = participants
+        self.panel_snapshots = panel_snapshots or {}
         self.succeeded = set()
         self.pending = set()
         self.accounts = []
@@ -56,11 +64,21 @@ class BatchProxyTask(AutoProxyTask):
             return super()._build_run_arguments()
         return ["-t", "MultiAccountConfigTask", "-e"]
 
-    def native_config_key(self) -> dict:
+    def snapshot_panels(self, now: datetime) -> dict[str, dict]:
+        from .tools.config_fields import runtime_panels
+        from .tools.plan import plan_panels
+
+        user = self.cur_user_config
+        return runtime_panels(user, planned=plan_panels(user, now=now))
+
+    def _runtime_panels(self) -> dict[str, dict]:
+        return self.panel_snapshots[str(self.cur_user_uid)]
+
+    def native_config_key(self, overrides: dict[str, dict]) -> dict:
         """批次间接调用的配置必须一致；基础来源差异同样参与分组。"""
         from app.utils.common.io import read_dict_file
 
-        from .tools.config_fields import PANEL_FILES, panel_values
+        from .tools.config_fields import PANEL_FILES
 
         config = self.cur_user_config
         root = (
@@ -76,8 +94,7 @@ class BatchProxyTask(AutoProxyTask):
                 continue
             path = root / filename
             values = read_dict_file(path) if path.exists() else {}
-            if config.Info.IfQuickConfig:
-                values.update(panel_values(config, kind))
+            values.update(overrides.get(filename, {}))
             result[filename] = values
         return result
 
@@ -125,6 +142,10 @@ class BatchProxyTask(AutoProxyTask):
                 enabled=True,
                 rotated_name=f"{self.script_log_path.stem}.%Y-%m-%d{self.script_log_path.suffix}",
             )
+        if not self.panel_snapshots:
+            # 逐账号切号路径只有一个参与者，无需在调度层分组。
+            self.panel_snapshots[str(self.cur_user_uid)] = self.snapshot_panels(today)
+
         for user in self.participants:
             config = self.user_config[uuid.UUID(user.user_id)]
             root = (
@@ -142,12 +163,7 @@ class BatchProxyTask(AutoProxyTask):
             )
             if not isinstance(values, dict):
                 raise ValueError(f"日常配置格式错误: {daily}")
-            from .tools.plan import task_config
-
-            task = task_config(config)
-            if config.Info.IfQuickConfig:
-                values.update(config.Task.DailyConfig)
-            values.update(task)
+            values.update(self.panel_snapshots[user.user_id].get("DailyTask.json", {}))
             key = normalize_account_key(config.Info.Id)
             self.account_users[key] = user
             self.accounts.append(

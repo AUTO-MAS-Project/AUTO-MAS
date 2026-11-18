@@ -78,6 +78,7 @@ async def test_gui_echo_changes_return_to_panel_without_polluting_base(
     task.view_only = view_only
     task.crashed = False
     task.panel_user = user
+    task.panel_plan = {}
     task.panel_originals = {"FarmEchoTask.json": original}
     task.script_config_path = tmp_path
     task.use_mas_config = False
@@ -293,6 +294,7 @@ async def test_gui_advanced_panels_return_to_account_and_restore_base(tmp_path):
     task.view_only = False
     task.crashed = False
     task.panel_user = user
+    task.panel_plan = {}
     task.panel_originals = {"NightmareNestTask.json": original}
     task.script_config_path = tmp_path
     task.use_mas_config = False
@@ -424,8 +426,10 @@ def test_echo_override_preserves_source_and_respects_quick_config(tmp_path, quic
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scenario", ["echo", "advanced"])
-async def test_batch_arguments_grouping_preserves_user_order(tmp_path, scenario):
+@pytest.mark.parametrize("scenario", ["echo", "advanced", "rollover"])
+async def test_batch_arguments_grouping_preserves_user_order(
+    tmp_path, monkeypatch, scenario
+):
     from unittest.mock import AsyncMock
 
     from app.models.task import UserItem
@@ -480,6 +484,42 @@ async def test_batch_arguments_grouping_preserves_user_order(tmp_path, scenario)
         }
     if scenario == "echo":
         manager.user_config[ids[2]].Task.FarmEchoConfig = {"Repeat Farm Count": 5}
+    if scenario == "rollover":
+        from datetime import datetime
+
+        from app.core import Config
+        from app.models.config import OkwwPlanConfig
+        from app.task.Okww import manager as manager_module
+        from app.utils.common.constants import UTC8
+
+        class Clock(datetime):
+            time = datetime(2026, 11, 17, 3, 59, tzinfo=UTC8)
+
+            @classmethod
+            def now(cls, tz=None):
+                return cls.time.astimezone(tz)
+
+        monkeypatch.setattr(manager_module, "datetime", Clock)
+        pid = uuid.uuid4()
+        monkeypatch.setattr(
+            Config,
+            "PlanConfig",
+            {
+                str(pid): OkwwPlanConfig.model_validate(
+                    {
+                        "Tuesday": {
+                            "Key": {
+                                "Configs": {
+                                    "FarmEchoTask.json": {"Repeat Farm Count": 12}
+                                }
+                            }
+                        }
+                    }
+                ),
+            },
+        )
+        manager.user_config[ids[4]].Info.PlanMode = pid
+
     manager.game_manager = None
     manager.check = AsyncMock(return_value="Pass")
     manager.prepare = AsyncMock()
@@ -490,6 +530,20 @@ async def test_batch_arguments_grouping_preserves_user_order(tmp_path, scenario)
     dispatched = []
 
     async def run(task):
+        if scenario == "rollover":
+            import json
+
+            if not dispatched:
+                Clock.time = datetime(2026, 11, 17, 4, 0, tzinfo=UTC8)
+            if task.participants[0].user_id == str(ids[4]):
+                # 模拟启动等待后墙钟再次变化，实际下发仍使用用于分组的周二设置。
+                Clock.time = datetime(2026, 11, 18, 4, 0, tzinfo=UTC8)
+                task.script_config_path = tmp_path / "injected"
+                task.script_config_path.mkdir()
+                task._apply_mas_overrides()
+                assert json.loads(
+                    (task.script_config_path / "FarmEchoTask.json").read_text()
+                ) == {"Repeat Farm Count": 12}
         dispatched.append(
             ([user.user_id for user in task.participants], task._build_run_arguments())
         )
@@ -497,16 +551,23 @@ async def test_batch_arguments_grouping_preserves_user_order(tmp_path, scenario)
     manager.spawn = AsyncMock(side_effect=run)
     await manager.main_task()
     default = ["-t", "MultiAccountConfigTask", "-e"]
-    expected = [
-        ([str(ids[0])], default),
-        (
-            [str(ids[1])],
-            ["-t", "OtherTask"],
-        ),
-    ]
-    if scenario in ("echo", "advanced"):
-        expected.append(([str(ids[2])], ["-t", "OtherTask"]))
-    expected.append(([str(ids[3]), str(ids[4])], default))
+    expected = [([str(ids[0])], default)]
+    if scenario == "rollover":
+        expected.extend(
+            [
+                ([str(ids[1]), str(ids[2])], ["-t", "OtherTask"]),
+                ([str(ids[3])], default),
+                ([str(ids[4])], default),
+            ]
+        )
+    else:
+        expected.extend(
+            [
+                ([str(ids[1])], ["-t", "OtherTask"]),
+                ([str(ids[2])], ["-t", "OtherTask"]),
+                ([str(ids[3]), str(ids[4])], default),
+            ]
+        )
     assert dispatched == expected
     assert manager._restore_script_config_from_temp.await_count == len(expected)
 
