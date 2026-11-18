@@ -16,6 +16,8 @@
 #   Contact: DLmaster_361@163.com
 """托管管理：OK-WW 路由与端点专用模型。"""
 
+from typing import Any, Literal
+
 from fastapi import APIRouter
 from pydantic import (
     BaseModel,
@@ -26,6 +28,8 @@ from app.models.schema import (
     OutBase,
 )
 from app.utils import get_logger
+
+from .tools.config_fields import PanelKind
 
 
 class OkwwClientPathOut(OutBase):
@@ -47,6 +51,67 @@ class OkwwArgumentsIn(BaseModel):
 class OkwwArgumentsOut(OutBase):
     arguments: list[str] = Field(default_factory=list)
     native_switch: bool = False
+
+
+class OkwwConfigField(BaseModel):
+    name: str
+    disabled: bool = False
+    minimum: float | None = None
+    maximum: float | None = None
+    integer: bool = False
+    type: Literal["bool", "number", "string", "select", "multi_selection", "json"]
+    options: list[str] = Field(default_factory=list)
+    parent: str | None = None
+    choices: list[str] = Field(default_factory=list)
+
+
+class OkwwTaskConfigOut(OutBase):
+    labels: dict[str, str] = Field(default_factory=dict)
+    values: dict[str, Any] = Field(default_factory=dict)
+    fields: list[OkwwConfigField] = Field(default_factory=list)
+
+
+class OkwwTaskConfigIn(BaseModel):
+    scriptId: str
+    userId: str
+    kind: PanelKind
+    values: dict[str, Any]
+
+
+@router.get("/okww/task-config", tags=["Get"], response_model=OkwwTaskConfigOut)
+async def get_okww_task_config_api(
+    scriptId: str,
+    userId: str,
+    kind: PanelKind,
+    locale: Literal["zh_CN", "en_US", "ja_JP"] = "zh_CN",
+) -> OkwwTaskConfigOut:
+    """读取原生字段及半动态控件描述。"""
+    from .api_service import describe_task_config, read_config_labels
+
+    try:
+        values, fields = describe_task_config(scriptId, userId, kind)
+        return OkwwTaskConfigOut(
+            code=200,
+            status="success",
+            message="",
+            values=values,
+            fields=fields,
+            labels=read_config_labels(scriptId, locale),
+        )
+    except (ValueError, KeyError, TypeError, OSError) as error:
+        return OkwwTaskConfigOut(code=400, status="error", message=str(error))
+
+
+@router.post("/okww/task-config", tags=["Set"], response_model=OutBase)
+async def save_okww_task_config_api(data: OkwwTaskConfigIn) -> OutBase:
+    """保存面板及已有日常字段，不修改基础来源。"""
+    from .api_service import save_task_config
+
+    try:
+        await save_task_config(data.scriptId, data.userId, data.kind, data.values)
+        return OutBase(code=200, status="success", message="")
+    except (ValueError, KeyError, TypeError, OSError) as error:
+        return OutBase(code=400, status="error", message=str(error))
 
 
 @router.post("/okww/startup-arguments", tags=["Get"], response_model=OkwwArgumentsOut)

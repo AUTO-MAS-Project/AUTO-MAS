@@ -163,13 +163,19 @@ async def stop_process(
     kill_tree: bool = False,
     deadline: float | None = None,
 ) -> None:
+    scope = current_process_scope.get()
+
     async def stop_and_wait() -> None:
         if kill_tree and process.pid is not None:
-            await asyncio.to_thread(
-                _terminate_process_tree,
-                process.pid,
-                grace_period=0 if deadline is not None else 3,
+            handled = scope is not None and await asyncio.to_thread(
+                scope.kill_process_tree, process.pid
             )
+            if not handled:
+                await asyncio.to_thread(
+                    _terminate_process_tree,
+                    process.pid,
+                    grace_period=0 if deadline is not None else 3,
+                )
         else:
             with suppress(ProcessLookupError):
                 process.kill()
@@ -266,6 +272,7 @@ async def create_subprocess(
     *args: str,
     breakaway: bool = False,
     cleanup: bool = False,
+    owned: bool = True,
     **kwargs,
 ) -> asyncio.subprocess.Process:
     """按平台标志启动子进程；``breakaway=True`` 时额外脱离监督器的 Job Object。
@@ -273,6 +280,7 @@ async def create_subprocess(
     后端被 AUTO-MAS-Runtime 用 Job Object 监督时，子进程默认留在 Job 里，随
     后端一起被回收；只有游戏/模拟器这类不该随后端退出的进程才由调用点显式
     传 ``breakaway=True``（详见 WindowsProcessPlatform 的说明）。
+    ``owned=False`` 不登记任务清理，供调用方按用户选项单独关闭游戏。
 
     父进程若恰好处在一个不允许 breakaway 的 Job 里，带
     CREATE_BREAKAWAY_FROM_JOB 的 CreateProcess 会以 ERROR_ACCESS_DENIED
@@ -290,7 +298,7 @@ async def create_subprocess(
         scope.ensure_can_start()
 
     base_flags = platform_process.creation_flags | kwargs.pop("creationflags", 0)
-    if scope is not None:
+    if scope is not None and owned:
         base_flags |= scope.creation_flags
     breakaway_flags = platform_process.breakaway_flags if breakaway else 0
     creation_flags = base_flags | breakaway_flags
@@ -323,6 +331,8 @@ async def create_subprocess(
             except Exception as error:
                 raise asyncio.CancelledError from error
             raise asyncio.CancelledError
+        if not owned:
+            return process
         try:
             scope.track(
                 process,

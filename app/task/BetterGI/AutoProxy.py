@@ -1867,7 +1867,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # breakaway=True：游戏不该随后端退出（Runtime 用 KILL_ON_JOB_CLOSE 的
         # Job 监督后端，子进程默认留在 Job 里被连带回收；对齐模拟器/游戏客户端
         # 直拉调用点的既有惯例，见 windows/process.py 顶部契约说明）
-        await self.switch_game_manager.open_process(game_exe, breakaway=True)
+        await self.switch_game_manager.open_process(
+            game_exe, breakaway=True, owned=False
+        )
         await self._push_dispatch_log("原神已拉起，等待窗口就绪...")
         return game_exe
 

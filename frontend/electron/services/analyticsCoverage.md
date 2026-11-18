@@ -119,7 +119,7 @@
 | T078 | adapter_setup_finished：M9A flavor 配置入口使用 | 已接入现有引导入口，详见下文 |
 | T079 | adapter_setup_finished：MSS flavor 配置与计划入口使用 | 已接入现有引导入口，详见下文 |
 | T080 | adapter_setup_finished：BetterGI 原生配置、更新与托管模式 | 已接入现有引导入口，详见下文 |
-| T081 | adapter_setup_finished：OK-WW 自动发现路径、更新与配置 | 已接入现有引导入口，详见下文 |
+| T081 | adapter_setup_finished：OK-WW 自动发现路径、更新与配置 | 动态日常/4C/高级面板保存由 useOkwwNativeConfigApi 记录 save 结果；读取不采集，其他入口见下文 |
 | T082 | adapter_setup_finished：OK-NTE 配置编辑与原生窗口 | 已接入现有引导入口，详见下文 |
 | T083 | adapter_setup_finished：ZZZ-OD 原生实例与配置会话 | 已接入现有引导入口，详见下文 |
 | T084 | adapter_setup_finished：奇想盒配置与原生会话 | 已接入现有引导入口，详见下文 |

@@ -40,6 +40,7 @@ from .AutoProxy import (
     _OKWW_REL_EXE,
     _OKWW_REL_PYTHONW,
     _configure_okww_launcher,
+    _update_json,
 )
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
@@ -72,6 +73,9 @@ class ScriptConfigTask(TaskExecuteBase):
         view_only: bool = False,
     ):
         super().__init__()
+        self.panel_user: OkwwUserConfig | None = None
+        self.panel_originals: dict[str, bytes | None] = {}
+
         if script_info.task_info is None:
             raise RuntimeError("ScriptItem 未绑定到 TaskItem")
         self.task_info = script_info.task_info
@@ -147,6 +151,25 @@ class ScriptConfigTask(TaskExecuteBase):
                 self.script_config_path,
                 script_id=self.script_info.script_id,
             )
+        if not self.view_only and self.cur_user_item.user_id != "Default":
+            user = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
+            if user.Info.IfQuickConfig:
+                from .tools.config_fields import PANEL_FILES, runtime_panels
+
+                self.panel_user = user
+                overrides = runtime_panels(user)
+                for filename in PANEL_FILES.values():
+                    path = self.script_config_path / filename
+                    self.panel_originals[filename] = (
+                        path.read_bytes() if path.exists() else None
+                    )
+                    if overrides.get(filename):
+                        _update_json(path, overrides[filename])
+                _utils_io.mark_native_config_injected(
+                    Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                    self.script_config_path,
+                    script_id=self.script_info.script_id,
+                )
         logger.info(f"启动 OK-WW 设置: {self.exe_path}")
         await self.cur_user_item.set_state(status="运行")
         await self.process_manager.open_process(self.exe_path)
@@ -162,6 +185,37 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.success("OK-WW 查看结束（只读，不回写配置）")
             await self.cur_user_item.set_state(status="完成")
             return
+
+        if not self.crashed and self.panel_user is not None:
+            from app.utils.common.io import read_dict_file
+
+            from .tools.config_fields import PANEL_FILES
+            from .tools.plan import daily_panel_patch
+
+            advanced = dict(self.panel_user.Task.NativeConfigs)
+            for kind, filename in PANEL_FILES.items():
+                path = self.script_config_path / filename
+                if not path.exists():
+                    continue
+                values = read_dict_file(path)
+                if kind == "daily":
+                    for field, value in daily_panel_patch(
+                        self.panel_user, values
+                    ).items():
+                        setattr(self.panel_user.Task, field, value)
+                elif kind == "echo":
+                    self.panel_user.Task.FarmEchoConfig = values
+                else:
+                    advanced[filename] = values
+            self.panel_user.Task.NativeConfigs = advanced
+            await self.panel_user.commit()
+            # 面板的原生文件只临时注入，不固化进共享或独立基础来源。
+            for filename, original in self.panel_originals.items():
+                path = self.script_config_path / filename
+                if original is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    _utils_io.atomic_write(path, original)
 
         if not self.crashed and self.use_mas_config and self.mas_config_dir:
             _configure_okww_launcher(self.root_path)

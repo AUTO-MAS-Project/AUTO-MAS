@@ -67,6 +67,7 @@ import type { OCRScreenshotOut } from '../models/OCRScreenshotOut';
 import type { OkwwArgumentsIn } from '../models/OkwwArgumentsIn';
 import type { OkwwArgumentsOut } from '../models/OkwwArgumentsOut';
 import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
+import type { OkwwTaskConfigOut } from '../models/OkwwTaskConfigOut';
 import type { OperationGetIn } from '../models/OperationGetIn';
 import type { OperationListIn } from '../models/OperationListIn';
 import type { OperationListOut } from '../models/OperationListOut';
@@ -548,6 +549,36 @@ export class GetService {
             url: '/api/scripts/share/inspect',
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Okww Task Config Api
+     * 读取原生字段及半动态控件描述。
+     * @param scriptId
+     * @param userId
+     * @param kind
+     * @param locale
+     * @returns OkwwTaskConfigOut Successful Response
+     * @throws ApiError
+     */
+    public static getOkwwTaskConfigApiApiScriptsOkwwTaskConfigGet(
+        scriptId: string,
+        userId: string,
+        kind: 'daily' | 'echo' | 'nightmare' | 'combat' | 'character' | 'monthly',
+        locale: 'zh_CN' | 'en_US' | 'ja_JP' = 'zh_CN',
+    ): CancelablePromise<OkwwTaskConfigOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/okww/task-config',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'kind': kind,
+                'locale': locale,
+            },
             errors: {
                 422: `Validation Error`,
             },

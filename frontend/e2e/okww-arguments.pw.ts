@@ -27,8 +27,9 @@ test.describe('@okww-arguments', () => {
       })
       const { userId } = await post('/api/scripts/user/add', { scriptId })
       await app.goto(`/scripts/${scriptId}/users/${userId}/edit/okww`)
+      await page.getByRole('tab', { name: 'OK-WW launch arguments', exact: true }).click()
       const field = page.locator('.ant-form-item').filter({
-        has: page.getByRole('group', { name: 'Launch arguments', exact: true }),
+        has: page.getByRole('group', { name: 'OK-WW launch arguments', exact: true }),
       })
       const input = field.getByRole('textbox')
       const toggle = field.getByRole('switch', { name: 'Custom arguments', exact: true })
@@ -90,6 +91,7 @@ test.describe('@okww-arguments', () => {
       await input.blur()
       expect((await (await saved).json()).code).toBe(200)
       await page.reload()
+      await page.getByRole('tab', { name: 'OK-WW launch arguments', exact: true }).click()
       await expect(toggle).toBeChecked()
       await expect(input).toHaveValue(custom)
       const preview = await post('/api/scripts/okww/startup-arguments', {

@@ -248,7 +248,11 @@ def _prepare_launcher(kernel, launcher_path: Path):
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+        creationflags=(
+            subprocess.DETACHED_PROCESS
+            | subprocess.CREATE_NEW_PROCESS_GROUP
+            | subprocess.CREATE_BREAKAWAY_FROM_JOB
+        ),
     )
     deadline = time.monotonic() + _LAUNCHER_TIMEOUT
     while time.monotonic() < deadline:

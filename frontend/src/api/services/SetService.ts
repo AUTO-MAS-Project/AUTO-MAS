@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { GameCalendarActivityCompletionIn } from '../models/GameCalendarActivityCompletionIn';
+import type { OkwwTaskConfigIn } from '../models/OkwwTaskConfigIn';
 import type { OutBase } from '../models/OutBase';
 import type { TaskboardArchiveIn } from '../models/TaskboardArchiveIn';
 import type { TaskboardDoneAtIn } from '../models/TaskboardDoneAtIn';
@@ -159,6 +160,26 @@ export class SetService {
         return __request(OpenAPI, {
             method: 'PUT',
             url: '/api/info/taskboard/version-story/done',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Save Okww Task Config Api
+     * 保存面板及已有日常字段，不修改基础来源。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static saveOkwwTaskConfigApiApiScriptsOkwwTaskConfigPost(
+        requestBody: OkwwTaskConfigIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/okww/task-config',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
