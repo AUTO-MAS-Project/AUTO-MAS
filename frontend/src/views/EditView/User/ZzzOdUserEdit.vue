@@ -1370,7 +1370,6 @@ const taskCards = computed<TaskCard[]>(() => {
       { name: item.app_name, configurable: item.configurable, jump: item.jump },
     ])
   )
-  // AppList 全量条目按原顺序渲染（含未启用项原位保留，对齐原生队列语义）
   const cards: TaskCard[] = savedApps.value
     .filter(item => item && typeof item.app_id === 'string')
     .map(item => ({
@@ -1380,11 +1379,12 @@ const taskCards = computed<TaskCard[]>(() => {
       configurable: nameBook.get(item.app_id)?.configurable,
       jump: nameBook.get(item.app_id)?.jump,
     }))
-  // 只把一条龙系列（zzz-od 默认编组）任务作为可选项；独立工具应用不入列
+  // 新任务按目录顺序置前，已保存任务保持用户顺序。
+  const newCards: TaskCard[] = []
   const known = new Set(cards.map(card => card.app_id))
   for (const item of catalog.value) {
     if (item.default_group && !known.has(item.app_id)) {
-      cards.push({
+      newCards.push({
         app_id: item.app_id,
         app_name: item.app_name,
         enabled: false,
@@ -1393,7 +1393,7 @@ const taskCards = computed<TaskCard[]>(() => {
       })
     }
   }
-  return cards
+  return [...newCards, ...cards]
 })
 
 const persistAppList = (list: { app_id: string; enabled: boolean }[]) => {
