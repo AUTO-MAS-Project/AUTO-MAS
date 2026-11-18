@@ -24,6 +24,33 @@ def _broken_runner() -> Callable[..., Awaitable[tuple[int, str]]]:
     return run
 
 
+def _fake_offline_device(monkeypatch, adb_address: str) -> list[tuple[str, ...]]:
+    """装一个假 adb: 连接是僵尸的, 只有「先失败过一次再断开重建」才能救回来。
+
+    僵尸连接下预先 ``connect`` 会假成功、设备照样 offline——这就是两台 MuMu 互相顶掉
+    5037 server 之后的真实现场。所以这里要求 ``disconnect`` 之前命令真的失败过一次,
+    才能区分「命令失败后重连」和「命令还没发就先把连接拆了」。
+    """
+    calls: list[tuple[str, ...]] = []
+    state = {"failed": False, "healthy": False}
+
+    async def fake_run_process(program, *args, timeout=None, if_merge_std=False):
+        calls.append(tuple(str(arg) for arg in args))
+        if args[0] == "disconnect":
+            state["healthy"] = state["failed"]
+            return SimpleNamespace(returncode=0, stdout=f"disconnected {adb_address}")
+        if args[0] == "connect":
+            return SimpleNamespace(returncode=0, stdout="connected")
+        if not state["healthy"]:
+            state["failed"] = True
+            # 与真实 adb 一致: offline 不带地址, not found 才带
+            return SimpleNamespace(returncode=1, stdout="error: device offline")
+        return SimpleNamespace(returncode=0, stdout="1")
+
+    monkeypatch.setattr(applaunch.ProcessRunner, "run_process", fake_run_process)
+    return calls
+
+
 def test_boot_timeout_carries_last_adb_result():
     """等不到开机完成时要把最后一次 adb 返回带出去。
 
@@ -78,43 +105,56 @@ def test_describe_adb_failure_only_speaks_for_stale_connections():
     assert describe_adb_failure(BROKEN_ADB_OUTPUT) == ""
 
 
-def test_runner_reconnects_and_retries_when_connection_is_stale(monkeypatch):
-    """命令报 offline 时要 disconnect+connect 重建一次再重试, 而不是把失败丢给上层。
+def test_runner_does_not_touch_connection_before_a_command_fails(monkeypatch):
+    """设备本来就连着时, 第一条命令之前不能动连接。
 
-    两台 MuMu 共用 5037 时 server 里会留着指向旧实例的连接, 此时 connect 直接回
-    成功、每条命令却都报 offline——只靠每秒轮询永远等不到开机完成。
+    界面上在已经开着的模拟器里点「打开游戏中心」也会新建一个执行器; 若它先断开再连,
+    别的东西在同一个 5037 server 上给这台设备建的 ``adb forward`` 就被删了, 后面的
+    ``connect`` 也不恢复。预先断连还会把唯一一次故障重连的机会提前用掉。
     """
-    monkeypatch.setattr(applaunch, "_RECONNECT_COOLDOWN", 0.0)
     calls: list[tuple[str, ...]] = []
-    shell_outputs = iter(["error: device offline", "1"])
 
     async def fake_run_process(program, *args, timeout=None, if_merge_std=False):
-        calls.append((str(program), *args))
-        if "shell" in args:
-            return SimpleNamespace(returncode=0, stdout=next(shell_outputs))
-        return SimpleNamespace(returncode=0, stdout="connected")
+        calls.append(tuple(str(arg) for arg in args))
+        return SimpleNamespace(returncode=0, stdout="1")
 
     monkeypatch.setattr(applaunch.ProcessRunner, "run_process", fake_run_process)
     runner = build_adb_runner(Path("adb.exe"), "127.0.0.1:16384")
 
-    code, output = asyncio.run(runner("shell", "getprop", "sys.boot_completed"))
+    assert asyncio.run(runner("shell", "getprop", "sys.boot_completed")) == (0, "1")
+    assert not [c for c in calls if c[0] in ("disconnect", "connect")]
 
-    assert (code, output) == (0, "1")
-    # 首次连接一次 + 发现失效后重连一次
-    assert [c[1] for c in calls].count("disconnect") == 2
-    assert [c[1] for c in calls].count("connect") == 2
+
+def test_runner_recovers_stale_connection_with_default_cooldown(monkeypatch):
+    """命令报 offline 时断开重连一次再重试, 默认冷却下也要能恢复。
+
+    冷却只该在「重连过之后」起作用。首次建连若就占掉它, 设备在启动命令期间掉线时
+    monkey 与 am start 都会落在断线里, 只剩前台轮询一直等到 launch-timeout。
+    """
+    calls = _fake_offline_device(monkeypatch, "127.0.0.1:16384")
+    runner = build_adb_runner(Path("adb.exe"), "127.0.0.1:16384")
+
+    assert asyncio.run(runner("shell", "getprop", "sys.boot_completed")) == (0, "1")
+    # 僵尸连接只有断开重建才救得回来, 这条命令确实走了恢复路径
+    assert "disconnect" in [c[0] for c in calls]
+
+
+def test_runner_reconnect_native_serial_skips_connect(monkeypatch):
+    """``emulator-5554`` 这类原生序列号不能用 ``connect`` 恢复, 断开一次让 server 重新扫到。"""
+    calls = _fake_offline_device(monkeypatch, "emulator-5554")
+    runner = build_adb_runner(Path("adb.exe"), "emulator-5554")
+
+    assert asyncio.run(runner("shell", "getprop", "sys.boot_completed")) == (0, "1")
+    assert [c[0] for c in calls if c[0] in ("disconnect", "connect")] == ["disconnect"]
 
 
 def test_runner_does_not_reconnect_for_missing_shell_command(monkeypatch):
     """设备里缺命令不是连接失效: 不能断开重连, 更不能把命令重复执行一次。"""
-    monkeypatch.setattr(applaunch, "_RECONNECT_COOLDOWN", 0.0)
     calls: list[tuple[str, ...]] = []
 
     async def fake_run_process(program, *args, timeout=None, if_merge_std=False):
-        calls.append((str(program), *args))
-        if "shell" in args:
-            return SimpleNamespace(returncode=127, stdout="sh: monkey: not found")
-        return SimpleNamespace(returncode=0, stdout="connected")
+        calls.append(tuple(str(arg) for arg in args))
+        return SimpleNamespace(returncode=127, stdout="sh: monkey: not found")
 
     monkeypatch.setattr(applaunch.ProcessRunner, "run_process", fake_run_process)
     runner = build_adb_runner(Path("adb.exe"), "127.0.0.1:16384")
@@ -123,51 +163,38 @@ def test_runner_does_not_reconnect_for_missing_shell_command(monkeypatch):
 
     assert code == 127
     assert "monkey: not found" in output
-    # 首次那一次连接之外不再重连, 命令只执行一次
-    assert [c[1] for c in calls].count("connect") == 1
-    assert [c[1] for c in calls].count("disconnect") == 1
-    assert len([c for c in calls if "shell" in c]) == 1
+    assert len(calls) == 1
 
 
-def test_runner_reconnect_native_serial_skips_connect(monkeypatch):
-    """``emulator-5554`` 这类原生序列号不能用 ``connect`` 恢复, 断开一次让 server 重新扫到。"""
-    monkeypatch.setattr(applaunch, "_RECONNECT_COOLDOWN", 0.0)
-    calls: list[tuple[str, ...]] = []
-    shell_outputs = iter(["error: device offline", "1"])
+def test_boot_timeout_detail_keeps_raw_error_unless_caller_asks_for_hint():
+    """公共启动流程只带原始 adb 报错; 「关掉别的模拟器、换端口」由调用方决定加不加。
 
-    async def fake_run_process(program, *args, timeout=None, if_merge_std=False):
-        calls.append((str(program), *args))
-        if "shell" in args:
-            return SimpleNamespace(returncode=0, stdout=next(shell_outputs))
-        return SimpleNamespace(returncode=0, stdout="")
-
-    monkeypatch.setattr(applaunch.ProcessRunner, "run_process", fake_run_process)
-    runner = build_adb_runner(Path("adb.exe"), "emulator-5554")
-
-    code, output = asyncio.run(runner("shell", "getprop", "sys.boot_completed"))
-
-    assert (code, output) == (0, "1")
-    # 原生序列号首次不用连, 失效时只断开
-    assert [c[1] for c in calls].count("disconnect") == 1
-    assert not [c for c in calls if c[1] == "connect"]
-
-
-def test_boot_timeout_detail_carries_port_hint():
-    """连不上时 detail 要带上「端口被占」的提示, 弹窗里才说得清下一步做什么。"""
+    ModAVD 走 ``modavd adb`` 的私有 server, 关机或换端口处理不了它的连接, 喂这句提示
+    只会把人带偏。
+    """
 
     async def stale_runner(*args: str, timeout: float | None = None):
         return 1, "error: device offline"
 
-    result = asyncio.run(
+    raw = asyncio.run(
         ensure_app_running(
             stale_runner, "com.example.game", boot_timeout=0, launch_timeout=0
         )
     )
+    hinted = asyncio.run(
+        ensure_app_running(
+            stale_runner,
+            "com.example.game",
+            boot_timeout=0,
+            launch_timeout=0,
+            failure_hint=describe_adb_failure,
+        )
+    )
 
-    assert not result.ok
-    assert result.reason == "boot-timeout"
-    assert "device offline" in result.detail
-    assert "端口" in result.detail
+    assert raw.reason == "boot-timeout"
+    assert "device offline" in raw.detail
+    assert "端口" not in raw.detail
+    assert "端口" in hinted.detail
 
 
 def test_missing_adb_returns_error_code_and_logs_once(tmp_path: Path, monkeypatch):

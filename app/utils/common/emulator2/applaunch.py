@@ -258,29 +258,35 @@ def build_adb_runner(adb_path: Path | None, adb_address: str) -> AdbRunner:
     """把「哪个 adb、哪台设备」包成一个只接命令参数的执行器。
 
     ``adb_path`` 为 ``None`` 时回退系统 ``adb``, 与 :meth:`DeviceBase.get_adb_path`
-    的约定一致。``host:port`` 形式的地址（MuMu）会在第一条命令前先 ``connect`` 一次。
+    的约定一致。
 
     执行器**吞掉所有异常**并转成 ``(-1, 错误文本)``: 上层是轮询逻辑, 一次执行失败
     应该继续等下一轮, 而不是把整个启动流程炸掉。
 
-    连之前一定先 ``disconnect``: 两台 MuMu 会互相顶掉 5037 上的 server, server 里留着
-    指向旧实例的连接时, ``connect`` 会直接回一句 ``connected`` 而设备实际是 offline。
-    命令结果里出现过期连接的字样时, 也会重连一次再试。
+    **发命令前不碰连接**: 只有命令输出表明连接已失效时, 才 ``disconnect`` + ``connect``
+    重连一次再试。预先连一次没有用——两台 MuMu 互相顶掉 5037 的 server 之后, 那条僵尸
+    连接照样让 ``connect`` 回成功、命令却全报 offline; 而预先断连会把别人在同一个 server
+    上给这台设备建的 ``adb forward`` 一并删掉（在已经开着的模拟器里点「打开游戏中心」
+    就会走这条路径）, 还会把唯一一次故障重连的机会提前用掉。
 
     ``host:port`` 与 ``emulator-5554`` 这类原生序列号的恢复方式不同: ``connect`` 只认
     前者, 后者断开一次让 adb server 自己重新扫到就够了。
     """
     program: Path | str = adb_path if adb_path is not None else "adb"
     tcp_address = ":" in adb_address
-    need_connect = tcp_address
     failed_once = False
     reconnect_lock = asyncio.Lock()
     last_reconnect = 0.0
 
-    async def connect(disconnect_first: bool) -> None:
-        """重建到这台设备的连接。连不上照旧吞掉——调用方本来就在等下一轮。"""
-        with suppress(Exception):
-            if disconnect_first:
+    async def reconnect() -> None:
+        """断开后重连。僵尸连接只有先 ``disconnect`` 才能清掉, 连不上照旧吞掉。"""
+        nonlocal last_reconnect
+        async with reconnect_lock:
+            now = time.monotonic()
+            if now - last_reconnect < _RECONNECT_COOLDOWN:
+                return
+            last_reconnect = now
+            with suppress(Exception):
                 await ProcessRunner.run_process(
                     program,
                     "disconnect",
@@ -288,30 +294,17 @@ def build_adb_runner(adb_path: Path | None, adb_address: str) -> AdbRunner:
                     timeout=_ADB_CONNECT_TIMEOUT,
                     if_merge_std=True,
                 )
-            if tcp_address:
-                await ProcessRunner.run_process(
-                    program,
-                    "connect",
-                    adb_address,
-                    timeout=_ADB_CONNECT_TIMEOUT,
-                    if_merge_std=True,
-                )
-
-    async def reconnect() -> None:
-        nonlocal last_reconnect
-        async with reconnect_lock:
-            now = time.monotonic()
-            if now - last_reconnect < _RECONNECT_COOLDOWN:
-                return
-            last_reconnect = now
-            await connect(disconnect_first=True)
+                if tcp_address:
+                    await ProcessRunner.run_process(
+                        program,
+                        "connect",
+                        adb_address,
+                        timeout=_ADB_CONNECT_TIMEOUT,
+                        if_merge_std=True,
+                    )
 
     async def run(*args: str, timeout: float = _ADB_TIMEOUT) -> tuple[int, str]:
-        nonlocal need_connect, failed_once
-        if need_connect:
-            # 连不上也照样往下走: 设备可能本来就连着, 真没连上后面的命令会自己报错
-            need_connect = False
-            await reconnect()
+        nonlocal failed_once
         for retried in (False, True):
             try:
                 result = await ProcessRunner.run_process(
@@ -386,6 +379,7 @@ async def ensure_app_running(
     vendor_launch: VendorLauncher | None = None,
     poll_seconds: float = _POLL_SECONDS,
     label: str = "",
+    failure_hint: Callable[[str], str] | None = None,
 ) -> AppLaunchResult:
     """确保某个包在设备上跑起来并到了前台。
 
@@ -411,6 +405,11 @@ async def ensure_app_running(
         轮询间隔。
     label
         日志前缀, 通常是设备号。
+    failure_hint
+        把最后一条 adb 输出翻译成排查建议的回调, ``None`` 表示不加。只有确认这台
+        设备走共享 5037 的调用方（MuMu、雷电）才传 :func:`describe_adb_failure`;
+        ModAVD 走 ``modavd adb`` 的私有 server, 「关掉其它模拟器、换个端口」对它没有
+        意义, 这种情况保留原始 adb 报错即可。
 
     Returns
     -------
@@ -423,7 +422,7 @@ async def ensure_app_running(
         run_adb, time.monotonic() + boot_timeout, poll_seconds
     )
     if not booted:
-        hint = describe_adb_failure(boot_detail)
+        hint = failure_hint(boot_detail) if failure_hint is not None else ""
         logger.warning(
             f"{prefix}等待系统启动完成超时，跳过启动 {package_name}"
             f"（最后一次 adb 返回: {boot_detail}）{hint}"
@@ -607,6 +606,7 @@ class AppLaunchMixin(DeviceBase):
             launch_timeout=launch_timeout,
             vendor_launch=lambda: self.vendor_launch_app(idx, package_name),
             label=str(idx),
+            failure_hint=describe_adb_failure,
         )
 
     async def open_store(self, idx: str) -> AppLaunchResult:
