@@ -26,6 +26,7 @@ const logger = window.electronAPI.getLogger('用户API')
 
 interface AddUserOptions {
   showError?: boolean
+  playSuccessSound?: boolean
 }
 
 export function useUserApi() {
@@ -60,9 +61,10 @@ export function useUserApi() {
       }
 
       operation.finish({ script_type, outcome: response.userId ? 'success' : 'failure' })
-      // 播放添加用户成功音频
-      const { playSound } = useAudioPlayer()
-      await playSound('add_user')
+      if (options.playSuccessSound !== false) {
+        const { playSound } = useAudioPlayer()
+        await playSound('add_user')
+      }
 
       return response
     } catch (err) {

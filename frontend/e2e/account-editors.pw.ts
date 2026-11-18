@@ -1,5 +1,3 @@
-import fs from 'node:fs/promises'
-import path from 'node:path'
 import { expect, test } from './fixtures'
 
 const backend = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? 36174}`
@@ -22,7 +20,7 @@ const adapters = [
 
 test.describe('@account-editors', () => {
   for (const [type, segment] of adapters) {
-    test(`${type} saves the common account fields and heading`, async ({ app, page }, testInfo) => {
+    test(`${type} saves the common account fields and heading`, async ({ app, page }) => {
       const post = async (path: string, data: unknown) => {
         const response = await page.request.post(`${backend}${path}`, { data })
         const body = await response.json()
@@ -37,13 +35,6 @@ test.describe('@account-editors', () => {
         )
       const { scriptId } = await post('/api/scripts/add', { type })
       try {
-        if (type === 'Okww') {
-          const scriptRoot = testInfo.outputPath('okww-script')
-          const configDir = path.join(scriptRoot, 'data/apps/ok-ww/working/configs')
-          await fs.mkdir(configDir, { recursive: true })
-          await fs.writeFile(path.join(configDir, 'e2e.json'), '{}')
-          await post('/api/scripts/update', { scriptId, data: { Info: { RootPath: scriptRoot } } })
-        }
         const { userId } = await post('/api/scripts/user/add', { scriptId })
         await app.goto(`/scripts/${scriptId}/users/${userId}/edit/${segment}`)
         const fields = page.locator('.user-basic-info-fields')

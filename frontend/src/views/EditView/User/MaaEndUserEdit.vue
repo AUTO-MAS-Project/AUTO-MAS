@@ -667,21 +667,19 @@ onMounted(async () => {
     return
   }
 
-  if (isEdit.value) {
-    await loadUserData()
-    await normalizeQuickConfig()
-  } else {
+  if (!isEdit.value) {
     const result = await addUser(scriptId)
-    if (result?.userId) {
-      userId = result.userId
-      isEdit.value = true
-      await normalizeQuickConfig()
-    } else {
+    if (!result?.userId) {
       if (!userError.value) message.error(t('core.edit.couldNotCreateUser'))
       router.push('/scripts')
       return
     }
+    userId = result.userId
+    isEdit.value = true
+    await router.replace({ name: 'MaaEndUserEdit', params: { scriptId, userId } })
   }
+  await loadUserData()
+  await normalizeQuickConfig()
 
   // 先等脚本信息与用户就绪（新建模式内部会创建用户并写入 userId）再归档，
   // 否则新建用户首次进入会因 userId 未就绪静默跳过归档

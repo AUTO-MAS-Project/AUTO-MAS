@@ -312,7 +312,7 @@ async def get_user_config_dir(user: UserConfigDirIn = Body(...)) -> UserConfigDi
 async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
 
     try:
-        uid, config = await Config.add_user(user.scriptId)
+        uid, config = await Config.add_user(user.scriptId, native_defaults=True)
         data = ConfigPayload[type(config)](
             **config.model_dump(context={"audience": "api"})
         )

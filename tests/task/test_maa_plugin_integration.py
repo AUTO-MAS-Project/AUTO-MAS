@@ -181,6 +181,9 @@ async def test_maa_backup_api_owns_round_trip_and_guards(maa_host):
     uid = (await client.post("/api/scripts/user/add", json={"scriptId": sid})).json()[
         "userId"
     ]
+    account = Config.ScriptConfig[sid].users[uid]
+    account.Info.Base = "shared"
+    await account.commit()
     directory = Config.data_path / sid / "Default" / "ConfigFile"
     directory.mkdir(parents=True)
     source = directory / "gui.new.json"
@@ -235,12 +238,16 @@ async def test_maa_owns_source_signal_and_configuration_directory(
     client, _ = maa_host
     created = (await client.post("/api/scripts/add", json={"type": "MAA"})).json()
     sid = created["scriptId"]
-    first = (await client.post("/api/scripts/user/add", json={"scriptId": sid})).json()[
-        "userId"
+    first, second = [
+        (await client.post("/api/scripts/user/add", json={"scriptId": sid})).json()
+        for _ in range(2)
     ]
-    second = (
-        await client.post("/api/scripts/user/add", json={"scriptId": sid})
-    ).json()["userId"]
+    assert first["code"] == second["code"] == 200
+    assert first["data"]["Info"]["Base"] == "native"
+    assert second["data"]["Info"]["Base"] == "shared"
+    assert first["data"]["Info"]["IfQuickConfig"] is False
+    assert second["data"]["Info"]["IfQuickConfig"] is False
+    first, second = first["userId"], second["userId"]
     script = Config.ScriptConfig[sid]
     shared = (
         await client.post(
@@ -249,8 +256,6 @@ async def test_maa_owns_source_signal_and_configuration_directory(
     ).json()
     assert shared["code"] == 200
     assert shared["path"] == str(Config.data_path / sid / "Default" / "ConfigFile")
-    script.users[first].Info.Base = "native"
-    await script.users[first].commit()
     # 不经过公共 API/handler 的写入也必须由插件自己的信号阻止冲突。
     script.users[second].Info.Base = "native"
     with pytest.raises(ConfigAggregateError):
