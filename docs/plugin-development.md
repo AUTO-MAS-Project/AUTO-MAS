@@ -12,9 +12,11 @@
 AUTO-MAS/
   app/
   frontend/src/views/maa/    暂时保留的 MAA 静态页面
+  frontend/src/views/whimbox/ 暂时保留的奇想盒静态页面
   plugins/
     auto_mas_core/         主程序跟踪的 SDK
     maa_adapter/           开发者克隆的独立仓库
+    whimbox_adapter/       奇想盒独立仓库
 ```
 
 Runtime 使用安装根目录保存用户插件，运行代码位于 `repo`。
@@ -42,6 +44,9 @@ cd plugins/maa_adapter
 git status
 ```
 
+奇想盒对应仓库为 `AUTO-MAS-Project/AUTO-MAS-Whimbox-Adapter`，本地目录为
+`plugins/whimbox_adapter`。两个适配器分别维护自己的配置、执行器与专用接口。
+
 启动主程序后，在插件中心手动启用源码插件。插件代码的提交、推送、版本推进和发布
 均在该独立仓库中进行。主程序 Git 只交付 SDK。
 
@@ -50,12 +55,21 @@ git status
 主程序会在领域配置激活前通过正常发行包安装入口补齐。用户主动放入的有效源码
 仍可承担对应插件实现。
 
+奇想盒的旧托管同样会在配置激活前补齐插件。先发布适配器发行包，再交付移除内置实现的
+主程序版本；首个发行包发布前，使用本地源码工程或本地构建的 wheel 联调。
+首发前应按实际配套 SDK 发行版本收紧插件的最低版本约束，并用该 SDK 发行包验证。
+同版本号的开发源码可能包含尚未发布的接口，不能据此推断旧 SDK 已兼容。
+
 ## 前端归属
 
 动态前端尚未上线，MAA 页面由主程序的 `frontend/src/views/maa` 维护并随桌面应用构建。
 新建托管、MAA 页面路由与 MAA 计划创建入口按后端提供的插件能力开放。
 动态页面上线后再将这些页面迁回插件。专项 API、配置模型、关卡缓存和语言资源
 仍由 MAA 插件持有。
+
+奇想盒页面按相同方式由 `frontend/src/views/whimbox/entry.ts` 汇入静态页面声明。
+不使用计划表的专项可以不声明 `plan`。奇想盒静态页面及其中英日文案暂由主程序维护，
+后端实现、通知内容、任务目录与备份恢复接口由 `whimbox_adapter` 持有。
 
 ## 回归环境
 

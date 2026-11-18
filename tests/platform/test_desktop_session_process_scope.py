@@ -18,6 +18,16 @@ from app.utils.common.process.runner import popen_scoped
 from app.utils.common.process.scope import TaskProcessScope, current_process_scope
 
 
+def test_desktop_session_keeps_builtin_support_when_whimbox_is_a_plugin():
+    from whimbox_adapter.config import WhimboxConfig
+
+    from app.models.config import GeneralConfig
+
+    general = GeneralConfig.build(payload={"Game": {"Enabled": False}})
+    assert lifecycle.supports_task(general)
+    assert not lifecycle.supports_task(WhimboxConfig.build())
+
+
 @pytest.mark.asyncio
 async def test_desktop_task_can_run_local_update_helper_without_adopting_local_processes(
     monkeypatch, tmp_path

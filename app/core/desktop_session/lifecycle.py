@@ -23,7 +23,6 @@ def supports_task(config: object) -> bool:
         MaaFWConfig,
         OkNteConfig,
         OkwwConfig,
-        WhimboxConfig,
         ZzzOdConfig,
     )
     from app.utils import IS_ELEVATED
@@ -73,8 +72,6 @@ def supports_task(config: object) -> bool:
         return (
             not config.Run.UseAdmin or IS_ELEVATED
         ) and not config.Update.TakeoverEnabled
-    if isinstance(config, WhimboxConfig):
-        return not config.Run.UseAdmin or IS_ELEVATED
     return isinstance(config, ZzzOdConfig) and IS_ELEVATED
 
 

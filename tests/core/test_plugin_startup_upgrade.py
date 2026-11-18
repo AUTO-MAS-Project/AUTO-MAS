@@ -22,12 +22,15 @@ from app.plugin.uv import ops, precheck
 
 
 @pytest.fixture(autouse=True)
-def isolated_installed_plugins(monkeypatch):
+def isolated_installed_plugins():
     """联合环境用例只发现其临时发行包，专项测试依赖继续由专项夹具装配。"""
     test_plugins = Path(__file__).resolve().parents[2] / ".test-plugins"
-    monkeypatch.setattr(
-        sys, "path", [item for item in sys.path if item != str(test_plugins)]
-    )
+    # 让用例自己的路径调整先撤销，再恢复专项测试的发行包路径。
+    with pytest.MonkeyPatch.context() as isolated:
+        isolated.setattr(
+            sys, "path", [item for item in sys.path if item != str(test_plugins)]
+        )
+        yield
 
 
 @pytest.mark.asyncio

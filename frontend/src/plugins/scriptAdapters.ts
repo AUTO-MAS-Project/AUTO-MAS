@@ -2,6 +2,7 @@ import type { Component } from 'vue'
 import type { RouteRecordRaw } from 'vue-router'
 import type { ScriptMetadata } from '@/utils/scriptMetadata'
 import maa from '@/views/maa/entry'
+import whimbox from '@/views/whimbox/entry'
 
 type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
 
@@ -11,7 +12,7 @@ export interface ScriptFrontendAdapter {
   type: string
   editors: { script: LazyPage; user: LazyPage }
   routes: RouteRecordRaw[]
-  plan: {
+  plan?: {
     configType: string
     displayNameKey: string
     defaultName: string
@@ -22,17 +23,18 @@ export interface ScriptFrontendAdapter {
   }
 }
 
-const adapters: ScriptFrontendAdapter[] = [maa]
+const adapters: ScriptFrontendAdapter[] = [maa, whimbox]
 
 export const SCRIPT_PLUGIN_EDITORS = Object.fromEntries(
   adapters.map(adapter => [adapter.type, adapter.editors])
 )
 export const SCRIPT_PLUGIN_ROUTES = adapters.flatMap(adapter => adapter.routes)
 export const SCRIPT_PLUGIN_PLANS = Object.fromEntries(
-  adapters.map(adapter => [
-    adapter.plan.configType,
-    { ...adapter.plan, createType: adapter.plan.configType },
-  ])
+  adapters.flatMap(adapter =>
+    adapter.plan
+      ? [[adapter.plan.configType, { ...adapter.plan, createType: adapter.plan.configType }]]
+      : []
+  )
 )
 
 export const SCRIPT_PLUGIN_METADATA = Object.fromEntries(
