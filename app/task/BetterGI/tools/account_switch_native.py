@@ -74,6 +74,7 @@ from app.tools import error_screenshot as _tool_error_screenshot
 from app.tools import ocr as _tool_ocr
 from app.utils import IS_WINDOWS, get_logger
 from app.utils import display as _utils_display
+from app.utils.common.process.session import desktop_process_target
 
 from .account_switch import mask_account
 
@@ -1691,6 +1692,15 @@ async def async_switch_account(
     on_log: Callable[[str], None] | None = None,
 ) -> bool:
     """async 版本：在后台线程执行完整切换流程，避免阻塞事件循环。"""
+    if (desktop := desktop_process_target.get()) is not None:
+        from app.task.desktop_session_worker import run_desktop_action
+
+        return await run_desktop_action(
+            desktop,
+            "bettergi_switch_account",
+            {"account": account, "password": password, "resource": resource},
+            on_log,
+        )
     return await asyncio.to_thread(
         account_switch, account, password, resource=resource, on_log=on_log
     )

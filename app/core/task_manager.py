@@ -40,6 +40,8 @@ from app.models.task import (
 from app.task.registration import ManagerFactory
 from app.task.script_expander import ScriptExpander
 from app.utils import get_logger
+from app.utils.common.process.session import desktop_process_target
+from app.utils.contracts.power import PowerSignal
 
 logger = get_logger("任务调度")
 _selection = TypeAdapter(dict[int, TaskSelectionNode])
@@ -50,6 +52,14 @@ if TYPE_CHECKING:
     from app.task.user_expander import UserExpander
 
 type PluginExpander = Callable[[TaskScriptItem, ScriptConfigType], UserExpander | None]
+
+
+class UnsupportedDesktopTask(ValueError):
+    """所选任务包含尚不能在桌面分身执行的操作。"""
+
+
+def script_config_name(entry: ScriptConfigType) -> str:
+    return entry.info.name if isinstance(entry, ScriptEntry) else entry.Info.Name
 
 
 class _TaskManager:
@@ -184,6 +194,7 @@ class _TaskManager:
             raise ValueError("一次任务必须且只能指定一个顶层入口")
         node = _selection.validate_python(raw)[0]
         info = run.task_info
+        desktop = desktop_process_target.get() is not None
         queue: QueueConfig | None = None
 
         def select(
@@ -222,6 +233,12 @@ class _TaskManager:
                 queue = Config.QueueConfig.get(queue_id) if queue_id else None
                 if queue_id and queue is None:
                     raise ValueError(f"队列不存在：{queue_id}")
+                if (
+                    desktop
+                    and queue is not None
+                    and queue.Info.AfterAccomplish != PowerSignal.NO_ACTION
+                ):
+                    raise UnsupportedDesktopTask("桌面分身不支持队列的电源操作")
                 if not session and queue is None and not node.children:
                     raise ValueError("不选择队列时必须显式指定托管")
                 selections = (
@@ -244,6 +261,13 @@ class _TaskManager:
                     entry = Config.ScriptConfig.get(script_id)
                     if entry is None:
                         raise ValueError(f"托管不存在：{script_id}")
+                    if desktop:
+                        from app.core.desktop_session.lifecycle import supports_task
+
+                        if not supports_task(entry):
+                            raise UnsupportedDesktopTask(
+                                "此托管的启动方式暂不支持桌面分身"
+                            )
                     sid = info.scripts.add(
                         TaskScriptItem,
                         payload={
@@ -257,9 +281,7 @@ class _TaskManager:
                                     ),
                                     type(entry).__name__,
                                 ),
-                                "name": entry.info.name
-                                if isinstance(entry, ScriptEntry)
-                                else entry.Info.Name,
+                                "name": script_config_name(entry),
                                 "params": deepcopy(selected.params),
                             }
                         },

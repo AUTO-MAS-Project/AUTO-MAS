@@ -24,6 +24,7 @@ import time
 import uuid
 from contextlib import suppress
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 
 from app.config import ConfigCollection
@@ -58,12 +59,13 @@ from app.utils import (
     compile_log_signs,
     get_logger,
     is_process_alive,
-    is_process_running,
     log_box,
     process,
 )
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
+from app.utils.common.process.manager import has_process_window
+from app.utils.common.process.session import desktop_process_target
 
 from . import push_log as _push_log
 from .config_schema import (
@@ -741,7 +743,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             await self._push_dispatch_log(
                 f"正在检查异环客户端进程 ({_NTE_CLIENT_PROCESS})..."
             )
-            if is_process_running(_NTE_CLIENT_PROCESS):
+            if await has_process_window(_NTE_CLIENT_PROCESS):
                 logger.info("检测到异环客户端进程已在运行，跳过由 MAS 重复启动游戏")
                 await self._push_dispatch_log("检测到客户端已在运行，跳过启动")
                 await self._note_launch_arguments_skipped()
@@ -781,7 +783,10 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 logger.info(message)
                 await self._push_dispatch_log(message)
                 await self.game_manager.open_process(
-                    launcher_path, breakaway=True, owned=False
+                    launcher_path,
+                    breakaway=True,
+                    owned=False,
+                    retain_desktop_descendants=True,
                 )
                 window_ready = bool(
                     await async_start_game_via_launcher(
@@ -808,7 +813,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 # 优先带 /autoplay 静默拉起：启动器自行进游戏，省掉 OCR 找按钮点击
                 # 「开始游戏」这一整段交互（含更新/弹窗等分支）。
                 await self.game_manager.open_process(
-                    launcher_path, AUTOPLAY_ARG, breakaway=True, owned=False
+                    launcher_path,
+                    AUTOPLAY_ARG,
+                    breakaway=True,
+                    owned=False,
+                    retain_desktop_descendants=True,
                 )
                 if await async_wait_autoplay_game(
                     launcher_path, on_log=_push_launch_log
@@ -817,11 +826,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                     message = f"{AUTOPLAY_ARG} 静默启动成功，跳过点击「开始游戏」"
                     logger.info(message)
                     await self._push_dispatch_log(message)
-                elif is_process_running(_NTE_CLIENT_PROCESS):
-                    # 窗口尚未被枚举到但客户端进程已存在：游戏其实已起，按成功处理；
-                    # 这条路径未确认窗口存在，故下面的收尾日志走「进程已在运行」表述
-                    logger.info(f"{AUTOPLAY_ARG} 未等到游戏窗口，但客户端进程已在运行")
-                    await self._push_dispatch_log("客户端进程已在运行，按已启动处理")
+                elif await has_process_window(_NTE_CLIENT_PROCESS):
+                    # 启动器等待结束后再次确认客户端窗口，覆盖刚起窗的情况。
+                    window_ready = True
+                    logger.info(f"{AUTOPLAY_ARG} 等待结束后检测到客户端窗口")
+                    await self._push_dispatch_log("已检测到客户端窗口，按已启动处理")
                 else:
                     # 静默启动只有 /autoplay 这一条路：超时（启动器没真正接管游戏，
                     # 例如待安装更新未被驱动）不回退去点「开始游戏」（那是「启动器
@@ -849,7 +858,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 raise RuntimeError("请设置异环游戏 URL")
             if not game_process_name:
                 raise RuntimeError("请设置异环游戏进程名称")
-            if is_process_running(game_process_name):
+            if await has_process_window(game_process_name):
                 logger.info(
                     f"检测到异环客户端进程已在运行，跳过启动: {game_process_name}"
                 )
@@ -932,6 +941,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
     async def main_task(self):
         await self.prepare()
         await self._reset_daily_proxy_count()
+        detect_in_desktop = None
+        if (desktop := desktop_process_target.get()) is not None:
+            from app.task.desktop_session_worker import detect_desktop_maintenance
+
+            detect_in_desktop = partial(
+                detect_desktop_maintenance, desktop, "oknte_detect_maintenance", {}
+            )
 
         await self.cur_user_item.set_state(status="运行")
         # 任务前脚本每账号一次，先于全部重试；后置脚本由收尾阶段成对执行
@@ -996,7 +1012,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             # 游戏窗口已就绪时先做画面维护检测（公告通道覆盖启动前，这里兜底
             # 「公告未覆盖但维护弹窗已出现」的场景）：命中即跳过当前账号；
             # 维护不会在重试间隔内结束，不再消耗剩余尝试次数
-            if await self.skip_on_game_maintenance(detect_game_maintenance_text):
+            if await self.skip_on_game_maintenance(
+                detect_game_maintenance_text, detect_in_desktop=detect_in_desktop
+            ):
                 break
 
             # 游戏启动成功后、下发脚本配置前，按「运行前强制切换账号」开关切号。
@@ -1062,7 +1080,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             self.wait_event.clear()
             maintenance_watch = asyncio.create_task(
                 self.watch_game_maintenance(
-                    detect_game_maintenance_text, self.wait_event
+                    detect_game_maintenance_text,
+                    self.wait_event,
+                    detect_in_desktop=detect_in_desktop,
                 )
             )
             try:

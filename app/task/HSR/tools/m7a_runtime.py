@@ -185,6 +185,14 @@ class M7ARunner:
     async def terminate_current_process(self) -> bool:
         """终止当前 M7A 子进程。"""
 
+        if (remote := self._process_manager.desktop_process) is not None:
+            if remote.returncode is None:
+                if self.kill_tree:
+                    await self._process_manager.kill()
+                else:
+                    await remote.terminate_root()
+                return True
+            return False
         process = self._process_manager.main_process
         async with self._termination_lock:
             if process is not self._process_manager.main_process:
@@ -205,7 +213,7 @@ class M7ARunner:
         客户端平台下三月七可能自己拉起了游戏客户端，按树杀会把游戏带走，只杀主进程。
         """
 
-        if self.kill_tree:
+        if self.kill_tree and self._process_manager.desktop_process is None:
             return await self.terminate_process_tree()
         return await self.terminate_current_process()
 
@@ -406,7 +414,11 @@ class M7ARunner:
         next_snapshot = 0.0
         while proc.returncode is None:
             now = asyncio.get_running_loop().time()
-            if self.kill_tree and now >= next_snapshot:
+            if (
+                self.kill_tree
+                and isinstance(proc, asyncio.subprocess.Process)
+                and now >= next_snapshot
+            ):
                 async with self._termination_lock:
                     await self._remember_process_tree(proc)
                 next_snapshot = now + 0.25
@@ -416,6 +428,8 @@ class M7ARunner:
     def _close_process_pipes(proc: asyncio.subprocess.Process) -> None:
         if proc.stdin is not None:
             proc.stdin.close()
+        if not isinstance(proc, asyncio.subprocess.Process):
+            return
         # StreamReader 没有公开的 close；只关闭本次子进程的读端，不终止可能是
         # 游戏客户端的后代。项目固定 Python 3.12，升级时需核对该 transport 接口。
         for fd in (1, 2):
@@ -645,12 +659,20 @@ class M7ARunner:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=build_m7a_env(self.env_overrides),
+                # PC 版启动的游戏要跨三月七命令保留，整棵进程树不能归命令所有。
+                retain_desktop_descendants=not self.kill_tree,
+                desktop_root_only=not self.kill_tree,
             )
-            process = self._process_manager.main_process
-            if not isinstance(process, asyncio.subprocess.Process):
+            process = (
+                self._process_manager.desktop_process
+                or self._process_manager.main_process
+            )
+            if self._process_manager.desktop_process is None and not isinstance(
+                process, asyncio.subprocess.Process
+            ):
                 raise RuntimeError("三月七子进程启动后未能被 ProcessManager 跟踪")
             proc = process
-            if self.kill_tree:
+            if self.kill_tree and isinstance(proc, asyncio.subprocess.Process):
                 async with self._termination_lock:
                     await self._remember_process_tree(proc)
             (

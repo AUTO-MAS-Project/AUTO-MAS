@@ -31,6 +31,7 @@ const navigationLabel = computed(() =>
 const tabs = computed(() => [
   { key: 'basic', title: t('core.setting.tab.basic') },
   { key: 'function', title: t('core.setting.tab.function') },
+  { key: 'desktop-session', title: t('bootstrap.desktopSession.title') },
   { key: 'notify', title: t('core.setting.tab.notify') },
   { key: 'advanced', title: t('core.setting.tab.advanced') },
   { key: 'others', title: t('core.setting.tab.others') },
