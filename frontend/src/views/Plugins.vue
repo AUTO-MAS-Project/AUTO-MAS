@@ -9,7 +9,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import PageSurface from '@/components/PageSurface.vue'
 import ApiRetryAlert from '@/components/ApiRetryAlert.vue'
 import NoData from '@/components/NoData.vue'
-import { usePluginQuery } from '@/views/plugins/usePluginQuery'
+import { pluginCatalogQueryKey, usePluginQuery } from '@/views/plugins/usePluginQuery'
 import { usePluginApi } from '@/composables/usePluginApi'
 import { pluginActionHint, pluginToggleChecked } from '@/views/plugins/configActions'
 import { apiErrorMessage } from '@/utils/apiResult'
@@ -116,7 +116,7 @@ const rows = computed(
 )
 
 const catalog = usePluginQuery(
-  () => ['plugins', 'market', locale.value],
+  () => pluginCatalogQueryKey(locale.value),
   api.getCatalog,
   () => t('core.plugins.marketLoadFailed')
 )

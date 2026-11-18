@@ -294,4 +294,18 @@ describe('plugin commands and settings', () => {
       expect(finish).toHaveBeenCalledExactlyOnceWith({ action, outcome: 'failure' })
     }
   )
+
+  it('shares catalog refreshes and observes only newly started manual batches', async () => {
+    const refresh = vi
+      .spyOn(Service, 'refreshPluginCatalogApiPluginCatalogRefreshPost')
+      .mockResolvedValue({ code: 200 })
+
+    await Promise.all([createApi().refreshCatalog('automatic'), createApi().refreshCatalog()])
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(finish).not.toHaveBeenCalled()
+
+    await Promise.all([createApi().refreshCatalog(), createApi().refreshCatalog()])
+    expect(refresh).toHaveBeenCalledTimes(2)
+    expect(finish).toHaveBeenCalledExactlyOnceWith({ action: 'refresh', outcome: 'success' })
+  })
 })

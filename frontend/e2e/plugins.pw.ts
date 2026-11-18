@@ -1,6 +1,102 @@
 import { expect, test } from './fixtures'
 
 test.describe('@plugins plugin foundation', () => {
+  const refreshEndpoint = '**/api/plugin_catalog/refresh?*'
+
+  test.beforeEach(async ({ page }) => {
+    await page.route(refreshEndpoint, route => route.fulfill({ json: { code: 200 } }))
+  })
+
+  test('shows local market entries while the catalog refreshes on entry', async ({ app, page }) => {
+    const uid = '47b17e9c-e285-4ef7-9002-676643210882'
+    let version = '1.0'
+    let refreshes = 0
+    let releaseRefresh: (() => void) | undefined
+    const refreshGate = new Promise<void>(resolve => {
+      releaseRefresh = resolve
+    })
+    await page.route('**/api/plugin_catalog/get?*', route =>
+      route.fulfill({
+        json: {
+          code: 200,
+          order: [{ uid, type: 'PluginMeta' }],
+          data: { [uid]: { uid, info: { display_name: 'Test adapter', version } } },
+        },
+      })
+    )
+    await page.route(refreshEndpoint, async route => {
+      refreshes += 1
+      if (refreshes > 1) {
+        await route.fulfill({ json: { code: 500, message: 'Offline' } })
+        return
+      }
+      await refreshGate
+      version = '2.0'
+      await route.fulfill({ json: { code: 200 } })
+    })
+
+    try {
+      const refreshing = page.waitForRequest(refreshEndpoint)
+      await app.goto('/plugins/market')
+      await refreshing
+      await expect(page.getByRole('cell', { name: '1.0', exact: true })).toBeVisible()
+      await page.getByRole('button', { name: /Refresh$/ }).click()
+    } finally {
+      releaseRefresh?.()
+    }
+    await expect(page.getByRole('cell', { name: '2.0', exact: true })).toBeVisible()
+    await expect(page.getByText('Plugin market refreshed', { exact: true })).toBeVisible()
+    expect(refreshes).toBe(1)
+
+    await app.goto('/plugins')
+    await expect(page.getByRole('heading', { name: 'Plugin center' })).toBeVisible()
+    const refreshFailed = page.waitForResponse(refreshEndpoint)
+    await app.goto('/plugins/market')
+    await refreshFailed
+    await expect(page.getByRole('cell', { name: '2.0', exact: true })).toBeVisible()
+    await expect(page.getByText('Offline', { exact: true })).toHaveCount(0)
+  })
+
+  test('updates the installed page when a market refresh outlives navigation', async ({
+    app,
+    page,
+  }) => {
+    let uid = '47b17e9c-e285-4ef7-9002-676643210882'
+    let version = '0.1.4'
+    let releaseRefresh: (() => void) | undefined
+    const refreshGate = new Promise<void>(resolve => {
+      releaseRefresh = resolve
+    })
+    await page.route('**/api/plugin_catalog/get?*', route =>
+      route.fulfill({
+        json: {
+          code: 200,
+          order: [{ uid, type: 'PluginMeta' }],
+          data: {
+            [uid]: { uid, info: { plugin_name: 'maa_adapter', version, update_available: true } },
+          },
+        },
+      })
+    )
+    await page.route(refreshEndpoint, async route => {
+      await refreshGate
+      uid = '47b17e9c-e285-4ef7-9002-676643210883'
+      version = '0.1.5'
+      await route.fulfill({ json: { code: 200 } })
+    })
+
+    try {
+      const refreshing = page.waitForRequest(refreshEndpoint)
+      await app.goto('/plugins/market')
+      await refreshing
+      await page.getByRole('button', { name: 'Back', exact: true }).click()
+      await expect(page.getByText('Update to 0.1.4', { exact: true })).toBeVisible()
+    } finally {
+      releaseRefresh?.()
+    }
+    await expect(page.getByText('Update to 0.1.5', { exact: true })).toBeVisible()
+  })
+
   test('upgrades market plugins from both pages and preserves retry after rejection', async ({
     app,
     page,

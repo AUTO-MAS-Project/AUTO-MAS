@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, watch, ref } from 'vue'
+import { computed, onMounted, onScopeDispose, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useQueryClient } from '@tanstack/vue-query'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, DownloadOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 
@@ -10,7 +11,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import NoData from '@/components/NoData.vue'
 import PageSurface from '@/components/PageSurface.vue'
 import ApiRetryAlert from '@/components/ApiRetryAlert.vue'
-import { usePluginQuery } from '@/views/plugins/usePluginQuery'
+import { pluginCatalogQueryKey, usePluginQuery } from '@/views/plugins/usePluginQuery'
 import { usePluginApi } from '@/composables/usePluginApi'
 import { usePluginInstallation } from '@/views/plugins/usePluginInstallation'
 import { pluginActionHint } from '@/views/plugins/configActions'
@@ -20,6 +21,7 @@ import PluginMetadataDetails from '@/views/plugins/PluginMetadataDetails.vue'
 const { t, locale } = useI18n()
 const router = useRouter()
 const api = usePluginApi()
+const queryClient = useQueryClient()
 const refreshing = ref(false)
 const {
   installing,
@@ -33,11 +35,7 @@ const {
   error: loadError,
   execute: load,
 } = usePluginQuery(
-  () => /* 以当前语言隔离市场查询缓存，切换语言时取得对应展示文本。 */ [
-    'plugins',
-    'market',
-    locale.value,
-  ],
+  () => pluginCatalogQueryKey(locale.value),
   api.getCatalog,
   () => /* 为市场查询提供当前语言的加载失败提示。 */ t('core.plugins.marketLoadFailed')
 )
@@ -66,7 +64,31 @@ const install = async (row: PluginCatalogDocument) => {
   if (await installPlugin(row)) await load()
 }
 
-watch(locale, load, { immediate: true })
+watch(locale, load)
+
+let disposed = false
+onScopeDispose(() => {
+  disposed = true
+})
+
+onMounted(async () => {
+  // 先读本机目录，再从发行源刷新，慢网或失败时保留已有列表。
+  await load()
+  if (disposed) return
+  try {
+    await api.refreshCatalog('automatic')
+    // 进页刷新可以跨导航完成，始终回读并更新插件中心共享的目录。
+    const queryKey = pluginCatalogQueryKey(locale.value)
+    await queryClient.cancelQueries({ queryKey, exact: true })
+    await queryClient.fetchQuery({
+      queryKey,
+      queryFn: () => api.getCatalog(queryKey[2]),
+      staleTime: 0,
+    })
+  } catch {
+    return
+  }
+})
 </script>
 
 <template>

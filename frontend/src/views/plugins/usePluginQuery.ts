@@ -1,6 +1,10 @@
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
+import { normalizeLocale } from '@/i18n'
 import { getApiErrorMessage } from '@/utils/apiError'
+
+export const pluginCatalogQueryKey = (locale: string) =>
+  ['plugins', 'market', normalizeLocale(locale)] as const
 
 /** 插件页面读取复用应用 QueryClient；命令不进入读取重试。 */
 export function usePluginQuery<T>(
@@ -13,7 +17,7 @@ export function usePluginQuery<T>(
     queryKey: computed(() =>
       /* 展开引用或 getter 形式的查询键，跟随页面身份与语言变化。 */ toValue(key)
     ),
-    queryFn: request,
+    queryFn: () => request(),
     enabled: false,
   })
   const execute = async () => {

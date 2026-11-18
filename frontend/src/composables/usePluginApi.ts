@@ -19,6 +19,8 @@ import { reconnectNow } from '@/services/websocket/connection'
 type Action = 'enable' | 'disable' | 'reload' | 'uninstall' | 'install' | 'refresh' | 'config'
 export type InstallationStage = 'waiting' | 'restarting' | 'recovering'
 
+let catalogRefreshRequest: Promise<OutBase> | undefined
+
 class OperationResultError extends Error {
   constructor(
     readonly outcome: 'failure' | 'cancelled' | 'unknown',
@@ -65,6 +67,21 @@ export function usePluginApi() {
     } finally {
       observation.finish({ action, outcome })
     }
+  }
+  const refreshCatalog = (trigger: 'manual' | 'automatic' = 'manual') => {
+    // 跨页面共用正在进行的刷新，只观察实际发起的手动批次。
+    if (catalogRefreshRequest) return catalogRefreshRequest
+    const request = () =>
+      requestApi(
+        () => Service.refreshPluginCatalogApiPluginCatalogRefreshPost(locale(), {}),
+        t('core.plugins.actionFailed')
+      )
+    catalogRefreshRequest = (
+      trigger === 'automatic' ? request() : perform('refresh', request)
+    ).finally(() => {
+      catalogRefreshRequest = undefined
+    })
+    return catalogRefreshRequest
   }
   const finishInstallation = async (
     metaId: string,
@@ -193,18 +210,12 @@ export function usePluginApi() {
         () => Service.getPluginRegistryApiPluginRegistryGetPost({ recordId }, locale()),
         t('core.plugins.loadFailed')
       ),
-    getCatalog: () =>
+    getCatalog: (language = locale()) =>
       /* 读取市场条目与安装字段的 UI 属性。 */ requestApi(
-        () => Service.getPluginCatalogApiPluginCatalogGetPost({}, locale()),
+        () => Service.getPluginCatalogApiPluginCatalogGetPost({}, language),
         t('core.plugins.marketLoadFailed')
       ),
-    refreshCatalog: () =>
-      perform('refresh', () =>
-        /* 刷新完成后记录结果。 */ requestApi(
-          () => Service.refreshPluginCatalogApiPluginCatalogRefreshPost(locale(), {}),
-          t('core.plugins.actionFailed')
-        )
-      ),
+    refreshCatalog,
     getConfig: (recordId: string) =>
       /* 读取插件自有配置及其独立配置 UID。 */ requestApi(
         () => Service.getPluginConfigApiPluginConfigGetPost({ recordId }, locale()),
