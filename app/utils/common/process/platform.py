@@ -16,7 +16,7 @@ from app.utils.contracts.process import (
 
 class CommonProcessPlatform:
     @staticmethod
-    def create_task_job() -> TaskProcessJob | None:
+    def create_task_job(*, kill_on_close: bool = False) -> TaskProcessJob | None:
         return None
 
     supports_elevation = False

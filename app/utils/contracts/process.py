@@ -32,7 +32,9 @@ class TaskProcessJob(Protocol):
 
 
 class ProcessPlatform(Protocol):
-    def create_task_job(self) -> TaskProcessJob | None: ...
+    def create_task_job(
+        self, *, kill_on_close: bool = False
+    ) -> TaskProcessJob | None: ...
     @property
     def supports_elevation(self) -> bool: ...
 
