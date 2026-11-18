@@ -9,7 +9,7 @@
     segment    = regex_segment | literal
     regex_segment = '$(' regex ')' ('.' function)*
     literal    = '"' text '"'                 # 支持 \\" \\\\ \\n \\t 转义
-    function   = identifier '(' args ')'
+    function   = ([namespace ':'] identifier) '(' args ')'
     args       = arg (',' arg)* | ε
     arg        = literal | number
 
@@ -21,8 +21,17 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Union
+
+# 命名空间允许发行包常用的点和连字符；无命名空间的函数语法保持不变。
+_QUALIFIED_FUNCTION = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*:[A-Za-z_][A-Za-z0-9_]*")
+
+
+def is_qualified_function_name(name: str) -> bool:
+    return _QUALIFIED_FUNCTION.fullmatch(name) is not None
+
 
 # ==================== AST 节点 ====================
 
@@ -214,7 +223,12 @@ class _Parser:
         functions: list[FunctionCall] = []
         while self.pos < self.length and self.text[self.pos] == ".":
             self.pos += 1  # 跳过 .
-            name = self._parse_identifier()
+            qualified = _QUALIFIED_FUNCTION.match(self.text, self.pos)
+            if qualified:
+                name = qualified[0]
+                self.pos = qualified.end()
+            else:
+                name = self._parse_identifier()
             if not name:
                 raise ExpressionError(f"位置 {self.pos}：'.' 后需要函数名")
             # 跳过空白

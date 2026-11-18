@@ -15,15 +15,15 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Optional, Pattern
 
-from .functions import FUNCTIONS, apply_function
+from .functions import FUNCTIONS, Arg, ExpressionFunction
 from .parser import (
     ExpressionError,
-    FunctionCall,
     LiteralSegment,
-    RegexSegment,
+    is_qualified_function_name,
     parse,
 )
 
@@ -31,11 +31,19 @@ from .parser import (
 
 
 @dataclass
+class _CompiledCall:
+    name: str
+    function: ExpressionFunction
+    args: tuple[Arg, ...]
+    strict: bool
+
+
+@dataclass
 class _CompiledRegex:
     """编译后的正则片段：预编译正则 + 函数链"""
 
     pattern: Optional[Pattern[str]]
-    functions: list[FunctionCall] = field(default_factory=list)
+    functions: list[_CompiledCall] = field(default_factory=list)
     full_text: bool = False  # True 表示 $() 为空，直接返回整段文本
 
 
@@ -50,6 +58,10 @@ _CompiledSegment = _CompiledRegex | _CompiledLiteral
 
 
 # ==================== 编译后的表达式 ====================
+
+
+class ExpressionEvaluationError(ExpressionError):
+    """已编译的函数调用执行失败。"""
 
 
 @dataclass
@@ -107,13 +119,7 @@ class CompiledExpression:
         """
         # 空 $() → 直接返回整段文本，再执行函数链
         if seg.full_text:
-            result = text
-            for func in seg.functions:
-                try:
-                    result = apply_function(func.name, func.args, result)
-                except (ValueError, TypeError):
-                    continue
-            return result
+            return self._apply_functions(seg.functions, text)
 
         if seg.pattern is None:
             return None
@@ -130,47 +136,58 @@ class CompiledExpression:
                 if g:
                     collected.append(g)
 
-        result = "\n".join(collected)  # 无捕获组或组全空时为空串
+        return self._apply_functions(seg.functions, "\n".join(collected))
 
-        # 依次执行函数链
-        for func in seg.functions:
+    def _apply_functions(self, calls: list[_CompiledCall], result: str) -> str:
+        for call in calls:
             try:
-                result = apply_function(func.name, func.args, result)
-            except (ValueError, TypeError):
-                # 函数执行失败时跳过，保留原文本
+                transformed = call.function(result, list(call.args))
+                if call.strict and not isinstance(transformed, str):
+                    raise TypeError("表达式函数必须返回字符串")
+            except (ValueError, TypeError) as exc:
+                if call.strict:
+                    raise ExpressionEvaluationError(
+                        f"函数 '{call.name}' 执行失败"
+                    ) from exc
+                # 旧规则继续跳过参数失败的函数，保留此次变换前的文本。
                 continue
-
+            result = transformed
         return result
 
 
 # ==================== 编译入口 ====================
 
 
-def compile_expression(expr_str: str) -> CompiledExpression:
+def compile_expression(
+    expr_str: str,
+    *,
+    extensions: Mapping[str, ExpressionFunction] | None = None,
+    strict_functions: bool = False,
+) -> CompiledExpression:
     """编译提取表达式字符串
 
     Args:
         expr_str: 表达式字符串，如 $(\\d+).replace("/","-")+"："+$(.+)
+        extensions: 当前会话的扩展函数，键为 namespace:name，调用错误始终向上报告。
+        strict_functions: 内置函数调用错误也向上报告；默认沿用旧规则跳过失败变换的行为。
 
     Returns:
         CompiledExpression 对象
 
     Raises:
-        ExpressionError: 语法错误或正则编译失败
+        ExpressionError: 语法错误、函数名称不可用或正则编译失败
     """
     ast_lines = parse(expr_str)
     compiled_lines: list[list[_CompiledSegment]] = []
 
-    # 校验函数名：未知函数名在编译期即报错，避免运行时静默失效
-    available = ", ".join(sorted(FUNCTIONS))
-    for line in ast_lines:
-        for seg in line:
-            if isinstance(seg, RegexSegment):
-                for fn in seg.functions:
-                    if fn.name not in FUNCTIONS:
-                        raise ExpressionError(
-                            f"未知函数 '{fn.name}'，可用函数: {available}"
-                        )
+    functions = dict(FUNCTIONS)
+    if extensions is not None:
+        for name, function in extensions.items():
+            if name in functions or not is_qualified_function_name(name):
+                raise ExpressionError(
+                    f"扩展函数名 '{name}' 必须是未注册的 namespace:name"
+                )
+            functions[name] = function
 
     for line in ast_lines:
         compiled_line: list[_CompiledSegment] = []
@@ -178,12 +195,26 @@ def compile_expression(expr_str: str) -> CompiledExpression:
             if isinstance(seg, LiteralSegment):
                 compiled_line.append(_CompiledLiteral(text=seg.text))
             else:
+                calls: list[_CompiledCall] = []
+                for fn in seg.functions:
+                    function = functions.get(fn.name)
+                    if function is None:
+                        available = ", ".join(sorted(functions))
+                        raise ExpressionError(
+                            f"未知函数 '{fn.name}'，可用函数: {available}"
+                        )
+                    calls.append(
+                        _CompiledCall(
+                            name=fn.name,
+                            function=function,
+                            args=tuple(fn.args),
+                            strict=strict_functions or ":" in fn.name,
+                        )
+                    )
                 # 空 $() → full_text 模式，直接返回整段文本
                 if not seg.pattern_str.strip():
                     compiled_line.append(
-                        _CompiledRegex(
-                            pattern=None, functions=seg.functions, full_text=True
-                        )
+                        _CompiledRegex(pattern=None, functions=calls, full_text=True)
                     )
                 else:
                     # 编译正则（启用 DOTALL 以跨行匹配）
@@ -197,7 +228,7 @@ def compile_expression(expr_str: str) -> CompiledExpression:
                         ) from e
                     compiled_line.append(
                         _CompiledRegex(
-                            pattern=pattern, functions=seg.functions, full_text=False
+                            pattern=pattern, functions=calls, full_text=False
                         )
                     )
         compiled_lines.append(compiled_line)

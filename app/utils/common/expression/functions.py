@@ -11,6 +11,7 @@ from typing import Callable, Union
 
 # 函数参数类型
 Arg = Union[str, int]
+ExpressionFunction = Callable[[str, list[Arg]], str]
 
 
 def _find_nth(text: str, marker: str, nth: int, start: int = 0) -> int:
@@ -194,7 +195,7 @@ def fn_lower(text: str, args: list[Arg]) -> str:
 
 # ==================== 函数注册表 ====================
 
-FUNCTIONS: dict[str, Callable[[str, list[Arg]], str]] = {
+FUNCTIONS: dict[str, ExpressionFunction] = {
     "cut": fn_cut,
     "get": fn_get,
     "sub": fn_sub,
