@@ -17,15 +17,11 @@
             </div>
 
             <a-form layout="vertical" class="form-fields" :disabled="loading || saving">
-              <a-form-item
+              <OkNteConfigFormItem
                 v-for="field in selectedConfig.fields"
                 :key="field.name"
-                :label="field.label || field.name"
+                :field="field"
               >
-                <template v-if="field.description" #extra>
-                  {{ field.description }}
-                </template>
-
                 <!-- object 类型：子任务配置组 -->
                 <template v-if="field.type === 'object'">
                   <div class="object-field">
@@ -33,16 +29,12 @@
                       v-if="!field.children || field.children.length === 0"
                       :description="t('core.edit.thisSubtaskHasNo')"
                     />
-                    <a-form-item
+                    <OkNteConfigFormItem
                       v-for="child in field.children || []"
                       :key="`${field.name}.${child.name}`"
-                      :label="child.label || child.name"
+                      :field="child"
                       class="nested-form-item"
                     >
-                      <template v-if="child.description" #extra>
-                        {{ child.description }}
-                      </template>
-
                       <a-switch
                         v-if="child.type === 'bool'"
                         :checked="getNestedFieldValue(selectedConfigFilename, field.name, child)"
@@ -125,7 +117,7 @@
                             )
                         "
                       />
-                    </a-form-item>
+                    </OkNteConfigFormItem>
                   </div>
                 </template>
 
@@ -276,7 +268,7 @@
                       )
                   "
                 />
-              </a-form-item>
+              </OkNteConfigFormItem>
 
               <div v-if="selectedConfig.fields.length === 0" class="empty-fields">
                 <NoData :description="t('core.edit.thisConfigurationFileHas')" />
@@ -300,6 +292,7 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons-vue'
 import OkNteConfigNavigation from './OkNteConfigNavigation.vue'
+import OkNteConfigFormItem from './OkNteConfigFormItem.vue'
 import { OkNteSetupService as OknteService } from '@/composables/useAdapterSetupApi'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 

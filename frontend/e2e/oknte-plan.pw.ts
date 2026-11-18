@@ -365,7 +365,9 @@ test.describe('@oknte-plan', () => {
       },
     })
     await app.goto(`/plans?planId=${created.planId}`)
-    const material = page.locator('[data-row-key=Monday] td').nth(5).getByRole('spinbutton')
+    const material = page
+      .locator('[data-row-key=Monday]')
+      .getByRole('spinbutton', { name: /材料序号/ })
     const saved = page.waitForResponse(r => r.url().includes('/api/plan/update'))
     await material.fill('2')
     await material.press('Tab')
@@ -397,4 +399,44 @@ test.describe('@oknte-plan', () => {
     await page.getByRole('button', { name: 'Back', exact: true }).click()
     await expect(page).toHaveURL(/\/plans\?planId=/)
   })
+})
+
+test('@oknte-plan detail weekly defaults apply once and preserve explicit inheritance', async ({
+  app,
+  page,
+}) => {
+  const created = await (
+    await page.request.post(`${backend}/api/plan/add`, { data: { type: 'OkNtePlan' } })
+  ).json()
+  const id = created.planId
+  const read = async (day: string) =>
+    (await (await page.request.post(`${backend}/api/plan/get`, { data: { planId: id } })).json())
+      .data[id][day].Key.Configs
+  const day = 'Monday',
+    weekday = '周一'
+  await app.goto(`/plans/${id}/oknte/${day}`)
+  await page.locator('.config-item').getByText('日常子任务配置', { exact: true }).click()
+  const row = page
+    .locator('.override-field')
+    .filter({ has: page.getByText('异象巡礼 / 目标', { exact: true }) })
+  const saved = page.waitForResponse(r => r.url().includes('/oknte/plan/save'))
+  await row.getByRole('button', { name: 'Inherit account configuration', exact: true }).click()
+  expect((await (await saved).json()).code).toBe(200)
+  const actual = (await read(day))['DailyRoutineTaskConfigs.json'].anomaly_pilgrimage
+  expect(actual['每周开始运行日']).toBe(weekday)
+  expect(actual['轮换起始日期']).toBe('')
+  const start = page
+    .locator('.override-field')
+    .filter({ has: page.getByText('异象巡礼 / 每周开始运行日', { exact: true }) })
+  const inherit = page.waitForResponse(r => r.url().includes('/oknte/plan/save'))
+  await start.getByRole('button', { name: 'Daily override', exact: true }).click()
+  await inherit
+  await row.locator('.ant-select').click()
+  const change = page.waitForResponse(r => r.url().includes('/oknte/plan/save'))
+  await page.locator('.ant-select-dropdown:visible').getByTitle('Morphix', { exact: true }).click()
+  await change
+  expect((await read(day))['DailyRoutineTaskConfigs.json'].anomaly_pilgrimage).not.toHaveProperty(
+    '每周开始运行日'
+  )
+  await page.keyboard.press('Escape')
 })
