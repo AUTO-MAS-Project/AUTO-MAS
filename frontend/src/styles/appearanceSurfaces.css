@@ -190,16 +190,6 @@ html.appearance-background-custom .content-area .navigation-link:hover {
   background: var(--ant-color-fill-quaternary);
 }
 
-/* 插件列表无需横向滚动时，操作列跟随表面底色。 */
-html.appearance-background-custom
-  .plugins-page
-  .ant-table:not(.ant-table-scroll-horizontal)
-  .ant-table-tbody
-  > tr
-  > td.ant-table-cell-fix-right:not(.ant-table-cell-row-hover) {
-  background-color: transparent;
-}
-
 /* 表头与激活页签保留轻微填充，输入框、按钮、选中/悬停行不受影响。 */
 html.appearance-background-custom
   .content-area
