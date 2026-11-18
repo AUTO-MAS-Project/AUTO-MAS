@@ -282,6 +282,16 @@ def _warn_unsupported_root_fields(data: dict[str, Any], source_path: Path) -> No
             source_path,
             extra=_LOG_ONLY,
         )
+    if "custom" in unsupported_keys:
+        # custom 不是「忽略也不影响行为」的那种字段：它是 MFW-PyQt6 外壳在自己进程里注册
+        # 自定义动作 / 识别的私有写法。内置运行不加载这些动作，用到它们的节点必然
+        # Action is null，用户能观察到的后果是可预期的，这条告警必须让他看见。
+        logger.warning(
+            "MaaFW ProjectInterface 声明了外壳私有字段 custom（%s）：该项目依赖外壳"
+            "自行注册的自定义动作 / 识别，内置运行不加载，用到它们的任务会失败；文件：%s",
+            data.get("custom"),
+            source_path,
+        )
 
 
 def _validate_tasks(tasks: Any, source_path: Path) -> None:
