@@ -22,9 +22,14 @@
       <a-button
         v-else-if="column.key === 'detail'"
         type="link"
+        size="small"
         :disabled="isSaving || Boolean(error)"
         @click="navigateTo(`/plans/${props.planId}/okww/${planColumnGroup(record.day)}`)"
-        >{{ t('core.plan.oknte.detail') }}</a-button
+        >{{
+          incompleteFarmTarget(record.day)
+            ? t('core.plan.okww.incompleteFarmTarget')
+            : t('core.plan.oknte.detail')
+        }}</a-button
       >
       <span v-else-if="notApplicable(record.day, column.key)" class="not-applicable">—</span>
       <a-input-number
@@ -178,6 +183,15 @@ const farmTargets = {
 }
 function farmTarget(mode: unknown) {
   return typeof mode === 'string' ? farmTargets[mode as keyof typeof farmTargets] : undefined
+}
+function incompleteFarmTarget(day: string) {
+  const fields = key(day)
+  const target = farmTarget(fields.WhichToFarm)
+  if (target) return fields[target.field] == null
+  return (
+    fields.WhichToFarm == null &&
+    Object.values(farmTargets).some(({ field }) => fields[field] != null)
+  )
 }
 function numberField(day: string) {
   const field = farmTarget(value(day, 'WhichToFarm'))?.field

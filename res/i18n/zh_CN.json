@@ -4843,6 +4843,7 @@
   "core.comp.downloadGradientSpeed": "渐变速率",
   "core.comp.downloadGradientContrast": "色差程度",
   "core.plan.okww.completeTarget": "补全目标覆写",
+  "core.plan.okww.incompleteFarmTarget": "目标不完整",
   "core.plan.okww.bossTarget": "首领目标",
   "core.plan.okww.farm": "消耗体力刷取",
   "core.plan.okww.number": "副本序号（F2）",

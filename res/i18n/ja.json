@@ -4843,6 +4843,7 @@
   "core.comp.downloadGradientSpeed": "変化速度",
   "core.comp.downloadGradientContrast": "色差の強さ",
   "core.plan.okww.completeTarget": "上書きする対象を補完",
+  "core.plan.okww.incompleteFarmTarget": "対象を補完",
   "core.plan.okww.bossTarget": "ボスの対象",
   "core.plan.okww.farm": "スタミナ消費先",
   "core.plan.okww.number": "ダンジョン番号（F2）",

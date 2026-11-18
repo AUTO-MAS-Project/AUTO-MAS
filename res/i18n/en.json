@@ -4843,6 +4843,7 @@
   "core.comp.downloadGradientSpeed": "Gradient speed",
   "core.comp.downloadGradientContrast": "Color variation",
   "core.plan.okww.completeTarget": "Complete target override",
+  "core.plan.okww.incompleteFarmTarget": "Fix target",
   "core.plan.okww.bossTarget": "Boss target",
   "core.plan.okww.farm": "Stamina farming",
   "core.plan.okww.number": "Dungeon number (F2)",
