@@ -27,6 +27,8 @@ python scripts/prepare-developer-backend.py --source . --base D:\Apps\AUTO-MAS -
 
 共用 Runtime 根的实例按顺序启动。关闭开发实例后，从未设置 `AUTO_MAS_BACKEND_REPO` 的终端启动原程序，即恢复日常模式。
 
+开发后端模式暂停桌面应用更新。需要更新安装包时，先退出开发模式，再正常启动发行版进行更新。
+
 直接使用未打包的开发 Electron 时，工具包通过 `AUTO_MAS_BACKEND_RUNTIME_ROOT` 指定要复用的发行目录。
 
 ## 可选前端工具
