@@ -68,7 +68,9 @@ _USER_WARNING_PREFIX = "MaaFW ProjectInterface "
 #    旧缓存里它是没经校验的原样字段。
 # 7：加载告警多了 ``preset.controller`` 写错（PI v2.10.4）与 ``input_type`` 不认识（v2.10.5），
 #    旧缓存里的告警没有这两类。
-DISK_CACHE_VERSION = 7
+# 8：加载告警多了顶层 ``custom``（外壳私有字段，内置运行不加载自定义动作）。
+#    旧缓存里的告警没有这一条，项目文件不变的老用户升级后仍看不到，所以要让它们重新解析。
+DISK_CACHE_VERSION = 8
 DISK_CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 DISK_CACHE_CLEANUP_INTERVAL_SECONDS = 24 * 60 * 60
 _interface_cache: dict[
