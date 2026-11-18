@@ -376,3 +376,38 @@ async def test_old_plan_routes_each_native_task_and_unbinds_on_delete(monkeypatc
     await plans.commit()
     assert user.Info.SanityMode == "Fixed"
     assert user.Info.AutoEssenceMode == "Fixed"
+
+
+@pytest.mark.asyncio
+async def test_same_task_failure_then_retry_completion_is_not_a_parse_failure(
+    proxy_fixture, monkeypatch
+):
+    """同名任务在一次日志里先失败、重试后完成，本轮仍应判为完成。
+
+    #1953：失败与完成都会推进固定索引，重试后的「完成」会读到配置实例列表外，
+    异常被吞成「任务执行情况解析失败」，整轮结果作废。
+    """
+    proxy, attempts = proxy_fixture
+
+    async def upstream_result(offsets):
+        lines = []
+        for task in attempts[-1][1]:
+            name = task["taskName"]
+            if name == "ProtocolSpace":
+                lines.extend(
+                    [
+                        f"任务开始: {name}\n",
+                        f"任务失败: {name}\n",
+                        f"任务开始: {name}\n",
+                        f"任务完成: {name}\n",
+                    ]
+                )
+            else:
+                lines.extend([f"任务开始: {name}\n", f"任务完成: {name}\n"])
+        await proxy.check_log(lines, datetime.now().astimezone(), if_stream_end=True)
+
+    monkeypatch.setattr(proxy, "_wait_maaend_stage", upstream_result)
+    await proxy.main_task()
+
+    assert proxy.cur_user_log.status != "MaaEnd 任务执行情况解析失败"
+    assert all(proxy.run_book.values())

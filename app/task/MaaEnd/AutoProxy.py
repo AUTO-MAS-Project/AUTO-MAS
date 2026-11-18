@@ -2946,20 +2946,23 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                             task_name in self.task_dict
                             and f"任务完成: {task_name}" in log_line
                         ):
-                            self.task_dict[task_name][
-                                task_index[task_name]["list"][
-                                    task_index[task_name]["index"]
-                                ]
-                            ] = False
-                            completed_task_names.add(
-                                self.task_name_map.get(task_name, task_name)
-                            )
-                            task_index[task_name]["index"] += 1
-                        elif (
-                            task_name in task_index
-                            and f"任务失败: {task_name}" in log_line
-                        ):
-                            task_index[task_name]["index"] += 1
+                            slot = task_index[task_name]
+                            if slot["index"] < len(slot["list"]):
+                                self.task_dict[task_name][
+                                    slot["list"][slot["index"]]
+                                ] = False
+                                completed_task_names.add(
+                                    self.task_name_map.get(task_name, task_name)
+                                )
+                                slot["index"] += 1
+                            else:
+                                # 同名任务失败后重试会多出终态行，配置里已经没有对应实例可标，
+                                # 跳过这一条即可，不能让整轮结果解析在这里失败
+                                logger.warning(
+                                    f"MaaEnd 日志中的任务「{task_name}」完成次数超过配置实例数，忽略多出的终态"
+                                )
+                        # 「任务失败」不推进索引：它只说明这一次尝试没成，同名任务重试后的
+                        # 「完成」仍然属于同一个配置实例，推进会把完成分支读到列表外
 
                     if self.cur_user_config.Info.IfQuickConfig:
                         await self._mark_daily_once_tasks_completed(
