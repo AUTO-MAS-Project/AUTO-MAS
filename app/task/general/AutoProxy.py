@@ -134,6 +134,10 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         # 是否写 MAS 侧配置：原生来源=不写，shared/independent 来源都写面板值。
         self.use_mas_config = self.config_base != CONFIG_BASE_NATIVE
         self.check_result = "-"
+        # 这两项在 prepare 后段才建立。准备阶段中途失败时 final_task 照样会进来，
+        # 先给空值，收尾才能只清理确实建起来的资源，也不会把最初那个错误盖成 AttributeError。
+        self.general_log_monitor: LogMonitor | None = None
+        self.run_book = False
 
     async def check(self) -> str:
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
@@ -851,11 +855,13 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
             and not self.stopped_manually,
         )
 
-        # 结束各子任务
-        await self.general_log_monitor.stop()
+        # 结束各子任务。准备阶段可能在监控器建立之前就失败，这里只停确实建起来的那一个，
+        # 否则 AttributeError 会顶掉最初那个真正的错误，后面的进程清理也一并被吃掉。
+        if self.general_log_monitor is not None:
+            await self.general_log_monitor.stop()
         await self.kill_managed_process()
         del self.general_process_manager
-        del self.general_log_monitor
+        self.general_log_monitor = None
 
         if self.run_book:
             if (
