@@ -18,6 +18,7 @@ from app.models.config import (
     PluginRegistryCollection,
 )
 from app.plugin.runtime import market
+from app.plugin.runtime.catalog_protocol import content_revision
 
 
 def published_catalog(*, empty=False):
@@ -85,6 +86,44 @@ async def test_data_station_conditional_request_reuses_valid_document(
     await market.refresh()
     assert list(catalog.keys()) == first
     assert len(catalog) == 1
+
+
+@pytest.mark.asyncio
+async def test_refresh_preserves_install_target_when_catalog_changes(
+    catalog, monkeypatch
+):
+    """新插件和文案变更不会使等待重启的安装丢失入口，版本变更仍使用新入口。"""
+    monkeypatch.setenv("AUTO_MAS_PLUGIN_INDEX_URL", "https://catalog.test/plugins.json")
+    document = published_catalog()
+    serve(monkeypatch, lambda _: httpx.Response(200, json=document))
+
+    await market.refresh()
+    (pending_uid,) = catalog.keys()
+
+    entry = document["plugins"][0]
+    entry["display_name_i18n"]["en"] = "Updated Demo Adapter"
+    new_entry = deepcopy(entry)
+    new_entry.update(package_name="auto-mas-another", plugin_name="another_adapter")
+    document["plugins"] = [new_entry, entry]
+    document["revision"] = content_revision(document["plugins"])
+    await market.refresh()
+
+    assert [meta.info.package_name for meta in catalog.values()] == [
+        "auto-mas-another",
+        "auto-mas-demo",
+    ]
+    assert catalog[pending_uid].info.display_name_i18n["en"] == "Updated Demo Adapter"
+
+    entry["version"] = "0.2.0"
+    document["revision"] = content_revision(document["plugins"])
+    await market.refresh()
+
+    assert pending_uid not in catalog
+    assert [
+        meta.info.version
+        for meta in catalog.values()
+        if meta.info.plugin_name == "demo_adapter"
+    ] == ["0.2.0"]
 
 
 @pytest.mark.asyncio
