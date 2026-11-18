@@ -62,11 +62,11 @@ async def test_bootstrap_core_with_separate_source_and_user_directories(
     monkeypatch.setattr(config, "plugin_catalog", catalog)
     # 此场景验证仅有 core 的用户环境；测试发行包留给各专项集成夹具装配，避免引导重载污染已收集的配置类型。
     test_plugins = Path(__file__).resolve().parents[2] / ".test-plugins"
+    core_source = config.source_path / "plugins" / "auto_mas_core" / "src"
     monkeypatch.setattr(
-        sys, "path", [item for item in sys.path if item != str(test_plugins)]
-    )
-    monkeypatch.syspath_prepend(
-        str(config.source_path / "plugins" / "auto_mas_core" / "src")
+        sys,
+        "path",
+        [str(core_source), *(item for item in sys.path if item != str(test_plugins))],
     )
     manager = _PluginManager()
     try:
