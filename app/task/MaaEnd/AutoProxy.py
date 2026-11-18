@@ -2951,9 +2951,16 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                                 target_id = slot["list"][slot["index"]]
                                 slot["index"] += 1
                             else:
-                                # 终态行比配置里的实例还多，只可能是同名任务失败后重试。
-                                # 回归最后一个还没标的实例上：读到列表外不行，算到下一个
-                                # 实例名下也不行——下一个实例还等着自己那条完成行。
+                                # 终态行比配置里的实例还多。只有该任务名在配置里只有一个实例时，
+                                # 这条「完成」才不可能是别人的：标它（同名任务失败后重试就是这种）。
+                                # 多实例时日志里只有同一个名字，没有依据认定属于哪个 ID，
+                                # 保留未完成、记一行，不替任务猜成功。
+                                if len(slot["list"]) > 1:
+                                    logger.warning(
+                                        f"MaaEnd 日志中的任务「{task_name}」多出的完成记录无法对应到实例，"
+                                        "按未完成处理"
+                                    )
+                                    continue
                                 remaining = [
                                     task_id
                                     for task_id in slot["list"]
@@ -2964,7 +2971,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                                         f"MaaEnd 日志中的任务「{task_name}」完成次数超过配置实例数，忽略多出的终态"
                                     )
                                     continue
-                                target_id = remaining[-1]
+                                target_id = remaining[0]
                                 slot["index"] = len(slot["list"])
                             self.task_dict[task_name][target_id] = False
                             completed_task_names.add(
