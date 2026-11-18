@@ -27,6 +27,7 @@ from app.config import (
     virtual_field,
 )
 from app.config.signals import ConfigEvent, FieldChangeEvent
+from app.models.log_flow import NodeObservation
 from app.models.notification.report import TaskNotificationState
 from app.utils.contracts.power import PowerSignal
 
@@ -70,6 +71,8 @@ class TaskTriggerReason(StrEnum):
 
 
 class RuntimeEntry(ConfigEntry):
+    _node_observation: NodeObservation | None = PrivateAttr(default=None)
+
     if TYPE_CHECKING:
         # 各具体节点声明自己的 info；保留 ConfigEntry 的开放字段构造签名。
         def __init__(self, **field_values: object) -> None: ...
@@ -81,6 +84,17 @@ class RuntimeEntry(ConfigEntry):
             # ConfigEntry 不固定分组类型；按公开分组名执行通用字段提交。
             setattr(getattr(self, "info"), name, value)
         await self.commit()
+
+    @property
+    def node_observation(self) -> NodeObservation | None:
+        """日志节点随实际运行节点留存，且不进入配置持久化。"""
+        return self._node_observation
+
+    def open_node_observation(self) -> NodeObservation:
+        if self._node_observation is not None:
+            raise ValueError("运行节点已绑定一次日志观察会话")
+        self._node_observation = NodeObservation()
+        return self._node_observation
 
     @property
     def task_info(self) -> TaskItem | None:

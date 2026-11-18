@@ -1,0 +1,377 @@
+"""用真实文件和进程守住实时可见、尾部冲刷及超时释放。"""
+
+import asyncio
+import json
+import os
+import sys
+from pathlib import Path
+
+import psutil
+import pytest
+
+from app.core.log_flow.contracts import (
+    FileInput,
+    FunctionRef,
+    LineRule,
+    PipelineSpec,
+    ReportedRecord,
+    TextRecord,
+    WindowRule,
+)
+from app.core.log_flow.manager import open_for_run
+from app.core.log_flow.report import render_node_details
+from app.core.log_flow.session import LogFlowSession, SessionOpenError
+from app.core.notify.report import render_scatter_push_log
+from app.models.log_flow import InvalidObservationCursor
+from app.models.task import TaskUserItem
+from app.task.OkNte.push_log import OKNTE_PUSH_RULES, oknte_resolve
+from app.utils.common.log.monitor import LogMonitor
+from app.utils.common.log_box import LogPipeline
+
+
+def append(path: Path, text: str) -> None:
+    with path.open("a", encoding="utf-8") as file:
+        file.write(text)
+
+
+def pipeline(path: Path, *, match: str = "done:") -> PipelineSpec:
+    return PipelineSpec(
+        file=FileInput(path=str(path)),
+        rules=(LineRule(match=match, extract=r"$(done:(\d+))", node_type="success"),),
+    )
+
+
+async def wait_for_first_node(session: LogFlowSession) -> None:
+    async with asyncio.timeout(5):
+        while not session.snapshot():
+            await asyncio.sleep(0.01)
+
+
+@pytest.mark.asyncio
+async def test_file_session_streams_and_closes_with_final_complete_lines(tmp_path):
+    path = tmp_path / "script.log"
+    append(path, "done:99\n")
+    session = await LogFlowSession.open(pipeline(path))
+    process = psutil.Process(session.pid)
+    try:
+        append(path, "done:1\n")
+        await wait_for_first_node(session)
+        assert [node.text for node in session.snapshot()] == ["1"]
+
+        # 轮转旧文件留下未读的完整行，新文件留下半行。
+        append(path, "done:2\n")
+        path.rename(path.with_suffix(".bak"))
+        append(path, "done:3\ndone:4")
+        first, second = await asyncio.gather(session.close(), session.close())
+        assert first == second
+        assert first.reason == "complete"
+        assert [(node.sequence, node.text) for node in first.nodes] == [
+            (1, "1"),
+            (2, "2"),
+            (3, "3"),
+        ]
+        await asyncio.to_thread(process.wait, timeout=1)
+    finally:
+        await session.close()
+
+
+@pytest.mark.asyncio
+async def test_stuck_worker_is_reaped_and_keeps_already_observed_nodes(tmp_path):
+    path = tmp_path / "script.log"
+    session = await LogFlowSession.open(pipeline(path))
+    process = psutil.Process(session.pid)
+    try:
+        append(path, "done:1\n")
+        await wait_for_first_node(session)
+        observed = session.snapshot()
+        process.suspend()
+        append(path, "done:2\n")
+        async with asyncio.timeout(3):
+            close = asyncio.create_task(session.close(timeout=0.2))
+            await asyncio.sleep(0.02)  # 宿主循环仍能执行，不必等待 worker。
+            assert not close.done()
+            close.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await close
+            summary = await session.close(timeout=20)
+        assert summary.reason == "timeout"
+        assert summary.nodes == session.snapshot() == observed
+        assert "worker 退出未确认" not in summary.detail
+        await asyncio.to_thread(process.wait, timeout=1)
+    finally:
+        await session.close(timeout=0)
+
+
+@pytest.mark.asyncio
+async def test_invalid_rule_prevents_worker_readiness(tmp_path):
+    with pytest.raises(SessionOpenError, match="unterminated subpattern"):
+        await LogFlowSession.open(pipeline(tmp_path / "script.log", match="("))
+
+
+@pytest.mark.asyncio
+async def test_file_backlog_reports_an_incomplete_session(tmp_path):
+    path = tmp_path / "script.log"
+    session = await LogFlowSession.open(pipeline(path))
+    try:
+        append(path, "done:1\n")
+        await wait_for_first_node(session)
+        # 单行也可能超过预算；不能把它一直当作尚未闭合的尾部并声称完整。
+        append(path, "x" * (2 * 1024 * 1024))
+        summary = await session.close()
+        assert summary.reason == "capacity"
+        assert [node.text for node in summary.nodes] == ["1"]
+        assert render_node_details(summary, mode="汇总") == ["1", "⚠️ 节点采集不完整"]
+        assert render_node_details(summary, mode="关闭") == []
+    finally:
+        await session.close()
+
+
+@pytest.mark.asyncio
+async def test_mixed_session_drains_accepted_records_and_rejects_late_input(tmp_path):
+    path = tmp_path / "script.log"
+    file_spec = pipeline(path)
+    # 两次执行可使用同一账号配置，观察信息仍按真实运行对象隔离。
+    run = TaskUserItem(user_id="same")
+    another_run = TaskUserItem(user_id="same")
+    unrelated = another_run.open_node_observation()
+    session = await open_for_run(
+        run, PipelineSpec(file=file_spec.file, rules=file_spec.rules, accept_push=True)
+    )
+    try:
+        append(path, "done:1\n")
+        await wait_for_first_node(session)
+        observation = run.node_observation
+        assert observation is not None
+        before = observation.read()
+        assert [node.text for node in before.nodes] == ["1"]
+        assert before.close_reason is None
+        with pytest.raises(InvalidObservationCursor):
+            unrelated.read(after=before.cursor)
+        assert session.submit(TextRecord(text="done:2"))
+        assert session.submit(
+            ReportedRecord(node_type="warning", text="done:3", timestamp=123.0)
+        )
+
+        summary = await session.close()
+        assert summary.complete
+        assert [(node.source, node.node_type, node.text) for node in summary.nodes] == [
+            ("file", "success", "1"),
+            ("push", "success", "2"),
+            ("push", "warning", "done:3"),
+        ]
+        assert not session.submit(TextRecord(text="done:4"))
+        after = observation.read(after=before.cursor)
+        assert after.nodes == summary.nodes[1:]
+        assert after.close_reason == "complete"
+        assert after.nodes[-1].timestamp == 123.0
+        assert run.info.status == "等待"
+    finally:
+        await session.close()
+
+
+@pytest.mark.asyncio
+async def test_push_returns_backpressure_without_blocking_host():
+    session = await LogFlowSession.open(PipelineSpec(accept_push=True))
+    process = psutil.Process(session.pid)
+    try:
+        process.suspend()
+        record = ReportedRecord(node_type="success", text="x" * 8192)
+        submitted = [session.submit(record) for _ in range(512)]
+        assert any(submitted) and not all(submitted)
+        async with asyncio.timeout(3):
+            summary = await session.close(timeout=0.2)
+        assert summary.reason == "timeout"
+        assert not summary.nodes
+        await asyncio.to_thread(process.wait, timeout=1)
+    finally:
+        await session.close(timeout=0)
+
+
+@pytest.mark.asyncio
+async def test_native_monitor_shares_raw_lines_without_changing_display():
+    session = await LogFlowSession.open(
+        PipelineSpec(
+            accept_push=True,
+            rules=(
+                LineRule(match="done:", extract=r"$(done:(\d+))", node_type="success"),
+            ),
+        )
+    )
+    display: list[str] = []
+
+    async def save_display(lines, latest_time):
+        display[:] = lines
+
+    monitor = LogMonitor(
+        (0, 0),
+        "",
+        save_display,
+        line_hook=lambda line: "显示已改写" if line else None,
+        on_raw_line=session.native_line_receiver(),
+    )
+    try:
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            "print('done:7')",
+            stdout=asyncio.subprocess.PIPE,
+        )
+        await asyncio.wait_for(monitor.monitor_process(process, "stdout"), 5)
+        assert await process.wait() == 0
+        assert display == ["显示已改写"]
+        summary = await session.close()
+        assert summary.complete
+        assert [(node.source, node.text) for node in summary.nodes] == [("mas", "7")]
+    finally:
+        await session.close(timeout=0)
+
+
+@pytest.mark.asyncio
+async def test_close_flushes_each_sources_unfinished_window(tmp_path):
+    path = tmp_path / "script.log"
+    session = await LogFlowSession.open(
+        PipelineSpec(
+            file=FileInput(path=str(path)),
+            accept_push=True,
+            windows=(
+                WindowRule(
+                    start="begin", extract=r"$(item:(\d+))", node_type="success"
+                ),
+            ),
+        )
+    )
+    try:
+        append(path, "begin\nitem:1\n")
+        assert session.submit(TextRecord(text="begin"))
+        assert session.submit(TextRecord(text="item:2"))
+        summary = await session.close()
+        assert summary.complete
+        assert {(node.source, node.text) for node in summary.nodes} == {
+            ("file", "1"),
+            ("push", "2"),
+        }
+    finally:
+        await session.close(timeout=0)
+
+
+@pytest.mark.asyncio
+async def test_custom_expression_function_executes_in_worker():
+    session = await LogFlowSession.open(
+        PipelineSpec(
+            accept_push=True,
+            functions=(
+                FunctionRef(
+                    name="sample:pid",
+                    module="tests.support.log_flow_functions",
+                    attribute="report_worker_pid",
+                ),
+            ),
+            rules=(
+                LineRule(match="^test$", extract="$().sample:pid()", node_type="info"),
+            ),
+        )
+    )
+    try:
+        assert session.submit(TextRecord(text="test"))
+        summary = await session.close()
+        assert summary.complete
+        assert [node.text for node in summary.nodes] == [str(session.pid)]
+        assert session.pid != os.getpid()
+    finally:
+        await session.close(timeout=0)
+
+
+@pytest.mark.asyncio
+async def test_oknte_shadow_report_matches_legacy_aggregation():
+    lines = [
+        "任务失败: 日常领取",
+        "无法找到活跃度奖励领取框",
+        "任务完成: 周本",
+        "info_set skipped ['清扫']",
+        "当前体力 120",
+        "共计消耗体力: 60",
+    ]
+    legacy = LogPipeline()
+    for rule in OKNTE_PUSH_RULES:
+        legacy.add_rule(*rule)
+    legacy.postprocessors.append(oknte_resolve)
+    timestamps = [1_750_000_000.0 + index * 60 for index in range(len(lines))]
+    for line, timestamp in zip(lines, timestamps, strict=True):
+        legacy.feed(line, timestamp=timestamp)
+
+    session = await LogFlowSession.open(
+        PipelineSpec(
+            accept_push=True,
+            rules=tuple(
+                LineRule(match=rule[0], extract=rule[1], node_type="普通")
+                for rule in OKNTE_PUSH_RULES
+            ),
+            postprocess=FunctionRef(
+                name="oknte:report",
+                module=oknte_resolve.__module__,
+                attribute=oknte_resolve.__name__,
+            ),
+        )
+    )
+    try:
+        for line, timestamp in zip(lines, timestamps, strict=True):
+            assert session.submit(TextRecord(text=line, timestamp=timestamp))
+        summary = await session.close()
+        assert summary.complete
+        old_entries = legacy.finish()
+        assert summary.report_entries == tuple(
+            (entry.log_type, entry.text, entry.timestamp) for entry in old_entries
+        )
+        assert render_node_details(summary, mode="逐条") == render_scatter_push_log(
+            old_entries
+        )
+        assert render_node_details(summary, mode="汇总") == [
+            "✅ 成功: 周本",
+            "⏭ 跳过: 日常领取（当日已领取）, 清扫",
+            "⚡ 剩余体力: 60",
+        ]
+    finally:
+        await session.close(timeout=0)
+
+
+@pytest.mark.asyncio
+async def test_general_webui_rules_share_legacy_hook_and_match_order():
+    session = await LogFlowSession.open(
+        PipelineSpec(
+            accept_push=True,
+            general_hooks=json.dumps(
+                [
+                    {"type": "drop", "match": "^noise"},
+                    {
+                        "type": "replace",
+                        "match": "token=\\w+",
+                        "replace": "token=hidden",
+                    },
+                ]
+            ),
+            general_patterns=json.dumps(
+                [
+                    {
+                        "type": "regex",
+                        "match": ".+",
+                        "extract": '"停用"',
+                        "enabled": False,
+                    },
+                    {
+                        "type": "regex",
+                        "match": "redacted",
+                        "extract": r"$(token=(\w+))",
+                    },
+                    {"type": "split", "match": "redacted"},
+                ]
+            ),
+        )
+    )
+    try:
+        assert session.submit(TextRecord(text="noise redacted token=discarded"))
+        assert session.submit(TextRecord(text="redacted token=secret"))
+        summary = await session.close()
+        assert summary.complete
+        assert [node.text for node in summary.nodes] == ["hidden"]
+    finally:
+        await session.close(timeout=0)
