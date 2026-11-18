@@ -419,9 +419,10 @@ def test_desktop_command_termination_preserves_game(monkeypatch, tmp_path):
             assert started["pid"] > 0
             assert started["rootHandle"] > 0
             controls.put({"rootHandleReceived": True})
-            game = psutil.Process(
-                int(base64.b64decode(frames.get(timeout=10)["stdout"]))
-            )
+            pid_line = bytearray()
+            while not pid_line.endswith(b"\n"):
+                pid_line.extend(base64.b64decode(frames.get(timeout=10)["stdout"]))
+            game = psutil.Process(int(pid_line))
             controls.put({"terminateRoot": True})
             while "exitCode" not in (frame := frames.get(timeout=10)):
                 assert frame == {"eof": "stdout"}
