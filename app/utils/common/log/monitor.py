@@ -76,6 +76,8 @@ class LogMonitor:
         except_logs: list[str] | None = None,
         parse_log: Callable[[list[str]], list[str]] | None = None,
         line_hook: Callable[[str], str | None] | None = None,
+        *,
+        on_raw_line: Callable[[str], None] | None = None,
     ):
         self.time_start = time_stamp_range[0]
         self.time_end = time_stamp_range[1]
@@ -85,6 +87,7 @@ class LogMonitor:
         self.parse_log = parse_log
         # 日志预处理：日志行进入日志内容前逐行预处理（改写）或丢弃
         self.line_hook = line_hook
+        self.on_raw_line = on_raw_line
         self.last_callback_time: datetime = datetime.now()
         # 节流判定用的单调时钟读数。last_callback_time 还要充当 strptime 的
         # 基准日期，必须保持墙钟；而墙钟回拨会让节流差值变成负数，接下来
@@ -304,6 +307,8 @@ class LogMonitor:
 
             line = ANSI_ESCAPE_RE.sub("", decode_bytes(bline))
 
+            if bline:
+                self._publish_raw_line(line)
             self.append_line(self.log_contents, line)
             await self.update_latest_timestamp(line)
 
@@ -351,6 +356,15 @@ class LogMonitor:
             return
         if hooked is not None:
             log_contents.append(hooked)
+
+    def _publish_raw_line(self, line: str) -> None:
+        if self.on_raw_line is not None:
+            try:
+                self.on_raw_line(line)
+            except Exception as exc:
+                # 可选观察方失败不能中断执行侧原有日志和状态判定。
+                self.on_raw_line = None
+                logger.error(f"日志分发失败，停止本轮分发: {exc}")
 
     async def update_latest_timestamp(self, log: str, if_init: bool = False) -> None:
 
@@ -417,9 +431,8 @@ class LogMonitor:
                             )
                             if entry_time > comparison_start:
                                 if_log_start = True
-                                self.append_line(log_contents, line)
-                                await self.update_latest_timestamp(line)
-                    else:
+                    if if_log_start:
+                        self._publish_raw_line(line)
                         self.append_line(log_contents, line)
                         await self.update_latest_timestamp(line)
         except (FileNotFoundError, PermissionError) as e:

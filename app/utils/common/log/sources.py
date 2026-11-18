@@ -9,9 +9,14 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+from stat import S_ISREG
 from typing import Optional, Union
 
 PathLike = Union[str, Path]
+
+
+class LogReadLimitExceeded(ValueError):
+    """一次增量超过已声明的读取预算。"""
 
 
 def _file_identity(stat: os.stat_result) -> tuple[int, int]:
@@ -38,6 +43,8 @@ class LogSource:
         *,
         start_from_end: bool = True,
         rotated_name: Optional[str] = None,
+        max_read_bytes: int | None = None,
+        strict_io: bool = False,
     ) -> None:
         self.path = Path(path)
         self.start_from_end = start_from_end
@@ -46,6 +53,8 @@ class LogSource:
         # 参与；仅文件系统不提供 inode 时按模板探测（日期式滚动命名的唯一
         # 兜底），未声明则回退 .bak 通用约定
         self.rotated_name = rotated_name
+        self.max_read_bytes = max_read_bytes
+        self.strict_io = strict_io
         self._offset = 0
         # 文件身份：Windows 沿用 inode + 创建时间；POSIX 使用 inode + 设备号，
         # 不能使用会随追加更新的 ctime，否则会把普通写入误判为轮转。
@@ -56,8 +65,15 @@ class LogSource:
         """记录起始位置（幂等）。文件不存在时从文件头开始（等待新文件生成）。"""
         self._offset = 0
         self._file_id = None
-        if self.path.is_file():
-            stat = self.path.stat()
+        try:
+            stat = self.path.stat() if self.strict_io or self.path.is_file() else None
+        except FileNotFoundError:
+            if not self.strict_io:
+                raise
+            stat = None
+        if stat is not None:
+            if self.strict_io and not S_ISREG(stat.st_mode):
+                raise ValueError("日志来源必须是普通文件")
             if self.start_from_end:
                 self._offset = stat.st_size
             self._file_id = _file_identity(stat)
@@ -73,8 +89,14 @@ class LogSource:
             return []
         try:
             stat = self.path.stat()
-        except OSError:
+        except FileNotFoundError:
             return []
+        except OSError:
+            if self.strict_io:
+                raise
+            return []
+        if self.strict_io and not S_ISREG(stat.st_mode):
+            raise ValueError("日志来源必须是普通文件")
         current_id = _file_identity(stat)
         if self._file_id is not None and current_id != self._file_id:
             # 轮转（文件身份变化）：先读被轮换的旧日志，再从头读新文件
@@ -94,13 +116,21 @@ class LogSource:
         """从当前 offset 读取新增的完整行；无新增或文件不存在时返回空列表"""
         try:
             stat = self.path.stat()
+        except FileNotFoundError:
+            return []
         except OSError:
+            if self.strict_io:
+                raise
             return []
         if stat.st_size <= self._offset:
             return []
         try:
             return self._read_from(self.path, self._offset)
+        except FileNotFoundError:
+            return []
         except OSError:
+            if self.strict_io:
+                raise
             return []
 
     def _read_rotated(self) -> list[str]:
@@ -123,7 +153,11 @@ class LogSource:
                 try:
                     return self._read_from(rotated, self._offset)
                 except OSError:
+                    if self.strict_io:
+                        raise
                     return []
+            if self.strict_io:
+                raise FileNotFoundError("日志已轮转，无法定位上一个文件")
             return []
         return self._read_candidates()
 
@@ -145,6 +179,8 @@ class LogSource:
                 except OSError:
                     continue
         except OSError:
+            if self.strict_io:
+                raise
             return None
         return None
 
@@ -159,18 +195,29 @@ class LogSource:
                 continue
             offset = self._offset if self._offset <= stat.st_size else 0
             if stat.st_size <= offset:
+                if self.strict_io:
+                    return []  # 找到了旧文件，但没有尚未读取的完整内容。
                 continue
             try:
                 return self._read_from(bak, offset)
             except OSError:
+                if self.strict_io:
+                    raise
                 continue
+        if self.strict_io:
+            raise FileNotFoundError("日志已轮转，无法定位上一个文件")
         return []
 
     def _read_from(self, path: Path, offset: int) -> list[str]:
         """从 path 的 offset 起读取字节并按行解码；文件访问错误向上抛出"""
         with open(path, "rb") as f:
             f.seek(offset)
-            raw = f.read()
+            if self.max_read_bytes is None:
+                raw = f.read()
+            else:
+                raw = f.read(self.max_read_bytes + 1)
+                if len(raw) > self.max_read_bytes:
+                    raise LogReadLimitExceeded("文件新增日志超过单次读取预算")
         return self._decode_lines(raw)
 
     def _rotation_candidates(self) -> list[Path]:
