@@ -110,12 +110,6 @@ SrcUserConfig = ConfigPayload[_config_models.SrcUserConfig]
 SrcUserConfigInput = ConfigInput[_config_models.SrcUserConfig]
 
 
-WhimboxUserConfig = ConfigPayload[_config_models.WhimboxUserConfig]
-
-
-WhimboxUserConfigInput = ConfigInput[_config_models.WhimboxUserConfig]
-
-
 ZzzOdUserConfig = ConfigPayload[_config_models.ZzzOdUserConfig]
 
 
@@ -138,7 +132,6 @@ class UserIndexItem(BaseModel):
                 "BetterGIUserConfig",
                 "ZzzOdUserConfig",
                 "BAAHUserConfig",
-                "WhimboxUserConfig",
                 "MSSUserConfig",
             ]
         },
@@ -178,7 +171,6 @@ class UserGetOut(OutBase):
             BetterGIUserConfig,
             ZzzOdUserConfig,
             BAAHUserConfig,
-            WhimboxUserConfig,
             MSSUserConfig,
         ],
     ] = Field(..., description="账号数据字典, key来自于index列表的uid")
@@ -199,7 +191,6 @@ class UserCreateOut(OutBase):
         BetterGIUserConfig,
         ZzzOdUserConfig,
         BAAHUserConfig,
-        WhimboxUserConfig,
         MSSUserConfig,
     ] = Field(..., description="账号配置数据")
 
@@ -219,7 +210,6 @@ class UserUpdateIn(UserInBase):
         BetterGIUserConfigInput,
         ZzzOdUserConfigInput,
         BAAHUserConfigInput,
-        WhimboxUserConfigInput,
         MSSUserConfigInput,
     ] = Field(..., description="账号更新数据")
 

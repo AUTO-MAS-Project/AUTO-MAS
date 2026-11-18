@@ -32,9 +32,9 @@ export namespace ScriptIndexItem {
         BETTER_GICONFIG = 'BetterGIConfig',
         ZZZ_OD_CONFIG = 'ZzzOdConfig',
         BAAHCONFIG = 'BAAHConfig',
-        WHIMBOX_CONFIG = 'WhimboxConfig',
         MSSCONFIG = 'MSSConfig',
         MAA_CONFIG = 'MaaConfig',
+        WHIMBOX_CONFIG = 'WhimboxConfig',
     }
 }
 

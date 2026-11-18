@@ -1,2 +1,3 @@
 # 主仓集成回归使用已发布 wheel；宿主与 SDK 使用当前源码，运行依赖由 uv.lock 提供。
 auto-mas-maa-adapter==0.1.3 --hash=sha256:e856e7fa1f3410d87638dbf3cb387d302c80e2e2aaaaab791548efb3ab872efc
+auto-mas-whimbox-adapter==0.1.0 --hash=sha256:e4a20f64fda5d0630f90db9be5c110d4870e1953a092d0b719e3a7445e0fc865

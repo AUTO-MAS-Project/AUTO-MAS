@@ -64,7 +64,7 @@
 </template>
 
 <script setup lang="ts">
-import accountIcon from '@/assets/whimbox.png'
+import accountIcon from '../whimbox.png'
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import type { UserAccountHeadingOptions } from '@/types/userEditor'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'

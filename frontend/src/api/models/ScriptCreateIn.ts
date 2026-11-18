@@ -28,9 +28,9 @@ export namespace ScriptCreateIn {
         BETTER_GI = 'BetterGI',
         ZZZ_OD = 'ZzzOd',
         BAAH = 'BAAH',
-        WHIMBOX = 'Whimbox',
         MSS = 'MSS',
         MAA = 'MAA',
+        WHIMBOX = 'Whimbox',
     }
 }
 
