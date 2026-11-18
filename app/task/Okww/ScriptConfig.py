@@ -200,25 +200,21 @@ class ScriptConfigTask(TaskExecuteBase):
                 path = self.script_config_path / filename
                 if not path.exists():
                     continue
-                # 即使会话跨过 04:00，也不能把打开时注入的计划值写进账号。
-                planned = self.panel_plan.get(filename, {})
-                values = {
-                    key: value
-                    for key, value in read_dict_file(path).items()
-                    if key not in planned
-                }
+                # 会话跨过 04:00 时，仍按打开窗口时注入的计划字段过滤。
+                managed = set(self.panel_plan.get(filename, {}))
+                values = read_dict_file(path)
                 if kind == "daily":
                     for field, value in daily_panel_patch(
-                        self.panel_user, values
+                        self.panel_user, values, managed=managed
                     ).items():
                         setattr(self.panel_user.Task, field, value)
                 elif kind == "echo":
                     self.panel_user.Task.FarmEchoConfig = account_panel_values(
-                        self.panel_user, kind, values
+                        self.panel_user, kind, values, managed=managed
                     )
                 else:
                     advanced[filename] = account_panel_values(
-                        self.panel_user, kind, values
+                        self.panel_user, kind, values, managed=managed
                     )
             self.panel_user.Task.NativeConfigs = advanced
             await self.panel_user.commit()

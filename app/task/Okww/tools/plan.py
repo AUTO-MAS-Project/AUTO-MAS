@@ -63,22 +63,28 @@ def plan_managed_fields(user: OkwwUserConfig, kind: str = "daily") -> set[str]:
     return set(plan_panels(user).get(PANEL_FILES[kind], {}))
 
 
-def account_panel_values(user: OkwwUserConfig, kind: str, values: dict) -> dict:
-    """保留账号默认值，过滤 GUI 回读中的当天计划显示值。"""
+def account_panel_values(
+    user: OkwwUserConfig, kind: str, values: dict, *, managed: set[str] | None = None
+) -> dict:
+    """保留账号默认值，GUI 回读时使用打开窗口时的计划字段。"""
     from .config_fields import panel_values
 
-    managed = plan_managed_fields(user, kind)
+    if managed is None:
+        managed = plan_managed_fields(user, kind)
     return {
         **panel_values(user, kind),
         **{name: value for name, value in values.items() if name not in managed},
     }
 
 
-def daily_panel_patch(user: OkwwUserConfig, values: dict) -> dict:
+def daily_panel_patch(
+    user: OkwwUserConfig, values: dict, *, managed: set[str] | None = None
+) -> dict:
     """网页与 GUI 保存同样保护计划字段，不将当天值固化进账号默认值。"""
-    managed = plan_managed_fields(user)
+    if managed is None:
+        managed = plan_managed_fields(user)
     return {
-        "DailyConfig": account_panel_values(user, "daily", values),
+        "DailyConfig": account_panel_values(user, "daily", values, managed=managed),
         **{
             name: values[key]
             for name, key in DAILY_FIELD_NAMES.items()

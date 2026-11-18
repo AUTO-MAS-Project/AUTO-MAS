@@ -58,27 +58,81 @@ async def test_echo_panel_uses_source_until_account_saved(tmp_path, monkeypatch,
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("view_only", [False, True])
+@pytest.mark.parametrize(
+    "view_only,rollover", [(False, False), (True, False), (False, True)]
+)
 async def test_gui_echo_changes_return_to_panel_without_polluting_base(
-    tmp_path, view_only
+    tmp_path, monkeypatch, view_only, rollover
 ):
     import asyncio
+    from datetime import datetime
     from unittest.mock import AsyncMock
 
+    from app.config import ConfigCollection, config_manager
+    from app.models.config import OkwwPlanConfig
+    from app.models.config import plan as plan_model
     from app.task.Okww.ScriptConfig import ScriptConfigTask
+    from app.task.Okww.tools import plan as plan_tools
+    from app.utils.common.constants import UTC8
 
     user = OkwwUserConfig()
     await user.activate()
     original = b'{"Repeat Farm Count":100}'
     path = tmp_path / "FarmEchoTask.json"
-    path.write_text('{"Repeat Farm Count":7}', encoding="utf-8")
     task = ScriptConfigTask.__new__(ScriptConfigTask)
     task.wait_event = asyncio.Event()
     task._kill_processes = AsyncMock()
     task.view_only = view_only
     task.crashed = False
     task.panel_user = user
-    task.panel_plan = {}
+    if rollover:
+        plans = ConfigCollection.build([OkwwPlanConfig])
+        await plans.activate()
+        plan_id = plans.add(
+            OkwwPlanConfig,
+            payload={
+                "Info": {"Mode": "Weekly"},
+                "Monday": {
+                    "Key": {"Configs": {"FarmEchoTask.json": {"Combat Wait Time": 2}}}
+                },
+                "Tuesday": {
+                    "Key": {"Configs": {"FarmEchoTask.json": {"Repeat Farm Count": 12}}}
+                },
+            },
+        )
+        await plans.commit()
+        monkeypatch.setattr(plan_tools, "Config", SimpleNamespace(PlanConfig=plans))
+        monkeypatch.setattr(
+            config_manager,
+            "_collections",
+            {
+                key: value
+                for key, value in config_manager._collections.items()
+                if key != "PlanConfig"
+            },
+        )
+        config_manager.register_collection("PlanConfig", plans)
+        user.Info.PlanMode = plan_id
+        await user.commit()
+
+        class Clock(datetime):
+            current = datetime(2026, 11, 17, 3, 59, tzinfo=UTC8)
+
+            @classmethod
+            def now(cls, tz=None):
+                return cls.current.astimezone(tz)
+
+        monkeypatch.setattr(plan_model, "datetime", Clock)
+        task.panel_plan = plan_tools.plan_panels(user)
+        assert task.panel_plan["FarmEchoTask.json"] == {"Combat Wait Time": 2}
+        path.write_text(
+            '{"Repeat Farm Count":7,"Combat Wait Time":2}', encoding="utf-8"
+        )
+        Clock.current = datetime(2026, 11, 17, 4, tzinfo=UTC8)
+        assert plan_tools.plan_managed_fields(user, "echo") == {"Repeat Farm Count"}
+    else:
+        task.panel_plan = {}
+        path.write_text('{"Repeat Farm Count":7}', encoding="utf-8")
     task.panel_originals = {"FarmEchoTask.json": original}
     task.script_config_path = tmp_path
     task.use_mas_config = False
