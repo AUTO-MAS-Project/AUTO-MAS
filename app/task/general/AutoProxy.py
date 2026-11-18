@@ -134,10 +134,16 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         # 是否写 MAS 侧配置：原生来源=不写，shared/independent 来源都写面板值。
         self.use_mas_config = self.config_base != CONFIG_BASE_NATIVE
         self.check_result = "-"
-        # 这两项在 prepare 后段才建立。准备阶段中途失败时 final_task 照样会进来，
-        # 先给空值，收尾才能只清理确实建起来的资源，也不会把最初那个错误盖成 AttributeError。
+        # 这几项同样在 prepare 后段才建立。准备阶段中途失败时收尾照样会读它们：
+        # 少了 push_log 这组，收尾会在回写推送日志那一步再抛一次 AttributeError，
+        # 把原始错误顶掉、后面的历史保存与统计通知也一并跳过。
         self.general_log_monitor: LogMonitor | None = None
         self.run_book = False
+        self.push_log_enabled = False
+        self.push_log_patterns_compiled = []
+        self.push_log_buffer = []
+        self._push_log_processed = 0
+        self._process_seen = False
 
     async def check(self) -> str:
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
