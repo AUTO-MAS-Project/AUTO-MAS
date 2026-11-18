@@ -88,7 +88,9 @@ async def test_desktop_login_maintenance_skips_proxy_without_retry(
     monkeypatch.setattr(
         proxy_module.process, "is_process_stopped", AsyncMock(return_value=True)
     )
-    monkeypatch.setattr(proxy_module, "is_process_running", lambda name: True)
+    monkeypatch.setattr(
+        proxy_module, "has_process_window", AsyncMock(return_value=True)
+    )
     monkeypatch.setattr(proxy_module, "find_client_pids", lambda *args: {123})
     # 游戏刚起窗的预检尚无维护画面；随后切号 OCR 才读到维护弹窗。
     monkeypatch.setattr(launcher_start, "_find_game_hwnd", lambda pids=None: None)

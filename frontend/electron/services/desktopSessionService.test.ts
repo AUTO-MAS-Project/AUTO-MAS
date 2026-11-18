@@ -247,3 +247,100 @@ it('dispatches and stops tasks through the same main backend', async () => {
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+it('preserves the session-changed error when the backend rejects dispatch', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'mas-desktop-dispatch-conflict-'))
+  vi.stubGlobal('fetch', async (url: string) => {
+    if (url.endsWith('/describe')) return Response.json({ python: 'python', root, source: root })
+    if (url.endsWith('/queues'))
+      return Response.json(
+        { code: 'session_changed', status: 'error', message: '桌面分身连接已断开' },
+        { status: 409 }
+      )
+    return Response.json({ updated: true, idle: true })
+  })
+  const tasksStarted = vi.fn()
+  const service = new DesktopSessionService(vi.fn(), vi.fn(), tasksStarted)
+  try {
+    const result = await service.start(
+      { queueIds: ['00000000-0000-4000-8000-000000000001'], mode: 'proxy', resolution: '1080p' },
+      1n,
+      [0, 0, 100, 100]
+    )
+    expect(result).toEqual({ code: 'session_changed', queues: [] })
+    expect(tasksStarted).not.toHaveBeenCalled()
+  } finally {
+    await service.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it.each([
+  { choice: 'split', dispatchedIds: ['desktop', 'emulator'], mainIds: ['emulator'] },
+  { choice: 'desktop', dispatchedIds: ['desktop'] },
+  { choice: 'cancel', dispatchedIds: [] },
+] as const)(
+  'waits for the mixed-session choice ($choice)',
+  async ({ choice, dispatchedIds, ...expected }) => {
+    const root = mkdtempSync(join(tmpdir(), 'mas-desktop-mixed-'))
+    const preview = [
+      { queueId: 'desktop', taskId: '', targetKind: 'script', label: 'Desktop task', code: '' },
+      {
+        queueId: 'emulator',
+        taskId: '',
+        targetKind: 'queue',
+        label: 'Emulator queue',
+        code: 'unsupported_target',
+      },
+    ]
+    const submissions: unknown[] = []
+    vi.stubGlobal('fetch', async (url: string, options: RequestInit) => {
+      const endpoint = new URL(url).pathname
+      if (endpoint.endsWith('/describe'))
+        return Response.json({ python: 'python', root, source: root })
+      if (endpoint.endsWith('/queues')) {
+        const body = JSON.parse(String(options.body))
+        if (body.previewOnly) return Response.json({ results: preview })
+        submissions.push(body)
+        return Response.json({
+          results: preview
+            .filter(target => body.queueIds.includes(target.queueId))
+            .map(target => ({ ...target, taskId: `task-${target.queueId}`, code: '' })),
+        })
+      }
+      return Response.json({ updated: true, idle: true })
+    })
+
+    const service = new DesktopSessionService(vi.fn(), vi.fn(), vi.fn())
+    try {
+      const result = await service.start(
+        { queueIds: ['desktop', 'emulator'], mode: 'proxy', resolution: '1080p' },
+        1n,
+        [0, 0, 100, 100],
+        {
+          confirmTakeover: async () => false,
+          confirmTaskDispatch: async ({ desktop, main }) => {
+            expect(submissions).toEqual([])
+            expect(desktop.map(target => target.label)).toEqual(['Desktop task'])
+            expect(main.map(target => target.label)).toEqual(['Emulator queue'])
+            return choice
+          },
+        }
+      )
+      expect(result.code).toBeUndefined()
+      expect(submissions).toEqual(
+        dispatchedIds.length
+          ? [
+              {
+                queueIds: dispatchedIds,
+                ...('mainIds' in expected ? { mainSessionQueueIds: expected.mainIds } : {}),
+              },
+            ]
+          : []
+      )
+    } finally {
+      await service.close()
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+)

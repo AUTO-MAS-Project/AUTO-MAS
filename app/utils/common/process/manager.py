@@ -87,11 +87,7 @@ def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
 
 
 def is_process_running(process_name: str) -> bool:
-    """检查指定进程名是否在当前桌面运行。"""
-
-    if desktop_process_target.get() is not None:
-        # 主会话无法枚举子会话窗口；启动器自身在分身内确认窗口是否就绪。
-        return is_process_alive(process_name)
+    """在调用者所在桌面查找指定进程的可见窗口。"""
 
     for proc in psutil.process_iter(["name"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
@@ -101,6 +97,20 @@ def is_process_running(process_name: str) -> bool:
                     if window.is_visible(hwnd):
                         return True
     return False
+
+
+async def has_process_window(process_name: str) -> bool:
+    """在任务所在桌面查找指定进程的可见窗口。"""
+    desktop = desktop_process_target.get()
+    if desktop is None:
+        return is_process_running(process_name)
+
+    from app.utils.windows.desktop_session.process_runner import run_desktop_action
+
+    code, _, _ = await run_desktop_action(
+        desktop, "has_process_window", {"name": process_name}
+    )
+    return code == 0
 
 
 def is_process_alive(process_name: str) -> bool:
@@ -194,6 +204,11 @@ class ProcessManager:
         return self._desktop_process
 
     @property
+    def launched_process(self) -> "asyncio.subprocess.Process | DesktopProcess | None":
+        """由本管理器启动的进程句柄，含桌面分身代理。"""
+        return self._desktop_process or self.process
+
+    @property
     def main_hwnd(self) -> int | None:
         """主进程的主窗口句柄"""
 
@@ -217,6 +232,7 @@ class ProcessManager:
         breakaway: bool = False,
         owned: bool = True,
         retain_desktop_descendants: bool = False,
+        desktop_root_only: bool = False,
         env: dict[str, str] | None = None,
     ) -> None:
         """
@@ -235,6 +251,7 @@ class ProcessManager:
             breakaway (bool): 若为 True 且在 Windows 上, 让子进程脱离监督器的 Job Object（CREATE_BREAKAWAY_FROM_JOB）。只给游戏/模拟器这类不该随后端退出的进程用, 脚本本体、MAA、agent 等保持默认 False。
             owned (bool): 是否加入任务清理；游戏由调用方按关闭选项收尾时传 False，进程管理器仍保留跟踪及显式关闭能力。
             retain_desktop_descendants (bool): 在分身内保留启动器派生进程，直到管理器收尾。
+            desktop_root_only (bool): 分身执行器收尾只停止主进程，派生进程可以继续运行。
             env (dict[str, str] | None): 子进程环境变量, 默认 None 表示继承当前进程; 传入时会整体替换, 需要保留现有环境的调用点自行并上 os.environ。elevated 走 ShellExecute, 该分支不支持指定环境。
         """
 
@@ -277,7 +294,7 @@ class ProcessManager:
                 desktop,
                 argv=[str(program), *args],
                 cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
-                owned=owned,
+                owned=owned and not desktop_root_only,
                 retain=(
                     retain_desktop_descendants
                     or breakaway
@@ -292,12 +309,15 @@ class ProcessManager:
                 ),
                 merge=stderr == asyncio.subprocess.STDOUT,
                 interactive=stdin == asyncio.subprocess.PIPE,
+                stream_stdout=stdout == asyncio.subprocess.PIPE,
+                stream_stderr=stderr == asyncio.subprocess.PIPE,
+                stop_root_only=desktop_root_only,
             )
             if scope is not None and scope.closed:
                 await self._desktop_process.stop()
                 raise asyncio.CancelledError
             if scope is not None and owned:
-                if retain_desktop_descendants:
+                if retain_desktop_descendants and not desktop_root_only:
                     scope.retain_desktop_process(self._desktop_process.stop)
                 else:
                     scope.add_check(

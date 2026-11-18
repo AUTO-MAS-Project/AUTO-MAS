@@ -4288,7 +4288,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         ):
             return
         try:
-            reason = await asyncio.to_thread(_utils_display.input_desktop_unavailable)
+            if (desktop := desktop_process_target.get()) is None:
+                reason = await asyncio.to_thread(
+                    _utils_display.input_desktop_unavailable
+                )
+            else:
+                from app.utils.windows.desktop_session.process_runner import (
+                    run_desktop_action,
+                )
+
+                _, output, _ = await run_desktop_action(
+                    desktop, "input_desktop_unavailable", {}
+                )
+                reason = output.decode("utf-8") if output else None
         except Exception as error:
             # 查不出来不拦：这一步是给出明确原因的改善项，不该把本来能跑的任务打掉
             logger.opt(exception=True).warning(f"检查锁屏状态失败，照常运行：{error}")

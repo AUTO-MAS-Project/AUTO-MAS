@@ -5,6 +5,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.core.desktop_session.lifecycle import (
@@ -17,6 +18,8 @@ from app.core.desktop_session.lifecycle import (
 
 class QueueSelection(BaseModel):
     queueIds: list[UUID] = Field(min_length=1, max_length=100)
+    previewOnly: bool = False
+    mainSessionQueueIds: set[UUID] = Field(default_factory=set, max_length=100)
 
 
 class ParentProcessScope(BaseModel):
@@ -34,6 +37,12 @@ class QueueResult(BaseModel):
 
 class QueueDispatchResult(BaseModel):
     results: list[QueueResult]
+
+
+class QueueDispatchConflictOut(BaseModel):
+    code: Literal["session_changed"] = "session_changed"
+    status: Literal["error"] = "error"
+    message: str
 
 
 class RuntimeDescriptionOut(BaseModel):
@@ -88,13 +97,26 @@ async def process_scope(request: Request, scope: ParentProcessScope) -> ScopeUpd
     return ScopeUpdateOut(updated=True)
 
 
-@router.post("/queues", response_model=QueueDispatchResult)
-async def queues(request: Request, selection: QueueSelection) -> QueueDispatchResult:
+@router.post(
+    "/queues",
+    response_model=QueueDispatchResult,
+    responses={409: {"model": QueueDispatchConflictOut}},
+)
+async def queues(
+    request: Request, selection: QueueSelection
+) -> QueueDispatchResult | JSONResponse:
     authorize(request)
     try:
-        results = await DesktopSessionLifecycle.start_queues(selection.queueIds)
+        results = await DesktopSessionLifecycle.dispatch_queues(
+            selection.queueIds,
+            preview_only=selection.previewOnly,
+            main_session_queue_ids=selection.mainSessionQueueIds,
+        )
     except DesktopSessionConflict as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return JSONResponse(
+            status_code=409,
+            content=QueueDispatchConflictOut(message=str(exc)).model_dump(),
+        )
     return QueueDispatchResult(results=[QueueResult(**item) for item in results])
 
 

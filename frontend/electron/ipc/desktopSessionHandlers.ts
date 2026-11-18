@@ -114,28 +114,41 @@ export function registerDesktopSession(
   function confirmClose(): Promise<boolean> {
     if (closeFlight) return closeFlight
     closeFlight = (async () => {
+      await service.waitForStart()
       const window = preview
       const text = labels()
-      if (service.active && window && !window.isDestroyed()) {
-        if (window.isMinimized()) window.restore()
-        if (!window.isVisible()) window.show()
+      let logoff: boolean | undefined
+      if (service.active) {
+        const owner = window && !window.isDestroyed() ? window : getMainWindow()
+        if (owner && !owner.isDestroyed()) {
+          if (owner.isMinimized()) owner.restore()
+          if (!owner.isVisible()) owner.show()
+        }
         service.changeWindow('hidden')
-        const { response } = await dialog.showMessageBox(window, {
+        const adopted = service.adopted
+        const options: MessageBoxOptions = {
           type: 'warning',
           title: text.closeTitle,
-          message: text.closeConfirm,
-          buttons: [text.closeContinue, text.cancel],
-          defaultId: 1,
-          cancelId: 1,
+          message: adopted ? text.adoptedCloseConfirm : text.closeConfirm,
+          buttons: adopted
+            ? [text.disconnectOnly, text.logoffDesktopSession, text.cancel]
+            : [text.closeContinue, text.cancel],
+          defaultId: adopted ? 0 : 1,
+          cancelId: adopted ? 2 : 1,
           noLink: true,
-        })
-        if (response !== 0) {
+        }
+        const { response } =
+          owner && !owner.isDestroyed()
+            ? await dialog.showMessageBox(owner, options)
+            : await dialog.showMessageBox(options)
+        if (response !== 0 && !(adopted && response === 1)) {
           if (!hidden) service.changeWindow('visible')
           return false
         }
+        logoff = !adopted || response === 1
       }
       try {
-        await service.close()
+        await service.close({ logoff })
       } catch {
         const options: MessageBoxOptions = {
           type: 'error',
@@ -243,6 +256,8 @@ export function registerDesktopSession(
   ipcMain.handle('desktop-session:start', (event, input: unknown) => {
     // 先确认来源，再做任何解析：fromPreview 之外的调用方拿不到校验细节。
     if (!fromPreview(event) || !preview) return { code: 'invalid_request', queues: [] }
+    if (closeFlight) return { code: 'busy', queues: [] }
+    const window = preview
     const request = normalizeRequest(input)
     const password = (input as Partial<DesktopSessionRequest> | null)?.password
     if (
@@ -253,8 +268,53 @@ export function registerDesktopSession(
     }
     return service.start(
       { ...request, password },
-      preview.getNativeWindowHandle().readBigUInt64LE(),
-      physicalBounds()
+      window.getNativeWindowHandle().readBigUInt64LE(),
+      physicalBounds(),
+      {
+        confirmTakeover: async () => {
+          const text = labels()
+          const { response } = await dialog.showMessageBox(window, {
+            type: 'warning',
+            title: text.takeoverTitle,
+            message: text.takeoverConfirm,
+            buttons: [text.takeoverContinue, text.cancel],
+            defaultId: 1,
+            cancelId: 1,
+            noLink: true,
+          })
+          return response === 0
+        },
+        confirmTaskDispatch: async ({ desktop, main }) => {
+          const text = labels()
+          const detail = [
+            [text.mainFallbackMainGroup, ...main.map(target => `• ${target.label}`)].join('\n'),
+          ]
+          if (desktop.length) {
+            detail.push(
+              [text.mainFallbackDesktopGroup, ...desktop.map(target => `• ${target.label}`)].join(
+                '\n'
+              )
+            )
+          }
+          service.changeWindow('hidden')
+          try {
+            const { response } = await dialog.showMessageBox(window, {
+              type: 'warning',
+              title: text.mainFallbackTitle,
+              message: text.mainFallbackConfirm,
+              detail: detail.join('\n\n'),
+              buttons: [text.mainFallbackContinue, text.mainFallbackDesktopOnly, text.cancel],
+              defaultId: 2,
+              cancelId: 2,
+              noLink: true,
+            })
+            if (response === 0) return 'split'
+            return response === 1 ? 'desktop' : 'cancel'
+          } finally {
+            if (!hidden) service.changeWindow('visible')
+          }
+        },
+      }
     )
   })
   ipcMain.on('desktop-session:bounds', (event, bounds: Rectangle) => {

@@ -91,6 +91,8 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `tray_action_requested` | 显示、隐藏、启动任务、停止全部任务和退出等托盘入口是否有实际使用 | `action_kind` |
 | `stop_all_requested` | 紧急停止入口的需求 | `source` |
 | `virtual_display_action_finished` | 虚拟屏检查、拆除、用户选择的效果 | `action` |
+| `desktop_session_connection_finished` | 桌面分身连接结果，主进程确认子会话已登记后记成功 | `reason_kind` |
+| `desktop_session_environment_repair_finished` | 桌面分身环境修复与复查结果 | — |
 | `virtual_display_prompt_answered` | 显示器恢复后用户怎样处理提示 | `choice` |
 | `system_resume_recovery_finished` | 电脑唤醒后能否继续使用 | `recovery_kind` |
 | `script_manage_finished` | 复制、删除、重排入口的使用 | `action`、`script_type`、`count_bucket` |

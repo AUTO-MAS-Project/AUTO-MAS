@@ -92,6 +92,7 @@ class RdpViewer:
         report: Callable[..., None],
         tick: Callable[[], None],
         on_connected: Callable[[], None],
+        adopt_session_id: int | None = None,
     ) -> None:
         self.mode = mode
         self.port = port
@@ -101,6 +102,7 @@ class RdpViewer:
         self.report = report
         self.tick = tick
         self.on_connected = on_connected
+        self.adopt_session_id = adopt_session_id
         self.parent_session = process_session(os.getpid())
         self.preview = self.host = None
         self.rdp = self.events = self.active_object = None
@@ -394,6 +396,13 @@ class RdpViewer:
                     return
                 session, active = None, False
             if self.session_id is None and active:
+                if (
+                    self.adopt_session_id is not None
+                    and session != self.adopt_session_id
+                ):
+                    self.phase = "disconnected"
+                    self.report("state", state=self.phase, code="session_changed")
+                    return
                 self.session_id = session
                 if self.remote_size is None:
                     self.remote_size = (
@@ -403,7 +412,11 @@ class RdpViewer:
                 self.on_connected()
                 self.phase = "connected"
                 self.report(
-                    "state", state=self.phase, sessionId=session, size=self.remote_size
+                    "state",
+                    state=self.phase,
+                    sessionId=session,
+                    size=self.remote_size,
+                    adopted=self.adopt_session_id is not None,
                 )
             elif self.session_id is not None and (
                 session != self.session_id or not active
@@ -547,6 +560,19 @@ class RdpViewer:
         extended.Property["ConnectToChildSession"] = C.byref(VARIANT(True))
         rdp.Domain, rdp.UserName = credential.rdp_identity
         nonscriptable.ClearTextPassword = credential.password
+        current = child_session()
+        if current != self.adopt_session_id:
+            # 验证凭据和初始化 ActiveX 期间也可能出现别的子会话。
+            self.phase = "disconnected"
+            self.report(
+                "state",
+                state="idle",
+                code="existing_child_session"
+                if self.adopt_session_id is None
+                else "session_changed",
+                existingSessionId=current,
+            )
+            return
         self.started = time.monotonic()
         rdp.Connect()
 

@@ -17,6 +17,8 @@ from pathlib import Path
 from queue import Empty, Queue
 from tempfile import TemporaryFile
 
+import win32api
+import win32con
 import win32pipe
 from pywintypes import error as Win32Error
 
@@ -26,10 +28,32 @@ from .native import handle_scope, process_session
 
 def run(pipe) -> None:
     launch = receive(pipe)
-    if launch.get("action") in {"activate_process_window", "minimize_process_window"}:
+    action = launch.get("action")
+    if action in {"activate_process_window", "minimize_process_window"}:
         send(pipe, {"pid": os.getpid()})
-        code = run_window_action(launch["action"], launch["arguments"])
+        code = run_window_action(action, launch["arguments"])
         send(pipe, {"returnCode": code})
+        return
+    if action == "has_process_window":
+        from app.utils.common.process.manager import is_process_running
+        from app.utils.common.process.session import configure_parent_scope
+
+        session_id = process_session(os.getpid())
+        configure_parent_scope(lambda: session_id)
+        send(pipe, {"pid": os.getpid()})
+        code = int(not is_process_running(launch["arguments"]["name"]))
+        send(pipe, {"returnCode": code})
+        return
+    if action == "input_desktop_unavailable":
+        from app.utils.windows.display import input_desktop_unavailable
+
+        send(pipe, {"pid": os.getpid()})
+        if reason := input_desktop_unavailable():
+            send(
+                pipe,
+                {"stdout": base64.b64encode(reason.encode("utf-8")).decode("ascii")},
+            )
+        send(pipe, {"returnCode": 0})
         return
     if "open" in launch:
         os.startfile(launch["open"])
@@ -38,7 +62,9 @@ def run(pipe) -> None:
         return
 
     if launch.get("stream"):
-        run_process(pipe, launch, subprocess.PIPE, subprocess.PIPE)
+        stdout = subprocess.PIPE if launch["stream_stdout"] else subprocess.DEVNULL
+        stderr = subprocess.PIPE if launch["stream_stderr"] else subprocess.DEVNULL
+        run_process(pipe, launch, stdout, stderr)
     elif launch["capture"]:
         with TemporaryFile() as stdout, TemporaryFile() as stderr:
             run_process(pipe, launch, stdout, stderr)
@@ -77,6 +103,7 @@ def run_process(pipe, launch: dict, stdout, stderr) -> None:
 
     owned = launch.get("owned", True)
     job = WindowsTaskProcessJob(kill_on_close=owned)
+    process = None
     try:
         process = subprocess.Popen(
             launch["argv"],
@@ -110,7 +137,20 @@ def run_process(pipe, launch: dict, stdout, stderr) -> None:
                 threading.Thread(
                     target=discard_output, args=(stream,), daemon=True
                 ).start()
-        send(pipe, {"pid": process.pid})
+        if launch.get("stop_root_only"):
+            # 主端取得同一个进程对象的句柄后才继续，避免用可复用的 PID 做兜底。
+            with closing(
+                win32api.OpenProcess(
+                    win32con.SYNCHRONIZE | win32con.PROCESS_TERMINATE,
+                    False,
+                    process.pid,
+                )
+            ) as root:
+                send(pipe, {"pid": process.pid, "rootHandle": int(root)})
+                if receive(pipe) != {"rootHandleReceived": True}:
+                    raise RuntimeError("主端未确认分身进程句柄")
+        else:
+            send(pipe, {"pid": process.pid})
         if process.stdin is not None and launch.get("stdin") is not None:
             threading.Thread(
                 target=write_input,
@@ -132,15 +172,16 @@ def run_process(pipe, launch: dict, stdout, stderr) -> None:
                     send(pipe, {"returnCode": process.poll() or 0})
                     return
                 if message.get("stop"):
+                    if launch.get("stop_root_only"):
+                        stop_root(pipe, process)
+                        return
                     stop = True
                     break
-            if (
-                launch["retain"]
-                and launch["capture"]
-                and not exit_sent
-                and process.poll() is not None
-            ):
-                send_capture(pipe, stdout, stderr)
+                if message.get("terminateRoot") and process.poll() is None:
+                    process.terminate()
+            if launch["retain"] and not exit_sent and process.poll() is not None:
+                if launch["capture"]:
+                    send_capture(pipe, stdout, stderr)
                 send(pipe, {"exitCode": process.returncode})
                 exit_sent = True
             time.sleep(0.05)
@@ -151,7 +192,16 @@ def run_process(pipe, launch: dict, stdout, stderr) -> None:
             send_capture(pipe, stdout, stderr)
         send(pipe, {"returnCode": code})
     finally:
-        job.close()
+        try:
+            if (
+                launch.get("stop_root_only")
+                and process is not None
+                and process.poll() is None
+            ):
+                process.terminate()
+                process.wait(timeout=3)
+        finally:
+            job.close()
 
 
 def send_capture(pipe, stdout, stderr) -> None:
@@ -168,6 +218,12 @@ def send_capture(pipe, stdout, stderr) -> None:
             stream.seek(offset)
 
 
+def stop_root(pipe, process) -> None:
+    if process.poll() is None:
+        process.terminate()
+    send(pipe, {"returnCode": process.wait(timeout=3)})
+
+
 def supervise_streamed_process(pipe, launch, process, job, output, readers) -> None:
     exit_sent = False
     while True:
@@ -177,7 +233,12 @@ def supervise_streamed_process(pipe, launch, process, job, output, readers) -> N
                 send(pipe, {"returnCode": process.poll() or 0})
                 return
             if message.get("stop"):
+                if launch.get("stop_root_only"):
+                    stop_root(pipe, process)
+                    return
                 job.kill()
+            elif message.get("terminateRoot") and process.poll() is None:
+                process.terminate()
             elif "input" in message and process.stdin is not None:
                 with suppress(BrokenPipeError):
                     process.stdin.write(base64.b64decode(message["input"]))

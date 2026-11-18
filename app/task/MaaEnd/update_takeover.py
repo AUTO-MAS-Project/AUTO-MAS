@@ -25,12 +25,16 @@ from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import psutil
 
 from app.utils import ProcessManager, compare_mirrorchyan_versions, get_logger
 from app.utils import io as _utils_io
 from app.utils.common.process.operations import iter_processes, terminate_process
+
+if TYPE_CHECKING:
+    from app.utils.windows.desktop_session.process_runner import DesktopProcess
 
 logger = get_logger("MaaEnd 更新接管")
 
@@ -266,10 +270,12 @@ async def _run_update_session(
     with _prepare_session_config(config_path, keep_logs=keep_logs):
         try:
             launched_at = time.time()
-            await process_manager.open_process(executable, cwd=root_path)
+            await process_manager.open_process(
+                executable, cwd=root_path, retain_desktop_descendants=True
+            )
             if on_launched is not None:
                 on_launched()
-            first_process = process_manager.process
+            first_process = process_manager.launched_process
             if first_process is None:
                 raise MaaEndUpdateError("MaaEnd 更新进程未启动")
 
@@ -345,7 +351,7 @@ async def update_maaend_after_stage(
     root_path: Path,
     log_offsets: dict[Path, int],
     *,
-    process: asyncio.subprocess.Process | None = None,
+    process: "asyncio.subprocess.Process | DesktopProcess | None" = None,
     on_status: Callable[[str], None] | None = None,
     on_before_session: Callable[[], Awaitable[bool]] | None = None,
     on_session_launched: Callable[[], None] | None = None,

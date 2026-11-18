@@ -125,17 +125,29 @@ def windows_signature() -> bool:
             "-NoProfile",
             "-NonInteractive",
             "-Command",
-            "$s=Get-AuthenticodeSignature (Join-Path $env:SystemRoot 'System32/termsrv.dll');"
+            "$ErrorActionPreference='Stop';"
+            "Import-Module (Join-Path $PSHOME 'Modules/Microsoft.PowerShell.Security');"
+            "$s=Get-AuthenticodeSignature -LiteralPath "
+            "(Join-Path $env:SystemRoot 'System32/termsrv.dll');"
             "if ($s.Status -ne 'Valid' -or "
-            "$s.SignerCertificate.Subject -notmatch '(^|, )O=Microsoft Corporation(,|$)') { exit 1 }",
+            "$s.SignerCertificate.Subject -notmatch '(^|, )O=Microsoft Corporation(,|$)') { exit 2 };"
+            "exit 0",
         ],
+        env={
+            key: value
+            for key, value in os.environ.items()
+            if key.upper() != "PSMODULEPATH"
+        },
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         timeout=15,
         creationflags=subprocess.CREATE_NO_WINDOW,
         check=False,
     )
-    return result.returncode == 0
+    if result.returncode == 2:
+        return False
+    result.check_returncode()
+    return True
 
 
 def probe(*, include_account: bool = True) -> tuple[list[dict[str, object]], int]:
@@ -145,7 +157,7 @@ def probe(*, include_account: bool = True) -> tuple[list[dict[str, object]], int
 
     result: list[dict[str, object]] = []
 
-    def check(code, operation, *, required=True) -> dict[str, object]:
+    def check(code, operation, *, required=True, error_code=None) -> dict[str, object]:
         try:
             ok, value = operation()
         except (
@@ -155,6 +167,7 @@ def probe(*, include_account: bool = True) -> tuple[list[dict[str, object]], int
             subprocess.SubprocessError,
             Win32Error,
         ) as exc:
+            code = error_code or code
             ok, value = False, getattr(exc, "winerror", None)
         row = {"code": code, "ok": bool(ok), "required": required, "value": value}
         result.append(row)
@@ -226,7 +239,11 @@ def probe(*, include_account: bool = True) -> tuple[list[dict[str, object]], int
             "service_dll_missing", lambda: ((system / "termsrv.dll").is_file(), None)
         )
         if service_dll_missing["ok"]:
-            check("service_signature", lambda: (windows_signature(), None))
+            check(
+                "service_signature",
+                lambda: (windows_signature(), None),
+                error_code="service_signature_check_failed",
+            )
 
     def service_state(name):
         scm = win32service.OpenSCManager(None, None, win32service.SC_MANAGER_CONNECT)

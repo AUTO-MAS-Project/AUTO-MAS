@@ -5,7 +5,7 @@ import base64
 import json
 import time
 from collections.abc import Awaitable, Callable, Mapping
-from contextlib import suppress
+from contextlib import closing, suppress
 from contextvars import ContextVar
 from pathlib import Path
 
@@ -92,24 +92,32 @@ class DesktopProcess:
         *,
         stream_limit: int | None = None,
         merge: bool = False,
+        stream_stdout: bool = True,
+        stream_stderr: bool = True,
         on_restart: Callable[[], Awaitable[None]] | None = None,
         interactive: bool = False,
         owned: bool = True,
+        root_handle=None,
     ) -> None:
         self.pid = pid
         self.owned = owned
         self._pipe = pipe
         self._worker = worker
+        self._root_handle = root_handle
         self._stopping = False
         self._on_log = on_log
         self._on_restart = on_restart
         self._write_lock = asyncio.Lock()
         self._restarting: asyncio.Task | None = None
         self.stdin = DesktopInput(self) if interactive else None
-        self.stdout = asyncio.StreamReader(limit=stream_limit) if stream_limit else None
+        self.stdout = (
+            asyncio.StreamReader(limit=stream_limit)
+            if stream_limit and stream_stdout
+            else None
+        )
         self.stderr = (
             asyncio.StreamReader(limit=stream_limit)
-            if stream_limit and not merge
+            if stream_limit and stream_stderr and not merge
             else None
         )
         self.returncode: int | None = None
@@ -175,11 +183,15 @@ class DesktopProcess:
                 if stream is not None:
                     stream.feed_eof()
             # 关闭控制管道会让执行器收尾。先等进程退出再释放主端的任务资源。
-            self._pipe.Close()
             try:
-                await asyncio.to_thread(_wait_worker, self._worker)
+                self._pipe.Close()
             finally:
-                self._worker.Close()
+                try:
+                    await asyncio.to_thread(
+                        _finish_worker, self._worker, self._root_handle
+                    )
+                finally:
+                    self._worker.Close()
 
     @property
     def running(self) -> bool:
@@ -208,7 +220,17 @@ class DesktopProcess:
             return code
         return self.returncode
 
+    async def terminate_root(self) -> None:
+        """停止本次启动的主进程，等待退出而不等待其后代。"""
+        if self.returncode is None:
+            with suppress(OSError, Win32Error):
+                await self.send_control({"terminateRoot": True})
+            await asyncio.wait_for(self.wait_exit(), timeout=5)
+
     async def release(self) -> None:
+        if self._root_handle is not None:
+            await self.stop()
+            return
         if not self._completion.done():
             with suppress(OSError, Win32Error):
                 await self.send_control({"release": True})
@@ -227,18 +249,46 @@ class DesktopProcess:
         try:
             await asyncio.wait_for(asyncio.shield(self._completion), timeout=5)
         except TimeoutError:
-            win32api.TerminateProcess(self._worker, 1)
+            if self._completion.done():
+                self._completion.result()
+                return
+            _terminate_if_running(self._worker)
             with suppress(Win32Error):
                 await asyncio.shield(self._completion)
-            if not self.owned:
+            if not self.owned and self._root_handle is None:
                 raise
 
 
 def _wait_worker(worker) -> None:
     if win32event.WaitForSingleObject(worker, 3000) == win32event.WAIT_TIMEOUT:
-        win32api.TerminateProcess(worker, 1)
+        _terminate_if_running(worker)
         if win32event.WaitForSingleObject(worker, 3000) == win32event.WAIT_TIMEOUT:
             raise TimeoutError("分身进程执行器未退出")
+
+
+def _terminate_if_running(handle) -> None:
+    if win32event.WaitForSingleObject(handle, 0) == win32event.WAIT_OBJECT_0:
+        return
+    try:
+        win32api.TerminateProcess(handle, 1)
+    except Win32Error:
+        if win32event.WaitForSingleObject(handle, 0) != win32event.WAIT_OBJECT_0:
+            raise
+
+
+def _finish_worker(worker, root_handle) -> None:
+    try:
+        _wait_worker(worker)
+    finally:
+        if root_handle is not None:
+            with closing(root_handle):
+                try:
+                    _terminate_if_running(root_handle)
+                    result = win32event.WaitForSingleObject(root_handle, 3000)
+                except Win32Error as error:
+                    raise RuntimeError("无法确认分身根进程停止") from error
+                if result == win32event.WAIT_TIMEOUT:
+                    raise TimeoutError("分身根进程未退出")
 
 
 async def launch_desktop_process(
@@ -255,6 +305,9 @@ async def launch_desktop_process(
     stream_limit: int | None = None,
     stdin: bytes | None = None,
     interactive: bool = False,
+    stream_stdout: bool = True,
+    stream_stderr: bool = True,
+    stop_root_only: bool = False,
 ) -> DesktopProcess:
     return await _launch(
         desktop,
@@ -268,7 +321,10 @@ async def launch_desktop_process(
             "drain": drain,
             "env": dict(env) if env is not None else None,
             "stream": stream_limit is not None,
+            "stream_stdout": stream_stdout,
+            "stream_stderr": stream_stderr,
             "interactive": interactive,
+            "stop_root_only": stop_root_only,
             "stdin": base64.b64encode(stdin).decode("ascii")
             if stdin is not None
             else None,
@@ -291,7 +347,7 @@ async def run_desktop_action(
     arguments: dict[str, str | bool | float | None],
     on_log: Callable[[str], None] | None = None,
     *,
-    worker_module: str,
+    worker_module: str = "app.utils.windows.desktop_session.process_worker",
     on_restart: Callable[[], Awaitable[None]] | None = None,
 ) -> tuple[int, bytes, bytes]:
     from app.utils.common.process.scope import current_process_scope
@@ -328,6 +384,8 @@ async def _launch(
 ) -> DesktopProcess:
     name, pipe = create_executor_pipe()
     worker = None
+    root_handle = None
+    stop_root_only = request.get("stop_root_only", False)
     owned = False
     request_sent = False
     pythoncom.CoInitialize()
@@ -352,14 +410,27 @@ async def _launch(
                     if error.winerror not in (231, 536) or time.monotonic() >= deadline:
                         raise
                     await asyncio.sleep(0.05)
+            worker_access = win32con.SYNCHRONIZE | win32con.PROCESS_TERMINATE
+            if stop_root_only:
+                worker_access |= win32con.PROCESS_DUP_HANDLE
             worker = win32api.OpenProcess(
-                win32con.SYNCHRONIZE | win32con.PROCESS_TERMINATE,
+                worker_access,
                 False,
                 client_pid(pipe, desktop.session_id),
             )
             await _write(pipe, request, deadline=deadline)
             request_sent = True
             result = await _read(pipe, deadline=deadline)
+            if stop_root_only:
+                root_handle = win32api.DuplicateHandle(
+                    worker,
+                    int(result["rootHandle"]),
+                    win32api.GetCurrentProcess(),
+                    0,
+                    False,
+                    win32con.DUPLICATE_SAME_ACCESS,
+                )
+                await _write(pipe, {"rootHandleReceived": True}, deadline=deadline)
         finally:
             with suppress(pythoncom.com_error):
                 folder.DeleteTask(registration, 0)
@@ -371,9 +442,12 @@ async def _launch(
             on_log,
             stream_limit=stream_limit,
             merge=request.get("merge", False),
+            stream_stdout=request.get("stream_stdout", True),
+            stream_stderr=request.get("stream_stderr", True),
             on_restart=on_restart,
             interactive=request.get("interactive", False),
             owned=request.get("owned", True),
+            root_handle=root_handle,
         )
         owned = True
         return process
@@ -393,9 +467,11 @@ async def _launch(
                         )
                         await asyncio.to_thread(_wait_worker, worker)
             finally:
-                pipe.Close()
-                if worker is not None:
-                    try:
-                        await asyncio.to_thread(_wait_worker, worker)
-                    finally:
-                        worker.Close()
+                try:
+                    pipe.Close()
+                finally:
+                    if worker is not None:
+                        try:
+                            await asyncio.to_thread(_finish_worker, worker, root_handle)
+                        finally:
+                            worker.Close()

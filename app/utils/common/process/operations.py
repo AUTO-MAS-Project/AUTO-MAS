@@ -88,10 +88,13 @@ async def is_process_running(path: Path | str) -> bool:
     return bool((await _scan_processes_by_path(path)).pids)
 
 
-async def is_process_stopped(path: Path | str) -> bool:
-    """确认目标路径没有存活进程；扫描不完整或同名进程路径不可读时返回 False。"""
+async def is_process_stopped(path: Path | str, *, all_sessions: bool = False) -> bool:
+    """确认目标路径无存活进程，共享文件的占用检查可查所有会话。
 
-    scan = await _scan_processes_by_path(path)
+    扫描不完整或同名进程路径不可读时返回 False。
+    """
+
+    scan = await _scan_processes_by_path(path, all_sessions=all_sessions)
     return scan.complete and not scan.pids and not scan.uncertain_pids
 
 
@@ -162,17 +165,20 @@ async def kill_process_by_pid(pid: int, *, kill_tree: bool = True) -> bool:
     return True
 
 
-async def _scan_processes_by_path(path: Path | str) -> _ProcessPathScan:
+async def _scan_processes_by_path(
+    path: Path | str, *, all_sessions: bool = False
+) -> _ProcessPathScan:
     """扫描精确路径进程，并记录无法确认路径的同名候选。"""
 
     path = Path(path)
     pids: list[int] = []
     uncertain_pids: list[int] = []
-    target_path = str(path).casefold()
     target_name = path.name.casefold()
 
     def _scan() -> bool:
         try:
+            target_path = str(path.resolve() if all_sessions else path).casefold()
+            session_id = None if all_sessions else restricted_session()
             processes = psutil.process_iter(["pid", "name", "exe"])
             for proc in processes:
                 try:
@@ -182,8 +188,15 @@ async def _scan_processes_by_path(path: Path | str) -> _ProcessPathScan:
 
                 process_path = info.get("exe")
                 if process_path:
-                    if str(process_path).casefold() == target_path and process_in_scope(
-                        proc.pid
+                    candidate = Path(process_path)
+                    if all_sessions and candidate.name.casefold() == target_name:
+                        try:
+                            candidate = candidate.resolve()
+                        except OSError:
+                            uncertain_pids.append(info["pid"])
+                            continue
+                    if str(candidate).casefold() == target_path and matches_session(
+                        proc.pid, session_id
                     ):
                         pids.append(info["pid"])
                     continue
@@ -192,7 +205,7 @@ async def _scan_processes_by_path(path: Path | str) -> _ProcessPathScan:
                 if (
                     process_name
                     and str(process_name).casefold() == target_name
-                    and process_in_scope(proc.pid)
+                    and matches_session(proc.pid, session_id)
                 ):
                     uncertain_pids.append(info["pid"])
         except (psutil.AccessDenied, OSError) as e:

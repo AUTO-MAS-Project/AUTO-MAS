@@ -58,6 +58,10 @@ class UnsupportedDesktopTask(ValueError):
     """所选任务包含尚不能在桌面分身执行的操作。"""
 
 
+def script_config_name(entry: ScriptConfigType) -> str:
+    return entry.info.name if isinstance(entry, ScriptEntry) else entry.Info.Name
+
+
 class _TaskManager:
     task_ended: Signal = Signal()
 
@@ -277,9 +281,7 @@ class _TaskManager:
                                     ),
                                     type(entry).__name__,
                                 ),
-                                "name": entry.info.name
-                                if isinstance(entry, ScriptEntry)
-                                else entry.Info.Name,
+                                "name": script_config_name(entry),
                                 "params": deepcopy(selected.params),
                             }
                         },

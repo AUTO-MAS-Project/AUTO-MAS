@@ -3,6 +3,7 @@
 import os
 import subprocess
 import sys
+import time
 import winreg
 from contextlib import ExitStack
 from uuid import uuid4
@@ -14,6 +15,7 @@ import win32event
 import win32process
 import win32security
 import win32service
+import winerror
 from win32com.shell import shell, shellcon
 
 from app.utils.windows.host import IS_ELEVATED
@@ -144,6 +146,28 @@ def _set_start_type(service, start_type: int) -> None:
     )
 
 
+def _restore_stopped_service(service) -> None:
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        state = win32service.QueryServiceStatus(service)[1]
+        if state == win32service.SERVICE_STOPPED:
+            return
+        if state not in (
+            win32service.SERVICE_START_PENDING,
+            win32service.SERVICE_STOP_PENDING,
+        ):
+            try:
+                win32service.ControlService(service, win32service.SERVICE_CONTROL_STOP)
+            except pywintypes.error as exc:
+                if exc.winerror not in (
+                    winerror.ERROR_SERVICE_CANNOT_ACCEPT_CTRL,
+                    winerror.ERROR_SERVICE_NOT_ACTIVE,
+                ):
+                    raise
+        time.sleep(0.1)
+    raise RepairError("environment_restore_failed")
+
+
 def _apply(changes: frozenset[str], handles: ExitStack, rollback: ExitStack) -> None:
     rdp = None
     service = None
@@ -167,6 +191,7 @@ def _apply(changes: frozenset[str], handles: ExitStack, rollback: ExitStack) -> 
             win32service.SERVICE_QUERY_CONFIG
             | win32service.SERVICE_QUERY_STATUS
             | win32service.SERVICE_START
+            | win32service.SERVICE_STOP
         )
         if service_disabled:
             access |= win32service.SERVICE_CHANGE_CONFIG
@@ -191,8 +216,10 @@ def _apply(changes: frozenset[str], handles: ExitStack, rollback: ExitStack) -> 
             try:
                 win32service.StartService(service, None)
             except pywintypes.error as exc:
-                if exc.winerror != 1056:  # ERROR_SERVICE_ALREADY_RUNNING
+                if exc.winerror != winerror.ERROR_SERVICE_ALREADY_RUNNING:
                     raise
+            else:
+                rollback.callback(_restore_stopped_service, service)
     if rdp is not None:
         rollback.callback(winreg.SetValueEx, rdp, RDP_DENY, 0, original[1], original[0])
         winreg.SetValueEx(rdp, RDP_DENY, 0, winreg.REG_DWORD, 0)

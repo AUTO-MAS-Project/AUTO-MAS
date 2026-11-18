@@ -352,7 +352,7 @@ async def create_subprocess(
         if not owned:
             return process
         try:
-            scope.track(
+            scope.track_started(
                 process,
                 suspended=bool(scope.creation_flags),
                 writer=current_update_scope.get() is scope,

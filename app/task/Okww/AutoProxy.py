@@ -49,13 +49,13 @@ from app.utils import (
     ProcessManager,
     get_logger,
     is_process_alive,
-    is_process_running,
     log_box,
     process,
 )
 from app.utils import constants as _utils_constants
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
+from app.utils.common.process.manager import has_process_window
 from app.utils.common.process.session import (
     DesktopProcessTarget,
     desktop_process_target,
@@ -644,7 +644,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     logger.info("检测到鸣潮客户端进程正在运行，跳过重复启动")
                     await self._note_launch_arguments_skipped()
                     return
-            elif is_process_running(_WUWA_CLIENT_PROCESS):
+            elif await has_process_window(_WUWA_CLIENT_PROCESS):
                 try:
                     await self.game_manager.search_process(
                         self._game_process_info(),

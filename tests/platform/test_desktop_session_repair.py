@@ -78,6 +78,11 @@ def test_repair_restores_configuration_when_connection_is_not_confirmed(
         )
         service_state = service.SERVICE_RUNNING
 
+    def stop_service(_service, control):
+        nonlocal service_state
+        assert control == service.SERVICE_CONTROL_STOP
+        service_state = service.SERVICE_STOPPED
+
     changes = frozenset(
         {
             "rdp_local_disabled",
@@ -100,6 +105,7 @@ def test_repair_restores_configuration_when_connection_is_not_confirmed(
     monkeypatch.setattr(service, "QueryServiceStatus", lambda _: (0, service_state))
     monkeypatch.setattr(service, "ChangeServiceConfig", set_start_type)
     monkeypatch.setattr(service, "StartService", start_service)
+    monkeypatch.setattr(service, "ControlService", stop_service)
     monkeypatch.setattr(repair.winreg, "OpenKey", lambda *_: nullcontext(rdp))
     monkeypatch.setattr(repair.winreg, "QueryValueEx", lambda key, value: key[value])
     monkeypatch.setattr(repair.winreg, "SetValueEx", write_rdp)
@@ -145,16 +151,27 @@ def test_repair_restores_configuration_when_connection_is_not_confirmed(
         if disabled and result == "commit"
         else original_start_type
     )
-    assert service_state == service.SERVICE_RUNNING
+    assert service_state == (
+        service.SERVICE_RUNNING if result == "commit" else service.SERVICE_STOPPED
+    )
 
 
-@pytest.mark.parametrize("created_session", [None, 42])
-def test_close_after_failed_connection_cleans_up_created_session(
-    tmp_path, monkeypatch, created_session
+@pytest.mark.parametrize(
+    "registered_session,adopted,logoff_requested,keeps_session",
+    [
+        (None, False, None, True),
+        (42, False, None, False),
+        (42, True, None, True),
+        (42, True, False, True),
+        (42, True, True, False),
+    ],
+)
+def test_close_after_disconnect_logs_off_only_registered_session(
+    tmp_path, monkeypatch, registered_session, adopted, logoff_requested, keeps_session
 ):
     from app.core.desktop_session import host
 
-    session = created_session
+    session = 42
     reports = []
 
     def current_session():
@@ -162,7 +179,7 @@ def test_close_after_failed_connection_cleans_up_created_session(
 
     def logoff(expected):
         nonlocal session
-        assert expected == session == created_session
+        assert expected == session == registered_session
         session = None
 
     def close_viewer():
@@ -170,14 +187,50 @@ def test_close_after_failed_connection_cleans_up_created_session(
 
     instance = host.Host(tmp_path)
     instance.report = lambda event, **fields: reports.append((event, fields))
-    instance.viewer = SimpleNamespace(parent_session=1, close=close_viewer)
+    instance.session_id = registered_session
+    instance.adopted = adopted
+    instance.viewer = SimpleNamespace(close=close_viewer)
     monkeypatch.setattr(host, "child_session", current_session)
     monkeypatch.setattr(host, "logoff_child", logoff)
 
     instance.report_viewer("state", state="disconnected", code="connect_timeout")
-    instance.command({"action": "close"})
+    instance.command({"action": "close", "logoff": logoff_requested})
 
-    assert session is None
+    assert session == (42 if keeps_session else None)
+    assert reports[-1] == ("state", {"state": "idle"})
+
+
+def test_connect_with_existing_child_leaves_it_running(tmp_path, monkeypatch):
+    from app.core.desktop_session import host
+
+    reports = []
+
+    def logoff(_):
+        pytest.fail("已有的 Windows 子会话不能被注销")
+
+    instance = host.Host(tmp_path)
+    instance.report = lambda event, **fields: reports.append((event, fields))
+    instance.report_environment = lambda _: None
+    monkeypatch.setattr(host, "probe", lambda: ([], 3389))
+    monkeypatch.setattr(host, "child_session", lambda: 42)
+    monkeypatch.setattr(host, "logoff_child", logoff)
+    monkeypatch.setattr(
+        host.credentials, "current_identity", lambda: ("account", "sid")
+    )
+    monkeypatch.setattr(host.credentials, "load", lambda *_: object())
+    monkeypatch.setattr(host.credentials, "validate", lambda _: None)
+
+    instance.command({"action": "connect"})
+    assert reports[-1] == (
+        "state",
+        {"state": "idle", "code": "existing_child_session", "existingSessionId": 42},
+    )
+    instance.command({"action": "connect", "adoptSessionId": 43})
+    assert reports[-1] == (
+        "state",
+        {"state": "idle", "code": "session_changed", "existingSessionId": 42},
+    )
+    instance.command({"action": "close"})
     assert reports[-1] == ("state", {"state": "idle"})
 
 
@@ -215,6 +268,7 @@ def test_environment_repair_finishes_before_password_check(
         raise host.credentials.CredentialError("password_required")
 
     monkeypatch.setattr(host, "probe", probe)
+    monkeypatch.setattr(host, "child_session", lambda: None)
     monkeypatch.setattr(
         host, "EnvironmentRepair", lambda: SimpleNamespace(start=apply, finish=finish)
     )

@@ -225,7 +225,26 @@ class TaskProcessScope:
     def creation_flags(self) -> int:
         return self._job.creation_flags if self._job is not None else 0
 
-    def track(
+    def track(self, process: psutil.Process) -> None:
+        """接管通过扫描找到的进程前核验它所在的会话。"""
+        from .session import process_in_scope
+
+        if not process_in_scope(process.pid):
+            raise ProcessLookupError("进程不属于桌面分身")
+        self._track(process)
+
+    def track_started(
+        self,
+        process: subprocess.Popen | asyncio.subprocess.Process,
+        *,
+        suspended: bool,
+        writer: bool,
+        breakaway: bool,
+    ) -> None:
+        """登记本任务直接创建并持有句柄的进程，包括在主会话运行的更新工具。"""
+        self._track(process, suspended=suspended, writer=writer, breakaway=breakaway)
+
+    def _track(
         self,
         handle: Any,
         *,
@@ -238,10 +257,6 @@ class TaskProcessScope:
         pid = handle.pid
         if pid is None:
             return
-        from .session import process_in_scope
-
-        if not process_in_scope(pid):
-            raise ProcessLookupError("进程不属于桌面分身")
         try:
             process = (
                 handle if isinstance(handle, psutil.Process) else psutil.Process(pid)
@@ -310,7 +325,7 @@ class TaskProcessScope:
             if self.closed:
                 process.kill()
                 raise asyncio.CancelledError
-            self.track(
+            self.track_started(
                 process,
                 suspended=bool(self.creation_flags),
                 writer=True,

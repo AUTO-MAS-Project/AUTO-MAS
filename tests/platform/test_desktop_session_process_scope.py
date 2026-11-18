@@ -1,8 +1,10 @@
 """主后端通过桌面分身控制入口登记进程管理范围。"""
 
+import asyncio
 import os
+import sys
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import psutil
 import pytest
@@ -12,14 +14,67 @@ from fastapi.testclient import TestClient
 from app.api.desktop_session import install_control
 from app.core.desktop_session import lifecycle
 from app.utils.common.process import operations, session
+from app.utils.common.process.runner import popen_scoped
+from app.utils.common.process.scope import TaskProcessScope, current_process_scope
+
+
+@pytest.mark.asyncio
+async def test_desktop_task_can_run_local_update_helper_without_adopting_local_processes(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(session, "matches_session", lambda pid, session_id: False)
+    scope = TaskProcessScope()
+    process_scope = current_process_scope.set(scope)
+    desktop_target = session.desktop_process_target.set(
+        session.DesktopProcessTarget(7, tmp_path, tmp_path)
+    )
+
+    def run_helper() -> int:
+        with popen_scoped([sys.executable, "-c", "pass"]) as process:
+            return process.wait(timeout=10)
+
+    try:
+        with pytest.raises(ProcessLookupError):
+            scope.track(psutil.Process(os.getpid()))
+        assert await asyncio.to_thread(run_helper) == 0
+    finally:
+        session.desktop_process_target.reset(desktop_target)
+        current_process_scope.reset(process_scope)
+        await scope.force_close()
+
+
+def test_dispatch_conflict_has_localizable_code(monkeypatch):
+    monkeypatch.setattr(lifecycle, "_control_token", "")
+    monkeypatch.setattr(
+        "app.api.desktop_session.authenticated", lambda token: token == "test-control"
+    )
+    monkeypatch.setattr(
+        lifecycle.DesktopSessionLifecycle,
+        "dispatch_queues",
+        AsyncMock(side_effect=lifecycle.DesktopSessionConflict("桌面分身连接已断开")),
+    )
+    app = FastAPI()
+    install_control(app)
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
+        response = client.post(
+            "/internal/desktop-session/queues",
+            json={"queueIds": ["00000000-0000-4000-8000-000000000001"]},
+            headers={lifecycle.CONTROL_HEADER: "test-control"},
+        )
+    assert response.status_code == 409
+    assert response.json() == {
+        "code": "session_changed",
+        "status": "error",
+        "message": "桌面分身连接已断开",
+    }
 
 
 @pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")
 @pytest.mark.parametrize("restored", [False, True])
-def test_parent_scope_tracks_only_the_registered_child(monkeypatch, restored):
+def test_parent_scope_protects_child_after_preview_disconnect(monkeypatch, restored):
     from app.utils.windows.desktop_session import native
 
-    child_id = 7
+    child_id = 7 if restored else None
     monkeypatch.setattr(native, "child_session", lambda: child_id)
     monkeypatch.setattr(
         native, "process_session", lambda pid: 1 if pid == os.getpid() else 7
@@ -41,11 +96,13 @@ def test_parent_scope_tracks_only_the_registered_child(monkeypatch, restored):
                 path, headers=headers, json={"sessionId": None, "connecting": True}
             ).is_success
             assert session.process_in_scope(100)
-            child_id = 8
+            child_id = 7
             assert not session.process_in_scope(100)
-            assert client.post(path, headers=headers, json={"sessionId": 8}).is_success
+            assert client.post(path, headers=headers, json={"sessionId": 7}).is_success
         assert not session.process_in_scope(100)
         assert client.post(path, headers=headers, json={"sessionId": None}).is_success
+        assert not session.process_in_scope(100)
+        child_id = None
         assert session.process_in_scope(100)
 
 
@@ -70,6 +127,38 @@ def test_process_operations_filter_and_recheck_scope(monkeypatch):
         session.desktop_process_target.reset(token)
     assert not operations.terminate_process(process, force=True)
     process.kill.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_shared_game_update_guard_checks_other_sessions(monkeypatch, tmp_path):
+    from app.task.MaaEnd.tools.update.checks import _release_install_dir
+    from app.utils import process as process_api
+
+    game = tmp_path / "game" / "Endfield.exe"
+    process = Mock(pid=100)
+    process.info = {"pid": 100, "name": game.name, "exe": str(game)}
+    monkeypatch.setattr(operations.psutil, "process_iter", lambda _: iter([process]))
+    monkeypatch.setattr(
+        operations, "matches_session", lambda _, session_id: session_id in (None, 1)
+    )
+    kill = AsyncMock()
+    monkeypatch.setattr(process_api, "kill_process", kill)
+    token = session.desktop_process_target.set(
+        session.DesktopProcessTarget(7, tmp_path, tmp_path)
+    )
+    try:
+        assert await operations.is_process_stopped(game)
+        assert not await operations.is_process_stopped(game, all_sessions=True)
+        assert await _release_install_dir(game)
+        kill.assert_not_awaited()
+        other_installation = tmp_path / "other" / game.name
+        assert await operations.is_process_stopped(
+            other_installation, all_sessions=True
+        )
+        process.info["exe"] = None
+        assert not await operations.is_process_stopped(game, all_sessions=True)
+    finally:
+        session.desktop_process_target.reset(token)
 
 
 @pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")
@@ -207,7 +296,9 @@ def test_desktop_job_keeps_game_after_launcher_exits(
         finally:
             stop.set()
         worker.result(timeout=10)
-        assert frames.get(timeout=1)["returnCode"] == 0
+        while "returnCode" not in (frame := frames.get(timeout=1)):
+            assert frame == {"exitCode": 0}
+        assert frame["returnCode"] == 0
         try:
             if command == "stop" and not breakaway:
                 game.wait(timeout=10)
@@ -243,6 +334,8 @@ def test_desktop_job_forwards_stdio_before_exit(monkeypatch, tmp_path, interacti
             ],
             "cwd": str(tmp_path),
             "stream": True,
+            "stream_stdout": True,
+            "stream_stderr": True,
             "interactive": interactive,
             "stdin": None if interactive else payload,
             "merge": False,
@@ -276,3 +369,118 @@ def test_desktop_job_forwards_stdio_before_exit(monkeypatch, tmp_path, interacti
         finally:
             controls.put({"stop": True})
         worker.result(timeout=10)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="需要 Windows Job Object")
+def test_desktop_command_termination_preserves_game(monkeypatch, tmp_path):
+    import base64
+    import subprocess
+    import sys
+    from concurrent.futures import ThreadPoolExecutor
+    from queue import Queue
+
+    from app.utils.windows.desktop_session import process_worker
+
+    frames, controls = Queue(), Queue()
+    monkeypatch.setattr(process_worker, "send", lambda _, frame: frames.put(frame))
+    monkeypatch.setattr(process_worker, "receive", lambda _: controls.get(timeout=1))
+    monkeypatch.setattr(
+        process_worker.win32pipe,
+        "PeekNamedPipe",
+        lambda pipe, size: (b"", controls.qsize(), 0),
+    )
+    command = (
+        "import subprocess, sys, time; "
+        "game = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], "
+        "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); "
+        "print(game.pid, flush=True); time.sleep(60)"
+    )
+    request = {
+        "argv": [sys.executable, "-u", "-c", command],
+        "cwd": str(tmp_path),
+        "merge": False,
+        "env": None,
+        "retain": True,
+        "owned": False,
+        "stream": True,
+        "stop_root_only": True,
+    }
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        worker = pool.submit(
+            process_worker.run_process,
+            None,
+            request,
+            subprocess.PIPE,
+            subprocess.DEVNULL,
+        )
+        game = None
+        try:
+            started = frames.get(timeout=10)
+            assert started["pid"] > 0
+            assert started["rootHandle"] > 0
+            controls.put({"rootHandleReceived": True})
+            game = psutil.Process(
+                int(base64.b64decode(frames.get(timeout=10)["stdout"]))
+            )
+            controls.put({"terminateRoot": True})
+            while "exitCode" not in (frame := frames.get(timeout=10)):
+                assert frame == {"eof": "stdout"}
+            assert frame["exitCode"] != 0
+            controls.put({"release": True})
+            worker.result(timeout=10)
+            assert game.is_running()
+        finally:
+            controls.put({"stop": True})
+            if game is not None and game.is_running():
+                game.kill()
+                game.wait(timeout=10)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="需要 Windows 进程句柄")
+@pytest.mark.asyncio
+async def test_desktop_worker_exit_stops_only_the_owned_root(monkeypatch, tmp_path):
+    import subprocess
+
+    import win32api
+    import win32con
+
+    from app.utils.windows.desktop_session import process_runner
+
+    game_pid_file = tmp_path / "game.pid"
+    command = (
+        "import subprocess, sys, time; from pathlib import Path; "
+        "game = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
+        "pid_file = Path(sys.argv[1]); temporary = pid_file.with_suffix('.tmp'); "
+        "temporary.write_text(str(game.pid)); temporary.replace(pid_file); time.sleep(60)"
+    )
+    access = win32con.SYNCHRONIZE | win32con.PROCESS_TERMINATE
+    with (
+        subprocess.Popen([sys.executable, "-c", command, str(game_pid_file)]) as root,
+        subprocess.Popen([sys.executable, "-c", "pass"]) as worker,
+    ):
+        game = None
+        try:
+            async with asyncio.timeout(10):
+                while not game_pid_file.exists():
+                    await asyncio.sleep(0.05)
+            game = psutil.Process(int(game_pid_file.read_text()))
+            monkeypatch.setattr(
+                process_runner, "_read", AsyncMock(side_effect=OSError("pipe closed"))
+            )
+            process = process_runner.DesktopProcess(
+                root.pid,
+                Mock(),
+                win32api.OpenProcess(access, False, worker.pid),
+                owned=False,
+                root_handle=win32api.OpenProcess(access, False, root.pid),
+            )
+            with pytest.raises(OSError, match="pipe closed"):
+                await process.wait()
+            assert root.poll() is not None
+            assert game.is_running()
+        finally:
+            if root.poll() is None:
+                root.kill()
+            if game is not None and game.is_running():
+                game.kill()
+                game.wait(timeout=10)

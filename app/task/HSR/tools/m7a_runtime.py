@@ -187,7 +187,10 @@ class M7ARunner:
 
         if (remote := self._process_manager.desktop_process) is not None:
             if remote.returncode is None:
-                await self._process_manager.kill()
+                if self.kill_tree:
+                    await self._process_manager.kill()
+                else:
+                    await remote.terminate_root()
                 return True
             return False
         process = self._process_manager.main_process
@@ -445,9 +448,7 @@ class M7ARunner:
             try:
                 await self.terminate()
             finally:
-                await self._process_manager.clear(
-                    keep_desktop_descendants=not self.kill_tree
-                )
+                await self._process_manager.clear()
                 self._tree_root = None
                 self._tree_children.clear()
 
@@ -658,7 +659,9 @@ class M7ARunner:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=build_m7a_env(self.env_overrides),
+                # PC 版启动的游戏要跨三月七命令保留，整棵进程树不能归命令所有。
                 retain_desktop_descendants=not self.kill_tree,
+                desktop_root_only=not self.kill_tree,
             )
             process = (
                 self._process_manager.desktop_process

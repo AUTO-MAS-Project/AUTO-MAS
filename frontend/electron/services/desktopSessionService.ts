@@ -16,6 +16,18 @@ import type {
 
 type HostEvent = Record<string, unknown> & { event: string }
 type RuntimeDescription = { python: string; source: string; root: string }
+type StartPrompts = {
+  confirmTakeover: () => Promise<boolean>
+  confirmTaskDispatch: (targets: {
+    desktop: DesktopQueueResult[]
+    main: DesktopQueueResult[]
+  }) => Promise<'split' | 'desktop' | 'cancel'>
+}
+type QueueDispatchPlan = {
+  queueIds: string[]
+  mainSessionQueueIds?: string[]
+  preview: DesktopQueueResult[]
+}
 
 class DesktopSessionError extends Error {}
 
@@ -44,7 +56,13 @@ async function request<T>(
     headers: { [header]: token, 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
-  if (!response.ok) throw new DesktopSessionError(`http_${response.status}`)
+  if (!response.ok) {
+    if (path === internal + 'queues' && response.status === 409) {
+      const conflict: { code?: string } | null = await response.json().catch(() => null)
+      if (conflict?.code === 'session_changed') throw new DesktopSessionError(conflict.code)
+    }
+    throw new DesktopSessionError(`http_${response.status}`)
+  }
   return (await response.json()) as T
 }
 
@@ -60,6 +78,7 @@ export class DesktopSessionService {
   private startingHost: Promise<void> | null = null
   private runtime: RuntimeDescription | undefined
   private orphanedSessionId: number | undefined
+  adopted = false
   private hostEvents = new EventTarget()
   private startOperation: Promise<DesktopSessionStartResult> | null = null
   private stopOperation: Promise<void> | null = null
@@ -192,6 +211,7 @@ export class DesktopSessionService {
       })
     } else if (event.event === 'state') {
       const state = event.state as DesktopSessionSnapshot['state']
+      if (state === 'connected') this.adopted = event.adopted === true
       this.patch({
         state:
           state === 'idle' && this.snapshot.checks.some(item => item.required && !item.ok)
@@ -346,7 +366,8 @@ export class DesktopSessionService {
   start(
     input: DesktopSessionRequest,
     owner: bigint,
-    bounds: [number, number, number, number]
+    bounds: [number, number, number, number],
+    prompts?: StartPrompts
   ): Promise<DesktopSessionStartResult> {
     if (this.snapshot.busy || this.snapshot.closing || this.stopOperation) {
       return Promise.resolve({ code: 'busy', queues: [] })
@@ -357,7 +378,7 @@ export class DesktopSessionService {
       credentialWarning: undefined,
       authenticationFailure: undefined,
     })
-    this.startOperation = this.startInternal(input, owner, bounds).finally(() => {
+    this.startOperation = this.startInternal(input, owner, bounds, prompts).finally(() => {
       this.startOperation = null
       this.patch({ busy: false })
       this.scheduleMonitor()
@@ -368,7 +389,8 @@ export class DesktopSessionService {
   private async startInternal(
     input: DesktopSessionRequest,
     owner: bigint,
-    bounds: [number, number, number, number]
+    bounds: [number, number, number, number],
+    prompts?: StartPrompts
   ): Promise<DesktopSessionStartResult> {
     const connection =
       this.snapshot.state !== 'connected'
@@ -384,20 +406,37 @@ export class DesktopSessionService {
         }
         publishingConnection = true
         await this.updateParentScope(null, true)
-        const event = await this.exchange(
-          {
-            action: 'connect',
-            resolution: input.resolution,
-            mode: input.mode,
-            password: input.password,
-            owner: owner.toString(),
-            bounds,
-          },
-          event =>
-            (event.event === 'state' && event.state !== 'connecting') ||
-            (event.event === 'command_error' && event.action === 'connect'),
-          120000
-        )
+        const connect = (adoptSessionId?: number) =>
+          this.exchange(
+            {
+              action: 'connect',
+              resolution: input.resolution,
+              mode: input.mode,
+              password: input.password,
+              owner: owner.toString(),
+              bounds,
+              adoptSessionId,
+            },
+            event =>
+              (event.event === 'state' && event.state !== 'connecting') ||
+              (event.event === 'command_error' && event.action === 'connect'),
+            120000
+          )
+        let event = await connect()
+        const existing = event.existingSessionId
+        if (
+          event.code === 'existing_child_session' &&
+          typeof existing === 'number' &&
+          Number.isInteger(existing) &&
+          existing > 0 &&
+          prompts
+        ) {
+          await this.closeViewer({ logoff: false })
+          if (!(await prompts.confirmTakeover()))
+            throw new DesktopSessionError('takeover_cancelled')
+          await this.updateParentScope(null, true)
+          event = await connect(existing)
+        }
         if (event.state !== 'connected') {
           throw new DesktopSessionError(
             typeof event.code === 'string' && event.event === 'state'
@@ -413,18 +452,25 @@ export class DesktopSessionService {
         connection?.finish({ outcome: 'success', reason_kind: 'none' })
       }
       if (!input.queueIds.length) return { queues: [] }
-      for (const id of input.queueIds) {
+      const plan = await this.prepareQueueDispatch(input.queueIds, prompts)
+      if (!plan) return { queues: [] }
+      if (!plan.queueIds.length) return { queues: plan.preview }
+      if (this.snapshot.state !== 'connected') throw new DesktopSessionError('session_changed')
+      const mainIds = new Set(plan.mainSessionQueueIds)
+      for (const id of plan.queueIds) {
         dispatches.set(id, beginMainFeature('task_start_result'))
       }
-      if (this.snapshot.state !== 'connected') throw new DesktopSessionError('session_changed')
-      this.patch({ executing: true })
+      if (plan.queueIds.some(id => !mainIds.has(id))) this.patch({ executing: true })
       const result = await request<{ results: DesktopQueueResult[] }>(
         getLocalApiEndpoint(),
         internal + 'queues',
         desktopSessionControlToken,
-        { queueIds: input.queueIds }
+        { queueIds: plan.queueIds, mainSessionQueueIds: plan.mainSessionQueueIds }
       )
-      for (const queue of result.results) {
+      const dispatched = result.results.map(target =>
+        mainIds.has(target.queueId) ? { ...target, executionSession: 'main' as const } : target
+      )
+      for (const queue of dispatched) {
         dispatches.get(queue.queueId)?.finish({
           source: 'desktop_session',
           mode: 'AutoProxy',
@@ -438,9 +484,14 @@ export class DesktopSessionService {
           accepted: Boolean(queue.taskId),
         })
       }
-      const accepted = result.results.filter(target => target.taskId)
+      const accepted = dispatched.filter(target => target.taskId)
       if (accepted.length) this.tasksStarted(accepted)
-      return { queues: result.results }
+      const byId = new Map(dispatched.map(target => [target.queueId, target]))
+      return {
+        queues: plan.preview.length
+          ? plan.preview.map(target => byId.get(target.queueId) ?? target)
+          : dispatched,
+      }
     } catch (error) {
       const code = error instanceof DesktopSessionError ? error.message : 'desktop_session_failed'
       if (publishingConnection) {
@@ -457,7 +508,7 @@ export class DesktopSessionService {
           : /rdp|connection|timeout/.test(code)
             ? 'connection'
             : 'process'
-      const cancelled = code === 'environment_repair_cancelled'
+      const cancelled = code === 'environment_repair_cancelled' || code === 'takeover_cancelled'
       connection?.finish({ outcome: cancelled ? 'cancelled' : 'failure', reason_kind: reason })
       this.patch({ code })
       this.log(cancelled ? 'start_cancelled' : 'start_failed', { code })
@@ -472,6 +523,32 @@ export class DesktopSessionService {
         })
       }
       delete input.password
+    }
+  }
+
+  private async prepareQueueDispatch(
+    queueIds: string[],
+    prompts?: StartPrompts
+  ): Promise<QueueDispatchPlan | undefined> {
+    if (!prompts) return { queueIds, preview: [] }
+    const { results: preview } = await request<{ results: DesktopQueueResult[] }>(
+      getLocalApiEndpoint(),
+      internal + 'queues',
+      desktopSessionControlToken,
+      { queueIds, previewOnly: true }
+    )
+    const desktop = preview.filter(target => !target.code)
+    const main = preview.filter(target => target.code === 'unsupported_target')
+    const choice = main.length ? await prompts.confirmTaskDispatch({ desktop, main }) : 'desktop'
+    if (choice === 'cancel') return
+    return {
+      queueIds: preview
+        .filter(
+          target => !target.code || (choice === 'split' && target.code === 'unsupported_target')
+        )
+        .map(target => target.queueId),
+      mainSessionQueueIds: choice === 'split' ? main.map(target => target.queueId) : undefined,
+      preview,
     }
   }
 
@@ -540,12 +617,12 @@ export class DesktopSessionService {
     return this.stopOperation
   }
 
-  private async closeViewer(): Promise<void> {
+  private async closeViewer({ logoff = !this.adopted }: { logoff?: boolean } = {}): Promise<void> {
     const orphanedSessionId = this.orphanedSessionId
     if (orphanedSessionId !== undefined) await this.ensureHost()
     if (!this.host) return
     const result = await this.exchange(
-      { action: 'close', orphanedSessionId },
+      { action: 'close', orphanedSessionId, logoff },
       event =>
         (event.event === 'state' && event.state === 'idle') ||
         (event.event === 'command_error' && event.action === 'close'),
@@ -556,21 +633,26 @@ export class DesktopSessionService {
       throw new DesktopSessionError('logoff_failed')
     }
     this.orphanedSessionId = undefined
+    this.adopted = false
     await this.updateParentScope(null)
   }
 
-  private async stopTasksAndCloseViewer(): Promise<void> {
+  private async stopTasksAndCloseViewer(options?: { logoff?: boolean }): Promise<void> {
     if (this.snapshot.executing) await this.stopTasks()
-    await this.closeViewer()
+    await this.closeViewer(options)
   }
 
-  async close(): Promise<void> {
+  async waitForStart(): Promise<void> {
+    await this.startOperation
+  }
+
+  async close(options?: { logoff?: boolean }): Promise<void> {
     this.patch({ closing: true })
     try {
       if (this.repairOperation) await this.repairOperation
       if (this.startOperation) await this.startOperation
       await this.startingHost?.catch(() => undefined)
-      await this.stopTasksAndCloseViewer()
+      await this.stopTasksAndCloseViewer(options)
       this.host?.stdin.end()
       this.host = null
       this.volume = 0

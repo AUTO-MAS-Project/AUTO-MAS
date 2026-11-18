@@ -78,11 +78,11 @@ class Host:
         self.commands: queue.SimpleQueue[dict] = queue.SimpleQueue()
         self.viewer: RdpViewer | None = None
         self.session_id: int | None = None
+        self.adopted = False
         self.next_sample = 0.0
         self.next_audio = 0.0
         self.volume = 0
         self.audio_state = None
-        self.connection_baseline = None
         self.home_edition = False
         self.rdp_logon: tuple[datetime, str, str] | None = None
         self.dead = False
@@ -251,6 +251,20 @@ class Host:
                 if failure:
                     self.report("authentication_failure", **failure)
             raise
+
+        approved = command.get("adoptSessionId")
+        current = child_session()
+        if current != approved:
+            self.report(
+                "state",
+                state="idle",
+                code="existing_child_session"
+                if approved is None
+                else "session_changed",
+                existingSessionId=current,
+            )
+            return
+
         if password is not None:
             try:
                 credentials.save(path, account, credentials.encode(credential))
@@ -262,10 +276,8 @@ class Host:
         def connected() -> None:
             assert self.viewer is not None
             self.session_id = self.viewer.session_id
+            self.adopted = approved is not None
 
-        self.connection_baseline = child_session()
-        if self.connection_baseline is not None:
-            self.report("existing_child_session", sessionId=self.connection_baseline)
         self.viewer = RdpViewer(
             mode=command["mode"],
             port=port,
@@ -275,6 +287,7 @@ class Host:
             report=self.report_viewer,
             tick=self.tick,
             on_connected=connected,
+            adopt_session_id=approved,
         )
         self.report(
             "state",
@@ -285,11 +298,15 @@ class Host:
         self.rdp_logon = (datetime.now(UTC), account, sid)
         self.viewer.open(credential)
 
-    def close(self, orphaned_session: int | None = None) -> None:
-        self.close_session(orphaned_session)
+    def close(
+        self, orphaned_session: int | None = None, *, logoff: bool | None = None
+    ) -> None:
+        self.close_session(orphaned_session, logoff=logoff)
         self.report("state", state="idle")
 
-    def close_session(self, orphaned_session: int | None) -> None:
+    def close_session(
+        self, orphaned_session: int | None, *, logoff: bool | None = None
+    ) -> None:
         session = self.session_id if orphaned_session is None else orphaned_session
         viewer = self.viewer
         if viewer is not None:
@@ -298,19 +315,11 @@ class Host:
                 viewer.close()
             except comtypes.COMError as exc:
                 self.report("viewer_close_error", nativeCode=exc.hresult)
-        if viewer is not None and session is None:
-            # 连接期间可能在最后一次轮询后产生会话。只注销连接发起后观察到的分身。
-            current = child_session()
-            if current not in (
-                None,
-                0,
-                viewer.parent_session,
-                self.connection_baseline,
-            ):
-                session = current
+        # 只注销本次登录成功后登记的会话，或由 Electron 转交的已登记会话。
         self.viewer = None
         self.rdp_logon = None
-        if session is not None:
+        should_logoff = not self.adopted if logoff is None else logoff
+        if session is not None and should_logoff:
             self.session_id = session
             start = time.monotonic()
             logoff_child(session)
@@ -322,6 +331,7 @@ class Host:
                 durationMs=round((time.monotonic() - start) * 1000),
             )
         self.session_id = None
+        self.adopted = False
 
     def command(self, command: dict) -> None:
         action = command["action"]
@@ -334,7 +344,7 @@ class Host:
         elif action == "repair":
             self.repair(frozenset(command["approvedRepairs"]))
         elif action == "close":
-            self.close(command.get("orphanedSessionId"))
+            self.close(command.get("orphanedSessionId"), logoff=command.get("logoff"))
         elif action == "eof":
             self.dead = True
         elif self.viewer is not None:

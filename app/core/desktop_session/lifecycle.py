@@ -95,7 +95,7 @@ class _DesktopSessionLifecycle:
     def __init__(self) -> None:
         self.lock = asyncio.Lock()
         self.task_ids: set[UUID] = set()
-        self.scope_state: tuple[int | None, bool, int | None] = (None, False, None)
+        self.scope_state: tuple[int | None, bool] = (None, False)
 
     def configure_process_scope(self) -> None:
         from app.utils.common.process.session import configure_parent_scope
@@ -110,37 +110,19 @@ class _DesktopSessionLifecycle:
             self.scope_state = (
                 int(_parent_child_session) if _parent_child_session else None,
                 False,
-                None,
             )
 
             def parent_scope() -> int | None:
-                tracked_session, connecting, baseline_session = self.scope_state
-                if tracked_session is None and not connecting:
-                    return None
+                # 断开预览后，Windows 仍可保留子会话和其中运行的程序。
                 try:
-                    current = child_session()
-                    if current is not None and (
-                        current == tracked_session
-                        or (connecting and current != baseline_session)
-                    ):
-                        return parent_session
+                    return parent_session if child_session() is not None else None
                 except OSError:
                     return parent_session
-                return None
 
             configure_parent_scope(parent_scope)
 
     def set_process_scope(self, *, session_id: int | None, connecting: bool) -> None:
-        from app.utils import get_logger
-        from app.utils.windows.desktop_session.native import child_session
-
-        baseline = None
-        if connecting:
-            try:
-                baseline = child_session()
-            except OSError as exc:
-                get_logger("桌面分身").warning(f"连接前无法读取 Windows 子会话: {exc}")
-        self.scope_state = (session_id, connecting, baseline)
+        self.scope_state = (session_id, connecting)
 
     def prune_and_list_tasks(self) -> tuple[UUID, ...]:
         """丢弃已结束的分身任务登记，返回仍在运行的任务。"""
@@ -163,9 +145,16 @@ class _DesktopSessionLifecycle:
             )
             return not self.prune_and_list_tasks()
 
-    async def start_queues(self, queue_ids: list[UUID]) -> list[dict[str, str]]:
+    async def dispatch_queues(
+        self,
+        queue_ids: list[UUID],
+        *,
+        preview_only: bool,
+        main_session_queue_ids: set[UUID],
+    ) -> list[dict[str, str]]:
+        """预览运行位置，或按确认的会话派发所选队列和托管。"""
         from app.core import Config, TaskManager
-        from app.core.task_manager import UnsupportedDesktopTask
+        from app.core.task_manager import UnsupportedDesktopTask, script_config_name
         from app.models.task import TaskMode
         from app.utils import get_logger
         from app.utils.common.process.session import (
@@ -181,7 +170,7 @@ class _DesktopSessionLifecycle:
         logger = get_logger("桌面分身")
         results = []
         async with self.lock:
-            session_id, connecting, _ = self.scope_state
+            session_id, connecting = self.scope_state
             if (
                 session_id is None
                 or connecting
@@ -192,7 +181,8 @@ class _DesktopSessionLifecycle:
             desktop = DesktopProcessTarget(
                 session_id, Config.source_path, Config.work_path
             )
-            self.prune_and_list_tasks()
+            if not preview_only:
+                self.prune_and_list_tasks()
             for uid in dict.fromkeys(queue_ids):
                 queue = Config.QueueConfig.get(uid)
                 script = Config.ScriptConfig.get(uid) if queue is None else None
@@ -206,7 +196,11 @@ class _DesktopSessionLifecycle:
                     if script is not None
                     else "unknown",
                     "code": "",
-                    "label": target.Info.Name if target is not None else str(uid),
+                    "label": queue.Info.Name
+                    if queue is not None
+                    else script_config_name(script)
+                    if script is not None
+                    else str(uid),
                 }
                 results.append(item)
                 if target is None:
@@ -219,19 +213,38 @@ class _DesktopSessionLifecycle:
                     item["code"] = "power_action"
                     continue
                 try:
+                    if preview_only:
+                        entries = (
+                            [
+                                Config.ScriptConfig.get(row.Info.ScriptId)
+                                for row in queue.QueueItem.values()
+                                if row.Info.ScriptId != "-"
+                            ]
+                            if queue is not None
+                            else [script]
+                        )
+                        if any(entry is None for entry in entries):
+                            item["code"] = "dispatch_failed"
+                        elif any(not supports_task(entry) for entry in entries):
+                            item["code"] = "unsupported_target"
+                        continue
                     node = (
                         {"uid": str(uid)}
                         if queue is not None
                         else {"uid": "-", "children": {0: {"uid": str(uid)}}}
                     )
-                    scope = desktop_process_target.set(desktop)
+                    in_main_session = uid in main_session_queue_ids
+                    scope = desktop_process_target.set(
+                        None if in_main_session else desktop
+                    )
                     try:
                         task_id = await TaskManager.start(
                             TaskMode.AUTO_PROXY, {0: node}
                         )
                     finally:
                         desktop_process_target.reset(scope)
-                    self.task_ids.add(task_id)
+                    if not in_main_session:
+                        self.task_ids.add(task_id)
                     item["taskId"] = str(task_id)
                 except UnsupportedDesktopTask:
                     item["code"] = "unsupported_target"

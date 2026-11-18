@@ -59,12 +59,12 @@ from app.utils import (
     compile_log_signs,
     get_logger,
     is_process_alive,
-    is_process_running,
     log_box,
     process,
 )
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
+from app.utils.common.process.manager import has_process_window
 from app.utils.common.process.session import desktop_process_target
 
 from . import push_log as _push_log
@@ -743,7 +743,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             await self._push_dispatch_log(
                 f"正在检查异环客户端进程 ({_NTE_CLIENT_PROCESS})..."
             )
-            if is_process_running(_NTE_CLIENT_PROCESS):
+            if await has_process_window(_NTE_CLIENT_PROCESS):
                 logger.info("检测到异环客户端进程已在运行，跳过由 MAS 重复启动游戏")
                 await self._push_dispatch_log("检测到客户端已在运行，跳过启动")
                 await self._note_launch_arguments_skipped()
@@ -826,11 +826,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                     message = f"{AUTOPLAY_ARG} 静默启动成功，跳过点击「开始游戏」"
                     logger.info(message)
                     await self._push_dispatch_log(message)
-                elif is_process_running(_NTE_CLIENT_PROCESS):
-                    # 窗口尚未被枚举到但客户端进程已存在：游戏其实已起，按成功处理；
-                    # 这条路径未确认窗口存在，故下面的收尾日志走「进程已在运行」表述
-                    logger.info(f"{AUTOPLAY_ARG} 未等到游戏窗口，但客户端进程已在运行")
-                    await self._push_dispatch_log("客户端进程已在运行，按已启动处理")
+                elif await has_process_window(_NTE_CLIENT_PROCESS):
+                    # 启动器等待结束后再次确认客户端窗口，覆盖刚起窗的情况。
+                    window_ready = True
+                    logger.info(f"{AUTOPLAY_ARG} 等待结束后检测到客户端窗口")
+                    await self._push_dispatch_log("已检测到客户端窗口，按已启动处理")
                 else:
                     # 静默启动只有 /autoplay 这一条路：超时（启动器没真正接管游戏，
                     # 例如待安装更新未被驱动）不回退去点「开始游戏」（那是「启动器
@@ -858,7 +858,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 raise RuntimeError("请设置异环游戏 URL")
             if not game_process_name:
                 raise RuntimeError("请设置异环游戏进程名称")
-            if is_process_running(game_process_name):
+            if await has_process_window(game_process_name):
                 logger.info(
                     f"检测到异环客户端进程已在运行，跳过启动: {game_process_name}"
                 )

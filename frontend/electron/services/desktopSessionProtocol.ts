@@ -45,6 +45,7 @@ export interface DesktopQueueResult {
   targetKind: 'queue' | 'script' | 'unknown'
   code: string
   label: string
+  executionSession?: 'main'
 }
 
 export interface DesktopSessionStartResult {

@@ -73,13 +73,13 @@ from app.utils import (
     ProcessManager,
     ProcessRunner,
     get_logger,
-    is_process_running,
     log_box,
     process,
 )
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
-from app.utils.common.process.session import desktop_process_target, restricted_session
+from app.utils.common.process.manager import has_process_window
+from app.utils.common.process.session import desktop_process_target
 
 from .inventory_report import (
     INVENTORY_REPORT_RULE,
@@ -509,6 +509,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         self.original_game_settings_read = False
         self.launcher_game_setting_options: dict[str, Any] = {}
         self.launcher_runtime_path: Path | None = None
+        desktop = desktop_process_target.get()
+        # 此登记表只在主 MAS 进程内使用，None 恒指该进程所在的主会话。
+        self.launcher_session_id = desktop.session_id if desktop is not None else None
         self.launcher_owner: object = object()
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         self.auto_collect_run_at: datetime | None = None
@@ -575,7 +578,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 if launcher_path is not None:
                     self.launcher_runtime_path = launcher_path.resolve()
                     _LAUNCHER_OWNERS[
-                        restricted_session(), self.launcher_runtime_path
+                        self.launcher_session_id, self.launcher_runtime_path
                     ] = self.launcher_owner
                 else:
                     logger.warning(
@@ -597,9 +600,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             launcher_path = self._launcher_path()
             if launcher_path is not None:
                 self.launcher_runtime_path = launcher_path.resolve()
-                _LAUNCHER_OWNERS[restricted_session(), self.launcher_runtime_path] = (
-                    self.launcher_owner
-                )
+                _LAUNCHER_OWNERS[
+                    self.launcher_session_id, self.launcher_runtime_path
+                ] = self.launcher_owner
             await self._mas_launch_game_directly()
 
     def _launcher_path(self) -> Path | None:
@@ -760,7 +763,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         self, *, preserve_running_game: bool = False
     ) -> None:
         """调用方持有启动器锁，由 MaaEnd 应用设置并启动游戏。"""
-        needs_wait = not is_process_running(_MAAEND_CLIENT_PROCESS) or (
+        needs_wait = not await has_process_window(_MAAEND_CLIENT_PROCESS) or (
             not preserve_running_game
             and self.mode == self.first_run_mode
             and (
@@ -796,7 +799,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
     async def _mas_launch_game_directly(self) -> None:
         """通过现有直启入口拉起游戏，也用于更新确认后的重新启动。"""
         if (
-            is_process_running(_MAAEND_CLIENT_PROCESS)
+            await has_process_window(_MAAEND_CLIENT_PROCESS)
             and await self._game_window_in_session()
         ):
             logger.info("检测到终末地客户端已运行，准备由 MAS 执行账号切换")
@@ -852,7 +855,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     "未找到终末地官方启动器，请重新选择启动器可执行文件（.exe）"
                 )
             self.launcher_runtime_path = launcher_path.resolve()
-            _LAUNCHER_OWNERS[restricted_session(), self.launcher_runtime_path] = (
+            _LAUNCHER_OWNERS[self.launcher_session_id, self.launcher_runtime_path] = (
                 self.launcher_owner
             )
             # 启动器模式只复用旧版独立设置任务，游戏始终由 MAS 经启动器拉起。
@@ -864,7 +867,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             ):
                 await self._apply_launcher_game_settings()
             if (
-                is_process_running(_MAAEND_CLIENT_PROCESS)
+                await has_process_window(_MAAEND_CLIENT_PROCESS)
                 and await self._game_window_in_session()
             ):
                 logger.info("检测到终末地客户端进程已在运行，跳过由 MAS 重复启动游戏")
@@ -1356,10 +1359,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
     async def _wait_maaend_stage(self, log_offsets: dict[Path, int]) -> None:
         """等待日志结果、进程退出或 MXU 队列结束，兜底完成后未退出的进程。"""
-        process = (
-            self.maaend_process_manager.desktop_process
-            or self.maaend_process_manager.process
-        )
+        process = self.maaend_process_manager.launched_process
         if process is None:
             await self.cur_user_log.set_state(status="MaaEnd 未启动可监控的进程")
             return
@@ -1494,7 +1494,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             version = await update_maaend_after_stage(
                 root_path,
                 log_offsets,
-                process=self.maaend_process_manager.process,
+                process=self.maaend_process_manager.launched_process,
                 on_status=update_status,
                 on_before_session=before_update_session,
                 on_session_launched=after_update_session_launch,
@@ -1735,11 +1735,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 "--instance",
                 self.maaend_instance_name,
                 "--quit-after-run",
-                stdout=(
-                    asyncio.subprocess.PIPE
-                    if desktop_process_target.get() is None
-                    else asyncio.subprocess.DEVNULL
-                ),
+                stdout=asyncio.subprocess.PIPE,
+                retain_desktop_descendants=True,
             )
             # 只有进程真的起来了才算一次 MXU 启动；否则 debug/ 里还是上一轮的残留。
             self._mxu_launch_count += 1
@@ -1875,7 +1872,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 if (
                     self.launcher_runtime_path is not None
                     and _LAUNCHER_OWNERS.get(
-                        (restricted_session(), self.launcher_runtime_path)
+                        (self.launcher_session_id, self.launcher_runtime_path)
                     )
                     is not self.launcher_owner
                     or self.launcher_runtime_path is None
