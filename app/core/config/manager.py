@@ -1369,8 +1369,6 @@ class AppConfig:
 
     def _native_user_defaults(self, script: ConfigEntry) -> dict[str, Any] | None:
         """返回常规建号的初始来源，不修改配置模型的存量缺省值。"""
-        from app.task.proxy_helpers import user_uses_native_base
-
         if isinstance(script, (GeneralConfig, HSRConfig)):
             return {"Info": {"Base": _utils_constants.BASE_NATIVE}}
 
@@ -1391,15 +1389,7 @@ class AppConfig:
         ):
             return None
 
-        info: dict[str, Any] = {"IfQuickConfig": False}
-        if not (
-            (is_maa or isinstance(script, (SrcConfig, ZzzOdConfig)))
-            and any(
-                user_uses_native_base(user) for user in script_users(script).values()
-            )
-        ):
-            info["Base"] = _utils_constants.BASE_NATIVE
-        return {"Info": info}
+        return {"Info": {"Base": _utils_constants.BASE_NATIVE, "IfQuickConfig": False}}
 
     async def add_user(
         self,
@@ -1444,11 +1434,10 @@ class AppConfig:
 
         # handler 选择具体用户类，集合登记表在 add 时核验；联合类型不保留这层配对。
         users = cast(ConfigCollection[ConfigEntry], script_users(script_config))
-        async with config_manager.execution_gate():
-            if native_defaults and payload is None:
-                payload = self._native_user_defaults(script_config)
-            uid = users.add(user_class, payload=payload)
-            await users.commit()
+        if native_defaults and payload is None:
+            payload = self._native_user_defaults(script_config)
+        uid = users.add(user_class, payload=payload)
+        await users.commit()
         config = script_users(script_config)[uid]
         if handler is not None and handler.initialize_user is not None:
 

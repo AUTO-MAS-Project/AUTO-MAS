@@ -229,12 +229,10 @@ async def test_maa_backup_api_owns_round_trip_and_guards(maa_host):
 
 
 @pytest.mark.asyncio
-async def test_maa_owns_source_signal_and_configuration_directory(
+async def test_maa_accounts_default_to_native_and_resolve_config_dir(
     maa_host, tmp_path_factory
 ):
-    """公共 CRUD 无专项处理器时仍保留目录定位；直接配置提交同样执行原生来源互斥。"""
-    from app.config.errors import ConfigAggregateError
-
+    """同一托管的多个新账号默认使用原生，手动选共享后仍使用共享目录。"""
     client, _ = maa_host
     created = (await client.post("/api/scripts/add", json={"type": "MAA"})).json()
     sid = created["scriptId"]
@@ -244,11 +242,16 @@ async def test_maa_owns_source_signal_and_configuration_directory(
     ]
     assert first["code"] == second["code"] == 200
     assert first["data"]["Info"]["Base"] == "native"
-    assert second["data"]["Info"]["Base"] == "shared"
+    assert second["data"]["Info"]["Base"] == "native"
     assert first["data"]["Info"]["IfQuickConfig"] is False
     assert second["data"]["Info"]["IfQuickConfig"] is False
     first, second = first["userId"], second["userId"]
     script = Config.ScriptConfig[sid]
+    updated = await client.post(
+        "/api/scripts/user/update",
+        json={"scriptId": sid, "userId": second, "data": {"Info": {"Base": "shared"}}},
+    )
+    assert updated.json()["code"] == 200
     shared = (
         await client.post(
             "/api/scripts/user/config-dir", json={"scriptId": sid, "userId": second}
@@ -256,11 +259,6 @@ async def test_maa_owns_source_signal_and_configuration_directory(
     ).json()
     assert shared["code"] == 200
     assert shared["path"] == str(Config.data_path / sid / "Default" / "ConfigFile")
-    # 不经过公共 API/handler 的写入也必须由插件自己的信号阻止冲突。
-    script.users[second].Info.Base = "native"
-    with pytest.raises(ConfigAggregateError):
-        await script.users[second].commit()
-    assert script.users[second].Info.Base == "shared"
     absent = (
         await client.post(
             "/api/scripts/user/config-dir", json={"scriptId": sid, "userId": first}

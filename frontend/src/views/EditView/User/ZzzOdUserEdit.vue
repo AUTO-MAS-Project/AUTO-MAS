@@ -903,25 +903,6 @@ const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'string' || !['independent', 'native'].includes(value)) return
   const prev = formData.Info.Base
   await flushPendingSaves()
-  if (value === 'native' && prev !== 'native') {
-    // 每脚本仅允许一个原生来源用户：原生来源是脚本级全局视图（实例/活跃/运行实例
-    // 都是一份 one_dragon.yml），多原生来源用户共享状态互相干扰
-    try {
-      const resp = await getUsers(scriptId)
-      const hasOtherDirect = Object.entries(resp?.data ?? {}).some(
-        ([uid, user]) =>
-          uid !== userId.value &&
-          String((user as { Info?: { Base?: string } })?.Info?.Base ?? '') === 'native'
-      )
-      if (hasOtherDirect) {
-        formData.Info.Base = prev
-        message.error(t('core.edit.zzzodDirectModeLimit'))
-        return
-      }
-    } catch (e) {
-      logger.warn(e instanceof Error ? e.message : String(e))
-    }
-  }
   if (!(await saveField('Info.Base', value))) return
   formData.Info.Base = value as 'shared' | 'independent' | 'native'
   if (value === 'native') {
