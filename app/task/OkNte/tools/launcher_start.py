@@ -566,6 +566,18 @@ async def async_wait_autoplay_game(
     on_log: Callable[[str], None] | None = None,
 ) -> bool:
     """async 版本：在后台线程轮询游戏窗口，避免阻塞事件循环。"""
+    from app.utils.common.process.session import desktop_process_target
+
+    if (desktop := desktop_process_target.get()) is not None:
+        from app.task.desktop_session_worker import run_desktop_action
+
+        return await run_desktop_action(
+            desktop,
+            "oknte_wait_autoplay",
+            {"launcher_path": str(launcher_path), "timeout": timeout},
+            on_log,
+        )
+
     return await asyncio.to_thread(
         wait_autoplay_game, launcher_path, timeout=timeout, on_log=on_log
     )
@@ -860,6 +872,15 @@ async def async_start_game_via_launcher(
     launcher_path: Path, *, on_log: Callable[[str], None] | None = None
 ) -> bool:
     """async 版本：在后台线程执行启动器交互，避免阻塞事件循环。"""
+    from app.utils.common.process.session import desktop_process_target
+
+    if (desktop := desktop_process_target.get()) is not None:
+        from app.task.desktop_session_worker import run_desktop_action
+
+        return await run_desktop_action(
+            desktop, "oknte_start_game", {"launcher_path": str(launcher_path)}, on_log
+        )
+
     return await asyncio.to_thread(
         start_game_via_launcher, launcher_path, on_log=on_log
     )

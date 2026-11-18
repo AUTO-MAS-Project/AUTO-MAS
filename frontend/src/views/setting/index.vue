@@ -24,6 +24,7 @@ const logger = window.electronAPI.getLogger('设置')
 // 引入拆分后的 Tab 组件
 import TabBasic from './TabBasic.vue'
 import TabFunction from './TabFunction.vue'
+import DesktopSessionSettings from '../desktopSession/DesktopSessionSettings.vue'
 import TabNotify from './TabNotify.vue'
 import TabAdvanced from './TabAdvanced.vue'
 import TabOthers from './TabOthers.vue'
@@ -247,6 +248,9 @@ onMounted(() => {
       </template>
       <template #function>
         <TabFunction :settings="settings" :handle-setting-change="handleSettingChange" />
+      </template>
+      <template #desktop-session>
+        <DesktopSessionSettings />
       </template>
       <template #notify>
         <TabNotify

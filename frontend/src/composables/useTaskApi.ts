@@ -12,7 +12,7 @@ import {
   registerAcceptedTask,
   reconcileStoppedTask,
 } from '@/composables/useTaskRuntimeState'
-import type { AnalyticsEventProps } from '@/types/analytics'
+import type { AnalyticsEventProps, AnalyticsTaskSource } from '@/types/analytics'
 
 function taskRequestError(error: unknown): Error {
   if (error instanceof ApiError) {
@@ -32,9 +32,10 @@ function taskRequestError(error: unknown): Error {
 
 export type TaskTargetKind = AnalyticsEventProps['task_start_result']['target_kind']
 
-type TaskStartMetadata = Partial<
-  Pick<AnalyticsEventProps['task_start_result'], 'source' | 'target_kind'>
->
+type TaskStartMetadata = {
+  source?: AnalyticsTaskSource
+  target_kind?: TaskTargetKind
+}
 
 function nativeScriptType(taskId: string, targetId = '') {
   const script = getTaskRuntimeStates().find(task => task.taskId === taskId)?.scripts[0]

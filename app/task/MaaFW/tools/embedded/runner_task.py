@@ -46,6 +46,7 @@ from app.services import execute_script_task
 from app.task.emulator_core import close_emulator, resolve_host_adb
 from app.task.MaaFW.tools.core.controller_win32.service import (
     MaaFWWin32ControllerService,
+    MaaFWWin32Window,
     controller_has_window_rules,
 )
 from app.task.MaaFW.tools.core.interface.models import (
@@ -124,11 +125,17 @@ from app.utils import IS_WINDOWS, UTC4, ProcessInfo, ProcessManager, get_logger,
 from app.utils import display as _utils_display
 from app.utils import game_apk as _utils_game_apk
 from app.utils import io as _utils_io
+from app.utils.common.process.operations import (
+    iter_processes,
+    managed_process,
+    terminate_process,
+)
 from app.utils.common.process.runner import create_subprocess, observe_process_exit
 from app.utils.common.process.scope import (
     current_process_scope,
     detached_process_context,
 )
+from app.utils.common.process.session import desktop_process_target
 
 from .embedded_project import resolve_maafw_project_root
 from .flavor import (
@@ -1273,6 +1280,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         game_path_error: str | None = None
         if (
+            desktop_process_target.get() is not None
+            and run_plan.controllerType != "Win32"
+        ):
+            raise ValueError("MaaFW 桌面分身仅支持 Win32 控制器")
+        if (
             run_plan.tasks
             and run_plan.controllerType == "Win32"
             and (not _optional_int(self.script_config.Device.HWnd))
@@ -2151,10 +2163,18 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         configured_hwnd = self.script_config.Device.HWnd
         parsed_hwnd = _optional_int(configured_hwnd)
         if parsed_hwnd:
+            if (desktop := desktop_process_target.get()) is not None:
+                from app.task.desktop_session_worker import request_desktop_action
+
+                _, exists = await request_desktop_action(
+                    desktop, "maafw_windows", {"hwnd": str(parsed_hwnd)}
+                )
+                if not exists:
+                    raise RuntimeError("配置的窗口句柄不在桌面分身内")
             return parsed_hwnd
         if not controller_has_window_rules(controller):
             raise RuntimeError(_WIN32_NO_WINDOW_RULES_MESSAGE)
-        matches = await asyncio.to_thread(_match_controller_windows, controller)
+        matches = await _match_windows_in_session(controller)
         if not matches:
             raise RuntimeError("未找到匹配 MaaFW Win32 controller 的窗口")
         if len(matches) > 1:
@@ -2376,19 +2396,42 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 # 不进项目视图），见 runner._inject_agent_pip_constraint。
                 AGENT_PIP_CONSTRAINT_DIR_ENV: str(_maafw_agent_constraints_dir()),
             }
-            process = await create_subprocess(
-                str(runner_environment.python_executable),
-                "-m",
-                "app.task.MaaFW.tools.core.runner.worker",
-                cwd=str(Path.cwd()),
-                env=worker_env,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                # 默认 64 KiB：agent 原样转发的输出、原生 ERROR 日志里整份 pipeline JSON
-                # 都可能更长，超了 readline 就抛错、读取任务退出，worker 写满管道后挂到硬超时
-                limit=_WORKER_STREAM_LINE_LIMIT,
-            )
+            if (desktop := desktop_process_target.get()) is not None:
+                from app.utils.windows.desktop_session.process_runner import (
+                    launch_desktop_process,
+                )
+
+                scope = current_process_scope.get()
+                if scope is not None:
+                    scope.ensure_can_start()
+                process = await launch_desktop_process(
+                    desktop,
+                    argv=[
+                        str(runner_environment.python_executable),
+                        "-m",
+                        "app.task.MaaFW.tools.core.runner.worker",
+                    ],
+                    cwd=Path.cwd(),
+                    env=worker_env,
+                    stdin=job_bytes,
+                    stream_limit=_WORKER_STREAM_LINE_LIMIT,
+                )
+                if scope is not None:
+                    scope.retain_desktop_process(process.stop)
+            else:
+                process = await create_subprocess(
+                    str(runner_environment.python_executable),
+                    "-m",
+                    "app.task.MaaFW.tools.core.runner.worker",
+                    cwd=str(Path.cwd()),
+                    env=worker_env,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    # 默认 64 KiB：agent 原样转发的输出、原生 ERROR 日志里整份 pipeline JSON
+                    # 都可能更长，超了 readline 就抛错、读取任务退出，worker 写满管道后挂到硬超时
+                    limit=_WORKER_STREAM_LINE_LIMIT,
+                )
             worker_id = service.register_worker(process)
         except BaseException:
             if event_server is not None:
@@ -2763,7 +2806,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     ) -> int | None:
         """等 worker 退出；结果已经回传的话只再等有限时间。"""
 
-        exit_task = asyncio.ensure_future(process.wait())
+        async def wait_exit():
+            if desktop_process_target.get() is not None:
+                code, _, _ = await process.wait()
+                return code
+            return await process.wait()
+
+        exit_task = asyncio.ensure_future(wait_exit())
         result_task = asyncio.ensure_future(result_received.wait())
         try:
             await asyncio.wait(
@@ -2815,7 +2864,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         )
         if not controller_has_window_rules(controller):
             return False
-        if await asyncio.to_thread(_match_controller_windows, controller):
+        if await _match_windows_in_session(controller):
             return False
         self._append_log("未找到游戏窗口，重新应用运行前设置")
         return True
@@ -2861,15 +2910,35 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 )
             self._append_log(f"开始应用运行前设置: {display_name}")
             started_at = loop.time()
-            process = await create_subprocess(
-                pretask.executable,
-                *pretask.args,
-                cwd=self.run_plan.path,
-                env=env,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                creationflags=creationflags,
-            )
+            if (desktop := desktop_process_target.get()) is not None:
+                from app.utils.windows.desktop_session.process_runner import (
+                    launch_desktop_process,
+                )
+
+                scope = current_process_scope.get()
+                if scope is not None:
+                    scope.ensure_can_start()
+                process = await launch_desktop_process(
+                    desktop,
+                    argv=[str(pretask.executable), *pretask.args],
+                    cwd=Path(self.run_plan.path),
+                    env=env,
+                    merge=True,
+                    retain=scope is not None,
+                    stream_limit=_WORKER_STREAM_LINE_LIMIT,
+                )
+                if scope is not None:
+                    scope.retain_desktop_process(process.stop)
+            else:
+                process = await create_subprocess(
+                    pretask.executable,
+                    *pretask.args,
+                    cwd=self.run_plan.path,
+                    env=env,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                    creationflags=creationflags,
+                )
             self.pretask_process = process
             # 输出按行实时进运行日志（以前 communicate() 要等进程结束才一次性写出）；末尾
             # 若干行另留一份，失败时从里面摘原因。
@@ -2984,6 +3053,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         process = self.runner_process
         self.runner_process = None
         if process is None or process.returncode is not None:
+            return
+
+        if desktop_process_target.get() is not None:
+            await process.stop()
             return
 
         # 必须在 terminate 之前把后代记下来：Windows 的 TerminateProcess 是立即
@@ -3258,7 +3331,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self.interface_model,
                 self.run_plan.controllerName,
             )
-            matches = await asyncio.to_thread(_match_controller_windows, controller)
+            matches = await _match_windows_in_session(controller)
             if matches:
                 selected = matches[0]
                 self._append_log(
@@ -3460,11 +3533,25 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             f"正在等待游戏客户端窗口就绪，最大等待时间 {wait_time}s: {game_path.name}"
         )
 
-        waited = 0.0
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + wait_time
+
+        async def match_before_deadline():
+            if desktop_process_target.get() is None:
+                return await _match_windows_in_session(controller)
+            try:
+                async with asyncio.timeout_at(deadline):
+                    return await _match_windows_in_session(controller)
+            except TimeoutError as exc:
+                raise RuntimeError(
+                    f"游戏窗口在 {wait_time}s 内未就绪: {game_path.name}"
+                ) from exc
+
+        waited = False
         process_detected = False
-        while waited < wait_time:
+        while loop.time() < deadline:
             if not explicit_hwnd:
-                matches = await asyncio.to_thread(_match_controller_windows, controller)
+                matches = await match_before_deadline()
                 if matches:
                     selected = matches[0]
                     self._append_log(
@@ -3472,7 +3559,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         f"hWnd={selected.hWnd}, class={selected.className}, "
                         f"title={selected.windowName}"
                     )
-                    return waited > 0
+                    return waited
 
             if await asyncio.to_thread(_is_process_path_running, game_path):
                 if not process_detected:
@@ -3483,9 +3570,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     self._append_log(
                         f"已配置窗口句柄，跳过窗口正则等待: {explicit_hwnd}"
                     )
-                    return waited > 0
+                    return waited
 
-                matches = await asyncio.to_thread(_match_controller_windows, controller)
+                matches = await match_before_deadline()
                 if matches:
                     selected = matches[0]
                     self._append_log(
@@ -3493,14 +3580,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         f"hWnd={selected.hWnd}, class={selected.className}, "
                         f"title={selected.windowName}"
                     )
-                    return waited > 0
+                    return waited
 
-            sleep_seconds = min(poll_interval, wait_time - waited)
-            await asyncio.sleep(sleep_seconds)
-            waited += sleep_seconds
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                break
+            await asyncio.sleep(min(poll_interval, remaining))
+            waited = True
+
+        if desktop_process_target.get() is not None:
+            raise RuntimeError(f"游戏窗口在 {wait_time}s 内未就绪: {game_path.name}")
 
         if not explicit_hwnd:
-            matches = await asyncio.to_thread(_match_controller_windows, controller)
+            matches = await _match_windows_in_session(controller)
             if matches:
                 selected = matches[0]
                 self._append_log(
@@ -3515,7 +3607,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self._append_log(f"已配置窗口句柄，跳过窗口正则等待: {explicit_hwnd}")
                 return True
 
-            matches = await asyncio.to_thread(_match_controller_windows, controller)
+            matches = await _match_windows_in_session(controller)
             if matches:
                 selected = matches[0]
                 self._append_log(
@@ -4006,7 +4098,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if since is None or not self._attached_game_close_wanted(failed=failed):
             return
         try:
-            pids = await asyncio.to_thread(self._attached_game_window_pids)
+            if (
+                desktop_process_target.get() is not None
+                and self.interface_model is not None
+            ):
+                controller = _find_controller(
+                    self.interface_model, self.run_plan.controllerName
+                )
+                pids = {
+                    int(row[3])
+                    for row in await _list_desktop_window_matches(controller)
+                }
+            else:
+                pids = await asyncio.to_thread(self._attached_game_window_pids)
             exes = [
                 path
                 for path in (
@@ -4110,7 +4214,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 if process is not None:
                     # pretask 的 stdout 可能由游戏继承，不能用 process.wait()
                     # 等其管道 EOF；只检查真正的进程退出状态。
-                    await observe_process_exit(process)
+                    if desktop_process_target.get() is not None:
+                        await process.wait_exit()
+                    else:
+                        await observe_process_exit(process)
                 if pending is not None:
                     try:
                         await asyncio.shield(pending)
@@ -4611,7 +4718,7 @@ def _match_controller_windows(controller: MaaFWController) -> list[Any]:
 
 def _is_process_path_running(executable_path: Path) -> bool:
     target_path = executable_path.resolve()
-    for proc in psutil.process_iter(["exe"]):
+    for proc in iter_processes(["exe"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied, OSError):
             raw_exe = proc.info.get("exe") or proc.exe()
             if raw_exe and Path(raw_exe).resolve() == target_path:
@@ -4619,8 +4726,36 @@ def _is_process_path_running(executable_path: Path) -> bool:
     return False
 
 
+async def _list_desktop_window_matches(controller: MaaFWController):
+    from app.task.desktop_session_worker import request_desktop_action
+
+    desktop = desktop_process_target.get()
+    if desktop is None:
+        raise RuntimeError("桌面分身会话未配置")
+    _, matches = await request_desktop_action(
+        desktop,
+        "maafw_windows",
+        {"controller": controller.model_dump_json(by_alias=True)},
+    )
+    return matches
+
+
+async def _match_windows_in_session(controller: MaaFWController):
+    if desktop_process_target.get() is None:
+        return await asyncio.to_thread(_match_controller_windows, controller)
+    return [
+        MaaFWWin32Window(*item[:3])
+        for item in await _list_desktop_window_matches(controller)
+    ]
+
+
 async def _open_launch_url(url: str) -> None:
     """用系统默认处理程序打开启动链接（Windows 上是 ShellExecute）。"""
+    if (desktop := desktop_process_target.get()) is not None:
+        from app.utils.windows.desktop_session.process_runner import open_in_desktop
+
+        await open_in_desktop(desktop, url)
+        return
 
     from app.utils import process_platform
 
@@ -4647,7 +4782,7 @@ def _normalized_exe(path: str | Path) -> str:
 
 def _snapshot_processes() -> list[_ProcessSnapshot]:
     snapshots: list[_ProcessSnapshot] = []
-    for proc in psutil.process_iter(["pid", "exe", "create_time"]):
+    for proc in iter_processes(["pid", "exe", "create_time"]):
         info = proc.info
         snapshots.append(
             _ProcessSnapshot(
@@ -4719,14 +4854,19 @@ def _end_processes(
     failed: list[_ProcessSnapshot] = []
     for target in targets:
         try:
-            proc = psutil.Process(target.pid)
-            if (
-                target.create_time is not None
-                and abs(proc.create_time() - target.create_time) > 1
-            ):
+            proc = managed_process(target.pid, expected_create_time=target.create_time)
+            if proc is None:
                 continue
-            proc.terminate()
+            if not terminate_process(proc):
+                if proc.is_running():
+                    logger.warning(f"MaaFW 未能结束进程: {target.label}")
+                    failed.append(target)
+                continue
         except psutil.NoSuchProcess:
+            continue
+        except ProcessLookupError:
+            logger.warning(f"MaaFW 结束进程时无法确认目标归属: {target.label}")
+            failed.append(target)
             continue
         except (psutil.AccessDenied, OSError) as exc:
             logger.warning(f"MaaFW 结束进程失败 {target.label}: {exc}")
@@ -4738,7 +4878,7 @@ def _end_processes(
     _, alive = psutil.wait_procs(list(started), timeout=grace_seconds)
     for proc in alive:
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied, OSError):
-            proc.kill()
+            terminate_process(proc, force=True)
     if alive:
         _, alive = psutil.wait_procs(alive, timeout=grace_seconds)
     for proc in alive:
@@ -4965,9 +5105,15 @@ async def _kill_pretask_process(
     # 不用 process.wait()：它要等输出管道关闭才返回，继承了管道的游戏不退它就不返回。
     try:
         if process.returncode is None:
-            process.terminate()
+            if desktop_process_target.get() is None:
+                process.terminate()
+            elif target := managed_process(process.pid):
+                terminate_process(target)
         if not await _wait_pretask_exit(process, 5):
-            process.kill()
+            if desktop_process_target.get() is None:
+                process.kill()
+            else:
+                await process.stop()
             if not await _wait_pretask_exit(process, 5):
                 logger.warning(
                     f"MaaFW 运行前设置进程（pid {process.pid}）强制结束后 5 秒仍未退出"

@@ -236,7 +236,11 @@ class _LegacyExecution(TaskBase):
                     pass
                 raise
         finally:
-            current_process_scope.reset(token)
+            try:
+                if self._owns_scope:
+                    await self._process_scope.close_desktop_processes()
+            finally:
+                current_process_scope.reset(token)
 
     def request_stop_checks(self):
         if self._owns_scope and self._stop_request is None:

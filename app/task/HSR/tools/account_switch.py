@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Callable, Literal
 
 from app.utils import ProcessInfo, get_logger, is_process_running, process
+from app.utils.common.process.session import desktop_process_target
 
 from ..task_mapping import engine_label
 from .cloud_browser import (
@@ -968,7 +969,9 @@ class HSRAccountSwitcher:
             return False
 
         manager = self.runtime.game_process_manager
-        if manager.main_pid is None or manager.main_hwnd is None:
+        if manager.main_pid is None or (
+            desktop_process_target.get() is None and manager.main_hwnd is None
+        ):
             try:
                 await manager.search_process(
                     ProcessInfo(name=process_name),
