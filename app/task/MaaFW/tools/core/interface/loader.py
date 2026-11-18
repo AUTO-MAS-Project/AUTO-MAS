@@ -629,19 +629,14 @@ def _scan_scan_select_cases(
             exc,
         )
         if context is not None:
-            # 照样登记进缓存依赖（用未解析的路径，只拿来 stat / glob 算签名）：装入点被删掉
-            # 或变成可信后签名会变，缓存自动失效，不会一直空着。
-            context.scan_select_specs.add(
-                (
-                    base_dir
-                    / _normalize_project_relative_path(
-                        scan_dir,
-                        field_name=f"scan_select 选项 {option_name} 的 scan_dir",
-                    ),
-                    _normalize_project_relative_path(
-                        scan_filter,
-                        field_name=f"scan_select 选项 {option_name} 的 scan_filter",
-                    ),
+            # 只登记进依赖、不进 scan_select_specs：后者的签名会对 (目录, 过滤串) 做
+            # glob 枚举，链接指向视图外时那一步就跟着读到项目外去了。依赖只对路径本身
+            # 取 stat 签名，链接被删、改回项目内或目标变了都会让缓存失效、重新解析。
+            context.dependency_paths.add(
+                base_dir
+                / _normalize_project_relative_path(
+                    scan_dir,
+                    field_name=f"scan_select 选项 {option_name} 的 scan_dir",
                 )
             )
         return []
