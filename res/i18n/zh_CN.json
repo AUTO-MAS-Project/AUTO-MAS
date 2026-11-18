@@ -4913,5 +4913,21 @@
   "core.edit.okwwLoginAccountPlaceholder": "完整手机号或登录列表中的账号",
   "core.edit.okwwDailyArgumentsExample": "普通日常模式启动参数示例",
   "core.edit.okwwArgumentsExampleHint": "原生切号模式由托管的账号切换方式决定，实际使用 -t MultiAccountConfigTask -e。",
-  "core.plan.oknte.basedOnDetail": "基于详细配置"
+  "core.plan.oknte.basedOnDetail": "基于详细配置",
+  "core.plan.oknte.weeklyTitle": "周本",
+  "core.plan.oknte.weeklyOff": "不启用",
+  "core.plan.oknte.weeklyInherit": "继承原配置",
+  "core.plan.oknte.weeklyConfirm": "确认",
+  "core.plan.oknte.weeklyUseAccount": "沿用账号周本配置",
+  "core.plan.oknte.weeklyDisabled": "当天不执行周本",
+  "core.plan.oknte.weeklyAddHint": "点击左侧周本添加",
+  "core.plan.oknte.weeklyUp": "上移",
+  "core.plan.oknte.weeklyDown": "下移",
+  "core.plan.oknte.weeklyRemove": "删除目标 {index}",
+  "core.plan.oknte.weeklySaveFailed": "周本计划保存失败",
+  "core.plan.oknte.weeklyArachne": "永不谢幕的阿拉克涅",
+  "core.plan.oknte.weeklyDebtCollector": "讨债人",
+  "core.plan.oknte.weeklyMorphix": "墨菲克斯",
+  "core.plan.oknte.weeklyBroodmother": "贵腐巢母",
+  "core.plan.oknte.fieldHelp": "{field}说明"
 }
