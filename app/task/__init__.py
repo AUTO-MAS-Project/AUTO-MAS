@@ -50,7 +50,6 @@ if TYPE_CHECKING:
     from .Okww import OkwwManager as OkwwManager
     from .SRC import SrcManager as SrcManager
     from .user_expander import UserExpander as UserExpander
-    from .Whimbox import WhimboxManager as WhimboxManager
     from .ZzzOd import ZzzOdManager as ZzzOdManager
 
 # 惰性导出（与 app/core/__init__.py 同一 idiom）。
@@ -80,7 +79,6 @@ _LAZY_EXPORTS = {
     "ZzzOdManager": (".ZzzOd", "ZzzOdManager"),
     "BAAHManager": (".BAAH", "BAAHManager"),
     "MaaFWEmbeddedManager": (".MaaFW.embedded_manager", "MaaFWEmbeddedManager"),
-    "WhimboxManager": (".Whimbox", "WhimboxManager"),
 }
 
 
@@ -113,5 +111,4 @@ __all__ = [
     "BetterGIManager",
     "ZzzOdManager",
     "MaaFWEmbeddedManager",
-    "WhimboxManager",
 ]

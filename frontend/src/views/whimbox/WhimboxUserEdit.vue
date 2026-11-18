@@ -60,7 +60,7 @@
 </template>
 
 <script setup lang="ts">
-import BasicInfoRestorePreview from '@/views/WhimboxUserEdit/BasicInfoRestorePreview.vue'
+import BasicInfoRestorePreview from '@/views/whimbox/user/BasicInfoRestorePreview.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -71,17 +71,17 @@ import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
-import { useWhimboxTaskCatalog } from '@/composables/useWhimboxTaskCatalog'
+import { useWhimboxTaskCatalog } from '@/views/whimbox/useWhimboxTaskCatalog'
 import type { WhimboxOptionCatalogItem, WhimboxTaskCatalogItem } from '@/api'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
-import BasicInfoSection from '@/views/WhimboxUserEdit/BasicInfoSection.vue'
-import TaskConfigSection from '@/views/WhimboxUserEdit/TaskConfigSection.vue'
-import WhimboxUserEditHeader from '@/views/WhimboxUserEdit/WhimboxUserEditHeader.vue'
-import { WHIMBOX_CONFIG_MODES } from '@/views/WhimboxUserEdit/modes'
+import BasicInfoSection from '@/views/whimbox/user/BasicInfoSection.vue'
+import TaskConfigSection from '@/views/whimbox/user/TaskConfigSection.vue'
+import WhimboxUserEditHeader from '@/views/whimbox/user/WhimboxUserEditHeader.vue'
+import { WHIMBOX_CONFIG_MODES } from '@/views/whimbox/user/modes'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
-import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
+import { useWhimboxConfigBackupApi } from './user/useWhimboxConfigBackupApi'
 
 const { t } = useI18n()
 
@@ -288,7 +288,7 @@ const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
   { key: 'native', kind: 'script' },
 ]
 
-const { restoreApi, ensure: ensureConfigBackup } = useConfigBackupApi({
+const { restoreApi, ensure: ensureConfigBackup } = useWhimboxConfigBackupApi({
   scriptId,
   userId: () => userId,
   logger,

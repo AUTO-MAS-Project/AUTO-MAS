@@ -39,6 +39,7 @@ async def test_script_breakaway_survives_task_cleanup(
         from pathlib import Path
         gate,result,early_gate,early_pid=map(Path,sys.argv[1:])
         children=[]
+        outcome={'pids':children}
         try:
             for flags in (0,subprocess.CREATE_BREAKAWAY_FROM_JOB):
                 ready = early_gate if flags == 0 else gate
@@ -49,9 +50,12 @@ async def test_script_breakaway_survives_task_cleanup(
                     stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
                 children.append(child.pid)
                 if flags == 0: early_pid.write_text(str(child.pid))
-            result.write_text(json.dumps({'pids':children}))
         except OSError as error:
-            result.write_text(json.dumps({'pids':children,'error':str(error)}))
+            outcome['error']=str(error)
+        # 读端用文件存在来判断结果是否就绪。
+        pending=result.with_suffix('.tmp')
+        pending.write_text(json.dumps(outcome))
+        pending.replace(result)
         time.sleep(60)
     """)
     scope = TaskProcessScope()

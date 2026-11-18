@@ -45,10 +45,6 @@ const EDITOR_PAGES: Record<string, { script: LazyPage; user: LazyPage }> = {
     script: () => import('@/views/EditView/Script/ZzzOdScriptEdit.vue'),
     user: () => import('@/views/EditView/User/ZzzOdUserEdit.vue'),
   },
-  Whimbox: {
-    script: () => import('@/views/EditView/Script/WhimboxScriptEdit.vue'),
-    user: () => import('@/views/EditView/User/WhimboxUserEdit.vue'),
-  },
 }
 
 const PAGE_ROUTES = {

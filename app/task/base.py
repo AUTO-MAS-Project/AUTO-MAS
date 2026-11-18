@@ -14,7 +14,6 @@ from app.models.config import (
     OkwwConfig,
     SrcConfig,
     UserConfigType,
-    WhimboxConfig,
     ZzzOdConfig,
 )
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
@@ -63,7 +62,6 @@ type ProxyScriptConfigType = (
     | BetterGIConfig
     | ZzzOdConfig
     | BAAHConfig
-    | WhimboxConfig
 )
 
 

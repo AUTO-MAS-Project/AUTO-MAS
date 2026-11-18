@@ -54,6 +54,32 @@ async def test_repeated_queue_items_run_in_order_with_independent_identity(
     scripts = run.task_info.script_list
     assert calls == [0, 1, 2]
     assert len(scripts) == 3 and len({script.uid for script in scripts}) == 3
+    assert {script.info.script_type for script in scripts} == {"General"}
+
+
+@pytest.mark.asyncio
+async def test_plugin_task_keeps_its_registered_script_type(scheduler, monkeypatch):
+    from whimbox_adapter.plugin import Plugin as WhimboxAdapter
+
+    from app.core.plugin import Plugin
+
+    manager, scripts, _, _ = scheduler
+    config_type = WhimboxAdapter.decl.script_type
+    scripts.add_type(config_type)
+    await scripts.commit()
+    script_id = scripts.add(config_type)
+    await scripts.commit()
+    monkeypatch.setattr(
+        Plugin, "script_classes", lambda: {WhimboxAdapter.script_type_key: config_type}
+    )
+    monkeypatch.setattr(manager, "manager_factories", {config_type: Builtin})
+
+    uid = await manager.start(
+        TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(script_id)}}}}
+    )
+    run = manager.task_handler[uid]
+    await asyncio.wait_for(run.accomplish.wait(), 4)
+    assert run.task_info.script_list[0].info.script_type == "Whimbox"
 
 
 @pytest.mark.asyncio
