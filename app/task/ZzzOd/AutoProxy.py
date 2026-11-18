@@ -90,12 +90,13 @@ from app.utils import (
     ProcessInfo,
     ProcessManager,
     get_logger,
-    is_process_running,
     log_box,
     process,
 )
 from app.utils.common.log import sources as log_source
+from app.utils.common.process.manager import has_process_window
 from app.utils.common.process.runner import create_subprocess
+from app.utils.common.process.session import desktop_process_target
 
 from . import push_log as _push_log
 from .launchers import (
@@ -1726,6 +1727,9 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
 
         # 多实例触发者可能被正常跳过，整轮是否成功以实际参与用户的结果为准。
         if self._shutdown_after_success and self.run_book:
+            if desktop_process_target.get() is not None:
+                await self._push_dispatch_log("桌面分身任务已完成，已跳过本机关机")
+                return
             shutdown_error = ""
             try:
                 process = await create_subprocess("shutdown", "/s", "/t", "60")
@@ -1836,7 +1840,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         if not isinstance(self.game_process_manager, ProcessManager):
             return
         await self._push_dispatch_log(f"正在检查游戏进程 ({_ZZZ_GAME_PROCESS})...")
-        if is_process_running(_ZZZ_GAME_PROCESS):
+        if await has_process_window(_ZZZ_GAME_PROCESS):
             logger.info("检测到游戏本体进程已在运行，跳过由 MAS 重复启动游戏")
             await self._push_dispatch_log("检测到游戏已在运行，跳过启动")
             await self._note_launch_arguments_skipped()

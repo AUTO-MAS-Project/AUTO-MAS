@@ -21,6 +21,7 @@ import time
 import uuid
 from contextlib import suppress
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 
 from app.config import ConfigCollection
@@ -48,13 +49,17 @@ from app.utils import (
     ProcessManager,
     get_logger,
     is_process_alive,
-    is_process_running,
     log_box,
     process,
 )
 from app.utils import constants as _utils_constants
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
+from app.utils.common.process.manager import has_process_window
+from app.utils.common.process.session import (
+    DesktopProcessTarget,
+    desktop_process_target,
+)
 
 from . import push_log as _push_log
 from .tools.account_switch import async_switch_account
@@ -649,7 +654,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     logger.info("检测到鸣潮客户端进程正在运行，跳过重复启动")
                     await self._note_launch_arguments_skipped()
                     return
-            elif is_process_running(_WUWA_CLIENT_PROCESS):
+            elif await has_process_window(_WUWA_CLIENT_PROCESS):
                 try:
                     await self.game_manager.search_process(
                         self._game_process_info(),
@@ -680,7 +685,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             raise RuntimeError("未找到鸣潮官方启动器路径，请重新导入启动器")
         await self._push_dispatch_log("未检测到运行中的客户端，正在拉起官方启动器...")
         await self.game_manager.open_process(
-            launcher_path, *split_args(self.script_config.Game.Arguments)
+            launcher_path,
+            *split_args(self.script_config.Game.Arguments),
+            retain_desktop_descendants=True,
         )
         await self._push_dispatch_log("启动器已拉起，正在等待点击「进入游戏」...")
         # 启动器交互在后台线程内同步执行，on_log 契约是同步回调；
@@ -763,8 +770,32 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             find_client_pids(self.game_process_path, self.launcher_path)
         )
 
+    async def _desktop_maintenance_detect(
+        self, desktop: DesktopProcessTarget
+    ) -> str | None:
+        from app.task.desktop_session_worker import detect_desktop_maintenance
+
+        return await detect_desktop_maintenance(
+            desktop,
+            "okww_detect_maintenance",
+            {
+                "client_path": str(self.game_process_path)
+                if self.game_process_path
+                else None,
+                "launcher_path": str(self.launcher_path)
+                if self.launcher_path
+                else None,
+            },
+        )
+
     async def main_task(self):
         await self.prepare()
+        desktop = desktop_process_target.get()
+        detect_in_desktop = (
+            partial(self._desktop_maintenance_detect, desktop)
+            if desktop is not None
+            else None
+        )
         self.curdate = datetime.now(tz=_utils_constants.UTC4).strftime("%Y-%m-%d")
         if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") != self.curdate:
             self.cur_user_config.Data.LastProxyDate = datetime.now(
@@ -834,7 +865,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             # 鸣潮尚未接入维护公告源；游戏窗口就绪后按明确维护弹窗跳过当前账号。
             # 登录期间再由切号流程检查同一判据，避免维护被误判为登录失败；
             # 维护不会在重试间隔内结束，不再消耗剩余尝试次数
-            if await self.skip_on_game_maintenance(self._maintenance_detect):
+            if await self.skip_on_game_maintenance(
+                self._maintenance_detect, detect_in_desktop=detect_in_desktop
+            ):
                 break
 
             if (
@@ -933,7 +966,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
             self.wait_event.clear()
             maintenance_watch = asyncio.create_task(
-                self.watch_game_maintenance(self._maintenance_detect, self.wait_event)
+                self.watch_game_maintenance(
+                    self._maintenance_detect,
+                    self.wait_event,
+                    detect_in_desktop=detect_in_desktop,
+                )
             )
             try:
                 await self.wait_event.wait()

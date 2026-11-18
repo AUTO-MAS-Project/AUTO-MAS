@@ -111,12 +111,6 @@ SrcConfig = ConfigPayload[_config_models.SrcConfig]
 SrcConfigInput = ConfigInput[_config_models.SrcConfig]
 
 
-WhimboxConfig = ConfigPayload[_config_models.WhimboxConfig]
-
-
-WhimboxConfigInput = ConfigInput[_config_models.WhimboxConfig]
-
-
 ZzzOdConfig = ConfigPayload[_config_models.ZzzOdConfig]
 
 
@@ -139,7 +133,6 @@ class ScriptIndexItem(BaseModel):
                 "BetterGIConfig",
                 "ZzzOdConfig",
                 "BAAHConfig",
-                "WhimboxConfig",
                 "MSSConfig",
             ]
         },
@@ -167,7 +160,6 @@ class ScriptCreateIn(BaseModel):
                 "BetterGI",
                 "ZzzOd",
                 "BAAH",
-                "Whimbox",
                 "MSS",
             ]
         },
@@ -194,7 +186,6 @@ class ScriptCreateOut(OutBase):
         BetterGIConfig,
         ZzzOdConfig,
         BAAHConfig,
-        WhimboxConfig,
         MSSConfig,
     ] = Field(..., description="托管配置数据")
 
@@ -222,7 +213,6 @@ class ScriptGetOut(OutBase):
             BetterGIConfig,
             ZzzOdConfig,
             BAAHConfig,
-            WhimboxConfig,
             MSSConfig,
         ],
     ] = Field(..., description="托管数据字典, key来自于index列表的uid")
@@ -251,7 +241,6 @@ class ScriptUpdateIn(BaseModel):
         BetterGIConfigInput,
         ZzzOdConfigInput,
         BAAHConfigInput,
-        WhimboxConfigInput,
         MSSConfigInput,
     ] = Field(..., description="托管更新数据")
 

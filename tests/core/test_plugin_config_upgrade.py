@@ -18,6 +18,20 @@ from app.core.config.plugin_upgrade import (
 from app.utils import io as config_io
 
 
+@pytest.mark.parametrize("filename", ["scripts.yaml", "ScriptConfig.json"])
+def test_whimbox_upgrade_detects_only_collection_types(tmp_path, filename):
+    """已有奇想盒托管必须先补齐插件，普通业务文本不能触发安装。"""
+    path = tmp_path / filename
+    config_io.write_file(
+        path, {"order": [{"uid": str(uuid4()), "type": "WhimboxConfig"}]}
+    )
+    assert required_adapter_plugins(tmp_path) == {
+        "whimbox_adapter": "auto-mas-whimbox-adapter"
+    }
+    config_io.write_file(path, {"order": [], "notes": "WhimboxConfig"})
+    assert required_adapter_plugins(tmp_path) == {}
+
+
 @pytest.mark.parametrize("legacy", [False, True])
 def test_plugin_upgrade_preserves_documents_and_backup(tmp_path, legacy):
     """转换 JSON/YAML 类型索引并保留身份、用户输入及原始备份，重复准备不覆盖备份。"""

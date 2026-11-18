@@ -9,6 +9,7 @@ import { buildScriptEditorRoutes } from './scriptEditorRoutes'
 import { SCRIPT_PLUGIN_ROUTES } from '@/plugins/scriptAdapters'
 import { registerRouterAnalytics } from './analytics'
 import { measureStartup } from '@/utils/startupTiming'
+import { translate as t } from '@/i18n'
 import { fetchScriptCapabilities } from '@/composables/useScriptCapabilities'
 const logger = window.electronAPI.getLogger('路由管理')
 
@@ -222,6 +223,17 @@ const routes = [
     name: 'VirtualDisplayPrompt',
     component: () => import('../views/VirtualDisplayPrompt.vue'),
     meta: { title: '虚拟显示器', skipGuard: true },
+  },
+  {
+    path: '/desktop-session',
+    name: 'DesktopSession',
+    component: () => import('../views/desktopSession/DesktopSessionWindow.vue'),
+    meta: {
+      get title() {
+        return t('bootstrap.desktopSession.title')
+      },
+      skipGuard: true,
+    },
   },
 ]
 

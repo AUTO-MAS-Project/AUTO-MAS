@@ -10,7 +10,6 @@ import okNteIcon from '@/assets/ok-nte.ico'
 import okwwIcon from '@/assets/ok-ww.ico'
 import srcIcon from '@/assets/SRC.png'
 import maafwIcon from '@/assets/maafw.png'
-import whimboxIcon from '@/assets/whimbox.png'
 import mssIcon from '@/assets/mss.png'
 import zzzOdIcon from '@/assets/zzz-od.ico'
 
@@ -125,6 +124,7 @@ export const SCRIPT_METADATA = {
     },
   },
   MAA: SCRIPT_PLUGIN_METADATA.MAA,
+  Whimbox: SCRIPT_PLUGIN_METADATA.Whimbox,
   MaaEnd: {
     logo: maaEndIcon,
     label: 'MaaEnd',
@@ -230,24 +230,6 @@ export const SCRIPT_METADATA = {
       titleKey: 'core.scripts.type.SRC',
       descriptionKey: 'core.scripts.create.typeDesc.SRC',
       keywords: ['src', '星穹铁道'],
-      group: 'specialized',
-    },
-  },
-  Whimbox: {
-    logo: whimboxIcon,
-    label: 'Whimbox',
-    typeTagColor: 'pink',
-    routeSuffix: 'whimbox',
-    routeTitles: {
-      script: '编辑奇想盒脚本',
-      userAdd: '添加奇想盒用户',
-      userEdit: '编辑奇想盒用户',
-    },
-    createOrder: 12,
-    create: {
-      titleKey: 'core.scripts.type.Whimbox',
-      descriptionKey: 'core.scripts.create.typeDesc.Whimbox',
-      keywords: ['whimbox', '奇想盒', '无限暖暖', 'nikki'],
       group: 'specialized',
     },
   },

@@ -51,6 +51,7 @@ from app.utils import (
 )
 from app.utils import io as _utils_io
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+from app.utils.common.process.session import desktop_process_target
 
 from .AutoProxy import AutoProxyTask
 from .resource_loader import MaaEndResourceLoader, load_maaend_controller_protocol
@@ -174,6 +175,12 @@ class MaaEndManager(ScriptManagerBase):
             )
         except (OSError, KeyError, ValueError) as error:
             return f"MaaEnd 控制器配置读取失败: {error}"
+
+        if (
+            desktop_process_target.get() is not None
+            and self.controller_protocol != "Win32"
+        ):
+            return "MaaEnd 桌面分身仅支持 PC 控制器"
 
         if self.execution_mode == "Update":
             # 只更新 PC 客户端：不读 mxu-MaaEnd.json，也不起模拟器。

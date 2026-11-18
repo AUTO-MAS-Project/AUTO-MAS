@@ -32,6 +32,7 @@ from typing import Any, Awaitable, Callable
 
 from app.utils import ProcessManager, decode_bytes, get_logger, is_admin
 from app.utils import io as _utils_io
+from app.utils.common.process.session import desktop_process_target
 
 from .log_detect import (
     HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT,
@@ -657,14 +658,18 @@ class SRAProcessRegistry:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=build_sra_env(),
+            retain_desktop_descendants=True,
         )
+        remote = self._process_manager.desktop_process
+        if remote is not None:
+            return remote
         proc = self._process_manager.main_process
         if not isinstance(proc, asyncio.subprocess.Process):
             raise RuntimeError("SRA 子进程启动后未能被 ProcessManager 跟踪")
         return proc
 
     async def clear(self) -> None:
-        await self._process_manager.clear()
+        await self._process_manager.clear(keep_desktop_descendants=True)
 
     async def terminate_current_process(self) -> bool:
         if not await self._process_manager.is_running():
@@ -1192,7 +1197,10 @@ async def _communicate_sra_with_live_output(
             )
         )
 
-    wait_group = asyncio.gather(proc.wait(), *read_tasks)
+    wait_group = asyncio.gather(
+        proc.wait_exit() if desktop_process_target.get() is not None else proc.wait(),
+        *read_tasks,
+    )
     try:
         await asyncio.wait_for(wait_group, timeout=timeout)
     except Exception:

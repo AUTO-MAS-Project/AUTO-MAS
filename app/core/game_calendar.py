@@ -37,7 +37,6 @@ SCRIPT_CALENDAR_GAMES = {
         "M9A": "reverse1999",
         "BAAH": "bluearchive",
         "MSS": "stellasora",
-        "Whimbox": "infinitynikki",
     }.items()
 }
 BAAH_CALENDAR_SERVERS = {"CN": "cn", "JP": "jp", "Globle": "global"}

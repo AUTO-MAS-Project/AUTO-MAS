@@ -41,6 +41,7 @@ _EXCLUDED_DIRS = {
     "data/history-capture",
     "config/maafw_runtime_pool",
     "config/maafw_agent_venvs",
+    "config/desktop-session",
     "data/mfw",
     "data/maafw_blobs",
     "data/maafw_update_cache",
