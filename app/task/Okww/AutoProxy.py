@@ -17,6 +17,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 import asyncio
 import json
+import re
 import time
 import uuid
 from contextlib import suppress
@@ -109,9 +110,14 @@ _GAME_EXIT_WAIT_SECONDS = 90
 # 「游戏更新成功」是环境变更而非脚本错误，命中后至少保证再跑一轮（见 main_task）。
 _OKWW_GAME_UPDATED_LOG = "游戏更新成功, 游戏即将重启"
 _OKWW_GAME_UPDATED_MSG = "游戏更新成功，即将重启任务"
-_OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
-    (_OKWW_GAME_UPDATED_LOG, _OKWW_GAME_UPDATED_MSG),
-    ("info_set 错误", "OK-WW 流程产生错误，请检查游戏状态"),
+_OKWW_ERROR_LOG = re.compile(
+    r"\b(?:(?P<task>\w+):)?info_set 错误(?=[ \t\r\n]|$)"
+    r"[ \t]*(?P<detail>[^\r\n]*)"
+)
+_OKWW_ERROR_PREFIX = "OK-WW："
+# 上游明确拒绝当前配置，重复下发相同配置无法恢复。
+_OKWW_4C_CONFIG_ERROR = (
+    "选择“传送并刷取4C声骸”时，必须在刷取声骸任务中启用“传送至首领”。"
 )
 # 窗口丢失的日志有两条形态：hwnd>0 但 IsWindow(hwnd) 返回 0 时 exists 是 int → `connected:0`；
 # hwnd<=0 时 exists 仍是 bool → `connected:False`。两种都要认。
@@ -1007,13 +1013,19 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 await Notify.send_notice(
                     LocalNotice(
                         title="OK-WW 自动代理出现异常！",
-                        message=f"账号 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        message=f"账号 {self.cur_user_item.name}：{self.cur_user_log.status}",
                         ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                         duration_seconds=3,
                     )
                 )
             except Exception:
                 pass
+            if (
+                self.cur_user_log.status
+                == f"{_OKWW_ERROR_PREFIX}{_OKWW_4C_CONFIG_ERROR}"
+            ):
+                await self.script_info.append_log("\n请修正 4C 声骸配置后再运行")
+                break
             if attempt < run_limit:
                 await self.script_info.append_log(
                     f"\n将在稍后重试 ({attempt}/{run_limit})"
@@ -1052,11 +1064,25 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         log_status = "OK-WW 正常运行中"
         user_item_status: str | None = None
 
-        for needle, msg in _OKWW_BUILTIN_FATAL:
-            if needle in log:
-                log_status = msg
-                user_item_status = "异常"
-                break
+        if _OKWW_GAME_UPDATED_LOG in log:
+            log_status = _OKWW_GAME_UPDATED_MSG
+            user_item_status = "异常"
+        elif error := _OKWW_ERROR_LOG.search(log):
+            detail = error["detail"].strip()
+            if detail.startswith("账号列表中未找到 "):
+                detail = "登录列表中未找到目标账号"
+            elif (
+                error["task"] in ("MultiAccountConfigTask", "MultiAccountDailyTask")
+                and detail != _OKWW_4C_CONFIG_ERROR
+            ):
+                # 原生多账号失败正文可能包含完整登录标识。
+                detail = "原生多账号任务失败，请查看本地脚本日志"
+            log_status = (
+                f"{_OKWW_ERROR_PREFIX}{detail}"
+                if detail
+                else "OK-WW 流程产生错误，请检查游戏状态"
+            )
+            user_item_status = "异常"
         else:
             # 多账号任务的单次日常完成不代表整批完成，只认框架退出语。
             success_logs = (
