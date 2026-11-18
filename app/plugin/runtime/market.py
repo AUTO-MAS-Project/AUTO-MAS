@@ -61,25 +61,36 @@ async def refresh() -> None:
     await _refresh_pypi()
 
 
+def _install_target(meta: PluginMeta) -> tuple[str, str, str]:
+    """以发行包、插件和版本绑定安装入口，展示元数据变更不影响安装交接。"""
+    info = meta.info
+    return package_key(info.package_name), info.plugin_name, info.version
+
+
 async def _replace_catalog(drafts: list[PluginMeta]) -> None:
-    """完整目录校验后原子替换集合，内容相同时保留条目身份与已有 UI 操作目标。"""
+    """原子同步完整目录，保留相同安装目标的 UID。"""
     col = Config.plugin_catalog
     async with config_manager.transaction():
-        drafts = sorted(drafts, key=lambda item: package_key(item.info.package_name))
-        current = sorted(
-            col.values(), key=lambda item: package_key(item.info.package_name)
-        )
-        if [
-            {key: getattr(item.info, key) for key in ENTRY_FIELDS} for item in current
-        ] == [
-            {key: getattr(item.info, key) for key in ENTRY_FIELDS} for item in drafts
-        ]:
-            return
-        for uid in list(col.keys()):
-            col.remove(uid)
-        for draft in drafts:
-            col.add(PluginMeta, payload={"info": draft.info.model_dump(mode="python")})
-        await col.commit()
+        current = {_install_target(item): item for item in col.values()}
+        order = []
+        for draft in sorted(drafts, key=_install_target):
+            entry = current.get(_install_target(draft))
+            info = draft.info.model_dump(mode="python", include=ENTRY_FIELDS)
+            if entry is None:
+                order.append(col.add(PluginMeta, payload={"info": info}))
+                continue
+            if entry.info.model_dump(mode="python", include=ENTRY_FIELDS) != info:
+                await entry.update(draft, check_visibility=False)
+            order.append(entry.uid)
+
+        previous_order = list(col.keys())
+        if order != previous_order:
+            retained = set(order)
+            for uid in previous_order:
+                if uid not in retained:
+                    col.remove(uid)
+            col.set_order(order)
+            await col.commit()
 
 
 async def _refresh_pypi() -> None:
