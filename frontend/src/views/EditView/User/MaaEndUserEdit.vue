@@ -49,6 +49,17 @@
           layout="vertical"
           class="config-form"
         >
+          <a-card id="section-basic" class="section-card">
+            <BasicInfoSection
+              :heading="{ isEdit, saveStatus: isSaving ? 'saving' : 'idle' }"
+              v-model:form-data="formData"
+              :loading="loading"
+              :resource-options="resourceOptions"
+              :show-resource="resourceOptions.length > 0 && controllerType !== 'CloudADB'"
+              @save="handleFieldSave"
+            />
+          </a-card>
+
           <a-card id="section-source" class="section-card">
             <template #title>{{ t('core.edit.configurationSource') }}</template>
             <template #extra>
@@ -72,17 +83,6 @@
               @import-config="handleImportMaaEndConfig"
               @script-config="handleScriptConfig"
               @mode-change="handleConfigModeChange"
-            />
-          </a-card>
-
-          <a-card id="section-basic" class="section-card">
-            <BasicInfoSection
-              :heading="{ isEdit, saveStatus: isSaving ? 'saving' : 'idle' }"
-              v-model:form-data="formData"
-              :loading="loading"
-              :resource-options="resourceOptions"
-              :show-resource="resourceOptions.length > 0 && controllerType !== 'CloudADB'"
-              @save="handleFieldSave"
             />
           </a-card>
 
