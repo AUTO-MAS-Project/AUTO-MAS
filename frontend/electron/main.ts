@@ -821,7 +821,7 @@ function parseConfigInteger(value: string | undefined, fallback: number): number
  * 打包分发不受影响（由 vite 产出的静态资源在 dist/ 中，正常读取）。
  */
 function assertDevelopmentRuntime(): void {
-  if (!isDevelopmentEnvironment()) return
+  if (app.isPackaged) return
   if (getDevelopmentServerUrl()) return
 
   const message =

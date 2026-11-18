@@ -2,6 +2,9 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+import { app } from 'electron'
+import { getApplicationEnvironment, getDevelopmentServerUrl } from '../instanceConfig'
+import { getAppRoot } from '../environmentService'
 
 import {
   RUNTIME_BACKUP_SUFFIX,
@@ -38,9 +41,47 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  delete process.env.AUTO_MAS_BACKEND_REPO
+  delete process.env.AUTO_MAS_BACKEND_RUNTIME_ROOT
+  delete process.env.VITE_DEV_SERVER_URL
+  Object.defineProperty(app, 'isPackaged', { value: false, configurable: true })
+  Reflect.deleteProperty(app, 'getPath')
   delete process.env[RUNTIME_MODE_ENV]
   delete process.env[RUNTIME_EXE_ENV]
   fs.rmSync(appRoot, { recursive: true, force: true })
+})
+
+describe('安装版使用开发后端', () => {
+  it('显式选择源码后隔离数据和应用环境，取消选择恢复正式模式', () => {
+    Object.defineProperty(app, 'isPackaged', { value: true, configurable: true })
+    const source = path.join(appRoot, 'source')
+    const installed = path.join(appRoot, 'installed')
+    Object.defineProperty(app, 'getPath', {
+      value: () => path.join(installed, 'AUTO-MAS.exe'),
+      configurable: true,
+    })
+    process.env.AUTO_MAS_BACKEND_REPO = source
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env.VITE_DEV_SERVER_URL = 'http://127.0.0.1:5173'
+    const config = resolveRuntimeLaunchConfig(installed)
+    expect(config).toMatchObject({
+      mode: 'development',
+      repo: source,
+      dataRoot: source,
+      appRoot: installed,
+      reuseManagedEnvironment: true,
+    })
+    expect(getAppRoot()).toBe(source)
+    expect(getApplicationEnvironment()).toBe('development')
+    // 安装包仍加载自己的页面，不因切换后端而加载外部页面。
+    expect(getDevelopmentServerUrl()).toBeUndefined()
+    delete process.env.AUTO_MAS_BACKEND_REPO
+    expect(resolveRuntimeLaunchConfig(installed)).toMatchObject({
+      mode: 'managed',
+      dataRoot: installed,
+    })
+    expect(getApplicationEnvironment()).toBe('production')
+  })
 })
 
 describe('resolveRuntimeExecutable', () => {
