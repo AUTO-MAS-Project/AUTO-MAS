@@ -59,11 +59,13 @@ async def initialize_user(
 ) -> None:
     """初始化失败时撤回新成员，集合提交由公共入口提供，文件副作用留在专项。"""
     user_config = cast(OkwwUserConfig, user)
+    if user_config.Info.Base == BASE_NATIVE:
+        return
     try:
         await ensure_user_config_dir(
             script_config=cast(OkwwConfig, script),
             user_id=str(user.uid),
-            base=str(user_config.Info.Base or BASE_SHARED),
+            base=user_config.Info.Base,
         )
     except (Exception, asyncio.CancelledError):
         # 保留异常回滚；取消也在原 Task 撤回后原样传播。

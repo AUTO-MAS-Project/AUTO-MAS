@@ -32,6 +32,12 @@ test.describe('@okww-dynamic-config', () => {
     const { scriptId } = await post('/api/scripts/add', { type: 'Okww' })
     await post('/api/scripts/update', { scriptId, data: { Info: { RootPath: install } } })
     const { userId } = await post('/api/scripts/user/add', { scriptId })
+    await post('/api/scripts/user/update', {
+      scriptId,
+      userId,
+      data: { Info: { Base: 'shared', IfQuickConfig: true } },
+    })
+    await post('/api/scripts/config/import', { scriptId, userId })
     await app.goto(`/scripts/${scriptId}/users/${userId}/edit/okww`)
     await page.getByRole('tab', { name: '4C Echo settings', exact: true }).click()
     const item = page

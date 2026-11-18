@@ -18,39 +18,18 @@
 
 """ZZZ-OD 用户更新策略，不接触原生文件或提交配置。"""
 
-from typing import Any, cast
+from typing import Any
 
 from app.config import ConfigEntry
-from app.models.config import ZzzOdConfig, ZzzOdUserConfig
 from app.utils import constants as _utils_constants
 
 
 def prepare_user_update(
     script: ConfigEntry, user: ConfigEntry, *, data: dict[str, Any]
 ) -> None:
-    """原生来源只保留一个账号，并关闭不参与原生运行的注入配置。"""
-    script_config = cast(ZzzOdConfig, script)
-    user_config = cast(ZzzOdUserConfig, user)
+    """关闭不参与原生运行的注入配置。"""
     new_base = _utils_constants.normalize_base_source(data.get("Info", {}).get("Base"))
     if new_base == _utils_constants.BASE_NATIVE:
         data.setdefault("OneDragon", {})["AppList"] = "[]"
         # 直控恒为纯原生裸跑，旧覆写常规配置开关归关。
         data.setdefault("Info", {})["IfQuickConfig"] = False
-    if (
-        new_base == _utils_constants.BASE_NATIVE
-        and _utils_constants.normalize_base_source(
-            user_config.Info.Base or _utils_constants.BASE_INDEPENDENT
-        )
-        != _utils_constants.BASE_NATIVE
-        and any(
-            _utils_constants.normalize_base_source(
-                cfg.Info.Base or _utils_constants.BASE_INDEPENDENT
-            )
-            == _utils_constants.BASE_NATIVE
-            for other_uid, cfg in script_config.UserData.items()
-            if other_uid != user.uid
-        )
-    ):
-        raise ValueError(
-            "每个托管仅允许一个原生来源账号, 多账号请在该账号的实例管理中配置"
-        )

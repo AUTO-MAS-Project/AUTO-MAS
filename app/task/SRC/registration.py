@@ -36,11 +36,9 @@ def build_manager(script_item: ScriptItem) -> TaskExecuteBase:
 
 def build_config_handler() -> ScriptConfigHandler:
     from app.models.config import SrcUserConfig
-    from app.task.SRC.user_update import prepare_user_update as prepare_src_user_update
 
     return ScriptConfigHandler(
         user_config_class=SrcUserConfig,
-        prepare_user_update=prepare_src_user_update,
         emulator_binding=ScriptEmulatorBinding(
             group="Emulator", id_field="Id", index_field="Index"
         ),

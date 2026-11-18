@@ -67,7 +67,7 @@
 | T020 | system_resume_recovery_finished：电脑唤醒后能否继续使用 | 已接入，持续复核 |
 | T021 | script_create_finished：新增托管漏斗和导入失败率 | 已接入，持续复核 |
 | T022 | script_manage_finished：复制、删除、重排入口的使用 | 已接入，持续复核 |
-| T023 | user_create_finished：第一次建托管账号是否顺利 | 已接入，持续复核 |
+| T023 | user_create_finished：自动和手动创建托管账号是否顺利 | 共用账号创建接口的观察入口 |
 | T024 | user_manage_finished：删除、启停和批量账号管理 | 已接入，持续复核 |
 | T025 | config_write_finished：配置保存失败是否普遍 | 已接入，持续复核 |
 | T026 | user_config_write_finished：账号配置草稿与联动保存是否可靠 | 已接入，持续复核 |
