@@ -347,6 +347,8 @@ Sentry 重载结果也绑定开始时的开关代次，关闭再开启不补发�
 
 通用脚本计划表按原有计划管理与原生配置会话边界观察；仅新增计划类型分类 `UniversalPlanConfig`。
 
+OK-WW 动态日常、4C、梦魇、战斗、角色及月卡面板保存复用 `adapter_setup_finished`（`script_type=Okww`、`operation_kind=save`），由 `useOkwwNativeConfigApi` 按保存响应确认结果；字段读取、表单渲染不额外采集，配置内容不进入事件。
+
 后端后台暂存前的插件预检属于定时轮询内部准备，不另行采集；失败原因仅在本地吐司展示，不进入遥测。手动同版本更新的拒绝沿用 backend_update_finished，由更新服务确认失败，不重复记录预检事件。
 
 MaaEnd 协议空间与基质刷取的独立配置复用 `useUserApi.updateUser` 的 `config_write_finished`，执行及送货失败停止后续任务复用 `taskAnalytics.ts` 的运行终态观察。库存目标、关卡及日志不参与上报。

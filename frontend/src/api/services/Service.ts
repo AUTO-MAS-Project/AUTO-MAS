@@ -129,6 +129,8 @@ import type { OkNtePlanConfigsOut } from '../models/OkNtePlanConfigsOut';
 import type { OkwwArgumentsIn } from '../models/OkwwArgumentsIn';
 import type { OkwwArgumentsOut } from '../models/OkwwArgumentsOut';
 import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
+import type { OkwwTaskConfigIn } from '../models/OkwwTaskConfigIn';
+import type { OkwwTaskConfigOut } from '../models/OkwwTaskConfigOut';
 import type { OperationGetIn } from '../models/OperationGetIn';
 import type { OperationListIn } from '../models/OperationListIn';
 import type { OperationListOut } from '../models/OperationListOut';
@@ -1229,6 +1231,56 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/Upload/web',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Okww Task Config Api
+     * 读取原生字段及半动态控件描述。
+     * @param scriptId
+     * @param userId
+     * @param kind
+     * @param locale
+     * @returns OkwwTaskConfigOut Successful Response
+     * @throws ApiError
+     */
+    public static getOkwwTaskConfigApiApiScriptsOkwwTaskConfigGet(
+        scriptId: string,
+        userId: string,
+        kind: 'daily' | 'echo' | 'nightmare' | 'combat' | 'character' | 'monthly',
+        locale: 'zh_CN' | 'en_US' | 'ja_JP' = 'zh_CN',
+    ): CancelablePromise<OkwwTaskConfigOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/okww/task-config',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'kind': kind,
+                'locale': locale,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Save Okww Task Config Api
+     * 保存面板及已有日常字段，不修改基础来源。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static saveOkwwTaskConfigApiApiScriptsOkwwTaskConfigPost(
+        requestBody: OkwwTaskConfigIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/okww/task-config',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -5106,6 +5158,81 @@ export class Service {
         });
     }
     /**
+     * Get Plugin Installation
+     * 读取本次市场安装的持久结果，后端业务初始化失败时也允许查询。
+     * @param requestBody
+     * @param locale
+     * @returns PluginInstallationOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginInstallationApiPluginInstallationGetPost(
+        requestBody: PluginInstallationGetIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginInstallationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/get',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Prepare Plugin Installation Restart
+     * 业务忙时保持等待；空闲后取得重启资格并暂停新任务和插件命令。
+     * @param requestBody
+     * @param locale
+     * @returns PluginInstallationOut Successful Response
+     * @throws ApiError
+     */
+    public static preparePluginInstallationRestartApiPluginInstallationRestartPost(
+        requestBody: PluginInstallationRestartIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginInstallationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/restart',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Resume After Plugin Installation Restart
+     * 前端未能重启后端时归还资格，候选环境继续保留。
+     * @param requestBody
+     * @param locale
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static resumeAfterPluginInstallationRestartApiPluginInstallationResumePost(
+        requestBody: PluginInstallationRestartIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/resume',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 导入基建配置文件
      * @param requestBody
      * @returns OutBase Successful Response
@@ -5414,81 +5541,6 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/mirror-cdk',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Get Plugin Installation
-     * 读取本次市场安装的持久结果，后端业务初始化失败时也允许查询。
-     * @param requestBody
-     * @param locale
-     * @returns PluginInstallationOut Successful Response
-     * @throws ApiError
-     */
-    public static getPluginInstallationApiPluginInstallationGetPost(
-        requestBody: PluginInstallationGetIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<PluginInstallationOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin/installation/get',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Prepare Plugin Installation Restart
-     * 业务忙时保持等待；空闲后取得重启资格并暂停新任务和插件命令。
-     * @param requestBody
-     * @param locale
-     * @returns PluginInstallationOut Successful Response
-     * @throws ApiError
-     */
-    public static preparePluginInstallationRestartApiPluginInstallationRestartPost(
-        requestBody: PluginInstallationRestartIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<PluginInstallationOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin/installation/restart',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Resume After Plugin Installation Restart
-     * 前端未能重启后端时归还资格，候选环境继续保留。
-     * @param requestBody
-     * @param locale
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static resumeAfterPluginInstallationRestartApiPluginInstallationResumePost(
-        requestBody: PluginInstallationRestartIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin/installation/resume',
-            query: {
-                'locale': locale,
-            },
             body: requestBody,
             mediaType: 'application/json',
             errors: {

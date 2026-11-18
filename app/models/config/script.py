@@ -2502,6 +2502,18 @@ class OkwwUserConfig(DomainEntry):
     Notify: NotifyFields = Field(default_factory=NotifyFields)
 
     class TaskFields(OkwwTaskFields):
+        NativeConfigs: dict[str, dict[str, Any]] = Field(
+            default_factory=dict, description="专项高级面板的原生配置"
+        )
+
+        DailyConfig: dict[str, Any] = Field(
+            default_factory=dict, description="日常任务原生配置面板"
+        )
+
+        FarmEchoConfig: dict[str, Any] = Field(
+            default_factory=dict, description="4C 声骸原生配置覆写，空值继承来源配置"
+        )
+
         IfCustomArguments: bool = Field(
             default_factory=lambda: False, description="启用自定义启动参数"
         )
