@@ -1,3 +1,4 @@
+import { effectScope } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import type { PluginCatalogDocument } from '@/api'
 
@@ -106,6 +107,29 @@ describe('插件安装排队', () => {
     expect(boundary.error).not.toHaveBeenCalled()
     expect(installation.taskOf('b')).toBeNull()
     expect(installation.taskOf('e')?.phase).toBe('succeeded')
+    expect(lock.busy.value).toBe(false)
+  })
+
+  it('回读期间离开插件中心：不再派发下一项，剩余移出排队，锁释放', async () => {
+    const lock = createPluginOperationLock()
+    let finishReload = () => {}
+    const reloading = new Promise<void>(resolve => (finishReload = resolve))
+    const onInstalled = vi.fn(() => reloading)
+    const scope = effectScope()
+    const installation = scope.run(() => usePluginInstallation(lock, { onInstalled }))!
+    boundary.runCommand.mockResolvedValue({})
+
+    const pending = installation.installSequence([row('a'), row('b'), row('c')])
+    // a 已成功，正停在回读上；此时页面卸载。
+    await vi.waitFor(() => expect(onInstalled).toHaveBeenCalledTimes(1))
+    scope.stop()
+    finishReload()
+
+    expect(await pending).toEqual({ succeeded: ['a'], failed: [], skipped: ['b', 'c'] })
+    expect(boundary.runCommand.mock.calls.map(call => call[1].configUid)).toEqual(['a'])
+    expect(installation.taskOf('b')).toBeNull()
+    expect(installation.taskOf('c')).toBeNull()
+    expect(boundary.error).not.toHaveBeenCalled()
     expect(lock.busy.value).toBe(false)
   })
 

@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, getCurrentScope, onScopeDispose, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import type { PluginCatalogDocument } from '@/api'
@@ -19,7 +19,7 @@ export interface InstallTask {
 export interface InstallSequenceResult {
   succeeded: string[]
   failed: string[]
-  /** 没有执行的条目：前一项失败，或执行前按最新目录判断已无更新、不可安装。 */
+  /** 没有执行的条目：前一项失败、所属页面已释放，或执行前按最新目录判断已无更新、不可安装。 */
   skipped: string[]
 }
 
@@ -45,6 +45,9 @@ export function usePluginInstallation(
   const api = usePluginApi()
   const { t } = useI18n()
   const tasks = ref<Record<string, InstallTask>>({})
+  // 所属页面释放后 usePluginApi 不再跟踪命令：此后提交的安装会在后台开始却没人收尾。
+  let disposed = false
+  if (getCurrentScope()) onScopeDispose(() => (disposed = true))
 
   const update = (task: InstallTask) => {
     tasks.value = { ...tasks.value, [task.uid]: task }
@@ -95,7 +98,7 @@ export function usePluginInstallation(
   const installSequence = async (
     rows: readonly PluginCatalogDocument[]
   ): Promise<InstallSequenceResult> => {
-    // 「全部更新」按顺序逐个执行；一项失败即停止，剩余条目回到未排队状态。
+    // 「全部更新」按顺序逐个执行；一项失败或所属页面已释放即停止，剩余条目回到未排队状态。
     // 前一项升级（可能跨重启）并回读后目录会变，每项执行前按最新条目重新判断。
     const result: InstallSequenceResult = { succeeded: [], failed: [], skipped: [] }
     const candidates = rows.filter(installable)
@@ -110,6 +113,11 @@ export function usePluginInstallation(
       })
     try {
       for (const [index, queued] of candidates.entries()) {
+        if (disposed) {
+          // 离开插件中心后不再派发剩余项；已交给后台的那一项按原机制收尾。
+          result.skipped.push(...candidates.slice(index).map(item => item.uid))
+          break
+        }
         const row = options.latest ? options.latest(queued.uid) : queued
         if (!row || row.info?.update_available !== true || !installable(row)) {
           // 已无更新或不可安装：不提交命令，也不算失败。
