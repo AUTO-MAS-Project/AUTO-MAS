@@ -19,7 +19,7 @@ from pydantic import TypeAdapter
 from app.config import ConfigEntry, ConfigNode, config_manager
 from app.core import Config, Publisher
 from app.core.ws import protocol
-from app.models.config import CLASS_BOOK, ScriptEntry, UserEntry
+from app.models.config import ScriptEntry, UserEntry
 from app.models.schema import (
     TaskRequirements,
     TaskRuntimeSnapshot,
@@ -255,6 +255,7 @@ class _TaskManager:
                         else Config.ScriptConfig.keys(),
                     )
                 )
+                script_classes = Config.script_classes
                 for selected in selections:
                     item = queue.QueueItem[UUID(selected.uid)] if queue else None
                     script_id = item.Info.ScriptId if item else str(UUID(selected.uid))
@@ -276,7 +277,7 @@ class _TaskManager:
                                 "script_type": next(
                                     (
                                         name
-                                        for name, cls in CLASS_BOOK.items()
+                                        for name, cls in script_classes.items()
                                         if type(entry) is cls
                                     ),
                                     type(entry).__name__,
