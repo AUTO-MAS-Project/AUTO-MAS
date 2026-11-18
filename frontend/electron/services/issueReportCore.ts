@@ -186,8 +186,8 @@ export function resolveDataRoots(appRoot: string): string[] {
 interface InstallationOptions {
   /** ScriptConfig.json 实例记录中的类型值，如 'OkwwConfig' / 'MaaEndConfig' */
   configType: string
-  /** 安装目录字段名，如 'RootPath' / 'Path' */
-  pathField: 'Path' | 'RootPath'
+  /** 安装目录字段名，如 'RootPath' / 'Path'；HSR 分 'M7APath' / 'SRAPath' 两套 */
+  pathField: 'Path' | 'RootPath' | 'M7APath' | 'SRAPath'
   /** 问题包归档目录的标签前缀，如 'okww' */
   labelPrefix: string
 }
@@ -908,12 +908,19 @@ export function addRecentFailedMaaEndHistoryLogs(
   return addRecentAdapterHistoryLogs(state, dataRoots, { adapter: 'maaend', limit })
 }
 
+/** 专项 → scripts.yaml 里 order[].type 的配置类名 */
+const ADAPTER_CONFIG_TYPES = {
+  maa: 'MaaConfig',
+  maaend: 'MaaEndConfig',
+  hsr: 'HSRConfig',
+} as const
+
 /** 按名称快照匹配当前专项；同名、重命名或删除后的归属限制不由导出端猜测补齐。 */
 export function addRecentAdapterHistoryLogs(
   state: CollectorState,
   dataRoots: string[],
   options: {
-    adapter: 'maa' | 'maaend'
+    adapter: keyof typeof ADAPTER_CONFIG_TYPES
     limit?: number
     fallbackLatest?: boolean
     includeJson?: boolean
@@ -928,7 +935,7 @@ export function addRecentAdapterHistoryLogs(
     const names = new Set<string>()
     if (isRecord(document) && Array.isArray(document.order) && isRecord(document.data)) {
       for (const instance of document.order) {
-        const type = options.adapter === 'maa' ? 'MaaConfig' : 'MaaEndConfig'
+        const type = ADAPTER_CONFIG_TYPES[options.adapter]
         if (!isRecord(instance) || instance.type !== type || typeof instance.uid !== 'string')
           continue
         const config = document.data[instance.uid]

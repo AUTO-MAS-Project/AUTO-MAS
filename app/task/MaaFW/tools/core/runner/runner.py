@@ -81,6 +81,7 @@ from app.task.MaaFW.tools.core.runner.environment import (
     host_architecture,
     host_runtime_rid_dirs,
     project_maafw_runtime_path,
+    runtime_missing_dependencies,
     write_agent_pip_constraint,
 )
 from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
@@ -393,7 +394,7 @@ TASK_STOP_SETTLE_POLL_SECONDS = 0.05
 # 收尾任务（nonFatalMessage）被我们自己停下（单任务时限、原地打转）之后，最多等这么久
 # 看脚本侧是不是也强停了：MaaTaskerPostStop 的通知比 job.wait() 返回晚到（实测约 19ms）。
 NONFATAL_SCRIPT_STOP_NOTICE_SECONDS = 0.2
-# 原地打转检测（Run.LoopGuard，实验性，默认关）判定卡死：停这个任务、截图，收尾与
+# 原地打转检测（Run.LoopGuard，配置默认开）判定卡死：停这个任务、截图，收尾与
 # 单任务超时同一口径。截图 kind 只能是小写字母（见 SIGNAL_SCREENSHOT_KINDS 的说明）。
 LOOP_GUARD_MESSAGE = "MaaFW 任务原地打转"
 LOOP_GUARD_SCREENSHOT_KIND = "loop"
@@ -667,11 +668,25 @@ def _agent_binary_path() -> str:
     return str(Path(sysconfig.get_path("purelib")) / "MaaAgentBinary")
 
 
+class _NativeRuntimeOpenError(Exception):
+    """打开 runner 选中的那份原生库失败（包着 ctypes 的 OSError）。"""
+
+    def __init__(self, cause: OSError) -> None:
+        super().__init__(str(cause))
+        self.cause = cause
+
+
 def _ensure_maafw_client_library_mode(runtime_path: Path | None = None) -> None:
     """Keep MaaFW loaded as a client library inside AUTO-MAS."""
 
     if runtime_path is not None:
-        Library.open(runtime_path, agent_server=False)
+        try:
+            Library.open(runtime_path, agent_server=False)
+            # open 只记路径，DLL 到第一次取 framework 才真加载；在这里加载，失败才认得出
+            # 是这份库的问题
+            Library.framework()
+        except OSError as exc:
+            raise _NativeRuntimeOpenError(exc) from exc
 
     if Library.is_agent_server():
         maa_bin_path = Path(maa_package.__file__).resolve().parent / "bin"
@@ -935,6 +950,34 @@ def runner_maafw_runtime_path(project_path: Path | None) -> Path | None:
     return project_maafw_runtime_path(project_path) or _pool_native_runtime_path()
 
 
+def _describe_native_load_failure(
+    runtime_path: Path, project_path: Path | None, exc: OSError
+) -> str:
+    """原生库加载失败时说清楚加载的是哪份、缺了什么。
+
+    Windows 的原报错只有「找不到 MaaFramework.dll 或其依赖」，看不出是哪份库、缺哪个依赖；
+    问题包也只能靠这一行日志知道 runner 实际选了哪个目录。
+    """
+
+    location = str(runtime_path)
+    if project_path is not None:
+        try:
+            location = runtime_path.relative_to(project_path).as_posix() or "."
+        except ValueError:
+            location = mask_home_path(str(runtime_path))
+    version = _read_runtime_maafw_version(runtime_path) or "版本未知"
+    missing = runtime_missing_dependencies(runtime_path)
+    if missing:
+        detail = f"目录里缺少依赖：{'、'.join(missing)}"
+    elif missing is None:
+        detail = "依赖是否齐全未检查"
+    else:
+        detail = "依赖文件齐全"
+    return (
+        f"MaaFramework 原生库加载失败：{location}（{version}），{detail}。原报错：{exc}"
+    )
+
+
 def _same_directory(left: Path, right: Path) -> bool:
     return os.path.normcase(str(left.resolve())) == os.path.normcase(
         str(right.resolve())
@@ -966,7 +1009,12 @@ def _ensure_maafw_global_init(
         )
         if architecture_error:
             raise RuntimeError(architecture_error)
-        _ensure_maafw_client_library_mode(runtime_path)
+        try:
+            _ensure_maafw_client_library_mode(runtime_path)
+        except _NativeRuntimeOpenError as exc:
+            raise RuntimeError(
+                _describe_native_load_failure(runtime_path, project_path, exc.cause)
+            ) from exc.cause
         if send_log is not None:
             loaded, binding = describe_loaded_maafw()
             source = str(runtime_path)
@@ -1136,7 +1184,7 @@ class MaaFWRunner:
         self._signal_hit: tuple[str, str] | None = None
         self._signal_task: str | None = None
         self._signal_stop_thread: threading.Thread | None = None
-        # 原地打转检测（Run.LoopGuard，实验性）。关闭时不建检测器、不喂事件、不扫豁免。
+        # 原地打转检测（Run.LoopGuard）。关闭时不建检测器、不喂事件、不扫豁免。
         # 回调线程持 _loop_guard_lock 喂事件；主线程每个任务投递前持同一把锁 reset()。
         # 判到卡死时记下（任务名, 判定）并在单独线程里 post_stop，主线程收尾。
         self._loop_guard_lock: threading.Lock = threading.Lock()
@@ -1833,7 +1881,7 @@ class MaaFWRunner:
     ) -> Literal["next", "skip_rest"] | None:
         """本任务被原地打转检测停掉时收尾；返回值同 ``_handle_task_deadline``。
 
-        口径与 ``_handle_task_deadline`` 完全一致：计划里的第一个任务或特调声明的关键
+        口径与 ``_handle_task_deadline`` 完全一致：受启动保护的第一个任务或特调声明的关键
         任务（``abortRoundMessage``）结束本轮，收尾任务（``nonFatalMessage``）放过（恰好
         又被脚本侧强停时跳过剩余任务；排在中间且等满仍停不下来时结束本轮并计入失败），
         其余记一条任务失败再继续。必须早于

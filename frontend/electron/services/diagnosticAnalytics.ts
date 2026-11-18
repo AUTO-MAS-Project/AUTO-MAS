@@ -18,6 +18,7 @@ const reportTypes: Record<string, AnalyticsScriptType> = {
   'maafw:exportIssueReport': 'MaaFW',
   'm9a:exportIssueReport': 'M9A',
   'mss:exportIssueReport': 'MSS',
+  'hsr:exportIssueReport': 'HSR',
 }
 /** 对话框取消与落盘失败分开；只读取结构化结果，不发送附件、路径和错误内容。 */
 export async function observeDiagnosticExport<T extends ExportResult>(

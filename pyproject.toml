@@ -1,6 +1,6 @@
 [project]
 name = "auto-mas"
-version = "5.8.0"
+version = "5.9.0b1"
 description = "AUTO-MAS 多脚本、多配置管理与自动化软件"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -45,6 +45,8 @@ dependencies = [
     "pyzipper==0.4.0",
     "blinker>=1.9.0",
     "python-socks[asyncio]==3.1.1",
+    "pyproject-metadata==0.12.1",
+    "watchdog==6.0.0",
 ]
 
 [project.urls]

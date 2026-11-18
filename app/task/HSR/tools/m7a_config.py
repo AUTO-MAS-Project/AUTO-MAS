@@ -34,7 +34,7 @@ import yaml
 
 from app.utils import get_logger
 
-from .managed_fields import managed_field_keys
+from .managed_fields import M7A_MANAGED_FIELDS, auto_managed_keys, managed_field_keys
 from .managed_overlay import (
     DroppedOverride,
     log_dropped_overrides,
@@ -65,10 +65,29 @@ M7A_MANAGED_STAGE_KEYS: frozenset[str] = frozenset(
 )
 
 
-def m7a_managed_keys(module_key: str) -> frozenset[str]:
-    """某模块 MAS 允许覆盖的三月七原生键（即该模块托管表单的全部字段）。"""
+def m7a_managed_keys(
+    module_key: str, native_config: Mapping[str, Any] | None = None
+) -> frozenset[str]:
+    """某模块 MAS 允许覆盖的三月七原生键（即该模块托管表单的全部字段）。
 
-    return frozenset(managed_field_keys("M7A", module_key)) - M7A_MANAGED_STAGE_KEYS
+    给了 ``native_config`` 时含按规则自动跟进的新键，不给时只有字段表。
+    """
+
+    return (
+        frozenset(managed_field_keys("M7A", module_key, native_config))
+        - M7A_MANAGED_STAGE_KEYS
+    )
+
+
+def m7a_auto_patch_keys(native_config: Mapping[str, Any]) -> frozenset[str]:
+    """各模块自动跟进的键：静态 patch 白名单不认识它们，写 config.yaml 时要补进去。"""
+
+    return frozenset().union(
+        *(
+            auto_managed_keys("M7A", module_key, native_config)
+            for module_key in M7A_MANAGED_FIELDS
+        )
+    )
 
 
 def _user_managed_options(user_config: Any, module_key: str) -> dict[str, Any]:
@@ -103,7 +122,7 @@ def overlay_m7a_managed_options(
     第二个返回值交给表单与运行日志，不再整体抛错。
     """
 
-    managed = m7a_managed_keys(module_key)
+    managed = m7a_managed_keys(module_key, native_config)
     native = {
         str(key): value for key, value in native_config.items() if str(key) in managed
     }
@@ -181,9 +200,11 @@ M7A_NOTIFICATION_DISABLE_PATCH: dict[str, Any] = {
     "notify_bark_enable": False,
     "notify_smtp_enable": False,
     "notify_onebot_enable": False,
+    "notify_qqbot_enable": False,
     "notify_gocqhttp_enable": False,
     "notify_dingtalk_enable": False,
     "notify_pushplus_enable": False,
+    "notify_qmsg_enable": False,
     "notify_wechatworkapp_enable": False,
     "notify_wechatworkbot_enable": False,
     "notify_gotify_enable": False,
@@ -504,7 +525,6 @@ M7A_WEEKLY_DIVERGENT_STABLE_MODE_DEFAULT: bool = False
 M7A_CURRENCY_WARS_TYPE: str = "normal"  # 标准博弈
 M7A_CURRENCY_WARS_RANK_DIFFICULTY: str = "lowest"  # 最低职级
 M7A_CURRENCY_WARS_STRATEGY: str = "aglaea"  # 阿格莱雅策略
-M7A_CURRENCY_WARS_STRATEGY_RESTART_ON_SPECIAL_TAGS: bool = True  # 特定词条接受重开
 M7A_CURRENCY_WARS_FAST_MODE: bool = False
 M7A_CURRENCY_WARS_BONUS_ENABLE: bool = True  # 积分奖励启用
 
@@ -603,8 +623,9 @@ def _apply_managed_patch(
     effective, dropped = overlay_m7a_managed_options(native, user_config, module_key)
     log_dropped_overrides(logger, "M7A", module_key, dropped)
     protected = M7A_MANAGED_STAGE_KEYS
+    auto_keys = frozenset(auto_managed_keys("M7A", module_key, native))
     for key, value in effective.items():
-        if key in whitelist and key not in protected:
+        if (key in whitelist or key in auto_keys) and key not in protected:
             patch[key] = value
     return patch
 
@@ -794,12 +815,6 @@ def build_currency_wars_patch(
         ),
         "currencywars_strategy": str(
             native_options.get("currencywars_strategy", M7A_CURRENCY_WARS_STRATEGY)
-        ),
-        "currencywars_strategy_restart_on_special_tags": bool(
-            native_options.get(
-                "currencywars_strategy_restart_on_special_tags",
-                M7A_CURRENCY_WARS_STRATEGY_RESTART_ON_SPECIAL_TAGS,
-            )
         ),
         "currencywars_fast_mode": bool(
             native_options.get("currencywars_fast_mode", M7A_CURRENCY_WARS_FAST_MODE)

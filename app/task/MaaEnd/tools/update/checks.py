@@ -57,19 +57,21 @@ def _resolve_within(root: Path, name: str) -> Path:
 
 
 async def _release_install_dir(game_exe: Path) -> str | None:
-    """让客户端退出；退不掉时返回给用户看的说明。
+    """请求本会话的客户端退出，再检查共享安装是否仍被占用。"""
 
-    不等句柄释放：从这一步到第一次写盘之间还隔着取 hpatchz 与下完几 GB 差量，那几分钟
-    本身就是等待。检测与中止都按镜像路径的精确匹配走，同一套判据——认不出来的进程既不会
-    被关掉，也不会被当成占用者；游戏目录下别的进程挡路时由落地的 PermissionError 说。
-    """
-
-    if not await process.is_process_running(game_exe):
+    if await process.is_process_running(game_exe):
+        logger.info(f"终末地客户端正在运行，先请求退出: {game_exe}")
+        if not await process.kill_process(game_exe):
+            return "终末地客户端没能退出，请手动退出游戏后重试"
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 3
+        while await process.is_process_running(game_exe):
+            if loop.time() >= deadline:
+                return "终末地客户端没能退出，请手动退出游戏后重试"
+            await asyncio.sleep(0.1)
+    if await process.is_process_stopped(game_exe, all_sessions=True):
         return None
-    logger.info(f"终末地客户端正在运行，先请求退出: {game_exe}")
-    if await process.kill_process(game_exe):
-        return None
-    return "终末地客户端没能退出，请手动退出游戏后重试"
+    return "无法确认此安装目录的终末地客户端已退出，请完全退出游戏后重试"
 
 
 def _landing_need(

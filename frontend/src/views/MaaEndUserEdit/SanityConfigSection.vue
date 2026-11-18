@@ -1,498 +1,165 @@
 <template>
   <div>
-    <SanityStrategySection
-      :enabled="formData.Task.IfSanity"
-      :show-detail="showSanityDetail"
-      :strategy="formData.Info.SanityStrategy"
-      :disabled="controlsDisabled"
-      :config-loading="configLoading"
-      :show-config-mask="showConfigMask"
-      @enable="value => emitSave('Task.IfSanity', value)"
-      @save="value => emitSave('Info.SanityStrategy', value)"
-      @configure="emit('configure')"
-    />
-    <a-row v-if="showSanityDetail && isMasStrategy" :gutter="24">
+    <a-row :gutter="24">
       <a-col :xs="24" :sm="12">
         <a-form-item :label="t('core.edit.sanityTaskConfigurationMode')">
           <a-select
-            v-model:value="formData.Info.SanityMode"
-            :options="resolvedSanityModeOptions"
+            :value="formData.Info.SanityMode"
+            :options="sanityModeOptions"
             :disabled="loading"
-            size="middle"
-            @change="emitSave('Info.SanityMode', formData.Info.SanityMode)"
+            @change="(value: string) => emit('save', 'Info.SanityMode', value)"
           />
         </a-form-item>
       </a-col>
-
       <a-col :xs="24" :sm="12">
-        <a-form-item>
-          <template #label>
-            <FieldLabelWithHint
-              :text="t('core.edit.sanityTask')"
-              :hint="t('core.edit.pickSanityTaskType')"
-              variant="form"
-            />
-          </template>
+        <a-form-item :label="t('core.edit.sanityTask')">
           <div v-if="isPlanMode" class="plan-mode-display">
-            <span>{{ displaySanityTaskType }}</span>
-            <span class="plan-source">{{ t('core.edit.fromPlan') }}</span>
+            {{ displayType }}
           </div>
           <a-select
             v-else
-            v-model:value="formData.Task.SanityTaskType"
-            :options="sanityTaskTypeOptions"
-            :disabled="optionControlsDisabled"
-            size="middle"
-            @change="handleSanityTaskTypeChange"
+            :value="formData.Task.SanityTaskType"
+            :options="taskTypes"
+            :disabled="disabled"
+            @change="handleTypeChange"
           />
         </a-form-item>
       </a-col>
-
-      <a-col v-if="effectiveSanityTaskType === 'Essence'" :xs="24" :sm="12">
-        <a-form-item :label="t('core.edit.maaEndEssenceFarmMode')">
-          <div v-if="isPlanMode" class="plan-mode-display">
-            <span>{{ displayEssenceMenu }}</span>
-            <span class="plan-source">{{ t('core.edit.fromPlan') }}</span>
-          </div>
-          <a-select
-            v-else
-            :value="formData.Task.AutoEssenceMenu"
-            :options="resolvedEssenceMenuOptions"
-            :disabled="optionControlsDisabled"
-            size="middle"
-            @change="handleEssenceMenuChange"
-          />
-        </a-form-item>
-      </a-col>
-
       <a-col :xs="24" :sm="12">
-        <a-form-item>
-          <template #label>
-            <FieldLabelWithHint :text="taskOptionLabel" :hint="taskOptionTooltip" variant="form" />
-          </template>
-          <div v-if="isPlanMode" class="plan-mode-display">
-            <span>{{ displayCurrentTask }}</span>
-            <span class="plan-source">{{ t('core.edit.fromPlan') }}</span>
-          </div>
+        <a-form-item :label="taskTitle">
+          <div v-if="isPlanMode" class="plan-mode-display">{{ displayTask }}</div>
           <a-select
             v-else
-            v-model:value="currentTaskValue"
-            :options="currentTaskOptions"
-            :mode="isTargetEssenceMode ? 'multiple' : undefined"
-            :disabled="optionControlsDisabled"
-            :loading="normalizedSanityTaskType === 'Essence' && optionsLoading"
-            size="middle"
-            @change="handleTaskOptionChange"
+            :value="currentValue"
+            :options="currentOptions"
+            :disabled="disabled"
+            @change="handleTaskChange"
           />
         </a-form-item>
       </a-col>
-      <a-col v-if="showRewardGroupSelect" :xs="24" :sm="12">
-        <a-form-item>
-          <template #label>
-            <FieldLabelWithHint
-              :text="t('core.edit.rewardGroup')"
-              :hint="t('core.edit.rewardGroupsProtocolSpace')"
-              variant="form"
-            />
-          </template>
+      <a-col v-if="rewardEnabled" :xs="24" :sm="12">
+        <a-form-item :label="t('core.edit.rewardGroup')">
           <div v-if="isPlanMode" class="plan-mode-display">
-            <span>{{ displayRewardsSet }}</span>
-            <span class="plan-source">{{ t('core.edit.fromPlan') }}</span>
+            {{ REWARD_LABEL_MAP[planModeConfig!.RewardsSetOption] }}
           </div>
           <a-select
             v-else
-            v-model:value="formData.Task.RewardsSetOption"
+            :value="formData.Task.RewardsSetOption"
             :options="REWARD_OPTIONS"
-            :disabled="optionControlsDisabled"
-            size="middle"
-            @change="emitSave('Task.RewardsSetOption', formData.Task.RewardsSetOption)"
+            :disabled="disabled"
+            @change="(value: string) => emit('save', 'Task.RewardsSetOption', value)"
           />
         </a-form-item>
       </a-col>
     </a-row>
+    <a-alert
+      v-if="isPlanMode && planModeConfig?.SanityTaskType === 'Essence'"
+      type="info"
+      show-icon
+      :message="t('core.edit.maaEndProtocolPlanSkipped')"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { computed, watch } from 'vue'
-import SanityStrategySection from './SanityStrategySection.vue'
 import type { ComboBoxItem } from '@/api'
+import type { MaaEndUserForm } from './userDefaults'
 import {
   PROTOCOL_SPACE_TASK_FIELD_MAP,
   PROTOCOL_SPACE_TASK_OPTIONS_MAP,
   PROTOCOL_SPACE_TASK_TITLE_MAP,
-  PROTOCOL_SPACE_TASK_TOOLTIP_MAP,
-  REWARD_OPTIONS,
-  REWARD_LABEL_MAP,
   SANITY_TASK_TYPE_OPTIONS,
   SANITY_TASK_TYPE_LABEL_MAP,
+  REWARD_OPTIONS,
+  REWARD_LABEL_MAP,
   getSanityTaskDisplayValue,
-  getEssenceTargetWeaponOptions,
   isProtocolSpaceRewardEnabled,
-  normalizeMaaEndSanityConfig,
-  AUTO_ESSENCE_MENU_OPTIONS,
-  type AutoEssenceMenu,
-  type MaaEndEssenceTargetGroup,
   type MaaEndSanityConfig,
   type ProtocolSpaceTab,
-  type SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
 
-const { t } = useI18n()
-
-interface FieldChange {
-  key: string
-  value: any
-}
-
-const props = withDefaults(
-  defineProps<{
-    formData: any
-    loading?: boolean
-    ifQuickConfig?: boolean
-    crisisDrillsOptions: ComboBoxItem[]
-    essenceLocationOptions: ComboBoxItem[]
-    essenceMenuOptions?: ComboBoxItem[]
-    essenceTargetWeaponGroups?: MaaEndEssenceTargetGroup[]
-    optionsLoading?: boolean
-    optionsLoaded?: boolean
-    isPlanMode?: boolean
-    configLoading?: boolean
-    showConfigMask?: boolean
-    // 默认值不写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
-    // 引用不到 useI18n() 的 t。兜底见下方 resolvedSanityModeOptions。
-    // oxlint-disable-next-line vue/require-default-prop
-    sanityModeOptions?: Array<{ label: string; value: string }>
-    planModeConfig?: MaaEndSanityConfig | null
-  }>(),
-  {
-    loading: false,
-    ifQuickConfig: true,
-    optionsLoading: false,
-    optionsLoaded: false,
-    isPlanMode: false,
-    configLoading: false,
-    showConfigMask: false,
-    essenceMenuOptions: () => [],
-    essenceTargetWeaponGroups: () => [],
-    planModeConfig: null,
-  }
-)
-
-// 默认值不能写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
-// 引用不到 useI18n() 返回的 t，编译期直接报错。改成在这里兜底。
-const resolvedSanityModeOptions = computed(
-  () => props.sanityModeOptions ?? [{ label: t('core.edit.fixed'), value: 'Fixed' }]
-)
-
-const emit = defineEmits<{
-  save: [key: string, value: any]
-  saveBatch: [changes: FieldChange[]]
-  configure: []
+const props = defineProps<{
+  formData: MaaEndUserForm
+  loading: boolean
+  crisisDrillsOptions: ComboBoxItem[]
+  optionsLoading: boolean
+  sanityModeOptions: Array<{ label: string; value: string }>
+  isPlanMode: boolean
+  planModeConfig: MaaEndSanityConfig | null
 }>()
-
+const emit = defineEmits<{
+  save: [key: string, value: unknown]
+  saveBatch: [changes: Array<{ key: string; value: unknown }>]
+}>()
+const { t } = useI18n()
 const formData = props.formData
-const isMasStrategy = computed(() => (formData.Info.SanityStrategy ?? 'MAS') === 'MAS')
-const controlsDisabled = computed(() => {
-  return props.loading || !props.ifQuickConfig
-})
-
-const optionControlsDisabled = computed(
-  () => controlsDisabled.value || props.optionsLoading || !isMasStrategy.value
-)
-const displayPlanConfig = computed(() =>
-  props.planModeConfig ? normalizeMaaEndSanityConfig(props.planModeConfig) : null
-)
-const displaySanityTaskType = computed(() =>
-  displayPlanConfig.value
-    ? SANITY_TASK_TYPE_LABEL_MAP[displayPlanConfig.value.SanityTaskType]
-    : '未读取到计划表配置'
-)
-const displayCurrentTask = computed(() =>
-  displayPlanConfig.value
-    ? getSanityTaskDisplayValue(
-        displayPlanConfig.value,
-        props.essenceLocationOptions,
-        props.crisisDrillsOptions
-      )
-    : '未读取到计划表配置'
-)
-const displayEssenceMenu = computed(() => {
-  if (!displayPlanConfig.value || displayPlanConfig.value.SanityTaskType !== 'Essence') {
-    return '未读取到计划表配置'
-  }
-  return (
-    resolvedEssenceMenuOptions.value.find(
-      option => option.value === displayPlanConfig.value?.AutoEssenceMenu
-    )?.label ?? displayPlanConfig.value.AutoEssenceMenu
-  )
-})
-const displayRewardsSet = computed(() =>
-  displayPlanConfig.value
-    ? REWARD_LABEL_MAP[displayPlanConfig.value.RewardsSetOption]
-    : '未读取到计划表配置'
-)
-
-const sanityTaskTypeOptions = computed(() =>
-  SANITY_TASK_TYPE_OPTIONS.filter(
-    option =>
-      option.value !== 'Essence' ||
-      !props.optionsLoaded ||
-      props.essenceLocationOptions.length > 0 ||
-      props.essenceTargetWeaponGroups.length > 0
-  )
-)
-
-const resolvedEssenceMenuOptions = computed(() => {
-  if (props.essenceMenuOptions.length) return props.essenceMenuOptions
-  // 旧版 MaaEnd 没有 AutoEssenceMenu；只暴露 MAS 原有的指定地点语义。
-  if (props.optionsLoaded) return [{ label: '指定地点', value: 'Location' }]
-  return AUTO_ESSENCE_MENU_OPTIONS.map(option => ({
-    label: option.label,
-    value: option.value,
-  }))
-})
-
-const essenceTargetWeaponOptions = computed(() =>
-  getEssenceTargetWeaponOptions(
-    props.essenceTargetWeaponGroups,
-    formData.Task.AutoEssenceTargetWeapons ?? []
-  )
-)
-
-const effectiveEssenceMenu = computed<AutoEssenceMenu>(() => {
-  const value = displayPlanConfig.value?.AutoEssenceMenu ?? formData.Task.AutoEssenceMenu
-  return resolvedEssenceMenuOptions.value.some(option => option.value === value)
-    ? value
-    : 'Location'
-})
-const isTargetEssenceMode = computed(
-  () => normalizedSanityTaskType.value === 'Essence' && effectiveEssenceMenu.value === 'Target'
-)
-
-const normalizedSanityTaskType = computed<SanityTaskType>(() =>
-  sanityTaskTypeOptions.value.some(option => option.value === formData.Task.SanityTaskType)
-    ? formData.Task.SanityTaskType
+const disabled = computed(() => props.loading || props.optionsLoading)
+const taskTypes = SANITY_TASK_TYPE_OPTIONS.filter(option => option.value !== 'Essence')
+const taskType = computed<ProtocolSpaceTab>(() =>
+  taskTypes.some(option => option.value === formData.Task.SanityTaskType)
+    ? (formData.Task.SanityTaskType as ProtocolSpaceTab)
     : 'OperatorProgression'
 )
-
-const effectiveSanityTaskType = computed<SanityTaskType>(
-  () => displayPlanConfig.value?.SanityTaskType ?? normalizedSanityTaskType.value
-)
-
-const currentField = computed(
-  () => PROTOCOL_SPACE_TASK_FIELD_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab]
-)
-const currentTaskSaveKey = computed(() =>
-  normalizedSanityTaskType.value === 'Essence'
-    ? isTargetEssenceMode.value
-      ? 'Task.AutoEssenceTargetWeapons'
-      : 'Task.AutoEssenceSpecifiedLocation'
-    : `Task.${currentField.value}`
-)
-
-const currentTaskOptions = computed<readonly (ComboBoxItem & { rewards?: boolean })[]>(() => {
-  if (normalizedSanityTaskType.value === 'Essence') {
-    return isTargetEssenceMode.value
-      ? essenceTargetWeaponOptions.value
-      : props.essenceLocationOptions
-  }
-  return normalizedSanityTaskType.value === 'CrisisDrills'
+const field = computed(() => PROTOCOL_SPACE_TASK_FIELD_MAP[taskType.value])
+const currentValue = computed(() => formData.Task[field.value])
+const currentOptions = computed(() =>
+  taskType.value === 'CrisisDrills'
     ? props.crisisDrillsOptions
-    : PROTOCOL_SPACE_TASK_OPTIONS_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab]
-})
-
-const currentTaskValue = computed({
-  get: () => {
-    if (normalizedSanityTaskType.value === 'Essence') {
-      return isTargetEssenceMode.value
-        ? formData.Task.AutoEssenceTargetWeapons
-        : formData.Task.AutoEssenceSpecifiedLocation
-    }
-    return formData.Task[currentField.value]
-  },
-  set: value => {
-    if (normalizedSanityTaskType.value === 'Essence') {
-      if (isTargetEssenceMode.value) {
-        formData.Task.AutoEssenceTargetWeapons = Array.isArray(value) ? value : []
-      } else {
-        formData.Task.AutoEssenceSpecifiedLocation = value
-      }
-      return
-    }
-    formData.Task[currentField.value] = value
-  },
-})
-
-const rewardGroupEnabled = computed(() => {
-  if (normalizedSanityTaskType.value === 'Essence') return false
-  const option = currentTaskOptions.value.find(option => option.value === currentTaskValue.value)
-  return Boolean(option && 'rewards' in option && option.rewards)
-})
-
-const taskOptionLabel = computed(() =>
-  effectiveSanityTaskType.value === 'Essence'
-    ? effectiveEssenceMenu.value === 'Target'
-      ? '目标武器'
-      : '基质地点'
-    : (PROTOCOL_SPACE_TASK_TITLE_MAP[effectiveSanityTaskType.value as ProtocolSpaceTab] ??
-      '协议空间任务')
+    : PROTOCOL_SPACE_TASK_OPTIONS_MAP[taskType.value]
 )
-
-const taskOptionTooltip = computed(() =>
-  effectiveSanityTaskType.value === 'Essence'
-    ? effectiveEssenceMenu.value === 'Target'
-      ? '选择需要刷取的目标武器，留空表示不限制武器'
-      : '选择当前基质刷取地点'
-    : (PROTOCOL_SPACE_TASK_TOOLTIP_MAP[effectiveSanityTaskType.value as ProtocolSpaceTab] ??
-      '选择当前协议空间任务')
-)
-
-const emitSave = (key: string, value: any) => {
-  if (controlsDisabled.value) return
-  emit('save', key, value)
-}
-
-const handleEssenceMenuChange = (value: AutoEssenceMenu) => {
-  if (optionControlsDisabled.value) return
-  const normalized = AUTO_ESSENCE_MENU_OPTIONS.some(option => option.value === value)
-    ? value
-    : 'Location'
-  formData.Task.AutoEssenceMenu = normalized
-  const taskValueChange = ensureCurrentTaskValue()
-  emitSaveBatch([
-    { key: 'Task.AutoEssenceMenu', value: normalized },
-    ...(taskValueChange ? [taskValueChange] : []),
-  ])
-}
-
-const showSanityDetail = computed(() => props.ifQuickConfig && formData.Task.IfSanity)
-const showRewardGroupSelect = computed(
+const taskTitle = computed(
   () =>
-    showSanityDetail.value &&
-    (displayPlanConfig.value
-      ? displayPlanConfig.value.SanityTaskType !== 'Essence' &&
-        isProtocolSpaceRewardEnabled(displayPlanConfig.value)
-      : rewardGroupEnabled.value)
+    PROTOCOL_SPACE_TASK_TITLE_MAP[
+      props.isPlanMode && props.planModeConfig && props.planModeConfig.SanityTaskType !== 'Essence'
+        ? props.planModeConfig.SanityTaskType
+        : taskType.value
+    ]
+)
+const displayType = computed(() =>
+  props.planModeConfig
+    ? SANITY_TASK_TYPE_LABEL_MAP[props.planModeConfig.SanityTaskType]
+    : t('core.edit.maaEndPlanUnavailable')
+)
+const displayTask = computed(() =>
+  props.planModeConfig
+    ? getSanityTaskDisplayValue(props.planModeConfig, [], props.crisisDrillsOptions)
+    : t('core.edit.maaEndPlanUnavailable')
+)
+const rewardEnabled = computed(() =>
+  props.isPlanMode
+    ? !!props.planModeConfig &&
+      props.planModeConfig.SanityTaskType !== 'Essence' &&
+      isProtocolSpaceRewardEnabled(props.planModeConfig)
+    : currentOptions.value.some(
+        option => option.value === currentValue.value && 'rewards' in option && option.rewards
+      )
 )
 
-const emitSaveBatch = (changes: FieldChange[]) => {
-  if (controlsDisabled.value || !changes.length) return
+const handleTypeChange = (value: ProtocolSpaceTab) => {
+  if (disabled.value) return
+  formData.Task.SanityTaskType = value
+  const changes: Array<{ key: string; value: unknown }> = [{ key: 'Task.SanityTaskType', value }]
+  if (
+    !currentOptions.value.some(option => option.value === currentValue.value) &&
+    currentOptions.value[0]?.value
+  ) {
+    changes.push({ key: `Task.${field.value}`, value: currentOptions.value[0].value })
+  }
   emit('saveBatch', changes)
 }
-
-const ensureCurrentTaskValue = (): FieldChange | null => {
-  if (optionControlsDisabled.value) return null
-  const options = currentTaskOptions.value
-  if (!options.length) return null
-  if (isTargetEssenceMode.value) {
-    const selected = Array.isArray(currentTaskValue.value) ? currentTaskValue.value : []
-    const validValues = new Set(options.map(option => option.value).filter(Boolean))
-    const normalized = selected.filter(
-      (value: unknown): value is string => typeof value === 'string' && validValues.has(value)
-    )
-    if (JSON.stringify(normalized) === JSON.stringify(selected)) return null
-    currentTaskValue.value = normalized
-    return { key: currentTaskSaveKey.value, value: normalized }
-  }
-  if (options.some(option => option.value === currentTaskValue.value)) return null
-  if (normalizedSanityTaskType.value === 'CrisisDrills' && currentTaskValue.value) return null
-
-  currentTaskValue.value = options[0].value
-  return { key: currentTaskSaveKey.value, value: currentTaskValue.value }
+const handleTaskChange = (value: string) => {
+  if (disabled.value) return
+  emit('save', `Task.${field.value}`, value)
 }
-
-const normalizeRewardGroupState = (): FieldChange | null => {
-  if (!rewardGroupEnabled.value && formData.Task.RewardsSetOption !== 'RewardsSetA') {
-    formData.Task.RewardsSetOption = 'RewardsSetA'
-    return { key: 'Task.RewardsSetOption', value: formData.Task.RewardsSetOption }
-  }
-  return null
-}
-
-const handleSanityTaskTypeChange = (value: SanityTaskType) => {
-  if (optionControlsDisabled.value) return
-  formData.Task.SanityTaskType = value
-  const taskValueChange = ensureCurrentTaskValue()
-
-  const changes: FieldChange[] = [
-    { key: 'Task.SanityTaskType', value: formData.Task.SanityTaskType },
-    taskValueChange ?? { key: currentTaskSaveKey.value, value: currentTaskValue.value },
-  ]
-
-  const rewardGroupChange = normalizeRewardGroupState()
-  if (rewardGroupChange) {
-    changes.push(rewardGroupChange)
-  }
-
-  emitSaveBatch(changes)
-}
-
-const handleTaskOptionChange = () => {
-  if (optionControlsDisabled.value) return
-  const changes: FieldChange[] = [{ key: currentTaskSaveKey.value, value: currentTaskValue.value }]
-
-  const rewardGroupChange = normalizeRewardGroupState()
-  if (rewardGroupChange) {
-    changes.push(rewardGroupChange)
-  }
-
-  emitSaveBatch(changes)
-}
-
-watch(
-  [
-    () => props.loading,
-    () => props.optionsLoading,
-    () => formData.Info.SanityStrategy,
-    () => formData.Task.SanityTaskType,
-    () => props.crisisDrillsOptions,
-    () => props.essenceLocationOptions,
-    () => props.essenceMenuOptions,
-    () => props.essenceTargetWeaponGroups,
-    () => formData.Task.AutoEssenceMenu,
-  ],
-  () => {
-    if (optionControlsDisabled.value) return
-    const changes: FieldChange[] = []
-    if (formData.Task.SanityTaskType !== normalizedSanityTaskType.value) {
-      formData.Task.SanityTaskType = normalizedSanityTaskType.value
-      changes.push({ key: 'Task.SanityTaskType', value: formData.Task.SanityTaskType })
-    }
-    const taskValueChange = ensureCurrentTaskValue()
-    if (taskValueChange) {
-      changes.push(taskValueChange)
-    }
-    const rewardGroupChange = normalizeRewardGroupState()
-    if (rewardGroupChange) {
-      changes.push(rewardGroupChange)
-    }
-    if (changes.length) {
-      emitSaveBatch(changes)
-    }
-  },
-  { immediate: true }
-)
 </script>
 
 <style scoped>
 .plan-mode-display {
   min-height: 40px;
-  padding: 8px 12px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
-  background: var(--ant-color-bg-container);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.plan-source {
-  flex-shrink: 0;
-  color: var(--ant-color-primary);
-  font-size: 12px;
+  color: var(--ant-color-text-secondary);
 }
 </style>

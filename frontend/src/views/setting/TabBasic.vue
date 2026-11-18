@@ -363,9 +363,12 @@ const handleLocaleChange = (value: unknown): void => {
 .color-swatch {
   display: grid;
   place-items: center;
+  flex-shrink: 0;
   width: 26px;
+  min-width: 26px;
   height: 26px;
   padding: 3px;
+  border-radius: 50%;
 }
 
 .color-swatch--selected {

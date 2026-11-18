@@ -21,7 +21,6 @@ from fastapi import APIRouter
 from app.task.BAAH.api import router as baah_router
 from app.task.BetterGI.api import router as bettergi_router
 from app.task.HSR.api import router as hsr_router
-from app.task.MAA.api import router as maa_router
 from app.task.MaaEnd.api import router as maaend_router
 from app.task.MaaFW.api import router as maafw_router
 from app.task.OkNte.api import router as oknte_router
@@ -41,7 +40,6 @@ router.include_router(webhooks.router)
 router.include_router(sharing.router)
 router.include_router(okww_router)
 router.include_router(maaend_router)
-router.include_router(maa_router)
 router.include_router(maafw_router)
 router.include_router(hsr_router)
 router.include_router(bettergi_router)

@@ -54,9 +54,20 @@ class BackgroundTaskHandle[T]:
     """不暴露 asyncio.Task；等待方取消不会取消背景执行。"""
 
     def __init__(self, group: BackgroundTaskGroup, uid: UUID) -> None:
+        """绑定任务组与任务标识，建立完成事件和回调列表，供调用方等待和订阅任务收尾。"""
         self.group = group
         self.uid = uid
         self._completed = asyncio.Event()
+        self._callbacks: list[Callable[[BackgroundTaskHandle[T]], None]] = []
+
+    def add_done_callback(
+        self, callback: Callable[[BackgroundTaskHandle[T]], None]
+    ) -> None:
+        """登记同步完成消费者；完成后可立即提取结果，不受轮询和 TTL 影响。"""
+        if self.done():
+            callback(self)
+        else:
+            self._callbacks.append(callback)
 
     def done(self) -> bool:
         return self._completed.is_set()
@@ -225,6 +236,7 @@ class BackgroundTaskGroup:
             self._cancel(uid)
 
     def _finish(self, record: _TaskRecord, task: asyncio.Task[Any]) -> None:
+        """收集任务终态并唤醒完成等待者，按保留策略保存结果、触发回调并处理关闭中的任务组。"""
         uid = record.handle.uid
         self._running.pop(uid)
         if record.deadline is not None:
@@ -244,7 +256,15 @@ class BackgroundTaskGroup:
             )
         record.outcome = outcome
         record.handle._completed.set()
-        if self.closing or not record.retain_result:
+        callbacks, record.handle._callbacks = record.handle._callbacks, []
+        for callback in callbacks:
+            try:
+                callback(record.handle)
+            except Exception:
+                logger.exception(f"背景任务组 {self.name} 的完成接收者失败")
+        if uid not in self._records:
+            pass
+        elif self.closing or not record.retain_result:
             self._discard(uid)
         else:
             assert self._loop is not None

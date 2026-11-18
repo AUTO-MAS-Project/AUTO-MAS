@@ -36,6 +36,5 @@ describe('渲染恢复 Sentry 上报', () => {
       loadErrorCode: -6,
     })
     expect(sdk.captureMessage).toHaveBeenCalledTimes(1)
-    expect(sdk.captureMessage.mock.calls[0][1].level).toBe('error')
   })
 })

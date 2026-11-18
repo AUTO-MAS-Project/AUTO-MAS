@@ -46,6 +46,51 @@ OKWW_PUSH_RULES: list[tuple[str, str]] = [
     # 每周乐园 / 合并声骸：开始标记，最终状态由跳过/成功/失败标记决定
     (r"检查每周乐园|check weekly garden", r'"每周乐园"'),
     (r"检查已弃置声骸|check discarded echo", r'"合并声骸"'),
+    # 与既有节点一致，开始记成功；明确失败/跳过日志覆盖状态。
+    (
+        r"每日任务已完成，开始传送并刷取4C声骸|Daily task completed, start teleport to farm 4C echo",
+        r'"4C_STARTED"',
+    ),
+    (
+        r"All full batches of discarded Echoes have been merged\.|所有满批次的已弃置声骸均已合成",
+        r'"MERGE_DONE"',
+    ),
+    (r"info_set Teleport to Tacet Suppression", r'"STAMINA_TARGET:无音区"'),
+    (r"info_set Teleport to Forgery Challenge", r'"STAMINA_TARGET:凝素领域"'),
+    (r"info_set Target Simulation Challenge", r'"STAMINA_TARGET:模拟领域"'),
+    # 仅采集上游主动通知的明确告警，不把普通战斗探测日志当异常。
+    (
+        r"FarmEchoTask:(?:选择目标失败[!！]|Target enemy failed, please disable Nvidia/AMD Filter or Sharpening!)",
+        r'"⚠ 异常: 4C声骸（选择战斗目标失败）"',
+    ),
+    (
+        r"(?:farm 4c: exceeded recovery retries|四费声骸刷取：超过恢复重试上限)",
+        r'"❌ 失败: 4C声骸"',
+    ),
+    (
+        r"(?:farm_tacet: exceeded recovery retries|farm_domain: exceeded recovery retries|无音区刷取：超过恢复重试上限|副本刷取：超过恢复重试上限)",
+        r'"STAMINA_FAILED"',
+    ),
+    (
+        r"nightmare nest unreachable, skip this run|梦魇巢穴无法到达，跳过本次",
+        r'"⚠ 异常: 梦魇巢穴（部分巢穴无法到达）"',
+    ),
+    (
+        r"nightmare nest: died .* times, skip this run|梦魇巢穴：阵亡 .* 次，跳过本次",
+        r'"⚠ 异常: 梦魇巢穴（部分巢穴阵亡过多）"',
+    ),
+    (
+        r"TaskExecutor:(?:📅\s*)?(?:每日任务|Daily Task) exception stopped",
+        r'"DAILY_FAILED"',
+    ),
+    (
+        r"current stamina: \d+ not enough to continue",
+        r'"体力刷本"; "体力当前:" + $((?:current stamina: )(\d+))',
+    ),
+    (
+        r"used all stamina|已用完所有体力",
+        r'"体力刷本"',
+    ),
     # 多账号：切换账号开始
     (r"正在返回登录界面|Switching back to login screen", r'"切换账号"'),
     # ── 失败标记（源码 log_error 专属失败日志）──
@@ -160,6 +205,10 @@ def okww_resolve(
     last_stamina: int | None = None
     last_stamina_ts: float | None = 0.0
     active_marks: set[str] = set()
+    warnings: dict[str, float | None] = {}
+    echo_started = False
+    merge_completed = False
+    stamina_node = "体力刷本"
 
     def _mark(status: str, node: str, ts: float | None) -> None:
         rank = _STATUS_RANK[status]
@@ -175,6 +224,50 @@ def okww_resolve(
         # 逐行解析，避免多个标记被当成一个节点名
         for marker in text.split("\n"):
             # 当前体力：仅记录最后一次，结束后据此输出「⚡ 剩余体力: N」
+            # 运行中局部跳过仅作额外提示，不参与任务最终状态排序。
+            if marker.startswith("⚠ 异常:"):
+                warnings[marker] = ts
+                continue
+            if marker == "启动":
+                # 最终节点只展示最近一次执行，重试历史由账号结果行保留。
+                order.clear()
+                states.clear()
+                ts_of.clear()
+                active_marks.clear()
+                warnings.clear()
+                last_stamina = None
+                last_stamina_ts = 0.0
+                merge_completed = False
+                echo_started = False
+                stamina_node = "体力刷本"
+            if marker.startswith("STAMINA_TARGET:"):
+                stamina_node = f"体力刷本（{marker.split(':', 1)[1]}）"
+                _mark("✅ 成功", stamina_node, ts)
+                continue
+            if marker == "STAMINA_FAILED":
+                _mark("❌ 失败", stamina_node, ts)
+                continue
+            if marker == "体力刷本":
+                marker = stamina_node
+            if marker == "合并声骸":
+                merge_completed = False
+            if marker == "MERGE_DONE":
+                merge_completed = True
+                _mark("✅ 成功", "合并声骸", ts)
+                continue
+            if marker == "DAILY_FAILED":
+                _mark("❌ 失败", "每日完成", ts)
+                if echo_started:
+                    _mark("❌ 失败", "4C声骸", ts)
+                echo_started = False
+                continue
+            if marker == "4C_STARTED":
+                echo_started = True
+                _mark("✅ 成功", "4C声骸", ts)
+                continue
+            if marker == "✅ 成功: 每日完成" and echo_started:
+                _mark("✅ 成功", "4C声骸", ts)
+                echo_started = False
             if marker.startswith("体力当前:"):
                 try:
                     last_stamina = int(marker[len("体力当前:") :])
@@ -205,7 +298,14 @@ def okww_resolve(
     }
     status_lines: list[tuple[str, str, float | None]] = []
     for node in order:
-        if node in forced:
+        if (
+            node == "合并声骸"
+            and not merge_completed
+            and states[node][0] < 3
+            and node not in forced
+        ):
+            status_lines.append((LOG_TYPE_NORMAL, "⏭ 跳过: 合并声骸", ts_of[node]))
+        elif node in forced:
             status, reason = forced[node]
             status_lines.append(
                 (LOG_TYPE_NORMAL, f"{status}: {node}（{reason}）", ts_of[node])
@@ -218,4 +318,5 @@ def okww_resolve(
         status_lines.append(
             (LOG_TYPE_NORMAL, f"⚡ 剩余体力: {last_stamina}", last_stamina_ts)
         )
+    status_lines.extend((LOG_TYPE_NORMAL, text, ts) for text, ts in warnings.items())
     return status_lines

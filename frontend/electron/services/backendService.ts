@@ -1,5 +1,6 @@
 import { beginMainFeature } from './featureAnalytics'
 import { getFluxdownInstallEnvironment } from './fluxdownInstallService'
+import { precheckAppVersion } from './appUpdateService'
 import { captureScheduledWakeupContext, scheduledWakeupBackendReady } from './scheduledWakeup'
 /**
  * 后端服务管理
@@ -9,11 +10,11 @@ import { captureScheduledWakeupContext, scheduledWakeupBackendReady } from './sc
 
 import * as fs from 'fs'
 import { resolveHttpPort } from './instanceConfig'
+import { desktopSessionControlToken, getDesktopSessionChildId } from './desktopSessionControl'
 
 import {
   RUNTIME_CLIENT_ERROR_DEFINITIONS,
   RuntimeClient,
-  RuntimeClientErrorDetails,
   RuntimeRemediation,
   RuntimeRunResult,
   RuntimeLogEvent,
@@ -32,11 +33,14 @@ import { observeMainOperation, recordMainCount, recordMainDuration } from './sen
 import { analyticsService, refreshAnalyticsPreference } from './analyticsService'
 import { analyticsDuration } from './analyticsPolicy'
 import type { AnalyticsRuntimeMode } from '../../src/types/analytics'
+import { runtimeFailureContext, type StartupFailureContext } from './startupRecovery'
 const logger = getLogger('后端服务')
 
 // Runtime 链路等待 state:running 的兜底上限。正常情况下 Runtime 自己的健康超时会先给出
 // BACKEND_HEALTH_TIMEOUT，这个上限只防止 Runtime 既不就绪也不给终态时把启动流程挂死。
 const RUNTIME_READY_TIMEOUT_MS = 180000
+// 插件镜像解析和安装各有超时；这里等待业务终态，不占 Runtime 的核心健康期限。
+const BUSINESS_READY_TIMEOUT_MS = 30 * 60 * 1000
 // 监督后端统一保留原有 30 秒清理窗口，覆盖旧 off 生产用户迁入 managed 的情况。
 const BACKEND_SHUTDOWN_SECONDS = 30
 // 另留 5 秒等待 Runtime 收口；超时才结束 Runtime，由其 Job Object 回收进程树。
@@ -77,6 +81,7 @@ export interface BackendStatus {
 
 export interface BackendStartOptions {
   timeout?: number // 启动超时时间（毫秒）
+  onProgress?: (message: string) => void
 }
 
 export interface BackendStartResult {
@@ -88,7 +93,7 @@ export interface BackendStartResult {
   retryable?: boolean
   remediation?: RuntimeRemediation[]
   /** 调用侧失败保留命令与真实退出证据，供桌面启动编排决定是否恢复。 */
-  runtimeFailure?: Pick<RuntimeClientErrorDetails, 'command' | 'processExited'>
+  runtimeFailure?: StartupFailureContext
 }
 
 /** 渲染进程实际使用的后端地址。 */
@@ -111,6 +116,7 @@ export interface BackendStopResult {
 
 interface RuntimeBackendUpdateCheck {
   updateAvailable: boolean
+  precheckError?: string
   staged?: boolean
   currentCommit?: string
   remoteCommit?: string
@@ -134,6 +140,7 @@ export class BackendService {
   private stopRequested = false
   // 本次监督进程的句柄与就绪地址。
   private runtimeHandle: RuntimeSuperviseHandle | null = null
+  private activationPending = false
   private runtimeBaseUrl: string | null = null
   private startingRuntimeHandle: RuntimeSuperviseHandle | null = null
   private runtimeStopping = false
@@ -176,6 +183,16 @@ export class BackendService {
 
   private async startBackendInternal(options?: BackendStartOptions): Promise<BackendStartResult> {
     if (this.runtimeHandle) {
+      if (this.activationPending) {
+        try {
+          await this.confirmAutomaticWork(this.runtimeHandle, 'status')
+          this.activationPending = false
+          scheduledWakeupBackendReady()
+          return { success: true }
+        } catch (error) {
+          return this.activationUnconfirmed(error instanceof Error ? error.message : String(error))
+        }
+      }
       logger.info('Runtime 已在监督后端，跳过重复启动')
       return { success: true }
     }
@@ -315,7 +332,10 @@ export class BackendService {
       appRoot: config.appRoot,
       dataRoot: config.dataRoot,
       env: {
+        AUTO_MAS_RUNTIME_DEFER_BUSINESS_START: '1',
         ...getFluxdownInstallEnvironment(),
+        AUTO_MAS_DESKTOP_CONTROL_TOKEN: desktopSessionControlToken,
+        AUTO_MAS_DESKTOP_PARENT_CHILD_SESSION: getDesktopSessionChildId()?.toString(),
         AUTO_MAS_SCHEDULED_WAKEUP: wakeup.scheduledWakeup ? '1' : undefined,
         // resume 先于第二实例事件，是否有待运行定时由后端配置判定。
         AUTO_MAS_SYSTEM_RESUME: wakeup.resumedAt,
@@ -346,10 +366,11 @@ export class BackendService {
         stderrLines.length = 0
         otherLines.length = 0
         const details = current.result.details
-        const version =
+        const currentVersion =
           details.healthy === true && typeof details.version === 'string'
             ? details.version
-            : resolveRuntimeTargetVersion()
+            : undefined
+        const version = resolveRuntimeTargetVersion(currentVersion)
         const prepared = await this.runRuntimePreparation(
           client,
           ['bootstrap', '--version', version, '--if-needed'],
@@ -373,9 +394,10 @@ export class BackendService {
     // 失败时组装成现有失败界面直接展示的整块文本。
     const stdoutLines: string[] = []
     const stderrLines: string[] = []
-    let resolveReady: (baseUrl: string) => void = () => undefined
-    const ready = new Promise<{ baseUrl: string }>(resolve => {
-      resolveReady = baseUrl => resolve({ baseUrl })
+    let resolveReady: (baseUrl: string, deferred: boolean) => void = () => undefined
+    let readyReported = false
+    const ready = new Promise<{ baseUrl: string; deferred: boolean }>(resolve => {
+      resolveReady = (baseUrl, deferred) => resolve({ baseUrl, deferred })
     })
 
     let handle: RuntimeSuperviseHandle
@@ -397,16 +419,17 @@ export class BackendService {
           // 就绪的唯一判据是 backend.run 阶段进入 running 且带 baseUrl；其他阶段即便
           // status 同名也不算，baseUrl 必须取自事件本身而不是自行假定端口。
           if (event.stage !== 'backend.run' || event.status !== 'running') return
+          if (readyReported) return
           const baseUrl = readRuntimeBaseUrl(event.details)
           if (!baseUrl) {
             logger.warn('Runtime 报告 backend.run running 但未携带 baseUrl，忽略该事件')
             return
           }
+          readyReported = true
           logger.info(
             `[启动计时] 桌面/Runtime 报告后端就绪，阶段 ${(performance.now() - superviseStartedAt).toFixed(1)} ms`
           )
-          scheduledWakeupBackendReady()
-          resolveReady(baseUrl)
+          resolveReady(baseUrl, event.details.startupActivation === 'pending')
         },
       })
       logger.info(
@@ -438,7 +461,11 @@ export class BackendService {
       (error: unknown) => ({ error })
     )
 
-    let outcome: 'timeout' | { baseUrl: string } | { result: RuntimeRunResult } | { error: unknown }
+    let outcome:
+      | 'timeout'
+      | { baseUrl: string; deferred: boolean }
+      | { result: RuntimeRunResult }
+      | { error: unknown }
     try {
       outcome = await Promise.race([ready, ended, timedOut])
     } finally {
@@ -474,7 +501,52 @@ export class BackendService {
       }
       releaseStartup()
       this.adoptRuntimeHandle(handle, outcome.baseUrl)
+      if (outcome.deferred) {
+        this.activationPending = true
+        try {
+          const deadline = Date.now() + BUSINESS_READY_TIMEOUT_MS
+          let previousMessage: string | null = null
+          while (true) {
+            if (this.runtimeStopping || this.runtimeHandle !== handle)
+              throw new Error('后端正在关闭')
+            if (Date.now() >= deadline) throw new Error('等待插件与业务初始化超时')
+            const response = await this.fetchWithTimeout(
+              `${outcome.baseUrl}${this.startupHealthPath}`,
+              { method: 'GET' },
+              5000
+            )
+            if (!response.ok) throw new Error(`读取业务初始化状态失败 (${response.status})`)
+            const health = (await response.json()) as {
+              businessStatus?: string
+              backgroundStatus: string
+              backgroundError?: string
+              businessMessage?: string | null
+            }
+            const status = health.businessStatus ?? health.backgroundStatus
+            if (status === 'failed' || status === 'cancelled')
+              throw new Error(health.backgroundError || '插件或业务初始化失败')
+            if (status === 'ready') break
+            if (status !== 'starting' && status !== 'running') throw new Error('业务初始化状态无效')
+            if (health.businessMessage && health.businessMessage !== previousMessage) {
+              logger.info(health.businessMessage)
+              options?.onProgress?.(health.businessMessage)
+              previousMessage = health.businessMessage
+            }
+            await new Promise(resolve => setTimeout(resolve, 500))
+          }
+          await this.confirmAutomaticWork(handle, 'activate')
+          this.activationPending = false
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          logger.error(`无法确认自动业务放行：${message}`)
+          return this.activationUnconfirmed(
+            message,
+            this.formatRuntimeStartupLogs(stdoutLines, stderrLines)
+          )
+        }
+      }
       logger.info(`后端服务启动成功，Runtime PID: ${handle.pid}，后端地址: ${outcome.baseUrl}`)
+      scheduledWakeupBackendReady()
       return { success: true }
     }
 
@@ -491,6 +563,67 @@ export class BackendService {
     // 就绪前拿到终态或调用侧异常：后端没起来，按失败展示。
     const reason = 'result' in outcome ? outcome.result : outcome.error
     return this.buildRuntimeStartFailure(reason, stdoutLines, stderrLines)
+  }
+
+  /** 确认同一实例；人工重试先查询，pending 时才重发幂等放行。 */
+  private async confirmAutomaticWork(
+    handle: RuntimeSuperviseHandle,
+    command: 'activate' | 'status'
+  ): Promise<void> {
+    if (this.runtimeStopping) throw new Error('后端正在关闭')
+    if (!handle.capabilities.includes('stdin.activate'))
+      throw new Error('Runtime 不支持自动业务放行')
+    let confirmed: (state: 'pending' | 'active') => void = () => undefined
+    const activated = new Promise<'pending' | 'active'>(resolve => {
+      confirmed = resolve
+    })
+    const unsubscribe = handle.onEvent(event => {
+      if (event.type === 'state' && event.stage === 'backend.run' && event.status === 'running') {
+        const activation = event.details.startupActivation
+        if (activation === 'active' || (command === 'status' && activation === 'pending'))
+          confirmed(activation)
+      }
+    })
+    let timer: NodeJS.Timeout | undefined
+    let queryTimer: NodeJS.Timeout | undefined
+    let activation: 'pending' | 'active'
+    try {
+      handle.sendControl(command)
+      if (command === 'activate')
+        queryTimer = setTimeout(() => {
+          if (!this.runtimeStopping) handle.status()
+        }, 5_000)
+      activation = await Promise.race([
+        activated,
+        handle.closed.then(() => {
+          throw new Error('Runtime 在业务放行确认前结束')
+        }),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('自动业务放行确认超时')),
+            command === 'activate' ? 10_000 : 5_000
+          )
+        }),
+      ])
+      if (this.runtimeStopping || this.runtimeHandle !== handle) throw new Error('后端正在关闭')
+    } finally {
+      unsubscribe()
+      if (timer) clearTimeout(timer)
+      if (queryTimer) clearTimeout(queryTimer)
+    }
+    if (activation === 'pending') await this.confirmAutomaticWork(handle, 'activate')
+  }
+
+  private activationUnconfirmed(error: string, logs?: string): BackendStartResult {
+    return {
+      success: false,
+      code: 'BACKEND_ACTIVATION_UNKNOWN',
+      retryable: false,
+      remediation: ['open-log'],
+      error,
+      logs,
+      runtimeFailure: { command: 'backend supervise', activationRequested: true },
+    }
   }
 
   /**
@@ -556,6 +689,7 @@ export class BackendService {
   private clearRuntimeState(handle: RuntimeSuperviseHandle): void {
     if (this.runtimeHandle !== handle) return
     this.runtimeHandle = null
+    this.activationPending = false
     this.runtimeBaseUrl = null
     this.startTime = null
     this.notifyStatusChange()
@@ -627,6 +761,7 @@ export class BackendService {
         code: reason.code,
         retryable: reason.result.retryable,
         remediation: [...reason.result.remediation],
+        runtimeFailure: runtimeFailureContext(reason),
       }
     }
 
@@ -798,7 +933,7 @@ export class BackendService {
    */
   restartBackend(
     options?: BackendStartOptions,
-    reason: 'manual' | 'recovery' = 'manual'
+    reason: 'manual' | 'recovery' | 'update' = 'manual'
   ): Promise<BackendStartResult> {
     if (this.restartFlight) return this.restartFlight
     const telemetry = beginMainFeature('backend_restart_finished')
@@ -897,7 +1032,9 @@ export class BackendService {
 
   private async prepareRuntimeBackendUpdate(): Promise<RuntimeBackendUpdateCheck> {
     const config = resolveRuntimeLaunchConfig(this.appRoot)
-    if (config.mode !== 'managed' || !config.runtimePath) return { updateAvailable: false }
+    const baseUrl = this.runtimeBaseUrl
+    if (config.mode !== 'managed' || !config.runtimePath || !baseUrl)
+      return { updateAvailable: false }
     try {
       const client = createRuntimeClient({
         runtimePath: config.runtimePath,
@@ -922,6 +1059,24 @@ export class BackendService {
             error: 'Runtime 远端检查未返回当前版本',
           }
         }
+        const remoteCommit = typeof details.remoteCommit === 'string' ? details.remoteCommit : ''
+        try {
+          // 按候选提交读取真实依赖；不兼容或无法完成预检时，保留当前后端且不发起暂存。
+          if (!/^[a-f0-9]{40}$/i.test(remoteCommit))
+            throw new Error('Runtime 未返回有效的更新提交，无法检查插件兼容性')
+          await precheckAppVersion(baseUrl, version, remoteCommit)
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error)
+          return {
+            updateAvailable: true,
+            staged: false,
+            currentCommit: typeof details.commit === 'string' ? details.commit : undefined,
+            remoteCommit,
+            precheckError: reason,
+            error: reason,
+          }
+        }
+        // TODO(plugin-migration): Runtime 支持指定期望提交后，将暂存绑定到预检提交；本轮不修改 Runtime。
         const stageOutcome = await this.runRuntimePreparation(client, [
           'workspace',
           'stage',

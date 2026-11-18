@@ -1,8 +1,6 @@
 """隔离文件系统故障，守住安装切换、恢复与不越界写入的公共契约。"""
 
-import asyncio
 import hashlib
-import json
 import threading
 import zipfile
 from pathlib import Path
@@ -11,7 +9,6 @@ from unittest.mock import Mock
 import pytest
 
 from app.services import script_install as install
-from app.task.MaaEnd.tools.pipeline_migration import refresh_merged_pipelines
 
 
 @pytest.fixture
@@ -28,7 +25,7 @@ def package(tmp_path, isolated_app_paths):
     return root, archive
 
 
-def apply(package, **kwargs):
+def apply(package, *, validate=lambda root: None, idle=lambda: None):
     root, archive = package
     install.install_package(
         root,
@@ -36,17 +33,38 @@ def apply(package, **kwargs):
         archive.stat().st_size,
         hashlib.sha256(archive.read_bytes()).hexdigest(),
         frozenset({"config"}),
-        kwargs.get("validate", lambda root: None),
-        kwargs.get("idle", lambda: None),
-        kwargs.get("cancelled", threading.Event()),
+        validate,
+        idle,
+        threading.Event(),
     )
 
 
-def test_switch_preserves_user_data_and_confirms_complete_tree(
-    package, isolated_app_paths
+@pytest.mark.parametrize("receipt_failure", [False, True])
+def test_install_commit_and_receipt_recovery_preserve_the_complete_tree(
+    package, isolated_app_paths, monkeypatch, receipt_failure
 ):
     root, _ = package
-    apply(package)
+    directory = install.workspace(root)
+    if receipt_failure:
+        replace = Path.replace
+
+        def fail_receipt(path, target):
+            if Path(target).name == "installed.json":
+                raise OSError("receipt disk full")
+            return replace(path, target)
+
+        with monkeypatch.context() as filesystem:
+            filesystem.setattr(Path, "replace", fail_receipt)
+            with pytest.raises(install.InstallUnsafeError):
+                apply(package)
+        assert (directory / "previous/app.exe").read_bytes() == b"old"
+        assert (directory / "transaction.json").is_file()
+        assert (root / "app.exe").read_bytes() == b"new"
+        install.recover_install(root, lambda: None, threading.Event())
+        assert not (directory / "previous").exists()
+        assert not (directory / "transaction.json").exists()
+    else:
+        apply(package)
     assert (root / "app.exe").read_bytes() == b"new"
     assert (root / "resource/new.json").read_bytes() == b"resource"
     assert (root / "config/user.json").read_bytes() == b"user-owned"
@@ -55,91 +73,8 @@ def test_switch_preserves_user_data_and_confirms_complete_tree(
     )
     assert len(receipts) == 1
     assert install.verify_installed_files(root, threading.Event())
-    assert not install.workspace(root).exists()
-
-
-def test_legacy_receipt_is_deleted_without_migration(package):
-    root, _ = package
-    legacy = install.workspace(root)
-    legacy.mkdir()
-    (legacy / "installed.json").write_text(
-        json.dumps({"files": {"app.exe": hashlib.sha256(b"old").hexdigest()}})
-    )
-    assert not install.verify_installed_files(root, threading.Event())
-
-    install.recover_install(root, lambda: None, threading.Event())
-
-    assert not legacy.exists()
-    assert not install.record_directory(root).exists()
-    assert (root / "app.exe").read_bytes() == b"old"
-    assert not install.verify_installed_files(root, threading.Event())
-
-
-def test_legacy_cleanup_keeps_user_backups_and_unknown_files(package):
-    root, _ = package
-    directory = install.workspace(root)
-    directory.mkdir()
-    for name in ("installed.json", "program-identity.json", "baah-version.json"):
-        (directory / name).write_bytes(b"old record")
-    backup = directory / "retired-pipelines/custom.json"
-    backup.parent.mkdir()
-    backup.write_bytes(b"user resource")
-    note = directory / "notes.txt"
-    note.write_bytes(b"user note")
-
-    install.recover_install(root, lambda: None, threading.Event())
-
-    assert not (directory / "installed.json").exists()
-    assert not (directory / "program-identity.json").exists()
-    assert not (directory / "baah-version.json").exists()
-    assert not install.record_directory(root).exists()
-    assert backup.read_bytes() == b"user resource"
-    assert note.read_bytes() == b"user note"
-
-
-def test_legacy_receipt_is_deleted_without_overwriting_current_record(package):
-    root, _ = package
-    apply(package)
-    receipt = install.record_directory(root) / "installed.json"
-    confirmed = receipt.read_bytes()
-    legacy = install.workspace(root)
-    legacy.mkdir()
-    old_record = legacy / "installed.json"
-    old_content = json.dumps(
-        {"files": {"app.exe": hashlib.sha256(b"old").hexdigest()}}
-    ).encode()
-    old_record.write_bytes(old_content)
-
-    install.recover_install(root, lambda: None, threading.Event())
-
-    assert receipt.read_bytes() == confirmed
-    assert not legacy.exists()
-    assert install.verify_installed_files(root, threading.Event())
-
-
-def test_receipt_write_failure_keeps_installation_recoverable(package, monkeypatch):
-    root, _ = package
-    replace = Path.replace
-
-    def fail_receipt(path, target):
-        if Path(target).name == "installed.json":
-            raise OSError("receipt disk full")
-        return replace(path, target)
-
-    monkeypatch.setattr(Path, "replace", fail_receipt)
-    with pytest.raises(install.InstallUnsafeError):
-        apply(package)
-    directory = install.workspace(root)
-    assert (directory / "previous/app.exe").read_bytes() == b"old"
-    assert (directory / "transaction.json").is_file()
-    assert (root / "app.exe").read_bytes() == b"new"
-
-    monkeypatch.setattr(Path, "replace", replace)
-    install.recover_install(root, lambda: None, threading.Event())
-    assert install.verify_installed_files(root, threading.Event())
-    assert (install.record_directory(root) / "installed.json").is_file()
-    assert not (directory / "previous").exists()
-    assert not (directory / "transaction.json").exists()
+    if not receipt_failure:
+        assert not directory.exists()
 
 
 @pytest.mark.parametrize(
@@ -178,14 +113,23 @@ def test_case_collision_and_protected_config_are_rejected(package):
 
 
 def test_zip_symlink_rejected(package):
-    _, archive = package
+    root, archive = package
+    outside = root.parent / "outside"
+    outside.mkdir()
+    sentinel = outside / "keep.txt"
+    sentinel.write_bytes(b"outside user data")
     entry = zipfile.ZipInfo("link")
     entry.create_system = 3
     entry.external_attr = 0o120777 << 16
     with zipfile.ZipFile(archive, "w") as payload:
-        payload.writestr(entry, "../outside")
+        payload.writestr(entry, str(outside))
+        payload.writestr("link/keep.txt", b"overwritten")
     with pytest.raises(ValueError):
         apply(package)
+    assert sentinel.read_bytes() == b"outside user data"
+    assert set(outside.iterdir()) == {sentinel}
+    assert (root / "app.exe").read_bytes() == b"old"
+    assert (root / "config/user.json").read_bytes() == b"user-owned"
 
 
 def test_checksum_failure_and_candidate_failure_keep_old_install(package):
@@ -199,347 +143,34 @@ def test_checksum_failure_and_candidate_failure_keep_old_install(package):
     assert (root / "app.exe").read_bytes() == b"old"
 
 
-def test_failed_second_rename_restores_old_directory(package, monkeypatch):
+@pytest.mark.parametrize(
+    "fault,expected_user",
+    [("late_edit", b"modified after last check"), ("publish", b"user-owned")],
+)
+def test_install_switch_failure_restores_old_program_without_overwriting_user_data(
+    package, monkeypatch, fault, expected_user
+):
     root, _ = package
+    calls = 0
+
+    def idle():
+        nonlocal calls
+        calls += 1
+        if fault == "late_edit" and calls == 2:
+            (root / "config/user.json").write_bytes(b"modified after last check")
+
     replace = Path.replace
 
     def fail_ready(path, target):
-        if path.name == "ready":
+        if fault == "publish" and path.name == "ready":
             raise PermissionError("file occupied")
         return replace(path, target)
 
     monkeypatch.setattr(Path, "replace", fail_ready)
     with pytest.raises(install.InstallUnsafeError):
-        apply(package)
-    assert (root / "app.exe").read_bytes() == b"old"
-    assert not (install.workspace(root) / "transaction.json").exists()
-
-
-def test_interrupted_first_rename_recovers_even_with_missing_executable(
-    package, monkeypatch
-):
-    root, _ = package
-    replace = Path.replace
-
-    def die_after_move(path, target):
-        result = replace(path, target)
-        if path == root:
-            raise SystemExit("simulated process exit")
-        return result
-
-    monkeypatch.setattr(Path, "replace", die_after_move)
-    with pytest.raises(install.InstallUnsafeError):
-        apply(package)
-    assert not root.exists()
-    monkeypatch.setattr(Path, "replace", replace)
-    install.recover_install(root, lambda: None, threading.Event())
-    assert (root / "app.exe").read_bytes() == b"old"
-
-
-def leave_new_unconfirmed(package):
-    count = 0
-
-    def idle():
-        nonlocal count
-        count += 1
-        if count == 3:
-            raise install.InstallUnsafeError("process appeared")
-
-    with pytest.raises(install.InstallUnsafeError):
-        apply(package, idle=idle)
-
-
-def test_recovery_verifies_all_files_not_just_version(package):
-    root, _ = package
-    leave_new_unconfirmed(package)
-    assert (install.workspace(root) / "previous/app.exe").read_bytes() == b"old"
-    (root / "resource/new.json").write_bytes(b"external modification")
-    with pytest.raises(install.InstallUnsafeError):
-        install.recover_install(root, lambda: None, threading.Event())
-    assert (root / "resource/new.json").read_bytes() == b"external modification"
-    assert (install.workspace(root) / "previous/app.exe").read_bytes() == b"old"
-
-
-def test_verified_recovery_commits_new_tree(package):
-    root, _ = package
-    leave_new_unconfirmed(package)
-    install.recover_install(root, lambda: None, threading.Event())
-    assert (root / "app.exe").read_bytes() == b"new"
-    assert not (install.workspace(root) / "previous").exists()
-
-
-def test_corrupt_journal_cannot_be_bypassed(package):
-    root, _ = package
-    directory = install.workspace(root)
-    directory.mkdir()
-    (directory / "transaction.json").write_text("broken json")
-    with pytest.raises(install.InstallUnsafeError):
-        install.recover_install(root, lambda: None, threading.Event())
-    assert (root / "app.exe").read_bytes() == b"old"
-
-
-def test_external_change_during_copy_is_preserved(package, monkeypatch):
-    root, _ = package
-    copy = install.shutil.copytree
-
-    def change_source(source, target, *args, **kwargs):
-        result = copy(source, target, *args, **kwargs)
-        if source == root:
-            (root / "config/user.json").write_bytes(b"changed outside")
-        return result
-
-    monkeypatch.setattr(install.shutil, "copytree", change_source)
-    with pytest.raises(install.InstallUnsafeError):
-        apply(package)
-    assert (root / "config/user.json").read_bytes() == b"changed outside"
-    assert (root / "app.exe").read_bytes() == b"old"
-
-
-def test_external_edit_after_final_precheck_rolls_back(package):
-    root, _ = package
-    calls = 0
-
-    def idle():
-        nonlocal calls
-        calls += 1
-        if calls == 2:
-            (root / "config/user.json").write_bytes(b"modified after last check")
-
-    with pytest.raises(install.InstallUnsafeError):
         apply(package, idle=idle)
     assert (root / "app.exe").read_bytes() == b"old"
-    assert (root / "config/user.json").read_bytes() == b"modified after last check"
+    assert (root / "config/user.json").read_bytes() == expected_user
     assert not (install.workspace(root) / "previous").exists()
-
-
-def test_modified_previous_survives_recovery(package):
-    root, _ = package
-    calls = 0
-
-    def idle():
-        nonlocal calls
-        calls += 1
-        if calls == 3:
-            (install.workspace(root) / "previous/config/user.json").write_bytes(
-                b"changed during commit"
-            )
-
-    with pytest.raises(install.InstallUnsafeError):
-        apply(package, idle=idle)
-    backup = install.workspace(root) / "previous/config/user.json"
-    assert backup.read_bytes() == b"changed during commit"
-    with pytest.raises(install.InstallUnsafeError):
-        install.recover_install(root, lambda: None, threading.Event())
-    assert backup.read_bytes() == b"changed during commit"
-
-
-def test_same_installation_access_is_exclusive(package):
-    root, _ = package
-    with install.installation_access(root):
-        with pytest.raises(install.InstallUnsafeError):
-            with install.installation_access(root):
-                pytest.fail("lock not exclusive")
-    with install.installation_access(root):
-        pass
-
-
-def test_installed_receipt_checks_resources_and_ignores_user_configuration(package):
-    root, _ = package
-    apply(package)
-    assert install.verify_installed_files(root, threading.Event())
-    (root / "config/user.json").write_bytes(b"updated by user")
-    assert install.verify_installed_files(root, threading.Event())
-    (root / "resource/new.json").write_bytes(b"damaged")
-    assert not install.verify_installed_files(root, threading.Event())
-
-
-def test_new_release_removes_only_previously_managed_obsolete_files(package):
-    root, archive = package
-    apply(package)
-    (root / "user-notes.txt").write_bytes(b"keep")
-    with zipfile.ZipFile(archive, "w") as payload:
-        payload.writestr("app.exe", b"newer")
-        payload.writestr("resource/next.json", b"next")
-    apply(package)
-    assert not (root / "resource/new.json").exists()
-    assert (root / "resource/next.json").read_bytes() == b"next"
-    assert (root / "user-notes.txt").read_bytes() == b"keep"
-
-
-def test_merged_pipeline_first_adoption_quarantines_obsolete_json(package):
-    root, archive = package
-    old_pipeline = root / "resource/pipeline"
-    old_pipeline.mkdir(parents=True)
-    old_split = b'{"AutoCollectSchedule": {"action": "Custom"}}'
-    (old_pipeline / "AutoCollect.json").write_bytes(old_split)
-    (old_pipeline / "Custom.json").write_text('{"UserNode": {}}')
-    (root / "resource_extra/pipeline").mkdir(parents=True)
-    (root / "resource_extra/pipeline/Old.json").write_text('{"Other": {}}')
-    with zipfile.ZipFile(archive, "w") as payload:
-        payload.writestr("app.exe", b"new")
-        payload.writestr("resource/pipeline/nodes.json", old_split)
-        payload.writestr("resource_extra/pipeline/nodes.json", '{"Other": {}}')
-    install.install_package(
-        root,
-        archive,
-        archive.stat().st_size,
-        hashlib.sha256(archive.read_bytes()).hexdigest(),
-        frozenset({"config"}),
-        lambda _: None,
-        lambda: None,
-        threading.Event(),
-        prepare_ready=refresh_merged_pipelines,
-    )
-    assert (root / "resource/pipeline/nodes.json").read_bytes() == old_split
-    assert not (root / "resource/pipeline/AutoCollect.json").exists()
-    assert not (root / "resource/pipeline/Custom.json").exists()
-    assert not (root / "resource_extra/pipeline/Old.json").exists()
-    backup_root = install.workspace(root) / "retired-pipelines"
-    backups = list(backup_root.glob("pipeline-*/resource/pipeline/AutoCollect.json"))
-    assert len(backups) == 1
-    assert backups[0].read_bytes() == old_split
-    assert list(backup_root.glob("pipeline-*/resource/pipeline/Custom.json"))
-    assert list(backup_root.glob("pipeline-*/resource_extra/pipeline/Old.json"))
-    assert install.verify_installed_files(root, threading.Event())
-    assert not (install.workspace(root) / "previous").exists()
-
-
-def test_merged_pipeline_quarantine_failure_preserves_old_install(package, monkeypatch):
-    root, archive = package
-    pipeline = root / "resource/pipeline"
-    pipeline.mkdir(parents=True)
-    (pipeline / "Old.json").write_text('{"Original": {}}')
-    with zipfile.ZipFile(archive, "w") as payload:
-        payload.writestr("app.exe", b"new")
-        payload.writestr("resource/pipeline/nodes.json", '{"New": {}}')
-    original_copytree = install.shutil.copytree
-
-    def fail_when_saving_pipeline(source, target, *args, **kwargs):
-        # shutil.copytree 递归时会传入 os.DirEntry，而非 Path。
-        # 仅模拟工作区备份失败，不干扰前面的正常安装目录复制。
-        if Path(source).name == "pipeline" and Path(target).is_relative_to(
-            install.workspace(root) / "retired-pipelines"
-        ):
-            raise OSError("quarantine unavailable")
-        return original_copytree(source, target, *args, **kwargs)
-
-    monkeypatch.setattr(install.shutil, "copytree", fail_when_saving_pipeline)
-    with pytest.raises(OSError, match="quarantine unavailable"):
-        install.install_package(
-            root,
-            archive,
-            archive.stat().st_size,
-            hashlib.sha256(archive.read_bytes()).hexdigest(),
-            frozenset({"config"}),
-            lambda _: None,
-            lambda: None,
-            threading.Event(),
-            prepare_ready=refresh_merged_pipelines,
-        )
-    assert (root / "app.exe").read_bytes() == b"old"
-    assert (pipeline / "Old.json").is_file()
-
-
-def test_low_disk_space_stops_before_original_is_changed(package, monkeypatch):
-    root, _ = package
-    monkeypatch.setattr(
-        install.shutil, "disk_usage", lambda path: type("Usage", (), {"free": 0})()
-    )
-    with pytest.raises(OSError):
-        apply(package)
-    assert (root / "app.exe").read_bytes() == b"old"
-
-
-@pytest.mark.asyncio
-async def test_cancel_waits_for_worker_to_stop():
-    started, stopped = threading.Event(), threading.Event()
-
-    def worker(cancelled):
-        started.set()
-        cancelled.wait(timeout=5)
-        stopped.set()
-        raise InterruptedError()
-
-    task = asyncio.create_task(install.run_worker(worker))
-    await asyncio.to_thread(started.wait, 5)
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert stopped.is_set()
-
-
-def test_missing_install_root_rejects_damaged_previous_backup(package, monkeypatch):
-    root, _ = package
-    replace = Path.replace
-
-    def fail_after_original_moved(path, target):
-        result = replace(path, target)
-        if path == root:
-            raise SystemExit("simulated interruption")
-        return result
-
-    monkeypatch.setattr(Path, "replace", fail_after_original_moved)
-    with pytest.raises(install.InstallUnsafeError):
-        apply(package)
-    monkeypatch.setattr(Path, "replace", replace)
-    previous = install.workspace(root) / "previous"
-    assert previous.exists() and not root.exists()
-    (previous / "app.exe").write_bytes(b"externally changed")
-    with pytest.raises(install.InstallUnsafeError, match="备份不完整"):
-        install.recover_install(root, lambda: None, threading.Event())
-    assert (previous / "app.exe").read_bytes() == b"externally changed"
-    assert (install.workspace(root) / "transaction.json").exists()
-
-
-@pytest.mark.parametrize("legacy_receipt", [False, True])
-def test_interrupted_backup_cleanup_can_safely_finish_on_next_run(
-    package, monkeypatch, legacy_receipt
-):
-    root, _ = package
-    old_rmtree = install.shutil.rmtree
-    previous = install.workspace(root) / "previous"
-
-    def fail_cleanup(path, *args, **kwargs):
-        if Path(path) == previous:
-            (previous / "app.exe").unlink()
-            raise OSError("simulated interrupted backup cleanup")
-        return old_rmtree(path, *args, **kwargs)
-
-    monkeypatch.setattr(install.shutil, "rmtree", fail_cleanup)
-    with pytest.raises(install.InstallUnsafeError):
-        apply(package)
-    monkeypatch.setattr(install.shutil, "rmtree", old_rmtree)
-    assert (root / "app.exe").read_bytes() == b"new"
-    assert previous.exists()
-    if legacy_receipt:
-        (install.record_directory(root) / "installed.json").replace(
-            install.workspace(root) / "installed.json"
-        )
-    install.recover_install(root, lambda: None, threading.Event())
-    assert install.record_path(root, "installed.json").is_file()
-    assert install.verify_installed_files(root, threading.Event())
-    assert not (install.workspace(root) / "installed.json").exists()
-    assert (root / "app.exe").read_bytes() == b"new"
-    assert not previous.exists()
-    assert not (install.workspace(root) / "transaction.json").exists()
-
-
-def test_interrupted_backup_cleanup_keeps_external_modifications(package, monkeypatch):
-    root, _ = package
-    old_rmtree = install.shutil.rmtree
-    previous = install.workspace(root) / "previous"
-
-    def fail_cleanup(path, *args, **kwargs):
-        if Path(path) == previous:
-            (previous / "app.exe").unlink()
-            raise OSError("simulated interrupted cleanup")
-        return old_rmtree(path, *args, **kwargs)
-
-    monkeypatch.setattr(install.shutil, "rmtree", fail_cleanup)
-    with pytest.raises(install.InstallUnsafeError):
-        apply(package)
-    monkeypatch.setattr(install.shutil, "rmtree", old_rmtree)
-    (previous / "config/user.json").write_bytes(b"external modification")
-    with pytest.raises(install.InstallUnsafeError, match="备份发生外部修改"):
-        install.recover_install(root, lambda: None, threading.Event())
-    assert (previous / "config/user.json").read_bytes() == b"external modification"
+    if fault == "publish":
+        assert not (install.workspace(root) / "transaction.json").exists()

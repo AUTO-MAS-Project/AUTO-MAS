@@ -26,7 +26,7 @@ Before editing frontend code:
 1. Confirm branch, remote, and working tree status.
 2. Inspect the target page, adjacent pages, related components, composables, API wrappers, router entries, and styles.
 3. Classify the task as new page, fix, refactor, style/UI adjustment, API integration, route change, or documentation-only.
-4. Select `mas-frontend-ui` as a required companion for any UI, layout, component, form, table, modal, feedback, or visual-state change.
+4. Select `mas-frontend-ui` as a required companion for any UI, layout, component, form, table, modal, feedback, or visual-state change. Before editing application UI source, follow its [concept preview and approval gate](../mas-frontend-ui/SKILL.md#concept-preview-before-implementation).
 5. Keep changes limited to files directly required by the task. Before editing a `.vue` file, record its line count at the task base commit and choose the applicable case in [Component Size Policy](#component-size-policy).
 6. For a new or changed user-visible workflow, page, API result or lifecycle operation, load [mas-telemetry](../mas-telemetry/SKILL.md) proactively. Reuse existing observation or add missing telemetry with the feature; document intentional omissions. Do not add a second event merely because a new component calls an already observed wrapper.
 
@@ -163,13 +163,13 @@ If a command cannot run, state the exact command and the reason. Never claim "co
 
 Vite Plus runs tests in the default node environment, configured by `frontend/vite.config.ts`. There is no DOM environment, `jsdom`, or `@vue/test-utils`. Tests are colocated next to their subject as `*.test.ts`.
 
-The permanent suite is intentionally small. Follow [frontend/TESTING.md](../../../frontend/TESTING.md): retain inexpensive, deterministic, isolated checks that protect shared infrastructure, user-visible behavior, or public contracts. Feature-specific regression tests remain local verification artifacts when they are exploratory or cannot be isolated; when a test is repeatable and protects a stable user-visible behavior or public contract, retain it with the implementation. Do not retain tests just because the subject is a pure function.
+Choose permanent coverage through the [mas-testing retention decision](../mas-testing/SKILL.md#先判断是否值得长期保留), then follow [frontend/TESTING.md](../../../frontend/TESTING.md) for frontend boundaries. Determinism, isolation and a reproducible bug do not by themselves justify retaining a test. Keep one-off verification as local evidence when its ongoing benefit does not cover its cost. Do not retain or reject tests just because the subject is a pure function.
 
 Three established patterns, in order of preference:
 
 1. **Pure logic** — import existing shared logic directly. `electron/services/runtime/ndjson.test.ts` is a reference. Do not extract a module merely to test a simple expression or mapping.
 2. **Composables** — test in node with `vi.mock()` for boundaries. Mock generated services and Electron IPC rather than reaching for a DOM. See `composables/useSaveQueue.test.ts` and `composables/useTaskRuntimeState.test.ts`.
-3. **Component rendering** — for local feature verification, render with `createSSRApp` + `renderToString` from `@vue/server-renderer` (ships with `vue`) and assert on the HTML. Stub Ant Design Vue components with slot-passthrough placeholders so assertions cover the component's decisions. Retain the test when it is deterministic, isolated, and protects a stable user-visible behavior or public contract; otherwise keep it as local verification.
+3. **Component rendering** — for local feature verification, render with `createSSRApp` + `renderToString` from `@vue/server-renderer` (ships with `vue`) and assert on the HTML. Stub Ant Design Vue components with slot-passthrough placeholders so assertions cover the component's decisions. Retain the test only when it also meets the `mas-testing` retention decision; otherwise keep it as local verification.
 
 Do not introduce `mount()`, `jsdom`, `happy-dom`, or `@vue/test-utils` for a routine change; that is a project-wide testing-stack decision, not a task-level one. If a behavior genuinely cannot be covered by these three patterns, say so in your result instead of adding a test dependency.
 

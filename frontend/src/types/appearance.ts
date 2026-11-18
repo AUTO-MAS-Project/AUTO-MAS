@@ -1,5 +1,6 @@
 import type {
   AppearanceCategory,
+  ResourcePackageFailureCode,
   MascotAssets,
   MascotDefinition,
   MascotSummary,
@@ -10,6 +11,7 @@ export type AppearanceMode = 'light' | 'dark'
 export const APPEARANCE_MENU_ICON_KEYS = [
   'home',
   'scripts',
+  'plugins',
   'plans',
   'emulators',
   'queue',
@@ -88,7 +90,13 @@ export interface InstalledAppearance extends AppearanceManifest, MascotAssets {
 export interface AppearanceImportResult {
   success: boolean
   appearance?: InstalledAppearance
-  code?: 'INVALID_PACKAGE' | 'INVALID_ANIMATION' | 'DUPLICATE_ID' | 'IMPORT_FAILED' | 'UNSUPPORTED'
+  code?:
+    | ResourcePackageFailureCode
+    | 'INVALID_PACKAGE'
+    | 'INVALID_ANIMATION'
+    | 'DUPLICATE_ID'
+    | 'IMPORT_FAILED'
+    | 'UNSUPPORTED'
   error?: string
   existing?: InstalledAppearance
 }
@@ -182,7 +190,7 @@ export interface OnlineAppearancePrepareResult {
   appearance?: OnlineAppearancePreview
   /** 本机已有同 ID 外观时给出名字，安装会走覆盖确认。 */
   existing?: { id: string; name: string } | null
-  code?: OnlineAppearanceErrorCode | 'INVALID_PACKAGE'
+  code?: OnlineAppearanceErrorCode | AppearanceImportResult['code']
   error?: string
 }
 
@@ -208,6 +216,6 @@ export interface LocalAppearanceInspectResult {
   success: boolean
   appearance?: OnlineAppearancePreview
   fileSize?: number
-  code?: 'INVALID_PACKAGE' | 'UNSUPPORTED'
+  code?: AppearanceImportResult['code']
   error?: string
 }

@@ -2737,6 +2737,23 @@ def _bundled_native_runtime_dir(
     return None
 
 
+def bundled_native_runtime_location(root: Path) -> str | None:
+    """一棵完整项目树（载荷、staging）里 runner 会用的那份 MaaFramework 原生库目录：
+    相对 ``root`` 的 posix 路径，按 casefold 归一；没带原生库或找不到 interface 时 None。
+
+    与 runner 同一套选法（``project_maafw_runtime_path``），用来比较更新前后「用哪份」变没变。
+    """
+
+    try:
+        base_relative, _ = _locate_interface((root,))
+    except ProjectionError:
+        return None
+    found = _bundled_native_runtime_dir((root,), base_relative)
+    if found is None:
+        return None
+    return found.as_posix().casefold()
+
+
 def _bundled_architecture_warnings(
     roots: tuple[Path, ...], base_relative: Path, runtime_relative: Path | None
 ) -> list[str]:

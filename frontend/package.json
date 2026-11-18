@@ -2,7 +2,7 @@
   "name": "frontend",
   "productName": "AUTO-MAS",
   "private": true,
-  "version": "v5.8.0",
+  "version": "v5.9.0-beta.1",
   "description": "A Multi-Script, Multi-Config Management and Automation Software",
   "author": "AUTO-MAS Team",
   "main": "dist-electron/main.js",
@@ -101,7 +101,9 @@
     "form-data": "^4.0.4",
     "json5": "2.2.3",
     "pinyin-pro": "^3.29.5",
-    "yaml": "2.8.1"
+    "smol-toml": "^1.9.1",
+    "yaml": "2.8.1",
+    "yauzl": "^3.4.0"
   },
   "devDependencies": {
     "@ant-design/icons-vue": "^7.0.1",
@@ -115,6 +117,7 @@
     "@types/node": "22.17.1",
     "@types/qrcode": "1.5.5",
     "@types/three": "^0",
+    "@types/yauzl": "^3.4.0",
     "@vitejs/plugin-vue": "^6.0.1",
     "@vue/devtools-core": "8.2.1",
     "@vue/tsconfig": "^0.7.0",

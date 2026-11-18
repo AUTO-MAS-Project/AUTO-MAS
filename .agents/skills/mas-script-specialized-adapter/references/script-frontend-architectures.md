@@ -42,7 +42,7 @@
 
 | 线 | 自动跑 | 用户改配置 |
 | --- | --- | --- |
-| ok-script | 以子项目实际 CLI 为准；Okww / OkNte 当前均为 `-t N -e` | **按子项目分两路**：Okww 仅 ScriptConfig 遮罩调本体 GUI；OkNte 动态表单 REST + 遮罩并存 |
+| ok-script | 以子项目实际 CLI 为准 | Okww / OkNte 均提供 REST 动态面板 + ScriptConfig 本体 GUI；字段元数据和账号覆写按子项目确认 |
 | MFAA | **不宜依赖单条 CLI 跑完队列**；写任务/运行 JSON 再启 exe | 不用 ScriptConfig 调 Avalonia 壳；Vue 改 config、后端写盘 |
 | MXU（MaaEnd） | `mxu-*.json` 可设 autoRun 类字段；必要时对照壳 CLI | 常 ScriptConfig 拉起本体会话；日常字段走 Section |
 | MAA | 依 MAA 文档，常见 ScriptConfig 路径 | ScriptConfig 调本体 + 关卡/plan Section |

@@ -78,9 +78,23 @@
         :description="template.preset.description"
         :base-path="basePath"
         :chips="presetTemplateChips(template)"
+        :disabled="template.unavailable"
       >
         <template #actions>
-          <a-button type="primary" @click="emit('applyPresetTemplate', template.preset.name)">
+          <!-- 不支持当前控制器的预设（PI v2.10.4）：置灰、悬停说明，不隐藏 -->
+          <a-tooltip
+            v-if="template.unavailable"
+            :title="t('core.edit.presetControllerUnavailable')"
+          >
+            <span class="preset-apply-disabled">
+              <a-button type="primary" disabled>{{ t('core.edit.applyPreset2') }}</a-button>
+            </span>
+          </a-tooltip>
+          <a-button
+            v-else
+            type="primary"
+            @click="emit('applyPresetTemplate', template.preset.name)"
+          >
             {{ t('core.edit.applyPreset2') }}
           </a-button>
         </template>
@@ -248,6 +262,16 @@ const confirmDelete = (name: string) => {
 
 .queue-template-save-button {
   margin-left: auto;
+}
+
+/* 禁用的按钮收不到鼠标事件：提示挂在外层 span 上 */
+.preset-apply-disabled {
+  display: inline-block;
+  cursor: not-allowed;
+}
+
+.preset-apply-disabled :deep(.ant-btn) {
+  pointer-events: none;
 }
 
 .preset-section-modal {

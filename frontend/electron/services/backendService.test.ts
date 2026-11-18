@@ -1,23 +1,31 @@
 import { spawn } from 'child_process'
 import { BrowserWindow } from 'electron'
 import { EventEmitter } from 'node:events'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
-import { analyticsService } from './analyticsService'
 import { BackendService } from './backendService'
 import { getFluxdownInstallEnvironment } from './fluxdownInstallService'
 import { InitializationService } from './initializationService'
-import { createRuntimeClient, RUNTIME_EXE_ENV, RUNTIME_MODE_ENV } from './runtime'
-import {
-  captureScheduledWakeupContext,
-  prepareSystemResumeRecovery,
-  scheduledWakeupBackendReady,
-} from './scheduledWakeup'
+import { RUNTIME_EXE_ENV, RUNTIME_MODE_ENV } from './runtime'
 
+// 更新准备本身由下载/预检集成测试守护；这里继续覆盖 Runtime 提交后的关闭协议。
+vi.mock(
+  './runtimeUpgradePreparation',
+  () => /* 隔离真实升级准备和下载，保留后端服务生命周期测试关注的停止与重启行为。 */ ({
+    prepareCoreUpgrade: async () => ({
+      apply: async () => ({ status: 'skipped' }),
+      dispose: async () => {},
+    }),
+    prepareRuntimeBinary: async () => ({
+      apply: async () => ({ status: 'skipped' }),
+      dispose: async () => {},
+    }),
+  })
+)
 vi.mock('child_process', () => ({ spawn: vi.fn() }))
 // 更新弹窗的检查不渲染 DOM；启动、更新状态与退出协调仍运行生产代码。
 vi.mock('ant-design-vue', () => ({ Modal: {}, message: {}, notification: {} }))
@@ -30,8 +38,10 @@ vi.mock('https', () => ({
 }))
 // 同时验证开发 Electron 与打包 Electron 的环境会显式传到 Runtime，且覆盖继承值。
 const appState = vi.hoisted(() => ({ isPackaged: false, appPath: '', userData: '' }))
+const metadataNetwork = vi.hoisted(() => ({ fetch: vi.fn(), setProxy: vi.fn() }))
 const ipcHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>())
 vi.mock('electron', () => ({
+  session: { fromPartition: () => metadataNetwork },
   ipcMain: {
     handle: (channel: string, handler: (...args: unknown[]) => unknown) =>
       ipcHandlers.set(channel, handler),
@@ -177,7 +187,7 @@ const helloLine = line({
 const runningStateLine = line({
   ...base,
   type: 'state',
-  sequence: 3,
+  sequence: 4,
   stage: 'backend.run',
   status: 'running',
   message: '后端运行中',
@@ -228,9 +238,31 @@ async function passEnvironmentEnsure(offset = 0): Promise<FakeChild> {
  * bootstrap --if-needed，各 spawn 一次），用真实成功夹具让它们结束，
  * 再返回随后 spawn 出来的 backend supervise 子进程。
  */
-async function passManagedPreparation(offset = 0): Promise<FakeChild> {
+async function passManagedPreparation(offset = 0, installedVersion?: string): Promise<FakeChild> {
   const check = await waitForSpawn(offset)
-  check.stdout.feed(fixtureLines('bootstrap-success.ndjson').join(''))
+  check.stdout.feed(
+    line({
+      ...base,
+      type: 'hello',
+      sequence: 1,
+      runtimeVersion: 'dev',
+      command: 'workspace check',
+      capabilities: [],
+    }) +
+      line({
+        ...base,
+        type: 'result',
+        sequence: 2,
+        success: true,
+        code: 'OK',
+        stage: 'workspace.check',
+        status: 'succeeded',
+        message: '检查完成',
+        retryable: false,
+        remediation: [],
+        details: { healthy: installedVersion !== undefined, version: installedVersion },
+      })
+  )
   check.close(0)
   const bootstrap = await waitForSpawn(offset + 1)
   bootstrap.stdout.feed(fixtureLines('bootstrap-success.ndjson').join(''))
@@ -256,7 +288,10 @@ beforeEach(() => {
   // health 默认带 version 且与前端 mock 版本（5.5.0-beta.3 归一化后）一致。
   fetchMock.mockImplementation(async (url: unknown) => {
     if (String(url).includes('/api/core/health')) {
-      return { ok: true, json: async () => ({ ready: true, version: 'v5.5.0-beta.3' }) }
+      return {
+        ok: true,
+        json: async () => ({ ready: true, businessStatus: 'ready', version: 'v5.5.0-beta.3' }),
+      }
     }
     throw new Error('connect ECONNREFUSED')
   })
@@ -275,167 +310,96 @@ afterEach(() => {
   rmSync(appState.userData, { recursive: true, force: true })
 })
 
-// ==================== Runtime 监督链路 ====================
-
-it('metadata-only Runtime clients do not retain a healthy resume source', async () => {
-  vi.useFakeTimers()
-  try {
-    prepareSystemResumeRecovery()
-    createRuntimeClient({ runtimePath: EXISTING_EXE, appRoot })
-    // 更新检查与 doctor 也创建客户端，但不启动后端，不应锁存来源。
-    await vi.advanceTimersByTimeAsync(11 * 60 * 1000)
-    expect(captureScheduledWakeupContext().resumedAt).toBeUndefined()
-  } finally {
-    scheduledWakeupBackendReady()
-    vi.useRealTimers()
-  }
-})
-
-describe('development 模式', () => {
+describe('Runtime 启动与退出', () => {
   beforeEach(() => {
     process.env[RUNTIME_MODE_ENV] = 'development'
     process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
   })
 
-  it.each([false, true])('应用环境决定端口，端点采纳就绪事件：%s', async isPackaged => {
-    appState.isPackaged = isPackaged
-    const service = createService()
-    mockSpawn()
-
-    const pending = service.startBackend()
-    const child = await passEnvironmentEnsure()
-    child.stdout.feed(helloLine + runningStateLine)
-    const result = await pending
-
-    expect(result).toEqual({ success: true })
-    expect(spawnMock).toHaveBeenCalledTimes(2)
-    expect(spawnMock.mock.calls[0][0]).toBe(EXISTING_EXE)
-    expect(spawnMock.mock.calls[1][0]).toBe(EXISTING_EXE)
-    // 第一步先在仓外的 Runtime 根目录种 uv：backend supervise 自己不下载 uv。
-    expect(spawnedArgs(0)).toEqual([
-      '--app-root',
-      runtimeRoot,
-      '--output',
-      'ndjson',
-      '--protocol',
-      '1',
-      'environment',
-      'ensure',
-    ])
-    expect(existsSync(runtimeRoot)).toBe(true)
-    // 第二步 supervise：--app-root 仍是仓外的 Runtime 根，--repo 才是源码根（用户数据根）。
-    expect(spawnedArgs(1)).toEqual([
-      '--app-root',
-      runtimeRoot,
-      '--output',
-      'ndjson',
-      '--protocol',
-      '1',
-      'backend',
-      'supervise',
-      '--mode',
-      'development',
-      '--repo',
-      appRoot,
-      '--port',
-      isPackaged ? '36163' : '36164',
-      '--shutdown-timeout',
-      '30',
-    ])
-
-    // WS 根地址由 baseUrl 派生，不按 resolveHttpPort 另算。
-    expect(service.getRuntimeApiEndpoints()).toEqual({
-      local: 'http://127.0.0.1:36163',
-      websocket: 'ws://127.0.0.1:36163',
-    })
-    expect(service.getStatus()).toMatchObject({ isRunning: true, pid: 4242 })
-    expect(service.getStatus().runtimeSupervised).toBe(true)
-
-    // 端口与身份由 Runtime 注入，应用环境随两次 spawn 传入，保持开发态遥测隔离。
-    for (const index of [0, 1]) {
-      expect(spawnedEnv(index).AUTO_MAS_HTTP_PORT).toBeUndefined()
-      expect(spawnedEnv(index).AUTO_MAS_DEV).toBeUndefined()
-      expect(spawnedEnv(index).AUTO_MAS_ENV).toBe(isPackaged ? 'production' : 'development')
-      expect(spawnedEnv(index).AUTO_MAS_INSTALL_TOKEN).toBe(
-        getFluxdownInstallEnvironment().AUTO_MAS_INSTALL_TOKEN
-      )
-    }
-
-    child.stdout.feed(stoppedResultLine)
-    child.close(0)
-  })
-
-  it.each(['development', 'managed'] as const)(
-    '自定义端口透传，端点采纳就绪事件：%s',
-    async mode => {
-      appState.isPackaged = true
+  it.each([
+    [false, 'development', undefined, '36164'],
+    [true, 'managed', undefined, '36163'],
+    [false, 'development', '36184', '36184'],
+  ] as const)(
+    '应用环境决定端口，端点采纳就绪事件：%s',
+    async (isPackaged, mode, port, expectedPort) => {
+      appState.isPackaged = isPackaged
       process.env[RUNTIME_MODE_ENV] = mode
-      vi.stubEnv('AUTO_MAS_HTTP_PORT', '36184')
-      try {
-        mockSpawn()
-        const service = createService()
-        const pending = service.startBackend()
-        const child = await (mode === 'managed'
-          ? passManagedPreparation()
-          : passEnvironmentEnsure())
-        child.stdout.feed(helloLine + runningStateLine)
-        expect(await pending).toEqual({ success: true })
-        expect(spawnedArgs(mode === 'managed' ? 2 : 1).slice(-4)).toEqual([
-          '--port',
-          '36184',
-          '--shutdown-timeout',
-          '30',
-        ])
-        expect(service.getRuntimeApiEndpoints()?.local).toBe('http://127.0.0.1:36163')
-        child.stdout.feed(stoppedResultLine)
-        child.close(0)
-      } finally {
-        vi.unstubAllEnvs()
-      }
-    }
-  )
-
-  it.each([1, 80, 1023])('Runtime 开发启动在准备前明确拒绝低端口 %s', async port => {
-    vi.stubEnv('AUTO_MAS_HTTP_PORT', String(port))
-    try {
-      mockSpawn()
-      const result = await createService().startBackend()
-      expect(result).toMatchObject({ success: false, code: 'INVALID_ARGUMENT' })
-      expect(result.error).toContain('1024–65535')
-      expect(result.error).toContain('yarn web')
-      expect(spawnMock).not.toHaveBeenCalled()
-    } finally {
-      vi.unstubAllEnvs()
-    }
-  })
-
-  it.each(['completes', 'times-out'] as const)(
-    '开发后端清理超过 5 秒时等待完整预算：%s',
-    async outcome => {
-      mockSpawn()
+      vi.stubEnv('AUTO_MAS_HTTP_PORT', port)
       const service = createService()
+      mockSpawn()
+
       const pending = service.startBackend()
-      const child = await passEnvironmentEnsure()
-      child.stdout.feed(helloLine + runningStateLine)
-      await pending
-      vi.useFakeTimers()
-      try {
-        const stopped = service.stopBackend()
-        await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
-        await vi.advanceTimersByTimeAsync(7000)
-        expect(child.killed).toBe(false)
-        if (outcome === 'completes') {
-          child.stdout.feed(stoppedResultLine)
-          child.close(0)
-        } else {
-          await vi.advanceTimersByTimeAsync(28000)
-          expect(child.killed).toBe(true)
-        }
-        expect(await stopped).toEqual({ success: true })
-      } finally {
-        vi.useRealTimers()
-        if (!child.killed && child.exitCode === null) child.close(0)
+      const child =
+        mode === 'managed' ? await passManagedPreparation() : await passEnvironmentEnsure()
+      child.stdout.feed(helloLine)
+      child.stdout.feed(
+        line({
+          ...base,
+          type: 'state',
+          sequence: 2,
+          stage: 'backend.health',
+          status: 'running',
+          details: { baseUrl: 'http://127.0.0.1:1' },
+        }) +
+          line({
+            ...base,
+            type: 'state',
+            sequence: 3,
+            stage: 'backend.run',
+            status: 'running',
+            details: {},
+          })
+      )
+      await new Promise<void>(resolve => setImmediate(resolve))
+      expect(service.getRuntimeApiEndpoints()).toBeNull()
+      expect(service.getStatus().isRunning).toBe(false)
+      expect(fetchMock).not.toHaveBeenCalled()
+      child.stdout.feed(runningStateLine)
+      const result = await pending
+
+      expect(result).toEqual({ success: true })
+      const superviseIndex = mode === 'managed' ? 2 : 1
+      expect(spawnMock).toHaveBeenCalledTimes(superviseIndex + 1)
+      expect(spawnedArgs(superviseIndex)).toEqual([
+        '--app-root',
+        mode === 'managed' ? appRoot : runtimeRoot,
+        '--output',
+        'ndjson',
+        '--protocol',
+        '1',
+        'backend',
+        'supervise',
+        '--mode',
+        mode,
+        ...(mode === 'development' ? ['--repo', appRoot] : []),
+        '--port',
+        expectedPort,
+        '--shutdown-timeout',
+        '30',
+      ])
+
+      // WS 根地址由 baseUrl 派生，不按 resolveHttpPort 另算。
+      expect(service.getRuntimeApiEndpoints()).toEqual({
+        local: 'http://127.0.0.1:36163',
+        websocket: 'ws://127.0.0.1:36163',
+      })
+      expect(service.getStatus()).toMatchObject({ isRunning: true, pid: 4242 })
+      expect(service.getStatus().runtimeSupervised).toBe(true)
+
+      // 端口与身份由 Runtime 注入，应用环境随两次 spawn 传入，保持开发态遥测隔离。
+      for (let index = 0; index <= superviseIndex; index += 1) {
+        expect(spawnMock.mock.calls[index][0]).toBe(EXISTING_EXE)
+        expect(spawnedEnv(index).AUTO_MAS_HTTP_PORT).toBe(port)
+        expect(spawnedEnv(index).AUTO_MAS_DEV).toBeUndefined()
+        expect(spawnedEnv(index).AUTO_MAS_ENV).toBe(isPackaged ? 'production' : 'development')
+        expect(spawnedEnv(index).AUTO_MAS_INSTALL_TOKEN).toBe(
+          getFluxdownInstallEnvironment().AUTO_MAS_INSTALL_TOKEN
+        )
       }
+
+      child.stdout.feed(stoppedResultLine)
+      child.close(0)
     }
   )
 
@@ -469,462 +433,165 @@ describe('development 模式', () => {
     expect(killAllMock).not.toHaveBeenCalled()
   })
 
-  it('stopBackend 只发一次 shutdown，不做任何进程清理', async () => {
-    const service = createService()
-    mockSpawn()
-
-    const pendingStart = service.startBackend()
-    const child = await passEnvironmentEnsure()
-    child.stdout.feed(helloLine + runningStateLine)
-    await pendingStart
-
-    const pendingStop = service.stopBackend()
-    await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
-
-    const payload = JSON.parse(child.stdin.chunks[0].trimEnd())
-    expect(payload).toMatchObject({ protocol: 1, command: 'shutdown' })
-
-    child.stdout.feed(stoppedResultLine)
-    child.close(0)
-
-    expect(await pendingStop).toEqual({ success: true })
-    expect(child.stdin.chunks).toHaveLength(1)
-    // 进程树归 Runtime 的 Job Object 管，这里不许再有 scoped taskkill，
-    // 也不再自己发 POST /api/core/close（启动闸门的健康检查除外）。
-    expect(killAllMock).not.toHaveBeenCalled()
-    const fetchedUrls = fetchMock.mock.calls.map(([url]) => String(url))
-    expect(fetchedUrls.some(url => url.includes('/api/core/close'))).toBe(false)
-    expect(child.killed).toBe(false)
-    expect(service.getRuntimeApiEndpoints()).toBeNull()
-    expect(service.getStatus().isRunning).toBe(false)
-  })
-
-  it.each(['before-hello', 'after-hello'] as const)(
-    'environment ensure 的 %s 阶段退出会取消准备，不再启动后端',
-    async phase => {
+  describe.each(['before-hello', 'checking-version', 'shutdown-timeout'])('关闭阶段 %s', phase => {
+    it('stopBackend 只发一次 shutdown，不做任何进程清理', async () => {
       const service = createService()
       mockSpawn()
+      vi.useFakeTimers()
+      let finishHealth: () => void = () => undefined
+      if (phase === 'checking-version') {
+        fetchMock.mockImplementationOnce(
+          () =>
+            new Promise(resolve => {
+              finishHealth = () =>
+                resolve({ ok: true, json: async () => ({ version: 'v5.5.0-beta.3' }) })
+            })
+        )
+      }
+
       const pendingStart = service.startBackend()
-      const ensure = await waitForSpawn(0)
-      const hello = fixtureLines('environment-ensure.ndjson')[0]
-      if (phase === 'after-hello') {
-        ensure.stdout.feed(hello)
-        await Promise.resolve()
+      const child = await passEnvironmentEnsure()
+      if (phase !== 'before-hello') {
+        child.stdout.feed(helloLine + runningStateLine)
+        if (phase === 'checking-version')
+          await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+        else expect(await pendingStart).toEqual({ success: true })
       }
       const pendingStop = service.stopBackend()
+      const repeatedStop = service.stopBackend()
       try {
-        if (phase === 'before-hello') {
-          ensure.stdout.feed(hello)
+        if (phase === 'before-hello') child.stdout.feed(helloLine)
+        await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
+        const controlLine = child.stdin.chunks[0]
+        expect(controlLine.endsWith('\n')).toBe(true)
+        expect(JSON.parse(controlLine)).toMatchObject({
+          protocol: 1,
+          command: 'shutdown',
+          commandId: expect.stringMatching(/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/),
+        })
+        finishHealth()
+        let stopped = false
+        void pendingStop.then(() => {
+          stopped = true
+        })
+        await vi.advanceTimersByTimeAsync(7000)
+        expect(child.killed).toBe(false)
+        expect(stopped).toBe(false)
+        if (phase === 'shutdown-timeout') {
+          await vi.advanceTimersByTimeAsync(28000)
+          expect(child.killed).toBe(true)
+        } else {
+          child.stdout.feed(stoppedResultLine)
+          await vi.advanceTimersByTimeAsync(0)
+          expect(stopped).toBe(false)
+          child.close(0)
         }
-        await vi.waitFor(() => expect(ensure.stdin.chunks).toHaveLength(1))
-        expect(JSON.parse(ensure.stdin.chunks[0])).toMatchObject({ command: 'cancel' })
-        ensure.stdout.feed(
+        expect(await Promise.all([pendingStop, repeatedStop])).toEqual([
+          { success: true },
+          { success: true },
+        ])
+        expect((await pendingStart).success).toBe(phase === 'shutdown-timeout')
+      } finally {
+        finishHealth()
+        if (child.exitCode === null && child.signalCode === null) child.close(0)
+        vi.useRealTimers()
+        await Promise.allSettled([pendingStart, pendingStop, repeatedStop])
+      }
+      expect(child.stdin.chunks).toHaveLength(1)
+      // 进程树归 Runtime 的 Job Object 管，这里不许再有 scoped taskkill，
+      // 也不再自己发 POST /api/core/close（启动闸门的健康检查除外）。
+      expect(killAllMock).not.toHaveBeenCalled()
+      const fetchedUrls = fetchMock.mock.calls.map(([url]) => String(url))
+      expect(fetchedUrls.some(url => url.includes('/api/core/close'))).toBe(false)
+      expect(child.killed).toBe(phase === 'shutdown-timeout')
+      expect(service.getRuntimeApiEndpoints()).toBeNull()
+      expect(service.getStatus().isRunning).toBe(false)
+    })
+  })
+
+  it.each([
+    'before-hello',
+    'after-hello',
+    'supervise-before-hello',
+    'supervise-waiting-ready',
+    'preparation-failed',
+  ] as const)('environment ensure 的 %s 阶段退出会取消准备，不再启动后端', async phase => {
+    const service = createService()
+    mockSpawn()
+    const pendingStart = service.startBackend()
+    const supervising = phase.startsWith('supervise-')
+    const ensure = supervising ? await passEnvironmentEnsure() : await waitForSpawn(0)
+    const hello = supervising ? helloLine : fixtureLines('environment-ensure.ndjson')[0]
+    if (phase === 'preparation-failed') {
+      ensure.stdout.feed(
+        hello +
           line({
             ...base,
             type: 'result',
             sequence: 2,
             success: false,
-            code: 'OPERATION_CANCELLED',
+            code: 'UV_DOWNLOAD_FAILED',
             stage: 'uv.download',
-            status: 'cancelled',
-            message: '已取消',
+            status: 'failed',
+            message: '下载 uv 失败',
             retryable: true,
             remediation: ['retry'],
             details: {},
           })
-        )
-        ensure.close(10)
-        expect((await pendingStart).success).toBe(false)
-        expect(await pendingStop).toEqual({ success: true })
-        expect(spawnMock).toHaveBeenCalledTimes(1)
-        expect(service.getStatus().isRunning).toBe(false)
-        expect(killAllMock).not.toHaveBeenCalled()
-      } finally {
-        if (ensure.exitCode === null && !ensure.killed) ensure.close(10)
-        await Promise.allSettled([pendingStart, pendingStop])
-      }
+      )
+      ensure.close(50)
+      expect(await pendingStart).toMatchObject({
+        success: false,
+        code: 'UV_DOWNLOAD_FAILED',
+        retryable: true,
+      })
+      expect(spawnMock).toHaveBeenCalledTimes(1)
+      expect(service.getRuntimeApiEndpoints()).toBeNull()
+      return
     }
-  )
-
-  it.each(['before-hello', 'waiting-ready'] as const)(
-    'supervise 的 %s 阶段退出会取消启动，不等待后端就绪超时',
-    async phase => {
-      const service = createService()
-      mockSpawn()
-      const pendingStart = service.startBackend()
-      const child = await passEnvironmentEnsure()
-      if (phase === 'waiting-ready') {
-        child.stdout.feed(helloLine)
-        await new Promise<void>(resolve => setImmediate(resolve))
-      }
-      const pendingStop = service.stopBackend()
-      try {
-        if (phase === 'before-hello') {
-          child.stdout.feed(helloLine)
-          await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
-          expect(JSON.parse(child.stdin.chunks[0])).toMatchObject({ command: 'shutdown' })
-          expect(child.killed).toBe(false)
-          child.stdout.feed(stoppedResultLine)
-          child.close(0)
-        } else {
-          await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
-          expect(JSON.parse(child.stdin.chunks[0])).toMatchObject({ command: 'shutdown' })
-          child.stdout.feed(stoppedResultLine)
-          child.close(0)
-        }
-        expect((await pendingStart).success).toBe(false)
-        expect(await pendingStop).toEqual({ success: true })
-        expect(spawnMock).toHaveBeenCalledTimes(2)
-        expect(service.getStatus().isRunning).toBe(false)
-        expect(killAllMock).not.toHaveBeenCalled()
-      } finally {
-        if (child.exitCode === null && !child.killed) child.close(0)
-        await Promise.allSettled([pendingStart, pendingStop])
-      }
+    if (phase === 'after-hello' || phase === 'supervise-waiting-ready') {
+      ensure.stdout.feed(hello)
+      await new Promise<void>(resolve => setImmediate(resolve))
     }
-  )
-
-  it('版本校验期间退出通过 shutdown 等待慢清理，不直接 cancel 强杀后端', async () => {
-    let finishHealth: () => void = () => undefined
-    fetchMock.mockImplementationOnce(
-      () =>
-        new Promise(resolve => {
-          finishHealth = () =>
-            resolve({ ok: true, json: async () => ({ version: 'v5.5.0-beta.3' }) })
-        })
-    )
-    const service = createService()
-    mockSpawn()
-    const pendingStart = service.startBackend()
-    const child = await passEnvironmentEnsure()
-    child.stdout.feed(helloLine + runningStateLine)
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
-    const write = child.stdin.write.bind(child.stdin)
-    vi.spyOn(child.stdin, 'write').mockImplementation(chunk => {
-      const result = write(chunk)
-      // Runtime 的 cancel 会直接清理进程；shutdown 才请求后端收尾。
-      if (JSON.parse(chunk).command === 'cancel') child.kill()
-      return result
-    })
-    vi.useFakeTimers()
     const pendingStop = service.stopBackend()
     try {
-      await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
-      expect(JSON.parse(child.stdin.chunks[0])).toMatchObject({ command: 'shutdown' })
-      finishHealth()
-      await vi.advanceTimersByTimeAsync(7000)
-      expect(child.killed).toBe(false)
-      child.stdout.feed(stoppedResultLine)
-      child.close(0)
+      if (phase === 'before-hello' || phase === 'supervise-before-hello') {
+        ensure.stdout.feed(hello)
+      }
+      await vi.waitFor(() => expect(ensure.stdin.chunks).toHaveLength(1))
+      expect(JSON.parse(ensure.stdin.chunks[0])).toMatchObject({
+        command: supervising ? 'shutdown' : 'cancel',
+      })
+      ensure.stdout.feed(
+        supervising
+          ? stoppedResultLine
+          : line({
+              ...base,
+              type: 'result',
+              sequence: 2,
+              success: false,
+              code: 'OPERATION_CANCELLED',
+              stage: 'uv.download',
+              status: 'cancelled',
+              message: '已取消',
+              retryable: true,
+              remediation: ['retry'],
+              details: {},
+            })
+      )
+      ensure.close(supervising ? 0 : 10)
       expect((await pendingStart).success).toBe(false)
       expect(await pendingStop).toEqual({ success: true })
+      expect(spawnMock).toHaveBeenCalledTimes(supervising ? 2 : 1)
       expect(service.getStatus().isRunning).toBe(false)
+      expect(killAllMock).not.toHaveBeenCalled()
     } finally {
-      vi.useRealTimers()
-      finishHealth()
-      if (child.exitCode === null && !child.killed) child.close(0)
+      if (ensure.exitCode === null && !ensure.killed) ensure.close(10)
       await Promise.allSettled([pendingStart, pendingStop])
     }
   })
-
-  it('environment ensure 失败时不再 supervise，按它的结果码报告失败', async () => {
-    const service = createService()
-    mockSpawn()
-
-    const pending = service.startBackend()
-    const ensure = await waitForSpawn(0)
-    ensure.stdout.feed(
-      line({
-        ...base,
-        type: 'hello',
-        sequence: 1,
-        runtimeVersion: 'dev',
-        command: 'environment ensure',
-        capabilities: ['stdin.cancel', 'state.v1'],
-      })
-    )
-    ensure.stderr.feed('auto-mas-runtime: 下载 uv 失败\n')
-    ensure.stdout.feed(
-      line({
-        ...base,
-        type: 'result',
-        sequence: 2,
-        success: false,
-        code: 'UV_DOWNLOAD_FAILED',
-        stage: 'uv.download',
-        status: 'failed',
-        message: '下载 uv 失败',
-        retryable: true,
-        remediation: ['retry', 'switch-mirror'],
-        details: {},
-      })
-    )
-    ensure.close(50)
-
-    const result = await pending
-
-    expect(result.success).toBe(false)
-    expect(result.code).toBe('UV_DOWNLOAD_FAILED')
-    expect(result.retryable).toBe(true)
-    expect(result.remediation).toEqual(['retry', 'switch-mirror'])
-    expect(result.error).toBe('下载 uv 失败')
-    expect(result.logs).toBe('[stderr]\nauto-mas-runtime: 下载 uv 失败')
-    // uv 没就绪就不该起 supervise，也不该有任何旧链路清理。
-    expect(spawnMock).toHaveBeenCalledTimes(1)
-    expect(service.getRuntimeApiEndpoints()).toBeNull()
-    expect(killAllMock).not.toHaveBeenCalled()
-  })
-
-  it('就绪只认 backend.run running 且带 baseUrl，其他阶段的 running 不算', async () => {
-    const service = createService()
-    mockSpawn()
-
-    const pending = service.startBackend()
-    const child = await passEnvironmentEnsure()
-    child.stdout.feed(helloLine)
-    // 同名 status 但阶段不对，或阶段对了却没有 baseUrl，都不能让启动成功。
-    child.stdout.feed(
-      line({
-        ...base,
-        type: 'state',
-        sequence: 2,
-        stage: 'backend.health',
-        status: 'running',
-        message: '健康检查中',
-        details: { baseUrl: 'http://127.0.0.1:1' },
-      })
-    )
-    child.stdout.feed(
-      line({
-        ...base,
-        type: 'state',
-        sequence: 3,
-        stage: 'backend.run',
-        status: 'running',
-        message: '后端运行中',
-        details: { pid: 9001 },
-      })
-    )
-    await new Promise(resolve => setTimeout(resolve, 20))
-    expect(service.getRuntimeApiEndpoints()).toBeNull()
-    expect(service.getStatus().isRunning).toBe(false)
-
-    child.stdout.feed(runningStateLine)
-    expect(await pending).toEqual({ success: true })
-    expect(service.getRuntimeApiEndpoints()?.local).toBe('http://127.0.0.1:36163')
-
-    child.stdout.feed(stoppedResultLine)
-    child.close(0)
-  })
-
-  it('找不到 Runtime 可执行文件时按 RUNTIME_NOT_FOUND 失败，不回退旧链路', async () => {
-    delete process.env[RUNTIME_EXE_ENV]
-    const service = createService()
-
-    const result = await service.startBackend({
-      pythonPath: EXISTING_EXE,
-      mainPyPath: EXISTING_EXE,
-    })
-
-    expect(result.success).toBe(false)
-    expect(result.code).toBe('RUNTIME_NOT_FOUND')
-    expect(result.retryable).toBe(false)
-    expect(result.remediation).toEqual(['update-desktop', 'contact-support'])
-    // 一次生命周期只走一条链路：既没有 spawn python，也没有 spawn Runtime。
-    expect(spawnMock).not.toHaveBeenCalled()
-    expect(killAllMock).not.toHaveBeenCalled()
-  })
 })
 
-describe('managed 模式', () => {
-  it.each(['workspace check', 'bootstrap'] as const)(
-    '%s 准备失败时保留 Runtime 协议日志',
-    async command => {
-      appState.isPackaged = true
-      process.env[RUNTIME_MODE_ENV] = 'managed'
-      process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-      const service = createService()
-      mockSpawn()
-      const record = vi.spyOn(analyticsService, 'recordMainEvent')
-
-      const pending = service.startBackend()
-      let preparation = await waitForSpawn(0)
-      if (command === 'bootstrap') {
-        preparation.stdout.feed(
-          line({
-            ...base,
-            type: 'hello',
-            sequence: 1,
-            runtimeVersion: 'dev',
-            command: 'workspace check',
-            capabilities: [],
-          }) +
-            line({
-              ...base,
-              type: 'log',
-              sequence: 2,
-              source: 'runtime',
-              stream: 'stdout',
-              message: '上一次检查成功日志',
-            }) +
-            line({
-              ...base,
-              type: 'result',
-              sequence: 3,
-              success: true,
-              code: 'OK',
-              stage: 'workspace.check',
-              status: 'succeeded',
-              message: '检查完成',
-              retryable: false,
-              remediation: [],
-              details: { healthy: true, version: 'v5.5.0-beta.3' },
-            })
-        )
-        preparation.close(0)
-        preparation = await waitForSpawn(1)
-      }
-      preparation.stdout.feed(
-        line({
-          ...base,
-          type: 'hello',
-          sequence: 1,
-          runtimeVersion: 'dev',
-          command,
-          capabilities: [],
-        }) +
-          line({
-            ...base,
-            type: 'log',
-            sequence: 2,
-            source: 'runtime',
-            stream: 'stdout',
-            message: '准备步骤日志',
-          }) +
-          line({
-            ...base,
-            type: 'log',
-            sequence: 3,
-            source: 'runtime',
-            stream: 'stderr',
-            message: '依赖失败详情',
-          }) +
-          line({
-            ...base,
-            type: 'result',
-            sequence: 4,
-            success: false,
-            code: 'DEPENDENCY_SYNC_FAILED',
-            stage: 'dependency.sync',
-            status: 'failed',
-            message: '准备失败',
-            retryable: true,
-            remediation: ['retry-sync'],
-            details: {},
-          })
-      )
-      preparation.close(50)
-
-      const result = await pending
-      expect(result.success).toBe(false)
-      expect(result.code).toBe('DEPENDENCY_SYNC_FAILED')
-      expect(result.logs).toBe('[stdout]\n准备步骤日志\n\n[stderr]\n依赖失败详情')
-      expect(record).toHaveBeenCalled()
-      expect(JSON.stringify(record.mock.calls)).not.toContain('准备步骤日志')
-      expect(JSON.stringify(record.mock.calls)).not.toContain('依赖失败详情')
-      record.mockRestore()
-      expect(spawnMock).toHaveBeenCalledTimes(command === 'bootstrap' ? 2 : 1)
-    }
-  )
-
-  it('准备命令异常退出时仍保留有界日志，不把日志送入遥测', async () => {
-    appState.isPackaged = true
-    process.env[RUNTIME_MODE_ENV] = 'managed'
-    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-    const service = createService()
-    mockSpawn()
-    const record = vi.spyOn(analyticsService, 'recordMainEvent')
-
-    const pending = service.startBackend()
-    const child = await waitForSpawn(0)
-    child.stdout.feed(
-      line({
-        ...base,
-        type: 'hello',
-        sequence: 1,
-        runtimeVersion: 'dev',
-        command: 'workspace check',
-        capabilities: [],
-      })
-    )
-    for (let i = 0; i < 205; i++) {
-      child.stdout.feed(
-        line({
-          ...base,
-          type: 'log',
-          sequence: i + 2,
-          source: 'runtime',
-          stream: 'stderr',
-          message: `本地诊断-${i}`,
-        })
-      )
-    }
-    child.close(50)
-
-    const result = await pending
-    expect(result.success).toBe(false)
-    expect(result.logs).toContain('本地诊断-5')
-    expect(result.logs).not.toContain('本地诊断-4\n')
-    expect(result.logs).toContain('本地诊断-204')
-    expect(result.logs?.split('\n')).toHaveLength(201)
-    expect(record).toHaveBeenCalled()
-    expect(JSON.stringify(record.mock.calls)).not.toContain('本地诊断-')
-    record.mockRestore()
-    expect(spawnMock).toHaveBeenCalledTimes(1)
-  })
-
-  it.each([false, true])('应用环境决定端口，受管目录不变：%s', async isPackaged => {
-    appState.isPackaged = isPackaged
-    process.env.AUTO_MAS_ENV = 'development'
-    process.env[RUNTIME_MODE_ENV] = 'managed'
-    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-    const service = createService()
-    mockSpawn()
-
-    const pending = service.startBackend()
-    // managed 的 supervise 之前先跑 workspace check 与 bootstrap 两次准备，
-    // 各自 spawn 一次；第三次 spawn 才是 backend supervise。
-    const child = await passManagedPreparation()
-    child.stdout.feed(helloLine + runningStateLine)
-    child.stdout.feed(helloLine + runningStateLine)
-
-    expect(await pending).toEqual({ success: true })
-    expect(spawnMock).toHaveBeenCalledTimes(3)
-    // managed 模式 --app-root 就是用户数据根（与 dataRoot 相同），不是仓外的 runtime 目录。
-    expect(spawnedArgs(2).slice(0, 2)).toEqual(['--app-root', appRoot])
-    expect(spawnedArgs(2).slice(-8)).toEqual([
-      'backend',
-      'supervise',
-      '--mode',
-      'managed',
-      '--port',
-      isPackaged ? '36163' : '36164',
-      '--shutdown-timeout',
-      '30',
-    ])
-    expect(spawnedArgs(2)).not.toContain('--repo')
-    expect(spawnedEnv(2).AUTO_MAS_ENV).toBe(isPackaged ? 'production' : 'development')
-    expect(spawnedEnv(2).AUTO_MAS_INSTALL_TOKEN).toBe(
-      getFluxdownInstallEnvironment().AUTO_MAS_INSTALL_TOKEN
-    )
-    expect(existsSync(runtimeRoot)).toBe(false)
-
-    child.stdout.feed(stoppedResultLine)
-    child.close(0)
-  })
-})
-
-// 主进程已开始启动，renderer 晚到或重载仍接回同一任务，恢复次数由主进程限制。
 describe('桌面前端只连接已有后端', () => {
   it.each(['development', 'managed'])('%s 不安装或接管外部后端', async mode => {
     process.argv.push('--connect-existing-backend')
@@ -980,62 +647,7 @@ describe('桌面前端只连接已有后端', () => {
 })
 
 describe('关闭时收口仍在运行的 Runtime 命令', () => {
-  it.each(['no-close', 'kill-error'])(
-    '监督进程 %s 时，第二次清理仍保留并处理同一进程',
-    async fault => {
-      process.env[RUNTIME_MODE_ENV] = 'development'
-      process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-      mockSpawn()
-      const service = new InitializationService(appRoot)
-      const startup = service.startDesktopStartup({
-        version: '5.5.0-beta.3',
-        initializedVersion: '5.5.0-beta.3',
-        autoUpdate: false,
-      })
-      const child = await passEnvironmentEnsure()
-      child.stdout.feed(helloLine + runningStateLine)
-      expect(await startup).toMatchObject({ success: true })
-      // 注入进程边界故障：结束请求已发出，但操作系统未交付 close，不能据此认定退出。
-      const kill = vi.fn(() => {
-        if (fault === 'kill-error') {
-          child.emit('error', Object.assign(new Error('kill denied'), { code: 'EPERM' }))
-          return false
-        }
-        child.killed = true
-        return true
-      })
-      child.kill = kill
-      vi.useFakeTimers()
-      try {
-        const first = service.stopDesktopStartup().then(
-          () => null,
-          (error: unknown) => error
-        )
-        await vi.advanceTimersByTimeAsync(40_000)
-        expect(await first).toBeInstanceOf(Error)
-        const firstAttempts = kill.mock.calls.length
-
-        const final = service.stopDesktopStartup(true).then(
-          () => null,
-          (error: unknown) => error
-        )
-        await vi.advanceTimersByTimeAsync(40_000)
-        expect(await final).toBeInstanceOf(Error)
-        expect(kill.mock.calls.length).toBeGreaterThan(firstAttempts)
-        expect(service.getBackendService().getStatus().isRunning).toBe(true)
-        expect(spawnMock).toHaveBeenCalledTimes(2)
-
-        child.close(null, 'SIGKILL')
-        await service.stopDesktopStartup(true)
-        expect(service.getBackendService().getStatus().isRunning).toBe(false)
-      } finally {
-        child.close(1)
-        vi.useRealTimers()
-      }
-    }
-  )
-
-  it.each(['startup', 'repair', 'update'])(
+  it.each(['startup', 'repair', 'update', 'recovery-wait'])(
     '%s 提交后迟到取消保留真实结果并禁止重启后端',
     async entry => {
       process.env[RUNTIME_MODE_ENV] = 'managed'
@@ -1046,14 +658,41 @@ describe('关闭时收口仍在运行的 Runtime 命令', () => {
       const handlers = await import('../ipc/initializationHandlers')
       handlers.registerInitializationHandlers(new BrowserWindow())
       const event = { sender: { isDestroyed: () => false, send: vi.fn() } }
+      if (entry === 'recovery-wait') vi.useFakeTimers()
       const work = Promise.resolve(
-        entry === 'startup'
-          ? handlers.startDesktopStartup({ version: '5.5.0-beta.3', autoUpdate: true })
+        entry === 'startup' || entry === 'recovery-wait'
+          ? handlers.startDesktopStartup({
+              version: '5.5.0-beta.3',
+              initializedVersion: entry === 'recovery-wait' ? '5.5.0-beta.3' : undefined,
+              autoUpdate: entry === 'startup',
+            })
           : entry === 'repair'
             ? ipcHandlers.get('install-dependencies')?.(event)
             : ipcHandlers.get('update-backend-via-runtime')?.(event, '5.5.0-beta.4')
       )
       const child = await waitForSpawn()
+      if (entry === 'recovery-wait') {
+        child.kill = () => {
+          child.killed = true
+          return true
+        }
+        try {
+          await vi.advanceTimersByTimeAsync(10_000)
+          expect(child.killed).toBe(true)
+          const stopped = handlers.stopDesktopStartup(true)
+          child.close(null, 'SIGKILL')
+          expect(await work).toMatchObject({ success: false })
+          await stopped
+          await vi.advanceTimersByTimeAsync(60_000)
+          expect(spawnMock).toHaveBeenCalledTimes(1)
+          expect(handlers.getBackendService().getStatus().isRunning).toBe(false)
+        } finally {
+          child.close(null, 'SIGKILL')
+          vi.useRealTimers()
+          await handlers.stopDesktopStartup(true)
+        }
+        return
+      }
       const lines = fixtureLines('bootstrap-success.ndjson')
       child.stdout.feed(lines[0])
       const firstStop = handlers.stopDesktopStartup()
@@ -1071,565 +710,433 @@ describe('关闭时收口仍在运行的 Runtime 命令', () => {
     }
   )
 
-  it('无法确认进程退出时有界报错，保留关闭状态供最终清理重试', async () => {
-    process.env[RUNTIME_MODE_ENV] = 'managed'
-    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-    mockSpawn()
-    const service = new InitializationService(appRoot)
-    const work = service.startDesktopStartup({ version: '5.5.0-beta.3', autoUpdate: true })
-    const child = await waitForSpawn()
-    child.stdout.feed(fixtureLines('bootstrap-success.ndjson')[0])
-    child.kill = () => {
-      child.killed = true
-      return true
-    }
-    vi.useFakeTimers()
-    const stop = service.stopDesktopStartup(true).then(
-      () => null,
-      (error: unknown) => error
-    )
-    try {
-      await vi.advanceTimersByTimeAsync(70_000)
-      expect(await stop).toBeInstanceOf(Error)
-      expect(() => service.resetDesktopStartup()).toThrow()
-      expect(child.exitCode).toBeNull()
-      expect(spawnMock).toHaveBeenCalledTimes(1)
-    } finally {
-      child.close(1)
-      vi.useRealTimers()
-      await work
-    }
-  })
-
-  it.each(['startup', 'repair', 'update'])('%s 不响应取消时有界退出且不遗留命令', async entry => {
-    process.env[RUNTIME_MODE_ENV] = 'managed'
-    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-    mockSpawn()
-    vi.resetModules()
-    ipcHandlers.clear()
-    const handlers = await import('../ipc/initializationHandlers')
-    handlers.registerInitializationHandlers(new BrowserWindow())
-    const event = { sender: { isDestroyed: () => false, send: vi.fn() } }
-    const work = Promise.resolve(
-      entry === 'startup'
-        ? handlers.startDesktopStartup({ version: '5.5.0-beta.3', autoUpdate: true })
-        : entry === 'repair'
-          ? ipcHandlers.get('install-dependencies')?.(event)
-          : ipcHandlers.get('update-backend-via-runtime')?.(event, '5.5.0-beta.4')
-    )
-    const child = await waitForSpawn()
-    child.stdout.feed(fixtureLines('bootstrap-success.ndjson')[0])
-    vi.useFakeTimers()
-    let stopped = false
-    const stop = handlers.stopDesktopStartup(true).then(() => {
-      stopped = true
-    })
-    try {
-      await vi.advanceTimersByTimeAsync(70_000)
-      expect(stopped).toBe(true)
-      expect(child.killed).toBe(true)
-      expect(spawnMock).toHaveBeenCalledTimes(1)
-    } finally {
-      child.close(1)
-      vi.useRealTimers()
-      await Promise.allSettled([work, stop])
-    }
-  })
-})
-
-describe('主进程拥有两种模式的启动生命周期', () => {
-  it('更新弹窗重启失败后再次点击会真实启动，普通请求仍复用旧失败', async () => {
-    process.env[RUNTIME_MODE_ENV] = 'managed'
-    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-    mockSpawn()
-    vi.resetModules()
-    ipcHandlers.clear()
-    const handlers = await import('../ipc/initializationHandlers')
-    const browserWindow = new BrowserWindow()
-    handlers.registerInitializationHandlers(browserWindow)
-    const event = { sender: browserWindow.webContents }
-    vi.stubGlobal('window', {
-      appEnvironment: 'development',
-      backendOwnership: 'owned',
-      setTimeout,
-      clearTimeout,
-      electronAPI: {
-        getLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
-        onBackendUpdateProgress: vi.fn(),
-        removeBackendUpdateProgressListener: vi.fn(),
-        updateBackendViaRuntime: async () => ({
-          success: false,
-          phase: 'restart',
-          error: 'backend restart failed after update',
-        }),
-        backendStart: (retry?: boolean) => ipcHandlers.get('backend-start')?.(event, retry),
-      },
-    })
-    const { useBackendRuntimeUpdate } = await import('@/composables/useBackendRuntimeUpdate')
-    const connection = await import('@/services/websocket/connection')
-    const { Service } = await import('@/api')
-    // 只隔离成功后刷新的两条网络出口，重试判断及 IPC/进程所有权保持真实。
-    const reconnect = vi.spyOn(connection, 'reconnectNow').mockResolvedValue(true)
-    const version = vi
-      .spyOn(Service, 'getGitVersionApiInfoVersionPost')
-      .mockRejectedValue(new Error('metadata unavailable'))
-    const update = useBackendRuntimeUpdate()
-    const pending: Promise<void>[] = []
-    try {
-      await update.start('v5.5.0-beta.3')
-      expect(update.outcome.value).toMatchObject({ success: false, phase: 'restart' })
-      pending.push(update.restartBackend())
-      const failed = await waitForSpawn()
-      failed.emit('error', Object.assign(new Error('temporarily busy'), { code: 'EBUSY' }))
-      await pending[0]
-      expect(update.outcome.value).toMatchObject({ success: false, phase: 'restart' })
-      expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({ state: 'failed' })
-      expect(await ipcHandlers.get('backend-start')?.(event)).toMatchObject({ success: false })
-      expect(spawnMock).toHaveBeenCalledTimes(1)
-
-      pending.push(update.restartBackend())
-      const child = await passManagedPreparation(1)
-      child.stdout.feed(helloLine + runningStateLine)
-      await pending[1]
-      expect(update.outcome.value).toEqual({ success: true })
-      expect(update.restartingBackend.value).toBe(false)
-      expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({ state: 'ready' })
-      expect(handlers.getBackendService().getStatus().isRunning).toBe(true)
-      expect(spawnMock).toHaveBeenCalledTimes(4)
-      child.stdout.feed(stoppedResultLine)
-      child.close(0)
-    } finally {
-      for (const result of spawnMock.mock.results) {
-        if (result.value instanceof FakeChild) result.value.close(1)
-      }
-      await Promise.allSettled(pending)
-      update.close()
-      reconnect.mockRestore()
-      version.mockRestore()
-    }
-  })
-
-  it('窗口晚到和重复 IPC 接入同一次有限恢复，首次失败仍留在快照中', async () => {
-    process.env[RUNTIME_MODE_ENV] = 'managed'
-    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-    mockSpawn()
-    vi.resetModules()
-    ipcHandlers.clear()
-    const handlers = await import('../ipc/initializationHandlers')
-    vi.useFakeTimers()
-    const startup = handlers.startDesktopStartup({
-      version: '5.5.0-beta.3',
-      initializedVersion: '5.5.0-beta.3',
-      autoUpdate: false,
-    })
-    const first = await waitForSpawn()
-    expect(spawnedArgs(0).slice(-2)).toEqual(['workspace', 'check'])
-    // 挂起的只读 Runtime 没有输出；只有真实 close 才允许下一次创建。
-    try {
-      await vi.advanceTimersByTimeAsync(10_000)
-    } finally {
-      vi.useRealTimers()
-    }
-    expect(first.exitCode !== null || first.signalCode !== null).toBe(true)
-    const window = new BrowserWindow()
-    handlers.registerInitializationHandlers(window)
-    const event = { sender: window.webContents }
-    const requests = [
-      ipcHandlers.get('desktop-startup-wait')?.(),
-      ipcHandlers.get('backend-start')?.(event),
-      ipcHandlers.get('backend-start')?.(event),
-    ]
-    expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({ state: 'running' })
-    const recovered = await passManagedPreparation(1)
-    recovered.stdout.feed(helloLine + runningStateLine)
-    expect(await startup).toMatchObject({ success: true })
-    for (const request of requests) expect(await request).toMatchObject({ success: true })
-    expect(spawnMock).toHaveBeenCalledTimes(4)
-    const snapshot = ipcHandlers.get('desktop-startup-status')?.()
-    expect(snapshot).toMatchObject({
-      state: 'ready',
-      attempts: [
-        { attempt: 1, result: { success: false, code: 'RUNTIME_HANDSHAKE_TIMEOUT' } },
-        { attempt: 2, result: { success: true } },
-      ],
-    })
-    expect(event.sender.send).not.toHaveBeenCalledWith(
-      'initialization-progress',
-      expect.objectContaining({ status: 'failed' })
-    )
-    recovered.stdout.feed(stoppedResultLine)
-    recovered.close(0)
-  })
-
-  it('持续握手超时只尝试两次，普通请求复用终态，手动重试建立新任务', async () => {
-    process.env[RUNTIME_MODE_ENV] = 'managed'
-    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-    mockSpawn()
-    vi.resetModules()
-    ipcHandlers.clear()
-    const handlers = await import('../ipc/initializationHandlers')
-    const window = new BrowserWindow()
-    handlers.registerInitializationHandlers(window)
-    vi.useFakeTimers()
-    const startup = handlers.startDesktopStartup({
-      version: '5.5.0-beta.3',
-      initializedVersion: '5.5.0-beta.3',
-      autoUpdate: false,
-    })
-    try {
-      await waitForSpawn()
-      await vi.advanceTimersByTimeAsync(10_000)
-      expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({ state: 'running' })
-      expect(window.webContents.send).not.toHaveBeenCalledWith(
-        'initialization-progress',
-        expect.objectContaining({ status: 'failed' })
-      )
-      await waitForSpawn(1)
-      await vi.advanceTimersByTimeAsync(10_000)
-      expect(await startup).toMatchObject({ success: false, code: 'RUNTIME_HANDSHAKE_TIMEOUT' })
-      expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({
-        state: 'failed',
-        attempts: [
-          { attempt: 1, durationMs: expect.any(Number), result: { success: false } },
-          { attempt: 2, durationMs: expect.any(Number), result: { success: false } },
-        ],
-      })
-    } finally {
-      vi.useRealTimers()
-    }
-    const event = { sender: window.webContents }
-    for (let index = 0; index < 3; index += 1) {
-      expect(await ipcHandlers.get('backend-start')?.(event)).toBe(await startup)
-    }
-    expect(spawnMock).toHaveBeenCalledTimes(2)
-    const manual = ipcHandlers.get('backend-start')?.(event, true)
-    const child = await passManagedPreparation(2)
-    expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({ state: 'running' })
-    child.stdout.feed(helloLine + runningStateLine)
-    expect(await manual).toMatchObject({ success: true })
-    expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({ state: 'ready' })
-    expect(spawnMock).toHaveBeenCalledTimes(5)
-    child.stdout.feed(stoppedResultLine)
-    child.close(0)
-  })
-
-  it.each(['workspace', 'supervise'])(
-    '%s 握手失败未确认 close 时，自动和手动重试均不能再创建进程',
-    async command => {
-      process.env[RUNTIME_MODE_ENV] = 'managed'
+  describe.each(['bootstrap', 'workspace', 'supervise', 'activation'])('退出确认 %s', phase => {
+    it('无法确认进程退出时有界报错，保留关闭状态供最终清理重试', async () => {
+      process.env[RUNTIME_MODE_ENV] = phase === 'activation' ? 'development' : 'managed'
       process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
       mockSpawn()
-      vi.resetModules()
-      ipcHandlers.clear()
-      const handlers = await import('../ipc/initializationHandlers')
-      const window = new BrowserWindow()
-      handlers.registerInitializationHandlers(window)
       vi.useFakeTimers()
-      let child: FakeChild | undefined
-      try {
-        const startup = handlers.startDesktopStartup({
-          version: '5.5.0-beta.3',
-          initializedVersion: '5.5.0-beta.3',
-          autoUpdate: false,
-        })
-        child = command === 'supervise' ? await passManagedPreparation() : await waitForSpawn()
-        const pendingChild = child
-        child.kill = () => {
-          pendingChild.killed = true
-          return true
-        }
-        await vi.advanceTimersByTimeAsync(12_000)
-        expect(await startup).toMatchObject({
-          success: false,
-          code: 'RUNTIME_HANDSHAKE_TIMEOUT',
-          runtimeFailure: { processExited: false },
-        })
-        expect(
-          await ipcHandlers.get('backend-start')?.({ sender: window.webContents }, true)
-        ).toMatchObject({
-          success: false,
-          code: 'RUNTIME_EXITED_UNEXPECTEDLY',
-        })
-        await vi.advanceTimersByTimeAsync(30_000)
-        expect(spawnMock).toHaveBeenCalledTimes(command === 'supervise' ? 3 : 1)
-      } finally {
-        child?.close(null, 'SIGKILL')
-        vi.useRealTimers()
-        await handlers.stopDesktopStartup(true)
-      }
-    }
-  )
-
-  it('自动恢复等待上一进程退出时取消，迟到 close 不会重新启动', async () => {
-    process.env[RUNTIME_MODE_ENV] = 'managed'
-    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-    mockSpawn()
-    const service = new InitializationService(appRoot)
-    vi.useFakeTimers()
-    try {
-      const startup = service.startDesktopStartup({
+      const service = new InitializationService(appRoot)
+      const work = service.startDesktopStartup({
         version: '5.5.0-beta.3',
-        initializedVersion: '5.5.0-beta.3',
-        autoUpdate: false,
+        initializedVersion: phase === 'bootstrap' ? undefined : '5.5.0-beta.3',
+        autoUpdate: phase === 'bootstrap',
       })
-      const child = await waitForSpawn()
+      const child =
+        phase === 'supervise'
+          ? await passManagedPreparation()
+          : phase === 'activation'
+            ? await passEnvironmentEnsure()
+            : await waitForSpawn()
       child.kill = () => {
         child.killed = true
         return true
       }
-      await vi.advanceTimersByTimeAsync(10_000)
-      const stopped = service.stopDesktopStartup(true)
-      child.close(null, 'SIGKILL')
-      expect(await startup).toMatchObject({ success: false })
-      await stopped
-      await vi.advanceTimersByTimeAsync(60_000)
-      expect(spawnMock).toHaveBeenCalledTimes(1)
-      expect(service.getBackendService().getStatus().isRunning).toBe(false)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it.each(['permission', 'protocol', 'argument', 'uv-isolation'])(
-    '%s 错误保留准确分类，不按泛 retryable 标记自动重试',
-    async fault => {
-      process.env[RUNTIME_MODE_ENV] = 'managed'
-      process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-      mockSpawn()
-      const service = new InitializationService(appRoot)
-      const startup = service.startDesktopStartup({
-        version: '5.5.0-beta.3',
-        initializedVersion: '5.5.0-beta.3',
-        autoUpdate: false,
-      })
-      let child = await waitForSpawn()
-      let expectedCode: string
-      if (fault === 'permission') {
-        child.emit('error', Object.assign(new Error('access denied'), { code: 'EACCES' }))
-        expectedCode = 'RUNTIME_SPAWN_FAILED'
-      } else if (fault === 'protocol') {
-        child.close(10)
-        expectedCode = 'RUNTIME_PROTOCOL_MISMATCH'
-      } else {
-        if (fault === 'uv-isolation') {
-          child.stdout.feed(fixtureLines('bootstrap-success.ndjson').join(''))
-          child.close(0)
-          child = await waitForSpawn(1)
+      try {
+        if (phase === 'bootstrap') {
+          child.stdout.feed(fixtureLines('bootstrap-success.ndjson')[0])
+        } else if (phase === 'activation') {
+          child.stdout.feed(
+            helloLine.replace('"stdin.status"', '"stdin.status","stdin.activate"') +
+              line({
+                ...base,
+                type: 'state',
+                sequence: 3,
+                stage: 'backend.run',
+                status: 'running',
+                details: { baseUrl: 'http://127.0.0.1:36163', startupActivation: 'pending' },
+              })
+          )
+          await vi.waitFor(() =>
+            expect(child.stdin.chunks.join('')).toContain('"command":"activate"')
+          )
+          await vi.advanceTimersByTimeAsync(10_000)
+          expect(await work).toMatchObject({ success: false, code: 'BACKEND_ACTIVATION_UNKNOWN' })
+          const retry = service.getBackendService().startBackend()
+          await vi.advanceTimersByTimeAsync(5_000)
+          expect(await retry).toMatchObject({ success: false, code: 'BACKEND_ACTIVATION_UNKNOWN' })
+        } else {
+          await vi.advanceTimersByTimeAsync(12_000)
+          expect(await work).toMatchObject({
+            success: false,
+            code: 'RUNTIME_HANDSHAKE_TIMEOUT',
+            runtimeFailure: { processExited: false },
+          })
+          const retry = service.getBackendService().startBackend()
+          await vi.advanceTimersByTimeAsync(0)
+          expect(await retry).toMatchObject({
+            success: false,
+            code: 'RUNTIME_EXITED_UNEXPECTEDLY',
+          })
         }
-        expectedCode = fault === 'argument' ? 'INVALID_ARGUMENT' : 'UV_EXEC_FAILED'
-        child.stdout.feed(
-          helloLine +
-            line({
-              ...base,
-              type: 'result',
-              sequence: 2,
-              success: false,
-              code: expectedCode,
-              stage: fault === 'argument' ? 'workspace.check' : 'uv.verify',
-              status: 'failed',
-              message: fault,
-              retryable: true,
-              remediation: ['open-log'],
-              details: fault === 'uv-isolation' ? { failureKind: 'process_isolation_failed' } : {},
-            })
+        const spawnCount = spawnMock.mock.calls.length
+        const stop = service.stopDesktopStartup(true).then(
+          () => null,
+          (error: unknown) => error
         )
-        child.close(50)
+        await vi.advanceTimersByTimeAsync(70_000)
+        expect(await stop).toBeInstanceOf(Error)
+        expect(() => service.resetDesktopStartup()).toThrow()
+        expect(child.exitCode).toBeNull()
+        expect(spawnMock).toHaveBeenCalledTimes(spawnCount)
+        child.close(null, 'SIGKILL')
+        const finalStop = service.stopDesktopStartup(true)
+        await vi.advanceTimersByTimeAsync(0)
+        await finalStop
+        await vi.advanceTimersByTimeAsync(60_000)
+        expect(service.getBackendService().getStatus().isRunning).toBe(false)
+        expect(spawnMock).toHaveBeenCalledTimes(spawnCount)
+      } finally {
+        child.close(1)
+        vi.useRealTimers()
+        await work
       }
-      expect(await startup).toMatchObject({ success: false, code: expectedCode })
-      expect(service.getDesktopStartupSnapshot()?.attempts).toHaveLength(1)
-      expect(spawnMock).toHaveBeenCalledTimes(fault === 'uv-isolation' ? 2 : 1)
-    }
-  )
-
-  it.each(['development', 'managed'])('%s 窗口请求在后端退出后恢复真实监督', async mode => {
-    process.env[RUNTIME_MODE_ENV] = mode
-    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-    mockSpawn()
-    vi.resetModules()
-    ipcHandlers.clear()
-    const handlers = await import('../ipc/initializationHandlers')
-    const window = new BrowserWindow()
-    handlers.registerInitializationHandlers(window)
-    const initial = handlers.startDesktopStartup({
-      version: '5.5.0-beta.3',
-      initializedVersion: '5.5.0-beta.3',
-      autoUpdate: false,
     })
-    const child =
-      mode === 'development' ? await passEnvironmentEnsure() : await passManagedPreparation()
-    child.stdout.feed(helloLine + runningStateLine)
-    expect(await initial).toMatchObject({ success: true })
-    const event = { sender: window.webContents }
-    expect(await ipcHandlers.get('get-api-endpoint')?.(event, 'local')).toBe(
-      'http://127.0.0.1:36163'
-    )
-    expect(await ipcHandlers.get('get-api-endpoint')?.(event, 'websocket')).toBe(
-      'ws://127.0.0.1:36163'
-    )
-    const start = ipcHandlers.get('backend-start')
-    expect(start).toBeDefined()
-    expect(await start?.({ sender: window.webContents })).toMatchObject({ success: true })
-    child.close(1)
-    const backend = handlers.getBackendService()
-    await vi.waitFor(() => expect(backend.getStatus().isRunning).toBe(false))
-
-    const recovered = [
-      start?.({ sender: window.webContents }),
-      start?.({ sender: window.webContents }),
-    ]
-    const offset = mode === 'development' ? 2 : 3
-    const restarted =
-      mode === 'development'
-        ? await passEnvironmentEnsure(offset)
-        : await passManagedPreparation(offset)
-    restarted.stdout.feed(helloLine + runningStateLine)
-    for (const request of recovered) expect(await request).toMatchObject({ success: true })
-    expect(spawnMock).toHaveBeenCalledTimes(offset * 2)
-    expect(backend.getStatus().isRunning).toBe(true)
-    const stopped = ipcHandlers.get('backend-stop')?.()
-    await vi.waitFor(() => expect(restarted.stdin.chunks.join('')).toContain('shutdown'))
-    restarted.stdout.feed(stoppedResultLine)
-    restarted.close(0)
-    expect(await stopped).toMatchObject({ success: true })
-    expect(backend.getStatus().isRunning).toBe(false)
-  })
-
-  it.each(['development', 'managed'])('%s 在窗口接入前启动并复用就绪结果', async mode => {
-    process.env[RUNTIME_MODE_ENV] = mode
-    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-    mockSpawn()
-    const service = new InitializationService(appRoot)
-    const preferences = {
-      version: '5.5.0-beta.3',
-      initializedVersion: '5.5.0-beta.3',
-      autoUpdate: false,
-    }
-    const pending = service.startDesktopStartup(preferences)
-    expect(service.getDesktopStartupSnapshot()).toMatchObject({
-      runtimeMode: mode,
-      state: 'running',
-    })
-    expect(() => service.resetDesktopStartup()).toThrow('启动尚未结束')
-    const child =
-      mode === 'development' ? await passEnvironmentEnsure() : await passManagedPreparation()
-    child.stdout.feed(helloLine + runningStateLine)
-    expect(await pending).toMatchObject({ success: true })
-    expect(service.getBackendService().getStatus().isRunning).toBe(true)
-    expect(service.getDesktopStartupSnapshot()?.state).toBe('ready')
-    expect(service.startDesktopStartup(preferences)).toBe(pending)
-    expect(spawnMock).toHaveBeenCalledTimes(mode === 'development' ? 2 : 3)
-    child.stdout.feed(stoppedResultLine)
-    child.close(0)
-  })
-
-  it.each(['development', 'managed'])('%s 准备过程中关闭不再拉起后端', async mode => {
-    process.env[RUNTIME_MODE_ENV] = mode
-    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-    mockSpawn()
-    const service = new InitializationService(appRoot)
-    const pending = service.startDesktopStartup({
-      version: '5.5.0-beta.3',
-      initializedVersion: '5.5.0-beta.3',
-      autoUpdate: false,
-    })
-    const child = await waitForSpawn()
-    child.stdout.feed(fixtureLines('environment-ensure.ndjson')[0])
-    const stopped = service.stopDesktopStartup(true)
-    await vi.waitFor(() =>
-      expect(child.killed || child.stdin.chunks.join('').includes('cancel')).toBe(true)
-    )
-    child.stdout.feed(
-      line({
-        ...base,
-        type: 'result',
-        sequence: 9,
-        success: false,
-        code: 'OPERATION_CANCELLED',
-        stage: 'environment.ensure',
-        status: 'cancelled',
-        message: 'cancelled',
-        retryable: true,
-        remediation: [],
-      })
-    )
-    child.close(0)
-    expect(await pending).toMatchObject({ success: false })
-    await stopped
-    expect(service.getBackendService().getStatus().isRunning).toBe(false)
-    expect(spawnMock).toHaveBeenCalledTimes(1)
   })
 })
 
-it('managed 首次启动先完成环境准备，窗口晚到可读取各阶段结果', async () => {
+describe('主进程拥有两种模式的启动生命周期', () => {
+  describe.each(['handshake', 'uv-health', 'first-initialization', 'activation'])(
+    '启动恢复 %s',
+    fault => {
+      it('持续握手超时只尝试两次，普通请求复用终态，手动重试建立新任务', async () => {
+        process.env[RUNTIME_MODE_ENV] = fault === 'activation' ? 'development' : 'managed'
+        process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+        mockSpawn()
+        vi.resetModules()
+        ipcHandlers.clear()
+        const handlers = await import('../ipc/initializationHandlers')
+        const window = new BrowserWindow()
+        handlers.registerInitializationHandlers(window)
+        vi.useFakeTimers()
+        const startup = handlers.startDesktopStartup({
+          version: '5.5.0-beta.3',
+          initializedVersion: fault === 'first-initialization' ? undefined : '5.5.0-beta.3',
+          autoUpdate: false,
+        })
+        try {
+          if (fault === 'activation') {
+            const backend = await passEnvironmentEnsure()
+            backend.stdout.feed(
+              helloLine.replace('"stdin.status"', '"stdin.status","stdin.activate"') +
+                line({
+                  ...base,
+                  type: 'state',
+                  sequence: 3,
+                  stage: 'backend.run',
+                  status: 'running',
+                  details: { baseUrl: 'http://127.0.0.1:36163', startupActivation: 'pending' },
+                })
+            )
+            await vi.waitFor(() =>
+              expect(backend.stdin.chunks.join('')).toContain('"command":"activate"')
+            )
+            await vi.advanceTimersByTimeAsync(5_000)
+            expect(backend.stdin.chunks.join('')).toContain('"command":"status"')
+            backend.stdout.feed(
+              line({
+                ...base,
+                type: 'state',
+                sequence: 4,
+                stage: 'backend.run',
+                status: 'running',
+                details: { baseUrl: 'http://127.0.0.1:36163', startupActivation: 'active' },
+              })
+            )
+            expect(await startup).toMatchObject({ success: true })
+            expect(spawnMock).toHaveBeenCalledTimes(2)
+            expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({
+              attempts: [{ result: { success: true } }],
+            })
+            backend.stdout.feed(stoppedResultLine)
+            backend.close(0)
+            return
+          }
+          if (fault === 'uv-health' || fault === 'first-initialization') {
+            const first = await waitForSpawn()
+            let failed = first
+            if (fault === 'uv-health') {
+              first.stdout.feed(fixtureLines('bootstrap-success.ndjson').join(''))
+              first.close(0)
+              failed = await waitForSpawn(1)
+            }
+            failed.stdout.feed(
+              helloLine.replace('backend supervise', 'bootstrap') +
+                line({
+                  ...base,
+                  type: 'result',
+                  sequence: 2,
+                  success: false,
+                  code: 'UV_EXEC_FAILED',
+                  stage: 'uv.verify',
+                  status: 'failed',
+                  message: 'uv verification failed',
+                  retryable: true,
+                  remediation: ['run-doctor', 'open-log'],
+                  details: { failureKind: 'process_isolation_failed' },
+                })
+            )
+            failed.close(50)
+            if (fault === 'first-initialization') {
+              const second = await waitForSpawn(1)
+              expect(spawnedArgs(1)).toContain('bootstrap')
+              second.stdout.feed(fixtureLines('bootstrap-success.ndjson').join(''))
+              second.close(0)
+            }
+            const backend = await passManagedPreparation(2)
+            if (fault === 'first-initialization') {
+              backend.stdout.feed(helloLine + runningStateLine)
+              expect(await startup).toMatchObject({ success: true })
+              expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({
+                state: 'ready',
+                attempts: [{ result: { code: 'UV_EXEC_FAILED' } }, { result: { success: true } }],
+              })
+              expect(spawnMock).toHaveBeenCalledTimes(5)
+              backend.stdout.feed(stoppedResultLine)
+              backend.close(0)
+              return
+            }
+            backend.stdout.feed(
+              helloLine +
+                line({
+                  ...base,
+                  type: 'result',
+                  sequence: 2,
+                  success: false,
+                  code: 'BACKEND_HEALTH_TIMEOUT',
+                  stage: 'backend.health',
+                  status: 'backend_failed',
+                  message: 'health timeout',
+                  retryable: true,
+                  remediation: ['restart-backend', 'open-log'],
+                  details: { businessDeferred: true },
+                })
+            )
+            backend.close(60)
+            expect(await startup).toMatchObject({ success: false, code: 'BACKEND_HEALTH_TIMEOUT' })
+          } else {
+            await waitForSpawn()
+            await vi.advanceTimersByTimeAsync(10_000)
+            expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({
+              state: 'running',
+            })
+            expect(window.webContents.send).not.toHaveBeenCalledWith(
+              'initialization-progress',
+              expect.objectContaining({ status: 'failed' })
+            )
+            await waitForSpawn(1)
+            await vi.advanceTimersByTimeAsync(10_000)
+            expect(await startup).toMatchObject({
+              success: false,
+              code: 'RUNTIME_HANDSHAKE_TIMEOUT',
+            })
+          }
+          expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({
+            state: 'failed',
+            attempts: [
+              { attempt: 1, durationMs: expect.any(Number), result: { success: false } },
+              { attempt: 2, durationMs: expect.any(Number), result: { success: false } },
+            ],
+          })
+        } finally {
+          vi.useRealTimers()
+        }
+        const event = { sender: window.webContents }
+        for (let index = 0; index < 3; index += 1) {
+          expect(await ipcHandlers.get('backend-start')?.(event)).toBe(await startup)
+        }
+        const offset = fault === 'uv-health' ? 5 : 2
+        expect(spawnMock).toHaveBeenCalledTimes(offset)
+        const manual = ipcHandlers.get('backend-start')?.(event, true)
+        const child = await passManagedPreparation(offset)
+        expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({ state: 'running' })
+        child.stdout.feed(helloLine + runningStateLine)
+        expect(await manual).toMatchObject({ success: true })
+        expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({ state: 'ready' })
+        expect(spawnMock).toHaveBeenCalledTimes(offset + 3)
+        child.stdout.feed(stoppedResultLine)
+        child.close(0)
+      })
+    }
+  )
+})
+
+it('Runtime 故障修复沿用独立更新入口，不先调用后端材料准备', async () => {
+  // 在 IPC 边界把依赖后端的准备设为离线失败，验证故障页仍进入 dev 原有更新流程。
   process.env[RUNTIME_MODE_ENV] = 'managed'
   process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-  mockSpawn()
-  vi.resetModules()
-  ipcHandlers.clear()
-  const handlers = await import('../ipc/initializationHandlers')
-  const window = new BrowserWindow()
-  handlers.registerInitializationHandlers(window)
-  const pending = handlers.startDesktopStartup({ version: '5.5.0-beta.3', autoUpdate: false })
-  const prepare = await waitForSpawn(0)
-  expect(spawnedArgs(0)).toContain('bootstrap')
-  expect(handlers.getBackendService().getStatus().isRunning).toBe(false)
-  prepare.stdout.feed(fixtureLines('bootstrap-success.ndjson').join(''))
-  prepare.close(0)
-  for (const index of [1, 2]) {
-    const child = await waitForSpawn(index)
-    child.stdout.feed(fixtureLines('bootstrap-success.ndjson').join(''))
-    child.close(0)
-  }
-  const backend = await waitForSpawn(3)
-  backend.stdout.feed(helloLine + runningStateLine)
-  expect(await pending).toMatchObject({ success: true })
-  expect(ipcHandlers.get('desktop-startup-status')?.()).toMatchObject({
-    runtimeMode: 'managed',
-    fullInitialization: true,
-    flowKind: 'first-run',
-    state: 'ready',
-  })
-  expect(window.webContents.send).toHaveBeenCalledWith(
-    'initialization-progress',
-    expect.objectContaining({ stage: 'backend', status: 'completed' })
+  const preparation = await import('./runtimeUpgradePreparation')
+  const { InitializationService } = await import('./initializationService')
+  const { RuntimeInitializationService } = await import('./runtimeInitializationService')
+  const prepare = vi
+    .spyOn(preparation, 'prepareRuntimeBinary')
+    .mockRejectedValue(new Error('backend offline'))
+  vi.spyOn(InitializationService.prototype, 'runEnvironmentOperation').mockImplementation(
+    async action => action()
   )
+  const update = vi
+    .spyOn(RuntimeInitializationService.prototype, 'updateRuntimeBinary')
+    .mockResolvedValue({ status: 'current', target: { version: 'v1.2.3' } })
+  const handlers = await import('../ipc/initializationHandlers')
+  handlers.registerInitializationHandlers(new BrowserWindow())
+  const result = await ipcHandlers.get('update-runtime-binary')?.({
+    sender: { isDestroyed: () => false, send: vi.fn() },
+  })
+  expect(result).toMatchObject({ status: 'current' })
+  expect(prepare).not.toHaveBeenCalled()
+  expect(update).toHaveBeenCalledExactlyOnceWith(expect.any(Function), expect.any(Function))
+})
+
+it.each(['ready', 'failed'] as const)('插件与业务初始化 %s 后才决定是否放行', async terminal => {
+  process.env[RUNTIME_MODE_ENV] = 'development'
+  process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+  mockSpawn()
+  const service = createService()
+  let businessStatus: string = 'running'
+  const progress = vi.fn()
+  fetchMock.mockImplementation(async () =>
+    Response.json({
+      version: 'v5.5.0-beta.3',
+      backgroundStatus: 'ready',
+      businessStatus,
+      businessMessage: 'preparing plugin environment',
+      backgroundError: businessStatus === 'failed' ? 'plugin installation failed' : null,
+    })
+  )
+  const startup = service.startBackend({ onProgress: progress })
+  const backend = await passEnvironmentEnsure()
+  backend.stdout.feed(
+    helloLine.replace('"stdin.status"', '"stdin.status","stdin.activate"') +
+      line({
+        ...base,
+        type: 'state',
+        sequence: 3,
+        stage: 'backend.run',
+        status: 'running',
+        message: 'core ready',
+        details: { baseUrl: 'http://127.0.0.1:36163', startupActivation: 'pending' },
+      })
+  )
+  await vi.waitFor(() => expect(progress).toHaveBeenCalledWith('preparing plugin environment'))
+  expect(backend.stdin.chunks.join('')).not.toContain('"command":"activate"')
+  businessStatus = terminal
+  if (terminal === 'ready') {
+    await vi.waitFor(() => expect(backend.stdin.chunks.join('')).toContain('"command":"activate"'))
+    backend.stdout.feed(
+      line({
+        ...base,
+        type: 'state',
+        sequence: 4,
+        stage: 'backend.run',
+        status: 'running',
+        message: 'active',
+        details: { baseUrl: 'http://127.0.0.1:36163', startupActivation: 'active' },
+      })
+    )
+    expect(await startup).toMatchObject({ success: true })
+  } else {
+    expect(await startup).toMatchObject({
+      success: false,
+      error: expect.stringContaining('plugin installation failed'),
+    })
+    expect(backend.stdin.chunks.join('')).not.toContain('"command":"activate"')
+  }
+  expect(spawnMock).toHaveBeenCalledTimes(2)
   backend.stdout.feed(stoppedResultLine)
   backend.close(0)
 })
 
-it('环境变更进行中拒绝第二次操作，完成后允许显式恢复', async () => {
-  const service = new InitializationService(appRoot)
-  let finish: (value: string) => void = () => undefined
-  const gate = new Promise<string>(resolve => {
-    finish = resolve
-  })
-  const pending = service.runEnvironmentOperation(() => gate)
-  try {
-    await expect(service.runEnvironmentOperation(async () => 'second')).rejects.toThrow(
-      '运行环境操作尚未结束'
+it.each(['compatible', 'conflict', 'network'] as const)(
+  '%s：只有依赖预检通过才暂存，失败保留正在运行的后端',
+  async outcome => {
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    const service = createService()
+    mockSpawn()
+    const startup = service.startBackend()
+    const backend = await passManagedPreparation()
+    backend.stdout.feed(helloLine + runningStateLine)
+    expect(await startup).toEqual({ success: true })
+    const commit = 'b'.repeat(40)
+    let checked = false
+    metadataNetwork.fetch.mockImplementation(async (url: string) => {
+      // 使用候选提交的真实依赖输入，执行实际前端解析与后端预检请求。
+      expect(url).toContain(`/${commit}/`)
+      if (url.endsWith('/.python-version')) return new Response('3.12.13\n')
+      if (url.endsWith('/uv.lock')) return new Response('version=1\n')
+      return new Response('[project]\nversion="5.5.0b3"\ndependencies=["pydantic>=2"]\n')
+    })
+    fetchMock.mockImplementation(async (url: URL) => {
+      if (url.pathname === '/api/setting/get')
+        return Response.json({ code: 200, data: { Update: {} } })
+      if (url.pathname === '/api/update/precheck') {
+        checked = true
+        if (outcome === 'network') throw new Error('precheck connection failed')
+        return Response.json({
+          code: 200,
+          compatible: outcome === 'compatible',
+          conflicts: outcome === 'conflict' ? [{ message: 'adapter requires dependency<2' }] : [],
+        })
+      }
+      throw new Error(`Unexpected endpoint: ${url.pathname}`)
+    })
+    const pending = service.checkRuntimeBackendUpdate()
+    const check = await waitForSpawn(3)
+    const reply = (command: string, details: Record<string, unknown>, stage: string) =>
+      line({
+        ...base,
+        type: 'hello',
+        sequence: 1,
+        runtimeVersion: 'dev',
+        command,
+        capabilities: [],
+      }) +
+      line({
+        ...base,
+        type: 'result',
+        sequence: 2,
+        success: true,
+        code: 'OK',
+        stage,
+        status: 'succeeded',
+        message: '完成',
+        retryable: false,
+        remediation: [],
+        details,
+      })
+    check.stdout.feed(
+      reply(
+        'workspace check',
+        {
+          healthy: true,
+          version: 'v5.5.0-beta.3',
+          commit: 'a'.repeat(40),
+          remoteCommit: commit,
+          updateAvailable: true,
+        },
+        'workspace.check'
+      )
     )
-  } finally {
-    finish('completed')
-    await pending
+    check.close(0)
+    if (outcome === 'compatible') {
+      const stage = await waitForSpawn(4)
+      expect(checked).toBe(true)
+      stage.stdout.feed(reply('workspace stage', { staged: true, commit }, 'workspace.verify'))
+      stage.close(0)
+      expect(await pending).toMatchObject({ staged: true, remoteCommit: commit })
+    } else {
+      expect(await pending).toMatchObject({
+        updateAvailable: true,
+        staged: false,
+        remoteCommit: commit,
+        precheckError:
+          outcome === 'conflict' ? 'adapter requires dependency<2' : 'precheck connection failed',
+      })
+      expect(checked).toBe(true)
+      expect(spawnMock).toHaveBeenCalledTimes(4)
+    }
+    expect(service.getStatus().isRunning).toBe(true)
+    backend.stdout.feed(stoppedResultLine)
+    backend.close(0)
   }
-  expect(await service.runEnvironmentOperation(async () => 'recovered')).toBe('recovered')
-})
-
-it.each([false, true])('启动前使用当前环境默认端点，支持自定义端口 packaged=%s', async packaged => {
-  appState.isPackaged = packaged
-  vi.resetModules()
-  ipcHandlers.clear()
-  const handlers = await import('../ipc/initializationHandlers')
-  const window = new BrowserWindow()
-  handlers.registerInitializationHandlers(window)
-  const event = { sender: window.webContents }
-  const port = packaged ? 36163 : 36164
-  expect(await ipcHandlers.get('get-api-endpoint')?.(event, 'local')).toBe(
-    `http://127.0.0.1:${port}`
-  )
-  vi.stubEnv('AUTO_MAS_HTTP_PORT', '36184')
-  expect(await ipcHandlers.get('get-api-endpoint')?.(event, 'local')).toBe('http://127.0.0.1:36184')
-  expect(await ipcHandlers.get('get-api-endpoint')?.(event, 'websocket')).toBe(
-    'ws://127.0.0.1:36184'
-  )
-})
+)

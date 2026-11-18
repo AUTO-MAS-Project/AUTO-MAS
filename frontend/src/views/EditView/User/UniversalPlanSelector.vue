@@ -6,9 +6,11 @@
           <FieldLabelWithHint
             :text="
               t(
-                planType === PLAN_CONFIG_TYPES.OKNTE
-                  ? 'core.plan.type.oknte'
-                  : 'core.plan.type.universal'
+                planType === PLAN_CONFIG_TYPES.OKWW
+                  ? 'core.plan.type.okww'
+                  : planType === PLAN_CONFIG_TYPES.OKNTE
+                    ? 'core.plan.type.oknte'
+                    : 'core.plan.type.universal'
               )
             "
             :hint="t('core.plan.universal.priority')"
@@ -94,6 +96,7 @@ watch(
         const matches = item.type === (props.planType ?? PLAN_CONFIG_TYPES.UNIVERSAL)
         const ownerMatches =
           props.planType === PLAN_CONFIG_TYPES.OKNTE ||
+          props.planType === PLAN_CONFIG_TYPES.OKWW ||
           (info && 'ScriptId' in info && info.ScriptId === props.scriptId)
         return matches && ownerMatches ? [{ label: info?.Name ?? '', value: item.uid }] : []
       })

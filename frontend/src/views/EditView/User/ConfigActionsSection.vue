@@ -70,6 +70,7 @@ const props = withDefaults(
     configLoading?: boolean
     configuring?: boolean
     importLoading?: boolean
+    hintOverride?: { target: string; impact: string }
     showImport?: boolean
   }>(),
   {
@@ -78,6 +79,7 @@ const props = withDefaults(
     configuring: false,
     importLoading: false,
     showImport: true,
+    hintOverride: undefined,
   }
 )
 
@@ -97,6 +99,7 @@ const showOpen = computed(() => props.base !== 'native')
  */
 const hint = computed(() => {
   if (!showOpen.value) return undefined
+  if (props.hintOverride) return props.hintOverride
   return props.base === 'shared'
     ? {
         target: t('core.edit.configActionsTargetShared'),

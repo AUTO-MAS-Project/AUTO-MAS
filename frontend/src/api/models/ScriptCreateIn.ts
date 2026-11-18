@@ -17,7 +17,6 @@ export namespace ScriptCreateIn {
      * 托管类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, 奇想盒脚本, MSS脚本
      */
     export enum type {
-        MAA = 'MAA',
         SRC = 'SRC',
         GENERAL = 'General',
         OKWW = 'Okww',
@@ -31,6 +30,7 @@ export namespace ScriptCreateIn {
         BAAH = 'BAAH',
         WHIMBOX = 'Whimbox',
         MSS = 'MSS',
+        MAA = 'MAA',
     }
 }
 

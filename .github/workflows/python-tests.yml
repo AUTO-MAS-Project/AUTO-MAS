@@ -46,7 +46,11 @@ jobs:
         run: uv sync --locked --group dev
 
       - name: Run full pytest suite
-        run: uv run --no-sync python -m pytest tests -q
+        # 集成回归按摘要准备插件发行包，不依赖开发者的本地源码目录。
+        # SDK 与宿主运行依赖仍来自本次提交及 uv.lock。
+        run: |
+          uv run --no-sync python scripts/prepare_test_plugins.py
+          uv run --no-sync python -m pytest tests -q
 
       - name: Check platform contracts for Windows, Linux and macOS
         run: |

@@ -30,8 +30,9 @@ export interface MaaFWFlavorSlotContextMap {
     /** 控制方式一步顶部、控制方式分节之前（如 MSS 的控制方式提示）；引导第 2 步 */
     beforeControl: MaaFWScriptSlotContext
     /**
-     * 控制方式分节里与「游戏包名」并排的位置（宽屏两列、窄屏上下排）；没有组件时包名独占一行。
-     * 由 control 分节的同名 slot 提供：特调替换 control 分节时要自己留这个 slot。引导第 2 步
+     * 控制方式分节里「游戏包名」「等待时间」之后、截图 / 输入策略表之前，每个组件单独一格。
+     * 由 control 分节的同名作用域 slot 提供（按 besidePackageNameCount 每格转发一次、带 index）：
+     * 特调替换 control 分节时要自己留这个 slot。引导第 2 步
      */
     besidePackageName: MaaFWScriptSlotContext
     /** 控制方式分节之后；引导第 2 步 */
@@ -80,6 +81,8 @@ export interface MaaFWScriptSlotContext {
   readonly scriptId: string
   maafwConfig: MaaFWScriptConfig
   readonly previewData: MaaFWInterfacePreviewData | null
+  /** 当前生效的控制器类型（Adb / Win32 …）；interface 没读到时为空串 */
+  readonly effectiveControllerType: string
   /** interface 还没读到或正在读：依赖 interface 的控件置灰 */
   readonly interfaceDisabled: boolean
   /** 页面仍在加载 */
@@ -107,7 +110,7 @@ export interface MaaFWUserSlotContext {
 export interface MaaFWCreateSlotContext {
   /** 选中的类型卡片 */
   readonly type: MaaFWFlavorType
-  /** 「项目从哪来」当前的选择：'new' = 新建一个别的项目；否则是要复用的项目所属脚本的 id */
+  /** 「项目从哪来」当前的选择：'new' = 导入新项目；否则是要复用的项目所属脚本的 id */
   readonly selection: string
 }
 
@@ -264,9 +267,10 @@ export interface MaaFWScriptPageText {
 
 /** 用户页文案 */
 export interface MaaFWUserPageText {
-  /** 账号字段的占位与问号提示（密码字段所有 flavor 都是「仅本地记录」） */
+  /** 账号字段的占位（密码字段所有 flavor 都是「仅本地记录」） */
   accountPlaceholderKey: string
-  accountTooltipKey: string
+  /** 账号标签上的问号提示：账号另有用处时写清它的作用；为空不挂问号 */
+  accountTooltipKey: string | null
   /** 任务队列区顶部的提示（\n 分行，一行一个框）；为空则不显示 */
   queueHintKey: string | null
 }
@@ -331,7 +335,10 @@ export interface MaaFWFlavor {
   scriptConfigType: string
   /** 后端用户配置类名（用户索引里的 type） */
   userConfigType: string
-  /** 后端新建脚本时给的默认名（配置类的 DEFAULT_SCRIPT_NAME）：还是这个名字时导入后自动改成项目名 */
+  /**
+   * 后端新建托管时给的默认名（与后端配置类 Info.Name 的默认值一致，改一边要改另一边）：
+   * 还是这个名字时导入后自动改成项目名
+   */
   defaultScriptName: string
   /** 脚本页卡片右上角、脚本列表的类型标签文字与颜色 */
   typeTagLabel: string

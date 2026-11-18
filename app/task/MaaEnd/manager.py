@@ -51,13 +51,14 @@ from app.utils import (
 )
 from app.utils import io as _utils_io
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+from app.utils.common.process.session import desktop_process_target
 
 from .AutoProxy import AutoProxyTask
 from .resource_loader import MaaEndResourceLoader, load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_base
 from .tools import script_update
-from .tools.managed_recovery import MaaEndInstallAdapter
 from .tools.backup_archive import archive_native_backup
+from .tools.managed_recovery import MaaEndInstallAdapter
 from .tools.update import ensure_game_updated
 from .Update import EndfieldUpdateTask
 
@@ -110,6 +111,28 @@ class MaaEndManager(ScriptManagerBase):
         self._program_update_prepared = False
         self._update_candidate: script_update.PreparedUpdate | str | None = None
 
+    @staticmethod
+    async def check_prefetch(config) -> list:
+        """在允许接管更新且已配置安装目录时检查更新候选，返回文件身份和适用渠道的下载请求。"""
+        from app.models.schema import DownloadRequest
+
+        if (
+            not config.Update.TakeoverEnabled
+            or config.Info.Path is None
+            or config.Update.PackageMode == "incremental"
+        ):
+            return []
+        candidate = await script_update.check_update(config.Info.Path, config)
+        if isinstance(candidate, str):
+            return []
+        return [
+            DownloadRequest(
+                url=candidate.url,
+                content_hash=candidate.digest or None,
+                downloader="builtin" if candidate.source == "MirrorChyan" else None,
+            )
+        ]
+
     async def prefetch_script_update(self) -> None:
         config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         if config.Update.TakeoverEnabled and config.Info.Path is not None:
@@ -152,6 +175,12 @@ class MaaEndManager(ScriptManagerBase):
             )
         except (OSError, KeyError, ValueError) as error:
             return f"MaaEnd 控制器配置读取失败: {error}"
+
+        if (
+            desktop_process_target.get() is not None
+            and self.controller_protocol != "Win32"
+        ):
+            return "MaaEnd 桌面分身仅支持 PC 控制器"
 
         if self.execution_mode == "Update":
             # 只更新 PC 客户端：不读 mxu-MaaEnd.json，也不起模拟器。

@@ -5,9 +5,12 @@ import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
 import { MAAFW_FLAVORS } from '@/composables/useMaaFWFlavor'
 import { buildMaaFWRoutes } from './maafwFlavorRoutes'
-import { buildScriptEditorRoutes, MAA_CULTIVATE_ROUTE } from './scriptEditorRoutes'
+import { buildScriptEditorRoutes } from './scriptEditorRoutes'
+import { SCRIPT_PLUGIN_ROUTES } from '@/plugins/scriptAdapters'
 import { registerRouterAnalytics } from './analytics'
 import { measureStartup } from '@/utils/startupTiming'
+import { translate as t } from '@/i18n'
+import { fetchScriptCapabilities } from '@/composables/useScriptCapabilities'
 const logger = window.electronAPI.getLogger('路由管理')
 
 // MaaFW 与各特调的路由（每个类型：脚本编辑 / 引导 / 加用户 / 编辑用户）按特调注册表生成；
@@ -50,6 +53,32 @@ const devRoutes =
 
 const routes = [
   {
+    path: '/plugins',
+    name: 'Plugins',
+    component: () => /* 进入插件中心时按需加载已安装插件页面。 */ import('@/views/Plugins.vue'),
+    meta: { title: '插件' },
+  },
+  {
+    path: '/plugins/market',
+    name: 'PluginMarket',
+    component: () => /* 进入插件市场时按需加载市场页面。 */ import('@/views/PluginMarket.vue'),
+    meta: { title: '插件市场' },
+  },
+  {
+    path: '/plugins/:pluginId/settings',
+    name: 'PluginSettings',
+    component: () =>
+      /* 进入插件配置路由时按需加载声明式设置页面。 */ import('@/views/PluginSettingsPage.vue'),
+    meta: { title: '插件设置' },
+  },
+  {
+    path: '/plugins/:pluginId/:pageId',
+    name: 'PluginPage',
+    component: () =>
+      /* 通过兼容配置路由进入时复用同一插件设置页面。 */ import('@/views/PluginSettingsPage.vue'),
+    meta: { title: '插件设置' },
+  },
+  {
     path: '/tools',
     name: 'Tools',
     component: () => import('@/views/tools/index.vue'),
@@ -82,7 +111,7 @@ const routes = [
   ...maafwRoutes.setup,
   ...maafwRoutes.userAdd,
   ...maafwRoutes.userEdit,
-  MAA_CULTIVATE_ROUTE,
+  ...SCRIPT_PLUGIN_ROUTES,
   {
     path: '/plans/:planId/oknte/:day',
     name: 'OkNtePlanDetail',
@@ -189,6 +218,17 @@ const routes = [
     component: () => import('../views/VirtualDisplayPrompt.vue'),
     meta: { title: '虚拟显示器', skipGuard: true },
   },
+  {
+    path: '/desktop-session',
+    name: 'DesktopSession',
+    component: () => import('../views/desktopSession/DesktopSessionWindow.vue'),
+    meta: {
+      get title() {
+        return t('bootstrap.desktopSession.title')
+      },
+      skipGuard: true,
+    },
+  },
 ]
 
 const router = createRouter({
@@ -278,6 +318,18 @@ router.beforeEach(async (to, from, next) => {
   }
 
   next()
+})
+
+// MAA 页面暂随主程序编译；直达地址也须确认插件当前提供该能力。
+router.beforeResolve(async to => {
+  if (to.meta.scriptType !== 'MAA') return
+  try {
+    const types = await fetchScriptCapabilities()
+    if (types.includes('MAA')) return
+  } catch (error) {
+    logger.warn(`读取 MAA 插件能力失败: ${String(error)}`)
+  }
+  return { path: '/plugins/market' }
 })
 
 export function navigateTo(

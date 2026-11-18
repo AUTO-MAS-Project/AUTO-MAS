@@ -14,7 +14,6 @@
       @cancel="handleCancel"
     />
 
-    <!-- 原生 GUI 会话遮罩（配置会话 / 查看会话，公用组件对齐 ok-nte） -->
     <GuiSessionMask
       :open="showOkwwConfigMask"
       :icon="SettingOutlined"
@@ -136,34 +135,36 @@
         </a-form>
       </a-card>
 
-      <!-- 配置文件来源：base 三态 ⊕ overlay 两态，与 MaaEnd / MAA 共用同一套面板 -->
       <a-card class="config-card config-source-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
               <h3>{{ t('core.edit.configurationSource') }}</h3>
             </div>
-            <a-row :gutter="24">
-              <a-col :span="24">
-                <GeneralConfigModeSelector
-                  :model-value="formData.Info.Base"
-                  :options="okwwConfigModeOptions"
-                  :disabled="configActionsDisabled"
-                  :saving="isSaving"
-                  :quick-config="formData.Info.IfQuickConfig"
-                  :quick-config-disabled="configActionsDisabled || isInitializing"
-                  :alert-message="t('core.edit.configSourceHintBase')"
-                  :show-gui-hint="false"
-                  @change="handleConfigModeChange"
-                  @quick-config-change="handleQuickConfigChange"
-                />
-              </a-col>
-            </a-row>
+            <OkwwConfigSource
+              :script-id="scriptId"
+              :user-id="userId"
+              :info="formData.Info"
+              :disabled="configActionsDisabled"
+              :saving="isSaving"
+              :initializing="isInitializing"
+              @plan-change="formData.Info.PlanMode = $event"
+              @base-change="handleConfigModeChange"
+              @quick-change="handleQuickConfigChange"
+            />
             <a-row :gutter="24">
               <a-col :span="24" class="config-actions-tail">
                 <ConfigActionsSection
                   :base="formData.Info.Base"
                   script-label="ok-ww"
+                  :hint-override="
+                    formData.Info.IfQuickConfig
+                      ? {
+                          target: t('core.edit.okwwGuiPanelTarget'),
+                          impact: t('core.edit.okwwGuiPanelImpact'),
+                        }
+                      : undefined
+                  "
                   :disabled="configActionsDisabled"
                   :config-loading="okwwConfigLoading"
                   :configuring="showOkwwConfigMask"
@@ -178,20 +179,16 @@
         </a-form>
       </a-card>
 
-      <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
-        <h3>{{ t('core.edit.taskConfiguration') }}</h3>
-        <a-space>
-          <a-button size="small" @click="openRestoreModal">
-            <template #icon><HistoryOutlined /></template>
-            {{ t('core.edit.configRestoreTitle') }}
-          </a-button>
-        </a-space>
-      </a-flex>
-      <OkwwTaskConfigSection
-        v-model="formData.Task"
-        :quick-config="formData.Info.IfQuickConfig"
-        :disabled="configActionsDisabled"
+      <OkwwAccountPlan
+        v-model="formData"
+        :script-id="scriptId"
+        :user-id="userId"
+        :save-task="saveTaskConfig"
+        :disabled="configEditingDisabled"
         @save="saveTaskConfig"
+        @restore="openRestoreModal"
+        @refresh="loadUser(true)"
+        @busy="nativeConfigSaving = $event"
       />
 
       <a-card class="config-card" style="margin-top: 24px">
@@ -217,7 +214,6 @@
       </a-card>
     </ConfigLockPanel>
 
-    <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、ok-ww 原生配置在后）══ -->
     <ConfigRestoreSection
       v-model:open="restoreOpen"
       :disabled="configLocked"
@@ -228,7 +224,6 @@
       :on-restored="handleRestored"
       :on-detail="handleRestoreView"
     >
-      <!-- ok-ww 备份摘要为文件集结构，用插槽完全接管预览区 -->
       <template #preview="{ raw }">
         <NoData
           v-if="!previewFiles(raw).length"
@@ -250,7 +245,10 @@
 </template>
 
 <script setup lang="ts">
-import OkwwTaskConfigSection from './components/OkwwTaskConfigSection.vue'
+import OkwwConfigSource from './components/OkwwConfigSource.vue'
+import OkwwAccountPlan from './components/OkwwAccountPlan.vue'
+import { getDefaultOkwwTaskConfig } from './components/okwwTaskConfig'
+
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import accountIcon from '@/assets/ok-ww.ico'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
@@ -261,12 +259,7 @@ import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import {
-  EyeOutlined,
-  HistoryOutlined,
-  QuestionCircleOutlined,
-  SettingOutlined,
-} from '@ant-design/icons-vue'
+import { EyeOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { OkwwUserConfig } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { buildFieldPatch } from '@/utils/fieldPatch'
@@ -279,7 +272,6 @@ import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import { buildRestoreConfirm } from '@/utils/configRestoreMode'
-import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 import ConfigActionsSection from './ConfigActionsSection.vue'
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
@@ -308,11 +300,12 @@ const isEdit = ref(!!userId.value)
 const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId: userId.value }))
 const scriptName = ref('ok-ww脚本')
 
+const nativeConfigSaving = ref(false)
 const pageLoading = ref(true)
 const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
 const { isSaving, enqueue } = useSaveQueue()
-const configActionsDisabled = computed(
+const configEditingDisabled = computed(
   () =>
     pageLoading.value ||
     !userId.value ||
@@ -325,6 +318,10 @@ const configActionsDisabled = computed(
     configLocked.value
 )
 
+const configActionsDisabled = computed(
+  () => configEditingDisabled.value || nativeConfigSaving.value
+)
+
 const resourceOptions = [
   { label: '官服（China）', value: '官服' },
   { label: '国际服（Global）', value: '国际服' },
@@ -335,36 +332,6 @@ const pushLogModeOptions = [
   { label: t('core.edit.pushLogModeOff'), value: '关闭' },
   { label: t('core.edit.pushLogModeList'), value: '逐条' },
   { label: t('core.edit.pushLogModeSummary'), value: '汇总' },
-]
-
-const okwwConfigModeOptions: Array<{
-  label: string
-  value: 'shared' | 'independent' | 'native'
-  title: string
-  description: string
-  icon: 'file' | 'database' | 'setting'
-}> = [
-  {
-    label: t('core.edit.script'),
-    value: 'shared',
-    title: t('core.edit.script'),
-    description: t('core.edit.useSharedScriptLevel'),
-    icon: 'file',
-  },
-  {
-    label: t('core.edit.user'),
-    value: 'independent',
-    title: t('core.edit.user'),
-    description: t('core.edit.useThisUserS'),
-    icon: 'database',
-  },
-  {
-    label: t('core.edit.directControl'),
-    value: 'native',
-    title: t('core.edit.directControl'),
-    description: t('core.edit.useExistingOkwwConfiguration'),
-    icon: 'setting',
-  },
 ]
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
@@ -386,6 +353,7 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Id: '',
     Base: 'shared',
     IfQuickConfig: true,
+    PlanMode: 'Fixed',
     Resource: '官服',
     RemainedDay: -1,
     IfScriptBeforeTask: false,
@@ -395,14 +363,7 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Notes: '',
     Tag: '',
   },
-  Task: {
-    WhichToFarm: 'Tacet Suppression',
-    WhichTacetSuppressionToFarm: 1,
-    WhichForgeryChallengeToFarm: 1,
-    MaterialSelection: 'Shell Credit',
-    FarmNightmareNestForDailyEcho: true,
-    AdditionalTasks: ['Check Weekly Garden'],
-  },
+  Task: getDefaultOkwwTaskConfig(),
   Notify: {
     Enabled: false,
     PushLogMode: '汇总',
@@ -429,9 +390,10 @@ const formData = reactive<OkwwUserFormData>({
 const handleConfigModeChange = async (value: boolean | string) => {
   if (configActionsDisabled.value) return
   if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
-  const previous = formData.Info.Base
-  formData.Info.Base = value as 'shared' | 'independent' | 'native'
-  if (!(await saveField('Info.Base', formData.Info.Base))) formData.Info.Base = previous
+  // 等后端切换完成再刷新面板，避免新来源的读取抢在保存之前。
+  if (await saveField('Info.Base', value)) {
+    formData.Info.Base = value as 'shared' | 'independent' | 'native'
+  }
 }
 
 const handleCancel = async () => {
@@ -493,19 +455,11 @@ const handleQuickConfigChange = async (value: boolean) => {
   }
 }
 
-const saveTaskConfig = async () => {
-  if (isInitializing.value || !userId.value) return
-  await enqueue(() =>
-    updateUser(scriptId, userId.value, {
-      Task: {
-        WhichToFarm: formData.Task.WhichToFarm,
-        WhichTacetSuppressionToFarm: formData.Task.WhichTacetSuppressionToFarm,
-        WhichForgeryChallengeToFarm: formData.Task.WhichForgeryChallengeToFarm,
-        MaterialSelection: formData.Task.MaterialSelection,
-        FarmNightmareNestForDailyEcho: formData.Task.FarmNightmareNestForDailyEcho,
-        AdditionalTasks: formData.Task.AdditionalTasks,
-      },
-    })
+const saveTaskConfig = async (): Promise<boolean> => {
+  if (isInitializing.value || !userId.value) return false
+  const { IfCustomArguments, CustomArguments } = formData.Task
+  return await enqueue(() =>
+    updateUser(scriptId, userId.value, { Task: { IfCustomArguments, CustomArguments } })
   )
 }
 
@@ -541,8 +495,9 @@ const handleScriptConfig = async () => {
   await router.push(`/scripts/${scriptId}/edit/okww`)
 }
 
-const handleSaveOkwwConfig = () => {
-  void saveSession()
+const handleSaveOkwwConfig = async () => {
+  await saveSession()
+  await loadUser()
 }
 
 const handleCloseOkwwView = () => {
@@ -561,8 +516,8 @@ const loadScriptInfo = async (): Promise<boolean> => {
   return true
 }
 
-const loadUser = async () => {
-  pageLoading.value = true
+const loadUser = async (quiet = false) => {
+  if (!quiet) pageLoading.value = true
   try {
     if (!userId.value) {
       if (!(await createUserImmediately())) return
@@ -595,7 +550,6 @@ const loadUser = async () => {
 }
 
 // ══ 配置恢复（通用组件 props 供给：双目标 MAS 在前脚本在后）══
-// 专项统一名（文案参数化用）：ok-ww 统一叫「ok-ww」
 const OKWW_DISPLAY_NAME = 'ok-ww'
 const restoreOpen = ref(false)
 
@@ -625,8 +579,7 @@ interface OkwwPreviewFileView {
 const previewFiles = (raw: unknown): OkwwPreviewFileView[] =>
   (raw as { fileCards?: OkwwPreviewFileView[] } | null)?.fileCards ?? []
 
-// 一键恢复成功：mas 恢复含快速配置覆盖层字段回填，重拉表单——否则旧表单
-// 值在下次保存时会静默覆盖回滚结果；native 恢复不影响本页表单
+// mas 恢复后重拉账号覆写，避免旧表单继续覆盖恢复值；native 恢复不影响本页表单。
 const handleRestored = async (target: string) => {
   restoreOpen.value = false
   if (target === 'mas') {

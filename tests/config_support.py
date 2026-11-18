@@ -1,4 +1,4 @@
-"""配置、API、归档与恢复测试共用的激活及分组适配夹具。"""
+"""配置测试共用的真实激活与落盘隔离。"""
 
 from pathlib import Path
 
@@ -16,11 +16,3 @@ async def activate_config(config, path: Path | None = None):
         await config.activate()
     await config_manager.flush()
     return config
-
-
-def group_view(config, group):
-    class Group:
-        def __getattr__(self, name):
-            return config.get(group, name)
-
-    return Group()

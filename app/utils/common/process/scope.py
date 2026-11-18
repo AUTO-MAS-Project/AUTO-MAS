@@ -29,6 +29,7 @@ class TaskProcessScope:
         self._base_flags = process_platform.platform_process.creation_flags
         self._breakaway_flags = process_platform.platform_process.breakaway_flags
         self.checks: list[StopCheck] = []
+        self._desktop_stoppers: list[Callable[[], Awaitable[None]]] = []
         self.requested = False
         self.closed = False
         self.cleanup_failed = False
@@ -51,6 +52,15 @@ class TaskProcessScope:
         if timeout <= 0:
             raise ValueError("停止检查超时必须大于 0")
         self.checks.append(StopCheck(name, run, timeout))
+
+    def retain_desktop_process(self, stop: Callable[[], Awaitable[None]]) -> None:
+        self._desktop_stoppers.append(stop)
+        self.add_check("desktop process", stop, timeout=12)
+
+    async def close_desktop_processes(self) -> None:
+        stoppers, self._desktop_stoppers = self._desktop_stoppers, []
+        if stoppers:
+            await asyncio.gather(*(stop() for stop in stoppers))
 
     def retain_worker(self, task: asyncio.Task) -> None:
         """保留反映底层真实完成的句柄，不让统一取消制造假完成。"""
@@ -215,7 +225,26 @@ class TaskProcessScope:
     def creation_flags(self) -> int:
         return self._job.creation_flags if self._job is not None else 0
 
-    def track(
+    def track(self, process: psutil.Process) -> None:
+        """接管通过扫描找到的进程前核验它所在的会话。"""
+        from .session import process_in_scope
+
+        if not process_in_scope(process.pid):
+            raise ProcessLookupError("进程不属于桌面分身")
+        self._track(process)
+
+    def track_started(
+        self,
+        process: subprocess.Popen | asyncio.subprocess.Process,
+        *,
+        suspended: bool,
+        writer: bool,
+        breakaway: bool,
+    ) -> None:
+        """登记本任务直接创建并持有句柄的进程，包括在主会话运行的更新工具。"""
+        self._track(process, suspended=suspended, writer=writer, breakaway=breakaway)
+
+    def _track(
         self,
         handle: Any,
         *,
@@ -271,6 +300,10 @@ class TaskProcessScope:
         self._writers.pop(id(handle), None)
         self._external_processes.pop(id(handle), None)
 
+    def kill_process_tree(self, pid: int) -> bool:
+        """按任务归属清理进程树，保留脚本主动脱离的游戏等子进程。"""
+        return self._job is not None and self._job.kill_tree(pid)
+
     def popen(self, *args: Any, **kwargs: Any) -> subprocess.Popen:
         """供安装线程使用的进程工厂，同样登记到任务进程组。"""
         if self.closed:
@@ -292,7 +325,7 @@ class TaskProcessScope:
             if self.closed:
                 process.kill()
                 raise asyncio.CancelledError
-            self.track(
+            self.track_started(
                 process,
                 suspended=bool(self.creation_flags),
                 writer=True,
@@ -384,3 +417,17 @@ def detached_process_context() -> Context:
     for variable in (current_process_scope, current_update_scope, current_stop_check):
         context.run(variable.set, None)
     return context
+
+
+@contextmanager
+def process_finalizer_scope(*, timeout: float = 10.0) -> Iterator[None]:
+    """登记当前层级收尾的停止确认上限，收尾期间允许完成已有进程资源的释放操作。"""
+    scope = current_process_scope.get()
+    token = current_stop_check.set(scope)
+    try:
+        task = asyncio.current_task()
+        if scope is not None and task is not None:
+            scope.watch_finalizer(task, timeout=timeout)
+        yield
+    finally:
+        current_stop_check.reset(token)

@@ -1,6 +1,12 @@
 <template>
-  <!-- 样子照 MaaFWTaskOptionEditor 里的 checkbox 类型选项，看起来是项目选项的第一行 -->
-  <div class="option-item task-weekdays-field">
+  <div v-if="collapsed" class="option-item task-weekdays-field task-weekdays-summary">
+    <span class="option-label">{{ t('core.edit.queueTaskWeekdays') }}</span>
+    <span class="task-weekdays-value">{{ t('core.edit.queueTaskWeekdaysEveryDay') }}</span>
+    <a-button type="link" size="small" :disabled="disabled" @click="expanded = true">
+      {{ t('core.edit.queueTaskWeekdaysChange') }}
+    </a-button>
+  </div>
+  <div v-else class="option-item task-weekdays-field">
     <div class="option-label">{{ t('core.edit.queueTaskWeekdays') }}</div>
     <div class="weekday-row">
       <!-- 全选放在组外：放进 a-checkbox-group 里会被组的取值接管 -->
@@ -27,7 +33,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   MAAFW_WEEKDAYS,
@@ -35,6 +41,10 @@ import {
   maafwWeekdaysSelectAllState,
 } from './maafwTaskSnapshot'
 
+/**
+ * 右栏「运行日」：样子照 MaaFWTaskOptionEditor 里的 checkbox 类型选项。七天全勾（每天跑，多数任务
+ * 如此）时收成一行「运行日：每天」，点「修改」才展开八个勾；不是每天时直接展开。
+ */
 const props = defineProps<{
   /** 显示的勾（ISO 星期，1=周一）：红灯时为空，绿灯时是存的运行日（没设过就是七天） */
   weekdays: number[]
@@ -67,6 +77,10 @@ const selectAllState = computed(() => maafwWeekdaysSelectAllState(props.weekdays
 const allChecked = computed(() => selectAllState.value === 'all')
 const partlyChecked = computed(() => selectAllState.value === 'partial')
 
+// 点过「修改」就一直展开（又勾回七天也不收），换一个任务时由父级按任务重建、重新收起
+const expanded = ref(false)
+const collapsed = computed(() => allChecked.value && !expanded.value)
+
 const handleChange = (value: unknown) => {
   emit(
     'update',
@@ -83,11 +97,7 @@ const handleToggleAll = () => {
 </script>
 
 <style scoped>
-/* 与 MaaFWTaskOptionEditor 的选项同一套样式；下面紧跟编辑器，间距同编辑器内的 16px */
-.task-weekdays-field {
-  margin-bottom: 16px;
-}
-
+/* 与 MaaFWTaskOptionEditor 的选项同一套样式 */
 .option-item {
   display: flex;
   flex-direction: column;
@@ -101,6 +111,21 @@ const handleToggleAll = () => {
   font-size: 14px;
   font-weight: 600;
   color: var(--ant-color-text);
+}
+
+/* 收起时一行：标签、「每天」、修改入口 */
+.task-weekdays-summary {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.task-weekdays-value {
+  color: var(--ant-color-text-secondary);
+}
+
+.task-weekdays-summary :deep(.ant-btn) {
+  padding-inline: 0;
 }
 
 /* 全选与七天排成一行，间距同选项里的勾 */

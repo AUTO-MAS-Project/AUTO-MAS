@@ -25,7 +25,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Literal
 
-from app.utils import ProcessInfo, get_logger, is_process_running, process
+from app.utils import ProcessInfo, get_logger, process
+from app.utils.common.process.manager import has_process_window
+from app.utils.common.process.session import desktop_process_target
 
 from ..task_mapping import engine_label
 from .cloud_browser import (
@@ -714,7 +716,7 @@ class HSRAccountSwitcher:
                 f"已请求关闭游戏，等待 {HSR_GAME_READY_DELAY_SECONDS}s 后重新启动"
             )
             await asyncio.sleep(HSR_GAME_READY_DELAY_SECONDS)
-            if process_name and is_process_running(process_name):
+            if process_name and await has_process_window(process_name):
                 self._append_log(
                     f"等待后仍检测到游戏进程运行（{process_name}），"
                     "将交由 ensure_game_started_by_mas 继续处理"
@@ -750,7 +752,7 @@ class HSRAccountSwitcher:
         game_exe_path = resolve_game_executable_path(self.script_config)
         self.runtime.game_exe_path = game_exe_path
         process_name = HSR_GAME_PROCESS_NAME
-        if process_name and is_process_running(process_name):
+        if process_name and await has_process_window(process_name):
             if (
                 _force_resolution_enabled(self.script_config)
                 and self.runtime.game_resolution_override is None
@@ -819,7 +821,7 @@ class HSRAccountSwitcher:
         self.runtime.game_transitioning = True
 
         try:
-            if process_name and is_process_running(process_name):
+            if process_name and await has_process_window(process_name):
                 self._append_log(
                     f"账号「{user_name}」需要登录/切号，检测到游戏正在运行，"
                     f"正在关闭游戏并等待 {HSR_GAME_READY_DELAY_SECONDS}s 后重启"
@@ -968,7 +970,9 @@ class HSRAccountSwitcher:
             return False
 
         manager = self.runtime.game_process_manager
-        if manager.main_pid is None or manager.main_hwnd is None:
+        if manager.main_pid is None or (
+            desktop_process_target.get() is None and manager.main_hwnd is None
+        ):
             try:
                 await manager.search_process(
                     ProcessInfo(name=process_name),
@@ -1001,7 +1005,7 @@ class HSRAccountSwitcher:
             sleep_seconds = min(poll_interval, wait_time - waited)
             await asyncio.sleep(sleep_seconds)
             waited += sleep_seconds
-            if process_name and is_process_running(process_name):
+            if process_name and await has_process_window(process_name):
                 await self._wait_after_game_process_detected(process_name)
                 return
 

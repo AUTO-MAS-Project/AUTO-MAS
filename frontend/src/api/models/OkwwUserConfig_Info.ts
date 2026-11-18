@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type OkwwUserConfig_Info = {
     /**
+     * 固定配置或 Okww 计划表
+     */
+    PlanMode?: (string | null);
+    /**
      * base 来源（shared=共享、independent=独立、native=脚本原生配置）
      */
     Base?: ('shared' | 'independent' | 'native' | null);

@@ -8,6 +8,8 @@ description: Use when adding, refactoring, or reviewing AUTO-MAS plan schedule t
 ## Objective
 Keep AUTO-MAS plan schedules easy to extend without turning them into a generic field engine. Each schedule type owns its data model, config class, table UI, and account consumption path. Shared code should only cover type registration, API dispatch, list selection, and CRUD orchestration.
 
+`UniversalPlanConfig` describes General scripts only. Keep its documentation and regression tests scoped to that feature; define specialized plan behavior in the owning adapter.
+
 ## Current Architecture
 Backend has one shared multi-config collection and one lightweight registration table.
 

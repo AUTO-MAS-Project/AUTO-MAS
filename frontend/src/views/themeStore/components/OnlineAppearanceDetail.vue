@@ -164,11 +164,11 @@ const handleVersionChange = (value: SelectValue): void => {
             </template>
           </a-result>
         </div>
-        <template v-else-if="prepared">
+        <template v-else-if="previewImage || prepared">
           <img
             v-if="previewImage"
             :src="previewImage"
-            :alt="prepared.appearance.name"
+            :alt="detailItem.displayName"
             class="online-preview-image"
           />
           <div v-else class="online-swatch" :style="swatchStyle">
@@ -249,7 +249,7 @@ const handleVersionChange = (value: SelectValue): void => {
           <a-button
             type="primary"
             :loading="installing"
-            :disabled="preparing || !prepared"
+            :disabled="preparing || detailLoading || selectedVersionNo === null"
             @click="install"
           >
             {{ t('core.themeStore.install') }}

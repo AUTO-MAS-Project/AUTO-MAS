@@ -752,15 +752,8 @@ async def _save_path(
 ) -> dict[str, Any]:
     """安装结果可用才保存路径；保留下载期间用户手动改的设置。"""
     _assert_complete_install(target)
-    # 安装结束后自动复用设置页的目录检测规则；拒绝仅有 GUI 或部分组件的目录。
-    detected = await asyncio.to_thread(
-        _fluxdown_cli.fluxdown_detect,
-        str(target),
-        0.0,
-        managed_dir=_install_dir(),
-    )
-    if not detected["path"] or Path(detected["path"]).resolve() != target.resolve():
-        raise RuntimeError("安装后 FluxDown 自动检测未通过，未保存路径")
+    # 指定安装目标的完整性由上面的校验保证；自动检测是路径推荐，
+    # 可能优先选择另一份 MAS 托管安装，不能用来验证本次目标。
     await _report_install_progress("save")
     try:
         async with config_manager.transaction():

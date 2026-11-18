@@ -1,23 +1,44 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
+import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
 import { useAppClosePreferences } from '@/composables/useAppClosePreferences'
+import type { AppCloseAction } from '@/utils/appClosePreferences'
+import SettingRow from '@/components/ui/SettingRow.vue'
 
 const logger = window.electronAPI.getLogger('关闭应用设置')
 const { t } = useI18n()
-const { confirmBeforeClose, loaded, saving, load, setConfirmationEnabled } =
-  useAppClosePreferences()
+const {
+  confirmBeforeClose,
+  lastAction,
+  loaded,
+  saving,
+  load,
+  setConfirmationEnabled,
+  chooseAction,
+} = useAppClosePreferences()
 
-const handleChange = async (checked: boolean): Promise<void> => {
+const closeActionOptions = computed(() => [
+  { label: t('core.setting.basic.closeQuit'), value: 'quit' },
+  { label: t('core.setting.basic.closeToTray'), value: 'tray' },
+])
+
+const handleChange = async (change: Promise<void>): Promise<void> => {
   try {
-    await setConfirmationEnabled(checked)
+    await change
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存关闭确认设置失败: ${errorMsg}`)
+    logger.error(`保存关闭应用设置失败: ${errorMsg}`)
     message.error(t('core.setting.toast.saveFailed'))
   }
 }
+
+const handleActionChange = (value: string | number | boolean) =>
+  handleChange(chooseAction(value as AppCloseAction, false))
+
+const handleConfirmationChange = (event: CheckboxChangeEvent) =>
+  handleChange(setConfirmationEnabled(event.target.checked === true))
 
 onMounted(() => {
   void load()
@@ -25,13 +46,36 @@ onMounted(() => {
 </script>
 
 <template>
-  <!-- 只输出控件本体：标签与提示由父级 SettingRow 承担 -->
-  <a-switch
-    :checked="confirmBeforeClose"
-    :loading="saving"
-    :disabled="!loaded || saving"
-    :aria-busy="saving"
-    :aria-label="t('core.setting.basic.closeConfirmation')"
-    @change="(checked: boolean | string | number) => handleChange(!!checked)"
-  />
+  <SettingRow :label="t('core.setting.basic.closeAction')" :aria-busy="saving">
+    <a-segmented
+      class="close-action-options"
+      :value="lastAction"
+      :options="closeActionOptions"
+      :disabled="!loaded"
+      :loading="saving"
+      :block="false"
+      :aria-label="t('core.setting.basic.closeAction')"
+      @change="handleActionChange"
+    />
+  </SettingRow>
+
+  <SettingRow
+    child
+    :label="t('core.setting.basic.closeConfirmation')"
+    :description="t('core.setting.basic.closeConfirmationTip')"
+  >
+    <a-checkbox
+      :checked="confirmBeforeClose"
+      :disabled="!loaded || saving"
+      :aria-busy="saving"
+      :aria-label="t('core.setting.basic.closeConfirmation')"
+      @change="handleConfirmationChange"
+    />
+  </SettingRow>
 </template>
+
+<style scoped>
+.close-action-options {
+  min-width: 0;
+}
+</style>

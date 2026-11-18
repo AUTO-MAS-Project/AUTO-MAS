@@ -53,6 +53,7 @@
             :env-logs="envLogs"
             :env-agents="envAgents"
             :env-outcome="envOutcome"
+            :is-wizard="isWizard"
             @change="handleChange"
             @select-path="selectMaaFWPath"
             @preview-interface="handlePreviewInterface"
@@ -97,18 +98,22 @@
             :adb-control-strategy-items="adbControlStrategyItems"
             :selected-emulator-label="selectedEmulatorLabel"
             :interface-dependent-disabled="interfaceDependentDisabled"
+            :beside-package-name-count="besidePackageNameCount"
             @change="handleChange"
             @controller-change="handleControllerChange"
             @resource-change="handleResourceChangeWithPackage"
             @emulator-select-change="handleEmulatorSelectChange"
             @select-launch-path="selectLaunchPath"
+            @select-launcher-path="selectLauncherPath"
           >
-            <template v-if="hasBesidePackageName" #besidePackageName>
+            <!-- control 分节按组件数每格转发一次，这里渲染第 index 个组件 -->
+            <template v-if="besidePackageNameCount > 0" #besidePackageName="{ index }">
               <MaaFWFlavorSlot
                 part="scriptPage"
                 name="besidePackageName"
                 :flavor="flavor"
                 :context="flavorSlotContext"
+                :index="index"
                 @change="handleChange"
               />
             </template>
@@ -270,6 +275,7 @@ const {
   handleResourceChangeWithPackage,
   handleEmulatorSelectChange,
   selectLaunchPath,
+  selectLauncherPath,
   dailyOnceTasks,
   weeklyOnceTasks,
   monthlyOnceTasks,
@@ -334,9 +340,9 @@ const headerLogo = computed(() =>
 // 各分节：默认用 MFW 的，当前特调替换了哪节就换成它的（契约见 MaaFWFlavor/sectionContracts）
 const sections = useMaaFWSections(flavor, 'scriptPage', MAAFW_SCRIPT_PAGE_SECTIONS)
 
-// 包名旁的插入点在 control 分节里面：只有当前特调登记了组件才填这个 slot，否则包名独占一行
-const hasBesidePackageName = computed(
-  () => resolveMaaFWFlavorSlot(flavor.value, 'scriptPage', 'besidePackageName').length > 0
+// 包名旁的插入点在 control 分节里面：组件数传给分节（每个组件一格），有组件时才填这个 slot
+const besidePackageNameCount = computed(
+  () => resolveMaaFWFlavorSlot(flavor.value, 'scriptPage', 'besidePackageName').length
 )
 </script>
 

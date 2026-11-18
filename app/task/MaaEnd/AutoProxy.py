@@ -21,6 +21,8 @@ import sys
 import tempfile
 import uuid
 from collections.abc import Callable
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 from time import time, time_ns
@@ -71,17 +73,20 @@ from app.utils import (
     ProcessManager,
     ProcessRunner,
     get_logger,
-    is_process_running,
     log_box,
     process,
 )
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
+from app.utils.common.process.manager import has_process_window
+from app.utils.common.process.session import desktop_process_target
 
 from .inventory_report import (
     INVENTORY_REPORT_RULE,
     InventoryReport,
+    TaskRewardReport,
     inventory_resolve,
+    load_reward_groups,
     merge_gain_entries,
 )
 from .push_log import MAAEND_PUSH_RULES, maaend_plain_text, maaend_resolve
@@ -121,12 +126,27 @@ _AUTOMAS_GAME_PRE_ACTION_ID = "automas-endfield"
 _MAAEND_CLIENT_PROCESS = "Endfield.exe"
 # 启动器 UI 自动化（前台点击 + 全局鼠标）一次只能有一路：跨脚本按此锁串行
 _LAUNCHER_AUTOMATION_LOCK = asyncio.Lock()
+_LAUNCHER_LOCK_HELD = ContextVar("maaend_launcher_lock_held", default=False)
 # 后一个启动会话接管同安装后，旧会话的延迟收尾不得关闭新会话的游戏或启动器。
-_LAUNCHER_OWNERS: dict[Path, object] = {}
+_LAUNCHER_OWNERS: dict[tuple[int | None, Path], object] = {}
 _MAAEND_SANITY_TASK_NAMES = {"ProtocolSpace", "AutoEssence"}
 _MXU_TASKS_COMPLETED = re.compile(
     r"收到 state-changed，已刷新运行时状态,\s*kind:\s*tasks-completed\s*$"
 )
+
+
+@asynccontextmanager
+async def _launcher_automation():
+    # 分身切号的更新回调沿用同一启动器锁，统一先取启动器锁再进入分身动作。
+    if _LAUNCHER_LOCK_HELD.get():
+        yield
+        return
+    async with _LAUNCHER_AUTOMATION_LOCK:
+        token = _LAUNCHER_LOCK_HELD.set(True)
+        try:
+            yield
+        finally:
+            _LAUNCHER_LOCK_HELD.reset(token)
 
 
 def _game_launch_command(
@@ -471,6 +491,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         # 账号级「节点详情推送」开关（Notify.PushLogMode），prepare 时按配置启用
         self.push_log_enabled = False
         self.inventory_status_messages: set[str] = set()
+        self.reward_item_labels: dict[str, str] = {}
         self.mode = "Routine"
         self.run_book: dict[str, bool] = {mode: False for mode in MAAEND_RUN_MOOD_BOOK}
         self.task_dict: dict[str, dict[str, bool]] | None = None
@@ -488,6 +509,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         self.original_game_settings_read = False
         self.launcher_game_setting_options: dict[str, Any] = {}
         self.launcher_runtime_path: Path | None = None
+        desktop = desktop_process_target.get()
+        # 此登记表只在主 MAS 进程内使用，None 恒指该进程所在的主会话。
+        self.launcher_session_id = desktop.session_id if desktop is not None else None
         self.launcher_owner: object = object()
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         self.auto_collect_run_at: datetime | None = None
@@ -540,7 +564,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 preserve_running_game=preserve_running_game
             )
             return
-        async with _LAUNCHER_AUTOMATION_LOCK:
+        async with _launcher_automation():
             if mode == "MaaEnd":
                 logger.info("启动方式为「MaaEnd 启动」")
                 # 手选路径与上游启动入口共用；未指定时保留 MaaEnd 原生定位方式。
@@ -553,7 +577,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     )
                 if launcher_path is not None:
                     self.launcher_runtime_path = launcher_path.resolve()
-                    _LAUNCHER_OWNERS[self.launcher_runtime_path] = self.launcher_owner
+                    _LAUNCHER_OWNERS[
+                        self.launcher_session_id, self.launcher_runtime_path
+                    ] = self.launcher_owner
                 else:
                     logger.warning(
                         "无法从游戏目录确认 MaaEnd 使用的启动器位置，"
@@ -574,7 +600,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             launcher_path = self._launcher_path()
             if launcher_path is not None:
                 self.launcher_runtime_path = launcher_path.resolve()
-                _LAUNCHER_OWNERS[self.launcher_runtime_path] = self.launcher_owner
+                _LAUNCHER_OWNERS[
+                    self.launcher_session_id, self.launcher_runtime_path
+                ] = self.launcher_owner
             await self._mas_launch_game_directly()
 
     def _launcher_path(self) -> Path | None:
@@ -705,6 +733,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 cwd=self.maaend_root_path,
                 timeout=timeout,
                 kill_tree_on_cancel=True,
+                retain_desktop_descendants=launching,
             )
         except asyncio.TimeoutError as error:
             raise RuntimeError(
@@ -734,7 +763,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         self, *, preserve_running_game: bool = False
     ) -> None:
         """调用方持有启动器锁，由 MaaEnd 应用设置并启动游戏。"""
-        needs_wait = not is_process_running(_MAAEND_CLIENT_PROCESS) or (
+        needs_wait = not await has_process_window(_MAAEND_CLIENT_PROCESS) or (
             not preserve_running_game
             and self.mode == self.first_run_mode
             and (
@@ -759,14 +788,40 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         return bool(win32gui.FindWindow("UnityWndClass", "Endfield"))
 
+    async def _game_window_in_session(self) -> bool:
+        if (desktop := desktop_process_target.get()) is None:
+            return self._game_window_present()
+        from app.task.desktop_session_worker import request_desktop_action
+
+        _, present = await request_desktop_action(desktop, "maaend_game_window", {})
+        return bool(present)
+
     async def _mas_launch_game_directly(self) -> None:
         """通过现有直启入口拉起游戏，也用于更新确认后的重新启动。"""
-        if is_process_running(_MAAEND_CLIENT_PROCESS) and self._game_window_present():
+        if (
+            await has_process_window(_MAAEND_CLIENT_PROCESS)
+            and await self._game_window_in_session()
+        ):
             logger.info("检测到终末地客户端已运行，准备由 MAS 执行账号切换")
             return
         # 进程残留但窗口已消失（如更新重启失败）：清掉残留后重新拉起
         await self.game_process_manager.kill()
         logger.info(f"启动终末地: {self.script_config.Game.Path}")
+        if (desktop := desktop_process_target.get()) is not None:
+            from app.task.desktop_session_worker import request_desktop_action
+
+            async with asyncio.timeout(60):
+                await request_desktop_action(
+                    desktop,
+                    "maaend_direct_launch",
+                    {
+                        "launcher_path": self._launcher_path_text(),
+                        "game_path": str(self.script_config.Game.Path),
+                        "game_arguments": str(self.script_config.Game.Arguments),
+                    },
+                )
+            await asyncio.sleep(self.script_config.Game.WaitTime)
+            return
         command = _game_launch_command(
             launcher_path=self._launcher_path_text(),
             game_path=str(self.script_config.Game.Path),
@@ -793,14 +848,16 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         前台点击与全局鼠标一次只能有一路，跨脚本按 _LAUNCHER_AUTOMATION_LOCK 串行。
         """
 
-        async with _LAUNCHER_AUTOMATION_LOCK:
+        async with _launcher_automation():
             launcher_path = self._launcher_path()
             if launcher_path is None:
                 raise RuntimeError(
                     "未找到终末地官方启动器，请重新选择启动器可执行文件（.exe）"
                 )
             self.launcher_runtime_path = launcher_path.resolve()
-            _LAUNCHER_OWNERS[self.launcher_runtime_path] = self.launcher_owner
+            _LAUNCHER_OWNERS[self.launcher_session_id, self.launcher_runtime_path] = (
+                self.launcher_owner
+            )
             # 启动器模式只复用旧版独立设置任务，游戏始终由 MAS 经启动器拉起。
             if (
                 not preserve_running_game
@@ -810,8 +867,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             ):
                 await self._apply_launcher_game_settings()
             if (
-                is_process_running(_MAAEND_CLIENT_PROCESS)
-                and self._game_window_present()
+                await has_process_window(_MAAEND_CLIENT_PROCESS)
+                and await self._game_window_in_session()
             ):
                 logger.info("检测到终末地客户端进程已在运行，跳过由 MAS 重复启动游戏")
                 await push_dispatch_log(
@@ -829,7 +886,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 )
                 # 手选 Games.exe 也已解析到稳定入口，始终定位终末地页。
                 await self.game_process_manager.open_process(
-                    launcher_path, "--game=Endfield", "--reason=4"
+                    launcher_path,
+                    "--game=Endfield",
+                    "--reason=4",
+                    breakaway=True,
+                    owned=False,
+                    retain_desktop_descendants=True,
                 )
             # 启动器交互在后台线程内同步执行，on_log 契约是同步回调；push_dispatch_log
             # 是 async 函数，须经 run_coroutine_threadsafe 调度回事件循环
@@ -840,11 +902,25 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     push_dispatch_log(self.script_info, line), launch_loop
                 )
 
-            if not await async_start_game_via_launcher(
-                launcher_path,
-                on_log=_push_launch_log,
-                on_error_screenshot=self._record_error_screenshot,
-            ):
+            if (desktop := desktop_process_target.get()) is not None:
+                from app.task.desktop_session_worker import request_desktop_action
+
+                code, screenshots = await request_desktop_action(
+                    desktop,
+                    "maaend_launch",
+                    {"launcher_path": str(launcher_path)},
+                    on_log=_push_launch_log,
+                )
+                for screenshot in screenshots:
+                    self._record_error_screenshot(Path(screenshot))
+                launched = code == 0
+            else:
+                launched = await async_start_game_via_launcher(
+                    launcher_path,
+                    on_log=_push_launch_log,
+                    on_error_screenshot=self._record_error_screenshot,
+                )
+            if not launched:
                 raise RuntimeError("终末地启动器未能拉起游戏，请人工确认启动器状态")
             wait_time = int(self.script_config.Game.WaitTime)
             await push_dispatch_log(
@@ -1002,48 +1078,23 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         name = str(task_name)
         selected_tasks = self._daily_once_task_names()
-        if name not in selected_tasks and not (
-            name in _MAAEND_SANITY_TASK_NAMES and "Sanity" in selected_tasks
-        ):
+        if name not in selected_tasks:
             return False
+        return self._daily_task_records().get(name) == self.curdate
 
-        records = self._daily_task_records()
-        if records.get(name) == self.curdate:
-            return True
-        return (
-            name in _MAAEND_SANITY_TASK_NAMES and records.get("Sanity") == self.curdate
-        )
-
-    def _quick_task_daily_once_done(self, task_name: str) -> bool:
-        """判断覆写常规配置中的逻辑任务是否已在当天完成。"""
-
-        if task_name != "Sanity":
-            return self._daily_once_task_done(task_name)
-        if self._daily_once_task_done(task_name):
-            return True
-        if self.cur_user_config.Info.SanityStrategy == "Inventory":
-            return self._daily_once_task_done("ProtocolSpace")
-        if self.cur_user_config.Info.SanityStrategy == "Native":
-            tasks = self._source_maaend_tasks()
-            sanity_tasks = [
-                str(task["taskName"])
-                for task in tasks or []
-                if task.get("taskName") in _MAAEND_SANITY_TASK_NAMES
-                and task.get("enabled", False)
-            ]
-            return bool(sanity_tasks) and all(
-                self._daily_once_task_done(name) for name in sanity_tasks
+    def _quick_sanity_task_enabled(self, task_name: str) -> bool:
+        """分别读取协议空间与基质开关，轮换计划只影响对应任务。"""
+        if task_name == "AutoEssence":
+            return self.cur_user_config.Task.IfAutoEssence and (
+                self.cur_user_config.Info.AutoEssenceMode == "Native"
+                or self.cur_user_config.get_effective_essence_task_key() is not None
             )
-        try:
-            sanity_task_key, _ = self.cur_user_config.get_effective_sanity_task_key()
-        except ValueError:
+        if not self.cur_user_config.Task.IfProtocolSpace:
             return False
-        target_task_name = (
-            "AutoEssence"
-            if sanity_task_key["SanityTaskType"] == "Essence"
-            else "ProtocolSpace"
-        )
-        return self._daily_once_task_done(target_task_name)
+        if self.cur_user_config.Info.SanityStrategy != "MAS":
+            return True
+        key, _ = self.cur_user_config.get_effective_sanity_task_key()
+        return key["SanityTaskType"] != "Essence"
 
     async def _mark_daily_once_tasks_completed(
         self, completed_task_names: set[str]
@@ -1059,8 +1110,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         changed = False
         for task_name in completed_task_names:
             keys = {str(task_name)}
-            if str(task_name) in _MAAEND_SANITY_TASK_NAMES:
-                keys.add("Sanity")
             for key in keys.intersection(selected_tasks):
                 if records.get(key) != self.curdate:
                     records[key] = self.curdate
@@ -1079,11 +1128,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         mode_results = [self._mode_skip_reason(mode) for mode in MAAEND_RUN_MOOD_BOOK]
         if any(reason is None or missing for reason, missing in mode_results):
             return None
-        daily_once_done = (
-            self._quick_task_daily_once_done
-            if self.cur_user_config.Info.IfQuickConfig
-            else self._daily_once_task_done
-        )
+        daily_once_done = self._daily_once_task_done
         if not any(
             daily_once_done(task_name) for task_name in self._daily_once_task_names()
         ):
@@ -1225,8 +1270,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
     def _quick_config_base_skip_reason(self, mode: str) -> tuple[str | None, bool]:
         """覆写常规配置下按 MAS 任务开关与 MaaEnd 配置判断阶段是否可执行。"""
 
-        native_sanity = self.cur_user_config.Info.SanityStrategy == "Native"
-        inventory_sanity = self.cur_user_config.Info.SanityStrategy == "Inventory"
         if mode == "Delivery":
             if not self.cur_user_config.Task.IfSeizeDeliveryJobs:
                 return "覆写常规配置未开启抢委托送货", False
@@ -1240,50 +1283,33 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             task_name = MAAEND_AUTO_COLLECT_TASK
             task_label = "自动采集"
         else:
-            sanity_enabled = bool(self.cur_user_config.Task.IfSanity) and (
-                not self._quick_task_daily_once_done("Sanity")
-            )
-            if not (
-                sanity_enabled
-                or any(
-                    (
-                        bool(getattr(self.cur_user_config.Task, f"If{task_name}"))
-                        and (not self._quick_task_daily_once_done(task_name))
-                        for task_name in MAAEND_TASKS
-                    )
-                )
-            ):
-                return "覆写常规配置未开启任何日常任务", False
-
             tasks = self._source_maaend_tasks()
-            if tasks is None:
-                return None, False
-
-            # MaaEnd 2.28 的 AutoEssence 任务可能尚未出现在旧配置实例中；
-            # set_maaend 会在临时运行配置中补齐任务，不能在这里提前跳过理智阶段。
-            if (
-                not native_sanity
-                and self.cur_user_config.Task.IfSanity
-                and not self._quick_task_daily_once_done("Sanity")
-            ):
-                target_sanity_task_name = "ProtocolSpace"
-                if not inventory_sanity:
-                    sanity_task_key, _ = (
-                        self.cur_user_config.get_effective_sanity_task_key()
-                    )
-                    if sanity_task_key["SanityTaskType"] == "Essence":
-                        target_sanity_task_name = "AutoEssence"
-                if (
-                    not any(
-                        str(task.get("taskName", "")) == target_sanity_task_name
-                        for task in tasks
-                    )
-                    and self._maaend_task_supported(target_sanity_task_name)
-                    is not False
+            for name in _MAAEND_SANITY_TASK_NAMES:
+                if not self._quick_sanity_task_enabled(
+                    name
+                ) or self._daily_once_task_done(name):
+                    continue
+                native = (
+                    self.cur_user_config.Info.SanityStrategy == "Native"
+                    if name == "ProtocolSpace"
+                    else self.cur_user_config.Info.AutoEssenceMode == "Native"
+                )
+                if not native:
+                    if self._maaend_task_supported(name) is not False:
+                        return None, False
+                elif tasks is None or any(
+                    task.get("taskName") == name and task.get("enabled", False)
+                    for task in tasks
                 ):
                     return None, False
-
-            target_sanity_task_name: str | None = None
+            if tasks is None:
+                if any(
+                    getattr(self.cur_user_config.Task, f"If{name}")
+                    and not self._daily_once_task_done(name)
+                    for name in MAAEND_TASKS
+                ):
+                    return None, False
+                return "覆写常规配置未开启任何日常任务", False
             for task in tasks:
                 task_name = str(task.get("taskName", ""))
                 if (
@@ -1296,36 +1322,15 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     _MAAEND_CLOSE_GAME_TASK,
                     MAAEND_DELIVERY_TASK,
                     MAAEND_AUTO_COLLECT_TASK,
+                    *_MAAEND_SANITY_TASK_NAMES,
                 }:
                     continue
-                if task_name in _MAAEND_SANITY_TASK_NAMES:
-                    if not self.cur_user_config.Task.IfSanity:
-                        continue
-                    if native_sanity:
-                        if task.get(
-                            "enabled", False
-                        ) and not self._daily_once_task_done(task_name):
-                            return None, False
-                        continue
-                    if target_sanity_task_name is None:
-                        target_sanity_task_name = "ProtocolSpace"
-                        if not inventory_sanity:
-                            sanity_task_key, _ = (
-                                self.cur_user_config.get_effective_sanity_task_key()
-                            )
-                            if sanity_task_key["SanityTaskType"] == "Essence":
-                                target_sanity_task_name = "AutoEssence"
-                    if task_name == target_sanity_task_name:
-                        if not self._quick_task_daily_once_done("Sanity"):
-                            return None, False
-                    continue
-                if task_name in MAAEND_TASKS:
-                    if getattr(self.cur_user_config.Task, f"If{task_name}") and (
-                        not self._quick_task_daily_once_done(task_name)
-                    ):
-                        return None, False
-                    continue
-                if bool(task.get("enabled", False)):
+                enabled = (
+                    getattr(self.cur_user_config.Task, f"If{task_name}")
+                    if task_name in MAAEND_TASKS
+                    else task.get("enabled", False)
+                )
+                if enabled and not self._daily_once_task_done(task_name):
                     return None, False
             return "MaaEnd 配置中没有可执行的日常任务", False
 
@@ -1354,8 +1359,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
     async def _wait_maaend_stage(self, log_offsets: dict[Path, int]) -> None:
         """等待日志结果、进程退出或 MXU 队列结束，兜底完成后未退出的进程。"""
-        process = self.maaend_process_manager.process
-        if not isinstance(process, asyncio.subprocess.Process):
+        process = self.maaend_process_manager.launched_process
+        if process is None:
             await self.cur_user_log.set_state(status="MaaEnd 未启动可监控的进程")
             return
 
@@ -1489,7 +1494,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             version = await update_maaend_after_stage(
                 root_path,
                 log_offsets,
-                process=self.maaend_process_manager.process,
+                process=self.maaend_process_manager.launched_process,
                 on_status=update_status,
                 on_before_session=before_update_session,
                 on_session_launched=after_update_session_launch,
@@ -1578,6 +1583,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 logger.warning(
                     f"账号: {self.cur_user_uid} - {stage_label}阶段重试次数已耗尽"
                 )
+                if self.mode == "Delivery":
+                    logger.warning("抢委托送货失败，停止该账号的后续阶段")
+                    break
                 mode_index += 1
                 i = 0
                 self.task_dict = None
@@ -1642,12 +1650,33 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
                 try:
                     await self.script_info.set_log("正在由 MAS 自建流程切换账号...")
-                    await login(
-                        account_id,
-                        self.emulator_info,
-                        restart_game=self._restart_game_after_update,
-                        on_error_screenshot=self._record_error_screenshot,
-                    )
+                    if (desktop := desktop_process_target.get()) is not None:
+                        from app.task.desktop_session_worker import (
+                            request_desktop_action,
+                        )
+
+                        async with _launcher_automation():
+                            code, outcome = await request_desktop_action(
+                                desktop,
+                                "maaend_login",
+                                {"account": account_id},
+                                on_restart=self._restart_game_after_update,
+                            )
+                        for screenshot in outcome["screenshots"]:
+                            self._record_error_screenshot(Path(screenshot))
+                        if code != 0:
+                            raise RuntimeError(
+                                f"分身内终末地账号切换失败：{outcome['error']}"
+                            )
+                        if outcome["notReady"] is not None:
+                            raise LoginNotReadyError(outcome["notReady"])
+                    else:
+                        await login(
+                            account_id,
+                            self.emulator_info,
+                            restart_game=self._restart_game_after_update,
+                            on_error_screenshot=self._record_error_screenshot,
+                        )
                 except Exception as error:
                     keep_game_for_login_retry = (
                         isinstance(error, LoginNotReadyError) and i < run_times_limit
@@ -1707,6 +1736,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 self.maaend_instance_name,
                 "--quit-after-run",
                 stdout=asyncio.subprocess.PIPE,
+                retain_desktop_descendants=True,
             )
             # 只有进程真的起来了才算一次 MXU 启动；否则 debug/ 里还是上一轮的残留。
             self._mxu_launch_count += 1
@@ -1838,10 +1868,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         """关闭游戏或模拟器进程（Win32 为终末地客户端，Adb 为模拟器）"""
 
         if self.emulator_manager is None:
-            async with _LAUNCHER_AUTOMATION_LOCK:
+            async with _launcher_automation():
                 if (
                     self.launcher_runtime_path is not None
-                    and _LAUNCHER_OWNERS.get(self.launcher_runtime_path)
+                    and _LAUNCHER_OWNERS.get(
+                        (self.launcher_session_id, self.launcher_runtime_path)
+                    )
                     is not self.launcher_owner
                     or self.launcher_runtime_path is None
                     and self._launch_mode() != "MaaEnd"
@@ -2440,6 +2472,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             self.maaend_root_path,
             str(settings["language"]),
         )
+        self.reward_item_labels.update(
+            (key.removeprefix("iconRecognition.name."), label)
+            for key, label in maaend_interface_i18n.items()
+            if key.startswith("iconRecognition.name.")
+        )
         self.inventory_status_messages.update(
             re.sub(r"<[^>]*>", "", message).strip()
             for key, message in maaend_interface_i18n.items()
@@ -2466,21 +2503,33 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         sanity_task_key = {}
         sanity_task_type = ""
-        target_task_name = ""
         native_sanity = self.cur_user_config.Info.SanityStrategy == "Native"
         inventory_sanity = self.cur_user_config.Info.SanityStrategy == "Inventory"
-        if if_quick_config and not native_sanity:
-            target_task_name = "ProtocolSpace"
-            if not inventory_sanity:
-                sanity_task_key, _ = (
-                    self.cur_user_config.get_effective_sanity_task_key()
-                )
-                sanity_task_type = sanity_task_key["SanityTaskType"]
-                target_task_name = (
-                    "AutoEssence" if sanity_task_type == "Essence" else "ProtocolSpace"
-                )
-            if self.cur_user_config.Task.IfSanity:
-                self._ensure_sanity_task(maaend_tasks, target_task_name)
+        essence_key = None
+        if if_quick_config:
+            if self._quick_sanity_task_enabled("ProtocolSpace") and not native_sanity:
+                if not inventory_sanity:
+                    sanity_task_key, _ = (
+                        self.cur_user_config.get_effective_sanity_task_key()
+                    )
+                    sanity_task_type = sanity_task_key["SanityTaskType"]
+                self._ensure_sanity_task(maaend_tasks, "ProtocolSpace")
+            if self._quick_sanity_task_enabled("AutoEssence"):
+                essence_key = self.cur_user_config.get_effective_essence_task_key()
+                if essence_key is not None:
+                    self._ensure_sanity_task(maaend_tasks, "AutoEssence")
+            # 两个原生任务在同一队列中运行，库存保持先于基质刷取。
+            indices = [
+                i
+                for i, task in enumerate(maaend_tasks)
+                if task.get("taskName") in _MAAEND_SANITY_TASK_NAMES
+            ]
+            ordered = sorted(
+                (maaend_tasks[i] for i in indices),
+                key=lambda task: task["taskName"] == "AutoEssence",
+            )
+            for index, task in zip(indices, ordered, strict=True):
+                maaend_tasks[index] = task
 
         # 补齐业务任务后再放置关闭游戏任务，避免理智任务落到关游戏之后。
         if self.emulator_manager is None:
@@ -2509,23 +2558,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             # 首次运行时按 MAS 配置生成本轮任务表，后续重试只收束这张表
             self.task_dict = {}
             self.task_name_map = {}
-            sanity_configured = False
-            sanity_switch_enabled = (
-                if_quick_config and self.cur_user_config.Task.IfSanity
-            )
-            target_sanity_task_exists = any(
-                (
-                    task.get("taskName") in _MAAEND_SANITY_TASK_NAMES
-                    and task.get("enabled", False)
-                    if native_sanity
-                    else task.get("taskName") == target_task_name
-                )
-                for task in maaend_tasks
-            )
-            sanity_missing = sanity_switch_enabled and not target_sanity_task_exists
-            sanity_managed = if_quick_config and (
-                not sanity_switch_enabled or target_sanity_task_exists
-            )
+            sanity_configured: set[str] = set()
 
             for task in maaend_tasks:
                 task_name_value = str(task.get("taskName"))
@@ -2539,18 +2572,21 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
                 task_enabled = bool(task.get("enabled", False))
                 if if_quick_config:
-                    if task_name_value in ("ProtocolSpace", "AutoEssence"):
-                        if native_sanity:
-                            # 原生策略沿用已选任务，MAS 理智开关只控制整组是否运行。
-                            task_enabled = task_enabled and sanity_switch_enabled
-                        elif sanity_managed:
-                            task_enabled = (
-                                sanity_switch_enabled
-                                and task_name_value == target_task_name
-                                and not sanity_configured
-                            )
-                            if task_enabled:
-                                sanity_configured = True
+                    if task_name_value in _MAAEND_SANITY_TASK_NAMES:
+                        native = (
+                            native_sanity
+                            if task_name_value == "ProtocolSpace"
+                            else self.cur_user_config.Info.AutoEssenceMode == "Native"
+                        )
+                        task_enabled = self._quick_sanity_task_enabled(
+                            task_name_value
+                        ) and (
+                            task_enabled
+                            if native
+                            else task_name_value not in sanity_configured
+                        )
+                        if task_enabled:
+                            sanity_configured.add(task_name_value)
                     elif task_name_value == MAAEND_DELIVERY_TASK:
                         task_enabled = getattr(
                             self.cur_user_config.Task, f"If{MAAEND_DELIVERY_TASK}"
@@ -2584,20 +2620,29 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     self.task_dict[task_name] = {}
                 self.task_dict[task_name][task["id"]] = task_enabled
 
-            if sanity_missing:
-                warning_message = (
-                    f"账号 {self.cur_user_item.name} 未在 MaaEnd 配置中启用理智任务，"
-                    "请在「配置库存目标」中启用协议空间或基质刷取"
-                    if native_sanity
-                    else f"账号 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 {target_task_name} 任务，"
-                    "已跳过理智任务覆写常规配置"
-                )
-                logger.warning(warning_message)
-                await Publisher.send(
-                    id=self.task_info.task_id,
-                    type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="warning", message=warning_message),
-                )
+            if if_quick_config:
+                for name in _MAAEND_SANITY_TASK_NAMES:
+                    native = (
+                        native_sanity
+                        if name == "ProtocolSpace"
+                        else self.cur_user_config.Info.AutoEssenceMode == "Native"
+                    )
+                    if (
+                        native
+                        and self._quick_sanity_task_enabled(name)
+                        and not any(
+                            task.get("taskName") == name and task.get("enabled", False)
+                            for task in maaend_tasks
+                        )
+                    ):
+                        label = "协议空间" if name == "ProtocolSpace" else "基质刷取"
+                        message = f"账号 {self.cur_user_item.name} 未在 MaaEnd 配置中启用{label}，已跳过该任务"
+                        logger.warning(message)
+                        await Publisher.send(
+                            id=self.task_info.task_id,
+                            type=protocol.TASK_NOTICE,
+                            data=WSTaskNoticeData(level="warning", message=message),
+                        )
 
             if removed_task_names:
                 warning_message = (
@@ -2679,8 +2724,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 )
             elif (
                 if_quick_config
-                and task_name_value == target_task_name
-                and target_task_name == "ProtocolSpace"
+                and not native_sanity
+                and task_name_value == "ProtocolSpace"
             ):
                 task.setdefault("optionValues", {})
                 # 指定关卡属于 ByCount 分支，避免原生库存目标模式屏蔽计划表关卡。
@@ -2790,12 +2835,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                             "type": "select",
                             "caseName": "CastDie",
                         }
-            elif (
-                if_quick_config
-                and task_name_value == target_task_name
-                and target_task_name == "AutoEssence"
-            ):
-                self._write_auto_essence_options(task, sanity_task_key)
+            elif if_quick_config and task_name_value == "AutoEssence":
+                if essence_key is not None:
+                    self._write_auto_essence_options(task, essence_key)
 
         # 只跟踪本轮实际启用的任务，避免禁用条目占用同名任务的结果位置。
         enabled_ids = {
@@ -2966,13 +3008,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         if self.on_error_screenshot is not None:
             self.on_error_screenshot(path)
 
-    async def _failure_window_handle(self) -> int | None:
+    @staticmethod
+    def find_failure_window(game_path: Path) -> int | None:
         """按终末地既有主窗口标识确认目标，不把同进程弹窗计为另一个游戏。"""
         import psutil
         import win32gui
         import win32process
-
-        game_path = Path(str(self.script_config.Game.Path or ""))
 
         def find() -> int | None:
             expected_path = game_path.resolve()
@@ -3012,7 +3053,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 return None
             return hwnd
 
-        return await asyncio.to_thread(find)
+        return find()
+
+    async def _failure_window_handle(self) -> int | None:
+        return await asyncio.to_thread(
+            self.find_failure_window, Path(str(self.script_config.Game.Path or ""))
+        )
 
     async def _capture_failure_shot(self) -> Path | None:
         if self._attempt_start_ns is None:
@@ -3028,6 +3074,15 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             return None
 
         if self.emulator_manager is None:
+            if (desktop := desktop_process_target.get()) is not None:
+                from app.task.desktop_session_worker import request_desktop_action
+
+                _, path = await request_desktop_action(
+                    desktop,
+                    "maaend_failure_screenshot",
+                    {"game_path": str(self.script_config.Game.Path)},
+                )
+                return Path(path) if path else None
             hwnd = await self._failure_window_handle()
             if hwnd is None:
                 return None
@@ -3183,10 +3238,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         history_records = []
         stage_log_paths = []
         stage_directory = None
-        inventory_notify = (
-            self.cur_user_config.Notify.Enabled
-            and self.cur_user_config.Notify.IfSendInventory
-        )
+        inventory_notify = self.cur_user_config.Notify.IfSendInventory
         if self.push_log_enabled or inventory_notify:
             try:
                 stage_directory = tempfile.TemporaryDirectory(
@@ -3307,29 +3359,48 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         )
 
         success_symbol = "√" if completed else "X"
+        pull_count_notify = self.cur_user_config.Notify.IfSendStatistic and bool(
+            statistics.get("pull_count_statistics")
+        )
+        report_targets = []
+        if history_records and (inventory_notify or pull_count_notify):
+            report_targets.append(Notify.global_target())
+            if self.cur_user_config.Notify.Enabled:
+                report_targets.append(Notify.user_target(self.cur_user_config))
 
         if inventory_notify and history_records:
             try:
-                await Notify.send_user(
+                await Notify.dispatch_task_notification(
                     payload=_format_maaend.build_inventory_payload(
                         title=f"{datetime.now():%m-%d} | {self.cur_user_item.name} 的本轮材料收获",
                         message=statistics,
                     ),
-                    user_config=self.cur_user_config,
+                    targets=report_targets,
+                    task_info=self.task_info,
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"养成材料通知推送失败: {e}")
 
         if history_records:
             try:
-                await Notify.push_statistics_report(
-                    payload=_format_maaend.build_statistics_payload(
-                        title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
-                        message=statistics,
-                    ),
-                    user_config=self.cur_user_config,
-                    task_info=self.task_info,
-                )
+                statistics_targets = Notify.statistic_targets(None)
+                if not statistics_targets:
+                    statistics.pop("matrix_statistics", None)
+                if pull_count_notify:
+                    statistics_targets = report_targets
+                else:
+                    statistics.pop("pull_count_statistics", None)
+                if statistics_targets and (
+                    pull_count_notify or "matrix_statistics" in statistics
+                ):
+                    await Notify.dispatch_task_notification(
+                        payload=_format_maaend.build_statistics_payload(
+                            title=f"{datetime.now():%m-%d} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
+                            message=statistics,
+                        ),
+                        targets=statistics_targets,
+                        task_info=self.task_info,
+                    )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
                 await Publisher.send(
@@ -3390,7 +3461,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         )
 
     def _collect_inventory_report(self, paths: list[Path]) -> list[str]:
-        """采集协议空间材料记录，返回带时间的展示行，并同步写入推送日志。"""
+        """采集独立材料通知的展示行，并将上游状态写入推送日志。"""
 
         report = InventoryReport(
             task_names={
@@ -3404,7 +3475,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         def append_inventory(log_type: str, text: str, ts: float) -> None:
             lines.append(f"[{datetime.fromtimestamp(ts):%H:%M:%S}] {text}")
-            if self.push_log_enabled:
+            if self.push_log_enabled and text.startswith("上游报告："):
                 append_push_log(
                     self.callbacks,
                     self.user_state(self.cur_user_item),
@@ -3440,6 +3511,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         def read() -> list[log_box.LogEntry]:
             pipeline = log_box.LogPipeline()
+            rewards = TaskRewardReport(
+                load_reward_groups(self.maaend_root_path, self.reward_item_labels)
+            )
             pipeline.preprocessors.append(maaend_plain_text)
             for rule in MAAEND_PUSH_RULES:
                 pipeline.add_rule(*rule)
@@ -3447,9 +3521,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             for path in paths:
                 source = log_source.LogSource(path, start_from_end=False)
                 source.open()
-                for line in source.read_new():
+                lines = source.read_new()
+                rewards.add_stage(lines)
+                for line in lines:
                     pipeline.feed(line, timestamp=time())
-            return pipeline.finish()
+            return [*pipeline.finish(), *rewards.entries()]
 
         async def deliver() -> None:
             try:

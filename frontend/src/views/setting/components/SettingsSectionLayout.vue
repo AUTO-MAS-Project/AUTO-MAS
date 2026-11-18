@@ -31,6 +31,7 @@ const navigationLabel = computed(() =>
 const tabs = computed(() => [
   { key: 'basic', title: t('core.setting.tab.basic') },
   { key: 'function', title: t('core.setting.tab.function') },
+  { key: 'desktop-session', title: t('bootstrap.desktopSession.title') },
   { key: 'notify', title: t('core.setting.tab.notify') },
   { key: 'advanced', title: t('core.setting.tab.advanced') },
   { key: 'others', title: t('core.setting.tab.others') },
@@ -92,8 +93,6 @@ async function toggleNavigation() {
       :class="{
         'settings-shell--navigation-available': navigationAvailable,
         'settings-shell--with-nav': hasNavigation,
-        'settings-shell--dual': effectiveDual,
-        'settings-shell--about': activeKey === 'others',
       }"
     >
       <div class="settings-shell-main">
@@ -168,7 +167,7 @@ async function toggleNavigation() {
 </template>
 
 <style scoped>
-/* 卡片与目录共用限宽容器，标题和页签保持同一条左边缘。 */
+/* 所有页签共用限宽容器，切换页面或目录时标题和页签保持对齐。 */
 .settings-section-layout {
   position: relative;
   display: flex;
@@ -185,18 +184,9 @@ async function toggleNavigation() {
   flex: 1;
   justify-content: center;
   width: 100%;
-  max-width: 1040px;
+  max-width: 1440px;
   min-height: 0;
   margin: 0 auto;
-}
-
-.settings-shell--navigation-available,
-.settings-shell--dual {
-  max-width: 1440px;
-}
-
-.settings-shell--about {
-  max-width: 1240px;
 }
 
 .settings-shell-main {

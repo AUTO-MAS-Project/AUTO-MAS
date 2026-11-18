@@ -1,8 +1,9 @@
-import { historyFilePath, type HistoryRecordRow } from './historyReader'
+import { historyFilePath, readHistoryRecords, type HistoryRecordRow } from './historyReader'
 import { readBackendDocument } from './backendConfig'
 import * as fs from 'fs'
 import * as path from 'path'
 import AdmZip = require('adm-zip')
+import { parse as parseJson5 } from 'json5'
 
 import { getLogger } from './logger'
 import { probeProjectRuntime } from './maafwProjectRuntimeProbe'
@@ -28,6 +29,10 @@ const logger = getLogger('MFW问题包')
 // 与 app/models/config.py 的 M9AConfig / MSSConfig 类名同步
 const M9A_CONFIG_TYPE = 'M9AConfig'
 const MSS_CONFIG_TYPE = 'MSSConfig'
+// 一键导出 M9A / MSS 时一个现存脚本都没有（或都读不到 interface），按这两个项目 interface 的
+// name 认已删脚本的运行（m9a 的 label 是 M9A，比较时一律小写）
+const M9A_PROJECT_NAME = 'm9a'
+const MSS_PROJECT_NAME = 'maastarresonance'
 
 // 与 app/task/MaaFW/tools/embedded/embedded_project.py 的 embedded_copy_dir_name 同步：
 // 每个脚本的项目视图是 data/mfw/<脚本 uuid 去掉连字符的前 12 位>/
@@ -47,6 +52,13 @@ const MAX_ARCHIVE_BYTES = 160 * 1024 * 1024
 // 有视图之前的版本直接在导入来源（Info.Path）里跑，那时的记录按来源路径认
 const VIEW_PATH_PATTERN = /[\\/]mfw[\\/]([0-9a-f]{12})(?![0-9a-f])/i
 const WORKER_LOG_HEAD_BYTES = 64 * 1024
+
+// 与 app/task/MaaFW/tools/embedded/runner_task.py 的 _format_run_overview_log 同步：每次运行的主日志
+// 里有一行「MaaFW 运行总览: project=<名字>; ...」，<名字> 取 interface 的 label（空或 $ 开头时取
+// name）。脚本删掉后视图跟着删，靠这一行认出已删脚本的运行属于哪个项目；worker 没跑到生成计划
+// 就失败的运行没有这一行，认不出来
+const RUN_OVERVIEW_PROJECT_PATTERN = /MaaFW 运行总览: project=([^;\r\n]+);/
+const MAIN_LOG_HEAD_BYTES = 256 * 1024
 
 // PI v2.10.0 的 password 输入框：MaaFramework 会把 override 连同密码原文写进项目自己的
 // debug 日志（见 app/task/MaaFW/AGENTS.md）；MAS 只给 history 副本里 4 个字符以上的密码打码，
@@ -68,19 +80,44 @@ const DROPPED_CONFIG_KEYS = new Set(['Notify'])
 const MASKED_CONFIG_KEY_PATTERN =
   /^(?:Account|Notes|Arguments|ScriptBeforeTask|ScriptAfterTask|ProxyAddress)$|cdk/i
 
-export interface MaaFWIssueReportScript {
+interface MaaFWScript {
   uid: string
   /** ScriptConfig.json 里的配置类名，如 'MaaFWConfig' / 'M9AConfig' */
   type: string
   name: string
   projectLabel: string
-}
-
-interface MaaFWScript extends MaaFWIssueReportScript {
   dataRoot: string
   viewDirName: string
   config: Record<string, unknown>
   userNames: string[]
+}
+
+/** 设置页下拉的一项：同一个项目（interface 的 name）的脚本合成一组。 */
+export interface MaaFWIssueReportProject {
+  /** 组键：interface 的 name 去空白转小写；读不到 interface 时是脚本的配置类名 */
+  key: string
+  label: string
+  scriptCount: number
+  /** 现存脚本里已经没有、只在最近的运行历史里出现的项目 */
+  deletedOnly: boolean
+  /** 组里现存脚本的配置类名 */
+  types: string[]
+}
+
+interface ProjectGroup {
+  key: string
+  label: string
+  scripts: MaaFWScript[]
+  /** 认运行用：组里各脚本 interface 的 name 与 label（小写） */
+  names: Set<string>
+}
+
+/** 一个数据根下认已删脚本运行要用的东西。 */
+interface DataRootRuns {
+  runs: HistoryRun[]
+  /** 该数据根下全部现存脚本（不限类型） */
+  scripts: MaaFWScript[]
+  sourceKeys: Array<{ uid: string; key: string }>
 }
 
 interface HistoryRun {
@@ -97,13 +134,15 @@ interface HistoryRun {
   screenshots: string[]
   /** .worker.log 里认出的项目视图；null 表示读过但没认出来 */
   viewDirName?: string | null
+  /** 主日志运行总览里的项目名；null 表示读过但没有这一行 */
+  projectName?: string | null
 }
 
 interface SelectedRun {
   run: HistoryRun
   result?: string
   success: boolean
-  matchedBy: 'projectPath' | 'userName'
+  matchedBy: 'projectPath' | 'userName' | 'projectName'
 }
 
 interface IssueReportResult {
@@ -142,8 +181,10 @@ function readHead(filePath: string, bytes: number): string {
   let fd: number | undefined
   try {
     fd = fs.openSync(filePath, 'r')
-    const buffer = Buffer.alloc(bytes)
-    const read = fs.readSync(fd, buffer, 0, bytes, 0)
+    // 列项目时要把 30 天内每次运行的主日志开头都读一遍，按文件实际大小分配，不每次都开满
+    const length = Math.min(bytes, fs.fstatSync(fd).size)
+    const buffer = Buffer.alloc(length)
+    const read = fs.readSync(fd, buffer, 0, length, 0)
     return buffer.subarray(0, read).toString('utf-8')
   } catch (error) {
     logger.debug(`读取文件开头失败: ${filePath}, ${String(error)}`)
@@ -224,37 +265,61 @@ function discoverMaaFWScripts(
   return scripts
 }
 
-/** 设置页下拉用：列出指定配置类的脚本（配置类名由前端特调注册表给出）。 */
-export function listMaaFWIssueReportScripts(
-  appRoot: string,
-  configTypes: string[]
-): MaaFWIssueReportScript[] {
-  const accepted = new Set(configTypes)
-  return discoverMaaFWScripts(resolveDataRoots(appRoot), (_uid, type) => accepted.has(type)).map(
-    ({ uid, type, name, projectLabel }) => ({ uid, type, name, projectLabel })
-  )
+function viewDirOf(script: MaaFWScript): string {
+  return path.join(script.dataRoot, 'data', 'mfw', script.viewDirName)
 }
 
-function findMaaFWScript(appRoot: string, scriptId: string): MaaFWScript | undefined {
-  return discoverMaaFWScripts(resolveDataRoots(appRoot), uid => uid === scriptId)[0]
+/** 视图里 interface.json 顶层的 name 与 label（$ 开头的 i18n 键不算）；读不到返回 undefined。 */
+function readProjectIdentity(viewDir: string): { name: string; label: string } | undefined {
+  let parsed: unknown
+  try {
+    // interface 允许 JSON5（注释、键名不带引号）
+    parsed = parseJson5(
+      fs.readFileSync(path.join(viewDir, 'interface.json'), 'utf-8').replace(/^﻿/, '')
+    )
+  } catch {
+    return undefined
+  }
+  const name = stringField(parsed, 'name')
+  if (!name) {
+    return undefined
+  }
+  const label = stringField(parsed, 'label')
+  return { name, label: label.startsWith('$') ? '' : label }
 }
 
-/** 问题包默认文件名前缀：带上脚本名，一眼能看出是哪个脚本的包。 */
-export function maafwIssueReportFileNamePrefix(appRoot: string, scriptId: string): string {
-  const name = findMaaFWScript(appRoot, scriptId)?.name ?? ''
-  const safeName = name
-    .replace(/[\\/:*?"<>|\s]+/g, '_')
-    .replace(/^[._]+|[._]+$/g, '')
-    .slice(0, 40)
-  return safeName ? `MFW-${safeName}-logs` : 'MFW-logs'
+/** 按项目分组，组的顺序就是各组第一个脚本的顺序。 */
+function groupScriptsByProject(scripts: MaaFWScript[]): Map<string, ProjectGroup> {
+  const groups = new Map<string, ProjectGroup>()
+  const nameLabels = new Map<ProjectGroup, string>()
+  for (const script of scripts) {
+    const identity = readProjectIdentity(viewDirOf(script))
+    const key = identity ? identity.name.toLowerCase() : script.type
+    let group = groups.get(key)
+    if (!group) {
+      group = { key, label: '', scripts: [], names: new Set() }
+      groups.set(key, group)
+    }
+    group.scripts.push(script)
+    if (identity) {
+      group.names.add(identity.name.toLowerCase())
+      if (identity.label) {
+        group.names.add(identity.label.toLowerCase())
+      }
+      group.label ||= identity.label
+      if (!nameLabels.has(group)) {
+        nameLabels.set(group, identity.name)
+      }
+    }
+  }
+  // 显示名：组里有 label 用 label，没有用 interface 的 name，都读不到用脚本名
+  for (const group of groups.values()) {
+    group.label ||= nameLabels.get(group) ?? group.scripts[0].name
+  }
+  return groups
 }
 
-function scanHistoryRuns(
-  dataRoot: string,
-  state: CollectorState,
-  archiveRoot: string
-): HistoryRun[] {
-  const records = readReportHistory(state, dataRoot, archiveRoot)
+function historyRunsOf(dataRoot: string, records: HistoryRecordRow[]): HistoryRun[] {
   const dates = [...new Set(records.map(record => record.date))]
     .sort()
     .reverse()
@@ -281,6 +346,32 @@ function scanHistoryRuns(
           .flatMap(item => historyFilePath(dataRoot, item.relative_path) ?? []),
       }
     })
+}
+
+function scanHistoryRuns(
+  dataRoot: string,
+  state: CollectorState,
+  archiveRoot: string
+): HistoryRun[] {
+  return historyRunsOf(dataRoot, readReportHistory(state, dataRoot, archiveRoot))
+}
+
+/** 列项目用：没有问题包可写，历史读不了就当没有。 */
+function listHistoryRuns(dataRoot: string): HistoryRun[] {
+  try {
+    return historyRunsOf(dataRoot, readHistoryRecords(dataRoot))
+  } catch (error) {
+    logger.warn(`读取运行历史失败: ${dataRoot}, ${String(error)}`)
+    return []
+  }
+}
+
+function runProjectName(run: HistoryRun): string | null {
+  if (run.projectName === undefined) {
+    const head = run.log ? readHead(run.log, MAIN_LOG_HEAD_BYTES) : ''
+    run.projectName = RUN_OVERVIEW_PROJECT_PATTERN.exec(head)?.[1]?.trim() || null
+  }
+  return run.projectName
 }
 
 function workerLogViewDirName(run: HistoryRun): string | null {
@@ -347,8 +438,7 @@ function claimRun(
 /** 最近 RECENT_RUN_COUNT 次运行，外加最近 RECENT_FAILED_RUN_COUNT 次失败，新的在前。 */
 function selectRuns(
   runs: HistoryRun[],
-  script: MaaFWScript,
-  sourceKeys: Array<{ uid: string; key: string }>
+  claim: (run: HistoryRun) => SelectedRun['matchedBy'] | undefined
 ): SelectedRun[] {
   const selected: SelectedRun[] = []
   let claimedCount = 0
@@ -360,7 +450,7 @@ function selectRuns(
     }
 
     const result = run.record.message
-    const matchedBy = claimRun(run, script, sourceKeys)
+    const matchedBy = claim(run)
     if (!matchedBy) {
       continue
     }
@@ -377,6 +467,145 @@ function selectRuns(
   }
 
   return selected
+}
+
+function dataRootRunsOf(dataRoot: string, runs: HistoryRun[]): DataRootRuns {
+  return {
+    runs,
+    scripts: discoverMaaFWScripts([dataRoot], () => true),
+    sourceKeys: sourcePathKeysOf(dataRoot),
+  }
+}
+
+/**
+ * 已删脚本的运行：没被任何现存脚本认领（认领已含视图 id 属于某个现存脚本的情况）。
+ * 删脚本时后端连视图一起删，这些运行只能靠主日志里的项目名归组。
+ */
+function isDeletedScriptRun(run: HistoryRun, context: DataRootRuns): boolean {
+  return !context.scripts.some(script => claimRun(run, script, context.sourceKeys))
+}
+
+function deletedScriptRunsOf(context: DataRootRuns, projectNames: Set<string>): HistoryRun[] {
+  return context.runs.filter(run => {
+    const project = runProjectName(run)
+    return !!project && projectNames.has(project.toLowerCase()) && isDeletedScriptRun(run, context)
+  })
+}
+
+function safeFileName(value: string): string {
+  return value
+    .replace(/[\\/:*?"<>|\s]+/g, '_')
+    .replace(/^[._]+|[._]+$/g, '')
+    .slice(0, 40)
+}
+
+interface DeletedOwner {
+  /** 视图 id；.worker.log 里没有视图路径的旧运行用脚本名 */
+  owner: string
+  archiveRoot: string
+  scriptNames: string[]
+  selectedRuns: SelectedRun[]
+}
+
+/** 已删脚本的运行按所有者分开，每个所有者同样取最近几次加最近几次失败；最近跑过的在前。 */
+function deletedOwnersOf(runs: HistoryRun[]): DeletedOwner[] {
+  const byOwner = new Map<string, { owner: string; runs: HistoryRun[] }>()
+  for (const run of runs) {
+    const owner = workerLogViewDirName(run) ?? run.record.script_name
+    const archiveRoot = `scripts/deleted-${safeFileName(owner) || 'unknown'}`
+    const entry = byOwner.get(archiveRoot) ?? { owner, runs: [] }
+    entry.runs.push(run)
+    byOwner.set(archiveRoot, entry)
+  }
+  return [...byOwner.entries()]
+    .map(([archiveRoot, { owner, runs: ownerRuns }]) => {
+      // 可能来自几个数据根，合起来重新按时间排
+      ownerRuns.sort(
+        (left, right) =>
+          right.record.timestamp - left.record.timestamp ||
+          right.record.id.localeCompare(left.record.id)
+      )
+      return {
+        owner,
+        archiveRoot,
+        scriptNames: [...new Set(ownerRuns.map(run => run.record.script_name))],
+        selectedRuns: selectRuns(ownerRuns, () => 'projectName'),
+      }
+    })
+    .sort(
+      (left, right) =>
+        right.selectedRuns[0].run.record.timestamp - left.selectedRuns[0].run.record.timestamp
+    )
+}
+
+/** 设置页下拉用：按项目列出指定配置类的脚本（配置类名由前端特调注册表给出），外加只剩历史的项目。 */
+export function listMaaFWIssueReportProjects(
+  appRoot: string,
+  configTypes: string[]
+): MaaFWIssueReportProject[] {
+  const accepted = new Set(configTypes)
+  const dataRoots = resolveDataRoots(appRoot)
+  const groups = groupScriptsByProject(
+    discoverMaaFWScripts(dataRoots, (_uid, type) => accepted.has(type))
+  )
+  const knownNames = new Set([...groups.values()].flatMap(group => [...group.names]))
+
+  // 只剩历史的项目：显示名取最近一次运行里的原值
+  const historyOnly = new Map<string, string>()
+  for (const dataRoot of dataRoots) {
+    const context = dataRootRunsOf(dataRoot, listHistoryRuns(dataRoot))
+    for (const run of context.runs) {
+      const project = runProjectName(run)
+      const key = project?.toLowerCase()
+      if (!project || !key || knownNames.has(key) || historyOnly.has(key)) {
+        continue
+      }
+      if (isDeletedScriptRun(run, context)) {
+        historyOnly.set(key, project)
+      }
+    }
+  }
+
+  return [
+    ...[...groups.values()].map(group => ({
+      key: group.key,
+      label: group.label,
+      scriptCount: group.scripts.length,
+      deletedOnly: false,
+      types: [...new Set(group.scripts.map(script => script.type))],
+    })),
+    ...[...historyOnly.entries()].map(([key, label]) => ({
+      key,
+      label,
+      scriptCount: 0,
+      deletedOnly: true,
+      types: [],
+    })),
+  ]
+}
+
+/** 按组键找组：先看现存脚本，没有就当只剩历史的项目，在历史里找它的原名。 */
+function findProjectGroup(appRoot: string, projectKey: string): ProjectGroup | undefined {
+  const dataRoots = resolveDataRoots(appRoot)
+  const group = groupScriptsByProject(discoverMaaFWScripts(dataRoots, () => true)).get(projectKey)
+  if (group) {
+    return group
+  }
+  for (const dataRoot of dataRoots) {
+    for (const run of listHistoryRuns(dataRoot)) {
+      const project = runProjectName(run)
+      if (project && project.toLowerCase() === projectKey) {
+        return { key: projectKey, label: project, scripts: [], names: new Set([projectKey]) }
+      }
+    }
+  }
+  return undefined
+}
+
+/** 问题包默认文件名前缀：带上项目名，一眼能看出是哪个项目的包。 */
+export function maafwIssueReportFileNamePrefix(appRoot: string, projectKey: string): string {
+  const safeName = safeFileName(findProjectGroup(appRoot, projectKey)?.label ?? '')
+  return safeName ? `MFW-${safeName}-logs` : 'MFW-logs'
 }
 
 function projectDeclaresPasswordInput(viewDir: string): boolean {
@@ -568,18 +797,67 @@ async function addRunHeavyFiles(
   }
 }
 
+/** 选中运行的文本日志；frameworkLogsShareable 为假的不收 .worker.log / .project.log。 */
+function addRunTextFiles(
+  state: CollectorState,
+  scriptRoot: string,
+  selectedRuns: SelectedRun[],
+  frameworkLogsShareable: Map<SelectedRun, boolean>
+): void {
+  for (const selected of selectedRuns) {
+    const { run } = selected
+    const shareable = frameworkLogsShareable.get(selected)
+    addReportHistoryJson(
+      state,
+      run.record,
+      `${scriptRoot}/history/${run.date}/${run.stamp}/record.json`
+    )
+    if (!run.log) {
+      const archivePath = `${scriptRoot}/history/${run.date}/${run.stamp}/main.log`
+      addReportHistoryLog(state, run.dataRoot, run.record, archivePath)
+    }
+    const workerLog = shareable ? run.workerLog : undefined
+    // .project.log 写的时候已按全部用户的密码打码，这里仍与 .worker.log 同一条件从严
+    const projectLog = shareable ? run.projectLog : undefined
+    for (const filePath of [run.log, workerLog, projectLog]) {
+      if (filePath) {
+        addDiagnosticFile(state, filePath, historyArchivePath(scriptRoot, run, filePath))
+      }
+    }
+  }
+}
+
+function manifestRunsOf(
+  selectedRuns: SelectedRun[],
+  frameworkLogsShareable: Map<SelectedRun, boolean>
+): Record<string, unknown>[] {
+  return selectedRuns.map(selected => ({
+    history: `${selected.run.date}/${selected.run.stamp}`,
+    result: selected.result ?? null,
+    success: selected.success,
+    matchedBy: selected.matchedBy,
+    frameworkLogs: frameworkLogsShareable.get(selected)
+      ? '已收集'
+      : '未收集：更早版本写的副本，可能有密码原文',
+  }))
+}
+
 /**
  * 收集顺序就是问题包总大小受限时的取舍顺序（先收的先占额度，后面的被截断或跳过）：
  * 1. 各脚本的配置、项目版本与 interface、选中运行的文本日志（.json / .log / .worker.log）
  * 2. 各脚本最近一次失败（没有失败就是最近一次）运行的原生日志副本与失败截图
- * 3. MAS 自己的日志目录
- * 4. 项目自己的 debug 目录（agent、项目自定义日志等）
- * 5. 其余选中运行的原生日志副本与失败截图：失败的在前，同类新的在前
+ * 3. 同项目已删脚本选中运行的文本日志
+ * 4. MAS 自己的日志目录
+ * 5. 项目自己的 debug 目录（agent、项目自定义日志等）
+ * 6. 其余选中运行（含已删脚本的）的原生日志副本与失败截图：失败的在前，同类新的在前
+ *
+ * projectNames 是这一组项目的名字（小写），用来从各数据根的历史里认已删脚本的运行。
  */
 async function createIssueReport(
   appRoot: string,
   zipPath: string,
   scripts: MaaFWScript[],
+  projectNames: Set<string>,
   label: string
 ): Promise<IssueReportResult> {
   const zip = new AdmZip()
@@ -600,6 +878,7 @@ async function createIssueReport(
     includeNativeLog: boolean
   }> = []
   const projectDebugDirs: Array<{ viewDir: string; archiveRoot: string }> = []
+  let anyProtectSecrets = false
   // 各脚本的运行时检查并行起跑（每个最多 15 秒），收集到它时再取结果
   const runtimeProbes = new Map(
     scripts.map(script => [
@@ -618,16 +897,16 @@ async function createIssueReport(
       )
       sourceKeysByDataRoot.set(script.dataRoot, sourcePathKeysOf(script.dataRoot))
     }
-    const selectedRuns = selectRuns(
-      runsByDataRoot.get(script.dataRoot) ?? [],
-      script,
-      sourceKeysByDataRoot.get(script.dataRoot) ?? []
+    const sourceKeys = sourceKeysByDataRoot.get(script.dataRoot) ?? []
+    const selectedRuns = selectRuns(runsByDataRoot.get(script.dataRoot) ?? [], run =>
+      claimRun(run, script, sourceKeys)
     )
     // 项目有 password 输入框（或配置里已经有加密的密码值）时，日志里可能有密码原文，
     // 脚本配置里 input 选项的值也打码
     const protectSecrets =
       JSON.stringify(script.config).includes(SEALED_SECRET_PREFIX) ||
       projectDeclaresPasswordInput(viewDir)
+    anyProtectSecrets ||= protectSecrets
 
     addSanitizedJsonValue(
       state,
@@ -665,27 +944,7 @@ async function createIssueReport(
       ])
     )
 
-    for (const selected of selectedRuns) {
-      const { run } = selected
-      const shareable = frameworkLogsShareable.get(selected)
-      addReportHistoryJson(
-        state,
-        run.record,
-        `${scriptRoot}/history/${run.date}/${run.stamp}/record.json`
-      )
-      if (!run.log) {
-        const archivePath = `${scriptRoot}/history/${run.date}/${run.stamp}/main.log`
-        addReportHistoryLog(state, run.dataRoot, run.record, archivePath)
-      }
-      const workerLog = shareable ? run.workerLog : undefined
-      // .project.log 写的时候已按全部用户的密码打码，这里仍与 .worker.log 同一条件从严
-      const projectLog = shareable ? run.projectLog : undefined
-      for (const filePath of [run.log, workerLog, projectLog]) {
-        if (filePath) {
-          addDiagnosticFile(state, filePath, historyArchivePath(scriptRoot, run, filePath))
-        }
-      }
-    }
+    addRunTextFiles(state, scriptRoot, selectedRuns, frameworkLogsShareable)
 
     const focusRun =
       selectedRuns.find(selected => selected.run.record.status === 'error') ?? selectedRuns[0]
@@ -718,15 +977,43 @@ async function createIssueReport(
       projectDebug: protectSecrets
         ? '未收集：项目带密码输入框，框架与 agent 自己写的日志里可能有密码原文'
         : '已收集（顶层 maafw*.log 即 history 里各次的 .maafw.log，不重复收）',
-      runs: selectedRuns.map(selected => ({
-        history: `${selected.run.date}/${selected.run.stamp}`,
-        result: selected.result ?? null,
-        success: selected.success,
-        matchedBy: selected.matchedBy,
-        frameworkLogs: frameworkLogsShareable.get(selected)
-          ? '已收集'
-          : '未收集：更早版本写的副本，可能有密码原文',
-      })),
+      runs: manifestRunsOf(selectedRuns, frameworkLogsShareable),
+    })
+  }
+
+  // 同项目已删脚本的运行：视图已经跟着脚本删了，只有运行历史，没有配置和项目目录。
+  // 密码从严：同组有现存脚本时随它们（任一要打码就打码），没有现存脚本时一律按要打码处理
+  const protectDeletedSecrets = scripts.length === 0 || anyProtectSecrets
+  const deletedRuns = dataRoots.flatMap(dataRoot => {
+    if (!runsByDataRoot.has(dataRoot)) {
+      runsByDataRoot.set(dataRoot, scanHistoryRuns(dataRoot, state, 'scripts/deleted/history'))
+    }
+    return deletedScriptRunsOf(
+      dataRootRunsOf(dataRoot, runsByDataRoot.get(dataRoot) ?? []),
+      projectNames
+    )
+  })
+  for (const { owner, archiveRoot, scriptNames, selectedRuns } of deletedOwnersOf(deletedRuns)) {
+    const frameworkLogsShareable = new Map(
+      selectedRuns.map(selected => [
+        selected,
+        !protectDeletedSecrets || workerLogRedactedAtWrite(selected.run),
+      ])
+    )
+    addRunTextFiles(state, archiveRoot, selectedRuns, frameworkLogsShareable)
+    deferred.push(
+      ...selectedRuns.map(selected => ({
+        scriptRoot: archiveRoot,
+        selected,
+        includeNativeLog: !!frameworkLogsShareable.get(selected),
+      }))
+    )
+    manifestScripts.push({
+      deleted: true,
+      owner,
+      scriptNames,
+      archiveRoot,
+      runs: manifestRunsOf(selectedRuns, frameworkLogsShareable),
     })
   }
 
@@ -770,17 +1057,38 @@ async function createIssueReport(
   }
 }
 
-/** 单个 MFW 脚本（含各特调）的问题包。 */
+/** 一个 MFW 项目（含各特调）的问题包：该项目的现存脚本，加同项目已删脚本的运行。 */
 export async function createMaaFWIssueReport(
   appRoot: string,
   zipPath: string,
-  scriptId: string
+  projectKey: string
 ): Promise<IssueReportResult> {
-  const script = findMaaFWScript(appRoot, scriptId)
-  if (!script) {
-    return { success: false, error: '没有找到这个 MFW 脚本，可能已被删除' }
+  const group = findProjectGroup(appRoot, projectKey)
+  if (!group) {
+    return { success: false, error: '没有找到这个 MFW 项目的脚本或运行记录' }
   }
-  return createIssueReport(appRoot, zipPath, [script], 'MFW')
+  return createIssueReport(appRoot, zipPath, group.scripts, group.names, 'MFW')
+}
+
+/** 某个特调配置类全部现存脚本，加同项目已删脚本的运行。 */
+async function createFlavorIssueReport(
+  appRoot: string,
+  zipPath: string,
+  configType: string,
+  fallbackProjectName: string,
+  label: string
+): Promise<IssueReportResult> {
+  const scripts = discoverMaaFWScripts(
+    resolveDataRoots(appRoot),
+    (_uid, type) => type === configType
+  )
+  const projectNames = new Set(
+    [...groupScriptsByProject(scripts).values()].flatMap(group => [...group.names])
+  )
+  if (projectNames.size === 0) {
+    projectNames.add(fallbackProjectName)
+  }
+  return createIssueReport(appRoot, zipPath, scripts, projectNames, label)
 }
 
 /** 全部 M9A 脚本的问题包。 */
@@ -788,11 +1096,7 @@ export async function createM9AIssueReport(
   appRoot: string,
   zipPath: string
 ): Promise<IssueReportResult> {
-  const scripts = discoverMaaFWScripts(
-    resolveDataRoots(appRoot),
-    (_uid, type) => type === M9A_CONFIG_TYPE
-  )
-  return createIssueReport(appRoot, zipPath, scripts, 'M9A')
+  return createFlavorIssueReport(appRoot, zipPath, M9A_CONFIG_TYPE, M9A_PROJECT_NAME, 'M9A')
 }
 
 /** 全部 MSS 脚本的问题包。 */
@@ -800,9 +1104,5 @@ export async function createMSSIssueReport(
   appRoot: string,
   zipPath: string
 ): Promise<IssueReportResult> {
-  const scripts = discoverMaaFWScripts(
-    resolveDataRoots(appRoot),
-    (_uid, type) => type === MSS_CONFIG_TYPE
-  )
-  return createIssueReport(appRoot, zipPath, scripts, 'MSS')
+  return createFlavorIssueReport(appRoot, zipPath, MSS_CONFIG_TYPE, MSS_PROJECT_NAME, 'MSS')
 }

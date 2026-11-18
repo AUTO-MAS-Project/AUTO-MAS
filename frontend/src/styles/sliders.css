@@ -1,0 +1,5 @@
+/* 细衬边隔开透明表面下的背景纹理，轨道颜色仍由主题控制。 */
+.ant-slider .ant-slider-rail,
+.ant-slider .ant-slider-track {
+  box-shadow: 0 0 0 1px var(--ant-color-bg-container);
+}

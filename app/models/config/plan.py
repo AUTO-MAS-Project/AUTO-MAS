@@ -26,24 +26,34 @@ from datetime import datetime, timedelta
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import BeforeValidator, ConfigDict, Field, create_model
 
 from app.config import (
     ConfigGroup,
     UiVisibility,
     ui,
 )
+from app.plugin.config import PluginCommandEntry
 from app.utils import constants as _utils_constants
 
 from .base import DomainEntry
 from .shared import (
+    OkwwTaskFields,
     default_baah_plan_key,
-    none_as,
     normalize_baah_plan_key,
     normalize_maaend_plan_key,
     normalize_mss_plan_key,
     schema_model,
 )
+
+
+class PlanEntry(PluginCommandEntry):
+    """插件计划表配置上界，具体排期字段由专项扩展。"""
+
+    class Info(ConfigGroup):
+        name: str = Field(default="新计划表", description="计划表名称")
+
+    info: Info = Field(default_factory=Info, description="计划表信息")
 
 
 class PlanDaysConfig(DomainEntry):
@@ -80,212 +90,6 @@ class WeeklyKeyPlan(PlanDaysConfig):
             self, self.current_group(datetime.now(tz=_utils_constants.UTC4))
         ).Key
         return key.model_dump(exclude_none=True)
-
-
-class MaaPlanConfig(PlanDaysConfig):
-    def get_current_info(self, name: str, server: str | None = None):
-        group = self.current_group(_utils_constants.game_now(server))
-        return getattr(getattr(self, group), name)
-
-    "MAA计划表配置"
-
-    class ALLFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
-            description="吃理智药", default_factory=lambda: 0
-        )
-
-        SeriesNumb: Literal["0", "6", "5", "4", "3", "2", "1", "-1"] = Field(
-            description="连战次数", default_factory=lambda: "0"
-        )
-
-        Stage: str = Field(description="关卡选择", default_factory=lambda: "-")
-
-        Stage_1: str = Field(description="备选关卡 - 1", default_factory=lambda: "-")
-
-        Stage_2: str = Field(description="备选关卡 - 2", default_factory=lambda: "-")
-
-        Stage_3: str = Field(description="备选关卡 - 3", default_factory=lambda: "-")
-
-    ALL: ALLFields = Field(default_factory=ALLFields)
-
-    class FridayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
-            description="吃理智药", default_factory=lambda: 0
-        )
-
-        SeriesNumb: Literal["0", "6", "5", "4", "3", "2", "1", "-1"] = Field(
-            description="连战次数", default_factory=lambda: "0"
-        )
-
-        Stage: str = Field(description="关卡选择", default_factory=lambda: "-")
-
-        Stage_1: str = Field(description="备选关卡 - 1", default_factory=lambda: "-")
-
-        Stage_2: str = Field(description="备选关卡 - 2", default_factory=lambda: "-")
-
-        Stage_3: str = Field(description="备选关卡 - 3", default_factory=lambda: "-")
-
-    Friday: FridayFields = Field(default_factory=FridayFields)
-
-    Day1: ALLFields = Field(default_factory=ALLFields)
-    Day2: ALLFields = Field(default_factory=ALLFields)
-    Day3: ALLFields = Field(default_factory=ALLFields)
-    Day4: ALLFields = Field(default_factory=ALLFields)
-    Day5: ALLFields = Field(default_factory=ALLFields)
-    Day6: ALLFields = Field(default_factory=ALLFields)
-    Day7: ALLFields = Field(default_factory=ALLFields)
-    Day8: ALLFields = Field(default_factory=ALLFields)
-    Day9: ALLFields = Field(default_factory=ALLFields)
-    Day10: ALLFields = Field(default_factory=ALLFields)
-    Day11: ALLFields = Field(default_factory=ALLFields)
-    Day12: ALLFields = Field(default_factory=ALLFields)
-    Day13: ALLFields = Field(default_factory=ALLFields)
-    Day14: ALLFields = Field(default_factory=ALLFields)
-    Day15: ALLFields = Field(default_factory=ALLFields)
-    Day16: ALLFields = Field(default_factory=ALLFields)
-    Day17: ALLFields = Field(default_factory=ALLFields)
-    Day18: ALLFields = Field(default_factory=ALLFields)
-    Day19: ALLFields = Field(default_factory=ALLFields)
-    Day20: ALLFields = Field(default_factory=ALLFields)
-    Day21: ALLFields = Field(default_factory=ALLFields)
-    Day22: ALLFields = Field(default_factory=ALLFields)
-    Day23: ALLFields = Field(default_factory=ALLFields)
-    Day24: ALLFields = Field(default_factory=ALLFields)
-    Day25: ALLFields = Field(default_factory=ALLFields)
-    Day26: ALLFields = Field(default_factory=ALLFields)
-    Day27: ALLFields = Field(default_factory=ALLFields)
-    Day28: ALLFields = Field(default_factory=ALLFields)
-    Day29: ALLFields = Field(default_factory=ALLFields)
-    Day30: ALLFields = Field(default_factory=ALLFields)
-    Day31: ALLFields = Field(default_factory=ALLFields)
-
-    class InfoFields(ConfigGroup):
-        RotateDays: Annotated[int, Field(ge=1, le=31)] = Field(
-            default=7, description="多天轮换天数"
-        )
-        Mode: Literal["ALL", "Weekly", "Rotate"] = Field(
-            default_factory=lambda: "ALL", description="计划表模式"
-        )
-
-        Name: str = Field(
-            default_factory=lambda: "新 MAA 计划表", description="计划表名称"
-        )
-
-    Info: InfoFields = Field(default_factory=InfoFields)
-
-    class MondayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
-            description="吃理智药", default_factory=lambda: 0
-        )
-
-        SeriesNumb: Literal["0", "6", "5", "4", "3", "2", "1", "-1"] = Field(
-            description="连战次数", default_factory=lambda: "0"
-        )
-
-        Stage: str = Field(description="关卡选择", default_factory=lambda: "-")
-
-        Stage_1: str = Field(description="备选关卡 - 1", default_factory=lambda: "-")
-
-        Stage_2: str = Field(description="备选关卡 - 2", default_factory=lambda: "-")
-
-        Stage_3: str = Field(description="备选关卡 - 3", default_factory=lambda: "-")
-
-    Monday: MondayFields = Field(default_factory=MondayFields)
-
-    class SaturdayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
-            description="吃理智药", default_factory=lambda: 0
-        )
-
-        SeriesNumb: Literal["0", "6", "5", "4", "3", "2", "1", "-1"] = Field(
-            description="连战次数", default_factory=lambda: "0"
-        )
-
-        Stage: str = Field(description="关卡选择", default_factory=lambda: "-")
-
-        Stage_1: str = Field(description="备选关卡 - 1", default_factory=lambda: "-")
-
-        Stage_2: str = Field(description="备选关卡 - 2", default_factory=lambda: "-")
-
-        Stage_3: str = Field(description="备选关卡 - 3", default_factory=lambda: "-")
-
-    Saturday: SaturdayFields = Field(default_factory=SaturdayFields)
-
-    class SundayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
-            description="吃理智药", default_factory=lambda: 0
-        )
-
-        SeriesNumb: Literal["0", "6", "5", "4", "3", "2", "1", "-1"] = Field(
-            description="连战次数", default_factory=lambda: "0"
-        )
-
-        Stage: str = Field(description="关卡选择", default_factory=lambda: "-")
-
-        Stage_1: str = Field(description="备选关卡 - 1", default_factory=lambda: "-")
-
-        Stage_2: str = Field(description="备选关卡 - 2", default_factory=lambda: "-")
-
-        Stage_3: str = Field(description="备选关卡 - 3", default_factory=lambda: "-")
-
-    Sunday: SundayFields = Field(default_factory=SundayFields)
-
-    class ThursdayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
-            description="吃理智药", default_factory=lambda: 0
-        )
-
-        SeriesNumb: Literal["0", "6", "5", "4", "3", "2", "1", "-1"] = Field(
-            description="连战次数", default_factory=lambda: "0"
-        )
-
-        Stage: str = Field(description="关卡选择", default_factory=lambda: "-")
-
-        Stage_1: str = Field(description="备选关卡 - 1", default_factory=lambda: "-")
-
-        Stage_2: str = Field(description="备选关卡 - 2", default_factory=lambda: "-")
-
-        Stage_3: str = Field(description="备选关卡 - 3", default_factory=lambda: "-")
-
-    Thursday: ThursdayFields = Field(default_factory=ThursdayFields)
-
-    class TuesdayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
-            description="吃理智药", default_factory=lambda: 0
-        )
-
-        SeriesNumb: Literal["0", "6", "5", "4", "3", "2", "1", "-1"] = Field(
-            description="连战次数", default_factory=lambda: "0"
-        )
-
-        Stage: str = Field(description="关卡选择", default_factory=lambda: "-")
-
-        Stage_1: str = Field(description="备选关卡 - 1", default_factory=lambda: "-")
-
-        Stage_2: str = Field(description="备选关卡 - 2", default_factory=lambda: "-")
-
-        Stage_3: str = Field(description="备选关卡 - 3", default_factory=lambda: "-")
-
-    Tuesday: TuesdayFields = Field(default_factory=TuesdayFields)
-
-    class WednesdayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
-            description="吃理智药", default_factory=lambda: 0
-        )
-
-        SeriesNumb: Literal["0", "6", "5", "4", "3", "2", "1", "-1"] = Field(
-            description="连战次数", default_factory=lambda: "0"
-        )
-
-        Stage: str = Field(description="关卡选择", default_factory=lambda: "-")
-
-        Stage_1: str = Field(description="备选关卡 - 1", default_factory=lambda: "-")
-
-        Stage_2: str = Field(description="备选关卡 - 2", default_factory=lambda: "-")
-
-        Stage_3: str = Field(description="备选关卡 - 3", default_factory=lambda: "-")
-
-    Wednesday: WednesdayFields = Field(default_factory=WednesdayFields)
 
 
 class MaaEndPlanConfig(WeeklyKeyPlan):
@@ -680,7 +484,7 @@ class MSSPlanConfig(WeeklyKeyPlan):
 
 
 class UniversalPlanConfig(PlanDaysConfig):
-    """完整原生配置的按日轮换；初版由通用脚本消费。"""
+    """通用脚本完整原生配置的按日轮换。"""
 
     class InfoFields(ConfigGroup):
         Name: str = Field(default="新通用脚本计划表", description="计划表名称")
@@ -711,6 +515,10 @@ class UniversalPlanConfig(PlanDaysConfig):
 
 class OkNtePlanConfig(WeeklyKeyPlan):
     """按日叠加日常体力参数，其他账号配置保持原有来源。"""
+
+    def current_group(self, now: datetime) -> str:
+        # 异环按北京时间凌晨五点切日，周计划和多天轮换使用同一边界。
+        return super().current_group(now.astimezone(_utils_constants.UTC3))
 
     class DayFields(ConfigGroup):
         Key: schema_model.OkNtePlanKey = Field(
@@ -767,22 +575,110 @@ class OkNtePlanConfig(WeeklyKeyPlan):
     Info: InfoFields = Field(default_factory=InfoFields)
 
 
+# 日常字段只声明一次；计划中的空值表示继承，不把默认值当作当天覆写。
+OkwwPlanKey = create_model(
+    "OkwwPlanKey",
+    __config__=ConfigDict(extra="forbid"),
+    **{
+        name: (
+            Annotated[field.annotation | None, *metadata]
+            if (
+                metadata := [
+                    item
+                    for item in field.metadata
+                    if not isinstance(item, BeforeValidator)
+                ]
+            )
+            else field.annotation | None,
+            Field(default=None, description=field.description),
+        )
+        for name, field in OkwwTaskFields.model_fields.items()
+    },
+)
+
+
+class OkwwPlanConfig(WeeklyKeyPlan):
+    """按日叠加日常体力参数，其他账号配置保持原有来源。"""
+
+    class DayFields(ConfigGroup):
+        Key: OkwwPlanKey = Field(
+            default_factory=lambda: OkwwPlanKey(
+                WhichToFarm="Tacet Suppression",
+                WhichTacetSuppressionToFarm=1,
+                WhichForgeryChallengeToFarm=1,
+                MaterialSelection="Shell Credit",
+            ),
+            description="体力计划参数",
+        )
+
+    ALL: DayFields = Field(default_factory=DayFields)
+    Monday: DayFields = Field(default_factory=DayFields)
+    Tuesday: DayFields = Field(default_factory=DayFields)
+    Wednesday: DayFields = Field(default_factory=DayFields)
+    Thursday: DayFields = Field(default_factory=DayFields)
+    Friday: DayFields = Field(default_factory=DayFields)
+    Saturday: DayFields = Field(default_factory=DayFields)
+    Sunday: DayFields = Field(default_factory=DayFields)
+    Day1: DayFields = Field(default_factory=DayFields)
+    Day2: DayFields = Field(default_factory=DayFields)
+    Day3: DayFields = Field(default_factory=DayFields)
+    Day4: DayFields = Field(default_factory=DayFields)
+    Day5: DayFields = Field(default_factory=DayFields)
+    Day6: DayFields = Field(default_factory=DayFields)
+    Day7: DayFields = Field(default_factory=DayFields)
+    Day8: DayFields = Field(default_factory=DayFields)
+    Day9: DayFields = Field(default_factory=DayFields)
+    Day10: DayFields = Field(default_factory=DayFields)
+    Day11: DayFields = Field(default_factory=DayFields)
+    Day12: DayFields = Field(default_factory=DayFields)
+    Day13: DayFields = Field(default_factory=DayFields)
+    Day14: DayFields = Field(default_factory=DayFields)
+    Day15: DayFields = Field(default_factory=DayFields)
+    Day16: DayFields = Field(default_factory=DayFields)
+    Day17: DayFields = Field(default_factory=DayFields)
+    Day18: DayFields = Field(default_factory=DayFields)
+    Day19: DayFields = Field(default_factory=DayFields)
+    Day20: DayFields = Field(default_factory=DayFields)
+    Day21: DayFields = Field(default_factory=DayFields)
+    Day22: DayFields = Field(default_factory=DayFields)
+    Day23: DayFields = Field(default_factory=DayFields)
+    Day24: DayFields = Field(default_factory=DayFields)
+    Day25: DayFields = Field(default_factory=DayFields)
+    Day26: DayFields = Field(default_factory=DayFields)
+    Day27: DayFields = Field(default_factory=DayFields)
+    Day28: DayFields = Field(default_factory=DayFields)
+    Day29: DayFields = Field(default_factory=DayFields)
+    Day30: DayFields = Field(default_factory=DayFields)
+    Day31: DayFields = Field(default_factory=DayFields)
+
+    class InfoFields(ConfigGroup):
+        Name: str = Field(default="新 Okww 计划表", description="计划表名称")
+        Mode: Literal["ALL", "Weekly", "Rotate"] = Field(
+            default="Weekly", description="计划模式"
+        )
+        RotateDays: int = Field(default=7, ge=1, le=31, description="轮换天数")
+
+    Info: InfoFields = Field(default_factory=InfoFields)
+
+
 type PlanConfigType = (
-    MaaPlanConfig
+    PlanEntry
     | MaaEndPlanConfig
     | BAAHPlanConfig
     | MSSPlanConfig
     | UniversalPlanConfig
     | OkNtePlanConfig
+    | OkwwPlanConfig
 )
 
 
 __all__ = [
+    "PlanEntry",
     "PlanConfigType",
     "OkNtePlanConfig",
+    "OkwwPlanConfig",
     "UniversalPlanConfig",
     "WeeklyKeyPlan",
-    "MaaPlanConfig",
     "MaaEndPlanConfig",
     "BAAHPlanConfig",
     "MSSPlanConfig",

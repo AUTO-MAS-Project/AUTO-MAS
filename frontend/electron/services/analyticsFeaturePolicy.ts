@@ -41,6 +41,7 @@ const plan = [
   'MaaEndPlanConfig',
   'BAAHPlanConfig',
   'MSSPlanConfig',
+  'OkwwPlanConfig',
   'OkNtePlanConfig',
   'UniversalPlanConfig',
   'multi',
@@ -53,6 +54,9 @@ const finished = <T extends Record<string, readonly string[]>>(fields: T) => ({
 })
 
 export const featureAnalyticsSchemas = {
+  plugin_action_finished: finished({
+    action: ['enable', 'disable', 'reload', 'uninstall', 'install', 'refresh', 'config'] as const,
+  }),
   mcp_retry_requested: finished({}),
   backend_restart_finished: finished({ reason_kind: ['manual', 'recovery', 'update'] as const }),
   runtime_alignment_finished: finished({
@@ -91,6 +95,10 @@ export const featureAnalyticsSchemas = {
     source: ['shortcut', 'tray', 'scheduler', 'home', 'mascot', 'unknown'] as const,
   }),
   virtual_display_action_finished: finished({ action: ['check', 'remove'] as const }),
+  desktop_session_connection_finished: finished({
+    reason_kind: ['none', 'environment', 'credentials', 'connection', 'process'] as const,
+  }),
+  desktop_session_environment_repair_finished: finished({}),
   virtual_display_prompt_answered: finished({ choice: ['remove', 'cancel', 'keep'] as const }),
   system_resume_recovery_finished: finished({
     recovery_kind: ['reconnect', 'backend_restart', 'skipped'] as const,
@@ -162,6 +170,7 @@ export const featureAnalyticsSchemas = {
       'auto_start',
       'scheduled_wakeup',
       'start_minimized',
+      'silent_start',
       'show_tray',
       'close_to_tray',
       'hide_close',
@@ -314,6 +323,8 @@ export const mainOnlyFeatureEvents = [
   'renderer_responsiveness_changed',
   'tray_action_requested',
   'virtual_display_prompt_answered',
+  'desktop_session_connection_finished',
+  'desktop_session_environment_repair_finished',
   'diagnostic_export_finished',
   'data_backup_export_finished',
 ] as const

@@ -21,9 +21,8 @@ import time
 import uuid
 from contextlib import suppress
 from datetime import datetime
+from functools import partial
 from pathlib import Path
-
-from packaging.version import InvalidVersion, Version
 
 from app.config import ConfigCollection
 from app.core import Notify, Publisher
@@ -50,25 +49,34 @@ from app.utils import (
     ProcessManager,
     get_logger,
     is_process_alive,
-    is_process_running,
     log_box,
     process,
 )
 from app.utils import constants as _utils_constants
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
+from app.utils.common.process.manager import has_process_window
+from app.utils.common.process.session import (
+    DesktopProcessTarget,
+    desktop_process_target,
+)
 
 from . import push_log as _push_log
-from .tools import async_switch_account
+from .tools.account_switch import async_switch_account
+from .tools.arguments import build_custom_arguments
+from .tools.arguments import daily_task_argument as _daily_task_argument
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
-    mas_config_dir,
-    owner_for_mode,
     read_overlay_values,
 )
 from .tools.batch_logs import (
     NATIVE_SWITCH_UNSUPPORTED_MESSAGE,
     NativeSwitchUnsupportedError,
+)
+from .tools.config_paths import (
+    _OKWW_REL_CONFIG_DIR,
+    _okww_config_base,
+    _okww_mas_config_dir,
 )
 from .tools.game_update import update_game_via_launcher
 from .tools.launcher_start import (
@@ -129,7 +137,6 @@ _OKWW_SUCCESS_LOG: tuple[str, ...] = (
 # ⚠️ 与前端 OkwwScriptEdit.vue 的 OKWW_EXE_NAME 保持同步，改这里时需同步改前端
 _OKWW_REL_EXE = "ok-ww.exe"
 _OKWW_REL_APP_JSON = "data/apps/ok-ww/app.json"
-_OKWW_REL_CONFIG_DIR = "data/apps/ok-ww/working/configs"
 _OKWW_REL_LOG_FILE = "data/apps/ok-ww/working/logs/ok-script.log"
 _OKWW_REL_PYTHONW = "data/apps/ok-ww/python/pythonw.exe"
 _OKWW_TRACK_PROCESS_NAME = "pythonw.exe"
@@ -137,38 +144,6 @@ _OKWW_UPDATE_METHOD = "AUTO_UPDATE"
 _OKWW_LOG_TIME_START = 1
 _OKWW_LOG_TIME_END = 23
 _OKWW_LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
-
-
-def _daily_task_argument(script_root: Path) -> str:
-    """按已安装版本选择上游支持的日常任务参数。"""
-    app_config = json.loads(
-        (script_root / _OKWW_REL_APP_JSON).read_text(encoding="utf-8-sig")
-    )
-    if not isinstance(app_config, dict):
-        raise ValueError("OK-WW 启动器配置格式错误，请先在脚本启动器中完成安装或更新")
-    raw_version = app_config.get("current_version")
-    try:
-        version = Version(str(raw_version))
-    except InvalidVersion as exc:
-        raise ValueError(
-            "无法识别 OK-WW 当前版本，请先在脚本启动器中完成安装或更新"
-        ) from exc
-    # 上游 f09ac771（ok-script 2.0.7b1）；首个含此变更的预发布 tag。
-    return "DailyTask" if version >= Version("3.6.7b2") else "1"
-
-
-def _okww_config_base(raw: object) -> str:
-    """读取 OK-WW 配置来源（base 三态），并兼容旧版字面量。"""
-
-    return _utils_constants.normalize_base_source(raw) or _utils_constants.BASE_SHARED
-
-
-def _okww_mas_config_dir(script_id: str, user_id: str, base: str) -> Path:
-    base = _okww_config_base(base)
-    owner = owner_for_mode(base, user_id)
-    if owner is None:
-        raise ValueError("原生来源不使用 MAS 全量配置目录")
-    return mas_config_dir(script_id, owner)
 
 
 def _update_json(path: Path, values: dict[str, object]) -> None:
@@ -271,6 +246,10 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             return "请设置ok-ww脚本路径"
         if not (root / _OKWW_REL_APP_JSON).is_file():
             return "请设置ok-ww脚本路径"
+        try:
+            self._build_run_arguments()
+        except ValueError as error:
+            return f"OK-WW 启动参数错误：{error}"
         # 启动检查早于每日重置，旧日期的次数不参与今日上限判断。
         curdate = datetime.now(tz=_utils_constants.UTC4).strftime("%Y-%m-%d")
         proxy_times = (
@@ -444,13 +423,16 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
         self.task_name = "DailyTask"
         self.task_index = 1 if self.task_name == "DailyTask" else 0
-        self.okww_args = ["-t", _daily_task_argument(self.script_root_path), "-e"]
+        self.okww_args = self._build_run_arguments()
+        if self.cur_user_config.Task.IfCustomArguments:
+            self.task_name = "CustomTask"
+            self.task_index = 0
 
         self.script_config_path = self.script_root_path / _OKWW_REL_CONFIG_DIR
 
     async def _start_okww_with_current_arguments(self) -> None:
         """启动时刷新参数，自更新跨过兼容边界后用新参数重启。"""
-        daily = self.okww_args[1] in ("1", "DailyTask")
+        daily = self.task_name == "DailyTask"
         while True:
             if daily:
                 self.okww_args = [
@@ -481,6 +463,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
     def _resolve_log_file_path(self) -> Path:
         return self.script_log_path
 
+    def _build_run_arguments(self) -> list[str]:
+        if self.cur_user_config.Task.IfCustomArguments:
+            return build_custom_arguments(self.cur_user_config.Task.CustomArguments)
+        return ["-t", _daily_task_argument(self.script_config.Info.RootPath), "-e"]
+
     def _apply_mas_overrides(self) -> None:
         """overlay 覆盖段：把 MAS 侧运行值覆盖到当前来源配置之上。
 
@@ -498,19 +485,10 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             self.script_config_path / "Basic Options.json",
             {"Exit App when Game Exits": True},
         )
-        if not self.cur_user_config.Info.IfQuickConfig:
-            return
-        _update_json(
-            self.script_config_path / "DailyTask.json",
-            {
-                "Which to Farm": self.cur_user_config.Task.WhichToFarm,
-                "Which Tacet Suppression to Farm": self.cur_user_config.Task.WhichTacetSuppressionToFarm,
-                "Which Forgery Challenge to Farm": self.cur_user_config.Task.WhichForgeryChallengeToFarm,
-                "Material Selection": self.cur_user_config.Task.MaterialSelection,
-                "Farm Nightmare Nest for Daily Echo": self.cur_user_config.Task.FarmNightmareNestForDailyEcho,
-                "Additional Tasks to Run After Daily Task": self.cur_user_config.Task.AdditionalTasks,
-            },
-        )
+        from .tools.config_fields import runtime_panels
+
+        for filename, values in runtime_panels(self.cur_user_config).items():
+            _update_json(self.script_config_path / filename, values)
 
     async def set_okww(self) -> None:
         """将 MAS 侧 OK-WW 任务配置下发到脚本 working 目录（对齐 General.set_general）。"""
@@ -666,7 +644,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     logger.info("检测到鸣潮客户端进程正在运行，跳过重复启动")
                     await self._note_launch_arguments_skipped()
                     return
-            elif is_process_running(_WUWA_CLIENT_PROCESS):
+            elif await has_process_window(_WUWA_CLIENT_PROCESS):
                 try:
                     await self.game_manager.search_process(
                         self._game_process_info(),
@@ -697,7 +675,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             raise RuntimeError("未找到鸣潮官方启动器路径，请重新导入启动器")
         await self._push_dispatch_log("未检测到运行中的客户端，正在拉起官方启动器...")
         await self.game_manager.open_process(
-            launcher_path, *split_args(self.script_config.Game.Arguments)
+            launcher_path,
+            *split_args(self.script_config.Game.Arguments),
+            retain_desktop_descendants=True,
         )
         await self._push_dispatch_log("启动器已拉起，正在等待点击「进入游戏」...")
         # 启动器交互在后台线程内同步执行，on_log 契约是同步回调；
@@ -780,8 +760,32 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             find_client_pids(self.game_process_path, self.launcher_path)
         )
 
+    async def _desktop_maintenance_detect(
+        self, desktop: DesktopProcessTarget
+    ) -> str | None:
+        from app.task.desktop_session_worker import detect_desktop_maintenance
+
+        return await detect_desktop_maintenance(
+            desktop,
+            "okww_detect_maintenance",
+            {
+                "client_path": str(self.game_process_path)
+                if self.game_process_path
+                else None,
+                "launcher_path": str(self.launcher_path)
+                if self.launcher_path
+                else None,
+            },
+        )
+
     async def main_task(self):
         await self.prepare()
+        desktop = desktop_process_target.get()
+        detect_in_desktop = (
+            partial(self._desktop_maintenance_detect, desktop)
+            if desktop is not None
+            else None
+        )
         self.curdate = datetime.now(tz=_utils_constants.UTC4).strftime("%Y-%m-%d")
         if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") != self.curdate:
             self.cur_user_config.Data.LastProxyDate = datetime.now(
@@ -851,14 +855,16 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             # 鸣潮尚未接入维护公告源；游戏窗口就绪后按明确维护弹窗跳过当前账号。
             # 登录期间再由切号流程检查同一判据，避免维护被误判为登录失败；
             # 维护不会在重试间隔内结束，不再消耗剩余尝试次数
-            if await self.skip_on_game_maintenance(self._maintenance_detect):
+            if await self.skip_on_game_maintenance(
+                self._maintenance_detect, detect_in_desktop=detect_in_desktop
+            ):
                 break
 
             # 游戏启动成功后、下发脚本配置前，按「运行前由 MAS 切换账号」开关切号。
             # 开关在游戏配置区，依赖 Game.Enabled（未启用游戏配置则不生效）；
             # 用户未填写手机号时跳过不切换。
             if (
-                self.task_name == "DailyTask"
+                self.task_name in ("DailyTask", "CustomTask")
                 and self.script_config.Game.AccountSwitchMethod == "MAS"
                 and self.script_config.Game.Enabled
                 and (self.game_manager is not None)
@@ -940,7 +946,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
             self.wait_event.clear()
             maintenance_watch = asyncio.create_task(
-                self.watch_game_maintenance(self._maintenance_detect, self.wait_event)
+                self.watch_game_maintenance(
+                    self._maintenance_detect,
+                    self.wait_event,
+                    detect_in_desktop=detect_in_desktop,
+                )
             )
             try:
                 await self.wait_event.wait()
@@ -1052,6 +1062,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             success_logs = (
                 _OKWW_SUCCESS_LOG[:1]
                 if self.task_name == "MultiAccountConfigTask"
+                or self.cur_user_config.Task.IfCustomArguments
                 else _OKWW_SUCCESS_LOG
             )
             if any(needle in log for needle in success_logs):

@@ -298,12 +298,20 @@ class MaaFWRunRecorder:
             return None
         return record.model_dump(mode="json")
 
-    def incidents(self) -> list[MaaFWRunIncident]:
-        """各次尝试里被原地打转检测或单任务时限停下的任务，按发生先后。"""
+    def incidents(
+        self, *, exclude: Iterable[MaaFWTaskRecord] = ()
+    ) -> list[MaaFWRunIncident]:
+        """各次尝试里被原地打转检测或单任务时限停下的任务，按发生先后。
 
+        ``exclude``：已经在别处说过的任务（按对象认，不按名字），不再列。
+        """
+
+        excluded = {id(task) for task in exclude}
         found: list[MaaFWRunIncident] = []
         for record in self._attempts.values():
             for task in record.tasks:
+                if id(task) in excluded:
+                    continue
                 # 看结局不看类别：收尾任务停下后发现游戏没起来时类别会被细化成
                 # game_launch_failed，停下它的仍是这两种之一。整次运行的时限另有一句话，
                 # 不在这里重复。

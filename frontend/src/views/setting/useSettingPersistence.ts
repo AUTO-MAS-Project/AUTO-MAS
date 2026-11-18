@@ -121,7 +121,7 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
     }
 
     // 处理托盘相关配置（需要额外的实时更新调用）
-    if (category === 'UI' && (key === 'IfShowTray' || key === 'IfToTray')) {
+    if (category === 'UI' && key === 'IfShowTray') {
       try {
         if (window.electronAPI?.updateTraySettings) {
           await window.electronAPI.updateTraySettings({ [key]: value })

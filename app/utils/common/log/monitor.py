@@ -25,13 +25,25 @@ from contextlib import suppress
 from copy import copy
 from datetime import date, datetime
 from pathlib import Path
-from typing import Awaitable, Callable, Literal
+from typing import Awaitable, Callable, Literal, Protocol
 
 import aiofiles
 
 from app.utils.common.constants import ANSI_ESCAPE_RE, TIME_FIELDS
 from app.utils.common.log.logger import get_logger
 from app.utils.common.tools import decode_bytes
+
+
+class _ProcessOutput(Protocol):
+    @property
+    def pid(self) -> int: ...
+
+    @property
+    def stdout(self) -> asyncio.StreamReader | None: ...
+
+    @property
+    def stderr(self) -> asyncio.StreamReader | None: ...
+
 
 logger = get_logger("日志监控器")
 
@@ -257,7 +269,9 @@ class LogMonitor:
             await asyncio.sleep(1)
 
     async def monitor_process(
-        self, process: asyncio.subprocess.Process, stream: Literal["stdout", "stderr"]
+        self,
+        process: _ProcessOutput,
+        stream: Literal["stdout", "stderr"],
     ):
         """监控进程日志"""
 
@@ -517,14 +531,14 @@ class LogMonitor:
 
     async def start_monitor_process(
         self,
-        process: asyncio.subprocess.Process,
+        process: _ProcessOutput,
         stream: Literal["stdout", "stderr"] = "stdout",
     ) -> None:
         """
         开始监控进程日志
 
         Args:
-            process (asyncio.subprocess.Process): 进程对象
+            process: 本机进程或桌面分身进程代理
             stream (Literal["stdout", "stderr"]): 流对象
         """
 

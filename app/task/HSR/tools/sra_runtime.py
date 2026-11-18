@@ -32,6 +32,7 @@ from typing import Any, Awaitable, Callable
 
 from app.utils import ProcessManager, decode_bytes, get_logger, is_admin
 from app.utils import io as _utils_io
+from app.utils.common.process.session import desktop_process_target
 
 from .log_detect import (
     HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT,
@@ -117,8 +118,8 @@ def discover_sra_managed_options(
 ) -> tuple[dict[str, Any], str]:
     """Discover native fields for one HSR module without applying overrides.
 
-    只返回 :data:`SRA_MANAGED_FIELDS` 里列出、且原生 profile 里确实存在的键，
-    顺序同字段表：表单露出什么，运行时就套用什么。
+    只返回 :data:`SRA_MANAGED_FIELDS` 里列出（或按规则自动跟进）、且原生 profile
+    里确实存在的键，顺序同字段表：表单露出什么，运行时就套用什么。
     """
 
     if module_key == "Daily":
@@ -137,14 +138,10 @@ def discover_sra_managed_options(
         if isinstance(rewards, list):
             for index, value in enumerate(rewards):
                 available.setdefault(f"rewards.{index}", value)
-    keys = select_sra_reward_keys(
-        frozenset(managed_field_keys("SRA", module_key)) & available.keys()
-    )
-    options = {
-        key: available[key]
-        for key in managed_field_keys("SRA", module_key)
-        if key in keys
-    }
+    # 字段表之外，新版 SRA 在本节新增的设置按 managed_fields 的规则自动跟进
+    field_keys = managed_field_keys("SRA", module_key, available)
+    keys = select_sra_reward_keys(frozenset(field_keys) & available.keys())
+    options = {key: available[key] for key in field_keys if key in keys}
     return options, section_name
 
 
@@ -661,14 +658,18 @@ class SRAProcessRegistry:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=build_sra_env(),
+            retain_desktop_descendants=True,
         )
+        remote = self._process_manager.desktop_process
+        if remote is not None:
+            return remote
         proc = self._process_manager.main_process
         if not isinstance(proc, asyncio.subprocess.Process):
             raise RuntimeError("SRA 子进程启动后未能被 ProcessManager 跟踪")
         return proc
 
     async def clear(self) -> None:
-        await self._process_manager.clear()
+        await self._process_manager.clear(keep_desktop_descendants=True)
 
     async def terminate_current_process(self) -> bool:
         if not await self._process_manager.is_running():
@@ -1196,7 +1197,10 @@ async def _communicate_sra_with_live_output(
             )
         )
 
-    wait_group = asyncio.gather(proc.wait(), *read_tasks)
+    wait_group = asyncio.gather(
+        proc.wait_exit() if desktop_process_target.get() is not None else proc.wait(),
+        *read_tasks,
+    )
     try:
         await asyncio.wait_for(wait_group, timeout=timeout)
     except Exception:

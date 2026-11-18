@@ -2,7 +2,7 @@
   <span
     class="field-label"
     :class="{ 'field-label-form': variant === 'form' }"
-    role="group"
+    :role="text ? 'group' : undefined"
     :aria-label="text"
   >
     {{ text }}
@@ -17,7 +17,7 @@
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 
 defineProps<{
-  text: string
+  text?: string
   hint?: string
   variant?: 'secondary' | 'form'
 }>()
@@ -52,7 +52,8 @@ defineProps<{
 
 /* 主表单标签保留现有层级，二级配置仍使用默认样式。 */
 .field-label-form {
-  gap: 8px;
+  /* 6px：4px 会让可聚焦的 ⓘ 黏在字尾，8px 又偏松，6px 既紧凑又留出命中间隙。 */
+  gap: 6px;
   color: var(--ant-color-text);
   font-size: 14px;
   font-weight: 600;

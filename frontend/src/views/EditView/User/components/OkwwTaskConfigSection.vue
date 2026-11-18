@@ -2,118 +2,96 @@
   <a-card class="config-card">
     <a-form :model="task" :disabled="disabled" layout="vertical" class="config-form">
       <div class="form-section">
-        <a-row :gutter="24">
-          <a-col :span="24">
-            <a-form-item>
-              <template #label>
-                <FieldLabelWithHint
-                  :text="t('core.edit.okwwDailyArgumentsExample')"
-                  :hint="t('core.edit.okwwArgumentsExampleHint')"
-                  variant="form"
-                />
-              </template>
-              <a-input :value="currentStartupArguments" size="large" readonly />
-            </a-form-item>
-          </a-col>
-        </a-row>
-
-        <template v-if="quickConfig">
-          <a-row :gutter="24">
-            <a-col :span="12">
-              <a-form-item :label="t('core.edit.spendSanityFarm')">
-                <a-select
-                  v-model:value="task.WhichToFarm"
-                  size="large"
-                  :options="farmOptions"
-                  @change="emit('save')"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col v-if="task.WhichToFarm === 'Tacet Suppression'" :span="12">
-              <a-form-item :label="t('core.edit.sonanceCasketNumberF2')">
-                <a-input-number
-                  v-model:value="task.WhichTacetSuppressionToFarm"
-                  :min="1"
-                  :max="99"
-                  style="width: 100%"
-                  size="large"
-                  @blur="emit('save')"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col v-else-if="task.WhichToFarm === 'Forgery Challenge'" :span="12">
-              <a-form-item :label="t('core.edit.echoDomainNumberF2')">
-                <a-input-number
-                  v-model:value="task.WhichForgeryChallengeToFarm"
-                  :min="1"
-                  :max="99"
-                  style="width: 100%"
-                  size="large"
-                  @blur="emit('save')"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col v-else :span="12">
-              <a-form-item :label="t('core.edit.simulatedUniverseMaterials')">
-                <a-select
-                  v-model:value="task.MaterialSelection"
-                  size="large"
-                  :options="materialOptions"
-                  @change="emit('save')"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-
-          <a-form-item :label="t('core.edit.useNightmareNestDaily')">
-            <a-switch v-model:checked="task.FarmNightmareNestForDailyEcho" @change="emit('save')" />
-          </a-form-item>
-
-          <a-form-item :label="t('core.edit.extraTasksThatRun')">
-            <a-checkbox-group
-              v-model:value="task.AdditionalTasks"
-              :options="additionalTaskOptions"
-              @change="emit('save')"
+        <a-tabs :tab-position="screens.md ? 'left' : 'top'" default-active-key="daily">
+          <a-tab-pane key="daily" :tab="t('core.edit.okwwDailyTab')">
+            <OkwwNativeTaskConfig
+              :script-id="scriptId"
+              :user-id="userId"
+              kind="daily"
+              :custom-arguments="task.IfCustomArguments"
+              :context-key="contextKey"
+              :snapshot="task.DailyConfig"
+              @busy="setBusy('daily', $event)"
+              :disabled="disabled"
+              :overlay-enabled="overlayEnabled"
+              @saved="emit('refresh')"
             />
-          </a-form-item>
-        </template>
+          </a-tab-pane>
+          <a-tab-pane key="echo" :tab="t('core.edit.okwwEchoConfigTitle')">
+            <OkwwNativeTaskConfig
+              :script-id="scriptId"
+              :user-id="userId"
+              kind="echo"
+              :context-key="contextKey"
+              :snapshot="task.FarmEchoConfig"
+              @busy="setBusy('echo', $event)"
+              :disabled="disabled"
+              :overlay-enabled="overlayEnabled"
+              @saved="emit('refresh')"
+            />
+          </a-tab-pane>
+          <a-tab-pane v-for="panel in advancedPanels" :key="panel.kind" :tab="t(panel.label)">
+            <OkwwNativeTaskConfig
+              :script-id="scriptId"
+              :user-id="userId"
+              :kind="panel.kind"
+              :context-key="contextKey"
+              :snapshot="task.NativeConfigs[panel.filename] ?? emptyConfig"
+              :disabled="disabled"
+              :overlay-enabled="overlayEnabled"
+              @saved="emit('refresh')"
+              @busy="setBusy(panel.kind, $event)"
+            />
+          </a-tab-pane>
+          <a-tab-pane key="arguments" :tab="t('core.edit.okwwArgumentsTab')" force-render>
+            <a-row :gutter="24">
+              <a-col :span="24">
+                <OkwwArgumentsConfig
+                  :script-id="scriptId"
+                  :save="saveTask"
+                  v-model="task"
+                  @save="emit('save')"
+                />
+              </a-col>
+            </a-row>
+          </a-tab-pane>
+        </a-tabs>
       </div>
     </a-form>
   </a-card>
 </template>
 
 <script setup lang="ts">
+import { reactive } from 'vue'
+import { Grid } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import type { OkwwUserConfig } from '@/api'
-import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import OkwwNativeTaskConfig from './OkwwNativeTaskConfig.vue'
+import OkwwArgumentsConfig from './OkwwArgumentsConfig.vue'
+import type { OkwwPanelKind } from '@/types/nativeConfig'
+import type { OkwwTaskForm } from './okwwTaskConfig'
 
-type TaskForm = {
-  [K in keyof NonNullable<OkwwUserConfig['Task']>]-?: NonNullable<
-    NonNullable<OkwwUserConfig['Task']>[K]
-  >
-}
-const task = defineModel<TaskForm>({ required: true })
-defineProps<{ quickConfig: boolean; disabled: boolean }>()
-const emit = defineEmits<{ save: [] }>()
+const task = defineModel<OkwwTaskForm>({ required: true })
+defineProps<{
+  overlayEnabled: boolean
+  contextKey: string
+  disabled: boolean
+  userId: string
+  scriptId: string
+  saveTask: () => Promise<boolean>
+}>()
+const emit = defineEmits<{ save: []; refresh: []; busy: [value: boolean] }>()
 const { t } = useI18n()
-const currentStartupArguments = '-t DailyTask -e / -t 1 -e'
-
-const farmOptions = [
-  { label: '无音区', value: 'Tacet Suppression' },
-  { label: '凝素领域', value: 'Forgery Challenge' },
-  { label: '模拟领域', value: 'Simulation Challenge' },
+const screens = Grid.useBreakpoint()
+const emptyConfig = {}
+const advancedPanels: { kind: OkwwPanelKind; filename: string; label: string }[] = [
+  { kind: 'nightmare', filename: 'NightmareNestTask.json', label: 'core.edit.okwwPanelNightmare' },
+  { kind: 'combat', filename: 'AutoCombatTask.json', label: 'core.edit.okwwPanelCombat' },
+  { kind: 'character', filename: 'Character Config.json', label: 'core.edit.okwwPanelCharacter' },
+  { kind: 'monthly', filename: 'Monthly Card Config.json', label: 'core.edit.okwwPanelMonthly' },
 ]
-
-const materialOptions = [
-  { label: '共鸣者经验', value: 'Resonator EXP' },
-  { label: '武器经验', value: 'Weapon EXP' },
-  { label: '贝币', value: 'Shell Credit' },
-]
-
-const additionalTaskOptions = [
-  { label: '检查每周乐园', value: 'Check Weekly Garden' },
-  { label: '自动刷所有梦魇巢穴', value: 'Auto Farm all Nightmare Nest' },
-  { label: '已弃置声骸超过 1000 时融合', value: 'Merge Echo If discarded > 1000' },
-  { label: '传送并刷取 4C 声骸', value: 'Teleport and Farm 4C Echo' },
-]
+const busy = reactive<Partial<Record<OkwwPanelKind, boolean>>>({})
+function setBusy(kind: OkwwPanelKind, value: boolean) {
+  busy[kind] = value
+  emit('busy', Object.values(busy).some(Boolean))
+}
 </script>

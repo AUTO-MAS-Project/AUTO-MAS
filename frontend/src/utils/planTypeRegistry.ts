@@ -1,4 +1,5 @@
 import { defineAsyncComponent, type Component } from 'vue'
+import { SCRIPT_PLUGIN_PLANS } from '@/plugins/scriptAdapters'
 import { PlanCreateIn } from '@/api/models/PlanCreateIn'
 import { PlanIndexItem } from '@/api/models/PlanIndexItem'
 import type { PlanGetOut } from '@/api'
@@ -10,6 +11,7 @@ type PlanCreateType = PlanCreateIn.type
 export type PlanConfigData = PlanGetOut['data'][string]
 
 export const PLAN_CONFIG_TYPES = {
+  OKWW: PlanIndexItem.type.OKWW_PLAN_CONFIG,
   OKNTE: PlanIndexItem.type.OK_NTE_PLAN_CONFIG,
   UNIVERSAL: PlanIndexItem.type.UNIVERSAL_PLAN_CONFIG,
   MAA: PlanIndexItem.type.MAA_PLAN_CONFIG,
@@ -48,7 +50,17 @@ interface PlanTypeDescriptor {
 
 // ==================== 注册表 ====================
 
-export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
+export const PLAN_TYPE_REGISTRY: Record<string, PlanTypeDescriptor> = {
+  [PLAN_CONFIG_TYPES.OKWW]: {
+    configType: PLAN_CONFIG_TYPES.OKWW,
+    createType: PlanCreateIn.type.OKWW_PLAN,
+    displayNameKey: 'core.plan.type.okww',
+    defaultName: '新 Okww 计划表',
+    selectorTag: 'Okww',
+    reloadAfterSave: false,
+    supportsSimpleView: false,
+    tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/OkwwPlanTable.vue')),
+  },
   [PLAN_CONFIG_TYPES.OKNTE]: {
     configType: PLAN_CONFIG_TYPES.OKNTE,
     createType: PlanCreateIn.type.OK_NTE_PLAN,
@@ -71,17 +83,7 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
       () => import('@/views/plan/tables/UniversalPlanTable.vue')
     ),
   },
-  [PLAN_CONFIG_TYPES.MAA]: {
-    configType: PLAN_CONFIG_TYPES.MAA,
-    createType: PlanCreateIn.type.MAA_PLAN,
-    displayNameKey: 'core.plan.type.maa',
-    // defaultName 会被写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
-    defaultName: '新 MAA 计划表',
-    selectorTag: 'MAA',
-    reloadAfterSave: true,
-    supportsSimpleView: true,
-    tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/MaaPlanTable.vue')),
-  },
+  ...SCRIPT_PLUGIN_PLANS,
   [PLAN_CONFIG_TYPES.MAA_END]: {
     configType: PLAN_CONFIG_TYPES.MAA_END,
     createType: PlanCreateIn.type.MAA_END_PLAN,

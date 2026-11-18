@@ -193,15 +193,7 @@ const handleMasInstall = async () => {
     if (!isDetectSuccess(result) || !result.path) {
       throw new Error(result.message || t('core.setting.others.fluxdownInstallFailed'))
     }
-    // 下载与安装成功不等于可用：自动走与「自动检测」按钮相同的后端入口。
-    const detection = await GetService.detectFluxdownApiUpdateFluxdownDetectGet()
-    if (
-      !isDetectSuccess(detection) ||
-      !detection.path ||
-      detection.path.toLowerCase() !== result.path.toLowerCase()
-    ) {
-      throw new Error(t('core.setting.others.fluxdownInstallVerifyFailed'))
-    }
+    // 安装接口已校验本次目标目录，自动路径推荐可能指向另一份 MAS 托管安装。
     emit('installed')
     fluxdownOnlyFull.value = false
     const text = t('core.setting.others.fluxdownInstallSuccess', {

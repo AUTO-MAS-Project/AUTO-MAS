@@ -43,14 +43,13 @@ from app.utils import io as _utils_io
 
 from .AutoProxy import (
     _OKWW_REL_APP_JSON,
-    _OKWW_REL_CONFIG_DIR,
     _OKWW_REL_EXE,
     AutoProxyTask,
-    _okww_config_base,
 )
 from .BatchProxy import BatchProxyTask
 from .ScriptConfig import ScriptConfigTask
 from .tools.backup_archive import archive_native_backup
+from .tools.config_paths import _OKWW_REL_CONFIG_DIR, _okww_config_base
 from .Update import WuwaUpdateTask
 
 logger = get_logger("OK-WW 调度器")
@@ -289,20 +288,31 @@ class OkwwManager(ScriptManagerBase):
 
         if self.script_config.Game.AccountSwitchMethod == "OKWW":
             participants = []
+            argument_groups = []
+            previous_arguments = None
             for index, user in enumerate(self.script_info.user_list):
                 await self.script_info.set_current_index(index)
                 if await self.check_user_before_run(
                     user, self.user_config[uuid.UUID(user.user_id)]
                 ):
-                    candidate = AutoProxyTask(
+                    candidate = BatchProxyTask(
                         self.script_info,
                         self.script_config,
                         self.user_config,
                         self.game_manager,
+                        participants=[user],
                     )
                     result = await candidate.check()
                     if result == "Pass":
                         participants.append(user)
+                        arguments = (
+                            candidate._build_run_arguments(),
+                            candidate.native_config_key(),
+                        )
+                        if not argument_groups or arguments != previous_arguments:
+                            argument_groups.append([])
+                        argument_groups[-1].append(user)
+                        previous_arguments = arguments
                     else:
                         await self.notify_user_check_failure(user, result)
             if participants:
@@ -321,12 +331,23 @@ class OkwwManager(ScriptManagerBase):
                     for user in participants:
                         await self.notify_user_check_failure(user, result)
                 else:
-                    try:
-                        for user in participants:
-                            self.record_user_run_start(user)
-                        await self.spawn(method)
-                    finally:
-                        await self._restore_script_config_from_temp()
+                    for group in argument_groups:
+                        await self.script_info.set_current_index(
+                            self.script_info.user_list.index(group[0])
+                        )
+                        method = BatchProxyTask(
+                            self.script_info,
+                            self.script_config,
+                            self.user_config,
+                            self.game_manager,
+                            participants=group,
+                        )
+                        try:
+                            for user in group:
+                                self.record_user_run_start(user)
+                            await self.spawn(method)
+                        finally:
+                            await self._restore_script_config_from_temp()
             return
 
         for _runtime_user_index in range(len(self.script_info.user_list)):

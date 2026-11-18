@@ -1,12 +1,11 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { DesktopOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
-import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
 import type { GlobalConfig } from '@/api'
 import type { SettingChangeHandler } from '../settingTypes'
 import SectionCard from '@/components/ui/SectionCard.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
-import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import CloseConfirmationSettings from './CloseConfirmationSettings.vue'
 import TrayMenuEditor from './TrayMenuEditor.vue'
 
@@ -16,6 +15,17 @@ const { settings, handleSettingChange } = defineProps<{
 }>()
 
 const { t } = useI18n()
+
+type StartKey = 'IfSelfStart' | 'IfScheduledWakeUp' | 'IfMinimizeDirectly'
+
+const startValue = (key: StartKey) => settings.Start?.[key] === true
+const setStart = (key: StartKey, value: boolean) => handleSettingChange('Start', key, value)
+
+// 静默启动只在自启或定时唤醒拉起时生效（main.ts：isAutoStart && IfMinimizeDirectly）。
+// 两个入口都关着时它不会起作用，禁用而不是让用户拨一个没有效果的开关。
+const silentAvailable = computed(
+  () => settings.Start?.IfSelfStart === true || settings.Start?.IfScheduledWakeUp === true
+)
 </script>
 
 <template>
@@ -24,94 +34,83 @@ const { t } = useI18n()
     :title="t('core.setting.basic.startupWindowSection')"
     :icon="DesktopOutlined"
   >
-    <SettingRow
-      class="startup-options-row"
-      :label="t('core.setting.basic.startupOptions')"
-      :hint="t('core.setting.basic.startupBehaviorHint')"
-    >
-      <a-checkbox
-        :checked="settings.Start?.IfSelfStart === true"
-        @change="
-          (event: CheckboxChangeEvent) =>
-            handleSettingChange('Start', 'IfSelfStart', event.target.checked)
-        "
+    <section class="setting-group">
+      <h4 class="setting-group-title">{{ t('core.setting.func.startupGroup') }}</h4>
+
+      <SettingRow
+        :label="t('core.setting.func.autoStart')"
+        :hint="t('core.setting.func.autoStartTip')"
       >
-        <FieldLabelWithHint
-          :text="t('core.setting.func.autoStart')"
-          :hint="t('core.setting.func.autoStartTip')"
+        <a-switch
+          :checked="startValue('IfSelfStart')"
+          :aria-label="t('core.setting.func.autoStart')"
+          @change="setStart('IfSelfStart', $event === true)"
         />
-      </a-checkbox>
-      <a-checkbox
-        :checked="settings.Start?.IfMinimizeDirectly === true"
-        @change="
-          (event: CheckboxChangeEvent) =>
-            handleSettingChange('Start', 'IfMinimizeDirectly', event.target.checked)
-        "
+      </SettingRow>
+
+      <SettingRow
+        child
+        :disabled="!silentAvailable"
+        :label="t('core.setting.func.silentStart')"
+        :description="t('core.setting.func.silentStartTip')"
       >
-        {{ t('core.setting.func.startMinimized') }}
-      </a-checkbox>
-    </SettingRow>
+        <a-switch
+          :checked="startValue('IfMinimizeDirectly')"
+          :disabled="!silentAvailable"
+          :aria-label="t('core.setting.func.silentStart')"
+          @change="setStart('IfMinimizeDirectly', $event === true)"
+        />
+      </SettingRow>
 
-    <SettingRow
-      :label="t('core.setting.func.scheduledWakeup')"
-      :hint="t('core.setting.func.scheduledWakeupTip')"
-    >
-      <a-switch
-        :checked="settings.Start?.IfScheduledWakeUp === true"
-        :aria-label="t('core.setting.func.scheduledWakeup')"
-        @change="
-          (checked: boolean | string | number) =>
-            handleSettingChange('Start', 'IfScheduledWakeUp', !!checked)
-        "
-      />
-    </SettingRow>
+      <SettingRow
+        :label="t('core.setting.func.scheduledWakeup')"
+        :hint="t('core.setting.func.scheduledWakeupTip')"
+      >
+        <a-switch
+          :checked="startValue('IfScheduledWakeUp')"
+          :aria-label="t('core.setting.func.scheduledWakeup')"
+          @change="setStart('IfScheduledWakeUp', $event === true)"
+        />
+      </SettingRow>
+    </section>
 
-    <SettingRow :label="t('core.setting.basic.minimizeBehavior')">
-      <a-segmented
-        :value="settings.UI?.IfToTray === true ? 'tray' : 'taskbar'"
-        :options="[
-          { label: t('core.setting.basic.minToTray'), value: 'tray' },
-          { label: t('core.setting.basic.minToTaskbar'), value: 'taskbar' },
-        ]"
-        :aria-label="t('core.setting.basic.minimizeBehavior')"
-        @change="
-          (value: string | number) => handleSettingChange('UI', 'IfToTray', value === 'tray')
-        "
-      />
-    </SettingRow>
-
-    <SettingRow
-      :label="t('core.setting.basic.showTray')"
-      :hint="t('core.setting.basic.showTrayTip')"
-    >
-      <a-switch
-        :checked="settings.UI?.IfShowTray === true"
-        :aria-label="t('core.setting.basic.showTray')"
-        @change="
-          (checked: boolean | string | number) => handleSettingChange('UI', 'IfShowTray', !!checked)
-        "
-      />
-    </SettingRow>
-
-    <SettingRow
-      :label="t('core.setting.basic.closeConfirmation')"
-      :description="t('core.setting.basic.closeBehaviorHint')"
-    >
+    <section class="setting-group">
+      <h4 class="setting-group-title">{{ t('core.setting.basic.closeBehavior') }}</h4>
       <CloseConfirmationSettings />
-    </SettingRow>
+    </section>
 
-    <TrayMenuEditor />
+    <section class="setting-group">
+      <h4 class="setting-group-title">{{ t('core.setting.basic.trayGroup') }}</h4>
+
+      <SettingRow
+        :label="t('core.setting.basic.showTray')"
+        :hint="t('core.setting.basic.showTrayTip')"
+      >
+        <a-switch
+          :checked="settings.UI?.IfShowTray === true"
+          :aria-label="t('core.setting.basic.showTray')"
+          @change="handleSettingChange('UI', 'IfShowTray', $event === true)"
+        />
+      </SettingRow>
+
+      <TrayMenuEditor />
+    </section>
   </SectionCard>
 </template>
 
 <style scoped>
-.settings-card-grid .startup-window-settings :deep(.ui-row.startup-options-row) {
-  grid-template-columns: auto minmax(0, 1fr);
+/* A 版：单列行式。分组标题用正文色/13px 承担分区，行分隔交给 SettingRow 自己画。 */
+.setting-group-title {
+  margin: 6px 0 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+  color: var(--ant-color-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
 }
 
-@container (max-width: 560px) {
-  .settings-card-grid .startup-window-settings :deep(.ui-row.startup-options-row) {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.setting-group + .setting-group {
+  margin-top: 10px;
 }
 </style>

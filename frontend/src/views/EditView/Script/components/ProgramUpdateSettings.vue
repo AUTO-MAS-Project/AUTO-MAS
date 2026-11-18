@@ -26,7 +26,7 @@ const { t } = useI18n()
       <h3>{{ title }}</h3>
     </div>
     <a-row :gutter="24">
-      <a-col :span="8">
+      <a-col :span="$slots['package-mode'] ? 6 : 8">
         <a-form-item :label="t('core.edit.updateChannel')">
           <a-select
             :value="channel"
@@ -40,7 +40,7 @@ const { t } = useI18n()
           />
         </a-form-item>
       </a-col>
-      <a-col :span="8">
+      <a-col :span="$slots['package-mode'] ? 6 : 8">
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
@@ -57,7 +57,8 @@ const { t } = useI18n()
           />
         </a-form-item>
       </a-col>
-      <a-col :span="8">
+      <slot name="package-mode" />
+      <a-col :span="$slots['package-mode'] ? 6 : 8">
         <a-form-item>
           <template #label>
             <FieldLabelWithHint

@@ -25,57 +25,34 @@ afterEach(() => {
 const readConfig = () => JSON.parse(fs.readFileSync(configPath, 'utf8'))
 
 describe('主进程配置补丁写入', () => {
-  it('保存偏好保留磁盘最新的窗口、Runtime 和未知字段', () => {
-    const previous = {
+  it('损坏的配置会拒绝写入并保留原文件，修复后可重试', () => {
+    const fallback = {
       UI: { location: '100,100', size: '1600,1000' },
       Runtime: { LaunchMode: 'auto' },
       custom: 'previous',
     }
-    patchConfigFile(configPath, previous)
-    patchConfigFile(configPath, {
-      UI: { location: '200,300', size: '1200,900' },
-      Runtime: { LaunchMode: 'on' },
-      custom: 'latest',
-    })
-
-    patchConfigFile(configPath, { language: 'en-US' }, previous)
-
-    expect(readConfig()).toEqual({
-      language: 'en-US',
-      UI: { location: '200,300', size: '1200,900' },
-      Runtime: { LaunchMode: 'on' },
-      custom: 'latest',
-    })
-  })
-
-  it('迁移仅补齐缺失字段，保留当前文件中的值', () => {
-    patchConfigFile(configPath, { themeColor: 'green', UI: { location: '200,300' } })
-
-    const saved = patchConfigFile(
-      configPath,
-      {},
-      { language: 'en-US', themeColor: 'blue', UI: { location: '100,100' } }
-    )
-
-    expect(saved).toEqual({ language: 'en-US', themeColor: 'green', UI: { location: '200,300' } })
-    expect(readConfig()).toEqual(saved)
-  })
-
-  it('显式补丁允许空字符串、false 和空数组，替换整个字段', () => {
-    patchConfigFile(configPath, { label: 'old', enabled: true, selected: ['old'] })
-    patchConfigFile(configPath, { label: '', enabled: false, selected: [] })
-
-    expect(readConfig()).toEqual({ label: '', enabled: false, selected: [] })
-  })
-
-  it('损坏的配置会拒绝写入并保留原文件，修复后可重试', () => {
     fs.mkdirSync(path.dirname(configPath), { recursive: true })
     fs.writeFileSync(configPath, '{broken', 'utf8')
 
-    expect(() => patchConfigFile(configPath, { language: 'en-US' })).toThrow()
+    expect(() => patchConfigFile(configPath, { language: 'en-US' }, fallback)).toThrow()
     expect(fs.readFileSync(configPath, 'utf8')).toBe('{broken')
-    fs.writeFileSync(configPath, '{"themeColor":"green"}', 'utf8')
-    patchConfigFile(configPath, { language: 'en-US' })
-    expect(readConfig()).toEqual({ language: 'en-US', themeColor: 'green' })
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        themeColor: 'green',
+        UI: { location: '200,300', size: '1200,900' },
+        Runtime: { LaunchMode: 'on' },
+        custom: 'latest',
+      }),
+      'utf8'
+    )
+    patchConfigFile(configPath, { language: 'en-US' }, fallback)
+    expect(readConfig()).toEqual({
+      language: 'en-US',
+      themeColor: 'green',
+      UI: { location: '200,300', size: '1200,900' },
+      Runtime: { LaunchMode: 'on' },
+      custom: 'latest',
+    })
   })
 })

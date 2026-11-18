@@ -91,7 +91,7 @@ const { t } = useI18n()
 
 /** 弹窗内的草稿：取消即丢弃 */
 const draft = reactive<TaskTimeLimitDraft>({})
-const loopGuardDraft = ref(false)
+const loopGuardDraft = ref(true)
 
 const resetDraft = () => {
   for (const key of Object.keys(draft)) delete draft[key]

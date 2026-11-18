@@ -8,7 +8,7 @@ export type GlobalConfig_StartInput = {
      */
     IfScheduledWakeUp?: (boolean | null);
     /**
-     * 是否启动时直接最小化
+     * 是否在开机自启或定时唤醒启动时静默进入托盘
      */
     IfMinimizeDirectly?: (boolean | null);
     /**

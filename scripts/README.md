@@ -1,6 +1,9 @@
 # 本地打包
 
-使用 PowerShell 7。随桌面安装包分发的 Runtime 版本记录在 `res/runtime-version.txt`，它只是
+使用 PowerShell 7 运行 `pwsh -NoProfile -File scripts/build-local-package.ps1`。
+脚本生成的测试包首次初始化会拉取 AUTO-MAS 的 `dev` 后端，之后按同分支更新流程跟进新提交。
+
+随桌面安装包分发的 Runtime 版本记录在 `res/runtime-version.txt`，它只是
 **打包时内置的那一版**：CI 从本次构建所选分支读取它，下载对应 Release 的 exe、按同一 Release
 的 `SHA256SUMS.txt` 校验后捆绑进安装包，并拒绝缺少后台更新协议的二进制。内置版本只用于离线
 兜底；用户机器上实际运行哪一版由应用在**完整初始化**时决定。
@@ -26,7 +29,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Runtime verification failed' }
 ```
 
 去掉 `-VerifyRuntimeOnly` 后执行完整本地打包。脚本校验源码版本一致性、Runtime SHA-256、
-`workspace stage` 和 `bootstrap --if-needed`，然后生成携带指定 Runtime 的安装包和解压目录。
+alpha 后端能力、`workspace stage` 和 `bootstrap --if-needed`，然后生成携带指定 Runtime 的安装包和解压目录。
 `-SkipInstall` 仅适用于前端依赖已经安装的环境；脚本不会发布或上传安装包。
 
 **运行 `-LocalRuntimePath` 打出来的包时必须设置 `AUTO_MAS_RUNTIME_EXE`。** 桌面端在完整初始化
@@ -45,6 +48,6 @@ $env:AUTO_MAS_RUNTIME_EXE = 'D:/Github/AUTO-MAS-Runtime/bin/auto-mas-runtime.exe
 未提权时会经 UAC 重新拉起，提权后的进程拿不到调用方的环境变量。
 桌面端用它指向的 exe 启动 Runtime，并跳过随本体更新。
 
-运行行为：managed 模式启动后首次检查当前 release 分支，之后每 10 分钟检查一次；
+运行行为：managed 模式启动后首次检查当前后端分支，之后每 10 分钟检查一次；
 发现更新就后台下载，完成后标题栏提示下次启动生效。下载不改变当前后端和环境；
 下次启动替换仓库并同步所需依赖。无更新时跳过依赖同步。依赖同步失败仍需通过已有修复入口重试。

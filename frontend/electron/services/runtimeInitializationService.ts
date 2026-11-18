@@ -9,12 +9,14 @@
  * 本模块负责 Runtime 命令映射与初始化、重试和诊断编排；后端生命周期由 backendService 管理。
  */
 
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { app } from 'electron'
 
 import { getLogger } from './logger'
 import { observeInitializationStage } from './initializationAnalytics'
+import { runtimeFailureContext, type StartupFailureContext } from './startupRecovery'
 import {
   RUNTIME_BINARY_ALIGN_ERROR,
   RUNTIME_BINARY_CANCELLED,
@@ -123,7 +125,7 @@ export function mapRuntimeStage(stage: RuntimeStage): InitializationRunStage {
 /**
  * 补齐 Runtime 要求的 `v` 前缀。
  *
- * Runtime 用目标版本拼 `release/<版本>` 分支名，版本号必须以 `v` 开头；
+ * Runtime 用目标版本解析后端分支，版本号必须以 `v` 开头；
  * Electron 的 `app.getVersion()` 给的是不带 `v` 的 `5.5.0-beta.3`。
  */
 export function toRuntimeVersion(raw: string): string {
@@ -131,9 +133,17 @@ export function toRuntimeVersion(raw: string): string {
   return trimmed.startsWith('v') ? trimmed : `v${trimmed}`
 }
 
-/** 首次安装的目标版本就是应用自身版本；更新流程的目标版本由更新任务另行给出。 */
-export function resolveRuntimeTargetVersion(): string {
-  return toRuntimeVersion(app.getVersion())
+/** 本地打包通过 alpha 目标跟踪 dev，其余包沿用调用方目标或应用版本。 */
+export function resolveRuntimeTargetVersion(targetVersion?: string): string {
+  if (
+    app.isPackaged &&
+    process.resourcesPath &&
+    existsSync(join(process.resourcesPath, 'auto-mas-backend-dev'))
+  ) {
+    const [baseVersion] = app.getVersion().split(/[-+]/)
+    return `${toRuntimeVersion(baseVersion)}-alpha.1`
+  }
+  return targetVersion ?? toRuntimeVersion(app.getVersion())
 }
 
 // ==================== 进度桥接 ====================
@@ -400,6 +410,7 @@ function clampRunningPercent(percent: number): number {
 
 /** Runtime 的结构化失败详情，供初始化界面按需展示。 */
 export interface RuntimeStageOutcome {
+  runtimeFailure?: StartupFailureContext
   success: boolean
   /** 仅当前 Runtime 对齐结果实际确认支持时存在。 */
   bootstrapEnvironmentReuse?: true
@@ -597,13 +608,18 @@ export class RuntimeInitializationService {
     return this.options.launchConfig
   }
 
-  /** 本实例的目标版本；省略时退回应用自身版本。 */
+  /** 本实例使用的后端目标版本。 */
   get targetVersion(): string {
-    return this.options.targetVersion ?? resolveRuntimeTargetVersion()
+    return resolveRuntimeTargetVersion(this.options.targetVersion)
   }
 
   get isBusy(): boolean {
-    return this.operating || this.activeControl !== null || this.aligning
+    return (
+      this.operating ||
+      this.activeControl !== null ||
+      this.aligning ||
+      [...this.clients].some(client => client.hasActiveSessions)
+    )
   }
 
   async checkRuntimeBinaryUpdate(): Promise<RuntimeBinaryUpdateCheck> {
@@ -625,8 +641,10 @@ export class RuntimeInitializationService {
   /** 失败页只重做第 0 步，保留源码、依赖与上一次失败的处置动作。 */
   async updateRuntimeBinary(
     onProgress: (progress: RuntimeBinarySyncProgress) => void,
-    stopBackends?: () => Promise<void>
+    stopBackends?: () => Promise<void>,
+    preparedAlignment?: RuntimeInitializationOptions['alignRuntimeBinary']
   ): Promise<RuntimeBinaryAlignResult> {
+    // 在受管模式下独占执行 Runtime 二进制更新，结合停止后端、取消信号和预先准备的可信材料返回结果。
     const { mode, runtimePath, appRoot } = this.options.launchConfig
     if (mode !== 'managed' || !runtimePath) {
       return { status: 'failed', error: '当前运行模式无法更新 Runtime，请重新安装完整程序。' }
@@ -642,12 +660,13 @@ export class RuntimeInitializationService {
       // 与第 0 步共用 runtime_binary 阶段观察，真实结局（含失败与取消）与耗时由此入库；
       // 模式与占用守卫在观察之外，被拒绝的请求不算一次更新。
       const observed = await observeInitializationStage('runtime_binary', mode, async () => {
+        // 进入 Runtime 更新观测阶段后先停止后端，取消时提前返回，否则执行准备好的二进制对齐。
         await stopBackends?.()
         if (this.cancelRequested) {
           return runtimeBinaryObservation({ status: 'cancelled', code: RUNTIME_BINARY_CANCELLED })
         }
         return runtimeBinaryObservation(
-          await this.alignRuntimeBinary({
+          await (preparedAlignment ?? this.alignRuntimeBinary)({
             channel: this.releaseChannel,
             runtimePath,
             appRoot,
@@ -674,7 +693,7 @@ export class RuntimeInitializationService {
    * 只接受 Runtime 正式版。更新流程换目标版本时，通道跟着目标版本走。
    */
   get releaseChannel(): RuntimeReleaseChannel {
-    return resolveRuntimeReleaseChannel(this.targetVersion)
+    return resolveRuntimeReleaseChannel(this.options.targetVersion ?? app.getVersion())
   }
 
   /**
@@ -704,6 +723,15 @@ export class RuntimeInitializationService {
     this.shuttingDown = true
     this.cancelRequested = true
     await Promise.all([...this.clients].map(client => client.stop(timeoutMs)))
+  }
+
+  /** 只收口失败尝试，保留本实例的修复信息及后续可用性。 */
+  async settleFailedAttempt(timeoutMs?: number): Promise<void> {
+    await Promise.all([...this.clients].map(client => client.stop(timeoutMs)))
+    for (const client of this.clients) {
+      if (client.hasActiveSessions) throw new Error('无法确认上一轮 Runtime 已结束')
+      this.clients.delete(client)
+    }
   }
 
   /**
@@ -1157,6 +1185,10 @@ export class RuntimeInitializationService {
           retryable: error.retryable,
           remediation: [...error.remediation],
           logs: mergeRuntimeLogs(stdoutLines, stderrLines, error.details.stderr),
+          runtimeFailure: {
+            command: error.details.command,
+            processExited: error.details.processExited,
+          },
           failedStage: bridge.currentStage ?? FALLBACK_INITIALIZATION_STAGE,
         }
       }
@@ -1204,6 +1236,7 @@ export class RuntimeInitializationService {
       remediation,
       logs: mergeRuntimeLogs(stdoutLines, stderrLines, outcome.stderr),
       logPath: readRuntimeLogPath(outcome.result.details),
+      runtimeFailure: runtimeFailureContext(outcome),
       failedStage,
     }
   }

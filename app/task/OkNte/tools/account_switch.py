@@ -418,8 +418,10 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
                 items = _tool_ocr.ocr_image(frame)
                 last_sig = sig
                 last_progress = time.monotonic()
-        except RuntimeError:
+        except (RuntimeError, win32gui.error):
             # 窗口句柄失效：可能是游戏内更新触发客户端重启，重找新窗口继续而非中止。
+            if win32gui.IsWindow(hwnd):
+                raise
             hwnd = _reacquire_game_hwnd(on_log)
             last_progress = time.monotonic()
             last_sig = None
@@ -729,4 +731,13 @@ async def async_switch_account(
     account_id: str, *, on_log: Callable[[str], None] | None = None
 ) -> bool:
     """async 版本：在后台线程执行完整切换流程，避免阻塞事件循环。"""
+    from app.utils.common.process.session import desktop_process_target
+
+    if (desktop := desktop_process_target.get()) is not None:
+        from app.task.desktop_session_worker import run_desktop_action
+
+        return await run_desktop_action(
+            desktop, "oknte_switch_account", {"account_id": account_id}, on_log
+        )
+
     return await asyncio.to_thread(account_switch, account_id, on_log=on_log)

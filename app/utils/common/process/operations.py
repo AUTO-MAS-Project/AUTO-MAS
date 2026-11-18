@@ -1,6 +1,7 @@
 """按路径查询及终止进程；调用方提供目标，不读取应用配置。"""
 
 import asyncio
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -8,7 +9,62 @@ import psutil
 
 from app.utils import get_logger, process_platform
 
+from .session import matches_session, process_in_scope, restricted_session
+
 logger = get_logger("进程操作")
+
+
+def iter_processes(attributes: list[str]) -> Iterator[psutil.Process]:
+    """枚举当前进程管理范围内的进程。"""
+    return processes_in_scope(psutil.process_iter(attributes))
+
+
+def processes_in_scope(processes: Iterable[psutil.Process]) -> Iterator[psutil.Process]:
+    """在同一轮枚举内使用一致的会话范围。"""
+    session_id = restricted_session()
+    return (
+        process for process in processes if matches_session(process.pid, session_id)
+    )
+
+
+def managed_process(
+    pid: int, *, expected_create_time: float | None = None
+) -> psutil.Process | None:
+    """打开当前管理范围内的进程。
+
+    原进程已退出或 PID 已复用时返回 ``None``。存活进程无法确认属于当前范围时
+    抛 ``ProcessLookupError``。
+    """
+
+    try:
+        process = psutil.Process(pid)
+        create_time = process.create_time()
+    except psutil.NoSuchProcess:
+        return None
+    if expected_create_time is not None and abs(create_time - expected_create_time) > 1:
+        return None
+    if process_in_scope(pid):
+        return process
+    if not process.is_running():
+        return None
+    raise ProcessLookupError(f"无法确认进程属于当前范围: {pid}")
+
+
+def terminate_process(process: psutil.Process, *, force: bool = False) -> bool:
+    """核验范围后发送终止请求，返回是否真的发出了终止请求。
+
+    越界（不属于当前桌面分身会话）意味着「这个进程不归我们管」，与「已经结束」是两件
+    不同的事。调用方必须把 ``False`` 当成「没能结束」，不要据此当作清理完成。
+    """
+
+    if not process_in_scope(process.pid):
+        logger.warning(f"跳过不属于当前范围的进程: pid={process.pid}")
+        return False
+    if force:
+        process.kill()
+    else:
+        process.terminate()
+    return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,10 +88,13 @@ async def is_process_running(path: Path | str) -> bool:
     return bool((await _scan_processes_by_path(path)).pids)
 
 
-async def is_process_stopped(path: Path | str) -> bool:
-    """确认目标路径没有存活进程；扫描不完整或同名进程路径不可读时返回 False。"""
+async def is_process_stopped(path: Path | str, *, all_sessions: bool = False) -> bool:
+    """确认目标路径无存活进程，共享文件的占用检查可查所有会话。
 
-    scan = await _scan_processes_by_path(path)
+    扫描不完整或同名进程路径不可读时返回 False。
+    """
+
+    scan = await _scan_processes_by_path(path, all_sessions=all_sessions)
     return scan.complete and not scan.pids and not scan.uncertain_pids
 
 
@@ -106,17 +165,20 @@ async def kill_process_by_pid(pid: int, *, kill_tree: bool = True) -> bool:
     return True
 
 
-async def _scan_processes_by_path(path: Path | str) -> _ProcessPathScan:
+async def _scan_processes_by_path(
+    path: Path | str, *, all_sessions: bool = False
+) -> _ProcessPathScan:
     """扫描精确路径进程，并记录无法确认路径的同名候选。"""
 
     path = Path(path)
     pids: list[int] = []
     uncertain_pids: list[int] = []
-    target_path = str(path).casefold()
     target_name = path.name.casefold()
 
     def _scan() -> bool:
         try:
+            target_path = str(path.resolve() if all_sessions else path).casefold()
+            session_id = None if all_sessions else restricted_session()
             processes = psutil.process_iter(["pid", "name", "exe"])
             for proc in processes:
                 try:
@@ -126,12 +188,25 @@ async def _scan_processes_by_path(path: Path | str) -> _ProcessPathScan:
 
                 process_path = info.get("exe")
                 if process_path:
-                    if str(process_path).casefold() == target_path:
+                    candidate = Path(process_path)
+                    if all_sessions and candidate.name.casefold() == target_name:
+                        try:
+                            candidate = candidate.resolve()
+                        except OSError:
+                            uncertain_pids.append(info["pid"])
+                            continue
+                    if str(candidate).casefold() == target_path and matches_session(
+                        proc.pid, session_id
+                    ):
                         pids.append(info["pid"])
                     continue
 
                 process_name = info.get("name")
-                if process_name and str(process_name).casefold() == target_name:
+                if (
+                    process_name
+                    and str(process_name).casefold() == target_name
+                    and matches_session(proc.pid, session_id)
+                ):
                     uncertain_pids.append(info["pid"])
         except (psutil.AccessDenied, OSError) as e:
             logger.warning(f"扫描进程路径失败: {e}")

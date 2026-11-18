@@ -104,8 +104,16 @@ def _list_plugin_catalog(root: Path) -> list[dict]:
         try:
             if directory.is_symlink() or not directory.is_dir():
                 continue
-            factories = list(directory.glob("*_factory.py"))
-            constants = list(directory.glob("*_const.py"))
+            factories = [
+                path
+                for path in directory.glob("*.py")
+                if path.name == "factory.py" or path.name.endswith("_factory.py")
+            ]
+            constants = [
+                path
+                for path in directory.glob("*.py")
+                if path.name == "const.py" or path.name.endswith("_const.py")
+            ]
             if len(factories) != 1 or len(constants) != 1:
                 raise ValueError("插件根必须各有一个 factory 和 const 文件")
             if factories[0].is_symlink() or constants[0].is_symlink():
@@ -132,6 +140,39 @@ def _list_plugin_catalog(root: Path) -> list[dict]:
             default = declarations.get("DEFAULT_GROUP")
             internal = declarations.get("INTERNAL_APP", False)
             priority = declarations.get("PRIORITY")
+            # 原生允许工厂构造时覆写排序；仅读取直接声明的整数，不执行插件。
+            factory_tree = ast.parse(factories[0].read_text(encoding="utf-8-sig"))
+            for cls in factory_tree.body:
+                if not isinstance(cls, ast.ClassDef) or not any(
+                    isinstance(base, ast.Name) and base.id == "ApplicationFactory"
+                    for base in cls.bases
+                ):
+                    continue
+                for method in cls.body:
+                    if (
+                        not isinstance(method, ast.FunctionDef)
+                        or method.name != "__init__"
+                    ):
+                        continue
+                    for statement in method.body:
+                        if isinstance(statement, ast.AnnAssign):
+                            targets, value = [statement.target], statement.value
+                        elif isinstance(statement, ast.Assign):
+                            targets, value = statement.targets, statement.value
+                        else:
+                            continue
+                        if any(
+                            isinstance(target, ast.Attribute)
+                            and isinstance(target.value, ast.Name)
+                            and target.value.id == "self"
+                            and target.attr == "priority"
+                            for target in targets
+                        ) and isinstance(value, (ast.Constant, ast.UnaryOp)):
+                            try:
+                                priority = ast.literal_eval(value)
+                            except (ValueError, TypeError):
+                                # 动态表达式交给原生执行，保留 const 名称与排序声明。
+                                continue
             if priority is None:
                 priority = 9999
             if (

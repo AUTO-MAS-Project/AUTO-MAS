@@ -1,3 +1,12 @@
+export type ResourcePackageFailureCode =
+  | 'NO_SPACE'
+  | 'EXTRACTION_LIMIT'
+  | 'PROCESS_FAILED'
+  | 'INVALID_MANIFEST'
+  | 'PACKAGE_CHANGED'
+  | 'CHECKSUM_MISMATCH'
+  | 'TOO_LARGE'
+
 export type AppearanceCategory = 'theme' | 'mascot'
 export type AppearanceFilter = 'all' | AppearanceCategory
 
@@ -69,7 +78,12 @@ export interface MascotImportResult {
   success: boolean
   mascot?: MascotSummary
   existing?: MascotSummary
-  code?: 'INVALID_PACKAGE' | 'INVALID_ANIMATION' | 'DUPLICATE_ID' | 'IMPORT_FAILED'
+  code?:
+    | ResourcePackageFailureCode
+    | 'INVALID_PACKAGE'
+    | 'INVALID_ANIMATION'
+    | 'DUPLICATE_ID'
+    | 'IMPORT_FAILED'
   error?: string
 }
 

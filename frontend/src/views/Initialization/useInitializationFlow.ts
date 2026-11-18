@@ -294,6 +294,7 @@ export function useInitializationFlow() {
       state.progressIndeterminate = progress.indeterminate ?? progress.progress === undefined
     }
 
+    if (progress.runtimeStatus === 'retrying') state.messageKey = 'bootstrap.init.msg.autoRetry'
     if (previousStatus !== state.status || previousMessage !== state.message) {
       logger.info(`[${stepKey}] ${state.message || state.status}`)
     }
@@ -345,7 +346,7 @@ export function useInitializationFlow() {
     if (!steps.some(step => step.key === progress.stage)) return
 
     const stepKey = progress.stage as InitializationStepKey
-    if (stepKey === 'backend' || RUNTIME_TAKEOVER_STEPS.has(stepKey)) return
+    if (RUNTIME_TAKEOVER_STEPS.has(stepKey)) return
 
     currentStepIndex.value = steps.findIndex(step => step.key === stepKey)
     handleProgress(stepKey, progress)

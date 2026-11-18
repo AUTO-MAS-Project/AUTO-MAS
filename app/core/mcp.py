@@ -61,7 +61,6 @@ MCP_INCLUDED_OPERATIONS = (
     "get_maafw_embedded_status_api_scripts_maafw_embedded_status_post",
     "reimport_maafw_embedded_api_scripts_maafw_embedded_reimport_post",
     "get_maaend_options_api_scripts_maaend_options_post",
-    "get_stage_combox_api_info_combox_stage_post",
     "get_plan_combox_api_info_combox_plan_post",
     "get_emulator_combox_api_info_combox_emulator_post",
     "get_emulator_devices_combox_api_info_combox_emulator_devices_post",
@@ -86,10 +85,6 @@ MCP_INCLUDED_OPERATIONS = (
     # 只读历史记录与编号详情，用于核对已结束的运行。
     "search_history_api_history_search_post",
     "get_history_detail_api_history_detail_post",
-    # MAA 基建选项
-    "get_user_combox_infrastructure_api_scripts_user_combox_infrastructure_post",
-    "get_infrast_plan_select_api_scripts_user_infrastructure_plan_select_get_post",
-    "set_infrast_plan_select_api_scripts_user_infrastructure_plan_select_post",
     # MFW / M9A / MSS 项目与外壳配置
     "preview_maafw_interface_api_scripts_maafw_preview_post",
     "list_maafw_shell_instances_api_scripts_maafw_shell_instances_post",
@@ -144,48 +139,90 @@ MCP_INCLUDED_OPERATIONS = (
 )
 
 
-def _patch_fastapi_mcp_ref_recursion(max_depth: int = 96) -> None:
-    """给 fastapi_mcp 的 $ref 解析加递归深度上限。
+def included_operations(app: FastAPI) -> tuple[str, ...]:
+    """合并宿主白名单与当前挂载插件明确声明的工具，不自动暴露其他插件 API。"""
+    return (
+        *MCP_INCLUDED_OPERATIONS,
+        *(
+            route.operation_id or route.unique_id
+            for route in app.routes
+            if isinstance(route, APIRoute)
+            and (route.openapi_extra or {}).get("x-auto-mas-mcp") is True
+        ),
+    )
 
-    库实现（openapi.utils.resolve_schema_references）在模型互相
-    $ref 引用时会无限展开（A→B→A…），递归 ~1000 层即 RecursionError，
-    导致 MCP 挂载失败。
-    这里以相同逻辑但带深度上限的实现替换；超限的 $ref 原样保留，
-    仅影响 MCP 工具 schema 的展示完整度，不再炸初始化。
-    需同时替换 utils 与 convert 两处按名绑定的引用。
+
+def _patch_fastapi_mcp_schema_references() -> None:
+    """展开非递归引用，递归处保留 $ref，随后迁入工具自己的 $defs。
+
+    fastapi-mcp 0.4.0 会无限展开递归模型；按深度截断仍可能超过
+    Pydantic 的序列化上限。按当前引用链停止展开，不限制参数本身的层数。
+    需同时替换 utils 与 convert 两处按名绑定的引用；上游支持递归后可移除。
     """
     import fastapi_mcp.openapi.convert as _fm_convert
     from fastapi_mcp.openapi import utils as _fm_utils
 
-    def resolve_with_depth_limit(schema_part, reference_schema, _depth=0):
+    def resolve_references(
+        schema_part: dict[str, Any],
+        reference_schema: dict[str, Any],
+        _refs: frozenset[str] = frozenset(),
+    ) -> dict[str, Any]:
         schema_part = schema_part.copy()
-        if "$ref" in schema_part and _depth < max_depth:
-            ref_path = schema_part["$ref"]
-            # 标准 OpenAPI 引用格式："#/components/schemas/ModelName"
-            if ref_path.startswith("#/components/schemas/"):
-                model_name = ref_path.split("/")[-1]
-                components = reference_schema.get("components") or {}
-                schemas = components.get("schemas") or {}
-                if model_name in schemas:
-                    ref_schema = schemas[model_name].copy()
-                    schema_part.pop("$ref")
-                    schema_part.update(ref_schema)
+        ref = schema_part.get("$ref", "")
+        if ref.startswith("#/components/schemas/") and ref not in _refs:
+            model_name = ref.split("/")[-1]
+            schema_part = {
+                **reference_schema["components"]["schemas"][model_name],
+                **schema_part,
+            }
+            schema_part.pop("$ref")
+            _refs = _refs | {ref}
         for key, value in schema_part.items():
             if isinstance(value, dict):
-                schema_part[key] = resolve_with_depth_limit(
-                    value, reference_schema, _depth + 1
+                schema_part[key] = resolve_references(
+                    schema_part=value, reference_schema=reference_schema, _refs=_refs
                 )
             elif isinstance(value, list):
                 schema_part[key] = [
-                    resolve_with_depth_limit(item, reference_schema, _depth + 1)
+                    resolve_references(
+                        schema_part=item, reference_schema=reference_schema, _refs=_refs
+                    )
                     if isinstance(item, dict)
                     else item
                     for item in value
                 ]
         return schema_part
 
-    _fm_utils.resolve_schema_references = resolve_with_depth_limit
-    _fm_convert.resolve_schema_references = resolve_with_depth_limit
+    _fm_utils.resolve_schema_references = resolve_references
+    _fm_convert.resolve_schema_references = resolve_references
+
+
+def _localize_tool_schema(
+    schema: dict[str, Any], components: dict[str, Any]
+) -> dict[str, Any]:
+    """把剩余引用及其传递依赖迁入工具内，避免依赖原 OpenAPI 文档。"""
+    definitions: dict[str, Any] = {}
+
+    def rewrite(value: Any) -> Any:
+        if isinstance(value, list):
+            return [rewrite(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        result = {key: rewrite(item) for key, item in value.items()}
+        ref = result.get("$ref", "")
+        if ref.startswith("#/components/schemas/"):
+            model_name = ref.split("/")[-1]
+            result["$ref"] = f"#/$defs/{model_name}"
+            if model_name not in definitions:
+                # 先登记，互相引用的模型也只复制一次。
+                definitions[model_name] = {}
+                definitions[model_name] = rewrite(components[model_name])
+        return result
+
+    result = rewrite(schema)
+    if definitions:
+        result["$defs"] = definitions
+    return result
 
 
 def _build_mcp(
@@ -217,10 +254,11 @@ def _build_mcp(
         http_client=client,
         # 仅暴露通用配置与试运行能力；新增 HTTP 接口不会自动成为工具。
         # fastapi-mcp 的操作与标签过滤取并集，白名单不能再搭配标签过滤。
-        include_operations=list(MCP_INCLUDED_OPERATIONS),
+        include_operations=list(included_operations(schema_app)),
     )
     # fastapi-mcp 0.4.0 给联合类型补入单一 type，使可空字段拒绝 null。
     # 仅移除转换器新增的约束，保留 OpenAPI 自己声明的 type。
+    components = schema_app.openapi().get("components", {}).get("schemas", {})
     body_routes = set()
     for tool in mcp.tools:
         operation = mcp.operation_map[tool.name]
@@ -241,6 +279,7 @@ def _build_mcp(
                 key in schema for key in ("anyOf", "oneOf", "allOf", "$ref")
             ):
                 properties[name].pop("type", None)
+        tool.inputSchema = _localize_tool_schema(tool.inputSchema, components)
         if request_body.get("required") and body_schema.get("type") == "object":
             body_routes.add((operation["method"], operation["path"]))
 
@@ -264,15 +303,18 @@ def _build_mcp(
     return mcp
 
 
-def _validate_mcp(mcp: FastApiMCP) -> None:
+def _validate_mcp(
+    mcp: FastApiMCP, operations: tuple[str, ...] = MCP_INCLUDED_OPERATIONS
+) -> None:
     # 0.4.0 在工具清单为空时不会清空调用映射，仍需按实际清单收敛。
     tool_names = {tool.name for tool in mcp.tools}
-    missing_operations = set(MCP_INCLUDED_OPERATIONS) - tool_names
+    allowed = set(operations)
+    missing_operations = allowed - tool_names
     if missing_operations:
         raise RuntimeError(
             f"MCP 白名单包含不存在的 operation: {sorted(missing_operations)}"
         )
-    if tool_names - set(MCP_INCLUDED_OPERATIONS):
+    if tool_names - allowed:
         raise RuntimeError("MCP 工具包含未授权的 operation")
     mcp.operation_map = {
         name: operation
@@ -281,7 +323,7 @@ def _validate_mcp(mcp: FastApiMCP) -> None:
     }
     for tool in mcp.tools:
         if tool.name == "get_maaend_options_api_scripts_maaend_options_post":
-            tool.description += (
+            tool.description = (tool.description or "") + (
                 "\n\n先创建 MaaEnd 托管并设置 Info.Path 为已安装的 MaaEnd 目录，"
                 "再用该托管的 scriptId 查询动态选项。"
                 "根据 controllerTypes 判断控制器协议：Adb 需配置模拟器与实例，"
@@ -289,14 +331,14 @@ def _validate_mcp(mcp: FastApiMCP) -> None:
                 "检查返回的 code，查询失败时先处理错误，不要猜测选项。"
             )
         elif tool.name == "get_task_status_api_dispatch_task__task_id__get":
-            tool.description += (
+            tool.description = (tool.description or "") + (
                 "\n\n按 taskId 单点查询一个任务：运行中返回 running，已结束返回"
                 "success/error/cancelled 及结果文本与错误信息，不返回日志。"
                 "code=404 表示该 id 既不在运行中，也不在最近完成的记录里，"
                 "结果未知，不要判成功。"
             )
         elif tool.name == "search_history_api_history_search_post":
-            tool.description += (
+            tool.description = (tool.description or "") + (
                 "\n\n用于查询已结束运行的结果，建议按运行日期使用 DAILY 模式。"
                 "按账号、托管名称、记录编号及带偏移的时间核对 index 中的 status 与 message。"
                 "success 表示成功，error 表示执行失败，skipped/cancelled 分别表示跳过/取消；存储错误不改变执行结论。可用 recordId 获取详情；该接口不按 taskId 精确检索，按 taskId 取终态请用任务状态查询；"
@@ -312,6 +354,7 @@ class McpService:
         enabled = os.getenv("AUTO_MAS_ENABLE_MCP", "1") == "1"
         self._status = McpStatusData(
             enabled=enabled,
+            environmentEnabled=enabled,
             state="pending" if enabled else "skipped",
             instanceId=uuid4().hex,
             runId=uuid4().hex,
@@ -333,6 +376,12 @@ class McpService:
         self._instance: FastApiMCP | None = None
         self._client: httpx.AsyncClient | None = None
         self._routes: list[Any] = []
+
+    def configure(self, *, enabled: bool) -> None:
+        """必要配置就绪后固定本次启动策略，不触发加载。"""
+        self._status.enabled = enabled and self._status.environmentEnabled
+        self._status.state = "pending" if self._status.enabled else "skipped"
+        self._status.revision += 1
 
     def status(self) -> McpStatusData:
         snapshot = self._status.model_copy()
@@ -439,6 +488,9 @@ class McpService:
             # 唯一加载流程串行导入，禁用时不会到达这里。
             package = await self._in_thread(importlib.import_module, "fastapi_mcp")
             self._check_open()
+            from app.services.common import telemetry
+
+            telemetry.enable_mcp_integration()
             await self._stage("building")
             import httpx
 
@@ -454,7 +506,7 @@ class McpService:
                     for route in app.routes
                     if isinstance(route, APIRoute)
                     and (route.operation_id or route.unique_id)
-                    in MCP_INCLUDED_OPERATIONS
+                    in included_operations(app)
                 ],
             )
             schema_app.openapi_version = app.openapi_version
@@ -463,13 +515,15 @@ class McpService:
                 base_url="http://apiserver",
                 timeout=10.0,
             )
-            _patch_fastapi_mcp_ref_recursion()
+            _patch_fastapi_mcp_schema_references()
             self._instance = await self._in_thread(
                 _build_mcp, package.FastApiMCP, schema_app, self._client
             )
             self._check_open()
             await self._stage("validating")
-            await self._in_thread(_validate_mcp, self._instance)
+            await self._in_thread(
+                _validate_mcp, self._instance, included_operations(schema_app)
+            )
             self._check_open()
             await self._stage("mounting")
             # mount_http 是同步操作；记录本次新增路由，即使部分挂载失败也能精确撤回。
@@ -505,12 +559,15 @@ class McpService:
             self._finish("cancelled")
         except Exception:
             logger.exception(f"MCP 加载失败: {self._status.stage}")
-            self._status.error = {
-                "importing": "import_failed",
-                "building": "build_failed",
-                "validating": "validation_failed",
-                "mounting": "mount_failed",
-            }[self._status.stage]
+            match self._status.stage:
+                case "importing":
+                    self._status.error = "import_failed"
+                case "building":
+                    self._status.error = "build_failed"
+                case "validating":
+                    self._status.error = "validation_failed"
+                case "mounting":
+                    self._status.error = "mount_failed"
             self._finish("cancelled" if self._closing else "failed")
         finally:
             if self._status.state != "ready":

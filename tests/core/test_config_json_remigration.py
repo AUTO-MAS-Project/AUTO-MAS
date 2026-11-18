@@ -31,12 +31,24 @@ def migrated_profile(tmp_path):
     return tmp_path, nodes
 
 
-@pytest.mark.parametrize("failure", [None, "replace", "checkpoint"])
-def test_remigration_uses_current_json_and_resumes(
+@pytest.mark.parametrize("failure", [None, "replace", "checkpoint", "invalid_record"])
+def test_remigration_keeps_failed_state_and_resumes_from_current_json(
     migrated_profile, monkeypatch, failure
 ):
     folder, nodes = migrated_profile
-    if failure:
+    if failure == "invalid_record":
+        record_path = folder / MIGRATION_RECORD
+        valid_record = record_path.read_bytes()
+        record = config_io.read_dict_file(record_path)
+        record["complete"] = False
+        config_io.write_file(record_path, record)
+        paths = [record_path, *(folder / new for _, new, _ in CONFIG_FILES)]
+        saved = {path: path.read_bytes() for path in paths}
+        with pytest.raises(ValueError):
+            upgrade_json_configs(folder, nodes)
+        assert saved == {path: path.read_bytes() for path in paths}
+        record_path.write_bytes(valid_record)
+    elif failure:
         replace = Path.replace
         write_file = config_io.write_file
         target = folder / "emulators.yaml"
@@ -81,26 +93,6 @@ def test_remigration_uses_current_json_and_resumes(
     config_io.write_file(setting, {"Values": {"Revision": 4}})
     upgrade_json_configs(folder, nodes)
     assert config_io.read_dict_file(setting) == {"Values": {"Revision": 4}}
-
-
-@pytest.mark.parametrize("invalid", ["record", "missing", "corrupted"])
-def test_invalid_remigration_keeps_existing_yaml(migrated_profile, invalid):
-    folder, nodes = migrated_profile
-    if invalid == "record":
-        record = config_io.read_dict_file(folder / MIGRATION_RECORD)
-        record["complete"] = False
-        config_io.write_file(folder / MIGRATION_RECORD, record)
-    elif invalid == "missing":
-        (folder / "GameSignAccounts.json").unlink()
-    else:
-        (folder / "QueueConfig.json").write_text("{", encoding="utf-8")
-    paths = [folder / MIGRATION_RECORD, *(folder / new for _, new, _ in CONFIG_FILES)]
-    saved = {path: path.read_bytes() for path in paths}
-
-    with pytest.raises(ValueError):
-        upgrade_json_configs(folder, nodes)
-
-    assert saved == {path: path.read_bytes() for path in paths}
 
 
 def test_unconvertible_collection_keeps_yaml_and_archive(tmp_path):

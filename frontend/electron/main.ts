@@ -1,3 +1,4 @@
+import { finishAssetPackageJobs } from './services/assetPackageProcess'
 import { detachPromptVirtualDisplay } from './services/virtualDisplayPromptActions'
 import { observeDiagnosticExport, observeDataBackup } from './services/diagnosticAnalytics'
 import { beginMainFeature } from './services/featureAnalytics'
@@ -34,6 +35,7 @@ import * as path from 'path'
 import { getAppRoot } from './services/environmentService'
 import {
   registerInitializationHandlers,
+  getBackendService,
   startDesktopStartup,
   stopDesktopStartup,
   checkCriticalFilesViaRuntime,
@@ -41,6 +43,8 @@ import {
   resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
+import { registerAppUpdateHandlers, stopAppUpdateForShutdown } from './ipc/appUpdateHandlers'
+import { recoverUpdateMaterials } from './services/updateStaging'
 import { registerFluxdownInstallHandlers } from './ipc/fluxdownInstallHandlers'
 import {
   isAnalyticsSender,
@@ -66,12 +70,14 @@ import { DEFAULT_MASCOT_MENU } from './services/mascotMenuDefinition'
 import { getAppearance } from './services/appearanceService'
 import { getMascot } from './services/mascotPackageService'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
+import { registerDesktopSession } from './ipc/desktopSessionHandlers'
 import {
   canElectronExitImmediately,
   canRequestRendererClose,
   markForceQuitFailed,
 } from './quitCoordinationState'
 import { attachRendererRecovery } from './services/rendererRecoveryService'
+import { promptLowPageZoom } from './services/pageZoomPrompt'
 import { patchConfigFile } from './utils/configFile'
 
 import { getLogger, initializeLogger } from './services/logger'
@@ -84,13 +90,14 @@ import {
   createM9AIssueReport,
   createMSSIssueReport,
   createMaaFWIssueReport,
-  listMaaFWIssueReportScripts,
+  listMaaFWIssueReportProjects,
   maafwIssueReportFileNamePrefix,
 } from './services/maafwIssueReportService'
 import { createOkwwIssueReport } from './services/okwwIssueReportService'
 import { createOkNteIssueReport } from './services/okNteIssueReportService'
 import { createZzzOdIssueReport } from './services/zzzOdIssueReportService'
 import { createWhimboxIssueReport } from './services/whimboxIssueReportService'
+import { createHSRIssueReport } from './services/hsrIssueReportService'
 import {
   configureMainSentry,
   recordMainCount,
@@ -202,12 +209,10 @@ async function stopAllTasksByShortcut(source: 'shortcut' | 'tray' = 'shortcut'):
   logger.info(`触发全局快捷键 ${STOP_ALL_TASKS_SHORTCUT}，开始停止所有任务`)
 
   try {
-    const apiUrl = `${getLocalApiEndpoint()}/api/dispatch/stop`
-    const response = await fetch(apiUrl, {
+    const endpoint = getLocalApiEndpoint()
+    const response = await fetch(`${endpoint}/api/dispatch/stop`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ taskId: 'ALL' }),
     })
 
@@ -310,7 +315,6 @@ interface AppConfig extends DesktopMascotHostPreferences {
   lastCloseAction: 'quit' | 'tray'
   UI: {
     IfShowTray: boolean
-    IfToTray: boolean
     IfHideCloseButton: boolean
     location: string
     maximized: boolean
@@ -337,7 +341,6 @@ const defaultConfig: AppConfig = {
   lastCloseAction: 'quit',
   UI: {
     IfShowTray: false,
-    IfToTray: false,
     IfHideCloseButton: false,
     location: '100,100',
     maximized: false,
@@ -465,7 +468,7 @@ function createTray(): boolean {
   tray.on('click', () => {
     if (!mainWindow) return
     if (mainWindow.isVisible()) {
-      hideMainWindow()
+      hideMainWindowToTray()
     } else {
       showMainWindow()
     }
@@ -485,16 +488,6 @@ function showMainWindow(): void {
   mainWindow.show()
   mainWindow.focus()
   updateTrayVisibility(loadConfig())
-}
-
-// 隐藏主窗口
-function hideMainWindow(): void {
-  if (!mainWindow) return
-  const currentConfig = loadConfig()
-  if (currentConfig.UI.IfToTray) {
-    mainWindow.setSkipTaskbar(true) // 隐藏任务栏图标
-  }
-  mainWindow.hide()
 }
 
 function hideMainWindowToTray(): boolean {
@@ -554,7 +547,7 @@ function handleTrayAction(item: TrayItem): void {
       showMainWindow()
       break
     case 'hide':
-      hideMainWindow()
+      hideMainWindowToTray()
       break
     case 'stopAll':
       void stopAllTasksByShortcut('tray')
@@ -622,7 +615,10 @@ function cancelQuitRequest(token?: number): void {
   showMainWindow()
 }
 
-function finishCoordinatedQuit(): void {
+async function finishCoordinatedQuit(): Promise<void> {
+  if (coordinatedQuit) return
+  await stopAppUpdateForShutdown(true)
+  await finishAssetPackageJobs()
   if (coordinatedQuit) return
   closeTelemetry?.finish({
     close_kind: forceQuitInProgress ? 'force' : closeTelemetryKind,
@@ -650,7 +646,7 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
   try {
     await forceKillRelatedProcesses()
     // Runtime 终态确认后才允许 Electron 退出。
-    finishCoordinatedQuit()
+    await finishCoordinatedQuit()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     closeTelemetry?.finish({ close_kind: 'force', outcome: 'failure' })
@@ -687,6 +683,12 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
 function requestRendererClose(reason: string, confirmRunningTasks = false): void {
   if (!canRequestRendererClose({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight }))
     return
+  if (desktopSession?.active) {
+    void desktopSession.closeForAppQuit().then(confirmed => {
+      if (confirmed) requestRendererClose(reason, confirmRunningTasks)
+    })
+    return
+  }
   observeScheduledWakeupQuit({ automatic: false })
   closeTelemetry ??= beginMainFeature('app_close_finished')
   const win = mainWindow
@@ -708,30 +710,12 @@ function requestRendererClose(reason: string, confirmRunningTasks = false): void
 
 // 更新托盘状态
 function updateTrayVisibility(config: AppConfig) {
-  // 根据需求逻辑判断是否应该显示托盘
-  let shouldShowTray = false
-
-  if (config.UI.IfShowTray && config.UI.IfToTray) {
-    // 勾选常驻显示托盘和最小化到托盘，就一直展示托盘
-    shouldShowTray = true
-  } else if (config.UI.IfShowTray && !config.UI.IfToTray) {
-    // 勾选常驻显示托盘但没有最小化到托盘，就一直展示托盘
-    shouldShowTray = true
-  } else if (!config.UI.IfShowTray && config.UI.IfToTray) {
-    // 没有常驻显示托盘但勾选最小化到托盘，有窗口时就只有窗口，最小化后任务栏消失，只有托盘
-    shouldShowTray = !mainWindow || !mainWindow.isVisible()
-  } else {
-    // 没有常驻显示托盘也没有最小化到托盘，托盘一直不展示
-    shouldShowTray = false
-  }
-
-  if (forceTrayVisibleUntilWindowShown) shouldShowTray = true
-
-  // 特殊情况：如果没有窗口显示且没有托盘，强制显示托盘避免程序成为幽灵
-  if (!shouldShowTray && (!mainWindow || !mainWindow.isVisible()) && !tray) {
-    shouldShowTray = true
-    logger.warn('防幽灵机制：强制显示托盘图标')
-  }
+  // 普通最小化保留任务栏入口；隐藏到托盘后必须保留托盘恢复入口。
+  const shouldShowTray =
+    config.UI.IfShowTray ||
+    forceTrayVisibleUntilWindowShown ||
+    !mainWindow ||
+    (!mainWindow.isVisible() && !mainWindow.isMinimized())
 
   if (shouldShowTray && !tray) {
     if (createTray()) logger.info('托盘图标已创建')
@@ -742,6 +726,8 @@ function updateTrayVisibility(config: AppConfig) {
 }
 
 let mainWindow: Electron.BrowserWindow | null = null
+let desktopSession: ReturnType<typeof registerDesktopSession> | undefined
+const mainWindowIcon = path.join(__dirname, '../public/AUTO-MAS.ico')
 let logWindow: Electron.BrowserWindow | null = null
 let virtualDisplayPromptWindow: Electron.BrowserWindow | null = null
 const saveMascotPreferences = (patch: Partial<DesktopMascotHostPreferences>): void => {
@@ -912,7 +898,7 @@ function createWindow() {
     useContentSize: true,
     frame: false,
     titleBarStyle: 'hidden',
-    icon: path.join(__dirname, '../public/AUTO-MAS.ico'),
+    icon: mainWindowIcon,
     autoHideMenuBar: true,
     show: false, // 改为 false，等待页面加载完成后再显示
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#000000' : '#ffffff', // 根据系统主题设置背景色
@@ -941,9 +927,9 @@ function createWindow() {
 
   // 崩溃时窗口若在托盘里，恢复后保持隐藏，不要自己弹出来打断用户。
   let keepHiddenAfterRecovery = false
-  let hasShownMainWindow = false
-  win.once('show', () => {
-    hasShownMainWindow = true
+  let hasLoadedMainWindow = false
+  win.webContents.once('did-finish-load', () => {
+    hasLoadedMainWindow = true
   })
 
   // 主框架重载或导航后旧确认窗已销毁，撤销等待；同文档路由切换不触发此事件。
@@ -961,8 +947,8 @@ function createWindow() {
       else if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
     },
     onReload: () => {
-      // 崩溃前窗口就在托盘里，重载后继续保持隐藏。
-      keepHiddenAfterRecovery = hasShownMainWindow && !win.isVisible()
+      // 首次加载失败仍按启动偏好恢复；加载后进入托盘的窗口继续保持隐藏。
+      keepHiddenAfterRecovery = hasLoadedMainWindow && !win.isVisible()
     },
   })
 
@@ -1014,13 +1000,18 @@ function createWindow() {
       return
     }
 
-    // 仅开机自启动且开启"启动后直接最小化"时才隐藏窗口，手动双击启动始终显示
-    if (!(isAutoStart && config.Start.IfMinimizeDirectly)) {
+    // 沿用旧启动字段保存用户偏好，静默自启始终直接进入托盘。
+    if (
+      isAutoStart &&
+      isInitialStartup &&
+      config.Start.IfMinimizeDirectly &&
+      hideMainWindowToTray()
+    ) {
+      notifyWindowActivity('background')
+      logger.info('静默启动，窗口已进入托盘')
+    } else {
       win.show()
       logger.info('页面加载完成，窗口已显示')
-    } else {
-      notifyWindowActivity('background')
-      logger.info('页面加载完成，窗口保持后台状态')
     }
   })
 
@@ -1093,19 +1084,22 @@ function createWindow() {
   screen.on('display-metrics-changed', handleDisplayConfigurationChanged)
   screen.on('display-removed', handleDisplayConfigurationChanged)
 
-  // 最大化配置
-  if (config.UI.maximized) {
-    win.maximize()
-  }
-
   win.setMenuBarVisibility(false)
   assertDevelopmentRuntime()
   const pageLoadStartedAt = performance.now()
   win.webContents.once('dom-ready', () => recordDesktopStartup('页面 DOM 就绪', pageLoadStartedAt))
   win.once('ready-to-show', () => recordDesktopStartup('窗口可绘制', pageLoadStartedAt))
-  win.webContents.once('did-finish-load', () =>
+  win.webContents.once('did-finish-load', () => {
     recordDesktopStartup('页面加载完成', pageLoadStartedAt)
-  )
+    const checkPageZoom = () => {
+      void promptLowPageZoom(win, config.language).catch(error =>
+        logger.warn('检查或恢复界面缩放失败', error)
+      )
+    }
+    // 静默启动时等到用户打开主窗口，再显示缩放提示。
+    if (win.isVisible()) checkPageZoom()
+    else win.once('show', checkPageZoom)
+  })
   const devServer = getDevelopmentServerUrl()
   if (devServer) {
     logger.info(`加载开发服务器: ${devServer}`)
@@ -1174,13 +1168,6 @@ function createWindow() {
 
   win.on('minimize', () => {
     notifyWindowActivity('background')
-    const currentConfig = loadConfig()
-    if (currentConfig.UI.IfToTray) {
-      win.hide()
-      win.setSkipTaskbar(true)
-      updateTrayVisibility(currentConfig)
-      logger.info('窗口已最小化到托盘，任务栏图标已隐藏')
-    }
   })
 
   win.on('show', () => {
@@ -1196,12 +1183,7 @@ function createWindow() {
 
   win.on('hide', () => {
     notifyWindowActivity('background')
-    const currentConfig = loadConfig()
-    if (currentConfig.UI.IfToTray) {
-      win.setSkipTaskbar(true)
-      logger.info('窗口已隐藏，任务栏图标已隐藏')
-    }
-    updateTrayVisibility(currentConfig)
+    updateTrayVisibility(loadConfig())
   })
 
   // 窗口尺寸/位置变化时防抖保存
@@ -1260,19 +1242,6 @@ function createWindow() {
 
     // 根据配置初始化托盘
     updateTrayVisibility(currentConfig)
-
-    // 处理启动后直接最小化（仅开机自启动时执行）
-    if (isAutoStart && isInitialStartup && currentConfig.Start.IfMinimizeDirectly) {
-      if (currentConfig.UI.IfToTray) {
-        win.hide()
-        win.setSkipTaskbar(true)
-        logger.info('应用初次启动后直接最小化到托盘')
-      } else {
-        win.minimize()
-        logger.info('应用初次启动后直接最小化')
-      }
-      updateTrayVisibility(currentConfig)
-    }
 
     // 标记初次启动已完成
     isInitialStartup = false
@@ -1765,12 +1734,18 @@ registerIssueReportExporter(
   'MSS-logs',
   createMSSIssueReport
 )
+registerIssueReportExporter(
+  'hsr:exportIssueReport',
+  '导出 HSR 问题包',
+  'HSR-logs',
+  createHSRIssueReport
+)
 
-ipcMain.handle('maafw:listIssueReportScripts', (_event, configTypes?: unknown) => {
+ipcMain.handle('maafw:listIssueReportProjects', (_event, configTypes?: unknown) => {
   const types = Array.isArray(configTypes)
     ? configTypes.filter((type): type is string => typeof type === 'string')
     : []
-  return listMaaFWIssueReportScripts(getAppRoot(), types)
+  return listMaaFWIssueReportProjects(getAppRoot(), types)
 })
 
 ipcMain.handle('data:backup', async () => {
@@ -1878,9 +1853,6 @@ ipcMain.handle('open-dev-tools', () => {
 // 窗口控制
 ipcMain.handle('window-minimize', () => {
   if (!mainWindow || mainWindow.isDestroyed()) return false
-
-  const config = loadConfig()
-  if (config.UI.IfToTray) return hideMainWindowToTray()
 
   mainWindow.minimize()
   return true
@@ -1990,9 +1962,7 @@ ipcMain.on('app-backend-close-observed', (event, request: unknown) => {
   closeTelemetryKind = 'backend'
 })
 
-ipcMain.handle('app-quit', () => {
-  finishCoordinatedQuit()
-})
+ipcMain.handle('app-quit', () => finishCoordinatedQuit())
 
 // renderer 已响应关闭请求，但用户尚未批准退出；保留请求锁，暂停强制清理。
 ipcMain.handle('app-wait-for-quit-confirmation', () => {
@@ -2008,9 +1978,10 @@ ipcMain.handle('app-wait-for-quit-confirmation', () => {
   return true
 })
 
-ipcMain.handle('app-prepare-quit', () => {
+ipcMain.handle('app-prepare-quit', async () => {
   if (coordinatedQuit || forceQuitInProgress) return null
   if (activeQuitPreparation !== null) return activeQuitPreparation
+  if (desktopSession?.active && !(await desktopSession.closeForAppQuit())) return null
   observeScheduledWakeupQuit({ automatic: false })
   closeTelemetry ??= beginMainFeature('app_close_finished')
   clearQuitFallback()
@@ -2424,9 +2395,6 @@ ipcMain.handle('set-initialized-version', async (_event, version: string) => {
 ipcMain.handle('get-runtime-launch-mode', () => resolveRuntimeLaunchModeDetail())
 
 // 应用生命周期
-// 在沙箱环境下运行会导致无法启动子进程，强制禁用沙箱
-app.commandLine.appendSwitch('no-sandbox')
-
 app.on('second-instance', (_event, argv) => {
   if (keepAwakeForScheduledWakeup(argv)) return
   if (mainWindow) {
@@ -2462,10 +2430,22 @@ app.on('before-quit', event => {
   requestRendererClose('Electron before-quit')
 })
 
+if (process.platform === 'win32') {
+  // Chromium 的 DirectComposition 会覆盖嵌在同一 HWND 内的 RDP ActiveX 画面。
+  app.commandLine.appendSwitch('disable-direct-composition')
+}
+
 app.whenReady().then(async () => {
+  // 在 Electron 就绪后启动桌面运行能力、注册各业务 IPC 与更新服务，并创建应用窗口。
+  desktopSession = registerDesktopSession(
+    () => mainWindow,
+    mainWindowIcon,
+    () => loadConfig().language
+  )
   keepAwakeForScheduledWakeup(process.argv)
   recordDesktopStartup('Electron 就绪')
   const startupConfig = loadConfig()
+  await recoverUpdateMaterials(getAppRoot())
   void startDesktopStartup({
     version: app.getVersion(),
     initializedVersion:
@@ -2479,6 +2459,16 @@ app.whenReady().then(async () => {
   const handlersStartedAt = performance.now()
   registerAnalyticsHandlers(() => mainWindow)
   registerFluxdownInstallHandlers(() => mainWindow, getLocalApiEndpoint)
+  registerAppUpdateHandlers({
+    root: getAppRoot(),
+    window: () => mainWindow,
+    backendUrl: getLocalApiEndpoint,
+    backend: getBackendService,
+    ownsBackend: () =>
+      /* 向更新服务报告当前应用是否拥有后端进程，以限制需要停机的更新操作。 */ getBackendOwnership() ===
+      'owned',
+    quit: finishCoordinatedQuit,
+  })
   refreshAnalyticsPreference()
   analyticsService.recordAppStarted({
     launch_kind: isScheduledWakeup ? 'scheduled_wakeup' : isAutoStart ? 'auto_start' : 'manual',

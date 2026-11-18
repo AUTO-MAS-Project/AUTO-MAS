@@ -16,13 +16,31 @@ withDefaults(
     description?: string
     /** 控件另起一行、左对齐（选项卡片、长输入等） */
     stacked?: boolean
+    /** 从属于上一行的子项：缩进 + 细连接线 */
+    child?: boolean
+    /** 依赖项未启用时整行置灰（控件自身仍需 disabled） */
+    disabled?: boolean
   }>(),
-  { label: '', hint: undefined, description: undefined, stacked: false }
+  {
+    label: '',
+    hint: undefined,
+    description: undefined,
+    stacked: false,
+    child: false,
+    disabled: false,
+  }
 )
 </script>
 
 <template>
-  <div class="ui-row" :class="{ 'ui-row--stacked': stacked || (!label && !$slots.label) }">
+  <div
+    class="ui-row"
+    :class="{
+      'ui-row--stacked': stacked || (!label && !$slots.label),
+      'ui-row--child': child,
+      'ui-row--disabled': disabled,
+    }"
+  >
     <div v-if="label || $slots.label" class="ui-row-label">
       <slot name="label">
         <FieldLabelWithHint :text="label" :hint="hint" variant="form" />
@@ -82,6 +100,36 @@ withDefaults(
 
 .ui-row--stacked .ui-row-control {
   justify-content: flex-start;
+}
+
+/* 从属行：缩进 22px 并画一段细连接线，让「从属于上一行」读得出来而不是纯缩进。 */
+.ui-row--child .ui-row-label {
+  position: relative;
+  padding-left: 22px;
+}
+
+.ui-row--child .ui-row-label::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  left: 0;
+  width: 9px;
+  height: 1px;
+  background: var(--ant-color-border);
+}
+
+.ui-row--child .ui-row-label :deep(.field-label-form) {
+  color: var(--ant-color-text-secondary);
+  font-weight: 500;
+}
+
+.ui-row--disabled .ui-row-label :deep(.field-label-form),
+.ui-row--disabled .ui-row-description {
+  color: var(--ant-color-text-quaternary);
+}
+
+.ui-row--disabled .ui-row-label::before {
+  opacity: 0.4;
 }
 
 .settings-card-grid .ui-row:not(.ui-row--stacked) {

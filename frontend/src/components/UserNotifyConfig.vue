@@ -5,18 +5,53 @@
     </div>
 
     <div class="notify-channel-list">
+      <div v-if="showInventory" class="notify-channel-item">
+        <div class="notify-channel-header">
+          <span class="notify-channel-name">{{ t('core.edit.maaEndImsNotify') }}</span>
+          <a-switch
+            v-model:checked="notify.IfSendInventory"
+            :disabled="loading"
+            @change="emitSave('Notify.IfSendInventory', notify.IfSendInventory)"
+          />
+        </div>
+        <div class="notify-channel-config">{{ t('core.edit.maaEndImsNotifyHint') }}</div>
+      </div>
+
+      <div v-if="showInventory" class="notify-channel-item">
+        <div class="notify-channel-header">
+          <span class="notify-channel-name">{{ t('core.edit.maaEndPullCountNotify') }}</span>
+          <a-switch
+            v-model:checked="notify.IfSendStatistic"
+            :disabled="loading"
+            @change="emitSave('Notify.IfSendStatistic', notify.IfSendStatistic)"
+          />
+        </div>
+        <div class="notify-channel-config">{{ t('core.edit.maaEndPullCountNotifyHint') }}</div>
+      </div>
+
       <div class="notify-channel-item">
         <div class="notify-channel-header">
-          <span class="notify-channel-name">{{ t('core.edit.enableNotifications') }}</span>
+          <span class="notify-channel-name">
+            {{
+              t(
+                showInventory
+                  ? 'core.edit.maaEndStandaloneNotifyEnable'
+                  : 'core.edit.enableNotifications'
+              )
+            }}
+          </span>
           <a-switch
             v-model:checked="notify.Enabled"
             :disabled="loading"
             @change="emitSave('Notify.Enabled', notify.Enabled)"
           />
         </div>
+        <div v-if="showInventory" class="notify-channel-config">
+          {{ t('core.edit.maaEndStandaloneNotifyHint') }}
+        </div>
       </div>
 
-      <div class="notify-channel-item">
+      <div v-if="!showInventory" class="notify-channel-item">
         <div class="notify-channel-header">
           <span class="notify-channel-name">{{ t('core.edit.statistics') }}</span>
           <a-switch
@@ -25,18 +60,6 @@
             @change="emitSave('Notify.IfSendStatistic', notify.IfSendStatistic)"
           />
         </div>
-      </div>
-
-      <div v-if="showInventory" class="notify-channel-item">
-        <div class="notify-channel-header">
-          <span>{{ t('core.edit.maaEndImsNotify') }}</span>
-          <a-switch
-            v-model:checked="notify.IfSendInventory"
-            :disabled="loading || !notify.Enabled"
-            @change="emitSave('Notify.IfSendInventory', notify.IfSendInventory)"
-          />
-        </div>
-        <div class="notify-channel-config">{{ t('core.edit.maaEndImsNotifyHint') }}</div>
       </div>
 
       <div v-if="showSixStar" class="notify-channel-item">
@@ -81,7 +104,7 @@
         </div>
       </div>
 
-      <div class="notify-channel-item">
+      <div v-if="!showInventory || notify.Enabled" class="notify-channel-item">
         <div class="notify-channel-header">
           <span class="notify-channel-name">{{ t('core.edit.emailNotification') }}</span>
           <a-switch
@@ -106,7 +129,7 @@
         </div>
       </div>
 
-      <div class="notify-channel-item">
+      <div v-if="!showInventory || notify.Enabled" class="notify-channel-item">
         <div class="notify-channel-header">
           <span class="notify-channel-name">{{ t('core.edit.serverchan') }}</span>
           <a-switch
@@ -131,7 +154,7 @@
     </div>
 
     <WebhookManager
-      v-if="scriptId && userId"
+      v-if="scriptId && userId && (!showInventory || notify.Enabled)"
       class="webhook-manager"
       mode="user"
       :script-id="scriptId"

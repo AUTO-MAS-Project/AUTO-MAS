@@ -48,13 +48,13 @@ from app.utils import (
     compile_log_signs,
     flush_patterns,
     get_logger,
-    is_process_running,
     load_patterns,
     process,
     strptime,
 )
 from app.utils import io as _utils_io
 from app.utils.common.log_box.hooks import make_line_hook
+from app.utils.common.process.manager import has_process_window
 
 from .log_protocol import parse_marker
 
@@ -136,7 +136,6 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         self.check_result = "-"
 
     async def check(self) -> str:
-
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
         if (
             self.task_info.is_queue_task
@@ -360,7 +359,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                 try:
                     if isinstance(self.game_manager, ProcessManager):
                         if self.script_config.Game.Type == "URL":
-                            if self.game_process_name and is_process_running(
+                            if self.game_process_name and await has_process_window(
                                 self.game_process_name
                             ):
                                 logger.info(
@@ -381,7 +380,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                             if self.game_path is None:
                                 raise ValueError("游戏路径未配置，请检查路径设置")
                             game_process_name = self.game_path.name
-                            if game_process_name and is_process_running(
+                            if game_process_name and await has_process_window(
                                 game_process_name
                             ):
                                 logger.info(

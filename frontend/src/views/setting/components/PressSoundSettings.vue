@@ -329,6 +329,7 @@ const handlePressSoundPreview = (phase?: PressSoundPhase) => {
 
 .sound-volume-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   width: 100%;
@@ -336,7 +337,7 @@ const handlePressSoundPreview = (phase?: PressSoundPhase) => {
 }
 
 .sound-volume-slider {
-  flex: 1;
+  flex: 1 1 80px;
   min-width: 64px;
   margin: 0;
 }
