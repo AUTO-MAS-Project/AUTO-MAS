@@ -866,10 +866,11 @@ def start_game_via_launcher(
             self_update_popup = any(
                 text.strip() == "启动器版本更新" for text, _ in popup_items
             )
-            if hwnd == self_update_hwnd:
+            # 点击后，旧窗口可能仍显示被遮罩的按钮。看到下载或校验后，
+            # 允许在同一窗口识别恢复的主界面。
+            if hwnd == self_update_hwnd and self_update_clicked_at is not None:
                 if (
                     self_update_popup
-                    and self_update_clicked_at is not None
                     and now - self_update_clicked_at >= _FIND_BUTTON_TIMEOUT
                 ):
                     raise RuntimeError(
@@ -913,17 +914,18 @@ def start_game_via_launcher(
                 update_launcher_box = next(
                     (box for text, box in popup_items if text.strip() == "更新"), None
                 )
-                if update_launcher_box is not None and self_update_hwnd is None:
+                if update_launcher_box is not None:
                     on_log("检测到启动器版本更新，点击「更新」并等待启动器重开...")
                     _click_box(
                         hwnd, update_launcher_box, after_sleep=0, stop_event=stop_event
                     )
+                    if self_update_hwnd is None:
+                        deadline = now + _UPDATE_TIMEOUT
                     self_update_hwnd = hwnd
                     self_update_clicked_at = now
                     start_clicks = 0
                     last_start_click = None
                     start_click_exhausted_logged = False
-                    deadline = now + _UPDATE_TIMEOUT
                 _pause(2, stop_event)
                 continue
 
@@ -931,7 +933,7 @@ def start_game_via_launcher(
                 self_update_hwnd = None
                 self_update_clicked_at = None
                 deadline = now + _FIND_BUTTON_TIMEOUT
-                on_log("官方启动器已重开，继续检查游戏更新...")
+                on_log("官方启动器已恢复主界面，继续检查游戏更新...")
 
             # 弹窗防护：「提示」类弹窗以遮罩覆盖启动器，此时按钮仍可被 OCR
             # 看到，但点击会落在遮罩上被吞掉：必须先点「确定」/「忽略」关掉

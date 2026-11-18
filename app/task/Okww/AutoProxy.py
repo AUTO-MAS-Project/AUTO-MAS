@@ -115,6 +115,7 @@ _OKWW_ERROR_LOG = re.compile(
     r"[ \t]*(?P<detail>[^\r\n]*)"
 )
 _OKWW_ERROR_PREFIX = "OK-WW："
+_OKWW_GENERIC_ERROR_STATUS = "OK-WW 流程产生错误，请检查游戏状态"
 # 上游明确拒绝当前配置，重复下发相同配置无法恢复。
 _OKWW_4C_CONFIG_ERROR = (
     "选择“传送并刷取4C声骸”时，必须在刷取声骸任务中启用“传送至首领”。"
@@ -150,6 +151,23 @@ _OKWW_UPDATE_METHOD = "AUTO_UPDATE"
 _OKWW_LOG_TIME_START = 1
 _OKWW_LOG_TIME_END = 23
 _OKWW_LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
+
+
+def _okww_error_status(log: str) -> str | None:
+    """从上游错误日志读取可显示的失败原因。"""
+    error = _OKWW_ERROR_LOG.search(log)
+    if error is None:
+        return None
+    detail = error["detail"].strip()
+    if detail.startswith("账号列表中未找到 "):
+        detail = "登录列表中未找到目标账号"
+    elif (
+        error["task"] in ("MultiAccountConfigTask", "MultiAccountDailyTask")
+        and detail != _OKWW_4C_CONFIG_ERROR
+    ):
+        # 原生多账号失败正文可能包含完整登录标识。
+        detail = "原生多账号任务失败，请查看本地脚本日志"
+    return f"{_OKWW_ERROR_PREFIX}{detail}" if detail else _OKWW_GENERIC_ERROR_STATUS
 
 
 def _update_json(path: Path, values: dict[str, object]) -> None:
@@ -1067,21 +1085,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         if _OKWW_GAME_UPDATED_LOG in log:
             log_status = _OKWW_GAME_UPDATED_MSG
             user_item_status = "异常"
-        elif error := _OKWW_ERROR_LOG.search(log):
-            detail = error["detail"].strip()
-            if detail.startswith("账号列表中未找到 "):
-                detail = "登录列表中未找到目标账号"
-            elif (
-                error["task"] in ("MultiAccountConfigTask", "MultiAccountDailyTask")
-                and detail != _OKWW_4C_CONFIG_ERROR
-            ):
-                # 原生多账号失败正文可能包含完整登录标识。
-                detail = "原生多账号任务失败，请查看本地脚本日志"
-            log_status = (
-                f"{_OKWW_ERROR_PREFIX}{detail}"
-                if detail
-                else "OK-WW 流程产生错误，请检查游戏状态"
-            )
+        elif error_status := _okww_error_status(log):
+            log_status = error_status
             user_item_status = "异常"
         else:
             # 多账号任务的单次日常完成不代表整批完成，只认框架退出语。
