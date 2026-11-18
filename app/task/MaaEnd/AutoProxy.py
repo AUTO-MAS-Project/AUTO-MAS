@@ -2948,21 +2948,37 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                         ):
                             slot = task_index[task_name]
                             if slot["index"] < len(slot["list"]):
-                                self.task_dict[task_name][
-                                    slot["list"][slot["index"]]
-                                ] = False
-                                completed_task_names.add(
-                                    self.task_name_map.get(task_name, task_name)
-                                )
+                                target_id = slot["list"][slot["index"]]
                                 slot["index"] += 1
                             else:
-                                # 同名任务失败后重试会多出终态行，配置里已经没有对应实例可标，
-                                # 跳过这一条即可，不能让整轮结果解析在这里失败
-                                logger.warning(
-                                    f"MaaEnd 日志中的任务「{task_name}」完成次数超过配置实例数，忽略多出的终态"
-                                )
-                        # 「任务失败」不推进索引：它只说明这一次尝试没成，同名任务重试后的
-                        # 「完成」仍然属于同一个配置实例，推进会把完成分支读到列表外
+                                # 终态行比配置里的实例还多，只可能是同名任务失败后重试。
+                                # 回归最后一个还没标的实例上：读到列表外不行，算到下一个
+                                # 实例名下也不行——下一个实例还等着自己那条完成行。
+                                remaining = [
+                                    task_id
+                                    for task_id in slot["list"]
+                                    if self.task_dict[task_name][task_id]
+                                ]
+                                if not remaining:
+                                    logger.warning(
+                                        f"MaaEnd 日志中的任务「{task_name}」完成次数超过配置实例数，忽略多出的终态"
+                                    )
+                                    continue
+                                target_id = remaining[-1]
+                                slot["index"] = len(slot["list"])
+                            self.task_dict[task_name][target_id] = False
+                            completed_task_names.add(
+                                self.task_name_map.get(task_name, task_name)
+                            )
+                        elif (
+                            task_name in task_index
+                            and f"任务失败: {task_name}" in log_line
+                            and task_index[task_name]["index"]
+                            < len(task_index[task_name]["list"])
+                        ):
+                            # 失败也是这个实例的终态：不推进的话，同名两个实例里第一个失败后，
+                            # 第二个的「完成」会落回第一个名下、把它标成成功
+                            task_index[task_name]["index"] += 1
 
                     if self.cur_user_config.Info.IfQuickConfig:
                         await self._mark_daily_once_tasks_completed(

@@ -411,3 +411,33 @@ async def test_same_task_failure_then_retry_completion_is_not_a_parse_failure(
 
     assert proxy.cur_user_log.status != "MaaEnd 任务执行情况解析失败"
     assert all(proxy.run_book.values())
+
+
+@pytest.mark.asyncio
+async def test_same_name_instances_keep_their_own_results(proxy_fixture, monkeypatch):
+    """同名两个配置实例：前一个失败、后一个成功，结果不能记到前一个名下。
+
+    #2050 审查：只看名字和成功次数会把后一个的成功算到前一个失败项上，
+    下一轮就会漏补真正失败的 ID、重跑已经成功的那个。
+    """
+    proxy, attempts = proxy_fixture
+    observed: dict[str, bool] = {}
+
+    async def upstream_result(offsets):
+        proxy.task_dict = {"AutoEssence": {"idA": True, "idB": True}}
+        await proxy.check_log(
+            [
+                "任务开始: AutoEssence\n",
+                "任务失败: AutoEssence\n",
+                "任务开始: AutoEssence\n",
+                "任务完成: AutoEssence\n",
+            ],
+            datetime.now().astimezone(),
+            if_stream_end=True,
+        )
+        observed.update(proxy.task_dict["AutoEssence"])
+
+    monkeypatch.setattr(proxy, "_wait_maaend_stage", upstream_result)
+    await proxy.main_task()
+
+    assert observed == {"idA": True, "idB": False}
