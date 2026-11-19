@@ -165,8 +165,9 @@ async def test_plugin_declaration_loads_its_own_worker_factory_after_reload(
 
     def write_plugin(prefix):
         entry.write_text(
-            "from auto_mas_core.log_flow import FunctionRef, PluginFlowDeclaration, SimpleFlowDeclaration, Source, TextProcessor, TextRecord, WorkerFactorySpec\n"
+            "from auto_mas_core.log_flow import FunctionRef, LineRule, PluginFlowDeclaration, SimpleFlowDeclaration, Source, TextProcessor, TextRecord, WorkerFactorySpec\n"
             "from app.plugin.base import BasePlugin\n"
+            f"def prefix(text, _args): return {prefix!r} + text\n"
             "class Processor:\n"
             "    def process(self, line):\n"
             f"        yield '普通', {prefix!r} + line\n"
@@ -182,16 +183,22 @@ async def test_plugin_declaration_loads_its_own_worker_factory_after_reload(
             "        use_mas_log=False, accept_push=True,\n"
             "        rules=SimpleFlowDeclaration(processor=WorkerFactorySpec(factory=FunctionRef(name='declared:processor', module=__name__, attribute='processor'))),\n"
             "        source=WorkerFactorySpec(factory=FunctionRef(name='declared:source', module=__name__, attribute='source')),\n"
+            "    ), 'expression': PluginFlowDeclaration(\n"
+            "        use_mas_log=False, accept_push=True,\n"
+            "        rules=SimpleFlowDeclaration(\n"
+            "            rules=(LineRule(match='^event$', extract='$().probe:prefix()', node_type='普通'),),\n"
+            "            functions=(FunctionRef(name='probe:prefix', module=__name__, attribute='prefix'),),\n"
+            "        ),\n"
             "    )}\n"
             "PLUGIN = Adapter\n",
             encoding="utf-8",
         )
 
-    async def collect():
+    async def collect(name):
         reports = []
         async with manager.open_log_flow(
             record._plugin,
-            "declared",
+            name,
             run=TaskUserItem(user_id="same"),
             mode="逐条",
             receive_report=reports.append,
@@ -203,10 +210,12 @@ async def test_plugin_declaration_loads_its_own_worker_factory_after_reload(
     write_plugin("before:")
     await manager.reload(record)
     await manager.enable(record)
-    assert await collect() == [["before:event", "before:source tail"]]
+    assert await collect("declared") == [["before:event", "before:source tail"]]
+    assert await collect("expression") == [["before:event"]]
     write_plugin("after!:")
     await manager.reload(record)
-    assert await collect() == [["after!:event", "after!:source tail"]]
+    assert await collect("declared") == [["after!:event", "after!:source tail"]]
+    assert await collect("expression") == [["after!:event"]]
 
 
 @pytest.mark.asyncio
