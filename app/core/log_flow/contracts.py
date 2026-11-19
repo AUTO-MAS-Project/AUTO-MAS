@@ -1,7 +1,6 @@
 """LogFlow 会话的内部声明和进程消息。"""
 
 import asyncio
-from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal, Self
@@ -25,9 +24,6 @@ MAX_NATIVE_PENDING_RECORDS = 2048
 MAX_HOST_PENDING_BYTES = MAX_PENDING_RECORDS * MAX_FRAME_BYTES
 MAX_NODE_FRAMES = 4096
 MAX_NODE_BYTES = 4 * 1024 * 1024
-
-type ResultItem = tuple[str, str, float | None]
-type PostProcessor = Callable[[list[ResultItem]], list[ResultItem]]
 
 
 class LineRule(BaseModel, frozen=True):

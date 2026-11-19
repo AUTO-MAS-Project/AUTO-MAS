@@ -1,7 +1,7 @@
 """声明式文本节点处理；每个来源独立保留多行窗口。"""
 
 import re
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from datetime import datetime
 from importlib import import_module
 from typing import Protocol, cast, runtime_checkable
@@ -16,6 +16,7 @@ from app.utils.common.log.patterns import (
     flush_patterns,
     load_patterns,
 )
+from app.utils.common.log.results import LinePreprocessor
 from app.utils.common.log.sources import LogReadLimitExceeded
 
 from .contracts import (
@@ -38,9 +39,6 @@ class TextProcessor(Protocol):
     def process(self, line: str) -> Iterable[ProcessorOutput]: ...
 
     def close(self) -> Iterable[ProcessorOutput]: ...
-
-
-type LinePreprocessor = Callable[[str], str | None]
 
 
 @runtime_checkable

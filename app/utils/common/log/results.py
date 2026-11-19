@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TypeAlias
 
-LegacyEntry: TypeAlias = tuple[str, str] | tuple[str, str, float | None]
+# 归并器接收带日志类型和时间的结果；行预处理返回 None 时跳过该行。
+ResultItem: TypeAlias = tuple[str, str, float | None]
+PostProcessor: TypeAlias = Callable[[list[ResultItem]], list[ResultItem]]
+LinePreprocessor: TypeAlias = Callable[[str], str | None]
+LegacyEntry: TypeAlias = tuple[str, str] | ResultItem
 
 
 @dataclass(frozen=True)

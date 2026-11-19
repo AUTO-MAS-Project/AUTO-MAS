@@ -15,6 +15,7 @@ from typing import cast
 from app.models.log_flow import Node, NodeAttributes, NodeDisplayStatus, NodeSource
 from app.models.notification.report import Node as LegacyReportNode
 from app.plugin.runtime.loader import prefer_package_source
+from app.utils.common.log.results import PostProcessor, ResultItem
 from app.utils.common.log.sources import LogReadLimitExceeded, LogSource
 
 from .contracts import (
@@ -30,11 +31,9 @@ from .contracts import (
     InputRecord,
     Observed,
     PipelineSpec,
-    PostProcessor,
     Ready,
     ReportedRecord,
     ReportEntry,
-    ResultItem,
     TextRecord,
     WithdrawnRecord,
     WorkerFactorySpec,

@@ -21,6 +21,7 @@ from app.models.log_flow import (
     SessionSummary,
 )
 from app.utils import process_platform
+from app.utils.common.log.results import ResultItem
 from app.utils.common.process.runner import close_process_pipes
 from app.utils.contracts.process import TaskProcessJob
 
@@ -41,7 +42,6 @@ from .contracts import (
     PipelineSpec,
     Ready,
     ReportedRecord,
-    ResultItem,
     TextRecord,
     WithdrawnRecord,
 )

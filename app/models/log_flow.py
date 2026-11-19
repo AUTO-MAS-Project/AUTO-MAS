@@ -6,6 +6,8 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, StrictBool, StrictInt
 
+from app.utils.common.log.results import ResultItem
+
 type NodeSource = Literal["file", "push", "mas", "custom"]
 type CloseReason = Literal["complete", "timeout", "worker_error", "capacity"]
 type ReportedNodeKey = Annotated[str, Field(pattern=r"^[A-Za-z0-9_.:-]{1,96}$")]
@@ -47,7 +49,7 @@ class SessionSummary:
     reason: CloseReason
     nodes: tuple[Node, ...]
     detail: str = ""
-    report_entries: tuple[tuple[str, str, float | None], ...] | None = None
+    report_entries: tuple[ResultItem, ...] | None = None
     requires_final_report: bool = False
     sink_error: str = ""
 
@@ -136,7 +138,7 @@ class NodeObservation:
         reason: CloseReason,
         detail: str = "",
         *,
-        report_entries: tuple[tuple[str, str, float | None], ...] | None = None,
+        report_entries: tuple[ResultItem, ...] | None = None,
         report_bytes: int = 0,
         requires_final_report: bool = False,
         sink_error: str = "",

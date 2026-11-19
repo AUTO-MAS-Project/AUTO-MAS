@@ -223,6 +223,8 @@ LogFlow 与日志节点管线的职责一致，继续沿用。其他名称按实
 
 解析、表达式求值、匹配、文件增量读取和纯排版可按职责共享。行预处理规则和 `LogEntry` 已迁入 `app/utils/common/log/`，由 LogFlow、通知排版与旧 LogBox 共用。旧 LogBox 包入口继续提供存量调用方使用的导出。LogFlow 的 worker、报告和插件 SDK 可独立导入。新框架核心与旧任务状态、配置对象、收尾回调和通知副作用保持各自的职责，worker 不初始化宿主 Config、调度或 Notify。
 
+`app.utils.common.log.results` 同时提供前置处理、三元组结果和后置归并的类型定义。旧 LogBox 和插件 SDK 从这里导出同一契约，专项可在旧采集与 LogFlow 之间复用归并实现。
+
 ### 4.7 合理性、改动范围与先验风险
 
 以 `7e0df6c7f` 的代码为评估基线。默认 Flow、共用节点、依赖收口三个方向成立，但改动大小不同。验证默认入口无需先交付完整插件框架，也不意味着可以直接发布当前 `PipelineSpec`。
@@ -498,7 +500,7 @@ P7 的 SDK 草案从 P1/P2 开始设计，不等全部专项迁完才考虑扩�
 | --- | --- |
 | BAAH、OK-NTE | 各自的 `AutoProxy` 文件节点采集与收尾 |
 | OK-WW | `AutoProxy` 单账号和 `BatchProxy` 批次，两条路径分别验收 |
-| ZZZ-OD | `AutoProxy` 文件节点采集与账号归并，`push_log.py` 仍引用旧归并器类型 |
+| ZZZ-OD | `AutoProxy` 文件节点采集与账号归并 |
 | MaaEnd | `AutoProxy` 阶段节点与材料增量两条路径，统计及材料通知分别验收 |
 
 General 用共享 WebUI 规则直接采集，BetterGI 由既有分步表产生节点。它们的报告管理器与上述五个专项现均直接导入 `app.utils.common.log.results.LogEntry`。删除旧包时保留共享条目、规则、文件读取、表达式和通知排版。仓库内的插件 SDK 当前没有直接依赖旧包。移除 `app.utils.log_box` 与 `app.utils.common.log_box` 之前，须核对在支持范围内的外部插件消费，处理旧包的对照测试，再按表重跑迁移验收。

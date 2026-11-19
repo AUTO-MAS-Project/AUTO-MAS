@@ -9,7 +9,6 @@ from app.core.log_flow.contracts import (
     FunctionRef,
     InputRecord,
     LineRule,
-    PostProcessor,
     ReportedRecord,
     TextRecord,
     WindowRule,
@@ -22,7 +21,7 @@ from app.core.log_flow.declaration import (
     SimpleFlowDeclaration,
 )
 from app.core.log_flow.extensions import Sink, Source
-from app.core.log_flow.processor import LinePreprocessor, ProcessorOutput, TextProcessor
+from app.core.log_flow.processor import ProcessorOutput, TextProcessor
 from app.core.log_flow.push import PushReporter, SubmitResult
 from app.core.log_flow.report import LogFlowTaskReport, ReportMode
 from app.core.log_flow.simple import FlowAccess
@@ -37,6 +36,7 @@ from app.models.log_flow import (
 )
 from app.utils.common.expression import ExpressionFunction
 from app.utils.common.log.monitor import LogMonitor
+from app.utils.common.log.results import LinePreprocessor, PostProcessor
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
