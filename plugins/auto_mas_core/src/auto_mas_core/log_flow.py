@@ -22,7 +22,7 @@ from app.core.log_flow.declaration import (
     SimpleFlowDeclaration,
 )
 from app.core.log_flow.extensions import Sink, Source
-from app.core.log_flow.processor import LinePreprocessor, TextProcessor
+from app.core.log_flow.processor import LinePreprocessor, ProcessorOutput, TextProcessor
 from app.core.log_flow.push import PushReporter, SubmitResult
 from app.core.log_flow.report import LogFlowTaskReport, ReportMode
 from app.core.log_flow.simple import FlowAccess
@@ -95,6 +95,7 @@ __all__ = [
     "ObservationSnapshot",
     "PluginFlowDeclaration",
     "PostProcessor",
+    "ProcessorOutput",
     "PushReporter",
     "ReportMode",
     "ReportedRecord",

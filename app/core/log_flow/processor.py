@@ -20,15 +20,24 @@ from app.utils.common.log.patterns import (
 from app.utils.common.log.sources import LogReadLimitExceeded
 from app.utils.common.log_box.hooks import make_line_hook
 
-from .contracts import MAX_FRAME_BYTES, FunctionRef, PipelineSpec, ProcessorFactorySpec
+from .contracts import (
+    MAX_FRAME_BYTES,
+    FunctionRef,
+    PipelineSpec,
+    ProcessorFactorySpec,
+    ReportedRecord,
+    WithdrawnRecord,
+)
+
+type ProcessorOutput = tuple[str, str] | ReportedRecord | WithdrawnRecord
 
 
 class TextProcessor(Protocol):
     """单来源处理实例。可实现 open()，在 worker 就绪前初始化。"""
 
-    def process(self, line: str) -> Iterable[tuple[str, str]]: ...
+    def process(self, line: str) -> Iterable[ProcessorOutput]: ...
 
-    def close(self) -> Iterable[tuple[str, str]]: ...
+    def close(self) -> Iterable[ProcessorOutput]: ...
 
 
 type ProcessorFactory = Callable[[Mapping[str, JsonValue]], TextProcessor]

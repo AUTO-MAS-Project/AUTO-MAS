@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import sys
 from contextlib import AsyncExitStack
 from types import SimpleNamespace
 
@@ -23,6 +24,7 @@ from app.models.task import TaskUserItem
 from app.plugin.errors import PluginBusyError
 from app.plugin.runtime import loader
 from app.plugin.types import PluginState
+from app.utils.common.log.monitor import LogMonitor
 from tests.support.scheduler import create_runtime_tree
 
 
@@ -281,6 +283,86 @@ async def test_named_general_flow_uses_current_webui_rules(
             replacement,
             replacement,
         ]
+
+
+@pytest.mark.asyncio
+async def test_declared_processor_corrects_native_nodes_before_task_finishes(
+    cascade_plugins, tmp_path
+):
+    manager, records = await cascade_plugins({"flow_revision": ()})
+    record = records["flow_revision"]
+    (tmp_path / "flow_revision" / "__init__.py").write_text(
+        "from app.plugin.base import BasePlugin\n"
+        "from auto_mas_core.log_flow import FunctionRef, PluginFlowDeclaration, ReportedRecord, SimpleFlowDeclaration, WithdrawnRecord, WorkerFactorySpec\n"
+        "class Processor:\n"
+        "    def process(self, line):\n"
+        "        slot, result = line.split()\n"
+        "        yield ReportedRecord(node_id=slot, node_type='普通', text=f'{slot} {result}', status=result)\n"
+        "        if result == 'failed':\n"
+        "            yield ReportedRecord(node_id='retry-warning', node_type='普通', text='retry pending', status='warning')\n"
+        "    def close(self): return (WithdrawnRecord(node_id='retry-warning'),)\n"
+        "def factory(options): return Processor()\n"
+        "class Adapter(BasePlugin):\n"
+        "    log_flows = {'native': PluginFlowDeclaration(rules=SimpleFlowDeclaration(\n"
+        "        processor=WorkerFactorySpec(factory=FunctionRef(name='test:processor', module=__name__, attribute='factory')),\n"
+        "    ))}\n"
+        "PLUGIN = Adapter\n",
+        encoding="utf-8",
+    )
+    await manager.reload(record)
+    await manager.enable(record)
+
+    async def discard_display(_lines, _latest_timestamp):
+        pass
+
+    monitor = LogMonitor((0, 0), "", discard_display)
+
+    async def run_script(*lines):
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            "import sys; print(*sys.argv[1:], sep='\\n')",
+            *lines,
+            stdout=asyncio.subprocess.PIPE,
+        )
+        await asyncio.wait_for(monitor.monitor_process(process, "stdout"), 5)
+        assert await process.wait() == 0
+
+    reports = []
+    async with manager.open_log_flow(
+        record._plugin,
+        "native",
+        run=TaskUserItem(),
+        monitor=monitor,
+        mode="汇总",
+        receive_report=reports.append,
+    ) as flow:
+        await run_script("slot-a failed", "slot-b success")
+        async with asyncio.timeout(5):
+            while (first := flow.snapshot_nodes()).cursor.sequence < 3:
+                assert first.close_reason is None
+                await asyncio.sleep(0.01)
+        assert [(node.node_id, node.status) for node in first.nodes] == [
+            ("mas/slot-a", "failed"),
+            ("mas/retry-warning", "warning"),
+            ("mas/slot-b", "success"),
+        ]
+        await run_script("slot-a success")
+        async with asyncio.timeout(5):
+            while not (retry := flow.read_nodes(after=first.cursor)).nodes:
+                assert retry.close_reason is None
+                await asyncio.sleep(0.01)
+        [correction] = retry.nodes
+        assert (correction.node_id, correction.revision, correction.status) == (
+            "mas/slot-a",
+            2,
+            "success",
+        )
+
+    [withdrawal] = flow.read_nodes(after=retry.cursor).nodes
+    assert withdrawal.node_id == "mas/retry-warning" and withdrawal.withdrawn
+    assert flow.snapshot_nodes().close_reason == "complete"
+    assert reports == [["slot-a success", "slot-b success"]]
 
 
 @pytest.mark.asyncio

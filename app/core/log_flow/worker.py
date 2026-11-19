@@ -42,6 +42,7 @@ from .contracts import (
 from .extensions import Sink, Source, create_extension
 from .processor import (
     GeneralRuleProcessor,
+    ProcessorOutput,
     RuleNodeProcessor,
     TextProcessor,
     build_custom_processor,
@@ -235,28 +236,45 @@ def _run_pipeline(
 
     last_timestamp: dict[NodeSource, float | None] = {}
 
-    def process_record(record: InputRecord, *, source_name: NodeSource) -> None:
-        if isinstance(record, WithdrawnRecord):
+    def emit_processed(
+        result: ProcessorOutput, *, source_name: NodeSource, timestamp: float | None
+    ) -> None:
+        if isinstance(result, WithdrawnRecord):
             emit(
                 ("", ""),
                 source_name=source_name,
                 timestamp=None,
-                node_id=record.node_id,
+                node_id=result.node_id,
                 withdrawn=True,
             )
-        elif isinstance(record, ReportedRecord):
+        elif isinstance(result, ReportedRecord):
             emit(
-                (record.node_type, record.text),
+                (result.node_type, result.text),
                 source_name=source_name,
-                timestamp=record.timestamp,
-                node_id=record.node_id,
-                status=record.status,
-                attributes=record.attributes,
+                timestamp=result.timestamp
+                if result.timestamp is not None
+                else timestamp,
+                node_id=result.node_id,
+                status=result.status,
+                attributes=result.attributes,
             )
         else:
-            last_timestamp[source_name] = record.timestamp
-            for result in processors[source_name].process(record.text):
-                emit(result, source_name=source_name, timestamp=record.timestamp)
+            emit(result, source_name=source_name, timestamp=timestamp)
+
+    def process_text(
+        line: str, *, source_name: NodeSource, timestamp: float | None
+    ) -> None:
+        last_timestamp[source_name] = timestamp
+        for result in processors[source_name].process(line):
+            emit_processed(result, source_name=source_name, timestamp=timestamp)
+
+    def process_record(record: InputRecord, *, source_name: NodeSource) -> None:
+        if isinstance(record, TextRecord):
+            process_text(
+                record.text, source_name=source_name, timestamp=record.timestamp
+            )
+        else:
+            emit_processed(record, source_name=source_name, timestamp=None)
 
     while True:
         try:
@@ -275,10 +293,7 @@ def _run_pipeline(
             process_record(record, source_name=source_name)
         if source is not None:
             for line in source.read_new():
-                timestamp = time.time()
-                last_timestamp["file"] = timestamp
-                for result in processors["file"].process(line):
-                    emit(result, source_name="file", timestamp=timestamp)
+                process_text(line, source_name="file", timestamp=time.time())
         if custom_source is not None:
             closing_source = closing
             for record in custom_source.close() if closing else custom_source.poll():
@@ -289,7 +304,7 @@ def _run_pipeline(
     for source_name in tuple(processors):
         processor = processors.pop(source_name)
         for result in processor.close():
-            emit(
+            emit_processed(
                 result,
                 source_name=source_name,
                 timestamp=last_timestamp.get(source_name),
