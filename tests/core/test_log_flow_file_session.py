@@ -381,10 +381,11 @@ async def test_unavailable_worker_does_not_prevent_execution_inside_flow():
 @pytest.mark.parametrize("rotation", ["none", "recreated", "between_files"])
 async def test_large_file_backlog_drains_in_batches_through_close(tmp_path, rotation):
     path = tmp_path / "script.log"
-    append(path, "done:9\n")
+    append(path, "done:9\nprevious run: ")
     start = await FileInput(path=str(path)).capture_start()
     padding = ("x" * 8192 + "\n") * 140
-    append(path, f"done:1\n{padding}done:2\n")
+    suffix = "x" * (2 * 1024 * 1024) if rotation == "between_files" else ""
+    append(path, f"done:999{suffix}\ndone:1\n{padding}done:2\n")
     if rotation != "none":
         path.rename(path.with_suffix(".bak"))
     if rotation == "recreated":

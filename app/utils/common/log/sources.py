@@ -291,13 +291,21 @@ class LogSource:
             if len(raw) > self.max_read_bytes:
                 has_more = True
                 raw = raw[: self.max_read_bytes]
+        start = 0
+        if self.strict_io and offset and raw:
+            # 起点可能落在上一轮的未闭合行内，续写的部分也属于旧行。
+            file.seek(offset - 1)
+            if file.read(1) not in (b"", b"\n"):
+                start = raw.find(b"\n") + 1
+                if not start:
+                    return _ReadBatch([], offset + len(raw), has_more)
         # 偏移只越过最后一个换行，未闭合尾部留待下次追加。
         end = raw.rfind(b"\n") + 1
-        if not end:
-            if has_more:
+        if end <= start:
+            if not start and has_more:
                 raise LogReadLimitExceeded("文件单行日志超过读取容量")
-            return _ReadBatch([], offset)
-        lines = raw[: end - 1].decode("utf-8", errors="replace").split("\n")
+            return _ReadBatch([], offset + start, has_more)
+        lines = raw[start : end - 1].decode("utf-8", errors="replace").split("\n")
         return _ReadBatch(lines, offset + end, has_more)
 
     def _rotation_candidates(self) -> list[Path]:
