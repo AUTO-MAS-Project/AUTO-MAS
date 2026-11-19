@@ -11,6 +11,7 @@ import pytest
 from auto_mas_core.log_flow import SubmitResult
 
 from app.core.log_flow.contracts import (
+    MAX_PENDING_RECORDS,
     FileInput,
     FunctionRef,
     LineRule,
@@ -194,6 +195,29 @@ async def test_push_returns_backpressure_without_blocking_host():
         await asyncio.to_thread(process.wait, timeout=1)
     finally:
         await session.close(timeout=0)
+
+
+@pytest.mark.asyncio
+async def test_native_burst_reports_dropped_input_as_incomplete():
+    session = await LogFlowSession.open(
+        PipelineSpec(
+            accept_mas=True, rules=(LineRule(match="^step ", node_type="普通"),)
+        )
+    )
+    try:
+        receive = session.native_line_receiver()
+        # 真实监控器可能在同一个事件循环轮次交接一批已经缓冲的行。
+        for index in range(MAX_PENDING_RECORDS + 2):
+            receive(f"step {index}")
+        summary = await session.close()
+        assert summary.reason == "capacity"
+        assert [node.text for node in summary.nodes] == [
+            f"step {index}" for index in range(MAX_PENDING_RECORDS)
+        ]
+        assert session.observation.read().close_reason == "capacity"
+        assert render_node_details(summary, mode="汇总")[-1] == "⚠️ 节点采集不完整"
+    finally:
+        await session.close()
 
 
 @pytest.mark.asyncio
