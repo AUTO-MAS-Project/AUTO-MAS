@@ -73,6 +73,41 @@ class PLUGIN(BasePlugin):
 
 展开类可以继承 `UserExpander[MyScriptEntry]`，使 `script_config` 保留专项配置类型。仓库的 `pyrightconfig.json` 已声明 SDK 源码路径；包内其他模块使用相对导入，独立插件工程则在自己的开发环境安装 SDK。
 
+## LogFlow 日志节点
+
+专项在插件的 `log_flows` 中声明节点规则，默认复用 MAS 的原生日志监控与通知排版。下面的片段使用已有专项的执行逻辑和 `LogMonitor`。
+
+```python
+from auto_mas_core import ScriptAdapterPlugin
+from auto_mas_core.log_flow import (
+    LineRule,
+    PluginFlowDeclaration,
+    SimpleFlowDeclaration,
+    open_log_flow,
+)
+
+
+class Adapter(ScriptAdapterPlugin):
+    log_flows = {
+        "progress": PluginFlowDeclaration(
+            rules=SimpleFlowDeclaration(
+                rules=(LineRule(match=r"^完成：", node_type="普通"),),
+            ),
+        ),
+    }
+
+
+async def execute_with_nodes(plugin, user_run, monitor, task_report, execute):
+    async with open_log_flow(
+        plugin, "progress", run=user_run, monitor=monitor, task_report=task_report,
+    ):
+        return await execute()
+```
+
+托管执行侧为当前 `TaskScriptItem` 创建一个 `LogFlowTaskReport`，各账号的会话传入同一个报告对象。托管定稿后调用 `task_report.send(title=..., report=...)` 交由 Notify 投递。`mode` 支持 `"逐条"`、`"汇总"` 和 `"关闭"`，绑定报告且省略模式时使用 `"汇总"`。关闭通知详情仍可查询节点。接入方按本次配置判断采集是否开启，关闭采集时直接执行原任务。
+
+在上下文中用 `as flow` 取得 `FlowAccess`。`snapshot_nodes()` 返回当前有效节点和游标，`read_nodes(after=cursor)` 继续读取新增、修订和撤回。已有结构化结果可在声明中启用 `accept_push`，通过 `flow.reporter` 上报。按运行绑定文件或替换自定义来源、处理器和 sink 时，仍使用同一个具名入口。[设计与迁移验收](../../docs/logbox-runstream-plan.md)
+
 ## 静态类型与开发环境
 
 SDK 顶层及 `host.*`、`utils`、`services`、`plugin` 的静态导出直接引用宿主的真实类型；运行时仍按需加载宿主能力。配置继承、泛型、装饰器和单例方法的类型不应通过动态 `__getattr__` 退化为 `Any`。
