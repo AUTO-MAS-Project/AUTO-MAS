@@ -112,5 +112,11 @@ MAA 包名为 `auto-mas-maa-adapter`。插件仓库完成构建、元数据校�
 主程序源码更新只带入其跟踪的 SDK 与静态页面，发行包安装结果和用户根目录源码插件
 按上述目录边界继续保留。
 
+### 在市场展示更新日志
+
+在适配器仓库的 `CHANGELOG.md` 写入本版面向用户的变化，使用 `## [版本] - 日期` 作为章节标题。在 `pyproject.toml` 的 `[project.urls]` 声明指向该文件的公开 HTTPS `Changelog` 链接，并随发行包发布。完整示例见[插件发布指南](https://doc.auto-mas.top/plugin/start/publish.html)。
+
+数据站目录按 PyPI 的发行版本收录最近五版内的章节。测试时刷新插件市场，在「更新」查看跨版说明，在「已安装」详情核对本机版本。主程序直接从 PyPI 或镜像刷新时，日志为空。
+
 PyPI Trusted Publishing、标签发布与市场安装验收步骤见
 [MAA 插件发布说明](https://github.com/AUTO-MAS-Project/AUTO-MAS-MAA-Adapter/blob/master/docs/PUBLISHING.md)。
