@@ -12,9 +12,11 @@ from tests.support.scheduler import create_runtime_tree
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("success,completed", [("", True), ("[", False)])
+@pytest.mark.parametrize(
+    "success,verdict", [("", "Success!"), ("[", "脚本在完成任务前退出")]
+)
 async def test_process_exit_only_completes_without_a_configured_success_sign(
-    tmp_path, monkeypatch, success, completed
+    tmp_path, monkeypatch, success, verdict
 ):
     uid = uuid.uuid4()
     _root, script, user = await create_runtime_tree(user_id=str(uid))
@@ -45,4 +47,4 @@ async def test_process_exit_only_completes_without_a_configured_success_sign(
     assert not proxy.wait_event.is_set()
     await proxy.check_log(["working"], now)
     assert proxy.wait_event.is_set()
-    assert (proxy.cur_user_log.status == "Success!") == completed
+    assert proxy.cur_user_log.status == verdict

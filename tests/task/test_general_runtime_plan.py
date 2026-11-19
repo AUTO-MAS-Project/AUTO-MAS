@@ -1,5 +1,4 @@
-"""通用脚本自动代理必须执行所选日期模板，并保留原生与账号固定配置。"""
-
+import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, Mock
 
@@ -8,106 +7,113 @@ import pytest_asyncio
 
 from app.config import ConfigCollection, config_manager
 from app.core.config import universal_plan
-from app.models.config import UniversalPlanConfig
-from app.task.general.AutoProxy import AutoProxyTask
+from app.models.config import GeneralConfig, UniversalPlanConfig
+from app.models.task import TaskMode
+from app.task.general import AutoProxy
 from app.task.general.manager import GeneralManager
 from tests.support.scheduler import create_runtime_tree
 from tests.support.scheduler import scheduler as scheduler
 
 
 @pytest_asyncio.fixture
-async def account(scheduler, isolated_app_paths, tmp_path, monkeypatch):
-    config = isolated_app_paths
+async def plan(scheduler, isolated_app_paths, monkeypatch):
     _, scripts, _, sid = scheduler
-    script = scripts[sid]
-    uid, user = next(iter(script.UserData.items()))
-    runtime = tmp_path / "mas"
-    runtime.mkdir()
-    monkeypatch.chdir(runtime)
-    native = tmp_path / "external" / "settings.ini"
-    native.parent.mkdir()
-    native.write_text("native")
-    executable = tmp_path / "script.exe"
-    executable.touch()
-    script.Script.ScriptPath = executable
-    script.Script.ConfigPath = native
-    script.Script.LogPath = tmp_path / "script.log"
-    script.Script.UpdateConfigMode = "Always"
-    await script.commit()
     plans = ConfigCollection.build([UniversalPlanConfig])
     await plans.activate()
     monkeypatch.setitem(config_manager._collections, "PlanConfig", plans)
-    monkeypatch.setattr(config, "PlanConfig", plans)
-    pid, plan = await config.add_plan("UniversalPlan", script_id=str(sid))
-    user.Info.PlanMode = pid
-    user.Info.Base = "native"
-    await user.commit()
-    task, info, _ = await create_runtime_tree(script_id=str(sid), user_id=str(uid))
-    await info.set_current_index(0)
-    clock = Mock(wraps=datetime)
-    clock.now.return_value = datetime(2026, 11, 3, 3, 59)
-    monkeypatch.setattr(universal_plan, "datetime", clock)
-    monkeypatch.setattr("app.task.general.AutoProxy.process.kill_process", AsyncMock())
-    monkeypatch.setattr(
-        "app.task.general.manager.Notify.push_proxy_result", AsyncMock()
-    )
-    return GeneralManager(info), script, user, plan, native, clock
+    monkeypatch.setattr(isolated_app_paths, "PlanConfig", plans)
+    pid, plan = await isolated_app_paths.add_plan("UniversalPlan", script_id=str(sid))
+    first = next(iter(scripts[sid].UserData.values()))
+    first.Info.PlanMode = pid
+    first.Info.Base = "native"
+    await first.commit()
+    return plan
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["File", "Folder"])
-async def test_plan_run_keeps_its_day_and_restores_native(
-    account, isolated_app_paths, monkeypatch, mode
+async def test_plan_retry_and_next_account_read_their_own_config(
+    scheduler, isolated_app_paths, plan, tmp_path, monkeypatch, mode
 ):
-    manager, script, user, plan, native, clock = account
+    manager, scripts, _, sid = scheduler
+    script = scripts[sid]
+    native = tmp_path / "external" / "settings.ini"
+    native.parent.mkdir()
+    native.write_text("native")
+    exe = tmp_path / "script.exe"
+    exe.touch()
+    log = tmp_path / "script.log"
+    script.Script.ScriptPath = exe
     script.Script.ConfigPathMode = mode
     script.Script.ConfigPath = native if mode == "File" else native.parent
+    script.Script.LogPath = log
+    script.Script.LogPathFormat = ""
+    script.Script.LogTimeFormat = "%Y-%m-%d %H:%M:%S.%f"
+    script.Script.LogTimeEnd = 26
+    script.Script.SuccessLog = "DONE"
+    script.Script.ErrorLog = "FAIL"
+    script.Script.UpdateConfigMode = "Always"
+    script.Run.RunTimesLimit = 2
     await script.commit()
-    script_root = isolated_app_paths.data_path / str(script.uid)
-    day = script_root / "Plans" / str(plan.uid) / "Monday"
-    template = day / "ConfigFile" / native.name
-    fixed = script_root / str(user.uid) / "ConfigFile" / native.name
-    runtime = day / "Users" / str(user.uid) / "ConfigFile" / native.name
-    for path, text in ((template, "Monday"), (fixed, "fixed"), (runtime, "old run")):
-        path.parent.mkdir(parents=True)
-        path.write_text(text)
 
+    data = isolated_app_paths.data_path / str(sid)
+    first, second = script.UserData.keys()
+    fixed = data / str(first) / "ConfigFile" / native.name
+    fixed.parent.mkdir(parents=True)
+    fixed.write_text("first fixed")
+    template = data / "Plans" / str(plan.uid) / "Monday" / "ConfigFile" / native.name
+    template.parent.mkdir(parents=True)
+    template.write_text("Monday")
+    clock = Mock()
+    clock.now.return_value = datetime(2026, 11, 3, 3, 59)
+    monkeypatch.setattr(universal_plan, "datetime", clock)
     observed = []
 
-    async def run_config_phases(_user, proxy):
-        assert await proxy.check() == "Pass"
+    async def launch(*args, **kwargs):
+        observed.append(native.read_text())
+        native.write_text(f"{observed[-1]} edited")
         clock.now.return_value = datetime(2026, 11, 3, 4, 1)
-        await proxy.prepare()
-        for attempt in range(2):
-            await proxy.set_general()
-            observed.append((native.read_text(), plan.is_locked))
-            native.write_text(f"script result {attempt}")
-            await proxy.update_config()
+        lines = ["FAIL"] if len(observed) == 1 else ["running", "DONE"]
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+        log.write_text("".join(f"{stamp} {line}\n" for line in lines))
 
-    monkeypatch.setattr(manager, "run_user_task", run_config_phases)
-    try:
-        await manager.main_task()
-    finally:
-        await manager.final_task()
+    monkeypatch.chdir(isolated_app_paths.data_path)
+    monkeypatch.setattr(AutoProxy.ProcessManager, "open_process", launch)
+    monkeypatch.setattr(AutoProxy.process, "kill_process", AsyncMock())
+    monkeypatch.setattr(AutoProxy, "Notify", AsyncMock())
+    monkeypatch.setattr("app.task.general.manager.Notify", AsyncMock())
+    sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda delay: sleep(min(delay, 0.01)))
+    monkeypatch.setattr(manager, "manager_factories", {GeneralConfig: GeneralManager})
+    uid = await manager.start(
+        TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(sid)}}}}
+    )
+    run = manager.task_handler[uid]
+    await asyncio.wait_for(run.accomplish.wait(), timeout=10)
 
-    assert observed == [("Monday", True), ("Monday", True)]
-    assert [p.read_text() for p in (native, fixed, template, runtime)] == [
-        "native",
-        "fixed",
-        "Monday",
-        "Monday",
-    ]
-    assert not plan.is_locked
+    assert observed == ["Monday", "Monday", "native"]
+    assert native.read_text() == "native"
+    assert template.read_text() == "Monday"
+    assert fixed.read_text() == "first fixed"
+    assert (
+        data / str(second) / "ConfigFile" / native.name
+    ).read_text() == "native edited"
 
 
 @pytest.mark.asyncio
-async def test_missing_plan_day_skips_with_reason_in_report(account):
-    manager, script, user, _, native, _ = account
-    run = AutoProxyTask(manager.script_info, script, script.UserData, None)
-    reason = await run.check()
-    assert reason != "Pass"
-    await run.main_task()
-    item = manager.script_info.user_list[0]
-    assert item.status == "跳过" and reason in item.result
-    assert reason in manager.script_info.log
-    assert user.Data.ProxyTimes == 0 and native.read_text() == "native"
+async def test_missing_plan_day_explains_skip_in_account_report(
+    scheduler, plan, tmp_path
+):
+    _, scripts, _, sid = scheduler
+    script = scripts[sid]
+    first = next(iter(script.UserData.values()))
+    script.Script.ConfigPath = tmp_path / "settings.ini"
+    await script.commit()
+    root, info, user = await create_runtime_tree(
+        script_id=str(sid), user_id=str(first.uid)
+    )
+    await info.set_current_index(0)
+    await AutoProxy.AutoProxyTask(info, script, script.UserData, None).execution.run()
+    assert user.status == "跳过"
+    assert "计划表尚未配置" in user.result
+    assert first.Data.ProxyTimes == 0
