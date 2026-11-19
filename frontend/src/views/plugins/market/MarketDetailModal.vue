@@ -43,7 +43,12 @@ const subtitle = computed(() =>
       </div>
     </template>
     <PluginDetailFields v-if="entry" :view="entry" :min-column-width="FIELD_COLUMN_MIN_WIDTH" />
-    <PluginReleaseNotes v-if="entry" :key="entry.uid" :notes="entry.updateAvailable ? entry.updateNotes : entry.releaseNotes" :upgrade="entry.updateAvailable" />
+    <PluginReleaseNotes
+      v-if="entry"
+      :key="entry.uid"
+      :notes="entry.updateAvailable ? entry.updateNotes : entry.releaseNotes"
+      :upgrade="entry.updateAvailable"
+    />
     <template #footer>
       <a-button @click="emit('close')">{{ t('core.common.close') }}</a-button>
     </template>

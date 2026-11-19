@@ -433,6 +433,26 @@ class PluginMeta(PluginCommandEntry):
         record = self._installed_record()
         return record.info.version if record is not None else None
 
+    def _installed_package_version(self) -> Version | None:
+        """只返回同一市场发行包的有效安装版本，本地源码与核心插件不参与。"""
+        record = self._installed_record()
+        if record is None:
+            return None
+        info, installed = self.effective.info, record.effective.info
+        if (
+            installed.is_core
+            or installed.is_local
+            or installed.source != "installed"
+            or info.plugin_name != installed.plugin_name
+            or canonicalize_name(info.package_name)
+            != canonicalize_name(installed.package_name)
+        ):
+            return None
+        try:
+            return Version(installed.version)
+        except InvalidVersion:
+            return None
+
     @virtual_field("info.changelog_versions")
     def compute_changelog_versions(self) -> PluginChangelogVersions:
         """按市场目标和本机发行身份选取安装、回看及跨版本升级所需的说明。"""
@@ -441,21 +461,7 @@ class PluginMeta(PluginCommandEntry):
         if not info.changelog:
             return selected
         target = Version(info.version)
-        record = self._installed_record()
-        installed = None
-        if (
-            record
-            and record.info.source == "installed"
-            and (
-                info.plugin_name == record.info.plugin_name
-                and canonicalize_name(info.package_name)
-                == canonicalize_name(record.info.package_name)
-            )
-        ):
-            try:
-                installed = Version(record.info.version)
-            except InvalidVersion:
-                pass
+        installed = self._installed_package_version()
         for note in info.changelog:
             version = Version(note.version)
             if version == target:
@@ -470,21 +476,11 @@ class PluginMeta(PluginCommandEntry):
     @virtual_field("info.update_available")
     def compute_update_available(self) -> bool:
         """按 PEP 440 比较同一市场插件的版本，核心与本地实现由各自源码维护。"""
-        record = self._installed_record()
-        if record is None:
-            return False
-        info, installed = self.effective.info, record.effective.info
-        if (
-            installed.is_core
-            or installed.is_local
-            or installed.source != "installed"
-            or info.plugin_name != installed.plugin_name
-            or canonicalize_name(info.package_name)
-            != canonicalize_name(installed.package_name)
-        ):
+        installed = self._installed_package_version()
+        if installed is None:
             return False
         try:
-            return Version(info.version) > Version(installed.version)
+            return Version(self.effective.info.version) > installed
         except InvalidVersion:
             return False
 

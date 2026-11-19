@@ -57,6 +57,27 @@ const installedOne = (info: object, extra: object = {}, ctx = context()) =>
   toInstalledViews(registry({ r1: { info, ...extra } }), [], ctx)[0]
 
 describe('插件中心缺声明回落', () => {
+  it('目录和注册表回读不同步时，不把旧说明挂到新版本或本地源码', () => {
+    const info = {
+      plugin_name: 'demo',
+      package_name: 'auto-mas-demo',
+      version: '2.0',
+      installed_version: '1.0',
+      changelog: [{ version: '1.0', body: 'old' }],
+      changelog_versions: { installed: '1.0', target: '2.0', updates: [] },
+    }
+    const market = toMarketViews(catalog({ m1: info }), null, context())
+    const notes = (version: string, source: string) =>
+      toInstalledViews(
+        registry({ r1: { info: { ...info, version, source } } }),
+        market,
+        context()
+      )[0].releaseNotes
+    expect(notes('1.0', 'installed')).toEqual(info.changelog)
+    expect(notes('2.0', 'installed')).toEqual([])
+    expect(notes('1.0', 'local')).toEqual([])
+  })
+
   it('名称依次取插件词条、注册表显示名、插件标识、条目 uid', () => {
     const ctx = context({ 'demo.display_name': '词条名' })
     expect(installedOne({ plugin_name: 'demo', display_name: '注册名' }, {}, ctx).name).toBe(
