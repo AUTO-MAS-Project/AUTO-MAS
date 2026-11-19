@@ -75,12 +75,13 @@ class PLUGIN(BasePlugin):
 
 ## LogFlow 日志节点
 
-专项在插件的 `log_flows` 中声明节点规则，默认复用 MAS 的原生日志监控与通知排版。下面的片段使用已有专项的执行逻辑和 `LogMonitor`。
+专项在插件的 `log_flows` 中声明节点规则，默认复用 MAS 的原生日志监控与通知排版。适配器可从 `auto_mas_core.log_flow` 导入 `LogMonitor` 创建原生日志监控器，或传入已有监控器。
 
 ```python
 from auto_mas_core import ScriptAdapterPlugin
 from auto_mas_core.log_flow import (
     LineRule,
+    LogMonitor,
     PluginFlowDeclaration,
     SimpleFlowDeclaration,
     open_log_flow,
@@ -97,7 +98,7 @@ class Adapter(ScriptAdapterPlugin):
     }
 
 
-async def execute_with_nodes(plugin, user_run, monitor, task_report, execute):
+async def execute_with_nodes(plugin, user_run, monitor: LogMonitor, task_report, execute):
     async with open_log_flow(
         plugin, "progress", run=user_run, monitor=monitor, task_report=task_report,
     ):

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
+from auto_mas_core.log_flow import LogMonitor
 
 from app.core import Notify
 from app.core.background_tasks import BackgroundTaskRegistry
@@ -24,7 +25,6 @@ from app.models.task import TaskUserItem
 from app.plugin.errors import PluginBusyError
 from app.plugin.runtime import loader
 from app.plugin.types import PluginState
-from app.utils.common.log.monitor import LogMonitor
 from tests.support.scheduler import create_runtime_tree
 
 

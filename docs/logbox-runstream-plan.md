@@ -195,7 +195,7 @@ General 的 WebUI 配置和专项 Python 声明分别适配到内部管线描述
 
 在具名声明中选用 `GeneralFlowDeclaration` 后，可通过 `general_rules` 传入本次执行的 WebUI 匹配及行预处理配置。宿主按声明选择 `GeneralRuleProcessor` 或专项的 `RuleNodeProcessor`；来源、查询和报告共用相同装配。配置随会话创建固定，每次执行可以用不同快照。
 
-插件可从同一 SDK 模块导入 `Source`、`TextProcessor`、`Sink`、`ExpressionFunction`、来源记录及节点观察类型。工厂和函数由宿主校验为插件自己的包，配置按 JSON 传入 worker。文本处理器按来源创建独立实例。自定义来源返回的记录统一标记为 `custom`，自定义 sink 失败后停止调用，宿主继续承接节点。插件停用或重载时，旧实例的上报能力随采集会话关闭。
+插件可从同一 SDK 模块导入 `LogMonitor`、`Source`、`TextProcessor`、`Sink`、`ExpressionFunction`、来源记录及节点观察类型。工厂和函数由宿主校验为插件自己的包，配置按 JSON 传入 worker。文本处理器按来源创建独立实例。自定义来源返回的记录统一标记为 `custom`，自定义 sink 失败后停止调用，宿主继续承接节点。插件停用或重载时，旧实例的上报能力随采集会话关闭。
 
 自定义文本处理器可选择实现 `open()`，在 worker 就绪前为各来源初始化状态。正常结束时 `close()` 既释放资源也可产出尾部节点。处理中断时已初始化的实例仍调用一次 `close()`，只清理资源；已承接节点留在不完整结果中。
 

@@ -36,6 +36,7 @@ from app.models.log_flow import (
     ObservationSnapshot,
 )
 from app.utils.common.expression import ExpressionFunction
+from app.utils.common.log.monitor import LogMonitor
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -45,7 +46,6 @@ if TYPE_CHECKING:
 
     from app.models.task import TaskScriptItem, TaskUserItem
     from app.plugin.base import BasePlugin
-    from app.utils.common.log.monitor import LogMonitor
 
 
 def open_log_flow(
@@ -86,6 +86,7 @@ __all__ = [
     "LinePreprocessor",
     "LineRule",
     "LogFlowTaskReport",
+    "LogMonitor",
     "Node",
     "NodeAttribute",
     "NodeAttributes",
