@@ -226,7 +226,6 @@
 </template>
 
 <script setup lang="ts">
-import { useConfigLoader } from '@/services/configUiSync'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { message, Modal } from 'ant-design-vue'
@@ -239,6 +238,7 @@ import {
 import { TEMPLATE_VARIABLES, WEBHOOK_TEMPLATES } from '@/utils/webhookTemplates'
 import { Service } from '@/api/services/Service'
 import { useWebhookTest } from '@/composables/useWebhookTest'
+import { useWebhookList, type WebhookItem } from '@/composables/useWebhookList'
 
 const { t } = useI18n()
 
@@ -266,17 +266,6 @@ interface CustomWebhook {
   enabled: boolean
   headers?: Record<string, string>
   method?: 'POST' | 'GET'
-}
-
-// 定义内部使用的Webhook类型
-interface WebhookItem {
-  uid: string
-  name: string
-  url: string
-  template: string
-  method: 'POST' | 'GET'
-  enabled: boolean
-  headers?: Record<string, string>
 }
 
 const props = withDefaults(
@@ -329,8 +318,7 @@ const { testingWebhooks, testWebhook } = useWebhookTest(
   () => (props.mode === 'global' ? 'global' : 'script')
 )
 const formRef = ref()
-const loading = ref(false)
-const apiWebhooks = ref<WebhookItem[]>([])
+const { loading, apiWebhooks, loadWebhooks } = useWebhookList(props, items => emit('listed', items))
 
 // 表单数据
 const formData = reactive({
@@ -365,61 +353,6 @@ const webhooks = computed({
   get: () => props.webhooks || [],
   set: value => emit('update:webhooks', value),
 })
-
-// 加载Webhook数据
-const loadWebhooks = useConfigLoader(
-  () => ['config', 'webhooks', props.mode, props.scriptId, props.userId],
-  async read => {
-    if (props.mode !== 'global' && !props.scriptId && !props.userId) {
-      return // 本地模式不需要加载
-    }
-
-    loading.value = true
-    try {
-      let response
-
-      if (props.mode === 'global') {
-        // 全局模式：使用setting接口
-        response = await Service.getWebhookApiSettingWebhookGetPost({
-          scriptId: null,
-          userId: null,
-          webhookId: null,
-        })
-      } else {
-        // 用户模式：使用scripts接口
-        response = await Service.getWebhookApiScriptsWebhookGetPost({
-          scriptId: props.scriptId || null,
-          userId: props.userId || null,
-          webhookId: null,
-        })
-      }
-
-      read(response)
-      if (response.code === 200) {
-        // 转换API数据为内部格式
-        apiWebhooks.value = response.index.map(item => {
-          const webhookData = response.data[item.uid]
-          return {
-            uid: item.uid,
-            name: webhookData.Info?.Name || '',
-            url: webhookData.Data?.Url || '',
-            template: webhookData.Data?.Template || '',
-            method: (webhookData.Data?.Method || 'POST') as 'POST' | 'GET',
-            enabled: webhookData.Info?.Enabled || false,
-            headers: webhookData.Data?.Headers ? JSON.parse(webhookData.Data.Headers) : undefined,
-          }
-        })
-        emit('listed', apiWebhooks.value)
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`加载Webhook失败: ${errorMsg}`)
-      message.error(t('core.comp.couldNotLoadWebhook'))
-    } finally {
-      loading.value = false
-    }
-  }
-)
 
 // 显示添加弹窗
 const showAddModal = () => {

@@ -76,7 +76,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { usePlanApi } from '@/composables/usePlanApi'
-import type { PlanIndexItem } from '@/api'
+import { projectPlanList, type PlanListItem } from './planList'
 import {
   generateUniquePlanName,
   getPlanTypeLabelKey,
@@ -86,7 +86,6 @@ import {
   DEFAULT_PLAN_CONFIG_TYPE,
   PLAN_TYPE_REGISTRY,
   PLAN_CONFIG_TYPES,
-  isKnownPlanType,
   type PlanChangeOptions,
   type PlanConfigData,
   type PlanConfigType,
@@ -107,12 +106,6 @@ const logger = window.electronAPI.getLogger('计划管理')
 
 const { getPlans, createPlan, updatePlan, deletePlan, reorderPlans } = usePlanApi()
 const route = useRoute()
-
-interface PlanListItem {
-  id: string
-  name: string
-  type: PlanConfigType
-}
 
 const planList = ref<PlanListItem[]>([])
 const activePlanId = ref<string>('')
@@ -530,34 +523,9 @@ const initPlans = useConfigLoader(['config', 'plans'], async read => {
       throw new Error(response.message || t('core.plan.toast.fetchFailed'))
     }
 
-    const nextPlanDataMap: Record<string, PlanConfigData> = {}
-    const nextPlanList: PlanListItem[] = []
-    const allPlanNames: string[] = []
-
-    response.index.forEach((item: PlanIndexItem) => {
-      const planId = item.uid
-      const planData = response.data[planId] as PlanConfigData | undefined
-      const planType = item.type as string
-
-      if (!isKnownPlanType(planType)) {
-        logger.error(`跳过未注册的计划表类型: ${planType}`)
-        return
-      }
-      if (!planData) {
-        logger.error(`跳过缺少配置数据的计划表: ${planId}`)
-        return
-      }
-
-      const planDescriptor = PLAN_TYPE_REGISTRY[planType]
-      let planName = planData.Info?.Name || ''
-      if (!planName || planName === planDescriptor.defaultName) {
-        planName = generateUniquePlanName(planType, allPlanNames)
-      }
-
-      allPlanNames.push(planName)
-      nextPlanDataMap[planId] = planData
-      nextPlanList.push({ id: planId, name: planName, type: planType })
-    })
+    const { nextPlanDataMap, nextPlanList } = projectPlanList(response, message =>
+      logger.error(message)
+    )
 
     planDataMap.value = nextPlanDataMap
     planList.value = nextPlanList
