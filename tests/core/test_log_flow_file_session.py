@@ -22,7 +22,11 @@ from app.core.log_flow.contracts import (
 from app.core.log_flow.manager import open_for_run
 from app.core.log_flow.report import render_node_details
 from app.core.log_flow.session import LogFlowSession, SessionOpenError
-from app.core.log_flow.simple import SimpleFlowDeclaration, open_simple_flow
+from app.core.log_flow.simple import (
+    SimpleFlowDeclaration,
+    open_custom_flow,
+    open_simple_flow,
+)
 from app.core.notify.report import render_scatter_push_log
 from app.models.log_flow import InvalidObservationCursor
 from app.models.task import TaskUserItem
@@ -298,6 +302,49 @@ async def test_simple_flow_can_replace_only_the_text_processor():
         assert reports == []
     assert [node.text for node in read_nodes(after=page.cursor).nodes] == ["合计: 2"]
     assert reports == [["✅ 成功: 7, 8", "合计: 2"]]
+
+
+@pytest.mark.asyncio
+async def test_custom_flow_keeps_all_sources_bound_to_one_run(tmp_path):
+    path = tmp_path / "script.log"
+    path.write_text("done:old\n", encoding="utf-8")
+    run = TaskUserItem(user_id="same")
+    other = TaskUserItem(user_id="same")
+
+    async def display(_lines, _latest_time):
+        pass
+
+    monitor = LogMonitor((0, 0), "", display)
+    reports = []
+    async with open_custom_flow(
+        SimpleFlowDeclaration(rules=(LineRule(match="^done:", node_type="普通"),)),
+        run=run,
+        mode="逐条",
+        receive_report=reports.append,
+        file=FileInput(path=str(path)),
+        monitor=monitor,
+        accept_push=True,
+    ) as flow:
+        assert flow.submit is not None
+        assert not flow.submit(TextRecord(text="done:spoof", source="mas"))
+        assert flow.submit(ReportedRecord(node_type="普通", text="from push"))
+        append(path, "done:file\n")
+        process = await asyncio.create_subprocess_exec(
+            sys.executable, "-c", "print('done:mas')", stdout=asyncio.subprocess.PIPE
+        )
+        await asyncio.wait_for(monitor.monitor_process(process, "stdout"), 5)
+        assert await process.wait() == 0
+    assert not flow.submit(ReportedRecord(node_type="普通", text="late"))
+    page = flow.read_nodes()
+    assert page.close_reason == "complete"
+    assert {(n.source, n.text) for n in page.nodes} == {
+        ("file", "done:file"),
+        ("mas", "done:mas"),
+        ("push", "from push"),
+    }
+    assert run.node_observation is not None and run.node_observation.read() == page
+    assert other.node_observation is None
+    assert len(reports) == 1 and len(reports[0]) == 3
 
 
 @pytest.mark.asyncio
