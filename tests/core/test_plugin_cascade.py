@@ -6,8 +6,11 @@ from types import SimpleNamespace
 import pytest
 import pytest_asyncio
 
+from app.core.log_flow.push import SubmitResult
+from app.core.log_flow.simple import SimpleFlowDeclaration, open_custom_flow
 from app.core.plugin.manager import _PluginManager
 from app.models.config import GlobalConfig, PluginRecord, PluginRegistryCollection
+from app.models.task import TaskUserItem
 from app.plugin.errors import PluginBusyError
 from app.plugin.runtime import loader
 from app.plugin.types import PluginState
@@ -141,6 +144,62 @@ async def test_reload_restores_complete_tree_without_enabling_inactive_descendan
     assert records["cascade_inactive"].info.state == PluginState.DISABLED
     assert not records["cascade_inactive"].info.enabled
     assert records["cascade_inactive"]._plugin_cls.events == []
+
+
+@pytest.mark.asyncio
+async def test_reload_and_disable_revoke_log_flow_of_the_previous_instance(
+    cascade_plugins,
+):
+    manager, records = await cascade_plugins({"flow_example": ()})
+    record = records["flow_example"]
+    await manager.enable(record)
+    previous = await manager.services.require("flow_example")()
+    owner = manager.log_flow_owner(previous)
+    reports = []
+    async with open_custom_flow(
+        SimpleFlowDeclaration(),
+        run=TaskUserItem(user_id="same"),
+        mode="关闭",
+        receive_report=reports.append,
+        accept_push=True,
+        owner=owner,
+    ) as flow:
+        assert flow.reporter is not None
+        assert flow.reporter.node("普通", "before reload") == SubmitResult.ACCEPTED
+        await manager.reload(record)
+        assert flow.reporter.node("普通", "late") == SubmitResult.CLOSED
+        assert flow.read_nodes().close_reason == "complete"
+        assert [node.text for node in flow.read_nodes().nodes] == ["before reload"]
+        with pytest.raises(PluginBusyError):
+            manager.log_flow_owner(previous)
+        with pytest.raises(PluginBusyError):
+            async with open_custom_flow(
+                SimpleFlowDeclaration(),
+                run=TaskUserItem(user_id="same"),
+                mode="关闭",
+                receive_report=reports.append,
+                accept_push=True,
+                owner=owner,
+            ):
+                pytest.fail("旧实例不应开启新会话")
+
+    current = await manager.services.require("flow_example")()
+    assert current is not previous
+    async with open_custom_flow(
+        SimpleFlowDeclaration(),
+        run=TaskUserItem(user_id="same"),
+        mode="关闭",
+        receive_report=reports.append,
+        accept_push=True,
+        owner=manager.log_flow_owner(current),
+    ) as next_flow:
+        assert next_flow.reporter is not None
+        assert flow.reporter.node("普通", "wrong generation") == SubmitResult.CLOSED
+        assert next_flow.reporter.node("普通", "after reload") == SubmitResult.ACCEPTED
+        await manager.disable(record)
+        assert next_flow.reporter.node("普通", "after disable") == SubmitResult.CLOSED
+        assert next_flow.read_nodes().close_reason == "complete"
+        assert [node.text for node in next_flow.read_nodes().nodes] == ["after reload"]
 
 
 @pytest.mark.asyncio

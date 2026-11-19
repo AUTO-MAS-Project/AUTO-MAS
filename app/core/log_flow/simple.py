@@ -21,8 +21,10 @@ from .contracts import (
     WorkerFactorySpec,
 )
 from .manager import open_for_run
-from .push import PushReporter
+from .ownership import FlowOwner
+from .push import GuardedReporter, PushReporter
 from .report import ReportMode, render_node_details
+from .session import LogFlowSession
 
 
 class SimpleFlowDeclaration(BaseModel, frozen=True):
@@ -47,6 +49,17 @@ class FlowAccess:
 
 
 @asynccontextmanager
+async def _open_unowned(
+    run: TaskScriptItem | TaskUserItem, config: PipelineSpec
+) -> AsyncIterator[LogFlowSession]:
+    session = await open_for_run(run, config)
+    try:
+        yield session
+    finally:
+        await session.close()
+
+
+@asynccontextmanager
 async def open_custom_flow(
     declaration: SimpleFlowDeclaration,
     *,
@@ -58,43 +71,47 @@ async def open_custom_flow(
     accept_push: bool = False,
     source: WorkerFactorySpec | None = None,
     sink: WorkerFactorySpec | None = None,
+    owner: FlowOwner | None = None,
 ) -> AsyncIterator[FlowAccess]:
     """宿主按运行分支绑定来源；上报方不能指定归属或冒充原生来源。"""
     if monitor is not None and monitor.on_raw_line is not None:
         raise ValueError("日志监控器已有原始行消费者")
-    session = await open_for_run(
-        run,
-        PipelineSpec(
-            file=file,
-            accept_mas=monitor is not None,
-            accept_push=accept_push,
-            source=source,
-            sink=sink,
-            rules=declaration.rules,
-            windows=declaration.windows,
-            postprocess=declaration.postprocess,
-            processor=declaration.processor,
-        ),
+    config = PipelineSpec(
+        file=file,
+        accept_mas=monitor is not None,
+        accept_push=accept_push,
+        source=source,
+        sink=sink,
+        rules=declaration.rules,
+        windows=declaration.windows,
+        postprocess=declaration.postprocess,
+        processor=declaration.processor,
     )
-    receiver = session.native_line_receiver() if monitor is not None else None
+    opening = (
+        owner.open(run, config) if owner is not None else _open_unowned(run, config)
+    )
+    async with opening as session:
+        receiver = session.native_line_receiver() if monitor is not None else None
+        reporter = session.push_reporter() if accept_push else None
+        if reporter is not None and owner is not None:
+            reporter = GuardedReporter(reporter, lambda: owner.accepting)
 
-    def read_nodes(
-        *, after: ObservationCursor | None = None, limit: int = 50
-    ) -> ObservationPage:
-        return session.observation.read(after=after, limit=limit)
+        def detach() -> None:
+            if monitor is not None and monitor.on_raw_line is receiver:
+                monitor.on_raw_line = None
 
-    try:
-        if monitor is not None:
-            if monitor.on_raw_line is not None:
-                raise ValueError("日志监控器已有原始行消费者")
-            monitor.on_raw_line = receiver
-        yield FlowAccess(read_nodes, session.push_reporter() if accept_push else None)
-    finally:
-        if monitor is not None and monitor.on_raw_line is receiver:
-            monitor.on_raw_line = None
-        summary = await session.close()
+        try:
+            if monitor is not None:
+                if monitor.on_raw_line is not None:
+                    raise ValueError("日志监控器已有原始行消费者")
+                monitor.on_raw_line = receiver
+                if owner is not None:
+                    owner.attach_cleanup(session, detach)
+            yield FlowAccess(session.observation.read, reporter)
+        finally:
+            detach()
     if mode != "关闭":
-        receive_report(render_node_details(summary, mode=mode))
+        receive_report(render_node_details(await session.close(), mode=mode))
 
 
 @asynccontextmanager
@@ -105,9 +122,15 @@ async def open_simple_flow(
     monitor: LogMonitor,
     mode: ReportMode,
     receive_report: Callable[[list[str]], None],
+    owner: FlowOwner | None = None,
 ) -> AsyncIterator[ReadNodes]:
     """默认只使用 MAS 原生日志，复用自定义装配的生命周期。"""
     async with open_custom_flow(
-        declaration, run=run, mode=mode, receive_report=receive_report, monitor=monitor
+        declaration,
+        run=run,
+        mode=mode,
+        receive_report=receive_report,
+        monitor=monitor,
+        owner=owner,
     ) as access:
         yield access.read_nodes

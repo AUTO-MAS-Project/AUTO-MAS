@@ -30,6 +30,7 @@ from packaging.utils import canonicalize_name
 from packaging.version import Version
 
 from app.config import NodeState
+from app.core.log_flow.ownership import FlowOwner
 from app.core.ws import Publisher
 from app.core.ws.protocol import ID_PLUGIN, PLUGIN_CAPABILITIES_UPDATED
 from app.plugin import uv as uv_tool
@@ -114,6 +115,14 @@ class _PluginManager:
         self._source_queue: asyncio.Queue[SourcesChangedPayload] | None = None
         self._source_worker_task: asyncio.Task[None] | None = None
         self._calls: dict[UUID, CallGate] = {}
+        self._log_flow_owners: dict[int, FlowOwner] = {}
+
+    def log_flow_owner(self, plugin: BasePlugin) -> FlowOwner:
+        """宿主使用实际插件实例绑定会话；重载后不能用旧实例取得新能力。"""
+        owner = self._log_flow_owners.get(id(plugin))
+        if owner is None or not owner.accepting:
+            raise PluginBusyError("插件实例未启用或正在释放")
+        return owner
 
     @asynccontextmanager
     async def _pause_owners(self, owners):
@@ -153,11 +162,15 @@ class _PluginManager:
         """注销插件实例拥有的背景任务组并关闭调用入口，避免实例卸载后继续执行工作。"""
         from app.core.background_tasks import BackgroundTaskManager
 
-        if plugin._background_tasks is not None:
-            await BackgroundTaskManager.unregister_group(plugin._background_tasks)
-        gate = self._calls.pop(plugin.record.uid, None)
+        gate = self._calls.get(plugin.record.uid)
         if gate is not None:
             gate.accepting = False
+        if (owner := self._log_flow_owners.get(id(plugin))) is not None:
+            await owner.close()
+            self._log_flow_owners.pop(id(plugin), None)
+        if plugin._background_tasks is not None:
+            await BackgroundTaskManager.unregister_group(plugin._background_tasks)
+        self._calls.pop(plugin.record.uid, None)
 
     # ==================== 初始化 ====================
 
@@ -647,6 +660,7 @@ class _PluginManager:
                 record.info.state = PluginState.ENABLED
                 record.info.lifecycle_context = LifecycleContext.IDLE
             await record.commit()
+            self._log_flow_owners[id(plugin)] = FlowOwner(lambda: gate.accepting)
             capabilities_changed.send(self, name=name, enabled=True)
             await Publisher.send(
                 id=ID_PLUGIN, type=PLUGIN_CAPABILITIES_UPDATED, data={}
