@@ -76,6 +76,7 @@ async def open_custom_flow(
         sink=sink,
         rules=specialized.rules if specialized is not None else (),
         windows=specialized.windows if specialized is not None else (),
+        preprocess=specialized.preprocess if specialized is not None else None,
         postprocess=(
             specialized.postprocess
             if specialized is not None and mode != "关闭"

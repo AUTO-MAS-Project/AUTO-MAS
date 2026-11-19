@@ -69,6 +69,7 @@ class PipelineSpec(BaseModel, frozen=True):
     accept_push: bool = False
     accept_mas: bool = False
     functions: tuple[FunctionRef, ...] = ()
+    preprocess: FunctionRef | None = None
     postprocess: FunctionRef | None = None
     general_patterns: str | None = None
     general_hooks: str = ""
@@ -93,13 +94,14 @@ class PipelineSpec(BaseModel, frozen=True):
         ):
             raise ValueError("文件采集必须声明规则")
         if self.general_patterns is not None and (
-            self.rules or self.windows or self.functions
+            self.rules or self.windows or self.functions or self.preprocess is not None
         ):
             raise ValueError("通用脚本和专项规则必须选用一种处理方式")
         if self.processor is not None and (
             self.rules
             or self.windows
             or self.functions
+            or self.preprocess is not None
             or self.general_patterns is not None
             or self.general_hooks
         ):

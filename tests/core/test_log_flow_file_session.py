@@ -33,6 +33,11 @@ from app.core.log_flow.simple import (
 from app.core.notify.report import render_scatter_push_log
 from app.models.log_flow import InvalidObservationCursor
 from app.models.task import TaskUserItem
+from app.task.MaaEnd.push_log import (
+    MAAEND_PUSH_RULES,
+    maaend_plain_text,
+    maaend_resolve,
+)
 from app.task.OkNte.push_log import OKNTE_PUSH_RULES, oknte_resolve
 from app.utils.common.log.monitor import LogMonitor
 from app.utils.common.log_box import LogPipeline
@@ -54,6 +59,53 @@ async def wait_for_first_node(session: LogFlowSession) -> None:
     async with asyncio.timeout(5):
         while not session.snapshot():
             await asyncio.sleep(0.01)
+
+
+@pytest.mark.asyncio
+async def test_declared_preprocessor_keeps_maaend_rich_text_report_compatible():
+    legacy = LogPipeline()
+    legacy.preprocessors.append(maaend_plain_text)
+    legacy.postprocessors.append(maaend_resolve)
+    for rule in MAAEND_PUSH_RULES:
+        legacy.add_rule(*rule)
+    module = maaend_plain_text.__module__
+    declaration = SimpleFlowDeclaration(
+        rules=tuple(
+            LineRule(match=match, extract=extract, node_type="普通")
+            for match, extract in MAAEND_PUSH_RULES
+        ),
+        preprocess=FunctionRef(
+            name="probe:plain", module=module, attribute="maaend_plain_text"
+        ),
+        postprocess=FunctionRef(
+            name="probe:report", module=module, attribute="maaend_resolve"
+        ),
+    )
+    lines = [
+        "<span>[2026-11-19 09:01:02.345] 任务开始: 🎁补给</span>",
+        "<span>[2026-11-19 09:01:03.456] 路线 1：样本采集失败</span>",
+        "<span>[2026-11-19 09:01:04.567] 任务失败: 🎁补给</span>",
+    ]
+    run = TaskUserItem()
+    async with open_custom_flow(
+        declaration, run=run, accept_push=True, mode="汇总"
+    ) as flow:
+        assert flow.reporter is not None
+        for line in lines:
+            legacy.feed(line, timestamp=1.0)
+            assert flow.reporter.text(line, timestamp=1.0) == SubmitResult.ACCEPTED
+    observation = run.node_observation
+    assert observation is not None and observation.summary is not None
+    summary = observation.summary
+    assert summary.complete
+    expected = legacy.finish()
+    assert len(expected) == 1 and "样本" in expected[0].text
+    assert summary.report_entries == tuple(
+        (entry.log_type, entry.text, entry.timestamp) for entry in expected
+    )
+    assert render_node_details(summary, mode="逐条") == render_scatter_push_log(
+        expected
+    )
 
 
 @pytest.mark.asyncio

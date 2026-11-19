@@ -220,6 +220,8 @@ class _PluginManager:
             ]
             if isinstance(rules, SimpleFlowDeclaration):
                 references.extend(rules.functions)
+                if rules.preprocess is not None:
+                    references.append(rules.preprocess)
                 if rules.postprocess is not None:
                     references.append(rules.postprocess)
                 if rules.processor is not None:

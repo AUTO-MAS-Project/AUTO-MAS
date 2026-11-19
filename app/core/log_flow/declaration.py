@@ -17,6 +17,7 @@ class SimpleFlowDeclaration(BaseModel, frozen=True, extra="forbid"):
 
     rules: tuple[LineRule, ...] = ()
     windows: tuple[WindowRule, ...] = Field(default=(), max_length=16)
+    preprocess: FunctionRef | None = None
     postprocess: FunctionRef | None = None
     functions: tuple[FunctionRef, ...] = ()
     processor: ProcessorFactorySpec | None = None

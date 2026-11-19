@@ -30,6 +30,7 @@ class TextProcessor(Protocol):
 
 
 type ProcessorFactory = Callable[[Mapping[str, JsonValue]], TextProcessor]
+type LinePreprocessor = Callable[[str], str | None]
 
 
 @runtime_checkable
@@ -63,6 +64,12 @@ class RuleNodeProcessor:
     def __init__(
         self, config: PipelineSpec, functions: Mapping[str, ExpressionFunction]
     ) -> None:
+        self.preprocess: LinePreprocessor | None = None
+        if (ref := config.preprocess) is not None:
+            implementation = getattr(import_module(ref.module), ref.attribute)
+            if not callable(implementation):
+                raise TypeError(f"行预处理器不可调用：{ref.name}")
+            self.preprocess = cast(LinePreprocessor, implementation)
         self.rules = [
             RegexMatcher(
                 match=re.compile(rule.match),
@@ -92,6 +99,13 @@ class RuleNodeProcessor:
             return
         if len(line.encode("utf-8")) >= MAX_FRAME_BYTES:
             raise LogReadLimitExceeded("单行日志超出处理容量")
+        if self.preprocess is not None:
+            processed = self.preprocess(line)
+            if not processed:
+                return
+            if len(processed.encode("utf-8")) >= MAX_FRAME_BYTES:
+                raise LogReadLimitExceeded("预处理后的日志超出处理容量")
+            line = processed
         result = apply_patterns(line, matchers=self.rules)
         if result is not None:
             yield result

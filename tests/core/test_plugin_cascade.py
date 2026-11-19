@@ -168,6 +168,7 @@ async def test_plugin_declaration_loads_its_own_worker_factory_after_reload(
             "from auto_mas_core.log_flow import FunctionRef, LineRule, PluginFlowDeclaration, SimpleFlowDeclaration, Source, TextProcessor, TextRecord, WorkerFactorySpec\n"
             "from app.plugin.base import BasePlugin\n"
             f"def prefix(text, _args): return {prefix!r} + text\n"
+            "def clean(line): return line.removeprefix('raw:')\n"
             "class Processor:\n"
             "    def process(self, line):\n"
             f"        yield '普通', {prefix!r} + line\n"
@@ -187,6 +188,7 @@ async def test_plugin_declaration_loads_its_own_worker_factory_after_reload(
             "        use_mas_log=False, accept_push=True,\n"
             "        rules=SimpleFlowDeclaration(\n"
             "            rules=(LineRule(match='^event$', extract='$().probe:prefix()', node_type='普通'),),\n"
+            "            preprocess=FunctionRef(name='probe:clean', module=__name__, attribute='clean'),\n"
             "            functions=(FunctionRef(name='probe:prefix', module=__name__, attribute='prefix'),),\n"
             "        ),\n"
             "    )}\n"
@@ -194,7 +196,7 @@ async def test_plugin_declaration_loads_its_own_worker_factory_after_reload(
             encoding="utf-8",
         )
 
-    async def collect(name):
+    async def collect(name, text="event"):
         reports = []
         async with manager.open_log_flow(
             record._plugin,
@@ -204,18 +206,18 @@ async def test_plugin_declaration_loads_its_own_worker_factory_after_reload(
             receive_report=reports.append,
         ) as flow:
             assert flow.reporter is not None
-            assert flow.reporter.text("event") == SubmitResult.ACCEPTED
+            assert flow.reporter.text(text) == SubmitResult.ACCEPTED
         return reports
 
     write_plugin("before:")
     await manager.reload(record)
     await manager.enable(record)
     assert await collect("declared") == [["before:event", "before:source tail"]]
-    assert await collect("expression") == [["before:event"]]
+    assert await collect("expression", "raw:event") == [["before:event"]]
     write_plugin("after!:")
     await manager.reload(record)
     assert await collect("declared") == [["after!:event", "after!:source tail"]]
-    assert await collect("expression") == [["after!:event"]]
+    assert await collect("expression", "raw:event") == [["after!:event"]]
 
 
 @pytest.mark.asyncio
