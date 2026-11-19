@@ -55,12 +55,14 @@ class FlowOwner:
             await self._close_session(session)
 
     async def _close_session(self, session: LogFlowSession) -> None:
-        # 只有实际收尾后才解除登记。等待者被取消时，宿主仍可等待同一关闭任务。
         if (detach := self._sessions.get(session)) is not None:
             self._sessions[session] = None
             detach()
-        await session.close()
-        self._sessions.pop(session, None)
+        try:
+            await session.close_on_exit()
+        finally:
+            if session.observation.summary is not None:
+                self._sessions.pop(session, None)
 
     def attach_cleanup(
         self, session: LogFlowSession, detach: Callable[[], None]

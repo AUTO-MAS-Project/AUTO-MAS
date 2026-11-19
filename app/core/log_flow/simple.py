@@ -50,7 +50,7 @@ async def _open_unowned(
     try:
         yield session
     finally:
-        await session.close()
+        await session.close_on_exit()
 
 
 @asynccontextmanager

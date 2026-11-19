@@ -187,11 +187,11 @@ class LogFlowSession:
                     raise SessionOpenError(summary.detail)
         except (TimeoutError, OSError) as exc:
             if session is not None:
-                await session._close_failed_open()
+                await session.close_on_exit(timeout=0)
             raise SessionOpenError("LogFlow worker 启动失败或未在期限内就绪") from exc
         except BaseException:
             if session is not None:
-                await session._close_failed_open()
+                await session.close_on_exit(timeout=0)
             raise
         finally:
             if session is None and job is not None:
@@ -294,9 +294,9 @@ class LogFlowSession:
             self._closing = asyncio.create_task(self._close(timeout))
         return self._closing
 
-    async def _close_failed_open(self) -> None:
-        """会话还未交付，启动方须持有资源登记直至有界清理结束。"""
-        closing = self._start_close(0)
+    async def close_on_exit(self, *, timeout: float = 2.0) -> None:
+        """生命周期所有者先等待有界收尾，再传播取消。"""
+        closing = self._start_close(timeout)
         cancelled: asyncio.CancelledError | None = None
         while not closing.done():
             try:

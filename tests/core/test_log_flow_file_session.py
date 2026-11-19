@@ -1031,6 +1031,62 @@ async def test_custom_flow_delivers_report_when_execution_raises():
 
 
 @pytest.mark.asyncio
+async def test_repeated_execution_cancellation_delivers_frozen_report(tmp_path):
+    run = TaskUserItem()
+    owner = FlowOwner(lambda: True)
+    sink_log = tmp_path / "sink.txt"
+    module = "tests.support.log_flow_functions"
+    reports: list[list[str]] = []
+    submitted = asyncio.Event()
+
+    async def execute():
+        async with open_custom_flow(
+            SimpleFlowDeclaration(
+                postprocess=FunctionRef(
+                    name="sample:report", module=module, attribute="sample_report"
+                )
+            ),
+            run=run,
+            mode="汇总",
+            receive_report=reports.append,
+            accept_push=True,
+            sink=WorkerFactorySpec(
+                factory=FunctionRef(
+                    name="sample:sink", module=module, attribute="sample_sink"
+                ),
+                options={"path": str(sink_log), "mode": "block_close"},
+            ),
+            owner=owner,
+        ) as flow:
+            assert flow.reporter is not None
+            assert flow.reporter.node("普通", "collected") == SubmitResult.ACCEPTED
+            submitted.set()
+            await asyncio.Future()
+
+    execution = asyncio.create_task(execute())
+    try:
+        async with asyncio.timeout(8):
+            await submitted.wait()
+            execution.cancel()
+            while "closing\n" not in sink_log.read_text(encoding="utf-8"):
+                await asyncio.sleep(0.01)
+            execution.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.shield(execution)
+
+        assert execution.cancelled()
+        assert reports == [["sample report", "⚠️ 节点采集不完整"]]
+        assert run.node_observation is not None
+        assert run.node_observation.read().close_reason == "timeout"
+        assert not owner.has_workers
+    finally:
+        if not execution.done():
+            execution.cancel()
+        await owner.close()
+        await asyncio.gather(execution, return_exceptions=True)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["ok", "fail", "block", "block_close"])
 async def test_worker_extensions_keep_observation_independent_of_sink(tmp_path, mode):
     path = tmp_path / "sink.txt"
