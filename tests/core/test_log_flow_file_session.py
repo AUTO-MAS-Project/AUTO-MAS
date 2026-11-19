@@ -420,12 +420,21 @@ async def test_file_backlog_reports_an_incomplete_session(tmp_path):
         await session.close()
 
 
-def test_worker_keeps_over_budget_node_out_of_pipe(tmp_path):
+def test_worker_keeps_over_budget_node_out_of_pipe_if_sink_cleanup_fails(tmp_path):
     path = tmp_path / "session.log"
     path.write_bytes(b"done:1\n" * (MAX_NODE_FRAMES + 1))
+    sink_log = tmp_path / "sink.log"
     spec = PipelineSpec(
         file=FileInput(path=str(path), start_from_end=False),
         rules=(LineRule(match="^done:", node_type="普通"),),
+        sink=WorkerFactorySpec(
+            factory=FunctionRef(
+                name="probe:sink",
+                module="tests.support.log_flow_functions",
+                attribute="sample_sink",
+            ),
+            options={"path": str(sink_log), "mode": "fail_close"},
+        ),
     )
     worker = subprocess.run(
         [sys.executable, "-m", "app.core.log_flow.worker"],
@@ -439,6 +448,7 @@ def test_worker_keeps_over_budget_node_out_of_pipe(tmp_path):
     ]
     nodes = [message.node for message in messages if isinstance(message, Observed)]
     assert [node.sequence for node in nodes] == list(range(1, MAX_NODE_FRAMES + 1))
+    assert sink_log.read_text(encoding="utf-8").splitlines()[-1] == "closed"
     assert isinstance(messages[-1], Failed) and messages[-1].reason == "capacity"
 
 

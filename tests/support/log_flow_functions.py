@@ -81,6 +81,8 @@ class _SampleSink:
             time.sleep(60)
         with self.path.open("a", encoding="utf-8") as stream:
             stream.write("closed\n")
+        if self.mode == "fail_close":
+            raise RuntimeError("sample sink failed during close")
 
 
 def sample_source(_options: Mapping[str, JsonValue]) -> _SampleSource:

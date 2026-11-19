@@ -88,7 +88,15 @@ def _collect(config: PipelineSpec, pipe: BufferedWriter) -> None:
         sys.path[:0] = [package.sdk_root, package.import_root, package.dependency_root]
         prefer_package_source(package.name, root)
     with ExitStack() as cleanup:
-        _run_pipeline(config, pipe, cleanup)
+        try:
+            _run_pipeline(config, pipe, cleanup)
+        except Exception as failure:
+            # 扩展清理仍需执行，宿主按管线原始失败原因生成摘要。
+            try:
+                cleanup.close()
+            except Exception as cleanup_failure:
+                raise failure from cleanup_failure
+            raise
 
 
 def _run_pipeline(
