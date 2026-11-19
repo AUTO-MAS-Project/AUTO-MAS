@@ -73,7 +73,9 @@ def test_stale_connection_is_recognised():
     )
     assert not applaunch.is_stale_connection("1")
     assert not applaunch.is_stale_connection("")
-    assert not applaunch.is_stale_connection("package:/system/priv-app/Settings/Settings.apk")
+    assert not applaunch.is_stale_connection(
+        "package:/system/priv-app/Settings/Settings.apk"
+    )
 
 
 def test_shell_command_missing_is_not_a_stale_connection():
