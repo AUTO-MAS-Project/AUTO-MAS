@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { NodeDisplayStatus } from './NodeDisplayStatus';
 import type { NodeSource } from './NodeSource';
 export type Node = {
     sequence: number;
@@ -12,5 +13,6 @@ export type Node = {
     node_id?: (string | null);
     revision?: number;
     withdrawn?: boolean;
+    status?: NodeDisplayStatus;
 };
 

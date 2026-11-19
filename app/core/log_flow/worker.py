@@ -12,7 +12,8 @@ from queue import Empty, Queue
 from threading import Thread
 from typing import cast
 
-from app.models.log_flow import Node, NodeSource
+from app.models.log_flow import Node, NodeDisplayStatus, NodeSource
+from app.models.notification.report import Node as LegacyReportNode
 from app.plugin.runtime.loader import prefer_package_source
 from app.utils.common.log.sources import LogReadLimitExceeded, LogSource
 
@@ -168,6 +169,7 @@ def _run_pipeline(
         timestamp: float | None,
         node_id: str | None = None,
         withdrawn: bool = False,
+        status: NodeDisplayStatus | None = None,
     ) -> None:
         nonlocal sequence, observed_bytes, sink_error
         sequence += 1
@@ -183,6 +185,9 @@ def _run_pipeline(
                 collected.pop(key, None)
             else:
                 collected[key] = (node_type, text, timestamp)
+        if status is None:
+            legacy = LegacyReportNode.from_text(text)
+            status = legacy.status if legacy is not None else "info"
         node = Node(
             sequence=sequence,
             node_type=node_type,
@@ -192,6 +197,7 @@ def _run_pipeline(
             node_id=stable_id,
             revision=revision,
             withdrawn=withdrawn,
+            status=status,
         )
         observed_bytes += _send(
             pipe,
@@ -222,6 +228,7 @@ def _run_pipeline(
                 source_name=source_name,
                 timestamp=record.timestamp,
                 node_id=record.node_id,
+                status=record.status,
             )
         else:
             last_timestamp[source_name] = record.timestamp

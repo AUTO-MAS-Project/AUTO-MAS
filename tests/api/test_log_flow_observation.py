@@ -34,7 +34,9 @@ async def test_observe_run_before_and_after_scheduler_completion(
             try:
                 reporter = session.push_reporter()
                 assert (
-                    reporter.node("error", "token=private", node_id="retry")
+                    reporter.node(
+                        "error", "token=private", node_id="retry", status="failed"
+                    )
                     == "accepted"
                 )
                 async with asyncio.timeout(3):
@@ -86,6 +88,7 @@ async def test_observe_run_before_and_after_scheduler_completion(
             ]
             assert page["closeReason"] is None
             assert page["nodes"][0]["revision"] == 1
+            assert page["nodes"][0]["status"] == "failed"
             cursor = page["cursor"]
             assert (
                 await client.get(path, params={**params, "after": 1})
@@ -120,6 +123,7 @@ async def test_observe_run_before_and_after_scheduler_completion(
         ]
         assert page["nodes"][0]["node_id"] == "push/retry"
         assert page["nodes"][0]["revision"] == 2
+        assert page["nodes"][0]["status"] == "info"
         assert page["closeReason"] == "complete" and page["hasMore"] is True
         last = (
             await reconnected.get(

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 type NodeSource = Literal["file", "push", "mas", "custom"]
 type CloseReason = Literal["complete", "timeout", "worker_error", "capacity"]
 type ReportedNodeKey = Annotated[str, Field(pattern=r"^[A-Za-z0-9_.:-]{1,96}$")]
+type NodeDisplayStatus = Literal["success", "skipped", "failed", "warning", "info"]
 
 _PAGE_BYTES = 256 * 1024
 
@@ -22,6 +23,7 @@ class Node(BaseModel, frozen=True):
     node_id: str | None = None
     revision: int = Field(default=1, ge=1)
     withdrawn: bool = False
+    status: NodeDisplayStatus = "info"
 
 
 @dataclass(frozen=True)

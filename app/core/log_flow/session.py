@@ -12,7 +12,13 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from app.models.log_flow import CloseReason, Node, NodeObservation, SessionSummary
+from app.models.log_flow import (
+    CloseReason,
+    Node,
+    NodeDisplayStatus,
+    NodeObservation,
+    SessionSummary,
+)
 from app.utils import process_platform
 from app.utils.common.process.runner import close_process_pipes
 from app.utils.contracts.process import TaskProcessJob
@@ -62,10 +68,15 @@ class _SessionReporter:
         *,
         timestamp: float | None = None,
         node_id: str | None = None,
+        status: NodeDisplayStatus | None = None,
     ) -> SubmitResult:
         try:
             record = ReportedRecord(
-                node_type=node_type, text=text, timestamp=timestamp, node_id=node_id
+                node_type=node_type,
+                text=text,
+                timestamp=timestamp,
+                node_id=node_id,
+                status=status,
             )
         except ValidationError:
             return SubmitResult.INVALID

@@ -5,7 +5,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, model_validator
 
-from app.models.log_flow import Node, ReportedNodeKey
+from app.models.log_flow import Node, NodeDisplayStatus, ReportedNodeKey
 
 # 进程管道的单条消息预算；不是日志文件或 SDK 限额。
 MAX_FRAME_BYTES = 64 * 1024
@@ -118,6 +118,7 @@ class ReportedRecord(BaseModel, frozen=True):
     text: str = Field(min_length=1)
     timestamp: float | None = Field(default=None, allow_inf_nan=False)
     node_id: ReportedNodeKey | None = None
+    status: NodeDisplayStatus | None = None
 
 
 class WithdrawnRecord(BaseModel, frozen=True):

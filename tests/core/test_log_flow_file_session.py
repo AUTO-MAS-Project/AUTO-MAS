@@ -218,6 +218,7 @@ async def test_report_consumes_current_nodes_after_correction_and_withdrawal():
         assert summary.complete
         assert render_node_details(summary, mode="逐条") == ["✅ 成功: step"]
         assert render_node_details(summary, mode="汇总") == ["✅ 成功: step"]
+        assert summary.nodes[0].status == "success"
         assert len(session.observation.read().nodes) == 4
     finally:
         await session.close(timeout=0)
