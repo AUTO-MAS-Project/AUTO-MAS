@@ -20,7 +20,11 @@ _ADAPTER_PLUGINS = {
     "MaaPlanConfig": ("maa_adapter", "auto-mas-maa-adapter"),
     "MaaPluginPlanConfig": ("maa_adapter", "auto-mas-maa-adapter"),
 }
-_MAA_GAME_ADAPTER_VERSION = "0.1.4"
+_MINIMUM_ADAPTER_VERSIONS = {
+    "maa_adapter": Version("0.1.4"),
+    "mumu_adapter": Version("0.1.1"),
+    "ldplayer_adapter": Version("0.1.1"),
+}
 
 
 def required_adapter_plugins(config_path: Path) -> dict[str, str]:
@@ -56,26 +60,24 @@ async def install_adapter_plugin(name: str, package: str) -> None:
     from app.models.config import PluginMeta
 
     record = Config.plugin_registry.by_name(name)
-    version = (
-        _MAA_GAME_ADAPTER_VERSION
-        if name == "maa_adapter"
+    minimum = _MINIMUM_ADAPTER_VERSIONS.get(name)
+    needs_upgrade = (
+        minimum is not None
         and record is not None
         and record.info.source == "installed"
         and record.info.version
-        and Version(record.info.version) < Version(_MAA_GAME_ADAPTER_VERSION)
-        else ""
+        and Version(record.info.version) < minimum
     )
     if (
         record is None
-        or version
+        or needs_upgrade
         or record.info.code_drift == PluginCodeDrift.PACKAGE_REMOVED
         or record._project_dir is None
         or not (record._project_dir / record.info.import_name).is_dir()
     ):
         await Plugin.install(
-            PluginMeta.build(
-                info={"plugin_name": name, "package_name": package, "version": version}
-            )
+            PluginMeta.build(info={"plugin_name": name, "package_name": package}),
+            minimum_version=minimum,
         )
         record = Config.plugin_registry.by_name(name)
     if record is None:

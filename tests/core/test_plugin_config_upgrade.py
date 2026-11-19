@@ -178,7 +178,7 @@ installs = []
 
 async def install(spec, *, plugin_name, meta_id, dry_run=False):
     global visible
-    assert spec == "auto-mas-maa-adapter"
+    assert spec == "auto-mas-maa-adapter>=0.1.4"
     installs.append(spec)
     if failure == "install":
         raise OSError("installation unavailable")
@@ -231,7 +231,7 @@ async def run():
                 assert (backup / ("ScriptConfig.json" if legacy else "scripts.yaml")).is_file()
                 with sqlite3.connect(backup / Config.database_path.name) as db:
                     assert db.execute("SELECT v FROM version").fetchone()[0] in ("v1.11", "v2.1")
-            assert installs == ([] if installed_before else ["auto-mas-maa-adapter"])
+            assert installs == ([] if installed_before else ["auto-mas-maa-adapter>=0.1.4"])
             script = Config.ScriptConfig[sid]
             assert script.Info.Name == "原托管"
             assert list(map(str, script.users.keys())) == [uid]

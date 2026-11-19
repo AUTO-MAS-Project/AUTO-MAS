@@ -128,8 +128,8 @@ async def run():
 asyncio.run(run())
 """
     expected = {
-        "auto-mas-mumu-adapter",
-        "auto-mas-ldplayer-adapter",
+        "auto-mas-mumu-adapter>=0.1.1",
+        "auto-mas-ldplayer-adapter>=0.1.1",
         "auto-mas-general-emulator-adapter",
         "auto-mas-win-process-adapter",
     }

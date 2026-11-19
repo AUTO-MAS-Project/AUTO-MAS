@@ -92,7 +92,7 @@
           </template>
           <template v-else-if="column.key === 'status'">
             <a-tag :color="statusColor(record.document)">{{
-              t('core.games.states.' + (record.document.info?.status ?? 10))
+              statusLabels[record.document.info?.status ?? 10]
             }}</a-tag>
             <a-tag v-if="isDeletedDevice(record.document)">{{ t('core.games.deleted') }}</a-tag>
           </template>
@@ -136,7 +136,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Modal, message } from 'ant-design-vue'
 import { DeleteOutlined, DownOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
-import { Service } from '@/api'
+import { Service, type DeviceStatus } from '@/api'
 import type { GameDevice, GameDeviceRow, GameRow } from '@/types/games'
 import { gameActionHint, gameDevices, isDeletedDevice } from '@/types/games'
 import { useGamesApi } from '@/composables/useGamesApi'
@@ -156,6 +156,17 @@ const hint = (field: string) => gameActionHint(props.game, props.game.uid, field
 const canRun = (field: string) => hint(field)?.editable === true
 const deviceEditing = ref<{ device: GameDeviceRow; kind: 'settings' | 'connection' | 'options' }>()
 const devices = computed(() => gameDevices(props.game))
+const statusLabels = computed<Record<DeviceStatus, string>>(() => ({
+  0: t('core.games.states.0'),
+  1: t('core.games.states.1'),
+  2: t('core.games.states.2'),
+  3: t('core.games.states.3'),
+  4: t('core.games.states.4'),
+  5: t('core.games.states.5'),
+  6: t('core.games.states.6'),
+  7: t('core.games.states.7'),
+  10: t('core.games.states.10'),
+}))
 const deviceColumns = computed(() => [
   { title: t('core.games.device'), key: 'name' },
   { title: t('core.games.status'), key: 'status', width: 130 },

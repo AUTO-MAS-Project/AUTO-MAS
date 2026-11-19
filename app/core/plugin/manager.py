@@ -1049,7 +1049,9 @@ class _PluginManager:
             )
             raise PluginOperationError(str(exc), payload={"name": name}) from exc
 
-    async def install(self, meta: PluginMeta) -> dict[str, Any]:
+    async def install(
+        self, meta: PluginMeta, *, minimum_version: Version | None = None
+    ) -> dict[str, Any]:
         """确认只读目录的安装目标及发行元数据，联合装包后核对实际身份，再发现并加载插件。"""
         async with self._hold():
             from app.core.config import Config
@@ -1062,6 +1064,10 @@ class _PluginManager:
                     and canonicalize_name(pending.progress.packageName)
                     == canonicalize_name(meta.info.package_name)
                     and pending.progress.pluginName == meta.info.plugin_name
+                    and (
+                        minimum_version is None
+                        or Version(pending.progress.version) >= minimum_version
+                    )
                     and (
                         not meta.info.version
                         or Version(pending.progress.version)
@@ -1146,6 +1152,11 @@ class _PluginManager:
             elif meta.activation_state != NodeState.INACTIVE:
                 raise PluginPrecheckError("市场条目缺少版本，请刷新目录后重试")
             # 主程序升级可从内部声明自动求解版本；同样须通过装包后的实际元数据校验。
+            requirement = package
+            if version:
+                requirement += f"=={version}"
+            elif minimum_version is not None:
+                requirement += f">={minimum_version}"
             pause = (
                 self._pause_activity(existing)
                 if existing is not None and existing._plugin_cls is not None
@@ -1157,7 +1168,7 @@ class _PluginManager:
                     if isinstance(plugin, (ScriptAdapterPlugin, GameAdapterPlugin)):
                         plugin.precheck_locks()
                 restart_required = await uv_tool.install(
-                    f"{package}=={version}" if version else package,
+                    requirement,
                     plugin_name=plugin_id,
                     meta_id=meta.uid,
                 )
