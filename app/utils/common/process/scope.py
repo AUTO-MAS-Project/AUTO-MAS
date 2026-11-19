@@ -12,6 +12,8 @@ from typing import Any, Literal
 
 import psutil
 
+from .platform import breakaway_rejected
+
 
 @dataclass
 class StopCheck:
@@ -314,12 +316,14 @@ class TaskProcessScope:
         try:
             process = subprocess.Popen(*args, **kwargs)
         except OSError as error:
-            if (
-                not kwargs["creationflags"] & self._breakaway_flags
-                or getattr(error, "winerror", None) != 5
-            ):
+            retry_flags = breakaway_rejected(
+                error,
+                flags=kwargs["creationflags"],
+                breakaway_flags=self._breakaway_flags,
+            )
+            if retry_flags is None:
                 raise
-            kwargs["creationflags"] &= ~self._breakaway_flags
+            kwargs["creationflags"] = retry_flags
             process = subprocess.Popen(*args, **kwargs)
         try:
             if self.closed:

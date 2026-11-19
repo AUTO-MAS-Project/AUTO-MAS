@@ -8,7 +8,7 @@ import sys
 import textwrap
 import time
 import uuid
-from contextlib import closing, suppress
+from contextlib import suppress
 
 import pytest
 
@@ -97,7 +97,7 @@ async def test_script_breakaway_survives_task_cleanup(
                     and access & win32con.PROCESS_SET_QUOTA
                     and not early_gate.exists()
                 ):
-                    # 旧实现此时已经拍完快照，但尚未真正登记根进程。
+                    # 此时已发现父进程但尚未登记，包装进程趁机再派生一个后代。
                     early_gate.touch()
                     deadline = time.monotonic() + 5
                     while not early_pid.exists():
@@ -107,7 +107,7 @@ async def test_script_breakaway_survives_task_cleanup(
 
             def assign_and_start(job, handle):
                 assign(job, handle)
-                # 登记时放行；生产暂停期间不能等子进程，恢复后再核对结果。
+                # 登记后补扫能找到登记前出生的后代，无需暂停进程等待。
                 early_gate.touch()
                 gate.touch()
 
@@ -155,8 +155,10 @@ async def test_script_breakaway_survives_task_cleanup(
 
 
 @pytest.mark.asyncio
-async def test_failed_adoption_resumes_the_running_script(tmp_path, monkeypatch):
-    """登记失败也必须恢复脚本，不能留下被 MAS 暂停的线程。"""
+async def test_failed_adoption_is_reported_without_touching_the_process(
+    tmp_path, monkeypatch
+):
+    """登记失败须上抛给调用方判定，既不吞成成功，也不干预脚本自身运行。"""
     import psutil
     import win32job
 
@@ -183,6 +185,7 @@ async def test_failed_adoption_resumes_the_running_script(tmp_path, monkeypatch)
         monkeypatch.setattr(win32job, "AssignProcessToJobObject", deny_assignment)
         with pytest.raises(PermissionError, match="injected Job assignment failure"):
             scope.track(psutil.Process(parent.pid))
+        # 接管失败只影响归属登记，脚本仍按自己的节奏运行。
         before = heartbeat.read_text()
         async with asyncio.timeout(3):
             while heartbeat.read_text() in ("", before):
@@ -196,74 +199,42 @@ async def test_failed_adoption_resumes_the_running_script(tmp_path, monkeypatch)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("worker_exits", [True, False], ids=["exited", "access-denied"])
-async def test_adoption_distinguishes_thread_exit_from_denied_access(
-    monkeypatch, worker_exits
-):
+async def test_adoption_does_not_suspend_the_target_process(tmp_path):
+    """接管不得暂停目标进程：受保护的游戏线程会拒绝挂起，登记仍须完成。"""
     import psutil
-    import pywintypes
-    import win32api
-    import win32con
-    import win32event
-    import winerror
 
     from app.utils.common.process.scope import TaskProcessScope
 
-    code = textwrap.dedent("""
-        import os, threading, time
+    heartbeat = tmp_path / "heartbeat"
+    parent = await asyncio.create_subprocess_exec(
+        sys._base_executable,
+        "-I",
+        "-c",
+        "import sys,time; from pathlib import Path; p=Path(sys.argv[1]); "
+        "\nfor i in range(600):\n p.write_text(str(i)); time.sleep(.02)",
+        str(heartbeat),
+    )
+    scope = TaskProcessScope()
+    try:
+        async with asyncio.timeout(5):
+            while not heartbeat.exists():
+                await asyncio.sleep(0.01)
 
-        def worker():
-            print(threading.get_native_id(), flush=True)
-            os.read(0, 1)
+        scope.track(psutil.Process(parent.pid))
 
-        threading.Thread(target=worker, daemon=True).start()
-        time.sleep(60)
-    """)
-    with subprocess.Popen(
-        [sys._base_executable, "-I", "-c", code],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-    ) as child:
-        scope = TaskProcessScope()
-        try:
-            tid = int(
-                await asyncio.wait_for(asyncio.to_thread(child.stdout.readline), 5)
-            )
-            open_thread = win32api.OpenThread
-            with closing(open_thread(win32con.SYNCHRONIZE, False, tid)) as worker:
-
-                def open_during_thread_exit(access, inherit, thread_id):
-                    if not worker_exits and thread_id == tid:
-                        # 存活线程用缺少挂起权限的真实句柄，触发原生拒绝访问。
-                        access = win32con.SYNCHRONIZE
-                    if worker_exits and not child.stdin.closed:
-                        # 等枚举完成再放行退出；此时还没有线程被挂起。
-                        child.stdin.close()
-                        assert (
-                            win32event.WaitForSingleObject(worker, 3000)
-                            == win32event.WAIT_OBJECT_0
-                        )
-                    return open_thread(access, inherit, thread_id)
-
-                monkeypatch.setattr(win32api, "OpenThread", open_during_thread_exit)
-                target = psutil.Process(child.pid)
-                if worker_exits:
-                    scope.track(target)
-                    assert child.poll() is None
-                    assert scope.kill_process_tree(child.pid)
-                    await asyncio.to_thread(child.wait, timeout=3)
-                else:
-                    with pytest.raises(pywintypes.error) as exc:
-                        scope.track(target)
-                    assert exc.value.winerror == winerror.ERROR_ACCESS_DENIED
-                    assert exc.value.funcname == "SuspendThread"
-                    assert (
-                        win32event.WaitForSingleObject(worker, 0)
-                        == win32event.WAIT_TIMEOUT
-                    )
-        finally:
-            child.kill()
-            await scope.force_close()
+        # 计数继续推进说明接管全程没有把目标进程挂起过；只要求推进，
+        # 不对采样间隔做假设，避免机器繁忙时误报。
+        started = int(heartbeat.read_text())
+        async with asyncio.timeout(3):
+            while int(heartbeat.read_text()) <= started + 2:
+                await asyncio.sleep(0.01)
+        assert scope.kill_process_tree(parent.pid)
+        await asyncio.wait_for(parent.wait(), 3)
+    finally:
+        await scope.force_close()
+        with suppress(ProcessLookupError):
+            parent.kill()
+        await asyncio.wait_for(parent.wait(), 3)
 
 
 @pytest.mark.asyncio
