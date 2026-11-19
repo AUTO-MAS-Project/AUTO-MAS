@@ -10,7 +10,13 @@ from app.models.log_flow import ObservationCursor, ObservationPage
 from app.models.task import TaskScriptItem, TaskUserItem
 from app.utils.common.log.monitor import LogMonitor
 
-from .contracts import FunctionRef, LineRule, PipelineSpec, WindowRule
+from .contracts import (
+    FunctionRef,
+    LineRule,
+    PipelineSpec,
+    ProcessorFactorySpec,
+    WindowRule,
+)
 from .manager import open_for_run
 from .report import ReportMode, render_node_details
 
@@ -21,6 +27,7 @@ class SimpleFlowDeclaration(BaseModel, frozen=True):
     rules: tuple[LineRule, ...] = ()
     windows: tuple[WindowRule, ...] = Field(default=(), max_length=16)
     postprocess: FunctionRef | None = None
+    processor: ProcessorFactorySpec | None = None
 
 
 class ReadNodes(Protocol):
@@ -48,6 +55,7 @@ async def open_simple_flow(
             rules=declaration.rules,
             windows=declaration.windows,
             postprocess=declaration.postprocess,
+            processor=declaration.processor,
         ),
     )
     receiver = session.native_line_receiver()

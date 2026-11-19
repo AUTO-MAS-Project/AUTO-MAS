@@ -13,7 +13,6 @@ from typing import cast
 
 from app.models.log_flow import Node, NodeSource
 from app.utils.common.log.sources import LogReadLimitExceeded, LogSource
-from app.utils.common.log_box.pipeline import PostProcessor, ResultItem
 
 from .contracts import (
     INPUT_RECORD,
@@ -27,12 +26,20 @@ from .contracts import (
     InputRecord,
     Observed,
     PipelineSpec,
+    PostProcessor,
     Ready,
     ReportedRecord,
     ReportEntry,
+    ResultItem,
     WorkerMessage,
 )
-from .processor import GeneralRuleProcessor, RuleNodeProcessor, load_functions
+from .processor import (
+    GeneralRuleProcessor,
+    RuleNodeProcessor,
+    TextProcessor,
+    build_custom_processor,
+    load_functions,
+)
 
 _POLL_SECONDS = 0.05
 _MAX_FILE_READ_BYTES = 1024 * 1024
@@ -70,12 +77,14 @@ def _collect(config: PipelineSpec, pipe: BufferedWriter) -> None:
             raise TypeError(f"报告归并器不可调用：{ref.name}")
         postprocessor = cast(PostProcessor, implementation)
 
-    def build_processor() -> GeneralRuleProcessor | RuleNodeProcessor:
+    def build_processor() -> TextProcessor:
+        if config.processor is not None:
+            return build_custom_processor(config.processor)
         if config.general_patterns is not None:
             return GeneralRuleProcessor(config.general_patterns, config.general_hooks)
         return RuleNodeProcessor(config, functions)
 
-    processors: dict[NodeSource, GeneralRuleProcessor | RuleNodeProcessor] = {}
+    processors: dict[NodeSource, TextProcessor] = {}
     if config.file is not None:
         processors["file"] = build_processor()
     if config.accept_push:

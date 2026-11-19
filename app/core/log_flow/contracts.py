@@ -1,8 +1,9 @@
 """LogFlow 会话的内部声明和进程消息。"""
 
+from collections.abc import Callable
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, Field, TypeAdapter, model_validator
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter, model_validator
 
 from app.models.log_flow import Node
 
@@ -11,6 +12,9 @@ MAX_FRAME_BYTES = 64 * 1024
 MAX_PENDING_RECORDS = 64
 MAX_NODE_FRAMES = 4096
 MAX_NODE_BYTES = 4 * 1024 * 1024
+
+type ResultItem = tuple[str, str, float | None]
+type PostProcessor = Callable[[list[ResultItem]], list[ResultItem]]
 
 
 class LineRule(BaseModel, frozen=True):
@@ -39,6 +43,13 @@ class FileInput(BaseModel, frozen=True):
     rotated_name: str | None = None
 
 
+class ProcessorFactorySpec(BaseModel, frozen=True):
+    """宿主选出的工厂及可序列化参数，不是公开插件注册声明。"""
+
+    factory: FunctionRef
+    options: dict[str, JsonValue] = Field(default_factory=dict)
+
+
 class PipelineSpec(BaseModel, frozen=True):
     file: FileInput | None = None
     rules: tuple[LineRule, ...] = ()
@@ -49,19 +60,31 @@ class PipelineSpec(BaseModel, frozen=True):
     postprocess: FunctionRef | None = None
     general_patterns: str | None = None
     general_hooks: str = ""
+    processor: ProcessorFactorySpec | None = None
 
     @model_validator(mode="after")
     def check_sources(self) -> Self:
         if self.file is None and not (self.accept_push or self.accept_mas):
             raise ValueError("至少声明一个日志来源")
         if self.file is not None and not (
-            self.rules or self.windows or self.general_patterns is not None
+            self.rules
+            or self.windows
+            or self.general_patterns is not None
+            or self.processor is not None
         ):
             raise ValueError("文件采集必须声明规则")
         if self.general_patterns is not None and (
             self.rules or self.windows or self.functions
         ):
             raise ValueError("通用脚本和专项规则必须选用一种处理方式")
+        if self.processor is not None and (
+            self.rules
+            or self.windows
+            or self.functions
+            or self.general_patterns is not None
+            or self.general_hooks
+        ):
+            raise ValueError("自定义处理器与内置处理规则不能同时使用")
         return self
 
 

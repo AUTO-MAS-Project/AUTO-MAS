@@ -1,9 +1,11 @@
 """声明式文本节点处理；每个来源独立保留多行窗口。"""
 
 import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from importlib import import_module
-from typing import cast
+from typing import Protocol, cast
+
+from pydantic import JsonValue
 
 from app.utils.common.expression import ExpressionFunction, compile_expression
 from app.utils.common.log.patterns import (
@@ -16,7 +18,24 @@ from app.utils.common.log.patterns import (
 from app.utils.common.log.sources import LogReadLimitExceeded
 from app.utils.common.log_box.hooks import make_line_hook
 
-from .contracts import MAX_FRAME_BYTES, FunctionRef, PipelineSpec
+from .contracts import MAX_FRAME_BYTES, FunctionRef, PipelineSpec, ProcessorFactorySpec
+
+
+class TextProcessor(Protocol):
+    """一个输入来源在 worker 内独占的处理实例。"""
+
+    def process(self, line: str) -> Iterable[tuple[str, str]]: ...
+
+    def close(self) -> Iterable[tuple[str, str]]: ...
+
+
+type ProcessorFactory = Callable[[Mapping[str, JsonValue]], TextProcessor]
+
+
+def build_custom_processor(spec: ProcessorFactorySpec) -> TextProcessor:
+    ref = spec.factory
+    factory = cast(ProcessorFactory, getattr(import_module(ref.module), ref.attribute))
+    return factory(spec.options)
 
 
 def load_functions(refs: tuple[FunctionRef, ...]) -> dict[str, ExpressionFunction]:

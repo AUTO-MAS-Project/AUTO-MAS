@@ -14,6 +14,7 @@ from app.core.log_flow.contracts import (
     FunctionRef,
     LineRule,
     PipelineSpec,
+    ProcessorFactorySpec,
     ReportedRecord,
     TextRecord,
     WindowRule,
@@ -249,6 +250,54 @@ async def test_default_flow_shares_live_nodes_and_delivers_selected_report(
     closed = read_nodes(after=page.cursor)
     assert closed.close_reason == "complete"
     assert [node.text for node in closed.nodes] == ["✅ 成功: 8"]
+
+
+@pytest.mark.asyncio
+async def test_simple_flow_can_replace_only_the_text_processor():
+    declaration = SimpleFlowDeclaration(
+        processor=ProcessorFactorySpec(
+            factory=FunctionRef(
+                name="example:prefix",
+                module="tests.support.log_flow_functions",
+                attribute="prefix_processor",
+            ),
+            options={"prefix": "✅ 成功: "},
+        )
+    )
+    run = TaskUserItem(user_id="test")
+    reports: list[list[str]] = []
+
+    async def display(_lines, _latest_time):
+        pass
+
+    monitor = LogMonitor((0, 0), "", display)
+    async with open_simple_flow(
+        declaration,
+        run=run,
+        monitor=monitor,
+        mode="汇总",
+        receive_report=reports.append,
+    ) as read_nodes:
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            "print('done:7'); print('done:8')",
+            stdout=asyncio.subprocess.PIPE,
+        )
+        await asyncio.wait_for(monitor.monitor_process(process, "stdout"), 5)
+        assert await process.wait() == 0
+        async with asyncio.timeout(5):
+            while len((page := read_nodes()).nodes) < 2:
+                await asyncio.sleep(0.01)
+        assert run.node_observation is not None
+        assert page == run.node_observation.read()
+        assert [(node.source, node.text) for node in page.nodes] == [
+            ("mas", "✅ 成功: 7"),
+            ("mas", "✅ 成功: 8"),
+        ]
+        assert reports == []
+    assert [node.text for node in read_nodes(after=page.cursor).nodes] == ["合计: 2"]
+    assert reports == [["✅ 成功: 7, 8", "合计: 2"]]
 
 
 @pytest.mark.asyncio
