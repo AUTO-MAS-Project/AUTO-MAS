@@ -5017,6 +5017,8 @@
   "core.plugins.link.docs": "文档",
   "core.plugins.link.homepage": "主页",
   "core.plugins.link.repository": "仓库",
+  "core.plugins.releaseNotes": "更新内容",
+  "core.plugins.releaseNotesLimit": "仅显示最近 5 个发行版本内的更新内容",
   "core.plugins.updateTo": "更新至 {version}",
   "core.plugins.installPhase.queued": "排队中",
   "core.plugins.installPhase.installing": "安装中",

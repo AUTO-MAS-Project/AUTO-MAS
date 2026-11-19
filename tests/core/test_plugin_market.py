@@ -27,7 +27,7 @@ def published_catalog(*, empty=False):
         (
             Path(__file__).parents[1]
             / "fixtures"
-            / ("plugin_catalog_empty_v1.json" if empty else "plugin_catalog_v1.json")
+            / ("plugin_catalog_empty_v2.json" if empty else "plugin_catalog_v2.json")
         ).read_text(encoding="utf-8")
     )
 
@@ -139,7 +139,7 @@ async def test_invalid_data_station_catalog_uses_existing_fallback(
     if failure == "revision":
         document["plugins"][0]["version"] = "99.0"
     elif failure == "schema":
-        document["schema_version"] = 2
+        document["schema_version"] = 1
     elif failure == "identity":
         document["plugins"].append(deepcopy(document["plugins"][0]))
     hosts = []
@@ -554,3 +554,62 @@ async def test_incomplete_mirror_is_discarded_before_next_source(
         assert catalog.model_dump() == before
     assert any("first.test" in url for url in requests)
     assert any("second.test" in url for url in requests)
+
+
+@pytest.mark.asyncio
+async def test_changelog_range_and_fallback_on_same_install_target(
+    catalog, monkeypatch
+):
+    """已装版本使用 PEP 440 筛选跨版说明，发行源回退清空同一条目内的数据站日志。"""
+    monkeypatch.setenv("AUTO_MAS_PLUGIN_INDEX_URL", "https://catalog.test/plugins.json")
+    document = published_catalog()
+    entry = document["plugins"][0]
+    entry["version"] = "1.10"
+    entry["changelog"] = [
+        {"version": version, "body": f"Notes {version}"}
+        for version in ("1.10", "1.3", "1.2")
+    ]
+    document["revision"] = content_revision(document["plugins"])
+    registry = market.Config.plugin_registry
+    registry.add(
+        PluginRecord,
+        payload={
+            "info": {
+                "plugin_name": entry["plugin_name"],
+                "package_name": entry["package_name"],
+                "source": "installed",
+                "version": "1.2.0",
+            }
+        },
+    )
+    await registry.commit()
+    online = True
+
+    def handler(request):
+        if request.url.host == "catalog.test":
+            return httpx.Response(200, json=document) if online else httpx.Response(503)
+        if request.url.path == "/simple/":
+            return httpx.Response(
+                200, text='<a href="/simple/auto-mas-demo/">auto-mas-demo</a>'
+            )
+        return httpx.Response(200, json=project(version="1.10"))
+
+    serve(monkeypatch, handler)
+    await market.refresh()
+    (uid,) = catalog.keys()
+    from app.api.plugin import PluginCatalogGetIn, get_plugin_catalog
+
+    result = await get_plugin_catalog(PluginCatalogGetIn(metaId=str(uid)))
+    assert result.code == 200
+    info = result.data[str(uid)].model_dump()["info"]
+    assert info["changelog_versions"] == {
+        "installed": "1.2",
+        "target": "1.10",
+        "updates": ["1.10", "1.3"],
+    }
+    assert info["changelog"] == entry["changelog"]
+
+    online = False
+    await market.refresh()
+    result = await get_plugin_catalog(PluginCatalogGetIn(metaId=str(uid)))
+    assert result.data[str(uid)].model_dump()["info"]["changelog"] == []
