@@ -84,8 +84,13 @@ def render_node_details(
     if report_entries is None and (
         not summary.complete or not summary.requires_final_report
     ):
+        nodes = (
+            sorted(summary.nodes, key=lambda node: node.sequence)
+            if summary.report_order == "last_updated"
+            else summary.nodes
+        )
         report_entries = tuple(
-            (node.node_type, node.text, node.timestamp) for node in summary.nodes
+            (node.node_type, node.text, node.timestamp) for node in nodes
         )
     entries = [
         LogEntry(*entry)

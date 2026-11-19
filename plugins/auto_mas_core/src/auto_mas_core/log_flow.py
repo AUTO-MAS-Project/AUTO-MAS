@@ -33,6 +33,7 @@ from app.models.log_flow import (
     ObservationCursor,
     ObservationPage,
     ObservationSnapshot,
+    ReportOrder,
 )
 from app.utils.common.expression import ExpressionFunction
 from app.utils.common.log.monitor import LogMonitor
@@ -99,6 +100,7 @@ __all__ = [
     "ProcessorOutput",
     "PushReporter",
     "ReportMode",
+    "ReportOrder",
     "ReportedRecord",
     "SimpleFlowDeclaration",
     "Sink",

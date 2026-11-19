@@ -18,6 +18,7 @@ from app.models.log_flow import (
     NodeAttributes,
     NodeDisplayStatus,
     NodeObservation,
+    ReportOrder,
     SessionSummary,
 )
 from app.utils import process_platform
@@ -109,6 +110,7 @@ class LogFlowSession:
         accept_mas: bool,
         observation: NodeObservation,
         requires_final_report: bool,
+        report_order: ReportOrder,
     ) -> None:
         self._process = process
         self._job = job
@@ -125,6 +127,7 @@ class LogFlowSession:
         self._writer: asyncio.Task[None] | None = None
         self.observation = observation
         self._requires_final_report = requires_final_report
+        self._report_order = report_order
         self._final_report: tuple[ResultItem, ...] | None = None
         self._final_report_bytes = 0
         self._missed_native = False
@@ -172,6 +175,7 @@ class LogFlowSession:
                     accept_push=config.accept_push,
                     accept_mas=config.accept_mas,
                     requires_final_report=config.postprocess is not None,
+                    report_order=config.report_order,
                     observation=observation
                     if observation is not None
                     else NodeObservation(),
@@ -378,6 +382,7 @@ class LogFlowSession:
             report_bytes=self._final_report_bytes,
             requires_final_report=self._requires_final_report,
             sink_error=sink_error,
+            report_order=self._report_order,
         )
 
     async def _receive(self) -> SessionSummary:

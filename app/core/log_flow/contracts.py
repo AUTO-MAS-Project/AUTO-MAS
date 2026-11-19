@@ -14,7 +14,13 @@ from pydantic import (
     model_validator,
 )
 
-from app.models.log_flow import Node, NodeAttributes, NodeDisplayStatus, ReportedNodeKey
+from app.models.log_flow import (
+    Node,
+    NodeAttributes,
+    NodeDisplayStatus,
+    ReportedNodeKey,
+    ReportOrder,
+)
 from app.utils.common.log.sources import FileCursor, capture_file_cursor
 
 # 进程管道的单条消息预算；不是日志文件或 SDK 限额。
@@ -87,6 +93,7 @@ class PipelineSpec(BaseModel, frozen=True):
     functions: tuple[FunctionRef, ...] = ()
     preprocess: FunctionRef | None = None
     postprocess: FunctionRef | WorkerFactorySpec | None = None
+    report_order: ReportOrder = "first_seen"
     general_patterns: str | None = None
     general_hooks: str = ""
     general_log_time: tuple[int, int, str] | None = None

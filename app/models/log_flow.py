@@ -12,6 +12,7 @@ type NodeSource = Literal["file", "push", "mas", "custom"]
 type CloseReason = Literal["complete", "timeout", "worker_error", "capacity"]
 type ReportedNodeKey = Annotated[str, Field(pattern=r"^[A-Za-z0-9_.:-]{1,96}$")]
 type NodeDisplayStatus = Literal["success", "skipped", "failed", "warning", "info"]
+type ReportOrder = Literal["first_seen", "last_updated"]
 
 MAX_NODE_ATTRIBUTE_TEXT = 256
 _PAGE_BYTES = 256 * 1024
@@ -52,6 +53,7 @@ class SessionSummary:
     report_entries: tuple[ResultItem, ...] | None = None
     requires_final_report: bool = False
     sink_error: str = ""
+    report_order: ReportOrder = "first_seen"
 
     @property
     def complete(self) -> bool:
@@ -142,6 +144,7 @@ class NodeObservation:
         report_bytes: int = 0,
         requires_final_report: bool = False,
         sink_error: str = "",
+        report_order: ReportOrder = "first_seen",
     ) -> SessionSummary:
         if self._summary is None:
             self._report_bytes = report_bytes
@@ -152,6 +155,7 @@ class NodeObservation:
                 report_entries=report_entries,
                 requires_final_report=requires_final_report,
                 sink_error=sink_error,
+                report_order=report_order,
             )
         return self._summary
 

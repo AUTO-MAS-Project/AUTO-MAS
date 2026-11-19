@@ -1088,6 +1088,38 @@ async def test_report_consumes_current_nodes_after_correction_and_withdrawal():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    ("order", "postprocess", "expected"),
+    [
+        ("first_seen", None, ["A2", "B"]),
+        ("last_updated", None, ["B", "A2"]),
+        (
+            "last_updated",
+            FunctionRef(name="probe:copy", module="builtins", attribute="list"),
+            ["B", "A2"],
+        ),
+    ],
+)
+async def test_report_order_is_independent_of_observation(order, postprocess, expected):
+    run = TaskUserItem()
+    declaration = SimpleFlowDeclaration(report_order=order, postprocess=postprocess)
+    async with open_custom_flow(
+        declaration, run=run, accept_push=True, mode="汇总"
+    ) as flow:
+        assert flow.reporter is not None
+        for key, text in [("a", "A1"), ("b", "B"), ("a", "A2")]:
+            assert (
+                flow.reporter.node("普通", text, node_id=key) is SubmitResult.ACCEPTED
+            )
+
+    assert [node.text for node in flow.snapshot_nodes().nodes] == ["A2", "B"]
+    assert [node.text for node in flow.read_nodes().nodes] == ["A1", "B", "A2"]
+    observation = run.node_observation
+    assert observation is not None and observation.summary is not None
+    assert render_node_details(observation.summary, mode="汇总") == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     ("mode", "expected"),
     [
         ("逐条", [["✅ 成功: 7", "✅ 成功: 8"]]),

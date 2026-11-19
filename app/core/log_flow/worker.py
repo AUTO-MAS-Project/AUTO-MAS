@@ -218,9 +218,9 @@ def _run_pipeline(
             revisions[stable_id] = revision
         if postprocessor is not None:
             key = stable_id if stable_id is not None else sequence
-            if withdrawn:
+            if withdrawn or config.report_order == "last_updated":
                 collected.pop(key, None)
-            else:
+            if not withdrawn:
                 collected[key] = (node_type, text, timestamp)
         if status is None:
             legacy = LegacyReportNode.from_text(text)

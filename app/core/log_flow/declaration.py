@@ -4,6 +4,8 @@ from typing import Self
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.models.log_flow import ReportOrder
+
 from .contracts import (
     FileInput,
     FunctionRef,
@@ -21,6 +23,7 @@ class SimpleFlowDeclaration(BaseModel, frozen=True, extra="forbid"):
     windows: tuple[WindowRule, ...] = Field(default=(), max_length=16)
     preprocess: FunctionRef | None = None
     postprocess: FunctionRef | WorkerFactorySpec | None = None
+    report_order: ReportOrder = "first_seen"
     functions: tuple[FunctionRef, ...] = ()
     processor: ProcessorFactorySpec | None = None
 

@@ -91,6 +91,9 @@ async def open_custom_flow(
             if specialized is not None and mode != "关闭"
             else None
         ),
+        report_order=specialized.report_order
+        if specialized is not None
+        else "first_seen",
         functions=specialized.functions if specialized is not None else (),
         processor=specialized.processor if specialized is not None else None,
         general_patterns=webui.patterns if webui is not None else None,

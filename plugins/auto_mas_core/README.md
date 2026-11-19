@@ -124,6 +124,8 @@ async def execute_with_nodes(
 
 迁移已有按账号交错排版的报告时，用 `task_report.details_for(user_run, include_error_nodes=report.uncompleted_count > 0)` 取得对应账号的详情，填进原有布局，再调用 `task_report.send(title=..., report=..., append_details=False)`。`"失败"` 类型用于通知筛选，节点的展示状态独立保存。
 
+报告默认按节点首次出现的顺序取当前状态。旧专项若按最后一次任务结果排序，可在 `SimpleFlowDeclaration` 设置 `report_order="last_updated"`。报告和后置归并器将按最后更新的事件序号接收当前节点，实时快照及游标的顺序保持原口径。
+
 在上下文中用 `as flow` 取得 `FlowAccess`。`snapshot_nodes()` 返回当前有效节点和游标，`read_nodes(after=cursor)` 继续读取新增、修订和撤回。每页使用返回的新游标，收到 `close_reason` 后仍按 `has_more` 读完余下节点。MAS 执行结果由任务状态独立提供。
 
 只采集专项文件时，可声明 `use_mas_log=False` 和 `use_run_file=True`，打开会话时传 `file_input=FileInput(path=...)`。脚本需提前启动时，在启动前 `await FileInput(path=...).capture_start()`，将返回值传入会话。已有结构化结果可在声明中启用 `accept_push`，通过 `flow.reporter` 上报。`accepted` 表示已入队，可用节点查询确认产出。`backpressure` 时只重试本次未入队的记录。自定义来源、处理器、sink 和表达式函数在采集进程中加载，工厂引用自己的插件包，运行参数使用 JSON 值。[设计与迁移验收](../../docs/logbox-runstream-plan.md)
