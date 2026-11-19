@@ -298,8 +298,11 @@ def _run_pipeline(
                 raise ValueError("该会话未声明消息来源")
             process_record(record, source_name=source_name)
         if source is not None:
-            for line in source.read_new():
-                process_text(line, source_name="file", timestamp=time.time())
+            while True:
+                for line in source.read_new():
+                    process_text(line, source_name="file", timestamp=time.time())
+                if not closing or not source.has_more:
+                    break
         if custom_source is not None:
             closing_source = closing
             for record in custom_source.close() if closing else custom_source.poll():

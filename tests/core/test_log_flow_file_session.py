@@ -271,6 +271,30 @@ async def test_unavailable_worker_does_not_prevent_execution_inside_flow():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("rotate", [False, True])
+async def test_large_file_backlog_drains_in_batches_through_close(tmp_path, rotate):
+    path = tmp_path / "script.log"
+    append(path, "done:9\n")
+    start = await FileInput(path=str(path)).capture_start()
+    padding = ("x" * 8192 + "\n") * 140
+    append(path, f"done:1\n{padding}done:2\n")
+    if rotate:
+        path.rename(path.with_suffix(".bak"))
+        append(path, "done:3\n")
+
+    spec = pipeline(path).model_copy(update={"file": start})
+    session = await LogFlowSession.open(spec)
+    try:
+        summary = await session.close()
+        assert summary.complete, summary.detail
+        assert [node.text for node in summary.nodes] == (
+            ["1", "2", "3"] if rotate else ["1", "2"]
+        )
+    finally:
+        await session.close()
+
+
+@pytest.mark.asyncio
 async def test_file_backlog_reports_an_incomplete_session(tmp_path):
     path = tmp_path / "script.log"
     session = await LogFlowSession.open(pipeline(path))
