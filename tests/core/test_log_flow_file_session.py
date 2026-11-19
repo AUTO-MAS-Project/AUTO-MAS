@@ -582,6 +582,62 @@ async def test_simple_flow_handles_stdout_burst_from_real_log_monitor():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("stop_case", ["normal", "rotated", "slow_callback"])
+async def test_native_file_flow_drains_last_poll_on_stop(
+    tmp_path, monkeypatch, stop_case
+):
+    from app.utils.common.log import monitor as monitor_module
+
+    path = tmp_path / "script.log"
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    append(path, f"{stamp} done:first\n")
+    first_seen = asyncio.Event()
+    slow_callback = stop_case == "slow_callback"
+
+    async def display(lines, _latest_time):
+        if lines:
+            first_seen.set()
+        if slow_callback and any("done:tail" in line for line in lines):
+            await asyncio.Future()
+
+    if slow_callback:
+        monkeypatch.setattr(monitor_module, "_FILE_DRAIN_SECONDS", 0.3)
+    monitor = LogMonitor((0, 19), "%Y-%m-%d %H:%M:%S", display)
+    run = TaskUserItem()
+    reports = []
+    declaration = SimpleFlowDeclaration(
+        rules=(LineRule(match="done:", extract=r"$(done:(\w+))", node_type="普通"),)
+    )
+    async with open_simple_flow(
+        declaration,
+        run=run,
+        monitor=monitor,
+        mode="逐条",
+        receive_report=reports.append,
+    ):
+        await monitor.start_monitor_file(
+            lambda: path, datetime.now() - timedelta(seconds=10)
+        )
+        try:
+            await asyncio.wait_for(first_seen.wait(), 5)
+            append(path, f"{stamp} done:tail\n{stamp} done:unfinished")
+            if stop_case == "rotated":
+                path.rename(path.with_suffix(".bak"))
+        finally:
+            await asyncio.wait_for(monitor.stop(), 2)
+
+    observation = run.node_observation
+    assert observation is not None
+    assert [node.text for node in observation.snapshot()] == ["first", "tail"]
+    assert observation.read().close_reason == (
+        "worker_error" if slow_callback else "complete"
+    )
+    assert reports == [
+        ["first", "tail", *(["⚠️ 节点采集不完整"] if slow_callback else [])]
+    ]
+
+
+@pytest.mark.asyncio
 async def test_native_file_flow_keeps_incomplete_lines_until_they_are_written(tmp_path):
     path = tmp_path / "script.log"
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

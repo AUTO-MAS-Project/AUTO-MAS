@@ -122,6 +122,7 @@ async def open_custom_flow(
             yield FlowAccess(observation.read, reporter, observation.capture)
             return
         receiver = session.native_line_receiver() if monitor is not None else None
+        report_native_gap = session.mark_native_incomplete
         reporter = session.push_reporter() if accept_push else None
         if reporter is not None and owner is not None:
             reporter = GuardedReporter(reporter, lambda: owner.accepting)
@@ -129,12 +130,15 @@ async def open_custom_flow(
         def detach() -> None:
             if monitor is not None and monitor.on_raw_line is receiver:
                 monitor.on_raw_line = None
+            if monitor is not None and monitor.on_raw_incomplete is report_native_gap:
+                monitor.on_raw_incomplete = None
 
         try:
             if monitor is not None:
                 if monitor.on_raw_line is not None:
                     raise ValueError("日志监控器已有原始行消费者")
                 monitor.on_raw_line = receiver
+                monitor.on_raw_incomplete = report_native_gap
                 if owner is not None:
                     owner.attach_cleanup(session, detach)
             observation = session.observation

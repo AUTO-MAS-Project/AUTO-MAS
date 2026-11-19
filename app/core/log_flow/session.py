@@ -128,6 +128,7 @@ class LogFlowSession:
         self._final_report: tuple[ResultItem, ...] | None = None
         self._final_report_bytes = 0
         self._missed_native = False
+        self._native_drain_failed = False
         self._ready = asyncio.Event()
         self._worker_pid: int | None = None
         self._closing: asyncio.Task[SessionSummary] | None = None
@@ -265,6 +266,10 @@ class LogFlowSession:
         if self._enqueue(TextRecord(text=line, source="mas")) != SubmitResult.ACCEPTED:
             if self._closing is None and not self._receiver.done():
                 self._missed_native = True
+
+    def mark_native_incomplete(self) -> None:
+        """原生采集器未能在停止时确认尾部读取完成。"""
+        self._native_drain_failed = True
 
     def push_reporter(self) -> PushReporter:
         """只为明确启用主动上报的当前会话签发能力。"""
@@ -429,6 +434,12 @@ class LogFlowSession:
                             return self._finish_observation(
                                 "capacity",
                                 "原生采集记录未能全部交接",
+                                sink_error=message.sink_error,
+                            )
+                        if self._native_drain_failed:
+                            return self._finish_observation(
+                                "worker_error",
+                                "原生文件日志未能完成末次读取",
                                 sink_error=message.sink_error,
                             )
                         return self._finish_observation(

@@ -51,6 +51,7 @@ logger = get_logger("日志监控器")
 
 # 排空旧日志失败时的最大重试轮次，超过后放弃旧文件剩余内容继续切换
 _DRAIN_RETRY_LIMIT = 5
+_FILE_DRAIN_SECONDS = 1.0
 
 
 class _LogIdentityChanged(OSError):
@@ -103,13 +104,17 @@ class LogMonitor:
         self.log_contents: list[str] = []
         self.latest_time = datetime.now()
         self.task: asyncio.Task | None = None
+        self._file_stop: asyncio.Event | None = None
+        self.on_raw_incomplete: Callable[[], None] | None = None
 
     async def monitor_file(
         self,
         log_file_path_resolver: Callable[[], Path],
         log_start_time: datetime,
         initial_offset: int | None = None,
-    ):
+        *,
+        stop_event: asyncio.Event | None = None,
+    ) -> bool:
         """监控日志文件
 
         ``log_file_path_resolver`` 每轮循环重新解析路径。用于监控按日期滚动
@@ -136,8 +141,17 @@ class LogMonitor:
         # 日期路径可能因时钟回拨而重访。偏移必须与当时的文件状态一起恢复。
         read_positions: dict[Path, tuple[int, os.stat_result | None]] = {}
         drain_failures = 0
+        stop_requested = stop_event if stop_event is not None else asyncio.Event()
 
-        while True:
+        async def pause(seconds: float) -> None:
+            with suppress(TimeoutError):
+                async with asyncio.timeout(seconds):
+                    await stop_requested.wait()
+
+        final_poll = False
+        final_incomplete = False
+        while not final_poll:
+            final_poll = stop_requested.is_set()
             # 日志按日期滚动（如 M9A 的 log-YYYYMMDD.log）时切换到新文件。
             try:
                 resolved = log_file_path_resolver()
@@ -170,13 +184,16 @@ class LogMonitor:
                         log_contents,
                         if_log_start,
                         log_start_time,
+                        missing_is_error=final_poll,
                     )
-                if drain_error is not None and drain_failures < _DRAIN_RETRY_LIMIT:
+                if drain_error is not None and final_poll:
+                    final_incomplete = True
+                elif drain_error is not None and drain_failures < _DRAIN_RETRY_LIMIT:
                     drain_failures += 1
                     logger.warning(
                         f"排空旧日志失败（第 {drain_failures} 次），本轮不切换: {drain_error}"
                     )
-                    await asyncio.sleep(1)
+                    await pause(1)
                     continue
                 if drain_error is not None:
                     logger.warning(f"排空旧日志连续失败，放弃其剩余内容: {drain_error}")
@@ -211,11 +228,13 @@ class LogMonitor:
                     if file_mtime_date == date.today():
                         if_mtime_checked = True
                     else:
+                        if final_poll:
+                            return False
                         if warned_mtime_date != file_mtime_date:
                             logger.warning(f"日志文件今天未被修改: {file_mtime_date}")
                             warned_mtime_date = file_mtime_date
                         await self.do_callback()
-                        await asyncio.sleep(1)
+                        await pause(1)
                         continue
 
                 # 轮转或文件被替换（同一路径上换了文件身份）：滚动前后属于
@@ -236,9 +255,12 @@ class LogMonitor:
                         log_contents,
                         if_log_start,
                         log_start_time,
+                        missing_is_error=final_poll and previous_id != current_id,
                     )
                     if recovery_error is not None:
                         logger.warning(f"轮转旧日志读取失败: {recovery_error}")
+                        if final_poll:
+                            final_incomplete = True
                     # 新文件可能没有新行，先交付刚补读的旧文件尾部。
                     await self._sync_and_callback(log_contents)
                     offset = 0
@@ -257,14 +279,15 @@ class LogMonitor:
                         f"日志文件已被替换或截断（{log_stat.st_size} < {offset}），从头重读"
                     )
                     offset = 0
-                    continue
+                    if not final_poll:
+                        continue
 
                 if log_stat.st_size <= offset:
                     # 日志无变化超时调用回调
                     if time.monotonic() - self.last_callback_at > 60:
                         await self.do_callback()
 
-                    await asyncio.sleep(1)
+                    await pause(1)
                     continue
 
                 offset, if_log_start, read_error = await self._consume_new_lines(
@@ -279,23 +302,40 @@ class LogMonitor:
                     # 已读到的行必须先同步，否则重试期间回调看不到它们
                     await self._sync_and_callback(log_contents)
                     logger.warning(f"文件访问错误: {read_error}")
-                    await asyncio.sleep(
-                        1 if isinstance(read_error, _LogIdentityChanged) else 5
-                    )
+                    if final_poll:
+                        return False
+                    await pause(1 if isinstance(read_error, _LogIdentityChanged) else 5)
                     continue
 
             except (FileNotFoundError, PermissionError) as e:
                 logger.warning(f"文件访问错误: {e}")
+                if final_poll:
+                    if not isinstance(e, FileNotFoundError):
+                        return False
+                    if log_stat is None:
+                        return not final_incomplete
+                    _, _, error = await self._read_rotated_tail(
+                        current_path,
+                        file_identity(log_stat),
+                        offset,
+                        log_contents,
+                        if_log_start,
+                        log_start_time,
+                        missing_is_error=True,
+                    )
+                    await self._sync_and_callback(log_contents)
+                    return error is None and not final_incomplete
                 # 日志尚未创建或被短暂锁定时也要推进回调；否则调用方的
                 # 停滞超时永远没有机会判定，任务会无限等待。
                 await self.do_callback()
-                await asyncio.sleep(5)
+                await pause(5)
                 continue
 
             # 日志变化调用回调
             await self._sync_and_callback(log_contents)
 
-            await asyncio.sleep(1)
+            await pause(1)
+        return not final_incomplete
 
     async def monitor_process(
         self,
@@ -510,6 +550,8 @@ class LogMonitor:
         log_contents: list[str],
         if_log_start: bool,
         log_start_time: datetime,
+        *,
+        missing_is_error: bool = False,
     ) -> tuple[int, bool, Exception | None]:
         """按身份找到旧文件，续读未读尾部并返回该文件的读取进度。
 
@@ -520,6 +562,7 @@ class LogMonitor:
             log_contents: 累积中的日志内容（就地追加找回的行）
             if_log_start: 是否已越过本次运行的起始时刻
             log_start_time: 本次运行的起始时刻
+            missing_is_error: 末次读取时，找不到旧文件则返回异常。
 
         Returns:
             旧文件的字节偏移、是否越过运行起点，以及读取错误。
@@ -527,7 +570,12 @@ class LogMonitor:
 
         rotated = self._find_rotated_file(current_path, old_file_id)
         if rotated is None:
-            return offset, if_log_start, None
+            error = (
+                FileNotFoundError("无法定位已轮转的日志文件")
+                if missing_is_error
+                else None
+            )
+            return offset, if_log_start, error
         return await self._consume_new_lines(
             rotated,
             offset,
@@ -573,8 +621,14 @@ class LogMonitor:
         if self.task is not None and not self.task.done():
             await self.stop()
 
+        self._file_stop = asyncio.Event()
         self.task = asyncio.create_task(
-            self.monitor_file(log_file_path_resolver, start_time, initial_offset)
+            self.monitor_file(
+                log_file_path_resolver,
+                start_time,
+                initial_offset,
+                stop_event=self._file_stop,
+            )
         )
         logger.info(f"日志文件监控已启动: {probe_path}")
 
@@ -594,21 +648,44 @@ class LogMonitor:
         if self.task is not None and not self.task.done():
             await self.stop()
 
+        self._file_stop = None
         self.task = asyncio.create_task(self.monitor_process(process, stream))
         logger.info(f"进程日志监控已启动: {process.pid}")
 
     async def stop(self):
-        """停止监控"""
+        """停止监控；已绑定的原生文件来源在期限内完成末次读取。"""
 
         logger.info("请求取消日志监控任务")
 
-        if self.task is not None and not self.task.done():
-            self.task.cancel()
-
-            try:
-                await self.task
-            except asyncio.CancelledError:
-                logger.info("日志监控任务已中止")
-
+        task = self.task
+        try:
+            if (
+                task is not None
+                and self._file_stop is not None
+                and self.on_raw_line is not None
+            ):
+                on_incomplete = self.on_raw_incomplete
+                self._file_stop.set()
+                drained = False
+                try:
+                    done, _ = await asyncio.wait((task,), timeout=_FILE_DRAIN_SECONDS)
+                    drained = bool(done) and not task.cancelled() and task.result()
+                except Exception as exc:
+                    logger.warning(f"日志监控末次读取失败: {exc}")
+                finally:
+                    if not drained:
+                        task.cancel()
+                        if on_incomplete is not None:
+                            on_incomplete()
+                        logger.warning("日志监控未能完成末次读取")
+            elif task is not None and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    logger.info("日志监控任务已中止")
+        finally:
+            if self.task is task:
+                self.task = None
+                self._file_stop = None
         logger.success("日志监控任务已停止")
-        self.task = None
