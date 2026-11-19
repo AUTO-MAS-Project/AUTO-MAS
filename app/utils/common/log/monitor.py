@@ -20,6 +20,7 @@
 
 
 import asyncio
+import os
 import time
 from contextlib import suppress
 from copy import copy
@@ -50,6 +51,10 @@ logger = get_logger("日志监控器")
 
 # 排空旧日志失败时的最大重试轮次，超过后放弃旧文件剩余内容继续切换
 _DRAIN_RETRY_LIMIT = 5
+
+
+class _LogIdentityChanged(OSError):
+    """路径在检查与打开之间指向了另一个文件。"""
 
 
 def strptime(date_string: str, format: str, default_date: datetime) -> datetime:
@@ -203,14 +208,14 @@ class LogMonitor:
                 # 轮转或文件被替换（同一路径上换了文件身份）：滚动前后属于
                 # 同一次运行，log_contents 与 if_log_start 保留不清空，否则
                 # 落库历史只剩轮转后内容（跨零点实测）；被重命名的旧文件按
-                # inode 在同目录找回，把未读尾部接回来。身份规则与主动文件源共用。
+                # 文件身份在同目录找回，把未读尾部接回来。身份规则与主动文件源共用。
                 current_stat = current_path.stat()
                 previous_id = file_identity(log_stat)
                 current_id = file_identity(current_stat)
                 if previous_id != current_id or log_stat.st_size > current_stat.st_size:
                     if_log_start = await self._recover_rotated_tail(
                         current_path,
-                        log_stat.st_ino,
+                        previous_id,
                         offset,
                         log_contents,
                         if_log_start,
@@ -247,13 +252,20 @@ class LogMonitor:
                     continue
 
                 offset, if_log_start, read_error = await self._consume_new_lines(
-                    current_path, offset, log_contents, if_log_start, log_start_time
+                    current_path,
+                    offset,
+                    log_contents,
+                    if_log_start,
+                    log_start_time,
+                    expected_id=current_id,
                 )
                 if read_error is not None:
                     # 已读到的行必须先同步，否则重试期间回调看不到它们
                     await self._sync_and_callback(log_contents)
                     logger.warning(f"文件访问错误: {read_error}")
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(
+                        1 if isinstance(read_error, _LogIdentityChanged) else 5
+                    )
                     continue
 
             except (FileNotFoundError, PermissionError) as e:
@@ -391,6 +403,8 @@ class LogMonitor:
         log_contents: list[str],
         if_log_start: bool,
         log_start_time: datetime,
+        *,
+        expected_id: tuple[int, int] | None = None,
     ) -> tuple[int, bool, Exception | None]:
         """读取文件自 offset 起的新增行并追加到 log_contents。
 
@@ -400,6 +414,7 @@ class LogMonitor:
             log_contents (list[str]): 日志内容列表，原地追加。
             if_log_start (bool): 是否已越过本次运行的起始时刻。
             log_start_time (datetime): 本次运行的起始时刻。
+            expected_id: 此偏移所属的文件身份。打开后复核，避免轮转时从新文件的旧偏移读取。
 
         Returns:
             tuple[int, bool, Exception | None]: 新的字节偏移、if_log_start，以及
@@ -410,6 +425,10 @@ class LogMonitor:
 
         try:
             async with aiofiles.open(path, "rb", opener=LOG_READ_OPENER) as f:
+                if expected_id is not None:
+                    opened_stat = await asyncio.to_thread(os.fstat, f.fileno())
+                    if file_identity(opened_stat) != expected_id:
+                        raise _LogIdentityChanged("打开日志时文件已轮转")
                 await f.seek(offset)
                 async for bline in f:
                     offset = await f.tell()
@@ -433,28 +452,30 @@ class LogMonitor:
                         self._publish_raw_line(line)
                         self.append_line(log_contents, line)
                         await self.update_latest_timestamp(line)
-        except (FileNotFoundError, PermissionError) as e:
+        except (FileNotFoundError, PermissionError, _LogIdentityChanged) as e:
             return offset, if_log_start, e
         return offset, if_log_start, None
 
-    def _find_rotated_file(self, current_path: Path, old_ino: int) -> Path | None:
-        """在同目录里找回被重命名的旧日志文件（重命名不改变 inode）
+    def _find_rotated_file(
+        self, current_path: Path, old_file_id: tuple[int, int]
+    ) -> Path | None:
+        """按文件身份在同目录里找回被重命名的旧日志文件。
 
         固定路径监控下，脚本把正在写的日志重命名滚动（如跨零点
-        ``log.txt`` → ``log.txt.YYYY-MM-DD``）后，同目录里持有旧 inode 的
+        ``log.txt`` → ``log.txt.YYYY-MM-DD``）后，同目录里持有旧身份的
         那个文件就是它：重命名前后是同一文件，离开时记录的 offset 逐字节
         对应，不依赖任何命名猜测，也不会误读同名旧残留。旧文件已被删除或
         文件系统不提供 inode（st_ino 为 0）时返回 None。
         """
 
-        if not old_ino:
+        if not old_file_id[0]:
             return None
         try:
             for candidate in current_path.parent.iterdir():
                 if candidate == current_path or not candidate.is_file():
                     continue
                 try:
-                    if candidate.stat().st_ino == old_ino:
+                    if file_identity(candidate.stat()) == old_file_id:
                         return candidate
                 except OSError:
                     continue
@@ -465,7 +486,7 @@ class LogMonitor:
     async def _recover_rotated_tail(
         self,
         current_path: Path,
-        old_ino: int,
+        old_file_id: tuple[int, int],
         offset: int,
         log_contents: list[str],
         if_log_start: bool,
@@ -475,7 +496,7 @@ class LogMonitor:
 
         Args:
             current_path: 监控目标路径（轮转后指向新文件）
-            old_ino: 轮转前记录的旧文件 inode
+            old_file_id: 轮转前记录的旧文件身份
             offset: 离开旧文件时的读取偏移
             log_contents: 累积中的日志内容（就地追加找回的行）
             if_log_start: 是否已越过本次运行的起始时刻
@@ -485,11 +506,16 @@ class LogMonitor:
             是否已越过本次运行的起始时刻（供后续新文件读取沿用）
         """
 
-        rotated = self._find_rotated_file(current_path, old_ino)
+        rotated = self._find_rotated_file(current_path, old_file_id)
         if rotated is None:
             return if_log_start
         offset, if_log_start, error = await self._consume_new_lines(
-            rotated, offset, log_contents, if_log_start, log_start_time
+            rotated,
+            offset,
+            log_contents,
+            if_log_start,
+            log_start_time,
+            expected_id=old_file_id,
         )
         if error is not None:
             logger.warning(f"轮转旧日志读取失败: {error}")

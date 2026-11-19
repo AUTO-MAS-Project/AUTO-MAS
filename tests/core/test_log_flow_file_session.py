@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
+import aiofiles
 import psutil
 import pytest
 from auto_mas_core.log_flow import SubmitResult
@@ -530,6 +531,52 @@ async def test_script_can_rotate_while_native_file_monitor_reads(tmp_path):
         assert rotated.is_file()
     finally:
         await monitor.stop()
+
+
+@pytest.mark.asyncio
+async def test_native_file_monitor_keeps_offset_when_open_races_rotation(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "script.log"
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    append(path, f"{stamp} first\n")
+    raw = []
+    appended = False
+    rotated = False
+    read_replacement = asyncio.Event()
+    original_open = aiofiles.open
+
+    def rotate_before_open(file, *args, **kwargs):
+        nonlocal rotated
+        if file == path and appended and not rotated:
+            rotated = True
+            path.rename(path.with_suffix(".bak"))
+            append(path, f"{stamp} new00\n{stamp} new01\n")
+        return original_open(file, *args, **kwargs)
+
+    async def display(lines, _latest_time):
+        nonlocal appended
+        if not appended and lines:
+            append(path, f"{stamp} last0\n")
+            appended = True
+        if any("new00" in line for line in lines):
+            read_replacement.set()
+
+    monkeypatch.setattr(aiofiles, "open", rotate_before_open)
+    monitor = LogMonitor((0, 19), "%Y-%m-%d %H:%M:%S", display, on_raw_line=raw.append)
+    await monitor.start_monitor_file(
+        lambda: path, datetime.now() - timedelta(seconds=10)
+    )
+    try:
+        await asyncio.wait_for(read_replacement.wait(), 7)
+    finally:
+        await monitor.stop()
+    assert [line.strip().split()[-1] for line in raw] == [
+        "first",
+        "last0",
+        "new00",
+        "new01",
+    ]
 
 
 @pytest.mark.asyncio
