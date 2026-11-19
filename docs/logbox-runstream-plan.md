@@ -503,6 +503,8 @@ P7 的 SDK 草案从 P1/P2 开始设计，不等全部专项迁完才考虑扩�
 
 General 用共享 WebUI 规则直接采集，BetterGI 由既有分步表产生节点。它们的报告管理器与上述五个专项现均直接导入 `app.utils.common.log.results.LogEntry`。删除旧包时保留共享条目、规则、文件读取、表达式和通知排版。仓库内的插件 SDK 当前没有直接依赖旧包。移除 `app.utils.log_box` 与 `app.utils.common.log_box` 之前，须核对在支持范围内的外部插件消费，处理旧包的对照测试，再按表重跑迁移验收。
 
+2026-11-20 的[官方插件目录快照](https://data.auto-mas.top/api/v1/files/auto-mas/Client/plugins/download)列出七个包。检查其对应版本的 wheel 和 sdist，并核对本机已安装的插件和测试发行样本，均未发现 Python 源码引用 `log_box`、`LogPipeline` 或旧 `@@LOGBOX@@` 标记。该证据覆盖目录所列版本和本机样本，清理前需要按当时的支持版本和私有插件范围复核。
+
 原单进程方案的 27–51 人日估算已失效；完整工作量需在最小跨进程可行性验证后重新估算。进程方案的成本分项见第 17 节。
 
 ## 13. 各接入方的迁移验收表
