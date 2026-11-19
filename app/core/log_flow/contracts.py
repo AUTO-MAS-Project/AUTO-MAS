@@ -10,6 +10,8 @@ from app.models.log_flow import Node, NodeDisplayStatus, ReportedNodeKey
 # 进程管道的单条消息预算；不是日志文件或 SDK 限额。
 MAX_FRAME_BYTES = 64 * 1024
 MAX_PENDING_RECORDS = 64
+MAX_NATIVE_PENDING_RECORDS = 2048
+MAX_HOST_PENDING_BYTES = MAX_PENDING_RECORDS * MAX_FRAME_BYTES
 MAX_NODE_FRAMES = 4096
 MAX_NODE_BYTES = 4 * 1024 * 1024
 

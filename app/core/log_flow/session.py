@@ -25,6 +25,8 @@ from app.utils.contracts.process import TaskProcessJob
 
 from .contracts import (
     MAX_FRAME_BYTES,
+    MAX_HOST_PENDING_BYTES,
+    MAX_NATIVE_PENDING_RECORDS,
     MAX_NODE_BYTES,
     MAX_NODE_FRAMES,
     MAX_PENDING_RECORDS,
@@ -108,10 +110,13 @@ class LogFlowSession:
         self._accept_push = accept_push
         self._accept_mas = accept_mas
         self._outbox: asyncio.Queue[bytes | None] | None = (
-            asyncio.Queue(MAX_PENDING_RECORDS + 1)
+            asyncio.Queue(
+                (MAX_NATIVE_PENDING_RECORDS if accept_mas else MAX_PENDING_RECORDS) + 1
+            )
             if accept_push or accept_mas
             else None
         )
+        self._queued_bytes = 0
         self._writer: asyncio.Task[None] | None = None
         self.observation = observation
         self._requires_final_report = requires_final_report
@@ -226,12 +231,20 @@ class LogFlowSession:
             and len(record.node_type) >= MAX_FRAME_BYTES
         ):
             return SubmitResult.TOO_LARGE
-        if outbox.qsize() >= MAX_PENDING_RECORDS:
+        limit = (
+            MAX_NATIVE_PENDING_RECORDS
+            if isinstance(record, TextRecord) and record.source == "mas"
+            else MAX_PENDING_RECORDS
+        )
+        if outbox.qsize() >= limit:
             return SubmitResult.BACKPRESSURE
         frame = record.model_dump_json().encode("utf-8") + b"\n"
         if len(frame) > MAX_FRAME_BYTES:
             return SubmitResult.TOO_LARGE
+        if self._queued_bytes + len(frame) > MAX_HOST_PENDING_BYTES:
+            return SubmitResult.BACKPRESSURE
         outbox.put_nowait(frame)
+        self._queued_bytes += len(frame)
         return SubmitResult.ACCEPTED
 
     def native_line_receiver(self) -> Callable[[str], None]:
@@ -256,6 +269,7 @@ class LogFlowSession:
         assert self._process.stdin is not None
         try:
             while (frame := await outbox.get()) is not None:
+                self._queued_bytes -= len(frame)
                 self._process.stdin.write(frame)
                 await self._process.stdin.drain()
         except (BrokenPipeError, ConnectionResetError):

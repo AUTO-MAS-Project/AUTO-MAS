@@ -11,7 +11,8 @@ import pytest
 from auto_mas_core.log_flow import SubmitResult
 
 from app.core.log_flow.contracts import (
-    MAX_PENDING_RECORDS,
+    MAX_HOST_PENDING_BYTES,
+    MAX_NATIVE_PENDING_RECORDS,
     FileInput,
     FunctionRef,
     LineRule,
@@ -207,17 +208,71 @@ async def test_native_burst_reports_dropped_input_as_incomplete():
     try:
         receive = session.native_line_receiver()
         # 真实监控器可能在同一个事件循环轮次交接一批已经缓冲的行。
-        for index in range(MAX_PENDING_RECORDS + 2):
+        for index in range(MAX_NATIVE_PENDING_RECORDS + 2):
             receive(f"step {index}")
         summary = await session.close()
         assert summary.reason == "capacity"
         assert [node.text for node in summary.nodes] == [
-            f"step {index}" for index in range(MAX_PENDING_RECORDS)
+            f"step {index}" for index in range(MAX_NATIVE_PENDING_RECORDS)
         ]
         assert session.observation.read().close_reason == "capacity"
         assert render_node_details(summary, mode="汇总")[-1] == "⚠️ 节点采集不完整"
     finally:
         await session.close()
+
+
+@pytest.mark.asyncio
+async def test_native_backlog_is_limited_by_bytes_when_lines_are_large():
+    session = await LogFlowSession.open(
+        PipelineSpec(
+            accept_mas=True, rules=(LineRule(match="^observed", node_type="普通"),)
+        )
+    )
+    try:
+        receive = session.native_line_receiver()
+        receive("observed")
+        large_line = "a" * 60_000
+        batch_size = MAX_HOST_PENDING_BYTES // len(large_line) + 2
+        assert batch_size < MAX_NATIVE_PENDING_RECORDS
+        for _ in range(batch_size):
+            receive(large_line)
+        summary = await session.close()
+        assert summary.reason == "capacity"
+        assert [node.text for node in summary.nodes] == ["observed"]
+    finally:
+        await session.close()
+
+
+@pytest.mark.asyncio
+async def test_simple_flow_handles_stdout_burst_from_real_log_monitor():
+    async def save_display(_lines, _latest_time):
+        pass
+
+    monitor = LogMonitor((0, 0), "", save_display)
+    run = TaskUserItem()
+    declaration = SimpleFlowDeclaration(
+        rules=(LineRule(match="^step ", node_type="普通"),)
+    )
+    async with open_simple_flow(
+        declaration,
+        run=run,
+        monitor=monitor,
+        mode="关闭",
+        receive_report=lambda _: None,
+    ):
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            'import sys; sys.stdout.buffer.write((b"step " + b"x"*114 + b"\\n") * 1024)',
+            stdout=asyncio.subprocess.PIPE,
+        )
+        await asyncio.wait_for(monitor.monitor_process(process, "stdout"), 5)
+        assert await process.wait() == 0
+
+    observation = run.node_observation
+    assert observation is not None
+    assert observation.read().close_reason == "complete"
+    assert len(observation.snapshot()) == 1024
 
 
 @pytest.mark.asyncio
