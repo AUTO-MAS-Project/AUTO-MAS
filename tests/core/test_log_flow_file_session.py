@@ -592,6 +592,58 @@ async def test_simple_flow_handles_stdout_burst_from_real_log_monitor():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("hold_pipe_open", [False, True])
+async def test_native_process_flow_drains_pipe_on_stop(monkeypatch, hold_pipe_open):
+    from app.utils.common.log import monitor as monitor_module
+
+    async def display(_lines, _latest_time):
+        pass
+
+    if hold_pipe_open:
+        monkeypatch.setattr(monitor_module, "_STOP_DRAIN_SECONDS", 0.3)
+    monitor = LogMonitor((0, 0), "", display)
+    run = TaskUserItem()
+    reports = []
+    declaration = SimpleFlowDeclaration(
+        rules=(LineRule(match="^done:", extract=r"$(done:(\w+))", node_type="普通"),)
+    )
+    async with open_simple_flow(
+        declaration,
+        run=run,
+        monitor=monitor,
+        mode="逐条",
+        receive_report=reports.append,
+    ) as read_nodes:
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            'import sys; print("done:tail", flush=True); sys.stdin.read()',
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+        )
+        assert process.stdin is not None
+        try:
+            if not hold_pipe_open:
+                process.stdin.close()
+                assert await asyncio.wait_for(process.wait(), 5) == 0
+            await monitor.start_monitor_process(process)
+            if hold_pipe_open:
+                async with asyncio.timeout(5):
+                    while not read_nodes().nodes:
+                        await asyncio.sleep(0.01)
+            async with asyncio.timeout(2):
+                await monitor.stop()
+        finally:
+            process.stdin.close()
+            await asyncio.wait_for(process.wait(), 5)
+
+    page = read_nodes()
+    assert [node.text for node in page.nodes] == ["tail"]
+    assert page.close_reason == ("worker_error" if hold_pipe_open else "complete")
+    assert reports == [["tail", *(["⚠️ 节点采集不完整"] if hold_pipe_open else [])]]
+
+
+@pytest.mark.asyncio
 async def test_native_stdout_skips_an_entire_oversized_line_and_reports_a_gap():
     async def display(_lines, _latest_time):
         pass
@@ -647,7 +699,7 @@ async def test_native_file_flow_drains_last_poll_on_stop(
             await asyncio.Future()
 
     if slow_callback:
-        monkeypatch.setattr(monitor_module, "_FILE_DRAIN_SECONDS", 0.3)
+        monkeypatch.setattr(monitor_module, "_STOP_DRAIN_SECONDS", 0.3)
     monitor = LogMonitor((0, 19), "%Y-%m-%d %H:%M:%S", display)
     run = TaskUserItem()
     reports = []

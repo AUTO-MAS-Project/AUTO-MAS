@@ -51,7 +51,7 @@ logger = get_logger("日志监控器")
 
 # 排空旧日志失败时的最大重试轮次，超过后放弃旧文件剩余内容继续切换
 _DRAIN_RETRY_LIMIT = 5
-_FILE_DRAIN_SECONDS = 1.0
+_STOP_DRAIN_SECONDS = 1.0
 
 
 class _LogIdentityChanged(OSError):
@@ -677,30 +677,31 @@ class LogMonitor:
         logger.info(f"进程日志监控已启动: {process.pid}")
 
     async def stop(self):
-        """停止监控；已绑定的原生文件来源在期限内完成末次读取。"""
+        """停止监控；有原始行订阅时，在同一期限内排空文件或进程管道。"""
 
         logger.info("请求取消日志监控任务")
 
         task = self.task
+        file_stop = self._file_stop
         try:
-            if (
-                task is not None
-                and self._file_stop is not None
-                and self.on_raw_line is not None
-            ):
+            if task is not None and self.on_raw_line is not None:
                 on_incomplete = self.on_raw_incomplete
-                self._file_stop.set()
+                if file_stop is not None:
+                    file_stop.set()
                 drained = False
                 try:
-                    done, _ = await asyncio.wait((task,), timeout=_FILE_DRAIN_SECONDS)
-                    drained = bool(done) and not task.cancelled() and task.result()
+                    done, _ = await asyncio.wait((task,), timeout=_STOP_DRAIN_SECONDS)
+                    if done and not task.cancelled():
+                        result = task.result()
+                        drained = file_stop is None or result
                 except Exception as exc:
                     logger.warning(f"日志监控末次读取失败: {exc}")
                 finally:
                     if not drained:
                         task.cancel()
                         if on_incomplete is not None:
-                            on_incomplete("原生文件日志未能完成末次读取")
+                            source = "文件" if file_stop is not None else "进程"
+                            on_incomplete(f"原生{source}日志未能完成末次读取")
                         logger.warning("日志监控未能完成末次读取")
             elif task is not None and not task.done():
                 task.cancel()
