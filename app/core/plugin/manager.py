@@ -43,6 +43,7 @@ from app.core.log_flow.declaration import (
 )
 from app.core.log_flow.ownership import FlowOwner
 from app.core.log_flow.report import LogFlowTaskReport, ReportMode
+from app.core.log_flow.session import LogFlowSession
 from app.core.log_flow.simple import FlowAccess, open_custom_flow
 from app.core.ws import Publisher
 from app.core.ws.protocol import ID_PLUGIN, PLUGIN_CAPABILITIES_UPDATED
@@ -1286,12 +1287,17 @@ class _PluginManager:
                     plugin = Config.plugin_registry[uid]._plugin
                     if isinstance(plugin, (ScriptAdapterPlugin, GameAdapterPlugin)):
                         plugin.precheck_locks()
+                await LogFlowSession.retry_unconfirmed_workers()
                 restart_required = await uv_tool.install(
                     f"{package}=={version}" if version else package,
                     plugin_name=plugin_id,
                     meta_id=meta.uid,
-                    has_shared_environment_readers=lambda: any(
-                        owner.has_workers for owner in self._log_flow_owners.values()
+                    has_shared_environment_readers=lambda: (
+                        LogFlowSession.has_unconfirmed_workers()
+                        or any(
+                            owner.has_workers
+                            for owner in self._log_flow_owners.values()
+                        )
                     ),
                 )
                 if restart_required:
@@ -1339,12 +1345,17 @@ class _PluginManager:
 
         ensure_writable()
         async with self._hold(), self._pause_operations(record):
+            await LogFlowSession.retry_unconfirmed_workers()
+            if LogFlowSession.has_unconfirmed_workers():
+                raise PluginBusyError("仍有采集进程退出待确认，请稍后重试")
             name = record.info.plugin_name
             package = record.info.package_name or name
             deps = await self.unload(record, held=True, remove_record=False)
             from app.core.config import Config
 
             try:
+                if LogFlowSession.has_unconfirmed_workers():
+                    raise PluginBusyError("仍有采集进程退出待确认，请稍后重试")
                 await uv_tool.uninstall(package)
                 (Config.config_path / "plugins" / f"{name}.yaml").unlink(
                     missing_ok=True

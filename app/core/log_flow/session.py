@@ -9,6 +9,7 @@ import sys
 from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path
+from typing import ClassVar
 
 from pydantic import ValidationError
 
@@ -100,6 +101,8 @@ class _SessionReporter:
 
 class LogFlowSession:
     """每个进程服务一次会话，宿主上报走有界待发队列。"""
+
+    _unconfirmed_workers: ClassVar[set[LogFlowSession]] = set()
 
     def __init__(
         self,
@@ -343,8 +346,23 @@ class LogFlowSession:
                 with suppress(asyncio.CancelledError):
                     await self._writer
 
-    async def _stop_worker(self) -> bool:
-        if self._stopping is None:
+    @classmethod
+    def has_unconfirmed_workers(cls) -> bool:
+        """退出待确认的 worker 仍可能读取共享插件环境。"""
+        return bool(cls._unconfirmed_workers)
+
+    @classmethod
+    async def retry_unconfirmed_workers(cls) -> None:
+        """环境变更前并行复查一次，保留仍无法确认的进程。"""
+        await asyncio.gather(
+            *(
+                session._stop_worker(retry=True)
+                for session in tuple(cls._unconfirmed_workers)
+            )
+        )
+
+    async def _stop_worker(self, *, retry: bool = False) -> bool:
+        if self._stopping is None or (retry and self._stopping.done()):
             self._stopping = asyncio.create_task(self._terminate_worker())
         return await asyncio.shield(self._stopping)
 
@@ -369,9 +387,10 @@ class LogFlowSession:
                 await asyncio.to_thread(job.kill)
             await asyncio.wait_for(self._process.wait(), _STOP_GRACE_SECONDS)
         except (OSError, TimeoutError, ExceptionGroup):
+            self._unconfirmed_workers.add(self)
             return False
-        finally:
-            self._release_job()
+        self._release_job()
+        self._unconfirmed_workers.discard(self)
         return True
 
     def _release_job(self) -> None:

@@ -3,27 +3,35 @@
 import asyncio
 import json
 import sys
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, suppress
 from types import SimpleNamespace
 
+import psutil
 import pytest
 import pytest_asyncio
 from auto_mas_core.log_flow import LogMonitor
 
 from app.core import Notify
 from app.core.background_tasks import BackgroundTaskRegistry
+from app.core.log_flow.contracts import PipelineSpec
 from app.core.log_flow.declaration import SimpleFlowDeclaration
 from app.core.log_flow.push import SubmitResult
+from app.core.log_flow.session import LogFlowSession
 from app.core.log_flow.simple import open_custom_flow
 from app.core.notify import tasks as notification_tasks
 from app.core.notify.rendering import AsyncNotificationRenderer
 from app.core.plugin.manager import _PluginManager
-from app.models.config import GlobalConfig, PluginRecord, PluginRegistryCollection
+from app.models.config import (
+    GlobalConfig,
+    PluginMeta,
+    PluginRecord,
+    PluginRegistryCollection,
+)
 from app.models.notification.channel import ChannelTarget, DeliveryChannel, NotifyTarget
 from app.models.notification.report import TaskReportPolicy, TaskResultReport
 from app.models.task import TaskUserItem
 from app.plugin.errors import PluginBusyError
-from app.plugin.runtime import loader
+from app.plugin.runtime import discover, loader
 from app.plugin.types import PluginState
 from tests.support.scheduler import create_runtime_tree
 
@@ -749,6 +757,68 @@ async def test_reload_restore_failure_skips_branch_and_continues_other_branches(
     assert records["cascade_c"]._plugin_cls.events.count("enable") == 1
     assert records["cascade_d"].info.state == PluginState.ENABLED
     assert await manager.services.require("cascade_d")() is records["cascade_d"]._plugin
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(sys.platform != "win32", reason="使用真实的 Windows Job")
+async def test_shared_environment_kept_until_log_flow_worker_exit_is_confirmed(
+    cascade_plugins, monkeypatch
+):
+    from app.plugin import uv
+
+    manager, records = await cascade_plugins({"worker_reader": ()}, source="installed")
+    record = records["worker_reader"]
+    await manager.enable(record)
+    session = await LogFlowSession.open(PipelineSpec(accept_push=True))
+    process = psutil.Process(session.pid)
+    job = session._job
+    assert job is not None
+    removed = []
+
+    async def remove(package):
+        removed.append(package)
+
+    async def prepare_install(_package, *, has_shared_environment_readers, **_kwargs):
+        assert has_shared_environment_readers()
+        return True
+
+    async def keep_fixture_registry():
+        pass
+
+    def denied():
+        raise PermissionError("无法结束启动器")
+
+    def cannot_confirm():
+        raise TimeoutError("无法确认采集进程退出")
+
+    monkeypatch.setattr(uv, "uninstall", remove)
+    monkeypatch.setattr(uv, "install", prepare_install)
+    monkeypatch.setattr(discover, "refresh", keep_fixture_registry)
+    try:
+        process.suspend()
+        with monkeypatch.context() as blocked:
+            blocked.setattr(session._process, "kill", denied)
+            blocked.setattr(job, "kill", cannot_confirm)
+            summary = await session.close(timeout=0)
+            assert summary.reason == "timeout" and "退出未确认" in summary.detail
+            meta = PluginMeta.build(
+                info={
+                    "package_name": "auto-mas-worker-replacement",
+                    "plugin_name": "worker_replacement",
+                }
+            )
+            assert await manager.install(meta) == {"restart_required": True}
+            with pytest.raises(PluginBusyError):
+                await manager.uninstall(record)
+            assert not removed and record.info.state == PluginState.ENABLED
+        await manager.uninstall(record)
+        assert removed == ["worker_reader"]
+        assert not process.is_running()
+    finally:
+        await LogFlowSession.retry_unconfirmed_workers()
+        with suppress(psutil.NoSuchProcess):
+            process.kill()
+            await asyncio.to_thread(process.wait, timeout=2)
 
 
 @pytest.mark.asyncio
