@@ -37,9 +37,9 @@ from app.utils import (
     TASK_MODE_ZH,
     ProcessManager,
     get_logger,
-    log_box,
 )
 from app.utils import io as _utils_io
+from app.utils.common.log.results import LogEntry
 
 from .AutoProxy import (
     _OKWW_REL_APP_JSON,
@@ -535,11 +535,9 @@ class OkwwManager(ScriptManagerBase):
         _report_rows = []
         for _report_user in self.script_info.user_list:
             _entries = [
-                item
-                if isinstance(item, log_box.LogEntry)
-                else log_box.LogEntry.from_legacy(item)
+                item if isinstance(item, LogEntry) else LogEntry.from_legacy(item)
                 for item in self.user_state(_report_user).push_log
-                if (item.log_type if isinstance(item, log_box.LogEntry) else item[0])
+                if (item.log_type if isinstance(item, LogEntry) else item[0])
                 != LOG_TYPE_ERROR
                 or has_uncompleted
             ]

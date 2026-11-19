@@ -49,8 +49,9 @@ from app.services import script_install
 from app.services.script_install_backup import ManagedInstallBackup
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
-from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, log_box, update_files
+from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, update_files
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+from app.utils.common.log.results import LogEntry
 
 from .AutoProxy import AutoProxyTask
 from .tools import program_update
@@ -418,11 +419,9 @@ class BAAHManager(ScriptManagerBase):
         _report_rows = []
         for _report_user in self.script_info.user_list:
             _entries = [
-                item
-                if isinstance(item, log_box.LogEntry)
-                else log_box.LogEntry.from_legacy(item)
+                item if isinstance(item, LogEntry) else LogEntry.from_legacy(item)
                 for item in self.user_state(_report_user).push_log
-                if (item.log_type if isinstance(item, log_box.LogEntry) else item[0])
+                if (item.log_type if isinstance(item, LogEntry) else item[0])
                 != LOG_TYPE_ERROR
                 or has_uncompleted
             ]
