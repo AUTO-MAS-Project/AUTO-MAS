@@ -8,7 +8,7 @@ import sys
 import textwrap
 import time
 import uuid
-from contextlib import suppress
+from contextlib import closing, suppress
 
 import pytest
 
@@ -193,6 +193,77 @@ async def test_failed_adoption_resumes_the_running_script(tmp_path, monkeypatch)
         with suppress(ProcessLookupError):
             parent.kill()
         await asyncio.wait_for(parent.wait(), 3)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("worker_exits", [True, False], ids=["exited", "access-denied"])
+async def test_adoption_distinguishes_thread_exit_from_denied_access(
+    monkeypatch, worker_exits
+):
+    import psutil
+    import pywintypes
+    import win32api
+    import win32con
+    import win32event
+    import winerror
+
+    from app.utils.common.process.scope import TaskProcessScope
+
+    code = textwrap.dedent("""
+        import os, threading, time
+
+        def worker():
+            print(threading.get_native_id(), flush=True)
+            os.read(0, 1)
+
+        threading.Thread(target=worker, daemon=True).start()
+        time.sleep(60)
+    """)
+    with subprocess.Popen(
+        [sys._base_executable, "-I", "-c", code],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+    ) as child:
+        scope = TaskProcessScope()
+        try:
+            tid = int(
+                await asyncio.wait_for(asyncio.to_thread(child.stdout.readline), 5)
+            )
+            open_thread = win32api.OpenThread
+            with closing(open_thread(win32con.SYNCHRONIZE, False, tid)) as worker:
+
+                def open_during_thread_exit(access, inherit, thread_id):
+                    if not worker_exits and thread_id == tid:
+                        # 存活线程用缺少挂起权限的真实句柄，触发原生拒绝访问。
+                        access = win32con.SYNCHRONIZE
+                    if worker_exits and not child.stdin.closed:
+                        # 等枚举完成再放行退出；此时还没有线程被挂起。
+                        child.stdin.close()
+                        assert (
+                            win32event.WaitForSingleObject(worker, 3000)
+                            == win32event.WAIT_OBJECT_0
+                        )
+                    return open_thread(access, inherit, thread_id)
+
+                monkeypatch.setattr(win32api, "OpenThread", open_during_thread_exit)
+                target = psutil.Process(child.pid)
+                if worker_exits:
+                    scope.track(target)
+                    assert child.poll() is None
+                    assert scope.kill_process_tree(child.pid)
+                    await asyncio.to_thread(child.wait, timeout=3)
+                else:
+                    with pytest.raises(pywintypes.error) as exc:
+                        scope.track(target)
+                    assert exc.value.winerror == winerror.ERROR_ACCESS_DENIED
+                    assert exc.value.funcname == "SuspendThread"
+                    assert (
+                        win32event.WaitForSingleObject(worker, 0)
+                        == win32event.WAIT_TIMEOUT
+                    )
+        finally:
+            child.kill()
+            await scope.force_close()
 
 
 @pytest.mark.asyncio
