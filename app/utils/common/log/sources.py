@@ -13,6 +13,13 @@ from pathlib import Path
 from stat import S_ISREG
 from typing import BinaryIO, Optional, Union
 
+if os.name == "nt":
+    import ctypes
+    import msvcrt
+
+    import pywintypes
+    import win32file
+
 PathLike = Union[str, Path]
 
 
@@ -23,6 +30,34 @@ class LogReadLimitExceeded(ValueError):
 def _file_identity(stat: os.stat_result) -> tuple[int, int]:
     """Windows 显式使用创建时间，路径与句柄返回的 ctime 可能不同。"""
     return (stat.st_ino, stat.st_birthtime_ns if os.name == "nt" else stat.st_dev)
+
+
+def _open_shared_read_fd(path: str, flags: int) -> int:
+    """允许 Windows 上的日志写入者在采集器读文件时改名轮转。"""
+    try:
+        handle = win32file.CreateFile(
+            path,
+            win32file.GENERIC_READ,
+            win32file.FILE_SHARE_READ
+            | win32file.FILE_SHARE_WRITE
+            | win32file.FILE_SHARE_DELETE,
+            None,
+            win32file.OPEN_EXISTING,
+            win32file.FILE_ATTRIBUTE_NORMAL,
+            None,
+        )
+    except pywintypes.error as exc:
+        raise ctypes.WinError(exc.winerror) from exc
+    try:
+        descriptor = msvcrt.open_osfhandle(int(handle), flags | os.O_BINARY)
+    except OSError:
+        handle.Close()
+        raise
+    handle.Detach()  # 之后由 fd 关闭原生句柄。
+    return descriptor
+
+
+_READ_OPENER = _open_shared_read_fd if os.name == "nt" else None
 
 
 @dataclass(frozen=True)
@@ -113,7 +148,7 @@ class LogSource:
                 if self.strict_io:
                     raise ValueError("日志来源必须是普通文件")
                 return []
-            file = open(self.path, "rb")
+            file = open(self.path, "rb", opener=_READ_OPENER)
         except FileNotFoundError:
             return []
         except OSError:
@@ -176,7 +211,7 @@ class LogSource:
             if not S_ISREG(stat.st_mode) or _file_identity(stat) != file_id:
                 continue
             try:
-                with open(candidate, "rb") as file:
+                with open(candidate, "rb", opener=_READ_OPENER) as file:
                     if _file_identity(os.fstat(file.fileno())) == file_id:
                         lines, _ = self._read_stream(file, self._offset)
                         return lines
@@ -202,7 +237,7 @@ class LogSource:
                     return []  # 找到了旧文件，但没有尚未读取的完整内容。
                 continue
             try:
-                with open(bak, "rb") as file:
+                with open(bak, "rb", opener=_READ_OPENER) as file:
                     lines, _ = self._read_stream(file, offset)
                     return lines
             except OSError:

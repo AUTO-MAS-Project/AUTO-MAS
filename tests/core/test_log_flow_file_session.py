@@ -86,6 +86,24 @@ def test_file_rotation_between_path_check_and_open(tmp_path, monkeypatch):
     assert source.read_new() == ["new tail"]
 
 
+def test_script_can_rotate_while_source_holds_read_handle(tmp_path, monkeypatch):
+    path = tmp_path / "script.log"
+    path.write_bytes(b"old tail\n")
+    source = LogSource(path, strict_io=True, start_from_end=False)
+    source.open()
+    original_fstat = os.fstat
+
+    def rotate_open_file(fd):
+        monkeypatch.setattr(os, "fstat", original_fstat)
+        path.rename(path.with_suffix(".bak"))
+        path.write_bytes(b"new head\n")
+        return original_fstat(fd)
+
+    monkeypatch.setattr(os, "fstat", rotate_open_file)
+    assert source.read_new() == ["old tail"]
+    assert source.read_new() == ["new head"]
+
+
 @pytest.mark.asyncio
 async def test_declared_preprocessor_keeps_maaend_rich_text_report_compatible():
     legacy = LogPipeline()
