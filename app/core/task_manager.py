@@ -7,6 +7,7 @@ import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from copy import deepcopy
+from dataclasses import dataclass, field
 from datetime import datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
@@ -20,6 +21,7 @@ from app.config import ConfigEntry, ConfigNode, config_manager
 from app.core import Config, Publisher
 from app.core.ws import protocol
 from app.models.config import ScriptEntry, UserEntry
+from app.models.log_flow import NodeObservation
 from app.models.schema import (
     TaskRequirements,
     TaskRuntimeSnapshot,
@@ -45,6 +47,18 @@ from app.utils.contracts.power import PowerSignal
 
 logger = get_logger("任务调度")
 _selection = TypeAdapter(dict[int, TaskSelectionNode])
+_RECENT_OBSERVATION_BYTES = 16 * 1024 * 1024
+
+type _RunIdentity = tuple[UUID, UUID | None]
+
+
+@dataclass
+class _RecentTask:
+    ended_at: float
+    tree: dict[str, Any]
+    observations: dict[_RunIdentity, NodeObservation] = field(default_factory=dict)
+    observation_bytes: int = 0
+
 
 if TYPE_CHECKING:
     from app.models.config import QueueConfig, ScriptConfigType
@@ -78,7 +92,7 @@ class _TaskManager:
         )
         self._factories_bound = False
         self._running: dict[UUID, ScriptExpander] = {}
-        self._recent: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
+        self._recent: OrderedDict[UUID, _RecentTask] = OrderedDict()
         self._stopping_all = False
         self._restart_pending = False
         self._creating = 0
@@ -436,10 +450,34 @@ class _TaskManager:
         由任务结束或查询触发，使用单调时钟计算年龄；与持久化执行历史分开。
         """
         while self._recent:
-            _, (at, _) = next(iter(self._recent.items()))
-            if len(self._recent) <= 200 and time.monotonic() - at <= 1800:
+            task = next(iter(self._recent.values()))
+            if len(self._recent) <= 200 and time.monotonic() - task.ended_at <= 1800:
                 break
             self._recent.popitem(last=False)
+
+        # 只清除旧会话引用，保留既有任务终态查询及其独立的窗口。
+        remaining = _RECENT_OBSERVATION_BYTES
+        for task in reversed(self._recent.values()):
+            if task.observation_bytes > remaining:
+                task.observations.clear()
+                task.observation_bytes = 0
+                remaining = 0
+            else:
+                remaining -= task.observation_bytes
+
+    def get_node_observation(
+        self, task_id: UUID, script_run_id: UUID, *, user_run_id: UUID | None
+    ) -> NodeObservation | None:
+        """读取指定运行分支；使用运行 UUID，避免重复执行同一配置时串号。"""
+        if (run := self._running.get(task_id)) is not None:
+            script = run.task_info.scripts.get(script_run_id)
+            if script is None:
+                return None
+            entry = script if user_run_id is None else script.users.get(user_run_id)
+            return entry.node_observation if entry is not None else None
+        self._prune_recent()
+        recent = self._recent.get(task_id)
+        return recent.observations.get((script_run_id, user_run_id)) if recent else None
 
     def describe_lock_holders(self, config: ConfigNode, *, cascade: bool) -> str:
         """只诊断当前冲突票据；从实际执行器查询占用者，不建立另一份锁登记。"""
@@ -481,8 +519,8 @@ class _TaskManager:
                 mode="json"
             )
         self._prune_recent()
-        recent = self._recent.get(str(uid))
-        return recent[1] if recent else None
+        recent = self._recent.get(uid)
+        return recent.tree if recent else None
 
     def get_task_status(self, task_id: str) -> TaskStatusOut | None:
         """从完整任务树生成轻量状态响应，将 pending 映射为 running。
@@ -547,9 +585,20 @@ class _TaskManager:
             return
         self._running.pop(info.uid, None)
         info.clear_log_cursor()
-        self._recent[info.task_id] = (
-            time.monotonic(),
-            TaskTreeData.model_validate(info.model_dump()).model_dump(mode="json"),
+        observations: dict[_RunIdentity, NodeObservation] = {}
+        for script in info.scripts.values():
+            if (observation := script.node_observation) is not None:
+                observations[script.uid, None] = observation
+            for user in script.users.values():
+                if (observation := user.node_observation) is not None:
+                    observations[script.uid, user.uid] = observation
+        self._recent[info.uid] = _RecentTask(
+            ended_at=time.monotonic(),
+            tree=TaskTreeData.model_validate(info.model_dump()).model_dump(mode="json"),
+            observations=observations,
+            observation_bytes=sum(
+                item.retained_bytes for item in observations.values()
+            ),
         )
         self._prune_recent()
         await self.task_ended.send_async(self, task=info)

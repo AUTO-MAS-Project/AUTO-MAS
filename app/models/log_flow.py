@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 type NodeSource = Literal["file", "push", "mas"]
 type CloseReason = Literal["complete", "timeout", "worker_error", "capacity"]
 
+_PAGE_BYTES = 256 * 1024
+
 
 class Node(BaseModel, frozen=True):
     sequence: int = Field(gt=0)
@@ -55,12 +57,21 @@ class NodeObservation:
     def __init__(self) -> None:
         self.session_id = uuid4()
         self._nodes: list[Node] = []
+        self._node_sizes: list[int] = []
+        self.size_bytes = 0
+        self._report_bytes = 0
         self._summary: SessionSummary | None = None
 
-    def append(self, node: Node) -> None:
+    def append(self, node: Node, *, frame_bytes: int) -> None:
         if self._summary is not None or node.sequence != len(self._nodes) + 1:
             raise ValueError("节点不属于当前观察进度")
         self._nodes.append(node)
+        self._node_sizes.append(frame_bytes)
+        self.size_bytes += frame_bytes
+
+    @property
+    def retained_bytes(self) -> int:
+        return self.size_bytes + self._report_bytes
 
     def __len__(self) -> int:
         return len(self._nodes)
@@ -74,9 +85,11 @@ class NodeObservation:
         detail: str = "",
         *,
         report_entries: tuple[tuple[str, str, float | None], ...] | None = None,
+        report_bytes: int = 0,
         requires_final_report: bool = False,
     ) -> SessionSummary:
         if self._summary is None:
+            self._report_bytes = report_bytes
             self._summary = SessionSummary(
                 reason=reason,
                 nodes=self.snapshot(),
@@ -99,7 +112,13 @@ class NodeObservation:
             start = after.sequence
         if not 1 <= limit <= 100:
             raise ValueError("观察分页大小必须在 1 到 100 之间")
-        stop = min(start + limit, len(self))
+        stop = start
+        size = 0
+        for node_size in self._node_sizes[start : start + limit]:
+            if stop > start and size + node_size > _PAGE_BYTES:
+                break
+            stop += 1
+            size += node_size
         return ObservationPage(
             nodes=tuple(self._nodes[start:stop]),
             cursor=ObservationCursor(self.session_id, stop),

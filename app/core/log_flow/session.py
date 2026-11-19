@@ -59,7 +59,6 @@ class LogFlowSession:
         self._writer: asyncio.Task[None] | None = None
         self.observation = observation
         self._requires_final_report = requires_final_report
-        self._node_bytes = 0
         self._missed_native = False
         self._ready = asyncio.Event()
         self._worker_pid: int | None = None
@@ -263,13 +262,12 @@ class LogFlowSession:
                 elif isinstance(message, Observed) and self._worker_pid is not None:
                     if (
                         len(self.observation) == MAX_NODE_FRAMES
-                        or self._node_bytes + len(frame) > MAX_NODE_BYTES
+                        or self.observation.size_bytes + len(frame) > MAX_NODE_BYTES
                     ):
                         reason = "capacity"
                         detail = "宿主节点容量已满"
                         break
-                    self.observation.append(message.node)
-                    self._node_bytes += len(frame)
+                    self.observation.append(message.node, frame_bytes=len(frame))
                 elif isinstance(message, FinalEntry) and self._worker_pid is not None:
                     if (
                         len(final_entries) == MAX_NODE_FRAMES
@@ -294,9 +292,12 @@ class LogFlowSession:
                                 "capacity",
                                 "原生采集记录未能全部交接",
                                 report_entries=report_entries,
+                                report_bytes=final_bytes,
                             )
                         return self.observation.finish(
-                            "complete", report_entries=report_entries
+                            "complete",
+                            report_entries=report_entries,
+                            report_bytes=final_bytes,
                         )
                     break
                 elif isinstance(message, Failed):
