@@ -1,6 +1,8 @@
 """插件声明的管线配置，不携带运行对象、监控器或模块搜索路径。"""
 
-from pydantic import BaseModel, Field
+from typing import Self
+
+from pydantic import BaseModel, Field, model_validator
 
 from .contracts import (
     FileInput,
@@ -35,5 +37,12 @@ class PluginFlowDeclaration(BaseModel, frozen=True):
     use_mas_log: bool = True
     accept_push: bool = False
     file: FileInput | None = None
+    use_run_file: bool = False
     source: WorkerFactorySpec | None = None
     sink: WorkerFactorySpec | None = None
+
+    @model_validator(mode="after")
+    def check_file_binding(self) -> Self:
+        if self.use_run_file and self.file is not None:
+            raise ValueError("日志文件只能选择固定绑定或按运行绑定")
+        return self

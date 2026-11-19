@@ -3,6 +3,7 @@
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 from app.models.log_flow import ObservationCursor, ObservationPage, ObservationSnapshot
@@ -69,6 +70,8 @@ async def open_custom_flow(
         declaration if isinstance(declaration, SimpleFlowDeclaration) else None
     )
     webui = declaration if isinstance(declaration, GeneralFlowDeclaration) else None
+    if file is not None:
+        file = file.model_copy(update={"path": str(Path(file.path).absolute())})
     config = PipelineSpec(
         file=file,
         accept_mas=monitor is not None,

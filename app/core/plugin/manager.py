@@ -31,7 +31,11 @@ from packaging.version import Version
 from pydantic import JsonValue
 
 from app.config import NodeState
-from app.core.log_flow.contracts import WorkerFactorySpec, WorkerPluginPackage
+from app.core.log_flow.contracts import (
+    FileInput,
+    WorkerFactorySpec,
+    WorkerPluginPackage,
+)
 from app.core.log_flow.declaration import (
     GeneralFlowDeclaration,
     PluginFlowDeclaration,
@@ -140,12 +144,17 @@ class _PluginManager:
         receive_report: Callable[[list[str]], None] | None = None,
         task_report: LogFlowTaskReport | None = None,
         monitor: LogMonitor | None = None,
+        file_input: FileInput | None = None,
         general_rules: GeneralFlowDeclaration | None = None,
         postprocess_options: Mapping[str, JsonValue] | None = None,
     ) -> AsyncGenerator[FlowAccess, None]:
         """宿主用已注册插件和实际运行对象装配具名流。"""
         owner = self.log_flow_owner(plugin)
         declaration = self._log_flow_declarations[id(plugin)][name]
+        if declaration.use_run_file and file_input is None:
+            raise ValueError("该声明需要本次运行的日志文件")
+        if not declaration.use_run_file and file_input is not None:
+            raise ValueError("该声明未启用按运行绑定日志文件")
         if general_rules is not None and not isinstance(
             declaration.rules, GeneralFlowDeclaration
         ):
@@ -193,7 +202,7 @@ class _PluginManager:
                 mode=mode,
                 receive_report=receive_report,
                 monitor=monitor if declaration.use_mas_log else None,
-                file=declaration.file,
+                file=file_input if file_input is not None else declaration.file,
                 accept_push=declaration.accept_push,
                 source=declaration.source,
                 sink=declaration.sink,

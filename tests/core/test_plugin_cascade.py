@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from contextlib import AsyncExitStack
 from types import SimpleNamespace
 
 import pytest
@@ -283,6 +284,63 @@ async def test_named_general_flow_uses_current_webui_rules(
             replacement,
             replacement,
         ]
+
+
+@pytest.mark.asyncio
+async def test_named_file_source_binds_to_the_current_run(
+    cascade_plugins, tmp_path, monkeypatch
+):
+    from auto_mas_core.log_flow import FileInput, open_log_flow
+
+    from app import core
+
+    manager, records = await cascade_plugins({"flow_run_file": ()})
+    monkeypatch.setattr(core, "Plugin", manager)
+    record = records["flow_run_file"]
+    (tmp_path / "flow_run_file" / "__init__.py").write_text(
+        "from auto_mas_core import BasePlugin\n"
+        "from auto_mas_core.log_flow import LineRule, PluginFlowDeclaration, SimpleFlowDeclaration\n"
+        "class Adapter(BasePlugin):\n"
+        "    log_flows = {'file': PluginFlowDeclaration(use_mas_log=False, use_run_file=True, rules=SimpleFlowDeclaration(\n"
+        "        rules=(LineRule(match='^done:', node_type='普通'),),\n"
+        "    ))}\n"
+        "PLUGIN = Adapter\n",
+        encoding="utf-8",
+    )
+    await manager.reload(record)
+    await manager.enable(record)
+    first = tmp_path / "first.log"
+    second = tmp_path / "second.log"
+    for path in (first, second):
+        path.write_text("done:old\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    async with AsyncExitStack() as stack:
+        first_flow = await stack.enter_async_context(
+            open_log_flow(
+                record._plugin,
+                "file",
+                run=TaskUserItem(),
+                file_input=FileInput(path=first.name),
+            )
+        )
+        second_flow = await stack.enter_async_context(
+            open_log_flow(
+                record._plugin,
+                "file",
+                run=TaskUserItem(),
+                file_input=FileInput(path=str(second)),
+            )
+        )
+        for path in (first, second):
+            with path.open("a", encoding="utf-8") as log:
+                log.write(f"done:{path.stem}\n")
+    first_snapshot, second_snapshot = (
+        first_flow.snapshot_nodes(),
+        second_flow.snapshot_nodes(),
+    )
+    assert first_snapshot.close_reason == second_snapshot.close_reason == "complete"
+    assert [node.text for node in first_snapshot.nodes] == ["done:first"]
+    assert [node.text for node in second_snapshot.nodes] == ["done:second"]
 
 
 @pytest.mark.asyncio
