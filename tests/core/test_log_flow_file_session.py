@@ -1007,6 +1007,34 @@ async def test_custom_flow_keeps_all_sources_bound_to_one_run(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_push_rejects_timestamp_that_cannot_be_rendered():
+    reports: list[list[str]] = []
+    async with open_custom_flow(
+        SimpleFlowDeclaration(),
+        run=TaskUserItem(),
+        mode="逐条",
+        receive_report=reports.append,
+        accept_push=True,
+    ) as flow:
+        reporter = flow.reporter
+        assert reporter is not None
+        milliseconds = 1_764_000_000_000
+        assert reporter.node("普通", "invalid time", timestamp=milliseconds) == (
+            SubmitResult.INVALID
+        )
+        assert reporter.text("invalid time", timestamp=milliseconds) == (
+            SubmitResult.INVALID
+        )
+        timestamp = datetime(2026, 11, 19, 10, 4).timestamp()
+        assert reporter.node("普通", "valid time", timestamp=timestamp) == (
+            SubmitResult.ACCEPTED
+        )
+
+    assert flow.read_nodes().close_reason == "complete"
+    assert reports == [["10:04 - valid time"]]
+
+
+@pytest.mark.asyncio
 async def test_custom_flow_delivers_report_when_execution_raises():
     run = TaskUserItem()
     reports: list[list[str]] = []

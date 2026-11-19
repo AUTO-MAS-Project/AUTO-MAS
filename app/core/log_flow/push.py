@@ -16,7 +16,10 @@ class SubmitResult(StrEnum):
 
 
 class PushReporter(Protocol):
-    """在 MAS 事件循环内非阻塞上报；接受仅表示宿主入队。"""
+    """在 MAS 事件循环内非阻塞上报；接受仅表示宿主入队。
+
+    timestamp 为可转换为本地时间的 Unix 秒数，省略时不附时间。
+    """
 
     def text(self, text: str, *, timestamp: float | None = None) -> SubmitResult: ...
 

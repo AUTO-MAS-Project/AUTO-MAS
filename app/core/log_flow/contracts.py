@@ -2,10 +2,18 @@
 
 import asyncio
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, Field, JsonValue, TypeAdapter, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    Field,
+    JsonValue,
+    TypeAdapter,
+    model_validator,
+)
 
 from app.models.log_flow import Node, NodeAttributes, NodeDisplayStatus, ReportedNodeKey
 from app.utils.common.log.sources import FileCursor, capture_file_cursor
@@ -122,18 +130,31 @@ class PipelineSpec(BaseModel, frozen=True):
         return self
 
 
+def _validate_timestamp(timestamp: float) -> float:
+    try:
+        datetime.fromtimestamp(timestamp)
+    except (OSError, OverflowError, ValueError) as exc:
+        raise ValueError("日志时间戳应为可转换为本地时间的 Unix 秒数") from exc
+    return timestamp
+
+
+type _LogTimestamp = Annotated[
+    float, Field(allow_inf_nan=False), AfterValidator(_validate_timestamp)
+]
+
+
 class TextRecord(BaseModel, frozen=True):
     kind: Literal["text"] = "text"
     text: str
     source: Literal["push", "mas"] = "push"
-    timestamp: float | None = Field(default=None, allow_inf_nan=False)
+    timestamp: _LogTimestamp | None = None
 
 
 class ReportedRecord(BaseModel, frozen=True):
     kind: Literal["reported"] = "reported"
     node_type: str = Field(min_length=1)
     text: str = Field(min_length=1)
-    timestamp: float | None = Field(default=None, allow_inf_nan=False)
+    timestamp: _LogTimestamp | None = None
     node_id: ReportedNodeKey | None = None
     status: NodeDisplayStatus | None = None
     attributes: NodeAttributes = ()
@@ -168,7 +189,7 @@ class Closed(BaseModel):
 class ReportEntry(BaseModel, frozen=True):
     node_type: str
     text: str
-    timestamp: float | None = Field(default=None, allow_inf_nan=False)
+    timestamp: _LogTimestamp | None = None
 
 
 class FinalEntry(BaseModel):
