@@ -202,7 +202,8 @@ const generalSessionViewOnly = ref(false) // 当前会话是否为查看（只�
 const configTimedOut = ref(false) // 新增：标记是否已超时
 let generalConfigTimeout: number | null = null
 
-// 通用脚本默认用户数据
+// 通用脚本默认用户数据。
+// 字段与默认值以 app/models/config/script.py 的 GeneralUserConfig 为准，后端改字段时需同步这里。
 const getDefaultGeneralUserData = () => ({
   Info: {
     Name: '',
@@ -226,8 +227,6 @@ const getDefaultGeneralUserData = () => ({
     IfSendStatistic: false,
     IfServerChan: false,
     ServerChanKey: '',
-    ServerChanChannel: '',
-    ServerChanTag: '',
   },
   Data: {
     LastProxyDate: '2000-01-01T00:00:00+04:00',
