@@ -621,9 +621,12 @@ def debug_pattern(
     if matcher is None:
         return ("规则配置无效", is_multiline, [])
 
-    # 统一预处理：strip 每行，过滤空行（与 apply_patterns 入口 strip 行为一致，
-    # 避免行尾 \r 等被正则 (.+) 配合 re.DOTALL 捕获导致调试与生产结果不一致）
-    lines = [raw_line.strip() for raw_line in log_text.split("\n") if raw_line.strip()]
+    # 逐行 strip 与 apply_patterns 一致。多行窗口还需要保留实际写入的空行。
+    lines = [raw_line.strip() for raw_line in log_text.removesuffix("\n").split("\n")]
+    if not is_multiline:
+        lines = [line for line in lines if line]
+    elif not log_text:
+        return (None, is_multiline, [])
     if not lines:
         return (None, is_multiline, [])
 
