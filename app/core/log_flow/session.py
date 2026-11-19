@@ -10,6 +10,8 @@ from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from app.models.log_flow import CloseReason, Node, NodeObservation, SessionSummary
 from app.utils import process_platform
 from app.utils.common.process.runner import close_process_pipes
@@ -28,8 +30,10 @@ from .contracts import (
     Observed,
     PipelineSpec,
     Ready,
+    ReportedRecord,
     TextRecord,
 )
+from .push import PushReporter, SubmitResult
 
 _SOURCE_ROOT = Path(__file__).resolve().parents[3]
 _STOP_GRACE_SECONDS = 1.0
@@ -37,6 +41,27 @@ _STOP_GRACE_SECONDS = 1.0
 
 class SessionOpenError(RuntimeError):
     """采集会话未就绪；由执行层与原脚本结果分开处理。"""
+
+
+class _SessionReporter:
+    def __init__(self, enqueue: Callable[[InputRecord], SubmitResult]) -> None:
+        self._enqueue = enqueue
+
+    def text(self, text: str, *, timestamp: float | None = None) -> SubmitResult:
+        try:
+            record = TextRecord(text=text, timestamp=timestamp)
+        except ValidationError:
+            return SubmitResult.INVALID
+        return self._enqueue(record)
+
+    def node(
+        self, node_type: str, text: str, *, timestamp: float | None = None
+    ) -> SubmitResult:
+        try:
+            record = ReportedRecord(node_type=node_type, text=text, timestamp=timestamp)
+        except ValidationError:
+            return SubmitResult.INVALID
+        return self._enqueue(record)
 
 
 class LogFlowSession:
@@ -156,9 +181,9 @@ class LogFlowSession:
             and record.source == "mas"
         ):
             return False
-        return self._enqueue(record)
+        return self._enqueue(record) == SubmitResult.ACCEPTED
 
-    def _enqueue(self, record: InputRecord) -> bool:
+    def _enqueue(self, record: InputRecord) -> SubmitResult:
         outbox = self._outbox
         if (
             outbox is None
@@ -166,14 +191,19 @@ class LogFlowSession:
             or self._receiver.done()
             or self._stopping is not None
         ):
-            return False
-        if outbox.qsize() >= MAX_PENDING_RECORDS or len(record.text) >= MAX_FRAME_BYTES:
-            return False
+            return SubmitResult.CLOSED
+        if len(record.text) >= MAX_FRAME_BYTES or (
+            isinstance(record, ReportedRecord)
+            and len(record.node_type) >= MAX_FRAME_BYTES
+        ):
+            return SubmitResult.TOO_LARGE
+        if outbox.qsize() >= MAX_PENDING_RECORDS:
+            return SubmitResult.BACKPRESSURE
         frame = record.model_dump_json().encode("utf-8") + b"\n"
         if len(frame) > MAX_FRAME_BYTES:
-            return False
+            return SubmitResult.TOO_LARGE
         outbox.put_nowait(frame)
-        return True
+        return SubmitResult.ACCEPTED
 
     def native_line_receiver(self) -> Callable[[str], None]:
         """取得宿主监控器的窄输入回调，声明缺失时在绑定阶段发现。"""
@@ -183,9 +213,15 @@ class LogFlowSession:
 
     def _accept_native_line(self, line: str) -> None:
         """由已绑定的 MAS 采集器调用；丢失必须反映在采集摘要。"""
-        if not self._enqueue(TextRecord(text=line, source="mas")):
+        if self._enqueue(TextRecord(text=line, source="mas")) != SubmitResult.ACCEPTED:
             if self._closing is None and not self._receiver.done():
                 self._missed_native = True
+
+    def push_reporter(self) -> PushReporter:
+        """只为明确启用主动上报的当前会话签发能力。"""
+        if not self._accept_push:
+            raise ValueError("该会话未启用主动上报")
+        return _SessionReporter(self._enqueue)
 
     async def _write_records(self, outbox: asyncio.Queue[bytes | None]) -> None:
         assert self._process.stdin is not None

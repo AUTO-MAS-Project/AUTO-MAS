@@ -8,6 +8,7 @@ from pathlib import Path
 
 import psutil
 import pytest
+from auto_mas_core.log_flow import SubmitResult
 
 from app.core.log_flow.contracts import (
     FileInput,
@@ -182,9 +183,10 @@ async def test_push_returns_backpressure_without_blocking_host():
     process = psutil.Process(session.pid)
     try:
         process.suspend()
-        record = ReportedRecord(node_type="success", text="x" * 8192)
-        submitted = [session.submit(record) for _ in range(512)]
-        assert any(submitted) and not all(submitted)
+        reporter = session.push_reporter()
+        submitted = {reporter.node("success", "x" * 8192) for _ in range(512)}
+        assert submitted == {SubmitResult.ACCEPTED, SubmitResult.BACKPRESSURE}
+        assert not session.snapshot()
         async with asyncio.timeout(3):
             summary = await session.close(timeout=0.2)
         assert summary.reason == "timeout"
@@ -326,16 +328,28 @@ async def test_custom_flow_keeps_all_sources_bound_to_one_run(tmp_path):
         monitor=monitor,
         accept_push=True,
     ) as flow:
-        assert flow.submit is not None
-        assert not flow.submit(TextRecord(text="done:spoof", source="mas"))
-        assert flow.submit(ReportedRecord(node_type="普通", text="from push"))
+        reporter = flow.reporter
+        assert reporter is not None
+        assert reporter.node("", "invalid") == SubmitResult.INVALID
+        assert reporter.text("汉" * 25000) == SubmitResult.TOO_LARGE
+        assert reporter.node("普通", "from push") == SubmitResult.ACCEPTED
         append(path, "done:file\n")
         process = await asyncio.create_subprocess_exec(
             sys.executable, "-c", "print('done:mas')", stdout=asyncio.subprocess.PIPE
         )
         await asyncio.wait_for(monitor.monitor_process(process, "stdout"), 5)
         assert await process.wait() == 0
-    assert not flow.submit(ReportedRecord(node_type="普通", text="late"))
+    async with open_custom_flow(
+        SimpleFlowDeclaration(),
+        run=other,
+        mode="关闭",
+        receive_report=reports.append,
+        accept_push=True,
+    ) as next_flow:
+        assert reporter.node("普通", "late") == SubmitResult.CLOSED
+        assert next_flow.reporter is not None
+        assert next_flow.reporter.node("普通", "next run") == SubmitResult.ACCEPTED
+    assert [n.text for n in next_flow.read_nodes().nodes] == ["next run"]
     page = flow.read_nodes()
     assert page.close_reason == "complete"
     assert {(n.source, n.text) for n in page.nodes} == {
@@ -344,7 +358,6 @@ async def test_custom_flow_keeps_all_sources_bound_to_one_run(tmp_path):
         ("push", "from push"),
     }
     assert run.node_observation is not None and run.node_observation.read() == page
-    assert other.node_observation is None
     assert len(reports) == 1 and len(reports[0]) == 3
 
 

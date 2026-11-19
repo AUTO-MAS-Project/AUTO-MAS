@@ -14,7 +14,6 @@ from app.utils.common.log.monitor import LogMonitor
 from .contracts import (
     FileInput,
     FunctionRef,
-    InputRecord,
     LineRule,
     PipelineSpec,
     ProcessorFactorySpec,
@@ -22,6 +21,7 @@ from .contracts import (
     WorkerFactorySpec,
 )
 from .manager import open_for_run
+from .push import PushReporter
 from .report import ReportMode, render_node_details
 
 
@@ -43,7 +43,7 @@ class ReadNodes(Protocol):
 @dataclass(frozen=True)
 class FlowAccess:
     read_nodes: ReadNodes
-    submit: Callable[[InputRecord], bool] | None
+    reporter: PushReporter | None
 
 
 @asynccontextmanager
@@ -88,7 +88,7 @@ async def open_custom_flow(
             if monitor.on_raw_line is not None:
                 raise ValueError("日志监控器已有原始行消费者")
             monitor.on_raw_line = receiver
-        yield FlowAccess(read_nodes, session.submit if accept_push else None)
+        yield FlowAccess(read_nodes, session.push_reporter() if accept_push else None)
     finally:
         if monitor is not None and monitor.on_raw_line is receiver:
             monitor.on_raw_line = None
