@@ -4,7 +4,12 @@ const { createHash, randomUUID } = require('node:crypto')
 const { spawn } = require('node:child_process')
 const DEV_SERVER_URL = 'http://127.0.0.1:5173/'
 
-async function ensureDevelopmentRuntime(root, env = process.env, platform = process.platform) {
+async function ensureDevelopmentRuntime(
+  root,
+  env = process.env,
+  platform = process.platform,
+  signal
+) {
   if (env.AUTO_MAS_RUNTIME_EXE?.trim()) return
   if (platform !== 'win32') {
     throw new Error('Runtime 仅提供 Windows 版本；其他系统请使用 yarn backend 和 yarn dev:frontend')
@@ -24,7 +29,10 @@ async function ensureDevelopmentRuntime(root, env = process.env, platform = proc
   const asset = `auto-mas-runtime-${version}.exe`
   const release = `https://github.com/AUTO-MAS-Project/AUTO-MAS-Runtime/releases/download/${version}`
   async function download(name) {
-    const response = await fetch(`${release}/${name}`, { signal: AbortSignal.timeout(60_000) })
+    const timeout = AbortSignal.timeout(60_000)
+    const response = await fetch(`${release}/${name}`, {
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    })
     if (!response.ok) throw new Error(`下载 ${name} 失败：HTTP ${response.status}`)
     return response
   }
@@ -132,10 +140,12 @@ if (process.versions.electron && process.type === 'browser') {
   let closing = false
   let resourcesClosed = false
   let serverStart
+  const runtimeDownload = new AbortController()
 
   async function close(code = 0) {
     process.exitCode = Math.max(process.exitCode ?? 0, code)
     closing = true
+    runtimeDownload.abort()
     typechecker?.kill()
     if (desktop && desktop.exitCode === null && desktop.signalCode === null) {
       if (desktop.connected) desktop.send('auto-mas-dev-quit')
@@ -152,7 +162,12 @@ if (process.versions.electron && process.type === 'browser') {
 
   async function main() {
     if (!process.argv.includes('--connect-existing-backend')) {
-      await ensureDevelopmentRuntime(root)
+      try {
+        await ensureDevelopmentRuntime(root, process.env, process.platform, runtimeDownload.signal)
+      } catch (error) {
+        if (!runtimeDownload.signal.aborted) throw error
+        return
+      }
       if (closing) return
     }
     // 先拒绝已占用端口；页面仍只在本次 Vite 真正监听成功后放行。
