@@ -7,7 +7,6 @@ from typing import cast
 
 from app.utils.common.expression import ExpressionFunction, compile_expression
 from app.utils.common.log.patterns import (
-    LOG_TYPE_NORMAL,
     MultiLineAggregator,
     RegexMatcher,
     apply_patterns,
@@ -16,7 +15,6 @@ from app.utils.common.log.patterns import (
 )
 from app.utils.common.log.sources import LogReadLimitExceeded
 from app.utils.common.log_box.hooks import make_line_hook
-from app.utils.common.log_box.protocol import parse_marker
 
 from .contracts import MAX_FRAME_BYTES, FunctionRef, PipelineSpec
 
@@ -95,13 +93,6 @@ class GeneralRuleProcessor:
         if processed is not None:
             if len(processed.encode("utf-8")) >= MAX_FRAME_BYTES:
                 raise LogReadLimitExceeded("单行日志超出处理容量")
-            marker = parse_marker(processed)
-            if marker is not None:
-                if marker.get("op") == "push" and (
-                    text := str(marker.get("text") or "")
-                ):
-                    yield str(marker.get("type") or LOG_TYPE_NORMAL), text
-                return
             result = apply_patterns(processed, matchers=self.rules)
             if result is not None:
                 yield result

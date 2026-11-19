@@ -1,6 +1,8 @@
 """@@LOGBOX@@ 结果标记：脚本子进程宿主下的结果回传通道
 
-脚本子进程把处理好的结果渲染为 @@LOGBOX@@ 标记回传，通用脚本观察和旧通知复用解码。
+脚本子进程无法直接写 MAS 内存中的 push_log，调用方把处理好的结果渲染为
+@@LOGBOX@@ 受控 stdout 标记回传；MAS 侧 check_log 单行嗅探后写入
+cur_user_item.push_log。MAS 进程宿主（专项适配器）直接注入 sink，不走标记。
 """
 
 from __future__ import annotations

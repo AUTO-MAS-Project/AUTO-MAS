@@ -27,9 +27,6 @@ from typing import Optional
 from app.config import ConfigCollection
 from app.core import Notify, Publisher
 from app.core.history import aggregate_data
-from app.core.log_flow.contracts import PipelineSpec
-from app.core.log_flow.manager import open_for_run
-from app.core.log_flow.session import LogFlowSession, SessionOpenError
 from app.core.notify.task_content import (
     build_script_statistics_payload as build_script_statistics_payload,
 )
@@ -57,8 +54,9 @@ from app.utils import (
 )
 from app.utils import io as _utils_io
 from app.utils.common.log_box.hooks import make_line_hook
-from app.utils.common.log_box.protocol import parse_marker
 from app.utils.common.process.manager import has_process_window
+
+from .log_protocol import parse_marker
 
 logger = get_logger("通用脚本自动代理")
 
@@ -136,7 +134,6 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         # 是否写 MAS 侧配置：原生来源=不写，shared/independent 来源都写面板值。
         self.use_mas_config = self.config_base != CONFIG_BASE_NATIVE
         self.check_result = "-"
-        self._log_flow: LogFlowSession | None = None
 
     async def check(self) -> str:
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
@@ -292,25 +289,6 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         )
 
         self.run_book = False
-        if self.push_log_enabled:
-            script = self.script_config.Script
-            try:
-                self._log_flow = await open_for_run(
-                    self.cur_user_item,
-                    PipelineSpec(
-                        accept_push=True,
-                        general_patterns=script.PushLogPatterns,
-                        general_hooks=script.LogHookRules
-                        if script.LogHookEnabled
-                        else "",
-                    ),
-                )
-            except SessionOpenError:
-                logger.opt(exception=True).warning("通用脚本日志节点观察启动失败")
-            else:
-                self.general_log_monitor.on_raw_line = (
-                    self._log_flow.native_line_receiver()
-                )
 
     def _resolve_log_file_path(self) -> Path:
         return self.script_log_path
@@ -874,12 +852,8 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         )
 
         # 结束各子任务
-        try:
-            await self.general_log_monitor.stop()
-            await self.kill_managed_process()
-        finally:
-            if self._log_flow is not None:
-                await self._log_flow.close()
+        await self.general_log_monitor.stop()
+        await self.kill_managed_process()
         del self.general_process_manager
         del self.general_log_monitor
 
