@@ -231,22 +231,18 @@ async def test_adoption_distinguishes_thread_exit_from_denied_access(
             )
             open_thread = win32api.OpenThread
             with closing(open_thread(win32con.SYNCHRONIZE, False, tid)) as worker:
-                released = False
 
                 def open_during_thread_exit(access, inherit, thread_id):
-                    nonlocal released
                     if not worker_exits and thread_id == tid:
                         # 存活线程用缺少挂起权限的真实句柄，触发原生拒绝访问。
                         access = win32con.SYNCHRONIZE
-                    if worker_exits and not released:
+                    if worker_exits and not child.stdin.closed:
                         # 等枚举完成再放行退出；此时还没有线程被挂起。
-                        child.stdin.write(b"x")
-                        child.stdin.flush()
+                        child.stdin.close()
                         assert (
                             win32event.WaitForSingleObject(worker, 3000)
                             == win32event.WAIT_OBJECT_0
                         )
-                        released = True
                     return open_thread(access, inherit, thread_id)
 
                 monkeypatch.setattr(win32api, "OpenThread", open_during_thread_exit)

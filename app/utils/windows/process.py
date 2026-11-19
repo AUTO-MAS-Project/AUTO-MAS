@@ -27,7 +27,12 @@ from app.utils.common.process.session import (
 from ..contracts.process import ElevatedProcess, EmulatorPopenOptions
 
 
-def _thread_has_exited(handle: Any) -> bool:
+def _is_exited_thread_denial(error: BaseException, handle: Any) -> bool:
+    if (
+        not isinstance(error, pywintypes.error)
+        or error.winerror != winerror.ERROR_ACCESS_DENIED
+    ):
+        return False
     # 只在挂起失败时申请等待权限，并核对同一个线程对象而不是重新查找 TID。
     current = win32api.GetCurrentProcess()
     try:
@@ -145,15 +150,10 @@ class WindowsTaskProcessJob:
                         win32process.SuspendThread(handle)
                     except BaseException as error:
                         with closing(handle):
-                            if (
-                                isinstance(error, pywintypes.error)
-                                and error.winerror == winerror.ERROR_ACCESS_DENIED
-                                and _thread_has_exited(handle)
-                            ):
-                                rescan = True
-                                continue
-                        raise
-                    handles[thread.id] = handle
+                            if not _is_exited_thread_denial(error, handle):
+                                raise
+                    else:
+                        handles[thread.id] = handle
                     rescan = True
                 if not rescan:
                     break
