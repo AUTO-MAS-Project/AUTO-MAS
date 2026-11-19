@@ -7,13 +7,15 @@
 from __future__ import annotations
 
 import os
+import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from stat import S_ISREG
 from typing import BinaryIO, Optional, Union
 
-if os.name == "nt":
+if sys.platform == "win32":
     import ctypes
     import msvcrt
 
@@ -29,35 +31,40 @@ class LogReadLimitExceeded(ValueError):
 
 def _file_identity(stat: os.stat_result) -> tuple[int, int]:
     """Windows 显式使用创建时间，路径与句柄返回的 ctime 可能不同。"""
-    return (stat.st_ino, stat.st_birthtime_ns if os.name == "nt" else stat.st_dev)
+    if sys.platform == "win32":
+        return stat.st_ino, stat.st_birthtime_ns
+    return stat.st_ino, stat.st_dev
 
 
-def _open_shared_read_fd(path: str, flags: int) -> int:
-    """允许 Windows 上的日志写入者在采集器读文件时改名轮转。"""
-    try:
-        handle = win32file.CreateFile(
-            path,
-            win32file.GENERIC_READ,
-            win32file.FILE_SHARE_READ
-            | win32file.FILE_SHARE_WRITE
-            | win32file.FILE_SHARE_DELETE,
-            None,
-            win32file.OPEN_EXISTING,
-            win32file.FILE_ATTRIBUTE_NORMAL,
-            None,
-        )
-    except pywintypes.error as exc:
-        raise ctypes.WinError(exc.winerror) from exc
-    try:
-        descriptor = msvcrt.open_osfhandle(int(handle), flags | os.O_BINARY)
-    except OSError:
-        handle.Close()
-        raise
-    handle.Detach()  # 之后由 fd 关闭原生句柄。
-    return descriptor
+_READ_OPENER: Callable[[str, int], int] | None = None
 
+if sys.platform == "win32":
 
-_READ_OPENER = _open_shared_read_fd if os.name == "nt" else None
+    def _open_shared_read_fd(path: str, flags: int) -> int:
+        """允许 Windows 上的日志写入者在采集器读文件时改名轮转。"""
+        try:
+            handle = win32file.CreateFile(
+                path,
+                win32file.GENERIC_READ,
+                win32file.FILE_SHARE_READ
+                | win32file.FILE_SHARE_WRITE
+                | win32file.FILE_SHARE_DELETE,
+                None,
+                win32file.OPEN_EXISTING,
+                win32file.FILE_ATTRIBUTE_NORMAL,
+                None,
+            )
+        except pywintypes.error as exc:
+            raise ctypes.WinError(exc.winerror) from exc
+        try:
+            descriptor = msvcrt.open_osfhandle(int(handle), flags | os.O_BINARY)
+        except OSError:
+            handle.Close()
+            raise
+        handle.Detach()  # 之后由 fd 关闭原生句柄。
+        return descriptor
+
+    _READ_OPENER = _open_shared_read_fd
 
 
 @dataclass(frozen=True)
