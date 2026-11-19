@@ -91,9 +91,7 @@
             </span>
           </template>
           <template v-else-if="column.key === 'status'">
-            <a-tag :color="statusColor(record.document)">{{
-              statusLabels[record.document.info?.status ?? 10]
-            }}</a-tag>
+            <a-tag :color="statusColor(record.document)">{{ statusLabel(record.document) }}</a-tag>
             <a-tag v-if="isDeletedDevice(record.document)">{{ t('core.games.deleted') }}</a-tag>
           </template>
           <template v-else-if="column.key === 'adb'">
@@ -176,6 +174,9 @@ const deviceColumns = computed(() => [
   { title: t('core.games.usage'), key: 'usage', width: 140 },
   { title: t('core.games.actions'), key: 'actions', width: 190 },
 ])
+function statusLabel(device: GameDevice) {
+  return statusLabels.value[device.info?.status ?? 10]
+}
 function statusColor(device: GameDevice) {
   const status = device.info?.status ?? 10
   if (status === 0) return 'success'
