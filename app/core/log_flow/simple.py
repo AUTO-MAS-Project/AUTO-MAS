@@ -5,7 +5,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from typing import Protocol
 
-from app.models.log_flow import ObservationCursor, ObservationPage
+from app.models.log_flow import ObservationCursor, ObservationPage, ObservationSnapshot
 from app.models.task import TaskScriptItem, TaskUserItem
 from app.utils.common.log.monitor import LogMonitor
 
@@ -33,6 +33,7 @@ class ReadNodes(Protocol):
 class FlowAccess:
     read_nodes: ReadNodes
     reporter: PushReporter | None
+    snapshot_nodes: Callable[[], ObservationSnapshot]
 
 
 @asynccontextmanager
@@ -100,7 +101,7 @@ async def open_custom_flow(
             summary = observation.summary
             assert summary is not None
             reporter = GuardedReporter(None, lambda: False) if accept_push else None
-            yield FlowAccess(observation.read, reporter)
+            yield FlowAccess(observation.read, reporter, observation.capture)
             if mode != "关闭" and receive_report is not None:
                 receive_report(render_node_details(summary, mode=mode))
             return
@@ -120,7 +121,9 @@ async def open_custom_flow(
                 monitor.on_raw_line = receiver
                 if owner is not None:
                     owner.attach_cleanup(session, detach)
-            yield FlowAccess(session.observation.read, reporter)
+            yield FlowAccess(
+                session.observation.read, reporter, session.observation.capture
+            )
         finally:
             detach()
     if mode != "关闭" and receive_report is not None:

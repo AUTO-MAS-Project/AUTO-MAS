@@ -74,6 +74,13 @@ class ObservationPage:
     close_reason: CloseReason | None
 
 
+@dataclass(frozen=True)
+class ObservationSnapshot:
+    nodes: tuple[Node, ...]
+    cursor: ObservationCursor
+    close_reason: CloseReason | None
+
+
 class NodeObservation:
     """保留变更游标，并投影每个逻辑节点的最新状态。"""
 
@@ -114,6 +121,14 @@ class NodeObservation:
             self._summary.nodes
             if self._summary is not None
             else tuple(self._current.values())
+        )
+
+    def capture(self) -> ObservationSnapshot:
+        """在同一事件循环轮次获取当前节点与下一次补读起点。"""
+        return ObservationSnapshot(
+            nodes=self.snapshot(),
+            cursor=ObservationCursor(self.session_id, len(self)),
+            close_reason=self._summary.reason if self._summary is not None else None,
         )
 
     def finish(

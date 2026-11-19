@@ -377,9 +377,12 @@ async def test_simple_flow_handles_stdout_burst_from_real_log_monitor():
 
 @pytest.mark.asyncio
 async def test_report_consumes_current_nodes_after_correction_and_withdrawal():
-    session = await LogFlowSession.open(PipelineSpec(accept_push=True))
-    try:
-        reporter = session.push_reporter()
+    run = TaskUserItem()
+    async with open_custom_flow(
+        SimpleFlowDeclaration(), run=run, accept_push=True, mode="汇总"
+    ) as flow:
+        reporter = flow.reporter
+        assert reporter is not None
         assert (
             reporter.node("失败", "❌ 失败: step", node_id="step")
             == SubmitResult.ACCEPTED
@@ -391,16 +394,27 @@ async def test_report_consumes_current_nodes_after_correction_and_withdrawal():
         assert (
             reporter.node("普通", "discard", node_id="discard") == SubmitResult.ACCEPTED
         )
+        async with asyncio.timeout(5):
+            while (snapshot := flow.snapshot_nodes()).cursor.sequence < 3:
+                await asyncio.sleep(0.01)
+        assert snapshot.close_reason is None
+        assert [node.text for node in snapshot.nodes] == ["✅ 成功: step", "discard"]
         assert reporter.withdraw("discard") == SubmitResult.ACCEPTED
         assert reporter.withdraw("invalid/key") == SubmitResult.INVALID
-        summary = await session.close()
-        assert summary.complete
-        assert render_node_details(summary, mode="逐条") == ["✅ 成功: step"]
-        assert render_node_details(summary, mode="汇总") == ["✅ 成功: step"]
-        assert summary.nodes[0].status == "success"
-        assert len(session.observation.read().nodes) == 4
-    finally:
-        await session.close(timeout=0)
+
+    latest = flow.snapshot_nodes()
+    delta = flow.read_nodes(after=snapshot.cursor)
+    assert latest.close_reason == delta.close_reason == "complete"
+    assert latest.cursor == delta.cursor
+    assert len(delta.nodes) == 1 and delta.nodes[0].withdrawn
+    assert delta.nodes[0].node_id == "push/discard"
+    assert len(latest.nodes) == 1 and latest.nodes[0].status == "success"
+    observation = run.node_observation
+    assert observation is not None and observation.summary is not None
+    summary = observation.summary
+    assert summary.nodes == latest.nodes
+    assert render_node_details(summary, mode="逐条") == ["✅ 成功: step"]
+    assert render_node_details(summary, mode="汇总") == ["✅ 成功: step"]
 
 
 @pytest.mark.asyncio

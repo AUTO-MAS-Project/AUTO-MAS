@@ -33,6 +33,7 @@ from app.models.log_flow import (
     NodeDisplayStatus,
     ObservationCursor,
     ObservationPage,
+    ObservationSnapshot,
 )
 from app.utils.common.expression import ExpressionFunction
 
@@ -89,6 +90,7 @@ __all__ = [
     "NodeDisplayStatus",
     "ObservationCursor",
     "ObservationPage",
+    "ObservationSnapshot",
     "PluginFlowDeclaration",
     "PostProcessor",
     "PushReporter",
