@@ -447,6 +447,9 @@ class LogMonitor:
                         raise _LogIdentityChanged("打开日志时文件已轮转")
                 await f.seek(offset)
                 async for bline in f:
+                    if self.on_raw_line is not None and not bline.endswith(b"\n"):
+                        # 流式订阅只接收完整行。保留偏移，下轮从该行开头续读。
+                        break
                     offset = await f.tell()
                     line = decode_bytes(bline)
                     if not if_log_start:

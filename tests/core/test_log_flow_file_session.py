@@ -582,6 +582,51 @@ async def test_simple_flow_handles_stdout_burst_from_real_log_monitor():
 
 
 @pytest.mark.asyncio
+async def test_native_file_flow_keeps_incomplete_lines_until_they_are_written(tmp_path):
+    path = tmp_path / "script.log"
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    append(path, f"{stamp} done:first\n{stamp} done:par")
+    saw_final = asyncio.Event()
+    appended = False
+
+    async def display(lines, _latest_time):
+        nonlocal appended
+        if lines and not appended:
+            append(path, f"tial\n{stamp} done:final\n{stamp} done:unfinished")
+            appended = True
+        if any("done:final" in line for line in lines):
+            saw_final.set()
+
+    monitor = LogMonitor((0, 19), "%Y-%m-%d %H:%M:%S", display)
+    run = TaskUserItem()
+    declaration = SimpleFlowDeclaration(
+        rules=(LineRule(match="done:", extract=r"$(done:(\w+))", node_type="普通"),)
+    )
+    async with open_simple_flow(
+        declaration,
+        run=run,
+        monitor=monitor,
+        mode="关闭",
+        receive_report=lambda _: None,
+    ):
+        await monitor.start_monitor_file(
+            lambda: path, datetime.now() - timedelta(seconds=10)
+        )
+        try:
+            await asyncio.wait_for(saw_final.wait(), 5)
+        finally:
+            await monitor.stop()
+
+    observation = run.node_observation
+    assert observation is not None
+    assert [node.text for node in observation.snapshot()] == [
+        "first",
+        "partial",
+        "final",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_native_file_monitor_does_not_replay_append_when_ctime_changes(
     tmp_path, monkeypatch
 ):
