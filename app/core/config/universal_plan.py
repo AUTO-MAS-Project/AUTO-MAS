@@ -7,13 +7,13 @@ from tempfile import TemporaryDirectory
 from typing import Literal
 from uuid import UUID
 
-from app.models.config import UniversalPlanConfig
+from app.models.config import PlanConfigType, UniversalPlanConfig
 
 
 def plan_directory(
     *,
     data_path: Path,
-    plan: UniversalPlanConfig,
+    plan: PlanConfigType,
     script_id: str,
     user_id: str | None = None,
     runtime: bool = False,

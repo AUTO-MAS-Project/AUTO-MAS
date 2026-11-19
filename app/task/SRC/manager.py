@@ -44,6 +44,7 @@ from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
     read_config_base,
 )
+from app.task.run_flow import point
 from app.utils import TASK_MODE_ZH, ProcessManager, get_logger
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
@@ -793,7 +794,7 @@ class SrcManager(ScriptManagerBase):
             self._program_update_prepared = True
         return True
 
-    async def _prepare_program_update(self) -> None:
+    async def _prepare_script_update(self) -> None:
         if self.execution_mode != "AutoProxy" or self._program_update_prepared:
             return
         root = self.src_root_path
@@ -807,13 +808,16 @@ class SrcManager(ScriptManagerBase):
                 try:
                     return await program_update.prepare_update(root)
                 except (script_install.InstallUnsafeError, FluxdownCancelUnconfirmed):
+                    point(self, "script_update", state="failed")
                     raise
                 except Exception as error:
+                    point(self, "script_update", state="failed", key="download")
                     raise DownloadRetryFailed(
                         source="SRC Git/CDN",
                         reason=f"下载或只读准备失败（{type(error).__name__}）",
                     ) from error
 
+            point(self, "script_update")
             candidate = await run_script_update_with_safe_fallback(
                 request, prepare, root, SRCInstallAdapter(root).inspect
             )
@@ -829,16 +833,27 @@ class SrcManager(ScriptManagerBase):
                         ensure_idle=adapter.ensure_idle,
                         after_rollback=adapter.after_rollback,
                     )
+                except Exception:
+                    point(self, "script_update", state="failed")
+                    raise
                 finally:
                     await adapter.ensure_idle()
                     program_update.remove_cached_git_objects(candidate.objects)
                 (
                     script_install.workspace(root) / "src-native-install-complete.json"
                 ).unlink(missing_ok=True)
+                point(
+                    self,
+                    "script_update",
+                    key=result,
+                    state="failed" if result == "old_version" else "succeeded",
+                )
             else:
                 # 不更新或安全旧版回退时，也必须确认原生安装确实完整。
                 await program_update.confirm_current_install(root)
                 result = candidate or "SRC 当前已经是最新版本"
+                if candidate is None:
+                    point(self, "script_update", state="succeeded", key="UpToDate")
             await self.script_info.set_log(str(result))
         elif marker.exists() or marker.is_symlink():
             raise script_install.InstallUnsafeError(
@@ -869,7 +884,7 @@ class SrcManager(ScriptManagerBase):
             await self._cleanup_current_src_root()
         if self.execution_mode != "AutoProxy":
             program_update.assert_safe_to_launch(self.src_root_path)
-        await self._prepare_program_update()
+        await self._prepare_script_update()
         # 任务执行前最后一次确认；恢复后也不容许新标记悄悄出现。
         program_update.assert_safe_to_launch(self.src_root_path)
         await self.prepare()

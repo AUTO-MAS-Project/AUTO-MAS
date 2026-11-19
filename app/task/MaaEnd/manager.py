@@ -40,6 +40,7 @@ from app.services import endfield_launcher as _service_endfield_launcher
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import push_dispatch_log
+from app.task.run_flow import game_update_result, point
 from app.utils import (
     BASE_NATIVE,
     BASE_SHARED,
@@ -276,7 +277,7 @@ class MaaEndManager(ScriptManagerBase):
         # 先处置上次崩溃残留的快照, 再备份原始配置。无条件清空会把崩溃后唯一
         # 一份原始配置副本删掉, 让注入污染的状态固化成「原始配置」。
         self._recover_previous_run()
-        await self._prepare_program_update(root_path)
+        await self._prepare_script_update(root_path)
 
         # 初始化模拟器管理器
         if self.controller_protocol == "Adb":
@@ -321,7 +322,7 @@ class MaaEndManager(ScriptManagerBase):
             f"账号列表加载完成, 已筛选账号数: {len(self.script_info.user_list)}"
         )
 
-    async def _prepare_program_update(self, root: Path) -> None:
+    async def _prepare_script_update(self, root: Path) -> None:
         if self._program_update_prepared:
             return
         if (
@@ -330,6 +331,7 @@ class MaaEndManager(ScriptManagerBase):
         ):
             return
         await push_dispatch_log(self.script_info, "正在检查 MaaEnd 程序更新…")
+        point(self, "script_update")
 
         async def progress(downloaded: int, total: int, speed: float) -> None:
             await self.script_info.set_log(
@@ -355,8 +357,10 @@ class MaaEndManager(ScriptManagerBase):
                     progress=progress,
                 )
         except (script_install.InstallUnsafeError, FluxdownCancelUnconfirmed):
+            point(self, "script_update", state="failed")
             raise
         except Exception as error:
+            point(self, "script_update", state="failed")
             await script_update.confirm_current_install(root)
             result = f"MaaEnd 更新准备未完成，沿用当前安装继续任务：{error}"
             logger.warning(result)
@@ -368,6 +372,7 @@ class MaaEndManager(ScriptManagerBase):
                     data=WSTaskNoticeData(level="warning", message=result),
                 )
         else:
+            point(self, "script_update", state="succeeded", key="checked")
             await push_dispatch_log(self.script_info, result)
         await self._refresh_after_program_install(root)
         self._program_update_prepared = True
@@ -443,7 +448,7 @@ class MaaEndManager(ScriptManagerBase):
             and self.script_info.user_list[0].status == "完成"
         )
 
-    async def _ensure_game_client_updated(self) -> str | None:
+    async def _prepare_game_update(self) -> str | None:
         """任务启动前接管终末地 PC 客户端更新。
 
         更新对象是托管级的 `Game.Path`，多账号与重试轮次都只该检查一次，所以要赶在本轮
@@ -490,6 +495,7 @@ class MaaEndManager(ScriptManagerBase):
             await push_dispatch_log(self.script_info, line)
 
         try:
+            point(self, "game_update")
             result = await ensure_game_updated(
                 game_exe,
                 time_limit_minutes=int(script_config.Game.UpdateTimeLimit),
@@ -498,6 +504,7 @@ class MaaEndManager(ScriptManagerBase):
         except Exception as error:
             # 能走到这里的只剩「已经开始写游戏目录之后」出的岔子：放行等于让脚本
             # 跑在半写入的客户端上，一律阻断。
+            point(self, "game_update", state="failed")
             logger.opt(exception=True).error(
                 f"终末地客户端更新接管异常，中止本轮任务: {error}"
             )
@@ -505,6 +512,7 @@ class MaaEndManager(ScriptManagerBase):
 
         # 结论也要在调度台留一句：拦住本轮的那句之外，「已更新至 x」与「判不了所以放行」
         # 同样得看得见；UpToDate 每轮任务都会出，重复播没人看
+        game_update_result(self, result)
         if result.status != "UpToDate":
             await push_dispatch_log(self.script_info, result.message)
         if result.status == "NeedManualUpdate":
@@ -598,7 +606,7 @@ class MaaEndManager(ScriptManagerBase):
                     await self._refresh_after_program_install(root)
                     self._program_update_prepared = True
                 else:
-                    await self._prepare_program_update(root)
+                    await self._prepare_script_update(root)
             elif script_install.record_path(root, "installed.json").exists():
                 # 非接管模式沿用 MXU 自行更新的安装。恢复事务仍须完成，
                 # 但旧 MAS 回执不应阻断后续配置或运行，也不重算哈希冒充可信。
@@ -628,7 +636,7 @@ class MaaEndManager(ScriptManagerBase):
             await self.spawn(EndfieldUpdateTask(self.script_info, self.script_config))
             return
 
-        failure = await self._ensure_game_client_updated()
+        failure = await self._prepare_game_update()
         if failure is not None:
             # 绝不能改 self.check_result：final_task 在它不是 Pass 时早退并跳过
             # unlock()，而此刻脚本配置已被 prepare() 锁上，写它就是永久泄锁。

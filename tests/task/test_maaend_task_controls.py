@@ -297,7 +297,7 @@ async def test_native_tasks_run_independently_in_one_queue(
     await proxy.main_task()
     if scenario == "delivery_failure":
         assert [mode for mode, _ in attempts] == ["Delivery", "Delivery"]
-        assert proxy.run_book["Routine"] is False
+        assert proxy.completed_phases["Routine"] is False
     else:
         assert [mode for mode, _ in attempts] == (
             ["Delivery", "Routine", "Routine"]
@@ -325,7 +325,7 @@ async def test_native_tasks_run_independently_in_one_queue(
             )
         if scenario == "essence_retry":
             assert [task["taskName"] for task in attempts[2][1]] == ["AutoEssence"]
-        assert all(proxy.run_book.values())
+        assert all(proxy.completed_phases.values())
 
 
 @pytest.mark.asyncio

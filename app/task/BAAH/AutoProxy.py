@@ -47,6 +47,7 @@ from app.models.notification import LocalNotice
 from app.models.schema import HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.task.base import ScriptAutoProxyBase
+from app.task.run_flow import begin_attempt, operation, point
 from app.tools.common.game_calendar import bluearchive as _tool_bluearchive_activity
 from app.utils import (
     LOG_TYPE_NORMAL,
@@ -60,6 +61,7 @@ from app.utils import (
 )
 from app.utils import update_files as _utils_update_files
 from app.utils.common.log import sources as log_source
+from app.utils.common.log.patterns import match_log_signs
 
 from .tools import (
     CONFIG_DIR_NAME,
@@ -88,12 +90,6 @@ logger = get_logger("BAAH 自动代理")
 
 ## BAAH 只输出「分:秒」，不带日期与小时
 BAAH_LOG_TIME_FORMAT = "%M:%S"
-
-## 完成任务时 BAAH 固定输出的日志文本（只在成功路径出现）
-BAAH_SUCCESS_LOG = "所有任务结束|All tasks are finished"
-
-## 运行失败时 BAAH 顶层异常处理输出的日志文本
-BAAH_ERROR_LOG = "运行出错:|Error occurred:"
 
 ## 等待日志文件生成的超时（秒）
 _LOG_FILE_WAIT_SECONDS = 60
@@ -226,6 +222,12 @@ def prioritize_event_quest(
 class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
     """自动代理模式"""
 
+    # 成功文案只在任务结束时出现；失败文案来自 BAAH 顶层异常处理。
+    log_signs = {
+        "success": compile_log_signs("所有任务结束|All tasks are finished"),
+        "failure": compile_log_signs("运行出错:|Error occurred:"),
+    }
+
     def __init__(
         self,
         script_info: ScriptItem,
@@ -247,7 +249,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
         self.check_result = "-"
-        self.run_book = False
+        self.run_complete = False
         self.managed_backup: ManagedConfigBackup | None = None
         self.process_manager: ProcessManager | None = None
         self.log_monitor: LogMonitor | None = None
@@ -338,11 +340,6 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         self.log_start_time = datetime.now().astimezone()
         self.log_start_at = time.monotonic()
 
-        ## 成功与失败关键字固定：成功文本只出现在 BAAH 的成功路径，
-        ## 失败文本是其顶层异常处理的输出
-        self.success_log = compile_log_signs(BAAH_SUCCESS_LOG, "Split")
-        self.error_log = compile_log_signs(BAAH_ERROR_LOG, "Split")
-
         ## 日志监控器不在这里构造：它把构造时刻当作补齐 %M:%S 缺失小时的基准，
         ## 而冷启模拟器与等待日志文件可能跨过整点，提前构造会把首行算成上一个
         ## 小时而整段丢弃。等定位到日志文件之后再构造（见 _run_launched）。
@@ -397,8 +394,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         await self.cur_user_item.set_state(status="运行")
 
         for i in range(self.script_config.Run.RunTimesLimit):
-            if self.run_book:
+            if self.run_complete:
                 break
+            begin_attempt(self, i + 1)
 
             logger.info(
                 f"账号 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
@@ -413,7 +411,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             await self.run_once()
 
             if self.cur_user_log.status == "Success!":
-                self.run_book = True
+                self.run_complete = True
                 await self.cur_user_item.set_state(status="完成")
                 logger.success(f"账号: {self.cur_user_uid} - BAAH 完成代理任务")
                 break
@@ -440,9 +438,10 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         await self.cur_user_item.set_state(status="运行")
 
         try:
-            device_info = await self.emulator_manager.open(
-                str(self.script_config.Emulator.Index)
-            )
+            with operation(self, "start_game"):
+                device_info = await self.emulator_manager.open(
+                    str(self.script_config.Emulator.Index)
+                )
         except Exception as e:
             logger.opt(exception=True).warning(f"启动模拟器失败: {e}")
             await self.handle_pre_script_error("启动模拟器失败", e)
@@ -705,7 +704,8 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         launch_at = time.time()
 
         try:
-            await self.process_manager.open_process(self.baah_path, config_name)
+            with operation(self, "start_script"):
+                await self.process_manager.open_process(self.baah_path, config_name)
         except Exception as e:
             logger.opt(exception=True).warning(f"启动 BAAH 进程失败: {e}")
             await self.handle_pre_script_error("启动 BAAH 进程失败", e)
@@ -755,6 +755,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             self.check_log,
         )
 
+        point(self, "run")
         await self.log_monitor.start_monitor_file(
             self._resolve_log_file_path, self.log_start_time
         )
@@ -764,7 +765,10 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         ## 命中成功标记只说明任务跑完了，BAAH 还要执行收尾（自动退出与用户的
         ## POST_COMMAND）：先给它时间自己走完，超时才强制结束
         if self.cur_user_log.status == "Success!":
+            point(self, "run", state="succeeded", key=self._log_result_key)
             await self._wait_process_exit()
+        else:
+            point(self, "run", state="failed", key=self._log_result_key)
 
         await self.kill_managed_process()
         await asyncio.sleep(_PROCESS_EXIT_WAIT_SECONDS)
@@ -827,21 +831,23 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         await self.cur_user_log.set_state(content=log_content)
         await self.script_info.set_log(log)
 
-        if self.success_log.search(log) is not None:
-            await self.cur_user_log.set_state(status="Success!")
+        if hit := match_log_signs(log, self.log_signs, key="success"):
+            status, key = "Success!", hit.key
         elif self.is_log_stalled(
             latest_time, minutes=self.script_config.Run.RunTimeLimit
         ):
-            await self.cur_user_log.set_state(status="脚本进程超时")
-        elif self.error_log.search(log) is not None:
-            await self.cur_user_log.set_state(status="BAAH 运行出错")
+            status, key = "脚本进程超时", "log_timeout"
+        elif hit := match_log_signs(log, self.log_signs, key="failure"):
+            status, key = "BAAH 运行出错", hit.key
         elif (
             self.process_manager is not None and await self.process_manager.is_running()
         ):
-            await self.cur_user_log.set_state(status="BAAH 正常运行中")
+            status, key = "BAAH 正常运行中", ""
         else:
             ## 进程已退出但未命中成功标记：不能确认任务完成
-            await self.cur_user_log.set_state(status="BAAH 在完成任务前退出")
+            status, key = "BAAH 在完成任务前退出", "process_exit"
+        await self.cur_user_log.set_state(status=status)
+        self._log_result_key = key
 
         logger.debug(f"BAAH 日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "BAAH 正常运行中":
@@ -856,6 +862,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
 
         try:
             logger.info(f"中止 BAAH 进程: {self.baah_path}")
+            point(self, "stop_script")
             await self.process_manager.kill()
             await process.kill_process(self.baah_path)
         except Exception as e:
@@ -908,7 +915,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             self.script_info,
             self.cur_user_item,
             failed=bool(self.cur_user_item.log_record)
-            and not self.run_book
+            and not self.run_complete
             and not self.stopped_manually,
         )
 
@@ -919,7 +926,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
 
         await self._restore_managed_config()
 
-        if self.run_book:
+        if self.run_complete:
             ## 与通用脚本同一套口径：当天首次成功才递减剩余天数，代理次数始终累加。
             ## 不更新的话账号标签会一直停在「任务：未代理」、剩余天数也不减
             if (
@@ -995,10 +1002,10 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             "start_time": self.user_start_time.strftime("%Y-%m-%d %H:%M:%S"),
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "user_result": (
-                "代理任务全部完成" if self.run_book else self.cur_user_item.status
+                "代理任务全部完成" if self.run_complete else self.cur_user_item.status
             ),
         }
-        success_symbol = "√" if self.run_book else "X"
+        success_symbol = "√" if self.run_complete else "X"
         title = (
             f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  "
             f"{self.cur_user_item.name} 的自动代理统计报告"
@@ -1108,6 +1115,8 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
                     return pipeline.finish()
 
                 entries = await asyncio.to_thread(read)
+                for key in pipeline.matched_keys:
+                    point(self, "special", state="matched", key=key)
                 for entry in entries:
                     await self.user_state(user).append_push_log(
                         (entry.log_type, entry.text, entry.timestamp)

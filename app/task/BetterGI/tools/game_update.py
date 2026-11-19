@@ -50,6 +50,7 @@ from pathlib import Path
 from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.services.common.gi_updater import genshin as _service_genshin_updater
 from app.task.BetterGI.tools import game_info
+from app.task.run_flow import point
 from app.utils import get_logger
 from app.utils.common.process.operations import is_process_stopped
 
@@ -86,6 +87,7 @@ async def ensure_game_updated(
     script_config: BetterGIConfig,
     user_config: BetterGIUserConfig,
     *,
+    owner: object,
     on_log: LogHook | None = None,
     manual: bool = False,
     should_abort: AbortHook | None = None,
@@ -152,6 +154,7 @@ async def ensure_game_updated(
         """只进调度台：更新过程的日志由编排层统一写 app.log，这里不再复述。"""
         await _report(on_log, line)
 
+    point(owner, "game_update")
     result = await _service_genshin_updater.update_genshin_client(
         str(game_exe.parent),
         resource=resource,
@@ -162,11 +165,18 @@ async def ensure_game_updated(
     if result.kind == _service_genshin_updater.UpdateKind.Unknown.value:
         # 问不出结论：自动流程已由编排层放行并留了 app.log，手动入口是用户当面来问的，
         # 查不出就是查不出，要把原因摊开而不是回一句「已是最新」
+        point(owner, "game_update", state="skipped", key="unknown")
         if manual:
             raise RuntimeError(result.message)
         return True
 
     if result.success:
+        point(
+            owner,
+            "game_update",
+            state="succeeded",
+            key="UpToDate" if result.noop else "Updated",
+        )
         if result.noop:
             # 「已是最新」对手动入口是必须当面回答的结论；自动流程只留 app.log 一行。
             # 编排层附带的结论（例如官方开了预下载）一并说全，用户才知道下一步去哪
@@ -183,6 +193,7 @@ async def ensure_game_updated(
             )
         return True
 
+    point(owner, "game_update", state="failed")
     if manual:
         raise RuntimeError(f"更新未完成：{result.message}")
     await report(f"原神客户端更新未完成：{result.message}")

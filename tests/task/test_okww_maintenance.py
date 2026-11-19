@@ -156,7 +156,7 @@ async def test_desktop_login_maintenance_skips_proxy_without_retry(
     assert user.status == "跳过"
     assert proxy.user_state(user).maintenance_skipped
     assert account.Data.LastProxyStatus == "维护中"
-    assert not proxy.run_book
+    assert not proxy.run_complete
     assert len(user.log_record) == 1
     assert "服务器未开放" in proxy.cur_user_log.status
     start.assert_not_awaited()

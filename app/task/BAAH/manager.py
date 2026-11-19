@@ -49,6 +49,7 @@ from app.services import script_install
 from app.services.script_install_backup import ManagedInstallBackup
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
+from app.task.run_flow import point
 from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, log_box, update_files
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
@@ -148,7 +149,7 @@ class BAAHManager(ScriptManagerBase):
             self.script_config.Emulator.Id
         )
 
-    async def _prepare_program_update(self) -> None:
+    async def _prepare_script_update(self) -> None:
         root = self.script_config.Script.BAAHPath.parent
         self.check_result = "BAAH 更新准备未完成"
         lock = update_files.directory_lock(root.resolve())
@@ -249,13 +250,16 @@ class BAAHManager(ScriptManagerBase):
                         root, self.script_config, progress=progress
                     )
                 except (script_install.InstallUnsafeError, FluxdownCancelUnconfirmed):
+                    point(self, "script_update", state="failed")
                     raise
                 except Exception as error:
+                    point(self, "script_update", state="failed", key="download")
                     raise DownloadRetryFailed(
                         source="BAAH GitHub/MirrorChyan",
                         reason=f"BAAH 更新准备失败（{type(error).__name__}）",
                     ) from error
 
+            point(self, "script_update")
             candidate = await run_script_update_with_safe_fallback(
                 request,
                 prepare,
@@ -277,15 +281,26 @@ class BAAHManager(ScriptManagerBase):
                         ensure_idle=adapter.ensure_idle,
                         after_rollback=adapter.after_rollback,
                     )
+                except Exception:
+                    point(self, "script_update", state="failed")
+                    raise
                 finally:
                     await adapter.ensure_idle()
                     if candidate.archive.parent.exists():
                         shutil.rmtree(candidate.archive.parent)
                     if backup.read() is None:
                         await script_install.run_worker(cleanup_original_receipts, root)
+                point(
+                    self,
+                    "script_update",
+                    key=result,
+                    state="failed" if result == "old_version" else "succeeded",
+                )
             else:
                 await program_update.confirm_current_install(root)
                 result = candidate or "BAAH 当前无需更新"
+                if candidate is None:
+                    point(self, "script_update", state="succeeded", key="UpToDate")
             await self.script_info.set_log(str(result))
         self.check_result = "Pass"
 
@@ -307,7 +322,7 @@ class BAAHManager(ScriptManagerBase):
         if not isinstance(self.script_config, BAAHConfig):
             raise RuntimeError("托管配置类型错误, 不是 BAAH 托管类型")
 
-        await self._prepare_program_update()
+        await self._prepare_script_update()
 
         for _runtime_user_index in range(len(self.script_info.user_list)):
             await self.script_info.set_current_index(_runtime_user_index)

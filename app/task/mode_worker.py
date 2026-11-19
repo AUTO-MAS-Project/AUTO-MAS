@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from contextlib import nullcontext
 from typing import TYPE_CHECKING, ClassVar
 
 from app.models.config import UserConfigType, UserEntry
 from app.models.task import TaskMode
 from app.task.lifecycle import TaskBase
+from app.task.run_flow import operation, point
 from app.utils.common.process.scope import process_finalizer_scope
 
 if TYPE_CHECKING:
@@ -47,6 +49,8 @@ class ModeWorker(TaskBase):
         if reason:
             raise ValueError(reason)
         await self.prepare()
+        if self.mode == TaskMode.AUTO_PROXY:
+            point(self, "run")
         await self.main_logic()
 
     async def check(self) -> str | None:
@@ -91,6 +95,22 @@ class ModeWorker(TaskBase):
 
 class AutoProxyWorker(ModeWorker):
     mode = TaskMode.AUTO_PROXY
+
+    async def final_task(self) -> None:
+        try:
+            with operation(self, "finalize") if self._entered else nullcontext():
+                await super().final_task()
+        except Exception:
+            point(self, "task", state="failed")
+            raise
+        if self.user_info.status == "已取消":
+            point(self, "task", state="cancelled")
+        elif self.error is not None or self.user_info.status == "异常":
+            point(self, "task", state="failed")
+        elif self.user_info.status == "完成":
+            point(self, "task", state="succeeded")
+        elif self.user_info.status == "跳过":
+            point(self, "task", state="skipped")
 
 
 class ScriptConfigWorker(ModeWorker):

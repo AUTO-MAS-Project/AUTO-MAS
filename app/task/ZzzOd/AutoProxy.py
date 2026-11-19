@@ -83,6 +83,7 @@ from app.task.proxy_helpers import (
     split_args,
     user_uses_native_base,
 )
+from app.task.run_flow import begin_attempt, point
 from app.utils import (
     BASE_SOURCE_LABELS,
     UTC4,
@@ -466,7 +467,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         self._multi_run_status = ""
         self._history_users: dict[str, UserItem] = {}
         self._shutdown_after_success: bool = False
-        self.run_book = False
+        self.run_complete = False
         # app_id → 中文名（用于结果与推送日志展示）
         self._app_name_book: dict[str, str] = {}
         # 本轮应用级失败名单（_judge_final 写入；重试前判「重试无意义」用）
@@ -888,7 +889,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             enabled=self._push_log_enabled(),
             rotated_name=f"{self.script_log_path.name}.%Y-%m-%d",
         )
-        self.run_book = False
+        self.run_complete = False
 
     def _resolve_log_file_path(self) -> Path:
         """一条龙统一日志路径（zzz-od 按日期滚动，当天固定为 log.txt）。
@@ -984,8 +985,9 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             )
 
             for i in range(run_limit):
-                if self.run_book:
+                if self.run_complete:
                     break
+                begin_attempt(self, i + 1)
                 logger.info(
                     f"账号 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
                 )
@@ -1058,6 +1060,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     f"{' '.join(launcher_args)}"
                 )
 
+                point(self, "start_script")
                 await self.launcher_process_manager.open_process(
                     self.launcher_exe_path,
                     *launcher_args,
@@ -1070,6 +1073,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 )
 
                 await asyncio.sleep(1)
+                point(self, "run")
                 await self.log_monitor.start_monitor_file(
                     self._resolve_log_file_path, self.log_start_time
                 )
@@ -1095,7 +1099,8 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     )
                     await self._judge_final(records_before, records_after, log)
 
-                if self.run_book:
+                point(self, "run", state="succeeded" if self.run_complete else "failed")
+                if self.run_complete:
                     # 终态成功（判定器设置）：统一为框架成功契约「Success!」
                     # （原生来源跳过场景的可读说明已由判定器写入 script_info.log）
                     if (
@@ -1185,7 +1190,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
 
         # check_log 已把超时/异常/致命态写入 cur_user_log.status 并 need_stop；
         # 该值对 main_task 的最终结果判定具有最高优先级（避免被无 diff 的
-        # 「今日任务均已完成」覆盖成 run_book=True 而绕过重试）。
+        # 「今日任务均已完成」覆盖成 run_complete=True 而绕过重试）。
         # 「Success!」（check_log 成功标志）和「ZZZ-OD 正常运行中/空」继续走
         # 后续 diff 路径，由运行记录与致命日志统一判定。
         if self.cur_user_log.status not in (
@@ -1193,7 +1198,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             "",
             "Success!",
         ):
-            self.run_book = False
+            self.run_complete = False
             if self.cur_user_item.status not in ("异常", "跳过"):
                 await self.cur_user_item.set_state(status="异常")
             return
@@ -1250,7 +1255,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
 
         await self.cur_user_log.set_state(status=log_status)
         # 仅成功或上游确认已完成的任务走成功分支，应用失败交给 main_task 重试。
-        self.run_book = user_status == "完成"
+        self.run_complete = user_status == "完成"
         if user_status is not None:
             await self.cur_user_item.set_state(status=user_status)
 
@@ -1427,7 +1432,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             # 非参与用户只承担本次启动与进度展示，其日志不作为账号历史保存。
             await self.cur_user_log.set_state(status=self._multi_run_status)
 
-        self.run_book = all_ok
+        self.run_complete = all_ok
         self._multi_ran = True
 
     async def _apply_proxy_success(self, cfg: ZzzOdUserConfig) -> None:
@@ -1599,7 +1604,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 self.script_info,
                 self.cur_user_item,
                 failed=bool(self.cur_user_item.log_record)
-                and not self.run_book
+                and not self.run_complete
                 and not self.stopped_manually,
             )
 
@@ -1704,12 +1709,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 start_time = getattr(self, "user_start_time", datetime.now())
                 statistics["start_time"] = start_time.strftime("%Y-%m-%d %H:%M:%S")
                 statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                if not self.run_book:
+                if not self.run_complete:
                     user_result = self.cur_user_item.result
                 else:
                     user_result = "代理任务全部完成"
                 statistics["user_result"] = user_result
-                success_symbol = "√" if self.run_book else "X"
+                success_symbol = "√" if self.run_complete else "X"
                 await Notify.push_statistics_report(
                     payload=build_user_statistics_payload(
                         title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 ZZZ-OD 自动代理统计报告",
@@ -1726,7 +1731,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 )
 
         # 多实例触发者可能被正常跳过，整轮是否成功以实际参与用户的结果为准。
-        if self._shutdown_after_success and self.run_book:
+        if self._shutdown_after_success and self.run_complete:
             if desktop_process_target.get() is not None:
                 await self._push_dispatch_log("桌面分身任务已完成，已跳过本机关机")
                 return
@@ -1748,7 +1753,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         if self._multi_ran:
             return
 
-        if self.run_book:
+        if self.run_complete:
             await self._apply_proxy_success(self.cur_user_config)
             await self.cur_user_item.set_state(status="完成")
             logger.success(f"账号 {self.cur_user_uid} 的 ZZZ-OD 自动代理任务已完成")
@@ -1811,6 +1816,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
 
         if self.launcher_process_manager is not None:
             try:
+                point(self, "stop_script")
                 await self.launcher_process_manager.kill()
             except Exception as e:
                 logger.opt(exception=True).warning(
@@ -1823,6 +1829,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 ZZZ-OD 主进程失败: {e}")
         if kill_game:
+            point(self, "stop_game")
             await self._kill_game_process()
 
     def _mas_should_close_game(self) -> bool:
@@ -1850,6 +1857,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 "未配置游戏路径，请在脚本配置的游戏配置中选择游戏本体（ZenlessZoneZero.exe）"
             )
         await self._push_dispatch_log("正在由 MAS 启动游戏...")
+        point(self, "start_game")
         await self.game_process_manager.open_process(
             self.game_exe_path,
             *split_args(self.script_config.Game.Arguments),

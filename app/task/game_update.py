@@ -16,6 +16,7 @@ from app.task.emulator_core import (
     mod_avd_open_kwargs,
     resolve_host_adb,
 )
+from app.task.run_flow import game_update_result, operation, point
 from app.utils import game_apk as _utils_game_apk
 from app.utils import game_update as _utils_game_update
 from app.utils import get_logger
@@ -64,15 +65,17 @@ class EmulatorGameUpdateTask(TaskExecuteBase):
             # 不传游戏包名，只启动设备供版本检查和 APK 安装使用。
             # 更新检查可能先于账号代理启动设备，必须在真正开启之前提交可见提示。
             await self._report("正在启动模拟器\n")
-            info = await self.emulator_manager.open(
-                self.emulator_index,
-                **mod_avd_open_kwargs(
-                    self.emulator_manager, allowed=self.allow_mod_avd
-                ),
-            )
+            with operation(self, "start_game"):
+                info = await self.emulator_manager.open(
+                    self.emulator_index,
+                    **mod_avd_open_kwargs(
+                        self.emulator_manager, allowed=self.allow_mod_avd
+                    ),
+                )
             # ModAVD 实例：宿主的 adb 走 ``modavd adb``（ModAVD 的私有 server），不落到 5037；其余模拟器不接管
             host_adb = await resolve_host_adb(self, index=self.emulator_index)
             with _utils_game_apk.adb_runner_scope(host_adb):
+                point(self, "game_update")
                 self.result = await self.checker(
                     adb_path=self.emulator_manager.get_adb_path(),
                     adb_address=info.adb_address,
@@ -83,6 +86,7 @@ class EmulatorGameUpdateTask(TaskExecuteBase):
                     time_limit=self.time_limit,
                     progress=self._report,
                 )
+            game_update_result(self, self.result)
             await self._report(self.result.message)
 
     async def close_owned_emulator(self) -> None:

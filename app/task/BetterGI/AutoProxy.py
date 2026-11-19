@@ -42,6 +42,7 @@ from app.task.proxy_helpers import (
     push_dispatch_log,
     read_config_base,
 )
+from app.task.run_flow import begin_attempt, point
 from app.utils import (
     IS_ELEVATED,
     UTC4,
@@ -76,7 +77,7 @@ from .tools.one_dragon_report import (
     parse_execution_layer_report,
     parse_one_dragon_report,
 )
-from .tools.push_log import steps_to_push_log
+from .tools.push_log import step_state, steps_to_push_log
 
 logger = get_logger("BetterGI 自动代理")
 
@@ -681,7 +682,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         self.launch_config_name = self.one_dragon_config
         self.bettergi_args = ["startOneDragon", self.launch_config_name]
 
-        self.run_book = False
+        self.run_complete = False
 
         # 通用战斗队伍/策略落到全局 config.json 前的叶子快照，None 表示尚未接管
         self._reseed_global_config: dict | None = None
@@ -1037,6 +1038,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             self.cur_user_config,
             on_log=self._push_dispatch_log,
             should_abort=lambda: task_stopped(self),
+            owner=self,
         ):
             await self.cur_user_item.set_state(status="异常")
             return
@@ -1071,6 +1073,12 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         execution_failure_summary = ""
         if self.exec_group_names:
             exec_ok = await self._run_execution_layer()
+            point(
+                self,
+                "special",
+                state="succeeded" if exec_ok else "failed",
+                key="execution_groups",
+            )
             if not exec_ok:
                 execution_failure_summary = self.cur_user_log.status
                 await self.script_info.set_log(
@@ -1086,7 +1094,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         if not self._native_one_dragon_has_tasks():
             if exec_ok:
                 # 执行层已完成，原生一条龙无活可干：整体视为成功，直接收尾
-                self.run_book = True
+                self.run_complete = True
                 await self.script_info.set_log(
                     "执行层已完成；原生一条龙无启用任务，跳过阶段2"
                 )
@@ -1117,8 +1125,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
 
         run_limit = int(self.script_config.Run.RunTimesLimit)
         for i in range(run_limit):
-            if self.run_book:
+            if self.run_complete:
                 break
+            begin_attempt(self, i + 1)
             logger.info(
                 f"账号 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
             )
@@ -1157,6 +1166,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             )
 
             self.wait_event.clear()
+            point(self, "start_script")
             await self.bettergi_process_manager.open_process(
                 self.script_exe_path,
                 *self.bettergi_args,
@@ -1168,6 +1178,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             # 传入可调用对象让监控器按日期滚动日志跨零点自动切换新文件，
             # 避免固定路径在午夜后读不到新日志行而误判超时
             await asyncio.sleep(1)
+            point(self, "run")
             await self.log_monitor.start_monitor_file(
                 self._resolve_log_file_path, self.log_start_time
             )
@@ -1175,8 +1186,15 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             await self._wait_for_bgi_result()
             await self.log_monitor.stop()
 
+            point(
+                self,
+                "run",
+                state="succeeded"
+                if self.cur_user_log.status == "Success!"
+                else "failed",
+            )
             if self.cur_user_log.status == "Success!":
-                self.run_book = True
+                self.run_complete = True
                 await self.script_info.set_log(
                     "检测到 BetterGI 已完成任务\n正在等待 BetterGI 自行退出"
                 )
@@ -1440,6 +1458,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         monitor = LogMonitor(self.log_time_range, self.log_time_format, on_log)
 
         try:
+            point(self, "start_script")
             await self.bettergi_process_manager.open_process(
                 self.script_exe_path,
                 "--startGroups",
@@ -1449,6 +1468,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             )
             result["started"] = True
             await asyncio.sleep(1)
+            point(self, "run")
             await monitor.start_monitor_file(
                 self._resolve_log_file_path, datetime.now()
             )
@@ -1867,6 +1887,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # breakaway=True：游戏不该随后端退出（Runtime 用 KILL_ON_JOB_CLOSE 的
         # Job 监督后端，子进程默认留在 Job 里被连带回收；对齐模拟器/游戏客户端
         # 直拉调用点的既有惯例，见 windows/process.py 顶部契约说明）
+        point(self, "start_game")
         await self.switch_game_manager.open_process(
             game_exe, breakaway=True, owned=False
         )
@@ -1953,7 +1974,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             self.script_info,
             self.cur_user_item,
             failed=bool(self.cur_user_item.log_record)
-            and not self.run_book
+            and not self.run_complete
             and not self.stopped_manually,
         )
 
@@ -2157,16 +2178,22 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 statistics["start_time"] = start_time.strftime("%Y-%m-%d %H:%M:%S")
                 statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 statistics["user_result"] = (
-                    "代理任务全部完成" if self.run_book else self.cur_user_item.result
+                    "代理任务全部完成"
+                    if self.run_complete
+                    else self.cur_user_item.result
                 )
-                if self.run_book and (self.partial_failed_steps or self.warning_steps):
+                if self.run_complete and (
+                    self.partial_failed_steps or self.warning_steps
+                ):
                     # 上游流程已完成；子任务失败和无法确认的检查结果仅作警告展示。
                     statistics["user_result"] = (
                         f"代理流程完成（有警告：{self.partial_failed_steps} 个步骤失败，"
                         f"{self.warning_steps} 项需关注）"
                     )
-                success_symbol = "√" if self.run_book else "X"
-                if self.run_book and (self.partial_failed_steps or self.warning_steps):
+                success_symbol = "√" if self.run_complete else "X"
+                if self.run_complete and (
+                    self.partial_failed_steps or self.warning_steps
+                ):
                     success_symbol = "⚠"
                 # 统计通知的字段清单：用于确认分步表/掉落表这类可选区块到底有没有下发
                 logger.info(
@@ -2193,7 +2220,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         if self.cur_user_config is None:
             return
 
-        if self.run_book:
+        if self.run_complete:
             if (
                 self.cur_user_config.Data.ProxyTimes == 0
                 and self.cur_user_config.Info.RemainedDay != -1
@@ -2312,6 +2339,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             return
 
         await self._push_dispatch_log("任务结束，正在关闭游戏进程")
+        point(self, "stop_game")
         await self._kill_game_processes(_BGI_GAME_PROCESS_NAMES)
         await self._push_dispatch_log("游戏进程已关闭")
 
@@ -2405,6 +2433,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         """
         if self.bettergi_process_manager is not None:
             try:
+                point(self, "stop_script")
                 await self.bettergi_process_manager.kill()
             except Exception as e:
                 logger.opt(exception=True).warning(
@@ -2436,6 +2465,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 entries = await asyncio.to_thread(steps_to_push_log, snapshot)
                 for entry in entries:
                     await self.user_state(user).append_push_log(entry)
+                for step in snapshot:
+                    if name := step.get("task"):
+                        point(self, "special", key=name, state=step_state(step))
             except Exception:
                 logger.opt(exception=True).warning("BetterGI 节点结果交付失败")
 

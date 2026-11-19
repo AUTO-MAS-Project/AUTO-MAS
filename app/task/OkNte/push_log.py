@@ -39,9 +39,14 @@ from app.utils import LOG_TYPE_NORMAL
 # 的「共计消耗体力」，无需本常量
 _ANOMALY_TASK_COST = 40
 
-# 推送规则：(匹配正则, 提取表达式 [, 日志类型])；匹配与提取均在原始日志行。
+# 上游正常打开面板后才可能报告无奖励；同一原文供日常结果复核和收尾报告使用。
+DAILY_CLAIM_NO_REWARD = "无法找到活跃度奖励领取框"
+# 节点行保留原名，info_set 列表会翻译；两种名称属于同一领取任务。
+DAILY_CLAIM_NODES = ("日常领取", "Daily Claim")
+
+# 推送规则：(匹配正则, 提取表达式 [, 日志类型, 检测点])；匹配与提取均在原始日志行。
 # 顺序敏感：失败/成功/跳过/体力标记各自独立成行，聚合顺序由后处理器保持执行序。
-OKNTE_PUSH_RULES: list[tuple[str, str] | tuple[str, str, str]] = [
+OKNTE_PUSH_RULES: list[tuple[str, str] | tuple[str, str, str, str]] = [
     # 节点级状态（每个启用的日常子任务都会走到「任务完成」或「任务失败」）
     (r"任务完成: (.+)", r'"✅ 成功: " + $((?:任务完成: )(.+))'),
     (r"任务失败: (.+)", r'"❌ 失败: " + $((?:任务失败: )(.+))'),
@@ -49,7 +54,7 @@ OKNTE_PUSH_RULES: list[tuple[str, str] | tuple[str, str, str]] = [
     (r"info_set skipped \[(.*)\]", r'"SKIP:" + $((?:info_set skipped \[)(.*)\])'),
     # 当日已领取特征：活跃度面板正常打开但找不到亮起的领取按钮（无可领取项）；
     # resolve 据此把「日常领取」的失败降级为跳过（与成败判定的豁免保持一致）
-    (r"无法找到活跃度奖励领取框", r'"NO_REWARD"'),
+    (DAILY_CLAIM_NO_REWARD, r'"NO_REWARD"', LOG_TYPE_NORMAL, "oknte.no_claim_reward"),
     # 体力追踪：当前体力 + 刷本实际消耗；resolve 按「最后当前体力 − 其后消耗」算剩余
     (r"当前体力 (\d+)", r'"CUR:" + $((?:当前体力 )(\d+))'),
     # 异象界域：双倍/单倍次数（两捕获组换行拼接为 D\nS）
@@ -63,11 +68,6 @@ OKNTE_PUSH_RULES: list[tuple[str, str] | tuple[str, str, str]] = [
 
 # 状态优先级：失败 > 跳过 > 成功
 _OKNTE_STATUS_RANK = {"✅ 成功": 1, "⏭ 跳过": 2, "❌ 失败": 3}
-
-# 「日常领取」节点名别名（私有副本）：节点行（任务完成/失败）用上游原始名，而
-# info_set success/failed 列表经 tr() 翻译，英文环境产出 "Daily Claim"；
-# AutoProxy 的成败判定豁免对同一组别名有独立副本，修改时须两处同步
-_OKNTE_DAILY_CLAIM_NODES = ("日常领取", "Daily Claim")
 
 
 def _oknte_parse_skip_list(payload: str) -> list[str]:
@@ -156,11 +156,7 @@ def oknte_resolve(
         status = states[node][1]
         # 当日活跃度奖励已领取：上游因找不到领取框把「日常领取」标为失败，
         # 推送降级为跳过（成败判定层同步豁免）
-        if (
-            daily_claim_no_reward
-            and node in _OKNTE_DAILY_CLAIM_NODES
-            and status == "❌ 失败"
-        ):
+        if daily_claim_no_reward and node in DAILY_CLAIM_NODES and status == "❌ 失败":
             result.append(
                 (LOG_TYPE_NORMAL, f"⏭ 跳过: {node}（当日已领取）", ts_of[node])
             )
