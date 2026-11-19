@@ -1,6 +1,7 @@
 """用真实文件和进程守住实时可见、尾部冲刷及超时释放。"""
 
 import asyncio
+import builtins
 import os
 import sys
 from pathlib import Path
@@ -40,6 +41,7 @@ from app.task.MaaEnd.push_log import (
 )
 from app.task.OkNte.push_log import OKNTE_PUSH_RULES, oknte_resolve
 from app.utils.common.log.monitor import LogMonitor
+from app.utils.common.log.sources import LogSource
 from app.utils.common.log_box import LogPipeline
 
 
@@ -59,6 +61,29 @@ async def wait_for_first_node(session: LogFlowSession) -> None:
     async with asyncio.timeout(5):
         while not session.snapshot():
             await asyncio.sleep(0.01)
+
+
+def test_file_rotation_between_path_check_and_open(tmp_path, monkeypatch):
+    path = tmp_path / "script.log"
+    path.write_bytes(b"history: before this session\n")
+    source = LogSource(path, strict_io=True)
+    source.open()
+    with path.open("ab") as file:
+        file.write(b"old tail\n")
+    original_open = builtins.open
+
+    def rotate_before_open(file, *args, **kwargs):
+        if file == path:
+            monkeypatch.setattr(builtins, "open", original_open)
+            path.rename(path.with_suffix(".bak"))
+            path.write_bytes(b"new head\n")
+        return original_open(file, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", rotate_before_open)
+    assert source.read_new() == ["old tail", "new head"]
+    with path.open("ab") as file:
+        file.write(b"new tail\n")
+    assert source.read_new() == ["new tail"]
 
 
 @pytest.mark.asyncio
