@@ -520,8 +520,9 @@ async def test_named_report_factory_uses_one_account_snapshot_per_run(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("uncompleted", [0, 1], ids=["all-complete", "mixed-result"])
 async def test_declared_log_flow_delivers_one_task_report_via_notify(
-    cascade_plugins, tmp_path, monkeypatch
+    cascade_plugins, tmp_path, monkeypatch, uncompleted
 ):
     from auto_mas_core.log_flow import LogFlowTaskReport, open_log_flow
 
@@ -596,10 +597,22 @@ async def test_declared_log_flow_delivers_one_task_report_via_notify(
                 ) as flow:
                     assert flow.reporter is not None
                     assert flow.reporter.node("普通", text) == SubmitResult.ACCEPTED
+                    if run is first:
+                        assert (
+                            flow.reporter.node("普通", "step outcome", status="failed")
+                            == SubmitResult.ACCEPTED
+                        )
+                    if run is not muted:
+                        assert (
+                            flow.reporter.node("失败", f"{text} diagnostic")
+                            == SubmitResult.ACCEPTED
+                        )
             assert second.node_observation.read().close_reason == "timeout"
             assert muted.node_observation.read().close_reason == "complete"
             assert report.details_for(muted) == []
-            result = TaskResultReport("10:00", "10:01", 3, 0, "用户任务已完成")
+            result = TaskResultReport(
+                "10:00", "10:01", 3 - uncompleted, uncompleted, "账号执行结果"
+            )
             assert (await report.send(title="任务报告", report=result)).queued
             duplicate = await LogFlowTaskReport(script).send(
                 title="重复报告", report=result
@@ -609,11 +622,20 @@ async def test_declared_log_flow_delivers_one_task_report_via_notify(
         assert await tasks.drain_notifications(timeout=3)
         [(target, content)] = delivered
         assert target == "probe"
-        assert "未完成数: 0" in content
-        assert (
-            "用户任务已完成\n\n【User】\nfirst step\n\n【Second】\nsecond step\n⚠️ 节点采集不完整"
-            in content
-        )
+        assert f"未完成数: {uncompleted}" in content
+        rendered_details = content.split("账号执行结果\n\n【User】\n", 1)[1]
+        first_block, second_block = rendered_details.split("\n\n【Second】\n", 1)
+        assert first_block.splitlines() == [
+            "first step",
+            "step outcome",
+            *(["first step diagnostic"] if uncompleted else []),
+        ]
+        assert second_block.splitlines()[: 2 + uncompleted] == [
+            "second step",
+            *(["second step diagnostic"] if uncompleted else []),
+            "⚠️ 节点采集不完整",
+        ]
+        assert content.count(" diagnostic") == 2 * uncompleted
         assert "muted step" not in content
     finally:
         await tasks.close()

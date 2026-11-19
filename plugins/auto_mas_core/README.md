@@ -106,6 +106,8 @@ async def execute_with_nodes(plugin, user_run, monitor, task_report, execute):
 
 托管执行侧为当前 `TaskScriptItem` 创建一个 `LogFlowTaskReport`，各账号的会话传入同一个报告对象。托管定稿后调用 `task_report.send(title=..., report=...)` 交由 Notify 投递。`mode` 支持 `"逐条"`、`"汇总"` 和 `"关闭"`，绑定报告且省略模式时使用 `"汇总"`。关闭通知详情仍可查询节点。接入方按本次配置判断采集是否开启，关闭采集时直接执行原任务。
 
+迁移已有按账号交错排版的报告时，用 `task_report.details_for(user_run, include_error_nodes=report.uncompleted_count > 0)` 取得对应账号的详情，填进原有布局，再调用 `task_report.send(title=..., report=..., append_details=False)`。`"失败"` 类型用于通知筛选，节点的展示状态独立保存。
+
 在上下文中用 `as flow` 取得 `FlowAccess`。`snapshot_nodes()` 返回当前有效节点和游标，`read_nodes(after=cursor)` 继续读取新增、修订和撤回。已有结构化结果可在声明中启用 `accept_push`，通过 `flow.reporter` 上报。按运行绑定文件或替换自定义来源、处理器和 sink 时，仍使用同一个具名入口。[设计与迁移验收](../../docs/logbox-runstream-plan.md)
 
 ## 静态类型与开发环境
