@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from fastapi import APIRouter
 
     from app.core.background_tasks import BackgroundTaskGroup
+    from app.core.log_flow.declaration import PluginFlowDeclaration
     from app.models.config import PluginConfig, PluginRecord
     from app.plugin.services import ServiceResolver
 
@@ -24,6 +25,7 @@ class BasePlugin:
     provides_services: ClassVar[Mapping[str, str]] = MappingProxyType({})
     config_class: ClassVar[type[PluginConfig] | None] = None
     api_router: ClassVar[APIRouter | None] = None
+    log_flows: ClassVar[Mapping[str, PluginFlowDeclaration]] = MappingProxyType({})
     services: ServiceResolver
 
     def __init__(

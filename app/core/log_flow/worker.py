@@ -13,6 +13,7 @@ from threading import Thread
 from typing import cast
 
 from app.models.log_flow import Node, NodeSource
+from app.plugin.runtime.loader import prefer_package_source
 from app.utils.common.log.sources import LogReadLimitExceeded, LogSource
 
 from .contracts import (
@@ -71,6 +72,12 @@ def _read_inbox(inbox: Queue[InputRecord | Exception | None]) -> None:
 
 
 def _collect(config: PipelineSpec, pipe: BufferedWriter) -> None:
+    if (package := config.plugin_package) is not None:
+        from pathlib import Path
+
+        root = Path(package.import_root)
+        sys.path[:0] = [package.sdk_root, package.import_root, package.dependency_root]
+        prefer_package_source(package.name, root)
     with ExitStack() as cleanup:
         _run_pipeline(config, pipe, cleanup)
 

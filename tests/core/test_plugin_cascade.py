@@ -147,6 +147,51 @@ async def test_reload_restores_complete_tree_without_enabling_inactive_descendan
 
 
 @pytest.mark.asyncio
+async def test_plugin_declaration_loads_its_own_worker_factory_after_reload(
+    cascade_plugins, tmp_path
+):
+    manager, records = await cascade_plugins({"flow_declared": ()})
+    record = records["flow_declared"]
+    entry = tmp_path / "flow_declared" / "__init__.py"
+
+    def write_plugin(prefix):
+        entry.write_text(
+            "from auto_mas_core.log_flow import FunctionRef, PluginFlowDeclaration, SimpleFlowDeclaration, WorkerFactorySpec\n"
+            "from app.plugin.base import BasePlugin\n"
+            "class Processor:\n"
+            "    def process(self, line):\n"
+            f"        yield '普通', {prefix!r} + line\n"
+            "    def close(self): return ()\n"
+            "def processor(options): return Processor()\n"
+            "class Adapter(BasePlugin):\n"
+            "    log_flows = {'declared': PluginFlowDeclaration(use_mas_log=False, accept_push=True, rules=SimpleFlowDeclaration(processor=WorkerFactorySpec(factory=FunctionRef(name='declared:processor', module=__name__, attribute='processor'))))}\n"
+            "PLUGIN = Adapter\n",
+            encoding="utf-8",
+        )
+
+    async def collect():
+        reports = []
+        async with manager.open_log_flow(
+            record._plugin,
+            "declared",
+            run=TaskUserItem(user_id="same"),
+            mode="逐条",
+            receive_report=reports.append,
+        ) as flow:
+            assert flow.reporter is not None
+            assert flow.reporter.text("event") == SubmitResult.ACCEPTED
+        return reports
+
+    write_plugin("before:")
+    await manager.reload(record)
+    await manager.enable(record)
+    assert await collect() == [["before:event"]]
+    write_plugin("after!:")
+    await manager.reload(record)
+    assert await collect() == [["after!:event"]]
+
+
+@pytest.mark.asyncio
 async def test_reload_and_disable_revoke_log_flow_of_the_previous_instance(
     cascade_plugins,
 ):

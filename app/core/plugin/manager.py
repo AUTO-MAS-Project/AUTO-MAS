@@ -17,7 +17,7 @@ import importlib.metadata as importlib_metadata
 import re
 import sys
 import weakref
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -30,7 +30,11 @@ from packaging.utils import canonicalize_name
 from packaging.version import Version
 
 from app.config import NodeState
+from app.core.log_flow.contracts import WorkerPluginPackage
+from app.core.log_flow.declaration import PluginFlowDeclaration
 from app.core.log_flow.ownership import FlowOwner
+from app.core.log_flow.report import ReportMode
+from app.core.log_flow.simple import FlowAccess, open_custom_flow
 from app.core.ws import Publisher
 from app.core.ws.protocol import ID_PLUGIN, PLUGIN_CAPABILITIES_UPDATED
 from app.plugin import uv as uv_tool
@@ -75,6 +79,8 @@ from app.utils.common.tools import to_pep440
 
 if TYPE_CHECKING:
     from app.models.config import PluginMeta, PluginRecord
+    from app.models.task import TaskScriptItem, TaskUserItem
+    from app.utils.common.log.monitor import LogMonitor
 
 logger = get_logger("插件管理")
 
@@ -116,6 +122,48 @@ class _PluginManager:
         self._source_worker_task: asyncio.Task[None] | None = None
         self._calls: dict[UUID, CallGate] = {}
         self._log_flow_owners: dict[int, FlowOwner] = {}
+        self._log_flow_declarations: dict[int, dict[str, PluginFlowDeclaration]] = {}
+
+    @asynccontextmanager
+    async def open_log_flow(
+        self,
+        plugin: BasePlugin,
+        name: str,
+        *,
+        run: TaskScriptItem | TaskUserItem,
+        mode: ReportMode,
+        receive_report: Callable[[list[str]], None],
+        monitor: LogMonitor | None = None,
+    ) -> AsyncGenerator[FlowAccess, None]:
+        """宿主用已注册插件和实际运行对象装配具名流。"""
+        owner = self.log_flow_owner(plugin)
+        declaration = self._log_flow_declarations[id(plugin)][name]
+        if declaration.use_mas_log and monitor is None:
+            raise ValueError("该声明需要 MAS 原生日志监控器")
+        from app.core.config import Config
+
+        project = plugin.record._project_dir
+        assert project is not None  # 已加载插件由 loader 保证项目目录。
+        package = WorkerPluginPackage(
+            name=plugin.record.info.import_name,
+            import_root=str(project.resolve()),
+            dependency_root=str(Config.plugins_path / "pypi" / "site-packages"),
+            sdk_root=str(Config.source_path / "plugins" / "auto_mas_core" / "src"),
+        )
+        async with open_custom_flow(
+            declaration.rules,
+            run=run,
+            mode=mode,
+            receive_report=receive_report,
+            monitor=monitor if declaration.use_mas_log else None,
+            file=declaration.file,
+            accept_push=declaration.accept_push,
+            source=declaration.source,
+            sink=declaration.sink,
+            owner=owner,
+            plugin_package=package,
+        ) as flow:
+            yield flow
 
     def log_flow_owner(self, plugin: BasePlugin) -> FlowOwner:
         """宿主使用实际插件实例绑定会话；重载后不能用旧实例取得新能力。"""
@@ -123,6 +171,25 @@ class _PluginManager:
         if owner is None or not owner.accepting:
             raise PluginBusyError("插件实例未启用或正在释放")
         return owner
+
+    @staticmethod
+    def _prepare_log_flows(plugin: BasePlugin) -> dict[str, PluginFlowDeclaration]:
+        """只登记本包内的工厂，且复制声明供当前实例独占。"""
+        package = plugin.record.info.import_name
+        declarations = {}
+        for name, declaration in plugin.log_flows.items():
+            rules = declaration.rules
+            references = [rules.postprocess, *rules.functions]
+            references.extend(
+                item.factory
+                for item in (rules.processor, declaration.source, declaration.sink)
+                if item is not None
+            )
+            for ref in references:
+                if ref is not None and ref.module.split(".", 1)[0] != package:
+                    raise ValueError(f"LogFlow {name} 的工厂必须来自插件包 {package}")
+            declarations[name] = declaration.model_copy(deep=True)
+        return declarations
 
     @asynccontextmanager
     async def _pause_owners(self, owners):
@@ -168,6 +235,7 @@ class _PluginManager:
         if (owner := self._log_flow_owners.get(id(plugin))) is not None:
             await owner.close()
             self._log_flow_owners.pop(id(plugin), None)
+        self._log_flow_declarations.pop(id(plugin), None)
         if plugin._background_tasks is not None:
             await BackgroundTaskManager.unregister_group(plugin._background_tasks)
         self._calls.pop(plugin.record.uid, None)
@@ -626,6 +694,7 @@ class _PluginManager:
 
             # ── 用户段 ──
             await plugin.on_enable()
+            declarations = self._prepare_log_flows(plugin)
 
             # ── 系统段：服务/HTTP/类型表 + system_enable ──
             record._degraded_wants = [
@@ -661,6 +730,7 @@ class _PluginManager:
                 record.info.lifecycle_context = LifecycleContext.IDLE
             await record.commit()
             self._log_flow_owners[id(plugin)] = FlowOwner(lambda: gate.accepting)
+            self._log_flow_declarations[id(plugin)] = declarations
             capabilities_changed.send(self, name=name, enabled=True)
             await Publisher.send(
                 id=ID_PLUGIN, type=PLUGIN_CAPABILITIES_UPDATED, data={}

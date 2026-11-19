@@ -61,6 +61,11 @@ class _SourceFinder(importlib.abc.MetaPathFinder):
         )
 
 
+def prefer_package_source(package_name: str, import_root: Path) -> None:
+    """独立 worker 避免使用上一代插件写入的字节码缓存。"""
+    sys.meta_path.insert(0, _SourceFinder(package_name, import_root / package_name))
+
+
 def clear(record: PluginRecord) -> None:
     """清理当前来源及实际已加载实现的模块，确保来源切换时不残留旧子模块。"""
     import_name = str(record.info.import_name or "").strip()

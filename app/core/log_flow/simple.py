@@ -19,6 +19,7 @@ from .contracts import (
     ProcessorFactorySpec,
     WindowRule,
     WorkerFactorySpec,
+    WorkerPluginPackage,
 )
 from .manager import open_for_run
 from .ownership import FlowOwner
@@ -33,6 +34,7 @@ class SimpleFlowDeclaration(BaseModel, frozen=True):
     rules: tuple[LineRule, ...] = ()
     windows: tuple[WindowRule, ...] = Field(default=(), max_length=16)
     postprocess: FunctionRef | None = None
+    functions: tuple[FunctionRef, ...] = ()
     processor: ProcessorFactorySpec | None = None
 
 
@@ -72,6 +74,7 @@ async def open_custom_flow(
     source: WorkerFactorySpec | None = None,
     sink: WorkerFactorySpec | None = None,
     owner: FlowOwner | None = None,
+    plugin_package: WorkerPluginPackage | None = None,
 ) -> AsyncIterator[FlowAccess]:
     """宿主按运行分支绑定来源；上报方不能指定归属或冒充原生来源。"""
     if monitor is not None and monitor.on_raw_line is not None:
@@ -85,7 +88,9 @@ async def open_custom_flow(
         rules=declaration.rules,
         windows=declaration.windows,
         postprocess=declaration.postprocess,
+        functions=declaration.functions,
         processor=declaration.processor,
+        plugin_package=plugin_package,
     )
     opening = (
         owner.open(run, config) if owner is not None else _open_unowned(run, config)

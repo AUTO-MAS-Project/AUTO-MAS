@@ -50,6 +50,13 @@ class WorkerFactorySpec(BaseModel, frozen=True):
     options: dict[str, JsonValue] = Field(default_factory=dict)
 
 
+class WorkerPluginPackage(BaseModel, frozen=True):
+    name: str
+    import_root: str
+    dependency_root: str
+    sdk_root: str
+
+
 ProcessorFactorySpec = WorkerFactorySpec
 
 
@@ -66,6 +73,7 @@ class PipelineSpec(BaseModel, frozen=True):
     processor: ProcessorFactorySpec | None = None
     source: WorkerFactorySpec | None = None
     sink: WorkerFactorySpec | None = None
+    plugin_package: WorkerPluginPackage | None = None
 
     @model_validator(mode="after")
     def check_sources(self) -> Self:
