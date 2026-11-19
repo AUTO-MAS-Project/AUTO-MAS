@@ -75,3 +75,7 @@ def sample_source(_options: Mapping[str, JsonValue]) -> _SampleSource:
 
 def sample_sink(options: Mapping[str, JsonValue]) -> _SampleSink:
     return _SampleSink(Path(str(options["path"])), str(options["mode"]))
+
+
+def sample_report(_entries):
+    return [("普通", "sample report", None)]

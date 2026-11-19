@@ -17,7 +17,9 @@ def render_node_details(
     if mode == "关闭":
         return []
     report_entries = summary.report_entries
-    if report_entries is None and not summary.requires_final_report:
+    if report_entries is None and (
+        not summary.complete or not summary.requires_final_report
+    ):
         report_entries = tuple(
             (node.node_type, node.text, node.timestamp) for node in summary.nodes
         )

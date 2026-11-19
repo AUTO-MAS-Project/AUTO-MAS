@@ -408,6 +408,9 @@ async def test_worker_extensions_keep_observation_independent_of_sink(tmp_path, 
                 options={"path": str(path), "mode": mode},
             ),
             rules=(LineRule(match="^done:", node_type="普通"),),
+            postprocess=FunctionRef(
+                name="sample:report", module=module, attribute="sample_report"
+            ),
         )
     )
     try:
@@ -421,9 +424,16 @@ async def test_worker_extensions_keep_observation_independent_of_sink(tmp_path, 
         if mode == "block":
             assert summary.reason == "timeout"
             assert [n.text for n in summary.nodes] == ["done:sample"]
+            assert summary.requires_final_report
+            assert render_node_details(summary, mode="汇总") == [
+                "done:sample",
+                "⚠️ 节点采集不完整",
+            ]
+            assert render_node_details(summary, mode="关闭") == []
         else:
             assert summary.complete
             assert [n.text for n in summary.nodes] == ["done:sample", "source tail"]
+            assert render_node_details(summary, mode="汇总") == ["sample report"]
             assert lines[1:] == (
                 ["custom:done:sample", "custom:source tail", "closed"]
                 if mode == "ok"
