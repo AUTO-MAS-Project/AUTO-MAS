@@ -68,7 +68,7 @@ const buttonText = computed(() => {
   border-top: 1px solid var(--ant-color-border-secondary);
 }
 
-.update-row:has([aria-expanded="true"]) {
+.update-row:has([aria-expanded='true']) {
   align-items: flex-start;
 }
 
