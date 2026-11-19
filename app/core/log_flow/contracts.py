@@ -5,7 +5,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, model_validator
 
-from app.models.log_flow import Node
+from app.models.log_flow import Node, ReportedNodeKey
 
 # 进程管道的单条消息预算；不是日志文件或 SDK 限额。
 MAX_FRAME_BYTES = 64 * 1024
@@ -117,9 +117,17 @@ class ReportedRecord(BaseModel, frozen=True):
     node_type: str = Field(min_length=1)
     text: str = Field(min_length=1)
     timestamp: float | None = Field(default=None, allow_inf_nan=False)
+    node_id: ReportedNodeKey | None = None
 
 
-type InputRecord = Annotated[TextRecord | ReportedRecord, Field(discriminator="kind")]
+class WithdrawnRecord(BaseModel, frozen=True):
+    kind: Literal["withdrawn"] = "withdrawn"
+    node_id: ReportedNodeKey
+
+
+type InputRecord = Annotated[
+    TextRecord | ReportedRecord | WithdrawnRecord, Field(discriminator="kind")
+]
 INPUT_RECORD: TypeAdapter[InputRecord] = TypeAdapter(InputRecord)
 
 

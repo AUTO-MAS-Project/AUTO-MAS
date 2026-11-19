@@ -1,13 +1,14 @@
 """任务运行树内的日志节点状态；独立于任务执行成败。"""
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
 type NodeSource = Literal["file", "push", "mas", "custom"]
 type CloseReason = Literal["complete", "timeout", "worker_error", "capacity"]
+type ReportedNodeKey = Annotated[str, Field(pattern=r"^[A-Za-z0-9_.:-]{1,96}$")]
 
 _PAGE_BYTES = 256 * 1024
 
@@ -18,6 +19,9 @@ class Node(BaseModel, frozen=True):
     text: str
     source: NodeSource
     timestamp: float | None = Field(default=None, allow_inf_nan=False)
+    node_id: str | None = None
+    revision: int = Field(default=1, ge=1)
+    withdrawn: bool = False
 
 
 @dataclass(frozen=True)
@@ -53,11 +57,12 @@ class ObservationPage:
 
 
 class NodeObservation:
-    """同一宿主事件循环内持有节点及观察终态；初版仅追加。"""
+    """保留变更游标，并投影每个逻辑节点的最新状态。"""
 
     def __init__(self) -> None:
         self.session_id = uuid4()
         self._nodes: list[Node] = []
+        self._current: dict[str | int, Node] = {}
         self._node_sizes: list[int] = []
         self.size_bytes = 0
         self._report_bytes = 0
@@ -67,6 +72,11 @@ class NodeObservation:
         if self._summary is not None or node.sequence != len(self._nodes) + 1:
             raise ValueError("节点不属于当前观察进度")
         self._nodes.append(node)
+        key = node.node_id if node.node_id is not None else node.sequence
+        if node.withdrawn:
+            self._current.pop(key, None)
+        else:
+            self._current[key] = node
         self._node_sizes.append(frame_bytes)
         self.size_bytes += frame_bytes
 
@@ -78,7 +88,11 @@ class NodeObservation:
         return len(self._nodes)
 
     def snapshot(self) -> tuple[Node, ...]:
-        return self._summary.nodes if self._summary is not None else tuple(self._nodes)
+        return (
+            self._summary.nodes
+            if self._summary is not None
+            else tuple(self._current.values())
+        )
 
     def finish(
         self,

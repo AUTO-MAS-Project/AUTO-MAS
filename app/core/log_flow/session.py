@@ -32,6 +32,7 @@ from .contracts import (
     Ready,
     ReportedRecord,
     TextRecord,
+    WithdrawnRecord,
 )
 from .push import PushReporter, SubmitResult
 
@@ -55,10 +56,24 @@ class _SessionReporter:
         return self._enqueue(record)
 
     def node(
-        self, node_type: str, text: str, *, timestamp: float | None = None
+        self,
+        node_type: str,
+        text: str,
+        *,
+        timestamp: float | None = None,
+        node_id: str | None = None,
     ) -> SubmitResult:
         try:
-            record = ReportedRecord(node_type=node_type, text=text, timestamp=timestamp)
+            record = ReportedRecord(
+                node_type=node_type, text=text, timestamp=timestamp, node_id=node_id
+            )
+        except ValidationError:
+            return SubmitResult.INVALID
+        return self._enqueue(record)
+
+    def withdraw(self, node_id: str) -> SubmitResult:
+        try:
+            record = WithdrawnRecord(node_id=node_id)
         except ValidationError:
             return SubmitResult.INVALID
         return self._enqueue(record)
@@ -192,7 +207,10 @@ class LogFlowSession:
             or self._stopping is not None
         ):
             return SubmitResult.CLOSED
-        if len(record.text) >= MAX_FRAME_BYTES or (
+        if (
+            not isinstance(record, WithdrawnRecord)
+            and len(record.text) >= MAX_FRAME_BYTES
+        ) or (
             isinstance(record, ReportedRecord)
             and len(record.node_type) >= MAX_FRAME_BYTES
         ):

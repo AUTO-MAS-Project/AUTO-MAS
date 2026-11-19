@@ -19,8 +19,15 @@ class PushReporter(Protocol):
     def text(self, text: str, *, timestamp: float | None = None) -> SubmitResult: ...
 
     def node(
-        self, node_type: str, text: str, *, timestamp: float | None = None
+        self,
+        node_type: str,
+        text: str,
+        *,
+        timestamp: float | None = None,
+        node_id: str | None = None,
     ) -> SubmitResult: ...
+
+    def withdraw(self, node_id: str) -> SubmitResult: ...
 
 
 class GuardedReporter:
@@ -36,8 +43,20 @@ class GuardedReporter:
         return self._reporter.text(text, timestamp=timestamp)
 
     def node(
-        self, node_type: str, text: str, *, timestamp: float | None = None
+        self,
+        node_type: str,
+        text: str,
+        *,
+        timestamp: float | None = None,
+        node_id: str | None = None,
     ) -> SubmitResult:
         if not self._accepting():
             return SubmitResult.CLOSED
-        return self._reporter.node(node_type, text, timestamp=timestamp)
+        return self._reporter.node(
+            node_type, text, timestamp=timestamp, node_id=node_id
+        )
+
+    def withdraw(self, node_id: str) -> SubmitResult:
+        if not self._accepting():
+            return SubmitResult.CLOSED
+        return self._reporter.withdraw(node_id)

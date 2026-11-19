@@ -33,6 +33,8 @@ from .contracts import (
     ReportedRecord,
     ReportEntry,
     ResultItem,
+    TextRecord,
+    WithdrawnRecord,
     WorkerMessage,
 )
 from .extensions import Sink, Source, create_extension
@@ -156,22 +158,40 @@ def _run_pipeline(
     _send(pipe, Ready(pid=os.getpid()))
     sequence = 0
     observed_bytes = 0
-    collected: list[ResultItem] = []
+    collected: dict[str | int, ResultItem] = {}
+    revisions: dict[str, int] = {}
 
     def emit(
-        result: tuple[str, str], *, source_name: NodeSource, timestamp: float | None
+        result: tuple[str, str],
+        *,
+        source_name: NodeSource,
+        timestamp: float | None,
+        node_id: str | None = None,
+        withdrawn: bool = False,
     ) -> None:
         nonlocal sequence, observed_bytes, sink_error
         sequence += 1
         node_type, text = result
+        stable_id = f"{source_name}/{node_id}" if node_id is not None else None
+        revision = 1
+        if stable_id is not None:
+            revision = revisions.get(stable_id, 0) + 1
+            revisions[stable_id] = revision
         if postprocessor is not None:
-            collected.append((node_type, text, timestamp))
+            key = stable_id if stable_id is not None else sequence
+            if withdrawn:
+                collected.pop(key, None)
+            else:
+                collected[key] = (node_type, text, timestamp)
         node = Node(
             sequence=sequence,
             node_type=node_type,
             text=text,
             source=source_name,
             timestamp=timestamp,
+            node_id=stable_id,
+            revision=revision,
+            withdrawn=withdrawn,
         )
         observed_bytes += _send(
             pipe,
@@ -188,11 +208,20 @@ def _run_pipeline(
     last_timestamp: dict[NodeSource, float | None] = {}
 
     def process_record(record: InputRecord, *, source_name: NodeSource) -> None:
-        if isinstance(record, ReportedRecord):
+        if isinstance(record, WithdrawnRecord):
+            emit(
+                ("", ""),
+                source_name=source_name,
+                timestamp=None,
+                node_id=record.node_id,
+                withdrawn=True,
+            )
+        elif isinstance(record, ReportedRecord):
             emit(
                 (record.node_type, record.text),
                 source_name=source_name,
                 timestamp=record.timestamp,
+                node_id=record.node_id,
             )
         else:
             last_timestamp[source_name] = record.timestamp
@@ -210,9 +239,7 @@ def _run_pipeline(
         if isinstance(record, Exception):
             raise record
         if record is not None:
-            source_name = (
-                "push" if isinstance(record, ReportedRecord) else record.source
-            )
+            source_name = record.source if isinstance(record, TextRecord) else "push"
             if source_name not in processors:
                 raise ValueError("该会话未声明消息来源")
             process_record(record, source_name=source_name)
@@ -237,7 +264,7 @@ def _run_pipeline(
                 timestamp=last_timestamp.get(source_name),
             )
     if postprocessor is not None:
-        for node_type, text, timestamp in postprocessor(collected):
+        for node_type, text, timestamp in postprocessor(list(collected.values())):
             _send(
                 pipe,
                 FinalEntry(

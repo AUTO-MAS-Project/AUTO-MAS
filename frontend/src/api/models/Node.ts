@@ -9,5 +9,8 @@ export type Node = {
     text: string;
     source: NodeSource;
     timestamp?: (number | null);
+    node_id?: (string | null);
+    revision?: number;
+    withdrawn?: boolean;
 };
 

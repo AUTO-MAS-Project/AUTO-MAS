@@ -32,20 +32,23 @@ async def test_observe_run_before_and_after_scheduler_completion(
             user = next(self.script_info.users.values())
             session = await open_for_run(user, PipelineSpec(accept_push=True))
             try:
-                assert session.submit(
-                    ReportedRecord(node_type="success", text="token=private")
+                reporter = session.push_reporter()
+                assert (
+                    reporter.node("error", "token=private", node_id="retry")
+                    == "accepted"
                 )
                 async with asyncio.timeout(3):
                     while not session.snapshot():
                         await asyncio.sleep(0.01)
                 first_emitted.set()
                 await finish.wait()
-                assert session.submit(
-                    ReportedRecord(node_type="error", text="step two")
+                assert (
+                    reporter.node("success", "step two", node_id="retry") == "accepted"
                 )
                 assert session.submit(
                     ReportedRecord(node_type="success", text="step three")
                 )
+                assert reporter.withdraw("retry") == "accepted"
             finally:
                 await session.close()
             await super().main_task()
@@ -82,6 +85,7 @@ async def test_observe_run_before_and_after_scheduler_completion(
                 (1, "token=***")
             ]
             assert page["closeReason"] is None
+            assert page["nodes"][0]["revision"] == 1
             cursor = page["cursor"]
             assert (
                 await client.get(path, params={**params, "after": 1})
@@ -114,6 +118,8 @@ async def test_observe_run_before_and_after_scheduler_completion(
         assert [(node["sequence"], node["text"]) for node in page["nodes"]] == [
             (2, "step two")
         ]
+        assert page["nodes"][0]["node_id"] == "push/retry"
+        assert page["nodes"][0]["revision"] == 2
         assert page["closeReason"] == "complete" and page["hasMore"] is True
         last = (
             await reconnected.get(
@@ -122,10 +128,16 @@ async def test_observe_run_before_and_after_scheduler_completion(
                     **params,
                     "sessionId": cursor["sessionId"],
                     "after": page["cursor"]["sequence"],
+                    "limit": 2,
                 },
             )
         ).json()
-        assert [node["sequence"] for node in last["nodes"]] == [3]
+        assert [node["sequence"] for node in last["nodes"]] == [3, 4]
+        assert last["nodes"][1]["node_id"] == "push/retry"
+        assert last["nodes"][1]["revision"] == 3 and last["nodes"][1]["withdrawn"]
+        assert [node.text for node in first_user.node_observation.snapshot()] == [
+            "step three"
+        ]
         assert last["hasMore"] is False
         assert (await reconnected.get(f"/api/dispatch/task/{task_id}")).json()[
             "status"

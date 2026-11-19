@@ -197,6 +197,33 @@ async def test_push_returns_backpressure_without_blocking_host():
 
 
 @pytest.mark.asyncio
+async def test_report_consumes_current_nodes_after_correction_and_withdrawal():
+    session = await LogFlowSession.open(PipelineSpec(accept_push=True))
+    try:
+        reporter = session.push_reporter()
+        assert (
+            reporter.node("失败", "❌ 失败: step", node_id="step")
+            == SubmitResult.ACCEPTED
+        )
+        assert (
+            reporter.node("普通", "✅ 成功: step", node_id="step")
+            == SubmitResult.ACCEPTED
+        )
+        assert (
+            reporter.node("普通", "discard", node_id="discard") == SubmitResult.ACCEPTED
+        )
+        assert reporter.withdraw("discard") == SubmitResult.ACCEPTED
+        assert reporter.withdraw("invalid/key") == SubmitResult.INVALID
+        summary = await session.close()
+        assert summary.complete
+        assert render_node_details(summary, mode="逐条") == ["✅ 成功: step"]
+        assert render_node_details(summary, mode="汇总") == ["✅ 成功: step"]
+        assert len(session.observation.read().nodes) == 4
+    finally:
+        await session.close(timeout=0)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("mode", "expected"),
     [
