@@ -1006,6 +1006,31 @@ async def test_custom_flow_keeps_all_sources_bound_to_one_run(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_custom_flow_delivers_report_when_execution_raises():
+    run = TaskUserItem()
+    reports: list[list[str]] = []
+    execution_error = RuntimeError("script failed")
+    with pytest.raises(RuntimeError) as failure:
+        async with open_custom_flow(
+            SimpleFlowDeclaration(),
+            run=run,
+            mode="逐条",
+            receive_report=reports.append,
+            accept_push=True,
+        ) as flow:
+            assert flow.reporter is not None
+            assert (
+                flow.reporter.node("普通", "node before failure")
+                == SubmitResult.ACCEPTED
+            )
+            raise execution_error
+
+    assert failure.value is execution_error
+    assert flow.read_nodes().close_reason == "complete"
+    assert reports == [["node before failure"]]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["ok", "fail", "block", "block_close"])
 async def test_worker_extensions_keep_observation_independent_of_sink(tmp_path, mode):
     path = tmp_path / "sink.txt"

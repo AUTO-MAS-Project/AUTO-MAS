@@ -6,7 +6,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from app.models.log_flow import ObservationCursor, ObservationPage, ObservationSnapshot
+from app.models.log_flow import (
+    NodeObservation,
+    ObservationCursor,
+    ObservationPage,
+    ObservationSnapshot,
+)
 from app.models.task import TaskScriptItem, TaskUserItem
 from app.utils.common.log.monitor import LogMonitor
 
@@ -98,18 +103,23 @@ async def open_custom_flow(
     opening = (
         owner.open(run, config) if owner is not None else _open_unowned(run, config)
     )
+    observation: NodeObservation | None = None
+
+    def publish_report(deliver: Callable[[list[str]], None]) -> None:
+        if observation is not None and (summary := observation.summary) is not None:
+            deliver(render_node_details(summary, mode=mode))
+
     async with AsyncExitStack() as stack:
+        if mode != "关闭" and receive_report is not None:
+            # 先登记，退出时先完成采集收尾，再交付报告。
+            stack.callback(publish_report, receive_report)
         try:
             session = await stack.enter_async_context(opening)
         except SessionOpenError:
             observation = run.node_observation
             assert observation is not None
-            summary = observation.summary
-            assert summary is not None
             reporter = GuardedReporter(None, lambda: False) if accept_push else None
             yield FlowAccess(observation.read, reporter, observation.capture)
-            if mode != "关闭" and receive_report is not None:
-                receive_report(render_node_details(summary, mode=mode))
             return
         receiver = session.native_line_receiver() if monitor is not None else None
         reporter = session.push_reporter() if accept_push else None
@@ -127,13 +137,10 @@ async def open_custom_flow(
                 monitor.on_raw_line = receiver
                 if owner is not None:
                     owner.attach_cleanup(session, detach)
-            yield FlowAccess(
-                session.observation.read, reporter, session.observation.capture
-            )
+            observation = session.observation
+            yield FlowAccess(observation.read, reporter, observation.capture)
         finally:
             detach()
-    if mode != "关闭" and receive_report is not None:
-        receive_report(render_node_details(await session.close(), mode=mode))
 
 
 @asynccontextmanager
