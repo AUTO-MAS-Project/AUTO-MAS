@@ -85,6 +85,7 @@ class PipelineSpec(BaseModel, frozen=True):
     postprocess: FunctionRef | WorkerFactorySpec | None = None
     general_patterns: str | None = None
     general_hooks: str = ""
+    general_log_time: tuple[int, int, str] | None = None
     processor: ProcessorFactorySpec | None = None
     source: WorkerFactorySpec | None = None
     sink: WorkerFactorySpec | None = None

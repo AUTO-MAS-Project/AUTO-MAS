@@ -117,7 +117,11 @@ def _run_pipeline(
             cleanup.callback(release_processor, source_name)
             return processor
         if config.general_patterns is not None:
-            return GeneralRuleProcessor(config.general_patterns, config.general_hooks)
+            return GeneralRuleProcessor(
+                config.general_patterns,
+                config.general_hooks,
+                log_time=config.general_log_time if source_name == "mas" else None,
+            )
         return RuleNodeProcessor(config, functions)
 
     if config.file is not None:

@@ -2,6 +2,7 @@
 
 import asyncio
 import builtins
+import json
 import os
 import sys
 from pathlib import Path
@@ -23,7 +24,7 @@ from app.core.log_flow.contracts import (
     WindowRule,
     WorkerFactorySpec,
 )
-from app.core.log_flow.declaration import SimpleFlowDeclaration
+from app.core.log_flow.declaration import GeneralFlowDeclaration, SimpleFlowDeclaration
 from app.core.log_flow.manager import open_for_run
 from app.core.log_flow.report import render_node_details
 from app.core.log_flow.session import LogFlowSession, SessionOpenError
@@ -31,7 +32,7 @@ from app.core.log_flow.simple import (
     open_custom_flow,
     open_simple_flow,
 )
-from app.core.notify.report import render_scatter_push_log
+from app.core.notify.report import render_aggregate_push_log, render_scatter_push_log
 from app.models.log_flow import InvalidObservationCursor
 from app.models.task import TaskUserItem
 from app.task.MaaEnd.push_log import (
@@ -42,7 +43,7 @@ from app.task.MaaEnd.push_log import (
 from app.task.OkNte.push_log import OKNTE_PUSH_RULES, oknte_resolve
 from app.utils.common.log.monitor import LogMonitor
 from app.utils.common.log.sources import LogSource
-from app.utils.common.log_box import LogPipeline
+from app.utils.common.log_box import LogEntry, LogPipeline
 
 
 def append(path: Path, text: str) -> None:
@@ -416,6 +417,53 @@ async def test_simple_flow_handles_stdout_burst_from_real_log_monitor():
     assert observation is not None
     assert observation.read().close_reason == "complete"
     assert len(observation.snapshot()) == 1024
+
+
+@pytest.mark.asyncio
+async def test_webui_notifications_keep_general_log_time_prefix():
+    async def discard_display(_lines, _latest_time):
+        pass
+
+    monitor = LogMonitor((0, 8), "%H:%M:%S", discard_display)
+    run = TaskUserItem()
+    declaration = GeneralFlowDeclaration(
+        patterns=json.dumps(
+            [
+                {
+                    "type": "regex",
+                    "match": "done:",
+                    "extract": r'"✅ 成功: " + $(done:(\w+))',
+                }
+            ]
+        )
+    )
+    lines = ["09:15:37 done:timed", "no clock done:untimed"]
+    async with open_custom_flow(declaration, run=run, monitor=monitor, mode="汇总"):
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            "import sys; sys.stdout.buffer.write(bytes.fromhex(sys.argv[1]))",
+            ("\n".join(lines) + "\n").encode().hex(),
+            stdout=asyncio.subprocess.PIPE,
+        )
+        await asyncio.wait_for(monitor.monitor_process(process, "stdout"), 5)
+        assert await process.wait() == 0
+
+    observation = run.node_observation
+    assert observation is not None and observation.summary is not None
+    summary = observation.summary
+    assert summary.complete
+    expected = [
+        LogEntry("普通", "09:15 - ✅ 成功: timed"),
+        LogEntry("普通", "✅ 成功: untimed"),
+    ]
+    assert [node.text for node in summary.nodes] == [entry.text for entry in expected]
+    assert render_node_details(summary, mode="逐条") == render_scatter_push_log(
+        expected
+    )
+    assert render_node_details(summary, mode="汇总") == render_aggregate_push_log(
+        expected
+    )
 
 
 @pytest.mark.asyncio

@@ -90,6 +90,9 @@ async def open_custom_flow(
         processor=specialized.processor if specialized is not None else None,
         general_patterns=webui.patterns if webui is not None else None,
         general_hooks=webui.hooks if webui is not None else "",
+        general_log_time=(monitor.time_start, monitor.time_end, monitor.time_format)
+        if webui is not None and monitor is not None and monitor.time_format
+        else None,
         plugin_package=plugin_package,
     )
     opening = (

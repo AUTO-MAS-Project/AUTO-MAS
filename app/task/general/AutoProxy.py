@@ -39,7 +39,6 @@ from app.models.task import LogRecord, ScriptItem
 from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
 from app.utils import (
-    LOG_TYPE_NORMAL,
     UTC4,
     LogMonitor,
     ProcessInfo,
@@ -55,8 +54,6 @@ from app.utils import (
 from app.utils import io as _utils_io
 from app.utils.common.log_box.hooks import make_line_hook
 from app.utils.common.process.manager import has_process_window
-
-from .log_protocol import parse_marker
 
 logger = get_logger("通用脚本自动代理")
 
@@ -764,27 +761,13 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         await self.cur_user_log.set_state(content=log_content)
         await self.script_info.set_log(log)
 
-        # 采集推送日志：先嗅探脚本宿主 @@LOGBOX@@ 回传标记，再按高级模式规则采集
+        # 按 WebUI 配置的高级模式规则增量采集推送日志。
         # 日志轮转/截断时监控器会把 log_contents 重置为更短/全新的列表，
         # 此前累计的 _push_log_processed 落后于新列表长度，切片会跳过恢复后的
         # 前段日志；检测到长度变小即归零游标，从新列表头部重新采集
         if len(log_content) < self._push_log_processed:
             self._push_log_processed = 0
         for line in log_content[self._push_log_processed :]:
-            # 脚本宿主回传通道：push 收结果入缓冲、flush 结束回传，均跳过该行
-            marker = parse_marker(line)
-            if marker is not None:
-                op = marker.get("op")
-                if op == "push":
-                    self.push_log_buffer.append(
-                        (
-                            marker.get("type") or LOG_TYPE_NORMAL,
-                            str(marker.get("text") or ""),
-                        )
-                    )
-                # flush 标记仅表示回传通道结束，无需记录状态；
-                # 结果统一在 final_task 写回 push_log
-                continue
             # 按推送日志高级模式采集任务进程信息（受总开关控制）
             # 命中规则时以 (日志类型, 提取文本) 形式采集，类型供推送策略过滤
             if self.push_log_enabled and self.push_log_patterns_compiled:

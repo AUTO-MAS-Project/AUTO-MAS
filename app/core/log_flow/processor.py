@@ -2,15 +2,15 @@
 
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
+from datetime import datetime
 from importlib import import_module
 from typing import Protocol, cast, runtime_checkable
 
 from pydantic import JsonValue
 
 from app.utils.common.expression import ExpressionFunction, compile_expression
-from app.utils.common.log.legacy_protocol import parse_marker
+from app.utils.common.log.monitor import strptime
 from app.utils.common.log.patterns import (
-    LOG_TYPE_NORMAL,
     MultiLineAggregator,
     RegexMatcher,
     apply_patterns,
@@ -122,9 +122,12 @@ class RuleNodeProcessor:
 class GeneralRuleProcessor:
     """复用 WebUI 规则的匹配顺序、停用项和预处理语义。"""
 
-    def __init__(self, patterns: str, hooks: str) -> None:
+    def __init__(
+        self, patterns: str, hooks: str, *, log_time: tuple[int, int, str] | None
+    ) -> None:
         self.rules = load_patterns(patterns)
         self.hook = make_line_hook(hooks)
+        self.log_time = log_time
         if len(self.rules) > 100 or any(
             isinstance(rule, MultiLineAggregator) and rule.max_lines > 100
             for rule in self.rules
@@ -137,19 +140,20 @@ class GeneralRuleProcessor:
             return
         if len(processed.encode("utf-8")) >= MAX_FRAME_BYTES:
             raise LogReadLimitExceeded("单行日志超出处理容量")
-        if (marker := parse_marker(processed)) is not None:
-            if marker.get("op") == "push":
-                node_type = marker.get("type")
-                yield (
-                    node_type
-                    if isinstance(node_type, str) and node_type
-                    else LOG_TYPE_NORMAL,
-                    str(marker.get("text") or ""),
-                )
-            return
         result = apply_patterns(processed, matchers=self.rules)
-        if result is not None:
-            yield result
+        if result is None:
+            return
+        node_type, text = result
+        if self.log_time is not None:
+            start, end, time_format = self.log_time
+            try:
+                timestamp = strptime(processed[start:end], time_format, datetime.now())
+            except ValueError:
+                pass
+            else:
+                # 通用脚本在两种通知排版里都保留正文的时间前缀。
+                text = f"{timestamp:%H:%M} - {text}"
+        yield node_type, text
 
     def close(self) -> list[tuple[str, str]]:
         return flush_patterns(self.rules)
