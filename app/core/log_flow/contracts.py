@@ -43,11 +43,14 @@ class FileInput(BaseModel, frozen=True):
     rotated_name: str | None = None
 
 
-class ProcessorFactorySpec(BaseModel, frozen=True):
+class WorkerFactorySpec(BaseModel, frozen=True):
     """宿主选出的工厂及可序列化参数，不是公开插件注册声明。"""
 
     factory: FunctionRef
     options: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+ProcessorFactorySpec = WorkerFactorySpec
 
 
 class PipelineSpec(BaseModel, frozen=True):
@@ -61,10 +64,16 @@ class PipelineSpec(BaseModel, frozen=True):
     general_patterns: str | None = None
     general_hooks: str = ""
     processor: ProcessorFactorySpec | None = None
+    source: WorkerFactorySpec | None = None
+    sink: WorkerFactorySpec | None = None
 
     @model_validator(mode="after")
     def check_sources(self) -> Self:
-        if self.file is None and not (self.accept_push or self.accept_mas):
+        if (
+            self.file is None
+            and self.source is None
+            and not (self.accept_push or self.accept_mas)
+        ):
             raise ValueError("至少声明一个日志来源")
         if self.file is not None and not (
             self.rules
@@ -119,6 +128,7 @@ class Observed(BaseModel):
 class Closed(BaseModel):
     kind: Literal["closed"] = "closed"
     has_final_report: bool = False
+    sink_error: str = ""
 
 
 class ReportEntry(BaseModel, frozen=True):

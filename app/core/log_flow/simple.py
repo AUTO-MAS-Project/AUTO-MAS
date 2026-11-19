@@ -19,6 +19,7 @@ from .contracts import (
     PipelineSpec,
     ProcessorFactorySpec,
     WindowRule,
+    WorkerFactorySpec,
 )
 from .manager import open_for_run
 from .report import ReportMode, render_node_details
@@ -55,6 +56,8 @@ async def open_custom_flow(
     monitor: LogMonitor | None = None,
     file: FileInput | None = None,
     accept_push: bool = False,
+    source: WorkerFactorySpec | None = None,
+    sink: WorkerFactorySpec | None = None,
 ) -> AsyncIterator[FlowAccess]:
     """宿主按运行分支绑定来源；上报方不能指定归属或冒充原生来源。"""
     if monitor is not None and monitor.on_raw_line is not None:
@@ -65,6 +68,8 @@ async def open_custom_flow(
             file=file,
             accept_mas=monitor is not None,
             accept_push=accept_push,
+            source=source,
+            sink=sink,
             rules=declaration.rules,
             windows=declaration.windows,
             postprocess=declaration.postprocess,

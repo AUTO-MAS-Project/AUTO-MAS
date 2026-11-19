@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+from contextlib import ExitStack
 from importlib import import_module
 from io import BufferedWriter
 from queue import Empty, Queue
@@ -33,6 +34,7 @@ from .contracts import (
     ResultItem,
     WorkerMessage,
 )
+from .extensions import Sink, Source, create_extension
 from .processor import (
     GeneralRuleProcessor,
     RuleNodeProcessor,
@@ -69,6 +71,13 @@ def _read_inbox(inbox: Queue[InputRecord | Exception | None]) -> None:
 
 
 def _collect(config: PipelineSpec, pipe: BufferedWriter) -> None:
+    with ExitStack() as cleanup:
+        _run_pipeline(config, pipe, cleanup)
+
+
+def _run_pipeline(
+    config: PipelineSpec, pipe: BufferedWriter, cleanup: ExitStack
+) -> None:
     functions = load_functions(config.functions)
     postprocessor: PostProcessor | None = None
     if (ref := config.postprocess) is not None:
@@ -91,6 +100,39 @@ def _collect(config: PipelineSpec, pipe: BufferedWriter) -> None:
         processors["push"] = build_processor()
     if config.accept_mas:
         processors["mas"] = build_processor()
+    custom_source = (
+        cast(Source, create_extension(config.source))
+        if config.source is not None
+        else None
+    )
+    sink: Sink | None = None
+    if custom_source is not None:
+        processors["custom"] = build_processor()
+        custom_source.open()
+
+        def release_source() -> None:
+            if not closing_source:
+                for _ in custom_source.close():
+                    pass
+
+        cleanup.callback(release_source)
+    closing_source = False
+    sink_error = ""
+    if config.sink is not None:
+        try:
+            candidate = cast(Sink, create_extension(config.sink))
+            candidate.open()
+        except Exception as exc:
+            sink_error = f"open: {type(exc).__name__}"
+        else:
+            sink = candidate
+
+            def release_sink() -> None:
+                if not closing_sink:
+                    candidate.close()
+
+            cleanup.callback(release_sink)
+    closing_sink = False
     source = None
     if config.file is not None:
         source = LogSource(
@@ -112,27 +154,44 @@ def _collect(config: PipelineSpec, pipe: BufferedWriter) -> None:
     def emit(
         result: tuple[str, str], *, source_name: NodeSource, timestamp: float | None
     ) -> None:
-        nonlocal sequence, observed_bytes
+        nonlocal sequence, observed_bytes, sink_error
         sequence += 1
         node_type, text = result
         if postprocessor is not None:
             collected.append((node_type, text, timestamp))
+        node = Node(
+            sequence=sequence,
+            node_type=node_type,
+            text=text,
+            source=source_name,
+            timestamp=timestamp,
+        )
         observed_bytes += _send(
             pipe,
-            Observed(
-                node=Node(
-                    sequence=sequence,
-                    node_type=node_type,
-                    text=text,
-                    source=source_name,
-                    timestamp=timestamp,
-                )
-            ),
+            Observed(node=node),
         )
         if sequence > MAX_NODE_FRAMES or observed_bytes > MAX_NODE_BYTES:
             raise LogReadLimitExceeded("观察节点容量已满")
+        if sink is not None and not sink_error:
+            try:
+                sink.write(node)
+            except Exception as exc:
+                sink_error = f"write: {type(exc).__name__}"
 
     last_timestamp: dict[NodeSource, float | None] = {}
+
+    def process_record(record: InputRecord, *, source_name: NodeSource) -> None:
+        if isinstance(record, ReportedRecord):
+            emit(
+                (record.node_type, record.text),
+                source_name=source_name,
+                timestamp=record.timestamp,
+            )
+        else:
+            last_timestamp[source_name] = record.timestamp
+            for result in processors[source_name].process(record.text):
+                emit(result, source_name=source_name, timestamp=record.timestamp)
+
     while True:
         try:
             record = inbox.get(timeout=_POLL_SECONDS)
@@ -149,22 +208,17 @@ def _collect(config: PipelineSpec, pipe: BufferedWriter) -> None:
             )
             if source_name not in processors:
                 raise ValueError("该会话未声明消息来源")
-            if isinstance(record, ReportedRecord):
-                emit(
-                    (record.node_type, record.text),
-                    source_name="push",
-                    timestamp=record.timestamp,
-                )
-            else:
-                last_timestamp[record.source] = record.timestamp
-                for result in processors[record.source].process(record.text):
-                    emit(result, source_name=record.source, timestamp=record.timestamp)
+            process_record(record, source_name=source_name)
         if source is not None:
             for line in source.read_new():
                 timestamp = time.time()
                 last_timestamp["file"] = timestamp
                 for result in processors["file"].process(line):
                     emit(result, source_name="file", timestamp=timestamp)
+        if custom_source is not None:
+            closing_source = closing
+            for record in custom_source.close() if closing else custom_source.poll():
+                process_record(record, source_name="custom")
         if closing:
             break
     reader.join()
@@ -185,7 +239,16 @@ def _collect(config: PipelineSpec, pipe: BufferedWriter) -> None:
                     )
                 ),
             )
-    _send(pipe, Closed(has_final_report=postprocessor is not None))
+    if sink is not None:
+        closing_sink = True
+        try:
+            sink.close()
+        except Exception as exc:
+            if not sink_error:
+                sink_error = f"close: {type(exc).__name__}"
+    _send(
+        pipe, Closed(has_final_report=postprocessor is not None, sink_error=sink_error)
+    )
 
 
 def main() -> int:

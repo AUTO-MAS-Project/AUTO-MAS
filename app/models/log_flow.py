@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
-type NodeSource = Literal["file", "push", "mas"]
+type NodeSource = Literal["file", "push", "mas", "custom"]
 type CloseReason = Literal["complete", "timeout", "worker_error", "capacity"]
 
 _PAGE_BYTES = 256 * 1024
@@ -27,6 +27,7 @@ class SessionSummary:
     detail: str = ""
     report_entries: tuple[tuple[str, str, float | None], ...] | None = None
     requires_final_report: bool = False
+    sink_error: str = ""
 
     @property
     def complete(self) -> bool:
@@ -87,6 +88,7 @@ class NodeObservation:
         report_entries: tuple[tuple[str, str, float | None], ...] | None = None,
         report_bytes: int = 0,
         requires_final_report: bool = False,
+        sink_error: str = "",
     ) -> SessionSummary:
         if self._summary is None:
             self._report_bytes = report_bytes
@@ -96,6 +98,7 @@ class NodeObservation:
                 detail=detail,
                 report_entries=report_entries,
                 requires_final_report=requires_final_report,
+                sink_error=sink_error,
             )
         return self._summary
 

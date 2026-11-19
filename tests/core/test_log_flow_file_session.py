@@ -18,6 +18,7 @@ from app.core.log_flow.contracts import (
     ReportedRecord,
     TextRecord,
     WindowRule,
+    WorkerFactorySpec,
 )
 from app.core.log_flow.manager import open_for_run
 from app.core.log_flow.report import render_node_details
@@ -345,6 +346,53 @@ async def test_custom_flow_keeps_all_sources_bound_to_one_run(tmp_path):
     assert run.node_observation is not None and run.node_observation.read() == page
     assert other.node_observation is None
     assert len(reports) == 1 and len(reports[0]) == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["ok", "fail", "block"])
+async def test_worker_extensions_keep_observation_independent_of_sink(tmp_path, mode):
+    path = tmp_path / "sink.txt"
+    module = "tests.support.log_flow_functions"
+    session = await LogFlowSession.open(
+        PipelineSpec(
+            source=WorkerFactorySpec(
+                factory=FunctionRef(
+                    name="sample:source", module=module, attribute="sample_source"
+                )
+            ),
+            sink=WorkerFactorySpec(
+                factory=FunctionRef(
+                    name="sample:sink", module=module, attribute="sample_sink"
+                ),
+                options={"path": str(path), "mode": mode},
+            ),
+            rules=(LineRule(match="^done:", node_type="普通"),),
+        )
+    )
+    try:
+        await wait_for_first_node(session)
+        assert [(n.source, n.text) for n in session.snapshot()] == [
+            ("custom", "done:sample")
+        ]
+        summary = await session.close(timeout=0.2 if mode == "block" else 2)
+        lines = path.read_text(encoding="utf-8").splitlines()
+        assert lines[0] == f"pid:{session.pid}" and session.pid != os.getpid()
+        if mode == "block":
+            assert summary.reason == "timeout"
+            assert [n.text for n in summary.nodes] == ["done:sample"]
+        else:
+            assert summary.complete
+            assert [n.text for n in summary.nodes] == ["done:sample", "source tail"]
+            assert lines[1:] == (
+                ["custom:done:sample", "custom:source tail", "closed"]
+                if mode == "ok"
+                else ["closed"]
+            )
+            assert summary.sink_error == (
+                "write: RuntimeError" if mode == "fail" else ""
+            )
+    finally:
+        await session.close(timeout=0)
 
 
 @pytest.mark.asyncio

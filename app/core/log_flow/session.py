@@ -308,11 +308,13 @@ class LogFlowSession:
                                 "原生采集记录未能全部交接",
                                 report_entries=report_entries,
                                 report_bytes=final_bytes,
+                                sink_error=message.sink_error,
                             )
                         return self.observation.finish(
                             "complete",
                             report_entries=report_entries,
                             report_bytes=final_bytes,
+                            sink_error=message.sink_error,
                         )
                     break
                 elif isinstance(message, Failed):

@@ -6,4 +6,5 @@ export enum NodeSource {
     FILE = 'file',
     PUSH = 'push',
     MAS = 'mas',
+    CUSTOM = 'custom',
 }
