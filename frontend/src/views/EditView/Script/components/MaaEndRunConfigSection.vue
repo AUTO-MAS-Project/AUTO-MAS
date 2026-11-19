@@ -94,7 +94,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const timeoutFields = [
   { key: 'RunTimeLimit', label: 'core.edit.runTimeoutMinutes', hint: 'core.edit.treatRunAsTimed' },
-  { key: 'RunTimesLimit', label: 'core.edit.retryLimit', hint: 'core.edit.ifRunStillUnfinished' },
+  { key: 'RunTimesLimit', label: 'core.edit.retryLimit', hint: 'core.edit.retryLimitHint' },
 ] as const
 const accountSwitchOptions = computed(() => [
   { label: t('core.edit.accountSwitchMethodMas'), value: 'MAS' },

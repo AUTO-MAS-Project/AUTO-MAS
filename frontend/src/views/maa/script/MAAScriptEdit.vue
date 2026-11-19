@@ -191,7 +191,7 @@
                 v-model="maaConfig.Run.RunTimesLimit"
                 kind="retry"
                 :label="t('core.edit.retryLimit')"
-                :hint="t('core.edit.ifRunStillUnfinished')"
+                :hint="t('core.edit.retryLimitHint')"
                 enhanced
                 @save="handleChange('Run', 'RunTimesLimit', maaConfig.Run.RunTimesLimit)"
               />
