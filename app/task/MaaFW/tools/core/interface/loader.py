@@ -68,7 +68,9 @@ _USER_WARNING_PREFIX = "MaaFW ProjectInterface "
 #    旧缓存里它是没经校验的原样字段。
 # 7：加载告警多了 ``preset.controller`` 写错（PI v2.10.4）与 ``input_type`` 不认识（v2.10.5），
 #    旧缓存里的告警没有这两类。
-DISK_CACHE_VERSION = 7
+# 8：加载告警多了顶层 ``custom``（外壳私有字段，内置运行不加载自定义动作）。
+#    旧缓存里的告警没有这一条，项目文件不变的老用户升级后仍看不到，所以要让它们重新解析。
+DISK_CACHE_VERSION = 8
 DISK_CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 DISK_CACHE_CLEANUP_INTERVAL_SECONDS = 24 * 60 * 60
 _interface_cache: dict[
@@ -281,6 +283,16 @@ def _warn_unsupported_root_fields(data: dict[str, Any], source_path: Path) -> No
             ", ".join(unsupported_keys),
             source_path,
             extra=_LOG_ONLY,
+        )
+    if "custom" in unsupported_keys:
+        # custom 不是「忽略也不影响行为」的那种字段：它是 MFW-PyQt6 外壳在自己进程里注册
+        # 自定义动作 / 识别的私有写法。内置运行不加载这些动作，用到它们的节点必然
+        # Action is null，用户能观察到的后果是可预期的，这条告警必须让他看见。
+        logger.warning(
+            "MaaFW ProjectInterface 声明了外壳私有字段 custom（%s）：该项目依赖外壳"
+            "自行注册的自定义动作 / 识别，内置运行不加载，用到它们的任务会失败；文件：%s",
+            data.get("custom"),
+            source_path,
         )
 
 
