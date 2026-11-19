@@ -455,15 +455,19 @@ class _TaskManager:
                 break
             self._recent.popitem(last=False)
 
-        # 只清除旧会话引用，保留既有任务终态查询及其独立的窗口。
+        # 优先保留较新的任务；同一任务内按运行树倒序保留能放下的会话。
         remaining = _RECENT_OBSERVATION_BYTES
         for task in reversed(self._recent.values()):
-            if task.observation_bytes > remaining:
-                task.observations.clear()
-                task.observation_bytes = 0
-                remaining = 0
-            else:
+            if task.observation_bytes <= remaining:
                 remaining -= task.observation_bytes
+                continue
+            for run_id in tuple(reversed(task.observations)):
+                size = task.observations[run_id].retained_bytes
+                if size <= remaining:
+                    remaining -= size
+                else:
+                    del task.observations[run_id]
+                    task.observation_bytes -= size
 
     def get_node_observation(
         self, task_id: UUID, script_run_id: UUID, *, user_run_id: UUID | None
