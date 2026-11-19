@@ -3,7 +3,7 @@ import os
 import subprocess
 import time
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from threading import Lock
 from typing import Any, Unpack
@@ -12,8 +12,10 @@ import psutil
 import pywintypes
 import win32api
 import win32con
+import win32event
 import win32job
 import win32process
+import winerror
 
 from app.utils.common.process.runner import ProcessRunner
 from app.utils.common.process.session import (
@@ -23,6 +25,20 @@ from app.utils.common.process.session import (
 )
 
 from ..contracts.process import ElevatedProcess, EmulatorPopenOptions
+
+
+def _thread_has_exited(handle: Any) -> bool:
+    # 只在挂起失败时申请等待权限，并核对同一个线程对象而不是重新查找 TID。
+    current = win32api.GetCurrentProcess()
+    try:
+        with closing(
+            win32api.DuplicateHandle(
+                current, handle, current, win32con.SYNCHRONIZE, False, 0
+            )
+        ) as waiter:
+            return win32event.WaitForSingleObject(waiter, 0) == win32event.WAIT_OBJECT_0
+    except pywintypes.error:
+        return False
 
 
 class WindowsTaskProcessJob:
@@ -113,7 +129,7 @@ class WindowsTaskProcessJob:
         deadline = time.monotonic() + 1
         try:
             while True:
-                added = False
+                rescan = False
                 for thread in process.threads():
                     if thread.id in handles:
                         continue
@@ -127,12 +143,19 @@ class WindowsTaskProcessJob:
                         raise
                     try:
                         win32process.SuspendThread(handle)
-                    except BaseException:
-                        handle.Close()
+                    except BaseException as error:
+                        with closing(handle):
+                            if (
+                                isinstance(error, pywintypes.error)
+                                and error.winerror == winerror.ERROR_ACCESS_DENIED
+                                and _thread_has_exited(handle)
+                            ):
+                                rescan = True
+                                continue
                         raise
                     handles[thread.id] = handle
-                    added = True
-                if not added:
+                    rescan = True
+                if not rescan:
                     break
                 # 首轮暂停期间仍可能出生新线程，收敛后才枚举后代及登记 Job。
                 if time.monotonic() >= deadline:
