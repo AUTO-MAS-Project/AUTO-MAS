@@ -12,7 +12,7 @@ from pathlib import Path
 from app.task.MaaEnd.push_log import _parse_line_ts, maaend_plain_text
 from app.utils import LOG_TYPE_NORMAL, get_logger
 from app.utils.common.io import ConfigCorruptedError, read_dict_file
-from app.utils.common.log_box.results import LogEntry
+from app.utils.common.log.results import LogEntry
 
 logger = get_logger("MaaEnd 奖励统计")
 

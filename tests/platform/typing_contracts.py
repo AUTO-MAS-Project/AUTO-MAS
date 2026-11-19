@@ -21,8 +21,8 @@ from app.task.ZzzOd.push_log import make_zzzod_resolve
 from app.utils.common import host as common_host
 from app.utils.common import startup as common_startup
 from app.utils.common import update_native as common_update
+from app.utils.common.log.results import LogEntry
 from app.utils.common.log_box.pipeline import PostProcessor
-from app.utils.common.log_box.results import LogEntry
 from app.utils.common.power import CommonPowerController
 from app.utils.common.process import platform as common_process
 from app.utils.contracts.audio import AudioAPI

@@ -9,6 +9,7 @@ from typing import Protocol, cast, runtime_checkable
 from pydantic import JsonValue
 
 from app.utils.common.expression import ExpressionFunction, compile_expression
+from app.utils.common.log.hooks import make_line_hook
 from app.utils.common.log.monitor import strptime
 from app.utils.common.log.patterns import (
     MultiLineAggregator,
@@ -18,7 +19,6 @@ from app.utils.common.log.patterns import (
     load_patterns,
 )
 from app.utils.common.log.sources import LogReadLimitExceeded
-from app.utils.common.log_box.hooks import make_line_hook
 
 from .contracts import (
     MAX_FRAME_BYTES,

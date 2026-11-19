@@ -19,7 +19,7 @@ from app.models.notification.report import (
     TaskReportSummary,
     UserReportText,
 )
-from app.utils.common.log_box.results import Entry, LogEntry
+from app.utils.common.log.results import Entry, LogEntry
 
 
 class DefaultReportRenderer:

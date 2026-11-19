@@ -10,7 +10,7 @@ from app.models.notification.channel import DispatchResult
 from app.models.notification.report import TaskResultReport
 from app.models.task import TaskItem, TaskScriptItem, TaskUserItem
 from app.utils.common.log.patterns import LOG_TYPE_ERROR
-from app.utils.common.log_box.results import LogEntry
+from app.utils.common.log.results import LogEntry
 
 type ReportMode = Literal["关闭", "逐条", "汇总"]
 

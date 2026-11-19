@@ -12,8 +12,7 @@ from app.utils import (
     compile_regex,
 )
 from app.utils import expression as _utils_expression
-
-from .results import LogEntry
+from app.utils.common.log.results import LogEntry
 
 # 后处理器继续接收三元组，文本改写不丢失日志类型和采集时间。
 ResultItem = tuple[str, str, float | None]
