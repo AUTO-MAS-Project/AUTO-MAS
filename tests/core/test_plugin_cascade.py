@@ -6,14 +6,21 @@ from types import SimpleNamespace
 import pytest
 import pytest_asyncio
 
+from app.core import Notify
+from app.core.background_tasks import BackgroundTaskRegistry
 from app.core.log_flow.push import SubmitResult
 from app.core.log_flow.simple import SimpleFlowDeclaration, open_custom_flow
+from app.core.notify import tasks as notification_tasks
+from app.core.notify.rendering import AsyncNotificationRenderer
 from app.core.plugin.manager import _PluginManager
 from app.models.config import GlobalConfig, PluginRecord, PluginRegistryCollection
+from app.models.notification.channel import ChannelTarget, DeliveryChannel, NotifyTarget
+from app.models.notification.report import TaskReportPolicy, TaskResultReport
 from app.models.task import TaskUserItem
 from app.plugin.errors import PluginBusyError
 from app.plugin.runtime import loader
 from app.plugin.types import PluginState
+from tests.support.scheduler import create_runtime_tree
 
 
 @pytest_asyncio.fixture
@@ -189,6 +196,104 @@ async def test_plugin_declaration_loads_its_own_worker_factory_after_reload(
     write_plugin("after!:")
     await manager.reload(record)
     assert await collect() == [["after!:event"]]
+
+
+@pytest.mark.asyncio
+async def test_declared_log_flow_delivers_one_task_report_via_notify(
+    cascade_plugins, tmp_path, monkeypatch
+):
+    from auto_mas_core.log_flow import LogFlowTaskReport
+
+    manager, records = await cascade_plugins({"flow_notify": ()})
+    record = records["flow_notify"]
+    (tmp_path / "flow_notify" / "__init__.py").write_text(
+        "from auto_mas_core.log_flow import FunctionRef, PluginFlowDeclaration, SimpleFlowDeclaration\n"
+        "from app.plugin.base import BasePlugin\n"
+        "from time import sleep\n"
+        "def slow_report(entries): sleep(60)\n"
+        "class Adapter(BasePlugin):\n"
+        "    log_flows = {\n"
+        "        'normal': PluginFlowDeclaration(use_mas_log=False, accept_push=True),\n"
+        "        'slow': PluginFlowDeclaration(use_mas_log=False, accept_push=True, rules=SimpleFlowDeclaration(postprocess=FunctionRef(name='spec:slow', module=__name__, attribute='slow_report'))),\n"
+        "    }\n"
+        "PLUGIN = Adapter\n",
+        encoding="utf-8",
+    )
+    await manager.reload(record)
+    await manager.enable(record)
+    task, script, first = await create_runtime_tree()
+    second_uid = script.users.add(
+        TaskUserItem, payload={"info": {"user_id": "second", "name": "Second"}}
+    )
+    muted_uid = script.users.add(
+        TaskUserItem, payload={"info": {"user_id": "muted", "name": "Muted"}}
+    )
+    await script.users.commit()
+    second, muted = script.users[second_uid], script.users[muted_uid]
+    report = LogFlowTaskReport(script)
+    delivered = []
+
+    async def send_channel(*, channel, target, rendered):
+        delivered.append((target.id, rendered.content))
+
+    renderer = AsyncNotificationRenderer()
+    tasks = notification_tasks.NotificationTasks()
+    monkeypatch.setattr(
+        notification_tasks, "BackgroundTaskManager", BackgroundTaskRegistry()
+    )
+    monkeypatch.setattr(Notify, "tasks", tasks)
+    monkeypatch.setitem(Notify.__dict__, "_renderer", renderer)
+    monkeypatch.setitem(
+        Notify.__dict__, "_transport", SimpleNamespace(send_channel=send_channel)
+    )
+    monkeypatch.setattr(
+        Notify,
+        "read_task_report_policy",
+        lambda: TaskReportPolicy("任何时刻", community_enabled=False, wait_seconds=0),
+    )
+    monkeypatch.setattr(
+        Notify,
+        "global_target",
+        lambda **_: NotifyTarget(
+            channels=(
+                (DeliveryChannel("probe", None), ChannelTarget("probe", "Probe")),
+            )
+        ),
+    )
+    try:
+        with Notify.task_notification_batch(task_id=task.task_id):
+            for run, key, mode, text in [
+                (first, "normal", "逐条", "first step"),
+                (second, "slow", None, "second step"),
+                (muted, "slow", "关闭", "muted step"),
+            ]:
+                async with manager.open_log_flow(
+                    record._plugin, key, run=run, mode=mode, task_report=report
+                ) as flow:
+                    assert flow.reporter is not None
+                    assert flow.reporter.node("普通", text) == SubmitResult.ACCEPTED
+            assert second.node_observation.read().close_reason == "timeout"
+            assert muted.node_observation.read().close_reason == "complete"
+            assert report.details_for(muted) == []
+            result = TaskResultReport("10:00", "10:01", 3, 0, "用户任务已完成")
+            assert (await report.send(title="任务报告", report=result)).queued
+            duplicate = await LogFlowTaskReport(script).send(
+                title="重复报告", report=result
+            )
+            assert not duplicate.queued and duplicate.attempted == 0
+            assert delivered == []
+        assert await tasks.drain_notifications(timeout=3)
+        [(target, content)] = delivered
+        assert target == "probe"
+        assert "未完成数: 0" in content
+        assert (
+            "用户任务已完成\n\n【User】\nfirst step\n\n【Second】\nsecond step\n⚠️ 节点采集不完整"
+            in content
+        )
+        assert "muted step" not in content
+    finally:
+        await tasks.close()
+        renderer.close()
 
 
 @pytest.mark.asyncio

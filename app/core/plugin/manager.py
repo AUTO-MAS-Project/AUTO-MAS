@@ -33,7 +33,7 @@ from app.config import NodeState
 from app.core.log_flow.contracts import WorkerPluginPackage
 from app.core.log_flow.declaration import PluginFlowDeclaration
 from app.core.log_flow.ownership import FlowOwner
-from app.core.log_flow.report import ReportMode
+from app.core.log_flow.report import LogFlowTaskReport, ReportMode
 from app.core.log_flow.simple import FlowAccess, open_custom_flow
 from app.core.ws import Publisher
 from app.core.ws.protocol import ID_PLUGIN, PLUGIN_CAPABILITIES_UPDATED
@@ -131,8 +131,9 @@ class _PluginManager:
         name: str,
         *,
         run: TaskScriptItem | TaskUserItem,
-        mode: ReportMode,
-        receive_report: Callable[[list[str]], None],
+        mode: ReportMode | None = None,
+        receive_report: Callable[[list[str]], None] | None = None,
+        task_report: LogFlowTaskReport | None = None,
         monitor: LogMonitor | None = None,
     ) -> AsyncGenerator[FlowAccess, None]:
         """宿主用已注册插件和实际运行对象装配具名流。"""
@@ -140,6 +141,19 @@ class _PluginManager:
         declaration = self._log_flow_declarations[id(plugin)][name]
         if declaration.use_mas_log and monitor is None:
             raise ValueError("该声明需要 MAS 原生日志监控器")
+        if mode is None:
+            mode = (
+                "汇总"
+                if task_report is not None or receive_report is not None
+                else "关闭"
+            )
+        if task_report is not None:
+            if receive_report is not None:
+                raise ValueError("日志会话只能绑定一个报告接收方")
+            task_report.validate_run(run)
+        elif mode != "关闭" and receive_report is None:
+            raise ValueError("启用节点通知时需要绑定报告接收方")
+        previous_observation = run.node_observation
         from app.core.config import Config
 
         project = plugin.record._project_dir
@@ -150,20 +164,31 @@ class _PluginManager:
             dependency_root=str(Config.plugins_path / "pypi" / "site-packages"),
             sdk_root=str(Config.source_path / "plugins" / "auto_mas_core" / "src"),
         )
-        async with open_custom_flow(
-            declaration.rules,
-            run=run,
-            mode=mode,
-            receive_report=receive_report,
-            monitor=monitor if declaration.use_mas_log else None,
-            file=declaration.file,
-            accept_push=declaration.accept_push,
-            source=declaration.source,
-            sink=declaration.sink,
-            owner=owner,
-            plugin_package=package,
-        ) as flow:
-            yield flow
+        try:
+            async with open_custom_flow(
+                declaration.rules,
+                run=run,
+                mode=mode,
+                receive_report=receive_report,
+                monitor=monitor if declaration.use_mas_log else None,
+                file=declaration.file,
+                accept_push=declaration.accept_push,
+                source=declaration.source,
+                sink=declaration.sink,
+                owner=owner,
+                plugin_package=package,
+            ) as flow:
+                yield flow
+        finally:
+            observation = run.node_observation
+            if (
+                task_report is not None
+                and mode != "关闭"
+                and observation is not None
+                and observation is not previous_observation
+                and (summary := observation.summary) is not None
+            ):
+                task_report.record(run, mode, summary)
 
     def log_flow_owner(self, plugin: BasePlugin) -> FlowOwner:
         """宿主使用实际插件实例绑定会话；重载后不能用旧实例取得新能力。"""

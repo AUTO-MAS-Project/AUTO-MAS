@@ -1,4 +1,4 @@
-"""LogFlow 主动上报能力；会话由 MAS 宿主绑定和签发。"""
+"""LogFlow 声明、主动上报和任务报告；会话由 MAS 宿主绑定和签发。"""
 
 from app.core.log_flow.contracts import (
     FileInput,
@@ -9,6 +9,7 @@ from app.core.log_flow.contracts import (
 )
 from app.core.log_flow.declaration import PluginFlowDeclaration
 from app.core.log_flow.push import PushReporter, SubmitResult
+from app.core.log_flow.report import LogFlowTaskReport
 from app.core.log_flow.simple import SimpleFlowDeclaration
 from app.models.log_flow import NodeDisplayStatus
 
@@ -16,6 +17,7 @@ __all__ = [
     "FileInput",
     "FunctionRef",
     "LineRule",
+    "LogFlowTaskReport",
     "NodeDisplayStatus",
     "PluginFlowDeclaration",
     "PushReporter",

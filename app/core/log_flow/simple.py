@@ -67,7 +67,7 @@ async def open_custom_flow(
     *,
     run: TaskScriptItem | TaskUserItem,
     mode: ReportMode,
-    receive_report: Callable[[list[str]], None],
+    receive_report: Callable[[list[str]], None] | None = None,
     monitor: LogMonitor | None = None,
     file: FileInput | None = None,
     accept_push: bool = False,
@@ -115,7 +115,7 @@ async def open_custom_flow(
             yield FlowAccess(session.observation.read, reporter)
         finally:
             detach()
-    if mode != "关闭":
+    if mode != "关闭" and receive_report is not None:
         receive_report(render_node_details(await session.close(), mode=mode))
 
 

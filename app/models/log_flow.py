@@ -89,6 +89,10 @@ class NodeObservation:
     def __len__(self) -> int:
         return len(self._nodes)
 
+    @property
+    def summary(self) -> SessionSummary | None:
+        return self._summary
+
     def snapshot(self) -> tuple[Node, ...]:
         return (
             self._summary.nodes
