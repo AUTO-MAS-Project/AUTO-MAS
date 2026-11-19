@@ -8,10 +8,10 @@ cur_user_item.push_log。MAS 进程宿主（专项适配器）直接注入 sink�
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
 
-# 结果回传标记前缀（独立前缀，避免与正常日志内容混淆）
-MSG_PREFIX = "@@LOGBOX@@"
+from app.utils.common.log.legacy_protocol import MSG_PREFIX, parse_marker
+
+__all__ = ["MSG_PREFIX", "emit", "parse_marker", "render_flush", "render_push"]
 
 
 def render_push(text: str, log_type: str) -> str:
@@ -28,26 +28,6 @@ def render_flush() -> str:
     """渲染 flush 标记行：@@LOGBOX@@{"op":"flush"}"""
     payload = json.dumps({"op": "flush"}, separators=(",", ":"))
     return f"{MSG_PREFIX}{payload}"
-
-
-def parse_marker(line: str) -> Optional[dict[str, Any]]:
-    """解析单行标记
-
-    Args:
-        line: 待解析的日志行
-
-    Returns:
-        标记载荷字典；非标记前缀或解析失败返回 None（该行按普通日志处理）
-    """
-    if not line.startswith(MSG_PREFIX):
-        return None
-    try:
-        payload = json.loads(line[len(MSG_PREFIX) :])
-    except (json.JSONDecodeError, TypeError):
-        return None
-    if not isinstance(payload, dict):
-        return None
-    return payload
 
 
 def emit(line: str) -> None:

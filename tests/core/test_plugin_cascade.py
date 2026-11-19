@@ -227,6 +227,7 @@ async def test_named_general_flow_uses_current_webui_rules(
     from auto_mas_core.log_flow import GeneralFlowDeclaration, open_log_flow
 
     from app import core
+    from app.task.general.log_protocol import render_flush, render_push
 
     manager, records = await cascade_plugins({"flow_webui": ()})
     monkeypatch.setattr(core, "Plugin", manager)
@@ -266,14 +267,22 @@ async def test_named_general_flow_uses_current_webui_rules(
             record._plugin, "webui", run=TaskUserItem(), general_rules=rules
         ) as flow:
             assert flow.reporter is not None
-            assert (
-                flow.reporter.text("noise redacted token=discarded")
-                == SubmitResult.ACCEPTED
+            lines = (
+                render_push("旧宿主节点", "普通"),
+                render_flush(),
+                "noise redacted token=discarded",
+                "redacted token=secret",
+                "@@LOGBOX@@broken redacted token=secret",
             )
-            assert flow.reporter.text("redacted token=secret") == SubmitResult.ACCEPTED
+            for line in lines:
+                assert flow.reporter.text(line) == SubmitResult.ACCEPTED
         page = flow.read_nodes()
         assert page.close_reason == "complete"
-        assert [node.text for node in page.nodes] == [replacement]
+        assert [node.text for node in page.nodes] == [
+            "旧宿主节点",
+            replacement,
+            replacement,
+        ]
 
 
 @pytest.mark.asyncio

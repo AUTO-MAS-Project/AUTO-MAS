@@ -8,7 +8,9 @@ from typing import Protocol, cast, runtime_checkable
 from pydantic import JsonValue
 
 from app.utils.common.expression import ExpressionFunction, compile_expression
+from app.utils.common.log.legacy_protocol import parse_marker
 from app.utils.common.log.patterns import (
+    LOG_TYPE_NORMAL,
     MultiLineAggregator,
     RegexMatcher,
     apply_patterns,
@@ -131,12 +133,23 @@ class GeneralRuleProcessor:
 
     def process(self, line: str) -> Iterator[tuple[str, str]]:
         processed = self.hook(line) if self.hook is not None else line
-        if processed is not None:
-            if len(processed.encode("utf-8")) >= MAX_FRAME_BYTES:
-                raise LogReadLimitExceeded("单行日志超出处理容量")
-            result = apply_patterns(processed, matchers=self.rules)
-            if result is not None:
-                yield result
+        if processed is None:
+            return
+        if len(processed.encode("utf-8")) >= MAX_FRAME_BYTES:
+            raise LogReadLimitExceeded("单行日志超出处理容量")
+        if (marker := parse_marker(processed)) is not None:
+            if marker.get("op") == "push":
+                node_type = marker.get("type")
+                yield (
+                    node_type
+                    if isinstance(node_type, str) and node_type
+                    else LOG_TYPE_NORMAL,
+                    str(marker.get("text") or ""),
+                )
+            return
+        result = apply_patterns(processed, matchers=self.rules)
+        if result is not None:
+            yield result
 
     def close(self) -> list[tuple[str, str]]:
         return flush_patterns(self.rules)
