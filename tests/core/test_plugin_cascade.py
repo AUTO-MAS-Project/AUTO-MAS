@@ -314,13 +314,18 @@ async def test_named_file_source_binds_to_the_current_run(
     for path in (first, second):
         path.write_text("done:old\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
+    first_input = await FileInput(path=first.name).capture_start()
+    with first.open("a", encoding="utf-8") as log:
+        log.write("done:before-rotation\n")
+    first.rename(first.with_suffix(".bak"))
+    first.write_text("done:before-worker\n", encoding="utf-8")
     async with AsyncExitStack() as stack:
         first_flow = await stack.enter_async_context(
             open_log_flow(
                 record._plugin,
                 "file",
                 run=TaskUserItem(),
-                file_input=FileInput(path=first.name),
+                file_input=first_input,
             )
         )
         second_flow = await stack.enter_async_context(
@@ -328,7 +333,7 @@ async def test_named_file_source_binds_to_the_current_run(
                 record._plugin,
                 "file",
                 run=TaskUserItem(),
-                file_input=FileInput(path=str(second)),
+                file_input=FileInput(path=second.name),
             )
         )
         for path in (first, second):
@@ -339,7 +344,11 @@ async def test_named_file_source_binds_to_the_current_run(
         second_flow.snapshot_nodes(),
     )
     assert first_snapshot.close_reason == second_snapshot.close_reason == "complete"
-    assert [node.text for node in first_snapshot.nodes] == ["done:first"]
+    assert [node.text for node in first_snapshot.nodes] == [
+        "done:before-rotation",
+        "done:before-worker",
+        "done:first",
+    ]
     assert [node.text for node in second_snapshot.nodes] == ["done:second"]
 
 

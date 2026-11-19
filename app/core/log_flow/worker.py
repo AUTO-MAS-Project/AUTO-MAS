@@ -168,7 +168,7 @@ def _run_pipeline(
             max_read_bytes=_MAX_FILE_READ_BYTES,
             strict_io=True,
         )
-        source.open()
+        source.open(cursor=config.file.start_cursor)
     inbox: Queue[InputRecord | Exception | None] = Queue(MAX_PENDING_RECORDS)
     reader = Thread(target=_read_inbox, args=(inbox,), daemon=True)
     reader.start()

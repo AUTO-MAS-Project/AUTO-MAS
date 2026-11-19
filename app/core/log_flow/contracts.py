@@ -1,11 +1,14 @@
 """LogFlow 会话的内部声明和进程消息。"""
 
+import asyncio
 from collections.abc import Callable
+from pathlib import Path
 from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, model_validator
 
 from app.models.log_flow import Node, NodeAttributes, NodeDisplayStatus, ReportedNodeKey
+from app.utils.common.log.sources import FileCursor, capture_file_cursor
 
 # 进程管道的单条消息预算；不是日志文件或 SDK 限额。
 MAX_FRAME_BYTES = 64 * 1024
@@ -43,6 +46,15 @@ class FileInput(BaseModel, frozen=True):
     path: str = Field(min_length=1)
     start_from_end: bool = True
     rotated_name: str | None = None
+    start_cursor: FileCursor | None = None
+
+    async def capture_start(self) -> Self:
+        """在启动脚本之前固定本轮文件及字节起点。"""
+        path = str(Path(self.path).absolute())
+        cursor = await asyncio.to_thread(
+            capture_file_cursor, path, start_from_end=self.start_from_end
+        )
+        return self.model_copy(update={"path": path, "start_cursor": cursor})
 
 
 class WorkerFactorySpec(BaseModel, frozen=True):

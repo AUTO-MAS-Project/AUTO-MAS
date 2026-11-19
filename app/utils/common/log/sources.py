@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from stat import S_ISREG
@@ -22,6 +23,26 @@ class LogReadLimitExceeded(ValueError):
 def _file_identity(stat: os.stat_result) -> tuple[int, int]:
     """追加不改变身份；POSIX ctime 是元数据变更时间，不能用于判定轮转。"""
     return (stat.st_ino, stat.st_ctime_ns if os.name == "nt" else stat.st_dev)
+
+
+@dataclass(frozen=True)
+class FileCursor:
+    offset: int
+    file_id: tuple[int, int] | None
+
+    def __post_init__(self) -> None:
+        if self.offset < 0 or (self.offset and self.file_id is None):
+            raise ValueError("日志起点缺少有效的文件身份或偏移")
+
+
+def capture_file_cursor(path: PathLike, *, start_from_end: bool) -> FileCursor:
+    try:
+        stat = Path(path).stat()
+    except FileNotFoundError:
+        return FileCursor(0, None)
+    if not S_ISREG(stat.st_mode):
+        raise ValueError("日志来源必须是普通文件")
+    return FileCursor(stat.st_size if start_from_end else 0, _file_identity(stat))
 
 
 class LogSource:
@@ -61,22 +82,22 @@ class LogSource:
         self._file_id: Optional[tuple[int, int]] = None
         self._opened = False
 
-    def open(self) -> None:
+    def open(self, *, cursor: FileCursor | None = None) -> None:
         """记录起始位置（幂等）。文件不存在时从文件头开始（等待新文件生成）。"""
-        self._offset = 0
-        self._file_id = None
-        try:
-            stat = self.path.stat() if self.strict_io or self.path.is_file() else None
-        except FileNotFoundError:
-            if not self.strict_io:
-                raise
-            stat = None
-        if stat is not None:
-            if self.strict_io and not S_ISREG(stat.st_mode):
-                raise ValueError("日志来源必须是普通文件")
-            if self.start_from_end:
-                self._offset = stat.st_size
-            self._file_id = _file_identity(stat)
+        if cursor is None:
+            if self.strict_io:
+                cursor = capture_file_cursor(
+                    self.path, start_from_end=self.start_from_end
+                )
+            elif self.path.is_file():
+                stat = self.path.stat()
+                cursor = FileCursor(
+                    stat.st_size if self.start_from_end else 0, _file_identity(stat)
+                )
+            else:
+                cursor = FileCursor(0, None)
+        self._offset = cursor.offset
+        self._file_id = cursor.file_id
         self._opened = True
 
     def read_new(self) -> list[str]:
