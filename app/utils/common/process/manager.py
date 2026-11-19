@@ -55,9 +55,9 @@ class ProcessInfo:
 def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
     """检查进程是否与目标进程信息匹配
 
-    ``proc`` 须来自预取了 name/exe/cmdline 的 ``psutil.process_iter``, 直接用
-    ``proc.info`` 里的字段比对, 不再逐个进程重新查询; 无权限读到的字段为 None,
-    按不匹配处理。
+    ``proc.info`` 里预取的字段直接比对; ``exe`` 与 ``cmdline`` 只在目标要求时
+    读取, 因为命令行在受保护进程上要等读超时, 不能整表预取。读不到的字段按
+    不匹配处理。
     """
 
     info = proc.info
@@ -65,14 +65,26 @@ def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
         return False
     if target.name is not None and info["name"] != target.name:
         return False
-    if target.exe is not None and (
-        not info["exe"] or Path(info["exe"]) != Path(target.exe)
+    if target.exe is not None:
+        exe = info.get("exe") or _read_field(proc, "exe")
+        if not exe or Path(exe) != Path(target.exe):
+            return False
+    if (
+        target.cmdline is not None
+        and (info.get("cmdline") or _read_field(proc, "cmdline")) != target.cmdline
     ):
-        return False
-    if target.cmdline is not None and info["cmdline"] != target.cmdline:
         return False
 
     return True
+
+
+def _read_field(proc: psutil.Process, field: str) -> object:
+    """按需读取未预取的进程字段; 无权访问或已退出时按读不到处理。"""
+
+    try:
+        return getattr(proc, field)()
+    except psutil.Error:
+        return None
 
 
 def is_process_running(process_name: str) -> bool:
@@ -338,9 +350,12 @@ class ProcessManager:
         """
 
         def _scan() -> tuple[psutil.Process, float | None] | None:
-            for proc in psutil.process_iter(
-                ["pid", "name", "exe", "cmdline", "create_time"]
-            ):
+            # cmdline 对受保护进程每次都要等读超时，整表预取会把一次扫描拖到
+            # 数秒，发现游戏太晚；只预取轻量字段，cmdline 等筛选命中后再读。
+            attrs = ["pid", "name", "create_time"]
+            if target_process.exe is not None:
+                attrs.append("exe")
+            for proc in psutil.process_iter(attrs):
                 if not match_process(proc, target_process):
                     continue
                 create_time = proc.info["create_time"]

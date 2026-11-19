@@ -2,43 +2,22 @@ import asyncio
 import os
 import subprocess
 import time
-from collections.abc import Iterator, Sequence
-from contextlib import closing, contextmanager
+from collections.abc import Sequence
+from contextlib import suppress
 from pathlib import Path
 from threading import Lock
-from typing import Any, Unpack
+from typing import Any
 
 import psutil
 import pywintypes
 import win32api
 import win32con
-import win32event
 import win32job
 import win32process
-import winerror
 
 from app.utils.common.process.runner import ProcessRunner
 
-from ..contracts.process import ElevatedProcess, EmulatorPopenOptions
-
-
-def _is_exited_thread_denial(error: BaseException, handle: Any) -> bool:
-    if (
-        not isinstance(error, pywintypes.error)
-        or error.winerror != winerror.ERROR_ACCESS_DENIED
-    ):
-        return False
-    # 只在挂起失败时申请等待权限，并核对同一个线程对象而不是重新查找 TID。
-    current = win32api.GetCurrentProcess()
-    try:
-        with closing(
-            win32api.DuplicateHandle(
-                current, handle, current, win32con.SYNCHRONIZE, False, 0
-            )
-        ) as waiter:
-            return win32event.WaitForSingleObject(waiter, 0) == win32event.WAIT_OBJECT_0
-    except pywintypes.error:
-        return False
+from ..contracts.process import ElevatedProcess
 
 
 class WindowsTaskProcessJob:
@@ -106,53 +85,6 @@ class WindowsTaskProcessJob:
                     finally:
                         handle.Close()
 
-    @staticmethod
-    @contextmanager
-    def _pause(process: psutil.Process) -> Iterator[None]:
-        """短暂暂停存量进程，始终撤销本次增加的线程暂停计数。"""
-        handles: dict[int, Any] = {}
-        deadline = time.monotonic() + 1
-        try:
-            while True:
-                rescan = False
-                for thread in process.threads():
-                    if thread.id in handles:
-                        continue
-                    try:
-                        handle = win32api.OpenThread(
-                            win32con.THREAD_SUSPEND_RESUME, False, thread.id
-                        )
-                    except pywintypes.error:
-                        if thread.id not in {item.id for item in process.threads()}:
-                            continue
-                        raise
-                    try:
-                        win32process.SuspendThread(handle)
-                    except BaseException as error:
-                        with closing(handle):
-                            if not _is_exited_thread_denial(error, handle):
-                                raise
-                    else:
-                        handles[thread.id] = handle
-                    rescan = True
-                if not rescan:
-                    break
-                # 首轮暂停期间仍可能出生新线程，收敛后才枚举后代及登记 Job。
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("接管进程时未能及时暂停全部线程")
-            yield
-        finally:
-            errors = []
-            for tid, handle in reversed(handles.items()):
-                try:
-                    win32process.ResumeThread(handle)
-                except pywintypes.error as error:
-                    errors.append(error)
-                finally:
-                    handle.Close()
-            if errors and process.is_running():
-                raise ExceptionGroup("接管后恢复进程线程失败", errors)
-
     def adopt(self, pid: int, create_time: float) -> None:
         """给明确接管的进程及已有后代加 Job 标记，后续后代由系统继承。"""
         with self._lock:
@@ -170,7 +102,7 @@ class WindowsTaskProcessJob:
 
                 try:
                     # 包装进程可能在 OpenProcess 期间退出，先保存已发现的孩子，
-                    # 父进程消失后仍继续接管；暂停内再补齐登记前出生的后代。
+                    # 父进程消失后仍继续接管；登记后再补扫一轮登记前出生的后代。
                     pending.extend(target.children())
                     process = win32api.OpenProcess(
                         win32con.PROCESS_SET_QUOTA
@@ -188,18 +120,23 @@ class WindowsTaskProcessJob:
                             if target.pid == root.pid:
                                 return
                             continue
-                        with self._pause(target):
-                            # 暂停期间读取后代并登记，避免快照与登记之间漏掉普通
-                            # 子进程；恢复后普通后代自动继承，不重扫已脱离的游戏。
-                            pending.extend(target.children())
-                            # 外部进程可能来自不同的系统 Job，不能共用嵌套 Job。
-                            job = self._create_job()
-                            try:
-                                win32job.AssignProcessToJobObject(job, process)
-                            except BaseException:
-                                job.Close()
-                                raise
-                            self._adopted.append(job)
+                        # 登记对进程原子生效：此后正常新生的后代由系统继承归属，
+                        # 无需暂停进程。登记前已存在的后代不会补进 Job，按登记
+                        # 时刻下限补扫；登记后才出生的是脚本显式脱离的进程，
+                        # 不能重新接管，否则会关掉脚本主动放手的游戏。
+                        # 外部进程可能来自不同的系统 Job，不能共用嵌套 Job。
+                        job = self._create_job()
+                        try:
+                            assigned_at = time.time()
+                            win32job.AssignProcessToJobObject(job, process)
+                        except BaseException:
+                            job.Close()
+                            raise
+                        self._adopted.append(job)
+                        for child in target.children():
+                            with suppress(psutil.NoSuchProcess):
+                                if child.create_time() <= assigned_at:
+                                    pending.append(child)
                     finally:
                         process.Close()
                 except (psutil.NoSuchProcess, pywintypes.error):
@@ -324,7 +261,7 @@ class WindowsProcessPlatform:
     #
     # 父进程若恰好处在一个不允许 breakaway 的 Job 里，带这个标志的
     # CreateProcess 会以 ERROR_ACCESS_DENIED（WinError 5）失败；
-    # process_runner.create_subprocess 对此有去掉该位重试一次的兜底。
+    # breakaway_rejected 对此给出去掉该位重试一次的判据。
     creation_flags = subprocess.CREATE_NO_WINDOW
     breakaway_flags = subprocess.CREATE_BREAKAWAY_FROM_JOB
     # 自更新时接替当前进程的安装程序必须活过后端退出，因此这组标志固定带
@@ -363,29 +300,6 @@ class WindowsProcessPlatform:
         return True, ""
 
     agent_flags = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
-    emulator_flags = (
-        subprocess.CREATE_NO_WINDOW
-        | subprocess.CREATE_NEW_PROCESS_GROUP
-        | subprocess.CREATE_BREAKAWAY_FROM_JOB
-    )
-
-    @staticmethod
-    def popen_emulator(
-        args: Sequence[str], **kwargs: Unpack[EmulatorPopenOptions]
-    ) -> subprocess.Popen[bytes]:
-        try:
-            return subprocess.Popen(
-                args, creationflags=WindowsProcessPlatform.emulator_flags, **kwargs
-            )
-        except OSError as exc:
-            if getattr(exc, "winerror", None) != 5:
-                raise
-            return subprocess.Popen(
-                args,
-                creationflags=WindowsProcessPlatform.emulator_flags
-                & ~WindowsProcessPlatform.breakaway_flags,
-                **kwargs,
-            )
 
     @staticmethod
     def prepare_elevated() -> ElevatedProcess:
