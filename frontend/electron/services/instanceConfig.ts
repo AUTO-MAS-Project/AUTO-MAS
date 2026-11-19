@@ -23,9 +23,15 @@ const DEV_STOP_ALL_TASKS_SHORTCUT = 'Control+Shift+Alt+N'
 
 // ==================== 工具函数 ====================
 
-// 应用环境只由打包状态决定，不受宿主 NODE_ENV 或开发服务器地址影响。
+/** 显式选择开发后端；不读取 .env，不根据端口或目录是否存在自动切换。 */
+export function getDeveloperBackendRepo(): string | undefined {
+  const configured = process.env.AUTO_MAS_BACKEND_REPO?.trim()
+  return configured ? path.resolve(configured) : undefined
+}
+
+// 使用开发后端的安装版也隔离端口、用户数据与遥测。
 export function getApplicationEnvironment(): ApplicationEnvironment {
-  return app?.isPackaged ? 'production' : 'development'
+  return app?.isPackaged && !getDeveloperBackendRepo() ? 'production' : 'development'
 }
 
 export function isDevelopmentEnvironment(): boolean {
@@ -45,7 +51,7 @@ export function getBackendOwnership(): BackendOwnership {
 }
 
 export function getDevelopmentServerUrl(): string | undefined {
-  return isDevelopmentEnvironment() ? process.env.VITE_DEV_SERVER_URL : undefined
+  return !app?.isPackaged ? process.env.VITE_DEV_SERVER_URL : undefined
 }
 
 // 解析端口号，非法值返回 undefined 交由调用方回退
@@ -89,6 +95,7 @@ export function applyInstanceIdentity(): void {
   }
 
   const instanceName = `${app.getName()}-dev`
-  app.setPath('userData', path.join(app.getPath('appData'), instanceName))
+  const developerHome = process.env.AUTO_MAS_DEVELOPER_HOME?.trim()
+  app.setPath('userData', path.join(developerHome || app.getPath('appData'), instanceName))
   app.setName(instanceName)
 }

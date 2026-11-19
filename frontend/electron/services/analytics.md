@@ -4,9 +4,11 @@ Electron 主进程按 Aptabase 的单事件协议向
 `https://telemetry.auto-mas.top/api/v0/event` 发送数据。App Key 是公开的客户端写入标识，
 不包含管理或查询凭据。Vue 通过受限 preload / IPC 交给主进程，不初始化 Web 或 Electron SDK。
 
-采集环境统一由 Electron 打包状态决定，并在页面执行前通过 preload 传入 Vue。源码运行禁报，
+采集环境由 Electron 打包状态和显式开发后端选择决定，并在页面执行前通过 preload 传入 Vue。源码运行或安装版显式设置 `AUTO_MAS_BACKEND_REPO` 时禁报，
 打包运行仍遵守用户遥测开关；Runtime 启动模式与宿主的 `NODE_ENV` 不改变应用环境。
 后端仅在显式收到 `AUTO_MAS_ENV=production` 时启用生产行为，不再依赖 `.env` 文件。
+
+发行版复用源码后端时沿用现有启动、关闭和失败结果观察，不新增事件；开发环境隔离继续禁止实际发送。源码路径和环境变量内容不进入事件属性。
 
 后续新增或修改可观察业务流程时，按 [mas-telemetry Skill](../../../.agents/skills/mas-telemetry/SKILL.md)
 主动复用或补齐埋点。首页活动只统计实际开始的新加载批次，busy 跳过不复用旧结果；

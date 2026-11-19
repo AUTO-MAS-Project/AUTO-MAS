@@ -109,6 +109,7 @@ import {
   resolveStopAllTasksShortcut,
   isDevelopmentEnvironment,
   getDevelopmentServerUrl,
+  getDeveloperBackendRepo,
   getRendererEnvironmentArguments,
   getBackendOwnership,
 } from './services/instanceConfig'
@@ -821,7 +822,7 @@ function parseConfigInteger(value: string | undefined, fallback: number): number
  * 打包分发不受影响（由 vite 产出的静态资源在 dist/ 中，正常读取）。
  */
 function assertDevelopmentRuntime(): void {
-  if (!isDevelopmentEnvironment()) return
+  if (app.isPackaged) return
   if (getDevelopmentServerUrl()) return
 
   const message =
@@ -2445,7 +2446,9 @@ app.whenReady().then(async () => {
   keepAwakeForScheduledWakeup(process.argv)
   recordDesktopStartup('Electron 就绪')
   const startupConfig = loadConfig()
-  await recoverUpdateMaterials(getAppRoot())
+  const updateRoot = app.isPackaged ? path.dirname(app.getPath('exe')) : getAppRoot()
+  const desktopUpdatesEnabled = !getDeveloperBackendRepo()
+  if (desktopUpdatesEnabled) await recoverUpdateMaterials(updateRoot)
   void startDesktopStartup({
     version: app.getVersion(),
     initializedVersion:
@@ -2460,7 +2463,8 @@ app.whenReady().then(async () => {
   registerAnalyticsHandlers(() => mainWindow)
   registerFluxdownInstallHandlers(() => mainWindow, getLocalApiEndpoint)
   registerAppUpdateHandlers({
-    root: getAppRoot(),
+    installRoot: updateRoot,
+    updatesEnabled: desktopUpdatesEnabled,
     window: () => mainWindow,
     backendUrl: getLocalApiEndpoint,
     backend: getBackendService,
