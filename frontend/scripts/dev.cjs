@@ -1,7 +1,60 @@
 const fs = require('node:fs')
 const path = require('node:path')
+const { createHash, randomUUID } = require('node:crypto')
 const { spawn } = require('node:child_process')
 const DEV_SERVER_URL = 'http://127.0.0.1:5173/'
+
+async function ensureDevelopmentRuntime(root, env = process.env, platform = process.platform) {
+  if (env.AUTO_MAS_RUNTIME_EXE?.trim()) return
+  if (platform !== 'win32') {
+    throw new Error('Runtime 仅提供 Windows 版本；其他系统请使用 yarn backend 和 yarn dev:frontend')
+  }
+
+  const version = fs.readFileSync(path.join(root, '../res/runtime-version.txt'), 'utf8').trim()
+  if (!/^v\d+(\.\d+)*([-+][0-9A-Za-z.-]+)?$/.test(version)) {
+    throw new Error(`Runtime 版本格式无效：${version}`)
+  }
+  const directory = path.join(root, 'node_modules', '.cache', 'auto-mas-runtime', version)
+  const runtimePath = path.join(directory, 'auto-mas-runtime.exe')
+  if (fs.existsSync(runtimePath)) {
+    env.AUTO_MAS_RUNTIME_EXE = runtimePath
+    return
+  }
+
+  const asset = `auto-mas-runtime-${version}.exe`
+  const release = `https://github.com/AUTO-MAS-Project/AUTO-MAS-Runtime/releases/download/${version}`
+  async function download(name) {
+    const response = await fetch(`${release}/${name}`, { signal: AbortSignal.timeout(60_000) })
+    if (!response.ok) throw new Error(`下载 ${name} 失败：HTTP ${response.status}`)
+    return response
+  }
+
+  console.log(`[dev] 正在下载 Runtime ${version}…`)
+  const sums = await (await download('SHA256SUMS.txt')).text()
+  const checksum = sums
+    .split(/\r?\n/)
+    .map(line => line.match(/^([\da-fA-F]{64})\s+\*?(.+?)\s*$/))
+    .find(match => match?.[2] === asset)?.[1]
+    .toLowerCase()
+  if (!checksum) throw new Error(`SHA256SUMS.txt 中找不到 ${asset}`)
+  const binary = Buffer.from(await (await download(asset)).arrayBuffer())
+  if (createHash('sha256').update(binary).digest('hex') !== checksum) {
+    throw new Error(`Runtime SHA-256 校验失败：${asset}`)
+  }
+
+  fs.mkdirSync(directory, { recursive: true })
+  const temporary = path.join(directory, `.${randomUUID()}.tmp`)
+  try {
+    fs.writeFileSync(temporary, binary, { flag: 'wx' })
+    fs.renameSync(temporary, runtimePath)
+  } finally {
+    fs.rmSync(temporary, { force: true })
+  }
+  env.AUTO_MAS_RUNTIME_EXE = runtimePath
+  console.log(`[dev] Runtime ${version} 已准备完成`)
+}
+
+if (typeof module !== 'undefined') module.exports = { ensureDevelopmentRuntime }
 
 if (process.versions.electron && process.type === 'browser') {
   let electron
@@ -98,6 +151,10 @@ if (process.versions.electron && process.type === 'browser') {
   process.on('SIGTERM', () => void close())
 
   async function main() {
+    if (!process.argv.includes('--connect-existing-backend')) {
+      await ensureDevelopmentRuntime(root)
+      if (closing) return
+    }
     // 先拒绝已占用端口；页面仍只在本次 Vite 真正监听成功后放行。
     await new Promise((resolve, reject) => {
       const probe = require('node:net').createServer()
