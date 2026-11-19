@@ -53,13 +53,17 @@ _POLL_SECONDS = 0.05
 _MAX_FILE_READ_BYTES = 1024 * 1024
 
 
-def _send(pipe: BufferedWriter, message: WorkerMessage) -> int:
-    frame = message.model_dump_json().encode("utf-8")
-    if len(frame) >= MAX_FRAME_BYTES:
+def _send(
+    pipe: BufferedWriter, message: WorkerMessage, *, remaining_bytes: int | None = None
+) -> int:
+    frame = message.model_dump_json().encode("utf-8") + b"\n"
+    if len(frame) > MAX_FRAME_BYTES:
         raise LogReadLimitExceeded("日志节点超出进程消息容量")
-    pipe.write(frame + b"\n")
+    if remaining_bytes is not None and len(frame) > remaining_bytes:
+        raise LogReadLimitExceeded("采集输出字节容量已满")
+    pipe.write(frame)
     pipe.flush()
-    return len(frame) + 1
+    return len(frame)
 
 
 def _read_inbox(inbox: Queue[InputRecord | Exception | None]) -> None:
@@ -194,6 +198,8 @@ def _run_pipeline(
         attributes: NodeAttributes = (),
     ) -> None:
         nonlocal sequence, observed_bytes, sink_error
+        if sequence == MAX_NODE_FRAMES:
+            raise LogReadLimitExceeded("观察节点容量已满")
         sequence += 1
         node_type, text = result
         stable_id = f"{source_name}/{node_id}" if node_id is not None else None
@@ -225,9 +231,8 @@ def _run_pipeline(
         observed_bytes += _send(
             pipe,
             Observed(node=node),
+            remaining_bytes=MAX_NODE_BYTES - observed_bytes,
         )
-        if sequence > MAX_NODE_FRAMES or observed_bytes > MAX_NODE_BYTES:
-            raise LogReadLimitExceeded("观察节点容量已满")
         if sink is not None and not sink_error:
             try:
                 sink.write(node)
@@ -310,14 +315,19 @@ def _run_pipeline(
                 timestamp=last_timestamp.get(source_name),
             )
     if postprocessor is not None:
-        for node_type, text, timestamp in postprocessor(list(collected.values())):
-            _send(
+        final_bytes = 0
+        entries = postprocessor(list(collected.values()))
+        for count, (node_type, text, timestamp) in enumerate(entries):
+            if count == MAX_NODE_FRAMES:
+                raise LogReadLimitExceeded("最终报告容量已满")
+            final_bytes += _send(
                 pipe,
                 FinalEntry(
                     entry=ReportEntry(
                         node_type=node_type, text=text, timestamp=timestamp
                     )
                 ),
+                remaining_bytes=MAX_NODE_BYTES - final_bytes,
             )
     if sink is not None:
         closing_sink = True

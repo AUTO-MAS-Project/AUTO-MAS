@@ -4,6 +4,7 @@ import asyncio
 import builtins
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -14,9 +15,13 @@ from auto_mas_core.log_flow import SubmitResult
 from app.core.log_flow.contracts import (
     MAX_HOST_PENDING_BYTES,
     MAX_NATIVE_PENDING_RECORDS,
+    MAX_NODE_FRAMES,
+    WORKER_MESSAGE,
+    Failed,
     FileInput,
     FunctionRef,
     LineRule,
+    Observed,
     PipelineSpec,
     ProcessorFactorySpec,
     ReportedRecord,
@@ -278,6 +283,28 @@ async def test_file_backlog_reports_an_incomplete_session(tmp_path):
         assert render_node_details(summary, mode="关闭") == []
     finally:
         await session.close()
+
+
+def test_worker_keeps_over_budget_node_out_of_pipe(tmp_path):
+    path = tmp_path / "session.log"
+    path.write_bytes(b"done:1\n" * (MAX_NODE_FRAMES + 1))
+    spec = PipelineSpec(
+        file=FileInput(path=str(path), start_from_end=False),
+        rules=(LineRule(match="^done:", node_type="普通"),),
+    )
+    worker = subprocess.run(
+        [sys.executable, "-m", "app.core.log_flow.worker"],
+        input=spec.model_dump_json().encode() + b"\n",
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+    messages = [
+        WORKER_MESSAGE.validate_json(frame) for frame in worker.stdout.splitlines()
+    ]
+    nodes = [message.node for message in messages if isinstance(message, Observed)]
+    assert [node.sequence for node in nodes] == list(range(1, MAX_NODE_FRAMES + 1))
+    assert isinstance(messages[-1], Failed) and messages[-1].reason == "capacity"
 
 
 @pytest.mark.asyncio
