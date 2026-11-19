@@ -277,6 +277,76 @@ async def test_named_general_flow_uses_current_webui_rules(
 
 
 @pytest.mark.asyncio
+async def test_named_report_factory_uses_one_account_snapshot_per_run(
+    cascade_plugins, tmp_path, monkeypatch
+):
+    from auto_mas_core.log_flow import LogFlowTaskReport, open_log_flow
+
+    from app import core
+    from app.core.notify.report import render_scatter_push_log
+    from app.task.ZzzOd.push_log import ZZZOD_PUSH_RULES, make_zzzod_resolve
+    from app.utils.common.log_box import LogPipeline
+
+    manager, records = await cascade_plugins({"flow_report_factory": ()})
+    monkeypatch.setattr(core, "Plugin", manager)
+    record = records["flow_report_factory"]
+    (tmp_path / "flow_report_factory" / "__init__.py").write_text(
+        "from auto_mas_core import BasePlugin\n"
+        "from auto_mas_core.log_flow import FunctionRef, LineRule, PluginFlowDeclaration, PostProcessor, SimpleFlowDeclaration, WorkerFactorySpec\n"
+        "from app.task.ZzzOd.push_log import ZZZOD_PUSH_RULES, make_zzzod_resolve\n"
+        "def report_factory(options) -> PostProcessor:\n"
+        "    return make_zzzod_resolve(set(options['apps']), dict(enumerate(options['accounts'])))\n"
+        "class Adapter(BasePlugin):\n"
+        "    log_flows = {'batch': PluginFlowDeclaration(use_mas_log=False, accept_push=True, rules=SimpleFlowDeclaration(\n"
+        "        rules=tuple(LineRule(match=match, extract=extract, node_type='普通') for match, extract in ZZZOD_PUSH_RULES),\n"
+        "        postprocess=WorkerFactorySpec(factory=FunctionRef(name='batch:report', module=__name__, attribute='report_factory'), options={'apps': ['体力刷本']}),\n"
+        "    ))}\n"
+        "PLUGIN = Adapter\n",
+        encoding="utf-8",
+    )
+    await manager.reload(record)
+    await manager.enable(record)
+    lines = [
+        "开始加载实例配置 0",
+        "指令[ 体力刷本 ] 执行失败 返回状态 测试异常",
+        "指令[ 体力刷本 ] 执行成功 返回状态 剩余电量 42",
+        "开始加载实例配置 1",
+        "应用已完成 体力刷本",
+    ]
+    for account_names in (["First", "Second"], ["Next", "Last"]):
+        _task, script, _account = await create_runtime_tree()
+        report = LogFlowTaskReport(script)
+        legacy = LogPipeline()
+        for rule in ZZZOD_PUSH_RULES:
+            legacy.add_rule(*rule)
+        legacy.postprocessors.append(
+            make_zzzod_resolve({"体力刷本"}, dict(enumerate(account_names)))
+        )
+        async with open_log_flow(
+            record._plugin,
+            "batch",
+            run=script,
+            mode="逐条",
+            task_report=report,
+            postprocess_options={"accounts": account_names},
+        ) as flow:
+            assert flow.reporter is not None
+            for timestamp, line in enumerate(lines, start=1):
+                legacy.feed(line, timestamp=float(timestamp))
+                assert (
+                    flow.reporter.text(line, timestamp=float(timestamp))
+                    == SubmitResult.ACCEPTED
+                )
+        details = report.details_for(script)
+        assert len(details) == 3
+        assert details == render_scatter_push_log(legacy.finish())
+        assert all(
+            any(f"【{account}】" in line for line in details)
+            for account in account_names
+        )
+
+
+@pytest.mark.asyncio
 async def test_declared_log_flow_delivers_one_task_report_via_notify(
     cascade_plugins, tmp_path, monkeypatch
 ):

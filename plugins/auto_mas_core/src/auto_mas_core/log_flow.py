@@ -9,6 +9,7 @@ from app.core.log_flow.contracts import (
     FunctionRef,
     InputRecord,
     LineRule,
+    PostProcessor,
     ReportedRecord,
     TextRecord,
     WindowRule,
@@ -36,7 +37,10 @@ from app.models.log_flow import (
 from app.utils.common.expression import ExpressionFunction
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from contextlib import AbstractAsyncContextManager
+
+    from pydantic import JsonValue
 
     from app.models.task import TaskScriptItem, TaskUserItem
     from app.plugin.base import BasePlugin
@@ -52,6 +56,7 @@ def open_log_flow(
     mode: ReportMode | None = None,
     task_report: LogFlowTaskReport | None = None,
     general_rules: GeneralFlowDeclaration | None = None,
+    postprocess_options: Mapping[str, JsonValue] | None = None,
 ) -> AbstractAsyncContextManager[FlowAccess]:
     """为当前运行打开具名声明，返回实时节点与已启用的上报能力。"""
     from app.core import Plugin
@@ -64,6 +69,7 @@ def open_log_flow(
         mode=mode,
         task_report=task_report,
         general_rules=general_rules,
+        postprocess_options=postprocess_options,
     )
 
 
@@ -84,6 +90,7 @@ __all__ = [
     "ObservationCursor",
     "ObservationPage",
     "PluginFlowDeclaration",
+    "PostProcessor",
     "PushReporter",
     "ReportMode",
     "ReportedRecord",

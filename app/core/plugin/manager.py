@@ -17,7 +17,7 @@ import importlib.metadata as importlib_metadata
 import re
 import sys
 import weakref
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -28,9 +28,10 @@ import httpx
 from blinker import Namespace
 from packaging.utils import canonicalize_name
 from packaging.version import Version
+from pydantic import JsonValue
 
 from app.config import NodeState
-from app.core.log_flow.contracts import WorkerPluginPackage
+from app.core.log_flow.contracts import WorkerFactorySpec, WorkerPluginPackage
 from app.core.log_flow.declaration import (
     GeneralFlowDeclaration,
     PluginFlowDeclaration,
@@ -140,6 +141,7 @@ class _PluginManager:
         task_report: LogFlowTaskReport | None = None,
         monitor: LogMonitor | None = None,
         general_rules: GeneralFlowDeclaration | None = None,
+        postprocess_options: Mapping[str, JsonValue] | None = None,
     ) -> AsyncGenerator[FlowAccess, None]:
         """宿主用已注册插件和实际运行对象装配具名流。"""
         owner = self.log_flow_owner(plugin)
@@ -148,6 +150,17 @@ class _PluginManager:
             declaration.rules, GeneralFlowDeclaration
         ):
             raise ValueError("只有 WebUI 规则声明可以绑定本次运行的 WebUI 配置")
+        rules = general_rules if general_rules is not None else declaration.rules
+        if postprocess_options is not None:
+            if not isinstance(rules, SimpleFlowDeclaration) or not isinstance(
+                rules.postprocess, WorkerFactorySpec
+            ):
+                raise ValueError("只有声明了归并工厂的日志流可以绑定归并配置")
+            factory = WorkerFactorySpec(
+                factory=rules.postprocess.factory,
+                options=rules.postprocess.options | dict(postprocess_options),
+            )
+            rules = rules.model_copy(update={"postprocess": factory})
         if declaration.use_mas_log and monitor is None:
             raise ValueError("该声明需要 MAS 原生日志监控器")
         if mode is None:
@@ -175,7 +188,7 @@ class _PluginManager:
         )
         try:
             async with open_custom_flow(
-                general_rules if general_rules is not None else declaration.rules,
+                rules,
                 run=run,
                 mode=mode,
                 receive_report=receive_report,
@@ -223,7 +236,11 @@ class _PluginManager:
                 if rules.preprocess is not None:
                     references.append(rules.preprocess)
                 if rules.postprocess is not None:
-                    references.append(rules.postprocess)
+                    references.append(
+                        rules.postprocess.factory
+                        if isinstance(rules.postprocess, WorkerFactorySpec)
+                        else rules.postprocess
+                    )
                 if rules.processor is not None:
                     references.append(rules.processor.factory)
             for ref in references:

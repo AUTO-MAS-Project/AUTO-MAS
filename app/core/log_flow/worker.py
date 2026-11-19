@@ -36,6 +36,7 @@ from .contracts import (
     ResultItem,
     TextRecord,
     WithdrawnRecord,
+    WorkerFactorySpec,
     WorkerMessage,
 )
 from .extensions import Sink, Source, create_extension
@@ -90,10 +91,17 @@ def _run_pipeline(
 ) -> None:
     functions = load_functions(config.functions)
     postprocessor: PostProcessor | None = None
-    if (ref := config.postprocess) is not None:
-        implementation = getattr(import_module(ref.module), ref.attribute)
+    if (postprocess := config.postprocess) is not None:
+        if isinstance(postprocess, WorkerFactorySpec):
+            implementation = create_extension(postprocess)
+            name = postprocess.factory.name
+        else:
+            implementation = getattr(
+                import_module(postprocess.module), postprocess.attribute
+            )
+            name = postprocess.name
         if not callable(implementation):
-            raise TypeError(f"报告归并器不可调用：{ref.name}")
+            raise TypeError(f"报告归并器不可调用：{name}")
         postprocessor = cast(PostProcessor, implementation)
 
     processors: dict[NodeSource, TextProcessor] = {}
