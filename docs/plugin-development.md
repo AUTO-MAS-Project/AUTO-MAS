@@ -60,6 +60,8 @@ git status
 首发前应按实际配套 SDK 发行版本收紧插件的最低版本约束，并用该 SDK 发行包验证。
 同版本号的开发源码可能包含尚未发布的接口，不能据此推断旧 SDK 已兼容。
 
+专项迁移日志节点时，从 [SDK 的 LogFlow 具名声明与收尾示例](../plugins/auto_mas_core/README.md#logflow-日志节点)接入，按[迁移验收表](logflow-progress.md#接下来按验收拆分的开发步骤)核对实时节点、最终报告和旧采集退出条件。
+
 ## 前端归属
 
 动态前端尚未上线，MAA 页面由主程序的 `frontend/src/views/maa` 维护并随桌面应用构建。
