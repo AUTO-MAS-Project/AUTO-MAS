@@ -710,7 +710,7 @@ async def test_custom_flow_keeps_all_sources_bound_to_one_run(tmp_path):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["ok", "fail", "block"])
+@pytest.mark.parametrize("mode", ["ok", "fail", "block", "block_close"])
 async def test_worker_extensions_keep_observation_independent_of_sink(tmp_path, mode):
     path = tmp_path / "sink.txt"
     module = "tests.support.log_flow_functions"
@@ -750,6 +750,14 @@ async def test_worker_extensions_keep_observation_independent_of_sink(tmp_path, 
                 "⚠️ 节点采集不完整",
             ]
             assert render_node_details(summary, mode="关闭") == []
+        elif mode == "block_close":
+            assert summary.reason == "timeout"
+            assert [n.text for n in summary.nodes] == ["done:sample", "source tail"]
+            assert render_node_details(summary, mode="汇总") == [
+                "sample report",
+                "⚠️ 节点采集不完整",
+            ]
+            assert "closed" not in lines
         else:
             assert summary.complete
             assert [n.text for n in summary.nodes] == ["done:sample", "source tail"]

@@ -35,11 +35,13 @@ from .contracts import (
     Closed,
     Failed,
     FinalEntry,
+    FinalReportReady,
     InputRecord,
     Observed,
     PipelineSpec,
     Ready,
     ReportedRecord,
+    ResultItem,
     TextRecord,
     WithdrawnRecord,
 )
@@ -123,6 +125,8 @@ class LogFlowSession:
         self._writer: asyncio.Task[None] | None = None
         self.observation = observation
         self._requires_final_report = requires_final_report
+        self._final_report: tuple[ResultItem, ...] | None = None
+        self._final_report_bytes = 0
         self._missed_native = False
         self._ready = asyncio.Event()
         self._worker_pid: int | None = None
@@ -306,9 +310,7 @@ class LogFlowSession:
             detail = "采集收尾超时，报告不完整"
             if not stopped:
                 detail += "；worker 退出未确认"
-            return self.observation.finish(
-                "timeout", detail, requires_final_report=self._requires_final_report
-            )
+            return self._finish_observation("timeout", detail)
         finally:
             if self._writer is not None:
                 self._writer.cancel()
@@ -344,11 +346,23 @@ class LogFlowSession:
             job, self._job = self._job, None
             job.close()
 
+    def _finish_observation(
+        self, reason: CloseReason, detail: str = "", *, sink_error: str = ""
+    ) -> SessionSummary:
+        return self.observation.finish(
+            reason,
+            detail,
+            report_entries=self._final_report,
+            report_bytes=self._final_report_bytes,
+            requires_final_report=self._requires_final_report,
+            sink_error=sink_error,
+        )
+
     async def _receive(self) -> SessionSummary:
         assert self._process.stdout is not None
         reason: CloseReason = "worker_error"
         detail = "LogFlow worker 意外退出"
-        final_entries: list[tuple[str, str, float | None]] = []
+        final_entries: list[ResultItem] = []
         final_bytes = 0
         try:
             while frame := await self._process.stdout.readline():
@@ -365,7 +379,12 @@ class LogFlowSession:
                         detail = "宿主节点容量已满"
                         break
                     self.observation.append(message.node, frame_bytes=len(frame))
-                elif isinstance(message, FinalEntry) and self._worker_pid is not None:
+                elif (
+                    isinstance(message, FinalEntry)
+                    and self._worker_pid is not None
+                    and self._requires_final_report
+                    and self._final_report is None
+                ):
                     if (
                         len(final_entries) == MAX_NODE_FRAMES
                         or final_bytes + len(frame) > MAX_NODE_BYTES
@@ -376,27 +395,28 @@ class LogFlowSession:
                     entry = message.entry
                     final_entries.append((entry.node_type, entry.text, entry.timestamp))
                     final_bytes += len(frame)
+                elif (
+                    isinstance(message, FinalReportReady)
+                    and self._worker_pid is not None
+                    and self._requires_final_report
+                    and self._final_report is None
+                ):
+                    self._final_report = tuple(final_entries)
+                    self._final_report_bytes = final_bytes
+                    final_entries.clear()
                 elif isinstance(message, Closed) and self._worker_pid is not None:
-                    if message.has_final_report != self._requires_final_report:
+                    if (self._final_report is not None) != self._requires_final_report:
                         raise ValueError("LogFlow worker 未交付预期的最终报告")
                     if await self._process.wait() == 0:
                         self._release_job()
-                        report_entries = (
-                            tuple(final_entries) if message.has_final_report else None
-                        )
                         if self._missed_native:
-                            return self.observation.finish(
+                            return self._finish_observation(
                                 "capacity",
                                 "原生采集记录未能全部交接",
-                                report_entries=report_entries,
-                                report_bytes=final_bytes,
                                 sink_error=message.sink_error,
                             )
-                        return self.observation.finish(
-                            "complete",
-                            report_entries=report_entries,
-                            report_bytes=final_bytes,
-                            sink_error=message.sink_error,
+                        return self._finish_observation(
+                            "complete", sink_error=message.sink_error
                         )
                     break
                 elif isinstance(message, Failed):
@@ -410,6 +430,4 @@ class LogFlowSession:
         if not await self._stop_worker():
             detail += "；worker 退出未确认"
         self._ready.set()
-        return self.observation.finish(
-            reason, detail, requires_final_report=self._requires_final_report
-        )
+        return self._finish_observation(reason, detail)

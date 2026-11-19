@@ -26,6 +26,7 @@ from .contracts import (
     Closed,
     Failed,
     FinalEntry,
+    FinalReportReady,
     InputRecord,
     Observed,
     PipelineSpec,
@@ -329,6 +330,7 @@ def _run_pipeline(
                 ),
                 remaining_bytes=MAX_NODE_BYTES - final_bytes,
             )
+        _send(pipe, FinalReportReady())
     if sink is not None:
         closing_sink = True
         try:
@@ -336,9 +338,7 @@ def _run_pipeline(
         except Exception as exc:
             if not sink_error:
                 sink_error = f"close: {type(exc).__name__}"
-    _send(
-        pipe, Closed(has_final_report=postprocessor is not None, sink_error=sink_error)
-    )
+    _send(pipe, Closed(sink_error=sink_error))
 
 
 def main() -> int:

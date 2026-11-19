@@ -162,7 +162,6 @@ class Observed(BaseModel):
 
 class Closed(BaseModel):
     kind: Literal["closed"] = "closed"
-    has_final_report: bool = False
     sink_error: str = ""
 
 
@@ -177,6 +176,10 @@ class FinalEntry(BaseModel):
     entry: ReportEntry
 
 
+class FinalReportReady(BaseModel):
+    kind: Literal["final_report_ready"] = "final_report_ready"
+
+
 class Failed(BaseModel):
     kind: Literal["failed"] = "failed"
     reason: Literal["worker_error", "capacity"] = "worker_error"
@@ -184,6 +187,7 @@ class Failed(BaseModel):
 
 
 type WorkerMessage = Annotated[
-    Ready | Observed | FinalEntry | Closed | Failed, Field(discriminator="kind")
+    Ready | Observed | FinalEntry | FinalReportReady | Closed | Failed,
+    Field(discriminator="kind"),
 ]
 WORKER_MESSAGE: TypeAdapter[WorkerMessage] = TypeAdapter(WorkerMessage)

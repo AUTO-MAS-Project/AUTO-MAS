@@ -73,6 +73,8 @@ class _SampleSink:
             stream.write(f"{node.source}:{node.text}\n")
 
     def close(self):
+        if self.mode == "block_close":
+            time.sleep(60)
         with self.path.open("a", encoding="utf-8") as stream:
             stream.write("closed\n")
 
