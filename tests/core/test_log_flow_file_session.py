@@ -34,6 +34,7 @@ from app.core.log_flow.contracts import (
 )
 from app.core.log_flow.declaration import GeneralFlowDeclaration, SimpleFlowDeclaration
 from app.core.log_flow.manager import open_for_run
+from app.core.log_flow.ownership import FlowOwner
 from app.core.log_flow.report import render_node_details
 from app.core.log_flow.session import LogFlowSession, SessionOpenError
 from app.core.log_flow.simple import (
@@ -219,6 +220,69 @@ async def test_stuck_worker_is_reaped_and_keeps_already_observed_nodes(tmp_path)
 async def test_invalid_rule_prevents_worker_readiness(tmp_path):
     with pytest.raises(SessionOpenError, match="unterminated subpattern"):
         await LogFlowSession.open(pipeline(tmp_path / "script.log", match="("))
+
+
+@pytest.mark.asyncio
+async def test_repeated_start_cancellation_keeps_worker_registered(
+    tmp_path, monkeypatch
+):
+    pid_path = tmp_path / "worker.pid"
+    run = TaskUserItem()
+    owner = FlowOwner(lambda: True)
+    stopping = asyncio.Event()
+    release_stop = asyncio.Event()
+    terminate = LogFlowSession._terminate_worker
+
+    async def pause_before_termination(session):
+        stopping.set()
+        await release_stop.wait()
+        return await terminate(session)
+
+    monkeypatch.setattr(LogFlowSession, "_terminate_worker", pause_before_termination)
+    spec = PipelineSpec(
+        source=WorkerFactorySpec(
+            factory=FunctionRef(
+                name="probe:start",
+                module="tests.support.log_flow_functions",
+                attribute="blocking_start_source",
+            ),
+            options={"pid_path": str(pid_path)},
+        )
+    )
+
+    async def start():
+        async with owner.open(run, spec):
+            pytest.fail("worker 启动尚未完成")
+
+    starting = asyncio.create_task(start())
+    closing = None
+    try:
+        async with asyncio.timeout(5):
+            while not pid_path.exists() or not (pid := pid_path.read_text()).strip():
+                await asyncio.sleep(0.01)
+        process = psutil.Process(int(pid))
+        starting.cancel()
+        await asyncio.wait_for(stopping.wait(), 3)
+        starting.cancel()
+        closing = asyncio.create_task(owner.close())
+        await asyncio.wait({starting, closing}, timeout=0.05)
+        assert owner.has_workers and not closing.done()
+
+        release_stop.set()
+        with pytest.raises(asyncio.CancelledError):
+            await starting
+        await asyncio.wait_for(closing, 3)
+        await asyncio.to_thread(process.wait, timeout=2)
+        assert not owner.has_workers
+        assert run.node_observation is not None
+        assert run.node_observation.summary is not None
+        assert not run.node_observation.summary.complete
+    finally:
+        release_stop.set()
+        starting.cancel()
+        await asyncio.gather(starting, return_exceptions=True)
+        if closing is not None:
+            await asyncio.gather(closing, return_exceptions=True)
 
 
 @pytest.mark.asyncio

@@ -83,6 +83,12 @@ def sample_source(_options: Mapping[str, JsonValue]) -> _SampleSource:
     return _SampleSource()
 
 
+def blocking_start_source(options: Mapping[str, JsonValue]) -> _SampleSource:
+    Path(str(options["pid_path"])).write_text(str(os.getpid()), encoding="utf-8")
+    time.sleep(60)
+    return _SampleSource()
+
+
 def sample_sink(options: Mapping[str, JsonValue]) -> _SampleSink:
     return _SampleSink(Path(str(options["path"])), str(options["mode"]))
 
