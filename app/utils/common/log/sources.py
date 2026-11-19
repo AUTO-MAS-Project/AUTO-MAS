@@ -167,7 +167,13 @@ class LogSource:
                 return []
             file = open(self.path, "rb", opener=LOG_READ_OPENER)
         except FileNotFoundError:
-            return []
+            if not self.strict_io or self._file_id is None:
+                return []
+            # 轮转可能先改名，再创建当前文件。保留旧身份，供下轮继续排空。
+            rotated = self._read_rotated(self._file_id)
+            self._offset = rotated.offset
+            self.has_more = rotated.has_more
+            return rotated.lines
         except OSError:
             if self.strict_io:
                 raise
