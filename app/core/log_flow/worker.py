@@ -96,20 +96,28 @@ def _run_pipeline(
             raise TypeError(f"报告归并器不可调用：{ref.name}")
         postprocessor = cast(PostProcessor, implementation)
 
-    def build_processor() -> TextProcessor:
+    processors: dict[NodeSource, TextProcessor] = {}
+
+    def release_processor(source_name: NodeSource) -> None:
+        if (processor := processors.pop(source_name, None)) is not None:
+            for _ in processor.close():
+                pass
+
+    def build_processor(source_name: NodeSource) -> TextProcessor:
         if config.processor is not None:
-            return build_custom_processor(config.processor)
+            processor = build_custom_processor(config.processor)
+            cleanup.callback(release_processor, source_name)
+            return processor
         if config.general_patterns is not None:
             return GeneralRuleProcessor(config.general_patterns, config.general_hooks)
         return RuleNodeProcessor(config, functions)
 
-    processors: dict[NodeSource, TextProcessor] = {}
     if config.file is not None:
-        processors["file"] = build_processor()
+        processors["file"] = build_processor("file")
     if config.accept_push:
-        processors["push"] = build_processor()
+        processors["push"] = build_processor("push")
     if config.accept_mas:
-        processors["mas"] = build_processor()
+        processors["mas"] = build_processor("mas")
     custom_source = (
         cast(Source, create_extension(config.source))
         if config.source is not None
@@ -117,7 +125,7 @@ def _run_pipeline(
     )
     sink: Sink | None = None
     if custom_source is not None:
-        processors["custom"] = build_processor()
+        processors["custom"] = build_processor("custom")
         custom_source.open()
 
         def release_source() -> None:
@@ -263,7 +271,8 @@ def _run_pipeline(
         if closing:
             break
     reader.join()
-    for source_name, processor in processors.items():
+    for source_name in tuple(processors):
+        processor = processors.pop(source_name)
         for result in processor.close():
             emit(
                 result,

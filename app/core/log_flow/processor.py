@@ -3,7 +3,7 @@
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from importlib import import_module
-from typing import Protocol, cast
+from typing import Protocol, cast, runtime_checkable
 
 from pydantic import JsonValue
 
@@ -22,7 +22,7 @@ from .contracts import MAX_FRAME_BYTES, FunctionRef, PipelineSpec, ProcessorFact
 
 
 class TextProcessor(Protocol):
-    """一个输入来源在 worker 内独占的处理实例。"""
+    """单来源处理实例。可实现 open()，在 worker 就绪前初始化。"""
 
     def process(self, line: str) -> Iterable[tuple[str, str]]: ...
 
@@ -32,10 +32,18 @@ class TextProcessor(Protocol):
 type ProcessorFactory = Callable[[Mapping[str, JsonValue]], TextProcessor]
 
 
+@runtime_checkable
+class _ProcessorOpen(Protocol):
+    def open(self) -> None: ...
+
+
 def build_custom_processor(spec: ProcessorFactorySpec) -> TextProcessor:
     ref = spec.factory
     factory = cast(ProcessorFactory, getattr(import_module(ref.module), ref.attribute))
-    return factory(spec.options)
+    processor = factory(spec.options)
+    if isinstance(processor, _ProcessorOpen):
+        processor.open()
+    return processor
 
 
 def load_functions(refs: tuple[FunctionRef, ...]) -> dict[str, ExpressionFunction]:

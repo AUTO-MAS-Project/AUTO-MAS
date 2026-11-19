@@ -16,23 +16,31 @@ def report_worker_pid(_text: str, _args: list[str | int]) -> str:
 
 
 class _PrefixProcessor:
-    def __init__(self, prefix: str) -> None:
+    def __init__(self, prefix: str, release_marker: Path | None) -> None:
         self.prefix = prefix
+        self.release_marker = release_marker
+
+    def open(self) -> None:
         self.count = 0
 
     def process(self, line: str):
+        if line == "crash":
+            raise RuntimeError("sample processor failed")
         if line.startswith("done:"):
             self.count += 1
             yield "普通", f"{self.prefix}{line.strip().removeprefix('done:')}"
 
     def close(self):
+        if self.release_marker is not None:
+            self.release_marker.write_text("released", encoding="utf-8")
         yield "普通", f"合计: {self.count}"
 
 
 def prefix_processor(options: Mapping[str, JsonValue]) -> _PrefixProcessor:
     prefix = options["prefix"]
     assert isinstance(prefix, str)
-    return _PrefixProcessor(prefix)
+    marker = options.get("release_marker")
+    return _PrefixProcessor(prefix, Path(str(marker)) if marker is not None else None)
 
 
 class _SampleSource:

@@ -118,6 +118,34 @@ async def test_invalid_rule_prevents_worker_readiness(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_custom_processor_releases_resources_after_a_processing_error(tmp_path):
+    marker = tmp_path / "released.txt"
+    session = await LogFlowSession.open(
+        PipelineSpec(
+            accept_push=True,
+            processor=ProcessorFactorySpec(
+                factory=FunctionRef(
+                    name="probe:prefix",
+                    module="tests.support.log_flow_functions",
+                    attribute="prefix_processor",
+                ),
+                options={"prefix": "", "release_marker": str(marker)},
+            ),
+        )
+    )
+    try:
+        reporter = session.push_reporter()
+        assert reporter.text("done:first") == SubmitResult.ACCEPTED
+        assert reporter.text("crash") == SubmitResult.ACCEPTED
+        summary = await session.close()
+        assert summary.reason == "worker_error"
+        assert [node.text for node in summary.nodes] == ["first"]
+        assert marker.read_text(encoding="utf-8") == "released"
+    finally:
+        await session.close()
+
+
+@pytest.mark.asyncio
 async def test_unavailable_worker_does_not_prevent_execution_inside_flow():
     run = TaskUserItem()
     reports = []
