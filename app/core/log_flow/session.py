@@ -351,12 +351,19 @@ class LogFlowSession:
     async def _terminate_worker(self) -> bool:
         if self._writer is not None:
             self._writer.cancel()
-        with suppress(ProcessLookupError):
-            self._process.kill()
-        close_process_pipes(self._process)
         # Windows 需要确认 Job 中的实际解释器和启动器都已退出。
         job = self._job
         try:
+            try:
+                self._process.kill()
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                if job is None:
+                    raise
+                # 启动器句柄拒绝终止时，仍使用已有 Job 回收进程组。
+            finally:
+                close_process_pipes(self._process)
             if job is not None:
                 # Job 自己有退出确认期限；在后台线程等它结束后再关闭句柄，避免争用 Job 锁。
                 await asyncio.to_thread(job.kill)

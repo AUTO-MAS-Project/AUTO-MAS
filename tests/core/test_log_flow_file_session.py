@@ -190,10 +190,30 @@ async def test_file_session_streams_and_closes_with_final_complete_lines(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_stuck_worker_is_reaped_and_keeps_already_observed_nodes(tmp_path):
+@pytest.mark.parametrize(
+    "launcher_denied",
+    [
+        False,
+        pytest.param(
+            True,
+            marks=pytest.mark.skipif(
+                sys.platform != "win32", reason="使用 Windows Job 回收"
+            ),
+        ),
+    ],
+)
+async def test_stuck_worker_is_reaped_and_keeps_already_observed_nodes(
+    tmp_path, monkeypatch, launcher_denied
+):
     path = tmp_path / "script.log"
     session = await LogFlowSession.open(pipeline(path))
     process = psutil.Process(session.pid)
+    if launcher_denied:
+
+        def deny_launcher_kill():
+            raise PermissionError("启动器拒绝终止")
+
+        monkeypatch.setattr(session._process, "kill", deny_launcher_kill)
     try:
         append(path, "done:1\n")
         await wait_for_first_node(session)
