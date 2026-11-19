@@ -44,6 +44,7 @@ class PipelineSpec(BaseModel, frozen=True):
     rules: tuple[LineRule, ...] = ()
     windows: tuple[WindowRule, ...] = Field(default=(), max_length=16)
     accept_push: bool = False
+    accept_mas: bool = False
     functions: tuple[FunctionRef, ...] = ()
     postprocess: FunctionRef | None = None
     general_patterns: str | None = None
@@ -51,7 +52,7 @@ class PipelineSpec(BaseModel, frozen=True):
 
     @model_validator(mode="after")
     def check_sources(self) -> Self:
-        if self.file is None and not self.accept_push:
+        if self.file is None and not (self.accept_push or self.accept_mas):
             raise ValueError("至少声明一个日志来源")
         if self.file is not None and not (
             self.rules or self.windows or self.general_patterns is not None

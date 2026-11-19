@@ -80,6 +80,7 @@ def _collect(config: PipelineSpec, pipe: BufferedWriter) -> None:
         processors["file"] = build_processor()
     if config.accept_push:
         processors["push"] = build_processor()
+    if config.accept_mas:
         processors["mas"] = build_processor()
     source = None
     if config.file is not None:
@@ -134,8 +135,11 @@ def _collect(config: PipelineSpec, pipe: BufferedWriter) -> None:
         if isinstance(record, Exception):
             raise record
         if record is not None:
-            if not config.accept_push:
-                raise ValueError("该会话未声明上报来源")
+            source_name = (
+                "push" if isinstance(record, ReportedRecord) else record.source
+            )
+            if source_name not in processors:
+                raise ValueError("该会话未声明消息来源")
             if isinstance(record, ReportedRecord):
                 emit(
                     (record.node_type, record.text),

@@ -48,13 +48,18 @@ class LogFlowSession:
         *,
         job: TaskProcessJob | None,
         accept_push: bool,
+        accept_mas: bool,
         observation: NodeObservation,
         requires_final_report: bool,
     ) -> None:
         self._process = process
         self._job = job
+        self._accept_push = accept_push
+        self._accept_mas = accept_mas
         self._outbox: asyncio.Queue[bytes | None] | None = (
-            asyncio.Queue(MAX_PENDING_RECORDS + 1) if accept_push else None
+            asyncio.Queue(MAX_PENDING_RECORDS + 1)
+            if accept_push or accept_mas
+            else None
         )
         self._writer: asyncio.Task[None] | None = None
         self.observation = observation
@@ -101,6 +106,7 @@ class LogFlowSession:
                     process,
                     job=job,
                     accept_push=config.accept_push,
+                    accept_mas=config.accept_mas,
                     requires_final_report=config.postprocess is not None,
                     observation=observation
                     if observation is not None
@@ -144,6 +150,15 @@ class LogFlowSession:
 
     def submit(self, record: InputRecord) -> bool:
         """接受到当前会话的宿主队列；不承诺处理完成，不等待堵塞的 worker。"""
+        if (
+            not self._accept_push
+            or isinstance(record, TextRecord)
+            and record.source == "mas"
+        ):
+            return False
+        return self._enqueue(record)
+
+    def _enqueue(self, record: InputRecord) -> bool:
         outbox = self._outbox
         if (
             outbox is None
@@ -162,13 +177,13 @@ class LogFlowSession:
 
     def native_line_receiver(self) -> Callable[[str], None]:
         """取得宿主监控器的窄输入回调，声明缺失时在绑定阶段发现。"""
-        if self._outbox is None:
+        if not self._accept_mas:
             raise ValueError("该会话未启用宿主日志输入")
         return self._accept_native_line
 
     def _accept_native_line(self, line: str) -> None:
         """由已绑定的 MAS 采集器调用；丢失必须反映在采集摘要。"""
-        if not self.submit(TextRecord(text=line, source="mas")):
+        if not self._enqueue(TextRecord(text=line, source="mas")):
             if self._closing is None and not self._receiver.done():
                 self._missed_native = True
 

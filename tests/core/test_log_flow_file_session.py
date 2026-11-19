@@ -21,6 +21,7 @@ from app.core.log_flow.contracts import (
 from app.core.log_flow.manager import open_for_run
 from app.core.log_flow.report import render_node_details
 from app.core.log_flow.session import LogFlowSession, SessionOpenError
+from app.core.log_flow.simple import SimpleFlowDeclaration, open_simple_flow
 from app.core.notify.report import render_scatter_push_log
 from app.models.log_flow import InvalidObservationCursor
 from app.models.task import TaskUserItem
@@ -188,16 +189,28 @@ async def test_push_returns_backpressure_without_blocking_host():
 
 
 @pytest.mark.asyncio
-async def test_native_monitor_shares_raw_lines_without_changing_display():
-    session = await LogFlowSession.open(
-        PipelineSpec(
-            accept_push=True,
-            rules=(
-                LineRule(match="done:", extract=r"$(done:(\d+))", node_type="success"),
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    [
+        ("逐条", [["✅ 成功: 7", "✅ 成功: 8"]]),
+        ("汇总", [["✅ 成功: 7, 8"]]),
+        ("关闭", []),
+    ],
+)
+async def test_default_flow_shares_live_nodes_and_delivers_selected_report(
+    mode, expected
+):
+    declaration = SimpleFlowDeclaration(
+        rules=(LineRule(match="^✅ 成功:", node_type="普通"),),
+        windows=(
+            WindowRule(
+                start="^BEGIN", end="^END", extract='"✅ 成功: 8"', node_type="普通"
             ),
-        )
+        ),
     )
+    run = TaskUserItem(user_id="test")
     display: list[str] = []
+    reports: list[list[str]] = []
 
     async def save_display(lines, latest_time):
         display[:] = lines
@@ -207,23 +220,35 @@ async def test_native_monitor_shares_raw_lines_without_changing_display():
         "",
         save_display,
         line_hook=lambda line: "显示已改写" if line else None,
-        on_raw_line=session.native_line_receiver(),
     )
-    try:
+    async with open_simple_flow(
+        declaration, run=run, monitor=monitor, mode=mode, receive_report=reports.append
+    ) as read_nodes:
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-c",
-            "print('done:7')",
+            "import sys; sys.stdout.buffer.write('✅ 成功: 7\\nBEGIN\\n'.encode('utf-8'))",
             stdout=asyncio.subprocess.PIPE,
         )
         await asyncio.wait_for(monitor.monitor_process(process, "stdout"), 5)
         assert await process.wait() == 0
-        assert display == ["显示已改写"]
-        summary = await session.close()
-        assert summary.complete
-        assert [(node.source, node.text) for node in summary.nodes] == [("mas", "7")]
-    finally:
-        await session.close(timeout=0)
+        assert display and all(line == "显示已改写" for line in display)
+        async with asyncio.timeout(5):
+            while not (page := read_nodes()).nodes:
+                await asyncio.sleep(0.01)
+        observation = run.node_observation
+        assert observation is not None
+        assert page == observation.read()
+        assert [(node.source, node.text) for node in page.nodes] == [
+            ("mas", "✅ 成功: 7")
+        ]
+        assert page.close_reason is None
+        assert reports == []
+    assert reports == expected
+    assert monitor.on_raw_line is None
+    closed = read_nodes(after=page.cursor)
+    assert closed.close_reason == "complete"
+    assert [node.text for node in closed.nodes] == ["✅ 成功: 8"]
 
 
 @pytest.mark.asyncio
