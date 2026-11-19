@@ -29,14 +29,14 @@ class LogReadLimitExceeded(ValueError):
     """一次增量超过已声明的读取预算。"""
 
 
-def _file_identity(stat: os.stat_result) -> tuple[int, int]:
+def file_identity(stat: os.stat_result) -> tuple[int, int]:
     """Windows 显式使用创建时间，路径与句柄返回的 ctime 可能不同。"""
     if sys.platform == "win32":
         return stat.st_ino, stat.st_birthtime_ns
     return stat.st_ino, stat.st_dev
 
 
-_READ_OPENER: Callable[[str, int], int] | None = None
+LOG_READ_OPENER: Callable[[str, int], int] | None = None
 
 if sys.platform == "win32":
 
@@ -64,7 +64,7 @@ if sys.platform == "win32":
         handle.Detach()  # 之后由 fd 关闭原生句柄。
         return descriptor
 
-    _READ_OPENER = _open_shared_read_fd
+    LOG_READ_OPENER = _open_shared_read_fd
 
 
 @dataclass(frozen=True)
@@ -84,7 +84,7 @@ def capture_file_cursor(path: PathLike, *, start_from_end: bool) -> FileCursor:
         return FileCursor(0, None)
     if not S_ISREG(stat.st_mode):
         raise ValueError("日志来源必须是普通文件")
-    return FileCursor(stat.st_size if start_from_end else 0, _file_identity(stat))
+    return FileCursor(stat.st_size if start_from_end else 0, file_identity(stat))
 
 
 class LogSource:
@@ -134,7 +134,7 @@ class LogSource:
             elif self.path.is_file():
                 stat = self.path.stat()
                 cursor = FileCursor(
-                    stat.st_size if self.start_from_end else 0, _file_identity(stat)
+                    stat.st_size if self.start_from_end else 0, file_identity(stat)
                 )
             else:
                 cursor = FileCursor(0, None)
@@ -155,7 +155,7 @@ class LogSource:
                 if self.strict_io:
                     raise ValueError("日志来源必须是普通文件")
                 return []
-            file = open(self.path, "rb", opener=_READ_OPENER)
+            file = open(self.path, "rb", opener=LOG_READ_OPENER)
         except FileNotFoundError:
             return []
         except OSError:
@@ -168,7 +168,7 @@ class LogSource:
                 stat = os.fstat(file.fileno())
                 if self.strict_io and not S_ISREG(stat.st_mode):
                     raise ValueError("日志来源必须是普通文件")
-                current_id = _file_identity(stat)
+                current_id = file_identity(stat)
                 offset = self._offset
                 rotated_lines = []
                 if self._file_id is not None and current_id != self._file_id:
@@ -215,11 +215,11 @@ class LogSource:
                 stat = candidate.stat()
             except OSError:
                 continue
-            if not S_ISREG(stat.st_mode) or _file_identity(stat) != file_id:
+            if not S_ISREG(stat.st_mode) or file_identity(stat) != file_id:
                 continue
             try:
-                with open(candidate, "rb", opener=_READ_OPENER) as file:
-                    if _file_identity(os.fstat(file.fileno())) == file_id:
+                with open(candidate, "rb", opener=LOG_READ_OPENER) as file:
+                    if file_identity(os.fstat(file.fileno())) == file_id:
                         lines, _ = self._read_stream(file, self._offset)
                         return lines
             except FileNotFoundError:
@@ -244,7 +244,7 @@ class LogSource:
                     return []  # 找到了旧文件，但没有尚未读取的完整内容。
                 continue
             try:
-                with open(bak, "rb", opener=_READ_OPENER) as file:
+                with open(bak, "rb", opener=LOG_READ_OPENER) as file:
                     lines, _ = self._read_stream(file, offset)
                     return lines
             except OSError:

@@ -6,7 +6,9 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import psutil
 import pytest
@@ -444,6 +446,90 @@ async def test_simple_flow_handles_stdout_burst_from_real_log_monitor():
     assert observation is not None
     assert observation.read().close_reason == "complete"
     assert len(observation.snapshot()) == 1024
+
+
+@pytest.mark.asyncio
+async def test_native_file_monitor_does_not_replay_append_when_ctime_changes(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "script.log"
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    append(path, f"{stamp} done:first\n")
+    original_stat = Path.stat
+    ctime_delta = 0
+    saw_append = asyncio.Event()
+
+    def stat_with_changed_ctime(target, *args, **kwargs):
+        stat = original_stat(target, *args, **kwargs)
+        if target != path:
+            return stat
+        fields = ["st_ino", "st_dev", "st_size", "st_mode", "st_mtime"]
+        if sys.platform == "win32":
+            fields.append("st_birthtime_ns")
+        return SimpleNamespace(
+            **{field: getattr(stat, field) for field in fields},
+            st_ctime_ns=stat.st_ctime_ns + ctime_delta,
+        )
+
+    async def display(lines, _latest_time):
+        nonlocal ctime_delta
+        if lines and not ctime_delta:
+            append(path, f"{stamp} done:second\n")
+            ctime_delta = 1
+        if lines and "done:second" in lines[-1]:
+            saw_append.set()
+
+    monkeypatch.setattr(Path, "stat", stat_with_changed_ctime)
+    monitor = LogMonitor((0, 19), "%Y-%m-%d %H:%M:%S", display)
+    run = TaskUserItem()
+    flow = SimpleFlowDeclaration(
+        rules=(LineRule(match="done:", extract=r"$(done:(\w+))", node_type="普通"),)
+    )
+    async with open_simple_flow(
+        flow, run=run, monitor=monitor, mode="关闭", receive_report=lambda _: None
+    ):
+        await monitor.start_monitor_file(
+            lambda: path, datetime.now() - timedelta(seconds=10)
+        )
+        try:
+            await asyncio.wait_for(saw_append.wait(), 5)
+        finally:
+            await monitor.stop()
+    assert run.node_observation is not None
+    assert [node.text for node in run.node_observation.snapshot()] == [
+        "first",
+        "second",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_script_can_rotate_while_native_file_monitor_reads(tmp_path):
+    path = tmp_path / "script.log"
+    rotated = path.with_suffix(".bak")
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    append(path, f"{stamp} done:first\n")
+    read = asyncio.Event()
+
+    def roll_after_first_line(line):
+        if "done:first" in line and not rotated.exists():
+            path.rename(rotated)
+        return line
+
+    async def display(lines, _latest_time):
+        if lines:
+            read.set()
+
+    monitor = LogMonitor(
+        (0, 19), "%Y-%m-%d %H:%M:%S", display, line_hook=roll_after_first_line
+    )
+    await monitor.start_monitor_file(
+        lambda: path, datetime.now() - timedelta(seconds=10)
+    )
+    try:
+        await asyncio.wait_for(read.wait(), 5)
+        assert rotated.is_file()
+    finally:
+        await monitor.stop()
 
 
 @pytest.mark.asyncio

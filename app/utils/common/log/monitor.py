@@ -31,6 +31,7 @@ import aiofiles
 
 from app.utils.common.constants import ANSI_ESCAPE_RE, TIME_FIELDS
 from app.utils.common.log.logger import get_logger
+from app.utils.common.log.sources import LOG_READ_OPENER, file_identity
 from app.utils.common.tools import decode_bytes
 
 
@@ -202,13 +203,10 @@ class LogMonitor:
                 # 轮转或文件被替换（同一路径上换了文件身份）：滚动前后属于
                 # 同一次运行，log_contents 与 if_log_start 保留不清空，否则
                 # 落库历史只剩轮转后内容（跨零点实测）；被重命名的旧文件按
-                # inode 在同目录找回，把未读尾部接回来。身份比对用
-                # (st_ino, st_ctime_ns) 双信号（与 log_box 的 LogSource 一致）：
-                # Windows 下 ctime 是创建时间，同文件追加不变、被替换才变化，
-                # 补上无 inode 文件系统上新文件长过旧 offset 时漏检替换的缺口
+                # inode 在同目录找回，把未读尾部接回来。身份规则与主动文件源共用。
                 current_stat = current_path.stat()
-                previous_id = (log_stat.st_ino, log_stat.st_ctime_ns)
-                current_id = (current_stat.st_ino, current_stat.st_ctime_ns)
+                previous_id = file_identity(log_stat)
+                current_id = file_identity(current_stat)
                 if previous_id != current_id or log_stat.st_size > current_stat.st_size:
                     if_log_start = await self._recover_rotated_tail(
                         current_path,
@@ -411,7 +409,7 @@ class LogMonitor:
         """
 
         try:
-            async with aiofiles.open(path, "rb") as f:
+            async with aiofiles.open(path, "rb", opener=LOG_READ_OPENER) as f:
                 await f.seek(offset)
                 async for bline in f:
                     offset = await f.tell()
