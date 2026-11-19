@@ -1258,6 +1258,7 @@ class _PluginManager:
     def resolve_script_expander(self, script, config):
         """托管锁内按实际启用声明分派；旧类型由调用方继续走旧工厂。"""
         from app.models.config import ScriptEntry
+        from app.models.task import TaskMode
 
         if not isinstance(config, ScriptEntry):
             return None
@@ -1268,6 +1269,19 @@ class _PluginManager:
             if isinstance(config, decl.script_type):
                 if script.task_info.info.mode not in decl.supported_modes:
                     raise PluginPrecheckError("该插件不支持当前执行模式")
+                # 旧 MAA 插件会重复运行已穷尽恢复的模拟器启动，必须在执行前升级。
+                if (
+                    script.task_info.info.mode == TaskMode.AUTO_PROXY
+                    and record.info.plugin_name == "maa_adapter"
+                    and (
+                        Version(record.info.version) < Version("0.1.4")
+                        or record.info.code_drift != PluginCodeDrift.NORMAL
+                    )
+                ):
+                    raise PluginPrecheckError(
+                        "MAA 专项插件需要 0.1.4 或更新版本并完成重载或重启，"
+                        "请在插件市场升级后重试"
+                    )
                 return decl.expander_class(script, config)
         raise PluginPrecheckError("托管所属插件当前不可用")
 

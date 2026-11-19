@@ -35,6 +35,10 @@ class EmulatorRuntimePolicy:
     resource_path: Path
 
 
+class EmulatorStartupError(RuntimeError):
+    """模拟器的安全启动恢复已结束，调用方不得叠加任务重试。"""
+
+
 class DeviceStatus(IntEnum):
     ONLINE = 0
     """设备在线"""

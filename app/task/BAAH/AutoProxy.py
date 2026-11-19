@@ -42,7 +42,7 @@ from app.core.notify.task_content import (
 )
 from app.core.ws import protocol
 from app.models.config import BAAHConfig, BAAHPlanConfig, BAAHUserConfig
-from app.models.emulator import DeviceBase
+from app.models.emulator import DeviceBase, EmulatorStartupError
 from app.models.notification import LocalNotice
 from app.models.schema import HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
@@ -443,6 +443,8 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             device_info = await self.emulator_manager.open(
                 str(self.script_config.Emulator.Index)
             )
+        except EmulatorStartupError:
+            raise
         except Exception as e:
             logger.opt(exception=True).warning(f"启动模拟器失败: {e}")
             await self.handle_pre_script_error("启动模拟器失败", e)

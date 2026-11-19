@@ -30,7 +30,12 @@ from app.core.notify.task_content import (
 )
 from app.core.ws import protocol
 from app.models.config import SrcConfig, SrcUserConfig
-from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
+from app.models.emulator import (
+    DeviceBase,
+    DeviceInfo,
+    DeviceStatus,
+    EmulatorStartupError,
+)
 from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
@@ -227,6 +232,8 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
                     self.script_config.Emulator.Index,
                     STARRAIL_PACKAGE_NAME[self.cur_user_config.Info.Server],
                 )
+            except EmulatorStartupError:
+                raise
             except Exception as e:
                 if not await self.handle_pre_src_error("模拟器启动失败", e):
                     return
