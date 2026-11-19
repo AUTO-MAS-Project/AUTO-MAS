@@ -404,18 +404,29 @@ async def test_large_file_backlog_drains_in_batches_through_close(tmp_path, rota
 
 
 @pytest.mark.asyncio
-async def test_file_backlog_reports_an_incomplete_session(tmp_path):
+@pytest.mark.parametrize("accept_push", [False, True])
+async def test_file_backlog_reports_an_incomplete_session(tmp_path, accept_push):
     path = tmp_path / "script.log"
-    session = await LogFlowSession.open(pipeline(path))
+    spec = pipeline(path).model_copy(update={"accept_push": accept_push})
+    session = await LogFlowSession.open(spec)
     try:
         append(path, "done:1\n")
         await wait_for_first_node(session)
         # 单行也可能超过预算；不能把它一直当作尚未闭合的尾部并声称完整。
         append(path, "x" * (2 * 1024 * 1024))
+        expected = ["1"]
+        if accept_push:
+            reporter = session.push_reporter()
+            for text in ("2", "3"):
+                assert reporter.node("普通", text) == SubmitResult.ACCEPTED
+                expected.append(text)
         summary = await session.close()
         assert summary.reason == "capacity"
-        assert [node.text for node in summary.nodes] == ["1"]
-        assert render_node_details(summary, mode="汇总") == ["1", "⚠️ 节点采集不完整"]
+        assert [node.text for node in summary.nodes] == expected
+        assert render_node_details(summary, mode="汇总") == [
+            *expected,
+            "⚠️ 节点采集不完整",
+        ]
         assert render_node_details(summary, mode="关闭") == []
     finally:
         await session.close()

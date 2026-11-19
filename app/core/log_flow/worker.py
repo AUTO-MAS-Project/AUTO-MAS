@@ -249,6 +249,7 @@ def _run_pipeline(
                 sink_error = f"write: {type(exc).__name__}"
 
     last_timestamp: dict[NodeSource, float | None] = {}
+    file_capacity_error = ""
 
     def emit_processed(
         result: ProcessorOutput, *, source_name: NodeSource, timestamp: float | None
@@ -305,12 +306,20 @@ def _run_pipeline(
             if source_name not in processors:
                 raise ValueError("该会话未声明消息来源")
             process_record(record, source_name=source_name)
-        if source is not None:
-            while True:
-                for line in source.read_new():
-                    process_text(line, source_name="file", timestamp=time.time())
-                if not closing or not source.has_more:
-                    break
+        while source is not None:
+            try:
+                lines = source.read_new()
+            except LogReadLimitExceeded as exc:
+                if len(processors) == 1:
+                    raise
+                # 文件读取超限只停止这个来源，让其他来源继续交接。
+                file_capacity_error = str(exc)
+                source = None
+                break
+            for line in lines:
+                process_text(line, source_name="file", timestamp=time.time())
+            if not closing or not source.has_more:
+                break
         if custom_source is not None:
             closing_source = closing
             for record in custom_source.close() if closing else custom_source.poll():
@@ -349,7 +358,7 @@ def _run_pipeline(
         except Exception as exc:
             if not sink_error:
                 sink_error = f"close: {type(exc).__name__}"
-    _send(pipe, Closed(sink_error=sink_error))
+    _send(pipe, Closed(sink_error=sink_error, file_capacity_error=file_capacity_error))
 
 
 def main() -> int:
