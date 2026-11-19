@@ -34,14 +34,16 @@ class PushReporter(Protocol):
 
 
 class GuardedReporter:
-    """会话能力随插件实例准入撤销，已接收记录仍由会话排空。"""
+    """没有可用会话或插件实例已撤销时返回已关闭。"""
 
-    def __init__(self, reporter: PushReporter, accepting: Callable[[], bool]) -> None:
+    def __init__(
+        self, reporter: PushReporter | None, accepting: Callable[[], bool]
+    ) -> None:
         self._reporter = reporter
         self._accepting = accepting
 
     def text(self, text: str, *, timestamp: float | None = None) -> SubmitResult:
-        if not self._accepting():
+        if self._reporter is None or not self._accepting():
             return SubmitResult.CLOSED
         return self._reporter.text(text, timestamp=timestamp)
 
@@ -54,13 +56,13 @@ class GuardedReporter:
         node_id: str | None = None,
         status: NodeDisplayStatus | None = None,
     ) -> SubmitResult:
-        if not self._accepting():
+        if self._reporter is None or not self._accepting():
             return SubmitResult.CLOSED
         return self._reporter.node(
             node_type, text, timestamp=timestamp, node_id=node_id, status=status
         )
 
     def withdraw(self, node_id: str) -> SubmitResult:
-        if not self._accepting():
+        if self._reporter is None or not self._accepting():
             return SubmitResult.CLOSED
         return self._reporter.withdraw(node_id)

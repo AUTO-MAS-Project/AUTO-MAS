@@ -119,6 +119,27 @@ async def test_invalid_rule_prevents_worker_readiness(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_unavailable_worker_does_not_prevent_execution_inside_flow():
+    run = TaskUserItem()
+    reports = []
+    declaration = SimpleFlowDeclaration(rules=(LineRule(match="(", node_type="普通"),))
+    async with open_custom_flow(
+        declaration,
+        run=run,
+        mode="汇总",
+        receive_report=reports.append,
+        accept_push=True,
+    ) as flow:
+        assert flow.read_nodes().close_reason == "worker_error"
+        assert flow.reporter is not None
+        assert flow.reporter.node("普通", "no worker") == SubmitResult.CLOSED
+        await run.set_state(status="完成")
+
+    assert run.info.status == "完成"
+    assert reports == [["⚠️ 节点采集不完整"]]
+
+
+@pytest.mark.asyncio
 async def test_file_backlog_reports_an_incomplete_session(tmp_path):
     path = tmp_path / "script.log"
     session = await LogFlowSession.open(pipeline(path))

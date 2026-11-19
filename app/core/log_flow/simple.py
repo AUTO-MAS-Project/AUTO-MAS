@@ -1,7 +1,7 @@
 """默认 LogFlow 的宿主装配；声明不携带执行对象或进程参数。"""
 
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -25,7 +25,7 @@ from .manager import open_for_run
 from .ownership import FlowOwner
 from .push import GuardedReporter, PushReporter
 from .report import ReportMode, render_node_details
-from .session import LogFlowSession
+from .session import LogFlowSession, SessionOpenError
 
 
 class SimpleFlowDeclaration(BaseModel, frozen=True):
@@ -95,7 +95,19 @@ async def open_custom_flow(
     opening = (
         owner.open(run, config) if owner is not None else _open_unowned(run, config)
     )
-    async with opening as session:
+    async with AsyncExitStack() as stack:
+        try:
+            session = await stack.enter_async_context(opening)
+        except SessionOpenError:
+            observation = run.node_observation
+            assert observation is not None
+            summary = observation.summary
+            assert summary is not None
+            reporter = GuardedReporter(None, lambda: False) if accept_push else None
+            yield FlowAccess(observation.read, reporter)
+            if mode != "关闭" and receive_report is not None:
+                receive_report(render_node_details(summary, mode=mode))
+            return
         receiver = session.native_line_receiver() if monitor is not None else None
         reporter = session.push_reporter() if accept_push else None
         if reporter is not None and owner is not None:
