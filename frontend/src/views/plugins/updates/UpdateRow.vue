@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import PluginReleaseNotes from '../components/PluginReleaseNotes.vue'
 import PluginAvatar from '../components/PluginAvatar.vue'
 import PluginOriginTag from '../components/PluginOriginTag.vue'
 import PluginStatusTag from '../components/PluginStatusTag.vue'
@@ -31,17 +32,19 @@ const buttonText = computed(() => {
   <div class="update-row">
     <PluginAvatar :icon="entry.icon" />
     <div class="update-row-main">
-      <div class="update-row-title">
-        <strong class="update-row-name">{{ entry.name }}</strong>
-        <span v-if="item.fromVersion || item.toVersion" class="update-row-versions">
-          <span v-if="item.fromVersion" class="update-row-version">{{ item.fromVersion }}</span>
-          <span v-if="item.fromVersion && item.toVersion" aria-hidden="true">→</span>
-          <span v-if="item.toVersion" class="update-row-version update-row-version--next">{{
-            item.toVersion
-          }}</span>
-        </span>
-        <PluginOriginTag :official="entry.official" :local="item.installed?.local" />
-      </div>
+      <PluginReleaseNotes :notes="entry.updateNotes" upgrade>
+        <div class="update-row-title">
+          <strong class="update-row-name">{{ entry.name }}</strong>
+          <span v-if="item.fromVersion || item.toVersion" class="update-row-versions">
+            <span v-if="item.fromVersion" class="update-row-version">{{ item.fromVersion }}</span>
+            <span v-if="item.fromVersion && item.toVersion" aria-hidden="true">→</span>
+            <span v-if="item.toVersion" class="update-row-version update-row-version--next">{{
+              item.toVersion
+            }}</span>
+          </span>
+          <PluginOriginTag :official="entry.official" :local="item.installed?.local" />
+        </div>
+      </PluginReleaseNotes>
     </div>
     <div class="update-row-actions">
       <PluginStatusTag v-if="phase" :status="phase" />
@@ -63,6 +66,10 @@ const buttonText = computed(() => {
   gap: 12px;
   padding: 14px 0;
   border-top: 1px solid var(--ant-color-border-secondary);
+}
+
+.update-row:has([aria-expanded='true']) {
+  align-items: flex-start;
 }
 
 .update-row:first-child {
