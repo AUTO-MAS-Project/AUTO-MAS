@@ -891,6 +891,8 @@ export type { MSSUserConfig_Task } from './models/MSSUserConfig_Task';
 export type { MSSUserConfig_TaskInput } from './models/MSSUserConfig_TaskInput';
 export type { MSSUserConfigInput } from './models/MSSUserConfigInput';
 export type { Node } from './models/Node';
+export type { NodeAttribute } from './models/NodeAttribute';
+export type { NodeAttributes } from './models/NodeAttributes';
 export { NodeDisplayStatus } from './models/NodeDisplayStatus';
 export { NodeSource } from './models/NodeSource';
 export type { NoticeOut } from './models/NoticeOut';

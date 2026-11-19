@@ -4,14 +4,29 @@ from dataclasses import dataclass
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool, StrictInt
 
 type NodeSource = Literal["file", "push", "mas", "custom"]
 type CloseReason = Literal["complete", "timeout", "worker_error", "capacity"]
 type ReportedNodeKey = Annotated[str, Field(pattern=r"^[A-Za-z0-9_.:-]{1,96}$")]
 type NodeDisplayStatus = Literal["success", "skipped", "failed", "warning", "info"]
 
+MAX_NODE_ATTRIBUTE_TEXT = 256
 _PAGE_BYTES = 256 * 1024
+
+
+class NodeAttribute(BaseModel, frozen=True):
+    key: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_.-]{0,47}$")
+    value: (
+        StrictBool
+        | StrictInt
+        | Annotated[float, Field(strict=True, allow_inf_nan=False)]
+        | Annotated[str, Field(strict=True, max_length=MAX_NODE_ATTRIBUTE_TEXT)]
+        | None
+    )
+
+
+type NodeAttributes = Annotated[tuple[NodeAttribute, ...], Field(max_length=16)]
 
 
 class Node(BaseModel, frozen=True):
@@ -24,6 +39,7 @@ class Node(BaseModel, frozen=True):
     revision: int = Field(default=1, ge=1)
     withdrawn: bool = False
     status: NodeDisplayStatus = "info"
+    attributes: NodeAttributes = ()
 
 
 @dataclass(frozen=True)

@@ -11,6 +11,7 @@ from app.api import dispatch
 from app.core.log_flow.contracts import PipelineSpec, ReportedRecord
 from app.core.log_flow.manager import open_for_run
 from app.models.config import GeneralConfig
+from app.models.log_flow import NodeAttribute
 from app.models.task import TaskMode
 from tests.support.scheduler import Builtin
 from tests.support.scheduler import scheduler as scheduler
@@ -35,7 +36,23 @@ async def test_observe_run_before_and_after_scheduler_completion(
                 reporter = session.push_reporter()
                 assert (
                     reporter.node(
-                        "error", "token=private", node_id="retry", status="failed"
+                        "error",
+                        "invalid attributes",
+                        attributes=(NodeAttribute(key="attempt", value=1),) * 17,
+                    )
+                    == "invalid"
+                )
+                assert (
+                    reporter.node(
+                        "error",
+                        "token=private",
+                        node_id="retry",
+                        status="failed",
+                        attributes=(
+                            NodeAttribute(key="attempt", value=1),
+                            NodeAttribute(key="detail", value="token=private"),
+                            NodeAttribute(key="probe.token", value="private"),
+                        ),
                     )
                     == "accepted"
                 )
@@ -45,7 +62,13 @@ async def test_observe_run_before_and_after_scheduler_completion(
                 first_emitted.set()
                 await finish.wait()
                 assert (
-                    reporter.node("success", "step two", node_id="retry") == "accepted"
+                    reporter.node(
+                        "success",
+                        "step two",
+                        node_id="retry",
+                        attributes=(NodeAttribute(key="attempt", value=2),),
+                    )
+                    == "accepted"
                 )
                 assert session.submit(
                     ReportedRecord(node_type="success", text="step three")
@@ -89,6 +112,13 @@ async def test_observe_run_before_and_after_scheduler_completion(
             assert page["closeReason"] is None
             assert page["nodes"][0]["revision"] == 1
             assert page["nodes"][0]["status"] == "failed"
+            assert page["nodes"][0]["attributes"] == [
+                {"key": "attempt", "value": 1},
+                {"key": "detail", "value": "token=***"},
+            ]
+            local_observation = first_user.node_observation
+            assert local_observation is not None
+            assert local_observation.snapshot()[0].attributes[-1].value == "private"
             cursor = page["cursor"]
             assert (
                 await client.get(path, params={**params, "after": 1})
@@ -124,6 +154,7 @@ async def test_observe_run_before_and_after_scheduler_completion(
         assert page["nodes"][0]["node_id"] == "push/retry"
         assert page["nodes"][0]["revision"] == 2
         assert page["nodes"][0]["status"] == "info"
+        assert page["nodes"][0]["attributes"] == [{"key": "attempt", "value": 2}]
         assert page["closeReason"] == "complete" and page["hasMore"] is True
         last = (
             await reconnected.get(
@@ -139,6 +170,7 @@ async def test_observe_run_before_and_after_scheduler_completion(
         assert [node["sequence"] for node in last["nodes"]] == [3, 4]
         assert last["nodes"][1]["node_id"] == "push/retry"
         assert last["nodes"][1]["revision"] == 3 and last["nodes"][1]["withdrawn"]
+        assert last["nodes"][1]["attributes"] == []
         assert [node.text for node in first_user.node_observation.snapshot()] == [
             "step three"
         ]

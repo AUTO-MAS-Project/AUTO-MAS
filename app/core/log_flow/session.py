@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from app.models.log_flow import (
     CloseReason,
     Node,
+    NodeAttributes,
     NodeDisplayStatus,
     NodeObservation,
     SessionSummary,
@@ -71,6 +72,7 @@ class _SessionReporter:
         timestamp: float | None = None,
         node_id: str | None = None,
         status: NodeDisplayStatus | None = None,
+        attributes: NodeAttributes = (),
     ) -> SubmitResult:
         try:
             record = ReportedRecord(
@@ -79,6 +81,7 @@ class _SessionReporter:
                 timestamp=timestamp,
                 node_id=node_id,
                 status=status,
+                attributes=attributes,
             )
         except ValidationError:
             return SubmitResult.INVALID

@@ -4,7 +4,7 @@ from collections.abc import Callable
 from enum import StrEnum
 from typing import Protocol
 
-from app.models.log_flow import NodeDisplayStatus
+from app.models.log_flow import NodeAttributes, NodeDisplayStatus
 
 
 class SubmitResult(StrEnum):
@@ -28,6 +28,7 @@ class PushReporter(Protocol):
         timestamp: float | None = None,
         node_id: str | None = None,
         status: NodeDisplayStatus | None = None,
+        attributes: NodeAttributes = (),
     ) -> SubmitResult: ...
 
     def withdraw(self, node_id: str) -> SubmitResult: ...
@@ -55,11 +56,17 @@ class GuardedReporter:
         timestamp: float | None = None,
         node_id: str | None = None,
         status: NodeDisplayStatus | None = None,
+        attributes: NodeAttributes = (),
     ) -> SubmitResult:
         if self._reporter is None or not self._accepting():
             return SubmitResult.CLOSED
         return self._reporter.node(
-            node_type, text, timestamp=timestamp, node_id=node_id, status=status
+            node_type,
+            text,
+            timestamp=timestamp,
+            node_id=node_id,
+            status=status,
+            attributes=attributes,
         )
 
     def withdraw(self, node_id: str) -> SubmitResult:

@@ -36,6 +36,7 @@ from pydantic import (
 
 from app.core import Power, TaskManager
 from app.models.log_flow import (
+    MAX_NODE_ATTRIBUTE_TEXT,
     CloseReason,
     InvalidObservationCursor,
     Node,
@@ -225,15 +226,32 @@ async def get_task_log_nodes(
             code=409, status="error", message="游标已失效，请从头读取"
         )
     return TaskLogNodesOut(
-        nodes=tuple(
-            node.model_copy(update={"text": sanitize_log_message(node.text)})
-            for node in page.nodes
-        ),
+        nodes=tuple(_public_log_node(node) for node in page.nodes),
         cursor=TaskLogCursor(
             sessionId=page.cursor.session_id, sequence=page.cursor.sequence
         ),
         hasMore=page.has_more,
         closeReason=page.close_reason,
+    )
+
+
+def _public_log_node(node: Node) -> Node:
+    attributes = []
+    for attribute in node.attributes:
+        key_probe = f"{attribute.key}=0"
+        if sanitize_log_message(key_probe) != key_probe:
+            continue
+        value = attribute.value
+        if isinstance(value, str):
+            attribute = attribute.model_copy(
+                update={"value": sanitize_log_message(value)[:MAX_NODE_ATTRIBUTE_TEXT]}
+            )
+        attributes.append(attribute)
+    return node.model_copy(
+        update={
+            "text": sanitize_log_message(node.text),
+            "attributes": tuple(attributes),
+        }
     )
 
 

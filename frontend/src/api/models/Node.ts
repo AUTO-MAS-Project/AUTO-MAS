@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { NodeAttributes } from './NodeAttributes';
 import type { NodeDisplayStatus } from './NodeDisplayStatus';
 import type { NodeSource } from './NodeSource';
 export type Node = {
@@ -14,5 +15,6 @@ export type Node = {
     revision?: number;
     withdrawn?: boolean;
     status?: NodeDisplayStatus;
+    attributes?: NodeAttributes;
 };
 

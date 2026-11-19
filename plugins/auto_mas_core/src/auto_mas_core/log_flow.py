@@ -27,6 +27,8 @@ from app.core.log_flow.report import LogFlowTaskReport, ReportMode
 from app.core.log_flow.simple import FlowAccess
 from app.models.log_flow import (
     Node,
+    NodeAttribute,
+    NodeAttributes,
     NodeDisplayStatus,
     ObservationCursor,
     ObservationPage,
@@ -75,6 +77,8 @@ __all__ = [
     "LineRule",
     "LogFlowTaskReport",
     "Node",
+    "NodeAttribute",
+    "NodeAttributes",
     "NodeDisplayStatus",
     "ObservationCursor",
     "ObservationPage",
