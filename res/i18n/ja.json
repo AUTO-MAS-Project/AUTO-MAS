@@ -1666,7 +1666,6 @@
   "core.edit.materialLightConeExp4": "素材：光円錐経験値（エーテルの蕾 オンファロス）",
   "core.edit.materialLightConeExp5": "素材：光円錐経験値（エーテルの蕾 ヤリーロ-Ⅵ）",
   "core.edit.materialStage": "素材ステージ",
-  "core.edit.maximumAttemptsFailedTask": "失敗したタスクの最大試行回数",
   "core.edit.maximumGameLaunchWait": "ゲーム起動の最大待機時間",
   "core.edit.maximumLines": "最大行数",
   "core.edit.maximumLinesWindowBefore": "範囲の最大行数。これに達すると強制的に閉じます",

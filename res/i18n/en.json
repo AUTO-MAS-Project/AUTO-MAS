@@ -1666,7 +1666,6 @@
   "core.edit.materialLightConeExp4": "Material: light cone EXP (以太之蕾 翁法罗斯)",
   "core.edit.materialLightConeExp5": "Material: light cone EXP (以太之蕾 雅利洛-Ⅵ)",
   "core.edit.materialStage": "Material stage",
-  "core.edit.maximumAttemptsFailedTask": "Maximum attempts for a failed task",
   "core.edit.maximumGameLaunchWait": "Maximum game launch wait",
   "core.edit.maximumLines": "Maximum lines",
   "core.edit.maximumLinesWindowBefore": "Maximum lines in a window before it is force-closed",

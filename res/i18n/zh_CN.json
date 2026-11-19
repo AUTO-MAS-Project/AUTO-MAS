@@ -1666,7 +1666,6 @@
   "core.edit.materialLightConeExp4": "材料：武器经验（以太之蕾 翁法罗斯）",
   "core.edit.materialLightConeExp5": "材料：武器经验（以太之蕾 雅利洛-Ⅵ）",
   "core.edit.materialStage": "材料关卡",
-  "core.edit.maximumAttemptsFailedTask": "失败任务最大尝试次数",
   "core.edit.maximumGameLaunchWait": "游戏最大启动等待时间",
   "core.edit.maximumLines": "最大行数",
   "core.edit.maximumLinesWindowBefore": "窗口最大跨行数，达到后强制关闭",
