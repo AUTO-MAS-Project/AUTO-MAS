@@ -188,11 +188,11 @@ General 的 WebUI 配置和专项 Python 声明分别适配到内部管线描述
 
 通过其他预装 Flow 或声明覆盖项，可以改用文件、主动上报、混合来源，或替换单个处理器或 sink。`CustomFlow` 是最底层的组合入口，仍复用宿主绑定、进程隔离与关闭预算；默认与高级入口共享装配核心和节点契约。这里不要求存在同名 Python 类，也不要求 `SimpleLogFlow` 继承 `CustomFlow`。通知默认由 MAS 提供逐条与汇总两种排版，按用户配置选一项，在收尾交付。
 
-首个模拟入口 `open_simple_flow()` 接受 `SimpleFlowDeclaration`。宿主提供运行对象、已选报告模式、监控器与报告接收回调；调用侧拿到只读分页函数。当前初始化策略是编译规则，收尾支持窗口冲刷与既有归并引用；通用 `open` 扩展和正式 Notify 仍待实现。内部已将 MAS 原始输入与主动上报分别启用，默认 Flow 只开 MAS 输入。
+宿主的 `open_simple_flow()` 接受 `SimpleFlowDeclaration`，绑定当前运行、原生监控器及报告接收方。调用侧拿到只读分页函数。内置处理器初始化时编译规则，收尾时冲刷窗口并按需对报告做后置归并。默认 Flow 仅启用 MAS 原生输入。
 
-局部替换原型已支持宿主选定可导入的处理器工厂及 JSON 参数。worker 为每个文本来源创建独立实例，沿用同一节点发送、观察与报告路径。默认规则与自定义处理器互斥。该工厂引用是内部装配契约，不能从外部协议直接传入，插件注册及代际管理仍待完成。
+插件通过 `BasePlugin.log_flows` 注册具名 `PluginFlowDeclaration`，使用 `auto_mas_core.log_flow.open_log_flow()` 绑定实际运行对象。默认声明只写节点规则，启用通知时由本次托管的 `LogFlowTaskReport` 统一接收。运行中 `FlowAccess.read_nodes()` 支持分页和补读。主动上报打开时，`FlowAccess.reporter` 是本会话的句柄。采集总开关由接入方从本次配置快照读取，关闭时直接执行业务。
 
-`open_custom_flow()` 目前是宿主内部组合入口：文件、监控器和主动上报可独立提供，默认入口复用同一套装配。上报能力绑定当前会话，不能自行指定归属或声明为 MAS 原始来源；关闭后不再接收。宿主可向 worker 传递选定的 Source/Sink 工厂和 JSON 参数；阶段内契约使用同步 `open/poll/close` 与 `open/write/close`，阻塞由进程收尾预算隔离。自定义来源的输出由 worker 标注 `custom`。sink 异常在摘要中独立记录并停止继续调用；节点观察仍由宿主承接。当前未提供插件注册或冻结 SDK。
+插件可从同一 SDK 模块导入 `Source`、`TextProcessor`、`Sink`、`ExpressionFunction`、来源记录及节点观察类型。工厂和函数由宿主校验为插件自己的包，配置按 JSON 传入 worker。文本处理器按来源创建独立实例。自定义来源返回的记录统一标记为 `custom`，自定义 sink 失败后停止调用，宿主继续承接节点。插件停用或重载时，旧实例的上报能力随采集会话关闭。
 
 ### 4.5 按职责命名及 Python 实现组织
 

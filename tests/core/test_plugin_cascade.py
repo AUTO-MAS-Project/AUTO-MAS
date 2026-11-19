@@ -163,15 +163,24 @@ async def test_plugin_declaration_loads_its_own_worker_factory_after_reload(
 
     def write_plugin(prefix):
         entry.write_text(
-            "from auto_mas_core.log_flow import FunctionRef, PluginFlowDeclaration, SimpleFlowDeclaration, WorkerFactorySpec\n"
+            "from auto_mas_core.log_flow import FunctionRef, PluginFlowDeclaration, SimpleFlowDeclaration, Source, TextProcessor, TextRecord, WorkerFactorySpec\n"
             "from app.plugin.base import BasePlugin\n"
             "class Processor:\n"
             "    def process(self, line):\n"
             f"        yield '普通', {prefix!r} + line\n"
             "    def close(self): return ()\n"
-            "def processor(options): return Processor()\n"
+            "def processor(options) -> TextProcessor: return Processor()\n"
+            "class SampleSource:\n"
+            "    def open(self): pass\n"
+            "    def poll(self): return ()\n"
+            "    def close(self): return (TextRecord(text='source tail'),)\n"
+            "def source(options) -> Source: return SampleSource()\n"
             "class Adapter(BasePlugin):\n"
-            "    log_flows = {'declared': PluginFlowDeclaration(use_mas_log=False, accept_push=True, rules=SimpleFlowDeclaration(processor=WorkerFactorySpec(factory=FunctionRef(name='declared:processor', module=__name__, attribute='processor'))))}\n"
+            "    log_flows = {'declared': PluginFlowDeclaration(\n"
+            "        use_mas_log=False, accept_push=True,\n"
+            "        rules=SimpleFlowDeclaration(processor=WorkerFactorySpec(factory=FunctionRef(name='declared:processor', module=__name__, attribute='processor'))),\n"
+            "        source=WorkerFactorySpec(factory=FunctionRef(name='declared:source', module=__name__, attribute='source')),\n"
+            "    )}\n"
             "PLUGIN = Adapter\n",
             encoding="utf-8",
         )
@@ -192,19 +201,22 @@ async def test_plugin_declaration_loads_its_own_worker_factory_after_reload(
     write_plugin("before:")
     await manager.reload(record)
     await manager.enable(record)
-    assert await collect() == [["before:event"]]
+    assert await collect() == [["before:event", "before:source tail"]]
     write_plugin("after!:")
     await manager.reload(record)
-    assert await collect() == [["after!:event"]]
+    assert await collect() == [["after!:event", "after!:source tail"]]
 
 
 @pytest.mark.asyncio
 async def test_declared_log_flow_delivers_one_task_report_via_notify(
     cascade_plugins, tmp_path, monkeypatch
 ):
-    from auto_mas_core.log_flow import LogFlowTaskReport
+    from auto_mas_core.log_flow import LogFlowTaskReport, open_log_flow
+
+    from app import core
 
     manager, records = await cascade_plugins({"flow_notify": ()})
+    monkeypatch.setattr(core, "Plugin", manager)
     record = records["flow_notify"]
     (tmp_path / "flow_notify" / "__init__.py").write_text(
         "from auto_mas_core.log_flow import FunctionRef, PluginFlowDeclaration, SimpleFlowDeclaration\n"
@@ -267,7 +279,7 @@ async def test_declared_log_flow_delivers_one_task_report_via_notify(
                 (second, "slow", None, "second step"),
                 (muted, "slow", "关闭", "muted step"),
             ]:
-                async with manager.open_log_flow(
+                async with open_log_flow(
                     record._plugin, key, run=run, mode=mode, task_report=report
                 ) as flow:
                     assert flow.reporter is not None
