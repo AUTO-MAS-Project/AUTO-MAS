@@ -580,6 +580,52 @@ async def test_native_file_monitor_keeps_offset_when_open_races_rotation(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("replace_file", [False, True])
+async def test_native_file_monitor_resumes_date_path_by_identity(
+    tmp_path, replace_file
+):
+    first = tmp_path / "day-one.log"
+    second = tmp_path / "day-two.log"
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    append(first, f"{stamp} first\n")
+    append(second, f"{stamp} other\n")
+    current = first
+    switched_back = False
+    finished = asyncio.Event()
+    raw = []
+
+    async def display(lines, _latest_time):
+        nonlocal current, switched_back
+        if not lines:
+            return
+        tail = lines[-1].split()[-1]
+        if tail == "first" and not switched_back:
+            current = second
+        elif tail == "other" and not switched_back:
+            append(first, f"{stamp} last0\n")
+            if replace_file:
+                first.rename(first.with_suffix(".bak"))
+                append(first, f"{stamp} new00\n{stamp} new01\n")
+            current = first
+            switched_back = True
+        elif tail == ("new01" if replace_file else "last0"):
+            finished.set()
+
+    monitor = LogMonitor((0, 19), "%Y-%m-%d %H:%M:%S", display, on_raw_line=raw.append)
+    await monitor.start_monitor_file(
+        lambda: current, datetime.now() - timedelta(seconds=10)
+    )
+    try:
+        await asyncio.wait_for(finished.wait(), 7)
+    finally:
+        await monitor.stop()
+    expected = ["first", "other", "last0"]
+    if replace_file:
+        expected.extend(("new00", "new01"))
+    assert [line.split()[-1] for line in raw] == expected
+
+
+@pytest.mark.asyncio
 async def test_webui_notifications_keep_general_log_time_prefix():
     async def discard_display(_lines, _latest_time):
         pass

@@ -131,10 +131,10 @@ class LogMonitor:
         warned_mtime_date: date | None = None
         if_log_start = False
         offset = initial_offset if initial_offset is not None else 0
+        log_stat: os.stat_result | None = None
         log_contents = []
-        # 按路径记忆读取偏移：时钟回拨可能让解析出的路径倒退回昨天，
-        # 若一律从 0 重读会把整份旧日志重复摄入。
-        read_offsets: dict[Path, int] = {current_path: offset}
+        # 日期路径可能因时钟回拨而重访。偏移必须与当时的文件状态一起恢复。
+        read_positions: dict[Path, tuple[int, os.stat_result | None]] = {}
         drain_failures = 0
 
         while True:
@@ -179,7 +179,7 @@ class LogMonitor:
                 )
                 # log_contents 与 if_log_start 保留：滚动前后属于同一次运行，
                 # 清空会丢掉午夜前累积的全部日志，历史记录也只剩后半截。
-                read_offsets[current_path] = offset
+                read_positions[current_path] = offset, log_stat
                 current_path = resolved
                 # 刷新 strptime 的基准日期：BetterGI 这类无日期的时间格式靠
                 # last_callback_time 补日期，若切换轮次里旧文件没有新行、没有
@@ -188,14 +188,14 @@ class LogMonitor:
                 self.last_callback_time = datetime.now()
                 if_mtime_checked = False
                 warned_mtime_date = None
-                offset = read_offsets.get(current_path, 0)
+                offset, log_stat = read_positions.get(current_path, (0, None))
 
             # 尝试读取文件
             try:
+                current_stat = current_path.stat()
                 if not if_mtime_checked:
-                    file_mtime_date = date.fromtimestamp(current_path.stat().st_mtime)
+                    file_mtime_date = date.fromtimestamp(current_stat.st_mtime)
                     if file_mtime_date == date.today():
-                        log_stat = current_path.stat()
                         if_mtime_checked = True
                     else:
                         if warned_mtime_date != file_mtime_date:
@@ -209,10 +209,13 @@ class LogMonitor:
                 # 同一次运行，log_contents 与 if_log_start 保留不清空，否则
                 # 落库历史只剩轮转后内容（跨零点实测）；被重命名的旧文件按
                 # 文件身份在同目录找回，把未读尾部接回来。身份规则与主动文件源共用。
-                current_stat = current_path.stat()
-                previous_id = file_identity(log_stat)
                 current_id = file_identity(current_stat)
-                if previous_id != current_id or log_stat.st_size > current_stat.st_size:
+                previous_id = (
+                    file_identity(log_stat) if log_stat is not None else current_id
+                )
+                if log_stat is not None and (
+                    previous_id != current_id or log_stat.st_size > current_stat.st_size
+                ):
                     if_log_start = await self._recover_rotated_tail(
                         current_path,
                         previous_id,
@@ -232,11 +235,7 @@ class LogMonitor:
                 log_stat = current_stat
 
                 if log_stat.st_size < offset:
-                    # 文件比记录的偏移还短，说明它被替换或截断过。按日期滚动
-                    # 切回旧路径时最容易撞上：offset 是离开前记住的，而文件在
-                    # 离开期间被换掉了，既有的缩水检测只比较在场期间的两次
-                    # stat，对此天然失明。不归零就会永远落进下面的「无变化」
-                    # 分支空转，新内容再也读不到。
+                    # 启动前记下的初始偏移可能已因截断而失效。
                     logger.info(
                         f"日志文件已被替换或截断（{log_stat.st_size} < {offset}），从头重读"
                     )
