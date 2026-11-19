@@ -1,6 +1,7 @@
 import log from 'electron-log'
 import * as path from 'path'
 import { app } from 'electron'
+import { getAppRoot } from './environmentService'
 import { isDevelopmentEnvironment } from './instanceConfig'
 
 /**
@@ -128,16 +129,14 @@ export function initializeLogger(): void {
     console.error('日志初始化失败: electron.app 不可用')
     return
   }
-  // 必须和 environmentService 的 getAppRoot() 同口径：日志窗读的是 `<appRoot>/debug`，
-  // 开发环境下 exe 是 node_modules 里的 electron.exe，写到那儿日志页永远读不到。
   const isDevelopment = isDevelopmentEnvironment()
-  const appPath = isDevelopment ? path.dirname(app.getAppPath()) : path.dirname(app.getPath('exe'))
+  const appRoot = getAppRoot()
 
   // 设置日志级别
   log.transports.file.level = 'info'
   configureConsoleOutput(isDevelopment)
 
-  log.transports.file.resolvePathFn = () => path.join(appPath, 'debug', 'frontend.log')
+  log.transports.file.resolvePathFn = () => path.join(appRoot, 'debug', 'frontend.log')
 
   // 设置日志格式
   log.transports.file.format = fileFormat

@@ -6,7 +6,7 @@ import { readBackendDocument } from '../backendConfig'
  * - 遥测：用户关闭匿名遥测时透传 `AUTO_MAS_TELEMETRY=disabled` 给 `auto-mas-runtime.exe`，
  *   让 Runtime 自己的上报也一并关闭；开启时不设该变量。`--offline` 是完全独立的网络开关
  *   （禁止任何联网尝试），不能拿来当遥测开关用；
- * - 运行环境由 Electron 打包状态决定，与 Runtime 的启动模式无关，经 Runtime 传给后端。
+ * - 运行环境由 Electron 打包状态与显式开发后端选择决定，经 Runtime 传给后端。
  *   开发环境额外禁用 Runtime 自身遥测；受监督时端口与退出仍遵守 Runtime 契约。
  *
  * 遥测开关的权威来源是后端持久化的 `GlobalConfig.Function.IfEnableTelemetry`
