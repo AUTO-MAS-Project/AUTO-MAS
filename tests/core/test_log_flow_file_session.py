@@ -1,7 +1,6 @@
 """用真实文件和进程守住实时可见、尾部冲刷及超时释放。"""
 
 import asyncio
-import json
 import os
 import sys
 from pathlib import Path
@@ -23,11 +22,11 @@ from app.core.log_flow.contracts import (
     WindowRule,
     WorkerFactorySpec,
 )
+from app.core.log_flow.declaration import SimpleFlowDeclaration
 from app.core.log_flow.manager import open_for_run
 from app.core.log_flow.report import render_node_details
 from app.core.log_flow.session import LogFlowSession, SessionOpenError
 from app.core.log_flow.simple import (
-    SimpleFlowDeclaration,
     open_custom_flow,
     open_simple_flow,
 )
@@ -659,48 +658,5 @@ async def test_oknte_shadow_report_matches_legacy_aggregation():
             "⏭ 跳过: 日常领取（当日已领取）, 清扫",
             "⚡ 剩余体力: 60",
         ]
-    finally:
-        await session.close(timeout=0)
-
-
-@pytest.mark.asyncio
-async def test_general_webui_rules_share_legacy_hook_and_match_order():
-    session = await LogFlowSession.open(
-        PipelineSpec(
-            accept_push=True,
-            general_hooks=json.dumps(
-                [
-                    {"type": "drop", "match": "^noise"},
-                    {
-                        "type": "replace",
-                        "match": "token=\\w+",
-                        "replace": "token=hidden",
-                    },
-                ]
-            ),
-            general_patterns=json.dumps(
-                [
-                    {
-                        "type": "regex",
-                        "match": ".+",
-                        "extract": '"停用"',
-                        "enabled": False,
-                    },
-                    {
-                        "type": "regex",
-                        "match": "redacted",
-                        "extract": r"$(token=(\w+))",
-                    },
-                    {"type": "split", "match": "redacted"},
-                ]
-            ),
-        )
-    )
-    try:
-        assert session.submit(TextRecord(text="noise redacted token=discarded"))
-        assert session.submit(TextRecord(text="redacted token=secret"))
-        summary = await session.close()
-        assert summary.complete
-        assert [node.text for node in summary.nodes] == ["hidden"]
     finally:
         await session.close(timeout=0)

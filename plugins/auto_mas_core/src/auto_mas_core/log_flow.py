@@ -15,12 +15,16 @@ from app.core.log_flow.contracts import (
     WithdrawnRecord,
     WorkerFactorySpec,
 )
-from app.core.log_flow.declaration import PluginFlowDeclaration
+from app.core.log_flow.declaration import (
+    GeneralFlowDeclaration,
+    PluginFlowDeclaration,
+    SimpleFlowDeclaration,
+)
 from app.core.log_flow.extensions import Sink, Source
 from app.core.log_flow.processor import TextProcessor
 from app.core.log_flow.push import PushReporter, SubmitResult
 from app.core.log_flow.report import LogFlowTaskReport, ReportMode
-from app.core.log_flow.simple import FlowAccess, SimpleFlowDeclaration
+from app.core.log_flow.simple import FlowAccess
 from app.models.log_flow import (
     Node,
     NodeDisplayStatus,
@@ -45,12 +49,19 @@ def open_log_flow(
     monitor: LogMonitor | None = None,
     mode: ReportMode | None = None,
     task_report: LogFlowTaskReport | None = None,
+    general_rules: GeneralFlowDeclaration | None = None,
 ) -> AbstractAsyncContextManager[FlowAccess]:
     """为当前运行打开具名声明，返回实时节点与已启用的上报能力。"""
     from app.core import Plugin
 
     return Plugin.open_log_flow(
-        plugin, name, run=run, monitor=monitor, mode=mode, task_report=task_report
+        plugin,
+        name,
+        run=run,
+        monitor=monitor,
+        mode=mode,
+        task_report=task_report,
+        general_rules=general_rules,
     )
 
 
@@ -59,6 +70,7 @@ __all__ = [
     "FileInput",
     "FlowAccess",
     "FunctionRef",
+    "GeneralFlowDeclaration",
     "InputRecord",
     "LineRule",
     "LogFlowTaskReport",

@@ -192,6 +192,8 @@ General 的 WebUI 配置和专项 Python 声明分别适配到内部管线描述
 
 插件通过 `BasePlugin.log_flows` 注册具名 `PluginFlowDeclaration`，使用 `auto_mas_core.log_flow.open_log_flow()` 绑定实际运行对象。默认声明只写节点规则，启用通知时由本次托管的 `LogFlowTaskReport` 统一接收。运行中 `FlowAccess.read_nodes()` 支持分页和补读。主动上报打开时，`FlowAccess.reporter` 是本会话的句柄。采集总开关由接入方从本次配置快照读取，关闭时直接执行业务。
 
+在具名声明中选用 `GeneralFlowDeclaration` 后，可通过 `general_rules` 传入本次执行的 WebUI 匹配及行预处理配置。宿主按声明选择 `GeneralRuleProcessor` 或专项的 `RuleNodeProcessor`；来源、查询和报告共用相同装配。配置随会话创建固定，每次执行可以用不同快照。
+
 插件可从同一 SDK 模块导入 `Source`、`TextProcessor`、`Sink`、`ExpressionFunction`、来源记录及节点观察类型。工厂和函数由宿主校验为插件自己的包，配置按 JSON 传入 worker。文本处理器按来源创建独立实例。自定义来源返回的记录统一标记为 `custom`，自定义 sink 失败后停止调用，宿主继续承接节点。插件停用或重载时，旧实例的上报能力随采集会话关闭。
 
 ### 4.5 按职责命名及 Python 实现组织

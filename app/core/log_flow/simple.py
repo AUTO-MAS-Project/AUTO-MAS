@@ -5,37 +5,22 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from typing import Protocol
 
-from pydantic import BaseModel, Field
-
 from app.models.log_flow import ObservationCursor, ObservationPage
 from app.models.task import TaskScriptItem, TaskUserItem
 from app.utils.common.log.monitor import LogMonitor
 
 from .contracts import (
     FileInput,
-    FunctionRef,
-    LineRule,
     PipelineSpec,
-    ProcessorFactorySpec,
-    WindowRule,
     WorkerFactorySpec,
     WorkerPluginPackage,
 )
+from .declaration import GeneralFlowDeclaration, SimpleFlowDeclaration
 from .manager import open_for_run
 from .ownership import FlowOwner
 from .push import GuardedReporter, PushReporter
 from .report import ReportMode, render_node_details
 from .session import LogFlowSession, SessionOpenError
-
-
-class SimpleFlowDeclaration(BaseModel, frozen=True):
-    """MAS 原生日志的节点规则；规则在初始化时编译，关闭时冲刷及归并。"""
-
-    rules: tuple[LineRule, ...] = ()
-    windows: tuple[WindowRule, ...] = Field(default=(), max_length=16)
-    postprocess: FunctionRef | None = None
-    functions: tuple[FunctionRef, ...] = ()
-    processor: ProcessorFactorySpec | None = None
 
 
 class ReadNodes(Protocol):
@@ -63,7 +48,7 @@ async def _open_unowned(
 
 @asynccontextmanager
 async def open_custom_flow(
-    declaration: SimpleFlowDeclaration,
+    declaration: SimpleFlowDeclaration | GeneralFlowDeclaration,
     *,
     run: TaskScriptItem | TaskUserItem,
     mode: ReportMode,
@@ -79,17 +64,27 @@ async def open_custom_flow(
     """宿主按运行分支绑定来源；上报方不能指定归属或冒充原生来源。"""
     if monitor is not None and monitor.on_raw_line is not None:
         raise ValueError("日志监控器已有原始行消费者")
+    specialized = (
+        declaration if isinstance(declaration, SimpleFlowDeclaration) else None
+    )
+    webui = declaration if isinstance(declaration, GeneralFlowDeclaration) else None
     config = PipelineSpec(
         file=file,
         accept_mas=monitor is not None,
         accept_push=accept_push,
         source=source,
         sink=sink,
-        rules=declaration.rules,
-        windows=declaration.windows,
-        postprocess=declaration.postprocess if mode != "关闭" else None,
-        functions=declaration.functions,
-        processor=declaration.processor,
+        rules=specialized.rules if specialized is not None else (),
+        windows=specialized.windows if specialized is not None else (),
+        postprocess=(
+            specialized.postprocess
+            if specialized is not None and mode != "关闭"
+            else None
+        ),
+        functions=specialized.functions if specialized is not None else (),
+        processor=specialized.processor if specialized is not None else None,
+        general_patterns=webui.patterns if webui is not None else None,
+        general_hooks=webui.hooks if webui is not None else "",
         plugin_package=plugin_package,
     )
     opening = (
@@ -133,7 +128,7 @@ async def open_custom_flow(
 
 @asynccontextmanager
 async def open_simple_flow(
-    declaration: SimpleFlowDeclaration,
+    declaration: SimpleFlowDeclaration | GeneralFlowDeclaration,
     *,
     run: TaskScriptItem | TaskUserItem,
     monitor: LogMonitor,

@@ -31,7 +31,11 @@ from packaging.version import Version
 
 from app.config import NodeState
 from app.core.log_flow.contracts import WorkerPluginPackage
-from app.core.log_flow.declaration import PluginFlowDeclaration
+from app.core.log_flow.declaration import (
+    GeneralFlowDeclaration,
+    PluginFlowDeclaration,
+    SimpleFlowDeclaration,
+)
 from app.core.log_flow.ownership import FlowOwner
 from app.core.log_flow.report import LogFlowTaskReport, ReportMode
 from app.core.log_flow.simple import FlowAccess, open_custom_flow
@@ -135,10 +139,15 @@ class _PluginManager:
         receive_report: Callable[[list[str]], None] | None = None,
         task_report: LogFlowTaskReport | None = None,
         monitor: LogMonitor | None = None,
+        general_rules: GeneralFlowDeclaration | None = None,
     ) -> AsyncGenerator[FlowAccess, None]:
         """宿主用已注册插件和实际运行对象装配具名流。"""
         owner = self.log_flow_owner(plugin)
         declaration = self._log_flow_declarations[id(plugin)][name]
+        if general_rules is not None and not isinstance(
+            declaration.rules, GeneralFlowDeclaration
+        ):
+            raise ValueError("只有 WebUI 规则声明可以绑定本次运行的 WebUI 配置")
         if declaration.use_mas_log and monitor is None:
             raise ValueError("该声明需要 MAS 原生日志监控器")
         if mode is None:
@@ -166,7 +175,7 @@ class _PluginManager:
         )
         try:
             async with open_custom_flow(
-                declaration.rules,
+                general_rules if general_rules is not None else declaration.rules,
                 run=run,
                 mode=mode,
                 receive_report=receive_report,
@@ -204,14 +213,19 @@ class _PluginManager:
         declarations = {}
         for name, declaration in plugin.log_flows.items():
             rules = declaration.rules
-            references = [rules.postprocess, *rules.functions]
-            references.extend(
+            references = [
                 item.factory
-                for item in (rules.processor, declaration.source, declaration.sink)
+                for item in (declaration.source, declaration.sink)
                 if item is not None
-            )
+            ]
+            if isinstance(rules, SimpleFlowDeclaration):
+                references.extend(rules.functions)
+                if rules.postprocess is not None:
+                    references.append(rules.postprocess)
+                if rules.processor is not None:
+                    references.append(rules.processor.factory)
             for ref in references:
-                if ref is not None and ref.module.split(".", 1)[0] != package:
+                if ref.module.split(".", 1)[0] != package:
                     raise ValueError(f"LogFlow {name} 的工厂必须来自插件包 {package}")
             declarations[name] = declaration.model_copy(deep=True)
         return declarations

@@ -1,6 +1,7 @@
 """插件级联重载恢复状态，卸载等待全部下游的在途调用结束。"""
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -8,8 +9,9 @@ import pytest_asyncio
 
 from app.core import Notify
 from app.core.background_tasks import BackgroundTaskRegistry
+from app.core.log_flow.declaration import SimpleFlowDeclaration
 from app.core.log_flow.push import SubmitResult
-from app.core.log_flow.simple import SimpleFlowDeclaration, open_custom_flow
+from app.core.log_flow.simple import open_custom_flow
 from app.core.notify import tasks as notification_tasks
 from app.core.notify.rendering import AsyncNotificationRenderer
 from app.core.plugin.manager import _PluginManager
@@ -205,6 +207,62 @@ async def test_plugin_declaration_loads_its_own_worker_factory_after_reload(
     write_plugin("after!:")
     await manager.reload(record)
     assert await collect() == [["after!:event", "after!:source tail"]]
+
+
+@pytest.mark.asyncio
+async def test_named_general_flow_uses_current_webui_rules(
+    cascade_plugins, tmp_path, monkeypatch
+):
+    from auto_mas_core.log_flow import GeneralFlowDeclaration, open_log_flow
+
+    from app import core
+
+    manager, records = await cascade_plugins({"flow_webui": ()})
+    monkeypatch.setattr(core, "Plugin", manager)
+    record = records["flow_webui"]
+    (tmp_path / "flow_webui" / "__init__.py").write_text(
+        "from auto_mas_core import BasePlugin\n"
+        "from auto_mas_core.log_flow import GeneralFlowDeclaration, PluginFlowDeclaration\n"
+        "class Adapter(BasePlugin):\n"
+        "    log_flows = {'webui': PluginFlowDeclaration(use_mas_log=False, accept_push=True, rules=GeneralFlowDeclaration(patterns='[]'))}\n"
+        "PLUGIN = Adapter\n",
+        encoding="utf-8",
+    )
+    await manager.reload(record)
+    await manager.enable(record)
+    patterns = json.dumps(
+        [
+            {"type": "regex", "match": ".+", "extract": '"停用"', "enabled": False},
+            {"type": "regex", "match": "redacted", "extract": r"$(token=(\w+))"},
+            {"type": "split", "match": "redacted"},
+        ]
+    )
+    for replacement in ("first", "second"):
+        rules = GeneralFlowDeclaration(
+            patterns=patterns,
+            hooks=json.dumps(
+                [
+                    {"type": "drop", "match": "^noise"},
+                    {
+                        "type": "replace",
+                        "match": r"token=\w+",
+                        "replace": f"token={replacement}",
+                    },
+                ]
+            ),
+        )
+        async with open_log_flow(
+            record._plugin, "webui", run=TaskUserItem(), general_rules=rules
+        ) as flow:
+            assert flow.reporter is not None
+            assert (
+                flow.reporter.text("noise redacted token=discarded")
+                == SubmitResult.ACCEPTED
+            )
+            assert flow.reporter.text("redacted token=secret") == SubmitResult.ACCEPTED
+        page = flow.read_nodes()
+        assert page.close_reason == "complete"
+        assert [node.text for node in page.nodes] == [replacement]
 
 
 @pytest.mark.asyncio
