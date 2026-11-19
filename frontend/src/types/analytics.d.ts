@@ -94,6 +94,7 @@ export type AnalyticsScreen =
   | 'user_edit'
   | 'plans'
   | 'emulators'
+  | 'games'
   | 'queue'
   | 'scheduler'
   | 'history'

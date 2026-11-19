@@ -1,3 +1,4 @@
+import type { ConfigSnapshot } from '@/services/configUiSync'
 import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { translate as t } from '@/i18n'
@@ -117,7 +118,7 @@ export function useScriptApi() {
   // 获取脚本列表（可选择是否管理 loading 状态，避免嵌套调用时提前结束 loading）
   const getScripts = async (
     manageLoading: boolean = true,
-    options: { showError?: boolean } = {}
+    options: { showError?: boolean; read?: (snapshot: ConfigSnapshot) => void } = {}
   ): Promise<ScriptDetail[]> => {
     if (manageLoading) {
       loading.value = true
@@ -141,6 +142,7 @@ export function useScriptApi() {
       }
       sharedRequest = scriptListRequest
       const response = await sharedRequest.promise
+      options.read?.(response)
 
       if (response.code !== 200) {
         const errorMsg = response.message || t('core.apiErrors.scriptListFailed')

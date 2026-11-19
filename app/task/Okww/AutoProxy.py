@@ -37,8 +37,8 @@ from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNotice
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import wuthering_waves as _service_wuthering_waves
 from app.task.base import ScriptAutoProxyBase
+from app.task.client import client_executable_path, client_launcher_path
 from app.task.proxy_helpers import (
-    kill_pids,
     push_dispatch_log,
     split_args,
 )
@@ -270,8 +270,10 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             return "账号剩余天数为 0, 跳过该账号"
 
         if self.script_config.Game.Enabled:
-            launcher_path = Path(str(self.script_config.Game.Path or "").strip())
-            client_path = str(self.script_config.Game.ClientPath or "").strip()
+            launcher_path = Path(
+                str(client_launcher_path(self.script_config) or "").strip()
+            )
+            client_path = str(client_executable_path(self.script_config) or "").strip()
             if client_path:
                 # 手动指定了客户端程序：以指定值为准，两种启动方式都认它（启动器
                 # 态只用它做已运行检测与收尾，更精确）；启动器路径仅服务 MAS 前置
@@ -592,7 +594,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         if self.launcher_path is None or not self.launcher_path.is_file():
             if (
                 self._game_launch_type() == "Client"
-                and not str(self.script_config.Game.Path or "").strip()
+                and not str(client_launcher_path(self.script_config) or "").strip()
             ):
                 await self._push_dispatch_log(
                     "未配置官方启动器，跳过启动前更新检查并直接启动客户端"
@@ -1344,36 +1346,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 logger.opt(exception=True).warning(
                     f"通过进程管理器关闭鸣潮客户端失败: {e}"
                 )
-        if self.game_process_path is not None:
-            try:
-                await process.kill_process(self.game_process_path)
-            except Exception as e:
-                logger.opt(exception=True).warning(f"兜底强杀鸣潮客户端失败: {e}")
-        if (
-            self.launcher_path is not None
-            and self.launcher_path.name.lower() == "launcher.exe"
-            and self.launcher_path.is_file()
-        ):
-            # 实际运行的那份可能不在已知路径上（手动指定的客户端与实际启动的不是
-            # 同一份，或启动器态压根解不出路径），只按路径匹配会漏杀。兜底按
-            # 「名称 + 启动器安装根目录树内」扫——Client-Win64-Shipping.exe 是虚幻
-            # 通用进程名，单按名会误伤同机其它虚幻游戏，必须有目录树限定；启动器
-            # 路径本身失效时无从限定，只保留上面的按已知路径结束，不冒险按名扫。
-            # 有没杀掉的（多为提权进程）要提示用户，不能静默。
-            # 注意 kill_process_by_pid 失败时返回 False 而非抛异常，必须看返回值
-            try:
-                failed = await kill_pids(
-                    await asyncio.to_thread(find_game_pids, self.launcher_path)
-                )
-                if failed:
-                    message = (
-                        f"有 {failed} 个鸣潮客户端进程未能结束（可能是提权进程，"
-                        "MAS 无权结束），请人工确认关闭"
-                    )
-                    logger.warning(message)
-                    await self._push_dispatch_log(message)
-            except Exception as e:
-                logger.opt(exception=True).warning(f"清理鸣潮客户端进程失败: {e}")
         if self.launcher_path is not None and self._game_launch_type() == "Launcher":
             try:
                 # 启动器是进程家族：顶层 launcher.exe 引导器 + 版本目录下的

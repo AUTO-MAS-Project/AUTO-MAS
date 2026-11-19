@@ -73,22 +73,6 @@ class PluginInstallation(BaseModel):
     message: str | None = None
 
 
-class OperationInfo(BaseModel):
-    """宿主命令快照，业务参数和插件实例不进入外部契约。"""
-
-    operationId: UUID
-    configUid: UUID
-    field: str
-    owner: UUID | None = None
-    state: Literal[
-        "queued", "running", "cancelling", "succeeded", "failed", "cancelled"
-    ] = "queued"
-    cancellable: bool = True
-    createdAt: AwareDatetime
-    completedAt: AwareDatetime | None = None
-    errorCode: str | None = None
-
-
 class DownloadSnapshot(BaseModel):
     """下载中心的可重复读取快照，不消费背景结果。"""
 
@@ -370,6 +354,12 @@ class OutBase(BaseModel):
     code: int = Field(default=200, description="状态码")
     status: str = Field(default="success", description="操作状态")
     message: str = Field(default="操作成功", description="操作消息")
+
+
+class ConfigSnapshotOut(OutBase):
+    """配置快照及其 Entry / Collection 订阅来源。"""
+
+    uiSources: list[UUID] = Field(default_factory=list)
 
 
 class ConfigBackupItemOut(BaseModel):
@@ -1831,7 +1821,7 @@ class WebhookGetIn(WebhookInBase):
 ConfigDataT = TypeVar("ConfigDataT")
 
 
-class WebhookGetOut(OutBase, Generic[ConfigDataT]):
+class WebhookGetOut(ConfigSnapshotOut, Generic[ConfigDataT]):
     index: List[WebhookIndexItem] = Field(..., description="Webhook索引列表")
     data: Dict[str, ConfigDataT] = Field(
         ..., description="Webhook数据字典, key来自于index列表的uid"
@@ -1902,7 +1892,6 @@ __all__ = [
     "ConfigBackupEnsureOut",
     "ConfigBackupPreviewOut",
     "ConfigBackupFileOut",
-    "OperationInfo",
     "PluginInstallation",
     "DownloadRequest",
     "DownloadSnapshot",

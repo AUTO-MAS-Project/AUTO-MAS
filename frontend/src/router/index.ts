@@ -125,10 +125,11 @@ const routes = [
     meta: { title: '计划管理' },
   },
   {
-    path: '/emulators',
-    name: 'Emulators',
-    component: () => import('../views/Emulator.vue'),
-    meta: { title: '模拟器管理' },
+    path: '/games',
+    alias: '/emulators',
+    name: 'Games',
+    component: () => import('../views/games/index.vue'),
+    meta: { title: '游戏管理' },
   },
   {
     path: '/queue',

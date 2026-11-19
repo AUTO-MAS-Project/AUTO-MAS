@@ -5,13 +5,8 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.utils.common.emulator2 import applaunch
-from app.utils.common.emulator2.applaunch import (
-    build_adb_runner,
-    describe_adb_failure,
-    ensure_app_running,
-    is_stale_connection,
-)
+from mumu_adapter import applaunch
+from mumu_adapter.applaunch import build_adb_runner, ensure_app_running
 
 #: 与真实 adb 等价的最小替身: 按 AdbRunner 契约永不抛异常, 只返回非 0 返回码。
 BROKEN_ADB_OUTPUT = "[WinError 2] 系统找不到指定的文件。"
@@ -71,14 +66,14 @@ def test_boot_timeout_carries_last_adb_result():
 
 def test_stale_connection_is_recognised():
     """连接失效的几种写法都要认出来, 正常输出一个都不能误判。"""
-    assert is_stale_connection("error: device offline")
-    assert is_stale_connection("adb.exe: device '127.0.0.1:16384' not found")
-    assert is_stale_connection(
+    assert applaunch.is_stale_connection("error: device offline")
+    assert applaunch.is_stale_connection("adb.exe: device '127.0.0.1:16384' not found")
+    assert applaunch.is_stale_connection(
         "cannot connect to 127.0.0.1:16384: 由于目标计算机积极拒绝"
     )
-    assert not is_stale_connection("1")
-    assert not is_stale_connection("")
-    assert not is_stale_connection("package:/system/priv-app/Settings/Settings.apk")
+    assert not applaunch.is_stale_connection("1")
+    assert not applaunch.is_stale_connection("")
+    assert not applaunch.is_stale_connection("package:/system/priv-app/Settings/Settings.apk")
 
 
 def test_shell_command_missing_is_not_a_stale_connection():
@@ -88,21 +83,21 @@ def test_shell_command_missing_is_not_a_stale_connection():
     ``/system/bin/sh: monkey: not found``; 按裸 ``not found`` 判就会把一条好连接
     断开重连, 还把命令重复执行一次。
     """
-    assert not is_stale_connection("/system/bin/sh: monkey: not found")
-    assert not is_stale_connection("/system/bin/sh: am: not found")
-    assert not is_stale_connection("sh: pm: not found")
+    assert not applaunch.is_stale_connection("/system/bin/sh: monkey: not found")
+    assert not applaunch.is_stale_connection("/system/bin/sh: am: not found")
+    assert not applaunch.is_stale_connection("sh: pm: not found")
     # 真掉线还是照样要认出来
-    assert is_stale_connection("error: device '127.0.0.1:16384' not found")
-    assert is_stale_connection("adb.exe: device 'emulator-5554' not found")
-    assert is_stale_connection("error: device not found")
+    assert applaunch.is_stale_connection("error: device '127.0.0.1:16384' not found")
+    assert applaunch.is_stale_connection("adb.exe: device 'emulator-5554' not found")
+    assert applaunch.is_stale_connection("error: device not found")
 
 
 def test_describe_adb_failure_only_speaks_for_stale_connections():
     """只有连接失效才给「换端口」的提示: adb 路径失效之类喂这句会把人带偏。"""
-    hint = describe_adb_failure("error: device offline")
+    hint = applaunch.describe_adb_failure("error: device offline")
     assert "端口" in hint
-    assert describe_adb_failure("") == ""
-    assert describe_adb_failure(BROKEN_ADB_OUTPUT) == ""
+    assert applaunch.describe_adb_failure("") == ""
+    assert applaunch.describe_adb_failure(BROKEN_ADB_OUTPUT) == ""
 
 
 def test_runner_does_not_touch_connection_before_a_command_fails(monkeypatch):
@@ -187,7 +182,7 @@ def test_boot_timeout_detail_keeps_raw_error_unless_caller_asks_for_hint():
             "com.example.game",
             boot_timeout=0,
             launch_timeout=0,
-            failure_hint=describe_adb_failure,
+            failure_hint=applaunch.describe_adb_failure,
         )
     )
 

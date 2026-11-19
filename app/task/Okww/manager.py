@@ -28,6 +28,7 @@ from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.notification.report import TaskResultReport, UserReportText
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
+from app.task.client import ClientProcess, client_launcher_path
 from app.task.manager_base import ScriptManagerBase
 from app.utils import (
     BASE_NATIVE,
@@ -107,7 +108,7 @@ class OkwwManager(ScriptManagerBase):
         if self.execution_mode == "Update":
             if not script_config.Game.Enabled:
                 return "请先在托管配置中启用游戏配置"
-            launcher = Path(str(script_config.Game.Path or "").strip())
+            launcher = Path(str(client_launcher_path(script_config) or "").strip())
             if not launcher.is_file():
                 return "请先在托管配置中导入有效的鸣潮官方启动器"
 
@@ -184,7 +185,7 @@ class OkwwManager(ScriptManagerBase):
         # Enabled=游戏管理总开关；开启后任务前始终启动游戏，任务结束/失败时始终关闭游戏
         self.game_manager: ProcessManager | None = None
         if self.execution_mode == "AutoProxy" and self.script_config.Game.Enabled:
-            self.game_manager = ProcessManager()
+            self.game_manager = ClientProcess()
 
         if self.execution_mode in ("AutoProxy", "ScriptConfig"):
             root_path = self.script_config.Info.RootPath

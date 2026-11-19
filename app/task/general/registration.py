@@ -20,7 +20,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.models.config import GeneralConfig
-from app.models.script_contracts import ScriptConfigHandler, ScriptEmulatorBinding
+from app.models.script_contracts import ScriptConfigHandler
 from app.task.registration import ScriptRegistration
 
 if TYPE_CHECKING:
@@ -39,8 +39,11 @@ def build_config_handler() -> ScriptConfigHandler:
 
     return ScriptConfigHandler(
         user_config_class=GeneralUserConfig,
-        emulator_binding=ScriptEmulatorBinding(
-            group="Game", id_field="EmulatorId", index_field="EmulatorIndex"
+        game_kinds=("emulator", "client"),
+        expected_game_kind=lambda script, patch: (
+            "emulator"
+            if patch.get("Game", {}).get("Type", script.Game.Type) == "Emulator"
+            else "client"
         ),
     )
 

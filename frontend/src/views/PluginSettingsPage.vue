@@ -12,6 +12,7 @@ import PageSurface from '@/components/PageSurface.vue'
 import ApiRetryAlert from '@/components/ApiRetryAlert.vue'
 import { usePluginQuery } from '@/views/plugins/usePluginQuery'
 import { usePluginApi } from '@/composables/usePluginApi'
+import { useActiveTriggers } from '@/composables/useActiveTriggers'
 import { apiErrorMessage } from '@/utils/apiResult'
 import type { DeclarativeHint } from './plugins/components/PluginDeclarativeField.vue'
 
@@ -24,7 +25,15 @@ const runningKey = ref<string | null>(null)
 const title = ref('')
 const pluginName = ref('')
 const configUid = ref('')
+const { data: activeTriggers, dataUpdatedAt: triggersReadAt } = useActiveTriggers()
+const activeFields = computed(
+  () =>
+    activeTriggers.value
+      ?.filter(item => item.configUid === configUid.value)
+      .map(item => `${item.group}.${item.field}`) ?? []
+)
 const values = reactive<Record<string, Record<string, unknown>>>({})
+const edited = new Map<string, Set<string>>()
 const groups = ref<Array<{ name: string; hints: DeclarativeHint[] }>>([])
 
 const pluginId = computed(() =>
@@ -63,10 +72,14 @@ const {
     const info = record?.info as Record<string, unknown> | undefined
     title.value = String(info?.display_name || info?.plugin_name || pluginId.value)
     pluginName.value = String(info?.plugin_name || '')
-    for (const key of Object.keys(values)) delete values[key]
     const data =
       config.data && typeof config.data === 'object' ? (config.data as Record<string, unknown>) : {}
-    configUid.value = typeof data.uid === 'string' ? data.uid : ''
+    const uid = typeof data.uid === 'string' ? data.uid : ''
+    if (uid !== configUid.value) {
+      edited.clear()
+      for (const key of Object.keys(values)) delete values[key]
+    }
+    configUid.value = uid
     const configUi =
       data.ui && typeof data.ui === 'object' ? (data.ui as Record<string, unknown>) : {}
     const configHints =
@@ -86,9 +99,16 @@ const {
         data[group.name] && typeof data[group.name] === 'object'
           ? (data[group.name] as Record<string, unknown>)
           : {}
-      values[group.name] = { ...source }
+      const draft = values[group.name]
+      const fresh = Object.fromEntries(
+        Object.entries(source).filter(
+          ([field]) => !group.hints.some(hint => hint.field === field && hint.state !== undefined)
+        )
+      )
+      for (const field of edited.get(group.name) ?? []) fresh[field] = draft?.[field]
+      values[group.name] = fresh
     }
-    return config.data
+    return { uiSources: [...(registry.uiSources ?? []), ...(config.uiSources ?? [])] }
   },
   () => /* 为插件专属配置查询提供当前语言的加载失败提示。 */ t('core.plugins.settingsLoadFailed')
 )
@@ -96,14 +116,28 @@ const updateValue = (group: string, field: string, value: unknown) => {
   // 更新本地表单分组中的字段值，尚未存在的分组按需建立。
   if (!values[group]) values[group] = {}
   values[group][field] = value
+  const fields = edited.get(group) ?? new Set<string>()
+  fields.add(field)
+  edited.set(group, fields)
 }
 
 const save = async () => {
   // 在无在途保存或动作时提交当前配置值，等待成功后重新读取后端规范化结果。
-  if (saving.value || runningKey.value) return
+  if (saving.value || runningKey.value || activeFields.value.length) return
   saving.value = true
   try {
-    await api.updateConfig({ recordId: pluginId.value, data: values })
+    const data = Object.fromEntries(
+      [...edited].map(([group, fields]) => [
+        group,
+        Object.fromEntries([...fields].map(field => [field, values[group]?.[field]])),
+      ])
+    )
+    await api.updateConfig({ recordId: pluginId.value, data })
+    for (const [group, fields] of Object.entries(data)) {
+      for (const [field, value] of Object.entries(fields)) {
+        if (values[group]?.[field] === value) edited.get(group)?.delete(field)
+      }
+    }
     message.success(t('core.plugins.saved'))
     await load()
   } catch (error) {
@@ -116,11 +150,18 @@ const save = async () => {
 const runAction = async (group: string, hint: DeclarativeHint, value: unknown) => {
   // 仅提交当前按钮字段的触发值，等待后台操作结果并重新加载配置，执行期间阻止重复操作。
   const field = hint.field
-  if (!field || !configUid.value || hint.editable !== true || runningKey.value || saving.value)
+  if (
+    !field ||
+    !configUid.value ||
+    hint.editable !== true ||
+    runningKey.value ||
+    saving.value ||
+    activeFields.value.includes(`${group}.${field}`)
+  )
     return
   runningKey.value = `${group}.${field}`
   try {
-    if (typeof value !== 'boolean' && typeof value !== 'string') return
+    if (value !== true) return
     const result = await api.runCommand('config', {
       configUid: configUid.value,
       group,
@@ -136,6 +177,14 @@ const runAction = async (group: string, hint: DeclarativeHint, value: unknown) =
   }
 }
 
+watch([activeFields, triggersReadAt], ([next], [previous]) => {
+  if (runningKey.value || saving.value || loading.value) return
+  const settled = previous.some(field => !next.includes(field))
+  const staleHint = groups.value.some(group =>
+    group.hints.some(hint => hint.state === 'busy' && !next.includes(`${group.name}.${hint.field}`))
+  )
+  if (settled || staleHint) void load()
+})
 watch([pluginId, locale], load, { immediate: true })
 </script>
 
@@ -153,7 +202,7 @@ watch([pluginId, locale], load, { immediate: true })
         ><a-button
           type="primary"
           :loading="saving"
-          :disabled="loading || !groups.length"
+          :disabled="loading || !groups.length || !!runningKey || activeFields.length > 0"
           @click="save"
           ><template #icon><SaveOutlined /></template>{{ t('core.plugins.save') }}</a-button
         ></template
@@ -174,6 +223,7 @@ watch([pluginId, locale], load, { immediate: true })
           :disabled="saving || runningKey !== null"
           :values="values"
           :running-key="runningKey"
+          :active-fields="activeFields"
           @update:value="updateValue"
           @action="runAction"
         />

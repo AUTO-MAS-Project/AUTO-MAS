@@ -30,6 +30,7 @@ export type UserGetOut = {
      * 操作消息
      */
     message?: string;
+    uiSources?: Array<string>;
     /**
      * 账号索引列表
      */

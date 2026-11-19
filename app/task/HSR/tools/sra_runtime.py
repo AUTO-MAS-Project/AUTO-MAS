@@ -30,6 +30,7 @@ from inspect import isawaitable
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+from app.task.client import client_executable_path
 from app.utils import ProcessManager, decode_bytes, get_logger, is_admin
 from app.utils import io as _utils_io
 from app.utils.common.process.session import desktop_process_target
@@ -287,7 +288,7 @@ def build_sra_start_game_config(
     config = _build_sra_base_config(name)
     config["startGame"]["enabled"] = True
     config["startGame"]["game.channel"] = SRA_GAME_CHANNEL_CLIENT
-    config["startGame"]["game.path"] = str(script_config.Game.Path or "")
+    config["startGame"]["game.path"] = str(client_executable_path(script_config) or "")
     config["startGame"]["game.useGlobalPath"] = False
 
     if mode == "remembered":

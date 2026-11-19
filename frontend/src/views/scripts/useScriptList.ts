@@ -1,3 +1,4 @@
+import type { ConfigSnapshot } from '@/services/configUiSync'
 import { Service } from '@/api'
 import { ref } from 'vue'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -36,11 +37,13 @@ export function useScriptList() {
   }
 
   // 列表仅获取并组合展示数据，不重建专项配置或参与配置保存。
-  const getScriptsWithUsers = async (): Promise<ScriptListItem[]> => {
+  const getScriptsWithUsers = async (
+    read?: (snapshot: ConfigSnapshot) => void
+  ): Promise<ScriptListItem[]> => {
     loading.value = true
     try {
       // 列表页呈现失败原因与重试，避免请求层再弹同一错误。
-      const scripts = await getScripts(false, { showError: false })
+      const scripts = await getScripts(false, { showError: false, read })
       error.value = requestError.value
       return await Promise.all(
         scripts.map(async script => {

@@ -25,9 +25,18 @@ const { t, te, locale } = useI18n()
 const api = usePluginApi()
 const expandedRowKeys = ref<string[]>([])
 const running = ref(false)
+const lifecycleOperations = computed(
+  () =>
+    activeTriggers.value?.filter(
+      item =>
+        item.group === 'info' &&
+        ['enable', 'disable', 'reload', 'uninstall', 'install'].includes(item.field)
+    ) ?? []
+)
 const checking = ref(false)
 const {
   installing,
+  activeTriggers,
   install: installPlugin,
   messageHolder: installationMessageHolder,
 } = usePluginInstallation()
@@ -107,12 +116,15 @@ const {
   async () => {
     // 注册配置已包含运行状态及 UI 属性，直接使用这一份权威数据。
     const result = await api.getRegistry()
-    return (result.order ?? []).map(item => normalize(item.uid, result.data?.[item.uid]))
+    return {
+      uiSources: result.uiSources,
+      rows: (result.order ?? []).map(item => normalize(item.uid, result.data?.[item.uid])),
+    }
   },
   () => /* 为插件列表查询提供当前语言的加载失败提示。 */ t('core.plugins.loadFailed')
 )
 const rows = computed(
-  () => /* 读取注册配置中的插件行，尚无查询结果时返回空列表。 */ queryRows.value ?? []
+  () => /* 读取注册配置中的插件行，尚无查询结果时返回空列表。 */ queryRows.value?.rows ?? []
 )
 
 const catalog = usePluginQuery(
@@ -156,6 +168,7 @@ const trigger = async (row: PluginRow, action: 'enable' | 'disable' | 'reload' |
   // 互斥提交插件启用、停用、重载或卸载触发器，等待后台结果后提示并刷新列表。
   if (
     running.value ||
+    lifecycleOperations.value.some(item => item.configUid === row.uid) ||
     installing.value ||
     pluginActionHint(row.ui, 'info', action)?.editable !== true
   )
@@ -219,6 +232,14 @@ const handleExpand = (expanded: boolean, row: PluginRow) => {
         key => /* 收起表格指定行时移除该插件的展开键。 */ key !== row.uid
       )
 }
+watch(lifecycleOperations, (next, previous) => {
+  if (
+    !running.value &&
+    previous.some(item => !next.some(active => active.taskId === item.taskId))
+  ) {
+    void load()
+  }
+})
 watch(locale, load, { immediate: true })
 </script>
 
@@ -315,6 +336,7 @@ watch(locale, load, { immediate: true })
               :checked="pluginToggleChecked(record.ui, record.info.enabled)"
               :disabled="
                 running ||
+                lifecycleOperations.some(item => item.configUid === record.uid) ||
                 installing !== null ||
                 pluginActionHint(
                   record.ui,

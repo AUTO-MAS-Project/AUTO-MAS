@@ -17,6 +17,8 @@
 
 """账号 Webhook 管理路由与端点专用模型。"""
 
+from uuid import UUID
+
 from fastapi import APIRouter, Body
 
 import app.models.config as _config_models
@@ -83,7 +85,14 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
             index=[],
             data={},
         )
-    return WebhookGetOut(index=index, data=data)
+    source = webhook.webhookId or webhook.userId
+    return WebhookGetOut(
+        index=index,
+        data=data,
+        uiSources=[UUID(source)]
+        if source
+        else [Config.setting.Notify_CustomWebhooks.uid],
+    )
 
 
 @router.post(

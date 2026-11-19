@@ -1,8 +1,9 @@
-import { onScopeDispose, ref, watch } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import type { PluginCatalogDocument } from '@/api'
 import { usePluginApi, type InstallationStage } from '@/composables/usePluginApi'
+import { useActiveTriggers } from '@/composables/useActiveTriggers'
 import { useTheme } from '@/composables/useTheme'
 import { apiErrorMessage } from '@/utils/apiResult'
 import { pluginActionHint } from './configActions'
@@ -12,7 +13,14 @@ export function usePluginInstallation() {
   const api = usePluginApi()
   const { t, locale } = useI18n()
   const { antdTheme } = useTheme()
-  const installing = ref<string | null>(null)
+  const submitting = ref<string | null>(null)
+  const { data: activeTriggers } = useActiveTriggers()
+  const backgroundInstall = computed(
+    () =>
+      activeTriggers.value?.find(item => item.group === 'info' && item.field === 'install')
+        ?.configUid ?? null
+  )
+  const installing = computed(() => submitting.value ?? backgroundInstall.value)
   const stage = ref<InstallationStage | null>(null)
   const upgrading = ref(false)
   const [progressMessage, messageHolder] = message.useMessage({ top: 40 })
@@ -44,7 +52,7 @@ export function usePluginInstallation() {
     // 以市场配置 UID 提交原安装触发器，安装与升级均等待完整加载结果后反馈。
     if (installing.value || pluginActionHint(row.ui, 'info', 'install')?.editable !== true)
       return false
-    installing.value = row.uid
+    submitting.value = row.uid
     upgrading.value = row.info?.update_available === true
     try {
       await api.runCommand(
@@ -62,9 +70,9 @@ export function usePluginInstallation() {
       return false
     } finally {
       stage.value = null
-      installing.value = null
+      submitting.value = null
     }
   }
 
-  return { installing, install, messageHolder }
+  return { installing, activeTriggers, install, messageHolder }
 }

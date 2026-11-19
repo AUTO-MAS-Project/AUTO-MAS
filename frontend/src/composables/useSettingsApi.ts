@@ -1,3 +1,4 @@
+import type { ConfigSnapshot } from '@/services/configUiSync'
 import { beginSettingsChanges } from '@/utils/settingsAnalytics'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { translate as t } from '@/i18n'
@@ -22,7 +23,9 @@ export function useSettingsApi() {
   }
 
   // 获取设置
-  const getSettings = async (): Promise<GlobalConfig | null> => {
+  const getSettings = async (
+    read?: (snapshot: ConfigSnapshot) => void
+  ): Promise<GlobalConfig | null> => {
     loading.value = true
     error.value = null
 
@@ -35,6 +38,7 @@ export function useSettingsApi() {
         throw new Error(errorMsg)
       }
 
+      read?.(response)
       return response.data
     } catch (err) {
       const errorMsg = getApiErrorMessage(err, t('bootstrap.apiErrors.settingsLoadFailed'))

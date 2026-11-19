@@ -315,13 +315,7 @@
                           variant="form"
                         />
                       </template>
-                      <PathPickerField
-                        v-model="formData.Game.GamePath"
-                        mode="file"
-                        :placeholder="t('core.edit.zzzodGamePathPlaceholder')"
-                        :pick-label="t('core.edit.pickFile')"
-                        @pick="selectGamePath"
-                      />
+                      <BoundGamePathField />
                     </a-form-item>
                   </a-col>
                 </a-row>
@@ -592,6 +586,8 @@
 </template>
 
 <script setup lang="ts">
+import BoundGamePathField from '@/components/BoundGamePathField.vue'
+
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import UserEditHeader from '@/components/UserEditHeader.vue'
 import accountIcon from '@/assets/zzz-od.ico'

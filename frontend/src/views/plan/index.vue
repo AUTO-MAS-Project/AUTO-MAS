@@ -69,6 +69,7 @@
 </template>
 
 <script setup lang="ts">
+import { useConfigLoader } from '@/services/configUiSync'
 import { usePlanFieldSave } from './usePlanFieldSave'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -521,9 +522,10 @@ const loadPlanData = async (planId: string, force = false, forceCustomStages = f
   }
 }
 
-const initPlans = async () => {
+const initPlans = useConfigLoader(['config', 'plans'], async read => {
   try {
-    const response = await getPlans()
+    const response = await getPlans(undefined, { silent: true })
+    read(response)
     if (response.code !== 200) {
       throw new Error(response.message || t('core.plan.toast.fetchFailed'))
     }
@@ -568,22 +570,23 @@ const initPlans = async () => {
 
     const queryPlanId = (route.query.planId as string) || ''
     const target = queryPlanId ? nextPlanList.find(plan => plan.id === queryPlanId) : null
-    const selectedPlanId = target?.id ?? nextPlanList[0].id
+    const current = nextPlanList.find(plan => plan.id === activePlanId.value)
+    const selectedPlanId = current?.id ?? target?.id ?? nextPlanList[0].id
 
-    syncCurrentPlan(selectedPlanId, true)
+    const draftName = isEditingPlanName.value ? currentPlanName.value : undefined
+    syncCurrentPlan(selectedPlanId, selectedPlanId !== activePlanId.value)
+    if (draftName !== undefined && selectedPlanId === activePlanId.value) {
+      currentPlanName.value = draftName
+    }
     activePlanId.value = selectedPlanId
     logger.info(`初始加载数据 (${selectedPlanId})`)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`初始化计划失败: ${errorMsg}`)
-    planDataMap.value = {}
-    planList.value = []
-    activePlanId.value = ''
-    tableData.value = {}
   } finally {
     loading.value = false
   }
-}
+})
 
 const getDefaultPlanName = (planType: PlanConfigType) => {
   const existingNames = planList.value.map(plan => plan.name)

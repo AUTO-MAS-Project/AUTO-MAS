@@ -39,9 +39,9 @@ from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.task.base import ScriptAutoProxyBase
+from app.task.client import client_executable_path, client_launcher_path
 from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
-    kill_pids_by_name,
     push_dispatch_log,
     quick_config_takeover,
     resolve_config_base,
@@ -398,10 +398,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             self.script_config.Game.Enabled
             and self.script_config.Game.Type == "Client"
             and self.script_config.Game.LaunchBeforeTask
-            and (
-                not self.script_config.Game.Path
-                or not self.script_config.Game.Path.is_file()
-            )
+            and self._resolve_launcher_path(use_script_fallback=False) is None
         ):
             return "请设置异环启动器路径"
         if (
@@ -712,7 +709,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         <安装根>\\Client\\... 反推 <安装根>\\NTELauncher\\<启动器>。都没有时
         回退 ok-nte 自己的 LauncherTask.json（其注册表回退由 ok-nte 维护）。
         """
-        game_path = self.script_config.Game.Path
+        game_path = client_launcher_path(self.script_config) or client_executable_path(
+            self.script_config
+        )
         if game_path is not None and game_path.is_file():
             if (
                 game_path.suffix.casefold() == ".exe"
@@ -1484,14 +1483,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             if game_type == "Client":
                 # 明确关闭游戏时也清理启动器，包括由本体启动且未开启托管的情况。
                 await self._kill_launcher_process(use_script_fallback=True)
-                # Game.Path 是启动器，游戏本体按进程名结束；进程管理器只跟踪
-                # 启动器，HTGame.exe 由启动器拉起、可能不在其进程树内。
-                # 全进程扫描放到线程里，不阻塞事件循环
-                failed = await kill_pids_by_name(_NTE_CLIENT_PROCESS)
-                if failed:
-                    message = f"有 {failed} 个异环游戏进程未能结束，请人工确认关闭"
-                    logger.warning(message)
-                    await self._push_dispatch_log(message)
         except Exception as e:
             logger.opt(exception=True).warning(f"关闭游戏进程失败: {e}")
 

@@ -4,9 +4,14 @@
 /* eslint-disable */
 import type { GeneralConfig_GameInput } from './GeneralConfig_GameInput';
 import type { GeneralConfig_InfoInput } from './GeneralConfig_InfoInput';
+import type { GeneralConfig_plugin_gameInput } from './GeneralConfig_plugin_gameInput';
 import type { GeneralConfig_RunInput } from './GeneralConfig_RunInput';
 import type { GeneralConfig_ScriptInput } from './GeneralConfig_ScriptInput';
 export type GeneralConfigInput = {
+    /**
+     * 游戏与设备
+     */
+    game?: (GeneralConfig_plugin_gameInput | null);
     Game?: (GeneralConfig_GameInput | null);
     Info?: (GeneralConfig_InfoInput | null);
     Run?: (GeneralConfig_RunInput | null);

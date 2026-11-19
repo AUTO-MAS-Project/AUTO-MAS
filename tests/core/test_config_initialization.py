@@ -8,11 +8,30 @@ from pathlib import Path
 import pytest
 
 
+def _run_config_startup(profile: Path, code: str) -> None:
+    source_root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=profile,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env={
+            **os.environ,
+            "PYTHONPATH": str(source_root),
+            "PYTHONIOENCODING": "utf-8",
+            "AUTO_MAS_ENV": "development",
+            "AUTO_MAS_SUPERVISED": "1",
+        },
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 @pytest.mark.parametrize("power_supported", [True, False])
 def test_empty_profile_initializes_user_data_separately_from_source(
     tmp_path, power_supported
 ):
-    source_root = Path(__file__).resolve().parents[2]
     code = """
 import asyncio
 import os
@@ -70,20 +89,49 @@ async def run():
 
 asyncio.run(run())
 """
-    code = code.replace("__POWER_SUPPORTED__", repr(power_supported))
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        env={
-            **os.environ,
-            "PYTHONPATH": str(source_root),
-            "PYTHONIOENCODING": "utf-8",
-            "AUTO_MAS_ENV": "development",
-            "AUTO_MAS_SUPERVISED": "1",
-        },
-        timeout=30,
+    _run_config_startup(
+        tmp_path, code.replace("__POWER_SUPPORTED__", repr(power_supported))
     )
-    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_offline_first_start_does_not_retry_default_plugins_on_restart(tmp_path):
+    code = """
+import asyncio
+from unittest.mock import AsyncMock, patch
+
+from app.core import Config, Plugin
+from app.plugin import uv
+from app.plugin.errors import PluginError
+from app.plugin.runtime import discover
+from app.utils import power
+
+attempted = set()
+
+async def unavailable(spec, **kwargs):
+    attempted.add(spec)
+    raise PluginError("PyPI unavailable")
+
+async def run():
+    core = Config.source_path / "plugins" / "auto_mas_core"
+    with (
+        patch.object(discover, "_source_projects", return_value={core}),
+        patch.object(uv, "install", unavailable),
+        patch.object(power, "set_sleep_prevention", AsyncMock()),
+    ):
+        try:
+            await Config.init_config(prepare_plugins=Plugin.initialize)
+            assert Config.database_path.is_file()
+            assert attempted == __EXPECTED_SPECS__, attempted
+        finally:
+            await Plugin.shutdown()
+
+asyncio.run(run())
+"""
+    expected = {
+        "auto-mas-mumu-adapter",
+        "auto-mas-ldplayer-adapter",
+        "auto-mas-general-emulator-adapter",
+        "auto-mas-win-process-adapter",
+    }
+    _run_config_startup(tmp_path, code.replace("__EXPECTED_SPECS__", repr(expected)))
+    _run_config_startup(tmp_path, code.replace("__EXPECTED_SPECS__", "set()"))

@@ -1,12 +1,60 @@
 """将当前插件声明的配置契约合入宿主 OpenAPI，类型来自实际配置模型。"""
 
 from collections.abc import Iterable
+from typing import Literal
 
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 
+from app.config import ConfigEntry
 from app.config.wire import config_contract
+from app.plugin.base.game import GameAdapterPlugin, GameTypeDecl
 from app.plugin.base.script import ScriptAdapterPlugin, ScriptTypeDecl
+
+
+def extend_game_contracts(
+    document: dict, declarations: Iterable[tuple[str, GameTypeDecl]]
+) -> dict:
+    """游戏及嵌套设备从已启用插件的真实配置生成契约。"""
+    schemas = document["components"]["schemas"]
+    if "GameGetOut" not in schemas:
+        return document
+    choices = []
+    inputs = []
+    device_inputs = []
+    keys = []
+    for key, declaration in declarations:
+        keys.append(key)
+        projections: tuple[
+            tuple[type[ConfigEntry], Literal["input", "output"], list[dict[str, str]]],
+            ...,
+        ] = (
+            (declaration.game_class, "output", choices),
+            (declaration.game_class, "input", inputs),
+            (declaration.device_class, "input", device_inputs),
+        )
+        for entry_type, mode, destination in projections:
+            contract = config_contract(
+                entry_type,
+                mode=mode,
+                include_collections=mode == "output",
+                extra="forbid" if mode == "input" else "ignore",
+            )
+            schema = contract.model_json_schema(
+                ref_template="#/components/schemas/{model}"
+            )
+            schemas.update(schema.pop("$defs", {}))
+            schemas[contract.__name__] = schema
+            destination.append({"$ref": f"#/components/schemas/{contract.__name__}"})
+    if choices:
+        schemas["GameGetOut"]["properties"]["data"]["additionalProperties"] = {
+            "anyOf": choices
+        }
+        schemas["GameCreateIn"]["properties"]["type"]["enum"] = keys
+        schemas["GameCreateIn"]["properties"]["data"] = {"anyOf": inputs}
+        schemas["GameUpdateIn"]["properties"]["data"] = {"anyOf": inputs}
+        schemas["GameDeviceUpdateIn"]["properties"]["data"] = {"anyOf": device_inputs}
+    return document
 
 
 def extend_script_contracts(
@@ -104,7 +152,15 @@ def bind_openapi(app: FastAPI) -> None:
                 and record._plugin_cls is not None
                 and issubclass(record._plugin_cls, ScriptAdapterPlugin)
             ]
-            app.openapi_schema = extend_script_contracts(document, declarations)
+            document = extend_script_contracts(document, declarations)
+            game_declarations = [
+                (record._plugin_cls.game_type_key, Plugin.game_types[record.uid])
+                for record in Plugin.list_plugins()
+                if record.uid in Plugin.game_types
+                and record._plugin_cls is not None
+                and issubclass(record._plugin_cls, GameAdapterPlugin)
+            ]
+            app.openapi_schema = extend_game_contracts(document, game_declarations)
         return app.openapi_schema
 
     app.openapi = openapi

@@ -21,45 +21,21 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BeforeValidator, Field, ValidationInfo
+from pydantic import Field
 
 from app.config import (
     ConfigGroup,
     legacy,
 )
 from app.config.types import (
-    SYSTEM_BLOCKED_DIRS,
     JsonDictString,
     JsonListString,
-    normalize_path_input,
-    path_policy,
+    LoosePath,
 )
-from app.utils import EMULATOR_PATH_BOOK
 
 from .base import DomainEntry
-
-
-def normalize_emulator_manager(value: object, info: ValidationInfo) -> object:
-    """复用模拟器管理器定位入口，将目录或快捷方式归一为主程序路径。"""
-    value = normalize_path_input(value)
-    if value is None:
-        return None
-    kind = info.data.get("Type", "general")
-    if kind not in EMULATOR_PATH_BOOK:
-        return value
-    from app.utils import emulator as _utils_emulator
-
-    return _utils_emulator.tools.find_emulator_manager_path(str(value), kind)
-
-
-EmulatorManagerPath = Annotated[
-    Path | None,
-    path_policy(kind="file", must_exist=True, blocked_dirs=SYSTEM_BLOCKED_DIRS),
-    BeforeValidator(normalize_emulator_manager),
-]
 
 
 class EmulatorConfig(DomainEntry):
@@ -102,7 +78,7 @@ class EmulatorConfig(DomainEntry):
 
         Name: str = Field(default_factory=lambda: "新模拟器", description="模拟器名称")
 
-        Path: EmulatorManagerPath = Field(default=None, description="模拟器路径")
+        Path: LoosePath = Field(default=None, description="旧模拟器安装路径")
 
         Paths: JsonListString = Field(
             default_factory=lambda: "[]",

@@ -127,10 +127,7 @@
                   <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
                 <span
-                  v-if="
-                    okwwConfig.Game.Type === 'Client' &&
-                    (!okwwConfig.Game.Path || okwwConfig.Game.Path === '.')
-                  "
+                  v-if="okwwConfig.Game.Type === 'Client' && !boundGameLauncher"
                   class="control-hint"
                 >
                   {{ t('core.edit.autoUpdateNeedsLauncher') }}
@@ -188,31 +185,7 @@
                     </a-radio-group>
                   </div>
                 </template>
-                <PathPickerField
-                  v-model="okwwConfig.Game.Path"
-                  mode="folder"
-                  :placeholder="t('core.edit.pickLauncherDirectory')"
-                  :pick-label="t('core.edit.pickDirectory')"
-                  :disabled="!okwwConfig.Game.Enabled"
-                  :pick-disabled="!okwwConfig.Game.Enabled || isDiscoveringGame || isSaving"
-                  @pick="selectGameRootPath"
-                >
-                  <template #before-pick>
-                    <a-button
-                      type="primary"
-                      size="large"
-                      class="auto-import-button"
-                      :loading="isDiscoveringGame"
-                      :disabled="!okwwConfig.Game.Enabled || isSaving"
-                      @click="discoverGamePath"
-                    >
-                      <template #icon>
-                        <ImportOutlined />
-                      </template>
-                      {{ t('core.edit.import') }}
-                    </a-button>
-                  </template>
-                </PathPickerField>
+                <BoundGamePathField />
                 <a-alert
                   v-if="gamePathValidation.status !== 'unknown'"
                   :type="gamePathValidation.status === 'valid' ? 'success' : 'error'"
@@ -230,27 +203,7 @@
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
-                  <PathPickerField
-                    :model-value="okwwConfig.Game.ClientPath || derivedClientPath"
-                    mode="file"
-                    :placeholder="t('core.edit.clientPathPending')"
-                    :pick-label="t('core.edit.selectFile')"
-                    :disabled="!okwwConfig.Game.Enabled"
-                    :pick-disabled="!okwwConfig.Game.Enabled || isSaving"
-                    @pick="selectClientPath"
-                  >
-                    <template #after-pick>
-                      <a-button
-                        v-if="okwwConfig.Game.ClientPath"
-                        size="large"
-                        class="path-button"
-                        :disabled="!okwwConfig.Game.Enabled || isSaving"
-                        @click="resetClientPath"
-                      >
-                        {{ t('core.edit.resetAutoLocate') }}
-                      </a-button>
-                    </template>
-                  </PathPickerField>
+                  <BoundGamePathField />
                 </div>
               </a-form-item>
             </a-col>
@@ -370,6 +323,9 @@
 </template>
 
 <script setup lang="ts">
+import BoundGamePathField from '@/components/BoundGamePathField.vue'
+import { useBoundGameTarget } from '@/composables/useBoundGameTarget'
+
 import PathPickerField from '@/components/PathPickerField.vue'
 import ScriptRunLimitsSection from './components/ScriptRunLimitsSection.vue'
 import OkwwAccountSwitchField from './components/OkwwAccountSwitchField.vue'
@@ -395,6 +351,7 @@ import {
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import type { PathDiscoveryCandidate } from '@/types/electron'
+const { launcher: boundGameLauncher } = useBoundGameTarget()
 
 const { t } = useI18n()
 
@@ -929,7 +886,7 @@ const selectGameRootPath = async () => {
 // 已手动指定 ClientPath 时展示值不来自解码，跳过调用避免无谓的失败提示
 const refreshDerivedClientPath = async () => {
   if (okwwConfig.Game.ClientPath) return
-  if (!okwwConfig.Game.Path || okwwConfig.Game.Path === '.') {
+  if (!boundGameLauncher.value) {
     derivedClientPath.value = ''
     return
   }

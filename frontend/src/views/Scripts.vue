@@ -153,6 +153,7 @@
 </template>
 
 <script setup lang="ts">
+import { useConfigLoader } from '@/services/configUiSync'
 import { TaskMode } from '@/api'
 import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
 
@@ -367,9 +368,9 @@ onUnmounted(() => {
   activeConnections.value.clear()
 })
 
-const loadScripts = async () => {
+const loadScripts = useConfigLoader(['config', 'script-list'], async read => {
   try {
-    const result = await getScriptsWithUsers()
+    const result = await getScriptsWithUsers(read)
     if (!scriptListError.value) scripts.value = result
   } catch (error) {
     const errorMsg = getApiErrorMessage(error, t('core.apiErrors.scriptListFailed'))
@@ -379,7 +380,7 @@ const loadScripts = async () => {
     // 首次加载结束（不论成功失败）后置位，避免初始闪烁
     loadedOnce.value = true
   }
-}
+})
 
 const retryScriptUsers = async (scriptId: string) => {
   const script = scripts.value.find(item => item.id === scriptId)

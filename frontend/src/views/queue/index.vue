@@ -151,6 +151,7 @@
 </template>
 
 <script setup lang="ts">
+import { useConfigLoader } from '@/services/configUiSync'
 import { useI18n } from 'vue-i18n'
 import { Service, type QueueConfig_Info } from '@/api'
 import { queueApi } from '@/composables/useQueueApi'
@@ -201,10 +202,11 @@ const currentQueueItems = ref<any[]>([])
 const loading = ref(true)
 
 // 获取队列列表
-const fetchQueues = async () => {
-  loading.value = true
+const fetchQueues = useConfigLoader(['config', 'queues'], async read => {
+  if (!queueList.value.length) loading.value = true
   try {
     const response = await queueApi.getQueues({})
+    read(response)
     if (!isMounted) return
     if (response.code === 200) {
       // 处理队列数据
@@ -218,7 +220,7 @@ const fetchQueues = async () => {
         }))
 
         // 如果有队列且没有选中的队列，默认选中第一个
-        if (queueList.value.length > 0 && !activeQueueId.value) {
+        if (!queueList.value.some(queue => queue.id === activeQueueId.value)) {
           activeQueueId.value = queueList.value[0].id
           logger.debug(`Selected queue ID: ${activeQueueId.value}`) // 调试日志
           // 首屏直接复用这次拉回来的数据，不再为同一份内容再请求一次
@@ -247,7 +249,7 @@ const fetchQueues = async () => {
   } finally {
     loading.value = false
   }
-}
+})
 
 // 加载队列数据；调用方手里已有整份队列数据时直接传入，省一次请求
 const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) => {
@@ -297,119 +299,131 @@ const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) 
 }
 
 // 刷新定时项数据
-const refreshTimeSets = async () => {
-  if (!activeQueueId.value) {
-    currentTimeSets.value = []
-    return
-  }
-
-  try {
-    // 使用专门的定时项API获取数据
-    const response = await Service.getTimeSetApiQueueTimeGetPost({
-      queueId: activeQueueId.value,
-    })
-
-    if (response.code !== 200) {
-      logger.error(`获取定时项数据失败: ${JSON.stringify(response)}`)
-      // 不清空数组，避免骨架屏闪现
+const refreshTimeSets = useConfigLoader(
+  () => ['config', 'queue-times', activeQueueId.value],
+  async read => {
+    if (!activeQueueId.value) {
+      currentTimeSets.value = []
       return
     }
 
-    const timeSets: any[] = []
-
-    // 处理定时项数据
-    if (response.index && Array.isArray(response.index)) {
-      response.index.forEach((item: any) => {
-        try {
-          const timeSetId = item.uid
-          if (!timeSetId || !response.data || !response.data[timeSetId]) return
-
-          const timeSetData = response.data[timeSetId]
-          if (timeSetData?.Info) {
-            const timeString = timeSetData.Info.Time || '00:00'
-
-            timeSets.push({
-              id: timeSetId,
-              time: timeString,
-              enabled: Boolean(timeSetData.Info.Enabled),
-              days: timeSetData.Info.Days || [],
-            })
-          }
-        } catch (itemError) {
-          const errorMsg = itemError instanceof Error ? itemError.message : String(itemError)
-          logger.warn(`解析单个定时项失败: ${errorMsg}, item: ${JSON.stringify(item)}`)
-        }
+    const selected = activeQueueId.value
+    try {
+      // 使用专门的定时项API获取数据
+      const response = await Service.getTimeSetApiQueueTimeGetPost({
+        queueId: selected,
       })
-    }
 
-    // 使用nextTick确保数据更新不会导致渲染问题
-    await nextTick()
-    if (!isMounted) return
-    // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
-    currentTimeSets.value.splice(0, currentTimeSets.value.length, ...timeSets)
-    logger.debug(`刷新后的定时项数据: ${JSON.stringify(timeSets)}`) // 调试日志
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`刷新定时项列表失败: ${errorMsg}`)
-    // 不清空数组，避免骨架屏闪现
+      read(response)
+      if (selected !== activeQueueId.value) return
+      if (response.code !== 200) {
+        logger.error(`获取定时项数据失败: ${JSON.stringify(response)}`)
+        // 不清空数组，避免骨架屏闪现
+        return
+      }
+
+      const timeSets: any[] = []
+
+      // 处理定时项数据
+      if (response.index && Array.isArray(response.index)) {
+        response.index.forEach((item: any) => {
+          try {
+            const timeSetId = item.uid
+            if (!timeSetId || !response.data || !response.data[timeSetId]) return
+
+            const timeSetData = response.data[timeSetId]
+            if (timeSetData?.Info) {
+              const timeString = timeSetData.Info.Time || '00:00'
+
+              timeSets.push({
+                id: timeSetId,
+                time: timeString,
+                enabled: Boolean(timeSetData.Info.Enabled),
+                days: timeSetData.Info.Days || [],
+              })
+            }
+          } catch (itemError) {
+            const errorMsg = itemError instanceof Error ? itemError.message : String(itemError)
+            logger.warn(`解析单个定时项失败: ${errorMsg}, item: ${JSON.stringify(item)}`)
+          }
+        })
+      }
+
+      // 使用nextTick确保数据更新不会导致渲染问题
+      await nextTick()
+      if (!isMounted || selected !== activeQueueId.value) return
+      // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
+      currentTimeSets.value.splice(0, currentTimeSets.value.length, ...timeSets)
+      logger.debug(`刷新后的定时项数据: ${JSON.stringify(timeSets)}`) // 调试日志
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`刷新定时项列表失败: ${errorMsg}`)
+      // 不清空数组，避免骨架屏闪现
+    }
   }
-}
+)
 
 // 刷新队列项数据
-const refreshQueueItems = async () => {
-  if (!activeQueueId.value) {
-    // 不清空数组，避免骨架屏闪现
-    return
-  }
-
-  try {
-    // 使用专门的队列项API获取数据
-    const response = await queueApi.getItems({
-      queueId: activeQueueId.value,
-    })
-
-    if (response.code !== 200) {
-      logger.error(`获取队列项数据失败: ${JSON.stringify(response)}`)
+const refreshQueueItems = useConfigLoader(
+  () => ['config', 'queue-items', activeQueueId.value],
+  async read => {
+    if (!activeQueueId.value) {
       // 不清空数组，避免骨架屏闪现
       return
     }
 
-    const queueItems: any[] = []
-
-    // 处理队列项数据
-    if (response.index && Array.isArray(response.index)) {
-      response.index.forEach((item: any) => {
-        try {
-          const queueItemId = item.uid
-          if (!queueItemId || !response.data || !response.data[queueItemId]) return
-
-          const queueItemData = response.data[queueItemId]
-          if (queueItemData?.Info) {
-            queueItems.push({
-              id: queueItemId,
-              script: queueItemData.Info.ScriptId || '',
-              schedule: { ...(queueItemData.Schedule || {}) },
-            })
-          }
-        } catch (itemError) {
-          const errorMsg = itemError instanceof Error ? itemError.message : String(itemError)
-          logger.warn(`解析单个队列项失败: ${errorMsg}, item: ${JSON.stringify(item)}`)
-        }
+    const selected = activeQueueId.value
+    try {
+      // 使用专门的队列项API获取数据
+      const response = await queueApi.getItems({
+        queueId: selected,
       })
-    }
 
-    // 使用nextTick确保数据更新不会导致渲染问题
-    await nextTick()
-    if (!isMounted) return
-    // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
-    currentQueueItems.value.splice(0, currentQueueItems.value.length, ...queueItems)
-    logger.debug(`刷新后的队列项数据: ${JSON.stringify(queueItems)}`) // 调试日志
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`刷新队列项列表失败: ${errorMsg}`)
-    // 不清空数组，避免骨架屏闪现
+      read(response)
+      if (selected !== activeQueueId.value) return
+      if (response.code !== 200) {
+        logger.error(`获取队列项数据失败: ${JSON.stringify(response)}`)
+        // 不清空数组，避免骨架屏闪现
+        return
+      }
+
+      const queueItems: any[] = []
+
+      // 处理队列项数据
+      if (response.index && Array.isArray(response.index)) {
+        response.index.forEach((item: any) => {
+          try {
+            const queueItemId = item.uid
+            if (!queueItemId || !response.data || !response.data[queueItemId]) return
+
+            const queueItemData = response.data[queueItemId]
+            if (queueItemData?.Info) {
+              queueItems.push({
+                id: queueItemId,
+                script: queueItemData.Info.ScriptId || '',
+                schedule: { ...(queueItemData.Schedule || {}) },
+              })
+            }
+          } catch (itemError) {
+            const errorMsg = itemError instanceof Error ? itemError.message : String(itemError)
+            logger.warn(`解析单个队列项失败: ${errorMsg}, item: ${JSON.stringify(item)}`)
+          }
+        })
+      }
+
+      // 使用nextTick确保数据更新不会导致渲染问题
+      await nextTick()
+      if (!isMounted || selected !== activeQueueId.value) return
+      // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
+      currentQueueItems.value.splice(0, currentQueueItems.value.length, ...queueItems)
+      logger.debug(`刷新后的队列项数据: ${JSON.stringify(queueItems)}`) // 调试日志
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`刷新队列项列表失败: ${errorMsg}`)
+      // 不清空数组，避免骨架屏闪现
+    }
   }
-}
+)
 
 // 队列名称编辑失焦处理 - 保存到后端
 const onQueueNameBlur = async () => {

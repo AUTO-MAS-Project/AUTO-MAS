@@ -43,6 +43,8 @@ class ScriptTypeDecl:
     # 以下为对接现有 MAS 业务新增的声明，不属于来源框架的原始类型声明。
     # 首页活动展示和活动提醒使用的游戏标识，不声明游戏适配能力。
     activity_game: str | None = None
+    game_kinds: tuple[str, ...] = ()
+    supports_mod_avd: bool = False
 
 
 class ScriptAdapterPlugin(_AdapterPlugin):

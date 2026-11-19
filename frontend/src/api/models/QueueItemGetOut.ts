@@ -17,6 +17,7 @@ export type QueueItemGetOut = {
      * 操作消息
      */
     message?: string;
+    uiSources?: Array<string>;
     /**
      * 队列项索引列表
      */

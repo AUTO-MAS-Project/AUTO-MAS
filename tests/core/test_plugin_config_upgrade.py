@@ -111,6 +111,14 @@ from app.plugin.runtime import discover
 from app.plugin.types import PluginState
 from app.utils import io
 
+# 发行包安装测试不应命中开发者源码目录中的同名插件。
+source_projects = discover._source_projects
+checkout_plugins = (source / "plugins").resolve()
+discover._source_projects = lambda: {
+    project for project in source_projects()
+    if project.parent != checkout_plugins or project.name == "auto_mas_core"
+}
+
 sid = "e1821d2b-bbb8-4ac5-ad7c-e445c8324aa0"
 uid = "0896c0be-e2a8-4c38-bb3b-10eca7768405"
 pid = "5924194a-fcc0-49b6-8a2b-f1d1875def93"

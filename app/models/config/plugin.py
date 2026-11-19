@@ -31,17 +31,18 @@ from pydantic import Field, PrivateAttr, field_validator
 
 from app.config import (
     ConfigCollection,
+    ConfigEntry,
     ConfigGroup,
     ConfigNode,
     Trigger,
     UiVisibility,
     Virtual,
+    trigger_field,
     ui,
     virtual_field,
 )
 from app.config.shortcuts import ui_visibility
 from app.plugin.base.plugin import BasePlugin
-from app.plugin.config import PluginCommandEntry, trigger_field
 from app.plugin.types import (
     LifecycleContext,
     PluginCodeDrift,
@@ -50,11 +51,11 @@ from app.plugin.types import (
 )
 
 
-class PluginConfig(PluginCommandEntry):
+class PluginConfig(ConfigEntry):
     """插件自有配置根；由注册项持有，API 凭注册项定位，根 UID 独立。"""
 
 
-class PluginRecord(PluginCommandEntry):
+class PluginRecord(ConfigEntry):
     """已安装插件注册表项：元数据 + 状态由 Manager 回写；四 Trigger 仅开闸。
 
     不用配置信号维护级联/状态。前端 update 须剔除非 Trigger 字段。
@@ -120,10 +121,10 @@ class PluginRecord(PluginCommandEntry):
             default=PluginCodeDrift.NORMAL,
             description="与最近一次发现/磁盘的差异：normal=一致；needs_reload=需重载；package_removed=包缺失",
         )
-        enable: Trigger = Field(default=False, description="启用（写 True 开闸）")
-        disable: Trigger = Field(default=False, description="禁用（写 True 开闸）")
-        reload: Trigger = Field(default=False, description="重载（写 True 开闸）")
-        uninstall: Trigger = Field(default=False, description="卸载（写 True 开闸）")
+        enable: Trigger = Field(default=None, description="启用（写 True 开闸）")
+        disable: Trigger = Field(default=None, description="禁用（写 True 开闸）")
+        reload: Trigger = Field(default=None, description="重载（写 True 开闸）")
+        uninstall: Trigger = Field(default=None, description="卸载（写 True 开闸）")
 
         @field_validator("code_drift", mode="before")
         @classmethod
@@ -164,28 +165,28 @@ class PluginRecord(PluginCommandEntry):
         """按当前语言及回退顺序生成已安装插件的展示标签。"""
         return PluginMeta._pick_tags(self.info.tags_i18n)
 
-    @trigger_field("info.enable", cancellable=False)
+    @trigger_field("info.enable", finish_on_cancel=True)
     async def on_enable(self) -> None:
         """将启用触发器交给宿主插件管理器，激活当前插件及所需依赖。"""
         from app.core.plugin import Plugin
 
         await Plugin.enable(self)
 
-    @trigger_field("info.disable", cancellable=False)
+    @trigger_field("info.disable", finish_on_cancel=True)
     async def on_disable(self) -> None:
         """将停用触发器交给宿主插件管理器，协调当前插件及依赖者的停用。"""
         from app.core.plugin import Plugin
 
         await Plugin.disable(self)
 
-    @trigger_field("info.reload", cancellable=False)
+    @trigger_field("info.reload", finish_on_cancel=True)
     async def on_reload(self) -> None:
         """将重载触发器交给宿主插件管理器，按重载语义重新建立当前插件实例。"""
         from app.core.plugin import Plugin
 
         await Plugin.reload(self)
 
-    @trigger_field("info.uninstall", cancellable=False)
+    @trigger_field("info.uninstall", finish_on_cancel=True)
     async def on_uninstall(self) -> None:
         """将卸载触发器交给宿主插件管理器，移除当前插件及其配置。"""
         from app.core.plugin import Plugin
@@ -267,7 +268,7 @@ class PluginRegistryCollection(ConfigCollection[PluginRecord]):
         return None
 
 
-class PluginMeta(PluginCommandEntry):
+class PluginMeta(ConfigEntry):
     """插件目录（市场）条目：刷新写入；install Trigger 开闸安装。
 
     展示字段：隐藏 ``*_i18n`` 字典 + Virtual 按 ``setting.language.locale`` 暴露。
@@ -323,7 +324,7 @@ class PluginMeta(PluginCommandEntry):
         update_available: Annotated[
             Virtual[bool], ui(visibility=UiVisibility.DISABLE)
         ] = None
-        install: Trigger = Field(default=False, description="安装（写 True 开闸）")
+        install: Trigger = Field(default=None, description="安装（写 True 开闸）")
 
     info: Info = Field(default_factory=Info, description="目录项")
 
@@ -447,7 +448,7 @@ class PluginMeta(PluginCommandEntry):
             else UiVisibility.DISABLE
         )
 
-    @trigger_field("info.install", cancellable=False)
+    @trigger_field("info.install", finish_on_cancel=True)
     async def on_install(self) -> None:
         """执行前复查市场条目的安装权限，再复用预检、安装及升级加载流程。"""
         from app.core.plugin import Plugin

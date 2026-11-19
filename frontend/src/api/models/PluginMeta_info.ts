@@ -44,5 +44,9 @@ export type PluginMeta_info = {
     readonly tags?: (Array<string> | null);
     readonly installed_version?: (string | null);
     readonly update_available?: (boolean | null);
+    /**
+     * 安装（写 True 开闸）
+     */
+    readonly install?: (string | null);
 };
 

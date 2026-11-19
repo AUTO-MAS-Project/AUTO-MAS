@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { WhimboxUserConfig_Data } from './WhimboxUserConfig_Data';
+import type { WhimboxUserConfig_game } from './WhimboxUserConfig_game';
 import type { WhimboxUserConfig_Info } from './WhimboxUserConfig_Info';
 import type { WhimboxUserConfig_Notify } from './WhimboxUserConfig_Notify';
 import type { WhimboxUserConfig_OneDragon } from './WhimboxUserConfig_OneDragon';
@@ -10,6 +11,10 @@ import type { WhimboxUserConfig_plugin_info } from './WhimboxUserConfig_plugin_i
 import type { WhimboxUserConfig_plugin_notify } from './WhimboxUserConfig_plugin_notify';
 import type { WhimboxUserConfig_Task } from './WhimboxUserConfig_Task';
 export type WhimboxUserConfig = {
+    /**
+     * 游戏与设备
+     */
+    game?: (WhimboxUserConfig_game | null);
     info?: (WhimboxUserConfig_plugin_info | null);
     /**
      * 用户通知

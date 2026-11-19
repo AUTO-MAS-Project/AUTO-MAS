@@ -88,5 +88,21 @@ export type PluginRecord_info = {
      * 与最近一次发现/磁盘的差异：normal=一致；needs_reload=需重载；package_removed=包缺失
      */
     code_drift?: (PluginCodeDrift | null);
+    /**
+     * 启用（写 True 开闸）
+     */
+    readonly enable?: (string | null);
+    /**
+     * 禁用（写 True 开闸）
+     */
+    readonly disable?: (string | null);
+    /**
+     * 重载（写 True 开闸）
+     */
+    readonly reload?: (string | null);
+    /**
+     * 卸载（写 True 开闸）
+     */
+    readonly uninstall?: (string | null);
 };
 

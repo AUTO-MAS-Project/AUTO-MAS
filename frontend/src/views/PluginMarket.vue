@@ -25,6 +25,7 @@ const queryClient = useQueryClient()
 const refreshing = ref(false)
 const {
   installing,
+  activeTriggers,
   install: installPlugin,
   messageHolder: installationMessageHolder,
 } = usePluginInstallation()
@@ -82,12 +83,26 @@ onMounted(async () => {
     await queryClient.cancelQueries({ queryKey, exact: true })
     await queryClient.fetchQuery({
       queryKey,
-      queryFn: () => api.getCatalog(queryKey[2]),
+      queryFn: async () => {
+        const value = await api.getCatalog(queryKey[2])
+        return { value, uiSources: value?.uiSources }
+      },
       staleTime: 0,
     })
   } catch {
     return
   }
+})
+watch(activeTriggers, (next, previous) => {
+  if (
+    previous?.some(
+      item =>
+        item.group === 'info' &&
+        item.field === 'install' &&
+        !next?.some(active => active.taskId === item.taskId)
+    )
+  )
+    void load()
 })
 </script>
 

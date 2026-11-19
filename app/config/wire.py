@@ -30,6 +30,7 @@ from pydantic import (
     ConfigDict,
     Field,
     JsonValue,
+    StrictBool,
     create_model,
     model_serializer,
     model_validator,
@@ -132,9 +133,7 @@ def config_group_contract(
     """从分组字段派生无运行时状态的接口模型，不执行配置激活或字段校正。"""
     fields = {}
     for key, field in group_type.model_fields.items():
-        # 触发器没有输出状态，但配置更新必须能提交其动作值。
-        if mode == "output" and is_trigger_model_field(field):
-            continue
+        is_trigger = is_trigger_model_field(field)
         visibility = (
             entry_type._cfg_ui_visibility.get((group, key))
             if entry_type is not None and group is not None
@@ -143,6 +142,16 @@ def config_group_contract(
         if visibility == UiVisibility.HIDE or (
             mode == "input" and visibility == UiVisibility.DISABLE
         ):
+            continue
+        if is_trigger:
+            fields[key] = (
+                UUID | None if mode == "output" else Union[StrictBool, None],
+                Field(
+                    default=None,
+                    description=field.description,
+                    json_schema_extra={"readOnly": True} if mode == "output" else None,
+                ),
+            )
             continue
         annotation, _metadata = unwrap_ann(field.annotation)
         if any(isinstance(m, PathPolicy) for m in (*_metadata, *field.metadata)):

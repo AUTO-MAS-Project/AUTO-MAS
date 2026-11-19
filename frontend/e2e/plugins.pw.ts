@@ -97,6 +97,88 @@ test.describe('@plugins plugin foundation', () => {
     await expect(page.getByText('Update to 0.1.5', { exact: true })).toBeVisible()
   })
 
+  test('restores a running option trigger after leaving and returning to settings', async ({
+    app,
+    page,
+  }) => {
+    const recordId = '47b17e9c-e285-4ef7-9002-676643210820'
+    const configUid = '47b17e9c-e285-4ef7-9002-676643210821'
+    const taskId = '47b17e9c-e285-4ef7-9002-676643210822'
+    const activeField = {
+      taskId,
+      configUid,
+      group: 'options',
+      field: 'refresh_sources',
+      cancelling: false,
+    }
+    let started = false
+    let finished = false
+    let submissions = 0
+
+    await page.route('**/api/plugin_registry/get?*', route =>
+      route.fulfill({
+        json: {
+          code: 200,
+          data: {
+            [recordId]: {
+              info: { plugin_name: 'trigger_fixture', display_name: 'Trigger fixture' },
+            },
+          },
+        },
+      })
+    )
+    await page.route('**/api/plugin_config/get?*', route => {
+      const busy = started && !finished
+      return route.fulfill({
+        json: {
+          code: 200,
+          data: {
+            uid: configUid,
+            options: { refresh_sources: busy ? taskId : null },
+            ui: {
+              hints: {
+                options: [
+                  {
+                    field: 'refresh_sources',
+                    component: 'button',
+                    state: busy ? 'busy' : 'idle',
+                    editable: !busy,
+                  },
+                ],
+              },
+            },
+          },
+        },
+      })
+    })
+    await page.route('**/api/config/triggers/write', route => {
+      submissions++
+      started = true
+      return route.fulfill({ json: { code: 200, data: taskId } })
+    })
+    await page.route('**/api/config/triggers/active', route =>
+      route.fulfill({ json: { code: 200, data: started && !finished ? [activeField] : [] } })
+    )
+    await page.route('**/api/config/triggers/result', route =>
+      route.fulfill({
+        json: { code: 200, data: { state: finished ? 'succeeded' : 'running' } },
+      })
+    )
+
+    const settings = `/plugins/${recordId}/settings`
+    await app.goto(settings)
+    const trigger = page.getByRole('button', { name: /refresh_sources/ })
+    await trigger.click()
+    await expect(trigger).toHaveClass(/ant-btn-loading/)
+    await app.goto('/settings')
+    await app.goto(settings)
+    await expect(trigger).toBeDisabled()
+    await expect(trigger).toHaveClass(/ant-btn-loading/)
+    finished = true
+    await expect(trigger).toBeEnabled()
+    expect(submissions).toBe(1)
+  })
+
   test('upgrades market plugins from both pages and preserves retry after rejection', async ({
     app,
     page,
@@ -104,7 +186,7 @@ test.describe('@plugins plugin foundation', () => {
     // 两页复用市场触发器，防止误用注册 UID，并检查后台失败后仍可重试。
     const recordId = '47b17e9c-e285-4ef7-9002-676643210881'
     const metaId = '47b17e9c-e285-4ef7-9002-676643210882'
-    const operationId = '47b17e9c-e285-4ef7-9002-676643210883'
+    const taskId = '47b17e9c-e285-4ef7-9002-676643210883'
     let installed = '1.0'
     let reject = true
     const info = {
@@ -156,7 +238,7 @@ test.describe('@plugins plugin foundation', () => {
         })
       })
     }
-    await page.route('**/api/operations/start', route => {
+    await page.route('**/api/config/triggers/write', route => {
       expect(route.request().postDataJSON()).toEqual({
         configUid: metaId,
         group: 'info',
@@ -164,17 +246,15 @@ test.describe('@plugins plugin foundation', () => {
         value: true,
       })
       return route.fulfill({
-        json: { code: 200, data: { operationId, configUid: metaId, state: 'queued' } },
+        json: { code: 200, data: taskId },
       })
     })
-    await page.route('**/api/operations/get', route => {
+    await page.route('**/api/config/triggers/result', route => {
       if (!reject) installed = '2.0'
       return route.fulfill({
         json: {
           code: 200,
           data: {
-            operationId,
-            configUid: metaId,
             state: reject ? 'failed' : 'succeeded',
             errorCode: reject ? 'PluginPrecheckError' : null,
           },
@@ -361,7 +441,7 @@ test.describe('@plugins plugin foundation', () => {
   test('confirms uninstall before submitting a disabled adapter command', async ({ app, page }) => {
     // 隔离注册表与命令接口，验证已禁用适配器仍提示清空配置，取消不提交，确认仅提交一次。
     const configUid = '8f34836e-8498-4a6d-8fbe-a5d4db9d8ca6'
-    const operationId = '9545fe42-3ef9-40d6-a0f0-b1b178bfb58b'
+    const taskId = '9545fe42-3ef9-40d6-a0f0-b1b178bfb58b'
     let installed = true
     const submissions: unknown[] = []
     await page.route('**/api/plugin_registry/get?*', route =>
@@ -389,16 +469,16 @@ test.describe('@plugins plugin foundation', () => {
         },
       })
     )
-    await page.route('**/api/operations/start', route => {
+    await page.route('**/api/config/triggers/write', route => {
       submissions.push(route.request().postDataJSON())
       return route.fulfill({
-        json: { code: 200, data: { operationId, configUid, state: 'queued' } },
+        json: { code: 200, data: taskId },
       })
     })
-    await page.route('**/api/operations/get', route => {
+    await page.route('**/api/config/triggers/result', route => {
       installed = false
       return route.fulfill({
-        json: { code: 200, data: { operationId, configUid, state: 'succeeded' } },
+        json: { code: 200, data: { state: 'succeeded' } },
       })
     })
     await app.goto('/plugins')
@@ -441,7 +521,7 @@ test.describe('@plugins plugin foundation', () => {
     const command = async (field: 'enable' | 'disable') => {
       // 经公开命令接口模拟窗口打开期间的外部能力变化，等待真正完成。
       const accepted = await (
-        await page.request.post(`${backend}/api/operations/start`, {
+        await page.request.post(`${backend}/api/config/triggers/write`, {
           data: { configUid: record.uid, group: 'info', field, value: true },
         })
       ).json()
@@ -451,8 +531,8 @@ test.describe('@plugins plugin foundation', () => {
           async () =>
             (
               await (
-                await page.request.post(`${backend}/api/operations/get`, {
-                  data: { operationId: accepted.data.operationId },
+                await page.request.post(`${backend}/api/config/triggers/result`, {
+                  data: { taskId: accepted.data },
                 })
               ).json()
             ).data.state
@@ -624,7 +704,7 @@ test.describe('@plugins plugin foundation', () => {
   }) => {
     // 仅替换公开接口边界，验证命令身份、轮询和安装完成后的 UI 禁用，不安装真实插件。
     const configUid = '47b17e9c-e285-4ef7-9002-676643210111'
-    const operationId = '47b17e9c-e285-4ef7-9002-676643210222'
+    const taskId = '47b17e9c-e285-4ef7-9002-676643210222'
     let installed = false
     await page.route('**/api/plugin_catalog/get?*', route =>
       route.fulfill({
@@ -644,7 +724,7 @@ test.describe('@plugins plugin foundation', () => {
         },
       })
     )
-    await page.route('**/api/operations/start', async route => {
+    await page.route('**/api/config/triggers/write', async route => {
       expect(route.request().postDataJSON()).toEqual({
         configUid,
         group: 'info',
@@ -652,14 +732,14 @@ test.describe('@plugins plugin foundation', () => {
         value: true,
       })
       await route.fulfill({
-        json: { code: 200, data: { operationId, configUid, state: 'queued' } },
+        json: { code: 200, data: taskId },
       })
     })
-    await page.route('**/api/operations/get', async route => {
-      expect(route.request().postDataJSON()).toEqual({ operationId })
+    await page.route('**/api/config/triggers/result', async route => {
+      expect(route.request().postDataJSON()).toEqual({ taskId })
       installed = true
       await route.fulfill({
-        json: { code: 200, data: { operationId, configUid, state: 'succeeded' } },
+        json: { code: 200, data: { state: 'succeeded' } },
       })
     })
     await app.goto('/plugins/market')
@@ -698,7 +778,7 @@ test.describe('@plugins plugin foundation', () => {
           code: 200,
           data: {
             uid: configUid,
-            setup: { run: false },
+            setup: { run: null },
             ui: {
               hints: { setup: [{ field: 'run', component: 'button', editable: !completed }] },
               tables: [],
@@ -707,7 +787,7 @@ test.describe('@plugins plugin foundation', () => {
         },
       })
     )
-    await page.route('**/api/operations/start', async route => {
+    await page.route('**/api/config/triggers/write', async route => {
       expect(route.request().postDataJSON()).toEqual({
         configUid,
         group: 'setup',
@@ -718,14 +798,13 @@ test.describe('@plugins plugin foundation', () => {
       await route.fulfill({
         json: {
           code: 200,
-          data: {
-            operationId: '47b17e9c-e285-4ef7-9002-676643210555',
-            configUid,
-            state: 'succeeded',
-          },
+          data: '47b17e9c-e285-4ef7-9002-676643210555',
         },
       })
     })
+    await page.route('**/api/config/triggers/result', route =>
+      route.fulfill({ json: { code: 200, data: { state: 'succeeded' } } })
+    )
     await app.goto(`/plugins/${recordId}/settings`)
     const run = page.getByRole('button', { name: 'run', exact: true })
     await expect(run).toBeEnabled()

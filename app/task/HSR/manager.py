@@ -40,6 +40,7 @@ from app.models.config import HSRConfig, HSRUserConfig
 from app.models.notification.report import TaskResultData, TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.task.client import client_executable_path
 from app.utils import TASK_MODE_ZH, get_logger, is_admin
 from app.utils import io as _utils_io
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
@@ -732,7 +733,7 @@ class HSRManager(NotificationTaskBase):
             )
 
         if game_management_enabled and (enabled_module_keys or has_direct_user):
-            if not str(script_config.Game.Path or "").strip():
+            if not str(client_executable_path(script_config) or "").strip():
                 return "请设置游戏路径"
             game_exe_path = resolve_game_executable_path(script_config)
             if not game_exe_path.exists():

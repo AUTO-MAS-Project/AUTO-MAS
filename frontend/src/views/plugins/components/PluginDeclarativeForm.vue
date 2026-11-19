@@ -9,6 +9,7 @@ const props = defineProps<{
   groups: Array<{ name: string; hints: DeclarativeHint[] }>
   values: Record<string, Record<string, unknown>>
   runningKey?: string | null
+  activeFields?: string[]
   uid: string
   namespace: string
   disabled?: boolean
@@ -67,7 +68,11 @@ const emit = defineEmits<{
           :hint="hint"
           :value="values[group.name]?.[hint.field || '']"
           :options="options(group.name, hint)"
-          :loading="runningKey === `${group.name}.${hint.field}`"
+          :loading="
+            hint.state === 'busy' ||
+            activeFields?.includes(`${group.name}.${hint.field}`) ||
+            runningKey === `${group.name}.${hint.field}`
+          "
           @update:value="emit('update:value', group.name, hint.field || '', $event)"
           @action="emit('action', group.name, hint, $event)"
         />
