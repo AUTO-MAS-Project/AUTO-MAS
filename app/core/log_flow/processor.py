@@ -6,8 +6,6 @@ from datetime import datetime
 from importlib import import_module
 from typing import Protocol, cast, runtime_checkable
 
-from pydantic import JsonValue
-
 from app.utils.common.expression import ExpressionFunction, compile_expression
 from app.utils.common.log.hooks import make_line_hook
 from app.utils.common.log.monitor import strptime
@@ -24,7 +22,6 @@ from .contracts import (
     MAX_FRAME_BYTES,
     FunctionRef,
     PipelineSpec,
-    ProcessorFactorySpec,
     ReportedRecord,
     WithdrawnRecord,
 )
@@ -33,29 +30,22 @@ type ProcessorOutput = tuple[str, str] | ReportedRecord | WithdrawnRecord
 
 
 class TextProcessor(Protocol):
-    """单来源处理实例。可实现 open()，在 worker 就绪前初始化。"""
+    """单来源处理实例。可实现 open()，在 worker 就绪前初始化。
+
+    close() 也承担部分初始化失败后的清理。
+    """
 
     def process(self, line: str) -> Iterable[ProcessorOutput]: ...
 
     def close(self) -> Iterable[ProcessorOutput]: ...
 
 
-type ProcessorFactory = Callable[[Mapping[str, JsonValue]], TextProcessor]
 type LinePreprocessor = Callable[[str], str | None]
 
 
 @runtime_checkable
-class _ProcessorOpen(Protocol):
+class OpenableProcessor(Protocol):
     def open(self) -> None: ...
-
-
-def build_custom_processor(spec: ProcessorFactorySpec) -> TextProcessor:
-    ref = spec.factory
-    factory = cast(ProcessorFactory, getattr(import_module(ref.module), ref.attribute))
-    processor = factory(spec.options)
-    if isinstance(processor, _ProcessorOpen):
-        processor.open()
-    return processor
 
 
 def load_functions(refs: tuple[FunctionRef, ...]) -> dict[str, ExpressionFunction]:

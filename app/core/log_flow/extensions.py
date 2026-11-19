@@ -10,7 +10,10 @@ from .contracts import InputRecord, WorkerFactorySpec
 
 
 class Source(Protocol):
-    """按批返回当前可读记录；关闭时返回最后一批并释放资源。"""
+    """按批返回当前可读记录；关闭时返回最后一批并释放资源。
+
+    close() 也承担部分初始化失败后的清理。
+    """
 
     def open(self) -> None: ...
     def poll(self) -> Iterable[InputRecord]: ...
@@ -18,7 +21,7 @@ class Source(Protocol):
 
 
 class Sink(Protocol):
-    """在观察消息发出后消费节点，并在关闭时结算。"""
+    """在观察消息发出后消费节点，并在关闭时结算或清理部分初始化。"""
 
     def open(self) -> None: ...
     def write(self, node: Node) -> None: ...

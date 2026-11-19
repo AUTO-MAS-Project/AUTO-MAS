@@ -63,6 +63,8 @@ class _SampleSink:
 
     def open(self):
         self.path.write_text(f"pid:{os.getpid()}\n", encoding="utf-8")
+        if self.mode == "fail_open":
+            raise RuntimeError("sample sink failed during open")
 
     def write(self, node: Node):
         if self.mode == "fail":
@@ -93,6 +95,30 @@ def blocking_start_source(options: Mapping[str, JsonValue]) -> _SampleSource:
 
 def sample_sink(options: Mapping[str, JsonValue]) -> _SampleSink:
     return _SampleSink(Path(str(options["path"])), str(options["mode"]))
+
+
+class _FailingInitializer:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def open(self) -> None:
+        self.path.write_text("opened\n", encoding="utf-8")
+        raise RuntimeError("sample input failed during open")
+
+    def poll(self):
+        raise AssertionError("source must not poll after failed open")
+
+    def process(self, _line: str):
+        raise AssertionError("processor must not process after failed open")
+
+    def close(self):
+        with self.path.open("a", encoding="utf-8") as stream:
+            stream.write("closed\n")
+        return (ReportedRecord(node_type="普通", text="unfinished tail"),)
+
+
+def failing_initializer(options: Mapping[str, JsonValue]) -> _FailingInitializer:
+    return _FailingInitializer(Path(str(options["path"])))
 
 
 def sample_report(_entries):

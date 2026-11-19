@@ -43,10 +43,10 @@ from .contracts import (
 from .extensions import Sink, Source, create_extension
 from .processor import (
     GeneralRuleProcessor,
+    OpenableProcessor,
     ProcessorOutput,
     RuleNodeProcessor,
     TextProcessor,
-    build_custom_processor,
     load_functions,
 )
 
@@ -117,34 +117,37 @@ def _run_pipeline(
             for _ in processor.close():
                 pass
 
-    def build_processor(source_name: NodeSource) -> TextProcessor:
+    def add_processor(source_name: NodeSource) -> None:
         if config.processor is not None:
-            processor = build_custom_processor(config.processor)
+            processor = cast(TextProcessor, create_extension(config.processor))
+            processors[source_name] = processor
             cleanup.callback(release_processor, source_name)
-            return processor
-        if config.general_patterns is not None:
-            return GeneralRuleProcessor(
+            if isinstance(processor, OpenableProcessor):
+                processor.open()
+        elif config.general_patterns is not None:
+            processors[source_name] = GeneralRuleProcessor(
                 config.general_patterns,
                 config.general_hooks,
                 log_time=config.general_log_time if source_name == "mas" else None,
             )
-        return RuleNodeProcessor(config, functions)
+        else:
+            processors[source_name] = RuleNodeProcessor(config, functions)
 
     if config.file is not None:
-        processors["file"] = build_processor("file")
+        add_processor("file")
     if config.accept_push:
-        processors["push"] = build_processor("push")
+        add_processor("push")
     if config.accept_mas:
-        processors["mas"] = build_processor("mas")
+        add_processor("mas")
     custom_source = (
         cast(Source, create_extension(config.source))
         if config.source is not None
         else None
     )
     sink: Sink | None = None
+    closing_source = False
     if custom_source is not None:
-        processors["custom"] = build_processor("custom")
-        custom_source.open()
+        add_processor("custom")
 
         def release_source() -> None:
             if not closing_source:
@@ -152,23 +155,21 @@ def _run_pipeline(
                     pass
 
         cleanup.callback(release_source)
-    closing_source = False
+        custom_source.open()
     sink_error = ""
+    closing_sink = False
     if config.sink is not None:
         try:
-            candidate = cast(Sink, create_extension(config.sink))
-            candidate.open()
-        except Exception as exc:
-            sink_error = f"open: {type(exc).__name__}"
-        else:
-            sink = candidate
+            sink = cast(Sink, create_extension(config.sink))
 
-            def release_sink() -> None:
+            def release_sink(candidate: Sink) -> None:
                 if not closing_sink:
                     candidate.close()
 
-            cleanup.callback(release_sink)
-    closing_sink = False
+            cleanup.callback(release_sink, sink)
+            sink.open()
+        except Exception as exc:
+            sink_error = f"open: {type(exc).__name__}"
     source = None
     if config.file is not None:
         source = LogSource(

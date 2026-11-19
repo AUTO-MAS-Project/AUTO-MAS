@@ -314,6 +314,49 @@ async def test_custom_processor_releases_resources_after_a_processing_error(tmp_
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("component", ["processor", "source", "sink"])
+async def test_worker_closes_extensions_with_a_partial_open_failure(
+    tmp_path, component
+):
+    marker = tmp_path / "lifecycle.txt"
+    factory = WorkerFactorySpec(
+        factory=FunctionRef(
+            name="probe:initializer",
+            module="tests.support.log_flow_functions",
+            attribute="sample_sink" if component == "sink" else "failing_initializer",
+        ),
+        options={"path": str(marker), "mode": "fail_open"},
+    )
+    run = TaskUserItem()
+    rules = SimpleFlowDeclaration(
+        processor=factory if component == "processor" else None
+    )
+    async with open_custom_flow(
+        rules,
+        run=run,
+        mode="关闭",
+        accept_push=True,
+        source=factory if component == "source" else None,
+        sink=factory if component == "sink" else None,
+    ) as flow:
+        assert flow.reporter is not None
+        submitted = flow.reporter.node("普通", "valid observation")
+        assert submitted == (
+            SubmitResult.ACCEPTED if component == "sink" else SubmitResult.CLOSED
+        )
+    observation = run.node_observation
+    assert observation is not None and observation.summary is not None
+    summary = observation.summary
+    if component == "sink":
+        assert summary.complete and summary.sink_error == "open: RuntimeError"
+        assert [node.text for node in summary.nodes] == ["valid observation"]
+        assert marker.read_text(encoding="utf-8").splitlines()[1:] == ["closed"]
+    else:
+        assert summary.reason == "worker_error" and not summary.nodes
+        assert marker.read_text(encoding="utf-8").splitlines() == ["opened", "closed"]
+
+
+@pytest.mark.asyncio
 async def test_unavailable_worker_does_not_prevent_execution_inside_flow():
     run = TaskUserItem()
     reports = []
