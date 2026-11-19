@@ -79,3 +79,7 @@ def sample_sink(options: Mapping[str, JsonValue]) -> _SampleSink:
 
 def sample_report(_entries):
     return [("普通", "sample report", None)]
+
+
+def disabled_report(_entries):
+    raise AssertionError("关闭通知时不得执行报告归并")

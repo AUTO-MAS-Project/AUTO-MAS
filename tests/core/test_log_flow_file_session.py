@@ -243,6 +243,15 @@ async def test_default_flow_shares_live_nodes_and_delivers_selected_report(
                 start="^BEGIN", end="^END", extract='"✅ 成功: 8"', node_type="普通"
             ),
         ),
+        postprocess=(
+            FunctionRef(
+                name="sample:report",
+                module="tests.support.log_flow_functions",
+                attribute="disabled_report",
+            )
+            if mode == "关闭"
+            else None
+        ),
     )
     run = TaskUserItem(user_id="test")
     display: list[str] = []

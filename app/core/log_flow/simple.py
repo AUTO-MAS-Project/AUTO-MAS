@@ -87,7 +87,7 @@ async def open_custom_flow(
         sink=sink,
         rules=declaration.rules,
         windows=declaration.windows,
-        postprocess=declaration.postprocess,
+        postprocess=declaration.postprocess if mode != "关闭" else None,
         functions=declaration.functions,
         processor=declaration.processor,
         plugin_package=plugin_package,
