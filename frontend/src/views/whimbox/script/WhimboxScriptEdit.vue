@@ -89,7 +89,7 @@
               <ScriptRunLimitField
                 v-model="whimboxConfig.Run.RunTimesLimit"
                 kind="retry"
-                :label="t('core.edit.retryLimit2')"
+                :label="t('core.edit.retryLimit')"
                 :hint="t('core.edit.whimboxRetryLimitHint')"
                 @save="handleChange('Run', 'RunTimesLimit', whimboxConfig.Run.RunTimesLimit)"
               />

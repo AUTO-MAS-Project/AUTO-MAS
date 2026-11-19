@@ -647,7 +647,6 @@
             v-model:retry-limit="generalConfig.Run.RunTimesLimit"
             v-model:timeout="generalConfig.Run.RunTimeLimit"
             :daily-hint="t('core.edit.skipRunOnceThis')"
-            :retry-label="t('core.edit.retryLimit')"
             enhanced
             :retry-hint="t('core.edit.ifRunStillUnfinished')"
             :timeout-hint="t('core.edit.treatRunAsTimed')"

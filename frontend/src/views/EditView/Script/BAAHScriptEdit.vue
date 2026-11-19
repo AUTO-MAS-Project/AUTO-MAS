@@ -213,7 +213,7 @@
               <ScriptRunLimitField
                 v-model="baahConfig.Run.RunTimesLimit"
                 kind="retry"
-                :label="t('core.edit.retryLimit2')"
+                :label="t('core.edit.retryLimit')"
                 :hint="t('core.edit.baahRunTimesLimitHint')"
                 @save="handleChange('Run', 'RunTimesLimit', baahConfig.Run.RunTimesLimit)"
               />
