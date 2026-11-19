@@ -107,8 +107,10 @@ def preserve_local_packages(target: Path, prepared: Path) -> None:
             shutil.copy2(source, destination)
 
 
-def changed_loaded_dependencies(prepared: Path, replacing: str) -> list[str]:
-    """比较候选环境与已导入文件的发行归属，只对实际换版的在用依赖要求重启。"""
+def changed_loaded_dependencies(
+    prepared: Path, replacing: str, *, shared_environment_in_use: bool = False
+) -> list[str]:
+    """在线共享依赖有外部读者时，保护它们可延迟导入的已装发行包。"""
     from .ops import site_dir
 
     current = distributions(site_dir(activate=False))
@@ -119,17 +121,25 @@ def changed_loaded_dependencies(prepared: Path, replacing: str) -> list[str]:
         if (file := getattr(module, "__file__", None)) is not None
     }
     restart = []
+    replacing = canonicalize_name(replacing)
     for name, distribution in current.items():
         other = proposed.get(name)
-        if name == canonicalize_name(replacing):
+        if (
+            name != replacing
+            and other is not None
+            and other.version == distribution.version
+        ):
+            continue
+        if shared_environment_in_use:
+            restart.append(name)
+            continue
+        if name == replacing:
             # 插件自身由既有生命周期重载；已加载的原生扩展仍须交给新进程。
             files = distribution.files or []
             if not any(
                 str(path).casefold().endswith((".pyd", ".so", ".dll")) for path in files
             ):
                 continue
-        elif other is not None and other.version == distribution.version:
-            continue
         else:
             files = distribution.files
             if files is None:

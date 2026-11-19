@@ -27,6 +27,11 @@ class FlowOwner:
     def accepting(self) -> bool:
         return not self._sealed and self._accepting()
 
+    @property
+    def has_workers(self) -> bool:
+        """启动中的会话也可能已在独立进程导入共享依赖。"""
+        return self._starting > 0 or bool(self._sessions)
+
     @asynccontextmanager
     async def open(
         self, run: TaskScriptItem | TaskUserItem, config: PipelineSpec

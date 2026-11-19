@@ -15,6 +15,7 @@ import platform
 import shutil
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -119,6 +120,7 @@ async def install(
     plugin_name: str,
     meta_id: UUID | None = None,
     dry_run: bool = False,
+    has_shared_environment_readers: Callable[[], bool] | None = None,
 ) -> bool:
     """联合安装到候选目录；可热加载时发布文件，否则保留候选并返回需重启。"""
     from packaging.requirements import Requirement
@@ -179,8 +181,16 @@ async def install(
             distribution.metadata, package_name=replacing, plugin_name=plugin_name
         )
         environment.preserve_local_packages(target, prepared)
+        # 求解期间宿主仍可启动 worker，在同步发布前才取读者状态。
         restart_required = bool(
-            environment.changed_loaded_dependencies(prepared, replacing)
+            environment.changed_loaded_dependencies(
+                prepared,
+                replacing,
+                shared_environment_in_use=(
+                    has_shared_environment_readers is not None
+                    and has_shared_environment_readers()
+                ),
+            )
         )
         existing_record = Config.plugin_registry.by_name(plugin_name)
         record = environment.InstallationRecord(

@@ -1290,6 +1290,9 @@ class _PluginManager:
                     f"{package}=={version}" if version else package,
                     plugin_name=plugin_id,
                     meta_id=meta.uid,
+                    has_shared_environment_readers=lambda: any(
+                        owner.has_workers for owner in self._log_flow_owners.values()
+                    ),
                 )
                 if restart_required:
                     return {"restart_required": True}
