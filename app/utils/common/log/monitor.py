@@ -105,7 +105,7 @@ class LogMonitor:
         self.latest_time = datetime.now()
         self.task: asyncio.Task | None = None
         self._file_stop: asyncio.Event | None = None
-        self.on_raw_incomplete: Callable[[], None] | None = None
+        self.on_raw_incomplete: Callable[[str], None] | None = None
 
     async def monitor_file(
         self,
@@ -356,13 +356,31 @@ class LogMonitor:
             raise ValueError(f"无效的流类型: {stream}")
 
         self.log_contents = []
+        discarding_line = False
 
         while True:
+            # 订阅需要确认被舍弃行的分隔符，避免下一次读取发布该行的残段。
+            read_line = (
+                process_stream.readuntil
+                if self.on_raw_line is not None or discarding_line
+                else process_stream.readline
+            )
             try:
-                bline = await asyncio.wait_for(process_stream.readline(), timeout=60)
+                bline = await asyncio.wait_for(read_line(), timeout=60)
             except asyncio.TimeoutError:
                 # 超时后调用回调函数
                 await self.do_callback()
+                continue
+            except asyncio.IncompleteReadError as exc:
+                bline = exc.partial
+            except asyncio.LimitOverrunError as exc:
+                await process_stream.readexactly(exc.consumed)
+                if not discarding_line:
+                    detail = "进程输出中有一行超过读取上限，已丢弃整行"
+                    logger.warning(detail)
+                    if self.on_raw_incomplete is not None:
+                        self.on_raw_incomplete(detail)
+                discarding_line = True
                 continue
             except ValueError:
                 # 单行超过 StreamReader 的读取上限（默认 64 KiB）时 readline 抛
@@ -370,6 +388,12 @@ class LogMonitor:
                 # 该行尚未到达的剩余部分会作为一条新行继续处理。
                 logger.warning("进程输出中有一行超过读取上限，已丢弃超限部分")
                 continue
+
+            if discarding_line:
+                discarding_line = False
+                if not process_stream.at_eof():
+                    continue
+                bline = b""
 
             line = ANSI_ESCAPE_RE.sub("", decode_bytes(bline))
 
@@ -676,7 +700,7 @@ class LogMonitor:
                     if not drained:
                         task.cancel()
                         if on_incomplete is not None:
-                            on_incomplete()
+                            on_incomplete("原生文件日志未能完成末次读取")
                         logger.warning("日志监控未能完成末次读取")
             elif task is not None and not task.done():
                 task.cancel()

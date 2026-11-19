@@ -582,6 +582,42 @@ async def test_simple_flow_handles_stdout_burst_from_real_log_monitor():
 
 
 @pytest.mark.asyncio
+async def test_native_stdout_skips_an_entire_oversized_line_and_reports_a_gap():
+    async def display(_lines, _latest_time):
+        pass
+
+    monitor = LogMonitor((0, 0), "", display)
+    run = TaskUserItem()
+    reports = []
+    declaration = SimpleFlowDeclaration(
+        rules=(LineRule(match="^done:", extract=r"$(done:(\w+))", node_type="普通"),)
+    )
+    async with open_simple_flow(
+        declaration,
+        run=run,
+        monitor=monitor,
+        mode="逐条",
+        receive_report=reports.append,
+    ):
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            'import sys, time; out = sys.stdout.buffer; out.write(b"done:before\\n" + b"x" * 2048); '
+            'out.flush(); time.sleep(.3); out.write(b"done:fragment\\ndone:after\\n"); out.flush()',
+            stdout=asyncio.subprocess.PIPE,
+            limit=128,
+        )
+        await asyncio.wait_for(monitor.monitor_process(process, "stdout"), 5)
+        assert await process.wait() == 0
+
+    assert reports == [["before", "after", "⚠️ 节点采集不完整"]]
+    observation = run.node_observation
+    assert observation is not None and observation.summary is not None
+    assert [node.text for node in observation.snapshot()] == ["before", "after"]
+    assert observation.summary.reason == "worker_error"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("stop_case", ["normal", "rotated", "slow_callback"])
 async def test_native_file_flow_drains_last_poll_on_stop(
     tmp_path, monkeypatch, stop_case
