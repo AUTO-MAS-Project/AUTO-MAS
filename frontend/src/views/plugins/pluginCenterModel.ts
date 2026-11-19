@@ -1,4 +1,5 @@
 import type {
+  PluginReleaseNote,
   PluginCatalogDocument,
   PluginCatalogGetOut,
   PluginConfigUi,
@@ -91,6 +92,7 @@ export interface PluginDiagnostic {
 }
 
 interface PluginCommonView {
+  releaseNotes: PluginReleaseNote[]
   /** 条目 uid：已安装为注册表 uid，市场为目录 uid；命令目标即此 uid。 */
   uid: string
   /** 插件标识（plugin_name），缺失时为 null。 */
@@ -115,6 +117,8 @@ interface PluginCommonView {
 
 export interface MarketEntryView extends PluginCommonView {
   kind: 'market'
+  updateNotes: PluginReleaseNote[]
+  installedNotes: PluginReleaseNote[]
   /** 已安装版本；缺失按未安装处理。 */
   installedVersion: string | null
   installed: boolean
@@ -345,6 +349,15 @@ export function toMarketViews(
     const installedVersion = firstText(info.installed_version)
     return {
       kind: 'market',
+      releaseNotes: (info.changelog ?? []).filter(
+        note => note.version === info.changelog_versions?.target
+      ),
+      installedNotes: (info.changelog ?? []).filter(
+        note => note.version === info.changelog_versions?.installed
+      ),
+      updateNotes: (info.changelog ?? []).filter(note =>
+        info.changelog_versions?.updates?.includes(note.version)
+      ),
       uid,
       pluginId,
       name: resolvePluginName(uid, info, context.texts),
@@ -427,6 +440,7 @@ export function toInstalledViews(
     const name = resolvePluginName(uid, info, context.texts, catalogName)
     return {
       kind: 'installed',
+      releaseNotes: catalogEntry?.installedNotes ?? [],
       uid,
       pluginId,
       name,

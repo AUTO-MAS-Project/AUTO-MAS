@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RightOutlined } from '@ant-design/icons-vue'
+import PluginReleaseNotes from '../components/PluginReleaseNotes.vue'
 import PluginDetailFields from '../components/PluginDetailFields.vue'
 import type { InstalledPluginView } from '../pluginCenterModel'
 
@@ -21,6 +22,7 @@ const diagnosticsText = computed(() =>
 <template>
   <div class="installed-detail">
     <PluginDetailFields :view="view" :min-column-width="DETAIL_MIN_COLUMN_WIDTH">
+      <PluginReleaseNotes :notes="view.releaseNotes" />
       <div v-if="view.diagnostics.length" class="installed-diagnostics">
         <a-button
           type="text"

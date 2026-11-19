@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import PluginReleaseNotes from '../components/PluginReleaseNotes.vue'
 import PluginAvatar from '../components/PluginAvatar.vue'
 import PluginDetailFields from '../components/PluginDetailFields.vue'
 import PluginOriginTag from '../components/PluginOriginTag.vue'
@@ -42,6 +43,7 @@ const subtitle = computed(() =>
       </div>
     </template>
     <PluginDetailFields v-if="entry" :view="entry" :min-column-width="FIELD_COLUMN_MIN_WIDTH" />
+    <PluginReleaseNotes v-if="entry" :key="entry.uid" :notes="entry.updateAvailable ? entry.updateNotes : entry.releaseNotes" :upgrade="entry.updateAvailable" />
     <template #footer>
       <a-button @click="emit('close')">{{ t('core.common.close') }}</a-button>
     </template>

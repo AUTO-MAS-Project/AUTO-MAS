@@ -5017,6 +5017,8 @@
   "core.plugins.link.docs": "Docs",
   "core.plugins.link.homepage": "Homepage",
   "core.plugins.link.repository": "Repository",
+  "core.plugins.releaseNotes": "Release notes",
+  "core.plugins.releaseNotesLimit": "Only notes from the last 5 releases are shown.",
   "core.plugins.updateTo": "Update to {version}",
   "core.plugins.installPhase.queued": "Queued",
   "core.plugins.installPhase.installing": "Installing",

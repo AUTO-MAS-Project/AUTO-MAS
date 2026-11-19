@@ -159,6 +159,16 @@ test.describe('@plugins plugin foundation', () => {
                   ? {
                       ...info,
                       version: '2.0',
+                      changelog: [
+                        { version: '2.0', body: '- New release change' },
+                        { version: '1.5', body: '- Intermediate release change' },
+                        { version: '1.0', body: '- Installed release change' },
+                      ],
+                      changelog_versions: {
+                        target: '2.0',
+                        installed,
+                        updates: installed === '2.0' ? [] : ['2.0', '1.5'],
+                      },
                       installed_version: installed,
                       update_available: installed !== '2.0',
                     }
@@ -213,6 +223,13 @@ test.describe('@plugins plugin foundation', () => {
         },
       })
     })
+    await app.goto('/plugins/updates')
+    const updateRow = page.locator('.update-row').filter({ hasText: 'Upgrade fixture' })
+    await updateRow.getByRole('button', { name: 'Release notes' }).click()
+    await expect(updateRow.getByText('New release change', { exact: true })).toBeVisible()
+    await expect(updateRow.getByText('Intermediate release change', { exact: true })).toBeVisible()
+    await expect(updateRow.getByText('Installed release change', { exact: true })).toHaveCount(0)
+    await app.evidence('plugin-update-notes')
     for (const path of ['/plugins', '/plugins/market']) {
       installed = '1.0'
       reject = true
@@ -229,7 +246,14 @@ test.describe('@plugins plugin foundation', () => {
         await expect(
           marketCard(page, 'Upgrade fixture').getByText('Installed', { exact: true })
         ).toBeVisible()
-      else await expect(installedRow(page, 'Upgrade fixture')).toContainText('2.0')
+      else {
+        const row = installedRow(page, 'Upgrade fixture')
+        await expect(row).toContainText('2.0')
+        await row.locator('.installed-row-main').click()
+        await row.getByRole('button', { name: 'Release notes' }).click()
+        await expect(row.getByText('New release change', { exact: true })).toBeVisible()
+        await expect(row.getByText('Intermediate release change', { exact: true })).toHaveCount(0)
+      }
     }
   })
 

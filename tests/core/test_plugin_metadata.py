@@ -176,7 +176,7 @@ def test_unsafe_plugin_identity_is_rejected_in_metadata_and_catalog(identity):
         is None
     )
     entry = json.loads(
-        (Path(__file__).parents[1] / "fixtures/plugin_catalog_v1.json").read_text(
+        (Path(__file__).parents[1] / "fixtures/plugin_catalog_v2.json").read_text(
             encoding="utf-8"
         )
     )["plugins"][0]

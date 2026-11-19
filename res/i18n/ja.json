@@ -5017,6 +5017,8 @@
   "core.plugins.link.docs": "ドキュメント",
   "core.plugins.link.homepage": "ホームページ",
   "core.plugins.link.repository": "リポジトリ",
+  "core.plugins.releaseNotes": "更新内容",
+  "core.plugins.releaseNotesLimit": "直近5リリースの更新内容を表示します。",
   "core.plugins.updateTo": "{version} に更新",
   "core.plugins.installPhase.queued": "待機中",
   "core.plugins.installPhase.installing": "インストール中",

@@ -27,7 +27,7 @@ from typing import Annotated, ClassVar
 
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
-from pydantic import Field, PrivateAttr, field_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 from app.config import (
     ConfigCollection,
@@ -267,6 +267,21 @@ class PluginRegistryCollection(ConfigCollection[PluginRecord]):
         return None
 
 
+class PluginReleaseNote(BaseModel):
+    """数据站提供的单个发行版本的 Markdown 更新说明。"""
+
+    version: str
+    body: str
+
+
+class PluginChangelogVersions(BaseModel):
+    """各页签使用的版本键，共享目录正文并按 PEP 440 匹配安装版本。"""
+
+    target: str | None = None
+    installed: str | None = None
+    updates: list[str] = Field(default_factory=list)
+
+
 class PluginMeta(PluginCommandEntry):
     """插件目录（市场）条目：刷新写入；install Trigger 开闸安装。
 
@@ -283,6 +298,12 @@ class PluginMeta(PluginCommandEntry):
         version: Annotated[str, ui(visibility=UiVisibility.DISABLE)] = Field(
             default="", description="版本"
         )
+        changelog: Annotated[
+            list[PluginReleaseNote], ui(visibility=UiVisibility.DISABLE)
+        ] = Field(default_factory=list, description="最近五个发行版本内的更新说明")
+        changelog_versions: Annotated[
+            Virtual[PluginChangelogVersions], ui(visibility=UiVisibility.DISABLE)
+        ] = None
         docs_url: Annotated[str, ui(visibility=UiVisibility.DISABLE)] = Field(
             default="", description="文档 URL"
         )
@@ -411,6 +432,40 @@ class PluginMeta(PluginCommandEntry):
         """返回当前实现的版本，供市场与插件中心共同展示升级前后的版本。"""
         record = self._installed_record()
         return record.info.version if record is not None else None
+
+    @virtual_field("info.changelog_versions")
+    def compute_changelog_versions(self) -> PluginChangelogVersions:
+        """按市场目标和本机发行身份选取安装、回看及跨版本升级所需的说明。"""
+        selected = PluginChangelogVersions()
+        info = self.effective.info
+        if not info.changelog:
+            return selected
+        target = Version(info.version)
+        record = self._installed_record()
+        installed = None
+        if (
+            record
+            and record.info.source == "installed"
+            and (
+                info.plugin_name == record.info.plugin_name
+                and canonicalize_name(info.package_name)
+                == canonicalize_name(record.info.package_name)
+            )
+        ):
+            try:
+                installed = Version(record.info.version)
+            except InvalidVersion:
+                pass
+        for note in info.changelog:
+            version = Version(note.version)
+            if version == target:
+                selected.target = note.version
+            if installed is not None:
+                if installed == version:
+                    selected.installed = note.version
+                elif installed < version <= target:
+                    selected.updates.append(note.version)
+        return selected
 
     @virtual_field("info.update_available")
     def compute_update_available(self) -> bool:
