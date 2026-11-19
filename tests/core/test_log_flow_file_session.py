@@ -580,9 +580,11 @@ async def test_native_file_monitor_keeps_offset_when_open_races_rotation(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("replace_file", [False, True])
+@pytest.mark.parametrize(
+    "rotation", ["none", "while_away", "during_drain", "before_drain"]
+)
 async def test_native_file_monitor_resumes_date_path_by_identity(
-    tmp_path, replace_file
+    tmp_path, monkeypatch, rotation
 ):
     first = tmp_path / "day-one.log"
     second = tmp_path / "day-two.log"
@@ -593,6 +595,22 @@ async def test_native_file_monitor_resumes_date_path_by_identity(
     switched_back = False
     finished = asyncio.Event()
     raw = []
+    backup = first.with_suffix(".bak")
+    original_open = aiofiles.open
+
+    def write_replacement():
+        append(first, f"{stamp} new00\n{stamp} new01\n")
+
+    def rotate_during_open(file, *args, **kwargs):
+        if (
+            rotation == "during_drain"
+            and file == first
+            and current == second
+            and not backup.exists()
+        ):
+            first.rename(backup)
+            write_replacement()
+        return original_open(file, *args, **kwargs)
 
     async def display(lines, _latest_time):
         nonlocal current, switched_back
@@ -600,17 +618,24 @@ async def test_native_file_monitor_resumes_date_path_by_identity(
             return
         tail = lines[-1].split()[-1]
         if tail == "first" and not switched_back:
+            if rotation in ("during_drain", "before_drain"):
+                append(first, f"{stamp} last0\n")
+            if rotation == "before_drain":
+                first.rename(backup)
             current = second
         elif tail == "other" and not switched_back:
-            append(first, f"{stamp} last0\n")
-            if replace_file:
-                first.rename(first.with_suffix(".bak"))
-                append(first, f"{stamp} new00\n{stamp} new01\n")
+            if rotation in ("none", "while_away"):
+                append(first, f"{stamp} last0\n")
+            if rotation == "while_away":
+                first.rename(backup)
+            if rotation in ("while_away", "before_drain"):
+                write_replacement()
             current = first
             switched_back = True
-        elif tail == ("new01" if replace_file else "last0"):
+        elif tail == ("last0" if rotation == "none" else "new01"):
             finished.set()
 
+    monkeypatch.setattr(aiofiles, "open", rotate_during_open)
     monitor = LogMonitor((0, 19), "%Y-%m-%d %H:%M:%S", display, on_raw_line=raw.append)
     await monitor.start_monitor_file(
         lambda: current, datetime.now() - timedelta(seconds=10)
@@ -619,8 +644,12 @@ async def test_native_file_monitor_resumes_date_path_by_identity(
         await asyncio.wait_for(finished.wait(), 7)
     finally:
         await monitor.stop()
-    expected = ["first", "other", "last0"]
-    if replace_file:
+    expected = (
+        ["first", "last0", "other"]
+        if rotation in ("during_drain", "before_drain")
+        else ["first", "other", "last0"]
+    )
+    if rotation != "none":
         expected.extend(("new00", "new01"))
     assert [line.split()[-1] for line in raw] == expected
 

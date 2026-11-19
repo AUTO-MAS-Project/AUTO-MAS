@@ -150,9 +150,22 @@ class LogMonitor:
                 # 必须先读完旧文件的剩余内容：轮询间隔内被监控进程可能刚往
                 # 旧文件写了完成或失败标志，直接切换会永久丢掉这些行。
                 drain_error = None
-                if current_path.is_file():
+                expected_id = file_identity(log_stat) if log_stat is not None else None
+                if expected_id is not None or current_path.is_file():
                     offset, if_log_start, drain_error = await self._consume_new_lines(
                         current_path,
+                        offset,
+                        log_contents,
+                        if_log_start,
+                        log_start_time,
+                        expected_id=expected_id,
+                    )
+                if expected_id is not None and isinstance(
+                    drain_error, (FileNotFoundError, _LogIdentityChanged)
+                ):
+                    offset, if_log_start, drain_error = await self._read_rotated_tail(
+                        current_path,
+                        expected_id,
                         offset,
                         log_contents,
                         if_log_start,
@@ -216,7 +229,7 @@ class LogMonitor:
                 if log_stat is not None and (
                     previous_id != current_id or log_stat.st_size > current_stat.st_size
                 ):
-                    if_log_start = await self._recover_rotated_tail(
+                    _, if_log_start, recovery_error = await self._read_rotated_tail(
                         current_path,
                         previous_id,
                         offset,
@@ -224,6 +237,10 @@ class LogMonitor:
                         if_log_start,
                         log_start_time,
                     )
+                    if recovery_error is not None:
+                        logger.warning(f"轮转旧日志读取失败: {recovery_error}")
+                    # 新文件可能没有新行，先交付刚补读的旧文件尾部。
+                    await self._sync_and_callback(log_contents)
                     offset = 0
                     # 与上面路径切换分支同理：排空可能一行未得（旧文件在轮转
                     # 前一轮已读空），无行触发回调时 last_callback_time 仍停在
@@ -482,7 +499,7 @@ class LogMonitor:
             return None
         return None
 
-    async def _recover_rotated_tail(
+    async def _read_rotated_tail(
         self,
         current_path: Path,
         old_file_id: tuple[int, int],
@@ -490,8 +507,8 @@ class LogMonitor:
         log_contents: list[str],
         if_log_start: bool,
         log_start_time: datetime,
-    ) -> bool:
-        """轮转后从被重命名的旧文件续读未读尾部，接回既有日志内容
+    ) -> tuple[int, bool, Exception | None]:
+        """按身份找到旧文件，续读未读尾部并返回该文件的读取进度。
 
         Args:
             current_path: 监控目标路径（轮转后指向新文件）
@@ -502,13 +519,13 @@ class LogMonitor:
             log_start_time: 本次运行的起始时刻
 
         Returns:
-            是否已越过本次运行的起始时刻（供后续新文件读取沿用）
+            旧文件的字节偏移、是否越过运行起点，以及读取错误。
         """
 
         rotated = self._find_rotated_file(current_path, old_file_id)
         if rotated is None:
-            return if_log_start
-        offset, if_log_start, error = await self._consume_new_lines(
+            return offset, if_log_start, None
+        return await self._consume_new_lines(
             rotated,
             offset,
             log_contents,
@@ -516,13 +533,6 @@ class LogMonitor:
             log_start_time,
             expected_id=old_file_id,
         )
-        if error is not None:
-            logger.warning(f"轮转旧日志读取失败: {error}")
-            return if_log_start
-        # 找回的行立刻同步一次：新文件可能还没有新行，等空闲节流回调会让
-        # 刚接回的完成/失败标志迟到一整个空闲周期
-        await self._sync_and_callback(log_contents)
-        return if_log_start
 
     async def _sync_and_callback(self, log_contents: list[str]) -> None:
         """日志内容有变化时同步到实例缓冲区并触发回调。
