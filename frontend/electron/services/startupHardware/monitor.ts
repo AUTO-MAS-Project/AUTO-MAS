@@ -59,7 +59,7 @@ export class StartupAttempt {
   private previousSource = ''
   private downloads = 0
   private command = ''
-  private operation = ''
+  private operation?: string
   private lastItem = ''
   private lastBytes = 0
   private switches = 0
@@ -264,14 +264,15 @@ export class StartupAttempt {
       return
     }
     if (event.type === 'result') {
+      this.operation = undefined
       this.lifecycleActivity = ''
       this.setActivity('', event.timestamp)
       if (this.command === 'dependencies rebuild' && event.success) this.details.env_rebuilt = 'yes'
       const archive = event.details.startupArchive
       if (archive && typeof archive === 'object') {
         const stats = archive as Record<string, unknown>
-        if (typeof stats.cached === 'boolean')
-          this.details.cache_reused = stats.cached ? 'yes' : 'no'
+        if (stats.cached === true) this.details.cache_reused = 'yes'
+        else if (stats.cached === false) this.details.cache_reused ??= 'no'
         for (const [key, phase] of [
           ['downloadMs', 'download'],
           ['verifyMs', 'verify'],
@@ -279,7 +280,7 @@ export class StartupAttempt {
         ]) {
           const ms = stats[key]
           if (typeof ms === 'number' && Number.isFinite(ms) && ms >= 0)
-            this.durations.set(phase, ms)
+            this.durations.set(phase, (this.durations.get(phase) ?? 0) + ms)
         }
       }
       if (event.stage === 'bootstrap' && event.success && event.details.unchanged === true)
@@ -289,16 +290,16 @@ export class StartupAttempt {
     if (event.type === 'progress') {
       if (event.stage === 'network.probe') return
       const stage = event.stage
-      const active =
-        stage === 'uv.download'
-          ? 'other'
-          : stage.includes('download')
-            ? 'download'
-            : stage.includes('verify')
-              ? 'verify'
-              : stage.includes('extract')
-                ? 'unpack'
-                : stage.split('.')[0]
+      // uv 的进度覆盖整个准备过程，归档下载、校验和解包的实测耗时随终态返回。
+      const active = stage.startsWith('uv.')
+        ? 'other'
+        : stage.includes('download')
+          ? 'download'
+          : stage.includes('verify')
+            ? 'verify'
+            : stage.includes('extract')
+              ? 'unpack'
+              : stage.split('.')[0]
       this.setActivity(
         event.status === 'running' ? active : this.lifecycleActivity,
         event.timestamp

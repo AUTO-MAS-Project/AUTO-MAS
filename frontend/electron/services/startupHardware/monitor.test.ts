@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { parseRuntimeEventLine } from '../runtime/ndjson'
-import type { RuntimeStateEvent } from '../runtime/protocol'
+import type { RuntimeResultEvent, RuntimeStateEvent } from '../runtime/protocol'
 import path from 'node:path'
 import { expect, it, vi } from 'vite-plus/test'
 import { StartupHardwareLog } from './localLog'
@@ -104,6 +104,48 @@ it('安装文件和后续 uv 传输合计，重复的字节进度只计算一次
     const switches = attempt.snapshot().source_switches
     expect(attempt.beginDesktopDownload(2)).toBeUndefined()
     expect(attempt.snapshot().source_switches).toBe(switches)
+  }))
+
+it('跨命令累计归档耗时，复用缓存和重复终态不会覆盖或重复计算', () =>
+  withAttempt(attempt => {
+    const archives = [
+      { cached: false, downloadMs: 4_000, verifyMs: 500, unpackMs: 3_000 },
+      { cached: true, downloadMs: 0, verifyMs: 0, unpackMs: 0 },
+      { cached: false, downloadMs: 4_000, verifyMs: 600, unpackMs: 4_000 },
+    ]
+    const times = archives.map((startupArchive, i) => {
+      const base = { protocol: 1, operationId: String(i), timestamp: '' }
+      attempt.progress({
+        ...base,
+        type: 'hello',
+        sequence: 1,
+        command: 'bootstrap',
+        capabilities: [],
+        runtimeVersion: 'test',
+      })
+      const result: RuntimeResultEvent = {
+        ...base,
+        type: 'result',
+        sequence: 2,
+        success: true,
+        code: 'OK',
+        stage: 'bootstrap',
+        status: 'ready_to_start',
+        message: '',
+        retryable: false,
+        remediation: [],
+        details: { startupArchive },
+      }
+      attempt.progress(result)
+      attempt.progress(result)
+      const { download_time, verify_time, unpack_time, cache_reused } = attempt.snapshot()
+      return [download_time, verify_time, unpack_time, cache_reused]
+    })
+    expect(times).toEqual([
+      ['1-5s', '<1s', '1-5s', 'no'],
+      ['1-5s', '<1s', '1-5s', 'yes'],
+      ['5-15s', '1-5s', '5-15s', 'yes'],
+    ])
   }))
 
 it('重建过的环境在同一次启动的后续检查中仍记为已重建', () =>
