@@ -51,18 +51,35 @@ const devRoutes =
       ]
     : []
 
+// 插件中心三个页签共用一个外壳；viewKey 相同，切换页签时外壳实例与进行中的安装不被重建。
+const PluginCenterView = () => import('@/views/Plugins.vue')
+const PLUGIN_CENTER_VIEW_KEY = 'plugin-center'
+
+declare module 'vue-router' {
+  interface RouteMeta {
+    /** 同值的路由在内容区复用同一页面实例；缺省按路径区分。 */
+    viewKey?: string
+  }
+}
+
 const routes = [
   {
     path: '/plugins',
     name: 'Plugins',
-    component: () => /* 进入插件中心时按需加载已安装插件页面。 */ import('@/views/Plugins.vue'),
-    meta: { title: '插件' },
+    component: PluginCenterView,
+    meta: { title: '插件', viewKey: PLUGIN_CENTER_VIEW_KEY },
   },
   {
     path: '/plugins/market',
     name: 'PluginMarket',
-    component: () => /* 进入插件市场时按需加载市场页面。 */ import('@/views/PluginMarket.vue'),
-    meta: { title: '插件市场' },
+    component: PluginCenterView,
+    meta: { title: '插件市场', viewKey: PLUGIN_CENTER_VIEW_KEY },
+  },
+  {
+    path: '/plugins/updates',
+    name: 'PluginUpdates',
+    component: PluginCenterView,
+    meta: { title: '插件更新', viewKey: PLUGIN_CENTER_VIEW_KEY },
   },
   {
     path: '/plugins/:pluginId/settings',
@@ -116,6 +133,12 @@ const routes = [
     path: '/plans/:planId/oknte/:day',
     name: 'OkNtePlanDetail',
     component: () => import('@/views/plan/OkNtePlanDetail.vue'),
+    meta: { title: 'core.plan.oknte.detail' },
+  },
+  {
+    path: '/plans/:planId/okww/:day',
+    name: 'OkwwPlanDetail',
+    component: () => import('@/views/plan/OkwwPlanDetail.vue'),
     meta: { title: 'core.plan.oknte.detail' },
   },
   {

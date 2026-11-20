@@ -42,7 +42,7 @@
 - 启动器左侧有账号信息卡与活动公告等富文本干扰，且下载进度行的速度/总量并不
   一直显示（可能只剩计时与百分比），因此状态判定与点击只认右下角动作区，
   下载卡死签名只取百分比/体积/速度并剥离计时文本。
-- 启动器其它弹窗状态（自更新、公告等）待实测后按既有分支模式补充。
+- 启动器自更新弹窗优先于右下角动作区。更新时允许主窗口消失，等待启动器重开。
 """
 
 import asyncio
@@ -149,6 +149,9 @@ _FRAME_HEIGHT = 1080
 # 右下角动作区（相对 1080p 帧）：启动器按钮与下载进度都在此区域，左侧用户
 # 信息卡/活动公告/新闻列表含大量富文本，不参与判定与点击，避免干扰误触
 _ACTION_ROI: _tool_ocr.Box = (1240, 820, 1920, 1080)
+# 自更新弹窗居中，和右下角的游戏更新按钮分开识别。
+_SELF_UPDATE_ROI: _tool_ocr.Box = (600, 360, 1300, 750)
+_SELF_UPDATE_BUSY_TEXTS = ("资源下载中", "资源校验中", "资源解压中")
 
 # 首次找到按钮的等待；点击「进入游戏」后等游戏起窗；点「更新」后等下载完成
 _FIND_BUTTON_TIMEOUT = 120
@@ -614,9 +617,11 @@ def detect_game_maintenance_text(pids: set[int] | None = None) -> str | None:
     return find_game_maintenance_text(text for text, _ in _tool_ocr.ocr_image(frame))
 
 
-def _items_in_action_roi(items: list[_tool_ocr.OCRItem]) -> list[_tool_ocr.OCRItem]:
-    """按文字框中心过滤出右下角动作区内的条目（排除左侧卡片等富文本干扰）。"""
-    left, top, right, bottom = _ACTION_ROI
+def _items_in_roi(
+    items: list[_tool_ocr.OCRItem], roi: _tool_ocr.Box
+) -> list[_tool_ocr.OCRItem]:
+    """按文字框中心筛选区域内的条目。"""
+    left, top, right, bottom = roi
     selected: list[_tool_ocr.OCRItem] = []
     for text, (x, y, width, height) in items:
         center_x = x + width / 2
@@ -720,7 +725,7 @@ def start_game_via_launcher(
     「校验解压」阶段，与下载同样按忙碌态动态续延等待，解压多久等多久；同时以
     百分比/体积/速度构造进度签名，长时间无变化判定卡死提前失败。
 
-    状态判定与点击只认右下角动作区（左侧用户卡片/活动公告为富文本干扰源）。
+    自更新弹窗先于右下角动作区处理，等待启动器重开后再判断游戏是否就绪。
 
     Args:
         launcher_path: 启动器 exe 路径（鸣潮官方启动器 launcher.exe）。
@@ -786,17 +791,53 @@ def start_game_via_launcher(
         busy_since: float | None = None
         ready_since: float | None = None
         selection_unavailable_since: float | None = None
+        self_update_hwnd: int | None = None
+        self_update_clicked_at: float | None = None
+        foreground_wait_since: float | None = None
         iter_count = 0
         deadline = time.monotonic() + _FIND_BUTTON_TIMEOUT
         while time.monotonic() < deadline:
             _pause(0, stop_event)
-            if not update_only and _find_game_hwnd() is not None:
+            if (
+                not update_only
+                and self_update_hwnd is None
+                and _find_game_hwnd() is not None
+            ):
                 on_log("已检测到鸣潮游戏窗口")
                 return True
 
             try:
+                if self_update_hwnd is not None:
+                    current_hwnd = _find_launcher_hwnd(launcher_path)
+                    if current_hwnd is None:
+                        _pause(2, stop_event)
+                        continue
+                    if current_hwnd != hwnd:
+                        hwnd = current_hwnd
+                        foreground_wait_since = None
+                        _write_diagnostic(
+                            f"自更新后发现启动器窗口 hwnd={hwnd} {_describe_window(hwnd)}\n"
+                        )
+                    if (
+                        hwnd != self_update_hwnd
+                        and win32gui.GetForegroundWindow() != hwnd
+                    ):
+                        _activate_window(hwnd, stop_event=stop_event)
+                    if win32gui.GetForegroundWindow() != hwnd:
+                        if hwnd != self_update_hwnd:
+                            now = time.monotonic()
+                            if foreground_wait_since is None:
+                                foreground_wait_since = now
+                            elif now - foreground_wait_since >= _FIND_BUTTON_TIMEOUT:
+                                raise RuntimeError("鸣潮启动器已重开，但无法切到前台")
+                        _pause(2, stop_event)
+                        continue
+                    foreground_wait_since = None
                 items = _read_texts(hwnd)
-            except RuntimeError:
+            except (RuntimeError, win32gui.error):
+                if self_update_hwnd is not None and not win32gui.IsWindow(hwnd):
+                    _pause(2, stop_event)
+                    continue
                 # 启动器点击「进入游戏」后会直接退出：只等游戏起窗
                 if start_clicks > 0:
                     exit_wait_polls += 1
@@ -807,6 +848,46 @@ def start_game_via_launcher(
                     _pause(2, stop_event)
                     continue
                 raise
+
+            # 下载与校验页可能占用旧窗口，也可能出现在一个临时窗口。
+            # 这时选择记录和主界面按钮均可能暂不可用。
+            if _find_text(items, _SELF_UPDATE_BUSY_TEXTS) is not None:
+                if self_update_hwnd is None:
+                    deadline = time.monotonic() + _UPDATE_TIMEOUT
+                    on_log("官方启动器正在更新自身，等待启动器重开...")
+                self_update_hwnd = hwnd
+                self_update_clicked_at = None
+                ready_since = None
+                _pause(2, stop_event)
+                continue
+
+            now = time.monotonic()
+            popup_items = _items_in_roi(items, _SELF_UPDATE_ROI)
+            self_update_popup = any(
+                text.strip() == "启动器版本更新" for text, _ in popup_items
+            )
+            # 点击后，旧窗口可能仍显示被遮罩的按钮。看到下载或校验后，
+            # 允许在同一窗口识别恢复的主界面。
+            if hwnd == self_update_hwnd and self_update_clicked_at is not None:
+                if (
+                    self_update_popup
+                    and now - self_update_clicked_at >= _FIND_BUTTON_TIMEOUT
+                ):
+                    raise RuntimeError(
+                        "鸣潮启动器版本更新弹窗未关闭，请确认更新是否启动"
+                    )
+                _pause(2, stop_event)
+                continue
+
+            action_items = _items_in_roi(items, _ACTION_ROI)
+            if (
+                self_update_hwnd is not None
+                and not self_update_popup
+                and _find_text(action_items, ("进入游戏", "更新")) is None
+                and _find_busy_box(action_items) is None
+            ):
+                _pause(2, stop_event)
+                continue
 
             # 新版统一启动器可切换游戏；每轮操作前确认仍在鸣潮页，避免更新其它游戏。
             try:
@@ -828,7 +909,31 @@ def start_game_via_launcher(
                 _write_diagnostic(f"\n[{datetime.now():%H:%M:%S}] 第 {iter_count} 轮\n")
                 _dump_ocr_items(items)
 
-            now = time.monotonic()
+            if self_update_popup:
+                ready_since = None
+                update_launcher_box = next(
+                    (box for text, box in popup_items if text.strip() == "更新"), None
+                )
+                if update_launcher_box is not None:
+                    on_log("检测到启动器版本更新，点击「更新」并等待启动器重开...")
+                    _click_box(
+                        hwnd, update_launcher_box, after_sleep=0, stop_event=stop_event
+                    )
+                    if self_update_hwnd is None:
+                        deadline = now + _UPDATE_TIMEOUT
+                    self_update_hwnd = hwnd
+                    self_update_clicked_at = now
+                    start_clicks = 0
+                    last_start_click = None
+                    start_click_exhausted_logged = False
+                _pause(2, stop_event)
+                continue
+
+            if self_update_hwnd is not None:
+                self_update_hwnd = None
+                self_update_clicked_at = None
+                deadline = now + _FIND_BUTTON_TIMEOUT
+                on_log("官方启动器已恢复主界面，继续检查游戏更新...")
 
             # 弹窗防护：「提示」类弹窗以遮罩覆盖启动器，此时按钮仍可被 OCR
             # 看到，但点击会落在遮罩上被吞掉：必须先点「确定」/「忽略」关掉
@@ -848,9 +953,6 @@ def start_game_via_launcher(
                     start_click_exhausted_logged = False
                     _pause(1, stop_event)
                     continue
-
-            # 状态判定与点击只认右下角动作区，排除左侧富文本干扰
-            action_items = _items_in_action_roi(items)
 
             # 游戏下载/校验解压进行中：基于忙碌态动态续延等待，并以进度签名
             # 检测卡死（校验解压阶段进度行为「过程不消耗流量 88.08%」）
@@ -988,6 +1090,8 @@ def start_game_via_launcher(
             _pause(2, stop_event)
 
         _pause(0, stop_event)
+        if self_update_hwnd is not None:
+            raise RuntimeError("等待鸣潮启动器更新后重开超时，请确认官方启动器状态")
         if not update_only and _find_game_hwnd() is not None:
             on_log("已检测到鸣潮游戏窗口")
             return True

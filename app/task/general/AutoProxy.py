@@ -136,6 +136,16 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         # 是否写 MAS 侧配置：原生来源=不写，shared/independent 来源都写面板值。
         self.use_mas_config = self.config_base != CONFIG_BASE_NATIVE
         self.check_result = "-"
+        # 这几项同样在 prepare 后段才建立。准备阶段中途失败时收尾照样会读它们：
+        # 少了 push_log 这组，收尾会在回写推送日志那一步再抛一次 AttributeError，
+        # 把原始错误顶掉、后面的历史保存与统计通知也一并跳过。
+        self.general_log_monitor: LogMonitor | None = None
+        self.run_book = False
+        self.push_log_enabled = False
+        self.push_log_patterns_compiled = []
+        self.push_log_buffer = []
+        self._push_log_processed = 0
+        self._process_seen = False
 
     async def check(self) -> str:
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
@@ -849,11 +859,13 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
             and not self.stopped_manually,
         )
 
-        # 结束各子任务
-        await self.general_log_monitor.stop()
+        # 结束各子任务。准备阶段可能在监控器建立之前就失败，这里只停确实建起来的那一个，
+        # 否则 AttributeError 会顶掉最初那个真正的错误，后面的进程清理也一并被吃掉。
+        if self.general_log_monitor is not None:
+            await self.general_log_monitor.stop()
         await self.kill_managed_process()
         del self.general_process_manager
-        del self.general_log_monitor
+        self.general_log_monitor = None
 
         if self.run_book:
             if (

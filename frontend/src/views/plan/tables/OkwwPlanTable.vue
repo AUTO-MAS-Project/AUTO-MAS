@@ -14,11 +14,23 @@
     :columns="columns"
     :data-source="days.map(day => ({ day }))"
     :pagination="false"
-    :scroll="{ x: 844 }"
+    :scroll="{ x: 944 }"
     bordered
   >
     <template #bodyCell="{ column, record }">
       <span v-if="column.key === 'day'">{{ label(record.day) }}</span>
+      <a-button
+        v-else-if="column.key === 'detail'"
+        type="link"
+        size="small"
+        :disabled="isSaving || Boolean(error)"
+        @click="navigateTo(`/plans/${props.planId}/okww/${planColumnGroup(record.day)}`)"
+        >{{
+          incompleteFarmTarget(record.day)
+            ? t('core.plan.okww.incompleteFarmTarget')
+            : t('core.plan.oknte.detail')
+        }}</a-button
+      >
       <span v-else-if="notApplicable(record.day, column.key)" class="not-applicable">—</span>
       <a-input-number
         v-else-if="column.key === 'number'"
@@ -30,7 +42,10 @@
         :disabled="isSaving || Boolean(error)"
         :placeholder="t('core.plan.oknte.inheritShort')"
         :aria-label="`${label(record.day)} ${column.title}`"
-        @change="(value: any) => save(record.day, numberField(record.day), value)"
+        @change="
+          (value: number | null) =>
+            value !== null && save(record.day, numberField(record.day), value)
+        "
       />
       <a-popover
         v-else-if="column.key === 'AdditionalTasks'"
@@ -80,7 +95,7 @@
         :options="options(column.key)"
         :disabled="isSaving || Boolean(error)"
         :bordered="false"
-        allow-clear
+        :allow-clear="column.key !== 'MaterialSelection'"
         :placeholder="t('core.plan.oknte.inheritShort')"
         class="plan-field"
         :class="{ 'plan-field--inherited': value(record.day, column.key) === '__inherit' }"
@@ -96,6 +111,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { navigateTo } from '@/router'
 import { DownOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 import type { OkwwPlanConfig } from '@/api'
@@ -140,6 +156,7 @@ const columns = computed(() =>
       width: 144,
     },
     { title: t('core.plan.okww.additional'), key: 'AdditionalTasks', width: 260 },
+    { title: t('core.plan.oknte.detail'), key: 'detail', width: 100 },
   ].map(column => ({ ...column, align: 'center' as const }))
 )
 function label(day: string) {
@@ -159,12 +176,26 @@ function value(day: string, field: string) {
   }
   return result ?? undefined
 }
+const farmTargets = {
+  'Tacet Suppression': { field: 'WhichTacetSuppressionToFarm', fallback: 1 },
+  'Forgery Challenge': { field: 'WhichForgeryChallengeToFarm', fallback: 1 },
+  'Simulation Challenge': { field: 'MaterialSelection', fallback: 'Shell Credit' },
+}
+function farmTarget(mode: unknown) {
+  return typeof mode === 'string' ? farmTargets[mode as keyof typeof farmTargets] : undefined
+}
+function incompleteFarmTarget(day: string) {
+  const fields = key(day)
+  const target = farmTarget(fields.WhichToFarm)
+  if (target) return fields[target.field] == null
+  return (
+    fields.WhichToFarm == null &&
+    Object.values(farmTargets).some(({ field }) => fields[field] != null)
+  )
+}
 function numberField(day: string) {
-  return value(day, 'WhichToFarm') === 'Tacet Suppression'
-    ? 'WhichTacetSuppressionToFarm'
-    : value(day, 'WhichToFarm') === 'Forgery Challenge'
-      ? 'WhichForgeryChallengeToFarm'
-      : ''
+  const field = farmTarget(value(day, 'WhichToFarm'))?.field
+  return field && field !== 'MaterialSelection' ? field : ''
 }
 function notApplicable(day: string, field: string) {
   return field === 'number'
@@ -204,6 +235,11 @@ async function save(day: string, field: string, input: unknown) {
           ? null
           : input === 'true'
         : (input ?? null),
+  }
+  if (field === 'WhichToFarm') {
+    const target = farmTarget(input)
+    if (target) next[target.field] ??= target.fallback
+    else for (const item of Object.values(farmTargets)) next[item.field] = null
   }
   drafts.value[day] = next
   const saved = await enqueue(() => props.handlePlanChange(`${planColumnGroup(day)}.Key`, next))

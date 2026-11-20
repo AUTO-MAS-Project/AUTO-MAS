@@ -22,6 +22,8 @@
 from __future__ import annotations
 
 import json
+import re
+from _strptime import TimeRE
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path as NativePath
@@ -2970,6 +2972,45 @@ class BetterGIUserConfig(DomainEntry):
             return self.getTags()
         except Exception as exc:
             return str(exc)
+
+
+def _compile_strptime_format(value: str) -> str:
+    """用上游脚本同一个 strptime 编译器试一遍格式。
+
+    格式写错（不认识的指令、重复命名的捕获组）要等到运行期准备阶段才炸，
+    那一炸还会把收尾一起带断，所以在写进配置时就挡住。
+    """
+
+    try:
+        TimeRE().compile(value)
+    except KeyError as exc:
+        raise ValueError(f"日志格式含不认识的指令 {exc}: {value}") from exc
+    except re.error as exc:
+        raise ValueError(f"日志格式无法编译（{exc}）: {value}") from exc
+    return value
+
+
+def reject_invalid_log_formats(data: dict[str, Any]) -> str | None:
+    """保存前检查一次日志格式；返回给用户看的原因，没问题就是 None。
+
+    接口侧的配置更新是宽松投影（``ConfigInput``），不跑字段校验，所以要在入口
+    单独调一次；模型本身也挂了同一个校验，加载旧配置时同样会被挡住。
+    """
+
+    script = data.get("Script")
+    if not isinstance(script, dict):
+        return None
+    for field, label in (
+        ("LogPathFormat", "日志路径格式"),
+        ("LogTimeFormat", "日志时间格式"),
+    ):
+        value = script.get(field)
+        if isinstance(value, str) and value:
+            try:
+                _compile_strptime_format(value)
+            except ValueError as exc:
+                return f"{label}不可用：{exc}"
+    return None
 
 
 class GeneralConfig(DomainEntry):

@@ -137,6 +137,8 @@ import type { OkNtePlanConfigsOut } from '../models/OkNtePlanConfigsOut';
 import type { OkwwArgumentsIn } from '../models/OkwwArgumentsIn';
 import type { OkwwArgumentsOut } from '../models/OkwwArgumentsOut';
 import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
+import type { OkwwPlanConfigsIn } from '../models/OkwwPlanConfigsIn';
+import type { OkwwPlanConfigsOut } from '../models/OkwwPlanConfigsOut';
 import type { OkwwTaskConfigIn } from '../models/OkwwTaskConfigIn';
 import type { OkwwTaskConfigOut } from '../models/OkwwTaskConfigOut';
 import type { OutBase } from '../models/OutBase';
@@ -2039,6 +2041,53 @@ export class Service {
             query: {
                 'scriptId': scriptId,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Okww Plan Configs Api
+     * 读取当天详细覆写及原生面板字段。
+     * @param planId
+     * @param day
+     * @param locale
+     * @returns OkwwPlanConfigsOut Successful Response
+     * @throws ApiError
+     */
+    public static getOkwwPlanConfigsApiApiScriptsOkwwPlanConfigsGet(
+        planId: string,
+        day: string,
+        locale: 'zh_CN' | 'en_US' | 'ja_JP' = 'zh_CN',
+    ): CancelablePromise<OkwwPlanConfigsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/okww/plan/configs',
+            query: {
+                'plan_id': planId,
+                'day': day,
+                'locale': locale,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Save Okww Plan Configs Api
+     * 替换当天覆写，未设置项恢复继承账号配置。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static saveOkwwPlanConfigsApiApiScriptsOkwwPlanConfigsPost(
+        requestBody: OkwwPlanConfigsIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/okww/plan/configs',
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

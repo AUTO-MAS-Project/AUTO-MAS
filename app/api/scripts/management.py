@@ -37,6 +37,7 @@ import app.models.config as _config_models
 from app.config.wire import ConfigInput, ConfigPayload, config_contract
 from app.core import Config
 from app.core.game_calendar import SCRIPT_CALENDAR_GAMES
+from app.models.config.script import reject_invalid_log_formats
 from app.models.schema import (
     ConfigSnapshotOut,
     OutBase,
@@ -391,6 +392,10 @@ async def update_script(
 
     try:
         data = script.data.model_dump(exclude_unset=True)
+        # 日志格式写错要等到运行期准备阶段才炸，收尾也会跟着断：保存时就挡住。
+        invalid_format = reject_invalid_log_formats(data)
+        if invalid_format:
+            return OutBase(code=500, status="error", message=invalid_format)
         # 设备绑定不受支持时拦截保存，避免先提交配置。
         refusal = await Config.update_script_settings(script.scriptId, data)
         if refusal:

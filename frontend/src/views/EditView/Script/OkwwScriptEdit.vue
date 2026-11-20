@@ -77,34 +77,13 @@
           <div class="section-header">
             <h3>{{ t('core.edit.gameConfiguration') }}</h3>
           </div>
-          <a-row :gutter="24" class="game-control-row">
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.enableGameConfiguration')"
-                    :hint="t('core.edit.masTakesOverStarting')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="okwwConfig.Game.Enabled"
-                  size="large"
-                  class="modern-input"
-                  @change="handleChange('Game', 'Enabled', $event)"
-                >
-                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <OkwwAccountSwitchField
-                v-model="okwwConfig.Game.AccountSwitchMethod"
-                @save="handleChange('Game', 'AccountSwitchMethod', $event)"
-              />
-            </a-col>
-          </a-row>
+          <OkwwGameControlFields
+            v-model="okwwConfig.Game.AccountSwitchMethod"
+            v-model:game-enabled="okwwConfig.Game.Enabled"
+            class="game-control-row"
+            @save="handleChange('Game', 'AccountSwitchMethod', $event)"
+            @save-enabled="handleChange('Game', 'Enabled', $event)"
+          />
 
           <a-row :gutter="24" class="game-control-row">
             <a-col :span="12">
@@ -328,7 +307,7 @@ import { useBoundGameTarget } from '@/composables/useBoundGameTarget'
 
 import PathPickerField from '@/components/PathPickerField.vue'
 import ScriptRunLimitsSection from './components/ScriptRunLimitsSection.vue'
-import OkwwAccountSwitchField from './components/OkwwAccountSwitchField.vue'
+import OkwwGameControlFields from './components/OkwwGameControlFields.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { requestUserUpdateStart } from '@/composables/useTaskApi'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'

@@ -13,6 +13,7 @@ import psutil
 
 from app.utils import get_logger
 
+from .platform import breakaway_rejected
 from .scope import current_process_scope, current_update_scope, detached_process_context
 from .session import desktop_process_target, restricted_session
 
@@ -328,14 +329,18 @@ async def create_subprocess(
             **kwargs,
         )
     except OSError as exc:
-        if not breakaway_flags or getattr(exc, "winerror", None) != 5:
+        retry_flags = breakaway_rejected(
+            exc, flags=creation_flags, breakaway_flags=platform_process.breakaway_flags
+        )
+        if retry_flags is None:
             raise
 
         get_logger("进程管理").warning(
             f"带 CREATE_BREAKAWAY_FROM_JOB 启动子进程被拒绝(WinError 5)，"
             f"父进程所在 Job 不允许脱离，去掉该标志重试: {program}"
         )
-        creation_flags &= ~platform_process.breakaway_flags
+        # 后续按实际生效的标志登记归属：重试后子进程留在当前 Job 里。
+        creation_flags = retry_flags
         process = await asyncio.create_subprocess_exec(
             program,
             *args,

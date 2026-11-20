@@ -17,6 +17,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 import asyncio
 import json
+import re
 import time
 import uuid
 from contextlib import suppress
@@ -89,6 +90,7 @@ from .tools.launcher_start import (
 )
 from .tools.maintenance import GameMaintenanceDetected
 from .tools.startup import start_okww
+from .tools.task_logs import find_task_failure
 
 logger = get_logger("OK-WW 自动代理")
 
@@ -109,16 +111,16 @@ _GAME_EXIT_WAIT_SECONDS = 90
 # 「游戏更新成功」是环境变更而非脚本错误，命中后至少保证再跑一轮（见 main_task）。
 _OKWW_GAME_UPDATED_LOG = "游戏更新成功, 游戏即将重启"
 _OKWW_GAME_UPDATED_MSG = "游戏更新成功，即将重启任务"
-_OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
-    (_OKWW_GAME_UPDATED_LOG, _OKWW_GAME_UPDATED_MSG),
-    ("info_set 错误", "OK-WW 流程产生错误，请检查游戏状态"),
+_OKWW_ERROR_LOG = re.compile(
+    r"\b(?:(?P<task>\w+):)?info_set 错误(?=[ \t\r\n]|$)"
+    r"[ \t]*(?P<detail>[^\r\n]*)"
 )
-# 窗口丢失的日志有两条形态：hwnd>0 但 IsWindow(hwnd) 返回 0 时 exists 是 int → `connected:0`；
-# hwnd<=0 时 exists 仍是 bool → `connected:False`。两种都要认。
-# 它不进内置 fatal：ok-ww 成功后按 -e 关游戏（stop_hwnd）同样会打 connected:0，只比完成日志晚
-# 约 5s；日志监控若跨过这 5s，两行会落进同一批，故只在没有完成日志时判未连接（见 check_log）。
-_OKWW_DISCONNECT_LOG: tuple[str, ...] = ("connected:False", "connected:0")
-_OKWW_DISCONNECT_MSG = "OK-WW 未连接游戏客户端"
+_OKWW_ERROR_PREFIX = "OK-WW："
+# 上游明确拒绝当前配置，重复下发相同配置无法恢复。
+_OKWW_4C_CONFIG_ERROR = (
+    "选择“传送并刷取4C声骸”时，必须在刷取声骸任务中启用“传送至首领”。"
+)
+_OKWW_TASK_FAILED_MSG = "OK-WW 任务执行失败，请查看脚本日志"
 # 成功判据（任一命中即完成）：
 # 1. ok-script 框架 TaskExecutor 的退出语：DailyTask.run() 正常返回后才打印
 #    （失败路径走异常分支，跳过退出日志），logger 硬编码英文、不走 gettext，
@@ -144,6 +146,23 @@ _OKWW_UPDATE_METHOD = "AUTO_UPDATE"
 _OKWW_LOG_TIME_START = 1
 _OKWW_LOG_TIME_END = 23
 _OKWW_LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
+
+
+def _okww_error_status(log: str) -> str | None:
+    """从上游错误日志读取可显示的失败原因。"""
+    error = _OKWW_ERROR_LOG.search(log)
+    if error is None:
+        return None
+    detail = error["detail"].strip()
+    if detail.startswith("账号列表中未找到 "):
+        detail = "登录列表中未找到目标账号"
+    elif (
+        error["task"] in ("MultiAccountConfigTask", "MultiAccountDailyTask")
+        and detail != _OKWW_4C_CONFIG_ERROR
+    ):
+        # 原生多账号失败正文可能包含完整登录标识。
+        detail = "原生多账号任务失败，请查看本地脚本日志"
+    return f"{_OKWW_ERROR_PREFIX}{detail}" if detail else None
 
 
 def _update_json(path: Path, values: dict[str, object]) -> None:
@@ -268,6 +287,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         if self.cur_user_config.Info.RemainedDay == 0:
             await self.cur_user_item.set_state(status="跳过")
             return "账号剩余天数为 0, 跳过该账号"
+
+        from .tools.plan import plan_panels, validate_plan_targets
+
+        try:
+            validate_plan_targets(plan_panels(self.cur_user_config))
+        except ValueError as error:
+            return str(error)
 
         if self.script_config.Game.Enabled:
             launcher_path = Path(
@@ -470,6 +496,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             return build_custom_arguments(self.cur_user_config.Task.CustomArguments)
         return ["-t", _daily_task_argument(self.script_config.Info.RootPath), "-e"]
 
+    def _runtime_panels(self) -> dict[str, dict]:
+        from .tools.config_fields import runtime_panels
+
+        return runtime_panels(self.cur_user_config)
+
     def _apply_mas_overrides(self) -> None:
         """overlay 覆盖段：把 MAS 侧运行值覆盖到当前来源配置之上。
 
@@ -487,9 +518,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             self.script_config_path / "Basic Options.json",
             {"Exit App when Game Exits": True},
         )
-        from .tools.config_fields import runtime_panels
-
-        for filename, values in runtime_panels(self.cur_user_config).items():
+        for filename, values in self._runtime_panels().items():
             _update_json(self.script_config_path / filename, values)
 
     async def set_okww(self) -> None:
@@ -862,6 +891,14 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             ):
                 break
 
+            if (
+                self.script_config.Game.AccountSwitchMethod == "MAS"
+                and not self.script_config.Game.Enabled
+            ):
+                await self._push_dispatch_log(
+                    "未启用游戏配置，MAS 不会切换账号，将使用当前已登录的账号"
+                )
+
             # 游戏启动成功后、下发脚本配置前，按「运行前由 MAS 切换账号」开关切号。
             # 开关在游戏配置区，依赖 Game.Enabled（未启用游戏配置则不生效）；
             # 用户未填写手机号时跳过不切换。
@@ -873,7 +910,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             ):
                 account_id = (self.cur_user_config.Info.Id or "").strip()
                 if not account_id:
-                    await self._push_dispatch_log("未配置账号，跳过账号切换")
+                    await self._push_dispatch_log(
+                        "未配置账号标识，MAS 不会切换账号，将使用当前已登录的账号"
+                    )
                 else:
                     try:
                         await self._push_dispatch_log("正在切换鸣潮登录账号...")
@@ -1009,13 +1048,19 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 await Notify.send_notice(
                     LocalNotice(
                         title="OK-WW 自动代理出现异常！",
-                        message=f"账号 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        message=f"账号 {self.cur_user_item.name}：{self.cur_user_log.status}",
                         ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                         duration_seconds=3,
                     )
                 )
             except Exception:
                 pass
+            if (
+                self.cur_user_log.status
+                == f"{_OKWW_ERROR_PREFIX}{_OKWW_4C_CONFIG_ERROR}"
+            ):
+                await self.script_info.append_log("\n请修正 4C 声骸配置后再运行")
+                break
             if attempt < run_limit:
                 await self.script_info.append_log(
                     f"\n将在稍后重试 ({attempt}/{run_limit})"
@@ -1054,11 +1099,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         log_status = "OK-WW 正常运行中"
         user_item_status: str | None = None
 
-        for needle, msg in _OKWW_BUILTIN_FATAL:
-            if needle in log:
-                log_status = msg
-                user_item_status = "异常"
-                break
+        if _OKWW_GAME_UPDATED_LOG in log:
+            log_status = _OKWW_GAME_UPDATED_MSG
+            user_item_status = "异常"
+        elif (failure_line := find_task_failure(log_content)) is not None:
+            log_status = _okww_error_status(failure_line) or _OKWW_TASK_FAILED_MSG
+            user_item_status = "异常"
         else:
             # 多账号任务的单次日常完成不代表整批完成，只认框架退出语。
             success_logs = (
@@ -1070,9 +1116,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             if any(needle in log for needle in success_logs):
                 log_status = "Success!"
                 user_item_status = "完成"
-            elif any(needle in log for needle in _OKWW_DISCONNECT_LOG):
-                log_status = _OKWW_DISCONNECT_MSG
-                user_item_status = "异常"
             elif not await self.okww_process_manager.is_running():
                 log_status = "OK-WW 在完成任务前退出"
                 user_item_status = "异常"

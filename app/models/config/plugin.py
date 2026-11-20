@@ -27,7 +27,7 @@ from typing import Annotated, ClassVar
 
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
-from pydantic import Field, PrivateAttr, field_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 from app.config import (
     ConfigCollection,
@@ -268,6 +268,21 @@ class PluginRegistryCollection(ConfigCollection[PluginRecord]):
         return None
 
 
+class PluginReleaseNote(BaseModel):
+    """数据站提供的单个发行版本的 Markdown 更新说明。"""
+
+    version: str
+    body: str
+
+
+class PluginChangelogVersions(BaseModel):
+    """各页签使用的版本键，共享目录正文并按 PEP 440 匹配安装版本。"""
+
+    target: str | None = None
+    installed: str | None = None
+    updates: list[str] = Field(default_factory=list)
+
+
 class PluginMeta(ConfigEntry):
     """插件目录（市场）条目：刷新写入；install Trigger 开闸安装。
 
@@ -284,6 +299,12 @@ class PluginMeta(ConfigEntry):
         version: Annotated[str, ui(visibility=UiVisibility.DISABLE)] = Field(
             default="", description="版本"
         )
+        changelog: Annotated[
+            list[PluginReleaseNote], ui(visibility=UiVisibility.DISABLE)
+        ] = Field(default_factory=list, description="最近五个发行版本内的更新说明")
+        changelog_versions: Annotated[
+            Virtual[PluginChangelogVersions], ui(visibility=UiVisibility.DISABLE)
+        ] = None
         docs_url: Annotated[str, ui(visibility=UiVisibility.DISABLE)] = Field(
             default="", description="文档 URL"
         )
@@ -413,12 +434,11 @@ class PluginMeta(ConfigEntry):
         record = self._installed_record()
         return record.info.version if record is not None else None
 
-    @virtual_field("info.update_available")
-    def compute_update_available(self) -> bool:
-        """按 PEP 440 比较同一市场插件的版本，核心与本地实现由各自源码维护。"""
+    def _installed_package_version(self) -> Version | None:
+        """只返回同一市场发行包的有效安装版本，本地源码与核心插件不参与。"""
         record = self._installed_record()
         if record is None:
-            return False
+            return None
         info, installed = self.effective.info, record.effective.info
         if (
             installed.is_core
@@ -428,9 +448,40 @@ class PluginMeta(ConfigEntry):
             or canonicalize_name(info.package_name)
             != canonicalize_name(installed.package_name)
         ):
+            return None
+        try:
+            return Version(installed.version)
+        except InvalidVersion:
+            return None
+
+    @virtual_field("info.changelog_versions")
+    def compute_changelog_versions(self) -> PluginChangelogVersions:
+        """按市场目标和本机发行身份选取安装、回看及跨版本升级所需的说明。"""
+        selected = PluginChangelogVersions()
+        info = self.effective.info
+        if not info.changelog:
+            return selected
+        target = Version(info.version)
+        installed = self._installed_package_version()
+        for note in info.changelog:
+            version = Version(note.version)
+            if version == target:
+                selected.target = note.version
+            if installed is not None:
+                if installed == version:
+                    selected.installed = note.version
+                elif installed < version <= target:
+                    selected.updates.append(note.version)
+        return selected
+
+    @virtual_field("info.update_available")
+    def compute_update_available(self) -> bool:
+        """按 PEP 440 比较同一市场插件的版本，核心与本地实现由各自源码维护。"""
+        installed = self._installed_package_version()
+        if installed is None:
             return False
         try:
-            return Version(info.version) > Version(installed.version)
+            return Version(self.effective.info.version) > installed
         except InvalidVersion:
             return False
 

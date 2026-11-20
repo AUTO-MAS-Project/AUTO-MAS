@@ -40,6 +40,7 @@ from app.utils import (
     get_logger,
     log_box,
 )
+from app.utils import constants as _utils_constants
 from app.utils import io as _utils_io
 
 from .AutoProxy import (
@@ -289,8 +290,7 @@ class OkwwManager(ScriptManagerBase):
 
         if self.script_config.Game.AccountSwitchMethod == "OKWW":
             participants = []
-            argument_groups = []
-            previous_arguments = None
+            candidates = []
             for index, user in enumerate(self.script_info.user_list):
                 await self.script_info.set_current_index(index)
                 if await self.check_user_before_run(
@@ -306,14 +306,7 @@ class OkwwManager(ScriptManagerBase):
                     result = await candidate.check()
                     if result == "Pass":
                         participants.append(user)
-                        arguments = (
-                            candidate._build_run_arguments(),
-                            candidate.native_config_key(),
-                        )
-                        if not argument_groups or arguments != previous_arguments:
-                            argument_groups.append([])
-                        argument_groups[-1].append(user)
-                        previous_arguments = arguments
+                        candidates.append(candidate)
                     else:
                         await self.notify_user_check_failure(user, result)
             if participants:
@@ -332,7 +325,27 @@ class OkwwManager(ScriptManagerBase):
                     for user in participants:
                         await self.notify_user_check_failure(user, result)
                 else:
-                    for group in argument_groups:
+                    cursor = 0
+                    while cursor < len(participants):
+                        # 每批启动前重算剩余账号，批次内及补跑使用同一份配置。
+                        now = datetime.now(tz=_utils_constants.UTC4)
+                        snapshots = {}
+                        start = cursor
+                        batch_key = None
+                        while cursor < len(participants):
+                            candidate = candidates[cursor]
+                            panels = candidate.snapshot_panels(now)
+                            candidate_key = (
+                                candidate._build_run_arguments(),
+                                candidate.native_config_key(panels),
+                            )
+                            if cursor > start and candidate_key != batch_key:
+                                break
+                            batch_key = candidate_key
+                            snapshots[participants[cursor].user_id] = panels
+                            cursor += 1
+
+                        group = participants[start:cursor]
                         await self.script_info.set_current_index(
                             self.script_info.user_list.index(group[0])
                         )
@@ -342,6 +355,7 @@ class OkwwManager(ScriptManagerBase):
                             self.user_config,
                             self.game_manager,
                             participants=group,
+                            panel_snapshots=snapshots,
                         )
                         try:
                             for user in group:

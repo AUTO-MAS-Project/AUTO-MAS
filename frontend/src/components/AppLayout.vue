@@ -65,7 +65,11 @@
         </a-alert>
         <router-view v-slot="{ Component, route: currentRoute }">
           <keep-alive :include="['SchedulerPage']">
-            <component :is="Component" :key="currentRoute.path" @vue:mounted="onPageMounted" />
+            <component
+              :is="Component"
+              :key="currentRoute.meta.viewKey ?? currentRoute.path"
+              @vue:mounted="onPageMounted"
+            />
           </keep-alive>
         </router-view>
       </a-layout-content>
