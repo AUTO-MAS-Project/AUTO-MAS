@@ -4412,7 +4412,6 @@
   "core.setting.others.viewHistory": "查看历史记录",
   "core.setting.pressSound.custom": "自定义音频",
   "core.setting.pressSound.duck": "小黄鸭",
-  "core.setting.pressSound.fx1": "音效1",
   "core.setting.pushTime.always": "任何时刻",
   "core.setting.pushTime.failOnly": "仅失败时",
   "core.setting.pushTime.never": "不推送",

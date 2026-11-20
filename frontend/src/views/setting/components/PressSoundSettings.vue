@@ -37,7 +37,6 @@ const { t } = useI18n()
 const isCustom = computed(() => preset.value === 'custom' || preset.value === 'customPair')
 const soundOptions = computed(() => [
   { label: t('core.setting.pressSound.duck'), value: 'duck' },
-  { label: t('core.setting.pressSound.fx1'), value: 'fx1' },
   { label: t('core.setting.pressSound.custom'), value: 'custom' },
 ])
 const modeOptions = computed(() => [

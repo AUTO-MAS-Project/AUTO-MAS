@@ -4412,7 +4412,6 @@
   "core.setting.others.viewHistory": "View history",
   "core.setting.pressSound.custom": "Custom audio",
   "core.setting.pressSound.duck": "Rubber duck",
-  "core.setting.pressSound.fx1": "Sound 1",
   "core.setting.pushTime.always": "Always",
   "core.setting.pushTime.failOnly": "On failure only",
   "core.setting.pushTime.never": "Never",
