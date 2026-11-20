@@ -33,6 +33,7 @@ class ScriptExpander(TaskBase):
     def __init__(self, info: TaskItem, dispatcher: _TaskManager) -> None:
         super().__init__()
         self.task_info = info
+        self.target_id: str | None = None
         self.dispatcher = dispatcher
         self.context = TaskContext()
         self._manager: TaskExecuteBase | None = None

@@ -162,6 +162,7 @@ export interface WSTaskScriptFinishedData extends WSTaskScriptStartedData {
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */
 export interface WSTaskCreatedData {
+  targetId?: string | null
   trigger?: TaskTriggerReason
   taskId: string
   mode: WSTaskMode
