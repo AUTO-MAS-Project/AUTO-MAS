@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from abc import abstractmethod
+from abc import ABCMeta, abstractmethod
 from typing import TYPE_CHECKING, ClassVar
 
 from app.models.config import UserConfigType, UserEntry
@@ -12,6 +12,7 @@ from app.utils.common.process.scope import process_finalizer_scope
 
 if TYPE_CHECKING:
     from app.models.task import TaskUserItem
+    from app.task.game import BoundEmulator
     from app.task.user_expander import UserExpander
 
 
@@ -33,6 +34,11 @@ class ModeWorker(TaskBase):
         self.context = expander.context.with_params(user.info.params)
         self.user_config = config
         self._entered = False
+
+    @property
+    def emulator(self) -> BoundEmulator | None:
+        """借用当前账号的设备能力，资源收尾归 L2/L3。"""
+        return self.expander.emulator
 
     async def main_task(self) -> None:
         if self.mode != self.task_info.mode:
@@ -101,7 +107,7 @@ class ScriptViewWorker(ModeWorker):
     mode = TaskMode.SCRIPT_VIEW
 
 
-MODE_WORKERS: dict[TaskMode, type[ModeWorker]] = {
+MODE_WORKERS: dict[TaskMode, ABCMeta] = {
     TaskMode.AUTO_PROXY: AutoProxyWorker,
     TaskMode.SCRIPT_CONFIG: ScriptConfigWorker,
     TaskMode.SCRIPT_VIEW: ScriptViewWorker,

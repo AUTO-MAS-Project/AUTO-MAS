@@ -30,6 +30,7 @@ def isolated_config_roots():
 def isolated_app_paths(tmp_path, monkeypatch):
     """为需要真实 Config 路径的测试隔离用户目录，保留源码及内置资源位置。"""
     from app.core import Config
+    from app.plugin.runtime import discover
 
     monkeypatch.setattr(Config, "work_path", tmp_path)
     monkeypatch.setattr(Config, "install_path", tmp_path)
@@ -45,6 +46,17 @@ def isolated_app_paths(tmp_path, monkeypatch):
         monkeypatch.setattr(Config, attribute, tmp_path / directory)
     monkeypatch.setattr(Config, "log_path", Config.debug_path / "app.log")
     monkeypatch.setattr(Config, "database_path", Config.data_path / "data.db")
+    source_projects = discover._source_projects
+    checkout_plugins = (root / "plugins").resolve()
+
+    def isolated_projects():
+        return {
+            project
+            for project in source_projects()
+            if project.parent != checkout_plugins or project.name == "auto_mas_core"
+        }
+
+    monkeypatch.setattr(discover, "_source_projects", isolated_projects)
     for directory in (Config.config_path, Config.data_path, Config.debug_path):
         directory.mkdir(parents=True, exist_ok=True)
     return Config

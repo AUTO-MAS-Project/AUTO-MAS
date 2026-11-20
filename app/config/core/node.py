@@ -777,6 +777,7 @@ class ConfigNode(BaseModel):
         for child in self.iter_children():
             await child._delete()
         self.effective._deleted = True
+        config_manager.mark_ui_changed(self)
 
     async def lock_s(self, *, cascade: bool = True) -> LockTicket:
         """共享锁：可叠加；禁一切热写；与 X 互斥。
@@ -794,8 +795,11 @@ class ConfigNode(BaseModel):
         if any(node._lock_x is not None for node in nodes):
             raise ValueError("已有 X 锁，无法加 S")
         token = uuid4()
-        for node in nodes:
-            node._lock_s.add(token)
+        with config_manager.runtime_transaction(
+            *(node for node in nodes if not node._lock_s)
+        ):
+            for node in nodes:
+                node._lock_s.add(token)
         return LockTicket(mode="s", token=token, issuer=self.uid, cascade=cascade)
 
     async def lock_x(self, *, cascade: bool = True) -> LockTicket:
@@ -814,9 +818,10 @@ class ConfigNode(BaseModel):
         if any(node._lock_x is not None or node._lock_s for node in nodes):
             raise ValueError("已有锁，无法加 X")
         token = uuid4()
-        for node in nodes:
-            node._lock_x = token
-        add_x_token(token)
+        with config_manager.runtime_transaction(*nodes):
+            for node in nodes:
+                node._lock_x = token
+            add_x_token(token)
         return LockTicket(mode="x", token=token, issuer=self.uid, cascade=cascade)
 
     async def try_lock_x(self, *, cascade: bool = True) -> LockTicket | None:
@@ -833,11 +838,14 @@ class ConfigNode(BaseModel):
         self._require_lifecycle_access()
         if ticket.issuer != self.uid:
             raise ValueError("须在签发节点解锁")
+        changed: list[ConfigNode] = []
         if ticket.mode == "s":
             if ticket.token not in self._lock_s:
                 raise ValueError("无效或未持有的 S 锁凭证")
 
             def unregister(node: ConfigNode) -> None:
+                if node._lock_s == {ticket.token}:
+                    changed.append(node)
                 node._lock_s.discard(ticket.token)
                 if not ticket.cascade:
                     return
@@ -845,6 +853,7 @@ class ConfigNode(BaseModel):
                     unregister(child)
 
             unregister(self)
+            config_manager.runtime_committed(*changed)
             return
         if ticket.mode == "x":
             if self._lock_x != ticket.token:
@@ -854,6 +863,7 @@ class ConfigNode(BaseModel):
                 # 树结构可能已变化，只释放本票据登记的锁。
                 if node._lock_x == ticket.token:
                     node._lock_x = None
+                    changed.append(node)
                 if not ticket.cascade:
                     return
                 for child in node.iter_children():
@@ -862,6 +872,7 @@ class ConfigNode(BaseModel):
             unregister(self)
             # 差集移除：跨上下文 unlock 合法，勿用 ContextVar.reset
             discard_x_token(ticket.token)
+            config_manager.runtime_committed(*changed)
             return
         raise ValueError(f"未知锁模式: {ticket.mode!r}")
 

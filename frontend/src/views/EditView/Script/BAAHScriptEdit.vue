@@ -126,77 +126,7 @@
           <div class="section-header">
             <h3>{{ t('core.edit.emulators') }}</h3>
           </div>
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.emulator')"
-                    :hint="t('core.edit.baahEmulatorHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="baahConfig.Emulator.Id"
-                  size="large"
-                  :placeholder="t('core.edit.pickEmulator')"
-                  :loading="emulatorLoading"
-                  @change="handleEmulatorSelectChange"
-                >
-                  <a-select-option
-                    v-for="item in emulatorOptions"
-                    :key="item.value"
-                    :value="item.value"
-                  >
-                    {{ item.label }}
-                  </a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.emulatorInstance')"
-                    :hint="t('core.edit.pickEmulatorInstance')"
-                    variant="form"
-                  />
-                </template>
-                <!-- 当API返回空列表时显示输入框 -->
-                <a-input
-                  v-if="
-                    emulatorDeviceOptions.length === 0 &&
-                    !emulatorDeviceLoading &&
-                    baahConfig.Emulator.Id
-                  "
-                  v-model:value="baahConfig.Emulator.Index"
-                  size="large"
-                  :placeholder="t('core.edit.enterInstanceInfoAs')"
-                  class="modern-input"
-                  @blur="handleChange('Emulator', 'Index', baahConfig.Emulator.Index)"
-                />
-                <!-- 正常情况下显示下拉框 -->
-                <a-select
-                  v-else
-                  v-model:value="baahConfig.Emulator.Index"
-                  size="large"
-                  :placeholder="t('core.edit.pickEmulatorFirst')"
-                  :loading="emulatorDeviceLoading"
-                  :disabled="!baahConfig.Emulator.Id"
-                  @change="handleChange('Emulator', 'Index', $event)"
-                >
-                  <a-select-option
-                    v-for="item in emulatorDeviceOptions"
-                    :key="item.value"
-                    :value="item.value"
-                    :disabled="item.disabled"
-                  >
-                    {{ item.label }}
-                  </a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-          </a-row>
+          <a-row :gutter="24"> </a-row>
         </div>
 
         <!-- 运行配置 -->
@@ -249,23 +179,12 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
-import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
-import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('BAAH脚本编辑')
 const route = useRoute()
 const router = useRouter()
 const { getScript, error: scriptApiError } = useScriptApi()
-const {
-  emulatorDeviceLoading,
-  emulatorDeviceOptions,
-  clearEmulatorDeviceOptions,
-  loadEmulatorDeviceOptions,
-} = useEmulatorDeviceOptions()
-
-// 模拟器相关状态：模拟器的启动与关闭由本软件调度，BAAH 只负责连接
-const { emulatorLoading, emulatorOptions, loadEmulatorOptions } = useEmulatorOptions()
 
 const scriptId = route.params.id as string
 const pageLoading = ref(true)
@@ -292,17 +211,11 @@ interface BAAHRunForm {
   RunTimeLimit: number
 }
 
-interface BAAHEmulatorForm {
-  Id: string
-  Index: string
-}
-
 interface BAAHScriptConfigForm {
   Update: BAAHConfig_Update
   Info: BAAHInfoForm
   Script: BAAHScriptForm
   Run: BAAHRunForm
-  Emulator: BAAHEmulatorForm
 }
 
 const getDefaultBAAHConfig = (): BAAHScriptConfigForm => ({
@@ -316,10 +229,6 @@ const getDefaultBAAHConfig = (): BAAHScriptConfigForm => ({
     PushLogEnabled: true,
   },
   Run: { HardTimeLimit: 120, RunTimesLimit: 2, RunTimeLimit: 60 },
-  Emulator: {
-    Id: '',
-    Index: '',
-  },
 })
 
 const baahConfig = reactive<BAAHScriptConfigForm>(getDefaultBAAHConfig())
@@ -367,11 +276,6 @@ const loadScript = async () => {
     Object.assign(baahConfig.Info, config.Info || {})
     Object.assign(baahConfig.Script, config.Script || {})
     Object.assign(baahConfig.Run, config.Run || {})
-    Object.assign(baahConfig.Emulator, config.Emulator || {})
-    // 已经选过模拟器时同步加载它的设备列表
-    if (baahConfig.Emulator.Id) {
-      void loadEmulatorDeviceOptions(baahConfig.Emulator.Id)
-    }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
@@ -396,23 +300,8 @@ const selectBaahPath = async () => {
   await handleChange('Script', 'BAAHPath', normalized)
 }
 
-// 模拟器相关方法
-const handleEmulatorSelectChange = async (emulatorId: string) => {
-  // 换模拟器后旧的实例索引不再有效
-  baahConfig.Emulator.Index = ''
-  if (emulatorId) {
-    void loadEmulatorDeviceOptions(emulatorId)
-  } else {
-    clearEmulatorDeviceOptions()
-  }
-
-  // 模拟器和清空实例一起落盘，避免等待期间选的新实例又被清空。
-  await save({ Emulator: { Id: emulatorId, Index: '' } })
-}
-
 onMounted(() => {
   void loadScript()
-  void loadEmulatorOptions()
 })
 </script>
 

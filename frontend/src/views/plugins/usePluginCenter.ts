@@ -1,6 +1,7 @@
-import { inject, provide, ref, type InjectionKey, type Ref } from 'vue'
+import { computed, inject, provide, ref, watch, type InjectionKey, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
+import { useActiveTriggers } from '@/composables/useActiveTriggers'
 import { usePluginApi } from '@/composables/usePluginApi'
 import { apiErrorMessage } from '@/utils/apiResult'
 import {
@@ -10,7 +11,11 @@ import {
   type LifecycleAction,
   type MarketFilter,
 } from './pluginCenterModel'
-import { createPluginOperationLock, type PluginOperationLock } from './pluginOperationLock'
+import {
+  createPluginOperationLock,
+  type PluginOperationAction,
+  type PluginOperationLock,
+} from './pluginOperationLock'
 import { usePluginCenterData, type PluginCenterData } from './usePluginCenterData'
 import { usePluginInstallation, type PluginInstallationController } from './usePluginInstallation'
 
@@ -32,6 +37,9 @@ export interface PluginCenterContext {
   runLifecycle(view: InstalledPluginView, action: LifecycleAction): Promise<boolean>
 }
 
+const pluginActions = new Set<string>(['install', 'enable', 'disable', 'reload', 'uninstall'])
+const isPluginAction = (field: string): field is PluginOperationAction => pluginActions.has(field)
+
 const PLUGIN_CENTER_KEY: InjectionKey<PluginCenterContext> = Symbol('plugin-center')
 
 /** 外壳调用一次：建立取数、安装状态与操作锁，并向三个页签提供。 */
@@ -39,9 +47,25 @@ export function providePluginCenter(): PluginCenterContext {
   const { t } = useI18n()
   const api = usePluginApi()
   const data = usePluginCenterData()
-  const lock = createPluginOperationLock()
+  const { data: activeTriggers } = useActiveTriggers()
+  const activePluginTriggers = computed(() =>
+    activeTriggers.value.flatMap(trigger =>
+      trigger.group === 'info' && isPluginAction(trigger.field)
+        ? [{ uid: trigger.configUid, action: trigger.field, taskId: trigger.taskId }]
+        : []
+    )
+  )
+  const lock = createPluginOperationLock(() => activePluginTriggers.value[0] ?? null)
+  watch(activePluginTriggers, (next, previous) => {
+    if (previous.some(trigger => !next.some(current => current.taskId === trigger.taskId)))
+      void data.reload()
+  })
   const installation = usePluginInstallation(lock, {
     onInstalled: data.reload,
+    activeInstalls: () =>
+      activePluginTriggers.value.flatMap(trigger =>
+        trigger.action === 'install' ? [trigger.uid] : []
+      ),
     latest: uid => data.market.value.find(entry => entry.uid === uid)?.document,
   })
 

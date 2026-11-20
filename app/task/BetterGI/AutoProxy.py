@@ -36,6 +36,7 @@ from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.task.base import ScriptAutoProxyBase
+from app.task.client import ClientProcess, client_executable_path
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     find_pids_by_name,
@@ -482,7 +483,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             expected = _RESOURCE_EXPECTED_CHANNEL.get(resource)
             if expected:
                 info = game_info.read_game_info(
-                    root, str(self.cur_user_config.Switch.GamePath or "")
+                    root, str(client_executable_path(self.cur_user_config) or "")
                 )
                 if info["channel"] and info["channel"] != expected:
                     await self.cur_user_item.set_state(status="异常")
@@ -1585,7 +1586,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 是全局单值，写入会污染其他「跟随全局」的账号（2026-09-23 实机）。
         # 生效方式：MAS 方式自行按账号路径拉起游戏；BGI 脚本方式由 MAS 预拉起
         # 后 BGI attach 运行中的客户端。
-        user_game_path = str(self.cur_user_config.Switch.GamePath or "").strip()
+        user_game_path = str(client_executable_path(self.cur_user_config) or "").strip()
 
         if self._account_switch_method() == "MAS":
             return await self._switch_account_mas(user_game_path)
@@ -1863,7 +1864,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         await self._push_dispatch_log(f"正在由 MAS 启动原神: {game_exe.name}")
         # 持有为实例属性：局部 ProcessManager 出栈后 asyncio 子进程 transport
         # 被 GC 会产生 unclosed 告警噪音；保留句柄不影响 CloseOnFinish 收尾语义
-        self.switch_game_manager = ProcessManager()
+        self.switch_game_manager = ClientProcess()
         # breakaway=True：游戏不该随后端退出（Runtime 用 KILL_ON_JOB_CLOSE 的
         # Job 监督后端，子进程默认留在 Job 里被连带回收；对齐模拟器/游戏客户端
         # 直拉调用点的既有惯例，见 windows/process.py 顶部契约说明）
@@ -2281,6 +2282,14 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         退出直至 60s 超时抛异常，反而跳过后续的强制关闭（旧实现的游戏残留根因），
         故这里直接 /F 结束。
         """
+        from app.plugin.base.client import ClientControl
+        from app.task.client import ClientProcess
+        from app.task.game import current_game_session
+
+        session = current_game_session.get()
+        if session is not None and isinstance(session.control, ClientControl):
+            await ClientProcess().kill()
+            return
         for image in names:
             try:
                 result = await kill_windows_process_tree_by_image(image)

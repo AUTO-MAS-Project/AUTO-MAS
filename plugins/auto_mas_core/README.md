@@ -83,7 +83,7 @@ SDK 顶层及 `host.*`、`utils`、`services`、`plugin` 的静态导出直接�
 
 ## 宿主服务与通知
 
-`auto_mas_core.services` 导出真实的 `BackgroundTaskManager`、`Downloads`、`Operations` 和 `Notify`。跨插件服务总线位于 `auto_mas_core.plugin.services`；新插件优先使用实例绑定的 `self.services`。
+`auto_mas_core.services` 导出真实的 `BackgroundTaskManager`、`Downloads`、`Notify` 和 `run_in_worker`。跨插件服务总线位于 `auto_mas_core.plugin.services`；新插件优先使用实例绑定的 `self.services`。
 
 从 `auto_mas_core.notify` 获取宿主的实际 `Notify` 单例及消息类型，直接沿用渠道、模板、统计和签到摘要；没有插件专用通知协议或绑定：
 
@@ -112,13 +112,12 @@ result = await Notify.send_global(
 
 ## 插件配置命令
 
-插件自有配置继承 `PluginConfig`；独立的插件命令节点继承 `PluginCommandEntry`，游戏、设备、托管、用户和插件计划上界已包含这一适配。
-从 SDK 导入的 `trigger_field(path, cancellable=...)` 复用配置触发器绑定并声明取消策略。属性赋值及 `update()` 触发的命令统一进入插件 Operations。
-普通 `ConfigEntry` 沿用 dev 的精简触发语义；所有配置 `update()` 返回 `None`，不返回操作 ID。
+插件自有配置继承 `PluginConfig`。在配置分组声明 `field: Trigger = None`，用 `@trigger_field("group.field")` 绑定无参同步或异步实例方法。
 
-需要跟踪结果时通过 `Operations.start(config_uid=配置自身UID, group=..., field=..., value=...)` 或 HTTP `/api/operations/start` 取得操作 ID。
-插件自有配置 UID 与注册项 UID 各自独立；配置保存接口只返回保存结果。前端使用配置输出的 `ui.hints` 显隐及 `editable` 禁用按钮，不自行推断插件生命周期权限。
-Operations 保留同一 Trigger 去重、查询、取消及插件停用协调；实际执行由背景任务组承担，具体资源清理由处理方法完成。
+用 `entry.write_trigger(group, field, value)` 写入命令。传 `None` 跳过，传 `True` 启动或返回当前任务 UUID，传 `False` 请求取消当前任务。配置 `update()` 也接受同样的命令值，仍返回 `None`。属性读取返回 `UUID | None`。接口使用配置自身 UID，可通过 `/api/config/triggers/write` 写入，并通过 `/api/config/triggers/result` 查任务结果。触发器字段和 UUID 从配置文件及备份中省略。
+
+配置管理器托管执行和回收。同步处理器进入独立线程池，异步处理器通过事件循环运行。异步处理器中的阻塞调用应使用 `run_in_worker`。默认超时 15 分钟。可在字段声明时使用 `field: Trigger = trigger(timeout=120, description="刷新资源")` 覆盖，单位秒。取消或超时后，已经开始的线程调用须实际退出才清除字段占用。插件方法若有必须完整收尾的副作用，可以声明 `finish_on_cancel=True`，让已经开始的处理器安全完成后再结束任务。可中断的异步方法应使用 `finally` 清理资源。
+
 
 ## 旧脚本更新桥接
 

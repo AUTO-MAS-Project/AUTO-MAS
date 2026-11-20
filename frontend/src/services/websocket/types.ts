@@ -25,6 +25,8 @@ export interface WSEnvelope<T = WSJsonObject> {
 // ==================== 固定路由 ID ====================
 
 export const WS_ID_MAIN = 'Main'
+export const WS_ID_CONFIG = 'Config'
+export const WS_CONFIG_UI_CHANGED = 'config.ui.changed'
 export const WS_ID_PLUGIN = 'Plugin'
 export const WS_PLUGIN_CAPABILITIES_UPDATED = 'plugin.capabilities.updated'
 export const WS_ID_MCP = 'MCP'
@@ -321,6 +323,7 @@ type WSEmptyData = Record<string, never>
 
 /** 已知关键消息的 type → data 映射。未知消息回退到 WSJsonObject。 */
 interface WSMessageDataMap {
+  [WS_CONFIG_UI_CHANGED]: { nodeUids: string[] }
   [WS_MCP_STATUS_UPDATED]: McpStatusData
   [WS_I18N_UPDATED]: { revision: string }
   [WS_TASK_INFO_UPDATED]: WSTaskInfoUpdatedData

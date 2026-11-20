@@ -7,7 +7,13 @@ from enum import Enum
 from typing import TYPE_CHECKING, Annotated, Protocol
 from uuid import UUID
 
-from pydantic import GetCoreSchemaHandler, ValidationInfo
+from pydantic import (
+    GetCoreSchemaHandler,
+    PlainSerializer,
+    PlainValidator,
+    StrictBool,
+    ValidationInfo,
+)
 from pydantic.fields import FieldInfo
 from pydantic_core import core_schema
 
@@ -146,25 +152,36 @@ def is_virtual_model_field(model_field: FieldInfo) -> bool:
 # ──────────────────────────── trigger ────────────────────────────
 
 
-class TriggerDecl:
+class _TriggerMarker:
     """``Trigger`` 类型桩标记；须与 ``@trigger_field`` 配对。"""
 
 
-Trigger = Annotated[bool, TriggerDecl()]
-"""响应式触发器类型桩（bool；读恒 ``False``，置 ``True`` 执行一次；须配 ``@trigger_field``）。
+@dataclass(frozen=True)
+class _TriggerTimeout:
+    seconds: float
 
-Literal 多按钮写法（与 bool **不混用**）::
 
-    action: Annotated[Literal["a", "b"] | None, TriggerDecl()] = None
-    # 读/API 闲置为 None；写入字面量触发，handler(value)
-"""
+def validate_trigger_command(value: object) -> bool | None:
+    """接受严格的三态命令，任务 UUID 只由运行时生成。"""
+    if value is None or isinstance(value, bool):
+        return value
+    raise ValueError("触发器只接受 null、true 或 false")
+
+
+Trigger = Annotated[
+    UUID | None,
+    _TriggerMarker(),
+    PlainValidator(validate_trigger_command, json_schema_input_type=StrictBool | None),
+    PlainSerializer(lambda value: value, return_type=bool | UUID | None),
+]
+"""触发器字段读取 UUID 或 None。写入使用三态命令，处理器无需接收参数。"""
 
 
 def is_trigger_model_field(model_field: FieldInfo) -> bool:
     meta = list(getattr(model_field, "metadata", ())) + list(
         unwrap_ann(getattr(model_field, "annotation", None))[1]
     )
-    return any(isinstance(m, TriggerDecl) for m in meta)
+    return any(isinstance(m, _TriggerMarker) for m in meta)
 
 
 def is_reactive_model_field(model_field: FieldInfo) -> bool:

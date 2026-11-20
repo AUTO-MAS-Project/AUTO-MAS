@@ -41,12 +41,14 @@ from app.models.task import LogRecord, ScriptItem
 from app.services import endfield_launcher as _service_endfield_launcher
 from app.services.common.maa_capture import AdbCapture, Win32Capture
 from app.task.base import ScriptAutoProxyBase
+from app.task.client import ClientProcess, client_executable_path, client_launcher_path
 from app.task.emulator_core import (
     close_emulator,
     resolve_device_ref,
     resolve_host_adb,
 )
 from app.task.failure_capture_core import FailureCapture
+from app.task.game import game_device_id
 from app.task.MaaFW.tools.core.interface.loader import load_interface_model
 from app.task.MaaFW.tools.core.interface.task_config import (
     build_task_option_maps,
@@ -568,12 +570,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             if mode == "MaaEnd":
                 logger.info("启动方式为「MaaEnd 启动」")
                 # 手选路径与上游启动入口共用；未指定时保留 MaaEnd 原生定位方式。
-                if self.script_config.Game.LauncherPath:
+                if client_launcher_path(self.script_config):
                     launcher_path = self._launcher_path()
                 else:
                     launcher_path = await asyncio.to_thread(
                         _service_endfield_launcher.discover_launcher_exe,
-                        Path(str(self.script_config.Game.Path)),
+                        Path(str(client_executable_path(self.script_config))),
                     )
                 if launcher_path is not None:
                     self.launcher_runtime_path = launcher_path.resolve()
@@ -608,8 +610,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
     def _launcher_path(self) -> Path | None:
         """自动与手动路径共用服务层校验；失效的手动路径明确报错。"""
         return _service_endfield_launcher.resolve_launcher_exe(
-            Path(str(self.script_config.Game.Path or "")),
-            str(self.script_config.Game.LauncherPath or ""),
+            Path(str(client_executable_path(self.script_config) or "")),
+            str(client_launcher_path(self.script_config) or ""),
         )
 
     def _launcher_path_text(self) -> str:
@@ -625,7 +627,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             launcher_path = None
         if launcher_path is not None:
             return str(launcher_path)
-        return str(self.script_config.Game.LauncherPath or "")
+        return str(client_launcher_path(self.script_config) or "")
 
     async def _apply_launcher_game_settings(
         self, *, preserve_running_game: bool = False
@@ -648,9 +650,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         skipped: list[str] = []
         # 复用现有 MXU 选项转换与 PI 预任务命令解析，不复制上游显示设置逻辑。
         setting_options = self.launcher_game_setting_options.copy()
-        if (
-            task_name == _MAAEND_LAUNCH_GAME_PRETASK
-            and self.script_config.Game.LauncherPath
+        if task_name == _MAAEND_LAUNCH_GAME_PRETASK and client_launcher_path(
+            self.script_config
         ):
             launcher_path = self._launcher_path()
             if launcher_path is not None:
@@ -806,7 +807,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             return
         # 进程残留但窗口已消失（如更新重启失败）：清掉残留后重新拉起
         await self.game_process_manager.kill()
-        logger.info(f"启动终末地: {self.script_config.Game.Path}")
+        game_path = str(client_executable_path(self.script_config))
+        logger.info(f"启动终末地: {game_path}")
         if (desktop := desktop_process_target.get()) is not None:
             from app.task.desktop_session_worker import request_desktop_action
 
@@ -816,7 +818,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     "maaend_direct_launch",
                     {
                         "launcher_path": self._launcher_path_text(),
-                        "game_path": str(self.script_config.Game.Path),
+                        "game_path": game_path,
                         "game_arguments": str(self.script_config.Game.Arguments),
                     },
                 )
@@ -824,7 +826,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             return
         command = _game_launch_command(
             launcher_path=self._launcher_path_text(),
-            game_path=str(self.script_config.Game.Path),
+            game_path=game_path,
             game_arguments=str(self.script_config.Game.Arguments),
         )
         result = await ProcessRunner.run_process(
@@ -1139,7 +1141,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         self.maaend_process_manager = ProcessManager()
         if self.emulator_manager is None:
-            self.game_process_manager = ProcessManager()
+            self.game_process_manager = ClientProcess()
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
         self.log_start_time = datetime.now().astimezone()
@@ -1627,9 +1629,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                         preserve_running_game=keep_game_for_login_retry
                     )
                 else:
-                    logger.info(f"启动模拟器: {self.script_config.Game.EmulatorIndex}")
+                    logger.info(f"启动模拟器: {game_device_id(self.script_config)}")
                     self.emulator_info = await self.emulator_manager.open(
-                        self.script_config.Game.EmulatorIndex,
+                        game_device_id(self.script_config),
                         "" if cloud_adb else "com.hypergryph.endfield",
                     )
             except Exception as e:
@@ -1893,17 +1895,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 await self.game_process_manager.kill()
             except Exception as error:
                 logger.opt(exception=True).warning(f"终末地进程管理器清理失败: {error}")
-            try:
-                await process.kill_process(self.script_config.Game.Path)
-            except Exception as error:
-                logger.opt(exception=True).warning(f"关闭终末地客户端失败: {error}")
             await self._kill_launcher_process()
         else:
             try:
                 logger.info("中止模拟器进程")
                 await close_emulator(
                     self,
-                    index=self.script_config.Game.EmulatorIndex,
+                    index=game_device_id(self.script_config),
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
@@ -2249,7 +2247,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             read_unity_resolution,
         )
 
-        game_path = str(self.script_config.Game.Path or "").strip()
+        game_path = str(client_executable_path(self.script_config) or "").strip()
         if not game_path:
             return None
         exe_path = Path(game_path)
@@ -2452,7 +2450,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             _configure_game_pre_action(
                 maaend_instance,
                 launcher_path=self._launcher_path_text(),
-                game_path=str(self.script_config.Game.Path),
+                game_path=str(client_executable_path(self.script_config)),
                 game_arguments=str(self.script_config.Game.Arguments),
                 result_path=self.game_launch_result_path,
                 enabled=False,
@@ -3056,9 +3054,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         return find()
 
     async def _failure_window_handle(self) -> int | None:
-        return await asyncio.to_thread(
-            self.find_failure_window, Path(str(self.script_config.Game.Path or ""))
+        game_path = (
+            client_executable_path(self.script_config) or self.script_config.Game.Path
         )
+        if game_path is None:
+            return None
+        return await asyncio.to_thread(self.find_failure_window, game_path)
 
     async def _capture_failure_shot(self) -> Path | None:
         if self._attempt_start_ns is None:
@@ -3077,10 +3078,16 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             if (desktop := desktop_process_target.get()) is not None:
                 from app.task.desktop_session_worker import request_desktop_action
 
+                game_path = (
+                    client_executable_path(self.script_config)
+                    or self.script_config.Game.Path
+                )
+                if game_path is None:
+                    return None
                 _, path = await request_desktop_action(
                     desktop,
                     "maaend_failure_screenshot",
-                    {"game_path": str(self.script_config.Game.Path)},
+                    {"game_path": str(game_path)},
                 )
                 return Path(path) if path else None
             hwnd = await self._failure_window_handle()
@@ -3090,7 +3097,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         else:
             if self.emulator_info is None:
                 return None
-            index = self.script_config.Game.EmulatorIndex
+            index = game_device_id(self.script_config)
             host_adb = await resolve_host_adb(self, index=index)
             if host_adb is not None:
                 from PIL import Image

@@ -2,7 +2,8 @@ import { onScopeDispose } from 'vue'
 import {
   Service,
   PluginInstallation,
-  type OperationStartIn,
+  type TriggerTaskResult,
+  type TriggerWriteIn,
   type PluginConfigUpdateIn,
   type OutBase,
 } from '@/api'
@@ -157,7 +158,7 @@ export function usePluginApi() {
   }
   const runCommand = (
     action: Action,
-    body: OperationStartIn,
+    body: TriggerWriteIn,
     onProgress?: (stage: InstallationStage) => void
   ) =>
     perform(action, async () => {
@@ -175,30 +176,32 @@ export function usePluginApi() {
       }
       // 命令入口直接返回身份，配置 update 不再承担命令跟踪契约。
       const accepted = await requestApi(
-        () => Service.startOperationApiOperationsStartPost(body),
+        () => Service.writeConfigTriggerApiConfigTriggersWritePost(body),
         t('core.plugins.actionFailed')
       )
-      const operationId = accepted.data?.operationId
-      if (!operationId) throw new OperationResultError('unknown')
-      let operation = accepted.data
+      const taskId = accepted.data
+      if (!taskId) throw new OperationResultError('unknown')
       let misses = 0
-      while (operation?.state !== 'succeeded') {
-        if (operation?.state === 'failed' || operation?.state === 'cancelled') {
-          throw new OperationResultError(operation.state === 'cancelled' ? 'cancelled' : 'failure')
-        }
+      while (true) {
         if (disposed) throw new OperationResultError('unknown')
-        await pause()
+        let state: TriggerTaskResult['state']
         try {
           const response = await requestApi(
-            () => Service.getOperationApiOperationsGetPost({ operationId }),
+            () => Service.getConfigTriggerResultApiConfigTriggersResultPost({ taskId }),
             t('core.plugins.outcomeUnknown')
           )
           if (!response.data) throw new OperationResultError('unknown')
-          operation = response.data
+          state = response.data.state
           misses = 0
         } catch {
           if (++misses >= 3) throw new OperationResultError('unknown')
+          await pause()
+          continue
         }
+        if (state === 'succeeded') break
+        if (state === 'failed' || state === 'timed_out') throw new OperationResultError('failure')
+        if (state === 'cancelled') throw new OperationResultError('cancelled')
+        await pause()
       }
       if (action === 'install') await finishInstallation(body.configUid, onProgress)
       return accepted

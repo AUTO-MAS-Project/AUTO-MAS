@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import os
 import threading
 import weakref
-from collections import deque
-from collections.abc import Iterator
+from collections import OrderedDict, deque
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import asynccontextmanager, contextmanager, nullcontext
 from contextvars import ContextVar, copy_context
 from dataclasses import dataclass, field
 from pathlib import Path
 from time import monotonic
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Generator, Literal
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Generator, Literal, cast
 from uuid import UUID, uuid4
 
 from app.utils import get_logger
@@ -22,6 +23,7 @@ from app.utils import io as _utils_io
 from ..errors import ConfigAggregateError, ConfigPersistenceError
 
 logger = get_logger("配置持久化")
+trigger_logger = get_logger("配置触发器")
 
 # 当前 asyncio 上下文持有的 X 锁 token。判定用差集而非 Token.reset：
 # 收尾兜底可能在另一个上下文里 unlock，reset 会抛 LookupError。
@@ -42,7 +44,16 @@ def discard_x_token(token: UUID) -> None:
 
 
 if TYPE_CHECKING:
+    from app.core.background_tasks import (
+        BackgroundTaskGroup,
+        BackgroundTaskHandle,
+        BackgroundTaskRegistry,
+        BackgroundTaskState,
+        TaskOutcome,
+    )
+
     from .collection import ConfigCollection
+    from .entry import ConfigEntry
     from .node import ConfigNode, NodeState
 
 type WorkspaceUnit = ConfigNode | type[ConfigNode]
@@ -60,18 +71,19 @@ def execution_owner() -> ExecutionOwner:
     return task if task is not None else threading.current_thread()
 
 
-@dataclass
 class TransactionContext:
     """一个事务提交与回退边界；普通嵌套调用直接复用当前上下文。"""
 
-    parent: TransactionContext | None = None
-    registered: list[WorkspaceUnit] = field(default_factory=list)
-    owner: ExecutionOwner = field(default_factory=execution_owner)
-    scope_id: UUID = field(default_factory=uuid4)
-    active: bool = True
-    staged_nodes: dict[int, weakref.ReferenceType[ConfigNode]] = field(
-        default_factory=dict
-    )
+    def __init__(self, *, parent: TransactionContext | None = None) -> None:
+        self.parent = parent
+        self.registered: list[WorkspaceUnit] = []
+        self.owner = execution_owner()
+        self.scope_id = uuid4()
+        self.active = True
+        self.staged_nodes: dict[int, weakref.ReferenceType[ConfigNode]] = {}
+        self.ui_nodes: set[UUID] = set()
+        self.triggers: list[tuple[ConfigEntry, str, str, bool]] = []
+        self.committed = False
 
     @property
     def is_current(self) -> bool:
@@ -127,12 +139,33 @@ class _SaveFailure:
     next_retry_at: float | None
 
 
+class TriggerUnavailable(RuntimeError):
+    """触发器请求无法受理。"""
+
+
+@dataclass(frozen=True)
+class TriggerResult:
+    state: BackgroundTaskState
+    error_code: str | None = None
+
+
+@dataclass
+class _RunningTrigger:
+    handle: BackgroundTaskHandle[None]
+    entry: ConfigEntry
+    group: str
+    field: str
+    owner: UUID | None
+    finish_on_cancel: bool
+
+
 class ConfigManager:
     """全局配置管理器单例。"""
 
     def __init__(self) -> None:
         self._collections: dict[str, ConfigCollection[Any]] = {}
         self._roots: dict[UUID, RootRecord] = {}
+        self._ui_listener: Callable[[frozenset[UUID]], None] | None = None
         self._txn: ContextVar[TransactionContext | None] = ContextVar(
             "config_framework_v2_txn", default=None
         )
@@ -155,6 +188,277 @@ class ConfigManager:
         self._save_event: asyncio.Event | None = None
         self._save_failures: dict[UUID, _SaveFailure] = {}
         self._save_retry_delays = (1.0, 2.0, 4.0, 8.0, 16.0)
+        self._trigger_group: BackgroundTaskGroup | None = None
+        self._trigger_background: BackgroundTaskRegistry | None = None
+        self._trigger_owner: Callable[[ConfigEntry], UUID | None] = lambda _: None
+        self._triggers: dict[UUID, _RunningTrigger] = {}
+        self._trigger_results: OrderedDict[UUID, TriggerResult] = OrderedDict()
+        self._paused_trigger_owners: dict[UUID, int] = {}
+        self._trigger_current: ContextVar[UUID | None] = ContextVar(
+            "config_trigger", default=None
+        )
+        self._triggers_closed = False
+        self._triggers_restarting = False
+
+    def bind_ui_listener(
+        self, listener: Callable[[frozenset[UUID]], None] | None
+    ) -> None:
+        """登记宿主对已提交配置快照变化的监听。"""
+        self._ui_listener = listener
+
+    @staticmethod
+    def _ui_sources(nodes: Iterable[ConfigNode]) -> frozenset[UUID]:
+        sources: set[UUID] = set()
+        for node in nodes:
+            parent: ConfigNode | None = node
+            while parent is not None and parent.uid not in sources:
+                sources.add(parent.uid)
+                parent = parent.parent
+        return frozenset(sources)
+
+    def _publish_ui_commit(self, sources: frozenset[UUID]) -> None:
+        if sources and (listener := self._ui_listener) is not None:
+            listener(sources)
+
+    @contextmanager
+    def runtime_transaction(self, *nodes: ConfigNode) -> Iterator[None]:
+        """提交一次同步的内存状态切换。操作执行和等待都在此边界之外。"""
+        yield
+        self.runtime_committed(*nodes)
+
+    def runtime_committed(self, *nodes: ConfigNode) -> None:
+        """登记已原子生效的运行态，例如 asyncio.Lock 的获取。"""
+        if self._ui_listener is not None:
+            self._publish_ui_commit(self._ui_sources(nodes))
+
+    def mark_ui_changed(self, node: ConfigNode) -> None:
+        """记录工作区变化，随所属根事务提交或丢弃。"""
+        if self._ui_listener is not None and (ctx := self.current) is not None:
+            ctx.ui_nodes.update(self._ui_sources((node,)))
+
+    def initialize_triggers(
+        self,
+        background: BackgroundTaskRegistry,
+        *,
+        max_running: int,
+        resolve_owner: Callable[[ConfigEntry], UUID | None] = lambda _: None,
+        execution_timeout: float = 900,
+    ) -> None:
+        """在宿主启动时登记配置触发器的背景任务组。"""
+        self._trigger_group = background.register_group(
+            "config-triggers",
+            max_running=max_running,
+            max_retained=max_running,
+            execution_timeout=execution_timeout,
+        )
+        self._trigger_background = background
+        self._trigger_owner = resolve_owner
+
+    def write_trigger(
+        self, config_uid: UUID, *, group: str, field: str, value: bool | None
+    ) -> UUID | None:
+        """定位实时配置，写入指定触发器字段。"""
+        from .entry import ConfigEntry
+
+        pending = list(self.iter_persist_roots())
+        while pending:
+            node = pending.pop()
+            if node.uid == config_uid and isinstance(node, ConfigEntry):
+                return self.submit_trigger(node, group=group, field=field, value=value)
+            pending.extend(node.iter_children())
+        raise TriggerUnavailable("trigger_target_not_found")
+
+    def apply_trigger_field(
+        self, entry: ConfigEntry, group: str, field: str, value: bool | None
+    ) -> None:
+        """配置字段写入无需返回任务 UID，事务内推迟到根提交之后受理。"""
+        if value is None:
+            return
+        if (ctx := self.current) is not None:
+            ctx.triggers.append((entry, group, field, value))
+        else:
+            self.submit_trigger(entry, group=group, field=field, value=value)
+
+    def submit_trigger(
+        self, entry: ConfigEntry, *, group: str, field: str, value: bool | None
+    ) -> UUID | None:
+        """None 跳过，True 请求启动，False 请求取消当前字段的任务。"""
+        from app.core.background_tasks import wait_until_settled
+
+        from ..fields.hints import UiVisibility
+        from ..fields.ref import _TriggerTimeout, validate_trigger_command
+        from .group import ConfigGroup
+
+        value = validate_trigger_command(value)
+        handler_name = type(entry)._cfg_trigger_specs.get((group, field))
+        if handler_name is None:
+            raise TriggerUnavailable("trigger_field_not_found")
+        if value is None:
+            return None
+        if self.current is not None:
+            raise TriggerUnavailable("trigger_requires_committed_configuration")
+        if entry.deleted or entry._is_workspace or not entry._activation_ready:
+            raise TriggerUnavailable("trigger_target_unavailable")
+
+        target = cast(ConfigGroup, entry.__dict__[group])
+        uid = target._trigger_uids.get(field)
+        if value is False:
+            if uid is not None:
+                if uid == self._trigger_current.get():
+                    raise TriggerUnavailable("trigger_cannot_cancel_itself")
+                handle = self._triggers[uid].handle
+                if not handle.cancelling():
+                    with self.runtime_transaction(entry):
+                        handle.cancel()
+            return uid
+        if uid is not None:
+            return uid
+
+        background = self._trigger_group
+        if self._triggers_closed or self._triggers_restarting or background is None:
+            raise TriggerUnavailable("trigger_unavailable")
+        if entry.is_locked:
+            raise TriggerUnavailable("trigger_target_locked")
+        owner = self._trigger_owner(entry)
+        if owner in self._paused_trigger_owners:
+            raise TriggerUnavailable("trigger_owner_stopping")
+        if entry._ui_visibility(group, field) in (
+            UiVisibility.HIDE,
+            UiVisibility.DISABLE,
+        ):
+            raise TriggerUnavailable("trigger_not_editable")
+        handler = getattr(entry, handler_name)
+        finish_on_cancel = bool(getattr(handler, "__trigger_finish_on_cancel__", False))
+
+        async def invoke() -> None:
+            result = (
+                handler()
+                if inspect.iscoroutinefunction(handler)
+                else await background.run_sync(handler)
+            )
+            if inspect.isawaitable(result):
+                await result
+
+        async def execute() -> None:
+            if entry.deleted or not entry._activation_ready or entry.is_locked:
+                raise TriggerUnavailable("trigger_target_changed")
+            assert task is not None
+            token = self._trigger_current.set(task.uid)
+            try:
+                if finish_on_cancel:
+                    await wait_until_settled(asyncio.create_task(invoke()))
+                else:
+                    await invoke()
+            finally:
+                self._trigger_current.reset(token)
+
+        timeout = next(
+            (
+                option.seconds
+                for option in type(target).model_fields[field].metadata
+                if isinstance(option, _TriggerTimeout)
+            ),
+            None,
+        )
+        task = background.spawn(execute, execution_timeout=timeout)
+        if task is None:
+            raise TriggerUnavailable("trigger_busy")
+        uid = task.uid
+
+        def finished(handle: BackgroundTaskHandle[None]) -> None:
+            outcome = cast("TaskOutcome[None]", handle.group.try_take(handle))
+            error_code = (
+                type(outcome.error).__name__ if outcome.error is not None else None
+            )
+            with self.runtime_transaction(entry):
+                target._trigger_uids.pop(field)
+                self._triggers.pop(handle.uid)
+                self._trigger_results[handle.uid] = TriggerResult(
+                    outcome.state, error_code
+                )
+                if len(self._trigger_results) > 200:
+                    self._trigger_results.popitem(last=False)
+            if outcome.state in ("failed", "timed_out"):
+                trigger_logger.warning(f"{entry.uid} {group}.{field}: {outcome.error}")
+
+        with self.runtime_transaction(entry):
+            self._triggers[uid] = _RunningTrigger(
+                task, entry, group, field, owner, finish_on_cancel
+            )
+            target._trigger_uids[field] = uid
+            task.add_done_callback(finished)
+        return uid
+
+    def trigger_result(self, uid: UUID) -> TriggerResult | None:
+        from app.core.background_tasks import BackgroundTaskState
+
+        running = self._triggers.get(uid)
+        if running is not None:
+            state = (
+                BackgroundTaskState.CANCELLING
+                if running.handle.cancelling()
+                else BackgroundTaskState.RUNNING
+            )
+            return TriggerResult(state)
+        return self._trigger_results.get(uid)
+
+    def active_triggers(self) -> list[tuple[UUID, str, str, UUID, bool]]:
+        return [
+            (item.entry.uid, item.group, item.field, uid, item.handle.cancelling())
+            for uid, item in self._triggers.items()
+        ]
+
+    async def _drain_triggers(self, owners: set[UUID] | None = None) -> None:
+        selected = [
+            item
+            for uid, item in self._triggers.items()
+            if uid != self._trigger_current.get()
+            and (owners is None or item.owner in owners)
+        ]
+        for item in selected:
+            if not item.finish_on_cancel and not item.handle.cancelling():
+                with self.runtime_transaction(item.entry):
+                    item.handle.cancel()
+        await asyncio.gather(*(item.handle.wait_done() for item in selected))
+
+    @asynccontextmanager
+    async def pause_trigger_owners(
+        self, owners: Iterable[UUID]
+    ) -> AsyncGenerator[None]:
+        """等待旧插件的触发器退出后再卸载其代码。"""
+        selected = set(owners)
+        for owner in selected:
+            self._paused_trigger_owners[owner] = (
+                self._paused_trigger_owners.get(owner, 0) + 1
+            )
+        try:
+            await self._drain_triggers(selected)
+            yield
+        finally:
+            for owner in selected:
+                count = self._paused_trigger_owners[owner] - 1
+                if count:
+                    self._paused_trigger_owners[owner] = count
+                else:
+                    del self._paused_trigger_owners[owner]
+
+    def prepare_trigger_restart(self) -> bool:
+        if self._triggers:
+            return False
+        self._triggers_restarting = True
+        return True
+
+    def cancel_trigger_restart(self) -> None:
+        self._triggers_restarting = False
+
+    def seal_triggers(self) -> None:
+        self._triggers_closed = True
+
+    async def shutdown_triggers(self) -> None:
+        self.seal_triggers()
+        await self._drain_triggers()
+        if self._trigger_background is not None and self._trigger_group is not None:
+            await self._trigger_background.unregister_group(self._trigger_group)
 
     # ──────────────── ref 池（仅 Collection）────────────────
 
@@ -408,6 +712,22 @@ class ConfigManager:
         ctx.staged_nodes.clear()
         ctx.registered.clear()
 
+    def _finish_root_transaction(
+        self, ctx: TransactionContext, need_save: bool
+    ) -> None:
+        self._transaction_settled(need_save=need_save)
+        if not ctx.committed:
+            return
+        self._publish_ui_commit(frozenset(ctx.ui_nodes))
+        errors: list[Exception] = []
+        for entry, group, field_name, value in ctx.triggers:
+            try:
+                self.submit_trigger(entry, group=group, field=field_name, value=value)
+            except Exception as error:
+                errors.append(error)
+        if errors:
+            raise ConfigAggregateError(errors)
+
     @asynccontextmanager
     async def transaction(
         self, *, new_boundary: bool = False
@@ -434,7 +754,7 @@ class ConfigManager:
                     self._txn.reset(token)
         finally:
             if ctx is not None and parent is None:
-                self._transaction_settled(need_save=need_save)
+                self._finish_root_transaction(ctx, need_save)
 
     @contextmanager
     def transaction_sync(
@@ -462,7 +782,7 @@ class ConfigManager:
                     self._txn.reset(token)
         finally:
             if ctx is not None and parent is None:
-                self._transaction_settled(need_save=need_save)
+                self._finish_root_transaction(ctx, need_save)
 
     def _register_workspace(self, unit: WorkspaceUnit) -> None:
         ctx = self.current
@@ -487,6 +807,10 @@ class ConfigManager:
                 ctx.parent.registered.append(unit)
         for record in roots.values():
             record.revision += 1
+        if ctx.parent is not None:
+            ctx.parent.triggers.extend(ctx.triggers)
+            ctx.parent.ui_nodes.update(ctx.ui_nodes)
+        ctx.committed = True
         return bool(roots)
 
     def ROLLBACK(self, ctx: TransactionContext) -> None:

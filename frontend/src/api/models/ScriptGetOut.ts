@@ -30,6 +30,7 @@ export type ScriptGetOut = {
      * 操作消息
      */
     message?: string;
+    uiSources?: Array<string>;
     /**
      * 托管索引列表
      */

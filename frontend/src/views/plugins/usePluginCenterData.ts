@@ -109,6 +109,7 @@ export function usePluginCenterData() {
       }
     }
     return {
+      uiSources: [],
       scripts: related.map((script, index): UsageScript => ({
         uid: script.uid,
         name: script.name,
@@ -206,7 +207,10 @@ export function usePluginCenterData() {
       await queryClient.cancelQueries({ queryKey, exact: true })
       await queryClient.fetchQuery({
         queryKey,
-        queryFn: () => api.getCatalog(queryKey[2]),
+        queryFn: async () => {
+          const value = await api.getCatalog(queryKey[2])
+          return { value, uiSources: value.uiSources }
+        },
         staleTime: 0,
       })
     } catch {

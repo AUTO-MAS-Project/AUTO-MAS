@@ -17,8 +17,8 @@ vi.mock('@/api', async importOriginal => ({
   Service: {
     updatePluginConfigApiPluginConfigUpdatePost: vi.fn(),
     refreshPluginCatalogApiPluginCatalogRefreshPost: vi.fn(),
-    startOperationApiOperationsStartPost: boundary.start,
-    getOperationApiOperationsGetPost: boundary.get,
+    writeConfigTriggerApiConfigTriggersWritePost: boundary.start,
+    getConfigTriggerResultApiConfigTriggersResultPost: boundary.get,
     getPluginInstallationApiPluginInstallationGetPost: boundary.installation,
     preparePluginInstallationRestartApiPluginInstallationRestartPost: boundary.prepare,
     resumeAfterPluginInstallationRestartApiPluginInstallationResumePost: boundary.resume,
@@ -52,8 +52,9 @@ describe('插件安装的热加载与重启交接', () => {
     vi.clearAllMocks()
     boundary.start.mockResolvedValue({
       code: 200,
-      data: { operationId: 'operation', state: 'succeeded' },
+      data: 'task',
     })
+    boundary.get.mockResolvedValue({ code: 200, data: { state: 'succeeded' } })
     boundary.installation.mockResolvedValue(progress('succeeded'))
     boundary.prepare.mockResolvedValue({ code: 200, ready: true })
     boundary.resume.mockResolvedValue({ code: 200 })
@@ -179,17 +180,11 @@ describe('插件安装的热加载与重启交接', () => {
   })
 })
 
-import { OperationInfo, Service } from '@/api'
+import { BackgroundTaskState, Service } from '@/api'
 const finish = boundary.finish
 describe('plugin commands and settings', () => {
   const scopes: ReturnType<typeof effectScope>[] = []
   const body = { configUid: 'config', group: 'info', field: 'enable', value: true }
-  const operation = {
-    operationId: 'operation',
-    configUid: 'config',
-    field: 'info.enable',
-    createdAt: '2026-11-12T00:00:00Z',
-  }
   const createApi = () => {
     // 在真实 Vue 作用域内创建业务封装，确保轮询释放使用正式生命周期。
     const scope = effectScope()
@@ -213,19 +208,20 @@ describe('plugin commands and settings', () => {
   })
 
   it.each([
-    [OperationInfo.state.SUCCEEDED, 'success'],
-    [OperationInfo.state.FAILED, 'failure'],
-    [OperationInfo.state.CANCELLED, 'cancelled'],
+    [BackgroundTaskState.SUCCEEDED, 'success'],
+    [BackgroundTaskState.FAILED, 'failure'],
+    [BackgroundTaskState.TIMED_OUT, 'failure'],
+    [BackgroundTaskState.CANCELLED, 'cancelled'],
   ] as const)(
     'records %s only after the command reaches its terminal state',
     async (state, outcome) => {
       // 后台受理与完成分开；不同终态必须保留独立结果且只观测一次。
       const start = vi
-        .spyOn(Service, 'startOperationApiOperationsStartPost')
-        .mockResolvedValue({ code: 200, data: { ...operation, state: OperationInfo.state.QUEUED } })
+        .spyOn(Service, 'writeConfigTriggerApiConfigTriggersWritePost')
+        .mockResolvedValue({ code: 200, data: 'task' })
       const query = vi
-        .spyOn(Service, 'getOperationApiOperationsGetPost')
-        .mockResolvedValue({ code: 200, data: { ...operation, state } })
+        .spyOn(Service, 'getConfigTriggerResultApiConfigTriggersResultPost')
+        .mockResolvedValue({ code: 200, data: { state } })
       const settled = createApi()
         .runCommand('enable', body)
         .then(
@@ -237,7 +233,7 @@ describe('plugin commands and settings', () => {
       await vi.runAllTimersAsync()
       expect(await settled).toBe(state === 'succeeded' ? 'success' : 'error')
       expect(start).toHaveBeenCalledWith(body)
-      expect(query).toHaveBeenCalledWith({ operationId: 'operation' })
+      expect(query).toHaveBeenCalledWith({ taskId: 'task' })
       expect(finish).toHaveBeenCalledExactlyOnceWith({ action: 'enable', outcome })
     }
   )
@@ -245,10 +241,10 @@ describe('plugin commands and settings', () => {
   it('reports unknown after repeated query failures without resubmitting the command', async () => {
     // 轮询网络故障不能变成操作成功，也不能重复提交产生副作用的命令。
     const start = vi
-      .spyOn(Service, 'startOperationApiOperationsStartPost')
-      .mockResolvedValue({ code: 200, data: { ...operation, state: OperationInfo.state.QUEUED } })
+      .spyOn(Service, 'writeConfigTriggerApiConfigTriggersWritePost')
+      .mockResolvedValue({ code: 200, data: 'task' })
     const query = vi
-      .spyOn(Service, 'getOperationApiOperationsGetPost')
+      .spyOn(Service, 'getConfigTriggerResultApiConfigTriggersResultPost')
       .mockRejectedValue(new Error('disconnected'))
     const settled = createApi()
       .runCommand('enable', body)
@@ -265,7 +261,7 @@ describe('plugin commands and settings', () => {
     const save = vi
       .spyOn(Service, 'updatePluginConfigApiPluginConfigUpdatePost')
       .mockResolvedValue({ code: 200 })
-    const query = vi.spyOn(Service, 'getOperationApiOperationsGetPost')
+    const query = vi.spyOn(Service, 'getConfigTriggerResultApiConfigTriggersResultPost')
     const patch = { recordId: 'record', data: { info: { value: true } } }
     expect(await createApi().updateConfig(patch)).toEqual({ code: 200 })
     expect(save).toHaveBeenCalledWith(patch, 'en-US')

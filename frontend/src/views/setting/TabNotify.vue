@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useConfigLoader } from '@/services/configUiSync'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ApiOutlined, BellOutlined, FileTextOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
@@ -82,19 +83,20 @@ const clawConnected = computed<Record<string, boolean>>(() => ({
 // WebhookManager 只在配置弹窗里挂载，页面加载时先预取一次，避免卡片首屏假「0 条」。
 const webhookNames = ref<string[]>([])
 
-const loadWebhookNames = async () => {
+const loadWebhookNames = useConfigLoader(['config', 'webhook-names'], async read => {
   try {
     const response = await Service.getWebhookApiSettingWebhookGetPost({
       scriptId: null,
       userId: null,
       webhookId: null,
     })
+    read(response)
     if (response.code !== 200) return
     webhookNames.value = response.index.map(item => response.data[item.uid]?.Info?.Name || item.uid)
   } catch {
     // 摘要失败不影响页面，打开弹窗后由列表重载补上
   }
-}
+})
 
 const groups = computed(() => groupChannels(channels.value, 'global', notifyValues.value))
 const channelCards = computed(() => sortChannels([...groups.value.active, ...groups.value.idle]))

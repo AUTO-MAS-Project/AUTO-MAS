@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { MaaUserConfig_Data } from './MaaUserConfig_Data';
+import type { MaaUserConfig_game } from './MaaUserConfig_game';
 import type { MaaUserConfig_Info } from './MaaUserConfig_Info';
 import type { MaaUserConfig_Notify } from './MaaUserConfig_Notify';
 import type { MaaUserConfig_plugin_info } from './MaaUserConfig_plugin_info';
@@ -10,6 +11,10 @@ import type { MaaUserConfig_plugin_notify } from './MaaUserConfig_plugin_notify'
 import type { MaaUserConfig_Stage } from './MaaUserConfig_Stage';
 import type { MaaUserConfig_Task } from './MaaUserConfig_Task';
 export type MaaUserConfig = {
+    /**
+     * 游戏与设备
+     */
+    game?: (MaaUserConfig_game | null);
     info?: (MaaUserConfig_plugin_info | null);
     /**
      * 用户通知

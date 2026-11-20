@@ -18,13 +18,15 @@ from app.core import Config
 from app.core.background_tasks import BackgroundTaskRegistry
 from app.core.task_manager import _TaskManager
 from app.models.config import (
-    EmulatorConfig,
     GameEntry,
     PlanEntry,
     QueueConfig,
     ScriptEntry,
 )
+from app.models.config.plugin_emulator import EmulatorDeviceEntry, EmulatorEntry
+from app.models.emulator import DeviceInfo, DeviceRef, DeviceStatus
 from app.models.task import TaskMode
+from app.plugin.base.emulator import EmulatorControl
 
 
 @pytest_asyncio.fixture
@@ -32,17 +34,18 @@ async def runtime(monkeypatch, isolated_app_paths, tmp_path, tmp_path_factory):
     """构建隔离的真实配置、MAA 原生文件和宿主调度环境，以受控进程和模拟器替代外部程序，结束时清理任务。"""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(config_manager, "_collections", {})
-    games = ConfigCollection[GameEntry].build([GameEntry], name="games")
+    games = ConfigCollection[GameEntry].build([EmulatorEntry], name="games")
     await games.activate()
-    emulator_configs = ConfigCollection[EmulatorConfig].build(
-        [EmulatorConfig], name="EmulatorConfig"
-    )
-    await emulator_configs.activate()
-    eid = emulator_configs.add(
-        EmulatorConfig, payload={"Info": {"Name": "boundary emulator"}}
-    )
-    await emulator_configs.commit()
-    monkeypatch.setattr(Config, "EmulatorConfig", emulator_configs)
+    eid = games.add(EmulatorEntry, payload={"info": {"name": "boundary emulator"}})
+    await games.commit()
+    device_id = games[eid].devices.add(EmulatorDeviceEntry)
+    await games[eid].devices.commit()
+    monkeypatch.setattr(Config, "GameConfig", games)
+    from maa_adapter.plugin import Plugin as MaaPlugin
+
+    from app.core import Plugin
+
+    monkeypatch.setattr(Plugin, "script_types", {"maa": MaaPlugin.decl})
     scripts = ConfigCollection[ScriptEntry].build([MaaConfig], name="ScriptConfig")
     await scripts.activate()
     plans = ConfigCollection[PlanEntry].build([MaaPlanConfig], name="PlanConfig")
@@ -73,7 +76,7 @@ async def runtime(monkeypatch, isolated_app_paths, tmp_path, tmp_path_factory):
         MaaConfig,
         payload={
             "Info": {"Name": "fresh MAA", "Path": str(install)},
-            "Emulator": {"Id": str(eid), "Index": "0"},
+            "game": {"game_id": str(eid), "device_id": str(device_id)},
         },
     )
     await scripts.commit()
@@ -99,6 +102,50 @@ async def runtime(monkeypatch, isolated_app_paths, tmp_path, tmp_path_factory):
         close=AsyncMock(),
         get_adb_path=lambda: adb,
     )
+
+    class DeviceBoundary(EmulatorControl):
+        async def refresh(self):
+            pass
+
+        async def open(self, uid, package=None, *, ticket):
+            self.check_subscription(uid, ticket)
+            await emulator.open(uid, package)
+
+        async def close(self, uid, *, ticket):
+            self.check_subscription(uid, ticket)
+            await emulator.close(uid)
+
+        async def show(self, uid, *, ticket):
+            self.check_subscription(uid, ticket)
+
+        hide = minimize = maximize = open_store = show
+
+        async def launch_app(self, uid, package, *, ticket):
+            self.check_subscription(uid, ticket)
+
+        async def create_instance(self, name):
+            raise NotImplementedError
+
+        async def delete_instance(self, uid, *, ticket):
+            raise NotImplementedError
+
+        async def install_app(self, uid, path, *, ticket):
+            raise NotImplementedError
+
+        async def device_info(self, uid):
+            return DeviceInfo(
+                "boundary emulator", DeviceStatus.ONLINE, "127.0.0.1:5555"
+            )
+
+        def get_adb_path(self):
+            return adb
+
+        def resolve_device(self, uid):
+            return DeviceRef("general", str(adb), "0")
+
+    from app.core.game_manager import _GameManager
+
+    _GameManager.create_control(config=games[eid], control_class=DeviceBoundary)
 
     class Process:
         async def open_process(self, executable, *args, **kwargs):
@@ -130,11 +177,6 @@ async def runtime(monkeypatch, isolated_app_paths, tmp_path, tmp_path_factory):
     )
     monkeypatch.setattr(
         manager_module.process, "is_process_running", AsyncMock(return_value=False)
-    )
-    monkeypatch.setattr(
-        manager_module.EmulatorManager,
-        "get_emulator_instance",
-        AsyncMock(return_value=emulator),
     )
     from app.core import Publisher
 

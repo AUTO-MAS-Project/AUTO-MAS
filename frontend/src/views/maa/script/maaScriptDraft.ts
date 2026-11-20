@@ -16,10 +16,6 @@ export const createMaaScriptDraft = (): MAAScriptConfig => ({
     IfAutoInstallGameApk: false,
     GameUpdateTimeLimit: 60,
   },
-  Emulator: {
-    Id: '',
-    Index: '',
-  },
   Update: {
     Channel: 'stable',
     TakeoverEnabled: false,

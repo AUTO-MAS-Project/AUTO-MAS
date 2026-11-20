@@ -7,11 +7,9 @@ import type { UserAccountHeadingOptions } from '@/types/userEditor'
 // 这里只放类型，不引入任何组件：注册表（会被路由、脚本列表引入）通过它取类型，不能带上页面代码。
 
 import type { VNode } from 'vue'
-import type { ComboBoxItem, MaaFWShellInstanceItem } from '@/api'
+import type { MaaFWShellInstanceItem } from '@/api'
 import type { MaaFWFlavorType, MaaFWUserFormData } from '@/composables/maafwFlavorTypes'
 import type { MaaFWEmbeddedStatus } from '@/composables/useMaaFWEmbeddedApi'
-import type { EmulatorDeviceOption } from '@/composables/useEmulatorDeviceOptions'
-import type { EmulatorType } from '@/composables/useMaaFWScriptConfig'
 import type { MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
 import type {
   MaaFWControllerInfo,
@@ -96,12 +94,6 @@ export interface MaaFWScriptControlSectionProps {
   maafwConfig: MaaFWScriptConfig
   previewData: MaaFWInterfacePreviewData | null
   interfaceLoading: boolean
-  emulatorLoading: boolean
-  emulatorOptionsReady: boolean
-  emulatorDeviceLoading: boolean
-  emulatorOptions: ComboBoxItem[]
-  emulatorDeviceOptions: EmulatorDeviceOption[]
-  emulatorTypeById: Record<string, EmulatorType>
   controllerOptions: MaaFWControllerInfo[]
   effectiveControllerName: string
   effectiveControllerType: string
@@ -111,7 +103,6 @@ export interface MaaFWScriptControlSectionProps {
   /** 实际生效的资源（Info.Resource 不在可选列表里时退回第一个），键位映射按它挑 option */
   effectiveResourceName: string
   adbControlStrategyItems: Array<{ label: string; value: string }>
-  selectedEmulatorLabel: string
   interfaceDependentDisabled: boolean
   /** 插入点 besidePackageName 登记了几个组件；不传或为 0 时不留这一格 */
   besidePackageNameCount?: number
@@ -121,7 +112,6 @@ export interface MaaFWScriptControlSectionEmits {
   change: MaaFWScriptChangeEmit
   'controller-change': []
   'resource-change': []
-  'emulator-select-change': [emulatorId: string]
   'select-launch-path': []
   /** 由脚本控制游戏时选启动器 exe（MAS 兜底关闭时一并关它） */
   'select-launcher-path': []

@@ -104,24 +104,14 @@ class _PowerManager:
         if mode == PowerSignal.NO_ACTION:
             return
         if mode not in {PowerSignal.KILL_SELF, PowerSignal.RESTART_SELF}:
-            from app.core import EmulatorManager
+            from app.core import GameManager
 
             if mode not in power.supported_actions:
                 raise RuntimeError(f"当前平台不支持电源操作: {mode}")
-            if mode in {
-                PowerSignal.SHUTDOWN,
-                PowerSignal.SHUTDOWN_FORCE,
-                PowerSignal.REBOOT,
-                PowerSignal.LOGOFF,
-            }:
-                try:
-                    await asyncio.wait_for(
-                        EmulatorManager.close_running_avd_instances(), 30
-                    )
-                except Exception as error:
-                    logger.warning(f"关闭 ModAVD 实例失败，继续电源操作: {error}")
             if mode in {PowerSignal.SHUTDOWN, PowerSignal.REBOOT, PowerSignal.LOGOFF}:
-                await EmulatorManager.kill_emulator_processes()
+                await GameManager.close_devices()
+            elif mode == PowerSignal.SHUTDOWN_FORCE:
+                await GameManager.close_devices(kind="avd")
         if mode not in {PowerSignal.KILL_SELF, PowerSignal.RESTART_SELF}:
             # TODO(退出时序优化)：本轮保留先发系统动作再请求应用退出的顺序。
             # /t 0、/f 可能先终止本进程，不能保证后台收尾及时完成。

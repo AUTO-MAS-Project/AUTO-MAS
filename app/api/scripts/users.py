@@ -37,6 +37,7 @@ import app.models.config as _config_models
 from app.config.wire import ConfigInput, ConfigPayload, config_contract
 from app.core import Config
 from app.models.schema import (
+    ConfigSnapshotOut,
     OutBase,
     UserDeleteIn,
     UserInBase,
@@ -154,7 +155,7 @@ class UserGetIn(UserInBase):
     )
 
 
-class UserGetOut(OutBase):
+class UserGetOut(ConfigSnapshotOut):
     index: List[UserIndexItem] = Field(..., description="账号索引列表")
     data: Dict[
         str,
@@ -265,7 +266,13 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
             index=[],
             data={},
         )
-    return UserGetOut.model_validate({"index": index, "data": data})
+    return UserGetOut.model_validate(
+        {
+            "index": index,
+            "data": data,
+            "uiSources": [uuid.UUID(user.userId) if user.userId else user_configs.uid],
+        }
+    )
 
 
 @router.post(

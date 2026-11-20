@@ -16,6 +16,7 @@ from app.models.schema import WSTaskCompletedData, WSTaskNoticeData
 from app.models.task import TaskItem, TaskMode, TaskScriptItem, TaskTriggerReason
 from app.services import execute_script_task
 from app.task.context import TaskContext
+from app.task.game import GameSession, current_game_session
 from app.task.history_core import TaskHistorySession
 from app.task.lifecycle import TaskBase
 from app.task.script_update import ScriptRecoverySession
@@ -44,6 +45,7 @@ class ScriptExpander(TaskBase):
         self._plugin_stop_checks: asyncio.Task | None = None
         self._script_ticket: LockTicket | None = None
         self._script_config: ScriptConfigType | None = None
+        self._game_session: GameSession | None = None
         self._started_at = time.perf_counter()
         # [兼容旧专项] 隐藏的手动更新标记；新代码按标准 TaskMode 分派。
         self.maintenance = False
@@ -171,6 +173,7 @@ class ScriptExpander(TaskBase):
         from app.services import telemetry
 
         entry: ScriptConfigType
+        game_token = None
         try:
             candidate: ScriptConfigType | None = Config.ScriptConfig.get(
                 script.script_id
@@ -180,6 +183,8 @@ class ScriptExpander(TaskBase):
             ):
                 raise ValueError("托管配置已删除或替换")
             entry = candidate
+            self._game_session = GameSession(script, entry)
+            game_token = current_game_session.set(self._game_session)
             await script.set_current_index(-1)
             await script.set_state(status="等待")
             if Config.ScriptConfig.get(script.script_id) is not entry:
@@ -238,6 +243,17 @@ class ScriptExpander(TaskBase):
                     ):
                         raise TypeError("插件必须绑定当前托管运行节点及已锁配置")
                     await self._prefetch.prepare(script, entry)
+                    from app.core import Plugin
+
+                    declaration = next(
+                        d
+                        for d in Plugin.script_types.values()
+                        if isinstance(entry, d.script_type)
+                    )
+                    if declaration.expect_builder is not None:
+                        self._game_session.expect = declaration.expect_builder(entry)
+                    await self._game_session.select()
+                    plugin.game_session = self._game_session
                     plugin.context = self.context.with_params(script.info.params)
                     plugin.history = self.history
                     self._plugin = plugin
@@ -257,7 +273,9 @@ class ScriptExpander(TaskBase):
 
                         async def after_lock(locked_config):
                             """在旧专项取得配置锁后复查并等待预下载，将任务参数和 URL 路径映射绑定到专项运行上下文。"""
+                            self._game_session.config = locked_config
                             paths = await self._prefetch.prepare(script, locked_config)
+                            await self._game_session.select()
                             manager.context = self.context.with_params(
                                 script.info.params
                             )
@@ -304,7 +322,16 @@ class ScriptExpander(TaskBase):
                 data=WSTaskNoticeData(level="error", message=str(error)),
             )
         finally:
-            await self._release_script_lock()
+            try:
+                if self._game_session is not None:
+                    await self._game_session.release()
+                    if self._game_session.cleanup_failed:
+                        await script.set_state(status="异常")
+            finally:
+                await self._release_script_lock()
+                if game_token is not None:
+                    current_game_session.reset(game_token)
+                self._game_session = None
             self._manager = None
             self._plugin = None
             self.history.observe(script)

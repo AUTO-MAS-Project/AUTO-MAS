@@ -32,75 +32,7 @@
           </a-select>
         </a-form-item>
       </a-col>
-      <template v-if="isAdbController">
-        <a-col v-bind="adbCol('emulator')">
-          <a-form-item>
-            <template #label>
-              <span class="form-label">{{ t('core.edit.emulator') }}</span>
-            </template>
-            <a-select
-              v-model:value="emulatorIdValue"
-              size="large"
-              :placeholder="t('core.edit.pickEmulator')"
-              :loading="emulatorLoading"
-              :disabled="!emulatorOptionsReady"
-              @change="(value: string | number) => emit('emulator-select-change', String(value))"
-            >
-              <a-select-option
-                v-for="item in emulatorOptions"
-                :key="item.value"
-                :value="item.value"
-              >
-                {{ item.label }}
-              </a-select-option>
-            </a-select>
-          </a-form-item>
-        </a-col>
-        <a-col v-bind="adbCol('instance')">
-          <a-form-item>
-            <template #label>
-              <span class="form-label">{{ t('core.edit.emulatorInstance') }}</span>
-            </template>
-            <a-input
-              v-if="
-                emulatorDeviceOptions.length === 0 &&
-                !emulatorDeviceLoading &&
-                maafwConfig.Emulator.Id &&
-                maafwConfig.Emulator.Id !== '-'
-              "
-              v-model:value="emulatorIndexValue"
-              size="large"
-              :placeholder="t('core.edit.enterEmulatorInstanceIndex')"
-              class="modern-input"
-              :disabled="!emulatorOptionsReady"
-              @blur="emit('change', 'Emulator', 'Index', maafwConfig.Emulator.Index)"
-            />
-            <a-select
-              v-else
-              v-model:value="emulatorIndexValue"
-              size="large"
-              :placeholder="t('core.edit.pickEmulatorFirst')"
-              :loading="emulatorDeviceLoading"
-              :disabled="
-                !emulatorOptionsReady ||
-                emulatorDeviceLoading ||
-                !maafwConfig.Emulator.Id ||
-                maafwConfig.Emulator.Id === '-'
-              "
-              @change="(value: string | number) => emit('change', 'Emulator', 'Index', value)"
-            >
-              <a-select-option
-                v-for="item in emulatorDeviceOptions"
-                :key="item.value"
-                :value="item.value"
-                :disabled="item.disabled"
-              >
-                {{ item.label }}
-              </a-select-option>
-            </a-select>
-          </a-form-item>
-        </a-col>
-      </template>
+      <template v-if="isAdbController"> </template>
       <a-col v-bind="isAdbController ? adbCol('resource') : HALF_COL">
         <a-form-item>
           <template #label>
@@ -251,8 +183,6 @@ const mediumRowSpans = (count: number): number[] => {
 
 type AdbField =
   | 'controller'
-  | 'emulator'
-  | 'instance'
   | 'resource'
   | 'packageName'
   | 'waitTime'
@@ -267,8 +197,6 @@ const besideIndexes = computed(() =>
 // 模拟器各格按模板顺序排
 const adbFields = (): AdbField[] => [
   'controller',
-  'emulator',
-  'instance',
   'resource',
   'packageName',
   'waitTime',
@@ -286,26 +214,6 @@ const adbCol = (field: AdbField) => {
     xl: wideRowSpans(fields.length)[position],
   }
 }
-
-// 模拟器 / 实例下拉的「未选择」（值为 -）由后端列表自带，这里不再另加一项。列表还没到时
-// （加载中、加载失败、没选模拟器时实例列表为空）选项里没有它，框里会直接露出「-」，改显示占位文字；
-// 扫不到实例改手动输入时同理
-const shownWhenListed = (value: string, options: Array<{ value: string | null }>) =>
-  value === '-' && !options.some(item => item.value === '-') ? undefined : value
-
-const emulatorIdValue = computed({
-  get: () => shownWhenListed(props.maafwConfig.Emulator.Id, props.emulatorOptions),
-  set: (value: string | undefined) => {
-    props.maafwConfig.Emulator.Id = value ?? '-'
-  },
-})
-
-const emulatorIndexValue = computed({
-  get: () => shownWhenListed(props.maafwConfig.Emulator.Index, props.emulatorDeviceOptions),
-  set: (value: string | undefined) => {
-    props.maafwConfig.Emulator.Index = value ?? '-'
-  },
-})
 </script>
 
 <style scoped src="./maafwSection.css"></style>

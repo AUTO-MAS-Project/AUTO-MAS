@@ -73,11 +73,11 @@ from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.task.base import ScriptAutoProxyBase
+from app.task.client import ClientProcess, client_executable_path
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_NATIVE,
     CONFIG_BASE_SHARED,
-    kill_pids_by_name,
     push_dispatch_log,
     read_config_base,
     split_args,
@@ -832,12 +832,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         self.launcher_process_manager = ProcessManager(reseek_target=True)
         # 「启用游戏配置 + 任务前启动游戏」时由 MAS 拉起游戏本体（对齐 ok-nte）
         self.game_process_manager = (
-            ProcessManager()
+            ClientProcess()
             if self.script_config.Game.Enabled
             and self.script_config.Game.LaunchBeforeTask
             else None
         )
-        game_path = str(self.script_config.Game.Path or "").strip()
+        game_path = str(client_executable_path(self.script_config) or "").strip()
         self.game_exe_path = Path(game_path) if game_path else None
         self.wait_event = asyncio.Event()
 
@@ -1872,17 +1872,14 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             await self._push_dispatch_log(message)
 
     async def _kill_game_process(self) -> None:
-        """按进程名结束游戏本体（对齐 ok-nte 的 MAS 侧关闭）。"""
+        """由当前游戏票据结束所选安装的客户端。"""
+        from app.task.client import ClientProcess
 
         try:
-            # 全进程扫描放到线程里，不阻塞事件循环
-            failed = await kill_pids_by_name(_ZZZ_GAME_PROCESS)
-            if failed:
-                message = f"有 {failed} 个绝区零游戏进程未能结束，请人工确认关闭"
-                logger.warning(message)
-                await self._push_dispatch_log(message)
-        except Exception as e:
-            logger.opt(exception=True).warning(f"关闭游戏进程失败: {e}")
+            await ClientProcess().kill()
+        except Exception as error:
+            logger.opt(exception=True).warning(f"关闭游戏进程失败: {error}")
+            await self._push_dispatch_log(f"关闭游戏失败: {error}")
 
     def _prepare_log_details(
         self, path: Path, *, mode: str, enabled: bool, rotated_name: str | None

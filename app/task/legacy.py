@@ -347,6 +347,26 @@ class TaskExecuteBase(ABC):
         self.maintenance = False
         self._user_states: dict[UUID, LegacyUserState] = {}
         self._active_child: TaskExecuteBase | None = None
+        self._emulator_instance = None
+
+    @property
+    def emulator_manager(self):
+        """[兼容旧专项] 旧调用面借用当前账号设备，不保留独立资源占用。"""
+        from app.task.game import current_game_session
+
+        session = current_game_session.get()
+        if session is not None and session.control is not None:
+            return session.emulator
+        return self._emulator_instance
+
+    @emulator_manager.setter
+    def emulator_manager(self, value):
+        self._emulator_instance = value
+
+    @property
+    def emulator(self):
+        """[兼容旧专项] 与插件执行器共享的设备借用属性。"""
+        return self.emulator_manager
 
     def user_state(self, user: TaskUserItem) -> LegacyUserState:
         """[兼容旧专项] 只读取旧专项私有素材；新代码不依赖此状态容器。"""
@@ -451,10 +471,39 @@ class TaskExecuteBase(ABC):
             await script.set_state(status="运行")
         # shield 中的账号收尾仍属于当前子任务，停止通知要覆盖到它真正结束。
         self._active_child = child
+        from app.task.game import current_game_session
+
+        session = current_game_session.get()
         try:
+            if session is not None and script is not None:
+                from app.core import Config
+
+                config = Config.ScriptConfig.get(script.info.script_id)
+                index = script.current_index
+                user = script.user_list[index] if index >= 0 else None
+                owner = (
+                    script_users(config).get(user.info.user_id)
+                    if config is not None
+                    and user is not None
+                    and user.info.user_id != "default"
+                    else None
+                )
+                try:
+                    await session.select(owner)
+                except Exception as error:
+                    await session.release()
+                    if user is None:
+                        raise
+                    await user.set_state(status="异常")
+                    await script.set_log(str(error))
+                    return
             await self.execution.spawn(child.execution)
         finally:
-            self._active_child = None
+            try:
+                if session is not None:
+                    await session.release_account()
+            finally:
+                self._active_child = None
 
     def execute(self):
         """[兼容旧专项] 旧启动方法名；新顶层执行器使用 TaskBase.start()。"""

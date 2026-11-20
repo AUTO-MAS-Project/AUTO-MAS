@@ -22,13 +22,14 @@ from pathlib import Path
 from app.core import Config
 from app.models.config import OkwwConfig as RuntimeOkwwConfig
 from app.services import wuthering_waves as _service_wuthering_waves
+from app.task.client import client_launcher_path
 
 
 def resolve_client_path(script_id: str) -> Path:
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
     if not isinstance(script_config, RuntimeOkwwConfig):
         raise TypeError("托管配置类型错误, 不是 OK-WW 类型")
-    launcher_path = Path(str(script_config.Game.Path or "").strip())
+    launcher_path = Path(str(client_launcher_path(script_config) or "").strip())
     client_path = _service_wuthering_waves.resolve_wuthering_waves_process_path(
         launcher_path
     )

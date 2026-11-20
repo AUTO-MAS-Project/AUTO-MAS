@@ -29,11 +29,11 @@ from uuid import UUID
 from pydantic import BeforeValidator, ConfigDict, Field, create_model
 
 from app.config import (
+    ConfigEntry,
     ConfigGroup,
     UiVisibility,
     ui,
 )
-from app.plugin.config import PluginCommandEntry
 from app.utils import constants as _utils_constants
 
 from .base import DomainEntry
@@ -47,7 +47,7 @@ from .shared import (
 )
 
 
-class PlanEntry(PluginCommandEntry):
+class PlanEntry(ConfigEntry):
     """插件计划表配置上界，具体排期字段由专项扩展。"""
 
     class Info(ConfigGroup):

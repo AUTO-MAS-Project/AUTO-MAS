@@ -171,11 +171,7 @@
                     </a-radio-group>
                   </div>
                 </template>
-                <OkNteLauncherPicker
-                  :path="oknteConfig.Game.Path"
-                  :disabled="!oknteConfig.Game.Enabled"
-                  @select="saveGameLauncher"
-                />
+                <BoundGamePathField />
                 <span v-if="showLaunchModeHint" class="control-hint">
                   {{ t('core.edit.oknteLaunchModeNeedsLaunchBeforeTask') }}
                 </span>
@@ -245,6 +241,8 @@
 </template>
 
 <script setup lang="ts">
+import BoundGamePathField from '@/components/BoundGamePathField.vue'
+
 import ScriptRunLimitsSection from './components/ScriptRunLimitsSection.vue'
 import OkNteLauncherPicker from './components/OkNteLauncherPicker.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'

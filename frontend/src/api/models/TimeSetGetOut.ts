@@ -17,6 +17,7 @@ export type TimeSetGetOut = {
      * 操作消息
      */
     message?: string;
+    uiSources?: Array<string>;
     /**
      * 时间设置索引列表
      */

@@ -210,7 +210,9 @@ const logger = window.electronAPI.getLogger('脚本管理')
 const router = useRouter()
 const { deleteScript } = useScriptApi()
 const {
-  getScriptsWithUsers,
+  scripts,
+  loadedOnce,
+  loadScripts,
   getScriptUsers,
   loading: listLoading,
   error: scriptListError,
@@ -221,7 +223,6 @@ const { subscribe, unsubscribe } = useWebSocket()
 const { getShareTemplates, importScriptFromTemplate, error: templateError } = useTemplateApi()
 const { listEmbeddedSources, cloneEmbedded } = useMaaFWEmbeddedApi()
 
-const scripts = ref<ScriptListItem[]>([])
 const scriptSearchKeyword = ref('')
 const isSearching = computed(() => Boolean(scriptSearchKeyword.value.trim()))
 const filteredScripts = computed(() =>
@@ -229,7 +230,6 @@ const filteredScripts = computed(() =>
 )
 const scriptTableRef = ref<InstanceType<typeof ScriptTable> | null>(null)
 // 增加：标记是否已经完成过一次脚本列表加载（成功或失败都算一次）
-const loadedOnce = ref(false)
 const scriptCreateVisible = ref(false)
 const templates = ref<ShareTemplateItem[]>([])
 const templatePage = ref(1)
@@ -366,20 +366,6 @@ onUnmounted(() => {
   }
   activeConnections.value.clear()
 })
-
-const loadScripts = async () => {
-  try {
-    const result = await getScriptsWithUsers()
-    if (!scriptListError.value) scripts.value = result
-  } catch (error) {
-    const errorMsg = getApiErrorMessage(error, t('core.apiErrors.scriptListFailed'))
-    logger.error(`加载脚本列表失败: ${errorMsg}`)
-    scriptListError.value = errorMsg
-  } finally {
-    // 首次加载结束（不论成功失败）后置位，避免初始闪烁
-    loadedOnce.value = true
-  }
-}
 
 const retryScriptUsers = async (scriptId: string) => {
   const script = scripts.value.find(item => item.id === scriptId)

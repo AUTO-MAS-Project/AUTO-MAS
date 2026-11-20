@@ -1,3 +1,4 @@
+import { useGamesApi } from '@/composables/useGamesApi'
 import {
   computed,
   getCurrentInstance,
@@ -106,7 +107,12 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     maafwRouteLocation(scriptType.value, 'script', { id: scriptId })
   )
   const scriptConfig = ref<MaaFWScriptConfig | null>(null)
-  const preferAdbController = ref(false)
+  const games = useGamesApi()
+  const preferAdbController = computed(
+    () =>
+      games.rows.value.find(game => game.uid === scriptConfig.value?.game.game_id)?.type.kind ===
+      'emulator'
+  )
   const previewData = shallowRef<MaaFWInterfacePreviewData | null>(null)
 
   // 特调用自己声明的图标（模板里回退到 flavor.logo）；通用 MaaFW 与脚本列表同一个口径取项目图标，
@@ -254,9 +260,6 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
       const loadedScriptConfig = script.config as MaaFWScriptConfig
       scriptConfig.value = loadedScriptConfig
       scriptPath.value = loadedScriptConfig.Info?.Path || ''
-      preferAdbController.value = Boolean(
-        loadedScriptConfig.Emulator?.Id && loadedScriptConfig.Emulator.Id !== '-'
-      )
       // 特调独有区块的数据与组件和 interface 一起备好，卡片出来时已经齐了
       await Promise.all([reloadInterface(false), prepareMaaFWFlavorPage(flavor.value, 'userPage')])
 
