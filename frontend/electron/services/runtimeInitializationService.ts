@@ -16,6 +16,11 @@ import { app } from 'electron'
 
 import { getLogger } from './logger'
 import { observeInitializationStage } from './initializationAnalytics'
+import {
+  claimStartupAttempt,
+  clearStartupHardware,
+  localStartupAttempt,
+} from './startupHardware/monitor'
 import { runtimeFailureContext, type StartupFailureContext } from './startupRecovery'
 import {
   RUNTIME_BINARY_ALIGN_ERROR,
@@ -656,6 +661,9 @@ export class RuntimeInitializationService {
     this.cancelRequested = false
     this.operating = true
     this.aligning = true
+    // 失败页停留期间不采样；只有更新成功，后续初始化才接回这次采样。
+    const recoveryAttempt = localStartupAttempt() ? null : claimStartupAttempt()
+    let restartsInitialization = false
     try {
       // 与第 0 步共用 runtime_binary 阶段观察，真实结局（含失败与取消）与耗时由此入库；
       // 模式与占用守卫在观察之外，被拒绝的请求不算一次更新。
@@ -675,12 +683,14 @@ export class RuntimeInitializationService {
           })
         )
       })
+      restartsInitialization = observed.result.status === 'upgraded'
       return observed.result
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       logger.error(`更新 Runtime 失败: ${message}`)
       return { status: 'failed', error: message, code: RUNTIME_BINARY_ALIGN_ERROR }
     } finally {
+      if (!restartsInitialization && recoveryAttempt !== null) clearStartupHardware(recoveryAttempt)
       this.aligning = false
       this.operating = false
     }

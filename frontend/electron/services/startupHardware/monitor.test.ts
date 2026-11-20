@@ -106,6 +106,35 @@ it('安装文件和后续 uv 传输合计，重复的字节进度只计算一次
     expect(attempt.snapshot().source_switches).toBe(switches)
   }))
 
+it('依赖下载切换文件时沿用 Runtime 已汇总的字节数', () =>
+  withAttempt(attempt => {
+    const base = { protocol: 1, operationId: 'bootstrap', timestamp: '', sequence: 1 }
+    attempt.progress({
+      ...base,
+      type: 'hello',
+      command: 'bootstrap',
+      capabilities: [],
+      runtimeVersion: 'test',
+    })
+    for (const [item, mib] of [
+      ['a.whl', 8],
+      ['b.whl', 20],
+      ['c.whl', 120],
+    ] as const) {
+      attempt.progress({
+        ...base,
+        type: 'progress',
+        stage: 'dependencies.sync',
+        status: 'running',
+        message: '',
+        item,
+        current: mib * 2 ** 20,
+        bytesPerSecond: 1,
+      })
+    }
+    expect(attempt.snapshot().downloaded).toBe('16-128MiB')
+  }))
+
 it('停止采样后才失败时按真正的失败时刻过滤最近读数', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'mas-hardware-expired-'))
   const log = new StartupHardwareLog(dir)

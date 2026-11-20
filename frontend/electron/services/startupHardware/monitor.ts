@@ -310,6 +310,7 @@ export class StartupAttempt {
           ((stage === 'python.install' || stage === 'dependencies.sync') &&
             event.bytesPerSecond !== undefined))
       if (byteProgress && event.current !== undefined) {
+        // Python 和依赖中继的 current 已汇总所有文件，item 仅标记此刻活跃的文件。
         const item =
           event.operationId +
           '|' +
@@ -409,7 +410,8 @@ function start() {
     /* 探针不可用时沿用原启动流程。 */
   }
 }
-export function clearStartupHardware() {
+export function clearStartupHardware(id = sequence) {
+  if (id !== sequence) return
   current?.stop()
   current = undefined
 }
