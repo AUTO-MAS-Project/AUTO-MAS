@@ -37,6 +37,7 @@ class ScriptExpander(TaskBase):
         """绑定 L2 任务与调度器，建立历史、恢复和预下载会话，并初始化新旧专项执行与锁状态。"""
         super().__init__()
         self.task_info = info
+        self.target_id: str | None = None
         self.dispatcher = dispatcher
         self.context = TaskContext()
         self._manager: TaskExecuteBase | None = None

@@ -872,6 +872,7 @@ class TaskRuntimeSnapshotItem(BaseModel):
 
     task: TaskTreeData
     taskId: str = Field(..., description="任务 ID")
+    targetId: str | None = Field(default=None, description="可重跑的队列或单个托管 ID")
     mode: TaskMode = Field(
         ..., description="脚本执行模式; 循环运行的脚本同样按 AutoProxy 执行"
     )
@@ -960,6 +961,7 @@ class WSTaskCreatedData(BaseModel):
 
     trigger: TaskTriggerReason = TaskTriggerReason.MANUAL
     taskId: str = Field(..., description="新任务ID")
+    targetId: str | None = Field(default=None, description="可重跑的队列或单个托管 ID")
     mode: TaskMode = Field(..., description="任务模式, 与创建请求一致")
     scripts: List[WSTaskScriptIdentityData] = Field(
         default_factory=list, description="任务关联的托管静态标识"

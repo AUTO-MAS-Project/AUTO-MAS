@@ -45,6 +45,7 @@ async def test_repeated_queue_items_run_in_order_with_independent_identity(
     uid = await manager.start(
         TaskMode.AUTO_PROXY, {0: {"uid": str(qid), "children": children}}
     )
+    assert manager.get_runtime_snapshot().tasks[0].targetId == str(qid)
     run = manager.task_handler[uid]
     await asyncio.wait_for(run.accomplish.wait(), 4)
     assert run.task_info.status == "success", (
