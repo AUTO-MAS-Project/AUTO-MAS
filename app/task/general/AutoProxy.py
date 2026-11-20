@@ -55,7 +55,7 @@ from app.utils import (
     strptime,
 )
 from app.utils import io as _utils_io
-from app.utils.common.log_box.hooks import make_line_hook
+from app.utils.common.log.hooks import make_line_hook
 from app.utils.common.process.manager import has_process_window
 
 from .log_protocol import parse_marker
