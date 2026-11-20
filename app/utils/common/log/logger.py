@@ -36,9 +36,6 @@ from loguru import logger as _logger
 
 from app.utils.common.security import sanitize_log_message
 
-(Path.cwd() / "debug").mkdir(parents=True, exist_ok=True)
-
-
 _logger.remove()
 
 
@@ -49,18 +46,21 @@ def _sanitize_record(record):
     return True
 
 
-_logger.add(
-    sink=Path.cwd() / "debug/app.log",
-    level="INFO",
-    format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{extra[module]}</cyan> | <level>{message}</level>",
-    filter=_sanitize_record,
-    enqueue=True,
-    backtrace=True,
-    diagnose=False,
-    rotation="1 week",
-    retention="1 month",
-    compression="zip",
-)
+if os.environ.get("AUTO_MAS_LOGFLOW_WORKER") != "1":
+    debug_dir = Path.cwd() / "debug"
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    _logger.add(
+        sink=debug_dir / "app.log",
+        level="INFO",
+        format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{extra[module]}</cyan> | <level>{message}</level>",
+        filter=_sanitize_record,
+        enqueue=True,
+        backtrace=True,
+        diagnose=False,
+        rotation="1 week",
+        retention="1 month",
+        compression="zip",
+    )
 
 _logger.add(
     sink=sys.stderr,

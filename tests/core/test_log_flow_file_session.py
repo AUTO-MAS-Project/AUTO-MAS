@@ -244,6 +244,24 @@ async def test_stuck_worker_is_reaped_and_keeps_already_observed_nodes(
 
 
 @pytest.mark.asyncio
+async def test_worker_inherits_host_workdir_without_opening_an_application_log(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    session = await LogFlowSession.open(PipelineSpec(accept_push=True))
+    try:
+        assert Path(psutil.Process(session.pid).cwd()) == tmp_path
+        assert not (tmp_path / "debug").exists()
+        assert (
+            session.push_reporter().node("普通", "worker ready")
+            == SubmitResult.ACCEPTED
+        )
+        assert (await session.close()).complete
+    finally:
+        await session.close()
+
+
+@pytest.mark.asyncio
 async def test_invalid_rule_prevents_worker_readiness(tmp_path):
     with pytest.raises(SessionOpenError, match="unterminated subpattern"):
         await LogFlowSession.open(pipeline(tmp_path / "script.log", match="("))

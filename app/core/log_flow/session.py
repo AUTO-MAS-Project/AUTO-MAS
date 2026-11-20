@@ -154,6 +154,16 @@ class LogFlowSession:
         if len(payload) > MAX_FRAME_BYTES:
             raise SessionOpenError("采集会话配置超过启动消息容量")
         creation_flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        python_path = os.environ.get("PYTHONPATH")
+        worker_env = {
+            **os.environ,
+            "AUTO_MAS_LOGFLOW_WORKER": "1",
+            "PYTHONPATH": os.pathsep.join(
+                (str(_SOURCE_ROOT), python_path)
+                if python_path
+                else (str(_SOURCE_ROOT),)
+            ),
+        }
         session: LogFlowSession | None = None
         job: TaskProcessJob | None = None
         try:
@@ -163,9 +173,10 @@ class LogFlowSession:
             async with asyncio.timeout(timeout):
                 process = await asyncio.create_subprocess_exec(
                     sys.executable,
+                    "-P",
                     "-m",
                     "app.core.log_flow.worker",
-                    cwd=_SOURCE_ROOT,
+                    env=worker_env,
                     stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.DEVNULL,
