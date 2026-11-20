@@ -1,6 +1,7 @@
+import { captureStartupHostFailure } from './sentry'
 import { analyticsService } from './analyticsService'
 import { analyticsDuration } from './analyticsPolicy'
-import { localStartupAttempt, inStartupOperation } from './startupHardware/monitor'
+import { startupAttempt, localStartupAttempt, inStartupOperation } from './startupHardware/monitor'
 import type {
   AnalyticsInitializationCode,
   AnalyticsInitializationStage,
@@ -43,9 +44,28 @@ export async function observeInitializationStage<
   run: () => Promise<T>
 ): Promise<T> {
   const context = analyticsService.getContext()
-  const stopStage = localStartupAttempt()?.beginStage(stage)
+  const attempt = localStartupAttempt()
+  const stopStage = attempt?.beginStage(stage)
   const startedAt = performance.now()
-  const finish = (result?: T) =>
+  const finish = (result?: T) => {
+    const outcome = result?.success
+      ? 'success'
+      : result?.code === 'OPERATION_CANCELLED'
+        ? 'cancelled'
+        : 'failure'
+    const code: AnalyticsInitializationCode = result?.success
+      ? 'none'
+      : codes.has(result?.code as AnalyticsInitializationCode)
+        ? (result!.code as AnalyticsInitializationCode)
+        : 'unknown'
+    const summary = stopStage?.(outcome, code)
+    if (
+      attempt &&
+      attempt === startupAttempt() &&
+      outcome === 'failure' &&
+      (stage === 'runtime_binary' || code === 'RUNTIME_NOT_FOUND')
+    )
+      captureStartupHostFailure(stage, code)
     analyticsService.recordMainEvent(
       context,
       {
@@ -53,16 +73,8 @@ export async function observeInitializationStage<
         props: {
           stage,
           runtime_mode: runtimeMode,
-          outcome: result?.success
-            ? 'success'
-            : result?.code === 'OPERATION_CANCELLED'
-              ? 'cancelled'
-              : 'failure',
-          known_code: result?.success
-            ? 'none'
-            : codes.has(result?.code as AnalyticsInitializationCode)
-              ? (result!.code as AnalyticsInitializationCode)
-              : 'unknown',
+          outcome,
+          known_code: code,
           failed_stage: result?.success
             ? 'none'
             : stage === 'runtime_binary'
@@ -73,15 +85,9 @@ export async function observeInitializationStage<
           duration_bucket: analyticsDuration(performance.now() - startedAt),
         },
       },
-      stopStage?.(
-        result?.success
-          ? 'success'
-          : result?.code === 'OPERATION_CANCELLED'
-            ? 'cancelled'
-            : 'failure',
-        codes.has(result?.code as AnalyticsInitializationCode) ? result?.code : 'unknown'
-      )
+      attempt === startupAttempt() ? summary : undefined
     )
+  }
   try {
     const result = await inStartupOperation(run)
     finish(result)

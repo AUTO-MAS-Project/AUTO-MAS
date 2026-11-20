@@ -21,9 +21,24 @@ export function runtimeStartupSample() {
   let enabled = false
   let disposed = false
   const sockets = new Set<Socket>()
+  const waiting = new Set<Socket>()
+  let failed = false
+  function respond() {
+    if (disposed || !enabled || !failed) return
+    for (const socket of waiting) {
+      waiting.delete(socket)
+      const current = owner.deref()
+      socket.end(
+        JSON.stringify(current && current === startupAttempt() ? current.snapshot(true) : {})
+      )
+    }
+  }
   const server = createServer(socket => {
     sockets.add(socket)
-    socket.on('close', () => sockets.delete(socket))
+    socket.on('close', () => {
+      sockets.delete(socket)
+      waiting.delete(socket)
+    })
     socket.on('error', () => socket.destroy())
     socket.setTimeout(120, () => socket.destroy())
     let input = ''
@@ -35,16 +50,12 @@ export function runtimeStartupSample() {
         return
       }
       if (!input.endsWith('\n')) return
-      const current = owner.deref()
-      const summary =
-        current &&
-        startupAttempt() === current &&
-        current.sampling &&
-        enabled &&
-        input === token.slice(32) + '\n'
-          ? current.snapshot(true)
-          : {}
-      socket.end(JSON.stringify(summary))
+      if (input !== token.slice(32) + '\n') {
+        socket.destroy()
+        return
+      }
+      waiting.add(socket)
+      respond()
     })
   })
   let detach: (() => void) | undefined = attempt.onStop(close)
@@ -57,6 +68,10 @@ export function runtimeStartupSample() {
     for (const socket of sockets) socket.destroy()
   }
   server.on('error', close)
+  server.listen('\\\\.\\pipe\\auto-mas-startup-' + token.slice(0, 32)).unref()
+  server.once('listening', () => {
+    if (disposed) server.close()
+  })
   return {
     token,
     close,
@@ -74,7 +89,10 @@ export function runtimeStartupSample() {
         !enabled
       ) {
         enabled = true
-        server.listen('\\\\.\\pipe\\auto-mas-startup-' + token.slice(0, 32)).unref()
+      }
+      if (event.type === 'result' && !event.success) {
+        failed = true
+        respond()
       }
     },
   }

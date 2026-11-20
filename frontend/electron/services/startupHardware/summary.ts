@@ -5,6 +5,7 @@ export type RawSample = Record<string, unknown>
 type Scale = keyof typeof catalog.values
 const fields: Readonly<Record<string, Scale | undefined>> = catalog.fields as Record<string, Scale>
 const limits: Partial<Record<Scale, readonly number[]>> = {
+  startupDuration: [1, 5, 30, 120],
   percent: [20, 50, 75, 90],
   gib: [1, 4, 8, 16, 32, 64, 256, 1024],
   count: [1, 2, 5, 9, 17, 33],
@@ -30,6 +31,7 @@ export function allowedFields(fieldsIn: Fields, compact = false): Fields {
 
 const populationFields = new Set([
   'coverage',
+  'startup_duration',
   'scope',
   'cpu_series',
   'logical_cores',
@@ -155,6 +157,9 @@ export class SampleSummary {
     }
   }
 
+  get hasInterval() {
+    return this.usage.size > 0
+  }
   fields(): Fields {
     const summary = { ...this.values }
     for (const [key, stat] of this.usage) {

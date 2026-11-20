@@ -1,4 +1,5 @@
 import { startPortableProbe } from './portable'
+import { totalmem, freemem } from 'node:os'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
@@ -26,6 +27,7 @@ export class StartupAttempt {
   private child?: ChildProcess
   private stopPortable?: () => void
   private until?: NodeJS.Timeout
+  private firstFrame?: NodeJS.Timeout
   private last = 0
   private frozen?: number
   private readonly cleanup = new Set<() => void>()
@@ -38,6 +40,8 @@ export class StartupAttempt {
   private readonly details: Fields
   private previousSource = ''
   private downloads = 0
+  private command = ''
+  private operation = ''
   private lastItem = ''
   private lastBytes = 0
   private switches = 0
@@ -59,6 +63,14 @@ export class StartupAttempt {
       scope: config.scope,
       acceleration: config.acceleration,
     }
+    const total = totalmem(),
+      available = freemem()
+    if (total > 0)
+      this.log.write('起始内存', {
+        attempt: this.wallStart,
+        ram_gib: Math.round((total / 2 ** 30) * 100) / 100,
+        available_gib: Math.round((available / 2 ** 30) * 100) / 100,
+      })
     this.until = setTimeout(() => this.stop(), maxDuration)
     this.until.unref()
     const fallback = () => {
@@ -76,6 +88,13 @@ export class StartupAttempt {
       stdio: ['pipe', 'pipe', 'ignore'],
     })
     this.child = child
+    this.firstFrame = setTimeout(() => {
+      if (!this.last && this.sampling) {
+        child.kill()
+        fallback()
+      }
+    }, 5000)
+    this.firstFrame.unref()
     child.on('error', fallback)
     child.stdin.on('error', () => {})
     const lines = createInterface({ input: child.stdout })
@@ -95,6 +114,7 @@ export class StartupAttempt {
   }
   private accept(data: RawSample) {
     if (!this.sampling) return
+    clearTimeout(this.firstFrame)
     const at = performance.now(),
       sample = { at, previous: this.last || at, data }
     if (!this.last)
@@ -144,6 +164,7 @@ export class StartupAttempt {
     this.frozen = performance.now()
     this.revokeUpload()
     clearTimeout(this.until)
+    clearTimeout(this.firstFrame)
     this.stopPortable?.()
     this.child?.stdin?.end()
     this.child?.kill()
@@ -163,7 +184,7 @@ export class StartupAttempt {
       return {
         ...fields,
         ...this.details,
-        coverage: Object.keys(fields).length ? 'sampled' : 'insufficient',
+        coverage: summary.hasInterval ? 'sampled' : 'insufficient',
       }
     }
   }
@@ -180,16 +201,25 @@ export class StartupAttempt {
   }
   progress(event: RuntimeEvent) {
     if (!this.sampling) return
+    if (event.type === 'hello') {
+      this.command = event.command
+      this.operation = event.operationId
+      this.previousSource = ''
+      return
+    }
+    if (event.operationId !== this.operation) return
     if (event.type === 'result') {
       this.finishActivity(performance.now())
       this.activityStarted = 0
       this.activity = ''
+      if (this.command === 'dependencies rebuild' && event.success) this.details.env_rebuilt = 'yes'
       const archive = event.details.startupArchive
       if (archive && typeof archive === 'object') {
         const stats = archive as Record<string, unknown>
         if (typeof stats.cached === 'boolean')
           this.details.cache_reused = stats.cached ? 'yes' : 'no'
         for (const [key, phase] of [
+          ['downloadMs', 'download'],
           ['verifyMs', 'verify'],
           ['unpackMs', 'unpack'],
         ]) {
@@ -206,13 +236,16 @@ export class StartupAttempt {
     if (event.type === 'progress') {
       if (event.stage === 'network.probe') return
       const stage = event.stage
-      const active = stage.includes('download')
-        ? 'download'
-        : stage.includes('verify')
-          ? 'verify'
-          : stage.includes('extract')
-            ? 'unpack'
-            : stage.split('.')[0]
+      const active =
+        stage === 'uv.download'
+          ? 'other'
+          : stage.includes('download')
+            ? 'download'
+            : stage.includes('verify')
+              ? 'verify'
+              : stage.includes('extract')
+                ? 'unpack'
+                : stage.split('.')[0]
       const now = performance.now()
       if (active !== this.activity || event.status !== 'running') {
         this.finishActivity(now)
@@ -226,7 +259,11 @@ export class StartupAttempt {
           ((stage === 'python.install' || stage === 'dependencies.sync') &&
             event.bytesPerSecond !== undefined))
       if (byteProgress && event.current !== undefined) {
-        const item = stage + '|' + (event.item ?? '') + '|' + (event.source ?? '')
+        const item =
+          event.operationId +
+          '|' +
+          stage +
+          (stage === 'uv.download' ? '|' + (event.source ?? '') : '')
         const from = item === this.lastItem && event.current >= this.lastBytes ? this.lastBytes : 0
         this.downloads += event.current - from
         this.lastItem = item
@@ -280,7 +317,8 @@ export class StartupAttempt {
       ...summary.fields(),
       ...this.details,
       ...times,
-      coverage: this.last ? 'sampled' : 'insufficient',
+      startup_duration: band('startup_duration', (now - this.started) / 1000) ?? 'unknown',
+      coverage: summary.hasInterval ? 'sampled' : 'insufficient',
       sample_age: this.last
         ? band('sample_age', (performance.now() - this.last) / 1000)!
         : 'unknown',

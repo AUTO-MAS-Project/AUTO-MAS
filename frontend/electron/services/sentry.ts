@@ -126,6 +126,20 @@ export const observeMainOperation = <T>(
   return Sentry.startSpan({ name, op, attributes }, callback)
 }
 
+/** Runtime 无法自行上报的桌面准备失败，只使用初始化策略已验证的阶段和错误码。 */
+export function captureStartupHostFailure(stage: string, code: string) {
+  if (!isSentryEnabled() || !startupAttempt()) return
+  try {
+    Sentry.captureMessage('桌面启动准备失败', {
+      level: 'error',
+      tags: { component: 'electron-main', startup_failure: stage, known_code: code },
+      fingerprint: ['desktop-startup', stage, code],
+    })
+  } catch {
+    /* 不影响原有错误展示。 */
+  }
+}
+
 export const recordMainStartup = () => {
   recordMainDuration('auto_mas.app.startup.duration', performance.now() - processStartedAt, {
     component: 'electron-main',

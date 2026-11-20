@@ -1,7 +1,7 @@
 import { StartupHardwareLog } from './localLog'
 import { app } from 'electron'
 import path from 'node:path'
-import { getBackendOwnership } from '../instanceConfig'
+import { getBackendOwnership, getDeveloperBackendRepo } from '../instanceConfig'
 import { getAppRoot } from '../environmentService'
 import { resolveDevelopmentRuntimeRoot, resolveRuntimeLaunchMode } from '../runtime/launchConfig'
 import type { ProbeConfig } from './monitor'
@@ -23,7 +23,11 @@ export function startupProbeConfig(): ProbeConfig {
     repo,
     path.join(runtime, 'cache', 'uv'),
     path.join(runtime, 'environment', 'python'),
-    path.join(runtime, 'environment', 'venv'),
+    managed ||
+    (!!getDeveloperBackendRepo() &&
+      (app.isPackaged || !!process.env.AUTO_MAS_BACKEND_RUNTIME_ROOT?.trim()))
+      ? path.join(runtime, 'environment', 'venv')
+      : path.join(repo, '.venv'),
     app.getPath('temp'),
     path.join(data, 'temp'),
     path.join(runtime, 'cache', 'build'),

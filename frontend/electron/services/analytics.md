@@ -365,3 +365,22 @@ MaaEnd 协议空间与基质刷取的独立配置复用 `useUserApi.updateUser` 
 桌面启动时按一次尝试启用只读采样器，每秒取样，最多十分钟。关闭匿名遥测后继续将实测值和失败前十五秒写入本地 debug/startup-hardware.log，现有日志包会包含它。其他平台和 Windows 探针不可用时使用系统 CPU、内存和卷空间读数；无法读取的 GPU 引擎或磁盘性能保留未知。错误详情只取最近的有效样本。整体与阶段结果使用已有事件，仅主进程附加有限字段。目录按用途映射并归桶；旧 Runtime 沿用原错误。手动重试另起尝试，运行中关闭会撤销上传许可并关闭 Runtime 的取样管道。重新开启从下次尝试开始。
 
 看板选 `initialization_finished_v2`，先按应用版本和 `flow_kind` 筛选，再按 `install_media`、`ram` 或 `cpu_series` 分组。每组失败率是 failure 尝试数除以该组终态总数，同时列出 success、cancelled、skipped、unconfirmed 和样本数。以 `coverage=sampled` 统计有硬件读数的覆盖；旧版本或配置未确认造成的缺失不能当低负载。阶段耗时用 `initialization_stage_finished_v2` 按 stage 和 duration_bucket 分组。
+
+可复验本机日志导出与关闭开关的行为。在 frontend 运行 `yarn build:main` 后运行 `node scripts/check-startup-hardware.cjs`。脚本创建独立临时目录，复用导出收集器生成 logs.zip，上传验证使用本机临时 HTTP 接收器。
+
+下面的 ClickHouse 查询按安装盘和启动场景统计尝试数、失败率和缺样数。应用编号为查询参数。启动前准备材料的时间包含在 startup_duration，原有 duration_bucket 保留界面侧口径。
+
+```sql
+SELECT app_version,
+       JSONExtractString(string_props, 'flow_kind') AS flow,
+       if(empty(JSONExtractString(string_props, 'install_media')), 'unknown', JSONExtractString(string_props, 'install_media')) AS disk,
+       count() AS attempts,
+       countIf(JSONExtractString(string_props, 'coverage') != 'sampled') AS missing,
+       countIf(JSONExtractString(string_props, 'outcome') = 'failure') AS failures,
+       round(100 * failures / attempts, 2) AS failure_percent
+FROM events
+WHERE app_id = {app:String} AND timestamp >= now() - INTERVAL 30 DAY
+  AND event_name = 'initialization_finished_v2'
+GROUP BY app_version, flow, disk
+ORDER BY attempts DESC
+```

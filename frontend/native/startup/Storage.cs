@@ -41,10 +41,16 @@ sealed class Storage
                     uint n = GetFinalPathNameByHandle(file, resolved, (uint)resolved.Capacity, 1);
                     string full = resolved.ToString();
                     int end = full.IndexOf("}\\", StringComparison.Ordinal);
-                    return n > 0 && n < resolved.Capacity &&
-                                   full.StartsWith(@"\\?\Volume{", StringComparison.OrdinalIgnoreCase) && end > 0
-                               ? full.Substring(0, end + 2)
-                               : null;
+                    if (n > 0 && n < resolved.Capacity &&
+                        full.StartsWith(@"\\?\Volume{", StringComparison.OrdinalIgnoreCase) && end > 0)
+                        return full.Substring(0, end + 2);
+                    resolved.Clear();
+                    n = GetFinalPathNameByHandle(file, resolved, (uint)resolved.Capacity, 0);
+                    full = resolved.ToString();
+                    if (n > 0 && n < resolved.Capacity &&
+                        full.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+                        return Path.GetPathRoot(@"\\" + full.Substring(8)).TrimEnd('\\') + @"\";
+                    return null;
                 }
                 int err = Marshal.GetLastWin32Error();
                 if (err != 2 && err != 3)
@@ -72,6 +78,11 @@ sealed class Storage
         var fs = new StringBuilder(32);
         if (GetVolumeInformation(root, IntPtr.Zero, 0, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, fs, 32))
             v.Fs = fs.ToString().ToLowerInvariant();
+        if (root.StartsWith(@"\\", StringComparison.Ordinal) && !root.StartsWith(@"\\?\", StringComparison.Ordinal))
+        {
+            v.Bus = "network";
+            return v;
+        }
         using (var h = CreateFile(root.TrimEnd('\\'), 0, 7, IntPtr.Zero, 3, 0, IntPtr.Zero))
         {
             var buf = new byte[256];
@@ -152,7 +163,7 @@ sealed class Storage
             {
                 v.Available = available / 1073741824.0;
                 v.Capacity = total / 1073741824.0;
-                v.Used = 100.0 * (1 - free / (double)total);
+                v.Used = 100.0 * (1 - available / (double)total);
             }
             else
                 v.Capacity = 0;

@@ -69,7 +69,8 @@
       "other"
     ],
     "size": ["<1MiB", "1-16MiB", "16-128MiB", "128-1024MiB", "1GiB+"],
-    "graphics": ["integrated-only", "discrete-only", "mixed", "software-only", "no-adapter"]
+    "graphics": ["integrated-only", "discrete-only", "mixed", "software-only", "no-adapter"],
+    "startupDuration": ["<1s", "1-5s", "5-30s", "30-120s", ">120s"]
   },
   "fields": {
     "cpu_series": "cpu",
@@ -297,6 +298,7 @@
     "python_time": "duration",
     "backend_time": "duration",
     "other_time": "duration",
-    "graphics_layout": "graphics"
+    "graphics_layout": "graphics",
+    "startup_duration": "startupDuration"
   }
 }
