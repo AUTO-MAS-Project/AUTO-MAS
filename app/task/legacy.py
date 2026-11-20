@@ -18,10 +18,11 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskMode
 from app.task.lifecycle import TaskBase
 from app.utils import get_logger
+from app.utils.common.log_box.results import Entry, LogEntry
 
 if TYPE_CHECKING:
     from app.models.schema import TaskRequirements
-    from app.models.task import TaskItem, TaskUserItem
+    from app.models.task import TaskItem, TaskScriptItem, TaskUserItem
     from app.task.context import TaskContext
     from app.task.history_core import TaskHistorySession
     from app.utils.common.process.scope import TaskProcessScope
@@ -36,9 +37,7 @@ class LegacyUserState:
     旧专项的维护判断和通知素材，不属于公共任务树。"""
 
     maintenance_skipped: bool = False
-    push_log: list[tuple[str, str] | tuple[str, str, float | None]] = field(
-        default_factory=list
-    )
+    push_log: list[Entry] = field(default_factory=list)
     push_log_mode: str = "汇总"
 
     async def append_push_log(self, value) -> None:
@@ -343,6 +342,35 @@ class TaskExecuteBase(ABC):
     def user_state(self, user: TaskUserItem) -> LegacyUserState:
         """[兼容旧专项] 只读取旧专项私有素材；新代码不依赖此状态容器。"""
         return self._user_states.setdefault(user.uid, LegacyUserState())
+
+    def finalize_completion_details(self, script: TaskScriptItem) -> None:
+        """[兼容旧专项] 排版已收尾的 LogBox 节点，供本轮完成摘要展示。"""
+        from app.core.notify.report import (
+            render_aggregate_push_log,
+            render_scatter_push_log,
+        )
+        from app.utils.common.log.patterns import LOG_TYPE_ERROR
+
+        has_uncompleted = any(
+            user.info.status in ("异常", "等待") for user in script.users.values()
+        )
+        for uid, user in script.users.items():
+            state = self._user_states.get(uid)
+            if state is None or state.push_log_mode == "关闭" or not state.push_log:
+                continue
+            entries: list[LogEntry] = []
+            for item in state.push_log:
+                entry = (
+                    item if isinstance(item, LogEntry) else LogEntry.from_legacy(item)
+                )
+                if entry.log_type != LOG_TYPE_ERROR or has_uncompleted:
+                    entries.append(entry)
+            render = (
+                render_aggregate_push_log
+                if state.push_log_mode == "汇总"
+                else render_scatter_push_log
+            )
+            user._completion_details = tuple(render(entries))
 
     @property
     def execution_mode(self) -> TaskMode | Literal["Update"]:
