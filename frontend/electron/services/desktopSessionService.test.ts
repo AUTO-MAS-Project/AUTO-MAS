@@ -13,6 +13,7 @@ const host = vi.hoisted(() => ({
   command: vi.fn(),
   connect: vi.fn(),
   exit: vi.fn(),
+  closeViewer: vi.fn(),
 }))
 
 vi.mock('../ipc/initializationHandlers', () => ({
@@ -31,7 +32,7 @@ vi.mock('node:child_process', () => ({
     host.report.mockImplementation(report)
     const stdin = new Writable({
       write(chunk, _encoding, done) {
-        const { action, approvedRepairs } = JSON.parse(String(chunk))
+        const { action, approvedRepairs, logoff } = JSON.parse(String(chunk))
         host.command(action)
         if (action === 'connect') {
           report(host.connect() ?? { event: 'state', state: 'connected', sessionId: 7 })
@@ -51,7 +52,10 @@ vi.mock('node:child_process', () => ({
           })
           report({ event: 'repair_finished' })
         }
-        if (action === 'close') report({ event: 'state', state: 'idle' })
+        if (action === 'close') {
+          host.closeViewer(logoff)
+          report({ event: 'state', state: 'idle' })
+        }
         if (action === 'shutdown') {
           stdout.end()
           stderr.end()
@@ -317,13 +321,13 @@ it('preserves the session-changed error when the backend rejects dispatch', asyn
 })
 
 it.each([
-  { adopted: false, taskState: 'none', expected: undefined },
-  { adopted: false, taskState: 'finished', expected: undefined },
+  { adopted: false, taskState: 'none', expected: 'close' },
+  { adopted: false, taskState: 'finished', expected: 'close' },
   { adopted: false, taskState: 'running', expected: 'close' },
   { adopted: false, taskState: 'unknown', expected: 'close' },
   { adopted: true, taskState: 'none', expected: 'close-adopted' },
 ] as const)(
-  'checks manual close for adopted=$adopted with tasks $taskState',
+  'asks before signing out for adopted=$adopted with tasks $taskState',
   async ({ adopted, taskState, expected }) => {
     const root = mkdtempSync(join(tmpdir(), 'mas-desktop-close-policy-'))
     host.connect.mockReturnValue({ event: 'state', state: 'connected', sessionId: 7, adopted })
@@ -359,11 +363,13 @@ it.each([
       )
       expect(start.code).toBeUndefined()
       if (taskState === 'unknown') {
-        await expect(service.getClosePrompt(true)).rejects.toThrow('http_503')
+        await expect(service.getClosePrompt()).rejects.toThrow('http_503')
       } else {
-        expect(await service.getClosePrompt(true)).toBe(expected)
-        expect(await service.getClosePrompt(false)).toBe(adopted ? 'close-adopted' : 'close')
+        expect(await service.getClosePrompt()).toBe(expected)
       }
+      const logoff = taskState === 'finished'
+      await service.close(logoff ? { logoff: true } : undefined)
+      expect(host.closeViewer).toHaveBeenCalledExactlyOnceWith(logoff)
     } finally {
       await service.close()
       rmSync(root, { recursive: true, force: true })

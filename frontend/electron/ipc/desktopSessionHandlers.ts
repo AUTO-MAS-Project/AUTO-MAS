@@ -102,7 +102,7 @@ export function registerDesktopSession(
         preview.webContents.send('desktop-session:state', snapshot)
     },
     action => {
-      if (action === 'close') void confirmClose(true)
+      if (action === 'close') void confirmClose()
       else preview?.minimize()
     },
     tasks => {
@@ -194,7 +194,7 @@ export function registerDesktopSession(
     if (preview && viewport) service.position(physicalBounds())
   }
 
-  function confirmClose(manual: boolean): Promise<boolean> {
+  function confirmClose(): Promise<boolean> {
     if (closeFlight) return closeFlight
     closeFlight = (async () => {
       const window = preview
@@ -202,9 +202,9 @@ export function registerDesktopSession(
       if (window) prompts.get(window)?.finish('cancel')
       await service.waitForStart()
       const owner = window && !window.isDestroyed() ? window : getMainWindow()
-      let logoff: boolean | undefined
+      let logoff = false
       try {
-        const kind = await service.getClosePrompt(manual)
+        const kind = await service.getClosePrompt()
         if (kind) {
           if (owner && !owner.isDestroyed()) {
             if (owner.isMinimized()) owner.restore()
@@ -269,7 +269,7 @@ export function registerDesktopSession(
     window.on('ready-to-show', () => window.show())
     window.on('close', event => {
       event.preventDefault()
-      void confirmClose(true)
+      void confirmClose()
     })
     window.on('closed', () => {
       if (preview === window) {
@@ -433,6 +433,6 @@ export function registerDesktopSession(
     get active() {
       return preview !== null || service.active
     },
-    closeForAppQuit: () => confirmClose(false),
+    closeForAppQuit: confirmClose,
   }
 }

@@ -683,7 +683,7 @@ export class DesktopSessionService {
     return this.stopOperation
   }
 
-  private async closeViewer({ logoff = !this.adopted }: { logoff?: boolean } = {}): Promise<void> {
+  private async closeViewer({ logoff = false }: { logoff?: boolean } = {}): Promise<void> {
     const orphanedSessionId = this.orphanedSessionId
     if (orphanedSessionId !== undefined) await this.ensureHost()
     if (!this.host) return
@@ -712,12 +712,11 @@ export class DesktopSessionService {
     await this.startOperation
   }
 
-  async getClosePrompt(manual: boolean): Promise<'close' | 'close-adopted' | undefined> {
+  async getClosePrompt(): Promise<'close' | 'close-adopted' | undefined> {
     if (!this.active) return
     const { idle } = await this.pauseAdmissions(true)
     this.patch({ executing: !idle })
-    if (this.adopted) return 'close-adopted'
-    if (!manual || !idle) return 'close'
+    return this.adopted ? 'close-adopted' : 'close'
   }
 
   private async pauseAdmissions(closing: boolean): Promise<{ idle: boolean }> {
