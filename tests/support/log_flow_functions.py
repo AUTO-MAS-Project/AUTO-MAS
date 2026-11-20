@@ -139,6 +139,10 @@ def sample_report(_entries):
     return [ReportEntry(node_type="普通", text="sample report")]
 
 
+def identity_report(entries):
+    return entries
+
+
 def maaend_flow_report(entries):
     from app.task.MaaEnd.push_log import maaend_resolve
 

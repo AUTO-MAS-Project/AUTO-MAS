@@ -35,6 +35,7 @@ from app.core.log_flow.contracts import (
     ReportedRecord,
     TextRecord,
     WindowRule,
+    WithdrawnRecord,
     WorkerFactorySpec,
     WorkerPluginPackage,
 )
@@ -48,7 +49,7 @@ from app.core.log_flow.simple import (
     open_simple_flow,
 )
 from app.core.notify.report import render_scatter_push_log
-from app.models.log_flow import InvalidObservationCursor, ReportEntry
+from app.models.log_flow import InvalidObservationCursor, ObservationCursor, ReportEntry
 from app.models.task import TaskUserItem
 from app.task.MaaEnd.push_log import (
     MAAEND_PUSH_RULES,
@@ -646,6 +647,52 @@ async def test_oversized_custom_line_keeps_later_nodes_and_push_records():
             ("push", "push node"),
             ("custom", "done:tail"),
         }
+    finally:
+        await session.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("budget", ["events", "bytes"])
+async def test_worker_preserves_withdrawal_at_observation_capacity(budget):
+    spec = PipelineSpec(
+        accept_push=True,
+        postprocess=FunctionRef(
+            name="probe:report",
+            module="tests.support.log_flow_functions",
+            attribute="identity_report",
+        ),
+    )
+    ordinary = "ordinary" if budget == "events" else "x" * 32768
+    count = MAX_NODE_FRAMES - 1 if budget == "events" else 140
+    records = (
+        ReportedRecord(node_type="普通", text="stale", node_id="a"),
+        *[ReportedRecord(node_type="普通", text=ordinary)] * count,
+        WithdrawnRecord(node_id="a"),
+    )
+    session = await LogFlowSession.open(spec)
+    try:
+        async with asyncio.timeout(10):
+            for record in records:
+                while not session.submit(record):
+                    await asyncio.sleep(0.001)
+        summary = await session.close(timeout=5)
+        assert summary.reason == "capacity"
+        observation = session.observation
+        if budget == "events":
+            assert len(observation) == MAX_NODE_FRAMES
+        else:
+            assert 1 < len(observation) < count
+        tail = observation.read(
+            after=ObservationCursor(observation.session_id, len(observation) - 1)
+        )
+        assert len(tail.nodes) == 1 and tail.nodes[0].withdrawn
+        assert [node.text for node in summary.nodes] == [ordinary] * (
+            len(observation) - 2
+        )
+        assert summary.report_entries is not None
+        assert [entry.text for entry in summary.report_entries] == [ordinary] * (
+            len(observation) - 2
+        )
     finally:
         await session.close()
 

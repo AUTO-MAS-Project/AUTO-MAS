@@ -200,6 +200,8 @@ def _run_pipeline(
     observation_capacity_error = ""
     collected: dict[str | int, ReportEntry] = {}
     revisions: dict[str, int] = {}
+    withdrawal_reserves: dict[str, int] = {}
+    reserved_bytes = 0
 
     def emit(
         result: tuple[str, str],
@@ -212,15 +214,12 @@ def _run_pipeline(
         attributes: NodeAttributes = (),
     ) -> None:
         nonlocal sequence, observed_bytes, sink_error, observation_full
-        nonlocal observation_capacity_error
-        if observation_full:
-            return
-        if sequence == MAX_NODE_FRAMES:
-            observation_full = True
-            observation_capacity_error = "观察节点容量已满"
-            return
+        nonlocal observation_capacity_error, reserved_bytes
         node_type, text = result
         stable_id = f"{source_name}/{node_id}" if node_id is not None else None
+        reserve = withdrawal_reserves.get(stable_id, 0) if stable_id is not None else 0
+        if observation_full and not (withdrawn and reserve):
+            return
         revision = 1
         if stable_id is not None:
             revision = revisions.get(stable_id, 0) + 1
@@ -240,7 +239,34 @@ def _run_pipeline(
         if len(frame) > MAX_FRAME_BYTES:
             observation_capacity_error = "日志节点超出进程消息容量"
             return
-        if observed_bytes + len(frame) > MAX_NODE_BYTES:
+        next_count = len(withdrawal_reserves)
+        next_bytes = reserved_bytes
+        new_reserve = 0
+        if withdrawn and reserve:
+            next_count -= 1
+            next_bytes -= reserve
+        elif stable_id is not None and not withdrawn and not reserve:
+            # 为每个有效的稳定 ID 预留一次撤回；序号和修订号均不会超过事件条数上限。
+            retraction = Node(
+                sequence=MAX_NODE_FRAMES,
+                revision=MAX_NODE_FRAMES,
+                source=source_name,
+                node_id=stable_id,
+                node_type="",
+                text="",
+                withdrawn=True,
+                status="info",
+            )
+            new_reserve = (
+                len(Observed(node=retraction).model_dump_json().encode("utf-8")) + 1
+            )
+            next_count += 1
+            next_bytes += new_reserve
+        if sequence + 1 + next_count > MAX_NODE_FRAMES:
+            observation_full = True
+            observation_capacity_error = "观察节点容量已满"
+            return
+        if observed_bytes + len(frame) + next_bytes > MAX_NODE_BYTES:
             observation_full = True
             observation_capacity_error = "观察节点字节容量已满"
             return
@@ -248,8 +274,13 @@ def _run_pipeline(
         pipe.flush()
         observed_bytes += len(frame)
         sequence += 1
+        reserved_bytes = next_bytes
         if stable_id is not None:
             revisions[stable_id] = revision
+            if withdrawn:
+                withdrawal_reserves.pop(stable_id, None)
+            elif new_reserve:
+                withdrawal_reserves[stable_id] = new_reserve
         if postprocessor is not None:
             key = stable_id if stable_id is not None else sequence
             if withdrawn or config.report_order == "last_updated":
