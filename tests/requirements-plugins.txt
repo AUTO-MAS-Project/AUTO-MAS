@@ -3,3 +3,4 @@ auto-mas-maa-adapter==0.1.4 --hash=sha256:d11bb61c50b9a120bcc67b90f6873a38125f37
 auto-mas-ldplayer-adapter==0.1.1 --hash=sha256:af91d50c6b20800c75c327de81c955c3c3bb6db56507268834d87997990a3e0e
 auto-mas-mumu-adapter==0.1.1 --hash=sha256:855e1289f5c1d958d12fc0b15a1bc0bf2baccfc5ed83c686680d326c274f634b
 auto-mas-whimbox-adapter==0.1.0 --hash=sha256:e4a20f64fda5d0630f90db9be5c110d4870e1953a092d0b719e3a7445e0fc865
+auto-mas-src-adapter==0.1.0 --hash=sha256:d11260caf2bf57e498ea972634edbd3c39873e4741de05497774dec69e5dcf76
