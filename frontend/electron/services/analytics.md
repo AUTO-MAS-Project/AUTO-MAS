@@ -107,6 +107,9 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `emulator_operation_observed_finished` | 前端观察到的模拟器操作结局 | `emulator_family`、`operation` |
 | `emulator_instance_manage_finished` | 实例创建、删除与批量设置 | `emulator_family`、`action`、`scope`、`count_bucket` |
 | `emulator_guard_changed` | 稳定模式和配置守卫是否解决使用障碍 | `guard_kind`、`action` |
+| `game_target_changed` | 游戏目标管理、发现、设置及批量操作结果 | `adapter`、`action` |
+| `game_operation_result` | 插件设备命令是否被受理 | `adapter`、`operation` |
+| `game_operation_observed_finished` | 由唯一操作标识确认的设备操作终态 | `adapter`、`operation` |
 | `avd_root_added` | 自定义 AVD 安装导入完成率 | `reason_kind` |
 | `game_sign_requested` | 手动签到的使用与被占用拒绝 | `trigger_kind` |
 | `community_account_manage_finished` | 签到账号创建、启停、删除 | `action` |

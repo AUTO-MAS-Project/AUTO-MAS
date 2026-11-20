@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from app.core.background_tasks import run_in_worker as run_in_worker
+
 if TYPE_CHECKING:
     from app.core import BackgroundTaskManager, Notify
     from app.core.downloads import Downloads
-    from app.core.plugin.operations import Operations
 
-__all__ = ["BackgroundTaskManager", "Downloads", "Notify", "Operations"]
+__all__ = ["BackgroundTaskManager", "Downloads", "Notify", "run_in_worker"]
 
 
 if not TYPE_CHECKING:
@@ -18,10 +19,6 @@ if not TYPE_CHECKING:
         """按 SDK 公开服务名称惰性取得宿主单例，未公开服务拒绝访问。"""
         if name not in __all__:
             raise AttributeError(name)
-        if name == "Operations":
-            from app.core.plugin.operations import Operations
-
-            return Operations
         import app.core as host_core
 
         return getattr(host_core, name)

@@ -111,6 +111,14 @@ from app.plugin.runtime import discover
 from app.plugin.types import PluginState
 from app.utils import io
 
+# 发行包安装测试不应命中开发者源码目录中的同名插件。
+source_projects = discover._source_projects
+checkout_plugins = (source / "plugins").resolve()
+discover._source_projects = lambda: {
+    project for project in source_projects()
+    if project.parent != checkout_plugins or project.name == "auto_mas_core"
+}
+
 sid = "e1821d2b-bbb8-4ac5-ad7c-e445c8324aa0"
 uid = "0896c0be-e2a8-4c38-bb3b-10eca7768405"
 pid = "5924194a-fcc0-49b6-8a2b-f1d1875def93"
@@ -170,7 +178,7 @@ installs = []
 
 async def install(spec, *, plugin_name, meta_id, dry_run=False, has_shared_environment_readers=None):
     global visible
-    assert spec == "auto-mas-maa-adapter"
+    assert spec == "auto-mas-maa-adapter>=0.1.4"
     installs.append(spec)
     if failure == "install":
         raise OSError("installation unavailable")
@@ -223,7 +231,7 @@ async def run():
                 assert (backup / ("ScriptConfig.json" if legacy else "scripts.yaml")).is_file()
                 with sqlite3.connect(backup / Config.database_path.name) as db:
                     assert db.execute("SELECT v FROM version").fetchone()[0] in ("v1.11", "v2.1")
-            assert installs == ([] if installed_before else ["auto-mas-maa-adapter"])
+            assert installs == ([] if installed_before else ["auto-mas-maa-adapter>=0.1.4"])
             script = Config.ScriptConfig[sid]
             assert script.Info.Name == "原托管"
             assert list(map(str, script.users.keys())) == [uid]

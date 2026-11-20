@@ -290,13 +290,7 @@
                     variant="form"
                   />
                 </template>
-                <PathPickerField
-                  v-model="hsrConfig.Game.Path"
-                  mode="folder"
-                  :placeholder="t('core.edit.pickStarRailInstall')"
-                  :pick-label="t('core.edit.pickFolder')"
-                  @pick="selectPath('Game.Path')"
-                />
+                <BoundGamePathField />
               </a-form-item>
             </a-col>
             <a-col :xs="24" :lg="8">
@@ -455,6 +449,8 @@
 </template>
 
 <script setup lang="ts">
+import BoundGamePathField from '@/components/BoundGamePathField.vue'
+
 import PathPickerField from '@/components/PathPickerField.vue'
 import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'

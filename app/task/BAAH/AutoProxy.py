@@ -47,6 +47,7 @@ from app.models.notification import LocalNotice
 from app.models.schema import HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.task.base import ScriptAutoProxyBase
+from app.task.game import game_device_id
 from app.tools.common.game_calendar import bluearchive as _tool_bluearchive_activity
 from app.utils import (
     LOG_TYPE_NORMAL,
@@ -441,7 +442,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
 
         try:
             device_info = await self.emulator_manager.open(
-                str(self.script_config.Emulator.Index)
+                str(game_device_id(self.script_config))
             )
         except Exception as e:
             logger.opt(exception=True).warning(f"启动模拟器失败: {e}")

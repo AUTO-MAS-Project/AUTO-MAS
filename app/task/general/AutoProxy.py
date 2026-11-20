@@ -37,6 +37,8 @@ from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.task.base import ScriptAutoProxyBase
+from app.task.client import client_executable_path
+from app.task.game import game_device_id
 from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
 from app.utils import (
     LOG_TYPE_NORMAL,
@@ -253,7 +255,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         else:
             self.log_format = self.script_log_path.name
 
-        self.game_path = self.script_config.Game.Path
+        self.game_path = client_executable_path(self.script_config)
         self.game_url = self.script_config.Game.URL
         self.game_process_name = self.script_config.Game.ProcessName
         self.log_time_range = (
@@ -412,12 +414,8 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                                 )
                                 await asyncio.sleep(self.script_config.Game.WaitTime)
                     elif isinstance(self.game_manager, DeviceBase):
-                        logger.info(
-                            f"启动模拟器: {self.script_config.Game.EmulatorIndex}"
-                        )
-                        await self.game_manager.open(
-                            self.script_config.Game.EmulatorIndex
-                        )
+                        logger.info(f"启动模拟器: {game_device_id(self.script_config)}")
+                        await self.game_manager.open(game_device_id(self.script_config))
                 except Exception as e:
                     await self.handle_pre_script_error("游戏/模拟器启动失败", e)
                     continue
@@ -653,7 +651,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                         if self.game_path is not None:
                             await process.kill_process(self.game_path)
                 elif isinstance(self.game_manager, DeviceBase):
-                    await self.game_manager.close(self.script_config.Game.EmulatorIndex)
+                    await self.game_manager.close(game_device_id(self.script_config))
             except Exception as e:
                 logger.opt(exception=True).warning(f"关闭游戏/模拟器失败: {e}")
 

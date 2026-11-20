@@ -24,8 +24,6 @@ export const createMaaEndScriptDraft = (): MaaEndScriptConfig => ({
     LauncherPath: '',
     Arguments: '',
     WaitTime: 60,
-    EmulatorId: '',
-    EmulatorIndex: '',
     RestoreAutoHDR: 'Unchanged',
     AutoHDR: 'Unchanged',
     SetResolution: false,

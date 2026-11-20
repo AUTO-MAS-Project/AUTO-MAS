@@ -30,7 +30,6 @@ if TYPE_CHECKING:
     from .config import Config as Config
     from .desktop_guard import DesktopGuard as DesktopGuard
     from .downloads import Downloads as Downloads
-    from .emulator_manager import EmulatorManager as EmulatorManager
     from .game_calendar import GameCalendar as GameCalendar
     from .game_maintenance import GameMaintenance as GameMaintenance
     from .game_manager import GameManager as GameManager
@@ -41,7 +40,6 @@ if TYPE_CHECKING:
     from .mcp import MCP as MCP
     from .notify import Notify as Notify
     from .plugin import Plugin as Plugin
-    from .plugin.operations import Operations as Operations
     from .power import Power as Power
     from .startup import Startup as Startup
     from .task_manager import TaskManager as TaskManager
@@ -54,7 +52,6 @@ if TYPE_CHECKING:
 
 _LAZY_EXPORTS = {
     "Plugin": (".plugin", "Plugin"),
-    "Operations": (".plugin.operations", "Operations"),
     "Downloads": (".downloads", "Downloads"),
     "GameManager": (".game_manager", "GameManager"),
     "Power": (".power", "Power"),
@@ -65,7 +62,6 @@ _LAZY_EXPORTS = {
     "TaskManager": (".task_manager", "TaskManager"),
     "MainTimer": (".timer", "MainTimer"),
     "Startup": (".startup", "Startup"),
-    "EmulatorManager": (".emulator_manager", "EmulatorManager"),
     "MaaFWManager": (".maa_manager", "MaaFWManager"),
     "DesktopGuard": (".desktop_guard", "DesktopGuard"),
     "GameCalendar": (".game_calendar", "GameCalendar"),
@@ -93,7 +89,6 @@ def __getattr__(name: str):
 
 __all__ = [
     "Plugin",
-    "Operations",
     "Downloads",
     "GameManager",
     "Power",
@@ -104,7 +99,6 @@ __all__ = [
     "TaskManager",
     "MainTimer",
     "Startup",
-    "EmulatorManager",
     "MaaFWManager",
     "DesktopGuard",
     "GameCalendar",

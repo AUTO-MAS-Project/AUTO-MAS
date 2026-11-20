@@ -39,6 +39,7 @@ from app.core import Config
 from app.core.game_calendar import SCRIPT_CALENDAR_GAMES
 from app.models.config.script import reject_invalid_log_formats
 from app.models.schema import (
+    ConfigSnapshotOut,
     OutBase,
     ScriptDeleteIn,
     UserInBase,
@@ -197,7 +198,7 @@ class ScriptGetIn(BaseModel):
     )
 
 
-class ScriptGetOut(OutBase):
+class ScriptGetOut(ConfigSnapshotOut):
     index: List[ScriptIndexItem] = Field(..., description="托管索引列表")
     data: Dict[
         str,
@@ -223,7 +224,7 @@ class ScriptLockIn(UserInBase):
     userId: str | None = Field(default=None, description="省略时查询托管本体")
 
 
-class ScriptLockOut(OutBase):
+class ScriptLockOut(ConfigSnapshotOut):
     locked: bool = Field(default=False, description="目标配置当前是否被锁定")
 
 
@@ -354,7 +355,13 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
             data={},
         )
     # 配置框架运行时生成具体投影类，保留现有联合响应的兼容契约。
-    return ScriptGetOut(index=index, data=data)  # pyright: ignore[reportArgumentType]
+    return ScriptGetOut(
+        index=index,
+        data=data,  # pyright: ignore[reportArgumentType]
+        uiSources=[
+            uuid.UUID(script.scriptId) if script.scriptId else Config.ScriptConfig.uid
+        ],
+    )
 
 
 @router.post(
@@ -369,7 +376,7 @@ async def get_script_lock(target: ScriptLockIn) -> ScriptLockOut:
     )
     if config is None:
         return ScriptLockOut(code=404, status="error", message="用户配置不存在")
-    return ScriptLockOut(locked=config.is_locked)
+    return ScriptLockOut(locked=config.is_locked, uiSources=[config.uid])
 
 
 @router.post(

@@ -8,6 +8,7 @@
         show-icon
         :message="t('core.edit.configLocked')"
       />
+      <GameBindingSection :script-id="scriptId" />
       <slot />
     </ConfigProvider>
   </div>
@@ -17,6 +18,7 @@
 import { useI18n } from 'vue-i18n'
 import { ConfigProvider } from 'ant-design-vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
+import GameBindingSection from '@/components/GameBindingSection.vue'
 
 const props = defineProps<{
   scriptId: string

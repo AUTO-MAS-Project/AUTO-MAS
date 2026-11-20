@@ -33,6 +33,7 @@ from app.core.ws import protocol
 from app.models.config import MaaEndConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
+from app.task.client import client_executable_path
 from app.task.proxy_helpers import push_dispatch_log
 from app.utils import get_logger
 
@@ -68,7 +69,7 @@ class EndfieldUpdateTask(TaskExecuteBase):
 
     async def main_task(self) -> None:
         await self.cur_user_item.set_state(status="运行")
-        game_exe = Path(str(self.script_config.Game.Path or "").strip())
+        game_exe = Path(str(client_executable_path(self.script_config) or "").strip())
 
         # 不看 Game.IfAutoUpdate：那是自动门的开关，用户当面点下按钮即为授权。
         try:

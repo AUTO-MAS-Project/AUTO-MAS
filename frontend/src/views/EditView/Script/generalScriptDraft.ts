@@ -8,8 +8,6 @@ export const createGeneralScriptDraft = (): GeneralScriptConfig => ({
     Path: '.',
     Type: 'Emulator',
     WaitTime: 0,
-    EmulatorId: '',
-    EmulatorIndex: '',
     URL: '',
     ProcessName: '',
   },

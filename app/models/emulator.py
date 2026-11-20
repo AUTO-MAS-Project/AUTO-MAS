@@ -21,9 +21,49 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
+from typing import Literal, Protocol
+
+
+@dataclass(frozen=True)
+class DeviceUpdateOptions:
+    """宿主向适配插件提供的更新选项。"""
+
+    source: str
+    automas_version: str
+    cdk_dpapi: str = field(default="", repr=False)
+
+
+class SettingsConflictError(RuntimeError):
+    """实例配置在编辑后已变化，调用方应重新读取。"""
+
+    def __init__(self, fields: list[str]) -> None:
+        super().__init__("配置在编辑期间被改动: " + ", ".join(fields))
+        self.fields = fields
+
+
+@dataclass(frozen=True)
+class FieldValue:
+    value: int | None
+    state: Literal["saved", "default", "unset", "unreadable"]
+
+
+@dataclass(frozen=True)
+class InstanceSettings:
+    """插件返回给宿主的实例设置视图。"""
+
+    fields: dict[str, FieldValue]
+
+    def to_dict(self) -> dict[str, dict[str, str | int | None]]:
+        return {
+            key: {"value": item.value, "state": item.state}
+            for key, item in self.fields.items()
+        }
+
+    def values(self) -> dict[str, int | None]:
+        return {key: item.value for key, item in self.fields.items()}
 
 
 @dataclass(frozen=True)
@@ -35,7 +75,31 @@ class EmulatorRuntimePolicy:
     resource_path: Path
 
 
+class EmulatorPorts(Protocol):
+    @property
+    def console(self) -> int: ...
+
+
+class EmulatorAdbInfo(Protocol):
+    @property
+    def adb_exe(self) -> str: ...
+
+    @property
+    def adb_server_port(self) -> int: ...
+
+    @property
+    def ports(self) -> EmulatorPorts: ...
+
+
+class HostAdb(Protocol):
+    async def __call__(self, *args: str, timeout: float = 20.0) -> tuple[int, str]: ...
+
+    async def screencap_png(self, timeout: float = 30.0) -> bytes: ...
+
+
 class DeviceStatus(IntEnum):
+    """设备状态。管理器与设备配置共用。"""
+
     ONLINE = 0
     """设备在线"""
     OFFLINE = 1

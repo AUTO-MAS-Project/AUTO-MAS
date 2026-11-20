@@ -26,12 +26,16 @@ from app.config import (
     UiVisibility,
     Virtual,
     collection,
+    config_manager,
     encrypted,
     select,
+    trigger,
+    trigger_field,
     ui,
     ui_visibility,
     virtual_field,
 )
+from app.config.types import STANDARD_BLOCKED_DIRS, path_policy
 from app.core.background_tasks import BackgroundTaskGroup, BackgroundTaskHandle
 from app.models.config import (
     EmulatorDeviceEntry,
@@ -70,9 +74,9 @@ from app.plugin.base import (
     ScriptAdapterPlugin,
     ScriptTypeDecl,
 )
+from app.plugin.base.client import ClientControl
 from app.plugin.base.extension import AdapterRuntime
 from app.plugin.base.game import GameRuntime
-from app.plugin.config import PluginCommandEntry, trigger_field
 from app.plugin.errors import PluginError, PluginPrecheckError
 from app.plugin.http import plugin_route
 from app.plugin.services import ServiceResolver
@@ -139,8 +143,10 @@ __all__ = [
     "GameRuntime",
     "ServiceResolver",
     "TRIGGER_TICKET",
+    "ClientControl",
     "BasePlugin",
     "Config",
+    "config_manager",
     "ConfigCollection",
     "ConfigEntry",
     "ConfigGroup",
@@ -175,7 +181,6 @@ __all__ = [
     "PLUGIN_API_VERSION",
     "Plugin",
     "PluginConfig",
-    "PluginCommandEntry",
     "PlanEntry",
     "PluginError",
     "Publisher",
@@ -199,7 +204,10 @@ __all__ = [
     "Virtual",
     "collection",
     "plugin_route",
+    "trigger",
     "trigger_field",
     "ui",
     "ui_visibility",
+    "STANDARD_BLOCKED_DIRS",
+    "path_policy",
 ]

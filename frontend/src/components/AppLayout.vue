@@ -150,8 +150,8 @@ const mainMenuItems = computed(() => /* 按当前语言生成脚本、计划和�
   { key: '/scripts', label: t('core.comp.scripts'), icon: icon('scripts', FileTextOutlined) },
   { key: '/plans', label: t('core.comp.plans'), icon: icon('plans', CalendarOutlined) },
   {
-    key: '/emulators',
-    label: t('core.comp.emulators'),
+    key: '/games',
+    label: t('core.games.title'),
     icon: icon('emulators', DatabaseOutlined),
   },
   { key: '/queue', label: t('core.comp.queue'), icon: icon('queue', UnorderedListOutlined) },

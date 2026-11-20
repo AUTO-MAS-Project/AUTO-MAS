@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Awaitable, Callable, Literal
 
+from app.task.client import ClientProcess
 from app.utils import ProcessManager
 
 from .cloud_browser import CloudBrowser
@@ -146,7 +147,7 @@ class HSRRuntimeState:
     module_results: list[HSRModuleResult] = field(default_factory=list)
     m7a_runner: M7ARunner | None = None
     sra_process_registry: SRAProcessRegistry = field(default_factory=SRAProcessRegistry)
-    game_process_manager: ProcessManager = field(default_factory=ProcessManager)
+    game_process_manager: ProcessManager = field(default_factory=ClientProcess)
     game_launch_checked: bool = False
     game_started_by_mas: bool = False
     game_exe_path: Path | None = None

@@ -4,17 +4,20 @@
 /* eslint-disable */
 import type { MSSConfig_Device } from './MSSConfig_Device';
 import type { MSSConfig_Embedded } from './MSSConfig_Embedded';
-import type { MSSConfig_Emulator } from './MSSConfig_Emulator';
 import type { MSSConfig_Game } from './MSSConfig_Game';
 import type { MSSConfig_Info } from './MSSConfig_Info';
+import type { MSSConfig_plugin_game } from './MSSConfig_plugin_game';
 import type { MSSConfig_Run } from './MSSConfig_Run';
 import type { MSSConfig_Selection } from './MSSConfig_Selection';
 import type { MSSConfig_Task } from './MSSConfig_Task';
 import type { MSSConfig_Update } from './MSSConfig_Update';
 export type MSSConfig = {
+    /**
+     * 游戏与设备
+     */
+    game?: (MSSConfig_plugin_game | null);
     Device?: (MSSConfig_Device | null);
     Embedded?: (MSSConfig_Embedded | null);
-    Emulator?: (MSSConfig_Emulator | null);
     Game?: (MSSConfig_Game | null);
     Info?: (MSSConfig_Info | null);
     Run?: (MSSConfig_Run | null);

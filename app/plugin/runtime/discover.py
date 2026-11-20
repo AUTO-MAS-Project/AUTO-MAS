@@ -141,6 +141,15 @@ async def _parse_source_package(path: Path) -> PluginRecord | None:
     return record
 
 
+def _source_projects() -> set[Path]:
+    return {
+        child.resolve()
+        for root in (Config.plugins_path, Config.source_path / "plugins")
+        if root.is_dir()
+        for child in root.iterdir()
+    }
+
+
 async def refresh(
     *, scope: RefreshScope | None = None, installed_path: Path | None = None
 ) -> None:
@@ -178,14 +187,7 @@ async def refresh(
                 seen.add(origin)
                 candidates.append(draft)
 
-        roots = (Config.plugins_path, Config.source_path / "plugins")
-        projects = {
-            child.resolve()
-            for root in roots
-            if root.is_dir()
-            for child in root.iterdir()
-        }
-        for child in sorted(projects):
+        for child in sorted(_source_projects()):
             try:
                 draft = await _parse_source_package(child)
             except Exception as exc:

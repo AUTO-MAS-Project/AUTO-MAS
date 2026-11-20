@@ -240,7 +240,7 @@ class QueueConfig(DomainEntry):
             default=None, description="下次循环触发时间，由上次触发时间和间隔计算"
         )
         ResetTimer: Trigger = Field(
-            default=False, description="重置循环计时，将上次循环触发时间设为现在"
+            default=None, description="重置循环计时，将上次循环触发时间设为现在"
         )
 
     Cycle: Annotated[

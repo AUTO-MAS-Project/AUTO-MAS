@@ -38,6 +38,11 @@ class OptionHint(TypedDict):
     label: NotRequired[str]
 
 
+class TriggerUiState(str, Enum):
+    IDLE = "idle"
+    BUSY = "busy"
+
+
 class ComponentHint(TypedDict, total=False):
     """单字段 UI 组件提示（无文案/宽度）。"""
 
@@ -45,6 +50,7 @@ class ComponentHint(TypedDict, total=False):
     component: str
     secret: bool
     editable: bool
+    state: TriggerUiState
     masked: bool
     format: str | None
     path_kind: PathKind | None
@@ -235,7 +241,7 @@ def hint_for_field(
     fname: str,
     field_info: object,
     *,
-    trigger_mode: tuple[str, tuple[object, ...], object] | None = None,
+    is_trigger: bool = False,
 ) -> ComponentHint:
     """单字段 ``ComponentHint``（无 ``editable``；显隐在实例 ``_get_ui_hints`` 叠加）。"""
     hint: ComponentHint = {"field": fname, "component": "input"}
@@ -244,13 +250,8 @@ def hint_for_field(
     meta = list(meta) + list(getattr(field_info, "metadata", ()) or ())
     base = strip_optional(base)
 
-    if trigger_mode is not None:
-        mode, values, _idle = trigger_mode
-        if mode == "literal":
-            hint["component"] = "dropdown-button"
-            hint["options"] = [{"value": str(v)} for v in values]
-        else:
-            hint["component"] = "button"
+    if is_trigger:
+        hint["component"] = "button"
 
     # ── Annotated / 框架标记优先 ──
     for m in meta:

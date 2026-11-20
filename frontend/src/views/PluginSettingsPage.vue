@@ -26,6 +26,7 @@ import {
   usePluginSettingsDraft,
   type SettingsValues,
 } from '@/views/plugins/settings/usePluginSettingsDraft'
+import { useActiveTriggers } from '@/composables/useActiveTriggers'
 import { usePluginApi } from '@/composables/usePluginApi'
 import { apiErrorMessage } from '@/utils/apiResult'
 import type { DeclarativeHint } from './plugins/components/PluginDeclarativeField.vue'
@@ -39,6 +40,12 @@ const draft = usePluginSettingsDraft()
 const saving = ref(false)
 const runningKey = ref<string | null>(null)
 const configUid = ref('')
+const { data: activeTriggers } = useActiveTriggers()
+const activeFields = computed(() =>
+  activeTriggers.value
+    .filter(item => item.configUid === configUid.value)
+    .map(item => `${item.group}.${item.field}`)
+)
 const registry = shallowRef<PluginRegistryGetOut | null>(null)
 const groups = ref<Array<{ name: string; hints: DeclarativeHint[] }>>([])
 
@@ -77,6 +84,7 @@ const errorMessage = (error: unknown) =>
 const {
   loading,
   error: loadError,
+  data: settings,
   execute: fetchSettings,
 } = usePluginQuery(
   () => /* 以插件身份和语言隔离配置查询缓存。 */ [
@@ -94,45 +102,74 @@ const {
       api.getRegistry(requestedId),
       api.getConfig(requestedId),
     ])
-    return { requestedId, requestedLocale, registry: registryResult, config: config.data }
+    return {
+      requestedId,
+      requestedLocale,
+      registry: registryResult,
+      config: config.data,
+      uiSources: [...(registryResult.uiSources ?? []), ...(config.uiSources ?? [])],
+    }
   },
   () => /* 为插件专属配置查询提供当前语言的加载失败提示。 */ t('core.plugins.settingsLoadFailed')
 )
 
-/** 读取并建立分组与编辑值；keepDraft 时保留未保存的改动（切换语言、按钮执行后的重读）。 */
-const load = async (options: { keepDraft: boolean } = { keepDraft: true }) => {
-  const result = await fetchSettings()
-  if (!result || result.requestedId !== pluginId.value || result.requestedLocale !== locale.value)
-    return
-  registry.value = result.registry
-  const data =
-    result.config && typeof result.config === 'object'
-      ? (result.config as Record<string, unknown>)
-      : {}
-  configUid.value = typeof data.uid === 'string' ? data.uid : ''
-  // 自有配置与注册表是不同对象；插件没有自有配置时展示空态。
-  groups.value = pluginSettingsGroups<DeclarativeHint>(data)
-  const next: SettingsValues = {}
-  for (const group of groups.value) {
-    const source = data[group.name]
-    next[group.name] =
-      source && typeof source === 'object' ? { ...(source as Record<string, unknown>) } : {}
-  }
-  draft.reset(next, options)
-}
-const retry = () => load()
+watch(
+  pluginId,
+  () => {
+    configUid.value = ''
+    registry.value = null
+    groups.value = []
+    draft.reset({}, { keepDraft: false })
+    return fetchSettings()
+  },
+  { immediate: true }
+)
+watch(locale, fetchSettings)
+
+watch(
+  settings,
+  result => {
+    if (!result || result.requestedId !== pluginId.value || result.requestedLocale !== locale.value)
+      return
+    registry.value = result.registry
+    const data =
+      result.config && typeof result.config === 'object'
+        ? (result.config as Record<string, unknown>)
+        : {}
+    configUid.value = typeof data.uid === 'string' ? data.uid : ''
+    // 自有配置与注册表是不同对象；插件没有自有配置时展示空态。
+    groups.value = pluginSettingsGroups<DeclarativeHint>(data)
+    const next: SettingsValues = {}
+    for (const group of groups.value) {
+      const source = data[group.name]
+      const values = source && typeof source === 'object' ? Object.entries(source) : []
+      next[group.name] = Object.fromEntries(
+        values.filter(
+          ([field]) => !group.hints.some(hint => hint.field === field && hint.state !== undefined)
+        )
+      )
+    }
+    draft.reset(next, { keepDraft: true })
+  },
+  { immediate: true }
+)
 
 const save = async (options: { reload: boolean } = { reload: true }) => {
   // 在无在途保存或动作时提交当前配置值，成功后按需重新读取后端规范化结果。
-  if (saving.value || runningKey.value) return false
+  if (saving.value || runningKey.value || activeFields.value.length) return false
   saving.value = true
   try {
     const submitted = draft.snapshot()
-    await api.updateConfig({ recordId: pluginId.value, data: submitted })
+    const data: SettingsValues = {}
+    for (const { group, field } of draft.changes.value) {
+      const fields = (data[group] ??= {})
+      fields[field] = submitted[group]?.[field]
+    }
+    await api.updateConfig({ recordId: pluginId.value, data })
     // 先把基线设为刚提交的值；之后重读失败也只剩失败重试条，不再显示未保存。
     draft.commit(submitted)
     message.success(t('core.plugins.saved'))
-    if (options.reload) await load({ keepDraft: false })
+    if (options.reload) await fetchSettings()
     return true
   } catch (error) {
     message.error(errorMessage(error))
@@ -145,11 +182,18 @@ const save = async (options: { reload: boolean } = { reload: true }) => {
 const runAction = async (group: string, hint: DeclarativeHint, value: unknown) => {
   // 仅提交当前按钮字段的触发值，等待后台操作结果并重新加载配置，执行期间阻止重复操作。
   const field = hint.field
-  if (!field || !configUid.value || hint.editable !== true || runningKey.value || saving.value)
+  if (
+    value !== true ||
+    !field ||
+    !configUid.value ||
+    hint.editable !== true ||
+    runningKey.value ||
+    saving.value ||
+    activeFields.value.includes(`${group}.${field}`)
+  )
     return
   runningKey.value = `${group}.${field}`
   try {
-    if (typeof value !== 'boolean' && typeof value !== 'string') return
     const result = await api.runCommand('config', {
       configUid: configUid.value,
       group,
@@ -157,7 +201,7 @@ const runAction = async (group: string, hint: DeclarativeHint, value: unknown) =
       value,
     })
     message.success(result.message || t('core.plugins.actionComplete'))
-    await load()
+    await fetchSettings()
   } catch (error) {
     message.error(errorMessage(error))
   } finally {
@@ -190,9 +234,6 @@ const saveAndLeave = async () => finishLeave(await save({ reload: false }))
 
 onBeforeRouteLeave(() => confirmLeave())
 onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId || confirmLeave())
-
-watch(pluginId, () => load({ keepDraft: false }), { immediate: true })
-watch(locale, () => load())
 </script>
 
 <template>
@@ -213,7 +254,7 @@ watch(locale, () => load())
       </template>
     </PageHeader>
     <PageSurface>
-      <ApiRetryAlert :error="loadError" :loading="loading" @retry="retry" />
+      <ApiRetryAlert :error="loadError" :loading="loading" @retry="fetchSettings" />
       <a-spin :spinning="loading">
         <NoData
           v-if="!loading && !loadError && !groups.length"
@@ -227,6 +268,7 @@ watch(locale, () => load())
           :disabled="saving || runningKey !== null"
           :values="draft.values"
           :running-key="runningKey"
+          :active-fields="activeFields"
           @update:value="draft.update"
           @action="runAction"
         />
@@ -235,7 +277,7 @@ watch(locale, () => load())
         v-if="draft.dirtyCount.value"
         :count="draft.dirtyCount.value"
         :saving="saving"
-        :disabled="loading || runningKey !== null"
+        :disabled="loading || runningKey !== null || activeFields.length > 0"
         @discard="draft.discard"
         @save="save()"
       />

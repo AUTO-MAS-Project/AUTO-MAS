@@ -59,7 +59,8 @@ from app.config.types import (
 )
 from app.utils import constants as _utils_constants
 
-from .base import DomainEntry
+from .base import DomainEntry as _DomainEntry
+from .game_binding import GameBindingOwner
 from .plan import (
     BAAHPlanConfig,
     MaaEndPlanConfig,
@@ -87,6 +88,11 @@ from .shared import (
     none_as,
     normalize_maaend_plan_key,
 )
+
+
+class DomainEntry(_DomainEntry, GameBindingOwner):
+    """旧专项配置复用新游戏绑定，保留原有配置输入转换。"""
+
 
 MaaEndInstallPath = Annotated[
     NativePath | None, path_policy(kind="folder", blocked_dirs=STANDARD_BLOCKED_DIRS)
@@ -568,19 +574,6 @@ class MaaEndConfig(DomainEntry):
             default_factory=lambda: "", description="控制器类型"
         )
 
-        EmulatorId: Annotated[
-            UUID | str,
-            ref(
-                "EmulatorConfig",
-                default="-",
-                allow_values=("-",),
-                display_field="Info.Name",
-            ),
-        ] = Field(default_factory=lambda: "-", description="模拟器 ID")
-        EmulatorIndex: str = Field(
-            default_factory=lambda: "-", description="模拟器索引"
-        )
-
         IfAutoUpdate: bool = Field(
             default_factory=lambda: False,
             description="是否在任务启动前检查并自动更新终末地 PC 客户端",
@@ -1035,20 +1028,6 @@ class SrcConfig(DomainEntry):
     Update: UpdateFields = Field(default_factory=UpdateFields)
 
     related_config: ClassVar = {}
-
-    class EmulatorFields(ConfigGroup):
-        Id: Annotated[
-            UUID | str,
-            ref(
-                "EmulatorConfig",
-                default="-",
-                allow_values=("-",),
-                display_field="Info.Name",
-            ),
-        ] = Field(default_factory=lambda: "-", description="模拟器 ID")
-        Index: str = Field(default_factory=lambda: "-", description="模拟器索引")
-
-    Emulator: EmulatorFields = Field(default_factory=EmulatorFields)
 
     class InfoFields(ConfigGroup):
         Name: str = Field(
@@ -1893,23 +1872,6 @@ class MaaFWConfig(DomainEntry):
         )
 
     Embedded: EmbeddedFields = Field(default_factory=EmbeddedFields)
-
-    class EmulatorFields(ConfigGroup):
-        Id: Annotated[
-            UUID | str,
-            ref(
-                "EmulatorConfig",
-                default="-",
-                allow_values=("-",),
-                display_field="Info.Name",
-            ),
-        ] = Field(
-            default_factory=lambda: "-",
-            description="模拟器 ID，ADB controller 留空地址时使用",
-        )
-        Index: str = Field(default_factory=lambda: "-", description="模拟器索引")
-
-    Emulator: EmulatorFields = Field(default_factory=EmulatorFields)
 
     class GameFields(ConfigGroup):
         Arguments: CliArgumentString = Field(
@@ -3061,19 +3023,6 @@ class GeneralConfig(DomainEntry):
             default_factory=lambda: "", description="游戏启动参数"
         )
 
-        EmulatorId: Annotated[
-            UUID | str,
-            ref(
-                "EmulatorConfig",
-                default="-",
-                allow_values=("-",),
-                display_field="Info.Name",
-            ),
-        ] = Field(default_factory=lambda: "-", description="模拟器 ID")
-        EmulatorIndex: str = Field(
-            default_factory=lambda: "-", description="模拟器索引"
-        )
-
         Enabled: bool = Field(default_factory=lambda: False, description="是否启用游戏")
 
         IfForceClose: bool = Field(
@@ -4128,20 +4077,6 @@ class BAAHConfig(DomainEntry):
     Update: UpdateFields = Field(default_factory=UpdateFields)
 
     related_config: ClassVar = {}
-
-    class EmulatorFields(ConfigGroup):
-        Id: Annotated[
-            UUID | str,
-            ref(
-                "EmulatorConfig",
-                default="-",
-                allow_values=("-",),
-                display_field="Info.Name",
-            ),
-        ] = Field(default_factory=lambda: "-", description="模拟器 ID")
-        Index: str = Field(default_factory=lambda: "-", description="模拟器索引")
-
-    Emulator: EmulatorFields = Field(default_factory=EmulatorFields)
 
     class InfoFields(ConfigGroup):
         Name: str = Field(

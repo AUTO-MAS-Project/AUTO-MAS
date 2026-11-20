@@ -16,8 +16,4 @@ export const createSrcScriptDraft = (): SRCScriptConfig => ({
     IfAutoInstallGameApk: false,
     GameUpdateTimeLimit: 60,
   },
-  Emulator: {
-    Id: '',
-    Index: '',
-  },
 })

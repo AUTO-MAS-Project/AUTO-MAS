@@ -35,6 +35,8 @@ export function usePluginInstallation(
   lock: PluginOperationLock,
   options: {
     onInstalled?: () => Promise<unknown>
+    /** 后端仍在执行的安装，离页后重新打开插件中心时也会显示。 */
+    activeInstalls?: () => readonly string[]
     /**
      * 按 uid 取当前最新的市场条目；「全部更新」每项执行前用它重新判断。
      * 返回空表示条目已不在目录里。不传时沿用调用时给的条目。
@@ -142,17 +144,34 @@ export function usePluginInstallation(
     return result
   }
 
+  const visibleTasks = computed(() => {
+    const result = { ...tasks.value }
+    for (const uid of options.activeInstalls?.() ?? []) {
+      if (result[uid] && isInstallPhaseActive(result[uid].phase)) continue
+      const row = options.latest?.(uid)
+      if (row) {
+        result[uid] = {
+          uid,
+          pluginId: row.info?.plugin_name ?? null,
+          upgrade: row.info?.update_available === true,
+          phase: 'running',
+        }
+      }
+    }
+    return result
+  })
+
   return {
     /** 按市场 uid 记录的任务；完成或失败的结果保留到该条目下次安装。 */
-    tasks: computed(() => tasks.value),
+    tasks: visibleTasks,
     /** 正在执行（未排队、未结束）的任务。 */
     active: computed(
       () =>
-        Object.values(tasks.value).find(
+        Object.values(visibleTasks.value).find(
           task => isInstallPhaseActive(task.phase) && task.phase !== 'queued'
         ) ?? null
     ),
-    taskOf: (uid: string): InstallTask | null => tasks.value[uid] ?? null,
+    taskOf: (uid: string): InstallTask | null => visibleTasks.value[uid] ?? null,
     install,
     installSequence,
   }

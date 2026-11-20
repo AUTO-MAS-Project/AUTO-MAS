@@ -43,7 +43,9 @@ from app.models.schema import (
 )
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import execute_script_task
+from app.task.client import ClientProcess, client_executable_path, client_launcher_path
 from app.task.emulator_core import close_emulator, resolve_host_adb
+from app.task.game import game_device_id, game_is_emulator, game_target_id
 from app.task.MaaFW.tools.core.controller_win32.service import (
     MaaFWWin32ControllerService,
     MaaFWWin32Window,
@@ -121,7 +123,7 @@ from app.task.MaaFW.tools.core.worker_protocol import (
     forwards_to_ui,
     strip_ansi,
 )
-from app.utils import IS_WINDOWS, UTC4, ProcessInfo, ProcessManager, get_logger, power
+from app.utils import IS_WINDOWS, UTC4, ProcessInfo, get_logger, power
 from app.utils import display as _utils_display
 from app.utils import game_apk as _utils_game_apk
 from app.utils import io as _utils_io
@@ -585,7 +587,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._display_hold: Any = None
         self.opened_emulator = False
         self.opened_game = False
-        self.game_process_manager = ProcessManager()
+        self.game_process_manager = ClientProcess()
         # 启动游戏前临时改写的 Unity 注册表分辨率，游戏关闭后恢复；None 表示没改
         self.game_resolution_override: UnityGameResolutionOverride | None = None
         # 本轮游戏刚启动的单调时钟时刻，据此算首个任务的最早下发时刻。只在游戏是刚
@@ -725,8 +727,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 return MAINTENANCE_SKIP_MESSAGE
 
             if self.run_plan.controllerType == "Adb":
-                emulator_id = self.script_config.Emulator.Id
-                emulator_index = self.script_config.Emulator.Index
+                emulator_id = game_target_id(self.script_config)
+                emulator_index = game_device_id(self.script_config)
                 if emulator_id == "-" or emulator_index in ("", "-"):
                     await self.cur_user_item.set_state(status="异常")
                     return (
@@ -1246,14 +1248,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _resolve_game_launch_path(self) -> Path | None:
         """游戏 exe：DirectExe 下 MAS 启动它，URL / AttachOnly 下只用来认出游戏。"""
 
-        raw = str(self.script_config.Game.LaunchPath or "").strip()
+        raw = str(client_executable_path(self.script_config) or "").strip()
         return Path(raw) if raw else None
 
     def _resolve_launcher_path(self) -> Path | None:
         """AttachOnly 下可选的启动器 exe，MAS 兜底关闭时一并关它。"""
 
-        raw = str(self.script_config.Game.LauncherPath or "").strip()
-        return Path(raw) if raw else None
+        return client_launcher_path(self.script_config)
 
     def _describe_game_launch_config_error(self) -> str | None:
         """MAS 负责启动游戏时缺了什么配置；不缺返回 None。会读盘，调用方放在工作线程里。"""
@@ -1478,7 +1479,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return resolve_run_selection(
             interface_model,
             configured_controller=str(self.script_config.Info.Controller or ""),
-            emulator_selected=self.script_config.Emulator.Id != "-",
+            emulator_selected=game_is_emulator(self.script_config),
             configured_resource=str(self.script_config.Info.Resource or ""),
         )
 
@@ -1601,7 +1602,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self.emulator_manager is None:
             raise RuntimeError("当前 controller 需要 ADB，请在托管管理页选择模拟器")
 
-        emulator_index = self.script_config.Emulator.Index
+        emulator_index = game_device_id(self.script_config)
         if emulator_index in ("", "-"):
             raise RuntimeError("当前 controller 需要 ADB，请在托管管理页选择模拟器实例")
 
@@ -1805,39 +1806,22 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._login_checked = True
 
     async def _derive_adb_path_from_emulator_config(self) -> Path | None:
-        emulator_id = self.script_config.Emulator.Id
-        if emulator_id == "-":
+        if self.emulator_manager is None:
             return None
-
-        # 一条配置可以纳管多个模拟器安装, 那种情况下持久化的 Info.Path 是空的,
-        # 得先问管理器这个设备号落在哪条安装上。
-        emulator_index = self.script_config.Emulator.Index
-        with suppress(Exception):
-            resolve_device = getattr(self.emulator_manager, "resolve_device", None)
-            if resolve_device is not None and emulator_index not in ("", "-"):
-                device_ref = resolve_device(emulator_index)
-                if device_ref is not None and device_ref.emulator_type == "avd":
-                    # ModAVD 的 adb 问 modavd（``modavd list`` 的 adb_exe），不在主程序旁边
-                    adb_info = await self.emulator_manager.avd_adb_info(emulator_index)
-                    return Path(adb_info.adb_exe)
-                if device_ref is not None and device_ref.manager_path:
-                    return Path(device_ref.manager_path).parent / "adb.exe"
-
-        with suppress(Exception):
-            emulator_config = Config.EmulatorConfig[emulator_id]
-            emulator_path = emulator_config.Info.Path
-            if emulator_path is None:
-                return None
-            return emulator_path.parent / "adb.exe"
-        return None
+        index = game_device_id(self.script_config)
+        ref = self.emulator_manager.resolve_device(index)
+        if ref.emulator_type == "avd":
+            info = await self.emulator_manager.avd_adb_info(index)
+            return Path(info.adb_exe)
+        return self.emulator_manager.get_adb_path()
 
     async def _build_adb_control_profile(self) -> MaaFWAdbControlProfile:
         """解析当前模拟器的 EmulatorExtras 能力，并构造 MuMu/雷电 controller extras 配置。"""
         if self._cached_adb_profile is not None:
             return self._cached_adb_profile
 
-        emulator_id = self.script_config.Emulator.Id
-        emulator_index = self.script_config.Emulator.Index
+        emulator_id = game_target_id(self.script_config)
+        emulator_index = game_device_id(self.script_config)
         if emulator_id == "-" or emulator_index in ("", "-"):
             self._cached_adb_profile = MaaFWAdbControlProfile(None, False, False, {})
             return self._cached_adb_profile
@@ -1858,19 +1842,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 先问管理器这个设备号的真实归属。持久化的 Info.Type 在纳管多个安装时
             # 不等于设备的真实类型, 直接读它会让雷电专用截图被跳过——而雷电上普通
             # ADB 截图取不到游戏的 GPU 渲染层, 识别会全程无命中。
-            native_index = emulator_index
-            resolve_device = getattr(self.emulator_manager, "resolve_device", None)
-            device_ref = resolve_device(emulator_index) if resolve_device else None
-            if device_ref is not None:
-                emulator_type = device_ref.emulator_type
-                emulator_path = Path(device_ref.manager_path)
-                native_index = device_ref.native_index
-            else:
-                emulator_config = Config.EmulatorConfig[emulator_id]
-                emulator_type = str(emulator_config.Info.Type or "")
-                emulator_path = emulator_config.Info.Path
-                if emulator_path is None:
-                    raise ValueError("Path未配置，请检查路径设置")
+            device_ref = self.emulator_manager.resolve_device(emulator_index)
+            emulator_type = device_ref.emulator_type
+            emulator_path = Path(device_ref.manager_path)
+            native_index = device_ref.native_index
             # build_adb_emulator_extra_capabilities 通过 find_spec 探测运行时 maa，
             # 不会把 maa 载入 sys.modules，满足导入边界约束；返回 {type: {screencap,input}}。
             capabilities = build_adb_emulator_extra_capabilities()
@@ -1919,13 +1894,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return self._cached_adb_profile
 
     def _mod_avd_open_kwargs(self) -> dict[str, Any]:
-        """Emulator 2.0 门面的 ``open`` 要知道调用方能不能用 ModAVD（MaaFW 脚本一律放行）；
-        旧式模拟器管理器不收这个参数。"""
-        from app.utils import emulator2 as _utils_emulator2
-
-        if isinstance(self.emulator_manager, _utils_emulator2.facade.Emulator2Manager):
-            return {"allow_mod_avd": True}
-        return {}
+        return {"allow_mod_avd": True}
 
     async def _build_avd_adb_profile(
         self, device_ref: Any, emulator_index: str
@@ -1935,8 +1904,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         adb 程序、私有 server 端口、控制台端口都问 modavd（``modavd list``；根目录可以设 ``portBase``
         换一段端口），截图共享内存按控制台端口命名。
         """
-        from app.utils import emulator2 as _utils_emulator2
-
         capability = build_adb_emulator_extra_capabilities().get("avd", {})
         if not capability.get("screencap"):
             raise RuntimeError(
@@ -1950,55 +1917,30 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if not adb_path.is_file():
             raise RuntimeError(f"找不到 ModAVD 的 adb：{adb_path}")
         console = adb_info.ports.console
-        config = _utils_emulator2.avd.maafw_extras.build_maafw_avd_config(
-            adb_path, adb_info.adb_server_port, console
-        )
+        config = await self.emulator_manager.maafw_adb_extra(emulator_index)
         self._append_log(
             f"ModAVD 截图走 AVDExtras（共享内存 SHM_videmulator{console}），不回落普通 adb"
         )
         return MaaFWAdbControlProfile("avd", True, False, config)
 
     async def _script_adb_env(self) -> dict[str, str]:
-        """ModAVD 实例上叠加给 worker（agent 与它们起的 adb 继承）和 pretask 的环境变量：
-        ``ANDROID_ADB_SERVER_PORT=<script_adb_server_port>``（``modavd servers`` 报的，默认 20049）。
-        脚本用 SDK 的新版 adb，放在 5037 上会和雷电 / MuMu 自带的旧版 adb 互杀 server；端口问不到时报错。
-        其余模拟器返回空字典。"""
-        emulator_index = self.script_config.Emulator.Index
-        if self.script_config.Emulator.Id == "-" or emulator_index in ("", "-"):
+        if self.emulator_manager is None:
             return {}
-        device_ref = None
-        with suppress(Exception):
-            resolve_device = getattr(self.emulator_manager, "resolve_device", None)
-            device_ref = resolve_device(emulator_index) if resolve_device else None
-        if device_ref is None or device_ref.emulator_type != "avd":
-            return {}
-        from app.utils import emulator2 as _utils_emulator2
-
-        root = _utils_emulator2.avd.components.root_from_manager_exe(
-            device_ref.manager_path
+        env = await self.emulator_manager.process_env(
+            game_device_id(self.script_config)
         )
-        # 先由 modavd 以脱离方式起好：worker 里的 adb 顺手拉起的 server 会继承 worker 的输出管道
-        try:
-            await _utils_emulator2.avd.host.ensure_script_adb_server(root)
-        except _utils_emulator2.avd.host.ScriptAdbPortConflict:
-            raise  # 端口被别的程序占着，worker 里的 adb 连上去只会一直失败，直接报给用户
-        except Exception as exc:  # noqa: BLE001 - 见下
-            # 这次没问成 modavd：之前问到过端口就接着用（server 交给 worker 的 adb 起），没问到过就把原因报出去
-            if not _utils_emulator2.avd.host.script_adb_port_known(root):
-                raise
-            logger.warning(
-                f"modavd servers 这次失败，沿用之前报的脚本专用 adb 端口: {exc}"
-            )
-        return _utils_emulator2.avd.host.script_adb_env(root)
+        return (
+            {"ANDROID_ADB_SERVER_PORT": env["ANDROID_ADB_SERVER_PORT"]}
+            if env is not None
+            else {}
+        )
 
     def _check_avd_runtime_version(self, maafw_version: str | None) -> None:
         """ModAVD 要 AVDExtras：运行环境的 MaaFramework 低于 5.7.0 时明确报错，不让它静默回落。"""
         profile = self._cached_adb_profile
         if profile is None or profile.emulator_type != "avd":
             return
-        from app.utils import emulator2 as _utils_emulator2
-
-        supported = _utils_emulator2.avd.maafw_extras.avd_extras_supported(
+        supported = self.emulator_manager.supports_maafw_adb_extra_version(
             maafw_version
         )
         if supported is False:

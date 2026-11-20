@@ -17,7 +17,7 @@ import importlib.metadata as importlib_metadata
 import re
 import sys
 import weakref
-from collections.abc import AsyncGenerator, Callable, Mapping
+from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -30,7 +30,7 @@ from packaging.utils import canonicalize_name
 from packaging.version import Version
 from pydantic import JsonValue
 
-from app.config import NodeState
+from app.config import NodeState, config_manager
 from app.core.log_flow.contracts import (
     FileInput,
     WorkerFactorySpec,
@@ -88,7 +88,9 @@ from app.utils import get_logger
 from app.utils.common.tools import to_pep440
 
 if TYPE_CHECKING:
+    from app.config import ConfigEntry, ConfigNode
     from app.models.config import PluginMeta, PluginRecord
+    from app.models.config.game import GameEntry
     from app.models.task import TaskScriptItem, TaskUserItem
     from app.utils.common.log.flow_monitor import LogFlowMonitor
 
@@ -259,11 +261,32 @@ class _PluginManager:
             declarations[name] = declaration.model_copy(deep=True)
         return declarations
 
+    def trigger_owner(self, entry: ConfigEntry) -> UUID | None:
+        """从插件记录、专属配置及游戏或脚本声明中确定配置节点所属插件，未归属插件时返回 None。"""
+        from app.models.config import PluginRecord
+
+        if isinstance(entry, PluginRecord):
+            return entry.uid
+        for record in self.list_plugins():
+            if record._config is entry.root:
+                return record.uid
+        node: ConfigNode | None = entry
+        while node is not None:
+            for uid, decl in self.game_types.items():
+                if isinstance(node, (decl.game_class, decl.device_class)):
+                    return uid
+            for uid, decl in self.script_types.items():
+                types = (decl.script_type, decl.user_type)
+                if decl.plan_type is not None:
+                    types += (decl.plan_type,)
+                if isinstance(node, types):
+                    return uid
+            node = node.parent
+        return None
+
     @asynccontextmanager
     async def _pause_owners(self, owners):
         """暂停指定插件的调用准入，等待在途调用和配置操作收尾，退出时按当前启用状态恢复准入。"""
-        from app.core.plugin.operations import Operations
-
         owners = tuple(owners)
         gates = {
             uid: (self._calls[uid], self._calls[uid].accepting)
@@ -273,7 +296,7 @@ class _PluginManager:
         for gate, _ in gates.values():
             gate.accepting = False
         try:
-            async with Operations.pause_owners(owners):
+            async with config_manager.pause_trigger_owners(owners):
                 # 保留发起调用的任务身份，让 drain 排除自身，避免等待自己返回。
                 for gate, _ in gates.values():
                     await gate.drain()
@@ -517,7 +540,6 @@ class _PluginManager:
     async def prepare_installation_restart(self, installation_id: UUID) -> bool:
         """确认候选身份，等待业务空闲后封闭新任务和命令，交由前端立即重启。"""
         from app.core import TaskManager
-        from app.core.plugin.operations import Operations
         from app.plugin.uv.environment import read_installation
 
         record = read_installation()
@@ -532,7 +554,7 @@ class _PluginManager:
         async with self._hold():
             if not TaskManager.prepare_restart():
                 return False
-            if not Operations.prepare_restart():
+            if not config_manager.prepare_trigger_restart():
                 TaskManager.cancel_restart()
                 return False
             self._restart_installation = installation_id
@@ -541,13 +563,12 @@ class _PluginManager:
     def cancel_installation_restart(self, installation_id: UUID) -> None:
         """前端重启失败或放弃时恢复受理；候选环境继续保留，供下次启动应用。"""
         from app.core import TaskManager
-        from app.core.plugin.operations import Operations
 
         if self._restart_installation != installation_id:
             return
         self._restart_installation = None
         TaskManager.cancel_restart()
-        Operations.cancel_restart()
+        config_manager.cancel_trigger_restart()
 
     async def load(
         self,
@@ -825,7 +846,7 @@ class _PluginManager:
             raise PluginOperationError(str(exc), payload={"name": name}) from exc
 
     @asynccontextmanager
-    async def _pause_operations(self, record: PluginRecord):
+    async def _pause_activity(self, record: PluginRecord):
         """收集当前插件及其下游依赖者，在上下文内统一暂停调用与配置操作。"""
         owners: set[UUID] = set()
         pending = [record]
@@ -848,7 +869,7 @@ class _PluginManager:
     ) -> dict[str, Any]:
         """递归禁用仍启用的下游，返回本次实际拆卸的完整级联树。"""
         if not held:
-            async with self._hold(), self._pause_operations(record):
+            async with self._hold(), self._pause_activity(record):
                 return await self.disable(record, held=True, dep_path=dep_path, ctx=ctx)
 
         path_list = list(dep_path or [])
@@ -957,7 +978,7 @@ class _PluginManager:
     ) -> dict[str, Any]:
         """DFS 释放插件运行时；卸包入口可保留注册项，待发行包与配置删除成功后再移除。"""
         if not held:
-            async with self._hold(), self._pause_operations(record):
+            async with self._hold(), self._pause_activity(record):
                 return await self.unload(
                     record,
                     held=True,
@@ -1054,7 +1075,7 @@ class _PluginManager:
     ) -> dict[str, Any]:
         """拆下启用中的下游并保存完整树，重载本项后按树先父后子恢复。"""
         if not held:
-            async with self._hold(), self._pause_operations(record) as owners:
+            async with self._hold(), self._pause_activity(record) as owners:
                 from app.core import Config
 
                 # 重载会替换整棵实际拆卸树的实例，先检查所有适配器，避免拆到一半才遇到锁。
@@ -1181,7 +1202,9 @@ class _PluginManager:
             )
             raise PluginOperationError(str(exc), payload={"name": name}) from exc
 
-    async def install(self, meta: PluginMeta) -> dict[str, Any]:
+    async def install(
+        self, meta: PluginMeta, *, minimum_version: Version | None = None
+    ) -> dict[str, Any]:
         """确认只读目录的安装目标及发行元数据，联合装包后核对实际身份，再发现并加载插件。"""
         async with self._hold():
             from app.core.config import Config
@@ -1194,6 +1217,10 @@ class _PluginManager:
                     and canonicalize_name(pending.progress.packageName)
                     == canonicalize_name(meta.info.package_name)
                     and pending.progress.pluginName == meta.info.plugin_name
+                    and (
+                        minimum_version is None
+                        or Version(pending.progress.version) >= minimum_version
+                    )
                     and (
                         not meta.info.version
                         or Version(pending.progress.version)
@@ -1278,8 +1305,13 @@ class _PluginManager:
             elif meta.activation_state != NodeState.INACTIVE:
                 raise PluginPrecheckError("市场条目缺少版本，请刷新目录后重试")
             # 主程序升级可从内部声明自动求解版本；同样须通过装包后的实际元数据校验。
+            requirement = package
+            if version:
+                requirement += f"=={version}"
+            elif minimum_version is not None:
+                requirement += f">={minimum_version}"
             pause = (
-                self._pause_operations(existing)
+                self._pause_activity(existing)
                 if existing is not None and existing._plugin_cls is not None
                 else contextlib.nullcontext(set())
             )
@@ -1290,7 +1322,7 @@ class _PluginManager:
                         plugin.precheck_locks()
                 await LogFlowSession.retry_unconfirmed_workers()
                 restart_required = await uv_tool.install(
-                    f"{package}=={version}" if version else package,
+                    requirement,
                     plugin_name=plugin_id,
                     meta_id=meta.uid,
                     has_shared_environment_readers=lambda: (
@@ -1345,7 +1377,7 @@ class _PluginManager:
         from app.plugin.uv.environment import ensure_writable
 
         ensure_writable()
-        async with self._hold(), self._pause_operations(record):
+        async with self._hold(), self._pause_activity(record):
             await LogFlowSession.retry_unconfirmed_workers()
             if LogFlowSession.has_unconfirmed_workers():
                 raise PluginBusyError("仍有采集进程退出待确认，请稍后重试")
@@ -1420,6 +1452,25 @@ class _PluginManager:
                     return []
                 return await self._calls[record.uid].wrap(decl.prefetch_check)(config)
         raise PluginPrecheckError("托管所属插件当前不可用")
+
+    async def search_game_adapter(
+        self, uid: UUID, decl: GameTypeDecl
+    ) -> Sequence[GameEntry]:
+        """通过当前插件实例的调用门执行自己的发现方法。"""
+        from app.core import Config
+
+        record = Config.plugin_registry.get(uid)
+        gate = self._calls.get(uid)
+        if (
+            record is None
+            or record.info.state != PluginState.ENABLED
+            or self.game_types.get(uid) is not decl
+            or gate is None
+            or not gate.accepting
+        ):
+            return ()
+        entries = await gate.wrap(decl.search)()
+        return entries if gate.accepting and self.game_types.get(uid) is decl else ()
 
     def resolve_script_expander(self, script, config):
         """托管锁内按实际启用声明分派；旧类型由调用方继续走旧工厂。"""

@@ -36,6 +36,7 @@ from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNotice
 from app.models.task import LogRecord, ScriptItem
 from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
+from app.task.game import game_device_id
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_SHARED,
@@ -222,9 +223,9 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
             await self.script_info.set_log("正在启动模拟器...")
             # 启动模拟器
             try:
-                logger.info(f"启动模拟器: {self.script_config.Emulator.Index}")
+                logger.info(f"启动模拟器: {game_device_id(self.script_config)}")
                 emulator_info = await self.emulator_manager.open(
-                    self.script_config.Emulator.Index,
+                    game_device_id(self.script_config),
                     STARRAIL_PACKAGE_NAME[self.cur_user_config.Info.Server],
                 )
             except Exception as e:

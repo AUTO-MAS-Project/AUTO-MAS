@@ -17,6 +17,7 @@ export type WebhookGetOut_Webhook_ = {
      * 操作消息
      */
     message?: string;
+    uiSources?: Array<string>;
     /**
      * Webhook索引列表
      */

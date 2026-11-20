@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from enum import IntEnum
 from typing import TYPE_CHECKING, Annotated, Literal
 from uuid import UUID
 
@@ -11,16 +10,18 @@ from pydantic import Field, PrivateAttr
 
 from app.config import (
     ConfigCollection,
+    ConfigEntry,
     ConfigGroup,
     LockTicket,
     Trigger,
     UiVisibility,
+    trigger_field,
     ui,
     ui_visibility,
 )
 from app.config.shortcuts import collection
 from app.config.signals import CollectionChangeEvent
-from app.plugin.config import PluginCommandEntry, trigger_field
+from app.models.emulator import DeviceStatus as DeviceStatus
 
 if TYPE_CHECKING:
     from app.plugin.base.game import GameControl
@@ -41,19 +42,7 @@ TRIGGER_TICKET = LockTicket(
 )
 
 
-class DeviceStatus(IntEnum):
-    """设备状态。管理器与设备配置共用。"""
-
-    ONLINE = 0
-    OFFLINE = 1
-    STARTING = 2
-    CLOSEING = 3
-    ERROR = 4
-    NOT_FOUND = 5
-    UNKNOWN = 10
-
-
-class GameDeviceEntry(PluginCommandEntry):
+class GameDeviceEntry(ConfigEntry):
     """设备上界。除触发器外前端不可改；操作经父游戏配置上的管理实例。"""
 
     class Info(ConfigGroup):
@@ -65,13 +54,17 @@ class GameDeviceEntry(PluginCommandEntry):
         )
 
     class Action(ConfigGroup):
-        open: Trigger = Field(default=False, description="启动")
-        close: Trigger = Field(default=False, description="关闭")
-        show: Trigger = Field(default=False, description="显示")
-        hide: Trigger = Field(default=False, description="隐藏")
+        open: Trigger = Field(default=None, description="启动")
+        close: Trigger = Field(default=None, description="关闭")
+        show: Trigger = Field(default=None, description="显示")
+        hide: Trigger = Field(default=None, description="隐藏")
+        minimize: Trigger = Field(default=None, description="最小化")
+        maximize: Trigger = Field(default=None, description="最大化")
 
     info: Info = Field(default_factory=Info, description="设备信息")
-    action: Action = Field(default_factory=Action, description="设备操作")
+    action: Annotated[Action, ui(visibility=lambda entry: entry._vis_actions())] = (
+        Field(default_factory=Action, description="设备操作")
+    )
 
     @property
     def _control(self) -> GameControl[GameEntry, GameDeviceEntry]:
@@ -82,29 +75,17 @@ class GameDeviceEntry(PluginCommandEntry):
             raise RuntimeError("设备未挂入游戏配置")
         return game._control
 
-    @property
-    def busy(self) -> bool:
-        """是否有操作正在执行（供 UI 查询）。
-
-        单次操作互斥标志只在控制器上：一台设备的操作要经哪个执行器排队由
-        控制器决定，配置这边再存一份只会两处不一致。管理实例取不到时按
-        「不忙」处理 —— 那是配置还没挂上控制器，不该把按钮一律禁掉。
-        """
-        try:
-            return self._control.busy
-        except Exception:
-            return False
-
-    def _busy_vis(self) -> UiVisibility:
-        """忙时禁用、闲时显示。各 ``_vis_*`` 的公共尾巴。"""
-        return UiVisibility.DISABLE if self.busy else UiVisibility.SHOW
+    def _vis_actions(self) -> UiVisibility:
+        collection = self.parent
+        game = collection.parent if collection is not None else None
+        return game._vis_actions() if isinstance(game, GameEntry) else UiVisibility.SHOW
 
     @ui_visibility("action.open")
     def _vis_open(self) -> UiVisibility:
         """设备已在线或正在启动时隐藏启动操作，其余状态按控制器忙闲决定是否可用。"""
         if self.info.status in {DeviceStatus.ONLINE, DeviceStatus.STARTING}:
             return UiVisibility.HIDE
-        return self._busy_vis()
+        return UiVisibility.SHOW
 
     @ui_visibility("action.close")
     def _vis_close(self) -> UiVisibility:
@@ -115,46 +96,60 @@ class GameDeviceEntry(PluginCommandEntry):
             DeviceStatus.ERROR,
         }:
             return UiVisibility.HIDE
-        return self._busy_vis()
+        return UiVisibility.SHOW
 
     @ui_visibility("action.show")
     def _vis_show(self) -> UiVisibility:
         """仅为在线设备展示显示窗口操作，并遵循控制器忙闲限制。"""
         if self.info.status != DeviceStatus.ONLINE:
             return UiVisibility.HIDE
-        return self._busy_vis()
+        return UiVisibility.SHOW
 
     @ui_visibility("action.hide")
     def _vis_hide(self) -> UiVisibility:
         """仅为在线设备展示隐藏窗口操作，并遵循控制器忙闲限制。"""
-        if self.info.status != DeviceStatus.ONLINE:
-            return UiVisibility.HIDE
-        return self._busy_vis()
+        return self._vis_show()
 
-    @trigger_field("action.open", cancellable=False)
+    @ui_visibility("action.minimize")
+    def _vis_minimize(self) -> UiVisibility:
+        return self._vis_show()
+
+    @ui_visibility("action.maximize")
+    def _vis_maximize(self) -> UiVisibility:
+        return self._vis_show()
+
+    @trigger_field("action.open", finish_on_cancel=True)
     async def on_open(self) -> None:
         # 触发器带特殊票免订阅校验（用户权限最高）；
-        # 操作互斥由控制器自己的执行器管（``GameControl.busy``）
+        # 手动操作的准入由游戏目标的 action 组统一判断。
         """以用户触发器身份请求控制器启动当前设备，具体执行限制由控制器处理。"""
         await self._control.open(self.uid, ticket=TRIGGER_TICKET)
 
-    @trigger_field("action.close", cancellable=False)
+    @trigger_field("action.close", finish_on_cancel=True)
     async def on_close(self) -> None:
         """以用户触发器身份请求控制器关闭当前设备。"""
         await self._control.close(self.uid, ticket=TRIGGER_TICKET)
 
-    @trigger_field("action.show", cancellable=False)
+    @trigger_field("action.show", finish_on_cancel=True)
     async def on_show(self) -> None:
         """以用户触发器身份请求控制器显示当前设备窗口。"""
         await self._control.show(self.uid, ticket=TRIGGER_TICKET)
 
-    @trigger_field("action.hide", cancellable=False)
+    @trigger_field("action.hide", finish_on_cancel=True)
     async def on_hide(self) -> None:
         """以用户触发器身份请求控制器隐藏当前设备窗口。"""
         await self._control.hide(self.uid, ticket=TRIGGER_TICKET)
 
+    @trigger_field("action.minimize", finish_on_cancel=True)
+    async def on_minimize(self) -> None:
+        await self._control.minimize(self.uid, ticket=TRIGGER_TICKET)
 
-class GameEntry(PluginCommandEntry):
+    @trigger_field("action.maximize", finish_on_cancel=True)
+    async def on_maximize(self) -> None:
+        await self._control.maximize(self.uid, ticket=TRIGGER_TICKET)
+
+
+class GameEntry(ConfigEntry):
     """游戏主配置上界。插件继承后加自己的字段，并注册进 GameConfig。"""
 
     class Info(ConfigGroup):
@@ -162,15 +157,17 @@ class GameEntry(PluginCommandEntry):
         type: Annotated[
             Literal["emulator", "client"], ui(visibility=UiVisibility.HIDE)
         ] = Field(default="emulator", description="模拟器或客户端")
-        concurrent_execution: Annotated[bool, ui(visibility=UiVisibility.HIDE)] = Field(
+        concurrent_execution: bool = Field(
             default=False, description="是否允许并发运行"
         )
 
     class Action(ConfigGroup):
-        refresh: Trigger = Field(default=False, description="刷新设备列表")
+        refresh: Trigger = Field(default=None, description="刷新设备列表")
 
     info: Info = Field(default_factory=Info, description="游戏信息")
-    action: Action = Field(default_factory=Action, description="游戏操作")
+    action: Annotated[Action, ui(visibility=lambda entry: entry._vis_actions())] = (
+        Field(default_factory=Action, description="游戏操作")
+    )
     devices: ConfigCollection[GameDeviceEntry] = collection(GameDeviceEntry)
 
     # 框架 add 时写入；业务经 ``_control`` / subscribe 取，不要直接读存储
@@ -186,7 +183,20 @@ class GameEntry(PluginCommandEntry):
             raise RuntimeError("游戏管理实例未挂载")
         return ctrl
 
-    @trigger_field("action.refresh", cancellable=False)
+    @property
+    def actions_busy(self) -> bool:
+        """安装配置正被修改、控制器在执行，或本目标有已受理的触发器。"""
+        return (
+            self._lock_x is not None
+            or (self._game_control is not None and self._game_control.busy)
+            or bool(self.action._trigger_uids)
+            or any(device.action._trigger_uids for device in self.devices.values())
+        )
+
+    def _vis_actions(self) -> UiVisibility:
+        return UiVisibility.DISABLE if self.actions_busy else UiVisibility.SHOW
+
+    @trigger_field("action.refresh", finish_on_cancel=True)
     async def on_refresh(self) -> None:
         """走配置触发器刷新 devices，受主配置 S 锁约束。"""
         await self._control.refresh()
@@ -200,10 +210,19 @@ class GameEntry(PluginCommandEntry):
         event.entry.bind_runtime_signals()
 
     def bind_runtime_signals(self) -> None:
-        """新增与重载后的实例共用设备删除订阅。"""
-        self.devices.connect(GameEntry.on_remove_device, phase="runtime", kind="remove")
+        """按设备集合声明订阅，允许新增条目仍处于激活事务时建立关联。"""
+        type(self.devices).disconnect(
+            GameEntry.on_remove_device, phase="runtime", kind="remove"
+        )
+        type(self.devices).connect(
+            GameEntry.on_remove_device, phase="runtime", kind="remove"
+        )
 
     @staticmethod
     async def on_remove_device(sender: object, event: CollectionChangeEvent) -> None:
         """单个游戏 devices 的 remove → 转发为 ``device_removed``。"""
+        if not isinstance(sender, ConfigCollection) or not isinstance(
+            sender.parent, GameEntry
+        ):
+            return
         await device_removed.send_async(sender, uid=event.uid)

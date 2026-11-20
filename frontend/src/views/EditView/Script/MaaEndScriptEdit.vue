@@ -171,7 +171,7 @@
             :detecting="launcherDetecting"
             :saving="launcherSaving"
             :disabled="isSaving || launcherSaving"
-            :can-detect="Boolean(maaEndConfig.Game.Path)"
+            :can-detect="Boolean(boundGamePath)"
             @change-launch-mode="handleLaunchModeChange"
             @change-source="changeLauncherSource"
             @refresh="refreshLauncherPath"
@@ -188,13 +188,7 @@
                     variant="form"
                   />
                 </template>
-                <PathPickerField
-                  v-model="maaEndConfig.Game.Path"
-                  mode="file"
-                  :placeholder="t('core.edit.pickGameExecutable')"
-                  :pick-label="t('core.edit.pickFile')"
-                  @pick="selectGamePath"
-                />
+                <BoundGamePathField />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -289,7 +283,7 @@
               isWinController &&
               maaEndConfig.Game.CloseOnFinish &&
               restoreDisplaySelection === 'Original' &&
-              !maaEndConfig.Game.Path?.trim()
+              !boundGamePath.trim()
             "
             type="warning"
             show-icon
@@ -370,77 +364,7 @@
             @change="handleAutoHDRChange('RestoreAutoHDR', $event)"
           />
 
-          <a-row v-if="isAdbController" :gutter="24">
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.emulator')"
-                    :hint="t('core.edit.pickEmulatorUse')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="maaEndConfig.Game.EmulatorId"
-                  size="large"
-                  :placeholder="t('core.edit.pickEmulator')"
-                  :loading="emulatorLoading"
-                  @change="handleEmulatorSelectChange"
-                >
-                  <a-select-option
-                    v-for="item in emulatorOptions"
-                    :key="item.value"
-                    :value="item.value"
-                  >
-                    {{ item.label }}
-                  </a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('core.edit.emulatorInstance') }}
-                    <a-tooltip
-                      :title="
-                        emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
-                          ? t('core.edit.thisEmulatorCannotBe')
-                          : t('core.edit.pickEmulatorInstance')
-                      "
-                    >
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input
-                  v-if="showManualEmulatorIndexInput"
-                  v-model:value="maaEndConfig.Game.EmulatorIndex"
-                  size="large"
-                  :placeholder="t('core.edit.enterInstanceInfoAs')"
-                  @blur="handleChange('Game', 'EmulatorIndex', maaEndConfig.Game.EmulatorIndex)"
-                />
-                <a-select
-                  v-else
-                  v-model:value="maaEndConfig.Game.EmulatorIndex"
-                  size="large"
-                  :placeholder="t('core.edit.pickInstance')"
-                  :loading="emulatorDeviceLoading"
-                  :disabled="!maaEndConfig.Game.EmulatorId"
-                  @change="handleChange('Game', 'EmulatorIndex', $event)"
-                >
-                  <a-select-option
-                    v-for="item in emulatorDeviceOptions"
-                    :key="item.value"
-                    :value="item.value"
-                    :disabled="item.disabled"
-                  >
-                    {{ item.label }}
-                  </a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-          </a-row>
+          <a-row v-if="isAdbController" :gutter="24"> </a-row>
 
           <MaaEndGameUpdateSection
             v-if="isWinController"
@@ -499,6 +423,9 @@
 </template>
 
 <script setup lang="ts">
+import BoundGamePathField from '@/components/BoundGamePathField.vue'
+import { useBoundGameTarget } from '@/composables/useBoundGameTarget'
+
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import MaaEndGameUpdateSection from './components/MaaEndGameUpdateSection.vue'
 import MaaEndProgramUpdateSettings from './components/MaaEndProgramUpdateSettings.vue'
@@ -515,10 +442,8 @@ import { message, Modal } from 'ant-design-vue'
 import type { ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
-import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
-import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
 import { useWebSocket } from '@/composables/useWebSocket'
 import {
   WS_TASK_COMPLETED,
@@ -534,6 +459,7 @@ import { useMaaEndLauncher } from './useMaaEndLauncher'
 import MaaEndLauncherSection from './components/MaaEndLauncherSection.vue'
 import MaaEndHDRField from './components/MaaEndHDRField.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
+const { executable: boundGamePath } = useBoundGameTarget()
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('MaaEnd脚本编辑')
@@ -541,12 +467,6 @@ const logger = window.electronAPI.getLogger('MaaEnd脚本编辑')
 const route = useRoute()
 const router = useRouter()
 const { getScript, getMaaEndOptions, updateScript, error: scriptApiError } = useScriptApi()
-const {
-  emulatorDeviceLoading,
-  emulatorDeviceOptions,
-  clearEmulatorDeviceOptions,
-  loadEmulatorDeviceOptions,
-} = useEmulatorDeviceOptions()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
@@ -654,8 +574,6 @@ const booleanOptions = [
   { label: t('core.edit.no'), value: false },
 ]
 
-const { emulatorLoading, emulatorOptions, loadEmulatorOptions } = useEmulatorOptions()
-
 const controllerProtocol = computed(
   () => controllerProtocols.value[maaEndConfig.Game.ControllerType ?? '']
 )
@@ -688,7 +606,6 @@ const {
   changeSource: changeLauncherSource,
   changeLaunchMode: handleLaunchModeChange,
 } = useMaaEndLauncher({
-  game: maaEndConfig.Game,
   getScriptId: () => scriptId,
   enabled: () =>
     !isInitializing.value &&
@@ -699,12 +616,6 @@ const {
   save: patch => enqueue(() => updateScript(scriptId, { Game: patch }), 'Game.Launcher'),
 })
 const isAdbController = computed(() => controllerProtocol.value === 'Adb')
-const showManualEmulatorIndexInput = computed(
-  () =>
-    emulatorDeviceOptions.value.length === 0 &&
-    !emulatorDeviceLoading.value &&
-    Boolean(maaEndConfig.Game.EmulatorId)
-)
 
 // 后端会把这些路径字段规范化（相对路径转绝对、展开 %APPDATA%、解析 .lnk 等），
 // 保存后回读一次界面才与落盘值一致；其余字段保存即生效不再整份回读
@@ -877,10 +788,6 @@ const loadScript = async () => {
     formData.type = scriptDetail.type
     formData.name = scriptDetail.name
     applyMaaEndConfig(scriptDetail.config as MaaEndScriptConfig)
-
-    if (maaEndConfig.Game.EmulatorId) {
-      void loadEmulatorDeviceOptions(maaEndConfig.Game.EmulatorId)
-    }
   } finally {
     pageLoading.value = false
   }
@@ -902,14 +809,9 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
         }
       : {
           ControllerType: value,
-          EmulatorId: '',
-          EmulatorIndex: '',
         }
 
   if (protocol !== 'Adb') {
-    clearEmulatorDeviceOptions()
-    maaEndConfig.Game.EmulatorId = ''
-    maaEndConfig.Game.EmulatorIndex = ''
     if (protocol !== 'Win32') {
       originalResolution.value = null
       originalDisplayType.value = null
@@ -930,29 +832,9 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
     return success
   })
 
-  if (protocol === 'Adb') {
-    await loadEmulatorOptions()
-  } else if (protocol === 'Win32' && success) {
+  if (protocol === 'Win32' && success) {
     await loadMaaEndOptions()
   }
-}
-
-const handleEmulatorSelectChange = async (emulatorId: string) => {
-  maaEndConfig.Game.EmulatorIndex = ''
-  if (emulatorId) {
-    void loadEmulatorDeviceOptions(emulatorId)
-  } else {
-    clearEmulatorDeviceOptions()
-  }
-
-  await enqueue(() =>
-    updateScript(scriptId, {
-      Game: {
-        EmulatorId: emulatorId,
-        EmulatorIndex: '',
-      },
-    })
-  )
 }
 
 const selectMaaEndPath = async () => {
@@ -1066,7 +948,7 @@ const handleCancel = () => {
 onMounted(async () => {
   // MaaEnd 选项的默认控制器要看脚本里已有的 ControllerType, 必须排在 loadScript 之后;
   // 模拟器列表与二者无关, 并行发出
-  await Promise.all([loadScript().then(loadMaaEndOptions), loadEmulatorOptions()])
+  await Promise.all([loadScript().then(loadMaaEndOptions)])
   // 初始化结束后由启动器配置的 watcher 获取自动识别结果。
   isInitializing.value = false
 })
