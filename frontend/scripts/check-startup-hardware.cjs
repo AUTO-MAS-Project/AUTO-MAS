@@ -74,7 +74,6 @@ async function check() {
       () => analytics.getContext()
     )
     const local = hardware.claimStartupAttempt()
-    assert.equal(hardware.claimStartupAttempt(), local)
     const initialMonitor = hardware.localStartupAttempt()
     assert.equal(hardware.claimStartupAttempt(), local)
     assert.equal(hardware.localStartupAttempt(), initialMonitor)
