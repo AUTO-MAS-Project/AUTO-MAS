@@ -198,6 +198,17 @@ async def test_failed_adoption_is_reported_without_touching_the_process(
         await asyncio.wait_for(parent.wait(), 3)
 
 
+def read_heartbeat(path):
+    """读心跳计数。
+
+    子进程用 ``write_text`` 写，会先截断再写，读到空的瞬间说明正好撞上一次写入，
+    不是故障；返回 ``None`` 让调用方跳过这一拍。
+    """
+
+    text = path.read_text().strip()
+    return int(text) if text else None
+
+
 @pytest.mark.asyncio
 async def test_adoption_does_not_suspend_the_target_process(tmp_path):
     """接管不得暂停目标进程：受保护的游戏线程会拒绝挂起，登记仍须完成。"""
@@ -224,9 +235,12 @@ async def test_adoption_does_not_suspend_the_target_process(tmp_path):
 
         # 计数继续推进说明接管全程没有把目标进程挂起过；只要求推进，
         # 不对采样间隔做假设，避免机器繁忙时误报。
-        started = int(heartbeat.read_text())
+        started = read_heartbeat(heartbeat)
         async with asyncio.timeout(3):
-            while int(heartbeat.read_text()) <= started + 2:
+            while True:
+                current = read_heartbeat(heartbeat)
+                if current is not None and current > started + 2:
+                    break
                 await asyncio.sleep(0.01)
         assert scope.kill_process_tree(parent.pid)
         await asyncio.wait_for(parent.wait(), 3)
