@@ -28,8 +28,7 @@
   已完成任务误判为「未连接游戏客户端」并反复重试（TODO-16 实测）。
 - 旧版 ok-ww（v3.7.4 及更早）没有框架退出语，英文完成日志是唯一标志，
   不能因新增退出语判据而被移除。
-- 未出现任何成功标志时，正常退出流程中的断连日志仍须报异常，不允许被
-  关窗日志或其他退出路径冒充成功。
+- 短暂断连后仍可继续运行。脚本在成功标志出现前退出时必须报异常。
 
 日志行按 ok-ww 实机日志构造（CRLF 行尾、`TaskName:消息` 前缀），
 经 `check_log` 回调边界注入，与 LogMonitor 按行摄入的格式一致。
@@ -59,8 +58,13 @@ def make_proxy() -> AutoProxyTask:
     return proxy
 
 
-async def judge(lines: list[str]) -> AutoProxyTask:
+async def judge(lines: list[str], *, process_running: bool = True) -> AutoProxyTask:
     proxy = make_proxy()
+
+    async def running() -> bool:
+        return process_running
+
+    proxy.okww_process_manager.is_running = running
     await proxy.check_log(lines, datetime.now())
     return proxy
 
@@ -104,8 +108,8 @@ def test_legacy_english_completion_without_exit_line_marks_success():
     asyncio.run(scenario())
 
 
-def test_disconnect_without_completion_still_fails():
-    """未出现成功标志时断连：仍报未连接异常，不得冒充成功。"""
+def test_disconnect_while_script_is_running_keeps_waiting():
+    """脚本还在运行时，一条断连日志不会结束任务。"""
 
     async def scenario():
         proxy = await judge(
@@ -113,9 +117,8 @@ def test_disconnect_without_completion_still_fails():
                 "2026-11-04 14:05:00,000 INFO update_window_size hwnd_window:hwnd changed,connected:0\r\n",
             ]
         )
-        assert proxy.cur_user_log.status == "OK-WW 未连接游戏客户端"
-        assert proxy.cur_user_item.status == "异常"
-        assert proxy.wait_event.is_set()
+        assert proxy.cur_user_item.status == "运行"
+        assert not proxy.wait_event.is_set()
 
     asyncio.run(scenario())
 
@@ -141,8 +144,7 @@ def test_localized_completion_text_without_exit_line_is_not_success():
     """仅翻译完成文案（含 farm 4C 追加预告）、无退出语：不得判成功。
 
     翻译文案是 farm 4C 追加阶段在完成日志之前打印的预告，若被误加为
-    成功判据，任务会在刷声骸中途被判完成并杀进程；无退出语时它只应
-    落回断连异常路径。
+    成功判据，任务会在刷声骸中途被判完成并杀进程。脚本先退出时应报异常。
     """
 
     async def scenario():
@@ -150,9 +152,10 @@ def test_localized_completion_text_without_exit_line_is_not_success():
             [
                 "2026-11-04 14:30:00,000 INFO TaskExecutor DailyTask:每日任务已完成，开始传送并刷取4C声骸\r\n",
                 "2026-11-04 14:35:00,000 INFO update_window_size hwnd_window:hwnd changed,connected:0\r\n",
-            ]
+            ],
+            process_running=False,
         )
-        assert proxy.cur_user_log.status == "OK-WW 未连接游戏客户端"
+        assert proxy.cur_user_log.status == "OK-WW 在完成任务前退出"
         assert proxy.cur_user_item.status == "异常"
         assert proxy.wait_event.is_set()
 

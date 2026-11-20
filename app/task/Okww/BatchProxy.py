@@ -184,8 +184,6 @@ class BatchProxyTask(AutoProxyTask):
         self.succeeded.update(completed)
         for key in completed:
             await self.account_users[key].set_state(status="完成")
-        if "info_set 状态 执行失败" in "".join(log_content):
-            await self.cur_user_log.set_state(status="OK-WW 部分账号执行失败")
         if self.cur_user_log.status == "Success!" and not self.pending.issubset(
             self.succeeded
         ):

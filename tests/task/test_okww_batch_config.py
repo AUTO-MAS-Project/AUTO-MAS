@@ -72,15 +72,21 @@ async def test_batch_log_keeps_confirmed_success_when_later_account_fails(tmp_pa
         json.dumps({"A": {"status": "success"}, "B": {"status": "failed"}}),
         encoding="utf-8",
     )
-    await proxy.check_log(
-        [
-            "MultiAccountConfigTask:info_set 当前账号 B\n",
-            "MultiAccountConfigTask:info_set 状态 执行失败\n",
-        ],
-        datetime.now(),
-    )
+    lines = [
+        "2026-11-19 10:48:07,226 INFO TaskExecutor TaskExecutor:get queued onetime_task Multi Account Config Task\n",
+        "MultiAccountConfigTask:info_set 当前账号 B\n",
+        "MultiAccountConfigTask:info_set 状态 执行失败\n",
+    ]
+    await proxy.check_log(lines, datetime.now())
     assert proxy.succeeded == {"A"}
     assert proxy.account_failures == {"B": "OK-WW 切换账号失败"}
+    assert proxy.account_users["A"].status == "完成"
+    assert not proxy.wait_event.is_set()
+
+    lines.append(
+        "2026-11-19 10:53:25,331 ERROR TaskExecutor TaskExecutor:Multi Account Config Task exception stopped Traceback\n"
+    )
+    await proxy.check_log(lines, datetime.now())
     assert proxy.account_users["A"].status == "完成"
     assert proxy.wait_event.is_set()
 

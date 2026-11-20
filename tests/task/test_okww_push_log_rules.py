@@ -144,7 +144,7 @@ def test_stamina_after_farming_uses_last_reading():
     assert resolve(
         [
             "info_set current_stamina 180",
-            "must_use completed current stamina: 120",
+            "BaseWWTask:current stamina: 120 must_use completed, no need to use back_up",
         ]
     ) == ["✅ 成功: 体力刷本", "⚡ 剩余体力: 120"]
 
@@ -153,3 +153,45 @@ def test_daily_completion_preview_line_does_not_produce_node():
     """farm 4C 预告行含「每日任务已完成」子串，行尾锚定保证不提前产出节点。"""
     assert resolve(["每日任务已完成，开始传送并刷取4C声骸"]) == []
     assert resolve(["Daily task completed, start teleport to farm 4C echo"]) == []
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        ("错误 ", "脚本报告异常"),
+        ("错误 找不到进入的 F 交互提示", "找不到进入的 F 交互提示"),
+    ],
+)
+def test_reported_daily_error_adds_warning_without_changing_failure_rules(
+    error, reason
+):
+    warning = f"⚠ 异常: 每日任务（{reason}）"
+    lines = [f"DailyTask:info_set {error}"]
+    assert resolve(lines) == [warning]
+    assert resolve([*lines, "TaskExecutor:📅 Daily Task exception stopped"]) == [
+        "❌ 失败: 每日完成",
+        warning,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("finish_log", "expected"),
+    [
+        ("TacetTask:已用完所有体力", ["⚡ 剩余体力: 225"]),
+        (
+            "BaseWWTask:current stamina: -60 must_use completed, no need to use back_up",
+            ["✅ 成功: 体力刷本", "⚡ 剩余体力: 0"],
+        ),
+        (
+            "BaseWWTask:current stamina: 20 not enough to continue",
+            ["✅ 成功: 体力刷本", "⚡ 剩余体力: 20"],
+        ),
+    ],
+)
+def test_stamina_success_requires_a_finish_log(finish_log, expected):
+    start = [
+        "TacetTask:info_set current_stamina 225",
+        "TacetTask:info_set Teleport to Tacet Suppression 0",
+    ]
+    assert resolve(start) == ["⚡ 剩余体力: 225"]
+    assert resolve([*start, finish_log]) == expected
