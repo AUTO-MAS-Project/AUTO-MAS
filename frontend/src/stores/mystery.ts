@@ -1,32 +1,16 @@
 import { defineStore } from 'pinia'
 import { computed, onScopeDispose, ref } from 'vue'
 import { useEventListener } from '@vueuse/core'
-import { OpenAPI } from '@/api'
+import { Service, type MysteryStatusOut } from '@/api'
 import { getMysteryDate } from '@/utils/mysteryAccess'
 
-/** 后端 /api/mystery 的统一响应结构：业务码在 body 里，HTTP 状态始终是 200。 */
-interface MysteryPayload {
-  code: number
-  status: string
-  message: string
-  unlocked: boolean
-  unlockedDate: string
-}
-
 /**
- * 调用神秘入口后端接口。
- *
- * 解锁状态由后端校验并持久化，前端不再自行判断口令，避免两处算法各算一份。
- * 后端沿用 `code` 表达业务结果，所以 HTTP 成功不代表业务成功，交由调用方判 `code`。
+ * 取解锁日期；业务失败时后端把状态码放在 body 里（HTTP 状态始终是 200），
+ * 所以 HTTP 成功不代表业务成功，仍需判 `code`。
  */
-const request = async (path: string, init?: RequestInit): Promise<MysteryPayload> => {
-  const base = OpenAPI.BASE || 'http://localhost:36163'
-  const response = await fetch(`${base}/api/mystery/${path}`, {
-    ...init,
-    headers: { Accept: 'application/json', ...init?.headers },
-  })
-  if (!response.ok) throw new Error(`HTTP ${response.status}`)
-  return (await response.json()) as MysteryPayload
+const unlockDateOf = (payload: MysteryStatusOut): string => {
+  if (payload.code !== 200) throw new Error(payload.message || `HTTP ${payload.code}`)
+  return payload.unlockedDate ?? ''
 }
 
 export const useMysteryStore = defineStore('mystery', () => {
@@ -60,9 +44,7 @@ export const useMysteryStore = defineStore('mystery', () => {
 
     loadPromise = (async () => {
       try {
-        const payload = await request('status')
-        if (payload.code !== 200) throw new Error(payload.message)
-        unlockedDate.value = payload.unlockedDate ?? ''
+        unlockedDate.value = unlockDateOf(await Service.getMysteryStatusApiMysteryStatusGet())
         initialized.value = true
       } finally {
         loadPromise = null
@@ -84,15 +66,10 @@ export const useMysteryStore = defineStore('mystery', () => {
 
     saving.value = true
     try {
-      const payload = await request('unlock', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessCode }),
-      })
+      const payload = await Service.unlockMysteryApiMysteryUnlockPost({ accessCode })
       if (payload.code === 400) return false
-      if (payload.code !== 200) throw new Error(payload.message)
 
-      unlockedDate.value = payload.unlockedDate ?? ''
+      unlockedDate.value = unlockDateOf(payload)
       refreshDate()
       return unlocked.value
     } finally {
@@ -106,8 +83,7 @@ export const useMysteryStore = defineStore('mystery', () => {
 
     saving.value = true
     try {
-      const payload = await request('lock', { method: 'POST' })
-      if (payload.code !== 200) throw new Error(payload.message)
+      unlockDateOf(await Service.lockMysteryApiMysteryLockPost())
       unlockedDate.value = ''
     } finally {
       saving.value = false
