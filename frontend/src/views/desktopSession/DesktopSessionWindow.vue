@@ -287,7 +287,6 @@ onBeforeUnmount(() => {
         gap="middle"
         class="empty"
       >
-        <a-alert type="warning" show-icon :message="t('bootstrap.desktopSession.experimental')" />
         <template v-if="snapshot?.closing">
           <a-spin />
         </template>
@@ -330,7 +329,9 @@ onBeforeUnmount(() => {
                 ? t('bootstrap.desktopSession.powerAction')
                 : result.code === 'unsupported_target'
                   ? t('bootstrap.desktopSession.unsupportedTarget')
-                  : t('bootstrap.desktopSession.dispatchFailed')
+                  : result.code === 'emulator_required'
+                    ? t('bootstrap.desktopSession.emulatorRequired')
+                    : t('bootstrap.desktopSession.dispatchFailed')
         }}
       </a-typography-text>
     </a-flex>

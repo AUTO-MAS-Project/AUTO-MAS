@@ -395,6 +395,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   desktopSessionOpen: (input: import('./services/desktopSessionProtocol').DesktopSessionRequest) =>
     ipcRenderer.invoke('desktop-session:open', input),
   desktopSessionCheck: () => ipcRenderer.invoke('desktop-session:check'),
+  desktopSessionGetPrompt: () => ipcRenderer.invoke('desktop-session:prompt:get'),
+  desktopSessionRespondToPrompt: (
+    id: number,
+    action: import('./services/desktopSessionProtocol').DesktopSessionPromptAction
+  ) => ipcRenderer.invoke('desktop-session:prompt:respond', id, action),
+  onDesktopSessionPrompt: (callback: () => void) => {
+    ipcRenderer.on('desktop-session:prompt', callback)
+    return () => ipcRenderer.removeListener('desktop-session:prompt', callback)
+  },
   desktopSessionRepair: (
     plan: import('./services/desktopSessionProtocol').DesktopSessionRepair[]
   ) => ipcRenderer.invoke('desktop-session:repair', plan),

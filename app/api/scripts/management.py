@@ -139,6 +139,10 @@ class ScriptIndexItem(BaseModel):
         default=None, description="对应的游戏活动标识，无游戏归属时为空"
     )
 
+    desktopSessionSupported: bool | None = Field(
+        default=None, description="查询单个托管时返回当前配置是否支持桌面分身"
+    )
+
 
 class ScriptCreateIn(BaseModel):
     type: str = Field(
@@ -326,8 +330,19 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
                 for decl in Plugin.script_types.values()
             }
         )
+        from app.core.desktop_session.lifecycle import supports_task
+
         index = [
-            ScriptIndexItem(**item, activityGame=activity_games.get(item["type"]))
+            ScriptIndexItem(
+                **item,
+                activityGame=activity_games.get(item["type"]),
+                desktopSessionSupported=(
+                    supports_task(Config.ScriptConfig[uuid.UUID(item["uid"])])
+                    if script.scriptId
+                    and Plugin.services.get("desktop_session.launcher")
+                    else None
+                ),
+            )
             for item in index
         ]
         data = {

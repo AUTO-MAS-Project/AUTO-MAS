@@ -25,10 +25,16 @@ def configure_parent_scope(resolve: Callable[[], int | None]) -> None:
     _parent_scope = resolve
 
 
-def restricted_session() -> int | None:
+def desktop_process_session_id() -> int | None:
+    """返回当前任务选定的分身会话；主桌面操作返回 None。"""
     target = desktop_process_target.get()
-    if target is not None:
-        return target.session_id
+    return target.session_id if target is not None else None
+
+
+def restricted_session() -> int | None:
+    session_id = desktop_process_session_id()
+    if session_id is not None:
+        return session_id
     return _parent_scope() if _parent_scope is not None else None
 
 

@@ -16,6 +16,8 @@ export const DESKTOP_SESSION_REPAIRS = [
 
 export type DesktopSessionRepair = (typeof DESKTOP_SESSION_REPAIRS)[number]
 
+export type DesktopSessionAvailability = 'unsupported' | 'plugin_required' | 'ready' | 'unavailable'
+
 export interface DesktopSessionRequest {
   queueIds: string[]
   mode: 'proxy' | 'native'
@@ -47,6 +49,24 @@ export interface DesktopQueueResult {
   label: string
   executionSession?: 'main'
 }
+
+export type DesktopSessionPromptTarget = Pick<DesktopQueueResult, 'label' | 'targetKind'>
+
+export type DesktopSessionPromptContent =
+  | { kind: 'dispatch'; main: DesktopSessionPromptTarget[]; desktop: DesktopSessionPromptTarget[] }
+  | { kind: 'emulator-only'; main: DesktopSessionPromptTarget[] }
+  | { kind: 'takeover' | 'close' | 'close-adopted' | 'close-failed' }
+
+export type DesktopSessionPrompt = DesktopSessionPromptContent & { id: number }
+
+export type DesktopSessionPromptAction =
+  | 'cancel'
+  | 'acknowledge'
+  | 'split'
+  | 'desktop'
+  | 'takeover'
+  | 'disconnect'
+  | 'logoff'
 
 export interface DesktopSessionStartResult {
   code?: string

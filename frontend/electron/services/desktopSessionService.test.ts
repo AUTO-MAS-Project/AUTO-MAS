@@ -52,11 +52,11 @@ vi.mock('node:child_process', () => ({
           report({ event: 'repair_finished' })
         }
         if (action === 'close') report({ event: 'state', state: 'idle' })
-        done()
-      },
-      final(done) {
-        stdout.end()
-        stderr.end()
+        if (action === 'shutdown') {
+          stdout.end()
+          stderr.end()
+          queueMicrotask(() => host.exit())
+        }
         done()
       },
     })
@@ -79,10 +79,12 @@ it('closes a host that is still being prepared by the first check', async () => 
   const service = new DesktopSessionService(vi.fn(), vi.fn(), vi.fn())
   const check = service.check()
   const close = service.close()
-  runtime.resolve(Response.json({ python: 'python', root, source: root }))
+  runtime.resolve(
+    Response.json({ python: 'python', launcher: join(root, 'bootstrap.py'), root, source: root })
+  )
   try {
     await Promise.all([check, close])
-    expect(host.command.mock.calls).toEqual([['close']])
+    expect(host.command.mock.calls).toEqual([['close'], ['shutdown']])
     expect(service.snapshot.state).toBe('idle')
   } finally {
     await service.close()
@@ -94,7 +96,12 @@ it('repairs only through the approved repair operation', async () => {
   const root = mkdtempSync(join(tmpdir(), 'mas-desktop-repair-'))
   vi.stubGlobal('fetch', async (url: string) =>
     new URL(url).pathname.endsWith('/describe')
-      ? Response.json({ python: 'python', root, source: root })
+      ? Response.json({
+          python: 'python',
+          launcher: join(root, 'bootstrap.py'),
+          root,
+          source: root,
+        })
       : Response.json({ updated: true })
   )
   const service = new DesktopSessionService(vi.fn(), vi.fn(), vi.fn())
@@ -120,12 +127,13 @@ it('repairs only through the approved repair operation', async () => {
 })
 
 it.each([
-  { idle: true, hostExited: false },
-  { idle: false, hostExited: false },
-  { idle: true, hostExited: true },
+  { idle: true, hostExited: false, externalStart: false },
+  { idle: false, hostExited: false, externalStart: false },
+  { idle: true, hostExited: true, externalStart: false },
+  { idle: true, hostExited: false, externalStart: true },
 ])(
-  'checks and waits for old tasks before reconnecting ($idle, $hostExited)',
-  async ({ idle, hostExited }) => {
+  'checks and waits for old tasks before reconnecting ($idle, $hostExited, $externalStart)',
+  async ({ idle, hostExited, externalStart }) => {
     const root = mkdtempSync(join(tmpdir(), 'mas-desktop-reconnect-'))
     const queueId = '00000000-0000-4000-8000-000000000001'
     const request = { mode: 'proxy', resolution: '1080p' } as const
@@ -134,7 +142,13 @@ it.each([
     vi.stubGlobal('fetch', async (url: string) => {
       switch (new URL(url).pathname) {
         case '/internal/desktop-session/describe':
-          return Response.json({ python: 'python', root, source: root })
+          return Response.json({
+            python: 'python',
+            launcher: join(root, 'bootstrap.py'),
+            root,
+            source: root,
+          })
+        case '/internal/desktop-session/release':
         case '/internal/desktop-session/process-scope':
           return Response.json({ updated: true })
         case '/internal/desktop-session/queues':
@@ -154,21 +168,30 @@ it.each([
     const service = new DesktopSessionService(vi.fn(), vi.fn(), vi.fn())
     const bounds: [number, number, number, number] = [0, 0, 100, 100]
     try {
-      await service.start({ ...request, queueIds: [queueId] }, 1n, bounds)
-      expect(service.snapshot.executing).toBe(true)
+      await service.start({ ...request, queueIds: externalStart ? [] : [queueId] }, 1n, bounds)
+      expect(service.snapshot.executing).toBe(!externalStart)
       if (hostExited) host.exit()
       else host.report({ event: 'state', state: 'disconnected' })
       expect(service.snapshot.state).toBe('disconnected')
+      if (externalStart) {
+        // A task started via the backend can exist before the first state poll.
+        await vi.waitFor(() => expect(stopRequested).toHaveBeenCalledOnce(), { timeout: 2000 })
+        pendingStop.resolve(Response.json({ idle: true }))
+        await vi.waitFor(() => expect(service.snapshot.code).toBe('executor_interrupted'))
+      }
       await service.check()
       host.command.mockClear()
 
       const reconnect = service.start({ ...request, queueIds: [] }, 1n, bounds)
-      await vi.waitFor(() => expect(stopRequested).toHaveBeenCalledOnce())
-      expect(host.command).not.toHaveBeenCalled()
-      pendingStop.resolve(Response.json({ idle }))
+      if (!externalStart) {
+        await vi.waitFor(() => expect(stopRequested).toHaveBeenCalledOnce())
+        expect(host.command).not.toHaveBeenCalled()
+        pendingStop.resolve(Response.json({ idle }))
+      }
 
       if (idle) {
         expect(await reconnect).toEqual({ queues: [] })
+        expect(stopRequested).toHaveBeenCalledOnce()
         expect(host.command.mock.calls.slice(0, 2)).toEqual([['close'], ['connect']])
       } else {
         expect(await reconnect).toEqual({ code: 'executor_failed', queues: [] })
@@ -198,7 +221,13 @@ it('dispatches and stops tasks through the same main backend', async () => {
     requests.push(endpoint.pathname)
     switch (endpoint.pathname) {
       case '/internal/desktop-session/describe':
-        return Response.json({ python: 'python', root, source: root })
+        return Response.json({
+          python: 'python',
+          launcher: join(root, 'bootstrap.py'),
+          root,
+          source: root,
+        })
+      case '/internal/desktop-session/release':
       case '/internal/desktop-session/process-scope':
         return Response.json({ updated: true })
       case '/internal/desktop-session/queues':
@@ -214,13 +243,18 @@ it('dispatches and stops tasks through the same main backend', async () => {
 
   const tasksStarted = vi.fn()
   const service = new DesktopSessionService(vi.fn(), vi.fn(), tasksStarted)
+  const confirmTaskDispatch = vi.fn()
+  const notifyEmulatorOnly = vi.fn()
   try {
     const result = await service.start(
       { queueIds: [queueId], mode: 'proxy', resolution: '1080p' },
       1n,
-      [0, 0, 100, 100]
+      [0, 0, 100, 100],
+      { confirmTakeover: async () => false, confirmTaskDispatch, notifyEmulatorOnly }
     )
     expect(result.queues[0]?.taskId).toBe(taskId)
+    expect(confirmTaskDispatch).not.toHaveBeenCalled()
+    expect(notifyEmulatorOnly).not.toHaveBeenCalled()
     expect(tasksStarted).toHaveBeenCalledWith(result.queues)
     const dispatchEvents = analytics.recordMainEvent.mock.calls
       .map(([, event]) => event)
@@ -241,6 +275,7 @@ it('dispatches and stops tasks through the same main backend', async () => {
     expect(validateAnalyticsEvent(dispatchEvents[0], true)).toBeNull()
     await service.close()
     expect(requests).toContain('/internal/desktop-session/stop')
+    expect(requests.at(-1)).toBe('/internal/desktop-session/release')
     expect(requests).not.toContain('/internal/desktop-session/handoff')
     expect(service.snapshot.executing).toBe(false)
   } finally {
@@ -251,7 +286,13 @@ it('dispatches and stops tasks through the same main backend', async () => {
 it('preserves the session-changed error when the backend rejects dispatch', async () => {
   const root = mkdtempSync(join(tmpdir(), 'mas-desktop-dispatch-conflict-'))
   vi.stubGlobal('fetch', async (url: string) => {
-    if (url.endsWith('/describe')) return Response.json({ python: 'python', root, source: root })
+    if (new URL(url).pathname.endsWith('/describe'))
+      return Response.json({
+        python: 'python',
+        launcher: join(root, 'bootstrap.py'),
+        root,
+        source: root,
+      })
     if (url.endsWith('/queues'))
       return Response.json(
         { code: 'session_changed', status: 'error', message: '桌面分身连接已断开' },
@@ -276,6 +317,93 @@ it('preserves the session-changed error when the backend rejects dispatch', asyn
 })
 
 it.each([
+  { adopted: false, taskState: 'none', expected: undefined },
+  { adopted: false, taskState: 'finished', expected: undefined },
+  { adopted: false, taskState: 'running', expected: 'close' },
+  { adopted: false, taskState: 'unknown', expected: 'close' },
+  { adopted: true, taskState: 'none', expected: 'close-adopted' },
+] as const)(
+  'checks manual close for adopted=$adopted with tasks $taskState',
+  async ({ adopted, taskState, expected }) => {
+    const root = mkdtempSync(join(tmpdir(), 'mas-desktop-close-policy-'))
+    host.connect.mockReturnValue({ event: 'state', state: 'connected', sessionId: 7, adopted })
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      const endpoint = new URL(url).pathname
+      if (endpoint.endsWith('/describe'))
+        return Response.json({
+          python: 'python',
+          launcher: join(root, 'bootstrap.py'),
+          root,
+          source: root,
+        })
+      if (endpoint.endsWith('/queues'))
+        return Response.json({
+          results: [{ queueId: 'test-queue', taskId: 'test-task', targetKind: 'queue' }],
+        })
+      if (endpoint.endsWith('/preview-closing'))
+        return taskState === 'unknown' && JSON.parse(String(init?.body)).closing
+          ? new Response(null, { status: 503 })
+          : Response.json({ idle: taskState === 'none' || taskState === 'finished' })
+      return Response.json({ updated: true, idle: true })
+    })
+    const service = new DesktopSessionService(vi.fn(), vi.fn(), vi.fn())
+    try {
+      const start = await service.start(
+        {
+          queueIds: taskState === 'none' ? [] : ['test-queue'],
+          mode: 'proxy',
+          resolution: '1080p',
+        },
+        1n,
+        [0, 0, 100, 100]
+      )
+      expect(start.code).toBeUndefined()
+      if (taskState === 'unknown') {
+        await expect(service.getClosePrompt(true)).rejects.toThrow('http_503')
+      } else {
+        expect(await service.getClosePrompt(true)).toBe(expected)
+        expect(await service.getClosePrompt(false)).toBe(adopted ? 'close-adopted' : 'close')
+      }
+    } finally {
+      await service.close()
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+)
+
+it('reports an emulator-only selection without connecting or submitting tasks', async () => {
+  const target = {
+    queueId: 'emulator',
+    taskId: '',
+    targetKind: 'script',
+    label: 'Emulator task',
+    code: 'emulator_required',
+  }
+  vi.stubGlobal('fetch', async (url: string, options: RequestInit) => {
+    expect(new URL(url).pathname).toBe('/internal/desktop-session/queues')
+    expect(JSON.parse(String(options.body))).toEqual({
+      queueIds: [target.queueId],
+      previewOnly: true,
+    })
+    return Response.json({ results: [target] })
+  })
+  const notifyEmulatorOnly = vi.fn()
+  const confirmTaskDispatch = vi.fn()
+  const service = new DesktopSessionService(vi.fn(), vi.fn(), vi.fn())
+  const result = await service.start(
+    { queueIds: [target.queueId], mode: 'proxy', resolution: '1080p' },
+    1n,
+    [0, 0, 100, 100],
+    { confirmTakeover: async () => false, confirmTaskDispatch, notifyEmulatorOnly }
+  )
+  expect(result).toEqual({ queues: [target] })
+  expect(notifyEmulatorOnly).toHaveBeenCalledWith([target])
+  expect(confirmTaskDispatch).not.toHaveBeenCalled()
+  expect(host.connect).not.toHaveBeenCalled()
+  expect(analytics.recordMainEvent).not.toHaveBeenCalled()
+})
+
+it.each([
   { choice: 'split', dispatchedIds: ['desktop', 'emulator'], mainIds: ['emulator'] },
   { choice: 'desktop', dispatchedIds: ['desktop'] },
   { choice: 'cancel', dispatchedIds: [] },
@@ -290,6 +418,13 @@ it.each([
         taskId: '',
         targetKind: 'queue',
         label: 'Emulator queue',
+        code: 'emulator_required',
+      },
+      {
+        queueId: 'unsupported',
+        taskId: '',
+        targetKind: 'script',
+        label: 'Unsupported task',
         code: 'unsupported_target',
       },
     ]
@@ -297,7 +432,12 @@ it.each([
     vi.stubGlobal('fetch', async (url: string, options: RequestInit) => {
       const endpoint = new URL(url).pathname
       if (endpoint.endsWith('/describe'))
-        return Response.json({ python: 'python', root, source: root })
+        return Response.json({
+          python: 'python',
+          launcher: join(root, 'bootstrap.py'),
+          root,
+          source: root,
+        })
       if (endpoint.endsWith('/queues')) {
         const body = JSON.parse(String(options.body))
         if (body.previewOnly) return Response.json({ results: preview })
@@ -314,12 +454,14 @@ it.each([
     const service = new DesktopSessionService(vi.fn(), vi.fn(), vi.fn())
     try {
       const result = await service.start(
-        { queueIds: ['desktop', 'emulator'], mode: 'proxy', resolution: '1080p' },
+        { queueIds: preview.map(target => target.queueId), mode: 'proxy', resolution: '1080p' },
         1n,
         [0, 0, 100, 100],
         {
           confirmTakeover: async () => false,
+          notifyEmulatorOnly: vi.fn(),
           confirmTaskDispatch: async ({ desktop, main }) => {
+            expect(host.connect).not.toHaveBeenCalled()
             expect(submissions).toEqual([])
             expect(desktop.map(target => target.label)).toEqual(['Desktop task'])
             expect(main.map(target => target.label)).toEqual(['Emulator queue'])
@@ -328,6 +470,7 @@ it.each([
         }
       )
       expect(result.code).toBeUndefined()
+      if (choice === 'cancel') expect(host.connect).not.toHaveBeenCalled()
       expect(submissions).toEqual(
         dispatchedIds.length
           ? [

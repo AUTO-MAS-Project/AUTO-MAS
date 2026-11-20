@@ -5,6 +5,7 @@ import os
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
+from uuid import UUID, uuid4
 
 import psutil
 import pytest
@@ -13,6 +14,8 @@ from fastapi.testclient import TestClient
 
 from app.api.desktop_session import install_control
 from app.core.desktop_session import lifecycle
+from app.plugin.errors import PluginPrecheckError
+from app.plugin.services import ServiceRegistry
 from app.utils.common.process import operations, session
 from app.utils.common.process.runner import popen_scoped
 from app.utils.common.process.scope import TaskProcessScope, current_process_scope
@@ -53,6 +56,160 @@ async def test_desktop_task_can_run_local_update_helper_without_adopting_local_p
         await scope.force_close()
 
 
+@pytest.mark.asyncio
+async def test_dispatch_preflight_classifies_builtin_and_plugin_tasks_before_connecting(
+    monkeypatch,
+):
+    from maa_adapter.config.script import MaaConfig
+
+    from app.core import Config, Plugin, TaskManager
+    from app.models.config import (
+        BetterGIConfig,
+        HSRConfig,
+        M9AConfig,
+        OkwwConfig,
+        SrcConfig,
+    )
+    from app.utils.windows.desktop_session import native
+
+    entries = {
+        uuid4(): entry
+        for entry in (
+            MaaConfig.build(),
+            M9AConfig.build(),
+            SrcConfig.build(),
+            BetterGIConfig.model_validate({"Run": {"UseAdmin": False}}),
+            HSRConfig.build(),
+            OkwwConfig.build(),
+        )
+    }
+    monkeypatch.setattr(Config, "ScriptConfig", entries)
+    monkeypatch.setattr(Plugin, "script_classes", lambda: {"MAA": MaaConfig})
+    current_session = Mock(return_value=None)
+    monkeypatch.setattr(native, "child_session", current_session)
+    dispatch_scopes = []
+
+    async def start(_mode, tasks, *, use_configured_session):
+        assert not use_configured_session
+        dispatch_scopes.append(
+            (tasks[0]["children"][0]["uid"], session.desktop_process_target.get())
+        )
+        return uuid4()
+
+    monkeypatch.setattr(TaskManager, "start", start)
+    service = type(lifecycle.DesktopSessionLifecycle)()
+    results = await service.dispatch_queues(
+        list(entries), preview_only=True, main_session_queue_ids=set()
+    )
+    assert [row["code"] for row in results] == ["emulator_required"] * 3 + [""] * 3
+    current_session.assert_not_called()
+    assert dispatch_scopes == []
+
+    main = {uid for uid, result in zip(entries, results, strict=True) if result["code"]}
+    current_session.return_value = 7
+    monkeypatch.setattr(native, "session_state", lambda _: 0)
+    service.scope_state = (7, False)
+    admitted = await service.dispatch_queues(
+        list(entries), preview_only=False, main_session_queue_ids=main
+    )
+    assert all(row["taskId"] for row in admitted)
+    assert {
+        uid: scope.session_id if scope is not None else None
+        for uid, scope in dispatch_scopes
+    } == {str(uid): None if uid in main else 7 for uid in entries}
+
+
+@pytest.mark.asyncio
+async def test_single_script_default_uses_connected_session_and_respects_close(
+    monkeypatch,
+):
+    from app.api.dispatch import TaskCreateIn, add_task
+    from app.core import Config, Plugin, TaskManager
+    from app.core.notify.commands import execute_notification_command
+    from app.models.config import GeneralConfig
+    from app.utils.windows.desktop_session import native
+
+    desktop_id, legacy_id, queue_id = (uuid4() for _ in range(3))
+    desktop = GeneralConfig.build(
+        payload={"Info": {"Name": "Desktop"}, "Run": {"ExecutionSession": "desktop"}}
+    )
+    legacy = GeneralConfig.build()
+    await desktop.activate()
+    await legacy.activate()
+    monkeypatch.setattr(
+        Config, "ScriptConfig", {desktop_id: desktop, legacy_id: legacy}
+    )
+    monkeypatch.setattr(lifecycle, "_control_token", "test-token")
+    services = ServiceRegistry()
+    services.register("desktop_session.launcher", lambda: None, owner="desktop_session")
+    monkeypatch.setattr(Plugin, "services", services)
+    monkeypatch.setattr(native, "child_session", lambda: 7)
+    monkeypatch.setattr(native, "session_state", lambda _: 0)
+    service = type(lifecycle.DesktopSessionLifecycle)()
+    monkeypatch.setattr(lifecycle, "DesktopSessionLifecycle", service)
+    starts = []
+    running = {}
+
+    async def launch(_run, node):
+        uid = uuid4()
+        running[uid] = object()
+        starts.append((session.desktop_process_session_id(), node))
+        return uid
+
+    monkeypatch.setattr(TaskManager, "_check_accepting", lambda: None)
+    monkeypatch.setattr(TaskManager, "_launch_selected", launch)
+    monkeypatch.setattr(type(TaskManager), "task_info", property(lambda _: running))
+
+    def single(uid):
+        return TaskCreateIn.model_validate(
+            {
+                "mode": "AutoProxy",
+                "tasks": {
+                    "0": {
+                        "uid": "-",
+                        "children": {
+                            "0": {
+                                "uid": str(uid),
+                                "children": {"0": {"uid": str(uuid4())}},
+                            }
+                        },
+                    }
+                },
+            }
+        )
+
+    selected = single(desktop_id)
+    assert (await add_task(selected)).code == 409
+    assert "暂时无法启动" in await execute_notification_command(
+        "retry_script", "Desktop"
+    )
+    assert not starts
+    await service.set_process_scope(session_id=7, connecting=False)
+    result = await add_task(selected)
+    assert result.code == 200
+    assert starts == [(7, selected.tasks[0])]
+    assert service.prune_and_list_tasks() == (UUID(result.taskId),)
+
+    assert "已提交脚本重试" in await execute_notification_command(
+        "retry_script", "Desktop"
+    )
+    assert starts[-1][0] == 7
+    assert not await service.set_preview_closing(closing=True)
+    assert (await add_task(selected)).code == 409
+    assert len(starts) == 2
+    assert (await add_task(single(legacy_id))).code == 200
+    queue = TaskCreateIn.model_validate(
+        {"mode": "AutoProxy", "tasks": {"0": {"uid": str(queue_id)}}}
+    )
+    assert (await add_task(queue)).code == 200
+    assert [(scope, node.uid) for scope, node in starts] == [
+        (7, "-"),
+        (7, "-"),
+        (None, "-"),
+        (None, str(queue_id)),
+    ]
+
+
 def test_dispatch_conflict_has_localizable_code(monkeypatch):
     monkeypatch.setattr(lifecycle, "_control_token", "")
     monkeypatch.setattr(
@@ -77,6 +234,44 @@ def test_dispatch_conflict_has_localizable_code(monkeypatch):
         "status": "error",
         "message": "桌面分身连接已断开",
     }
+
+
+def test_preview_uses_enabled_plugin_and_holds_it_across_backend_restart(
+    monkeypatch, isolated_app_paths, tmp_path
+):
+    from app.api.desktop_session import router
+    from app.core import Plugin
+
+    services = ServiceRegistry()
+    monkeypatch.setattr(Plugin, "services", services)
+    monkeypatch.setattr(lifecycle, "_control_token", "test-control-token")
+    app = FastAPI()
+    app.include_router(router)
+    describe = "/internal/desktop-session/describe"
+    headers = {lifecycle.CONTROL_HEADER: "test-control-token"}
+    launcher = tmp_path / "wheel" / "desktop_session" / "bootstrap.py"
+    restarted = type(lifecycle.DesktopSessionLifecycle)()
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
+        assert client.post(describe, headers=headers).status_code == 404
+        services.register(
+            "desktop_session.launcher", lambda: launcher, owner="desktop_session"
+        )
+        assert client.post(describe).status_code == 403
+        assert client.post(describe, headers=headers).json()["launcher"] == str(
+            launcher
+        )
+        restarted.assert_preview_closed()
+
+        assert client.post(f"{describe}?reserve=true", headers=headers).is_success
+        with pytest.raises(PluginPrecheckError):
+            restarted.assert_preview_closed()
+        assert client.post(
+            "/internal/desktop-session/release", headers=headers
+        ).is_success
+        restarted.assert_preview_closed()
+
+        services.unregister_owner("desktop_session")
+        assert client.post(describe, headers=headers).status_code == 404
 
 
 @pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")

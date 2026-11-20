@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type MaaEndConfig_RunInput = {
     /**
+     * 单独启动托管时使用的 Windows 会话
+     */
+    ExecutionSession?: ('main' | 'desktop' | null);
+    /**
      * 账号切换方式（默认使用 MAAEND，MAS 为兼容入口）
      */
     AccountSwitchMethod?: ('MAS' | 'MAAEND' | null);

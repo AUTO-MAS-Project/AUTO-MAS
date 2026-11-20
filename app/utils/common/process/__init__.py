@@ -7,8 +7,12 @@ from .operations import (
     is_process_stopped as is_process_stopped,
 )
 from .operations import (
+    iter_processes as iter_processes,
+)
+from .operations import (
     kill_process as kill_process,
 )
 from .operations import (
     kill_process_by_pid as kill_process_by_pid,
 )
+from .session import desktop_process_session_id as desktop_process_session_id

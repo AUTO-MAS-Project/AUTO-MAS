@@ -3,6 +3,7 @@
     <div class="section-header">
       <h3>{{ t('core.edit.runConfiguration') }}</h3>
     </div>
+    <ScriptExecutionSessionField />
     <div class="run-config-grid">
       <ScriptHardTimeoutField
         v-model:value="run.HardTimeLimit"
@@ -82,6 +83,7 @@ import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { MaaEndScriptConfig } from '@/types/script'
+import ScriptExecutionSessionField from './ScriptExecutionSessionField.vue'
 import ScriptHardTimeoutField from './ScriptHardTimeoutField.vue'
 import MaaEndErrorLogBundleField from './MaaEndErrorLogBundleField.vue'
 

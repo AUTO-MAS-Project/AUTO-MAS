@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type BetterGIConfig_Run = {
     /**
+     * 单独启动托管时使用的 Windows 会话
+     */
+    ExecutionSession?: ('main' | 'desktop' | null);
+    /**
      * 账号切换方式（托管级，参考 MaaEnd Run.AccountSwitchMethod）： BGI = BetterGI「切换账号多模式」脚本执行（国际服请改用此方式）；MAS = MAS 侧 前台 OCR 直接操控游戏切号（官服/B服，游戏由 MAS 托管启动），官服/B服推荐。 默认值双轨：新建托管取类默认 MAS；既有托管（配置无该键）由 load 迁移固化 旧默认 BGI（见 _migrate_bgi_account_switch_default），保持升级前行为。
      */
     AccountSwitchMethod?: ('BGI' | 'MAS' | null);

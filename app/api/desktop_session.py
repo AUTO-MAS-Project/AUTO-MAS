@@ -14,6 +14,7 @@ from app.core.desktop_session.lifecycle import (
     DesktopSessionLifecycle,
     authenticated,
 )
+from app.plugin.errors import PluginBusyError
 
 
 class QueueSelection(BaseModel):
@@ -49,10 +50,15 @@ class RuntimeDescriptionOut(BaseModel):
     python: str
     source: str
     root: str
+    launcher: str
 
 
 class ScopeUpdateOut(BaseModel):
     updated: bool
+
+
+class PreviewClosingIn(BaseModel):
+    closing: bool
 
 
 class SessionStateOut(BaseModel):
@@ -77,21 +83,40 @@ def authorize(request: Request) -> None:
 
 
 @router.post("/describe", response_model=RuntimeDescriptionOut)
-async def describe(request: Request) -> RuntimeDescriptionOut:
-    from app.core import Config
+async def describe(request: Request, reserve: bool = False) -> RuntimeDescriptionOut:
+    from app.core import Config, Plugin
 
     authorize(request)
+    if Plugin.installation_restart_reserved:
+        raise HTTPException(status_code=503)
+    launcher = Plugin.services.get("desktop_session.launcher")
+    if launcher is None:
+        raise HTTPException(status_code=404)
+    try:
+        path = launcher()
+    except PluginBusyError as exc:
+        raise HTTPException(status_code=503) from exc
+    if reserve:
+        DesktopSessionLifecycle.reserve_preview()
     return RuntimeDescriptionOut(
         python=sys.executable,
         source=str(Config.source_path),
         root=str(Config.work_path),
+        launcher=str(path),
     )
+
+
+@router.post("/release", response_model=ScopeUpdateOut)
+async def release(request: Request) -> ScopeUpdateOut:
+    authorize(request)
+    DesktopSessionLifecycle.release_preview()
+    return ScopeUpdateOut(updated=True)
 
 
 @router.post("/process-scope", response_model=ScopeUpdateOut)
 async def process_scope(request: Request, scope: ParentProcessScope) -> ScopeUpdateOut:
     authorize(request)
-    DesktopSessionLifecycle.set_process_scope(
+    await DesktopSessionLifecycle.set_process_scope(
         session_id=scope.sessionId, connecting=scope.connecting
     )
     return ScopeUpdateOut(updated=True)
@@ -124,6 +149,14 @@ async def queues(
 async def state(request: Request) -> SessionStateOut:
     authorize(request)
     return SessionStateOut(idle=await DesktopSessionLifecycle.idle())
+
+
+@router.post("/preview-closing", response_model=SessionStateOut)
+async def preview_closing(request: Request, data: PreviewClosingIn) -> SessionStateOut:
+    authorize(request)
+    return SessionStateOut(
+        idle=await DesktopSessionLifecycle.set_preview_closing(closing=data.closing)
+    )
 
 
 @router.post("/stop", response_model=SessionStateOut)

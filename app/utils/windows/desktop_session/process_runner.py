@@ -18,7 +18,6 @@ from pywintypes import error as Win32Error
 
 from app.utils.common.process.session import DesktopProcessTarget
 
-from .credentials import current_identity
 from .launcher import (
     client_pid,
     create_executor_pipe,
@@ -27,6 +26,7 @@ from .launcher import (
     run_executor,
     write_chunk,
 )
+from .native import current_identity
 
 _action_lock = asyncio.Lock()
 _action_callback = ContextVar("desktop_action_callback", default=False)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
@@ -25,6 +25,7 @@ const logger = window.electronAPI.getLogger('设置')
 import TabBasic from './TabBasic.vue'
 import TabFunction from './TabFunction.vue'
 import DesktopSessionSettings from '../desktopSession/DesktopSessionSettings.vue'
+import { useDesktopSessionAvailability } from '../desktopSession/useDesktopSessionAvailability'
 import TabNotify from './TabNotify.vue'
 import TabAdvanced from './TabAdvanced.vue'
 import TabOthers from './TabOthers.vue'
@@ -66,6 +67,10 @@ const {
 // 活动标签
 const route = useRoute()
 const activeKey = ref(route.query.tab === 'function' ? 'function' : 'basic')
+const desktopSessionAvailable = useDesktopSessionAvailability()
+watch(desktopSessionAvailable, available => {
+  if (!available && activeKey.value === 'desktop-session') activeKey.value = 'basic'
+})
 const version = computed(() => import.meta.env.VITE_APP_VERSION || t('core.setting.versionFailed'))
 const backendUpdateInfo = ref<VersionOut | null>(null)
 
@@ -206,7 +211,11 @@ onMounted(() => {
 <template>
   <div class="settings-container">
     <component :is="modalContextHolder" />
-    <SettingsSectionLayout v-model:active-key="activeKey" :loading="loading">
+    <SettingsSectionLayout
+      v-model:active-key="activeKey"
+      :loading="loading"
+      :desktop-session-available="desktopSessionAvailable"
+    >
       <template #header>
         <div class="settings-header">
           <h1 class="page-title app-page-title">{{ t('core.setting.title') }}</h1>

@@ -21,6 +21,7 @@ from .native import (
     bind,
     checked,
     child_session,
+    current_identity,
     handle_scope,
     kernel32,
     process_session,
@@ -111,8 +112,6 @@ def run_executor(
 
     from app.utils.windows.host import IS_ELEVATED
 
-    from .credentials import current_identity
-
     if (
         session_id in (0, process_session(os.getpid()))
         or child_session() != session_id
@@ -169,8 +168,6 @@ def run_executor(
 
 
 def create_executor_pipe():
-    from .credentials import current_identity
-
     _, sid = current_identity()
     attributes = pywintypes.SECURITY_ATTRIBUTES()
     attributes.SECURITY_DESCRIPTOR = (
@@ -197,8 +194,6 @@ def create_executor_pipe():
 
 
 def client_pid(pipe, expected_session: int) -> int:
-    from .credentials import current_identity
-
     get_pid = bind(
         kernel32, "GetNamedPipeClientProcessId", W.BOOL, W.HANDLE, C.POINTER(W.ULONG)
     )

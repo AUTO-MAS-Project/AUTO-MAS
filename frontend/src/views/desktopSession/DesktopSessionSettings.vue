@@ -29,10 +29,10 @@ const options = computed(() => {
   })
 })
 const loading = ref(false)
+const initializing = ref(true)
 const starting = ref(false)
 const mode = ref<DesktopSessionRequest['mode']>('proxy')
 const resolution = ref<DesktopSessionRequest['resolution']>('1080p')
-const supported = ref<boolean>()
 
 async function loadQueues() {
   loading.value = true
@@ -68,10 +68,7 @@ async function open() {
 }
 
 onMounted(async () => {
-  if (!(await window.electronAPI?.desktopSessionSupported?.())) {
-    supported.value = false
-    return
-  }
+  loading.value = true
   try {
     const saved = (await getConfig()).desktopSessionQueueIds
     if (Array.isArray(saved)) selected.value = saved.filter(id => typeof id === 'string')
@@ -79,67 +76,59 @@ onMounted(async () => {
     message.warning(t('bootstrap.desktopSession.loadSelectionFailed'))
   }
   await loadQueues()
-  supported.value = true
+  initializing.value = false
 })
 </script>
 
 <template>
   <a-card :title="t('bootstrap.desktopSession.title')" class="settings-card">
     <a-flex vertical gap="middle">
-      <a-alert type="warning" show-icon :message="t('bootstrap.desktopSession.experimental')" />
-      <a-alert
-        v-if="supported === false"
-        type="info"
-        :message="t('bootstrap.desktopSession.unsupported')"
+      <a-select
+        :value="selected"
+        :options="options"
+        :loading="loading"
+        :disabled="starting || initializing"
+        mode="multiple"
+        option-filter-prop="label"
+        :placeholder="t('bootstrap.desktopSession.selectTasks')"
+        @dropdown-visible-change="(visible: boolean) => visible && !loading && loadQueues()"
+        @change="saveSelection"
       />
-      <template v-else-if="supported">
+      <a-space wrap>
         <a-select
-          :value="selected"
-          :options="options"
-          :loading="loading"
-          :disabled="starting"
-          mode="multiple"
-          option-filter-prop="label"
-          :placeholder="t('bootstrap.desktopSession.selectTasks')"
-          @dropdown-visible-change="(visible: boolean) => visible && !loading && loadQueues()"
-          @change="saveSelection"
+          v-model:value="resolution"
+          :aria-label="t('bootstrap.desktopSession.resolution')"
+          :options="[
+            { value: '1080p', label: '1920 × 1080' },
+            { value: 'primary', label: t('bootstrap.desktopSession.primaryResolution') },
+          ]"
         />
-        <a-space wrap>
-          <a-select
-            v-model:value="resolution"
-            :aria-label="t('bootstrap.desktopSession.resolution')"
-            :options="[
-              { value: '1080p', label: '1920 × 1080' },
-              { value: 'primary', label: t('bootstrap.desktopSession.primaryResolution') },
-            ]"
-          />
-          <a-select
-            v-model:value="mode"
-            :aria-label="t('bootstrap.desktopSession.minimizeMode')"
-            :options="[
-              { value: 'proxy', label: t('bootstrap.desktopSession.proxy') },
-              { value: 'native', label: t('bootstrap.desktopSession.native') },
-            ]"
-          />
-        </a-space>
-        <a-flex justify="space-between" align="center" gap="middle">
-          <a-typography-text type="secondary">{{
-            t('bootstrap.desktopSession.emptySelection')
-          }}</a-typography-text>
-          <a-button
-            type="primary"
-            :loading="starting"
-            :disabled="loading || selected.length > MAX_DESKTOP_SESSION_TARGETS"
-            @click="open"
-          >
-            {{
-              selected.length
-                ? t('bootstrap.desktopSession.openWithTasks')
-                : t('bootstrap.desktopSession.open')
-            }}
-          </a-button>
-        </a-flex>
-      </template>
+        <a-select
+          v-model:value="mode"
+          :aria-label="t('bootstrap.desktopSession.minimizeMode')"
+          :options="[
+            { value: 'proxy', label: t('bootstrap.desktopSession.proxy') },
+            { value: 'native', label: t('bootstrap.desktopSession.native') },
+          ]"
+        />
+      </a-space>
+      <a-flex justify="space-between" align="center" gap="middle">
+        <a-typography-text type="secondary">{{
+          t('bootstrap.desktopSession.emptySelection')
+        }}</a-typography-text>
+        <a-button
+          type="primary"
+          :loading="starting"
+          :disabled="loading || selected.length > MAX_DESKTOP_SESSION_TARGETS"
+          @click="open"
+        >
+          {{
+            selected.length
+              ? t('bootstrap.desktopSession.openWithTasks')
+              : t('bootstrap.desktopSession.open')
+          }}
+        </a-button>
+      </a-flex>
     </a-flex>
   </a-card>
 </template>

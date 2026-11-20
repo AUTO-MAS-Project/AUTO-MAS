@@ -151,10 +151,12 @@ class _TaskManager:
         tasks: TaskRequirements,
         *,
         trigger: TaskTriggerReason = TaskTriggerReason.MANUAL,
+        use_configured_session: bool = True,
     ) -> UUID:
         """按模式、单入口要求树和触发原因创建普通任务，返回运行 UUID。
 
         构造任务根及 L2 后交给 _launch；只等待受理完成，实际执行在后台继续。
+        分身预览派发已选定执行会话，通过 use_configured_session=False 保留该选择。
         """
         self._check_accepting()
         info = TaskItem.build(
@@ -162,7 +164,11 @@ class _TaskManager:
                 "info": {"mode": TaskMode(mode), "trigger": TaskTriggerReason(trigger)}
             }
         )
-        return await self._launch(ScriptExpander(info, self), tasks)
+        return await self._launch(
+            ScriptExpander(info, self),
+            tasks,
+            use_configured_session=use_configured_session,
+        )
 
     async def start_maintenance(self, target_id: str) -> UUID:
         """[兼容旧专项] 旧手动更新入口；普通任务使用 start()。
@@ -181,18 +187,38 @@ class _TaskManager:
         run.maintenance = True
         return await self._launch(run, maintenance_requirements(target_id))
 
-    async def _launch(self, run: ScriptExpander, tasks: TaskRequirements) -> UUID:
+    async def _launch(
+        self,
+        run: ScriptExpander,
+        tasks: TaskRequirements,
+        *,
+        use_configured_session: bool = False,
+    ) -> UUID:
+        raw = dict(tasks)
+        TaskSelectionNode.validate_indices(raw)
+        if len(raw) != 1:
+            raise ValueError("一次任务必须且只能指定一个顶层入口")
+        node = _selection.validate_python(raw)[0]
+        if use_configured_session and run.task_info.info.mode is TaskMode.AUTO_PROXY:
+            from app.core.desktop_session.lifecycle import DesktopSessionLifecycle
+
+            task_id = await DesktopSessionLifecycle.start_configured_script(
+                node, lambda: self._launch_selected(run, node)
+            )
+            if task_id is not None:
+                return task_id
+        return await self._launch_selected(run, node)
+
+    async def _launch_selected(
+        self, run: ScriptExpander, node: TaskSelectionNode
+    ) -> UUID:
         """L1：完整校验单入口要求树、建树和记时，随后登记、通知并启动 L2。
 
         短配置事务内解析队列项到托管、按序展开用户、提交唯一队列的触发时间。
         事务成功后才登记和发布创建通知；此后的失败清理执行器，已提交时间保留。
         创建计数覆盖登记与启动过程，成功、异常和取消都会结清停止全部的屏障。
         """
-        raw = {key: value for key, value in tasks.items()}
-        TaskSelectionNode.validate_indices(raw)
-        if len(raw) != 1:
-            raise ValueError("一次任务必须且只能指定一个顶层入口")
-        node = _selection.validate_python(raw)[0]
+        self._check_accepting()
         info = run.task_info
         desktop = desktop_process_target.get() is not None
         queue: QueueConfig | None = None

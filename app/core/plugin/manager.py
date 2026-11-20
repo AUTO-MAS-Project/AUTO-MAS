@@ -388,6 +388,11 @@ class _PluginManager:
 
     # ==================== 对外生命周期 ====================
 
+    @property
+    def installation_restart_reserved(self) -> bool:
+        """插件安装已取得后端重启资格。"""
+        return self._restart_installation is not None
+
     async def prepare_installation_restart(self, installation_id: UUID) -> bool:
         """确认候选身份，等待业务空闲后封闭新任务和命令，交由前端立即重启。"""
         from app.core import TaskManager
@@ -403,6 +408,9 @@ class _PluginManager:
         if self._restart_installation == installation_id:
             return True
         async with self._hold():
+            current = self._record_by_plugin_id(record.progress.pluginName)
+            if current is not None and current._plugin is not None:
+                await current._plugin.pre_reload()
             if not TaskManager.prepare_restart():
                 return False
             if not config_manager.prepare_trigger_restart():
@@ -1167,6 +1175,8 @@ class _PluginManager:
                     plugin = Config.plugin_registry[uid]._plugin
                     if isinstance(plugin, (ScriptAdapterPlugin, GameAdapterPlugin)):
                         plugin.precheck_locks()
+                if existing is not None and existing._plugin is not None:
+                    await existing._plugin.pre_reload()
                 restart_required = await uv_tool.install(
                     requirement,
                     plugin_name=plugin_id,

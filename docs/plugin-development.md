@@ -19,6 +19,7 @@ AUTO-MAS/
     maa_adapter/           开发者克隆的独立仓库
     whimbox_adapter/       奇想盒独立仓库
     src_adapter/           SRC 独立仓库
+    desktop_session/       桌面分身独立仓库
 ```
 
 Runtime 使用安装根目录保存用户插件，运行代码位于 `repo`。
@@ -72,6 +73,16 @@ git status
 奇想盒页面按相同方式由 `frontend/src/views/whimbox/entry.ts` 汇入静态页面声明。
 不使用计划表的专项可以不声明 `plan`。奇想盒静态页面及其中英日文案暂由主程序维护，
 后端实现、通知内容、任务目录与备份恢复接口由 `whimbox_adapter` 持有。
+
+桌面分身插件 ID 为 `desktop_session`，包名为 `auto-mas-desktop-session`。
+插件负责 Windows 预览、环境检查和修复、凭据保管。启用后通过插件服务向 Electron
+提供原生宿主启动入口。设置和预览窗口随 Electron 构建，任务派发及进程范围由主程序管理。
+两个插件在发行包声明 `auto-mas-core`。桌面分身同时声明 `auto-mas-win-process-adapter>=0.1.1,<1`
+作为发行包依赖，并通过 `requires` 声明适配提供的 `win_process.desktop_scope` 服务。
+宿主据此先启用适配，停用适配时先收尾桌面分身。绑定通用 Windows 游戏目标的托管由该适配管理游戏进程，
+任务选择的执行会话由宿主传递给进程管理器。适配可使用 `auto_mas_core.utils.process` 的
+`iter_processes` 和 `desktop_process_session_id` 分别进行范围内的扫描和跟踪状态分区。
+预览开启期间须先关闭预览、停止其中的任务，才能停用、重载或卸载插件。
 
 ## 回归环境
 

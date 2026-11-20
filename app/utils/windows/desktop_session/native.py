@@ -1,7 +1,6 @@
 """桌面分身的 Win32 绑定。"""
 
 import ctypes as C
-import os
 from contextlib import contextmanager
 from ctypes import wintypes as W
 
@@ -55,28 +54,6 @@ def child_session():
     return None if session.value == 0xFFFFFFFF else session.value
 
 
-def child_sessions_enabled():
-    fn = bind(wtsapi32, "WTSIsChildSessionsEnabled", W.BOOL, C.POINTER(W.BOOL))
-    enabled = W.BOOL()
-    checked(fn(C.byref(enabled)), "WTSIsChildSessionsEnabled")
-    return bool(enabled.value)
-
-
-def set_child_sessions_enabled(*, enabled: bool) -> None:
-    fn = bind(wtsapi32, "WTSEnableChildSessions", W.BOOL, W.BOOL)
-    checked(fn(enabled), "WTSEnableChildSessions")
-
-
-def logoff_child(expected: int) -> None:
-    current = child_session()
-    if current is None:
-        return
-    if current != expected or current in (0, process_session(os.getpid())):
-        raise RuntimeError("session_changed")
-    logoff = bind(wtsapi32, "WTSLogoffSession", W.BOOL, W.HANDLE, W.DWORD, W.BOOL)
-    checked(logoff(None, current, True), "WTSLogoffSession")
-
-
 def session_state(session_id: int) -> int:
     query = bind(
         wtsapi32,
@@ -101,6 +78,22 @@ def session_state(session_id: int) -> int:
         bind(wtsapi32, "WTSFreeMemory", None, C.c_void_p)(data)
 
 
-def primary_size() -> tuple[int, int]:
-    metric = bind(user32, "GetSystemMetrics", C.c_int, C.c_int)
-    return metric(0), metric(1)
+def token_sid(token) -> str:
+    import win32security
+
+    sid, _ = win32security.GetTokenInformation(token, win32security.TokenUser)
+    return win32security.ConvertSidToStringSid(sid)
+
+
+def current_identity() -> tuple[str, str]:
+    import win32api
+    import win32con
+    import win32security
+
+    with handle_scope(
+        win32security.OpenProcessToken(
+            win32api.GetCurrentProcess(), win32con.TOKEN_QUERY
+        )
+    ) as token:
+        sid = token_sid(token)
+    return win32api.GetUserNameEx(2), sid

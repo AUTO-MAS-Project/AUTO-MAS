@@ -76,7 +76,7 @@ class BasePlugin:
         """启用前的业务预检。"""
 
     async def pre_reload(self) -> None:
-        """重载前的业务预检。"""
+        """热重载或安装替换当前插件前的业务预检。"""
 
     async def pre_disable(self) -> None:
         """禁用前的业务预检。"""

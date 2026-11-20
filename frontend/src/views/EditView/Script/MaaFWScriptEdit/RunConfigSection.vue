@@ -1,6 +1,7 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
   <MaaFWFormSection :title="t('core.edit.runConfiguration')">
+    <ScriptExecutionSessionField />
     <a-row :gutter="24">
       <a-col :span="8">
         <a-form-item :label="t('core.edit.maafwRunsPerDayLimit')">
@@ -131,6 +132,7 @@
 </template>
 
 <script setup lang="ts">
+import ScriptExecutionSessionField from '../components/ScriptExecutionSessionField.vue'
 import { useI18n } from 'vue-i18n'
 import type {
   MaaFWScriptRunSectionEmits,

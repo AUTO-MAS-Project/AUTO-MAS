@@ -7,7 +7,7 @@ import { useSettingsSectionLayout } from './useSettingsSectionLayout'
 import { getConfig, saveConfig } from '@/utils/config'
 import { beginAnalyticsOperation } from '@/utils/analytics'
 
-defineProps<{ loading: boolean }>()
+const props = defineProps<{ loading: boolean; desktopSessionAvailable: boolean }>()
 const activeKey = defineModel<string>('activeKey', { required: true })
 const { t } = useI18n()
 const layoutReady = ref(false)
@@ -31,7 +31,9 @@ const navigationLabel = computed(() =>
 const tabs = computed(() => [
   { key: 'basic', title: t('core.setting.tab.basic') },
   { key: 'function', title: t('core.setting.tab.function') },
-  { key: 'desktop-session', title: t('bootstrap.desktopSession.title') },
+  ...(props.desktopSessionAvailable
+    ? [{ key: 'desktop-session', title: t('bootstrap.desktopSession.title') }]
+    : []),
   { key: 'notify', title: t('core.setting.tab.notify') },
   { key: 'advanced', title: t('core.setting.tab.advanced') },
   { key: 'others', title: t('core.setting.tab.others') },

@@ -1,3 +1,4 @@
+import { queryRequest } from '@/utils/queryRequest'
 import type { ConfigSnapshot } from '@/services/configUiSync'
 import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
 import { getApiErrorMessage } from '@/utils/apiError'
@@ -31,6 +32,19 @@ import {
 } from '@/utils/analytics'
 
 const logger = window.electronAPI.getLogger('脚本API')
+
+export async function fetchScriptExecutionSession(scriptId: string, signal: AbortSignal) {
+  const response = await queryRequest(signal, () =>
+    GetService.getScriptApiScriptsGetPost({ scriptId })
+  )
+  if (response.code !== 200) throw new Error(response.message)
+  const run = response.data[scriptId]?.Run
+  return {
+    supported: response.index[0]?.desktopSessionSupported === true,
+    value: run && 'ExecutionSession' in run ? (run.ExecutionSession ?? 'main') : 'main',
+    uiSources: response.uiSources,
+  }
+}
 
 // 首页卫星与活动区共用在途的列表请求，完成后释放，后续读取仍取最新数据。
 interface ScriptListRequest {

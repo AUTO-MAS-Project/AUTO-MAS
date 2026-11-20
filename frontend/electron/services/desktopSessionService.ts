@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { once } from 'node:events'
 import { createInterface } from 'node:readline'
 import { mkdirSync, appendFileSync, renameSync, statSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
@@ -8,6 +9,7 @@ import { desktopSessionControlToken, setDesktopSessionChildId } from './desktopS
 import { DESKTOP_SESSION_REPAIRS } from './desktopSessionProtocol'
 import type {
   DesktopQueueResult,
+  DesktopSessionAvailability,
   DesktopSessionRepair,
   DesktopSessionRequest,
   DesktopSessionSnapshot,
@@ -15,9 +17,10 @@ import type {
 } from './desktopSessionProtocol'
 
 type HostEvent = Record<string, unknown> & { event: string }
-type RuntimeDescription = { python: string; source: string; root: string }
+type RuntimeDescription = { python: string; source: string; root: string; launcher: string }
 type StartPrompts = {
   confirmTakeover: () => Promise<boolean>
+  notifyEmulatorOnly: (targets: DesktopQueueResult[]) => Promise<void>
   confirmTaskDispatch: (targets: {
     desktop: DesktopQueueResult[]
     main: DesktopQueueResult[]
@@ -76,7 +79,7 @@ export class DesktopSessionService {
   }
   private host: ChildProcessWithoutNullStreams | null = null
   private startingHost: Promise<void> | null = null
-  private runtime: RuntimeDescription | undefined
+  private reserved = false
   private orphanedSessionId: number | undefined
   adopted = false
   private hostEvents = new EventTarget()
@@ -84,6 +87,8 @@ export class DesktopSessionService {
   private stopOperation: Promise<void> | null = null
   private repairOperation: Promise<string | undefined> | null = null
   private monitor: NodeJS.Timeout | undefined
+  private disconnectPending = false
+  private admissionsPaused = false
   private volume = 0
   private logsRoot: string | undefined
   private correlation: string | undefined
@@ -107,6 +112,23 @@ export class DesktopSessionService {
 
   get logFolder(): string | undefined {
     return this.logsRoot
+  }
+
+  async availability(): Promise<DesktopSessionAvailability> {
+    try {
+      const runtime = await request<RuntimeDescription>(
+        getLocalApiEndpoint(),
+        internal + 'describe',
+        desktopSessionControlToken,
+        undefined,
+        5000
+      )
+      return runtime.launcher ? 'ready' : 'plugin_required'
+    } catch (error) {
+      return error instanceof DesktopSessionError && error.message === 'http_404'
+        ? 'plugin_required'
+        : 'unavailable'
+    }
   }
 
   private patch(patch: Partial<DesktopSessionSnapshot>): void {
@@ -147,22 +169,39 @@ export class DesktopSessionService {
   }
 
   private async spawnHost(): Promise<void> {
-    const runtime =
-      this.runtime ??
-      (await request<RuntimeDescription>(
+    const alreadyReserved = this.reserved
+    this.reserved = true
+    let runtime: RuntimeDescription
+    try {
+      runtime = await request<RuntimeDescription>(
         getLocalApiEndpoint(),
-        internal + 'describe',
+        internal + 'describe?reserve=true',
         desktopSessionControlToken,
         undefined,
         5000
-      ))
-    this.runtime = runtime
+      )
+      if (!runtime.launcher) throw new DesktopSessionError('http_404')
+    } catch (error) {
+      if (
+        !alreadyReserved &&
+        error instanceof DesktopSessionError &&
+        error.message === 'http_404'
+      ) {
+        this.reserved = false
+        throw new DesktopSessionError('plugin_required')
+      }
+      throw error
+    }
     this.logsRoot = join(runtime.root, 'debug', 'desktop-session')
-    const child = spawn(runtime.python, ['-m', 'app.core.desktop_session.host', runtime.root], {
-      cwd: runtime.source,
-      windowsHide: true,
-      stdio: 'pipe',
-    })
+    const child = spawn(
+      runtime.python,
+      ['-I', runtime.launcher, runtime.source, 'preview', runtime.root],
+      {
+        cwd: runtime.source,
+        windowsHide: true,
+        stdio: 'pipe',
+      }
+    )
     this.host = child
     const reader = createInterface({ input: child.stdout })
     reader.on('line', line => {
@@ -182,6 +221,8 @@ export class DesktopSessionService {
       this.orphanedSessionId ??= this.snapshot.sessionId
       this.log('host_exited', { exitCode: child.exitCode })
       this.hostEvents.dispatchEvent(new Event('exit'))
+      if (this.snapshot.closing && this.orphanedSessionId === undefined) return
+      this.disconnectPending ||= this.orphanedSessionId !== undefined
       this.patch({ state: this.active ? 'disconnected' : 'idle', code: 'host_exited' })
       this.scheduleMonitor()
     }
@@ -190,16 +231,16 @@ export class DesktopSessionService {
     try {
       await this.wait(event => event.event === 'ready', 10000)
     } catch (error) {
-      if (this.host === child) {
-        this.host = null
-        child.kill()
-      }
+      if (this.host === child) child.kill()
       throw error
     }
   }
 
   private handleHostEvent(event: HostEvent): void {
     if (typeof event.correlation === 'string') this.correlation = event.correlation
+    if (this.snapshot.closing && event.event === 'state') {
+      this.log('host_close_state', { state: event.state })
+    }
     if (event.event === 'diagnostics') {
       const checks = event.checks as DesktopSessionSnapshot['checks']
       this.patch({
@@ -227,7 +268,10 @@ export class DesktopSessionService {
             ? undefined
             : ((event.size as [number, number] | undefined) ?? this.snapshot.size),
       })
-      if (state === 'disconnected') this.scheduleMonitor()
+      if (state === 'disconnected') {
+        this.disconnectPending = true
+        this.scheduleMonitor()
+      }
     } else if (event.event === 'window') {
       this.patch({ windowState: event.state as DesktopSessionSnapshot['windowState'] })
     } else if (event.event === 'audio') {
@@ -392,13 +436,21 @@ export class DesktopSessionService {
     bounds: [number, number, number, number],
     prompts?: StartPrompts
   ): Promise<DesktopSessionStartResult> {
-    const connection =
-      this.snapshot.state !== 'connected'
-        ? beginMainFeature('desktop_session_connection_finished')
-        : null
+    let connection:
+      | ReturnType<typeof beginMainFeature<'desktop_session_connection_finished'>>
+      | undefined
     const dispatches = new Map<string, ReturnType<typeof beginMainFeature<'task_start_result'>>>()
     let publishingConnection = false
     try {
+      const plan = input.queueIds.length
+        ? await this.prepareQueueDispatch(input.queueIds, prompts)
+        : undefined
+      if (input.queueIds.length && !plan?.queueIds.length) {
+        return { queues: plan?.preview ?? [] }
+      }
+      if (this.snapshot.state !== 'connected') {
+        connection = beginMainFeature('desktop_session_connection_finished')
+      }
       await this.ensureHost()
       if (this.snapshot.state !== 'connected') {
         if (this.snapshot.state === 'disconnected' || this.orphanedSessionId !== undefined) {
@@ -451,10 +503,7 @@ export class DesktopSessionService {
         this.changeVolume(this.volume)
         connection?.finish({ outcome: 'success', reason_kind: 'none' })
       }
-      if (!input.queueIds.length) return { queues: [] }
-      const plan = await this.prepareQueueDispatch(input.queueIds, prompts)
       if (!plan) return { queues: [] }
-      if (!plan.queueIds.length) return { queues: plan.preview }
       if (this.snapshot.state !== 'connected') throw new DesktopSessionError('session_changed')
       const mainIds = new Set(plan.mainSessionQueueIds)
       for (const id of plan.queueIds) {
@@ -526,25 +575,34 @@ export class DesktopSessionService {
     }
   }
 
-  private async prepareQueueDispatch(
-    queueIds: string[],
-    prompts?: StartPrompts
-  ): Promise<QueueDispatchPlan | undefined> {
-    if (!prompts) return { queueIds, preview: [] }
-    const { results: preview } = await request<{ results: DesktopQueueResult[] }>(
+  async previewQueues(queueIds: string[]): Promise<DesktopQueueResult[]> {
+    const { results } = await request<{ results: DesktopQueueResult[] }>(
       getLocalApiEndpoint(),
       internal + 'queues',
       desktopSessionControlToken,
       { queueIds, previewOnly: true }
     )
+    return results
+  }
+
+  private async prepareQueueDispatch(
+    queueIds: string[],
+    prompts?: StartPrompts
+  ): Promise<QueueDispatchPlan | undefined> {
+    if (!prompts) return { queueIds, preview: [] }
+    const preview = await this.previewQueues(queueIds)
     const desktop = preview.filter(target => !target.code)
-    const main = preview.filter(target => target.code === 'unsupported_target')
+    const main = preview.filter(target => target.code === 'emulator_required')
+    if (!desktop.length) {
+      if (main.length) await prompts.notifyEmulatorOnly(main)
+      return { queueIds: [], preview }
+    }
     const choice = main.length ? await prompts.confirmTaskDispatch({ desktop, main }) : 'desktop'
     if (choice === 'cancel') return
     return {
       queueIds: preview
         .filter(
-          target => !target.code || (choice === 'split' && target.code === 'unsupported_target')
+          target => !target.code || (choice === 'split' && target.code === 'emulator_required')
         )
         .map(target => target.queueId),
       mainSessionQueueIds: choice === 'split' ? main.map(target => target.queueId) : undefined,
@@ -554,7 +612,6 @@ export class DesktopSessionService {
 
   private async updateParentScope(sessionId: number | null, connecting = false): Promise<void> {
     setDesktopSessionChildId(sessionId)
-    if (!this.runtime) return
     await request(
       getLocalApiEndpoint(),
       internal + 'process-scope',
@@ -569,7 +626,10 @@ export class DesktopSessionService {
 
   private scheduleMonitor(): void {
     clearTimeout(this.monitor)
-    if (this.snapshot.executing && !this.snapshot.closing) {
+    if (
+      (this.disconnectPending || this.snapshot.executing || this.snapshot.state === 'connected') &&
+      !this.snapshot.closing
+    ) {
       this.monitor = setTimeout(() => void this.monitorExecution(), 1000)
     }
   }
@@ -578,7 +638,7 @@ export class DesktopSessionService {
     if (this.startOperation || this.stopOperation || this.snapshot.closing) return
     const monitor = this.monitor
     try {
-      if (this.snapshot.state === 'disconnected') {
+      if (this.disconnectPending) {
         await this.stopTasks()
         this.patch({ code: 'executor_interrupted' })
       } else {
@@ -589,8 +649,13 @@ export class DesktopSessionService {
           undefined,
           2000
         )
-        if (idle && this.monitor === monitor && !this.startOperation) {
-          this.patch({ executing: false })
+        if (
+          this.monitor === monitor &&
+          !this.startOperation &&
+          !this.admissionsPaused &&
+          this.snapshot.executing === idle
+        ) {
+          this.patch({ executing: !idle })
         }
       }
     } catch {
@@ -602,18 +667,19 @@ export class DesktopSessionService {
 
   private stopTasks(): Promise<void> {
     if (this.stopOperation) return this.stopOperation
-    this.stopOperation = request<{ idle: boolean }>(
-      getLocalApiEndpoint(),
-      internal + 'stop',
-      desktopSessionControlToken
-    )
-      .then(({ idle }) => {
-        if (!idle) throw new DesktopSessionError('executor_failed')
-        this.patch({ executing: false })
-      })
-      .finally(() => {
-        this.stopOperation = null
-      })
+    this.stopOperation = (async () => {
+      if (this.disconnectPending) await this.updateParentScope(null)
+      const { idle } = await request<{ idle: boolean }>(
+        getLocalApiEndpoint(),
+        internal + 'stop',
+        desktopSessionControlToken
+      )
+      if (!idle) throw new DesktopSessionError('executor_failed')
+      this.disconnectPending = false
+      this.patch({ executing: false })
+    })().finally(() => {
+      this.stopOperation = null
+    })
     return this.stopOperation
   }
 
@@ -638,7 +704,7 @@ export class DesktopSessionService {
   }
 
   private async stopTasksAndCloseViewer(options?: { logoff?: boolean }): Promise<void> {
-    if (this.snapshot.executing) await this.stopTasks()
+    if (this.disconnectPending || this.snapshot.executing) await this.stopTasks()
     await this.closeViewer(options)
   }
 
@@ -646,15 +712,58 @@ export class DesktopSessionService {
     await this.startOperation
   }
 
+  async getClosePrompt(manual: boolean): Promise<'close' | 'close-adopted' | undefined> {
+    if (!this.active) return
+    const { idle } = await this.pauseAdmissions(true)
+    this.patch({ executing: !idle })
+    if (this.adopted) return 'close-adopted'
+    if (!manual || !idle) return 'close'
+  }
+
+  private async pauseAdmissions(closing: boolean): Promise<{ idle: boolean }> {
+    if (closing) this.admissionsPaused = true
+    const result = await request<{ idle: boolean }>(
+      getLocalApiEndpoint(),
+      internal + 'preview-closing',
+      desktopSessionControlToken,
+      { closing },
+      5000
+    )
+    this.admissionsPaused = closing
+    return result
+  }
+
+  async resumeAdmissions(): Promise<void> {
+    if (this.admissionsPaused) await this.pauseAdmissions(false)
+  }
+
   async close(options?: { logoff?: boolean }): Promise<void> {
+    this.log('preview_close_started')
     this.patch({ closing: true })
     try {
       if (this.repairOperation) await this.repairOperation
       if (this.startOperation) await this.startOperation
       await this.startingHost?.catch(() => undefined)
       await this.stopTasksAndCloseViewer(options)
-      this.host?.stdin.end()
-      this.host = null
+      await this.resumeAdmissions()
+      this.log('viewer_closed')
+      const child = this.host
+      if (child) {
+        this.send({ action: 'shutdown' })
+        await once(child, 'exit', { signal: AbortSignal.timeout(10000) })
+        this.log('host_shutdown_confirmed')
+      }
+      if (this.reserved) {
+        await request(
+          getLocalApiEndpoint(),
+          internal + 'release',
+          desktopSessionControlToken,
+          undefined,
+          5000
+        )
+        this.reserved = false
+        this.log('preview_released')
+      }
       this.volume = 0
       this.patch({ state: 'idle', windowState: 'visible' })
     } finally {
