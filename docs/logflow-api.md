@@ -321,10 +321,10 @@ $next = Invoke-RestMethod "${url}?userRunId=$userRunId&sessionId=$session&after=
 
 - 按 `sequence` 递增消费页内事件。 `node_id=null` 的事件各自成行；有 ID 的事件按 `node_id` 更新原行。 `withdrawn=true` 时移除对应行。新会话使用新的游标和行集合。
 - `status` 由 LogFlow 定义，支持成功 `success`、失败 `failed`、异常 `exception`、进行中 `running`、跳过 `skipped`、警告 `warning`、信息 `info`。省略状态时使用 `info`，旧 WebUI 规则路径也使用该默认值。 `node_type` 由插件定义业务分类，正文可按需写入额外信息。观察和报告均读取结构化状态。
-- SDK 使用 `session_id`、`has_more`、`close_reason`；HTTP 外层使用 `sessionId`、`hasMore`、`closeReason`，节点字段沿用示例中的下划线命名。
+- SDK 使用 `session_id`、`has_more`、`close_reason`。HTTP 外层使用 `sessionId`、`hasMore`、`closeReason`，每个节点与 SDK 共用同一份下划线命名的字段契约。
 - 采集终态为 `complete`、`timeout`、`worker_error` 或 `capacity`。即使收到终态，也继续读到 `has_more=false`。脚本执行成败另读 MAS 任务状态。
 - 活动会话与近期已结束任务可在宿主进程内补读。当前默认保留上限为结束后 30 分钟、最近 200 个任务，近期观察共用 16 MiB 预算，因此可能更早淘汰。重启后需从新的运行会话开始。
-- 单行匹配即时筛选，未命中的原始行不会进入结果集。多行规则只暂存当前窗口。每会话的观察历史最多保留 4,096 条事件或 4 MiB。达到上限后停止接纳新节点，已接纳的有效节点仍可正常参与收尾归并，并标记采集不完整。单个超长节点会被跳过，后续能容纳的节点仍可接纳。
+- 单行匹配即时筛选，未命中的原始行不会进入结果集。多行规则只暂存当前窗口。每会话的观察历史最多保留 4,096 条事件或 4 MiB，其中为每个仍有效的稳定 ID 预留一次撤回的额度。普通事件额度用尽后，已有节点仍可撤回，撤回同时反映在实时观察与最终报告中。已经接纳且仍有效的节点继续参与归并，采集标记为不完整。单个超长节点或自定义来源的超长输入行会被跳过，后续能容纳的记录仍可接纳。
 
 ## 5. 自定义处理和下沉
 
