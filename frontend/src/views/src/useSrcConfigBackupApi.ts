@@ -11,11 +11,7 @@ interface SrcConfigBackupApiOptions {
 }
 
 /** SRC 自身的备份请求与恢复结果统计；通用弹窗只消费页面提供的 API。 */
-export function useSrcConfigBackupApi({
-  scriptId,
-  userId,
-  logger,
-}: SrcConfigBackupApiOptions) {
+export function useSrcConfigBackupApi({ scriptId, userId, logger }: SrcConfigBackupApiOptions) {
   const { t } = useI18n()
 
   // 新建用户后 ID 会变化，不能在创建 composable 时捕获空 ID。
@@ -35,13 +31,12 @@ export function useSrcConfigBackupApi({
       forced: force ? ('yes' as const) : ('no' as const),
     }
     try {
-      const response =
-        await SrcService.srcRestoreConfigBackupApiPluginSrcAdapterBackupRestorePost({
-          ...ids,
-          target,
-          time,
-          ...(force === undefined ? {} : { force }),
-        })
+      const response = await SrcService.srcRestoreConfigBackupApiPluginSrcAdapterBackupRestorePost({
+        ...ids,
+        target,
+        time,
+        ...(force === undefined ? {} : { force }),
+      })
       operation.finish({
         ...dimensions,
         outcome:
