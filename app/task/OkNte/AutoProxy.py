@@ -72,6 +72,7 @@ from .config_schema import (
     get_all_config_info,
 )
 from .tools.account_switch import async_switch_account
+from .tools.arguments import task_argument
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
     ensure_quick_config_dir,
@@ -349,10 +350,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             await self.cur_user_config.commit()
 
     async def check(self) -> str:
-        if (
-            not self.script_config.Info.RootPath
-            or not self.script_config.Info.RootPath.is_dir()
-        ):
+        script_root_path = self.script_config.Info.RootPath
+        if not script_root_path or not script_root_path.is_dir():
             return "请设置 OK-NTE 脚本路径"
         if (
             not self.script_config.Script.ScriptPath
@@ -411,6 +410,14 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 return "请设置异环游戏 URL"
             if not str(self.script_config.Game.ProcessName or "").strip():
                 return "请设置异环游戏进程名称"
+
+        self.task_index = 2 if self.plan_active else self.cur_user_config.Task.TaskIndex
+        try:
+            self.task_cli_value = await asyncio.to_thread(
+                task_argument, script_root_path, self.task_index
+            )
+        except ValueError as exc:
+            return str(exc)
         return "Pass"
 
     async def prepare(self):
@@ -485,14 +492,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
 
         # 当前账号配置
 
-        self.task_index = (
-            2 if self.plan_active else int(self.cur_user_config.Task.TaskIndex)
-        )
         self.exit_on_finish = bool(self.cur_user_config.Task.ExitOnFinish)
 
         extra_args = split_args(self.script_config.Script.Arguments)
 
-        self.oknte_args = ["-t", str(self.task_index)]
+        self.oknte_args = ["-t", self.task_cli_value]
         if self.exit_on_finish:
             self.oknte_args.append("-e")
         self.oknte_args.extend(extra_args)
@@ -1041,7 +1045,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
 
             await self.set_oknte()
             await self._push_dispatch_log(
-                f"启动 OK-NTE: -t {self.task_index}"
+                f"启动 OK-NTE: -t {self.oknte_args[1]}"
                 + (" -e" if self.exit_on_finish else "")
             )
             logger.info(
