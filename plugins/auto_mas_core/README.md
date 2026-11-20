@@ -103,15 +103,25 @@ class Adapter(ScriptAdapterPlugin):
 
 
 async def execute_with_nodes(
-    plugin, user_run, monitor: LogMonitor, task_report, execute,
-    *, collect_nodes: bool, mode: ReportMode = "汇总",
+    plugin,
+    user_run,
+    monitor: LogMonitor,
+    task_report,
+    execute,
+    *,
+    collect_nodes: bool,
+    mode: ReportMode = "汇总",
 ):
     async with AsyncExitStack() as stack:
         if collect_nodes:
             await stack.enter_async_context(
                 open_log_flow(
-                    plugin, "progress", run=user_run, monitor=monitor,
-                    task_report=task_report, mode=mode,
+                    plugin,
+                    "progress",
+                    run=user_run,
+                    monitor=monitor,
+                    task_report=task_report,
+                    mode=mode,
                 )
             )
         try:

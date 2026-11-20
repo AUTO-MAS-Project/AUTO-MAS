@@ -81,7 +81,10 @@ from contextlib import AsyncExitStack
 
 from auto_mas_core import ScriptAdapterPlugin
 from auto_mas_core.log_flow import (
-    LineRule, LogFlowTaskReport, PluginFlowDeclaration, SimpleFlowDeclaration,
+    LineRule,
+    LogFlowTaskReport,
+    PluginFlowDeclaration,
+    SimpleFlowDeclaration,
     open_log_flow,
 )
 from auto_mas_core.notify import TaskResultReport
@@ -114,8 +117,12 @@ async def run_account(
         if collect_nodes:
             flow = await stack.enter_async_context(
                 open_log_flow(
-                    plugin, "progress", run=user_run, monitor=monitor,
-                    task_report=task_report, mode=mode,
+                    plugin,
+                    "progress",
+                    run=user_run,
+                    monitor=monitor,
+                    task_report=task_report,
+                    mode=mode,
                 )
             )
         try:
@@ -126,9 +133,7 @@ async def run_account(
             await monitor.stop()
 
 
-async def publish_result(
-    task_report: LogFlowTaskReport, report: TaskResultReport
-):
+async def publish_result(task_report: LogFlowTaskReport, report: TaskResultReport):
     return await task_report.send(title="专项执行结果", report=report)
 ```
 
@@ -171,6 +176,7 @@ mixed = PluginFlowDeclaration(
 )
 webui = PluginFlowDeclaration(rules=GeneralFlowDeclaration(patterns="[]"))
 
+
 # 把 mixed、webui 放入 log_flows 后，在专项实际执行方法中调用。
 async def run_mixed(plugin, user_run, monitor, log_path, execute):
     file_input = await FileInput(path=str(log_path)).capture_start()
@@ -204,7 +210,10 @@ def report_stamina(flow, used: int):
     if reporter is None:
         raise ValueError("当前声明没有启用主动上报")
     result = reporter.node(
-        "体力", f"已消耗 {used} 点", node_id="daily:stamina", status="success",
+        "体力",
+        f"已消耗 {used} 点",
+        node_id="daily:stamina",
+        status="success",
         attributes=(NodeAttribute(key="used", value=used),),
     )
     return result  # 如返回 SubmitResult.BACKPRESSURE，由调用侧在本轮稍后重试。
@@ -342,7 +351,7 @@ class PrefixProcessor:
 
     def process(self, line):
         if line.startswith(self.prefix):
-            yield "普通", line[len(self.prefix):].strip()
+            yield "普通", line[len(self.prefix) :].strip()
 
     def close(self):
         return ()
@@ -356,7 +365,9 @@ custom = PluginFlowDeclaration(
     rules=SimpleFlowDeclaration(
         processor=WorkerFactorySpec(
             factory=FunctionRef(
-                name="adapter:processor", module=__name__, attribute="make_processor",
+                name="adapter:processor",
+                module=__name__,
+                attribute="make_processor",
             ),
             options={"prefix": "完成："},
         ),
