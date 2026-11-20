@@ -338,10 +338,11 @@ export class StartupAttempt {
     const now = performance.now()
     const emittedAt = timestamp ? Date.parse(timestamp) : NaN
     if (this.activity) {
-      // 同一批到达的事件也应保留 Runtime 实际花费的时间。
+      // 批量到达时使用事件时间。若系统校时让阶段耗时超过整次采样，则使用接收时间差。
       const runtimeElapsed = emittedAt - this.activityEmittedAt
+      const maxElapsed = Math.ceil(now - this.started)
       const elapsed =
-        runtimeElapsed >= 0 && runtimeElapsed <= maxDuration
+        runtimeElapsed >= 0 && runtimeElapsed <= maxElapsed
           ? runtimeElapsed
           : now - this.activityStarted
       this.durations.set(this.activity, (this.durations.get(this.activity) ?? 0) + elapsed)

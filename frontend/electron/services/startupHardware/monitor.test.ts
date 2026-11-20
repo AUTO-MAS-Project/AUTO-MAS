@@ -33,7 +33,8 @@ it('按 Runtime 的状态帧记录依赖同步，在后端就绪时结束启动�
       fileURLToPath(new URL('../runtime/__fixtures__/bootstrap-success.ndjson', import.meta.url)),
       'utf8'
     )
-    const clock = vi.spyOn(performance, 'now').mockReturnValue(attempt.started)
+    const received = attempt.started + 30_000
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(received)
     try {
       for (const line of data.trim().split('\n')) {
         attempt.progress(parseRuntimeEventLine(line)!)
@@ -55,18 +56,19 @@ it('按 Runtime 的状态帧记录依赖同步，在后端就绪时结束启动�
         message: '',
         details: {},
       }
-      clock.mockReturnValue(100)
-      attempt.progress(state)
-      clock.mockReturnValue(3200)
+      clock.mockReturnValue(received + 100)
+      attempt.progress({ ...state, timestamp: '2026-09-01T21:00:00Z' })
+      clock.mockReturnValue(received + 3200)
       attempt.progress({ ...state, stage: 'backend.health' })
-      clock.mockReturnValue(6100)
+      clock.mockReturnValue(received + 6100)
       attempt.progress({
         ...state,
+        timestamp: '2026-09-01T21:02:06Z',
         stage: 'backend.run',
         status: 'running',
         details: { baseUrl: 'http://127.0.0.1:36163' },
       })
-      clock.mockReturnValue(90_000)
+      clock.mockReturnValue(received + 90_000)
       expect(attempt.snapshot()).toMatchObject({ backend_time: '5-15s' })
     } finally {
       clock.mockRestore()
