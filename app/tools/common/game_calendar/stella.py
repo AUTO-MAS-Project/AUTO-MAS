@@ -24,9 +24,7 @@
 标题和正文摘要里——接口本身没有时间字段，只能读「▌活动时间 / 招募时间 /
 开放时间」那一段文本。
 
-首页的活动卡与横幅、以及 MSS 判断「当前有没有活动」，用的都是这里的结果。
-判定只认「版本活动」那一类（``VERSION_KIND``）：只有它会开限时活动关，招募与
-拼图之类的小玩法没有关卡可打，全算进来的话几乎天天「有活动」。
+首页活动卡读取官网公告；MSS 排期单独使用 StellaBase 的中文活动日历。
 
 取数失败返回 None，由调用方退回默认行为。
 """
@@ -45,6 +43,7 @@ from app.utils import get_logger
 logger = get_logger("星塔旅人活动")
 
 NEWS_BASE = "https://stellasora.yostar.cn"
+STELLABASE_EVENTS_URL = "https://stella.ennead.cc/api/stella/events"
 NEWS_LIST_URL = f"{NEWS_BASE}/api/resource/news"
 NEWS_DETAIL_URL = f"{NEWS_BASE}/api/resource/news"
 ## 那个 CMS 认 Referer，不带就只给空壳
@@ -78,7 +77,7 @@ KIND_BY_SUFFIX = (
     ("招募", "招募"),
     ("一览", "版本活动"),
 )
-## 带活动关的那一类：横幅与 MSS 的活动期判定都只认它
+## 带活动关的那一类：首页横幅只认它
 VERSION_KIND = "版本活动"
 ## 同一期活动往往有两篇公告（活动一览、商品上新），同名去重时按分类定去留：
 ## 数值小的优先，免得「版本全新商品上新！」把真正的「限时活动一览」顶掉
@@ -132,8 +131,9 @@ MAINTENANCE_RANGE = re.compile(
 )
 
 _cache: tuple[float, dict[str, Any]] | None = None
-## 活动期判定自己取的那份（只有列表、没补封面）；失败时存 None
-_running_check_cache: tuple[float, list[dict[str, Any]] | None] | None = None
+## 缓存活动窗口；跨过起止时刻即可更新判定，无需重新请求。
+_ActivityWindow = tuple[datetime, datetime, bool]
+_running_check_cache: tuple[float, list[_ActivityWindow] | None] | None = None
 
 
 def _at(year: str, month: str, day: str, hour: str, minute: str) -> datetime:
@@ -341,73 +341,64 @@ async def fetch_official_activities(*, force: bool = False) -> dict[str, Any] | 
     return data
 
 
-async def _activities_for_running_check() -> list[dict[str, Any]] | None:
-    """活动期判定用的活动列表；取数失败为 None。
+def _stellabase_windows(payload: Mapping[str, Any]) -> list[_ActivityWindow]:
+    """读取可游玩时段；商店领奖期可能比关卡多开一周。"""
+    windows = []
+    for group in ("current", "upcoming", "ended"):
+        entries = payload[group]
+        if not isinstance(entries, list):
+            raise ValueError(f"无效的活动分组: {group}")
+        for entry in entries:
+            start = datetime.fromisoformat(entry["startTime"])
+            end = datetime.fromisoformat(entry["endTime"])
+            if start.tzinfo is None or end.tzinfo is None or end <= start:
+                raise ValueError("活动时间范围无效")
+            # 弹珠小游戏也写有「活动限时关卡」；版本活动同时列有关卡和故事剧情。
+            description = entry["description"]
+            story_battle = "活动限时关卡" in description and "故事剧情" in description
+            windows.append((start, end, story_battle))
+    if not windows:
+        raise ValueError("活动日历为空")
+    return windows
 
-    判定只要分类和起止时间：首页那份缓存还新鲜就直接用，否则自己只取列表、不补封面，
-    结果单独缓存（成功 ``CACHE_TTL_SECONDS``，失败 ``RUNNING_CHECK_FAILURE_TTL_SECONDS``），
-    不写进首页那份缓存——首页要的封面这里没取。
-    """
 
+async def _activities_for_running_check() -> list[_ActivityWindow] | None:
+    """获取 StellaBase 中文日历，失败时短暂缓存以免每个账号重复等待。"""
     global _running_check_cache
 
-    now = time.time()
-    if _cache is not None and now - _cache[0] < CACHE_TTL_SECONDS:
-        return _cache[1]["activities"]
+    now = time.monotonic()
     if _running_check_cache is not None:
-        fetched_at, cached = _running_check_cache
+        fetched_at, windows = _running_check_cache
         ttl = (
             CACHE_TTL_SECONDS
-            if cached is not None
+            if windows is not None
             else RUNNING_CHECK_FAILURE_TTL_SECONDS
         )
         if now - fetched_at < ttl:
-            return cached
+            return windows
 
-    activities: list[dict[str, Any]] | None = None
     try:
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
-            rows = await _fetch_news_rows(client)
-        if rows:
-            activities = parse_activities(rows, datetime.now(BEIJING))
-            for item in activities:
-                item.pop("_newsId", None)
-        else:
-            logger.warning("星塔旅人官网活动列表为空，按拿不到处理")
-    except Exception as e:
-        logger.warning(f"获取星塔旅人官网活动失败: {type(e).__name__}: {e}")
+            response = await client.get(STELLABASE_EVENTS_URL, params={"lang": "cn"})
+            response.raise_for_status()
+            windows = _stellabase_windows(response.json())
+    except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
+        logger.warning(f"获取 StellaBase 活动日历失败: {exc}")
+        windows = None
 
-    _running_check_cache = (now, activities)
-    return activities
+    _running_check_cache = (now, windows)
+    return windows
 
 
 async def has_running_official_activity() -> bool | None:
-    """当前有没有进行中的「版本活动」。
-
-    只有版本活动会开限时活动关，MSS 据此决定「活动快速战斗」排不排、排在哪；
-    招募与拼图之类的小玩法没有关卡可打，算进来几乎天天「有活动」，判定就废了。
-
-    Returns:
-        bool | None: 有 True、确实没有 False、取不到数据 None——调用方要把 None
-        当成「说不准」跳过编排，不能当成「没有活动」。
-    """
-
-    activities = await _activities_for_running_check()
-    if activities is None:
-        return None
-
-    versions = [item for item in activities if item["kind"] == VERSION_KIND]
-    if not versions:
-        # 一条版本活动都没认出来：多半是官网换写法、解析跟不上，按「说不准」处理。
-        # 报 False 会让调用方把「活动快速战斗」从队列里摘掉，整轮就漏打了
-        logger.warning("星塔旅人这一批公告里没有版本活动，活动期判定按说不准处理")
+    """按 StellaBase 可游玩时段判断 MSS 是否应加入活动快速战斗。"""
+    windows = await _activities_for_running_check()
+    if windows is None:
         return None
 
     now = datetime.now(BEIJING)
-    for item in versions:
-        start = datetime.fromisoformat(item["startTime"])
-        end = datetime.fromisoformat(item["endTime"])
-        if start <= now < end:
-            return True
-
-    return False
+    active = [story for start, end, story in windows if start <= now < end]
+    if not active:
+        return False
+    # 有活动但未确认支持快速战斗时，让用户手动排入的任务仍可运行。
+    return True if any(active) else None
