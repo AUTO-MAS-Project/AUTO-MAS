@@ -61,6 +61,7 @@ async def test_dispatch_preflight_classifies_builtin_and_plugin_tasks_before_con
     monkeypatch,
 ):
     from maa_adapter.config.script import MaaConfig
+    from src_adapter.config import SrcConfig
 
     from app.core import Config, Plugin, TaskManager
     from app.models.config import (
@@ -68,7 +69,6 @@ async def test_dispatch_preflight_classifies_builtin_and_plugin_tasks_before_con
         HSRConfig,
         M9AConfig,
         OkwwConfig,
-        SrcConfig,
     )
     from app.utils.windows.desktop_session import native
 
@@ -84,7 +84,9 @@ async def test_dispatch_preflight_classifies_builtin_and_plugin_tasks_before_con
         )
     }
     monkeypatch.setattr(Config, "ScriptConfig", entries)
-    monkeypatch.setattr(Plugin, "script_classes", lambda: {"MAA": MaaConfig})
+    monkeypatch.setattr(
+        Plugin, "script_classes", lambda: {"MAA": MaaConfig, "SRC": SrcConfig}
+    )
     current_session = Mock(return_value=None)
     monkeypatch.setattr(native, "child_session", current_session)
     dispatch_scopes = []
