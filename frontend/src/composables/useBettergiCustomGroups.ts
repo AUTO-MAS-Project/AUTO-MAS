@@ -22,7 +22,7 @@ interface BettergiCustomGroupOptions {
   oneDragon: () => { CustomGroups: string | any[]; IfUseCustomGroups: boolean }
   /** 一条龙配置名（Task.OneDragonConfigName），决定从 BetterGI 哪份配置读取自定义组 */
   configName: () => string
-  /** 用户独立配置（Info.IfUseMasConfig）：为 true 时读取该用户 per-user 副本（固定槽位名） */
+  /** 配置来源非原生（Info.Base ≠ native）：为 true 时读取该用户 per-user 副本（固定槽位名） */
   masConfig: () => boolean
   /** 是否处于「原生来源配置」之外（可编辑）。为 true 时允许交互 */
   editable: () => boolean

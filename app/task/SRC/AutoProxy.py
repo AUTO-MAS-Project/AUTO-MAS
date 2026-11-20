@@ -226,7 +226,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
                 logger.info(f"启动模拟器: {game_device_id(self.script_config)}")
                 emulator_info = await self.emulator_manager.open(
                     game_device_id(self.script_config),
-                    STARRAIL_PACKAGE_NAME[self.cur_user_config.Info.Server],
+                    STARRAIL_PACKAGE_NAME[self.cur_user_config.Info.Resource],
                 )
             except Exception as e:
                 if not await self.handle_pre_src_error("模拟器启动失败", e):
@@ -249,7 +249,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
 
             if await login(
                 emulator_info=emulator_info,
-                package_name=STARRAIL_PACKAGE_NAME[self.cur_user_config.Info.Server],
+                package_name=STARRAIL_PACKAGE_NAME[self.cur_user_config.Info.Resource],
                 id=self.cur_user_config.Info.Id,
                 password=self.cur_user_config.Info.Password,
                 get_agree_bilibili=lambda: Config.setting.Function.IfAgreeBilibili,
@@ -455,8 +455,8 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
             result = await ensure_game_updated(
                 adb_path=self.emulator_manager.get_adb_path(),
                 adb_address=emulator_info.adb_address,
-                server=self.cur_user_config.Info.Server,
-                package_name=STARRAIL_PACKAGE_NAME[self.cur_user_config.Info.Server],
+                server=self.cur_user_config.Info.Resource,
+                package_name=STARRAIL_PACKAGE_NAME[self.cur_user_config.Info.Resource],
                 apk_dir=Path.cwd() / "data/GameApk",
                 if_auto_install=self.script_config.Run.IfAutoInstallGameApk,
                 time_limit=self.script_config.Run.GameUpdateTimeLimit,
@@ -595,7 +595,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
         if emulator_info.adb_address != "Unknown":
             src_set["Alas"]["Emulator"]["Serial"] = emulator_info.adb_address
         src_set["Alas"]["Emulator"]["GameClient"] = "android"
-        src_set["Alas"]["Emulator"]["PackageName"] = self.cur_user_config.Info.Server
+        src_set["Alas"]["Emulator"]["PackageName"] = self.cur_user_config.Info.Resource
         src_set["Alas"]["Emulator"]["GameLanguage"] = "cn"
         src_set["Alas"]["Emulator"]["AdbRestart"] = True
 

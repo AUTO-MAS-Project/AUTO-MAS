@@ -666,7 +666,7 @@ def _migrate_user(
     snapshot = _build_snapshot(
         user, index, script_payload, script_uid, user_uid, script_label, report
     )
-    account = str(info.get("Account") or "")
+    account = str(info.get("Id") or "")
     switch_supported = supports_account_switch(
         script_resource, login_mode=_login_mode(script_payload)
     )
@@ -725,11 +725,8 @@ def _migrate_user(
             "ScriptAfterTask": str(info.get("ScriptAfterTask") or ""),
             "Notes": notes,
             "Tag": str(info.get("Tag") or "[ ]"),
-            "Account": account,
+            "Id": account,
             "Password": "",
-            "IfQuickConfig": True,
-            "Controller": "",
-            "Resource": "",
         },
         "Task": {
             "SelectedPreset": "",
@@ -738,7 +735,6 @@ def _migrate_user(
         "Data": {
             "LastProxyDate": str(data.get("LastProxyDate") or "2000-01-01"),
             "ProxyTimes": _int(data.get("ProxyTimes"), 0),
-            "IfPassCheck": True,
             "LastProxyStatus": "未知",
             "PeriodTaskRecords": json.dumps(period_records, ensure_ascii=False),
         },
@@ -1471,9 +1467,9 @@ def repair_script_config_payload(
             info = user.get("Info") if isinstance(user.get("Info"), dict) else {}
             legacy_info = (legacy_users.get(user_uid) or {}).get("Info") or {}
             label = f"{script_label} / {str(info.get('Name') or user_uid[:8])}"
-            account = str(info.get("Account") or "").strip()
+            account = str(info.get("Id") or "").strip()
             # 升级后自己填了别的「账号」：补回实例文件里的切号会压过它，交给用户决定
-            account_changed = account != str(legacy_info.get("Account") or "").strip()
+            account_changed = account != str(legacy_info.get("Id") or "").strip()
             answer_snapshot = _load_snapshot(
                 (answer_user.get("Task") or {}).get("TaskSnapshot")
             )
@@ -1592,7 +1588,7 @@ def _repair_user_snapshot(
                     info = user["Info"] = {}
                 change = settle_user_info(
                     settlement,
-                    account=str(info.get("Account") or ""),
+                    account=str(info.get("Id") or ""),
                     notes=str(info.get("Notes") or ""),
                     note_split=False,
                 )
@@ -1836,7 +1832,7 @@ def _normalize_user(
     settlement = _settle_with_index(snapshot, index, supports_switch=supports_switch)
     change = settle_user_info(
         settlement,
-        account=str(info.get("Account") or ""),
+        account=str(info.get("Id") or ""),
         notes=str(info.get("Notes") or ""),
         note_split=True,
     )

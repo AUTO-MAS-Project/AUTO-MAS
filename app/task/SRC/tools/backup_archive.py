@@ -82,8 +82,8 @@ _OVERLAY_STAGE_KEYS = (
 )
 """MAS 页面关卡与开拓力字段（UserData.Stage，运行时注入 src.json）"""
 
-_OVERLAY_INFO_KEYS = ("Server", "Base")
-"""MAS 页面基础字段（UserData.Info）：Server 注入 PackageName；Mode 仅预览"""
+_OVERLAY_INFO_KEYS = ("Resource", "Base")
+"""MAS 页面基础字段（UserData.Info）：Resource 注入 PackageName；Base 仅预览"""
 
 _OVERLAY_KEY_GROUPS = {"Info": _OVERLAY_INFO_KEYS, "Stage": _OVERLAY_STAGE_KEYS}
 """侧车字段的配置段归属（两组键名无交集，侧车内平铺存储）"""
@@ -431,10 +431,11 @@ def build_overlay_preview(overlay: dict) -> dict:
         sections.append({"name": "mas-only", "label": "MAS 独有配置", "rows": mas_rows})
 
     src_rows: list[dict] = []
-    if "Server" in overlay:
+    if "Resource" in overlay:
         src_rows.append(
             _row(
-                "服务器", _SERVER_LABELS.get(str(overlay["Server"]), overlay["Server"])
+                "服务器",
+                _SERVER_LABELS.get(str(overlay["Resource"]), overlay["Resource"]),
             )
         )
     if "Channel" in overlay:

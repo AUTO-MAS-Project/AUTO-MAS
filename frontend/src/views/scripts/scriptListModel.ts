@@ -16,7 +16,7 @@ export interface ScriptListUser {
     Server?: string | null
     Resource?: string | null
   }
-  Game?: Pick<ZzzOdUserConfig_Game, 'GameRegion' | 'Account' | 'BilibiliAccountName'>
+  Game?: Pick<ZzzOdUserConfig_Game, 'GameRegion' | 'BilibiliAccountName'>
 }
 
 export interface ScriptListItem {
@@ -92,14 +92,12 @@ export function toScriptListUser(
       Password: PASSWORD_CONFIG_TYPES.has(index.type)
         ? defaultIfMissing(info && 'Password' in info ? info.Password : undefined, '')
         : undefined,
-      Base:
-        baseDefault === undefined
-          ? (info?.Base ?? undefined)
-          : defaultIfMissing(info?.Base, baseDefault),
+      // 账号配置里的配置来源：有该字段的专项取真实值，没有的按列表默认展示
+      Base: 'Base' in (info ?? {}) ? (info as { Base?: string }).Base : baseDefault,
       Server:
         serverDefault === undefined
           ? undefined
-          : defaultIfMissing(info && 'Server' in info ? info.Server : undefined, serverDefault),
+          : defaultIfMissing(info && 'Resource' in info ? info.Resource : undefined, serverDefault),
       Resource:
         index.type === 'MaaEndUserConfig'
           ? defaultIfMissing(info && 'Resource' in info ? info.Resource : undefined, '')
@@ -116,7 +114,6 @@ export function toScriptListUser(
       ? {
           Game: {
             GameRegion: defaultIfMissing(game?.GameRegion, 'cn'),
-            Account: defaultIfMissing(game?.Account, ''),
             BilibiliAccountName: defaultIfMissing(game?.BilibiliAccountName, ''),
           },
         }

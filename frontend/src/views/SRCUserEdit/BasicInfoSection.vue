@@ -79,12 +79,12 @@
             />
           </template>
           <a-select
-            v-model:value="formData.Info.Server"
+            v-model:value="formData.Info.Resource"
             :placeholder="t('core.edit.pickServer')"
             :disabled="loading"
             :options="serverOptions"
             size="large"
-            @change="emitSave('Info.Server', formData.Info.Server)"
+            @change="emitSave('Info.Resource', formData.Info.Resource)"
           />
         </a-form-item>
       </a-col>

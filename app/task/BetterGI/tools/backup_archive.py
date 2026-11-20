@@ -41,8 +41,7 @@
   副本（副本与来源无关，原生来源下前端编辑同样落盘），池**恒按账号分桶**，
   无 owner 解耦（对齐 General）。
 - 字段侧车：OneDragon 段全部字段 + Task.OneDragonConfigName + Switch.
-  Resource（运行时物化进副本/原生或注入切号脚本）+ Info.Base（仅预览：
-  决定是否物化）。Id/Password/前后置脚本/通知/Data 由 MAS 自己消费（登录
+  Resource（运行时物化进副本/原生或注入切号脚本）。Id/Password/前后置脚本/通知/Data 由 MAS 自己消费（登录
   与执行域），不属于 BetterGI 配置内容，不进备份。恢复 = 副本目录回滚 +
   字段回填 UserData。
 
@@ -62,7 +61,7 @@ BetterGI 特有的副本布局、字段侧车、恢复语义（恢复前强制�
 import json
 from pathlib import Path
 
-from app.utils import BASE_SOURCE_LABELS, get_logger
+from app.utils import get_logger
 from app.utils.common.config import archive as _utils_config_archive
 
 OVERLAY_SIDECAR_NAME = _utils_config_archive.OVERLAY_SIDECAR_NAME
@@ -73,7 +72,6 @@ logger = get_logger("BetterGI 配置备份")
 # ══════════════════ MAS 账号配置（per-user 副本 + 字段侧车） ══════════════════
 
 _OVERLAY_KEY_GROUPS = {
-    "Info": ("Base",),
     "Task": ("OneDragonConfigName",),
     "OneDragon": (
         "Groups",
@@ -96,8 +94,6 @@ _OVERLAY_KEY_GROUP = {
     key: group for group, keys in _OVERLAY_KEY_GROUPS.items() for key in keys
 }
 
-_OVERLAY_PREVIEW_ONLY_KEYS = {"Base"}
-"""仅预览不回填的字段：配置来源决定 MAS 是否物化，恢复以当前值为准"""
 
 # 预览分区一：与 BetterGI 概念对应的字段（可在 BetterGI GUI 对照）
 _OVERLAY_BGI_ORDER = (
@@ -116,10 +112,8 @@ _OVERLAY_BGI_ORDER = (
     "Resource",
 )
 # 预览分区二：MAS 独有字段（BetterGI GUI 无对应概念）
-_OVERLAY_MAS_ONLY_ORDER = ("Base",)
 
 _OVERLAY_FIELD_LABELS = {
-    "Base": "配置来源",
     "OneDragonConfigName": "一条龙配置名",
     "Groups": "已启用任务",
     "DailyRewardPartyName": "领取奖励队伍",
@@ -143,7 +137,7 @@ _PER_USER_SUB_DIRS = ("OneDragon", "ScriptGroup", "GlobalDomain")
 def read_overlay_values(config) -> dict:
     """读取配置对象的 BetterGI 页面字段（鸭子类型，仅需 ``get(group, key)``）。
 
-    覆盖 Info.Base / Task.OneDragonConfigName / OneDragon 段全部字段 /
+    覆盖 Task.OneDragonConfigName / OneDragon 段全部字段 /
     Switch.Resource；值为 ``None``（配置项不存在）的键不纳入侧车。
     """
 
@@ -164,8 +158,6 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
 
     grouped: dict[str, dict] = {}
     for key, value in overlay.items():
-        if key in _OVERLAY_PREVIEW_ONLY_KEYS:
-            continue
         grouped.setdefault(_OVERLAY_KEY_GROUP.get(key, "OneDragon"), {})[key] = value
     return grouped
 
@@ -503,19 +495,6 @@ def build_overlay_preview(overlay: dict) -> dict:
     """
 
     sections: list[dict] = []
-
-    mas_rows: list[dict] = []
-    for key in _OVERLAY_MAS_ONLY_ORDER:
-        if key in overlay:
-            raw = overlay[key]
-            mas_rows.append(
-                {
-                    "key": _OVERLAY_FIELD_LABELS.get(key, key),
-                    "value": BASE_SOURCE_LABELS.get(str(raw), _summary_text(raw)),
-                }
-            )
-    if mas_rows:
-        sections.append({"name": "mas-only", "label": "MAS 独有配置", "rows": mas_rows})
 
     bgi_rows: list[dict] = []
     for key in _OVERLAY_BGI_ORDER:
