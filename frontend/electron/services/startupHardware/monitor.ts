@@ -421,10 +421,11 @@ export function localStartupAttempt() {
 export function revokeHardwareUpload() {
   current?.revokeUpload()
 }
+export function isStartupUploadAllowed(generation: number | null) {
+  return generation !== null && getGeneration?.() === generation
+}
 export function startupAttempt() {
-  return current && current.generation !== null && getGeneration?.() === current.generation
-    ? current
-    : undefined
+  return current && isStartupUploadAllowed(current.generation) ? current : undefined
 }
 const running = new AsyncLocalStorage<WeakRef<StartupAttempt> | undefined>()
 export function inStartupOperation<T>(run: () => T) {
