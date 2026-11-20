@@ -149,6 +149,8 @@ async def publish_result(task_report: LogFlowTaskReport, report: TaskResultRepor
 | `postprocess_options` | 后置归并声明为工厂时可传 JSON 键值，同名键覆盖工厂默认值 |
 | `async with … as flow` | 进入时打开会话，退出时有限收尾，返回 `FlowAccess`。启动故障可表现为带 `worker_error` 的可读会话 |
 
+文件监控可通过 `initial_offset` 提供同一文件在启动前的字节长度。偏移有效时，从该位置起视为本轮日志。监控期间等待半行写完整，末次读取和已轮转文件的排空会接收无换行的尾行。
+
 `send(*, title, report, append_details=True)` 返回 Notify 的 `DispatchResult`。同一托管运行重复提交时会去重。通知仍受现有 Notify 设置、筛选和异步投递流程控制。
 
 ## 2. 内置声明与混合来源

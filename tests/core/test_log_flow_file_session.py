@@ -776,12 +776,21 @@ async def test_native_file_flow_drains_last_poll_on_stop(
 
     observation = run.node_observation
     assert observation is not None
-    assert [node.text for node in observation.snapshot()] == ["first", "tail"]
+    assert [node.text for node in observation.snapshot()] == [
+        "first",
+        "tail",
+        "unfinished",
+    ]
     assert observation.read().close_reason == (
         "worker_error" if slow_callback else "complete"
     )
     assert reports == [
-        ["first", "tail", *(["⚠️ 节点采集不完整"] if slow_callback else [])]
+        [
+            "first",
+            "tail",
+            "unfinished",
+            *(["⚠️ 节点采集不完整"] if slow_callback else []),
+        ]
     ]
 
 
@@ -827,7 +836,76 @@ async def test_native_file_flow_keeps_incomplete_lines_until_they_are_written(tm
         "first",
         "partial",
         "final",
+        "unfinished",
     ]
+
+
+@pytest.mark.asyncio
+async def test_native_file_uses_start_offset_and_calls_back_when_a_half_line_stalls(
+    tmp_path,
+):
+    path = tmp_path / "script.log"
+    stamp = datetime.now().replace(microsecond=0)
+    prefix = stamp.strftime("%Y-%m-%d %H:%M:%S")
+    path.write_text(f"{prefix} old\n", encoding="utf-8")
+    offset = path.stat().st_size
+    append(path, f"{prefix} first\n{prefix} terminal")
+    observed = []
+    callbacks = []
+    checked = asyncio.Event()
+
+    async def display(lines, _latest_time):
+        callbacks.append(list(lines))
+        if len(callbacks) == 1:
+            monitor.last_callback_at -= 70
+        if len(callbacks) == 2:
+            checked.set()
+
+    monitor = LogMonitor(
+        (0, 19), "%Y-%m-%d %H:%M:%S", display, on_raw_line=observed.append
+    )
+    monitor.last_callback_time = stamp
+    await monitor.start_monitor_file(
+        lambda: path, stamp + timedelta(microseconds=999999), offset
+    )
+    try:
+        await asyncio.wait_for(checked.wait(), 4)
+        assert [line.split()[-1] for line in observed] == ["first"]
+        assert callbacks[0] == callbacks[1]
+    finally:
+        await monitor.stop()
+    assert [line.split()[-1] for line in observed] == ["first", "terminal"]
+    assert callbacks[-1][-1].endswith("terminal")
+
+
+@pytest.mark.asyncio
+async def test_native_file_lost_rotation_marks_gap_and_still_reads_new_file(tmp_path):
+    path = tmp_path / "script.log"
+    replacement = tmp_path / "replacement.log"
+    now = datetime.now()
+    stamp = now.strftime("%Y-%m-%d %H:%M:%S")
+    append(path, f"{stamp} first\n")
+    replaced = asyncio.Event()
+    gaps = []
+
+    async def display(lines, _latest_time):
+        if len(lines) == 1 and not replacement.exists():
+            append(path, f"{stamp} lost\n")
+            append(replacement, f"{stamp} next\n")
+            os.replace(replacement, path)
+        elif len(lines) == 2:
+            replaced.set()
+
+    raw = []
+    monitor = LogMonitor((0, 19), "%Y-%m-%d %H:%M:%S", display, on_raw_line=raw.append)
+    monitor.on_raw_incomplete = gaps.append
+    await monitor.start_monitor_file(lambda: path, now - timedelta(seconds=10))
+    try:
+        await asyncio.wait_for(replaced.wait(), 4)
+        assert [line.split()[-1] for line in raw] == ["first", "next"]
+    finally:
+        await monitor.stop()
+    assert gaps
 
 
 @pytest.mark.asyncio

@@ -97,6 +97,7 @@ class LogFlowMonitor(LogMonitor):
         warned_mtime_date: date | None = None
         if_log_start = False
         offset = initial_offset if initial_offset is not None else 0
+        initial_path = current_path if initial_offset is not None else None
         log_stat: os.stat_result | None = None
         log_contents = []
         # 日期路径可能因时钟回拨而重访。偏移必须与当时的文件状态一起恢复。
@@ -110,7 +111,7 @@ class LogFlowMonitor(LogMonitor):
                     await stop_requested.wait()
 
         final_poll = False
-        final_incomplete = False
+        incomplete = False
         while not final_poll:
             final_poll = stop_requested.is_set()
             # 日志按日期滚动（如 M9A 的 log-YYYYMMDD.log）时切换到新文件。
@@ -138,6 +139,7 @@ class LogFlowMonitor(LogMonitor):
                         if_log_start,
                         log_start_time,
                         expected_id=expected_id,
+                        allow_partial=final_poll,
                     )
                 if expected_id is not None and isinstance(
                     drain_error, (FileNotFoundError, _LogIdentityChanged)
@@ -149,11 +151,13 @@ class LogFlowMonitor(LogMonitor):
                         log_contents,
                         if_log_start,
                         log_start_time,
-                        missing_is_error=final_poll,
+                        missing_is_error=True,
                     )
-                if drain_error is not None and final_poll:
-                    final_incomplete = True
-                elif drain_error is not None and drain_failures < _DRAIN_RETRY_LIMIT:
+                if (
+                    drain_error is not None
+                    and not final_poll
+                    and drain_failures < _DRAIN_RETRY_LIMIT
+                ):
                     drain_failures += 1
                     logger.warning(
                         f"排空旧日志失败（第 {drain_failures} 次），本轮不切换: {drain_error}"
@@ -161,6 +165,7 @@ class LogFlowMonitor(LogMonitor):
                     await pause(1)
                     continue
                 if drain_error is not None:
+                    incomplete = True
                     logger.warning(f"排空旧日志连续失败，放弃其剩余内容: {drain_error}")
                 drain_failures = 0
 
@@ -188,6 +193,9 @@ class LogFlowMonitor(LogMonitor):
             # 尝试读取文件
             try:
                 current_stat = current_path.stat()
+                if current_path == initial_path:
+                    if_log_start = offset <= current_stat.st_size
+                    initial_path = None
                 if not if_mtime_checked:
                     file_mtime_date = date.fromtimestamp(current_stat.st_mtime)
                     if file_mtime_date == date.today():
@@ -220,12 +228,11 @@ class LogFlowMonitor(LogMonitor):
                         log_contents,
                         if_log_start,
                         log_start_time,
-                        missing_is_error=final_poll and previous_id != current_id,
+                        missing_is_error=previous_id != current_id,
                     )
                     if recovery_error is not None:
                         logger.warning(f"轮转旧日志读取失败: {recovery_error}")
-                        if final_poll:
-                            final_incomplete = True
+                        incomplete = True
                     # 新文件可能没有新行，先交付刚补读的旧文件尾部。
                     await self._sync_and_callback(log_contents)
                     offset = 0
@@ -262,6 +269,7 @@ class LogFlowMonitor(LogMonitor):
                     if_log_start,
                     log_start_time,
                     expected_id=current_id,
+                    allow_partial=final_poll,
                 )
                 if read_error is not None:
                     # 已读到的行必须先同步，否则重试期间回调看不到它们
@@ -278,7 +286,7 @@ class LogFlowMonitor(LogMonitor):
                     if not isinstance(e, FileNotFoundError):
                         return False
                     if log_stat is None:
-                        return not final_incomplete
+                        return not incomplete
                     _, _, error = await self._read_rotated_tail(
                         current_path,
                         file_identity(log_stat),
@@ -289,7 +297,7 @@ class LogFlowMonitor(LogMonitor):
                         missing_is_error=True,
                     )
                     await self._sync_and_callback(log_contents)
-                    return error is None and not final_incomplete
+                    return error is None and not incomplete
                 # 日志尚未创建或被短暂锁定时也要推进回调；否则调用方的
                 # 停滞超时永远没有机会判定，任务会无限等待。
                 await self.do_callback()
@@ -298,9 +306,12 @@ class LogFlowMonitor(LogMonitor):
 
             # 日志变化调用回调
             await self._sync_and_callback(log_contents)
+            # 读到未闭合行时偏移可能不动，仍需给执行侧机会检查停滞。
+            if not final_poll and time.monotonic() - self.last_callback_at > 60:
+                await self.do_callback()
 
             await pause(1)
-        return not final_incomplete
+        return not incomplete
 
     async def monitor_process(
         self,
@@ -393,6 +404,7 @@ class LogFlowMonitor(LogMonitor):
         log_start_time: datetime,
         *,
         expected_id: tuple[int, int] | None = None,
+        allow_partial: bool = False,
     ) -> tuple[int, bool, Exception | None]:
         """读取文件自 offset 起的新增行并追加到 log_contents。
 
@@ -419,7 +431,11 @@ class LogFlowMonitor(LogMonitor):
                         raise _LogIdentityChanged("打开日志时文件已轮转")
                 await f.seek(offset)
                 async for bline in f:
-                    if self.on_raw_line is not None and not bline.endswith(b"\n"):
+                    if (
+                        self.on_raw_line is not None
+                        and not allow_partial
+                        and not bline.endswith(b"\n")
+                    ):
                         # 流式订阅只接收完整行。保留偏移，下轮从该行开头续读。
                         break
                     offset = await f.tell()
@@ -515,6 +531,7 @@ class LogFlowMonitor(LogMonitor):
             if_log_start,
             log_start_time,
             expected_id=old_file_id,
+            allow_partial=True,
         )
 
     async def start_monitor_file(
