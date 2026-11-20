@@ -64,24 +64,25 @@ async def main() -> None:
                     ".git", "build", "*.egg-info", "__pycache__"
                 ),
             )
-    elif not (repo_plugins / "maa_adapter" / "pyproject.toml").is_file():
-        if not (test_plugins / "maa_adapter").is_dir():
-            raise RuntimeError(
-                "请先运行 uv run --no-sync python scripts/prepare_test_plugins.py"
-            )
-        # 配对验证目录可包含其他未发布插件，普通种子只引入此流程所需 MAA。
-        for source in test_plugins.glob("*maa_adapter*"):
-            if source.is_dir():
-                shutil.copytree(
-                    source,
-                    Config.plugins_path / "pypi" / "site-packages" / source.name,
-                    dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns("__pycache__"),
-                )
+    else:
+        for name in ("maa_adapter", "src_adapter"):
+            if (repo_plugins / name / "pyproject.toml").is_file():
+                continue
+            if not (test_plugins / name).is_dir():
+                raise RuntimeError("请先运行 python scripts/prepare_test_plugins.py")
+            for source in test_plugins.glob(f"*{name}*"):
+                if source.is_dir():
+                    shutil.copytree(
+                        source,
+                        Config.plugins_path / "pypi" / "site-packages" / source.name,
+                        dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns("__pycache__"),
+                    )
     # 首次配置升级会清理旧历史，先走正式迁移，再写入现行格式的种子。
     bind_script_handlers()
     await Config.check_data(prepare_plugins=Plugin.initialize)
-    await Plugin.enable(Config.plugin_registry.by_name("maa_adapter"))
+    for name in ("maa_adapter", "src_adapter"):
+        await Plugin.enable(Config.plugin_registry.by_name(name))
     if source_projects:
         for name in (
             "mumu_adapter",

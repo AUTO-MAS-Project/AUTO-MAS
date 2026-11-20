@@ -19,16 +19,21 @@ from app.utils import io as config_io
 
 
 @pytest.mark.parametrize("filename", ["scripts.yaml", "ScriptConfig.json"])
-def test_whimbox_upgrade_detects_only_collection_types(tmp_path, filename):
-    """已有奇想盒托管必须先补齐插件，普通业务文本不能触发安装。"""
+@pytest.mark.parametrize(
+    ("config_type", "name", "package"),
+    [
+        ("WhimboxConfig", "whimbox_adapter", "auto-mas-whimbox-adapter"),
+        ("SrcConfig", "src_adapter", "auto-mas-src-adapter"),
+    ],
+)
+def test_upgrade_detects_only_collection_types(
+    tmp_path, filename, config_type, name, package
+):
+    """仅实际旧托管触发安装，普通业务字符串不触发。"""
     path = tmp_path / filename
-    config_io.write_file(
-        path, {"order": [{"uid": str(uuid4()), "type": "WhimboxConfig"}]}
-    )
-    assert required_adapter_plugins(tmp_path) == {
-        "whimbox_adapter": "auto-mas-whimbox-adapter"
-    }
-    config_io.write_file(path, {"order": [], "notes": "WhimboxConfig"})
+    config_io.write_file(path, {"order": [{"uid": str(uuid4()), "type": config_type}]})
+    assert required_adapter_plugins(tmp_path) == {name: package}
+    config_io.write_file(path, {"order": [], "notes": config_type})
     assert required_adapter_plugins(tmp_path) == {}
 
 

@@ -123,6 +123,7 @@ export const SCRIPT_METADATA = {
     },
   },
   MAA: SCRIPT_PLUGIN_METADATA.MAA,
+  SRC: SCRIPT_PLUGIN_METADATA.SRC,
   Whimbox: SCRIPT_PLUGIN_METADATA.Whimbox,
   MaaEnd: {
     logo: maaEndIcon,

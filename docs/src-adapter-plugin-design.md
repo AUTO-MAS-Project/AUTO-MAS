@@ -35,7 +35,7 @@ class Plugin(ScriptAdapterPlugin):
     )
 ```
 
-SRC 没有专项计划表。声明沿用当前设备范围和程序更新时机。设备要求、ModAVD 专属支持、后台预下载均须有对应实现才声明。游戏与设备由已有适配器提供，无须再装一个 SRC 游戏管理插件。[SDK 声明](../app/plugin/base/script.py) · [SRC 当前注册](../app/task/SRC/registration.py)
+SRC 没有专项计划表。声明沿用当前设备范围和程序更新时机。设备要求、ModAVD 专属支持、后台预下载均须有对应实现才声明。游戏与设备由已有适配器提供，无须再装一个 SRC 游戏管理插件。[SDK 声明](../app/plugin/base/script.py) · [SRC 当前注册](https://github.com/AUTO-MAS-Project/AUTO-MAS/blob/e0380ba92/app/task/SRC/registration.py)
 
 公共调用仍是“创建 SRC 托管 → 添加账号 → 提交任务要求树”。运行、编辑、查看分别提交 `AutoProxy`、`ScriptConfig`、`ScriptView`。调用者给出托管或账号 UUID，用返回的运行任务 ID 停止会话并等待收尾。托管级操作传托管 UUID，磁盘目录名 `Default` 只在插件内部解析。托管和账号读写继续走现有 CRUD。备份的 list、ensure、preview、file、restore 由插件 router 在 `/api/plugin/src_adapter/backup/*` 提供，复用现有 DTO、恢复服务和前端面板。按启用插件导出 OpenAPI 并重新生成客户端。[任务入口](../frontend/src/composables/useTaskApi.ts) · [动态 OpenAPI](../app/plugin/openapi.py) · [现有备份操作](../app/api/scripts/backup.py)
 
@@ -45,7 +45,7 @@ SRC 没有专项计划表。声明沿用当前设备范围和程序更新时机�
 2. 托管级处理未确认的安装记录。自动代理按原 `Update.TakeoverEnabled` 设置调用 SRC 的 Git/CDN 准备和官方安装器，复用宿主安装备份、确认与回滚。配置和查看会话只走启动安全检查。脚本更新与账号运行前的游戏 APK 检查有各自的开关和失败结果。
 3. SDK 逐账号取锁，解析账号设备覆盖或托管继承，L4 使用当前绑定设备。自动代理保留禁用、剩余天数、队列当日次数上限与手动单跑的区别。插件账号的公共 `info.enabled` 只表达启用开关，SRC 的 `RemainedDay == 0` 仍须在自动代理资格判断处生效。运行重试受原单账号总时限约束，前置及后置脚本按账号执行。
 4. `AutoProxyWorker` 启动 SRC，用原生日志报告结果。当前用结构化日志中的 `Close game during wait` 判为本轮完成，接管请求、提前退出和停滞各自有结果。保留原口径并用样本验证。账号计数、历史和统计报告各写一次，沿用宿主投递与任务结果遥测。
-5. `ScriptConfigWorker` 和 `ScriptViewWorker` 共享启动 WebUI、确认进程退出和恢复安装现场的代码，但各自决定写回。L4 交还账号前完成保存。若进程退出未确认，L3 在 `await super().spawn(child)` 后检查清理结果，终止本次托管，保留恢复记录。这里需要显式检查，因为 `TaskBase.run()` 会接住普通子任务异常。L3 最后释放安装占用，L2 在收尾后归还资源与托管锁。[旧执行顺序](../app/task/SRC/manager.py) · [账号展开](../app/task/user_expander.py) · [子任务生命周期](../app/task/lifecycle.py) · [日志判定](../app/task/SRC/AutoProxy.py)
+5. `ScriptConfigWorker` 和 `ScriptViewWorker` 共享启动 WebUI、确认进程退出和恢复安装现场的代码，但各自决定写回。L4 交还账号前完成保存。若进程退出未确认，L3 在 `await super().spawn(child)` 后检查清理结果，终止本次托管，保留恢复记录。这里需要显式检查，因为 `TaskBase.run()` 会接住普通子任务异常。L3 最后释放安装占用，L2 在收尾后归还资源与托管锁。[旧执行顺序](https://github.com/AUTO-MAS-Project/AUTO-MAS/blob/e0380ba92/app/task/SRC/manager.py) · [账号展开](../app/task/user_expander.py) · [子任务生命周期](../app/task/lifecycle.py) · [日志判定](https://github.com/AUTO-MAS-Project/AUTO-MAS/blob/e0380ba92/app/task/SRC/AutoProxy.py)
 
 插件内按职责放置 `config`、`tasks`、`native`、`updates` 和 `api` 模块。`native` 持有安装身份、进程、快照、目录交换及 SRC 的备份适配。公共配置恢复、进程管理和通知继续通过 SDK 调用。只有在发行版 SDK 缺少所用的公共操作时，才在配套宿主版本导出该操作。
 
@@ -58,11 +58,11 @@ SRC 没有专项计划表。声明沿用当前设备范围和程序更新时机�
 | 编辑原生来源账号 | SRC 自己保存到安装目录的 `config/` | 保留成功编辑的结果 |
 | 查看历史备份 | 无写回目标 | 恢复任务前现场。托管级查看跳过下发，账号级按备份来源准备视图 |
 
-旧编辑会话正常保存时调用 `_mas_owner()`。写中断标记时却记录当前账号 ID，重启后的 `_save_pending_config_session()` 直接用该 ID 拼写回目录。因此，共享账号在中断前后可能写入不同位置，原生账号也可能被当成有 MAS 副本的账号。这两个路径在当前源码中可以核对。[会话标记与正常保存](../app/task/SRC/ScriptConfig.py) · [中断恢复](../app/task/SRC/manager.py)
+旧编辑会话正常保存时调用 `_mas_owner()`。写中断标记时却记录当前账号 ID，重启后的 `_save_pending_config_session()` 直接用该 ID 拼写回目录。因此，共享账号在中断前后可能写入不同位置，原生账号也可能被当成有 MAS 副本的账号。这两个路径在当前源码中可以核对。[会话标记与正常保存](https://github.com/AUTO-MAS-Project/AUTO-MAS/blob/e0380ba92/app/task/SRC/ScriptConfig.py) · [中断恢复](https://github.com/AUTO-MAS-Project/AUTO-MAS/blob/e0380ba92/app/task/SRC/manager.py)
 
 新会话在下发时确定写回目标。进程记录与 `Temp.ready` 同时保存可识别版本的会话意图和目标，恢复时核对托管 ID、安装身份和两份记录。共享目标为 `Default`，独立目标为账号 UUID，查看及原生编辑没有 MAS 写回目标。原生编辑正常完成与异常中断的安装目录处理仍分别执行。旧记录继续可读，按原记录和可核实的来源判定目标。无法证明旧账号会话应写入哪个目录时，先保全编辑现场和原始快照，向用户给出恢复位置，不覆盖候选目录。宿主加载配置时不清理这些文件，由首个 SRC 任务接手。
 
-MAS 备份继续按账号放在 `data/{scriptId}/SrcBackups/mas/{userId}`。原生备份继续按安装配置根指纹放在 `data/SrcBackups/native/{key}`，供引用同一安装的托管共享。有待恢复的 `Temp.ready` 时，原生恢复操作先拒绝覆盖。归档和迁移保留已有侧车，预览能读旧备份，`Base` 不从侧车静默回填。[备份目录与恢复守卫](../app/task/SRC/tools/backup_archive.py)
+MAS 备份继续按账号放在 `data/{scriptId}/SrcBackups/mas/{userId}`。原生备份继续按安装配置根指纹放在 `data/SrcBackups/native/{key}`，供引用同一安装的托管共享。有待恢复的 `Temp.ready` 时，原生恢复操作先拒绝覆盖。归档和迁移保留已有侧车，预览能读旧备份，`Base` 不从侧车静默回填。[备份目录与恢复守卫](https://github.com/AUTO-MAS-Project/AUTO-MAS/blob/e0380ba92/app/task/SRC/tools/backup_archive.py)
 
 ## 旧用户升级与插件启停
 
@@ -72,8 +72,8 @@ MAS 备份继续按账号放在 `data/{scriptId}/SrcBackups/mas/{userId}`。原�
 
 ## 两处需要对照上游的存量能力
 
-- 旧版用 MaaFramework 的 `StarRailEmulator` 管线切换官服和 B 服账号，图片和管线在主仓，宿主加载公共资源目录。上游已有启动、登录确认和进入主界面的逻辑。普通登录优先走 SRC 自己的入口，指定账号、账号列表选取与 B 服凭据切换要分别核实。上游覆盖即替换；确有缺口则先评估上游贡献，受阻时才保留有退出条件的兼容实现。若必须保留，SRC 专属管线与图片随插件 wheel 交付，验证干净安装能加载，MaaFramework 引擎仍复用公共能力。发布前须能证明给指定账号派发时进的是该账号。[当前调用](../app/task/SRC/tools/login.py) · [宿主资源加载](../app/core/maa_manager.py) · [上游登录实现](https://github.com/LmeSzinc/StarRailCopilot/blob/master/tasks/login/login.py)
-- 旧版覆写 `src.json`、`deploy.yaml` 并从备份解析关卡值。保留用户已有设置与恢复能力，先核实所支持的 SRC 发行版能否从公开配置或启动入口表达同一行为。能替代的调用移交上游，遗留兼容只集中在插件的原生配置模块，连同适用版本和移除条件记录。关卡表、上游私有字段和游戏流程不进入宿主 SDK。[现有覆写](../app/task/SRC/AutoProxy.py) · [上游程序入口](https://github.com/LmeSzinc/StarRailCopilot/blob/master/src.py)
+- 旧版用 MaaFramework 的 `StarRailEmulator` 管线切换官服和 B 服账号，图片和管线在主仓，宿主加载公共资源目录。上游已有启动、登录确认和进入主界面的逻辑。普通登录优先走 SRC 自己的入口，指定账号、账号列表选取与 B 服凭据切换要分别核实。上游覆盖即替换；确有缺口则先评估上游贡献，受阻时才保留有退出条件的兼容实现。若必须保留，SRC 专属管线与图片随插件 wheel 交付，验证干净安装能加载，MaaFramework 引擎仍复用公共能力。发布前须能证明给指定账号派发时进的是该账号。[当前调用](https://github.com/AUTO-MAS-Project/AUTO-MAS/blob/e0380ba92/app/task/SRC/tools/login.py) · [宿主资源加载](../app/core/maa_manager.py) · [上游登录实现](https://github.com/LmeSzinc/StarRailCopilot/blob/master/tasks/login/login.py)
+- 旧版覆写 `src.json`、`deploy.yaml` 并从备份解析关卡值。保留用户已有设置与恢复能力，先核实所支持的 SRC 发行版能否从公开配置或启动入口表达同一行为。能替代的调用移交上游，遗留兼容只集中在插件的原生配置模块，连同适用版本和移除条件记录。关卡表、上游私有字段和游戏流程不进入宿主 SDK。[现有覆写](https://github.com/AUTO-MAS-Project/AUTO-MAS/blob/e0380ba92/app/task/SRC/AutoProxy.py) · [上游程序入口](https://github.com/LmeSzinc/StarRailCopilot/blob/master/src.py)
 
 ## 交付顺序与验收
 

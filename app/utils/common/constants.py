@@ -37,6 +37,7 @@ UTC8 = timezone(timedelta(hours=8))
 
 TYPE_BOOK = {
     "MaaConfig": "MAA",
+    "SrcConfig": "SRC",
     "MaaEndConfig": "MaaEnd",
     "GeneralConfig": "通用",
     "OkwwConfig": "ok-ww",
