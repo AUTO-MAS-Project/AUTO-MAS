@@ -187,7 +187,7 @@ class Observed(BaseModel):
 class Closed(BaseModel):
     kind: Literal["closed"] = "closed"
     sink_error: str = ""
-    file_capacity_error: str = ""
+    capacity_error: str = ""
 
 
 class ReportEntry(BaseModel, frozen=True):

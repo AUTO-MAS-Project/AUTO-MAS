@@ -462,10 +462,10 @@ class LogFlowSession:
                         raise ValueError("LogFlow worker 未交付预期的最终报告")
                     if await self._process.wait() == 0:
                         self._release_job()
-                        if message.file_capacity_error:
+                        if message.capacity_error:
                             return self._finish_observation(
                                 "capacity",
-                                message.file_capacity_error,
+                                message.capacity_error,
                                 sink_error=message.sink_error,
                             )
                         if self._missed_native:

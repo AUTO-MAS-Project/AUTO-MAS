@@ -193,6 +193,8 @@ def _run_pipeline(
     _send(pipe, Ready(pid=os.getpid()))
     sequence = 0
     observed_bytes = 0
+    observation_full = False
+    observation_capacity_error = ""
     collected: dict[str | int, ResultItem] = {}
     revisions: dict[str, int] = {}
 
@@ -206,27 +208,24 @@ def _run_pipeline(
         status: NodeDisplayStatus | None = None,
         attributes: NodeAttributes = (),
     ) -> None:
-        nonlocal sequence, observed_bytes, sink_error
+        nonlocal sequence, observed_bytes, sink_error, observation_full
+        nonlocal observation_capacity_error
+        if observation_full:
+            return
         if sequence == MAX_NODE_FRAMES:
-            raise LogReadLimitExceeded("观察节点容量已满")
-        sequence += 1
+            observation_full = True
+            observation_capacity_error = "观察节点容量已满"
+            return
         node_type, text = result
         stable_id = f"{source_name}/{node_id}" if node_id is not None else None
         revision = 1
         if stable_id is not None:
             revision = revisions.get(stable_id, 0) + 1
-            revisions[stable_id] = revision
-        if postprocessor is not None:
-            key = stable_id if stable_id is not None else sequence
-            if withdrawn or config.report_order == "last_updated":
-                collected.pop(key, None)
-            if not withdrawn:
-                collected[key] = (node_type, text, timestamp)
         if status is None:
             legacy = LegacyReportNode.from_text(text)
             status = legacy.status if legacy is not None else "info"
         node = Node(
-            sequence=sequence,
+            sequence=sequence + 1,
             node_type=node_type,
             text=text,
             source=source_name,
@@ -237,11 +236,26 @@ def _run_pipeline(
             status=status,
             attributes=attributes,
         )
-        observed_bytes += _send(
-            pipe,
-            Observed(node=node),
-            remaining_bytes=MAX_NODE_BYTES - observed_bytes,
-        )
+        frame = Observed(node=node).model_dump_json().encode("utf-8") + b"\n"
+        if len(frame) > MAX_FRAME_BYTES:
+            observation_capacity_error = "日志节点超出进程消息容量"
+            return
+        if observed_bytes + len(frame) > MAX_NODE_BYTES:
+            observation_full = True
+            observation_capacity_error = "观察节点字节容量已满"
+            return
+        pipe.write(frame)
+        pipe.flush()
+        observed_bytes += len(frame)
+        sequence += 1
+        if stable_id is not None:
+            revisions[stable_id] = revision
+        if postprocessor is not None:
+            key = stable_id if stable_id is not None else sequence
+            if withdrawn or config.report_order == "last_updated":
+                collected.pop(key, None)
+            if not withdrawn:
+                collected[key] = (node_type, text, timestamp)
         if sink is not None and not sink_error:
             try:
                 sink.write(node)
@@ -358,7 +372,13 @@ def _run_pipeline(
         except Exception as exc:
             if not sink_error:
                 sink_error = f"close: {type(exc).__name__}"
-    _send(pipe, Closed(sink_error=sink_error, file_capacity_error=file_capacity_error))
+    _send(
+        pipe,
+        Closed(
+            sink_error=sink_error,
+            capacity_error=observation_capacity_error or file_capacity_error,
+        ),
+    )
 
 
 def main() -> int:

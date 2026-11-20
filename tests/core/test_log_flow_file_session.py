@@ -20,8 +20,10 @@ from app.core.log_flow.contracts import (
     MAX_NATIVE_PENDING_RECORDS,
     MAX_NODE_FRAMES,
     WORKER_MESSAGE,
-    Failed,
+    Closed,
     FileInput,
+    FinalEntry,
+    FinalReportReady,
     FunctionRef,
     LineRule,
     Observed,
@@ -452,13 +454,18 @@ async def test_file_backlog_reports_an_incomplete_session(tmp_path, accept_push)
         await session.close()
 
 
-def test_worker_keeps_over_budget_node_out_of_pipe_if_sink_cleanup_fails(tmp_path):
+def test_worker_finishes_report_at_node_capacity_even_if_sink_cleanup_fails(tmp_path):
     path = tmp_path / "session.log"
     path.write_bytes(b"done:1\n" * (MAX_NODE_FRAMES + 1))
     sink_log = tmp_path / "sink.log"
     spec = PipelineSpec(
         file=FileInput(path=str(path), start_from_end=False),
         rules=(LineRule(match="^done:", node_type="普通"),),
+        postprocess=FunctionRef(
+            name="probe:report",
+            module="tests.support.log_flow_functions",
+            attribute="sample_report",
+        ),
         sink=WorkerFactorySpec(
             factory=FunctionRef(
                 name="probe:sink",
@@ -481,7 +488,13 @@ def test_worker_keeps_over_budget_node_out_of_pipe_if_sink_cleanup_fails(tmp_pat
     nodes = [message.node for message in messages if isinstance(message, Observed)]
     assert [node.sequence for node in nodes] == list(range(1, MAX_NODE_FRAMES + 1))
     assert sink_log.read_text(encoding="utf-8").splitlines()[-1] == "closed"
-    assert isinstance(messages[-1], Failed) and messages[-1].reason == "capacity"
+    entries = [
+        message.entry.text for message in messages if isinstance(message, FinalEntry)
+    ]
+    assert entries == ["sample report"]
+    assert isinstance(messages[-2], FinalReportReady)
+    assert isinstance(messages[-1], Closed)
+    assert messages[-1].capacity_error and messages[-1].sink_error
 
 
 @pytest.mark.asyncio
