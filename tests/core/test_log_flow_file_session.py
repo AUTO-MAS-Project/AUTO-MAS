@@ -6,8 +6,10 @@ import json
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
+from threading import Event
 from types import SimpleNamespace
 
 import aiofiles
@@ -241,6 +243,34 @@ async def test_stuck_worker_is_reaped_and_keeps_already_observed_nodes(
         await asyncio.to_thread(process.wait, timeout=1)
     finally:
         await session.close(timeout=0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.name != "nt", reason="Windows Job 回收")
+async def test_worker_close_handles_a_saturated_job_cleanup_executor(monkeypatch):
+    from app.core.log_flow import session as session_module
+
+    session = await LogFlowSession.open(PipelineSpec(accept_push=True))
+    loop = asyncio.get_running_loop()
+    release = Event()
+    executor = ThreadPoolExecutor(max_workers=1)
+    loop.set_default_executor(executor)
+    blocker = loop.run_in_executor(None, release.wait)
+    try:
+        monkeypatch.setattr(session_module, "_STOP_GRACE_SECONDS", 0.1)
+        psutil.Process(session.pid).suspend()
+        async with asyncio.timeout(2):
+            summary = await session.close(timeout=0)
+        assert summary.reason == "timeout"
+        assert LogFlowSession.has_unconfirmed_workers()
+        assert session._job_kill_task is not None
+    finally:
+        release.set()
+        await blocker
+        monkeypatch.setattr(session_module, "_STOP_GRACE_SECONDS", 2)
+        await LogFlowSession.retry_unconfirmed_workers()
+        await session.close(timeout=0)
+    assert not LogFlowSession.has_unconfirmed_workers()
 
 
 @pytest.mark.asyncio
