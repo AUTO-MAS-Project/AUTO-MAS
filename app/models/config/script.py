@@ -22,13 +22,15 @@
 from __future__ import annotations
 
 import json
+import re
+from _strptime import TimeRE
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path as NativePath
 from typing import Annotated, Any, ClassVar, Literal
 from uuid import UUID
 
-from pydantic import Field, PrivateAttr
+from pydantic import Field, PrivateAttr, field_validator
 
 from app.config import (
     ConfigCollection,
@@ -3010,6 +3012,45 @@ class BetterGIUserConfig(DomainEntry):
             return str(exc)
 
 
+def _compile_strptime_format(value: str) -> str:
+    """用上游脚本同一个 strptime 编译器试一遍格式。
+
+    格式写错（不认识的指令、重复命名的捕获组）要等到运行期准备阶段才炸，
+    那一炸还会把收尾一起带断，所以在写进配置时就挡住。
+    """
+
+    try:
+        TimeRE().compile(value)
+    except KeyError as exc:
+        raise ValueError(f"日志格式含不认识的指令 {exc}: {value}") from exc
+    except re.error as exc:
+        raise ValueError(f"日志格式无法编译（{exc}）: {value}") from exc
+    return value
+
+
+def reject_invalid_log_formats(data: dict[str, Any]) -> str | None:
+    """保存前检查一次日志格式；返回给用户看的原因，没问题就是 None。
+
+    接口侧的配置更新是宽松投影（``ConfigInput``），不跑字段校验，所以要在入口
+    单独调一次；模型本身也挂了同一个校验，加载旧配置时同样会被挡住。
+    """
+
+    script = data.get("Script")
+    if not isinstance(script, dict):
+        return None
+    for field, label in (
+        ("LogPathFormat", "日志路径格式"),
+        ("LogTimeFormat", "日志时间格式"),
+    ):
+        value = script.get(field)
+        if isinstance(value, str) and value:
+            try:
+                _compile_strptime_format(value)
+            except ValueError as exc:
+                return f"{label}不可用：{exc}"
+    return None
+
+
 class GeneralConfig(DomainEntry):
     "通用配置"
 
@@ -3129,6 +3170,11 @@ class GeneralConfig(DomainEntry):
             default_factory=lambda: "%Y-%m-%d", description="日志路径格式"
         )
 
+        @field_validator("LogPathFormat", mode="after")
+        @classmethod
+        def _check_log_path_format(cls, value: str) -> str:
+            return _compile_strptime_format(value)
+
         LogTimeEnd: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 1, description="日志时间戳结束位置"
         )
@@ -3136,6 +3182,11 @@ class GeneralConfig(DomainEntry):
         LogTimeFormat: str = Field(
             default_factory=lambda: "%Y-%m-%d %H:%M:%S", description="日志时间格式"
         )
+
+        @field_validator("LogTimeFormat", mode="after")
+        @classmethod
+        def _check_log_time_format(cls, value: str) -> str:
+            return _compile_strptime_format(value)
 
         LogTimeStart: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 1, description="日志时间戳开始位置"
