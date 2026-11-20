@@ -243,7 +243,8 @@ if (process.versions.electron && process.type === 'browser') {
         options?.args ?? ['.', ...process.argv.slice(2)],
         {
           cwd: root,
-          windowsHide: true,
+          // Windows 下隐藏 Electron 进程会让主窗口首次 show() 失效。
+          windowsHide: false,
           stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
           env: {
             ...process.env,
