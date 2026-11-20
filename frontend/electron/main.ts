@@ -434,7 +434,7 @@ function createTray(): boolean {
       if (fs.existsSync(iconPath)) {
         trayIcon = nativeImage.createFromPath(iconPath)
         if (!trayIcon.isEmpty()) {
-          logger.info(`成功加载托盘图标: ${iconPath}`)
+          logger.debug(`成功加载托盘图标: ${iconPath}`)
           break
         }
       }
@@ -719,10 +719,10 @@ function updateTrayVisibility(config: AppConfig) {
     (!mainWindow.isVisible() && !mainWindow.isMinimized())
 
   if (shouldShowTray && !tray) {
-    if (createTray()) logger.info('托盘图标已创建')
+    if (createTray()) logger.debug('托盘图标已创建')
   } else if (!shouldShowTray && tray) {
     destroyTray()
-    logger.info('托盘图标已销毁')
+    logger.debug('托盘图标已销毁')
   }
 }
 
@@ -1208,7 +1208,6 @@ function createWindow() {
           config.UI.maximized = isMaximized
 
           saveConfig(config)
-          logger.info('窗口状态已自动保存')
         } catch {
           logger.error('保存窗口状态失败')
         }
@@ -1224,11 +1223,9 @@ function createWindow() {
 
   // 注册初始化处理器
   registerInitializationHandlers(win)
-  logger.info('应用初始化处理器已注册')
 
   // 注册文件处理器
   registerFileHandlers()
-  logger.info('文件处理器已注册')
 
   // 初始托盘配置（使用文件配置）
   updateTrayVisibility(config)
@@ -2186,7 +2183,6 @@ ipcMain.handle('save-config', (event, patch, defaults) => {
     const configPath = path.join(configDir, 'frontend_config.json')
 
     const config = patchConfigFile(configPath, patch, defaults) as AppConfig
-    logger.info(`配置已保存到: ${configPath}`)
 
     desktopMascot.configChanged(patch)
 
@@ -2342,7 +2338,6 @@ ipcMain.handle('load-config', async () => {
 
     if (fs.existsSync(configPath)) {
       const config = fs.readFileSync(configPath, 'utf8')
-      logger.info(`从文件加载配置: ${configPath}`)
       return JSON.parse(config)
     }
 
@@ -2487,16 +2482,13 @@ app.whenReady().then(async () => {
 
   // 注册文件操作处理器（在窗口创建之前注册）
   registerFileHandlers()
-  logger.info('文件操作处理器已注册')
 
   registerAppearanceHandlers({ onChanged: desktopMascot.sync })
   registerMascotHandlers(desktopMascot.sync)
   desktopMascot.mount()
-  logger.info('外观包处理器已注册')
 
   // 注册 OK-WW 与鸣潮安装路径发现处理器
   registerOkwwPathDiscoveryHandlers()
-  logger.info('OK-WW 路径发现处理器已注册')
 
   registerStopAllTasksShortcut()
 

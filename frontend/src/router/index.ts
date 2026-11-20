@@ -261,7 +261,7 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
-  logger.info(`路由守卫：${JSON.stringify({ to: to.path, from: from.path })}`)
+  logger.debug(`路由守卫：${JSON.stringify({ to: to.path, from: from.path })}`)
 
   const { isInitialized, isBootstrapping } = useAppInitialization()
 
@@ -316,7 +316,7 @@ router.beforeEach(async (to, from, next) => {
     return next()
   }
 
-  logger.info(
+  logger.debug(
     `检查初始化状态：${JSON.stringify({ isInitialized: isInitialized.value, isBootstrapping: isBootstrapping.value })}`
   )
   if (isBootstrapping.value) {

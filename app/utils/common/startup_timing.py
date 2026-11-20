@@ -22,7 +22,7 @@ def startup_mark(name: str) -> None:
 def startup_stage(name: str) -> Iterator[None]:
     """分别测量阶段耗时，嵌套或并行阶段不互相覆盖起点。"""
     started_at = perf_counter()
-    logger.info(f"[启动计时] {name} 开始")
+    logger.debug(f"[启动计时] {name} 开始")
     outcome = "完成"
     try:
         yield

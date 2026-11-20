@@ -303,7 +303,7 @@ describe('一次性命令退出', () => {
     )
     privateChild.close(0)
     expect(await privateRun).toMatchObject({ success: true })
-    const diagnostics = loggerMock.info.mock.calls
+    const diagnostics = [...loggerMock.debug.mock.calls, ...loggerMock.warn.mock.calls]
       .map(([message]) => String(message))
       .filter(message => message.startsWith('[Runtime进程] '))
       .join('\n')

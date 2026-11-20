@@ -3,6 +3,7 @@ import * as path from 'path'
 import { app } from 'electron'
 import { getAppRoot } from './environmentService'
 import { isDevelopmentEnvironment } from './instanceConfig'
+import { readOutputLogLevel } from '../utils/configFile'
 
 /**
  * 模块颜色映射
@@ -10,6 +11,8 @@ import { isDevelopmentEnvironment } from './instanceConfig'
 const moduleColors = new Map<string, string>()
 let consoleOutputGuardInstalled = false
 let consolePipeBroken = false
+
+const fileLevels = { DEBUG: 'debug', INFO: 'info', WARNING: 'warn', ERROR: 'error' } as const
 
 /**
  * 文件日志格式化函数
@@ -100,8 +103,11 @@ function handleConsoleError(error: unknown): void {
   log.transports.console.level = false
 }
 
-function configureConsoleOutput(isDevelopment: boolean): void {
-  log.transports.console.level = isDevelopment && !consolePipeBroken ? 'debug' : false
+function configureConsoleOutput(
+  isDevelopment: boolean,
+  level: (typeof fileLevels)[keyof typeof fileLevels]
+): void {
+  log.transports.console.level = isDevelopment && !consolePipeBroken ? level : false
   if (consoleOutputGuardInstalled) return
 
   // Windows 的同步写入可能直接抛错；electron-log 的内部报错也会绕过 level 调用 writeFn。
@@ -131,10 +137,11 @@ export function initializeLogger(): void {
   }
   const isDevelopment = isDevelopmentEnvironment()
   const appRoot = getAppRoot()
+  const level = fileLevels[readOutputLogLevel(appRoot)]
 
   // 设置日志级别
-  log.transports.file.level = 'info'
-  configureConsoleOutput(isDevelopment)
+  log.transports.file.level = level
+  configureConsoleOutput(isDevelopment, level)
 
   log.transports.file.resolvePathFn = () => path.join(appRoot, 'debug', 'frontend.log')
 
@@ -144,8 +151,6 @@ export function initializeLogger(): void {
 
   // 设置按文件大小轮换
   log.transports.file.maxSize = 10 * 1024 * 1024 // 10MB
-
-  log.info('日志', '日志组件初始化完成')
 
   // Hook console 方法
   hookConsole()

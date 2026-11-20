@@ -529,8 +529,8 @@ class ProcessRunner:
             )
             raise
 
-        logger.info(
-            f"子进程已退出: {command} - 用时: {time.monotonic() - started_at:.3f}秒"
+        logger.debug(
+            f"子进程已退出: {Path(program).name} - 用时: {time.monotonic() - started_at:.3f}秒"
         )
         scope = current_process_scope.get()
         if scope is not None and not cleanup:

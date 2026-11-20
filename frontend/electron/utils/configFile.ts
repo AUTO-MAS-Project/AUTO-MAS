@@ -1,5 +1,19 @@
 import * as fs from 'fs'
 import * as path from 'path'
+import { normalizeOutputLogLevel, type OutputLogLevel } from './logOutputLevel'
+
+/** 桌面和受监督的后端从同一份偏好读取最低输出级别。 */
+export function readOutputLogLevel(appRoot: string): OutputLogLevel {
+  try {
+    const config = JSON.parse(
+      fs.readFileSync(path.join(appRoot, 'config', 'frontend_config.json'), 'utf8')
+    )
+    return normalizeOutputLogLevel(config?.logOutputLevel)
+  } catch {
+    // 日志需要在配置初始化前可用，配置缺失或损坏时仍记录 INFO。
+    return 'INFO'
+  }
+}
 
 // 在主进程中同步读取、合并和写入，期间不让出事件循环给其他配置写入。
 export function patchConfigFile(
