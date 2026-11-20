@@ -16,6 +16,8 @@ PLUGIN_ID_PATTERN = re.compile(r'(?!\.{1,2}$)[^/\\:*?"<>|\s\x00-\x1f]+')
 # 包顶层 ``__init__.py`` 固定入口符号（取代 entry-points）
 PLUGIN_ATTR = "PLUGIN"
 PLUGIN_API_VERSION = "6"
+# 受控插件：神秘入口未解锁时不进入市场、不可安装，解锁后行为与普通插件一致。
+RESTRICTED_PLUGIN_NAMES = frozenset({"token_adapter"})
 plugin_locale: ContextVar[str] = ContextVar("plugin_locale", default="zh-CN")
 
 
