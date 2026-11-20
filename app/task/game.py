@@ -154,6 +154,7 @@ class GameSession:
         self.ticket: LockTicket | None = None
         self.device_uid: UUID | None = None
         self.game_uid: UUID | None = None
+        self.close_emulator_on_release = False
         self.cleanup_failed = False
         self._account_override = False
 
@@ -242,7 +243,13 @@ class GameSession:
             return
         ticket = self.ticket
         try:
-            await GameManager.unsubscribe(ticket)
+            try:
+                if self.close_emulator_on_release and self.emulator is not None:
+                    async with asyncio.timeout(30):
+                        await self.emulator.close(str(self.device_uid))
+            finally:
+                self.close_emulator_on_release = False
+                await GameManager.unsubscribe(ticket)
         except Exception as error:
             self.cleanup_failed = True
             await self.script.set_log(

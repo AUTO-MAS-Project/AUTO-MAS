@@ -13,10 +13,12 @@ AUTO-MAS/
   app/
   frontend/src/views/maa/    暂时保留的 MAA 静态页面
   frontend/src/views/whimbox/ 暂时保留的奇想盒静态页面
+  frontend/src/views/src/     SRC 静态编辑页
   plugins/
     auto_mas_core/         主程序跟踪的 SDK
     maa_adapter/           开发者克隆的独立仓库
     whimbox_adapter/       奇想盒独立仓库
+    src_adapter/           SRC 独立仓库
 ```
 
 Runtime 使用安装根目录保存用户插件，运行代码位于 `repo`。
@@ -45,7 +47,7 @@ git status
 ```
 
 奇想盒对应仓库为 `AUTO-MAS-Project/AUTO-MAS-Whimbox-Adapter`，本地目录为
-`plugins/whimbox_adapter`。两个适配器分别维护自己的配置、执行器与专用接口。
+`plugins/whimbox_adapter`。SRC 对应 [AUTO-MAS-SRC-Adapter](https://github.com/AUTO-MAS-Project/AUTO-MAS-SRC-Adapter)，本地目录为 `plugins/src_adapter`。各适配器分别维护自己的配置、执行器与专用接口。
 
 启动主程序后，在插件中心手动启用源码插件。插件代码的提交、推送、版本推进和发布
 均在该独立仓库中进行。主程序 Git 只交付 SDK。
@@ -55,7 +57,7 @@ git status
 主程序会在领域配置激活前通过正常发行包安装入口补齐。用户主动放入的有效源码
 仍可承担对应插件实现。
 
-奇想盒的旧托管同样会在配置激活前补齐插件。先发布适配器发行包，再交付移除内置实现的
+奇想盒和 SRC 的旧托管同样会在配置激活前补齐插件。先发布适配器发行包，再交付移除内置实现的
 主程序版本；首个发行包发布前，使用本地源码工程或本地构建的 wheel 联调。
 首发前应按实际配套 SDK 发行版本收紧插件的最低版本约束，并用该 SDK 发行包验证。
 同版本号的开发源码可能包含尚未发布的接口，不能据此推断旧 SDK 已兼容。

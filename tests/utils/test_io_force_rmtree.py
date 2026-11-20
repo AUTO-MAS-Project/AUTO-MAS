@@ -1,4 +1,4 @@
-"""Windows 配置恢复遇到占用文件时，不能留下半删的用户目录。"""
+"""Windows 配置恢复遇到占用文件时必须报告失败。"""
 
 import sys
 from pathlib import Path
@@ -9,8 +9,8 @@ from app.utils import io as _utils_io
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows 文件占用语义")
-def test_replace_dir_restores_when_target_still_held(tmp_path: Path) -> None:
-    """目标有文件被占用时不再停在半删状态：删掉的部分会被就地补回。"""
+def test_replace_dir_rejects_target_still_held(tmp_path: Path) -> None:
+    """目标未清空时不能复制新配置并假装替换成功。"""
 
     src = tmp_path / "src"
     dst = tmp_path / "configs"
@@ -21,8 +21,8 @@ def test_replace_dir_restores_when_target_still_held(tmp_path: Path) -> None:
     (dst / "held.bin").write_bytes(b"x" * 64)
 
     with (dst / "held.bin").open("rb"):
-        _utils_io.replace_dir(src, dst)
+        with pytest.raises(OSError, match="目标目录未能清空"):
+            _utils_io.replace_dir(src, dst)
 
-        # 关键断言：不是「删了一半、备份一个没拷回」
-        assert (dst / "user.json").exists()
-        assert (dst / "user.json").read_text(encoding="utf-8") == '{"a": 1}'
+    assert (dst / "held.bin").exists()
+    assert not (dst / "user.json").exists()
