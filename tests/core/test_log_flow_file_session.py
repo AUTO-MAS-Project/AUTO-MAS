@@ -276,6 +276,26 @@ async def test_worker_close_handles_a_saturated_job_cleanup_executor(monkeypatch
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(os.name != "nt", reason="Windows Job 回收")
+async def test_job_handle_close_error_preserves_worker_timeout_report(monkeypatch):
+    session = await LogFlowSession.open(PipelineSpec(accept_push=True))
+    job = session._job
+    assert job is not None
+    close = type(job).close
+
+    def fail_closing_handle(self):
+        close(self)
+        raise ExceptionGroup("Job handle", [OSError("injected close error")])
+
+    monkeypatch.setattr(type(job), "close", fail_closing_handle)
+    psutil.Process(session.pid).suspend()
+    summary = await session.close(timeout=0)
+    assert summary.reason == "timeout"
+    assert "worker 退出未确认" not in summary.detail
+    assert not LogFlowSession.has_unconfirmed_workers()
+
+
+@pytest.mark.asyncio
 async def test_worker_inherits_host_workdir_without_opening_an_application_log(
     tmp_path, monkeypatch
 ):

@@ -23,7 +23,7 @@ from app.models.log_flow import (
     ReportOrder,
     SessionSummary,
 )
-from app.utils import process_platform
+from app.utils import get_logger, process_platform
 from app.utils.common.process.runner import close_process_pipes
 from app.utils.contracts.process import TaskProcessJob
 
@@ -51,6 +51,7 @@ from .push import PushReporter, SubmitResult
 
 _SOURCE_ROOT = Path(__file__).resolve().parents[3]
 _STOP_GRACE_SECONDS = 1.0
+logger = get_logger("LogFlow")
 
 
 class SessionOpenError(RuntimeError):
@@ -414,7 +415,11 @@ class LogFlowSession:
     def _release_job(self) -> None:
         if self._job is not None:
             job, self._job = self._job, None
-            job.close()
+            try:
+                job.close()
+            except (OSError, ExceptionGroup) as exc:
+                # 进程退出已确认，句柄错误不应阻止交付报告或清除共享环境占用登记。
+                logger.warning(f"采集进程 Job 句柄关闭失败：{exc!r}")
 
     def _finish_observation(
         self, reason: CloseReason, detail: str = "", *, sink_error: str = ""
