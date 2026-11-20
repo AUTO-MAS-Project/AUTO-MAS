@@ -50,6 +50,8 @@ from .types import (
 # 合成路径搜索的深度上限（composite 表无环，防御性限制）
 _MAX_PATH_DEPTH = 5
 
+_MAX_AUTO_CULTIVATE_TARGETS = 10
+
 # 专精/模组维度只有这些源携带真实观测值。local（OperBoxData 结构性无
 # 专精/模组字段）与 default（兜底全零）的空表是"未观测"而不是"没养成"：
 # 按 0 起算会把已达档位的材料重刷一遍，并虚增缺口抑制库存保持。森空岛
@@ -170,13 +172,13 @@ def select_auto_cultivate_targets(
     inventory: Mapping[str, int],
     data: CultivateDataSet,
 ) -> tuple[OperatorTarget, ...]:
-    """按各材料满足比例均值选取最多十名干员。
+    """按目标顺序下发最多十名干员，超出名额时按材料达成率筛选。
 
-    每名干员独立对比现有成品库存，不预分配共享材料；同分沿用目标顺序。
+    筛选时每名干员独立对比现有成品库存，不预分配共享材料；同分沿用目标顺序。
     模组没有自动培养入口，不参与评分，也不占用名额。
     """
 
-    scored: list[tuple[OperatorTarget, float]] = []
+    candidates: list[OperatorTarget] = []
     for target in targets:
         goals = tuple(
             goal
@@ -194,7 +196,13 @@ def select_auto_cultivate_targets(
             goals = tuple(goal for goal in goals if goal.kind != "skill")
             if snapshot.data.skill_level < 7:
                 goals += (Goal(kind="skill", target_id="", to_level=7),)
-        candidate = replace(target, goals=goals)
+        candidates.append(replace(target, goals=goals))
+
+    if len(candidates) <= _MAX_AUTO_CULTIVATE_TARGETS:
+        return tuple(candidates)
+
+    scored: list[tuple[int, float]] = []
+    for index, candidate in enumerate(candidates):
         requirements = build_requirements(
             targets=(candidate,), snapshots=snapshots, demands=data.demands
         )
@@ -207,11 +215,12 @@ def select_auto_cultivate_targets(
             if requirements
             else 1.0
         )
-        scored.append((candidate, completion))
-    return tuple(
-        target
-        for target, _ in sorted(scored, key=lambda item: item[1], reverse=True)[:10]
+        scored.append((index, completion))
+    scored.sort(key=lambda item: item[1], reverse=True)
+    selected_indices = sorted(
+        index for index, _ in scored[:_MAX_AUTO_CULTIVATE_TARGETS]
     )
+    return tuple(candidates[index] for index in selected_indices)
 
 
 def _build_recipe_map(data: CultivateDataSet) -> dict[str, Recipe]:
