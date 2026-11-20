@@ -8,6 +8,7 @@ import { localReadings, type StartupHardwareLog } from './localLog'
 import type { RuntimeEvent } from '../runtime/protocol'
 
 export interface ProbeConfig {
+  reportHostFailure?: (stage: string, code: string) => void
   log: StartupHardwareLog
   executable?: string
   graphics: () => Promise<unknown>
@@ -21,6 +22,7 @@ const recentWindow = 15_000
 export class StartupAttempt {
   readonly started = performance.now()
   readonly wallStart = Date.now()
+  readonly reportHostFailure: ProbeConfig['reportHostFailure']
   private readonly overall = new SampleSummary(this.started)
   private readonly stages = new Set<SampleSummary>()
   private recent: TimedSample[] = []
@@ -53,6 +55,7 @@ export class StartupAttempt {
     readonly generation: number | null,
     config: ProbeConfig
   ) {
+    this.reportHostFailure = config.reportHostFailure
     this.log = config.log
     this.log.write('开始', {
       attempt: this.wallStart,
@@ -128,7 +131,13 @@ export class StartupAttempt {
     this.overall.add(sample)
     for (const stage of this.stages) stage.add(sample)
   }
-  logResult(stage: string, outcome: string, code = 'none', started = this.started) {
+  logResult(
+    stage: string,
+    outcome: string,
+    code = 'none',
+    started = this.started,
+    stageSummary?: Fields
+  ) {
     const at = this.frozen ?? performance.now()
     const latest = this.recent.at(-1)
     this.log.write('阶段结果', {
@@ -139,7 +148,7 @@ export class StartupAttempt {
       elapsed_ms: Math.round(at - started),
       sample_age_ms: latest ? Math.round(at - latest.at) : null,
       readings: latest ? localReadings(latest.data) : {},
-      summary: this.snapshot(),
+      summary: stageSummary ?? this.snapshot(),
     })
     if (outcome === 'failure' && !this.failureLogged) {
       this.failureLogged = true
@@ -178,9 +187,9 @@ export class StartupAttempt {
     const summary = new SampleSummary(start)
     this.stages.add(summary)
     return (outcome: string, code?: string) => {
-      this.logResult(stage, outcome, code, start)
       this.stages.delete(summary)
       const fields = summary.fields()
+      this.logResult(stage, outcome, code, start, fields)
       return {
         ...fields,
         ...this.details,
@@ -197,6 +206,7 @@ export class StartupAttempt {
       band('source_switches', Math.max(0, sourceIndex - 1)) ?? 'unknown'
   }
   retry() {
+    this.failureLogged = false
     this.details.retries = band('retries', ++this.retries)!
   }
   progress(event: RuntimeEvent) {

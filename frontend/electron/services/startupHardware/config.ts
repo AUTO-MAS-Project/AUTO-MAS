@@ -1,3 +1,4 @@
+import { captureStartupHostFailure } from '../sentry'
 import { StartupHardwareLog } from './localLog'
 import { app } from 'electron'
 import path from 'node:path'
@@ -36,6 +37,7 @@ export function startupProbeConfig(): ProbeConfig {
   if (!owned) for (const index of [1, 2, 3, 4, 6, 7, 8]) directories[index] = ''
   return {
     log: (log ??= new StartupHardwareLog(path.join(data, 'debug'))),
+    reportHostFailure: captureStartupHostFailure,
     graphics: () => app.getGPUInfo('basic'),
     executable:
       process.platform !== 'win32'

@@ -1,4 +1,3 @@
-import { captureStartupHostFailure } from './sentry'
 import { analyticsService } from './analyticsService'
 import { analyticsDuration } from './analyticsPolicy'
 import { startupAttempt, localStartupAttempt, inStartupOperation } from './startupHardware/monitor'
@@ -65,7 +64,7 @@ export async function observeInitializationStage<
       outcome === 'failure' &&
       (stage === 'runtime_binary' || code === 'RUNTIME_NOT_FOUND')
     )
-      captureStartupHostFailure(stage, code)
+      attempt.reportHostFailure?.(stage, code)
     analyticsService.recordMainEvent(
       context,
       {
