@@ -306,6 +306,11 @@ class ScriptExpander(TaskBase):
                     finally:
                         await manager.callbacks.close()
                         self._callback_failed |= bool(manager.callbacks.errors)
+                        if (
+                            not self.maintenance
+                            and self.task_info.mode == TaskMode.AUTO_PROXY
+                        ):
+                            manager.finalize_completion_details(script)
                 if any("异常" in u.status for u in script.users.values()):
                     await script.set_state(status="异常")
         except FluxdownCancelUnconfirmed:
