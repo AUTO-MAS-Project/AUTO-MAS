@@ -627,6 +627,9 @@ class WSTaskNoticeData(BaseModel):
     """任务提示消息数据 (type=task.notice)"""
 
     level: Literal["info", "warning", "error"] = Field(..., description="提示级别")
+    sourceScriptType: str | None = Field(
+        default=None, description="实际发出提示的专项类型"
+    )
     message: str = Field(..., description="提示内容")
     messageKey: Optional[str] = Field(
         default=None, description="可选的前端翻译键；旧客户端仍使用 message"

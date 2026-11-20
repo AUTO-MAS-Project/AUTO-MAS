@@ -24,7 +24,7 @@ function showWhenReady(show: () => void, expectedGeneration = generation) {
   else pending.push(display)
 }
 
-async function handleNotice(state: TaskRuntimeState, data: WSTaskNoticeData) {
+async function handleNotice(data: WSTaskNoticeData) {
   const { exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
   const feedbackGeneration = generation
   const { playSound } = useAudioPlayer()
@@ -32,9 +32,6 @@ async function handleNotice(state: TaskRuntimeState, data: WSTaskNoticeData) {
 
   if (data.level === 'error') {
     const errorMsg = String(data.message).toLowerCase()
-    const isMaaEndTask = state.scripts.some(script =>
-      script.scriptType.toLowerCase().includes('maaend')
-    )
 
     // 根据错误内容匹配具体的 noisy 模式音频
     if (
@@ -64,7 +61,7 @@ async function handleNotice(state: TaskRuntimeState, data: WSTaskNoticeData) {
       await playSound('error_occurred')
     }
 
-    const isMaaEndError = isMaaEndTask || errorMsg.includes('maaend')
+    const isMaaEndError = data.sourceScriptType === 'MaaEnd'
     showWhenReady(() => {
       if (isMaaEndError) {
         if (!maaEndFailureModalOpen) {
@@ -200,7 +197,7 @@ export function bootstrapTaskFeedback() {
     }
   )
   disposeListener = onTaskRuntimeEvent(event => {
-    if (event.type === 'notice') return handleNotice(event.state, event.notice)
+    if (event.type === 'notice') return handleNotice(event.notice)
     if (event.type === 'completed') return handleCompleted(event.state)
   })
 }
