@@ -90,7 +90,7 @@ from app.utils.common.tools import to_pep440
 if TYPE_CHECKING:
     from app.models.config import PluginMeta, PluginRecord
     from app.models.task import TaskScriptItem, TaskUserItem
-    from app.utils.common.log.monitor import LogMonitor
+    from app.utils.common.log.flow_monitor import LogFlowMonitor
 
 logger = get_logger("插件管理")
 
@@ -144,7 +144,7 @@ class _PluginManager:
         mode: ReportMode | None = None,
         receive_report: Callable[[list[str]], None] | None = None,
         task_report: LogFlowTaskReport | None = None,
-        monitor: LogMonitor | None = None,
+        monitor: LogFlowMonitor | None = None,
         file_input: FileInput | None = None,
         general_rules: GeneralFlowDeclaration | None = None,
         postprocess_options: Mapping[str, JsonValue] | None = None,
@@ -297,16 +297,16 @@ class _PluginManager:
         """注销插件实例拥有的背景任务组并关闭调用入口，避免实例卸载后继续执行工作。"""
         from app.core.background_tasks import BackgroundTaskManager
 
-        gate = self._calls.get(plugin.record.uid)
-        if gate is not None:
-            gate.accepting = False
         if (owner := self._log_flow_owners.get(id(plugin))) is not None:
+            if (gate := self._calls.get(plugin.record.uid)) is not None:
+                gate.accepting = False
             await owner.close()
             self._log_flow_owners.pop(id(plugin), None)
-        self._log_flow_declarations.pop(id(plugin), None)
+            self._log_flow_declarations.pop(id(plugin), None)
         if plugin._background_tasks is not None:
             await BackgroundTaskManager.unregister_group(plugin._background_tasks)
-        self._calls.pop(plugin.record.uid, None)
+        if (gate := self._calls.pop(plugin.record.uid, None)) is not None:
+            gate.accepting = False
 
     # ==================== 初始化 ====================
 
@@ -797,8 +797,9 @@ class _PluginManager:
                 record.info.state = PluginState.ENABLED
                 record.info.lifecycle_context = LifecycleContext.IDLE
             await record.commit()
-            self._log_flow_owners[id(plugin)] = FlowOwner(lambda: gate.accepting)
-            self._log_flow_declarations[id(plugin)] = declarations
+            if declarations:
+                self._log_flow_owners[id(plugin)] = FlowOwner(lambda: gate.accepting)
+                self._log_flow_declarations[id(plugin)] = declarations
             capabilities_changed.send(self, name=name, enabled=True)
             await Publisher.send(
                 id=ID_PLUGIN, type=PLUGIN_CAPABILITIES_UPDATED, data={}

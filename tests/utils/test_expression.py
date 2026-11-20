@@ -36,8 +36,10 @@ def test_rule_keeps_its_session_function_after_reload():
 
     assert old_rule.extract("掉落 3") == "旧：3件"
     assert new_rule.extract("掉落 3") == "新：3件"
-    with pytest.raises(ExpressionError, match=name):
+    with pytest.raises(ExpressionError):
         compile_expression(rule)
+    with pytest.raises(ExpressionError, match=name):
+        compile_expression(rule, extensions={})
 
 
 def test_invalid_extension_call_is_distinct_from_no_match():

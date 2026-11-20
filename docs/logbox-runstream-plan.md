@@ -527,7 +527,7 @@ P7 的 SDK 草案从 P1/P2 开始设计，不等全部专项迁完才考虑扩�
 | ZZZ-OD | `AutoProxy` 文件节点采集与账号归并 |
 | MaaEnd | `AutoProxy` 阶段节点与材料增量两条路径，统计及材料通知分别验收 |
 
-General 用共享 WebUI 规则直接采集，BetterGI 由既有分步表产生节点。它们的报告管理器与上述五个专项现均直接导入 `app.utils.common.log.results.LogEntry`。删除旧包时保留共享条目、规则、文件读取、表达式和通知排版。仓库内的插件 SDK 当前没有直接依赖旧包。移除 `app.utils.log_box` 与 `app.utils.common.log_box` 之前，须核对在支持范围内的外部插件消费，处理旧包的对照测试，再按表重跑迁移验收。
+General 用 WebUI 规则直接采集，并保留旧 stdout 标记回传，BetterGI 由既有分步表产生节点。它们的报告管理器与上述五个专项继续使用上游的条目和通知逻辑。LogFlow 复用纯规则与时间解析，原始行监控和严格文件采集从 LogFlow 专用入口启用。移除 `app.utils.log_box` 与 `app.utils.common.log_box` 之前，须核对在支持范围内的外部插件消费，处理旧包的对照测试，再按表重跑迁移验收。
 
 清理前演练在隔离的宿主和采集进程中拦截两个旧包的导入。可从本地 SDK wheel 运行模拟专项，完成正常与取消收尾、原生尾日志、节点查询、补读及 Notify 测试交付。该证据覆盖新管线闭环，五个旧专项的切换仍按下表验收。
 

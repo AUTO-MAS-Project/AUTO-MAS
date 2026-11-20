@@ -75,7 +75,7 @@ class PLUGIN(BasePlugin):
 
 ## LogFlow 日志节点
 
-在现有专项插件类的 `log_flows` 中加一条具名声明即可使用 MAS 原生日志和默认通知排版。下面片段沿用专项已有的 `script_type_key`、`decl` 和执行逻辑。`monitor` 由专项创建，`execute()` 在启动日志生产进程时启动该监控器，并继续负责执行结果和进程清理。
+在现有专项插件类的 `log_flows` 中加一条具名声明即可使用 MAS 原生日志和默认通知排版。下面片段沿用专项已有的 `script_type_key`、`decl` 和执行逻辑。专项通过 `auto_mas_core.log_flow.LogMonitor` 创建监控器。`execute()` 在启动日志生产进程时启动该监控器，并继续负责执行结果和进程清理。
 
 ```python
 from contextlib import AsyncExitStack

@@ -1,17 +1,12 @@
-"""文本采集与通知排版共享的日志条目。"""
+"""文本处理结果；元数据由调用方提供，不解释业务状态。"""
 
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TypeAlias
 
-# 归并器接收带日志类型和时间的结果；行预处理返回 None 时跳过该行。
-ResultItem: TypeAlias = tuple[str, str, float | None]
-PostProcessor: TypeAlias = Callable[[list[ResultItem]], list[ResultItem]]
-LinePreprocessor: TypeAlias = Callable[[str], str | None]
-LegacyEntry: TypeAlias = tuple[str, str] | ResultItem
+LegacyEntry: TypeAlias = tuple[str, str] | tuple[str, str, float | None]
 
 
 @dataclass(frozen=True)

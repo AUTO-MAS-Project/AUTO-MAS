@@ -177,7 +177,7 @@ def compile_expression(
     Raises:
         ExpressionError: 语法错误、函数名称不可用或正则编译失败
     """
-    ast_lines = parse(expr_str)
+    ast_lines = parse(expr_str, allow_qualified=extensions is not None)
     compiled_lines: list[list[_CompiledSegment]] = []
 
     functions = dict(FUNCTIONS)

@@ -52,8 +52,8 @@ from app.task.MaaEnd.push_log import (
     maaend_resolve,
 )
 from app.task.OkNte.push_log import OKNTE_PUSH_RULES, oknte_resolve
-from app.utils.common.log.monitor import LogMonitor
-from app.utils.common.log.sources import LogSource
+from app.utils.common.log.flow_file import FlowFileSource
+from app.utils.common.log.flow_monitor import LogFlowMonitor as LogMonitor
 from app.utils.common.log_box import LogEntry, LogPipeline
 
 
@@ -78,7 +78,7 @@ async def wait_for_first_node(session: LogFlowSession) -> None:
 def test_file_rotation_between_path_check_and_open(tmp_path, monkeypatch):
     path = tmp_path / "script.log"
     path.write_bytes(b"history: before this session\n")
-    source = LogSource(path, strict_io=True)
+    source = FlowFileSource(path)
     source.open()
     with path.open("ab") as file:
         file.write(b"old tail\n")
@@ -101,7 +101,7 @@ def test_file_rotation_between_path_check_and_open(tmp_path, monkeypatch):
 def test_script_can_rotate_while_source_holds_read_handle(tmp_path, monkeypatch):
     path = tmp_path / "script.log"
     path.write_bytes(b"old tail\n")
-    source = LogSource(path, strict_io=True, start_from_end=False)
+    source = FlowFileSource(path, start_from_end=False)
     source.open()
     original_fstat = os.fstat
 
@@ -644,7 +644,7 @@ async def test_simple_flow_handles_stdout_burst_from_real_log_monitor():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("hold_pipe_open", [False, True])
 async def test_native_process_flow_drains_pipe_on_stop(monkeypatch, hold_pipe_open):
-    from app.utils.common.log import monitor as monitor_module
+    from app.utils.common.log import flow_monitor as monitor_module
 
     async def display(_lines, _latest_time):
         pass
@@ -734,7 +734,7 @@ async def test_native_stdout_skips_an_entire_oversized_line_and_reports_a_gap():
 async def test_native_file_flow_drains_last_poll_on_stop(
     tmp_path, monkeypatch, stop_case
 ):
-    from app.utils.common.log import monitor as monitor_module
+    from app.utils.common.log import flow_monitor as monitor_module
 
     path = tmp_path / "script.log"
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1033,6 +1033,24 @@ async def test_native_file_monitor_resumes_date_path_by_identity(
     if rotation != "none":
         expected.extend(("new00", "new01"))
     assert [line.split()[-1] for line in raw] == expected
+
+
+@pytest.mark.asyncio
+async def test_webui_flow_counts_blank_lines_in_multiline_windows():
+    pattern = {"type": "multiline", "start": "^BEGIN", "end": "^END", "maxLines": 3}
+    declaration = GeneralFlowDeclaration(patterns=json.dumps([pattern]))
+    async with open_custom_flow(
+        declaration, run=TaskUserItem(), mode="关闭", accept_push=True
+    ) as flow:
+        assert flow.reporter is not None
+        for line in ["BEGIN", " ", "part", "END", "BEGIN", "unclosed"]:
+            assert flow.reporter.text(line + "\r\n") is SubmitResult.ACCEPTED
+    snapshot = flow.snapshot_nodes()
+    assert snapshot.close_reason == "complete"
+    assert [node.text for node in snapshot.nodes] == [
+        "BEGIN\n\npart",
+        "BEGIN\nunclosed",
+    ]
 
 
 @pytest.mark.asyncio

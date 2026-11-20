@@ -7,6 +7,7 @@ from importlib import import_module
 from typing import Protocol, cast, runtime_checkable
 
 from app.utils.common.expression import ExpressionFunction, compile_expression
+from app.utils.common.log.flow_file import LogReadLimitExceeded
 from app.utils.common.log.hooks import make_line_hook
 from app.utils.common.log.monitor import strptime
 from app.utils.common.log.patterns import (
@@ -16,12 +17,11 @@ from app.utils.common.log.patterns import (
     flush_patterns,
     load_patterns,
 )
-from app.utils.common.log.results import LinePreprocessor
-from app.utils.common.log.sources import LogReadLimitExceeded
 
 from .contracts import (
     MAX_FRAME_BYTES,
     FunctionRef,
+    LinePreprocessor,
     PipelineSpec,
     ReportedRecord,
     WithdrawnRecord,

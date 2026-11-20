@@ -22,7 +22,7 @@ from app.models.log_flow import (
     ReportEntry,
     ReportOrder,
 )
-from app.utils.common.log.sources import FileCursor, capture_file_cursor
+from app.utils.common.log.flow_file import FileCursor, capture_file_cursor
 
 # 进程管道的单条消息预算；不是日志文件或 SDK 限额。
 MAX_FRAME_BYTES = 64 * 1024
@@ -33,6 +33,7 @@ MAX_NODE_FRAMES = 4096
 MAX_NODE_BYTES = 4 * 1024 * 1024
 
 type PostProcessor = Callable[[list[ReportEntry]], list[ReportEntry]]
+type LinePreprocessor = Callable[[str], str | None]
 
 
 class LineRule(BaseModel, frozen=True):

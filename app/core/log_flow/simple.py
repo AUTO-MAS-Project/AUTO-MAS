@@ -13,7 +13,7 @@ from app.models.log_flow import (
     ObservationSnapshot,
 )
 from app.models.task import TaskScriptItem, TaskUserItem
-from app.utils.common.log.monitor import LogMonitor
+from app.utils.common.log.flow_monitor import LogFlowMonitor
 
 from .contracts import (
     FileInput,
@@ -60,7 +60,7 @@ async def open_custom_flow(
     run: TaskScriptItem | TaskUserItem,
     mode: ReportMode,
     receive_report: Callable[[list[str]], None] | None = None,
-    monitor: LogMonitor | None = None,
+    monitor: LogFlowMonitor | None = None,
     file: FileInput | None = None,
     accept_push: bool = False,
     source: WorkerFactorySpec | None = None,
@@ -69,8 +69,11 @@ async def open_custom_flow(
     plugin_package: WorkerPluginPackage | None = None,
 ) -> AsyncIterator[FlowAccess]:
     """宿主按运行分支绑定来源；上报方不能指定归属或冒充原生来源。"""
-    if monitor is not None and monitor.on_raw_line is not None:
-        raise ValueError("日志监控器已有原始行消费者")
+    if monitor is not None:
+        if not isinstance(monitor, LogFlowMonitor):
+            raise TypeError("MAS 日志来源需要使用 auto_mas_core.log_flow.LogMonitor")
+        if monitor.on_raw_line is not None:
+            raise ValueError("日志监控器已有原始行消费者")
     specialized = (
         declaration if isinstance(declaration, SimpleFlowDeclaration) else None
     )
@@ -156,7 +159,7 @@ async def open_simple_flow(
     declaration: SimpleFlowDeclaration | GeneralFlowDeclaration,
     *,
     run: TaskScriptItem | TaskUserItem,
-    monitor: LogMonitor,
+    monitor: LogFlowMonitor,
     mode: ReportMode,
     receive_report: Callable[[list[str]], None],
     owner: FlowOwner | None = None,

@@ -660,9 +660,18 @@ async def test_declared_log_flow_delivers_one_task_report_via_notify(
 @pytest.mark.asyncio
 async def test_reload_and_disable_revoke_log_flow_of_the_previous_instance(
     cascade_plugins,
+    tmp_path,
 ):
     manager, records = await cascade_plugins({"flow_example": ()})
     record = records["flow_example"]
+    with (tmp_path / "flow_example" / "__init__.py").open(
+        "a", encoding="utf-8"
+    ) as module:
+        module.write(
+            "\nfrom auto_mas_core.log_flow import PluginFlowDeclaration\n"
+            "Adapter.log_flows = {'push': PluginFlowDeclaration(use_mas_log=False, accept_push=True)}\n"
+        )
+    await manager.reload(record)
     await manager.enable(record)
     previous = await manager.services.require("flow_example")()
     owner = manager.log_flow_owner(previous)

@@ -52,8 +52,7 @@ ZZZ-OD 专项作为 log_box 的一个实例：本模块只提供参数（规则�
 
 import re
 
-from app.utils import LOG_TYPE_NORMAL
-from app.utils.common.log.results import PostProcessor
+from app.utils import LOG_TYPE_NORMAL, log_box
 
 # 推送规则：(匹配正则, 提取表达式)；均为普通类型，节点级失败由文本「❌ 失败:」
 # 体现（始终展示），推送时机由全局 SendTaskResultTime 控制。
@@ -106,7 +105,9 @@ _WARNING_FAIL_REASONS = frozenset(
 )
 
 
-def make_zzzod_resolve(app_names: set[str], idx_names: dict[int, str]) -> PostProcessor:
+def make_zzzod_resolve(
+    app_names: set[str], idx_names: dict[int, str]
+) -> log_box.PostProcessor:
     """构造 log_box 后置处理器（节点终态聚合 + 账号归属 + 白名单吞失败警告）。
 
     输入/输出均为 ``(log_type, text, ts)`` 元组（与 log_box 后置处理器契约

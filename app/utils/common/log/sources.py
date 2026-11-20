@@ -7,91 +7,16 @@
 from __future__ import annotations
 
 import os
-import sys
-from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from stat import S_ISREG
-from typing import BinaryIO, Optional, Union
-
-if sys.platform == "win32":
-    import ctypes
-    import msvcrt
-
-    import pywintypes
-    import win32file
+from typing import Optional, Union
 
 PathLike = Union[str, Path]
 
 
-class LogReadLimitExceeded(ValueError):
-    """一次增量超过已声明的读取预算。"""
-
-
-@dataclass
-class _ReadBatch:
-    lines: list[str]
-    offset: int
-    has_more: bool = False
-
-
-def file_identity(stat: os.stat_result) -> tuple[int, int]:
-    """Windows 显式使用创建时间，路径与句柄返回的 ctime 可能不同。"""
-    if sys.platform == "win32":
-        return stat.st_ino, stat.st_birthtime_ns
-    return stat.st_ino, stat.st_dev
-
-
-LOG_READ_OPENER: Callable[[str, int], int] | None = None
-
-if sys.platform == "win32":
-
-    def _open_shared_read_fd(path: str, flags: int) -> int:
-        """允许 Windows 上的日志写入者在采集器读文件时改名轮转。"""
-        try:
-            handle = win32file.CreateFile(
-                path,
-                win32file.GENERIC_READ,
-                win32file.FILE_SHARE_READ
-                | win32file.FILE_SHARE_WRITE
-                | win32file.FILE_SHARE_DELETE,
-                None,
-                win32file.OPEN_EXISTING,
-                win32file.FILE_ATTRIBUTE_NORMAL,
-                None,
-            )
-        except pywintypes.error as exc:
-            raise ctypes.WinError(exc.winerror) from exc
-        try:
-            descriptor = msvcrt.open_osfhandle(int(handle), flags | os.O_BINARY)
-        except OSError:
-            handle.Close()
-            raise
-        handle.Detach()  # 之后由 fd 关闭原生句柄。
-        return descriptor
-
-    LOG_READ_OPENER = _open_shared_read_fd
-
-
-@dataclass(frozen=True)
-class FileCursor:
-    offset: int
-    file_id: tuple[int, int] | None
-
-    def __post_init__(self) -> None:
-        if self.offset < 0 or (self.offset and self.file_id is None):
-            raise ValueError("日志起点缺少有效的文件身份或偏移")
-
-
-def capture_file_cursor(path: PathLike, *, start_from_end: bool) -> FileCursor:
-    try:
-        stat = Path(path).stat()
-    except FileNotFoundError:
-        return FileCursor(0, None)
-    if not S_ISREG(stat.st_mode):
-        raise ValueError("日志来源必须是普通文件")
-    return FileCursor(stat.st_size if start_from_end else 0, file_identity(stat))
+def _file_identity(stat: os.stat_result) -> tuple[int, int]:
+    """追加不改变身份；POSIX ctime 是元数据变更时间，不能用于判定轮转。"""
+    return (stat.st_ino, stat.st_ctime_ns if os.name == "nt" else stat.st_dev)
 
 
 class LogSource:
@@ -113,8 +38,6 @@ class LogSource:
         *,
         start_from_end: bool = True,
         rotated_name: Optional[str] = None,
-        max_read_bytes: int | None = None,
-        strict_io: bool = False,
     ) -> None:
         self.path = Path(path)
         self.start_from_end = start_from_end
@@ -123,32 +46,21 @@ class LogSource:
         # 参与；仅文件系统不提供 inode 时按模板探测（日期式滚动命名的唯一
         # 兜底），未声明则回退 .bak 通用约定
         self.rotated_name = rotated_name
-        self.max_read_bytes = max_read_bytes
-        self.strict_io = strict_io
-        self.has_more = False
         self._offset = 0
         # 文件身份：Windows 沿用 inode + 创建时间；POSIX 使用 inode + 设备号，
         # 不能使用会随追加更新的 ctime，否则会把普通写入误判为轮转。
         self._file_id: Optional[tuple[int, int]] = None
         self._opened = False
 
-    def open(self, *, cursor: FileCursor | None = None) -> None:
+    def open(self) -> None:
         """记录起始位置（幂等）。文件不存在时从文件头开始（等待新文件生成）。"""
-        if cursor is None:
-            if self.strict_io:
-                cursor = capture_file_cursor(
-                    self.path, start_from_end=self.start_from_end
-                )
-            elif self.path.is_file():
-                stat = self.path.stat()
-                cursor = FileCursor(
-                    stat.st_size if self.start_from_end else 0, file_identity(stat)
-                )
-            else:
-                cursor = FileCursor(0, None)
-        self._offset = cursor.offset
-        self._file_id = cursor.file_id
-        self.has_more = False
+        self._offset = 0
+        self._file_id = None
+        if self.path.is_file():
+            stat = self.path.stat()
+            if self.start_from_end:
+                self._offset = stat.st_size
+            self._file_id = _file_identity(stat)
         self._opened = True
 
     def read_new(self) -> list[str]:
@@ -157,63 +69,41 @@ class LogSource:
         Returns:
             新增的完整行列表；无新增或文件不存在时返回空列表
         """
-        self.has_more = False
         if not self._opened:
             return []
         try:
-            if not S_ISREG(self.path.stat().st_mode):
-                if self.strict_io:
-                    raise ValueError("日志来源必须是普通文件")
-                return []
-            file = open(self.path, "rb", opener=LOG_READ_OPENER)
-        except FileNotFoundError:
-            if not self.strict_io or self._file_id is None:
-                return []
-            # 轮转可能先改名，再创建当前文件。保留旧身份，供下轮继续排空。
-            rotated = self._read_rotated(self._file_id)
-            self._offset = rotated.offset
-            self.has_more = rotated.has_more
-            return rotated.lines
+            stat = self.path.stat()
         except OSError:
-            if self.strict_io:
-                raise
+            return []
+        current_id = _file_identity(stat)
+        if self._file_id is not None and current_id != self._file_id:
+            # 轮转（文件身份变化）：先读被轮换的旧日志，再从头读新文件
+            lines = self._read_rotated()
+            self._offset = 0
+            lines.extend(self._read_tail())
+        elif stat.st_size < self._offset:
+            # 截断（文件变小但身份未变）：重置到文件头重读
+            self._offset = 0
+            lines = self._read_tail()
+        else:
+            lines = self._read_tail()
+        self._file_id = current_id
+        return lines
+
+    def _read_tail(self) -> list[str]:
+        """从当前 offset 读取新增的完整行；无新增或文件不存在时返回空列表"""
+        try:
+            stat = self.path.stat()
+        except OSError:
+            return []
+        if stat.st_size <= self._offset:
             return []
         try:
-            with file:
-                # 路径可能在 stat 与 open 之间被替换，以实际读取的句柄为准。
-                stat = os.fstat(file.fileno())
-                if self.strict_io and not S_ISREG(stat.st_mode):
-                    raise ValueError("日志来源必须是普通文件")
-                current_id = file_identity(stat)
-                offset = self._offset
-                rotated_lines = []
-                if self._file_id is not None and current_id != self._file_id:
-                    rotated = self._read_rotated(self._file_id)
-                    rotated_lines = rotated.lines
-                    if rotated.has_more:
-                        self._offset = rotated.offset
-                        self.has_more = True
-                        return rotated_lines
-                    if rotated_lines and self.max_read_bytes is not None:
-                        # 先交付已读完的旧批次。新文件独立读取，不影响旧节点交付。
-                        self._file_id = current_id
-                        self._offset = 0
-                        self.has_more = stat.st_size > 0
-                        return rotated_lines
-                    offset = 0
-                elif stat.st_size < offset:
-                    offset = 0
-                batch = self._read_stream(file, offset)
+            return self._read_from(self.path, self._offset)
         except OSError:
-            if self.strict_io:
-                raise
             return []
-        self._file_id = current_id
-        self._offset = batch.offset
-        self.has_more = batch.has_more
-        return rotated_lines + batch.lines
 
-    def _read_rotated(self, file_id: tuple[int, int]) -> _ReadBatch:
+    def _read_rotated(self) -> list[str]:
         """读取被轮换的旧日志，避免轮转前内容静默丢失
 
         有 inode 时一律按 inode 在同目录找回被重命名的旧文件（与运行日志
@@ -226,37 +116,39 @@ class LogSource:
         探测：声明了 ``rotated_name`` 按昨天/今天的模板候选，未声明按
         ``.bak`` 通用约定。
         """
-        if file_id[0]:
-            batch = self._read_rotated_by_identity(file_id)
-            if batch is not None:
-                return batch
-            if self.strict_io:
-                raise FileNotFoundError("日志已轮转，无法定位上一个文件")
-            return _ReadBatch([], self._offset)
+        old_ino = self._file_id[0] if self._file_id is not None else 0
+        if old_ino:
+            rotated = self._find_rotated_file(old_ino)
+            if rotated is not None:
+                try:
+                    return self._read_from(rotated, self._offset)
+                except OSError:
+                    return []
+            return []
         return self._read_candidates()
 
-    def _read_rotated_by_identity(self, file_id: tuple[int, int]) -> _ReadBatch | None:
-        for candidate in self.path.parent.iterdir():
-            if candidate == self.path:
-                continue
-            try:
-                stat = candidate.stat()
-            except OSError:
-                continue
-            if not S_ISREG(stat.st_mode) or file_identity(stat) != file_id:
-                continue
-            try:
-                with open(candidate, "rb", opener=LOG_READ_OPENER) as file:
-                    if file_identity(os.fstat(file.fileno())) == file_id:
-                        return self._read_stream(file, self._offset)
-            except FileNotFoundError:
-                continue
-            except OSError:
-                if self.strict_io:
-                    raise
+    def _find_rotated_file(self, old_ino: int) -> Path | None:
+        """在同目录里按 inode 找回被重命名的旧日志文件（与 LogMonitor 同逻辑）
+
+        重命名前后是同一文件，离开时记录的 offset 逐字节对应。st_ino 为 0
+        （文件系统不提供 inode）或未找到（旧文件已被删除）时返回 None。
+        """
+        if not old_ino:
+            return None
+        try:
+            for candidate in self.path.parent.iterdir():
+                if candidate == self.path or not candidate.is_file():
+                    continue
+                try:
+                    if candidate.stat().st_ino == old_ino:
+                        return candidate
+                except OSError:
+                    continue
+        except OSError:
+            return None
         return None
 
-    def _read_candidates(self) -> _ReadBatch:
+    def _read_candidates(self) -> list[str]:
         """按候选路径探测旧日志，命中第一个存在且有未读内容的"""
         for bak in self._rotation_candidates():
             if not bak.is_file():
@@ -267,46 +159,19 @@ class LogSource:
                 continue
             offset = self._offset if self._offset <= stat.st_size else 0
             if stat.st_size <= offset:
-                if self.strict_io:
-                    return _ReadBatch([], offset)  # 已找到排空的旧文件。
                 continue
             try:
-                with open(bak, "rb", opener=LOG_READ_OPENER) as file:
-                    return self._read_stream(file, offset)
+                return self._read_from(bak, offset)
             except OSError:
-                if self.strict_io:
-                    raise
                 continue
-        if self.strict_io:
-            raise FileNotFoundError("日志已轮转，无法定位上一个文件")
-        return _ReadBatch([], self._offset)
+        return []
 
-    def _read_stream(self, file: BinaryIO, offset: int) -> _ReadBatch:
-        file.seek(offset)
-        has_more = False
-        if self.max_read_bytes is None:
-            raw = file.read()
-        else:
-            raw = file.read(self.max_read_bytes + 1)
-            if len(raw) > self.max_read_bytes:
-                has_more = True
-                raw = raw[: self.max_read_bytes]
-        start = 0
-        if self.strict_io and offset and raw:
-            # 起点可能落在上一轮的未闭合行内，续写的部分也属于旧行。
-            file.seek(offset - 1)
-            if file.read(1) not in (b"", b"\n"):
-                start = raw.find(b"\n") + 1
-                if not start:
-                    return _ReadBatch([], offset + len(raw), has_more)
-        # 偏移只越过最后一个换行，未闭合尾部留待下次追加。
-        end = raw.rfind(b"\n") + 1
-        if end <= start:
-            if not start and has_more:
-                raise LogReadLimitExceeded("文件单行日志超过读取容量")
-            return _ReadBatch([], offset + start, has_more)
-        lines = raw[start : end - 1].decode("utf-8", errors="replace").split("\n")
-        return _ReadBatch(lines, offset + end, has_more)
+    def _read_from(self, path: Path, offset: int) -> list[str]:
+        """从 path 的 offset 起读取字节并按行解码；文件访问错误向上抛出"""
+        with open(path, "rb") as f:
+            f.seek(offset)
+            raw = f.read()
+        return self._decode_lines(raw)
 
     def _rotation_candidates(self) -> list[Path]:
         """轮转候选路径（按优先级，命中第一个存在且有未读内容的）
@@ -330,3 +195,18 @@ class LogSource:
             Path(str(self.path) + ".bak"),
             self.path.with_suffix(".bak"),
         ]
+
+    def _decode_lines(self, raw: bytes) -> list[str]:
+        """把按字节读取的内容切成完整行
+
+        只取最后一个换行之前的完整行；未闭合尾部留待下次追加（offset 不越过它）。
+        """
+        last_nl = raw.rfind(b"\n")
+        if last_nl == -1:
+            return []
+        self._offset += last_nl + 1
+        text = raw[: last_nl + 1].decode("utf-8", errors="replace")
+        lines = text.split("\n")
+        if lines and lines[-1] == "":
+            lines.pop()
+        return lines

@@ -20,7 +20,7 @@ from app.models.log_flow import (
     ReportEntry,
 )
 from app.plugin.runtime.loader import prefer_package_source
-from app.utils.common.log.sources import LogReadLimitExceeded, LogSource
+from app.utils.common.log.flow_file import FlowFileSource, LogReadLimitExceeded
 
 from .contracts import (
     INPUT_RECORD,
@@ -183,12 +183,11 @@ def _run_pipeline(
             sink_error = f"open: {type(exc).__name__}"
     source = None
     if config.file is not None:
-        source = LogSource(
+        source = FlowFileSource(
             config.file.path,
             start_from_end=config.file.start_from_end,
             rotated_name=config.file.rotated_name,
             max_read_bytes=_MAX_FILE_READ_BYTES,
-            strict_io=True,
         )
         source.open(cursor=config.file.start_cursor)
     inbox: Queue[InputRecord | Exception | None] = Queue(MAX_PENDING_RECORDS)

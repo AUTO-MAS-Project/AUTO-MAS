@@ -8,6 +8,7 @@ from app.core.log_flow.contracts import (
     FileInput,
     FunctionRef,
     InputRecord,
+    LinePreprocessor,
     LineRule,
     PostProcessor,
     ReportedRecord,
@@ -38,8 +39,7 @@ from app.models.log_flow import (
     ReportOrder,
 )
 from app.utils.common.expression import ExpressionFunction
-from app.utils.common.log.monitor import LogMonitor
-from app.utils.common.log.results import LinePreprocessor
+from app.utils.common.log.flow_monitor import LogFlowMonitor as LogMonitor
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

@@ -72,11 +72,12 @@ class ExpressionError(Exception):
 # ==================== 解析器 ====================
 
 
-def parse(expr_str: str) -> list[list[Segment]]:
+def parse(expr_str: str, *, allow_qualified: bool = False) -> list[list[Segment]]:
     """将表达式字符串解析为「行 → 片段」二维列表。
 
     Args:
         expr_str: 表达式字符串
+        allow_qualified: 允许会话级的限定函数名
 
     Returns:
         lines: 每个元素是一行的片段列表
@@ -87,15 +88,16 @@ def parse(expr_str: str) -> list[list[Segment]]:
     if not expr_str or not expr_str.strip():
         return []
 
-    parser = _Parser(expr_str)
+    parser = _Parser(expr_str, allow_qualified=allow_qualified)
     return parser.parse()
 
 
 class _Parser:
     """字符级扫描解析器"""
 
-    def __init__(self, text: str):
+    def __init__(self, text: str, *, allow_qualified: bool):
         self.text = text
+        self.allow_qualified = allow_qualified
         self.pos = 0
         self.length = len(text)
 
@@ -223,7 +225,11 @@ class _Parser:
         functions: list[FunctionCall] = []
         while self.pos < self.length and self.text[self.pos] == ".":
             self.pos += 1  # 跳过 .
-            qualified = _QUALIFIED_FUNCTION.match(self.text, self.pos)
+            qualified = (
+                _QUALIFIED_FUNCTION.match(self.text, self.pos)
+                if self.allow_qualified
+                else None
+            )
             if qualified:
                 name = qualified[0]
                 self.pos = qualified.end()

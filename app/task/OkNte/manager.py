@@ -31,9 +31,8 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import user_uses_native_base, user_uses_quick_config
-from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, ProcessManager, get_logger
+from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, ProcessManager, get_logger, log_box
 from app.utils import io as _utils_io
-from app.utils.common.log.results import LogEntry
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
@@ -414,9 +413,11 @@ class OkNteManager(ScriptManagerBase):
         _report_rows = []
         for _report_user in self.script_info.user_list:
             _entries = [
-                item if isinstance(item, LogEntry) else LogEntry.from_legacy(item)
+                item
+                if isinstance(item, log_box.LogEntry)
+                else log_box.LogEntry.from_legacy(item)
                 for item in self.user_state(_report_user).push_log
-                if (item.log_type if isinstance(item, LogEntry) else item[0])
+                if (item.log_type if isinstance(item, log_box.LogEntry) else item[0])
                 != LOG_TYPE_ERROR
                 or has_uncompleted
             ]

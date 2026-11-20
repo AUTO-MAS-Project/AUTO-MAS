@@ -1,6 +1,6 @@
 # LogFlow 现有架构与接入手册
 
-依据 `feat/logflow` 的当前实现。适用于在 MAS 插件中接入日志节点，或在本机读取已接入运行的节点。当前内置任务仍沿用既有采集路径，图中的 LogFlow 路径由已登记并显式打开会话的插件触发。模拟插件、SDK wheel 和专项旁路各自的验证范围见[进度表](logflow-progress.md)和[开发记录](logflow-development-log.md)。
+依据 `feat/logflow` 的当前实现。适用于在 MAS 插件中接入日志节点，或在本机读取已接入运行的节点。内置任务保留原采集、报告和通知链路，通用脚本继续兼容旧标记回传。图中的 LogFlow 路径由已登记并显式打开会话的插件触发。模拟插件、SDK wheel 和专项旁路各自的验证范围见[进度表](logflow-progress.md)和[开发记录](logflow-development-log.md)。
 
 ## 架构图
 
@@ -142,7 +142,7 @@ async def publish_result(task_report: LogFlowTaskReport, report: TaskResultRepor
 | `open_log_flow(plugin, name, *, ...)` | 用法 |
 | --- | --- |
 | `plugin`, `name`, `run` | 当前启用的真实插件实例、已登记的声明名、宿主传入的 `TaskScriptItem` 或 `TaskUserItem` |
-| `monitor` | `use_mas_log=True` 时必传 `LogMonitor`。同一监控器的原始行回调需留给本次会话 |
+| `monitor` | `use_mas_log=True` 时，传入用 `auto_mas_core.log_flow.LogMonitor` 创建的监控器。它复用原生日志的显示回调，但有独立的订阅、轮转和尾部读取逻辑。同一监控器的原始行回调需留给本次会话 |
 | `file_input` | 声明 `use_run_file=True` 时必传。固定文件放在声明的 `file` |
 | `mode`, `task_report` | `逐条`、`汇总`、`关闭`。启用节点通知需绑定报告。省略模式时，有报告默认汇总，否则关闭。关闭模式仍可观察节点 |
 | `general_rules` | 声明为 `GeneralFlowDeclaration` 时可覆盖本轮 WebUI 规则快照 |

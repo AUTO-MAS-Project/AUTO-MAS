@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from app.utils import (
     LOG_TYPE_NORMAL,
     MultiLineAggregator,
@@ -10,10 +12,14 @@ from app.utils import (
     compile_regex,
 )
 from app.utils import expression as _utils_expression
-from app.utils.common.log.results import LinePreprocessor as PreProcessor
-from app.utils.common.log.results import LogEntry
-from app.utils.common.log.results import PostProcessor as PostProcessor
-from app.utils.common.log.results import ResultItem as ResultItem
+
+from .results import LogEntry
+
+# 后处理器继续接收三元组，文本改写不丢失日志类型和采集时间。
+ResultItem = tuple[str, str, float | None]
+# 前置处理器逐行 map/filter：返回 None 时该行不参与后续匹配。
+PreProcessor = Callable[[str], str | None]
+PostProcessor = Callable[[list[ResultItem]], list[ResultItem]]
 
 
 class LogPipeline:
