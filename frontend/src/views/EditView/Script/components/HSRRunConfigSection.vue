@@ -22,7 +22,7 @@ const { t } = useI18n()
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>{{ t('core.edit.runConfiguration') }}</h3>
+      <h3>{{ t('core.edit.runLimits') }}</h3>
     </div>
     <ScriptExecutionSessionField />
     <a-row :gutter="16">

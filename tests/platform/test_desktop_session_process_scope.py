@@ -4,6 +4,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from types import ModuleType
 from unittest.mock import AsyncMock, Mock
 from uuid import UUID, uuid4
 
@@ -19,6 +20,17 @@ from app.plugin.services import ServiceRegistry
 from app.utils.common.process import operations, session
 from app.utils.common.process.runner import popen_scoped
 from app.utils.common.process.scope import TaskProcessScope, current_process_scope
+
+
+@pytest.fixture
+def desktop_session_native(monkeypatch):
+    """在 Windows 系统调用边界模拟子会话状态。"""
+    name = "app.utils.windows.desktop_session.native"
+    native = ModuleType(name)
+    native.child_session = Mock(return_value=None)
+    native.session_state = Mock(return_value=0)
+    monkeypatch.setitem(sys.modules, name, native)
+    return native
 
 
 def test_desktop_session_keeps_builtin_support_when_whimbox_is_a_plugin():
@@ -59,6 +71,7 @@ async def test_desktop_task_can_run_local_update_helper_without_adopting_local_p
 @pytest.mark.asyncio
 async def test_dispatch_preflight_classifies_builtin_and_plugin_tasks_before_connecting(
     monkeypatch,
+    desktop_session_native,
 ):
     from maa_adapter.config.script import MaaConfig
     from src_adapter.config import SrcConfig
@@ -70,7 +83,6 @@ async def test_dispatch_preflight_classifies_builtin_and_plugin_tasks_before_con
         M9AConfig,
         OkwwConfig,
     )
-    from app.utils.windows.desktop_session import native
 
     entries = {
         uuid4(): entry
@@ -87,8 +99,7 @@ async def test_dispatch_preflight_classifies_builtin_and_plugin_tasks_before_con
     monkeypatch.setattr(
         Plugin, "script_classes", lambda: {"MAA": MaaConfig, "SRC": SrcConfig}
     )
-    current_session = Mock(return_value=None)
-    monkeypatch.setattr(native, "child_session", current_session)
+    current_session = desktop_session_native.child_session
     dispatch_scopes = []
 
     async def start(_mode, tasks, *, use_configured_session):
@@ -109,7 +120,6 @@ async def test_dispatch_preflight_classifies_builtin_and_plugin_tasks_before_con
 
     main = {uid for uid, result in zip(entries, results, strict=True) if result["code"]}
     current_session.return_value = 7
-    monkeypatch.setattr(native, "session_state", lambda _: 0)
     service.scope_state = (7, False)
     admitted = await service.dispatch_queues(
         list(entries), preview_only=False, main_session_queue_ids=main
@@ -124,12 +134,12 @@ async def test_dispatch_preflight_classifies_builtin_and_plugin_tasks_before_con
 @pytest.mark.asyncio
 async def test_single_script_default_uses_connected_session_and_respects_close(
     monkeypatch,
+    desktop_session_native,
 ):
     from app.api.dispatch import TaskCreateIn, add_task
     from app.core import Config, Plugin, TaskManager
     from app.core.notify.commands import execute_notification_command
     from app.models.config import GeneralConfig
-    from app.utils.windows.desktop_session import native
 
     desktop_id, legacy_id, queue_id = (uuid4() for _ in range(3))
     desktop = GeneralConfig.build(
@@ -145,8 +155,7 @@ async def test_single_script_default_uses_connected_session_and_respects_close(
     services = ServiceRegistry()
     services.register("desktop_session.launcher", lambda: None, owner="desktop_session")
     monkeypatch.setattr(Plugin, "services", services)
-    monkeypatch.setattr(native, "child_session", lambda: 7)
-    monkeypatch.setattr(native, "session_state", lambda _: 0)
+    desktop_session_native.child_session.return_value = 7
     service = type(lifecycle.DesktopSessionLifecycle)()
     monkeypatch.setattr(lifecycle, "DesktopSessionLifecycle", service)
     starts = []
