@@ -19,8 +19,8 @@ from app.models.log_flow import (
     NodeSource,
     ReportEntry,
 )
-from app.plugin.runtime.loader import prefer_package_source
 from app.utils.common.log.flow_file import FlowFileSource, LogReadLimitExceeded
+from app.utils.common.source_import import prefer_package_source
 
 from .contracts import (
     INPUT_RECORD,
