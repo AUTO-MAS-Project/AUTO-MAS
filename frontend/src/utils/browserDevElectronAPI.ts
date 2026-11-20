@@ -17,13 +17,14 @@ const ONLINE_APPEARANCE_UNSUPPORTED = {
   error: '浏览器预览不支持在线外观',
 }
 
-const readJsonStorage = <T>(key: string): T | null => {
+const readJsonStorage = <T>(key: string, strict = false): T | null => {
   const raw = localStorage.getItem(key)
-  if (!raw) return null
+  if (raw === null) return null
 
   try {
     return JSON.parse(raw) as T
-  } catch {
+  } catch (error) {
+    if (strict) throw error
     return null
   }
 }
@@ -58,9 +59,43 @@ const windowStateBridge = {
   onWindowMaximizedChange: () => () => undefined,
 } satisfies Pick<ElectronAPI, 'windowIsMaximized' | 'onWindowMaximizedChange'>
 
+const desktopUpdateUnsupported = async (): Promise<never> => {
+  // 浏览器调试环境缺少桌面安装能力时，明确拒绝应用更新操作并给出原因。
+  throw new Error('应用更新需要桌面应用，请在 Electron 中操作')
+}
+const appUpdateBridge = {
+  appUpdateCheck: desktopUpdateUnsupported,
+  appUpdateStart: desktopUpdateUnsupported,
+  appUpdateInstall: desktopUpdateUnsupported,
+  appUpdateCancel: desktopUpdateUnsupported,
+  appUpdateSwitch: desktopUpdateUnsupported,
+  appUpdateStatus:
+    async () => /* 为浏览器调试提供空闲更新快照，让界面可读取状态而不执行桌面业务。 */ ({
+      status: 'idle' as const,
+      version: null,
+      source: null,
+      downloaded_size: 0,
+      file_size: 0,
+      speed: 0,
+      file: null,
+      message: null,
+    }),
+  onAppUpdate: () => () => undefined,
+} satisfies Pick<
+  ElectronAPI,
+  | 'appUpdateCheck'
+  | 'appUpdateStart'
+  | 'appUpdateInstall'
+  | 'appUpdateCancel'
+  | 'appUpdateSwitch'
+  | 'appUpdateStatus'
+  | 'onAppUpdate'
+>
+
 const browserDevElectronAPI = {
   ...desktopMascotTaskBridge,
   ...windowStateBridge,
+  ...appUpdateBridge,
   getLogger,
   getApiEndpoint: async (key: string) =>
     key === 'websocket' ? BACKEND_WS_ENDPOINT : BACKEND_HTTP_ENDPOINT,
@@ -79,10 +114,10 @@ const browserDevElectronAPI = {
   selectFolder: async () => null,
   selectFile: async () => [],
   saveConfig: async (config: Record<string, unknown>, defaults?: Record<string, unknown>) => {
-    const current = readJsonStorage<Record<string, unknown>>(CONFIG_KEY)
+    const current = readJsonStorage<Record<string, unknown>>(CONFIG_KEY, true)
     localStorage.setItem(CONFIG_KEY, JSON.stringify({ ...defaults, ...current, ...config }))
   },
-  loadConfig: async () => readJsonStorage(CONFIG_KEY),
+  loadConfig: async (strict = false) => readJsonStorage(CONFIG_KEY, strict),
   resetConfig: async () => {
     localStorage.removeItem(CONFIG_KEY)
   },
@@ -123,7 +158,13 @@ const browserDevElectronAPI = {
   backendStatus: async () => ({ isRunning: true, runtimeSupervised: false }),
 } as unknown as ElectronAPI
 
-if (isDev && !window.electronAPI) {
+if (import.meta.env.DEV && isDev && !window.electronAPI) {
   ;(window as BrowserDevWindow).__AUTO_MAS_BROWSER_DEV_MODE__ = true
-  window.electronAPI = browserDevElectronAPI
+  window.electronAPI = {
+    ...browserDevElectronAPI,
+    async verifyMysteryAccessCode(accessCode, context) {
+      const { verifyMysteryAccessCode } = await import('../../electron/services/mysteryAccessCode')
+      return verifyMysteryAccessCode(accessCode, context)
+    },
+  }
 }

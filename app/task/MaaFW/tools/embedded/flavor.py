@@ -175,7 +175,7 @@
 
 ModAVD（Emulator 2.0 的 ``avd`` 后端）不是特调声明：所有 MaaFW 脚本（通用项目与各特调）一律放行，
 ``runner_task`` 给门面 ``open`` 传 ``allow_mod_avd=True``、按设备构造 AVDExtras 截图配置；脚本保存时
-``app.core.EmulatorManager.mod_avd_binding_error`` 读取宿主登记的设备能力，MaaFW 特调继承引擎声明。
+``app.core.GameManager.mod_avd_binding_error`` 读取宿主登记的设备能力，MaaFW 特调继承引擎声明。
 """
 
 from __future__ import annotations
@@ -187,6 +187,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+from app.task.game import game_is_emulator
 from app.task.MaaFW.tools.core.interface import loader as _interface_loader
 from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 from app.task.MaaFW.tools.core.runner import run_plan as _run_plan
@@ -438,7 +439,7 @@ def sanitize_user_task_update(
         configured_controller=str(
             config_value(script_config, "Info", "Controller") or ""
         ),
-        emulator_selected=config_value(script_config, "Emulator", "Id") != "-",
+        emulator_selected=game_is_emulator(script_config),
         configured_resource=str(config_value(script_config, "Info", "Resource") or ""),
     )
     incoming_info = data.get("Info") if isinstance(data.get("Info"), dict) else {}

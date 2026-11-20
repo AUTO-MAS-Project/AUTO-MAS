@@ -45,6 +45,11 @@ import psutil
 from websockets.asyncio.client import ClientConnection, connect
 
 from app.utils import ProcessManager, get_logger
+from app.utils.common.process.operations import (
+    iter_processes,
+    processes_in_scope,
+    terminate_process,
+)
 
 logger = get_logger("HSR 云浏览器")
 
@@ -286,7 +291,7 @@ def is_m7a_self_started_browser_cmdline(cmdline: Iterable[str] | None) -> bool:
 
 def _find_cloud_browsers(match: Callable[[list[str]], bool]) -> list[psutil.Process]:
     found: list[psutil.Process] = []
-    for proc in psutil.process_iter(["name", "cmdline"]):
+    for proc in iter_processes(["name", "cmdline"]):
         with suppress(psutil.Error):
             name = proc.info.get("name")
             if not name or name.lower() != BROWSER_PROCESS_NAME:
@@ -321,14 +326,18 @@ def _terminate_tree(
         children = proc.children(recursive=True)
     except psutil.Error:
         children = []
-    victims = [proc, *children]
+    victims = list(processes_in_scope([proc, *children]))
+    pending = []
     for victim in victims:
-        with suppress(psutil.Error):
-            victim.terminate()
-    _, alive = psutil.wait_procs(victims, timeout=timeout)
+        try:
+            if terminate_process(victim):
+                pending.append(victim)
+        except psutil.Error:
+            pending.append(victim)
+    _, alive = psutil.wait_procs(pending, timeout=timeout)
     for victim in alive:
         with suppress(psutil.Error):
-            victim.kill()
+            terminate_process(victim, force=True)
     if alive:
         psutil.wait_procs(alive, timeout=timeout)
 

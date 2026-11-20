@@ -25,13 +25,24 @@ import time
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import psutil
 
-from app.utils import UnsupportedPlatformError, get_logger, process_platform, window
+from app.utils import (
+    IS_ELEVATED,
+    UnsupportedPlatformError,
+    get_logger,
+    process_platform,
+    window,
+)
 
 from .runner import create_subprocess
 from .scope import current_process_scope
+from .session import desktop_process_target, process_in_scope
+
+if TYPE_CHECKING:
+    from app.utils.windows.desktop_session.process_runner import DesktopProcess
 
 logger = get_logger("进程管理")
 
@@ -55,9 +66,9 @@ class ProcessInfo:
 def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
     """检查进程是否与目标进程信息匹配
 
-    ``proc`` 须来自预取了 name/exe/cmdline 的 ``psutil.process_iter``, 直接用
-    ``proc.info`` 里的字段比对, 不再逐个进程重新查询; 无权限读到的字段为 None,
-    按不匹配处理。
+    ``proc.info`` 里预取的字段直接比对; ``exe`` 与 ``cmdline`` 只在目标要求时
+    读取, 因为命令行在受保护进程上要等读超时, 不能整表预取。读不到的字段按
+    不匹配处理。
     """
 
     info = proc.info
@@ -65,27 +76,53 @@ def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
         return False
     if target.name is not None and info["name"] != target.name:
         return False
-    if target.exe is not None and (
-        not info["exe"] or Path(info["exe"]) != Path(target.exe)
+    if target.exe is not None:
+        exe = info.get("exe") or _read_field(proc, "exe")
+        if not exe or Path(exe) != Path(target.exe):
+            return False
+    if (
+        target.cmdline is not None
+        and (info.get("cmdline") or _read_field(proc, "cmdline")) != target.cmdline
     ):
         return False
-    if target.cmdline is not None and info["cmdline"] != target.cmdline:
-        return False
 
-    return True
+    return process_in_scope(proc.pid)
+
+
+def _read_field(proc: psutil.Process, field: str) -> object:
+    """按需读取未预取的进程字段; 无权访问或已退出时按读不到处理。"""
+
+    try:
+        return getattr(proc, field)()
+    except psutil.Error:
+        return None
 
 
 def is_process_running(process_name: str) -> bool:
-    """检查指定进程名是否正在运行且存在可见窗口"""
+    """在调用者所在桌面查找指定进程的可见窗口。"""
 
     for proc in psutil.process_iter(["name"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
-            if proc.info.get("name") == process_name:
+            if proc.info.get("name") == process_name and process_in_scope(proc.pid):
                 # 平台不支持窗口能力时 get_window_handles 返回空列表, 循环不进入
                 for hwnd in get_window_handles(proc.pid):
                     if window.is_visible(hwnd):
                         return True
     return False
+
+
+async def has_process_window(process_name: str) -> bool:
+    """在任务所在桌面查找指定进程的可见窗口。"""
+    desktop = desktop_process_target.get()
+    if desktop is None:
+        return is_process_running(process_name)
+
+    from app.utils.windows.desktop_session.process_runner import run_desktop_action
+
+    code, _, _ = await run_desktop_action(
+        desktop, "has_process_window", {"name": process_name}
+    )
+    return code == 0
 
 
 def is_process_alive(process_name: str) -> bool:
@@ -98,7 +135,7 @@ def is_process_alive(process_name: str) -> bool:
 
     for proc in psutil.process_iter(["name"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
-            if proc.info.get("name") == process_name:
+            if proc.info.get("name") == process_name and process_in_scope(proc.pid):
                 return True
     return False
 
@@ -141,6 +178,7 @@ class ProcessManager:
         super().__init__()
 
         self.process: asyncio.subprocess.Process | None = None
+        self._desktop_process: DesktopProcess | None = None
         self.target_process: psutil.Process | None = None
         self.window_title = window_title
         self.window_class_name = window_class_name
@@ -159,6 +197,8 @@ class ProcessManager:
             return self.target_process.pid
         if self.process is not None:
             return self.process.pid
+        if self._desktop_process is not None:
+            return self._desktop_process.pid
         return None
 
     @property
@@ -170,6 +210,15 @@ class ProcessManager:
         if self.process is not None:
             return self.process
         return None
+
+    @property
+    def desktop_process(self) -> "DesktopProcess | None":
+        return self._desktop_process
+
+    @property
+    def launched_process(self) -> "asyncio.subprocess.Process | DesktopProcess | None":
+        """由本管理器启动的进程句柄，含桌面分身代理。"""
+        return self._desktop_process or self.process
 
     @property
     def main_hwnd(self) -> int | None:
@@ -193,6 +242,9 @@ class ProcessManager:
         null_stream_to_pipe: bool = False,
         elevated: bool = False,
         breakaway: bool = False,
+        owned: bool = True,
+        retain_desktop_descendants: bool = False,
+        desktop_root_only: bool = False,
         env: dict[str, str] | None = None,
     ) -> None:
         """
@@ -209,6 +261,9 @@ class ProcessManager:
             null_stream_to_pipe (bool): 若为 True, 将设为 DEVNULL 的 stdout/stderr 替换为一条自动销毁输出的标准流管道。
             elevated (bool): 若为 True 且在 Windows 上, 以管理员权限启动进程（触发 UAC），此时不直接持有子进程句柄，依赖 target_process 追踪。
             breakaway (bool): 若为 True 且在 Windows 上, 让子进程脱离监督器的 Job Object（CREATE_BREAKAWAY_FROM_JOB）。只给游戏/模拟器这类不该随后端退出的进程用, 脚本本体、MAA、agent 等保持默认 False。
+            owned (bool): 是否加入任务清理；游戏由调用方按关闭选项收尾时传 False，进程管理器仍保留跟踪及显式关闭能力。
+            retain_desktop_descendants (bool): 在分身内保留启动器派生进程，直到管理器收尾。
+            desktop_root_only (bool): 分身执行器收尾只停止主进程，派生进程可以继续运行。
             env (dict[str, str] | None): 子进程环境变量, 默认 None 表示继承当前进程; 传入时会整体替换, 需要保留现有环境的调用点自行并上 os.environ。elevated 走 ShellExecute, 该分支不支持指定环境。
         """
 
@@ -226,6 +281,70 @@ class ProcessManager:
 
         await self.clear()
 
+        desktop = desktop_process_target.get()
+        if desktop is not None:
+            if (elevated and not IS_ELEVATED) or (
+                stdin not in (asyncio.subprocess.DEVNULL, asyncio.subprocess.PIPE)
+                or stdout not in (asyncio.subprocess.DEVNULL, asyncio.subprocess.PIPE)
+                or stderr
+                not in (
+                    asyncio.subprocess.DEVNULL,
+                    asyncio.subprocess.PIPE,
+                    asyncio.subprocess.STDOUT,
+                )
+            ):
+                raise ValueError("桌面分身暂不支持此进程启动方式")
+            from app.utils.windows.desktop_session.process_runner import (
+                launch_desktop_process,
+            )
+
+            scope = current_process_scope.get()
+            if scope is not None:
+                scope.ensure_can_start()
+            started = time.time()
+            self._desktop_process = await launch_desktop_process(
+                desktop,
+                argv=[str(program), *args],
+                cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
+                owned=owned and not desktop_root_only,
+                retain=(
+                    retain_desktop_descendants
+                    or breakaway
+                    or target_process is not None
+                ),
+                drain=null_stream_to_pipe,
+                env=env,
+                stream_limit=(
+                    2**16
+                    if asyncio.subprocess.PIPE in (stdin, stdout, stderr)
+                    else None
+                ),
+                merge=stderr == asyncio.subprocess.STDOUT,
+                interactive=stdin == asyncio.subprocess.PIPE,
+                stream_stdout=stdout == asyncio.subprocess.PIPE,
+                stream_stderr=stderr == asyncio.subprocess.PIPE,
+                stop_root_only=desktop_root_only,
+            )
+            if scope is not None and scope.closed:
+                await self._desktop_process.stop()
+                raise asyncio.CancelledError
+            if scope is not None and owned:
+                if retain_desktop_descendants and not desktop_root_only:
+                    scope.retain_desktop_process(self._desktop_process.stop)
+                else:
+                    scope.add_check(
+                        "停止桌面分身进程", self._desktop_process.stop, timeout=12
+                    )
+            if target_process is not None:
+                try:
+                    await self.search_process(
+                        target_process, min_create_time=started, owned=owned
+                    )
+                except BaseException:
+                    await self.clear()
+                    raise
+            return
+
         if elevated and process_platform.platform_process.supports_elevation:
             # 以管理员权限启动进程（触发 UAC），ShellExecute 不返回子进程句柄，
             # 因此无法直接持有 process，仅支持通过 target_process 追踪。
@@ -238,6 +357,7 @@ class ProcessManager:
                     target_process,
                     60.0,
                     min_create_time=time.time(),
+                    owned=owned,
                 )
             return
 
@@ -255,6 +375,7 @@ class ProcessManager:
             program,
             *args,
             breakaway=breakaway,
+            owned=owned,
             cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
             stdin=stdin,
             stdout=stdout,
@@ -274,6 +395,7 @@ class ProcessManager:
                 target_process,
                 60.0,
                 min_create_time=time.time(),
+                owned=owned,
             )
 
     async def _drain(self, stream: asyncio.StreamReader) -> None:
@@ -302,6 +424,7 @@ class ProcessManager:
             target_process (ProcessInfo): 期望目标进程信息
         """
 
+        started = time.time()
         try:
             await process_platform.platform_process.open_protocol(protocol_url)
         except UnsupportedPlatformError:
@@ -312,7 +435,7 @@ class ProcessManager:
         await self.search_process(
             target_process,
             60.0,
-            min_create_time=time.time(),
+            min_create_time=started,
         )
 
     async def search_process(
@@ -334,9 +457,12 @@ class ProcessManager:
         """
 
         def _scan() -> tuple[psutil.Process, float | None] | None:
-            for proc in psutil.process_iter(
-                ["pid", "name", "exe", "cmdline", "create_time"]
-            ):
+            # cmdline 对受保护进程每次都要等读超时，整表预取会把一次扫描拖到
+            # 数秒，发现游戏太晚；只预取轻量字段，cmdline 等筛选命中后再读。
+            attrs = ["pid", "name", "create_time"]
+            if target_process.exe is not None:
+                attrs.append("exe")
+            for proc in psutil.process_iter(attrs):
                 if not match_process(proc, target_process):
                     continue
                 create_time = proc.info["create_time"]
@@ -383,6 +509,8 @@ class ProcessManager:
             return False
         if self.process is not None:
             return self.process.returncode is None
+        if self._desktop_process is not None:
+            return self._desktop_process.running
         return False
 
     async def _reseek_target(self) -> bool:
@@ -445,10 +573,24 @@ class ProcessManager:
                     with suppress(asyncio.TimeoutError):
                         await asyncio.wait_for(self.process.wait(), timeout=3)
 
+        if self._desktop_process is not None:
+            await self._desktop_process.stop()
         await self.clear()
 
-    async def clear(self) -> None:
+    async def clear(self, *, keep_desktop_descendants: bool = False) -> None:
         """清空跟踪的进程信息"""
+
+        if self._desktop_process is not None:
+            keep = (
+                keep_desktop_descendants
+                and self._desktop_process.returncode == 0
+                and current_process_scope.get() is not None
+            )
+            if not self._desktop_process.owned:
+                await self._desktop_process.release()
+            elif not keep:
+                await self._desktop_process.stop()
+            self._desktop_process = None
 
         # 清理残留的排水任务, 避免泄漏
         if self._drain_tasks:
@@ -518,6 +660,8 @@ class ProcessManager:
             bool: 操作是否成功
         """
 
+        if desktop_process_target.get() is not None:
+            return await self._operate_desktop_window("minimize_process_window")
         hwnd = self.main_hwnd
         if hwnd is None:
             return False
@@ -534,6 +678,8 @@ class ProcessManager:
             bool: 操作是否成功
         """
 
+        if desktop_process_target.get() is not None:
+            return await self._operate_desktop_window("activate_process_window")
         hwnd = self.main_hwnd
         if hwnd is None:
             return False
@@ -542,6 +688,27 @@ class ProcessManager:
             return window.activate_window(hwnd)
         except Exception:
             return False
+
+    async def _operate_desktop_window(self, action: str) -> bool:
+        if (
+            desktop := desktop_process_target.get()
+        ) is not None and self.main_pid is not None:
+            from app.utils.windows.desktop_session.process_runner import (
+                run_desktop_action,
+            )
+
+            code, _, _ = await run_desktop_action(
+                desktop,
+                action,
+                {
+                    "pid": str(self.main_pid),
+                    "title": self.window_title,
+                    "class": self.window_class_name,
+                },
+                worker_module="app.utils.windows.desktop_session.process_worker",
+            )
+            return code == 0
+        return False
 
     async def close(self) -> None:
         """请被管理进程自行退出，等它走完退出时的配置保存

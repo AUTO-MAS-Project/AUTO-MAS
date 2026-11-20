@@ -29,8 +29,8 @@ with startup_stage("后端/API 导入/core"):
     from .core import router as core_router
 with startup_stage("后端/API 导入/dispatch"):
     from .dispatch import router as dispatch_router
-with startup_stage("后端/API 导入/emulator"):
-    from .emulator import router as emulator_router
+with startup_stage("后端/API 导入/games"):
+    from .games import router as games_router
 with startup_stage("后端/API 导入/history"):
     from .history import router as history_router
 with startup_stage("后端/API 导入/i18n"):
@@ -55,15 +55,21 @@ with startup_stage("后端/API 导入/share"):
     from .share import router as share_router
 with startup_stage("后端/API 导入/update"):
     from .update import router as update_router
+from .config_triggers import router as config_triggers_router
+from .downloads import router as downloads_router
+from .plugin import router as plugin_router
 
 __all__ = [
+    "plugin_router",
+    "config_triggers_router",
+    "downloads_router",
     "community_router",
     "core_router",
     "info_router",
     "mystery_router",
     "scripts_router",
     "plan_router",
-    "emulator_router",
+    "games_router",
     "queue_router",
     "dispatch_router",
     "history_router",

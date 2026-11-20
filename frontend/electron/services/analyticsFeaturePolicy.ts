@@ -36,6 +36,31 @@ const script = [
   'none',
 ] as const
 const family = ['mumu', 'leidian', 'bluestacks', 'avd', 'multi', 'unknown'] as const
+const gameAdapter = [
+  'mumu',
+  'ldplayer',
+  'avd',
+  'general_emulator',
+  'win_process',
+  'unknown',
+] as const
+const gameOperation = [
+  'open',
+  'close',
+  'show',
+  'hide',
+  'minimize',
+  'maximize',
+  'refresh',
+  'create_instance',
+  'delete_instance',
+  'install_app',
+  'open_store',
+  'check_components',
+  'check_update',
+  'update',
+  'unknown',
+] as const
 const plan = [
   'MaaPlanConfig',
   'MaaEndPlanConfig',
@@ -54,6 +79,25 @@ const finished = <T extends Record<string, readonly string[]>>(fields: T) => ({
 })
 
 export const featureAnalyticsSchemas = {
+  game_target_changed: finished({
+    adapter: gameAdapter,
+    action: [
+      'create',
+      'update',
+      'delete',
+      'search',
+      'import',
+      'settings',
+      'batch_settings',
+      'stable_mode',
+      'capture',
+    ] as const,
+  }),
+  game_operation_result: finished({ adapter: gameAdapter, operation: gameOperation }),
+  game_operation_observed_finished: finished({ adapter: gameAdapter, operation: gameOperation }),
+  plugin_action_finished: finished({
+    action: ['enable', 'disable', 'reload', 'uninstall', 'install', 'refresh', 'config'] as const,
+  }),
   mcp_retry_requested: finished({}),
   backend_restart_finished: finished({ reason_kind: ['manual', 'recovery', 'update'] as const }),
   runtime_alignment_finished: finished({
@@ -92,6 +136,10 @@ export const featureAnalyticsSchemas = {
     source: ['shortcut', 'tray', 'scheduler', 'home', 'mascot', 'unknown'] as const,
   }),
   virtual_display_action_finished: finished({ action: ['check', 'remove'] as const }),
+  desktop_session_connection_finished: finished({
+    reason_kind: ['none', 'environment', 'credentials', 'connection', 'process'] as const,
+  }),
+  desktop_session_environment_repair_finished: finished({}),
   virtual_display_prompt_answered: finished({ choice: ['remove', 'cancel', 'keep'] as const }),
   system_resume_recovery_finished: finished({
     recovery_kind: ['reconnect', 'backend_restart', 'skipped'] as const,
@@ -316,6 +364,8 @@ export const mainOnlyFeatureEvents = [
   'renderer_responsiveness_changed',
   'tray_action_requested',
   'virtual_display_prompt_answered',
+  'desktop_session_connection_finished',
+  'desktop_session_environment_repair_finished',
   'diagnostic_export_finished',
   'data_backup_export_finished',
 ] as const

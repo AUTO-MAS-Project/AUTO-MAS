@@ -22,12 +22,12 @@ export const additionalTaskOptions = [
     value: 'Auto Farm all Nightmare Nest',
   },
   {
-    label: '已弃置声骸超过 1000 时融合',
+    label: '已弃置声骸超过1000时融合',
     shortLabelKey: 'core.plan.okww.taskSummary.merge',
     value: 'Merge Echo If discarded > 1000',
   },
   {
-    label: '传送并刷取 4C 声骸',
+    label: '传送并刷取4C声骸',
     shortLabelKey: 'core.plan.okww.taskSummary.echo',
     value: 'Teleport and Farm 4C Echo',
   },

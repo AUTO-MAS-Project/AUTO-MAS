@@ -3,6 +3,7 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { translate as t } from '@/i18n'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useUserApi } from '@/composables/useUserApi'
 import type { useTemplateApi } from '@/composables/useTemplateApi'
 import type { useMaaFWEmbeddedApi } from '@/composables/useMaaFWEmbeddedApi'
 import { maafwRouteLocation } from '@/router/maafwFlavorRoutes'
@@ -24,6 +25,7 @@ interface CreationOptions {
 export function useScriptCreation(options: CreationOptions) {
   const router = useRouter()
   const { addScript, deleteScript } = useScriptApi()
+  const { addUser } = useUserApi()
   const logger = window.electronAPI.getLogger('脚本创建')
   const addLoading = ref(false)
   const copyingScriptId = ref<string | null>(null)
@@ -79,18 +81,20 @@ export function useScriptCreation(options: CreationOptions) {
           await options.reloadScripts()
           return
         }
-        outcome = 'success'
         message.success(
           t('core.scripts.toast.createdFromTemplate', { name: request.template.displayName })
         )
-        await options.reloadScripts()
-        options.closeDialog()
-        navigate(result.scriptId, 'General')
-        return
       }
-      outcome = 'success'
+
+      // MFW 由引导末尾创建或导入首个账号，普通托管在进入配置前创建。
+      if (
+        isMfwFamily(type) ||
+        (await addUser(result.scriptId, { playSuccessSound: false }))?.userId
+      )
+        outcome = 'success'
+      if (request.kind === 'general-template') await options.reloadScripts()
       options.closeDialog()
-      navigate(result.scriptId, type, result.data)
+      navigate(result.scriptId, type, request.kind === 'general-template' ? undefined : result.data)
     } catch (error) {
       logger.error(`创建脚本失败: ${error instanceof Error ? error.message : String(error)}`)
     } finally {

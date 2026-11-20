@@ -20,14 +20,6 @@ export type MaaEndConfig_GameInput = {
      */
     ControllerType?: (string | null);
     /**
-     * 模拟器 ID
-     */
-    EmulatorId?: (string | null);
-    /**
-     * 模拟器索引
-     */
-    EmulatorIndex?: (string | null);
-    /**
      * 是否在任务启动前检查并自动更新终末地 PC 客户端
      */
     IfAutoUpdate?: (boolean | null);

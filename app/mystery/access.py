@@ -52,9 +52,10 @@ def get_backend_hash(root: Path) -> str:
     paths = [root / "main.py", *(root / "app").rglob("*.py")]
     digest = hashlib.sha256(b"auto-mas:mystery:backend:v1\n")
     for path in sorted(paths, key=lambda item: item.relative_to(root).as_posix()):
-        if "__pycache__" in path.parts:
+        relative = path.relative_to(root)
+        if "__pycache__" in relative.parts:
             continue
-        relative_path = path.relative_to(root).as_posix()
+        relative_path = relative.as_posix()
         content = path.read_bytes().replace(b"\r\n", b"\n")
         file_hash = hashlib.sha256(content).hexdigest()
         digest.update(f"{relative_path}\0{file_hash}\n".encode("utf-8"))

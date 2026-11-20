@@ -17,7 +17,6 @@ export namespace UserIndexItem {
      * 配置类型
      */
     export enum type {
-        MAA_USER_CONFIG = 'MaaUserConfig',
         GENERAL_USER_CONFIG = 'GeneralUserConfig',
         OKWW_USER_CONFIG = 'OkwwUserConfig',
         OK_NTE_USER_CONFIG = 'OkNteUserConfig',
@@ -29,8 +28,9 @@ export namespace UserIndexItem {
         BETTER_GIUSER_CONFIG = 'BetterGIUserConfig',
         ZZZ_OD_USER_CONFIG = 'ZzzOdUserConfig',
         BAAHUSER_CONFIG = 'BAAHUserConfig',
-        WHIMBOX_USER_CONFIG = 'WhimboxUserConfig',
         MSSUSER_CONFIG = 'MSSUserConfig',
+        MAA_USER_CONFIG = 'MaaUserConfig',
+        WHIMBOX_USER_CONFIG = 'WhimboxUserConfig',
     }
 }
 

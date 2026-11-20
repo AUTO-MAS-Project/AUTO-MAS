@@ -75,8 +75,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
   }
 
   const control = useMaaFWControlConfig(maafwConfig, previewData, previewLoading, handleChange)
-  const { syncControllerResourceSelection, loadEmulatorOptions, loadEmulatorDeviceOptions } =
-    control
+  const { syncControllerResourceSelection } = control
 
   const periodTasks = useMaaFWPeriodTasks(maafwConfig, previewData, handleChange)
   const { prunePeriodTaskSelections, syncPeriodTasksFromConfig } = periodTasks
@@ -140,13 +139,12 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     isWizard: wizard.isWizard.value,
   }))
 
+  // 基础信息里那一行计数：只列用户看得懂的几项（引用文件数、Agent 数偏开发者，不常驻显示）
   const interfaceStats = computed(() => [
     { label: t('core.edit.task'), value: previewData.value?.tasks.length ?? 0 },
     { label: t('core.edit.preset'), value: previewData.value?.presets.length ?? 0 },
     { label: t('core.edit.controller'), value: previewData.value?.controllers.length ?? 0 },
     { label: t('core.edit.resource'), value: previewData.value?.resources.length ?? 0 },
-    { label: t('core.edit.maafwImportFiles'), value: previewData.value?.importCount ?? 0 },
-    { label: t('core.edit.maafwAgentCount'), value: previewData.value?.agentCount ?? 0 },
   ])
 
   // 最近一次读 interface 失败的原因：读不到时基础信息区落到引导卡片，原因留在卡片上，
@@ -260,7 +258,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       const initialScript = host?.takeInitialScript()
       const [scriptDetail] = await Promise.all([
         initialScript !== undefined ? initialScript : getScript(scriptId),
-        loadEmulatorOptions(),
+        control.prepareBinding(),
       ])
       if (!scriptDetail) {
         if (!scriptApiError.value && !host?.scriptLoadError.value)
@@ -281,9 +279,6 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
         formData.name = maafwConfig.Info.Name
       }
 
-      if (maafwConfig.Emulator.Id && maafwConfig.Emulator.Id !== '-') {
-        await loadEmulatorDeviceOptions(maafwConfig.Emulator.Id)
-      }
       await refreshEmbeddedStatus()
       if (maafwConfig.Info.Path) {
         await runPreview()

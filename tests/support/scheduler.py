@@ -19,6 +19,25 @@ from app.models.config import (
 from app.task.legacy import TaskExecuteBase
 
 
+async def create_runtime_tree(*, script_id="script", user_id="user"):
+    """建立不启动执行器的真实运行树，供预下载状态和路径发布回归共用。"""
+    from app.models.task import TaskItem, TaskScriptItem, TaskUserItem
+
+    root = TaskItem()
+    await root.activate()
+    sid = root.scripts.add(
+        TaskScriptItem, payload={"info": {"script_id": script_id, "name": "Script"}}
+    )
+    await root.scripts.commit()
+    script = root.scripts[sid]
+    uid = script.users.add(
+        TaskUserItem, payload={"info": {"user_id": user_id, "name": "User"}}
+    )
+    await script.users.commit()
+    await root.set_current_index(0)
+    return root, script, script.users[uid]
+
+
 class Builtin(TaskExecuteBase):
     def __init__(self, script):
         super().__init__()
@@ -63,6 +82,8 @@ async def scheduler():
         patch("app.core.task_manager.TaskManager", manager),
         patch("app.core.Power", power),
         patch("app.core.BackgroundTaskManager", background),
+        patch("app.task.prefetch.BackgroundTaskManager", background),
+        patch("app.task.history_core.BackgroundTaskManager", background),
         patch.object(Config, "ScriptConfig", scripts),
         patch.object(Config, "QueueConfig", queues),
         patch.dict(config_manager._collections, {"ScriptConfig": scripts}),

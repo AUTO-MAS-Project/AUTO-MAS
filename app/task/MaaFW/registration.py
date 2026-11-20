@@ -20,7 +20,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.models.config import M9AConfig, MaaFWConfig, MSSConfig
-from app.models.script_contracts import ScriptConfigHandler, ScriptEmulatorBinding
+from app.models.script_contracts import ScriptConfigHandler
 from app.task.registration import ScriptRegistration
 
 if TYPE_CHECKING:
@@ -59,11 +59,30 @@ def build_config_handler() -> ScriptConfigHandler:
         prepare_user_update=prepare_maafw_user_update,
         prepare_user_read=prepare_maafw_user_read,
         initialize_user=initialize_maafw_user,
-        emulator_binding=ScriptEmulatorBinding(
-            group="Emulator", id_field="Id", index_field="Index"
-        ),
+        game_kinds=("emulator", "client"),
+        expected_game_kind=expected_game_kind,
         supports_mod_avd=True,
     )
+
+
+def expected_game_kind(script, patch):
+    """显式选择的公开 controller 决定目标类别，未导入项目时保留两类选择。"""
+    from .tools.core.interface.loader import load_interface_model_cached
+    from .tools.embedded.embedded_project import resolve_maafw_project_root
+
+    controller = patch.get("Info", {}).get("Controller", script.Info.Controller)
+    if not controller:
+        return None
+    root = resolve_maafw_project_root(str(script.uid), script)
+    if not root.is_dir():
+        return None
+    interface = load_interface_model_cached(root)
+    selected = next(
+        (item for item in interface.controller if item.name == controller), None
+    )
+    if selected is None:
+        return None
+    return "emulator" if selected.type == "Adb" else "client"
 
 
 def load_restore_pools() -> list[ConfigRestorePool]:

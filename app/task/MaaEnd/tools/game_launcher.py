@@ -17,6 +17,8 @@ from pathlib import Path
 
 import psutil
 
+from app.utils.common.process.operations import iter_processes
+
 logger = logging.getLogger("终末地启动")
 
 # 当前官方启动器签名，证书轮换后需同步更新（与参考实现保持一致）。
@@ -178,7 +180,7 @@ def verify_launcher_signature(path: Path) -> None:
 
 
 def _game_running(game_path: Path) -> bool:
-    for process in psutil.process_iter(["exe"]):
+    for process in iter_processes(["exe"]):
         try:
             if process.info["exe"] and Path(process.info["exe"]) == game_path:
                 return True
@@ -189,7 +191,7 @@ def _game_running(game_path: Path) -> bool:
 
 def _find_parent(kernel, launcher_path: Path):
     """核验同一安装目录下的 Games.exe，返回保持打开的父进程句柄。"""
-    for process in psutil.process_iter(["name"]):
+    for process in iter_processes(["name"]):
         if (process.info["name"] or "").lower() != "games.exe":
             continue
         handle = None
@@ -248,7 +250,11 @@ def _prepare_launcher(kernel, launcher_path: Path):
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+        creationflags=(
+            subprocess.DETACHED_PROCESS
+            | subprocess.CREATE_NEW_PROCESS_GROUP
+            | subprocess.CREATE_BREAKAWAY_FROM_JOB
+        ),
     )
     deadline = time.monotonic() + _LAUNCHER_TIMEOUT
     while time.monotonic() < deadline:

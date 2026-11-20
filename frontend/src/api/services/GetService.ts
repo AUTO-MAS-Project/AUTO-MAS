@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { ActiveTriggersOut } from '../models/ActiveTriggersOut';
 import type { ADBScreenshotIn } from '../models/ADBScreenshotIn';
 import type { ADBScreenshotOut } from '../models/ADBScreenshotOut';
 import type { BlueArchiveActivityIn } from '../models/BlueArchiveActivityIn';
@@ -13,33 +14,22 @@ import type { CheckImageAnyIn } from '../models/CheckImageAnyIn';
 import type { CheckImageIn } from '../models/CheckImageIn';
 import type { CheckImageOut } from '../models/CheckImageOut';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
+import type { CoreUpgradePrecheckIn } from '../models/CoreUpgradePrecheckIn';
+import type { CoreUpgradePrecheckOut } from '../models/CoreUpgradePrecheckOut';
 import type { CultivatePreviewIn } from '../models/CultivatePreviewIn';
 import type { CultivatePreviewOut } from '../models/CultivatePreviewOut';
-import type { Emulator2AvdInstanceIn } from '../models/Emulator2AvdInstanceIn';
-import type { Emulator2AvdInstanceOptionsOut } from '../models/Emulator2AvdInstanceOptionsOut';
-import type { Emulator2AvdStatusIn } from '../models/Emulator2AvdStatusIn';
-import type { Emulator2AvdStatusOut } from '../models/Emulator2AvdStatusOut';
-import type { Emulator2AvdUpdateStatusIn } from '../models/Emulator2AvdUpdateStatusIn';
-import type { Emulator2AvdUpdateStatusOut } from '../models/Emulator2AvdUpdateStatusOut';
-import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
-import type { Emulator2DevicesOut } from '../models/Emulator2DevicesOut';
-import type { Emulator2InstanceDeleteIn } from '../models/Emulator2InstanceDeleteIn';
-import type { Emulator2InstanceDeletePreviewOut } from '../models/Emulator2InstanceDeletePreviewOut';
-import type { Emulator2PathRemoveIn } from '../models/Emulator2PathRemoveIn';
-import type { Emulator2PathRemovePreviewOut } from '../models/Emulator2PathRemovePreviewOut';
-import type { Emulator2SearchIn } from '../models/Emulator2SearchIn';
-import type { Emulator2SearchOut } from '../models/Emulator2SearchOut';
-import type { EmulatorDeleteIn } from '../models/EmulatorDeleteIn';
-import type { EmulatorGetIn } from '../models/EmulatorGetIn';
-import type { EmulatorGetOut } from '../models/EmulatorGetOut';
-import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
-import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { FluxdownDetectOut } from '../models/FluxdownDetectOut';
 import type { FluxdownInstallIn } from '../models/FluxdownInstallIn';
 import type { FluxdownInstallOut } from '../models/FluxdownInstallOut';
 import type { FluxdownReleaseOut } from '../models/FluxdownReleaseOut';
+import type { GameBindingOptionsIn } from '../models/GameBindingOptionsIn';
+import type { GameBindingOptionsOut } from '../models/GameBindingOptionsOut';
 import type { GameCalendarActivitiesOut } from '../models/GameCalendarActivitiesOut';
-import type { GetStageIn } from '../models/GetStageIn';
+import type { GameDeviceIn } from '../models/GameDeviceIn';
+import type { GameGetIn } from '../models/GameGetIn';
+import type { GameGetOut } from '../models/GameGetOut';
+import type { GameSettingsOut } from '../models/GameSettingsOut';
+import type { GameTypesOut } from '../models/GameTypesOut';
 import type { HistoryDetailGetIn } from '../models/HistoryDetailGetIn';
 import type { HistoryDetailGetOut } from '../models/HistoryDetailGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
@@ -66,9 +56,20 @@ import type { OCRScreenshotOut } from '../models/OCRScreenshotOut';
 import type { OkwwArgumentsIn } from '../models/OkwwArgumentsIn';
 import type { OkwwArgumentsOut } from '../models/OkwwArgumentsOut';
 import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
+import type { OkwwPlanConfigsOut } from '../models/OkwwPlanConfigsOut';
+import type { OkwwTaskConfigOut } from '../models/OkwwTaskConfigOut';
 import type { PlanComboxIn } from '../models/PlanComboxIn';
 import type { PlanGetIn } from '../models/PlanGetIn';
 import type { PlanGetOut } from '../models/PlanGetOut';
+import type { PluginCatalogGetIn } from '../models/PluginCatalogGetIn';
+import type { PluginCatalogGetOut } from '../models/PluginCatalogGetOut';
+import type { PluginConfigGetIn } from '../models/PluginConfigGetIn';
+import type { PluginConfigGetOut } from '../models/PluginConfigGetOut';
+import type { PluginInstallationGetIn } from '../models/PluginInstallationGetIn';
+import type { PluginInstallationOut } from '../models/PluginInstallationOut';
+import type { PluginRegistryGetIn } from '../models/PluginRegistryGetIn';
+import type { PluginRegistryGetOut } from '../models/PluginRegistryGetOut';
+import type { PluginRuntimeListOut } from '../models/PluginRuntimeListOut';
 import type { PowerCountdownSnapshot } from '../models/PowerCountdownSnapshot';
 import type { PowerOut } from '../models/PowerOut';
 import type { QueueGetIn } from '../models/QueueGetIn';
@@ -84,6 +85,7 @@ import type { ScriptMirrorCdkIn } from '../models/ScriptMirrorCdkIn';
 import type { ScriptMirrorCdkOut } from '../models/ScriptMirrorCdkOut';
 import type { ScriptShareInspectIn } from '../models/ScriptShareInspectIn';
 import type { ScriptStatusOverviewOut } from '../models/ScriptStatusOverviewOut';
+import type { ScriptTypesOut } from '../models/ScriptTypesOut';
 import type { SettingGetOut } from '../models/SettingGetOut';
 import type { SettingMirrorCdkIn } from '../models/SettingMirrorCdkIn';
 import type { SettingMirrorCdkOut } from '../models/SettingMirrorCdkOut';
@@ -104,11 +106,10 @@ import type { TaskStatusOut } from '../models/TaskStatusOut';
 import type { TimeSetGetIn } from '../models/TimeSetGetIn';
 import type { TimeSetGetOut } from '../models/TimeSetGetOut';
 import type { ToolsGetOut } from '../models/ToolsGetOut';
+import type { TriggerResultIn } from '../models/TriggerResultIn';
+import type { TriggerResultOut } from '../models/TriggerResultOut';
 import type { UniversalPlanStateIn } from '../models/UniversalPlanStateIn';
 import type { UniversalPlanStateOut } from '../models/UniversalPlanStateOut';
-import type { UpdateCheckIn } from '../models/UpdateCheckIn';
-import type { UpdateCheckOut } from '../models/UpdateCheckOut';
-import type { UpdateDownloadSnapshot } from '../models/UpdateDownloadSnapshot';
 import type { UserConfigDirIn } from '../models/UserConfigDirIn';
 import type { UserConfigDirOut } from '../models/UserConfigDirOut';
 import type { UserDeleteIn } from '../models/UserDeleteIn';
@@ -124,6 +125,171 @@ import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class GetService {
+    /**
+     * 查询插件注册表配置
+     * 读取单个或全部已安装插件记录，按配置 API 格式返回条目顺序与展示数据。
+     * @param requestBody
+     * @param locale
+     * @returns PluginRegistryGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginRegistryApiPluginRegistryGetPost(
+        requestBody: PluginRegistryGetIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginRegistryGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_registry/get',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询插件目录配置
+     * 读取单个或全部市场插件条目，返回展示顺序、版本及安装操作所需的配置数据。
+     * @param requestBody
+     * @param locale
+     * @returns PluginCatalogGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginCatalogApiPluginCatalogGetPost(
+        requestBody: PluginCatalogGetIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginCatalogGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_catalog/get',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询插件自有配置（凭注册表项定位）
+     * 读取已安装插件的专属配置，未声明配置时返回空值，记录不存在时返回未找到错误。
+     * @param requestBody
+     * @param locale
+     * @returns PluginConfigGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginConfigApiPluginConfigGetPost(
+        requestBody: PluginConfigGetIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginConfigGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_config/get',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 列出已加载插件（运行时）
+     * 汇总已发现插件的运行状态、版本、来源和依赖，供前端插件管理页展示。
+     * @param locale
+     * @returns PluginRuntimeListOut Successful Response
+     * @throws ApiError
+     */
+    public static listPluginsApiPluginListPost(
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginRuntimeListOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/list',
+            query: {
+                'locale': locale,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Plugin Installation
+     * 读取本次市场安装的持久结果，后端业务初始化失败时也允许查询。
+     * @param requestBody
+     * @param locale
+     * @returns PluginInstallationOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginInstallationApiPluginInstallationGetPost(
+        requestBody: PluginInstallationGetIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginInstallationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/get',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Active Config Triggers
+     * 读取当前占用的配置触发器字段。
+     * @returns ActiveTriggersOut Successful Response
+     * @throws ApiError
+     */
+    public static getActiveConfigTriggersApiConfigTriggersActiveGet(): CancelablePromise<ActiveTriggersOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/config/triggers/active',
+        });
+    }
+    /**
+     * Get Config Trigger Result
+     * 读取任务执行状态和近期终态。
+     * @param requestBody
+     * @returns TriggerResultOut Successful Response
+     * @throws ApiError
+     */
+    public static getConfigTriggerResultApiConfigTriggersResultPost(
+        requestBody: TriggerResultIn,
+    ): CancelablePromise<TriggerResultOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/config/triggers/result',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询工具配置
+     * 获取工具设置
+     * @returns ToolsGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getToolsApiToolsGetPost(): CancelablePromise<ToolsGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/get',
+        });
+    }
     /**
      * 获取游戏已完成活动
      * @param game
@@ -170,25 +336,6 @@ export class GetService {
         });
     }
     /**
-     * 获取关卡号下拉框信息
-     * @param requestBody
-     * @returns ComboBoxOut Successful Response
-     * @throws ApiError
-     */
-    public static getStageComboxApiInfoComboxStagePost(
-        requestBody: GetStageIn,
-    ): CancelablePromise<ComboBoxOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/info/combox/stage',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 获取托管下拉框信息
      * @returns ComboBoxOut Successful Response
      * @throws ApiError
@@ -211,36 +358,6 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/combox/plan',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取可选模拟器下拉框信息
-     * @returns ComboBoxOut Successful Response
-     * @throws ApiError
-     */
-    public static getEmulatorComboxApiInfoComboxEmulatorPost(): CancelablePromise<ComboBoxOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/info/combox/emulator',
-        });
-    }
-    /**
-     * 获取可选模拟器多开实例下拉框信息
-     * @param requestBody
-     * @returns ComboBoxOut Successful Response
-     * @throws ApiError
-     */
-    public static getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost(
-        requestBody: EmulatorDeleteIn,
-    ): CancelablePromise<ComboBoxOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/info/combox/emulator/devices',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -272,6 +389,7 @@ export class GetService {
     }
     /**
      * 信息总览
+     * 返回宿主托管概览，MAA 关卡及活动资源由所属插件接口提供。
      * @param refresh
      * @returns InfoOut Successful Response
      * @throws ApiError
@@ -434,6 +552,18 @@ export class GetService {
         });
     }
     /**
+     * Get Script Types
+     * 返回当前已启用的内置和插件托管类型，供新建页面实时筛选能力。
+     * @returns ScriptTypesOut Successful Response
+     * @throws ApiError
+     */
+    public static getScriptTypesApiScriptsTypesGet(): CancelablePromise<ScriptTypesOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/types',
+        });
+    }
+    /**
      * 查询托管配置信息
      * @param requestBody
      * @returns ScriptGetOut Successful Response
@@ -548,6 +678,36 @@ export class GetService {
         });
     }
     /**
+     * Get Okww Task Config Api
+     * 读取原生字段及半动态控件描述。
+     * @param scriptId
+     * @param userId
+     * @param kind
+     * @param locale
+     * @returns OkwwTaskConfigOut Successful Response
+     * @throws ApiError
+     */
+    public static getOkwwTaskConfigApiApiScriptsOkwwTaskConfigGet(
+        scriptId: string,
+        userId: string,
+        kind: 'daily' | 'echo' | 'nightmare' | 'combat' | 'character' | 'monthly',
+        locale: 'zh_CN' | 'en_US' | 'ja_JP' = 'zh_CN',
+    ): CancelablePromise<OkwwTaskConfigOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/okww/task-config',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'kind': kind,
+                'locale': locale,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Preview Okww Arguments Api
      * 按实际启动规则预览参数，不启动脚本。
      * @param requestBody
@@ -591,6 +751,33 @@ export class GetService {
         });
     }
     /**
+     * Get Okww Plan Configs Api
+     * 读取当天详细覆写及原生面板字段。
+     * @param planId
+     * @param day
+     * @param locale
+     * @returns OkwwPlanConfigsOut Successful Response
+     * @throws ApiError
+     */
+    public static getOkwwPlanConfigsApiApiScriptsOkwwPlanConfigsGet(
+        planId: string,
+        day: string,
+        locale: 'zh_CN' | 'en_US' | 'ja_JP' = 'zh_CN',
+    ): CancelablePromise<OkwwPlanConfigsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/okww/plan/configs',
+            query: {
+                'plan_id': planId,
+                'day': day,
+                'locale': locale,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 从终末地客户端路径识别官方启动器路径
      * 按脚本的终末地客户端路径识别启动器 Launcher.exe（前端「自动识别」用）。
      *
@@ -625,6 +812,761 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maaend/options',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询计划表
+     * @param requestBody
+     * @returns PlanGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getPlanApiPlanGetPost(
+        requestBody: PlanGetIn,
+    ): CancelablePromise<PlanGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plan/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询通用脚本计划表已配置的日期
+     * @param requestBody
+     * @returns UniversalPlanStateOut Successful Response
+     * @throws ApiError
+     */
+    public static getUniversalPlanStateApiPlanUniversalStatePost(
+        requestBody: UniversalPlanStateIn,
+    ): CancelablePromise<UniversalPlanStateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plan/universal-state',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Game Binding Options
+     * @param requestBody
+     * @returns GameBindingOptionsOut Successful Response
+     * @throws ApiError
+     */
+    public static gameBindingOptionsApiGamesBindingOptionsPost(
+        requestBody: GameBindingOptionsIn,
+    ): CancelablePromise<GameBindingOptionsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/games/binding/options',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Game Types
+     * @returns GameTypesOut Successful Response
+     * @throws ApiError
+     */
+    public static gameTypesApiGamesTypesPost(): CancelablePromise<GameTypesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/games/types',
+        });
+    }
+    /**
+     * Get Games
+     * @param requestBody
+     * @returns GameGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getGamesApiGamesGetPost(
+        requestBody?: GameGetIn,
+    ): CancelablePromise<GameGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/games/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Game Device Settings
+     * @param requestBody
+     * @returns GameSettingsOut Successful Response
+     * @throws ApiError
+     */
+    public static gameDeviceSettingsApiGamesSettingsGetPost(
+        requestBody: GameDeviceIn,
+    ): CancelablePromise<GameSettingsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/games/settings/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Device Options
+     * @param requestBody
+     * @returns GameSettingsOut Successful Response
+     * @throws ApiError
+     */
+    public static deviceOptionsApiGamesDeviceOptionsPost(
+        requestBody: GameDeviceIn,
+    ): CancelablePromise<GameSettingsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/games/device/options',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询调度队列配置信息
+     * @param requestBody
+     * @returns QueueGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getQueuesApiQueueGetPost(
+        requestBody: QueueGetIn,
+    ): CancelablePromise<QueueGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/queue/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询定时项
+     * @param requestBody
+     * @returns TimeSetGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getTimeSetApiQueueTimeGetPost(
+        requestBody: TimeSetGetIn,
+    ): CancelablePromise<TimeSetGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/queue/time/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询队列项
+     * @param requestBody
+     * @returns QueueItemGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getItemApiQueueItemGetPost(
+        requestBody: QueueItemGetIn,
+    ): CancelablePromise<QueueItemGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/queue/item/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取运行中任务初始快照
+     * 返回当前运行任务；WS 只承载后续状态、日志与完成事件。
+     * @returns TaskRuntimeSnapshot Successful Response
+     * @throws ApiError
+     */
+    public static getTaskRuntimeSnapshotApiDispatchRuntimeSnapshotGet(): CancelablePromise<TaskRuntimeSnapshot> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/dispatch/runtime-snapshot',
+        });
+    }
+    /**
+     * 按 taskId 查询单个任务状态
+     * 返回运行中或最近完成任务的终态；不包含日志。
+     * @param taskId
+     * @returns TaskStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getTaskStatusApiDispatchTaskTaskIdGet(
+        taskId: string,
+    ): CancelablePromise<TaskStatusOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/dispatch/task/{task_id}',
+            path: {
+                'task_id': taskId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Tasks
+     * @param requestBody
+     * @returns TaskGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getTasksApiDispatchGetPost(
+        requestBody: TaskGetIn,
+    ): CancelablePromise<TaskGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/dispatch/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取电源倒计时初始快照
+     * 返回当前倒计时；WS 只承载后续逐秒更新与取消事件。
+     * @returns PowerCountdownSnapshot Successful Response
+     * @throws ApiError
+     */
+    public static getPowerCountdownSnapshotApiDispatchPowerCountdownSnapshotGet(): CancelablePromise<PowerCountdownSnapshot> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/dispatch/power/countdown-snapshot',
+        });
+    }
+    /**
+     * 获取电源标志
+     * @returns PowerOut Successful Response
+     * @throws ApiError
+     */
+    public static getPowerApiDispatchGetPowerPost(): CancelablePromise<PowerOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/dispatch/get/power',
+        });
+    }
+    /**
+     * 搜索历史记录及类型化统计
+     * @param requestBody
+     * @returns HistorySearchOut Successful Response
+     * @throws ApiError
+     */
+    public static searchHistoryApiHistorySearchPost(
+        requestBody: HistorySearchIn,
+    ): CancelablePromise<HistorySearchOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/history/search',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 按记录编号获取执行结果、日志和附件
+     * @param requestBody
+     * @returns HistoryDetailGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getHistoryDetailApiHistoryDetailPost(
+        requestBody: HistoryDetailGetIn,
+    ): CancelablePromise<HistoryDetailGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/history/detail',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 按附件编号读取图片、文件或视频
+     * @param attachmentId
+     * @param download
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getHistoryAttachmentApiHistoryAttachmentsAttachmentIdGet(
+        attachmentId: string,
+        download: boolean = false,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/history/attachments/{attachment_id}',
+            path: {
+                'attachment_id': attachmentId,
+            },
+            query: {
+                'download': download,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询全局 Mirror 酱 CDK 状态与到期时间
+     * @param requestBody
+     * @returns SettingMirrorCdkOut Successful Response
+     * @throws ApiError
+     */
+    public static querySettingMirrorCdkApiSettingMirrorCdkPost(
+        requestBody: SettingMirrorCdkIn,
+    ): CancelablePromise<SettingMirrorCdkOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/mirror-cdk',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 检查 OBS 回放缓冲
+     * @returns ObsReplayCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static checkObsReplayApiSettingObsCheckPost(): CancelablePromise<ObsReplayCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/obs/check',
+        });
+    }
+    /**
+     * 导出数据备份
+     * 导出数据、配置与历史记录。
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static backupDataApiSettingBackupGet(): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/setting/backup',
+        });
+    }
+    /**
+     * 查询配置
+     * 查询配置
+     * @returns SettingGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getScriptsApiSettingGetPost(): CancelablePromise<SettingGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/get',
+        });
+    }
+    /**
+     * 查询通知渠道描述
+     * 返回通知渠道描述表，仅展示元数据，不含任何配置值。
+     * @returns NotifyChannelsOut Successful Response
+     * @throws ApiError
+     */
+    public static getNotifyChannelsApiSettingNotifyChannelsGet(): CancelablePromise<NotifyChannelsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/setting/notify/channels',
+        });
+    }
+    /**
+     * 查询 webhook 配置
+     * @param requestBody
+     * @returns WebhookGetOut_Webhook_ Successful Response
+     * @throws ApiError
+     */
+    public static getWebhookApiSettingWebhookGetPost(
+        requestBody: WebhookGetIn,
+    ): CancelablePromise<WebhookGetOut_Webhook_> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/webhook/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 检测虚拟显示驱动
+     * 三段式检测虚拟显示驱动。
+     *
+     * 前两段验「能不能调用」，第三段真插一块屏再拆掉，验「有没有效果」——只做前两段
+     * 会出现「设置页显示检测通过、无人值守时照样失败」的假信号。第三段会真的改变桌面
+     * 拓扑，所以只挂在用户手动触发的按钮上，不在任务流程里自动跑。
+     * @returns VirtualDisplayCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static checkVirtualDisplayApiSettingVirtualDisplayCheckPost(): CancelablePromise<VirtualDisplayCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/virtual-display/check',
+        });
+    }
+    /**
+     * 查询虚拟显示驱动状态
+     * 只查驱动装没装、能不能调，不改变桌面拓扑。
+     *
+     * 设置页打开时自动调用，用来决定开关能不能打开。不做缓存也不持久化：一次 0.2ms，
+     * 而存下来的状态只会变陈旧。
+     * @returns VirtualDisplayCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static virtualDisplayStatusApiSettingVirtualDisplayStatusPost(): CancelablePromise<VirtualDisplayCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/virtual-display/status',
+        });
+    }
+    /**
+     * 获取配置中心已发布的通用脚本配置
+     * @param requestBody
+     * @returns ShareTemplateListOut Successful Response
+     * @throws ApiError
+     */
+    public static listShareTemplatesApiShareTemplatesPost(
+        requestBody: ShareTemplateListIn,
+    ): CancelablePromise<ShareTemplateListOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/templates',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取配置中心授权状态
+     * @returns ShareAuthStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getShareAuthStatusApiShareAuthStatusPost(): CancelablePromise<ShareAuthStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/auth/status',
+        });
+    }
+    /**
+     * 轮询配置中心授权结果
+     * @returns ShareAuthStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static pollShareAuthApiShareAuthPollPost(): CancelablePromise<ShareAuthStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/auth/poll',
+        });
+    }
+    /**
+     * 获取当前账号的外观上传记录
+     * @param requestBody
+     * @returns ShareAppearanceUploadsOut Successful Response
+     * @throws ApiError
+     */
+    public static listShareAppearanceUploadsApiShareAppearanceUploadsPost(
+        requestBody?: ShareAppearanceCategoryIn,
+    ): CancelablePromise<ShareAppearanceUploadsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/uploads',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取当前账号在分享站上的全部外观
+     * @param requestBody
+     * @returns ShareAppearanceMineOut Successful Response
+     * @throws ApiError
+     */
+    public static listMyShareAppearancesApiShareAppearanceMinePost(
+        requestBody?: ShareAppearanceCategoryIn,
+    ): CancelablePromise<ShareAppearanceMineOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/mine',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取自己外观某个版本的封面
+     * @param requestBody
+     * @returns ShareAppearanceCoverOut Successful Response
+     * @throws ApiError
+     */
+    public static getMyShareAppearanceCoverApiShareAppearanceCoverPost(
+        requestBody: ShareAppearanceCoverIn,
+    ): CancelablePromise<ShareAppearanceCoverOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/cover',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Precheck Core Upgrade
+     * 在插件状态锁内检查目标 core 版本与插件依赖是否兼容，返回准入结论和冲突明细供前端决策。
+     * @param requestBody
+     * @returns CoreUpgradePrecheckOut Successful Response
+     * @throws ApiError
+     */
+    public static precheckCoreUpgradeApiUpdatePrecheckPost(
+        requestBody: CoreUpgradePrecheckIn,
+    ): CancelablePromise<CoreUpgradePrecheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/update/precheck',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 全盘检测 FluxDown 并择优推荐
+     * CLI 便携版优先，其次同盘、就近、新目录；无 CLI 只有全量版时提示污染风险。
+     * @returns FluxdownDetectOut Successful Response
+     * @throws ApiError
+     */
+    public static detectFluxdownApiUpdateFluxdownDetectGet(): CancelablePromise<FluxdownDetectOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/update/fluxdown/detect',
+        });
+    }
+    /**
+     * 获取 FluxDown 最新 Release 直链
+     * 用于设置页展示 CLI / Server 两个包的 GitHub 下载链接。
+     * @returns FluxdownReleaseOut Successful Response
+     * @throws ApiError
+     */
+    public static getFluxdownReleaseApiUpdateFluxdownReleaseGet(): CancelablePromise<FluxdownReleaseOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/update/fluxdown/release',
+        });
+    }
+    /**
+     * 由 MAS 下载并安装 FluxDown CLI 与 Server
+     * 静默下载两个发布包，校验后解压到 MAS 数据目录并写入 FluxdownPath。
+     * @param requestBody
+     * @returns FluxdownInstallOut Successful Response
+     * @throws ApiError
+     */
+    public static installFluxdownApiUpdateFluxdownInstallPost(
+        requestBody: FluxdownInstallIn,
+    ): CancelablePromise<FluxdownInstallOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/update/fluxdown/install',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取窗口截图
+     * 根据窗口标题获取截图，返回Base64编码的图像数据
+     *
+     * Args:
+     * params: 截图参数
+     * - window_title: 窗口标题关键字
+     * - should_preprocess: 是否预处理图片区域（默认True）
+     * - aspect_ratio_width: 宽高比宽度（默认16）
+     * - aspect_ratio_height: 宽高比高度（默认9）
+     * - region: 自定义截图区域，格式为 (left, top, width, height)
+     *
+     * Returns:
+     * OCRScreenshotOut: 包含Base64编码的截图和区域信息
+     * @param requestBody
+     * @returns OCRScreenshotOut Successful Response
+     * @throws ApiError
+     */
+    public static getScreenshotApiOcrScreenshotPost(
+        requestBody: OCRScreenshotIn,
+    ): CancelablePromise<OCRScreenshotOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/ocr/screenshot',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 通过ADB获取设备截图
+     * 通过 ADB 端口获取 Android 设备/模拟器截图，返回Base64编码的图像数据
+     *
+     * 支持两种截图方法：
+     * 1. screencap PNG 方法（推荐）：速度快，直接获取 PNG 图像
+     * 2. screencap raw 方法：获取原始像素数据，适用于某些不支持 PNG 的设备
+     *
+     * Args:
+     * params: ADB 截图参数
+     * - adb_path: ADB 可执行文件的路径
+     * - serial: 设备序列号，格式如 "127.0.0.1:5555" 或 "emulator-5554"
+     * - use_screencap: 是否使用 screencap PNG 方法（默认True）
+     *
+     * Returns:
+     * ADBScreenshotOut: 包含Base64编码的截图和设备信息
+     * @param requestBody
+     * @returns ADBScreenshotOut Successful Response
+     * @throws ApiError
+     */
+    public static getScreenshotAdbApiOcrScreenshotAdbPost(
+        requestBody: ADBScreenshotIn,
+    ): CancelablePromise<ADBScreenshotOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/ocr/screenshot/adb',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 检查是否存在指定图像
+     * 截图并查找是否存在图片内的内容
+     *
+     * Args:
+     * params: 检查图像参数
+     * - window_title: 窗口标题关键字
+     * - image_path: 要查找的图片路径
+     * - interval: 截图间隔时间（秒），默认为 0
+     * - retry_times: 重复截图次数，默认为 1
+     * - threshold: 图像匹配阈值，范围 0-1，默认 0.8
+     *
+     * Returns:
+     * CheckImageOut: 包含查找结果和尝试次数
+     * @param requestBody
+     * @returns CheckImageOut Successful Response
+     * @throws ApiError
+     */
+    public static checkImageApiOcrCheckImagePost(
+        requestBody: CheckImageIn,
+    ): CancelablePromise<CheckImageOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/ocr/check/image',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 检查是否存在任意一个指定图像
+     * 截图并查找是否存在列表中任意一张图片的内容
+     *
+     * Args:
+     * params: 检查图像参数
+     * - window_title: 窗口标题关键字
+     * - image_paths: 要查找的图片路径列表
+     * - interval: 截图间隔时间（秒），默认为 0
+     * - retry_times: 重复截图次数，默认为 1
+     * - threshold: 图像匹配阈值，范围 0-1，默认 0.8
+     *
+     * Returns:
+     * CheckImageOut: 包含查找结果和尝试次数
+     * @param requestBody
+     * @returns CheckImageOut Successful Response
+     * @throws ApiError
+     */
+    public static checkImageAnyApiOcrCheckImageAnyPost(
+        requestBody: CheckImageAnyIn,
+    ): CancelablePromise<CheckImageOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/ocr/check/image/any',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 检查是否存在所有指定图像
+     * 截图并查找是否存在列表中所有图片的内容
+     *
+     * Args:
+     * params: 检查图像参数
+     * - window_title: 窗口标题关键字
+     * - image_paths: 要查找的图片路径列表
+     * - interval: 截图间隔时间（秒），默认为 0
+     * - retry_times: 重复截图次数，默认为 1
+     * - threshold: 图像匹配阈值，范围 0-1，默认 0.8
+     *
+     * Returns:
+     * CheckImageOut: 包含查找结果和尝试次数
+     * @param requestBody
+     * @returns CheckImageOut Successful Response
+     * @throws ApiError
+     */
+    public static checkImageAllApiOcrCheckImageAllPost(
+        requestBody: CheckImageAllIn,
+    ): CancelablePromise<CheckImageOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/ocr/check/image/all',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -884,892 +1826,6 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/mirror-cdk',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询计划表
-     * @param requestBody
-     * @returns PlanGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getPlanApiPlanGetPost(
-        requestBody: PlanGetIn,
-    ): CancelablePromise<PlanGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plan/get',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询通用脚本计划表已配置的日期
-     * @param requestBody
-     * @returns UniversalPlanStateOut Successful Response
-     * @throws ApiError
-     */
-    public static getUniversalPlanStateApiPlanUniversalStatePost(
-        requestBody: UniversalPlanStateIn,
-    ): CancelablePromise<UniversalPlanStateOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plan/universal-state',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询模拟器配置
-     * @param requestBody
-     * @returns EmulatorGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getEmulatorApiEmulatorGetPost(
-        requestBody: EmulatorGetIn,
-    ): CancelablePromise<EmulatorGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/get',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询模拟器状态
-     * @param requestBody
-     * @returns EmulatorStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static getStatusApiEmulatorStatusPost(
-        requestBody: EmulatorGetIn,
-    ): CancelablePromise<EmulatorStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/status',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 搜索已安装的模拟器
-     * 枚举卸载表并解析主管理器路径（不依赖 ADB 设备枚举）。
-     * @returns EmulatorSearchOut Successful Response
-     * @throws ApiError
-     */
-    public static searchEmulatorsApiEmulatorEmulatorSearchPost(): CancelablePromise<EmulatorSearchOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/emulator/search',
-        });
-    }
-    /**
-     * 搜索可加入 Emulator 2.0 的模拟器
-     * 列出本机模拟器并逐条判定。不可添加的**也会列出**并给出原因枚举。
-     * @param requestBody
-     * @returns Emulator2SearchOut Successful Response
-     * @throws ApiError
-     */
-    public static searchEmulatorsApiEmulator2SearchPost(
-        requestBody?: Emulator2SearchIn,
-    ): CancelablePromise<Emulator2SearchOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/search',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 预览移除模拟器路径的影响
-     * 只读。列出会失效的设备号与受影响的脚本，供确认页使用。
-     * @param requestBody
-     * @returns Emulator2PathRemovePreviewOut Successful Response
-     * @throws ApiError
-     */
-    public static previewRemovePathApiEmulator2PathsRemovePreviewPost(
-        requestBody: Emulator2PathRemoveIn,
-    ): CancelablePromise<Emulator2PathRemovePreviewOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/paths/remove/preview',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询合并后的设备列表
-     * 合并多条安装的实例。键是设备号，另附模拟器自己的实例索引。
-     *
-     * 枚举失败的安装标 ``unavailable``——一次枚举失败不等于实例被删除，
-     * 既不写墓碑也不影响下次恢复。``withSettings=false`` 只取状态，给轮询用。
-     * @param requestBody
-     * @returns Emulator2DevicesOut Successful Response
-     * @throws ApiError
-     */
-    public static listDevicesApiEmulator2DevicesPost(
-        requestBody: Emulator2DevicesIn,
-    ): CancelablePromise<Emulator2DevicesOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/devices',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 预览删除实例的影响
-     * 只读。列出绑定了该设备号的脚本，供确认页使用。
-     * @param requestBody
-     * @returns Emulator2InstanceDeletePreviewOut Successful Response
-     * @throws ApiError
-     */
-    public static previewDeleteInstanceApiEmulator2InstancesDeletePreviewPost(
-        requestBody: Emulator2InstanceDeleteIn,
-    ): CancelablePromise<Emulator2InstanceDeletePreviewOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/instances/delete/preview',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询 ModAVD 根目录的组件状态
-     * 组件清单与是否齐全（缺哪几项）、硬件加速（WHPX）是否可用、开机前电脑检查。
-     * 组件随模拟器内测包提供，MAS 不下载。只读，不联网。``refresh`` 为 true 时检查不走缓存。
-     * @param requestBody
-     * @returns Emulator2AvdStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static avdStatusApiEmulator2AvdStatusPost(
-        requestBody: Emulator2AvdStatusIn,
-    ): CancelablePromise<Emulator2AvdStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/status',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询 ModAVD 实例选项
-     * 显示档位、内存、核数、数据盘、首次初始化与渲染器检测结果、端口。
-     * @param requestBody
-     * @returns Emulator2AvdInstanceOptionsOut Successful Response
-     * @throws ApiError
-     */
-    public static avdInstanceOptionsApiEmulator2AvdInstanceOptionsPost(
-        requestBody: Emulator2AvdInstanceIn,
-    ): CancelablePromise<Emulator2AvdInstanceOptionsOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/instance/options',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询 ModAVD 根目录的更新状态
-     * 装着的版本、最新版本、已下载好的版本、更新进度。``check`` 为 true 时（「检查更新」）先强制问一次
-     * 下载源（Mirror 酱、GitHub）最新版本，不带 CDK；查不到不算接口失败，原因写在 ``checkError``。
-     * @param requestBody
-     * @returns Emulator2AvdUpdateStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static avdUpdateStatusApiEmulator2AvdUpdateStatusPost(
-        requestBody: Emulator2AvdUpdateStatusIn,
-    ): CancelablePromise<Emulator2AvdUpdateStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/update/status',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询调度队列配置信息
-     * @param requestBody
-     * @returns QueueGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getQueuesApiQueueGetPost(
-        requestBody: QueueGetIn,
-    ): CancelablePromise<QueueGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/queue/get',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询定时项
-     * @param requestBody
-     * @returns TimeSetGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getTimeSetApiQueueTimeGetPost(
-        requestBody: TimeSetGetIn,
-    ): CancelablePromise<TimeSetGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/queue/time/get',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询队列项
-     * @param requestBody
-     * @returns QueueItemGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getItemApiQueueItemGetPost(
-        requestBody: QueueItemGetIn,
-    ): CancelablePromise<QueueItemGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/queue/item/get',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取运行中任务初始快照
-     * 返回当前运行任务；WS 只承载后续状态、日志与完成事件。
-     * @returns TaskRuntimeSnapshot Successful Response
-     * @throws ApiError
-     */
-    public static getTaskRuntimeSnapshotApiDispatchRuntimeSnapshotGet(): CancelablePromise<TaskRuntimeSnapshot> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/dispatch/runtime-snapshot',
-        });
-    }
-    /**
-     * 按 taskId 查询单个任务状态
-     * 返回运行中或最近完成任务的终态；不包含日志。
-     * @param taskId
-     * @returns TaskStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static getTaskStatusApiDispatchTaskTaskIdGet(
-        taskId: string,
-    ): CancelablePromise<TaskStatusOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/dispatch/task/{task_id}',
-            path: {
-                'task_id': taskId,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Get Tasks
-     * @param requestBody
-     * @returns TaskGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getTasksApiDispatchGetPost(
-        requestBody: TaskGetIn,
-    ): CancelablePromise<TaskGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/dispatch/get',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取电源倒计时初始快照
-     * 返回当前倒计时；WS 只承载后续逐秒更新与取消事件。
-     * @returns PowerCountdownSnapshot Successful Response
-     * @throws ApiError
-     */
-    public static getPowerCountdownSnapshotApiDispatchPowerCountdownSnapshotGet(): CancelablePromise<PowerCountdownSnapshot> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/dispatch/power/countdown-snapshot',
-        });
-    }
-    /**
-     * 获取电源标志
-     * @returns PowerOut Successful Response
-     * @throws ApiError
-     */
-    public static getPowerApiDispatchGetPowerPost(): CancelablePromise<PowerOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/dispatch/get/power',
-        });
-    }
-    /**
-     * 搜索历史记录及类型化统计
-     * @param requestBody
-     * @returns HistorySearchOut Successful Response
-     * @throws ApiError
-     */
-    public static searchHistoryApiHistorySearchPost(
-        requestBody: HistorySearchIn,
-    ): CancelablePromise<HistorySearchOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/history/search',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 按记录编号获取执行结果、日志和附件
-     * @param requestBody
-     * @returns HistoryDetailGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getHistoryDetailApiHistoryDetailPost(
-        requestBody: HistoryDetailGetIn,
-    ): CancelablePromise<HistoryDetailGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/history/detail',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 按附件编号读取图片、文件或视频
-     * @param attachmentId
-     * @param download
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static getHistoryAttachmentApiHistoryAttachmentsAttachmentIdGet(
-        attachmentId: string,
-        download: boolean = false,
-    ): CancelablePromise<any> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/history/attachments/{attachment_id}',
-            path: {
-                'attachment_id': attachmentId,
-            },
-            query: {
-                'download': download,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询工具配置
-     * 获取工具设置
-     * @returns ToolsGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getToolsApiToolsGetPost(): CancelablePromise<ToolsGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/get',
-        });
-    }
-    /**
-     * 查询全局 Mirror 酱 CDK 状态与到期时间
-     * @param requestBody
-     * @returns SettingMirrorCdkOut Successful Response
-     * @throws ApiError
-     */
-    public static querySettingMirrorCdkApiSettingMirrorCdkPost(
-        requestBody: SettingMirrorCdkIn,
-    ): CancelablePromise<SettingMirrorCdkOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/setting/mirror-cdk',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 检查 OBS 回放缓冲
-     * @returns ObsReplayCheckOut Successful Response
-     * @throws ApiError
-     */
-    public static checkObsReplayApiSettingObsCheckPost(): CancelablePromise<ObsReplayCheckOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/setting/obs/check',
-        });
-    }
-    /**
-     * 导出数据备份
-     * 导出数据、配置与历史记录。
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static backupDataApiSettingBackupGet(): CancelablePromise<any> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/setting/backup',
-        });
-    }
-    /**
-     * 查询配置
-     * 查询配置
-     * @returns SettingGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getScriptsApiSettingGetPost(): CancelablePromise<SettingGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/setting/get',
-        });
-    }
-    /**
-     * 查询通知渠道描述
-     * 返回通知渠道描述表，仅展示元数据，不含任何配置值。
-     * @returns NotifyChannelsOut Successful Response
-     * @throws ApiError
-     */
-    public static getNotifyChannelsApiSettingNotifyChannelsGet(): CancelablePromise<NotifyChannelsOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/setting/notify/channels',
-        });
-    }
-    /**
-     * 查询 webhook 配置
-     * @param requestBody
-     * @returns WebhookGetOut_Webhook_ Successful Response
-     * @throws ApiError
-     */
-    public static getWebhookApiSettingWebhookGetPost(
-        requestBody: WebhookGetIn,
-    ): CancelablePromise<WebhookGetOut_Webhook_> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/setting/webhook/get',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 检测虚拟显示驱动
-     * 三段式检测虚拟显示驱动。
-     *
-     * 前两段验「能不能调用」，第三段真插一块屏再拆掉，验「有没有效果」——只做前两段
-     * 会出现「设置页显示检测通过、无人值守时照样失败」的假信号。第三段会真的改变桌面
-     * 拓扑，所以只挂在用户手动触发的按钮上，不在任务流程里自动跑。
-     * @returns VirtualDisplayCheckOut Successful Response
-     * @throws ApiError
-     */
-    public static checkVirtualDisplayApiSettingVirtualDisplayCheckPost(): CancelablePromise<VirtualDisplayCheckOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/setting/virtual-display/check',
-        });
-    }
-    /**
-     * 查询虚拟显示驱动状态
-     * 只查驱动装没装、能不能调，不改变桌面拓扑。
-     *
-     * 设置页打开时自动调用，用来决定开关能不能打开。不做缓存也不持久化：一次 0.2ms，
-     * 而存下来的状态只会变陈旧。
-     * @returns VirtualDisplayCheckOut Successful Response
-     * @throws ApiError
-     */
-    public static virtualDisplayStatusApiSettingVirtualDisplayStatusPost(): CancelablePromise<VirtualDisplayCheckOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/setting/virtual-display/status',
-        });
-    }
-    /**
-     * 获取配置中心已发布的通用脚本配置
-     * @param requestBody
-     * @returns ShareTemplateListOut Successful Response
-     * @throws ApiError
-     */
-    public static listShareTemplatesApiShareTemplatesPost(
-        requestBody: ShareTemplateListIn,
-    ): CancelablePromise<ShareTemplateListOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/share/templates',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取配置中心授权状态
-     * @returns ShareAuthStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static getShareAuthStatusApiShareAuthStatusPost(): CancelablePromise<ShareAuthStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/share/auth/status',
-        });
-    }
-    /**
-     * 轮询配置中心授权结果
-     * @returns ShareAuthStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static pollShareAuthApiShareAuthPollPost(): CancelablePromise<ShareAuthStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/share/auth/poll',
-        });
-    }
-    /**
-     * 获取当前账号的外观上传记录
-     * @param requestBody
-     * @returns ShareAppearanceUploadsOut Successful Response
-     * @throws ApiError
-     */
-    public static listShareAppearanceUploadsApiShareAppearanceUploadsPost(
-        requestBody?: ShareAppearanceCategoryIn,
-    ): CancelablePromise<ShareAppearanceUploadsOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/share/appearance/uploads',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取当前账号在分享站上的全部外观
-     * @param requestBody
-     * @returns ShareAppearanceMineOut Successful Response
-     * @throws ApiError
-     */
-    public static listMyShareAppearancesApiShareAppearanceMinePost(
-        requestBody?: ShareAppearanceCategoryIn,
-    ): CancelablePromise<ShareAppearanceMineOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/share/appearance/mine',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取自己外观某个版本的封面
-     * @param requestBody
-     * @returns ShareAppearanceCoverOut Successful Response
-     * @throws ApiError
-     */
-    public static getMyShareAppearanceCoverApiShareAppearanceCoverPost(
-        requestBody: ShareAppearanceCoverIn,
-    ): CancelablePromise<ShareAppearanceCoverOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/share/appearance/cover',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取更新下载初始快照
-     * 返回当前下载权威状态；WS 只承载后续进度与终态事件。
-     * @returns UpdateDownloadSnapshot Successful Response
-     * @throws ApiError
-     */
-    public static getUpdateDownloadStatusApiUpdateDownloadStatusGet(): CancelablePromise<UpdateDownloadSnapshot> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/update/download/status',
-        });
-    }
-    /**
-     * 检查更新
-     * @param requestBody
-     * @returns UpdateCheckOut Successful Response
-     * @throws ApiError
-     */
-    public static checkUpdateApiUpdateCheckPost(
-        requestBody: UpdateCheckIn,
-    ): CancelablePromise<UpdateCheckOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/update/check',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 全盘检测 FluxDown 并择优推荐
-     * CLI 便携版优先，其次同盘、就近、新目录；无 CLI 只有全量版时提示污染风险。
-     * @returns FluxdownDetectOut Successful Response
-     * @throws ApiError
-     */
-    public static detectFluxdownApiUpdateFluxdownDetectGet(): CancelablePromise<FluxdownDetectOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/update/fluxdown/detect',
-        });
-    }
-    /**
-     * 获取 FluxDown 最新 Release 直链
-     * 用于设置页展示 CLI / Server 两个包的 GitHub 下载链接。
-     * @returns FluxdownReleaseOut Successful Response
-     * @throws ApiError
-     */
-    public static getFluxdownReleaseApiUpdateFluxdownReleaseGet(): CancelablePromise<FluxdownReleaseOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/update/fluxdown/release',
-        });
-    }
-    /**
-     * 由 MAS 下载并安装 FluxDown CLI 与 Server
-     * 静默下载两个发布包，校验后解压到 MAS 数据目录并写入 FluxdownPath。
-     * @param requestBody
-     * @returns FluxdownInstallOut Successful Response
-     * @throws ApiError
-     */
-    public static installFluxdownApiUpdateFluxdownInstallPost(
-        requestBody: FluxdownInstallIn,
-    ): CancelablePromise<FluxdownInstallOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/update/fluxdown/install',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取窗口截图
-     * 根据窗口标题获取截图，返回Base64编码的图像数据
-     *
-     * Args:
-     * params: 截图参数
-     * - window_title: 窗口标题关键字
-     * - should_preprocess: 是否预处理图片区域（默认True）
-     * - aspect_ratio_width: 宽高比宽度（默认16）
-     * - aspect_ratio_height: 宽高比高度（默认9）
-     * - region: 自定义截图区域，格式为 (left, top, width, height)
-     *
-     * Returns:
-     * OCRScreenshotOut: 包含Base64编码的截图和区域信息
-     * @param requestBody
-     * @returns OCRScreenshotOut Successful Response
-     * @throws ApiError
-     */
-    public static getScreenshotApiOcrScreenshotPost(
-        requestBody: OCRScreenshotIn,
-    ): CancelablePromise<OCRScreenshotOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/ocr/screenshot',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 通过ADB获取设备截图
-     * 通过 ADB 端口获取 Android 设备/模拟器截图，返回Base64编码的图像数据
-     *
-     * 支持两种截图方法：
-     * 1. screencap PNG 方法（推荐）：速度快，直接获取 PNG 图像
-     * 2. screencap raw 方法：获取原始像素数据，适用于某些不支持 PNG 的设备
-     *
-     * Args:
-     * params: ADB 截图参数
-     * - adb_path: ADB 可执行文件的路径
-     * - serial: 设备序列号，格式如 "127.0.0.1:5555" 或 "emulator-5554"
-     * - use_screencap: 是否使用 screencap PNG 方法（默认True）
-     *
-     * Returns:
-     * ADBScreenshotOut: 包含Base64编码的截图和设备信息
-     * @param requestBody
-     * @returns ADBScreenshotOut Successful Response
-     * @throws ApiError
-     */
-    public static getScreenshotAdbApiOcrScreenshotAdbPost(
-        requestBody: ADBScreenshotIn,
-    ): CancelablePromise<ADBScreenshotOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/ocr/screenshot/adb',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 检查是否存在指定图像
-     * 截图并查找是否存在图片内的内容
-     *
-     * Args:
-     * params: 检查图像参数
-     * - window_title: 窗口标题关键字
-     * - image_path: 要查找的图片路径
-     * - interval: 截图间隔时间（秒），默认为 0
-     * - retry_times: 重复截图次数，默认为 1
-     * - threshold: 图像匹配阈值，范围 0-1，默认 0.8
-     *
-     * Returns:
-     * CheckImageOut: 包含查找结果和尝试次数
-     * @param requestBody
-     * @returns CheckImageOut Successful Response
-     * @throws ApiError
-     */
-    public static checkImageApiOcrCheckImagePost(
-        requestBody: CheckImageIn,
-    ): CancelablePromise<CheckImageOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/ocr/check/image',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 检查是否存在任意一个指定图像
-     * 截图并查找是否存在列表中任意一张图片的内容
-     *
-     * Args:
-     * params: 检查图像参数
-     * - window_title: 窗口标题关键字
-     * - image_paths: 要查找的图片路径列表
-     * - interval: 截图间隔时间（秒），默认为 0
-     * - retry_times: 重复截图次数，默认为 1
-     * - threshold: 图像匹配阈值，范围 0-1，默认 0.8
-     *
-     * Returns:
-     * CheckImageOut: 包含查找结果和尝试次数
-     * @param requestBody
-     * @returns CheckImageOut Successful Response
-     * @throws ApiError
-     */
-    public static checkImageAnyApiOcrCheckImageAnyPost(
-        requestBody: CheckImageAnyIn,
-    ): CancelablePromise<CheckImageOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/ocr/check/image/any',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 检查是否存在所有指定图像
-     * 截图并查找是否存在列表中所有图片的内容
-     *
-     * Args:
-     * params: 检查图像参数
-     * - window_title: 窗口标题关键字
-     * - image_paths: 要查找的图片路径列表
-     * - interval: 截图间隔时间（秒），默认为 0
-     * - retry_times: 重复截图次数，默认为 1
-     * - threshold: 图像匹配阈值，范围 0-1，默认 0.8
-     *
-     * Returns:
-     * CheckImageOut: 包含查找结果和尝试次数
-     * @param requestBody
-     * @returns CheckImageOut Successful Response
-     * @throws ApiError
-     */
-    public static checkImageAllApiOcrCheckImageAllPost(
-        requestBody: CheckImageAllIn,
-    ): CancelablePromise<CheckImageOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/ocr/check/image/all',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

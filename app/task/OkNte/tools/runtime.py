@@ -27,6 +27,7 @@ import psutil
 
 from app.models.config import OkNteConfig
 from app.utils import ProcessInfo, ProcessManager, get_logger
+from app.utils.common.process.operations import iter_processes
 
 logger = get_logger("OK-NTE 运行入口")
 
@@ -81,7 +82,9 @@ class OkNteProcessManager(ProcessManager):
         track = self.config.Script.IfTrackProcess
         custom = self._custom_target() if track and use_custom_target else None
         started = time.time()
-        await self.open_process(program, *args, target_process=custom)
+        await self.open_process(
+            program, *args, target_process=custom, retain_desktop_descendants=track
+        )
         if track and custom is None:
             await self.search_runtime_process(min_create_time=started)
 
@@ -95,7 +98,7 @@ class OkNteProcessManager(ProcessManager):
         def scan() -> tuple[psutil.Process, float] | None:
             executables = runtime_executables(self.root)
             candidates: list[tuple[int, float, int, psutil.Process]] = []
-            for proc in psutil.process_iter(["pid", "exe", "cmdline", "create_time"]):
+            for proc in iter_processes(["pid", "exe", "cmdline", "create_time"]):
                 info = proc.info
                 if not info["exe"] or not info["cmdline"]:
                     continue

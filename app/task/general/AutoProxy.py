@@ -37,6 +37,8 @@ from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.task.base import ScriptAutoProxyBase
+from app.task.client import client_executable_path
+from app.task.game import game_device_id
 from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
 from app.utils import (
     LOG_TYPE_NORMAL,
@@ -48,13 +50,13 @@ from app.utils import (
     compile_log_signs,
     flush_patterns,
     get_logger,
-    is_process_running,
     load_patterns,
     process,
     strptime,
 )
 from app.utils import io as _utils_io
 from app.utils.common.log_box.hooks import make_line_hook
+from app.utils.common.process.manager import has_process_window
 
 from .log_protocol import parse_marker
 
@@ -134,9 +136,18 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         # 是否写 MAS 侧配置：原生来源=不写，shared/independent 来源都写面板值。
         self.use_mas_config = self.config_base != CONFIG_BASE_NATIVE
         self.check_result = "-"
+        # 这几项同样在 prepare 后段才建立。准备阶段中途失败时收尾照样会读它们：
+        # 少了 push_log 这组，收尾会在回写推送日志那一步再抛一次 AttributeError，
+        # 把原始错误顶掉、后面的历史保存与统计通知也一并跳过。
+        self.general_log_monitor: LogMonitor | None = None
+        self.run_book = False
+        self.push_log_enabled = False
+        self.push_log_patterns_compiled = []
+        self.push_log_buffer = []
+        self._push_log_processed = 0
+        self._process_seen = False
 
     async def check(self) -> str:
-
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
         if (
             self.task_info.is_queue_task
@@ -244,7 +255,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         else:
             self.log_format = self.script_log_path.name
 
-        self.game_path = self.script_config.Game.Path
+        self.game_path = client_executable_path(self.script_config)
         self.game_url = self.script_config.Game.URL
         self.game_process_name = self.script_config.Game.ProcessName
         self.log_time_range = (
@@ -360,7 +371,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                 try:
                     if isinstance(self.game_manager, ProcessManager):
                         if self.script_config.Game.Type == "URL":
-                            if self.game_process_name and is_process_running(
+                            if self.game_process_name and await has_process_window(
                                 self.game_process_name
                             ):
                                 logger.info(
@@ -381,7 +392,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                             if self.game_path is None:
                                 raise ValueError("游戏路径未配置，请检查路径设置")
                             game_process_name = self.game_path.name
-                            if game_process_name and is_process_running(
+                            if game_process_name and await has_process_window(
                                 game_process_name
                             ):
                                 logger.info(
@@ -403,12 +414,8 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                                 )
                                 await asyncio.sleep(self.script_config.Game.WaitTime)
                     elif isinstance(self.game_manager, DeviceBase):
-                        logger.info(
-                            f"启动模拟器: {self.script_config.Game.EmulatorIndex}"
-                        )
-                        await self.game_manager.open(
-                            self.script_config.Game.EmulatorIndex
-                        )
+                        logger.info(f"启动模拟器: {game_device_id(self.script_config)}")
+                        await self.game_manager.open(game_device_id(self.script_config))
                 except Exception as e:
                     await self.handle_pre_script_error("游戏/模拟器启动失败", e)
                     continue
@@ -644,7 +651,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                         if self.game_path is not None:
                             await process.kill_process(self.game_path)
                 elif isinstance(self.game_manager, DeviceBase):
-                    await self.game_manager.close(self.script_config.Game.EmulatorIndex)
+                    await self.game_manager.close(game_device_id(self.script_config))
             except Exception as e:
                 logger.opt(exception=True).warning(f"关闭游戏/模拟器失败: {e}")
 
@@ -852,11 +859,13 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
             and not self.stopped_manually,
         )
 
-        # 结束各子任务
-        await self.general_log_monitor.stop()
+        # 结束各子任务。准备阶段可能在监控器建立之前就失败，这里只停确实建起来的那一个，
+        # 否则 AttributeError 会顶掉最初那个真正的错误，后面的进程清理也一并被吃掉。
+        if self.general_log_monitor is not None:
+            await self.general_log_monitor.stop()
         await self.kill_managed_process()
         del self.general_process_manager
-        del self.general_log_monitor
+        self.general_log_monitor = None
 
         if self.run_book:
             if (

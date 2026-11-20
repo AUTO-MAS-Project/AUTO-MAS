@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import BoundGamePathField from '@/components/BoundGamePathField.vue'
+import { useBoundGameTarget } from '@/composables/useBoundGameTarget'
+
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { computed, ref, onScopeDispose } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -6,6 +9,7 @@ import { message } from 'ant-design-vue'
 import { FolderOpenOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
 import { BetterGiService, type BetterGIUserConfig_Switch } from '@/api'
 import { useBetterGIUpdate } from '../useBetterGIUpdate'
+const { executable: boundGamePath } = useBoundGameTarget()
 
 type GameClientDraft = { [K in 'GamePath' | 'Resource']: NonNullable<BetterGIUserConfig_Switch[K]> }
 const props = defineProps<{
@@ -130,14 +134,14 @@ const syncResourceWithChannel = async () => {
 const loadGameClientInfo = async () => {
   const version = ++readVersion
   const config = props.config
-  const path = config.GamePath
+  const path = boundGamePath.value
   const inputAtStart = gamePathInput.value
   const current = () =>
-    active && version === readVersion && config === props.config && path === props.config.GamePath
+    active && version === readVersion && config === props.config && path === boundGamePath.value
   try {
     const resp = await BetterGiService.getBettergiGameInfoApiApiScriptsBettergiGameInfoGet(
       props.scriptId,
-      props.config.GamePath || ''
+      boundGamePath.value || ''
     )
     if (!current()) return
     if (resp.status === 'success') {
@@ -295,29 +299,7 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
               variant="form"
             />
           </template>
-          <a-input-group compact class="path-input-group">
-            <a-input
-              v-model:value="gamePathInput"
-              :placeholder="gamePathPlaceholder"
-              size="large"
-              class="path-input"
-              @blur="handleGamePathSaved"
-            />
-            <a-button size="large" class="path-button" @click="selectGameClient">
-              <template #icon>
-                <FolderOpenOutlined />
-              </template>
-              {{ t('core.edit.pickFile') }}
-            </a-button>
-            <a-button
-              size="large"
-              class="path-button"
-              :disabled="!gamePathInput"
-              @click="clearGameClient"
-            >
-              {{ t('core.edit.bettergiGameClientRestore') }}
-            </a-button>
-          </a-input-group>
+          <BoundGamePathField />
         </a-form-item>
         <a-tooltip :title="updateUnsupported ? t('core.edit.bettergiUpdateUnsupportedHint') : ''">
           <span class="game-client-check">

@@ -435,7 +435,7 @@ const formData = reactive<HSRUserConfigData>({
     Status: true,
     Id: '',
     Password: '',
-    // 配置来源三态（shared/independent/native）是页面上唯一的模式轴；新建用户默认「共享」，与后端一致
+    // 配置来源三态是页面上唯一的模式轴，建号后以服务端保存的来源为准。
     Base: 'shared',
     // HSR 按方案 B 声明不支持快速配置（模型/schema 字段保留但运行时无消费，
     // native_control.py 已声明），前端不渲染快速配置开关，故不设 IfQuickConfig 默认值

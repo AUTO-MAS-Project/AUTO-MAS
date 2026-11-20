@@ -38,7 +38,8 @@ from app.models.config import HSRConfig, HSRUserConfig
 from app.models.notification import NotifyPayload
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
-from app.utils import UTC4, ProcessManager, get_logger, is_process_running, process
+from app.utils import UTC4, ProcessManager, get_logger
+from app.utils.common.process.manager import has_process_window
 
 from .history import save_hsr_user_history
 from .task_mapping import (
@@ -374,13 +375,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self.runtime.game_transitioning = True
 
         try:
-            await process.kill_process(game_exe_path)
+            await self._game_process_manager.kill()
             await self._game_process_manager.clear()
             self._append_log(
                 f"已请求关闭游戏，等待 {HSR_GAME_READY_DELAY_SECONDS}s 后重新启动"
             )
             await asyncio.sleep(HSR_GAME_READY_DELAY_SECONDS)
-            if process_name and is_process_running(process_name):
+            if process_name and await has_process_window(process_name):
                 self._append_log(
                     f"等待后仍检测到游戏进程运行（{process_name}），"
                     "将继续按启动流程等待游戏就绪"
@@ -1776,7 +1777,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     break
                 if self.runtime.game_transitioning:
                     continue
-                if is_process_running(HSR_GAME_PROCESS_NAME):
+                if await has_process_window(HSR_GAME_PROCESS_NAME):
                     continue
                 # 进程刚消失时先让出一拍：让读输出的协程把 M7A 关游戏前打的
                 # 那行 ERROR 收进来，也给「脚本自己关掉游戏后紧接着退出」留出

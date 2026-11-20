@@ -15,6 +15,8 @@ export interface FrontendConfig {
 
   /** 设置页右侧分区目录的显示偏好。 */
   settingsShowNavigation?: boolean
+  /** 桌面分身独立选择的队列与托管任务。 */
+  desktopSessionQueueIds?: string[]
 
   // 主题设置
   themeMode: ThemeMode
@@ -88,6 +90,7 @@ const DEFAULT_CONFIG: FrontendConfig = {
   themeMode: 'system',
   themeColor: 'blue',
   settingsShowNavigation: true,
+  desktopSessionQueueIds: [],
   desktopMascotFps: null,
   cursorEffect: 'none',
   lowPerformanceMode: false,

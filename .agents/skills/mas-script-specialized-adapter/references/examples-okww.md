@@ -1,6 +1,6 @@
 # 案例：Okww（鸣潮 / OK-WW）
 
-Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -e` 启动，配置方案是两条并行且都有效的路（对照表见 [SKILL.md](../SKILL.md#ok-script-家族两种并行范式)）。Okww 走**固定字段 + 仅 ScriptConfig 遮罩调本体 GUI**；不要给 Okww 加 OkNte 那套 REST 动态表单，也不要用 Okww 标准判 OkNte 违规。
+Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族，均提供 **REST 动态面板 + ScriptConfig 遮罩调本体 GUI**（对照表见 [SKILL.md](../SKILL.md#ok-script-家族配置编辑)）。Okww 面板读取原生 JSON、合并账号覆写，已知字段补充控件元数据，未知字段按值生成控件并保留原生键值；标签优先读取安装目录翻译。任务执行与配置语义仍由上游负责。
 
 具体字段、路径、函数名现场读 `app/task/Okww/` 确认。本文件只记推不出来的部分。
 
@@ -43,7 +43,8 @@ Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -
 - `current_profile` 是**发行/更新渠道**（`China`=阿里云+腾讯CNB、`Global`=GitHub+PyPi 更新源，见上游 `pyappify.yml` 与 `build.yml` 发行说明），**与游戏区服（官服/国际服）无关**——ok-ww 本体不消费它（仅 ok-script 用于窗口标题）。MAS 不写它、不接管：用户安装哪个包就保持哪个更新渠道，避免静默改指向另一 git 源。真正按区服区分的是 MAS 自己的鸣潮更新器（`app/services/common/wuthering_waves/__init__.py` 两个官方 index.json）。
 - `auto_start` / `update_method` 是「缺省才补」的启动器默认值，无事零写入、不需要还原。
 - `Basic Options.json` 与 `DailyTask.json` 都在换入后的 working 目录里，**三态一律覆盖**（原生来源同样覆盖），任务结束由整目录快照还原——因此不会固化进任何来源的 base。
-- **配置会话（`ScriptConfig`）不得注入 overlay 值**：会话结束时原生目录会整目录回写 base，且会话没有还原路径，写进去就是永久固化。base 只保留用户在 ok-ww GUI 里的设置。
+- **配置会话隔离账号面板与 base**：普通账号编辑会话临时注入有效面板，保存后将面板改动回填账号覆写，再还原被注入的文件，最后将其他 GUI 改动回写所选 base；只读备份预览不得注入或回填。不得把账号覆写固化进共享或独立 base。
+- **保存各自负责的字段**：动态面板保存对应映射，启动参数只保存 `IfCustomArguments` 与 `CustomArguments`，不得携带尚未回读的其他面板快照覆盖新值。
 
 ## 哨兵契约
 
@@ -84,7 +85,7 @@ OCR 走共享工具 `app/tools/common/ocr/__init__.py`（用法见 [ocr-tools.md
 
 ## 节点详情规则（log_box）
 
-- **不读上游 ok.po、不做前置翻译**：上游 `log_info` 按界面语言翻译，`info_set` 行始终是英文键；规则必须直接同时覆盖英文源文案与当前中文译文，节点名由提取表达式固定输出中文。读 ok.po 会把节点详情绑到上游私有资源布局，译文一变规则就静默失效。
+- **节点识别不依赖上游翻译资源**：上游 `log_info` 按界面语言翻译，`info_set` 行始终是英文键；规则直接覆盖英文源文案与当前中文译文，节点名由提取表达式固定输出中文。面板标签读取翻译资源不改变节点识别规则。
 - **不要用 traceback 回显的源码行当指纹**（如 `if self.click_dialog_left_button():`）：那是依赖上游内部实现，上游改写法即失效，且违反黑箱边界。只认上游公开日志；异常路径没有公开信号时按失败呈现，需要更精确的结果就向上游要日志/结果入口。
 - 规则改动后用日志样本同时覆盖中文界面、英文界面与 `info_set` 原始键；`tests/task/test_okww_push_log_rules.py` 是对应回归入口。
 - **任务级失败要认上游直接 return 的错误行**：`MergeEchoTask` 开包失败只打 `can not open bag with hotkey` 后直接 return，不进入 DailyTask 的 `MergeEchoTask Failed` 分支；漏认会把失败显示成成功。
@@ -122,7 +123,7 @@ ok-ww 已接入通用配置恢复（`ConfigRestoreSection`），mas 池形态与
 - [ ] 原生来源直接读脚本原配置，任务前后保留原配置快照
 - [ ] 原生配置写入一律可还原：`working/configs` 内靠整目录快照，`app.json` 靠键级快照；只有「缺省才补」的启动器默认值可无快照
 - [ ] `app.json` 的 `current_profile` 覆盖后，任务结束（含异常/崩溃）必须回到任务前原值；任务期外部改动不被回滚
-- [ ] 配置会话（`ScriptConfig`）不注入 overlay 值（会话回写 base 且无还原路径）
+- [ ] 配置会话保存账号面板后还原注入文件，再回写 base；只读预览不注入、不回填
 - [ ] 自动发现与手动选择校验同一组哨兵
 - [ ] 启动器路径与客户端进程路径职责分离
 - [ ] `app.json` profile 与用户资源一致，GUI 配置时保留当前 profile

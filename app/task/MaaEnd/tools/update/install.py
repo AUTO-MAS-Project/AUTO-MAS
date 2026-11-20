@@ -451,7 +451,7 @@ async def _apply_delta(
         if progress is not None and (done % _APPLY_STEP == 0 or done == total):
             await progress(line)
 
-    next_busy_check = time.monotonic() + _APPLY_BUSY_RECHECK_SECONDS
+    next_busy_check = 0.0
 
     async def recheck() -> None:
         """定期检查游戏是否重新启动，在下一条覆盖前停止，避免客户端占用资源文件。"""
@@ -461,9 +461,9 @@ async def _apply_delta(
         if now < next_busy_check:
             return
         next_busy_check = now + _APPLY_BUSY_RECHECK_SECONDS
-        if await process.is_process_running(game_exe):
+        if not await process.is_process_stopped(game_exe, all_sessions=True):
             raise EndfieldUpdateError(
-                "落地期间游戏被重新启动，本轮不再覆盖，请退出游戏后重试"
+                "落地期间无法确认游戏已退出，本轮不再覆盖，请退出游戏后重试"
             )
 
     async def run_worker(work: Coroutine[Any, Any, None]) -> None:
@@ -484,6 +484,7 @@ async def _apply_delta(
         # 大成员解包放在线程里，保持事件循环响应；中止由逐块检查 abort 实现。
         await run_worker(asyncio.to_thread(_write_member, archive, info, temp, abort))
 
+    await recheck()
     if mark_landing_started is not None:
         # 置位必须早于第一次写入：此后崩溃留下的就是「可能半新半旧」的现场，而在这之前
         # 一个字都没写进游戏目录，不该让下一轮误判
@@ -550,6 +551,7 @@ async def _apply_delta(
         await _report(f"正在打补丁并覆盖游戏文件 {done}/{total}")
 
     for path in plan.deletes:
+        await recheck()
         try:
             _resolve_within(install_dir, path).unlink(missing_ok=True)
         except OSError as error:
@@ -558,6 +560,7 @@ async def _apply_delta(
 
     pending = staging / _PENDING_CONFIG_NAME
     await _unpack(archive.getinfo(_CONFIG_MEMBER), pending)
+    await recheck()
     # 携带新版本号的这份配置是本轮最后一次写入：单次原子改名，不进线程池
     _utils_update_files.replace_file(
         pending, install_dir / _CONFIG_MEMBER, clear_readonly=True

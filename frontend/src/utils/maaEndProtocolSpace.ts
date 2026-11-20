@@ -112,7 +112,10 @@ export const MAAEND_TASK_GROUPS = [
   {
     key: 'Sanity',
     label: '🧠 理智作战',
-    tasks: [{ name: 'Sanity', label: '🧠 理智任务' }],
+    tasks: [
+      { name: 'ProtocolSpace', label: '协议空间（库存保持）' },
+      { name: 'AutoEssence', label: '基质刷取' },
+    ],
   },
   {
     key: 'Infrastructure',

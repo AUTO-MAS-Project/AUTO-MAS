@@ -26,12 +26,12 @@
 import asyncio
 import shutil
 import uuid
-from contextlib import ExitStack, suppress
+from contextlib import ExitStack
 from datetime import datetime
 
 import app.core.notify.report as _node_report
 from app.config import config_manager
-from app.core import Config, EmulatorManager, Notify, Publisher
+from app.core import Config, GameManager, Notify, Publisher
 from app.core.script_update import (
     ScriptUpdateRequest,
     auto_recover_script_install,
@@ -46,7 +46,9 @@ from app.models.notification.report import TaskResultReport, UserReportText
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem
 from app.services import script_install
+from app.services.script_install_backup import ManagedInstallBackup
 from app.task.emulator_core import close_emulator
+from app.task.game import game_device_id, game_target_id
 from app.task.manager_base import ScriptManagerBase
 from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, log_box, update_files
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
@@ -56,12 +58,11 @@ from .tools import program_update
 from .tools.managed_recovery import (
     BAAHInstallAdapter,
     acknowledge_stale_transaction,
-    inspect_stale_transaction,
-    snapshot_original_receipts,
     cleanup_original_receipts,
+    inspect_stale_transaction,
     receipt_backup_path,
+    snapshot_original_receipts,
 )
-from app.services.script_install_backup import ManagedInstallBackup
 
 logger = get_logger("BAAH 调度器")
 
@@ -104,7 +105,7 @@ class BAAHManager(ScriptManagerBase):
         if not isinstance(script_config, BAAHConfig):
             return "托管配置类型错误, 不是 BAAH 托管类型"
 
-        if script_config.Emulator.Id == "-" or script_config.Emulator.Index in [
+        if game_target_id(script_config) == "-" or game_device_id(script_config) in [
             "",
             "-",
         ]:
@@ -143,9 +144,9 @@ class BAAHManager(ScriptManagerBase):
 
         # 初始化模拟器管理器：模拟器的启动与关闭统一由本软件调度,
         # BAAH 自身不再负责拉起模拟器
-        device_provider = self._device_provider or EmulatorManager.get_emulator_instance
+        device_provider = self._device_provider or GameManager.get_emulator_instance
         self.emulator_manager: DeviceBase = await device_provider(
-            self.script_config.Emulator.Id
+            game_target_id(self.script_config)
         )
 
     async def _prepare_program_update(self) -> None:

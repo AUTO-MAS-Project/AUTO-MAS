@@ -11,6 +11,7 @@ import { fetchTaskTargets, fetchTaskScope, type TaskTarget } from '@/composables
 import { onTaskRuntimeEvent } from '@/composables/useTaskRuntimeState'
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import { WS_ID_MAIN, WS_POWER_SIGN_UPDATED } from '@/services/websocket/types'
+import { useConfigLoader } from '@/services/configUiSync'
 import type { SchedulerTab } from './schedulerConstants'
 
 /** 页面只编排草稿、请求和局部界面；运行数据与订阅不随页面挂载变化。 */
@@ -61,11 +62,11 @@ export function useSchedulerLogic() {
     tab.selectedTaskId = taskId
     await loadTaskScope(tab)
   }
-  async function loadTaskOptions() {
+  const loadTaskOptions = useConfigLoader(['config', 'scheduler-targets'], async read => {
     const request = (optionsRequest = {})
-    taskOptionsLoading.value = true
+    if (!taskOptions.value.length) taskOptionsLoading.value = true
     try {
-      const options = await fetchTaskTargets()
+      const options = await fetchTaskTargets(read)
       if (optionsRequest !== request) return
       taskOptions.value = options
       for (const tab of schedulerTabs.value) {
@@ -83,7 +84,7 @@ export function useSchedulerLogic() {
     } finally {
       if (optionsRequest === request) taskOptionsLoading.value = false
     }
-  }
+  })
   async function startTask(tab: SchedulerTab) {
     if (tab.starting || store.statusFor(tab) === '运行') return
     const target = taskOptions.value.find(item => item.value === tab.selectedTaskId)

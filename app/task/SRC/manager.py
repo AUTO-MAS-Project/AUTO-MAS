@@ -21,12 +21,11 @@ from datetime import datetime
 from pathlib import Path
 
 from app.config import config_manager
-from app.core import Config, EmulatorManager, Notify, Publisher
+from app.core import Config, GameManager, Notify, Publisher
 from app.core.script_update import (
     ScriptUpdateRequest,
     auto_recover_script_install,
     run_managed_script_install,
-    run_script_update,
     run_script_update_with_safe_fallback,
 )
 from app.core.script_update_recovery import DownloadRetryFailed
@@ -37,7 +36,9 @@ from app.models.notification.report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.services import script_install
+from app.services.script_install_backup import ManagedInstallBackup
 from app.task.emulator_core import close_emulator
+from app.task.game import game_device_id, game_target_id
 from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
@@ -49,8 +50,6 @@ from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
-from .tools.managed_recovery import SRCInstallAdapter
-from app.services.script_install_backup import ManagedInstallBackup
 from .tools import (
     SrcConfigSnapshotState,
     SrcProcessState,
@@ -70,6 +69,7 @@ from .tools import (
     write_src_config_snapshot_state,
     write_src_process_state,
 )
+from .tools.managed_recovery import SRCInstallAdapter
 
 logger = get_logger("SRC 调度器")
 
@@ -120,11 +120,11 @@ class SrcManager(ScriptManagerBase):
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], SrcConfig
         ):
             return "托管配置类型错误, 不是SRC托管类型"
-        if Config.ScriptConfig[
-            uuid.UUID(self.script_info.script_id)
-        ].Emulator.Id == "-" or Config.ScriptConfig[
-            uuid.UUID(self.script_info.script_id)
-        ].Emulator.Index in ("", "-"):
+        if game_target_id(
+            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        ) == "-" or game_device_id(
+            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        ) in ("", "-"):
             return "未完成模拟器配置, 请检查托管配置中的模拟器设置！"
         root_path = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Info.Path
         if root_path is None or not root_path.is_dir():
@@ -180,8 +180,10 @@ class SrcManager(ScriptManagerBase):
         logger.success(f"{self.script_info.script_id}已锁定, SRC配置提取完成")
 
         # 初始化模拟器管理器和账号列表
-        device_provider = self._device_provider or EmulatorManager.get_emulator_instance
-        self.emulator_manager = await device_provider(self.script_config.Emulator.Id)
+        device_provider = self._device_provider or GameManager.get_emulator_instance
+        self.emulator_manager = await device_provider(
+            game_target_id(self.script_config)
+        )
         if self.execution_mode == "ScriptConfig":
             await self.script_info.set_users(
                 [

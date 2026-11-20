@@ -79,25 +79,7 @@
           <div class="section-header">
             <h3>{{ t('core.edit.emulators') }}</h3>
           </div>
-          <a-row :gutter="24">
-            <a-col :span="12">
-              <EmulatorSelectField
-                v-model="srcConfig.Emulator.Id"
-                :options="emulatorOptions"
-                :loading="emulatorLoading"
-                @change="handleEmulatorSelectChange"
-              />
-            </a-col>
-            <a-col :span="12">
-              <EmulatorInstanceField
-                v-model="srcConfig.Emulator.Index"
-                :emulator-id="srcConfig.Emulator.Id"
-                :options="emulatorDeviceOptions"
-                :loading="emulatorDeviceLoading"
-                @save="handleChange('Emulator', 'Index', $event)"
-              />
-            </a-col>
-          </a-row>
+          <a-row :gutter="24"> </a-row>
         </div>
 
         <!-- 运行配置 -->
@@ -247,8 +229,6 @@
 
 <script setup lang="ts">
 import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
-import EmulatorInstanceField from './components/EmulatorInstanceField.vue'
-import EmulatorSelectField from './components/EmulatorSelectField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { createSrcScriptDraft } from './srcScriptDraft'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
@@ -261,10 +241,8 @@ import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
 import type { SRCScriptConfig, ScriptType } from '@/types/script.ts'
-import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
-import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
 
 const { t } = useI18n()
 
@@ -273,12 +251,6 @@ const logger = window.electronAPI.getLogger('SRC脚本编辑')
 const route = useRoute()
 const router = useRouter()
 const { getScript, updateScript, error: scriptApiError } = useScriptApi()
-const {
-  emulatorDeviceLoading,
-  emulatorDeviceOptions,
-  clearEmulatorDeviceOptions,
-  loadEmulatorDeviceOptions,
-} = useEmulatorDeviceOptions()
 
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
@@ -318,9 +290,6 @@ const rules = {
   path: [{ required: true, message: t('core.edit.pickSrcPath'), trigger: 'blur' }],
 }
 
-// 模拟器相关状态
-const { emulatorLoading, emulatorOptions, loadEmulatorOptions } = useEmulatorOptions()
-
 // 即时保存函数 - 只发送修改的字段（遵循最小原则）
 // 后端会把这些路径字段规范化（相对路径转绝对、展开 %APPDATA%、解析 .lnk 等），
 // 保存后只回读这一个字段，界面才与落盘值一致；其余字段保存即生效不再整份回读
@@ -336,7 +305,7 @@ const refreshNormalizedField = async (category: string, key: string) => {
 
 onMounted(async () => {
   // 两个请求互不依赖, 并行发出
-  await Promise.all([loadScript(), loadEmulatorOptions()])
+  await Promise.all([loadScript()])
   // 初始化完成后允许自动保存
   isInitializing.value = false
 })
@@ -360,11 +329,6 @@ const loadScript = async () => {
         formData.name = scriptDetail.name
         Object.assign(srcConfig, scriptDetail.config as SRCScriptConfig)
       }
-
-      // 如果已经有选择的模拟器，加载对应的设备选项
-      if (srcConfig.Emulator?.Id) {
-        void loadEmulatorDeviceOptions(srcConfig.Emulator.Id)
-      }
     } else {
       // 编辑现有脚本时，从API获取数据
       const scriptDetail = await getScript(scriptId)
@@ -379,11 +343,6 @@ const loadScript = async () => {
       formData.name = scriptDetail.name
 
       Object.assign(srcConfig, scriptDetail.config as SRCScriptConfig)
-
-      // 如果已经有选择的模拟器，加载对应的设备选项
-      if (srcConfig.Emulator?.Id) {
-        void loadEmulatorDeviceOptions(srcConfig.Emulator.Id)
-      }
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -397,36 +356,6 @@ const loadScript = async () => {
 
 const handleCancel = () => {
   router.push('/scripts')
-}
-
-// 模拟器相关方法
-const handleEmulatorSelectChange = async (emulatorId: string) => {
-  // 清空模拟器实例选择
-  srcConfig.Emulator.Index = ''
-  if (emulatorId) {
-    void loadEmulatorDeviceOptions(emulatorId)
-  } else {
-    clearEmulatorDeviceOptions()
-  }
-
-  // 保存模拟器选择和清空的实例字段
-  await enqueue(async () => {
-    try {
-      const updateData = {
-        Emulator: {
-          Id: emulatorId,
-          Index: '',
-        },
-      }
-      const success = await updateScript(scriptId, updateData)
-      if (success) {
-        logger.info('模拟器配置已保存')
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`保存模拟器配置失败: ${errorMsg}`)
-    }
-  })
 }
 
 // 文件选择方法

@@ -34,22 +34,20 @@ test.describe('@maa-event-template activity target editing', () => {
         TimeZone: 8,
       },
     }
-    await page.route('**/api/info/get/overview*', route =>
+    await page.route('**/api/plugin/maa_adapter/stages/overview*', route =>
       route.fulfill({
         json: {
           code: 200,
           status: 'success',
           data: {
-            StageByServer: {
-              Official: {
-                Activity: active ? [activity] : [],
-                ActivityTemplate: active ? [] : ['material', 'material', 'orundum'],
-                ActivityStatus: active ? 'ready' : 'empty',
-                Resource: [],
-                Options: [],
-              },
+            Official: {
+              Activity: active ? [activity] : [],
+              ActivityTemplate: active ? [] : ['material', 'material', 'orundum'],
+              ActivityStatus: active ? 'ready' : 'empty',
+              ActivityUpdatedAt: '2026-10-20T00:00:00Z',
+              Resource: [],
+              Options: [],
             },
-            Proxy: {},
           },
         },
       })

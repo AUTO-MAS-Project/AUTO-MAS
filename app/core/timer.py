@@ -251,6 +251,12 @@ class _MainTimer:
 
     async def _start_automatic_work(self) -> None:
         await Startup.wait()
+        if (
+            os.getenv("AUTO_MAS_BACKEND_REPO")
+            and os.getenv("AUTO_MAS_DEVELOPER_AUTOMATION") != "1"
+        ):
+            logger.info("开发后端默认暂停自动任务；手动任务仍可使用")
+            return
         self.second_timer = asyncio.create_task(self.second_task())
         self.wakeup_timer = asyncio.create_task(self.wakeup_task())
         self.hour_timer = asyncio.create_task(self.hour_task())

@@ -7,6 +7,9 @@ export type OkwwTaskForm = {
 }
 
 export const getDefaultOkwwTaskConfig = (): OkwwTaskForm => ({
+  FarmEchoConfig: {},
+  DailyConfig: {},
+  NativeConfigs: {},
   WhichToFarm: 'Tacet Suppression',
   WhichTacetSuppressionToFarm: 1,
   WhichForgeryChallengeToFarm: 1,

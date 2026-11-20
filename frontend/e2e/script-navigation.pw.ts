@@ -46,6 +46,8 @@ test.describe('@script-navigation', () => {
         has: page.getByRole('heading', { name: scriptName, exact: true }),
       })
       await expect(card).toBeVisible()
+      await expect(card.locator('.user-item')).toHaveCount(1)
+      await app.evidence('script-automatic-first-account')
       await card.getByRole('button', { name: /Edit managed script$/ }).click()
       await expect(page).toHaveURL(new RegExp(`#/scripts/${scriptId}/edit/general$`))
       await expect(scriptNameInput).toHaveValue(scriptName)
@@ -56,6 +58,7 @@ test.describe('@script-navigation', () => {
       await expect(page).toHaveURL(new RegExp(`#/scripts/${scriptId}/users/add/general$`))
       const account = await (await addingAccount).json()
       expect(account.code).toBe(200)
+      expect(account.data.Info.Base).toBe('native')
       const userId: string = account.userId
       expect(userId).toBeTruthy()
       const accountNameInput = page.getByPlaceholder('Enter the account name', { exact: true })

@@ -21,7 +21,7 @@ from functools import partial
 from typing import TYPE_CHECKING
 
 from app.models.config import MaaEndConfig
-from app.models.script_contracts import ScriptConfigHandler, ScriptEmulatorBinding
+from app.models.script_contracts import ScriptConfigHandler
 from app.task.registration import ScriptRegistration
 
 if TYPE_CHECKING:
@@ -45,8 +45,14 @@ def build_config_handler(*, maaend: MaaEndConfigService) -> ScriptConfigHandler:
         initialize=maaend.initialize,
         validate_update=maaend.validate_update,
         import_config=maaend.import_config,
-        emulator_binding=ScriptEmulatorBinding(
-            group="Game", id_field="EmulatorId", index_field="EmulatorIndex"
+        game_kinds=("emulator", "client"),
+        expected_game_kind=lambda script, patch: (
+            "emulator"
+            if str(
+                patch.get("Game", {}).get("ControllerType", script.Game.ControllerType)
+            ).lower()
+            == "adb"
+            else "client"
         ),
     )
 

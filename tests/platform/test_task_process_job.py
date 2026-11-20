@@ -6,12 +6,264 @@ import os
 import subprocess
 import sys
 import textwrap
+import time
 import uuid
 from contextlib import suppress
 
 import pytest
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows 任务 Job")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("launch_mode", ["created", "adopted", "adopted_during"])
+@pytest.mark.parametrize("cleanup", ["scope", "path", "cancel"])
+async def test_script_breakaway_survives_task_cleanup(
+    tmp_path, monkeypatch, launch_mode, cleanup
+):
+    """脚本主动脱离的游戏保留，普通后代清理；显式关闭游戏仍然有效。"""
+    import psutil
+    import win32api
+    import win32con
+    import win32job
+
+    from app.utils.common.process.manager import ProcessInfo, ProcessManager
+    from app.utils.common.process.operations import kill_process_by_pid
+    from app.utils.common.process.runner import create_subprocess, stop_process
+    from app.utils.common.process.scope import TaskProcessScope, current_process_scope
+
+    gate, result_file = tmp_path / "gate", tmp_path / "result.json"
+    early_gate, early_pid = tmp_path / "early_gate", tmp_path / "early_pid"
+    code = textwrap.dedent("""
+        import json,subprocess,sys,time
+        from pathlib import Path
+        gate,result,early_gate,early_pid=map(Path,sys.argv[1:])
+        children=[]
+        outcome={'pids':children}
+        try:
+            for flags in (0,subprocess.CREATE_BREAKAWAY_FROM_JOB):
+                ready = early_gate if flags == 0 else gate
+                while not ready.exists(): time.sleep(.01)
+                child=subprocess.Popen(
+                    [sys.executable,'-I','-c','import time; time.sleep(60)'],
+                    creationflags=flags,stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                children.append(child.pid)
+                if flags == 0: early_pid.write_text(str(child.pid))
+        except OSError as error:
+            outcome['error']=str(error)
+        # 读端用文件存在来判断结果是否就绪。
+        pending=result.with_suffix('.tmp')
+        pending.write_text(json.dumps(outcome))
+        pending.replace(result)
+        time.sleep(60)
+    """)
+    scope = TaskProcessScope()
+    token = current_process_scope.set(scope)
+    parent = None
+    children = []
+    try:
+        if launch_mode == "created":
+            parent = await create_subprocess(
+                sys._base_executable,
+                "-I",
+                "-c",
+                code,
+                str(gate),
+                str(result_file),
+                str(early_gate),
+                str(early_pid),
+            )
+            early_gate.touch()
+            gate.touch()
+        else:
+            parent = await asyncio.create_subprocess_exec(
+                sys._base_executable,
+                "-I",
+                "-c",
+                code,
+                str(gate),
+                str(result_file),
+                str(early_gate),
+                str(early_pid),
+            )
+            assign = win32job.AssignProcessToJobObject
+            open_process = win32api.OpenProcess
+
+            def open_and_start(access, inherit, pid):
+                if (
+                    launch_mode == "adopted_during"
+                    and pid == parent.pid
+                    and access & win32con.PROCESS_SET_QUOTA
+                    and not early_gate.exists()
+                ):
+                    # 此时已发现父进程但尚未登记，包装进程趁机再派生一个后代。
+                    early_gate.touch()
+                    deadline = time.monotonic() + 5
+                    while not early_pid.exists():
+                        assert time.monotonic() < deadline
+                        time.sleep(0.01)
+                return open_process(access, inherit, pid)
+
+            def assign_and_start(job, handle):
+                assign(job, handle)
+                # 登记后补扫能找到登记前出生的后代，无需暂停进程等待。
+                early_gate.touch()
+                gate.touch()
+
+            monkeypatch.setattr(win32api, "OpenProcess", open_and_start)
+            monkeypatch.setattr(win32job, "AssignProcessToJobObject", assign_and_start)
+            scope.track(psutil.Process(parent.pid))
+
+        async with asyncio.timeout(5):
+            while not result_file.exists():
+                await asyncio.sleep(0.01)
+        result = json.loads(result_file.read_text())
+        children = [psutil.Process(pid) for pid in result["pids"]]
+        assert "error" not in result, result.get("error")
+        worker, game = children
+        if cleanup == "scope":
+            await scope.force_close()
+        elif cleanup == "path":
+            assert await kill_process_by_pid(parent.pid)
+        else:
+            await stop_process(parent, kill_tree=True)
+        await asyncio.wait_for(parent.wait(), 3)
+        _, alive = await asyncio.to_thread(psutil.wait_procs, [worker], timeout=3)
+        assert not alive, "普通子进程必须随任务清理"
+        assert game.is_running(), "已主动脱离的游戏不应被任务清理关闭"
+
+        # 不关闭时已确认游戏存活；用户选择关闭时，独立游戏关闭入口仍须有效。
+        manager = ProcessManager()
+        await manager.search_process(
+            ProcessInfo(pid=game.pid), timeout_seconds=3, owned=False
+        )
+        await manager.kill()
+        assert not game.is_running()
+    finally:
+        current_process_scope.reset(token)
+        if not scope.closed:
+            await scope.force_close()
+        for child in children:
+            with suppress(psutil.NoSuchProcess):
+                child.kill()
+                await asyncio.to_thread(child.wait, timeout=3)
+        if parent is not None:
+            with suppress(ProcessLookupError):
+                parent.kill()
+            await asyncio.wait_for(parent.wait(), 3)
+
+
+@pytest.mark.asyncio
+async def test_failed_adoption_is_reported_without_touching_the_process(
+    tmp_path, monkeypatch
+):
+    """登记失败须上抛给调用方判定，既不吞成成功，也不干预脚本自身运行。"""
+    import psutil
+    import win32job
+
+    from app.utils.common.process.scope import TaskProcessScope
+
+    heartbeat = tmp_path / "heartbeat"
+    parent = await asyncio.create_subprocess_exec(
+        sys._base_executable,
+        "-I",
+        "-c",
+        "import sys,time; from pathlib import Path; p=Path(sys.argv[1]); "
+        "\nfor i in range(600):\n p.write_text(str(i)); time.sleep(.02)",
+        str(heartbeat),
+    )
+    scope = TaskProcessScope()
+    try:
+        async with asyncio.timeout(5):
+            while not heartbeat.exists():
+                await asyncio.sleep(0.01)
+
+        def deny_assignment(job, handle):
+            raise PermissionError("injected Job assignment failure")
+
+        monkeypatch.setattr(win32job, "AssignProcessToJobObject", deny_assignment)
+        with pytest.raises(PermissionError, match="injected Job assignment failure"):
+            scope.track(psutil.Process(parent.pid))
+        # 接管失败只影响归属登记，脚本仍按自己的节奏运行。
+        before = heartbeat.read_text()
+        async with asyncio.timeout(3):
+            while heartbeat.read_text() in ("", before):
+                await asyncio.sleep(0.01)
+        assert parent.returncode is None
+    finally:
+        await scope.force_close()
+        with suppress(ProcessLookupError):
+            parent.kill()
+        await asyncio.wait_for(parent.wait(), 3)
+
+
+@pytest.mark.asyncio
+async def test_adoption_does_not_suspend_the_target_process(tmp_path):
+    """接管不得暂停目标进程：受保护的游戏线程会拒绝挂起，登记仍须完成。"""
+    import psutil
+
+    from app.utils.common.process.scope import TaskProcessScope
+
+    heartbeat = tmp_path / "heartbeat"
+    parent = await asyncio.create_subprocess_exec(
+        sys._base_executable,
+        "-I",
+        "-c",
+        "import sys,time; from pathlib import Path; p=Path(sys.argv[1]); "
+        "\nfor i in range(600):\n p.write_text(str(i)); time.sleep(.02)",
+        str(heartbeat),
+    )
+    scope = TaskProcessScope()
+    try:
+        async with asyncio.timeout(5):
+            while not heartbeat.exists():
+                await asyncio.sleep(0.01)
+
+        scope.track(psutil.Process(parent.pid))
+
+        # 计数继续推进说明接管全程没有把目标进程挂起过；只要求推进，
+        # 不对采样间隔做假设，避免机器繁忙时误报。
+        started = int(heartbeat.read_text())
+        async with asyncio.timeout(3):
+            while int(heartbeat.read_text()) <= started + 2:
+                await asyncio.sleep(0.01)
+        assert scope.kill_process_tree(parent.pid)
+        await asyncio.wait_for(parent.wait(), 3)
+    finally:
+        await scope.force_close()
+        with suppress(ProcessLookupError):
+            parent.kill()
+        await asyncio.wait_for(parent.wait(), 3)
+
+
+@pytest.mark.asyncio
+async def test_game_launched_by_mas_is_closed_only_explicitly():
+    """MAS 提前启动的游戏也不能被任务的兜底清理抢先关闭。"""
+    from app.utils.common.process.manager import ProcessManager
+    from app.utils.common.process.scope import TaskProcessScope, current_process_scope
+
+    scope = TaskProcessScope()
+    manager = ProcessManager()
+    token = current_process_scope.set(scope)
+    try:
+        await manager.open_process(
+            sys._base_executable,
+            "-I",
+            "-c",
+            "import time; time.sleep(60)",
+            breakaway=True,
+            owned=False,
+        )
+        await scope.force_close()
+        assert await manager.is_running()
+        await manager.kill()
+        assert not await manager.is_running()
+    finally:
+        current_process_scope.reset(token)
+        await manager.kill()
+        if not scope.closed:
+            await scope.force_close()
 
 
 @pytest.mark.asyncio
@@ -191,14 +443,21 @@ async def test_task_job_inside_runtime_job(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "child_before_registration,intermediate",
-    [(False, False), (True, False), (False, True)],
+    "child_before_registration,intermediate,exit_on_open",
+    [
+        (False, False, False),
+        (True, False, False),
+        (False, True, False),
+        pytest.param(True, False, True, id="parent_exits_during_open"),
+    ],
 )
 async def test_adoption_reaps_descendants_but_never_a_looked_up_foreign_process(
-    tmp_path, monkeypatch, child_before_registration, intermediate
+    tmp_path, monkeypatch, child_before_registration, intermediate, exit_on_open
 ):
     """接管进程的已有及后续子进程都须随任务停止，任务外进程不受影响。"""
     import psutil
+    import win32api
+    import win32con
 
     from app.utils.common.process.manager import ProcessInfo, ProcessManager
     from app.utils.common.process.scope import TaskProcessScope, current_process_scope
@@ -265,6 +524,17 @@ async def test_adoption_reaps_descendants_but_never_a_looked_up_foreign_process(
             async with asyncio.timeout(5):
                 while not pid_file.exists():
                     await asyncio.sleep(0.01)
+        if exit_on_open:
+            open_process = win32api.OpenProcess
+
+            def open_after_parent_exit(access, inherit, pid):
+                if pid == parent.pid and access & win32con.PROCESS_SET_QUOTA:
+                    # 父子都已存在；只在打开父句柄的边界放行包装进程退出。
+                    gate.touch()
+                    known[1].wait(timeout=3)
+                return open_process(access, inherit, pid)
+
+            monkeypatch.setattr(win32api, "OpenProcess", open_after_parent_exit)
         token = current_process_scope.set(scope)
         try:
             observer = ProcessManager()

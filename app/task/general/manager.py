@@ -21,16 +21,18 @@ from pathlib import Path
 
 import app.core.notify.report as _node_report
 from app.config import config_manager
-from app.core import Config, EmulatorManager, Notify, Publisher
+from app.core import Config, GameManager, Notify, Publisher
 from app.core.ws import protocol
 from app.models.config import GeneralConfig
 from app.models.emulator import DeviceProvider
 from app.models.notification.report import TaskResultReport, UserReportText
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
+from app.task.client import ClientProcess, client_executable_path
+from app.task.game import game_device_id, game_target_id
 from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
-from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, ProcessManager, get_logger, log_box
+from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, log_box
 from app.utils import io as _utils_io
 
 from .AutoProxy import AutoProxyTask
@@ -114,19 +116,19 @@ class GeneralManager(ScriptManagerBase):
         ].Script.LogPath:
             return "未填写日志路径, 请检查托管配置中的日志路径设置！"
         if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Game.Enabled:
-            game_path = Config.ScriptConfig[
-                uuid.UUID(self.script_info.script_id)
-            ].Game.Path
+            game_path = client_executable_path(
+                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+            )
             if Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].Game.Type == "Emulator" and (
-                Config.ScriptConfig[
-                    uuid.UUID(self.script_info.script_id)
-                ].Game.EmulatorId
+                game_target_id(
+                    Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+                )
                 == "-"
-                or Config.ScriptConfig[
-                    uuid.UUID(self.script_info.script_id)
-                ].Game.EmulatorIndex
+                or game_device_id(
+                    Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+                )
                 in ["", "-"]
             ):
                 return "未完成模拟器配置, 请检查托管配置中的模拟器设置！"
@@ -264,16 +266,16 @@ class GeneralManager(ScriptManagerBase):
                 == "Emulator"
             ):
                 device_provider = (
-                    self._device_provider or EmulatorManager.get_emulator_instance
+                    self._device_provider or GameManager.get_emulator_instance
                 )
                 self.emulator_manager = await device_provider(
-                    self.script_config.Game.EmulatorId
+                    game_target_id(self.script_config)
                 )
 
             elif Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].Game.Type in ["Client", "URL"]:
-                self.game_process_manager = ProcessManager()
+                self.game_process_manager = ClientProcess()
 
         # 构建账号列表
         if self.execution_mode == "ScriptConfig":

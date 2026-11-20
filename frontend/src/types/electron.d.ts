@@ -1,6 +1,13 @@
 import type { FluxdownInstallOut, GlobalConfig_UI, GlobalConfig_Update } from '@/api'
 import type { AnalyticsContext, RendererAnalyticsEvent } from '@/types/analytics'
 import type { FrontendCloseRequest } from '@/types/appLifecycle'
+import type {
+  DesktopSessionRequest,
+  DesktopSessionRepair,
+  DesktopSessionSnapshot,
+  DesktopSessionStartResult,
+  DesktopQueueResult,
+} from '../../electron/services/desktopSessionProtocol'
 import type { AppearanceCategory, MascotImportResult, MascotSummary } from '@/types/mascotPack'
 import type {
   DesktopMascotHostAPI,
@@ -223,6 +230,21 @@ export interface VirtualDisplayPromptPayload {
 }
 
 export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHostAPI {
+  appUpdateCheck(
+    input: import('../../electron/services/appUpdateTypes').AppUpdateSettings
+  ): Promise<import('../../electron/services/appUpdateTypes').AppUpdateCheck>
+  appUpdateStatus(): Promise<import('../../electron/services/appUpdateTypes').AppUpdateSnapshot>
+  appUpdateStart(
+    version: string,
+    input: import('../../electron/services/appUpdateTypes').AppUpdateSettings,
+    downloader?: 'builtin' | 'fluxdown'
+  ): Promise<{ code: number; message?: string }>
+  appUpdateCancel(): Promise<{ code: number; message?: string }>
+  appUpdateSwitch(): Promise<{ code: number; message?: string }>
+  appUpdateInstall(): Promise<{ code: number; message?: string }>
+  onAppUpdate(
+    callback: (event: import('../../electron/services/appUpdateTypes').AppUpdateEvent) => void
+  ): () => void
   analytics?: {
     getContext: () => Promise<AnalyticsContext>
     trackEvent: (context: number, event: RendererAnalyticsEvent) => void
@@ -521,6 +543,20 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
 
   // API 端点获取
   getApiEndpoint: (key: ElectronApiEndpointKey) => Promise<string>
+  desktopSessionSupported?: () => Promise<boolean>
+  desktopSessionOpen?: (input: DesktopSessionRequest) => Promise<void>
+  desktopSessionCheck?: () => Promise<DesktopSessionSnapshot | null>
+  desktopSessionRepair?: (plan: DesktopSessionRepair[]) => Promise<string | undefined>
+  desktopSessionExportLogs?: () => Promise<boolean>
+  desktopSessionPending?: () => Promise<DesktopSessionRequest | null>
+  desktopSessionStart?: (request: DesktopSessionRequest) => Promise<DesktopSessionStartResult>
+  desktopSessionBounds?: (bounds: { x: number; y: number; width: number; height: number }) => void
+  desktopSessionWindow?: (action: 'show' | 'hide') => void
+  desktopSessionVolume?: (volume: number) => void
+  desktopSessionLogs?: () => Promise<string>
+  onDesktopSessionState?: (callback: (state: DesktopSessionSnapshot) => void) => () => void
+  onDesktopSessionPending?: (callback: () => void) => () => void
+  onDesktopSessionTasksStarted?: (callback: (tasks: DesktopQueueResult[]) => void) => () => void
 
   // Runtime 完整初始化流程
   initialize: (
@@ -554,10 +590,11 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
 
   // 后端服务管理
   backendStart: (retry?: boolean) => Promise<InstallStageResult>
-  backendRestart: (reason?: 'manual' | 'recovery') => Promise<InstallStageResult>
+  backendRestart: (reason?: 'manual' | 'recovery' | 'update') => Promise<InstallStageResult>
   backendStatus: () => Promise<BackendStatus>
   checkRuntimeBackendUpdate: () => Promise<{
     updateAvailable: boolean
+    precheckError?: string
     staged?: boolean
     currentCommit?: string
     remoteCommit?: string

@@ -315,13 +315,7 @@
                           variant="form"
                         />
                       </template>
-                      <PathPickerField
-                        v-model="formData.Game.GamePath"
-                        mode="file"
-                        :placeholder="t('core.edit.zzzodGamePathPlaceholder')"
-                        :pick-label="t('core.edit.pickFile')"
-                        @pick="selectGamePath"
-                      />
+                      <BoundGamePathField />
                     </a-form-item>
                   </a-col>
                 </a-row>
@@ -592,6 +586,8 @@
 </template>
 
 <script setup lang="ts">
+import BoundGamePathField from '@/components/BoundGamePathField.vue'
+
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import UserEditHeader from '@/components/UserEditHeader.vue'
 import accountIcon from '@/assets/zzz-od.ico'
@@ -903,25 +899,6 @@ const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'string' || !['independent', 'native'].includes(value)) return
   const prev = formData.Info.Base
   await flushPendingSaves()
-  if (value === 'native' && prev !== 'native') {
-    // 每脚本仅允许一个原生来源用户：原生来源是脚本级全局视图（实例/活跃/运行实例
-    // 都是一份 one_dragon.yml），多原生来源用户共享状态互相干扰
-    try {
-      const resp = await getUsers(scriptId)
-      const hasOtherDirect = Object.entries(resp?.data ?? {}).some(
-        ([uid, user]) =>
-          uid !== userId.value &&
-          String((user as { Info?: { Base?: string } })?.Info?.Base ?? '') === 'native'
-      )
-      if (hasOtherDirect) {
-        formData.Info.Base = prev
-        message.error(t('core.edit.zzzodDirectModeLimit'))
-        return
-      }
-    } catch (e) {
-      logger.warn(e instanceof Error ? e.message : String(e))
-    }
-  }
   if (!(await saveField('Info.Base', value))) return
   formData.Info.Base = value as 'shared' | 'independent' | 'native'
   if (value === 'native') {
@@ -1370,7 +1347,6 @@ const taskCards = computed<TaskCard[]>(() => {
       { name: item.app_name, configurable: item.configurable, jump: item.jump },
     ])
   )
-  // AppList 全量条目按原顺序渲染（含未启用项原位保留，对齐原生队列语义）
   const cards: TaskCard[] = savedApps.value
     .filter(item => item && typeof item.app_id === 'string')
     .map(item => ({
@@ -1380,11 +1356,12 @@ const taskCards = computed<TaskCard[]>(() => {
       configurable: nameBook.get(item.app_id)?.configurable,
       jump: nameBook.get(item.app_id)?.jump,
     }))
-  // 只把一条龙系列（zzz-od 默认编组）任务作为可选项；独立工具应用不入列
+  // 新任务按目录顺序置前，已保存任务保持用户顺序。
+  const newCards: TaskCard[] = []
   const known = new Set(cards.map(card => card.app_id))
   for (const item of catalog.value) {
     if (item.default_group && !known.has(item.app_id)) {
-      cards.push({
+      newCards.push({
         app_id: item.app_id,
         app_name: item.app_name,
         enabled: false,
@@ -1393,7 +1370,7 @@ const taskCards = computed<TaskCard[]>(() => {
       })
     }
   }
-  return cards
+  return [...newCards, ...cards]
 })
 
 const persistAppList = (list: { app_id: string; enabled: boolean }[]) => {

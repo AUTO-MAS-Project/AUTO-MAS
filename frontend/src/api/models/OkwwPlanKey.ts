@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type OkwwPlanKey = {
     /**
+     * 原生任务配置覆写
+     */
+    Configs?: Record<string, Record<string, any>>;
+    /**
      * 每日任务后运行的附加任务
      */
     AdditionalTasks?: (Array<'Check Weekly Garden' | 'Auto Farm all Nightmare Nest' | 'Merge Echo If discarded > 1000' | 'Teleport and Farm 4C Echo'> | null);

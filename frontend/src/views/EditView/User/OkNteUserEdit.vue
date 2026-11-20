@@ -168,54 +168,17 @@
               </a-col>
             </a-row>
           </div>
-
-          <div class="form-section">
-            <div class="section-header">
-              <h3>{{ t('core.edit.taskConfiguration') }}</h3>
-            </div>
-
-            <a-row :gutter="24">
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.startTaskTN')"
-                      :hint="t('core.edit.taskNumbersMatchOk')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-select
-                    v-model:value="formData.Task.TaskIndex"
-                    :disabled="formData.Info.PlanMode !== 'Fixed'"
-                    size="large"
-                    @change="handleTaskIndexChange"
-                  >
-                    <a-select-option
-                      v-for="item in oknteTaskOptions"
-                      :key="item.value"
-                      :value="item.value"
-                    >
-                      {{ item.label }}
-                    </a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.currentLaunchArguments')"
-                      :hint="t('core.edit.argumentsGeneratedFromTask')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-input :value="currentStartupArguments" size="large" readonly />
-                </a-form-item>
-              </a-col>
-            </a-row>
-          </div>
         </a-form>
       </a-card>
+
+      <OkNteTaskConfigSection
+        v-model:task-index="formData.Task.TaskIndex"
+        :options="oknteTaskOptions"
+        :startup-arguments="currentStartupArguments"
+        :disabled="formData.Info.PlanMode !== 'Fixed'"
+        :loading="pageLoading"
+        @change="handleTaskIndexChange"
+      />
 
       <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
         <h3>{{ t('core.edit.okNteConfiguration') }}</h3>
@@ -312,6 +275,7 @@ import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import OkNteConfigSource from './OkNteUserEdit/OkNteConfigSource.vue'
 import OkNteConfigEditor from './OkNteUserEdit/OkNteConfigEditor.vue'
+import OkNteTaskConfigSection from './OkNteUserEdit/OkNteTaskConfigSection.vue'
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()

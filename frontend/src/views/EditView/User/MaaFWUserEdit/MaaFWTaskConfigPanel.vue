@@ -1,5 +1,4 @@
 <template>
-  <!-- 任务队列右栏「任务配置」：选中任务的运行日与选项；虚影只给原来的设置与删除 -->
   <div v-if="selectedTask" class="task-option-panel">
     <div class="selected-task-header">
       <img
@@ -12,7 +11,7 @@
         @error="hideBrokenMaaFWIcon"
         @load="showLoadedMaaFWIcon"
       />
-      <div>
+      <div class="selected-task-heading">
         <div class="selected-task-title">
           {{ selectedTaskTitle.name }}
           <span v-if="selectedTaskTitle.index !== null" class="task-copy-index">
@@ -22,14 +21,22 @@
         <!-- 入口 | 分组：原来是队列行里的两个标签，挪到这里当副标题 -->
         <div class="selected-task-meta">{{ selectedTaskMeta }}</div>
       </div>
+      <!-- 删除放在标题行右侧的小按钮：右键菜单里也能删，这里不必是面板里最显眼的东西 -->
+      <a-popconfirm
+        :title="t('core.edit.deleteThisTask2')"
+        :ok-text="t('core.edit.ok')"
+        :cancel-text="t('core.edit.cancel')"
+        :disabled="disabled"
+        @confirm="emit('deleteSelectedTask')"
+      >
+        <a-button type="text" danger size="small" class="delete-task-button" :disabled="disabled">
+          <template #icon>
+            <DeleteOutlined />
+          </template>
+          {{ t('core.edit.queueTaskDelete') }}
+        </a-button>
+      </a-popconfirm>
     </div>
-    <!-- 运行日：前置任务与特调受管任务不受它影响，不显示 -->
-    <MaaFWTaskWeekdaysField
-      v-if="showWeekdays"
-      :weekdays="selectedWeekdays"
-      :disabled="disabled"
-      @update="weekdays => emit('weekdaysUpdate', selectedTaskId, weekdays)"
-    />
     <!-- 按选中的实例重建：搜索词与没提交的草稿不带到下一个任务 -->
     <MaaFWTaskOptionEditor
       :key="selectedTaskId"
@@ -42,30 +49,25 @@
       :disabled="disabled"
       @update="payload => emit('taskOptionUpdate', selectedTaskId, payload)"
     />
+    <!-- 运行日排在选项后面：多数任务每天跑，七天全勾时收成一行；前置任务与特调受管任务不受它影响，不显示 -->
+    <MaaFWTaskWeekdaysField
+      v-if="showWeekdays"
+      :key="`weekdays-${selectedTaskId}`"
+      :weekdays="selectedWeekdays"
+      :disabled="disabled"
+      class="selected-task-weekdays"
+      @update="weekdays => emit('weekdaysUpdate', selectedTaskId, weekdays)"
+    />
     <div v-if="selectedTask.description" class="selected-task-description">
       <div class="selected-task-description-label">
         {{ t('core.edit.taskDescriptionLabel') }}
       </div>
       <MaaFWDescriptionView :content="selectedTask.description" :base-path="previewData.path" />
     </div>
-    <a-popconfirm
-      :title="t('core.edit.deleteThisTask2')"
-      :ok-text="t('core.edit.ok')"
-      :cancel-text="t('core.edit.cancel')"
-      :disabled="disabled"
-      @confirm="emit('deleteSelectedTask')"
-    >
-      <a-button danger block class="delete-task-button" :disabled="disabled">
-        <template #icon>
-          <DeleteOutlined />
-        </template>
-        {{ t('core.edit.deleteThisTask') }}
-      </a-button>
-    </a-popconfirm>
   </div>
   <div v-else-if="selectedMissingTask" class="task-option-panel">
     <div class="selected-task-header">
-      <div>
+      <div class="selected-task-heading">
         <div class="selected-task-title task-title-missing">
           {{ selectedTaskTitle.name }}
           <span v-if="selectedTaskTitle.index !== null" class="task-copy-index">
@@ -74,6 +76,20 @@
         </div>
         <div class="selected-task-meta">{{ t('core.edit.missingTaskHint') }}</div>
       </div>
+      <a-popconfirm
+        :title="t('core.edit.deleteThisTask2')"
+        :ok-text="t('core.edit.ok')"
+        :cancel-text="t('core.edit.cancel')"
+        :disabled="disabled"
+        @confirm="emit('deleteSelectedTask')"
+      >
+        <a-button type="text" danger size="small" class="delete-task-button" :disabled="disabled">
+          <template #icon>
+            <DeleteOutlined />
+          </template>
+          {{ t('core.edit.queueTaskDelete') }}
+        </a-button>
+      </a-popconfirm>
     </div>
     <div v-if="missingTaskSettings.length > 0" class="missing-task-settings">
       <div class="missing-task-settings-title">{{ t('core.edit.missingTaskSettings') }}</div>
@@ -82,20 +98,6 @@
         <span class="missing-task-setting-value">{{ row.value }}</span>
       </div>
     </div>
-    <a-popconfirm
-      :title="t('core.edit.deleteThisTask2')"
-      :ok-text="t('core.edit.ok')"
-      :cancel-text="t('core.edit.cancel')"
-      :disabled="disabled"
-      @confirm="emit('deleteSelectedTask')"
-    >
-      <a-button danger block class="delete-task-button" :disabled="disabled">
-        <template #icon>
-          <DeleteOutlined />
-        </template>
-        {{ t('core.edit.deleteThisTask') }}
-      </a-button>
-    </a-popconfirm>
   </div>
   <div v-else class="task-option-empty">
     <NoData :description="t('core.edit.pickTaskLeftConfigure')" />
@@ -216,6 +218,11 @@ const resolveMaaFWAssetUrl = (rawPath?: string | null) =>
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
+.selected-task-heading {
+  flex: 1;
+  min-width: 0;
+}
+
 .selected-task-icon {
   width: 32px;
   height: 32px;
@@ -306,8 +313,13 @@ const resolveMaaFWAssetUrl = (rawPath?: string | null) =>
   border-radius: 8px;
 }
 
+/* 标题行右侧的小号删除：标题再长也不把它挤下去 */
 .delete-task-button {
-  margin-top: 24px;
-  height: 40px;
+  flex: none;
+}
+
+/* 运行日接在选项编辑器后面，间距同编辑器里各项之间 */
+.selected-task-weekdays {
+  margin-top: 16px;
 }
 </style>

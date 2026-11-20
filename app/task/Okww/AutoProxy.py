@@ -17,10 +17,12 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 import asyncio
 import json
+import re
 import time
 import uuid
 from contextlib import suppress
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 
 from app.config import ConfigCollection
@@ -36,8 +38,8 @@ from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNotice
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import wuthering_waves as _service_wuthering_waves
 from app.task.base import ScriptAutoProxyBase
+from app.task.client import client_executable_path, client_launcher_path
 from app.task.proxy_helpers import (
-    kill_pids,
     push_dispatch_log,
     split_args,
 )
@@ -48,13 +50,17 @@ from app.utils import (
     ProcessManager,
     get_logger,
     is_process_alive,
-    is_process_running,
     log_box,
     process,
 )
 from app.utils import constants as _utils_constants
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
+from app.utils.common.process.manager import has_process_window
+from app.utils.common.process.session import (
+    DesktopProcessTarget,
+    desktop_process_target,
+)
 
 from . import push_log as _push_log
 from .tools.account_switch import async_switch_account
@@ -84,6 +90,7 @@ from .tools.launcher_start import (
 )
 from .tools.maintenance import GameMaintenanceDetected
 from .tools.startup import start_okww
+from .tools.task_logs import find_task_failure
 
 logger = get_logger("OK-WW 自动代理")
 
@@ -104,16 +111,16 @@ _GAME_EXIT_WAIT_SECONDS = 90
 # 「游戏更新成功」是环境变更而非脚本错误，命中后至少保证再跑一轮（见 main_task）。
 _OKWW_GAME_UPDATED_LOG = "游戏更新成功, 游戏即将重启"
 _OKWW_GAME_UPDATED_MSG = "游戏更新成功，即将重启任务"
-_OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
-    (_OKWW_GAME_UPDATED_LOG, _OKWW_GAME_UPDATED_MSG),
-    ("info_set 错误", "OK-WW 流程产生错误，请检查游戏状态"),
+_OKWW_ERROR_LOG = re.compile(
+    r"\b(?:(?P<task>\w+):)?info_set 错误(?=[ \t\r\n]|$)"
+    r"[ \t]*(?P<detail>[^\r\n]*)"
 )
-# 窗口丢失的日志有两条形态：hwnd>0 但 IsWindow(hwnd) 返回 0 时 exists 是 int → `connected:0`；
-# hwnd<=0 时 exists 仍是 bool → `connected:False`。两种都要认。
-# 它不进内置 fatal：ok-ww 成功后按 -e 关游戏（stop_hwnd）同样会打 connected:0，只比完成日志晚
-# 约 5s；日志监控若跨过这 5s，两行会落进同一批，故只在没有完成日志时判未连接（见 check_log）。
-_OKWW_DISCONNECT_LOG: tuple[str, ...] = ("connected:False", "connected:0")
-_OKWW_DISCONNECT_MSG = "OK-WW 未连接游戏客户端"
+_OKWW_ERROR_PREFIX = "OK-WW："
+# 上游明确拒绝当前配置，重复下发相同配置无法恢复。
+_OKWW_4C_CONFIG_ERROR = (
+    "选择“传送并刷取4C声骸”时，必须在刷取声骸任务中启用“传送至首领”。"
+)
+_OKWW_TASK_FAILED_MSG = "OK-WW 任务执行失败，请查看脚本日志"
 # 成功判据（任一命中即完成）：
 # 1. ok-script 框架 TaskExecutor 的退出语：DailyTask.run() 正常返回后才打印
 #    （失败路径走异常分支，跳过退出日志），logger 硬编码英文、不走 gettext，
@@ -139,6 +146,23 @@ _OKWW_UPDATE_METHOD = "AUTO_UPDATE"
 _OKWW_LOG_TIME_START = 1
 _OKWW_LOG_TIME_END = 23
 _OKWW_LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
+
+
+def _okww_error_status(log: str) -> str | None:
+    """从上游错误日志读取可显示的失败原因。"""
+    error = _OKWW_ERROR_LOG.search(log)
+    if error is None:
+        return None
+    detail = error["detail"].strip()
+    if detail.startswith("账号列表中未找到 "):
+        detail = "登录列表中未找到目标账号"
+    elif (
+        error["task"] in ("MultiAccountConfigTask", "MultiAccountDailyTask")
+        and detail != _OKWW_4C_CONFIG_ERROR
+    ):
+        # 原生多账号失败正文可能包含完整登录标识。
+        detail = "原生多账号任务失败，请查看本地脚本日志"
+    return f"{_OKWW_ERROR_PREFIX}{detail}" if detail else None
 
 
 def _update_json(path: Path, values: dict[str, object]) -> None:
@@ -264,9 +288,18 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             await self.cur_user_item.set_state(status="跳过")
             return "账号剩余天数为 0, 跳过该账号"
 
+        from .tools.plan import plan_panels, validate_plan_targets
+
+        try:
+            validate_plan_targets(plan_panels(self.cur_user_config))
+        except ValueError as error:
+            return str(error)
+
         if self.script_config.Game.Enabled:
-            launcher_path = Path(str(self.script_config.Game.Path or "").strip())
-            client_path = str(self.script_config.Game.ClientPath or "").strip()
+            launcher_path = Path(
+                str(client_launcher_path(self.script_config) or "").strip()
+            )
+            client_path = str(client_executable_path(self.script_config) or "").strip()
             if client_path:
                 # 手动指定了客户端程序：以指定值为准，两种启动方式都认它（启动器
                 # 态只用它做已运行检测与收尾，更精确）；启动器路径仅服务 MAS 前置
@@ -463,6 +496,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             return build_custom_arguments(self.cur_user_config.Task.CustomArguments)
         return ["-t", _daily_task_argument(self.script_config.Info.RootPath), "-e"]
 
+    def _runtime_panels(self) -> dict[str, dict]:
+        from .tools.config_fields import runtime_panels
+
+        return runtime_panels(self.cur_user_config)
+
     def _apply_mas_overrides(self) -> None:
         """overlay 覆盖段：把 MAS 侧运行值覆盖到当前来源配置之上。
 
@@ -480,11 +518,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             self.script_config_path / "Basic Options.json",
             {"Exit App when Game Exits": True},
         )
-        from .tools.plan import task_config
-
-        task = task_config(self.cur_user_config)
-        if task:
-            _update_json(self.script_config_path / "DailyTask.json", task)
+        for filename, values in self._runtime_panels().items():
+            _update_json(self.script_config_path / filename, values)
 
     async def set_okww(self) -> None:
         """将 MAS 侧 OK-WW 任务配置下发到脚本 working 目录（对齐 General.set_general）。"""
@@ -588,7 +623,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         if self.launcher_path is None or not self.launcher_path.is_file():
             if (
                 self._game_launch_type() == "Client"
-                and not str(self.script_config.Game.Path or "").strip()
+                and not str(client_launcher_path(self.script_config) or "").strip()
             ):
                 await self._push_dispatch_log(
                     "未配置官方启动器，跳过启动前更新检查并直接启动客户端"
@@ -640,7 +675,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     logger.info("检测到鸣潮客户端进程正在运行，跳过重复启动")
                     await self._note_launch_arguments_skipped()
                     return
-            elif is_process_running(_WUWA_CLIENT_PROCESS):
+            elif await has_process_window(_WUWA_CLIENT_PROCESS):
                 try:
                     await self.game_manager.search_process(
                         self._game_process_info(),
@@ -671,7 +706,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             raise RuntimeError("未找到鸣潮官方启动器路径，请重新导入启动器")
         await self._push_dispatch_log("未检测到运行中的客户端，正在拉起官方启动器...")
         await self.game_manager.open_process(
-            launcher_path, *split_args(self.script_config.Game.Arguments)
+            launcher_path,
+            *split_args(self.script_config.Game.Arguments),
+            retain_desktop_descendants=True,
         )
         await self._push_dispatch_log("启动器已拉起，正在等待点击「进入游戏」...")
         # 启动器交互在后台线程内同步执行，on_log 契约是同步回调；
@@ -754,8 +791,32 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             find_client_pids(self.game_process_path, self.launcher_path)
         )
 
+    async def _desktop_maintenance_detect(
+        self, desktop: DesktopProcessTarget
+    ) -> str | None:
+        from app.task.desktop_session_worker import detect_desktop_maintenance
+
+        return await detect_desktop_maintenance(
+            desktop,
+            "okww_detect_maintenance",
+            {
+                "client_path": str(self.game_process_path)
+                if self.game_process_path
+                else None,
+                "launcher_path": str(self.launcher_path)
+                if self.launcher_path
+                else None,
+            },
+        )
+
     async def main_task(self):
         await self.prepare()
+        desktop = desktop_process_target.get()
+        detect_in_desktop = (
+            partial(self._desktop_maintenance_detect, desktop)
+            if desktop is not None
+            else None
+        )
         self.curdate = datetime.now(tz=_utils_constants.UTC4).strftime("%Y-%m-%d")
         if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") != self.curdate:
             self.cur_user_config.Data.LastProxyDate = datetime.now(
@@ -825,8 +886,18 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             # 鸣潮尚未接入维护公告源；游戏窗口就绪后按明确维护弹窗跳过当前账号。
             # 登录期间再由切号流程检查同一判据，避免维护被误判为登录失败；
             # 维护不会在重试间隔内结束，不再消耗剩余尝试次数
-            if await self.skip_on_game_maintenance(self._maintenance_detect):
+            if await self.skip_on_game_maintenance(
+                self._maintenance_detect, detect_in_desktop=detect_in_desktop
+            ):
                 break
+
+            if (
+                self.script_config.Game.AccountSwitchMethod == "MAS"
+                and not self.script_config.Game.Enabled
+            ):
+                await self._push_dispatch_log(
+                    "未启用游戏配置，MAS 不会切换账号，将使用当前已登录的账号"
+                )
 
             # 游戏启动成功后、下发脚本配置前，按「运行前由 MAS 切换账号」开关切号。
             # 开关在游戏配置区，依赖 Game.Enabled（未启用游戏配置则不生效）；
@@ -839,7 +910,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             ):
                 account_id = (self.cur_user_config.Info.Id or "").strip()
                 if not account_id:
-                    await self._push_dispatch_log("未配置账号，跳过账号切换")
+                    await self._push_dispatch_log(
+                        "未配置账号标识，MAS 不会切换账号，将使用当前已登录的账号"
+                    )
                 else:
                     try:
                         await self._push_dispatch_log("正在切换鸣潮登录账号...")
@@ -914,7 +987,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
             self.wait_event.clear()
             maintenance_watch = asyncio.create_task(
-                self.watch_game_maintenance(self._maintenance_detect, self.wait_event)
+                self.watch_game_maintenance(
+                    self._maintenance_detect,
+                    self.wait_event,
+                    detect_in_desktop=detect_in_desktop,
+                )
             )
             try:
                 await self.wait_event.wait()
@@ -971,13 +1048,19 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 await Notify.send_notice(
                     LocalNotice(
                         title="OK-WW 自动代理出现异常！",
-                        message=f"账号 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        message=f"账号 {self.cur_user_item.name}：{self.cur_user_log.status}",
                         ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                         duration_seconds=3,
                     )
                 )
             except Exception:
                 pass
+            if (
+                self.cur_user_log.status
+                == f"{_OKWW_ERROR_PREFIX}{_OKWW_4C_CONFIG_ERROR}"
+            ):
+                await self.script_info.append_log("\n请修正 4C 声骸配置后再运行")
+                break
             if attempt < run_limit:
                 await self.script_info.append_log(
                     f"\n将在稍后重试 ({attempt}/{run_limit})"
@@ -1016,11 +1099,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         log_status = "OK-WW 正常运行中"
         user_item_status: str | None = None
 
-        for needle, msg in _OKWW_BUILTIN_FATAL:
-            if needle in log:
-                log_status = msg
-                user_item_status = "异常"
-                break
+        if _OKWW_GAME_UPDATED_LOG in log:
+            log_status = _OKWW_GAME_UPDATED_MSG
+            user_item_status = "异常"
+        elif (failure_line := find_task_failure(log_content)) is not None:
+            log_status = _okww_error_status(failure_line) or _OKWW_TASK_FAILED_MSG
+            user_item_status = "异常"
         else:
             # 多账号任务的单次日常完成不代表整批完成，只认框架退出语。
             success_logs = (
@@ -1032,9 +1116,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             if any(needle in log for needle in success_logs):
                 log_status = "Success!"
                 user_item_status = "完成"
-            elif any(needle in log for needle in _OKWW_DISCONNECT_LOG):
-                log_status = _OKWW_DISCONNECT_MSG
-                user_item_status = "异常"
             elif not await self.okww_process_manager.is_running():
                 log_status = "OK-WW 在完成任务前退出"
                 user_item_status = "异常"
@@ -1308,36 +1389,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 logger.opt(exception=True).warning(
                     f"通过进程管理器关闭鸣潮客户端失败: {e}"
                 )
-        if self.game_process_path is not None:
-            try:
-                await process.kill_process(self.game_process_path)
-            except Exception as e:
-                logger.opt(exception=True).warning(f"兜底强杀鸣潮客户端失败: {e}")
-        if (
-            self.launcher_path is not None
-            and self.launcher_path.name.lower() == "launcher.exe"
-            and self.launcher_path.is_file()
-        ):
-            # 实际运行的那份可能不在已知路径上（手动指定的客户端与实际启动的不是
-            # 同一份，或启动器态压根解不出路径），只按路径匹配会漏杀。兜底按
-            # 「名称 + 启动器安装根目录树内」扫——Client-Win64-Shipping.exe 是虚幻
-            # 通用进程名，单按名会误伤同机其它虚幻游戏，必须有目录树限定；启动器
-            # 路径本身失效时无从限定，只保留上面的按已知路径结束，不冒险按名扫。
-            # 有没杀掉的（多为提权进程）要提示用户，不能静默。
-            # 注意 kill_process_by_pid 失败时返回 False 而非抛异常，必须看返回值
-            try:
-                failed = await kill_pids(
-                    await asyncio.to_thread(find_game_pids, self.launcher_path)
-                )
-                if failed:
-                    message = (
-                        f"有 {failed} 个鸣潮客户端进程未能结束（可能是提权进程，"
-                        "MAS 无权结束），请人工确认关闭"
-                    )
-                    logger.warning(message)
-                    await self._push_dispatch_log(message)
-            except Exception as e:
-                logger.opt(exception=True).warning(f"清理鸣潮客户端进程失败: {e}")
         if self.launcher_path is not None and self._game_launch_type() == "Launcher":
             try:
                 # 启动器是进程家族：顶层 launcher.exe 引导器 + 版本目录下的

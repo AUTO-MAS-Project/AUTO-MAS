@@ -35,6 +35,7 @@ import * as path from 'path'
 import { getAppRoot } from './services/environmentService'
 import {
   registerInitializationHandlers,
+  getBackendService,
   startDesktopStartup,
   stopDesktopStartup,
   checkCriticalFilesViaRuntime,
@@ -42,6 +43,8 @@ import {
   resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
+import { registerAppUpdateHandlers, stopAppUpdateForShutdown } from './ipc/appUpdateHandlers'
+import { recoverUpdateMaterials } from './services/updateStaging'
 import { registerFluxdownInstallHandlers } from './ipc/fluxdownInstallHandlers'
 import {
   isAnalyticsSender,
@@ -68,6 +71,7 @@ import { getAppearance } from './services/appearanceService'
 import { getMascot } from './services/mascotPackageService'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
 import { registerMysteryHandlers } from './ipc/mysteryHandlers'
+import { registerDesktopSession } from './ipc/desktopSessionHandlers'
 import {
   canElectronExitImmediately,
   canRequestRendererClose,
@@ -106,6 +110,7 @@ import {
   resolveStopAllTasksShortcut,
   isDevelopmentEnvironment,
   getDevelopmentServerUrl,
+  getDeveloperBackendRepo,
   getRendererEnvironmentArguments,
   getBackendOwnership,
 } from './services/instanceConfig'
@@ -206,12 +211,10 @@ async function stopAllTasksByShortcut(source: 'shortcut' | 'tray' = 'shortcut'):
   logger.info(`触发全局快捷键 ${STOP_ALL_TASKS_SHORTCUT}，开始停止所有任务`)
 
   try {
-    const apiUrl = `${getLocalApiEndpoint()}/api/dispatch/stop`
-    const response = await fetch(apiUrl, {
+    const endpoint = getLocalApiEndpoint()
+    const response = await fetch(`${endpoint}/api/dispatch/stop`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ taskId: 'ALL' }),
     })
 
@@ -616,6 +619,7 @@ function cancelQuitRequest(token?: number): void {
 
 async function finishCoordinatedQuit(): Promise<void> {
   if (coordinatedQuit) return
+  await stopAppUpdateForShutdown(true)
   await finishAssetPackageJobs()
   if (coordinatedQuit) return
   closeTelemetry?.finish({
@@ -681,6 +685,12 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
 function requestRendererClose(reason: string, confirmRunningTasks = false): void {
   if (!canRequestRendererClose({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight }))
     return
+  if (desktopSession?.active) {
+    void desktopSession.closeForAppQuit().then(confirmed => {
+      if (confirmed) requestRendererClose(reason, confirmRunningTasks)
+    })
+    return
+  }
   observeScheduledWakeupQuit({ automatic: false })
   closeTelemetry ??= beginMainFeature('app_close_finished')
   const win = mainWindow
@@ -718,6 +728,8 @@ function updateTrayVisibility(config: AppConfig) {
 }
 
 let mainWindow: Electron.BrowserWindow | null = null
+let desktopSession: ReturnType<typeof registerDesktopSession> | undefined
+const mainWindowIcon = path.join(__dirname, '../public/AUTO-MAS.ico')
 let logWindow: Electron.BrowserWindow | null = null
 let virtualDisplayPromptWindow: Electron.BrowserWindow | null = null
 const saveMascotPreferences = (patch: Partial<DesktopMascotHostPreferences>): void => {
@@ -811,7 +823,7 @@ function parseConfigInteger(value: string | undefined, fallback: number): number
  * 打包分发不受影响（由 vite 产出的静态资源在 dist/ 中，正常读取）。
  */
 function assertDevelopmentRuntime(): void {
-  if (!isDevelopmentEnvironment()) return
+  if (app.isPackaged) return
   if (getDevelopmentServerUrl()) return
 
   const message =
@@ -888,7 +900,7 @@ function createWindow() {
     useContentSize: true,
     frame: false,
     titleBarStyle: 'hidden',
-    icon: path.join(__dirname, '../public/AUTO-MAS.ico'),
+    icon: mainWindowIcon,
     autoHideMenuBar: true,
     show: false, // 改为 false，等待页面加载完成后再显示
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#000000' : '#ffffff', // 根据系统主题设置背景色
@@ -1968,9 +1980,10 @@ ipcMain.handle('app-wait-for-quit-confirmation', () => {
   return true
 })
 
-ipcMain.handle('app-prepare-quit', () => {
+ipcMain.handle('app-prepare-quit', async () => {
   if (coordinatedQuit || forceQuitInProgress) return null
   if (activeQuitPreparation !== null) return activeQuitPreparation
+  if (desktopSession?.active && !(await desktopSession.closeForAppQuit())) return null
   observeScheduledWakeupQuit({ automatic: false })
   closeTelemetry ??= beginMainFeature('app_close_finished')
   clearQuitFallback()
@@ -2420,10 +2433,24 @@ app.on('before-quit', event => {
   requestRendererClose('Electron before-quit')
 })
 
+if (process.platform === 'win32') {
+  // Chromium 的 DirectComposition 会覆盖嵌在同一 HWND 内的 RDP ActiveX 画面。
+  app.commandLine.appendSwitch('disable-direct-composition')
+}
+
 app.whenReady().then(async () => {
+  // 在 Electron 就绪后启动桌面运行能力、注册各业务 IPC 与更新服务，并创建应用窗口。
+  desktopSession = registerDesktopSession(
+    () => mainWindow,
+    mainWindowIcon,
+    () => loadConfig().language
+  )
   keepAwakeForScheduledWakeup(process.argv)
   recordDesktopStartup('Electron 就绪')
   const startupConfig = loadConfig()
+  const updateRoot = app.isPackaged ? path.dirname(app.getPath('exe')) : getAppRoot()
+  const desktopUpdatesEnabled = !getDeveloperBackendRepo()
+  if (desktopUpdatesEnabled) await recoverUpdateMaterials(updateRoot)
   void startDesktopStartup({
     version: app.getVersion(),
     initializedVersion:
@@ -2437,6 +2464,17 @@ app.whenReady().then(async () => {
   const handlersStartedAt = performance.now()
   registerAnalyticsHandlers(() => mainWindow)
   registerFluxdownInstallHandlers(() => mainWindow, getLocalApiEndpoint)
+  registerAppUpdateHandlers({
+    installRoot: updateRoot,
+    updatesEnabled: desktopUpdatesEnabled,
+    window: () => mainWindow,
+    backendUrl: getLocalApiEndpoint,
+    backend: getBackendService,
+    ownsBackend: () =>
+      /* 向更新服务报告当前应用是否拥有后端进程，以限制需要停机的更新操作。 */ getBackendOwnership() ===
+      'owned',
+    quit: finishCoordinatedQuit,
+  })
   refreshAnalyticsPreference()
   analyticsService.recordAppStarted({
     launch_kind: isScheduledWakeup ? 'scheduled_wakeup' : isAutoStart ? 'auto_start' : 'manual',

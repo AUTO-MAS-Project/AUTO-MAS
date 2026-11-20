@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+import sqlite3
 from collections.abc import Callable, Mapping
+from contextlib import closing
 from datetime import date, datetime, time, timezone
 from pathlib import Path
 from typing import Any, get_args
@@ -236,13 +238,19 @@ def is_blank_file(path: Path) -> bool:
     return not path.read_bytes().strip(_BLANK_MARKS)
 
 
-def preserve_pre_upgrade(config_path: Path) -> None:
-    """按固定 JSON 白名单留存升级原件，重试不覆盖已有备份。"""
+def preserve_pre_upgrade(
+    config_path: Path, *, database_path: Path | None = None
+) -> None:
+    """按配置白名单及 SQLite 一致性快照留存升级原件，重试不覆盖首次备份。"""
     backup = config_path / "legacy-json" / "pre-upgrade"
     backup.mkdir(parents=True, exist_ok=True)
-    # 七个聚合文件及早期升级实际涉及的 JSON；保留相对路径，不复制目录内容。
+    # 新旧聚合配置及早期升级涉及的 JSON；按固定范围保留相对路径，不复制历史备份。
     for pattern in (
         *(old for old, _new, _key in CONFIG_FILES),
+        *(new for _old, new, _key in CONFIG_FILES),
+        "plugins/*.yaml",
+        "plugin_registry.yaml",
+        "plugin_catalog.yaml",
         "config.json",
         "QueueConfig/*.json",
         "MaaPlanConfig/*/config.json",
@@ -262,6 +270,17 @@ def preserve_pre_upgrade(config_path: Path) -> None:
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
+    if database_path is not None and database_path.is_file():
+        target = backup / database_path.name
+        if not target.exists():
+            temporary = target.with_suffix(target.suffix + ".tmp")
+            temporary.unlink(missing_ok=True)
+            with (
+                closing(sqlite3.connect(database_path)) as source_db,
+                closing(sqlite3.connect(temporary)) as target_db,
+            ):
+                source_db.backup(target_db)
+            temporary.replace(target)
 
 
 def upgrade_json_configs(

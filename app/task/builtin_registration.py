@@ -41,8 +41,6 @@ def build_builtin_script_capabilities(
         from app.task.general.registration import REGISTRATION as general
     with startup_stage("后端/专项注册导入/HSR.registration"):
         from app.task.HSR.registration import REGISTRATION as hsr
-    with startup_stage("后端/专项注册导入/MAA.registration"):
-        from app.task.MAA.registration import REGISTRATION as maa
     with startup_stage("后端/专项注册导入/MaaEnd.registration"):
         from app.task.MaaEnd.registration import registration as maaend_registration
     with startup_stage("后端/专项注册导入/MaaFW.registration"):
@@ -55,8 +53,6 @@ def build_builtin_script_capabilities(
         from app.task.Okww.registration import REGISTRATION as okww
     with startup_stage("后端/专项注册导入/SRC.registration"):
         from app.task.SRC.registration import REGISTRATION as src
-    with startup_stage("后端/专项注册导入/Whimbox.registration"):
-        from app.task.Whimbox.registration import REGISTRATION as whimbox
     with startup_stage("后端/专项注册导入/ZzzOd.registration"):
         from app.task.ZzzOd.registration import registration as zzzod_registration
 
@@ -64,7 +60,6 @@ def build_builtin_script_capabilities(
         (
             maaend_registration(maaend=maaend),
             bettergi,
-            maa,
             src,
             zzzod_registration(zzzod=zzzod),
             maafw,
@@ -73,7 +68,6 @@ def build_builtin_script_capabilities(
             oknte,
             hsr,
             baah,
-            whimbox,
         ),
         expected_types=CLASS_BOOK.values(),
     )

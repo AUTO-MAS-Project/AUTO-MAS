@@ -44,29 +44,31 @@ export const useMysteryStore = defineStore('mystery', () => {
   }
   onScopeDispose(() => clearTimeout(expiryTimer))
 
-  const load = async (): Promise<void> => {
+  const load = async (refresh = false): Promise<void> => {
     refreshDate()
-    if (initialized.value) return
-    if (loadPromise) return loadPromise
+    if (!refresh) {
+      if (loadPromise) return loadPromise
+      if (initialized.value) return
+    }
 
-    const generation = contextGeneration
+    const generation = ++contextGeneration
     loadError.value = ''
     const pending = (async () => {
       try {
-        const [config, currentContext] = await Promise.all([
-          getConfig({ strict: true }),
-          getMysteryContext(),
-        ])
+        const currentContext = await getMysteryContext()
+        // 在指纹请求返回后读配置，避免等待期间手动锁定却又恢复旧的解锁记录。
+        const config = await getConfig({ strict: true })
         if (generation !== contextGeneration) return
         context.value = currentContext
         unlockedDate.value = config.mysteryUnlockedDate ?? ''
         unlockedFingerprint.value = config.mysteryUnlockedFingerprint ?? ''
         initialized.value = true
       } catch (error) {
-        if (generation === contextGeneration) {
-          loadError.value =
-            error instanceof MysteryContextError ? error.message : 'CONTEXT_UNAVAILABLE'
-        }
+        if (generation !== contextGeneration) return
+        context.value = null
+        initialized.value = false
+        loadError.value =
+          error instanceof MysteryContextError ? error.message : 'CONTEXT_UNAVAILABLE'
         throw error
       } finally {
         if (generation === contextGeneration) loadPromise = null
@@ -76,21 +78,16 @@ export const useMysteryStore = defineStore('mystery', () => {
     return pending
   }
 
-  // 后端重连后重取它自己的源码指纹，避免更新后沿用上一进程的解锁状态。
+  // WS 短断时 HTTP 扫码可以继续。重连后用新指纹更新状态，避免卸载同一后端的扫码页面。
   watch(state, status => {
-    contextGeneration++
-    context.value = null
-    initialized.value = false
-    loadError.value = ''
-    loadPromise = null
     if (status !== 'open') return
-    void load().catch(() => {
+    void load(true).catch(() => {
       // loadError 已保留可重试的失败状态，由入口页面显示。
     })
   })
 
   const unlock = async (accessCode: string): Promise<boolean> => {
-    await load()
+    await load(state.value !== 'open')
     if (saving.value) return false
 
     saving.value = true
@@ -107,7 +104,8 @@ export const useMysteryStore = defineStore('mystery', () => {
         }))
       )
         return false
-      if (checkedDate !== getMysteryDate() || checkedContext !== context.value) return false
+      await load()
+      if (checkedDate !== getMysteryDate() || checkedFingerprint !== fingerprint.value) return false
 
       await saveConfig({
         mysteryUnlockedDate: checkedDate,
@@ -123,7 +121,6 @@ export const useMysteryStore = defineStore('mystery', () => {
   }
 
   const lock = async (): Promise<void> => {
-    await load()
     if (saving.value) return
 
     saving.value = true
