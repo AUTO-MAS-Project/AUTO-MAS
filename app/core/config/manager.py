@@ -1381,7 +1381,6 @@ class AppConfig:
                 OkNteConfig,
                 BetterGIConfig,
                 ZzzOdConfig,
-                WhimboxConfig,
             ),
         ):
             return None
