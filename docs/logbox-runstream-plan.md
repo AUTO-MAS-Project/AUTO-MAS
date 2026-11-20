@@ -100,28 +100,40 @@ flowchart TD
 
 ## 4. Python 模块组织与抽象
 
-### 4.1 建议目录
+### 4.1 目录分层迁移方案
 
 ```text
-app/utils/common/expression/       # 保留纯解析、编译、求值；注入函数表
-app/core/log_flow/
-    __init__.py                   # MAS 组件单例与公开入口
-    manager.py                    # 会话登记、插件归属、生命周期编排
-    session.py                    # 每次运行独立会话、顺序处理和关闭
-    contracts.py                  # 内部 Source / Processor / Sink 协议
-    sources/                      # mas_log、file_log、push
-    processors/                   # general_rule、rule_node、reported_node
-    sinks/                        # notification 与宿主下沉适配
-    registry.py                   # 带 owner 和代际的扩展工厂注册
-    worker/                       # 独立入口、实现加载和管线执行；不初始化宿主单例
-    bridge.py                     # 非阻塞消息交接和宿主能力桥接
-app/models/log_flow.py             # 跨模块节点与进程消息模型
-app/models/task.py                 # 运行节点挂载点及模型推送订阅
-app/models/schema.py               # 共享 HTTP / WS 契约
-app/api/log_flow.py                # 薄查询与协议入口，名称和路径以契约审定为准
+app/utils/common/
+    expression/                  # 独立表达式引擎，原位置
+    log/                         # 原生监控、文件读取和通用规则，原位置
+    log_flow/
+        contracts.py             # 规则、配置快照和 IPC 消息
+        observation.py           # 节点、游标、快照与收尾摘要
+        declaration.py           # 可序列化的声明类型
+        processor.py             # 声明处理与 WebUI 规则处理
+        extensions.py            # Source / Sink 协议和通用工厂装配
+        push.py                  # 会话上报契约
+        report.py                # 按摘要生成逐条或汇总文本
+        session.py               # 宿主侧进程监督与会话 IPC
+        worker.py                # 子进程入口与管线执行
+    source_import.py             # 限定包目录的源码查找和加载
+app/core/plugin/
+    manager.py                   # 声明登记、工厂归属与插件生命周期
+    log_flow.py                  # 插件会话所有权、准入和在途实例回收
+app/task/log_flow/
+    binding.py                   # 按托管或账号绑定会话、监控回调和观察结果
+    report.py                    # 按运行归集结束摘要并交 Notify
+app/models/task.py               # 运行树挂载唯一的观察实例
+app/core/task_manager.py          # 按运行身份查询与保留近期结果
+app/api/dispatch.py               # 现有本机 HTTP 查询与脱敏
+plugins/auto_mas_core/.../log_flow.py  # 插件公开 SDK，更新内部导入
 ```
 
-上述文件仅为责任规划，按实际复杂度合并，不为每个类机械建文件。主框架先放在 `core/log_flow`；worker 入口必须能独立加载，导入不能顺带初始化 Config、Plugin 或通知单例。若确有独立基础框架和大量 MAS 扩展两种职责，再评估拆 `app/` 基础包。`core` 始终承担真实编排，不能退化成实例壳。表达式作为纯工具不得反向导入 core 或插件管理器。
+目前 `app/core/log_flow/` 同时装有通用管线、运行绑定和通知桥接。计划把纯机制下沉到 `utils`，由现有插件宿主和任务层分别持有各自的编排。`utils` 中的项目导入限于 `utils`。纯节点、摘要与观察状态从 `app/models/log_flow.py` 迁入管线，运行树、SDK 和 API 继续共用同一份类型与观察实例。`TaskLogNodesOut` 等 HTTP 契约留在接口层。文件名按迁移中的实际职责调整。
+
+worker 目前为了绕过插件重载后的旧字节码，会导入 `app.plugin.runtime.loader`。宿主和 worker 共用的源码查找器提取为独立工具，保留源码缓存规避和 `.pyd`／`.so` 原有加载器。插件实例校验、包名与目录解析仍在宿主，worker 只接收已验证的包名和路径快照。移动 worker 时同步更新 `-m` 入口、源码根目录定位和现有启动选项，验证 SDK wheel、源代码和打包路径。
+
+首个任务快捷入口放在持有账号运行节点的 `AutoProxyWorker`，以类似 `self.open_log_flow(plugin, "daily", monitor=monitor)` 的显式调用绑定当前账号。实际插件实例由现有调用链传入，沿用插件宿主校验。托管级流程与需要自定义 source、sink 的插件继续调用现有 SDK。会话在活动作用域关闭，报告使用已冻结的摘要。LogFlow 的实时观察、结束摘要与 MAS 任务成败分别读取。控制台展示后续接入任务层的结束明细。
 
 ### 4.2 抽象契约建议
 
@@ -146,7 +158,7 @@ class Sink(Protocol):
     async def close(self, summary: SessionSummary) -> None: ...
 ```
 
-Context 是不同阶段所需的窄接口，不暴露可随意改写的整套 Config。宿主组件单例负责创建会话，worker 内的执行实例每会话独立。跨进程 Context 仅包含可序列化快照及明确的请求协议，不能传入活 Config、绑定方法、闭包或通知单例。框架适配外部 push 为可消费记录，sink 无须拉取 source 或自己重复解析。接口草案描述 worker 内部 Python 协作；IPC 消息契约另行定义。
+Context 是不同阶段所需的窄接口。任务层绑定运行并打开会话，worker 内的执行实例每会话独立。跨进程 Context 仅包含可序列化快照及明确的请求协议，宿主保留 Config、绑定方法和通知实例。框架适配外部 push 为可消费记录，sink 消费已生成的节点。接口草案描述 worker 内部 Python 协作，IPC 消息契约另行定义。
 
 ### 4.3 内置实现对照
 
@@ -243,6 +255,17 @@ LogFlow 与日志节点管线的职责一致，继续沿用。其他名称按实
 | 插件基座及正式接线 | `ScriptTypeDecl` 目前不含日志声明，直接塞一个字段也不能解决非专项插件接入，或 worker 加载与插件重载的归属。 | 跨模块改动留到默认与局部替换原型跑通后；再决定公共能力挂载点、工厂 owner/代际与在途释放。不在这一步改插件基座、调度树结构、默认专项执行、配置升级或 UI。 |
 
 实施顺序按依赖拆成三步：① 模拟默认 Flow，验证同一节点在关闭前可被 MAS 和插件分别补读，关闭通知后仍可读；② 替换一个处理环节验证装配边界，收口确实阻碍扩展的旧依赖，再补完整组合；③ 有真实插件调用方后确定公开声明位置与注册生命周期，再做正式通知及专项迁移。第 ① 步若连一个运行分支的原始输入都无法可靠绑定，先核查采集入口；不提前引入通用总线。报告验收至少同时核对逐条与汇总，模拟交付不等于真实渠道已验收。
+
+### 4.8 分步实施与验收
+
+| 顺序 | 提交范围 | 本步验收 |
+| --- | --- | --- |
+| 1 | 提取公共源码加载器，保留插件宿主现有的记录校验与清理 | 同名包按现有目录优先级加载，重载后读取新源码，原生扩展仍由平台加载器加载 |
+| 2 | 迁移通用管线、观察模型和进程入口，一次更新 SDK、运行树与接口侧的内部导入 | 真实独立进程通过启动、混采、容量与撤回、超时冻结、Windows Job 回收回归。比较迁移前后的 HTTP 路由、OpenAPI 与节点序列化；验证安装态可启动 worker |
+| 3 | 将原 `simple.py` 与 `manager.py` 的运行绑定收口到任务层，将 `FlowOwner` 放回插件管理域，拆开纯排版与 Notify 交付 | 模拟插件通过现有 SDK 跑完账号级与托管级会话。正常、取消、关闭超时、暂停、重载和卸载时核对在途上报、尾部交接、节点归属与通知去重。SDK 导出和 HTTP 契约保持兼容 |
+| 4 | 在 `AutoProxyWorker` 增加显式的账号级快捷入口，补 SDK 示例与迁移记录 | 用模拟插件只提供声明及当前日志监控器即可采集。运行期从 SDK 和宿主读同一份状态；结束后验证逐条、汇总及关闭模式。确认未接入的专项和 #2081 的旧明细路径仍能运行 |
+
+各步单独提交，通过本步验证后再继续。现有 `auto_mas_core.log_flow` 是 SDK 稳定入口，仓库内部导入在同一提交切换，清理旧 `app/core/log_flow` 下的内部路径。保留旧 LogBox 并跑、现有预算与通知时机。正式专项迁移、控制台接线和两套监控器收敛各自验收。
 
 ## 5. 表达式引擎与函数扩展
 
