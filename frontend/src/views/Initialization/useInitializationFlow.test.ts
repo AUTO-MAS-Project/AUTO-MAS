@@ -18,7 +18,10 @@ vi.mock('@/utils/environment', () => ({
   isBrowserDevelopment: () => false,
   managesBackendProcess: () => true,
 }))
-vi.mock('@/utils/analytics', () => ({ beginAnalyticsOperation: () => ({ finish: vi.fn() }) }))
+vi.mock('@/utils/analytics', () => ({
+  beginAnalyticsOperation: () => ({ finish: vi.fn() }),
+  beginInitializationAnalytics: () => ({ finish: vi.fn() }),
+}))
 vi.mock('./finishInitializationEntry', () => ({ finishInitializationEntry: vi.fn() }))
 vi.mock('@/composables/useVersionService', () => ({ getBackendVersion: vi.fn() }))
 
