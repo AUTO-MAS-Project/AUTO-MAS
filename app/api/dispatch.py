@@ -21,7 +21,12 @@
 #   Contact: DLmaster_361@163.com
 
 
-from fastapi import APIRouter, Body
+from ipaddress import ip_address
+from typing import Annotated
+from urllib.parse import urlsplit
+from uuid import UUID
+
+from fastapi import APIRouter, Body, Query, Request, Response
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -40,6 +45,14 @@ from app.models.schema import (
 )
 from app.models.task import TaskMode
 from app.utils import get_logger
+from app.utils.common.log_flow.observation import (
+    MAX_NODE_ATTRIBUTE_TEXT,
+    CloseReason,
+    InvalidObservationCursor,
+    Node,
+    ObservationCursor,
+)
+from app.utils.common.security import is_sensitive_log_key, sanitize_log_message
 from app.utils.contracts.power import PowerSignal
 
 
@@ -82,6 +95,18 @@ class TaskGetOut(OutBase):
 
 class TaskCreateOut(OutBase):
     taskId: str = Field(..., description="新创建的任务ID")
+
+
+class TaskLogCursor(BaseModel):
+    sessionId: UUID
+    sequence: int = Field(ge=0)
+
+
+class TaskLogNodesOut(OutBase):
+    nodes: tuple[Node, ...] = ()
+    cursor: TaskLogCursor | None = None
+    hasMore: bool = False
+    closeReason: CloseReason | None = None
 
 
 class PowerIn(BaseModel):
@@ -128,6 +153,105 @@ async def get_task_status(task_id: str) -> TaskStatusOut:
             taskId=task_id,
         )
     return result
+
+
+def _loopback_host(host: str | None) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ip_address(host or "").is_loopback
+    except ValueError:
+        return False
+
+
+def _local_node_reader(request: Request) -> bool:
+    if (
+        request.client is None
+        or not _loopback_host(request.client.host)
+        or not _loopback_host(request.url.hostname)
+    ):
+        return False
+    origin = request.headers.get("origin")
+    if origin is None:
+        return True
+    try:
+        source = urlsplit(origin)
+        return source.scheme in ("http", "https") and _loopback_host(source.hostname)
+    except ValueError:
+        return False
+
+
+@router.get(
+    "/task/{task_id}/runs/{script_run_id}/log-nodes",
+    tags=["Get"],
+    summary="按运行分支查询已采集的日志节点",
+    response_model=TaskLogNodesOut,
+    responses={
+        403: {"model": TaskLogNodesOut},
+        404: {"model": TaskLogNodesOut},
+        409: {"model": TaskLogNodesOut},
+    },
+)
+async def get_task_log_nodes(
+    task_id: UUID,
+    script_run_id: UUID,
+    request: Request,
+    response: Response,
+    userRunId: UUID | None = None,
+    sessionId: UUID | None = None,
+    after: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> TaskLogNodesOut:
+    """首次省略游标；后续传入返回的 sessionId 和 sequence（after）。"""
+    response.headers["Cache-Control"] = "no-store"
+    if not _local_node_reader(request):
+        response.status_code = 403
+        return TaskLogNodesOut(code=403, status="error", message="日志节点仅限本机读取")
+    observation = TaskManager.get_node_observation(
+        task_id, script_run_id, user_run_id=userRunId
+    )
+    if observation is None:
+        response.status_code = 404
+        return TaskLogNodesOut(
+            code=404, status="error", message="该运行没有可读取的日志节点会话"
+        )
+    try:
+        if sessionId is None and after:
+            raise InvalidObservationCursor("缺少会话 ID")
+        cursor = ObservationCursor(sessionId, after) if sessionId is not None else None
+        page = observation.read(after=cursor, limit=limit)
+    except InvalidObservationCursor:
+        response.status_code = 409
+        return TaskLogNodesOut(
+            code=409, status="error", message="游标已失效，请从头读取"
+        )
+    return TaskLogNodesOut(
+        nodes=tuple(_public_log_node(node) for node in page.nodes),
+        cursor=TaskLogCursor(
+            sessionId=page.cursor.session_id, sequence=page.cursor.sequence
+        ),
+        hasMore=page.has_more,
+        closeReason=page.close_reason,
+    )
+
+
+def _public_log_node(node: Node) -> Node:
+    attributes = []
+    for attribute in node.attributes:
+        if is_sensitive_log_key(attribute.key):
+            continue
+        value = attribute.value
+        if isinstance(value, str):
+            attribute = attribute.model_copy(
+                update={"value": sanitize_log_message(value)[:MAX_NODE_ATTRIBUTE_TEXT]}
+            )
+        attributes.append(attribute)
+    return node.model_copy(
+        update={
+            "text": sanitize_log_message(node.text),
+            "attributes": tuple(attributes),
+        }
+    )
 
 
 @router.post("/get", tags=["Get"], response_model=TaskGetOut)

@@ -2,6 +2,7 @@
 
 import importlib.metadata
 import sys
+from contextlib import AsyncExitStack
 from email.message import Message
 from types import SimpleNamespace
 
@@ -9,11 +10,20 @@ import httpx
 import pytest
 import pytest_asyncio
 
+from app.core.plugin.log_flow import FlowOwner
 from app.core.plugin.manager import _PluginManager
 from app.models.config import PluginMeta, PluginRecord, PluginRegistryCollection
+from app.models.task import TaskUserItem
 from app.plugin import uv
 from app.plugin.errors import PluginPrecheckError
 from app.plugin.runtime import loader
+from app.plugin.uv import environment, precheck
+from app.utils.common.log_flow.contracts import (
+    FunctionRef,
+    PipelineSpec,
+    WorkerPluginPackage,
+)
+from app.utils.common.log_flow.observation import ReportEntry
 
 
 def metadata(*, identity="install_probe", version="1.0", sdk=True):
@@ -25,6 +35,100 @@ def metadata(*, identity="install_probe", version="1.0", sdk=True):
     if sdk:
         result["Requires-Dist"] = "auto-mas-core>=5,<6"
     return result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("dependency_version", ["1.0", "2.0"])
+async def test_install_preserves_packages_read_by_logflow_worker(
+    isolated_app_paths, tmp_path, monkeypatch, dependency_version
+):
+    """装包求解期间启动的 worker 仍能从共享环境读到它原来使用的依赖。"""
+    registry = PluginRegistryCollection.build([PluginRecord])
+    await registry.activate()
+    monkeypatch.setattr(isolated_app_paths, "plugin_registry", registry)
+    monkeypatch.setattr(sys, "path", sys.path.copy())
+    monkeypatch.setattr(precheck, "host_constraints", lambda: [])
+    monkeypatch.setattr(precheck, "host_dependencies", lambda: [])
+    site = uv.site_dir(activate=False)
+    dependency = "logflow_worker_dep"
+
+    def write_distribution(root, name, version, implementation):
+        package = root / name
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text(implementation, encoding="utf-8")
+        info = root / f"{name}-{version}.dist-info"
+        info.mkdir()
+        payload = metadata(identity=name, version=version)
+        payload.replace_header("Name", name.replace("_", "-"))
+        (info / "METADATA").write_text(str(payload), encoding="utf-8")
+        (info / "RECORD").write_text(
+            f"{name}/__init__.py,,\n{info.name}/METADATA,,\n{info.name}/RECORD,,\n",
+            encoding="utf-8",
+        )
+
+    def report_code(version):
+        return (
+            "from app.utils.common.log_flow.observation import ReportEntry\n"
+            f"def report(_): return [ReportEntry(node_type='info', text={version!r})]\n"
+        )
+
+    write_distribution(site, dependency, "1.0", report_code("1.0"))
+    owner = FlowOwner(lambda: True)
+    async with AsyncExitStack() as stack:
+        session = None
+
+        async def resolve_environment(*, destination, **_kwargs):
+            nonlocal session
+            session = await stack.enter_async_context(
+                owner.open(
+                    TaskUserItem(),
+                    PipelineSpec(
+                        accept_push=True,
+                        plugin_package=WorkerPluginPackage(
+                            name="probe",
+                            import_root=str(tmp_path),
+                            dependency_root=str(site),
+                            sdk_root=str(tmp_path),
+                        ),
+                        postprocess=FunctionRef(
+                            name="probe:report", module=dependency, attribute="report"
+                        ),
+                    ),
+                )
+            )
+            write_distribution(
+                destination,
+                dependency,
+                dependency_version,
+                report_code(dependency_version),
+            )
+            write_distribution(destination, "install_probe", "1.0", "")
+            return SimpleNamespace(ok=True)
+
+        monkeypatch.setattr(precheck, "resolve_environment", resolve_environment)
+        assert not owner.has_workers
+        expects_restart = dependency_version != "1.0"
+        result = await uv.install(
+            "install-probe",
+            plugin_name="install_probe",
+            has_shared_environment_readers=lambda: owner.has_workers,
+        )
+        assert dependency not in sys.modules
+        assert result is expects_restart
+        assert (site / dependency / "__init__.py").read_text(
+            encoding="utf-8"
+        ) == report_code("1.0")
+        assert (site / "install_probe").exists() is not expects_restart
+        assert site.with_suffix(".pending").exists() is expects_restart
+        assert environment.read_installation().progress.state == (
+            "waiting_restart" if expects_restart else "applying"
+        )
+        assert session is not None
+        summary = await session.close()
+        assert summary.complete and summary.report_entries == (
+            ReportEntry(node_type="info", text="1.0"),
+        )
+    assert not owner.has_workers
 
 
 @pytest_asyncio.fixture
@@ -84,9 +188,10 @@ async def installation(isolated_app_paths, monkeypatch, tmp_path):
         lambda **kwargs: original_client(transport=httpx.MockTransport(response)),
     )
 
-    async def install(package, *, plugin_name, meta_id):
+    async def install(package, *, plugin_name, meta_id, has_shared_environment_readers):
         """在进程边界落地测试发行包，后续读取、发现和加载均使用实际文件。"""
         state.calls.append(package)
+        assert not has_shared_environment_readers()
         info = site / "auto_mas_install_probe-1.0.dist-info"
         info.mkdir()
         (info / "METADATA").write_text(str(state.package), encoding="utf-8")

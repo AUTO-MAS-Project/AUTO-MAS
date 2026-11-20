@@ -73,6 +73,30 @@ class PLUGIN(BasePlugin):
 
 展开类可以继承 `UserExpander[MyScriptEntry]`，使 `script_config` 保留专项配置类型。仓库的 `pyrightconfig.json` 已声明 SDK 源码路径；包内其他模块使用相对导入，独立插件工程则在自己的开发环境安装 SDK。
 
+## LogFlow 日志节点
+
+在专项插件类登记一条 `log_flows` 声明，可使用 MAS 原生日志。以下声明定义一个成功节点。
+
+```python
+from auto_mas_core.log_flow import (
+    LineRule,
+    PluginFlowDeclaration,
+    SimpleFlowDeclaration,
+)
+
+log_flows = {
+    "progress": PluginFlowDeclaration(
+        rules=SimpleFlowDeclaration(
+            rules=(LineRule(match=r"^完成：", node_type="步骤", status="success"),),
+        ),
+    ),
+}
+```
+
+将声明放在现有插件类上。账号执行器用 `self.open_log_flow(plugin, "progress", monitor=monitor, task_report=task_report)` 绑定当前账号。用 `auto_mas_core.log_flow.LogMonitor` 创建监控器，在退出会话前停止它以交接尾部。托管结束后由 `LogFlowTaskReport.send()` 交给 Notify。
+
+混合来源、主动上报、实时查询、自定义处理器和专项验收见 [LogFlow 接入与迁移](https://github.com/AUTO-MAS-Project/AUTO-MAS/blob/dev/.agents/skills/mas-script-specialized-adapter/references/logflow-api.md)。
+
 ## 静态类型与开发环境
 
 SDK 顶层及 `host.*`、`utils`、`services`、`plugin` 的静态导出直接引用宿主的真实类型；运行时仍按需加载宿主能力。配置继承、泛型、装饰器和单例方法的类型不应通过动态 `__getattr__` 退化为 `Any`。

@@ -1,16 +1,39 @@
 """插件级联重载恢复状态，卸载等待全部下游的在途调用结束。"""
 
 import asyncio
+import json
+import sys
+from contextlib import AsyncExitStack, suppress
 from types import SimpleNamespace
 
+import psutil
 import pytest
 import pytest_asyncio
+from auto_mas_core.log_flow import LogMonitor
 
+from app.core import Notify
+from app.core.background_tasks import BackgroundTaskRegistry
+from app.core.notify import tasks as notification_tasks
+from app.core.notify.rendering import AsyncNotificationRenderer
 from app.core.plugin.manager import _PluginManager
-from app.models.config import GlobalConfig, PluginRecord, PluginRegistryCollection
+from app.models.config import (
+    GlobalConfig,
+    PluginMeta,
+    PluginRecord,
+    PluginRegistryCollection,
+)
+from app.models.notification.channel import ChannelTarget, DeliveryChannel, NotifyTarget
+from app.models.notification.report import TaskReportPolicy, TaskResultReport
+from app.models.task import TaskUserItem
 from app.plugin.errors import PluginBusyError
-from app.plugin.runtime import loader
+from app.plugin.runtime import discover, loader
 from app.plugin.types import PluginState
+from app.task.log_flow.binding import open_custom_flow
+from app.utils.common.log_flow.contracts import PipelineSpec
+from app.utils.common.log_flow.declaration import SimpleFlowDeclaration
+from app.utils.common.log_flow.push import SubmitResult
+from app.utils.common.log_flow.session import LogFlowSession
+from tests.support.scheduler import create_runtime_tree
 
 
 @pytest_asyncio.fixture
@@ -144,6 +167,672 @@ async def test_reload_restores_complete_tree_without_enabling_inactive_descendan
 
 
 @pytest.mark.asyncio
+async def test_plugin_declaration_loads_its_own_worker_factory_after_reload(
+    cascade_plugins, tmp_path
+):
+    manager, records = await cascade_plugins({"flow_declared": ()})
+    record = records["flow_declared"]
+    entry = tmp_path / "flow_declared" / "__init__.py"
+
+    def write_plugin(prefix):
+        entry.write_text(
+            "from auto_mas_core.log_flow import FunctionRef, LineRule, PluginFlowDeclaration, SimpleFlowDeclaration, Source, TextProcessor, TextRecord, WorkerFactorySpec\n"
+            "from app.plugin.base import BasePlugin\n"
+            f"def prefix(text, _args): return {prefix!r} + text\n"
+            "def clean(line): return line.removeprefix('raw:')\n"
+            "class Processor:\n"
+            "    def process(self, line):\n"
+            f"        yield '普通', {prefix!r} + line\n"
+            "    def close(self): return ()\n"
+            "def processor(options) -> TextProcessor: return Processor()\n"
+            "class SampleSource:\n"
+            "    def open(self): pass\n"
+            "    def poll(self): return ()\n"
+            "    def close(self): return (TextRecord(text='source tail'),)\n"
+            "def source(options) -> Source: return SampleSource()\n"
+            "class Adapter(BasePlugin):\n"
+            "    log_flows = {'declared': PluginFlowDeclaration(\n"
+            "        use_mas_log=False, accept_push=True,\n"
+            "        rules=SimpleFlowDeclaration(processor=WorkerFactorySpec(factory=FunctionRef(name='declared:processor', module=__name__, attribute='processor'))),\n"
+            "        source=WorkerFactorySpec(factory=FunctionRef(name='declared:source', module=__name__, attribute='source')),\n"
+            "    ), 'expression': PluginFlowDeclaration(\n"
+            "        use_mas_log=False, accept_push=True,\n"
+            "        rules=SimpleFlowDeclaration(\n"
+            "            rules=(LineRule(match='^event$', extract='$().probe:prefix()', node_type='普通'),),\n"
+            "            preprocess=FunctionRef(name='probe:clean', module=__name__, attribute='clean'),\n"
+            "            functions=(FunctionRef(name='probe:prefix', module=__name__, attribute='prefix'),),\n"
+            "        ),\n"
+            "    )}\n"
+            "PLUGIN = Adapter\n",
+            encoding="utf-8",
+        )
+
+    async def collect(name, text="event"):
+        reports = []
+        async with manager.open_log_flow(
+            record._plugin,
+            name,
+            run=TaskUserItem(user_id="same"),
+            mode="逐条",
+            receive_report=reports.append,
+        ) as flow:
+            assert flow.reporter is not None
+            assert flow.reporter.text(text) == SubmitResult.ACCEPTED
+        return reports
+
+    write_plugin("before:")
+    await manager.reload(record)
+    await manager.enable(record)
+    assert await collect("declared") == [["before:event", "before:source tail"]]
+    assert await collect("expression", "raw:event") == [["before:event"]]
+    write_plugin("after!:")
+    await manager.reload(record)
+    assert await collect("declared") == [["after!:event", "after!:source tail"]]
+    assert await collect("expression", "raw:event") == [["after!:event"]]
+
+
+@pytest.mark.asyncio
+async def test_named_general_flow_uses_current_webui_rules(
+    cascade_plugins, tmp_path, monkeypatch
+):
+    from auto_mas_core.log_flow import GeneralFlowDeclaration, open_log_flow
+
+    from app import core
+
+    manager, records = await cascade_plugins({"flow_webui": ()})
+    monkeypatch.setattr(core, "Plugin", manager)
+    record = records["flow_webui"]
+    (tmp_path / "flow_webui" / "__init__.py").write_text(
+        "from auto_mas_core import BasePlugin\n"
+        "from auto_mas_core.log_flow import GeneralFlowDeclaration, PluginFlowDeclaration\n"
+        "class Adapter(BasePlugin):\n"
+        "    log_flows = {'webui': PluginFlowDeclaration(use_mas_log=False, accept_push=True, rules=GeneralFlowDeclaration(patterns='[]'))}\n"
+        "PLUGIN = Adapter\n",
+        encoding="utf-8",
+    )
+    await manager.reload(record)
+    await manager.enable(record)
+    patterns = json.dumps(
+        [
+            {"type": "regex", "match": ".+", "extract": '"停用"', "enabled": False},
+            {"type": "regex", "match": "redacted", "extract": r"$(token=(\w+))"},
+            {"type": "split", "match": "redacted"},
+        ]
+    )
+    for replacement in ("first", "second"):
+        rules = GeneralFlowDeclaration(
+            patterns=patterns,
+            hooks=json.dumps(
+                [
+                    {"type": "drop", "match": "^noise"},
+                    {
+                        "type": "replace",
+                        "match": r"token=\w+",
+                        "replace": f"token={replacement}",
+                    },
+                ]
+            ),
+        )
+        async with open_log_flow(
+            record._plugin, "webui", run=TaskUserItem(), general_rules=rules
+        ) as flow:
+            assert flow.reporter is not None
+            lines = (
+                '@@LOGBOX@@{"op":"push","type":"普通","text":"旧宿主节点"}',
+                "noise redacted token=discarded",
+                "redacted token=secret",
+                "@@LOGBOX@@ redacted token=secret",
+            )
+            for line in lines:
+                assert flow.reporter.text(line) == SubmitResult.ACCEPTED
+        page = flow.read_nodes()
+        assert page.close_reason == "complete"
+        assert [node.text for node in page.nodes] == [
+            replacement,
+            replacement,
+        ]
+
+
+@pytest.mark.asyncio
+async def test_autoproxy_worker_opens_declared_flow_for_its_account(
+    cascade_plugins, monkeypatch, tmp_path
+):
+    from auto_mas_core import AutoProxyWorker, UserExpander
+    from auto_mas_core.log_flow import LogFlowTaskReport
+
+    from app import core
+    from app.models.config import GeneralConfig
+
+    manager, records = await cascade_plugins({"flow_worker": ()})
+    monkeypatch.setattr(core, "Plugin", manager)
+    record = records["flow_worker"]
+    (tmp_path / "flow_worker" / "__init__.py").write_text(
+        "from auto_mas_core import BasePlugin\n"
+        "from auto_mas_core.log_flow import LineRule, PluginFlowDeclaration, SimpleFlowDeclaration\n"
+        "class Adapter(BasePlugin):\n"
+        "    log_flows = {'daily': PluginFlowDeclaration(rules=SimpleFlowDeclaration(\n"
+        "        rules=(LineRule(match='^done:', node_type='daily', status='success'),),\n"
+        "    ))}\n"
+        "PLUGIN = Adapter\n",
+        encoding="utf-8",
+    )
+    await manager.reload(record)
+    await manager.enable(record)
+    _, script, account = await create_runtime_tree(user_id="default")
+    report = LogFlowTaskReport(script)
+
+    async def discard_display(_lines, _latest_timestamp):
+        pass
+
+    class Worker(AutoProxyWorker):
+        async def main_logic(self):
+            monitor = LogMonitor((0, 0), "", discard_display)
+            async with self.open_log_flow(
+                record._plugin, "daily", monitor=monitor, task_report=report
+            ) as flow:
+                process = await asyncio.create_subprocess_exec(
+                    sys.executable,
+                    "-c",
+                    "print('done:claim')",
+                    stdout=asyncio.subprocess.PIPE,
+                )
+                await asyncio.wait_for(monitor.monitor_process(process, "stdout"), 5)
+                assert await process.wait() == 0
+                async with asyncio.timeout(5):
+                    while not (snapshot := flow.snapshot_nodes()).nodes:
+                        await asyncio.sleep(0.01)
+                assert account.node_observation is not None
+                assert snapshot == account.node_observation.capture()
+            await self.user_info.set_state(status="完成")
+
+    class Expander(UserExpander):
+        def build_worker(self, user, config):
+            return Worker(self, user, config)
+
+    worker = Expander(script, GeneralConfig.build()).build_worker(account, None)
+    await worker.run()
+    assert worker.error is None
+    assert script.node_observation is None
+    assert account.status == "完成"
+    assert report.details_for(account) == ["✅ 成功: done:claim"]
+
+
+@pytest.mark.asyncio
+async def test_declared_processor_corrects_native_nodes_before_task_finishes(
+    cascade_plugins, tmp_path
+):
+    manager, records = await cascade_plugins({"flow_revision": ()})
+    record = records["flow_revision"]
+    (tmp_path / "flow_revision" / "__init__.py").write_text(
+        "from app.plugin.base import BasePlugin\n"
+        "from auto_mas_core.log_flow import FunctionRef, PluginFlowDeclaration, ReportedRecord, SimpleFlowDeclaration, WithdrawnRecord, WorkerFactorySpec\n"
+        "class Processor:\n"
+        "    def process(self, line):\n"
+        "        slot, result = line.split()\n"
+        "        yield ReportedRecord(node_id=slot, node_type='普通', text=f'{slot} {result}', status=result)\n"
+        "        if result == 'failed':\n"
+        "            yield ReportedRecord(node_id='retry-warning', node_type='普通', text='retry pending', status='warning')\n"
+        "    def close(self): return (WithdrawnRecord(node_id='retry-warning'),)\n"
+        "def factory(options): return Processor()\n"
+        "class Adapter(BasePlugin):\n"
+        "    log_flows = {'native': PluginFlowDeclaration(rules=SimpleFlowDeclaration(\n"
+        "        processor=WorkerFactorySpec(factory=FunctionRef(name='test:processor', module=__name__, attribute='factory')),\n"
+        "    ))}\n"
+        "PLUGIN = Adapter\n",
+        encoding="utf-8",
+    )
+    await manager.reload(record)
+    await manager.enable(record)
+
+    async def discard_display(_lines, _latest_timestamp):
+        pass
+
+    monitor = LogMonitor((0, 0), "", discard_display)
+
+    async def run_script(*lines):
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            "import sys; print(*sys.argv[1:], sep='\\n')",
+            *lines,
+            stdout=asyncio.subprocess.PIPE,
+        )
+        await asyncio.wait_for(monitor.monitor_process(process, "stdout"), 5)
+        assert await process.wait() == 0
+
+    reports = []
+    async with manager.open_log_flow(
+        record._plugin,
+        "native",
+        run=TaskUserItem(),
+        monitor=monitor,
+        mode="汇总",
+        receive_report=reports.append,
+    ) as flow:
+        await run_script("slot-a failed", "slot-b success")
+        async with asyncio.timeout(5):
+            while (first := flow.snapshot_nodes()).cursor.sequence < 3:
+                assert first.close_reason is None
+                await asyncio.sleep(0.01)
+        assert [(node.node_id, node.status) for node in first.nodes] == [
+            ("mas/slot-a", "failed"),
+            ("mas/retry-warning", "warning"),
+            ("mas/slot-b", "success"),
+        ]
+        await run_script("slot-a success")
+        async with asyncio.timeout(5):
+            while not (retry := flow.read_nodes(after=first.cursor)).nodes:
+                assert retry.close_reason is None
+                await asyncio.sleep(0.01)
+        [correction] = retry.nodes
+        assert (correction.node_id, correction.revision, correction.status) == (
+            "mas/slot-a",
+            2,
+            "success",
+        )
+
+    [withdrawal] = flow.read_nodes(after=retry.cursor).nodes
+    assert withdrawal.node_id == "mas/retry-warning" and withdrawal.withdrawn
+    assert flow.snapshot_nodes().close_reason == "complete"
+    assert reports == [["✅ 成功: slot-a success, slot-b success"]]
+
+
+@pytest.mark.asyncio
+async def test_named_file_source_binds_to_the_current_run(
+    cascade_plugins, tmp_path, monkeypatch
+):
+    from auto_mas_core.log_flow import FileInput, open_log_flow
+
+    from app import core
+
+    manager, records = await cascade_plugins({"flow_run_file": ()})
+    monkeypatch.setattr(core, "Plugin", manager)
+    record = records["flow_run_file"]
+    (tmp_path / "flow_run_file" / "__init__.py").write_text(
+        "from auto_mas_core import BasePlugin\n"
+        "from auto_mas_core.log_flow import LineRule, PluginFlowDeclaration, SimpleFlowDeclaration\n"
+        "class Adapter(BasePlugin):\n"
+        "    log_flows = {'file': PluginFlowDeclaration(use_mas_log=False, use_run_file=True, rules=SimpleFlowDeclaration(\n"
+        "        rules=(LineRule(match='^done:', node_type='普通'),),\n"
+        "    ))}\n"
+        "PLUGIN = Adapter\n",
+        encoding="utf-8",
+    )
+    await manager.reload(record)
+    await manager.enable(record)
+    first = tmp_path / "first.log"
+    second = tmp_path / "second.log"
+    for path in (first, second):
+        path.write_text("done:old\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    first_input = await FileInput(path=first.name).capture_start()
+    with first.open("a", encoding="utf-8") as log:
+        log.write("done:before-rotation\n")
+    first.rename(first.with_suffix(".bak"))
+    first.write_text("done:before-worker\n", encoding="utf-8")
+    async with AsyncExitStack() as stack:
+        first_flow = await stack.enter_async_context(
+            open_log_flow(
+                record._plugin,
+                "file",
+                run=TaskUserItem(),
+                file_input=first_input,
+            )
+        )
+        second_flow = await stack.enter_async_context(
+            open_log_flow(
+                record._plugin,
+                "file",
+                run=TaskUserItem(),
+                file_input=FileInput(path=second.name),
+            )
+        )
+        for path in (first, second):
+            with path.open("a", encoding="utf-8") as log:
+                log.write(f"done:{path.stem}\n")
+    first_snapshot, second_snapshot = (
+        first_flow.snapshot_nodes(),
+        second_flow.snapshot_nodes(),
+    )
+    assert first_snapshot.close_reason == second_snapshot.close_reason == "complete"
+    assert [node.text for node in first_snapshot.nodes] == [
+        "done:before-rotation",
+        "done:before-worker",
+        "done:first",
+    ]
+    assert [node.text for node in second_snapshot.nodes] == ["done:second"]
+
+
+@pytest.mark.asyncio
+async def test_named_report_factory_uses_one_account_snapshot_per_run(
+    cascade_plugins, tmp_path, monkeypatch
+):
+    from auto_mas_core.log_flow import LogFlowTaskReport, open_log_flow
+
+    from app import core
+    from app.task.ZzzOd.push_log import ZZZOD_PUSH_RULES, make_zzzod_resolve
+    from app.utils.common.log_box import LogPipeline
+
+    manager, records = await cascade_plugins({"flow_report_factory": ()})
+    monkeypatch.setattr(core, "Plugin", manager)
+    record = records["flow_report_factory"]
+    (tmp_path / "flow_report_factory" / "__init__.py").write_text(
+        "from auto_mas_core import BasePlugin\n"
+        "from auto_mas_core.log_flow import FunctionRef, LineRule, PluginFlowDeclaration, PostProcessor, ReportEntry, SimpleFlowDeclaration, WorkerFactorySpec\n"
+        "from app.task.ZzzOd.push_log import ZZZOD_PUSH_RULES, make_zzzod_resolve\n"
+        "def report_factory(options) -> PostProcessor:\n"
+        "    resolve = make_zzzod_resolve(set(options['apps']), dict(enumerate(options['accounts'])))\n"
+        "    def aggregate(entries):\n"
+        "        inputs = [(entry.node_type, entry.text, entry.timestamp) for entry in entries]\n"
+        "        return [ReportEntry(node_type=kind, text=text, timestamp=ts) for kind, text, ts in resolve(inputs)]\n"
+        "    return aggregate\n"
+        "class Adapter(BasePlugin):\n"
+        "    log_flows = {'batch': PluginFlowDeclaration(use_mas_log=False, accept_push=True, rules=SimpleFlowDeclaration(\n"
+        "        rules=tuple(LineRule(match=match, extract=extract, node_type='普通') for match, extract in ZZZOD_PUSH_RULES),\n"
+        "        postprocess=WorkerFactorySpec(factory=FunctionRef(name='batch:report', module=__name__, attribute='report_factory'), options={'apps': ['体力刷本', '每日签到', '通知']}),\n"
+        "    ))}\n"
+        "PLUGIN = Adapter\n",
+        encoding="utf-8",
+    )
+    await manager.reload(record)
+    await manager.enable(record)
+    lines = [
+        "开始加载实例配置 0",
+        "指令[ 体力刷本 ] 执行失败 返回状态 测试异常",
+        "指令[ 检查掉落 ] 执行失败 返回状态 驱动盘数量已达到可拥有上限",
+        "指令[ 体力刷本 ] 执行成功 返回状态 剩余电量 42",
+        "开始加载实例配置 1",
+        "应用已完成 体力刷本",
+        "指令[ 辅助检查 ] 执行失败 返回状态 忽略辅助失败",
+        "指令[ 每日签到 ] 执行成功",
+        "指令[ 通知 ] 执行失败 返回状态 汇总失败信号",
+    ]
+    for account_names in (
+        ["First", "Second"],
+        ["Next", "Last"],
+    ):
+        _task, script, _account = await create_runtime_tree()
+        report = LogFlowTaskReport(script)
+        legacy = LogPipeline()
+        for rule in ZZZOD_PUSH_RULES:
+            legacy.add_rule(*rule)
+        legacy.postprocessors.append(
+            make_zzzod_resolve(
+                {"体力刷本", "每日签到", "通知"}, dict(enumerate(account_names))
+            )
+        )
+        async with open_log_flow(
+            record._plugin,
+            "batch",
+            run=script,
+            mode="汇总",
+            task_report=report,
+            postprocess_options={"accounts": account_names},
+        ) as flow:
+            assert flow.reporter is not None
+            for timestamp, line in enumerate(lines, start=1):
+                legacy.feed(line, timestamp=float(timestamp))
+                assert (
+                    flow.reporter.text(line, timestamp=float(timestamp))
+                    == SubmitResult.ACCEPTED
+                )
+        details = report.details_for(script)
+        assert details == [entry.text for entry in legacy.finish()]
+        first, second = account_names
+        [warning] = [line for line in details if "驱动盘数量" in line]
+        assert warning.startswith(f"【{first}】")
+        assert any(
+            line.startswith(f"【{second}】") and "每日签到" in line for line in details
+        )
+        report_text = "\n".join(details)
+        assert "剩余体力: 42" in report_text
+        assert "测试异常" not in report_text
+        assert "忽略辅助失败" not in report_text
+        assert "汇总失败信号" not in report_text
+
+
+@pytest.mark.asyncio
+async def test_log_flow_report_retry_depends_on_notify_acceptance(monkeypatch):
+    from auto_mas_core.log_flow import LogFlowTaskReport
+
+    from app.core.notify.coordinator import TaskReportCoordinator
+
+    _, script, _ = await create_runtime_tree()
+    report = LogFlowTaskReport(script)
+    result = TaskResultReport("10:00", "10:01", 1, 0, "账号执行结果")
+
+    def fail_before_acceptance(**_):
+        raise asyncio.CancelledError
+
+    attempts = []
+
+    async def fail_after_acceptance(self, *, request, payload):
+        attempts.append(payload.text)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(
+        Notify,
+        "read_task_report_policy",
+        lambda: TaskReportPolicy("任何时刻", community_enabled=False, wait_seconds=0),
+    )
+    monkeypatch.setattr(Notify, "global_target", fail_before_acceptance)
+    monkeypatch.setattr(
+        TaskReportCoordinator, "_dispatch_report_payload", fail_after_acceptance
+    )
+    with pytest.raises(asyncio.CancelledError):
+        await report.send(title="任务报告", report=result)
+
+    monkeypatch.setattr(Notify, "global_target", lambda **_: NotifyTarget())
+    with pytest.raises(asyncio.CancelledError):
+        await report.send(title="任务报告", report=result)
+
+    await report.send(title="任务报告", report=result)
+    assert len(attempts) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("uncompleted", [0, 1], ids=["all-complete", "mixed-result"])
+async def test_declared_log_flow_delivers_one_task_report_via_notify(
+    cascade_plugins, tmp_path, monkeypatch, uncompleted
+):
+    from auto_mas_core.log_flow import LogFlowTaskReport, open_log_flow
+
+    from app import core
+
+    manager, records = await cascade_plugins({"flow_notify": ()})
+    monkeypatch.setattr(core, "Plugin", manager)
+    record = records["flow_notify"]
+    (tmp_path / "flow_notify" / "__init__.py").write_text(
+        "from auto_mas_core.log_flow import FunctionRef, PluginFlowDeclaration, SimpleFlowDeclaration\n"
+        "from app.plugin.base import BasePlugin\n"
+        "from time import sleep\n"
+        "def slow_report(entries): sleep(60)\n"
+        "class Adapter(BasePlugin):\n"
+        "    log_flows = {\n"
+        "        'normal': PluginFlowDeclaration(use_mas_log=False, accept_push=True),\n"
+        "        'slow': PluginFlowDeclaration(use_mas_log=False, accept_push=True, rules=SimpleFlowDeclaration(postprocess=FunctionRef(name='spec:slow', module=__name__, attribute='slow_report'))),\n"
+        "    }\n"
+        "PLUGIN = Adapter\n",
+        encoding="utf-8",
+    )
+    await manager.reload(record)
+    await manager.enable(record)
+    task, script, first = await create_runtime_tree()
+    second_uid = script.users.add(
+        TaskUserItem, payload={"info": {"user_id": "second", "name": "Second"}}
+    )
+    muted_uid = script.users.add(
+        TaskUserItem, payload={"info": {"user_id": "muted", "name": "Muted"}}
+    )
+    await script.users.commit()
+    second, muted = script.users[second_uid], script.users[muted_uid]
+    report = LogFlowTaskReport(script)
+    delivered = []
+
+    async def send_channel(*, channel, target, rendered):
+        delivered.append((target.id, rendered.content))
+
+    renderer = AsyncNotificationRenderer()
+    tasks = notification_tasks.NotificationTasks()
+    monkeypatch.setattr(
+        notification_tasks, "BackgroundTaskManager", BackgroundTaskRegistry()
+    )
+    monkeypatch.setattr(Notify, "tasks", tasks)
+    monkeypatch.setitem(Notify.__dict__, "_renderer", renderer)
+    monkeypatch.setitem(
+        Notify.__dict__, "_transport", SimpleNamespace(send_channel=send_channel)
+    )
+    monkeypatch.setattr(
+        Notify,
+        "read_task_report_policy",
+        lambda: TaskReportPolicy("任何时刻", community_enabled=False, wait_seconds=0),
+    )
+    monkeypatch.setattr(
+        Notify,
+        "global_target",
+        lambda **_: NotifyTarget(
+            channels=(
+                (DeliveryChannel("probe", None), ChannelTarget("probe", "Probe")),
+            )
+        ),
+    )
+    try:
+        with Notify.task_notification_batch(task_id=task.task_id):
+            for run, key, mode, text in [
+                (first, "normal", "逐条", "first step"),
+                (second, "slow", None, "second step"),
+                (muted, "slow", "关闭", "muted step"),
+            ]:
+                async with open_log_flow(
+                    record._plugin, key, run=run, mode=mode, task_report=report
+                ) as flow:
+                    assert flow.reporter is not None
+                    assert flow.reporter.node("普通", text) == SubmitResult.ACCEPTED
+                    if run is first:
+                        assert (
+                            flow.reporter.node("普通", "step outcome", status="failed")
+                            == SubmitResult.ACCEPTED
+                        )
+                        assert (
+                            flow.reporter.node("失败", "category only")
+                            == SubmitResult.ACCEPTED
+                        )
+                    if run is not muted:
+                        assert (
+                            flow.reporter.node(
+                                "步骤", f"{text} diagnostic", status="exception"
+                            )
+                            == SubmitResult.ACCEPTED
+                        )
+            assert second.node_observation.read().close_reason == "timeout"
+            assert muted.node_observation.read().close_reason == "complete"
+            assert report.details_for(muted) == []
+            result = TaskResultReport(
+                "10:00", "10:01", 3 - uncompleted, uncompleted, "账号执行结果"
+            )
+            assert (await report.send(title="任务报告", report=result)).queued
+            duplicate = await LogFlowTaskReport(script).send(
+                title="重复报告", report=result
+            )
+            assert not duplicate.queued and duplicate.attempted == 0
+            assert delivered == []
+        assert await tasks.drain_notifications(timeout=3)
+        [(target, content)] = delivered
+        assert target == "probe"
+        assert f"未完成数: {uncompleted}" in content
+        rendered_details = content.split("账号执行结果\n\n【User】\n", 1)[1]
+        first_block, second_block = rendered_details.split("\n\n【Second】\n", 1)
+        assert first_block.splitlines() == [
+            "first step",
+            "❌ 失败: step outcome",
+            "category only",
+            "⚠ 异常: first step diagnostic",
+        ]
+        assert second_block.splitlines()[:3] == [
+            "second step",
+            "⚠ 异常: second step diagnostic",
+            "⚠️ 节点采集不完整",
+        ]
+        assert content.count(" diagnostic") == 2
+        assert "muted step" not in content
+    finally:
+        await tasks.close()
+        renderer.close()
+
+
+@pytest.mark.asyncio
+async def test_reload_and_disable_revoke_log_flow_of_the_previous_instance(
+    cascade_plugins,
+    tmp_path,
+):
+    manager, records = await cascade_plugins({"flow_example": ()})
+    record = records["flow_example"]
+    with (tmp_path / "flow_example" / "__init__.py").open(
+        "a", encoding="utf-8"
+    ) as module:
+        module.write(
+            "\nfrom auto_mas_core.log_flow import PluginFlowDeclaration\n"
+            "Adapter.log_flows = {'push': PluginFlowDeclaration(use_mas_log=False, accept_push=True)}\n"
+        )
+    await manager.reload(record)
+    await manager.enable(record)
+    previous = await manager.services.require("flow_example")()
+    owner = manager.log_flow_owner(previous)
+    reports = []
+    async with open_custom_flow(
+        SimpleFlowDeclaration(),
+        run=TaskUserItem(user_id="same"),
+        mode="关闭",
+        receive_report=reports.append,
+        accept_push=True,
+        owner=owner,
+    ) as flow:
+        assert flow.reporter is not None
+        assert flow.reporter.node("普通", "before reload") == SubmitResult.ACCEPTED
+        async with manager._pause_owners((record.uid,)):
+            with pytest.raises(PluginBusyError):
+                manager.log_flow_owner(previous)
+            assert flow.reporter.node("普通", "during pause") == SubmitResult.ACCEPTED
+        await manager.reload(record)
+        assert flow.reporter.node("普通", "late") == SubmitResult.CLOSED
+        assert flow.read_nodes().close_reason == "complete"
+        assert [node.text for node in flow.read_nodes().nodes] == [
+            "before reload",
+            "during pause",
+        ]
+        with pytest.raises(PluginBusyError):
+            manager.log_flow_owner(previous)
+        with pytest.raises(PluginBusyError):
+            async with open_custom_flow(
+                SimpleFlowDeclaration(),
+                run=TaskUserItem(user_id="same"),
+                mode="关闭",
+                receive_report=reports.append,
+                accept_push=True,
+                owner=owner,
+            ):
+                pytest.fail("旧实例不应开启新会话")
+
+    current = await manager.services.require("flow_example")()
+    assert current is not previous
+    async with open_custom_flow(
+        SimpleFlowDeclaration(),
+        run=TaskUserItem(user_id="same"),
+        mode="关闭",
+        receive_report=reports.append,
+        accept_push=True,
+        owner=manager.log_flow_owner(current),
+    ) as next_flow:
+        assert next_flow.reporter is not None
+        assert flow.reporter.node("普通", "wrong generation") == SubmitResult.CLOSED
+        assert next_flow.reporter.node("普通", "after reload") == SubmitResult.ACCEPTED
+        await manager.disable(record)
+        assert next_flow.reporter.node("普通", "after disable") == SubmitResult.CLOSED
+        assert next_flow.read_nodes().close_reason == "complete"
+        assert [node.text for node in next_flow.read_nodes().nodes] == ["after reload"]
+
+
+@pytest.mark.asyncio
 async def test_reload_shared_descendant_is_disabled_and_restored_once(cascade_plugins):
     """菱形依赖只记录实际拆卸路径，正常启用仍能先恢复尚未轮到的上游。"""
     manager, records = await cascade_plugins(
@@ -194,6 +883,68 @@ async def test_reload_restore_failure_skips_branch_and_continues_other_branches(
     assert records["cascade_c"]._plugin_cls.events.count("enable") == 1
     assert records["cascade_d"].info.state == PluginState.ENABLED
     assert await manager.services.require("cascade_d")() is records["cascade_d"]._plugin
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(sys.platform != "win32", reason="使用真实的 Windows Job")
+async def test_shared_environment_kept_until_log_flow_worker_exit_is_confirmed(
+    cascade_plugins, monkeypatch
+):
+    from app.plugin import uv
+
+    manager, records = await cascade_plugins({"worker_reader": ()}, source="installed")
+    record = records["worker_reader"]
+    await manager.enable(record)
+    session = await LogFlowSession.open(PipelineSpec(accept_push=True))
+    process = psutil.Process(session.pid)
+    job = session._job
+    assert job is not None
+    removed = []
+
+    async def remove(package):
+        removed.append(package)
+
+    async def prepare_install(_package, *, has_shared_environment_readers, **_kwargs):
+        assert has_shared_environment_readers()
+        return True
+
+    async def keep_fixture_registry():
+        pass
+
+    def denied():
+        raise PermissionError("无法结束启动器")
+
+    def cannot_confirm():
+        raise TimeoutError("无法确认采集进程退出")
+
+    monkeypatch.setattr(uv, "uninstall", remove)
+    monkeypatch.setattr(uv, "install", prepare_install)
+    monkeypatch.setattr(discover, "refresh", keep_fixture_registry)
+    try:
+        process.suspend()
+        with monkeypatch.context() as blocked:
+            blocked.setattr(session._process, "kill", denied)
+            blocked.setattr(job, "kill", cannot_confirm)
+            summary = await session.close(timeout=0)
+            assert summary.reason == "timeout" and "退出未确认" in summary.detail
+            meta = PluginMeta.build(
+                info={
+                    "package_name": "auto-mas-worker-replacement",
+                    "plugin_name": "worker_replacement",
+                }
+            )
+            assert await manager.install(meta) == {"restart_required": True}
+            with pytest.raises(PluginBusyError):
+                await manager.uninstall(record)
+            assert not removed and record.info.state == PluginState.ENABLED
+        await manager.uninstall(record)
+        assert removed == ["worker_reader"]
+        assert not process.is_running()
+    finally:
+        await LogFlowSession.retry_unconfirmed_workers()
+        with suppress(psutil.NoSuchProcess):
+            process.kill()
+            await asyncio.to_thread(process.wait, timeout=2)
 
 
 @pytest.mark.asyncio

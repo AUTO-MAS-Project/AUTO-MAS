@@ -18,18 +18,20 @@
 
     from app.utils.common.expression import compile_expression
 
-    expr = compile_expression('$(\\d+).replace("/",":")')
+    expr = compile_expression('$((\\d+/\\d+)).replace("/",":")')
     result = expr.extract("1/4")  # → "1:4"
 """
 
-from .evaluator import CompiledExpression, compile_expression
-from .functions import FUNCTIONS, apply_function
+from .evaluator import CompiledExpression, ExpressionEvaluationError, compile_expression
+from .functions import FUNCTIONS, ExpressionFunction, apply_function
 from .parser import ExpressionError, parse
 
 __all__ = [
     "compile_expression",
     "CompiledExpression",
     "ExpressionError",
+    "ExpressionEvaluationError",
+    "ExpressionFunction",
     "parse",
     "FUNCTIONS",
     "apply_function",

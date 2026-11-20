@@ -273,8 +273,8 @@ class WindowsTaskProcessJob:
 
 class WindowsProcessPlatform:
     @staticmethod
-    def create_task_job() -> WindowsTaskProcessJob:
-        return WindowsTaskProcessJob()
+    def create_task_job(*, kill_on_close: bool = False) -> WindowsTaskProcessJob:
+        return WindowsTaskProcessJob(kill_on_close=kill_on_close)
 
     supports_elevation = True
     # 后端被 AUTO-MAS-Runtime 用 Job Object 监督（KILL_ON_JOB_CLOSE，且允许

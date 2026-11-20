@@ -17,7 +17,7 @@ import importlib.metadata as importlib_metadata
 import re
 import sys
 import weakref
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -28,8 +28,10 @@ import httpx
 from blinker import Namespace
 from packaging.utils import canonicalize_name
 from packaging.version import Version
+from pydantic import JsonValue
 
 from app.config import NodeState, config_manager
+from app.core.plugin.log_flow import FlowOwner
 from app.core.ws import Publisher
 from app.core.ws.protocol import ID_PLUGIN, PLUGIN_CAPABILITIES_UPDATED
 from app.plugin import uv as uv_tool
@@ -69,13 +71,29 @@ from app.plugin.types import (
     SourcesChangedPayload,
 )
 from app.plugin.uv.precheck import host_dependencies
+from app.task.log_flow.binding import FlowAccess, open_custom_flow
+from app.task.log_flow.report import LogFlowTaskReport
 from app.utils import get_logger
+from app.utils.common.log_flow.contracts import (
+    FileInput,
+    WorkerFactorySpec,
+    WorkerPluginPackage,
+)
+from app.utils.common.log_flow.declaration import (
+    GeneralFlowDeclaration,
+    PluginFlowDeclaration,
+    SimpleFlowDeclaration,
+)
+from app.utils.common.log_flow.report import ReportMode
+from app.utils.common.log_flow.session import LogFlowSession
 from app.utils.common.tools import to_pep440
 
 if TYPE_CHECKING:
     from app.config import ConfigEntry, ConfigNode
     from app.models.config import PluginMeta, PluginRecord
     from app.models.config.game import GameEntry
+    from app.models.task import TaskScriptItem, TaskUserItem
+    from app.utils.common.log.flow_monitor import LogFlowMonitor
 
 logger = get_logger("插件管理")
 
@@ -116,6 +134,118 @@ class _PluginManager:
         self._source_queue: asyncio.Queue[SourcesChangedPayload] | None = None
         self._source_worker_task: asyncio.Task[None] | None = None
         self._calls: dict[UUID, CallGate] = {}
+        self._log_flow_owners: dict[int, FlowOwner] = {}
+        self._log_flow_declarations: dict[int, dict[str, PluginFlowDeclaration]] = {}
+
+    @asynccontextmanager
+    async def open_log_flow(
+        self,
+        plugin: BasePlugin,
+        name: str,
+        *,
+        run: TaskScriptItem | TaskUserItem,
+        mode: ReportMode | None = None,
+        receive_report: Callable[[list[str]], None] | None = None,
+        task_report: LogFlowTaskReport | None = None,
+        monitor: LogFlowMonitor | None = None,
+        file_input: FileInput | None = None,
+        general_rules: GeneralFlowDeclaration | None = None,
+        postprocess_options: Mapping[str, JsonValue] | None = None,
+    ) -> AsyncGenerator[FlowAccess, None]:
+        """宿主用已注册插件和实际运行对象装配具名流。"""
+        owner = self.log_flow_owner(plugin)
+        declaration = self._log_flow_declarations[id(plugin)][name]
+        if declaration.use_run_file and file_input is None:
+            raise ValueError("该声明需要本次运行的日志文件")
+        if not declaration.use_run_file and file_input is not None:
+            raise ValueError("该声明未启用按运行绑定日志文件")
+        if general_rules is not None and not isinstance(
+            declaration.rules, GeneralFlowDeclaration
+        ):
+            raise ValueError("只有 WebUI 规则声明可以绑定本次运行的 WebUI 配置")
+        rules = general_rules if general_rules is not None else declaration.rules
+        if postprocess_options is not None:
+            if not isinstance(rules, SimpleFlowDeclaration) or not isinstance(
+                rules.postprocess, WorkerFactorySpec
+            ):
+                raise ValueError("只有声明了归并工厂的日志流可以绑定归并配置")
+            factory = WorkerFactorySpec(
+                factory=rules.postprocess.factory,
+                options=rules.postprocess.options | dict(postprocess_options),
+            )
+            rules = rules.model_copy(update={"postprocess": factory})
+        if declaration.use_mas_log and monitor is None:
+            raise ValueError("该声明需要 MAS 原生日志监控器")
+        if mode is None:
+            mode = (
+                "汇总"
+                if task_report is not None or receive_report is not None
+                else "关闭"
+            )
+        if mode != "关闭" and task_report is None and receive_report is None:
+            raise ValueError("启用节点通知时需要绑定报告接收方")
+        from app.core.config import Config
+
+        project = plugin.record._project_dir
+        assert project is not None  # 已加载插件由 loader 保证项目目录。
+        package = WorkerPluginPackage(
+            name=plugin.record.info.import_name,
+            import_root=str(project.resolve()),
+            dependency_root=str(Config.plugins_path / "pypi" / "site-packages"),
+            sdk_root=str(Config.source_path / "plugins" / "auto_mas_core" / "src"),
+        )
+        async with open_custom_flow(
+            rules,
+            run=run,
+            mode=mode,
+            receive_report=receive_report,
+            task_report=task_report,
+            monitor=monitor if declaration.use_mas_log else None,
+            file=file_input if file_input is not None else declaration.file,
+            accept_push=declaration.accept_push,
+            source=declaration.source,
+            sink=declaration.sink,
+            owner=owner,
+            plugin_package=package,
+        ) as flow:
+            yield flow
+
+    def log_flow_owner(self, plugin: BasePlugin) -> FlowOwner:
+        """宿主使用实际插件实例绑定会话；重载后不能用旧实例取得新能力。"""
+        owner = self._log_flow_owners.get(id(plugin))
+        if owner is None or not owner.accepting:
+            raise PluginBusyError("插件实例未启用或正在释放")
+        return owner
+
+    @staticmethod
+    def _prepare_log_flows(plugin: BasePlugin) -> dict[str, PluginFlowDeclaration]:
+        """只登记本包内的工厂，且复制声明供当前实例独占。"""
+        package = plugin.record.info.import_name
+        declarations = {}
+        for name, declaration in plugin.log_flows.items():
+            rules = declaration.rules
+            references = [
+                item.factory
+                for item in (declaration.source, declaration.sink)
+                if item is not None
+            ]
+            if isinstance(rules, SimpleFlowDeclaration):
+                references.extend(rules.functions)
+                if rules.preprocess is not None:
+                    references.append(rules.preprocess)
+                if rules.postprocess is not None:
+                    references.append(
+                        rules.postprocess.factory
+                        if isinstance(rules.postprocess, WorkerFactorySpec)
+                        else rules.postprocess
+                    )
+                if rules.processor is not None:
+                    references.append(rules.processor.factory)
+            for ref in references:
+                if ref.module.split(".", 1)[0] != package:
+                    raise ValueError(f"LogFlow {name} 的工厂必须来自插件包 {package}")
+            declarations[name] = declaration.model_copy(deep=True)
+        return declarations
 
     def trigger_owner(self, entry: ConfigEntry) -> UUID | None:
         """从插件记录、专属配置及游戏或脚本声明中确定配置节点所属插件，未归属插件时返回 None。"""
@@ -176,10 +306,15 @@ class _PluginManager:
         """注销插件实例拥有的背景任务组并关闭调用入口，避免实例卸载后继续执行工作。"""
         from app.core.background_tasks import BackgroundTaskManager
 
+        if (owner := self._log_flow_owners.get(id(plugin))) is not None:
+            if (gate := self._calls.get(plugin.record.uid)) is not None:
+                gate.accepting = False
+            await owner.close()
+            self._log_flow_owners.pop(id(plugin), None)
+            self._log_flow_declarations.pop(id(plugin), None)
         if plugin._background_tasks is not None:
             await BackgroundTaskManager.unregister_group(plugin._background_tasks)
-        gate = self._calls.pop(plugin.record.uid, None)
-        if gate is not None:
+        if (gate := self._calls.pop(plugin.record.uid, None)) is not None:
             gate.accepting = False
 
     # ==================== 初始化 ====================
@@ -634,6 +769,7 @@ class _PluginManager:
 
             # ── 用户段 ──
             await plugin.on_enable()
+            declarations = self._prepare_log_flows(plugin)
 
             # ── 系统段：服务/HTTP/类型表 + system_enable ──
             record._degraded_wants = [
@@ -668,6 +804,9 @@ class _PluginManager:
                 record.info.state = PluginState.ENABLED
                 record.info.lifecycle_context = LifecycleContext.IDLE
             await record.commit()
+            if declarations:
+                self._log_flow_owners[id(plugin)] = FlowOwner(lambda: gate.accepting)
+                self._log_flow_declarations[id(plugin)] = declarations
             capabilities_changed.send(self, name=name, enabled=True)
             await Publisher.send(
                 id=ID_PLUGIN, type=PLUGIN_CAPABILITIES_UPDATED, data={}
@@ -1167,10 +1306,18 @@ class _PluginManager:
                     plugin = Config.plugin_registry[uid]._plugin
                     if isinstance(plugin, (ScriptAdapterPlugin, GameAdapterPlugin)):
                         plugin.precheck_locks()
+                await LogFlowSession.retry_unconfirmed_workers()
                 restart_required = await uv_tool.install(
                     requirement,
                     plugin_name=plugin_id,
                     meta_id=meta.uid,
+                    has_shared_environment_readers=lambda: (
+                        LogFlowSession.has_unconfirmed_workers()
+                        or any(
+                            owner.has_workers
+                            for owner in self._log_flow_owners.values()
+                        )
+                    ),
                 )
                 if restart_required:
                     return {"restart_required": True}
@@ -1217,12 +1364,17 @@ class _PluginManager:
 
         ensure_writable()
         async with self._hold(), self._pause_activity(record):
+            await LogFlowSession.retry_unconfirmed_workers()
+            if LogFlowSession.has_unconfirmed_workers():
+                raise PluginBusyError("仍有采集进程退出待确认，请稍后重试")
             name = record.info.plugin_name
             package = record.info.package_name or name
             deps = await self.unload(record, held=True, remove_record=False)
             from app.core.config import Config
 
             try:
+                if LogFlowSession.has_unconfirmed_workers():
+                    raise PluginBusyError("仍有采集进程退出待确认，请稍后重试")
                 await uv_tool.uninstall(package)
                 (Config.config_path / "plugins" / f"{name}.yaml").unlink(
                     missing_ok=True
