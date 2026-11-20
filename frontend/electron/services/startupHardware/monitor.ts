@@ -138,7 +138,7 @@ export class StartupAttempt {
     started = this.started,
     stageSummary?: Fields
   ) {
-    const at = this.frozen ?? performance.now()
+    const at = performance.now()
     const latest = this.recent.at(-1)
     this.log.write('阶段结果', {
       attempt: this.wallStart,
@@ -147,7 +147,7 @@ export class StartupAttempt {
       code,
       elapsed_ms: Math.round(at - started),
       sample_age_ms: latest ? Math.round(at - latest.at) : null,
-      readings: latest ? localReadings(latest.data) : {},
+      readings: latest && at - latest.at <= recentWindow ? localReadings(latest.data) : {},
       summary: stageSummary ?? this.snapshot(),
     })
     if (outcome === 'failure' && !this.failureLogged) {
@@ -301,7 +301,8 @@ export class StartupAttempt {
       )
   }
   snapshot(recent = false): Fields {
-    const now = this.frozen ?? performance.now()
+    const now = performance.now()
+    const endOfSampling = this.frozen ?? now
     let summary = this.overall
     if (recent) {
       summary = new SampleSummary(now - recentWindow)
@@ -319,7 +320,7 @@ export class StartupAttempt {
     ]) {
       const elapsed =
         (this.durations.get(activity) ?? 0) +
-        (activity === this.activity ? now - this.activityStarted : 0)
+        (activity === this.activity ? endOfSampling - this.activityStarted : 0)
       if (elapsed > 0)
         times[activity + '_time'] = band(activity + '_time', elapsed / 1000) ?? 'unknown'
     }
@@ -340,12 +341,9 @@ let current: StartupAttempt | undefined
 let config: (() => ProbeConfig) | undefined
 let getGeneration: (() => number | null) | undefined
 let sequence = 0
-let claimed = false
-let pendingDesktop = false
 export function setupStartupHardware(settings: () => ProbeConfig, generation: () => number | null) {
   config = settings
   getGeneration = generation
-  pendingDesktop = true
   start()
 }
 function start() {
@@ -385,13 +383,11 @@ export function operationAttempt() {
 }
 
 export function claimStartupAttempt() {
-  if (!pendingDesktop && (!current || claimed)) start()
-  pendingDesktop = false
-  claimed = true
+  if (!current) start()
   return current ? sequence : null
 }
 export function finishStartupAttempt(id: unknown, outcome: string, code: string) {
-  if (id !== sequence || !current) return {}
+  if (id !== sequence || !current) return undefined
   current.logResult('initialization', outcome, code)
   const summary = startupAttempt()?.snapshot() ?? {}
   clearStartupHardware()

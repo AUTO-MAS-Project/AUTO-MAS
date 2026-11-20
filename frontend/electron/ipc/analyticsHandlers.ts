@@ -64,7 +64,7 @@ export function registerAnalyticsHandlers(getMainWindow: () => BrowserWindow | n
       if (valid?.name !== 'initialization_finished_v2') return
       refreshAnalyticsPreference()
       const summary = finishStartupAttempt(attempt, valid.props.outcome, valid.props.failed_stage)
-      if (isAnalyticsSender(event))
+      if (summary && isAnalyticsSender(event))
         analyticsService.recordRendererEvent(context, valid, () => summary)
     }
   )
