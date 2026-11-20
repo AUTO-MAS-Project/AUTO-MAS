@@ -45,7 +45,7 @@ async def test_okww_waits_for_the_active_task_to_report_failure(monkeypatch):
     proxy.cur_user_log = await script.users[user_id].add_log_record(now, LogRecord())
     lines = [
         "2026-11-19 10:48:07,226 INFO TaskExecutor TaskExecutor:get queued onetime_task 📅 Daily Task\n",
-        "2026-11-19 10:53:25,328 INFO TaskExecutor DailyTask:info_set 错误 \n",
+        "2026-11-19 10:53:25,328 INFO TaskExecutor AutoLoginTask:info_set 错误 后台登录异常\n",
         "2026-11-19 10:53:25,329 INFO update_window_size hwnd_window:hwnd changed,connected:0\n",
         "2026-11-19 10:53:25,330 ERROR TaskExecutor TaskExecutor:🔑 Auto Login exception stopped Traceback\n",
     ]
@@ -58,3 +58,4 @@ async def test_okww_waits_for_the_active_task_to_report_failure(monkeypatch):
     await proxy.check_log(lines, now)
     assert proxy.wait_event.is_set()
     assert script.users[user_id].status == "异常"
+    assert proxy.cur_user_log.status == "OK-WW 任务执行失败，请查看脚本日志"
