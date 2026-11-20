@@ -62,6 +62,7 @@
       "dist/mascot.html",
       "dist/mascot-menu.html",
       "dist/assets/**",
+      "dist/sounds/**",
       "!dist/assets/**/*.map",
       "dict/AUTO-MAS.ico",
       "dict/logo.png",
