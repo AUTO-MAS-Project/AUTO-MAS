@@ -25,6 +25,20 @@ beforeEach(() => {
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
 
 describe('配置升级前后的 Electron 文件读取', () => {
+  it('仅重启后端时沿用本次桌面启动的日志级别', async () => {
+    vi.resetModules()
+    const { buildRuntimeEnv } = await import('./runtime/runtimeEnv')
+    write('frontend_config.json', JSON.stringify({ logOutputLevel: 'DEBUG' }))
+    expect(buildRuntimeEnv(root).AUTO_MAS_LOG_LEVEL).toBe('DEBUG')
+
+    write('frontend_config.json', JSON.stringify({ logOutputLevel: 'ERROR' }))
+    expect(buildRuntimeEnv(root).AUTO_MAS_LOG_LEVEL).toBe('DEBUG')
+
+    vi.resetModules()
+    const { buildRuntimeEnv: buildAfterAppRestart } = await import('./runtime/runtimeEnv')
+    expect(buildAfterAppRestart(root).AUTO_MAS_LOG_LEVEL).toBe('ERROR')
+  })
+
   it('YAML 优先于旧 JSON，遥测设置传入 Runtime', () => {
     write(
       'ScriptConfig.json',

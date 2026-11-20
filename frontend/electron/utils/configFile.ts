@@ -2,17 +2,22 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { normalizeOutputLogLevel, type OutputLogLevel } from './logOutputLevel'
 
-/** 桌面和受监督的后端从同一份偏好读取最低输出级别。 */
-export function readOutputLogLevel(appRoot: string): OutputLogLevel {
+let startupOutputLogLevel: OutputLogLevel | undefined
+
+/** 桌面初始化时读取，后续启动或重启后端都沿用该级别。 */
+export function getStartupOutputLogLevel(appRoot: string): OutputLogLevel {
+  if (startupOutputLogLevel !== undefined) return startupOutputLogLevel
+
   try {
     const config = JSON.parse(
       fs.readFileSync(path.join(appRoot, 'config', 'frontend_config.json'), 'utf8')
     )
-    return normalizeOutputLogLevel(config?.logOutputLevel)
+    startupOutputLogLevel = normalizeOutputLogLevel(config?.logOutputLevel)
   } catch {
     // 日志需要在配置初始化前可用，配置缺失或损坏时仍记录 INFO。
-    return 'INFO'
+    startupOutputLogLevel = 'INFO'
   }
+  return startupOutputLogLevel
 }
 
 // 在主进程中同步读取、合并和写入，期间不让出事件循环给其他配置写入。

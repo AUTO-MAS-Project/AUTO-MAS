@@ -45,6 +45,7 @@
 
 运行环境隔离统一使用 Electron 打包状态和 preload 下发值；Runtime 启动模式不改变采集环境。
 设置页分区目录显隐由 `SettingsSectionLayout` 的唯一保存入口复用 `settings_change_finished`（settings_navigation/other/enabled|disabled），按前端配置保存结果记录成功或失败；初始化、窗口缩放、列数回流与目录跳转不采集，不发送分区标题或位置。
+日志输出级别是本机排障偏好，切换档位不能反映排障结果，因此不采集该设置及其保存结果。日志导出仍由 `diagnostic_export_finished` 记录操作结果。
 主题模式统一从「外观与语言」设置，复用 `useTheme.setThemeMode` 的 `appearance_preference_changed` 保存结果，不增加点击事件或重复观察。
 源码 Electron 与安装版统一由 BackendService 记录 Runtime 启动结果，初始化阶段复用实际命令
 边界；移除旧安装器后不再产生 off 模式事件。独立后端和浏览器调试不新增采集。

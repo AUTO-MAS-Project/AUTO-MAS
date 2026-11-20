@@ -320,8 +320,6 @@ const handleFieldSave = async (key: string, value: any) => {
   return await enqueue(async () => {
     try {
       const userData = buildFieldPatch(key, value)
-
-      logger.debug(`保存字段: ${key} = ${JSON.stringify(value)}`)
       const success = await updateUser(scriptId, userId, userData)
       if (success) {
         logger.info(`字段已保存: ${key}`)

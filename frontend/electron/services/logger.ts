@@ -3,7 +3,7 @@ import * as path from 'path'
 import { app } from 'electron'
 import { getAppRoot } from './environmentService'
 import { isDevelopmentEnvironment } from './instanceConfig'
-import { readOutputLogLevel } from '../utils/configFile'
+import { getStartupOutputLogLevel } from '../utils/configFile'
 
 /**
  * 模块颜色映射
@@ -137,7 +137,7 @@ export function initializeLogger(): void {
   }
   const isDevelopment = isDevelopmentEnvironment()
   const appRoot = getAppRoot()
-  const level = fileLevels[readOutputLogLevel(appRoot)]
+  const level = fileLevels[getStartupOutputLogLevel(appRoot)]
 
   // 设置日志级别
   log.transports.file.level = level
