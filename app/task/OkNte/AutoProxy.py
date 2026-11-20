@@ -64,7 +64,10 @@ from app.utils import (
 )
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
-from app.utils.common.process.manager import has_process_window
+from app.utils.common.process.manager import (
+    has_process_window,
+    wait_process_window_ready,
+)
 from app.utils.common.process.session import desktop_process_target
 
 from . import push_log as _push_log
@@ -843,13 +846,16 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                         f"{AUTOPLAY_ARG} 静默启动未出现游戏窗口（超时），"
                         "请人工确认启动器状态"
                     )
-            wait_time = int(self.script_config.Game.WaitTime)
+            wait_time = max(int(self.script_config.Game.WaitTime), 0)
             await self._push_dispatch_log(
-                f"游戏窗口已出现，正在等待游戏完成启动（{wait_time}s）..."
+                f"游戏窗口已出现，正在等待游戏完成启动（最多 {wait_time or 60}s）..."
                 if window_ready
-                else f"客户端进程已在运行，正在等待游戏完成启动（{wait_time}s）..."
+                else f"客户端进程已在运行，正在等待游戏完成启动（最多 {wait_time or 60}s）..."
             )
-            await asyncio.sleep(wait_time)
+            # 启动器只保证窗口出现，引擎还在初始化时截图仍是空图，等客户区画出来再继续
+            await wait_process_window_ready(
+                ProcessInfo(name=_NTE_CLIENT_PROCESS), wait_time
+            )
             await self._push_dispatch_log("游戏启动完成")
             return
 
@@ -872,7 +878,10 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 game_url,
                 ProcessInfo(name=game_process_name),
             )
-            await asyncio.sleep(2)
+            await wait_process_window_ready(
+                ProcessInfo(name=game_process_name),
+                max(int(self.script_config.Game.WaitTime), 0),
+            )
             await self._push_dispatch_log("游戏启动指令已发送")
             return
 

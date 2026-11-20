@@ -63,6 +63,10 @@ def get_window_rect(hwnd: int) -> tuple[int, int, int, int]:
     raise UnsupportedPlatformError("window")
 
 
+def get_client_size(hwnd: int) -> tuple[int, int] | None:
+    raise UnsupportedPlatformError("window")
+
+
 def is_minimized(hwnd: int) -> bool:
     raise UnsupportedPlatformError("window")
 

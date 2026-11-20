@@ -72,6 +72,7 @@ from app.utils import (
     MAAEND_TASKS,
     UTC4,
     LogMonitor,
+    ProcessInfo,
     ProcessManager,
     ProcessRunner,
     get_logger,
@@ -80,7 +81,10 @@ from app.utils import (
 )
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
-from app.utils.common.process.manager import has_process_window
+from app.utils.common.process.manager import (
+    has_process_window,
+    wait_process_window_ready,
+)
 from app.utils.common.process.session import desktop_process_target
 
 from .inventory_report import (
@@ -776,7 +780,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             preserve_running_game=preserve_running_game
         )
         if needs_wait:
-            await asyncio.sleep(int(self.script_config.Game.WaitTime))
+            await wait_process_window_ready(
+                ProcessInfo(name=_MAAEND_CLIENT_PROCESS),
+                int(self.script_config.Game.WaitTime),
+            )
 
     @staticmethod
     def _game_window_present() -> bool:
@@ -822,7 +829,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                         "game_arguments": str(self.script_config.Game.Arguments),
                     },
                 )
-            await asyncio.sleep(self.script_config.Game.WaitTime)
+            await wait_process_window_ready(
+                ProcessInfo(name=_MAAEND_CLIENT_PROCESS),
+                int(self.script_config.Game.WaitTime),
+            )
             return
         command = _game_launch_command(
             launcher_path=self._launcher_path_text(),
@@ -835,7 +845,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         if result.returncode != 0:
             raise RuntimeError(result.failure_detail())
         logger.info(result.stderr or result.stdout)
-        await asyncio.sleep(self.script_config.Game.WaitTime)
+        await wait_process_window_ready(
+            ProcessInfo(name=_MAAEND_CLIENT_PROCESS),
+            int(self.script_config.Game.WaitTime),
+        )
 
     async def _restart_game_after_update(self) -> None:
         """游戏内确认更新后，只按用户选择的启动方式重新拉起。"""
@@ -927,9 +940,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             wait_time = int(self.script_config.Game.WaitTime)
             await push_dispatch_log(
                 self.script_info,
-                f"游戏窗口已出现，正在等待游戏完成启动（{wait_time}s）...",
+                f"游戏窗口已出现，正在等待画面就绪（最多 {wait_time}s）...",
             )
-            await asyncio.sleep(wait_time)
+            # 启动器只保证窗口出现，引擎还在初始化时截图仍是空图，等客户区画出来再继续
+            await wait_process_window_ready(
+                ProcessInfo(name=_MAAEND_CLIENT_PROCESS), wait_time
+            )
 
     async def _kill_launcher_process(self) -> None:
         """持有启动器锁时，按进程家族与安装根目录树结束启动器。"""

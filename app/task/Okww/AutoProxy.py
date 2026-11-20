@@ -56,7 +56,10 @@ from app.utils import (
 from app.utils import constants as _utils_constants
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
-from app.utils.common.process.manager import has_process_window
+from app.utils.common.process.manager import (
+    has_process_window,
+    wait_process_window_ready,
+)
 from app.utils.common.process.session import (
     DesktopProcessTarget,
     desktop_process_target,
@@ -694,9 +697,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             else:
                 await self._launch_game_via_launcher()
             wait_time = max(int(self.script_config.Game.WaitTime), 0)
-            if wait_time:
-                await self._push_dispatch_log(f"等待游戏启动（{wait_time} 秒）...")
-                await asyncio.sleep(wait_time)
+            await self._push_dispatch_log(
+                f"等待游戏窗口就绪（最多 {wait_time or 60} 秒）..."
+            )
+            await wait_process_window_ready(
+                ProcessInfo(name=_WUWA_CLIENT_PROCESS), wait_time
+            )
 
     async def _launch_game_via_launcher(self) -> None:
         """经官方启动器拉起游戏：开启动器并等待 OCR 点击「进入游戏」。"""
