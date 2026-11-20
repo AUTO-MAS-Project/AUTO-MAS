@@ -1,76 +1,11 @@
-# LogFlow 现有架构与接入手册
+# LogFlow 接入与迁移
 
-依据 `feat/logflow` 的当前实现。适用于在 MAS 插件中接入日志节点，或在本机读取已接入运行的节点。内置任务保留原采集、报告和通知链路，通用脚本继续兼容旧标记回传。图中的 LogFlow 路径由已登记并显式打开会话的插件触发。模拟插件、SDK wheel 和专项旁路各自的验证范围见[进度表](logflow-progress.md)和[开发记录](logflow-development-log.md)。
+用于专项插件声明日志节点、读取运行期节点和交付结束报告。现有专项在各自迁移完成前继续使用 [旧 LogBox](logbox-api.md)，General 保留旧 stdout 回传。
 
-## 架构图
-
-```mermaid
-flowchart TB
-  subgraph H["MAS 宿主进程 · 会话装配"]
-    direction LR
-    P["专项插件 · log_flows + open_log_flow"]
-    B["插件宿主 · 声明登记与运行绑定"]
-    M["LogMonitor 原始行回调"]
-    U["Python SDK · PushReporter"]
-    S["LogFlowSession · IPC 与生命周期"]
-    P --> B --> S
-    M --> S
-    U --> S
-  end
-  subgraph W["独立采集子进程 · 每个会话一个"]
-    direction LR
-    I["输入 · MAS / Python 上报 / 增量文件 / 自定义 Source"]
-    T["处理 · 专项规则 / WebUI 规则 / 自定义 TextProcessor"]
-    E["独立表达式引擎"]
-    N["节点 · 新增、修订、撤回"]
-    K["可选自定义 Sink"]
-    A["可选收尾归并"]
-    I -->|"文本"| T
-    I -->|"结构化记录"| N
-    T -.->|"规则提取"| E
-    T --> N
-    N --> K
-    N --> A
-  end
-  subgraph O["同一 MAS 宿主进程 · 观察与交付"]
-    direction LR
-    V["运行树 · NodeObservation"]
-    Q["观察者 · 插件 SDK / MAS 内部 / 本机 HTTP"]
-    R["LogFlowTaskReport → Notify"]
-    V --> Q
-    V --> R
-  end
-  H -->|"IPC · 声明快照与输入"| W
-  W -->|"IPC · 经 LogFlowSession 接收节点和可选最终条目"| O
-  style H fill:#f2f7fb,stroke:#aebfcb
-  style O fill:#f2f7fb,stroke:#aebfcb
-  style W fill:#eef8f5,stroke:#90bab0
-```
-
-宿主把观察状态挂在实际的托管运行或账号运行上。一个运行节点绑定一次会话。插件提交不携带任务、账号或来源身份。插件的表达式函数、预处理、文本处理器、后置归并、自定义 Source 和 Sink 均由 worker 加载并执行；MAS 日志监控、节点缓存和通知交接由宿主负责。
-
-## 数据流图
-
-```mermaid
-flowchart LR
-  O["打开会话<br/>绑定运行与来源"] --> I["读取文件 / Source<br/>接收 MAS 行 / SDK 上报"]
-  I --> T["文本匹配与提取<br/>每种来源独立处理"]
-  I --> D["结构化节点<br/>或撤回"]
-  T --> E["节点事件<br/>sequence + revision"]
-  D --> E
-  E --> R["宿主运行树<br/>事件页 + 当前快照"]
-  E --> S["可选自定义 Sink<br/>逐个消费事件"]
-  R --> Q["运行期逐行读取<br/>按游标补读"]
-  I --> C["生产方收尾<br/>交接尾部并关闭处理器"]
-  C -->|"补发尾部节点"| E
-  C --> F["冻结采集结果<br/>可选归并或保留已采集节点"]
-  F -->|"采集终态"| R
-  F --> P["逐条 / 汇总排版"]
-  B["MAS 执行结果<br/>由调度侧定稿"] --> H["托管方提交一次<br/>Notify 投递"]
-  P --> H
-```
-
-“逐条”和“汇总”是**结束后的两种通知排版**。运行期间已经产出的节点从观察接口获取。节点 `status`、采集 `close_reason`、MAS 执行结果分别由节点、会话、任务树提供。即使采集超时，已送达宿主的节点仍可补读，启用的节点报告会附上“⚠️ 节点采集不完整”。
+- [默认接入](#1-默认接入--mas-原生日志--通知)
+- [混合来源](#2-内置声明与混合来源)与 [主动上报](#3-python-主动上报)
+- [实时查询](#4-实时观察与逐行展示)与 [自定义扩展](#5-自定义处理和下沉)
+- [专项迁移验收](#专项迁移验收)
 
 ## 1. 默认接入 · MAS 原生日志 + 通知
 
@@ -85,7 +20,6 @@ from auto_mas_core.log_flow import (
     LogFlowTaskReport,
     PluginFlowDeclaration,
     SimpleFlowDeclaration,
-    open_log_flow,
 )
 from auto_mas_core.notify import TaskResultReport
 
@@ -110,16 +44,15 @@ class Adapter(ScriptAdapterPlugin):
 
 
 async def run_account(
-    plugin, user_run, monitor, execute, task_report, *, collect_nodes, mode
+    worker, plugin, monitor, execute, task_report, *, collect_nodes, mode
 ):
     async with AsyncExitStack() as stack:
         flow = None
         if collect_nodes:
             flow = await stack.enter_async_context(
-                open_log_flow(
+                worker.open_log_flow(
                     plugin,
                     "progress",
-                    run=user_run,
                     monitor=monitor,
                     task_report=task_report,
                     mode=mode,
@@ -139,7 +72,7 @@ async def publish_result(task_report: LogFlowTaskReport, report: TaskResultRepor
 
 托管层用 `task_report = LogFlowTaskReport(script_run)` 创建一次报告对象，传给本次托管下的账号会话。所有参与会话退出、业务报告定稿后调用 `publish_result`。专项自定义排版可以用 `details_for(run, statuses={"failed", "exception"})` 选取关注状态，再用 `send(..., append_details=False)` 交给 Notify。默认报告包含最终有效节点，省略仍在进行中的节点。Notify 根据托管结果与用户设置决定整份报告的发送时机。
 
-在 `AutoProxyWorker` 的账号任务中，可用 `async with self.open_log_flow(plugin, "progress", monitor=monitor, task_report=task_report) as flow:` 为当前账号打开声明。关闭监控器时先交接尾部日志，再退出会话。需要传入托管级运行或定制本轮输入时，使用下面的 SDK 入口。
+示例中的 `worker` 是当前 `AutoProxyWorker`。在其执行方法内直接用 `self.open_log_flow(...)` 即可绑定当前账号。使用 SDK 的 `open_log_flow` 时显式传入实际运行对象，适用于托管级会话或本轮自定义输入。
 
 | `open_log_flow(plugin, name, *, ...)` | 用法 |
 | --- | --- |
@@ -169,7 +102,7 @@ async def publish_result(task_report: LogFlowTaskReport, report: TaskResultRepor
 示例同时使用 MAS 行、每次运行指定的文件和主动上报。只采集文件时加 `use_mas_log=False` 并省略 `monitor`。文件来源需要文本规则或自定义处理器。
 
 ```python
-from auto_mas_core.log_flow import FileInput, GeneralFlowDeclaration
+from auto_mas_core.log_flow import FileInput, GeneralFlowDeclaration, open_log_flow
 
 mixed = PluginFlowDeclaration(
     use_run_file=True,
@@ -258,7 +191,7 @@ async def watch_nodes(flow, use_snapshot, use_event):
 
 ### MAS 内部
 
-已有运行对象可用 `run.node_observation`。按运行 UUID 查询时，可用 `TaskManager.get_node_observation(task_id, script_run_id, user_run_id=…)`，返回 `NodeObservation | None`。在宿主事件循环中调用 `capture()` 取快照与游标，或 `read(after=…, limit=…)` 取事件页。这与插件和本机 HTTP 读取的是同一会话。宿主查询入口位于 [TaskManager](../app/core/task_manager.py)。
+已有运行对象可用 `run.node_observation`。按运行 UUID 查询时，可用 `TaskManager.get_node_observation(task_id, script_run_id, user_run_id=…)`，返回 `NodeObservation | None`。在宿主事件循环中调用 `capture()` 取快照与游标，或 `read(after=…, limit=…)` 取事件页。这与插件和本机 HTTP 读取的是同一会话。宿主查询入口位于 [TaskManager](../../../../app/core/task_manager.py)。
 
 ### 本机 HTTP
 
@@ -381,8 +314,15 @@ custom = PluginFlowDeclaration(
 
 正常退出会交接尾部记录、关闭处理器、生成可选的最终条目并关闭 Sink。当前内部默认启动等待 5 秒、收尾等待 2 秒，受限的进程回收另有宽限，均非插件 SDK 参数。插件临时暂停接纳时，已打开的会话仍可上报，直到实际关闭。自定义 Sink 抛出的常规异常可与节点观察隔离，Sink 阻塞导致收尾超时时则以会话终态为准。扩展自行管理所启动的辅助进程，并在关闭时释放。
 
+## 专项迁移验收
+
+用同一份运行日志或模拟输入对照旧报告和 LogFlow。确认账号归属、多阶段与重试归并、时间戳、节点顺序、逐条／汇总／关闭和异常筛选。运行中按游标核对新增、修订及撤回，正常结束和主动取消均应先停监控器并交接尾部，再退出会话。超时或缺口须显示采集不完整，任务成败从 MAS 执行状态读取。
+
+模拟或旁路对照期间只保留一条正式通知发送路径。正式切换前用配套 SDK 发行包，验证真实专项账号配置、报告正文、通知投递以及其独立统计。仍有旧调用方时保留旧采集链路。
+
 ## 代码入口
 
-- [插件 SDK 与示例](../plugins/auto_mas_core/README.md#logflow-日志节点) · [SDK 导出](../plugins/auto_mas_core/src/auto_mas_core/log_flow.py)
-- [宿主登记和会话装配](../app/core/plugin/manager.py) · [采集进程](../app/core/log_flow/worker.py) · [表达式语法](../frontend/src/views/EditView/Script/docs/expression-doc.md)
-- [观察模型](../app/models/log_flow.py) · [本机路由](../app/api/dispatch.py) · [通知桥接](../app/core/log_flow/report.py)
+- [公开 SDK](../../../../plugins/auto_mas_core/src/auto_mas_core/log_flow.py) · [任务快捷入口](../../../../app/task/mode_worker.py)
+- [宿主声明登记](../../../../app/core/plugin/manager.py) · [任务绑定](../../../../app/task/log_flow/binding.py) · [报告交付](../../../../app/task/log_flow/report.py)
+- [采集 worker](../../../../app/utils/common/log_flow/worker.py) · [节点观察](../../../../app/utils/common/log_flow/observation.py) · [本机查询](../../../../app/api/dispatch.py)
+- [表达式语法](../../../../frontend/src/views/EditView/Script/docs/expression-doc.md)
