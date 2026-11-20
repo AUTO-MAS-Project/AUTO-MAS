@@ -21,7 +21,6 @@ from app.config import ConfigEntry, ConfigNode, config_manager
 from app.core import Config, Publisher
 from app.core.ws import protocol
 from app.models.config import ScriptEntry, UserEntry
-from app.models.log_flow import NodeObservation
 from app.models.schema import (
     TaskRequirements,
     TaskRuntimeSnapshot,
@@ -42,6 +41,7 @@ from app.models.task import (
 from app.task.registration import ManagerFactory
 from app.task.script_expander import ScriptExpander
 from app.utils import get_logger
+from app.utils.common.log_flow.observation import NodeObservation
 from app.utils.common.process.session import desktop_process_target
 from app.utils.contracts.power import PowerSignal
 

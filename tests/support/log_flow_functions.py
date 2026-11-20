@@ -7,8 +7,8 @@ from pathlib import Path
 
 from pydantic import JsonValue
 
-from app.core.log_flow.contracts import ReportedRecord, TextRecord
-from app.models.log_flow import Node, ReportEntry
+from app.utils.common.log_flow.contracts import ReportedRecord, TextRecord
+from app.utils.common.log_flow.observation import Node, ReportEntry
 
 
 def report_worker_pid(_text: str, _args: list[str | int]) -> str:

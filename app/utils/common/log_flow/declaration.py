@@ -4,8 +4,6 @@ from typing import Self
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.models.log_flow import ReportOrder
-
 from .contracts import (
     FileInput,
     FunctionRef,
@@ -14,6 +12,7 @@ from .contracts import (
     WindowRule,
     WorkerFactorySpec,
 )
+from .observation import ReportOrder
 
 
 class SimpleFlowDeclaration(BaseModel, frozen=True, extra="forbid"):

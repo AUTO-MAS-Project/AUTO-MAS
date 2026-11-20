@@ -12,9 +12,9 @@ if TYPE_CHECKING:
     from fastapi import APIRouter
 
     from app.core.background_tasks import BackgroundTaskGroup
-    from app.core.log_flow.declaration import PluginFlowDeclaration
     from app.models.config import PluginConfig, PluginRecord
     from app.plugin.services import ServiceResolver
+    from app.utils.common.log_flow.declaration import PluginFlowDeclaration
 
 
 class BasePlugin:

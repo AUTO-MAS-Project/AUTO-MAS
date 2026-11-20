@@ -35,13 +35,6 @@ from pydantic import (
 )
 
 from app.core import Power, TaskManager
-from app.models.log_flow import (
-    MAX_NODE_ATTRIBUTE_TEXT,
-    CloseReason,
-    InvalidObservationCursor,
-    Node,
-    ObservationCursor,
-)
 from app.models.schema import (
     OutBase,
     PowerCountdownSnapshot,
@@ -52,6 +45,13 @@ from app.models.schema import (
 )
 from app.models.task import TaskMode
 from app.utils import get_logger
+from app.utils.common.log_flow.observation import (
+    MAX_NODE_ATTRIBUTE_TEXT,
+    CloseReason,
+    InvalidObservationCursor,
+    Node,
+    ObservationCursor,
+)
 from app.utils.common.security import is_sensitive_log_key, sanitize_log_message
 from app.utils.contracts.power import PowerSignal
 

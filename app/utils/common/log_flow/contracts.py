@@ -13,7 +13,9 @@ from pydantic import (
     model_validator,
 )
 
-from app.models.log_flow import (
+from app.utils.common.log.flow_file import FileCursor, capture_file_cursor
+
+from .observation import (
     LogTimestamp,
     Node,
     NodeAttributes,
@@ -22,7 +24,6 @@ from app.models.log_flow import (
     ReportEntry,
     ReportOrder,
 )
-from app.utils.common.log.flow_file import FileCursor, capture_file_cursor
 
 # 进程管道的单条消息预算；不是日志文件或 SDK 限额。
 MAX_FRAME_BYTES = 64 * 1024

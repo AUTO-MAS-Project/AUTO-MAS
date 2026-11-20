@@ -18,7 +18,24 @@ import psutil
 import pytest
 from auto_mas_core.log_flow import SubmitResult
 
-from app.core.log_flow.contracts import (
+from app.core.log_flow.manager import open_for_run
+from app.core.log_flow.ownership import FlowOwner
+from app.core.log_flow.simple import (
+    open_custom_flow,
+    open_simple_flow,
+)
+from app.core.notify.report import render_scatter_push_log
+from app.models.task import TaskUserItem
+from app.task.MaaEnd.push_log import (
+    MAAEND_PUSH_RULES,
+    maaend_plain_text,
+    maaend_resolve,
+)
+from app.task.OkNte.push_log import OKNTE_PUSH_RULES, oknte_resolve
+from app.utils.common.log.flow_file import FlowFileSource
+from app.utils.common.log.flow_monitor import LogFlowMonitor as LogMonitor
+from app.utils.common.log_box import LogEntry, LogPipeline
+from app.utils.common.log_flow.contracts import (
     MAX_HOST_PENDING_BYTES,
     MAX_NATIVE_PENDING_RECORDS,
     MAX_NODE_FRAMES,
@@ -39,27 +56,17 @@ from app.core.log_flow.contracts import (
     WorkerFactorySpec,
     WorkerPluginPackage,
 )
-from app.core.log_flow.declaration import GeneralFlowDeclaration, SimpleFlowDeclaration
-from app.core.log_flow.manager import open_for_run
-from app.core.log_flow.ownership import FlowOwner
-from app.core.log_flow.report import render_node_details
-from app.core.log_flow.session import LogFlowSession, SessionOpenError
-from app.core.log_flow.simple import (
-    open_custom_flow,
-    open_simple_flow,
+from app.utils.common.log_flow.declaration import (
+    GeneralFlowDeclaration,
+    SimpleFlowDeclaration,
 )
-from app.core.notify.report import render_scatter_push_log
-from app.models.log_flow import InvalidObservationCursor, ObservationCursor, ReportEntry
-from app.models.task import TaskUserItem
-from app.task.MaaEnd.push_log import (
-    MAAEND_PUSH_RULES,
-    maaend_plain_text,
-    maaend_resolve,
+from app.utils.common.log_flow.observation import (
+    InvalidObservationCursor,
+    ObservationCursor,
+    ReportEntry,
 )
-from app.task.OkNte.push_log import OKNTE_PUSH_RULES, oknte_resolve
-from app.utils.common.log.flow_file import FlowFileSource
-from app.utils.common.log.flow_monitor import LogFlowMonitor as LogMonitor
-from app.utils.common.log_box import LogEntry, LogPipeline
+from app.utils.common.log_flow.report import render_node_details
+from app.utils.common.log_flow.session import LogFlowSession, SessionOpenError
 
 
 def append(path: Path, text: str) -> None:
@@ -251,7 +258,7 @@ async def test_stuck_worker_is_reaped_and_keeps_already_observed_nodes(
 @pytest.mark.asyncio
 @pytest.mark.skipif(os.name != "nt", reason="Windows Job 回收")
 async def test_worker_close_handles_a_saturated_job_cleanup_executor(monkeypatch):
-    from app.core.log_flow import session as session_module
+    from app.utils.common.log_flow import session as session_module
 
     session = await LogFlowSession.open(PipelineSpec(accept_push=True))
     loop = asyncio.get_running_loop()
@@ -601,7 +608,7 @@ def test_worker_finishes_report_at_node_capacity_even_if_sink_cleanup_fails(tmp_
         ),
     )
     worker = subprocess.run(
-        [sys.executable, "-m", "app.core.log_flow.worker"],
+        [sys.executable, "-m", "app.utils.common.log_flow.worker"],
         input=spec.model_dump_json().encode() + b"\n",
         capture_output=True,
         timeout=10,

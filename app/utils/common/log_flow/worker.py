@@ -12,13 +12,6 @@ from queue import Empty, Queue
 from threading import Thread
 from typing import cast
 
-from app.models.log_flow import (
-    Node,
-    NodeAttributes,
-    NodeDisplayStatus,
-    NodeSource,
-    ReportEntry,
-)
 from app.utils.common.log.flow_file import FlowFileSource, LogReadLimitExceeded
 from app.utils.common.source_import import prefer_package_source
 
@@ -44,6 +37,13 @@ from .contracts import (
     WorkerMessage,
 )
 from .extensions import Sink, Source, create_extension
+from .observation import (
+    Node,
+    NodeAttributes,
+    NodeDisplayStatus,
+    NodeSource,
+    ReportEntry,
+)
 from .processor import (
     GeneralRuleProcessor,
     OpenableProcessor,

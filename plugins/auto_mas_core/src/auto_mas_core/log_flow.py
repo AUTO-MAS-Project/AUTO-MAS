@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from app.core.log_flow.contracts import (
+from app.core.log_flow.report import LogFlowTaskReport
+from app.core.log_flow.simple import FlowAccess
+from app.utils.common.expression import ExpressionFunction
+from app.utils.common.log.flow_monitor import LogFlowMonitor as LogMonitor
+from app.utils.common.log_flow.contracts import (
     FileInput,
     FunctionRef,
     InputRecord,
@@ -17,17 +21,13 @@ from app.core.log_flow.contracts import (
     WithdrawnRecord,
     WorkerFactorySpec,
 )
-from app.core.log_flow.declaration import (
+from app.utils.common.log_flow.declaration import (
     GeneralFlowDeclaration,
     PluginFlowDeclaration,
     SimpleFlowDeclaration,
 )
-from app.core.log_flow.extensions import Sink, Source
-from app.core.log_flow.processor import ProcessorOutput, TextProcessor
-from app.core.log_flow.push import PushReporter, SubmitResult
-from app.core.log_flow.report import LogFlowTaskReport, ReportMode
-from app.core.log_flow.simple import FlowAccess
-from app.models.log_flow import (
+from app.utils.common.log_flow.extensions import Sink, Source
+from app.utils.common.log_flow.observation import (
     Node,
     NodeAttribute,
     NodeAttributes,
@@ -38,8 +38,9 @@ from app.models.log_flow import (
     ReportEntry,
     ReportOrder,
 )
-from app.utils.common.expression import ExpressionFunction
-from app.utils.common.log.flow_monitor import LogFlowMonitor as LogMonitor
+from app.utils.common.log_flow.processor import ProcessorOutput, TextProcessor
+from app.utils.common.log_flow.push import PushReporter, SubmitResult
+from app.utils.common.log_flow.report import ReportMode
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

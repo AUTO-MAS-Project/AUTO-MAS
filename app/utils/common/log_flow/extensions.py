@@ -4,9 +4,8 @@ from collections.abc import Iterable
 from importlib import import_module
 from typing import Protocol
 
-from app.models.log_flow import Node
-
 from .contracts import InputRecord, WorkerFactorySpec
+from .observation import Node
 
 
 class Source(Protocol):

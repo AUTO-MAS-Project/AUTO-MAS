@@ -4,7 +4,7 @@ from collections.abc import Callable
 from enum import StrEnum
 from typing import Protocol
 
-from app.models.log_flow import NodeAttributes, NodeDisplayStatus
+from .observation import NodeAttributes, NodeDisplayStatus
 
 
 class SubmitResult(StrEnum):

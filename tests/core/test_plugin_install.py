@@ -10,16 +10,20 @@ import httpx
 import pytest
 import pytest_asyncio
 
-from app.core.log_flow.contracts import FunctionRef, PipelineSpec, WorkerPluginPackage
 from app.core.log_flow.ownership import FlowOwner
 from app.core.plugin.manager import _PluginManager
 from app.models.config import PluginMeta, PluginRecord, PluginRegistryCollection
-from app.models.log_flow import ReportEntry
 from app.models.task import TaskUserItem
 from app.plugin import uv
 from app.plugin.errors import PluginPrecheckError
 from app.plugin.runtime import loader
 from app.plugin.uv import environment, precheck
+from app.utils.common.log_flow.contracts import (
+    FunctionRef,
+    PipelineSpec,
+    WorkerPluginPackage,
+)
+from app.utils.common.log_flow.observation import ReportEntry
 
 
 def metadata(*, identity="install_probe", version="1.0", sdk=True):
@@ -64,7 +68,7 @@ async def test_install_preserves_packages_read_by_logflow_worker(
 
     def report_code(version):
         return (
-            "from app.models.log_flow import ReportEntry\n"
+            "from app.utils.common.log_flow.observation import ReportEntry\n"
             f"def report(_): return [ReportEntry(node_type='info', text={version!r})]\n"
         )
 

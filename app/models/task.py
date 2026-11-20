@@ -27,8 +27,8 @@ from app.config import (
     virtual_field,
 )
 from app.config.signals import ConfigEvent, FieldChangeEvent
-from app.models.log_flow import NodeObservation
 from app.models.notification.report import TaskNotificationState
+from app.utils.common.log_flow.observation import NodeObservation
 from app.utils.contracts.power import PowerSignal
 
 if TYPE_CHECKING:

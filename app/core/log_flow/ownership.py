@@ -6,10 +6,10 @@ from contextlib import asynccontextmanager
 
 from app.models.task import TaskScriptItem, TaskUserItem
 from app.plugin.errors import PluginBusyError
+from app.utils.common.log_flow.contracts import PipelineSpec
+from app.utils.common.log_flow.session import LogFlowSession
 
-from .contracts import PipelineSpec
 from .manager import open_for_run
-from .session import LogFlowSession
 
 
 class FlowOwner:

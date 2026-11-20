@@ -3,9 +3,8 @@
 import asyncio
 
 from app.models.task import TaskScriptItem, TaskUserItem
-
-from .contracts import PipelineSpec
-from .session import LogFlowSession, SessionOpenError
+from app.utils.common.log_flow.contracts import PipelineSpec
+from app.utils.common.log_flow.session import LogFlowSession, SessionOpenError
 
 
 async def open_for_run(

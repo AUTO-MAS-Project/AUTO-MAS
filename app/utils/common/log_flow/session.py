@@ -13,16 +13,6 @@ from typing import ClassVar
 
 from pydantic import ValidationError
 
-from app.models.log_flow import (
-    CloseReason,
-    Node,
-    NodeAttributes,
-    NodeDisplayStatus,
-    NodeObservation,
-    ReportEntry,
-    ReportOrder,
-    SessionSummary,
-)
 from app.utils import get_logger, process_platform
 from app.utils.common.process.runner import close_process_pipes
 from app.utils.contracts.process import TaskProcessJob
@@ -47,9 +37,19 @@ from .contracts import (
     TextRecord,
     WithdrawnRecord,
 )
+from .observation import (
+    CloseReason,
+    Node,
+    NodeAttributes,
+    NodeDisplayStatus,
+    NodeObservation,
+    ReportEntry,
+    ReportOrder,
+    SessionSummary,
+)
 from .push import PushReporter, SubmitResult
 
-_SOURCE_ROOT = Path(__file__).resolve().parents[3]
+_SOURCE_ROOT = Path(__file__).resolve().parents[4]
 _STOP_GRACE_SECONDS = 1.0
 logger = get_logger("LogFlow")
 
@@ -176,7 +176,7 @@ class LogFlowSession:
                     sys.executable,
                     "-P",
                     "-m",
-                    "app.core.log_flow.worker",
+                    "app.utils.common.log_flow.worker",
                     env=worker_env,
                     stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
