@@ -202,11 +202,9 @@ const selectAll = () =>
 const clearAll = () =>
   updateEntries(entry => ({ ...entry, selection: 'none', selected: [] }), 'none')
 const fromHere = (index: number) =>
-  updateEntries((entry, position) => ({
-    ...entry,
-    selection: position < index ? 'none' : 'all',
-    selected: [],
-  }))
+  updateEntries((entry, position) =>
+    position < index ? { ...entry, selection: 'none', selected: [] } : entry
+  )
 const setEntry = (uid: string, checked: boolean) =>
   updateEntries(entry =>
     entry.uid === uid ? { ...entry, selection: checked ? 'all' : 'none', selected: [] } : entry
