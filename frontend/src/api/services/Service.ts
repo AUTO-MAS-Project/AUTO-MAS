@@ -129,10 +129,6 @@ import type { MaaFWShellInstancesIn } from '../models/MaaFWShellInstancesIn';
 import type { MaaFWShellInstancesOut } from '../models/MaaFWShellInstancesOut';
 import type { McpRetryOut } from '../models/McpRetryOut';
 import type { McpStatusOut } from '../models/McpStatusOut';
-import type { MysteryLockOut } from '../models/MysteryLockOut';
-import type { MysteryStatusOut } from '../models/MysteryStatusOut';
-import type { MysteryUnlockIn } from '../models/MysteryUnlockIn';
-import type { MysteryUnlockOut } from '../models/MysteryUnlockOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
 import type { ObsReplayCheckOut } from '../models/ObsReplayCheckOut';
@@ -1048,47 +1044,6 @@ export class Service {
             errors: {
                 422: `Validation Error`,
             },
-        });
-    }
-    /**
-     * 获取神秘入口解锁状态
-     * @returns MysteryStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static getMysteryStatusApiMysteryStatusGet(): CancelablePromise<MysteryStatusOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/mystery/status',
-        });
-    }
-    /**
-     * 解锁神秘入口
-     * @param requestBody
-     * @returns MysteryUnlockOut Successful Response
-     * @throws ApiError
-     */
-    public static unlockMysteryApiMysteryUnlockPost(
-        requestBody: MysteryUnlockIn,
-    ): CancelablePromise<MysteryUnlockOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/mystery/unlock',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 重新锁定神秘入口
-     * @returns MysteryLockOut Successful Response
-     * @throws ApiError
-     */
-    public static lockMysteryApiMysteryLockPost(): CancelablePromise<MysteryLockOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/mystery/lock',
         });
     }
     /**

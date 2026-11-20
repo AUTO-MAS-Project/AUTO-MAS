@@ -13,7 +13,7 @@ import pytest
 import pytest_asyncio
 
 import app.api.plugin as plugin_api
-import app.core.mystery as mystery_core
+import app.mystery.gate as mystery_gate
 from app.config import ConfigCollection
 from app.models.config import (
     GlobalConfig,
@@ -23,16 +23,6 @@ from app.models.config import (
 )
 from app.plugin.errors import PluginPrecheckError
 from app.plugin.types import RESTRICTED_PLUGIN_NAMES
-
-
-class _Gate:
-    """把神秘入口状态固定为指定结果，避免测试依赖真实日期。"""
-
-    def __init__(self, unlocked: bool) -> None:
-        self.unlocked = unlocked
-
-    def is_unlocked(self) -> bool:
-        return self.unlocked
 
 
 def _meta(package: str, identity: str) -> PluginMeta:
@@ -79,9 +69,12 @@ async def market(isolated_app_paths, monkeypatch):
 
 def _use_gate(monkeypatch, unlocked: bool) -> None:
     """市场过滤与安装门禁必须同时看到同一状态。"""
-    gate = _Gate(unlocked)
-    monkeypatch.setattr(plugin_api, "Mystery", gate)
-    monkeypatch.setattr(mystery_core, "Mystery", gate)
+
+    def state() -> bool:
+        return unlocked
+
+    monkeypatch.setattr(plugin_api, "is_unlocked", state)
+    monkeypatch.setattr(mystery_gate, "is_unlocked", state)
 
 
 @pytest.mark.asyncio

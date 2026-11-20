@@ -44,7 +44,7 @@ from app.config import CollectionOrderItem, config_manager
 from app.config.errors import ConfigAggregateError
 from app.config.fields.hints import UiHintsMap, UiTablesList
 from app.config.wire import ConfigInput, ConfigPayload
-from app.core import Config, Mystery
+from app.core import Config
 from app.core.i18n import AppLocale
 from app.core.plugin import Plugin
 from app.models.config import PluginMeta, PluginRecord
@@ -55,6 +55,7 @@ from app.models.schema import (
     OutBase,
     PluginInstallation,
 )
+from app.mystery.gate import is_unlocked
 from app.plugin.errors import PluginBusyError
 from app.plugin.http import PLUGIN_GATEWAY_PATH
 from app.plugin.types import (
@@ -244,7 +245,7 @@ def _market_visible(meta: PluginMeta) -> bool:
     info = meta.effective.info
     if info.plugin_name not in RESTRICTED_PLUGIN_NAMES:
         return True
-    return Mystery.is_unlocked()
+    return is_unlocked()
 
 
 @_catalog.post(

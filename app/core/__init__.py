@@ -38,7 +38,6 @@ if TYPE_CHECKING:
     from .lifecycle import ShutdownCoordinator as ShutdownCoordinator
     from .maa_manager import MaaFWManager as MaaFWManager
     from .mcp import MCP as MCP
-    from .mystery import Mystery as Mystery
     from .notify import Notify as Notify
     from .plugin import Plugin as Plugin
     from .power import Power as Power
@@ -64,7 +63,6 @@ _LAZY_EXPORTS = {
     "MainTimer": (".timer", "MainTimer"),
     "Startup": (".startup", "Startup"),
     "MaaFWManager": (".maa_manager", "MaaFWManager"),
-    "Mystery": (".mystery", "Mystery"),
     "DesktopGuard": (".desktop_guard", "DesktopGuard"),
     "GameCalendar": (".game_calendar", "GameCalendar"),
     "GameMaintenance": (".game_maintenance", "GameMaintenance"),
@@ -102,7 +100,6 @@ __all__ = [
     "MainTimer",
     "Startup",
     "MaaFWManager",
-    "Mystery",
     "DesktopGuard",
     "GameCalendar",
     "GameMaintenance",

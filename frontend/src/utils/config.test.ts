@@ -17,7 +17,7 @@ const resetConfig = vi.fn()
 beforeEach(() => {
   vi.resetModules()
   vi.resetAllMocks()
-  disk = { themeMode: 'light', themeColor: 'blue', customBackgroundPath: '/old.png' }
+  disk = { themeMode: 'light', themeColor: 'blue', mysteryUnlockedDate: '2026-10-02' }
   loadConfig.mockImplementation(async () => (disk ? { ...disk } : null))
   saveConfig.mockImplementation(async (config, defaults) => {
     disk = { ...defaults, ...disk, ...config }
@@ -73,22 +73,22 @@ describe('共享前端配置读写', () => {
     const first = config.saveConfig({ language: 'en-US' })
     await sameField.started.promise
     const second = config.saveConfig({ language: 'ja-JP' })
-    const lock = config.saveConfig({ customSurfaceOpacity: 0.5 })
+    const lock = config.saveConfig({ mysteryUnlockedDate: '' })
     await nextTurn()
     sameField.release.resolve()
     await Promise.all([first, second, lock])
     expect(disk).toMatchObject({
       language: 'ja-JP',
-      customSurfaceOpacity: 0.5,
+      mysteryUnlockedDate: '',
       UI: { location: '200,300', size: '1200,900' },
     })
-    disk = { themeMode: 'light', themeColor: 'blue', customBackgroundPath: '/old.png' }
+    disk = { themeMode: 'light', themeColor: 'blue', mysteryUnlockedDate: '2026-10-02' }
     saveConfig.mockRejectedValueOnce(new Error('disk unavailable'))
     const failed = config.saveConfig({ language: 'en-US' })
     const next = config.saveConfig({ themeColor: 'green' })
     await expect(failed).rejects.toThrow('disk unavailable')
     await next
-    expect(disk).toMatchObject({ themeColor: 'green', customBackgroundPath: '/old.png' })
+    expect(disk).toMatchObject({ themeColor: 'green', mysteryUnlockedDate: '2026-10-02' })
     expect(disk?.language).toBeUndefined()
   })
 

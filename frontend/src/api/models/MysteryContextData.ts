@@ -2,13 +2,14 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-/**
- * 解锁请求。
- */
-export type MysteryUnlockIn = {
+export type MysteryContextData = {
     /**
-     * 当日访问口令
+     * 设备指纹
      */
-    accessCode: string;
+    deviceHash: string;
+    /**
+     * 当前后端源码指纹
+     */
+    backendHash: string;
 };
 

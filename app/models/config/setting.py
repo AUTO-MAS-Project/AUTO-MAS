@@ -42,7 +42,6 @@ from app.config.types import (
     JsonDictString,
     UrlString,
 )
-from app.utils import UTC8
 
 from .base import DomainEntry
 from .queue import Webhook
@@ -108,16 +107,6 @@ class GlobalConfig(DomainEntry):
         default_factory=DownloadFields, description="下载管理"
     )
     uv: UvFields = Field(default_factory=UvFields, description="插件安装环境")
-
-    class MysteryFields(ConfigGroup):
-        UnlockedDate: Annotated[datetime, tz(UTC8), ui(format="date")] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC8),
-            description="神秘入口上次解锁日期 (北京时间，跨日自动失效)",
-        )
-
-    mystery: Annotated[MysteryFields, ui(visibility=UiVisibility.HIDE)] = Field(
-        default_factory=MysteryFields, description="神秘入口"
-    )
 
     class DataFields(ConfigGroup):
         IfShowNotice: bool = Field(

@@ -1202,6 +1202,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
                 data=WSTaskNoticeData(
+                    sourceScriptType="MaaEnd",
                     level="warning",
                     message=(
                         f"账号 {self.cur_user_item.name} 当前 MaaEnd 配置中不存在"
@@ -1552,7 +1553,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=message),
+                    data=WSTaskNoticeData(
+                        sourceScriptType="MaaEnd", level="error", message=message
+                    ),
                 )
             else:
                 logger.info(message)
@@ -1817,7 +1820,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=error_message),
+                data=WSTaskNoticeData(
+                    sourceScriptType="MaaEnd",
+                    level="error",
+                    message=error_message,
+                ),
             )
         else:
             logger.opt(exception=True).warning(
@@ -1826,7 +1833,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
+                data=WSTaskNoticeData(
+                    sourceScriptType="MaaEnd",
+                    level="error",
+                    message=f"{error_message}: {e}",
+                ),
             )
         await self.cur_user_log.set_state(content=[f"{error_message}, 无日志记录"])
         await self.cur_user_log.set_state(status=error_message)
@@ -2639,7 +2650,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                         await Publisher.send(
                             id=self.task_info.task_id,
                             type=protocol.TASK_NOTICE,
-                            data=WSTaskNoticeData(level="warning", message=message),
+                            data=WSTaskNoticeData(
+                                sourceScriptType="MaaEnd",
+                                level="warning",
+                                message=message,
+                            ),
                         )
 
             if removed_task_names:
@@ -2652,7 +2667,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="warning", message=warning_message),
+                    data=WSTaskNoticeData(
+                        sourceScriptType="MaaEnd",
+                        level="warning",
+                        message=warning_message,
+                    ),
                 )
 
         # 按本轮任务表写回 MaaEnd 运行配置
@@ -3414,7 +3433,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
                     data=WSTaskNoticeData(
-                        level="error", message=f"推送通知时出现异常: {e}"
+                        sourceScriptType="MaaEnd",
+                        level="error",
+                        message=f"推送通知时出现异常: {e}",
                     ),
                 )
         if completed:
@@ -3464,7 +3485,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         await Publisher.send(
             id=self.task_info.task_id,
             type=protocol.TASK_NOTICE,
-            data=WSTaskNoticeData(level="error", message=f"自动代理任务出现异常: {e}"),
+            data=WSTaskNoticeData(
+                sourceScriptType="MaaEnd",
+                level="error",
+                message=f"自动代理任务出现异常: {e}",
+            ),
         )
 
     def _collect_inventory_report(self, paths: list[Path]) -> list[str]:

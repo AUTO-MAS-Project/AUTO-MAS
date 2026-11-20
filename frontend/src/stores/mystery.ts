@@ -1,24 +1,31 @@
 import { defineStore } from 'pinia'
-import { computed, onScopeDispose, ref } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
-import { Service, type MysteryStatusOut } from '@/api'
+import type { MysteryContextData } from '@/api'
+import { getMysteryContext, MysteryContextError } from '@/composables/useMysteryApi'
+import { useWebSocket } from '@/composables/useWebSocket'
+import { getConfig, saveConfig } from '@/utils/config'
 import { getMysteryDate } from '@/utils/mysteryAccess'
-
-/**
- * 取解锁日期；业务失败时后端把状态码放在 body 里（HTTP 状态始终是 200），
- * 所以 HTTP 成功不代表业务成功，仍需判 `code`。
- */
-const unlockDateOf = (payload: MysteryStatusOut): string => {
-  if (payload.code !== 200) throw new Error(payload.message || `HTTP ${payload.code}`)
-  return payload.unlockedDate ?? ''
-}
 
 export const useMysteryStore = defineStore('mystery', () => {
   const unlockedDate = ref('')
+  const unlockedFingerprint = ref('')
+  const context = ref<MysteryContextData | null>(null)
   const today = ref(getMysteryDate())
-  const unlocked = computed(() => unlockedDate.value === today.value)
+  const fingerprint = computed(() =>
+    context.value ? `${context.value.deviceHash}:${context.value.backendHash}` : ''
+  )
+  const unlocked = computed(
+    () =>
+      !!fingerprint.value &&
+      unlockedDate.value === today.value &&
+      unlockedFingerprint.value === fingerprint.value
+  )
   const initialized = ref(false)
   const saving = ref(false)
+  const loadError = ref('')
+  const { state } = useWebSocket()
+  let contextGeneration = 0
   let loadPromise: Promise<void> | null = null
   let expiryTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -37,39 +44,75 @@ export const useMysteryStore = defineStore('mystery', () => {
   }
   onScopeDispose(() => clearTimeout(expiryTimer))
 
-  const load = async (): Promise<void> => {
+  const load = async (refresh = false): Promise<void> => {
     refreshDate()
-    if (initialized.value) return
-    if (loadPromise) return loadPromise
+    if (!refresh) {
+      if (loadPromise) return loadPromise
+      if (initialized.value) return
+    }
 
-    loadPromise = (async () => {
+    const generation = ++contextGeneration
+    loadError.value = ''
+    const pending = (async () => {
       try {
-        unlockedDate.value = unlockDateOf(await Service.getMysteryStatusApiMysteryStatusGet())
+        const currentContext = await getMysteryContext()
+        // 在指纹请求返回后读配置，避免等待期间手动锁定却又恢复旧的解锁记录。
+        const config = await getConfig({ strict: true })
+        if (generation !== contextGeneration) return
+        context.value = currentContext
+        unlockedDate.value = config.mysteryUnlockedDate ?? ''
+        unlockedFingerprint.value = config.mysteryUnlockedFingerprint ?? ''
         initialized.value = true
+      } catch (error) {
+        if (generation !== contextGeneration) return
+        context.value = null
+        initialized.value = false
+        loadError.value =
+          error instanceof MysteryContextError ? error.message : 'CONTEXT_UNAVAILABLE'
+        throw error
       } finally {
-        loadPromise = null
+        if (generation === contextGeneration) loadPromise = null
       }
     })()
-
-    return loadPromise
+    loadPromise = pending
+    return pending
   }
 
-  /**
-   * 提交口令。
-   *
-   * 口令不正确（后端 400）返回 false 由页面提示，其余失败继续抛出，
-   * 让页面能区分「密钥不对」与「服务异常」两种提示。
-   */
+  // WS 短断时 HTTP 扫码可以继续。重连后用新指纹更新状态，避免卸载同一后端的扫码页面。
+  watch(state, status => {
+    if (status !== 'open') return
+    void load(true).catch(() => {
+      // loadError 已保留可重试的失败状态，由入口页面显示。
+    })
+  })
+
   const unlock = async (accessCode: string): Promise<boolean> => {
-    await load()
+    await load(state.value !== 'open')
     if (saving.value) return false
 
     saving.value = true
     try {
-      const payload = await Service.unlockMysteryApiMysteryUnlockPost({ accessCode })
-      if (payload.code === 400) return false
+      const checkedAt = new Date()
+      const checkedDate = getMysteryDate(checkedAt)
+      const checkedContext = context.value
+      const checkedFingerprint = fingerprint.value
+      if (!checkedContext) return false
+      if (
+        !(await window.electronAPI.verifyMysteryAccessCode(accessCode, {
+          deviceHash: checkedContext.deviceHash,
+          backendHash: checkedContext.backendHash,
+        }))
+      )
+        return false
+      await load()
+      if (checkedDate !== getMysteryDate() || checkedFingerprint !== fingerprint.value) return false
 
-      unlockedDate.value = unlockDateOf(payload)
+      await saveConfig({
+        mysteryUnlockedDate: checkedDate,
+        mysteryUnlockedFingerprint: checkedFingerprint,
+      })
+      unlockedDate.value = checkedDate
+      unlockedFingerprint.value = checkedFingerprint
       refreshDate()
       return unlocked.value
     } finally {
@@ -78,17 +121,17 @@ export const useMysteryStore = defineStore('mystery', () => {
   }
 
   const lock = async (): Promise<void> => {
-    await load()
     if (saving.value) return
 
     saving.value = true
     try {
-      unlockDateOf(await Service.lockMysteryApiMysteryLockPost())
+      await saveConfig({ mysteryUnlockedDate: '', mysteryUnlockedFingerprint: '' })
       unlockedDate.value = ''
+      unlockedFingerprint.value = ''
     } finally {
       saving.value = false
     }
   }
 
-  return { unlocked, initialized, saving, load, unlock, lock }
+  return { unlocked, initialized, saving, loadError, load, unlock, lock }
 })

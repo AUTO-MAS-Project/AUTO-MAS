@@ -1,91 +1,58 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025-2026 AUTO-MAS Team
+"""神秘入口的申请信息接口。"""
 
-#   This file is part of AUTO-MAS.
-
-#   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU Affero General Public License as
-#   published by the Free Software Foundation, either version 3 of
-#   the License, or (at your option) any later version.
-
-#   AUTO-MAS is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty of
-#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-#   GNU Affero General Public License for more details.
-
-#   You should have received a copy of the GNU Affero General Public License
-#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
-#   Contact: DLmaster_361@163.com
-
-
-"""神秘入口 API 路由。
-
-解锁状态由后端校验并持久化，前端只负责提交口令与展示结果；附属插件据此判断能否安装。
-"""
+from typing import Literal
 
 from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from app.core import Mystery
 from app.models.schema import OutBase
+from app.mystery.access import MysteryContextError, get_access_context
 from app.utils import get_logger
 
-router = APIRouter(prefix="/api/mystery", tags=["神秘入口"])
-logger = get_logger("神秘入口 API")
+
+class MysteryContextData(BaseModel):
+    deviceHash: str = Field(pattern=r"^[0-9a-f]{64}$", description="设备指纹")
+    backendHash: str = Field(pattern=r"^[0-9a-f]{64}$", description="当前后端源码指纹")
 
 
-class MysteryStatusOut(OutBase):
-    """神秘入口当前解锁状态。"""
-
-    unlocked: bool = Field(default=False, description="当日是否已解锁")
-    unlockedDate: str = Field(default="", description="上次解锁的北京日期")
+class MysteryContextOut(OutBase):
+    data: MysteryContextData | None = None
+    errorCode: Literal["DEVICE_UNAVAILABLE", "BACKEND_UNAVAILABLE"] | None = None
 
 
-class MysteryUnlockIn(BaseModel):
-    """解锁请求。"""
-
-    accessCode: str = Field(..., repr=False, description="当日访问口令")
+router = APIRouter(prefix="/api/mystery", tags=["Mystery"])
+logger = get_logger("神秘入口")
 
 
-class MysteryUnlockOut(MysteryStatusOut):
-    """解锁结果。"""
-
-
-class MysteryLockOut(MysteryStatusOut):
-    """重新锁定结果。"""
-
-
-@router.get("/status", summary="获取神秘入口解锁状态", response_model=MysteryStatusOut)
-async def get_mystery_status() -> MysteryStatusOut:
+@router.get(
+    "/context",
+    summary="获取神秘入口申请信息",
+    response_model=MysteryContextOut,
+    responses={503: {"model": MysteryContextOut}},
+)
+def get_mystery_context() -> MysteryContextOut | JSONResponse:
+    # 同步端点由 FastAPI 在线程池执行，首次设备查询与源码读取不阻塞事件循环。
     try:
-        return MysteryStatusOut(
-            unlocked=Mystery.is_unlocked(), unlockedDate=Mystery.unlocked_date()
+        device_hash, backend_hash = get_access_context()
+    except MysteryContextError as error:
+        cause = error.__cause__ or error
+        location = cause.__traceback__
+        while location and location.tb_next:
+            location = location.tb_next
+        operation = (
+            location.tb_frame.f_code.co_name if location else "get_access_context"
         )
-    except Exception as e:
-        logger.exception("读取神秘入口解锁状态失败")
-        return MysteryStatusOut(code=500, status="error", message=str(e))
-
-
-@router.post("/unlock", summary="解锁神秘入口", response_model=MysteryUnlockOut)
-async def unlock_mystery(body: MysteryUnlockIn) -> MysteryUnlockOut:
-    try:
-        date = await Mystery.unlock(body.accessCode)
-    except ValueError as e:
-        logger.warning(f"神秘入口解锁失败: {type(e).__name__}")
-        return MysteryUnlockOut(code=400, status="error", message=str(e))
-    except OSError as e:
-        logger.error(f"神秘入口解锁状态写入失败: {e}")
-        return MysteryUnlockOut(code=500, status="error", message=str(e))
-    return MysteryUnlockOut(unlocked=True, unlockedDate=date, message="神秘入口已解锁")
-
-
-@router.post("/lock", summary="重新锁定神秘入口", response_model=MysteryLockOut)
-async def lock_mystery() -> MysteryLockOut:
-    try:
-        await Mystery.lock()
-    except OSError as e:
-        logger.error(f"神秘入口锁定失败: {e}")
-        return MysteryLockOut(code=500, status="error", message=str(e))
-    return MysteryLockOut(unlocked=False, unlockedDate="", message="神秘入口已锁定")
+        system_error = getattr(cause, "hresult", getattr(cause, "errno", None))
+        # 记录异常类别、操作和系统错误，避免把设备原码或异常中的原始值写入日志。
+        logger.warning(
+            f"读取申请信息失败: {error.code}, "
+            f"异常={type(cause).__name__}, 操作={operation}, 系统错误={system_error}"
+        )
+        response = MysteryContextOut(
+            code=503, status="error", message="申请信息不可用", errorCode=error.code
+        )
+        return JSONResponse(status_code=503, content=response.model_dump())
+    return MysteryContextOut(
+        data=MysteryContextData(deviceHash=device_hash, backendHash=backend_hash)
+    )

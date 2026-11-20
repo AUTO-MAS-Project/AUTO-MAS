@@ -2,10 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-/**
- * 重新锁定结果。
- */
-export type MysteryLockOut = {
+import type { MysteryContextData } from './MysteryContextData';
+export type MysteryContextOut = {
     /**
      * 状态码
      */
@@ -18,13 +16,7 @@ export type MysteryLockOut = {
      * 操作消息
      */
     message?: string;
-    /**
-     * 当日是否已解锁
-     */
-    unlocked?: boolean;
-    /**
-     * 上次解锁的北京日期
-     */
-    unlockedDate?: string;
+    data?: (MysteryContextData | null);
+    errorCode?: ('DEVICE_UNAVAILABLE' | 'BACKEND_UNAVAILABLE' | null);
 };
 
