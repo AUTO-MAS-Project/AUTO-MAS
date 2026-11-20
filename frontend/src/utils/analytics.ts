@@ -61,6 +61,30 @@ export function recordAnalyticsEvent(
     })
 }
 
+/** 主窗口接回桌面已开始的启动尝试，结束时仅传回本机序号。 */
+export function beginInitializationAnalytics() {
+  const api = window.electronAPI?.analytics
+  const context = api?.beginInitialization?.().catch(() => null) ?? Promise.resolve(null)
+  const start = performance.now()
+  let done = false
+  return {
+    finish(props: Omit<AnalyticsEventProps['initialization_finished_v2'], 'duration_bucket'>) {
+      if (done) return
+      done = true
+      const duration = durationBucket(performance.now() - start)
+      void context
+        .then(info => {
+          if (info)
+            api?.finishInitialization(info.generation, info.attempt, {
+              name: 'initialization_finished_v2',
+              props: { ...props, duration_bucket: duration },
+            })
+        })
+        .catch(() => {})
+    },
+  }
+}
+
 /** 操作只消费一次终态；异步 IPC 不进入业务 await 链。 */
 export function beginAnalyticsOperation<K extends AnalyticsOperationName>(
   name: K,

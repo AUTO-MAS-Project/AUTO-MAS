@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { formatRuntimeProgress } from './runtimeProgress'
 import { finishInitializationEntry } from './finishInitializationEntry'
-import { beginAnalyticsOperation } from '@/utils/analytics'
+import { beginAnalyticsOperation, beginInitializationAnalytics } from '@/utils/analytics'
 import type { AnalyticsEventProps } from '@/types/analytics'
 import { getBackendVersion } from '@/composables/useVersionService'
 import { canRestoreWorkspace, decideFailureActions } from '@/utils/initializationDecision'
@@ -115,7 +115,7 @@ export function useInitializationFlow() {
   let skippedStage = false
   const ensureAnalyticsAttempt = () => {
     if (!analyticsAttempt) {
-      analyticsAttempt = beginAnalyticsOperation('initialization_finished_v2')
+      analyticsAttempt = beginInitializationAnalytics()
       skippedStage = false
     }
   }

@@ -31,6 +31,12 @@ window.addEventListener('DOMContentLoaded', () => {
 contextBridge.exposeInMainWorld('electronAPI', {
   analytics: {
     getContext: () => ipcRenderer.invoke('analytics:context'),
+    beginInitialization: () => ipcRenderer.invoke('analytics:initialization-begin'),
+    finishInitialization: (
+      context: number | null,
+      attempt: number | null,
+      event: RendererAnalyticsEvent
+    ) => ipcRenderer.send('analytics:initialization-finish', context, attempt, event),
     trackEvent: (context: number, event: RendererAnalyticsEvent) =>
       ipcRenderer.send('analytics:event', context, event),
   },

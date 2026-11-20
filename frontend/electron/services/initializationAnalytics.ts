@@ -1,5 +1,6 @@
 import { analyticsService } from './analyticsService'
 import { analyticsDuration } from './analyticsPolicy'
+import { localStartupAttempt, inStartupOperation } from './startupHardware/monitor'
 import type {
   AnalyticsInitializationCode,
   AnalyticsInitializationStage,
@@ -42,35 +43,47 @@ export async function observeInitializationStage<
   run: () => Promise<T>
 ): Promise<T> {
   const context = analyticsService.getContext()
+  const stopStage = localStartupAttempt()?.beginStage(stage)
   const startedAt = performance.now()
   const finish = (result?: T) =>
-    analyticsService.recordMainEvent(context, {
-      name: 'initialization_stage_finished_v2',
-      props: {
-        stage,
-        runtime_mode: runtimeMode,
-        outcome: result?.success
+    analyticsService.recordMainEvent(
+      context,
+      {
+        name: 'initialization_stage_finished_v2',
+        props: {
+          stage,
+          runtime_mode: runtimeMode,
+          outcome: result?.success
+            ? 'success'
+            : result?.code === 'OPERATION_CANCELLED'
+              ? 'cancelled'
+              : 'failure',
+          known_code: result?.success
+            ? 'none'
+            : codes.has(result?.code as AnalyticsInitializationCode)
+              ? (result!.code as AnalyticsInitializationCode)
+              : 'unknown',
+          failed_stage: result?.success
+            ? 'none'
+            : stage === 'runtime_binary'
+              ? 'runtime_binary'
+              : stages.has(result?.failedStage ?? '')
+                ? (result!.failedStage as AnalyticsInitializationStage)
+                : 'unknown',
+          duration_bucket: analyticsDuration(performance.now() - startedAt),
+        },
+      },
+      stopStage?.(
+        result?.success
           ? 'success'
           : result?.code === 'OPERATION_CANCELLED'
             ? 'cancelled'
             : 'failure',
-        known_code: result?.success
-          ? 'none'
-          : codes.has(result?.code as AnalyticsInitializationCode)
-            ? (result!.code as AnalyticsInitializationCode)
-            : 'unknown',
-        failed_stage: result?.success
-          ? 'none'
-          : stage === 'runtime_binary'
-            ? 'runtime_binary'
-            : stages.has(result?.failedStage ?? '')
-              ? (result!.failedStage as AnalyticsInitializationStage)
-              : 'unknown',
-        duration_bucket: analyticsDuration(performance.now() - startedAt),
-      },
-    })
+        codes.has(result?.code as AnalyticsInitializationCode) ? result?.code : 'unknown'
+      )
+    )
   try {
-    const result = await run()
+    const result = await inStartupOperation(run)
     finish(result)
     return result
   } catch (error) {

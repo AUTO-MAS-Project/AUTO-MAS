@@ -114,6 +114,8 @@ import {
   getBackendOwnership,
 } from './services/instanceConfig'
 import { resolveRuntimeLaunchModeDetail } from './services/runtime'
+import { setupStartupHardware, localStartupAttempt } from './services/startupHardware/monitor'
+import { startupProbeConfig, flushStartupHardwareLog } from './services/startupHardware/config'
 import AdmZip = require('adm-zip')
 import { migrateUserData, selectUserDataLock } from './services/userDataMigration'
 import { recordDesktopStartup } from './services/startupTiming'
@@ -1548,6 +1550,7 @@ ipcMain.handle('log:export', async (_event, rawDialogLabels?: unknown) => {
       }
 
       const zipPath = result.filePath
+      await flushStartupHardwareLog()
 
       // 与问题包同一套脱敏（日志里的推送密钥、家目录等），但不设大小上限：这里要的就是全部日志
       const zip = new AdmZip()
@@ -2447,6 +2450,8 @@ app.whenReady().then(async () => {
   recordDesktopStartup('Electron 就绪')
   const startupConfig = loadConfig()
   const updateRoot = app.isPackaged ? path.dirname(app.getPath('exe')) : getAppRoot()
+  refreshAnalyticsPreference()
+  setupStartupHardware(startupProbeConfig, () => analyticsService.getContext())
   const desktopUpdatesEnabled = !getDeveloperBackendRepo()
   if (desktopUpdatesEnabled) await recoverUpdateMaterials(updateRoot)
   void startDesktopStartup({
@@ -2457,7 +2462,16 @@ app.whenReady().then(async () => {
         : undefined,
     autoUpdate: startupConfig.Update.IfAutoUpdate,
   }).then(result => {
-    if (!result.success) logger.warn(`桌面启动未完成: ${result.error ?? result.code}`)
+    if (!result.success) {
+      const attempt = localStartupAttempt()
+      attempt?.logResult(
+        'desktop',
+        result.code === 'OPERATION_CANCELLED' ? 'cancelled' : 'failure',
+        result.code?.match(/^[A-Z_]{1,64}$/) ? result.code : 'unknown'
+      )
+      attempt?.stop()
+      logger.warn(`桌面启动未完成: ${result.error ?? result.code}`)
+    }
   })
   const handlersStartedAt = performance.now()
   registerAnalyticsHandlers(() => mainWindow)
@@ -2473,7 +2487,6 @@ app.whenReady().then(async () => {
       'owned',
     quit: finishCoordinatedQuit,
   })
-  refreshAnalyticsPreference()
   analyticsService.recordAppStarted({
     launch_kind: isScheduledWakeup ? 'scheduled_wakeup' : isAutoStart ? 'auto_start' : 'manual',
     runtime_mode:

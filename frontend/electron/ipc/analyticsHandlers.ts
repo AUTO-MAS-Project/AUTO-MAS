@@ -9,6 +9,8 @@ import * as path from 'path'
 import { fileURLToPath } from 'url'
 import { analyticsService, refreshAnalyticsPreference } from '../services/analyticsService'
 import { getDevelopmentServerUrl } from '../services/instanceConfig'
+import { validateAnalyticsEvent } from '../services/analyticsPolicy'
+import { claimStartupAttempt, finishStartupAttempt } from '../services/startupHardware/monitor'
 
 let mainWindow: () => BrowserWindow | null = () => null
 
@@ -48,6 +50,24 @@ export function registerAnalyticsHandlers(getMainWindow: () => BrowserWindow | n
     refreshAnalyticsPreference()
     return analyticsService.getContext()
   })
+  ipcMain.handle('analytics:initialization-begin', event => {
+    if (!isApplicationWindowSender(event, mainWindow(), { allowDevelopment: true }))
+      return { generation: null, attempt: null }
+    refreshAnalyticsPreference()
+    return { generation: analyticsService.getContext(), attempt: claimStartupAttempt() }
+  })
+  ipcMain.on(
+    'analytics:initialization-finish',
+    (event, context: unknown, attempt: unknown, payload: unknown) => {
+      if (!isApplicationWindowSender(event, mainWindow(), { allowDevelopment: true })) return
+      const valid = validateAnalyticsEvent(payload, true)
+      if (valid?.name !== 'initialization_finished_v2') return
+      refreshAnalyticsPreference()
+      const summary = finishStartupAttempt(attempt, valid.props.outcome, valid.props.failed_stage)
+      if (isAnalyticsSender(event))
+        analyticsService.recordRendererEvent(context, valid, () => summary)
+    }
+  )
   ipcMain.on('analytics:event', (event, context: unknown, payload: unknown) => {
     if (!isAnalyticsSender(event)) return
     refreshAnalyticsPreference()

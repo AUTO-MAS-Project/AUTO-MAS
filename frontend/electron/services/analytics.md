@@ -359,3 +359,9 @@ OK-WW 动态日常、4C、梦魇、战斗、角色及月卡面板保存复用 `a
 后端后台暂存前的插件预检属于定时轮询内部准备，不另行采集；失败原因仅在本地吐司展示，不进入遥测。手动同版本更新的拒绝沿用 backend_update_finished，由更新服务确认失败，不重复记录预检事件。
 
 MaaEnd 协议空间与基质刷取的独立配置复用 `useUserApi.updateUser` 的 `config_write_finished`，执行及送货失败停止后续任务复用 `taskAnalytics.ts` 的运行终态观察。库存目标、关卡及日志不参与上报。
+
+## 启动硬件统计
+
+桌面启动时按一次尝试启用只读采样器，每秒取样，最多十分钟。关闭匿名遥测后继续将实测值和失败前十五秒写入本地 debug/startup-hardware.log，现有日志包会包含它。其他平台和 Windows 探针不可用时使用系统 CPU、内存和卷空间读数；无法读取的 GPU 引擎或磁盘性能保留未知。错误详情只取最近的有效样本。整体与阶段结果使用已有事件，仅主进程附加有限字段。目录按用途映射并归桶；旧 Runtime 沿用原错误。手动重试另起尝试，运行中关闭会撤销上传许可并关闭 Runtime 的取样管道。重新开启从下次尝试开始。
+
+看板选 `initialization_finished_v2`，先按应用版本和 `flow_kind` 筛选，再按 `install_media`、`ram` 或 `cpu_series` 分组。每组失败率是 failure 尝试数除以该组终态总数，同时列出 success、cancelled、skipped、unconfirmed 和样本数。以 `coverage=sampled` 统计有硬件读数的覆盖；旧版本或配置未确认造成的缺失不能当低负载。阶段耗时用 `initialization_stage_finished_v2` 按 stage 和 duration_bucket 分组。

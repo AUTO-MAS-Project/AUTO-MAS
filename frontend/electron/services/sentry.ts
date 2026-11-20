@@ -1,3 +1,5 @@
+import { startupAttempt } from './startupHardware/monitor'
+import { allowedFields } from './startupHardware/summary'
 import * as Sentry from '@sentry/electron/main'
 import { app } from 'electron'
 
@@ -37,7 +39,29 @@ const startSentry = () => {
         integration => integration.name !== 'Console' && !/minidump/i.test(integration.name)
       ),
     tracesSampleRate: 0.05,
-    beforeSend: sanitizeMainSentryEvent,
+    beforeSend(event) {
+      const clean = sanitizeMainSentryEvent(event)
+      if (clean.contexts) delete clean.contexts.startup_resources
+      const active = startupAttempt()
+      const captured = (event.timestamp ?? 0) * 1000
+      if (
+        active &&
+        captured >= active.wallStart &&
+        captured <= Date.now() &&
+        (event.exception?.values?.length ||
+          event.tags?.renderer_gone_reason ||
+          event.tags?.startup_failure)
+      ) {
+        const summary = active.snapshot(true)
+        if (
+          summary.coverage === 'sampled' &&
+          ['<1s', '1-5s', '5-15s'].includes(summary.sample_age)
+        ) {
+          clean.contexts = { ...clean.contexts, startup_resources: allowedFields(summary) }
+        }
+      }
+      return clean
+    },
     beforeSendTransaction: sanitizeMainSentryEvent,
   })
   Sentry.setTag('component', 'electron-main')

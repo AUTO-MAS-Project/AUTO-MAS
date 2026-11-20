@@ -1,3 +1,4 @@
+import { operationAttempt } from './startupHardware/monitor'
 import { beginMainFeature } from './featureAnalytics'
 /**
  * Runtime 可执行文件对齐到线上最新版
@@ -968,7 +969,8 @@ async function downloadTarget(
       source.url,
       downloadPath,
       Math.min(deadline - Date.now(), sourceTimeoutMs),
-      progress =>
+      progress => {
+        operationAttempt()?.desktopDownload(progress.downloadedSize, progress.speed, index + 1)
         options.onProgress?.({
           phase: 'download',
           progress: progress.progress,
@@ -982,7 +984,8 @@ async function downloadTarget(
           bytesPerSecond: progress.speed,
           current: progress.downloadedSize,
           total: progress.totalSize,
-        }),
+        })
+      },
       isCancelled
     )
     if (result.cancelled) return { status: 'cancelled' }
