@@ -17,6 +17,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 import asyncio
 import json
+import re
 import time
 import uuid
 from contextlib import suppress
@@ -81,7 +82,7 @@ from .tools.launcher_start import (
 )
 from .tools.maintenance import GameMaintenanceDetected
 from .tools.startup import start_okww
-from .tools.task_logs import has_task_failure
+from .tools.task_logs import find_task_failure
 
 logger = get_logger("OK-WW 自动代理")
 
@@ -102,6 +103,15 @@ _GAME_EXIT_WAIT_SECONDS = 90
 # 「游戏更新成功」是环境变更而非脚本错误，命中后至少保证再跑一轮（见 main_task）。
 _OKWW_GAME_UPDATED_LOG = "游戏更新成功, 游戏即将重启"
 _OKWW_GAME_UPDATED_MSG = "游戏更新成功，即将重启任务"
+_OKWW_ERROR_LOG = re.compile(
+    r"\b(?:(?P<task>\w+):)?info_set 错误(?=[ \t\r\n]|$)"
+    r"[ \t]*(?P<detail>[^\r\n]*)"
+)
+_OKWW_ERROR_PREFIX = "OK-WW："
+# 上游明确拒绝当前配置，重复下发相同配置无法恢复。
+_OKWW_4C_CONFIG_ERROR = (
+    "选择“传送并刷取4C声骸”时，必须在刷取声骸任务中启用“传送至首领”。"
+)
 _OKWW_TASK_FAILED_MSG = "OK-WW 任务执行失败，请查看脚本日志"
 # 成功判据（任一命中即完成）：
 # 1. ok-script 框架 TaskExecutor 的退出语：DailyTask.run() 正常返回后才打印
@@ -161,6 +171,23 @@ def _okww_mas_config_dir(script_id: str, user_id: str, base: str) -> Path:
     if owner is None:
         raise ValueError("原生来源不使用 MAS 全量配置目录")
     return mas_config_dir(script_id, owner)
+
+
+def _okww_error_status(log: str) -> str | None:
+    """从上游错误日志读取可显示的失败原因。"""
+    error = _OKWW_ERROR_LOG.search(log)
+    if error is None:
+        return None
+    detail = error["detail"].strip()
+    if detail.startswith("账号列表中未找到 "):
+        detail = "登录列表中未找到目标账号"
+    elif (
+        error["task"] in ("MultiAccountConfigTask", "MultiAccountDailyTask")
+        and detail != _OKWW_4C_CONFIG_ERROR
+    ):
+        # 原生多账号失败正文可能包含完整登录标识。
+        detail = "原生多账号任务失败，请查看本地脚本日志"
+    return f"{_OKWW_ERROR_PREFIX}{detail}" if detail else None
 
 
 def _update_json(path: Path, values: dict[str, object]) -> None:
@@ -989,13 +1016,19 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 await Notify.send_notice(
                     LocalNotice(
                         title="OK-WW 自动代理出现异常！",
-                        message=f"账号 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        message=f"账号 {self.cur_user_item.name}：{self.cur_user_log.status}",
                         ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                         duration_seconds=3,
                     )
                 )
             except Exception:
                 pass
+            if (
+                self.cur_user_log.status
+                == f"{_OKWW_ERROR_PREFIX}{_OKWW_4C_CONFIG_ERROR}"
+            ):
+                await self.script_info.append_log("\n请修正 4C 声骸配置后再运行")
+                break
             if attempt < run_limit:
                 await self.script_info.append_log(
                     f"\n将在稍后重试 ({attempt}/{run_limit})"
@@ -1037,8 +1070,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         if _OKWW_GAME_UPDATED_LOG in log:
             log_status = _OKWW_GAME_UPDATED_MSG
             user_item_status = "异常"
-        elif has_task_failure(log_content):
-            log_status = _OKWW_TASK_FAILED_MSG
+        elif (failure_line := find_task_failure(log_content)) is not None:
+            log_status = _okww_error_status(failure_line) or _OKWW_TASK_FAILED_MSG
             user_item_status = "异常"
         else:
             # 多账号任务的单次日常完成不代表整批完成，只认框架退出语。
