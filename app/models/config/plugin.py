@@ -44,6 +44,7 @@ from app.config import (
 from app.config.shortcuts import ui_visibility
 from app.plugin.base.plugin import BasePlugin
 from app.plugin.types import (
+    RESTRICTED_PLUGIN_NAMES,
     LifecycleContext,
     PluginCodeDrift,
     PluginState,
@@ -502,9 +503,14 @@ class PluginMeta(ConfigEntry):
     @trigger_field("info.install", finish_on_cancel=True)
     async def on_install(self) -> None:
         """执行前复查市场条目的安装权限，再复用预检、安装及升级加载流程。"""
+        from app.core.mystery import Mystery
         from app.core.plugin import Plugin
         from app.plugin.errors import PluginPrecheckError
 
         if self._vis_install() != UiVisibility.SHOW:
             raise PluginPrecheckError("当前插件不可安装或升级，请刷新市场后重试")
+        # 受控插件与市场可见性同源，绕过市场的直接安装请求同样被拒。
+        if self.effective.info.plugin_name in RESTRICTED_PLUGIN_NAMES:
+            if not Mystery.is_unlocked():
+                raise PluginPrecheckError("该插件需要先在神秘入口解锁后才能安装")
         await Plugin.install(self)

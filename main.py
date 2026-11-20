@@ -689,6 +689,7 @@ def main():
             history_router,
             i18n_router,
             info_router,
+            mystery_router,
             ocr_router,
             openclaw_qq_router,
             plan_router,
@@ -763,6 +764,7 @@ def main():
         app.include_router(history_router)
         app.include_router(i18n_router)
         app.include_router(community_router)
+        app.include_router(mystery_router)
         app.include_router(setting_router)
         app.include_router(share_router)
         app.include_router(update_router)

@@ -37,6 +37,8 @@ with startup_stage("后端/API 导入/i18n"):
     from .i18n import router as i18n_router
 with startup_stage("后端/API 导入/info"):
     from .info import router as info_router
+with startup_stage("后端/API 导入/mystery"):
+    from .mystery import router as mystery_router
 with startup_stage("后端/API 导入/ocr"):
     from .ocr import router as ocr_router
 with startup_stage("后端/API 导入/openclaw_qq"):
@@ -64,6 +66,7 @@ __all__ = [
     "community_router",
     "core_router",
     "info_router",
+    "mystery_router",
     "scripts_router",
     "plan_router",
     "games_router",

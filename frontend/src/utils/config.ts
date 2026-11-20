@@ -55,9 +55,6 @@ export interface FrontendConfig {
   /** 自定义背景下的主界面表面透明度；范围为 0.10～1.00。 */
   customSurfaceOpacity?: number
 
-  // 神秘入口上次解锁的北京时间日期，仅作轻量访问门槛
-  mysteryUnlockedDate?: string
-
   // 界面语言；未设置时跟随系统
   language?: AppLocale
 
