@@ -580,7 +580,7 @@ class DepotCultivateService:
             skland: 森空岛整表快照 (练度映射, 拉取时刻)；None = 未绑定或
                 拉取失败，链短路落 local（决策 37/38）。
             require_observations: 实际执行要求练度与库存可用，预览仍允许估算。
-            auto_raise: 使用本次练度与库存按材料达成率选取最多十名干员。
+            auto_raise: 按目标顺序下发最多十名干员，超出名额时按材料达成率筛选。
 
         Returns:
             (流转后的目标列表, 养成计划, 是否存在材料缺口, 自动培养名单)；
