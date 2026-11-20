@@ -44,8 +44,10 @@ def _proxy(tmp_path: Path, log_path, config_path):
     )
     proxy.task_info = SimpleNamespace(is_queue_task=False)
     proxy.cur_user_config = SimpleNamespace(
-        Info=SimpleNamespace(RemainedDay=-1, PlanMode="Fixed")
+        Info=SimpleNamespace(RemainedDay=-1, PlanMode="Fixed"),
+        Task=SimpleNamespace(TaskIndex=2),
     )
+    proxy.plan_active = False
     proxy.native_base = False
     proxy._reset_daily_proxy_count = AsyncMock()
     return proxy
