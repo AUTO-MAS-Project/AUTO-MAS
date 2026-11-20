@@ -435,7 +435,7 @@ export class BackendService {
           resolveReady(baseUrl, event.details.startupActivation === 'pending')
         },
       })
-      logger.info(
+      logger.debug(
         `[启动计时] 桌面/Runtime 监督握手，阶段 ${(performance.now() - superviseStartedAt).toFixed(1)} ms`
       )
     } catch (error) {

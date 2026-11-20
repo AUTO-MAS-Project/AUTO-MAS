@@ -41,6 +41,10 @@ from app.utils.common.security import sanitize_log_message
 
 _logger.remove()
 
+_level = os.getenv("AUTO_MAS_LOG_LEVEL", "INFO")
+if _level not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
+    _level = "INFO"
+
 
 def _sanitize_record(record):
     """在每个 Loguru sink 写出前过滤敏感字段。"""
@@ -51,7 +55,7 @@ def _sanitize_record(record):
 
 _logger.add(
     sink=Path.cwd() / "debug/app.log",
-    level="INFO",
+    level=_level,
     format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{extra[module]}</cyan> | <level>{message}</level>",
     filter=_sanitize_record,
     enqueue=True,
@@ -64,13 +68,13 @@ _logger.add(
 
 _logger.add(
     sink=sys.stderr,
-    level="DEBUG",
+    level=_level,
     format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{extra[module]}</cyan> | <level>{message}</level>",
     filter=_sanitize_record,
     enqueue=True,
     backtrace=True,
     diagnose=False,
-    colorize=True,
+    colorize=sys.stderr.isatty(),
 )
 
 

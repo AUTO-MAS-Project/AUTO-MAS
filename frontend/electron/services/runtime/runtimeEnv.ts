@@ -16,6 +16,7 @@ import { readBackendDocument } from '../backendConfig'
  */
 
 import { getLogger } from '../logger'
+import { getStartupOutputLogLevel } from '../../utils/configFile'
 import { getApplicationEnvironment, isDevelopmentEnvironment } from '../instanceConfig'
 
 const logger = getLogger('Runtime环境变量')
@@ -170,7 +171,11 @@ function readProxyAddress(config: BackendConfigShape): string | null {
  */
 export function buildRuntimeEnv(dataRoot: string): NodeJS.ProcessEnv {
   const config = readBackendConfig(dataRoot)
-  const env: NodeJS.ProcessEnv = { [RUNTIME_APP_ENV]: getApplicationEnvironment() }
+  const env: NodeJS.ProcessEnv = {
+    [RUNTIME_APP_ENV]: getApplicationEnvironment(),
+    AUTO_MAS_LOG_LEVEL: getStartupOutputLogLevel(dataRoot),
+    PYTHONIOENCODING: 'utf-8',
+  }
   if (isDevelopmentEnvironment() || !isTelemetryEnabled(config)) {
     env[RUNTIME_TELEMETRY_ENV] = 'disabled'
   }

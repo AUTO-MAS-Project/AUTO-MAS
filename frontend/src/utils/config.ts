@@ -4,6 +4,7 @@ import type { CursorEffect } from '@/types/cursorEffect'
 import type { PressSoundPreset } from '@/types/pressSound'
 import type { HomeLayoutConfig } from '@/types/home'
 import type { HomeSatelliteStyle } from '@/types/homeSatellite'
+import type { OutputLogLevel } from '../../electron/utils/logOutputLevel'
 
 const logger = window.electronAPI.getLogger('配置管理')
 
@@ -15,6 +16,7 @@ export interface FrontendConfig {
 
   /** 设置页右侧分区目录的显示偏好。 */
   settingsShowNavigation?: boolean
+  logOutputLevel?: OutputLogLevel
   /** 桌面分身独立选择的队列与托管任务。 */
   desktopSessionQueueIds?: string[]
 
@@ -172,10 +174,8 @@ async function getConfigInternal(): Promise<FrontendConfig> {
     if (localConfig) {
       const parsed = JSON.parse(localConfig)
       config = { ...config, ...parsed, ...(fileConfig ?? {}) }
-      logger.info(`从localStorage迁移配置: ${JSON.stringify(parsed)}`)
     } else if (fileConfig) {
       config = { ...config, ...fileConfig }
-      logger.info(`从文件加载配置: 键=${Object.keys(fileConfig).join(',')}`)
     }
 
     if (themeConfig) {
@@ -186,11 +186,6 @@ async function getConfigInternal(): Promise<FrontendConfig> {
       if (!fileConfig || fileConfig.themeColor === undefined) {
         config.themeColor = parsed.themeColor || 'blue'
       }
-      logger.info(`从localStorage迁移主题配置: ${JSON.stringify(parsed)}`)
-    }
-
-    if (!localConfig && !themeConfig && fileConfig) {
-      logger.info(`从文件加载配置: 键=${Object.keys(fileConfig).join(',')}`)
     }
 
     return { ...config, ...legacyThemePatch }
@@ -236,13 +231,11 @@ export async function getConfig(): Promise<FrontendConfig> {
 export async function saveConfig(config: Partial<FrontendConfig>): Promise<void> {
   return enqueueConfigOperation(async () => {
     try {
-      logger.info(`开始保存配置: 键=${Object.keys(config).join(',')}`)
       const defaults = await getConfigInternal() // 保留默认值和旧配置迁移
       await window.electronAPI.saveConfig(config, defaults)
       // 迁移曾失败时旧主题键还在；用户已显式保存新值，删掉对应旧键，免得下次迁移把它覆盖回去。
       if (config.themeMode !== undefined) localStorage.removeItem('theme-mode')
       if (config.themeColor !== undefined) localStorage.removeItem('theme-color')
-      logger.info('配置保存成功')
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`保存配置失败: ${errorMsg}`)

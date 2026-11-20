@@ -87,6 +87,23 @@ test.describe('@account-editors', () => {
           .evaluateAll(cols => cols.slice(0, 3).map(col => col.getBoundingClientRect().width))
         expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(1)
         await app.evidence(`account-editor-${segment}-narrow`)
+        if (type === 'SRC') {
+          const password = 'synthetic password for log regression'
+          let loggedPassword = false
+          page.on('console', message => {
+            loggedPassword ||= message.text().includes(password)
+          })
+          const passwordField = page.locator('input[type=password]').first()
+          await passwordField.fill(password)
+          const updating = saved()
+          const savedMessage = page.waitForEvent('console', {
+            predicate: message => message.text().includes('字段已保存: Info.Password'),
+          })
+          await passwordField.blur()
+          expect((await (await updating).json()).code).toBe(200)
+          await savedMessage
+          expect(loggedPassword, '保存账号密码时，前端日志不应包含输入值').toBe(false)
+        }
         if (type === 'MaaFW') {
           const updateUrl = '**/api/scripts/user/update'
           await page.route(

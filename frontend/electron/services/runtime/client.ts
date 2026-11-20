@@ -612,18 +612,21 @@ class RuntimeSession {
 
   /** 每个阶段最多一条本地记录；不采集输出正文、路径或命令参数。 */
   private diagnose(event: string, details: Record<string, unknown> = {}): void {
-    logger.info(
-      `[Runtime进程] ${JSON.stringify({
-        sessionId: this.sessionId,
-        command: this.command,
-        event,
-        elapsedMs: Math.round((performance.now() - this.requestedAt) * 10) / 10,
-        pid: this.child?.pid,
-        stdoutBytes: this.stdoutBytes,
-        stderrBytes: this.stderrBytes,
-        ...details,
-      })}`
-    )
+    const message = `[Runtime进程] ${JSON.stringify({
+      sessionId: this.sessionId,
+      command: this.command,
+      event,
+      elapsedMs: Math.round((performance.now() - this.requestedAt) * 10) / 10,
+      pid: this.child?.pid,
+      stdoutBytes: this.stdoutBytes,
+      stderrBytes: this.stderrBytes,
+      ...details,
+    })}`
+    if (event === 'handshake_timeout' || event === 'spawn_error') {
+      logger.warn(message)
+    } else {
+      logger.debug(message)
+    }
   }
 
   addListener(listener: (event: RuntimeEvent) => void): () => void {
@@ -809,7 +812,7 @@ class RuntimeSession {
 
     this.helloEvent = event
     this.diagnose('hello')
-    logger.info(
+    logger.debug(
       `Runtime ${event.runtimeVersion} 已握手，命令 ${event.command}，能力 [${event.capabilities.join(', ')}]`
     )
     this.resolveHello(event)

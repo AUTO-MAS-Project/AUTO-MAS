@@ -257,12 +257,7 @@ class AppConfig:
             | None
         ) = None
 
-        logger.info("")
-        logger.info("===================================")
-        logger.info("AUTO-MAS 后端应用程序")
-        logger.info(f"版本号:  {self.VERSION}")
-        logger.info(f"工作目录:  {self.work_path}")
-        logger.info("===================================")
+        logger.info(f"AUTO-MAS 后端 {self.VERSION}，工作目录 {self.work_path}")
 
         self.log_path = self.debug_path / "app.log"
         self.database_path = self.data_path / "data.db"
@@ -1294,8 +1289,6 @@ class AppConfig:
     async def get_script(self, script_id: str | None) -> tuple[list, dict]:
         """获取托管配置"""
 
-        logger.info(f"获取托管配置: {script_id}")
-
         if script_id is None:
             # 获取所有托管配置
             data = self.ScriptConfig.model_dump(context={"audience": "api"})
@@ -1398,8 +1391,6 @@ class AppConfig:
         self, script_id: str, user_id: Optional[str]
     ) -> tuple[list, dict]:
         """获取账号配置"""
-
-        logger.info(f"获取账号配置: {script_id} - {user_id}")
 
         uid = uuid.UUID(script_id)
 
@@ -1794,8 +1785,6 @@ class AppConfig:
 
     async def get_user_config_dir(self, script_id: str, user_id: str) -> Path:
         """获取专项声明的生效配置目录，未声明时沿用账号数据目录。"""
-
-        logger.info(f"{script_id} 获取账号配置目录: {user_id}")
 
         script_uid = uuid.UUID(script_id)
         user_uid = uuid.UUID(user_id)
@@ -2486,8 +2475,6 @@ class AppConfig:
     async def get_setting(self) -> Dict[str, Any]:
         """获取全局设置"""
 
-        logger.info("获取全局设置")
-
         data = self.setting.model_dump(context={"audience": "api"})
         return data
 
@@ -2754,7 +2741,6 @@ class AppConfig:
             datetime.now().astimezone() - timedelta(hours=1)
             < self.setting.Data.LastNoticeUpdated
         ):
-            logger.info("一小时内已进行过一次检查, 直接使用缓存的公告信息")
             return (False, json.loads(self.setting.Data.Notice).get("notice_dict", {}))
 
         logger.info("开始从 AUTO-MAS 服务器获取公告信息")
@@ -2767,7 +2753,6 @@ class AppConfig:
                     headers={"If-None-Match": self.setting.Data.NoticeETag},
                 )
                 if response.status_code == 304:
-                    logger.info("公告未更新，使用本地缓存的公告信息")
                     await self.setting.update(
                         type(self.setting).model_validate(
                             {"Data": {"LastNoticeUpdated": datetime.now().astimezone()}}

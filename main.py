@@ -120,7 +120,10 @@ class InterceptHandler(logging.Handler):
             level = logger.level(record.levelname).name
         except ValueError:
             level = record.levelno
-        # 过滤 httpcore 正常阶段流水，失败事件提为 WARNING，保留到 app.log
+        # httpx 的请求流水仅供调试。
+        if record.name == "httpx" and record.levelno == logging.INFO:
+            level = "DEBUG"
+        # 过滤 httpcore 正常阶段流水，失败事件提为 WARNING。
         if record.levelno == logging.DEBUG and (
             record.name == "httpcore" or record.name.startswith("httpcore.")
         ):
@@ -129,7 +132,7 @@ class InterceptHandler(logging.Handler):
                 return
             if event.endswith(".failed"):
                 level = "WARNING"
-        # 访问日志降到 DEBUG: 不进 app.log (INFO), 开发时 stderr (DEBUG) 仍可见
+        # 常规访问日志仅在 DEBUG 模式记录。
         if record.name == "uvicorn.access":
             level = "DEBUG"
         # 过滤敏感信息并转发日志

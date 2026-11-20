@@ -29,6 +29,12 @@ import SectionCard from '@/components/ui/SectionCard.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
 import { SCRIPT_LABELS, SCRIPT_LOGOS } from '@/utils/scriptLogos'
 import { maafwScriptTypeByConfigType } from '@/composables/useMaaFWFlavor'
+import { getConfig, saveConfig } from '@/utils/config'
+import {
+  normalizeOutputLogLevel,
+  OUTPUT_LOG_LEVELS,
+  type OutputLogLevel,
+} from '../../../electron/utils/logOutputLevel'
 
 const { t } = useI18n()
 
@@ -37,6 +43,34 @@ const { openDevTools } = defineProps<{
 }>()
 
 const logger = window.electronAPI.getLogger('日志管理')
+const logOutputLevel = ref<OutputLogLevel>('INFO')
+const loadingLogOutputLevel = ref(true)
+const savingLogOutputLevel = ref(false)
+const logOutputLevelOptions = OUTPUT_LOG_LEVELS.map(level => ({ value: level, label: level }))
+
+async function loadLogOutputLevel() {
+  try {
+    logOutputLevel.value = normalizeOutputLogLevel((await getConfig()).logOutputLevel)
+  } catch (error) {
+    logger.error('读取日志输出级别失败', error)
+    message.error(t('core.setting.advanced.logOutputLevelLoadFailed'))
+  } finally {
+    loadingLogOutputLevel.value = false
+  }
+}
+
+async function changeLogOutputLevel(level: OutputLogLevel) {
+  savingLogOutputLevel.value = true
+  try {
+    await saveConfig({ logOutputLevel: level })
+    logOutputLevel.value = level
+  } catch {
+    message.error(t('core.setting.toast.saveFailed'))
+  } finally {
+    savingLogOutputLevel.value = false
+  }
+}
+
 const { exportingLogs, packageLogs: exportLogsZip } = useLogExport()
 const exportingDataBackup = ref(false)
 const { exporting: exportingMaaEndLogs, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
@@ -148,6 +182,7 @@ const issueTiles = computed<IssueTile[]>(() => [
 ])
 
 onMounted(() => {
+  void loadLogOutputLevel()
   void loadMaaFWReportProjects()
   void loadAddedScriptTypes()
 })
@@ -269,6 +304,20 @@ const exportDataBackup = async () => {
     </SectionCard>
 
     <SectionCard :title="t('core.setting.advanced.runtimeDebugSection')" :icon="CodeOutlined">
+      <SettingRow
+        :label="t('core.setting.advanced.logOutputLevel')"
+        :description="t('core.setting.advanced.logOutputLevelDesc')"
+      >
+        <a-select
+          :value="logOutputLevel"
+          :options="logOutputLevelOptions"
+          :loading="loadingLogOutputLevel || savingLogOutputLevel"
+          :disabled="loadingLogOutputLevel || savingLogOutputLevel"
+          :aria-label="t('core.setting.advanced.logOutputLevel')"
+          style="width: 170px"
+          @change="changeLogOutputLevel"
+        />
+      </SettingRow>
       <SettingRow :label="t('core.setting.advanced.devToolsLabel')">
         <a-button @click="openDevTools">{{ t('core.setting.advanced.openDevTools') }}</a-button>
       </SettingRow>
