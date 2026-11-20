@@ -32,7 +32,7 @@ test.describe('@script-run-limits', () => {
           .locator('.ant-form-item')
           .filter({ has: page.getByText(label, { exact: true }) })
           .getByRole('spinbutton')
-      const retryLabel = 'Retry limit'
+      const retryLabel = 'Max attempts'
       const hardLabel = 'Per-account total run limit (minutes)'
 
       // 失焦会修正输入；回归曾把修正前的旧草稿保存，而界面显示新值。

@@ -180,7 +180,7 @@
             v-model:daily-limit="bettergiConfig.Run.ProxyTimesLimit"
             v-model:retry-limit="bettergiConfig.Run.RunTimesLimit"
             v-model:timeout="bettergiConfig.Run.RunTimeLimit"
-            :retry-hint="t('core.edit.bettergiRetryLimitHint')"
+            :retry-hint="t('core.edit.retryLimitHint')"
             :timeout-hint="t('core.edit.bettergiRunTimeoutHint')"
             @save="key => handleChange('Run', key, bettergiConfig.Run[key])"
           />

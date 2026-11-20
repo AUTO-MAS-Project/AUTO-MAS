@@ -5,7 +5,6 @@ import ScriptRunLimitField from './ScriptRunLimitField.vue'
 
 defineProps<{
   dailyHint?: string
-  retryLabel?: string
   retryHint: string
   timeoutHint: string
   enhanced?: boolean
@@ -39,7 +38,7 @@ const { t } = useI18n()
       <ScriptRunLimitField
         v-model="retryLimit"
         kind="retry"
-        :label="retryLabel ?? t('core.edit.retryLimit2')"
+        :label="t('core.edit.retryLimit')"
         :hint="retryHint"
         :enhanced="enhanced"
         @save="emit('save', 'RunTimesLimit')"

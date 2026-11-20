@@ -386,7 +386,7 @@
               />
             </a-col>
             <a-col :span="12">
-              <a-form-item :label="t('core.edit.maximumAttemptsFailedTask')">
+              <a-form-item :label="t('core.edit.retryLimit')">
                 <a-input-number
                   v-model:value="hsrConfig.Run.RunTimesLimit"
                   :min="1"

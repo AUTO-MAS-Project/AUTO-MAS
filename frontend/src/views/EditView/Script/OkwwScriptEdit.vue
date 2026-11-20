@@ -284,7 +284,7 @@
             v-model:daily-limit="okwwConfig.Run.ProxyTimesLimit"
             v-model:retry-limit="okwwConfig.Run.RunTimesLimit"
             v-model:timeout="okwwConfig.Run.RunTimeLimit"
-            :retry-hint="t('core.edit.giveUpAfterThis')"
+            :retry-hint="t('core.edit.retryLimitHint')"
             :timeout-hint="t('core.edit.logThatStaysUnchanged')"
             @save="key => handleChange('Run', key, okwwConfig.Run[key])"
           />

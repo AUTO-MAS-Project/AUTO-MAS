@@ -234,7 +234,7 @@
             v-model:daily-limit="oknteConfig.Run.ProxyTimesLimit"
             v-model:retry-limit="oknteConfig.Run.RunTimesLimit"
             v-model:timeout="oknteConfig.Run.RunTimeLimit"
-            :retry-hint="t('core.edit.giveUpAfterThis')"
+            :retry-hint="t('core.edit.retryLimitHint')"
             :timeout-hint="t('core.edit.logThatStaysUnchanged')"
             @save="key => handleChange('Run', key, oknteConfig.Run[key])"
           />
