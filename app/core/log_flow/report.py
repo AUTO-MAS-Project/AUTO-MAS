@@ -80,9 +80,20 @@ class LogFlowTaskReport:
             if len(blocks) > 1:
                 report = replace(report, result="\n\n".join(blocks))
         requested.add(self._script.uid)
-        return await Notify.push_proxy_result(
-            title=title, report=report, task_info=self._task
-        )
+        accepted = False
+
+        def accept() -> None:
+            nonlocal accepted
+            accepted = True
+
+        try:
+            return await Notify.push_proxy_result(
+                title=title, report=report, task_info=self._task, on_accepted=accept
+            )
+        except BaseException:
+            if not accepted:
+                requested.discard(self._script.uid)
+            raise
 
 
 def render_node_details(

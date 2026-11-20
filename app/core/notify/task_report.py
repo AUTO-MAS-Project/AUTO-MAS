@@ -111,6 +111,8 @@ class PreparedTaskReport:
         self,
         payload: NotifyPayload,
         targets: list[NotifyTarget],
+        *,
+        on_accepted: Callable[[], None] | None = None,
     ) -> DispatchResult:
         request = TaskReportRequest(
             payload=payload,
@@ -130,8 +132,10 @@ class PreparedTaskReport:
             deliver
         ):
             self.coordinator.reports_pending += 1
+            if on_accepted is not None:
+                on_accepted()
             return DispatchResult(queued=True)
-        return await self.coordinator.dispatch_report(request)
+        return await self.coordinator.dispatch_report(request, on_accepted=on_accepted)
 
 
 def prepare_task_report(task_info: TaskItem | None = None) -> PreparedTaskReport:

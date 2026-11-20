@@ -528,6 +528,45 @@ async def test_named_report_factory_uses_one_account_snapshot_per_run(
 
 
 @pytest.mark.asyncio
+async def test_log_flow_report_retry_depends_on_notify_acceptance(monkeypatch):
+    from auto_mas_core.log_flow import LogFlowTaskReport
+
+    from app.core.notify.coordinator import TaskReportCoordinator
+
+    _, script, _ = await create_runtime_tree()
+    report = LogFlowTaskReport(script)
+    result = TaskResultReport("10:00", "10:01", 1, 0, "账号执行结果")
+
+    def fail_before_acceptance(**_):
+        raise asyncio.CancelledError
+
+    attempts = []
+
+    async def fail_after_acceptance(self, *, request, payload):
+        attempts.append(payload.text)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(
+        Notify,
+        "read_task_report_policy",
+        lambda: TaskReportPolicy("任何时刻", community_enabled=False, wait_seconds=0),
+    )
+    monkeypatch.setattr(Notify, "global_target", fail_before_acceptance)
+    monkeypatch.setattr(
+        TaskReportCoordinator, "_dispatch_report_payload", fail_after_acceptance
+    )
+    with pytest.raises(asyncio.CancelledError):
+        await report.send(title="任务报告", report=result)
+
+    monkeypatch.setattr(Notify, "global_target", lambda **_: NotifyTarget())
+    with pytest.raises(asyncio.CancelledError):
+        await report.send(title="任务报告", report=result)
+
+    await report.send(title="任务报告", report=result)
+    assert len(attempts) == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("uncompleted", [0, 1], ids=["all-complete", "mixed-result"])
 async def test_declared_log_flow_delivers_one_task_report_via_notify(
     cascade_plugins, tmp_path, monkeypatch, uncompleted

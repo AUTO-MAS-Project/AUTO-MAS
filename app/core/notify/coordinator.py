@@ -206,6 +206,8 @@ class TaskReportCoordinator:
     async def dispatch_report(
         self,
         request: TaskReportRequest,
+        *,
+        on_accepted: Callable[[], None] | None = None,
     ) -> DispatchResult:
         """使用入口固定的策略；迟到补发会重新读取下一次通知的策略。"""
 
@@ -232,6 +234,8 @@ class TaskReportCoordinator:
                     payload = self.dependencies.renderer.append_summary(
                         payload, TaskReportSummary(text=pending, markdown=pending)
                     )
+            if on_accepted is not None:
+                on_accepted()
             try:
                 return await self._dispatch_report_payload(
                     request=request, payload=payload
