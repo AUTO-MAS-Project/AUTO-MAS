@@ -66,6 +66,7 @@ export class StartupAttempt {
   private retries = 0
   private lifecycleActivity = ''
   private activityStarted = 0
+  private activityEmittedAt = NaN
   private activity = ''
   private readonly durations = new Map<string, number>()
   constructor(
@@ -219,6 +220,7 @@ export class StartupAttempt {
     this.details.downloaded = band('downloaded', this.downloads / 1048576)!
   }
   beginDesktopDownload(sourceIndex: number) {
+    if (!this.sampling) return
     if (sourceIndex > 1) this.switches++
     this.details.source_switches = band('source_switches', this.switches)!
     let received = 0
@@ -257,13 +259,13 @@ export class StartupAttempt {
           : lifecycleActivities.get(event.status)
       if (next !== undefined && (next !== this.lifecycleActivity || !next)) {
         this.lifecycleActivity = next
-        this.setActivity(next)
+        this.setActivity(next, event.timestamp)
       }
       return
     }
     if (event.type === 'result') {
       this.lifecycleActivity = ''
-      this.setActivity('')
+      this.setActivity('', event.timestamp)
       if (this.command === 'dependencies rebuild' && event.success) this.details.env_rebuilt = 'yes'
       const archive = event.details.startupArchive
       if (archive && typeof archive === 'object') {
@@ -298,7 +300,10 @@ export class StartupAttempt {
               : stage.includes('extract')
                 ? 'unpack'
                 : stage.split('.')[0]
-      this.setActivity(event.status === 'running' ? active : this.lifecycleActivity)
+      this.setActivity(
+        event.status === 'running' ? active : this.lifecycleActivity,
+        event.timestamp
+      )
       const byteProgress =
         event.current !== undefined &&
         (stage === 'uv.download' ||
@@ -328,16 +333,22 @@ export class StartupAttempt {
         this.details.env_rebuilt = 'yes'
     }
   }
-  private setActivity(next: string) {
+  private setActivity(next: string, timestamp?: string) {
     if (next === this.activity) return
     const now = performance.now()
-    if (this.activity)
-      this.durations.set(
-        this.activity,
-        (this.durations.get(this.activity) ?? 0) + now - this.activityStarted
-      )
+    const emittedAt = timestamp ? Date.parse(timestamp) : NaN
+    if (this.activity) {
+      // 同一批到达的事件也应保留 Runtime 实际花费的时间。
+      const runtimeElapsed = emittedAt - this.activityEmittedAt
+      const elapsed =
+        runtimeElapsed >= 0 && runtimeElapsed <= maxDuration
+          ? runtimeElapsed
+          : now - this.activityStarted
+      this.durations.set(this.activity, (this.durations.get(this.activity) ?? 0) + elapsed)
+    }
     this.activity = next
     this.activityStarted = now
+    this.activityEmittedAt = emittedAt
     if (next) this.details.activity = band('activity', next) ?? 'unknown'
   }
   snapshot(recent = false): Fields {

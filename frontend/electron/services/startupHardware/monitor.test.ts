@@ -33,12 +33,10 @@ it('按 Runtime 的状态帧记录依赖同步，在后端就绪时结束启动�
       fileURLToPath(new URL('../runtime/__fixtures__/bootstrap-success.ndjson', import.meta.url)),
       'utf8'
     )
-    const clock = vi.spyOn(performance, 'now')
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(attempt.started)
     try {
       for (const line of data.trim().split('\n')) {
-        const event = parseRuntimeEventLine(line)!
-        clock.mockReturnValue(Date.parse(event.timestamp))
-        attempt.progress(event)
+        attempt.progress(parseRuntimeEventLine(line)!)
       }
       expect(attempt.snapshot()).toMatchObject({ dependencies_time: '1-5s' })
       const base = { protocol: 1, operationId: 'supervise', timestamp: '', sequence: 1 }
@@ -78,10 +76,11 @@ it('按 Runtime 的状态帧记录依赖同步，在后端就绪时结束启动�
 it('安装文件和后续 uv 传输合计，重复的字节进度只计算一次', () =>
   withAttempt(attempt => {
     const mib = 2 ** 20
-    const transfer = attempt.beginDesktopDownload(1)
+    const transfer = attempt.beginDesktopDownload(1)!
     transfer(8 * mib, undefined)
     transfer(64 * mib, undefined)
     transfer(64 * mib, undefined)
+    expect(attempt.snapshot().downloaded).toBe('16-128MiB')
     const base = { protocol: 1, operationId: 'bootstrap', timestamp: '', sequence: 1 }
     attempt.progress({
       ...base,
@@ -96,9 +95,13 @@ it('安装文件和后续 uv 传输合计，重复的字节进度只计算一次
       stage: 'uv.download',
       status: 'running',
       message: '',
-      current: mib,
+      current: 64 * mib,
     })
-    expect(attempt.snapshot().downloaded).toBe('16-128MiB')
+    expect(attempt.snapshot().downloaded).toBe('128-1024MiB')
+    attempt.stop()
+    const switches = attempt.snapshot().source_switches
+    expect(attempt.beginDesktopDownload(2)).toBeUndefined()
+    expect(attempt.snapshot().source_switches).toBe(switches)
   }))
 
 it('停止采样后才失败时按真正的失败时刻过滤最近读数', async () => {
