@@ -105,12 +105,6 @@ OkwwUserConfig = ConfigPayload[_config_models.OkwwUserConfig]
 OkwwUserConfigInput = ConfigInput[_config_models.OkwwUserConfig]
 
 
-SrcUserConfig = ConfigPayload[_config_models.SrcUserConfig]
-
-
-SrcUserConfigInput = ConfigInput[_config_models.SrcUserConfig]
-
-
 ZzzOdUserConfig = ConfigPayload[_config_models.ZzzOdUserConfig]
 
 
@@ -125,7 +119,6 @@ class UserIndexItem(BaseModel):
                 "GeneralUserConfig",
                 "OkwwUserConfig",
                 "OkNteUserConfig",
-                "SrcUserConfig",
                 "MaaEndUserConfig",
                 "M9AUserConfig",
                 "MaaFWUserConfig",
@@ -161,7 +154,6 @@ class UserGetOut(ConfigSnapshotOut):
         str,
         Union[
             SerializeAsAny[BaseModel],
-            SrcUserConfig,
             GeneralUserConfig,
             OkwwUserConfig,
             OkNteUserConfig,
@@ -181,7 +173,6 @@ class UserCreateOut(OutBase):
     userId: str = Field(..., description="新创建的账号ID")
     data: Union[
         SerializeAsAny[BaseModel],
-        SrcUserConfig,
         GeneralUserConfig,
         OkwwUserConfig,
         OkNteUserConfig,
@@ -200,7 +191,6 @@ class UserUpdateIn(UserInBase):
     userId: str = Field(..., description="账号ID")
     data: Union[
         SerializeAsAny[BaseModel],
-        SrcUserConfigInput,
         GeneralUserConfigInput,
         OkwwUserConfigInput,
         OkNteUserConfigInput,

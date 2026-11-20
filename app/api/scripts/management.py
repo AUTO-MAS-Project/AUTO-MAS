@@ -107,12 +107,6 @@ OkwwConfig = ConfigPayload[_config_models.OkwwConfig]
 OkwwConfigInput = ConfigInput[_config_models.OkwwConfig]
 
 
-SrcConfig = ConfigPayload[_config_models.SrcConfig]
-
-
-SrcConfigInput = ConfigInput[_config_models.SrcConfig]
-
-
 ZzzOdConfig = ConfigPayload[_config_models.ZzzOdConfig]
 
 
@@ -127,7 +121,6 @@ class ScriptIndexItem(BaseModel):
                 "GeneralConfig",
                 "OkwwConfig",
                 "OkNteConfig",
-                "SrcConfig",
                 "MaaEndConfig",
                 "M9AConfig",
                 "MaaFWConfig",
@@ -151,7 +144,6 @@ class ScriptCreateIn(BaseModel):
     type: str = Field(
         json_schema_extra={
             "enum": [
-                "SRC",
                 "General",
                 "Okww",
                 "OkNte",
@@ -177,7 +169,6 @@ class ScriptCreateOut(OutBase):
     scriptId: str = Field(..., description="新创建的托管ID")
     data: Union[
         SerializeAsAny[BaseModel],
-        SrcConfig,
         GeneralConfig,
         OkwwConfig,
         OkNteConfig,
@@ -204,7 +195,6 @@ class ScriptGetOut(ConfigSnapshotOut):
         str,
         Union[
             SerializeAsAny[BaseModel],
-            SrcConfig,
             GeneralConfig,
             OkwwConfig,
             OkNteConfig,
@@ -232,7 +222,6 @@ class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="托管ID")
     data: Union[
         SerializeAsAny[BaseModel],
-        SrcConfigInput,
         GeneralConfigInput,
         OkwwConfigInput,
         OkNteConfigInput,

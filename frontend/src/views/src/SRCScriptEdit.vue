@@ -228,7 +228,7 @@
 </template>
 
 <script setup lang="ts">
-import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
+import ScriptRunLimitField from '@/views/EditView/Script/components/ScriptRunLimitField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { createSrcScriptDraft } from './srcScriptDraft'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'

@@ -51,6 +51,7 @@ if TYPE_CHECKING:
 
 from app.config import ConfigCollection, ConfigEntry, NodeState, config_manager
 from app.core.config.plugin_upgrade import (
+    backup_legacy_src_users,
     install_adapter_plugin,
     install_adapter_plugins,
     prepare_plugin_documents,
@@ -102,8 +103,6 @@ from app.models.config import (
     QueueItem,
     ScriptConfigType,
     ScriptEntry,
-    SrcConfig,
-    SrcUserConfig,
     TimeSet,
     UniversalPlanConfig,
     UserConfigType,
@@ -599,6 +598,8 @@ class AppConfig:
             )
         # 已升级用户也可能失去此前随主仓交付的专项源码，激活领域配置前补齐所需实现。
         required = required_adapter_plugins(self.config_path)
+        if "src_adapter" in required:
+            await asyncio.to_thread(backup_legacy_src_users, self.config_path)
         from app.core.config.game_upgrade import (
             migrate_game_documents,
             required_game_plugins,
@@ -1213,7 +1214,6 @@ class AppConfig:
     ) -> tuple[
         uuid.UUID,
         ScriptEntry
-        | SrcConfig
         | GeneralConfig
         | MaaEndConfig
         | M9AConfig
@@ -1435,11 +1435,11 @@ class AppConfig:
         plugin_defaults = isinstance(script, ScriptEntry) and type(script) in (
             self.script_classes.get("MAA"),
             self.script_classes.get("Whimbox"),
+            self.script_classes.get("SRC"),
         )
         if not plugin_defaults and not isinstance(
             script,
             (
-                SrcConfig,
                 MaaEndConfig,
                 OkwwConfig,
                 OkNteConfig,
@@ -1460,7 +1460,6 @@ class AppConfig:
     ) -> tuple[
         uuid.UUID,
         UserEntry
-        | SrcUserConfig
         | GeneralUserConfig
         | MaaEndUserConfig
         | M9AUserConfig
