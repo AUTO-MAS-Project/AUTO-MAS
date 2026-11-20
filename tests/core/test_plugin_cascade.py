@@ -686,10 +686,17 @@ async def test_reload_and_disable_revoke_log_flow_of_the_previous_instance(
     ) as flow:
         assert flow.reporter is not None
         assert flow.reporter.node("普通", "before reload") == SubmitResult.ACCEPTED
+        async with manager._pause_owners((record.uid,)):
+            with pytest.raises(PluginBusyError):
+                manager.log_flow_owner(previous)
+            assert flow.reporter.node("普通", "during pause") == SubmitResult.ACCEPTED
         await manager.reload(record)
         assert flow.reporter.node("普通", "late") == SubmitResult.CLOSED
         assert flow.read_nodes().close_reason == "complete"
-        assert [node.text for node in flow.read_nodes().nodes] == ["before reload"]
+        assert [node.text for node in flow.read_nodes().nodes] == [
+            "before reload",
+            "during pause",
+        ]
         with pytest.raises(PluginBusyError):
             manager.log_flow_owner(previous)
         with pytest.raises(PluginBusyError):

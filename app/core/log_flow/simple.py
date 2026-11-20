@@ -132,7 +132,7 @@ async def open_custom_flow(
         report_native_gap = session.mark_native_incomplete
         reporter = session.push_reporter() if accept_push else None
         if reporter is not None and owner is not None:
-            reporter = GuardedReporter(reporter, lambda: owner.accepting)
+            reporter = GuardedReporter(reporter, owner.can_report)
 
         def detach() -> None:
             if monitor is not None and monitor.on_raw_line is receiver:

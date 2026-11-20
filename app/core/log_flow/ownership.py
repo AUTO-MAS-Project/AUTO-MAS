@@ -27,6 +27,10 @@ class FlowOwner:
     def accepting(self) -> bool:
         return not self._sealed and self._accepting()
 
+    def can_report(self) -> bool:
+        """已有会话可交接上报，直到插件实例实际开始关闭。"""
+        return not self._sealed
+
     @property
     def has_workers(self) -> bool:
         """启动中的会话也可能已在独立进程导入共享依赖。"""
