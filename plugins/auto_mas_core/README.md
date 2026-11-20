@@ -78,7 +78,11 @@ class PLUGIN(BasePlugin):
 在专项插件类登记一条 `log_flows` 声明，可使用 MAS 原生日志。以下声明定义一个成功节点。
 
 ```python
-from auto_mas_core.log_flow import LineRule, PluginFlowDeclaration, SimpleFlowDeclaration
+from auto_mas_core.log_flow import (
+    LineRule,
+    PluginFlowDeclaration,
+    SimpleFlowDeclaration,
+)
 
 log_flows = {
     "progress": PluginFlowDeclaration(
