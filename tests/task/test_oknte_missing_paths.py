@@ -39,7 +39,10 @@ def _proxy(tmp_path: Path, log_path, config_path):
         Game=SimpleNamespace(Enabled=False, Type="Client", LaunchBeforeTask=False),
     )
     proxy.task_info = SimpleNamespace(is_queue_task=False)
-    proxy.cur_user_config = SimpleNamespace(Info=SimpleNamespace(RemainedDay=-1))
+    proxy.cur_user_config = SimpleNamespace(
+        Info=SimpleNamespace(RemainedDay=-1),
+        Task=SimpleNamespace(TaskIndex=2),
+    )
     proxy.native_base = False
     proxy._reset_daily_proxy_count = AsyncMock()
     return proxy
