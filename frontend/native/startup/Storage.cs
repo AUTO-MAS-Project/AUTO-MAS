@@ -132,6 +132,12 @@ sealed class Storage
                     break;
                 }
             }
+            // 虚拟磁盘与 RAID 的系统磁盘号不能证明物理介质归属。
+            if (v.Bus == "virtual" || v.Bus == "raid")
+            {
+                v.Disk = -1;
+                return v;
+            }
             input[0] = 7;
             if (DeviceIoControl(h, 0x2d1400, input, input.Length, buf, buf.Length, out got, IntPtr.Zero) && got >= 9 &&
                 v.Bus != "virtual" && v.Bus != "raid")
@@ -145,13 +151,25 @@ sealed class Storage
         {
             if (String.IsNullOrEmpty(paths[i]))
                 continue;
-            string root = FinalVolume(paths[i]);
-            if (root == null)
-                continue;
-            Volume v;
-            if (!volumes.TryGetValue(root, out v))
-                volumes[root] = v = Inspect(root);
-            roles[names[i]] = v;
+            try
+            {
+                string root = FinalVolume(paths[i]);
+                if (root == null)
+                    continue;
+                Volume volume;
+                if (!volumes.TryGetValue(root, out volume))
+                    volumes[root] = volume = Inspect(root);
+                roles[names[i]] = volume;
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+            catch (ArgumentException)
+            {
+            }
         }
     }
     public void Sample(Dictionary<string, object> row, Counters counters)
