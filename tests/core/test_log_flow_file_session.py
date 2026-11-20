@@ -265,14 +265,14 @@ async def test_worker_close_handles_a_saturated_job_cleanup_executor(monkeypatch
             summary = await session.close(timeout=0)
         assert summary.reason == "timeout"
         assert LogFlowSession.has_unconfirmed_workers()
-        assert session._job_kill_task is not None
     finally:
         release.set()
         await blocker
-        monkeypatch.setattr(session_module, "_STOP_GRACE_SECONDS", 2)
-        await LogFlowSession.retry_unconfirmed_workers()
         await session.close(timeout=0)
-    assert not LogFlowSession.has_unconfirmed_workers()
+    async with asyncio.timeout(5):
+        while LogFlowSession.has_unconfirmed_workers():
+            await asyncio.sleep(0.01)
+    assert await session.close(timeout=0) == summary
 
 
 @pytest.mark.asyncio

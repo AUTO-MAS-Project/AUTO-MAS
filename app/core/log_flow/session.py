@@ -139,7 +139,6 @@ class LogFlowSession:
         self._worker_pid: int | None = None
         self._closing: asyncio.Task[SessionSummary] | None = None
         self._stopping: asyncio.Task[bool] | None = None
-        self._job_kill_task: asyncio.Task[None] | None = None
         self._receiver = asyncio.create_task(self._receive())
 
     @classmethod
@@ -374,9 +373,17 @@ class LogFlowSession:
         )
 
     async def _stop_worker(self, *, retry: bool = False) -> bool:
-        if self._stopping is None or (retry and self._stopping.done()):
+        if self._stopping is None or (
+            retry and self._stopping.done() and not self._stopping.result()
+        ):
             self._stopping = asyncio.create_task(self._terminate_worker())
-        return await asyncio.shield(self._stopping)
+        stopping = self._stopping
+        await asyncio.wait((stopping,), timeout=_STOP_GRACE_SECONDS)
+        if stopping.done():
+            return stopping.result()
+        # 会话可以先返回不完整的报告，回收任务仍负责确认退出和释放 Job。
+        self._unconfirmed_workers.add(self)
+        return False
 
     async def _terminate_worker(self) -> bool:
         if self._writer is not None:
@@ -394,23 +401,12 @@ class LogFlowSession:
                 # 启动器句柄拒绝终止时，仍使用已有 Job 回收进程组。
             finally:
                 close_process_pipes(self._process)
-            async with asyncio.timeout(_STOP_GRACE_SECONDS):
-                if job is not None:
-                    if self._job_kill_task is None:
-                        self._job_kill_task = asyncio.create_task(
-                            asyncio.to_thread(job.kill)
-                        )
-                    # 期限覆盖线程池排队。进程退出待确认时保留同一次清理及其 Job。
-                    await asyncio.shield(self._job_kill_task)
-                await self._process.wait()
+            if job is not None:
+                await asyncio.to_thread(job.kill)
+            await self._process.wait()
         except (OSError, TimeoutError, ExceptionGroup):
             self._unconfirmed_workers.add(self)
             return False
-        finally:
-            if (kill_task := self._job_kill_task) is not None and kill_task.done():
-                self._job_kill_task = None
-                if not kill_task.cancelled():
-                    kill_task.exception()
         self._release_job()
         self._unconfirmed_workers.discard(self)
         return True
