@@ -46,7 +46,11 @@ class _SourceFinder(importlib.abc.MetaPathFinder):
         ):
             return None
         spec = importlib.machinery.PathFinder.find_spec(fullname, path, target)
-        if spec is None or spec.origin is None:
+        if (
+            spec is None
+            or spec.origin is None
+            or not isinstance(spec.loader, importlib.machinery.SourceFileLoader)
+        ):
             return spec
         try:
             origin = Path(spec.origin).resolve()

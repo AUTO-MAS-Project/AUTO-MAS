@@ -4,6 +4,7 @@ import asyncio
 import builtins
 import json
 import os
+import shutil
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -35,6 +36,7 @@ from app.core.log_flow.contracts import (
     TextRecord,
     WindowRule,
     WorkerFactorySpec,
+    WorkerPluginPackage,
 )
 from app.core.log_flow.declaration import GeneralFlowDeclaration, SimpleFlowDeclaration
 from app.core.log_flow.manager import open_for_run
@@ -1744,6 +1746,51 @@ async def test_close_flushes_each_sources_unfinished_window(tmp_path):
         }
     finally:
         await session.close(timeout=0)
+
+
+@pytest.mark.asyncio
+async def test_worker_loads_native_extension_from_plugin_package(tmp_path):
+    import _socket
+
+    origin = getattr(_socket, "__file__", None)
+    if origin is None:
+        pytest.skip("当前 Python 将 socket 编译为内置模块")
+    package = tmp_path / "native_probe"
+    package.mkdir()
+    shutil.copyfile(origin, package / Path(origin).name)
+    (package / "__init__.py").write_text(
+        "from . import _socket\n"
+        "def extract(text, _args): return f'{text}:{int(_socket.AF_INET)}'\n",
+        encoding="utf-8",
+    )
+    session = await LogFlowSession.open(
+        PipelineSpec(
+            accept_push=True,
+            rules=(
+                LineRule(
+                    match="^node", extract="$().probe:extract()", node_type="普通"
+                ),
+            ),
+            functions=(
+                FunctionRef(
+                    name="probe:extract", module="native_probe", attribute="extract"
+                ),
+            ),
+            plugin_package=WorkerPluginPackage(
+                name="native_probe",
+                import_root=str(tmp_path),
+                dependency_root=str(tmp_path),
+                sdk_root=str(tmp_path),
+            ),
+        )
+    )
+    try:
+        assert session.push_reporter().text("node") is SubmitResult.ACCEPTED
+        summary = await session.close()
+        assert summary.complete
+        assert [node.text for node in summary.nodes] == [f"node:{int(_socket.AF_INET)}"]
+    finally:
+        await session.close()
 
 
 @pytest.mark.asyncio
