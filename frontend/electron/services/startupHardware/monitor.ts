@@ -19,6 +19,22 @@ export interface ProbeConfig {
 const maxDuration = 10 * 60_000
 const recentWindow = 15_000
 
+// state 描述整段生命周期；progress 可以进一步指出其中正在执行的步骤。
+const lifecycleActivities = new Map([
+  ['preparing_uv', 'other'],
+  ['syncing_repository', 'workspace'],
+  ['preparing_python', 'python'],
+  ['syncing_environment', 'dependencies'],
+  ['starting_backend', 'backend'],
+  ['restarting', 'backend'],
+  ['ready_to_start', ''],
+  ['uninitialized', ''],
+  ['environment_broken', ''],
+  ['backend_failed', ''],
+  ['stopping_backend', ''],
+  ['stopped', ''],
+])
+
 export class StartupAttempt {
   readonly started = performance.now()
   readonly wallStart = Date.now()
@@ -48,6 +64,7 @@ export class StartupAttempt {
   private lastBytes = 0
   private switches = 0
   private retries = 0
+  private lifecycleActivity = ''
   private activityStarted = 0
   private activity = ''
   private readonly durations = new Map<string, number>()
@@ -197,13 +214,23 @@ export class StartupAttempt {
       }
     }
   }
-  desktopDownload(bytes: number | undefined, speed: number | undefined, sourceIndex: number) {
-    if (bytes !== undefined)
-      this.details.downloaded = band('downloaded', bytes / 1048576) ?? 'unknown'
-    if (speed !== undefined)
-      this.details.download_speed = band('download_speed', speed / 1048576) ?? 'unknown'
-    this.details.source_switches =
-      band('source_switches', Math.max(0, sourceIndex - 1)) ?? 'unknown'
+  private addDownloadedBytes(delta: number) {
+    this.downloads += delta
+    this.details.downloaded = band('downloaded', this.downloads / 1048576)!
+  }
+  beginDesktopDownload(sourceIndex: number) {
+    if (sourceIndex > 1) this.switches++
+    this.details.source_switches = band('source_switches', this.switches)!
+    let received = 0
+    return (bytes: number | undefined, speed: number | undefined) => {
+      if (!this.sampling) return
+      if (bytes !== undefined && bytes >= received) {
+        this.addDownloadedBytes(bytes - received)
+        received = bytes
+      }
+      if (speed !== undefined)
+        this.details.download_speed = band('download_speed', speed / 1048576) ?? 'unknown'
+    }
   }
   retry() {
     this.failureLogged = false
@@ -212,16 +239,31 @@ export class StartupAttempt {
   progress(event: RuntimeEvent) {
     if (!this.sampling) return
     if (event.type === 'hello') {
+      this.lifecycleActivity = ''
+      this.setActivity('')
       this.command = event.command
       this.operation = event.operationId
       this.previousSource = ''
       return
     }
     if (event.operationId !== this.operation) return
+    if (event.type === 'state') {
+      const next =
+        event.status === 'running' &&
+        event.stage === 'backend.run' &&
+        typeof event.details.baseUrl === 'string' &&
+        event.details.baseUrl.length > 0
+          ? ''
+          : lifecycleActivities.get(event.status)
+      if (next !== undefined && (next !== this.lifecycleActivity || !next)) {
+        this.lifecycleActivity = next
+        this.setActivity(next)
+      }
+      return
+    }
     if (event.type === 'result') {
-      this.finishActivity(performance.now())
-      this.activityStarted = 0
-      this.activity = ''
+      this.lifecycleActivity = ''
+      this.setActivity('')
       if (this.command === 'dependencies rebuild' && event.success) this.details.env_rebuilt = 'yes'
       const archive = event.details.startupArchive
       if (archive && typeof archive === 'object') {
@@ -256,13 +298,7 @@ export class StartupAttempt {
               : stage.includes('extract')
                 ? 'unpack'
                 : stage.split('.')[0]
-      const now = performance.now()
-      if (active !== this.activity || event.status !== 'running') {
-        this.finishActivity(now)
-        this.activity = event.status === 'running' ? active : ''
-        this.activityStarted = event.status === 'running' ? now : 0
-      }
-      this.details.activity = band('activity', active) ?? 'unknown'
+      this.setActivity(event.status === 'running' ? active : this.lifecycleActivity)
       const byteProgress =
         event.current !== undefined &&
         (stage === 'uv.download' ||
@@ -275,10 +311,9 @@ export class StartupAttempt {
           stage +
           (stage === 'uv.download' ? '|' + (event.source ?? '') : '')
         const from = item === this.lastItem && event.current >= this.lastBytes ? this.lastBytes : 0
-        this.downloads += event.current - from
+        this.addDownloadedBytes(event.current - from)
         this.lastItem = item
         this.lastBytes = event.current
-        this.details.downloaded = band('downloaded', this.downloads / 1048576)!
       }
       if (event.bytesPerSecond !== undefined) {
         this.details.download_speed =
@@ -293,12 +328,17 @@ export class StartupAttempt {
         this.details.env_rebuilt = 'yes'
     }
   }
-  private finishActivity(now: number) {
-    if (this.activityStarted)
+  private setActivity(next: string) {
+    if (next === this.activity) return
+    const now = performance.now()
+    if (this.activity)
       this.durations.set(
         this.activity,
         (this.durations.get(this.activity) ?? 0) + now - this.activityStarted
       )
+    this.activity = next
+    this.activityStarted = now
+    if (next) this.details.activity = band('activity', next) ?? 'unknown'
   }
   snapshot(recent = false): Fields {
     const now = performance.now()

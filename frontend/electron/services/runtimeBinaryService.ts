@@ -964,13 +964,14 @@ async function downloadTarget(
 
     logger.info(`尝试从 ${label} 下载 Runtime ${target.version}: ${source.url}`)
     const downloadPath = nextDownloadPath(runtimePath)
+    const observeDownload = operationAttempt()?.beginDesktopDownload(index + 1)
     const result = await downloadWithTimeout(
       download,
       source.url,
       downloadPath,
       Math.min(deadline - Date.now(), sourceTimeoutMs),
       progress => {
-        operationAttempt()?.desktopDownload(progress.downloadedSize, progress.speed, index + 1)
+        observeDownload?.(progress.downloadedSize, progress.speed)
         options.onProgress?.({
           phase: 'download',
           progress: progress.progress,

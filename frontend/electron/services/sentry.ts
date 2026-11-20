@@ -44,14 +44,14 @@ const startSentry = () => {
       if (clean.contexts) delete clean.contexts.startup_resources
       const active = startupAttempt()
       const captured = (event.timestamp ?? 0) * 1000
-      if (
-        active &&
-        captured >= active.wallStart &&
-        captured <= Date.now() &&
-        (event.exception?.values?.length ||
-          event.tags?.renderer_gone_reason ||
-          event.tags?.startup_failure)
-      ) {
+      const recoveryOutcome = event.tags?.renderer_recovery_outcome
+      const isFailure =
+        recoveryOutcome !== undefined
+          ? recoveryOutcome === 'failure' && event.level === 'error'
+          : event.exception?.values?.length ||
+            (event.level === 'fatal' && event.tags?.renderer_gone_reason) ||
+            (event.level === 'error' && event.tags?.startup_failure)
+      if (active && captured >= active.wallStart && captured <= Date.now() && isFailure) {
         const summary = active.snapshot(true)
         if (
           summary.coverage === 'sampled' &&
