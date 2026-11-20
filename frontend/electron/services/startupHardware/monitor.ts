@@ -207,6 +207,8 @@ export class StartupAttempt {
     return (outcome: string, code?: string) => {
       this.stages.delete(summary)
       const fields = summary.fields()
+      // 每条命令独立记录失败现场；同一错误传到桌面和初始化终态时沿用这份现场。
+      this.failureLogged = false
       this.logResult(stage, outcome, code, start, fields)
       return {
         ...fields,

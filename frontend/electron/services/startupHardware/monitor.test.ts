@@ -8,7 +8,9 @@ import { expect, it, vi } from 'vite-plus/test'
 import { StartupHardwareLog } from './localLog'
 import { StartupAttempt } from './monitor'
 
-async function withAttempt(run: (attempt: StartupAttempt) => void | Promise<void>) {
+async function withAttempt(
+  run: (attempt: StartupAttempt, log: StartupHardwareLog) => void | Promise<void>
+) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'mas-hardware-progress-'))
   const log = new StartupHardwareLog(directory)
   const attempt = new StartupAttempt(null, {
@@ -19,7 +21,7 @@ async function withAttempt(run: (attempt: StartupAttempt) => void | Promise<void
     acceleration: 'unknown',
   })
   try {
-    await run(attempt)
+    await run(attempt, log)
   } finally {
     attempt.stop()
     await log.drain()
@@ -206,6 +208,16 @@ it('依赖下载切换文件时沿用 Runtime 已汇总的字节数', () =>
       })
     }
     expect(attempt.snapshot().downloaded).toBe('16-128MiB')
+  }))
+
+it('自动修复再次失败时保留两次现场，同一个失败传到初始化终态时只写一次', () =>
+  withAttempt((attempt, log) => {
+    const write = vi.spyOn(log, 'write')
+    attempt.beginStage('dependency')('failure', 'PYTHON_VERSION_MISMATCH')
+    attempt.beginStage('python')('failure', 'ENVIRONMENT_BROKEN')
+    attempt.logResult('initialization', 'failure', 'python')
+    const windows = write.mock.calls.filter(([event]) => event === '失败前15秒')
+    expect(windows.map(([, row]) => row.stage)).toEqual(['dependency', 'python'])
   }))
 
 it('停止采样后才失败时按真正的失败时刻过滤最近读数', async () => {
