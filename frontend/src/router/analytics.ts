@@ -19,6 +19,7 @@ const screens: Record<string, AnalyticsScreen> = {
   Scripts: 'scripts',
   Plans: 'plans',
   OkNtePlanDetail: 'plans',
+  OkwwPlanDetail: 'plans',
   Emulators: 'emulators',
   Queue: 'queue',
   Scheduler: 'scheduler',

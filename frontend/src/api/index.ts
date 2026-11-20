@@ -1105,7 +1105,11 @@ export type { OkwwPlanConfig_TuesdayInput } from './models/OkwwPlanConfig_Tuesda
 export type { OkwwPlanConfig_Wednesday } from './models/OkwwPlanConfig_Wednesday';
 export type { OkwwPlanConfig_WednesdayInput } from './models/OkwwPlanConfig_WednesdayInput';
 export type { OkwwPlanConfigInput } from './models/OkwwPlanConfigInput';
+export type { OkwwPlanConfigsIn } from './models/OkwwPlanConfigsIn';
+export type { OkwwPlanConfigsOut } from './models/OkwwPlanConfigsOut';
 export type { OkwwPlanKey } from './models/OkwwPlanKey';
+export { OkwwPlanPanel } from './models/OkwwPlanPanel';
+export { OkwwPlanPanelFile } from './models/OkwwPlanPanelFile';
 export { OkwwTaskConfigIn } from './models/OkwwTaskConfigIn';
 export type { OkwwTaskConfigOut } from './models/OkwwTaskConfigOut';
 export type { OkwwUserConfig } from './models/OkwwUserConfig';

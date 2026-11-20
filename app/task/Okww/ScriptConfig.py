@@ -75,6 +75,7 @@ class ScriptConfigTask(TaskExecuteBase):
         super().__init__()
         self.panel_user: OkwwUserConfig | None = None
         self.panel_originals: dict[str, bytes | None] = {}
+        self.panel_plan: dict[str, dict] = {}
 
         if script_info.task_info is None:
             raise RuntimeError("ScriptItem 未绑定到 TaskItem")
@@ -155,9 +156,11 @@ class ScriptConfigTask(TaskExecuteBase):
             user = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
             if user.Info.IfQuickConfig:
                 from .tools.config_fields import PANEL_FILES, runtime_panels
+                from .tools.plan import plan_panels
 
                 self.panel_user = user
-                overrides = runtime_panels(user)
+                self.panel_plan = plan_panels(user)
+                overrides = runtime_panels(user, planned=self.panel_plan)
                 for filename in PANEL_FILES.values():
                     path = self.script_config_path / filename
                     self.panel_originals[filename] = (
@@ -190,23 +193,29 @@ class ScriptConfigTask(TaskExecuteBase):
             from app.utils.common.io import read_dict_file
 
             from .tools.config_fields import PANEL_FILES
-            from .tools.plan import daily_panel_patch
+            from .tools.plan import account_panel_values, daily_panel_patch
 
             advanced = dict(self.panel_user.Task.NativeConfigs)
             for kind, filename in PANEL_FILES.items():
                 path = self.script_config_path / filename
                 if not path.exists():
                     continue
+                # 会话跨过 04:00 时，仍按打开窗口时注入的计划字段过滤。
+                managed = set(self.panel_plan.get(filename, {}))
                 values = read_dict_file(path)
                 if kind == "daily":
                     for field, value in daily_panel_patch(
-                        self.panel_user, values
+                        self.panel_user, values, managed=managed
                     ).items():
                         setattr(self.panel_user.Task, field, value)
                 elif kind == "echo":
-                    self.panel_user.Task.FarmEchoConfig = values
+                    self.panel_user.Task.FarmEchoConfig = account_panel_values(
+                        self.panel_user, kind, values, managed=managed
+                    )
                 else:
-                    advanced[filename] = values
+                    advanced[filename] = account_panel_values(
+                        self.panel_user, kind, values, managed=managed
+                    )
             self.panel_user.Task.NativeConfigs = advanced
             await self.panel_user.commit()
             # 面板的原生文件只临时注入，不固化进共享或独立基础来源。
