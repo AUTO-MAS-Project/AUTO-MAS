@@ -56,6 +56,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from app.config.fields.encrypted import EncryptedValue
 from app.task.M9A.flavor import (
     CLOSE_ENTRY,
     FALLBACK_TASK_NAMES,
@@ -78,6 +79,15 @@ from app.utils import constants as _utils_constants
 from app.utils import get_logger
 
 logger = get_logger("M9A 迁移")
+
+
+def _account_of(info: dict) -> str:
+    """读取账号：旧版存 ``Account``，新版存加密的 ``Id``，两种都认。"""
+
+    raw = info.get("Id") or info.get("Account") or ""
+    text = raw.plaintext() if isinstance(raw, EncryptedValue) else str(raw)
+    return text.strip()
+
 
 LEGACY_BACKUP_SUFFIX = ".m9a-legacy-"
 LEGACY_BACKUP_KEEP = 3
@@ -666,7 +676,7 @@ def _migrate_user(
     snapshot = _build_snapshot(
         user, index, script_payload, script_uid, user_uid, script_label, report
     )
-    account = str(info.get("Id") or "")
+    account = _account_of(info)
     switch_supported = supports_account_switch(
         script_resource, login_mode=_login_mode(script_payload)
     )
@@ -1467,9 +1477,9 @@ def repair_script_config_payload(
             info = user.get("Info") if isinstance(user.get("Info"), dict) else {}
             legacy_info = (legacy_users.get(user_uid) or {}).get("Info") or {}
             label = f"{script_label} / {str(info.get('Name') or user_uid[:8])}"
-            account = str(info.get("Id") or "").strip()
+            account = _account_of(info)
             # 升级后自己填了别的「账号」：补回实例文件里的切号会压过它，交给用户决定
-            account_changed = account != str(legacy_info.get("Id") or "").strip()
+            account_changed = account != _account_of(legacy_info)
             answer_snapshot = _load_snapshot(
                 (answer_user.get("Task") or {}).get("TaskSnapshot")
             )
@@ -1588,7 +1598,7 @@ def _repair_user_snapshot(
                     info = user["Info"] = {}
                 change = settle_user_info(
                     settlement,
-                    account=str(info.get("Id") or ""),
+                    account=_account_of(info),
                     notes=str(info.get("Notes") or ""),
                     note_split=False,
                 )
@@ -1832,7 +1842,7 @@ def _normalize_user(
     settlement = _settle_with_index(snapshot, index, supports_switch=supports_switch)
     change = settle_user_info(
         settlement,
-        account=str(info.get("Id") or ""),
+        account=_account_of(info),
         notes=str(info.get("Notes") or ""),
         note_split=True,
     )
