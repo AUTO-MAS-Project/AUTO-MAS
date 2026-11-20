@@ -220,6 +220,8 @@ def parse_to_plugin_meta(
             "author": view["author"],
             "license": view["license"],
             "requires_dist": list(view["requires_dist"]),
+            # 配置更新只提交显式字段；切换到发行源时清除先前的数据站日志。
+            "changelog": [],
             **display,
         }
     )

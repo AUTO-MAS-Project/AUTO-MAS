@@ -83,7 +83,10 @@ async def test_okww_run_reports_error_and_only_retries_recoverable_failure(
     woke_before_error = []
 
     async def report_log(callback):
-        lines = []
+        task_name = "Multi Account Config Task" if batch else "📅 Daily Task"
+        lines = [
+            f"2026-11-18 16:55:35,026 INFO TaskExecutor TaskExecutor:get queued onetime_task {task_name}\n"
+        ]
         if batch:
             lines.extend(
                 [
@@ -93,11 +96,13 @@ async def test_okww_run_reports_error_and_only_retries_recoverable_failure(
             )
             await callback(lines, proxy.log_start_time)
             woke_before_error.append(proxy.wait_event.is_set())
-        lines.extend(
-            [
-                f"2026-11-18 16:55:35,030 INFO TaskExecutor {task}:info_set 错误 {upstream_error}\n",
-                "2026-11-18 16:55:35,031 ERROR TaskExecutor Traceback\n",
-            ]
+        lines.append(
+            f"2026-11-18 16:55:35,030 INFO TaskExecutor {task}:info_set 错误 {upstream_error}\n"
+        )
+        await callback(lines, proxy.log_start_time)
+        woke_before_error.append(proxy.wait_event.is_set())
+        lines.append(
+            f"2026-11-18 16:55:35,031 ERROR TaskExecutor TaskExecutor:{task_name} exception stopped Traceback\n"
         )
         with script_log.open("a", encoding="utf-8") as log:
             log.writelines(lines)
@@ -144,8 +149,8 @@ async def test_okww_run_reports_error_and_only_retries_recoverable_failure(
         # Keep the real batch result and log collection, with history delivery isolated.
         monkeypatch.setattr(proxy_module.AutoProxyTask, "final_task", AsyncMock())
         await proxy.final_task()
-        assert not any(woke_before_error)
 
+    assert not any(woke_before_error)
     assert user.status == "异常"
     assert start.await_count == attempts
     result = f"OK-WW：{expected_detail}"

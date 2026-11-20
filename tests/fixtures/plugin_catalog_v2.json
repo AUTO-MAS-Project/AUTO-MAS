@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "revision": "136740c99535e95832a067d4db30a84c307bade71de08c6fc1d9273c2291c9a8",
+  "schema_version": 2,
+  "revision": "075db1eaf3081baf3c27646e2248939fe33f7afb08a49b93e728390ba65b2497",
   "updated_at": "2020-01-01T00:00:00+00:00",
   "plugins": [
     {
@@ -26,7 +26,8 @@
         "en": [
           "Adapter"
         ]
-      }
+      },
+      "changelog": []
     }
   ]
 }

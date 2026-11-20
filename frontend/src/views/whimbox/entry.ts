@@ -2,6 +2,7 @@ import type { ScriptFrontendAdapter } from '@/plugins/scriptAdapters'
 import whimboxIcon from './whimbox.png'
 
 export default {
+  pluginId: 'whimbox_adapter',
   type: 'Whimbox',
   metadata: {
     logo: whimboxIcon,

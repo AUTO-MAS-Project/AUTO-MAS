@@ -67,6 +67,7 @@ import type { OCRScreenshotOut } from '../models/OCRScreenshotOut';
 import type { OkwwArgumentsIn } from '../models/OkwwArgumentsIn';
 import type { OkwwArgumentsOut } from '../models/OkwwArgumentsOut';
 import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
+import type { OkwwPlanConfigsOut } from '../models/OkwwPlanConfigsOut';
 import type { OkwwTaskConfigOut } from '../models/OkwwTaskConfigOut';
 import type { OperationGetIn } from '../models/OperationGetIn';
 import type { OperationListIn } from '../models/OperationListIn';
@@ -621,6 +622,33 @@ export class GetService {
             url: '/api/scripts/okww/client-path',
             query: {
                 'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Okww Plan Configs Api
+     * 读取当天详细覆写及原生面板字段。
+     * @param planId
+     * @param day
+     * @param locale
+     * @returns OkwwPlanConfigsOut Successful Response
+     * @throws ApiError
+     */
+    public static getOkwwPlanConfigsApiApiScriptsOkwwPlanConfigsGet(
+        planId: string,
+        day: string,
+        locale: 'zh_CN' | 'en_US' | 'ja_JP' = 'zh_CN',
+    ): CancelablePromise<OkwwPlanConfigsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/okww/plan/configs',
+            query: {
+                'plan_id': planId,
+                'day': day,
+                'locale': locale,
             },
             errors: {
                 422: `Validation Error`,

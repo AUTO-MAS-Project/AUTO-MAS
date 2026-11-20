@@ -67,9 +67,9 @@ def panel_values(user, kind: str) -> dict:
     return dict(user.Task.NativeConfigs.get(PANEL_FILES[kind], {}))
 
 
-def runtime_panels(user) -> dict[str, dict]:
+def runtime_panels(user, *, planned: dict[str, dict] | None = None) -> dict[str, dict]:
     """输出本次实际下发的面板，快速配置总开关关闭时仅计划生效。"""
-    from .plan import task_config
+    from .plan import account_daily_fields, plan_panels, validate_plan_targets
 
     result = {}
     if user.Info.IfQuickConfig:
@@ -77,7 +77,12 @@ def runtime_panels(user) -> dict[str, dict]:
             filename: panel_values(user, kind) for kind, filename in PANEL_FILES.items()
         }
     daily = result.setdefault(PANEL_FILES["daily"], {})
-    daily.update(task_config(user))
+    daily.update(account_daily_fields(user))
+    if planned is None:
+        planned = plan_panels(user)
+    validate_plan_targets(planned)
+    for filename, values in planned.items():
+        result.setdefault(filename, {}).update(values)
     return {filename: values for filename, values in result.items() if values}
 
 
