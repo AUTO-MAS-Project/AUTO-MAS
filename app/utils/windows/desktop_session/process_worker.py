@@ -25,11 +25,20 @@ from pywintypes import error as Win32Error
 from .launcher import connect_executor_pipe, receive, send
 from .native import handle_scope, process_session
 
+WINDOW_ACTIONS = {
+    "activate_process_window": "activate_window",
+    "minimize_process_window": "minimize_window",
+    "maximize_process_window": "maximize_window",
+    "show_process_window": "show_window",
+    "hide_process_window": "hide_window",
+    "close_process_window": "close_window",
+}
+
 
 def run(pipe) -> None:
     launch = receive(pipe)
     action = launch.get("action")
-    if action in {"activate_process_window", "minimize_process_window"}:
+    if action in WINDOW_ACTIONS:
         send(pipe, {"pid": os.getpid()})
         code = run_window_action(action, launch["arguments"])
         send(pipe, {"returnCode": code})
@@ -90,11 +99,7 @@ def run_window_action(action: str, arguments: dict) -> int:
         if process is not None
         else None
     )
-    operation = (
-        window.activate_window
-        if action == "activate_process_window"
-        else window.minimize_window
-    )
+    operation = getattr(window, WINDOW_ACTIONS[action])
     return int(not (hwnd and operation(hwnd)))
 
 

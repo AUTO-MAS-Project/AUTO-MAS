@@ -128,6 +128,11 @@ def minimize_window(hwnd: int) -> bool:
     return True
 
 
+def maximize_window(hwnd: int) -> bool:
+    win32gui.ShowWindow(hwnd, win32con.SW_MAXIMIZE)
+    return win32gui.GetWindowPlacement(hwnd)[1] == win32con.SW_SHOWMAXIMIZED
+
+
 def close_window(hwnd: int) -> bool:
     """发送 WM_CLOSE 请求窗口关闭，由应用自行走退出保存流程"""
 

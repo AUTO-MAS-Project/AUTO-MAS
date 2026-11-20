@@ -629,6 +629,8 @@ class ProcessManager:
             bool: 操作是否成功
         """
 
+        if desktop_process_target.get() is not None:
+            return await self._operate_desktop_window("show_process_window")
         hwnd = self.main_hwnd
         if hwnd is None:
             return False
@@ -644,6 +646,8 @@ class ProcessManager:
         Returns:
             bool: 操作是否成功
         """
+        if desktop_process_target.get() is not None:
+            return await self._operate_desktop_window("hide_process_window")
         hwnd = self.main_hwnd
         if hwnd is None:
             return False
@@ -670,6 +674,13 @@ class ProcessManager:
             return window.minimize_window(hwnd)
         except Exception:
             return False
+
+    async def maximize_window(self) -> bool:
+        """最大化当前主进程的窗口。"""
+        if desktop_process_target.get() is not None:
+            return await self._operate_desktop_window("maximize_process_window")
+        hwnd = self.main_hwnd
+        return hwnd is not None and window.maximize_window(hwnd)
 
     async def activate_window(self) -> bool:
         """激活主进程窗口并将其置于前台
@@ -718,7 +729,11 @@ class ProcessManager:
         """
 
         while await self.is_running():
-            hwnd = self.main_hwnd
-            if hwnd is None or not window.close_window(hwnd):
-                return
+            if desktop_process_target.get() is not None:
+                if not await self._operate_desktop_window("close_process_window"):
+                    return
+            else:
+                hwnd = self.main_hwnd
+                if hwnd is None or not window.close_window(hwnd):
+                    return
             await asyncio.sleep(0.2)

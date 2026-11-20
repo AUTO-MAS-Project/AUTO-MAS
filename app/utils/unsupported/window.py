@@ -35,6 +35,10 @@ def minimize_window(hwnd: int) -> bool:
     raise UnsupportedPlatformError("window")
 
 
+def maximize_window(hwnd: int) -> bool:
+    raise UnsupportedPlatformError("window")
+
+
 def close_window(hwnd: int) -> bool:
     raise UnsupportedPlatformError("window")
 
