@@ -1,4 +1,4 @@
-"""按 LogFlow 节点状态渲染收尾报告，并交由 Notify 投递。"""
+"""按实际运行归集 LogFlow 明细并交由 Notify 投递。"""
 
 from collections.abc import Set
 from dataclasses import replace

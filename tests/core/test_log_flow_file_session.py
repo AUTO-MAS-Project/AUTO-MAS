@@ -18,14 +18,14 @@ import psutil
 import pytest
 from auto_mas_core.log_flow import SubmitResult
 
-from app.core.log_flow.manager import open_for_run
-from app.core.log_flow.ownership import FlowOwner
-from app.core.log_flow.simple import (
+from app.core.notify.report import render_scatter_push_log
+from app.core.plugin.log_flow import FlowOwner
+from app.models.task import TaskUserItem
+from app.task.log_flow.binding import (
     open_custom_flow,
+    open_for_run,
     open_simple_flow,
 )
-from app.core.notify.report import render_scatter_push_log
-from app.models.task import TaskUserItem
 from app.task.MaaEnd.push_log import (
     MAAEND_PUSH_RULES,
     maaend_plain_text,

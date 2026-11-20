@@ -31,9 +31,7 @@ from packaging.version import Version
 from pydantic import JsonValue
 
 from app.config import NodeState, config_manager
-from app.core.log_flow.ownership import FlowOwner
-from app.core.log_flow.report import LogFlowTaskReport
-from app.core.log_flow.simple import FlowAccess, open_custom_flow
+from app.core.plugin.log_flow import FlowOwner
 from app.core.ws import Publisher
 from app.core.ws.protocol import ID_PLUGIN, PLUGIN_CAPABILITIES_UPDATED
 from app.plugin import uv as uv_tool
@@ -73,6 +71,8 @@ from app.plugin.types import (
     SourcesChangedPayload,
 )
 from app.plugin.uv.precheck import host_dependencies
+from app.task.log_flow.binding import FlowAccess, open_custom_flow
+from app.task.log_flow.report import LogFlowTaskReport
 from app.utils import get_logger
 from app.utils.common.log_flow.contracts import (
     FileInput,
@@ -182,13 +182,8 @@ class _PluginManager:
                 if task_report is not None or receive_report is not None
                 else "关闭"
             )
-        if task_report is not None:
-            if receive_report is not None:
-                raise ValueError("日志会话只能绑定一个报告接收方")
-            task_report.validate_run(run)
-        elif mode != "关闭" and receive_report is None:
+        if mode != "关闭" and task_report is None and receive_report is None:
             raise ValueError("启用节点通知时需要绑定报告接收方")
-        previous_observation = run.node_observation
         from app.core.config import Config
 
         project = plugin.record._project_dir
@@ -199,31 +194,21 @@ class _PluginManager:
             dependency_root=str(Config.plugins_path / "pypi" / "site-packages"),
             sdk_root=str(Config.source_path / "plugins" / "auto_mas_core" / "src"),
         )
-        try:
-            async with open_custom_flow(
-                rules,
-                run=run,
-                mode=mode,
-                receive_report=receive_report,
-                monitor=monitor if declaration.use_mas_log else None,
-                file=file_input if file_input is not None else declaration.file,
-                accept_push=declaration.accept_push,
-                source=declaration.source,
-                sink=declaration.sink,
-                owner=owner,
-                plugin_package=package,
-            ) as flow:
-                yield flow
-        finally:
-            observation = run.node_observation
-            if (
-                task_report is not None
-                and mode != "关闭"
-                and observation is not None
-                and observation is not previous_observation
-                and (summary := observation.summary) is not None
-            ):
-                task_report.record(run, mode, summary)
+        async with open_custom_flow(
+            rules,
+            run=run,
+            mode=mode,
+            receive_report=receive_report,
+            task_report=task_report,
+            monitor=monitor if declaration.use_mas_log else None,
+            file=file_input if file_input is not None else declaration.file,
+            accept_push=declaration.accept_push,
+            source=declaration.source,
+            sink=declaration.sink,
+            owner=owner,
+            plugin_package=package,
+        ) as flow:
+            yield flow
 
     def log_flow_owner(self, plugin: BasePlugin) -> FlowOwner:
         """宿主使用实际插件实例绑定会话；重载后不能用旧实例取得新能力。"""

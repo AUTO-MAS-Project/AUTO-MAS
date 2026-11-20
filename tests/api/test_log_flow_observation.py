@@ -9,9 +9,9 @@ from fastapi import FastAPI
 
 from app.api import dispatch
 from app.core import task_manager
-from app.core.log_flow.manager import open_for_run
 from app.models.config import GeneralConfig
 from app.models.task import TaskMode
+from app.task.log_flow.binding import open_for_run
 from app.utils.common.log_flow.contracts import PipelineSpec, ReportedRecord
 from app.utils.common.log_flow.observation import NodeAttribute
 from tests.support.scheduler import Builtin

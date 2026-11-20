@@ -10,7 +10,7 @@ import httpx
 import pytest
 import pytest_asyncio
 
-from app.core.log_flow.ownership import FlowOwner
+from app.core.plugin.log_flow import FlowOwner
 from app.core.plugin.manager import _PluginManager
 from app.models.config import PluginMeta, PluginRecord, PluginRegistryCollection
 from app.models.task import TaskUserItem

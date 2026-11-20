@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from app.core.log_flow.report import LogFlowTaskReport
-from app.core.log_flow.simple import FlowAccess
+from app.task.log_flow.binding import FlowAccess
+from app.task.log_flow.report import LogFlowTaskReport
 from app.utils.common.expression import ExpressionFunction
 from app.utils.common.log.flow_monitor import LogFlowMonitor as LogMonitor
 from app.utils.common.log_flow.contracts import (

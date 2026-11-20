@@ -13,7 +13,6 @@ from auto_mas_core.log_flow import LogMonitor
 
 from app.core import Notify
 from app.core.background_tasks import BackgroundTaskRegistry
-from app.core.log_flow.simple import open_custom_flow
 from app.core.notify import tasks as notification_tasks
 from app.core.notify.rendering import AsyncNotificationRenderer
 from app.core.plugin.manager import _PluginManager
@@ -29,6 +28,7 @@ from app.models.task import TaskUserItem
 from app.plugin.errors import PluginBusyError
 from app.plugin.runtime import discover, loader
 from app.plugin.types import PluginState
+from app.task.log_flow.binding import open_custom_flow
 from app.utils.common.log_flow.contracts import PipelineSpec
 from app.utils.common.log_flow.declaration import SimpleFlowDeclaration
 from app.utils.common.log_flow.push import SubmitResult

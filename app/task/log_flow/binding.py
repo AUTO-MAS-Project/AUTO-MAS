@@ -1,10 +1,13 @@
 """默认 LogFlow 的宿主装配；声明不携带执行对象或进程参数。"""
 
+from __future__ import annotations
+
+import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from app.models.task import TaskScriptItem, TaskUserItem
 from app.utils.common.log.flow_monitor import LogFlowMonitor
@@ -28,8 +31,9 @@ from app.utils.common.log_flow.push import GuardedReporter, PushReporter
 from app.utils.common.log_flow.report import ReportMode, render_node_details
 from app.utils.common.log_flow.session import LogFlowSession, SessionOpenError
 
-from .manager import open_for_run
-from .ownership import FlowOwner
+if TYPE_CHECKING:
+    from app.core.plugin.log_flow import FlowOwner
+    from app.task.log_flow.report import LogFlowTaskReport
 
 
 class ReadNodes(Protocol):
@@ -43,6 +47,23 @@ class FlowAccess:
     read_nodes: ReadNodes
     reporter: PushReporter | None
     snapshot_nodes: Callable[[], ObservationSnapshot]
+
+
+async def open_for_run(
+    run: TaskScriptItem | TaskUserItem, config: PipelineSpec, *, timeout: float = 5.0
+) -> LogFlowSession:
+    """执行层传入实际运行对象；日志来源不能指定任务或账号身份。"""
+    observation = run.open_node_observation()
+    try:
+        return await LogFlowSession.open(
+            config, timeout=timeout, observation=observation
+        )
+    except asyncio.CancelledError:
+        observation.finish("worker_error", "采集启动已取消")
+        raise
+    except SessionOpenError as exc:
+        observation.finish("worker_error", str(exc))
+        raise
 
 
 @asynccontextmanager
@@ -63,6 +84,7 @@ async def open_custom_flow(
     run: TaskScriptItem | TaskUserItem,
     mode: ReportMode,
     receive_report: Callable[[list[str]], None] | None = None,
+    task_report: LogFlowTaskReport | None = None,
     monitor: LogFlowMonitor | None = None,
     file: FileInput | None = None,
     accept_push: bool = False,
@@ -72,6 +94,11 @@ async def open_custom_flow(
     plugin_package: WorkerPluginPackage | None = None,
 ) -> AsyncIterator[FlowAccess]:
     """宿主按运行分支绑定来源；上报方不能指定归属或冒充原生来源。"""
+    if task_report is not None:
+        if receive_report is not None:
+            raise ValueError("日志会话只能绑定一个报告接收方")
+        task_report.validate_run(run)
+    previous_observation = run.node_observation
     if monitor is not None:
         if not isinstance(monitor, LogFlowMonitor):
             raise TypeError("MAS 日志来源需要使用 auto_mas_core.log_flow.LogMonitor")
@@ -118,10 +145,22 @@ async def open_custom_flow(
         if observation is not None and (summary := observation.summary) is not None:
             deliver(render_node_details(summary, mode=mode))
 
+    def record_report(report: LogFlowTaskReport) -> None:
+        current = run.node_observation
+        if (
+            current is not None
+            and current is not previous_observation
+            and (summary := current.summary) is not None
+        ):
+            report.record(run, mode, summary)
+
     async with AsyncExitStack() as stack:
-        if mode != "关闭" and receive_report is not None:
+        if mode != "关闭":
             # 先登记，退出时先完成采集收尾，再交付报告。
-            stack.callback(publish_report, receive_report)
+            if task_report is not None:
+                stack.callback(record_report, task_report)
+            elif receive_report is not None:
+                stack.callback(publish_report, receive_report)
         reporter: PushReporter | None
         try:
             session = await stack.enter_async_context(opening)
