@@ -365,7 +365,9 @@ class MaaEndManager(ScriptManagerBase):
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="warning", message=result),
+                    data=WSTaskNoticeData(
+                        sourceScriptType="MaaEnd", level="warning", message=result
+                    ),
                 )
         else:
             await push_dispatch_log(self.script_info, result)
@@ -609,7 +611,11 @@ class MaaEndManager(ScriptManagerBase):
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=self.check_result),
+                data=WSTaskNoticeData(
+                    sourceScriptType="MaaEnd",
+                    level="error",
+                    message=self.check_result,
+                ),
             )
             return
 
@@ -638,7 +644,9 @@ class MaaEndManager(ScriptManagerBase):
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=failure),
+                data=WSTaskNoticeData(
+                    sourceScriptType="MaaEnd", level="error", message=failure
+                ),
             )
             return
 
@@ -757,7 +765,9 @@ class MaaEndManager(ScriptManagerBase):
                         id=self.task_info.task_id,
                         type=protocol.TASK_NOTICE,
                         data=WSTaskNoticeData(
-                            level="error", message=f"推送代理结果时出现异常: {e}"
+                            sourceScriptType="MaaEnd",
+                            level="error",
+                            message=f"推送代理结果时出现异常: {e}",
                         ),
                     )
 
@@ -796,7 +806,11 @@ class MaaEndManager(ScriptManagerBase):
         await Publisher.send(
             id=self.task_info.task_id,
             type=protocol.TASK_NOTICE,
-            data=WSTaskNoticeData(level="error", message=f"MaaEnd任务出现异常: {e}"),
+            data=WSTaskNoticeData(
+                sourceScriptType="MaaEnd",
+                level="error",
+                message=f"MaaEnd任务出现异常: {e}",
+            ),
         )
 
     def _render_user_results(self, *, has_uncompleted: bool) -> str:
