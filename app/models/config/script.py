@@ -30,7 +30,7 @@ from pathlib import Path as NativePath
 from typing import Annotated, Any, ClassVar, Literal
 from uuid import UUID
 
-from pydantic import Field, PrivateAttr, field_validator
+from pydantic import Field, PrivateAttr
 
 from app.config import (
     ConfigCollection,
@@ -3170,11 +3170,6 @@ class GeneralConfig(DomainEntry):
             default_factory=lambda: "%Y-%m-%d", description="日志路径格式"
         )
 
-        @field_validator("LogPathFormat", mode="after")
-        @classmethod
-        def _check_log_path_format(cls, value: str) -> str:
-            return _compile_strptime_format(value)
-
         LogTimeEnd: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 1, description="日志时间戳结束位置"
         )
@@ -3182,11 +3177,6 @@ class GeneralConfig(DomainEntry):
         LogTimeFormat: str = Field(
             default_factory=lambda: "%Y-%m-%d %H:%M:%S", description="日志时间格式"
         )
-
-        @field_validator("LogTimeFormat", mode="after")
-        @classmethod
-        def _check_log_time_format(cls, value: str) -> str:
-            return _compile_strptime_format(value)
 
         LogTimeStart: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 1, description="日志时间戳开始位置"
