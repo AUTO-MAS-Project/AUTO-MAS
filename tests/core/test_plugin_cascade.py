@@ -294,6 +294,70 @@ async def test_named_general_flow_uses_current_webui_rules(
 
 
 @pytest.mark.asyncio
+async def test_autoproxy_worker_opens_declared_flow_for_its_account(
+    cascade_plugins, monkeypatch, tmp_path
+):
+    from auto_mas_core import AutoProxyWorker, UserExpander
+    from auto_mas_core.log_flow import LogFlowTaskReport
+
+    from app import core
+    from app.models.config import GeneralConfig
+
+    manager, records = await cascade_plugins({"flow_worker": ()})
+    monkeypatch.setattr(core, "Plugin", manager)
+    record = records["flow_worker"]
+    (tmp_path / "flow_worker" / "__init__.py").write_text(
+        "from auto_mas_core import BasePlugin\n"
+        "from auto_mas_core.log_flow import LineRule, PluginFlowDeclaration, SimpleFlowDeclaration\n"
+        "class Adapter(BasePlugin):\n"
+        "    log_flows = {'daily': PluginFlowDeclaration(rules=SimpleFlowDeclaration(\n"
+        "        rules=(LineRule(match='^done:', node_type='daily', status='success'),),\n"
+        "    ))}\n"
+        "PLUGIN = Adapter\n",
+        encoding="utf-8",
+    )
+    await manager.reload(record)
+    await manager.enable(record)
+    _, script, account = await create_runtime_tree(user_id="default")
+    report = LogFlowTaskReport(script)
+
+    async def discard_display(_lines, _latest_timestamp):
+        pass
+
+    class Worker(AutoProxyWorker):
+        async def main_logic(self):
+            monitor = LogMonitor((0, 0), "", discard_display)
+            async with self.open_log_flow(
+                record._plugin, "daily", monitor=monitor, task_report=report
+            ) as flow:
+                process = await asyncio.create_subprocess_exec(
+                    sys.executable,
+                    "-c",
+                    "print('done:claim')",
+                    stdout=asyncio.subprocess.PIPE,
+                )
+                await asyncio.wait_for(monitor.monitor_process(process, "stdout"), 5)
+                assert await process.wait() == 0
+                async with asyncio.timeout(5):
+                    while not (snapshot := flow.snapshot_nodes()).nodes:
+                        await asyncio.sleep(0.01)
+                assert account.node_observation is not None
+                assert snapshot == account.node_observation.capture()
+            await self.user_info.set_state(status="完成")
+
+    class Expander(UserExpander):
+        def build_worker(self, user, config):
+            return Worker(self, user, config)
+
+    worker = Expander(script, GeneralConfig.build()).build_worker(account, None)
+    await worker.run()
+    assert worker.error is None
+    assert script.node_observation is None
+    assert account.status == "完成"
+    assert report.details_for(account) == ["✅ 成功: done:claim"]
+
+
+@pytest.mark.asyncio
 async def test_declared_processor_corrects_native_nodes_before_task_finishes(
     cascade_plugins, tmp_path
 ):

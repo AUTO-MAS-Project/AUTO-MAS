@@ -129,9 +129,9 @@ app/api/dispatch.py               # 现有本机 HTTP 查询与脱敏
 plugins/auto_mas_core/.../log_flow.py  # 插件公开 SDK，更新内部导入
 ```
 
-目前 `app/core/log_flow/` 同时装有通用管线、运行绑定和通知桥接。计划把纯机制下沉到 `utils`，由现有插件宿主和任务层分别持有各自的编排。`utils` 中的项目导入限于 `utils`。纯节点、摘要与观察状态从 `app/models/log_flow.py` 迁入管线，运行树、SDK 和 API 继续共用同一份类型与观察实例。`TaskLogNodesOut` 等 HTTP 契约留在接口层。文件名按迁移中的实际职责调整。
+旧 `app/core/log_flow/` 同时装有通用管线、运行绑定和通知桥接。迁移后纯机制位于 `utils`，插件宿主和任务层分别持有各自的编排。`utils` 中的项目导入限于 `utils`。节点、摘要与观察状态位于管线的 `observation.py`，运行树、SDK 和 API 共用同一份类型与观察实例。`TaskLogNodesOut` 等 HTTP 契约留在接口层。
 
-worker 目前为了绕过插件重载后的旧字节码，会导入 `app.plugin.runtime.loader`。宿主和 worker 共用的源码查找器提取为独立工具，保留源码缓存规避和 `.pyd`／`.so` 原有加载器。插件实例校验、包名与目录解析仍在宿主，worker 只接收已验证的包名和路径快照。移动 worker 时同步更新 `-m` 入口、源码根目录定位和现有启动选项，验证 SDK wheel、源代码和打包路径。
+宿主和 worker 共用独立的源码查找器，保留源码缓存规避和 `.pyd`／`.so` 原有加载器。插件实例校验、包名与目录解析仍在宿主，worker 只接收已验证的包名和路径快照。子进程入口为 `app.utils.common.log_flow.worker`，源码根目录按新的模块位置定位。
 
 首个任务快捷入口放在持有账号运行节点的 `AutoProxyWorker`，以类似 `self.open_log_flow(plugin, "daily", monitor=monitor)` 的显式调用绑定当前账号。实际插件实例由现有调用链传入，沿用插件宿主校验。托管级流程与需要自定义 source、sink 的插件继续调用现有 SDK。会话在活动作用域关闭，报告使用已冻结的摘要。LogFlow 的实时观察、结束摘要与 MAS 任务成败分别读取。控制台展示后续接入任务层的结束明细。
 
@@ -239,7 +239,7 @@ LogFlow 与日志节点管线的职责一致，继续沿用。其他名称按实
 
 解析、表达式求值、匹配、文件增量读取和纯排版可按职责共享。行预处理规则由 `app.utils.common.log.hooks` 提供，旧 LogBox 包入口继续导出原有钩子名称。LogFlow 的 worker、报告和插件 SDK 可独立导入。新框架核心与旧任务状态、配置对象、收尾回调和通知副作用保持各自的职责，worker 不初始化宿主 Config、调度或 Notify。
 
-旧 LogBox 的 `LogEntry` 留在 `app.utils.common.log_box.results`。LogFlow 使用 `app.models.log_flow.ReportEntry` 和自己的前后置处理契约。迁移专项若需复用旧归并逻辑，可在插件适配处转换结果。
+旧 LogBox 的 `LogEntry` 留在 `app.utils.common.log_box.results`。LogFlow 使用 `app.utils.common.log_flow.observation.ReportEntry` 和自己的前后置处理契约。迁移专项若需复用旧归并逻辑，可在插件适配处转换结果。
 
 ### 4.7 合理性、改动范围与先验风险
 

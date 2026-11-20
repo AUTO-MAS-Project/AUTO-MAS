@@ -139,6 +139,8 @@ async def publish_result(task_report: LogFlowTaskReport, report: TaskResultRepor
 
 托管层用 `task_report = LogFlowTaskReport(script_run)` 创建一次报告对象，传给本次托管下的账号会话。所有参与会话退出、业务报告定稿后调用 `publish_result`。专项自定义排版可以用 `details_for(run, statuses={"failed", "exception"})` 选取关注状态，再用 `send(..., append_details=False)` 交给 Notify。默认报告包含最终有效节点，省略仍在进行中的节点。Notify 根据托管结果与用户设置决定整份报告的发送时机。
 
+在 `AutoProxyWorker` 的账号任务中，可用 `async with self.open_log_flow(plugin, "progress", monitor=monitor, task_report=task_report) as flow:` 为当前账号打开声明。关闭监控器时先交接尾部日志，再退出会话。需要传入托管级运行或定制本轮输入时，使用下面的 SDK 入口。
+
 | `open_log_flow(plugin, name, *, ...)` | 用法 |
 | --- | --- |
 | `plugin`, `name`, `run` | 当前启用的真实插件实例、已登记的声明名、宿主传入的 `TaskScriptItem` 或 `TaskUserItem` |

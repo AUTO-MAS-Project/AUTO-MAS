@@ -11,9 +11,16 @@ from app.task.lifecycle import TaskBase
 from app.utils.common.process.scope import process_finalizer_scope
 
 if TYPE_CHECKING:
+    from contextlib import AbstractAsyncContextManager
+
     from app.models.task import TaskUserItem
+    from app.plugin.base.plugin import BasePlugin
     from app.task.game import BoundEmulator
+    from app.task.log_flow.binding import FlowAccess
+    from app.task.log_flow.report import LogFlowTaskReport
     from app.task.user_expander import UserExpander
+    from app.utils.common.log.flow_monitor import LogFlowMonitor
+    from app.utils.common.log_flow.report import ReportMode
 
 
 class ModeWorker(TaskBase):
@@ -97,6 +104,27 @@ class ModeWorker(TaskBase):
 
 class AutoProxyWorker(ModeWorker):
     mode = TaskMode.AUTO_PROXY
+
+    def open_log_flow(
+        self,
+        plugin: BasePlugin,
+        name: str,
+        *,
+        monitor: LogFlowMonitor,
+        mode: ReportMode | None = None,
+        task_report: LogFlowTaskReport | None = None,
+    ) -> AbstractAsyncContextManager[FlowAccess]:
+        """为当前账号打开插件的具名日志声明。"""
+        from app.core import Plugin
+
+        return Plugin.open_log_flow(
+            plugin,
+            name,
+            run=self.user_info,
+            monitor=monitor,
+            mode=mode,
+            task_report=task_report,
+        )
 
 
 class ScriptConfigWorker(ModeWorker):
