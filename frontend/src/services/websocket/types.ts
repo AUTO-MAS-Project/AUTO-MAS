@@ -98,6 +98,7 @@ export const WS_SYSTEM_NOTICE = 'system.notice'
 
 /** 任务提示消息数据 (type=task.notice) */
 export interface WSTaskNoticeData {
+  sourceScriptType?: string | null
   level: 'info' | 'warning' | 'error'
   message: string
   messageKey?: string | null
@@ -166,6 +167,7 @@ export interface WSTaskScriptFinishedData extends WSTaskScriptStartedData {
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */
 export interface WSTaskCreatedData {
+  targetId?: string | null
   trigger?: TaskTriggerReason
   taskId: string
   mode: WSTaskMode

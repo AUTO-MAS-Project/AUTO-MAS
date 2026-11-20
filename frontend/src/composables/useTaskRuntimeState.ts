@@ -34,6 +34,7 @@ const SNAPSHOT_FAILURE_RETRY_DELAY_MS = 3000
 
 export interface TaskRuntimeState {
   taskId: string
+  targetId: string | null
   mode: WSTaskMode | null
   scriptId: string | null
   userId: string | null
@@ -112,6 +113,7 @@ const releaseTaskSubscriptions = (taskId: string): void => {
 
 const createUnknownTaskState = (taskId: string): TaskRuntimeState => ({
   taskId,
+  targetId: null,
   mode: null,
   scriptId: null,
   userId: null,
@@ -176,6 +178,7 @@ const handleTaskCreated = (data: WSTaskCreatedData): void => {
   const state: TaskRuntimeState = {
     ...(current ?? createUnknownTaskState(data.taskId)),
     mode: data.mode,
+    targetId: data.targetId ?? current?.targetId ?? null,
     trigger: data.trigger ?? TaskTriggerReason.MANUAL,
     scriptId: data.scripts[0]?.scriptId ?? null,
     scripts: cloneScripts(data.scripts),
@@ -219,6 +222,7 @@ const stateFromSnapshot = (
   const state: TaskRuntimeState = {
     ...(current ?? createUnknownTaskState(item.taskId)),
     taskId: item.taskId,
+    targetId: item.targetId ?? current?.targetId ?? null,
     mode: item.mode,
     scriptId: item.scriptId ?? null,
     userId: item.userId ?? null,

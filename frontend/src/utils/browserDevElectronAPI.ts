@@ -17,13 +17,14 @@ const ONLINE_APPEARANCE_UNSUPPORTED = {
   error: '浏览器预览不支持在线外观',
 }
 
-const readJsonStorage = <T>(key: string): T | null => {
+const readJsonStorage = <T>(key: string, strict = false): T | null => {
   const raw = localStorage.getItem(key)
-  if (!raw) return null
+  if (raw === null) return null
 
   try {
     return JSON.parse(raw) as T
-  } catch {
+  } catch (error) {
+    if (strict) throw error
     return null
   }
 }
@@ -113,10 +114,10 @@ const browserDevElectronAPI = {
   selectFolder: async () => null,
   selectFile: async () => [],
   saveConfig: async (config: Record<string, unknown>, defaults?: Record<string, unknown>) => {
-    const current = readJsonStorage<Record<string, unknown>>(CONFIG_KEY)
+    const current = readJsonStorage<Record<string, unknown>>(CONFIG_KEY, true)
     localStorage.setItem(CONFIG_KEY, JSON.stringify({ ...defaults, ...current, ...config }))
   },
-  loadConfig: async () => readJsonStorage(CONFIG_KEY),
+  loadConfig: async (strict = false) => readJsonStorage(CONFIG_KEY, strict),
   resetConfig: async () => {
     localStorage.removeItem(CONFIG_KEY)
   },
@@ -157,7 +158,13 @@ const browserDevElectronAPI = {
   backendStatus: async () => ({ isRunning: true, runtimeSupervised: false }),
 } as unknown as ElectronAPI
 
-if (isDev && !window.electronAPI) {
+if (import.meta.env.DEV && isDev && !window.electronAPI) {
   ;(window as BrowserDevWindow).__AUTO_MAS_BROWSER_DEV_MODE__ = true
-  window.electronAPI = browserDevElectronAPI
+  window.electronAPI = {
+    ...browserDevElectronAPI,
+    async verifyMysteryAccessCode(accessCode, context) {
+      const { verifyMysteryAccessCode } = await import('../../electron/services/mysteryAccessCode')
+      return verifyMysteryAccessCode(accessCode, context)
+    },
+  }
 }

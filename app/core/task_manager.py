@@ -378,6 +378,10 @@ class _TaskManager:
                     if info.info.trigger == TaskTriggerReason.CYCLE:
                         queue.Cycle.LastRunAt = now
                     await queue.commit()
+            if queue is not None:
+                run.target_id = str(queue.uid)
+            elif len(info.scripts) == 1:
+                run.target_id = info.script_id
             self._running[info.uid] = run
             # 维护任务可按 ID 查询和停止，但不创建普通调度面板。
             if not run.maintenance:
@@ -389,6 +393,7 @@ class _TaskManager:
                         mode=info.info.mode,
                         trigger=info.info.trigger,
                         taskName=info.info.name,
+                        targetId=run.target_id,
                         scripts=[
                             WSTaskScriptIdentityData(
                                 scriptId=script.info.script_id,
@@ -561,6 +566,7 @@ class _TaskManager:
                         "mode": info.mode,
                         "trigger": info.info.trigger,
                         "scriptId": info.script_id,
+                        "targetId": run.target_id,
                         "userId": info.user_id,
                         "stopping": run.cancelled,
                         "scripts": [

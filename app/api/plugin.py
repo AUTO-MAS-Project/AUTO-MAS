@@ -55,9 +55,14 @@ from app.models.schema import (
     OutBase,
     PluginInstallation,
 )
+from app.mystery.gate import is_unlocked
 from app.plugin.errors import PluginBusyError
 from app.plugin.http import PLUGIN_GATEWAY_PATH
-from app.plugin.types import PluginState, plugin_locale
+from app.plugin.types import (
+    RESTRICTED_PLUGIN_NAMES,
+    PluginState,
+    plugin_locale,
+)
 from app.utils import get_logger
 
 
@@ -235,6 +240,14 @@ async def get_plugin_registry(
 # ==================== 目录 plugin_catalog ====================
 
 
+def _market_visible(meta: PluginMeta) -> bool:
+    """受控插件仅在神秘入口当日已解锁时进入市场，其余插件始终可见。"""
+    info = meta.effective.info
+    if info.plugin_name not in RESTRICTED_PLUGIN_NAMES:
+        return True
+    return is_unlocked()
+
+
 @_catalog.post(
     "/get", tags=["Get"], summary="查询插件目录配置", response_model=PluginCatalogGetOut
 )
@@ -245,6 +258,8 @@ async def get_plugin_catalog(
     try:
         col = Config.plugin_catalog
         uids = [UUID(body.metaId)] if body.metaId else list(col.keys())
+        # 受控插件未解锁时按不存在处理，市场与安装入口同时关闭。
+        uids = [uid for uid in uids if _market_visible(col[uid])]
         return PluginCatalogGetOut(
             uiSources=[UUID(body.metaId) if body.metaId else col.uid],
             order=[

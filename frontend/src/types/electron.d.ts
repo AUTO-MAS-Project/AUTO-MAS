@@ -61,6 +61,11 @@ export interface ElectronConfig {
   [key: string]: unknown
 }
 
+export interface MysteryAccessContext {
+  deviceHash: string
+  backendHash: string
+}
+
 export type ElectronApiEndpointKey = 'local' | 'websocket'
 
 // ==================== Runtime 后端更新 ====================
@@ -320,7 +325,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   // 配置文件操作
   // 仅覆盖 config 中的字段；defaults 只补齐文件中缺失的字段。
   saveConfig: (config: unknown, defaults?: unknown) => Promise<void>
-  loadConfig: () => Promise<ElectronConfig | null>
+  loadConfig: (strict?: boolean) => Promise<ElectronConfig | null>
   resetConfig: () => Promise<void>
 
   // 应用初始化版本（保存前端版本号用于比对）
@@ -477,6 +482,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   readFileBase64: (filePath: string, maxBytes?: number) => Promise<{ base64: string; size: number }>
 
   getAppPath: (name: string) => Promise<string>
+  verifyMysteryAccessCode: (accessCode: string, context: MysteryAccessContext) => Promise<boolean>
 
   // 自定义外观包
   listAppearances?: () => Promise<InstalledAppearance[]>
