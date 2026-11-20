@@ -162,7 +162,7 @@ async def publish_result(task_report: LogFlowTaskReport, report: TaskResultRepor
 | `LineRule(match, node_type, extract="", status="info")` | 模型用关键字参数。用 Python 正则匹配。提取留空时取匹配行，提取表达式用 `$()`，在正则内用捕获组指定正文 |
 | `WindowRule(start, node_type, end=None, extract="", max_lines=50, status="info")` | 同时最多声明 16 条。单个窗口允许 2–100 行，遇到结束行、下个起点、上限或会话关闭时结算。窗口按来源分别维护 |
 | `GeneralFlowDeclaration(patterns, hooks="")` | `patterns` 和 `hooks` 沿用 WebUI 持有的字符串格式。由执行侧传本次运行配置快照。有效的 MAS 日志时间前缀按旧排版保留 |
-| `FileInput(path, start_from_end=True, rotated_name=None, start_cursor=None)` | 走 worker 文件增量读取，支持轮转。默认从当前末尾起读。调用 `await FileInput(path=...).capture_start()` 可在脚本启动前固定本轮起点 |
+| `FileInput(path, start_from_end=True, rotated_name=None, start_cursor=None)` | 走 worker 文件增量读取，依次尝试 UTF-8 和 GB18030。默认从当前末尾起读。调用 `await FileInput(path=...).capture_start()` 可在脚本启动前固定本轮起点。轮转按记录的旧文件身份补读，一次轮询间隔内的多次轮转需要来源自行提供中间文件的读取顺序。文件原位改写且大小和身份均未变化时，文件源无法可靠检测 |
 
 示例同时使用 MAS 行、每次运行指定的文件和主动上报。只采集文件时加 `use_mas_log=False` 并省略 `monitor`。文件来源需要文本规则或自定义处理器。
 

@@ -264,6 +264,7 @@ def _run_pipeline(
 
     last_timestamp: dict[NodeSource, float | None] = {}
     file_capacity_error = ""
+    file_error = ""
 
     def emit_processed(
         result: ProcessorOutput, *, source_name: NodeSource, timestamp: float | None
@@ -324,14 +325,21 @@ def _run_pipeline(
             try:
                 lines = source.read_new()
             except LogReadLimitExceeded as exc:
-                if len(processors) == 1:
-                    raise
-                # 文件读取超限只停止这个来源，让其他来源继续交接。
                 file_capacity_error = str(exc)
                 source = None
                 break
+            except OSError as exc:
+                file_error = f"文件日志读取失败: {type(exc).__name__}"
+                source = None
+                break
+            if source.rotation_gap:
+                file_error = source.rotation_gap
             for line in lines:
-                process_text(line, source_name="file", timestamp=time.time())
+                try:
+                    process_text(line, source_name="file", timestamp=time.time())
+                except LogReadLimitExceeded as exc:
+                    # 偏移已越过该行，后续文件行和其他来源仍可交付。
+                    file_capacity_error = str(exc)
             if not closing or not source.has_more:
                 break
         if custom_source is not None:
@@ -373,6 +381,7 @@ def _run_pipeline(
         Closed(
             sink_error=sink_error,
             capacity_error=observation_capacity_error or file_capacity_error,
+            file_error=file_error,
         ),
     )
 

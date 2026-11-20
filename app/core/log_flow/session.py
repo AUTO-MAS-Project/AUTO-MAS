@@ -473,10 +473,10 @@ class LogFlowSession:
                                 "原生采集记录未能全部交接",
                                 sink_error=message.sink_error,
                             )
-                        if self._native_incomplete_detail:
+                        if gap := message.file_error or self._native_incomplete_detail:
                             return self._finish_observation(
                                 "worker_error",
-                                self._native_incomplete_detail,
+                                gap,
                                 sink_error=message.sink_error,
                             )
                         return self._finish_observation(

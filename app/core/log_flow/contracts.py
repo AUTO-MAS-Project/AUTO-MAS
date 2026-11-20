@@ -181,6 +181,7 @@ class Closed(BaseModel):
     kind: Literal["closed"] = "closed"
     sink_error: str = ""
     capacity_error: str = ""
+    file_error: str = ""
 
 
 class FinalEntry(BaseModel):

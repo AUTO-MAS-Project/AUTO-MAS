@@ -14,6 +14,8 @@ from pathlib import Path
 from stat import S_ISREG
 from typing import BinaryIO, Optional, Union
 
+from app.utils.common.tools import decode_bytes
+
 if sys.platform == "win32":
     import ctypes
     import msvcrt
@@ -123,6 +125,7 @@ class FlowFileSource:
         self.rotated_name = rotated_name
         self.max_read_bytes = max_read_bytes
         self.has_more = False
+        self.rotation_gap = ""
         self._offset = 0
         # 文件身份：Windows 沿用 inode + 创建时间；POSIX 使用 inode + 设备号，
         # 不能使用会随追加更新的 ctime，否则会把普通写入误判为轮转。
@@ -136,6 +139,7 @@ class FlowFileSource:
         self._offset = cursor.offset
         self._file_id = cursor.file_id
         self.has_more = False
+        self.rotation_gap = ""
         self._opened = True
 
     def read_new(self) -> list[str]:
@@ -149,7 +153,7 @@ class FlowFileSource:
             return []
         try:
             if not S_ISREG(self.path.stat().st_mode):
-                raise ValueError("日志来源必须是普通文件")
+                raise OSError("日志来源必须是普通文件")
             file = open(self.path, "rb", opener=LOG_READ_OPENER)
         except FileNotFoundError:
             if self._file_id is None:
@@ -163,7 +167,7 @@ class FlowFileSource:
             # 路径可能在 stat 与 open 之间被替换，以实际读取的句柄为准。
             stat = os.fstat(file.fileno())
             if not S_ISREG(stat.st_mode):
-                raise ValueError("日志来源必须是普通文件")
+                raise OSError("日志来源必须是普通文件")
             current_id = file_identity(stat)
             offset = self._offset
             rotated_lines = []
@@ -204,10 +208,12 @@ class FlowFileSource:
         """
         if file_id[0]:
             batch = self._read_rotated_by_identity(file_id)
-            if batch is not None:
-                return batch
-            raise FileNotFoundError("日志已轮转，无法定位上一个文件")
-        return self._read_candidates()
+        else:
+            batch = self._read_candidates()
+        if batch is not None:
+            return batch
+        self.rotation_gap = "日志已轮转，无法定位上一个文件"
+        return _ReadBatch([], self._offset)
 
     def _read_rotated_by_identity(self, file_id: tuple[int, int]) -> _ReadBatch | None:
         for candidate in self.path.parent.iterdir():
@@ -227,7 +233,7 @@ class FlowFileSource:
                 continue
         return None
 
-    def _read_candidates(self) -> _ReadBatch:
+    def _read_candidates(self) -> _ReadBatch | None:
         """按候选路径探测旧日志，命中第一个存在且有未读内容的"""
         for bak in self._rotation_candidates():
             if not bak.is_file():
@@ -241,7 +247,7 @@ class FlowFileSource:
                 return _ReadBatch([], offset)  # 已找到排空的旧文件。
             with open(bak, "rb", opener=LOG_READ_OPENER) as file:
                 return self._read_stream(file, offset)
-        raise FileNotFoundError("日志已轮转，无法定位上一个文件")
+        return None
 
     def _read_stream(self, file: BinaryIO, offset: int) -> _ReadBatch:
         file.seek(offset)
@@ -267,7 +273,10 @@ class FlowFileSource:
             if not start and has_more:
                 raise LogReadLimitExceeded("文件单行日志超过读取容量")
             return _ReadBatch([], offset + start, has_more)
-        lines = raw[start : end - 1].decode("utf-8", errors="replace").split("\n")
+        lines = [
+            decode_bytes(line, encodings=("utf-8-sig", "gb18030"))
+            for line in raw[start : end - 1].split(b"\n")
+        ]
         return _ReadBatch(lines, offset + end, has_more)
 
     def _rotation_candidates(self) -> list[Path]:

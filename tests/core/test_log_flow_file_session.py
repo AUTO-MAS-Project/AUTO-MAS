@@ -459,6 +459,55 @@ async def test_file_backlog_reports_an_incomplete_session(tmp_path, accept_push)
         await session.close()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("problem", "close_reason"),
+    [("lost_rotation", "worker_error"), ("oversized_line", "capacity")],
+)
+async def test_file_gap_preserves_later_file_and_push_nodes(
+    tmp_path, problem, close_reason
+):
+    path = tmp_path / "script.log"
+    first = "开始"
+    later = "继续"
+    session = await LogFlowSession.open(
+        PipelineSpec(
+            file=FileInput(path=str(path)),
+            accept_push=True,
+            rules=(
+                LineRule(match="done:", extract=r"$(done:(\w+))", node_type="步骤"),
+            ),
+        )
+    )
+    try:
+        path.write_bytes(f"done:{first}\n".encode("gbk"))
+        await wait_for_first_node(session)
+        if problem == "lost_rotation":
+            replacement = tmp_path / "replacement.log"
+            replacement.write_bytes(f"done:{later}\n".encode("gbk"))
+            os.replace(replacement, path)
+        else:
+            with path.open("ab") as output:
+                output.write(b"x" * 70_000 + b"\n" + f"done:{later}\n".encode("gbk"))
+
+        async with asyncio.timeout(5):
+            while len(session.snapshot()) < 2:
+                await asyncio.sleep(0.01)
+        assert (
+            session.push_reporter().node("步骤", "push-after-gap")
+            == SubmitResult.ACCEPTED
+        )
+        summary = await session.close()
+        assert summary.reason == close_reason
+        assert [(node.source, node.text) for node in summary.nodes] == [
+            ("file", first),
+            ("file", later),
+            ("push", "push-after-gap"),
+        ]
+    finally:
+        await session.close()
+
+
 def test_worker_finishes_report_at_node_capacity_even_if_sink_cleanup_fails(tmp_path):
     path = tmp_path / "session.log"
     path.write_bytes(b"done:1\n" * (MAX_NODE_FRAMES + 1))
