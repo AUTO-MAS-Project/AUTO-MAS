@@ -101,6 +101,9 @@ async def test_observe_run_before_and_after_scheduler_completion(
                             NodeAttribute(key="attempt", value=1),
                             NodeAttribute(key="detail", value="token=private"),
                             NodeAttribute(key="probe.token", value="private"),
+                            NodeAttribute(key="sendkey", value="fixture"),
+                            NodeAttribute(key="notify.pushkey", value="fixture"),
+                            NodeAttribute(key="appToken", value="fixture"),
                         ),
                     )
                     == "accepted"
@@ -168,7 +171,9 @@ async def test_observe_run_before_and_after_scheduler_completion(
             ]
             local_observation = first_user.node_observation
             assert local_observation is not None
-            assert local_observation.snapshot()[0].attributes[-1].value == "private"
+            assert local_observation.snapshot()[0].attributes[-1] == NodeAttribute(
+                key="appToken", value="fixture"
+            )
             cursor = page["cursor"]
             assert (
                 await client.get(path, params={**params, "after": 1})

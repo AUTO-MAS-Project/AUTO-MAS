@@ -52,7 +52,7 @@ from app.models.schema import (
 )
 from app.models.task import TaskMode
 from app.utils import get_logger
-from app.utils.common.security import sanitize_log_message
+from app.utils.common.security import is_sensitive_log_key, sanitize_log_message
 from app.utils.contracts.power import PowerSignal
 
 
@@ -238,8 +238,7 @@ async def get_task_log_nodes(
 def _public_log_node(node: Node) -> Node:
     attributes = []
     for attribute in node.attributes:
-        key_probe = f"{attribute.key}=0"
-        if sanitize_log_message(key_probe) != key_probe:
+        if is_sensitive_log_key(attribute.key):
             continue
         value = attribute.value
         if isinstance(value, str):

@@ -30,11 +30,28 @@ looks_like_dpapi_blob = secret.looks_like_dpapi_blob
 
 __all__ = [
     "sanitize_log_message",
+    "is_sensitive_log_key",
     "format_exception_reason",
     "dpapi_encrypt",
     "dpapi_decrypt",
     "looks_like_dpapi_blob",
 ]
+
+_SENSITIVE_LOG_KEY = (
+    r"(?:cdk|password|passwd|pwd|token|access[_-]?token|"
+    r"refresh[_-]?token|authorization|cookies?[_-]?str|cookie|"
+    r"secret|api[_-]?key|username|phone|cellphone|useridentity)"
+)
+_URL_SECRET_KEYS = r"(?:key|sendkey|sign|sig|pushkey|apptoken)"
+_STRUCTURED_SECRET_KEY = re.compile(
+    rf"(?:^|[.:-])(?:{_SENSITIVE_LOG_KEY}|{_URL_SECRET_KEYS})(?:$|[.:-])",
+    re.IGNORECASE,
+)
+
+
+def is_sensitive_log_key(key: str) -> bool:
+    """识别日志里的结构化凭据键，包括带命名空间的键。"""
+    return _STRUCTURED_SECRET_KEY.search(key) is not None
 
 
 # 推送地址里的密钥。httpx 按 INFO 记下每个请求的完整 URL，这些 URL 会进 app.log 与
@@ -50,7 +67,7 @@ _URL_SECRET_PATTERNS = [
     # WxPusher ?appToken=、Power Automate &sig=；JSON 里的 & 会转义成 &
     (
         re.compile(
-            rf"((?:[?&]|\\u0026)(?:key|sendkey|sign|sig|pushkey|apptoken)=){_URL_VALUE}",
+            rf"((?:[?&]|\\u0026){_URL_SECRET_KEYS}=){_URL_VALUE}",
             re.IGNORECASE,
         ),
         r"\1***",
@@ -102,11 +119,7 @@ def sanitize_log_message(message: str) -> str:
     :rtype: str
     """
     # 定义需要过滤的敏感参数模式，兼容 URL、表单和 JSON 日志格式。
-    sensitive_key = (
-        r"(?:cdk|password|passwd|pwd|token|access[_-]?token|"
-        r"refresh[_-]?token|authorization|cookies?[_-]?str|cookie|"
-        r"secret|api[_-]?key|username|phone|cellphone|useridentity)"
-    )
+    sensitive_key = _SENSITIVE_LOG_KEY
     sensitive_patterns = [
         # JSON 字符串值，例如 "password": "..."
         (rf"([\"']{sensitive_key}[\"']\s*:\s*[\"'])(.*?)([\"'])", r"\1***\3"),
