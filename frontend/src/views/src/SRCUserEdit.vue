@@ -183,12 +183,12 @@ import { buildRestoreConfirm } from '@/utils/configRestoreMode'
 const logger = window.electronAPI.getLogger('SRC用户编辑')
 
 // 导入拆分的组件
-import SRCUserEditHeader from '@/views/SRCUserEdit/SRCUserEditHeader.vue'
-import BasicInfoSection from '@/views/SRCUserEdit/BasicInfoSection.vue'
-import StageConfigSection from '@/views/SRCUserEdit/StageConfigSection.vue'
+import SRCUserEditHeader from './user/SRCUserEditHeader.vue'
+import BasicInfoSection from './user/BasicInfoSection.vue'
+import StageConfigSection from './user/StageConfigSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
-import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
+import { useSrcConfigBackupApi } from './useSrcConfigBackupApi'
 
 const { t } = useI18n()
 
@@ -362,7 +362,7 @@ const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
 ]
 
 // 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
-const { restoreApi, ensureBackup } = useConfigBackupApi({
+const { restoreApi, ensureBackup } = useSrcConfigBackupApi({
   scriptId,
   userId: () => userId,
   logger,

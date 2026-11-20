@@ -48,7 +48,6 @@ if TYPE_CHECKING:
     )
     from .OkNte import OkNteManager as OkNteManager
     from .Okww import OkwwManager as OkwwManager
-    from .SRC import SrcManager as SrcManager
     from .user_expander import UserExpander as UserExpander
     from .ZzzOd import ZzzOdManager as ZzzOdManager
 
@@ -70,7 +69,6 @@ _LAZY_EXPORTS = {
     "ScriptViewWorker": (".mode_worker", "ScriptViewWorker"),
     "MODE_WORKERS": (".mode_worker", "MODE_WORKERS"),
     "MaaEndManager": (".MaaEnd", "MaaEndManager"),
-    "SrcManager": (".SRC", "SrcManager"),
     "GeneralManager": (".general", "GeneralManager"),
     "OkwwManager": (".Okww", "OkwwManager"),
     "OkNteManager": (".OkNte", "OkNteManager"),
@@ -102,7 +100,6 @@ __all__ = [
     "ScriptConfigWorker",
     "ScriptViewWorker",
     "MODE_WORKERS",
-    "SrcManager",
     "GeneralManager",
     "MaaEndManager",
     "OkwwManager",
