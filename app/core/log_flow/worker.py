@@ -263,7 +263,7 @@ def _run_pipeline(
                 sink_error = f"write: {type(exc).__name__}"
 
     last_timestamp: dict[NodeSource, float | None] = {}
-    file_capacity_error = ""
+    input_capacity_error = ""
     file_error = ""
 
     def emit_processed(
@@ -325,7 +325,7 @@ def _run_pipeline(
             try:
                 lines = source.read_new()
             except LogReadLimitExceeded as exc:
-                file_capacity_error = str(exc)
+                input_capacity_error = str(exc)
                 source = None
                 break
             except OSError as exc:
@@ -339,13 +339,16 @@ def _run_pipeline(
                     process_text(line, source_name="file", timestamp=time.time())
                 except LogReadLimitExceeded as exc:
                     # 偏移已越过该行，后续文件行和其他来源仍可交付。
-                    file_capacity_error = str(exc)
+                    input_capacity_error = str(exc)
             if not closing or not source.has_more:
                 break
         if custom_source is not None:
             closing_source = closing
             for record in custom_source.close() if closing else custom_source.poll():
-                process_record(record, source_name="custom")
+                try:
+                    process_record(record, source_name="custom")
+                except LogReadLimitExceeded as exc:
+                    input_capacity_error = str(exc)
         if closing:
             break
     reader.join()
@@ -380,7 +383,7 @@ def _run_pipeline(
         pipe,
         Closed(
             sink_error=sink_error,
-            capacity_error=observation_capacity_error or file_capacity_error,
+            capacity_error=observation_capacity_error or input_capacity_error,
             file_error=file_error,
         ),
     )

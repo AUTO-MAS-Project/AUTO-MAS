@@ -89,6 +89,18 @@ def sample_source(_options: Mapping[str, JsonValue]) -> _SampleSource:
     return _SampleSource()
 
 
+def oversized_source(_options: Mapping[str, JsonValue]) -> _SampleSource:
+    class OversizedSource(_SampleSource):
+        def poll(self):
+            return ()
+
+        def close(self):
+            yield TextRecord(text="x" * 65536)
+            yield TextRecord(text="done:tail")
+
+    return OversizedSource()
+
+
 def blocking_start_source(options: Mapping[str, JsonValue]) -> _SampleSource:
     Path(str(options["pid_path"])).write_text(str(os.getpid()), encoding="utf-8")
     time.sleep(60)

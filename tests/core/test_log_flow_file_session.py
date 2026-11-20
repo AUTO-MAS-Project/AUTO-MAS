@@ -622,6 +622,35 @@ def test_worker_finishes_report_at_node_capacity_even_if_sink_cleanup_fails(tmp_
 
 
 @pytest.mark.asyncio
+async def test_oversized_custom_line_keeps_later_nodes_and_push_records():
+    session = await LogFlowSession.open(
+        PipelineSpec(
+            accept_push=True,
+            source=WorkerFactorySpec(
+                factory=FunctionRef(
+                    name="probe:source",
+                    module="tests.support.log_flow_functions",
+                    attribute="oversized_source",
+                )
+            ),
+            rules=(LineRule(match="^done:", node_type="普通"),),
+        )
+    )
+    try:
+        assert (
+            session.push_reporter().node("普通", "push node") == SubmitResult.ACCEPTED
+        )
+        summary = await session.close()
+        assert summary.reason == "capacity"
+        assert {(node.source, node.text) for node in summary.nodes} == {
+            ("push", "push node"),
+            ("custom", "done:tail"),
+        }
+    finally:
+        await session.close()
+
+
+@pytest.mark.asyncio
 async def test_mixed_session_drains_accepted_records_and_rejects_late_input(tmp_path):
     path = tmp_path / "script.log"
     file_spec = pipeline(path)
