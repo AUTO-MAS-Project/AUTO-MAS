@@ -282,9 +282,8 @@ export class StartupAttempt {
             this.durations.set(phase, ms)
         }
       }
-      if (event.stage === 'bootstrap' && event.success) {
-        if (event.details.unchanged === true) this.details.env_rebuilt = 'no'
-      }
+      if (event.stage === 'bootstrap' && event.success && event.details.unchanged === true)
+        this.details.env_rebuilt ??= 'no'
       return
     }
     if (event.type === 'progress') {

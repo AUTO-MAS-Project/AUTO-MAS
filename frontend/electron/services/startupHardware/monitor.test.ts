@@ -106,6 +106,37 @@ it('安装文件和后续 uv 传输合计，重复的字节进度只计算一次
     expect(attempt.snapshot().source_switches).toBe(switches)
   }))
 
+it('重建过的环境在同一次启动的后续检查中仍记为已重建', () =>
+  withAttempt(attempt => {
+    const commands = ['bootstrap', 'dependencies rebuild', 'bootstrap']
+    const flags = commands.map((command, i) => {
+      const base = { protocol: 1, operationId: String(i), timestamp: '' }
+      attempt.progress({
+        ...base,
+        type: 'hello',
+        sequence: 1,
+        command,
+        capabilities: [],
+        runtimeVersion: 'test',
+      })
+      attempt.progress({
+        ...base,
+        type: 'result',
+        sequence: 2,
+        success: true,
+        code: 'OK',
+        stage: command === 'bootstrap' ? 'bootstrap' : 'dependencies.rebuild',
+        status: 'ready_to_start',
+        message: '',
+        retryable: false,
+        remediation: [],
+        details: command === 'bootstrap' ? { unchanged: true } : {},
+      })
+      return attempt.snapshot().env_rebuilt
+    })
+    expect(flags).toEqual(['no', 'yes', 'yes'])
+  }))
+
 it('依赖下载切换文件时沿用 Runtime 已汇总的字节数', () =>
   withAttempt(attempt => {
     const base = { protocol: 1, operationId: 'bootstrap', timestamp: '', sequence: 1 }
