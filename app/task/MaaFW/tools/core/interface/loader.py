@@ -82,6 +82,10 @@ class MaaFWInterfaceLoadError(ValueError):
     """Raised when a MaaFW ProjectInterface cannot be loaded safely."""
 
 
+class MaaFWInterfacePathEscape(MaaFWInterfaceLoadError):
+    """声明的相对路径解析后落在项目目录之外（多由项目自己建的链接 / 装入点引起）。"""
+
+
 class _MergeState:
     def __init__(self) -> None:
         self.group_names: set[str] = set()
@@ -209,7 +213,7 @@ def _resolve_project_relative_path(
     normalized_path = _normalize_project_relative_path(raw_path, field_name=field_name)
     resolved_path = (base_dir / normalized_path).resolve()
     if not _is_within_base_dir(resolved_path, base_dir):
-        raise MaaFWInterfaceLoadError(
+        raise MaaFWInterfacePathEscape(
             f"{field_name} 越界，禁止访问 MaaFW 项目目录之外的路径: {raw_path}"
         )
     return resolved_path
@@ -610,32 +614,29 @@ def _scan_scan_select_cases(
             scan_dir,
             field_name=f"scan_select 选项 {option_name} 的 scan_dir",
         )
-    except OSError as exc:
-        if not _is_untrusted_mount_point(exc):
+    except (OSError, MaaFWInterfacePathEscape) as exc:
+        if not (
+            _is_untrusted_mount_point(exc) or isinstance(exc, MaaFWInterfacePathEscape)
+        ):
             raise
-        # 项目运行期自建的装入点（线上见过视图里的 BBchannel\settings）被系统判为不受信任，
-        # 解析不了就没法做越界判断：不读它，按没有可选项处理，别让整份 interface 读不出来。
+        # 项目运行期自建的装入点 / 链接（线上见过视图里的 BBchannel\settings）有两种不可用情形：
+        # 系统判为不受信任时根本解析不了，能解析时又跟着链接落到视图之外。scan_dir 指的是
+        # 「用户自备内容的目录」，两种都按没有可选项处理，别让整份 interface 读不出来。
         logger.warning(
-            "MaaFW ProjectInterface scan_select 选项 %s 的 scan_dir 含不受信任的装入点，"
-            "无法解析：%s（%s）；按没有可选项处理",
+            "MaaFW ProjectInterface scan_select 选项 %s 的 scan_dir 无法在项目目录内解析：%s；"
+            "按没有可选项处理",
             option_name,
-            exc.filename or (base_dir / scan_dir),
             exc,
         )
         if context is not None:
-            # 照样登记进缓存依赖（用未解析的路径，只拿来 stat / glob 算签名）：装入点被删掉
-            # 或变成可信后签名会变，缓存自动失效，不会一直空着。
-            context.scan_select_specs.add(
-                (
-                    base_dir
-                    / _normalize_project_relative_path(
-                        scan_dir,
-                        field_name=f"scan_select 选项 {option_name} 的 scan_dir",
-                    ),
-                    _normalize_project_relative_path(
-                        scan_filter,
-                        field_name=f"scan_select 选项 {option_name} 的 scan_filter",
-                    ),
+            # 只登记进依赖、不进 scan_select_specs：后者的签名会对 (目录, 过滤串) 做
+            # glob 枚举，链接指向视图外时那一步就跟着读到项目外去了。依赖只对路径本身
+            # 取 stat 签名，链接被删、改回项目内或目标变了都会让缓存失效、重新解析。
+            context.dependency_paths.add(
+                base_dir
+                / _normalize_project_relative_path(
+                    scan_dir,
+                    field_name=f"scan_select 选项 {option_name} 的 scan_dir",
                 )
             )
         return []
