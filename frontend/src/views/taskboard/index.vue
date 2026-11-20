@@ -7,6 +7,7 @@ import { parseActivityTime } from '@/utils/activityTime'
 import { matchesKeyword } from '@/utils/searchMatch'
 import { useTaskboardStateStore } from '@/stores/taskboardState'
 import { useTaskboardData } from './useTaskboardData'
+import BannerWatch from './components/BannerWatch.vue'
 import GamePickerModal from './components/GamePickerModal.vue'
 import TaskboardCard from './components/TaskboardCard.vue'
 import TaskboardToolbar from './components/TaskboardToolbar.vue'
@@ -50,7 +51,7 @@ const cardStateOf = (e: TaskboardActivity): 'active' | 'done' | 'archived' => {
 
 const taskboardState = useTaskboardStateStore()
 
-const tab = ref<'active' | 'done' | 'archived' | 'weekly' | 'version'>('active')
+const tab = ref<'active' | 'done' | 'archived' | 'weekly' | 'version' | 'banners'>('active')
 const keyword = ref('')
 const gameFilter = ref<string | undefined>(undefined)
 const editOpen = ref(false)
@@ -163,7 +164,7 @@ const emptyText = computed(() =>
 const hintText = computed(() => {
   if (tab.value === 'active') return t('core.taskboard.activeHint')
   if (tab.value === 'done') return t('core.taskboard.doneHint')
-  if (tab.value === 'weekly' || tab.value === 'version') return ''
+  if (tab.value === 'weekly' || tab.value === 'version' || tab.value === 'banners') return ''
   return t('core.taskboard.archiveHint')
 })
 
@@ -200,7 +201,7 @@ const saveGames = async (keys: string[]) => {
   <div class="taskboard-container">
     <div class="tb-header">
       <h1 class="page-title">{{ t('core.taskboard.title') }}</h1>
-      <span class="tb-updated">
+      <span v-if="tab !== 'banners'" class="tb-updated">
         {{
           updatedAt
             ? t('core.taskboard.dataUpdated', { p0: updatedAt })
@@ -209,7 +210,7 @@ const saveGames = async (keys: string[]) => {
               : t('core.taskboard.notUpdated')
         }}
       </span>
-      <a-button :loading="refreshing || loading" @click="load">
+      <a-button v-if="tab !== 'banners'" :loading="refreshing || loading" @click="load">
         {{ t('core.taskboard.refresh') }}
       </a-button>
     </div>
@@ -244,7 +245,7 @@ const saveGames = async (keys: string[]) => {
         </template>
       </a-alert>
       <a-alert
-        v-if="sourceIssues.length"
+        v-if="tab !== 'banners' && sourceIssues.length"
         type="warning"
         show-icon
         class="tb-alert"
@@ -281,6 +282,7 @@ const saveGames = async (keys: string[]) => {
         </a-spin>
       </template>
 
+      <BannerWatch v-else-if="tab === 'banners'" />
       <WeeklyTasksPanel
         v-else-if="tab === 'weekly'"
         :options="weeklyVisibleOptions"

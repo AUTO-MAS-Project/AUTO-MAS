@@ -46,6 +46,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     dialogOptions?: { dialogTitle?: string; buttonLabel?: string }
   ) => ipcRenderer.invoke('save-text-file', defaultName, content, filters, dialogOptions),
   openUrl: (url: string) => ipcRenderer.invoke('open-url', url),
+  analyzeBannerWithCodex: (prompt: string) =>
+    ipcRenderer.invoke('banner-watch:analyze-with-codex', prompt),
   discoverOkwwPath: () => ipcRenderer.invoke('okww-path-discovery:discover-okww'),
   discoverWutheringWavesPath: () =>
     ipcRenderer.invoke('okww-path-discovery:discover-wuthering-waves'),

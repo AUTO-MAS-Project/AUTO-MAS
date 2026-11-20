@@ -680,6 +680,7 @@ def main():
         from fastapi.middleware.cors import CORSMiddleware
 
         from app.api import (
+            banner_watch_router,
             community_router,
             config_triggers_router,
             core_router,
@@ -755,6 +756,7 @@ def main():
 
         app.include_router(core_router)
         app.include_router(info_router)
+        app.include_router(banner_watch_router)
         app.include_router(scripts_router)
         app.include_router(plan_router)
         app.include_router(games_router)

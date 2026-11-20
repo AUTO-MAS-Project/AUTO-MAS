@@ -23,6 +23,8 @@
 
 from app.utils.common.startup_timing import startup_stage
 
+with startup_stage("后端/API 导入/banner_watch"):
+    from .banner_watch import router as banner_watch_router
 with startup_stage("后端/API 导入/community"):
     from .community import router as community_router
 with startup_stage("后端/API 导入/core"):
@@ -61,6 +63,7 @@ __all__ = [
     "plugin_router",
     "config_triggers_router",
     "downloads_router",
+    "banner_watch_router",
     "community_router",
     "core_router",
     "info_router",

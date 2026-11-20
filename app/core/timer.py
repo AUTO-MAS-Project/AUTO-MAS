@@ -36,6 +36,7 @@ from app.utils import UTC4, UTC8, get_logger, startup
 from app.utils import environment as _utils_environment
 from app.utils.common.process.scope import detached_process_context
 
+from .banner_watch import BANNER_REFRESH_INTERVAL_SECONDS, BannerWatch
 from .community.scheduling import (
     TASK_COMMUNITY_SOURCES,
     CommunityTriggerSource,
@@ -105,6 +106,8 @@ class _MainTimer:
         self.hour_timer: asyncio.Task[None] | None = None
         self.calendar_timer: asyncio.Task[None] | None = None
         self.calendar_send_task: asyncio.Task[None] | None = None
+        self.banner_refresh_task: asyncio.Task[None] | None = None
+        self.banner_send_task: asyncio.Task[None] | None = None
         self.community_sign_task: asyncio.Task | None = None
         # 定时启动的上次检查时刻（带本地偏移），None 表示尚未检查过
         self._last_timed_check: datetime | None = None
@@ -261,6 +264,7 @@ class _MainTimer:
         self.wakeup_timer = asyncio.create_task(self.wakeup_task())
         self.hour_timer = asyncio.create_task(self.hour_task())
         self.calendar_timer = asyncio.create_task(self.calendar_task())
+        self.banner_refresh_task = asyncio.create_task(self.banner_task())
 
         if (
             Config.ToolsConfig.GameSign.Enabled
@@ -286,6 +290,8 @@ class _MainTimer:
                 self.hour_timer,
                 self.calendar_timer,
                 self.calendar_send_task,
+                self.banner_refresh_task,
+                self.banner_send_task,
                 self.community_sign_task,
             )
             if task is not None and not task.done()
@@ -316,6 +322,9 @@ class _MainTimer:
             await self._run_loop_step("定时启动检查", self.timed_start)
             await self._run_loop_step(
                 "游戏日历日程派发", self.schedule_calendar_notifications
+            )
+            await self._run_loop_step(
+                "卡池日历日程派发", self.schedule_banner_notifications
             )
             await asyncio.sleep(1)
 
@@ -382,6 +391,22 @@ class _MainTimer:
         while True:
             await self._run_loop_step("游戏日历日程刷新", GameCalendar.refresh_schedule)
             await asyncio.sleep(CALENDAR_REFRESH_INTERVAL_SECONDS)
+
+    async def banner_task(self) -> None:
+        """每十五分钟检查官宣，慢来源不占用队列调度。"""
+        loop = asyncio.get_running_loop()
+        while True:
+            next_refresh = loop.time() + BANNER_REFRESH_INTERVAL_SECONDS
+            await self._run_loop_step("卡池日历公告刷新", BannerWatch.refresh_sources)
+            await asyncio.sleep(max(0, next_refresh - loop.time()))
+
+    async def schedule_banner_notifications(self) -> None:
+        if self.banner_send_task is not None and not self.banner_send_task.done():
+            return
+        if BannerWatch.minute_due():
+            self.banner_send_task = asyncio.create_task(
+                self._run_loop_step("卡池日历通知推送", BannerWatch.dispatch_due)
+            )
 
     async def schedule_calendar_notifications(self) -> None:
         """按已登记日程到点派发推送，不阻塞队列的定时启动。"""

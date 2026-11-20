@@ -58,6 +58,8 @@ import {
   syncAnalyticsPreference,
 } from './services/analyticsService'
 import { registerAppearanceHandlers } from './ipc/appearanceHandlers'
+import { registerBannerCodexHandlers } from './ipc/bannerCodexHandlers'
+import { stopBannerCodexAnalysis } from './services/bannerCodexService'
 import { registerMascotHandlers } from './ipc/mascotHandlers'
 import {
   createDesktopMascotHost,
@@ -2412,6 +2414,7 @@ app.on('child-process-gone', (_event, details) => {
 })
 
 app.on('will-quit', () => {
+  stopBannerCodexAnalysis()
   finishScheduledWakeupQuit({ restart: relaunchAfterQuit })
   disposeAnalytics()
   desktopMascot.dispose()
@@ -2461,6 +2464,7 @@ app.whenReady().then(async () => {
   })
   const handlersStartedAt = performance.now()
   registerAnalyticsHandlers(() => mainWindow)
+  registerBannerCodexHandlers(() => mainWindow)
   registerFluxdownInstallHandlers(() => mainWindow, getLocalApiEndpoint)
   registerAppUpdateHandlers({
     installRoot: updateRoot,

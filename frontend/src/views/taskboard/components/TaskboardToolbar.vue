@@ -1,5 +1,5 @@
 <template>
-  <div class="tb-toolbar">
+  <div v-if="tab !== 'banners'" class="tb-toolbar">
     <a-input-search
       :value="keyword"
       :placeholder="t('core.taskboard.searchPlaceholder')"
@@ -10,7 +10,7 @@
     <span class="tb-total">{{ t('core.taskboard.total', { p0: total }) }}</span>
   </div>
 
-  <div class="tb-chips">
+  <div v-if="tab !== 'banners'" class="tb-chips">
     <template v-if="options.length">
       <a-tooltip :title="t('core.taskboard.summaryHint')">
         <a-tag
@@ -118,6 +118,16 @@
       <span>{{ t('core.taskboard.tabVersion') }}</span>
       <span class="tb-tab-count">{{ counts.version }}</span>
     </button>
+    <button
+      type="button"
+      role="tab"
+      class="tb-tab"
+      :class="{ 'is-selected': tab === 'banners' }"
+      :aria-selected="tab === 'banners'"
+      @click="changeTab('banners')"
+    >
+      <CalendarOutlined />{{ t('bootstrap.banners.tab') }}
+    </button>
   </div>
 </template>
 
@@ -134,7 +144,7 @@ import {
 } from '@ant-design/icons-vue'
 import type { TaskboardGameOption } from '@/types/taskboard'
 
-type TabKey = 'active' | 'done' | 'archived' | 'weekly' | 'version'
+type TabKey = 'active' | 'done' | 'archived' | 'weekly' | 'version' | 'banners'
 
 defineProps<{
   keyword: string

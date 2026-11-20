@@ -3,6 +3,7 @@
 
 import { createI18n } from 'vue-i18n'
 
+import banners from './bannerWatch.json'
 import enUS from './bootstrap/en-US.json'
 import jaJP from './bootstrap/ja-JP.json'
 import zhCN from './bootstrap/zh-CN.json'
@@ -27,9 +28,9 @@ export type LocaleMessages = { [key: string]: string | LocaleMessages }
 
 /** 初始化词表由前端独立维护，不依赖后端资源或业务词表缓存。 */
 export const bootstrapMessages: Record<AppLocale, LocaleMessages> = {
-  'zh-CN': { ...zhCN, desktopSession: desktopSessionMessages['zh-CN'] },
-  'en-US': { ...enUS, desktopSession: desktopSessionMessages['en-US'] },
-  'ja-JP': { ...jaJP, desktopSession: desktopSessionMessages['ja-JP'] },
+  'zh-CN': { ...zhCN, banners: banners['zh-CN'], desktopSession: desktopSessionMessages['zh-CN'] },
+  'en-US': { ...enUS, banners: banners['en-US'], desktopSession: desktopSessionMessages['en-US'] },
+  'ja-JP': { ...jaJP, banners: banners['ja-JP'], desktopSession: desktopSessionMessages['ja-JP'] },
 }
 
 export const fallbackLocales = (locale: AppLocale): AppLocale[] =>

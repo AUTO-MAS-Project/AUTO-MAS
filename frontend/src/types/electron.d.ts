@@ -225,6 +225,9 @@ export interface VirtualDisplayPromptPayload {
 }
 
 export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHostAPI {
+  analyzeBannerWithCodex?: (
+    prompt: string
+  ) => Promise<{ status: 'ok'; analysis: string } | { status: 'unavailable' | 'failed' | 'busy' }>
   appUpdateCheck(
     input: import('../../electron/services/appUpdateTypes').AppUpdateSettings
   ): Promise<import('../../electron/services/appUpdateTypes').AppUpdateCheck>

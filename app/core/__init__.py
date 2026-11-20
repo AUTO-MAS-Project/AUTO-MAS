@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .background_tasks import BackgroundTaskManager as BackgroundTaskManager
+    from .banner_watch import BannerWatch as BannerWatch
     from .community import Community as Community
     from .config import Config as Config
     from .desktop_guard import DesktopGuard as DesktopGuard
@@ -51,6 +52,7 @@ if TYPE_CHECKING:
     from .ws import Publisher as Publisher
 
 _LAZY_EXPORTS = {
+    "BannerWatch": (".banner_watch", "BannerWatch"),
     "Plugin": (".plugin", "Plugin"),
     "Downloads": (".downloads", "Downloads"),
     "GameManager": (".game_manager", "GameManager"),
@@ -88,6 +90,7 @@ def __getattr__(name: str):
 
 
 __all__ = [
+    "BannerWatch",
     "Plugin",
     "Downloads",
     "GameManager",
