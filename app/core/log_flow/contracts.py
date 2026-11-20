@@ -1,12 +1,11 @@
 """LogFlow 会话的内部声明和进程消息。"""
 
 import asyncio
-from datetime import datetime
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Literal, Self
 
 from pydantic import (
-    AfterValidator,
     BaseModel,
     Field,
     JsonValue,
@@ -15,10 +14,12 @@ from pydantic import (
 )
 
 from app.models.log_flow import (
+    LogTimestamp,
     Node,
     NodeAttributes,
     NodeDisplayStatus,
     ReportedNodeKey,
+    ReportEntry,
     ReportOrder,
 )
 from app.utils.common.log.sources import FileCursor, capture_file_cursor
@@ -31,11 +32,14 @@ MAX_HOST_PENDING_BYTES = MAX_PENDING_RECORDS * MAX_FRAME_BYTES
 MAX_NODE_FRAMES = 4096
 MAX_NODE_BYTES = 4 * 1024 * 1024
 
+type PostProcessor = Callable[[list[ReportEntry]], list[ReportEntry]]
+
 
 class LineRule(BaseModel, frozen=True):
     match: str = Field(min_length=1)
     extract: str = ""
     node_type: str = Field(min_length=1)
+    status: NodeDisplayStatus = "info"
 
 
 class WindowRule(BaseModel, frozen=True):
@@ -44,6 +48,7 @@ class WindowRule(BaseModel, frozen=True):
     extract: str = ""
     max_lines: int = Field(default=50, ge=2, le=100)
     node_type: str = Field(min_length=1)
+    status: NodeDisplayStatus = "info"
 
 
 class FunctionRef(BaseModel, frozen=True):
@@ -133,31 +138,18 @@ class PipelineSpec(BaseModel, frozen=True):
         return self
 
 
-def _validate_timestamp(timestamp: float) -> float:
-    try:
-        datetime.fromtimestamp(timestamp)
-    except (OSError, OverflowError, ValueError) as exc:
-        raise ValueError("日志时间戳应为可转换为本地时间的 Unix 秒数") from exc
-    return timestamp
-
-
-type _LogTimestamp = Annotated[
-    float, Field(allow_inf_nan=False), AfterValidator(_validate_timestamp)
-]
-
-
 class TextRecord(BaseModel, frozen=True):
     kind: Literal["text"] = "text"
     text: str
     source: Literal["push", "mas"] = "push"
-    timestamp: _LogTimestamp | None = None
+    timestamp: LogTimestamp | None = None
 
 
 class ReportedRecord(BaseModel, frozen=True):
     kind: Literal["reported"] = "reported"
     node_type: str = Field(min_length=1)
     text: str = Field(min_length=1)
-    timestamp: _LogTimestamp | None = None
+    timestamp: LogTimestamp | None = None
     node_id: ReportedNodeKey | None = None
     status: NodeDisplayStatus | None = None
     attributes: NodeAttributes = ()
@@ -188,12 +180,6 @@ class Closed(BaseModel):
     kind: Literal["closed"] = "closed"
     sink_error: str = ""
     capacity_error: str = ""
-
-
-class ReportEntry(BaseModel, frozen=True):
-    node_type: str
-    text: str
-    timestamp: _LogTimestamp | None = None
 
 
 class FinalEntry(BaseModel):

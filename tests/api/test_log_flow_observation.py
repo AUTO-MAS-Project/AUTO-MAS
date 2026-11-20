@@ -96,7 +96,7 @@ async def test_observe_run_before_and_after_scheduler_completion(
                         "error",
                         "token=private",
                         node_id="retry",
-                        status="failed",
+                        status="exception",
                         attributes=(
                             NodeAttribute(key="attempt", value=1),
                             NodeAttribute(key="detail", value="token=private"),
@@ -115,6 +115,7 @@ async def test_observe_run_before_and_after_scheduler_completion(
                         "success",
                         "step two",
                         node_id="retry",
+                        status="running",
                         attributes=(NodeAttribute(key="attempt", value=2),),
                     )
                     == "accepted"
@@ -160,7 +161,7 @@ async def test_observe_run_before_and_after_scheduler_completion(
             ]
             assert page["closeReason"] is None
             assert page["nodes"][0]["revision"] == 1
-            assert page["nodes"][0]["status"] == "failed"
+            assert page["nodes"][0]["status"] == "exception"
             assert page["nodes"][0]["attributes"] == [
                 {"key": "attempt", "value": 1},
                 {"key": "detail", "value": "token=***"},
@@ -202,7 +203,7 @@ async def test_observe_run_before_and_after_scheduler_completion(
         ]
         assert page["nodes"][0]["node_id"] == "push/retry"
         assert page["nodes"][0]["revision"] == 2
-        assert page["nodes"][0]["status"] == "info"
+        assert page["nodes"][0]["status"] == "running"
         assert page["nodes"][0]["attributes"] == [{"key": "attempt", "value": 2}]
         assert page["closeReason"] == "complete" and page["hasMore"] is True
         last = (

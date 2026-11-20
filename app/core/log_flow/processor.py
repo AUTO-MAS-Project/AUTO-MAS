@@ -70,29 +70,35 @@ class RuleNodeProcessor:
                 raise TypeError(f"行预处理器不可调用：{ref.name}")
             self.preprocess = cast(LinePreprocessor, implementation)
         self.rules = [
-            RegexMatcher(
-                match=re.compile(rule.match),
-                extract=compile_expression(rule.extract, extensions=functions)
-                if rule.extract
-                else None,
-                log_type=rule.node_type,
+            (
+                RegexMatcher(
+                    match=re.compile(rule.match),
+                    extract=compile_expression(rule.extract, extensions=functions)
+                    if rule.extract
+                    else None,
+                    log_type=rule.node_type,
+                ),
+                rule.status,
             )
             for rule in config.rules
         ]
         self.windows = [
-            MultiLineAggregator(
-                start_re=re.compile(rule.start),
-                end_re=re.compile(rule.end) if rule.end else None,
-                extract_expr=compile_expression(rule.extract, extensions=functions)
-                if rule.extract
-                else None,
-                max_lines=rule.max_lines,
-                log_type=rule.node_type,
+            (
+                MultiLineAggregator(
+                    start_re=re.compile(rule.start),
+                    end_re=re.compile(rule.end) if rule.end else None,
+                    extract_expr=compile_expression(rule.extract, extensions=functions)
+                    if rule.extract
+                    else None,
+                    max_lines=rule.max_lines,
+                    log_type=rule.node_type,
+                ),
+                rule.status,
             )
             for rule in config.windows
         ]
 
-    def process(self, line: str) -> Iterator[tuple[str, str]]:
+    def process(self, line: str) -> Iterator[ReportedRecord]:
         line = line.strip()
         if not line:
             return
@@ -105,15 +111,25 @@ class RuleNodeProcessor:
             if len(processed.encode("utf-8")) >= MAX_FRAME_BYTES:
                 raise LogReadLimitExceeded("预处理后的日志超出处理容量")
             line = processed
-        result = apply_patterns(line, matchers=self.rules)
-        if result is not None:
-            yield result
-        for window in self.windows:
-            if (text := window.apply(line)) is not None:
-                yield window.log_type, text
+        match_line = line.strip()
+        for matcher, status in self.rules:
+            if text := matcher.apply(match_line):
+                yield ReportedRecord(
+                    node_type=matcher.log_type, text=text, status=status
+                )
+                break
+        for window, status in self.windows:
+            if text := window.apply(line):
+                yield ReportedRecord(
+                    node_type=window.log_type, text=text, status=status
+                )
 
-    def close(self) -> list[tuple[str, str]]:
-        return flush_patterns(self.windows)
+    def close(self) -> Iterator[ReportedRecord]:
+        for window, status in self.windows:
+            if text := window.flush():
+                yield ReportedRecord(
+                    node_type=window.log_type, text=text, status=status
+                )
 
 
 class GeneralRuleProcessor:

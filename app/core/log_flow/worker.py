@@ -12,10 +12,14 @@ from queue import Empty, Queue
 from threading import Thread
 from typing import cast
 
-from app.models.log_flow import Node, NodeAttributes, NodeDisplayStatus, NodeSource
-from app.models.notification.report import Node as LegacyReportNode
+from app.models.log_flow import (
+    Node,
+    NodeAttributes,
+    NodeDisplayStatus,
+    NodeSource,
+    ReportEntry,
+)
 from app.plugin.runtime.loader import prefer_package_source
-from app.utils.common.log.results import PostProcessor, ResultItem
 from app.utils.common.log.sources import LogReadLimitExceeded, LogSource
 
 from .contracts import (
@@ -31,9 +35,9 @@ from .contracts import (
     InputRecord,
     Observed,
     PipelineSpec,
+    PostProcessor,
     Ready,
     ReportedRecord,
-    ReportEntry,
     TextRecord,
     WithdrawnRecord,
     WorkerFactorySpec,
@@ -195,7 +199,7 @@ def _run_pipeline(
     observed_bytes = 0
     observation_full = False
     observation_capacity_error = ""
-    collected: dict[str | int, ResultItem] = {}
+    collected: dict[str | int, ReportEntry] = {}
     revisions: dict[str, int] = {}
 
     def emit(
@@ -221,9 +225,6 @@ def _run_pipeline(
         revision = 1
         if stable_id is not None:
             revision = revisions.get(stable_id, 0) + 1
-        if status is None:
-            legacy = LegacyReportNode.from_text(text)
-            status = legacy.status if legacy is not None else "info"
         node = Node(
             sequence=sequence + 1,
             node_type=node_type,
@@ -233,7 +234,7 @@ def _run_pipeline(
             node_id=stable_id,
             revision=revision,
             withdrawn=withdrawn,
-            status=status,
+            status=status or "info",
             attributes=attributes,
         )
         frame = Observed(node=node).model_dump_json().encode("utf-8") + b"\n"
@@ -255,7 +256,7 @@ def _run_pipeline(
             if withdrawn or config.report_order == "last_updated":
                 collected.pop(key, None)
             if not withdrawn:
-                collected[key] = (node_type, text, timestamp)
+                collected[key] = ReportEntry.from_node(node)
         if sink is not None and not sink_error:
             try:
                 sink.write(node)
@@ -341,27 +342,23 @@ def _run_pipeline(
         if closing:
             break
     reader.join()
-    for source_name in tuple(processors):
-        processor = processors.pop(source_name)
+    for processor_source in tuple(processors):
+        processor = processors.pop(processor_source)
         for result in processor.close():
             emit_processed(
                 result,
-                source_name=source_name,
-                timestamp=last_timestamp.get(source_name),
+                source_name=processor_source,
+                timestamp=last_timestamp.get(processor_source),
             )
     if postprocessor is not None:
         final_bytes = 0
         entries = postprocessor(list(collected.values()))
-        for count, (node_type, text, timestamp) in enumerate(entries):
+        for count, entry in enumerate(entries):
             if count == MAX_NODE_FRAMES:
                 raise LogReadLimitExceeded("最终报告容量已满")
             final_bytes += _send(
                 pipe,
-                FinalEntry(
-                    entry=ReportEntry(
-                        node_type=node_type, text=text, timestamp=timestamp
-                    )
-                ),
+                FinalEntry(entry=entry),
                 remaining_bytes=MAX_NODE_BYTES - final_bytes,
             )
         _send(pipe, FinalReportReady())

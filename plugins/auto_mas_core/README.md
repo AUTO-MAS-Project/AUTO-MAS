@@ -96,7 +96,7 @@ class Adapter(ScriptAdapterPlugin):
     log_flows = {
         "progress": PluginFlowDeclaration(
             rules=SimpleFlowDeclaration(
-                rules=(LineRule(match=r"^完成：", node_type="普通"),),
+                rules=(LineRule(match=r"^完成：", node_type="步骤", status="success"),),
             ),
         ),
     }
@@ -122,7 +122,7 @@ async def execute_with_nodes(
 
 托管执行侧为当前 `TaskScriptItem` 创建一个 `LogFlowTaskReport`，各账号的会话传入同一个报告对象。托管定稿后调用 `task_report.send(title=..., report=...)` 交由 Notify 投递。`mode` 支持 `"逐条"`、`"汇总"` 和 `"关闭"`，绑定报告且省略模式时使用 `"汇总"`。采集使用本次运行的开关，通知关闭时仍可查询节点。将 `monitor.stop()` 放在 Flow 退出前，让正常结束和取消都能先交接缓冲日志，再冻结报告。
 
-迁移已有按账号交错排版的报告时，用 `task_report.details_for(user_run, include_error_nodes=report.uncompleted_count > 0)` 取得对应账号的详情，填进原有布局，再调用 `task_report.send(title=..., report=..., append_details=False)`。`"失败"` 类型用于通知筛选，节点的展示状态独立保存。
+专项可以在单行、多行和主动上报中声明 `status`，取 `success`、`failed`、`exception`、`running`、`skipped`、`warning` 或 `info`。 `node_type` 可自行定义业务分类。默认报告省略进行中的节点。专项自定义布局时，可用 `task_report.details_for(user_run, statuses={"failed", "exception"})` 选择状态，再调用 `task_report.send(title=..., report=..., append_details=False)`。后置归并接收及返回 `list[ReportEntry]`，由条目携带状态。
 
 报告默认按节点首次出现的顺序取当前状态。旧专项若按最后一次任务结果排序，可在 `SimpleFlowDeclaration` 设置 `report_order="last_updated"`。报告和后置归并器将按最后更新的事件序号接收当前节点，实时快照及游标的顺序保持原口径。
 

@@ -1,18 +1,26 @@
-"""把采集收尾结果桥接到现有逐条或汇总排版。"""
+"""按 LogFlow 节点状态渲染收尾报告，并交由 Notify 投递。"""
 
+from collections.abc import Set
 from dataclasses import replace
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from app.core.notify.report import render_aggregate_push_log, render_scatter_push_log
-from app.models.log_flow import SessionSummary
+from app.models.log_flow import NodeDisplayStatus, ReportEntry, SessionSummary
 from app.models.notification.channel import DispatchResult
 from app.models.notification.report import TaskResultReport
 from app.models.task import TaskItem, TaskScriptItem, TaskUserItem
-from app.utils.common.log.patterns import LOG_TYPE_ERROR
-from app.utils.common.log.results import LogEntry
 
 type ReportMode = Literal["关闭", "逐条", "汇总"]
+
+_STATUS_LABELS: dict[NodeDisplayStatus, str] = {
+    "success": "✅ 成功",
+    "skipped": "⏭ 跳过",
+    "failed": "❌ 失败",
+    "exception": "⚠ 异常",
+    "running": "⏳ 进行中",
+    "warning": "⚠ 警告",
+}
 
 
 class LogFlowTaskReport:
@@ -39,15 +47,16 @@ class LogFlowTaskReport:
         self._reports[run.uid] = mode, summary
 
     def details_for(
-        self, run: TaskScriptItem | TaskUserItem, *, include_error_nodes: bool = True
+        self,
+        run: TaskScriptItem | TaskUserItem,
+        *,
+        statuses: Set[NodeDisplayStatus] | None = None,
     ) -> list[str]:
         self.validate_run(run)
         if (report := self._reports.get(run.uid)) is None:
             return []
         mode, summary = report
-        return render_node_details(
-            summary, mode=mode, include_error_nodes=include_error_nodes
-        )
+        return render_node_details(summary, mode=mode, statuses=statuses)
 
     async def send(
         self, *, title: str, report: TaskResultReport, append_details: bool = True
@@ -60,10 +69,12 @@ class LogFlowTaskReport:
             return DispatchResult()
         if append_details:
             blocks = [report.result]
-            for run in (self._script, *self._script.users.values()):
-                lines = self.details_for(
-                    run, include_error_nodes=report.uncompleted_count > 0
-                )
+            runs: tuple[TaskScriptItem | TaskUserItem, ...] = (
+                self._script,
+                *self._script.users.values(),
+            )
+            for run in runs:
+                lines = self.details_for(run)
                 if lines:
                     blocks.append("\n".join((f"【{run.info.name}】", *lines)))
             if len(blocks) > 1:
@@ -75,9 +86,12 @@ class LogFlowTaskReport:
 
 
 def render_node_details(
-    summary: SessionSummary, *, mode: ReportMode, include_error_nodes: bool = True
+    summary: SessionSummary,
+    *,
+    mode: ReportMode,
+    statuses: Set[NodeDisplayStatus] | None = None,
 ) -> list[str]:
-    """供拥有通知交付责任的调用方使用，保留原有排版和失败过滤语义。"""
+    """按 LogFlow 状态呈现本次会话的有效节点。"""
     if mode == "关闭":
         return []
     report_entries = summary.report_entries
@@ -89,18 +103,45 @@ def render_node_details(
             if summary.report_order == "last_updated"
             else summary.nodes
         )
-        report_entries = tuple(
-            (node.node_type, node.text, node.timestamp) for node in nodes
-        )
+        report_entries = tuple(ReportEntry.from_node(node) for node in nodes)
     entries = [
-        LogEntry(*entry)
+        entry
         for entry in report_entries or ()
-        if include_error_nodes or entry[0] != LOG_TYPE_ERROR
+        if (
+            entry.status in statuses
+            if statuses is not None
+            else entry.status != "running"
+        )
     ]
     if mode == "逐条":
-        lines = render_scatter_push_log(entries)
+        lines = [_render_entry(entry) for entry in entries]
     else:
-        lines = render_aggregate_push_log(entries)
+        lines = _render_groups(entries)
     if not summary.complete:
         lines.append("⚠️ 节点采集不完整")
     return lines
+
+
+def _render_entry(entry: ReportEntry) -> str:
+    text = entry.text
+    if (label := _STATUS_LABELS.get(entry.status)) is not None:
+        text = f"{label}: {text}"
+    if entry.timestamp is not None:
+        return f"{datetime.fromtimestamp(entry.timestamp):%H:%M} - {text}"
+    return text
+
+
+def _render_groups(entries: list[ReportEntry]) -> list[str]:
+    groups: dict[NodeDisplayStatus, list[str]] = {}
+    rows: list[str | list[str]] = []
+    for entry in entries:
+        if (label := _STATUS_LABELS.get(entry.status)) is None:
+            rows.append(entry.text)
+            continue
+        if entry.status not in groups:
+            group = [f"{label}: {entry.text}"]
+            groups[entry.status] = group
+            rows.append(group)
+        else:
+            groups[entry.status].append(entry.text)
+    return [", ".join(row) if isinstance(row, list) else row for row in rows]

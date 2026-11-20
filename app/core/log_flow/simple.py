@@ -116,6 +116,7 @@ async def open_custom_flow(
         if mode != "关闭" and receive_report is not None:
             # 先登记，退出时先完成采集收尾，再交付报告。
             stack.callback(publish_report, receive_report)
+        reporter: PushReporter | None
         try:
             session = await stack.enter_async_context(opening)
         except SessionOpenError:

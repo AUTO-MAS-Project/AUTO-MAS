@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import JsonValue
 
 from app.core.log_flow.contracts import ReportedRecord, TextRecord
-from app.models.log_flow import Node
+from app.models.log_flow import Node, ReportEntry
 
 
 def report_worker_pid(_text: str, _args: list[str | int]) -> str:
@@ -124,7 +124,29 @@ def failing_initializer(options: Mapping[str, JsonValue]) -> _FailingInitializer
 
 
 def sample_report(_entries):
-    return [("普通", "sample report", None)]
+    return [ReportEntry(node_type="普通", text="sample report")]
+
+
+def maaend_flow_report(entries):
+    from app.task.MaaEnd.push_log import maaend_resolve
+
+    return [
+        ReportEntry(node_type=node_type, text=text, timestamp=timestamp)
+        for node_type, text, timestamp in maaend_resolve(
+            [(entry.node_type, entry.text, entry.timestamp) for entry in entries]
+        )
+    ]
+
+
+def oknte_flow_report(entries):
+    from app.task.OkNte.push_log import oknte_resolve
+
+    return [
+        ReportEntry(node_type=node_type, text=text, timestamp=timestamp)
+        for node_type, text, timestamp in oknte_resolve(
+            [(entry.node_type, entry.text, entry.timestamp) for entry in entries]
+        )
+    ]
 
 
 def disabled_report(_entries):

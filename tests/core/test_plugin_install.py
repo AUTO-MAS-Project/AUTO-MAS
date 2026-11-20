@@ -14,6 +14,7 @@ from app.core.log_flow.contracts import FunctionRef, PipelineSpec, WorkerPluginP
 from app.core.log_flow.ownership import FlowOwner
 from app.core.plugin.manager import _PluginManager
 from app.models.config import PluginMeta, PluginRecord, PluginRegistryCollection
+from app.models.log_flow import ReportEntry
 from app.models.task import TaskUserItem
 from app.plugin import uv
 from app.plugin.errors import PluginPrecheckError
@@ -62,7 +63,10 @@ async def test_install_preserves_packages_read_by_logflow_worker(
         )
 
     def report_code(version):
-        return f"def report(_): return [('info', {version!r}, None)]\n"
+        return (
+            "from app.models.log_flow import ReportEntry\n"
+            f"def report(_): return [ReportEntry(node_type='info', text={version!r})]\n"
+        )
 
     write_distribution(site, dependency, "1.0", report_code("1.0"))
     owner = FlowOwner(lambda: True)
@@ -117,7 +121,9 @@ async def test_install_preserves_packages_read_by_logflow_worker(
         )
         assert session is not None
         summary = await session.close()
-        assert summary.complete and summary.report_entries == (("info", "1.0", None),)
+        assert summary.complete and summary.report_entries == (
+            ReportEntry(node_type="info", text="1.0"),
+        )
     assert not owner.has_workers
 
 

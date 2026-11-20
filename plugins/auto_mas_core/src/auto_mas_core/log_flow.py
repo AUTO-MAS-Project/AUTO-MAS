@@ -9,6 +9,7 @@ from app.core.log_flow.contracts import (
     FunctionRef,
     InputRecord,
     LineRule,
+    PostProcessor,
     ReportedRecord,
     TextRecord,
     WindowRule,
@@ -33,11 +34,12 @@ from app.models.log_flow import (
     ObservationCursor,
     ObservationPage,
     ObservationSnapshot,
+    ReportEntry,
     ReportOrder,
 )
 from app.utils.common.expression import ExpressionFunction
 from app.utils.common.log.monitor import LogMonitor
-from app.utils.common.log.results import LinePreprocessor, PostProcessor
+from app.utils.common.log.results import LinePreprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -102,6 +104,7 @@ __all__ = [
     "ReportMode",
     "ReportOrder",
     "ReportedRecord",
+    "ReportEntry",
     "SimpleFlowDeclaration",
     "Sink",
     "Source",

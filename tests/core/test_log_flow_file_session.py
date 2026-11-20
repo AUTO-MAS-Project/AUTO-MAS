@@ -43,8 +43,8 @@ from app.core.log_flow.simple import (
     open_custom_flow,
     open_simple_flow,
 )
-from app.core.notify.report import render_aggregate_push_log, render_scatter_push_log
-from app.models.log_flow import InvalidObservationCursor
+from app.core.notify.report import render_scatter_push_log
+from app.models.log_flow import InvalidObservationCursor, ReportEntry
 from app.models.task import TaskUserItem
 from app.task.MaaEnd.push_log import (
     MAAEND_PUSH_RULES,
@@ -133,7 +133,9 @@ async def test_declared_preprocessor_keeps_maaend_rich_text_report_compatible():
             name="probe:plain", module=module, attribute="maaend_plain_text"
         ),
         postprocess=FunctionRef(
-            name="probe:report", module=module, attribute="maaend_resolve"
+            name="probe:report",
+            module="tests.support.log_flow_functions",
+            attribute="maaend_flow_report",
         ),
     )
     lines = [
@@ -156,7 +158,10 @@ async def test_declared_preprocessor_keeps_maaend_rich_text_report_compatible():
     expected = legacy.finish()
     assert len(expected) == 1 and "样本" in expected[0].text
     assert summary.report_entries == tuple(
-        (entry.log_type, entry.text, entry.timestamp) for entry in expected
+        ReportEntry(
+            node_type=entry.log_type, text=entry.text, timestamp=entry.timestamp
+        )
+        for entry in expected
     )
     assert render_node_details(summary, mode="逐条") == render_scatter_push_log(
         expected
@@ -1072,9 +1077,10 @@ async def test_webui_notifications_keep_general_log_time_prefix():
     assert render_node_details(summary, mode="逐条") == render_scatter_push_log(
         expected
     )
-    assert render_node_details(summary, mode="汇总") == render_aggregate_push_log(
-        expected
-    )
+    assert render_node_details(summary, mode="汇总") == [
+        entry.text for entry in expected
+    ]
+    assert [node.status for node in summary.nodes] == ["info", "info"]
 
 
 @pytest.mark.asyncio
@@ -1086,11 +1092,11 @@ async def test_report_consumes_current_nodes_after_correction_and_withdrawal():
         reporter = flow.reporter
         assert reporter is not None
         assert (
-            reporter.node("失败", "❌ 失败: step", node_id="step")
+            reporter.node("步骤", "step", node_id="step", status="running")
             == SubmitResult.ACCEPTED
         )
         assert (
-            reporter.node("普通", "✅ 成功: step", node_id="step")
+            reporter.node("步骤", "step", node_id="step", status="success")
             == SubmitResult.ACCEPTED
         )
         assert (
@@ -1100,7 +1106,7 @@ async def test_report_consumes_current_nodes_after_correction_and_withdrawal():
             while (snapshot := flow.snapshot_nodes()).cursor.sequence < 3:
                 await asyncio.sleep(0.01)
         assert snapshot.close_reason is None
-        assert [node.text for node in snapshot.nodes] == ["✅ 成功: step", "discard"]
+        assert [node.text for node in snapshot.nodes] == ["step", "discard"]
         assert reporter.withdraw("discard") == SubmitResult.ACCEPTED
         assert reporter.withdraw("invalid/key") == SubmitResult.INVALID
 
@@ -1123,12 +1129,12 @@ async def test_report_consumes_current_nodes_after_correction_and_withdrawal():
 @pytest.mark.parametrize(
     ("order", "postprocess", "expected"),
     [
-        ("first_seen", None, ["A2", "B"]),
-        ("last_updated", None, ["B", "A2"]),
+        ("first_seen", None, ["⚠ 异常: A2", "B"]),
+        ("last_updated", None, ["B", "⚠ 异常: A2"]),
         (
             "last_updated",
             FunctionRef(name="probe:copy", module="builtins", attribute="list"),
-            ["B", "A2"],
+            ["B", "⚠ 异常: A2"],
         ),
     ],
 )
@@ -1139,16 +1145,25 @@ async def test_report_order_is_independent_of_observation(order, postprocess, ex
         declaration, run=run, accept_push=True, mode="汇总"
     ) as flow:
         assert flow.reporter is not None
-        for key, text in [("a", "A1"), ("b", "B"), ("a", "A2")]:
+        for key, text, status in [
+            ("a", "A1", "running"),
+            ("b", "B", "info"),
+            ("a", "A2", "exception"),
+            ("c", "C", "running"),
+        ]:
             assert (
-                flow.reporter.node("普通", text, node_id=key) is SubmitResult.ACCEPTED
+                flow.reporter.node("普通", text, node_id=key, status=status)
+                is SubmitResult.ACCEPTED
             )
 
-    assert [node.text for node in flow.snapshot_nodes().nodes] == ["A2", "B"]
-    assert [node.text for node in flow.read_nodes().nodes] == ["A1", "B", "A2"]
+    assert [node.text for node in flow.snapshot_nodes().nodes] == ["A2", "B", "C"]
+    assert [node.text for node in flow.read_nodes().nodes] == ["A1", "B", "A2", "C"]
     observation = run.node_observation
     assert observation is not None and observation.summary is not None
     assert render_node_details(observation.summary, mode="汇总") == expected
+    assert render_node_details(
+        observation.summary, mode="逐条", statuses={"running"}
+    ) == ["⏳ 进行中: C"]
 
 
 @pytest.mark.asyncio
@@ -1164,10 +1179,21 @@ async def test_default_flow_shares_live_nodes_and_delivers_selected_report(
     mode, expected
 ):
     declaration = SimpleFlowDeclaration(
-        rules=(LineRule(match="^✅ 成功:", node_type="普通"),),
+        rules=(
+            LineRule(
+                match="^done:",
+                extract="$(done: (.+))",
+                node_type="步骤",
+                status="success",
+            ),
+        ),
         windows=(
             WindowRule(
-                start="^BEGIN", end="^END", extract='"✅ 成功: 8"', node_type="普通"
+                start="^BEGIN",
+                end="^END",
+                extract='"8"',
+                node_type="步骤",
+                status="success",
             ),
         ),
         postprocess=(
@@ -1199,7 +1225,7 @@ async def test_default_flow_shares_live_nodes_and_delivers_selected_report(
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-c",
-            "import sys; sys.stdout.buffer.write('✅ 成功: 7\\nBEGIN\\n'.encode('utf-8'))",
+            "import sys; sys.stdout.buffer.write(b'done: 7\\nBEGIN\\n')",
             stdout=asyncio.subprocess.PIPE,
         )
         await asyncio.wait_for(monitor.monitor_process(process, "stdout"), 5)
@@ -1211,8 +1237,8 @@ async def test_default_flow_shares_live_nodes_and_delivers_selected_report(
         observation = run.node_observation
         assert observation is not None
         assert page == observation.read()
-        assert [(node.source, node.text) for node in page.nodes] == [
-            ("mas", "✅ 成功: 7")
+        assert [(node.source, node.text, node.status) for node in page.nodes] == [
+            ("mas", "7", "success")
         ]
         assert page.close_reason is None
         assert reports == []
@@ -1220,7 +1246,7 @@ async def test_default_flow_shares_live_nodes_and_delivers_selected_report(
     assert monitor.on_raw_line is None
     closed = read_nodes(after=page.cursor)
     assert closed.close_reason == "complete"
-    assert [node.text for node in closed.nodes] == ["✅ 成功: 8"]
+    assert [(node.text, node.status) for node in closed.nodes] == [("8", "success")]
 
 
 @pytest.mark.asyncio
@@ -1268,7 +1294,7 @@ async def test_simple_flow_can_replace_only_the_text_processor():
         ]
         assert reports == []
     assert [node.text for node in read_nodes(after=page.cursor).nodes] == ["合计: 2"]
-    assert reports == [["✅ 成功: 7, 8", "合计: 2"]]
+    assert reports == [["✅ 成功: 7", "✅ 成功: 8", "合计: 2"]]
 
 
 @pytest.mark.asyncio
@@ -1581,8 +1607,8 @@ async def test_oknte_shadow_report_matches_legacy_aggregation():
             ),
             postprocess=FunctionRef(
                 name="oknte:report",
-                module=oknte_resolve.__module__,
-                attribute=oknte_resolve.__name__,
+                module="tests.support.log_flow_functions",
+                attribute="oknte_flow_report",
             ),
         )
     )
@@ -1593,15 +1619,16 @@ async def test_oknte_shadow_report_matches_legacy_aggregation():
         assert summary.complete
         old_entries = legacy.finish()
         assert summary.report_entries == tuple(
-            (entry.log_type, entry.text, entry.timestamp) for entry in old_entries
+            ReportEntry(
+                node_type=entry.log_type, text=entry.text, timestamp=entry.timestamp
+            )
+            for entry in old_entries
         )
         assert render_node_details(summary, mode="逐条") == render_scatter_push_log(
             old_entries
         )
         assert render_node_details(summary, mode="汇总") == [
-            "✅ 成功: 周本",
-            "⏭ 跳过: 日常领取（当日已领取）, 清扫",
-            "⚡ 剩余体力: 60",
+            entry.text for entry in old_entries
         ]
     finally:
         await session.close(timeout=0)

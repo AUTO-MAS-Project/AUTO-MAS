@@ -1,17 +1,18 @@
 """任务运行树内的日志节点状态；独立于任务执行成败。"""
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, StrictBool, StrictInt
-
-from app.utils.common.log.results import ResultItem
+from pydantic import AfterValidator, BaseModel, Field, StrictBool, StrictInt
 
 type NodeSource = Literal["file", "push", "mas", "custom"]
 type CloseReason = Literal["complete", "timeout", "worker_error", "capacity"]
 type ReportedNodeKey = Annotated[str, Field(pattern=r"^[A-Za-z0-9_.:-]{1,96}$")]
-type NodeDisplayStatus = Literal["success", "skipped", "failed", "warning", "info"]
+type NodeDisplayStatus = Literal[
+    "success", "skipped", "failed", "exception", "running", "warning", "info"
+]
 type ReportOrder = Literal["first_seen", "last_updated"]
 
 MAX_NODE_ATTRIBUTE_TEXT = 256
@@ -45,12 +46,43 @@ class Node(BaseModel, frozen=True):
     attributes: NodeAttributes = ()
 
 
+def _validate_timestamp(timestamp: float) -> float:
+    try:
+        datetime.fromtimestamp(timestamp)
+    except (OSError, OverflowError, ValueError) as exc:
+        raise ValueError("日志时间戳应为可转换为本地时间的 Unix 秒数") from exc
+    return timestamp
+
+
+type LogTimestamp = Annotated[
+    float, Field(allow_inf_nan=False), AfterValidator(_validate_timestamp)
+]
+
+
+class ReportEntry(BaseModel, frozen=True):
+    """LogFlow 收尾使用的结构化条目，由归并器保留或重新声明状态。"""
+
+    node_type: str
+    text: str
+    timestamp: LogTimestamp | None = None
+    status: NodeDisplayStatus = "info"
+
+    @classmethod
+    def from_node(cls, node: Node) -> "ReportEntry":
+        return cls(
+            node_type=node.node_type,
+            text=node.text,
+            timestamp=node.timestamp,
+            status=node.status,
+        )
+
+
 @dataclass(frozen=True)
 class SessionSummary:
     reason: CloseReason
     nodes: tuple[Node, ...]
     detail: str = ""
-    report_entries: tuple[ResultItem, ...] | None = None
+    report_entries: tuple[ReportEntry, ...] | None = None
     requires_final_report: bool = False
     sink_error: str = ""
     report_order: ReportOrder = "first_seen"
@@ -140,7 +172,7 @@ class NodeObservation:
         reason: CloseReason,
         detail: str = "",
         *,
-        report_entries: tuple[ResultItem, ...] | None = None,
+        report_entries: tuple[ReportEntry, ...] | None = None,
         report_bytes: int = 0,
         requires_final_report: bool = False,
         sink_error: str = "",

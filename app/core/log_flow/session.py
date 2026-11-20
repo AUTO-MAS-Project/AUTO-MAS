@@ -19,11 +19,11 @@ from app.models.log_flow import (
     NodeAttributes,
     NodeDisplayStatus,
     NodeObservation,
+    ReportEntry,
     ReportOrder,
     SessionSummary,
 )
 from app.utils import process_platform
-from app.utils.common.log.results import ResultItem
 from app.utils.common.process.runner import close_process_pipes
 from app.utils.contracts.process import TaskProcessJob
 
@@ -131,7 +131,7 @@ class LogFlowSession:
         self.observation = observation
         self._requires_final_report = requires_final_report
         self._report_order = report_order
-        self._final_report: tuple[ResultItem, ...] | None = None
+        self._final_report: tuple[ReportEntry, ...] | None = None
         self._final_report_bytes = 0
         self._missed_native = False
         self._native_incomplete_detail = ""
@@ -415,7 +415,7 @@ class LogFlowSession:
         assert self._process.stdout is not None
         reason: CloseReason = "worker_error"
         detail = "LogFlow worker 意外退出"
-        final_entries: list[ResultItem] = []
+        final_entries: list[ReportEntry] = []
         final_bytes = 0
         try:
             while frame := await self._process.stdout.readline():
@@ -445,8 +445,7 @@ class LogFlowSession:
                         reason = "capacity"
                         detail = "最终报告容量已满"
                         break
-                    entry = message.entry
-                    final_entries.append((entry.node_type, entry.text, entry.timestamp))
+                    final_entries.append(message.entry)
                     final_bytes += len(frame)
                 elif (
                     isinstance(message, FinalReportReady)

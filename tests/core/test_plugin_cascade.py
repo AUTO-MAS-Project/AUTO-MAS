@@ -370,7 +370,7 @@ async def test_declared_processor_corrects_native_nodes_before_task_finishes(
     [withdrawal] = flow.read_nodes(after=retry.cursor).nodes
     assert withdrawal.node_id == "mas/retry-warning" and withdrawal.withdrawn
     assert flow.snapshot_nodes().close_reason == "complete"
-    assert reports == [["slot-a success", "slot-b success"]]
+    assert reports == [["✅ 成功: slot-a success, slot-b success"]]
 
 
 @pytest.mark.asyncio
@@ -446,10 +446,6 @@ async def test_named_report_factory_uses_one_account_snapshot_per_run(
     from auto_mas_core.log_flow import LogFlowTaskReport, open_log_flow
 
     from app import core
-    from app.core.notify.report import (
-        render_aggregate_push_log,
-        render_scatter_push_log,
-    )
     from app.task.ZzzOd.push_log import ZZZOD_PUSH_RULES, make_zzzod_resolve
     from app.utils.common.log_box import LogPipeline
 
@@ -458,10 +454,14 @@ async def test_named_report_factory_uses_one_account_snapshot_per_run(
     record = records["flow_report_factory"]
     (tmp_path / "flow_report_factory" / "__init__.py").write_text(
         "from auto_mas_core import BasePlugin\n"
-        "from auto_mas_core.log_flow import FunctionRef, LineRule, PluginFlowDeclaration, PostProcessor, SimpleFlowDeclaration, WorkerFactorySpec\n"
+        "from auto_mas_core.log_flow import FunctionRef, LineRule, PluginFlowDeclaration, PostProcessor, ReportEntry, SimpleFlowDeclaration, WorkerFactorySpec\n"
         "from app.task.ZzzOd.push_log import ZZZOD_PUSH_RULES, make_zzzod_resolve\n"
         "def report_factory(options) -> PostProcessor:\n"
-        "    return make_zzzod_resolve(set(options['apps']), dict(enumerate(options['accounts'])))\n"
+        "    resolve = make_zzzod_resolve(set(options['apps']), dict(enumerate(options['accounts'])))\n"
+        "    def aggregate(entries):\n"
+        "        inputs = [(entry.node_type, entry.text, entry.timestamp) for entry in entries]\n"
+        "        return [ReportEntry(node_type=kind, text=text, timestamp=ts) for kind, text, ts in resolve(inputs)]\n"
+        "    return aggregate\n"
         "class Adapter(BasePlugin):\n"
         "    log_flows = {'batch': PluginFlowDeclaration(use_mas_log=False, accept_push=True, rules=SimpleFlowDeclaration(\n"
         "        rules=tuple(LineRule(match=match, extract=extract, node_type='普通') for match, extract in ZZZOD_PUSH_RULES),\n"
@@ -483,9 +483,9 @@ async def test_named_report_factory_uses_one_account_snapshot_per_run(
         "指令[ 每日签到 ] 执行成功",
         "指令[ 通知 ] 执行失败 返回状态 汇总失败信号",
     ]
-    for account_names, mode, render in (
-        (["First", "Second"], "逐条", render_scatter_push_log),
-        (["Next", "Last"], "汇总", render_aggregate_push_log),
+    for account_names in (
+        ["First", "Second"],
+        ["Next", "Last"],
     ):
         _task, script, _account = await create_runtime_tree()
         report = LogFlowTaskReport(script)
@@ -501,7 +501,7 @@ async def test_named_report_factory_uses_one_account_snapshot_per_run(
             record._plugin,
             "batch",
             run=script,
-            mode=mode,
+            mode="汇总",
             task_report=report,
             postprocess_options={"accounts": account_names},
         ) as flow:
@@ -513,7 +513,7 @@ async def test_named_report_factory_uses_one_account_snapshot_per_run(
                     == SubmitResult.ACCEPTED
                 )
         details = report.details_for(script)
-        assert details == render(legacy.finish())
+        assert details == [entry.text for entry in legacy.finish()]
         first, second = account_names
         [warning] = [line for line in details if "驱动盘数量" in line]
         assert warning.startswith(f"【{first}】")
@@ -610,9 +610,15 @@ async def test_declared_log_flow_delivers_one_task_report_via_notify(
                             flow.reporter.node("普通", "step outcome", status="failed")
                             == SubmitResult.ACCEPTED
                         )
+                        assert (
+                            flow.reporter.node("失败", "category only")
+                            == SubmitResult.ACCEPTED
+                        )
                     if run is not muted:
                         assert (
-                            flow.reporter.node("失败", f"{text} diagnostic")
+                            flow.reporter.node(
+                                "步骤", f"{text} diagnostic", status="exception"
+                            )
                             == SubmitResult.ACCEPTED
                         )
             assert second.node_observation.read().close_reason == "timeout"
@@ -635,15 +641,16 @@ async def test_declared_log_flow_delivers_one_task_report_via_notify(
         first_block, second_block = rendered_details.split("\n\n【Second】\n", 1)
         assert first_block.splitlines() == [
             "first step",
-            "step outcome",
-            *(["first step diagnostic"] if uncompleted else []),
+            "❌ 失败: step outcome",
+            "category only",
+            "⚠ 异常: first step diagnostic",
         ]
-        assert second_block.splitlines()[: 2 + uncompleted] == [
+        assert second_block.splitlines()[:3] == [
             "second step",
-            *(["second step diagnostic"] if uncompleted else []),
+            "⚠ 异常: second step diagnostic",
             "⚠️ 节点采集不完整",
         ]
-        assert content.count(" diagnostic") == 2 * uncompleted
+        assert content.count(" diagnostic") == 2
         assert "muted step" not in content
     finally:
         await tasks.close()

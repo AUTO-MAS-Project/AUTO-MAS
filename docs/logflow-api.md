@@ -1,6 +1,6 @@
 # LogFlow 现有架构与接入手册
 
-依据 `feat/logflow` 的实现快照 `4159e9d43`。适用于在 MAS 插件中接入日志节点，或在本机读取已接入运行的节点。当前内置任务仍沿用既有采集路径，图中的 LogFlow 路径由已登记并显式打开会话的插件触发。模拟插件、SDK wheel 和专项旁路各自的验证范围见[进度表](logflow-progress.md)和[开发记录](logflow-development-log.md)。
+依据 `feat/logflow` 的当前实现。适用于在 MAS 插件中接入日志节点，或在本机读取已接入运行的节点。当前内置任务仍沿用既有采集路径，图中的 LogFlow 路径由已登记并显式打开会话的插件触发。模拟插件、SDK wheel 和专项旁路各自的验证范围见[进度表](logflow-progress.md)和[开发记录](logflow-development-log.md)。
 
 ## 架构图
 
@@ -96,9 +96,10 @@ class Adapter(ScriptAdapterPlugin):
                     LineRule(
                         match=r"^完成：",
                         extract=r"$(完成：(.+))",
-                        node_type="普通",
+                        node_type="步骤",
+                        status="success",
                     ),
-                    LineRule(match=r"^失败：", node_type="失败"),
+                    LineRule(match=r"^失败：", node_type="步骤", status="failed"),
                 ),
             ),
         ),
@@ -131,7 +132,7 @@ async def publish_result(
     return await task_report.send(title="专项执行结果", report=report)
 ```
 
-托管层用 `task_report = LogFlowTaskReport(script_run)` 创建一次报告对象，传给本次托管下的账号会话。所有参与会话退出、业务报告定稿后调用 `publish_result`。原本已有最终通知调用的专项，可将同一次交付替换为 `task_report.send`。如果保留专项排版，先用 `details_for(run, include_error_nodes=report.uncompleted_count > 0)` 取各运行的节点详情，再用 `send(..., append_details=False)` 交给 Notify。默认追加排版也在整份托管报告的未完成数为零时过滤 `失败` 类型。
+托管层用 `task_report = LogFlowTaskReport(script_run)` 创建一次报告对象，传给本次托管下的账号会话。所有参与会话退出、业务报告定稿后调用 `publish_result`。专项自定义排版可以用 `details_for(run, statuses={"failed", "exception"})` 选取关注状态，再用 `send(..., append_details=False)` 交给 Notify。默认报告包含最终有效节点，省略仍在进行中的节点。Notify 根据托管结果与用户设置决定整份报告的发送时机。
 
 | `open_log_flow(plugin, name, *, ...)` | 用法 |
 | --- | --- |
@@ -151,8 +152,8 @@ async def publish_result(
 | --- | --- |
 | `PluginFlowDeclaration` | `rules=SimpleFlowDeclaration()`，`use_mas_log=True`，`accept_push=False`。可按会话组合 MAS、文件、主动上报、自定义来源。可加一个自定义 Sink |
 | `SimpleFlowDeclaration` | `rules` 按顺序匹配单行，首个产出胜出。另可加 `windows`，每条窗口规则独立出结果。支持 `preprocess`、`functions`、`postprocess`、`report_order`，或以 `processor` 接管文本处理 |
-| `LineRule(match, node_type, extract="")` | 模型用关键字参数。用 Python 正则匹配。提取留空时取匹配行，提取表达式用 `$()`，在正则内用捕获组指定正文 |
-| `WindowRule(start, node_type, end=None, extract="", max_lines=50)` | 同时最多声明 16 条。单个窗口允许 2–100 行，遇到结束行、下个起点、上限或会话关闭时结算。窗口按来源分别维护 |
+| `LineRule(match, node_type, extract="", status="info")` | 模型用关键字参数。用 Python 正则匹配。提取留空时取匹配行，提取表达式用 `$()`，在正则内用捕获组指定正文 |
+| `WindowRule(start, node_type, end=None, extract="", max_lines=50, status="info")` | 同时最多声明 16 条。单个窗口允许 2–100 行，遇到结束行、下个起点、上限或会话关闭时结算。窗口按来源分别维护 |
 | `GeneralFlowDeclaration(patterns, hooks="")` | `patterns` 和 `hooks` 沿用 WebUI 持有的字符串格式。由执行侧传本次运行配置快照。有效的 MAS 日志时间前缀按旧排版保留 |
 | `FileInput(path, start_from_end=True, rotated_name=None, start_cursor=None)` | 走 worker 文件增量读取，支持轮转。默认从当前末尾起读。调用 `await FileInput(path=...).capture_start()` 可在脚本启动前固定本轮起点 |
 
@@ -308,7 +309,7 @@ $next = Invoke-RestMethod "${url}?userRunId=$userRunId&sessionId=$session&after=
 ### 消费节点的规则
 
 - 按 `sequence` 递增消费页内事件。 `node_id=null` 的事件各自成行；有 ID 的事件按 `node_id` 更新原行。 `withdrawn=true` 时移除对应行。新会话使用新的游标和行集合。
-- `status` 是显示提示，取 `success`、`skipped`、`failed`、`warning`、`info`。未显式上报时，兼容已有可识别的节点正文，否则用 `info`。 `node_type` 可用于业务分类，`失败` 在通知中有既有筛选语义。
+- `status` 由 LogFlow 定义，支持成功 `success`、失败 `failed`、异常 `exception`、进行中 `running`、跳过 `skipped`、警告 `warning`、信息 `info`。省略状态时使用 `info`，旧 WebUI 规则路径也使用该默认值。 `node_type` 由插件定义业务分类，正文可按需写入额外信息。观察和报告均读取结构化状态。
 - SDK 使用 `session_id`、`has_more`、`close_reason`；HTTP 外层使用 `sessionId`、`hasMore`、`closeReason`，节点字段沿用示例中的下划线命名。
 - 采集终态为 `complete`、`timeout`、`worker_error` 或 `capacity`。即使收到终态，也继续读到 `has_more=false`。脚本执行成败另读 MAS 任务状态。
 - 活动会话与近期已结束任务可在宿主进程内补读。当前默认保留上限为结束后 30 分钟、最近 200 个任务，近期观察共用 16 MiB 预算，因此可能更早淘汰。重启后需从新的运行会话开始。
@@ -325,7 +326,7 @@ $next = Invoke-RestMethod "${url}?userRunId=$userRunId&sessionId=$session&after=
 | `sink` | 工厂返回 `Sink`。 `open()`、`write(node)`、`close()`。节点先发给宿主观察，再交给 Sink。通知开关只控制内置报告路径，自定义 Sink 随声明启用 |
 | `rules.preprocess` | 引用 `(str) -> str \| None` 的函数。可改写或过滤专项原始行 |
 | `rules.functions` | 引用 `(text, args) -> str` 的表达式函数。用唯一的 `namespace:name` 注册，在表达式中写 `$().namespace:name()` |
-| `rules.postprocess` | 引用函数或返回函数的工厂，接收及返回 `list[tuple[node_type, text, timestamp]]`。在结束排版前归并有效节点，节点通知关闭时不运行 |
+| `rules.postprocess` | 引用 `PostProcessor` 函数或返回该函数的工厂，接收及返回 `list[ReportEntry]`。条目包含 `node_type`、`text`、`timestamp`、`status`。归并器可原样保留、用 `model_copy` 修订或创建条目。节点通知关闭时跳过归并 |
 | `rules.report_order` | 默认 `first_seen`，可选 `last_updated`。只影响最终报告和归并器的输入顺序 |
 
 `InputRecord` 支持 `TextRecord`、`ReportedRecord`、`WithdrawnRecord`。处理器可产出 `(node_type, text)` 或后两种结构化记录。释放资源应能处理部分初始化的情况。
