@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { GameCalendarActivityCompletionIn } from '../models/GameCalendarActivityCompletionIn';
+import type { OkwwPlanConfigsIn } from '../models/OkwwPlanConfigsIn';
 import type { OkwwTaskConfigIn } from '../models/OkwwTaskConfigIn';
 import type { OutBase } from '../models/OutBase';
 import type { TaskboardArchiveIn } from '../models/TaskboardArchiveIn';
@@ -180,6 +181,26 @@ export class SetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/okww/task-config',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Save Okww Plan Configs Api
+     * 替换当天覆写，未设置项恢复继承账号配置。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static saveOkwwPlanConfigsApiApiScriptsOkwwPlanConfigsPost(
+        requestBody: OkwwPlanConfigsIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/okww/plan/configs',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

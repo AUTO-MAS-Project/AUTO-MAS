@@ -261,6 +261,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             await self.cur_user_item.set_state(status="跳过")
             return "账号剩余天数为 0, 跳过该账号"
 
+        from .tools.plan import plan_panels, validate_plan_targets
+
+        try:
+            validate_plan_targets(plan_panels(self.cur_user_config))
+        except ValueError as error:
+            return str(error)
+
         if self.script_config.Game.Enabled:
             launcher_path = Path(str(self.script_config.Game.Path or "").strip())
             client_path = str(self.script_config.Game.ClientPath or "").strip()
@@ -460,6 +467,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             return build_custom_arguments(self.cur_user_config.Task.CustomArguments)
         return ["-t", _daily_task_argument(self.script_config.Info.RootPath), "-e"]
 
+    def _runtime_panels(self) -> dict[str, dict]:
+        from .tools.config_fields import runtime_panels
+
+        return runtime_panels(self.cur_user_config)
+
     def _apply_mas_overrides(self) -> None:
         """overlay 覆盖段：把 MAS 侧运行值覆盖到当前来源配置之上。
 
@@ -477,9 +489,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             self.script_config_path / "Basic Options.json",
             {"Exit App when Game Exits": True},
         )
-        from .tools.config_fields import runtime_panels
-
-        for filename, values in runtime_panels(self.cur_user_config).items():
+        for filename, values in self._runtime_panels().items():
             _update_json(self.script_config_path / filename, values)
 
     async def set_okww(self) -> None:
@@ -852,6 +862,14 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             ):
                 break
 
+            if (
+                self.script_config.Game.AccountSwitchMethod == "MAS"
+                and not self.script_config.Game.Enabled
+            ):
+                await self._push_dispatch_log(
+                    "未启用游戏配置，MAS 不会切换账号，将使用当前已登录的账号"
+                )
+
             # 游戏启动成功后、下发脚本配置前，按「运行前由 MAS 切换账号」开关切号。
             # 开关在游戏配置区，依赖 Game.Enabled（未启用游戏配置则不生效）；
             # 用户未填写手机号时跳过不切换。
@@ -863,7 +881,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             ):
                 account_id = (self.cur_user_config.Info.Id or "").strip()
                 if not account_id:
-                    await self._push_dispatch_log("未配置账号，跳过账号切换")
+                    await self._push_dispatch_log(
+                        "未配置账号标识，MAS 不会切换账号，将使用当前已登录的账号"
+                    )
                 else:
                     try:
                         await self._push_dispatch_log("正在切换鸣潮登录账号...")
