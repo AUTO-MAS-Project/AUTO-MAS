@@ -92,23 +92,17 @@ async def install_adapter_plugin(name: str, package: str) -> None:
 
 
 def backup_legacy_src_users(config_path: Path) -> None:
-    """首次激活插件前保留仍含内置 SRC 账号集合的活动配置文件。"""
+    """首次接手 SRC 索引时备份原文件，正文的加载和校验交给配置集合。"""
     for name in ("scripts.yaml", "ScriptConfig.json"):
         path = config_path / name
         backup = config_path / "legacy-src-plugin" / name
         if backup.exists() or not path.is_file() or is_blank_file(path):
             continue
         document = _utils_io.read_dict_file(path)
-        entries = document.get("data", document)
-        for item in document.get("order", document.get("instances", [])):
-            if item["type"] == "SrcConfig":
-                script = entries[item["uid"]]
-                if "UserData" in script or "UserData" in script.get(
-                    "SubConfigsInfo", {}
-                ):
-                    backup.parent.mkdir(parents=True, exist_ok=True)
-                    _utils_io.atomic_write(backup, path.read_bytes())
-                    break
+        index = document.get("order", document.get("instances", []))
+        if any(item["type"] == "SrcConfig" for item in index):
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            _utils_io.atomic_write(backup, path.read_bytes())
 
 
 def prepare_plugin_documents(config_path: Path) -> None:

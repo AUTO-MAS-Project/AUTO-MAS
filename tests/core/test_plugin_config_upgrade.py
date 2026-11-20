@@ -11,6 +11,7 @@ import pytest
 from maa_adapter.config.script import MaaConfig
 
 from app.core.config.plugin_upgrade import (
+    backup_legacy_src_users,
     migrate_maa_update_channel,
     prepare_plugin_documents,
     required_adapter_plugins,
@@ -35,6 +36,22 @@ def test_upgrade_detects_only_collection_types(
     assert required_adapter_plugins(tmp_path) == {name: package}
     config_io.write_file(path, {"order": [], "notes": config_type})
     assert required_adapter_plugins(tmp_path) == {}
+
+
+def test_src_backup_preserves_original_even_without_indexed_body(tmp_path):
+    path = tmp_path / "scripts.yaml"
+    sid = str(uuid4())
+    config_io.write_file(
+        path, {"order": [{"uid": sid, "type": "SrcConfig"}], "data": {}}
+    )
+    original = path.read_bytes()
+    backup_legacy_src_users(tmp_path)
+    config_io.write_file(
+        path,
+        {"order": [{"uid": sid, "type": "SrcConfig"}], "data": {sid: {"users": {}}}},
+    )
+    backup_legacy_src_users(tmp_path)
+    assert (tmp_path / "legacy-src-plugin" / path.name).read_bytes() == original
 
 
 @pytest.mark.parametrize("legacy", [False, True])
