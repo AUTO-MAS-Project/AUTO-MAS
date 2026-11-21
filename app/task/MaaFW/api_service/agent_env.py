@@ -37,12 +37,11 @@ from app.task.MaaFW.api_service.common import (
     maafw_script_config,
 )
 from app.task.MaaFW.api_service.embedded import embedded_summary_lines
-from app.task.MaaFW.tools.core.agent_env.env import DETAIL_LOG_PREFIX
 from app.task.MaaFW.tools.core.interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
 )
-from app.task.MaaFW.tools.core.log_redact import mask_home_path
+from app.task.MaaFW.tools.core.log_redact import DETAIL_LOG_PREFIX, mask_home_path
 from app.task.MaaFW.tools.core.project_update.state import redact_text
 from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_proxy_url,

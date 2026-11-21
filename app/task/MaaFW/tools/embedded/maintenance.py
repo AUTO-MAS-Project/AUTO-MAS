@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import asyncio
-import shutil
 import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -17,9 +16,6 @@ from app.models.config import MaaFWConfig
 from app.utils import get_logger
 
 logger = get_logger("MFW 维护")
-
-# 刚动过的 venv 不碰，避免与正在准备环境的运行抢。
-MAAFW_AGENT_VENV_GRACE_SECONDS = 60 * 60
 
 
 class MaaFWMaintenanceService:
@@ -69,28 +65,19 @@ class MaaFWMaintenanceService:
         只有真实启动时它才可信。挂在 check() 上曾把测试替身当成真配置，
         把开发者磁盘上的真 venv 删掉了。
 
-        隔离 venv 按依赖清单 + maafw 版本 + 宿主身份跨视图共用，目录名不再由项目路径推出：
-        存活集合按各存活脚本的引用记录（准备时写在 ``.refs/`` 下）、建计划时会算出的目录、
-        以及还没准备过的脚本升级前按路径建的老目录算，不读 venv 目录内的清单；存活脚本的
-        引用记录读不出来就整轮不回收（见 ``agent_env.planner.collect_orphan_agent_venvs``）。
-        再加两道保护——刚动过的一律不碰；正被准备（锁文件被占）的也不碰，避免与正在
-        准备环境的运行抢。不属于任何存活脚本的引用记录一并删掉。
+        隔离 venv 归 agent 环境一侧管：这里只按托管快照算出存活视图（有效根），作为普通数据
+        交给 ``pool_reconcile.reconcile_agent_venvs`` 对账回收（存活集合与保护规则见那里）。
         """
 
-        from app.task.MaaFW.tools.core.agent_env.planner import (
-            collect_orphan_agent_venvs,
-        )
-        from app.task.MaaFW.tools.core.agent_env.venv_share import (
-            collect_stale_venv_refs,
-            discard_venv_lock_file,
-            isolated_venv_guard,
-        )
         from app.task.MaaFW.tools.embedded.embedded_project import (
             resolve_maafw_project_root,
         )
+        from app.task.MaaFW.tools.embedded.pool_reconcile import (
+            agent_venvs_root,
+            reconcile_agent_venvs,
+        )
 
-        root = Path.cwd() / "config" / "maafw_agent_venvs"
-        if not root.is_dir():
+        if not agent_venvs_root().is_dir():
             return
         if not self._scripts_loaded_intact():
             logger.warning("脚本配置未完整加载，跳过 MFW 隔离 venv 孤儿清理")
@@ -114,43 +101,7 @@ class MaaFWMaintenanceService:
             )
             live_paths = [path for path in live_paths if Path(path).exists()]
 
-        try:
-            orphans = collect_orphan_agent_venvs(root, live_paths)
-        except Exception as exc:
-            logger.warning(f"MFW 隔离 venv 孤儿扫描失败: {exc}")
-            return
-
-        cutoff = time.time() - MAAFW_AGENT_VENV_GRACE_SECONDS
-        for venv_path in orphans:
-            try:
-                if venv_path.stat().st_mtime > cutoff:
-                    continue  # 刚动过，可能有运行正在用它
-                with isolated_venv_guard(venv_path, blocking=False) as locked:
-                    if not locked:
-                        logger.info(
-                            f"MFW 隔离 venv 正在被准备，本次不清理: {venv_path}"
-                        )
-                        continue
-                    shutil.rmtree(venv_path)
-            except OSError as exc:
-                logger.warning(f"MFW 隔离 venv 清理失败: {venv_path} - {exc}")
-                continue
-            # 锁文件出了锁才删得掉（Windows 上开着的文件删不了）
-            discard_venv_lock_file(venv_path)
-            logger.info(f"已清理无人引用的 MFW 隔离 venv: {venv_path}")
-
-        try:
-            stale_refs = collect_stale_venv_refs(root, live_paths)
-        except Exception as exc:
-            logger.warning(f"MFW 隔离 venv 引用记录扫描失败: {exc}")
-            return
-        for ref_path in stale_refs:
-            try:
-                ref_path.unlink(missing_ok=True)
-            except OSError as exc:
-                logger.warning(f"MFW 隔离 venv 引用记录清理失败: {ref_path} - {exc}")
-                continue
-            logger.debug(f"已清理无主的 MFW 隔离 venv 引用记录: {ref_path}")
+        reconcile_agent_venvs(live_paths)
 
     async def clean_embedded_copies(self) -> None:
         """清掉内嵌副本目录下的两类垃圾：staging 半成品、脚本已不存在的副本。
@@ -348,11 +299,14 @@ class MaaFWMaintenanceService:
         与 ``clean_agent_venvs`` 同一个道理放在启动清理里：判定依赖「当前
         全部脚本配置」这个全局状态，只有真实启动时它才可信。规则与保守条件见
         ``tools/embedded/pool_reconcile.py``；这里只负责把权威集合（全部 MaaFW 类
-        脚本的项目目录）交过去，并在脚本表疑似没加载起来时弃权。
+        脚本的项目目录，``live_projects.collect_live_project_paths``）交过去，并在脚本表
+        疑似没加载起来时弃权。
         """
 
-        from app.task.MaaFW.tools.embedded.pool_reconcile import (
+        from app.task.MaaFW.tools.embedded.live_projects import (
             collect_live_project_paths,
+        )
+        from app.task.MaaFW.tools.embedded.pool_reconcile import (
             reconcile_runtime_pool,
             runtime_pool_root,
         )

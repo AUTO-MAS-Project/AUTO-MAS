@@ -16,7 +16,7 @@ from typing import Callable
 from packaging.version import InvalidVersion, Version
 
 from ..interface.agent_entry import describe_uv_agent, is_uv_launcher
-from ..log_redact import mask_home_path
+from ..log_redact import DETAIL_LOG_PREFIX, mask_home_path
 from ..native.layout import EMBEDDED_COPIES_DIR_PARTS
 from ..native.offline_dependencies import describe_self_install_materials
 from ..native.requirement import resolve_project_maafw_requirement
@@ -38,7 +38,6 @@ from ..runtime_pool.installer import (
     is_package_index_offline,
     resolve_package_index_candidates,
 )
-from ..worker_protocol import DETAIL_LOG_PREFIX
 from .models import MaaFWAgentCommandPlan, MaaFWAgentEnvPrepareResult
 from .pip_constraint import pin_agent_maafw_requirement
 from .planner import MaaFWAgentEnvError, venv_base_python_missing, venv_python_exe
@@ -65,7 +64,7 @@ PIP_INSTALL_TIMEOUT = 120
 # pip install 本身单独给足余量：与运行池的 RUNTIME_INSTALL_TIMEOUT_SECONDS 对齐，
 # 且每个镜像候选各享一次完整超时。venv 创建与 ensurepip 仍用上面那个。
 PIP_INSTALL_PER_INDEX_TIMEOUT = 300
-# DETAIL_LOG_PREFIX（定义在 worker_protocol，runner 与这里共用一份）：worker 里据此只写进
+# DETAIL_LOG_PREFIX（定义在 log_redact，runner、项目更新与这里共用一份）：worker 里据此只写进
 # .worker.log，宿主侧的更新日志据此只写后端日志，都不上界面。宿主的几处出口从这里引它。
 # 完整输出进详情日志时的上限（按结尾截），挡住异常情况下的超长输出。
 DETAIL_OUTPUT_LIMIT = 20000

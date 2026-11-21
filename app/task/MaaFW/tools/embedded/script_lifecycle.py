@@ -72,7 +72,7 @@ async def clone_script(source: ConfigEntry, target: ConfigEntry) -> None:
 
 def after_script_removal() -> None:
     """删除提交后启动运行池对账，不拖慢删除响应。"""
-    from .pool_reconcile import reconcile_in_background
+    from .live_projects import reconcile_in_background
 
     reconcile_in_background("script-deleted")
 

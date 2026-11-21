@@ -2,7 +2,8 @@
 
 worker（``runner/worker.py``）跑在运行池的隔离 venv 里，``runner.py`` 一导入就加载 ``maa``，宿主
 引用不了它的常量，以前只好在宿主里复制一份（信号截图的 kind、``[MaaFW 详情] `` 前缀、日志去向的
-几组文案）。两边共用的东西都放这里。只依赖标准库：它在 worker 的导入闭包里（见 MaaFW/AGENTS.md），
+几组文案）。两边共用的东西都放这里。只依赖标准库（外加同样只用标准库的 ``log_redact``，
+详情行前缀定义在那里）：它在 worker 的导入闭包里（见 MaaFW/AGENTS.md），
 宿主导入它也不会拉起 runner 子树。
 
 传输（宿主 ``tools/embedded/runner_task.py`` ↔ ``runner/worker.py``）：
@@ -60,6 +61,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable, Mapping
 
+from .log_redact import DETAIL_LOG_PREFIX
+
 if sys.platform == "win32":
     import _winapi
 else:  # pragma: no cover - MaaFW 内置运行只在 Windows 上跑；别处直接用 stdout 旧格式
@@ -93,8 +96,8 @@ JOB_EVENT_CHANNEL_KEY = "eventChannel"
 # 宿主与 worker 共用的常量
 # ---------------------------------------------------------------------------
 
-#: 带这个前缀的日志只进 ``.worker.log`` / 后端日志，不进界面（runner、agent 环境准备都用它）。
-DETAIL_LOG_PREFIX = "[MaaFW 详情] "
+#: ``DETAIL_LOG_PREFIX``（带它的日志只进 ``.worker.log`` / 后端日志）定义在 ``log_redact``，
+#: agent 环境与项目更新也从那里取；这里照旧对外提供，宿主与 runner 的老写法不用改。
 
 #: 信号取值（``MaaFWRunResult.signal``）。worker 的 ``run_signal`` 与宿主的 ``signal_notice`` 都引这里。
 SERVER_MAINTENANCE = "server_maintenance"

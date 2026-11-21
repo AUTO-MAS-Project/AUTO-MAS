@@ -51,11 +51,11 @@ from app.task.MaaFW.api_service.update_job import (
     current_update_job,
     record_update_progress,
 )
-from app.task.MaaFW.tools.core.agent_env.env import DETAIL_LOG_PREFIX
 from app.task.MaaFW.tools.core.interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
 )
+from app.task.MaaFW.tools.core.log_redact import DETAIL_LOG_PREFIX
 from app.task.MaaFW.tools.core.project_update import (
     ALERT_LOG_PREFIX,
     MaaFWProjectUpdateError,
@@ -817,7 +817,7 @@ async def _after_apply(
     """放掉预约之后：作废这个版本的预检备忘、新旧 runtime 对账（都只记日志、不影响回复）。"""
 
     from app.task.MaaFW.tools.core.project_update import clear_runtime_precheck
-    from app.task.MaaFW.tools.embedded.pool_reconcile import reconcile_in_background
+    from app.task.MaaFW.tools.embedded.live_projects import reconcile_in_background
     from app.task.MaaFW.tools.embedded.view_update import memo_path_factory
 
     result = outcome.result

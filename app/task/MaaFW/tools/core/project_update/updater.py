@@ -21,8 +21,7 @@ from app.utils import MIRROR_ERROR_INFO
 
 from ..file_lockers import describe_lockers_async
 from ..interface.models import MaaFWInterface
-from ..log_redact import mask_home_path
-from ..worker_protocol import DETAIL_LOG_PREFIX
+from ..log_redact import DETAIL_LOG_PREFIX, mask_home_path
 from .apply import (
     InvalidPackageArchive,
     UpdateApplyError,

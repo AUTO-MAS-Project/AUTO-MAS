@@ -24,8 +24,8 @@
 检查，项目没动过时这几秒全是空转。
 
 这里把成功准备过的结果连同**项目输入指纹**落盘，下次先比指纹：一致、且结果里
-记的那些路径都还在，就直接把上次的结果还回去。指纹用的就是 runner 包的
-``project_environment_fingerprint()``——它哈希的正是 interface / requirements /
+记的那些路径都还在，就直接把上次的结果还回去。指纹用的就是 agent 环境的
+``project_env.project_environment_fingerprint()``——它哈希的正是 interface / requirements /
 uv.lock 这些「脚本更新了没」的输入，项目一更新缓存自然失效。
 
 项目文件不是唯一的输入：运行池里那份 runtime 的身份还包含**宿主引导解释器**
@@ -53,8 +53,6 @@ from typing import Any
 
 from app.utils import get_logger
 
-from .project_path import normalize_project_path
-
 logger = get_logger("MFW 运行环境缓存")
 
 # 缓存结构变更时递增：读到不认识的版本一律当没有缓存。MAS 自己的准备规则变了也在
@@ -66,6 +64,17 @@ logger = get_logger("MFW 运行环境缓存")
 #    布局，整体作废、每脚本重备一次。指纹同时纳入项目自带 DLL 的版本（见
 #    project_environment_fingerprint）：DLL 换了、interface 没变时不能命中旧 binding。
 CACHE_FORMAT_VERSION = 4
+
+
+def _normalize_project_path(path: str | Path) -> str:
+    """缓存键里的项目路径。
+
+    与项目更新一侧的预约键（``project_path.normalize_project_path``）同一个写法，这里自留
+    一份：环境缓存归 agent 环境，不为一行规范化去引项目更新的模块。已落盘的缓存
+    ``projectPath`` 与文件名都按它算，改写法会让所有缓存一次失效。
+    """
+
+    return os.path.normcase(str(Path(path).resolve())).casefold()
 
 
 def _host_python_identity() -> dict[str, str]:
@@ -85,7 +94,7 @@ def _cache_root() -> Path:
 
 
 def _cache_path(project_path: str | Path) -> Path:
-    key = normalize_project_path(project_path)
+    key = _normalize_project_path(project_path)
     digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
     return _cache_root() / f"{digest}.json"
 
@@ -157,7 +166,7 @@ def load_prepared_environment(
         return None
     if payload.get("version") != CACHE_FORMAT_VERSION:
         return None
-    if payload.get("projectPath") != normalize_project_path(project_path):
+    if payload.get("projectPath") != _normalize_project_path(project_path):
         return None
     if payload.get("fingerprint") != fingerprint:
         return None
@@ -187,7 +196,7 @@ def store_prepared_environment(
 
     payload = {
         "version": CACHE_FORMAT_VERSION,
-        "projectPath": normalize_project_path(project_path),
+        "projectPath": _normalize_project_path(project_path),
         "fingerprint": fingerprint,
         "host": _host_python_identity(),
         "preparedAt": datetime.now().astimezone().isoformat(timespec="seconds"),

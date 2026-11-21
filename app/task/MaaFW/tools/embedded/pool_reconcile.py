@@ -16,7 +16,11 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""MFW 运行池的引用对账回收（宿主侧）。
+"""MFW 运行池与 agent 隔离 venv 的引用对账回收（宿主侧，agent 环境这一块）。
+
+这里只收普通数据：调用方（项目更新一侧，``live_projects.py``、``maintenance.py``）先在事件
+循环上算好「应保留的项目路径集合」与「本次被替换下来的 maafw 版本」交进来，这里不读脚本配置、
+不碰项目副本。
 
 运行池（``config/maafw_runtime_pool/runtimes/<id>``）按「requirement 集合 + 宿主
 解释器身份」建 runtime，此前的回收只按 ``lastUsedAt`` 宽限 + 保留最新一个，且每个
@@ -26,7 +30,7 @@
 
 这里改成按引用对账：
 
-1. 权威集合 = 所有 MaaFW 类脚本的项目目录，每个项目用
+1. 权威集合 = 所有 MaaFW 类脚本的项目目录（由调用方给），每个项目用
    ``describe_runner_runtime_selection`` 算出借运行环境（``borrow_runtime_environment``）
    会选中的 runtime id 与 maafw requirement——两边走同一批 helper，算出来的就是运行时
    会用的那一个。
@@ -37,8 +41,8 @@
    缓存硬链接出来的，旧 runtime 删掉后那些文件就只剩缓存这一份，不清等于没删。
    仍有旧 runtime 在等新身份替换时不清，保住离线用户靠缓存重建的能力。
 
-核心包 ``runtime_pool`` 不读 ``Config``，权威集合只在这一层算。与
-``MaaFWMaintenanceService.clean_agent_venvs`` 同一套保守规则：任一存活项目此刻不可达、任一
+核心包 ``runtime_pool`` 不读 ``Config``，权威集合由项目更新一侧算好交进来。与
+:func:`reconcile_agent_venvs` 同一套保守规则：任一存活项目此刻不可达、任一
 项目算不出 selection、托管解释器还没装（算不出身份），整轮弃权——回收晚一轮
 没有代价，误删一份 runtime 要重下几十到上百 MB。
 """
@@ -47,15 +51,22 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import threading
+import time
 from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.models.config import MaaFWConfig
+from app.task.MaaFW.tools.core.agent_env.planner import collect_orphan_agent_venvs
 from app.task.MaaFW.tools.core.agent_env.runtime_lease import (
     describe_runner_runtime_selection,
+)
+from app.task.MaaFW.tools.core.agent_env.venv_share import (
+    collect_stale_venv_refs,
+    discard_venv_lock_file,
+    isolated_venv_guard,
 )
 from app.task.MaaFW.tools.core.native.requirement import (
     resolve_project_maafw_requirement,
@@ -66,12 +77,16 @@ from app.task.MaaFW.tools.core.runtime_pool.binding import (
     retained_versions,
 )
 from app.task.MaaFW.tools.core.runtime_pool.identity import infer_exact_maafw_version
-from app.task.MaaFW.tools.embedded.embedded_project import resolve_maafw_project_root
 from app.utils import get_logger
 
 logger = get_logger("MFW 运行池回收")
+# 隔离 venv 回收的日志沿用原先的 logger 名（那段代码原先在 ``maintenance.py`` 里）。
+_venv_logger = get_logger("MFW 维护")
 
 _RECONCILE_LOCK = threading.Lock()
+
+# 刚动过的 venv 不碰，避免与正在准备环境的运行抢。
+MAAFW_AGENT_VENV_GRACE_SECONDS = 60 * 60
 
 
 def runtime_pool_root() -> Path:
@@ -80,28 +95,61 @@ def runtime_pool_root() -> Path:
     return Path.cwd() / "config" / "maafw_runtime_pool"
 
 
-def collect_live_project_paths(
-    scripts: Iterable[tuple[str, MaaFWConfig]],
-) -> list[str]:
-    """当前配置里全部 MaaFW 类脚本的有效项目根（权威集合的输入）。
+def agent_venvs_root() -> Path:
+    """agent 隔离 venv 的根（``config/maafw_agent_venvs``）。"""
 
-    lab（内嵌副本）口径：有效根永远是副本 ``data/mfw/<12hex>``（更新只落在副本，
-    来源目录停在旧版本，照抄 ``Info.Path`` 会把副本正在用的新版本当孤儿）。副本还没
-    建的脚本（升级后没打开过、新建未导入）退到来源目录——只用来算它会钉哪个
-    maafw 版本，好在收割 / 回收时把那个版本保住；两边都没有的托管名下不可能有
-    binding，不计入。
+    return Path.cwd() / "config" / "maafw_agent_venvs"
+
+
+def reconcile_agent_venvs(live_paths: list[str]) -> None:
+    """清掉已无存活视图引用的 agent 隔离 venv 与无主的引用记录。
+
+    ``live_paths`` 是存活脚本的有效项目根（调用方已去掉还没导入过、目录不存在的）。
+    存活集合按各存活视图的引用记录（准备时写在 ``.refs/`` 下）、建计划时会算出的目录、
+    以及还没准备过的视图升级前按路径建的老目录算，不读 venv 目录内的清单；存活视图的
+    引用记录读不出来就整轮不回收（见 ``agent_env.planner.collect_orphan_agent_venvs``）。
+    再加两道保护——刚动过的一律不碰；正被准备（锁文件被占）的也不碰，避免与正在
+    准备环境的运行抢。不属于任何存活视图的引用记录一并删掉。
     """
 
-    paths: list[str] = []
-    for uid, config in scripts:
-        copy_dir = resolve_maafw_project_root(str(uid), config)
-        if copy_dir.is_dir():
-            paths.append(str(copy_dir))
+    root = agent_venvs_root()
+    try:
+        orphans = collect_orphan_agent_venvs(root, live_paths)
+    except Exception as exc:
+        _venv_logger.warning(f"MFW 隔离 venv 孤儿扫描失败: {exc}")
+        return
+
+    cutoff = time.time() - MAAFW_AGENT_VENV_GRACE_SECONDS
+    for venv_path in orphans:
+        try:
+            if venv_path.stat().st_mtime > cutoff:
+                continue  # 刚动过，可能有运行正在用它
+            with isolated_venv_guard(venv_path, blocking=False) as locked:
+                if not locked:
+                    _venv_logger.info(
+                        f"MFW 隔离 venv 正在被准备，本次不清理: {venv_path}"
+                    )
+                    continue
+                shutil.rmtree(venv_path)
+        except OSError as exc:
+            _venv_logger.warning(f"MFW 隔离 venv 清理失败: {venv_path} - {exc}")
             continue
-        source = str(config.Info.Path or "").strip()
-        if source and Path(source).is_dir():
-            paths.append(source)
-    return paths
+        # 锁文件出了锁才删得掉（Windows 上开着的文件删不了）
+        discard_venv_lock_file(venv_path)
+        _venv_logger.info(f"已清理无人引用的 MFW 隔离 venv: {venv_path}")
+
+    try:
+        stale_refs = collect_stale_venv_refs(root, live_paths)
+    except Exception as exc:
+        _venv_logger.warning(f"MFW 隔离 venv 引用记录扫描失败: {exc}")
+        return
+    for ref_path in stale_refs:
+        try:
+            ref_path.unlink(missing_ok=True)
+        except OSError as exc:
+            _venv_logger.warning(f"MFW 隔离 venv 引用记录清理失败: {ref_path} - {exc}")
+            continue
+        _venv_logger.debug(f"已清理无主的 MFW 隔离 venv 引用记录: {ref_path}")
 
 
 def reconcile_runtime_pool(
@@ -421,7 +469,7 @@ def reconcile_after_project_update(
     提交前的运行环境预检已经把新版本的 runtime 建好了（见
     ``tools/embedded/precheck.py``），所以此时删旧的不会让项目暂时跑不了。
     阻塞调用，放线程里跑；``project_paths`` 是权威集合，由调用方在事件循环
-    线程上先算好传进来。
+    线程上先算好传进来（``live_projects.reconcile_in_background``）。
     """
 
     replaced: list[str] = []
@@ -443,61 +491,12 @@ def reconcile_after_project_update(
     )
 
 
-def reconcile_in_background(
-    reason: str,
-    *,
-    updated_project_path: str | Path | None = None,
-    previous_version: str | None = None,
-) -> None:
-    """起一个守护线程跑一轮回收，调用方不等结果。
-
-    删脚本、项目更新提交这类路径都不该被回收拖慢（解释器探针 + 可能的
-    ``uv cache clean`` 要几秒）。给了 ``updated_project_path`` 就走
-    ``reconcile_after_project_update``，把被替换掉的旧版本一并豁免宽限。
-
-    权威集合在**调用方线程**（事件循环）上先算好：``Config.ScriptConfig`` 只在
-    事件循环上改，守护线程里去遍历它会撞上「dict changed size」。
-    """
-
-    from app.core import Config
-
-    if not Config.script_config_loaded_intact():
-        logger.warning(
-            "脚本配置文件非空但没有加载出任何脚本，疑似损坏，跳过 MFW 运行池回收"
-        )
-        return
-    project_paths = collect_live_project_paths(
-        [
-            (str(uid), config)
-            for uid, config in Config.ScriptConfig.items()
-            if isinstance(config, MaaFWConfig)
-        ]
-    )
-
-    def _run() -> None:
-        try:
-            if updated_project_path is not None:
-                reconcile_after_project_update(
-                    project_paths,
-                    updated_project_path,
-                    previous_version,
-                    reason=reason,
-                )
-            else:
-                reconcile_runtime_pool(project_paths, reason=reason)
-        except Exception:  # noqa: BLE001 - 后台维护，失败只记日志
-            logger.opt(exception=True).warning(f"MFW 运行池后台回收失败（{reason}）")
-
-    threading.Thread(
-        target=_run, name=f"maafw-pool-reconcile:{reason}", daemon=True
-    ).start()
-
-
 __all__ = [
-    "collect_live_project_paths",
+    "MAAFW_AGENT_VENV_GRACE_SECONDS",
+    "agent_venvs_root",
     "previous_maafw_version",
     "reconcile_after_project_update",
-    "reconcile_in_background",
+    "reconcile_agent_venvs",
     "reconcile_runtime_pool",
     "runtime_pool_root",
 ]

@@ -589,7 +589,7 @@ def _reconcile_pool_after_copy_change(
     旧版本作为 replaced 传给回收豁免宽限；权威集合按副本目录算，新副本自己在集合里。
     """
 
-    from app.task.MaaFW.tools.embedded.pool_reconcile import reconcile_in_background
+    from app.task.MaaFW.tools.embedded.live_projects import reconcile_in_background
 
     reconcile_in_background(
         reason, updated_project_path=copy_dir, previous_version=previous_version

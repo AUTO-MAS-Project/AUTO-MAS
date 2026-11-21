@@ -155,10 +155,10 @@ async def project(tmp_path, monkeypatch, isolated_app_paths):
         "_prepare_project_environment_sync",
         lambda *_args, **_kwargs: True,
     )
-    from app.task.MaaFW.tools.embedded import pool_reconcile
+    from app.task.MaaFW.tools.embedded import live_projects
 
     monkeypatch.setattr(
-        pool_reconcile, "reconcile_in_background", lambda *_a, **_k: None
+        live_projects, "reconcile_in_background", lambda *_a, **_k: None
     )
     monkeypatch.setattr(api.Notify, "push_system_notice", AsyncMock())
 

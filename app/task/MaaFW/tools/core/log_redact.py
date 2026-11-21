@@ -1,4 +1,4 @@
-"""MFW 日志脱敏：用户主目录换成 ``<HOME>``。
+"""MFW 日志文本的共用件：用户主目录换成 ``<HOME>``，以及详情行前缀 :data:`DETAIL_LOG_PREFIX`。
 
 app.log 会随日志包、问题包、Runtime 抓下的后端输出被发出去，``C:\\Users\\<Windows 用户名>``
 不该原样留在里面。全局的 ``app.utils.common.security.sanitize_log_message`` 只管参数名式的令牌与
@@ -8,6 +8,10 @@ app.log 会随日志包、问题包、Runtime 抓下的后端输出被发出去�
 放在 ``tools/core`` 而不是 ``app/utils``：worker 子进程（runner 子树）与 agent 环境准备也要用，
 它们的导入闭包里只能有 ``app.task.MaaFW.tools.core`` 之下的模块（见 MaaFW/AGENTS.md），宿主侧
 的 MFW 代码照样能引。只依赖标准库。
+
+``DETAIL_LOG_PREFIX`` 放在这里而不是 ``worker_protocol``：运行、agent 环境、项目更新三块都在
+日志里用它，``worker_protocol`` 是运行那一块的，另外两块不该为一个前缀去引它（将来与本模块
+一起进解析库）。``worker_protocol`` 从这里取、照旧对外提供。
 """
 
 from __future__ import annotations
@@ -17,6 +21,9 @@ import os
 import re
 
 HOME_TOKEN = "<HOME>"
+
+#: 带这个前缀的日志只进 ``.worker.log`` / 后端日志，不进界面（runner、agent 环境准备、项目更新都用它）。
+DETAIL_LOG_PREFIX = "[MaaFW 详情] "
 
 
 @functools.lru_cache(maxsize=8)
@@ -61,4 +68,4 @@ def mask_home_path(text: object) -> str:
     return pattern.sub(HOME_TOKEN, value)
 
 
-__all__ = ["HOME_TOKEN", "mask_home_path"]
+__all__ = ["DETAIL_LOG_PREFIX", "HOME_TOKEN", "mask_home_path"]

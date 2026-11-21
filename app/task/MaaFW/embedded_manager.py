@@ -881,7 +881,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         不能从这里引用），这样并入账号日志后看不出接缝。
         """
 
-        from app.task.MaaFW.tools.core.agent_env.env import DETAIL_LOG_PREFIX
+        from app.task.MaaFW.tools.core.log_redact import DETAIL_LOG_PREFIX
 
         logger.info(f"MFW 项目更新：{message}")
         if str(message).startswith(DETAIL_LOG_PREFIX):
@@ -1302,7 +1302,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             # runtime 不必再等 24 h 宽限（``reconcile_after_project_update`` 按全部视图判断
             # 旧版本还有没有人用）。后台线程跑，不拖运行。
             try:
-                from app.task.MaaFW.tools.embedded.pool_reconcile import (
+                from app.task.MaaFW.tools.embedded.live_projects import (
                     reconcile_in_background,
                 )
 
@@ -1467,9 +1467,11 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             f"代理 {describe_proxy(self.script_config)}"
         )
         # 记下更新前钉定的 maafw 版本：提交后若换了版本，旧 runtime 不必再等宽限。
+        from app.task.MaaFW.tools.embedded.live_projects import (
+            reconcile_in_background,
+        )
         from app.task.MaaFW.tools.embedded.pool_reconcile import (
             previous_maafw_version,
-            reconcile_in_background,
         )
 
         previous_version = await asyncio.to_thread(previous_maafw_version, project_path)
