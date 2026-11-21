@@ -18,9 +18,10 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Query
 from pydantic import BaseModel, Field
 
+from app.config.errors import DeletedNodeError
 from app.models.schema import OutBase
 from app.utils import get_logger
 
@@ -59,6 +60,31 @@ class OkNtePlanFile(BaseModel):
 
 class OkNtePlanConfigsOut(OutBase):
     data: list[OkNtePlanFile] = Field(default_factory=list)
+
+
+class OkNteTaskArgumentOut(OutBase):
+    data: str | None = None
+
+
+@router.get(
+    "/oknte/task-argument",
+    tags=["OKNTE"],
+    response_model=OkNteTaskArgumentOut,
+    summary="预览 OK-NTE 任务启动参数",
+)
+def get_oknte_task_argument(
+    script_id: str, task_index: int = Query(ge=1, le=19)
+) -> OkNteTaskArgumentOut:
+    from .api_service import preview_task_argument
+
+    try:
+        return OkNteTaskArgumentOut(data=preview_task_argument(script_id, task_index))
+    except (KeyError, DeletedNodeError):
+        return OkNteTaskArgumentOut(
+            code=404, status="error", message="OK-NTE 托管不存在，请刷新后重试"
+        )
+    except ValueError as exc:
+        return OkNteTaskArgumentOut(code=400, status="error", message=str(exc))
 
 
 @router.post(
