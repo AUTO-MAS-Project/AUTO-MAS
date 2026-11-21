@@ -95,7 +95,10 @@ from app.utils import (
     process,
 )
 from app.utils.common.log import sources as log_source
-from app.utils.common.process.manager import has_process_window
+from app.utils.common.process.manager import (
+    has_process_window,
+    wait_process_window_ready,
+)
 from app.utils.common.process.runner import create_subprocess
 from app.utils.common.process.session import desktop_process_target
 
@@ -1865,9 +1868,10 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             owned=False,
         )
         wait_time = max(int(self.script_config.Game.WaitTime or 0), 0)
-        if wait_time:
-            await self._push_dispatch_log(f"等待游戏启动（{wait_time} 秒）...")
-            await asyncio.sleep(wait_time)
+        await self._push_dispatch_log(
+            f"等待游戏窗口就绪（最多 {wait_time or 60} 秒）..."
+        )
+        await wait_process_window_ready(ProcessInfo(name=_ZZZ_GAME_PROCESS), wait_time)
         await self._push_dispatch_log("游戏启动完成")
 
     async def _note_launch_arguments_skipped(self) -> None:

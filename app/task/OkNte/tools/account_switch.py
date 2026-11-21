@@ -41,15 +41,14 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-import cv2
 import numpy as np
-import psutil
 from PIL import Image
 
 from app.tools import error_screenshot as _tool_error_screenshot
 from app.tools import ocr as _tool_ocr
 from app.utils import IS_WINDOWS, get_logger, is_process_alive
 from app.utils import display as _utils_display
+from app.utils.common import game_window as _game_window
 
 from .launcher_start import dismiss_screensaver
 
@@ -57,10 +56,7 @@ if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
     # IS_WINDOWS 检查一并惰性导入，避免非 Windows 环境在未启用切号时导入崩溃
     import pyautogui
-    import win32api
-    import win32con
     import win32gui
-    import win32process
 
 logger = get_logger("OK-NTE 账号切换")
 
@@ -109,8 +105,11 @@ _IN_GAME_POLL_INTERVAL = 3.0
 _DIAGNOSTIC_DUMP_EVERY_POLLS = 10
 
 # 截图基准分辨率（16:9），OCR 与点击均在此坐标空间计算后再映射回真实窗口
-_FRAME_WIDTH = 1920
-_FRAME_HEIGHT = 1080
+_FRAME_WIDTH = _game_window.FRAME_WIDTH
+_FRAME_HEIGHT = _game_window.FRAME_HEIGHT
+
+# 异常与日志里的窗口称呼
+_WINDOW_LABEL = "异环游戏窗口"
 
 # 标题界面右上角退出图标（无文本可 OCR，按 2048x1152 参考截图换算 1080p 坐标；
 # 图标中心 x≈1962/2048→1839，y≈363/1152→340，原 1865 偏右落在图标右缘外导致点击不生效）
@@ -134,22 +133,6 @@ _MASKED_SUFFIX = re.compile(r"\d+\*+(\d{4})")
 # ── 窗口定位 ────────────────────────────────────────────────────────────
 
 
-def _process_name(pid: int) -> str | None:
-    """按 pid 读取进程名；提权进程可能被拒，返回 None 而非抛错。"""
-    try:
-        return psutil.Process(pid).name()
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-        return None
-
-
-def _window_area(hwnd: int) -> int:
-    try:
-        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
-        return (right - left) * (bottom - top)
-    except Exception:
-        return 0
-
-
 def _find_game_hwnd(*, wait: bool = True, fail_on_exit: bool = False) -> int:
     """按所属进程名定位异环主窗口。
 
@@ -170,126 +153,42 @@ def _find_game_hwnd(*, wait: bool = True, fail_on_exit: bool = False) -> int:
         RuntimeError: 宽限期结束仍未定位到异环游戏窗口；或 ``fail_on_exit`` 且
             异环进程先出现后持续消失超过宽限期。
     """
-    deadline = time.monotonic() + _GAME_WINDOW_WAIT_SECONDS
-    seen_alive = False
-    gone_since: float | None = None
-    while True:
-        candidates: list[int] = []
-
-        def _enum(hwnd: int, _lparam: int) -> bool:
-            try:
-                if not win32gui.IsWindowVisible(hwnd):
-                    return True
-            except Exception:
-                return True
-            _, pid = win32process.GetWindowThreadProcessId(hwnd)
-            if pid and _process_name(pid) == _NTE_CLIENT_PROCESS:
-                candidates.append(hwnd)
-            return True
-
-        win32gui.EnumWindows(_enum, 0)
-        if candidates:
-            return max(candidates, key=_window_area)
-        if not wait or time.monotonic() >= deadline:
-            break
-        if fail_on_exit:
-            if is_process_alive(_NTE_CLIENT_PROCESS):
-                seen_alive = True
-                gone_since = None
-            elif seen_alive:
-                # 进程先出现后消失：先容忍更新/启动交接的短暂缺席（消失期间窗口
-                # 若先回来，下一轮 EnumWindows 会直接命中），持续消失超过宽限期
-                # 仍无进程也无窗口才判永久退出，如实快速失败。从未观察到进程
-                # （URL 协议拉起慢）与权限不足读不到提权进程名（退化为原宽限
-                # 轮询）都不在此列。
-                now = time.monotonic()
-                if gone_since is None:
-                    gone_since = now
-                elif now - gone_since >= _PROCESS_GONE_GRACE_SECONDS:
-                    raise RuntimeError(
-                        f"异环游戏进程已退出（{_NTE_CLIENT_PROCESS}），窗口不会再出现，"
-                        "请确认游戏已由 MAS 成功启动"
-                    )
-        logger.info(
-            f"异环游戏进程已启动但窗口暂未就绪，{_WINDOW_POLL_INTERVAL:g} 秒后重试..."
-        )
-        time.sleep(_WINDOW_POLL_INTERVAL)
-    raise RuntimeError(f"未找到异环游戏窗口（进程 {_NTE_CLIENT_PROCESS}）")
+    if not wait:
+        hwnd = _game_window.find_window(_NTE_CLIENT_PROCESS)
+        if hwnd is None:
+            raise RuntimeError(f"未找到异环游戏窗口（进程 {_NTE_CLIENT_PROCESS}）")
+        return hwnd
+    return _game_window.wait_window(
+        _NTE_CLIENT_PROCESS,
+        alive=lambda: is_process_alive(_NTE_CLIENT_PROCESS),
+        timeout=_GAME_WINDOW_WAIT_SECONDS,
+        label="异环游戏",
+        poll_interval=_WINDOW_POLL_INTERVAL,
+        gone_grace=_PROCESS_GONE_GRACE_SECONDS if fail_on_exit else None,
+    )
 
 
 # ── 截图 / 交互（前台 pyautogui + DPI 适配）─────────────────────────────
 
 
 def _activate_window(hwnd: int) -> None:
-    if not win32gui.IsWindow(hwnd):
-        raise RuntimeError("异环游戏窗口已失效")
-    show_command = (
-        win32con.SW_RESTORE
-        if win32gui.IsIconic(hwnd)
-        else win32con.SW_SHOW
-        if not win32gui.IsWindowVisible(hwnd)
-        else None
-    )
-    if show_command is not None:
-        win32gui.ShowWindow(hwnd, show_command)
-        time.sleep(0.15)
-    try:
-        if win32gui.GetForegroundWindow() != hwnd:
-            # Windows 前台锁：后台进程不能直接抢占前台。先附着当前前台窗口线程
-            # 的输入队列，再置前，绕过系统限制（与 OK-WW 切号同理）。
-            foreground = win32gui.GetForegroundWindow()
-            fg_thread = win32process.GetWindowThreadProcessId(foreground)[0]
-            win32process.AttachThreadInput(
-                win32api.GetCurrentThreadId(), fg_thread, True
-            )
-            try:
-                win32gui.BringWindowToTop(hwnd)
-                win32gui.SetForegroundWindow(hwnd)
-            finally:
-                win32process.AttachThreadInput(
-                    win32api.GetCurrentThreadId(), fg_thread, False
-                )
-        else:
-            win32gui.BringWindowToTop(hwnd)
-            win32gui.SetForegroundWindow(hwnd)
-    except win32gui.error:
-        logger.debug("异环游戏窗口焦点请求被系统忽略，继续按前置窗口处理")
-    time.sleep(0.1)
+    _game_window.activate_window(hwnd, label=_WINDOW_LABEL)
 
 
 def _client_size(hwnd: int) -> tuple[int, int]:
-    _, _, width, height = win32gui.GetClientRect(hwnd)
-    if width <= 0 or height <= 0:
-        raise RuntimeError("异环游戏窗口尺寸异常")
-    if abs(width / height - 16 / 9) > 0.02:
-        logger.warning(f"异环窗口非 16:9（{width}x{height}），账号切换坐标可能偏移")
+    width, height = _game_window.client_size(hwnd, label=_WINDOW_LABEL)
+    _game_window.warn_non_16_9(width, height, label=_WINDOW_LABEL)
     return width, height
 
 
 def _capture_window_image(hwnd: int, *, activate: bool = True) -> Image.Image:
-    with _utils_display.per_monitor_dpi():
-        if activate:
-            _activate_window(hwnd)
-        width, height = _client_size(hwnd)
-        left, top = win32gui.ClientToScreen(hwnd, (0, 0))
-        virtual_left = win32api.GetSystemMetrics(win32con.SM_XVIRTUALSCREEN)
-        virtual_top = win32api.GetSystemMetrics(win32con.SM_YVIRTUALSCREEN)
-        return pyautogui.screenshot(allScreens=True).crop(
-            (
-                left - virtual_left,
-                top - virtual_top,
-                left - virtual_left + width,
-                top - virtual_top + height,
-            )
-        )
+    return _game_window.capture_window_image(
+        hwnd, label=_WINDOW_LABEL, activate=activate
+    )
 
 
 def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
-    screenshot = _capture_window_image(hwnd, activate=activate)
-    screenshot = screenshot.resize(
-        (_FRAME_WIDTH, _FRAME_HEIGHT), Image.Resampling.LANCZOS
-    )
-    return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
+    return _game_window.capture_window(hwnd, label=_WINDOW_LABEL, activate=activate)
 
 
 def _dump_ocr_items(items: list[_tool_ocr.OCRItem]) -> None:

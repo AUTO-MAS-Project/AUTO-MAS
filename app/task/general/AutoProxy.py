@@ -63,7 +63,10 @@ from app.utils import (
 from app.utils import io as _utils_io
 from app.utils.common.log.patterns import match_log_signs
 from app.utils.common.log_box.hooks import make_line_hook
-from app.utils.common.process.manager import has_process_window
+from app.utils.common.process.manager import (
+    has_process_window,
+    wait_process_window_ready,
+)
 
 from .log_protocol import parse_marker
 
@@ -429,7 +432,6 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                                     f"检测到游戏进程已在运行，跳过由 MAS 重复启动游戏: {self.game_process_name}"
                                 )
                                 self._note_launch_arguments_skipped()
-                                await asyncio.sleep(2)
                             else:
                                 logger.info(
                                     f"启动游戏: {self.game_process_name}, 参数{self.game_url}"
@@ -439,7 +441,9 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                                         self.game_url,
                                         ProcessInfo(name=self.game_process_name),
                                     )
-                                await asyncio.sleep(2)
+                            await self._wait_game_window_ready(
+                                ProcessInfo(name=self.game_process_name)
+                            )
                         else:
                             if self.game_path is None:
                                 raise ValueError("游戏路径未配置，请检查路径设置")
@@ -451,7 +455,6 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                                     f"检测到游戏进程已在运行，跳过由 MAS 重复启动游戏: {game_process_name}"
                                 )
                                 self._note_launch_arguments_skipped()
-                                await asyncio.sleep(self.script_config.Game.WaitTime)
                             else:
                                 logger.info(
                                     f"启动游戏: {self.game_path}, 参数: {self.script_config.Game.Arguments}"
@@ -465,9 +468,12 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                                         breakaway=True,
                                     )
                                 await self.script_info.set_log(
-                                    f"正在等待游戏完成启动\n请等待{self.script_config.Game.WaitTime}s"
+                                    f"正在等待游戏完成启动\n"
+                                    f"最多等待{self.script_config.Game.WaitTime or 60}秒"
                                 )
-                                await asyncio.sleep(self.script_config.Game.WaitTime)
+                            await self._wait_game_window_ready(
+                                ProcessInfo(name=game_process_name)
+                            )
                     elif isinstance(self.game_manager, DeviceBase):
                         device_id = game_device_id(self.script_config)
                         logger.info(f"启动模拟器: {device_id}")
@@ -709,6 +715,19 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                     await self.game_manager.close(game_device_id(self.script_config))
             except Exception as e:
                 logger.opt(exception=True).warning(f"关闭游戏/模拟器失败: {e}")
+
+    async def _wait_game_window_ready(self, target: ProcessInfo) -> None:
+        """等游戏窗口真正画出客户区再交给脚本。
+
+        固定等待秒数同样会踩到「窗口已可见、引擎还在初始化」的启动阶段，那时
+        脚本的截图是空图；这里改成等窗口就绪，就绪即继续，到上限才报错。
+        目标为空（通用脚本允许不填进程名）时没有可等的东西，按原样等一小会儿。
+        """
+
+        if not (target.name or target.exe):
+            await asyncio.sleep(2)
+            return
+        await wait_process_window_ready(target, self.script_config.Game.WaitTime)
 
     async def set_general(self) -> None:
         """配置通用脚本运行参数"""

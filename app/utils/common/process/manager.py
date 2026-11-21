@@ -31,6 +31,7 @@ import psutil
 
 from app.utils import (
     IS_ELEVATED,
+    IS_WINDOWS,
     UnsupportedPlatformError,
     get_logger,
     process_platform,
@@ -53,6 +54,17 @@ _RESEEK_TIMEOUT_SECONDS = 5.0
 # 原进程退出最多晚一个日志空闲回调周期（60s）, 留足余量后仍能把运行期间早已
 # 存在的同 exe 无关实例（如用户手动打开的启动器 GUI）挡在改绑之外
 _RESEEK_MAX_SUCCESSOR_AGE_SECONDS = 180.0
+
+# 专项把「启动等待时间」填 0 时的兜底上限（秒）: 0 只表示不等画面, 不等窗口
+# 会让刚拉起的游戏当场被判「窗口未就绪」, 所以窗口还是要等到这个上限
+_WINDOW_READY_FALLBACK_SECONDS = 60.0
+
+# 窗口就绪轮询间隔（秒）: 游戏窗口从首次出现到画出客户区通常在数秒内, 0.5 秒
+# 足够跟手, 也不会让进程扫描占满事件循环
+_WINDOW_READY_POLL_SECONDS = 0.5
+
+# 桌面分身里等待窗口就绪时, 在用户上限之外再留给拉起 worker 进程的余量（秒）
+_DESKTOP_READY_GRACE_SECONDS = 30.0
 
 
 @dataclass
@@ -123,6 +135,123 @@ async def has_process_window(process_name: str) -> bool:
         desktop, "has_process_window", {"name": process_name}
     )
     return code == 0
+
+
+def _is_client_ready(hwnd: int) -> bool:
+    """窗口是否已经能看到内容: 可见且客户区有面积。
+
+    只判「窗口存在」不够: 游戏窗口刚创建时已经可见, 但引擎还在初始化, 客户区
+    仍是 0×0, 这时截图拿到空图会把脚本的识别结果带偏。
+    """
+
+    try:
+        if not window.is_visible(hwnd):
+            return False
+        size = window.get_client_size(hwnd)
+    except Exception:
+        # 轮询期间窗口被销毁属预期状态, 按「还没就绪」处理, 下一轮重新取句柄
+        return False
+    return size is not None and size[0] > 0 and size[1] > 0
+
+
+def _find_ready_window(target: ProcessInfo) -> int | None:
+    """在调用者所在桌面找第一个已就绪的主窗口句柄。"""
+
+    if target.pid is not None:
+        # MAS 自己拉起的进程: 精确到实例, 也不会被同名的旧实例抢先
+        hwnd = get_main_window_handle(target.pid)
+        return hwnd if hwnd is not None and _is_client_ready(hwnd) else None
+
+    for proc in psutil.process_iter(["pid", "name"]):
+        with suppress(psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            if not match_process(proc, target):
+                continue
+            hwnd = get_main_window_handle(proc.pid)
+            if hwnd is not None and _is_client_ready(hwnd):
+                return hwnd
+    return None
+
+
+def _describe_process(target: ProcessInfo) -> str:
+    if target.name is not None:
+        return target.name
+    if target.exe is not None:
+        return Path(target.exe).name
+    if target.pid is not None:
+        return f"PID {target.pid}"
+    return "目标进程"
+
+
+async def wait_process_window_ready(
+    target: ProcessInfo,
+    timeout_seconds: float,
+    *,
+    poll_interval: float = _WINDOW_READY_POLL_SECONDS,
+) -> bool:
+    """等目标进程的游戏窗口真正就绪, 等不到就报错。
+
+    「就绪」指主窗口可见且客户区有面积: 只等进程或只等窗口出现都太早, 引擎还在
+    初始化时窗口已经可见、客户区却仍是 0×0, 脚本此时开跑会拿到空截图。
+
+    Args:
+        target: 目标进程信息, 至少给 ``name`` 或 ``exe`` 之一
+        timeout_seconds: 等待上限（秒）。专项把「启动等待时间」填 0 时按
+            ``_WINDOW_READY_FALLBACK_SECONDS`` 兜底, 因为 0 只表示不等画面稳定,
+            不等窗口会让刚拉起的游戏当场被判未就绪
+        poll_interval: 轮询间隔（秒）
+
+    Returns:
+        找到就绪窗口返回 True; 本平台没有窗口概念、或目标信息为空（调用方没有
+        可等的东西）时返回 False, 两种情况下调用方都照常往下走
+
+    Raises:
+        RuntimeError: 超过上限仍未看到就绪窗口
+    """
+
+    if not IS_WINDOWS or not (
+        target.pid or target.name or target.exe or target.cmdline
+    ):
+        return False
+
+    timeout = timeout_seconds if timeout_seconds > 0 else _WINDOW_READY_FALLBACK_SECONDS
+
+    # 桌面分身里游戏在子会话中, 主会话的进程扫描看不到它; 整体交给分身的 worker
+    # 一次性等完, 避免每轮轮询都拉起一个进程
+    desktop = desktop_process_target.get()
+    if desktop is not None:
+        from app.utils.windows.desktop_session.process_runner import run_desktop_action
+
+        try:
+            async with asyncio.timeout(timeout + _DESKTOP_READY_GRACE_SECONDS):
+                code, _, _ = await run_desktop_action(
+                    desktop,
+                    "wait_process_window_ready",
+                    {
+                        "pid": target.pid,
+                        "name": target.name,
+                        "exe": target.exe,
+                        "timeout": timeout,
+                    },
+                )
+        except TimeoutError:
+            code = 1
+        if code == 0:
+            return True
+        raise RuntimeError(
+            f"游戏窗口在 {timeout:g} 秒内未就绪（{_describe_process(target)}）"
+        )
+
+    deadline = time.monotonic() + timeout
+    while True:
+        if await asyncio.to_thread(_find_ready_window, target) is not None:
+            return True
+        if time.monotonic() >= deadline:
+            break
+        await asyncio.sleep(poll_interval)
+
+    raise RuntimeError(
+        f"游戏窗口在 {timeout:g} 秒内未就绪（{_describe_process(target)}）"
+    )
 
 
 def is_process_alive(process_name: str) -> bool:
