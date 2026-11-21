@@ -19,7 +19,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
 - `tools/embedded/`：宿主与核心包之间**唯一**的接缝（`runner_task`、`runtime_route`、
   `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
   `update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
-  `default_snapshot`、`env_confirm`、`update_session`、`device_config`）。
+  `default_snapshot`、`env_confirm`、`update_session`、`device_config`、`plan_run`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - **设备配置与首任务闸门在 `tools/embedded/device_config.py`**（将来是运行这一块对外的「设备配置」调用，
   三个专项各自的流程都调它）：游戏包名、adb 路径（含「宿主没定下路径时问 Toolkit」，判据由调用方算好
@@ -29,10 +29,30 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   （`app.task.game.BoundEmulator`，参数名 `emulator`）。**不导入任务类、不读脚本配置**，缓存归调用方
   （`MaaFWAdbDeviceState`，关模拟器时 `forget_emulator_launch`，adb 路径不清）。开关模拟器、桌面游戏
   启停、登录与游戏更新钩子、起 worker 都不在这里；ModAVD 的 MaaFramework 版本门槛也不在这里（要借到
-  运行环境才知道版本），留在 `runner_task._check_avd_runtime_version`。`mumu_maafw_adb_extra` /
+  运行环境才知道版本），在 `plan_run`（见下一条）。`mumu_maafw_adb_extra` /
   `ldplayer_maafw_adb_extra` 与 SDK 的 `maafw_adb_extra` 同形，是为以后交给各自的模拟器适配插件准备的
   （ModAVD 已经这样做了）。按 interface 窗口规则匹配窗口仍在 `tools/core/controller_win32`（解析一侧，
   只依赖 `interface`）。
+- **「把一份计划在一台设备上跑完」在 `tools/embedded/plan_run.py`**（将来是运行这一块对外的「跑一份计划」，
+  三个专项各自的流程都调它，默认带全部保护）：整轮硬杀兜底（worker 自停的截止之后再给
+  `_RUN_DEADLINE_GRACE_SECONDS`）、借还运行环境、生成 job、事件通道（建不起来退回 stdout）、起 worker
+  （普通子进程与桌面分身两条路）、喂 job、读 stdout / stderr、处理 worker 事件（`handle_event`）、三份日志的
+  增量复制与打码、原生报错行摘取、附件收集、强杀前的进程树清理、ModAVD 的 MaaFramework 版本门槛、
+  按任务的截止时刻（`task_deadlines`，下发前一刻换算成秒）。
+  **只收普通数据**（`MaaFWPlanRunRequest`）：不接收脚本配置、账号配置或任务类实例，不回头碰调用方的对象。
+  打码的值分两组由调用方算好传入，算法仍在 `option_secrets`：`run_secrets`（`.worker.log`、`.maafw.log`、
+  转发的事件与原生诊断）= 本账号这次的 `collect_run_password_values` 的写法；`project_log_secrets`
+  （`.project.log`）= 它并上整个托管全部账号的密码（`collect_script_password_values`）。输出只有两条路：
+  **事件出口**（一个同步调用的 `MaaFWPlanRunSink`，四种事件：账号日志一行、运行进度点——名字与先后同
+  `run_flow`，由调用方以自己为 owner 上报——、worker 推来的结构化运行记录事件、宿主阶段起止）和**返回值**
+  （`MaaFWPlanRunOutcome`：结果、附件清单、原生报错行、这次用的 agent 命令计划；运行抛异常时同样的东西留在
+  `MaaFWPlanRun` 对象上，调用方在 `finally` 里取）。停止经 `MaaFWPlanRun.stop()`。出口要窄到以后能原样换成
+  「开始 / 取事件和结果 / 停止」：**不要往事件里塞对象、回调或 Future，不要让它读调用方的状态**；新的输出
+  先想清楚是事件还是返回值。任务类 `runner_task` 只剩一层：取配置 → 组装入参 → 调它 → 把事件转成账号日志、
+  运行记录与进度点 → 处理返回值。只和 M9A 有关的「登录交给首任务完成」（`StartupTask`）不在这里：任务类在
+  调用前把首任务标成 `abortRoundMessage`、把登录截止时刻放进 `task_deadlines`，截止已过时 `plan_run` 抛
+  `MaaFWTaskDeadlineExpired`、任务类换成「登录时限已耗尽」；首任务完成后记「已登录」也由任务类按返回的结果做。
+  运行前设置、重试循环、桌面游戏启停、历史保存与通知仍在任务类。
   接缝模块按将来的积木归属分好了，**agent 环境一侧**的接缝（`pool_reconcile`、`env_cache`、
   `env_trial`）只收普通数据（项目路径集合、被替换的版本、待验证的目录），不读脚本配置、不导入
   `embedded_project` / `project_path` 这类项目更新一侧的模块；「哪些项目还在」由项目更新一侧算
@@ -70,10 +90,10 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   都从这里取）、`interface/host_path.path_without_host_venv`、`interface/agent_entry` 的
   `agent_exec_outside_project` 等。建出的计划 `agents` 为空，interface 声明的 agent 放在
   `declaredAgents`（`exclude=True`，不随 job 下发）；`child_exec` 越出项目目录在建计划时就报（与 agent
-  环境拒绝它是同一句）。`runner_task` 借环境时把 `declaredAgents` 交给
+  环境拒绝它是同一句）。`plan_run` 借环境时把 `declaredAgents` 交给
   `borrow_runtime_environment(agents=...)`，agent 环境用 `planner.build_maafw_agent_command_plans`
   算出 `MaaFWRuntimeLease.agent_plans`，`runner/environment.worker_run_plan` 填进下发给 worker 的那份
-  （同时换 `PI_CLIENT_MAAFW_VERSION`）；同一账号这一轮的重试沿用第一次借到的那份（以前建计划时算一次、
+  （同时换 `PI_CLIENT_MAAFW_VERSION`）；同一账号这一轮的重试沿用第一次借到的那份（任务类记下返回的 `agent_plans`、重试时传回；以前建计划时算一次、
   重试从 `base_run_plan` 重建，是同一口径）。隔离 venv 的最终目录仍由 worker 里的 `prepare_agent_envs`
   按确切版本定一次、改写计划，见下面「计划阶段不一定知道最终目录」。
 - **原生库识别库 `tools/core/native/`**（将来的库 `maafw_native`）：只看项目目录，认项目自带的
@@ -96,7 +116,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   对外提供）、日志去向规则、分帧与通道都在这一处，宿主不再复制 runner 的常量（`runner.py` 一导入就
   加载 maa，宿主引不了它）。
   - **job 经 worker 的 stdin 传**、写完就关，不落盘（计划里有解密后的密码选项）。升级前写过的
-    `data/maafw_runner_jobs/*.json` 残留照旧按 1 小时清扫（`runner_task._sweep_legacy_runner_jobs`）。
+    `data/maafw_runner_jobs/*.json` 残留照旧按 1 小时清扫（`plan_run.sweep_legacy_runner_jobs`）。
     worker 仍认一个 job 文件路径参数，只为兜「旧宿主进程拉起新 worker」的升级窗口。
   - **事件走独立通道：Windows 命名管道**（`WorkerEventServer`：只进不出、名字随机、只有一个实例、
     拒绝远程连接），管道名与一次性令牌随 job 交给 worker；worker 按名字打开（`EventChannelClient`），
@@ -122,8 +142,9 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
     （agent 与环境准备转来的输出等）由 worker 的 `_emit` 按 `worker_protocol.forwards_to_ui` 补
     `audience`。不带 `audience` 的旧格式事件和 stdout 上的原生诊断仍按同一个函数判。`level` 目前只随
     事件带着，宿主不据它改界面或 app.log。新增的 runner 日志知道去向的就用 `_log` / `_log_detail`。
-  - 新增事件类型照旧：worker 里 `_emit({"type": ..., ...})`，宿主在 `runner_task` 的 `handle_event`
-    里按 `type` 加一个分支，两条传输都会经过它；宿主不认识的类型忽略。
+  - 新增事件类型照旧：worker 里 `_emit({"type": ..., ...})`，宿主在 `plan_run` 的 `handle_event`
+    里按 `type` 加一个分支，两条传输都会经过它；宿主不认识的类型忽略。调用方要看到的，经事件出口交出去
+    （普通数据的事件类型，见上面 `plan_run` 一条），不要在分支里碰调用方的对象。
 
 ## 项目目录与运行
 
@@ -536,7 +557,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
 - `Run.RunTimeLimit` 是套在单个账号整次 MaaFW 运行上的**硬超时**，与其他专项的"日志停滞超时"
   不同义。截止时刻随 job 交给 worker（`runDeadlineAt`）：到点 worker 自己 post_stop 当前任务、
   截一张 `timeout` 图、把已完成的任务连同 `timedOut=True` 正常回传；宿主的 `asyncio.wait_for`
-  只在其后加一段宽限（`_RUN_DEADLINE_GRACE_SECONDS`）兜底，worker 没停下才强杀，那时才没有截图
+  只在其后加一段宽限（`plan_run._RUN_DEADLINE_GRACE_SECONDS`）兜底，worker 没停下才强杀，那时才没有截图
   和进度。`Run.TaskTimeLimit` / `TaskTimeLimitOverrides` 是单任务时限：只停卡住的那个任务，计划里
   第一个任务或特调声明的关键任务（`abortRoundMessage`）结束本轮，其余记一条失败后继续；继续之前先等
   停止真正生效（`_wait_task_deadline_stop`，上限 `TASK_STOP_SETTLE_SECONDS`），否则下一个任务会被
@@ -749,7 +770,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `LogInfo << VAR(pipeline_override)` 记整份 override（INFO 级，不是只在 DBG 下），覆盖失败时
   `LogError` 再记一遍。**这份文件由框架直接写，MAS 管不了**，里面的密码是原文。MAS 自己的出口对
   **长度至少 4 个字符**（`MIN_REDACTED_SECRET_LENGTH`）的密码值都已打码
-  （`option_secrets.redact_secret_text`，按文本全局替换成「<已隐藏>」）：`runner_task` 复制到
+  （`option_secrets.redact_secret_text`，按文本全局替换成「<已隐藏>」）：`plan_run` 复制到
   历史详情中 `native_log` 角色的原生日志附件、转发的 worker 事件（事件通道与 stdout 退回格式都先解析、
   只打码给人读的文本，见 `_redact_worker_event`）、stdout 上的原生诊断与 stderr、`.worker.log`、pretask 输出。更短的值**不打码**
   （有意为之，本地测试钉住）：一两个字符全局替换会把日志里所有同样的字符都换掉，日志就没法看了。
@@ -762,7 +783,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   前端问题包导出（`frontend/electron/services/maafwIssueReportService.ts`）凭它认定这次的
   `worker_log` / `native_log` 附件已打码才往包里放，项目 `debug/` 目录与没有这一行的旧副本一律不收。
   项目 agent 自己写的日志（M9A `debug/custom/*.log`、MaaEnd `debug/go-service*.log`、MaaFgo
-  `bbcdll/*.log` …）由 `runner_task` 挨着 `.maafw.log` 另存：运行开始记下视图里每个 `.log`
+  `bbcdll/*.log` …）由 `plan_run` 挨着 `.maafw.log` 另存：运行开始记下视图里每个 `.log`
   的大小与开头，收尾只取本次新写的部分拼成临时日志并按 `project_log` 角色归档（每段一行分隔头；
   单个取末尾 2 MB、一次运行总量 8 MB，按行切；按该脚本**全部用户**的密码打码，
   `tools/embedded/project_logs.py`）。`debug/maafw*.log` 不在其中。问题包按附件角色识别，

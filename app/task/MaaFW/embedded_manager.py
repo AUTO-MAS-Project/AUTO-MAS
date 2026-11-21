@@ -668,7 +668,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         """解析 Runtime Pool 路由（root + poolId）。
 
         直接实例化运行池服务，交给 `runtime_route.runtime_pool_route_from_service`
-        解析。`_run_maafw` 缺这两个值会直接拒绝运行。
+        解析。跑计划（`plan_run`）缺这两个值会直接拒绝运行。
 
         **只在工作线程里调**（``asyncio.to_thread``）：构造服务要拿进程级的池锁，
         别的线程正持锁建 base venv / 装解释器 / 回收时会等上几秒到几分钟，放在事件
@@ -1438,7 +1438,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
 
         **任何失败都只记日志 + 通知，不抛出、不改脚本/账号状态**：更新失败
         不该让本来能跑的代理任务跑不了。耗时也天然不计入 ``Run.RunTimeLimit``
-        ——那个限时是 ``runner_task._run_maafw`` 用 ``asyncio.wait_for`` 套在
+        ——那个限时是 ``plan_run.MaaFWPlanRun.run`` 用 ``asyncio.wait_for`` 套在
         单个账号的 MaaFW 运行上的，这里还没建（或已收尾）账号任务。
         """
 

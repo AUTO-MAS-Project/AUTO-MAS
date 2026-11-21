@@ -3,10 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import queue
 import re
 import shlex
-import shutil
 import subprocess
 import tempfile
 import threading
@@ -17,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import partial
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable, Mapping
+from typing import Any, Callable, Mapping
 
 import psutil
 
@@ -63,10 +61,6 @@ from app.task.MaaFW.tools.core.native.project_runtime import (
     ARCHITECTURE_MISMATCH_MARKERS,
     describe_project_runtime_architecture_mismatch,
 )
-from app.task.MaaFW.tools.core.runner.environment import (
-    MaaFWRunnerEnvironment,
-    worker_run_plan,
-)
 from app.task.MaaFW.tools.core.runner.models import (
     MaaFWDeviceConfig,
     MaaFWRunPlan,
@@ -93,9 +87,7 @@ from app.task.MaaFW.tools.core.runner.run_events import (
     CATEGORY_SCRIPT_STOPPED,
     CATEGORY_SIGNAL,
     CATEGORY_USER_STOPPED,
-    RUN_RECORD_EVENT_TYPE,
     STAGE_CLIENT,
-    STAGE_ENVIRONMENT,
     STAGE_PRETASK,
     MaaFWTaskEndEvent,
     MaaFWTaskStartEvent,
@@ -119,21 +111,9 @@ from app.task.MaaFW.tools.core.runner.task_selection import (
 )
 from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     strip_host_python_environment,
-    subprocess_proxy_scope,
-)
-from app.task.MaaFW.tools.core.runtime_pool.installer import (
-    install_process_factory_scope,
 )
 from app.task.MaaFW.tools.core.worker_protocol import (
-    AUDIENCE_UI,
     SIGNAL_SCREENSHOT_KINDS,
-    UI_LOG_MAX_CHARS,
-    WorkerEventServer,
-    encode_job,
-    event_audience,
-    event_channel_supported,
-    forwards_to_ui,
-    strip_ansi,
 )
 from app.task.run_flow import (
     PointState,
@@ -145,7 +125,6 @@ from app.task.run_flow import (
 from app.utils import IS_WINDOWS, UTC4, ProcessInfo, get_logger, power
 from app.utils import display as _utils_display
 from app.utils import game_apk as _utils_game_apk
-from app.utils import io as _utils_io
 from app.utils.common.game_resolution import (
     UnityGameResolutionOverride,
     parse_resolution_option,
@@ -179,7 +158,6 @@ from .device_config import (
     resolve_adb_path,
     resolve_login_adb_path,
     resolve_window_handle,
-    task_start_gate,
 )
 from .embedded_project import resolve_maafw_project_root
 from .flavor import (
@@ -198,10 +176,23 @@ from .option_secrets import (
     log_redaction_notice,
     open_task_snapshot,
     redact_secret_text,
-    secret_byte_pairs,
     secret_log_variants,
 )
-from .project_logs import copy_project_log_delta, snapshot_project_logs
+from .plan_run import (
+    WORKER_STREAM_LINE_LIMIT,
+    MaaFWPlanRun,
+    MaaFWPlanRunEvent,
+    MaaFWPlanRunLog,
+    MaaFWPlanRunPoint,
+    MaaFWPlanRunRecord,
+    MaaFWPlanRunRequest,
+    MaaFWPlanRunStage,
+    MaaFWTaskDeadlineExpired,
+)
+from .plan_run import MaaFWRunTimeoutError as _MaaFWRunTimeoutError
+from .plan_run import clean_framework_output as _clean_framework_output
+from .plan_run import decode_subprocess_output as _decode_subprocess_output
+from .plan_run import terminate_process_snapshot as _terminate_snapshot
 from .project_path import (
     is_project_updating,
     release_project_path,
@@ -210,10 +201,7 @@ from .project_path import (
 )
 from .proxy_quota import proxy_times_used_up, proxy_today
 from .resource_failure import (
-    MAX_NATIVE_ERROR_LINES,
     describe_resource_failure,
-    native_error_excerpt,
-    read_native_error_lines,
 )
 from .run_record import (
     RUN_RECORD_HISTORY_KEY,
@@ -241,23 +229,9 @@ from .update_credentials import resolve_update_proxy_url
 logger = get_logger("MaaFW 插件自动代理")
 
 
-# 任务取消后等环境准备线程收尾的最长时间。Runtime 关机只给后端约 5 秒，
-# 安装线程若还在等 uv 子进程退出，超过这个值就不再等它。
-_PREPARE_ENVIRONMENT_CANCEL_GRACE_SECONDS = 2.0
-# 放弃等待后仍让收尾任务在后台跑完（准备恰好成功时要释放租约），
-# 这里持有强引用，免得任务对象被回收。
-_ABANDONED_PREPARATION_CLEANUPS: set[asyncio.Task[None]] = set()
-
-_SUBPROCESS_OUTPUT_ENCODINGS = ("utf-8", "gbk", "shift_jis", "utf-16")
 _RUN_OVERVIEW_LOG_VALUE_LIMIT = 1200
-# 与日志去向判定（worker_protocol.forwards_to_ui）用同一个上限
-_FRAMEWORK_UI_LOG_MAX_CHARS = UI_LOG_MAX_CHARS
-# worker 输出转发每处理这么多行（事件通道上是这么多条）就让出一次事件循环。取 50 是因为
-# 原生诊断的洪峰约每秒几十行，这个粒度下让出频率约每秒一次，开销可忽略。
-_RELAY_YIELD_EVERY_LINES = 50
-# worker stdout / stderr 单行上限（字节）。更长的一行丢掉、记一句，读取继续。协议事件走独立的
-# 事件通道、按帧传，不受它限制；stdout 上只剩原生诊断，以及事件通道建不起来时退回的旧格式事件。
-_WORKER_STREAM_LINE_LIMIT = 16 * 1024 * 1024
+# 运行前设置的输出同样按 worker 的单行上限读（见 plan_run）
+_WORKER_STREAM_LINE_LIMIT = WORKER_STREAM_LINE_LIMIT
 # 启动/附着游戏后定位其窗口的等待秒数
 WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
 # Game.WaitTime 填 0 时等游戏窗口出现的上限（秒）
@@ -300,13 +274,6 @@ _RERUN_AFTER_SWITCH = (
 )
 # 用户点停止后，等核对 / 清理线程收尾的上限：到点就不等了，预约交给它完成后再放。
 _RELEASE_CHECK_CANCEL_GRACE_SECONDS = 30.0
-# worker 到点自己停任务、截图、回传结果需要一点时间；宿主的硬超时在此之后才到，
-# 只兜 worker 没能停下来的情况（原生层卡死、agent 自定义动作不返回）。
-_RUN_DEADLINE_GRACE_SECONDS = 90.0
-# worker 把结果发回来之后还要收尾（断开 agent、结束 agent 进程）才退出。agent 卡死时
-# 这一步可能拖很久，而结果已经在手里了：给有限时间，到点强杀，别让宽限期把已经
-# 拿到的截图和进度一起作废。
-_WORKER_EXIT_AFTER_RESULT_SECONDS = 30.0
 # 运行前设置（interface pretask）进程退出后，管道里剩下的输出最多再读这么久。pretask 常常
 # 拉起启动器 / 游戏，它们可能继承了 pretask 的输出管道句柄，管道要等它们退出才到 EOF，
 # 所以等待以 pretask 进程退出为准、不等 EOF（见 ``_run_pretasks``）。
@@ -345,54 +312,6 @@ class MaaFWPretaskError(RuntimeError):
     """项目运行前设置失败，文案可直接显示给用户。"""
 
 
-async def _abandon_environment_preparation(
-    prepare_task: "asyncio.Future[Any]",
-    *,
-    release: Any,
-    grace_seconds: float,
-    send_log: Any = None,
-) -> None:
-    """任务取消后有界等待环境准备收尾。
-
-    调用方已把取消令牌置位。准备若在 ``grace_seconds`` 内以异常结束（安装被
-    终止），直接返回；若恰好成功，释放拿到的租约。超过限期就不再等：收尾任务
-    继续在后台跑，准备线程随 uv 子进程被杀而尽快结束。
-    """
-
-    async def release_after_prepare() -> None:
-        try:
-            prepared_after_cancel = await prepare_task
-        except BaseException:
-            return
-        with suppress(Exception):
-            await asyncio.to_thread(release, prepared_after_cancel)
-
-    cleanup_task = asyncio.create_task(release_after_prepare())
-    scope = current_process_scope.get()
-    if scope is not None:
-        scope.retain_worker(cleanup_task)
-        if scope.closed:
-            grace_seconds = 0
-    try:
-        await asyncio.wait_for(asyncio.shield(cleanup_task), timeout=grace_seconds)
-    except asyncio.TimeoutError:
-        _ABANDONED_PREPARATION_CLEANUPS.add(cleanup_task)
-        cleanup_task.add_done_callback(_ABANDONED_PREPARATION_CLEANUPS.discard)
-        if send_log is not None:
-            send_log(
-                "[MaaFW Runner] 环境准备未能在 "
-                f"{grace_seconds:g} 秒内响应取消，已放弃等待"
-            )
-    except asyncio.CancelledError:
-        # 再次被取消：同样不再等，收尾留给后台任务。
-        _ABANDONED_PREPARATION_CLEANUPS.add(cleanup_task)
-        cleanup_task.add_done_callback(_ABANDONED_PREPARATION_CLEANUPS.discard)
-
-
-class _MaaFWRunTimeoutError(RuntimeError):
-    """worker 在宽限期内也没停下，宿主强杀了它。"""
-
-
 class _MaaFWGameUpdateRequired(RuntimeError):
     """特调的游戏更新钩子判定客户端要手动更新：本账号本次判失败，不重试。"""
 
@@ -403,94 +322,6 @@ class _MaaFWWorkstationLocked(RuntimeError):
 
 # 截图和输入都要落在用户的交互式桌面上的控制器。ADB 不受锁屏影响。
 _DESKTOP_CONTROLLER_TYPES = frozenset({"Win32", "Gamepad"})
-
-
-class _FrameworkLogWriter:
-    """在专用线程中按提交顺序写入一次运行的框架日志。"""
-
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        self._queue: queue.Queue[tuple[str, str, str] | None] = queue.Queue()
-        self._ready = threading.Event()
-        self._thread: threading.Thread | None = None
-        self._open_error: Exception | None = None
-        self._write_error: Exception | None = None
-
-    def start(self) -> None:
-        self._thread = threading.Thread(
-            target=self._run,
-            name="maafw-framework-log-writer",
-            daemon=True,
-        )
-        self._thread.start()
-        self._ready.wait()
-        if self._open_error is not None:
-            self.close()
-            raise self._open_error
-
-    def write(self, source: str, message: str) -> None:
-        if self._thread is None:
-            return
-        timestamp = datetime.now().astimezone().strftime("%H:%M:%S.%f")[:-3]
-        try:
-            self._queue.put((timestamp, source, str(message or "")))
-        except Exception:
-            return
-
-    def close(self) -> None:
-        thread = self._thread
-        if thread is None:
-            return
-        self._queue.join()
-        self._queue.put(None)
-        thread.join()
-        self._thread = None
-        if self._write_error is not None:
-            raise RuntimeError(
-                f"MaaFW 框架日志写入不完整: {self._write_error}"
-            ) from self._write_error
-
-    def _run(self) -> None:
-        log_file: Any | None = None
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            log_file = self.path.open(
-                "a",
-                encoding="utf-8",
-                buffering=1,
-            )
-        except Exception as exc:
-            self._open_error = exc
-            self._ready.set()
-            return
-
-        self._ready.set()
-        try:
-            while True:
-                item = self._queue.get()
-                try:
-                    if item is None:
-                        return
-                    timestamp, source, message = item
-                    cleaned = _clean_framework_output(message)
-                    for line in cleaned.splitlines() or [""]:
-                        try:
-                            log_file.write(f"[{timestamp}] [{source}] {line}\n")
-                        except Exception as exc:
-                            if self._write_error is None:
-                                self._write_error = exc
-                            continue
-                except Exception as exc:
-                    if self._write_error is None:
-                        self._write_error = exc
-                finally:
-                    self._queue.task_done()
-        finally:
-            try:
-                log_file.close()
-            except Exception as exc:
-                if self._write_error is None:
-                    self._write_error = exc
 
 
 class MaaFWPluginAutoProxyTask(TaskExecuteBase):
@@ -579,7 +410,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # Game.WaitTime（加载页和动态标题都一直在动，像素判断分不出两者）。桌面路径始终为假。
         self.game_start_disk_quiet = False
         self.project_lock_key: str | None = None
-        self.runner_process: asyncio.subprocess.Process | None = None
+        # 正在跑的那一份计划（plan_run）：停止时经它结束 worker
+        self._plan_run: MaaFWPlanRun | None = None
         self.pretask_process: asyncio.subprocess.Process | None = None
         # 正在进行的运行前设置清理（见 _terminate_pretask_process）
         self.pretask_cleanup: asyncio.Task[None] | None = None
@@ -614,9 +446,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._completed_this_run: list[str] = []
         # 已完成过、但在队列里有多份同名的任务名：重试时不剔、全部重跑，开头写一行说明
         self._retry_rerun_duplicates: list[str] = []
-        # 本次尝试收到的原生 ERR 行（worker stdout / stderr，``[json=`` 起已丢）与本次运行的
-        # 原生日志副本里的 ERR 行：资源包加载失败时据此说出具体原因，后者优先（见 resource_failure）。
-        self._stdout_native_errors: list[str] = []
+        # 本次尝试的原生 ERR 行（plan_run 返回：原生日志副本里的优先，没有就用 worker stdout /
+        # stderr 上的）：资源包加载失败时据此说出具体原因（见 resource_failure）。
         self._attempt_native_errors: list[str] = []
         # 资源包加载失败后的发行包核对每个账号每次运行只做一次；清理过就额外再跑一次（不占重试
         # 次数），``_extra_attempts`` 记多出来的几次。
@@ -1627,601 +1458,108 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             else {}
         )
 
-    def _check_avd_runtime_version(self, maafw_version: str | None) -> None:
-        """ModAVD 要 AVDExtras：运行环境的 MaaFramework 低于 5.7.0 时明确报错，不让它静默回落。"""
-        profile = self._adb_state.profile
-        if profile is None or profile.emulator_type != "avd":
-            return
-        supported = self.emulator_manager.supports_maafw_adb_extra_version(
-            maafw_version
-        )
-        if supported is False:
-            raise RuntimeError(
-                f"项目使用的 MaaFramework {maafw_version} 低于 5.7.0，不支持 ModAVD 的截图通道"
-                "（AVDExtras）；请把项目更新到带 MaaFramework 5.7.0 以上的版本"
-            )
-        if supported is None:
-            self._append_log(
-                "认不出项目使用的 MaaFramework 版本，无法预先确认是否支持 ModAVD 截图通道"
-                "（AVDExtras，5.7.0 起）；不支持时连接会直接失败"
-            )
-
     async def _run_maafw(self, device_config: MaaFWDeviceConfig) -> MaaFWRunResult:
+        """取配置、组装入参，交给 ``plan_run`` 跑这份计划；事件转成账号日志、运行记录与进度点。"""
+
         plan = self.run_plan
         if plan is None:
             raise RuntimeError("MaaFW 运行计划尚未初始化")
-        limit_minutes = self.script_config.Run.RunTimeLimit
-        timeout = limit_minutes * 60
         task_limit_seconds, task_limit_overrides = task_time_limits_from_config(
             self.script_config
         )
-        loop_guard = loop_guard_from_config(self.script_config)
-        # 截止时刻交给 worker：到点它自己停任务、截图、把已完成的任务带回来。
-        # 宿主这层只在 worker 没停下时才强杀，那时既没有截图也没有进度。
-        run_deadline_at = time.time() + timeout
-        try:
-            return await asyncio.wait_for(
-                self._run_maafw_worker(
-                    device_config,
-                    run_deadline_at=run_deadline_at,
-                    task_time_limit_seconds=task_limit_seconds,
-                    task_time_limit_overrides=task_limit_overrides,
-                    loop_guard=loop_guard,
-                ),
-                timeout=timeout + _RUN_DEADLINE_GRACE_SECONDS,
+        # 特调把登录交给首任务完成（StartupTask）：首任务失败即结束本轮，时限截到剩余的登录
+        # 时限——截止时刻交给 plan_run，在下发 job 前一刻换算成秒（借环境的耗时照样扣掉）。
+        startup = self._startup_task
+        task_deadlines: dict[str, float] = {}
+        if startup is not None:
+            if not plan.tasks or plan.tasks[0].entry != startup.entry:
+                raise MaaFWLoginRequired("启动失败：运行计划缺少公开启动任务")
+            first = plan.tasks[0]
+            plan = plan.model_copy(
+                update={
+                    "tasks": [
+                        first.model_copy(update={"abortRoundMessage": "启动游戏失败"}),
+                        *plan.tasks[1:],
+                    ]
+                }
             )
-        except asyncio.TimeoutError as exc:
-            await self._terminate_runner_process()
-            raise _MaaFWRunTimeoutError(
-                f"MaaFW 任务运行超时（限制 {limit_minutes} 分钟，worker 未能自行停止，已强制结束）"
-            ) from exc
-        except asyncio.CancelledError:
-            await self._terminate_runner_process()
-            raise
-
-    async def _run_maafw_worker(
-        self,
-        device_config: MaaFWDeviceConfig,
-        *,
-        run_deadline_at: float | None = None,
-        task_time_limit_seconds: int = 0,
-        task_time_limit_overrides: dict[str, int] | None = None,
-        loop_guard: bool = False,
-    ) -> MaaFWRunResult:
-        plan = self.run_plan
-        if plan is None:
-            raise RuntimeError("MaaFW 运行计划尚未初始化")
-
-        service = MaaFWRunnerService()
-        loop = asyncio.get_running_loop()
-        runtime_pool_root = self.maafw_runtime_pool_root
-        runtime_pool_id = str(self.maafw_runtime_pool_id or "").strip()
-        if runtime_pool_root is None or not runtime_pool_id:
-            raise RuntimeError(
-                "MaaFW 运行任务缺少由 maafw.runtime_pool.v1 注入的 root/poolId"
-            )
-        native_debug_log_path = self.project_path / "debug" / "maafw.log"
-        (
-            native_debug_log_offset,
-            native_debug_log_rotations,
-        ) = await asyncio.to_thread(
-            _snapshot_native_debug_log_state, native_debug_log_path
-        )
-        # 项目 agent 自己写的日志（debug/custom、go-service …）同样记下起点，收尾时只另存本次新写的。
-        try:
-            project_log_marks = await asyncio.to_thread(
-                snapshot_project_logs, self.project_path
-            )
-        except Exception as exc:
-            project_log_marks = {}
-            self._append_log(f"MaaFW 项目日志起点记录失败，本次按全部新写处理: {exc}")
-
-        def send_runner_log(message: str) -> None:
-            loop.call_soon_threadsafe(self._append_log, message)
-
-        # 密码字段（PI v2.10.0）的原文会随 override 进原生日志与 worker 输出：复制、转发、
-        # 摘录失败原因前都换成占位（协议要求不得把原文写进日志）。
+            task_deadlines[first.name] = startup.deadline
         secrets = self._secret_log_variants()
-        self._stdout_native_errors = []
-        self._attempt_native_errors = []
-        prepare_cancel_event = threading.Event()
-        # 与运行前更新 / 预检同一份解析：托管级 Update.ProxyAddress 优先，留空跟随
-        # 全局。运行时装依赖也走它，否则「更新能走代理、真跑时装不上」。
-        proxy_url = resolve_update_proxy_url(self.script_config)
-        process_scope = current_process_scope.get()
-
-        def _prepare_environment_with_proxy() -> MaaFWRunnerEnvironment:
-            # 代理作用域按线程登记，要在 to_thread 的目标函数体内进入：池的 uv /
-            # pip 子进程、以及这里派生出的 worker 环境（worker 内的 agent pip 与
-            # 项目 agent 再从它继承）都从 strip_host_python_environment 拿到代理变量。
-            with (
-                subprocess_proxy_scope(proxy_url),
-                install_process_factory_scope(
-                    process_scope.popen if process_scope is not None else None
-                ),
-            ):
-                return service.prepare_environment(
-                    self.project_path,
-                    runtime_pool_root=runtime_pool_root,
-                    runtime_pool_id=runtime_pool_id,
-                    lease_owner=f"automas-script-maafw:{self.script_info.script_id}",
-                    lease_ttl_seconds=max(
-                        600, int(self.script_config.Run.RunTimeLimit or 120) * 60 + 600
-                    ),
-                    import_paths=[Config.source_path],
-                    send_log=send_runner_log,
-                    cancel_event=prepare_cancel_event,
-                    # agent 命令计划由 agent 环境在借环境时按声明算（见 _worker_agent_plans）
-                    agents=plan.declaredAgents,
-                )
-
-        prepare_environment_task = asyncio.create_task(
-            process_scope.run_update_worker(
-                _prepare_environment_with_proxy,
-                cancel=prepare_cancel_event.set,
-                release_cancelled=service.release_environment,
-            )
-            if process_scope is not None
-            else asyncio.to_thread(_prepare_environment_with_proxy)
+        profile = self._adb_state.profile
+        request = MaaFWPlanRunRequest(
+            project_path=self.project_path,
+            plan=plan,
+            device_config=device_config,
+            runtime_pool_root=self.maafw_runtime_pool_root,
+            runtime_pool_id=str(self.maafw_runtime_pool_id or ""),
+            lease_owner=f"automas-script-maafw:{self.script_info.script_id}",
+            run_time_limit_minutes=self.script_config.Run.RunTimeLimit,
+            attachment_root=Path(self._history_temp.name),
+            task_time_limit_seconds=task_limit_seconds,
+            task_time_limit_overrides=task_limit_overrides,
+            task_deadlines=task_deadlines,
+            loop_guard=loop_guard_from_config(self.script_config),
+            run_secrets=secrets,
+            project_log_secrets=self._project_log_secret_variants(secrets),
+            redaction_notice=self._log_redaction_notice(),
+            game_started_at=self.game_started_at,
+            game_start_disk_quiet=self.game_start_disk_quiet,
+            game_wait_seconds=self.script_config.Game.WaitTime,
+            import_paths=[Config.source_path],
+            # 与运行前更新 / 预检同一份解析：托管级 Update.ProxyAddress 优先，留空跟随全局
+            proxy_url=resolve_update_proxy_url(self.script_config),
+            agent_plans=self._worker_agent_plans,
+            extra_env=await self._script_adb_env(),
+            desktop=desktop_process_target.get(),
+            avd_emulator=(
+                self.emulator_manager
+                if profile is not None and profile.emulator_type == "avd"
+                else None
+            ),
         )
-        try:
-            with self._run_record.stage(STAGE_ENVIRONMENT):
-                runner_environment = await asyncio.shield(prepare_environment_task)
-        except asyncio.CancelledError:
-            # 取消要传进安装线程：置位令牌后正在跑的 uv/pip 子进程会被终止。
-            # 然后只等有限时间——后端关机时 Runtime 只给几秒，等不到就放弃，
-            # 租约释放交给后台任务或 TTL。
-            prepare_cancel_event.set()
-            await _abandon_environment_preparation(
-                prepare_environment_task,
-                release=service.release_environment,
-                grace_seconds=_PREPARE_ENVIRONMENT_CANCEL_GRACE_SECONDS,
-                send_log=self._append_log,
-            )
-            raise
+        run = MaaFWPlanRun(request, self._on_plan_run_event)
+        self._plan_run = run
         attempt_key = id(self.cur_user_log)
-        history_dir = Path(self._history_temp.name) / uuid.uuid4().hex
-        await asyncio.to_thread(history_dir.mkdir, parents=True, exist_ok=True)
-        history_stamp = "run"
-        worker_id: str | None = None
-        event_server: WorkerEventServer | None = None
-        # 事件通道建不起来时的原因：worker.log 建好后写进去（这次运行退回 stdout 传事件）
-        event_server_failure: str | None = None
         try:
-            self._check_avd_runtime_version(runner_environment.maafw_version)
-            # 同一账号这一轮只认第一次借环境时算出的 agent 命令计划，重试沿用（以前在建计划
-            # 时算一次、重试从 base_run_plan 重建也是同一份）。隔离 venv 的最终目录照旧由
-            # worker 准备 agent 环境时按确切版本再定一次。
-            if self._worker_agent_plans is None:
-                self._worker_agent_plans = runner_environment.agent_plans
-            runner_plan = worker_run_plan(
-                plan, runner_environment, agent_plans=self._worker_agent_plans
-            )
-            start_gate = task_start_gate(
-                started_at=self.game_started_at,
-                disk_quiet=self.game_start_disk_quiet,
-                wait_seconds=self.script_config.Game.WaitTime,
-                log=self._append_log,
-            )
-            payload = service.create_job_payload(
-                runner_plan,
-                device_config,
-                # 失败截图和本次尝试的 .log / .maafw.log 放一起。
-                failure_screenshot_dir=history_dir,
-                failure_screenshot_prefix=history_stamp,
-                task_start_not_before=start_gate.not_before,
-                task_start_gate_mode=start_gate.mode,
-                run_deadline_at=run_deadline_at,
-                task_time_limit_seconds=task_time_limit_seconds,
-                task_time_limit_overrides=task_time_limit_overrides,
-                loop_guard=loop_guard,
-            )
-            # job 经 worker 的 stdin 交过去、不再落盘；升级前的版本写过 job 文件，宿主与 worker
-            # 一起被硬杀时会留在盘上（里面可能有解密后的密码选项），照旧清掉。
-            await asyncio.to_thread(_sweep_legacy_runner_jobs)
-            # 事件（日志、结果）走独立通道（Windows 命名管道）；建不起来就让 worker 照旧写
-            # stdout，这次运行不受影响。没有这条通道的平台直接用 stdout，不记。
-            if event_channel_supported():
-                try:
-                    event_server = WorkerEventServer.open()
-                except OSError as exc:
-                    event_server_failure = (
-                        f"MaaFW 事件通道建立失败（{exc!r}），本次运行事件改走标准输出"
-                    )
-                    logger.warning(event_server_failure)
-            startup = self._startup_task
-            if startup is not None:
-                if not plan.tasks or plan.tasks[0].entry != startup.entry:
-                    raise MaaFWLoginRequired("启动失败：运行计划缺少公开启动任务")
-                remaining = startup.deadline - time.monotonic()
-                if remaining <= 0:
-                    raise MaaFWLoginRequired("启动失败：登录时限已耗尽")
-                payload.plan.tasks[0] = payload.plan.tasks[0].model_copy(
-                    update={"abortRoundMessage": "启动游戏失败"}
-                )
-                task_name = plan.tasks[0].name
-                overrides = dict(payload.taskTimeLimitOverrides or {})
-                configured = overrides.get(task_name, payload.taskTimeLimitSeconds or 0)
-                limit = max(1, int(remaining))
-                overrides[task_name] = min(configured, limit) if configured else limit
-                payload.taskTimeLimitOverrides = overrides
-            job_bytes = encode_job(
-                payload,
-                event_channel=event_server.spec if event_server is not None else None,
-            )
-            # ModAVD 实例：worker 及其 agent、adb 子进程的 adb 走脚本专用 server。
-            # 另拷一份，不改运行环境对象里那份（可能被缓存复用）。agent pip 约束文件的
-            # 目录已由借运行环境时带进 runner_environment.env（见 agent_env.runtime_lease）。
-            script_env = await self._script_adb_env()
-            worker_env = {
-                **runner_environment.env,
-                **script_env,
-            }
-            if (desktop := desktop_process_target.get()) is not None:
-                from app.utils.windows.desktop_session.process_runner import (
-                    launch_desktop_process,
-                )
-
-                scope = current_process_scope.get()
-                if scope is not None:
-                    scope.ensure_can_start()
-                with operation(self, "start_script"):
-                    process = await launch_desktop_process(
-                        desktop,
-                        argv=[
-                            str(runner_environment.python_executable),
-                            "-m",
-                            "app.task.MaaFW.tools.core.runner.worker",
-                        ],
-                        cwd=Path.cwd(),
-                        env=worker_env,
-                        stdin=job_bytes,
-                        stream_limit=_WORKER_STREAM_LINE_LIMIT,
-                    )
-                if scope is not None:
-                    scope.retain_desktop_process(process.stop)
-            else:
-                with operation(self, "start_script"):
-                    process = await create_subprocess(
-                        str(runner_environment.python_executable),
-                        "-m",
-                        "app.task.MaaFW.tools.core.runner.worker",
-                        cwd=str(Path.cwd()),
-                        env=worker_env,
-                        stdin=asyncio.subprocess.PIPE,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                        # 默认 64 KiB：agent 原样转发的输出、原生 ERROR 日志里整份 pipeline JSON
-                        # 都可能更长，超了 readline 就抛错、读取任务退出，worker 写满管道后挂到硬超时
-                        limit=_WORKER_STREAM_LINE_LIMIT,
-                    )
-            worker_id = service.register_worker(process)
-        except BaseException:
-            if event_server is not None:
-                event_server.close()
-            with suppress(Exception):
-                await asyncio.to_thread(service.release_environment, runner_environment)
-            service.unregister_worker(worker_id)
-            raise
-        self.runner_process = process
-        point(self, "run")
-        result_payload: dict[str, Any] | None = None
-        result_received = asyncio.Event()
-        stderr_lines: list[str] = []
-        # 两份文件：``.worker.log`` 是 MAS 自己这一侧（runner 事件、worker 的
-        # stdout/stderr），``.maafw.log`` 是项目 ``debug/maafw.log`` 本次运行部分的
-        # 原样副本——不加前缀、不改编码，和脚本作者自己用 MFAA 跑出来的一模一样，
-        # 出问题可以直接转交。以前两者混在一个文件里、原生每行还带一个抄写时刻，
-        # 脚本作者拿到手第一反应是"这日志不对"。
-        worker_log_path = history_dir / f"{history_stamp}.worker.log"
-        native_log_path = history_dir / f"{history_stamp}.maafw.log"
-        framework_log_writer: _FrameworkLogWriter | None = None
-
-        try:
-            writer = _FrameworkLogWriter(worker_log_path)
-            await asyncio.to_thread(writer.start)
-            framework_log_writer = writer
-            # 临时目录收尾就删，文件以附件归档进历史记录：路径只进后端日志，不进账号日志
-            logger.info(f"MaaFW worker 日志写入中: {worker_log_path}")
-        except Exception as exc:
-            if framework_log_writer is not None:
-                with suppress(Exception):
-                    await asyncio.to_thread(framework_log_writer.close)
-                framework_log_writer = None
-            self._append_log(f"MaaFW worker 日志创建失败: {exc}")
-        except BaseException:
-            # 在这里被停止：事件通道还没交给读取任务、下面的收尾也走不到，先关掉它（worker
-            # 由 _run_maafw 结束）。不关的话管道句柄留在宿主里一直不释放。
-            if event_server is not None:
-                event_server.close()
-            raise
-
-        def write_framework_log(source: str, message: str) -> None:
-            if framework_log_writer is None:
-                return
-            framework_log_writer.write(source, message)
-
-        # 项目有 password 输入框时第一行写打码说明：问题包导出凭它判断这份日志能不能往外发
-        redaction_notice = self._log_redaction_notice()
-        if redaction_notice:
-            write_framework_log("runner", redaction_notice)
-        if event_server_failure:
-            write_framework_log("runner", event_server_failure)
-
-        def handle_event(event: dict[str, Any]) -> None:
-            """worker 发来的一个协议事件（事件通道或 stdout 退回格式，已打码），按类型分发。"""
-
-            nonlocal result_payload
-            event_type = event.get("type")
-            if event_type == "log":
-                message = str(event.get("message") or "")
-                write_framework_log("runner", message)
-                # 去向由 worker 定好（audience）；旧格式事件不带，按原来的文案规则判
-                if event_audience(event) == AUDIENCE_UI:
-                    self._append_log(_framework_ui_message(message))
-            elif event_type == "result" and isinstance(event.get("data"), dict):
-                result_payload = event["data"]
-                result_received.set()
-            elif event_type == RUN_RECORD_EVENT_TYPE:
-                # 结构化运行记录：只进专项记录，不进日志
-                self._on_run_record_event(event.get("data"))
-            elif event_type == "error":
-                message = str(event.get("message") or "")
-                write_framework_log("runner-error", message)
-                # Keep the complete error in the per-run framework log,
-                # but apply the same native-noise filter as ordinary
-                # framework diagnostics.  Worker error events can contain
-                # an entire native parser/backtrace blob and must not
-                # flood the user-facing task log.
-                if event_audience(event) == AUDIENCE_UI:
-                    self._append_log(_framework_ui_message(message))
-
-        async def read_events() -> None:
-            """读事件通道：worker 打开管道、核对令牌后逐条分发；读到 EOF（worker 关闭管道或已退出、
-            已写进去的都读完了）时结束。"""
-
-            if event_server is None:
-                return
-            processed = 0
-            try:
-                async for event in event_server.events(
-                    lambda note: write_framework_log("runner", note)
-                ):
-                    processed += 1
-                    if processed % _RELAY_YIELD_EVERY_LINES == 0:
-                        await asyncio.sleep(0)  # 同 read_stdout：别独占事件循环
-                    handle_event(_redact_worker_event(event, secrets))
-            finally:
-                # 不再读了就立刻关掉：worker 再写会出错、改走 stdout，不会对着没人读的管道卡住
-                event_server.close()
-
-        async def feed_job() -> None:
-            """把 job 写进 worker 的 stdin 再关掉；worker 先退出时写不进去，记一句就算了。"""
-
-            stdin = process.stdin
-            if stdin is None:
-                return
-            try:
-                stdin.write(job_bytes)
-                await stdin.drain()
-            except (OSError, RuntimeError) as exc:
-                write_framework_log(
-                    "runner", f"MaaFW job 写入 worker 标准输入失败: {exc!r}"
-                )
-            finally:
-                with suppress(Exception):
-                    stdin.close()
-
-        async def read_stdout() -> None:
-            if process.stdout is None:
-                return
-            processed = 0
-            async for raw_line in _iter_stream_lines(
-                process.stdout,
-                lambda: write_framework_log("worker-stdout", _STREAM_OVERRUN_NOTE),
-            ):
-                # StreamReader 缓冲里有数据时 `async for` 不会挂起，会一路取到
-                # 缓冲耗尽为止。MaaFramework 的原生诊断动辄每秒几十行、单次运行
-                # 几千行，这个循环于是能连续独占事件循环数十秒——真机上表现为
-                # 界面日志停更、API 不响应、点了停止没反应，等这波处理完才一起
-                # 恢复。定期显式让出，代价可以忽略。
-                processed += 1
-                if processed % _RELAY_YIELD_EVERY_LINES == 0:
-                    await asyncio.sleep(0)
-                # Worker protocol events are UTF-8 JSON, while MaaFramework
-                # native diagnostics may be written directly to stdout using
-                # the Windows ACP/GBK code page.  Decode protocol lines
-                # strictly first and use the existing multi-codec fallback
-                # for native text so Chinese diagnostics are not persisted as
-                # replacement characters.
-                try:
-                    line = raw_line.decode("utf-8", errors="strict").strip()
-                except UnicodeDecodeError:
-                    line = _decode_subprocess_output(raw_line).strip()
-                if not line:
-                    continue
-                # 事件通道连上后 stdout 只剩原生诊断；通道建不起来、或中途断了，worker 把
-                # 协议事件照旧一行一个 JSON 写在这里。
-                event = _parse_worker_protocol_line(line, secrets)
-                if event is None:
-                    line = redact_secret_text(line, secrets)
-                    write_framework_log("worker-stdout", line)
-                    self._note_native_error(line)
-                    if _should_forward_framework_log(line):
-                        self._append_log(_framework_ui_message(line))
-                    continue
-                handle_event(event)
-
-        async def read_stderr() -> None:
-            if process.stderr is None:
-                return
-            processed = 0
-            async for raw_line in _iter_stream_lines(
-                process.stderr,
-                lambda: write_framework_log("worker-stderr", _STREAM_OVERRUN_NOTE),
-            ):
-                processed += 1
-                if processed % _RELAY_YIELD_EVERY_LINES == 0:
-                    await asyncio.sleep(0)  # 同 read_stdout：别独占事件循环
-                line = _clean_framework_output(
-                    _decode_subprocess_output(raw_line)
-                ).strip()
-                if not line:
-                    continue
-                line = redact_secret_text(line, secrets)
-                write_framework_log("worker-stderr", line)
-                self._note_native_error(line)
-                stderr_lines.append(line)
-                del stderr_lines[:-20]
-
-        feed_task = asyncio.create_task(feed_job())
-        events_task = asyncio.create_task(read_events())
-        stdout_task = asyncio.create_task(read_stdout())
-        stderr_task = asyncio.create_task(read_stderr())
-
-        async def drain_readers(*, propagate_errors: bool) -> None:
-            # worker 已经退出（或已被结束）：stdin 不用再写。事件通道把管道里剩下的读完、读到
-            # EOF 就结束（写的一方没了，已写进去的照样读得出）；worker 从没打开过管道的话立刻
-            # 结束，不再等。第二次调用时读取任务都已结束，这里不会再等。
-            feed_task.cancel()
-            if event_server is not None:
-                event_server.worker_exited()
-            _, pending_readers = await asyncio.wait(
-                (stdout_task, stderr_task, events_task),
-                timeout=5.0,
-            )
-            for task in pending_readers:
-                task.cancel()
-            reader_results = await asyncio.gather(
-                stdout_task,
-                stderr_task,
-                events_task,
-                return_exceptions=True,
-            )
-            await asyncio.gather(feed_task, return_exceptions=True)
-            if propagate_errors:
-                for result in reader_results:
-                    if isinstance(result, Exception):
-                        raise result
-
-        try:
-            returncode = await self._wait_worker_exit(process, result_received)
-            await drain_readers(propagate_errors=True)
+            outcome = await run.run()
+        except MaaFWTaskDeadlineExpired:
+            raise MaaFWLoginRequired("启动失败：登录时限已耗尽") from None
         finally:
-            if process.returncode is None:
-                await self._terminate_runner_process()
-            elif self.runner_process is process:
-                self.runner_process = None
-            await drain_readers(propagate_errors=False)
-            if event_server is not None:
-                event_server.close()
-            if framework_log_writer is not None:
-                try:
-                    await asyncio.to_thread(framework_log_writer.close)
-                except Exception as exc:
-                    self._append_log(f"MaaFW worker 日志保存不完整: {exc}")
-            try:
-                copied = await asyncio.to_thread(
-                    _copy_native_debug_log_delta,
-                    native_debug_log_path,
-                    native_debug_log_offset,
-                    native_debug_log_rotations,
-                    native_log_path,
-                    secrets,
+            if self._plan_run is run:
+                self._plan_run = None
+            # 附件、原生报错行与 agent 命令计划在运行抛异常时同样要留下
+            if run.attachments:
+                self._history_attachments.setdefault(attempt_key, []).extend(
+                    HistoryAttachmentInput(
+                        path=item.path,
+                        kind=item.kind,
+                        role=item.role,
+                        display_name=item.display_name,
+                    )
+                    for item in run.attachments
                 )
-            except Exception as exc:
-                self._append_log(f"MaaFW 原生日志复制失败: {exc}")
-            else:
-                if copied:
-                    logger.info(f"MaaFW 原生日志已保存: {native_log_path}")
-            # 资源包加载失败时找原因用：原生日志副本是 UTF-8、已打码，优先用它；worker stdout
-            # 里同一行按控制台代码页转过，非 ASCII 的节点名 / 路径可能已成了「?」。
-            native_errors = (
-                await asyncio.to_thread(read_native_error_lines, native_log_path)
-                if native_log_path.is_file()
-                else []
-            )
-            self._attempt_native_errors = native_errors or list(
-                self._stdout_native_errors
-            )
-            # 项目自己写的日志本次新增的部分：与 .maafw.log 同目录同前缀，按脚本全部用户的密码打码。
-            project_log_path = history_dir / f"{history_stamp}.project.log"
-            try:
-                project_logs = await asyncio.to_thread(
-                    copy_project_log_delta,
-                    self.project_path,
-                    project_log_marks,
-                    project_log_path,
-                    secrets=self._project_log_secret_variants(secrets),
-                )
-            except Exception as exc:
-                self._append_log(f"MaaFW 项目日志保存失败: {exc}")
-            else:
-                if project_logs.segments:
-                    logger.info(
-                        f"MaaFW 项目日志已保存: {project_log_path}"
-                        f"（{len(project_logs.segments)} 个文件，"
-                        f"{project_logs.written_bytes} 字节）"
-                    )
-            attachments = self._history_attachments.setdefault(attempt_key, [])
-            for path, kind, role in (
-                (worker_log_path, "log", "worker_log"),
-                (native_log_path, "log", "native_log"),
-                (project_log_path, "log", "project_log"),
-            ):
-                if path.is_file():
-                    attachments.append(
-                        HistoryAttachmentInput(
-                            path=path, kind=kind, role=role, display_name=path.name
-                        )
-                    )
-            for image in history_dir.iterdir():
-                if image.is_file() and image.suffix.lower() in {
-                    ".png",
-                    ".jpg",
-                    ".jpeg",
-                    ".webp",
-                }:
-                    attachments.append(
-                        HistoryAttachmentInput(
-                            path=image,
-                            kind="image",
-                            role="failure_screenshot",
-                            display_name=image.name,
-                        )
-                    )
-            with suppress(Exception):
-                await asyncio.to_thread(service.release_environment, runner_environment)
-            service.unregister_worker(worker_id)
+            self._attempt_native_errors = list(run.native_errors)
+            # 同一账号这一轮只认第一次借环境时算出的 agent 命令计划，重试沿用
+            if self._worker_agent_plans is None and run.agent_plans is not None:
+                self._worker_agent_plans = run.agent_plans
+        result = outcome.result
+        if startup is not None and plan.tasks[0].name in result.completedTasks:
+            # 首任务（登录）完成才记「已登录」
+            self._login_checked = True
+            self._startup_task = None
+        return result
 
-        if result_payload is not None:
-            result = MaaFWRunResult.model_validate(result_payload)
-            if startup is not None and plan.tasks[0].name in result.completedTasks:
-                self._login_checked = True
-                self._startup_task = None
-            return result
-        message = f"MaaFW runner worker exited without result: {returncode}"
-        point(self, "run", state="failed")
-        detail = "\n".join(stderr_lines[-5:]).strip()
-        if detail and _should_forward_framework_log(detail):
-            message += f": {_framework_ui_message(detail)}"
-        elif detail:
-            # Native stderr is already preserved in the per-run framework log.
-            # Do not copy parser/backtrace blobs into the normal task log when
-            # the worker exits without a protocol result.
-            message += (
-                ": MaaFW worker 未返回任务结果，完整输出已保存到本次运行的 .worker.log"
-            )
-        raise RuntimeError(message)
+    def _on_plan_run_event(self, event: MaaFWPlanRunEvent) -> None:
+        """``plan_run`` 的事件出口：账号日志、进度点（以本任务为 owner）、运行记录。"""
 
-    def _note_native_error(self, line: str) -> None:
-        """worker 转来的一行是原生 ERR 行就留下（``[json=`` 起丢掉、有条数上限）；续行不要。"""
-
-        excerpt = native_error_excerpt(line)
-        if excerpt is None:
-            return
-        self._stdout_native_errors.append(excerpt)
-        del self._stdout_native_errors[:-MAX_NATIVE_ERROR_LINES]
+        if isinstance(event, MaaFWPlanRunLog):
+            self._append_log(event.message)
+        elif isinstance(event, MaaFWPlanRunPoint):
+            point(self, event.stage, state=event.state, key=event.key)
+        elif isinstance(event, MaaFWPlanRunRecord):
+            self._on_run_record_event(event.data)
+        elif isinstance(event, MaaFWPlanRunStage):
+            self._run_record.mark_stage(event.stage, event.ok)
 
     def _run_password_values(self) -> list[str]:
         """本次运行要打码的密码值：计划里 password 字段的值 + 该账号快照里全部密文解开的值
@@ -2263,43 +1601,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self.run_plan is None or self.interface_model is None:
             return None
         return log_redaction_notice(self.interface_model, self._run_password_values())
-
-    async def _wait_worker_exit(
-        self,
-        process: asyncio.subprocess.Process,
-        result_received: asyncio.Event,
-    ) -> int | None:
-        """等 worker 退出；结果已经回传的话只再等有限时间。"""
-
-        async def wait_exit():
-            if desktop_process_target.get() is not None:
-                code, _, _ = await process.wait()
-                return code
-            return await process.wait()
-
-        exit_task = asyncio.ensure_future(wait_exit())
-        result_task = asyncio.ensure_future(result_received.wait())
-        try:
-            await asyncio.wait(
-                {exit_task, result_task}, return_when=asyncio.FIRST_COMPLETED
-            )
-            if exit_task.done():
-                return exit_task.result()
-            try:
-                return await asyncio.wait_for(
-                    asyncio.shield(exit_task),
-                    timeout=_WORKER_EXIT_AFTER_RESULT_SECONDS,
-                )
-            except asyncio.TimeoutError:
-                self._append_log(
-                    "MaaFW worker 已回传结果但迟迟不退出，强制结束以免拖过时限"
-                )
-                await self._terminate_runner_process()
-                return process.returncode
-        finally:
-            for task in (exit_task, result_task):
-                if not task.done():
-                    task.cancel()
 
     async def _shutdown_runner(self) -> None:
         await self._terminate_pretask_process()
@@ -2351,7 +1652,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         # 运行前设置没有自己的时限设置：沿用本托管的「单次运行时间限制」（RunTimeLimit），
         # 一次尝试里全部运行前设置合计不超过它（MaaFW 豁免了 HardTimeLimit，这里是它缺的外层兜底；
-        # worker 那一段另起计时，见 ``_run_maafw``）。
+        # worker 那一段另起计时，见 ``plan_run.MaaFWPlanRun.run``）。
         limit_minutes = self.script_config.Run.RunTimeLimit or 120
         loop = asyncio.get_running_loop()
         pretasks_started_at = loop.time()
@@ -2513,40 +1814,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         await asyncio.shield(cleanup)
 
     async def _terminate_runner_process(self) -> None:
-        process = self.runner_process
-        self.runner_process = None
-        if process is None or process.returncode is not None:
-            return
+        """停止时结束正在跑的 worker（经 ``plan_run`` 的停止入口；没有在跑的就什么都不做）。"""
 
-        if desktop_process_target.get() is not None:
-            with operation(self, "stop_script"):
-                await process.stop()
-            return
-
-        # 必须在 terminate 之前把后代记下来：Windows 的 TerminateProcess 是立即
-        # 且不可捕获的，worker 的 shutdown() 没机会跑；而父进程一死，子进程就
-        # 被重新挂到别处，事后再按父子关系已经查不到它们。
-        descendants = await asyncio.to_thread(_snapshot_descendants, process.pid)
-
-        point(self, "stop_script")
-        try:
-            process.terminate()
-            await asyncio.wait_for(process.wait(), timeout=5)
-        except asyncio.TimeoutError:
-            process.kill()
-            await process.wait()
-        except ProcessLookupError:
-            pass
-        except Exception as exc:
-            logger.warning(f"MaaFW runner worker 清理失败: {exc}")
-
-        if descendants:
-            await asyncio.to_thread(_terminate_snapshot, descendants)
-        point(
-            self,
-            "stop_script",
-            state="succeeded" if process.returncode is not None else "failed",
-        )
+        run = self._plan_run
+        if run is not None:
+            await run.stop()
 
     def _period_limits(self) -> MaaFWPeriodLimits:
         run = self.script_config.Run
@@ -4010,41 +3282,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.callbacks.submit(publish())
 
 
-def _sweep_legacy_runner_jobs() -> None:
-    """清掉升级前的版本留下的 job 文件（现在 job 经 worker 的 stdin 传，不再落盘）。
-
-    旧版本把 job 写在 ``data/maafw_runner_jobs``（更早是 ``runtime/maafw_runner_jobs``，
-    首次访问时整体迁过来再清）。目录本身不再新建。
-    """
-
-    jobs_dir = Path.cwd() / "data" / "maafw_runner_jobs"
-    _utils_io.migrate_legacy_dir(Path.cwd() / "runtime" / "maafw_runner_jobs", jobs_dir)
-    _sweep_stale_runner_jobs(jobs_dir)
-
-
-# 旧版本的 worker 读完 job 就删，正常情况下 job 文件只在盘上待几秒；超过这么久还在的，
-# 是宿主与 worker 一起被硬杀（断电、蓝屏、结束进程树）留下的。
-_STALE_RUNNER_JOB_SECONDS = 3600.0
-
-
-def _sweep_stale_runner_jobs(directory: Path) -> None:
-    """删掉上次异常退出残留的 job 文件：里面可能有解密后的密码选项。"""
-
-    try:
-        candidates = list(directory.glob("maafw-runner-job-*.json"))
-    except OSError:
-        return
-    now = time.time()
-    for path in candidates:
-        try:
-            if now - path.stat().st_mtime < _STALE_RUNNER_JOB_SECONDS:
-                continue
-            path.unlink()
-        except OSError:
-            continue
-        logger.info(f"已清理残留的 MaaFW job 文件: {path.name}")
-
-
 def _is_process_path_running(executable_path: Path) -> bool:
     target_path = executable_path.resolve()
     for proc in iter_processes(["exe"]):
@@ -4191,54 +3428,6 @@ def _end_processes(
         logger.warning(f"MaaFW 结束进程后仍在运行: {started[proc].label}")
         failed.append(started[proc])
     return [snapshot for proc, snapshot in started.items() if proc not in alive], failed
-
-
-def _snapshot_descendants(pid: int) -> list[tuple[int, float]]:
-    """记下某进程当前的全部后代（pid 与创建时间）。
-
-    创建时间与 pid 配对使用，防止 pid 复用导致误杀——这段时间里原进程可能
-    已经退出、pid 被别人占了。
-    """
-
-    snapshot: list[tuple[int, float]] = []
-    try:
-        for child in psutil.Process(pid).children(recursive=True):
-            with suppress(psutil.Error):
-                snapshot.append((child.pid, child.create_time()))
-    except psutil.Error:
-        return []
-    return snapshot
-
-
-def _terminate_snapshot(
-    snapshot: list[tuple[int, float]], *, owner: str = "MaaFW worker"
-) -> None:
-    """结束快照里仍然存活、且身份对得上的进程。
-
-    worker 被强杀后它启动的 agent 会变成孤儿：MaaFW 的 AgentClient 用 IPC 起
-    agent，生命周期本该随 worker，但 TerminateProcess 不给收尾机会。实测残留
-    过二十多个 agent.exe / python.exe，最老的有二十二小时，它们占内存也占文件
-    句柄——曾导致 venv 目录删不掉。
-    """
-
-    victims: list[psutil.Process] = []
-    for pid, create_time in snapshot:
-        try:
-            process = psutil.Process(pid)
-            if abs(process.create_time() - create_time) > 1:
-                continue  # pid 被复用了，不是当初那个进程
-            process.terminate()
-            victims.append(process)
-        except psutil.Error:
-            continue
-    if not victims:
-        return
-    _gone, alive = psutil.wait_procs(victims, timeout=3)
-    for process in alive:
-        with suppress(psutil.Error):
-            process.kill()
-    psutil.wait_procs(alive, timeout=2)
-    logger.info(f"已清理 {owner} 残留的 {len(victims)} 个子进程")
 
 
 def _snapshot_pretask_script_descendants(pid: int) -> list[tuple[int, float, str]]:
@@ -4429,21 +3618,6 @@ def _keep_pretask_drain(reader: asyncio.Task[None]) -> None:
     reader.add_done_callback(finished)
 
 
-def _decode_subprocess_output(data: bytes) -> str:
-    if not data:
-        return ""
-    for encoding in _SUBPROCESS_OUTPUT_ENCODINGS:
-        try:
-            return data.decode(encoding, errors="strict")
-        except (UnicodeDecodeError, LookupError):
-            continue
-    return data.decode("latin1", errors="replace")
-
-
-def _clean_framework_output(message: str) -> str:
-    return strip_ansi(message)
-
-
 _PRETASK_LOG_HEADER_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?\s+"
     r"(?:TRC|DBG|INF|WRN|ERR|FTL|PNC|TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\s+"
@@ -4490,96 +3664,6 @@ def _pretask_failure_reason(output: str) -> str:
             # 只有字段没有正文时，error 的值本身就是原因，不再套括号
             reason = f"{reason}（{value}）" if reason else value
     return reason or line
-
-
-_STREAM_OVERRUN_NOTE = f"（worker 输出有一行超过 {_WORKER_STREAM_LINE_LIMIT // (1024 * 1024)} MB，已丢弃该行）"
-
-
-async def _iter_stream_lines(
-    stream: asyncio.StreamReader, on_overrun: Callable[[], None]
-) -> AsyncIterator[bytes]:
-    """逐行读子进程输出；单行超过 StreamReader 上限时丢掉这一行、记一句，接着读。
-
-    ``async for line in stream`` 碰到超长行直接抛 ValueError，读取任务随之结束，之后没人
-    读管道，worker 写满管道就挂住。StreamReader 抛错前已经把那一行（或缓冲）丢掉，
-    接着读是安全的。
-    """
-
-    while True:
-        try:
-            line = await stream.readline()
-        except ValueError:
-            on_overrun()
-            continue
-        if not line:
-            return
-        yield line
-
-
-def _framework_ui_message(message: str) -> str:
-    """Bound worker diagnostics copied to the user-facing task log.
-
-    Complete worker output (runner events, worker stdout/stderr) is already
-    retained in ``*.worker.log``. A malformed task/encoding error can otherwise
-    contain megabytes of JSON or a parser trace and make the normal task page
-    unusable.
-    """
-
-    cleaned = _clean_framework_output(message).strip()
-    if len(cleaned) <= _FRAMEWORK_UI_LOG_MAX_CHARS:
-        return cleaned
-    lines = cleaned.splitlines()
-    compact = "\n".join(line[:240] for line in lines[:8]).strip()
-    omitted = max(0, len(cleaned) - len(compact))
-    summary = (
-        f"{compact}\n… 上述内容已省略 {omitted} 个字符，"
-        "完整内容请查看本次运行的 .worker.log"
-    )
-    return summary[:_FRAMEWORK_UI_LOG_MAX_CHARS]
-
-
-def _parse_worker_protocol_line(
-    line: str, secrets: list[str] | tuple[str, ...]
-) -> dict[str, Any] | None:
-    """worker stdout 的一行若是协议事件（JSON 对象）就解析并打码后返回，否则 None。
-
-    **先解析、后打码**：以前对整行 JSON 做字符串替换，密码恰好是 ``true`` / ``result`` /
-    ``success`` / ``2026`` 或某个任务名时，替换会打坏 JSON 结构、键名、截图路径、完成任务
-    列表——成功的运行被判成「worker exited without result」而重试，或通知丢图、周期任务
-    不记完成。现在只替换给人读的文本（log / error 的 ``message``、结果里的
-    ``errorMessage`` / ``userMessage``），结构字段（路径、任务名、状态、布尔、数字）一律不动。
-    解析不了的行（原生诊断）由调用方照旧整行打码。
-    """
-
-    try:
-        event = json.loads(line)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(event, dict):
-        return None
-    return _redact_worker_event(event, secrets)
-
-
-def _redact_worker_event(
-    event: dict[str, Any], secrets: list[str] | tuple[str, ...]
-) -> dict[str, Any]:
-    """协议事件只打码给人读的文本（见 ``_parse_worker_protocol_line``）；事件通道与 stdout 同一口径。"""
-
-    message = event.get("message")
-    if isinstance(message, str):
-        event["message"] = redact_secret_text(message, secrets)
-    data = event.get("data")
-    if isinstance(data, dict):
-        for key in ("errorMessage", "userMessage"):
-            if isinstance(data.get(key), str):
-                data[key] = redact_secret_text(data[key], secrets)
-    return event
-
-
-def _should_forward_framework_log(message: str) -> bool:
-    """stdout / stderr 上的原生诊断与不带 audience 的旧格式事件进不进界面（规则在 worker_protocol）。"""
-
-    return forwards_to_ui(message)
 
 
 def _load_json_dict(value: Any) -> dict[str, Any]:
@@ -4657,117 +3741,6 @@ def _load_json_list(value: Any) -> list[str]:
             if isinstance(data, list):
                 return [str(item) for item in data if str(item).strip()]
     return []
-
-
-def _iter_rotated_native_debug_logs(path: Path) -> list[Path]:
-    """按轮转时间升序列出 MaaFW 的历史原生日志。
-
-    文件名形如 ``maafw.bak.2026.08.30-22.58.30.451.log``，时间戳是零填充的
-    定宽字段，按文件名排序即按时间排序。
-    """
-
-    try:
-        return sorted(path.parent.glob(path.stem + ".bak.*" + path.suffix))
-    except OSError:
-        return []
-
-
-def _snapshot_native_debug_log_state(path: Path) -> tuple[int, frozenset[str]]:
-    """记下原生日志的读取起点：当前大小，以及运行前已存在的轮转文件。"""
-
-    try:
-        offset = path.stat().st_size
-    except OSError:
-        offset = 0
-    return offset, frozenset(
-        rotated.name for rotated in _iter_rotated_native_debug_logs(path)
-    )
-
-
-def _plan_native_debug_log_sources(
-    path: Path,
-    start_offset: int,
-    known_rotations: frozenset[str],
-) -> list[tuple[str, Path, int]]:
-    """列出本次运行写下的原生日志分片，按时间先后排列。
-
-    MaaFW 会在 ``maafw.log`` 涨到一定大小时把它整体挪成
-    ``maafw.bak.<时间戳>.log``，再开一个空文件继续写。只记字节偏移不够用：
-    轮转后新文件重新长回超过该偏移，收尾时便会拿运行前的偏移去 seek 一个
-    内容毫不相干的文件——运行前半段凭空消失，切口还落在任意字节上。而长到
-    足以触发轮转的运行，恰恰是最需要日志的那些。
-
-    所以改为对比运行前后的轮转文件集合：新出现的那些就是本次运行被挪走的
-    内容。其中最早的一个才是运行开始时正在写的文件，只有它要跳过运行前已有
-    的部分，其余分片都从头读。
-    """
-
-    rotated = [
-        candidate
-        for candidate in _iter_rotated_native_debug_logs(path)
-        if candidate.name not in known_rotations
-    ]
-    sources: list[tuple[str, Path, int]] = [
-        ("debug/" + candidate.name, candidate, start_offset if index == 0 else 0)
-        for index, candidate in enumerate(rotated)
-    ]
-    sources.append(("debug/" + path.name, path, 0 if rotated else start_offset))
-    return sources
-
-
-def _copy_native_debug_log_delta(
-    path: Path,
-    start_offset: int,
-    known_rotations: frozenset[str],
-    target: Path,
-    secrets: list[str] | tuple[str, ...] = (),
-) -> int:
-    """把本次运行写下的原生日志分片按顺序原样追加到 ``target``，返回复制的字节数。
-
-    按字节复制、不解码不清洗，副本才和项目 ``debug/maafw.log`` 完全一致。每次尝试
-    各写各的文件（文件名是这次尝试的开始时刻），追加只是为了不覆盖已有内容。
-    逐个分片流式复制，一份可能有几十 MB。
-
-    唯一的改动是 ``secrets``（密码字段的原文及其 JSON 转义写法）：框架在
-    ``Tasker::post_task`` 里按 INFO 级别记下整份 ``pipeline_override``（``[pipeline_override={...}]``），
-    密码会原样出现；给了就逐行换成占位（按 UTF-8 / GBK / UTF-16LE 的字节替换，其余字节不动）。项目目录里框架
-    自己写的 ``debug/maafw.log`` 不归 MAS 管，那份仍是原文。
-    """
-
-    # 每个写法按 UTF-8 / GBK / UTF-16LE 的字节都换（与 .project.log 同一套，见 option_secrets）。
-    secret_pairs = secret_byte_pairs(list(secrets))
-
-    copied = 0
-    target_file: Any | None = None
-    try:
-        for _label, source_path, source_offset in _plan_native_debug_log_sources(
-            path, start_offset, known_rotations
-        ):
-            try:
-                current_size = source_path.stat().st_size
-            except OSError:
-                continue
-            source_offset = source_offset if current_size >= source_offset else 0
-            if current_size <= source_offset:
-                continue
-            if target_file is None:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target_file = target.open("ab")
-            with source_path.open("rb") as source_file:
-                source_file.seek(source_offset)
-                if secret_pairs:
-                    for raw_line in source_file:
-                        for secret, placeholder in secret_pairs:
-                            if secret in raw_line:
-                                raw_line = raw_line.replace(secret, placeholder)
-                        target_file.write(raw_line)
-                else:
-                    shutil.copyfileobj(source_file, target_file)
-                copied += source_file.tell() - source_offset
-    finally:
-        if target_file is not None:
-            target_file.close()
-    return copied
 
 
 # worker 截图文件名是 ``[<前缀>.]<kind>-<HHMMSS>-<任务>.png``，信号证据图的 kind 与 worker
