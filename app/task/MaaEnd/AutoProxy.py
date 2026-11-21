@@ -2314,7 +2314,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             return self.original_game_settings
         self.original_game_settings_read = True
 
-        from app.task.MaaFW.tools.embedded.game_resolution import (
+        from app.utils.common.game_resolution import (
             read_unity_display_type,
             read_unity_resolution,
         )

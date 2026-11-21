@@ -137,6 +137,10 @@ from app.utils import IS_WINDOWS, UTC4, ProcessInfo, get_logger, power
 from app.utils import display as _utils_display
 from app.utils import game_apk as _utils_game_apk
 from app.utils import io as _utils_io
+from app.utils.common.game_resolution import (
+    UnityGameResolutionOverride,
+    parse_resolution_option,
+)
 from app.utils.common.process.operations import (
     iter_processes,
     managed_process,
@@ -164,7 +168,6 @@ from .flavor import (
     unselectable_entries,
 )
 from .game_package import resolve_game_package
-from .game_resolution import UnityGameResolutionOverride, parse_resolution_option
 from .option_secrets import (
     collect_run_password_values,
     collect_script_password_values,

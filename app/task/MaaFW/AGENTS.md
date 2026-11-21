@@ -18,7 +18,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   端点 docstring 会进 OpenAPI 生成物，搬业务时留在端点上原样不动。
 - `tools/embedded/`：宿主与核心包之间**唯一**的接缝（`runner_task`、`runtime_route`、
   `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
-  `game_resolution`、`update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
+  `update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
   `default_snapshot`、`env_confirm`、`update_session`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - `tools/core/`：六个核心包（interface / runner / runtime_pool / agent_env /
@@ -518,8 +518,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
     （`_close_game_after_run`：`_finalize_user` 与 `on_crash`），重试之间不关，免得和运行前设置的
     重跑判定（`_pretasks_need_rerun`）打架；每次运行只做一次。运行前设置超时 / 停止时的清理不变，
     照旧不碰游戏和启动器。
-- `Game.UnityResolution`（Off / 1920x1080 / 1280x720，DirectExe 与 URL 下生效）走
-  `game_resolution.py`：按 `<exe>_Data/app.info` 反查 `HKCU\Software\<公司>\<产品>`，
+- `Game.UnityResolution`（Off / 1920x1080 / 1280x720，DirectExe 与 URL 下生效）走宿主
+  `app/utils/common/game_resolution.py`（没有 MFW 语义，MaaEnd 专项与 `main.py` 也直接用它）：按 `<exe>_Data/app.info` 反查 `HKCU\Software\<公司>\<产品>`，
   只改 Unity 播放器的 `Screenmanager *` 值，不碰游戏自有的那层（星铁的
   `GraphicsSettings_PCResolution`、终末地的 `video_resolution_*`），效果要实机验证。
   这个通用选项**不做逐游戏适配**（2026-10-04 定，理由见 `game_resolution.py` 文件头），

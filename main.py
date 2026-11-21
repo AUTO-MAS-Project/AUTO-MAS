@@ -299,12 +299,12 @@ def main():
         from app.task.BAAH.api_service import BAAHConfigService
         from app.task.builtin_registration import build_builtin_script_capabilities
         from app.task.MaaEnd.api_service import MaaEndConfigService
-        from app.task.MaaFW.tools.embedded.game_resolution import (
+        from app.task.ZzzOd.config_context import ZzzOdContext
+        from app.task.ZzzOd.recovery import ZzzOdRecovery
+        from app.utils.common.game_resolution import (
             read_unity_display_type,
             read_unity_resolution,
         )
-        from app.task.ZzzOd.config_context import ZzzOdContext
-        from app.task.ZzzOd.recovery import ZzzOdRecovery
 
     with startup_stage("后端/专项能力绑定"):
         with startup_stage("后端/专项能力绑定/BAAH 服务"):
