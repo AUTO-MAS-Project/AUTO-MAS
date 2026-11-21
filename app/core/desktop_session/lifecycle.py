@@ -44,6 +44,7 @@ def supports_task(config: object) -> bool:
         except (OSError, KeyError, ValueError):
             return False
     if isinstance(config, MaaFWConfig):
+        from app.task.game import game_is_emulator
         from app.task.MaaFW.tools.core.interface.service import MaaFWInterfaceService
         from app.task.MaaFW.tools.core.runner.run_plan import (
             _select_controller,
@@ -60,7 +61,7 @@ def supports_task(config: object) -> bool:
             name, _ = resolve_run_selection(
                 interface,
                 configured_controller=str(config.Info.Controller),
-                emulator_selected=config.Emulator.Id != "-",
+                emulator_selected=game_is_emulator(config),
                 configured_resource=str(config.Info.Resource),
             )
             return _select_controller(interface, name).type == "Win32"
