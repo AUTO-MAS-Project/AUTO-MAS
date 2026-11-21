@@ -63,3 +63,42 @@ async def test_cached_activity_ends_before_shop_claim_deadline(calendar):
     assert await stella.has_running_official_activity() is True
     clock.now.return_value = datetime(2026, 11, 27, 4, tzinfo=stella.BEIJING)
     assert await stella.has_running_official_activity() is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "textures",
+    [
+        None,
+        [],
+        ["bad"],
+        "bad",
+        {"banner": 42},
+        {"banner": {"url": "bad"}},
+        {"banner": "https://[broken"},
+    ],
+)
+async def test_bad_cover_does_not_discard_open_activity(calendar, textures):
+    payload, _ = calendar
+    payload["current"][0]["textures"] = textures
+    assert await stella.has_running_official_activity() is True
+    data = await stella.fetch_official_activities()
+    assert len(data["activities"]) == 1
+    assert data["activities"][0]["cover"] == ""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("incomplete", [True, False])
+@pytest.mark.parametrize("day", [datetime(2026, 11, 28), datetime(2026, 12, 20)])
+async def test_old_calendar_distinguishes_missing_current_data(
+    calendar, incomplete, day
+):
+    payload, clock = calendar
+    payload["ended"] = payload["current"]
+    payload["current"] = [{}] if incomplete else []
+    clock.now.return_value = day.replace(tzinfo=stella.BEIJING)
+    data = await stella.fetch_official_activities()
+    if incomplete:
+        assert data is None  # API 据此使用 SRA 备用源。
+    else:
+        assert len(data["activities"]) == (1 if day.month == 11 else 0)

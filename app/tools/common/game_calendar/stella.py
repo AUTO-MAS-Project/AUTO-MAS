@@ -75,22 +75,28 @@ def _stellabase_activities(payload: Mapping[str, Any]) -> _Calendar:
                     raise ValueError("活动说明为空")
                 # 弹珠小游戏也写有「活动限时关卡」；版本活动同时列有关卡和故事剧情。
                 story = "活动限时关卡" in description and "故事剧情" in description
-                textures = entry.get("textures") or {}
-                image = textures.get("banner") or textures.get("tabBackground") or ""
-                # 与站点前端使用相同的图片代理路径。
-                cover = (
-                    urljoin(
-                        STELLABASE_BASE,
-                        f"/api/asset{image}"
-                        if image.startswith("/stella/assets/")
-                        else image,
-                    )
-                    if image
-                    else ""
-                )
             except (ValueError, TypeError, KeyError, AttributeError):
                 complete = False
                 continue
+
+            # 封面是展示字段，损坏时用空图，不改变活动有效性或排期判定。
+            cover = ""
+            textures = entry.get("textures")
+            if isinstance(textures, Mapping):
+                for key in ("banner", "tabBackground"):
+                    image = textures.get(key)
+                    if not isinstance(image, str) or not image:
+                        continue
+                    try:
+                        cover = urljoin(
+                            STELLABASE_BASE,
+                            f"/api/asset{image}"
+                            if image.startswith("/stella/assets/")
+                            else image,
+                        )
+                    except ValueError:
+                        continue
+                    break
             activities.append(
                 {
                     "name": name,
@@ -138,13 +144,24 @@ async def fetch_official_activities(*, force: bool = False) -> dict[str, Any] | 
     calendar = await _fetch_calendar(force=force)
     if calendar is None or not calendar[0]:
         return None
-    horizon = datetime.now(BEIJING) - timedelta(days=RECENT_WINDOW_DAYS)
+    now = datetime.now(BEIJING)
+    horizon = now - timedelta(days=RECENT_WINDOW_DAYS)
+    activities = [
+        item
+        for item in calendar[0]
+        if datetime.fromisoformat(item["endTime"]) >= horizon
+    ]
+    # 主页只展示进行中的活动。剩余条目即使还在最近结束窗口内，
+    # 也不能拿它们证明损坏的当前分组确实为空。
+    if not calendar[1] and not any(
+        datetime.fromisoformat(item["startTime"])
+        <= now
+        < datetime.fromisoformat(item["endTime"])
+        for item in activities
+    ):
+        return None
     return {
-        "activities": [
-            item
-            for item in calendar[0]
-            if datetime.fromisoformat(item["endTime"]) >= horizon
-        ],
+        "activities": activities,
         "sourceName": "StellaBase",
         "sourceUrl": f"{STELLABASE_BASE}/events",
     }
