@@ -412,6 +412,11 @@ class MaaFWTaskError(RuntimeError):
         self.user_message = user_message
 
 
+class MaaFWNonRetryableError(RuntimeError):
+    """确定性的失败：重试只会原样再失败。随结果的 ``retryable=False`` 交给宿主，文案与以前相同；
+    原文是写给用户看的，同时作为 ``userMessage`` 回报。"""
+
+
 class MaaFWResourceLoadError(RuntimeError):
     """资源包没能加载（``kind`` 见 ``MaaFWResourceFailure``）。文案与以前相同（宿主日志、
     ``errorMessage`` 不变），另外带上结构化的种类与目录，随结果交给宿主。"""
@@ -1439,7 +1444,14 @@ class MaaFWRunner:
                 audience=AUDIENCE_WORKER_LOG,
                 level=LEVEL_ERROR,
             )
-            user_message = exc.user_message if isinstance(exc, MaaFWTaskError) else None
+            if isinstance(exc, MaaFWTaskError):
+                user_message = exc.user_message
+            elif isinstance(exc, MaaFWNonRetryableError):
+                # 确定性失败的原文本来就是写给用户看的（原因与怎么处理都在里面）：推送与代理
+                # 结果照它说，不退回按失败阶段的笼统说法（「Agent 没能启动」「运行环境不可用」）
+                user_message = str(exc)
+            else:
+                user_message = None
             if user_message:
                 # 中止本轮之前已经有任务失败过（失败后继续的那些）：一并点名，
                 # 不然报告里只剩最后这一条。
@@ -1471,6 +1483,7 @@ class MaaFWRunner:
                     if isinstance(exc, MaaFWResourceLoadError)
                     else None
                 ),
+                retryable=not isinstance(exc, MaaFWNonRetryableError),
             )
         finally:
             self._close_task_record()
@@ -2915,7 +2928,7 @@ class MaaFWRunner:
             runner_where = str(runner_runtime.relative_to(project_path))
         except ValueError:
             runner_where = str(runner_runtime)
-        raise RuntimeError(
+        raise MaaFWNonRetryableError(
             f"原生 Agent（{Path(agent_plan.executable).name}）固定从 maafw 目录加载 "
             f"MaaFramework {_display_maafw_version(agent_version)}，runner 用的是 "
             f"{runner_where} 里的 {_display_maafw_version(runner_version)}："
@@ -3083,7 +3096,9 @@ class MaaFWRunner:
             handshake_error = self._agent_handshake_errors.get(process.pid)
             if handshake_error:
                 # 协议版本对不上是确定性的，重试到预算用完只是白等（原先要等满 600 秒）。
-                raise RuntimeError(f"Agent 拒绝连接：{handshake_error}: {label}")
+                raise MaaFWNonRetryableError(
+                    f"Agent 拒绝连接：{handshake_error}: {label}"
+                )
 
             try:
                 if agent_client.connect():

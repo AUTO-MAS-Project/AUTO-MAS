@@ -54,7 +54,8 @@
   用户运行日志的异步回调。返回值是写进运行日志的一句话，空串表示不写。
 - Win32 控制器以空 ``adb_address`` 调用，供钩子拒绝不支持的登录模式。
 - **失败**：抛 :class:`MaaFWLoginRequired`，文案直接给用户看；本账号本次尝试判失败，按普通失败
-  走重试（不特殊处理退出条件）。抛其它异常同样按失败处理，原因会附在异常原文后面。
+  走重试。确定性的配置错误（重试只会原样再失败）抛 ``MaaFWLoginRequired(..., retryable=False)``：
+  本账号本次直接结束，不重启游戏 / 模拟器。抛其它异常同样按可重试的失败处理，原因会附在异常原文后面。
 - **取消**：用户停止（``CancelledError``）必须照常向上抛，不能吞掉。
 
 选号后需要启动游戏时返回 ``StartupTask``，指定首项公开任务及剩余登录时限。
@@ -90,7 +91,9 @@
   对应 ``AutoInstall``（``Check`` 为 False）；``progress`` 是写用户运行日志的异步回调。
   返回 ``app.utils.common.game_update.GameUpdateResult``。
 - **结果**：``NeedManualUpdate`` → 本账号本次运行判失败，失败原因就是 ``message``，发错误
-  通知，**不走重试**（客户端不更新，重试多少次都一样）；其余状态照常继续，``message`` 进日志。
+  通知，**不走重试**（客户端不更新，重试多少次都一样），并与项目信号「需要更新客户端」同样记账：
+  本轮同一资源后面的账号在运行前检查就结束，不再开模拟器、不再调钩子；其余状态照常继续，
+  ``message`` 进日志。
 - **异常**：钩子抛任何 ``Exception`` 都只记警告、照常继续，不能挡住代理；``CancelledError``
   （用户停止）必须照常向上传——钩子里的下载 / 安装都要能被取消打断，不能在线程里死等。
 
@@ -353,7 +356,15 @@ GameUpdateHook = Callable[..., Awaitable[_utils_game_update.GameUpdateResult]]
 
 
 class MaaFWLoginRequired(RuntimeError):
-    """特调的运行前登录钩子判定本次无法继续运行（如 B 服登录失败）；文案直接给用户看。"""
+    """特调的运行前登录钩子判定本次无法继续运行（如 B 服登录失败）；文案直接给用户看。
+
+    ``retryable=False`` 表示重试只会原样再失败（账号没填、登录方式与客户端不匹配这类配置错误）：
+    宿主直接结束本账号，不重启游戏 / 模拟器。默认可重试。
+    """
+
+    def __init__(self, message: str, *, retryable: bool = True) -> None:
+        super().__init__(message)
+        self.retryable = retryable
 
 
 @dataclass(frozen=True)
