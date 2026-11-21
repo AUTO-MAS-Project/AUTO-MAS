@@ -1,4 +1,12 @@
-import { computed, defineAsyncComponent, onScopeDispose, provide, ref, type Component } from 'vue'
+import {
+  defineAsyncComponent,
+  onScopeDispose,
+  provide,
+  readonly,
+  ref,
+  shallowRef,
+  type Component,
+} from 'vue'
 import { useRoute, useRouter, type RouteRecordRaw } from 'vue-router'
 import { isMaaFWFamily, resolveMaaFWAdapter } from '@/plugins/maafwFamily'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -32,8 +40,8 @@ const isPageLoader = (page: LazyPage): page is () => Promise<Component> =>
   !('__vccOpts' in page)
 
 /**
- * 按类型与页面缓存的异步组件：模块级，同一类型的同一页始终是同一个组件引用——宿主重新计算时
- * 组件不变，页面不重建，引导进度不丢。
+ * 按类型与页面缓存的异步组件：模块级，同一类型的同一页始终是同一个组件引用，预取与渲染共用
+ * 同一个加载函数。
  */
 const PAGE_CACHE = new Map<string, MaaFWHostPage>()
 
@@ -57,8 +65,8 @@ const resolveHostPage = (type: ScriptType | string | null | undefined, part: Edi
  *    照带），自己什么都不渲染——路径一变 AppLayout 就整个重建，页面逻辑只在纠正后的实例里跑，
  *    所以加用户的地址写错也只建一个用户；
  * 3. 脚本不存在 / 读取失败 / 不是 MaaFW 家族：照常渲染通用 MFW 页，由页面给出现有的报错；
- * 4. 否则把上下文（脚本类型、页面种类、引导步骤、读到的脚本详情）交给页面，渲染该类型的页面。
- *    之后类型变了（导入后后端换类型，页面写回 scriptType）就地换页面，不改地址。
+ * 4. 否则把上下文（脚本类型、页面种类、读到的脚本详情）交给页面，渲染该类型的页面。
+ *    托管类型在新建时就定了，导入不换类型，所以页面选定后不再换。
  */
 export function useMaaFWPageHost() {
   const logger = window.electronAPI.getLogger('MaaFW 页面宿主')
@@ -81,14 +89,11 @@ export function useMaaFWPageHost() {
 
   // 读到 MaaFW 家族的脚本后换成它的实际类型；读不到时与页面原来一样从通用 MaaFW 起步
   const scriptType = ref<ScriptType>('MaaFW')
-  const wizardStep = ref(0)
-  const ready = ref(false)
   let initialScript: ScriptDetail | null | undefined
 
   const context: MaaFWPageHostContext = {
-    scriptType,
+    scriptType: readonly(scriptType),
     mode,
-    wizardStep,
     scriptLoadError,
     takeInitialScript: () => {
       const script = initialScript
@@ -98,11 +103,8 @@ export function useMaaFWPageHost() {
   }
   provide(MAAFW_PAGE_HOST_KEY, context)
 
-  /** 要渲染的页面；还没读到脚本或正在纠正地址时为 null */
-  const page = computed<Component | null>(() => {
-    if (!ready.value) return null
-    return resolveHostPage(scriptType.value, part).component
-  })
+  /** 要渲染的页面；还没读到脚本或正在纠正地址时为 null，选定后不再换 */
+  const page = shallowRef<Component | null>(null)
 
   let disposed = false
   onScopeDispose(() => {
@@ -116,12 +118,9 @@ export function useMaaFWPageHost() {
   }
 
   const show = (script: ScriptDetail | null | undefined) => {
-    if (script && isMaaFWFamily(script.type)) {
-      scriptType.value = script.type
-      prefetch(resolveHostPage(script.type, part))
-    }
+    if (script && isMaaFWFamily(script.type)) scriptType.value = script.type
     initialScript = script
-    ready.value = true
+    page.value = resolveHostPage(scriptType.value, part).component
   }
 
   const load = async () => {
@@ -161,5 +160,5 @@ export function useMaaFWPageHost() {
 
   const loaded = load()
 
-  return { page, scriptType, wizardStep, mode, loaded }
+  return { page, scriptType, mode, loaded }
 }

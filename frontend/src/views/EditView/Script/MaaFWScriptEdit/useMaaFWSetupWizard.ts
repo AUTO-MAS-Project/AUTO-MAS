@@ -32,7 +32,7 @@ interface MaaFWSetupWizardOptions {
   enqueue: <T>(run: () => Promise<T>, key?: string) => Promise<T>
   /** 脚本当前类型：跳转用户页按它走对应那条线 */
   scriptType: Ref<ScriptType>
-  /** 页面宿主的上下文：页面种类与引导步骤取它的；不在宿主里为 null（按路由 meta） */
+  /** 页面宿主的上下文：页面种类取它的；不在宿主里为 null（按路由 meta） */
   host: MaaFWPageHostContext | null
   /** 页面已卸载：还在跑的异步流程（外壳配置导入）结束时不再跳转 */
   isPageUnmounted: () => boolean
@@ -60,8 +60,7 @@ export function useMaaFWSetupWizard({
   // 之后再编辑走编辑路由的完整单页形态。
   const mode = host ? host.mode : route.meta.maafwPage
   const isWizard = computed(() => mode === 'setup')
-  // 步骤放在宿主里：导入后类型变了、宿主换成特调自己的页面时，新页面接着这一步走
-  const currentStep = host?.wizardStep ?? ref(0)
+  const currentStep = ref(0)
   // computed：页面打开后切换界面语言，步骤条标题跟着变
   const stepItems = computed(() => [
     { title: t('core.edit.basicInfo') },

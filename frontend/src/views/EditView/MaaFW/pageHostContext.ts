@@ -6,14 +6,12 @@ import type { ScriptDetail, ScriptType } from '@/types/script'
 
 export interface MaaFWPageHostContext {
   /**
-   * 脚本当前类型：宿主按它选渲染哪个页面。页面读到（或导入后重新读到）脚本详情时写回这里，
-   * 类型变了宿主就地换成该类型的页面（同一类型组件不变，页面不重建）。
+   * 宿主读到的脚本类型，宿主按它选了渲染哪个页面。托管类型在新建时就定了（导入不换类型），
+   * 页面只读它作初值。
    */
-  scriptType: Ref<ScriptType>
+  scriptType: Readonly<Ref<ScriptType>>
   /** 页面种类（路由 meta.maafwPage）：脚本页看它是不是引导 */
   mode: MaaFWPageKind
-  /** 引导当前步骤：放在宿主里，换页面后新页面接着这一步走 */
-  wizardStep: Ref<number>
   /** 宿主初次读取已提示的失败；子页不为同一次失败重复弹出提示。 */
   scriptLoadError: Readonly<Ref<string | null>>
   /**

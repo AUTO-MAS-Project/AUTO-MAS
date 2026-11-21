@@ -51,21 +51,10 @@ export function useMaaFWScriptPage({ scriptId, type }: MaaFWScriptPageOptions) {
     applyScriptConfig: applyDraftConfig,
   } = useMaaFWScriptDraft(scriptId)
 
-  // 脚本当前类型，不看路由 meta：导入完成后后端会按项目内容原地换类型（M9A 项目 → M9A，
-  // 其它 → MaaFW，uid 不变）。在页面宿主里时类型是宿主的那一份：写回去宿主就地换成该类型的页面。
+  // 脚本类型，不看路由 meta：在页面宿主里时以宿主读到的为初值，读到脚本详情后以它为准。
+  // 托管类型在新建时就定了，导入什么项目都不换类型。
   const host = useMaaFWPageHostContext()
-  const scriptType = host?.scriptType ?? ref<ScriptType>('MaaFW')
-  const refreshScriptType = async () => {
-    try {
-      const detail = await getScript(scriptId)
-      if (detail?.type) {
-        scriptType.value = detail.type
-        formData.type = detail.type
-      }
-    } catch (error) {
-      logger.warn(`刷新脚本类型失败: ${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
+  const scriptType = ref<ScriptType>(host?.scriptType.value ?? 'MaaFW')
 
   const control = useMaaFWControlConfig(maafwConfig, previewData, previewLoading, handleChange)
   const { syncControllerResourceSelection } = control
@@ -191,7 +180,6 @@ export function useMaaFWScriptPage({ scriptId, type }: MaaFWScriptPageOptions) {
     maafwConfig,
     formData,
     channel,
-    refreshScriptType,
     runPreviewOnNewRoot,
     isPageUnmounted: () => pageUnmounted,
   })
@@ -296,7 +284,6 @@ export function useMaaFWScriptPage({ scriptId, type }: MaaFWScriptPageOptions) {
     handleChange,
     applyScriptConfig,
     scriptType,
-    refreshScriptType,
     ...control,
     handleResourceChangeWithPackage,
     ...periodTasks,

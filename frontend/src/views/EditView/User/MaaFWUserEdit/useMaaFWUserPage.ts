@@ -136,10 +136,10 @@ export function useMaaFWUserPage({
 
   const scriptName = ref('')
   const scriptPath = ref('')
-  // 脚本当前类型（MaaFW / M9A / MSS），不看路由 meta。
-  // 在页面宿主里时类型是宿主的那一份：写回去宿主才知道要不要换页面。
+  // 脚本类型（MaaFW / M9A / MSS），不看路由 meta：在页面宿主里时以宿主读到的为初值，
+  // 读到脚本详情后以它为准。
   const host = useMaaFWPageHostContext()
-  const scriptType = host?.scriptType ?? ref<ScriptType>('MaaFW')
+  const scriptType = ref<ScriptType>(host?.scriptType.value ?? 'MaaFW')
   /** 面包屑回脚本页：按脚本当前类型走它那条线 */
   const scriptRoute = computed(() =>
     maafwRouteLocation(scriptType.value, 'script', { id: scriptId })
