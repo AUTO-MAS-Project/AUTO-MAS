@@ -2847,11 +2847,6 @@ class OkwwConfig(DomainEntry):
             description="账号切换方式：NONE 不切换；MAS 切换（推荐）；OKWW_SINGLE 由脚本逐账号切换、分别运行和重试；OKWW 批量切换并补跑未完成账号",
         )
 
-        AccountSwitch: bool = Field(
-            default_factory=lambda: False,
-            description="运行前由 MAS 切换账号（仅日常任务且游戏配置启用时生效；用户未填手机号时不切换）",
-        )
-
         Arguments: CliArgumentString = Field(
             default_factory=lambda: "",
             description="鸣潮启动参数（直启默认补充 -krqlv=hd，可用 -krqlv=sd 或 -krqlv=uhd 覆盖，需已安装对应资源）",

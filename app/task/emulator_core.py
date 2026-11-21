@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Any, TypedDict
 from uuid import UUID
 
 from app.task.game import game_device_id
+from app.task.run_flow import operation
 from app.utils import get_logger
 
 if TYPE_CHECKING:
@@ -118,7 +119,8 @@ async def close_emulator(
         f"超时: {timeout}秒"
     )
     try:
-        await asyncio.wait_for(emulator_manager.close(index), timeout=timeout)
+        with operation(owner, "stop_game"):
+            await asyncio.wait_for(emulator_manager.close(index), timeout=timeout)
         logger.success(
             f"模拟器已关闭: {type(emulator_manager).__name__} - 实例 {index} - "
             f"用时: {time.monotonic() - started_at:.3f}秒"

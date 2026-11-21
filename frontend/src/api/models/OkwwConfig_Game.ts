@@ -8,10 +8,6 @@ export type OkwwConfig_Game = {
      */
     AccountSwitchMethod?: ('NONE' | 'MAS' | 'OKWW_SINGLE' | 'OKWW' | null);
     /**
-     * 运行前由 MAS 切换账号（仅日常任务且游戏配置启用时生效；用户未填手机号时不切换）
-     */
-    AccountSwitch?: (boolean | null);
-    /**
      * 鸣潮启动参数（直启默认补充 -krqlv=hd，可用 -krqlv=sd 或 -krqlv=uhd 覆盖，需已安装对应资源）
      */
     Arguments?: (string | null);

@@ -31,6 +31,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.services import script_install
 from app.task.manager_base import ScriptManagerBase
+from app.task.run_flow import point
 from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, log_box
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
@@ -167,7 +168,7 @@ class BetterGIManager(ScriptManagerBase):
                 self.build_proxy_user_list(self.user_config.items())
             )
 
-    async def _prepare_program_update(self) -> None:
+    async def _prepare_script_update(self) -> None:
         root = self._update_root
         if root is None:
             return
@@ -186,6 +187,7 @@ class BetterGIManager(ScriptManagerBase):
                 )
 
             try:
+                point(self, "script_update")
                 result = await run_script_update(
                     ScriptUpdateRequest(self.script_info.script_id, "BetterGI"),
                     program_update.update_before_run,
@@ -194,8 +196,10 @@ class BetterGIManager(ScriptManagerBase):
                     progress=progress,
                 )
             except (script_install.InstallUnsafeError, FluxdownCancelUnconfirmed):
+                point(self, "script_update", state="failed")
                 raise
             except Exception as error:
+                point(self, "script_update", state="failed")
                 await program_update.confirm_current_install(root)
                 result = f"BetterGI 更新准备失败，沿用当前安装继续任务：{error}"
                 logger.warning(result)
@@ -205,6 +209,8 @@ class BetterGIManager(ScriptManagerBase):
                         type=protocol.TASK_NOTICE,
                         data=WSTaskNoticeData(level="warning", message=result),
                     )
+            else:
+                point(self, "script_update", state="succeeded", key="checked")
             await self.script_info.set_log(result)
             program_update.suppress_update_notice(root)
         else:
@@ -286,7 +292,7 @@ class BetterGIManager(ScriptManagerBase):
             ):
                 continue
 
-            await self._prepare_program_update()
+            await self._prepare_script_update()
 
             method = AutoProxyTask(
                 script_info=self.script_info,

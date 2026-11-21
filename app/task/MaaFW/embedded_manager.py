@@ -111,6 +111,7 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_proxy_url,
 )
 from app.task.MaaFW.tools.embedded.view_heal import heal_projection
+from app.task.run_flow import point
 from app.utils import TASK_MODE_ZH, get_logger, sanitize_log_message
 from app.utils.common.process.scope import current_process_scope
 
@@ -1484,6 +1485,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         self._update_stage = None
         self._update_downloaded = None
         self._update_total = None
+        point(self, "script_update", key=phase)
         update_task = asyncio.create_task(
             self._invoke_project_update(
                 project_path,
@@ -1513,15 +1515,20 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         try:
             finished = await self._await_or_stop(update_task)
         except asyncio.CancelledError:
+            point(self, "script_update", state="cancelled", key=phase)
             await abort_update()
             raise
         if not finished:
             # 收尾里的运行后更新：外层取消被基类挡住，停止经 _stop_requested 传进来。
+            point(self, "script_update", state="cancelled", key=phase)
             await abort_update()
             return
         try:
             outcome = update_task.result()
             result = outcome.result
+        except asyncio.CancelledError:
+            point(self, "script_update", state="cancelled", key=phase)
+            raise
         except Exception as exc:  # noqa: BLE001 - 更新失败不阻断运行
             reason = sanitize_log_message(str(exc)).strip() or type(exc).__name__
             if getattr(exc, "cancelled", False):
@@ -1529,9 +1536,11 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 # 分支（取消发生在 shield 之外）：照样别把「已中止」说成失败。
                 # 这里不复用 ``_describe_update_cancel``：那套文案是「正在停」，
                 # 事已停下再说「正在中止」只会让人以为还在等。
+                point(self, "script_update", state="cancelled", key=phase)
                 logger.info(f"MFW 项目{phase_zh}更新已中止：{reason}")
                 self._append_update_log("MFW 项目更新已中止")
                 return
+            point(self, "script_update", state="failed", key=phase)
             if precheck_failure and getattr(exc, "post_validate_rejected", False):
                 # 预检没过、新版本已丢弃：视图还是原样、照常能跑。这是「不升级」
                 # 而不是事故，只发一次 warning（D2）；其它失败仍是 error。
@@ -1558,6 +1567,15 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             )
             return
 
+        updated = bool(_result_field(result, "updated"))
+        if updated:
+            point(self, "script_update", state="succeeded", key="updated")
+        elif _result_field(result, "checked") and not _result_field(
+            result, "update_available"
+        ):
+            point(self, "script_update", state="succeeded", key="no_update")
+        else:
+            point(self, "script_update", state="skipped", key=phase)
         if outcome.registered_id:
             # 登记成功就意味着预检建出了环境，这个版本上次失败的备忘（若有）作废。
             try:
@@ -1576,7 +1594,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"清理运行环境预检备忘失败：{exc}")
-        if bool(_result_field(result, "updated")):
+        if updated:
             # 新版本的 runtime 预检时已建好；旧版本的那份在谱系里最后一个视图离开
             # 之后才可能无人引用（回收那边按全部视图判断）。
             reconcile_in_background(
@@ -1608,7 +1626,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         has_warning = bool(precheck_reminders) or any(
             level == "warning" for level, _ in lines
         )
-        if lines and (has_warning or bool(_result_field(result, "updated"))):
+        if lines and (has_warning or updated):
             await self._notify_update(
                 "warning" if has_warning else "info",
                 "；".join(text for _, text in lines),
