@@ -144,8 +144,8 @@ async def fetch_sra_activities(game: str) -> dict[str, object] | None:
                 activities = [
                     {
                         "name": str(item.get("name") or "").strip(),
-                        ## 分类留空：SRA 不给活动种类，前端据此不显示标签
-                        "kind": "",
+                        ## 星塔旅人的备用源带分类，其它游戏沿用空标签。
+                        "kind": str(item.get("kind") or "") if game == "xtlr" else "",
                         "description": str(item.get("description") or "").strip(),
                         "startTime": _beijing_time(item.get("startTime")),
                         "endTime": _beijing_time(item.get("endTime")),

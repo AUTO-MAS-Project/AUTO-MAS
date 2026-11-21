@@ -18,387 +18,154 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""星塔旅人官网活动公告的抓取与解析。
+"""StellaBase 中文活动日历，供主页与 MSS 活动编排共用。"""
 
-官网 CMS 把活动也当公告发：列表接口一次给 6 条，活动名、分类与开放时间都在
-标题和正文摘要里——接口本身没有时间字段，只能读「▌活动时间 / 招募时间 /
-开放时间」那一段文本。
-
-首页活动卡读取官网公告；MSS 排期单独使用 StellaBase 的中文活动日历。
-
-取数失败返回 None，由调用方退回默认行为。
-"""
-
-import asyncio
-import re
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import urljoin
 
 import httpx
 
 from app.utils import get_logger
 
 logger = get_logger("星塔旅人活动")
-
-NEWS_BASE = "https://stellasora.yostar.cn"
-STELLABASE_EVENTS_URL = "https://stella.ennead.cc/api/stella/events"
-NEWS_LIST_URL = f"{NEWS_BASE}/api/resource/news"
-NEWS_DETAIL_URL = f"{NEWS_BASE}/api/resource/news"
-## 那个 CMS 认 Referer，不带就只给空壳
-NEWS_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "Referer": f"{NEWS_BASE}/",
-}
-
-## 站点固定每页 6 条（size 参数不起作用）；翻 6 页 36 条，够覆盖进行中的
-## 活动与最近结束的那批，再多翻也只是更早的历史公告
-NEWS_MAX_PAGES = 6
+STELLABASE_BASE = "https://stella.ennead.cc"
+STELLABASE_EVENTS_URL = f"{STELLABASE_BASE}/api/stella/events"
 CACHE_TTL_SECONDS = 600
-## 活动期判定取数失败后，这么久之内不再联网、直接按「说不准」：断网或官网出错时，
-## 同一轮的每个 MSS 账号建计划不用各等一次超时
 RUNNING_CHECK_FAILURE_TTL_SECONDS = 300
 REQUEST_TIMEOUT_SECONDS = 20
-## 只留最近结束 14 天以内的，与其它活动源一个口径
 RECENT_WINDOW_DAYS = 14
-## 补封面要逐条取公告详情，同时最多发这么多个请求
-COVER_FETCH_CONCURRENCY = 5
-
 BEIJING = timezone(timedelta(hours=8))
-
-## 「「猎影合围Beta」活动说明」「[奋斗吧！大小姐的旅人修炼手册]活动一览」……
-## 书名号各家公告写法不一，半角方括号与【】都是官网自己用过的
-ACTIVITY_TITLE = re.compile(
-    r"^[「\[【](?P<name>[^「」\[\]【】]+)[」\]】](?P<suffix>.*)$"
-)
-## 标题后缀 → 卡片上的分类标签
-KIND_BY_SUFFIX = (
-    ("招募", "招募"),
-    ("一览", "版本活动"),
-)
-## 带活动关的那一类：首页横幅只认它
 VERSION_KIND = "版本活动"
-## 同一期活动往往有两篇公告（活动一览、商品上新），同名去重时按分类定去留：
-## 数值小的优先，免得「版本全新商品上新！」把真正的「限时活动一览」顶掉
-KIND_RANK = {
-    "版本活动": 0,
-    "常驻活动": 1,
-    "招募": 2,
-    "活动": 3,
-}
-## 长期开放、随版本轮换的活动单独归一类，首页给它们单开一栏。
-## 按关键词认而不是整名：猎影合围以后去掉了 Beta 也照样算
 PERMANENT_KIND = "常驻活动"
 PERMANENT_KEYWORDS = ("灾变防线", "创业激励基金", "猎影合围")
+_Calendar = tuple[list[dict[str, Any]], bool]
+_cache: tuple[float, _Calendar | None] | None = None
 
 
 def classify_activity_name(name: str) -> str:
-    """按公告标题给活动定分类。
-
-    官网公告没有分类字段，分类只能从标题看：命中常驻关键词的是「常驻活动」，
-    带「一览」的是「版本活动」，带「招募」的是「招募」，其余归到「活动」。
-    SRA 兜底那份数据也没有分类，同样用它补上，免得前端的横幅与分组筛选落空。
-    """
-
+    """补全 SRA 备用数据的常驻活动分类。"""
     if any(keyword in name for keyword in PERMANENT_KEYWORDS):
         return PERMANENT_KIND
-    for keyword, kind in KIND_BY_SUFFIX:
-        if keyword in name:
-            return kind
     return "活动"
 
 
-## 带这些字样的公告不是活动：维护、兑换码、问卷、充值之类
-SKIP_TITLE = re.compile(
-    r"维护|更新说明|兑换|问卷|举报|封禁|处罚|支付|充值|客服|反馈|补偿|直播|前瞻|预约|测试|下载|问题说明"
-)
-## 正文里的开放时间段落，标签名各家公告不统一
-TIME_SECTION = re.compile(
-    r"[▌■]\s*(?:活动时间|开放时间|招募时间|活动期间|卡池时间)[：:]?\s*([^\n▌■]+)"
-)
-## 正文里的第一张图：官方主视觉，比列表那个方形缩略图更适合当横幅封面
-DETAIL_IMAGE = re.compile(r'<img[^>]+src="([^"]+)"')
-## 起止都带时刻：2026/09/22 12:00 ~ 2026/09/29 10:59
-EXACT_RANGE = re.compile(
-    r"(\d{4})/(\d{2})/(\d{2})\s+(\d{2}):(\d{2})\s*[~～至\-]\s*"
-    r"(\d{4})/(\d{2})/(\d{2})\s+(\d{2}):(\d{2})"
-)
-## 开始写成「维护结束后」：只有日期没有时刻，2026/09/29 维护结束后 ~ 2026/10/13 03:59
-MAINTENANCE_RANGE = re.compile(
-    r"(\d{4})/(\d{2})/(\d{2})\s*维护结束后\s*[~～至\-]\s*"
-    r"(\d{4})/(\d{2})/(\d{2})\s+(\d{2}):(\d{2})"
-)
-
-_cache: tuple[float, dict[str, Any]] | None = None
-## 缓存活动窗口；跨过起止时刻即可更新判定，无需重新请求。
-_ActivityWindow = tuple[datetime, datetime, bool]
-_running_check_cache: tuple[float, list[_ActivityWindow] | None] | None = None
-
-
-def _at(year: str, month: str, day: str, hour: str, minute: str) -> datetime:
-    """按北京时间拼一个时刻"""
-
-    return datetime(
-        int(year), int(month), int(day), int(hour), int(minute), tzinfo=BEIJING
-    )
-
-
-def parse_open_time(text: str) -> tuple[datetime, datetime] | None:
-    """从公告正文里读出活动的开放时间。
-
-    优先认起止都带时刻的写法；开始写成「维护结束后」的，维护多久公告里没有，
-    硬猜只会让「距开始」错报，所以按当天零点算——倒计时按结束时间走，不受影响。
-
-    Args:
-        text: 公告正文（或摘要）。
-
-    Returns:
-        tuple[datetime, datetime] | None: 开始与结束时刻；读不出结束时刻时为 None。
-    """
-
-    exact = EXACT_RANGE.search(text)
-    if exact is not None:
-        return _at(*exact.groups()[:5]), _at(*exact.groups()[5:])
-
-    maintenance = MAINTENANCE_RANGE.search(text)
-    if maintenance is not None:
-        year, month, day = maintenance.groups()[:3]
-        return _at(year, month, day, "0", "0"), _at(*maintenance.groups()[3:])
-
-    return None
-
-
-def _kind_of(title: str, suffix: str) -> str:
-    """标题后缀 → 卡片上的分类标签"""
-
-    for keyword, kind in KIND_BY_SUFFIX:
-        if keyword in suffix:
-            return kind
-
-    return "活动"
-
-
-def parse_activities(
-    rows: Sequence[Mapping[str, Any]], now: datetime
-) -> list[dict[str, Any]]:
-    """把公告列表里认得出的活动整理成前端要的形状（按开始时间升序）。
-
-    认活动的方式：标题形如「活动名」后缀，后缀不是维护、兑换码之类的杂项；
-    正文里能读出开放时间。同名公告会重复发（活动说明、奖励说明各一篇），
-    只留结束最晚的那条。
-
-    Args:
-        rows: 官网列表接口返回的公告条目。
-        now: 判定时刻（北京时间）。
-
-    Returns:
-        list[dict[str, Any]]: 活动条目，字段与明日方舟那条链路一致。
-    """
-
-    horizon = now - timedelta(days=RECENT_WINDOW_DAYS)
-    picked: dict[str, dict[str, Any]] = {}
-
-    for row in rows:
-        title = str(row.get("title") or "").strip()
-        matched = ACTIVITY_TITLE.match(title)
-        if matched is None or SKIP_TITLE.search(title):
-            continue
-
-        text = f"{row.get('description') or ''}\n{title}"
-        section = TIME_SECTION.search(text)
-        window = parse_open_time(section.group(1) if section is not None else text)
-        if window is None:
-            continue
-
-        start, end = window
-        if end <= start or end < horizon:
-            continue
-
-        name = matched.group("name").strip()
-        description = re.sub(r"\s+", " ", str(row.get("description") or "")).strip()
-        kind = _kind_of(title, matched.group("suffix"))
-        if any(keyword in name for keyword in PERMANENT_KEYWORDS):
-            kind = PERMANENT_KIND
-
-        existing = picked.get(name)
-        if existing is not None:
-            # 同一期会有多篇公告：分类更「重」的那篇说了算（版本一览压过商品上新），
-            # 分类一样才比结束时间，留最晚的那条
-            existing_rank = KIND_RANK.get(existing["kind"], 9)
-            new_rank = KIND_RANK.get(kind, 9)
-            if existing_rank < new_rank:
-                continue
-            if (
-                existing_rank == new_rank
-                and datetime.fromisoformat(existing["endTime"]) >= end
-            ):
-                continue
-
-        picked[name] = {
-            "name": name,
-            "kind": kind,
-            "startTime": start.isoformat(timespec="minutes"),
-            "endTime": end.isoformat(timespec="minutes"),
-            "cover": str(row.get("thumbnail") or ""),
-            "url": str(row.get("link") or ""),
-            "description": description[:80],
-            ## 只用来补封面，发给前端前会摘掉
-            "_newsId": row.get("id"),
-        }
-
-    return sorted(picked.values(), key=lambda item: item["startTime"])
-
-
-async def _detail_cover(client: httpx.AsyncClient, news_id: object) -> str:
-    """取公告详情正文里的第一张图。
-
-    列表给的 ``thumbnail`` 是方形缩略图，铺进 5:1 的横幅只能缩成右边一小块；
-    正文开头那张才是官方主视觉（活动名与角色都在上面），所以封面优先用它。
-    """
-
-    try:
-        response = await client.get(
-            f"{NEWS_DETAIL_URL}/{news_id}", headers=NEWS_HEADERS
-        )
-        response.raise_for_status()
-        news = (response.json().get("data") or {}).get("news") or {}
-    except Exception as e:
-        logger.debug(f"取星塔旅人公告详情失败({news_id}): {type(e).__name__}: {e}")
-        return ""
-
-    matched = DETAIL_IMAGE.search(str(news.get("content") or ""))
-    return matched.group(1) if matched is not None else ""
-
-
-async def _fill_covers(
-    client: httpx.AsyncClient, activities: list[dict[str, Any]]
-) -> None:
-    """并发把每场活动的封面换成详情正文里的主视觉，取不到就留着列表缩略图"""
-
-    semaphore = asyncio.Semaphore(COVER_FETCH_CONCURRENCY)
-
-    async def fill(item: dict[str, Any]) -> None:
-        async with semaphore:
-            cover = await _detail_cover(client, item.get("_newsId"))
-        if cover:
-            item["cover"] = cover
-
-    await asyncio.gather(*(fill(item) for item in activities))
-
-
-async def _fetch_news_rows(client: httpx.AsyncClient) -> list[Mapping[str, Any]]:
-    """按页取公告列表，翻到空页或 ``NEWS_MAX_PAGES`` 为止；请求出错照常抛给调用方。"""
-
-    rows: list[Mapping[str, Any]] = []
-    for index in range(1, NEWS_MAX_PAGES + 1):
-        response = await client.get(
-            NEWS_LIST_URL, params={"index": index}, headers=NEWS_HEADERS
-        )
-        response.raise_for_status()
-        payload = response.json()
-        batch = (payload.get("data") or {}).get("rows")
-        if not isinstance(batch, list) or not batch:
-            break
-        rows.extend(item for item in batch if isinstance(item, Mapping))
-    return rows
-
-
-async def fetch_official_activities(*, force: bool = False) -> dict[str, Any] | None:
-    """取回官网的活动一览（带模块级缓存）。
-
-    Args:
-        force: 为 True 时忽略缓存。
-
-    Returns:
-        dict[str, Any] | None: ``{"activities": [...]}``；取数失败时为 None。
-    """
-
-    global _cache
-
-    now = time.time()
-    if not force and _cache is not None and now - _cache[0] < CACHE_TTL_SECONDS:
-        return _cache[1]
-
-    try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
-            rows = await _fetch_news_rows(client)
-            if not rows:
-                logger.warning("星塔旅人官网活动列表为空，按拿不到处理")
-                return None
-
-            activities = parse_activities(rows, datetime.now(BEIJING))
-            await _fill_covers(client, activities)
-    except Exception as e:
-        logger.warning(f"获取星塔旅人官网活动失败: {type(e).__name__}: {e}")
-        return None
-
-    for item in activities:
-        item.pop("_newsId", None)
-
-    data = {"activities": activities}
-    _cache = (now, data)
-    return data
-
-
-def _stellabase_windows(payload: Mapping[str, Any]) -> list[_ActivityWindow]:
-    """读取可游玩时段；商店领奖期可能比关卡多开一周。"""
-    windows = []
+def _stellabase_activities(payload: Mapping[str, Any]) -> _Calendar:
+    """逐条读取可游玩时段；坏记录不影响已确认开放的活动。"""
+    activities = []
+    complete = True
     for group in ("current", "upcoming", "ended"):
-        entries = payload[group]
+        entries = payload.get(group)
         if not isinstance(entries, list):
-            raise ValueError(f"无效的活动分组: {group}")
+            complete = False
+            continue
         for entry in entries:
-            start = datetime.fromisoformat(entry["startTime"])
-            end = datetime.fromisoformat(entry["endTime"])
-            if start.tzinfo is None or end.tzinfo is None or end <= start:
-                raise ValueError("活动时间范围无效")
-            # 弹珠小游戏也写有「活动限时关卡」；版本活动同时列有关卡和故事剧情。
-            description = entry["description"]
-            story_battle = "活动限时关卡" in description and "故事剧情" in description
-            windows.append((start, end, story_battle))
-    if not windows:
-        raise ValueError("活动日历为空")
-    return windows
+            try:
+                start = datetime.fromisoformat(entry["startTime"])
+                end = datetime.fromisoformat(entry["endTime"])
+                if start.tzinfo is None or end.tzinfo is None or end <= start:
+                    raise ValueError("活动时间范围无效")
+                name = entry["title"]
+                description = entry["description"]
+                if not isinstance(name, str) or not name.strip():
+                    raise ValueError("活动名称为空")
+                if not isinstance(description, str) or not description.strip():
+                    raise ValueError("活动说明为空")
+                # 弹珠小游戏也写有「活动限时关卡」；版本活动同时列有关卡和故事剧情。
+                story = "活动限时关卡" in description and "故事剧情" in description
+                textures = entry.get("textures") or {}
+                image = textures.get("banner") or textures.get("tabBackground") or ""
+                # 与站点前端使用相同的图片代理路径。
+                cover = (
+                    urljoin(
+                        STELLABASE_BASE,
+                        f"/api/asset{image}"
+                        if image.startswith("/stella/assets/")
+                        else image,
+                    )
+                    if image
+                    else ""
+                )
+            except (ValueError, TypeError, KeyError, AttributeError):
+                complete = False
+                continue
+            activities.append(
+                {
+                    "name": name,
+                    "kind": VERSION_KIND if story else "活动",
+                    "startTime": start.isoformat(),
+                    "endTime": end.isoformat(),
+                    "cover": cover,
+                    "url": f"{STELLABASE_BASE}/events",
+                    "description": description,
+                }
+            )
+    return activities, complete and bool(activities)
 
 
-async def _activities_for_running_check() -> list[_ActivityWindow] | None:
-    """获取 StellaBase 中文日历，失败时短暂缓存以免每个账号重复等待。"""
-    global _running_check_cache
-
+async def _fetch_calendar(*, force: bool = False) -> _Calendar | None:
+    """主页与编排共享日历，失败时短暂缓存以免各账号重复等待。"""
+    global _cache
     now = time.monotonic()
-    if _running_check_cache is not None:
-        fetched_at, windows = _running_check_cache
+    if not force and _cache is not None:
+        fetched_at, calendar = _cache
         ttl = (
             CACHE_TTL_SECONDS
-            if windows is not None
+            if calendar is not None
             else RUNNING_CHECK_FAILURE_TTL_SECONDS
         )
         if now - fetched_at < ttl:
-            return windows
-
+            return calendar
     try:
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
             response = await client.get(STELLABASE_EVENTS_URL, params={"lang": "cn"})
             response.raise_for_status()
-            windows = _stellabase_windows(response.json())
-    except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
+            payload = response.json()
+            if not isinstance(payload, Mapping):
+                raise ValueError("活动日历不是对象")
+            calendar = _stellabase_activities(payload)
+    except (httpx.HTTPError, ValueError) as exc:
         logger.warning(f"获取 StellaBase 活动日历失败: {exc}")
-        windows = None
+        calendar = None
+    _cache = (now, calendar)
+    return calendar
 
-    _running_check_cache = (now, windows)
-    return windows
+
+async def fetch_official_activities(*, force: bool = False) -> dict[str, Any] | None:
+    """取主页活动与横幅；结束时间使用关卡关闭时间。"""
+    calendar = await _fetch_calendar(force=force)
+    if calendar is None or not calendar[0]:
+        return None
+    horizon = datetime.now(BEIJING) - timedelta(days=RECENT_WINDOW_DAYS)
+    return {
+        "activities": [
+            item
+            for item in calendar[0]
+            if datetime.fromisoformat(item["endTime"]) >= horizon
+        ],
+        "sourceName": "StellaBase",
+        "sourceUrl": f"{STELLABASE_BASE}/events",
+    }
 
 
 async def has_running_official_activity() -> bool | None:
-    """按 StellaBase 可游玩时段判断 MSS 是否应加入活动快速战斗。"""
-    windows = await _activities_for_running_check()
-    if windows is None:
+    """确认开放即可编排；坏数据导致无法确认空档时保留手动队列。"""
+    calendar = await _fetch_calendar()
+    if calendar is None:
         return None
-
+    activities, complete = calendar
     now = datetime.now(BEIJING)
-    active = [story for start, end, story in windows if start <= now < end]
-    if not active:
-        return False
-    # 有活动但未确认支持快速战斗时，让用户手动排入的任务仍可运行。
-    return True if any(active) else None
+    active = [
+        item
+        for item in activities
+        if datetime.fromisoformat(item["startTime"])
+        <= now
+        < datetime.fromisoformat(item["endTime"])
+    ]
+    if any(item["kind"] == VERSION_KIND for item in active):
+        return True
+    if active or not complete:
+        return None
+    return False

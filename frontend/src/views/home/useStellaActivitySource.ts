@@ -4,7 +4,7 @@ import { createEmptySraActivityOverview } from '@/types/home'
 import type { SraActivityItem, SraActivityOverview } from '@/types/home'
 import { useHomeActivitySource } from './useHomeActivitySource'
 
-/** 后端从官网活动公告里解析出来的条目 */
+/** 后端从 StellaBase 中文日历整理出的条目 */
 interface StellaOfficialActivity {
   name?: string
   kind?: string
@@ -14,13 +14,19 @@ interface StellaOfficialActivity {
   description?: string
 }
 
+interface StellaActivityData {
+  activities?: StellaOfficialActivity[]
+  sourceName?: string
+  sourceUrl?: string
+}
+
 const toTimestamp = (value: string) => {
   const timestamp = new Date(value).getTime()
   return Number.isNaN(timestamp) ? 0 : timestamp
 }
 
 /**
- * 官网条目 → 卡片形状。后端已经把维护公告之类的杂项筛掉了，这里只做
+ * 日历条目 → 卡片形状。后端已经整理活动分类，这里只做
  * 字段收口与排序；缺名字或时间的条目界面没法展示，按不存在处理。
  */
 const buildActivities = (raw: StellaOfficialActivity[]): SraActivityItem[] =>
@@ -67,16 +73,13 @@ const buildOverview = (raw: StellaOfficialActivity[]): SraActivityOverview => {
 /**
  * 星塔旅人活动数据的后端中转数据源。
  *
- * 官网 CMS 不放开跨域、也认 Referer，浏览器直连拿不到，所以取数走后端
- * `POST /api/info/stella/activity`：后端把官网公告整理成与其它游戏一致的形状
- * （活动名、分类、起止时间、封面），这里只做收口与失败降级——与碧蓝档案、
- * 明日方舟那两条链路同一形状。这条链路没有快照也没有请求超时，重试节奏与
- * 可见性挂起交给公共骨架。
+ * 取数走后端 `POST /api/info/stella/activity`，使用 StellaBase 日历，
+ * SRA 作为备用源。实际来源名称和链接随数据返回，重试与可见性挂起交给公共骨架。
  */
 export const useStellaActivitySource = () => {
   const overview = ref<SraActivityOverview>(createEmptySraActivityOverview())
 
-  const source = useHomeActivitySource<StellaOfficialActivity[]>({
+  const source = useHomeActivitySource<StellaActivityData>({
     // 日志里沿用原本的中文名字，不随界面语言变
     label: () => '星塔旅人',
     loadingOnInit: false,
@@ -88,11 +91,14 @@ export const useStellaActivitySource = () => {
       if (response.code !== 200) {
         throw new Error(response.message || 'HTTP ' + response.code)
       }
-      const payload = (response.data ?? {}) as { activities?: StellaOfficialActivity[] }
-      return payload.activities ?? []
+      return (response.data ?? {}) as StellaActivityData
     },
-    applyData: activities => {
-      overview.value = buildOverview(activities)
+    applyData: data => {
+      overview.value = {
+        ...buildOverview(data.activities ?? []),
+        sourceName: data.sourceName,
+        sourceUrl: data.sourceUrl,
+      }
     },
     markStale: () => {
       // 保留上一次的内容并挂上 stale 标记，卡片据此提示数据可能已过期
