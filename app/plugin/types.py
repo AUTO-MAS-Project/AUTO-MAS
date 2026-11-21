@@ -17,7 +17,8 @@ PLUGIN_ID_PATTERN = re.compile(r'(?!\.{1,2}$)[^/\\:*?"<>|\s\x00-\x1f]+')
 PLUGIN_ATTR = "PLUGIN"
 PLUGIN_API_VERSION = "6"
 # 受控插件：神秘入口未解锁时不进入市场、不可安装，解锁后行为与普通插件一致。
-RESTRICTED_PLUGIN_NAMES = frozenset({"token_adapter"})
+# 第三方插件按发行时的插件名登记；SignFlow 的 Token 获取插件名为 signflow_token。
+RESTRICTED_PLUGIN_NAMES = frozenset({"token_adapter", "signflow_token"})
 plugin_locale: ContextVar[str] = ContextVar("plugin_locale", default="zh-CN")
 
 

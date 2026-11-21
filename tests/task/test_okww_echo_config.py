@@ -6,6 +6,8 @@ from types import SimpleNamespace
 import pytest
 
 from app.models.config.script import OkwwConfig, OkwwUserConfig
+from app.utils import IS_WINDOWS
+from app.utils import IS_WINDOWS
 from app.task.Okww import api_service
 from app.task.Okww.tools import backup_archive
 
@@ -480,6 +482,7 @@ def test_echo_override_preserves_source_and_respects_quick_config(tmp_path, quic
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not IS_WINDOWS, reason="账号按 Windows DPAPI 加密落盘")
 @pytest.mark.parametrize("scenario", ["echo", "advanced", "rollover"])
 async def test_batch_arguments_grouping_preserves_user_order(
     tmp_path, monkeypatch, scenario

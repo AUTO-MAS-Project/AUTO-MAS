@@ -294,10 +294,12 @@ async def test_native_tasks_run_independently_in_one_queue(
         await proxy.check_log(lines, datetime.now().astimezone(), if_stream_end=True)
 
     monkeypatch.setattr(proxy, "_wait_maaend_stage", upstream_result)
-    await proxy.main_task()
+    await proxy.execution.run()
+    assert proxy.cur_user_item.status == (
+        "异常" if scenario == "delivery_failure" else "完成"
+    )
     if scenario == "delivery_failure":
         assert [mode for mode, _ in attempts] == ["Delivery", "Delivery"]
-        assert proxy.run_book["Routine"] is False
     else:
         assert [mode for mode, _ in attempts] == (
             ["Delivery", "Routine", "Routine"]
@@ -325,7 +327,6 @@ async def test_native_tasks_run_independently_in_one_queue(
             )
         if scenario == "essence_retry":
             assert [task["taskName"] for task in attempts[2][1]] == ["AutoEssence"]
-        assert all(proxy.run_book.values())
 
 
 @pytest.mark.asyncio

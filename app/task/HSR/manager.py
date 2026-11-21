@@ -41,6 +41,7 @@ from app.models.notification.report import TaskResultData, TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.task.client import client_executable_path
+from app.task.run_flow import begin_attempt, point
 from app.utils import TASK_MODE_ZH, get_logger, is_admin
 from app.utils import io as _utils_io
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
@@ -470,6 +471,7 @@ class HSRManager(NotificationTaskBase):
             if not root:
                 continue
             source = str(getattr(script_config.Update, f"{engine}Source") or "")
+            point(self, "script_update", key=engine)
             try:
                 outcome = await run_script_update(
                     ScriptUpdateRequest(str(self.script_info.script_id), "HSR", engine),
@@ -485,17 +487,32 @@ class HSRManager(NotificationTaskBase):
                     should_abort=self._update_aborted,
                     prepared=getattr(self, "_prefetched_updates", {}).get(engine),
                 )
+            except asyncio.CancelledError:
+                point(self, "script_update", state="cancelled", key=engine)
+                raise
             except FluxdownCancelUnconfirmed:
+                point(self, "script_update", state="failed", key=engine)
                 raise
             except Exception as e:  # noqa: BLE001 - 未知安装状态不能沿用旧版运行
+                point(self, "script_update", state="failed", key=engine)
                 name = engine_label(engine, left=False)
                 logger.opt(exception=True).warning(f"HSR 更新：{name}更新时出错")
                 self._append_log(f"{name}更新状态无法确认，已停止任务：{e}")
                 raise RuntimeError(f"{name}更新状态无法确认，不能开始任务") from e
             if outcome.blocking:
+                point(self, "script_update", state="failed", key=engine)
                 return outcome.message or f"{engine_label(engine)}更新未完成"
             if self._update_aborted():
+                point(self, "script_update", state="cancelled", key=engine)
                 raise asyncio.CancelledError
+            if outcome.updated or (
+                outcome.checked and not outcome.update_available and not outcome.message
+            ):
+                point(self, "script_update", state="succeeded", key=engine)
+            elif not outcome.checked and outcome.message:
+                point(self, "script_update", state="failed", key=engine)
+            else:
+                point(self, "script_update", state="skipped", key=engine)
 
         return None
 
@@ -1238,6 +1255,7 @@ class HSRManager(NotificationTaskBase):
         self._direct_user_log = log_item
 
         try:
+            begin_attempt(self, 1)
             if "M7A" in control.engines:
                 # 端口（云平台）与收尾动作都要从还原后的原生配置里读，先还原再往下走；
                 # 必须在任务前脚本之前：原生来源多账号共用一份 config.yaml，按账号改它的
@@ -1315,7 +1333,21 @@ class HSRManager(NotificationTaskBase):
                         m7a_before_run = (
                             self._read_m7a_config_bytes() if engine == "M7A" else None
                         )
-                        result = await session.run(timeout_seconds)
+                        point(self, "run", key=engine)
+                        try:
+                            result = await session.run(timeout_seconds)
+                        except asyncio.CancelledError:
+                            point(self, "run", state="cancelled", key=engine)
+                            raise
+                        except Exception:
+                            point(self, "run", state="failed", key=engine)
+                            raise
+                        point(
+                            self,
+                            "run",
+                            state="succeeded" if result.success else "failed",
+                            key=engine,
+                        )
                         if engine == "M7A":
                             # 成败都刷新：跑失败时三月七已经写回的状态同样是真实状态。
                             self._refresh_m7a_backup_after_direct(

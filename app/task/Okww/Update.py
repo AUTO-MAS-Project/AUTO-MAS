@@ -26,6 +26,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.task.client import client_executable_path, client_launcher_path
 from app.task.proxy_helpers import push_dispatch_log
+from app.task.run_flow import operation
 from app.utils import get_logger
 
 from .tools.game_update import update_game_via_launcher
@@ -66,11 +67,12 @@ class WuwaUpdateTask(TaskExecuteBase):
         if not launcher.is_file():
             raise RuntimeError("请先在托管配置中导入有效的鸣潮官方启动器")
 
-        await update_game_via_launcher(
-            launcher,
-            client_path=client_executable_path(self.script_config),
-            on_progress=self._push_dispatch_log,
-        )
+        with operation(self, "game_update"):
+            await update_game_via_launcher(
+                launcher,
+                client_path=client_executable_path(self.script_config),
+                on_progress=self._push_dispatch_log,
+            )
         await self.cur_user_item.set_state(status="完成")
 
     async def final_task(self) -> None:

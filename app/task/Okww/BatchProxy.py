@@ -241,6 +241,7 @@ class BatchProxyTask(AutoProxyTask):
         if self.cur_user_log.status == "Success!" and not self.pending.issubset(
             self.succeeded
         ):
+            self._log_result_key = "batch_missing_results"
             await self.cur_user_log.set_state(
                 status="OK-WW 未取得全部账号的本轮成功结果"
             )
@@ -317,15 +318,15 @@ class BatchProxyTask(AutoProxyTask):
                 self.cur_user_log = await user.add_log_record(
                     datetime.now().astimezone(), LogRecord()
                 )
-            self.run_book = (
+            self.run_complete = (
                 normalize_account_key(self.cur_user_config.Info.Id) in self.succeeded
             )
-            skipped = maintenance_skipped and not self.run_book
+            skipped = maintenance_skipped and not self.run_complete
             self.user_state(user).maintenance_skipped = skipped
             await user.set_state(
-                status="完成" if self.run_book else "跳过" if skipped else "异常"
+                status="完成" if self.run_complete else "跳过" if skipped else "异常"
             )
-            if self.run_book:
+            if self.run_complete:
                 status = "Success!"
             elif skipped:
                 status = self._maintenance_reason or "鸣潮正在维护"

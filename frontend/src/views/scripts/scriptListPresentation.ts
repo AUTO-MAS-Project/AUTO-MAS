@@ -183,6 +183,6 @@ export const getZzzOdRegionLabel = (user: ScriptListUser): string => {
   return labels[getZzzOdRegion(user)] ?? labels.cn
 }
 
-// ZzzOd：B服账号名存 BilibiliAccountName，其余区服存 Account
+// ZzzOd：B服账号名存 BilibiliAccountName，其余区服存账号（Info.Id）
 export const getZzzOdAccountValue = (user: ScriptListUser): string =>
-  getZzzOdRegion(user) === 'cn_b' ? user.Game?.BilibiliAccountName || '' : user.Game?.Account || ''
+  getZzzOdRegion(user) === 'cn_b' ? user.Game?.BilibiliAccountName || '' : user.Info?.Id || ''

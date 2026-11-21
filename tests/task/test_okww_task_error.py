@@ -9,6 +9,8 @@ import pytest
 
 from app.models.config.script import OkwwConfig, OkwwUserConfig
 from app.models.task import TaskItem, TaskScriptItem, TaskUserItem
+from app.utils import IS_WINDOWS
+from app.utils import IS_WINDOWS
 from app.task.Okww import AutoProxy as proxy_module
 from app.task.Okww.BatchProxy import BatchProxyTask
 from tests.config_support import activate_config
@@ -17,6 +19,7 @@ _4C_ERROR = "选择“传送并刷取4C声骸”时，必须在刷取声骸任�
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not IS_WINDOWS, reason="账号按 Windows DPAPI 加密落盘")
 @pytest.mark.parametrize(
     ("task", "upstream_error", "expected_detail", "attempts"),
     [

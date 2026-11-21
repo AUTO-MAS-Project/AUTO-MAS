@@ -12,7 +12,6 @@ from app.models.config import (
     MaaEndConfig,
     OkNteConfig,
     OkwwConfig,
-    SrcConfig,
     UserConfigType,
     ZzzOdConfig,
 )
@@ -20,6 +19,7 @@ from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import execute_script_task
 from app.task.failure_capture_core import FailureCapture
 from app.task.proxy_helpers import push_dispatch_log
+from app.task.run_flow import operation, point
 from app.utils import get_logger
 from app.utils.common.process.scope import detached_process_context
 
@@ -55,7 +55,6 @@ def _running_inflight_detection(script_id: str) -> asyncio.Task | None:
 
 type ProxyScriptConfigType = (
     MaaEndConfig
-    | SrcConfig
     | OkwwConfig
     | OkNteConfig
     | GeneralConfig
@@ -277,14 +276,16 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
 
         收尾时成对执行后置脚本；收尾被取消或异常中断也仍会尝试执行。"""
 
-        try:
-            await super()._finalize_task()
-        finally:
-            await self.run_user_scripts_after()
-            # 收尾不等待卡住的检测：只留一条可查的说明。句柄由进程级 registry
-            # 持有并在底层结束后自动回收，既不堆积线程、也不拖住收尾。
-            if _running_inflight_detection(self.script_info.script_id) is not None:
-                logger.warning("上一轮游戏画面维护检测仍未结束，本轮不再投递新检测")
+        if self.stopped_manually:
+            point(self, "task", state="cancelled")
+        with operation(self, "finalize"):
+            try:
+                await super()._finalize_task()
+            finally:
+                await self.run_user_scripts_after()
+                # 不等待后台截图；句柄仍在时，后续轮次不再投递同一检测。
+                if _running_inflight_detection(self.script_info.script_id) is not None:
+                    logger.warning("上一轮游戏画面维护检测仍未结束，本轮不再投递新检测")
 
     async def _run_main_task(self) -> None:
         """[兼容旧专项] 旧主流程加超时保护；新 L4 的业务超时在执行器所属层实现。"""

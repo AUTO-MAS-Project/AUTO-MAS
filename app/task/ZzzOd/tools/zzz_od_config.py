@@ -586,8 +586,8 @@ def user_field_patch(user_config) -> dict[str, Any]:
         ("game_region", "Game", "GameRegion"),
         ("game_path", "Game", "GamePath"),
         ("game_language", "Game", "GameLanguage"),
-        ("account", "Game", "Account"),
-        ("password", "Game", "Password"),
+        ("account", "Info", "Id"),
+        ("password", "Info", "Password"),
         ("bilibili_account_name", "Game", "BilibiliAccountName"),
         ("platform", "Game", "Platform"),
     ):

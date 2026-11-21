@@ -344,14 +344,15 @@ router.beforeEach(async (to, from, next) => {
   next()
 })
 
-// MAA 页面暂随主程序编译；直达地址也须确认插件当前提供该能力。
+// 插件页面暂随主程序编译；直达地址也须确认插件当前提供该能力。
 router.beforeResolve(async to => {
-  if (to.meta.scriptType !== 'MAA') return
+  const type = to.meta.scriptType
+  if (type !== 'MAA' && type !== 'SRC') return
   try {
     const types = await fetchScriptCapabilities()
-    if (types.includes('MAA')) return
+    if (types.includes(type)) return
   } catch (error) {
-    logger.warn(`读取 MAA 插件能力失败: ${String(error)}`)
+    logger.warn(`读取 ${type} 插件能力失败: ${String(error)}`)
   }
   return { path: '/plugins/market' }
 })

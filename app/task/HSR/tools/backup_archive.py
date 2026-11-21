@@ -83,7 +83,7 @@ _USER_KEY_GROUPS: dict[str, tuple[str, ...]] = {
         "Base",
         "Name",
         "Status",
-        "Server",
+        "Resource",
         "RemainedDay",
         "IfScriptBeforeTask",
         "ScriptBeforeTask",
@@ -136,7 +136,7 @@ _OVERLAY_FIELD_LABELS: dict[tuple[str, str], str] = {
     ("Info", "Base"): "配置来源",
     ("Info", "Name"): "账号名",
     ("Info", "Status"): "启用状态",
-    ("Info", "Server"): "服务器",
+    ("Info", "Resource"): "服务器",
     ("Info", "RemainedDay"): "剩余天数",
     ("Info", "IfScriptBeforeTask"): "任务前脚本",
     ("Info", "ScriptBeforeTask"): "任务前脚本路径",
@@ -187,7 +187,7 @@ _STAGE_WEEKDAY_LABELS = {
 """TaskOpt.EchoOfWarWeekday 取值（HSRUserConfig OptionsValidator 值域）"""
 
 _STAGE_SERVER_LABELS = {"CN-Official": "官服"}
-"""Info.Server 取值（HSRUserConfig 值域，与 getTags 同款映射）"""
+"""Info.Resource 取值（HSRUserConfig 值域，与 getTags 同款映射）"""
 
 _TASKSWITCH_MODULE_LABELS = {
     "Daily": "每日",
@@ -606,8 +606,8 @@ def build_overlay_preview(overlay: dict, current_owner: str | None = None) -> di
                 "value": "是" if overlay["Info.Status"] else "否",
             }
         )
-    if has("Info", "Server"):
-        server = str(overlay["Info.Server"])
+    if has("Info", "Resource"):
+        server = str(overlay["Info.Resource"])
         mas_rows.append(
             {
                 "key": "服务器",

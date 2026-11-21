@@ -32,6 +32,7 @@ from packaging.version import Version
 from app.config import NodeState, config_manager
 from app.core.ws import Publisher
 from app.core.ws.protocol import ID_PLUGIN, PLUGIN_CAPABILITIES_UPDATED
+from app.mystery.gate import is_unlocked
 from app.plugin import uv as uv_tool
 from app.plugin.base.game import GameAdapterPlugin, GameTypeDecl
 from app.plugin.base.plugin import BasePlugin
@@ -62,6 +63,7 @@ from app.plugin.types import (
     MARKET_GATE_TAG,
     PLUGIN_ID_PATTERN,
     PLUGIN_ID_TAG_PREFIX,
+    RESTRICTED_PLUGIN_NAMES,
     LifecycleContext,
     PluginCodeDrift,
     PluginState,
@@ -506,6 +508,19 @@ class _PluginManager:
         self._assert_allowed(record, "enable")
         if self._is_enabled(record, ctx=ctx):
             return {}
+        # 受控插件：未通过神秘入口校验时不可启用。已安装并启用的存量不受影响——
+        # 它的启用请求走上面的早退，重载时拆下游再恢复的那一段由内部语境放行，
+        # 因此跨日失效或手动锁定都不会让在用的插件掉线。
+        if (
+            name in RESTRICTED_PLUGIN_NAMES
+            and ctx != LifecycleContext.RELOAD_CASCADE
+            and not record.info.enabled
+            and not is_unlocked()
+        ):
+            raise PluginPrecheckError(
+                "该插件需要先在神秘入口解锁后才能启用",
+                payload={"name": name},
+            )
         # 按语境允许进入态：根/级联 → disabled|fault_runtime；本项 reload 另允 reloading
         allowed_in = {PluginState.DISABLED, PluginState.FAULT_RUNTIME}
         if ctx == LifecycleContext.RELOAD:
@@ -727,18 +742,27 @@ class _PluginManager:
                 f"服务依赖回环: {' → '.join([*path_list, uid_s])}",
                 payload={"path": [*path_list, uid_s]},
             )
-        if record._plugin_cls is None:
-            raise PluginNotFoundError(f"插件不在列表中: {name}", payload={"name": name})
         if record.info.is_core:
             raise PluginPrecheckError("核心插件不可禁用", payload={"name": name})
         self._assert_allowed(record, "disable")
+        # 故障、禁停与已卸载记录没有可拆的实例：显式停用只取消下次启动的启用意图，
+        # 不再跑一遍插件收尾。否则用户想让出错的插件安静待着也做不到，重启还会被拉起。
         if record.info.state in {
             PluginState.DISABLED,
             PluginState.FAULT_LOAD,
             PluginState.FAULT_RUNTIME,
             PluginState.UNLOADED,
         }:
+            if record.info.enabled:
+                record.info.enabled = False
+                await record.commit()
+                capabilities_changed.send(self, name=name, enabled=False)
+                await Publisher.send(
+                    id=ID_PLUGIN, type=PLUGIN_CAPABILITIES_UPDATED, data={}
+                )
             return {}
+        if record._plugin_cls is None:
+            raise PluginNotFoundError(f"插件不在列表中: {name}", payload={"name": name})
         # 按语境允许进入态：根/级联仅 enabled；reload 另允 reloading；unload 另允 unloading
         allowed_in = {PluginState.ENABLED}
         if ctx == LifecycleContext.RELOAD:
@@ -797,6 +821,9 @@ class _PluginManager:
             if ctx in {LifecycleContext.NORMAL, LifecycleContext.RELOAD_CASCADE}:
                 record.info.state = PluginState.DISABLED
                 record.info.lifecycle_context = LifecycleContext.IDLE
+            # 只有用户真的点停用才写掉「下次还要开」。重载只是暂时停一下：它拆到一半失败时，
+            # 已经停稳的下层不在父层那份名单里，事后没处补，写掉就再也起不来。
+            if ctx == LifecycleContext.NORMAL:
                 record.info.enabled = False
             await record.commit()
             capabilities_changed.send(self, name=name, enabled=False)
@@ -948,17 +975,21 @@ class _PluginManager:
         if hung is not None:
             await hung.pre_reload()
 
-        was_enabled = record.info.state == PluginState.ENABLED
+        # 「在跑」决定要不要拆实例，「想开」决定重载后要不要重新拉起。故障记录上两者不同：
+        # 用户原本开着、只是眼下没运行，重载不该把这份启用意图抹成「从没启用过」。
+        was_running = record.info.state == PluginState.ENABLED
+        want_enabled = was_running or record.info.enabled
         downs = self._downstream(record)
 
         # 先写语境；拆下游时本项仍保持原稳态以便随后 disable
         record.info.lifecycle_context = LifecycleContext.RELOAD
         await record.commit()
         deps: dict[str, Any] = {}
+        tear: dict[str, Any] = {}
+
         try:
             # ── 拆下游 ──
             path = [*path_list, uid_s]
-            tear: dict[str, Any] = {}
             for dep_record in downs:
                 if dep_record.info.state != PluginState.ENABLED:
                     continue
@@ -977,7 +1008,7 @@ class _PluginManager:
             if hung is not None:
                 await hung.on_reload()
 
-            if was_enabled:
+            if was_running:
                 # 本项 disable/enable：dep_path 不含自身 uid；ctx=RELOAD 可进 RELOADING
                 await self.disable(
                     record, held=True, dep_path=path_list, ctx=LifecycleContext.RELOAD
@@ -991,7 +1022,7 @@ class _PluginManager:
             loader.clear(record)
             cls = loader.load(record)
             record._plugin_cls = cls
-            if was_enabled:
+            if want_enabled:
                 await self.enable(
                     record,
                     held=True,
@@ -1017,7 +1048,6 @@ class _PluginManager:
                     except Exception as exc:
                         logger.exception(f"重载后恢复下游失败: {dep_id}")
                         restored_record.info.state = PluginState.FAULT_RUNTIME
-                        restored_record.info.enabled = False
                         restored_record.info.last_error = str(exc)
                         await restored_record.commit()
                         # 子节点仍缺少此提供者，不能借恢复子树再次启用失败分支。
@@ -1027,7 +1057,7 @@ class _PluginManager:
 
             deps["restore"] = await restore_cascade(tear)
 
-            if was_enabled:
+            if want_enabled:
                 record.info.state = PluginState.ENABLED
                 record.info.enabled = True
             else:
@@ -1496,9 +1526,9 @@ class _PluginManager:
         state = record.info.state
         allowed: tuple[str, ...]
         if state == PluginState.FAULT_LOAD:
-            allowed = ("load", "unload")
+            allowed = ("load", "unload", "disable")
         elif state == PluginState.FAULT_RUNTIME:
-            allowed = ("load", "unload", "enable", "reload")
+            allowed = ("load", "unload", "enable", "reload", "disable")
         else:
             return
         if op not in allowed:

@@ -187,19 +187,20 @@ def replace_dir(src: Path, dst: Path) -> None:
     """
     用 ``src`` 整目录替换 ``dst``（先清后拷, 不做改名的双份拷贝）
 
-    只删一次且用 ``force_rmtree``: 目录带只读文件（如脚本自带的 ``.git`` 对象）
-    或删除前仍有残留时都能清干净, 不需要先拷到 .tmp 再改名的中间副本——
-    改名在 Windows 上并不原子, 目标存在时直接失败, 失败还会把用户的配置
-    留在半删状态。
-
-    删不掉的条目按 ``force_rmtree`` 语义忽略, 随后 ``copytree`` 就地补回被删的
-    部分: 宁可留下几个多余文件, 也不让目标停在半删状态。
+    删除走 ``force_rmtree``: 目录带只读文件（如脚本自带的 ``.git`` 对象）
+    时仍能清理。目标未清空则直接报错, 不能把残留旧文件混进新目录后继续
+    声称替换成功。
 
     Args:
         src: 内容来源目录。
         dst: 目标目录, 会被替换成 ``src`` 的内容。
+
+    Raises:
+        OSError: 目录未被清空, 通常是有文件仍被占用。
     """
     force_rmtree(dst)
+    if dst.exists() or dst.is_symlink() or dst.is_junction():
+        raise OSError(f"目标目录未能清空，仍有文件被占用: {dst}")
     shutil.copytree(src, dst, dirs_exist_ok=True)
 
 

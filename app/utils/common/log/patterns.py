@@ -46,9 +46,9 @@
 
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Optional, Pattern, Union
+from typing import NamedTuple, Optional, Pattern, Union
 
 from app.utils import expression as _utils_expression
 
@@ -153,6 +153,7 @@ class RegexMatcher:
     extract: Optional[_utils_expression.CompiledExpression]
     # 日志类型（普通/异常）：仅作为推送策略的元数据，不参与匹配逻辑
     log_type: str = LOG_TYPE_NORMAL
+    key: str = ""
 
     def apply(self, line: str) -> Optional[str]:
         """对单行日志应用正则规则，命中返回提取文本，未命中返回 None"""
@@ -412,6 +413,18 @@ def load_patterns(patterns_json: str) -> list[CompiledMatcher]:
 
 
 # ==================== 匹配 ====================
+def first_pattern_match[T: CompiledMatcher](
+    line: str, matchers: Sequence[T]
+) -> tuple[T, str] | None:
+    """每个匹配器至多执行一次，保留真正产出文本的规则。"""
+    line = line.strip()
+    for matcher in matchers:
+        result = matcher.apply(line)
+        if result is not None:
+            return matcher, result
+    return None
+
+
 def apply_patterns(
     line: str, matchers: Optional[Sequence[CompiledMatcher]] = None
 ) -> Optional[tuple[str, str]]:
@@ -430,11 +443,9 @@ def apply_patterns(
     """
     if not matchers:
         return None
-    line = line.strip()
-    for matcher in matchers:
-        result = matcher.apply(line)
-        if result is not None:
-            return (matcher.log_type, result)
+    if match := first_pattern_match(line, matchers):
+        matcher, result = match
+        return matcher.log_type, result
     return None
 
 
@@ -534,6 +545,21 @@ def compile_log_signs(raw: object, mode: str = SIGN_MODE_SPLIT) -> LogSignMatche
         return LogSignMatcher(mode=mode, pattern=compile_regex(text), configured=True)
     keywords = [item for token in text.split("|") if (item := token.strip())]
     return LogSignMatcher(mode=mode, keywords=keywords, configured=bool(keywords))
+
+
+class LogSignMatch(NamedTuple):
+    key: str
+    text: str
+
+
+def match_log_signs(
+    log: str, rules: Mapping[str, LogSignMatcher], *, key: str | None = None
+) -> LogSignMatch | None:
+    """按声明顺序取首个命中，或只检查指定规则以便在其间判断超时等非日志条件。"""
+    for name in (key,) if key is not None else rules:
+        if (text := rules[name].search(log)) is not None:
+            return LogSignMatch(name, text)
+    return None
 
 
 # ==================== 调试 ====================

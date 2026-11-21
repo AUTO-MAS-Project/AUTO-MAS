@@ -3,6 +3,7 @@ import type { RouteRecordRaw } from 'vue-router'
 import type { ScriptMetadata } from '@/utils/scriptMetadata'
 import type { PluginAdapterBinding } from '@/views/plugins/pluginCenterModel'
 import maa from '@/views/maa/entry'
+import src from '@/views/src/entry'
 import whimbox from '@/views/whimbox/entry'
 
 type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
@@ -26,7 +27,7 @@ export interface ScriptFrontendAdapter {
   }
 }
 
-const adapters: ScriptFrontendAdapter[] = [maa, whimbox]
+const adapters: ScriptFrontendAdapter[] = [maa, whimbox, src]
 
 export const SCRIPT_PLUGIN_EDITORS = Object.fromEntries(
   adapters.map(adapter => [adapter.type, adapter.editors])

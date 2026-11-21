@@ -4,10 +4,6 @@
 /* eslint-disable */
 export type ZzzOdUserConfig_GameInput = {
     /**
-     * 登录账号（手机号/邮箱；留空沿用 zzz-od 已保存的登录态）
-     */
-    Account?: (string | null);
-    /**
      * B服登录账号名
      */
     BilibiliAccountName?: (string | null);
@@ -47,10 +43,6 @@ export type ZzzOdUserConfig_GameInput = {
      * 显示器序号（上游枚举原值为字符串）
      */
     Monitor?: ('1' | '2' | '3' | '4' | null);
-    /**
-     * 登录密码（DPAPI 加密落盘，注入/回读写 game_account.yml 时经 get/set 自动加解密）
-     */
-    Password?: (string | null);
     /**
      * 游戏平台（上游枚举 GamePlatformEnum.PC 的真实值为大写 'PC'）
      */

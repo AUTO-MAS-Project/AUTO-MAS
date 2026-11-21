@@ -24,7 +24,6 @@ export namespace ScriptIndexItem {
         GENERAL_CONFIG = 'GeneralConfig',
         OKWW_CONFIG = 'OkwwConfig',
         OK_NTE_CONFIG = 'OkNteConfig',
-        SRC_CONFIG = 'SrcConfig',
         MAA_END_CONFIG = 'MaaEndConfig',
         M9ACONFIG = 'M9AConfig',
         MAA_FWCONFIG = 'MaaFWConfig',
@@ -35,6 +34,7 @@ export namespace ScriptIndexItem {
         MSSCONFIG = 'MSSConfig',
         MAA_CONFIG = 'MaaConfig',
         WHIMBOX_CONFIG = 'WhimboxConfig',
+        SRC_CONFIG = 'SrcConfig',
     }
 }
 

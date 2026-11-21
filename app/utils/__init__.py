@@ -128,14 +128,6 @@ if TYPE_CHECKING:
     from .common.constants import PLAN_CONSUMER_VALUES as PLAN_CONSUMER_VALUES
     from .common.constants import RESERVED_NAMES as RESERVED_NAMES
     from .common.constants import SKLAND_SM_CONFIG as SKLAND_SM_CONFIG
-    from .common.constants import (
-        STARRAIL_CN_UPDATE_LINK_URL as STARRAIL_CN_UPDATE_LINK_URL,
-    )
-    from .common.constants import STARRAIL_PACKAGE_NAME as STARRAIL_PACKAGE_NAME
-    from .common.constants import STARRAIL_STAGE_BOOK as STARRAIL_STAGE_BOOK
-    from .common.constants import (
-        STARRAIL_UPDATE_LINK_SERVER as STARRAIL_UPDATE_LINK_SERVER,
-    )
     from .common.constants import TASK_MODE_ZH as TASK_MODE_ZH
     from .common.constants import TIME_FIELDS as TIME_FIELDS
     from .common.constants import TYPE_BOOK as TYPE_BOOK
@@ -281,10 +273,6 @@ _LAZY_EXPORTS = {
     ),
     "MAAEND_SANITY_TASK_FIELDS": (".common.constants", "MAAEND_SANITY_TASK_FIELDS"),
     "ENDFIELD_SERVER_PRESETS": (".common.constants", "ENDFIELD_SERVER_PRESETS"),
-    "STARRAIL_PACKAGE_NAME": (".common.constants", "STARRAIL_PACKAGE_NAME"),
-    "STARRAIL_CN_UPDATE_LINK_URL": (".common.constants", "STARRAIL_CN_UPDATE_LINK_URL"),
-    "STARRAIL_UPDATE_LINK_SERVER": (".common.constants", "STARRAIL_UPDATE_LINK_SERVER"),
-    "STARRAIL_STAGE_BOOK": (".common.constants", "STARRAIL_STAGE_BOOK"),
     "TIME_FIELDS": (".common.constants", "TIME_FIELDS"),
     "RESERVED_NAMES": (".common.constants", "RESERVED_NAMES"),
     "ILLEGAL_CHARS": (".common.constants", "ILLEGAL_CHARS"),
@@ -497,10 +485,6 @@ __all__ = [
     "MAAEND_INVENTORY_TARGET_DEFAULTS",
     "MAAEND_SANITY_TASK_FIELDS",
     "ENDFIELD_SERVER_PRESETS",
-    "STARRAIL_PACKAGE_NAME",
-    "STARRAIL_CN_UPDATE_LINK_URL",
-    "STARRAIL_UPDATE_LINK_SERVER",
-    "STARRAIL_STAGE_BOOK",
     "TIME_FIELDS",
     "RESERVED_NAMES",
     "ILLEGAL_CHARS",

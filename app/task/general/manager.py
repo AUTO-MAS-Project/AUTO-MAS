@@ -20,10 +20,10 @@ from datetime import datetime
 from pathlib import Path
 
 import app.core.notify.report as _node_report
-from app.config import config_manager
+from app.config import LockTicket, config_manager
 from app.core import Config, GameManager, Notify, Publisher
 from app.core.ws import protocol
-from app.models.config import GeneralConfig
+from app.models.config import GeneralConfig, PlanConfigType
 from app.models.emulator import DeviceProvider
 from app.models.notification.report import TaskResultReport, UserReportText
 from app.models.schema import WSTaskNoticeData
@@ -31,7 +31,6 @@ from app.models.task import ScriptItem, UserItem
 from app.task.client import ClientProcess, client_executable_path
 from app.task.game import game_device_id, game_target_id
 from app.task.manager_base import ScriptManagerBase
-from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
 from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, log_box
 from app.utils import io as _utils_io
 
@@ -63,6 +62,7 @@ class GeneralManager(ScriptManagerBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
+        self.plan_locks: list[tuple[PlanConfigType, LockTicket]] = []
         self.external_config_exists = False
         self.external_config_snapshot_ready = False
         self._device_provider = device_provider
@@ -70,80 +70,52 @@ class GeneralManager(ScriptManagerBase):
     async def check(self) -> str:
         """校验通用脚本配置是否可用"""
         # TODO(插件迁移，#1845)：dev 新增的通用计划日期编辑会话暂不接入；
-        # params 传递、计划归属/日期校验、计划锁及模板换入后的保存结果待统一讨论。
+        # 编辑参数、指定日期校验及模板换入后的保存结果待统一讨论。
         # 同步时不能直接带入依赖 task_info.plan_id/plan_day 的旧执行分支。
         if self.execution_mode not in METHOD_BOOK:
             return "不支持的任务模式, 请检查任务配置！"
-        if not isinstance(
-            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], GeneralConfig
-        ):
+        config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        if not isinstance(config, GeneralConfig):
             return "托管配置类型错误, 不是通用托管类型"
-        if not Config.ScriptConfig[
-            uuid.UUID(self.script_info.script_id)
-        ].Script.ScriptPath:
+        script, game = config.Script, config.Game
+        if not script.ScriptPath:
             return "未填写脚本路径, 请检查托管配置中的脚本路径设置！"
-        if (
-            Config.ScriptConfig[
-                uuid.UUID(self.script_info.script_id)
-            ].Script.IfTrackProcess
-            and (
-                not Config.ScriptConfig[
-                    uuid.UUID(self.script_info.script_id)
-                ].Script.TrackProcessName
-            )
-            and (
-                not Config.ScriptConfig[
-                    uuid.UUID(self.script_info.script_id)
-                ].Script.TrackProcessExe
-            )
-            and (
-                not Config.ScriptConfig[
-                    uuid.UUID(self.script_info.script_id)
-                ].Script.TrackProcessCmdline
-            )
+        if script.IfTrackProcess and not (
+            script.TrackProcessName
+            or script.TrackProcessExe
+            or script.TrackProcessCmdline
         ):
             return "开启追踪子进程后, 需至少填写一项追踪进程信息！"
         # 配置路径为空时 Path("") 等价于 Path(".")，后续的快照与清理会落到
         # 程序自身的工作目录上，必须在任务开始前拦下
-        if not Config.ScriptConfig[
-            uuid.UUID(self.script_info.script_id)
-        ].Script.ConfigPath:
+        if not script.ConfigPath:
             return "未填写配置路径, 请检查托管配置中的配置路径设置！"
+        # 路径类型与模式不符属于确定性配置错误，在这里一次性判掉；运行期只再问
+        # 「该路径此刻是否存在」（那是脚本进程的领地，只能就地判断，不能预判）。
+        if script.ConfigPath.exists():
+            mismatch = (
+                script.ConfigPathMode == "Folder" and not script.ConfigPath.is_dir()
+            ) or (script.ConfigPathMode == "File" and not script.ConfigPath.is_file())
+            if mismatch:
+                return (
+                    f"配置路径与模式不符: 当前为{script.ConfigPathMode}, "
+                    f"但 {script.ConfigPath} 不是对应的类型, "
+                    "请检查托管配置中的配置路径设置！"
+                )
         # 日志路径未填时每轮尝试都会白等 60 秒日志文件再失败, 属于确定性配置错误,
         # 在任务开始前拦下; 目录不存在不在这里拦, 有的脚本首次运行才创建日志目录
-        if not Config.ScriptConfig[
-            uuid.UUID(self.script_info.script_id)
-        ].Script.LogPath:
+        if not script.LogPath:
             return "未填写日志路径, 请检查托管配置中的日志路径设置！"
-        if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Game.Enabled:
-            game_path = client_executable_path(
-                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
-            )
-            if Config.ScriptConfig[
-                uuid.UUID(self.script_info.script_id)
-            ].Game.Type == "Emulator" and (
-                game_target_id(
-                    Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
-                )
-                == "-"
-                or game_device_id(
-                    Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
-                )
-                in ["", "-"]
+        if game.Enabled:
+            if game.Type == "Emulator" and (
+                game_target_id(config) == "-" or game_device_id(config) in ["", "-"]
             ):
                 return "未完成模拟器配置, 请检查托管配置中的模拟器设置！"
-            elif Config.ScriptConfig[
-                uuid.UUID(self.script_info.script_id)
-            ].Game.Type == "Client" and (game_path is None or not game_path.exists()):
-                return "未完成游戏配置, 请检查托管配置中的游戏设置！"
-            elif Config.ScriptConfig[
-                uuid.UUID(self.script_info.script_id)
-            ].Game.Type == "URL" and (
-                not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Game.URL
-                or not Config.ScriptConfig[
-                    uuid.UUID(self.script_info.script_id)
-                ].Game.ProcessName
-            ):
+            elif game.Type == "Client":
+                game_path = client_executable_path(config)
+                if game_path is None or not game_path.exists():
+                    return "未完成游戏配置, 请检查托管配置中的游戏设置！"
+            elif game.Type == "URL" and not (game.URL and game.ProcessName):
                 return "未完成URL配置, 请检查托管配置中的URL和进程名称设置！"
 
         return "Pass"
@@ -233,24 +205,15 @@ class GeneralManager(ScriptManagerBase):
         _utils_io.clear_native_config_snapshot(self.temp_path)
         self.external_config_snapshot_ready = False
 
-    def _user_uses_mas_config(self) -> bool:
-        user_id = self.script_info.user_list[self.script_info.current_index].user_id
-        if user_id == "Default":
-            return True
-        user_config = self.user_config[uuid.UUID(user_id)]
-        # 原生来源=不写；shared/independent 来源都写面板值
-        return read_config_base(user_config) != CONFIG_BASE_NATIVE
-
-    async def prepare(self):
+    async def prepare(self) -> GeneralConfig:
         """运行前准备"""
 
         # 锁定脚本配置并加载账号配置
-        self.config_locks[
-            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].uid
-        ] = await self.lock_script_config(
-            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
-        )
-        self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        if not isinstance(config, GeneralConfig):
+            raise RuntimeError("托管配置类型错误, 不是通用托管类型")
+        self.config_locks[config.uid] = await self.lock_script_config(config)
+        self.script_config = config
         self.user_config = self.script_config.UserData
         logger.success(f"{self.script_info.script_id}已锁定, 通用托管配置提取完成")
 
@@ -260,21 +223,15 @@ class GeneralManager(ScriptManagerBase):
         self.script_config_path = script_config_path
         self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
 
-        if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Game.Enabled:
-            if (
-                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Game.Type
-                == "Emulator"
-            ):
+        if self.script_config.Game.Enabled:
+            if self.script_config.Game.Type == "Emulator":
                 device_provider = (
                     self._device_provider or GameManager.get_emulator_instance
                 )
                 self.emulator_manager = await device_provider(
                     game_target_id(self.script_config)
                 )
-
-            elif Config.ScriptConfig[
-                uuid.UUID(self.script_info.script_id)
-            ].Game.Type in ["Client", "URL"]:
+            elif self.script_config.Game.Type in ["Client", "URL"]:
                 self.game_process_manager = ClientProcess()
 
         # 构建账号列表
@@ -292,6 +249,13 @@ class GeneralManager(ScriptManagerBase):
             await self.script_info.set_users(
                 self.build_proxy_user_list(self.user_config.items())
             )
+            plan_ids = {
+                self.user_config[uuid.UUID(user.user_id)].Info.PlanMode
+                for user in self.script_info.user_list
+            }
+            for plan_id in plan_ids - {"Fixed"}:
+                plan = Config.PlanConfig[plan_id]
+                self.plan_locks.append((plan, await plan.lock_s()))
         logger.info(
             f"账号列表加载完成, 已筛选账号数: {len(self.script_info.user_list)}"
         )
@@ -311,6 +275,7 @@ class GeneralManager(ScriptManagerBase):
                 self.script_config_path,
                 self.script_config.Script.ConfigPathMode,
             )
+        return self.script_config
 
     async def main_task(self):
 
@@ -325,10 +290,7 @@ class GeneralManager(ScriptManagerBase):
             return
 
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        await self.prepare()
-
-        if not isinstance(self.script_config, GeneralConfig):
-            raise RuntimeError("托管配置类型错误, 不是通用托管类型")
+        script_config = await self.prepare()
 
         for _runtime_user_index in range(len(self.script_info.user_list)):
             await self.script_info.set_current_index(_runtime_user_index)
@@ -340,28 +302,25 @@ class GeneralManager(ScriptManagerBase):
                 )
             ):
                 continue
-            use_mas_config = self._user_uses_mas_config()
-            user_id = self.script_info.user_list[self.script_info.current_index].user_id
-            logger.info(
-                f"账号 {user_id} 配置来源: "
-                f"{'MAS 独立配置' if use_mas_config else '脚本原生来源配置'}"
-            )
-            if not use_mas_config:
-                self._restore_external_config()
-
             task = METHOD_BOOK[self.execution_mode](
                 self.script_info,
-                self.script_config,
+                script_config,
                 self.user_config,
                 (
                     self.emulator_manager
-                    if self.script_config.Game.Type == "Emulator"
+                    if script_config.Game.Type == "Emulator"
                     else self.game_process_manager
                 )
-                if self.script_config.Game.Enabled
+                if script_config.Game.Enabled
                 else None,
             )
-
+            logger.info(
+                f"账号 {current_user.user_id} 配置来源: "
+                f"{'MAS 配置' if task.use_mas_config else '脚本原生来源配置'}"
+            )
+            # 没有独立配置的账号也从原生配置起步，不能继承前一账号的运行副本。
+            if _runtime_user_index > 0:
+                self._restore_external_config()
             try:
                 await self.run_user_task(current_user, task)
             finally:
@@ -369,7 +328,7 @@ class GeneralManager(ScriptManagerBase):
                 # ConfigFile 下发进原生配置（GUI 所见即备份），重拍会把被
                 # 污染的原生存成新快照、覆盖 prepare 时的真实原状，收尾
                 # 还原时原生就被固定成备份内容
-                if not use_mas_config and not self.task_info.view_only:
+                if not task.use_mas_config and not self.task_info.view_only:
                     self._snapshot_external_config()
 
     async def final_task(self):
@@ -418,6 +377,9 @@ class GeneralManager(ScriptManagerBase):
 
             await self.script_info.set_state(status="完成")
         finally:
+            for plan, ticket in reversed(self.plan_locks):
+                await plan.unlock(ticket)
+            self.plan_locks.clear()
             script_config = getattr(self, "script_config", None)
             if script_config is not None:
                 ticket = self.config_locks.pop(script_config.uid, None)
