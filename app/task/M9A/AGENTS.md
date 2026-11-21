@@ -121,13 +121,13 @@
 `isinstance(…, MaaFWConfig)` 分支天然覆盖 M9A，不要再加 `isinstance(…, M9AConfig)` 分支。
 
 前端托管页 / 账号页是 M9A 的专属页面（`frontend/src/views/m9a/`：`M9AScriptEdit.vue`、`M9AUserEdit.vue`，
-用 MaaFW 的 pageKit 分节与编排层拼），由特调注册表里 M9A 的描述对象
-（`frontend/src/views/EditView/MaaFWFlavor/m9a/index.ts`）登记为整页；创建流程仍是 MaaFW 的组件。
+用 MaaFW 的 pageKit 分节与编排层拼），由同目录的 `entry.ts` 登记（适配条目上的 `maafw` 家族标记）；
+创建流程仍是 MaaFW 的组件。
 托管页控制方式分节里 ADB 下包名之后的两格是 M9A 独有的下拉：「登录方式」（`Run.LoginMode`，对应 `login.py`，
 `M9ALoginModeField.vue`，Project / Mas 与后端字面量一致）与「游戏更新」（`Run.GameUpdateMode`，对应
-`game_update.py`，`M9AGameUpdateField.vue`）。描述对象里的 `userPage.managed.entries` 与 `managed.py` 的
-`MANAGED_ENTRIES` 是同一组：通用账号页按它把受管任务挡在「添加任务」与预设模板之外，已在队列里的照常显示；
-`userPage.managed.accountTask`
+`game_update.py`，`M9AGameUpdateField.vue`）。`M9AUserEdit.vue` 传给编排层的 `managed.entries` 与 `managed.py` 的
+`MANAGED_ENTRIES` 是同一组：账号页按它把受管任务挡在「添加任务」与预设模板之外，已在队列里的照常显示；
+`managed.accountTask`
 （`SwitchAccount` + 官服）是拆分判据，只有页面上生效的资源在其中、有效切号 ≥ 2 时才给「拆分前不会运行」
 的警告；`Run.LoginMode == "Mas"` 时用户页把 accountTask 置空（切号由 MAS 完成、后端会直接移出残留），
 其余残留只给轻提示（`frontend/src/views/EditView/User/maafwManagedTasks.ts`）。改一边要同步另一边。#799 的配置备份恢复走 MaaFW 的两个池（`data/<sid>/MaaFWBackups/{mas,native}`）；

@@ -32,8 +32,8 @@
 `app/task/MaaFW/registration.py` 的家族声明显式把 `MSSConfig` 登记到 `MaaFWEmbeddedManager`，宿主生成的运行索引按类型精确匹配。
 
 前端托管页 / 账号页是 MSS 的专属页面（`frontend/src/views/mss/`：`MSSScriptEdit.vue`、`MSSUserEdit.vue`，
-用 MaaFW 的 pageKit 分节与编排层拼），由特调注册表里 MSS 的描述对象
-（`frontend/src/views/EditView/MaaFWFlavor/mss/index.ts`）登记为整页；托管页控制方式一步顶部「只支持桌面端」的提示、
+用 MaaFW 的 pageKit 分节与编排层拼），由同目录的 `entry.ts` 登记（适配条目上的 `maafw` 家族标记，计划表也在这里登记）；
+托管页控制方式一步顶部「只支持桌面端」的提示、
 账号页的计划表下拉与活动优先开关都是同目录下的组件。计划表页 `MSSPlanTable.vue` 是 MSS 自己的。
 
 只适配桌面端：模拟器端的星塔旅人启动不了游戏，托管页在控制方式一步写明原因；引擎不拦 Adb。
