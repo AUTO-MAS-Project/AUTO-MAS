@@ -4147,7 +4147,6 @@
   "core.setting.others.viewHistory": "履歴を表示",
   "core.setting.pressSound.custom": "カスタム音声",
   "core.setting.pressSound.duck": "ラバーダック",
-  "core.setting.pressSound.fx1": "サウンド1",
   "core.setting.pushTime.always": "毎回",
   "core.setting.pushTime.failOnly": "失敗時のみ",
   "core.setting.pushTime.never": "送信しない",

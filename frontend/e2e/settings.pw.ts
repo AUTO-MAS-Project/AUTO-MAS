@@ -171,8 +171,7 @@ test.describe('@settings user preferences', () => {
     await expect(enabled).not.toBeChecked()
     await enabled.click()
     await expect.poll(async () => (await readPreferences()).enabled).toBe(true)
-    await chooseOption(page, preset, 'Sound 1')
-    await expect.poll(async () => (await readPreferences()).preset).toBe('fx1')
+    await expect.poll(async () => (await readPreferences()).preset).toBe('duck')
     await volume.press('Home')
     await expect.poll(async () => (await readPreferences()).volume).toBe(0)
     await expect(volume).toBeEnabled()
@@ -181,9 +180,9 @@ test.describe('@settings user preferences', () => {
 
     await page.reload()
     await expect(enabled).toBeChecked()
-    await expect(preset.locator('.ant-select-selection-item')).toHaveText('Sound 1')
+    await expect(preset.locator('.ant-select-selection-item')).toHaveText('Rubber duck')
     await expect(volume).toHaveAttribute('aria-valuenow', '0.05')
-    await expect.poll(readPreferences).toEqual({ enabled: true, preset: 'fx1', volume: 0.05 })
+    await expect.poll(readPreferences).toEqual({ enabled: true, preset: 'duck', volume: 0.05 })
 
     // 保留浏览器桥接的配置存储，只在 IPC 写入边界拒绝一笔音效关闭。
     await page.evaluate(() => {
@@ -209,7 +208,7 @@ test.describe('@settings user preferences', () => {
     )
     await expect(enabled).toBeChecked()
     await expect(enabled).toBeEnabled()
-    expect(await readPreferences()).toEqual({ enabled: true, preset: 'fx1', volume: 0.05 })
+    expect(await readPreferences()).toEqual({ enabled: true, preset: 'duck', volume: 0.05 })
     await section.scrollIntoViewIfNeeded()
     await app.evidence('press-sound-save-rejected')
 
@@ -217,9 +216,9 @@ test.describe('@settings user preferences', () => {
     await expect.poll(async () => (await readPreferences()).enabled).toBe(false)
     await page.reload()
     await expect(enabled).not.toBeChecked()
-    await expect(preset.locator('.ant-select-selection-item')).toHaveText('Sound 1')
+    await expect(preset.locator('.ant-select-selection-item')).toHaveText('Rubber duck')
     await expect(volume).toHaveAttribute('aria-valuenow', '0.05')
-    await expect.poll(readPreferences).toEqual({ enabled: false, preset: 'fx1', volume: 0.05 })
+    await expect.poll(readPreferences).toEqual({ enabled: false, preset: 'duck', volume: 0.05 })
     await section.scrollIntoViewIfNeeded()
     await app.evidence('press-sound-retry-reloaded')
   })
