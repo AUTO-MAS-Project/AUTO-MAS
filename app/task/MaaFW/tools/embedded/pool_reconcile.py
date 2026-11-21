@@ -27,8 +27,8 @@
 这里改成按引用对账：
 
 1. 权威集合 = 所有 MaaFW 类脚本的项目目录，每个项目用
-   ``describe_runner_runtime_selection`` 算出 ``prepare_runner_environment`` 会选中
-   的 runtime id 与 maafw requirement——两边走同一批 helper，算出来的就是运行时
+   ``describe_runner_runtime_selection`` 算出借运行环境（``borrow_runtime_environment``）
+   会选中的 runtime id 与 maafw requirement——两边走同一批 helper，算出来的就是运行时
    会用的那一个。
 2. 交给 ``MaaFWRuntimePool.reclaim_stale_runtimes``：不在权威集合里的 runtime、
    binding、native 与作废缓存按各自的判据删（旧布局 runtime 先就地收割 binding；
@@ -54,11 +54,11 @@ from pathlib import Path
 from typing import Any
 
 from app.models.config import MaaFWConfig
+from app.task.MaaFW.tools.core.agent_env.runtime_lease import (
+    describe_runner_runtime_selection,
+)
 from app.task.MaaFW.tools.core.native.requirement import (
     resolve_project_maafw_requirement,
-)
-from app.task.MaaFW.tools.core.runner.environment import (
-    describe_runner_runtime_selection,
 )
 from app.task.MaaFW.tools.core.runtime_pool import MaaFWRuntimePoolService
 from app.task.MaaFW.tools.core.runtime_pool.binding import (

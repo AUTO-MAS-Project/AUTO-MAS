@@ -188,7 +188,9 @@ def _is_allowed(module: str) -> bool:
 def _runner_venv_import_roots() -> set[str]:
     """运行池 venv 里装着的三方包的顶层模块名：maafw binding + BASE_RUNTIME_PACKAGES。"""
 
-    from app.task.MaaFW.tools.core.runner.environment import BASE_RUNTIME_PACKAGES
+    from app.task.MaaFW.tools.core.agent_env.runtime_lease import (
+        BASE_RUNTIME_PACKAGES,
+    )
 
     allowed = {
         canonicalize_name(Requirement(spec).name) for spec in BASE_RUNTIME_PACKAGES

@@ -64,7 +64,7 @@ def resolve_project_maafw_requirement(
 ) -> str | None:
     """普通项目（非 Managed）会用到的 MaaFW requirement。
 
-    与 ``prepare_runner_environment`` 内的解析顺序一致：项目自带原生库的实测
+    与借运行环境（``agent_env.runtime_lease``）内的解析顺序一致：项目自带原生库的实测
     版本优先于 requirements.txt 的声明（实测 46 个发行包里有 3 个声明是陈旧的）。
 
     供运行前自检复用——它只需要知道「这个项目会用哪个 runtime」，不需要真的去

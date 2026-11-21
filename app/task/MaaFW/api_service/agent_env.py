@@ -135,8 +135,8 @@ async def prepare_agent_env(
     # 避免所有 API 请求都为它们付出导入成本。
     from app.core import Publisher
     from app.core.ws import protocol as ws_protocol
-    from app.task.MaaFW.tools.core.runner.service import (
-        MaaFWRunnerService,
+    from app.task.MaaFW.tools.core.agent_env.project_env import (
+        prepare_project_environment,
         project_environment_fingerprint,
     )
     from app.task.MaaFW.tools.core.runtime_pool import (
@@ -313,14 +313,11 @@ async def prepare_agent_env(
             # 代理作用域按线程登记，必须在 to_thread 的目标函数体内进入，
             # uv / pip 子进程环境才带上用户在 MAS 里填的代理。
             with subprocess_proxy_scope(proxy_url):
-                return MaaFWRunnerService().prepare_project_environment(
+                return prepare_project_environment(
                     root_path,
                     interface,
                     runtime_pool_root=route.root,
                     runtime_pool_id=route.pool_id,
-                    # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
-                    # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
-                    import_paths=[Config.source_path],
                     send_log=append_log,
                     progress=publish_progress,
                 )

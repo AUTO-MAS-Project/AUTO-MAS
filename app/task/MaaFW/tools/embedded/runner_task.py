@@ -45,9 +45,6 @@ from app.services import execute_script_task
 from app.task.client import ClientProcess, client_executable_path, client_launcher_path
 from app.task.emulator_core import close_emulator, resolve_host_adb
 from app.task.game import game_device_id, game_is_emulator, game_target_id
-from app.task.MaaFW.tools.core.agent_env.pip_constraint import (
-    AGENT_PIP_CONSTRAINT_DIR_ENV,
-)
 from app.task.MaaFW.tools.core.controller_win32.service import (
     MaaFWWin32ControllerService,
     MaaFWWin32Window,
@@ -2316,14 +2313,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 event_channel=event_server.spec if event_server is not None else None,
             )
             # ModAVD 实例：worker 及其 agent、adb 子进程的 adb 走脚本专用 server。
-            # 另拷一份，不改运行环境对象里那份（可能被缓存复用）
+            # 另拷一份，不改运行环境对象里那份（可能被缓存复用）。agent pip 约束文件的
+            # 目录已由借运行环境时带进 runner_environment.env（见 agent_env.runtime_lease）。
             script_env = await self._script_adb_env()
             worker_env = {
                 **runner_environment.env,
                 **script_env,
-                # worker 起 agent 时把 maafw 的 pip 约束文件写在这里（AUTO-MAS 自己的数据目录，
-                # 不进项目视图），见 runner._inject_agent_pip_constraint。
-                AGENT_PIP_CONSTRAINT_DIR_ENV: str(_maafw_agent_constraints_dir()),
             }
             if (desktop := desktop_process_target.get()) is not None:
                 from app.utils.windows.desktop_session.process_runner import (
@@ -4533,12 +4528,6 @@ def _sweep_legacy_runner_jobs() -> None:
     jobs_dir = Path.cwd() / "data" / "maafw_runner_jobs"
     _utils_io.migrate_legacy_dir(Path.cwd() / "runtime" / "maafw_runner_jobs", jobs_dir)
     _sweep_stale_runner_jobs(jobs_dir)
-
-
-def _maafw_agent_constraints_dir() -> Path:
-    """agent 运行期 pip 约束文件的目录（一个项目一份 ``maafw_agent_<路径哈希>.txt``，由 worker 写）。"""
-
-    return Path.cwd() / "data" / "maafw_agent_constraints"
 
 
 # 旧版本的 worker 读完 job 就删，正常情况下 job 文件只在盘上待几秒；超过这么久还在的，

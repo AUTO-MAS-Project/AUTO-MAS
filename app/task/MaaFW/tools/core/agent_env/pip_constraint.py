@@ -83,6 +83,16 @@ AGENT_PIP_CONSTRAINT_DIR_ENV = "AUTO_MAS_MAAFW_AGENT_CONSTRAINT_DIR"
 AGENT_PIP_CONSTRAINT_ENV_KEYS: tuple[str, ...] = ("PIP_CONSTRAINT", "UV_CONSTRAINT")
 
 
+def default_agent_constraint_dir() -> Path:
+    """agent 运行期 pip 约束文件的目录（一个项目一份 ``maafw_agent_<路径哈希>.txt``，由 worker 写）。
+
+    借运行环境时（``runtime_lease.borrow_runtime_environment``）经
+    :data:`AGENT_PIP_CONSTRAINT_DIR_ENV` 放进给 worker 的环境变量。
+    """
+
+    return Path.cwd() / "data" / "maafw_agent_constraints"
+
+
 @dataclass(frozen=True)
 class AgentMaaFWPipConstraint:
     """agent 运行期 pip 约束的判定结果。``version`` 为 None 时不注入，``reason`` 说明为什么。"""
@@ -261,6 +271,7 @@ __all__ = [
     "agent_maafw_pip_constraint",
     "agent_pip_constraint_file",
     "apply_agent_pip_constraint",
+    "default_agent_constraint_dir",
     "pin_agent_maafw_requirement",
     "write_agent_pip_constraint",
 ]

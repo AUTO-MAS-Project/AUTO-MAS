@@ -284,7 +284,7 @@ def describe_unusable_runtime(project_path: Path) -> str | None:
     100ms——解释器本来就要起）。没建过就不拦：那份环境会在运行时按需准备，失败
     自有它自己的报错路径。
 
-    runtime 的选法与 ``prepare_runner_environment`` 一致：同一份依赖选择器加同一个
+    runtime 的选法与借运行环境（``borrow_runtime_environment``）一致：同一份依赖选择器加同一个
     引导解释器。只按 MaaFW 版本去池里挑不行——旧版本用便携包 embeddable Python
     建出的坏环境和修好后新建的好环境 MaaFW 版本相同，挑错了会把能跑的任务拦下。
 
@@ -293,7 +293,7 @@ def describe_unusable_runtime(project_path: Path) -> str | None:
     """
 
     # 运行池会拉起 uv 与安装器，只在真要用时导入，别让每次 import 都付这份成本。
-    from app.task.MaaFW.tools.core.runner.environment import (
+    from app.task.MaaFW.tools.core.agent_env.runtime_lease import (
         describe_runner_runtime_selection,
     )
     from app.task.MaaFW.tools.core.runtime_pool import (
@@ -1667,8 +1667,8 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
 
         # 与 API 侧同理：这几个模块会拉起 runtime_pool 与 agent_env，只在真要
         # 用时导入。
-        from app.task.MaaFW.tools.core.runner.service import (
-            MaaFWRunnerService,
+        from app.task.MaaFW.tools.core.agent_env.project_env import (
+            prepare_project_environment,
             project_environment_fingerprint,
         )
         from app.task.MaaFW.tools.core.runtime_pool import (
@@ -1715,15 +1715,12 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         with subprocess_proxy_scope(
             proxy_url if proxy_url is not None else Config.proxy_url
         ):
-            result = MaaFWRunnerService().prepare_project_environment(
+            result = prepare_project_environment(
                 project_path,
                 interface,
                 runtime_pool_root=route.root,
                 runtime_pool_id=route.pool_id,
                 agent_env_root=agent_env_root,
-                # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
-                # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
-                import_paths=[Config.source_path],
                 send_log=send_log,
                 cancel_event=cancel_event,
                 lenient_health_check=lenient_health_check,
