@@ -151,6 +151,8 @@ export interface SraActivityItem {
 }
 
 export interface SraActivityOverview {
+  sourceName?: string
+  sourceUrl?: string
   Available: boolean
   Stale: boolean
   Message: string
