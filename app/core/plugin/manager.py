@@ -821,6 +821,9 @@ class _PluginManager:
             if ctx in {LifecycleContext.NORMAL, LifecycleContext.RELOAD_CASCADE}:
                 record.info.state = PluginState.DISABLED
                 record.info.lifecycle_context = LifecycleContext.IDLE
+            # 只有用户真的点停用才写掉「下次还要开」。重载只是暂时停一下：它拆到一半失败时，
+            # 已经停稳的下层不在父层那份名单里，事后没处补，写掉就再也起不来。
+            if ctx == LifecycleContext.NORMAL:
                 record.info.enabled = False
             await record.commit()
             capabilities_changed.send(self, name=name, enabled=False)
@@ -984,20 +987,6 @@ class _PluginManager:
         deps: dict[str, Any] = {}
         tear: dict[str, Any] = {}
 
-        async def keep_enable_intent(tree: dict[str, Any]) -> None:
-            """只补启用意图，不改状态：树里的节点都是这次重载前处于启用态的。
-
-            恢复失败的节点留在故障态、被跳过的子树留在禁停态，都不算「没启用过」。
-            抹掉意图会让老用户在故障排除后重新「启用」时被当成首次使用，
-            受控插件因此还要再解锁一次。从未启用和用户主动停用的插件不进这棵树。
-            """
-            for dep_id, children in tree.items():
-                dep_record = self._record_by_plugin_id(dep_id)
-                if dep_record is not None and not dep_record.info.enabled:
-                    dep_record.info.enabled = True
-                    await dep_record.commit()
-                await keep_enable_intent(children)
-
         try:
             # ── 拆下游 ──
             path = [*path_list, uid_s]
@@ -1067,8 +1056,6 @@ class _PluginManager:
                 return restored
 
             deps["restore"] = await restore_cascade(tear)
-            # 故障与被跳过的子树都要留着启用意图，否则故障排除后重新启用会被当成首次使用。
-            await keep_enable_intent(tear)
 
             if want_enabled:
                 record.info.state = PluginState.ENABLED
@@ -1090,10 +1077,6 @@ class _PluginManager:
                 exc=exc,
                 plugin=record._plugin,
             )
-            # 失败路径同样要还回已拆下游的启用意图：它们在拆解时被写成了停用，
-            # 而这次重载并没有经过用户的「停用」选择。
-            with contextlib.suppress(Exception):
-                await keep_enable_intent(tear)
             raise PluginOperationError(str(exc), payload={"name": name}) from exc
 
     async def install(

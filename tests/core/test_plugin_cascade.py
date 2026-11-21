@@ -56,6 +56,7 @@ async def cascade_plugins(isolated_app_paths, monkeypatch, tmp_path):
                 f"    provides_services = {{{name!r}: 'value', '{name}.sync': 'sync_value'}}\n"
                 "    events = []\n"
                 "    fail_enable = False\n"
+                "    fail_disable = False\n"
                 "    async def value(self, *, started=None, release=None, disable_self=False):\n"
                 '        """可等待放行或发起自禁用，返回实例以核对调用和资源释放的先后。"""\n'
                 "        if started is not None:\n"
@@ -82,8 +83,9 @@ async def cascade_plugins(isolated_app_paths, monkeypatch, tmp_path):
                 "        from_thread.run(disable)\n"
                 "        return {'disabled': self.record.info.state == 'disabled'}\n"
                 "    async def on_disable(self):\n"
-                '        """记录资源禁用，供核对共享依赖不会重复启停。"""\n'
+                '        """记录资源禁用；按插件故障开关注入收尾失败。"""\n'
                 "        self.events.append('disable')\n"
+                "        if self.fail_disable: raise RuntimeError('plugin disable failed')\n"
                 "PLUGIN = Adapter\n",
                 encoding="utf-8",
             )
@@ -274,6 +276,41 @@ async def test_reload_failure_keeps_enable_intent_of_torn_down_downstream(
     assert records["cascade_b"].info.state == PluginState.DISABLED
     # 拆下游是重载的内部动作，不是用户选择停用，启用意图必须留着。
     assert records["cascade_b"].info.enabled
+
+
+@pytest.mark.asyncio
+async def test_reload_teardown_failure_keeps_enable_intent_of_already_stopped_branch(
+    cascade_plugins, monkeypatch
+):
+    """重载拆到一半失败：已经停稳的最下层不在父层名单里，也不能被当成用户主动停用。"""
+    import app.core.plugin.manager as plugin_manager
+
+    manager, records = await cascade_plugins(
+        {
+            "cascade_a": (),
+            "cascade_b": ("cascade_a",),
+            "signflow_token": ("cascade_b",),
+        }
+    )
+    monkeypatch.setattr(plugin_manager, "is_unlocked", lambda: True)
+    await manager.enable(records["signflow_token"])
+    assert records["signflow_token"].info.enabled
+
+    # 中间层收尾失败：最下层已经停稳并把结果交给了它，但中间层抛错后，
+    # 最外层收到的名单里没有这一支，事后补不回来。
+    records["cascade_b"]._plugin_cls.fail_disable = True
+    with pytest.raises(PluginOperationError):
+        await manager.reload(records["cascade_a"])
+
+    assert records["signflow_token"].info.state == PluginState.DISABLED
+    # 临时停一下不等于用户说关掉：意图留着，故障排除后还能自己起来。
+    assert records["signflow_token"].info.enabled
+
+    # 当日未解锁也照样能重新启用：它不是首次启用，不该被门禁拦下。
+    records["cascade_b"]._plugin_cls.fail_disable = False
+    monkeypatch.setattr(plugin_manager, "is_unlocked", lambda: False)
+    await manager.enable(records["signflow_token"])
+    assert records["signflow_token"].info.state == PluginState.ENABLED
 
 
 @pytest.mark.asyncio
