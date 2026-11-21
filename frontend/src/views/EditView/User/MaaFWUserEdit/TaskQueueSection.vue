@@ -234,10 +234,7 @@ import {
 } from './maafwTaskSnapshot'
 import { MAAFW_MAX_TASK_REPEAT_COUNT } from '@/utils/maafwTaskInstance'
 import type { MaaFWQueueEntry, MaaFWTaskInfo } from '@/types/script'
-import type {
-  MaaFWUserTaskQueueSectionEmits,
-  MaaFWUserTaskQueueSectionProps,
-} from '../../MaaFWFlavor/sectionContracts'
+import type { MaaFWUserTaskQueueSectionEmits, MaaFWUserTaskQueueSectionProps } from './sectionProps'
 
 const { t } = useI18n()
 
@@ -250,7 +247,7 @@ type AddTaskCascaderPathOption = {
   value?: string | number
 }
 
-// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+// props / 事件见 sectionProps.ts
 const props = defineProps<MaaFWUserTaskQueueSectionProps>()
 
 const emit = defineEmits<MaaFWUserTaskQueueSectionEmits>()

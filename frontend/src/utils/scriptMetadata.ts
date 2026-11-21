@@ -26,8 +26,8 @@ export interface ScriptMetadata {
   }
 }
 
-// 这里只放静态资料，不引入 flavor 或页面，供它们共同读取而不形成依赖环。
-// 枚举顺序沿用原图标表；新建卡片按 createOrder 排列，MFW 特调仍由 flavor 的 after 插入。
+// 这里只放静态资料，不引入页面，供页面与列表共同读取而不形成依赖环。
+// 枚举顺序沿用原图标表；新建卡片（含 MaaFW 家族）一律按 createOrder 排列。
 // 已登记为适配条目（plugins/scriptAdapters.ts，含 MaaFW、M9A、MSS）的类型从条目取。
 export const SCRIPT_METADATA = {
   BAAH: {

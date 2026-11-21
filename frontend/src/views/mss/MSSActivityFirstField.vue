@@ -18,7 +18,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import type { MaaFWUserFormData } from '@/composables/maafwFlavorTypes'
+import type { MaaFWUserFormData } from '@/views/EditView/User/MaaFWUserEdit/sectionProps'
 
 const { t } = useI18n()
 

@@ -3,7 +3,7 @@ import maafwIcon from '@/assets/maafw.png'
 
 /**
  * 通用 MFW：任何带 interface.json 的项目都由它运行，页面只按 interface 渲染。
- * MaaFW 家族的四条路由由 router/maafwFlavorRoutes.ts 生成，不在这里声明（routes 为空）。
+ * MaaFW 家族的四条路由由 router/maafwRoutes.ts 生成，不在这里声明（routes 为空）。
  */
 export default {
   // MFW 不是插件：pluginId 只占位，不进插件中心统计（见 scriptAdapters.ts）

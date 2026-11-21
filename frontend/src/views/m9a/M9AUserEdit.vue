@@ -33,7 +33,7 @@
             }"
             :form-data="formData"
             :interface-dependent-disabled="interfaceDependentDisabled"
-            :account-record-tooltip="accountRecordTooltip"
+            :account-record-tooltip="t('core.edit.m9aFlavorAccountTooltip')"
             :account-placeholder="t('core.edit.m9aFlavorAccountPlaceholder')"
             @save="handleFieldSave"
           />
@@ -147,7 +147,7 @@
 <script setup lang="ts">
 // M9A（重返未来：1999）专属用户页：用 MFW 用户页的分节与编排层拼，与通用 MFW 用户页结构相同。
 // 账号绑成切号任务的目标账号；启动游戏、切换账号、关闭游戏是受管任务（由后端 app/task/M9A
-// 全权控制，不能手动加），受管任务的名单与拆用户判据由编排层按 M9A 的声明处理。
+// 全权控制，不能手动加），受管任务的名单与拆用户判据在下面交给编排层处理。
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { ref } from 'vue'
@@ -191,7 +191,6 @@ const {
   formData,
   rules,
   queueHintLines,
-  accountRecordTooltip,
   managedQueueAlert,
   handleShellImported,
   taskByName,
@@ -241,7 +240,19 @@ const {
   handleRestored,
   leaving,
   handleCancel,
-} = useMaaFWUserPage({ scriptId, userId: route.params.userId as string })
+} = useMaaFWUserPage({
+  scriptId,
+  userId: route.params.userId as string,
+  type: 'M9A',
+  managed: {
+    // 与后端 app/task/M9A/managed.py 的 MANAGED_ENTRIES 同一组
+    entries: ['StartUp', 'SwitchAccount', 'Close1999'],
+    // 与 managed.py 同一判据：官服、有效切号 ≥ 2 才要拆用户（MAS 登录模式下切号不下发，由编排层按配置关掉）
+    accountTask: { entry: 'SwitchAccount', resources: ['官服'] },
+    warningKey: 'core.edit.m9aFlavorManagedTaskWarning',
+    noticeKey: 'core.edit.m9aFlavorManagedTaskNotice',
+  },
+})
 </script>
 
 <style scoped src="../EditView/User/MaaFWUserEdit/userPage.css"></style>

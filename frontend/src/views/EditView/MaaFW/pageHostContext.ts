@@ -1,13 +1,13 @@
 // 页面宿主（MaaFWPageHost）交给页面的上下文。单独成文件：页面的编排层要取它，而宿主模块
 // 会按需引入页面，放在一起就成环了。
 import { hasInjectionContext, inject, type InjectionKey, type Ref } from 'vue'
-import type { MaaFWPageKind } from '@/composables/maafwFlavorTypes'
+import type { MaaFWPageKind } from '@/router/maafwRoutes'
 import type { ScriptDetail, ScriptType } from '@/types/script'
 
 export interface MaaFWPageHostContext {
   /**
    * 脚本当前类型：宿主按它选渲染哪个页面。页面读到（或导入后重新读到）脚本详情时写回这里，
-   * 类型变了宿主就地换页面（都是默认页时组件不变，页面不重建）。
+   * 类型变了宿主就地换成该类型的页面（同一类型组件不变，页面不重建）。
    */
   scriptType: Ref<ScriptType>
   /** 页面种类（路由 meta.maafwPage）：脚本页看它是不是引导 */

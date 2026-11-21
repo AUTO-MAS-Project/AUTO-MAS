@@ -62,14 +62,11 @@ import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
-import type {
-  MaaFWUserBasicInfoSectionEmits,
-  MaaFWUserBasicInfoSectionProps,
-} from '../../MaaFWFlavor/sectionContracts'
+import type { MaaFWUserBasicInfoSectionEmits, MaaFWUserBasicInfoSectionProps } from './sectionProps'
 
 const { t } = useI18n()
 
-// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+// props / 事件见 sectionProps.ts
 defineProps<MaaFWUserBasicInfoSectionProps>()
 
 const emit = defineEmits<MaaFWUserBasicInfoSectionEmits>()

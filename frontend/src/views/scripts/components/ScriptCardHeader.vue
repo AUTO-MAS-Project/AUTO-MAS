@@ -12,7 +12,7 @@ import {
   UserAddOutlined,
 } from '@ant-design/icons-vue'
 import type { ScriptListItem } from '../scriptListModel'
-import { isMaaFWFamily, resolveMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import { isMaaFWFamily, maafwLabel, maafwLogo } from '@/plugins/maafwFamily'
 import { fallbackToMaaFWLogo } from '@/utils/maafwProjectIcon'
 import {
   getMaaFWScriptLogo,
@@ -74,9 +74,9 @@ export type ScriptCardAction =
         <img
           v-if="isMaaFWFamily(script.type)"
           :src="getMaaFWScriptLogo(script)"
-          :alt="resolveMaaFWFlavor(script.type).typeTagLabel"
+          :alt="maafwLabel(script.type)"
           class="script-logo"
-          @error="fallbackToMaaFWLogo($event, resolveMaaFWFlavor(script.type).logo)"
+          @error="fallbackToMaaFWLogo($event, maafwLogo(script.type))"
         />
         <img
           v-else

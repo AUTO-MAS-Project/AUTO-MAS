@@ -1,5 +1,6 @@
 import type { Component } from 'vue'
 import type { RouteRecordRaw } from 'vue-router'
+import type { ScriptType } from '@/types/script'
 import type { ScriptMetadata } from '@/utils/scriptMetadata'
 import type { PluginAdapterBinding } from '@/views/plugins/pluginCenterModel'
 import maa from '@/views/maa/entry'
@@ -62,6 +63,9 @@ const pluginAdapters: ScriptFrontendAdapter[] = [maa, whimbox, src]
  * 所以不能进 SCRIPT_PLUGIN_EDITORS；MFW 不是插件，也不能进 SCRIPT_PLUGIN_BINDINGS。
  */
 const maafwAdapters = [maafw, m9a, mss] satisfies ScriptFrontendAdapter[]
+
+/** 由 MaaFW 引擎运行的脚本类型：从 MaaFW 家族的适配条目推出（新增一类在 maafwAdapters 里登记） */
+export type MaaFWFamilyType = Extract<ScriptType, (typeof maafwAdapters)[number]['type']>
 
 const toPlanEntries = (adapters: readonly ScriptFrontendAdapter[]) =>
   Object.fromEntries(

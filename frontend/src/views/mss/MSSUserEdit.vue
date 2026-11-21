@@ -32,7 +32,7 @@
             }"
             :form-data="formData"
             :interface-dependent-disabled="interfaceDependentDisabled"
-            :account-record-tooltip="accountRecordTooltip"
+            account-record-tooltip=""
             @save="handleFieldSave"
           />
 
@@ -170,6 +170,7 @@ import {
 } from '@/views/EditView/User/MaaFWUserEdit/pageKit'
 import MSSActivityFirstField from './MSSActivityFirstField.vue'
 import MSSPlanModeField from './MSSPlanModeField.vue'
+import { loadMSSPlanComboxItems } from './planModeOptions'
 
 const { t } = useI18n()
 
@@ -197,7 +198,6 @@ const {
   formData,
   rules,
   queueHintLines,
-  accountRecordTooltip,
   managedQueueAlert,
   queuedTaskCount,
   handleShellImported,
@@ -248,7 +248,14 @@ const {
   handleRestored,
   leaving,
   handleCancel,
-} = useMaaFWUserPage({ scriptId, userId: route.params.userId as string })
+} = useMaaFWUserPage({
+  scriptId,
+  userId: route.params.userId as string,
+  type: 'MSS',
+  queueHintKey: 'core.edit.mssFlavorQueueHint',
+  // 计划表选项和 interface 一起读好，下拉首屏就有选项、不闪 id
+  prepare: loadMSSPlanComboxItems,
+})
 </script>
 
 <style scoped src="../EditView/User/MaaFWUserEdit/userPage.css"></style>

@@ -267,7 +267,7 @@ const {
   interfaceStats,
   handlePreviewInterface,
   handleCancel,
-} = useMaaFWScriptPage({ scriptId })
+} = useMaaFWScriptPage({ scriptId, type: 'M9A' })
 </script>
 
 <style scoped src="../EditView/Script/MaaFWScriptEdit/scriptPage.css"></style>

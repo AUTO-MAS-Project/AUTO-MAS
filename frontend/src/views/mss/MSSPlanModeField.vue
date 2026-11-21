@@ -27,7 +27,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { MaaFWUserFormData } from '@/composables/maafwFlavorTypes'
+import type { MaaFWUserFormData } from '@/views/EditView/User/MaaFWUserEdit/sectionProps'
 import { buildPlanModeOptions, isMSSQueueUnrunnable, mssPlanComboxItems } from './planModeOptions'
 
 const { t } = useI18n()

@@ -21,7 +21,7 @@ import {
 } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
-import { maafwScriptTypeByConfigType } from '@/composables/useMaaFWFlavor'
+import { maafwScriptTypeByConfigType } from '@/plugins/maafwFamily'
 import {
   analyticsConfigSection,
   analyticsCountBucket,
@@ -51,7 +51,7 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   ZzzOdConfig: 'ZzzOd',
   BAAHConfig: 'BAAH',
   WhimboxConfig: 'Whimbox',
-  // MaaFW 与各特调（M9A / MSS ……）的配置类名由特调注册表提供
+  // MaaFW 家族（MaaFW / M9A / MSS）的配置类名登记在适配条目上
   ...maafwScriptTypeByConfigType(),
 }
 

@@ -3,7 +3,7 @@ import m9aIcon from '@/assets/M9A.png'
 
 /**
  * M9A（重返未来：1999）：由 MaaFW 引擎运行，脚本页与账号页是本目录的专属页面。
- * MaaFW 家族的四条路由由 router/maafwFlavorRoutes.ts 生成，不在这里声明（routes 为空）。
+ * MaaFW 家族的四条路由由 router/maafwRoutes.ts 生成，不在这里声明（routes 为空）。
  */
 export default {
   pluginId: 'm9a_adapter',

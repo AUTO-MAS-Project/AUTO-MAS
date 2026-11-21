@@ -1,13 +1,12 @@
-import { computed, h, ref, watch, type ComputedRef, type Ref } from 'vue'
+import { computed, h, ref, watch, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 import { message } from 'ant-design-vue'
 import type { MaaFWShellInstanceItem } from '@/api'
 import { useMaaFWShellInstanceApi } from '@/composables/useMaaFWShellInstanceApi'
-import type { MaaFWFlavor } from '@/composables/useMaaFWFlavor'
-import { maafwRouteLocation } from '@/router/maafwFlavorRoutes'
-import type { MaaFWPageHostContext } from '../../MaaFWFlavor/pageHostContext'
-import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/script'
+import { maafwRouteLocation } from '@/router/maafwRoutes'
+import type { MaaFWPageHostContext } from '../../MaaFW/pageHostContext'
+import type { MaaFWInterfacePreviewData, MaaFWScriptConfig, ScriptType } from '@/types/script'
 import {
   buildShellImportReportLines,
   shellImportItemName,
@@ -31,7 +30,8 @@ interface MaaFWSetupWizardOptions {
   handleChange: MaaFWScriptChangeHandler
   envReady: Ref<boolean>
   enqueue: <T>(run: () => Promise<T>, key?: string) => Promise<T>
-  flavor: ComputedRef<MaaFWFlavor>
+  /** 脚本当前类型：跳转用户页按它走对应那条线 */
+  scriptType: Ref<ScriptType>
   /** 页面宿主的上下文：页面种类与引导步骤取它的；不在宿主里为 null（按路由 meta） */
   host: MaaFWPageHostContext | null
   /** 页面已卸载：还在跑的异步流程（外壳配置导入）结束时不再跳转 */
@@ -46,7 +46,7 @@ export function useMaaFWSetupWizard({
   handleChange,
   envReady,
   enqueue,
-  flavor,
+  scriptType,
   host,
   isPageUnmounted,
 }: MaaFWSetupWizardOptions) {
@@ -78,7 +78,7 @@ export function useMaaFWSetupWizard({
   )
 
   // 用户页路由按脚本当前类型走对应那条线
-  const addUserLocation = () => maafwRouteLocation(flavor.value.type, 'userAdd', { scriptId })
+  const addUserLocation = () => maafwRouteLocation(scriptType.value, 'userAdd', { scriptId })
 
   // 引导最后一步直接去建第一个用户；先等排队中的保存写完，用户页读到的才是刚配好的脚本
   const handleCreateFirstUser = async () => {
@@ -216,7 +216,7 @@ export function useMaaFWSetupWizard({
       const [only] = summary.created
       leaveWizardTo(
         summary.created.length === 1 && only.userId
-          ? maafwRouteLocation(flavor.value.type, 'userEdit', { scriptId, userId: only.userId })
+          ? maafwRouteLocation(scriptType.value, 'userEdit', { scriptId, userId: only.userId })
           : '/scripts'
       )
     } finally {

@@ -1,41 +1,66 @@
-import { computed, onScopeDispose, provide, ref, type Component } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import {
-  MAAFW_PAGE_PART,
-  defineMaaFWLazyComponent,
-  type MaaFWLazyComponent,
-  type MaaFWPageKind,
-  type MaaFWPagePart,
-} from '@/composables/maafwFlavorTypes'
-import { isMaaFWFamily, resolveMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import { computed, defineAsyncComponent, onScopeDispose, provide, ref, type Component } from 'vue'
+import { useRoute, useRouter, type RouteRecordRaw } from 'vue-router'
+import { isMaaFWFamily, resolveMaaFWAdapter } from '@/plugins/maafwFamily'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { resolveMaaFWCanonicalLocation } from '@/router/maafwFlavorRoutes'
+import { resolveMaaFWCanonicalLocation, type MaaFWPageKind } from '@/router/maafwRoutes'
 import type { ScriptDetail, ScriptType } from '@/types/script'
 import { MAAFW_PAGE_HOST_KEY, type MaaFWPageHostContext } from './pageHostContext'
 
+/** 页面种类 → 渲染适配条目 editors 里的哪一页 */
+const PAGE_EDITOR = {
+  script: 'script',
+  setup: 'script',
+  userAdd: 'user',
+  userEdit: 'user',
+} as const satisfies Record<MaaFWPageKind, 'script' | 'user'>
+
+type EditorPart = (typeof PAGE_EDITOR)[MaaFWPageKind]
+type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
+
+/** 按需加载的页面：渲染用的异步组件 + 同一个加载函数（读脚本期间预取，首屏不闪） */
+interface MaaFWHostPage {
+  component: Component
+  load: () => Promise<unknown>
+}
+
+// editors 里是加载函数（() => import(...)）或现成的组件；判别法照 vue-router 对懒加载路由组件的判断
+const isPageLoader = (page: LazyPage): page is () => Promise<Component> =>
+  typeof page === 'function' &&
+  !('displayName' in page) &&
+  !('props' in page) &&
+  !('emits' in page) &&
+  !('__vccOpts' in page)
+
 /**
- * MFW 的默认页面：模块级常量，同一个异步组件引用——类型在默认页之间变（MaaFW ↔ 没有整页替换的
- * 特调）时宿主渲染的还是同一个组件，页面不重建，引导进度不丢。
+ * 按类型与页面缓存的异步组件：模块级，同一类型的同一页始终是同一个组件引用——宿主重新计算时
+ * 组件不变，页面不重建，引导进度不丢。
  */
-export const MAAFW_DEFAULT_PAGES: Record<MaaFWPagePart, MaaFWLazyComponent> = {
-  scriptPage: defineMaaFWLazyComponent(() => import('../Script/MaaFWScriptEdit.vue')),
-  userPage: defineMaaFWLazyComponent(() => import('../User/MaaFWUserEdit.vue')),
+const PAGE_CACHE = new Map<string, MaaFWHostPage>()
+
+const resolveHostPage = (type: ScriptType | string | null | undefined, part: EditorPart) => {
+  const adapter = resolveMaaFWAdapter(type)
+  const key = `${adapter.type}:${part}`
+  const cached = PAGE_CACHE.get(key)
+  if (cached) return cached
+  const editor = adapter.editors[part]
+  const load = isPageLoader(editor) ? editor : async () => editor
+  const page: MaaFWHostPage = { component: defineAsyncComponent(load), load }
+  PAGE_CACHE.set(key, page)
+  return page
 }
 
 /**
- * MaaFW 家族路由的页面宿主：按脚本实际类型选页面。
+ * MaaFW 家族路由的页面宿主：按脚本实际类型选页面（适配条目的 editors）。
  *
- * 1. 读路由的页面种类与参数，读脚本详情，同时预取默认页的 chunk；
+ * 1. 读路由的页面种类与参数，读脚本详情，同时预取通用 MFW 页的 chunk；
  * 2. 路由登记的类型与脚本实际类型不符：replace 到实际类型那条线（同一种页面、参数 / query / hash
  *    照带），自己什么都不渲染——路径一变 AppLayout 就整个重建，页面逻辑只在纠正后的实例里跑，
  *    所以加用户的地址写错也只建一个用户；
- * 3. 脚本不存在 / 读取失败 / 不是 MaaFW 家族：照常渲染默认页，由页面给出现有的报错；
- * 4. 否则把上下文（脚本类型、页面种类、引导步骤、读到的脚本详情）交给页面，渲染该类型的整页替换，
- *    没有就渲染默认页。之后类型变了（导入后后端换类型，页面写回 scriptType）就地换页面，不改地址。
+ * 3. 脚本不存在 / 读取失败 / 不是 MaaFW 家族：照常渲染通用 MFW 页，由页面给出现有的报错；
+ * 4. 否则把上下文（脚本类型、页面种类、引导步骤、读到的脚本详情）交给页面，渲染该类型的页面。
+ *    之后类型变了（导入后后端换类型，页面写回 scriptType）就地换页面，不改地址。
  */
-export function useMaaFWPageHost(
-  pages: Record<MaaFWPagePart, MaaFWLazyComponent> = MAAFW_DEFAULT_PAGES
-) {
+export function useMaaFWPageHost() {
   const logger = window.electronAPI.getLogger('MaaFW 页面宿主')
   const route = useRoute()
   const router = useRouter()
@@ -43,7 +68,7 @@ export function useMaaFWPageHost(
 
   // 宿主实例只对应一个地址（路径一变 AppLayout 就重建），这里取下当时的路由快照
   const mode: MaaFWPageKind = route.meta.maafwPage ?? 'script'
-  const part = MAAFW_PAGE_PART[mode]
+  const part = PAGE_EDITOR[mode]
   const snapshot = {
     meta: route.meta,
     params: { ...route.params },
@@ -51,7 +76,7 @@ export function useMaaFWPageHost(
     hash: route.hash,
   }
   const hostPath = route.fullPath
-  const scriptIdParam = part === 'scriptPage' ? route.params.id : route.params.scriptId
+  const scriptIdParam = part === 'script' ? route.params.id : route.params.scriptId
   const scriptId = Array.isArray(scriptIdParam) ? (scriptIdParam[0] ?? '') : (scriptIdParam ?? '')
 
   // 读到 MaaFW 家族的脚本后换成它的实际类型；读不到时与页面原来一样从通用 MaaFW 起步
@@ -76,7 +101,7 @@ export function useMaaFWPageHost(
   /** 要渲染的页面；还没读到脚本或正在纠正地址时为 null */
   const page = computed<Component | null>(() => {
     if (!ready.value) return null
-    return resolveMaaFWFlavor(scriptType.value)[part].page?.component ?? pages[part].component
+    return resolveHostPage(scriptType.value, part).component
   })
 
   let disposed = false
@@ -84,8 +109,7 @@ export function useMaaFWPageHost(
     disposed = true
   })
 
-  const prefetch = (entry: MaaFWLazyComponent | null | undefined) => {
-    if (!entry) return
+  const prefetch = (entry: MaaFWHostPage) => {
     void (async () => entry.load())().catch(error => {
       logger.warn(`预取页面失败: ${error instanceof Error ? error.message : String(error)}`)
     })
@@ -94,14 +118,15 @@ export function useMaaFWPageHost(
   const show = (script: ScriptDetail | null | undefined) => {
     if (script && isMaaFWFamily(script.type)) {
       scriptType.value = script.type
-      prefetch(resolveMaaFWFlavor(script.type)[part].page)
+      prefetch(resolveHostPage(script.type, part))
     }
     initialScript = script
     ready.value = true
   }
 
   const load = async () => {
-    prefetch(pages[part])
+    // 先预取通用 MFW 页（读不到脚本时也渲染它）
+    prefetch(resolveHostPage('MaaFW', part))
     let script: ScriptDetail | null | undefined
     try {
       script = await getScript(scriptId)

@@ -1,7 +1,6 @@
 <template>
   <div class="user-edit-container">
-    <component
-      :is="sections.header"
+    <MaaFWUserEditHeader
       :save-status="saveStatus"
       :save-error-message="saveErrorMessage"
       :script-id="scriptId"
@@ -23,33 +22,21 @@
           layout="vertical"
           class="config-form"
         >
-          <component
-            :is="sections.basicInfo"
+          <BasicInfoSection
             :heading="{
               isEdit,
-              logoSrc: projectIconUrl || flavor.logo,
+              logoSrc: projectIconUrl || metadata.logo,
               saveStatus,
               saveErrorMessage,
               onIconError: handleProjectIconError,
             }"
             :form-data="formData"
             :interface-dependent-disabled="interfaceDependentDisabled"
-            :account-record-tooltip="accountRecordTooltip"
-            :account-placeholder="t(flavor.userPage.text.accountPlaceholderKey)"
+            account-record-tooltip=""
             @save="handleFieldSave"
           />
 
-          <!-- 特调独有区块，由特调注册表按需加载 -->
-          <MaaFWFlavorSlot
-            part="userPage"
-            name="afterBasicInfo"
-            :flavor="flavor"
-            :context="flavorSlotContext"
-            @save="handleFieldSave"
-          />
-
-          <component
-            :is="sections.queueHeader"
+          <MaaFWQueueHeaderSection
             :queue-hint-lines="queueHintLines"
             :managed-queue-alert="managedQueueAlert"
             :user-import-candidates="userImportCandidates"
@@ -59,16 +46,7 @@
             @import-from-user="importQueueFromUser"
             @imported="handleShellImported"
           />
-          <!-- 特调独有区块（如 MSS 的计划表与活动优先），由特调注册表按需加载 -->
-          <MaaFWFlavorSlot
-            part="userPage"
-            name="beforeTaskQueue"
-            :flavor="flavor"
-            :context="flavorSlotContext"
-            @save="handleFieldSave"
-          />
-          <component
-            :is="sections.taskQueue"
+          <TaskQueueSection
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
             :interface-loading="interfaceLoading"
@@ -106,13 +84,6 @@
             @duplicate-task="duplicateTask"
             @rename-task="renameTask"
             @task-weekdays-update="updateTaskWeekdays"
-          />
-          <MaaFWFlavorSlot
-            part="userPage"
-            name="afterTaskQueue"
-            :flavor="flavor"
-            :context="flavorSlotContext"
-            @save="handleFieldSave"
           />
 
           <ExtraScriptSection
@@ -179,16 +150,23 @@ import type { FormInstance } from 'ant-design-vue/es/form'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
-import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
-import { useMaaFWSections } from '@/composables/useMaaFWFlavor'
-// MFW 默认分节静态引入：通用 MFW 打开不闪；特调的替换分节由注册表按需加载
-import { MAAFW_USER_PAGE_SECTIONS, useMaaFWUserPage } from './MaaFWUserEdit/pageKit'
+import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
+// 通用 MFW 用户页：只按 interface 渲染，不带任何专项分支（M9A、MSS 各有专属页面）
+import {
+  BasicInfoSection,
+  MaaFWQueueHeaderSection,
+  MaaFWUserEditHeader,
+  TaskQueueSection,
+  useMaaFWUserPage,
+} from './MaaFWUserEdit/pageKit'
 
 const { t } = useI18n()
 
 const route = useRoute()
 
 const scriptId = route.params.scriptId as string
+
+const metadata = SCRIPT_METADATA.MaaFW
 
 const formRef = ref<FormInstance>()
 
@@ -200,7 +178,6 @@ const {
   isEdit,
   configLocked,
   scriptName,
-  flavor,
   scriptRoute,
   previewData,
   interfaceLoading,
@@ -210,9 +187,7 @@ const {
   formData,
   rules,
   queueHintLines,
-  accountRecordTooltip,
   managedQueueAlert,
-  flavorSlotContext,
   handleShellImported,
   taskByName,
   effectiveControllerName,
@@ -261,10 +236,7 @@ const {
   handleRestored,
   leaving,
   handleCancel,
-} = useMaaFWUserPage({ scriptId, userId: route.params.userId as string })
-
-// 各分节：默认用 MFW 的，当前特调替换了哪节就换成它的（契约见 MaaFWFlavor/sectionContracts）
-const sections = useMaaFWSections(flavor, 'userPage', MAAFW_USER_PAGE_SECTIONS)
+} = useMaaFWUserPage({ scriptId, userId: route.params.userId as string, type: 'MaaFW' })
 </script>
 
 <style scoped src="./MaaFWUserEdit/userPage.css"></style>
