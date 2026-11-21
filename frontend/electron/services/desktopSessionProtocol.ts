@@ -48,6 +48,23 @@ export interface DesktopQueueResult {
   executionSession?: 'main'
 }
 
+export type DesktopSessionPromptTarget = Pick<DesktopQueueResult, 'label' | 'targetKind'>
+
+export type DesktopSessionPromptContent =
+  | { kind: 'dispatch'; main: DesktopSessionPromptTarget[]; desktop: DesktopSessionPromptTarget[] }
+  | { kind: 'takeover' | 'close' | 'close-adopted' | 'close-failed' }
+
+export type DesktopSessionPrompt = DesktopSessionPromptContent & { id: number }
+
+export type DesktopSessionPromptAction =
+  | 'cancel'
+  | 'acknowledge'
+  | 'split'
+  | 'desktop'
+  | 'takeover'
+  | 'disconnect'
+  | 'logoff'
+
 export interface DesktopSessionStartResult {
   code?: string
   queues: DesktopQueueResult[]
