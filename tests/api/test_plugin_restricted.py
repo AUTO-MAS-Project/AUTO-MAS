@@ -56,6 +56,7 @@ async def market(isolated_app_paths, monkeypatch):
     for package, identity in (
         ("auto-mas-demo-adapter", "demo_adapter"),
         ("auto-mas-token-adapter", "token_adapter"),
+        ("signflow-token", "signflow_token"),
     ):
         col.add(
             PluginMeta, payload={"info": _meta(package, identity).info.model_dump()}
@@ -90,7 +91,7 @@ async def test_restricted_plugin_hidden_until_unlocked(market, monkeypatch):
     _use_gate(monkeypatch, unlocked=True)
     opened = await plugin_api.get_plugin_catalog(plugin_api.PluginCatalogGetIn())
     names = {market[item.uid].effective.info.plugin_name for item in opened.order}
-    assert names == {"demo_adapter", "token_adapter"}
+    assert names == {"demo_adapter", "token_adapter", "signflow_token"}
 
 
 @pytest.mark.asyncio
@@ -103,6 +104,26 @@ async def test_restricted_plugin_install_rejected_until_unlocked(market, monkeyp
     )
 
     _use_gate(monkeypatch, unlocked=False)
+    with pytest.raises(PluginPrecheckError) as error:
+        await restricted.on_install()
+    assert "神秘入口" in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_signflow_token_is_restricted(market, monkeypatch):
+    """SignFlow 的 Token 获取插件按发行名登记，未解锁时同样进不了市场。"""
+    assert "signflow_token" in RESTRICTED_PLUGIN_NAMES
+
+    _use_gate(monkeypatch, unlocked=False)
+    locked = await plugin_api.get_plugin_catalog(plugin_api.PluginCatalogGetIn())
+    names = {market[item.uid].effective.info.plugin_name for item in locked.order}
+    assert "signflow_token" not in names
+
+    restricted = next(
+        item
+        for item in market.values()
+        if item.effective.info.plugin_name == "signflow_token"
+    )
     with pytest.raises(PluginPrecheckError) as error:
         await restricted.on_install()
     assert "神秘入口" in str(error.value)
