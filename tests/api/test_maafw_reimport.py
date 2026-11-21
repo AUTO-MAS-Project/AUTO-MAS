@@ -8,7 +8,6 @@ import threading
 import uuid
 import zipfile
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -18,7 +17,6 @@ from app.config import ConfigCollection
 from app.models.config import (
     GlobalConfig,
     M9AConfig,
-    M9AUserConfig,
     MaaFWConfig,
     MaaFWUserConfig,
 )
@@ -160,7 +158,6 @@ async def project(tmp_path, monkeypatch, isolated_app_paths):
     monkeypatch.setattr(
         live_projects, "reconcile_in_background", lambda *_a, **_k: None
     )
-    monkeypatch.setattr(api.Notify, "push_system_notice", AsyncMock())
 
     async def make_manager():
         info = TaskItem(mode="AutoProxy", name="audit")
@@ -199,29 +196,11 @@ async def project(tmp_path, monkeypatch, isolated_app_paths):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "stage", ["worker", "worker_cancel", "commit_cancel", "flavor_cancel"]
-)
-async def test_reimport_owns_view_until_worker_and_metadata_finish(
-    project, monkeypatch, stage
-):
+@pytest.mark.parametrize("stage", ["worker", "worker_cancel", "commit_cancel"])
+async def test_reimport_owns_view_until_worker_and_metadata_finish(project, stage):
     """真实导入先启动时阻止脚本；两次取消也不能越过文件线程或提交的异步窗口。"""
     committing, allow_commit = asyncio.Event(), asyncio.Event()
     allow_commit.set()
-    flavor_read, allow_flavor = threading.Event(), threading.Event()
-    allow_flavor.set()
-    new_interface = json.loads((project.source / "interface.json").read_text())
-    new_interface["name"] = "M9A"
-    (project.source / "interface.json").write_text(json.dumps(new_interface))
-    load_interface = api.load_interface_model_cached
-
-    def delayed_flavor_read(*args, **kwargs):
-        flavor_read.set()
-        if not allow_flavor.wait(10):
-            raise TimeoutError("flavor read was not released")
-        return load_interface(*args, **kwargs)
-
-    monkeypatch.setattr(api, "load_interface_model_cached", delayed_flavor_read)
 
     async def pause_commit(_sender, _event, **_kwargs):
         committing.set()
@@ -232,8 +211,6 @@ async def test_reimport_owns_view_until_worker_and_metadata_finish(
     )
     if stage == "commit_cancel":
         allow_commit.clear()
-    elif stage == "flavor_cancel":
-        allow_flavor.clear()
     else:
         project.allow_import.clear()
     importing = asyncio.create_task(
@@ -243,14 +220,11 @@ async def test_reimport_owns_view_until_worker_and_metadata_finish(
     try:
         if stage == "commit_cancel":
             await asyncio.wait_for(committing.wait(), 5)
-        elif stage == "flavor_cancel":
-            assert await asyncio.to_thread(flavor_read.wait, 5)
         else:
             assert await asyncio.to_thread(project.import_read.wait, 5)
         assert await manager.check() != "Pass"
         assert not manager._script_locked
-        if stage != "flavor_cancel":
-            assert project.config.is_locked
+        assert project.config.is_locked
         assert await project_path.try_reserve_project_path(project.view) is None
         cancelled = stage.endswith("_cancel")
         if cancelled:
@@ -259,12 +233,10 @@ async def test_reimport_owns_view_until_worker_and_metadata_finish(
             importing.cancel()
             await asyncio.sleep(0)
             assert not importing.done()
-            if stage != "flavor_cancel":
-                assert project.config.is_locked
+            assert project.config.is_locked
             assert await project_path.try_reserve_project_path(project.view) is None
         project.allow_import.set()
         allow_commit.set()
-        allow_flavor.set()
         if cancelled:
             with pytest.raises(asyncio.CancelledError):
                 await importing
@@ -272,9 +244,9 @@ async def test_reimport_owns_view_until_worker_and_metadata_finish(
             assert (await importing).code == 200
         assert project.worker_done.is_set()
         config = project.current_config()
-        assert isinstance(config, M9AConfig)
+        assert type(config) is MaaFWConfig
         assert len(config.UserData) == 1
-        assert isinstance(config.UserData[project.user_uid], M9AUserConfig)
+        assert type(config.UserData[project.user_uid]) is MaaFWUserConfig
         assert config.UserData[project.user_uid].Info.Name == "audit"
         assert not config.is_locked
         assert config.Info.Path == project.source
@@ -287,7 +259,6 @@ async def test_reimport_owns_view_until_worker_and_metadata_finish(
     finally:
         project.allow_import.set()
         allow_commit.set()
-        allow_flavor.set()
         await asyncio.gather(importing, return_exceptions=True)
         await asyncio.to_thread(project.worker_done.wait, 5)
         await manager._commit_user_data()

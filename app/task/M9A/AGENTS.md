@@ -23,8 +23,9 @@
 - `flavor.py`：`FLAVOR` 对象（满足 `app/task/MaaFW/tools/embedded/flavor.py` 的 `MaaFWFlavor` 协议）。
   它做的事穷举如下，多一件都没有：
   1. `matches_project(interface)`：`mirrorchyan_rid == M9A` / `github` 指向 `MAA1999/M9A` / `name == m9a`，
-     任一命中即认领——导入完成后引擎据此把托管类型定成 `M9AConfig`（不命中的项目导进 M9A 脚本会变回
-     `MaaFWConfig`，类型由项目决定、双向自动、uid 不变）。
+     任一命中即认领。**托管类型在新建时就定了，导入什么项目都不换**：M9A 托管导入、重新导入或克隆
+     不命中的项目时，引擎在动副本之前直接拒绝（「这不是 M9A 项目。要用别的项目，请新建通用 MFW 托管。」）；
+     通用 MFW 托管导入 M9A 项目仍是通用托管、按通用项目跑，不换类型、不提示、不转换。
   2. `decorate_selection(...)`：运行前先把勾选列表里三类受管任务**全部剔掉**（连同它们的选项），再按
      固定顺序补：`StartUp` 放队首；脚本资源支持切号且有账号时 `SwitchAccount` 紧跟启动、账号填进它
      第一个 input 选项；`Close1999` 放队尾。用户排的顺序不影响这三项。账号取 `Info.Account`，但队列里
@@ -57,8 +58,6 @@
      「兑换码」字段：引擎对没填的字符串字段回落 interface 的 default，而它的 default 是字面量
      「占位」，旧版迁移专门把预填的它清成空串（`migration._clean_input_values`），agent 遇到交不过去
      的码会中断整个兑换、后面真正的兑换码也不交。其余字段照常回落。
-  9. `retype_notice_lines(...)`：引擎的**可选**钩子（契约同上）。导入项目后脚本换成 / 换出 M9A 时，
-     系统通知里说明启停与切号；「账号栏改掉或清空」只在脚本已有账号时说。
 - `game_update.py`：脚本 `Run.GameUpdateMode` 不是 `Off` 时，模拟器启动后、第一个任务前比对
   官服客户端版本。只查资源为「官服」且拉起的包名是 `com.shenlan.m.reverse1999` 的，其余 `Skipped`。
   直链取自官网版本配置接口（`pageVersion` 从官网 `assets/js/api.js` 里读，读不出用写死的兜底值），
@@ -96,7 +95,7 @@
   官服、没有按 B 站昵称选号的入口；上游补齐等价入口后移除这里的 B 服退出、选号及启动补位（立项时未单独向上游提
   PR：本实现属于 MAS 侧运行前编排，上游入口补齐前无法复用）。
 - `migration.py`：旧版 M9A 专项配置（`Run.IfPsychubeDailyOnce`、`Task.Queue`、`Data.LastPsychubeDate`…）
-  → MaaFW 形状的一次性迁移，以及「通用 MaaFW 脚本指向 M9A 项目 → 换类型标签」。在
+  → MaaFW 形状的一次性迁移（不按项目换类型：跑着 M9A 项目的通用 MaaFW 托管保持通用）。在
   `Config.init_config` 里 **`ScriptConfig.connect()` 之前**改原始 JSON（`ConfigBase.load` 只认类里
   声明的条目，旧键在加载那一刻就丢并写回盘）。改写前备份 `ScriptConfig.json.m9a-legacy-<时间戳>.bak`
   留三份；幂等。逐字段口径见 `docs/设计参考/M9A风味专项-语义稿-20260918.md` §3–§7；

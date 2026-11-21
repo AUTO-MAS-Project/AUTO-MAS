@@ -9,8 +9,10 @@
    `name` 命中，任一即认领；后两条**同一口径**——等于 `MaaStellaSora` 或以 `MaaStellaSora-` 开头
    （`MaaStellaSoraX` 这种只是同前缀的不算，`https://github.com/MaaStellaSora` 这种组织主页也取不到仓库名）\
    ——官方版与个人版等
-   衍生版（如 `beichen24a1/MaaStellaSora-Personal`）都认，导入完成后引擎据此把托管类型定成
-   `MSSConfig`。**认领只定类型**；更新谱系仍按 `mirrorchyan_rid` / `github` / `name` 各自分开。
+   衍生版（如 `beichen24a1/MaaStellaSora-Personal`）都认。**托管类型在新建时就定了，导入什么项目都不换**：
+   MSS 托管导入、重新导入或克隆不认领的项目时，引擎在动副本之前直接拒绝（「这不是 MSS 项目。要用别的项目，
+   请新建通用 MFW 托管。」）；通用 MFW 托管导入 MSS 项目仍是通用托管、按通用项目跑。**认领只用来拒收**；
+   更新谱系仍按 `mirrorchyan_rid` / `github` / `name` 各自分开。
 2. `decorate_selection(...)`，按这个顺序：
    - 账号 `Info.PlanMode` 引用了 MSS 计划表时，按当天槽位改写 entry `战斗_入口`（悬赏试炼快速战斗）的
      `悬赏试炼关卡` / `悬赏试炼跳过难度选择` / `选择悬赏试炼难度` / `悬赏试炼消耗所有干劲` / `自定义快速作战次数`；

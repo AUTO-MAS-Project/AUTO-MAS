@@ -2,7 +2,7 @@
 
 布局（``root`` 由宿主给出，即 ``data/mfw/.payloads``）::
 
-    <root>/<lineage12>/lineage.json          谱系：名称、rid、github、configClass、
+    <root>/<lineage12>/lineage.json          谱系：名称、rid、github、
                                              每渠道的 latest、privatePaths、damaged
     <root>/<lineage12>/<版本>-<hash8>/        载荷树（不可变：大文件是 blob 的硬链接，小文件拷贝）
     <root>/<lineage12>/<版本>-<hash8>.json    载荷清单 {version, files: {rel: {sha256, size, origin}} …}
@@ -273,7 +273,6 @@ def _empty_lineage(key: str) -> dict[str, Any]:
         "name": "",
         "mirrorchyanRid": "",
         "github": "",
-        "configClass": "",
         "latest": {},
         "privatePaths": [],
         "damaged": [],

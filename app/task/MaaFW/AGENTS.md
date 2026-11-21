@@ -369,13 +369,20 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   的目标），不读源视图、不要源空闲、源的运行期状态不带；只预约目标（源还是没采纳的老副本、只能按目录
   克隆时才预约源，源被占用就拒绝）；`Info.Path` 与
   `Embedded.*`（开发者模式开关除外）沿用源（两者必须成对继承），`Update.Channel` 也沿用源——
-  复用的就是源那一版，渠道不跟着走的话第一次运行前的组同步会把它切到默认渠道的版本；类型随项目。
+  复用的就是源那一版，渠道不跟着走的话第一次运行前的组同步会把它切到默认渠道的版本；类型不变（见下条）。
   「复制托管」（`Config.add_script`）复用同一个函数。
   源挂的是开发者载荷时不复用它，见「跟随来源目录」里的「复制 / 克隆不继承」。
   视图与来源都没了时，`ensure_embedded_copy` 从同来源兄弟的谱系（没有兄弟就按载荷清单记的导入来源
   反查）按本托管渠道的 latest 重建——来源可删这句承诺靠它兜底。更新包下载缓存
   `data/maafw_update_cache` 按 源 + 版本 + 文件名 命中（Mirror 酱按包的 sha256：它的一次性下载地址每次都变），启动期 `MaaFWMaintenanceService.clean_update_cache`
   删 7 天没碰过的（`transport.prune_update_cache`）。
+- **托管类型在新建时就定了**（2026-11-21 用户定）：导入、重新导入、克隆什么项目都不换类型、不提示、
+  不做转换，启动期也不按项目收敛。通用 MFW 托管什么项目都收（M9A / MSS 项目也按通用项目跑）；特调托管
+  （M9A、MSS）只收自己那种项目：`/maafw/embedded/reimport` 在动副本之前读来源目录的 interface、
+  `/maafw/embedded/clone` 在建视图之前读源托管视图（视图不健康时读它的来源目录）的 interface，
+  按该特调的 `matches_project` 判，不认就返回「这不是 M9A 项目。要用别的项目，请新建通用 MFW 托管。」
+  这类原因、盘上什么都不改（`api_service/embedded._project_flavor_mismatch`）；读不出 interface 时不拦，
+  交给导入本身报错。前端沿用导入失败的显示（目录字段下的常驻原因、复用失败的提示）。
 - **启动期一次性迁移**（`MaaFWMaintenanceService.migrate_embedded_copies_to_payloads`，排在各项回收之前，整段
   在后台任务里跑、不挡主定时器；期间拿不到视图预约的运行按「正在切换版本」跳过一次）：没有标记的老
   副本逐个采纳（`embedded_project.adopt_view`：**载荷内容以视图自身为准**——按视图自己的 interface

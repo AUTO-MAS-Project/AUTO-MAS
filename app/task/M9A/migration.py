@@ -22,14 +22,11 @@
 ``Task.Queue``、``Data.LastPsychubeDate``…）在按新类加载的那一刻就会被丢弃并写回盘，
 之后再想迁就没有原料了。
 
-一趟做两件事：
+``type == "M9AConfig"`` 且带旧形状键的脚本 → 按 §3 / §4 逐字段翻译成 MaaFW 形状（类型标签不变，
+账号标签不变，只有数据变）。托管类型在新建时就定了：跑着 M9A 项目的通用 MaaFW 脚本仍是通用托管，
+这里不按项目换类型。
 
-1. ``type == "M9AConfig"`` 且带旧形状键的脚本 → 按 §3 / §4 逐字段翻译成 MaaFW 形状
-   （类型标签不变，账号标签不变，只有数据变）；
-2. ``type == "MaaFWConfig"`` 的脚本若项目被识别为 M9A（``flavor.is_m9a_project``）→ 只把
-   ``instances[].type`` 换成 ``M9AConfig`` / ``M9AUserConfig``，数据一个字段不动（两类同形）。
-
-幂等：迁完旧键消失、类型标签换完，再跑一遍什么都不会发生。改写前把整个文件复制成
+幂等：迁完旧键消失，再跑一遍什么都不会发生。改写前把整个文件复制成
 ``ScriptConfig.json.m9a-legacy-<时间戳>.bak``，只留最近三份。所有不可无损的地方（丢弃的
 选项、停用的用户、读不到 interface 的降级）都收进 ``MigrationReport``，由启动流程发通知。
 
@@ -39,7 +36,7 @@ v5.6.0-beta.1 的迁移把所有等于 interface default 的输入值都清空�
 
 「启动游戏」「切换账号」「关闭游戏」由 MAS 控制、不留在账号队列里（规则见 ``managed.py``）：
 迁移与补救按同一规则落地，另有 ``normalize_m9a_managed_entries`` 在每次启动时对全部 M9A 用户
-整理一遍（beta.1 迁移留下的、#1012 补回的、手加的、通用 MaaFW 脚本换成 M9A 带过来的），幂等。
+整理一遍（beta.1 迁移留下的、#1012 补回的、手加的），幂等。
 这几段都在文件末尾。
 """
 
@@ -63,7 +60,6 @@ from app.task.M9A.flavor import (
     LEGACY_ENTRY_ALIASES,
     STARTUP_ENTRY,
     SWITCH_ACCOUNT_ENTRY,
-    is_m9a_project,
 )
 from app.task.M9A.managed import (
     InfoChange,
@@ -120,7 +116,6 @@ class MigrationReport:
 
     migrated_scripts: list[str] = field(default_factory=list)
     migrated_uids: list[str] = field(default_factory=list)
-    retyped_scripts: list[str] = field(default_factory=list)
     disabled_users: list[str] = field(default_factory=list)
     dropped_tasks: list[str] = field(default_factory=list)
     dropped_options: list[str] = field(default_factory=list)
@@ -141,7 +136,7 @@ class MigrationReport:
 
     @property
     def changed(self) -> bool:
-        return bool(self.migrated_scripts or self.retyped_scripts)
+        return bool(self.migrated_scripts)
 
     @property
     def needs_attention(self) -> bool:
@@ -162,11 +157,6 @@ class MigrationReport:
         lines: list[str] = []
         if self.migrated_scripts:
             lines.append(f"已迁移 M9A 脚本：{'、'.join(self.migrated_scripts)}")
-        if self.retyped_scripts:
-            lines.append(
-                f"已识别为 M9A 项目并切换为 M9A 专项：{'、'.join(self.retyped_scripts)}"
-                "——这些脚本官服用户的「账号」会用于自动切换账号，如果原来只是备注请清空"
-            )
         if self.degraded_scripts:
             lines.append(
                 "读不到项目 interface、按内置别名迁移（任务选项与实例文件里的「切换账号」已丢弃）："
@@ -316,11 +306,6 @@ def migrate_script_config_payload(
             report.migrated_scripts.append(_script_label(payload, uid))
             report.migrated_uids.append(uid)
             changed = True
-        elif type_name == "MaaFWConfig" and _project_is_m9a(payload, uid):
-            instance["type"] = "M9AConfig"
-            _retag_users(payload, "M9AUserConfig")
-            report.retyped_scripts.append(_script_label(payload, uid))
-            changed = True
     return changed
 
 
@@ -333,14 +318,6 @@ def _is_legacy_m9a_payload(payload: dict[str, Any]) -> bool:
         if isinstance(task, dict) and "Queue" in task:
             return True
     return False
-
-
-def _project_is_m9a(payload: dict[str, Any], uid: str) -> bool:
-    root = _project_root_for_detection(payload, uid)
-    if root is None:
-        return False
-    interface = _read_interface_dict(root)
-    return bool(interface) and is_m9a_project(interface)
 
 
 def _project_root_for_detection(

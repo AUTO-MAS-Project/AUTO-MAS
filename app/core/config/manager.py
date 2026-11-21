@@ -2880,13 +2880,7 @@ class AppConfig:
             {
                 "level": "warning" if report.needs_attention else "info",
                 "title": (
-                    "M9A 托管迁移失败"
-                    if report.failure
-                    else (
-                        "M9A 托管已并入 MFW 引擎"
-                        if report.migrated_scripts
-                        else "已按项目识别出 M9A 托管"
-                    )
+                    "M9A 托管迁移失败" if report.failure else "M9A 托管已并入 MFW 引擎"
                 ),
                 "lines": lines,
             }

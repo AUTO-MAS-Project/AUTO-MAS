@@ -1369,18 +1369,6 @@ def _recover_one(journal: Path, view: Path, staging_root: Path) -> str:
 # --------------------------------------------------------------------------
 
 
-def _config_class_name(project_dir: Path) -> str:
-    try:
-        from app.task.MaaFW.tools.core.interface.loader import (
-            load_interface_model,
-        )
-        from app.task.MaaFW.tools.embedded.flavor import decide_project_config_class
-
-        return decide_project_config_class(load_interface_model(project_dir)).__name__
-    except Exception:  # noqa: BLE001 - 只是给新建对话框过滤用的簿记，识别失败留空
-        return ""
-
-
 # 导入时从来源 ``debug/`` 放进视图的只是状态文件：日志、截图、临时文件与大文件都不要。
 _SEED_SKIP_SUFFIXES = frozenset(
     {".log", ".tmp", ".temp", ".pyc", ".pyo", ".png", ".jpg", ".jpeg", ".bmp", ".webp"}
@@ -1696,7 +1684,6 @@ def import_embedded_project(
             else None
         )
         info = payloads.lineage_info_from_interface(interface)
-        info["configClass"] = _config_class_name(staging)
         registered = payloads.register(
             store_root,
             staging,
@@ -3246,7 +3233,6 @@ def adopt_view(
                 # 链过来的是副本里那一份：就地并入共用库（库里已有同内容就换成库的链接）。
                 blob_store.ingest_in_place(staging / rel)
         info = payloads.lineage_info_from_interface(interface)
-        info["configClass"] = _config_class_name(staging)
         registered = payloads.register(
             root,
             staging,

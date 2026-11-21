@@ -164,16 +164,14 @@
 - **该列什么**：default 是项目留下的字面量占位、真下发会出错的字段（如 M9A 自定义兑换码的
   「占位」）。能跑的 default 别列。
 
-可选钩子 ``retype_notice_lines``（按项目换类型时的通知说明）的契约：
+``matches_project``（项目认领）的契约：
 
-- **可选**：按 ``getattr`` 探测，不进协议；没实现等于没有要说的。
-- **何时调**：导入 / 复用项目后脚本按项目换了类型（``api_service.embedded._apply_project_flavor``），
-  换入的特调以 ``entering=True``、换出的特调以 ``entering=False`` 各调一次。
-- **签名**：``retype_notice_lines(self, *, entering: bool, has_users: bool) -> list[str]``；
-  ``has_users`` 是脚本此刻有没有用户——只对已有账号说的话（「把账号栏改掉」之类）没有用户时
-  不要返回。
-- **效果**：返回的行接在系统通知「已按项目识别为 …」下面；引擎自己不写任何专项的行为说明，
-  标题里的类型名取 ``type_key``。
+- **托管类型在新建时就定了**，之后导入、重新导入、克隆什么项目都不换类型、不提示、不转换。
+  通用 MaaFW 托管什么项目都收，按通用项目跑（M9A / MSS 项目也一样）。
+- **特调托管只收自己那种项目**：导入 / 重新导入在动副本之前先读来源目录的 interface、克隆在建
+  视图之前先读源托管副本的 interface，``matches_project`` 不认就拒绝，盘上什么都不改
+  （``api_service.embedded._project_flavor_mismatch``）。读不出 interface 时不拦，交给导入本身报错。
+- 没有脚本时的 ``/maafw/preview`` 按认领项目的特调取规则表（``flavor_for_project``）。
 
 ModAVD（Emulator 2.0 的 ``avd`` 后端）不是特调声明：所有 MaaFW 脚本（通用项目与各特调）一律放行，
 ``runner_task`` 给门面 ``open`` 传 ``allow_mod_avd=True``、按设备构造 AVDExtras 截图配置；脚本保存时
@@ -216,7 +214,7 @@ class MaaFWFlavor(Protocol):
     """托管类型键（``CLASS_BOOK`` 的键），日志与通知里用。"""
 
     def matches_project(self, interface_model: MaaFWInterface) -> bool:
-        """这个 interface 是不是本特调对应的项目（导入后据此决定托管类型）。"""
+        """这个 interface 是不是本特调对应的项目（本特调托管据此拒收别的项目，契约见模块说明）。"""
 
     def decorate_selection(
         self,
@@ -345,26 +343,19 @@ def plan_rules(flavor: Any) -> MaaFWPlanRules:
     )
 
 
-def retype_notice_lines(flavor: Any, *, entering: bool, has_users: bool) -> list[str]:
-    """特调声明的换类型说明，契约见模块说明。没实现、不是特调或钩子出错都返回空表。"""
-
-    hook = getattr(flavor, "retype_notice_lines", None) if flavor is not None else None
-    if not callable(hook):
-        return []
-    try:
-        lines = hook(entering=entering, has_users=has_users)
-    except Exception as exc:  # noqa: BLE001 - 通知文案出错不该挡住换类型
-        logger.warning(f"MaaFW 特调生成换类型说明失败：{exc}")
-        return []
-    return [str(line).strip() for line in lines or () if str(line or "").strip()]
-
-
 def flavor_for_project(interface_model: MaaFWInterface) -> MaaFWFlavor | None:
-    """认领这个项目的特调对象（与 ``decide_project_config_class`` 同一口径）；没有返回 None。"""
+    """认领这个项目的第一个特调对象（按 ``CLASS_BOOK`` 登记顺序）；没有返回 None。
 
-    config_class = decide_project_config_class(interface_model)
-    spec = getattr(config_class, "FLAVOR", None)
-    return _load_flavor(str(spec)) if spec else None
+    只给没有脚本时的预览选规则表用，不决定托管类型（契约见模块说明）。
+    """
+
+    for _config_class, flavor in flavored_config_classes():
+        try:
+            if flavor.matches_project(interface_model):
+                return flavor
+        except Exception as exc:  # noqa: BLE001 - 识别失败按没认领处理
+            logger.warning(f"MaaFW 特调 {flavor.type_key} 识别项目失败：{exc}")
+    return None
 
 
 GameUpdateHook = Callable[..., Awaitable[_utils_game_update.GameUpdateResult]]
@@ -515,60 +506,6 @@ def flavored_config_classes() -> list[tuple[type, MaaFWFlavor]]:
     return found
 
 
-def decide_project_config_class(interface_model: MaaFWInterface) -> type:
-    """按项目决定托管类型：第一个认领它的特调，否则通用 ``MaaFWConfig``。"""
-
-    from app.models.config import MaaFWConfig
-
-    for config_class, flavor in flavored_config_classes():
-        try:
-            if flavor.matches_project(interface_model):
-                return config_class
-        except Exception as exc:  # noqa: BLE001 - 识别失败不该挡住导入
-            logger.warning(f"MaaFW 特调 {flavor.type_key} 识别项目失败：{exc}")
-    return MaaFWConfig
-
-
-def user_config_type_transform(config_class: type) -> Callable[[dict], dict]:
-    """``ConfigCollection.replace_type`` 用的字典改写：把账号子配置的类型名换成新托管类的用户类。
-
-    顺带补上新类自带的按任务时限：数据整表搬过去，旧类的空覆盖表会盖掉新类的默认值
-    （通用 MaaFW 脚本导入 M9A 目录变成 M9A 时就拿不到 M9A 内置的那几条）。覆盖表还是
-    空的才补，用户配过的不动。
-    """
-
-    user_type_name = config_class.USER_CONFIG_CLASS.__name__
-    default_overrides = getattr(config_class, "DEFAULT_TASK_TIME_LIMIT_OVERRIDES", "")
-
-    def transform(payload: dict) -> dict:
-        user_data = payload.get("UserData")
-        if isinstance(user_data, dict):
-            for instance in user_data.get("order") or []:
-                if isinstance(instance, dict):
-                    instance["type"] = user_type_name
-        run = payload.get("Run")
-        if (
-            default_overrides
-            and isinstance(run, dict)
-            and _is_empty_json_object(run.get("TaskTimeLimitOverrides"))
-        ):
-            run["TaskTimeLimitOverrides"] = default_overrides
-        return payload
-
-    return transform
-
-
-def _is_empty_json_object(value: Any) -> bool:
-    if isinstance(value, dict):
-        return not value
-    if not isinstance(value, str):
-        return value is None
-    try:
-        return json.loads(value or "{}") == {}
-    except ValueError:
-        return False
-
-
 __all__ = [
     "GameUpdateHook",
     "LoginHook",
@@ -581,7 +518,6 @@ __all__ = [
     "no_default_fallback_inputs",
     "nonfatal_entries",
     "plan_rules",
-    "decide_project_config_class",
     "flavor_for_project",
     "flavored_config_classes",
     "resolve_flavor",
@@ -589,10 +525,8 @@ __all__ = [
     "resolve_login_hook",
     "StartupTask",
     "resolve_snapshot_sanitizer",
-    "retype_notice_lines",
     "sanitize_user_task_update",
     "skip_on_retry_entries",
     "task_name_for_entry",
     "unselectable_entries",
-    "user_config_type_transform",
 ]

@@ -18,8 +18,9 @@
 
 """``/maafw/embedded/*`` 端点背后的业务：副本状态、导入 / 重导、克隆、候选来源。
 
-导入与克隆之后的两步也在这里：按项目换托管类型（``_apply_project_flavor``），
-把同项目同渠道的空闲脚本切到组当前版本（``_propagate_view_to_group``）。
+托管类型在新建时就定了，导入与克隆不换类型；特调托管（M9A、MSS）在动副本之前先查项目是不是
+它那种，不是就拒绝（``_project_flavor_mismatch``）。导入与克隆之后把同项目同渠道的空闲脚本切到
+组当前版本（``_propagate_view_to_group``）。
 """
 
 from __future__ import annotations
@@ -27,12 +28,11 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-import uuid
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from app.core import Config, Notify
+from app.core import Config
 from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
 from app.models.schema import (
     MaaFWEmbeddedProjection,
@@ -47,12 +47,16 @@ from app.task.MaaFW.api_service.common import (
     maafw_script_config,
 )
 from app.task.MaaFW.tools.core.interface.loader import (
+    load_interface_model,
     load_interface_model_cached,
 )
 from app.task.MaaFW.tools.core.interface.preview import (
     interface_display_name,
 )
 from app.task.MaaFW.tools.core.log_redact import mask_home_path
+from app.task.MaaFW.tools.core.project_update.projection import (
+    discover_project_interface,
+)
 from app.task.MaaFW.tools.core.project_update.state import redact_text
 from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
@@ -73,13 +77,7 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     read_interface_version,
     read_view_marker,
 )
-from app.task.MaaFW.tools.embedded.flavor import (
-    decide_project_config_class,
-    flavor_for_project,
-    resolve_flavor,
-    retype_notice_lines,
-    user_config_type_transform,
-)
+from app.task.MaaFW.tools.embedded.flavor import resolve_flavor
 from app.task.MaaFW.tools.embedded.project_path import (
     is_project_updating,
     release_project_path,
@@ -196,8 +194,6 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
             )
         finally:
             await script_config.unlock(config_ticket)
-        # 类型替换不能持原配置的 X 票；此时仍持项目预约，启动检查须等这段结束。
-        await _apply_project_flavor(script_id)
         # 源码形态由新报告决定，按导入后的实际渠道传播。
         channel = effective_channel(script_id, maafw_script_config(script_id))
         await _propagate_view_to_group(script_id, channel)
@@ -209,7 +205,7 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
         try:
             error = await asyncio.shield(work)
         except asyncio.CancelledError:
-            # 线程不能中断；视图、配置写回与特调切换须做完，重复取消也不能提前放预约。
+            # 线程不能中断；视图与配置写回须做完，重复取消也不能提前放预约。
             while not work.done():
                 try:
                     await asyncio.shield(work)
@@ -322,63 +318,52 @@ def _embedded_import_progress(
     return on_progress
 
 
-async def _apply_project_flavor(script_id: str) -> None:
-    """导入完成后按项目决定托管类型：特调项目 → 特调类型，否则通用 MaaFW；uid 不变。
+def _project_flavor_mismatch(script_config: Any, project_dir: Path) -> str | None:
+    """特调托管要换进来的项目不是它那种时，给用户看的拒绝原因；能收就返回 None。
 
-    类型由项目决定、双向自动：M9A 目录导进通用 MaaFW 脚本会变成 M9A，M9A 脚本换成别的项目
-    会变回 MaaFW。保留脚本身份与共有配置，用户类型及专项默认值沿用既有转换规则。
+    托管类型在新建时就定了，导入 / 克隆不换类型（契约见 ``tools/embedded/flavor.py``）：通用 MaaFW
+    托管什么项目都收；特调托管只收 ``matches_project`` 认领的项目，否则它的专属页面与运行前装饰
+    都对不上。``project_dir`` 是来源目录或源托管的视图，interface 在根上或 ``assets/`` 下都认。
+    读不出 interface、识别本身出错时不拦：交给导入自己报错（与以前识别失败保持原类型同一口径）。
+    碰磁盘，调用方放进工作线程。
     """
 
+    flavor = resolve_flavor(script_config)
+    if flavor is None:
+        return None
     try:
-        script_uid = uuid.UUID(str(script_id))
-        script_config = Config.ScriptConfig[script_uid]
-    except (KeyError, ValueError):
-        return
-    try:
-        interface = await asyncio.to_thread(
-            lambda: load_interface_model_cached(
-                embedded_project_dir(script_id), force_reload=True
+        interface_base, _ = discover_project_interface(project_dir)
+        interface = load_interface_model(interface_base)
+    except Exception as exc:  # noqa: BLE001 - 读不出 interface 由导入本身报清楚
+        logger.info(
+            mask_home_path(
+                redact_text(f"导入前读取项目 interface 失败，不按项目类型拦截：{exc}")
             )
         )
-    except Exception as exc:  # noqa: BLE001 - 识别失败就保持原类型
-        logger.warning(f"导入后识别项目类型失败，保持原类型：{exc}")
-        return
-    target = decide_project_config_class(interface)
-    if type(script_config) is target:
-        return
-    previous_flavor = resolve_flavor(script_config)
+        return None
     try:
-        Config.ScriptConfig.replace_type(
-            script_uid,
-            target,
-            payload=user_config_type_transform(target)(await script_config.to_dict()),
-        )
-        await Config.ScriptConfig.commit()
-        script_config = Config.ScriptConfig[script_uid]
-    except Exception as exc:  # noqa: BLE001 - 换类型失败不该让导入失败
-        logger.warning(f"按项目切换托管类型失败，保持原类型：{exc}")
-        return
-    logger.info(f"托管 {script_id} 按项目识别为 {target.__name__}，已原地切换类型")
-    script_name = str(script_config.Info.Name or str(script_id)[:8])
-    has_users = len(script_config.UserData) > 0
-    # 各特调的行为说明由特调自己给（retype_notice_lines），引擎不写专项语义
-    target_flavor = flavor_for_project(interface)
-    lines = [
-        *retype_notice_lines(previous_flavor, entering=False, has_users=has_users),
-        *retype_notice_lines(target_flavor, entering=True, has_users=has_users),
-    ]
-    if has_users:
-        lines.append("用户与运行设置保留，任务队列请按新项目重排")
-    type_name = (
-        str(getattr(target_flavor, "type_key", "") or "")
-        if target_flavor is not None
-        else ""
-    ) or "通用 MFW 脚本"
-    await Notify.push_system_notice(
-        level="warning" if lines else "info",
-        title=f"脚本「{script_name}」已按项目识别为 {type_name}",
-        lines=lines,
-    )
+        if flavor.matches_project(interface):
+            return None
+    except Exception as exc:  # noqa: BLE001 - 识别出错不该挡住导入
+        logger.warning(f"MaaFW 特调 {flavor.type_key} 识别项目失败，不拦截：{exc}")
+        return None
+    return f"这不是 {flavor.type_key} 项目。要用别的项目，请新建通用 MFW 托管。"
+
+
+def _clone_flavor_mismatch(
+    script_config: Any, source_script_id: str, source_config: Any
+) -> str | None:
+    """克隆前的项目类型校验：看源托管的视图，视图不健康时看它的来源目录（克隆的退路按它导入）。"""
+
+    if resolve_flavor(script_config) is None:
+        return None
+    view = embedded_project_dir(source_script_id)
+    if copy_is_healthy(view):
+        return _project_flavor_mismatch(script_config, view)
+    source_path = str(source_config.Info.Path or "").strip()
+    if not source_path:
+        return None
+    return _project_flavor_mismatch(script_config, Path(source_path))
 
 
 async def get_embedded_status(script_id: str) -> MaaFWApiReply:
@@ -416,6 +401,18 @@ async def reimport_embedded(script_id: str, source_path: str | None) -> MaaFWApi
     # 校验要碰磁盘（is_dir / resolve），来源在慢网络盘上时别卡住事件循环
     if path_error := await asyncio.to_thread(_source_path_error, script_config, source):
         return MaaFWApiReply.error(400, f"{failure_prefix}{path_error}")
+    # 特调托管只收它那种项目：在动副本之前按来源目录的 interface 判，不是就原样拒绝
+    if mismatch := await asyncio.to_thread(
+        _project_flavor_mismatch, script_config, Path(source)
+    ):
+        logger.warning(
+            mask_home_path(
+                redact_text(
+                    f"MFW 托管 {script_id} 拒绝从 {source} 导入（项目类型不符）：{mismatch}"
+                )
+            )
+        )
+        return MaaFWApiReply.error(400, f"{failure_prefix}{mismatch}")
     copy_dir = embedded_project_dir(script_id)
     # 换树前记下旧副本钉定的 maafw 版本：重导后版本换了，旧 binding 不必再等宽限
     previous_version = await _previous_maafw_version(copy_dir)
@@ -786,7 +783,8 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
     载荷 + 视图口径：新视图从源托管挂着的载荷物化（大文件与载荷共用，源的运行期状态
     不带），源托管运行中也能建，只预约目标。``Info.Path``、``Embedded.*`` 与
     ``Update.Channel`` 沿用源托管的记录（复用就是用源那一版：渠道不跟着走的话，新托管留在
-    默认渠道，第一次运行前的组同步会把它切到那个渠道的版本）；类型随项目（M9A 项目 → M9A）。
+    默认渠道，第一次运行前的组同步会把它切到那个渠道的版本）。类型不变：M9A / MSS 托管只能从
+    它那种项目克隆，否则在建视图之前就拒绝；通用 MaaFW 托管什么项目都收。
 
     失败时的 ``message`` 只给原因：前端把它接在「复用项目失败：」后面、再告诉用户去引导页选目录。
     """
@@ -800,6 +798,15 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
         return MaaFWApiReply.error(400, "不能复用脚本自己的项目")
     if busy := _embedded_busy_reason(script_config):
         return MaaFWApiReply.error(400, busy)
+    # 特调托管只收它那种项目：按源托管的视图（没有就按它的来源目录）判，不是就什么都不建
+    if mismatch := await asyncio.to_thread(
+        _clone_flavor_mismatch, script_config, source_script_id, source_config
+    ):
+        logger.warning(
+            f"MFW 托管 {script_id} 拒绝从脚本 {source_script_id} 克隆项目（项目类型不符）："
+            f"{mismatch}"
+        )
+        return MaaFWApiReply.error(400, mismatch)
     source_channel = str(source_config.Update.Channel or "stable")
 
     target_dir = embedded_project_dir(script_id)
@@ -884,8 +891,6 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
             "Update": {"Channel": source_channel},
         },
     )
-    await _apply_project_flavor(script_id)
-    # 放在 retype 之后：权威集合在调用线程上按当前托管表算，要看到换过类型的配置
     _reconcile_pool_after_copy_change("clone", target_dir, previous_version)
     data = await embedded_status_data(script_id, maafw_script_config(script_id))
     source_name = str(source_config.Info.Name or source_script_id[:8])
