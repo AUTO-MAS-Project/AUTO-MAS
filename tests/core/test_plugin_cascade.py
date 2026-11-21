@@ -8,7 +8,7 @@ import pytest_asyncio
 
 from app.core.plugin.manager import _PluginManager
 from app.models.config import GlobalConfig, PluginRecord, PluginRegistryCollection
-from app.plugin.errors import PluginBusyError
+from app.plugin.errors import PluginBusyError, PluginOperationError
 from app.plugin.runtime import loader
 from app.plugin.types import PluginState
 
@@ -231,6 +231,49 @@ async def test_reload_restore_failure_keeps_enable_intent_for_restricted_plugin(
     await manager.enable(record)
     assert record.info.state == PluginState.ENABLED
     assert record.info.enabled
+
+
+@pytest.mark.asyncio
+async def test_disable_on_faulty_record_only_cancels_next_start(cascade_plugins):
+    """故障记录没有可拆的实例：显式停用只取消下次启动，不改状态也不跑插件收尾。"""
+    manager, records = await cascade_plugins({"cascade_a": ()})
+    record = records["cascade_a"]
+    await manager.enable(record)
+    # 模拟运行期故障：实例已被失败分支摘掉，只剩故障态与启用意图。
+    record.info.state = PluginState.FAULT_RUNTIME
+    record.info.last_error = "plugin crashed"
+    await record.commit()
+
+    assert await manager.disable(record) == {}
+
+    assert record.info.state == PluginState.FAULT_RUNTIME
+    assert not record.info.enabled
+    # 没有实例可收尾，钩子不能为「停用一个出错的东西」再跑一遍。
+    assert record._plugin_cls.events == ["enable"]
+
+
+@pytest.mark.asyncio
+async def test_reload_failure_keeps_enable_intent_of_torn_down_downstream(
+    cascade_plugins, tmp_path
+):
+    """重载自身失败也要还回已拆下游的启用意图，否则故障排除后得逐个手工重开。"""
+    manager, records = await cascade_plugins(
+        {"cascade_a": (), "cascade_b": ("cascade_a",)}
+    )
+    await manager.enable(records["cascade_b"])
+    assert records["cascade_b"].info.enabled
+
+    # 让被重载的插件在重新加载时失败：下游此时已被拆掉，正卡在失败路径上。
+    (tmp_path / "cascade_a" / "__init__.py").write_text(
+        "raise RuntimeError('plugin reload failed')\n", encoding="utf-8"
+    )
+    with pytest.raises(PluginOperationError):
+        await manager.reload(records["cascade_a"])
+
+    assert records["cascade_a"].info.state == PluginState.FAULT_RUNTIME
+    assert records["cascade_b"].info.state == PluginState.DISABLED
+    # 拆下游是重载的内部动作，不是用户选择停用，启用意图必须留着。
+    assert records["cascade_b"].info.enabled
 
 
 @pytest.mark.asyncio

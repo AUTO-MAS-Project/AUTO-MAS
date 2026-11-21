@@ -742,18 +742,27 @@ class _PluginManager:
                 f"服务依赖回环: {' → '.join([*path_list, uid_s])}",
                 payload={"path": [*path_list, uid_s]},
             )
-        if record._plugin_cls is None:
-            raise PluginNotFoundError(f"插件不在列表中: {name}", payload={"name": name})
         if record.info.is_core:
             raise PluginPrecheckError("核心插件不可禁用", payload={"name": name})
         self._assert_allowed(record, "disable")
+        # 故障、禁停与已卸载记录没有可拆的实例：显式停用只取消下次启动的启用意图，
+        # 不再跑一遍插件收尾。否则用户想让出错的插件安静待着也做不到，重启还会被拉起。
         if record.info.state in {
             PluginState.DISABLED,
             PluginState.FAULT_LOAD,
             PluginState.FAULT_RUNTIME,
             PluginState.UNLOADED,
         }:
+            if record.info.enabled:
+                record.info.enabled = False
+                await record.commit()
+                capabilities_changed.send(self, name=name, enabled=False)
+                await Publisher.send(
+                    id=ID_PLUGIN, type=PLUGIN_CAPABILITIES_UPDATED, data={}
+                )
             return {}
+        if record._plugin_cls is None:
+            raise PluginNotFoundError(f"插件不在列表中: {name}", payload={"name": name})
         # 按语境允许进入态：根/级联仅 enabled；reload 另允 reloading；unload 另允 unloading
         allowed_in = {PluginState.ENABLED}
         if ctx == LifecycleContext.RELOAD:
@@ -963,7 +972,10 @@ class _PluginManager:
         if hung is not None:
             await hung.pre_reload()
 
-        was_enabled = record.info.state == PluginState.ENABLED
+        # 「在跑」决定要不要拆实例，「想开」决定重载后要不要重新拉起。故障记录上两者不同：
+        # 用户原本开着、只是眼下没运行，重载不该把这份启用意图抹成「从没启用过」。
+        was_running = record.info.state == PluginState.ENABLED
+        want_enabled = was_running or record.info.enabled
         downs = self._downstream(record)
 
         # 先写语境；拆下游时本项仍保持原稳态以便随后 disable
@@ -1007,7 +1019,7 @@ class _PluginManager:
             if hung is not None:
                 await hung.on_reload()
 
-            if was_enabled:
+            if was_running:
                 # 本项 disable/enable：dep_path 不含自身 uid；ctx=RELOAD 可进 RELOADING
                 await self.disable(
                     record, held=True, dep_path=path_list, ctx=LifecycleContext.RELOAD
@@ -1021,7 +1033,7 @@ class _PluginManager:
             loader.clear(record)
             cls = loader.load(record)
             record._plugin_cls = cls
-            if was_enabled:
+            if want_enabled:
                 await self.enable(
                     record,
                     held=True,
@@ -1058,7 +1070,7 @@ class _PluginManager:
             # 故障与被跳过的子树都要留着启用意图，否则故障排除后重新启用会被当成首次使用。
             await keep_enable_intent(tear)
 
-            if was_enabled:
+            if want_enabled:
                 record.info.state = PluginState.ENABLED
                 record.info.enabled = True
             else:
@@ -1078,6 +1090,10 @@ class _PluginManager:
                 exc=exc,
                 plugin=record._plugin,
             )
+            # 失败路径同样要还回已拆下游的启用意图：它们在拆解时被写成了停用，
+            # 而这次重载并没有经过用户的「停用」选择。
+            with contextlib.suppress(Exception):
+                await keep_enable_intent(tear)
             raise PluginOperationError(str(exc), payload={"name": name}) from exc
 
     async def install(
@@ -1527,9 +1543,9 @@ class _PluginManager:
         state = record.info.state
         allowed: tuple[str, ...]
         if state == PluginState.FAULT_LOAD:
-            allowed = ("load", "unload")
+            allowed = ("load", "unload", "disable")
         elif state == PluginState.FAULT_RUNTIME:
-            allowed = ("load", "unload", "enable", "reload")
+            allowed = ("load", "unload", "enable", "reload", "disable")
         else:
             return
         if op not in allowed:

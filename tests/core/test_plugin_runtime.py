@@ -46,6 +46,24 @@ def test_disable_confirmation_includes_only_enabled_cascading_adapters(monkeypat
     assert manager.disable_impact(provider) == ["games", "scripts"]
 
 
+def test_disable_button_stays_available_for_intent_left_on_faulty_record():
+    """故障记录只要还留着启用意图就可停用，否则用户没法让出错的插件下次别再拉起。"""
+    faulty = PluginRecord.build(
+        info={"plugin_name": "faulty", "state": "fault_runtime", "enabled": True}
+    )
+    spent = PluginRecord.build(
+        info={"plugin_name": "spent", "state": "fault_runtime", "enabled": False}
+    )
+
+    def editable(record: PluginRecord) -> bool:
+        """按插件中心取值方式读出停用按钮是否可点。"""
+        hints = record._get_ui_hints()["info"]
+        return next(h for h in hints if h["field"] == "disable")["editable"]
+
+    assert editable(faulty) is True
+    assert editable(spent) is False
+
+
 @pytest.mark.asyncio
 async def test_bootstrap_core_with_separate_source_and_user_directories(
     isolated_app_paths, monkeypatch
