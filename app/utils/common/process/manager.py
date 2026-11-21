@@ -758,6 +758,8 @@ class ProcessManager:
             bool: 操作是否成功
         """
 
+        if desktop_process_target.get() is not None:
+            return await self._operate_desktop_window("show_process_window")
         hwnd = self.main_hwnd
         if hwnd is None:
             return False
@@ -773,6 +775,8 @@ class ProcessManager:
         Returns:
             bool: 操作是否成功
         """
+        if desktop_process_target.get() is not None:
+            return await self._operate_desktop_window("hide_process_window")
         hwnd = self.main_hwnd
         if hwnd is None:
             return False
@@ -847,7 +851,11 @@ class ProcessManager:
         """
 
         while await self.is_running():
-            hwnd = self.main_hwnd
-            if hwnd is None or not window.close_window(hwnd):
+            if desktop_process_target.get() is not None:
+                accepted = await self._operate_desktop_window("close_process_window")
+            else:
+                hwnd = self.main_hwnd
+                accepted = hwnd is not None and window.close_window(hwnd)
+            if not accepted:
                 return
             await asyncio.sleep(0.2)

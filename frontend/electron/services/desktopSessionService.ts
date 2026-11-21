@@ -617,7 +617,7 @@ export class DesktopSessionService {
     return this.stopOperation
   }
 
-  private async closeViewer({ logoff = !this.adopted }: { logoff?: boolean } = {}): Promise<void> {
+  private async closeViewer({ logoff = false }: { logoff?: boolean } = {}): Promise<void> {
     const orphanedSessionId = this.orphanedSessionId
     if (orphanedSessionId !== undefined) await this.ensureHost()
     if (!this.host) return

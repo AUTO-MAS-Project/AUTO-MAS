@@ -495,3 +495,58 @@ async def test_desktop_worker_exit_stops_only_the_owned_root(monkeypatch, tmp_pa
             if game is not None and game.is_running():
                 game.kill()
                 game.wait(timeout=10)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="需要 Windows 分身进程执行器")
+@pytest.mark.asyncio
+async def test_window_operations_run_in_the_selected_session(monkeypatch, tmp_path):
+    from app.utils.common.process.manager import ProcessManager
+    from app.utils.windows.desktop_session import process_runner, process_worker
+
+    process = Mock(spec=psutil.Process, pid=101)
+    process.is_running.return_value = True
+    manager = ProcessManager()
+    manager.target_process = process
+    target = session.DesktopProcessTarget(7, tmp_path, tmp_path)
+
+    def close_window(_hwnd):
+        process.is_running.return_value = False
+        return True
+
+    close = Mock(side_effect=close_window)
+    show, hide = Mock(return_value=True), Mock(return_value=True)
+    monkeypatch.setattr(process_worker, "process_session", lambda _: 7)
+    monkeypatch.setattr(
+        operations, "managed_process", lambda pid: process if pid == 101 else None
+    )
+    monkeypatch.setattr(
+        "app.utils.common.process.manager.get_main_window_handle",
+        lambda pid, *_: 42 if pid == 101 else None,
+    )
+    for name, operation in (
+        ("close_window", close),
+        ("show_window", show),
+        ("hide_window", hide),
+    ):
+        monkeypatch.setattr(
+            f"app.utils.common.process.manager.window.{name}", operation
+        )
+
+    async def run_in_child(selected, action, arguments, *, worker_module):
+        assert selected == target
+        assert worker_module == process_worker.__name__
+        return process_worker.run_window_action(action, arguments), b"", b""
+
+    monkeypatch.setattr(process_runner, "run_desktop_action", run_in_child)
+    token = session.desktop_process_target.set(target)
+    try:
+        assert await manager.show_window()
+        assert await manager.hide_window()
+        await manager.close()
+        assert not await manager.is_running()
+    finally:
+        session.desktop_process_target.reset(token)
+    for operation in (show, hide, close):
+        operation.assert_called_once_with(42)
+    process.terminate.assert_not_called()
+    process.kill.assert_not_called()

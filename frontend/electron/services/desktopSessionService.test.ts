@@ -11,6 +11,7 @@ const analytics = vi.hoisted(() => ({ getContext: vi.fn(), recordMainEvent: vi.f
 const host = vi.hoisted(() => ({
   report: vi.fn(),
   command: vi.fn(),
+  close: vi.fn(),
   connect: vi.fn(),
   exit: vi.fn(),
 }))
@@ -31,7 +32,7 @@ vi.mock('node:child_process', () => ({
     host.report.mockImplementation(report)
     const stdin = new Writable({
       write(chunk, _encoding, done) {
-        const { action, approvedRepairs } = JSON.parse(String(chunk))
+        const { action, approvedRepairs, logoff } = JSON.parse(String(chunk))
         host.command(action)
         if (action === 'connect') {
           report(host.connect() ?? { event: 'state', state: 'connected', sessionId: 7 })
@@ -51,7 +52,10 @@ vi.mock('node:child_process', () => ({
           })
           report({ event: 'repair_finished' })
         }
-        if (action === 'close') report({ event: 'state', state: 'idle' })
+        if (action === 'close') {
+          host.close(logoff)
+          report({ event: 'state', state: 'idle' })
+        }
         done()
       },
       final(done) {
@@ -83,6 +87,7 @@ it('closes a host that is still being prepared by the first check', async () => 
   try {
     await Promise.all([check, close])
     expect(host.command.mock.calls).toEqual([['close']])
+    expect(host.close).toHaveBeenCalledExactlyOnceWith(false)
     expect(service.snapshot.state).toBe('idle')
   } finally {
     await service.close()
@@ -239,7 +244,8 @@ it('dispatches and stops tasks through the same main backend', async () => {
     ])
     expect(validateAnalyticsEvent(dispatchEvents[0], false)).toEqual(dispatchEvents[0])
     expect(validateAnalyticsEvent(dispatchEvents[0], true)).toBeNull()
-    await service.close()
+    await service.close({ logoff: true })
+    expect(host.close).toHaveBeenCalledExactlyOnceWith(true)
     expect(requests).toContain('/internal/desktop-session/stop')
     expect(requests).not.toContain('/internal/desktop-session/handoff')
     expect(service.snapshot.executing).toBe(false)

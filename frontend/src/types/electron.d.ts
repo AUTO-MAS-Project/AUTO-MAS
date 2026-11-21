@@ -2,6 +2,8 @@ import type { FluxdownInstallOut, GlobalConfig_UI, GlobalConfig_Update } from '@
 import type { AnalyticsContext, RendererAnalyticsEvent } from '@/types/analytics'
 import type { FrontendCloseRequest } from '@/types/appLifecycle'
 import type {
+  DesktopSessionPrompt,
+  DesktopSessionPromptAction,
   DesktopSessionRequest,
   DesktopSessionRepair,
   DesktopSessionSnapshot,
@@ -552,6 +554,9 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   desktopSessionSupported?: () => Promise<boolean>
   desktopSessionOpen?: (input: DesktopSessionRequest) => Promise<void>
   desktopSessionCheck?: () => Promise<DesktopSessionSnapshot | null>
+  desktopSessionGetPrompt?: () => Promise<DesktopSessionPrompt | null>
+  desktopSessionRespondToPrompt?: (id: number, action: DesktopSessionPromptAction) => Promise<void>
+  onDesktopSessionPrompt?: (callback: () => void) => () => void
   desktopSessionRepair?: (plan: DesktopSessionRepair[]) => Promise<string | undefined>
   desktopSessionExportLogs?: () => Promise<boolean>
   desktopSessionPending?: () => Promise<DesktopSessionRequest | null>
