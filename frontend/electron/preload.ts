@@ -31,12 +31,20 @@ window.addEventListener('DOMContentLoaded', () => {
 contextBridge.exposeInMainWorld('electronAPI', {
   analytics: {
     getContext: () => ipcRenderer.invoke('analytics:context'),
+    beginInitialization: () => ipcRenderer.invoke('analytics:initialization-begin'),
+    finishInitialization: (
+      context: number | null,
+      attempt: number | null,
+      event: RendererAnalyticsEvent
+    ) => ipcRenderer.send('analytics:initialization-finish', context, attempt, event),
     trackEvent: (context: number, event: RendererAnalyticsEvent) =>
       ipcRenderer.send('analytics:event', context, event),
   },
   isMacOS: process.platform === 'darwin',
   installFluxdown: (mirror: string) => ipcRenderer.invoke('fluxdown:install', mirror),
   openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
+  verifyMysteryAccessCode: (accessCode: string, context: unknown) =>
+    ipcRenderer.invoke('mystery:verify', accessCode, context),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: (filters?: unknown[]) => ipcRenderer.invoke('select-file', filters),
   saveTextFile: (
@@ -175,7 +183,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 配置文件操作
   saveConfig: (config: unknown, defaults?: unknown) =>
     ipcRenderer.invoke('save-config', config, defaults),
-  loadConfig: () => ipcRenderer.invoke('load-config'),
+  loadConfig: (strict?: boolean) =>
+    strict === true ? ipcRenderer.invoke('load-config', true) : ipcRenderer.invoke('load-config'),
   resetConfig: () => ipcRenderer.invoke('reset-config'),
 
   // 应用初始化版本（保存前端版本号用于比对）

@@ -40,7 +40,6 @@ from .tools import *
 
 CLASS_BOOK: dict[str, type[ScriptConfigType]] = {
     "MaaEnd": MaaEndConfig,
-    "SRC": SrcConfig,
     "M9A": M9AConfig,
     "MaaFW": MaaFWConfig,
     "General": GeneralConfig,

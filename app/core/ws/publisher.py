@@ -21,11 +21,14 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
+from collections.abc import Callable
 from typing import Mapping, Optional, Union
+from uuid import UUID
 
 from pydantic import BaseModel, JsonValue
 
-from app.core.ws.protocol import build_message
+from app.core.ws.protocol import CONFIG_UI_CHANGED, ID_CONFIG, build_message
 from app.utils import get_logger
 
 logger = get_logger("WS发布器")
@@ -36,6 +39,30 @@ class _WSPublisher:
 
     主连接未就绪时消息直接丢弃（记录低级别日志），不缓存、不重放。
     """
+
+    def config_ui_listener(self) -> Callable[[frozenset[UUID]], None]:
+        """把配置提交送到宿主事件循环。同一批重复 UID 合并发送。"""
+        loop = asyncio.get_running_loop()
+        pending: set[UUID] = set()
+        worker: asyncio.Task[None] | None = None
+
+        async def flush() -> None:
+            while pending:
+                node_uids: list[JsonValue] = list(map(str, pending))
+                pending.clear()
+                await self.send(ID_CONFIG, CONFIG_UI_CHANGED, {"nodeUids": node_uids})
+
+        def enqueue(sources: frozenset[UUID]) -> None:
+            nonlocal worker
+            pending.update(sources)
+            if worker is None or worker.done():
+                worker = loop.create_task(flush())
+
+        def committed(sources: frozenset[UUID]) -> None:
+            if not loop.is_closed():
+                loop.call_soon_threadsafe(enqueue, sources)
+
+        return committed
 
     async def send(
         self,

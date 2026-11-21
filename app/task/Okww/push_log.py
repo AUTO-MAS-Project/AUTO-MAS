@@ -19,10 +19,7 @@ OK-WW 专项作为 log_box 的一个实例：本模块只提供规则与后置�
     1000、战令已结束），收尾按「⏭ 跳过: 节点（原因）」呈现；真正的异常仍判失败，
     且标记只作用于当次尝试（跨会话或重试不延续）
   - "✅ 成功: 节点" = 明确成功（源码有成功/完成日志的节点）
-  - "⚡ 剩余体力: N" = 刷完后的剩余体力（取最后一条 `current stamina:`；上游是领奖时
-    才扣体力，故最后一次领奖的 `current stamina: N` 优先于开刷前的
-    `info_set current_stamina N`，独立成行不参与状态聚合）；"体力刷本" 保留为
-    成功节点
+  - "⚡ 剩余体力: N" = 最后一次体力读数，独立成行不参与状态聚合。
   后处理按节点聚合，状态优先级 失败 > 跳过 > 成功。
 - 不再读取上游 ok.po、不做前置翻译：上游资源文件属私有布局，且译文变化会让
   规则静默失效；节点展示统一由规则提取表达式输出中文。
@@ -31,6 +28,10 @@ OK-WW 专项作为 log_box 的一个实例：本模块只提供规则与后置�
 import re
 
 from app.utils import LOG_TYPE_NORMAL
+
+_DAILY_ERROR = r"\bDailyTask:info_set (?:错误|錯誤)"
+_DAILY_ERROR_WITH_REASON = _DAILY_ERROR + r"[ \t]+(\S.*)$"
+_STAMINA_FINISHED = r"BaseWWTask:current stamina: (-?\d+) (?:not enough to continue|must_use completed, no need to use back_up)$"
 
 # 推送规则：(匹配正则, 提取表达式)；匹配与提取均在原始日志行。
 # 提取表达式输出状态标记（裸节点名 / "状态: 节点"），由 okww_resolve 解析。
@@ -58,7 +59,15 @@ OKWW_PUSH_RULES: list[tuple[str, str]] = [
     (r"info_set Teleport to Tacet Suppression", r'"STAMINA_TARGET:无音区"'),
     (r"info_set Teleport to Forgery Challenge", r'"STAMINA_TARGET:凝素领域"'),
     (r"info_set Target Simulation Challenge", r'"STAMINA_TARGET:模拟领域"'),
-    # 仅采集上游主动通知的明确告警，不把普通战斗探测日志当异常。
+    # 同一行只命中一条规则，有原因时优先显示上游原文。
+    (
+        _DAILY_ERROR_WITH_REASON,
+        rf'"⚠ 异常: 每日任务（" + $({_DAILY_ERROR_WITH_REASON}) + "）"',
+    ),
+    (
+        _DAILY_ERROR + r"$",
+        r'"⚠ 异常: 每日任务（脚本报告异常）"',
+    ),
     (
         r"FarmEchoTask:(?:选择目标失败[!！]|Target enemy failed, please disable Nvidia/AMD Filter or Sharpening!)",
         r'"⚠ 异常: 4C声骸（选择战斗目标失败）"',
@@ -82,14 +91,6 @@ OKWW_PUSH_RULES: list[tuple[str, str]] = [
     (
         r"TaskExecutor:(?:📅\s*)?(?:每日任务|Daily Task) exception stopped",
         r'"DAILY_FAILED"',
-    ),
-    (
-        r"current stamina: \d+ not enough to continue",
-        r'"体力刷本"; "体力当前:" + $((?:current stamina: )(\d+))',
-    ),
-    (
-        r"used all stamina|已用完所有体力",
-        r'"体力刷本"',
     ),
     # 多账号：切换账号开始
     (r"正在返回登录界面|Switching back to login screen", r'"切换账号"'),
@@ -145,17 +146,11 @@ OKWW_PUSH_RULES: list[tuple[str, str]] = [
     # 战令成功无日志（battle pass 为开始），靠无失败判定；此规则置于失败规则后
     (r"先约电台|battle pass", r'"先约电台"'),
     (r"乐园任务完成|Garden task completed", r'"✅ 成功: 每周乐园"'),
-    # 体力刷本：must_use completed = 一次刷本完成（保留成功节点）。同一行的 N 是
-    # 上游 use_stamina 领奖扣体力后算出的真实剩余（`current -= used`，单把消耗随
-    # 任务不同：无音区 60、铸潮/模拟 40，双倍按两把计），故一并产出最终剩余体力；
-    # 一条规则的两个标记用换行拼接，由 okww_resolve 按行拆分
+    # OK-WW 处理领奖后报告停止刷本，并输出扣除本次消耗后的体力。
     (
-        r"must_use completed",
-        r'"体力刷本"; "体力当前:" + $((?:current stamina: )(\d+))',
+        _STAMINA_FINISHED,
+        rf'"体力刷本"; "体力当前:" + $({_STAMINA_FINISHED})',
     ),
-    # 另一条终止分支「体力不足以继续」同样在领奖后打印，N 也是扣完后的真实剩余，
-    # 只补剩余体力、不做节点标记
-    (r"current stamina: (\d+)", r'"体力当前:" + $((?:current stamina: )(\d+))'),
     # 开刷前读数：`info_set current_stamina N` 是进入 F2 图鉴时读到的值，仅作兜底
     # （本把之后若发生领奖，终值由上面的领奖行覆盖）。info_set 行始终输出英文键，
     # 中文界面也不例外
@@ -242,7 +237,6 @@ def okww_resolve(
                 stamina_node = "体力刷本"
             if marker.startswith("STAMINA_TARGET:"):
                 stamina_node = f"体力刷本（{marker.split(':', 1)[1]}）"
-                _mark("✅ 成功", stamina_node, ts)
                 continue
             if marker == "STAMINA_FAILED":
                 _mark("❌ 失败", stamina_node, ts)
@@ -270,7 +264,8 @@ def okww_resolve(
                 echo_started = False
             if marker.startswith("体力当前:"):
                 try:
-                    last_stamina = int(marker[len("体力当前:") :])
+                    # 上游扣除的消耗可能包含备用体力，常规体力最低为 0。
+                    last_stamina = max(0, int(marker[len("体力当前:") :]))
                     last_stamina_ts = ts
                 except ValueError:
                     pass

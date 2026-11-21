@@ -21,6 +21,7 @@ from typing import (
     Optional,
     cast,
 )
+from uuid import UUID
 
 from fastapi import APIRouter, Body
 from pydantic import (
@@ -33,7 +34,7 @@ from pydantic import (
 import app.models.config as _config_models
 from app.config.wire import ConfigPayload, StrictConfigInput, config_contract
 from app.core import Config
-from app.models.schema import OutBase
+from app.models.schema import ConfigSnapshotOut, OutBase
 from app.utils import get_logger
 
 OkwwPlanConfig = ConfigPayload[_config_models.OkwwPlanConfig]
@@ -114,7 +115,7 @@ class PlanGetIn(BaseModel):
     )
 
 
-class PlanGetOut(OutBase):
+class PlanGetOut(ConfigSnapshotOut):
     index: List[PlanIndexItem] = Field(..., description="计划索引列表")
     data: Dict[str, PlanConfigData] = Field(..., description="计划列表或单个计划数据")
 
@@ -221,7 +222,11 @@ async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
             index=[],
             data={},
         )
-    return PlanGetOut(index=index, data=data)
+    return PlanGetOut(
+        index=index,
+        data=data,
+        uiSources=[UUID(plan.planId) if plan.planId else Config.PlanConfig.uid],
+    )
 
 
 @router.post(

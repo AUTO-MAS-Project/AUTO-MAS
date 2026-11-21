@@ -39,13 +39,7 @@
           <template #label>
             <span class="form-label">{{ t('core.edit.gameExecutable') }}</span>
           </template>
-          <PathPickerField
-            v-model="maafwConfig.Game.LaunchPath"
-            mode="file"
-            :placeholder="t('core.edit.pickGameExeThat')"
-            :pick-label="t('core.edit.pickExe')"
-            @pick="emit('select-launch-path')"
-          />
+          <BoundGamePathField />
         </a-form-item>
       </a-col>
       <template v-else-if="launchMode === 'URL'">
@@ -73,13 +67,7 @@
             <template #label>
               <span class="form-label">{{ t('core.edit.mfwGameExeForDetect') }}</span>
             </template>
-            <PathPickerField
-              v-model="maafwConfig.Game.LaunchPath"
-              mode="file"
-              :placeholder="t('core.edit.pickGameExeThat')"
-              :pick-label="t('core.edit.pickExe')"
-              @pick="emit('select-launch-path')"
-            />
+            <BoundGamePathField />
           </a-form-item>
         </a-col>
       </template>
@@ -188,26 +176,7 @@
           <template #label>
             <span class="form-label">{{ t('core.edit.mfwGameExeOptional') }}</span>
           </template>
-          <PathPickerField
-            v-model="maafwConfig.Game.LaunchPath"
-            mode="file"
-            :placeholder="t('core.edit.mfwGameExeOptionalPlaceholder')"
-            :pick-label="t('core.edit.pickExe')"
-            @pick="emit('select-launch-path')"
-          >
-            <template #after-pick>
-              <a-button
-                v-if="maafwConfig.Game.LaunchPath"
-                size="large"
-                :aria-label="t('core.edit.clearPath')"
-                @click="clearPath('LaunchPath')"
-              >
-                <template #icon>
-                  <DeleteOutlined />
-                </template>
-              </a-button>
-            </template>
-          </PathPickerField>
+          <BoundGamePathField />
         </a-form-item>
       </a-col>
       <a-col :span="pairedColSpan">
@@ -215,26 +184,7 @@
           <template #label>
             <span class="form-label">{{ t('core.edit.mfwLauncherExeOptional') }}</span>
           </template>
-          <PathPickerField
-            v-model="maafwConfig.Game.LauncherPath"
-            mode="file"
-            :placeholder="t('core.edit.optional')"
-            :pick-label="t('core.edit.pickExe')"
-            @pick="emit('select-launcher-path')"
-          >
-            <template #after-pick>
-              <a-button
-                v-if="maafwConfig.Game.LauncherPath"
-                size="large"
-                :aria-label="t('core.edit.clearPath')"
-                @click="clearPath('LauncherPath')"
-              >
-                <template #icon>
-                  <DeleteOutlined />
-                </template>
-              </a-button>
-            </template>
-          </PathPickerField>
+          <BoundGamePathField launcher />
         </a-form-item>
       </a-col>
       <MaaFWHotkeyField
@@ -251,6 +201,8 @@
 </template>
 
 <script setup lang="ts">
+import BoundGamePathField from '@/components/BoundGamePathField.vue'
+
 import PathPickerField from '@/components/PathPickerField.vue'
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'

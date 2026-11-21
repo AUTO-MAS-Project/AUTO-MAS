@@ -37,7 +37,7 @@
 - **加密**：`Annotated[str, encrypted()]`，标记位于注解元数据末尾。字段属性读取为明文，落盘为密文，采用同设备多用户可解密的算法；跨设备迁移使用明文导出。解密失败保留原始不可用内容，提示由前端决定，后端不替换提示文本。
 - **字符串**：复用 `JsonDictString/JsonListString/UrlString/WindowsNameString/KeyboardKeyString/CliArgumentString/CliArgumentListString` 的既定策略。JSON 字符串保持字符串；键位转小写，非法值通过 `PydanticUseDefault` 回退到该字段 `Field` 中声明的合法默认键位。
 - **引用**：`Annotated[UUID | str, ref(target_name, ...)]`。目标是已登记的命名集合；`entry_types` 通过 `isinstance` 接受子类。删除及 `reload_type/replace_type` 后统一重校验，复用 `SET_DEFAULT/RESTRICT/CASCADE/CUSTOM` 策略。`display_field="Info.Name"` 的选项值为 UUID、展示值来自目标字段；候选值和类型过滤由框架 UI 元数据统一计算。
-- **响应式**：`Virtual[T]` 与同步 `@virtual_field("Group.Field")` 配对，计算值只读；`Trigger[bool]` 或 `Trigger[Literal[...]]` 与 `@trigger_field(...)` 配对。触发器立即分派，异步处理另建任务，不能当作普通信号的事务内修改或假定 `commit()` 等待它完成。
+- **响应式**：`Virtual[T]` 与同步 `@virtual_field("Group.Field")` 配对。触发器默认声明 `Trigger = None`，用 `field: Trigger = trigger(timeout=120)` 可按字段指定超时秒数。触发器与 `@trigger_field("Group.Field")` 绑定无参处理器。运行时字段读为任务 UUID 或 `None`。写入 `None` 跳过、`True` 启动或复用任务、`False` 请求取消，Python 调用侧通过 `entry.write_trigger` 获得明确的写类型。同步处理器在线程池执行，异步处理器中的阻塞调用须显式卸载。背景任务完成回调清掉字段 UUID，持久化和备份不含触发器。配置更新先提交普通字段，再提交触发器，`commit()` 不等待其完成。
 - **显隐**：统一使用 `ui(visibility=...)` 或 `@ui_visibility(...)`；`SHOW/HIDE/DISABLE/MASKED` 分别表达正常、隐藏、禁用与掩码。所有子项隐藏时组隐藏，掩码限具体字段。`UI_MASKED_VALUE` 原样回传表示保持现值，不是待保存的真实内容。UI 元数据能力不自动授权增加动态表单或触发器交互。
 - **字段迁移**：统一使用 `legacy(group=..., name=..., convert=...)`，在输入准备和激活时集中转换并校验；显式目标字段（含 `None`）优先。转换后只使用当前字段，不新增并行别名、放宽类型标记或 API 搬运逻辑。
 

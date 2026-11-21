@@ -59,6 +59,7 @@ from app.models.emulator import DeviceBase, DeviceProvider
 from app.models.notification.report import TaskResultData, TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
+from app.task.game import game_target_id
 from app.task.MaaFW.tools.backup_archive import (
     archive_mas_runtime_backup,
     archive_native_backup,
@@ -650,13 +651,13 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         controller 类型 —— 判定要读 interface，属于运行编排的职责。
         """
 
-        emulator_id = str(script_config.Emulator.Id or "").strip()
+        emulator_id = str(game_target_id(script_config) or "").strip()
         if not emulator_id or emulator_id == "-":
             return None
 
-        from app.core import EmulatorManager
+        from app.core import GameManager
 
-        device_provider = self._device_provider or EmulatorManager.get_emulator_instance
+        device_provider = self._device_provider or GameManager.get_emulator_instance
         try:
             return await device_provider(emulator_id)
         except Exception as exc:  # noqa: BLE001 - 缺模拟器不该拦住 Win32 项目

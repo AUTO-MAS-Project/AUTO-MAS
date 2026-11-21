@@ -50,6 +50,7 @@ from pathlib import Path
 from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.services.common.gi_updater import genshin as _service_genshin_updater
 from app.task.BetterGI.tools import game_info
+from app.task.client import client_executable_path
 from app.task.run_flow import point
 from app.utils import get_logger
 from app.utils.common.process.operations import is_process_stopped
@@ -113,7 +114,7 @@ async def ensure_game_updated(
         return True
 
     root_path = Path(str(script_config.Info.RootPath or "."))
-    user_game_path = str(user_config.Switch.GamePath or "")
+    user_game_path = str(client_executable_path(user_config) or "")
     try:
         game_exe = game_info.resolve_game_exe(root_path, user_game_path)
     except Exception as error:  # noqa: BLE001

@@ -51,6 +51,8 @@ if TYPE_CHECKING:
 
 from app.config import ConfigCollection, ConfigEntry, NodeState, config_manager
 from app.core.config.plugin_upgrade import (
+    backup_legacy_src_users,
+    install_adapter_plugin,
     install_adapter_plugins,
     prepare_plugin_documents,
     required_adapter_plugins,
@@ -101,8 +103,6 @@ from app.models.config import (
     QueueItem,
     ScriptConfigType,
     ScriptEntry,
-    SrcConfig,
-    SrcUserConfig,
     TimeSet,
     UniversalPlanConfig,
     UserConfigType,
@@ -123,6 +123,8 @@ from app.utils import constants as _utils_constants
 from app.utils import get_logger, is_supervised
 from app.utils import io as _utils_io
 from app.utils.common.startup_timing import startup_stage
+
+DEFAULT_GAME_PLUGIN_INSTALL_TIMEOUT = 90
 
 # 各专项失败诊断目录里参与保留期清理的文件后缀（诊断日志与截图）；
 # 不在集合内的文件（如未来的标记/锁文件）不被自动清理触碰
@@ -290,8 +292,8 @@ class AppConfig:
         self.GameConfig = ConfigCollection[GameEntry].build(
             [GameEntry], name="games", file=self.config_path / "games.yaml"
         )
-        self.EmulatorConfig = ConfigCollection[EmulatorConfig].build(
-            [EmulatorConfig], name="EmulatorConfig"
+        self._legacy_emulators = ConfigCollection[EmulatorConfig].build(
+            [EmulatorConfig]
         )
         self.PlanConfig = ConfigCollection[PlanConfigType].build(
             [item["config_class"] for item in PLAN_BOOK.values()], name="PlanConfig"
@@ -308,7 +310,7 @@ class AppConfig:
         self.startup_notices = self.setting.startup_notices
         self._config_nodes = {
             "setting": self.setting,
-            "EmulatorConfig": self.EmulatorConfig,
+            "EmulatorConfig": self._legacy_emulators,
             "PlanConfig": self.PlanConfig,
             "ScriptConfig": self.ScriptConfig,
             "QueueConfig": self.QueueConfig,
@@ -342,7 +344,7 @@ class AppConfig:
             if related_config is not None:
                 related_config.update(
                     {
-                        "EmulatorConfig": self.EmulatorConfig,
+                        "EmulatorConfig": self._legacy_emulators,
                         "PlanConfig": self.PlanConfig,
                         "ScriptConfig": self.ScriptConfig,
                     }
@@ -426,8 +428,29 @@ class AppConfig:
     async def init_config(self, *, prepare_plugins=None) -> None:
         """初始化配置管理"""
 
+        # check_data 创建数据版本库，后续启动沿用该库，不再尝试安装默认插件。
+        first_start = (
+            prepare_plugins is not None
+            and not self.database_path.exists()
+            and not any(self.config_path.iterdir())
+        )
         with startup_stage("后端/配置/数据检查与加载"):
             await self.check_data(prepare_plugins=prepare_plugins)
+        if first_start:
+            from app.core.config.game_upgrade import DEFAULT_GAME_PLUGINS
+
+            with startup_stage("后端/配置/首次安装游戏管理插件"):
+                try:
+                    async with asyncio.timeout(DEFAULT_GAME_PLUGIN_INSTALL_TIMEOUT):
+                        for name, package in DEFAULT_GAME_PLUGINS:
+                            try:
+                                await install_adapter_plugin(name, package)
+                            except Exception as error:
+                                logger.opt(exception=True).warning(
+                                    f"首次安装游戏管理插件 {package} 失败：{error}"
+                                )
+                except TimeoutError:
+                    logger.warning("首次安装游戏管理插件超时，可在插件市场手动安装")
         with startup_stage("后端/配置/专项迁移"):
             if self._m9a_migration is not None:
                 if self._m9a_migration.changed or self._m9a_migration.failure:
@@ -474,6 +497,11 @@ class AppConfig:
         def on_telemetry(sender, event):
             _service_telemetry.set_telemetry_enabled(event.value)
 
+        async def on_block_ad(sender, event):
+            from app.core import GameManager
+
+            await GameManager.apply_block_ad(event.value)
+
         async def on_video_limit(sender, event):
             from app.core import History
 
@@ -491,6 +519,7 @@ class AppConfig:
             on_self_start,
             on_allow_sleep,
             on_telemetry,
+            on_block_ad,
             on_video_limit,
         )
         self.setting.connect(
@@ -501,6 +530,9 @@ class AppConfig:
         )
         self.setting.connect(
             on_telemetry, phase="runtime", group="Function", field="IfEnableTelemetry"
+        )
+        self.setting.connect(
+            on_block_ad, phase="runtime", group="Function", field="IfBlockAd"
         )
         self.setting.connect(
             on_video_limit,
@@ -566,7 +598,27 @@ class AppConfig:
             )
         # 已升级用户也可能失去此前随主仓交付的专项源码，激活领域配置前补齐所需实现。
         required = required_adapter_plugins(self.config_path)
+        if "src_adapter" in required:
+            await asyncio.to_thread(backup_legacy_src_users, self.config_path)
+        from app.core.config.game_upgrade import (
+            migrate_game_documents,
+            required_game_plugins,
+        )
+
+        required.update(required_game_plugins(self.config_path))
         prepare_runtime = prepare_plugins
+
+        async def migrate_games() -> None:
+            from app.core import Plugin
+
+            resolvers = {
+                declaration.game_class.__name__: declaration.resolve_installation
+                for declaration in Plugin.game_types.values()
+                if declaration.resolve_installation is not None
+            }
+            await asyncio.to_thread(
+                migrate_game_documents, self.config_path, resolve_installation=resolvers
+            )
 
         async def prepare_plugin_upgrade() -> None:
             """装配运行环境并补齐已有配置所需的插件，旧格式转换只在升级阶段执行。"""
@@ -653,6 +705,9 @@ class AppConfig:
                 for key, node in self._config_nodes.items()
                 if node.activation_state == NodeState.ACTIVE
             }
+            # 先保留旧设备及账号路径并转换绑定，再让当前模型转换历史 JSON。
+            await install_adapter_plugins(required_game_plugins(self.config_path))
+            await migrate_games()
             await asyncio.to_thread(
                 upgrade_json_configs,
                 self.config_path,
@@ -665,6 +720,8 @@ class AppConfig:
                 normalize_m9a_managed_entries, self.config_path / "scripts.yaml"
             )
         for _old, new, key in CONFIG_FILES:
+            if key == "EmulatorConfig":
+                continue
             config_manager.register_root(
                 self._config_nodes[key], self.config_path / new
             )
@@ -675,14 +732,19 @@ class AppConfig:
                 await collection.activate(fast_init=True)
         if prepare_plugins is not None:
             await prepare_plugins()
+        await migrate_games()
         from app.core.game_manager import GameManager
         from app.models.config import GameEntry
+        from app.models.config.game import device_removed
 
         self.GameConfig.connect(GameManager.on_add, phase="both", kind="add")
+        device_removed.connect(GameManager.on_device_removed, weak=False)
         self.GameConfig.connect(GameEntry.on_add_devices, phase="both", kind="add")
         if self.GameConfig.activation_state == NodeState.INACTIVE:
             await self.GameConfig.activate(fast_init=True)
         for _old, _new, key in CONFIG_FILES:
+            if key == "EmulatorConfig":
+                continue
             node = self._config_nodes[key]
             if node.activation_state == NodeState.INACTIVE:
                 with startup_stage(f"后端/配置/激活/{key}"):
@@ -1152,7 +1214,6 @@ class AppConfig:
     ) -> tuple[
         uuid.UUID,
         ScriptEntry
-        | SrcConfig
         | GeneralConfig
         | MaaEndConfig
         | M9AConfig
@@ -1253,9 +1314,11 @@ class AppConfig:
         self, script_id: str, data: Dict[str, Dict[str, Any]]
     ) -> str | None:
         """编辑保存先检查设备绑定，再按原有锁和提交规则更新配置。"""
-        from app.core import EmulatorManager
+        from app.core import GameManager
 
-        refusal = await EmulatorManager.mod_avd_binding_error(script_id, data)
+        refusal = await GameManager.validate_binding(
+            script_id, data, script=self.ScriptConfig[script_id]
+        )
         if refusal:
             return refusal
         await self.update_script(script_id, data)
@@ -1369,19 +1432,19 @@ class AppConfig:
         if isinstance(script, (GeneralConfig, HSRConfig)):
             return {"Info": {"Base": _utils_constants.BASE_NATIVE}}
 
-        is_maa = isinstance(script, ScriptEntry) and type(
-            script
-        ) is self.script_classes.get("MAA")
-        if not is_maa and not isinstance(
+        plugin_defaults = isinstance(script, ScriptEntry) and type(script) in (
+            self.script_classes.get("MAA"),
+            self.script_classes.get("Whimbox"),
+            self.script_classes.get("SRC"),
+        )
+        if not plugin_defaults and not isinstance(
             script,
             (
-                SrcConfig,
                 MaaEndConfig,
                 OkwwConfig,
                 OkNteConfig,
                 BetterGIConfig,
                 ZzzOdConfig,
-                WhimboxConfig,
             ),
         ):
             return None
@@ -1397,7 +1460,6 @@ class AppConfig:
     ) -> tuple[
         uuid.UUID,
         UserEntry
-        | SrcUserConfig
         | GeneralUserConfig
         | MaaEndUserConfig
         | M9AUserConfig
@@ -1575,12 +1637,20 @@ class AppConfig:
         之前再判一次，不成立就不写。判断与写入之间不让出，期间插不进别的写入。
         """
 
+        from app.core import GameManager
+
         logger.info(f"{script_id} 更新账号配置: {user_id}")
 
         script_uid = uuid.UUID(script_id)
         user_uid = uuid.UUID(user_id)
         script_config = self.ScriptConfig[script_uid]
         user_config = script_users(script_config)[user_uid]
+
+        refusal = await GameManager.validate_binding(
+            script_id, data, owner=user_config, script=script_config
+        )
+        if refusal:
+            raise ValueError(refusal)
 
         if isinstance(user_config, UserEntry) and precondition is None:
             # 插件配置只走配置基类已定义的更新入口，专项准备和信号由插件内部负责。
@@ -1668,24 +1738,29 @@ class AppConfig:
                 return handler
         raise RuntimeError(f"专项配置处理器未登记: {type(script).__name__}")
 
-    def get_script_emulator_binding(
-        self, script: ConfigEntry, *, patch: dict[str, Any] | None = None
-    ) -> tuple[Any, Any] | None:
-        """读取持久绑定；传入补丁时只返回本次提交设备号所形成的候选。"""
-        if isinstance(script, ScriptEntry):
-            # [兼容旧模拟器] 只读持久绑定供设备反查；插件保存校验归其自身配置。
-            return script.get_emulator_binding() if patch is None else None
-        handler = self._get_script_config_handler(script)
-        if handler is None or handler.emulator_binding is None:
-            return None
-        if patch is not None:
-            return handler.emulator_binding.read_patch(script, patch)
-        return handler.emulator_binding.read(script)
-
     def script_supports_mod_avd(self, script: ConfigEntry) -> bool:
         """[兼容旧专项] 读取旧设备表单的能力标记；插件由自身配置和任务校验设备。"""
+        if isinstance(script, ScriptEntry):
+            from app.core import Plugin
+
+            return next(
+                d.supports_mod_avd
+                for d in Plugin.script_types.values()
+                if isinstance(script, d.script_type)
+            )
         handler = self._get_script_config_handler(script)
         return handler is not None and handler.supports_mod_avd
+
+    def script_game_kinds(self, script: ConfigEntry, patch: dict) -> tuple[str, ...]:
+        handler = self._get_script_config_handler(script)
+        if handler is None:
+            return ()
+        expected = (
+            handler.expected_game_kind(script, patch)
+            if handler.expected_game_kind is not None
+            else None
+        )
+        return (expected,) if expected is not None else handler.game_kinds
 
     async def _initialize_script_config(self, script: ConfigEntry) -> None:
         handler = self._get_script_config_handler(script)
@@ -1948,65 +2023,6 @@ class AppConfig:
 
         self.PlanConfig.set_order(list(map(uuid.UUID, index_list)))
         await self.PlanConfig.commit()
-
-    async def get_emulator(self, emulator_id: Optional[str]) -> tuple[list, dict]:
-        """获取模拟器配置"""
-        logger.info(f"获取全局模拟器设置: {emulator_id}")
-
-        if emulator_id is None:
-            data = self.EmulatorConfig.model_dump(context={"audience": "api"})
-        else:
-            entry = self.EmulatorConfig[uuid.UUID(emulator_id)]
-            return (
-                [{"uid": str(entry.uid), "type": type(entry).__name__}],
-                {str(entry.uid): entry.model_dump(context={"audience": "api"})},
-            )
-
-        index = data["order"]
-        return list(index), data["data"]
-
-    async def add_emulator(self) -> tuple[uuid.UUID, EmulatorConfig]:
-        """添加模拟器配置"""
-        logger.info("添加全局模拟器配置")
-
-        uid = self.EmulatorConfig.add(EmulatorConfig)
-        await self.EmulatorConfig.commit()
-        config = self.EmulatorConfig[uid]
-        return uid, config
-
-    async def update_emulator(
-        self, emulator_id: str, data: Dict[str, Dict[str, Any]]
-    ) -> None:
-        """更新模拟器配置"""
-
-        emulator_uid = uuid.UUID(emulator_id)
-
-        logger.info(f"更新模拟器配置: {emulator_id}")
-
-        await self.EmulatorConfig[emulator_uid].update(
-            type(self.EmulatorConfig[emulator_uid]).model_validate(data)
-        )
-
-    async def del_emulator(self, emulator_id: str) -> None:
-        """删除模拟器配置"""
-
-        emulator_uid = uuid.UUID(emulator_id)
-
-        logger.info(f"删除全局模拟器配置: {emulator_id}")
-
-        async with config_manager.transaction():
-            for script in self.ScriptConfig.values():
-                binding = self.get_script_emulator_binding(script)
-                # 持久引用与运行占用不同：General 禁用游戏时也不能绕过被锁定的引用。
-                if binding is not None and str(binding[0]) == str(emulator_uid):
-                    if script.is_locked:
-                        raise RuntimeError(
-                            f"托管 {entry_name(script)} 正在使用此模拟器且被锁定, 无法完成删除"
-                        )
-
-            # 关联绑定由删除信号统一清理，任一运行锁拒绝时随删除一起回退。
-            self.EmulatorConfig.remove(emulator_uid)
-            await self.EmulatorConfig.commit()
 
     async def add_queue(
         self, *, payload: dict[str, Any] | None = None
@@ -2727,42 +2743,6 @@ class AppConfig:
                     }
                 )
         logger.success(f"{consumer} 计划下拉框信息获取成功")
-
-        return data
-
-    async def get_emulator_combox(self):
-        """获取模拟器下拉框信息"""
-
-        logger.info("开始获取模拟器下拉框信息")
-        data = [{"label": "未选择", "value": "-"}]
-        for uid, emulator in self.EmulatorConfig.items():
-            data.append({"label": emulator.Info.Name, "value": str(uid)})
-        logger.success("模拟器下拉框信息获取成功")
-        return data
-
-    async def get_emulator_devices_combox(self, emulator_id: str):
-        """获取模拟器多开实例下拉框信息"""
-
-        logger.info("开始获取模拟器下拉框信息")
-
-        if emulator_id == "-":
-            return []
-
-        if self.EmulatorConfig[uuid.UUID(emulator_id)].Info.Type == "general":
-            logger.info("通用模拟器不支持扫描多开实例, 返回空列表")
-            return []
-
-        data = [{"label": "未选择", "value": "-"}]
-
-        from app.core import EmulatorManager
-
-        devices = await (
-            await EmulatorManager.get_emulator_instance(emulator_id)
-        ).list_devices()
-        for index, title in devices.items():
-            data.append({"label": title, "value": index})
-
-        logger.success("模拟器下拉框信息获取成功")
 
         return data
 

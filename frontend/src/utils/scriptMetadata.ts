@@ -8,7 +8,6 @@ import maaEndIcon from '@/assets/MaaEnd.png'
 import m9aIcon from '@/assets/M9A.png'
 import okNteIcon from '@/assets/ok-nte.ico'
 import okwwIcon from '@/assets/ok-ww.ico'
-import srcIcon from '@/assets/SRC.png'
 import maafwIcon from '@/assets/maafw.png'
 import mssIcon from '@/assets/mss.png'
 import zzzOdIcon from '@/assets/zzz-od.ico'
@@ -124,6 +123,7 @@ export const SCRIPT_METADATA = {
     },
   },
   MAA: SCRIPT_PLUGIN_METADATA.MAA,
+  SRC: SCRIPT_PLUGIN_METADATA.SRC,
   Whimbox: SCRIPT_PLUGIN_METADATA.Whimbox,
   MaaEnd: {
     logo: maaEndIcon,
@@ -212,24 +212,6 @@ export const SCRIPT_METADATA = {
       titleKey: 'core.scripts.type.Okww',
       descriptionKey: 'core.scripts.create.typeDesc.Okww',
       keywords: ['okww', 'ok-ww', 'ok-script'],
-      group: 'specialized',
-    },
-  },
-  SRC: {
-    logo: srcIcon,
-    label: 'SRC',
-    typeTagColor: 'purple',
-    routeSuffix: 'src',
-    routeTitles: {
-      script: '编辑SRC脚本',
-      userAdd: '添加SRC用户',
-      userEdit: '编辑SRC用户',
-    },
-    createOrder: 3,
-    create: {
-      titleKey: 'core.scripts.type.SRC',
-      descriptionKey: 'core.scripts.create.typeDesc.SRC',
-      keywords: ['src', '星穹铁道'],
       group: 'specialized',
     },
   },

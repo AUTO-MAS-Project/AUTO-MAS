@@ -75,8 +75,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
   }
 
   const control = useMaaFWControlConfig(maafwConfig, previewData, previewLoading, handleChange)
-  const { syncControllerResourceSelection, loadEmulatorOptions, loadEmulatorDeviceOptions } =
-    control
+  const { syncControllerResourceSelection } = control
 
   const periodTasks = useMaaFWPeriodTasks(maafwConfig, previewData, handleChange)
   const { prunePeriodTaskSelections, syncPeriodTasksFromConfig } = periodTasks
@@ -259,7 +258,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       const initialScript = host?.takeInitialScript()
       const [scriptDetail] = await Promise.all([
         initialScript !== undefined ? initialScript : getScript(scriptId),
-        loadEmulatorOptions(),
+        control.prepareBinding(),
       ])
       if (!scriptDetail) {
         if (!scriptApiError.value && !host?.scriptLoadError.value)
@@ -280,9 +279,6 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
         formData.name = maafwConfig.Info.Name
       }
 
-      if (maafwConfig.Emulator.Id && maafwConfig.Emulator.Id !== '-') {
-        await loadEmulatorDeviceOptions(maafwConfig.Emulator.Id)
-      }
       await refreshEmbeddedStatus()
       if (maafwConfig.Info.Path) {
         await runPreview()

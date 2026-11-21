@@ -22,31 +22,26 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, cast
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import Field, ValidationInfo, field_validator
+from pydantic import Field
 
 from app.config import (
     ConfigCollection,
     ConfigGroup,
-    NodeState,
     Virtual,
-    config_manager,
     virtual_field,
 )
-from app.config.fields import RefDeleteAction
 from app.config.shortcuts import collection, ref, select, ui
-from app.config.signals import FieldChangeEvent
-from app.plugin.config import PluginCommandEntry
 
-from .game import device_removed
+from .game_binding import GameBindingOwner
 from .plan import PlanEntry
 from .queue import Webhook
 from .tag import TagItem
 
 
-class UserEntry(PluginCommandEntry):
+class UserEntry(GameBindingOwner):
     """用户配置上界：插件子类扩展；删用户时由宿主订阅清本地 data/。"""
 
     class Info(ConfigGroup):
@@ -97,83 +92,15 @@ class UserEntry(PluginCommandEntry):
         return tags
 
 
-class ScriptEntry(PluginCommandEntry):
+class ScriptEntry(GameBindingOwner):
     """脚本配置上界：至少脚本名 + 游戏选择；users 由适配器挂具体 user_type。"""
 
     class Info(ConfigGroup):
         name: str = Field(default="新脚本", description="脚本名称")
-        # 游戏：games 池外键；游戏被删 → 置 "-"
-        game_id: Annotated[
-            UUID | str,
-            select(endpoint="/api/plugin/options/games"),
-            ref("games", default="-", on_delete=RefDeleteAction.SET_DEFAULT),
-        ] = Field(default="-", description="关联游戏配置 uid；- 表示未选")
-        # 设备：不走外键，由下方校验器按所选游戏的 devices 归一；须声明在 game_id 之后
-        game_device_id: Annotated[
-            UUID | str,
-            select(endpoint="/api/plugin/options/devices"),
-            ui(deps=["info.game_id"]),
-        ] = Field(default="-", description="关联游戏设备 uid；- 表示只订游戏不订实例")
-
-        @field_validator("game_device_id")
-        @classmethod
-        def _normalize_device(
-            cls, value: UUID | str, info: ValidationInfo
-        ) -> UUID | str:
-            """热态：仅保留所选游戏 devices 内的 uid，否则 ``-``；冷态原样。"""
-            entry = (info.context or {}).get("entry")
-            if entry is None or entry.activation_state == NodeState.INACTIVE:
-                return value
-            # info.data 为同组其它字段的当前值（赋值校验时即工作区里的 game_id）
-            game_id = info.data.get("game_id")
-            try:
-                uid = value if isinstance(value, UUID) else UUID(value)
-                game = config_manager.get_collection("games").get(UUID(str(game_id)))
-            except ValueError:
-                return "-"
-            if game is None or uid not in game.devices:
-                return "-"
-            return uid
 
     info: Info = Field(default_factory=Info, description="脚本信息")
     users: ConfigCollection[UserEntry] = collection(UserEntry)
 
-    def get_emulator_binding(self) -> tuple[str | UUID, str] | None:
-        """[兼容旧模拟器] 提供设备反查所需的只读绑定；游戏设备迁移完成后删除。"""
-        return None
-
     @classmethod
     def bind_runtime_signals(cls) -> None:
-        """在插件类型登记时订阅本类实例的游戏引用联动，避免在成员激活期间修改生命周期。"""
-        cls.disconnect(
-            ScriptEntry.on_game_changed, phase="runtime", group="info", field="game_id"
-        )
-        cls.connect(
-            ScriptEntry.on_game_changed, phase="runtime", group="info", field="game_id"
-        )
-
-    @staticmethod
-    async def on_game_changed(sender: object, event: FieldChangeEvent) -> None:
-        """``game_id`` 变更（含游戏被删置 ``-``）：设备原值重赋，按新游戏重新归一。"""
-        _ = event
-        entry = cast(ScriptEntry, sender)
-        device = entry.info.game_device_id
-        if device == "-":
-            return
-        entry.info.game_device_id = device
-        await entry.commit()
-
-    @staticmethod
-    async def on_device_removed(sender: object, uid: UUID) -> None:
-        """统一设备删除信号：引用该设备的脚本原值重赋，交给校验器归一为 ``-``。"""
-        _ = sender
-        for entry in config_manager.get_collection("ScriptConfig").values():
-            if not isinstance(entry, ScriptEntry):
-                continue
-            if entry.info.game_device_id != uid:
-                continue
-            entry.info.game_device_id = uid
-            await entry.commit()
-
-
-device_removed.connect(ScriptEntry.on_device_removed)
+        """设备绑定由公共游戏目标模型校验，不再保留 info 下的旧游戏字段。"""

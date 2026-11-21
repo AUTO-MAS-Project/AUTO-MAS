@@ -2,20 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import weakref
 from pathlib import Path
-from types import UnionType
 from typing import (
     Any,
     ClassVar,
     Iterator,
-    Literal,
     Self,
-    Union,
     cast,
-    get_args,
     get_origin,
 )
 from uuid import UUID
@@ -45,17 +40,18 @@ from ..fields import (
     is_trigger_model_field,
     is_virtual_model_field,
 )
-from ..fields.ann import strip_optional, unwrap_ann
 from ..fields.encrypted import EncryptedValue
 from ..fields.hints import (
     ComponentHint,
     OptionHint,
+    TriggerUiState,
     UiTablesList,
     hint_for_field,
     migrate_legacy_fields,
     omit_masked_placeholders,
     visibility_spec_for_field,
 )
+from ..fields.ref import validate_trigger_command
 from ..shortcuts import virtual_field
 from ..signals import FieldChangeEvent
 from .collection import ConfigCollection
@@ -138,9 +134,6 @@ class ConfigEntry(ConfigNode):
     _cfg_virtual_specs: ClassVar[dict[tuple[str, str], str]] = {}
     _cfg_trigger_specs: ClassVar[dict[tuple[str, str], str]] = {}
     # (group, field) → ("bool"|"literal", 触发值元组, 闲置值)
-    _cfg_trigger_modes: ClassVar[
-        dict[tuple[str, str], tuple[str, tuple[object, ...], object]]
-    ] = {}
     _cfg_ref_specs: ClassVar[dict[tuple[str, str], RefField]] = {}
     _cfg_ui_hints: ClassVar[UiHintsMap] = {}
     _cfg_ui_tables: ClassVar[UiTablesList] = []
@@ -225,9 +218,6 @@ class ConfigEntry(ConfigNode):
         group_fields: list[str] = []
         collection_fields: list[str] = []
         ref_specs: dict[tuple[str, str], RefField] = {}
-        trigger_modes: dict[
-            tuple[str, str], tuple[str, tuple[object, ...], object]
-        ] = {}
         tables_by_cls: dict[type, list[str]] = {}
         ui_hints: UiHintsMap = {}
         ui_visibility: dict[tuple[str, str | None], UiVisibilitySpec] = {}
@@ -260,31 +250,13 @@ class ConfigEntry(ConfigNode):
                         )
                     if refs:
                         ref_specs[key] = refs[0]
-                    if is_trigger_model_field(sub_info):
-                        raw, _meta = unwrap_ann(sub_info.annotation)
-                        raw = strip_optional(raw)
-                        t_origin = get_origin(raw)
-                        if t_origin is Union or t_origin is UnionType:
-                            raise TypeError(
-                                f"{cls.__name__}.{fname}.{sub_name}: "
-                                "触发器须为 bool 或 Literal（可 | None），"
-                                "禁止 bool 与 Literal 混用"
-                            )
-                        if raw is bool or t_origin is bool:
-                            trigger_modes[key] = ("bool", (True,), False)
-                        elif t_origin is Literal:
-                            values = get_args(raw)
-                            if not values:
-                                raise TypeError(
-                                    f"{cls.__name__}.{fname}.{sub_name}: "
-                                    "Literal 触发器至少需要一个字面量"
-                                )
-                            trigger_modes[key] = ("literal", values, None)
-                        else:
-                            raise TypeError(
-                                f"{cls.__name__}.{fname}.{sub_name}: "
-                                f"触发器值类型须为 bool 或 Literal[...]，收到 {raw!r}"
-                            )
+                    if (
+                        is_trigger_model_field(sub_info)
+                        and sub_info.annotation != UUID | None
+                    ):
+                        raise TypeError(
+                            f"{cls.__name__}.{fname}.{sub_name} 须声明为 Trigger"
+                        )
                     vis = visibility_spec_for_field(sub_info)
                     if vis is not None:
                         if key in ui_visibility:
@@ -296,7 +268,7 @@ class ConfigEntry(ConfigNode):
                         hint_for_field(
                             sub_name,
                             sub_info,
-                            trigger_mode=trigger_modes.get(key),
+                            is_trigger=is_trigger_model_field(sub_info),
                         )
                     )
                 if group_hints:
@@ -350,7 +322,6 @@ class ConfigEntry(ConfigNode):
         cls._cfg_ref_specs = ref_specs
         cls._cfg_virtual_specs = virtual_specs
         cls._cfg_trigger_specs = trigger_specs
-        cls._cfg_trigger_modes = trigger_modes
         cls._cfg_ui_hints = ui_hints
         cls._cfg_ui_visibility = ui_visibility
         cls._cfg_ui_tables = [
@@ -400,18 +371,22 @@ class ConfigEntry(ConfigNode):
             for hint in hints:
                 fname = str(hint.get("field", ""))
                 vis = self._ui_visibility(gname, fname)
-                if vis == UiVisibility.HIDE:
+                trigger = (gname, fname) in type(self)._cfg_trigger_specs
+                busy = trigger and isinstance(self._resolve_field(gname, fname), UUID)
+                # 状态变化可能隐藏启动等入口，已受理的操作仍要展示到结束。
+                if vis == UiVisibility.HIDE and not busy:
                     continue
                 item = dict(hint)
                 # DISABLE / 虚拟 → 不可改；SHOW 默认可改；上锁再全量只读
-                item["editable"] = (
-                    False
-                    if locked
-                    or vis == UiVisibility.DISABLE
+                item["editable"] = not (
+                    locked
+                    or busy
+                    or vis in (UiVisibility.HIDE, UiVisibility.DISABLE)
                     or self._ui_visibility(gname) == UiVisibility.DISABLE
                     or (gname, fname) in virtuals
-                    else True
                 )
+                if trigger:
+                    item["state"] = TriggerUiState.BUSY if busy else TriggerUiState.IDLE
                 item["masked"] = vis == UiVisibility.MASKED
                 spec = type(self)._cfg_ref_specs.get((gname, fname))
                 if spec is not None:
@@ -503,7 +478,10 @@ class ConfigEntry(ConfigNode):
                 group, op.field, op.value, context={"entry": self}
             )
             new = group.__dict__.get(op.field)
-            if use_init or old != new:
+            changed = old != new
+            if changed:
+                config_manager.mark_ui_changed(self)
+            if use_init or changed:
                 await type(self).send(
                     sender=self,
                     event=FieldChangeEvent(
@@ -532,40 +510,21 @@ class ConfigEntry(ConfigNode):
             raise DeletedNodeError(self.uid)
         if (group, field) in type(self)._cfg_virtual_specs:
             return getattr(self, type(self)._cfg_virtual_specs[(group, field)])()
-        tmode = type(self)._cfg_trigger_modes.get((group, field))
-        if tmode is not None:
-            return tmode[2]
+        if (group, field) in type(self)._cfg_trigger_specs:
+            return self.__dict__[group]._trigger_uids.get(field)
         stored = getattr(self.effective, group).__dict__.get(field)
         if isinstance(stored, EncryptedValue):
             return stored.plaintext()
         return stored
 
-    def _dispatch_trigger(self, group: str, field: str, value: object = True) -> None:
-        if not self._activation_ready:
-            raise ValueError("配置尚未完成激活，无法触发操作")
-        if self.deleted:
-            raise DeletedNodeError(self.uid)
-        handler = getattr(self, type(self)._cfg_trigger_specs[(group, field)])
-        # bool：无额外参；Literal：传入触发值
-        result = (
-            handler()
-            if type(self)._cfg_trigger_modes[(group, field)][0] == "bool"
-            else handler(value)
+    def write_trigger(self, group: str, field: str, value: bool | None) -> UUID | None:
+        """写入配置触发器命令，返回受影响的任务 UUID。"""
+        return config_manager.submit_trigger(
+            self, group=group, field=field, value=value
         )
-        if inspect.isawaitable(result):
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-            coro = (
-                result
-                if inspect.iscoroutine(result)
-                else asyncio.wait_for(result, timeout=None)
-            )
-            if loop is not None:
-                loop.create_task(coro)
-            else:
-                asyncio.run(coro)
+
+    def _apply_trigger_field(self, group: str, field: str, value: bool | None) -> None:
+        config_manager.apply_trigger_field(self, group, field, value)
 
     # ──────────────── 更新 ────────────────
 
@@ -589,6 +548,7 @@ class ConfigEntry(ConfigNode):
             raise ValueError("须先 activate")
 
         errors: list[Exception] = []
+        triggers: list[tuple[str, str, bool | None]] = []
         other_set = other.model_fields_set
         for gname in self._cfg_group_fields:
             if gname not in other_set:
@@ -601,6 +561,10 @@ class ConfigEntry(ConfigNode):
             for fname, finfo in type(dst).model_fields.items():
                 if is_virtual_model_field(finfo) or fname not in src_set:
                     continue
+                value = src.__dict__.get(fname)
+                if is_trigger_model_field(finfo):
+                    triggers.append((gname, fname, validate_trigger_command(value)))
+                    continue
                 # hide / disable：跳过（与前端不可改契约对齐；求值用热态 self）
                 if check_visibility:
                     vis = self._ui_visibility(gname, fname)
@@ -609,13 +573,20 @@ class ConfigEntry(ConfigNode):
                     ):
                         continue
                 try:
-                    setattr(dst, fname, src.__dict__.get(fname))
+                    setattr(dst, fname, value)
                 except Exception as exc:  # noqa: BLE001
                     errors.append(exc)
         try:
             await self.commit()
         except Exception as exc:  # noqa: BLE001
             errors.append(exc)
+        if errors:
+            raise ConfigAggregateError(errors)
+        for group, name, value in triggers:
+            try:
+                self._apply_trigger_field(group, name, value)
+            except Exception as exc:
+                errors.append(exc)
         if errors:
             raise ConfigAggregateError(errors)
 

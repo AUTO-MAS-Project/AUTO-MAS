@@ -4,6 +4,7 @@
 /* eslint-disable */
 import type { HSRUserConfig_Control } from './HSRUserConfig_Control';
 import type { HSRUserConfig_Data } from './HSRUserConfig_Data';
+import type { HSRUserConfig_game } from './HSRUserConfig_game';
 import type { HSRUserConfig_Info } from './HSRUserConfig_Info';
 import type { HSRUserConfig_Managed } from './HSRUserConfig_Managed';
 import type { HSRUserConfig_Notify } from './HSRUserConfig_Notify';
@@ -11,6 +12,10 @@ import type { HSRUserConfig_Stage } from './HSRUserConfig_Stage';
 import type { HSRUserConfig_TaskOpt } from './HSRUserConfig_TaskOpt';
 import type { HSRUserConfig_TaskSwitch } from './HSRUserConfig_TaskSwitch';
 export type HSRUserConfig = {
+    /**
+     * 游戏与设备
+     */
+    game?: (HSRUserConfig_game | null);
     Control?: (HSRUserConfig_Control | null);
     Data?: (HSRUserConfig_Data | null);
     Info?: (HSRUserConfig_Info | null);

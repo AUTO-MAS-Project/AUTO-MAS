@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from app.utils import *  # noqa: F403 - 与宿主公开工具保持同一份静态类型声明。
-    from app.utils.common.constants import EMULATOR_PATH_BOOK as EMULATOR_PATH_BOOK
     from app.utils.common.io import read_file as read_file
     from app.utils.common.io import write_file as write_file
     from app.utils.common.tools import to_pep440 as to_pep440
@@ -25,6 +24,7 @@ __all__ = [
     "dpapi_encrypt",
     "get_logger",
     "get_setting",
+    "integrity",
     "is_process_running",
     "read_file",
     "sanitize_log_message",
@@ -60,10 +60,6 @@ if not TYPE_CHECKING:
 
     def __getattr__(name: str) -> Any:
         """按需查找并导出宿主公共工具和平台路径常量，无法找到的能力明确报告属性缺失。"""
-        if name == "EMULATOR_PATH_BOOK":
-            from app.utils.common.constants import EMULATOR_PATH_BOOK
-
-            return EMULATOR_PATH_BOOK
         import app.utils as host_utils
 
         if hasattr(host_utils, name):
@@ -85,4 +81,4 @@ def __dir__() -> list[str]:
     """合并 SDK 声明与宿主工具的可见名称，供插件开发时查看和补全。"""
     import app.utils as host_utils
 
-    return sorted(set(__all__) | {"EMULATOR_PATH_BOOK"} | set(dir(host_utils)))
+    return sorted(set(__all__) | set(dir(host_utils)))

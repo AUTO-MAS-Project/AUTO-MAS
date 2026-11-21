@@ -28,12 +28,20 @@ MAA / M9A / BAAH / MaaEnd / MaaFW / SRC 在任务收尾与各条失败分支上�
 另有 ModAVD 实例上用的几个小工具：门面 ``open`` 的放行参数、脚本进程的 adb 环境、宿主 adb 通道。
 """
 
+from __future__ import annotations
+
 import asyncio
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypedDict
+from uuid import UUID
 
+from app.task.game import game_device_id
 from app.task.run_flow import operation
 from app.utils import get_logger
+
+if TYPE_CHECKING:
+    from app.models.emulator import DeviceRef, HostAdb
+    from app.task.game import BoundEmulator
 
 logger = get_logger("模拟器管理")
 
@@ -41,87 +49,40 @@ logger = get_logger("模拟器管理")
 EMULATOR_CLOSE_TIMEOUT_SECONDS = 30
 
 
-def mod_avd_open_kwargs(manager: Any, *, allowed: bool) -> dict[str, Any]:
-    """给设备管理器 ``open`` 的额外参数：Emulator 2.0 门面要知道调用方能不能用 ModAVD（不能时
-    设备是 ModAVD 就拒绝开机）；旧式模拟器管理器不收这个参数，返回空字典。"""
-    from app.utils import emulator2 as _utils_emulator2
-
-    if isinstance(manager, _utils_emulator2.facade.Emulator2Manager):
-        return {"allow_mod_avd": allowed}
-    return {}
+class _ModAvdOpenOptions(TypedDict):
+    allow_mod_avd: bool
 
 
-def resolve_device_ref(manager: Any, index: Any) -> Any | None:
-    """设备号 → ``DeviceRef``（Emulator 2.0 才有；旧式管理器、查不到都返回 ``None``）。"""
-    resolve_device = getattr(manager, "resolve_device", None)
-    if resolve_device is None or index in (None, "", "-"):
+def mod_avd_open_kwargs(manager: Any, *, allowed: bool) -> _ModAvdOpenOptions:
+    """[兼容旧专项] 明确交接调用方对 ModAVD 的支持能力。"""
+    return {"allow_mod_avd": allowed}
+
+
+def resolve_device_ref(
+    manager: BoundEmulator | None, index: str | UUID | int | None
+) -> DeviceRef | None:
+    if manager is None or index in (None, "", "-"):
         return None
-    try:
-        return resolve_device(str(index))
-    except Exception as e:  # noqa: BLE001 - 认不出就按普通模拟器处理
-        logger.debug(f"解析设备 {index} 失败，按普通模拟器处理: {e}")
+    return manager.resolve_device(str(index))
+
+
+async def script_process_env(
+    manager: BoundEmulator | None, index: str | UUID | int | None
+) -> dict[str, str] | None:
+    if manager is None or index in (None, "", "-"):
         return None
-
-
-async def script_process_env(manager: Any, index: Any) -> dict[str, str] | None:
-    """为某台设备起脚本进程时要用的环境：ModAVD 实例返回「MAS 环境 + ``ANDROID_ADB_SERVER_PORT``
-    = 脚本专用端口（``modavd servers`` 报的 ``script_adb_server_port``，默认 20049）」，其余返回
-    ``None``（照旧继承 MAS 的环境）。
-
-    脚本用 SDK 的新版 adb，跑在 5037 上会和雷电 / MuMu 自带的旧版 adb 互杀 server。端口问不到时报错：
-    不能让脚本的 adb 落到 5037 上。
-    """
-    device_ref = resolve_device_ref(manager, index)
-    if device_ref is None or getattr(device_ref, "emulator_type", None) != "avd":
-        return None
-    import os
-
-    from app.utils import emulator2 as _utils_emulator2
-
-    root = _utils_emulator2.avd.components.root_from_manager_exe(
-        device_ref.manager_path
-    )
-    try:
-        # 先由 modavd 以脱离方式起好：脚本里的 adb 顺手拉起的 server 会继承脚本的输出管道
-        await _utils_emulator2.avd.host.ensure_script_adb_server(root)
-    except _utils_emulator2.avd.host.ScriptAdbPortConflict:
-        raise  # 端口被别的程序占着，脚本的 adb 连上去只会一直失败，直接报给用户
-    except Exception as e:  # noqa: BLE001 - 见下
-        # 这次没问成 modavd：之前问到过端口就接着用（server 交给脚本的 adb 起），没问到过就把原因报出去
-        if not _utils_emulator2.avd.host.script_adb_port_known(root):
-            raise
-        logger.warning(f"modavd servers 这次失败，沿用之前报的脚本专用 adb 端口: {e}")
-    env = dict(os.environ)
-    env.update(_utils_emulator2.avd.host.script_adb_env(root))
-    logger.info(
-        f"设备 {index} 是 ModAVD 实例：脚本的 adb 走专用 server（端口 "
-        f"{env['ANDROID_ADB_SERVER_PORT']}）"
-    )
-    return env
+    return await manager.process_env(str(index))
 
 
 async def resolve_host_adb(
     owner: Any, *, index: str | None = None, config_key: str = "Emulator"
-) -> Any | None:
-    """owner 接管的设备是 ModAVD 实例时，返回宿主进程对它发 adb 的通道（``modavd adb``，私有 server，
-    ``await runner(*args, timeout=…)``，另有 ``screencap_png()``）；其余情况返回 ``None``。
-
-    ModAVD 实例上宿主自己的 adb 命令（游戏更新检查、失败截图）不能落到 5037：脚本用的 SDK adb
-    会和雷电 / MuMu 自带的旧版 adb 互杀 server。雷电 / MuMu 返回 ``None``，调用方照旧走
-    ``get_adb_path()`` + 设备地址。查不到只当作不是 ModAVD。
-    """
-
-    emulator_manager = getattr(owner, "emulator_manager", None)
-    host_adb = getattr(emulator_manager, "host_adb", None)
-    if host_adb is None:
+) -> HostAdb | None:
+    manager = owner.emulator
+    if manager is None:
         return None
     if index is None:
-        index = getattr(getattr(owner.script_config, config_key), "Index")
-    try:
-        return await host_adb(index)
-    except Exception as e:  # noqa: BLE001 - 认不出就按普通模拟器处理
-        logger.debug(f"查询实例 {index} 的宿主 adb 通道失败，按普通模拟器处理: {e}")
-        return None
+        index = game_device_id(owner.script_config)
+    return await manager.host_adb(str(index))
 
 
 async def close_emulator(
@@ -145,15 +106,12 @@ async def close_emulator(
         log_failure: 失败时是否记录警告日志。
     """
 
-    # TODO(游戏管理迁移，#1845)：不同托管的配置锁不能保护同一模拟器的完整使用期，
-    # 一方结束时仍可能关闭另一方正在使用的实例。待来源游戏管理接管占用与释放，
-    # 本轮不另补设备预约机制。
-    emulator_manager = getattr(owner, "emulator_manager", None)
+    emulator_manager = owner.emulator
     if emulator_manager is None:
         return True
 
     if index is None:
-        index = getattr(getattr(owner.script_config, config_key), "Index")
+        index = game_device_id(owner.script_config)
 
     started_at = time.monotonic()
     logger.info(

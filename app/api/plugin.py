@@ -21,7 +21,7 @@
 """新插件系统 HTTP API（单文件）。
 
 面：
-- ``/api/plugin_registry`` — 注册表查询；插件命令统一经 Operations 提交
+- ``/api/plugin_registry`` — 注册表查询；插件命令统一由配置触发器提交
 - ``/api/plugin_catalog`` — 目录（市场）查询 / 透传 update / 全量刷新
 - ``/api/plugin_config`` — 插件自有配置查改（凭证 = ``PluginRecord.uid``，与注册表相同）
 - ``/api/plugin/list`` — 已加载插件运行时列表
@@ -40,7 +40,7 @@ from packaging.utils import canonicalize_name
 from packaging.version import Version
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.config import CollectionOrderItem
+from app.config import CollectionOrderItem, config_manager
 from app.config.errors import ConfigAggregateError
 from app.config.fields.hints import UiHintsMap, UiTablesList
 from app.config.wire import ConfigInput, ConfigPayload
@@ -48,10 +48,21 @@ from app.core import Config
 from app.core.i18n import AppLocale
 from app.core.plugin import Plugin
 from app.models.config import PluginMeta, PluginRecord
-from app.models.schema import ComboBoxItem, ComboBoxOut, OutBase, PluginInstallation
+from app.models.schema import (
+    ComboBoxItem,
+    ComboBoxOut,
+    ConfigSnapshotOut,
+    OutBase,
+    PluginInstallation,
+)
+from app.mystery.gate import is_unlocked
 from app.plugin.errors import PluginBusyError
 from app.plugin.http import PLUGIN_GATEWAY_PATH
-from app.plugin.types import PluginState, plugin_locale
+from app.plugin.types import (
+    RESTRICTED_PLUGIN_NAMES,
+    PluginState,
+    plugin_locale,
+)
 from app.utils import get_logger
 
 
@@ -104,7 +115,7 @@ class PluginCatalogDocument(ConfigPayload[PluginMeta]):
     ui: PluginConfigUi
 
 
-class PluginRegistryGetOut(OutBase):
+class PluginRegistryGetOut(ConfigSnapshotOut):
     order: list[CollectionOrderItem] = Field(default_factory=list)
     # 插件注册表条目包含运行时子类和后端 UI 声明，响应按 wire 数据透传。
     data: dict[str, PluginRegistryDocument] = Field(default_factory=dict)
@@ -114,7 +125,7 @@ class PluginCatalogGetIn(BaseModel):
     metaId: Optional[str] = Field(default=None, description="PluginMeta.uid；缺省全部")
 
 
-class PluginCatalogGetOut(OutBase):
+class PluginCatalogGetOut(ConfigSnapshotOut):
     order: list[CollectionOrderItem] = Field(default_factory=list)
     data: dict[str, PluginCatalogDocument] = Field(default_factory=dict)
 
@@ -144,7 +155,7 @@ class PluginConfigDocument(BaseModel):
     ui: PluginConfigUi
 
 
-class PluginConfigGetOut(OutBase):
+class PluginConfigGetOut(ConfigSnapshotOut):
     data: PluginConfigDocument | None = None
 
 
@@ -200,6 +211,7 @@ async def get_plugin_registry(
         col = Config.plugin_registry
         uids = [UUID(body.recordId)] if body.recordId else list(col.keys())
         return PluginRegistryGetOut(
+            uiSources=[UUID(body.recordId) if body.recordId else col.uid],
             order=[
                 CollectionOrderItem(uid=uid, type=type(col[uid]).__name__)
                 for uid in uids
@@ -228,6 +240,14 @@ async def get_plugin_registry(
 # ==================== 目录 plugin_catalog ====================
 
 
+def _market_visible(meta: PluginMeta) -> bool:
+    """受控插件仅在神秘入口当日已解锁时进入市场，其余插件始终可见。"""
+    info = meta.effective.info
+    if info.plugin_name not in RESTRICTED_PLUGIN_NAMES:
+        return True
+    return is_unlocked()
+
+
 @_catalog.post(
     "/get", tags=["Get"], summary="查询插件目录配置", response_model=PluginCatalogGetOut
 )
@@ -238,7 +258,10 @@ async def get_plugin_catalog(
     try:
         col = Config.plugin_catalog
         uids = [UUID(body.metaId)] if body.metaId else list(col.keys())
+        # 受控插件未解锁时按不存在处理，市场与安装入口同时关闭。
+        uids = [uid for uid in uids if _market_visible(col[uid])]
         return PluginCatalogGetOut(
+            uiSources=[UUID(body.metaId) if body.metaId else col.uid],
             order=[
                 CollectionOrderItem(uid=uid, type=type(col[uid]).__name__)
                 for uid in uids
@@ -316,14 +339,22 @@ async def get_plugin_config(body: PluginConfigGetIn = Body(...)) -> PluginConfig
         record = Config.plugin_registry[UUID(body.recordId)]
         cfg = record._config
         if cfg is None:
-            return PluginConfigGetOut(data=None)
+            return PluginConfigGetOut(data=None, uiSources=[record.uid])
         return PluginConfigGetOut(
+            uiSources=[
+                record.uid,
+                cfg.uid,
+                *(
+                    config_manager.get_collection(ref.target).uid
+                    for ref in type(cfg)._cfg_ref_specs.values()
+                ),
+            ],
             data=PluginConfigDocument.model_validate(
                 {
                     "uid": cfg.uid,
                     **cfg.model_dump(mode="json", context={"audience": "api"}),
                 }
-            )
+            ),
         )
     except KeyError:
         return PluginConfigGetOut(

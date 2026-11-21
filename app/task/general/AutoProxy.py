@@ -38,6 +38,8 @@ from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.task.base import ScriptAutoProxyBase
+from app.task.client import client_executable_path
+from app.task.game import game_device_id
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     push_dispatch_log,
@@ -168,6 +170,16 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
             or read_config_base(self.cur_user_config) != CONFIG_BASE_NATIVE
         )
         self.check_result = "-"
+        # 这几项同样在 prepare 后段才建立。准备阶段中途失败时收尾照样会读它们：
+        # 少了 push_log 这组，收尾会在回写推送日志那一步再抛一次 AttributeError，
+        # 把原始错误顶掉、后面的历史保存与统计通知也一并跳过。
+        self.general_log_monitor: LogMonitor | None = None
+        self.run_book = False
+        self.push_log_enabled = False
+        self.push_log_patterns_compiled = []
+        self.push_log_buffer = []
+        self._push_log_processed = 0
+        self._process_seen = False
 
     async def check(self) -> str:
         if self.plan_template_dir is not None:
@@ -280,7 +292,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         else:
             self.log_format = self.script_log_path.name
 
-        self.game_path = self.script_config.Game.Path
+        self.game_path = client_executable_path(self.script_config)
         self.game_url = self.script_config.Game.URL
         self.game_process_name = self.script_config.Game.ProcessName
         self.log_time_range = (
@@ -457,13 +469,10 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                                 )
                                 await asyncio.sleep(self.script_config.Game.WaitTime)
                     elif isinstance(self.game_manager, DeviceBase):
-                        logger.info(
-                            f"启动模拟器: {self.script_config.Game.EmulatorIndex}"
-                        )
+                        device_id = game_device_id(self.script_config)
+                        logger.info(f"启动模拟器: {device_id}")
                         with operation(self, "start_game"):
-                            await self.game_manager.open(
-                                self.script_config.Game.EmulatorIndex
-                            )
+                            await self.game_manager.open(device_id)
                 except Exception as e:
                     await self.handle_pre_script_error("游戏/模拟器启动失败", e)
                     continue
@@ -647,10 +656,10 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         config_path_mode = self.script_config.Script.ConfigPathMode
         mas_config_dir = self.mas_config_dir
 
-        # 源是用户填的脚本配置位置，可能不存在或类型与模式不符（路径填错、脚本
-        # 还没生成过配置）。按模式校验类型、不匹配就跳过：既要挡住 rmtree /
-        # copytree / copy 抛异常，也必须先判后动 —— 清空 MAS 侧副本在判断之后，
-        # 否则会先把唯一一份副本删掉再发现源不可用。
+        # 回写的源是脚本跑完后的现场，只可能有两种真实情况：脚本按自己的逻辑写
+        # 出了配置（存在且类型正确），或压根没写（不存在）。类型与模式不符已被
+        # GeneralManager.check() 在任务开始前拦掉；运行期间脚本若把这个路径换
+        # 成另一种类型，那是不属于受支持契约的现场，跳过并如实记一条警告即可。
         if config_path_mode == "Folder":
             if not self.script_config_path.is_dir():
                 logger.warning(
@@ -658,15 +667,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                     "无法按 「目录」 模式复制"
                 )
                 return
-            shutil.rmtree(
-                mas_config_dir,
-                ignore_errors=True,
-            )
-            shutil.copytree(
-                self.script_config_path,
-                mas_config_dir,
-                dirs_exist_ok=True,
-            )
+            _utils_io.replace_dir(self.script_config_path, mas_config_dir)
         elif config_path_mode == "File":
             if not self.script_config_path.is_file():
                 logger.warning(
@@ -705,7 +706,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                         if self.game_path is not None:
                             await process.kill_process(self.game_path)
                 elif isinstance(self.game_manager, DeviceBase):
-                    await self.game_manager.close(self.script_config.Game.EmulatorIndex)
+                    await self.game_manager.close(game_device_id(self.script_config))
             except Exception as e:
                 logger.opt(exception=True).warning(f"关闭游戏/模拟器失败: {e}")
 
@@ -731,22 +732,12 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
 
         config_path_mode = self.script_config.Script.ConfigPathMode
 
-        # 导入配置文件。MAS 侧还没为这个账号存过配置时（新建账号后直接跑自动代理）
-        # 跳过下发、让脚本用它自己的配置 —— 与 ScriptConfig.set_general 同口径，
-        # 否则 swap_in_dir / copy 会直接抛异常，把任务判成失败。源与目标都按
-        # ConfigPathMode 校验类型：源不存在或类型不符即跳过，不阻断任务。
+        # MAS 侧还没为这个账号存过配置时（新建账号后直接跑自动代理）跳过下发、
+        # 让脚本用它自己的配置 —— 与 ScriptConfig.set_general 同口径。路径模式
+        # 与目标类型的匹配已由 GeneralManager.check() 在任务开始前断言过。
         if config_path_mode == "Folder":
             if not mas_config_dir.is_dir():
                 logger.warning("MAS 中尚无该账号的配置, 跳过配置下发")
-                return
-            if (
-                self.script_config_path.exists()
-                and not self.script_config_path.is_dir()
-            ):
-                logger.warning(
-                    f"跳过配置下发: {self.script_config_path} 不是目录, "
-                    "无法按 「目录」 模式换入"
-                )
                 return
             _utils_io.swap_in_dir(
                 mas_config_dir,
@@ -761,12 +752,6 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
             mas_config_file = mas_config_dir / self.script_config_path.name
             if not mas_config_file.is_file():
                 logger.warning("MAS 中尚无该账号的配置文件, 跳过配置下发")
-                return
-            if self.script_config_path.is_dir():
-                logger.warning(
-                    f"跳过配置下发: {self.script_config_path} 是目录, "
-                    "无法按 「文件」 模式复制"
-                )
                 return
             shutil.copy(
                 mas_config_file,
@@ -903,11 +888,13 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
             and not self.stopped_manually,
         )
 
-        # 结束各子任务
-        await self.general_log_monitor.stop()
+        # 结束各子任务。准备阶段可能在监控器建立之前就失败，这里只停确实建起来的那一个，
+        # 否则 AttributeError 会顶掉最初那个真正的错误，后面的进程清理也一并被吃掉。
+        if self.general_log_monitor is not None:
+            await self.general_log_monitor.stop()
         await self.kill_managed_process()
         del self.general_process_manager
-        del self.general_log_monitor
+        self.general_log_monitor = None
 
         if self.run_complete:
             if (

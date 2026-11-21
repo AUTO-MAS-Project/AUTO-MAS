@@ -37,6 +37,7 @@ import app.models.config as _config_models
 from app.config.wire import ConfigInput, ConfigPayload, config_contract
 from app.core import Config
 from app.models.schema import (
+    ConfigSnapshotOut,
     OutBase,
     UserDeleteIn,
     UserInBase,
@@ -104,12 +105,6 @@ OkwwUserConfig = ConfigPayload[_config_models.OkwwUserConfig]
 OkwwUserConfigInput = ConfigInput[_config_models.OkwwUserConfig]
 
 
-SrcUserConfig = ConfigPayload[_config_models.SrcUserConfig]
-
-
-SrcUserConfigInput = ConfigInput[_config_models.SrcUserConfig]
-
-
 ZzzOdUserConfig = ConfigPayload[_config_models.ZzzOdUserConfig]
 
 
@@ -124,7 +119,6 @@ class UserIndexItem(BaseModel):
                 "GeneralUserConfig",
                 "OkwwUserConfig",
                 "OkNteUserConfig",
-                "SrcUserConfig",
                 "MaaEndUserConfig",
                 "M9AUserConfig",
                 "MaaFWUserConfig",
@@ -154,13 +148,12 @@ class UserGetIn(UserInBase):
     )
 
 
-class UserGetOut(OutBase):
+class UserGetOut(ConfigSnapshotOut):
     index: List[UserIndexItem] = Field(..., description="账号索引列表")
     data: Dict[
         str,
         Union[
             SerializeAsAny[BaseModel],
-            SrcUserConfig,
             GeneralUserConfig,
             OkwwUserConfig,
             OkNteUserConfig,
@@ -180,7 +173,6 @@ class UserCreateOut(OutBase):
     userId: str = Field(..., description="新创建的账号ID")
     data: Union[
         SerializeAsAny[BaseModel],
-        SrcUserConfig,
         GeneralUserConfig,
         OkwwUserConfig,
         OkNteUserConfig,
@@ -199,7 +191,6 @@ class UserUpdateIn(UserInBase):
     userId: str = Field(..., description="账号ID")
     data: Union[
         SerializeAsAny[BaseModel],
-        SrcUserConfigInput,
         GeneralUserConfigInput,
         OkwwUserConfigInput,
         OkNteUserConfigInput,
@@ -265,7 +256,13 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
             index=[],
             data={},
         )
-    return UserGetOut.model_validate({"index": index, "data": data})
+    return UserGetOut.model_validate(
+        {
+            "index": index,
+            "data": data,
+            "uiSources": [uuid.UUID(user.userId) if user.userId else user_configs.uid],
+        }
+    )
 
 
 @router.post(

@@ -1,17 +1,28 @@
 import asyncio
-import subprocess
-from collections.abc import Sequence
 from contextlib import suppress
-from typing import Unpack
 
 import psutil
 
 from app.utils.common.errors import UnsupportedPlatformError
 from app.utils.contracts.process import (
     ElevatedProcess,
-    EmulatorPopenOptions,
     TaskProcessJob,
 )
+
+
+def breakaway_rejected(
+    error: OSError, *, flags: int, breakaway_flags: int
+) -> int | None:
+    """判定 CreateProcess 是否因 Job 不允许脱离被拒，返回去掉脱离位后的标志。
+
+    父进程若恰好处在不允许 breakaway 的 Job 里，带 CREATE_BREAKAWAY_FROM_JOB
+    的 CreateProcess 会以 ERROR_ACCESS_DENIED（WinError 5）失败；此时去掉该位
+    重试一次，子进程留在当前 Job 里。其他原因返回 None，由调用方原样抛出。
+    """
+
+    if not flags & breakaway_flags or getattr(error, "winerror", None) != 5:
+        return None
+    return flags & ~breakaway_flags
 
 
 class CommonProcessPlatform:
@@ -21,18 +32,10 @@ class CommonProcessPlatform:
 
     supports_elevation = False
     agent_flags = 0
-    emulator_flags = 0
     creation_flags = 0
     # 非 Windows 没有 Job Object 概念，breakaway 位恒为 0，调用点传
     # breakaway=True 也不会改变行为。
     breakaway_flags = 0
-    detached_flags = 0
-
-    @staticmethod
-    def popen_emulator(
-        args: Sequence[str], **kwargs: Unpack[EmulatorPopenOptions]
-    ) -> subprocess.Popen[bytes]:
-        return subprocess.Popen(args, **kwargs)
 
     @staticmethod
     def prepare_elevated() -> ElevatedProcess:

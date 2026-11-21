@@ -30,6 +30,7 @@ async def test_daily_result_checks_fatal_and_claim_after_configured_sign(
     config = await activate_config(
         OkNteConfig(
             Info={"RootPath": tmp_path},
+            Game={"Enabled": False},
             Script={
                 "ScriptPath": path,
                 "LogPath": path,
@@ -44,6 +45,7 @@ async def test_daily_result_checks_fatal_and_claim_after_configured_sign(
         OkNteUserConfig(Task={"TaskIndex": "2"}, Notify={"PushLogMode": "关闭"})
     )
     proxy = AutoProxyTask(script, config, {uid: account}, None)
+    assert await proxy.check() == "Pass"
     await proxy.prepare()
     now = datetime.now().astimezone()
     proxy.cur_user_log = await user.add_log_record(now, LogRecord())

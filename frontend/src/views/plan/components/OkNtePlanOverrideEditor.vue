@@ -3,9 +3,14 @@
     <a-alert type="info" show-icon :message="t('core.plan.oknte.inheritanceHint')" />
     <a-alert v-if="error" type="error" show-icon :message="error">
       <template #action>
-        <a-button :loading="loading || isSaving" @click="loadFailed ? load() : retrySave()">{{
-          t('core.apiErrors.retry')
-        }}</a-button>
+        <a-space>
+          <a-button :loading="loading || isSaving" @click="loadFailed ? load() : retrySave()">
+            {{ t('core.apiErrors.retry') }}
+          </a-button>
+          <a-button v-if="!loadFailed" :disabled="isSaving" @click="discardAndBack">
+            {{ t('core.plan.discardAndBack') }}
+          </a-button>
+        </a-space>
       </template>
     </a-alert>
     <div class="editor-loading">
@@ -51,6 +56,7 @@
 import { computed, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { navigateTo } from '@/router'
 import { OknteService, type OkNtePlanFile } from '@/api'
 import { saveOkNtePlan } from '@/composables/useOkNtePlanApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
@@ -157,6 +163,10 @@ function queueSave(next: OverrideConfigs) {
       return false
     }
   })
+}
+function discardAndBack() {
+  pending = Promise.resolve(true)
+  navigateTo('/plans', { query: { planId: props.planId } })
 }
 function retrySave() {
   queueSave(JSON.parse(JSON.stringify(configs.value)))

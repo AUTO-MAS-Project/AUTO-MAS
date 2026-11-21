@@ -154,6 +154,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         )
         async with config_manager.transaction():
             self._build_workspace()
+            changed = True
 
             if op.kind == StageKind.COLLECTION_ADD:
                 assert op.entry_type is not None and op.uid is not None
@@ -219,6 +220,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                     raise ValueError("顺序列表必须与现有成员一致，且无重复")
                 by_uid = {item.uid: item for item in old_order}
                 new_order = [by_uid[uid] for uid in op.order]
+                changed = old_uids != list(op.order)
                 self.effective.order = new_order
                 await type(self).send(
                     sender=self,
@@ -389,6 +391,8 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                         reloaded_uids=tuple(reloaded),
                     ),
                 )
+            if changed:
+                config_manager.mark_ui_changed(self)
 
             if self._current_staged():
                 raise RuntimeError(

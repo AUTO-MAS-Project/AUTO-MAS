@@ -21,9 +21,8 @@
             :disabled="disabled || field.disabled"
             @change="(value: unknown) => emit('change', field.name, value)"
           />
-          <a-checkbox-group
+          <NativeConfigCheckboxes
             v-else-if="field.type === 'multi_selection'"
-            class="native-checkboxes"
             :value="values[field.name] as string[]"
             :disabled="disabled || field.disabled"
             :options="(field.options ?? []).map(value => ({ value, label: optionLabel(value) }))"
@@ -83,6 +82,7 @@
 <script setup lang="ts">
 import { computed, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
+import NativeConfigCheckboxes from './NativeConfigCheckboxes.vue'
 import type { NativeConfigField } from '@/types/nativeConfig'
 const props = withDefaults(
   defineProps<{
@@ -138,16 +138,6 @@ function saveJson(name: string) {
 }
 .native-config-field--multiple {
   grid-column: 1 / -1;
-}
-.native-checkboxes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-}
-.native-checkboxes :deep(.ant-checkbox-wrapper) {
-  margin-inline-start: 0;
-  max-width: 100%;
-  white-space: normal;
 }
 .native-config-field {
   min-width: 0;

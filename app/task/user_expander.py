@@ -16,6 +16,7 @@ from app.task.lifecycle import TaskBase
 from app.utils.common.process.scope import process_finalizer_scope
 
 if TYPE_CHECKING:
+    from app.task.game import BoundEmulator, GameSession
     from app.task.history_core import TaskHistorySession
     from app.task.mode_worker import ModeWorker
 
@@ -41,7 +42,16 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
         self.script_config = config
         self._user_config: UserConfigType | UserEntry | None = None
         self._user_ticket: LockTicket | None = None
+        self.game_session: GameSession | None = None
+        self._emulator_override: BoundEmulator | None = None
         self._entered = False
+
+    @property
+    def emulator(self) -> BoundEmulator | None:
+        """借用 L2 持有的当前账号设备；不签发或释放游戏票据。"""
+        if self.game_session is not None and self.game_session.control is not None:
+            return self.game_session.emulator
+        return self._emulator_override
 
     def user_collection(self, script: ScriptConfigT) -> _UserLookup:
         # 插件配置接入位置：由真实插件声明提供公开配置访问，不推断私有格式。
@@ -134,6 +144,15 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
                             user, status="跳过", reason="用户已禁用或剩余天数不足"
                         )
                         continue
+                if self.game_session is not None:
+                    try:
+                        await self.game_session.select(self._user_config)
+                    except Exception as error:
+                        await self.game_session.release()
+                        await self.record_user_state(
+                            user, status="异常", reason=str(error)
+                        )
+                        continue
                 worker = self.build_worker(user, self._user_config)
                 if (
                     worker.expander is not self
@@ -143,7 +162,11 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
                     raise ValueError("插件执行器未绑定当前用户及已锁配置")
                 await self.spawn(worker)
             finally:
-                await self._release_user_lock()
+                try:
+                    if self.game_session is not None:
+                        await self.game_session.release_account()
+                finally:
+                    await self._release_user_lock()
 
     async def _release_user_lock(self) -> None:
         if self._user_ticket is not None:
@@ -194,6 +217,7 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
                 if self.cancelled
                 else "异常"
                 if self.error
+                or (self.game_session is not None and self.game_session.cleanup_failed)
                 or any("异常" in u.status for u in self.script_info.users.values())
                 else "完成"
             )

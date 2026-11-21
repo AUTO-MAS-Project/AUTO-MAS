@@ -16,6 +16,7 @@ export type SettingGetOut = {
      * 操作消息
      */
     message?: string;
+    uiSources?: Array<string>;
     /**
      * 全局设置数据
      */

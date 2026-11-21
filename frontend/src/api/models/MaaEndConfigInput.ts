@@ -4,9 +4,14 @@
 /* eslint-disable */
 import type { MaaEndConfig_GameInput } from './MaaEndConfig_GameInput';
 import type { MaaEndConfig_InfoInput } from './MaaEndConfig_InfoInput';
+import type { MaaEndConfig_plugin_gameInput } from './MaaEndConfig_plugin_gameInput';
 import type { MaaEndConfig_RunInput } from './MaaEndConfig_RunInput';
 import type { MaaEndConfig_UpdateInput } from './MaaEndConfig_UpdateInput';
 export type MaaEndConfigInput = {
+    /**
+     * 游戏与设备
+     */
+    game?: (MaaEndConfig_plugin_gameInput | null);
     Game?: (MaaEndConfig_GameInput | null);
     Info?: (MaaEndConfig_InfoInput | null);
     Run?: (MaaEndConfig_RunInput | null);

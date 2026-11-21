@@ -36,6 +36,6 @@ export type UserCreateOut = {
     /**
      * 账号配置数据
      */
-    data: (SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | BetterGIUserConfig | ZzzOdUserConfig | BAAHUserConfig | MSSUserConfig | MaaUserConfig | WhimboxUserConfig);
+    data: (GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | BetterGIUserConfig | ZzzOdUserConfig | BAAHUserConfig | MSSUserConfig | MaaUserConfig | WhimboxUserConfig | SrcUserConfig);
 };
 

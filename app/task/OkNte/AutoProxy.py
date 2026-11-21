@@ -39,9 +39,9 @@ from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.task.base import ScriptAutoProxyBase
+from app.task.client import client_executable_path, client_launcher_path
 from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
-    kill_pids_by_name,
     push_dispatch_log,
     quick_config_takeover,
     resolve_config_base,
@@ -75,6 +75,7 @@ from .config_schema import (
     get_all_config_info,
 )
 from .tools.account_switch import async_switch_account
+from .tools.arguments import task_argument
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
     ensure_quick_config_dir,
@@ -340,10 +341,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             await self.cur_user_config.commit()
 
     async def check(self) -> str:
-        if (
-            not self.script_config.Info.RootPath
-            or not self.script_config.Info.RootPath.is_dir()
-        ):
+        script_root_path = self.script_config.Info.RootPath
+        if not script_root_path or not script_root_path.is_dir():
             return "请设置 OK-NTE 脚本路径"
         if (
             not self.script_config.Script.ScriptPath
@@ -387,10 +386,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             self.script_config.Game.Enabled
             and self.script_config.Game.Type == "Client"
             and self.script_config.Game.LaunchBeforeTask
-            and (
-                not self.script_config.Game.Path
-                or not self.script_config.Game.Path.is_file()
-            )
+            and self._resolve_launcher_path(use_script_fallback=False) is None
         ):
             return "请设置异环启动器路径"
         if (
@@ -402,6 +398,14 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 return "请设置异环游戏 URL"
             if not str(self.script_config.Game.ProcessName or "").strip():
                 return "请设置异环游戏进程名称"
+
+        self.task_index = 2 if self.plan_active else self.cur_user_config.Task.TaskIndex
+        try:
+            self.task_cli_value = await asyncio.to_thread(
+                task_argument, script_root_path, self.task_index
+            )
+        except ValueError as exc:
+            return str(exc)
         return "Pass"
 
     async def prepare(self):
@@ -477,14 +481,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
 
         # 当前账号配置
 
-        self.task_index = (
-            2 if self.plan_active else int(self.cur_user_config.Task.TaskIndex)
-        )
         self.exit_on_finish = bool(self.cur_user_config.Task.ExitOnFinish)
 
         extra_args = split_args(self.script_config.Script.Arguments)
 
-        self.oknte_args = ["-t", str(self.task_index)]
+        self.oknte_args = ["-t", self.task_cli_value]
         if self.exit_on_finish:
             self.oknte_args.append("-e")
         self.oknte_args.extend(extra_args)
@@ -702,7 +703,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         <安装根>\\Client\\... 反推 <安装根>\\NTELauncher\\<启动器>。都没有时
         回退 ok-nte 自己的 LauncherTask.json（其注册表回退由 ok-nte 维护）。
         """
-        game_path = self.script_config.Game.Path
+        game_path = client_launcher_path(self.script_config) or client_executable_path(
+            self.script_config
+        )
         if game_path is not None and game_path.is_file():
             if (
                 game_path.suffix.casefold() == ".exe"
@@ -1053,7 +1056,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
 
             await self.set_oknte()
             await self._push_dispatch_log(
-                f"启动 OK-NTE: -t {self.task_index}"
+                f"启动 OK-NTE: -t {self.oknte_args[1]}"
                 + (" -e" if self.exit_on_finish else "")
             )
             logger.info(
@@ -1487,14 +1490,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             if game_type == "Client":
                 # 明确关闭游戏时也清理启动器，包括由本体启动且未开启托管的情况。
                 await self._kill_launcher_process(use_script_fallback=True)
-                # Game.Path 是启动器，游戏本体按进程名结束；进程管理器只跟踪
-                # 启动器，HTGame.exe 由启动器拉起、可能不在其进程树内。
-                # 全进程扫描放到线程里，不阻塞事件循环
-                failed = await kill_pids_by_name(_NTE_CLIENT_PROCESS)
-                if failed:
-                    message = f"有 {failed} 个异环游戏进程未能结束，请人工确认关闭"
-                    logger.warning(message)
-                    await self._push_dispatch_log(message)
         except Exception as e:
             logger.opt(exception=True).warning(f"关闭游戏进程失败: {e}")
 

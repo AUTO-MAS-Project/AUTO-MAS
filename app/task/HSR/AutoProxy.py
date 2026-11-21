@@ -39,7 +39,7 @@ from app.models.notification import NotifyPayload
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.task.run_flow import begin_attempt, point
-from app.utils import UTC4, ProcessManager, get_logger, process
+from app.utils import UTC4, ProcessManager, get_logger
 from app.utils.common.process.manager import has_process_window
 
 from .history import save_hsr_user_history
@@ -377,7 +377,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         point(self, "stop_game")
         try:
-            closed = await process.kill_process(game_exe_path)
+            await self._game_process_manager.kill()
             await self._game_process_manager.clear()
             self._append_log(
                 f"已请求关闭游戏，等待 {HSR_GAME_READY_DELAY_SECONDS}s 后重新启动"
@@ -390,7 +390,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     "将继续按启动流程等待游戏就绪"
                 )
             else:
-                point(self, "stop_game", state="succeeded" if closed else "failed")
+                point(self, "stop_game", state="succeeded")
                 self._append_log("游戏进程已关闭，准备重新启动")
         except Exception as e:  # noqa: BLE001
             point(self, "stop_game", state="failed")

@@ -107,6 +107,9 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `emulator_operation_observed_finished` | 前端观察到的模拟器操作结局 | `emulator_family`、`operation` |
 | `emulator_instance_manage_finished` | 实例创建、删除与批量设置 | `emulator_family`、`action`、`scope`、`count_bucket` |
 | `emulator_guard_changed` | 稳定模式和配置守卫是否解决使用障碍 | `guard_kind`、`action` |
+| `game_target_changed` | 游戏目标管理、发现、设置及批量操作结果 | `adapter`、`action` |
+| `game_operation_result` | 插件设备命令是否被受理 | `adapter`、`operation` |
+| `game_operation_observed_finished` | 由唯一操作标识确认的设备操作终态 | `adapter`、`operation` |
 | `avd_root_added` | 自定义 AVD 安装导入完成率 | `reason_kind` |
 | `game_sign_requested` | 手动签到的使用与被占用拒绝 | `trigger_kind` |
 | `community_account_manage_finished` | 签到账号创建、启停、删除 | `action` |
@@ -356,3 +359,32 @@ OK-WW 动态日常、4C、梦魇、战斗、角色及月卡面板保存复用 `a
 后端后台暂存前的插件预检属于定时轮询内部准备，不另行采集；失败原因仅在本地吐司展示，不进入遥测。手动同版本更新的拒绝沿用 backend_update_finished，由更新服务确认失败，不重复记录预检事件。
 
 MaaEnd 协议空间与基质刷取的独立配置复用 `useUserApi.updateUser` 的 `config_write_finished`，执行及送货失败停止后续任务复用 `taskAnalytics.ts` 的运行终态观察。库存目标、关卡及日志不参与上报。
+
+## 启动硬件统计
+
+桌面启动时按一次尝试启用只读采样器，每秒取样，最多十分钟。关闭匿名遥测后继续将实测值和失败前十五秒写入本地 debug/startup-hardware.log，现有日志包会包含它。其他平台和 Windows 探针不可用时使用系统 CPU、内存和卷空间读数；无法读取的 GPU 引擎或磁盘性能保留未知。错误详情只取最近的有效样本。整体与阶段结果使用已有事件，仅主进程附加有限字段。目录按用途映射并归桶；旧 Runtime 沿用原错误。手动重试另起尝试，运行中关闭会撤销上传许可并关闭 Runtime 的取样管道。重新开启从下次尝试开始。
+
+看板选 `initialization_finished_v2`，先按应用版本和 `flow_kind` 筛选，再按 `install_media`、`ram` 或 `cpu_series` 分组。每组确认成败的失败率以 success 和 failure 为分母。总尝试、取消、跳过、未确认和缺样数分别展示。以 `coverage=sampled` 统计有硬件读数的覆盖；旧版本或配置未确认造成的缺失不能当低负载。阶段耗时用 `initialization_stage_finished_v2` 按 stage 和 duration_bucket 分组。
+
+可复验本机日志导出与关闭开关的行为。在 frontend 运行 `yarn build:main` 后运行 `node scripts/check-startup-hardware.cjs`。脚本创建独立临时目录，复用导出收集器生成 logs.zip，上传验证使用本机临时 HTTP 接收器。
+
+下面的 ClickHouse 查询按安装盘和启动场景统计尝试数、失败率和缺样数。应用编号为查询参数。启动前准备材料的时间包含在 startup_duration，原有 duration_bucket 保留界面侧口径。
+
+```sql
+SELECT app_version,
+       JSONExtractString(string_props, 'flow_kind') AS flow,
+       if(empty(JSONExtractString(string_props, 'install_media')), 'unknown', JSONExtractString(string_props, 'install_media')) AS disk,
+       count() AS attempts,
+       countIf(JSONExtractString(string_props, 'coverage') != 'sampled') AS missing,
+       countIf(JSONExtractString(string_props, 'outcome') = 'failure') AS failures,
+       countIf(JSONExtractString(string_props, 'outcome') = 'success') AS successes,
+       countIf(JSONExtractString(string_props, 'outcome') = 'cancelled') AS cancelled,
+       countIf(JSONExtractString(string_props, 'outcome') = 'skipped') AS skipped,
+       countIf(JSONExtractString(string_props, 'outcome') = 'unconfirmed') AS unconfirmed,
+       round(100 * failures / nullIf(successes + failures, 0), 2) AS confirmed_failure_percent
+FROM events
+WHERE app_id = {app:String} AND timestamp >= now() - INTERVAL 30 DAY
+  AND event_name = 'initialization_finished_v2'
+GROUP BY app_version, flow, disk
+ORDER BY attempts DESC
+```

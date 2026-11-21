@@ -291,7 +291,7 @@ def main():
     with startup_stage("后端/配置组件导入与构造"):
         from app.core import Config
     with startup_stage("后端/模拟器组件导入与构造"):
-        from app.core import EmulatorManager
+        from app.core import GameManager
     with startup_stage("后端/通知组件导入与构造"):
         from app.core import Notify
     with startup_stage("后端/专项能力导入"):
@@ -354,7 +354,10 @@ def main():
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        from app.core import Startup
+        from app.config import config_manager
+        from app.core import Publisher, Startup
+
+        config_manager.bind_ui_listener(Publisher.config_ui_listener())
 
         Startup.prepare(
             deferred=is_supervised()
@@ -377,9 +380,13 @@ def main():
 
         async def prepare_plugins() -> None:
             """初始化插件操作与统一下载中心，加载插件并接入专项任务展开器。"""
-            from app.core import Downloads, Operations, Plugin
+            from app.core import Downloads, Plugin
 
-            Operations.initialize(max_running=Config.setting.plugin.max_operations)
+            config_manager.initialize_triggers(
+                BackgroundTaskManager,
+                max_running=Config.setting.plugin.max_operations,
+                resolve_owner=Plugin.trigger_owner,
+            )
             options = Config.setting.download
             Downloads.initialize(
                 directory=Config.data_path / "downloads",
@@ -393,7 +400,6 @@ def main():
             app.state.business_message = "正在加载业务配置"
             TaskManager.plugin_expander = Plugin.resolve_script_expander
 
-        from app.config import config_manager
         from app.core import MCP, BackgroundTaskManager, History
         from app.services import obs_replay as _service_obs_replay
 
@@ -446,7 +452,7 @@ def main():
             async def init_avd_update() -> None:
 
                 # 每个纳管的根目录跑一次 modavd update status（不联网），上次换上被打断的再 recover
-                await EmulatorManager.startup_avd_update()
+                await GameManager.startup_maintenance()
 
             app.state.background_status = "running"
             try:
@@ -581,13 +587,12 @@ def main():
                 Dispatcher,
                 Downloads,
                 MainConnection,
-                Operations,
                 Plugin,
                 Power,
             )
 
             Startup.close()
-            Operations.seal()
+            config_manager.seal_triggers()
             Downloads.seal()
             Plugin.seal()
             await Plugin.stop_watching()
@@ -634,9 +639,9 @@ def main():
                 await Power.cancel_power_task()
 
             await _service_obs_replay.ObsReplay.stop()
-            from app.core import Downloads, Operations, Plugin
+            from app.core import Downloads, Plugin
 
-            await Operations.shutdown()
+            await config_manager.shutdown_triggers()
             await Plugin.shutdown()
             downloads_clean = await Downloads.shutdown_all()
             if not downloads_clean:
@@ -666,6 +671,7 @@ def main():
             startup_mark("后端/ASGI 初始化完成，交还服务器监听")
             yield
         finally:
+            config_manager.bind_ui_listener(None)
             # 覆盖 taskkill 等未经 /close 的退出路径；已由 /close 执行过则跳过
             await ShutdownCoordinator.run_teardown()
             logger.info("AUTO-MAS 后端程序关闭")
@@ -675,16 +681,17 @@ def main():
 
         from app.api import (
             community_router,
+            config_triggers_router,
             core_router,
             dispatch_router,
             downloads_router,
-            emulator_router,
+            games_router,
             history_router,
             i18n_router,
             info_router,
+            mystery_router,
             ocr_router,
             openclaw_qq_router,
-            operations_router,
             plan_router,
             plugin_router,
             queue_router,
@@ -749,9 +756,10 @@ def main():
 
         app.include_router(core_router)
         app.include_router(info_router)
+        app.include_router(mystery_router)
         app.include_router(scripts_router)
         app.include_router(plan_router)
-        app.include_router(emulator_router)
+        app.include_router(games_router)
         app.include_router(queue_router)
         app.include_router(dispatch_router)
         app.include_router(history_router)
@@ -762,7 +770,7 @@ def main():
         app.include_router(update_router)
         app.include_router(ocr_router)
         app.include_router(openclaw_qq_router)
-        app.include_router(operations_router)
+        app.include_router(config_triggers_router)
         app.include_router(downloads_router)
         app.include_router(plugin_router)
 

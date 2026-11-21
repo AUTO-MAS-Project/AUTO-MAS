@@ -14,7 +14,11 @@ const store = useMysteryStore()
 const logger = window.electronAPI.getLogger('神秘入口')
 const form = reactive({ accessCode: '' })
 const error = ref('')
-const loadFailed = ref(false)
+const loadErrorMessage = computed(() => {
+  if (store.loadError === 'DEVICE_UNAVAILABLE') return t('core.mystery.deviceUnavailable')
+  if (store.loadError === 'BACKEND_UNAVAILABLE') return t('core.mystery.backendUnavailable')
+  return t('core.mystery.loadFailed')
+})
 
 const isFeaturePage = computed(() => route.name !== 'Mystery')
 const pageTitle = computed(() =>
@@ -34,11 +38,9 @@ const back = () => {
 const openTokens = () => navigateTo('/settings/mystery/tokens')
 
 const load = async () => {
-  loadFailed.value = false
   try {
     await store.load()
   } catch (cause) {
-    loadFailed.value = true
     logger.error(`加载失败: ${cause instanceof Error ? cause.message : String(cause)}`)
   }
 }
@@ -90,7 +92,7 @@ const lock = async () => {
     </div>
 
     <div class="mystery-content" :class="{ 'mystery-content-unlocked': store.unlocked }">
-      <a-result v-if="loadFailed" status="error" :title="t('core.mystery.loadFailed')">
+      <a-result v-if="store.loadError" status="error" :title="loadErrorMessage">
         <template #extra>
           <a-button type="primary" @click="load">{{ t('core.mystery.retry') }}</a-button>
         </template>
@@ -103,6 +105,7 @@ const lock = async () => {
         :title="t('core.mystery.unlockTitle')"
         class="mystery-unlock"
       >
+        <a-typography-paragraph>{{ t('core.mystery.accessCodeHint') }}</a-typography-paragraph>
         <a-form :model="form" layout="vertical" @finish="unlock">
           <a-form-item
             name="accessCode"

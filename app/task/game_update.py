@@ -9,13 +9,14 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
-from app.models.emulator import DeviceBase, DeviceStatus
+from app.models.emulator import DeviceStatus
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.task.emulator_core import (
     close_emulator,
     mod_avd_open_kwargs,
     resolve_host_adb,
 )
+from app.task.game import BoundEmulator, game_device_id
 from app.task.run_flow import game_update_result, operation, point
 from app.utils import game_apk as _utils_game_apk
 from app.utils import game_update as _utils_game_update
@@ -30,7 +31,7 @@ class EmulatorGameUpdateTask(TaskExecuteBase):
         *,
         script_info: ScriptItem,
         script_config: Any,
-        emulator_manager: DeviceBase,
+        emulator_manager: BoundEmulator,
         server: str,
         package_name: str,
         checker: Callable[..., Awaitable[_utils_game_update.GameUpdateResult]],
@@ -41,16 +42,20 @@ class EmulatorGameUpdateTask(TaskExecuteBase):
         self.script_info = script_info
         self.script_config = script_config
         # 更新可能早于代理配置锁；清理必须始终指向本次实际启动的设备。
-        self.emulator_index = script_config.Emulator.Index
+        self.emulator_index = game_device_id(script_config)
         self.time_limit = script_config.Run.GameUpdateTimeLimit
         self.if_auto_install = script_config.Run.IfAutoInstallGameApk
-        self.emulator_manager = emulator_manager
+        self._bound_emulator = emulator_manager
         self.server = server
         self.package_name = package_name
         self.checker = checker
         self.allow_mod_avd = allow_mod_avd
         self.result: _utils_game_update.GameUpdateResult | None = None
         self.owns_emulator = False
+
+    @property
+    def emulator(self) -> BoundEmulator:
+        return self._bound_emulator
 
     async def _report(self, message: str) -> None:
         await self.script_info.set_log(message)
@@ -59,25 +64,23 @@ class EmulatorGameUpdateTask(TaskExecuteBase):
     async def main_task(self) -> None:
         async with asyncio.timeout(self.time_limit * 60):
             self.owns_emulator = (
-                await self.emulator_manager.getStatus(self.emulator_index)
+                await self.emulator.getStatus(self.emulator_index)
                 == DeviceStatus.OFFLINE
             )
             # 不传游戏包名，只启动设备供版本检查和 APK 安装使用。
             # 更新检查可能先于账号代理启动设备，必须在真正开启之前提交可见提示。
             await self._report("正在启动模拟器\n")
             with operation(self, "start_game"):
-                info = await self.emulator_manager.open(
+                info = await self.emulator.open(
                     self.emulator_index,
-                    **mod_avd_open_kwargs(
-                        self.emulator_manager, allowed=self.allow_mod_avd
-                    ),
+                    **mod_avd_open_kwargs(self.emulator, allowed=self.allow_mod_avd),
                 )
             # ModAVD 实例：宿主的 adb 走 ``modavd adb``（ModAVD 的私有 server），不落到 5037；其余模拟器不接管
             host_adb = await resolve_host_adb(self, index=self.emulator_index)
             with _utils_game_apk.adb_runner_scope(host_adb):
                 point(self, "game_update")
                 self.result = await self.checker(
-                    adb_path=self.emulator_manager.get_adb_path(),
+                    adb_path=self.emulator.get_adb_path(),
                     adb_address=info.adb_address,
                     server=self.server,
                     package_name=self.package_name,

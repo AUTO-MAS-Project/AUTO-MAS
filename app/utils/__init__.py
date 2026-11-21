@@ -49,8 +49,6 @@ if TYPE_CHECKING:
     from .common import OCR as OCR
     from .common import config as config
     from .common import constants as constants
-    from .common import emulator as emulator
-    from .common import emulator2 as emulator2
     from .common import environment as environment
     from .common import errors as errors
     from .common import exception as exception
@@ -87,7 +85,6 @@ if TYPE_CHECKING:
     from .common.constants import CYCLE_EMPTY_TIME as CYCLE_EMPTY_TIME
     from .common.constants import DEFAULT_DATETIME as DEFAULT_DATETIME
     from .common.constants import DES_RULE as DES_RULE
-    from .common.constants import EMULATOR_PATH_BOOK as EMULATOR_PATH_BOOK
     from .common.constants import (
         EMULATOR_SPLASH_ADS_PATH_BOOK as EMULATOR_SPLASH_ADS_PATH_BOOK,
     )
@@ -131,24 +128,12 @@ if TYPE_CHECKING:
     from .common.constants import PLAN_CONSUMER_VALUES as PLAN_CONSUMER_VALUES
     from .common.constants import RESERVED_NAMES as RESERVED_NAMES
     from .common.constants import SKLAND_SM_CONFIG as SKLAND_SM_CONFIG
-    from .common.constants import (
-        STARRAIL_CN_UPDATE_LINK_URL as STARRAIL_CN_UPDATE_LINK_URL,
-    )
-    from .common.constants import STARRAIL_PACKAGE_NAME as STARRAIL_PACKAGE_NAME
-    from .common.constants import STARRAIL_STAGE_BOOK as STARRAIL_STAGE_BOOK
-    from .common.constants import (
-        STARRAIL_UPDATE_LINK_SERVER as STARRAIL_UPDATE_LINK_SERVER,
-    )
     from .common.constants import TASK_MODE_ZH as TASK_MODE_ZH
     from .common.constants import TIME_FIELDS as TIME_FIELDS
     from .common.constants import TYPE_BOOK as TYPE_BOOK
     from .common.constants import UTC4 as UTC4
     from .common.constants import UTC8 as UTC8
     from .common.constants import normalize_base_source as normalize_base_source
-    from .common.emulator import EMULATOR_TYPE_BOOK as EMULATOR_TYPE_BOOK
-    from .common.emulator import LDManager as LDManager
-    from .common.emulator import MumuManager as MumuManager
-    from .common.emulator import search_all_emulators as search_all_emulators
     from .common.errors import UnsupportedPlatformError as UnsupportedPlatformError
     from .common.mirrorchyan import MirrorChyanError as MirrorChyanError
     from .common.mirrorchyan import (
@@ -173,7 +158,7 @@ if TYPE_CHECKING:
     from .contracts.audio import AudioAPI
     from .contracts.display import DisplayAPI
     from .contracts.file_lock import FileLockAPI
-    from .contracts.host import HostAPI, HostPredicate
+    from .contracts.host import HostAPI, HostPredicate, IntegrityAPI
     from .contracts.process import ProcessAPI
     from .contracts.registry import RegistryAPI
     from .contracts.secret import SecretAPI
@@ -185,6 +170,7 @@ if TYPE_CHECKING:
     display: DisplayAPI
     file_lock: FileLockAPI
     host: HostAPI
+    integrity: IntegrityAPI
     process_platform: ProcessAPI
     registry: RegistryAPI
     secret: SecretAPI
@@ -221,10 +207,6 @@ _LAZY_EXPORTS = {
     "debug_pattern": (".common.log.patterns", "debug_pattern"),
     "LogSignMatcher": (".common.log.patterns", "LogSignMatcher"),
     "compile_log_signs": (".common.log.patterns", "compile_log_signs"),
-    "MumuManager": (".common.emulator", "MumuManager"),
-    "LDManager": (".common.emulator", "LDManager"),
-    "search_all_emulators": (".common.emulator", "search_all_emulators"),
-    "EMULATOR_TYPE_BOOK": (".common.emulator", "EMULATOR_TYPE_BOOK"),
     "decode_bytes": (".common.tools", "decode_bytes"),
     "busy_wait": (".common.tools", "busy_wait"),
     "to_pep440": (".common.tools", "to_pep440"),
@@ -284,11 +266,6 @@ _LAZY_EXPORTS = {
     ),
     "MAAEND_SANITY_TASK_FIELDS": (".common.constants", "MAAEND_SANITY_TASK_FIELDS"),
     "ENDFIELD_SERVER_PRESETS": (".common.constants", "ENDFIELD_SERVER_PRESETS"),
-    "EMULATOR_PATH_BOOK": (".common.constants", "EMULATOR_PATH_BOOK"),
-    "STARRAIL_PACKAGE_NAME": (".common.constants", "STARRAIL_PACKAGE_NAME"),
-    "STARRAIL_CN_UPDATE_LINK_URL": (".common.constants", "STARRAIL_CN_UPDATE_LINK_URL"),
-    "STARRAIL_UPDATE_LINK_SERVER": (".common.constants", "STARRAIL_UPDATE_LINK_SERVER"),
-    "STARRAIL_STAGE_BOOK": (".common.constants", "STARRAIL_STAGE_BOOK"),
     "TIME_FIELDS": (".common.constants", "TIME_FIELDS"),
     "RESERVED_NAMES": (".common.constants", "RESERVED_NAMES"),
     "ILLEGAL_CHARS": (".common.constants", "ILLEGAL_CHARS"),
@@ -346,8 +323,6 @@ _COMMON_MODULES = {
     "game_update": ".common.game_update",
     "vdd": ".unsupported.vdd",
     "websocket": ".common.websocket",
-    "emulator": ".common.emulator",
-    "emulator2": ".common.emulator2",
     "OCR": ".common.OCR",
     "i18n": ".common.i18n",
     "expression": ".common.expression",
@@ -462,10 +437,6 @@ __all__ = [
     "debug_pattern",
     "LogSignMatcher",
     "compile_log_signs",
-    "MumuManager",
-    "LDManager",
-    "search_all_emulators",
-    "EMULATOR_TYPE_BOOK",
     "decode_bytes",
     "busy_wait",
     "WebSocketClient",
@@ -506,11 +477,6 @@ __all__ = [
     "MAAEND_INVENTORY_TARGET_DEFAULTS",
     "MAAEND_SANITY_TASK_FIELDS",
     "ENDFIELD_SERVER_PRESETS",
-    "EMULATOR_PATH_BOOK",
-    "STARRAIL_PACKAGE_NAME",
-    "STARRAIL_CN_UPDATE_LINK_URL",
-    "STARRAIL_UPDATE_LINK_SERVER",
-    "STARRAIL_STAGE_BOOK",
     "TIME_FIELDS",
     "RESERVED_NAMES",
     "ILLEGAL_CHARS",
@@ -559,8 +525,6 @@ __all__ = [
     "game_update",
     "vdd",
     "websocket",
-    "emulator",
-    "emulator2",
     "OCR",
     "i18n",
     "expression",

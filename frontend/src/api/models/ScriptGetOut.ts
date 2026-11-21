@@ -30,6 +30,7 @@ export type ScriptGetOut = {
      * 操作消息
      */
     message?: string;
+    uiSources?: Array<string>;
     /**
      * 托管索引列表
      */
@@ -37,6 +38,6 @@ export type ScriptGetOut = {
     /**
      * 托管数据字典, key来自于index列表的uid
      */
-    data: Record<string, (SrcConfig | GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig | MaaFWConfig | HSRConfig | BetterGIConfig | ZzzOdConfig | BAAHConfig | MSSConfig | MaaConfig | WhimboxConfig)>;
+    data: Record<string, (GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig | MaaFWConfig | HSRConfig | BetterGIConfig | ZzzOdConfig | BAAHConfig | MSSConfig | MaaConfig | WhimboxConfig | SrcConfig)>;
 };
 

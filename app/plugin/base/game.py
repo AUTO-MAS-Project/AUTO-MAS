@@ -6,19 +6,24 @@ import asyncio
 import inspect
 import weakref
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable, Sequence
-from contextlib import suppress
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Sequence
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Generic, Protocol, TypeVar
+from pathlib import Path
+from typing import Any, ClassVar, Generic, Protocol, TypeVar, cast
 from uuid import UUID
 
+from app.config import config_manager
 from app.config.core.node import LockTicket
 from app.models.config.game import TRIGGER_TICKET, GameDeviceEntry, GameEntry
+from app.models.emulator import DeviceUpdateOptions
+from app.utils import get_logger
 
 from .extension import _AdapterPlugin
 
 TGame = TypeVar("TGame", bound=GameEntry, covariant=True)
 TDevice = TypeVar("TDevice", bound=GameDeviceEntry, covariant=True)
+logger = get_logger("游戏设备")
 
 
 class GameRuntime(Protocol):
@@ -33,6 +38,17 @@ class GameRuntime(Protocol):
     def block_ad(self) -> bool:
         """提供宿主广告拦截设置，供控制器统一应用对应策略。"""
         ...
+
+    @property
+    def resource_path(self) -> Path:
+        """提供宿主只读资源目录。"""
+        ...
+
+    @property
+    def update_options(self) -> DeviceUpdateOptions: ...
+
+    @property
+    def process_environment(self) -> dict[str, str] | None: ...
 
 
 class DeviceSubscribeError(RuntimeError):
@@ -114,10 +130,34 @@ class GameControl(ABC, Generic[TGame, TDevice]):
     """挂在游戏配置私有属性上的管理实例。只弱引用配置，删除后随配置一起回收。"""
 
     runtime: GameRuntime
+    capabilities: ClassVar[tuple[str, ...]] = ("open", "close", "show", "hide")
 
-    def __init__(self, config: GameEntry | None = None) -> None:
+    def device_usage(self, uid: UUID) -> str | None:
+        sub = self._subs.get(uid)
+        return sub.usage if sub is not None else None
+
+    def recovery_pending(self, uid: UUID) -> bool:
+        return False
+
+    @property
+    def maintenance_snapshot(self) -> dict:
+        return {}
+
+    async def startup(self) -> None:
+        """插件在全部游戏配置激活后恢复上次中断的设备维护。"""
+
+    async def initialize_devices(self) -> None:
+        """新增目标时登记可从配置确定的设备，不启动或扫描外部程序。"""
+
+    async def teardown(self) -> None:
+        """清理插件自己的观察任务；不擅自停止用户设备。"""
+
+    async def maintenance(self, action: str) -> dict:
+        raise NotImplementedError("此适配器没有维护入口")
+
+    def __init__(self, config: TGame | None = None) -> None:
         """弱引用绑定游戏配置并建立设备订阅表，使运行时占用状态独立于持久化配置。"""
-        self._config_ref: weakref.ReferenceType[GameEntry] | None = (
+        self._config_ref: weakref.ReferenceType[TGame] | None = (
             weakref.ref(config) if config is not None else None
         )
         # 实例订阅登记：device uid → 订阅记录。只在内存 —— 描述实时并发，
@@ -129,7 +169,7 @@ class GameControl(ABC, Generic[TGame, TDevice]):
         self.runtime = runtime
 
     @property
-    def config(self) -> GameEntry:
+    def config(self) -> TGame:
         """返回仍存活的配置；弱引用未设或对象已回收则上抛，使管理器进入废弃态。"""
         ref = self._config_ref
         entry = ref() if ref is not None else None
@@ -147,6 +187,37 @@ class GameControl(ABC, Generic[TGame, TDevice]):
         执行态。与实例订阅无关：被别的任务订阅不使按钮变灰，用户权限最高。
         """
         return False
+
+    @asynccontextmanager
+    async def operation_scope(self, lock: asyncio.Lock) -> AsyncIterator[None]:
+        """保留适配器原有串行范围并通知控制器忙闲转换。"""
+        config = self.config
+        await lock.acquire()
+        try:
+            config_manager.runtime_committed(config)
+            yield
+        finally:
+            with config_manager.runtime_transaction(config):
+                lock.release()
+
+    def _subscription_sources(
+        self, device_uid: UUID
+    ) -> tuple[GameEntry | GameDeviceEntry, ...]:
+        config = self._config_ref() if self._config_ref is not None else None
+        if config is None:
+            return ()
+        if (
+            not config.deleted
+            and (device := config.devices.get(device_uid)) is not None
+        ):
+            return (device,)
+        return (config,)
+
+    def runtime_changed(self) -> None:
+        """通知游戏快照中已更新的控制器投影。"""
+        config = self._config_ref() if self._config_ref is not None else None
+        if config is not None:
+            config_manager.runtime_committed(config)
 
     # ── 实例订阅：校验、订阅、退订。基类一手办完，子类不必重写 ──
 
@@ -176,7 +247,7 @@ class GameControl(ABC, Generic[TGame, TDevice]):
         """订阅实例，返回句柄。同票重复订阅同台只累加计数。
 
         首个引用时调 ``_on_device_subscribed`` 做品牌准备（备份配置、写入
-        ``expect`` 等）；准备失败则尽力收尾，还原未完成时保留登记供重试。
+        ``expect`` 等）；准备失败则尽力收尾，备份与恢复重试归插件。
         已被他票占用时上抛 ``DeviceSubscribeError``，带出占用者用途说明。
         """
         if ticket is TRIGGER_TICKET:
@@ -190,14 +261,17 @@ class GameControl(ABC, Generic[TGame, TDevice]):
                 )
             if sub.releasing:
                 raise DeviceSubscribeError(
-                    f"实例 {device_uid} 尚未完成还原: {sub.usage}", usage=sub.usage
+                    f"实例 {device_uid} 正在退订: {sub.usage}", usage=sub.usage
                 )
             sub.count += 1
             return DeviceHandle(control=self, ticket=ticket, device_uid=device_uid)
 
         # 登记在前：他票占用时立刻上抛，不白做一轮品牌准备
         sub = DeviceSubscription(ticket=ticket, usage=usage, expect=expect)
-        self._subs[device_uid] = sub
+        with config_manager.runtime_transaction(
+            *self._subscription_sources(device_uid)
+        ):
+            self._subs[device_uid] = sub
         try:
             await self._on_device_subscribed(device_uid, expect)
         except BaseException:
@@ -216,7 +290,7 @@ class GameControl(ABC, Generic[TGame, TDevice]):
     async def _release_subscription(
         self, device_uid: UUID, sub: DeviceSubscription, *, all_references: bool
     ) -> None:
-        """还原成功才摘登记；失败或取消保留原票，供句柄或宿主重试。"""
+        """尝试品牌收尾后摘登记，配置恢复失败不保留运行占用。"""
         async with sub._release_lock:
             if self._subs.get(device_uid) is not sub:
                 return
@@ -224,8 +298,16 @@ class GameControl(ABC, Generic[TGame, TDevice]):
                 sub.count -= 1
                 return
             sub.releasing = True
-            await self._on_device_unsubscribed(device_uid)
-            del self._subs[device_uid]
+            try:
+                await self._on_device_unsubscribed(device_uid)
+            except Exception:
+                logger.exception(f"设备 {device_uid} 收尾失败，保留恢复材料供下次尝试")
+                raise
+            finally:
+                with config_manager.runtime_transaction(
+                    *self._subscription_sources(device_uid)
+                ):
+                    del self._subs[device_uid]
 
     async def unsubscribe_all(self, ticket: LockTicket) -> None:
         """退订该票名下**全部**实例。``GameManager.unsubscribe`` 调用。
@@ -238,7 +320,7 @@ class GameControl(ABC, Generic[TGame, TDevice]):
         ]:
             try:
                 await self._release_subscription(device_uid, sub, all_references=True)
-            except Exception as e:
+            except (Exception, asyncio.CancelledError) as e:
                 if first is None:
                     first = e
         if first is not None:
@@ -249,10 +331,10 @@ class GameControl(ABC, Generic[TGame, TDevice]):
     async def _on_device_subscribed(
         self, device_uid: UUID, expect: object | None
     ) -> None:
-        """首个引用订阅后的品牌准备（备份配置、写入 ``expect``）。默认无动作。"""
+        """品牌准备；有残留备份时先尝试恢复，失败保留原备份再继续本轮准备。"""
 
     async def _on_device_unsubscribed(self, device_uid: UUID) -> None:
-        """计数归零退订时的品牌收尾（还原配置）。默认无动作。"""
+        """品牌收尾；恢复失败保留备份并上抛，物理资源占用须在 finally 释放。"""
 
     # ── 通行操作面。``ticket`` 必传：触发器给 TRIGGER_TICKET，任务给订阅票 ──
     # 每个实现都在入口调 ``check_subscription``：中间层只传参，绕过它直接调
@@ -305,6 +387,7 @@ class GameTypeDecl:
     device_class: type[GameDeviceEntry]
     control_class: type[GameControl[GameEntry, GameDeviceEntry]]
     search: Callable[[], Awaitable[Sequence[GameEntry]]]
+    resolve_installation: Callable[[str], str | None] | None = None
 
 
 class GameAdapterPlugin(_AdapterPlugin, ABC):
@@ -333,3 +416,7 @@ class GameAdapterPlugin(_AdapterPlugin, ABC):
         self.game_class = self.decl.game_class
         self.device_class = self.decl.device_class
         self.control_class = self.decl.control_class
+
+    def instances(self) -> Iterable[GameEntry]:
+        # 适配运行时只返回本声明注册的游戏配置实例。
+        return cast(Iterable[GameEntry], super().instances())

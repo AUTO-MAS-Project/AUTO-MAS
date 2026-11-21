@@ -82,12 +82,6 @@
             :maafw-config="maafwConfig"
             :preview-data="previewData"
             :interface-loading="previewLoading"
-            :emulator-loading="emulatorLoading"
-            :emulator-options-ready="emulatorOptionsReady"
-            :emulator-device-loading="emulatorDeviceLoading"
-            :emulator-options="emulatorOptions"
-            :emulator-device-options="emulatorDeviceOptions"
-            :emulator-type-by-id="emulatorTypeById"
             :controller-options="controllerOptions"
             :effective-controller-name="effectiveControllerName"
             :effective-controller-type="effectiveControllerType"
@@ -96,13 +90,11 @@
             :resource-options="resourceOptions"
             :effective-resource-name="effectiveResourceName"
             :adb-control-strategy-items="adbControlStrategyItems"
-            :selected-emulator-label="selectedEmulatorLabel"
             :interface-dependent-disabled="interfaceDependentDisabled"
             :beside-package-name-count="besidePackageNameCount"
             @change="handleChange"
             @controller-change="handleControllerChange"
             @resource-change="handleResourceChangeWithPackage"
-            @emulator-select-change="handleEmulatorSelectChange"
             @select-launch-path="selectLaunchPath"
             @select-launcher-path="selectLauncherPath"
           >
@@ -255,12 +247,6 @@ const {
   rules,
   handleChange,
   flavor,
-  emulatorLoading,
-  emulatorOptionsReady,
-  emulatorDeviceLoading,
-  emulatorOptions,
-  emulatorDeviceOptions,
-  emulatorTypeById,
   controllerOptions,
   effectiveControllerName,
   effectiveControllerType,
@@ -269,11 +255,9 @@ const {
   resourceOptions,
   effectiveResourceName,
   interfaceDependentDisabled,
-  selectedEmulatorLabel,
   adbControlStrategyItems,
   handleControllerChange,
   handleResourceChangeWithPackage,
-  handleEmulatorSelectChange,
   selectLaunchPath,
   selectLauncherPath,
   dailyOnceTasks,

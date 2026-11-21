@@ -116,15 +116,7 @@
                     variant="form"
                   />
                 </template>
-                <PathPickerField
-                  v-model="zzzodConfig.Game.Path"
-                  mode="file"
-                  :placeholder="t('core.edit.zzzodGamePathPlaceholder')"
-                  :pick-label="t('core.edit.pickFile')"
-                  :disabled="!zzzodConfig.Game.Enabled"
-                  :pick-disabled="!zzzodConfig.Game.Enabled || isSaving"
-                  @pick="selectGamePath"
-                />
+                <BoundGamePathField />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -246,6 +238,8 @@
 </template>
 
 <script setup lang="ts">
+import BoundGamePathField from '@/components/BoundGamePathField.vue'
+
 import ScriptRunLimitsSection from './components/ScriptRunLimitsSection.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'

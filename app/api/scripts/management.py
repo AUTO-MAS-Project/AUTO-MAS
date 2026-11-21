@@ -37,7 +37,9 @@ import app.models.config as _config_models
 from app.config.wire import ConfigInput, ConfigPayload, config_contract
 from app.core import Config
 from app.core.game_calendar import SCRIPT_CALENDAR_GAMES
+from app.models.config.script import reject_invalid_log_formats
 from app.models.schema import (
+    ConfigSnapshotOut,
     OutBase,
     ScriptDeleteIn,
     UserInBase,
@@ -105,12 +107,6 @@ OkwwConfig = ConfigPayload[_config_models.OkwwConfig]
 OkwwConfigInput = ConfigInput[_config_models.OkwwConfig]
 
 
-SrcConfig = ConfigPayload[_config_models.SrcConfig]
-
-
-SrcConfigInput = ConfigInput[_config_models.SrcConfig]
-
-
 ZzzOdConfig = ConfigPayload[_config_models.ZzzOdConfig]
 
 
@@ -125,7 +121,6 @@ class ScriptIndexItem(BaseModel):
                 "GeneralConfig",
                 "OkwwConfig",
                 "OkNteConfig",
-                "SrcConfig",
                 "MaaEndConfig",
                 "M9AConfig",
                 "MaaFWConfig",
@@ -149,7 +144,6 @@ class ScriptCreateIn(BaseModel):
     type: str = Field(
         json_schema_extra={
             "enum": [
-                "SRC",
                 "General",
                 "Okww",
                 "OkNte",
@@ -175,7 +169,6 @@ class ScriptCreateOut(OutBase):
     scriptId: str = Field(..., description="新创建的托管ID")
     data: Union[
         SerializeAsAny[BaseModel],
-        SrcConfig,
         GeneralConfig,
         OkwwConfig,
         OkNteConfig,
@@ -196,13 +189,12 @@ class ScriptGetIn(BaseModel):
     )
 
 
-class ScriptGetOut(OutBase):
+class ScriptGetOut(ConfigSnapshotOut):
     index: List[ScriptIndexItem] = Field(..., description="托管索引列表")
     data: Dict[
         str,
         Union[
             SerializeAsAny[BaseModel],
-            SrcConfig,
             GeneralConfig,
             OkwwConfig,
             OkNteConfig,
@@ -222,7 +214,7 @@ class ScriptLockIn(UserInBase):
     userId: str | None = Field(default=None, description="省略时查询托管本体")
 
 
-class ScriptLockOut(OutBase):
+class ScriptLockOut(ConfigSnapshotOut):
     locked: bool = Field(default=False, description="目标配置当前是否被锁定")
 
 
@@ -230,7 +222,6 @@ class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="托管ID")
     data: Union[
         SerializeAsAny[BaseModel],
-        SrcConfigInput,
         GeneralConfigInput,
         OkwwConfigInput,
         OkNteConfigInput,
@@ -353,7 +344,13 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
             data={},
         )
     # 配置框架运行时生成具体投影类，保留现有联合响应的兼容契约。
-    return ScriptGetOut(index=index, data=data)  # pyright: ignore[reportArgumentType]
+    return ScriptGetOut(
+        index=index,
+        data=data,  # pyright: ignore[reportArgumentType]
+        uiSources=[
+            uuid.UUID(script.scriptId) if script.scriptId else Config.ScriptConfig.uid
+        ],
+    )
 
 
 @router.post(
@@ -368,7 +365,7 @@ async def get_script_lock(target: ScriptLockIn) -> ScriptLockOut:
     )
     if config is None:
         return ScriptLockOut(code=404, status="error", message="用户配置不存在")
-    return ScriptLockOut(locked=config.is_locked)
+    return ScriptLockOut(locked=config.is_locked, uiSources=[config.uid])
 
 
 @router.post(
@@ -384,6 +381,10 @@ async def update_script(
 
     try:
         data = script.data.model_dump(exclude_unset=True)
+        # 日志格式写错要等到运行期准备阶段才炸，收尾也会跟着断：保存时就挡住。
+        invalid_format = reject_invalid_log_formats(data)
+        if invalid_format:
+            return OutBase(code=500, status="error", message=invalid_format)
         # 设备绑定不受支持时拦截保存，避免先提交配置。
         refusal = await Config.update_script_settings(script.scriptId, data)
         if refusal:

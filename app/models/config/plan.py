@@ -23,17 +23,17 @@ from __future__ import annotations
 
 import calendar
 from datetime import datetime, timedelta
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BeforeValidator, ConfigDict, Field, create_model
 
 from app.config import (
+    ConfigEntry,
     ConfigGroup,
     UiVisibility,
     ui,
 )
-from app.plugin.config import PluginCommandEntry
 from app.utils import constants as _utils_constants
 
 from .base import DomainEntry
@@ -47,7 +47,7 @@ from .shared import (
 )
 
 
-class PlanEntry(PluginCommandEntry):
+class PlanEntry(ConfigEntry):
     """插件计划表配置上界，具体排期字段由专项扩展。"""
 
     class Info(ConfigGroup):
@@ -514,7 +514,7 @@ class UniversalPlanConfig(PlanDaysConfig):
 
 
 class OkNtePlanConfig(WeeklyKeyPlan):
-    """按日叠加日常体力参数，其他账号配置保持原有来源。"""
+    """按北京时间 05:00 切日，叠加当日任务设置。"""
 
     def current_group(self, now: datetime) -> str:
         # 异环按北京时间凌晨五点切日，周计划和多天轮换使用同一边界。
@@ -575,10 +575,24 @@ class OkNtePlanConfig(WeeklyKeyPlan):
     Info: InfoFields = Field(default_factory=InfoFields)
 
 
+type OkwwPlanPanelFile = Literal[
+    "DailyTask.json",
+    "FarmEchoTask.json",
+    "NightmareNestTask.json",
+    "AutoCombatTask.json",
+    "Character Config.json",
+    "Monthly Card Config.json",
+]
+
+
 # 日常字段只声明一次；计划中的空值表示继承，不把默认值当作当天覆写。
 OkwwPlanKey = create_model(
     "OkwwPlanKey",
     __config__=ConfigDict(extra="forbid"),
+    Configs=(
+        dict[OkwwPlanPanelFile, dict[str, Any]],
+        Field(default_factory=dict, description="原生任务配置覆写"),
+    ),
     **{
         name: (
             Annotated[field.annotation | None, *metadata]
@@ -598,7 +612,7 @@ OkwwPlanKey = create_model(
 
 
 class OkwwPlanConfig(WeeklyKeyPlan):
-    """按日叠加日常体力参数，其他账号配置保持原有来源。"""
+    """按北京时间 04:00 切日，叠加当日任务设置。"""
 
     class DayFields(ConfigGroup):
         Key: OkwwPlanKey = Field(

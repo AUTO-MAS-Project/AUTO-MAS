@@ -86,27 +86,6 @@ export function useDeclarativeOptions(
                   fallback
                 )
                 break
-              case '/api/info/combox/emulator':
-                response = await requestApi(
-                  () =>
-                    /* 查询宿主已有模拟器选项，供测试插件复用现有模拟器模块。 */ Service.getEmulatorComboxApiInfoComboxEmulatorPost(),
-                  fallback
-                )
-                break
-              case '/api/info/combox/emulator/devices': {
-                const gameId = field.dependencies[0]
-                if (!gameId || gameId === '-') return []
-                response = await requestApi(
-                  () =>
-                    /* 按所选模拟器标识查询其设备实例选项。 */ Service.getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost(
-                      {
-                        emulatorId: String(gameId),
-                      }
-                    ),
-                  fallback
-                )
-                break
-              }
               case '/api/info/combox/plan':
                 response = await requestApi(
                   () =>

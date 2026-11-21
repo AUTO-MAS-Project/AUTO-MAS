@@ -202,9 +202,8 @@ async def test_catalog_updates_only_submit_install(monkeypatch):
     from httpx import ASGITransport, AsyncClient
 
     from app.api.plugin import router
-    from app.config import ConfigCollection
+    from app.config import ConfigCollection, config_manager
     from app.core import Config
-    from app.core.plugin.operations import Operations
     from app.models.config import PluginMeta
 
     catalog = ConfigCollection[PluginMeta].build([PluginMeta])
@@ -223,7 +222,9 @@ async def test_catalog_updates_only_submit_install(monkeypatch):
     monkeypatch.setattr(Config, "plugin_catalog", catalog)
     submitted = []
     monkeypatch.setattr(
-        Operations, "submit", lambda entry, **kwargs: submitted.append((entry, kwargs))
+        config_manager,
+        "submit_trigger",
+        lambda entry, **kwargs: submitted.append((entry, kwargs)),
     )
     app = FastAPI()
     app.include_router(router)

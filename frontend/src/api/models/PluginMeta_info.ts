@@ -2,6 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { PluginChangelogVersions } from './PluginChangelogVersions';
+import type { PluginReleaseNote } from './PluginReleaseNote';
 export type PluginMeta_info = {
     /**
      * 包名
@@ -15,6 +17,11 @@ export type PluginMeta_info = {
      * 版本
      */
     readonly version?: (string | null);
+    /**
+     * 最近五个发行版本内的更新说明
+     */
+    readonly changelog?: (Array<PluginReleaseNote> | null);
+    readonly changelog_versions?: (PluginChangelogVersions | null);
     /**
      * 文档 URL
      */
@@ -44,5 +51,9 @@ export type PluginMeta_info = {
     readonly tags?: (Array<string> | null);
     readonly installed_version?: (string | null);
     readonly update_available?: (boolean | null);
+    /**
+     * 安装（写 True 开闸）
+     */
+    readonly install?: (string | null);
 };
 

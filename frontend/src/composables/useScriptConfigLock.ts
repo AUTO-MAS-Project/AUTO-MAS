@@ -1,5 +1,5 @@
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
-import { useQuery } from '@tanstack/vue-query'
+import { useConfigQuery } from '@/services/configUiSync'
 import { Service } from '@/api'
 import { queryRequest } from '@/utils/queryRequest'
 
@@ -11,17 +11,16 @@ export function useScriptConfigLock(target: MaybeRefOrGetter<ConfigLockTarget>) 
     const value = toValue(target)
     return typeof value === 'string' ? { scriptId: value } : value
   })
-  const query = useQuery({
+  const query = useConfigQuery({
     queryKey: computed(() => ['script-config-lock', selected.value]),
     enabled: computed(() => !!selected.value.scriptId),
-    refetchInterval: 1000,
     queryFn: async ({ signal }) => {
       const response = await queryRequest(signal, () =>
         Service.getScriptLockApiScriptsLockPost(selected.value)
       )
       if (response.code !== 200) throw new Error(response.message || '查询配置锁失败')
-      return response.locked === true
+      return response
     },
   })
-  return { configLocked: computed(() => query.data.value === true) }
+  return { configLocked: computed(() => query.data.value?.locked === true) }
 }

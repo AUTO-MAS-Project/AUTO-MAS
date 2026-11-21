@@ -54,7 +54,6 @@ from app.models.schema import (
     BlueArchiveActivityIn,
     ComboBoxItem,
     ComboBoxOut,
-    EmulatorDeleteIn,
     OutBase,
     PlanComboxConsumer,
     ScriptStatusOverviewItem,
@@ -485,51 +484,6 @@ async def get_plan_combox(plan: PlanComboxIn = Body(...)) -> ComboBoxOut:
     except Exception as e:
         logger.opt(exception=True).warning(
             f"get_plan_combox失败: {type(e).__name__}: {e}"
-        )
-        return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
-        )
-    return ComboBoxOut(data=data)
-
-
-@router.post(
-    "/combox/emulator",
-    tags=["Get"],
-    summary="获取可选模拟器下拉框信息",
-    response_model=ComboBoxOut,
-    status_code=200,
-)
-async def get_emulator_combox() -> ComboBoxOut:
-
-    try:
-        raw_data = await Config.get_emulator_combox()
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_emulator_combox失败: {type(e).__name__}: {e}"
-        )
-        return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
-        )
-    return ComboBoxOut(data=data)
-
-
-@router.post(
-    "/combox/emulator/devices",
-    tags=["Get"],
-    summary="获取可选模拟器多开实例下拉框信息",
-    response_model=ComboBoxOut,
-    status_code=200,
-)
-async def get_emulator_devices_combox(
-    emulator: EmulatorDeleteIn = Body(...),
-) -> ComboBoxOut:
-    try:
-        raw_data = await Config.get_emulator_devices_combox(emulator.emulatorId)
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_emulator_devices_combox失败: {type(e).__name__}: {e}"
         )
         return ComboBoxOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]

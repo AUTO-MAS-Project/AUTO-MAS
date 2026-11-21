@@ -11,6 +11,7 @@ import pytest
 from maa_adapter.config.script import MaaConfig
 
 from app.core.config.plugin_upgrade import (
+    backup_legacy_src_users,
     migrate_maa_update_channel,
     prepare_plugin_documents,
     required_adapter_plugins,
@@ -19,17 +20,38 @@ from app.utils import io as config_io
 
 
 @pytest.mark.parametrize("filename", ["scripts.yaml", "ScriptConfig.json"])
-def test_whimbox_upgrade_detects_only_collection_types(tmp_path, filename):
-    """已有奇想盒托管必须先补齐插件，普通业务文本不能触发安装。"""
+@pytest.mark.parametrize(
+    ("config_type", "name", "package"),
+    [
+        ("WhimboxConfig", "whimbox_adapter", "auto-mas-whimbox-adapter"),
+        ("SrcConfig", "src_adapter", "auto-mas-src-adapter"),
+    ],
+)
+def test_upgrade_detects_only_collection_types(
+    tmp_path, filename, config_type, name, package
+):
+    """仅实际旧托管触发安装，普通业务字符串不触发。"""
     path = tmp_path / filename
-    config_io.write_file(
-        path, {"order": [{"uid": str(uuid4()), "type": "WhimboxConfig"}]}
-    )
-    assert required_adapter_plugins(tmp_path) == {
-        "whimbox_adapter": "auto-mas-whimbox-adapter"
-    }
-    config_io.write_file(path, {"order": [], "notes": "WhimboxConfig"})
+    config_io.write_file(path, {"order": [{"uid": str(uuid4()), "type": config_type}]})
+    assert required_adapter_plugins(tmp_path) == {name: package}
+    config_io.write_file(path, {"order": [], "notes": config_type})
     assert required_adapter_plugins(tmp_path) == {}
+
+
+def test_src_backup_preserves_original_even_without_indexed_body(tmp_path):
+    path = tmp_path / "scripts.yaml"
+    sid = str(uuid4())
+    config_io.write_file(
+        path, {"order": [{"uid": sid, "type": "SrcConfig"}], "data": {}}
+    )
+    original = path.read_bytes()
+    backup_legacy_src_users(tmp_path)
+    config_io.write_file(
+        path,
+        {"order": [{"uid": sid, "type": "SrcConfig"}], "data": {sid: {"users": {}}}},
+    )
+    backup_legacy_src_users(tmp_path)
+    assert (tmp_path / "legacy-src-plugin" / path.name).read_bytes() == original
 
 
 @pytest.mark.parametrize("legacy", [False, True])
@@ -111,6 +133,14 @@ from app.plugin.runtime import discover
 from app.plugin.types import PluginState
 from app.utils import io
 
+# 发行包安装测试不应命中开发者源码目录中的同名插件。
+source_projects = discover._source_projects
+checkout_plugins = (source / "plugins").resolve()
+discover._source_projects = lambda: {
+    project for project in source_projects()
+    if project.parent != checkout_plugins or project.name == "auto_mas_core"
+}
+
 sid = "e1821d2b-bbb8-4ac5-ad7c-e445c8324aa0"
 uid = "0896c0be-e2a8-4c38-bb3b-10eca7768405"
 pid = "5924194a-fcc0-49b6-8a2b-f1d1875def93"
@@ -170,7 +200,7 @@ installs = []
 
 async def install(spec, *, plugin_name, meta_id, dry_run=False):
     global visible
-    assert spec == "auto-mas-maa-adapter"
+    assert spec == "auto-mas-maa-adapter>=0.1.4"
     installs.append(spec)
     if failure == "install":
         raise OSError("installation unavailable")
@@ -223,7 +253,7 @@ async def run():
                 assert (backup / ("ScriptConfig.json" if legacy else "scripts.yaml")).is_file()
                 with sqlite3.connect(backup / Config.database_path.name) as db:
                     assert db.execute("SELECT v FROM version").fetchone()[0] in ("v1.11", "v2.1")
-            assert installs == ([] if installed_before else ["auto-mas-maa-adapter"])
+            assert installs == ([] if installed_before else ["auto-mas-maa-adapter>=0.1.4"])
             script = Config.ScriptConfig[sid]
             assert script.Info.Name == "原托管"
             assert list(map(str, script.users.keys())) == [uid]

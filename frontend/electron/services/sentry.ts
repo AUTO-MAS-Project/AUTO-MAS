@@ -1,3 +1,9 @@
+import {
+  isStartupUploadAllowed,
+  startupAttempt,
+  type StartupAttempt,
+} from './startupHardware/monitor'
+import { allowedFields } from './startupHardware/summary'
 import * as Sentry from '@sentry/electron/main'
 import { app } from 'electron'
 
@@ -15,6 +21,40 @@ let sentryStarted = false
 let telemetryGeneration = 0
 
 const isSentryEnabled = () => Sentry.getClient()?.getOptions().enabled === true
+
+function isStartupFailure(event: Sentry.Event) {
+  const outcome = event.tags?.renderer_recovery_outcome
+  if (outcome !== undefined) return outcome === 'failure' && event.level === 'error'
+  return Boolean(
+    event.exception?.values?.length ||
+    (event.level === 'fatal' && event.tags?.renderer_gone_reason) ||
+    (event.level === 'error' && event.tags?.startup_failure)
+  )
+}
+
+function recentResources(active?: StartupAttempt) {
+  const fields = active?.snapshot(true)
+  if (fields?.coverage === 'sampled' && ['<1s', '1-5s', '5-15s'].includes(fields.sample_age))
+    return allowedFields(fields)
+}
+
+// hint 只在本进程的 SDK 内传递，渲染进程传入的事件无法构造这个实例。
+class StartupFailureCapture {
+  readonly sentryGeneration = telemetryGeneration
+  readonly generation: number | null
+  readonly resources: ReturnType<typeof recentResources>
+  constructor(active?: StartupAttempt) {
+    this.generation = active?.generation ?? null
+    this.resources = recentResources(active)
+  }
+}
+
+function captureMainEvent(event: Sentry.Event) {
+  const hint = isStartupFailure(event)
+    ? { data: { startupFailure: new StartupFailureCapture(startupAttempt()) } }
+    : undefined
+  Sentry.captureEvent(event, hint)
+}
 
 const startSentry = () => {
   if (isDevelopmentEnvironment()) return
@@ -37,7 +77,29 @@ const startSentry = () => {
         integration => integration.name !== 'Console' && !/minidump/i.test(integration.name)
       ),
     tracesSampleRate: 0.05,
-    beforeSend: sanitizeMainSentryEvent,
+    beforeSend(event, hint) {
+      const clean = sanitizeMainSentryEvent(event)
+      if (clean.contexts) delete clean.contexts.startup_resources
+      if (!isStartupFailure(event)) return clean
+      const failure: unknown = hint.data?.startupFailure
+      let resources: ReturnType<typeof recentResources>
+      if (failure instanceof StartupFailureCapture) {
+        if (
+          !isSentryEnabled() ||
+          failure.sentryGeneration !== telemetryGeneration ||
+          (failure.generation !== null && !isStartupUploadAllowed(failure.generation))
+        )
+          return null
+        resources = failure.resources
+      } else {
+        const active = startupAttempt()
+        const captured = (event.timestamp ?? 0) * 1000
+        if (active && captured >= active.wallStart && captured <= Date.now())
+          resources = recentResources(active)
+      }
+      if (resources) clean.contexts = { ...clean.contexts, startup_resources: resources }
+      return clean
+    },
     beforeSendTransaction: sanitizeMainSentryEvent,
   })
   Sentry.setTag('component', 'electron-main')
@@ -102,6 +164,21 @@ export const observeMainOperation = <T>(
   return Sentry.startSpan({ name, op, attributes }, callback)
 }
 
+/** Runtime 无法自行上报的桌面准备失败，只使用初始化策略已验证的阶段和错误码。 */
+export function captureStartupHostFailure(stage: string, code: string) {
+  if (!isSentryEnabled() || !startupAttempt()) return
+  try {
+    captureMainEvent({
+      message: '桌面启动准备失败',
+      level: 'error',
+      tags: { component: 'electron-main', startup_failure: stage, known_code: code },
+      fingerprint: ['desktop-startup', stage, code],
+    })
+  } catch {
+    /* 不影响原有错误展示。 */
+  }
+}
+
 export const recordMainStartup = () => {
   recordMainDuration('auto_mas.app.startup.duration', performance.now() - processStartedAt, {
     component: 'electron-main',
@@ -119,7 +196,8 @@ export const captureMainRendererCrash = (details: RendererCrashDetails) => {
   if (!isSentryEnabled()) return
 
   try {
-    Sentry.captureMessage(`渲染进程退出: ${details.reason}`, {
+    captureMainEvent({
+      message: `渲染进程退出: ${details.reason}`,
       level: 'fatal',
       tags: {
         component: 'electron-main',
@@ -144,7 +222,8 @@ export const beginMainRendererReload = (details: RendererCrashDetails) => {
     if (!client || client !== Sentry.getClient() || generation !== telemetryGeneration) return
     if (!isSentryEnabled()) return
     try {
-      Sentry.captureMessage(`渲染进程重载结果: ${result.outcome}`, {
+      captureMainEvent({
+        message: `渲染进程重载结果: ${result.outcome}`,
         level:
           result.outcome === 'failure'
             ? 'error'

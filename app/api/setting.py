@@ -46,6 +46,7 @@ from app.core import Config, Notify
 from app.models.config import Webhook as WebhookConfig
 from app.models.notification import NotifyPayload, WebhookTargetSnapshot
 from app.models.schema import (
+    ConfigSnapshotOut,
     ObsReplayCheckOut,
     OutBase,
     VirtualDisplayCheckOut,
@@ -174,7 +175,7 @@ class WebhookTestIn(WebhookInBase):
     data: WebhookInput = Field(..., description="Webhook配置数据")
 
 
-class SettingGetOut(OutBase):
+class SettingGetOut(ConfigSnapshotOut):
     data: GlobalConfig = Field(..., description="全局设置数据")
 
 
@@ -356,7 +357,7 @@ async def get_scripts() -> SettingGetOut:
             message=f"{type(e).__name__}: {str(e)}",
             data=GlobalConfig(**{}),
         )
-    return SettingGetOut(data=GlobalConfig(**data))
+    return SettingGetOut(data=GlobalConfig(**data), uiSources=[Config.setting.uid])
 
 
 @router.post(
@@ -534,7 +535,9 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
             index=[],
             data={},
         )
-    return WebhookGetOut(index=index, data=data)
+    return WebhookGetOut(
+        index=index, data=data, uiSources=[Config.setting.Notify_CustomWebhooks.uid]
+    )
 
 
 @router.post(

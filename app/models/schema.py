@@ -73,22 +73,6 @@ class PluginInstallation(BaseModel):
     message: str | None = None
 
 
-class OperationInfo(BaseModel):
-    """宿主命令快照，业务参数和插件实例不进入外部契约。"""
-
-    operationId: UUID
-    configUid: UUID
-    field: str
-    owner: UUID | None = None
-    state: Literal[
-        "queued", "running", "cancelling", "succeeded", "failed", "cancelled"
-    ] = "queued"
-    cancellable: bool = True
-    createdAt: AwareDatetime
-    completedAt: AwareDatetime | None = None
-    errorCode: str | None = None
-
-
 class DownloadSnapshot(BaseModel):
     """下载中心的可重复读取快照，不消费背景结果。"""
 
@@ -370,6 +354,12 @@ class OutBase(BaseModel):
     code: int = Field(default=200, description="状态码")
     status: str = Field(default="success", description="操作状态")
     message: str = Field(default="操作成功", description="操作消息")
+
+
+class ConfigSnapshotOut(OutBase):
+    """配置快照及其 Entry / Collection 订阅来源。"""
+
+    uiSources: list[UUID] = Field(default_factory=list)
 
 
 class ConfigBackupItemOut(BaseModel):
@@ -784,6 +774,9 @@ class WSTaskNoticeData(BaseModel):
     """任务提示消息数据 (type=task.notice)"""
 
     level: Literal["info", "warning", "error"] = Field(..., description="提示级别")
+    sourceScriptType: str | None = Field(
+        default=None, description="实际发出提示的专项类型"
+    )
     message: str = Field(..., description="提示内容")
     messageKey: Optional[str] = Field(
         default=None, description="可选的前端翻译键；旧客户端仍使用 message"
@@ -879,6 +872,7 @@ class TaskRuntimeSnapshotItem(BaseModel):
 
     task: TaskTreeData
     taskId: str = Field(..., description="任务 ID")
+    targetId: str | None = Field(default=None, description="可重跑的队列或单个托管 ID")
     mode: TaskMode = Field(
         ..., description="脚本执行模式; 循环运行的脚本同样按 AutoProxy 执行"
     )
@@ -967,6 +961,7 @@ class WSTaskCreatedData(BaseModel):
 
     trigger: TaskTriggerReason = TaskTriggerReason.MANUAL
     taskId: str = Field(..., description="新任务ID")
+    targetId: str | None = Field(default=None, description="可重跑的队列或单个托管 ID")
     mode: TaskMode = Field(..., description="任务模式, 与创建请求一致")
     scripts: List[WSTaskScriptIdentityData] = Field(
         default_factory=list, description="任务关联的托管静态标识"
@@ -1831,7 +1826,7 @@ class WebhookGetIn(WebhookInBase):
 ConfigDataT = TypeVar("ConfigDataT")
 
 
-class WebhookGetOut(OutBase, Generic[ConfigDataT]):
+class WebhookGetOut(ConfigSnapshotOut, Generic[ConfigDataT]):
     index: List[WebhookIndexItem] = Field(..., description="Webhook索引列表")
     data: Dict[str, ConfigDataT] = Field(
         ..., description="Webhook数据字典, key来自于index列表的uid"
@@ -1902,7 +1897,6 @@ __all__ = [
     "ConfigBackupEnsureOut",
     "ConfigBackupPreviewOut",
     "ConfigBackupFileOut",
-    "OperationInfo",
     "PluginInstallation",
     "DownloadRequest",
     "DownloadSnapshot",

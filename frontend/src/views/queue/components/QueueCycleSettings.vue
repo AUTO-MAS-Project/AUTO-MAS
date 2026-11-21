@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import type { QueueConfig_Cycle, QueueUpdateIn } from '@/api'
+import { useActiveTriggers } from '@/composables/useActiveTriggers'
 import { queueApi } from '@/composables/useQueueApi'
 import dayjs from 'dayjs'
 
@@ -11,6 +12,17 @@ const emit = defineEmits<{ refresh: [] }>()
 const { t } = useI18n()
 const interval = ref<number | null>(480)
 const saving = ref(false)
+const { data: activeTriggers, refetch: refreshTriggers } = useActiveTriggers()
+const resetting = computed(
+  () =>
+    activeTriggers.value?.some(
+      item =>
+        item.configUid === props.queueId && item.group === 'Cycle' && item.field === 'ResetTimer'
+    ) ?? false
+)
+watch(resetting, (busy, wasBusy) => {
+  if (!busy && wasBusy) emit('refresh')
+})
 
 watch(
   () => props.cycle,
@@ -21,10 +33,12 @@ watch(
 )
 
 async function save(data: NonNullable<QueueUpdateIn['data']['Cycle']>) {
+  if (saving.value || (data.ResetTimer && resetting.value)) return
   saving.value = true
   try {
     const response = await queueApi.updateQueue({ queueId: props.queueId, data: { Cycle: data } })
     if (response.code !== 200) throw new Error(response.message)
+    if (data.ResetTimer) await refreshTriggers()
   } catch (error) {
     message.error(error instanceof Error ? error.message : String(error))
   } finally {
@@ -73,9 +87,12 @@ function saveInterval() {
               <output class="cycle-next-run-time" :aria-label="t('core.queue.cycle.nextRun')">{{
                 cycle?.NextRunAt ? dayjs(cycle.NextRunAt).format('YYYY-MM-DD HH:mm') : '—'
               }}</output>
-              <a-button size="large" :loading="saving" @click="save({ ResetTimer: true })">{{
-                t('core.queue.triggers.reset')
-              }}</a-button>
+              <a-button
+                size="large"
+                :loading="saving || resetting"
+                @click="save({ ResetTimer: true })"
+                >{{ t('core.queue.triggers.reset') }}</a-button
+              >
             </div>
           </a-form-item>
         </a-col>
