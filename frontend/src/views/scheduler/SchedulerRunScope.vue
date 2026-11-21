@@ -1,158 +1,149 @@
 <template>
-  <a-button size="large" :disabled="disabled" @click="open = true">
-    <template #icon><TeamOutlined /></template>
-    {{ t('core.scheduler.control.runScopeTitle') }}
-    <span
-      v-if="!loading && !error"
-      class="scope-button-count"
-      :class="{ 'is-partial': scopePartial }"
-      >{{ selectedCount }}/{{ userCount }}</span
-    >
-  </a-button>
-  <a-modal
-    v-model:open="open"
-    :title="t('core.scheduler.control.runScopeTitle')"
-    :width="1120"
-    wrap-class-name="scheduler-scope-modal"
-    destroy-on-close
+  <a-popover
+    :open="open"
+    trigger="click"
+    :placement="showAbove ? 'topLeft' : 'bottomLeft'"
+    :arrow="false"
+    :auto-adjust-overflow="false"
+    :align="{ offset: [horizontalOffset, showAbove ? -4 : 4] }"
+    destroy-tooltip-on-hide
+    :overlay-style="{ padding: 0 }"
+    :overlay-inner-style="{ padding: 0, borderRadius: 'var(--ant-border-radius)' }"
+    @open-change="setOpen"
   >
-    <div class="scope-toolbar">
-      <div class="scope-summary">
-        <span>{{ t('core.scheduler.scope.items', { count: draft?.entries.length ?? 0 }) }}</span>
-        <span>{{
-          t('core.scheduler.scope.users', { selected: selectedCount, total: userCount })
-        }}</span>
-      </div>
-      <a-space :size="4">
-        <a-button
-          type="link"
-          size="small"
-          :disabled="loading || !draft || draft.selection === 'all'"
-          @click="selectAll"
-          >{{ t('core.scheduler.scope.all') }}</a-button
-        >
-        <a-button
-          type="link"
-          size="small"
-          danger
-          :disabled="loading || !draft || draft.selection === 'none'"
-          @click="clearAll"
-          >{{ t('core.scheduler.scope.clear') }}</a-button
-        >
-        <a-button
-          type="text"
-          size="small"
-          :loading="loading"
-          :aria-label="t('core.scheduler.scope.refresh')"
-          :title="t('core.scheduler.scope.refresh')"
-          @click="emit('refresh')"
-        >
-          <template #icon><ReloadOutlined /></template>
-        </a-button>
-      </a-space>
-    </div>
-    <!-- 只由此列表滚动；标题、工具栏和底部确认按钮始终可见。 -->
-    <div class="scope-entries" tabindex="0" :aria-label="t('core.scheduler.control.runScopeTitle')">
-      <a-alert v-if="error" type="error" show-icon :message="error">
-        <template #action
-          ><a-button size="small" @click="emit('refresh')">{{
-            t('core.scheduler.control.runScopeRetry')
-          }}</a-button></template
-        >
-      </a-alert>
-      <div v-else-if="loading" class="scope-state"><a-spin /></div>
-      <div v-else-if="!draft?.entries.length" class="scope-state">
-        <a-empty
-          :description="t('core.scheduler.control.runScopeNoUsers')"
-          :image="Empty.PRESENTED_IMAGE_SIMPLE"
-        />
-      </div>
+    <a-button
+      ref="trigger"
+      type="text"
+      class="scope-invoker"
+      :class="{ customized: ready && rows.length && !allChecked }"
+      :disabled="disabled"
+      :aria-expanded="open"
+      :aria-controls="open ? panelId : undefined"
+      :aria-label="t('core.scheduler.scope.trigger', { value: summary })"
+      :title="t('core.scheduler.control.runScopeTitle')"
+      @keydown.down.prevent="setOpen(true)"
+      @keydown.esc="setOpen(false)"
+    >
+      <span class="invoker-content">
+        <FilterOutlined class="invoker-filter" />
+        <span class="invoker-value">{{ summary }}</span>
+        <DownOutlined class="invoker-arrow" :rotate="open ? 180 : 0" />
+      </span>
+    </a-button>
+    <template #content>
       <section
-        v-for="({ entry, selected, missingUsers }, index) in error || loading ? [] : rows"
-        :key="entry.uid"
-        class="queue-scope-group"
+        :id="panelId"
+        ref="panel"
+        class="scope-sheet"
+        :class="{ compact: panelHeight < (pickingStart ? 200 : 160) }"
+        role="region"
+        :aria-label="t('core.scheduler.control.runScopeTitle')"
+        tabindex="-1"
+        :style="{ maxHeight: `${panelHeight}px` }"
+        @keydown.esc.stop.prevent="escape"
+        @focusout="onFocusOut"
       >
-        <div class="scope-entry-heading">
-          <a-checkbox
-            :checked="
-              entry.selection === 'all' ||
-              (entry.selection === 'explicit' &&
-                selected.size > 0 &&
-                selected.size === entry.users.length &&
-                !missingUsers)
-            "
-            :indeterminate="
-              entry.selection === 'explicit' &&
-              selected.size > 0 &&
-              selected.size < entry.users.length
-            "
-            @change="
-              (event: CheckboxChangeEvent) => setEntry(entry.uid, Boolean(event.target.checked))
-            "
-          >
-            <span v-if="draft?.kind === 'queue'" class="scope-position">{{ index + 1 }}</span>
-            <span class="scope-name">{{ entry.name || entry.scriptId }}</span>
-          </a-checkbox>
-          <div class="scope-entry-actions">
-            <span class="scope-summary">{{
-              t('core.scheduler.scope.users', {
-                selected: selected.size,
-                total: entry.users.length,
-              })
-            }}</span>
-            <a-button
+        <header class="sheet-heading">
+          <h2>{{ t('core.scheduler.control.runScopeTitle') }}</h2>
+          <div v-if="ready && !pickingStart" class="sheet-count" role="status" aria-atomic="true">
+            <i18n-t
               v-if="draft?.kind === 'queue'"
-              type="link"
-              size="small"
-              @click="fromHere(index)"
-              >{{ t('core.scheduler.scope.fromHere') }}</a-button
+              keypath="core.scheduler.scope.items"
+              tag="span"
+              scope="global"
             >
+              <template #count
+                ><b>{{ chosenEntries }}/{{ rows.length }}</b></template
+              >
+            </i18n-t>
+            <i18n-t keypath="core.scheduler.scope.accounts" tag="span" scope="global">
+              <template #count
+                ><b>{{ selectedCount }}/{{ userCount }}</b></template
+              >
+            </i18n-t>
           </div>
-        </div>
-        <a-alert
-          v-if="entry.missing || missingUsers"
-          class="scope-warning"
-          type="warning"
-          show-icon
-          :message="t('core.scheduler.scope.missing')"
-        />
-        <div v-if="!entry.missing && entry.users.length" class="scope-users">
-          <a-checkbox
-            v-for="user in entry.users"
-            :key="user.uid"
-            :checked="selected.has(user.uid)"
-            @change="
-              (event: CheckboxChangeEvent) =>
-                setUser(entry.uid, user.uid, Boolean(event.target.checked))
-            "
+        </header>
+        <a-alert v-if="error" class="scope-state" type="error" show-icon :message="error">
+          <template #action
+            ><a-button size="small" @click="emit('refresh')">{{
+              t('core.scheduler.control.runScopeRetry')
+            }}</a-button></template
           >
-            <span class="scope-user-name">{{ user.name }}</span>
-          </a-checkbox>
+        </a-alert>
+        <div v-else-if="!ready" class="scope-state" role="status">
+          <a-spin size="small" /> {{ t('core.scheduler.scope.loading') }}
         </div>
-        <p v-else-if="!entry.missing" class="scope-empty">
-          {{ t('core.scheduler.control.runScopeNoUsers') }}
-        </p>
+        <a-empty
+          v-else-if="!rows.length"
+          class="scope-state"
+          :image="Empty.PRESENTED_IMAGE_SIMPLE"
+          :description="t('core.scheduler.scope.emptyQueue')"
+        />
+        <RunScopeStartPoint
+          v-else-if="pickingStart"
+          :rows="rows"
+          :disabled="disabled"
+          @apply="applyStart"
+          @back="closePicker"
+        />
+        <template v-else>
+          <div class="tree-master">
+            <a-checkbox
+              :checked="allChecked"
+              :indeterminate="chosenEntries > 0 && !allChecked"
+              :disabled="disabled"
+              @change="(event: CheckboxChangeEvent) => setAll(!!event.target.checked)"
+              >{{ t('core.scheduler.scope.all') }}</a-checkbox
+            >
+            <a-button
+              v-if="draft?.kind === 'queue' && rows.length > 1"
+              ref="startPointButton"
+              type="text"
+              size="small"
+              class="start-point-action"
+              :disabled="disabled"
+              @click="pickingStart = true"
+            >
+              {{ t('core.scheduler.scope.chooseStart') }} <FlagOutlined aria-hidden="true" />
+            </a-button>
+          </div>
+          <ol class="tree-scroll">
+            <RunScopeEntry
+              v-for="({ entry, selected, checked, unavailable }, index) in rows"
+              :key="entry.uid"
+              :entry="entry"
+              :selected="selected"
+              :checked="checked"
+              :unavailable="unavailable"
+              :position="draft?.kind === 'queue' ? index + 1 : undefined"
+              :expanded="detail === entry.uid"
+              :disabled="disabled"
+              @toggle="detail = detail === entry.uid ? null : entry.uid"
+              @select="value => setEntry(entry.uid, value)"
+              @select-user="(uid, value) => setUser(entry.uid, uid, value)"
+              @refresh="emit('refresh')"
+            />
+          </ol>
+        </template>
       </section>
-    </div>
-    <template #footer>
-      <a-button type="primary" size="large" @click="open = false">{{
-        t('core.common.confirm')
-      }}</a-button>
     </template>
-  </a-modal>
+  </a-popover>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onDeactivated, ref, useId, useTemplateRef, watch } from 'vue'
+import { useElementBounding, useElementVisibility, useWindowSize } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { Empty } from 'ant-design-vue'
 import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
-import { ReloadOutlined, TeamOutlined } from '@ant-design/icons-vue'
+import { DownOutlined, FilterOutlined, FlagOutlined } from '@ant-design/icons-vue'
 import {
   selectedScopeUsers,
   type TaskScopeDraft,
   type TaskScopeEntry,
 } from '@/composables/taskSelection'
+import RunScopeEntry from './components/RunScopeEntry.vue'
+import RunScopeStartPoint from './components/RunScopeStartPoint.vue'
 
 const props = defineProps<{
   modelValue?: TaskScopeDraft
@@ -161,35 +152,112 @@ const props = defineProps<{
   disabled?: boolean
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: TaskScopeDraft]; refresh: [] }>()
+const draft = computed(() => props.modelValue)
 const { t } = useI18n()
 const open = ref(false)
-const draft = computed(() => props.modelValue)
-const rows = computed(
-  () =>
-    draft.value?.entries.map(entry => {
-      const selected = new Set(selectedScopeUsers(entry))
-      return {
-        entry,
-        selected,
-        missingUsers:
-          entry.selection === 'explicit' &&
-          entry.selected.some(uid => !entry.users.some(user => user.uid === uid)),
-      }
-    }) ?? []
+const pickingStart = ref(false)
+const detail = ref<string | null>(null)
+const panelId = useId()
+const trigger = useTemplateRef<{ $el: HTMLButtonElement }>('trigger')
+const startPointButton = useTemplateRef<{ $el: HTMLButtonElement }>('startPointButton')
+const panel = useTemplateRef<HTMLElement>('panel')
+const panelVisible = useElementVisibility(panel)
+const { left, top, bottom, update } = useElementBounding(() => trigger.value?.$el)
+const { width, height } = useWindowSize()
+const spaceBelow = computed(() => Math.max(0, height.value - bottom.value - 16))
+// 极矮的窗口向上展开时，为桌面标题栏保留 32px。
+const spaceAbove = computed(() => Math.max(0, top.value - 32 - 16))
+const showAbove = computed(() => spaceBelow.value < 160 && spaceAbove.value > spaceBelow.value)
+const panelHeight = computed(() =>
+  Math.min(460, showAbove.value ? spaceAbove.value : spaceBelow.value)
 )
-const userCount = computed(
-  () => draft.value?.entries.reduce((sum, entry) => sum + entry.users.length, 0) ?? 0
+const horizontalOffset = computed(() =>
+  Math.min(0, width.value - 12 - left.value - Math.min(416, width.value - 24))
 )
-const selectedCount = computed(
-  () => draft.value?.entries.reduce((sum, entry) => sum + selectedScopeUsers(entry).length, 0) ?? 0
+const ready = computed(() => !!draft.value && !props.loading && !props.error)
+const rows = computed(() =>
+  (draft.value?.entries ?? []).map(entry => {
+    const selected = new Set(selectedScopeUsers(entry))
+    const unavailable =
+      !!entry.missing ||
+      (entry.selection === 'explicit' &&
+        entry.selected.some(uid => !entry.users.some(user => user.uid === uid)))
+    const checked =
+      entry.selection === 'all' ||
+      (!unavailable && selected.size > 0 && selected.size === entry.users.length)
+    return { entry, selected, checked, unavailable }
+  })
 )
+const chosenEntries = computed(
+  () => rows.value.filter(({ entry }) => entry.selection !== 'none').length
+)
+const allChecked = computed(
+  () => rows.value.length > 0 && rows.value.every(row => row.checked && !row.unavailable)
+)
+const userCount = computed(() => rows.value.reduce((sum, { entry }) => sum + entry.users.length, 0))
+const selectedCount = computed(() =>
+  rows.value.reduce(
+    (sum, { entry, selected }) => sum + entry.users.filter(user => selected.has(user.uid)).length,
+    0
+  )
+)
+const summary = computed(() => {
+  if (props.error) return t('core.scheduler.scope.loadError')
+  if (!ready.value) return t('core.scheduler.scope.loading')
+  if (!rows.value.length) return t('core.scheduler.scope.noEntries')
+  if (!chosenEntries.value) return t('core.scheduler.scope.none')
+  if (rows.value.some(row => row.unavailable && row.entry.selection !== 'none'))
+    return t('core.scheduler.scope.review')
+  if (allChecked.value)
+    return draft.value?.kind === 'queue'
+      ? t('core.scheduler.scope.allEntries')
+      : t('core.scheduler.scope.allAccounts')
+  if (chosenEntries.value === rows.value.length)
+    return t('core.scheduler.scope.selectedAccounts', { count: selectedCount.value })
+  return t('core.scheduler.scope.selectedEntries', { count: chosenEntries.value })
+})
 
-const scopePartial = computed(() => selectedCount.value < userCount.value)
+function setOpen(value: boolean) {
+  if (value) update()
+  else {
+    detail.value = null
+    pickingStart.value = false
+  }
+  open.value = value
+}
+watch(panelVisible, visible => {
+  const el = panel.value
+  if (visible && el && open.value && document.activeElement === trigger.value?.$el)
+    (el.querySelector<HTMLElement>('input:not(:disabled), button:not(:disabled)') ?? el).focus({
+      preventScroll: true,
+    })
+})
+onDeactivated(() => setOpen(false))
 
-const updateEntries = (
+function onFocusOut(event: FocusEvent) {
+  const target = event.relatedTarget
+  if (
+    target instanceof Node &&
+    !panel.value?.contains(target) &&
+    !trigger.value?.$el.contains(target)
+  )
+    setOpen(false)
+}
+function escape() {
+  if (pickingStart.value) closePicker()
+  else {
+    setOpen(false)
+    trigger.value?.$el.focus()
+  }
+}
+function closePicker() {
+  pickingStart.value = false
+  nextTick(() => startPointButton.value?.$el.focus())
+}
+function updateEntries(
   change: (entry: TaskScopeEntry, index: number) => TaskScopeEntry,
   selection: TaskScopeDraft['selection'] = 'explicit'
-) => {
+) {
   if (draft.value)
     emit('update:modelValue', {
       ...draft.value,
@@ -197,19 +265,23 @@ const updateEntries = (
       entries: draft.value.entries.map(change),
     })
 }
-const selectAll = () =>
-  updateEntries(entry => ({ ...entry, selection: 'all', selected: [] }), 'all')
-const clearAll = () =>
-  updateEntries(entry => ({ ...entry, selection: 'none', selected: [] }), 'none')
-const fromHere = (index: number) =>
-  updateEntries((entry, position) =>
-    position < index ? { ...entry, selection: 'none', selected: [] } : entry
-  )
-const setEntry = (uid: string, checked: boolean) =>
+function setAll(checked: boolean) {
+  const selection = checked ? 'all' : 'none'
+  updateEntries(entry => ({ ...entry, selection, selected: [] }), selection)
+}
+function applyStart(index: number) {
+  if (index > 0)
+    updateEntries((entry, position) =>
+      position < index ? { ...entry, selection: 'none', selected: [] } : entry
+    )
+  closePicker()
+}
+function setEntry(uid: string, checked: boolean) {
   updateEntries(entry =>
     entry.uid === uid ? { ...entry, selection: checked ? 'all' : 'none', selected: [] } : entry
   )
-const setUser = (entryUid: string, userUid: string, checked: boolean) =>
+}
+function setUser(entryUid: string, userUid: string, checked: boolean) {
   updateEntries(entry => {
     if (entry.uid !== entryUid) return entry
     const selected = new Set(selectedScopeUsers(entry))
@@ -221,151 +293,141 @@ const setUser = (entryUid: string, userUid: string, checked: boolean) =>
       selected: entry.users.filter(user => selected.has(user.uid)).map(user => user.uid),
     }
   })
+}
 </script>
 
 <style scoped>
-/* 共享 overlay 样式预留标题栏；弹窗体仅负责分配高度，不另加滚动条。 */
-:global(.scheduler-scope-modal.ant-modal-wrap) {
-  padding-block: 16px;
-  overflow: hidden;
+.scope-invoker.ant-btn {
+  position: relative;
+  display: inline-grid;
+  align-items: center;
+  min-width: 150px;
+  height: 40px;
+  border: 0;
+  box-shadow: none;
+  padding: 0 12px;
+  border-radius: 0 var(--ant-border-radius) var(--ant-border-radius) 0;
+  background: transparent;
 }
-:global(.scheduler-scope-modal .ant-modal) {
-  top: 0;
-  max-width: calc(100vw - 32px);
-  margin-block: 0;
-  padding-bottom: 0;
+.scope-invoker::after {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block: 10px;
+  width: 1px;
+  background: var(--ant-color-border);
 }
-:global(.scheduler-scope-modal .ant-modal-content) {
+.scope-invoker:not(:disabled):hover {
+  background: var(--ant-color-fill-secondary);
+}
+.scope-invoker:not(:disabled):is(.customized, [aria-expanded='true']) {
+  background: var(--ant-color-primary-bg);
+  color: var(--ant-color-link);
+}
+.scope-invoker:is(.customized, [aria-expanded='true'])::after {
+  background: var(--ant-color-primary-border);
+}
+.scope-invoker.ant-btn > .invoker-content {
+  display: grid;
+  grid-template-columns: 16px 1fr 12px;
+  column-gap: 9px;
+  align-items: center;
+  text-align: start;
+  font-size: 14px;
+  line-height: 22px;
+}
+.invoker-filter {
+  font-size: 16px;
+}
+.invoker-value {
+  font-weight: 500;
+}
+.invoker-arrow {
+  font-size: 11px;
+}
+.scope-sheet {
   display: flex;
   flex-direction: column;
-  height: min(720px, calc(100vh - 32px));
+  width: min(416px, calc(100vw - 24px));
+  color: var(--ant-color-text);
+  font-size: 14px;
+  line-height: 22px;
 }
-:global(.scheduler-scope-modal .ant-modal-header),
-:global(.scheduler-scope-modal .ant-modal-footer) {
-  flex-shrink: 0;
-}
-:global(.scheduler-scope-modal .ant-modal-title) {
-  font-size: 18px;
-  line-height: 26px;
-}
-:global(.scheduler-scope-modal .ant-modal-body) {
+.sheet-heading {
+  flex: none;
+  min-height: 54px;
+  padding: 14px 18px 12px;
   display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
 }
-.scope-toolbar,
-.scope-entry-heading,
-.scope-entry-actions {
+.sheet-heading h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--ant-color-text-heading);
+}
+.sheet-count {
+  display: inline-flex;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+}
+.sheet-count b {
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+.tree-master {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  min-height: 36px;
+  padding-inline: 16px;
+  background: var(--ant-color-fill-quaternary);
+  border-block: 1px solid var(--ant-color-border-secondary);
 }
-.scope-toolbar {
-  flex-shrink: 0;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding-bottom: 12px;
+.tree-master :deep(.ant-checkbox-wrapper) {
+  padding-inline: 2px;
+  align-items: center;
+  min-height: 32px;
 }
-.scope-summary,
-.scope-position,
-.scope-empty {
+.tree-master :deep(.ant-checkbox-wrapper > span:last-child) {
+  padding-inline-start: 10px;
+}
+.start-point-action.ant-btn {
+  font-size: 12px;
   color: var(--ant-color-text-secondary);
-  font-size: 14px;
+  padding-inline: 6px;
 }
-.scope-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  font-variant-numeric: tabular-nums;
-}
-.scope-entries {
-  flex: 1;
+.tree-scroll {
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  padding-inline-end: 8px;
+  margin: 0;
+  padding: 4px 0 7px;
+  list-style: none;
 }
-.scope-entries:focus-visible {
-  outline: 2px solid var(--ant-color-primary);
-  outline-offset: -2px;
+.scope-sheet.compact {
+  display: block;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
-.queue-scope-group {
-  padding: 16px 0;
-  border-top: 1px solid var(--ant-color-border);
-}
-.scope-entry-heading {
-  align-items: flex-start;
-}
-.scope-entry-heading :deep(.ant-checkbox-wrapper) {
-  flex: 1;
-  min-width: 0;
-  font-size: 16px;
-  line-height: 24px;
-}
-.scope-entry-heading :deep(.ant-checkbox-wrapper > span:last-child) {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-.scope-name {
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-.scope-entry-actions {
-  flex-shrink: 0;
-  gap: 8px;
-}
-.scope-users {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
-  gap: 16px;
-  padding: 16px 0 0 24px;
-}
-.scope-users :deep(.ant-checkbox-wrapper) {
-  align-items: flex-start;
-  min-width: 0;
-  margin-inline-start: 0;
-  font-size: 16px;
-  line-height: 24px;
-}
-.scope-users :deep(.ant-checkbox),
-.scope-entry-heading :deep(.ant-checkbox) {
-  align-self: flex-start;
-  margin-top: 4px;
-}
-.scope-user-name {
-  overflow-wrap: anywhere;
-}
-.scope-empty {
-  margin: 12px 0 0 24px;
-}
-.scope-warning {
-  margin-top: 12px;
+.scope-sheet.compact .tree-scroll {
+  overflow: visible;
 }
 .scope-state {
-  display: grid;
-  place-items: center;
-  min-height: 128px;
-  height: 100%;
-}
-.scope-button-count {
-  margin-left: 8px;
+  margin: 8px 16px 16px;
+  overflow: auto;
+  text-align: center;
   color: var(--ant-color-text-secondary);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
 }
-.scope-button-count.is-partial {
-  color: var(--ant-color-warning);
-}
-@media (max-width: 600px) {
-  .scope-entry-heading {
-    flex-wrap: wrap;
-    gap: 8px;
-  }
+.scope-invoker:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: -2px;
 }
 </style>

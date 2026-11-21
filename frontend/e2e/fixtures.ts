@@ -41,7 +41,7 @@ const createApp = (page: Page, testInfo: TestInfo): App => ({
         '.tab-title',
         '.overview-panel-container',
         '.log-panel-container',
-        '.queue-scope',
+        '.scope-sheet',
         '.script-select',
         '.queue-title-text',
         '.ant-select-dropdown',
