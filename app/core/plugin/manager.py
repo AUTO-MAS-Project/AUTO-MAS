@@ -32,6 +32,7 @@ from packaging.version import Version
 from app.config import NodeState, config_manager
 from app.core.ws import Publisher
 from app.core.ws.protocol import ID_PLUGIN, PLUGIN_CAPABILITIES_UPDATED
+from app.mystery.gate import is_unlocked
 from app.plugin import uv as uv_tool
 from app.plugin.base.game import GameAdapterPlugin, GameTypeDecl
 from app.plugin.base.plugin import BasePlugin
@@ -62,6 +63,7 @@ from app.plugin.types import (
     MARKET_GATE_TAG,
     PLUGIN_ID_PATTERN,
     PLUGIN_ID_TAG_PREFIX,
+    RESTRICTED_PLUGIN_NAMES,
     LifecycleContext,
     PluginCodeDrift,
     PluginState,
@@ -506,6 +508,19 @@ class _PluginManager:
         self._assert_allowed(record, "enable")
         if self._is_enabled(record, ctx=ctx):
             return {}
+        # 受控插件：未通过神秘入口校验时不可启用。已安装并启用的存量不受影响——
+        # 它的启用请求走上面的早退，重载时拆下游再恢复的那一段由内部语境放行，
+        # 因此跨日失效或手动锁定都不会让在用的插件掉线。
+        if (
+            name in RESTRICTED_PLUGIN_NAMES
+            and ctx != LifecycleContext.RELOAD_CASCADE
+            and not record.info.enabled
+            and not is_unlocked()
+        ):
+            raise PluginPrecheckError(
+                "该插件需要先在神秘入口解锁后才能启用",
+                payload={"name": name},
+            )
         # 按语境允许进入态：根/级联 → disabled|fault_runtime；本项 reload 另允 reloading
         allowed_in = {PluginState.DISABLED, PluginState.FAULT_RUNTIME}
         if ctx == LifecycleContext.RELOAD:
