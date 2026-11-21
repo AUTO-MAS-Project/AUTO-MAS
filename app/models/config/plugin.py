@@ -216,11 +216,11 @@ class PluginRecord(ConfigEntry):
 
     @ui_visibility("info.disable")
     def _vis_disable(self) -> UiVisibility:
-        """仅已启用且非核心可禁用。"""
+        """运行中或仍留着启用意图的可停用；核心与过渡态不可。"""
         info = self.effective.info
         if info.is_core or self._lifecycle_busy():
             return UiVisibility.DISABLE
-        if info.state == PluginState.ENABLED:
+        if info.state == PluginState.ENABLED or info.enabled:
             return UiVisibility.SHOW
         return UiVisibility.DISABLE
 
