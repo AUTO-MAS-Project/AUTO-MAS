@@ -77,7 +77,7 @@ from .transport import (
 )
 
 if TYPE_CHECKING:  # 导入 runtime_pool 会连带整个运行池包，选包时才导入
-    from ..runtime_pool.architecture import ArchitectureTarget
+    from ..native.architecture import ArchitectureTarget
 
 HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 
@@ -368,11 +368,11 @@ def _range_delta_blocker(payload: PayloadTarget) -> str:
 def _host_update_target() -> ArchitectureTarget:
     """本机选包用的架构参数（Mirror 酱 os/arch、GitHub 资产架构段）。
 
-    只从 ``runtime_pool.architecture.host_architecture()`` 取；不是 x64 时按「只支持 x64」
+    只从 ``native.architecture.host_architecture()`` 取；不是 x64 时按「只支持 x64」
     报错，不悄悄按 x64 去下包。
     """
 
-    from ..runtime_pool.architecture import (
+    from ..native.architecture import (
         MaaFWUnsupportedArchitectureError,
         supported_architecture_target,
     )
@@ -470,7 +470,7 @@ def _payload_runtime_incomplete(payload: PayloadTarget) -> bool:
     """当前载荷里 runner 要用的 MaaFramework 原生库缺依赖、真加载也失败（判断不了算没坏）。"""
 
     try:
-        from app.task.MaaFW.tools.core.runner.environment import (
+        from app.task.MaaFW.tools.core.native.project_runtime import (
             project_runtime_broken,
         )
 

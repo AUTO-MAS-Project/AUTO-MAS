@@ -21,11 +21,21 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
   `default_snapshot`、`env_confirm`、`update_session`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
-- `tools/core/`：六个核心包（interface / runner / runtime_pool / agent_env /
+- `tools/core/`：七个核心包（interface / native / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
   `project_update/updater.py` 引了 `app.utils.constants`，以及 `project_update` 里的 `projection_heal` /
   `range_delta` 用宿主 `app.utils.common.zip_range` 的区间读取器（`RangeHTTPReader`、
   `RangeSpeedGuard`，没有 MFW 语义，MaaEnd 也直接用）——都只在宿主进程里跑；不要再加新的。
+- **原生库识别库 `tools/core/native/`**（将来的库 `maafw_native`）：只看项目目录，认项目自带的
+  MaaFramework 原生库——原生库目录在哪与取最高版本、读版本、PE 架构与导入表、能否在本机加载、
+  缺依赖 / 完整 / 损坏、架构不符的描述（`project_runtime`、`pe`），项目对 maafw 的版本需求
+  （`requirement`、`versions`），本机架构（`architecture`）、`requirements.txt` 解析、
+  离线依赖材料（`offline_dependencies`，本库不用、agent 环境与项目更新共用）与 `data/mfw`
+  这类目录布局常量（`layout`）。**依赖方向只能是别人导入它**：它只用标准库、`packaging` 与本库
+  模块，不导入 runner / agent_env / runtime_pool / project_update / 宿主（函数体里的延迟导入
+  也不行）。运行池的 `binding.py` 反过来从这里取
+  `normalize_version` / `exact_version_of` / `MaaFWBindingError`。给 agent 起动钉 maafw、拼 pip
+  约束的函数不是「识别」，在 `agent_env/pip_constraint.py`。
 - **worker 子进程**（`runner/worker.py`）以 `python -m` 启动，其导入闭包内的
   `app.*` 只能落在 `app.task.MaaFW.tools.core.` 之下，由
   `tests/task/test_maafw_core.py` 钉死。v5.5.0-beta.4 全员 MFW 挂掉，
@@ -188,7 +198,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   - **运行时**：裸 `python` → 隔离 venv（按视图根的 `requirements.txt`，见下面「隔离 venv 跨视图共用」）；没自带原生库 →
     runner 按声明（范围）解析出确切版本，agent 的 maafw 钉成**同一个确切版本**（宿主准备时传
     `environment.maafw_version`，worker 传实际加载的 binding 版本，见
-    `runner.environment.resolve_project_maafw_requirement(runner_maafw_version=…)`）——照抄范围让 pip
+    `native.requirement.resolve_project_maafw_requirement(runner_maafw_version=…)`）——照抄范围让 pip
     自己挑会落到协议不同的版本上。这条对**所有没自带原生库的项目**都成立，不限源码形态（没自带
     `maafw/` 的发行包以前照抄范围，升级后依赖哈希变了，会重建一次隔离 venv）；自带原生库（确切版本）
     的项目不受影响。
@@ -357,7 +367,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   静默失败、任务照报成功）：worker 起 Python agent（`project_python` / `isolated_venv`）时给它的环境挂
   `PIP_CONSTRAINT` / `UV_CONSTRAINT`（`runner._inject_agent_pip_constraint`），约束文件
   `data/maafw_agent_constraints/maafw_agent_<路径哈希>.txt` 只写 `maafw==<与钉回同一来源的版本>`
-  （`environment.agent_maafw_pip_constraint`）。三条别改错：**项目自己钉了 maafw 就不挂**
+  （`agent_env.pip_constraint.agent_maafw_pip_constraint`）。三条别改错：**项目自己钉了 maafw 就不挂**
   （requirements.txt / pyproject `[project].dependencies` 的确切版本、离线目录里的 `maafw-*.whl`，或声明
   的范围不含该版本）——M9A 钉 5.12.3 而自带库 5.13.0、MaaStarResonance 钉 5.12.1 而自带库 5.11.1，
   挂上约束它们的自装直接 ResolutionImpossible。「自钉」**只认这三处**（根 requirements.txt 及其 `-r`

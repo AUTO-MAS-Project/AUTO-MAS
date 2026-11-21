@@ -54,9 +54,11 @@ from pathlib import Path
 from typing import Any
 
 from app.models.config import MaaFWConfig
+from app.task.MaaFW.tools.core.native.requirement import (
+    resolve_project_maafw_requirement,
+)
 from app.task.MaaFW.tools.core.runner.environment import (
     describe_runner_runtime_selection,
-    resolve_project_maafw_requirement,
 )
 from app.task.MaaFW.tools.core.runtime_pool import MaaFWRuntimePoolService
 from app.task.MaaFW.tools.core.runtime_pool.binding import (

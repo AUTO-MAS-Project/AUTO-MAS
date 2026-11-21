@@ -12,7 +12,7 @@ from typing import Any
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 
-from .architecture import runtime_identity_architecture
+from ..native.architecture import runtime_identity_architecture
 
 IDENTITY_SCHEMA_VERSION = 1
 RUNTIME_ID_PREFIX = "maafw-runtime-"

@@ -21,11 +21,11 @@ from app.task.MaaFW.tools.core.runtime_pool import (
     RuntimeInstaller,
 )
 
+from ..native.project_runtime import probe_bundled_maafw_version
 from .environment import (
     DEFAULT_RUNTIME_LEASE_TTL_SECONDS,
     MaaFWRunnerEnvironment,
     prepare_runner_environment,
-    probe_bundled_maafw_version,
     release_runner_environment,
 )
 from .models import (

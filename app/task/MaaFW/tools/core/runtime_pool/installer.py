@@ -21,12 +21,12 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
-from ._shared import mask_url_credentials, output_tail
-from .architecture import (
+from ..native.architecture import (
     architecture_from_build_platform,
     runtime_identity_architecture,
     supported_architecture_target,
 )
+from ._shared import mask_url_credentials, output_tail
 from .host_environment import strip_host_python_environment
 from .identity import (
     find_maafw_requirement,

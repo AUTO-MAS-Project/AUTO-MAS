@@ -4,8 +4,8 @@ MFW 里凡是和本机架构有关的选择（Mirror 酱的 arch、GitHub 资产
 uv 装哪种解释器、运行池身份）都从这里取。MFW 目前只适配 x64：别的架构（含 32 位）
 一律给「MaaFW 目前只支持 x64」，不悄悄按 x64 去选包。
 
-只用标准库，放在运行池这一层是为了让 runtime_pool / project_update 能在模块层导入；
-``runner.environment`` 原样转出这里的公开名字。
+只用标准库，放在原生库识别库（``native``）里，运行池、agent 环境、项目更新与 runner
+都从这里导入，本模块不导入它们。
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ def host_architecture() -> str:
 
 #: MFW 目前只适配 x64。非 x64 的进程 / 运行池解释器一律按「不支持」提示，不按 x64 去选包。
 SUPPORTED_ARCHITECTURE = "x64"
-#: 「只支持 x64」提示里一定有它；也在 ``runner.environment.ARCHITECTURE_MISMATCH_MARKERS``
+#: 「只支持 x64」提示里一定有它；也在 ``native.project_runtime.ARCHITECTURE_MISMATCH_MARKERS``
 #: 里，宿主据此不重试。
 UNSUPPORTED_ARCHITECTURE_MARKER = "MaaFW 目前只支持 x64"
 

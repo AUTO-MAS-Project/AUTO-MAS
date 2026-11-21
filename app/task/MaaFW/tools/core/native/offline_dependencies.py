@@ -9,7 +9,8 @@
   MaaStarResonance：``pip install -r requirements.txt`` / ``get-pip.py`` + ``deps/*.whl``），
   照常起 agent，由它自己装（MFAA / MXU 对这类项目也是这样）。
 
-放在 ``tools/core`` 根下而不是 ``project_update``：agent 环境准备在 worker 的导入闭包里，
+放在原生库识别库（``native``）里而不是 ``project_update`` / ``agent_env``：本库自己不用它，
+但两边都要用，放在共用的库里两边才都只指向库；agent 环境准备在 worker 的导入闭包里，
 ``project_update`` 包的初始化会引到宿主模块（见 MaaFW/AGENTS.md）。只依赖标准库。
 """
 

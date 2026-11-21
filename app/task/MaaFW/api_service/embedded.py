@@ -696,7 +696,7 @@ def _view_architecture_warnings(view: Path, source: Path | None) -> list[str]:
     ``nativePluginPaths`` 优先，缺省 ``plugins/``）。
     """
 
-    from app.task.MaaFW.tools.core.runner.environment import (
+    from app.task.MaaFW.tools.core.native.project_runtime import (
         describe_plugin_architecture_mismatch,
         describe_project_runtime_architecture_mismatch,
     )

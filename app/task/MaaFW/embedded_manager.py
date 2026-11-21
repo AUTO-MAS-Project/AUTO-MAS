@@ -270,8 +270,7 @@ def describe_update_result(
 def describe_unsupported_host() -> str | None:
     """本机进程不是 x64 时的「MaaFW 目前只支持 x64」提示；是 x64 时 None。"""
 
-    # 与下面同理：runner.environment 会拉起运行池，只在检查时导入。
-    from app.task.MaaFW.tools.core.runner.environment import (
+    from app.task.MaaFW.tools.core.native.architecture import (
         describe_unsupported_architecture,
     )
 

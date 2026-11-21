@@ -44,11 +44,19 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import SpecifierSet
-from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
+from ..native.architecture import (
+    MaaFWUnsupportedArchitectureError,
+    supported_architecture_target,
+)
+from ..native.versions import (
+    MaaFWBindingError,
+    exact_version_of,
+    normalize_version,
+    parse_maafw_requirement,
+)
 from ._shared import (
     MaaFWRuntimePoolError,
     assert_existing_chain_has_no_reparse,
@@ -62,10 +70,6 @@ from ._shared import (
     remove_tree_best_effort,
     utc_now,
     write_json_atomic,
-)
-from .architecture import (
-    MaaFWUnsupportedArchitectureError,
-    supported_architecture_target,
 )
 from .binding_fallback import (
     BINDING_SOURCE_PREFIX,
@@ -121,10 +125,6 @@ _VERIFIED_CACHE_GUARD = threading.Lock()
 _VERIFIED_CACHE: dict[str, tuple[int, dict[str, Any], dict[str, tuple[int, int]]]] = {}
 
 
-class MaaFWBindingError(RuntimeError):
-    """binding / native 目录准备失败。文案面向用户，调用方原样带出。"""
-
-
 class MaaFWBindingUnavailableError(MaaFWBindingError):
     """索引上确实没有这个版本（或离线且本地没有）——不是网络故障。"""
 
@@ -158,14 +158,6 @@ class BindingInfo:
 # ---------------------------------------------------------------------------
 # 路径与版本
 # ---------------------------------------------------------------------------
-
-
-def normalize_version(value: Any) -> str:
-    text = str(value or "").strip()
-    try:
-        return str(Version(text))
-    except InvalidVersion as exc:
-        raise MaaFWBindingError(f"maafw 版本不合法: {value!r}") from exc
 
 
 def binding_directory(pool_root: Path, version: str) -> Path:
@@ -721,30 +713,7 @@ def binding_index_candidates() -> list[str] | None:
     return resolve_package_index_candidates()
 
 
-def parse_maafw_requirement(requirement: str) -> Requirement:
-    try:
-        parsed = Requirement(str(requirement).strip())
-    except InvalidRequirement as exc:
-        raise MaaFWBindingError(f"maafw requirement 不合法: {requirement!r}") from exc
-    if canonicalize_name(parsed.name) != "maafw":
-        raise MaaFWBindingError(f"requirement 必须约束 maafw: {requirement!r}")
-    return parsed
-
-
-def exact_version_of(requirement: str) -> str | None:
-    """``maafw==5.13.0`` → ``5.13.0``；范围 / 无约束 → None。"""
-
-    parsed = parse_maafw_requirement(requirement)
-    specifiers = list(parsed.specifier)
-    if len(specifiers) != 1 or specifiers[0].operator not in {"==", "==="}:
-        return None
-    value = specifiers[0].version.strip()
-    if not value or "*" in value:
-        return None
-    return normalize_version(value)
-
-
-#: runner 侧 import 了 ``maa.event_sink``，5.0.0 才有（见 runner/environment.py 的说明）；
+#: runner 侧 import 了 ``maa.event_sink``，5.0.0 才有（见 native/project_runtime.py 的说明）；
 #: 范围 / 无约束声明做版本选择时把它当隐式下限，精确钉住的不动。
 RUNNER_MINIMUM_MAAFW_VERSION = Version("5.0.0")
 
@@ -2037,7 +2006,6 @@ __all__ = [
     "BindingInfo",
     "IndexPage",
     "MaaFWBindingDownloadError",
-    "MaaFWBindingError",
     "MaaFWBindingNetworkError",
     "MaaFWBindingUnavailableError",
     "WheelLink",
@@ -2048,14 +2016,12 @@ __all__ = [
     "binding_index_candidates",
     "directory_version",
     "ensure_binding",
-    "exact_version_of",
     "fetch_index_page",
     "harvest_binding",
     "list_local_bindings",
     "manifest_last_used",
     "mask_url_credentials",
     "native_directory",
-    "normalize_version",
     "parse_simple_page",
     "prune_selections",
     "pool_pycache_prefix",

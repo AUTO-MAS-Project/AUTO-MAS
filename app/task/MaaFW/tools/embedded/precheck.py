@@ -128,7 +128,7 @@ def _resolve_requirement(project_path: Path) -> str | None:
     try:
         # 要读项目自带的 DLL，逻辑在 runner 包里；它会拉起 runtime_pool，
         # 所以只在真要写备忘时才导入。
-        from app.task.MaaFW.tools.core.runner.environment import (
+        from app.task.MaaFW.tools.core.native.requirement import (
             resolve_project_maafw_requirement,
         )
 
@@ -155,7 +155,7 @@ def check_staging_native_runtime(root: Path, send_log: Callable[[str], None]) ->
     if os.name != "nt":
         return
     try:
-        from app.task.MaaFW.tools.core.runner.environment import (
+        from app.task.MaaFW.tools.core.native.project_runtime import (
             NATIVE_LOAD_FAILED,
             NATIVE_LOAD_OK,
             probe_native_runtime_load,

@@ -45,6 +45,9 @@ from app.services import execute_script_task
 from app.task.client import ClientProcess, client_executable_path, client_launcher_path
 from app.task.emulator_core import close_emulator, resolve_host_adb
 from app.task.game import game_device_id, game_is_emulator, game_target_id
+from app.task.MaaFW.tools.core.agent_env.pip_constraint import (
+    AGENT_PIP_CONSTRAINT_DIR_ENV,
+)
 from app.task.MaaFW.tools.core.controller_win32.service import (
     MaaFWWin32ControllerService,
     MaaFWWin32Window,
@@ -61,11 +64,12 @@ from app.task.MaaFW.tools.core.interface.preview import (
 from app.task.MaaFW.tools.core.interface.service import (
     MaaFWInterfaceService,
 )
-from app.task.MaaFW.tools.core.runner.environment import (
-    AGENT_PIP_CONSTRAINT_DIR_ENV,
+from app.task.MaaFW.tools.core.native.project_runtime import (
     ARCHITECTURE_MISMATCH_MARKERS,
-    MaaFWRunnerEnvironment,
     describe_project_runtime_architecture_mismatch,
+)
+from app.task.MaaFW.tools.core.runner.environment import (
+    MaaFWRunnerEnvironment,
 )
 from app.task.MaaFW.tools.core.runner.models import (
     MaaFWDeviceConfig,

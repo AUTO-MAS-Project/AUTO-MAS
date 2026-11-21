@@ -48,7 +48,7 @@ SOURCE_ROOT = Path(__file__).resolve().parents[2]
 
 WORKER_MODULE = "app.task.MaaFW.tools.core.runner.worker"
 
-#: worker 允许触达的 ``app.*`` 范围：MaaFW 运行器与它的同层工具包。
+#: worker 允许触达的 ``app.*`` 范围：MaaFW 运行器与它的同层工具包（含原生库识别库 ``native``）。
 ALLOWED_PREFIX = "app.task.MaaFW.tools.core."
 
 
@@ -452,7 +452,7 @@ def test_agent_maafw_is_pinned_to_bundled_runtime(
     from app.task.MaaFW.tools.core.agent_env.env import (
         _load_project_agent_requirements,
     )
-    from app.task.MaaFW.tools.core.runner.environment import (
+    from app.task.MaaFW.tools.core.agent_env.pip_constraint import (
         pin_agent_maafw_requirement,
     )
 

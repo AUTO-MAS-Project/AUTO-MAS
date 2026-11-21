@@ -70,19 +70,21 @@ from app.task.MaaFW.tools.core.agent_env import (
     write_agent_compat_shims,
 )
 from app.task.MaaFW.tools.core.agent_env.env import AGENT_PROGRAM_MISSING_HINT
-from app.task.MaaFW.tools.core.log_redact import mask_home_path
-from app.task.MaaFW.tools.core.runner.environment import (
+from app.task.MaaFW.tools.core.agent_env.pip_constraint import (
     AGENT_PIP_CONSTRAINT_DIR_ENV,
-    _read_runtime_maafw_version,
     agent_maafw_pip_constraint,
     apply_agent_pip_constraint,
+    write_agent_pip_constraint,
+)
+from app.task.MaaFW.tools.core.log_redact import mask_home_path
+from app.task.MaaFW.tools.core.native.architecture import host_architecture
+from app.task.MaaFW.tools.core.native.pe import detect_pe_architecture
+from app.task.MaaFW.tools.core.native.project_runtime import (
     describe_runtime_architecture_mismatch,
-    detect_pe_architecture,
-    host_architecture,
     host_runtime_rid_dirs,
     project_maafw_runtime_path,
+    read_runtime_maafw_version,
     runtime_missing_dependencies,
-    write_agent_pip_constraint,
 )
 from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     set_project_pycache_prefix,
@@ -965,7 +967,7 @@ def _describe_native_load_failure(
             location = runtime_path.relative_to(project_path).as_posix() or "."
         except ValueError:
             location = mask_home_path(str(runtime_path))
-    version = _read_runtime_maafw_version(runtime_path) or "版本未知"
+    version = read_runtime_maafw_version(runtime_path) or "版本未知"
     missing = runtime_missing_dependencies(runtime_path)
     if missing:
         detail = f"目录里缺少依赖：{'、'.join(missing)}"
@@ -2907,8 +2909,8 @@ class MaaFWRunner:
         runner_runtime = runner_maafw_runtime_path(project_path)
         if runner_runtime is None or _same_directory(runner_runtime, agent_runtime):
             return
-        agent_version = _read_runtime_maafw_version(agent_runtime)
-        runner_version = _read_runtime_maafw_version(runner_runtime)
+        agent_version = read_runtime_maafw_version(agent_runtime)
+        runner_version = read_runtime_maafw_version(runner_runtime)
         if not agent_version or not runner_version or agent_version == runner_version:
             return
         try:

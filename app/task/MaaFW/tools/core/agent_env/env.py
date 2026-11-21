@@ -17,7 +17,13 @@ from packaging.version import InvalidVersion, Version
 
 from ..interface.agent_entry import describe_uv_agent, is_uv_launcher
 from ..log_redact import mask_home_path
-from ..offline_dependencies import describe_self_install_materials
+from ..native.layout import EMBEDDED_COPIES_DIR_PARTS
+from ..native.offline_dependencies import describe_self_install_materials
+from ..native.requirement import resolve_project_maafw_requirement
+from ..native.requirements_file import (
+    RequirementsFileError,
+    read_requirements_file,
+)
 from ..runtime_pool import runtime_managed_uv_executable
 from ..runtime_pool._shared import (
     mask_url_credentials,
@@ -25,7 +31,6 @@ from ..runtime_pool._shared import (
     remove_tree_best_effort,
 )
 from ..runtime_pool.host_environment import (
-    EMBEDDED_COPIES_DIR_PARTS,
     set_project_pycache_prefix,
     strip_host_python_environment,
 )
@@ -33,12 +38,9 @@ from ..runtime_pool.installer import (
     is_package_index_offline,
     resolve_package_index_candidates,
 )
-from ..runtime_pool.requirements_file import (
-    RequirementsFileError,
-    read_requirements_file,
-)
 from ..worker_protocol import DETAIL_LOG_PREFIX
 from .models import MaaFWAgentCommandPlan, MaaFWAgentEnvPrepareResult
+from .pip_constraint import pin_agent_maafw_requirement
 from .planner import MaaFWAgentEnvError, venv_base_python_missing, venv_python_exe
 from .venv_share import (
     VENV_TRASH_MARKER,
@@ -94,7 +96,7 @@ def prepare_agent_envs(
 
     ``runner_maafw_version``：runner 这次实际用的 maafw 版本（宿主备完 runner 环境后、worker
     从 job 的 ``PI_CLIENT_MAAFW_VERSION`` 取）。项目没自带原生库时隔离 venv 里的 maafw 钉成它
-    （见 ``runner.environment.resolve_project_maafw_requirement``），两侧才不会落到协议不同的
+    （见 ``native.requirement.resolve_project_maafw_requirement``），两侧才不会落到协议不同的
     版本上；自带原生库的项目钉的本来就是确切版本，不受影响。
 
     ``lenient_health_check``：项目自带 Python 的健康检查「报错照跑」，只给运行时传（worker 起
@@ -582,7 +584,7 @@ def _repin_project_python_binding(
     返回装完之后 binding 是否与原生库同版本（没动手、动手失败都是 False）。
     """
 
-    from app.task.MaaFW.tools.core.runner.environment import (
+    from app.task.MaaFW.tools.core.native.project_runtime import (
         probe_bundled_maafw_version,
     )
 
@@ -1144,13 +1146,6 @@ def _write_isolated_venv_manifest(
 def _load_project_agent_requirements(
     project_path: Path, *, runner_maafw_version: str | None = None
 ) -> list[str]:
-    # 延迟导入：``runner`` 的包初始化会 import ``run_plan``，而
-    # ``run_plan`` 反过来 import 本包，写成模块级导入会成环。
-    from app.task.MaaFW.tools.core.runner.environment import (
-        pin_agent_maafw_requirement,
-        resolve_project_maafw_requirement,
-    )
-
     # 清单逐条当独立参数交给 pip / uv（没有 -r 那一层），所以按 pip 的规则先洗一遍：
     # BOM、行内注释、续行、整行选项与 --hash 都会让原样照抄的那一条装不上。
     try:
@@ -1272,7 +1267,7 @@ def project_python_agent_binary_path(
     if not _bundled_maa_bin_missing(python_exe):
         return None
 
-    from app.task.MaaFW.tools.core.runner.environment import (
+    from app.task.MaaFW.tools.core.native.project_runtime import (
         project_maafw_runtime_path,
     )
 

@@ -264,7 +264,7 @@ async def _heal_projection(
     """手动检查更新前，旧投影规则建的载荷按当前规则补齐一次（与运行前同一条路，同组只查
     一次）。运行中、项目被占用或同项目正在更新时这次不查；失败只记日志，不影响检查。"""
 
-    from app.task.MaaFW.tools.core.runtime_pool.architecture import (
+    from app.task.MaaFW.tools.core.native.architecture import (
         SUPPORTED_ARCHITECTURE,
         host_architecture,
     )
@@ -899,7 +899,7 @@ async def query_mirror_cdk(script_id: str, cdk: str) -> MaaFWApiReply:
     if rid:
         status = "absent"
         if cdk.strip():
-            from app.task.MaaFW.tools.core.runtime_pool.architecture import (
+            from app.task.MaaFW.tools.core.native.architecture import (
                 supported_architecture_target,
             )
 

@@ -63,6 +63,12 @@ from pathlib import Path
 from typing import Any
 
 from app.task.MaaFW.tools.core.log_redact import mask_home_path
+from app.task.MaaFW.tools.core.native.layout import (
+    EMBEDDED_COPIES_DIR_PARTS,
+    EMBEDDED_PAYLOADS_DIR_NAME,
+    EMBEDDED_SWITCH_DIR_NAME,
+    PROJECT_PYCACHE_DIR_NAME,
+)
 from app.task.MaaFW.tools.core.project_update import payloads
 from app.task.MaaFW.tools.core.project_update.apply import (
     project_state_dir_for,
@@ -90,12 +96,6 @@ from app.task.MaaFW.tools.core.project_update.release_check import (
     STAGE_IMPORT,
     ReleaseVerdict,
     verify_tree,
-)
-from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
-    EMBEDDED_COPIES_DIR_PARTS,
-    EMBEDDED_PAYLOADS_DIR_NAME,
-    EMBEDDED_SWITCH_DIR_NAME,
-    PROJECT_PYCACHE_DIR_NAME,
 )
 from app.task.MaaFW.tools.embedded.project_path import (
     release_project_path_sync,

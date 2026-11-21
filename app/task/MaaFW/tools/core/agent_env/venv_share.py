@@ -202,11 +202,11 @@ def shared_venv_key_inputs(
     它们的键与加这条规则前逐字一致（不加字段），已建好的共用目录照常命中。
     """
 
-    # 延迟导入：env 在模块级 import planner，planner 在模块级 import 本模块。
-    from app.task.MaaFW.tools.core.runner.environment import (
+    from app.task.MaaFW.tools.core.native.requirement import (
         resolve_project_maafw_requirement,
     )
 
+    # 延迟导入：env 在模块级 import planner，planner 在模块级 import 本模块。
     from .env import _load_project_agent_requirements
 
     project = Path(project_path).resolve()

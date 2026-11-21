@@ -75,7 +75,7 @@ from ..interface.agent_entry import (
     is_relative_entry_path,
     is_uv_launcher,
 )
-from ..offline_dependencies import is_offline_dependency_file
+from ..native.offline_dependencies import is_offline_dependency_file
 from .blob_store import LINK_MIN_BYTES, RuntimeBlobStore, place_fresh
 
 MAX_REPORT_ITEMS = 128
@@ -2112,7 +2112,7 @@ def _projected_bundled_maafw_version(
     MaaFramework 报进导入报告，而它根本不进副本（超过 64 MB 的 ``dist/`` 不带）。
     """
 
-    from app.task.MaaFW.tools.core.runner.environment import (
+    from app.task.MaaFW.tools.core.native.project_runtime import (
         project_maafw_runtime_path,
     )
 
@@ -2666,11 +2666,11 @@ def _mixed_native_runtime_warning(project_root: Path) -> str | None:
     别的架构投影时本来就剔掉。版本读不出来的不参与「版本不同」的判断。
     """
 
-    from app.task.MaaFW.tools.core.runner.environment import (
+    from app.task.MaaFW.tools.core.native.project_runtime import (
         PROJECT_MAAFW_DLL_NAME,
-        _read_runtime_maafw_version,
         host_runtime_rid_dirs,
         project_maafw_runtime_path,
+        read_runtime_maafw_version,
     )
 
     candidates = [project_root / "maafw"]
@@ -2678,7 +2678,7 @@ def _mixed_native_runtime_warning(project_root: Path) -> str | None:
         candidates.extend((rid / "native", rid))
     candidates.append(project_root)
     found = [
-        (directory, _read_runtime_maafw_version(directory))
+        (directory, read_runtime_maafw_version(directory))
         for directory in candidates
         if (directory / PROJECT_MAAFW_DLL_NAME).is_file()
     ]
@@ -2699,7 +2699,7 @@ def _mixed_native_runtime_warning(project_root: Path) -> str | None:
     chosen = project_maafw_runtime_path(project_root)
     used = ""
     if chosen is not None:
-        version = versions.get(chosen) or _read_runtime_maafw_version(chosen)
+        version = versions.get(chosen) or read_runtime_maafw_version(chosen)
         used = f"运行时用 {label(chosen)}（{version or '版本未知'}），"
     return (
         f"检测到混装的 MaaFramework 原生库目录：{listed}。{used}"
@@ -2721,7 +2721,7 @@ def _bundled_native_runtime_dir(
     本机那一种不在才退回别的（运行前会按架构不符报出来）。
     """
 
-    from app.task.MaaFW.tools.core.runner.environment import (
+    from app.task.MaaFW.tools.core.native.project_runtime import (
         project_maafw_runtime_path,
     )
 
@@ -2764,7 +2764,7 @@ def _bundled_architecture_warnings(
     ``_bundled_native_runtime_dir`` 选 ``runtimes/<rid>`` 同一个近似。
     """
 
-    from app.task.MaaFW.tools.core.runner.environment import (
+    from app.task.MaaFW.tools.core.native.project_runtime import (
         describe_plugin_architecture_mismatch,
         describe_runtime_architecture_mismatch,
     )
@@ -2817,9 +2817,9 @@ def probe_bundled_python_version(root: Path, rules: ProjectionRules) -> str | No
 
 
 def probe_bundled_maafw_version(root: Path) -> str | None:
-    """来源（或更新包）自带 MaaFramework 原生库的版本；探测逻辑与 runner 共用。"""
+    """来源（或更新包）自带 MaaFramework 原生库的版本；探测逻辑在原生库识别库（``native.project_runtime``）。"""
 
-    from app.task.MaaFW.tools.core.runner.environment import (
+    from app.task.MaaFW.tools.core.native.project_runtime import (
         probe_bundled_maafw_version as _probe,
     )
 
