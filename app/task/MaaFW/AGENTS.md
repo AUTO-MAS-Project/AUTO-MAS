@@ -19,8 +19,20 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
 - `tools/embedded/`：宿主与核心包之间**唯一**的接缝（`runner_task`、`runtime_route`、
   `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
   `update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
-  `default_snapshot`、`env_confirm`、`update_session`）。
+  `default_snapshot`、`env_confirm`、`update_session`、`device_config`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
+- **设备配置与首任务闸门在 `tools/embedded/device_config.py`**（将来是运行这一块对外的「设备配置」调用，
+  三个专项各自的流程都调它）：游戏包名、adb 路径（含「宿主没定下路径时问 Toolkit」，判据由调用方算好
+  `ask_toolkit` 传入）、MuMu / 雷电 / ModAVD 的控制档案、截图与输入方式位掩码、adb 就绪超时、Win32
+  的窗口句柄与截图 / 鼠标 / 键盘方式、`task_start_gate`（最早下发时刻 + `disk_quiet` / `screen`）。
+  参数是模拟器 uid、配置里的原值和 interface 的控制器模型；要模拟器能力时按 uid 调宿主的设备入口
+  （`app.task.game.BoundEmulator`，参数名 `emulator`）。**不导入任务类、不读脚本配置**，缓存归调用方
+  （`MaaFWAdbDeviceState`，关模拟器时 `forget_emulator_launch`，adb 路径不清）。开关模拟器、桌面游戏
+  启停、登录与游戏更新钩子、起 worker 都不在这里；ModAVD 的 MaaFramework 版本门槛也不在这里（要借到
+  运行环境才知道版本），留在 `runner_task._check_avd_runtime_version`。`mumu_maafw_adb_extra` /
+  `ldplayer_maafw_adb_extra` 与 SDK 的 `maafw_adb_extra` 同形，是为以后交给各自的模拟器适配插件准备的
+  （ModAVD 已经这样做了）。按 interface 窗口规则匹配窗口仍在 `tools/core/controller_win32`（解析一侧，
+  只依赖 `interface`）。
   接缝模块按将来的积木归属分好了，**agent 环境一侧**的接缝（`pool_reconcile`、`env_cache`、
   `env_trial`）只收普通数据（项目路径集合、被替换的版本、待验证的目录），不读脚本配置、不导入
   `embedded_project` / `project_path` 这类项目更新一侧的模块；「哪些项目还在」由项目更新一侧算
@@ -617,7 +629,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   游戏冷启动（进程原本不在，`DeviceInfo.app_launch == "launched"`，见 `emulator2/applaunch.py`），从拉起
   完成起算；游戏进程已在（在前台 `already-running`、从后台切回前台 `resumed`）、没认出包名、拉起失败
   都不等。宿主把「最早可下发时刻」写进 job
-  （`taskStartNotBefore`），worker 在资源 / controller / agent 初始化完成后每秒截一帧，两条提前
+  （`taskStartNotBefore`，与 `taskStartGateMode` 一起由 `device_config.task_start_gate` 算），worker 在资源 / controller / agent 初始化完成后每秒截一帧，两条提前
   放行：连续 5s 画面没变（静态登录页）；或连续 20s 有内容哪怕一直在动（`runner.py` 的
   `STARTUP_SCREEN_CONTENT_SECONDS`）。黑屏 / 纯色把两个计数都清零，截不到图就等满上限。
   游戏早就在跑、重试轮次、AttachOnly 都不等。真机数据（2026-09-19）：终末地主界面每秒 3~6%
