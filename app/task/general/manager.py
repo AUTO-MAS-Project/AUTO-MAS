@@ -74,76 +74,48 @@ class GeneralManager(ScriptManagerBase):
         # 同步时不能直接带入依赖 task_info.plan_id/plan_day 的旧执行分支。
         if self.execution_mode not in METHOD_BOOK:
             return "不支持的任务模式, 请检查任务配置！"
-        if not isinstance(
-            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], GeneralConfig
-        ):
+        config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        if not isinstance(config, GeneralConfig):
             return "托管配置类型错误, 不是通用托管类型"
-        if not Config.ScriptConfig[
-            uuid.UUID(self.script_info.script_id)
-        ].Script.ScriptPath:
+        script, game = config.Script, config.Game
+        if not script.ScriptPath:
             return "未填写脚本路径, 请检查托管配置中的脚本路径设置！"
-        if (
-            Config.ScriptConfig[
-                uuid.UUID(self.script_info.script_id)
-            ].Script.IfTrackProcess
-            and (
-                not Config.ScriptConfig[
-                    uuid.UUID(self.script_info.script_id)
-                ].Script.TrackProcessName
-            )
-            and (
-                not Config.ScriptConfig[
-                    uuid.UUID(self.script_info.script_id)
-                ].Script.TrackProcessExe
-            )
-            and (
-                not Config.ScriptConfig[
-                    uuid.UUID(self.script_info.script_id)
-                ].Script.TrackProcessCmdline
-            )
+        if script.IfTrackProcess and not (
+            script.TrackProcessName
+            or script.TrackProcessExe
+            or script.TrackProcessCmdline
         ):
             return "开启追踪子进程后, 需至少填写一项追踪进程信息！"
         # 配置路径为空时 Path("") 等价于 Path(".")，后续的快照与清理会落到
         # 程序自身的工作目录上，必须在任务开始前拦下
-        if not Config.ScriptConfig[
-            uuid.UUID(self.script_info.script_id)
-        ].Script.ConfigPath:
+        if not script.ConfigPath:
             return "未填写配置路径, 请检查托管配置中的配置路径设置！"
+        # 路径类型与模式不符属于确定性配置错误，在这里一次性判掉；运行期只再问
+        # 「该路径此刻是否存在」（那是脚本进程的领地，只能就地判断，不能预判）。
+        if script.ConfigPath.exists():
+            mismatch = (
+                script.ConfigPathMode == "Folder" and not script.ConfigPath.is_dir()
+            ) or (script.ConfigPathMode == "File" and not script.ConfigPath.is_file())
+            if mismatch:
+                return (
+                    f"配置路径与模式不符: 当前为{script.ConfigPathMode}, "
+                    f"但 {script.ConfigPath} 不是对应的类型, "
+                    "请检查托管配置中的配置路径设置！"
+                )
         # 日志路径未填时每轮尝试都会白等 60 秒日志文件再失败, 属于确定性配置错误,
         # 在任务开始前拦下; 目录不存在不在这里拦, 有的脚本首次运行才创建日志目录
-        if not Config.ScriptConfig[
-            uuid.UUID(self.script_info.script_id)
-        ].Script.LogPath:
+        if not script.LogPath:
             return "未填写日志路径, 请检查托管配置中的日志路径设置！"
-        if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Game.Enabled:
-            game_path = client_executable_path(
-                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
-            )
-            if Config.ScriptConfig[
-                uuid.UUID(self.script_info.script_id)
-            ].Game.Type == "Emulator" and (
-                game_target_id(
-                    Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
-                )
-                == "-"
-                or game_device_id(
-                    Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
-                )
-                in ["", "-"]
+        if game.Enabled:
+            if game.Type == "Emulator" and (
+                game_target_id(config) == "-" or game_device_id(config) in ["", "-"]
             ):
                 return "未完成模拟器配置, 请检查托管配置中的模拟器设置！"
-            elif Config.ScriptConfig[
-                uuid.UUID(self.script_info.script_id)
-            ].Game.Type == "Client" and (game_path is None or not game_path.exists()):
-                return "未完成游戏配置, 请检查托管配置中的游戏设置！"
-            elif Config.ScriptConfig[
-                uuid.UUID(self.script_info.script_id)
-            ].Game.Type == "URL" and (
-                not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Game.URL
-                or not Config.ScriptConfig[
-                    uuid.UUID(self.script_info.script_id)
-                ].Game.ProcessName
-            ):
+            elif game.Type == "Client":
+                game_path = client_executable_path(config)
+                if game_path is None or not game_path.exists():
+                    return "未完成游戏配置, 请检查托管配置中的游戏设置！"
+            elif game.Type == "URL" and not (game.URL and game.ProcessName):
                 return "未完成URL配置, 请检查托管配置中的URL和进程名称设置！"
 
         return "Pass"
@@ -245,12 +217,9 @@ class GeneralManager(ScriptManagerBase):
         """运行前准备"""
 
         # 锁定脚本配置并加载账号配置
-        self.config_locks[
-            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].uid
-        ] = await self.lock_script_config(
-            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
-        )
-        self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        self.config_locks[config.uid] = await self.lock_script_config(config)
+        self.script_config = config
         self.user_config = self.script_config.UserData
         logger.success(f"{self.script_info.script_id}已锁定, 通用托管配置提取完成")
 
@@ -260,21 +229,15 @@ class GeneralManager(ScriptManagerBase):
         self.script_config_path = script_config_path
         self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
 
-        if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Game.Enabled:
-            if (
-                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Game.Type
-                == "Emulator"
-            ):
+        if self.script_config.Game.Enabled:
+            if self.script_config.Game.Type == "Emulator":
                 device_provider = (
                     self._device_provider or GameManager.get_emulator_instance
                 )
                 self.emulator_manager = await device_provider(
                     game_target_id(self.script_config)
                 )
-
-            elif Config.ScriptConfig[
-                uuid.UUID(self.script_info.script_id)
-            ].Game.Type in ["Client", "URL"]:
+            elif self.script_config.Game.Type in ["Client", "URL"]:
                 self.game_process_manager = ClientProcess()
 
         # 构建账号列表
@@ -326,9 +289,6 @@ class GeneralManager(ScriptManagerBase):
 
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await self.prepare()
-
-        if not isinstance(self.script_config, GeneralConfig):
-            raise RuntimeError("托管配置类型错误, 不是通用托管类型")
 
         for _runtime_user_index in range(len(self.script_info.user_list)):
             await self.script_info.set_current_index(_runtime_user_index)

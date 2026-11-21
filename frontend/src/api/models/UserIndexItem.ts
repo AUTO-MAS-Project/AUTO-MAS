@@ -20,7 +20,6 @@ export namespace UserIndexItem {
         GENERAL_USER_CONFIG = 'GeneralUserConfig',
         OKWW_USER_CONFIG = 'OkwwUserConfig',
         OK_NTE_USER_CONFIG = 'OkNteUserConfig',
-        SRC_USER_CONFIG = 'SrcUserConfig',
         MAA_END_USER_CONFIG = 'MaaEndUserConfig',
         M9AUSER_CONFIG = 'M9AUserConfig',
         MAA_FWUSER_CONFIG = 'MaaFWUserConfig',
@@ -31,6 +30,7 @@ export namespace UserIndexItem {
         MSSUSER_CONFIG = 'MSSUserConfig',
         MAA_USER_CONFIG = 'MaaUserConfig',
         WHIMBOX_USER_CONFIG = 'WhimboxUserConfig',
+        SRC_USER_CONFIG = 'SrcUserConfig',
     }
 }
 

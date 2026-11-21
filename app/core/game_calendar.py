@@ -28,7 +28,6 @@ SCRIPT_CALENDAR_GAMES = {
     CLASS_BOOK[script]: game
     for script, game in {
         "MaaEnd": "endfield",
-        "SRC": "starrail",
         "HSR": "starrail",
         "BetterGI": "genshin",
         "ZzzOd": "zenless",

@@ -247,6 +247,12 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   ): () => void
   analytics?: {
     getContext: () => Promise<AnalyticsContext>
+    beginInitialization: () => Promise<{ generation: AnalyticsContext; attempt: number | null }>
+    finishInitialization: (
+      context: AnalyticsContext,
+      attempt: number | null,
+      event: RendererAnalyticsEvent
+    ) => void
     trackEvent: (context: number, event: RendererAnalyticsEvent) => void
   }
   isMacOS: boolean

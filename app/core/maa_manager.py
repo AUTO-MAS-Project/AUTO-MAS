@@ -20,6 +20,7 @@
 
 
 import json
+from pathlib import Path
 from typing import Any
 
 from maa.context import Context
@@ -136,6 +137,8 @@ class _MaaFWManager:
         screencap_methods: int = MaaAdbScreencapMethodEnum.Default,
         input_methods: int = MaaAdbInputMethodEnum.Default,
         config: dict[str, Any] = {},
+        *,
+        resource_bundle: Path | None = None,
     ) -> Tasker:
         """
         创建一个连接 ADB 的 MaaFW 任务管理器
@@ -167,7 +170,14 @@ class _MaaFWManager:
         await self.do_job(controller.post_connection())
 
         tasker = Tasker()
-        tasker.bind(self.resource, controller)
+        resource = self.resource
+        if resource_bundle is not None:
+            resource = Resource()
+            resource.register_custom_action("DisableLog", DisableLog())
+            resource.register_custom_action("EnableLog", EnableLog())
+            await self.do_job(resource.post_bundle(Config.resource_path / "MaaFW"))
+            await self.do_job(resource.post_bundle(resource_bundle))
+        tasker.bind(resource, controller)
         if not tasker.inited:
             raise RuntimeError("无法初始化 MaaFW tasker")
 

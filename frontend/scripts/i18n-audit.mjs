@@ -77,7 +77,7 @@ const DEV_ONLY = /(^|\/)(devtools|OCRdev|TestRouter|UpdateDownloadDev|OverlayMas
 // 按规则豁免的硬编码中文：游戏内容名称没有官方外文译名，翻错比不翻更糟
 const HARDCODED_ALLOWLIST = [
   {
-    file: 'src/views/SRCUserEdit/StageConfigSection.vue',
+    file: 'src/views/src/user/StageConfigSection.vue',
     reason: '遗器/饰品/关卡选项，名称沿用游戏简中原名',
   },
 ]

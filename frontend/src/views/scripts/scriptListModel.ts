@@ -97,7 +97,7 @@ export function toScriptListUser(
       Server:
         serverDefault === undefined
           ? undefined
-          : defaultIfMissing(info && 'Resource' in info ? info.Resource : undefined, serverDefault),
+          : defaultIfMissing(info && 'Server' in info ? info.Server : undefined, serverDefault),
       Resource:
         index.type === 'MaaEndUserConfig'
           ? defaultIfMissing(info && 'Resource' in info ? info.Resource : undefined, '')

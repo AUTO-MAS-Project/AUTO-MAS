@@ -9,10 +9,6 @@ type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
 
 const EDITOR_PAGES: Record<string, { script: LazyPage; user: LazyPage }> = {
   ...SCRIPT_PLUGIN_EDITORS,
-  SRC: {
-    script: () => import('@/views/EditView/Script/SRCScriptEdit.vue'),
-    user: () => import('@/views/EditView/User/SRCUserEdit.vue'),
-  },
   MaaEnd: {
     script: () => import('@/views/EditView/Script/MaaEndScriptEdit.vue'),
     user: () => import('@/views/EditView/User/MaaEndUserEdit.vue'),
