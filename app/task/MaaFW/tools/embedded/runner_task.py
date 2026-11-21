@@ -12,7 +12,6 @@ import tempfile
 import threading
 import time
 import uuid
-from collections import Counter
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -73,6 +72,16 @@ from app.task.MaaFW.tools.core.runner.models import (
     MaaFWRunPlan,
     MaaFWRunResult,
     MaaFWSkippedTaskPlan,
+)
+from app.task.MaaFW.tools.core.runner.plan_transforms import (
+    PERIOD_DONE_REASONS,
+    RETRY_SKIP_REASON,
+    MaaFWPeriodLimits,
+    PeriodRecords,
+    filter_period_once_tasks,
+    parse_period_records,
+    record_period_completions,
+    skip_tasks_completed_this_run,
 )
 from app.task.MaaFW.tools.core.runner.run_events import (
     CATEGORY_ENVIRONMENT,
@@ -3005,72 +3014,23 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             state="succeeded" if process.returncode is not None else "failed",
         )
 
-    def _filter_period_once_tasks(self, plan: MaaFWRunPlan) -> MaaFWRunPlan:
-        daily_tasks = set(_load_json_list(self.script_config.Run.DailyOnceTasks))
-        weekly_tasks = set(_load_json_list(self.script_config.Run.WeeklyOnceTasks))
-        monthly_tasks = set(_load_json_list(self.script_config.Run.MonthlyOnceTasks))
-        if not daily_tasks and not weekly_tasks and not monthly_tasks:
-            return plan
+    def _period_limits(self) -> MaaFWPeriodLimits:
+        run = self.script_config.Run
+        return MaaFWPeriodLimits.of(
+            _load_json_list(run.DailyOnceTasks),
+            _load_json_list(run.WeeklyOnceTasks),
+            _load_json_list(run.MonthlyOnceTasks),
+        )
 
-        daily_key, weekly_key, monthly_key = _current_period_keys()
-        records = self._load_period_task_records()
-        runnable_tasks = []
-        skipped_tasks = []
-        # 周期限制按任务算，不按队列里的份数算：同一个任务被重复加入队列时，
-        # 本轮也只安排一次。否则「仅一次」在一轮内形同虚设，而且先跑的那份一
-        # 成功就会把整个任务名记成已完成，还没跑的副本会被当作已完成跳过。
-        period_limited_seen: set[str] = set()
-        for task in plan.tasks:
-            daily_done = (
-                task.name in daily_tasks
-                and records["daily"].get(task.name) == daily_key
-            )
-            weekly_done = (
-                task.name in weekly_tasks
-                and records["weekly"].get(task.name) == weekly_key
-            )
-            monthly_done = (
-                task.name in monthly_tasks
-                and records["monthly"].get(task.name) == monthly_key
-            )
-            if daily_done or weekly_done or monthly_done:
-                if daily_done:
-                    reason = "今日已正常完成"
-                elif monthly_done:
-                    reason = "本月已正常完成"
-                else:
-                    reason = "本周已正常完成"
-                skipped_tasks.append(
-                    MaaFWSkippedTaskPlan(
-                        name=task.name,
-                        label=task.label,
-                        entry=task.entry,
-                        reason=reason,
-                    )
-                )
-                continue
-            if (
-                task.name in daily_tasks
-                or task.name in weekly_tasks
-                or task.name in monthly_tasks
-            ):
-                if task.name in period_limited_seen:
-                    skipped_tasks.append(
-                        MaaFWSkippedTaskPlan(
-                            name=task.name,
-                            label=task.label,
-                            entry=task.entry,
-                            reason="本轮已安排一次",
-                        )
-                    )
-                    continue
-                period_limited_seen.add(task.name)
-            runnable_tasks.append(task)
-        return plan.model_copy(
-            update={
-                "tasks": runnable_tasks,
-                "skippedTasks": [*plan.skippedTasks, *skipped_tasks],
-            },
+    def _filter_period_once_tasks(self, plan: MaaFWRunPlan) -> MaaFWRunPlan:
+        limits = self._period_limits()
+        if limits.empty:
+            return plan
+        return filter_period_once_tasks(
+            plan,
+            limits,
+            self._load_period_task_records(),
+            datetime.now(tz=UTC4),
         )
 
     async def _refresh_run_plan_after_period_update(
@@ -3102,42 +3062,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         entries = skip_on_retry_entries(flavor)
         if not entries:
             return plan
-        remaining = Counter(self._completed_this_run)
-        # runner 只回报任务名，同名的几份（比如关卡不同的两份「作战」）分不清完成的是
-        # 哪一份：按队列顺序剔会剔掉失败的那份、把完成的再跑一遍。所以名字在计划里
-        # 不止一份时一份都不剔，全部重跑（#1296 之前的行为）；只有一份的照常剔。
-        occurrences = Counter(task.name for task in plan.tasks)
-        self._retry_rerun_duplicates = [
-            task.name
-            for task in plan.tasks
-            if task.entry in entries
-            and occurrences[task.name] > 1
-            and remaining[task.name] > 0
-        ]
-        tasks = []
-        skipped: list[MaaFWSkippedTaskPlan] = []
-        for task in plan.tasks:
-            if (
-                task.entry in entries
-                and occurrences[task.name] == 1
-                and remaining[task.name] > 0
-            ):
-                remaining[task.name] -= 1
-                skipped.append(
-                    MaaFWSkippedTaskPlan(
-                        name=task.name,
-                        label=task.label,
-                        entry=task.entry,
-                        reason=_RETRY_SKIP_REASON,
-                    )
-                )
-                continue
-            tasks.append(task)
-        if not skipped:
-            return plan
-        return plan.model_copy(
-            update={"tasks": tasks, "skippedTasks": [*plan.skippedTasks, *skipped]}
-        )
+        # 同名多份时一份都不剔、全部重跑，见 skip_tasks_completed_this_run
+        outcome = skip_tasks_completed_this_run(plan, self._completed_this_run, entries)
+        self._retry_rerun_duplicates = outcome.rerun_duplicates
+        return outcome.plan
 
     def _log_retry_skipped_tasks(self) -> None:
         """重试开头写一行被重试跳过的任务。
@@ -3160,45 +3088,25 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 f"{'、'.join(labels)} 在队列里有多份，分不清完成的是哪一份，重试时全部重跑"
             )
 
-    def _load_period_task_records(self) -> dict[str, dict[str, str]]:
-        raw_records = _load_json_dict(self.cur_user_config.Data.PeriodTaskRecords)
-        records: dict[str, dict[str, str]] = {"daily": {}, "weekly": {}, "monthly": {}}
-        for period in records:
-            raw_period_records = raw_records.get(period, {})
-            if isinstance(raw_period_records, dict):
-                records[period] = {
-                    str(task_name): str(period_key)
-                    for task_name, period_key in raw_period_records.items()
-                }
-        return records
+    def _load_period_task_records(self) -> PeriodRecords:
+        return parse_period_records(
+            _load_json_dict(self.cur_user_config.Data.PeriodTaskRecords)
+        )
 
     async def _mark_period_tasks_completed(self, completed_tasks: list[str]) -> None:
         if not completed_tasks:
             return
-        daily_tasks = set(_load_json_list(self.script_config.Run.DailyOnceTasks))
-        weekly_tasks = set(_load_json_list(self.script_config.Run.WeeklyOnceTasks))
-        monthly_tasks = set(_load_json_list(self.script_config.Run.MonthlyOnceTasks))
-        if not daily_tasks and not weekly_tasks and not monthly_tasks:
+        limits = self._period_limits()
+        if limits.empty:
             return
 
-        daily_key, weekly_key, monthly_key = _current_period_keys()
         records = self._load_period_task_records()
-        changed = False
-        for task_name in set(completed_tasks).intersection(daily_tasks):
-            if records["daily"].get(task_name) != daily_key:
-                records["daily"][task_name] = daily_key
-                changed = True
-        for task_name in set(completed_tasks).intersection(weekly_tasks):
-            if records["weekly"].get(task_name) != weekly_key:
-                records["weekly"][task_name] = weekly_key
-                changed = True
-        for task_name in set(completed_tasks).intersection(monthly_tasks):
-            if records["monthly"].get(task_name) != monthly_key:
-                records["monthly"][task_name] = monthly_key
-                changed = True
-        if changed:
+        new_records = record_period_completions(
+            records, limits, completed_tasks, datetime.now(tz=UTC4)
+        )
+        if new_records != records:
             self.cur_user_config.Data.PeriodTaskRecords = json.dumps(
-                records, ensure_ascii=False
+                new_records, ensure_ascii=False
             )
             await self.cur_user_config.commit()
 
@@ -5731,7 +5639,7 @@ MISSING_TASK_NOTICE_PREFIX = (
 #: 其余任务都跑完、但队列里有失效任务时统计报告的结果：照常算完成，不说「全部完成」。
 MISSING_TASK_USER_RESULT = "代理任务完成，但有失效任务"
 #: 特调声明的 skip_on_retry_entries 在重试时被剔掉的原因（进 skippedTasks 与尝试日志）。
-_RETRY_SKIP_REASON = "前面的尝试已完成"
+_RETRY_SKIP_REASON = RETRY_SKIP_REASON
 
 
 def _retry_skipped_tasks(plan: MaaFWRunPlan) -> list[MaaFWSkippedTaskPlan]:
@@ -5739,9 +5647,9 @@ def _retry_skipped_tasks(plan: MaaFWRunPlan) -> list[MaaFWSkippedTaskPlan]:
 
 
 _PERIOD_DONE_LABELS = {
-    "今日已正常完成": "今日",
-    "本周已正常完成": "本周",
-    "本月已正常完成": "本月",
+    PERIOD_DONE_REASONS["daily"]: "今日",
+    PERIOD_DONE_REASONS["weekly"]: "本周",
+    PERIOD_DONE_REASONS["monthly"]: "本月",
 }
 
 
@@ -5772,16 +5680,6 @@ def _period_all_done_message(plan: MaaFWRunPlan) -> str:
     if not periods:
         return "MaaFW 队列里的周期任务都已在本周期内完成，跳过本次运行"
     return f"MaaFW 队列里的周期任务都已在{' / '.join(ordered)}完成，跳过本次运行"
-
-
-def _current_period_keys(now: datetime | None = None) -> tuple[str, str, str]:
-    current = now or datetime.now(tz=UTC4)
-    iso_year, iso_week, _ = current.isocalendar()
-    return (
-        current.strftime("%Y-%m-%d"),
-        f"{iso_year}-W{iso_week:02d}",
-        current.strftime("%Y-%m"),
-    )
 
 
 def _format_user_log_line(message: str) -> str:
