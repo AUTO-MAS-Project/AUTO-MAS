@@ -3037,7 +3037,6 @@
   "core.home.sra.staleMessage": "Using the last successfully fetched event data",
   "core.home.sra.unavailable": "{name} event data is temporarily unavailable",
   "core.home.stella.permanent": "Permanent events",
-  "core.home.stella.sourceName": "Official site",
   "core.home.viewNotice": "Announcements",
   "core.maaCopilot.adjustSettings": "Adjust analysis",
   "core.maaCopilot.analysisContext": "{scope} · Target coverage {coverage}%",

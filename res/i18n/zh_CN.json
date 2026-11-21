@@ -3037,7 +3037,6 @@
   "core.home.sra.staleMessage": "正在使用上次成功获取的活动数据",
   "core.home.sra.unavailable": "{name}活动数据暂不可用",
   "core.home.stella.permanent": "常驻活动",
-  "core.home.stella.sourceName": "官网",
   "core.home.viewNotice": "查看公告",
   "core.maaCopilot.adjustSettings": "调整分析设置",
   "core.maaCopilot.analysisContext": "{scope} · 期望覆盖 {coverage}%",
