@@ -78,7 +78,7 @@ export function useMaaFWEmbeddedImport({
       embeddedStatus.value = status
       if (text) message.success(text)
       // 导入完成后后端按项目内容决定脚本类型（M9A 项目 → M9A，其它 → MaaFW），
-      // 重新拉一次类型让 flavor 文案跟上
+      // 重新拉一次类型：类型变了页面宿主就地换成该类型的页面
       await refreshScriptType()
       return true
     } catch (error) {

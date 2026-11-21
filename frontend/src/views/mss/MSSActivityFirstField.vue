@@ -9,8 +9,8 @@
     :extra="t('core.edit.mssFlavorActivityFirstHint')"
   >
     <a-switch
-      :checked="context.formData.Info.IfActivityFirst !== false"
-      :disabled="context.loading"
+      :checked="formData.Info.IfActivityFirst !== false"
+      :disabled="loading"
       @change="handleActivityFirstChange"
     />
   </a-form-item>
@@ -18,12 +18,14 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import type { MaaFWUserSlotContext } from '@/composables/maafwFlavorTypes'
+import type { MaaFWUserFormData } from '@/views/EditView/User/MaaFWUserEdit/sectionProps'
 
 const { t } = useI18n()
 
 const props = defineProps<{
-  context: MaaFWUserSlotContext
+  formData: MaaFWUserFormData
+  /** 页面仍在加载：控件置灰 */
+  loading: boolean
 }>()
 
 const emit = defineEmits<{
@@ -32,7 +34,7 @@ const emit = defineEmits<{
 
 /** 后端缺省是开，这里只在用户显式关掉时写 false */
 const handleActivityFirstChange = (checked: boolean | string | number) => {
-  props.context.formData.Info.IfActivityFirst = checked === true
-  emit('save', 'Info.IfActivityFirst', props.context.formData.Info.IfActivityFirst)
+  props.formData.Info.IfActivityFirst = checked === true
+  emit('save', 'Info.IfActivityFirst', props.formData.Info.IfActivityFirst)
 }
 </script>

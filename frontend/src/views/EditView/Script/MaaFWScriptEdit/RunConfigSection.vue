@@ -132,16 +132,13 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import type {
-  MaaFWScriptRunSectionEmits,
-  MaaFWScriptRunSectionProps,
-} from '../../MaaFWFlavor/sectionContracts'
+import type { MaaFWScriptRunSectionEmits, MaaFWScriptRunSectionProps } from './sectionProps'
 import MaaFWFormSection from './MaaFWFormSection.vue'
 import MaaFWTaskTimeLimitField from './MaaFWTaskTimeLimitField.vue'
 
 const { t } = useI18n()
 
-// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+// props / 事件见 sectionProps.ts
 const props = defineProps<MaaFWScriptRunSectionProps>()
 
 const emit = defineEmits<MaaFWScriptRunSectionEmits>()

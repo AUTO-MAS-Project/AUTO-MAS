@@ -189,16 +189,13 @@ import { handleExternalLink } from '@/utils/openExternal'
 import MaaFWFormSection from './MaaFWFormSection.vue'
 import UpdateProcessPanel from './UpdateProcessPanel.vue'
 import UpdatePackageMode from '../components/UpdatePackageMode.vue'
-import type {
-  MaaFWScriptUpdateSectionEmits,
-  MaaFWScriptUpdateSectionProps,
-} from '../../MaaFWFlavor/sectionContracts'
+import type { MaaFWScriptUpdateSectionEmits, MaaFWScriptUpdateSectionProps } from './sectionProps'
 
 const MIRRORCHYAN_CDK_URL = 'https://mirrorchyan.com?source=automas_script_update'
 
 const { t } = useI18n()
 
-// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+// props / 事件见 sectionProps.ts
 const props = defineProps<MaaFWScriptUpdateSectionProps>()
 
 const emit = defineEmits<MaaFWScriptUpdateSectionEmits>()

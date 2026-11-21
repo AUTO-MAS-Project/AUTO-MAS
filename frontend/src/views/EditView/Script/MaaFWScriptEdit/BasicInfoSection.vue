@@ -220,14 +220,14 @@ import {
 import type {
   MaaFWScriptBasicInfoSectionEmits,
   MaaFWScriptBasicInfoSectionProps,
-} from '../../MaaFWFlavor/sectionContracts'
+} from './sectionProps'
 import MaaFWEnvPanel from './MaaFWEnvPanel.vue'
 import MaaFWFollowSourceStatus from './MaaFWFollowSourceStatus.vue'
 import MaaFWFormSection from './MaaFWFormSection.vue'
 
 const { t } = useI18n()
 
-// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+// props / 事件见 sectionProps.ts
 const props = defineProps<MaaFWScriptBasicInfoSectionProps>()
 
 const emit = defineEmits<MaaFWScriptBasicInfoSectionEmits>()

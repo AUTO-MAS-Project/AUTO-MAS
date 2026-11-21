@@ -4,13 +4,19 @@ import type {
   RouteParamsRaw,
   RouteRecordRaw,
 } from 'vue-router'
-import type { MaaFWFlavor, MaaFWPageKind } from '@/composables/maafwFlavorTypes'
-import { isMaaFWFamily, resolveMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import type { ScriptFrontendAdapter } from '@/plugins/scriptAdapters'
+import { isMaaFWFamily, resolveMaaFWAdapter } from '@/plugins/maafwFamily'
 import type { ScriptType } from '@/types/script'
+
+/**
+ * 页面种类：MaaFW 家族每个类型各有这四条路由（buildMaaFWRoutes 按适配条目生成）。
+ * script / setup 渲染脚本页（编辑形态 / 新建后的分步引导），userAdd / userEdit 渲染用户页。
+ */
+export type MaaFWPageKind = 'script' | 'setup' | 'userAdd' | 'userEdit'
 
 declare module 'vue-router' {
   interface RouteMeta {
-    /** MaaFW 家族的路由：这条路由登记的特调类型。页面以脚本实际类型为准，它只用来纠正后缀写错的地址 */
+    /** MaaFW 家族的路由：这条路由登记的类型。页面以脚本实际类型为准，它只用来纠正后缀写错的地址 */
     scriptType?: ScriptType
     /** MaaFW 家族的路由：页面种类 */
     maafwPage?: MaaFWPageKind
@@ -21,7 +27,7 @@ type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
 
 /**
  * MaaFW 家族四种页面的路由名后缀与路径。路由名 = 类型 + 名字后缀（MaaFWScriptEdit、
- * M9ASetupWizard……），路径后缀取描述对象的 routes.suffix。生成路由与拼跳转目标共用这一张表。
+ * M9ASetupWizard……），路径后缀取适配条目的 metadata.routeSuffix。生成路由与拼跳转目标共用这一张表。
  */
 const MAAFW_PAGE_ROUTES: Record<MaaFWPageKind, { name: string; path: (suffix: string) => string }> =
   {
@@ -51,7 +57,7 @@ const routeNameOf = (type: string, kind: MaaFWPageKind) => `${type}${MAAFW_PAGE_
 export const maafwRouteName = (
   type: ScriptType | string | null | undefined,
   kind: MaaFWPageKind
-): string => routeNameOf(resolveMaaFWFlavor(type).type, kind)
+): string => routeNameOf(resolveMaaFWAdapter(type).type, kind)
 
 /**
  * 跳到 MaaFW 家族页面的目标：`router.push(maafwRouteLocation(type, 'userAdd', { scriptId }))`。
@@ -86,23 +92,31 @@ export const resolveMaaFWCanonicalLocation = (
   }
 }
 
+/** 某个家族适配条目四条路由的标题（route.meta.title）：引导取 maafw.setupTitle，其余取 routeTitles */
+const routeTitleOf = (adapter: ScriptFrontendAdapter, kind: MaaFWPageKind): string =>
+  kind === 'setup' ? (adapter.maafw?.setupTitle ?? '') : adapter.metadata.routeTitles[kind]
+
 /**
- * MaaFW 与各特调的路由按注册表生成：每个类型四条（脚本编辑 / 引导 / 加用户 / 编辑用户），
+ * MaaFW 家族的路由按适配条目生成：每个类型四条（脚本编辑 / 引导 / 加用户 / 编辑用户），
  * 按页面种类分组返回，路由表在原来的位置展开。组件都是页面宿主（按脚本实际类型选页面），
- * meta 记下标题、登记的类型与页面种类。新增特调不用改路由表。
+ * meta 记下标题、登记的类型与页面种类。新增一类不用改路由表。
  */
 export const buildMaaFWRoutes = (
-  flavors: readonly MaaFWFlavor[],
+  adapters: readonly ScriptFrontendAdapter[],
   page: LazyPage
 ): Record<MaaFWPageKind, RouteRecordRaw[]> =>
   Object.fromEntries(
     MAAFW_PAGE_KINDS.map(kind => [
       kind,
-      flavors.map((flavor): RouteRecordRaw => ({
-        path: MAAFW_PAGE_ROUTES[kind].path(flavor.routes.suffix),
-        name: routeNameOf(flavor.type, kind),
+      adapters.map((adapter): RouteRecordRaw => ({
+        path: MAAFW_PAGE_ROUTES[kind].path(adapter.metadata.routeSuffix),
+        name: routeNameOf(adapter.type, kind),
         component: page,
-        meta: { title: flavor.routes.titles[kind], scriptType: flavor.type, maafwPage: kind },
+        meta: {
+          title: routeTitleOf(adapter, kind),
+          scriptType: adapter.type as ScriptType,
+          maafwPage: kind,
+        },
       })),
     ])
   ) as Record<MaaFWPageKind, RouteRecordRaw[]>

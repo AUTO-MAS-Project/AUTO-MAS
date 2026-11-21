@@ -1,8 +1,8 @@
 <!-- eslint-disable vue/no-mutating-props -- Slot components edit the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
   <!-- M9A 的后端特调可让 MAS 完成 B 服登录（隐私政策提示 + 登录记录选号），登录回到标题页后再交给
-       M9A 的启动任务进游戏；挂在控制方式分节里，排在游戏包名、等待时间之后，单独一格（插入点
-       besidePackageName） -->
+       M9A 的启动任务进游戏；挂在控制方式分节里，排在游戏包名、等待时间之后，单独一格（M9A 专属脚本页经
+       control 分节的 besidePackageName 格放进来） -->
   <a-form-item>
     <template #label>
       <a-tooltip :title="t('core.edit.m9aFlavorLoginModeHint')">
@@ -13,7 +13,7 @@
       </a-tooltip>
     </template>
     <a-select
-      v-model:value="context.maafwConfig.Run.LoginMode"
+      v-model:value="maafwConfig.Run.LoginMode"
       size="large"
       style="width: 100%"
       :options="loginModeOptions"
@@ -26,13 +26,12 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
-import type { MaaFWScriptSlotContext } from '@/composables/maafwFlavorTypes'
 import type { MaaFWLoginMode, MaaFWScriptConfig } from '@/types/script'
 
 const { t } = useI18n()
 
 defineProps<{
-  context: MaaFWScriptSlotContext
+  maafwConfig: MaaFWScriptConfig
 }>()
 
 const emit = defineEmits<{

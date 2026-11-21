@@ -1,7 +1,7 @@
 import { UserIndexItem } from '@/api'
 import type { MaaUserConfig_Info, UserGetOut, ZzzOdUserConfig_Game } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
-import { isMaaFWFamily, maafwUserConfigTypes } from '@/composables/useMaaFWFlavor'
+import { isMaaFWFamily, maafwUserConfigTypes } from '@/plugins/maafwFamily'
 
 /** 列表只读投影；用户操作用 scriptId / id 定位，不能作为配置整体回写。 */
 export interface ScriptListUser {

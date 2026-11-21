@@ -143,7 +143,7 @@ import { EllipsisOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import type { MaaFWQueueSourceChip } from '../maafwQueueSource'
 import { checkMaaFWQueueTemplateName } from '../maafwQueueTemplates'
 import { presetTemplateChips } from '../maafwPresetQueue'
-import type { MaaFWQueueTemplateView, PresetTemplate } from '../../MaaFWFlavor/sectionContracts'
+import type { MaaFWQueueTemplateView, PresetTemplate } from './sectionProps'
 import MaaFWQueueCard from './MaaFWQueueCard.vue'
 import MaaFWQueueChips from './MaaFWQueueChips.vue'
 

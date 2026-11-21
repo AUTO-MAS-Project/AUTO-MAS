@@ -97,8 +97,8 @@
             />
           </a-form-item>
         </a-col>
-        <!-- 插入点里每个组件各占一格（不叠在同一格里把旁边的策略表拉高）：页面传来组件数，每格用
-             <slot> 转发一次并带上下标，页面渲染第 index 个组件 -->
+        <!-- 专属页的字段每个各占一格（不叠在同一格里把旁边的策略表拉高）：页面传来格数，每格用
+             <slot> 转发一次并带上下标，页面渲染第 index 格 -->
         <a-col
           v-for="index in besideIndexes"
           :key="`beside-${index}`"
@@ -135,17 +135,14 @@ import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { isDirectControllerType } from '@/composables/useMaaFWScriptConfig'
-import type {
-  MaaFWScriptControlSectionEmits,
-  MaaFWScriptControlSectionProps,
-} from '../../MaaFWFlavor/sectionContracts'
+import type { MaaFWScriptControlSectionEmits, MaaFWScriptControlSectionProps } from './sectionProps'
 import MaaFWControlStrategyTable from './MaaFWControlStrategyTable.vue'
 import MaaFWDesktopGameFields from './MaaFWDesktopGameFields.vue'
 import MaaFWFormSection from './MaaFWFormSection.vue'
 
 const { t } = useI18n()
 
-// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+// props / 事件见 sectionProps.ts
 const props = defineProps<MaaFWScriptControlSectionProps>()
 
 const emit = defineEmits<MaaFWScriptControlSectionEmits>()
@@ -189,7 +186,7 @@ type AdbField =
   | `beside${number}`
   | 'strategy'
 
-// 插入点 besidePackageName 各格的下标：组件数由页面按特调注册表传来（是 prop，变了 a-row 跟着更新）
+// besidePackageName 各格的下标：格数由页面传来（是 prop，变了 a-row 跟着更新）
 const besideIndexes = computed(() =>
   Array.from({ length: props.besidePackageNameCount ?? 0 }, (_, index) => index)
 )

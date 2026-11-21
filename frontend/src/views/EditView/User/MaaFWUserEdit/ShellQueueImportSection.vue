@@ -103,7 +103,7 @@ import { message, notification } from 'ant-design-vue'
 import { ImportOutlined } from '@ant-design/icons-vue'
 import type { MaaFWShellInstanceItem } from '@/api'
 import { useMaaFWShellInstanceApi } from '@/composables/useMaaFWShellInstanceApi'
-import type { MaaFWUserQueueImportCandidate } from '../../MaaFWFlavor/sectionContracts'
+import type { MaaFWUserQueueImportCandidate } from './sectionProps'
 import MaaFWQueueChips from './MaaFWQueueChips.vue'
 
 /**

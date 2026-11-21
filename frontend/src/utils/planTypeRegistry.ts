@@ -1,5 +1,5 @@
 import { defineAsyncComponent, type Component } from 'vue'
-import { SCRIPT_PLUGIN_PLANS } from '@/plugins/scriptAdapters'
+import { SCRIPT_BUILTIN_PLANS, SCRIPT_PLUGIN_PLANS } from '@/plugins/scriptAdapters'
 import { PlanCreateIn } from '@/api/models/PlanCreateIn'
 import { PlanIndexItem } from '@/api/models/PlanIndexItem'
 import type { PlanGetOut } from '@/api'
@@ -106,17 +106,8 @@ export const PLAN_TYPE_REGISTRY: Record<string, PlanTypeDescriptor> = {
     supportsSimpleView: false,
     tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/BAAHPlanTable.vue')),
   },
-  [PLAN_CONFIG_TYPES.MSS]: {
-    configType: PLAN_CONFIG_TYPES.MSS,
-    createType: PlanCreateIn.type.MSSPLAN,
-    displayNameKey: 'core.plan.type.mss',
-    // 同上：defaultName 会写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
-    defaultName: '新 MSS 计划表',
-    selectorTag: 'MSS',
-    reloadAfterSave: false,
-    supportsSimpleView: true,
-    tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/MSSPlanTable.vue')),
-  },
+  // 随主程序编译的专项计划表（MSS，由 views/mss/entry.ts 登记），排在最后
+  ...SCRIPT_BUILTIN_PLANS,
 }
 
 export const DEFAULT_PLAN_CONFIG_TYPE: PlanConfigType = PLAN_CONFIG_TYPES.MAA
