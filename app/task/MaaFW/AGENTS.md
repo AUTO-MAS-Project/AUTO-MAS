@@ -472,8 +472,16 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   框架以 task_id=0 拒掉。例外是特调声明的收尾任务（`nonfatal_entries` → `nonFatalMessage`，如 M9A 的关闭游戏）：它失败、
   超时、打转或被脚本侧强停都只截图记一行、不计入本轮失败（超时同样先等停下；停下时恰好又被脚本侧强停就跳过本轮剩余任务），且优先于上面两条；契约见 `tools/embedded/flavor.py`。
   特调声明的不可选任务（`unselectable_entries`，如 M9A 的小游戏）更早一步：`/maafw/preview` 给它们填
-  `unselectableReason`（核心包的预览不认识特调，在 `api_service/interface.py` 补），账号页不让选；
-  运行时在 `decorate_selection` 之前剔掉、按原因合并记一行，不进计划，所以上面几项声明对它不起作用。
+  `unselectableReason`，账号页不让选；运行时在 `decorate_selection` 之前剔掉、按原因合并记一行，不进计划，
+  所以上面几项声明对它不起作用。
+- **规则表与展开任务快照**：上面四类特调声明（不可选、关键任务、收尾任务、`no_default_fallback_inputs`）由
+  `flavor.plan_rules` 收成一份规则表（`core/interface/plan_rules.MaaFWPlanRules`），建计划与预览
+  （`core/interface/preview.apply_preview_plan_rules`）收同一份，核心只认规则表、不认特调。有特调的账号建计划走
+  `core/runner/task_selection`：`inspect_task_snapshot`（失效任务名 / 选项值、红灯、今天不在运行日）→
+  `expand_task_snapshot`（**先**剔不可选、**再**拿出停跑日实例，剩下的才交给 `decorate_selection`；顺序反了，
+  只剩小游戏或全在停跑日的队列会被补上首尾、白开一次模拟器）→ `merge_arranged_queue`（钩子补回的受管任务不受
+  运行日限制，没补回的停跑日实例记成跳过）→ 建计划 → `apply_plan_rules` / `attach_snapshot_findings`。通用
+  MaaFW 仍按快照直接建计划，规则表为空。
 - **原地打转检测**（`Run.LoopGuard`，托管级开关，**默认开**：新建托管取类默认；既有托管配置里写着这个键的不改（全量落盘分不清用户关过还是没碰过），没有这个键的落到类默认；纯逻辑在
   `tools/core/runner/loop_guard.py`）：只看 `Node.Recognition.*` 与 `Node.PipelineNode.*`，按节点名
   找周期 ≤ 8 步的循环，连续各轮都有物理动作（Click / Swipe / 按键…，Custom 与 DoNothing 不算，等待型

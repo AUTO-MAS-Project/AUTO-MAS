@@ -54,7 +54,6 @@ from app.task.MaaFW.tools.core.controller_win32.service import (
 from app.task.MaaFW.tools.core.interface.models import (
     MaaFWController,
     MaaFWInterface,
-    resolve_task_instance_name,
 )
 from app.task.MaaFW.tools.core.interface.preview import (
     build_adb_emulator_extra_capabilities,
@@ -62,11 +61,6 @@ from app.task.MaaFW.tools.core.interface.preview import (
 )
 from app.task.MaaFW.tools.core.interface.service import (
     MaaFWInterfaceService,
-)
-from app.task.MaaFW.tools.core.interface.task_config import (
-    excluded_task_ids_for_weekday,
-    find_missing_task_names,
-    unchecked_task_ids,
 )
 from app.task.MaaFW.tools.core.runner.environment import (
     AGENT_PIP_CONSTRAINT_DIR_ENV,
@@ -98,15 +92,22 @@ from app.task.MaaFW.tools.core.runner.run_events import (
     MaaFWTaskStartEvent,
 )
 from app.task.MaaFW.tools.core.runner.run_plan import (
-    ALL_TASKS_SKIPPED_MESSAGE,
-    NO_RUNNABLE_TASKS_MESSAGE,
     QUEUE_SKIPPED_TASK_REASON,
     MaaFWRunPlanError,
-    describe_stale_option_values,
     resolve_run_selection,
-    select_snapshot_tasks,
 )
 from app.task.MaaFW.tools.core.runner.service import MaaFWRunnerService
+from app.task.MaaFW.tools.core.runner.task_selection import (
+    OFF_DAY_REASON_SUFFIX,
+    MaaFWSnapshotExpansion,
+    MaaFWSnapshotInspection,
+    apply_plan_rules,
+    attach_snapshot_findings,
+    describe_plan_failure,
+    expand_task_snapshot,
+    inspect_task_snapshot,
+    merge_arranged_queue,
+)
 from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     path_without_host_venv,
     strip_host_python_environment,
@@ -158,14 +159,11 @@ from .flavor import (
     MaaFWLoginRequired,
     MaaFWSelectionContext,
     StartupTask,
-    abort_round_entries,
-    no_default_fallback_inputs,
-    nonfatal_entries,
+    plan_rules,
     resolve_flavor,
     resolve_game_update_hook,
     resolve_login_hook,
     skip_on_retry_entries,
-    unselectable_entries,
 )
 from .game_package import resolve_game_package
 from .option_secrets import (
@@ -1343,45 +1341,35 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         effective_preset = (
             selected_preset if selected_preset and not task_snapshot else None
         )
-        # 特调类型（脚本配置类声明了 FLAVOR）：先把快照归一化成实例 id 列表，交给
-        # 钩子装饰（首尾任务、切号绑定之类），再按装饰后的列表建计划。通用 MaaFW
-        # 没有钩子，仍按快照直接建计划，行为不变。
+        # 有规则的脚本类型（脚本配置类声明了 FLAVOR）：先展开任务快照（剔掉不可选任务与今天
+        # 不在运行日的实例），交给钩子排队列（补首尾任务、切号绑定之类），再按排好的队列建计划。
+        # 通用 MaaFW 没有钩子、规则表为空，仍按快照直接建计划，行为不变。
         flavor = resolve_flavor(self.script_config)
+        rules = plan_rules(flavor)
         # 托管级键位（Game.Hotkeys）：坏 JSON / 不是对象当空，字段级的校验在建计划时做。
         script_hotkeys = _load_script_hotkeys(self.script_config.Game.Hotkeys)
-        missing_skips: list[MaaFWSkippedTaskPlan] = []
-        unselectable_names: list[str] = []
+        # 本方法在工作线程里跑：没给线程安全的回调就只进后端日志。
+        log = send_log if send_log is not None else logger.info
+        inspection: MaaFWSnapshotInspection | None = None
+        expansion: MaaFWSnapshotExpansion | None = None
         try:
             # 密码字段（PI v2.10.0）在配置里是密文，只在这份内存副本里解开交给计划；
             # 账号配置本身不动，运行后的整表写回也就写不出明文。
             task_snapshot = open_task_snapshot(task_snapshot, interface_model)
-            # 项目更新改了任务 name 后，队列里的旧 id 在归一化时就被滤掉了，运行日志里
-            # 一点痕迹都没有。先按原始快照把它们找出来，建完计划记成跳过。
-            missing_names = find_missing_task_names(task_snapshot, interface_model)
-            missing_skips = [
-                MaaFWSkippedTaskPlan(name=name, reason="interface 内已无该任务")
-                for name in missing_names
-            ]
-            self.missing_task_names = list(dict.fromkeys(missing_names))
-            # 项目改了 case 名后，保存的值在归一化时被静默换回默认值；同样先按原始快照找出来，
-            # 进计划的提示（运行日志开头列出）
-            stale_warnings: list[str] = []
-            if task_snapshot:
-                try:
-                    stale_warnings = describe_stale_option_values(
-                        self.project_path, interface_model, task_snapshot
-                    )
-                except Exception:  # noqa: BLE001 - 只是提示，算不出来不挡运行
-                    logger.opt(exception=True).warning("MaaFW 失效选项值检查失败")
-            # 运行日按本机今天的星期判（与队列「执行日期」同口径），只在开跑建计划时判这一次：
-            # 结果固化在 base_run_plan 里，重试从它重建、不再重判，跨零点重试也不翻
-            # 今天不跑的实例与红灯一样在建计划之前排除，不校验它们的选项（坏配置不挡整轮）
+            # 先只看快照：项目更新改了任务 name 后，队列里的旧 id 在归一化时就被滤掉了，改了
+            # case 名的选项值会被静默换回默认值，建完计划分别记成跳过与提示。运行日按本机今天
+            # 的星期判（与队列「执行日期」同口径），只在开跑建计划时判这一次：结果固化在
+            # base_run_plan 里，重试从它重建、不再重判，跨零点重试也不翻。
             iso_weekday = datetime.now().isoweekday()
-            off_day_ids = excluded_task_ids_for_weekday(task_snapshot, iso_weekday)
-            off_day_reason = (
-                f"今天{_WEEKDAY_NAMES[iso_weekday - 1]}{_OFF_DAY_REASON_SUFFIX}"
+            inspection = inspect_task_snapshot(
+                self.project_path,
+                interface_model,
+                task_snapshot,
+                iso_weekday=iso_weekday,
             )
+            self.missing_task_names = list(dict.fromkeys(inspection.missing_task_names))
             if flavor is None:
+                # 今天不跑的实例与红灯一样在建计划之前排除，不校验它们的选项（坏配置不挡整轮）
                 plan = MaaFWRunnerService().build_plan(
                     self.project_path,
                     interface_model,
@@ -1390,101 +1378,58 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     selected_preset=effective_preset,
                     task_snapshot=task_snapshot or None,
                     script_hotkeys=script_hotkeys,
-                    excluded_task_reasons=dict.fromkeys(off_day_ids, off_day_reason),
+                    excluded_task_reasons=inspection.off_day_reasons(),
                 )
-                return _with_skipped_tasks(
-                    _with_warnings(plan, stale_warnings), missing_skips
+            else:
+                expansion = expand_task_snapshot(
+                    self.project_path,
+                    interface_model,
+                    task_snapshot=task_snapshot,
+                    selected_preset=effective_preset,
+                    iso_weekday=iso_weekday,
+                    rules=rules,
+                    inspection=inspection,
                 )
-            task_ids, task_options, global_options = select_snapshot_tasks(
-                interface_model,
-                selected_preset=effective_preset,
-                task_snapshot=task_snapshot or None,
-            )
-            # 特调声明不可选的任务先剔：装饰钩子看到的就是剔完的队列（剔空了它不补首尾）
-            task_ids, task_options = _drop_unselectable_tasks(
-                interface_model,
-                task_ids,
-                task_options,
-                unselectable_entries(flavor),
-                send_log=send_log if send_log is not None else logger.info,
-                dropped_names=unselectable_names,
-            )
-            # 今天不在运行日的实例不交给装饰钩子：钩子看到的是今天真要跑的队列（剔空了 M9A
-            # 就不补启动 / 关闭游戏）。钩子自己按固定规则补回的同一实例（受管任务）照常跑，
-            # 不受运行日影响；其余的仍按原位置交给核心，由核心在建计划前排除、记成跳过
-            # （不校验选项），全被排除时计划为空。红灯与今天不跑的实例经上下文交给钩子，
-            # 钩子另读账号配置自动补任务时用它，不必自己再解析快照、再判一次星期。
-            off_day_set = set(off_day_ids) & set(task_ids)
-            context = MaaFWSelectionContext(
-                script_config=self.script_config,
-                user_config=self.cur_user_config,
-                resource_name=resource_name,
-                excluded_task_ids=frozenset(
-                    [*unchecked_task_ids(task_snapshot), *off_day_ids]
-                ),
-                # 本方法在工作线程里跑：没给线程安全的回调就只进后端日志。
-                log=send_log if send_log is not None else logger.info,
-            )
-            decorated_ids, decorated_options = flavor.decorate_selection(
-                interface_model,
-                [task_id for task_id in task_ids if task_id not in off_day_set],
-                {
-                    key: value
-                    for key, value in task_options.items()
-                    if key not in off_day_set
-                },
-                context=context,
-            )
-            off_day_set -= set(decorated_ids)
-            off_day_extra = [task_id for task_id in task_ids if task_id in off_day_set]
-            task_ids = [*decorated_ids, *off_day_extra]
-            task_options = {
-                **decorated_options,
-                **{
-                    task_id: task_options[task_id]
-                    for task_id in off_day_extra
-                    if task_id in task_options
-                },
-            }
-            plan = MaaFWRunnerService().build_plan(
-                self.project_path,
-                interface_model,
-                controller_name=controller_name,
-                resource_name=resource_name,
-                # 特调路径把已选任务拆成 task_ids 交给核心；仍带上原始快照，
-                # 让核心把用户显式设为跳过的实例写进 skippedTasks，并从它取
-                # 从密文解出来的字段（下发失败的提示按密码处理）。
-                task_snapshot=task_snapshot,
-                task_ids=task_ids,
-                task_options=task_options,
-                global_options=global_options,
-                script_hotkeys=script_hotkeys,
-                # 特调声明不回落 default 的字符串字段（M9A 的自定义兑换码）
-                no_default_fallback_inputs=no_default_fallback_inputs(flavor),
-                excluded_task_reasons=dict.fromkeys(off_day_extra, off_day_reason),
-            )
-            plan = _mark_nonfatal_tasks(_mark_abort_round_tasks(plan, flavor), flavor)
-            return _with_skipped_tasks(
-                _with_warnings(plan, stale_warnings), missing_skips
-            )
+                for line in expansion.notices:
+                    log(line)
+                # 钩子看到的是今天真要跑的队列（剔空了就不补首尾）。红灯与今天不跑的实例经上下文
+                # 交给钩子，钩子另读账号配置自动补任务时跳过它们，不必自己再解析快照、再判星期。
+                arranged_ids, arranged_options = flavor.decorate_selection(
+                    interface_model,
+                    list(expansion.task_ids),
+                    dict(expansion.task_options),
+                    context=MaaFWSelectionContext(
+                        script_config=self.script_config,
+                        user_config=self.cur_user_config,
+                        resource_name=resource_name,
+                        excluded_task_ids=expansion.excluded_task_ids,
+                        log=log,
+                    ),
+                )
+                # 钩子按固定规则补回的同一实例照常跑、不受运行日影响；其余停跑日实例由核心在
+                # 建计划前排除、记成跳过（不校验选项），全被排除时计划为空。
+                queue = merge_arranged_queue(expansion, arranged_ids, arranged_options)
+                plan = MaaFWRunnerService().build_plan(
+                    self.project_path,
+                    interface_model,
+                    controller_name=controller_name,
+                    resource_name=resource_name,
+                    # 已选任务拆成 task_ids 交给核心；仍带上原始快照，让核心把用户显式设为
+                    # 跳过的实例写进 skippedTasks，并从它取从密文解出来的字段（下发失败的提示
+                    # 按密码处理）。
+                    task_snapshot=task_snapshot,
+                    task_ids=queue.task_ids,
+                    task_options=queue.task_options,
+                    global_options=dict(expansion.global_options),
+                    script_hotkeys=script_hotkeys,
+                    no_default_fallback_inputs=rules.no_default_fallback_inputs,
+                    excluded_task_reasons=queue.excluded_task_reasons,
+                )
+            return attach_snapshot_findings(apply_plan_rules(plan, rules), inspection)
         except Exception as exc:
-            message = str(exc)
-            if (
-                NO_RUNNABLE_TASKS_MESSAGE in message
-                or ALL_TASKS_SKIPPED_MESSAGE in message
-            ):
-                # 队列里只剩虚影时「没有可执行任务」说不清原因，把对不上的任务名带上；
-                # 只剩不可选任务时同理（前面的「已跳过」行在账号日志里，报错里看不到）。
-                # 别的报错（拆用户、找不到 controller……）与它们无关，不附加
-                if missing_skips:
-                    names = "、".join(
-                        dict.fromkeys(item.name for item in missing_skips)
-                    )
-                    message = f"{message}（interface 内已无：{names}）"
-                if unselectable_names:
-                    names = "、".join(unselectable_names)
-                    message = f"{message}（已跳过不可选任务：{names}）"
-            raise MaaFWRunPlanError(message) from exc
+            raise MaaFWRunPlanError(
+                describe_plan_failure(str(exc), inspection, expansion)
+            ) from exc
 
     def _select_run_selection(
         self, interface_model: MaaFWInterface
@@ -5812,9 +5757,9 @@ def _period_all_done_message(plan: MaaFWRunPlan) -> str:
     # 运行日的说法只在跳过原因全是「不在运行日」（或再加周期已完成）时用；混了红灯、失效任务
     # 等别的原因时，照改动前这种情况原本的提示说
     reasons = [task.reason or "" for task in plan.skippedTasks]
-    off_day = any(reason.endswith(_OFF_DAY_REASON_SUFFIX) for reason in reasons)
+    off_day = any(reason.endswith(OFF_DAY_REASON_SUFFIX) for reason in reasons)
     only_off_day_or_period = all(
-        reason.endswith(_OFF_DAY_REASON_SUFFIX) or reason in _PERIOD_DONE_LABELS
+        reason.endswith(OFF_DAY_REASON_SUFFIX) or reason in _PERIOD_DONE_LABELS
         for reason in reasons
     )
     if off_day and only_off_day_or_period and not ordered:
@@ -5827,121 +5772,6 @@ def _period_all_done_message(plan: MaaFWRunPlan) -> str:
     if not periods:
         return "MaaFW 队列里的周期任务都已在本周期内完成，跳过本次运行"
     return f"MaaFW 队列里的周期任务都已在{' / '.join(ordered)}完成，跳过本次运行"
-
-
-#: ISO 星期（1=周一）对应的叫法，运行日跳过原因用。
-_WEEKDAY_NAMES = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
-#: 运行日跳过原因的后半句：「今天周一，不在运行日」。
-_OFF_DAY_REASON_SUFFIX = "，不在运行日"
-
-
-def _drop_unselectable_tasks(
-    interface_model: MaaFWInterface,
-    task_ids: list[str],
-    task_options: dict[str, Any],
-    entries: dict[str, str],
-    *,
-    send_log: Callable[[str], None],
-    dropped_names: list[str] | None = None,
-) -> tuple[list[str], dict[str, Any]]:
-    """剔掉特调声明不可选的任务（``unselectable_entries``：entry → 原因），连同它们的选项。
-
-    日志按原因合并成一行（同名任务只列一次，名字顺序按队列），没声明时原样返回。
-    ``dropped_names`` 非空时把被剔任务的显示名（去重、按队列）追加进去，供空队列报错带上原因。
-    """
-
-    if not entries:
-        return task_ids, task_options
-    task_by_name = {task.name: task for task in interface_model.task}
-
-    def task_of(task_id: str) -> Any:
-        return task_by_name.get(resolve_task_instance_name(str(task_id), task_by_name))
-
-    def entry_of(task_id: str) -> str:
-        task = task_of(task_id)
-        return str(task.entry or "") if task is not None else ""
-
-    kept: list[str] = []
-    # 原因 → 被剔任务显示名（dict 保序：原因按首次出现，名字按队列，同名只列一次）
-    by_reason: dict[str, dict[str, None]] = {}
-    dropped: list[str] = []
-    for task_id in task_ids:
-        entry = entry_of(task_id)
-        if entry not in entries:
-            kept.append(task_id)
-            continue
-        name = _task_display_name(task_of(task_id))
-        by_reason.setdefault(entries[entry], {})[name] = None
-        dropped.append(name)
-    for reason, names in by_reason.items():
-        send_log("已跳过" + "".join(f"「{name}」" for name in names) + f"：{reason}")
-    if dropped_names is not None:
-        dropped_names.extend(dict.fromkeys(dropped))
-    if len(kept) == len(task_ids):
-        return task_ids, task_options
-    options = {
-        key: value
-        for key, value in task_options.items()
-        if entry_of(key) not in entries
-    }
-    return kept, options
-
-
-def _mark_abort_round_tasks(plan: MaaFWRunPlan, flavor: Any) -> MaaFWRunPlan:
-    """把特调声明的关键任务（``abort_round_entries``：entry → 失败时报的话）标到计划上。
-
-    runner 据此在这些任务失败或超时时直接结束本轮，见 ``MaaFWTaskRunPlan.abortRoundMessage``。
-    """
-
-    entries = abort_round_entries(flavor)
-    if not entries:
-        return plan
-    tasks = [
-        task.model_copy(update={"abortRoundMessage": entries[task.entry]})
-        if task.entry in entries
-        else task
-        for task in plan.tasks
-    ]
-    return plan.model_copy(update={"tasks": tasks})
-
-
-def _mark_nonfatal_tasks(plan: MaaFWRunPlan, flavor: Any) -> MaaFWRunPlan:
-    """把特调声明的收尾任务（``nonfatal_entries``：entry → 失败时接在日志后的说明）标到计划上。
-
-    runner 据此在这些任务失败、超时或原地打转时只截图记日志、不计入本轮失败，见
-    ``MaaFWTaskRunPlan.nonFatalMessage``。
-    """
-
-    entries = nonfatal_entries(flavor)
-    if not entries:
-        return plan
-    tasks = [
-        task.model_copy(update={"nonFatalMessage": entries[task.entry]})
-        if task.entry in entries
-        else task
-        for task in plan.tasks
-    ]
-    return plan.model_copy(update={"tasks": tasks})
-
-
-def _with_skipped_tasks(
-    plan: MaaFWRunPlan, skipped: list[MaaFWSkippedTaskPlan]
-) -> MaaFWRunPlan:
-    """把建计划之外判出的跳过项排在计划自己的跳过项前面。"""
-
-    if not skipped:
-        return plan
-    return plan.model_copy(update={"skippedTasks": [*skipped, *plan.skippedTasks]})
-
-
-def _with_warnings(plan: MaaFWRunPlan, warnings: list[str]) -> MaaFWRunPlan:
-    """把建计划之外判出的提示接在计划自己的提示后面（重复的只留一条）。"""
-
-    if not warnings:
-        return plan
-    return plan.model_copy(
-        update={"warnings": list(dict.fromkeys([*plan.warnings, *warnings]))}
-    )
 
 
 def _current_period_keys(now: datetime | None = None) -> tuple[str, str, str]:

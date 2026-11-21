@@ -22,6 +22,7 @@ from .models import (
     simplified_chinese_language_file,
     task_repeat_count,
 )
+from .plan_rules import MaaFWPlanRules
 from .task_config import (
     _build_default_task_order,
     _build_task_option_maps,
@@ -97,6 +98,30 @@ class MaaFWInterfacePreviewData(BaseModel):
     importCount: int = 0
     agentCount: int = 0
     controlCapabilities: dict[str, Any] = Field(default_factory=dict)
+
+
+def apply_preview_plan_rules(payload: dict[str, Any], rules: MaaFWPlanRules) -> None:
+    """按调用方给的规则表（与建计划同一份）就地改预览载荷（``model_dump`` 出来的字典）。
+
+    - 每个任务都填 ``unselectableReason``：规则表里不可选的填原因，其余填 ``None``。账号页据此
+      把它们挡在「添加任务」与预设模板之外。
+    - 不回落 default 的字符串字段把 ``default`` 置空：运行时没填就下发空串，账号页把没填的字段
+      显示成 default（与运行时回落同口径），不置空就会显示一个运行时并不下发的值。default 在
+      前端只用于显示与数字字段的空值校验，这些都是字符串字段，置空只影响显示。
+    """
+
+    for task in payload.get("tasks") or []:
+        task["unselectableReason"] = rules.unselectable.get(
+            str(task.get("entry") or "")
+        )
+    fields = rules.no_default_fallback_inputs
+    if not fields:
+        return
+    for option in payload.get("options") or []:
+        option_name = str(option.get("name") or "")
+        for input_item in option.get("inputs") or []:
+            if (option_name, str(input_item.get("name") or "")) in fields:
+                input_item["default"] = None
 
 
 def build_interface_preview_data(

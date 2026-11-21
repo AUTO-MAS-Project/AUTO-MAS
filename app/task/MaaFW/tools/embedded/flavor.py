@@ -98,7 +98,7 @@
 
 - **形状**：``dict[str, str]``，任务 entry → 这个任务失败时报给用户的话（如 M9A 的
   ``{"SwitchAccount": "切换账号失败"}``）。同样按 ``getattr`` 探测，不进协议。
-- **效果**：建运行计划后由 ``runner_task._mark_abort_round_tasks`` 标到对应任务的
+- **效果**：经 ``plan_rules`` 收进规则表，建运行计划后由核心 ``task_selection.apply_plan_rules`` 标到对应任务的
   ``abortRoundMessage`` 上；这些任务失败或单任务超时时本轮直接结束（不再跑后面的任务），
   按普通失败结算、宿主照常重试。普通任务失败仍是记失败后继续。
 
@@ -107,7 +107,7 @@
 - **形状**：``dict[str, str]``，任务 entry → 这个任务失败时接在日志后的说明（如 M9A 的
   ``{"Close1999": "MAS 收尾时会关闭游戏/模拟器，不影响本轮结果"}``）。同样按 ``getattr``
   探测，不进协议。
-- **效果**：建运行计划后由 ``runner_task._mark_nonfatal_tasks`` 标到对应任务的
+- **效果**：经 ``plan_rules`` 收进规则表，建运行计划后由核心 ``task_selection.apply_plan_rules`` 标到对应任务的
   ``nonFatalMessage`` 上；这些任务失败、单任务超时或原地打转时照常截图（只留在 history，
   本轮成功时不进通知），写一行日志接上这句说明，不计入本轮失败、不触发重试，然后继续。
   单任务超时后若后面还有任务，与普通任务一样先等停止生效再继续，等满仍没停下就按失败跳过本轮剩余
@@ -143,7 +143,8 @@
 - **界面**：``/maafw/preview`` 按脚本的特调（没有脚本时按项目认领的特调）给这些任务填
   ``unselectableReason``（就是这里的原因），其余任务为 ``None``；账号页据此把它们挡在「添加任务」
   与预设模板之外，已在队列里的照常显示、可删，并提示一次运行时会跳过。不改写账号配置。
-- **运行**：``runner_task`` 归一化队列之后、``decorate_selection`` 之前按 entry 剔掉它们（连同选项），
+- **运行**：展开任务快照（核心 ``task_selection.expand_task_snapshot``，规则表经 ``plan_rules``）
+  归一化队列之后、``decorate_selection`` 之前按 entry 剔掉它们（连同选项），
   按原因合并写一行账号日志（「已跳过「任务甲」「任务乙」：原因」，同名任务只列一次，顺序按队列）。
   剔完为空就是普通的空队列：特调不补首尾，引擎照常报「没有可执行任务」。
 - **优先级**：被剔掉的任务不进计划，所以优先于 ``abort_round_entries`` / ``nonfatal_entries`` /
@@ -156,7 +157,8 @@
 - **效果**：引擎对字符串 input 没填（没存或存的是空串）时回落 interface 的 ``default``
   （``runner/pipeline_override._string_input_fallback``）。列在这里的字段不回落，没填就下发空串。
   ``runner_task`` 两条建计划的路（快照路与特调的 ``task_ids`` 路）都按脚本的特调传，通用 MaaFW
-  没有例外。``/maafw/preview`` 按同一个特调把这些字段的 ``default`` 置成 null（与补
+  没有例外。``/maafw/preview`` 按同一个特调的规则表（``plan_rules`` → 核心
+  ``preview.apply_preview_plan_rules``）把这些字段的 ``default`` 置成 null（与补
   ``unselectableReason`` 同一处）：账号页把没填的字段显示成 default，不置空就会显示一个运行时
   并不下发的值。
 - **该列什么**：default 是项目留下的字面量占位、真下发会出错的字段（如 M9A 自定义兑换码的
@@ -190,6 +192,10 @@ from typing import Any, Protocol, runtime_checkable
 from app.task.game import game_is_emulator
 from app.task.MaaFW.tools.core.interface import loader as _interface_loader
 from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
+from app.task.MaaFW.tools.core.interface.plan_rules import (
+    EMPTY_PLAN_RULES,
+    MaaFWPlanRules,
+)
 from app.task.MaaFW.tools.core.runner import run_plan as _run_plan
 from app.utils import game_update as _utils_game_update
 from app.utils import get_logger
@@ -324,6 +330,19 @@ def skip_on_retry_entries(flavor: Any) -> frozenset[str]:
     if not isinstance(declared, (set, frozenset, list, tuple)):
         return frozenset()
     return frozenset(str(entry) for entry in declared if str(entry or "").strip())
+
+
+def plan_rules(flavor: Any) -> MaaFWPlanRules:
+    """特调声明的四张表收成建计划与预览共用的规则表；不是特调时是空表（行为与通用 MaaFW 相同）。"""
+
+    if flavor is None:
+        return EMPTY_PLAN_RULES
+    return MaaFWPlanRules(
+        unselectable=unselectable_entries(flavor),
+        abort_round=abort_round_entries(flavor),
+        nonfatal=nonfatal_entries(flavor),
+        no_default_fallback_inputs=no_default_fallback_inputs(flavor),
+    )
 
 
 def retype_notice_lines(flavor: Any, *, entering: bool, has_users: bool) -> list[str]:
@@ -561,6 +580,7 @@ __all__ = [
     "config_value",
     "no_default_fallback_inputs",
     "nonfatal_entries",
+    "plan_rules",
     "decide_project_config_class",
     "flavor_for_project",
     "flavored_config_classes",
