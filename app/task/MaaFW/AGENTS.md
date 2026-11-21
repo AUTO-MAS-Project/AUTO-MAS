@@ -21,11 +21,34 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
   `default_snapshot`、`env_confirm`、`update_session`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
+  接缝模块按将来的积木归属分好了，**agent 环境一侧**的接缝（`pool_reconcile`、`env_cache`、
+  `env_trial`）只收普通数据（项目路径集合、被替换的版本、待验证的目录），不读脚本配置、不导入
+  `embedded_project` / `project_path` 这类项目更新一侧的模块；「哪些项目还在」由项目更新一侧算
+  （`live_projects.collect_live_project_paths` / `reconcile_in_background`，`maintenance` 算隔离 venv 的
+  存活视图），再交给 `pool_reconcile.reconcile_runtime_pool` / `reconcile_agent_venvs`。更新预检
+  （`precheck.py`，项目更新一侧）只查原生库能不能加载、记失败与备忘；真建环境、agent 导入检查、
+  临时 agent 目录的放置与回收都在 `env_trial.trial_environment`。
 - `tools/core/`：七个核心包（interface / native / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
   `project_update/updater.py` 引了 `app.utils.constants`，以及 `project_update` 里的 `projection_heal` /
   `range_delta` 用宿主 `app.utils.common.zip_range` 的区间读取器（`RangeHTTPReader`、
   `RangeSpeedGuard`，没有 MFW 语义，MaaEnd 也直接用）——都只在宿主进程里跑；不要再加新的。
+- **三块将来做成插件的积木之间单向依赖**：
+  runner 可以导入 agent_env（含 runtime_pool），agent_env 不导入 runner 与 project_update，
+  project_update 不导入 runner（函数体里的延迟导入、`TYPE_CHECKING` 下的也算）；三块都可以导入
+  interface 与 native 两个库。`worker_protocol` 算 runner 那一块的，agent_env / project_update 不要引它
+  （日志前缀之类共用的常量放 `log_redact` 或 native）。这几条现在违反了也不会让运行出错，只会让以后
+  拆包时那一块带不走，所以没进核心最小回归；加导入前自己按 AST 查一遍方向。
+- **运行环境的准备与借还归 agent 环境**：`agent_env/runtime_lease.py` 是运行池 base venv + binding 的
+  唯一入口——`borrow_runtime_environment` 借（返回 `MaaFWRuntimeLease`：解释器、base venv、binding
+  版本与目录、`worker_env`（binding 相关的键与 agent pip 约束目录 `AUTO_MAS_MAAFW_AGENT_CONSTRAINT_DIR`）、
+  租约标识），`return_runtime_environment` 按标识还，`describe_runner_runtime_selection` 是同一套推导的
+  只算不建版本（回收对账、运行前自检用）；常量 `BASE_RUNTIME_PACKAGES` 也在这里。运行这边只经
+  `runner/environment.py` 的 `prepare_runner_environment` / `release_runner_environment` 调它们，
+  `build_runner_environment`（worker 的 `PYTHONPATH` 等怎么拼）留在运行。项目运行环境的准备与确认
+  （借一次环境 + 备 agent + 项目输入指纹）在 `agent_env/project_env.py`
+  （`prepare_project_environment`、`project_environment_fingerprint`），宿主的
+  `_prepare_project_environment_sync` 与 `api_service/agent_env` 直接调它，不经 `MaaFWRunnerService`。
 - **原生库识别库 `tools/core/native/`**（将来的库 `maafw_native`）：只看项目目录，认项目自带的
   MaaFramework 原生库——原生库目录在哪与取最高版本、读版本、PE 架构与导入表、能否在本机加载、
   缺依赖 / 完整 / 损坏、架构不符的描述（`project_runtime`、`pe`），项目对 maafw 的版本需求
@@ -41,9 +64,10 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `tests/task/test_maafw_core.py` 钉死。v5.5.0-beta.4 全员 MFW 挂掉，
   就是链路上多了一处 `from app.utils import ...`。要放宽这条边界，在那个测试里显式加白名单并在
   PR 里说明，不要只改这段文字。
-- **宿主 ↔ worker 协议**（`tools/core/worker_protocol.py`，只依赖标准库）：事件格式、两边共用的常量
-  （`DETAIL_LOG_PREFIX`、信号取值与证据截图 kind）、日志去向规则、分帧与通道都在这一处，宿主不再
-  复制 runner 的常量（`runner.py` 一导入就加载 maa，宿主引不了它）。
+- **宿主 ↔ worker 协议**（`tools/core/worker_protocol.py`，只依赖标准库与同样只用标准库的 `log_redact`）：
+  事件格式、两边共用的常量（信号取值与证据截图 kind；`DETAIL_LOG_PREFIX` 定义在 `log_redact`、这里照旧
+  对外提供）、日志去向规则、分帧与通道都在这一处，宿主不再复制 runner 的常量（`runner.py` 一导入就
+  加载 maa，宿主引不了它）。
   - **job 经 worker 的 stdin 传**、写完就关，不落盘（计划里有解密后的密码选项）。升级前写过的
     `data/maafw_runner_jobs/*.json` 残留照旧按 1 小时清扫（`runner_task._sweep_legacy_runner_jobs`）。
     worker 仍认一个 job 文件路径参数，只为兜「旧宿主进程拉起新 worker」的升级窗口。
@@ -375,7 +399,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   optional-dependencies、dependency-groups 或 `[tool.poetry]` 里钉版本的项目会被当成没钉而挂上约束，
   遇到真实项目再扩来源；**值写 `file:` URI**——pip 与 uv 都按空格拆这两个
   变量，装在带空格目录里的裸路径会让项目的 pip 整条报错；**文件只写 ASCII**——pip 读没有 BOM 的约束
-  文件按本机代码页解码。目录由宿主经 `AUTO_MAS_MAAFW_AGENT_CONSTRAINT_DIR` 交给 worker（不进 agent
+  文件按本机代码页解码。目录由借运行环境的返回值（`MaaFWRuntimeLease.worker_env`）经
+  `AUTO_MAS_MAAFW_AGENT_CONSTRAINT_DIR` 交给 worker（不进 agent
   环境），没设就不挂；pip 带 `--isolated` 时会忽略这个变量。
   **没装也补装**：健康检查报缺模块、自带解释器里压根没有 binding 时（换版本时视图不带它，而
   MaaTOT 这类「首次启动自己装依赖」的项目有自己的「已装过」标记、不会再装），走同一条钉回路径
@@ -447,12 +472,13 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   - **升级前按路径建的老目录**（`maafw_venv_<12hex>`）不迁移、不改名（venv 不可搬家）：共用目录还没
     建、老目录按老判据（项目路径 + interface + 依赖清单都没变）还能用时第一跑沿用它，不重建、不联网；
     项目一更新或同依赖的共用目录建好就换过去。
-  - **回收**（启动期 `MaaFWMaintenanceService.clean_agent_venvs` → `planner.collect_orphan_agent_venvs`）：存活 =
+  - **回收**（启动期 `MaaFWMaintenanceService.clean_agent_venvs` 算存活视图 → `pool_reconcile.reconcile_agent_venvs`
+    → `planner.collect_orphan_agent_venvs`）：存活 =
     各存活视图引用记录里的目录 ∪ 建计划会算出的目录 ∪ 没有引用记录的视图的老目录；存活视图的引用
     记录读不出来就整轮不回收。照旧跳过刚动过的，锁被占的也跳过；无主的引用记录一并删。
   - **更新预检不参与共用**：仍建在池根下的 `precheck_agent_venvs`，但每个 staging 一个子目录
-    `s<staging 路径哈希 10 位>`（`precheck.precheck_staging_agent_root`），用完整个删掉
-    （`precheck.cleanup_precheck_agent_venv`）。不能让预检 venv 在 `precheck_agent_venvs` 下按键共用：
+    `s<staging 路径哈希 10 位>`（`env_trial.precheck_staging_agent_root`），用完整个删掉
+    （`env_trial.trial_environment` 离开时调 `cleanup_precheck_agent_venv`）。不能让预检 venv 在 `precheck_agent_venvs` 下按键共用：
     上次预检被杀或没删干净的同键残留会被判「要重建」，而 `_reset_isolated_venv` 只肯重建
     `maafw_agent_venvs` 下的目录，预检直接失败、记成 `other`，这个版本的运行前自动更新就停住了；
     两个同依赖的预检并发时，先结束的也会删掉另一个正在用的那份。没有「预检那份直接提升为正式 venv」。

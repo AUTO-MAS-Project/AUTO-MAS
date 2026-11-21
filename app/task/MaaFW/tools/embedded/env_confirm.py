@@ -101,7 +101,7 @@ def bind_proxy(
     prepare: PrepareEnvironment, proxy_url: str | None
 ) -> PrepareEnvironment:
     """把代理绑进已解析的 ``prepare``（:func:`resolve_prepare_environment` 的返回值），签名与
-    ``precheck.PrepareProjectEnvironment`` 一致（预检里的 uv / pip 子进程也走托管级代理）。
+    ``env_trial.PrepareProjectEnvironment`` 一致（预检里的 uv / pip 子进程也走托管级代理）。
     不导入任何东西。"""
 
     return functools.partial(prepare, proxy_url=proxy_url)
@@ -116,10 +116,8 @@ def resolve_update_precheck() -> UpdatePrecheckBuilder:
     才导入。
     """
 
-    from app.task.MaaFW.tools.embedded.precheck import (
-        build_precheck_validator,
-        precheck_agent_root,
-    )
+    from app.task.MaaFW.tools.embedded.env_trial import precheck_agent_root
+    from app.task.MaaFW.tools.embedded.precheck import build_precheck_validator
 
     prepare = resolve_prepare_environment()
 
