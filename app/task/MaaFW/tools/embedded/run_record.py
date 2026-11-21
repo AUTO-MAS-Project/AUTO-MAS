@@ -155,15 +155,19 @@ class MaaFWRunRecorder:
         if not enabled:
             yield
             return
-        self._stage_mark(stage, None)
+        self.mark_stage(stage, None)
         ok = False
         try:
             yield
             ok = True
         finally:
-            self._stage_mark(stage, ok)
+            self.mark_stage(stage, ok)
 
-    def _stage_mark(self, stage: str, ok: bool | None) -> None:
+    def mark_stage(self, stage: str, ok: bool | None) -> None:
+        """宿主阶段的一次起止：``ok`` 为 None 记开始，真 / 假记结束；出错只写 WARNING（旁路）。
+
+        ``stage()`` 包不住的阶段（发生在 ``plan_run`` 里、经事件交回来的）由调用方直接调它。"""
+
         try:
             if ok is None:
                 self.stage_begin(stage)
