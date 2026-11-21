@@ -231,10 +231,32 @@ async def test_restricted_plugin_cascade_restore_skips_the_gate(
 
 
 @pytest.mark.asyncio
+async def test_restricted_plugin_first_enable_after_fault_still_needs_unlock(
+    isolated_app_paths, monkeypatch
+):
+    """故障态不等于「用户要它开着」：从未启用过的插件进故障态，启用仍要解锁。"""
+    record = await _restricted_record(
+        isolated_app_paths, monkeypatch, state="fault_runtime"
+    )
+
+    _use_gate(monkeypatch, unlocked=False)
+    with pytest.raises(PluginPrecheckError) as error:
+        await plugin_core.enable(record)
+    assert "神秘入口" in str(error.value)
+    assert record.info.state == PluginState.FAULT_RUNTIME
+    assert record.info.enabled is False
+
+
+@pytest.mark.asyncio
 async def test_enabled_restricted_plugin_recovers_from_runtime_fault_while_locked(
     isolated_app_paths, monkeypatch
 ):
-    """存量插件运行期故障后仍可重新启用：判据只看「上次是否用户启用过」，不看解锁状态。"""
+    """存量插件运行期故障后仍可重新启用：判据只看「上次是否用户启用过」，不看解锁状态。
+
+    真实的「启用意图」由重载恢复失败产生，见
+    tests/core/test_plugin_cascade.py::test_reload_restore_failure_keeps_enable_intent_for_restricted_plugin；
+    这里只固定门禁读到该意图时的放行结论。
+    """
     record = await _restricted_record(
         isolated_app_paths, monkeypatch, state="fault_runtime"
     )

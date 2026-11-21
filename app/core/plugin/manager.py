@@ -970,10 +970,25 @@ class _PluginManager:
         record.info.lifecycle_context = LifecycleContext.RELOAD
         await record.commit()
         deps: dict[str, Any] = {}
+        tear: dict[str, Any] = {}
+
+        async def keep_enable_intent(tree: dict[str, Any]) -> None:
+            """只补启用意图，不改状态：树里的节点都是这次重载前处于启用态的。
+
+            恢复失败的节点留在故障态、被跳过的子树留在禁停态，都不算「没启用过」。
+            抹掉意图会让老用户在故障排除后重新「启用」时被当成首次使用，
+            受控插件因此还要再解锁一次。从未启用和用户主动停用的插件不进这棵树。
+            """
+            for dep_id, children in tree.items():
+                dep_record = self._record_by_plugin_id(dep_id)
+                if dep_record is not None and not dep_record.info.enabled:
+                    dep_record.info.enabled = True
+                    await dep_record.commit()
+                await keep_enable_intent(children)
+
         try:
             # ── 拆下游 ──
             path = [*path_list, uid_s]
-            tear: dict[str, Any] = {}
             for dep_record in downs:
                 if dep_record.info.state != PluginState.ENABLED:
                     continue
@@ -1032,7 +1047,6 @@ class _PluginManager:
                     except Exception as exc:
                         logger.exception(f"重载后恢复下游失败: {dep_id}")
                         restored_record.info.state = PluginState.FAULT_RUNTIME
-                        restored_record.info.enabled = False
                         restored_record.info.last_error = str(exc)
                         await restored_record.commit()
                         # 子节点仍缺少此提供者，不能借恢复子树再次启用失败分支。
@@ -1041,6 +1055,8 @@ class _PluginManager:
                 return restored
 
             deps["restore"] = await restore_cascade(tear)
+            # 故障与被跳过的子树都要留着启用意图，否则故障排除后重新启用会被当成首次使用。
+            await keep_enable_intent(tear)
 
             if was_enabled:
                 record.info.state = PluginState.ENABLED

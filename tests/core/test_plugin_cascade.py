@@ -169,7 +169,7 @@ async def test_reload_shared_descendant_is_disabled_and_restored_once(cascade_pl
 async def test_reload_restore_failure_skips_branch_and_continues_other_branches(
     cascade_plugins,
 ):
-    """恢复失败保留故障记录，不通过其子节点重试失败分支，其他分支继续恢复。"""
+    """恢复失败保留故障记录与启用意图，不通过其子节点重试失败分支，其他分支继续恢复。"""
     manager, records = await cascade_plugins(
         {
             "cascade_a": (),
@@ -186,14 +186,51 @@ async def test_reload_restore_failure_skips_branch_and_continues_other_branches(
     assert result["restore"] == {"cascade_d": {}}
     assert records["cascade_a"].info.state == PluginState.ENABLED
     assert records["cascade_b"].info.state == PluginState.FAULT_RUNTIME
-    assert not records["cascade_b"].info.enabled
+    # 故障态只说明这次没恢复起来，不说明用户不要它：启用意图必须留着。
+    assert records["cascade_b"].info.enabled
     assert records["cascade_b"].info.last_error
     assert records["cascade_b"]._plugin_cls.events.count("enable") == 2
     assert records["cascade_c"].info.state == PluginState.DISABLED
-    assert not records["cascade_c"].info.enabled
+    # 被跳过的子树同样保留启用意图，否则故障排除后要逐个手工重新启用。
+    assert records["cascade_c"].info.enabled
     assert records["cascade_c"]._plugin_cls.events.count("enable") == 1
     assert records["cascade_d"].info.state == PluginState.ENABLED
     assert await manager.services.require("cascade_d")() is records["cascade_d"]._plugin
+
+
+@pytest.mark.asyncio
+async def test_reload_restore_failure_keeps_enable_intent_for_restricted_plugin(
+    cascade_plugins, monkeypatch
+):
+    """受控插件在依赖重载里没恢复起来，仍算「用户要它开着」：故障排除后重新启用不再要解锁。"""
+    import app.core.plugin.manager as plugin_manager
+
+    manager, records = await cascade_plugins(
+        {"cascade_a": (), "signflow_token": ("cascade_a",)}
+    )
+    unlocked = True
+    monkeypatch.setattr(plugin_manager, "is_unlocked", lambda: unlocked)
+
+    await manager.enable(records["signflow_token"])
+    record = records["signflow_token"]
+    assert record.info.state == PluginState.ENABLED
+    assert record.info.enabled
+
+    # 依赖重载会先拆下游再恢复，这次让恢复失败：只有走真实这段代码才盖得住。
+    record._plugin_cls.fail_enable = True
+    result = await manager.reload(records["cascade_a"])
+    assert result["tear"] == {"signflow_token": {}}
+    assert result["restore"] == {}
+    assert record.info.state == PluginState.FAULT_RUNTIME
+    assert record.info.last_error
+    assert record.info.enabled
+
+    # 故障排除但当日未解锁：老用户点「启用」不能被当成首次使用。
+    unlocked = False
+    record._plugin_cls.fail_enable = False
+    await manager.enable(record)
+    assert record.info.state == PluginState.ENABLED
+    assert record.info.enabled
 
 
 @pytest.mark.asyncio
