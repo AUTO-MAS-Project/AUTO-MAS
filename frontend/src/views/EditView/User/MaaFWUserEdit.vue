@@ -181,7 +181,6 @@ import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 import { useMaaFWSections } from '@/composables/useMaaFWFlavor'
-import { normalizeTaskSnapshot } from './MaaFWUserEdit/maafwTaskSnapshot'
 // MFW 默认分节静态引入：通用 MFW 打开不闪；特调的替换分节由注册表按需加载
 import { MAAFW_USER_PAGE_SECTIONS, useMaaFWUserPage } from './MaaFWUserEdit/pageKit'
 
@@ -214,6 +213,7 @@ const {
   accountRecordTooltip,
   managedQueueAlert,
   flavorSlotContext,
+  handleShellImported,
   taskByName,
   effectiveControllerName,
   effectiveResourceName,
@@ -265,51 +265,6 @@ const {
 
 // 各分节：默认用 MFW 的，当前特调替换了哪节就换成它的（契约见 MaaFWFlavor/sectionContracts）
 const sections = useMaaFWSections(flavor, 'userPage', MAAFW_USER_PAGE_SECTIONS)
-
-/**
- * 「配置导入」把外壳里的队列写进了用户：把实际落盘的快照规整成用户页自己的形状换进本地状态就行——
- * 写库那次请求后端已经做完了，这里再来一次 persistQueuedSnapshot 就是同一个动作写两遍。
- * 特调整理时一并改掉的账号 / 备注（M9A 把切换账号收进账号）也同步过来，否则页面上还是旧值。
- */
-const handleShellImported = (snapshot: Record<string, unknown>, info: Record<string, unknown>) => {
-  taskSnapshot.value = normalizeTaskSnapshot(snapshot, previewData.value, {
-    keepMissing: true,
-  })
-  // 队列被换掉了，原来选的预设不再对得上（后端那次写入也清了它）
-  formData.Task.SelectedPreset = ''
-  if (typeof info.Id === 'string') formData.Info.Id = info.Id
-  if (typeof info.Notes === 'string') formData.Info.Notes = info.Notes
-}
 </script>
 
-<style scoped>
-.user-edit-container {
-  background: var(--ant-color-bg-layout);
-}
-
-.user-edit-content {
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-.config-card {
-  border-radius: 12px;
-  border: 1px solid var(--ant-color-border-secondary);
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 24px;
-}
-
-/* 配置恢复预览（分区行；弹窗内滚动由通用组件负责） */
-.maafw-preview-title {
-  font-size: 15px;
-  font-weight: 600;
-  margin: 12px 0 8px;
-  color: var(--ant-color-text);
-}
-
-.maafw-preview-box {
-  margin-bottom: 8px;
-}
-</style>
+<style scoped src="./MaaFWUserEdit/userPage.css"></style>

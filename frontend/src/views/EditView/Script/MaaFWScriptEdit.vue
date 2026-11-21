@@ -330,44 +330,4 @@ const besidePackageNameCount = computed(
 )
 </script>
 
-<style scoped>
-.wizard-steps {
-  margin-bottom: 28px;
-}
-
-.wizard-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 8px;
-  padding-top: 20px;
-  border-top: 1px solid var(--ant-color-border-secondary);
-}
-
-.script-edit-content {
-  flex: 1;
-}
-
-.config-card {
-  border-radius: 16px;
-  box-shadow: none;
-  border: 1px solid var(--ant-color-border-secondary);
-  overflow: hidden;
-}
-
-.type-tag {
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 16px;
-  border-radius: 8px;
-  border: none;
-}
-
-.config-form {
-  max-width: none;
-}
-
-.config-form :deep(.ant-form-item) {
-  margin-bottom: 20px;
-}
-</style>
+<style scoped src="./MaaFWScriptEdit/scriptPage.css"></style>

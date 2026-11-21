@@ -31,11 +31,10 @@
 `mss`，`PLAN_BOOK` 的 `MSSPlanConfig`）与 `Info.IfActivityFirst`（活动优先）。
 `app/task/MaaFW/registration.py` 的家族声明显式把 `MSSConfig` 登记到 `MaaFWEmbeddedManager`，宿主生成的运行索引按类型精确匹配。
 
-前端没有 MSS 专用托管页 / 账号页：用 MaaFW 的两个页面，按脚本实际类型取特调注册表里 MSS 的描述对象
-（`frontend/src/views/EditView/MaaFWFlavor/mss/index.ts`，写法见 `frontend/src/composables/useMaaFWFlavor.ts`
-文件头）；托管页控制方式一步顶部「只支持桌面端」的提示挂在 `scriptPage.slots.beforeControl`，账号页的
-计划表下拉与活动优先开关挂在 `userPage.slots.beforeTaskQueue`，都是同目录下按需加载的独有区块。
-计划表页 `MSSPlanTable.vue` 是 MSS 自己的。
+前端托管页 / 账号页是 MSS 的专属页面（`frontend/src/views/mss/`：`MSSScriptEdit.vue`、`MSSUserEdit.vue`，
+用 MaaFW 的 pageKit 分节与编排层拼），由特调注册表里 MSS 的描述对象
+（`frontend/src/views/EditView/MaaFWFlavor/mss/index.ts`）登记为整页；托管页控制方式一步顶部「只支持桌面端」的提示、
+账号页的计划表下拉与活动优先开关都是同目录下的组件。计划表页 `MSSPlanTable.vue` 是 MSS 自己的。
 
 只适配桌面端：模拟器端的星塔旅人启动不了游戏，托管页在控制方式一步写明原因；引擎不拦 Adb。
 

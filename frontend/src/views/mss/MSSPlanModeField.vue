@@ -7,11 +7,11 @@
     :extra="t('core.edit.mssFlavorPlanHint')"
   >
     <a-select
-      v-model:value="context.formData.Info.PlanMode"
+      v-model:value="formData.Info.PlanMode"
       :options="planModeOptions"
-      :disabled="context.loading"
+      :disabled="loading"
       class="flavor-plan-select"
-      @change="emit('save', 'Info.PlanMode', context.formData.Info.PlanMode)"
+      @change="emit('save', 'Info.PlanMode', formData.Info.PlanMode)"
     />
   </a-form-item>
   <!-- 这一轮根本跑不起来时提前说清楚，别等引擎报「没有可执行任务」 -->
@@ -27,13 +27,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { MaaFWUserSlotContext } from '@/composables/maafwFlavorTypes'
+import type { MaaFWUserFormData } from '@/composables/maafwFlavorTypes'
 import { buildPlanModeOptions, isMSSQueueUnrunnable, mssPlanComboxItems } from './planModeOptions'
 
 const { t } = useI18n()
 
 const props = defineProps<{
-  context: MaaFWUserSlotContext
+  formData: MaaFWUserFormData
+  /** 页面仍在加载：控件置灰 */
+  loading: boolean
+  /** 任务队列里的任务实例数（虚影不算） */
+  queuedTaskCount: number
 }>()
 
 const emit = defineEmits<{
@@ -45,7 +49,7 @@ const planModeOptions = computed(() =>
 )
 
 const queueCannotRun = computed(() =>
-  isMSSQueueUnrunnable(props.context.queuedTaskCount, props.context.formData.Info.PlanMode)
+  isMSSQueueUnrunnable(props.queuedTaskCount, props.formData.Info.PlanMode)
 )
 </script>
 

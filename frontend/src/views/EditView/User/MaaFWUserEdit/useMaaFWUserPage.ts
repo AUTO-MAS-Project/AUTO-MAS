@@ -226,15 +226,35 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     ).map(notice => t('core.edit.maafwUnselectableTaskNotice', notice)),
   ])
 
+  // 任务队列里的任务实例数：虚影不会运行，不算进队列（MSS 靠它提示「队列为空又没选计划表」）
+  const queuedTaskCount = computed(() => presentQueuedTasks.value.length)
+
   // 特调插入点的上下文：独有区块直接改 formData 草稿，落盘走 save 事件回到 handleFieldSave
   const flavorSlotContext = computed<MaaFWUserSlotContext>(() => ({
     formData,
     loading: loading.value,
-    // 虚影不会运行，不算进队列（MSS 靠它提示「队列为空又没选计划表」）
-    queuedTaskCount: presentQueuedTasks.value.length,
+    queuedTaskCount: queuedTaskCount.value,
     previewData: previewData.value,
     scriptId,
   }))
+
+  /**
+   * 「配置导入」把外壳里的队列写进了用户：把实际落盘的快照规整成用户页自己的形状换进本地状态就行——
+   * 写库那次请求后端已经做完了，这里再来一次 persistQueuedSnapshot 就是同一个动作写两遍。
+   * 特调整理时一并改掉的账号 / 备注（M9A 把切换账号收进账号）也同步过来，否则页面上还是旧值。
+   */
+  const handleShellImported = (
+    snapshot: Record<string, unknown>,
+    info: Record<string, unknown>
+  ) => {
+    taskSnapshot.value = normalizeTaskSnapshot(snapshot, previewData.value, {
+      keepMissing: true,
+    })
+    // 队列被换掉了，原来选的预设不再对得上（后端那次写入也清了它）
+    formData.Task.SelectedPreset = ''
+    if (typeof info.Id === 'string') formData.Info.Id = info.Id
+    if (typeof info.Notes === 'string') formData.Info.Notes = info.Notes
+  }
 
   const loadScriptInfo = async () => {
     pageLoading.value = true
@@ -470,7 +490,9 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     queueHintLines,
     accountRecordTooltip,
     managedQueueAlert,
+    queuedTaskCount,
     flavorSlotContext,
+    handleShellImported,
     taskByName: context.taskByName,
     effectiveControllerName: context.effectiveControllerName,
     effectiveResourceName,
