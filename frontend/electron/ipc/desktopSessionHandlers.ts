@@ -117,7 +117,7 @@ export function registerDesktopSession(
       await service.waitForStart()
       const window = preview
       const text = labels()
-      let logoff: boolean | undefined
+      let logoff = false
       if (service.active) {
         const owner = window && !window.isDestroyed() ? window : getMainWindow()
         if (owner && !owner.isDestroyed()) {
