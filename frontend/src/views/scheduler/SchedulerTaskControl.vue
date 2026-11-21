@@ -1,13 +1,14 @@
 <template>
-  <div class="task-control app-page-section">
+  <div class="task-control" :class="isRunning ? 'app-page-section' : 'draft-bar'">
     <div class="control-card">
       <div class="control-row">
-        <a-space size="middle">
+        <div v-if="!isRunning" class="queue-scope-pair">
           <a-select
-            v-if="!isRunning"
             :value="selectedTaskId"
             :placeholder="t('core.scheduler.control.taskPlaceholder')"
-            style="width: 200px"
+            class="target-select"
+            :bordered="false"
+            :dropdown-match-select-width="false"
             :loading="taskOptionsLoading"
             :options="taskOptions"
             :disabled="disabled || starting"
@@ -15,20 +16,9 @@
             @change="onTargetChange"
             @dropdown-visible-change="onDropdown"
           />
-          <div v-if="isRunning" class="running-info">
-            <span class="info-item">
-              <span class="label">{{ t('core.scheduler.control.taskLabel') }}</span>
-              <span class="value">{{ runningTaskLabel }}</span>
-            </span>
-            <span class="divider">|</span>
-            <span class="info-item">
-              <span class="label">{{ t('core.scheduler.control.modeLabel') }}</span>
-              <span class="value">{{ runningModeLabel }}</span>
-            </span>
-          </div>
-          <!-- 范围编辑保留原控制栏位置，只替换内部要求树数据。 -->
           <SchedulerRunScope
-            v-if="!isRunning && selectedTaskId"
+            v-if="selectedTaskId"
+            :key="selectedTaskId"
             :model-value="scope"
             :loading="scopeLoading"
             :error="scopeError"
@@ -36,23 +26,30 @@
             @update:model-value="value => emit('update:scope', value)"
             @refresh="emit('refresh-scope')"
           />
-        </a-space>
-        <div class="control-spacer"></div>
-        <a-space size="middle">
-          <a-button
-            :type="isRunning ? 'default' : 'primary'"
-            :danger="isRunning"
-            :loading="starting"
-            :disabled="!isRunning && startDisabled"
-            size="large"
-            @click="isRunning ? emit('stop') : emit('start')"
-          >
-            <template #icon
-              ><StopOutlined v-if="isRunning" /><PlayCircleOutlined v-else
-            /></template>
-            {{ isRunning ? t('core.scheduler.control.stop') : t('core.scheduler.control.start') }}
-          </a-button>
-        </a-space>
+        </div>
+        <div v-else class="running-info">
+          <span class="info-item">
+            <span class="label">{{ t('core.scheduler.control.taskLabel') }}</span>
+            <span class="value">{{ runningTaskLabel }}</span>
+          </span>
+          <span class="divider">|</span>
+          <span class="info-item">
+            <span class="label">{{ t('core.scheduler.control.modeLabel') }}</span>
+            <span class="value">{{ runningModeLabel }}</span>
+          </span>
+        </div>
+        <a-button
+          class="run-action"
+          :type="isRunning ? 'default' : 'primary'"
+          :danger="isRunning"
+          :loading="starting"
+          :disabled="!isRunning && startDisabled"
+          size="large"
+          @click="isRunning ? emit('stop') : emit('start')"
+        >
+          <template #icon><StopOutlined v-if="isRunning" /><PlayCircleOutlined v-else /></template>
+          {{ isRunning ? t('core.scheduler.control.stop') : t('core.scheduler.control.start') }}
+        </a-button>
       </div>
     </div>
   </div>
@@ -132,23 +129,52 @@ const startDisabled = computed(() => {
   gap: 16px;
 }
 
-.control-spacer {
-  flex: 1;
+.run-action {
+  margin-inline-start: auto;
+}
+.draft-bar {
+  flex-shrink: 0;
+}
+.draft-bar .control-card {
+  padding: 0 0 0 2px;
+}
+.draft-bar .control-row {
+  gap: 4px 8px;
+}
+.queue-scope-pair {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  background: var(--ant-color-fill-tertiary);
+  border-radius: var(--ant-border-radius);
+}
+.target-select {
+  width: 178px;
+  min-width: 0;
+  border-radius: inherit;
+}
+.target-select:not(:only-child) {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+.target-select:not(.ant-select-disabled):hover {
+  background: var(--ant-color-fill-quaternary);
+}
+.target-select.ant-select-focused {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: -2px;
 }
 
 /* 响应式 - 移动端适配 */
 @media (max-width: 768px) {
-  .control-row {
+  .app-page-section .control-row {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .control-spacer {
-    display: none;
-  }
-
-  .control-card {
-    padding: var(--app-page-content-padding);
+  .app-page-section .run-action {
+    align-self: flex-start;
+    margin-inline-start: 0;
   }
 }
 
