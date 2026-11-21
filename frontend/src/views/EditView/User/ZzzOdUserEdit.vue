@@ -331,11 +331,11 @@
                         />
                       </template>
                       <a-input
-                        v-model:value="formData.Game.Account"
+                        v-model:value="formData.Info.Id"
                         :placeholder="t('core.edit.zzzodEnterAccount')"
                         size="large"
                         class="modern-input"
-                        @blur="saveField('Game.Account', formData.Game.Account)"
+                        @blur="saveField('Info.Id', formData.Info.Id)"
                       />
                     </a-form-item>
                   </a-col>
@@ -349,11 +349,11 @@
                         />
                       </template>
                       <a-input-password
-                        v-model:value="formData.Game.Password"
+                        v-model:value="formData.Info.Password"
                         :placeholder="t('core.edit.zzzodEnterPasswordPlaceholder')"
                         size="large"
                         class="modern-input"
-                        @blur="saveField('Game.Password', formData.Game.Password)"
+                        @blur="saveField('Info.Password', formData.Info.Password)"
                       />
                     </a-form-item>
                   </a-col>
@@ -671,13 +671,13 @@ const getDefaultUserData = (): Omit<ZzzOdUserFormData, 'userName'> => ({
     ScriptAfterTask: '',
     Notes: '',
     Tag: '',
+    Id: '',
+    Password: '',
   },
   Game: {
     GameRegion: 'cn',
     GamePath: '',
     GameLanguage: 'cn',
-    Account: '',
-    Password: '',
     BilibiliAccountName: '',
     Platform: 'PC',
     UseCustomWinTitle: false,

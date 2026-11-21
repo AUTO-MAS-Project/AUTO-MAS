@@ -122,7 +122,7 @@ export function useMaaFWUserPersistence({
       | undefined
     if (!userData) return
     if (userData.Info) {
-      formData.Info.Account = userData.Info.Account ?? formData.Info.Account
+      formData.Info.Id = userData.Info.Id ?? formData.Info.Id
       formData.Info.Notes = userData.Info.Notes ?? formData.Info.Notes
     }
     const savedSnapshot = userData.Task?.TaskSnapshot

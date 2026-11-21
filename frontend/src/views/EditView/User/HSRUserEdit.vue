@@ -439,7 +439,7 @@ const formData = reactive<HSRUserConfigData>({
     Base: 'shared',
     // HSR 按方案 B 声明不支持快速配置（模型/schema 字段保留但运行时无消费，
     // native_control.py 已声明），前端不渲染快速配置开关，故不设 IfQuickConfig 默认值
-    Server: 'CN-Official',
+    Resource: 'CN-Official',
     RemainedDay: -1,
     IfScriptBeforeTask: false,
     ScriptBeforeTask: '',

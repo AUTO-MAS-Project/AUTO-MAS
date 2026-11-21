@@ -779,7 +779,7 @@ async def ensure_logged_in(
             "「由 MAS 登录 B 服」仅支持 ADB 控制器，请切换控制器或把登录方式改回「由 M9A 登录」"
         )
 
-    account = str(getattr(getattr(user_config, "Info", None), "Account") or "").strip()
+    account = str(getattr(getattr(user_config, "Info", None), "Id") or "").strip()
     if not account:
         raise MaaFWLoginRequired(
             "B 服登录失败：账号为空，请在本账号的「账号」里填写登录记录中显示的完整昵称"

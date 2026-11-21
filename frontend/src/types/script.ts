@@ -318,12 +318,8 @@ export interface MaaFWUserConfig {
     ScriptAfterTask: string | null
     Notes: string
     Tag?: string | null
-    Account: string
+    Id: string
     Password: string
-    Resource?: string
-    Base?: 'shared' | 'independent' | 'native'
-    /** 快速配置：独立于配置来源的用户级开关 */
-    IfQuickConfig?: boolean
     /** 仅 MSS 用户携带：悬赏试炼关卡来源（Fixed 或 MSS 计划表 UUID） */
     PlanMode?: string
     /** 仅 MSS 用户携带：队列里没加活动任务时，是否在活动期间自动加入并排到最前 */
@@ -344,7 +340,6 @@ export interface MaaFWUserConfig {
   Data: {
     LastProxyDate: string
     ProxyTimes: number
-    IfPassCheck: boolean
     LastProxyStatus: string
     PeriodTaskRecords: string | Record<string, Record<string, string>>
   }

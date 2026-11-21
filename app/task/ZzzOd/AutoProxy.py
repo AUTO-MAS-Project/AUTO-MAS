@@ -604,8 +604,8 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             guarded: list[tuple[UserItem, ZzzOdUserConfig, list[dict]]] = []
             for user_item, cfg, apps in candidates:
                 if (
-                    str(cfg.Game.Account or "").strip()
-                    and str(cfg.Game.Password or "").strip()
+                    str(cfg.Info.Id or "").strip()
+                    and str(cfg.Info.Password or "").strip()
                 ):
                     guarded.append((user_item, cfg, apps))
                     continue
@@ -730,7 +730,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         force_login = False
         if len(slots) == 1:
             first_user = next(iter(self._slot_users.values()))[1]
-            force_login = bool(str(first_user.Game.Account or "").strip())
+            force_login = bool(str(first_user.Info.Id or "").strip())
 
         write_instance_view(
             self.script_root_path,

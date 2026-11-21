@@ -672,7 +672,7 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <BettergiTeamSettings
             :form-data="formData"
-            :editable="formData.Info.IfUseMasConfig"
+            :editable="masConfigEnabled"
             :strategy-options="strategyOptions"
             :domain-catalog="domainCatalog"
             :domain-catalog-error="domainCatalogError"
@@ -901,7 +901,6 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
     ScriptAfterTask: '',
     Notes: '',
     Tag: '',
-    IfUseMasConfig: true,
   },
   Task: {
     OneDragonConfigName: '默认配置',
