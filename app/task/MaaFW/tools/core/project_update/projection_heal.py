@@ -52,6 +52,13 @@ from urllib.parse import urlsplit
 import httpx
 import json5
 
+from app.utils.common.zip_range import (
+    HealSkip,
+    RangeHTTPReader,
+    RangeReadCancelled,
+    format_size,
+)
+
 from .apply import _EntryBoundary
 from .contracts import (
     RESERVED_PROJECT_DIRS,
@@ -108,17 +115,12 @@ CHECK_FAILED = "failed"
 # 取回的只是缺的那几个条目，重试不会重复下载大包。
 MAX_ATTEMPTS = 3
 RETRY_AFTER_SECONDS = 6 * 3600
-# 远端按这么大的块对齐读、缓存：zipfile 的多次小读取落在同一块里就不再发请求。
-RANGE_BLOCK_SIZE = 64 * 1024
-# 一次最多从远端读这么多（中央目录 + 缺的条目）：MaaFgo 一万多条目的中央目录 1.6 MB。
-MAX_REMOTE_BYTES = 64 * 1024 * 1024
 # 检查跑在运行前、同步等着，超时比更新本身短：Range 连接 5 s、读 10 s，查 Release 的 API
 # 每个请求 10 s；整次检查（找依据 + 取回缺的文件）最多 CHECK_DEADLINE_SECONDS，超了按暂时
 # 失败记下、本次照常运行。更新本身的超时不受影响。
 HTTP_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 API_TIMEOUT_SECONDS = 10.0
 CHECK_DEADLINE_SECONDS = 45.0
-HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 # 一次最多补这么多：实测 MaaEnd v2.30.1 缺 655 个文件、原始 1.2 MB 左右（Range 读 1.6 MB），
 # MaaFgo 3 个。再多说明比对出了意外，不在运行前悄悄下载一大批。
 MAX_HEAL_FILES = 5000
@@ -139,250 +141,9 @@ _ENV_INPUT_SUFFIXES = frozenset(
 _ENV_INPUT_PREFIXES = ("requirements", "constraints")
 
 
-class HealSkip(RuntimeError):
-    """拿不到比对依据或条目不能用；``permanent`` 的不再重试，``notify`` 的给用户一行提示。"""
-
-    def __init__(
-        self, message: str, *, permanent: bool = False, notify: bool = False
-    ) -> None:
-        super().__init__(message)
-        self.permanent = permanent
-        self.notify = notify
-
-
-class RangeReadCancelled(RuntimeError):
-    """``RangeHTTPReader`` 的 ``cancelled()`` 为真：在读响应体的块之间停下（区间差量更新用）。"""
-
-
 # --------------------------------------------------------------------------
-# 远端：按区间读取的只读文件对象，交给 zipfile
+# 远端：按区间读取的只读文件对象（``RangeHTTPReader`` 在宿主 ``app.utils.common.zip_range``）
 # --------------------------------------------------------------------------
-
-
-def _parse_content_range(value: str) -> tuple[int, int, int | None] | None:
-    from .transport import _parse_content_range as parse
-
-    return parse(value)
-
-
-class RangeHTTPReader:
-    """只读、可 seek 的远端文件：``read`` 时按 ``block_size`` 对齐发 HTTP Range，读过的块
-    缓存起来。只接受与请求一致的 206（回 200 时不读响应体、直接放弃），累计读到
-    ``max_bytes`` 就停。``cancelled()`` 为真时在响应体的块之间抛 :class:`RangeReadCancelled`
-    （补齐检查不传；区间差量更新传用户的停止令牌）。"""
-
-    def __init__(
-        self,
-        client: httpx.Client,
-        url: str,
-        *,
-        expected_size: int | None = None,
-        block_size: int = RANGE_BLOCK_SIZE,
-        max_bytes: int = MAX_REMOTE_BYTES,
-        deadline: float | None = None,
-        cancelled: Callable[[], bool] | None = None,
-        over_limit_reason: str = "",
-        on_chunk: Callable[["RangeHTTPReader"], None] | None = None,
-    ) -> None:
-        self.client = client
-        self.url = url
-        self.block_size = block_size
-        self.max_bytes = max_bytes
-        # ``time.monotonic()`` 的截止时刻：过了就不再发请求（整次检查的总时长上限）。
-        self.deadline = deadline
-        self.cancelled = cancelled
-        # 读的超过 ``max_bytes`` 时的原因：补齐检查默认说「不在运行前自动补齐」，区间差量
-        # 更新另给一句（它不是运行前补齐）。
-        self.over_limit_reason = over_limit_reason
-        # 最后一次响应来自哪台主机（github.com 会跳到 release-assets 之类的 CDN）。
-        self.final_host = ""
-        # 逐块收到的字节与花在网络请求里的秒数（含没收完就失败的请求）：区间差量的速度
-        # 保护据此估吞吐。``on_chunk`` 每收到一块调一次，可以抛 :class:`HealSkip` 中止读取。
-        self.received = 0
-        self.network_seconds = 0.0
-        self.on_chunk = on_chunk
-        self.blocks: dict[int, bytes] = {}
-        self.position = 0
-        self.fetched = 0
-        self.requests = 0
-        self.size = 0
-        # 总大小：GitHub CDN 不认 ``bytes=-N``，用 ``bytes=0-0`` 的 Content-Range。
-        total = self._request(0, 0)[1]
-        if not total:
-            raise HealSkip("下载服务器没给出发行包大小", permanent=True)
-        if expected_size and total != expected_size:
-            raise HealSkip(
-                f"发行包大小与 Release 记录的不同（服务器 {total} 字节，"
-                f"Release {expected_size} 字节）"
-            )
-        self.size = total
-
-    def _request(self, start: int, end: int) -> tuple[bytes, int | None]:
-        pieces, total = self._request_pieces(start, end, split=None)
-        return b"".join(pieces), total
-
-    def _request_pieces(
-        self, start: int, end: int, *, split: int | None
-    ) -> tuple[list[bytes], int | None]:
-        """发一次 Range 请求，响应体按 ``split`` 字节切成块交回（``None`` = 不切）。
-
-        边收边切：以前先整段放进 bytearray、再 ``bytes()`` 一份、再切块，一个几十 MB
-        的条目峰值是两三份；现在同一时刻只多一个块。
-        """
-
-        expected = end - start + 1
-        if self.fetched + expected > self.max_bytes:
-            raise HealSkip(
-                self.over_limit_reason
-                or f"要读的太多（超过 {format_size(self.max_bytes)}），不在运行前自动补齐",
-                permanent=True,
-            )
-        if self.deadline is not None and time.monotonic() > self.deadline:
-            raise HealSkip("读取发行包超时")
-        self.requests += 1
-        buffer = bytearray()
-        pieces: list[bytes] = []
-        received = 0
-        request_started = time.monotonic()
-        try:
-            with self.client.stream(
-                "GET",
-                self.url,
-                headers={**HTTP_HEADERS, "Range": f"bytes={start}-{end}"},
-            ) as response:
-                self.final_host = response.url.host or self.final_host
-                if response.status_code != 206:
-                    # 200 就是服务端不认 Range、要把整包发过来：一个字节都不读。
-                    raise HealSkip(
-                        f"下载服务器不支持按区间读取（HTTP {response.status_code}）",
-                        permanent=response.status_code == 200,
-                    )
-                content_range = str(response.headers.get("content-range") or "")
-                parsed = _parse_content_range(content_range)
-                if (
-                    parsed is None
-                    or parsed[:2] != (start, end)
-                    or (self.size and parsed[2] not in (None, self.size))
-                ):
-                    raise HealSkip(
-                        f"下载服务器回的区间与请求不符（要 {start}-{end}，"
-                        f"回 {content_range or '没有 Content-Range'}）"
-                    )
-                for chunk in response.iter_bytes():
-                    buffer.extend(chunk)
-                    received += len(chunk)
-                    self.received += len(chunk)
-                    if received > expected:
-                        raise HealSkip("下载服务器回的区间比请求的长")
-                    while split is not None and len(buffer) >= split:
-                        pieces.append(bytes(buffer[:split]))
-                        del buffer[:split]
-                    if self.cancelled is not None and self.cancelled():
-                        raise RangeReadCancelled("update cancelled")
-                    if self.on_chunk is not None:
-                        self.network_seconds += time.monotonic() - request_started
-                        request_started = time.monotonic()
-                        self.on_chunk(self)
-        except httpx.HTTPError as exc:
-            from .transport import _reason
-
-            # 与整包下载的失败原因同一口径（打码、截 200 字；超时类 str 为空时只剩类名）。
-            detail = _reason(exc)
-            name = type(exc).__name__
-            raise HealSkip(
-                f"读取发行包失败：{name if detail == name else f'{name}: {detail}'}"
-                f"（区间 {start}-{end}）"
-            ) from exc
-        finally:
-            self.network_seconds += time.monotonic() - request_started
-        if received != expected:
-            raise HealSkip("下载服务器回的区间不完整")
-        self.fetched += expected
-        if buffer:
-            pieces.append(bytes(buffer))
-        return pieces, parsed[2]
-
-    def ensure_window(self, end: int, window: int) -> None:
-        """边读边取的读法（单个很大的条目）：丢掉当前位置之前的块，当前位置所在块
-        还没缓存时，从当前位置起预读最多 ``window`` 字节（到 ``end`` 为止）。
-
-        与整段 ``prefetch`` 要的是同一批块（只是分几次要），所以取回计划的字节数不变；
-        内存里同时最多留一个窗口。"""
-
-        self.forget(self.position)
-        # 当前位置所在块多半是上一次读剩下的半块，看下一块：没缓存就从当前位置起取一窗。
-        ahead = self.position // self.block_size + 1
-        if ahead > min(end, self.size - 1) // self.block_size or ahead in self.blocks:
-            return
-        self.prefetch(self.position, min(end, self.position + window - 1))
-
-    def _ensure(self, first: int, last: int) -> None:
-        """把 ``[first, last]`` 里还没有的块读进来，连续缺的合成一次请求。"""
-
-        runs: list[list[int]] = []
-        for index in range(first, last + 1):
-            if index in self.blocks:
-                continue
-            if runs and index == runs[-1][-1] + 1:
-                runs[-1].append(index)
-            else:
-                runs.append([index])
-        for run in runs:
-            start = run[0] * self.block_size
-            end = min(self.size, (run[-1] + 1) * self.block_size) - 1
-            pieces = self._request_pieces(start, end, split=self.block_size)[0]
-            for index, piece in zip(run, pieces):
-                self.blocks[index] = piece
-
-    def prefetch(self, start: int, end: int) -> None:
-        """把 ``[start, end]`` 字节预读进缓存（缺的块合成一次请求）：区间差量把相邻的
-        几个条目连同间隙一次要回来，不让 zipfile 逐条目各发一次。"""
-
-        end = min(end, self.size - 1)
-        if end < start:
-            return
-        self._ensure(start // self.block_size, end // self.block_size)
-
-    def forget(self, before: int) -> None:
-        """丢掉 ``before`` 字节所在块之前的缓存（读过的条目不会再读，省内存）。"""
-
-        limit = before // self.block_size
-        for index in [index for index in self.blocks if index < limit]:
-            del self.blocks[index]
-
-    def read(self, size: int | None = -1) -> bytes:
-        if size is None or size < 0:
-            size = self.size - self.position
-        end = min(self.size, self.position + size)
-        if end <= self.position:
-            return b""
-        first = self.position // self.block_size
-        last = (end - 1) // self.block_size
-        self._ensure(first, last)
-        joined = b"".join(self.blocks[index] for index in range(first, last + 1))
-        begin = self.position - first * self.block_size
-        data = joined[begin : begin + (end - self.position)]
-        self.position = end
-        return data
-
-    def seek(self, offset: int, whence: int = 0) -> int:
-        base = {0: 0, 1: self.position, 2: self.size}.get(whence)
-        if base is None or base + offset < 0:
-            raise ValueError(f"invalid seek: {offset}, {whence}")
-        self.position = base + offset
-        return self.position
-
-    def tell(self) -> int:
-        return self.position
-
-    def seekable(self) -> bool:
-        return True
-
-    def readable(self) -> bool:
-        return True
-
-    def close(self) -> None:
-        self.blocks.clear()
 
 
 def _open_client(proxy: httpx.Proxy | None) -> httpx.Client:
@@ -1124,10 +885,6 @@ def rebuild_payload(
 # --------------------------------------------------------------------------
 # 编排
 # --------------------------------------------------------------------------
-
-
-def format_size(size: int) -> str:
-    return f"{size / 1024:.1f} KB" if size < 1024 * 1024 else f"{size / 2**20:.1f} MB"
 
 
 def describe_missing(missing: list[str]) -> str:

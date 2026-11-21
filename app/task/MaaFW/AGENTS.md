@@ -23,7 +23,9 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - `tools/core/`：六个核心包（interface / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
-  `project_update/updater.py` 引了 `app.utils.constants`——它只在宿主进程里跑；不要再加新的。
+  `project_update/updater.py` 引了 `app.utils.constants`，以及 `project_update` 里的 `projection_heal` /
+  `range_delta` 用宿主 `app.utils.common.zip_range` 的区间读取器（`RangeHTTPReader`、
+  `RangeSpeedGuard`，没有 MFW 语义，MaaEnd 也直接用）——都只在宿主进程里跑；不要再加新的。
 - **worker 子进程**（`runner/worker.py`）以 `python -m` 启动，其导入闭包内的
   `app.*` 只能落在 `app.task.MaaFW.tools.core.` 之下，由
   `tests/task/test_maafw_core.py` 钉死。v5.5.0-beta.4 全员 MFW 挂掉，

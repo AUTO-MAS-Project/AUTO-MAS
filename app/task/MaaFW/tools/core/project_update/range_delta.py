@@ -34,6 +34,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from app.utils.common.zip_range import RangeSpeedGuard
+
 from .apply import _EntryBoundary, _zip_member_parts
 from .blob_store import place_fresh
 from .contracts import RESERVED_PROJECT_DIRS
@@ -56,7 +58,6 @@ from .projection_heal import (
     read_entry,
     write_archive_skeleton,
 )
-from .timing import format_duration
 
 logger = logging.getLogger("automas.maafw.project_update.range_delta")
 
@@ -77,15 +78,6 @@ _LOCAL_HEADER_SIZE = 30
 # 更新不像运行前检查那样同步等着：单次请求给足时间，整段没有总时长上限（用户可以停止）。
 HTTP_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 _COPY_CHUNK = 1024 * 1024
-# 直连太慢就放弃区间（只在整包能走加速镜像时才设，见 :class:`RangeSpeedGuard`）：国内直连
-# GitHub 常年只有 100 多 KB/s，40% 预算的上限对识宝约 74 MB，按这个速度要十几分钟，
-# 不如按镜像下整包。估算「已用时 + 剩余计划字节 / 实测吞吐」超过这个秒数就放弃。
-SPEED_GUARD_BUDGET_SECONDS = 120.0
-# 不论估算多少，整次区间（读文件目录 + 取回）用时超过这个就放弃。
-SPEED_GUARD_HARD_LIMIT_SECONDS = SPEED_GUARD_BUDGET_SECONDS * 1.5
-# 吞吐样本够了才估：花在网络上至少这么多秒，或者至少收到这么多字节（取先到的）。
-SPEED_GUARD_MIN_SAMPLE_SECONDS = 3.0
-SPEED_GUARD_MIN_SAMPLE_BYTES = 512 * 1024
 _CANCEL_CHECK_EVERY = 200
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 
@@ -96,55 +88,6 @@ class RangeDeltaUnavailable(RuntimeError):
 
 class RangeDeltaCancelled(RuntimeError):
     """用户停止了更新：照常取消，不退回全量包。"""
-
-
-class RangeSpeedGuard:
-    """直连按需下载的速度保护：整包能走加速镜像时才由调用方建，不能退就不设。
-
-    读取器每收到一块调一次 :meth:`observe`（``RangeHTTPReader(on_chunk=...)``）；样本够了
-    就按「网络已用时 + 剩余字节 / 实测吞吐」估，超过 :data:`SPEED_GUARD_BUDGET_SECONDS`
-    抛 :class:`HealSkip`（区间这一路的失败，调用方照常退回整包）；网络已用时超过
-    :data:`SPEED_GUARD_HARD_LIMIT_SECONDS` 无论估多少都放弃。
-
-    **只看花在网络请求里的时间**（读取器累计的 ``network_seconds``）：本地的活——列旧载荷
-    大小、算投影规则、逐文件 CRC、取回阶段链接 / 复制——不算。大载荷放在慢盘上时网络再快
-    也会被墙钟拖过预算，而退回整包同样要做这些本地活（还多解压一遍），按墙钟放弃只会更慢。
-    所以不另设墙钟总上限；单次读取 30 秒没数据由读取超时兜住。
-
-    剩余字节分两段：读到包尾的结束记录后按「读完中央目录还要多少」估（``phase`` 为
-    「读文件目录」），定好取回计划后按整次计划估；结束记录读到之前只看硬上限。
-    """
-
-    def __init__(self) -> None:
-        self.budget = SPEED_GUARD_BUDGET_SECONDS
-        self.hard_limit = SPEED_GUARD_HARD_LIMIT_SECONDS
-        self.min_seconds = SPEED_GUARD_MIN_SAMPLE_SECONDS
-        self.min_bytes = SPEED_GUARD_MIN_SAMPLE_BYTES
-        #: 到当前这一段结束时从远端一共读的字节（读目录时是读完目录，之后是整次计划）。
-        self.planned_total: int | None = None
-        #: 估算的是哪一段，进日志。
-        self.phase = "按需下载"
-
-    def observe(self, reader: RangeHTTPReader) -> None:
-        received, seconds = reader.received, reader.network_seconds
-        if seconds > self.hard_limit:
-            raise HealSkip(
-                f"直连 GitHub {self.phase}，网络已用 {format_duration(seconds)}，"
-                f"超过上限 {format_duration(self.hard_limit)}，改为按镜像下整包"
-            )
-        if self.planned_total is None or received <= 0 or seconds <= 0:
-            return
-        if seconds < self.min_seconds and received < self.min_bytes:
-            # 样本太小：开头的握手、跳转会把速度算得很低，不据此放弃。
-            return
-        rate = received / seconds
-        remaining = max(0, self.planned_total - received) / rate
-        if seconds + remaining > self.budget:
-            raise HealSkip(
-                f"直连 GitHub 实测 {format_size(int(rate))}/s，{self.phase}预计还要 "
-                f"{format_duration(remaining)}（网络已用 {format_duration(seconds)}），"
-                f"超过 {format_duration(self.budget)}，改为按镜像下整包"
-            )
 
 
 def force_full_package() -> bool:
