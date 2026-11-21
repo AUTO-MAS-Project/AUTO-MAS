@@ -228,3 +228,19 @@ async def test_restricted_plugin_cascade_restore_skips_the_gate(
     _use_gate(monkeypatch, unlocked=False)
     await plugin_core.enable(record, ctx=LifecycleContext.RELOAD_CASCADE)
     assert record.info.state == PluginState.ENABLED
+
+
+@pytest.mark.asyncio
+async def test_enabled_restricted_plugin_recovers_from_runtime_fault_while_locked(
+    isolated_app_paths, monkeypatch
+):
+    """存量插件运行期故障后仍可重新启用：判据只看「上次是否用户启用过」，不看解锁状态。"""
+    record = await _restricted_record(
+        isolated_app_paths, monkeypatch, state="fault_runtime"
+    )
+    record.info.enabled = True
+    await record.commit()
+
+    _use_gate(monkeypatch, unlocked=False)
+    await plugin_core.enable(record)
+    assert record.info.state == PluginState.ENABLED
