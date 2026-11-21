@@ -5,19 +5,21 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from app.task.MaaFW.tools.core.interface.agent_command import MaaFWAgentCommandPlan
 from app.task.MaaFW.tools.core.interface.agent_entry import (
     CFA_FALLBACK_AGENT_ENTRY,
+    describe_agent_path_outside_project,
     describe_cfa_agent_entry_fallback,
     flattened_entry_path,
     is_python_entry_arg,
     is_relative_entry_path,
+    looks_like_project_path,
 )
 from app.task.MaaFW.tools.core.interface.models import MaaFWAgent
 from app.task.MaaFW.tools.core.runtime_pool._shared import (
     venv_base_python_missing as _venv_base_python_missing,
 )
 
-from .models import MaaFWAgentCommandPlan
 from .venv_share import AGENT_VENV_DIR_PREFIX as AGENT_VENV_DIR_PREFIX
 from .venv_share import (
     collect_orphan_agent_venvs as _collect_orphan_agent_venvs,
@@ -272,7 +274,7 @@ def _resolve_executable(
     managed_env_root: str | Path | None,
 ) -> dict[str, Any]:
     replaced = _replace_project_dir(child_exec, base_dir)
-    if not _looks_like_project_path(replaced):
+    if not looks_like_project_path(replaced):
         if _is_bare_python_command(replaced):
             return _isolated_venv_executable(
                 base_dir,
@@ -415,14 +417,6 @@ def _has_python_entry_arg(child_args: list[str]) -> bool:
     return any(str(arg).lower().endswith(".py") for arg in child_args)
 
 
-def _looks_like_project_path(value: str) -> bool:
-    if value.startswith("."):
-        return True
-    if "/" in value or "\\" in value:
-        return True
-    return Path(value).is_absolute()
-
-
 def _resolve_project_path(base_dir: Path, raw_path: str) -> Path:
     replaced = _replace_project_dir(raw_path, base_dir)
     candidate = Path(replaced)
@@ -430,9 +424,7 @@ def _resolve_project_path(base_dir: Path, raw_path: str) -> Path:
         candidate = base_dir / candidate
     resolved_path = candidate.resolve()
     if not _is_within_base_dir(resolved_path, base_dir):
-        raise MaaFWAgentEnvError(
-            f"路径越界，禁止访问项目目录之外的 agent 文件: {raw_path}"
-        )
+        raise MaaFWAgentEnvError(describe_agent_path_outside_project(raw_path))
     return resolved_path
 
 

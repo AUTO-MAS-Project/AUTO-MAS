@@ -1,32 +1,8 @@
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel, Field
 
-MaaFWAgentRuntimeKind = Literal[
-    "embedded",
-    "project_python",
-    "project_binary",
-    "isolated_venv",
-    "external",
-]
-
-
-class MaaFWAgentCommandPlan(BaseModel):
-    childExec: str
-    executable: str
-    executableExists: bool | None = None
-    fallbackReason: str | None = None
-    runtimeKind: MaaFWAgentRuntimeKind | str | None = None
-    isolatedVenvPath: str | None = None
-    childArgs: list[str] = Field(default_factory=list)
-    command: list[str] = Field(default_factory=list)
-    cwd: str
-    identifier: str | None = None
-    # interface 的 agent.timeout（秒，MFAA 私有扩展）；只决定等 agent 连上的预算
-    timeout: float | None = None
-    embedded: bool = False
+from ..interface.agent_command import MaaFWAgentCommandPlan
 
 
 class MaaFWAgentEnvPrepareResult(BaseModel):

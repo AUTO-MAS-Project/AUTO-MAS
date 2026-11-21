@@ -49,6 +49,21 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   （借一次环境 + 备 agent + 项目输入指纹）在 `agent_env/project_env.py`
   （`prepare_project_environment`、`project_environment_fingerprint`），宿主的
   `_prepare_project_environment_sync` 与 `api_service/agent_env` 直接调它，不经 `MaaFWRunnerService`。
+- **建计划归解析一侧，agent 命令计划在借环境时算**：`runner/run_plan.py`（选控制器与资源、pretask
+  规划、`build_maafw_run_plan`）、`pipeline_override`、`hotkey`、`runner/models.py` 的计划类型、
+  `task_selection`、`plan_transforms` 与 `interface/plan_rules` 将来随 interface 进解析库，现在还在原处，
+  但导入闭包里不能有 agent_env、runtime_pool、project_update、宿主模块和 runner 的执行侧（`runner`、
+  `worker`、`environment`、`service`；所以 `runner/__init__.py` 是惰性导出）。它们用到的小工具放解析
+  一侧：agent 命令计划的数据模型 `interface/agent_command.MaaFWAgentCommandPlan`（agent_env 与 runner
+  都从这里取）、`interface/host_path.path_without_host_venv`、`interface/agent_entry` 的
+  `agent_exec_outside_project` 等。建出的计划 `agents` 为空，interface 声明的 agent 放在
+  `declaredAgents`（`exclude=True`，不随 job 下发）；`child_exec` 越出项目目录在建计划时就报（与 agent
+  环境拒绝它是同一句）。`runner_task` 借环境时把 `declaredAgents` 交给
+  `borrow_runtime_environment(agents=...)`，agent 环境用 `planner.build_maafw_agent_command_plans`
+  算出 `MaaFWRuntimeLease.agent_plans`，`runner/environment.worker_run_plan` 填进下发给 worker 的那份
+  （同时换 `PI_CLIENT_MAAFW_VERSION`）；同一账号这一轮的重试沿用第一次借到的那份（以前建计划时算一次、
+  重试从 `base_run_plan` 重建，是同一口径）。隔离 venv 的最终目录仍由 worker 里的 `prepare_agent_envs`
+  按确切版本定一次、改写计划，见下面「计划阶段不一定知道最终目录」。
 - **原生库识别库 `tools/core/native/`**（将来的库 `maafw_native`）：只看项目目录，认项目自带的
   MaaFramework 原生库——原生库目录在哪与取最高版本、读版本、PE 架构与导入表、能否在本机加载、
   缺依赖 / 完整 / 损坏、架构不符的描述（`project_runtime`、`pe`），项目对 maafw 的版本需求
@@ -450,7 +465,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
     `pyvenv.cfg`，引导解释器没了照旧按「基解释器已不存在」重建。解释器小版本（本进程的
     `sys.version_info`，引导解释器与它同版本）进键：发版换了 Python 小版本时不沿用旧版本建的那份。
   - **计划阶段不一定知道最终目录**：项目没自带原生库、只声明范围的，maafw 要等 runner 解析出版本
-    才定。`compute_isolated_venv_path` 先看本视图的引用记录（`.refs/<视图路径哈希>.json`：上次准备
+    才定。`compute_isolated_venv_path`（借运行环境时算 agent 命令计划，见上「建计划归解析一侧」）
+    先看本视图的引用记录（`.refs/<视图路径哈希>.json`：上次准备
     实际用的目录 + 当时建计划算出的键，键对得上才信），`prepare_agent_envs` 再按确切版本定一次并
     **改写计划**（`isolatedVenvPath` / `executable` / `command[0]`），worker 起 agent 与结果里的计划都
     是改写后的。新增读计划里 venv 路径的地方要在准备之后读，或者走 `compute_isolated_venv_path`。

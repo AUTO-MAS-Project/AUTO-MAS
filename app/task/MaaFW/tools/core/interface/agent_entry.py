@@ -11,6 +11,8 @@ interface 里留着源码仓写法 ``../agent/main.py``——CFA 靠这个兜底
 
 from __future__ import annotations
 
+from pathlib import Path
+
 #: 兜底入口，相对 interface 所在目录。
 CFA_FALLBACK_AGENT_ENTRY = "agent/main.py"
 
@@ -115,6 +117,44 @@ def describe_pretask_exec_outside(raw_exec: str) -> str:
         f"运行前设置的可执行文件 {raw_exec} 在项目目录之外，AUTO-MAS 不运行项目目录外的程序，"
         "运行时跳过这一项运行前设置"
     )
+
+
+def looks_like_project_path(value: str) -> bool:
+    """agent 的 ``child_exec``（已替换 ``{PROJECT_DIR}``）是不是路径写法：以 ``.`` 开头、带分隔符
+    或是绝对路径。不是的（``python``、``node`` 这类命令名）交给 PATH，不按项目目录解析。"""
+
+    if value.startswith("."):
+        return True
+    if "/" in value or "\\" in value:
+        return True
+    return Path(value).is_absolute()
+
+
+def describe_agent_path_outside_project(raw_path: str) -> str:
+    """agent 声明的文件解析到项目目录之外时的报错（建计划与 agent 环境共用）。"""
+
+    return f"路径越界，禁止访问项目目录之外的 agent 文件: {raw_path}"
+
+
+def agent_exec_outside_project(base_dir: Path, child_exec: str) -> str | None:
+    """agent 的 ``child_exec`` 是路径写法、却解析到项目目录 ``base_dir``（已 resolve）之外时
+    返回报错，否则返回 None。
+
+    与 ``agent_env.planner`` 算命令计划时拒绝的是同一种情形、同一句话：建计划时先查这一条，
+    借运行环境时再算命令计划就不会因它失败（也就不会等到拉起游戏 / 模拟器之后才报）。
+    """
+
+    replaced = child_exec.replace("{PROJECT_DIR}", str(base_dir))
+    if not looks_like_project_path(replaced):
+        return None
+    candidate = Path(replaced)
+    if not candidate.is_absolute():
+        candidate = base_dir / candidate
+    try:
+        candidate.resolve().relative_to(base_dir)
+    except ValueError:
+        return describe_agent_path_outside_project(replaced)
+    return None
 
 
 #: 源码仓里 agent 的开发者写法 ``uv run agent/main.py``：AUTO-MAS 不支持（见 :func:`describe_uv_agent`）。

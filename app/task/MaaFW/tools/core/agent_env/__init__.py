@@ -6,10 +6,7 @@ from .env import (
     project_python_agent_binary_path,
     write_agent_compat_shims,
 )
-from .models import (
-    MaaFWAgentCommandPlan,
-    MaaFWAgentEnvPrepareResult,
-)
+from .models import MaaFWAgentEnvPrepareResult
 from .planner import (
     MaaFWAgentEnvError,
     build_maafw_agent_command_plans,
@@ -19,7 +16,6 @@ from .planner import (
 from .service import MaaFWAgentEnvService
 
 __all__ = [
-    "MaaFWAgentCommandPlan",
     "MaaFWAgentEnvError",
     "MaaFWAgentEnvPrepareResult",
     "MaaFWAgentEnvService",

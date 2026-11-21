@@ -109,7 +109,9 @@ def _warn_agent_imports(
             check_agent_plan_imports,
             log_agent_import_reports,
         )
-        from app.task.MaaFW.tools.core.agent_env.models import MaaFWAgentCommandPlan
+        from app.task.MaaFW.tools.core.interface.agent_command import (
+            MaaFWAgentCommandPlan,
+        )
 
         agents = result.get("agents") or {}
         plans = [

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import psutil
 
-from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
+from app.task.MaaFW.tools.core.interface.models import MaaFWAgent, MaaFWInterface
 
 from .environment import (
     DEFAULT_RUNTIME_LEASE_TTL_SECONDS,
@@ -56,7 +56,6 @@ class MaaFWRunnerService:
         task_ids: list[str] | None = None,
         task_options: dict[str, Any] | None = None,
         global_options: dict[str, Any] | None = None,
-        managed_env_root: str | Path | None = None,
         script_hotkeys: dict[str, dict[str, str]] | None = None,
         secret_inputs: Any = None,
         no_default_fallback_inputs: Any = None,
@@ -72,7 +71,6 @@ class MaaFWRunnerService:
             task_ids=task_ids,
             task_options=task_options,
             global_options=global_options,
-            managed_env_root=managed_env_root,
             script_hotkeys=script_hotkeys,
             secret_inputs=secret_inputs,
             no_default_fallback_inputs=no_default_fallback_inputs,
@@ -138,6 +136,8 @@ class MaaFWRunnerService:
         send_log: Callable[[str], None] | None = None,
         progress: ProjectEnvironmentProgressCallback | None = None,
         cancel_event: threading.Event | None = None,
+        agents: list[MaaFWAgent] | None = None,
+        agent_env_root: str | Path | None = None,
     ) -> MaaFWRunnerEnvironment:
         return prepare_runner_environment(
             project_path,
@@ -152,6 +152,8 @@ class MaaFWRunnerService:
             send_log=send_log,
             progress=progress,
             cancel_event=cancel_event,
+            agents=agents,
+            agent_env_root=agent_env_root,
         )
 
     def release_environment(

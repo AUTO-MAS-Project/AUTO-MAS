@@ -15,6 +15,7 @@ from typing import Callable
 
 from packaging.version import InvalidVersion, Version
 
+from ..interface.agent_command import MaaFWAgentCommandPlan
 from ..interface.agent_entry import describe_uv_agent, is_uv_launcher
 from ..log_redact import DETAIL_LOG_PREFIX, mask_home_path
 from ..native.layout import EMBEDDED_COPIES_DIR_PARTS
@@ -38,7 +39,7 @@ from ..runtime_pool.installer import (
     is_package_index_offline,
     resolve_package_index_candidates,
 )
-from .models import MaaFWAgentCommandPlan, MaaFWAgentEnvPrepareResult
+from .models import MaaFWAgentEnvPrepareResult
 from .pip_constraint import pin_agent_maafw_requirement
 from .planner import MaaFWAgentEnvError, venv_base_python_missing, venv_python_exe
 from .venv_share import (

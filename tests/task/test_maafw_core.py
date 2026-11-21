@@ -554,7 +554,9 @@ def _mixed_project(tmp_path: Path, natives: dict[Path, str]) -> Path:
 
 
 def _agent_plan(project: Path, kind: str):
-    from app.task.MaaFW.tools.core.agent_env.models import MaaFWAgentCommandPlan
+    from app.task.MaaFW.tools.core.interface.agent_command import (
+        MaaFWAgentCommandPlan,
+    )
 
     if kind == "project_python":
         exe = project / "python" / "python.exe"

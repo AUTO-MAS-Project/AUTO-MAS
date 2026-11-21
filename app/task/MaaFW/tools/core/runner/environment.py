@@ -4,7 +4,8 @@
 这里是运行这边唯一的接缝：:func:`prepare_runner_environment` 借一次
 （``borrow_runtime_environment``，拿回解释器路径、binding 版本与目录、给 worker 的环境变量等
 普通数据），用 :func:`build_runner_environment` 拼出 worker 的 ``PYTHONPATH`` 等；
-:func:`release_runner_environment` 按借到的标识还回去。
+:func:`release_runner_environment` 按借到的标识还回去。借的时候连同运行计划里声明的 agent
+一起交过去，agent 环境顺带算好 agent 命令计划，:func:`worker_run_plan` 把它填进下发给 worker 的计划。
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import os
 import sys
 import sysconfig
 import threading
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterable
@@ -29,11 +30,17 @@ from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
 )
 
 if TYPE_CHECKING:
+    from app.task.MaaFW.tools.core.interface.agent_command import (
+        MaaFWAgentCommandPlan,
+    )
+    from app.task.MaaFW.tools.core.interface.models import MaaFWAgent
     from app.task.MaaFW.tools.core.runtime_pool import (
         ExtraPackagesInstaller,
         MaaFWRuntimePool,
         RuntimeInstaller,
     )
+
+    from .models import MaaFWRunPlan
 
 
 @dataclass(frozen=True)
@@ -52,6 +59,8 @@ class MaaFWRunnerEnvironment:
     binding_dir: Path | None = None
     binding_version: str | None = None
     native_dir: Path | None = None
+    #: 借环境时 agent 环境按声明算出的 agent 命令计划（``MaaFWRuntimeLease.agent_plans``）。
+    agent_plans: tuple[MaaFWAgentCommandPlan, ...] = ()
 
 
 def prepare_runner_environment(
@@ -69,16 +78,21 @@ def prepare_runner_environment(
     send_log: Callable[[str], None] | None = None,
     progress: EnvironmentProgressCallback | None = None,
     cancel_event: threading.Event | None = None,
+    agents: Sequence[MaaFWAgent] | None = None,
+    agent_env_root: str | Path | None = None,
 ) -> MaaFWRunnerEnvironment:
     """向 agent 环境借一份运行环境，拼好 worker 的环境变量。
 
     借的规则（base venv、binding、取消、租约）见 ``agent_env.runtime_lease.borrow_runtime_environment``；
-    ``import_paths`` 只决定 worker 的 ``PYTHONPATH``（binding 目录之后）。用完交给
+    ``import_paths`` 只决定 worker 的 ``PYTHONPATH``（binding 目录之后）。``agents`` 是运行计划的
+    ``declaredAgents``，借到的 ``agent_plans`` 交给 :func:`worker_run_plan`。用完交给
     :func:`release_runner_environment`。
     """
 
     lease = borrow_runtime_environment(
         project_path,
+        agents=agents,
+        agent_env_root=agent_env_root,
         managed_env_root=managed_env_root,
         runtime_pool_root=runtime_pool_root,
         runtime_pool=runtime_pool,
@@ -112,6 +126,7 @@ def prepare_runner_environment(
             binding_dir=lease.binding_dir,
             binding_version=lease.binding_version,
             native_dir=lease.native_dir,
+            agent_plans=lease.agent_plans,
         )
     except Exception:
         return_runtime_environment(
@@ -138,6 +153,29 @@ def release_runner_environment(
         binding_version=environment.binding_version,
         runtime_pool=runtime_pool,
     )
+
+
+def worker_run_plan(
+    plan: MaaFWRunPlan,
+    environment: MaaFWRunnerEnvironment,
+    *,
+    agent_plans: Sequence[MaaFWAgentCommandPlan] | None = None,
+) -> MaaFWRunPlan:
+    """下发给 worker 的计划：``plan`` 的深拷贝，填上 agent 命令计划，``PI_CLIENT_MAAFW_VERSION``
+    换成这次实际加载的 binding 版本（借不出版本时保留建计划时的值）。
+
+    ``agent_plans`` 缺省取 ``environment.agent_plans``；调用方要沿用早先算好的一份（同一账号
+    这一轮的重试）时显式传。``plan`` 本身不改。
+    """
+
+    runner_plan = plan.model_copy(deep=True)
+    source = environment.agent_plans if agent_plans is None else agent_plans
+    runner_plan.agents = [agent.model_copy(deep=True) for agent in source]
+    if environment.maafw_version:
+        runner_plan.piEnv["PI_CLIENT_MAAFW_VERSION"] = (
+            f"v{environment.maafw_version.lstrip('v')}"
+        )
+    return runner_plan
 
 
 def build_runner_environment(

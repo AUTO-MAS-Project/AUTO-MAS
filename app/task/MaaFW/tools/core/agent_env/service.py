@@ -3,13 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from app.task.MaaFW.tools.core.interface.agent_command import MaaFWAgentCommandPlan
 from app.task.MaaFW.tools.core.interface.models import (
     MaaFWAgent,
     MaaFWInterface,
 )
 
 from .env import prepare_agent_envs
-from .models import MaaFWAgentCommandPlan, MaaFWAgentEnvPrepareResult
+from .models import MaaFWAgentEnvPrepareResult
 from .planner import build_maafw_agent_command_plans
 
 

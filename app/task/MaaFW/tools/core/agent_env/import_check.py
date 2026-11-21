@@ -36,12 +36,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..interface.agent_command import MaaFWAgentCommandPlan
 from ..runtime_pool._shared import output_tail
 from ..runtime_pool.host_environment import (
     set_project_pycache_prefix,
     strip_host_python_environment,
 )
-from .models import MaaFWAgentCommandPlan
 from .planner import MaaFWAgentEnvError
 
 #: 预检失败条目里的 ``kind``：新版本缺 agent 模块（备忘里仍按 other 记，不自动重试）

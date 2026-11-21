@@ -18,13 +18,15 @@ import sys
 import threading
 import uuid
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
 
+from ..interface.agent_command import MaaFWAgentCommandPlan
+from ..interface.models import MaaFWAgent
 from ..native.architecture import supported_architecture_target
 from ..native.project_runtime import project_maafw_runtime_path
 from ..native.requirement import (
@@ -67,6 +69,7 @@ from ..runtime_pool.installer import (
     raise_if_install_cancelled,
 )
 from .pip_constraint import AGENT_PIP_CONSTRAINT_DIR_ENV, default_agent_constraint_dir
+from .planner import build_maafw_agent_command_plans
 
 PROJECT_RUNTIME_MANIFEST_NAME = ".auto_mas_maafw_project.json"
 #: base venv 的常量包集合：runner 三包自身的三方依赖 + maafw binding 的运行时依赖。
@@ -145,6 +148,9 @@ class MaaFWRuntimeLease:
     #: 交给 worker 的环境变量：binding 相关的键（``binding_environment_variables``）与 agent
     #: 运行期 pip 约束文件的目录（``AGENT_PIP_CONSTRAINT_DIR_ENV``）。
     worker_env: dict[str, str] = field(default_factory=dict)
+    #: 借的时候按传进来的 agent 声明算出的命令计划（解释器、隔离 venv 目录），按声明顺序；
+    #: 运行把它填进下发给 worker 的计划。没传声明时为空。
+    agent_plans: tuple[MaaFWAgentCommandPlan, ...] = ()
 
 
 def _raise_if_prepare_cancelled(cancel_event: threading.Event | None) -> None:
@@ -153,6 +159,57 @@ def _raise_if_prepare_cancelled(cancel_event: threading.Event | None) -> None:
 
 
 def borrow_runtime_environment(
+    project_path: str | Path,
+    *,
+    managed_env_root: str | Path | None = None,
+    runtime_pool_root: str | Path | None = None,
+    runtime_pool: MaaFWRuntimePool | None = None,
+    runtime_installer: RuntimeInstaller | None = None,
+    extras_installer: ExtraPackagesInstaller | None = None,
+    runtime_pool_id: str | None = None,
+    lease_owner: str = "automas-maafw-runner",
+    lease_ttl_seconds: float | None = DEFAULT_RUNTIME_LEASE_TTL_SECONDS,
+    send_log: Callable[[str], None] | None = None,
+    progress: EnvironmentProgressCallback | None = None,
+    cancel_event: threading.Event | None = None,
+    agents: Sequence[MaaFWAgent] | None = None,
+    agent_env_root: str | Path | None = None,
+) -> MaaFWRuntimeLease:
+    """备好一个项目的运行环境并借出，见 :func:`_borrow_pool_environment`。
+
+    ``agents`` 是 interface 声明的 agent（运行计划的 ``declaredAgents``）：借之前先按它们算出
+    agent 命令计划（``planner.build_maafw_agent_command_plans``，只读依赖清单、引用记录与 venv
+    目录，不占池、不建环境），放进返回值的 ``agent_plans``。``agent_env_root`` 是隔离 venv 的根
+    （缺省 ``config/maafw_agent_venvs``），与 ``managed_env_root``（老的运行池根参数）无关。
+    隔离 venv 的最终目录仍由 worker 准备 agent 环境时按确切的 maafw 版本定一次、改写计划
+    （``env.prepare_agent_envs``），这里只算建计划时那一份。
+    """
+
+    agent_plans = tuple(
+        build_maafw_agent_command_plans(
+            project_path, list(agents or ()), managed_env_root=agent_env_root
+        )
+    )
+    lease = _borrow_pool_environment(
+        project_path,
+        managed_env_root=managed_env_root,
+        runtime_pool_root=runtime_pool_root,
+        runtime_pool=runtime_pool,
+        runtime_installer=runtime_installer,
+        extras_installer=extras_installer,
+        runtime_pool_id=runtime_pool_id,
+        lease_owner=lease_owner,
+        lease_ttl_seconds=lease_ttl_seconds,
+        send_log=send_log,
+        progress=progress,
+        cancel_event=cancel_event,
+    )
+    if not agent_plans:
+        return lease
+    return replace(lease, agent_plans=agent_plans)
+
+
+def _borrow_pool_environment(
     project_path: str | Path,
     *,
     managed_env_root: str | Path | None = None,

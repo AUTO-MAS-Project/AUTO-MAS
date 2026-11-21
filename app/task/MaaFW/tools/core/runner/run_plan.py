@@ -10,17 +10,17 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any
 
-from app.task.MaaFW.tools.core.agent_env import (
-    build_maafw_agent_command_plans,
-)
 from app.task.MaaFW.tools.core.interface.agent_entry import (
+    agent_exec_outside_project,
     bundled_python_escape_path,
     describe_pretask_exec_outside,
     describe_pretask_python_fallback,
 )
+from app.task.MaaFW.tools.core.interface.host_path import path_without_host_venv
 from app.task.MaaFW.tools.core.interface.loader import parse_json_text
 from app.task.MaaFW.tools.core.interface.models import (
     SUPPORTED_OPTION_TYPES,
+    MaaFWAgent,
     MaaFWController,
     MaaFWInterface,
     MaaFWOption,
@@ -53,9 +53,6 @@ from app.task.MaaFW.tools.core.interface.task_config import (
     normalize_task_execution_payload,
     unchecked_task_ids,
 )
-from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
-    path_without_host_venv,
-)
 
 from .hotkey import MaaFWHotkeyError, resolve_hotkey
 from .models import (
@@ -74,11 +71,15 @@ from .pipeline_override import (
     MaaFWPipelineOverrideBuilder,
 )
 
-# 本模块会被运行池隔离 venv 里的 worker 进程导入（``runner``
-# 的 ``__init__`` 连带 import 它），那个 venv 只装了 maafw 与项目依赖，没有
+# 本模块会被运行池隔离 venv 里的 worker 进程导入（``worker`` / ``runner``
+# 直接 import 它），那个 venv 只装了 maafw 与项目依赖，没有
 # 宿主的第三方包。所以这里不能导入宿主的 Config 或 utils，避免拉起配置、
 # 日志器等宿主状态。独立 worker 只读取随本模块源码分发的客户端版本元数据，
 # 不访问宿主配置和用户数据目录。守卫见 tests/task/test_maafw_core.py。
+# 建计划归解析一侧（将来随 interface 进解析库）：导入闭包里不能有 agent 环境、运行池和
+# runner 里执行侧的模块（runner / worker / environment / service）。agent 命令计划
+# （解释器、隔离 venv 目录）不在这里算，计划只带 interface 声明的 agent（``declaredAgents``），
+# 借运行环境时由 agent 环境算好填进下发给 worker 的计划（``runner.environment.worker_run_plan``）。
 _SOURCE_ROOT = Path(__file__).resolve().parents[6]
 
 logger = logging.getLogger("automas.maafw.runner.run_plan")
@@ -184,13 +185,16 @@ def build_maafw_run_plan(
     task_ids: list[str] | None = None,
     task_options: dict[str, Any] | None = None,
     global_options: dict[str, Any] | None = None,
-    managed_env_root: str | Path | None = None,
     script_hotkeys: dict[str, dict[str, str]] | None = None,
     secret_inputs: Any = None,
     no_default_fallback_inputs: Any = None,
     excluded_task_reasons: dict[str, str] | None = None,
 ) -> MaaFWRunPlan:
-    """``script_hotkeys``：托管级键位 ``{option 名: {字段名: 组合键}}``（``Game.Hotkeys``）。
+    """建出的计划 ``agents`` 为空，interface 声明的 agent 原样放在 ``declaredAgents``（不随计划
+    下发给 worker）；命令计划由借运行环境那一步算（``agent_env.runtime_lease``）。声明的
+    ``child_exec`` 解析到项目目录之外时在这里就报，与以前建计划时算命令计划报的是同一句。
+
+    ``script_hotkeys``：托管级键位 ``{option 名: {字段名: 组合键}}``（``Game.Hotkeys``）。
 
     ``excluded_task_reasons``：``{实例 id: 跳过原因}``，宿主判定这次不跑的实例（如今天不在运行日）。
     与红灯一样在建覆盖之前排除、不校验它们的选项，按原因记进 ``skippedTasks``；勾选的普通任务
@@ -457,11 +461,8 @@ def build_maafw_run_plan(
         resourceName=resource.name,
         resource=resource_bundle,
         nativePluginPaths=_build_native_plugin_paths(resolved_base_dir),
-        agents=build_maafw_agent_command_plans(
-            resolved_base_dir,
-            interface.agent,
-            managed_env_root=managed_env_root,
-        ),
+        # 与以前算 agent 命令计划在同一位置：越界报错的先后次序不变
+        declaredAgents=_declared_agents(resolved_base_dir, interface.agent),
         pretasks=pretask_plans,
         piEnv=_build_pi_env(
             interface, controller, resource, i18n_mapping, resolved_base_dir
@@ -472,6 +473,25 @@ def build_maafw_run_plan(
         warnings=plan_warnings,
         i18n=i18n_mapping,
     )
+
+
+def _declared_agents(
+    base_dir: Path, raw_agent: MaaFWAgent | list[MaaFWAgent] | None
+) -> list[MaaFWAgent]:
+    """interface 声明的 agent（副本，按声明顺序）。``child_exec`` 越出项目目录的报
+    ``MaaFWRunPlanError``，话与 agent 环境算命令计划时拒绝它的一样（``agent_entry``）。"""
+
+    if raw_agent is None:
+        agents: list[MaaFWAgent] = []
+    elif isinstance(raw_agent, (list, tuple)):
+        agents = list(raw_agent)
+    else:
+        agents = [raw_agent]
+    for agent in agents:
+        message = agent_exec_outside_project(base_dir, agent.child_exec)
+        if message is not None:
+            raise MaaFWRunPlanError(message)
+    return [agent.model_copy(deep=True) for agent in agents]
 
 
 def _all_explicit_common_tasks_skipped(

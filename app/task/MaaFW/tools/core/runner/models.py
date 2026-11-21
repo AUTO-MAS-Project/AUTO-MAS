@@ -4,9 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.task.MaaFW.tools.core.agent_env.models import (
-    MaaFWAgentCommandPlan,
-)
+from app.task.MaaFW.tools.core.interface.agent_command import MaaFWAgentCommandPlan
+from app.task.MaaFW.tools.core.interface.models import MaaFWAgent
 
 MaaFWControllerType = Literal["Adb", "Win32"]
 # 项目节点 attach.auto_mas 声明的联动信号（见 run_signal.py）。取值就是
@@ -81,7 +80,12 @@ class MaaFWRunPlan(BaseModel):
     resourceName: str
     resource: MaaFWResourceBundlePlan
     nativePluginPaths: list[MaaFWResolvedPath] = Field(default_factory=list)
+    # agent 命令计划（解释器、隔离 venv 目录）。建计划时为空；借运行环境时由 agent 环境按
+    # declaredAgents 算好，填进下发给 worker 的那份（runner.environment.worker_run_plan）。
     agents: list[MaaFWAgentCommandPlan] = Field(default_factory=list)
+    # interface 声明的 agent，建计划时原样摘出，只在宿主进程里用来算上面的 agents；不随
+    # job 下发（序列化时排除），worker 收到的计划与以前逐字相同。
+    declaredAgents: list[MaaFWAgent] = Field(default_factory=list, exclude=True)
     pretasks: list[MaaFWPretaskRunPlan] = Field(default_factory=list)
     piEnv: dict[str, str] = Field(default_factory=dict)
     tasks: list[MaaFWTaskRunPlan] = Field(default_factory=list)

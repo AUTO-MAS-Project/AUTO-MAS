@@ -50,6 +50,8 @@ from app.task.MaaFW.tools.core.controller_win32.service import (
     MaaFWWin32Window,
     controller_has_window_rules,
 )
+from app.task.MaaFW.tools.core.interface.agent_command import MaaFWAgentCommandPlan
+from app.task.MaaFW.tools.core.interface.host_path import path_without_host_venv
 from app.task.MaaFW.tools.core.interface.models import (
     MaaFWController,
     MaaFWInterface,
@@ -67,6 +69,7 @@ from app.task.MaaFW.tools.core.native.project_runtime import (
 )
 from app.task.MaaFW.tools.core.runner.environment import (
     MaaFWRunnerEnvironment,
+    worker_run_plan,
 )
 from app.task.MaaFW.tools.core.runner.models import (
     MaaFWDeviceConfig,
@@ -119,7 +122,6 @@ from app.task.MaaFW.tools.core.runner.task_selection import (
     merge_arranged_queue,
 )
 from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
-    path_without_host_venv,
     strip_host_python_environment,
     subprocess_proxy_scope,
 )
@@ -577,6 +579,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.interface_model: MaaFWInterface | None = None
         self.base_run_plan: MaaFWRunPlan | None = None
         self.run_plan: MaaFWRunPlan | None = None
+        # 本账号这一轮第一次借运行环境时 agent 环境算出的 agent 命令计划，重试沿用
+        self._worker_agent_plans: tuple[MaaFWAgentCommandPlan, ...] | None = None
         self.cur_user_log: LogRecord | None = None
         # 运行前检查时本账号的日志还没建（特调钩子建计划时的提示就在这时候到），
         # 先攒在这里，prepare() 建好日志时并进去
@@ -730,6 +734,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     self.run_plan,
                     game_path_error,
                 ) = state
+                # 计划重建了，agent 命令计划下次借环境时按新的声明重算
+                self._worker_agent_plans = None
             except Exception as exc:
                 await self.cur_user_item.set_state(status="异常")
                 return f"无法构建 MaaFW 运行计划，请检查项目和任务配置: {exc}"
@@ -2222,6 +2228,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     import_paths=[Config.source_path],
                     send_log=send_runner_log,
                     cancel_event=prepare_cancel_event,
+                    # agent 命令计划由 agent 环境在借环境时按声明算（见 _worker_agent_plans）
+                    agents=plan.declaredAgents,
                 )
 
         prepare_environment_task = asyncio.create_task(
@@ -2258,12 +2266,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         event_server_failure: str | None = None
         try:
             self._check_avd_runtime_version(runner_environment.maafw_version)
-            runner_plan = plan
-            if runner_environment.maafw_version:
-                runner_plan = plan.model_copy(deep=True)
-                runner_plan.piEnv["PI_CLIENT_MAAFW_VERSION"] = (
-                    f"v{runner_environment.maafw_version.lstrip('v')}"
-                )
+            # 同一账号这一轮只认第一次借环境时算出的 agent 命令计划，重试沿用（以前在建计划
+            # 时算一次、重试从 base_run_plan 重建也是同一份）。隔离 venv 的最终目录照旧由
+            # worker 准备 agent 环境时按确切版本再定一次。
+            if self._worker_agent_plans is None:
+                self._worker_agent_plans = runner_environment.agent_plans
+            runner_plan = worker_run_plan(
+                plan, runner_environment, agent_plans=self._worker_agent_plans
+            )
             payload = service.create_job_payload(
                 runner_plan,
                 device_config,
