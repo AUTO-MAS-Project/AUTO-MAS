@@ -30,8 +30,8 @@ from typing import TYPE_CHECKING
 
 from app.models.config import M9AConfig, MaaFWConfig, MSSConfig
 from app.models.script_contracts import ScriptConfigHandler
+from app.task.MaaFW.blocks.maafw_project_update.host import owners
 from app.task.MaaFW.owner_entry import BuiltinConfigOwner
-from app.task.MaaFW.tools.embedded import owners
 from app.task.MaaFW.tools.embedded.config_handler import (
     build_maafw_config_handler,
     load_maafw_restore_pools,

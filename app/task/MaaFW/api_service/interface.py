@@ -45,9 +45,11 @@ from app.task.MaaFW.blocks.maafw_interface.interface.preview import (
     interface_text_translator,
 )
 from app.task.MaaFW.blocks.maafw_interface.log_redact import mask_home_path
-from app.task.MaaFW.tools.core.project_update.state import redact_text
-from app.task.MaaFW.tools.embedded import owners
-from app.task.MaaFW.tools.embedded.embedded_project import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.state import (
+    redact_text,
+)
+from app.task.MaaFW.blocks.maafw_project_update.host import owners
+from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
     embedded_projects_root,
     is_embedded_copy_dir_name,
     resolve_maafw_project_root,

@@ -48,13 +48,12 @@ from app.task.MaaFW.blocks.maafw_agent_env.host.runtime_route import (
 from app.task.MaaFW.blocks.maafw_native.architecture import (
     describe_unsupported_architecture,
 )
-from app.task.MaaFW.tools.backup_archive import (
-    archive_mas_runtime_backup,
-    archive_native_backup,
+from app.task.MaaFW.blocks.maafw_project_update.host import owners
+from app.task.MaaFW.blocks.maafw_project_update.host.owners import (
+    RecordPatch,
+    write_managed_record,
 )
-from app.task.MaaFW.tools.embedded import owners
-from app.task.MaaFW.tools.embedded.owners import RecordPatch, write_managed_record
-from app.task.MaaFW.tools.embedded.project_session import (
+from app.task.MaaFW.blocks.maafw_project_update.host.project_session import (
     BENIGN_SKIPS,
     SKIP_OCCUPIED,
     MaaFWProjectDownload,
@@ -70,6 +69,13 @@ from app.task.MaaFW.tools.embedded.project_session import (
     discover_prefetch,
     project_request_from_record,
 )
+from app.task.MaaFW.blocks.maafw_project_update.host.update_credentials import (
+    AutoUpdateMode,
+)
+from app.task.MaaFW.tools.backup_archive import (
+    archive_mas_runtime_backup,
+    archive_native_backup,
+)
 from app.task.MaaFW.tools.embedded.proxy_quota import proxy_today
 from app.task.MaaFW.tools.embedded.run_messages import update_log_lines
 from app.task.MaaFW.tools.embedded.run_notices import (
@@ -83,7 +89,6 @@ from app.task.MaaFW.tools.embedded.signal_notice import (
     push_signal_notices,
 )
 from app.task.MaaFW.tools.embedded.telemetry_project import record_project_run
-from app.task.MaaFW.tools.embedded.update_credentials import AutoUpdateMode
 from app.task.MSS import config_view
 from app.task.run_flow import point
 from app.utils import TASK_MODE_ZH, get_logger

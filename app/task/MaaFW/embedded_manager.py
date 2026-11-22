@@ -64,23 +64,18 @@ from app.task.MaaFW.blocks.maafw_agent_env.host.runtime_check import (
 from app.task.MaaFW.blocks.maafw_agent_env.host.runtime_route import (
     resolve_runtime_pool_route,
 )
-from app.task.MaaFW.tools.backup_archive import (
-    archive_mas_runtime_backup,
-    archive_native_backup,
-    read_overlay_values,
-)
-from app.task.MaaFW.tools.embedded import owners
-from app.task.MaaFW.tools.embedded.default_snapshot import (
-    fill_default_task_snapshots,
-)
-from app.task.MaaFW.tools.embedded.embedded_project import (
+from app.task.MaaFW.blocks.maafw_project_update.host import owners
+from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
     resolve_maafw_project_root,
 )
-from app.task.MaaFW.tools.embedded.owners import RecordPatch, write_managed_record
-from app.task.MaaFW.tools.embedded.project_environment import (
+from app.task.MaaFW.blocks.maafw_project_update.host.owners import (
+    RecordPatch,
+    write_managed_record,
+)
+from app.task.MaaFW.blocks.maafw_project_update.host.project_environment import (
     prepare_project_environment_sync,
 )
-from app.task.MaaFW.tools.embedded.project_session import (
+from app.task.MaaFW.blocks.maafw_project_update.host.project_session import (
     BENIGN_SKIPS,
     SKIP_OCCUPIED,
     MaaFWProjectDownload,
@@ -94,6 +89,18 @@ from app.task.MaaFW.tools.embedded.project_session import (
     current_siblings,
     describe_open_failure,
     discover_prefetch,
+)
+from app.task.MaaFW.blocks.maafw_project_update.host.update_credentials import (
+    AutoUpdateMode,
+    resolve_auto_update_mode,
+)
+from app.task.MaaFW.tools.backup_archive import (
+    archive_mas_runtime_backup,
+    archive_native_backup,
+    read_overlay_values,
+)
+from app.task.MaaFW.tools.embedded.default_snapshot import (
+    fill_default_task_snapshots,
 )
 from app.task.MaaFW.tools.embedded.proxy_quota import (
     proxy_times_used_up,
@@ -110,10 +117,6 @@ from app.task.MaaFW.tools.embedded.signal_notice import (
     push_signal_notices,
 )
 from app.task.MaaFW.tools.embedded.telemetry_project import record_project_run
-from app.task.MaaFW.tools.embedded.update_credentials import (
-    AutoUpdateMode,
-    resolve_auto_update_mode,
-)
 from app.task.run_flow import point
 from app.utils import TASK_MODE_ZH, get_logger
 

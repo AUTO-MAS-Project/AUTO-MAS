@@ -40,21 +40,26 @@ from typing import Any
 
 import httpx
 
-from app.task.MaaFW.tools.core.project_update.projection_heal import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.projection_heal import (
     HealOutcome,
     heal_due,
     heal_payload,
     write_missing_files,
 )
-from app.task.MaaFW.tools.core.project_update.updater import MaaFWProjectUpdateError
-from app.task.MaaFW.tools.embedded.embedded_project import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.updater import (
+    MaaFWProjectUpdateError,
+)
+from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
     GroupMember,
     embedded_project_dir,
     payloads_root,
     read_view_marker,
 )
-from app.task.MaaFW.tools.embedded.update_session import UpdateProxy, UpdateSession
-from app.task.MaaFW.tools.embedded.view_update import latest_entry
+from app.task.MaaFW.blocks.maafw_project_update.host.update_session import (
+    UpdateProxy,
+    UpdateSession,
+)
+from app.task.MaaFW.blocks.maafw_project_update.host.view_update import latest_entry
 from app.utils import get_logger
 
 logger = get_logger("MFW 投影补齐")

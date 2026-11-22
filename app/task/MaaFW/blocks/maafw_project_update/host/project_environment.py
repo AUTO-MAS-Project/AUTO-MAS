@@ -91,7 +91,7 @@ def prepare_project_environment_sync(
     from app.task.MaaFW.blocks.maafw_interface.interface import (
         load_interface_model_cached,
     )
-    from app.task.MaaFW.tools.embedded.embedded_project import (
+    from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
         mark_env_confirmed,
         read_view_marker,
     )

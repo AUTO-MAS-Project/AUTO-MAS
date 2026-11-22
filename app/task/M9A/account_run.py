@@ -93,6 +93,14 @@ from app.task.MaaFW.blocks.maafw_interface.runner.task_selection import (
 from app.task.MaaFW.blocks.maafw_native.project_runtime import (
     describe_project_runtime_architecture_mismatch,
 )
+from app.task.MaaFW.blocks.maafw_project_update.host.project_path import (
+    is_project_updating,
+    release_run_reservation,
+    try_reserve_project_path,
+)
+from app.task.MaaFW.blocks.maafw_project_update.host.resource_repair import (
+    MaaFWResourceRepair,
+)
 from app.task.MaaFW.tools.core.runner.run_events import (
     CATEGORY_SIGNAL,
     STAGE_CLIENT,
@@ -144,18 +152,12 @@ from app.task.MaaFW.tools.embedded.pretask_run import (
     MaaFWPretaskRunRequest,
     pretasks_need_rerun,
 )
-from app.task.MaaFW.tools.embedded.project_path import (
-    is_project_updating,
-    release_run_reservation,
-    try_reserve_project_path,
-)
 from app.task.MaaFW.tools.embedded.proxy_quota import (
     proxy_day_rolled,
     proxy_today,
     success_settlement,
 )
 from app.task.MaaFW.tools.embedded.resource_failure import describe_resource_failure
-from app.task.MaaFW.tools.embedded.resource_repair import MaaFWResourceRepair
 from app.task.MaaFW.tools.embedded.run_messages import (
     MISSING_TASK_NOTICE_PREFIX,
     describe_failed_result,

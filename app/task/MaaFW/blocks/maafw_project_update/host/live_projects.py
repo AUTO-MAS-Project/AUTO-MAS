@@ -38,8 +38,8 @@ from app.task.MaaFW.blocks.maafw_agent_env.host.pool_reconcile import (
     reconcile_after_project_update,
     reconcile_runtime_pool,
 )
-from app.task.MaaFW.tools.embedded import owners
-from app.task.MaaFW.tools.embedded.embedded_project import (
+from app.task.MaaFW.blocks.maafw_project_update.host import owners
+from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
     embedded_projects_root,
     is_embedded_copy_dir_name,
     resolve_maafw_project_root,

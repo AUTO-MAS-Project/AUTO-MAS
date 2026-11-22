@@ -47,7 +47,7 @@ from app.task.MaaFW.blocks.maafw_interface.interface.task_config import (
     normalize_global_options,
     normalize_snapshot,
 )
-from app.task.MaaFW.tools.embedded.embedded_project import (
+from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
     embedded_project_dir,
     view_imported_from,
 )
@@ -137,8 +137,11 @@ def _family_script_config(script_id: str) -> Any:
 
     import uuid
 
+    from app.task.MaaFW.blocks.maafw_project_update.host.owners import (
+        NOT_MAAFW_MESSAGE,
+        find_managed,
+    )
     from app.task.MaaFW.registration import MAAFW_FAMILY_TYPES
-    from app.task.MaaFW.tools.embedded.owners import NOT_MAAFW_MESSAGE, find_managed
 
     find_managed(script_id)
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]

@@ -37,18 +37,22 @@ from typing import Any
 
 import httpx
 
-from app.task.MaaFW.tools.core.project_update import payloads
-from app.task.MaaFW.tools.core.project_update.payloads import read_project_interface
-from app.task.MaaFW.tools.core.project_update.projection_heal import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update import payloads
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.payloads import (
+    read_project_interface,
+)
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.projection_heal import (
     needs_environment_precheck,
 )
-from app.task.MaaFW.tools.core.project_update.release_check import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.release_check import (
     CleanOutcome,
     check_and_clean,
     payload_check_state,
 )
-from app.task.MaaFW.tools.core.project_update.updater import MaaFWProjectUpdateError
-from app.task.MaaFW.tools.embedded.embedded_project import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.updater import (
+    MaaFWProjectUpdateError,
+)
+from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
     ENV_CONFIRMED_FIELD,
     GroupMember,
     _same_version,
@@ -57,8 +61,11 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     payloads_root,
     read_view_marker,
 )
-from app.task.MaaFW.tools.embedded.update_session import UpdateProxy, UpdateSession
-from app.task.MaaFW.tools.embedded.view_update import latest_entry
+from app.task.MaaFW.blocks.maafw_project_update.host.update_session import (
+    UpdateProxy,
+    UpdateSession,
+)
+from app.task.MaaFW.blocks.maafw_project_update.host.view_update import latest_entry
 from app.utils import get_logger
 
 logger = get_logger("MFW 发行包核对")
@@ -83,7 +90,7 @@ def release_group_members(script_id: str) -> list[GroupMember]:
     """同组候选：除自己外属主名下的全部托管（事件循环线程上抄出来；运行中的标 ``busy``）。
     与 ``api_service.common.maafw_group_members`` 同一口径（都是 ``owners.group_members``）。"""
 
-    from app.task.MaaFW.tools.embedded.owners import group_members
+    from app.task.MaaFW.blocks.maafw_project_update.host.owners import group_members
 
     return group_members(exclude=script_id)
 

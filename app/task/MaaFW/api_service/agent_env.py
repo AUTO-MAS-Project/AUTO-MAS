@@ -45,8 +45,10 @@ from app.task.MaaFW.blocks.maafw_interface.log_redact import (
     DETAIL_LOG_PREFIX,
     mask_home_path,
 )
-from app.task.MaaFW.tools.core.project_update.state import redact_text
-from app.task.MaaFW.tools.embedded.update_credentials import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.state import (
+    redact_text,
+)
+from app.task.MaaFW.blocks.maafw_project_update.host.update_credentials import (
     resolve_update_proxy_url,
 )
 from app.utils import get_logger, sanitize_log_message
@@ -157,7 +159,7 @@ async def prepare_agent_env(
     from app.task.MaaFW.blocks.maafw_agent_env.host.runtime_route import (
         runtime_pool_route_from_service,
     )
-    from app.task.MaaFW.tools.embedded.project_path import (
+    from app.task.MaaFW.blocks.maafw_project_update.host.project_path import (
         is_project_updating,
         release_project_path,
         try_reserve_project_path,

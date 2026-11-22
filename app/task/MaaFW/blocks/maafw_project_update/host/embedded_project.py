@@ -69,20 +69,20 @@ from app.task.MaaFW.blocks.maafw_native.layout import (
     EMBEDDED_SWITCH_DIR_NAME,
     PROJECT_PYCACHE_DIR_NAME,
 )
-from app.task.MaaFW.tools.core.project_update import payloads
-from app.task.MaaFW.tools.core.project_update.apply import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update import payloads
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.apply import (
     project_state_dir_for,
 )
-from app.task.MaaFW.tools.core.project_update.blob_store import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.blob_store import (
     RuntimeBlobStore,
     sha256_file,
 )
-from app.task.MaaFW.tools.core.project_update.contracts import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.contracts import (
     RUNTIME_STATE_FILES,
     VERSION_BOUND_STATE_FILES,
     VIEW_MARKER_FILE_NAME,
 )
-from app.task.MaaFW.tools.core.project_update.projection import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.projection import (
     PROJECTION_REVISION,
     ProjectionError,
     ProjectionPlan,
@@ -91,13 +91,13 @@ from app.task.MaaFW.tools.core.project_update.projection import (
     is_shared_path,
     read_json_object,
 )
-from app.task.MaaFW.tools.core.project_update.release_check import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.release_check import (
     RECORD_ITEMS,
     STAGE_IMPORT,
     ReleaseVerdict,
     verify_tree,
 )
-from app.task.MaaFW.tools.embedded.project_path import (
+from app.task.MaaFW.blocks.maafw_project_update.host.project_path import (
     release_project_path_sync,
     try_reserve_project_path_sync,
 )
@@ -1538,7 +1538,7 @@ def _script_proxy_url(script_config: Any) -> str | None:
     ``user:pw@``，不进日志；读不了就直连。"""
 
     try:
-        from app.task.MaaFW.tools.embedded.update_credentials import (
+        from app.task.MaaFW.blocks.maafw_project_update.host.update_credentials import (
             resolve_update_proxy_url,
         )
 
@@ -1611,7 +1611,9 @@ def _report_release_verdict(
     ``excludedCount``（路径与投影排除的一样是来源相对路径），``warnings`` 里一句话；核对不了也
     在 ``warnings`` 里说一句。另记一个内部键 ``releaseCheck``（API 模型不带它）。"""
 
-    from app.task.MaaFW.tools.core.project_update.projection import MAX_REPORT_ITEMS
+    from app.task.MaaFW.blocks.maafw_project_update.core.project_update.projection import (
+        MAX_REPORT_ITEMS,
+    )
 
     report["releaseCheck"] = {
         "result": verdict.status,
@@ -3150,7 +3152,7 @@ def _adoption_whitelist(view: Path) -> Callable[[str], bool] | None:
     """按视图自己的 interface 重算投影白名单（附录 B 第 4 条）：采纳时载荷的去留只看它。"""
 
     try:
-        from app.task.MaaFW.tools.core.project_update.projection import (
+        from app.task.MaaFW.blocks.maafw_project_update.core.project_update.projection import (
             build_projection_rules,
         )
 

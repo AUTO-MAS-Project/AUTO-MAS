@@ -18,7 +18,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from app.task.MaaFW.tools.embedded import owners
+from app.task.MaaFW.blocks.maafw_project_update.host import owners
 from app.utils import get_logger
 
 logger = get_logger("MFW 维护")
@@ -80,12 +80,12 @@ class MaaFWMaintenanceService:
         运行 / 更新 / 切换）的跳过，下一轮再补；已记了别的属主的不覆盖。
         """
 
-        from app.task.MaaFW.tools.embedded.embedded_project import (
+        from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
             embedded_project_dir,
             tag_view_owner,
             view_owner,
         )
-        from app.task.MaaFW.tools.embedded.project_path import (
+        from app.task.MaaFW.blocks.maafw_project_update.host.project_path import (
             release_project_path,
             try_reserve_project_path,
         )
@@ -144,10 +144,12 @@ class MaaFWMaintenanceService:
             agent_venvs_root,
             reconcile_agent_venvs,
         )
-        from app.task.MaaFW.tools.embedded.embedded_project import (
+        from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
             resolve_maafw_project_root,
         )
-        from app.task.MaaFW.tools.embedded.live_projects import keep_view_paths
+        from app.task.MaaFW.blocks.maafw_project_update.host.live_projects import (
+            keep_view_paths,
+        )
 
         if not agent_venvs_root().is_dir():
             return
@@ -184,7 +186,7 @@ class MaaFWMaintenanceService:
         孤儿只认视图标记里记着属主、属主已登记且名下没有这个托管的；判定不了的留着。
         """
 
-        from app.task.MaaFW.tools.embedded.embedded_project import (
+        from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
             STAGING_DIR_NAME,
             embedded_copy_dir_name,
             embedded_projects_root,
@@ -193,8 +195,10 @@ class MaaFWMaintenanceService:
             remove_tree,
             switch_root,
         )
-        from app.task.MaaFW.tools.embedded.live_projects import classify_views
-        from app.task.MaaFW.tools.embedded.project_path import (
+        from app.task.MaaFW.blocks.maafw_project_update.host.live_projects import (
+            classify_views,
+        )
+        from app.task.MaaFW.blocks.maafw_project_update.host.project_path import (
             release_project_path,
             try_reserve_project_path,
         )
@@ -282,7 +286,7 @@ class MaaFWMaintenanceService:
             logger.info(f"已清理无脚本引用的 MFW 内嵌副本: {child}")
         # 视图没了的脚本（下次运行前要按载荷重建）：它的导入来源在事件循环线程上抄出来，
         # 回收据此保住对应的谱系。
-        from app.task.MaaFW.tools.embedded.embedded_project import (
+        from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
             collect_payload_garbage,
             embedded_project_dir,
             follow_source_enabled,
@@ -347,7 +351,7 @@ class MaaFWMaintenanceService:
         放在副本清理之后：副本删掉，它引用的 blob 才会变成孤儿。
         """
 
-        from app.task.MaaFW.tools.core.project_update.blob_store import (
+        from app.task.MaaFW.blocks.maafw_project_update.core.project_update.blob_store import (
             RuntimeBlobStore,
         )
 
@@ -370,7 +374,7 @@ class MaaFWMaintenanceService:
         正在下载 / 落地的条目持有文件锁，会被跳过。
         """
 
-        from app.task.MaaFW.tools.core.project_update.transport import (
+        from app.task.MaaFW.blocks.maafw_project_update.core.project_update.transport import (
             prune_update_cache,
         )
 
@@ -399,7 +403,9 @@ class MaaFWMaintenanceService:
             reconcile_runtime_pool,
             runtime_pool_root,
         )
-        from app.task.MaaFW.tools.embedded.live_projects import keep_project_paths
+        from app.task.MaaFW.blocks.maafw_project_update.host.live_projects import (
+            keep_project_paths,
+        )
 
         if not (runtime_pool_root() / "runtimes").is_dir():
             return
@@ -439,7 +445,7 @@ class MaaFWMaintenanceService:
             logger.info("原生日志永久保留, 跳过 MFW 原生日志备份清理")
             return
 
-        from app.task.MaaFW.tools.embedded.embedded_project import (
+        from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
             resolve_maafw_project_root,
         )
 

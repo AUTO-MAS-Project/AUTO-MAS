@@ -55,6 +55,7 @@ ALLOWED_PREFIXES = (
     "app.task.MaaFW.blocks.maafw_native.",
     "app.task.MaaFW.blocks.maafw_interface.",
     "app.task.MaaFW.blocks.maafw_agent_env.core.",
+    "app.task.MaaFW.blocks.maafw_project_update.core.",
 )
 
 

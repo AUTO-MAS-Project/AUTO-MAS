@@ -54,7 +54,7 @@ def supports_task(config: object) -> bool:
             _select_controller,
             resolve_run_selection,
         )
-        from app.task.MaaFW.tools.embedded.embedded_project import (
+        from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
             resolve_maafw_project_root,
         )
 

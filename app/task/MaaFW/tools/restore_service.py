@@ -50,10 +50,10 @@ from app.task.MaaFW.blocks.maafw_interface.interface.models import (
 from app.task.MaaFW.blocks.maafw_interface.interface.preview import (
     interface_text_translator,
 )
-from app.task.MaaFW.tools.embedded.embedded_project import (
+from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
     resolve_maafw_project_root,
 )
-from app.task.MaaFW.tools.embedded.project_path import (
+from app.task.MaaFW.blocks.maafw_project_update.host.project_path import (
     release_project_path,
     try_reserve_project_path,
 )

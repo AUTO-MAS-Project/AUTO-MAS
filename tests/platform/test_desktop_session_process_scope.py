@@ -37,7 +37,7 @@ def test_desktop_session_judges_mfw_project_by_its_controller(
     import json
 
     from app.models.config import MaaFWConfig
-    from app.task.MaaFW.tools.embedded import embedded_project
+    from app.task.MaaFW.blocks.maafw_project_update.host import embedded_project
 
     (tmp_path / "interface.json").write_text(
         json.dumps(

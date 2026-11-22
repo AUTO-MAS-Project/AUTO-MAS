@@ -52,7 +52,7 @@ from app.task.MaaFW.blocks.maafw_agent_env.host.env_trial import (
     PrepareProjectEnvironment,
     trial_environment,
 )
-from app.task.MaaFW.tools.core.project_update.precheck_memo import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.precheck_memo import (
     classify_precheck_failure,
     write_runtime_precheck,
 )

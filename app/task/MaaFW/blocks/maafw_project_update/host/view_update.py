@@ -40,19 +40,21 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from app.task.MaaFW.tools.core.project_update import payloads
-from app.task.MaaFW.tools.core.project_update.blob_store import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update import payloads
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.blob_store import (
     RuntimeBlobStore,
 )
-from app.task.MaaFW.tools.core.project_update.precheck_memo import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.precheck_memo import (
     precheck_memo_path,
 )
-from app.task.MaaFW.tools.core.project_update.timing import format_duration
-from app.task.MaaFW.tools.core.project_update.updater import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.timing import (
+    format_duration,
+)
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.updater import (
     MaaFWProjectUpdateError,
 )
-from app.task.MaaFW.tools.embedded import env_confirm
-from app.task.MaaFW.tools.embedded.embedded_project import (
+from app.task.MaaFW.blocks.maafw_project_update.host import env_confirm
+from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
     SKIP_UNADOPTED,
     STAGING_DIR_NAME,
     EmbeddedProjectError,
@@ -66,7 +68,7 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     read_view_marker,
     switch_view,
 )
-from app.task.MaaFW.tools.embedded.project_path import (
+from app.task.MaaFW.blocks.maafw_project_update.host.project_path import (
     begin_project_updating,
     end_project_updating,
     release_project_path_sync,

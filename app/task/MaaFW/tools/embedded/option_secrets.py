@@ -49,9 +49,10 @@ from app.task.MaaFW.blocks.maafw_interface.interface.task_config import (
 from app.task.MaaFW.blocks.maafw_interface.runner.pipeline_override import (
     SECRET_INPUTS_SNAPSHOT_KEY,
 )
+from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
+    resolve_maafw_project_root,
+)
 from app.utils import dpapi_decrypt, dpapi_encrypt, get_logger
-
-from .embedded_project import resolve_maafw_project_root
 
 logger = get_logger("MaaFW 密码字段")
 

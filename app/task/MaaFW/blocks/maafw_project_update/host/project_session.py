@@ -47,12 +47,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
-from app.task.MaaFW.tools.core.file_lockers import describe_lockers_async
-from app.task.MaaFW.tools.core.project_update.payloads import (
+from app.task.MaaFW.blocks.maafw_project_update.core.file_lockers import (
+    describe_lockers_async,
+)
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.payloads import (
     lineage_info_from_interface,
 )
-from app.task.MaaFW.tools.embedded import owners
-from app.task.MaaFW.tools.embedded.embedded_project import (
+from app.task.MaaFW.blocks.maafw_project_update.host import owners
+from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
     EmbeddedProjectError,
     GroupMember,
     effective_channel,
@@ -66,13 +68,13 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     shell_hint_from_report,
     switch_or_confirm_in_progress,
 )
-from app.task.MaaFW.tools.embedded.project_path import (
+from app.task.MaaFW.blocks.maafw_project_update.host.project_path import (
     is_project_updating,
     release_project_path,
     release_project_path_sync,
     try_reserve_project_path,
 )
-from app.task.MaaFW.tools.embedded.update_credentials import (
+from app.task.MaaFW.blocks.maafw_project_update.host.update_credentials import (
     AutoUpdateMode,
     MaaFWUpdateCredentials,
     describe_cdk,
@@ -81,13 +83,15 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_credentials,
     resolve_update_proxy_url,
 )
-from app.task.MaaFW.tools.embedded.view_heal import heal_projection
+from app.task.MaaFW.blocks.maafw_project_update.host.view_heal import heal_projection
 from app.utils import get_logger, sanitize_log_message
 from app.utils.common.process.scope import current_process_scope
 
 if TYPE_CHECKING:  # pragma: no cover
     from app.models.schema import DownloadRequest
-    from app.task.MaaFW.tools.embedded.update_session import UpdateProxy
+    from app.task.MaaFW.blocks.maafw_project_update.host.update_session import (
+        UpdateProxy,
+    )
     from app.task.run_flow import PointState, RunStage
 
 # 与管理器同一个名字：后端日志里这段流程的行照旧记在「MFW 内置运行」下
@@ -387,7 +391,9 @@ def _update_proxy(shape: Any) -> UpdateProxy:
     同一份配置两种行为。填错就整条直连。
     """
 
-    from app.task.MaaFW.tools.embedded.update_session import UpdateProxy
+    from app.task.MaaFW.blocks.maafw_project_update.host.update_session import (
+        UpdateProxy,
+    )
 
     return UpdateProxy.parse(
         resolve_update_proxy_url(shape) or None, warn=logger.warning
@@ -533,7 +539,7 @@ def describe_precheck_failure(phase_zh: str, failure: Mapping[str, Any]) -> str:
     from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.import_check import (
         KIND_AGENT_MODULE_MISSING,
     )
-    from app.task.MaaFW.tools.core.project_update.precheck_memo import (
+    from app.task.MaaFW.blocks.maafw_project_update.core.project_update.precheck_memo import (
         KIND_BINDING_UNAVAILABLE,
     )
 
@@ -588,7 +594,7 @@ async def discover_prefetch(request: MaaFWProjectRequest) -> list[DownloadReques
     """按项目更新模式和凭据发现可用更新，跳过跟随源码的项目并返回发行文件下载需求。"""
 
     from app.models.schema import DownloadRequest
-    from app.task.MaaFW.tools.core.project_update.updater import (
+    from app.task.MaaFW.blocks.maafw_project_update.core.project_update.updater import (
         discover_maafw_project_update,
     )
 
@@ -908,11 +914,11 @@ class MaaFWProjectSession:
         本视图预约时清）。切换失败只记日志（视图留在原版本、照常运行），下次再同步。
         """
 
-        from app.task.MaaFW.tools.embedded.embedded_project import (
+        from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
             clear_switched_by,
             read_view_marker,
         )
-        from app.task.MaaFW.tools.embedded.view_update import (
+        from app.task.MaaFW.blocks.maafw_project_update.host.view_update import (
             latest_entry,
             sync_view_to_group,
         )
@@ -970,7 +976,7 @@ class MaaFWProjectSession:
             # runtime 不必再等 24 h 宽限（``reconcile_after_project_update`` 按全部视图判断
             # 旧版本还有没有人用）。后台线程跑，不拖运行。
             try:
-                from app.task.MaaFW.tools.embedded.live_projects import (
+                from app.task.MaaFW.blocks.maafw_project_update.host.live_projects import (
                     reconcile_in_background,
                 )
 
@@ -1016,10 +1022,10 @@ class MaaFWProjectSession:
         ``progress`` 出口给的是后者）。
         """
 
-        from app.task.MaaFW.tools.core.project_update.progress import (
+        from app.task.MaaFW.blocks.maafw_project_update.core.project_update.progress import (
             UpdateProgressEvent,
         )
-        from app.task.MaaFW.tools.embedded.update_progress import (
+        from app.task.MaaFW.blocks.maafw_project_update.host.update_progress import (
             MaaFWUpdateTaskLogTranslator,
         )
 
@@ -1106,15 +1112,21 @@ class MaaFWProjectSession:
         把这次跳过升成 warning。
         """
 
-        from app.task.MaaFW.tools.core.project_update import (
+        from app.task.MaaFW.blocks.maafw_project_update.core.project_update import (
             update_maafw_project_if_needed,
         )
-        from app.task.MaaFW.tools.embedded.precheck_gate import build_precheck_gate
-        from app.task.MaaFW.tools.embedded.update_mirrors import (
+        from app.task.MaaFW.blocks.maafw_project_update.host.precheck_gate import (
+            build_precheck_gate,
+        )
+        from app.task.MaaFW.blocks.maafw_project_update.host.update_mirrors import (
             github_release_mirror_urls,
         )
-        from app.task.MaaFW.tools.embedded.update_session import UpdateSession
-        from app.task.MaaFW.tools.embedded.view_update import memo_path_factory
+        from app.task.MaaFW.blocks.maafw_project_update.host.update_session import (
+            UpdateSession,
+        )
+        from app.task.MaaFW.blocks.maafw_project_update.host.view_update import (
+            memo_path_factory,
+        )
 
         shape = _config_shape(request)
         send_log = self._threadsafe_log()
@@ -1254,7 +1266,7 @@ class MaaFWProjectSession:
         from app.task.MaaFW.blocks.maafw_agent_env.host.pool_reconcile import (
             previous_maafw_version,
         )
-        from app.task.MaaFW.tools.embedded.live_projects import (
+        from app.task.MaaFW.blocks.maafw_project_update.host.live_projects import (
             reconcile_in_background,
         )
 
@@ -1360,10 +1372,10 @@ class MaaFWProjectSession:
         if outcome.registered_id:
             # 登记成功就意味着预检建出了环境，这个版本上次失败的备忘（若有）作废。
             try:
-                from app.task.MaaFW.tools.core.project_update import (
+                from app.task.MaaFW.blocks.maafw_project_update.core.project_update import (
                     clear_runtime_precheck,
                 )
-                from app.task.MaaFW.tools.embedded.view_update import (
+                from app.task.MaaFW.blocks.maafw_project_update.host.view_update import (
                     memo_path_factory,
                 )
 
@@ -1446,7 +1458,7 @@ class MaaFWProjectSession:
         # 装依赖走的代理与更新下载同一份：托管级优先，留空跟随全局。
         proxy_url = _update_proxy(shape).url
         health_warnings: list[str] = []
-        from app.task.MaaFW.tools.embedded.env_confirm import (
+        from app.task.MaaFW.blocks.maafw_project_update.host.env_confirm import (
             resolve_prepare_environment,
         )
 
@@ -1551,7 +1563,9 @@ class MaaFWProjectSession:
                 request, "运行后", reservation_held=False
             )
         try:
-            from app.task.MaaFW.tools.embedded.view_audit import audit_view
+            from app.task.MaaFW.blocks.maafw_project_update.host.view_audit import (
+                audit_view,
+            )
 
             report = await asyncio.to_thread(audit_view, view)
             for line in report.messages:
@@ -1559,7 +1573,7 @@ class MaaFWProjectSession:
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(f"MFW 写穿巡检失败：{exc}")
         try:
-            from app.task.MaaFW.tools.embedded.view_audit import (
+            from app.task.MaaFW.blocks.maafw_project_update.host.view_audit import (
                 clean_native_log_backups,
             )
 
@@ -1579,20 +1593,24 @@ class MaaFWProjectSession:
     async def prefetch(self, request: MaaFWProjectRequest) -> None:
         """队列预下载：发现完整包更新就下进核心的共享缓存，候选留在会话里给 :meth:`update` 用。"""
 
-        from app.task.MaaFW.tools.core.project_update.progress import (
+        from app.task.MaaFW.blocks.maafw_project_update.core.project_update.progress import (
             UpdateProgressEvent,
         )
-        from app.task.MaaFW.tools.core.project_update.transport import (
+        from app.task.MaaFW.blocks.maafw_project_update.core.project_update.transport import (
             download_resumable,
         )
-        from app.task.MaaFW.tools.core.project_update.updater import (
+        from app.task.MaaFW.blocks.maafw_project_update.core.project_update.updater import (
             discover_maafw_project_update,
         )
-        from app.task.MaaFW.tools.embedded.precheck_gate import build_precheck_gate
-        from app.task.MaaFW.tools.embedded.update_mirrors import (
+        from app.task.MaaFW.blocks.maafw_project_update.host.precheck_gate import (
+            build_precheck_gate,
+        )
+        from app.task.MaaFW.blocks.maafw_project_update.host.update_mirrors import (
             github_release_mirror_urls,
         )
-        from app.task.MaaFW.tools.embedded.view_update import memo_path_factory
+        from app.task.MaaFW.blocks.maafw_project_update.host.view_update import (
+            memo_path_factory,
+        )
 
         shape = _config_shape(request)
         # 增量依赖启动时的当前载荷，交给运行前更新，避免提前下载全量。

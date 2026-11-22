@@ -329,7 +329,7 @@ def _project_root_for_detection(
 
     candidates: list[Path] = []
     try:
-        from app.task.MaaFW.tools.embedded.embedded_project import (
+        from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
             embedded_project_dir,
         )
 

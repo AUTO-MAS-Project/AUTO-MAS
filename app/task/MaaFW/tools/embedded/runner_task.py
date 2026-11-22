@@ -73,6 +73,21 @@ from app.task.MaaFW.blocks.maafw_interface.runner.task_selection import (
 from app.task.MaaFW.blocks.maafw_native.project_runtime import (
     describe_project_runtime_architecture_mismatch,
 )
+from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
+    resolve_maafw_project_root,
+)
+from app.task.MaaFW.blocks.maafw_project_update.host.project_path import (
+    is_project_updating,
+    release_run_reservation,
+    try_reserve_project_path,
+)
+from app.task.MaaFW.blocks.maafw_project_update.host.resource_repair import (
+    MaaFWRepairRequest,
+    MaaFWResourceRepair,
+)
+from app.task.MaaFW.blocks.maafw_project_update.host.update_credentials import (
+    resolve_update_proxy_url,
+)
 from app.task.MaaFW.tools.core.runner.run_events import (
     CATEGORY_SIGNAL,
     STAGE_CLIENT,
@@ -113,7 +128,6 @@ from .device_config import (
     resolve_login_adb_path,
     resolve_window_handle,
 )
-from .embedded_project import resolve_maafw_project_root
 from .host_client import (
     WORKSTATION_LOCKED_MESSAGE,
     open_emulator_for_run,
@@ -141,11 +155,6 @@ from .pretask_run import (
     MaaFWPretaskRunRequest,
     pretasks_need_rerun,
 )
-from .project_path import (
-    is_project_updating,
-    release_run_reservation,
-    try_reserve_project_path,
-)
 from .proxy_quota import (
     proxy_day_rolled,
     proxy_times_used_up,
@@ -155,7 +164,6 @@ from .proxy_quota import (
 from .resource_failure import (
     describe_resource_failure,
 )
-from .resource_repair import MaaFWRepairRequest, MaaFWResourceRepair
 from .run_messages import (
     MISSING_TASK_NOTICE_PREFIX,
     describe_failed_result,
@@ -199,7 +207,6 @@ from .signal_notice import (
     SIGNAL_USER_MESSAGES,
     MaaFWSignalTracker,
 )
-from .update_credentials import resolve_update_proxy_url
 
 logger = get_logger("MaaFW 插件自动代理")
 
@@ -1308,8 +1315,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         """资源包加载失败之后与发行包核对（``resource_repair``）：视图换了载荷就返回下一次的
         （开头那行, 称呼）、该立刻再跑一次；其余情况它写一行停止原因、返回 None。"""
 
-        from .embedded_project import follow_source_enabled, shell_hint_from_report
-        from .update_credentials import resolve_update_credentials
+        from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
+            follow_source_enabled,
+            shell_hint_from_report,
+        )
+        from app.task.MaaFW.blocks.maafw_project_update.host.update_credentials import (
+            resolve_update_credentials,
+        )
 
         return await self._repair.run(
             kind,

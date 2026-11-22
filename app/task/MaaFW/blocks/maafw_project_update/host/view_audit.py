@@ -35,12 +35,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from app.task.MaaFW.tools.core.project_update import payloads
-from app.task.MaaFW.tools.core.project_update.blob_store import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update import payloads
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.blob_store import (
     RuntimeBlobStore,
     sha256_file,
 )
-from app.task.MaaFW.tools.embedded.embedded_project import (
+from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
     VIEW_MARKER_NAME,
     payloads_root,
     read_view_marker,

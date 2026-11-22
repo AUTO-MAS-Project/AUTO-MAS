@@ -49,9 +49,11 @@ from app.task.MaaFW.blocks.maafw_interface.runner.run_plan import (
     MaaFWRunPlanError,
     resolve_default_snapshot,
 )
+from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
+    copy_is_healthy,
+    resolve_maafw_project_root,
+)
 from app.utils import get_logger
-
-from .embedded_project import copy_is_healthy, resolve_maafw_project_root
 
 logger = get_logger("MaaFW 默认任务队列")
 

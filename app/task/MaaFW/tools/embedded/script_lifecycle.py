@@ -20,17 +20,19 @@ from typing import cast
 
 from app.config import ConfigEntry
 from app.models.config import MaaFWConfig
-from app.utils import get_logger
-from app.utils import io as _utils_io
-
-from .embedded_project import (
+from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
     FollowSourceCloneUnavailable,
     clone_embedded_copy,
     embedded_project_dir,
     is_source_form,
     view_owner,
 )
-from .project_path import release_project_path, try_reserve_project_path
+from app.task.MaaFW.blocks.maafw_project_update.host.project_path import (
+    release_project_path,
+    try_reserve_project_path,
+)
+from app.utils import get_logger
+from app.utils import io as _utils_io
 
 logger = get_logger("配置管理")
 
@@ -77,7 +79,9 @@ async def clone_script(
 
 def after_script_removal() -> None:
     """删除提交后启动运行池对账，不拖慢删除响应。"""
-    from .live_projects import reconcile_in_background
+    from app.task.MaaFW.blocks.maafw_project_update.host.live_projects import (
+        reconcile_in_background,
+    )
 
     reconcile_in_background("script-deleted")
 

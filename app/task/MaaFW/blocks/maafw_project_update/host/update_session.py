@@ -43,9 +43,11 @@ from typing import Any
 import httpx
 
 from app.core.script_update import ScriptUpdateRequest, run_script_update
-from app.task.MaaFW.tools.core.project_update.progress import UpdateProgressEvent
-from app.task.MaaFW.tools.embedded import env_confirm, view_update
-from app.task.MaaFW.tools.embedded.embedded_project import GroupMember
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.progress import (
+    UpdateProgressEvent,
+)
+from app.task.MaaFW.blocks.maafw_project_update.host import env_confirm, view_update
+from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import GroupMember
 from app.utils.common.process.scope import current_process_scope
 
 ProgressSink = Callable[[UpdateProgressEvent], None]

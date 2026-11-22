@@ -55,39 +55,44 @@ from app.task.MaaFW.blocks.maafw_interface.interface.loader import (
     load_interface_model_cached,
 )
 from app.task.MaaFW.blocks.maafw_interface.log_redact import DETAIL_LOG_PREFIX
-from app.task.MaaFW.tools.core.project_update import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update import (
     ALERT_LOG_PREFIX,
     MaaFWProjectUpdateError,
     can_check_project_update,
     discover_maafw_project_update,
     update_maafw_project_if_needed,
 )
-from app.task.MaaFW.tools.core.project_update.progress import UpdateProgressEvent
-from app.task.MaaFW.tools.core.project_update.updater import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.progress import (
+    UpdateProgressEvent,
+)
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.updater import (
     _public_package_source,
 )
-from app.task.MaaFW.tools.embedded.embedded_project import (
+from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
     EmbeddedProjectError,
     follow_source_enabled,
     is_source_form,
     resolve_maafw_project_root,
     shell_hint_from_report,
 )
-from app.task.MaaFW.tools.embedded.project_path import (
+from app.task.MaaFW.blocks.maafw_project_update.host.project_path import (
     begin_project_updating,
     end_project_updating,
     is_project_updating,
     release_project_path,
     try_reserve_project_path,
 )
-from app.task.MaaFW.tools.embedded.update_credentials import (
+from app.task.MaaFW.blocks.maafw_project_update.host.update_credentials import (
     resolve_update_credentials,
     resolve_update_proxy_url,
 )
-from app.task.MaaFW.tools.embedded.update_progress import (
+from app.task.MaaFW.blocks.maafw_project_update.host.update_progress import (
     MaaFWUpdateProgressTracker,
 )
-from app.task.MaaFW.tools.embedded.update_session import UpdateProxy, UpdateSession
+from app.task.MaaFW.blocks.maafw_project_update.host.update_session import (
+    UpdateProxy,
+    UpdateSession,
+)
 from app.utils import get_logger, sanitize_log_message
 
 UPDATE_SCRIPT_BUSY = "托管正在运行，运行结束后再更新项目"
@@ -233,9 +238,13 @@ def _group_ahead_version(root_path: Path, channel: str) -> str | None:
     其他托管；这时「更新」只是切过去，不用下载。
     """
 
-    from app.task.MaaFW.tools.core.project_update.payloads import version_newer
-    from app.task.MaaFW.tools.embedded.embedded_project import read_view_marker
-    from app.task.MaaFW.tools.embedded.view_update import latest_entry
+    from app.task.MaaFW.blocks.maafw_project_update.core.project_update.payloads import (
+        version_newer,
+    )
+    from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
+        read_view_marker,
+    )
+    from app.task.MaaFW.blocks.maafw_project_update.host.view_update import latest_entry
 
     marker = read_view_marker(root_path)
     if marker is None:
@@ -267,7 +276,7 @@ async def _heal_projection(
         SUPPORTED_ARCHITECTURE,
         host_architecture,
     )
-    from app.task.MaaFW.tools.embedded.view_heal import (
+    from app.task.MaaFW.blocks.maafw_project_update.host.view_heal import (
         heal_projection,
         projection_heal_due,
     )
@@ -717,7 +726,7 @@ async def _run_apply(req: _UpdateRequest) -> tuple[Any, str | None] | MaaFWApiRe
     from app.task.MaaFW.blocks.maafw_agent_env.host.runtime_route import (
         runtime_pool_route_from_service,
     )
-    from app.task.MaaFW.tools.embedded.env_confirm import (
+    from app.task.MaaFW.blocks.maafw_project_update.host.env_confirm import (
         confirm_switched_environment,
     )
 
@@ -766,10 +775,12 @@ def _apply_core_call(
     """手动更新的核心那一步：下载 / staging 构建 / 预检 / 登记（``run_view_update`` 的
     ``core_call``）。不读预检备忘（手动即强制重试），项目发错的高主版本号允许拉回。"""
 
-    from app.task.MaaFW.tools.embedded.update_mirrors import (
+    from app.task.MaaFW.blocks.maafw_project_update.host.update_mirrors import (
         github_release_mirror_urls,
     )
-    from app.task.MaaFW.tools.embedded.view_update import memo_path_factory
+    from app.task.MaaFW.blocks.maafw_project_update.host.view_update import (
+        memo_path_factory,
+    )
 
     async def core_call(view_path: Path, target: Any, after_register: Any) -> Any:
         view_interface = await asyncio.to_thread(
@@ -819,9 +830,15 @@ async def _after_apply(
 ) -> None:
     """放掉预约之后：作废这个版本的预检备忘、新旧 runtime 对账（都只记日志、不影响回复）。"""
 
-    from app.task.MaaFW.tools.core.project_update import clear_runtime_precheck
-    from app.task.MaaFW.tools.embedded.live_projects import reconcile_in_background
-    from app.task.MaaFW.tools.embedded.view_update import memo_path_factory
+    from app.task.MaaFW.blocks.maafw_project_update.core.project_update import (
+        clear_runtime_precheck,
+    )
+    from app.task.MaaFW.blocks.maafw_project_update.host.live_projects import (
+        reconcile_in_background,
+    )
+    from app.task.MaaFW.blocks.maafw_project_update.host.view_update import (
+        memo_path_factory,
+    )
 
     result = outcome.result
     if outcome.registered_id:

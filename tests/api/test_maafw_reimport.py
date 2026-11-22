@@ -23,10 +23,16 @@ from app.models.config import (
 from app.models.task import TaskItem, TaskScriptItem
 from app.task.MaaFW import embedded_manager
 from app.task.MaaFW.api_service import embedded as api
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update import (
+    transport,
+    updater,
+)
+from app.task.MaaFW.blocks.maafw_project_update.host import (
+    embedded_project,
+    project_path,
+)
 from app.task.MaaFW.registration import build_config_handler
 from app.task.MaaFW.registration import register_owner as register_maafw_owner
-from app.task.MaaFW.tools.core.project_update import transport, updater
-from app.task.MaaFW.tools.embedded import embedded_project, project_path
 from tests.config_support import activate_config
 
 
@@ -152,10 +158,10 @@ async def project(tmp_path, monkeypatch, isolated_app_paths):
         staticmethod(lambda: SimpleNamespace(root=tmp_path / "runtime")),
     )
     monkeypatch.setattr(
-        "app.task.MaaFW.tools.embedded.project_environment.prepare_project_environment_sync",
+        "app.task.MaaFW.blocks.maafw_project_update.host.project_environment.prepare_project_environment_sync",
         lambda *_args, **_kwargs: True,
     )
-    from app.task.MaaFW.tools.embedded import live_projects
+    from app.task.MaaFW.blocks.maafw_project_update.host import live_projects
 
     monkeypatch.setattr(
         live_projects, "reconcile_in_background", lambda *_a, **_k: None

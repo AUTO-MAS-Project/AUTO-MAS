@@ -51,12 +51,14 @@ from app.task.MaaFW.blocks.maafw_interface.interface.preview import (
     interface_display_name,
 )
 from app.task.MaaFW.blocks.maafw_interface.log_redact import mask_home_path
-from app.task.MaaFW.tools.core.project_update.projection import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.projection import (
     discover_project_interface,
 )
-from app.task.MaaFW.tools.core.project_update.state import redact_text
-from app.task.MaaFW.tools.embedded import owners
-from app.task.MaaFW.tools.embedded.embedded_project import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.state import (
+    redact_text,
+)
+from app.task.MaaFW.blocks.maafw_project_update.host import owners
+from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
     EmbeddedProjectError,
     FollowSourceCloneUnavailable,
     clone_embedded_copy,
@@ -75,12 +77,12 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     read_interface_version,
     read_view_marker,
 )
-from app.task.MaaFW.tools.embedded.project_path import (
+from app.task.MaaFW.blocks.maafw_project_update.host.project_path import (
     is_project_updating,
     release_project_path,
     try_reserve_project_path,
 )
-from app.task.MaaFW.tools.embedded.update_credentials import (
+from app.task.MaaFW.blocks.maafw_project_update.host.update_credentials import (
     resolve_update_proxy_url,
 )
 
@@ -241,7 +243,9 @@ async def _propagate_view_to_group(script_id: str, channel: str) -> None:
     # 切换只把文件摆好：被切的兄弟各自在后台确认一次运行环境，别把 isolated_venv 的
     # 重建留到它们下一次运行、游戏已经起来的时候（§3.1 第 8 步）。切换时拿的预约直接
     # 交给确认线程，两步之间不留空档。
-    from app.task.MaaFW.tools.embedded.view_update import propagate_and_confirm
+    from app.task.MaaFW.blocks.maafw_project_update.host.view_update import (
+        propagate_and_confirm,
+    )
 
     try:
         result = await asyncio.to_thread(
@@ -585,7 +589,9 @@ def _reconcile_pool_after_copy_change(
     旧版本作为 replaced 传给回收豁免宽限；权威集合按副本目录算，新副本自己在集合里。
     """
 
-    from app.task.MaaFW.tools.embedded.live_projects import reconcile_in_background
+    from app.task.MaaFW.blocks.maafw_project_update.host.live_projects import (
+        reconcile_in_background,
+    )
 
     reconcile_in_background(
         reason, updated_project_path=copy_dir, previous_version=previous_version

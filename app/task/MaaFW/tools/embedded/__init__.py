@@ -13,8 +13,7 @@ from app.task.MaaFW.blocks.maafw_agent_env.host.runtime_route import (
     MaaFWRuntimePoolRoute,
     MaaFWRuntimeRouteError,
 )
-
-from .project_path import (
+from app.task.MaaFW.blocks.maafw_project_update.host.project_path import (
     normalize_project_path,
     release_project_path,
     try_reserve_project_path,

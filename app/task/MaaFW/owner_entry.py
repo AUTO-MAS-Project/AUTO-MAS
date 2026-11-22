@@ -21,7 +21,7 @@ from app.task.MaaFW.blocks.maafw_interface.interface.plan_rules import (
     EMPTY_PLAN_RULES,
     MaaFWPlanRules,
 )
-from app.task.MaaFW.tools.embedded.owners import (
+from app.task.MaaFW.blocks.maafw_project_update.host.owners import (
     OWNER_PROTOCOL,
     UNSET,
     ManagedRecord,

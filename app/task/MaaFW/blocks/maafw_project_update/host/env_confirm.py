@@ -82,7 +82,7 @@ def resolve_prepare_environment() -> PrepareEnvironment:
     失败原样抛出，由调用方决定记日志还是当更新失败。
     """
 
-    from app.task.MaaFW.tools.embedded import project_environment
+    from app.task.MaaFW.blocks.maafw_project_update.host import project_environment
 
     # 按模块属性现取：测试在 project_environment 上打的补丁要生效
     prepare = project_environment.prepare_project_environment_sync
@@ -117,7 +117,9 @@ def resolve_update_precheck() -> UpdatePrecheckBuilder:
     """
 
     from app.task.MaaFW.blocks.maafw_agent_env.host.env_trial import precheck_agent_root
-    from app.task.MaaFW.tools.embedded.precheck import build_precheck_validator
+    from app.task.MaaFW.blocks.maafw_project_update.host.precheck import (
+        build_precheck_validator,
+    )
 
     prepare = resolve_prepare_environment()
 

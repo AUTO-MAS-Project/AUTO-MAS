@@ -57,7 +57,7 @@ from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool.installer import (
     is_package_index_offline,
     resolve_package_index_candidates,
 )
-from app.task.MaaFW.tools.core.project_update.precheck_memo import (
+from app.task.MaaFW.blocks.maafw_project_update.core.project_update.precheck_memo import (
     KIND_BINDING_UNAVAILABLE,
     KIND_TRANSIENT,
     clear_runtime_precheck,

@@ -35,14 +35,23 @@ from app.task.MaaFW.blocks.maafw_interface.runner.plan_transforms import (
     MaaFWPeriodLimits,
 )
 from app.task.MaaFW.blocks.maafw_interface.runner.run_plan import resolve_run_selection
-from app.task.MaaFW.tools.backup_archive import read_overlay_values
-from app.task.MaaFW.tools.embedded.default_snapshot import fill_default_task_snapshots
-from app.task.MaaFW.tools.embedded.desktop_game import MaaFWDesktopGameSpec
-from app.task.MaaFW.tools.embedded.embedded_project import (
+from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
     follow_source_enabled,
     resolve_maafw_project_root,
     shell_hint_from_report,
 )
+from app.task.MaaFW.blocks.maafw_project_update.host.resource_repair import (
+    MaaFWRepairRequest,
+)
+from app.task.MaaFW.blocks.maafw_project_update.host.update_credentials import (
+    AutoUpdateMode,
+    resolve_auto_update_mode,
+    resolve_update_credentials,
+    resolve_update_proxy_url,
+)
+from app.task.MaaFW.tools.backup_archive import read_overlay_values
+from app.task.MaaFW.tools.embedded.default_snapshot import fill_default_task_snapshots
+from app.task.MaaFW.tools.embedded.desktop_game import MaaFWDesktopGameSpec
 from app.task.MaaFW.tools.embedded.option_secrets import (
     script_task_snapshots,
     user_task_snapshot,
@@ -50,14 +59,7 @@ from app.task.MaaFW.tools.embedded.option_secrets import (
 from app.task.MaaFW.tools.embedded.proxy_quota import (
     proxy_times_used_up as _proxy_times_used_up,
 )
-from app.task.MaaFW.tools.embedded.resource_repair import MaaFWRepairRequest
 from app.task.MaaFW.tools.embedded.run_settings import period_limits as _period_limits
-from app.task.MaaFW.tools.embedded.update_credentials import (
-    AutoUpdateMode,
-    resolve_auto_update_mode,
-    resolve_update_credentials,
-    resolve_update_proxy_url,
-)
 from app.task.MSS.rules import PLAN_MODE_FIXED
 from app.utils.common.game_resolution import parse_resolution_option
 
