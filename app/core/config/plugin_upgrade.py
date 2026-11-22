@@ -20,7 +20,16 @@ _ADAPTER_PLUGINS = {
     "MaaPluginConfig": ("maa_adapter", "auto-mas-maa-adapter"),
     "MaaPlanConfig": ("maa_adapter", "auto-mas-maa-adapter"),
     "MaaPluginPlanConfig": ("maa_adapter", "auto-mas-maa-adapter"),
+    "MaaFWConfig": ("maafw_adapter", "auto-mas-maafw-adapter"),
+    "M9AConfig": ("m9a_adapter", "auto-mas-m9a-adapter"),
+    "MSSConfig": ("mss_adapter", "auto-mas-mss-adapter"),
+    "MSSPlanConfig": ("mss_adapter", "auto-mas-mss-adapter"),
 }
+# MFW 一族（通用 MFW、M9A、MSS）改由插件提供后，首次接手前备份的托管与计划表类型。
+MAAFW_FAMILY_TYPE_NAMES = frozenset(
+    {"MaaFWConfig", "M9AConfig", "MSSConfig", "MSSPlanConfig"}
+)
+MAAFW_FAMILY_PLUGINS = frozenset({"maafw_adapter", "m9a_adapter", "mss_adapter"})
 _MINIMUM_ADAPTER_VERSIONS = {
     "maa_adapter": Version("0.1.4"),
     "mumu_adapter": Version("0.1.1"),
@@ -101,6 +110,24 @@ def backup_legacy_src_users(config_path: Path) -> None:
         document = _utils_io.read_dict_file(path)
         index = document.get("order", document.get("instances", []))
         if any(item["type"] == "SrcConfig" for item in index):
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            _utils_io.atomic_write(backup, path.read_bytes())
+
+
+def backup_legacy_maafw_documents(config_path: Path) -> None:
+    """首次由插件接手 MFW 一族前按字节备份托管与计划表文件；已有备份不覆盖。
+
+    插件类激活后会把账号集合以新形状写回（``UserData`` → ``users``），旧宿主读不了；
+    回退到旧宿主时把 ``config/legacy-maafw-plugin/`` 下的文件拷回 ``config/``。
+    """
+    for name in ("scripts.yaml", "ScriptConfig.json", "plans.yaml", "PlanConfig.json"):
+        path = config_path / name
+        backup = config_path / "legacy-maafw-plugin" / name
+        if backup.exists() or not path.is_file() or is_blank_file(path):
+            continue
+        document = _utils_io.read_dict_file(path)
+        index = document.get("order", document.get("instances", []))
+        if any(item["type"] in MAAFW_FAMILY_TYPE_NAMES for item in index):
             backup.parent.mkdir(parents=True, exist_ok=True)
             _utils_io.atomic_write(backup, path.read_bytes())
 

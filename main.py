@@ -488,37 +488,6 @@ def main():
                     "maaend-resource-preload", max_running=1, max_retained=1
                 ).spawn(preload_maaend_resources, retain_result=False)
 
-                async def _maafw_startup_maintenance() -> None:
-                    # 老副本一次性采纳成「载荷 + 视图」要几分钟：连同它后面依赖终态布局的
-                    # 各项回收一起放到后台，不挡主定时器（队列定时按分钟精确匹配，挡住就
-                    # 被静默跳过）。期间撞上的 MFW 运行在运行前检查里按「正在切换版本」跳过。
-                    try:
-                        with startup_stage("后端/MFW 后台维护/旧副本迁移"):
-                            await Config.maafw_maintenance.migrate_embedded_copies_to_payloads()
-                        with startup_stage("后端/MFW 后台维护/视图属主标记"):
-                            await Config.maafw_maintenance.tag_view_owners()
-                        with startup_stage("后端/MFW 后台维护/副本清理"):
-                            await Config.maafw_maintenance.clean_embedded_copies()
-                        # 先清副本，再把应保留的视图交给 agent 环境对账：副本删掉以后
-                        # 它引用的隔离 venv 才会变成无人引用。
-                        with startup_stage("后端/MFW 后台维护/Agent 环境清理"):
-                            await Config.maafw_maintenance.clean_agent_venvs()
-                        with startup_stage("后端/MFW 后台维护/Runtime 文件清理"):
-                            await Config.maafw_maintenance.clean_runtime_blobs()
-                        with startup_stage("后端/MFW 后台维护/更新缓存清理"):
-                            await Config.maafw_maintenance.clean_update_cache()
-                        # 副本清理之后：副本没了，它的 binding / runtime 才会变成无人引用
-                        with startup_stage("后端/MFW 后台维护/Runtime 池清理"):
-                            await Config.maafw_maintenance.clean_runtime_pool()
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception:
-                        logger.exception("MFW 启动期维护失败，下次启动再试")
-
-                app.state.maafw_startup_maintenance = asyncio.create_task(
-                    _maafw_startup_maintenance()
-                )
-
                 # 显示输出守卫要早于主定时器：定时器可能立刻拉起一轮任务，而任务开跑前
                 # 会要求守卫强制巡检一次，守卫没起来那次巡检就是空转。守卫失败不拦定时器：
                 # 空转一次巡检远比定时任务整夜不触发轻。
@@ -609,14 +578,6 @@ def main():
                 background_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await background_task
-            # MFW 启动期维护（迁移 + 回收）也是后台跑的：同样先停下。迁移逐副本持视图预约、
-            # 被打断的切换有 journal，下次启动收尾。
-            maintenance = getattr(app.state, "maafw_startup_maintenance", None)
-            if maintenance is not None and not maintenance.done():
-                maintenance.cancel()
-                with suppress(asyncio.CancelledError):
-                    await maintenance
-
             # 停止 WS 分发与连接后台任务，避免清理期间仍处理入站消息
             await MainConnection.begin_shutdown()
             await Dispatcher.shutdown()

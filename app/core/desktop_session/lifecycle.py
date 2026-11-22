@@ -48,35 +48,6 @@ def supports_task(config: object) -> bool:
             )
         except (OSError, KeyError, ValueError):
             return False
-    # MFW 托管按确切类型认（不靠继承：M9A、MSS 以后不再继承 MaaFWConfig）
-    from app.task.MaaFW.registration import MAAFW_FAMILY_TYPES
-
-    if type(config) in MAAFW_FAMILY_TYPES:
-        from app.task.game import game_is_emulator
-        from app.task.MaaFW.blocks.maafw_interface.interface.service import (
-            MaaFWInterfaceService,
-        )
-        from app.task.MaaFW.blocks.maafw_interface.runner.run_plan import (
-            _select_controller,
-            resolve_run_selection,
-        )
-        from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
-            resolve_maafw_project_root,
-        )
-
-        try:
-            interface = MaaFWInterfaceService().load(
-                resolve_maafw_project_root(str(config.uid), config)
-            )
-            name, _ = resolve_run_selection(
-                interface,
-                configured_controller=str(config.Info.Controller),
-                emulator_selected=game_is_emulator(config),
-                configured_resource=str(config.Info.Resource),
-            )
-            return _select_controller(interface, name).type == "Win32"
-        except (OSError, ValueError):
-            return False
     if isinstance(config, (HSRConfig, OkNteConfig, OkwwConfig)):
         return True
     if isinstance(config, BetterGIConfig):

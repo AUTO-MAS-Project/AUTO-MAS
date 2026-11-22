@@ -72,28 +72,10 @@ HSRConfig = ConfigPayload[_config_models.HSRConfig]
 HSRConfigInput = ConfigInput[_config_models.HSRConfig]
 
 
-M9AConfig = ConfigPayload[_config_models.M9AConfig]
-
-
-M9AConfigInput = ConfigInput[_config_models.M9AConfig]
-
-
-MSSConfig = ConfigPayload[_config_models.MSSConfig]
-
-
-MSSConfigInput = ConfigInput[_config_models.MSSConfig]
-
-
 MaaEndConfig = ConfigPayload[_config_models.MaaEndConfig]
 
 
 MaaEndConfigInput = ConfigInput[_config_models.MaaEndConfig]
-
-
-MaaFWConfig = ConfigPayload[_config_models.MaaFWConfig]
-
-
-MaaFWConfigInput = ConfigInput[_config_models.MaaFWConfig]
 
 
 OkNteConfig = ConfigPayload[_config_models.OkNteConfig]
@@ -123,13 +105,10 @@ class ScriptIndexItem(BaseModel):
                 "OkwwConfig",
                 "OkNteConfig",
                 "MaaEndConfig",
-                "M9AConfig",
-                "MaaFWConfig",
                 "HSRConfig",
                 "BetterGIConfig",
                 "ZzzOdConfig",
                 "BAAHConfig",
-                "MSSConfig",
             ]
         },
         default=...,
@@ -153,13 +132,10 @@ class ScriptCreateIn(BaseModel):
                 "Okww",
                 "OkNte",
                 "MaaEnd",
-                "M9A",
-                "MaaFW",
                 "HSR",
                 "BetterGI",
                 "ZzzOd",
                 "BAAH",
-                "MSS",
             ]
         },
         default=...,
@@ -178,13 +154,10 @@ class ScriptCreateOut(OutBase):
         OkwwConfig,
         OkNteConfig,
         MaaEndConfig,
-        M9AConfig,
-        MaaFWConfig,
         HSRConfig,
         BetterGIConfig,
         ZzzOdConfig,
         BAAHConfig,
-        MSSConfig,
     ] = Field(..., description="托管配置数据")
 
 
@@ -204,13 +177,10 @@ class ScriptGetOut(ConfigSnapshotOut):
             OkwwConfig,
             OkNteConfig,
             MaaEndConfig,
-            M9AConfig,
-            MaaFWConfig,
             HSRConfig,
             BetterGIConfig,
             ZzzOdConfig,
             BAAHConfig,
-            MSSConfig,
         ],
     ] = Field(..., description="托管数据字典, key来自于index列表的uid")
     unavailable: List[UnavailableConfigItem] = Field(
@@ -235,13 +205,10 @@ class ScriptUpdateIn(BaseModel):
         OkwwConfigInput,
         OkNteConfigInput,
         MaaEndConfigInput,
-        M9AConfigInput,
-        MaaFWConfigInput,
         HSRConfigInput,
         BetterGIConfigInput,
         ZzzOdConfigInput,
         BAAHConfigInput,
-        MSSConfigInput,
     ] = Field(..., description="托管更新数据")
 
     @model_validator(mode="before")

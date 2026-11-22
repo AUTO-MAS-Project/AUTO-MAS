@@ -11,6 +11,7 @@ import pytest
 from maa_adapter.config.script import MaaConfig
 
 from app.core.config.plugin_upgrade import (
+    backup_legacy_maafw_documents,
     backup_legacy_src_users,
     migrate_maa_update_channel,
     prepare_plugin_documents,
@@ -25,6 +26,10 @@ from app.utils import io as config_io
     [
         ("WhimboxConfig", "whimbox_adapter", "auto-mas-whimbox-adapter"),
         ("SrcConfig", "src_adapter", "auto-mas-src-adapter"),
+        ("MaaFWConfig", "maafw_adapter", "auto-mas-maafw-adapter"),
+        ("M9AConfig", "m9a_adapter", "auto-mas-m9a-adapter"),
+        ("MSSConfig", "mss_adapter", "auto-mas-mss-adapter"),
+        ("MSSPlanConfig", "mss_adapter", "auto-mas-mss-adapter"),
     ],
 )
 def test_upgrade_detects_only_collection_types(
@@ -52,6 +57,30 @@ def test_src_backup_preserves_original_even_without_indexed_body(tmp_path):
     )
     backup_legacy_src_users(tmp_path)
     assert (tmp_path / "legacy-src-plugin" / path.name).read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    ("filename", "config_type"),
+    [("scripts.yaml", "M9AConfig"), ("plans.yaml", "MSSPlanConfig")],
+)
+def test_maafw_backup_preserves_first_original(tmp_path, filename, config_type):
+    """MFW 一族首次接手前按字节备份，重试不覆盖；别的类型不备份。"""
+    path = tmp_path / filename
+    sid = str(uuid4())
+    config_io.write_file(path, {"order": [{"uid": sid, "type": "OkwwConfig"}]})
+    backup_legacy_maafw_documents(tmp_path)
+    assert not (tmp_path / "legacy-maafw-plugin").exists()
+    config_io.write_file(
+        path, {"order": [{"uid": sid, "type": config_type}], "data": {sid: {}}}
+    )
+    original = path.read_bytes()
+    backup_legacy_maafw_documents(tmp_path)
+    config_io.write_file(
+        path,
+        {"order": [{"uid": sid, "type": config_type}], "data": {sid: {"users": {}}}},
+    )
+    backup_legacy_maafw_documents(tmp_path)
+    assert (tmp_path / "legacy-maafw-plugin" / filename).read_bytes() == original
 
 
 @pytest.mark.parametrize("legacy", [False, True])

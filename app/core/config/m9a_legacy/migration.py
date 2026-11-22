@@ -43,9 +43,11 @@ v5.6.0-beta.1 的迁移把所有等于 interface default 的输入值都清空�
 from __future__ import annotations
 
 import copy
+import importlib.util
 import json
 import os
 import shutil
+import uuid
 from collections import Counter
 from collections.abc import Collection
 from dataclasses import dataclass, field
@@ -74,6 +76,19 @@ from app.utils import get_logger
 
 logger = get_logger("M9A 迁移")
 
+
+def mfw_interface_missing(stage: str) -> bool:
+    """MFW 解析库（``maafw_interface``，随 MFW 插件装进插件环境）不在时记一条提示，调用方这次跳过。"""
+
+    if importlib.util.find_spec("maafw_interface") is not None:
+        return False
+    logger.warning(
+        f"{stage}这次跳过：没找到 MFW 解析库 maafw_interface（随 M9A 插件一起安装），"
+        "装好插件后重启会再做"
+    )
+    return True
+
+
 # 旧版 M9A 专项按名字记任务；名字随版本变过（「每日心相」→「每日心相（意志解析）」），
 # 迁移时按 entry 反查。这张表只服务迁移与无 interface 降级，运行期不用。
 LEGACY_ENTRY_ALIASES: dict[str, str] = {
@@ -99,7 +114,7 @@ FALLBACK_TASK_NAMES: dict[str, str] = {
 def resolve_task_instance_name(task_id: str, valid_task_names: Collection[str]) -> str:
     """解析库同名函数（重复实例 id 还原成任务名），用到时才导入。"""
 
-    from app.task.MaaFW.blocks.maafw_interface.interface.models import (
+    from maafw_interface.interface.models import (
         resolve_task_instance_name as resolve,
     )
 
@@ -245,6 +260,8 @@ def migrate_legacy_m9a_scripts(
         return report
     if not isinstance(data, dict):
         return report
+    if "M9AConfig" in text and mfw_interface_missing("M9A 旧配置迁移"):
+        return report
 
     try:
         changed = migrate_script_config_payload(
@@ -359,11 +376,8 @@ def _project_root_for_detection(
 
     candidates: list[Path] = []
     try:
-        from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
-            embedded_project_dir,
-        )
-
-        candidates.append(embedded_project_dir(uid))
+        # 视图目录 data/mfw/<托管 uuid 前 12 位>，与项目更新插件的约定一致
+        candidates.append(Path.cwd() / "data" / "mfw" / uuid.UUID(uid).hex[:12])
     except Exception:  # noqa: BLE001 - uid 不合法就只看来源目录
         pass
     info = payload.get("Info") or {}
@@ -1193,7 +1207,7 @@ def _read_interface_dict(root: Path) -> dict[str, Any] | None:
 
 def _read_interface_model(root: Path) -> Any | None:
     try:
-        from app.task.MaaFW.blocks.maafw_interface.interface.service import (
+        from maafw_interface.interface.service import (
             MaaFWInterfaceService,
         )
 
@@ -1355,6 +1369,8 @@ def repair_m9a_migration_losses(
         reverse=True,
     )
     if not backups:
+        return report
+    if mfw_interface_missing("M9A 迁移补救"):
         return report
 
     tmp = path.with_name(f"{path.name}.m9a-repairing")
@@ -1717,6 +1733,8 @@ def normalize_m9a_managed_entries(
         raw = path.read_bytes()
         if b"M9AConfig" not in raw:
             return report  # 没有 M9A 脚本就不读 interface
+        if mfw_interface_missing("M9A 受管任务整理"):
+            return report
         from app.utils import io as _utils_io
 
         data = _utils_io.read_dict_file(path)
@@ -1753,7 +1771,7 @@ def _login_mode(payload: dict[str, Any]) -> str:
 def _run_resource(model: Any, payload: dict[str, Any]) -> str | None:
     """脚本运行时实际生效的资源：与建运行计划同一个 ``resolve_run_selection``（原始 JSON 版）。"""
 
-    from app.task.MaaFW.blocks.maafw_interface.runner.run_plan import (
+    from maafw_interface.runner.run_plan import (
         resolve_run_selection,
     )
 

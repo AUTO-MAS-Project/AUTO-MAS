@@ -42,15 +42,6 @@ def build_builtin_script_capabilities(
         from app.task.HSR.registration import REGISTRATION as hsr
     with startup_stage("后端/专项注册导入/MaaEnd.registration"):
         from app.task.MaaEnd.registration import registration as maaend_registration
-    with startup_stage("后端/专项注册导入/MaaFW.registration"):
-        from app.task.MaaFW.registration import REGISTRATION as maafw
-        from app.task.MaaFW.registration import register_owner as register_maafw_owner
-    with startup_stage("后端/专项注册导入/M9A.registration"):
-        from app.task.M9A.registration import REGISTRATION as m9a
-        from app.task.M9A.registration import register_owner as register_m9a_owner
-    with startup_stage("后端/专项注册导入/MSS.registration"):
-        from app.task.MSS.registration import REGISTRATION as mss
-        from app.task.MSS.registration import register_owner as register_mss_owner
     with startup_stage("后端/专项注册导入/OkNte.registration"):
         from app.task.OkNte.registration import REGISTRATION as oknte
     with startup_stage("后端/专项注册导入/Okww.registration"):
@@ -63,9 +54,6 @@ def build_builtin_script_capabilities(
             maaend_registration(maaend=maaend),
             bettergi,
             zzzod_registration(zzzod=zzzod),
-            maafw,
-            m9a,
-            mss,
             okww,
             general,
             oknte,
@@ -74,9 +62,4 @@ def build_builtin_script_capabilities(
         ),
         expected_types=CLASS_BOOK.values(),
     )
-    # 三种 MFW 托管的属主登记给项目更新一侧（共享目录的清理与 /maafw/* 端点按它认托管）。
-    # 删托管时的视图清理由三种类型各自的配置回调声明，只删本属主的视图。
-    register_maafw_owner()
-    register_m9a_owner()
-    register_mss_owner()
     return capabilities

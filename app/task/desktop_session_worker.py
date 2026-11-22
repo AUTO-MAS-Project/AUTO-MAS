@@ -72,6 +72,45 @@ async def request_desktop_action(
     return code, json.loads(stdout) if stdout else None
 
 
+def _maafw_window_matches(controller: dict[str, Any]) -> list[Any]:
+    """按 interface 的窗口规则匹配分身桌面上的窗口。
+
+    匹配规则在 MFW 解析库 ``maafw_interface`` 里，宿主不带它：分身进程的导入路径里没有插件环境时，
+    从工作目录下的插件环境补上；仍找不到就报错，由发起方按查窗口失败处理。
+    """
+    import sys
+
+    from maa.toolkit import Toolkit
+
+    try:
+        from maafw_interface.controller_win32 import service
+    except ImportError:
+        site = str(Path.cwd() / "plugins" / "pypi" / "site-packages")
+        if site not in sys.path:
+            sys.path.append(site)
+        try:
+            from maafw_interface.controller_win32 import service
+        except ImportError as exc:
+            raise RuntimeError(
+                "桌面分身里查窗口要用 MFW 解析库 maafw_interface，没有找到："
+                "请在插件中心安装 MFW 插件"
+            ) from exc
+
+    def list_windows() -> list[Any]:
+        return [
+            service.MaaFWWin32Window(
+                hWnd=int(getattr(window.hwnd, "value", window.hwnd) or 0),
+                className=str(window.class_name or ""),
+                windowName=str(window.window_name or ""),
+            )
+            for window in Toolkit.find_desktop_windows()
+        ]
+
+    return service.MaaFWWin32ControllerService().match_controller_windows(
+        controller, list_windows=list_windows
+    )
+
+
 def run_action(pipe) -> None:
     request = receive(pipe)
     from app.utils.common.process.session import configure_parent_scope
@@ -206,17 +245,10 @@ def run_action(pipe) -> None:
         text = json.dumps(bool(pid and process_session(pid) == session_id))
         code = 0
     elif action == "maafw_windows":
+        # 兼容 MFW 插件 0.1.0 的运行积木：它在分身里查窗口仍发这个动作（新代码用 list_windows）。
         import win32gui
         import win32process
 
-        from app.task.MaaFW.blocks.maafw_interface.controller_win32.service import (
-            MaaFWWin32ControllerService,
-        )
-        from app.task.MaaFW.blocks.maafw_runner.host.desktop_windows import (
-            list_maafw_desktop_windows,
-        )
-
-        service = MaaFWWin32ControllerService()
         hwnd = arguments.get("hwnd")
         if hwnd is not None:
             hwnd = int(hwnd)
@@ -227,10 +259,6 @@ def run_action(pipe) -> None:
             )
             text = json.dumps(bool(pid and process_session(pid) == session_id))
         else:
-            windows = service.match_controller_windows(
-                json.loads(arguments["controller"]),
-                list_windows=list_maafw_desktop_windows,
-            )
             text = json.dumps(
                 [
                     [
@@ -239,7 +267,9 @@ def run_action(pipe) -> None:
                         item.windowName,
                         win32process.GetWindowThreadProcessId(item.hWnd)[1],
                     ]
-                    for item in windows
+                    for item in _maafw_window_matches(
+                        json.loads(arguments["controller"])
+                    )
                     if win32gui.IsWindow(item.hWnd)
                 ]
             )

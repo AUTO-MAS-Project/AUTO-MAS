@@ -56,6 +56,8 @@ from app.core.config.m9a_legacy.migration import (
     repair_m9a_migration_losses,
 )
 from app.core.config.plugin_upgrade import (
+    MAAFW_FAMILY_PLUGINS,
+    backup_legacy_maafw_documents,
     backup_legacy_src_users,
     install_adapter_plugin,
     install_adapter_plugins,
@@ -86,16 +88,9 @@ from app.models.config import (
     GlobalConfig,
     HSRConfig,
     HSRUserConfig,
-    M9AConfig,
-    M9AUserConfig,
     MaaEndConfig,
     MaaEndPlanConfig,
     MaaEndUserConfig,
-    MaaFWConfig,
-    MaaFWUserConfig,
-    MSSConfig,
-    MSSPlanConfig,
-    MSSUserConfig,
     OkNteConfig,
     OkNtePlanConfig,
     OkNteUserConfig,
@@ -138,7 +133,7 @@ DIAGNOSTIC_SCREENSHOT_MAX_BYTES = 10 * 1024 * 1024
 # 累积，不跟随历史记录保留时间设置
 DIAGNOSTIC_RETENTION_DAYS = 15
 
-#: 本进程启动时刻；启动清理只碰比它更早的半成品。
+#: 本进程启动时刻；启动清理只碰比它更早的半成品。MFW 项目更新插件 0.1.0 直接读它，别改名。
 _PROCESS_STARTED_AT = time.time()
 
 logger = get_logger("配置管理")
@@ -328,25 +323,10 @@ class AppConfig:
         # 启动时没装上、没启用的专项插件：插件名 → 原因，进启动提示。
         self._adapter_plugin_failures: dict[str, str] = {}
         self._managed_restore_tasks: set[asyncio.Task] = set()
-        from app.task.MaaFW.blocks.maafw_project_update.host import (
-            owners as maafw_owners,
-        )
-        from app.task.MaaFW.blocks.maafw_project_update.host.maintenance import (
-            MaaFWMaintenanceService,
-        )
-
-        # 托管属主的回答只在托管完整加载之后算数：信号由宿主注入项目更新一侧。
-        maafw_owners.set_loaded_signal(self.managed_configs_loaded)
-        self.maafw_maintenance = MaaFWMaintenanceService(
-            scripts_loaded_intact=self.managed_configs_loaded,
-            retention_days=lambda: self.setting.Function.HistoryRetentionTime,
-            process_started_at=_PROCESS_STARTED_AT,
-        )
         for model in (
             *CLASS_BOOK.values(),
             MaaEndUserConfig,
             BAAHUserConfig,
-            MSSUserConfig,
             HSRUserConfig,
             QueueItem,
         ):
@@ -610,6 +590,8 @@ class AppConfig:
         required = required_adapter_plugins(self.config_path)
         if "src_adapter" in required:
             await asyncio.to_thread(backup_legacy_src_users, self.config_path)
+        if MAAFW_FAMILY_PLUGINS & required.keys():
+            await asyncio.to_thread(backup_legacy_maafw_documents, self.config_path)
         from app.core.config.game_upgrade import (
             migrate_game_documents,
             required_game_plugins,
@@ -740,10 +722,6 @@ class AppConfig:
                 prepared_documents=prepared,
                 entry_migrations=entry_migrations,
             )
-        if self._m9a_managed is None:
-            self._m9a_managed = await asyncio.to_thread(
-                normalize_m9a_managed_entries, self.config_path / "scripts.yaml"
-            )
         for _old, new, key in CONFIG_FILES:
             if key == "EmulatorConfig":
                 continue
@@ -757,6 +735,12 @@ class AppConfig:
                 await collection.activate(fast_init=True)
         if prepare_plugins is not None:
             await prepare_plugins()
+        if self._m9a_managed is None:
+            # 整理要读 interface，MFW 解析库随插件装进插件环境，所以排在插件就绪之后、
+            # 托管集合激活之前（激活后旧键就按插件类丢了）。
+            self._m9a_managed = await asyncio.to_thread(
+                normalize_m9a_managed_entries, self.config_path / "scripts.yaml"
+            )
         await migrate_games()
         from app.core.game_manager import GameManager
         from app.models.config import GameEntry
@@ -1258,15 +1242,12 @@ class AppConfig:
         ScriptEntry
         | GeneralConfig
         | MaaEndConfig
-        | M9AConfig
-        | MaaFWConfig
         | OkwwConfig
         | OkNteConfig
         | HSRConfig
         | BetterGIConfig
         | ZzzOdConfig
-        | BAAHConfig
-        | MSSConfig,
+        | BAAHConfig,
     ]:
         """添加托管配置"""
 
@@ -1541,15 +1522,12 @@ class AppConfig:
         UserEntry
         | GeneralUserConfig
         | MaaEndUserConfig
-        | M9AUserConfig
-        | MaaFWUserConfig
         | OkwwUserConfig
         | OkNteUserConfig
         | HSRUserConfig
         | BetterGIUserConfig
         | ZzzOdUserConfig
-        | BAAHUserConfig
-        | MSSUserConfig,
+        | BAAHUserConfig,
     ]:
         """添加账号配置"""
 
@@ -1562,10 +1540,7 @@ class AppConfig:
             # 插件用户集合在类型声明时已收窄，不再通过另一份处理器登记账号类。
             user_class = next(iter(script_config.users.entry_types.values()))
         else:
-            # [兼容旧专项] 特调账号类优先于 MaaFW 父类型处理器。
-            user_class = getattr(script_config, "USER_CONFIG_CLASS", None)
-            if user_class is None and handler is not None:
-                user_class = handler.user_config_class
+            user_class = handler.user_config_class if handler is not None else None
         if user_class is None:
             raise TypeError(f"不支持的托管配置类型: {type(script_config)}")
 
@@ -1929,7 +1904,6 @@ class AppConfig:
         PlanEntry
         | MaaEndPlanConfig
         | BAAHPlanConfig
-        | MSSPlanConfig
         | UniversalPlanConfig
         | OkNtePlanConfig
         | OkwwPlanConfig,
@@ -2930,46 +2904,12 @@ class AppConfig:
         )
 
     async def _settle_m9a_migration(self, report: Any) -> None:
-        """旧 M9A 配置迁完之后的两件收尾：原先有归档的托管用 MaaFW 池归档一次；结果攒成系统通知。
+        """旧 M9A 配置迁完之后把结果攒成系统通知。
 
-        旧 M9A 池（``data/<sid>/M9ABackups/``）不再被列出也不支持恢复，目录原地保留。此时
-        副本还没建，native 池按来源目录归档；引擎首次运行前还会按有效根再归档一次，指纹去重。
+        旧 M9A 池（``data/<sid>/M9ABackups/``）不再被列出也不支持恢复，目录原地保留；按新格式
+        归档由 M9A 插件在首次运行前做。
         """
 
-        from app.task.MaaFW.registration import MAAFW_FAMILY_TYPES
-        from app.task.MaaFW.seams.backup_archive import (
-            archive_mas_runtime_backup,
-            archive_native_backup,
-            read_overlay_values,
-        )
-
-        archived: list[str] = []
-        for uid_text in report.migrated_uids:
-            legacy_pool = self.data_path / uid_text / "M9ABackups"
-            if not legacy_pool.is_dir():
-                continue
-            try:
-                script_config = self.ScriptConfig[uuid.UUID(uid_text)]
-                if type(script_config) not in MAAFW_FAMILY_TYPES:
-                    continue
-            except (KeyError, ValueError):
-                continue
-            source = str(script_config.Info.Path or "").strip()
-            try:
-                if source and Path(source).is_dir():
-                    await asyncio.to_thread(
-                        archive_native_backup, uid_text, Path(source)
-                    )
-                for user_uid, user_config in script_users(script_config).items():
-                    await asyncio.to_thread(
-                        archive_mas_runtime_backup,
-                        uid_text,
-                        str(user_uid),
-                        read_overlay_values(user_config),
-                    )
-                archived.append(str(script_config.Info.Name or uid_text[:8]))
-            except Exception as exc:  # noqa: BLE001 - 归档失败不该挡住启动
-                logger.warning(f"M9A 迁移后归档失败（{uid_text[:8]}）：{exc}")
         lines = list(report.summary_lines())
         if report.failure:
             lines.insert(
@@ -2978,8 +2918,6 @@ class AppConfig:
                 f"迁移前的原文件已备份为 {report.backup_path.name if report.backup_path else '（备份也失败）'}，"
                 f"原因：{report.failure}",
             )
-        if archived:
-            lines.append("原先有归档的托管已按新格式归档一次：" + "、".join(archived))
         # 失败行已经带了备份文件名（或「备份也失败」），不再重复一遍
         if report.backup_path is not None and not report.failure:
             lines.append(f"迁移前的配置已备份为 {report.backup_path.name}")

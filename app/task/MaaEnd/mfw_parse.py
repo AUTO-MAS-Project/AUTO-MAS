@@ -14,8 +14,8 @@
 #   Contact: DLmaster_361@163.com
 """MaaEnd 用到的 MFW interface 解析代码，调用时才导入。
 
-解析代码不是宿主依赖：导入 MaaEnd 不需要它，只有真正拼游戏启动设置时才要。
-它不在时抛 ``RuntimeError``，走 MaaEnd 现有的运行前失败提示。
+解析代码是已发布的库 ``maafw_interface``，不是宿主依赖：装了 MFW 插件才在插件环境里。导入 MaaEnd
+不需要它，只有真正拼游戏启动设置时才要；它不在时抛 ``RuntimeError``，走 MaaEnd 现有的运行前失败提示。
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from app.task.MaaFW.blocks.maafw_interface.embedded_labels import Labels, Translate
-    from app.task.MaaFW.blocks.maafw_interface.interface.models import (
+    from maafw_interface.embedded_labels import Labels, Translate
+    from maafw_interface.interface.models import (
         MaaFWController,
         MaaFWInterface,
         MaaFWOption,
@@ -36,19 +36,22 @@ if TYPE_CHECKING:
         MaaFWTaskOptionsByTask,
         MaaFWTaskOptionValue,
     )
-    from app.task.MaaFW.blocks.maafw_interface.runner.models import MaaFWPretaskRunPlan
+    from maafw_interface.runner.models import MaaFWPretaskRunPlan
 
-_LOADER = "app.task.MaaFW.blocks.maafw_interface.interface.loader"
-_TASK_CONFIG = "app.task.MaaFW.blocks.maafw_interface.interface.task_config"
-_RUN_PLAN = "app.task.MaaFW.blocks.maafw_interface.runner.run_plan"
-_EMBEDDED_LABELS = "app.task.MaaFW.blocks.maafw_interface.embedded_labels"
+_LOADER = "maafw_interface.interface.loader"
+_TASK_CONFIG = "maafw_interface.interface.task_config"
+_RUN_PLAN = "maafw_interface.runner.run_plan"
+_EMBEDDED_LABELS = "maafw_interface.embedded_labels"
 
 
 def _module(name: str) -> ModuleType:
     try:
         return importlib.import_module(name)
     except ImportError as error:
-        raise RuntimeError(f"MaaEnd 需要 MFW 解析组件，当前不可用：{error}") from error
+        raise RuntimeError(
+            "MaaEnd 的游戏启动设置要用 MFW 解析库 maafw_interface，当前没有装上："
+            f"请在插件中心安装 MFW 插件（auto-mas-maafw-adapter）后重试（{error}）"
+        ) from error
 
 
 def load_interface_model(base_dir: str | Path) -> MaaFWInterface:
