@@ -744,9 +744,17 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             discover_maafw_project_update,
         )
 
+        # 增量依赖开跑时的当前载荷，交给运行前更新（与 prefetch_script_update 一致）；
+        # 这里一旦给出预下载包，运行前更新就会改走全量。
+        if config.Update.PackageMode == "incremental":
+            return []
         if resolve_auto_update_mode(config) == "Off" or follow_source_enabled(config):
             return []
         credentials = resolve_update_credentials(config)
+        # Mirror 酱的一次性下载地址每次发现都不同，预下载的包对不上运行前更新自己拿到
+        # 的地址，只会白下整包、多签地址；在发现之前就跳过。
+        if credentials.package_source == "mirrorchyan":
+            return []
         project = resolve_maafw_project_root(str(config.uid), config).resolve()
         source = {
             "package_source": credentials.package_source,
