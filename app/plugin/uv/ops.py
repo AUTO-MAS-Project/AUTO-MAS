@@ -615,9 +615,7 @@ async def prepare_environment(
     records = list(Config.plugin_registry.values())
     targets = plugin_targets(records, installed_path=target)
     existing = {
-        canonicalize_name(dist.name): dist.version
-        for dist in importlib_metadata.distributions(path=[str(target)])
-        if canonicalize_name(dist.name) != canonicalize_name(CORE_DISTRIBUTION_NAME)
+        name: dist.version for name, dist in environment.distributions(target).items()
     }
     fingerprint = {
         "core": Config.VERSION,
@@ -708,8 +706,9 @@ async def prepare_environment(
         environment.preserve_local_packages(target, prepared)
 
         installed = {
-            canonicalize_name(dist.name): dist
+            name: dist
             for dist in importlib_metadata.distributions(path=[str(prepared)])
+            if (name := environment.distribution_name(dist)) is not None
         }
         retained = {
             canonicalize_name(Requirement(item).name)

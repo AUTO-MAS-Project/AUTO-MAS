@@ -40,10 +40,21 @@ def distributions(directory: Path) -> dict[str, metadata.Distribution]:
     from app.plugin.types import CORE_DISTRIBUTION_NAME
 
     return {
-        canonicalize_name(dist.name): dist
+        name: dist
         for dist in metadata.distributions(path=[str(directory)])
-        if canonicalize_name(dist.name) != canonicalize_name(CORE_DISTRIBUTION_NAME)
+        if (name := distribution_name(dist)) is not None
+        and name != canonicalize_name(CORE_DISTRIBUTION_NAME)
     }
+
+
+def distribution_name(dist: metadata.Distribution) -> str | None:
+    """规范化的发行名；缺 METADATA（读不了、残缺）的 dist-info 记一条警告后跳过。"""
+    if dist.name is None:
+        logger.warning(
+            "跳过缺少发行名称的元数据：{}", getattr(dist, "_path", "<unknown>")
+        )
+        return None
+    return canonicalize_name(dist.name)
 
 
 def read_installation() -> InstallationRecord | None:
