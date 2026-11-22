@@ -772,3 +772,12 @@ def resolve_task_instance_name(task_id: str, valid_task_names: Collection[str]) 
     if separator and head in valid_task_names:
         return head
     return task_id
+
+
+def task_name_for_entry(interface_model: MaaFWInterface, entry: str) -> str | None:
+    """interface 里第一个 ``entry`` 等于给定值的任务名；找不到返回 None。"""
+
+    for task in interface_model.task:
+        if str(task.entry or "") == entry:
+            return task.name
+    return None

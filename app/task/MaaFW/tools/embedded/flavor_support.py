@@ -21,6 +21,9 @@
 单独成一个模块，是因为特调包（``app/task/M9A``、``app/task/MSS``）在启动早期就会被配置迁移
 导入，导入期不能拉起建计划的核心 runner；``flavor.py`` 引了它，这里只依赖标准库与 interface
 模型。契约写在 ``flavor.py`` 的模块说明里，``flavor.py`` 原样转出这里的名字。
+
+``task_name_for_entry`` 已归到解析一侧（``tools/core/interface/models.py``，M9A、MSS 自己的排队列
+也用它），这里只是转出同名，第 11 步删风味时随本模块一起去掉。
 """
 
 from __future__ import annotations
@@ -29,7 +32,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
+from app.task.MaaFW.tools.core.interface.models import task_name_for_entry
 
 
 @dataclass(frozen=True)
@@ -50,15 +53,6 @@ class MaaFWSelectionContext:
 
     log: Callable[[str], None]
     """写一行账号运行日志；钩子在工作线程里跑，这个回调可以直接调。"""
-
-
-def task_name_for_entry(interface_model: MaaFWInterface, entry: str) -> str | None:
-    """interface 里第一个 ``entry`` 等于给定值的任务名；找不到返回 None。"""
-
-    for task in interface_model.task:
-        if str(task.entry or "") == entry:
-            return task.name
-    return None
 
 
 def config_value(config: Any, group: str, name: str) -> Any:
