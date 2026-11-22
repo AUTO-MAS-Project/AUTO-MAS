@@ -293,8 +293,18 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
     `app/task/M9A/manager.py`、`app/task/MSS/manager.py`）。合并上游 dev 时，凡是改了 `runner_task` / `embedded_manager`
     的，同样的改动手工搬进 M9A、MSS 各自那两份（只和通用 MFW 有关的分支除外，例如快照直建；只和 M9A 有关的
     登录 / 游戏更新 / 首任务只搬进 M9A；MSS 的建计划拆成了 `_load_run_state` / `_plan_head` / `_plan_tail`，按所在段落
-    搬）；改了 `tools/` 下叶子的不用搬（三份都调它）。合并后先跑本地对拍 `tests/task/mfw_parity`（实时对拍会报出
-    分叉，金样会报出行为变化），合并说明里逐个列出同步了哪些函数；尽量缩短第 9 步到第 11 步的间隔。
+    搬）；改了 `tools/` 下叶子的不用搬（三份都调它）。合并提交只做让合并成立的事（冲突落在通用那份上就在通用那份
+    手解），同步进 M9A、MSS 各一个提交，提交说明里逐个列出同步了哪些函数；尽量缩短第 9 步到第 11 步的间隔。
+    对拍按实施方案 §13.1：
+    1. **实时对拍是第一道门**：同步完以后新旧在同一份代码上跑，必须相等（除 MSS 探测线程等 README 列明的允许差异）。
+    2. **金样跟着合并提交前移**：上游改了行为、金样变红时，在「合并提交的导出目录里反向应用两个翻登记提交」
+       （`git archive <合并提交>` 后 `git apply -R` 那两个提交的补丁）得到的旧路径上 `MFW_PARITY_RECORD=1` 重录；
+       重录前后的差异逐条用这次合并进来的上游改动解释，写进对拍 README 的「重录记录」，解释不了的按回归处理、不许
+       重录盖掉；没被上游改动影响的金样重录后必须逐字节不变。为上游新逻辑补的情形也在这个旧路径上录。
+    3. **第 11 步删掉风味分支之后旧路径不复存在**，上面第 2 条不再可用：已知要进来的上游改动都要在第 11 步之前合并、
+       同步、重录完；之后再合并上游，M、S 组只能靠「同一处改动手工同步进三份、逐条审金样差异」。
+    第一次这样做是合并 #2107、#2108（合并提交 `803aeb744`）：拿锁后的回调与按账号选定同步进了三份管理器，预下载的
+    两个提前返回落在叶子 `project_session.discover_prefetch`，金样重录记录见对拍 README。
 - `tools/core/`：七个核心包（interface / native / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
   `project_update/updater.py` 引了 `app.utils.constants`，以及 `project_update` 里的 `projection_heal` /

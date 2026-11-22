@@ -51,10 +51,17 @@ M9A、MSS）各写一份**，互不继承、互不导入；共用的只有 `app/
   `final_task` 的 finally 链、设备配置的拼装顺序、请求组装都在本目录写一份。
 - 照旧路径**原样保留**、不要顺手改的：logger 名「MaaFW 插件自动代理」/「MFW 内置运行」（配置回调里的整理是
   「MaaFW 特调」）；`lease_owner` 仍是 `automas-script-maafw:{id}`；管理器直接 `try_lock_x()`、不走
-  `lock_script_config`（`after_config_lock` 对 MFW 家族从来不触发）；与通用流程相同的三处既有问题（脚本后任务抛
-  异常时 `on_crash` 被调两次、代理结果写「全部完成」而账号状态是「异常」；资源包核对任务不在作用域的保留名单里，
-  停止时会被取消；上面那条锁的口径使脚本级 `GameSession.select()` 不被调，通用 MFW 的 DirectExe 在预检就取不到 exe）——
-  要修就三个专项一起修，不在一份里单独改。
+  `lock_script_config`；与通用流程相同的两处既有问题（脚本后任务抛异常时 `on_crash` 被调两次、代理结果写「全部完成」
+  而账号状态是「异常」；资源包核对任务不在作用域的保留名单里，停止时会被取消）——要修就三个专项一起修，不在一份里
+  单独改。
+- 游戏会话（上游 #2107、#2108 合进来后，与通用 MFW 逐行相同）：`_check` 确认有可运行账号之后、取模拟器之前调 L2 挂的
+  `after_config_lock`（选定托管级游戏会话、复查预下载），失败时交回托管锁、把原因作为检查结果；账号循环里每个账号
+  先 `_select_account_game` 按账号选定（账号另绑了目标就换成它的，选定失败只把这个账号记异常），整个账号包在
+  `try/finally` 里、`finally` 对会话 `release_account()`，账号覆盖占的目标当场交回。登录、游戏更新都在账号流程里，
+  在按账号选定之后。判「另绑模拟器没选设备」的读取在 `config_view.account_emulator_without_device`。
+- 管理器经 M9A 属主 `read_managed` 现取托管记录，读不到抛 `_ManagedRecordMissing`：运行阶段照旧向上抛；收尾（保存
+  账号配置并解锁之后）补确认运行环境那一步遇到它只记一行 warning、跳过，不把结果改成异常（实施方案 §13.2；旧路径拿
+  手里的配置对象照常确认，对拍里是 M41 的允许差异）。收尾项目那一步在 `try` 里，记「MFW 收尾维护失败」后跳过。
 - 启动期导入链：`import app.task.M9A.registration` / `app.task.M9A.migration` 不拉起 `account_run`、`manager`、
   风味模块；调一次 `create_config_handler()` 比翻登记之前只多导入 `config_hooks` 本身。
 
@@ -62,13 +69,16 @@ M9A、MSS）各写一份**，互不继承、互不导入；共用的只有 `app/
 时，凡是改了 `app/task/MaaFW/tools/embedded/runner_task.py` 的，要把同样的改动搬进 `account_run.py`；改了
 `app/task/MaaFW/embedded_manager.py` 的，搬进 `manager.py`（第 10 步起 MSS 也有自己的流程，同样搬进
 `app/task/MSS/account_run.py` / `manager.py`，见 `app/task/MSS/AGENTS.md`）。
-合并后先跑实时对拍，它会报出分叉；合并说明里逐个列出同步了哪些函数。
+合并后先跑实时对拍，它会报出分叉；合并说明里逐个列出同步了哪些函数。改动落在 `tools/` 叶子上的（例如 #2107 的
+预下载提前返回在 `project_session.discover_prefetch`）三份都调它，不用搬。金样怎么跟着合并重录见
+`app/task/MaaFW/AGENTS.md`「从现在到第 11 步之间合并上游」。
 
 **对拍**（迁移期间的本地测试，不随 PR 提交；详见它自己的 `tests/task/mfw_parity/README.md`）：从树根用本树解释器跑
 `python -m pytest tests/task/mfw_parity -p no:cacheprovider --basetemp <临时目录下的新目录> -q`
 （全量前先设好 `AUTO_MAS_UV_EXE`）。
 - 金样（`test_mfw_parity_golden.py`）经宿主的登记取管理器与配置回调，翻登记后 M 组守的就是本目录的流程，
-  必须与基线 `3bf58bb13` 上录的金样一致；金样只许在基线导出目录里重录。
+  必须与旧路径上录的金样一致；金样只许在旧路径上重录：没合并过上游时是基线 `3bf58bb13` 的导出目录，合并过之后是
+  「最近一个合并提交的导出目录里反向应用两个翻登记提交」（实施方案 §13.1，README「重录记录」）。
 - 实时对拍（`test_mfw_parity_live.py`）旧路径显式用 MFW 管理器 + 风味路径的配置回调（不经登记），新路径用
   `M9AManager` 与 `config_hooks`，翻登记后比的仍是「风味路径 vs 本目录流程」。
 - 本目录的新模块引用了宿主函数时，把模块路径加进 `harness.NEW_FLOW_MODULES`，否则假实现盖不住。

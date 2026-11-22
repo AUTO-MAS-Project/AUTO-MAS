@@ -53,14 +53,19 @@ M9A、MSS）各写一份**，互不继承、互不导入（MSS 不导入 `app.ta
   `final_task` 的 finally 链、设备配置的拼装顺序、请求组装都在本目录写一份（`_PlanHead` 只是建计划前后两段之间
   传的一小份普通数据，不跨出 `_load_run_state`）。
 - 照旧路径**原样保留**、不要顺手改的：logger 名「MaaFW 插件自动代理」/「MFW 内置运行」；`lease_owner` 仍是
-  `automas-script-maafw:{id}`；管理器直接 `try_lock_x()`、不走 `lock_script_config`（`after_config_lock` 对 MFW 家族
-  从来不触发）；与通用流程相同的三处既有问题（脚本后任务抛异常时 `on_crash` 被调两次、代理结果写「全部完成」而
-  账号状态是「异常」；资源包核对任务不在作用域的保留名单里，停止时会被取消；上面那条锁的口径使脚本级
-  `GameSession.select()` 不被调，DirectExe 在预检取不到 exe）——要修就三个专项一起修，不在一份里单独改；
-  按任务名比 `excluded_task_ids`（实例 id 的集合），第二个活动实例设成红灯挡不住自动补入，同样是既有口径。
-- 管理器每次经 MSS 属主 `read_managed` 现取托管记录（旧路径用手里的配置对象）：只有「保存账号配置并解锁之后、
-  收尾项目之前，用户恰好删了这个托管」这一窄窗口里两边不同——新流程读不到记录，`final_task` 记一行
-  「MFW 收尾维护失败」后跳过收尾项目；旧路径会拿已删托管的旧对象照常收尾。与 M9A 同一口径。
+  `automas-script-maafw:{id}`；管理器直接 `try_lock_x()`、不走 `lock_script_config`；与通用流程相同的两处既有问题
+  （脚本后任务抛异常时 `on_crash` 被调两次、代理结果写「全部完成」而账号状态是「异常」；资源包核对任务不在作用域的
+  保留名单里，停止时会被取消）——要修就三个专项一起修，不在一份里单独改；按任务名比 `excluded_task_ids`（实例 id
+  的集合），第二个活动实例设成红灯挡不住自动补入，同样是既有口径。
+- 游戏会话（上游 #2107、#2108 合进来后，与通用 MFW 逐行相同）：`_check` 确认有可运行账号之后、取模拟器之前调 L2 挂的
+  `after_config_lock`（选定托管级游戏会话、复查预下载），失败时交回托管锁、把原因作为检查结果；账号循环里每个账号
+  先 `_select_account_game` 按账号选定（选定失败只把这个账号记异常），整个账号包在 `try/finally` 里、`finally` 对
+  会话 `release_account()`。活动探测在账号流程的 `check` 里，在按账号选定之后。判「另绑模拟器没选设备」的读取在
+  `config_view.account_emulator_without_device`。
+- 管理器每次经 MSS 属主 `read_managed` 现取托管记录（旧路径用手里的配置对象），读不到抛 `_ManagedRecordMissing`：
+  只有「保存账号配置并解锁之后、收尾期间，用户恰好删了这个托管」这一窄窗口里两边不同——收尾项目那一步在 `try` 里，
+  记一行「MFW 收尾维护失败」后跳过；补确认运行环境那一步记一行 warning 后跳过、不把结果改成异常（实施方案 §13.2，
+  对拍里是 S35 的允许差异）；旧路径会拿已删托管的旧对象照常收尾。运行阶段读不到照旧向上抛。与 M9A 同一口径。
 - 启动期导入链：`import app.task.MSS.registration` 不拉起 `account_run`、`manager`、`config_view`、风味模块与
   `MaaFW/registration`。
 
@@ -68,12 +73,15 @@ M9A、MSS）各写一份**，互不继承、互不导入（MSS 不导入 `app.ta
 dev 时，凡是改了 `app/task/MaaFW/tools/embedded/runner_task.py` 的，要把同样的改动搬进本目录的 `account_run.py`
 （和 M9A 的那份）；改了 `app/task/MaaFW/embedded_manager.py` 的，搬进 `manager.py`（同上）。建计划那段（`runner_task`
 的 `_load_run_state_for_check` / `_build_run_plan`）在本目录拆成了 `_load_run_state` / `_plan_head` / `_plan_tail`，
-改动按所在的段落搬。合并后先跑实时对拍，它会报出分叉；合并说明里逐个列出同步了哪些函数。
+改动按所在的段落搬。改动落在 `tools/` 叶子上的（例如 #2107 的预下载提前返回在 `project_session.discover_prefetch`）
+三份都调它，不用搬。合并后先跑实时对拍，它会报出分叉；合并说明里逐个列出同步了哪些函数。金样怎么跟着合并重录见
+`app/task/MaaFW/AGENTS.md`「从现在到第 11 步之间合并上游」。
 
 **对拍**（迁移期间的本地测试，不随 PR 提交；详见 `tests/task/mfw_parity/README.md`）：从树根用本树解释器跑
 `python -m pytest tests/task/mfw_parity -p no:cacheprovider --basetemp <临时目录下的新目录> -q`（全量前先设好
 `AUTO_MAS_UV_EXE`）。金样经宿主的登记取管理器，翻登记后 S 组守的就是本目录的流程（探测线程按上面那条唯一差异
-单独断言），金样只许在基线 `3bf58bb13` 的导出目录里重录；实时对拍旧路径显式用 MFW 管理器 + 风味路径。本目录的新
+单独断言），金样只许在旧路径上重录（没合并过上游时是基线 `3bf58bb13` 的导出目录，合并过之后是最近一个合并提交的
+导出目录里反向应用两个翻登记提交，实施方案 §13.1）；实时对拍旧路径显式用 MFW 管理器 + 风味路径。本目录的新
 模块引用了宿主函数时，把模块路径加进 `harness.NEW_FLOW_MODULES`。
 
 **回退第 10 步** = revert 翻登记的那一个提交（只改 `registration.py`）：`manager_factory` 换回 MFW 管理器，MSS 托管
