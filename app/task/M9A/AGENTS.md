@@ -123,7 +123,7 @@
 配置类在 `app/models/config.py`：`M9AConfig(MaaFWConfig)` / `M9AUserConfig(MaaFWUserConfig)` 同形，只改
 `DEFAULT_SCRIPT_NAME`、`USER_CONFIG_CLASS`、`FLAVOR`。`FLAVOR` 是字符串 `"app.task.M9A.flavor:FLAVOR"`，
 由引擎按需导入——`app.models` 不能反向 import `app.task`。本目录的 `registration.py` 按确切类型 `M9AConfig`
-登记运行（仍是 `MaaFWEmbeddedManager`）、配置回调与恢复池（与通用 MFW 同一套，`build_config_handler(M9AConfig, owner="m9a_adapter")`），
+登记运行（仍是 `MaaFWEmbeddedManager`）、配置回调与恢复池（与通用 MFW 同一套，从中立模块 `MaaFW/tools/embedded/config_handler` 取：`build_maafw_config_handler(M9AConfig, owner="m9a_adapter")`、`load_maafw_restore_pools`），
 以及托管属主 `m9a_adapter`（`register_owner()`，见 `app/task/MaaFW/AGENTS.md`「托管属主登记」）。宿主的回调、
 恢复池、漏登校验都按确切类型查，**不靠继承** `MaaFWConfig`：要判断「是不是 MFW 托管」的地方用
 `app/task/MaaFW/registration.MAAFW_FAMILY_TYPES` 按确切类型比，不写 `isinstance(…, MaaFWConfig)`。

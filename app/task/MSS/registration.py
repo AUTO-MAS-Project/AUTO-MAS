@@ -4,7 +4,8 @@
 
 """MSS 托管的运行、配置、恢复与托管属主接入声明（按确切类型 ``MSSConfig`` 登记）。
 
-现在仍由 MFW 管理器运行、共用 MFW 的配置回调与恢复池；第 10 步 MSS 有了自己的流程后，
+现在仍由 MFW 管理器运行、共用 MFW 的配置回调与恢复池（取自中立模块 ``MaaFW/tools/embedded/config_handler``，不经
+``MaaFW/registration``）；第 10 步 MSS 有了自己的流程后，
 只改这里的 ``manager_factory``。
 """
 
@@ -14,12 +15,12 @@ from functools import partial
 
 from app.models.config import MSSConfig
 from app.task.MaaFW.owner_entry import BuiltinConfigOwner
-from app.task.MaaFW.registration import (
-    build_config_handler,
-    build_manager,
-    load_restore_pools,
-)
+from app.task.MaaFW.registration import build_manager
 from app.task.MaaFW.tools.embedded import owners
+from app.task.MaaFW.tools.embedded.config_handler import (
+    build_maafw_config_handler,
+    load_maafw_restore_pools,
+)
 from app.task.registration import ScriptRegistration
 
 MSS_OWNER = "mss_adapter"
@@ -40,8 +41,10 @@ REGISTRATION = ScriptRegistration(
     config_type=MSSConfig,
     run_types=(MSSConfig,),
     manager_factory=build_manager,
-    create_config_handler=partial(build_config_handler, MSSConfig, owner=MSS_OWNER),
-    load_restore_pools=load_restore_pools,
+    create_config_handler=partial(
+        build_maafw_config_handler, MSSConfig, owner=MSS_OWNER
+    ),
+    load_restore_pools=load_maafw_restore_pools,
     config_priority=5,
     restore_priority=9,
 )

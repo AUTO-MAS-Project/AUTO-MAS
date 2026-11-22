@@ -24,7 +24,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
   `default_snapshot`、`env_confirm`、`update_session`、`device_config`、`plan_run`、`pretask_run`、
   `run_verdict`、`run_redaction`、`run_settings`、`run_messages`、`run_notices`、`attempt_ledger`、
-  `desktop_game`、`host_client`、`project_session`、`owners`、`runtime_check`、`telemetry_project`）。
+  `desktop_game`、`host_client`、`project_session`、`owners`、`runtime_check`、`telemetry_project`、
+  `project_environment`、`resource_repair`、`config_handler`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - **设备配置与首任务闸门在 `tools/embedded/device_config.py`**（将来是运行这一块对外的「设备配置」调用，
   三个专项各自的流程都调它）：游戏包名、adb 路径（含「宿主没定下路径时问 Toolkit」，判据由调用方算好
@@ -208,7 +209,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   - **视图上的属主标记**：视图标记 `owner = {name, scriptId, at}`（`embedded_project.view_owner` / `tag_view_owner`）。
     导入、重新导入、克隆、同来源重建（含视图不完整时按已登记版本重建）建成视图时当场写上「这次经哪个属主读写
     这个托管」（`_tag_new_view`，调用方传 `owner`：端点取 `ManagedShape.owner_name`，管理器经
-    `owners.find_managed` 放进 `MaaFWProjectRequest.owner`，复制托管的配置回调由 `build_config_handler(owner=)`
+    `owners.find_managed` 放进 `MaaFWProjectRequest.owner`，复制托管的配置回调由 `build_maafw_config_handler(owner=)`
     声明；说不出属主就不记）。克隆写的是目标托管自己的属主，不带源视图的标记；`_realize_view` 换版本、换项目
     重导时从盘上这棵视图自己的标记带过去；已记别的属主不覆盖。启动期维护在迁移之后、清副本之前仍给属主确认
     仍在、还没有标记的存量视图补上（拿不到预约的下轮再补）。新视图当场带标记带来一处**已接受的**行为变化：
@@ -226,8 +227,10 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
     不许反过来；代价是存量孤儿视图（没有标记）会留在盘上。
   - **以后新增一个专项**要做的：一个确切类型的配置类；`registration.py` 里 `ScriptRegistration`（`config_type` 与
     `run_types` 都是它）与 `register_owner()`，并在 `builtin_registration` 里列出、调用；配置回调用
-    `build_config_handler(<类型>, owner=<属主名>)`（保存前加密、读取前准备、新账号默认队列、复制时克隆视图、删除时
-    清理本属主视图、删除后运行池对账一样不能少）；按「是 MFW 托管」判断的地方（桌面分身判定
+    `tools/embedded/config_handler.build_maafw_config_handler(<类型>, owner=<属主名>)`（`MaaFW/registration.build_config_handler` 只是转出名；保存前加密、读取前准备、新账号默认队列、复制时克隆视图、删除时
+    清理本属主视图、删除后运行池对账一样不能少；要换其中一项用 `dataclasses.replace`，不往工厂里加参数），恢复池
+    用 `load_maafw_restore_pools`，要换恢复那一步时用 `tools/restore_service` 公开的 `user_guard` / `mas_files` /
+    `mas_root` / `preview_mas` 与整个 `NATIVE_POOL` 自己拼；按「是 MFW 托管」判断的地方（桌面分身判定
     `core/desktop_session/lifecycle.py`、外壳配置导入 `api_service/shell_instances._family_script_config`、M9A 迁移后
     归档 `core/config/manager._settle_m9a_migration`）用 `registration.MAAFW_FAMILY_TYPES`，新专项要加进去；
     M9A、MSS 有了自己的流程以后**仍在里面**，不能删，否则桌面分身、外壳配置导入、M9A 迁移后归档会一起坏。

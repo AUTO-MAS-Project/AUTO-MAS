@@ -76,7 +76,7 @@ from .backup_archive import (
 logger = get_logger("MaaFW 配置恢复")
 
 
-def _user_guard(ctx: _utils_config_restore.RestoreContext) -> None:
+def user_guard(ctx: _utils_config_restore.RestoreContext) -> None:
     """恢复守卫：目标账号必须存在，避免把字段回填进孤儿配置。"""
 
     if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
@@ -97,12 +97,12 @@ def _project_path(ctx: _utils_config_restore.RestoreContext) -> Path | None:
 # ══════════════════ mas 池（声明式 + 定制预览/恢复） ══════════════════
 
 
-async def _mas_files(
+async def mas_files(
     ctx: _utils_config_restore.RestoreContext,
 ) -> dict[str, str] | None:
     """归档内容 = 页面核心字段侧车（内存 JSON，免临时文件）。"""
 
-    _user_guard(ctx)
+    user_guard(ctx)
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     overlay = read_overlay_values(user)
     if not overlay:
@@ -110,11 +110,11 @@ async def _mas_files(
     return {OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)}
 
 
-async def _mas_root(ctx: _utils_config_restore.RestoreContext) -> Path:
+async def mas_root(ctx: _utils_config_restore.RestoreContext) -> Path:
     return mas_backup_root(ctx.script_id, ctx.user_id)
 
 
-async def _preview_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> dict:
+async def preview_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> dict:
     backup_dir = get_mas_backup_dir(ctx.script_id, ctx.user_id, ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
@@ -160,7 +160,7 @@ def _task_label_resolver(project_path: Path) -> Callable[[str], str] | None:
 
 
 async def _restore_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> None:
-    _user_guard(ctx)
+    user_guard(ctx)
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     # 恢复前把当前字段终态存底（force），误恢复可找回
     archive_mas_backup(
@@ -219,22 +219,35 @@ async def _restore_native(ctx: _utils_config_restore.RestoreContext, ts: str) ->
         await release_project_path(reservation)
 
 
+# native 池整个公开：有自己流程的专项拼自己的恢复池时原样带上它；mas 池的部件（``user_guard``、
+# ``mas_files``、``mas_root``、``preview_mas``）同样公开，恢复那一步各专项自己写。
+NATIVE_POOL = _utils_config_restore.ConfigRestorePool(
+    key="native",
+    kind="script",
+    files=_native_files,
+    backup_root=_native_root,
+    preview=_preview_native,
+    restore=_restore_native,
+)
+
 RESTORE_POOLS = [
     _utils_config_restore.ConfigRestorePool(
         key="mas",
         kind="user",
         mas_base="sidecar_only",
-        files=_mas_files,
-        backup_root=_mas_root,
-        preview=_preview_mas,
+        files=mas_files,
+        backup_root=mas_root,
+        preview=preview_mas,
         restore=_restore_mas,
     ),
-    _utils_config_restore.ConfigRestorePool(
-        key="native",
-        kind="script",
-        files=_native_files,
-        backup_root=_native_root,
-        preview=_preview_native,
-        restore=_restore_native,
-    ),
+    NATIVE_POOL,
+]
+
+__all__ = [
+    "NATIVE_POOL",
+    "RESTORE_POOLS",
+    "mas_files",
+    "mas_root",
+    "preview_mas",
+    "user_guard",
 ]

@@ -44,7 +44,7 @@
 `USER_CONFIG_CLASS`、`FLAVOR`；`MSSUserConfig(MaaFWUserConfig)` 多一项 `Info.PlanMode`（计划表消费方
 `mss`，`PLAN_BOOK` 的 `MSSPlanConfig`）与 `Info.IfActivityFirst`（活动优先）。
 本目录的 `registration.py` 按确切类型 `MSSConfig` 登记运行（仍是 `MaaFWEmbeddedManager`）、配置回调与恢复池（与通用
-MFW 同一套）以及托管属主 `mss_adapter`（见 `app/task/MaaFW/AGENTS.md`「托管属主登记」）；宿主按确切类型查，不靠继承。
+MFW 同一套，从中立模块 `MaaFW/tools/embedded/config_handler` 取）以及托管属主 `mss_adapter`（见 `app/task/MaaFW/AGENTS.md`「托管属主登记」）；宿主按确切类型查，不靠继承。
 
 前端托管页 / 账号页是 MSS 的专属页面（`frontend/src/views/mss/`：`MSSScriptEdit.vue`、`MSSUserEdit.vue`，
 用 MaaFW 的 pageKit 分节与编排层拼），由同目录的 `entry.ts` 登记（适配条目上的 `maafw` 家族标记，计划表也在这里登记）；

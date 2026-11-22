@@ -17,7 +17,8 @@
 
 三种托管类型（通用 MFW、M9A、MSS）现在共用 MFW 管理器与同一套配置回调，但各自显式登记
 （M9A、MSS 的在 ``app/task/M9A/registration.py``、``app/task/MSS/registration.py``）：回调、恢复池、
-属主都按确切类型认，不靠配置类之间的继承。
+属主都按确切类型认，不靠配置类之间的继承。配置回调与恢复池的实现在中立模块
+``tools/embedded/config_handler``，这里的 ``build_config_handler`` / ``load_restore_pools`` 只是转出名。
 """
 
 from __future__ import annotations
@@ -29,12 +30,18 @@ from app.models.config import M9AConfig, MaaFWConfig, MSSConfig
 from app.models.script_contracts import ScriptConfigHandler
 from app.task.MaaFW.owner_entry import BuiltinConfigOwner
 from app.task.MaaFW.tools.embedded import owners
+from app.task.MaaFW.tools.embedded.config_handler import (
+    build_maafw_config_handler,
+    load_maafw_restore_pools,
+)
+from app.task.MaaFW.tools.embedded.config_handler import (
+    expected_game_kind as expected_game_kind,
+)
 from app.task.registration import ScriptRegistration
 
 if TYPE_CHECKING:
     from app.config import ConfigEntry
     from app.models.task import ScriptItem, TaskExecuteBase
-    from app.utils.common.config.restore import ConfigRestorePool
 
 # 「是 MFW 托管」的确切类型（通用 MFW、M9A、MSS 三个专项都算）：桌面分身判定、外壳配置导入、
 # M9A 迁移后归档这类按家族判断的地方都用它按确切类型比，不用 isinstance。M9A、MSS 有了自己的流程后
@@ -68,76 +75,23 @@ def build_manager(script_item: ScriptItem) -> TaskExecuteBase:
 def build_config_handler(
     config_type: type[ConfigEntry] = MaaFWConfig, *, owner: str = MAAFW_OWNER
 ) -> ScriptConfigHandler:
-    """一种托管类型的配置回调：保存前加密密码、读取前准备、新账号补默认队列、复制托管时克隆
-    视图（新视图记本属主）、删除托管时清理视图（只删本属主的视图）与删除后的运行池对账。三种类型各造
-    一份，内容相同。"""
+    """（转出名）一种托管类型的配置回调，实现在 ``tools/embedded/config_handler``。"""
 
-    from app.task.MaaFW.tools.embedded.default_snapshot import (
-        initialize_user as initialize_maafw_user,
-    )
-    from app.task.MaaFW.tools.embedded.default_snapshot import (
-        prepare_user_read as prepare_maafw_user_read,
-    )
-    from app.task.MaaFW.tools.embedded.script_lifecycle import (
-        after_script_removal as after_maafw_script_removal,
-    )
-    from app.task.MaaFW.tools.embedded.script_lifecycle import (
-        cleanup_script_files as cleanup_maafw_script_files,
-    )
-    from app.task.MaaFW.tools.embedded.script_lifecycle import (
-        clone_script as clone_maafw_script,
-    )
-    from app.task.MaaFW.tools.embedded.user_update import (
-        prepare_user_update as prepare_maafw_user_update,
-    )
-
-    return ScriptConfigHandler(
-        # 宿主建号先取类上的 USER_CONFIG_CLASS，这一项只是兜底
-        user_config_class=getattr(config_type, "USER_CONFIG_CLASS"),
-        clone_script=partial(clone_maafw_script, owner=owner),
-        after_script_removal=after_maafw_script_removal,
-        cleanup_script_files=partial(cleanup_maafw_script_files, owner=owner),
-        prepare_user_update=prepare_maafw_user_update,
-        prepare_user_read=prepare_maafw_user_read,
-        initialize_user=initialize_maafw_user,
-        game_kinds=("emulator", "client"),
-        expected_game_kind=expected_game_kind,
-        supports_mod_avd=True,
-    )
+    return build_maafw_config_handler(config_type, owner=owner)
 
 
-def expected_game_kind(script, patch):
-    """显式选择的公开 controller 决定目标类别，未导入项目时保留两类选择。"""
-    from .tools.core.interface.loader import load_interface_model_cached
-    from .tools.embedded.embedded_project import resolve_maafw_project_root
-
-    controller = patch.get("Info", {}).get("Controller", script.Info.Controller)
-    if not controller:
-        return None
-    root = resolve_maafw_project_root(str(script.uid), script)
-    if not root.is_dir():
-        return None
-    interface = load_interface_model_cached(root)
-    selected = next(
-        (item for item in interface.controller if item.name == controller), None
-    )
-    if selected is None:
-        return None
-    return "emulator" if selected.type == "Adb" else "client"
-
-
-def load_restore_pools() -> list[ConfigRestorePool]:
-    from .tools.restore_service import RESTORE_POOLS
-
-    return RESTORE_POOLS
+# （转出名）MFW 的恢复池，实现在 ``tools/embedded/config_handler``
+load_restore_pools = load_maafw_restore_pools
 
 
 REGISTRATION = ScriptRegistration(
     config_type=MaaFWConfig,
     run_types=(MaaFWConfig,),
     manager_factory=build_manager,
-    create_config_handler=partial(build_config_handler, MaaFWConfig, owner=MAAFW_OWNER),
-    load_restore_pools=load_restore_pools,
+    create_config_handler=partial(
+        build_maafw_config_handler, MaaFWConfig, owner=MAAFW_OWNER
+    ),
+    load_restore_pools=load_maafw_restore_pools,
     config_priority=5,
     restore_priority=9,
 )
