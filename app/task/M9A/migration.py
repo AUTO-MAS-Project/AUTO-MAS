@@ -66,14 +66,23 @@ from app.task.M9A.managed import (
     split_message,
     supports_account_switch,
 )
-from app.task.M9A.rules import FALLBACK_TASK_NAMES, LEGACY_ENTRY_ALIASES
-from app.task.MaaFW.blocks.maafw_interface.interface.models import (
-    resolve_task_instance_name,
-)
 from app.utils import constants as _utils_constants
 from app.utils import get_logger
 
+# 宿主启动时（``app.core.config.manager``）就导入本模块；``rules`` 与 MFW 解析库只在真的要迁移 / 整理
+# M9A 托管时才在函数里现导入，没有 M9A 托管的启动不碰它们（解析库以后不在宿主里）。
+
 logger = get_logger("M9A 迁移")
+
+
+def resolve_task_instance_name(task_id: str, valid_task_names: Collection[str]) -> str:
+    """解析库同名函数（重复实例 id 还原成任务名），用到时才导入。"""
+
+    from app.task.MaaFW.blocks.maafw_interface.interface.models import (
+        resolve_task_instance_name as resolve,
+    )
+
+    return resolve(task_id, valid_task_names)
 
 
 def _account_of(info: dict) -> str:
@@ -426,12 +435,16 @@ class _InterfaceIndex:
                 break
 
     def task_name_for_entry(self, entry: str) -> str | None:
+        from app.task.M9A.rules import FALLBACK_TASK_NAMES
+
         if self.available:
             return self.name_by_entry.get(entry)
         return FALLBACK_TASK_NAMES.get(entry)
 
     def resolve_task_name(self, raw_name: str) -> str | None:
         """旧队列里的名字 → 现在的任务名；先按名字，再按旧别名反查 entry。"""
+
+        from app.task.M9A.rules import FALLBACK_TASK_NAMES, LEGACY_ENTRY_ALIASES
 
         name = str(raw_name or "").strip()
         if not name:
@@ -447,6 +460,8 @@ class _InterfaceIndex:
         return None
 
     def entry_of(self, task_name: str) -> str:
+        from app.task.M9A.rules import LEGACY_ENTRY_ALIASES
+
         task = self.task_by_name.get(task_name)
         if task is not None:
             return str(task.get("entry") or "")

@@ -37,14 +37,13 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Literal
 
-from app.task.MaaFW.blocks.maafw_interface.interface.plan_rules import (
-    EMPTY_PLAN_RULES,
-    MaaFWPlanRules,
-)
 from app.utils import get_logger
 
 if TYPE_CHECKING:
     from app.task.MaaFW.blocks.maafw_interface.interface.models import MaaFWInterface
+    from app.task.MaaFW.blocks.maafw_interface.interface.plan_rules import (
+        MaaFWPlanRules,
+    )
 
 logger = get_logger("MFW 托管属主")
 
@@ -510,6 +509,11 @@ def owner_plan_rules(owner: str | None) -> MaaFWPlanRules:
     provider = _provider(owner) if owner else None
     rules = getattr(provider, "plan_rules", None)
     if not callable(rules):
+        # 解析库用到时才导入：宿主构造配置单例时就导入本模块（注入加载信号），不该带起解析库。
+        from app.task.MaaFW.blocks.maafw_interface.interface.plan_rules import (
+            EMPTY_PLAN_RULES,
+        )
+
         return EMPTY_PLAN_RULES
     return rules()
 
