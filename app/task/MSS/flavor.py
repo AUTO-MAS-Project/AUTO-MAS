@@ -34,6 +34,9 @@
 
 按 entry 找任务、按 interface 里真实的选项名与 case 名写值（取自 MaaStellaSora v1.4.4 的
 ``resource/tasks/{activity,fight,climb_tower}.json``）；找不到就写一行账号日志跳过那一项。
+
+这里只是 MFW 风味路径上的一层外壳：规则常量与项目判据在 ``rules.py``，排队列在 ``arrange.py``
+（活动探测前后两段）；本模块从配置里取出计划表与活动优先后转调它们，活动探测仍在建计划的工作线程里做。
 """
 
 from __future__ import annotations
@@ -45,103 +48,23 @@ from typing import Any
 
 from app.task.MaaFW.tools.core.interface.models import (
     MaaFWInterface,
-    resolve_task_instance_name,
+    task_name_for_entry,
 )
 from app.task.MaaFW.tools.embedded.flavor_support import (
     MaaFWSelectionContext,
     config_value,
-    task_name_for_entry,
 )
-
-TYPE_KEY = "MSS"
-ACTIVITY_ENTRY = "活动快速战斗_入口"
-TRIBULATION_ENTRY = "战斗_入口"
-CLIMB_ENTRY = "星塔_入口_agent"
-
-## 悬赏试炼的五个选项（后两对是 switch 的 No 分支带出来的子选项，值与父选项平铺在一起）
-OPTION_TRIBULATION_STAGE = "悬赏试炼关卡"
-OPTION_SKIP_DIFFICULTY = "悬赏试炼跳过难度选择"
-OPTION_DIFFICULTY = "选择悬赏试炼难度"
-INPUT_DIFFICULTY = "难度"
-OPTION_CONSUME_ALL = "悬赏试炼消耗所有干劲"
-OPTION_FIGHT_TIMES = "自定义快速作战次数"
-INPUT_FIGHT_TIMES = "次数"
-SWITCH_ON = "Yes"
-SWITCH_OFF = "No"
-
-PLAN_MODE_FIXED = "Fixed"
-
-## 项目唯一标识符前缀：官方版是 MaaStellaSora，衍生版在其后加后缀（个人版 MaaStellaSora-Personal）。
-## github 仓库名按同一口径认。
-_MSS_PROJECT_NAME = "maastellasora"
-
-
-def github_repo_name(github: str) -> str:
-    """``github`` 里的仓库名；给不出 ``owner/repo`` 这种两段路径时返回空串。
-
-    认这些写法：``https://github.com/owner/repo``、``https://github.com/owner/repo.git``、
-    ``git@github.com:owner/repo.git``、``owner/repo``。
-    只给一段的（如 ``https://github.com/MaaStellaSora`` 这种组织主页）返回空串——
-    它不是一个仓库，按仓库名认领会把整个组织名下的项目都算进来。
-    """
-
-    cleaned = github.strip()
-    if "://" in cleaned:
-        cleaned = cleaned.split("://", 1)[1]
-    cleaned = cleaned.replace(":", "/")
-    cleaned = cleaned.strip("/")
-    if cleaned.endswith(".git"):
-        cleaned = cleaned[: -len(".git")]
-    parts = [part for part in cleaned.split("/") if part]
-    if parts and ("." in parts[0] or "@" in parts[0]):
-        ## 首段是主机名（github.com / git@github.com），去掉后剩下的才是路径
-        parts = parts[1:]
-    if len(parts) < 2:
-        return ""
-    return parts[-1]
-
-
-def _is_mss_project_key(value: str) -> bool:
-    """项目标识符是否属于 MSS：等于 ``MaaStellaSora``，或以 ``MaaStellaSora-`` 开头。
-
-    后缀必须是连字符分隔的——``MaaStellaSora-Personal`` ✓、``MaaStellaSoraX`` ✗，
-    免得把碰巧同前缀的无关项目认成衍生版。``github`` 与 ``name`` 走同一口径。
-    """
-
-    normalized = value.strip().casefold()
-    return normalized == _MSS_PROJECT_NAME or normalized.startswith(
-        f"{_MSS_PROJECT_NAME}-"
-    )
-
-
-def is_mss_project(interface_model: MaaFWInterface | dict[str, Any]) -> bool:
-    """官方版与其衍生版（个人版）都认领，三条判据任一命中即可：
-
-    - ``mirrorchyan_rid == SSAH``：官方版在 MirrorChyan 的分发标识；
-    - ``github`` 仓库名（``owner/repo`` 里的 repo）命中同一口径：官方
-      ``MaaStellaSora/MaaStellaSora``、个人版 ``beichen24a1/MaaStellaSora-Personal`` 都命中；
-    - ``name``（PI 的项目唯一标识符）命中同一口径。
-
-    后两条共用 ``_is_mss_project_key``：**等于 ``MaaStellaSora`` 或以 ``MaaStellaSora-`` 开头**。
-    只给 ``https://github.com/MaaStellaSora`` 这种组织主页时仓库名取不到，不会认领。
-
-    认领只决定**托管类型**（都用 ``MSSConfig`` 与同一套运行期装饰）；更新谱系仍按
-    ``mirrorchyan_rid`` / ``github`` / ``name`` 各自分开，衍生版不会被官方版的更新包覆盖。
-    """
-
-    if isinstance(interface_model, dict):
-        rid = interface_model.get("mirrorchyan_rid")
-        github = interface_model.get("github")
-        name = interface_model.get("name")
-    else:
-        rid = getattr(interface_model, "mirrorchyan_rid", None)
-        github = getattr(interface_model, "github", None)
-        name = getattr(interface_model, "name", None)
-    if str(rid or "").strip().casefold() == "ssah":
-        return True
-    if _is_mss_project_key(github_repo_name(str(github or ""))):
-        return True
-    return _is_mss_project_key(str(name or ""))
+from app.task.MSS.arrange import mss_arrange_head, mss_arrange_tail
+from app.task.MSS.rules import (
+    ACTIVITY_ENTRY,
+    CLIMB_ENTRY,
+    MSS_SKIP_ON_RETRY,
+    PLAN_MODE_FIXED,
+    TRIBULATION_ENTRY,
+    TYPE_KEY,
+    github_repo_name,
+    is_mss_project,
+)
 
 
 def activity_running() -> bool | None:
@@ -161,32 +84,14 @@ def activity_running() -> bool | None:
 
 
 class MSSFlavor:
-    """满足 ``MaaFWFlavor`` 协议的 MSS 特调对象。"""
+    """满足 ``MaaFWFlavor`` 协议的 MSS 特调对象。
+
+    重试不补跑的声明就是 ``rules.MSS_SKIP_ON_RETRY``（说明写在那里）；队列装饰 = ``arrange`` 的前半段
+    → 按需查一次活动排期 → 后半段。
+    """
 
     type_key = TYPE_KEY
-    # 本次运行已成功的日常、挑战不再补跑。登录不列：重试重新启动游戏后仍要登录。
-    # 逐项声明已确认的公开 entry；上游新增任务默认保留重跑行为。
-    # 灾变防线保留在这里：它是「一期只能打一次」的常驻活动，成功后再派一遍会重新走
-    # 导航和走位，而这条声明只依赖引擎给的 completedTasks，与谁负责编排无关。
-    skip_on_retry_entries = frozenset(
-        {
-            ACTIVITY_ENTRY,
-            TRIBULATION_ENTRY,
-            CLIMB_ENTRY,
-            "灾变防线_入口",
-            "活动挑战_入口",
-            "好友_入口",
-            "基金_入口",
-            "邀约_入口",
-            "邮箱_入口",
-            "猎影合围_入口",
-            "真格挑战_入口",
-            "委托_入口",
-            "采购_入口",
-            "心链_入口",
-            "任务_入口",
-        }
-    )
+    skip_on_retry_entries = MSS_SKIP_ON_RETRY
 
     def __init__(
         self,
@@ -209,115 +114,21 @@ class MSSFlavor:
         # MSS 的装饰只看账号配置与活动排期
         log = context.log
         user_config = context.user_config
-        valid_names = {task.name for task in interface_model.task}
-
-        def name_of(task_id: str) -> str:
-            return resolve_task_instance_name(task_id, valid_names)
-
-        ids = list(task_ids)
-        options = dict(task_options)
-        ## 自动编排不补回引擎判定本轮不跑的实例（红灯、今天不在运行日），
-        ## 也不因为它们去套计划表
-        skipped_ids = context.excluded_task_ids
-
-        activity = task_name_for_entry(interface_model, ACTIVITY_ENTRY)
-        tribulation = task_name_for_entry(interface_model, TRIBULATION_ENTRY)
-        climb = task_name_for_entry(interface_model, CLIMB_ENTRY)
-
-        ## 一个任务都没勾、也没选计划表：手上没有任何可执行任务，交给引擎按原有语义报错。
-        ## 选了计划表就不算空队列——下面 _apply_plan 会把悬赏试炼补上，和账号页那句
-        ## 「队列里没有它时会自动加入」保持一致（这条以前被空队列提前返回挡住了）。
-        ## 顺序是「活动 → 日常 → 周常」：先补好悬赏试炼，活动才有锚点插在它前面；爬塔最后归位。
         plan_key = _current_plan_key(user_config, log)
-        if not ids and plan_key is None:
-            return list(ids), dict(options)
-
-        if plan_key is not None and (
-            tribulation not in skipped_ids
-            or any(name_of(task_id) == tribulation for task_id in ids)
-        ):
-            ids, options = _apply_plan(
-                interface_model, ids, options, tribulation, plan_key, name_of, log
-            )
-
-        ## 「活动优先」开着时，队列里没加活动任务也补一个——但只有**确认在活动期**才补：
-        ## 取不到活动数据时乱加会让这一轮多跑一个本来不该跑的任务。
-        ## 补的位置与已在队列里时同一口径：悬赏试炼之前（先消耗干劲），没有悬赏试炼就在爬塔前。
-        added = False
-        if (
-            activity is not None
-            and activity not in skipped_ids
-            and not any(name_of(i) == activity for i in ids)
-            and config_value(user_config, "Info", "IfActivityFirst") is not False
-            and self._activity_probe() is True
-        ):
-            ids = _insert_before_climb(ids, activity, interface_model, name_of)
-            moved = _move_before(ids, activity, tribulation, name_of)
-            ids = moved
-            added = True
-            if tribulation is not None and any(name_of(i) == tribulation for i in ids):
-                log(
-                    f"[MSS] 活动进行中，已自动加入「{activity}」，"
-                    f"排在「{tribulation}」之前"
-                )
-            else:
-                log(f"[MSS] 活动进行中，已自动加入「{activity}」")
-
-        if (
-            not added
-            and activity is not None
-            and any(name_of(i) == activity for i in ids)
-        ):
-            running = self._activity_probe()
-            if running is False:
-                remaining = [i for i in ids if name_of(i) != activity]
-                if remaining:
-                    ids = remaining
-                    log(f"[MSS] 当前没有进行中的活动，本轮跳过「{activity}」")
-                else:
-                    ## 队列里只有活动任务：摘空后引擎会把这一轮判成「无法构建运行计划」的异常，
-                    ## 比照活动数据取不到的处理，按队列原样执行。
-                    log(
-                        f"[MSS] 当前没有进行中的活动，但队列里只有「{activity}」，按队列原样执行"
-                    )
-            elif running is None:
-                log(f"[MSS] 取不到星塔旅人活动数据，「{activity}」按队列原样执行")
-            else:
-                moved = _move_before(ids, activity, tribulation, name_of)
-                if moved != ids:
-                    ids = moved
-                    log(f"[MSS] 活动进行中，「{activity}」已挪到「{tribulation}」之前")
-                else:
-                    log(f"[MSS] 活动进行中，「{activity}」按队列顺序执行")
-
-        if climb is not None and any(name_of(i) == climb for i in ids):
-            reordered = [i for i in ids if name_of(i) != climb] + [
-                i for i in ids if name_of(i) == climb
-            ]
-            if reordered != ids:
-                ids = reordered
-                log(f"[MSS] 「{climb}」已挪到队尾")
-
-        return ids, options
-
-
-def _move_before(
-    ids: list[str],
-    target: str,
-    anchor: str | None,
-    name_of: Callable[[str], str],
-) -> list[str]:
-    """把 ``target`` 的所有实例挪到 ``anchor`` 第一次出现之前；锚点不在队列里就不动。"""
-
-    if anchor is None:
-        return ids
-    anchor_index = next((n for n, i in enumerate(ids) if name_of(i) == anchor), None)
-    if anchor_index is None:
-        return ids
-    moving = [i for i in ids if name_of(i) == target]
-    rest = [i for i in ids if name_of(i) != target]
-    position = next(n for n, i in enumerate(rest) if name_of(i) == anchor)
-    return [*rest[:position], *moving, *rest[position:]]
+        state = mss_arrange_head(
+            interface_model,
+            task_ids,
+            task_options,
+            excluded_ids=context.excluded_task_ids,
+            plan_key=plan_key,
+            if_activity_first=config_value(user_config, "Info", "IfActivityFirst"),
+            log=log,
+        )
+        # 活动排期只在前半段说要查时查，最多一次
+        running = self._activity_probe() if state.probe_needed else None
+        return mss_arrange_tail(
+            state, running, interface_model=interface_model, log=log
+        )
 
 
 def _current_plan_key(
@@ -339,78 +150,6 @@ def _current_plan_key(
     return key
 
 
-def _apply_plan(
-    interface_model: MaaFWInterface,
-    ids: list[str],
-    options: dict[str, Any],
-    tribulation: str | None,
-    plan_key: dict[str, Any],
-    name_of: Callable[[str], str],
-    log: Callable[[str], None],
-) -> tuple[list[str], dict[str, Any]]:
-    """按计划表当天那一格改写悬赏试炼的选项；队列里没有这个任务就补在爬塔之前。"""
-
-    if tribulation is None:
-        log(f"[MSS] interface 里没有 entry 为 {TRIBULATION_ENTRY} 的任务，计划表未生效")
-        return ids, options
-
-    option_book = interface_model.option or {}
-    stage = str(plan_key.get("TribulationStage"))
-    stage_option = option_book.get(OPTION_TRIBULATION_STAGE)
-    stage_cases = {case.name for case in (getattr(stage_option, "cases", None) or [])}
-    if stage not in stage_cases:
-        log(
-            f"[MSS] 悬赏试炼没有「{stage}」这个关卡（项目可能改了名），计划表本轮未生效"
-        )
-        return ids, options
-
-    targets = [i for i in ids if name_of(i) == tribulation]
-    if not targets:
-        targets = [tribulation]
-        ids = _insert_before_climb(ids, tribulation, interface_model, name_of)
-        log(f"[MSS] 计划表已选，自动加入「{tribulation}」")
-    else:
-        ## 队列里手动加了多个同任务实例时只改第一个：剩下的留给用户自己配，
-        ## 这样「一个按计划表刷、一个固定刷别的关」还能共存
-        targets = targets[:1]
-
-    values: dict[str, Any] = {
-        OPTION_TRIBULATION_STAGE: stage,
-        OPTION_SKIP_DIFFICULTY: SWITCH_ON
-        if plan_key.get("SkipDifficulty")
-        else SWITCH_OFF,
-        OPTION_DIFFICULTY: {INPUT_DIFFICULTY: str(plan_key.get("Difficulty") or 1)},
-        OPTION_CONSUME_ALL: SWITCH_ON
-        if plan_key.get("ConsumeAllEnergy")
-        else SWITCH_OFF,
-        OPTION_FIGHT_TIMES: {INPUT_FIGHT_TIMES: str(plan_key.get("FightTimes") or 1)},
-    }
-    missing = [name for name in values if name not in option_book]
-    if missing:
-        log(f"[MSS] interface 里缺少选项 {' / '.join(missing)}，这几项按队列原样")
-    patch = {name: value for name, value in values.items() if name in option_book}
-    for task_id in targets:
-        options[task_id] = {**(options.get(task_id) or {}), **patch}
-    log(f"[MSS] 按计划表设置悬赏试炼：{stage}")
-    return ids, options
-
-
-def _insert_before_climb(
-    ids: list[str],
-    task: str,
-    interface_model: MaaFWInterface,
-    name_of: Callable[[str], str],
-) -> list[str]:
-    """把 ``task`` 插在爬塔之前（爬塔是那个会被挪到队尾的任务）；没有爬塔就追加到末尾。"""
-
-    climb = task_name_for_entry(interface_model, CLIMB_ENTRY)
-    index = next(
-        (n for n, i in enumerate(ids) if climb is not None and name_of(i) == climb),
-        len(ids),
-    )
-    return [*ids[:index], task, *ids[index:]]
-
-
 FLAVOR = MSSFlavor()
 
 __all__ = [
@@ -421,6 +160,7 @@ __all__ = [
     "TRIBULATION_ENTRY",
     "TYPE_KEY",
     "activity_running",
+    "github_repo_name",
     "is_mss_project",
     "task_name_for_entry",
 ]

@@ -1,7 +1,7 @@
 # app/task/MSS — MSS 是 MaaFW 的特调类型，不是专项
 
 进这个目录之前先读 `app/task/MaaFW/AGENTS.md`：MSS（MaaStellaSora / 星塔旅人）的运行、更新、内嵌副本、
-通知、失败截图、周期任务、代理次数……全部是 MaaFW 引擎的既有语义，这里一行都没有重写。本目录只有
+通知、失败截图、周期任务、代理次数……全部是 MaaFW 引擎的既有语义，这里一行都没有重写。本目录的核心是
 `flavor.py`（`FLAVOR` 对象，满足 `app/task/MaaFW/tools/embedded/flavor.py` 的 `MaaFWFlavor`
 协议，外加 `app/task/MSS/__init__.py` 的包说明与接入声明 `registration.py`，见下文「配置类」一段）。`flavor.py` 做的事穷举如下，多一件都没有：
 
@@ -27,6 +27,18 @@
 3. `skip_on_retry_entries`：按公开 task entry 声明已确认的日常与挑战任务，复用 MaaFW 的
    「前面的尝试已完成」过滤。本次运行成功过的任务不再补跑，失败、超时和未执行的任务保留；
    登录不在声明内，每次尝试仍执行。同名重复任务沿用引擎的保守重跑策略，不额外推断完成的是哪份。
+
+`flavor.py` 只是一层外壳（第 10 步的前置件，MSS 以后自己的流程直接用下面两个模块）：
+
+- `rules.py`：三个 entry、`MSS_SKIP_ON_RETRY`（上面第 3 条的名单就是它）、`TYPE_KEY`、`PLAN_MODE_FIXED`、
+  `is_mss_project` / `github_repo_name`，全包只有这一份；只依赖解析一侧。
+- `arrange.py`：排队列拆成活动探测前后两段，只吃 interface、队列与调用方取好的值（计划表当天那一格、
+  `Info.IfActivityFirst` 原值、排除的实例），不读配置。`mss_arrange_head` 套计划表并算出要不要查活动排期
+  （`probe_needed`：活动不在队列里、没被排除、开着活动优先 = `want_add`；活动在队列里 = `want_judge`；
+  两者互斥），`mss_arrange_tail` 按查到的结果补上 / 挪动 / 摘掉活动，再把爬塔挪到队尾。
+  `flavor.decorate_selection` = 取计划表那一格（`_current_plan_key`，日志在这一步写）→ head →
+  只在 `probe_needed` 时调一次探测 → tail。**判断条件在原来的位置算出来，最多探一次，日志先后与原来一次
+  排完时一字不差**；改这两段时守住这三条（本地对拍 S1–S18 与探测次数矩阵 S16 守着）。
 
 配置类在 `app/models/config/script.py`（计划表类在 `app/models/config/plan.py`）：`MSSConfig(MaaFWConfig)` 同形，只改 `DEFAULT_SCRIPT_NAME`、
 `USER_CONFIG_CLASS`、`FLAVOR`；`MSSUserConfig(MaaFWUserConfig)` 多一项 `Info.PlanMode`（计划表消费方

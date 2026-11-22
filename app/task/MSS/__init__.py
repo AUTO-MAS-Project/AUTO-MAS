@@ -20,7 +20,8 @@
 
 """MSS（MaaStellaSora / 星塔旅人）：MaaFW 引擎的特调类型，不是独立专项。
 
-这里只有 ``flavor.py``（运行前的队列装饰 + "是不是 MSS 项目"的判据）。运行、更新、内嵌
+这里只有 ``flavor.py``（运行前的队列装饰 + "是不是 MSS 项目"的判据；规则常量与判据在
+``rules.py``、排队列的前后两段在 ``arrange.py``，flavor 转调它们）。运行、更新、内嵌
 副本、通知全走 ``app/task/MaaFW/``。保持本包不在导入期拉起任何重模块：
 ``app.models.config`` 在类属性里只记了 ``"app.task.MSS.flavor:FLAVOR"`` 这个字符串，
 引擎按需导入。
