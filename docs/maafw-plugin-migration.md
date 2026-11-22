@@ -55,3 +55,5 @@
 ## 开发辅助
 
 新发到 PyPI 的包当天可能不在数据站插件目录和 PyPI 的 simple 总索引里。起后端前设 `AUTO_MAS_PLUGIN_EXTRA_PACKAGES=auto-mas-maafw-adapter,auto-mas-m9a-adapter,auto-mas-mss-adapter`，刷新插件目录时会按包名从 PyPI 补进来。默认不设。
+
+要改插件包源码时，按 [mfw-plugins-local-integration.md](mfw-plugins-local-integration.md) 把本地源码接进宿主（`scripts/dev/link_mfw_plugins.ps1`），那里也写了无害真跑和存量配置升级演练的做法。
