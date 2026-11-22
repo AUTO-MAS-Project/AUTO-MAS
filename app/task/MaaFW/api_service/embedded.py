@@ -18,8 +18,8 @@
 
 """``/maafw/embedded/*`` 端点背后的业务：副本状态、导入 / 重导、克隆、候选来源。
 
-托管类型在新建时就定了，导入与克隆不换类型；特调托管（M9A、MSS）在动副本之前先查项目是不是
-它那种，不是就拒绝（``_project_flavor_mismatch``）。导入与克隆之后把同项目同渠道的空闲脚本切到
+托管类型在新建时就定了，导入与克隆不换类型；有项目要求的属主（M9A、MSS）的托管在动副本之前先查
+项目是不是它那种，不是就拒绝（``_project_mismatch``，文案由属主给）。导入与克隆之后把同项目同渠道的空闲脚本切到
 组当前版本（``_propagate_view_to_group``）。
 """
 
@@ -75,7 +75,6 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     read_interface_version,
     read_view_marker,
 )
-from app.task.MaaFW.tools.embedded.flavor import resolve_flavor
 from app.task.MaaFW.tools.embedded.project_path import (
     is_project_updating,
     release_project_path,
@@ -317,18 +316,16 @@ def _embedded_import_progress(
     return on_progress
 
 
-def _project_flavor_mismatch(script_config: Any, project_dir: Path) -> str | None:
-    """特调托管要换进来的项目不是它那种时，给用户看的拒绝原因；能收就返回 None。
+def _project_mismatch(owner: str | None, project_dir: Path) -> str | None:
+    """有项目要求的属主（M9A、MSS）要换进来的项目不是它那种时，给用户看的拒绝原因；能收就返回 None。
 
-    托管类型在新建时就定了，导入 / 克隆不换类型（契约见 ``tools/embedded/flavor.py``）：通用 MaaFW
-    托管什么项目都收；特调托管只收 ``matches_project`` 认领的项目，否则它的专属页面与运行前装饰
-    都对不上。``project_dir`` 是来源目录或源托管的视图，interface 在根上或 ``assets/`` 下都认。
-    读不出 interface、识别本身出错时不拦：交给导入自己报错（与以前识别失败保持原类型同一口径）。
-    碰磁盘，调用方放进工作线程。
+    托管类型在新建时就定了，导入 / 克隆不换类型：通用 MFW 托管什么项目都收（不读 interface）；有项目
+    要求的属主只收它认领的项目（``owners.owner_project_mismatch``，文案由属主给），否则它的专属页面与
+    运行前排队列都对不上。``project_dir`` 是来源目录或源托管的视图，interface 在根上或 ``assets/`` 下都认。
+    读不出 interface、识别本身出错时不拦：交给导入自己报错。碰磁盘，调用方放进工作线程。
     """
 
-    flavor = resolve_flavor(script_config)
-    if flavor is None:
+    if not owners.owner_screens_projects(owner):
         return None
     try:
         interface_base, _ = discover_project_interface(project_dir)
@@ -341,28 +338,27 @@ def _project_flavor_mismatch(script_config: Any, project_dir: Path) -> str | Non
         )
         return None
     try:
-        if flavor.matches_project(interface):
-            return None
+        return owners.owner_project_mismatch(owner, interface)
     except Exception as exc:  # noqa: BLE001 - 识别出错不该挡住导入
-        logger.warning(f"MaaFW 特调 {flavor.type_key} 识别项目失败，不拦截：{exc}")
+        logger.warning(f"托管属主 {owner} 识别项目失败，不拦截：{exc}")
         return None
-    return f"这不是 {flavor.type_key} 项目。要用别的项目，请新建通用 MFW 托管。"
 
 
-def _clone_flavor_mismatch(
-    script_config: Any, source_script_id: str, source_config: Any
+def _clone_project_mismatch(
+    owner: str | None, source_script_id: str, source_config: Any
 ) -> str | None:
-    """克隆前的项目类型校验：看源托管的视图，视图不健康时看它的来源目录（克隆的退路按它导入）。"""
+    """克隆前的项目类型校验（按目标托管的属主）：看源托管的视图，视图不健康时看它的来源目录
+    （克隆的退路按它导入）。"""
 
-    if resolve_flavor(script_config) is None:
+    if not owners.owner_screens_projects(owner):
         return None
     view = embedded_project_dir(source_script_id)
     if copy_is_healthy(view):
-        return _project_flavor_mismatch(script_config, view)
+        return _project_mismatch(owner, view)
     source_path = str(source_config.Info.Path or "").strip()
     if not source_path:
         return None
-    return _project_flavor_mismatch(script_config, Path(source_path))
+    return _project_mismatch(owner, Path(source_path))
 
 
 async def get_embedded_status(script_id: str) -> MaaFWApiReply:
@@ -400,9 +396,9 @@ async def reimport_embedded(script_id: str, source_path: str | None) -> MaaFWApi
     # 校验要碰磁盘（is_dir / resolve），来源在慢网络盘上时别卡住事件循环
     if path_error := await asyncio.to_thread(_source_path_error, script_id, source):
         return MaaFWApiReply.error(400, f"{failure_prefix}{path_error}")
-    # 特调托管只收它那种项目：在动副本之前按来源目录的 interface 判，不是就原样拒绝
+    # 有项目要求的属主只收它那种项目：在动副本之前按来源目录的 interface 判，不是就原样拒绝
     if mismatch := await asyncio.to_thread(
-        _project_flavor_mismatch, script_config, Path(source)
+        _project_mismatch, script_config.owner_name, Path(source)
     ):
         logger.warning(
             mask_home_path(
@@ -801,9 +797,12 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
         return MaaFWApiReply.error(400, "不能复用脚本自己的项目")
     if busy := _embedded_busy_reason(script_config):
         return MaaFWApiReply.error(400, busy)
-    # 特调托管只收它那种项目：按源托管的视图（没有就按它的来源目录）判，不是就什么都不建
+    # 有项目要求的属主只收它那种项目：按源托管的视图（没有就按它的来源目录）判，不是就什么都不建
     if mismatch := await asyncio.to_thread(
-        _clone_flavor_mismatch, script_config, source_script_id, source_config
+        _clone_project_mismatch,
+        script_config.owner_name,
+        source_script_id,
+        source_config,
     ):
         logger.warning(
             f"MFW 托管 {script_id} 拒绝从脚本 {source_script_id} 克隆项目（项目类型不符）："

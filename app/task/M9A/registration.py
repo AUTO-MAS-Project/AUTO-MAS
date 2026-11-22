@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.models.config import M9AConfig
+from app.task.M9A.rules import M9A_PLAN_RULES, TYPE_KEY, is_m9a_project
 from app.task.MaaFW.owner_entry import BuiltinConfigOwner
 from app.task.MaaFW.tools.embedded import owners
 from app.task.registration import ScriptRegistration
@@ -28,7 +29,14 @@ if TYPE_CHECKING:
     from app.utils.common.config.restore import ConfigRestorePool
 
 M9A_OWNER = "m9a_adapter"
-_OWNER = BuiltinConfigOwner(M9A_OWNER, lambda: M9AConfig)
+# 预览与建计划同一份规则表；导入 / 克隆只收 M9A 项目
+_OWNER = BuiltinConfigOwner(
+    M9A_OWNER,
+    lambda: M9AConfig,
+    plan_rules=M9A_PLAN_RULES,
+    claims_project=is_m9a_project,
+    project_label=TYPE_KEY,
+)
 
 
 def _resolve_owner() -> BuiltinConfigOwner:

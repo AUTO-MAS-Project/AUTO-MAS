@@ -15,8 +15,12 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from app.task.MaaFW.tools.core.interface.plan_rules import (
+    EMPTY_PLAN_RULES,
+    MaaFWPlanRules,
+)
 from app.task.MaaFW.tools.embedded.owners import (
     OWNER_PROTOCOL,
     UNSET,
@@ -27,6 +31,9 @@ from app.task.MaaFW.tools.embedded.owners import (
     RecordPatch,
     WriteResult,
 )
+
+if TYPE_CHECKING:
+    from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 
 
 def _host_config() -> Any:
@@ -85,7 +92,12 @@ def _patch_data(patch: RecordPatch) -> dict[str, Any]:
 
 
 class BuiltinConfigOwner:
-    """宿主托管表里某一种确切类型的托管的属主入口。"""
+    """宿主托管表里某一种确切类型的托管的属主入口。
+
+    ``plan_rules``：这种托管建计划与预览共用的规则表（不可选任务、不回落 default 的字段等），通用 MFW
+    是空表。``claims_project``：这种托管只收哪种项目（导入 / 克隆前判，不认就拒收）；None 表示什么
+    项目都收，端点据此连 interface 都不读。``project_label``：拒收文案里的项目称呼。
+    """
 
     owner_protocol = OWNER_PROTOCOL
 
@@ -95,11 +107,36 @@ class BuiltinConfigOwner:
         config_type: Callable[[], type],
         *,
         host: Callable[[], Any] = _host_config,
+        plan_rules: MaaFWPlanRules = EMPTY_PLAN_RULES,
+        claims_project: Callable[[MaaFWInterface], bool] | None = None,
+        project_label: str = "",
     ) -> None:
         self.name = name
         self._config_type = config_type
         self._host = host
         self._tickets: dict[str, tuple[str, Any]] = {}
+        self._plan_rules = plan_rules
+        self._claims_project = claims_project
+        self._project_label = project_label
+
+    # -- 项目要求 -------------------------------------------------------------
+
+    def plan_rules(self) -> MaaFWPlanRules:
+        """这种托管的规则表（预览按它给不可选原因、置空不回落的 default）。"""
+
+        return self._plan_rules
+
+    def screens_projects(self) -> bool:
+        """这种托管是不是只收自己那种项目（是的话导入 / 克隆前要读 interface 判）。"""
+
+        return self._claims_project is not None
+
+    def project_mismatch(self, interface: MaaFWInterface) -> str | None:
+        """项目不是这种托管收的那种时给用户看的拒收原因；能收返回 None。识别本身抛的异常原样抛出。"""
+
+        if self._claims_project is None or self._claims_project(interface):
+            return None
+        return f"这不是 {self._project_label} 项目。要用别的项目，请新建通用 MFW 托管。"
 
     def _mine(self, config: Any) -> bool:
         return type(config) is self._config_type()

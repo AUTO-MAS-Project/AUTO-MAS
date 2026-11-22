@@ -18,6 +18,9 @@
   → :class:`PathCheck`；写回 ``write_record(uid, patch, ticket=)`` → :class:`WriteResult`（patch 是
   :class:`RecordPatch`），导入期间的锁 ``lock_managed(uid)`` / ``unlock_managed(uid, ticket)``，票据
   对外只是一个不透明的字符串。写回由属主自己校验和保存。
+- **项目要求也由属主给**（可选，没实现当没有要求）：``plan_rules()`` 规则表（预览用，
+  :func:`owner_plan_rules`）、``screens_projects()`` 是否只收自己那种项目、``project_mismatch(interface)``
+  拒收原因（导入 / 克隆前判，:func:`owner_screens_projects` / :func:`owner_project_mismatch`）。
 - **属主的回答只有在托管完整加载之后才算数**：:func:`snapshot` 的 ``require_ready=True`` 要宿主
   注入的「托管配置完整加载」信号（:func:`set_loaded_signal`）为真、至少登记了一个属主、且每个已
   登记属主都答上来、都说自己 ``ready``，有一个不满足就返回 None，据此判断「不在了」的清理整轮跳过。只做正向匹配的
@@ -32,9 +35,16 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from types import SimpleNamespace
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
+from app.task.MaaFW.tools.core.interface.plan_rules import (
+    EMPTY_PLAN_RULES,
+    MaaFWPlanRules,
+)
 from app.utils import get_logger
+
+if TYPE_CHECKING:
+    from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 
 logger = get_logger("MFW 托管属主")
 
@@ -496,6 +506,37 @@ def managed_running(owner: str, script_id: str, *, default: bool = False) -> boo
     return bool(result.record.running)
 
 
+def owner_plan_rules(owner: str | None) -> MaaFWPlanRules:
+    """属主给的规则表（预览用）；属主取不到或没给时是空表。"""
+
+    provider = _provider(owner) if owner else None
+    rules = getattr(provider, "plan_rules", None)
+    if not callable(rules):
+        return EMPTY_PLAN_RULES
+    return rules()
+
+
+def owner_screens_projects(owner: str | None) -> bool:
+    """属主是不是只收自己那种项目（导入 / 克隆前要不要读 interface 判）；取不到属主时为假。"""
+
+    provider = _provider(owner) if owner else None
+    screens = getattr(provider, "screens_projects", None)
+    return bool(screens()) if callable(screens) else False
+
+
+def owner_project_mismatch(owner: str | None, interface: MaaFWInterface) -> str | None:
+    """项目不是属主收的那种时的拒收原因（属主给的原话）；能收或取不到属主时为 None。
+
+    识别本身抛的异常原样抛出，由调用方决定拦不拦。
+    """
+
+    provider = _provider(owner) if owner else None
+    mismatch = getattr(provider, "project_mismatch", None)
+    if not callable(mismatch):
+        return None
+    return mismatch(interface)
+
+
 def check_source_path(owner: str, script_id: str, path: str) -> PathCheck:
     """来源路径能不能写进托管（属主按自己配置的校验器判）。会碰磁盘，调用方放进工作线程。"""
 
@@ -585,6 +626,9 @@ __all__ = [
     "lock_managed",
     "managed_loaded",
     "managed_running",
+    "owner_plan_rules",
+    "owner_project_mismatch",
+    "owner_screens_projects",
     "register_owner",
     "registered_owners",
     "set_loaded_signal",

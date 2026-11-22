@@ -24,13 +24,20 @@ from app.task.MaaFW.tools.embedded.config_handler import (
     build_maafw_config_handler,
     load_maafw_restore_pools,
 )
+from app.task.MSS.rules import TYPE_KEY, is_mss_project
 from app.task.registration import ScriptRegistration
 
 if TYPE_CHECKING:
     from app.models.task import ScriptItem, TaskExecuteBase
 
 MSS_OWNER = "mss_adapter"
-_OWNER = BuiltinConfigOwner(MSS_OWNER, lambda: MSSConfig)
+# 导入 / 克隆只收 MSS 项目；规则表是空表
+_OWNER = BuiltinConfigOwner(
+    MSS_OWNER,
+    lambda: MSSConfig,
+    claims_project=is_mss_project,
+    project_label=TYPE_KEY,
+)
 
 
 def _resolve_owner() -> BuiltinConfigOwner:

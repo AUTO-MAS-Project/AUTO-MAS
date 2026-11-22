@@ -35,7 +35,10 @@ from app.task.MaaFW.tools.core.interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
 )
-from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
+from app.task.MaaFW.tools.core.interface.plan_rules import (
+    EMPTY_PLAN_RULES,
+    MaaFWPlanRules,
+)
 from app.task.MaaFW.tools.core.interface.preview import (
     apply_preview_plan_rules,
     build_interface_preview_data,
@@ -43,15 +46,11 @@ from app.task.MaaFW.tools.core.interface.preview import (
 )
 from app.task.MaaFW.tools.core.log_redact import mask_home_path
 from app.task.MaaFW.tools.core.project_update.state import redact_text
+from app.task.MaaFW.tools.embedded import owners
 from app.task.MaaFW.tools.embedded.embedded_project import (
     embedded_projects_root,
     is_embedded_copy_dir_name,
     resolve_maafw_project_root,
-)
-from app.task.MaaFW.tools.embedded.flavor import (
-    flavor_for_project,
-    plan_rules,
-    resolve_flavor,
 )
 from app.task.MaaFW.tools.embedded.game_package import (
     resolve_game_package,
@@ -108,10 +107,8 @@ async def preview_project_interface(script_id: str | None, path: str) -> MaaFWAp
             interface,
         )
         payload = preview.model_dump(mode="json")
-        # 与建计划同一份规则表（不可选任务、不回落 default 的字段），按脚本的特调读出来传进去
-        apply_preview_plan_rules(
-            payload, plan_rules(_preview_flavor(script_id, interface))
-        )
+        # 与建计划同一份规则表（不可选任务、不回落 default 的字段），由托管的属主给
+        apply_preview_plan_rules(payload, _preview_plan_rules(script_id))
         data = MaaFWInterfacePreviewData.model_validate(payload)
     except MaaFWInterfaceLoadError as exc:
         _log_preview_failure(script_id, root_path, str(exc))
@@ -141,18 +138,19 @@ def _log_preview_failure(script_id: str | None, project: Any, reason: str) -> No
     )
 
 
-def _preview_flavor(script_id: str | None, interface: MaaFWInterface) -> Any:
-    """预览按哪个特调读规则表：有脚本按脚本的特调（与运行期同一个），否则按认领项目的特调。
+def _preview_plan_rules(script_id: str | None) -> MaaFWPlanRules:
+    """预览用的规则表：有托管按它的属主给的（与运行期同一份），没有托管或认不出托管时是空表。
 
-    核心包的预览不认识特调，只收规则表（契约见 ``tools/embedded/flavor.py``）。
+    核心包的预览不认识专项，只收规则表。
     """
 
-    if script_id:
-        try:
-            return resolve_flavor(maafw_managed(script_id))
-        except (KeyError, ValueError, TypeError):
-            return None
-    return flavor_for_project(interface)
+    if not script_id:
+        return EMPTY_PLAN_RULES
+    try:
+        owner = maafw_managed(script_id).owner_name
+    except (KeyError, ValueError, TypeError):
+        return EMPTY_PLAN_RULES
+    return owners.owner_plan_rules(owner)
 
 
 _MAAFW_IMAGE_SUFFIXES = {
