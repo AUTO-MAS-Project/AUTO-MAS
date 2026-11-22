@@ -191,6 +191,7 @@ if fresh:
 
 script_file = Config.config_path / ("ScriptConfig.json" if fresh and legacy else "scripts.yaml")
 original = script_file.read_bytes()
+original_document = io.read_dict_file(script_file)
 installed_marker = Path.cwd() / "adapter-installed"
 visible = installed_marker.exists()
 installed_before = visible
@@ -234,6 +235,16 @@ async def run():
         patch.object(config_manager, "flush", flush),
     ):
         try:
+            if failure == "install" and current:
+                # 已是插件化格式的数据：专项插件装不上不挡启动，托管与计划原样保留。
+                await Config.check_data(prepare_plugins=prepare)
+                assert Config.ScriptConfig.is_unresolved(sid)
+                assert Config.PlanConfig.is_unresolved(pid)
+                assert not Config.managed_configs_loaded()
+                assert io.read_dict_file(script_file) == original_document
+                with sqlite3.connect(Config.database_path) as db:
+                    assert db.execute("SELECT v FROM version").fetchone()[0] == "v2.2"
+                return
             try:
                 await Config.check_data(prepare_plugins=prepare)
             except OSError as exc:
