@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import importlib.metadata as importlib_metadata
+import inspect
 import re
 import sys
 import weakref
@@ -1316,6 +1317,86 @@ class _PluginManager:
                     return []
                 return await self._calls[record.uid].wrap(decl.prefetch_check)(config)
         raise PluginPrecheckError("托管所属插件当前不可用")
+
+    def script_config_handler(self, config):
+        """把插件托管覆盖了的生命周期钩子包装成宿主内部回调。
+
+        插件一个钩子都没覆盖时返回 ``None``，宿主各入口照旧走插件的直写路径。
+        覆盖了钩子却拿不到实例或调用门（停用、重载途中）时拒绝，免得保存绕开钩子。
+        """
+        from app.models.script_contracts import ScriptConfigHandler
+        from app.plugin.base.script import SCRIPT_LIFECYCLE_HOOKS
+
+        for record in self.list_plugins():
+            decl = self.script_types.get(record.uid)
+            if decl is None or not isinstance(config, decl.script_type):
+                continue
+            plugin_cls = record._plugin_cls
+            overridden = {
+                name
+                for name in SCRIPT_LIFECYCLE_HOOKS
+                if getattr(plugin_cls, name, None)
+                is not getattr(ScriptAdapterPlugin, name)
+            }
+            if not overridden:
+                return None
+            plugin = record._plugin
+            gate = self._calls.get(record.uid)
+            if (
+                record.info.state != PluginState.ENABLED
+                or plugin is None
+                or gate is None
+            ):
+                raise PluginBusyError("托管所属插件当前不可用")
+            return self._wrap_script_hooks(
+                ScriptConfigHandler, decl, plugin, gate, overridden
+            )
+        return None
+
+    @staticmethod
+    def _wrap_script_hooks(handler_cls, decl, plugin, gate, overridden):
+        """按旧回调签名经调用门转接插件钩子；同步实现的钩子也照样受理。"""
+
+        async def call(name, *args):
+            result = gate.wrap(getattr(plugin, name))(*args)
+            return await result if inspect.isawaitable(result) else result
+
+        async def clone_script(source, target):
+            await call("on_script_cloned", source, target)
+
+        async def cleanup_script_files(script_id):
+            await call("on_script_removed", script_id)
+
+        async def prepare_user_read(script, *, user_ids):
+            await call("prepare_user_read", script, user_ids)
+
+        async def initialize_user(script, user, *, rollback):
+            # 插件钩子不提供撤回：新账号失败时保留，由插件自行修正。
+            _ = rollback
+            await call("on_user_added", script, user)
+
+        async def prepare_user_update(script, user, *, data):
+            guard = await call("prepare_user_update", script, user, data)
+            # 守卫在配置执行门内执行，此时插件调用门已经放开，所以再包一层。
+            return None if guard is None else gate.wrap(guard)
+
+        # 旧回调字段 → (插件钩子名, 转接函数)
+        hooks = {
+            "clone_script": ("on_script_cloned", clone_script),
+            "cleanup_script_files": ("on_script_removed", cleanup_script_files),
+            "prepare_user_read": ("prepare_user_read", prepare_user_read),
+            "initialize_user": ("on_user_added", initialize_user),
+            "prepare_user_update": ("prepare_user_update", prepare_user_update),
+        }
+        return handler_cls(
+            **{
+                field: hook
+                for field, (name, hook) in hooks.items()
+                if name in overridden
+            },
+            supports_mod_avd=decl.supports_mod_avd,
+            game_kinds=decl.game_kinds,
+        )
 
     async def search_game_adapter(
         self, uid: UUID, decl: GameTypeDecl
