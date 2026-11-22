@@ -3,7 +3,7 @@
 进这个目录之前先读 `app/task/MaaFW/AGENTS.md`：MSS（MaaStellaSora / 星塔旅人）的运行、更新、内嵌副本、
 通知、失败截图、周期任务、代理次数……全部是 MaaFW 引擎的既有语义，这里一行都没有重写。本目录只有
 `flavor.py`（`FLAVOR` 对象，满足 `app/task/MaaFW/tools/embedded/flavor.py` 的 `MaaFWFlavor`
-协议，外加 `app/task/MSS/__init__.py` 的包说明）。`flavor.py` 做的事穷举如下，多一件都没有：
+协议，外加 `app/task/MSS/__init__.py` 的包说明与接入声明 `registration.py`，见下文「配置类」一段）。`flavor.py` 做的事穷举如下，多一件都没有：
 
 1. `matches_project(interface)`：`mirrorchyan_rid == SSAH` / `github` 仓库名命中 /
    `name` 命中，任一即认领；后两条**同一口径**——等于 `MaaStellaSora` 或以 `MaaStellaSora-` 开头
@@ -31,7 +31,8 @@
 配置类在 `app/models/config/script.py`（计划表类在 `app/models/config/plan.py`）：`MSSConfig(MaaFWConfig)` 同形，只改 `DEFAULT_SCRIPT_NAME`、
 `USER_CONFIG_CLASS`、`FLAVOR`；`MSSUserConfig(MaaFWUserConfig)` 多一项 `Info.PlanMode`（计划表消费方
 `mss`，`PLAN_BOOK` 的 `MSSPlanConfig`）与 `Info.IfActivityFirst`（活动优先）。
-`app/task/MaaFW/registration.py` 的家族声明显式把 `MSSConfig` 登记到 `MaaFWEmbeddedManager`，宿主生成的运行索引按类型精确匹配。
+本目录的 `registration.py` 按确切类型 `MSSConfig` 登记运行（仍是 `MaaFWEmbeddedManager`）、配置回调与恢复池（与通用
+MFW 同一套）以及托管属主 `mss_adapter`（见 `app/task/MaaFW/AGENTS.md`「托管属主登记」）；宿主按确切类型查，不靠继承。
 
 前端托管页 / 账号页是 MSS 的专属页面（`frontend/src/views/mss/`：`MSSScriptEdit.vue`、`MSSUserEdit.vue`，
 用 MaaFW 的 pageKit 分节与编排层拼），由同目录的 `entry.ts` 登记（适配条目上的 `maafw` 家族标记，计划表也在这里登记）；

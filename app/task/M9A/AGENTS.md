@@ -1,7 +1,7 @@
 # app/task/M9A — M9A 是 MaaFW 的特调类型，不是专项
 
 进这个目录之前先读 `app/task/MaaFW/AGENTS.md`：M9A 的运行、更新、内嵌副本、通知、失败截图、
-周期任务、代理次数……全部是 MaaFW 引擎的既有语义，这里一行都没有重写。本目录只有五个文件：
+周期任务、代理次数……全部是 MaaFW 引擎的既有语义，这里一行都没有重写。本目录只有五个文件（另有接入声明 `registration.py`，见下文「配置类」一段）：
 
 - `managed.py`：**受管任务**的唯一规则。entry `StartUp`（启动游戏）、`SwitchAccount`（切换账号）、
   `Close1999`（关闭游戏）由 MAS 全权控制，不许留在账号队列里；按 entry 判，不按任务名。
@@ -115,9 +115,11 @@
 
 配置类在 `app/models/config.py`：`M9AConfig(MaaFWConfig)` / `M9AUserConfig(MaaFWUserConfig)` 同形，只改
 `DEFAULT_SCRIPT_NAME`、`USER_CONFIG_CLASS`、`FLAVOR`。`FLAVOR` 是字符串 `"app.task.M9A.flavor:FLAVOR"`，
-由引擎按需导入——`app.models` 不能反向 import `app.task`。`app/task/MaaFW/registration.py` 的家族声明
-显式把 `M9AConfig` 登记到 `MaaFWEmbeddedManager`，宿主生成的运行索引按类型精确匹配；`app/core/config/manager.py` 里所有
-`isinstance(…, MaaFWConfig)` 分支天然覆盖 M9A，不要再加 `isinstance(…, M9AConfig)` 分支。
+由引擎按需导入——`app.models` 不能反向 import `app.task`。本目录的 `registration.py` 按确切类型 `M9AConfig`
+登记运行（仍是 `MaaFWEmbeddedManager`）、配置回调与恢复池（与通用 MFW 同一套，`build_config_handler(M9AConfig, owner="m9a_adapter")`），
+以及托管属主 `m9a_adapter`（`register_owner()`，见 `app/task/MaaFW/AGENTS.md`「托管属主登记」）。宿主的回调、
+恢复池、漏登校验都按确切类型查，**不靠继承** `MaaFWConfig`：要判断「是不是 MFW 托管」的地方用
+`app/task/MaaFW/registration.MAAFW_RUN_TYPES` 按确切类型比，不写 `isinstance(…, MaaFWConfig)`。
 
 前端托管页 / 账号页是 M9A 的专属页面（`frontend/src/views/m9a/`：`M9AScriptEdit.vue`、`M9AUserEdit.vue`，
 用 MaaFW 的 pageKit 分节与编排层拼），由同目录的 `entry.ts` 登记（适配条目上的 `maafw` 家族标记）；

@@ -8,7 +8,9 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
 
 - `embedded_manager.py`：宿主侧管理器——任务调度、更新时机、账号配置副本与写回；打开项目、运行前更新、
   运行环境确认、收尾项目与预下载调 `tools/embedded/project_session.py`（见下文）。
-- `tools/embedded/maintenance.py`：宿主资源维护入口；公共 Config 注入托管快照、完整加载状态与保留天数，`migration.py` 承接老副本采纳、组版本统一和旧更新状态清理。main 编排迁移后的启动清理，timer 触发每日原生日志清理。
+- `tools/embedded/maintenance.py`：宿主资源维护入口；公共 Config 注入完整加载状态与保留天数，托管只经属主登记
+  （`tools/embedded/owners.py`，见下面「托管属主登记」）问，`migration.py` 承接老副本采纳、组版本统一和旧更新状态清理。
+  main 编排迁移后的启动清理，timer 触发每日原生日志清理。
 - `api_service/`：`/api/scripts/maafw/*` 端点背后的全部业务（`common` 托管解析 / 有效项目根 /
   同组候选，`embedded` 副本状态 / 导入 / 克隆 / 候选来源，`interface` 预览 / 包名 / 图片资源 / 项目图标，
   `update` 手动更新，`agent_env` 预备运行环境，`shell_instances` 外壳配置实例导入成账号）。
@@ -21,7 +23,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
   `update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
   `default_snapshot`、`env_confirm`、`update_session`、`device_config`、`plan_run`、`pretask_run`、
-  `run_verdict`、`run_redaction`、`project_session`）。
+  `run_verdict`、`run_redaction`、`project_session`、`owners`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - **设备配置与首任务闸门在 `tools/embedded/device_config.py`**（将来是运行这一块对外的「设备配置」调用，
   三个专项各自的流程都调它）：游戏包名、adb 路径（含「宿主没定下路径时问 Toolkit」，判据由调用方算好
@@ -93,7 +95,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   导入 / 重建后要写回的项目记录（`MaaFWProjectRecordUpdate`）随结局交回，要弹的任务通知
   （`MaaFWProjectNotice`）作返回值交回，都由管理器照原来的时机写回 / 发出。过程输出只经事件出口
   （`MaaFWProjectSink`：项目更新日志一行、`run_flow` 进度点、预下载字节进度），做法同 `plan_run`。
-  属主登记之前的三处临时做法写在模块开头：同组候选与查脚本名是构造时给的两个现取函数；
+  三处临时做法写在模块开头：同组候选与查脚本名是构造时给的两个现取函数（候选已经经属主登记现取）；
   `embedded_project` 里按属性读配置的辅助函数吃一个由请求摆出来的只读形状；打开项目时管理器在预约里还要
   写回项目记录、补默认队列、拿 X 锁，所以把这一整段包成任务交给 `hold`，**用户停止时等它做完（有限宽限）
   再交回预约，等不到就把释放交给任务完成回调**——这条与运行环境确认里的同一套，改动时不能丢。
@@ -102,11 +104,49 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   只剩取配置 → 组装入参 → 调用 → 事件转日志 → 处理结局与写回。
 - 接缝模块按将来的积木归属分好了，**agent 环境一侧**的接缝（`pool_reconcile`、`env_cache`、
   `env_trial`）只收普通数据（项目路径集合、被替换的版本、待验证的目录），不读脚本配置、不导入
-  `embedded_project` / `project_path` 这类项目更新一侧的模块；「哪些项目还在」由项目更新一侧算
-  （`live_projects.collect_live_project_paths` / `reconcile_in_background`，`maintenance` 算隔离 venv 的
-  存活视图），再交给 `pool_reconcile.reconcile_runtime_pool` / `reconcile_agent_venvs`。更新预检
+  `embedded_project` / `project_path` 这类项目更新一侧的模块；「哪些项目还在」由项目更新一侧按属主的回答算
+  （`live_projects.keep_project_paths` / `keep_view_paths` / `reconcile_in_background`，见下面「托管属主登记」），
+  再交给 `pool_reconcile.reconcile_runtime_pool` / `reconcile_agent_venvs`。更新预检
   （`precheck.py`，项目更新一侧）只查原生库能不能加载、记失败与备忘；真建环境、agent 导入检查、
   临时 agent 目录的放置与回收都在 `env_trial.trial_environment`。
+- **托管属主登记**（`tools/embedded/owners.py`，项目更新一侧；方案 §3.8，第 8 步）：共享目录（视图、运行池、
+  agent 环境、载荷库）的清理、`/api/scripts/maafw/*` 端点认托管、同组候选与同来源重建的候选，都**只问已登记的
+  属主**，不按配置类判断家族、不靠继承（`isinstance(…, MaaFWConfig)` 一处都不留；三种配置类以后不再继承）。
+  - **登记**：每个专项登记一个属主，表里只存「属主名 → 取入口的函数」，每次用前现取；取不到（None、抛异常、
+    `owner_protocol` 不对）就当属主没登记。内置形态的入口是 `app/task/MaaFW/owner_entry.BuiltinConfigOwner`，
+    按**确切类型**认（`type(config) is <类型>`，类型每次现取）；通用 MFW（`maafw_adapter`）、M9A（`m9a_adapter`）、
+    MSS（`mss_adapter`）各在自己的 `registration.py` 里有 `register_owner()`，`builtin_registration` 统一调。
+    以后换成插件服务 `maafw.owner.<名字>.v1` 时只换「取入口的函数」。
+  - **只传普通数据**：`list_managed()` → `OwnerListing(ready, items)`，`read_managed(uid)` → `ReadResult`，记录是
+    `ManagedRecord`（配置原值 + 是否正在运行 + 宿主列表里的位置 `order`，跨属主合起来按它排，与原先遍历托管表的
+    先后一致）；`check_source_path`；写回 `write_record(uid, RecordPatch, ticket=)`（导入报告、来源版本、导入时间、
+    项目路径、更新渠道，`UNSET` = 不写这一项）与导入期间的 `lock_managed` / `unlock_managed`（票据是不透明字符串）。
+    写回由属主自己校验保存：内置的不持票时走 `Config.update_script`、持票时直接提交原节点，形状与原先一致。
+    端点与 `embedded_project` 里按属性读配置的辅助函数吃 `ManagedRecord.shape(owner=)` 摆出的只读形状，它的
+    `is_locked` 每次读都经属主现问（隔了 await 的地方读到的是此刻的运行状态）；其余字段是快照，写回后要重取。
+    外壳配置导入要建账号，是通用 MFW 自己的端点：经属主确认后按确切类型取配置对象（`_family_script_config`）。
+  - **回答只在托管完整加载后才算数**：宿主把 `script_config_loaded_intact` 注入成信号（`set_loaded_signal`，
+    `app/core/config/manager.py`）。`snapshot(require_ready=True)` 要信号为真、每个已登记属主都答上来且 `ready`，
+    否则 None；据此判断「不在了」的每一步（迁移、补标记、清副本、agent 环境对账、运行池对账，含运行期的
+    `reconcile_in_background`）拿到 None 就整轮跳过。只做正向匹配的（同组候选、重建候选、原生日志清理）用
+    `require_ready=False`。启动期维护仍在 `Config.init_config` 返回之后才起，这条等待不能丢。
+  - **视图上的属主标记**：视图标记 `owner = {name, scriptId, at}`（`embedded_project.view_owner` / `tag_view_owner`）。
+    启动期维护在迁移之后、清副本之前给属主确认仍在的托管补上（拿不到预约的下轮再补，已记别的属主不覆盖）；
+    `_realize_view` 换版本、换项目重导时从盘上这棵视图自己的标记带过去，克隆不带源的。
+  - **清理前要过的判断**：一个视图目录只有 ① 托管完整加载 ② 属主快照算得出来 ③ 标记里有属主且与目录名对得上
+    ④ 该属主已登记并答上来 ⑤ 任何属主名下都没有这个托管 ⑥ 早于进程启动 ⑦ 没有未完成的 journal ⑧ 抢得到预约，
+    才删（`live_projects.classify_views` 的 `gone`）。没有标记、没有属主、属主没登记、对不上目录名、被多个属主认领的
+    一律不删。**应保留的视图** = 属主确认仍在的 + 上面判定不了的，交给 agent 环境（`keep_view_paths`）与运行池
+    （`keep_project_paths`，视图不在时退到来源目录）对账；顺序是先清副本、再对账。载荷回收另外要求没有视图记着
+    这轮没答上来的属主；有未采纳又不归任何属主的老副本时，旧更新状态的基线留着。删托管时的视图清理
+    （各类型配置回调的 `cleanup_script_files`，带本属主名）遇到视图记着别的属主就不删。只许「以前删、现在不删」，
+    不许反过来；代价是存量孤儿视图（没有标记）会留在盘上。
+  - **以后新增一个专项**要做的：一个确切类型的配置类；`registration.py` 里 `ScriptRegistration`（`config_type` 与
+    `run_types` 都是它）与 `register_owner()`，并在 `builtin_registration` 里列出、调用；配置回调用
+    `build_config_handler(<类型>, owner=<属主名>)`（保存前加密、读取前准备、新账号默认队列、复制时克隆视图、删除时
+    清理本属主视图、删除后运行池对账一样不能少）；要按「是 MFW 托管」判断的地方加进 `MAAFW_RUN_TYPES`（第 9、10 步
+    M9A、MSS 各有流程后从里面删）。宿主的漏登校验、配置回调、恢复池都按确切类型查，子类不会落到父类的登记上，
+    漏登记启动就报「专项能力漏登」。
 - `tools/core/`：七个核心包（interface / native / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
   `project_update/updater.py` 引了 `app.utils.constants`，以及 `project_update` 里的 `projection_heal` /
@@ -430,6 +470,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   隔离 blob、记 `privatePaths`、标载荷 `damaged`；`damaged` 的载荷下次更新只要全量包）。回收在启动期：`MaaFWMaintenanceService.clean_embedded_copies`
   删无人引用的载荷（`embedded_project.collect_payload_garbage`：引用集 = 视图标记 ∪ 未完成切换的 to，
   谱系还有视图时再加它的 latest（私有渠道的 latest 只在开着开发者模式时算，见「跟随来源目录」）；一个视图都不剩的谱系整个收走，视图丢了但脚本还在的按导入来源保住；
+  有视图记着这轮没答上来的属主时整轮不回收（见「托管属主登记」）；
   本进程起来之后建的不收。回收跑在后台、API 已在服务：删之前要在该谱系的 `lineage_lock` 内按盘上最新
   状态再判一次，否则判定之后刚登记的载荷会被一起删掉；整谱系收走时放锁后还会删锁文件和空目录，
   所以 `DurableFileLock` 的等待方碰到目录没了要重建再等，不能把这次撞车报给调用方），随后 `MaaFWMaintenanceService.clean_runtime_blobs` 删 `st_nlink == 1` 的 blob。本机实测：inode 被映射（DLL 已加载）时
@@ -578,7 +619,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   - **升级前按路径建的老目录**（`maafw_venv_<12hex>`）不迁移、不改名（venv 不可搬家）：共用目录还没
     建、老目录按老判据（项目路径 + interface + 依赖清单都没变）还能用时第一跑沿用它，不重建、不联网；
     项目一更新或同依赖的共用目录建好就换过去。
-  - **回收**（启动期 `MaaFWMaintenanceService.clean_agent_venvs` 算存活视图 → `pool_reconcile.reconcile_agent_venvs`
+  - **回收**（启动期 `MaaFWMaintenanceService.clean_agent_venvs` 在清副本之后按属主快照算应保留的视图（`live_projects.keep_view_paths`）
+    → `pool_reconcile.reconcile_agent_venvs`
     → `planner.collect_orphan_agent_venvs`）：存活 =
     各存活视图引用记录里的目录 ∪ 建计划会算出的目录 ∪ 没有引用记录的视图的老目录；存活视图的引用
     记录读不出来就整轮不回收。照旧跳过刚动过的，锁被占的也跳过；无主的引用记录一并删。
