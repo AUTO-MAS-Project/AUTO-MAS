@@ -116,6 +116,7 @@ from app.task.MaaFW.tools.embedded.host_client import (
     script_adb_env,
     workstation_lock_reason,
 )
+from app.task.MaaFW.tools.embedded.host_version import host_client_version
 from app.task.MaaFW.tools.embedded.option_secrets import (
     DPAPI_SECRET_OPENER,
     open_task_snapshot,
@@ -923,6 +924,7 @@ class MSSAccountRun(TaskExecuteBase):
                 resource_name=head.resource_name,
                 script_hotkeys=head.script_hotkeys,
                 rules=EMPTY_PLAN_RULES,
+                client_version=host_client_version(),
             )
         except Exception as exc:
             raise MaaFWRunPlanError(

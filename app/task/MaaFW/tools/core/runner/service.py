@@ -60,6 +60,7 @@ class MaaFWRunnerService:
         secret_inputs: Any = None,
         no_default_fallback_inputs: Any = None,
         excluded_task_reasons: dict[str, str] | None = None,
+        client_version: str = "",
     ) -> MaaFWRunPlan:
         return build_maafw_run_plan(
             project_path,
@@ -75,6 +76,7 @@ class MaaFWRunnerService:
             secret_inputs=secret_inputs,
             no_default_fallback_inputs=no_default_fallback_inputs,
             excluded_task_reasons=excluded_task_reasons,
+            client_version=client_version,
         )
 
     def create_job_payload(

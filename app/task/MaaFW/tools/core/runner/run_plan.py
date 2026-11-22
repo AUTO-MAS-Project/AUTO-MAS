@@ -74,13 +74,12 @@ from .pipeline_override import (
 # 本模块会被运行池隔离 venv 里的 worker 进程导入（``worker`` / ``runner``
 # 直接 import 它），那个 venv 只装了 maafw 与项目依赖，没有
 # 宿主的第三方包。所以这里不能导入宿主的 Config 或 utils，避免拉起配置、
-# 日志器等宿主状态。独立 worker 只读取随本模块源码分发的客户端版本元数据，
+# 日志器等宿主状态。客户端版本（``PI_CLIENT_VERSION``）由调用方经 ``client_version`` 传入，
 # 不访问宿主配置和用户数据目录。守卫见 tests/task/test_maafw_core.py。
 # 建计划归解析一侧（将来随 interface 进解析库）：导入闭包里不能有 agent 环境、运行池和
 # runner 里执行侧的模块（runner / worker / environment / service）。agent 命令计划
 # （解释器、隔离 venv 目录）不在这里算，计划只带 interface 声明的 agent（``declaredAgents``），
 # 借运行环境时由 agent 环境算好填进下发给 worker 的计划（``runner.environment.worker_run_plan``）。
-_SOURCE_ROOT = Path(__file__).resolve().parents[6]
 
 logger = logging.getLogger("automas.maafw.runner.run_plan")
 # 语言文件解析失败只提醒一次：同一份坏文件每次建计划都会再撞上。
@@ -189,6 +188,7 @@ def build_maafw_run_plan(
     secret_inputs: Any = None,
     no_default_fallback_inputs: Any = None,
     excluded_task_reasons: dict[str, str] | None = None,
+    client_version: str = "",
 ) -> MaaFWRunPlan:
     """建出的计划 ``agents`` 为空，interface 声明的 agent 原样放在 ``declaredAgents``（不随计划
     下发给 worker）；命令计划由借运行环境那一步算（``agent_env.runtime_lease``）。声明的
@@ -216,6 +216,9 @@ def build_maafw_run_plan(
     全局组按全局表、资源 / 控制器 / 任务组按任务自己的值（PI 顺序，任务的盖住全局的）。
     ``task_ids`` 路径上任务选项里出现的「只属于全局」的选项是特调写的，这一实例以它为准
     （``extract_task_global_overrides``）。
+
+    ``client_version``：AUTO-MAS 客户端版本号，原样写进 ``piEnv`` 的 ``PI_CLIENT_VERSION``。
+    宿主以前由本模块读 ``res/version.json``，进库后改由调用方传入；不传为空串。
     """
 
     interface = _coerce_interface(interface_model)
@@ -465,7 +468,12 @@ def build_maafw_run_plan(
         declaredAgents=_declared_agents(resolved_base_dir, interface.agent),
         pretasks=pretask_plans,
         piEnv=_build_pi_env(
-            interface, controller, resource, i18n_mapping, resolved_base_dir
+            interface,
+            controller,
+            resource,
+            i18n_mapping,
+            resolved_base_dir,
+            client_version,
         ),
         tasks=runnable_tasks,
         skippedTasks=[*queue_skipped_tasks, *skipped_tasks],
@@ -1666,6 +1674,7 @@ def _build_pi_env(
     resource: MaaFWResource,
     i18n_mapping: dict[str, Any],
     project_root: Path,
+    client_version: str,
 ) -> dict[str, str]:
     """注入给 agent 与 pretask 子进程的 ``PI_*`` 环境变量（runner 与宿主跑 pretask 共用这一份）。
 
@@ -1688,7 +1697,7 @@ def _build_pi_env(
     return {
         "PI_INTERFACE_VERSION": PI_INTERFACE_VERSION,
         "PI_CLIENT_NAME": PI_CLIENT_NAME,
-        "PI_CLIENT_VERSION": _load_client_version(),
+        "PI_CLIENT_VERSION": client_version,
         "PI_CLIENT_LANGUAGE": PI_CLIENT_LANGUAGE,
         "PI_CLIENT_MAAFW_VERSION": _load_maafw_version(),
         "PI_VERSION": interface_model.version or "",
@@ -1700,16 +1709,6 @@ def _build_pi_env(
             resource_payload, ensure_ascii=False, separators=(",", ":")
         ),
     }
-
-
-def _load_client_version() -> str:
-    version_path = _SOURCE_ROOT / "res" / "version.json"
-    try:
-        data = json.loads(version_path.read_text(encoding="utf-8"))
-        version = data.get("version")
-        return version if isinstance(version, str) else ""
-    except Exception:
-        return ""
 
 
 def _load_maafw_version() -> str:

@@ -397,6 +397,7 @@ def build_arranged_plan(
     resource_name: str | None,
     script_hotkeys: dict[str, dict[str, str]] | None,
     rules: MaaFWPlanRules,
+    client_version: str = "",
 ) -> MaaFWRunPlan:
     """按调用方排好的队列建计划（有规则的专项：展开快照 → 专项自己排队列 → 这里）。
 
@@ -407,6 +408,8 @@ def build_arranged_plan(
 
     异常原样抛出，由调用方统一包成 ``MaaFWRunPlanError(describe_plan_failure(...))``。排队列不经
     回调：展开与这里之间是调用方自己的普通代码。
+
+    ``client_version`` 原样交给 :func:`build_maafw_run_plan`（写进 ``PI_CLIENT_VERSION``）。
     """
 
     queue = merge_arranged_queue(expansion, task_ids, task_options)
@@ -422,6 +425,7 @@ def build_arranged_plan(
         script_hotkeys=script_hotkeys,
         no_default_fallback_inputs=rules.no_default_fallback_inputs,
         excluded_task_reasons=queue.excluded_task_reasons,
+        client_version=client_version,
     )
     return attach_snapshot_findings(apply_plan_rules(plan, rules), inspection)
 

@@ -118,6 +118,7 @@ from .host_client import (
     script_adb_env,
     workstation_lock_reason,
 )
+from .host_version import host_client_version
 from .option_secrets import (
     DPAPI_SECRET_OPENER,
     open_task_snapshot,
@@ -928,6 +929,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 task_snapshot=task_snapshot or None,
                 script_hotkeys=script_hotkeys,
                 excluded_task_reasons=inspection.off_day_reasons(),
+                client_version=host_client_version(),
             )
             return attach_snapshot_findings(plan, inspection)
         except Exception as exc:
