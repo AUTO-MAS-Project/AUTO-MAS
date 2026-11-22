@@ -108,20 +108,20 @@ from app.task.MaaFW.blocks.maafw_runner.host.signal_notice import (
     MaaFWSignalTracker,
     push_signal_notices,
 )
-from app.task.MaaFW.tools.backup_archive import (
+from app.task.MaaFW.seams.backup_archive import (
     archive_mas_runtime_backup,
     archive_native_backup,
     read_overlay_values,
 )
-from app.task.MaaFW.tools.embedded.default_snapshot import (
+from app.task.MaaFW.seams.default_snapshot import (
     fill_default_task_snapshots,
 )
-from app.task.MaaFW.tools.embedded.telemetry_project import record_project_run
+from app.task.MaaFW.seams.telemetry_project import record_project_run
 from app.task.run_flow import point
 from app.utils import TASK_MODE_ZH, get_logger
 
 if TYPE_CHECKING:  # pragma: no cover - 仅供类型检查，运行期不导入 maa
-    from app.task.MaaFW.tools.embedded.runner_task import MaaFWPluginAutoProxyTask
+    from app.task.MaaFW.runner_task import MaaFWPluginAutoProxyTask
 
 logger = get_logger("MFW 内置运行")
 
@@ -385,7 +385,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         """``route`` 是 :meth:`_resolve_runtime_pool_route` 的结果，调用方在工作线程里取。"""
 
         # 延迟导入：runner_task 经 runner 包 import maa，导入即打开 DLL。
-        from app.task.MaaFW.tools.embedded.runner_task import (
+        from app.task.MaaFW.runner_task import (
             MaaFWPluginAutoProxyTask,
         )
 

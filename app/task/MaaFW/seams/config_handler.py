@@ -43,22 +43,22 @@ def build_maafw_config_handler(
     视图（新视图记本属主）、删除托管时清理视图（只删本属主的视图）与删除后的运行池对账。三种类型各造
     一份，内容相同。"""
 
-    from app.task.MaaFW.tools.embedded.default_snapshot import (
+    from app.task.MaaFW.seams.default_snapshot import (
         initialize_user as initialize_maafw_user,
     )
-    from app.task.MaaFW.tools.embedded.default_snapshot import (
+    from app.task.MaaFW.seams.default_snapshot import (
         prepare_user_read as prepare_maafw_user_read,
     )
-    from app.task.MaaFW.tools.embedded.script_lifecycle import (
+    from app.task.MaaFW.seams.script_lifecycle import (
         after_script_removal as after_maafw_script_removal,
     )
-    from app.task.MaaFW.tools.embedded.script_lifecycle import (
+    from app.task.MaaFW.seams.script_lifecycle import (
         cleanup_script_files as cleanup_maafw_script_files,
     )
-    from app.task.MaaFW.tools.embedded.script_lifecycle import (
+    from app.task.MaaFW.seams.script_lifecycle import (
         clone_script as clone_maafw_script,
     )
-    from app.task.MaaFW.tools.embedded.user_update import (
+    from app.task.MaaFW.seams.user_update import (
         prepare_user_update as prepare_maafw_user_update,
     )
 
@@ -104,7 +104,7 @@ def expected_game_kind(script, patch):
 def load_maafw_restore_pools() -> list[ConfigRestorePool]:
     """MFW 的两个恢复池（MAS 账号字段池、项目配置池），见 ``tools/restore_service``。"""
 
-    from app.task.MaaFW.tools.restore_service import RESTORE_POOLS
+    from app.task.MaaFW.seams.restore_service import RESTORE_POOLS
 
     return RESTORE_POOLS
 

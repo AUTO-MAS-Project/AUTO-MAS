@@ -11,7 +11,7 @@
 - **登记**：:func:`register_owner` 只记「属主名 → 取入口的办法」（一个不带参数的函数）。每次用
   之前现取；取不到（返回 None、抛异常、``owner_protocol`` 不对）就当属主没登记，记一句 warning。
   内置形态下三个专项各自登记一个（``maafw_adapter`` / ``m9a_adapter`` / ``mss_adapter``，见
-  ``app/task/MaaFW/owner_entry.py``），插件化以后取入口的办法换成按服务名
+  ``app/task/MaaFW/seams/owner_entry.py``），插件化以后取入口的办法换成按服务名
   （``maafw.owner.<名字>.v1``）向插件管理器现取，调用方不用改。
 - **入口的调用只传普通数据**：``list_managed()`` → :class:`OwnerListing`（是否算数 + 名下全部托管的
   :class:`ManagedRecord`），``read_managed(uid)`` → :class:`ReadResult`，``check_source_path(uid, path)``

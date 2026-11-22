@@ -18,11 +18,11 @@ from typing import TYPE_CHECKING
 
 from app.models.config import MSSConfig
 from app.task.MaaFW.blocks.maafw_project_update.host import owners
-from app.task.MaaFW.owner_entry import BuiltinConfigOwner
-from app.task.MaaFW.tools.embedded.config_handler import (
+from app.task.MaaFW.seams.config_handler import (
     build_maafw_config_handler,
     load_maafw_restore_pools,
 )
+from app.task.MaaFW.seams.owner_entry import BuiltinConfigOwner
 from app.task.MSS.rules import TYPE_KEY, is_mss_project
 from app.task.registration import ScriptRegistration
 

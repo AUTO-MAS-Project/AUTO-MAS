@@ -51,7 +51,7 @@ from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
     embedded_project_dir,
     view_imported_from,
 )
-from app.task.MaaFW.tools.embedded.shell_instances import (
+from app.task.MaaFW.shell_instances import (
     ShellImportPlan,
     ShellInstance,
     Translate,

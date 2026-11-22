@@ -2836,7 +2836,7 @@ class AppConfig:
         """
 
         from app.task.MaaFW.registration import MAAFW_FAMILY_TYPES
-        from app.task.MaaFW.tools.backup_archive import (
+        from app.task.MaaFW.seams.backup_archive import (
             archive_mas_runtime_backup,
             archive_native_backup,
             read_overlay_values,

@@ -54,9 +54,9 @@ from app.task.MaaFW.blocks.maafw_runner.host.proxy_quota import (
 from app.task.MaaFW.blocks.maafw_runner.host.run_settings import (
     period_limits as _period_limits,
 )
-from app.task.MaaFW.tools.backup_archive import read_overlay_values
-from app.task.MaaFW.tools.embedded.default_snapshot import fill_default_task_snapshots
-from app.task.MaaFW.tools.embedded.option_secrets import (
+from app.task.MaaFW.seams.backup_archive import read_overlay_values
+from app.task.MaaFW.seams.default_snapshot import fill_default_task_snapshots
+from app.task.MaaFW.seams.option_secrets import (
     prepare_user_task_snapshot,
     script_task_snapshots,
     user_task_snapshot,

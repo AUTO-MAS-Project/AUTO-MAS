@@ -84,11 +84,11 @@ from app.task.MaaFW.blocks.maafw_runner.host.signal_notice import (
     MaaFWSignalTracker,
     push_signal_notices,
 )
-from app.task.MaaFW.tools.backup_archive import (
+from app.task.MaaFW.seams.backup_archive import (
     archive_mas_runtime_backup,
     archive_native_backup,
 )
-from app.task.MaaFW.tools.embedded.telemetry_project import record_project_run
+from app.task.MaaFW.seams.telemetry_project import record_project_run
 from app.task.MSS import config_view
 from app.task.run_flow import point
 from app.utils import TASK_MODE_ZH, get_logger

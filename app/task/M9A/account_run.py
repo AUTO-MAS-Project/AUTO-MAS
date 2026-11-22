@@ -196,14 +196,14 @@ from app.task.MaaFW.blocks.maafw_runner.host.signal_notice import (
     SIGNAL_USER_MESSAGES,
     MaaFWSignalTracker,
 )
-from app.task.MaaFW.tools.embedded.host_client import (
+from app.task.MaaFW.seams.host_client import (
     WORKSTATION_LOCKED_MESSAGE,
     open_emulator_for_run,
     script_adb_env,
     workstation_lock_reason,
 )
-from app.task.MaaFW.tools.embedded.host_version import host_client_version
-from app.task.MaaFW.tools.embedded.option_secrets import (
+from app.task.MaaFW.seams.host_version import host_client_version
+from app.task.MaaFW.seams.option_secrets import (
     DPAPI_SECRET_OPENER,
     open_task_snapshot,
 )

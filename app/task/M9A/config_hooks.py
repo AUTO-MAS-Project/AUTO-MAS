@@ -147,7 +147,7 @@ async def restore_m9a_mas(ctx: RestoreContext, ts: str) -> None:
     import uuid
 
     from app.task.M9A import config_view
-    from app.task.MaaFW.tools import backup_archive, restore_service
+    from app.task.MaaFW.seams import backup_archive, restore_service
 
     restore_service.user_guard(ctx)
     user = config_view.user_collection(ctx.script_config)[uuid.UUID(ctx.user_id)]
@@ -166,7 +166,7 @@ async def restore_m9a_mas(ctx: RestoreContext, ts: str) -> None:
 
 
 def _build_restore_pools() -> list[ConfigRestorePool]:
-    from app.task.MaaFW.tools import restore_service
+    from app.task.MaaFW.seams import restore_service
     from app.utils.common.config.restore import ConfigRestorePool
 
     return [
@@ -190,7 +190,7 @@ def build_m9a_config_handler() -> ScriptConfigHandler:
 
     from app.models.config import M9AConfig
     from app.task.M9A.registration import M9A_OWNER
-    from app.task.MaaFW.tools.embedded.config_handler import (
+    from app.task.MaaFW.seams.config_handler import (
         build_maafw_config_handler,
     )
 

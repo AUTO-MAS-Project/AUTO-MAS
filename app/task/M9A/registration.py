@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 from app.models.config import M9AConfig
 from app.task.M9A.rules import M9A_PLAN_RULES, TYPE_KEY, is_m9a_project
 from app.task.MaaFW.blocks.maafw_project_update.host import owners
-from app.task.MaaFW.owner_entry import BuiltinConfigOwner
+from app.task.MaaFW.seams.owner_entry import BuiltinConfigOwner
 from app.task.registration import ScriptRegistration
 
 if TYPE_CHECKING:

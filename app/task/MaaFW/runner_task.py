@@ -183,6 +183,19 @@ from app.task.MaaFW.blocks.maafw_runner.host.signal_notice import (
     SIGNAL_USER_MESSAGES,
     MaaFWSignalTracker,
 )
+from app.task.MaaFW.seams.host_client import (
+    WORKSTATION_LOCKED_MESSAGE,
+    open_emulator_for_run,
+    script_adb_env,
+    workstation_lock_reason,
+)
+from app.task.MaaFW.seams.host_version import host_client_version
+from app.task.MaaFW.seams.option_secrets import (
+    DPAPI_SECRET_OPENER,
+    open_task_snapshot,
+    script_task_snapshots,
+    user_task_snapshot,
+)
 from app.task.run_flow import (
     begin_attempt,
     point,
@@ -195,20 +208,6 @@ from app.utils.common.process.scope import (
     current_process_scope,
 )
 from app.utils.common.process.session import desktop_process_target
-
-from .host_client import (
-    WORKSTATION_LOCKED_MESSAGE,
-    open_emulator_for_run,
-    script_adb_env,
-    workstation_lock_reason,
-)
-from .host_version import host_client_version
-from .option_secrets import (
-    DPAPI_SECRET_OPENER,
-    open_task_snapshot,
-    script_task_snapshots,
-    user_task_snapshot,
-)
 
 logger = get_logger("MaaFW 插件自动代理")
 
