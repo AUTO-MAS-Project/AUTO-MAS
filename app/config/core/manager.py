@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import os
 import threading
 import weakref
@@ -20,7 +21,7 @@ from uuid import UUID, uuid4
 from app.utils import get_logger
 from app.utils import io as _utils_io
 
-from ..errors import ConfigAggregateError, ConfigPersistenceError
+from ..errors import ConfigAggregateError, ConfigPersistenceError, ReportableError
 
 logger = get_logger("配置持久化")
 trigger_logger = get_logger("配置触发器")
@@ -147,6 +148,20 @@ class TriggerUnavailable(RuntimeError):
 class TriggerResult:
     state: BackgroundTaskState
     error_code: str | None = None
+    # 仅 ReportableError 填写：写给用户的原因及其附加信息（已保证可 JSON 序列化）。
+    message: str | None = None
+    detail: dict[str, Any] | None = None
+
+
+def _reportable(error: BaseException | None) -> tuple[str | None, dict | None]:
+    """取出可展示异常的原因；其他异常不外露文本，只留类名给 ``error_code``。"""
+    if not isinstance(error, ReportableError):
+        return None, None
+    try:
+        detail = json.loads(json.dumps(error.payload, default=str))
+    except (TypeError, ValueError):
+        detail = None
+    return error.message, detail if isinstance(detail, dict) else None
 
 
 @dataclass
@@ -370,11 +385,12 @@ class ConfigManager:
             error_code = (
                 type(outcome.error).__name__ if outcome.error is not None else None
             )
+            message, detail = _reportable(outcome.error)
             with self.runtime_transaction(entry):
                 target._trigger_uids.pop(field)
                 self._triggers.pop(handle.uid)
                 self._trigger_results[handle.uid] = TriggerResult(
-                    outcome.state, error_code
+                    outcome.state, error_code, message, detail
                 )
                 if len(self._trigger_results) > 200:
                     self._trigger_results.popitem(last=False)

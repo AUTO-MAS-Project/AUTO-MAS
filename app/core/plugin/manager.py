@@ -634,10 +634,13 @@ class _PluginManager:
                 await record.commit()
             # ── 上游 DFS ──
             path = [*path_list, uid_s]
+            # 「重载本项」语境只属于本项：新版本新依赖了一个停着的上游时，上游是一次普通启用，
+            # 否则它会停在「已停用」却挂着实例（RELOAD 语境下状态留给父操作收尾）。
+            up_ctx = LifecycleContext.NORMAL if ctx == LifecycleContext.RELOAD else ctx
             for dep_record in ups:
                 dep_id = dep_record.info.plugin_name
                 deps[dep_id] = await self.enable(
-                    dep_record, held=True, dep_path=path, ctx=ctx
+                    dep_record, held=True, dep_path=path, ctx=up_ctx
                 )
 
             # ── 激活配置根（若有）──
@@ -732,6 +735,15 @@ class _PluginManager:
         """递归禁用仍启用的下游，返回本次实际拆卸的完整级联树。"""
         if not held:
             async with self._hold(), self._pause_activity(record):
+                # 级联停用前对整棵要拆的树一起预检：下游的拒绝不能等到兄弟分支已经拆完、
+                # 托管已经删掉之后才冒出来，再落进上游的失败分支。
+                if (
+                    record.info.state == PluginState.ENABLED
+                    and record._plugin_cls is not None
+                ):
+                    await self._precheck_teardown(
+                        self._teardown_tree(record, enabled_only=True)
+                    )
                 return await self.disable(record, held=True, dep_path=dep_path, ctx=ctx)
 
         path_list = list(dep_path or [])
@@ -853,6 +865,9 @@ class _PluginManager:
         """DFS 释放插件运行时；卸包入口可保留注册项，待发行包与配置删除成功后再移除。"""
         if not held:
             async with self._hold(), self._pause_activity(record):
+                await self._precheck_teardown(
+                    self._teardown_tree(record, enabled_only=False)
+                )
                 return await self.unload(
                     record,
                     held=True,
@@ -953,10 +968,9 @@ class _PluginManager:
                 from app.core import Config
 
                 # 重载会替换整棵实际拆卸树的实例，先检查所有适配器，避免拆到一半才遇到锁。
-                for uid in owners:
-                    plugin = Config.plugin_registry[uid]._plugin
-                    if isinstance(plugin, (ScriptAdapterPlugin, GameAdapterPlugin)):
-                        plugin.precheck_locks()
+                await self._precheck_teardown(
+                    [Config.plugin_registry[uid] for uid in owners]
+                )
                 return await self.reload(record, held=True, dep_path=dep_path)
 
         path_list = list(dep_path or [])
@@ -1022,6 +1036,8 @@ class _PluginManager:
             loader.clear(record)
             cls = loader.load(record)
             record._plugin_cls = cls
+            # 新类的 requires / wants 写在暂存区；先提交，启用时的上游求解才看得到新版本的依赖。
+            await record.commit()
             if want_enabled:
                 await self.enable(
                     record,
@@ -1193,10 +1209,11 @@ class _PluginManager:
                 else contextlib.nullcontext(set())
             )
             async with pause as owners:
-                for uid in owners:
-                    plugin = Config.plugin_registry[uid]._plugin
-                    if isinstance(plugin, (ScriptAdapterPlugin, GameAdapterPlugin)):
-                        plugin.precheck_locks()
+                await self._precheck_teardown(
+                    [Config.plugin_registry[uid] for uid in owners]
+                )
+                # 装包可能按 Requires-Dist 连带装上别的插件，记下装包前已登记的名字。
+                before = {r.info.plugin_name for r in Config.plugin_registry.values()}
                 restart_required = await uv_tool.install(
                     requirement,
                     plugin_name=plugin_id,
@@ -1225,6 +1242,18 @@ class _PluginManager:
                 ):
                     raise PluginPrecheckError("发现的插件与已验证的安装发行包不一致")
                 try:
+                    # 先加载本次新出现的依赖插件（只加载不启用），目标启用时才找得到上游提供者；
+                    # 否则装完直接启用会报「所需服务无提供者」，要重启后端才行。
+                    created = [
+                        r
+                        for r in Config.plugin_registry.values()
+                        if r.info.plugin_name not in before
+                        and r.uid != record.uid
+                        and r._project_dir is not None
+                        and r._plugin_cls is None
+                    ]
+                    for dep in sorted(created, key=lambda r: r.info.plugin_name):
+                        await self.load(dep, held=True)
                     if record._plugin_cls is not None:
                         result = await self.reload(record, held=True)
                     else:
@@ -1249,6 +1278,9 @@ class _PluginManager:
         async with self._hold(), self._pause_activity(record):
             name = record.info.plugin_name
             package = record.info.package_name or name
+            await self._precheck_teardown(
+                self._teardown_tree(record, enabled_only=False)
+            )
             deps = await self.unload(record, held=True, remove_record=False)
             from app.core.config import Config
 
@@ -1480,9 +1512,90 @@ class _PluginManager:
             out.append(dep)
         return out
 
-    def disable_impact(self, record: PluginRecord) -> list[Literal["scripts", "games"]]:
+    def _teardown_tree(
+        self, root: PluginRecord, *, enabled_only: bool
+    ) -> list[PluginRecord]:
+        """根加全部传递下游，顺序同级联。``enabled_only`` 对应停用 / 重载只拆启用中的下游。"""
+        out: list[PluginRecord] = []
+        seen: set[UUID] = set()
+        pending = [root]
+        while pending:
+            current = pending.pop(0)
+            if current.uid in seen:
+                continue
+            seen.add(current.uid)
+            out.append(current)
+            pending.extend(
+                dep
+                for dep in self._downstream(current)
+                if not enabled_only or dep.info.state == PluginState.ENABLED
+            )
+        return out
+
+    async def _precheck_teardown(self, records: Sequence[PluginRecord]) -> None:
+        """拆卸前对整棵树问一遍「能不能拆」，收集全部原因后一次拒绝；任何实例都还没动。"""
+        blockers: list[dict[str, str]] = []
+        for record in records:
+            plugin = record._plugin
+            if plugin is None:
+                continue
+            name = record.info.plugin_name
+            if isinstance(plugin, (ScriptAdapterPlugin, GameAdapterPlugin)):
+                try:
+                    plugin.precheck_locks()
+                except PluginPrecheckError as exc:
+                    blockers.append({"plugin": name, "reason": exc.message})
+            # 插件自己的在途工作（运行、更新作业、准备环境）不对应托管锁，由它说明能否拆。
+            try:
+                reasons = await plugin.teardown_blockers()
+            except Exception as exc:
+                logger.exception(f"插件拆卸预检出错: {name}")
+                reasons = [f"预检出错：{exc}"]
+            blockers.extend(
+                {"plugin": name, "reason": str(reason)} for reason in reasons or ()
+            )
+        if blockers:
+            raise PluginPrecheckError(
+                "；".join(f"插件 `{b['plugin']}`：{b['reason']}" for b in blockers),
+                payload={"blockers": blockers},
+            )
+
+    def dependency_view(self, record: PluginRecord) -> dict[str, list[str]]:
+        """只读的依赖关系：直接上游、缺提供者的服务，以及停用 / 卸载会一并拆掉的插件。"""
+        depends_on: list[str] = []
+        missing: list[str] = []
+        for service in record.info.requires:
+            provider = self._provider(service)
+            if provider is None:
+                if service not in missing:
+                    missing.append(service)
+            elif provider.uid != record.uid:
+                name = provider.info.plugin_name
+                if name not in depends_on:
+                    depends_on.append(name)
+        disable_cascade = (
+            [
+                r.info.plugin_name
+                for r in self._teardown_tree(record, enabled_only=True)[1:]
+            ]
+            if record.info.state == PluginState.ENABLED
+            else []
+        )
+        return {
+            "dependsOn": depends_on,
+            "missingServices": missing,
+            "disableCascade": disable_cascade,
+            "uninstallCascade": [
+                r.info.plugin_name
+                for r in self._teardown_tree(record, enabled_only=False)[1:]
+            ],
+        }
+
+    def disable_impact(
+        self, record: PluginRecord
+    ) -> list[Literal["scripts", "games", "plans"]]:
         """汇总停用本插件及级联下游时会删除的配置领域，供前端确认。"""
-        impact: set[Literal["scripts", "games"]] = set()
+        impact: set[Literal["scripts", "games", "plans"]] = set()
         visited: set[UUID] = set()
         pending = [record]
         while pending:
@@ -1494,6 +1607,10 @@ class _PluginManager:
             if cls is not None:
                 if issubclass(cls, ScriptAdapterPlugin):
                     impact.add("scripts")
+                    # 声明了计划类型的专项停用时，计划类型连同全部计划表一起删除。
+                    decl = getattr(cls, "decl", None)
+                    if getattr(decl, "plan_type", None) is not None:
+                        impact.add("plans")
                 if issubclass(cls, GameAdapterPlugin):
                     impact.add("games")
             pending.extend(self._downstream(current))

@@ -3,8 +3,21 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
+
+
+class ReportableError(Exception):
+    """文本写给用户看的异常：触发器结果把 ``message`` 与 ``payload`` 交给界面。
+
+    只有显式继承本类的异常才对外显示原文；其他异常只报类名，避免把路径等内部信息带出去。
+    """
+
+    def __init__(self, message: str, *, payload: dict[str, Any] | None = None) -> None:
+        """保存面向用户的消息和可序列化的附加信息。"""
+        super().__init__(message)
+        self.message = message
+        self.payload = payload or {}
 
 
 class ConfigError(Exception):

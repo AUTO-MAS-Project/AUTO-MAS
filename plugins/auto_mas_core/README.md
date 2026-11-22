@@ -53,7 +53,21 @@ class PLUGIN(BasePlugin):
 
 宿主在 `pre_enable()` 前绑定 `self.services` 和 `self.background_tasks`。后台工作使用当前实例的任务组。停用、卸载和重载时，宿主关闭新调用准入，等待在途调用及真实背景工作结束；插件负责其外部进程、订阅和私有资源。
 
-服务通过 `provides_services` 声明，使用 `self.services.get(name)` 或 `require(name)` 消费，提供者启用早于依赖它的插件。HTTP 使用 `plugin_route` 声明，宿主在执行前绑定调用参数，业务异常不会触发二次调用。
+服务通过 `provides_services` 声明，使用 `self.services.get(name)` 或 `require(name)` 消费，提供者启用早于依赖它的插件。
+
+**插件依赖插件。** 依赖别的插件时，在 `requires` 写对方提供的服务名，并在 `pyproject.toml` 的 `dependencies` 写对方的发行包。从插件中心安装时，宿主会把按 `Requires-Dist` 一起装上的新插件先加载（只加载、不启用），再加载或重载目标；启用目标时沿 `requires` 先启用上游，装完不用重启。插件注册表（`/api/plugin_registry/get`）的每条记录给出 `dependsOn`（直接上游）、`missingServices`（找不到提供者的服务）、`disableCascade`（停用或重载会一并拆掉的插件）和 `uninstallCascade`（卸载会一并卸掉的插件）；`disableImpact` 列出会被删除的配置领域，声明了 `plan_type` 的专项含 `plans`。
+
+**失败原因。** 插件命令（启用、停用、重载、卸载、安装）失败时，界面显示 `PluginError`（及其子类）的消息，`payload` 一并返回。宿主自己的拒绝原因、钩子里抛出的 `PluginError`，以及生命周期执行阶段被宿主包成 `PluginOperationError` 的原异常文本都会原样显示，所以钩子里的异常消息要写给用户看，不要带密钥或隐私。不是 `PluginError` 的异常直接冒出命令时只报类名。依赖无法共同满足时，消息会列出 uv 诊断里涉及的包。HTTP 使用 `plugin_route` 声明，宿主在执行前绑定调用参数，业务异常不会触发二次调用。
+
+**拆卸前的拒绝出口。** 停用、重载、卸载、卸包和安装升级会连带拆掉依赖本插件的全部下游。宿主在动任何实例之前，先对整棵要拆的树一起预检：适配器的托管被任务锁住，或任一插件的 `teardown_blockers()` 返回非空，整个操作被拒绝，界面显示每条原因，树上的插件和托管都保持原样。有在途工作而又不对应托管锁的插件（运行、手动更新、准备环境等）覆写这个方法：
+
+```python
+async def teardown_blockers(self) -> list[str]:
+    n = len(self._running)
+    return [f"有 {n} 个运行未结束"] if n else []
+```
+
+调用时整棵树的调用准入已关闭、在途调用已结束。方法只读、要快，不得发起生命周期操作；抛出异常也按拒绝处理。默认返回空列表。`pre_disable()` 等钩子的调用时机不变：它们在级联途中才被调用，拒绝会落进上游的失败分支，需要整体拒绝时用本方法。
 
 `on_teardown()` 用于程序退出清理，保留用户的启用选择。普通禁用沿用类型移除语义；适配器重载通过 `reload_type` 保留配置身份与引用。
 

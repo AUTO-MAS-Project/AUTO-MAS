@@ -129,6 +129,7 @@ async def install(
 
     from . import environment
     from .precheck import (
+        conflict_summary,
         host_constraints,
         host_dependencies,
         plugin_targets,
@@ -160,8 +161,11 @@ async def install(
             destination=None if dry_run else prepared,
         )
         if not result.ok:
+            summary = conflict_summary(result)
             raise PluginError(
-                "插件与共享环境的依赖无法共同满足", payload={"detail": result.detail}
+                "插件与共享环境的依赖无法共同满足"
+                + (f"：涉及 {summary}" if summary else ""),
+                payload={"detail": result.detail, "conflicts": list(result.conflicts)},
             )
         if dry_run:
             return False
@@ -239,6 +243,7 @@ async def prepare_environment() -> None:
     from ..types import CORE_DISTRIBUTION_NAME, CORE_PLUGIN_NAME
     from . import environment
     from .precheck import (
+        conflict_summary,
         host_constraints,
         host_dependencies,
         plugin_targets,
@@ -312,7 +317,12 @@ async def prepare_environment() -> None:
                 destination=prepared,
             )
         if not result.ok:
-            raise PluginError(f"插件自动升级失败：{result.detail}")
+            summary = conflict_summary(result)
+            raise PluginError(
+                f"插件自动升级失败：{result.detail}"
+                + (f"（涉及 {summary}）" if summary else ""),
+                payload={"conflicts": list(result.conflicts)},
+            )
 
         # 源码覆盖只选择当前实现，不能顺带卸载被覆盖的发行包；源码移除后仍可回落。
         environment.preserve_local_packages(target, prepared)
