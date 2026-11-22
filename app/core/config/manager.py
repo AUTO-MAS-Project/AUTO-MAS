@@ -295,11 +295,14 @@ class AppConfig:
         self._legacy_emulators = ConfigCollection[EmulatorConfig].build(
             [EmulatorConfig]
         )
+        # 所属插件没装上 / 没启用的托管与计划原样保留（旁挂区），插件恢复后还原。
         self.PlanConfig = ConfigCollection[PlanConfigType].build(
-            [item["config_class"] for item in PLAN_BOOK.values()], name="PlanConfig"
+            [item["config_class"] for item in PLAN_BOOK.values()],
+            name="PlanConfig",
+            keep_unknown_types=True,
         )
         self.ScriptConfig = ConfigCollection[ScriptConfigType].build(
-            list(CLASS_BOOK.values()), name="ScriptConfig"
+            list(CLASS_BOOK.values()), name="ScriptConfig", keep_unknown_types=True
         )
         self.QueueConfig = ConfigCollection[QueueConfig].build(
             [QueueConfig], name="QueueConfig"
@@ -322,6 +325,9 @@ class AppConfig:
         self._m9a_managed = None
         # ACTIVE 也可能是部分激活的结果；只有加载成功返回后才允许按引用回收。
         self._script_configs_loaded = False
+        # 启动时没装上、没启用的专项插件：插件名 → 原因，进启动提示。
+        self._adapter_plugin_failures: dict[str, str] = {}
+        self._managed_restore_tasks: set[asyncio.Task] = set()
         from app.task.MaaFW.blocks.maafw_project_update.host import (
             owners as maafw_owners,
         )
@@ -330,9 +336,9 @@ class AppConfig:
         )
 
         # 托管属主的回答只在托管完整加载之后算数：信号由宿主注入项目更新一侧。
-        maafw_owners.set_loaded_signal(self.script_config_loaded_intact)
+        maafw_owners.set_loaded_signal(self.managed_configs_loaded)
         self.maafw_maintenance = MaaFWMaintenanceService(
-            scripts_loaded_intact=self.script_config_loaded_intact,
+            scripts_loaded_intact=self.managed_configs_loaded,
             retention_days=lambda: self.setting.Function.HistoryRetentionTime,
             process_started_at=_PROCESS_STARTED_AT,
         )
@@ -609,7 +615,9 @@ class AppConfig:
             required_game_plugins,
         )
 
-        required.update(required_game_plugins(self.config_path))
+        required_adapters = dict(required)
+        required_games = required_game_plugins(self.config_path)
+        required.update(required_games)
         prepare_runtime = prepare_plugins
 
         async def migrate_games() -> None:
@@ -628,7 +636,20 @@ class AppConfig:
             """装配运行环境并补齐已有配置所需的插件，旧格式转换只在升级阶段执行。"""
             if prepare_runtime is not None:
                 await prepare_runtime()
-            if required:
+            if version == "v2.2":
+                # 数据已是插件化格式：专项插件装不上只让它的托管旁挂，不挡启动；
+                # 游戏集合没有旁挂区，游戏插件仍然必须装上。
+                if required_games:
+                    await install_adapter_plugins(required_games)
+                for name, package in required_adapters.items():
+                    try:
+                        await install_adapter_plugin(name, package)
+                    except Exception as error:  # noqa: BLE001
+                        logger.opt(exception=True).warning(
+                            f"专项插件 {name} 没能装上或启用，它的托管先原样保留：{error}"
+                        )
+                        self._adapter_plugin_failures[name] = str(error)
+            elif required:
                 await install_adapter_plugins(required)
             if version != "v2.2":
                 prepare_plugin_documents(self.config_path)
@@ -755,6 +776,22 @@ class AppConfig:
                     await node.activate(fast_init=True)
                 if key == "ScriptConfig":
                     self._script_configs_loaded = True
+        if version != "v2.2" and (
+            self.ScriptConfig.unresolved() or self.PlanConfig.unresolved()
+        ):
+            # 旧数据升级要靠插件在场转换，版本号不能带着没解析的成员推进；
+            # 旁挂成员照旧原样落盘，中止不丢数据。
+            types = sorted(
+                {
+                    item.type_name
+                    for collection in (self.ScriptConfig, self.PlanConfig)
+                    for item in collection.unresolved()
+                }
+            )
+            raise RuntimeError(
+                "配置升级时有类型无法识别，所属插件不可用：" + "、".join(types)
+            )
+        self._notice_unavailable_managed()
         with startup_stage("后端/配置/专项初始化与保存"):
             if version != "v2.2":
                 from app.core.config.plugin_upgrade import migrate_adapter_configs
@@ -763,6 +800,7 @@ class AppConfig:
             for script in self.ScriptConfig.values():
                 await self._initialize_script_config(script)
             await config_manager.flush()
+        self._connect_managed_restore()
         if version not in {"v2.0", "v2.1", "v2.2"}:
             # 本次迁移、全部配置激活及最终保存均成功后，才标记 v2.0。
             with closing(sqlite3.connect(self.database_path)) as database:
@@ -1332,6 +1370,15 @@ class AppConfig:
         """导出当前配置与历史的一致快照后生成整包备份。"""
         from app.core.config.backup import create_data_backup
 
+        unavailable = [*self.unavailable_scripts(), *self.unavailable_plans()]
+        if unavailable:
+            # 旁挂条目按盘上原样写进备份，加密字段是本机密文，换机或换用户恢复后解不开。
+            logger.warning(
+                "备份里有所属插件不可用的配置，其中加密字段只能在本机本用户下恢复："
+                + "、".join(
+                    f"{i['typeLabel']} - {i['name'] or i['uid']}" for i in unavailable
+                )
+            )
         return await create_data_backup()
 
     async def update_script(
@@ -1360,6 +1407,10 @@ class AppConfig:
         logger.info(f"删除托管配置: {script_id}")
 
         uid = uuid.UUID(script_id)
+
+        if self.ScriptConfig.is_unresolved(uid):
+            await self._del_unavailable_script(uid)
+            return
 
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"托管 {script_id} 正在运行, 无法删除")
@@ -1390,12 +1441,36 @@ class AppConfig:
         if handler is not None and handler.cleanup_script_files is not None:
             await handler.cleanup_script_files(str(uid))
 
+    async def _del_unavailable_script(self, uid: uuid.UUID) -> None:
+        """删除所属插件不可用的托管：插件的删除回调拿不到，只删队列引用、配置和数据目录。"""
+
+        for queue in self.QueueConfig.values():
+            doomed = [
+                key
+                for key, value in queue.QueueItem.items()
+                if value.Info.ScriptId == uid
+            ]
+            for key in doomed:
+                queue.QueueItem.remove(key)
+                await queue.QueueItem.commit()
+        await self.ScriptConfig.discard_unresolved(uid)
+        script_data_dir = self.data_path / f"{uid}"
+        if script_data_dir.exists():
+            await asyncio.to_thread(_utils_io.force_rmtree, script_data_dir)
+
     async def reorder_script(self, index_list: list[str]) -> None:
         """重新排序托管"""
 
         logger.info(f"重新排序托管: {index_list}")
 
-        self.ScriptConfig.set_order([uuid.UUID(_) for _ in index_list])
+        # 旁挂托管不参与排序，落盘时按原来的前驱定位。
+        self.ScriptConfig.set_order(
+            [
+                uid
+                for uid in map(uuid.UUID, index_list)
+                if not self.ScriptConfig.is_unresolved(uid)
+            ]
+        )
         await self.ScriptConfig.commit()
 
     async def get_user(
@@ -1953,6 +2028,11 @@ class AppConfig:
 
         plan_uid = uuid.UUID(plan_id)
 
+        if self.PlanConfig.is_unresolved(plan_uid):
+            # 所属插件不可用：引用它的托管同属该插件、也在旁挂区，只删计划表本身。
+            await self.PlanConfig.discard_unresolved(plan_uid)
+            return
+
         plan_config = self.PlanConfig[plan_uid]
         if isinstance(plan_config, PlanEntry):
             # 插件计划引用的重校验、默认值与锁保护由 ref 信号在同一删除事务中处理。
@@ -2026,7 +2106,13 @@ class AppConfig:
 
         logger.info(f"重新排序计划表: {index_list}")
 
-        self.PlanConfig.set_order(list(map(uuid.UUID, index_list)))
+        self.PlanConfig.set_order(
+            [
+                uid
+                for uid in map(uuid.UUID, index_list)
+                if not self.PlanConfig.is_unresolved(uid)
+            ]
+        )
         await self.PlanConfig.commit()
 
     async def add_queue(
@@ -2714,10 +2800,19 @@ class AppConfig:
         logger.info("开始获取托管下拉框信息")
         data = [{"label": "未选择", "value": "-"}]
         for uid, script in self.ScriptConfig.items():
+            type_name = type(script).__name__
             data.append(
                 {
-                    "label": f"{_utils_constants.TYPE_BOOK[type(script).__name__]} - {entry_name(script)}",
+                    "label": f"{_utils_constants.TYPE_BOOK.get(type_name, type_name)} - {entry_name(script)}",
                     "value": str(uid),
+                }
+            )
+        # 所属插件不可用的托管也列出，队列里引用它的项才显示得出名字。
+        for item in self.unavailable_scripts():
+            data.append(
+                {
+                    "label": f"{item['typeLabel']} - {item['name']}（所属插件不可用）",
+                    "value": item["uid"],
                 }
             )
         logger.success("托管下拉框信息获取成功")
@@ -2892,10 +2987,16 @@ class AppConfig:
             }
         )
 
-    def script_config_loaded_intact(self) -> bool:
-        """确认托管集合加载成功；空表再核对持久文件，避免把损坏配置当成无引用。"""
+    def managed_configs_loaded(self) -> bool:
+        """托管配置是否已完整加载：只有它为真时，按托管集合判「不在了」才算数。
+
+        激活成功返回过、没有因所属插件不可用而旁挂的托管；空表再核对持久文件，
+        避免把损坏配置当成无引用。瞬时值：每轮清理前现取，为假时整轮跳过。
+        """
 
         if not self._script_configs_loaded:
+            return False
+        if self.ScriptConfig.unresolved():
             return False
         if len(self.ScriptConfig) > 0:
             return True
@@ -2907,6 +3008,141 @@ class AppConfig:
         except (OSError, ValueError):
             return False
         return not bool(data.get("order"))
+
+    def script_config_loaded_intact(self) -> bool:
+        """旧名，同 ``managed_configs_loaded``；随内置 MFW 一起删。"""
+        return self.managed_configs_loaded()
+
+    @staticmethod
+    def _unavailable_items(collection: ConfigCollection) -> list[dict[str, Any]]:
+        """旁挂成员给接口和提示用的描述；名字从盘上原始字典里取。"""
+        from app.core.config.plugin_upgrade import _ADAPTER_PLUGINS
+
+        items = []
+        for item in collection.unresolved():
+            payload = item.payload
+            info = payload.get("Info") or payload.get("info") or {}
+            name = (
+                info.get("Name", info.get("name", "")) if isinstance(info, dict) else ""
+            )
+            plugin = _ADAPTER_PLUGINS.get(item.type_name)
+            items.append(
+                {
+                    "uid": str(item.uid),
+                    "type": item.type_name,
+                    "typeLabel": _utils_constants.TYPE_BOOK.get(
+                        item.type_name, item.type_name
+                    ),
+                    "name": "" if name is None else str(name),
+                    "plugin": plugin[0] if plugin is not None else None,
+                    "reason": (
+                        "load_failed"
+                        if item.reason == "load_failed"
+                        else "plugin_unavailable"
+                    ),
+                    "detail": item.detail,
+                }
+            )
+        return items
+
+    def unavailable_scripts(self) -> list[dict[str, Any]]:
+        """所属插件不可用、原样保留着的托管。"""
+        return self._unavailable_items(self.ScriptConfig)
+
+    def unavailable_plans(self) -> list[dict[str, Any]]:
+        """所属插件不可用、原样保留着的计划表。"""
+        return self._unavailable_items(self.PlanConfig)
+
+    def _notice_unavailable_managed(self) -> None:
+        """专项插件没装上、托管被原样保留时，启动提示里列出来。"""
+        scripts = self.unavailable_scripts()
+        plans = self.unavailable_plans()
+        if not (scripts or plans or self._adapter_plugin_failures):
+            return
+        lines = [
+            f"专项插件 {name} 没能装上或启用：{reason}"
+            for name, reason in self._adapter_plugin_failures.items()
+        ]
+        if scripts or plans:
+            lines.append("以下配置所属插件不可用，已原样保留；插件恢复后会自动还原：")
+            lines.extend(
+                f"{item['typeLabel']} - {item['name'] or item['uid']}"
+                for item in (*scripts, *plans)
+            )
+        self.startup_notices.append(
+            {"level": "warning", "title": "部分托管所属插件不可用", "lines": lines}
+        )
+
+    def _connect_managed_restore(self) -> None:
+        """插件运行中变为已启用后，把它的旁挂托管还原回来（只在已启用之后做）。"""
+        if getattr(self, "_managed_restore_receiver", None) is not None:
+            return
+        from app.plugin.signals import capabilities_changed
+
+        def on_capabilities_changed(sender, *, enabled: bool = False, **_kw) -> None:
+            if not enabled:
+                return
+            if not (self.ScriptConfig.unresolved() or self.PlanConfig.unresolved()):
+                return
+            task = asyncio.get_running_loop().create_task(
+                self.restore_unavailable_managed()
+            )
+            self._managed_restore_tasks.add(task)
+
+            def done(finished: asyncio.Task) -> None:
+                self._managed_restore_tasks.discard(finished)
+                if not finished.cancelled() and finished.exception() is not None:
+                    logger.opt(exception=finished.exception()).warning(
+                        "还原所属插件已恢复的托管失败"
+                    )
+
+            task.add_done_callback(done)
+
+        self._managed_restore_receiver = on_capabilities_changed
+        capabilities_changed.connect(on_capabilities_changed, weak=False)
+
+    async def restore_unavailable_managed(self) -> list[uuid.UUID]:
+        """把类型此刻已登记的旁挂计划表与托管还原成真成员，返回还原的托管 uid。"""
+        lock = getattr(self, "_managed_restore_lock", None)
+        if lock is None:
+            lock = self._managed_restore_lock = asyncio.Lock()
+        restored_scripts: list[uuid.UUID] = []
+        async with lock:
+            # 托管可能引用计划表，先还原计划表。
+            for collection in (self.PlanConfig, self.ScriptConfig):
+                if collection.activation_state != NodeState.ACTIVE:
+                    return restored_scripts
+                registered = collection.entry_types
+                names = dict.fromkeys(
+                    item.type_name
+                    for item in collection.unresolved()
+                    if item.type_name in registered
+                )
+                for type_name in names:
+                    restored = await collection.materialize_unresolved(type_name)
+                    if collection is self.ScriptConfig:
+                        restored_scripts.extend(restored)
+                    if restored:
+                        logger.info(
+                            f"所属插件已恢复，还原 {len(restored)} 条 {type_name}"
+                        )
+                for item in collection.unresolved():
+                    if item.type_name in registered:
+                        logger.warning(
+                            f"还原失败，继续原样保留：{item.type_name} {item.uid}"
+                            f"（{item.detail}）"
+                        )
+            for uid in restored_scripts:
+                script = self.ScriptConfig.get(uid)
+                if script is None:
+                    continue
+                try:
+                    await self._initialize_script_config(script)
+                except Exception as error:  # noqa: BLE001
+                    logger.opt(exception=True).warning(
+                        f"还原后的托管初始化失败（{uid}）：{error}"
+                    )
+        return restored_scripts
 
     def clean_debug_diagnostics(self) -> None:
         """清理 debug 目录下过期的失败诊断文件。

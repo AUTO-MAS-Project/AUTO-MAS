@@ -221,6 +221,10 @@ class _DesktopSessionLifecycle:
                                 Config.ScriptConfig.get(row.Info.ScriptId)
                                 for row in queue.QueueItem.values()
                                 if row.Info.ScriptId != "-"
+                                # 所属插件不可用的托管运行时会被跳过，预检同样不算它。
+                                and not Config.ScriptConfig.is_unresolved(
+                                    row.Info.ScriptId
+                                )
                             ]
                             if queue is not None
                             else [script]

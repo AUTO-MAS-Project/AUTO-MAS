@@ -105,6 +105,23 @@ point(self, "special", state="matched", key="daily_reward")  # 在现有检测�
 
 展开类可以继承 `UserExpander[MyScriptEntry]`，使 `script_config` 保留专项配置类型。仓库的 `pyrightconfig.json` 已声明 SDK 源码路径；包内其他模块使用相对导入，独立插件工程则在自己的开发环境安装 SDK。
 
+## 托管配置的加载状态
+
+专项插件没装上、没加载起来或没启用时，它的托管和计划表不会被删掉：宿主照常启动，把这些条目原样留在配置集合的旁挂区，照旧写回盘上，界面标「所属插件不可用」。插件之后在运行中落到已启用，宿主会把它们还原回原来的位置；下次启动插件正常时直接加载。旁挂区里的条目对 `Config.ScriptConfig` / `Config.PlanConfig` 的 `keys()`、`values()`、`get()`、`in` 都不可见，按 uid 取会抛继承 `KeyError` 的 `UnresolvedEntryError`。只读查询用集合的 `unresolved()` 和 `is_unresolved(uid)`。
+
+凡是按「托管集合里有没有」来判断某样东西已经没人用、可以清理的（项目副本、环境、缓存目录等），必须先看 `Config.managed_configs_loaded()`：
+
+```python
+from auto_mas_core import Config
+
+if not Config.managed_configs_loaded():
+    return  # 托管没有完整加载，这一轮整轮跳过，不删任何东西
+```
+
+- 只有它为真时，按托管集合回答「不在了」才算数；为假时可能只是所属插件这次没加载起来。
+- 它是瞬时值，每一轮清理开始前现取，不要缓存；还原或删掉最后一条旁挂托管后会自动变真。
+- 没有变更通知：拿到假就跳过，等下一次触发（启动、删改托管）再判。
+
 ## 静态类型与开发环境
 
 SDK 顶层及 `host.*`、`utils`、`services`、`plugin` 的静态导出直接引用宿主的真实类型；运行时仍按需加载宿主能力。配置继承、泛型、装饰器和单例方法的类型不应通过动态 `__getattr__` 退化为 `Any`。

@@ -58,5 +58,20 @@ class ConfigAggregateError(ConfigError):
         super().__init__(detail or "操作失败")
 
 
+class UnresolvedEntryError(KeyError):
+    """按 uid 取到的是所属类型没登记、原样保留着的成员（所属插件不可用）。
+
+    继承 ``KeyError``：按「不存在」处理的调用方照旧走缺失分支。
+    """
+
+    def __init__(self, uid: UUID | str, type_name: str) -> None:
+        super().__init__(uid)
+        self.uid = uid
+        self.type_name = type_name
+
+    def __str__(self) -> str:
+        return f"所属插件不可用：{self.uid}（{self.type_name}）"
+
+
 # activate / commit / update 收集的错误列表元素类型（可嵌套聚合）
 type ConfigErrorList = list[Exception]

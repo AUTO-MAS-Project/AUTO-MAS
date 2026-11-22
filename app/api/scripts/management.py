@@ -42,6 +42,7 @@ from app.models.schema import (
     ConfigSnapshotOut,
     OutBase,
     ScriptDeleteIn,
+    UnavailableConfigItem,
     UserInBase,
 )
 from app.models.script_access import script_users
@@ -138,6 +139,10 @@ class ScriptIndexItem(BaseModel):
     activityGame: str | None = Field(
         default=None, description="对应的游戏活动标识，无游戏归属时为空"
     )
+    pluginAvailable: bool = Field(
+        default=True,
+        description="所属插件当前是否可用；插件托管的插件不在已启用状态时为 false",
+    )
 
 
 class ScriptCreateIn(BaseModel):
@@ -208,6 +213,10 @@ class ScriptGetOut(ConfigSnapshotOut):
             MSSConfig,
         ],
     ] = Field(..., description="托管数据字典, key来自于index列表的uid")
+    unavailable: List[UnavailableConfigItem] = Field(
+        default_factory=list,
+        description="所属插件不可用的托管，只在获取全部托管时给出；只能删除",
+    )
 
 
 class ScriptLockIn(UserInBase):
@@ -277,6 +286,25 @@ async def get_script_types() -> ScriptTypesOut:
 logger = get_logger("托管管理 API")
 
 
+def _plugin_available(config: object) -> bool:
+    """插件托管：有处于已启用状态、类型命中的声明才算可用（同运行时的分派判法）。"""
+    from app.core.plugin import Plugin
+    from app.models.config import ScriptEntry
+    from app.plugin.types import PluginState
+
+    if not isinstance(config, ScriptEntry):
+        return True
+    for record in Plugin.list_plugins():
+        decl = Plugin.script_types.get(record.uid)
+        if (
+            decl is not None
+            and record.info.state == PluginState.ENABLED
+            and isinstance(config, decl.script_type)
+        ):
+            return True
+    return False
+
+
 @router.post(
     "/add",
     tags=["Add"],
@@ -327,13 +355,24 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
             }
         )
         index = [
-            ScriptIndexItem(**item, activityGame=activity_games.get(item["type"]))
+            ScriptIndexItem(
+                **item,
+                activityGame=activity_games.get(item["type"]),
+                pluginAvailable=_plugin_available(
+                    Config.ScriptConfig[uuid.UUID(item["uid"])]
+                ),
+            )
             for item in index
         ]
         data = {
             uid: ConfigPayload[type(Config.ScriptConfig[uuid.UUID(uid)])](**cfg)
             for uid, cfg in data.items()
         }
+        unavailable = (
+            [UnavailableConfigItem(**item) for item in Config.unavailable_scripts()]
+            if script.scriptId is None
+            else []
+        )
     except Exception as e:
         logger.opt(exception=True).warning(f"get_script失败: {type(e).__name__}: {e}")
         return ScriptGetOut(
@@ -347,6 +386,7 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
     return ScriptGetOut(
         index=index,
         data=data,  # pyright: ignore[reportArgumentType]
+        unavailable=unavailable,
         uiSources=[
             uuid.UUID(script.scriptId) if script.scriptId else Config.ScriptConfig.uid
         ],
