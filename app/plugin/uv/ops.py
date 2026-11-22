@@ -15,7 +15,7 @@ import platform
 import shutil
 import sys
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -511,12 +511,81 @@ async def _solve_minimums(
     return result
 
 
-async def prepare_environment(minimums: Mapping[str, Version] | None = None) -> None:
+def _library_targets(
+    libraries: Sequence[str], existing: Mapping[str, str]
+) -> tuple[list[str], list[str]]:
+    """宿主内置托管要的库的求解目标：已装且满足的钉 ``==现版本``，其余照需求原样。
+
+    第二项是还没装上或版本不满足的需求。
+    """
+    targets, missing = [], []
+    for text in libraries:
+        requirement = Requirement(text)
+        name = canonicalize_name(requirement.name)
+        version = existing.get(name)
+        if version is not None and requirement.specifier.contains(
+            version, prereleases=True
+        ):
+            targets.append(f"{name}=={version}")
+        else:
+            targets.append(text)
+            missing.append(text)
+    return targets, missing
+
+
+async def _solve_libraries(
+    targets: list[str], missing: list[str], pins: list[str], prepared: Path
+):
+    """带上宿主内置托管要的库求解并装进候选目录；解不开或出错时返回 None。
+
+    库装不上不挡启动：调用方退回不带库的原有流程，用到它的功能运行时再报错。
+    """
+    from app.core import Config
+
+    from .precheck import conflict_summary, host_dependencies, resolve_environment
+
+    if missing:
+        logger.info(
+            "宿主内置托管要的库还没装上，一并装进插件环境：{}", "、".join(missing)
+        )
+    try:
+        result = await resolve_environment(
+            targets=targets,
+            core_version=Config.VERSION,
+            dependencies=host_dependencies(),
+            constraints=pins,
+            destination=prepared,
+            partial=True,
+        )
+    except Exception as error:  # noqa: BLE001
+        logger.opt(exception=True).warning(
+            "宿主内置托管要的库没装上，先照常启动，联网后重启会再装：{}", error
+        )
+        return None
+    if not result.ok:
+        summary = conflict_summary(result)
+        logger.warning(
+            "宿主内置托管要的库没装上，先照常启动：{}{}",
+            result.detail,
+            f"（涉及 {summary}）" if summary else "",
+        )
+        return None
+    return result
+
+
+async def prepare_environment(
+    minimums: Mapping[str, Version] | None = None,
+    libraries: Sequence[str] = (),
+) -> None:
     """首次导入前联合修复插件环境；校验成功后替换目录，不触发禁用或清配置。
 
     ``minimums``：存量配置要的插件（插件 ID → 版本下限）。已装版本低于下限时，这次
     求解带上下限，整族在任何插件模块导入前换成达标的版本；解不开时只记警告、按现有
     版本继续，没达标的插件由插件管理器这一轮不启用。
+
+    ``libraries``：宿主内置托管要的库（需求串，例如 MaaEnd 用的 MFW 解析库）。它们
+    不是插件，只作为求解目标装进同一个插件环境；已装且满足时不触发求解，装不上时
+    只记警告、照常启动。
     """
     from app.core import Config
     from app.utils.common.tools import to_pep440
@@ -573,7 +642,9 @@ async def prepare_environment(minimums: Mapping[str, Version] | None = None) -> 
     previous = target.with_suffix(".previous")
     # 环境没变也要求解：已装版本低于存量配置要的下限，不能被指纹短路。
     raised = _below_minimum(records, existing, minimums or {})
-    if unchanged and not raised:
+    # 宿主内置托管要的库：已装且满足就钉在现版本，指纹里的已装版本照常管住它。
+    pinned_libraries, missing = _library_targets(libraries, existing)
+    if unchanged and not raised and not missing:
         if previous.exists():
             shutil.rmtree(previous)
         return
@@ -585,7 +656,20 @@ async def prepare_environment(minimums: Mapping[str, Version] | None = None) -> 
         prepared = Path(temporary) / "site-packages"
         result = None
         if raised:
-            result = await _solve_minimums(targets, raised, pins, prepared, target)
+            result = await _solve_minimums(
+                [*targets, *libraries], raised, pins, prepared, target
+            )
+            if result is None:
+                if prepared.exists():
+                    shutil.rmtree(prepared)
+                if unchanged and not missing:
+                    if previous.exists():
+                        shutil.rmtree(previous)
+                    return
+        if result is None and libraries:
+            result = await _solve_libraries(
+                [*targets, *pinned_libraries], missing, pins, prepared
+            )
             if result is None:
                 if prepared.exists():
                     shutil.rmtree(prepared)

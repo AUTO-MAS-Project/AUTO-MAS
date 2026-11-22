@@ -243,11 +243,15 @@ class _PluginManager:
             # 只发现元数据；旧插件及其依赖在联合升级完成前不能进入导入环境。
             await discover.refresh(installed_path=site)
             minimums = self._startup_minimums()
+            libraries = self._startup_libraries()
+            requirements: dict[str, Any] = {}
             if minimums:
                 # 存量配置要的专项低于下限时，在任何插件模块导入前连同同族一起升上来。
-                await uv_tool.prepare_environment(minimums=minimums)
-            else:
-                await uv_tool.prepare_environment()
+                requirements["minimums"] = minimums
+            if libraries:
+                # 宿主内置托管要的库（例如 MaaEnd 用的 MFW 解析库）一起装进插件环境。
+                requirements["libraries"] = libraries
+            await uv_tool.prepare_environment(**requirements)
             uv_tool.site_dir()
             from app.core.config import Config
 
@@ -1684,6 +1688,18 @@ class _PluginManager:
         except Exception:
             logger.exception("读取存量配置要求的插件版本下限失败，按无下限启动")
             return {}
+
+    @staticmethod
+    def _startup_libraries() -> list[str]:
+        """配置里的宿主内置托管要装进插件环境的库；读不了配置时按没有处理。"""
+        from app.core.config import Config
+        from app.core.config.plugin_upgrade import required_host_libraries
+
+        try:
+            return required_host_libraries(Config.config_path)
+        except Exception:
+            logger.exception("读取宿主内置托管要的库失败，本次启动不补装")
+            return []
 
     def _below_minimum_family(self, minimums: dict[str, Version]) -> frozenset[str]:
         """已加载版本仍低于下限的插件，加上只为它们服务的上游，这一轮都不启用。

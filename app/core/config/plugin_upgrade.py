@@ -31,6 +31,12 @@ MAAFW_FAMILY_TYPE_NAMES = frozenset(
 )
 MAAFW_FAMILY_PLUGINS = frozenset({"maafw_adapter", "m9a_adapter", "mss_adapter"})
 _ADAPTER_PLUGIN_NAMES = frozenset(target[0] for target in _ADAPTER_PLUGINS.values())
+# 宿主内置托管要的库：托管类型 → 需求。它们不是插件，不进注册表，只随启动前的共享环境
+# 准备装进插件环境；只写下限，和依赖同一个库的插件按各自范围共存。
+_HOST_LIBRARIES = {
+    # MaaEnd 拼游戏启动设置要用 MFW 的 interface 解析库。
+    "MaaEndConfig": "auto-mas-maafw-interface>=0.2.0",
+}
 _MINIMUM_ADAPTER_VERSIONS = {
     "maa_adapter": Version("0.1.4"),
     "mumu_adapter": Version("0.1.1"),
@@ -48,17 +54,27 @@ def adapter_package(config_type: str) -> str | None:
     return target[1] if target else None
 
 
-def required_adapter_plugins(config_path: Path) -> dict[str, str]:
-    """按旧托管及计划索引识别升级所需插件，不扫描备份或业务字段中的字符串。"""
-    required = {}
+def _index_types(config_path: Path) -> list[str]:
+    """托管与计划集合索引里各条目的类型名，按文件和条目顺序；不读业务字段。"""
+    types = []
     for name in ("ScriptConfig.json", "PlanConfig.json", "scripts.yaml", "plans.yaml"):
         path = config_path / name
         if not path.is_file() or is_blank_file(path):
             continue
         document = _utils_io.read_dict_file(path)
-        for item in document.get("order", document.get("instances", [])):
-            if target := _ADAPTER_PLUGINS.get(item["type"]):
-                required[target[0]] = target[1]
+        types.extend(
+            item["type"]
+            for item in document.get("order", document.get("instances", []))
+        )
+    return types
+
+
+def required_adapter_plugins(config_path: Path) -> dict[str, str]:
+    """按旧托管及计划索引识别升级所需插件，不扫描备份或业务字段中的字符串。"""
+    required = {}
+    for kind in _index_types(config_path):
+        if target := _ADAPTER_PLUGINS.get(kind):
+            required[target[0]] = target[1]
     # v1.8 之前仍按目录保存专项，尚无聚合集合索引。
     if any(config_path.glob("MaaConfig/*/config.json")) or any(
         config_path.glob("MaaPlanConfig/*/config.json")
@@ -80,6 +96,14 @@ def required_minimum_versions(config_path: Path) -> dict[str, Version]:
         for name in required_adapter_plugins(config_path)
         if name in _MINIMUM_ADAPTER_VERSIONS
     }
+
+
+def required_host_libraries(config_path: Path) -> list[str]:
+    """配置里的宿主内置托管要装进插件环境的库（需求串）；没有这类托管时为空。"""
+    types = set(_index_types(config_path))
+    return sorted(
+        {requirement for kind, requirement in _HOST_LIBRARIES.items() if kind in types}
+    )
 
 
 # 版本没达标、这一轮不接手配置时给用户看的原因。
