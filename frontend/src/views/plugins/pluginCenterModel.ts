@@ -41,6 +41,12 @@ export const LIFECYCLE_LABEL_KEYS: Record<LifecycleAction, string> = {
 const OFFICIAL_PACKAGE_NAMES: ReadonlySet<string> = new Set([
   'auto-mas-maa-adapter',
   'auto-mas-whimbox-adapter',
+  'auto-mas-maafw-adapter',
+  'auto-mas-m9a-adapter',
+  'auto-mas-mss-adapter',
+  'auto-mas-maafw-agent-env',
+  'auto-mas-maafw-project-update',
+  'auto-mas-maafw-runner',
 ])
 
 /** 专项前端入口声明的所属插件，用来对上托管类型、计划表类型与图标。 */
