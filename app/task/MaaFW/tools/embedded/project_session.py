@@ -589,9 +589,17 @@ async def discover_prefetch(request: MaaFWProjectRequest) -> list[DownloadReques
     )
 
     shape = _config_shape(request)
+    # 增量依赖开跑时的当前载荷，交给运行前更新（与 prefetch_script_update 一致）；
+    # 这里一旦给出预下载包，运行前更新就会改走全量。
+    if shape.Update.PackageMode == "incremental":
+        return []
     if resolve_auto_update_mode(shape) == "Off" or follow_source_enabled(shape):
         return []
     credentials = resolve_update_credentials(shape)
+    # Mirror 酱的一次性下载地址每次发现都不同，预下载的包对不上运行前更新自己拿到
+    # 的地址，只会白下整包、多签地址；在发现之前就跳过。
+    if credentials.package_source == "mirrorchyan":
+        return []
     project = resolve_maafw_project_root(request.script_id, shape).resolve()
     source = _source_config(credentials, shape)
     proxy = _update_proxy(shape).client

@@ -11,6 +11,7 @@ from uuid import UUID
 from app.models.config.game_binding import GameBindingOwner
 from app.plugin.base.emulator import EmulatorControl
 from app.plugin.base.game import DeviceSubscribeError
+from app.utils import get_logger
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -27,16 +28,30 @@ if TYPE_CHECKING:
     from app.plugin.base.emulator import EmulatorExpect
     from app.plugin.base.game import GameControl
 
+logger = get_logger("游戏会话")
+
 current_game_session: ContextVar[GameSession | None] = ContextVar(
     "game_session", default=None
 )
+
+
+def selected_game_session() -> GameSession | None:
+    """已选定的当前会话；会话已建但尚未选定时（旧专项上锁前的检查、维护模式）
+    只读查询按配置回落，与会话外一致。"""
+    session = current_game_session.get()
+    if session is None:
+        return None
+    if not session.selected:
+        logger.debug(f"游戏会话尚未选定，按托管配置读取：{session.script.info.name}")
+        return None
+    return session
 
 
 def game_is_emulator(owner: GameBindingOwner) -> bool:
     """控制器选择只把模拟器目标算作 ADB 输入，不把客户端绑定误判为模拟器。"""
     from app.core import Config
 
-    session = current_game_session.get()
+    session = selected_game_session()
     if session is not None:
         return isinstance(session.control, EmulatorControl)
     uid = owner.game.game_id
@@ -157,6 +172,9 @@ class GameSession:
         self.close_emulator_on_release = False
         self.cleanup_failed = False
         self._account_override = False
+        # 选定过一次即为真，释放不复位：绑定为「-」或目标非本地客户端时 control 同样为空，
+        # 不能拿 control 判断是否已选定。
+        self.selected = False
 
     @property
     def emulator(self) -> BoundEmulator | None:
@@ -169,6 +187,7 @@ class GameSession:
     async def select(self, owner: GameBindingOwner | None = None) -> None:
         from app.core import Config, GameManager
 
+        self.selected = True
         self._account_override = owner is not None and owner.game.game_id != "-"
         binding = (
             owner.game
