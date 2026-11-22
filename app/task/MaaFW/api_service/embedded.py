@@ -176,6 +176,7 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
                 channel=channel,
                 follow_source=follow,
                 proxy_url=proxy_url,
+                owner=owner,
             )
             # 当前任务持有 X 票：经属主持票写回（属主直接提交原节点；外部编辑入口会拒绝
             # 一切已锁节点，不能用于持票的内部写回）。
@@ -469,6 +470,7 @@ async def sync_embedded(script_id: str) -> MaaFWApiReply:
             source,
             progress=_embedded_import_progress(publish),
             follow_source=True,
+            owner=script_config.owner_name,
         )
         publish("imported", "success", "同步完成", 100.0)
     except EmbeddedProjectError as exc:
@@ -830,6 +832,8 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
                     script_id,
                     group_channel=source_channel,
                     source_form=is_source_form(source_config),
+                    # 新视图记目标托管自己的属主，不带源视图的标记
+                    owner=script_config.owner_name,
                 )
             )
         except FollowSourceCloneUnavailable as exc:
@@ -853,6 +857,7 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
                 follow_source=follow_source_switch_on(script_config),
                 # 导入时与官方发行包核对资源文件走脚本的更新代理（同 _embed_from_source）
                 proxy_url=resolve_update_proxy_url(script_config),
+                owner=script_config.owner_name,
             )
             cloned = True
     except EmbeddedProjectError as exc:

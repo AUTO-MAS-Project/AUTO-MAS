@@ -132,6 +132,7 @@ async def maafw_effective_root(
                 script_id,
                 script_config,
                 siblings=maafw_sibling_configs(),
+                owner=script_config.owner_name,
             )
         except EmbeddedProjectError as exc:
             logger.warning(

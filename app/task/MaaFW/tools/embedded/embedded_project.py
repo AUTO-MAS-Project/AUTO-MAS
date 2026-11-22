@@ -607,8 +607,10 @@ def _set_follow_source_record(view_dir: Path, record: Mapping[str, Any] | None) 
 
 
 # 视图标记里「这个视图归哪个托管属主」：``{"name": 属主名, "scriptId": 完整托管 uuid, "at": 时刻}``。
-# 启动期维护对属主确认仍在的托管补上（``tag_view_owner``），换版本时随标记带过去（``_realize_view``），
-# 克隆不带源的标记。清理只删「属主已登记、且属主确认托管已经不在」的视图，没有这一项的一律不删。
+# 导入、重新导入、克隆、同来源重建建成视图时当场写上这次经手的属主（``_tag_new_view``，调用方传
+# ``owner``）；换版本、换项目时随标记带过去（``_realize_view``），克隆不带源的标记、写的是目标托管
+# 自己的属主。启动期维护仍对属主确认仍在、还没有这一项的存量视图补上（``tag_view_owner``）。
+# 清理只删「属主已登记、且属主确认托管已经不在」的视图，没有这一项的一律不删。
 OWNER_FIELD = "owner"
 
 
@@ -665,6 +667,27 @@ def tag_view_owner(view_dir: Path, name: str, script_id: str) -> TagOutcome:
     marker[OWNER_FIELD] = {"name": name, "scriptId": script_id, "at": _now_text()}
     payloads.write_json_atomic(Path(view_dir) / VIEW_MARKER_NAME, marker)
     return "tagged"
+
+
+def _tag_new_view(view_dir: Path, owner: str | None, script_id: str) -> None:
+    """视图刚建成：按这次经哪个属主读写这个托管（``owner``）记下属主（:func:`tag_view_owner`）。
+
+    ``owner`` 为空（调用方说不出属主）就不记，留给启动期维护补。已记了别的属主不覆盖（换版本、
+    换项目时 :func:`_realize_view` 从盘上这棵视图带过来的）；没有标记的老副本（按目录克隆的）
+    写不了。写失败只告警：视图已经建好，启动期维护下次再补。调用方持有该视图的项目预约。
+    """
+
+    if not owner:
+        return
+    try:
+        outcome = tag_view_owner(view_dir, owner, script_id)
+    except (OSError, EmbeddedProjectError) as exc:
+        logger.warning(f"[MFW 内嵌] 视图 {Path(view_dir).name} 属主标记写入失败: {exc}")
+        return
+    if outcome == "conflict":
+        logger.warning(
+            f"[MFW 内嵌] 视图 {Path(view_dir).name} 已记着别的属主，不改成 {owner}"
+        )
 
 
 def follow_source_record(marker: Mapping[str, Any] | None) -> dict[str, Any] | None:
@@ -1641,8 +1664,11 @@ def import_embedded_project(
     proxy_url: str | None = None,
     verify_release: bool = True,
     release_cache_root: Path | None = None,
+    owner: str | None = None,
 ) -> dict[str, Any]:
     """来源目录 → 载荷（登记进脚本所在渠道的组）→ 视图切到组的 latest。
+
+    ``owner``：这次经哪个属主读写这个托管；视图（重）建成时当场记下（:func:`_tag_new_view`）。
 
     ``verify_release``（普通渠道才做；开发者模式与源码形态以来源目录为准，不做）：登记前把
     投影出的资源文件与「来源 interface 版本」的官方发行包核对一次（:func:`_verify_import_release`，
@@ -1832,6 +1858,7 @@ def import_embedded_project(
                 f"{registered.manifest.get('version') or registered.payload_id} 已经登记，"
                 "同项目同渠道的其他托管下次运行时会切换到它"
             ) from exc
+        _tag_new_view(final_dir, owner, script_id)
     if view_result.seeded:
         preview = ", ".join(view_result.seeded[:10])
         more = " ..." if len(view_result.seeded) > 10 else ""
@@ -2000,8 +2027,11 @@ def clone_embedded_copy(
     *,
     group_channel: str | None = None,
     source_form: bool = False,
+    owner: str | None = None,
 ) -> bool:
     """同一项目再建一个脚本：从源托管挂着的载荷物化目标视图；返回是否克隆了。
+
+    ``owner``：目标托管的属主（这次经它写目标托管）；新视图当场记下它，不带源视图的标记。
 
     源有标记（或正在切换）→ 直接从载荷物化，不读源视图，源运行期的私有状态不带过去。
     源是还没采纳的老副本 → 退回按目录克隆（已共用的再挂链接、共用候选经共用库放、其余复制，
@@ -2034,14 +2064,11 @@ def clone_embedded_copy(
                     "源托管开着开发者模式，挂的是从来源目录同步的本地版本，不复用；"
                     f"同项目「{channel}」渠道在本机还没有可复用的版本"
                 )
-        _realize_view(
-            embedded_project_dir(target_script_id, base),
-            lineage,
-            payload_id,
-            base=base,
-            carry=False,
-        )
+        target_view = embedded_project_dir(target_script_id, base)
+        _realize_view(target_view, lineage, payload_id, base=base, carry=False)
+        _tag_new_view(target_view, owner, target_script_id)
         return True
+    # 按目录克隆的老副本没有标记，记不了属主（采纳成视图后由启动期维护补）
     return _clone_legacy_copy(source_script_id, target_script_id, base)
 
 
@@ -2568,14 +2595,17 @@ def _rebuild_from_group(
     *,
     base: Path | None,
     send_log: Callable[[str], None] | None,
+    owner: str | None = None,
 ) -> dict[str, Any] | None:
     """来源目录已删、视图又没了：从同项目的载荷重建。找不到返回 None。
 
     视图没了、标记也跟着没了，谱系只能从同来源的其它托管上认出来：有标记的兄弟 →
     按它的谱系取本托管渠道的 ``latest`` 物化（不读兄弟视图、不要兄弟空闲）；只有没采纳的
-    老副本兄弟 → 照旧按目录克隆（持兄弟预约）。
+    老副本兄弟 → 照旧按目录克隆（持兄弟预约）。重建出的视图当场记下本托管的属主 ``owner``
+    （不带兄弟的标记）。
     """
 
+    view = embedded_project_dir(script_id, base)
     channel = effective_channel(script_id, script_config)
     for other_id, other_config in siblings:
         other_id = str(other_id)
@@ -2592,13 +2622,8 @@ def _rebuild_from_group(
             target = _formal_group_target(lineage, channel, fallback, base)
             if not target:
                 continue
-            _realize_view(
-                embedded_project_dir(script_id, base),
-                lineage,
-                target,
-                base=base,
-                carry=False,
-            )
+            _realize_view(view, lineage, target, base=base, carry=False)
+            _tag_new_view(view, owner, script_id)
         else:
             other_dir = embedded_project_dir(other_id, base)
             if not copy_is_healthy(other_dir):
@@ -2623,13 +2648,8 @@ def _rebuild_from_group(
     target = _formal_group_target(found[0], channel, found[1], base) if found else ""
     if found is not None and target:
         lineage = found[0]
-        _realize_view(
-            embedded_project_dir(script_id, base),
-            lineage,
-            target,
-            base=base,
-            carry=False,
-        )
+        _realize_view(view, lineage, target, base=base, carry=False)
+        _tag_new_view(view, owner, script_id)
         message = "[MFW 内嵌] 来源目录已不存在，已按本机登记的项目版本重建"
         logger.info(message)
         if send_log is not None:
@@ -2768,6 +2788,7 @@ def _sync_follow_source(
     base: Path | None,
     send_log: Callable[[str], None] | None,
     source_form: bool = False,
+    owner: str | None = None,
 ) -> dict[str, Any] | None:
     """开发者模式的运行前检查：来源目录的签名与视图标记记的不同就重新导入；返回新记录。
 
@@ -2796,7 +2817,7 @@ def _sync_follow_source(
             )
             return None
         imported = import_embedded_project(
-            script_id, source, base=base, follow_source=True, plan=plan
+            script_id, source, base=base, follow_source=True, plan=plan, owner=owner
         )
     except Exception as exc:  # noqa: BLE001 - 读来源失败一律沿用上次同步的视图，原因写进日志
         _keep_last_follow_source_sync(
@@ -2865,6 +2886,7 @@ def _leave_follow_source(
     *,
     base: Path | None,
     send_log: Callable[[str], None] | None,
+    owner: str | None = None,
 ) -> dict[str, Any] | None:
     """开发者模式刚关掉（标记还带着 ``followSource``）：回到 ``Update.Channel`` 的组。
 
@@ -2905,6 +2927,7 @@ def _leave_follow_source(
             base=base,
             channel=channel,
             proxy_url=_script_proxy_url(script_config),
+            owner=owner,
         )
     _set_follow_source_record(view, None)
     _say(
@@ -2924,8 +2947,11 @@ def ensure_embedded_copy(
     send_log: Callable[[str], None] | None = None,
     siblings: Iterable[tuple[str, Any]] | None = None,
     follow_source_check: bool = False,
+    owner: str | None = None,
 ) -> dict[str, Any] | None:
     """视图不在（老脚本、被删）或来源换了目录时导入一次；返回新报告，否则 None。
+
+    ``owner``：这次经哪个属主读写这个托管；这里导入、重新导入、重建出的视图当场记下它。
 
     调用方拿到非 None 要把报告写回配置。调用方持有该视图的项目预约。健康但还没有标记的
     视图（启动期采纳失败的老副本）就地再试一次采纳，仍失败就报错、本次不运行——不存在
@@ -2963,9 +2989,10 @@ def ensure_embedded_copy(
                 base=base,
                 send_log=send_log,
                 source_form=source_form,
+                owner=owner,
             )
         left = _leave_follow_source(
-            script_id, script_config, source, base=base, send_log=send_log
+            script_id, script_config, source, base=base, send_log=send_log, owner=owner
         )
         if left is not None:
             return left
@@ -3016,6 +3043,7 @@ def ensure_embedded_copy(
                 if send_log is not None:
                     send_log("[MFW 内嵌] 视图不完整，正在按已登记的项目版本重建")
                 _realize_view(copy_dir, lineage, target, base=base, carry=True)
+                _tag_new_view(copy_dir, owner, script_id)
                 return None
         rebuilt = _rebuild_from_group(
             script_id,
@@ -3024,6 +3052,7 @@ def ensure_embedded_copy(
             siblings or (),
             base=base,
             send_log=send_log,
+            owner=owner,
         )
         if rebuilt is not None:
             return rebuilt
@@ -3046,6 +3075,7 @@ def ensure_embedded_copy(
         channel=_script_channel(script_config),
         follow_source=follow_source_switch_on(script_config),
         proxy_url=_script_proxy_url(script_config),
+        owner=owner,
     )
 
 

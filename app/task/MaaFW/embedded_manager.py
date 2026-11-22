@@ -548,6 +548,12 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 )
                 for other in (current.records() if current is not None else [])
             )
+        # 这次经哪个属主读写这个托管（写回项目记录也经它）：打开项目时新建的视图当场记下。
+        # 认不出来就不记，留给启动期维护补。
+        try:
+            owner, _record = owners.find_managed(script_id)
+        except Exception:  # noqa: BLE001 - 只影响新视图当场记不记属主
+            owner = ""
         return MaaFWProjectRequest(
             script_id=script_id,
             name=config.Info.Name,
@@ -565,6 +571,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             siblings=siblings,
             prefetch_paths=(params or {}).get("prefetch_paths", {}),
             round_started_at=round_started_at,
+            owner=owner,
         )
 
     def _project_request(

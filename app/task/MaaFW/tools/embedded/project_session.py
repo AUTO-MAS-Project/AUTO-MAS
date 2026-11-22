@@ -170,6 +170,8 @@ class MaaFWProjectRequest:
       ``proxy_address``：托管级更新代理（``Update.ProxyAddress``，留空跟随全局）。
     - ``siblings``：同来源重建的候选（只有打开项目要）；``prefetch_paths``：任务参数里队列预下载
       交来的路径映射；``round_started_at``：本轮开始时刻（收尾只清在它之前轮转出的原生日志备份）。
+    - ``owner``：调用方经哪个属主读写这个托管（属主名）；打开项目时导入、重建出的视图当场记下它，
+      空串就不记（留给启动期维护补）。
     """
 
     script_id: str
@@ -189,6 +191,7 @@ class MaaFWProjectRequest:
     siblings: tuple[MaaFWProjectSibling, ...] = ()
     prefetch_paths: Any = field(default_factory=dict)
     round_started_at: float = 0.0
+    owner: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -723,6 +726,7 @@ class MaaFWProjectSession:
                 # 开发者模式：比一次来源目录，变了就重新导入（日志一行说清）；
                 # 刚关掉时回到 Update.Channel 的组。
                 follow_source_check=True,
+                owner=request.owner or None,
             )
             if rebuilt is not None:
                 record = MaaFWProjectRecordUpdate(

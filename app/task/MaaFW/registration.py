@@ -64,7 +64,8 @@ def build_config_handler(
     config_type: type[ConfigEntry] = MaaFWConfig, *, owner: str = MAAFW_OWNER
 ) -> ScriptConfigHandler:
     """一种托管类型的配置回调：保存前加密密码、读取前准备、新账号补默认队列、复制托管时克隆
-    视图、删除托管时清理视图（只删本属主的视图）与删除后的运行池对账。三种类型各造一份，内容相同。"""
+    视图（新视图记本属主）、删除托管时清理视图（只删本属主的视图）与删除后的运行池对账。三种类型各造
+    一份，内容相同。"""
 
     from app.task.MaaFW.tools.embedded.default_snapshot import (
         initialize_user as initialize_maafw_user,
@@ -88,7 +89,7 @@ def build_config_handler(
     return ScriptConfigHandler(
         # 宿主建号先取类上的 USER_CONFIG_CLASS，这一项只是兜底
         user_config_class=getattr(config_type, "USER_CONFIG_CLASS"),
-        clone_script=clone_maafw_script,
+        clone_script=partial(clone_maafw_script, owner=owner),
         after_script_removal=after_maafw_script_removal,
         cleanup_script_files=partial(cleanup_maafw_script_files, owner=owner),
         prepare_user_update=prepare_maafw_user_update,

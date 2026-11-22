@@ -35,12 +35,15 @@ from .project_path import release_project_path, try_reserve_project_path
 logger = get_logger("配置管理")
 
 
-async def clone_script(source: ConfigEntry, target: ConfigEntry) -> None:
+async def clone_script(
+    source: ConfigEntry, target: ConfigEntry, *, owner: str | None = None
+) -> None:
     """复制时物化源载荷；失败留待运行前重建，不影响已提交的脚本复制。
 
     开发者模式不随复制继承，目标挂源原渠道组的 latest。组里没有正式载荷，
     或源为源码形态时先不建视图，首次运行按来源目录导入；来源也不在时沿用
-    缺视图的同来源兄弟 / 已登记版本重建路径。
+    缺视图的同来源兄弟 / 已登记版本重建路径。新视图当场记下目标托管的属主（``owner``，
+    由复制这个托管的属主的配置回调声明）。
     """
     source_config = cast(MaaFWConfig, source)
     target_config = cast(MaaFWConfig, target)
@@ -61,6 +64,7 @@ async def clone_script(source: ConfigEntry, target: ConfigEntry) -> None:
                 target_script_id=str(target.uid),
                 group_channel=group_channel,
                 source_form=source_form,
+                owner=owner,
             )
         )
     except FollowSourceCloneUnavailable as exc:
