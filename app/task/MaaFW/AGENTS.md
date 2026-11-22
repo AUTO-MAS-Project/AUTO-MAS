@@ -24,7 +24,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
   `default_snapshot`、`env_confirm`、`update_session`、`device_config`、`plan_run`、`pretask_run`、
   `run_verdict`、`run_redaction`、`run_settings`、`run_messages`、`run_notices`、`attempt_ledger`、
-  `host_client`、`project_session`、`owners`）。
+  `desktop_game`、`host_client`、`project_session`、`owners`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - **设备配置与首任务闸门在 `tools/embedded/device_config.py`**（将来是运行这一块对外的「设备配置」调用，
   三个专项各自的流程都调它）：游戏包名、adb 路径（含「宿主没定下路径时问 Toolkit」，判据由调用方算好
@@ -58,7 +58,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   运行记录与进度点 → 处理返回值。只和 M9A 有关的「登录交给首任务完成」（`StartupTask`）不在这里：任务类在
   调用前把首任务标成 `abortRoundMessage`、把登录截止时刻放进 `task_deadlines`，截止已过时 `plan_run` 抛
   `MaaFWTaskDeadlineExpired`、任务类换成「登录时限已耗尽」；首任务完成后记「已登录」也由任务类按返回的结果做。
-  重试循环、桌面游戏启停、历史保存与通知仍在任务类（见下面「任务类还剩什么」）。
+  重试循环、历史保存与通知仍在任务类（见下面「任务类还剩什么」）；桌面游戏启停在 `desktop_game`（见下文）。
 - **运行前设置（interface `pretask`）的执行在 `tools/embedded/pretask_run.py`**，做法与 `plan_run` 相同：
   入参只收普通数据（`MaaFWPretaskRunRequest`：计划里的 pretask、工作目录、时限原值、`PI_*` 与 ModAVD adb
   端口两层进程环境、要打码的写法、桌面分身目标），输出经同一种事件出口（只发账号日志
@@ -117,8 +117,22 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `WORKSTATION_LOCKED_MESSAGE`）。参数是模拟器入口与普通数据，输出经返回值与 `plan_run` 同形的事件出口。
   地址校验与缓存、`opened_emulator` 的置位（调用之前）、首任务闸门的时刻与读盘判据（拿返回值写）、
   `silent` 的取值（调用那一刻读 `IfSilence`）、锁屏时抛 `MaaFWWorkstationLocked` 都留在流程里。
+- **Win32 桌面游戏的启停在 `tools/embedded/desktop_game.py`**（运行这一块，三个专项的账号流程都用）：一个账号
+  一份 `MaaFWDesktopGame`，是一台「设备」——开没开过（`opened`）、游戏刚启动的时刻（`started_at`）、链接
+  拉起的时刻、本次运行第一次打开链接的时刻、临时改过的 Unity 分辨率、AttachOnly 兜底关闭的分界
+  （`mark_run_started`）全是它自己的、跨尝试保留；什么时候开（`ensure_started`）、重试前关（`close`）、最终
+  收尾关（`close_after_run`，含 URL 兜底扫描与 AttachOnly 兜底关闭）由流程决定。配置原值由流程在每个调用点
+  现取、装进 `MaaFWDesktopGameSpec`（`Game.LaunchMode` / `URL` / `Arguments` / `WaitTime` / `UnityResolution` /
+  `CloseMode`、客户端绑定的游戏 exe 与启动器、`Device.HWnd`），interface 与控制器名、桌面分身目标作参数传入；
+  运行前检查用 `desktop_launch_managed` / `describe_desktop_launch_error`（读盘，放工作线程）。输出经 `plan_run`
+  同形的事件出口：账号日志、`start_game` 的 entered / succeeded / failed / cancelled（与 `run_flow.operation`
+  同义）、`stop_game` 的先后照旧；只进 app.log 的行仍记在「MaaFW 插件自动代理」下。「不是 Win32 就不管」留在
+  流程里。**`started_at` 的置位与清空时机不能动**：MAS 拉起后等出窗口、接管时窗口是等出来的、链接拉起后等出
+  窗口时置（都在窗口前置之前），`close` 里清空；流程下发计划时 Win32 用它，ADB 用流程自己从
+  `open_emulator_for_run` 拿到的时刻（同一个账号运行只走其中一条路，原来共用一个字段）。
 - **任务类 `runner_task` 还剩什么**：取配置与账号数据、建计划（调解析一侧）、运行前检查与项目预约、桌面
-  游戏 / 模拟器启停与登录、游戏更新钩子、设备配置（调 `device_config`）、**重试主循环**（次数、每次尝试的
+  游戏 / 模拟器什么时候开关（实现在 `desktop_game` / `host_client`）与登录、游戏更新钩子、设备配置（调
+  `device_config`）、**重试主循环**（次数、每次尝试的
   日志与「上一次（…）」、按 `judge_attempt` 的判定走：信号收尾、资源包修复后不计次数的重跑、重启客户端、
   周期任务刷新计划）、失败文案的组装（文案本身在 `run_messages`；资源包失败的人话要读原生报错、超时摘要要读时限配置，所以不在判定里）、
   历史（`HistoryWrite` 的拼装）、统计与通知的发送（尝试记账在 `attempt_ledger`）。跑计划、运行前设置、判定、
@@ -216,7 +230,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   project_update 不导入 runner（函数体里的延迟导入、`TYPE_CHECKING` 下的也算）；三块都可以导入
   interface 与 native 两个库。`worker_protocol` 算 runner 那一块的，agent_env / project_update 不要引它
   （日志前缀之类共用的常量放 `log_redact` 或 native）。接缝里归 runner 的（`plan_run`、`pretask_run`、
-  `run_verdict`、`run_redaction`、`run_settings`、`run_messages`、`run_notices`、`attempt_ledger`）不导入项目更新一侧的接缝（`project_session`、`embedded_project`……）与专项
+  `run_verdict`、`run_redaction`、`run_settings`、`run_messages`、`run_notices`、`attempt_ledger`、`desktop_game`）不导入项目更新一侧的接缝（`project_session`、`embedded_project`……）与专项
   （任务类 `runner_task` 这类账号级流程、风味）。这几条现在违反了也不会让运行出错，只会让以后
   拆包时那一块带不走，所以没进核心最小回归；加导入前自己按 AST 查一遍方向。
 - **运行环境的准备与借还归 agent 环境**：`agent_env/runtime_lease.py` 是运行池 base venv + binding 的
@@ -752,22 +766,23 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
 - Win32 下 `Game.LaunchMode` 三态：`DirectExe`（默认，MAS 按 `Game.LaunchPath` 启动、结束后关闭）、
   `URL`（MAS 用 ShellExecute 打开 `Game.URL` 拉起游戏，如 `steam://rungameid/<appid>`，结束后关闭）与
   `AttachOnly`（脚本或用户自己启动，MAS 只接管窗口）。
-  - DirectExe / URL 关不关只看 `opened_game`；发现游戏已在运行（控制器窗口在，或 exe 在跑）时只接管、
-    不关。重试前 `_restart_client_before_retry` 照常关、下一轮重新拉起。
+  - 实现在 `desktop_game.MaaFWDesktopGame`（见上文）。DirectExe / URL 关不关只看它的 `opened`；发现游戏已在
+    运行（控制器窗口在，或 exe 在跑）时只接管、不关。重试前 `_restart_client_before_retry` 照常关（`close`）、
+    下一轮重新拉起。
   - **URL 模式**：`LaunchPath` 必填但不用来启动，只用来认游戏（是否已在运行、等窗口、前置、关闭、Unity
     分辨率覆盖）；缺 exe 或缺链接在运行前检查就报。打开链接前记下时刻，按 exe +
     `min_create_time` 找进程，时限 `max(WaitTime, 60)`（Steam 冷启动慢）；链接一打开就置
-    `opened_game`。`Game.Arguments` 不用，参数写进链接（`steam://run/<appid>//<参数>/`）。关闭时
+    `opened`。`Game.Arguments` 不用，参数写进链接（`steam://run/<appid>//<参数>/`）。关闭时
     `kill()` 跟踪的那个之后，再把 exe 等于游戏 exe、创建时间不早于打开链接时刻（容差 2s）的进程都
     结束（先 terminate，3s 后 kill）：游戏不是 MAS 的子进程，有的还会自我重启换 PID。
   - **AttachOnly 兜底关闭**（`Game.CloseMode`，默认 `OnFailure`；DirectExe / URL 忽略它）：`Script`
     交给脚本、MAS 不关；`OnFailure` 本次运行没正常完成（`run_complete` 为假：失败、超时、停止、维护
     信号，以及 `on_crash`）时关；`Always` 结束后一律关。**硬规则：只关本次运行期间新出现的进程**——
-    账号运行开始（脚本前任务与第一次尝试的运行前设置之前）记下 `run_started_at`，收尾时候选三路（控制器窗口匹配
+    账号运行开始（脚本前任务与第一次尝试的运行前设置之前）记下分界（`mark_run_started`），收尾时候选三路（控制器窗口匹配
     到的窗口所属进程、exe 等于 `Game.LaunchPath` 的、exe 等于可选 `Game.LauncherPath` 的），只结束
-    创建时间 ≥ `run_started_at − 2s` 的，运行前就在的各写一行「运行开始前就已打开，不关闭」；创建时间
+    创建时间 ≥ 分界 − 2s 的，运行前就在的各写一行「运行开始前就已打开，不关闭」；创建时间
     读不到的按「运行前就在」处理。控制器没写窗口规则时窗口这一路不参与。**只在最终收尾做**
-    （`_close_game_after_run`：`_finalize_user` 与 `on_crash`），重试之间不关，免得和运行前设置的
+    （`close_after_run`，任务类的 `_close_game_after_run`：`_finalize_user` 与 `on_crash`），重试之间不关，免得和运行前设置的
     重跑判定（`_pretasks_need_rerun`）打架；每次运行只做一次。运行前设置超时 / 停止时的清理不变，
     照旧不碰游戏和启动器。
 - `Game.UnityResolution`（Off / 1920x1080 / 1280x720，DirectExe 与 URL 下生效）走宿主
@@ -777,10 +792,10 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   这个通用选项**不做逐游戏适配**（2026-10-04 定，理由见 `game_resolution.py` 文件头），
   游戏自有层由该游戏的特调或专项自己调。
 - **项目的运行前设置（interface `pretask`）在每次尝试里跑**，不像账号级「脚本前任务」只跑一次：
-  MaaEnd 的「🚀启动游戏（PC）」就是它，此时 `Game.LaunchMode` 是 AttachOnly、`opened_game` 为假，
+  MaaEnd 的「🚀启动游戏（PC）」就是它，此时 `Game.LaunchMode` 是 AttachOnly、桌面游戏的 `opened` 为假，
   MAS 不拉起游戏、重试之间也不关（结束后按 `Game.CloseMode` 兜底，见上一条）。第一次尝试照常跑；它自己失败按普通失败重试；成功过之后的重试只在客户端
   已经不在时重跑（`pretask_run.pretasks_need_rerun`：MAS 刚关掉自己起的游戏 / 模拟器——关的时候报错也算，
-  `_close_*` 不论成败都清 `opened_*`、下一轮会重新拉起，见 `_reset_client_for_retry`；或 Win32 下
+  关模拟器与 `desktop_game.close` 不论成败都清「MAS 开过」的标记、下一轮会重新拉起，见 `_reset_client_for_retry`；或 Win32 下
   控制器窗口找不到——队列末尾的「关闭游戏」任务会把它关掉）。游戏还开着不重跑，免得项目的启动脚本
   对着已在运行的游戏再走一遍。重跑前先清掉「已成功」标记：重跑到一半失败（窗口已被拉起）时，下一轮
   看到窗口在也不能跳过。2026-10-17 生产：以前放在重试循环外，第 2、3 次各 2 ms 报「未找到匹配
