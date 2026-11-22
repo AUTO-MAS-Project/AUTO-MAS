@@ -48,7 +48,7 @@ from app.models.schema import (
     MaaFWProjectUpdateJobResult,
     WSMaaFWProjectUpdateProgressData,
 )
-from app.task.MaaFW.api_service.common import MaaFWApiReply, maafw_script_config
+from app.task.MaaFW.api_service.common import MaaFWApiReply, maafw_managed
 from app.utils import get_logger
 
 # 与前端更新面板日志框的上限一致（updateProgress.ts 的 MAX_UPDATE_LOG_LINES）。
@@ -248,7 +248,7 @@ async def project_update_job(script_id: str, *, wait: bool = False) -> MaaFWApiR
     """
 
     try:
-        maafw_script_config(script_id)
+        maafw_managed(script_id)
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
 

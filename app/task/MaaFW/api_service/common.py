@@ -16,25 +16,25 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""MFW 端点共用的小件：结果载体、脚本解析、有效项目根、同组候选。"""
+"""MFW 端点共用的小件：结果载体、托管解析、有效项目根、同组候选。
+
+端点认托管只认「属主已登记的托管」（``tools/embedded/owners``）：读经属主入口给出的只读形状，写回经
+属主的写回调用，不按配置类判断家族、不拿专项的配置对象。
+"""
 
 from __future__ import annotations
 
 import asyncio
-import json
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.core import Config
-from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
 from app.task.MaaFW.tools.core.log_redact import mask_home_path
 from app.task.MaaFW.tools.core.project_update.state import redact_text
+from app.task.MaaFW.tools.embedded import owners
 from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
     GroupMember,
-    effective_channel,
     embedded_project_dir,
     ensure_embedded_copy,
     resolve_maafw_project_root,
@@ -42,9 +42,6 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
 from app.task.MaaFW.tools.embedded.project_path import (
     release_project_path,
     try_reserve_project_path,
-)
-from app.task.MaaFW.tools.embedded.update_credentials import (
-    resolve_update_proxy_url,
 )
 from app.utils import get_logger
 
@@ -84,42 +81,28 @@ class MaaFWApiReply:
         return fields
 
 
-def maafw_script_config(script_id: str) -> RuntimeMaaFWConfig:
-    """Resolve a MaaFW script and reject cross-type IDs before domain access."""
+def maafw_managed(script_id: str) -> owners.ManagedShape:
+    """按属主登记认托管，交回它的只读形状（``Info`` / ``Update`` / ``Embedded`` 原值）。
 
-    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
-    if not isinstance(script_config, RuntimeMaaFWConfig):
-        raise TypeError("托管配置类型错误, 不是 MFW 类型")
-    return script_config
+    不归任何已登记属主时抛 ``TypeError``（「托管配置类型错误, 不是 MFW 类型」），uid 不合法抛
+    ``ValueError``，没有这个托管抛 ``KeyError``——文案与原先按配置类判断时一字不差。形状上的
+    ``is_locked`` 每次读都经属主现问；其余字段是此刻的快照，写回之后要重新取。
+    """
+
+    owner, record = owners.find_managed(script_id)
+    return record.shape(owner=owner)
 
 
 def maafw_sibling_configs() -> list[tuple[str, Any]]:
-    """来源目录已删、副本又没了时可以克隆的候选：所有 MFW 家族脚本（含自己，服务层会跳过）。"""
+    """来源目录已删、副本又没了时可以克隆的候选：属主名下全部托管（含自己，服务层会跳过）。"""
 
-    return [
-        (str(uid), config)
-        for uid, config in Config.ScriptConfig.items()
-        if isinstance(config, RuntimeMaaFWConfig)
-    ]
+    return owners.siblings()
 
 
 def maafw_group_members(script_id: str) -> list[GroupMember]:
-    """同组候选：除自己外的 MFW 家族脚本（事件循环线程上抄出来）。运行中的标 ``busy``。"""
+    """同组候选：除自己外属主名下的全部托管（事件循环线程上抄出来）。运行中的标 ``busy``。"""
 
-    members: list[GroupMember] = []
-    for uid, config in Config.ScriptConfig.items():
-        if not isinstance(config, RuntimeMaaFWConfig) or str(uid) == script_id:
-            continue
-        members.append(
-            GroupMember(
-                script_id=str(uid),
-                channel=effective_channel(str(uid), config),
-                busy=bool(getattr(config, "is_locked", False)),
-                name=str(config.Info.Name or ""),
-                proxy_url=resolve_update_proxy_url(config) or None,
-            )
-        )
-    return members
+    return owners.group_members(exclude=script_id)
 
 
 async def maafw_effective_root(
@@ -132,7 +115,7 @@ async def maafw_effective_root(
 
     if script_id:
         try:
-            script_config = maafw_script_config(script_id)
+            script_config = maafw_managed(script_id)
         except (KeyError, ValueError, TypeError) as exc:
             return None, f"MFW 脚本无效: {exc}"
         # 副本还没建（老脚本）或来源换了目录：先导入，报告写回配置。
@@ -171,15 +154,14 @@ async def maafw_effective_root(
         finally:
             await release_project_path(root_key)
         if rebuilt is not None:
-            await Config.update_script(
+            await owners.write_or_raise(
+                script_config.owner_name,
                 script_id,
-                {
-                    "Embedded": {
-                        "Report": json.dumps(rebuilt["report"], ensure_ascii=False),
-                        "SourceVersion": rebuilt["sourceVersion"],
-                        "ImportedAt": rebuilt["importedAt"],
-                    }
-                },
+                owners.RecordPatch(
+                    report=rebuilt["report"],
+                    source_version=rebuilt["sourceVersion"],
+                    imported_at=rebuilt["importedAt"],
+                ),
             )
         return resolve_maafw_project_root(script_id, script_config).resolve(), ""
     value = str(fallback_path or "").strip()

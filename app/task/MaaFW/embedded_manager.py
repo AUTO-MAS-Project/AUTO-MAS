@@ -34,7 +34,6 @@ MAS 在自己的 worker 子进程内加载项目的 MaaFramework 直接驱动，
 from __future__ import annotations
 
 import asyncio
-import json
 import threading
 import time
 import uuid
@@ -61,18 +60,20 @@ from app.models.notification.report import TaskResultData, TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.game import game_target_id
+from app.task.MaaFW.registration import MAAFW_RUN_TYPES
 from app.task.MaaFW.tools.backup_archive import (
     archive_mas_runtime_backup,
     archive_native_backup,
     read_overlay_values,
 )
+from app.task.MaaFW.tools.embedded import owners
 from app.task.MaaFW.tools.embedded.default_snapshot import (
     fill_default_task_snapshots,
 )
 from app.task.MaaFW.tools.embedded.embedded_project import (
-    effective_channel,
     resolve_maafw_project_root,
 )
+from app.task.MaaFW.tools.embedded.owners import RecordPatch, write_managed_record
 from app.task.MaaFW.tools.embedded.project_session import (
     BENIGN_SKIPS,
     SKIP_OCCUPIED,
@@ -101,7 +102,6 @@ from app.task.MaaFW.tools.embedded.signal_notice import (
 from app.task.MaaFW.tools.embedded.update_credentials import (
     AutoUpdateMode,
     resolve_auto_update_mode,
-    resolve_update_proxy_url,
 )
 from app.task.run_flow import point
 from app.utils import TASK_MODE_ZH, get_logger
@@ -305,7 +305,8 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         except (KeyError, ValueError):
             return "MFW 托管配置不存在，请刷新后重试"
 
-        if not isinstance(script_config, MaaFWConfig):
+        # 按确切类型认（不靠继承）：MFW 管理器现在运行这三种托管。
+        if type(script_config) not in MAAFW_RUN_TYPES:
             return "托管配置类型错误，不是 MFW 托管类型"
         self.script_config = script_config
 
@@ -328,18 +329,14 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 self._project_request(script_config, with_siblings=True)
             )
             if opened.record is not None:
-                # 视图已变，取消时也先把导入报告写完，再交回项目预约。
-                await Config.update_script(
+                # 视图已变，取消时也先把导入报告写完，再交回项目预约。写回经托管的属主。
+                await write_managed_record(
                     script_id,
-                    {
-                        "Embedded": {
-                            "Report": json.dumps(
-                                opened.record.report, ensure_ascii=False
-                            ),
-                            "SourceVersion": opened.record.source_version,
-                            "ImportedAt": opened.record.imported_at,
-                        }
-                    },
+                    RecordPatch(
+                        report=opened.record.report,
+                        source_version=opened.record.source_version,
+                        imported_at=opened.record.imported_at,
+                    ),
                 )
             if self._project.stopping:
                 return None
@@ -539,16 +536,17 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
 
         siblings: tuple[MaaFWProjectSibling, ...] = ()
         if with_siblings:
+            # 属主名下的全部托管（含自己，项目会话会跳过），按宿主托管列表的顺序
+            current = owners.snapshot(require_ready=False)
             siblings = tuple(
                 MaaFWProjectSibling(
-                    script_id=str(uid),
-                    name=other.Info.Name,
-                    source_path=other.Info.Path,
-                    report=other.Embedded.Report,
-                    source_version=other.Embedded.SourceVersion,
+                    script_id=other.uid,
+                    name=other.name,
+                    source_path=other.source_path,
+                    report=other.report,
+                    source_version=other.source_version,
                 )
-                for uid, other in Config.ScriptConfig.items()
-                if isinstance(other, MaaFWConfig)
+                for other in (current.records() if current is not None else [])
             )
         return MaaFWProjectRequest(
             script_id=script_id,
@@ -647,27 +645,11 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             self._post_run_env_confirm = outcome.env_confirm_needed
 
     def _group_members(self) -> list[Any]:
-        """同组候选：其它 MFW 脚本（在事件循环线程上抄出来，守护线程里遍历脚本表会撞
+        """同组候选：属主名下的其它托管（在事件循环线程上抄出来，守护线程里遍历托管表会撞
         「dict changed size」）。运行中的（脚本配置锁着）标 ``busy``，不被中途切换。
         渠道按各自所在的组（开发者模式的脚本是它的私有渠道，谁的更新都切不到它）。"""
 
-        from app.task.MaaFW.tools.embedded.embedded_project import GroupMember
-
-        members: list[Any] = []
-        own = str(self.script_info.script_id)
-        for uid, config in Config.ScriptConfig.items():
-            if not isinstance(config, MaaFWConfig) or str(uid) == own:
-                continue
-            members.append(
-                GroupMember(
-                    script_id=str(uid),
-                    channel=effective_channel(str(uid), config),
-                    busy=bool(getattr(config, "is_locked", False)),
-                    name=str(config.Info.Name or ""),
-                    proxy_url=resolve_update_proxy_url(config) or None,
-                )
-            )
-        return members
+        return owners.group_members(exclude=str(self.script_info.script_id))
 
     async def _run_project_update(self, phase: AutoUpdateMode) -> None:
         """按时机更新项目目录（项目会话做）。整个脚本只跑一次，且在账号任务之外。

@@ -34,7 +34,7 @@ from app.models.schema import (
 from app.task.MaaFW.api_service.common import (
     MaaFWApiReply,
     maafw_effective_root,
-    maafw_script_config,
+    maafw_managed,
 )
 from app.task.MaaFW.api_service.embedded import embedded_summary_lines
 from app.task.MaaFW.tools.core.interface.loader import (
@@ -306,7 +306,7 @@ async def prepare_agent_env(
         proxy_url = Config.proxy_url
         if progress_id:
             try:
-                proxy_url = resolve_update_proxy_url(maafw_script_config(progress_id))
+                proxy_url = resolve_update_proxy_url(maafw_managed(progress_id))
             except (KeyError, ValueError, TypeError):
                 pass
 

@@ -33,7 +33,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
 from app.models.schema import (
     MaaFWMirrorCdkData,
     MaaFWProjectUpdateData,
@@ -45,7 +44,7 @@ from app.task.MaaFW.api_service.common import (
     logger,
     maafw_effective_root,
     maafw_group_members,
-    maafw_script_config,
+    maafw_managed,
 )
 from app.task.MaaFW.api_service.update_job import (
     current_update_job,
@@ -189,7 +188,7 @@ def _maafw_update_message_with_cdk(message: str, extra: dict[str, Any]) -> str:
     return message
 
 
-def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, str]:
+def _maafw_update_source_config(script_config: Any) -> dict[str, str]:
     """组装 MaaFW 项目更新实现所需的 source_config。
 
     只包含用户可配置的三项：``package_source``（托管级 ``Update.Source``，
@@ -252,7 +251,7 @@ def _group_ahead_version(root_path: Path, channel: str) -> str | None:
 
 async def _heal_projection(
     script_id: str,
-    script_config: RuntimeMaaFWConfig,
+    script_config: Any,
     root_path: Path,
     *,
     channel: str,
@@ -413,7 +412,7 @@ async def _open_update_request(
     """校验脚本与项目目录、读 interface、解析下载源与代理；不能更新时直接给出回复。"""
 
     try:
-        script_config = maafw_script_config(script_id)
+        script_config = maafw_managed(script_id)
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
     if follow_source_enabled(script_config):
@@ -878,7 +877,7 @@ async def query_mirror_cdk(script_id: str, cdk: str) -> MaaFWApiReply:
     """
 
     try:
-        script_config = maafw_script_config(script_id)
+        script_config = maafw_managed(script_id)
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
 

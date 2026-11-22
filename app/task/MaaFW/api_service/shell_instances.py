@@ -34,7 +34,6 @@ from app.task.MaaFW.api_service.common import (
     MaaFWApiReply,
     logger,
     maafw_effective_root,
-    maafw_script_config,
 )
 from app.task.MaaFW.tools.core.interface.loader import (
     MaaFWInterfaceLoadError,
@@ -125,6 +124,25 @@ def _interface_name(items: list[Any], raw: str) -> str:
     """脚本上记的 controller / resource 名在 interface 里存在才算数，否则当作不限。"""
 
     return raw if raw and any(item.name == raw for item in items) else ""
+
+
+def _family_script_config(script_id: str) -> Any:
+    """外壳配置导入要建账号，拿的是托管的配置对象（这组端点归通用 MFW 自己）。
+
+    先经属主登记确认这是属主已登记的 MFW 托管（认不出时的异常与文案同其它 MFW 端点），再按
+    确切类型取宿主托管表里的配置对象。
+    """
+
+    import uuid
+
+    from app.task.MaaFW.registration import MAAFW_RUN_TYPES
+    from app.task.MaaFW.tools.embedded.owners import NOT_MAAFW_MESSAGE, find_managed
+
+    find_managed(script_id)
+    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+    if type(script_config) not in MAAFW_RUN_TYPES:
+        raise TypeError(NOT_MAAFW_MESSAGE)
+    return script_config
 
 
 @dataclass
@@ -252,7 +270,7 @@ async def list_shell_instances(
     """
 
     try:
-        script_config = maafw_script_config(script_id)
+        script_config = _family_script_config(script_id)
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
     roots, error = await asyncio.to_thread(
@@ -332,7 +350,7 @@ async def import_shell_instances(
     """
 
     try:
-        script_config = maafw_script_config(script_id)
+        script_config = _family_script_config(script_id)
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
     context = await _load_import_context(
@@ -387,7 +405,7 @@ async def apply_shell_instance_to_user(
     """
 
     try:
-        script_config = maafw_script_config(script_id)
+        script_config = _family_script_config(script_id)
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
 

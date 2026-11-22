@@ -24,6 +24,7 @@ from app.models.task import TaskItem, TaskScriptItem
 from app.task.MaaFW import embedded_manager
 from app.task.MaaFW.api_service import embedded as api
 from app.task.MaaFW.registration import build_config_handler
+from app.task.MaaFW.registration import register_owner as register_maafw_owner
 from app.task.MaaFW.tools.core.project_update import transport, updater
 from app.task.MaaFW.tools.embedded import embedded_project, project_path
 from tests.config_support import activate_config
@@ -139,8 +140,10 @@ async def project(tmp_path, monkeypatch, isolated_app_paths):
     monkeypatch.setattr(isolated_app_paths, "setting", setting)
     monkeypatch.setattr(isolated_app_paths, "_script_config_handlers", {})
     isolated_app_paths.bind_script_config_handler(MaaFWConfig, build_config_handler())
+    # 端点经属主登记认托管：登记通用 MFW 的属主（按确切类型认 MaaFWConfig）
+    register_maafw_owner()
     assert config.Info.Path == sources[0]
-    assert api._source_path_error(config, str(sources[1])) is None
+    assert api._source_path_error(script_id, str(sources[1])) is None
 
     # 本回归不安装真实的 MaaFramework/agent 依赖或触发运行池后台回收。
     monkeypatch.setattr(

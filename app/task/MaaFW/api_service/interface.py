@@ -29,7 +29,7 @@ from app.task.MaaFW.api_service.common import (
     MaaFWApiReply,
     logger,
     maafw_effective_root,
-    maafw_script_config,
+    maafw_managed,
 )
 from app.task.MaaFW.tools.core.interface.loader import (
     MaaFWInterfaceLoadError,
@@ -149,7 +149,7 @@ def _preview_flavor(script_id: str | None, interface: MaaFWInterface) -> Any:
 
     if script_id:
         try:
-            return resolve_flavor(maafw_script_config(script_id))
+            return resolve_flavor(maafw_managed(script_id))
         except (KeyError, ValueError, TypeError):
             return None
     return flavor_for_project(interface)
@@ -220,7 +220,7 @@ async def maafw_script_icon_file(script_id: str) -> Path:
     """
 
     try:
-        script_config = maafw_script_config(script_id)
+        script_config = maafw_managed(script_id)
     except (KeyError, ValueError, TypeError) as exc:
         raise FileNotFoundError(f"MFW 脚本无效: {exc}") from exc
     root_path = resolve_maafw_project_root(script_id, script_config)

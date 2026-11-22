@@ -52,13 +52,11 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     ENV_CONFIRMED_FIELD,
     GroupMember,
     _same_version,
-    effective_channel,
     embedded_project_dir,
     mark_env_confirmed,
     payloads_root,
     read_view_marker,
 )
-from app.task.MaaFW.tools.embedded.update_credentials import resolve_update_proxy_url
 from app.task.MaaFW.tools.embedded.update_session import UpdateProxy, UpdateSession
 from app.task.MaaFW.tools.embedded.view_update import latest_entry
 from app.utils import get_logger
@@ -82,26 +80,12 @@ NEXT_RUN_SWITCH_HINT = "下次运行前会自动换过去，这次不再核对"
 
 
 def release_group_members(script_id: str) -> list[GroupMember]:
-    """同组候选：除自己外的 MFW 家族脚本（事件循环线程上抄出来；运行中的标 ``busy``）。
-    与 ``api_service.common.maafw_group_members`` 同一口径。"""
+    """同组候选：除自己外属主名下的全部托管（事件循环线程上抄出来；运行中的标 ``busy``）。
+    与 ``api_service.common.maafw_group_members`` 同一口径（都是 ``owners.group_members``）。"""
 
-    from app.core import Config
-    from app.models.config import MaaFWConfig
+    from app.task.MaaFW.tools.embedded.owners import group_members
 
-    members: list[GroupMember] = []
-    for uid, config in Config.ScriptConfig.items():
-        if not isinstance(config, MaaFWConfig) or str(uid) == script_id:
-            continue
-        members.append(
-            GroupMember(
-                script_id=str(uid),
-                channel=effective_channel(str(uid), config),
-                busy=bool(getattr(config, "is_locked", False)),
-                name=str(config.Info.Name or ""),
-                proxy_url=resolve_update_proxy_url(config) or None,
-            )
-        )
-    return members
+    return group_members(exclude=script_id)
 
 
 def _state(

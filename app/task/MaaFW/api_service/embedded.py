@@ -26,14 +26,11 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from app.core import Config
-from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
 from app.models.schema import (
     MaaFWEmbeddedProjection,
     MaaFWEmbeddedSourceItem,
@@ -44,7 +41,7 @@ from app.task.MaaFW.api_service.common import (
     MaaFWApiReply,
     logger,
     maafw_group_members,
-    maafw_script_config,
+    maafw_managed,
 )
 from app.task.MaaFW.tools.core.interface.loader import (
     load_interface_model,
@@ -58,6 +55,7 @@ from app.task.MaaFW.tools.core.project_update.projection import (
     discover_project_interface,
 )
 from app.task.MaaFW.tools.core.project_update.state import redact_text
+from app.task.MaaFW.tools.embedded import owners
 from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
     FollowSourceCloneUnavailable,
@@ -152,13 +150,16 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
     async def complete_import() -> str:
         nonlocal channel, script_name
         # 路径校验会让出事件循环，运行可能已在此期间取得 X 锁。拿到项目预约后
-        # 重读配置并取同一把 X 票，直到视图与来源/报告都写完才允许脚本启动。
-        script_config = maafw_script_config(script_id)
-        config_ticket = await script_config.try_lock_x()
+        # 重读托管并经属主取同一把 X 票，直到视图与来源/报告都写完才允许脚本启动。
+        owner = maafw_managed(script_id).owner_name
+        assert owner is not None
+        config_ticket = await owners.lock_managed(owner, script_id)
         if config_ticket is None:
             log_failure(EMBEDDED_SCRIPT_BUSY)
             return EMBEDDED_SCRIPT_BUSY
         try:
+            # 锁住之后再读一次：拿锁那一下让出过事件循环
+            script_config = maafw_managed(script_id)
             script_name = str(script_config.Info.Name or script_id[:8])
             # 源码形态由本次导入识别；只看开发者模式开关，不沿用旧报告的 sourceForm。
             follow = follow_source_switch_on(script_config)
@@ -176,26 +177,23 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
                 follow_source=follow,
                 proxy_url=proxy_url,
             )
-            # 当前任务持有 X token，直接提交原节点；Config.update_script 的外部
-            # 编辑入口会拒绝一切已锁节点，不能用于持票的内部写回。
-            await script_config.update(
-                type(script_config).model_validate(
-                    {
-                        "Info": {"Path": source_path},
-                        "Embedded": {
-                            "Report": json.dumps(
-                                imported["report"], ensure_ascii=False
-                            ),
-                            "SourceVersion": imported["sourceVersion"],
-                            "ImportedAt": imported["importedAt"],
-                        },
-                    }
-                )
+            # 当前任务持有 X 票：经属主持票写回（属主直接提交原节点；外部编辑入口会拒绝
+            # 一切已锁节点，不能用于持票的内部写回）。
+            await owners.write_or_raise(
+                owner,
+                script_id,
+                owners.RecordPatch(
+                    source_path=source_path,
+                    report=imported["report"],
+                    source_version=imported["sourceVersion"],
+                    imported_at=imported["importedAt"],
+                ),
+                ticket=config_ticket,
             )
         finally:
-            await script_config.unlock(config_ticket)
+            await owners.unlock_managed(owner, script_id, config_ticket)
         # 源码形态由新报告决定，按导入后的实际渠道传播。
-        channel = effective_channel(script_id, maafw_script_config(script_id))
+        channel = effective_channel(script_id, maafw_managed(script_id))
         await _propagate_view_to_group(script_id, channel)
         publish("imported", "success", "导入完成", 100.0)
         return ""
@@ -237,7 +235,7 @@ async def _propagate_view_to_group(script_id: str, channel: str) -> None:
     # 遍历脚本表必须在事件循环线程上做（工作线程里遍历会撞 dict changed size）
     members = maafw_group_members(script_id)
     try:
-        source_name = str(maafw_script_config(script_id).Info.Name or script_id[:8])
+        source_name = str(maafw_managed(script_id).Info.Name or script_id[:8])
     except (KeyError, ValueError, TypeError):
         source_name = script_id[:8]
     # 切换只把文件摆好：被切的兄弟各自在后台确认一次运行环境，别把 isolated_venv 的
@@ -370,7 +368,7 @@ async def get_embedded_status(script_id: str) -> MaaFWApiReply:
     """``/maafw/embedded/status``：脚本内嵌副本的状态。"""
 
     try:
-        script_config = maafw_script_config(script_id)
+        script_config = maafw_managed(script_id)
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
     return MaaFWApiReply(data=await embedded_status_data(script_id, script_config))
@@ -383,7 +381,7 @@ async def reimport_embedded(script_id: str, source_path: str | None) -> MaaFWApi
     """
 
     try:
-        script_config = maafw_script_config(script_id)
+        script_config = maafw_managed(script_id)
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
     if busy := _embedded_busy_reason(script_config):
@@ -399,7 +397,7 @@ async def reimport_embedded(script_id: str, source_path: str | None) -> MaaFWApi
     # 来源最后要写进 Info.Path，先按它的校验器过一遍（系统目录、AUTO-MAS 自己的目录不收）：
     # 拖到复制之后才发现，副本已经换成新项目、来源却写不进去，端点还会直接 500。
     # 校验要碰磁盘（is_dir / resolve），来源在慢网络盘上时别卡住事件循环
-    if path_error := await asyncio.to_thread(_source_path_error, script_config, source):
+    if path_error := await asyncio.to_thread(_source_path_error, script_id, source):
         return MaaFWApiReply.error(400, f"{failure_prefix}{path_error}")
     # 特调托管只收它那种项目：在动副本之前按来源目录的 interface 判，不是就原样拒绝
     if mismatch := await asyncio.to_thread(
@@ -423,7 +421,7 @@ async def reimport_embedded(script_id: str, source_path: str | None) -> MaaFWApi
         )
     # 来源与导入报告已在同一段受保护的导入操作中提交。
     _reconcile_pool_after_copy_change("reimport", copy_dir, previous_version)
-    data = await embedded_status_data(script_id, maafw_script_config(script_id))
+    data = await embedded_status_data(script_id, maafw_managed(script_id))
     # 副本、来源、省了多少这些细节只进运行环境日志（见 embedded_summary_lines），
     # 页面上就是一句「项目已导入」
     return MaaFWApiReply(message="项目已导入", data=data)
@@ -444,7 +442,7 @@ async def sync_embedded(script_id: str) -> MaaFWApiReply:
     """
 
     try:
-        script_config = maafw_script_config(script_id)
+        script_config = maafw_managed(script_id)
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
     if not follow_source_enabled(script_config):
@@ -498,37 +496,38 @@ async def sync_embedded(script_id: str) -> MaaFWApiReply:
     )
     logger.info(f"MFW 托管 {script_id} 立即同步：{message}")
     try:
-        await Config.update_script(
+        await owners.write_or_raise(
+            script_config.owner_name,
             script_id,
-            {
-                "Embedded": {
-                    "Report": json.dumps(imported["report"], ensure_ascii=False),
-                    "SourceVersion": imported["sourceVersion"],
-                    "ImportedAt": imported["importedAt"],
-                }
-            },
+            owners.RecordPatch(
+                report=imported["report"],
+                source_version=imported["sourceVersion"],
+                imported_at=imported["importedAt"],
+            ),
         )
     except RuntimeError as exc:
         # 同步完、写回之前脚本刚好开跑（配置锁住）：视图已经是新的，报告下次运行前写回。
         logger.warning(f"MFW 托管 {script_id} 立即同步后写回导入记录失败：{exc}")
-    data = await embedded_status_data(script_id, maafw_script_config(script_id))
+    data = await embedded_status_data(script_id, maafw_managed(script_id))
     return MaaFWApiReply(message=message, data=data)
 
 
-def _source_path_error(script_config: RuntimeMaaFWConfig, source: str) -> str | None:
-    """这个来源能不能写进 Info.Path；不能就说清楚为什么、该怎么改。"""
+def _source_path_error(script_id: str, source: str) -> str | None:
+    """这个来源能不能写进 Info.Path；不能就说清楚为什么、该怎么改。
 
-    try:
-        validated = type(script_config.Info).model_validate({"Path": source})
-        if validated.Path is None:
-            # 路径校验器不收的来源直接清空、不抛原因，这里按同一套规则补上为什么被拒。
-            return (
-                _describe_source_path_error(source, "")
-                or "来源路径无效，请重新选择项目目录"
-            )
-    # 路径里的符号链接成环时，Python 3.12 的 Path.resolve 抛 RuntimeError
-    except (ValueError, RuntimeError) as exc:
-        return _describe_source_path_error(source, str(exc))
+    按托管自己的路径校验器判（经属主入口），碰磁盘，调用方放进工作线程。
+    """
+
+    owner, _record = owners.find_managed(script_id)
+    check = owners.check_source_path(owner, script_id, source)
+    if check.status == "cleared":
+        # 路径校验器不收的来源直接清空、不抛原因，这里按同一套规则补上为什么被拒。
+        return (
+            _describe_source_path_error(source, "")
+            or "来源路径无效，请重新选择项目目录"
+        )
+    if check.status == "error":
+        return _describe_source_path_error(source, check.detail)
     return None
 
 
@@ -613,7 +612,7 @@ def embedded_summary_lines(script_id: str) -> list[str]:
     """
 
     try:
-        script_config = maafw_script_config(script_id)
+        script_config = maafw_managed(script_id)
         status = embedded_status(script_id, script_config)
     except Exception:  # noqa: BLE001 - 日志装饰，读不出来就不写
         return []
@@ -743,17 +742,18 @@ async def list_embedded_sources(excluded_script_id: str | None) -> MaaFWApiReply
     """``/maafw/embedded/sources``：有健康副本的 MFW / M9A 脚本，排除 ``excluded_script_id``。"""
 
     excluded = str(excluded_script_id or "").strip()
-    # 遍历脚本表必须在事件循环线程上做（工作线程里遍历会撞上整表重载）：这里先抄出要的
+    # 问属主必须在事件循环线程上做（工作线程里遍历托管表会撞上整表重载）：这里先抄出要的
     # 字段，线程里只碰盘
+    current = owners.snapshot(require_ready=False)
     candidates = [
         (
-            str(uid),
-            str(config.Info.Name or ""),
-            type(config).__name__.removesuffix("Config"),
-            bool(getattr(config, "is_locked", False)),
+            record.uid,
+            str(record.name or ""),
+            record.kind,
+            record.running,
         )
-        for uid, config in Config.ScriptConfig.items()
-        if str(uid) != excluded and isinstance(config, RuntimeMaaFWConfig)
+        for record in (current.records() if current is not None else [])
+        if record.uid != excluded
     ]
 
     def _collect() -> list[MaaFWEmbeddedSourceItem]:
@@ -789,9 +789,10 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
     失败时的 ``message`` 只给原因：前端把它接在「复用项目失败：」后面、再告诉用户去引导页选目录。
     """
 
+    # 跨属主时读源托管、写目标托管分别经两边的属主
     try:
-        script_config = maafw_script_config(script_id)
-        source_config = maafw_script_config(source_script_id)
+        script_config = maafw_managed(script_id)
+        source_config = maafw_managed(source_script_id)
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
     if script_id == source_script_id:
@@ -878,21 +879,25 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
     if not cloned:
         return MaaFWApiReply.error(400, "所选脚本的项目文件已不可用")
 
+    # 克隆期间源托管可能被改过：写回前再经源的属主读一次（源已删掉就用开头那份）
+    try:
+        source_config = maafw_managed(source_script_id)
+    except (KeyError, ValueError, TypeError):
+        pass
     inherited = imported or inherit_embedded_record(source_config, script_id)
-    await Config.update_script(
+    await owners.write_or_raise(
+        script_config.owner_name,
         script_id,
-        {
-            "Info": {"Path": str(source_config.Info.Path or "")},
-            "Embedded": {
-                "Report": json.dumps(inherited["report"], ensure_ascii=False),
-                "SourceVersion": inherited["sourceVersion"],
-                "ImportedAt": inherited["importedAt"],
-            },
-            "Update": {"Channel": source_channel},
-        },
+        owners.RecordPatch(
+            source_path=str(source_config.Info.Path or ""),
+            report=inherited["report"],
+            source_version=inherited["sourceVersion"],
+            imported_at=inherited["importedAt"],
+            channel=source_channel,
+        ),
     )
     _reconcile_pool_after_copy_change("clone", target_dir, previous_version)
-    data = await embedded_status_data(script_id, maafw_script_config(script_id))
+    data = await embedded_status_data(script_id, maafw_managed(script_id))
     source_name = str(source_config.Info.Name or source_script_id[:8])
     if imported is not None:
         if (imported.get("report") or {}).get("sourceForm"):
