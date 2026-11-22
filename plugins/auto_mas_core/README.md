@@ -81,6 +81,37 @@ async def teardown_blockers(self) -> list[str]:
 
 专项通过 `auto_mas_core.host.core_downloads.download_file()` 消费时传入相同的 `key` 与 `rid`／哈希；宿主只复制本 L2 已交付且身份匹配的缓存文件，文件缺失或身份不匹配则执行正常下载。脚本复制后使用自己的副本，L2 收尾释放引用；最后一次释放取消未完成下载，已完成缓存仍按容量规则回收。
 
+**托管生命周期钩子。** 专项状态不全在 `data/<托管 uid>/` 下、或者保存前要改写账号数据时，覆盖 `ScriptAdapterPlugin` 的下列异步方法。宿主只接子类覆盖了的方法，一个都没覆盖的插件行为不变。
+
+| 方法 | 调用时机 |
+| --- | --- |
+| `on_script_cloned(source, target)` | 复制托管：新托管配置已提交、宿主复制 `data/<来源 uid>` 之前 |
+| `on_script_removed(script_id)` | 删除托管：删除已提交、宿主已删 `data/<uid>` 之后 |
+| `prepare_user_read(script, user_ids)` | 读取账号配置前；`user_ids` 为 `None` 表示整个托管 |
+| `on_user_added(script, user)` | 新账号已提交后；失败时账号保留，不撤回 |
+| `prepare_user_update(script, user, data)` | 保存账号前原地改 `data`；在配置执行门外调用，返回的同步守卫在门内、写入前执行，守卫抛异常则不写入 |
+
+钩子都经本插件的调用门执行：插件停用或重载途中调用得到 `PluginBusyError`，配置不动；覆盖了钩子的插件不可用时，宿主拒绝对其托管的这些操作，不会绕开钩子直接写入。钩子抛出的其他异常原样传给发起操作的接口。需要钩子的插件应把 `auto-mas-core` 的下限设到带钩子的宿主版本，并在导入时检查 `hasattr(ScriptAdapterPlugin, "on_script_cloned")`，旧宿主上钩子不会被调用。
+
+**MFW 专项用到的宿主出口。** 下列 `auto_mas_core.host` 模块只开放 `__all__` 里列出的名字，其余名字取不到；Windows 专属模块在取属性时才导入宿主模块，非 Windows 上导入 SDK 不出错。
+
+| SDK 模块 | 宿主模块 | 开放的名字 |
+| --- | --- | --- |
+| `tools_common_ocr` | `app.tools.common.ocr` | `ocr_image`、`Box`、`OCRItem` |
+| `tools_common_game_calendar` | `app.tools.common.game_calendar` | 子模块 `stella` |
+| `utils_common_process_session` | `app.utils.common.process.session` | `desktop_process_target`、`DesktopProcessTarget` |
+| `utils_windows_desktop_session_process_runner` | `app.utils.windows.desktop_session.process_runner` | `launch_desktop_process`、`open_in_desktop`、`run_desktop_action` |
+| `task_desktop_session_worker` | `app.task.desktop_session_worker` | `request_desktop_action` |
+| `task_run_flow` | `app.task.run_flow` | `point`、`begin_attempt`、`game_update_result`、`operation`、`observe_run`、`RunPoint`、`PointState`、`RunStage` |
+| `task_game` | `app.task.game` | `game_device_id`、`game_is_emulator`、`game_target_id`、`current_game_session` |
+| `task_client` | `app.task.client` | `client_executable_path`、`client_launcher_path`、`ClientProcess` |
+| `utils_common_process_operations` | `app.utils.common.process.operations` | `iter_processes`、`managed_process`、`terminate_process` |
+| `utils_common_zip_range` | `app.utils.common.zip_range` | `HealSkip`、`RangeHTTPReader`、`RangeReadCancelled`、`RangeSpeedGuard`、`format_size` |
+| `models_notification_channel` | `app.models.notification.channel` | `DispatchResult`、`NotifyTarget` |
+| `core_config_manager` | `app.core.config.manager` | `normalize_proxy_address` |
+
+桌面分身里的动作由宿主写死的表分派，分身进程不导入插件包，所以插件只能用通用动作：`request_desktop_action(desktop, "list_windows", {})` 返回分身桌面上的全部窗口 `[[hwnd, 类名, 标题, pid], …]`（MaaFramework 的枚举顺序，已去掉失效句柄），窗口规则由调用方在本进程匹配；`request_desktop_action(desktop, "window_in_session", {"hwnd": "<句柄>"})` 返回这个窗口是否属于该分身。
+
 迁移测试插件可通过 `auto_mas_core.host` 复用现有模拟器、MAA 共用工具等真实宿主能力；这些出口不提供独立宿主或旧任务框架。L2 在派发前向 `UserExpander.history` 绑定当前任务的实际 `TaskHistorySession`，供专项归档使用。
 
 任务展开使用 `UserExpander` 与真实模式的 `ModeWorker` 子类：`AutoProxyWorker`、`ScriptConfigWorker`、`ScriptViewWorker`。插件提供实际执行、结果判定以及 `finish()` 所需的保存与恢复，不依赖未实现的历史写入协议。
@@ -102,6 +133,15 @@ point(self, "special", state="matched", key="daily_reward")  # 在现有检测�
 主动中止不是运行失败，后续收尾仍可成功；子任务完成不等于整轮成功。`observe_run(callback)` 在当前
 执行上下文接收 `(执行器, RunPoint)`，不新增公共任务树字段、WebSocket 消息或磁盘格式。
 只有收尾时才读取的规则在收尾交付，不伪装成实时监听。更新或关闭动作未由 MAS 接管时，不补报成功。
+
+**按配置判定的游戏类型和桌面分身。** `ScriptTypeDecl` 末尾有两个可选的同步函数，都经插件调用门调用：
+
+- `game_kind(script, patch)`：按托管当前配置和本次保存补丁（运行时选目标时补丁只含 `game`）返回 `"emulator"` 或 `"client"`，把 `game_kinds` 收窄成一项；返回 `None`、插件不可用或抛异常时按静态的 `game_kinds`。保存托管、保存账号和运行时选游戏目标都会用它校验绑定，判断不了时请返回 `None`，不要拦住运行。
+- `desktop_session(script)`：这个托管能否在桌面分身里跑；未声明、插件不可用或抛异常时为不支持（即以前的行为）。
+
+两个函数都会在事件循环里同步执行，只做轻量读取。
+
+**托管级检查与良性跳过。** `UserExpander.check()` 返回字符串时整个托管记「异常」；返回 `ScriptSkip(reason)`（从 `auto_mas_core` 或 `auto_mas_core.adapters.script` 导入）表示这次不是故障、只是暂时不能跑（例如项目正在更新或被占用）：托管和尚未开始的账号记「跳过」，任务收到一条 warning 提示，不派发任何账号。返回 `None` 照常运行。
 
 展开类可以继承 `UserExpander[MyScriptEntry]`，使 `script_config` 保留专项配置类型。仓库的 `pyrightconfig.json` 已声明 SDK 源码路径；包内其他模块使用相对导入，独立插件工程则在自己的开发环境安装 SDK。
 

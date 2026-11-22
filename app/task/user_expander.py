@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from abc import abstractmethod
+from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
@@ -27,6 +28,13 @@ class _UserLookup(Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class ScriptSkip:
+    """``check()`` 返回它表示整个托管良性跳过：托管记「跳过」、发 warning，不算异常。"""
+
+    reason: str
+
+
 class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
     history: TaskHistorySession
 
@@ -45,6 +53,7 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
         self.game_session: GameSession | None = None
         self._emulator_override: BoundEmulator | None = None
         self._entered = False
+        self._skipped: str | None = None
 
     @property
     def emulator(self) -> BoundEmulator | None:
@@ -90,6 +99,9 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
         await self.script_info.set_state(status="运行")
         self._entered = True
         reason = await self.check()
+        if isinstance(reason, ScriptSkip):
+            await self._skip_script(reason.reason)
+            return
         if reason:
             raise ValueError(reason)
         # 游戏接入位置：取得托管锁后、派发用户前订阅游戏/设备；资源由真实提供方负责。
@@ -175,8 +187,25 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
             self._user_ticket = None
             self._user_config = None
 
-    async def check(self) -> str | None:
-        """插件托管级检查。"""
+    async def _skip_script(self, reason: str) -> None:
+        """良性跳过：未开始的账号记「跳过」，向任务发一条 warning；托管状态由收尾写。"""
+        from app.core import Publisher
+        from app.core.ws import protocol
+        from app.models.schema import WSTaskNoticeData
+
+        self._skipped = reason
+        await self.script_info.set_log(reason)
+        for user in self.script_info.users.values():
+            if user.info.status == "等待":
+                await user.set_state(status="跳过")
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="warning", message=reason),
+        )
+
+    async def check(self) -> str | ScriptSkip | None:
+        """插件托管级检查：返回原因字符串记「异常」，返回 ``ScriptSkip`` 记「跳过」。"""
         return None
 
     async def prepare(self) -> None:
@@ -219,5 +248,7 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
                 if self.error
                 or (self.game_session is not None and self.game_session.cleanup_failed)
                 or any("异常" in u.status for u in self.script_info.users.values())
+                else "跳过"
+                if self._skipped is not None
                 else "完成"
             )

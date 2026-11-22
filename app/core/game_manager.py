@@ -261,12 +261,7 @@ class _GameManager:
         if game is None:
             return "所选游戏目标不存在"
         if isinstance(script, ScriptEntry):
-            declaration = next(
-                d
-                for d in Plugin.script_types.values()
-                if isinstance(script, d.script_type)
-            )
-            kinds = declaration.game_kinds
+            kinds = Plugin.script_game_kinds(script, patch)
         else:
             kinds = Config.script_game_kinds(script, patch)
         if kinds and game.info.type not in kinds:

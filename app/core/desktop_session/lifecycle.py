@@ -22,10 +22,16 @@ def supports_task(config: object) -> bool:
         MaaEndConfig,
         OkNteConfig,
         OkwwConfig,
+        ScriptEntry,
         ZzzOdConfig,
     )
     from app.utils import IS_ELEVATED
 
+    if isinstance(config, ScriptEntry):
+        # 插件托管按其声明的 desktop_session 判定；未声明为不支持。
+        from app.core import Plugin
+
+        return Plugin.script_supports_desktop(config)
     if isinstance(config, GeneralConfig):
         return not config.Game.Enabled or config.Game.Type != "Emulator"
     if isinstance(config, MaaEndConfig):

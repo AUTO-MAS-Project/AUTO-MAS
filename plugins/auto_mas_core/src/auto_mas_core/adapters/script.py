@@ -15,6 +15,7 @@ from app.task.run_flow import (
     operation,
     point,
 )
+from app.task.user_expander import ScriptSkip
 
 __all__ = [
     "MODE_WORKERS",
@@ -24,6 +25,7 @@ __all__ = [
     "ScriptAdapterPlugin",
     "ScriptConfigWorker",
     "UserExpander",
+    "ScriptSkip",
     "ScriptTypeDecl",
     "RunPoint",
     "begin_attempt",

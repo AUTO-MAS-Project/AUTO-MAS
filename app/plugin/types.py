@@ -10,6 +10,8 @@ from enum import Enum
 CORE_PLUGIN_NAME = "auto_mas_core"
 CORE_DISTRIBUTION_NAME = "auto_mas_core"
 MARKET_GATE_TAG = "auto-mas-plugin"
+# 本地源码库：插件共用、尚未发布的库，参与依赖求解并加入导入路径，本身不是插件。
+LOCAL_LIBRARY_TAG = "auto-mas-library"
 PLUGIN_ID_TAG_PREFIX = "auto-mas-id:"
 # 插件身份会作为配置文件名，拒绝两种平台的路径及 Windows 文件名控制字符。
 PLUGIN_ID_PATTERN = re.compile(r'(?!\.{1,2}$)[^/\\:*?"<>|\s\x00-\x1f]+')

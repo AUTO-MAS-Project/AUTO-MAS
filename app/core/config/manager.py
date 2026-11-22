@@ -1731,13 +1731,17 @@ class AppConfig:
         if refusal:
             raise ValueError(refusal)
 
-        if isinstance(user_config, UserEntry) and precondition is None:
-            # 插件配置只走配置基类已定义的更新入口，专项准备和信号由插件内部负责。
+        handler = self._get_script_config_handler(script_config)
+        if (
+            isinstance(user_config, UserEntry)
+            and precondition is None
+            and (handler is None or handler.prepare_user_update is None)
+        ):
+            # 插件没有保存前钩子时只走配置基类已定义的更新入口，信号由插件内部负责。
             await user_config.update(type(user_config).model_validate(data))
             return True
 
         guard: Callable[[], None] | None = None
-        handler = self._get_script_config_handler(script_config)
         if handler is not None and handler.prepare_user_update is not None:
             prepared = handler.prepare_user_update(
                 script_config, user_config, data=data
@@ -1809,9 +1813,11 @@ class AppConfig:
     def _get_script_config_handler(
         self, script: ConfigEntry
     ) -> ScriptConfigHandler | None:
-        """[兼容旧专项] 查找存量配置回调，随插件配置能力迁移一并移除。"""
+        """查找托管的配置回调：旧专项按登记取，插件托管取其覆盖了的生命周期钩子。"""
         if isinstance(script, ScriptEntry):
-            return None
+            from app.core import Plugin
+
+            return Plugin.script_config_handler(script)
         # 按确切类型查：子类不因父类登记过就拿到父类的回调（M9A、MSS 各自登记）。
         entry_type = type(script)
         if entry_type in self._script_config_handlers:
