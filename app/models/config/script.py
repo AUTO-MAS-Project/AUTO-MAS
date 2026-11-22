@@ -1565,7 +1565,7 @@ class M9AUserConfig(MaaFWUserConfig):
     """M9A 账号配置。
 
     ``Info.Account`` 在这里不只是备注：脚本资源为官服且账号非空时，运行前会自动插入
-    「切换账号」任务（见 ``app/task/M9A/flavor.py``）。
+    「切换账号」任务（见 ``app/task/M9A/arrange.py``）。
     """
 
 
@@ -1633,8 +1633,8 @@ class MSSUserConfig(MaaFWUserConfig):
     """MSS（MaaStellaSora / 星塔旅人）账号配置：MaaFW 账号配置再加一项计划表引用。
 
     ``Info.PlanMode`` 是比 MaaFW 多出的唯一字段：``Fixed`` 表示悬赏试炼按任务队列里
-    用户自己配的选项跑；填了 MSS 计划表的 UID，运行前由特调钩子按当天槽位改写悬赏试炼的
-    关卡、难度与次数（见 ``app/task/MSS/flavor.py``）。
+    用户自己配的选项跑；填了 MSS 计划表的 UID，运行前由 MSS 的流程按当天槽位改写悬赏试炼的
+    关卡、难度与次数（见 ``app/task/MSS/arrange.py``）。
     """
 
     related_config: ClassVar = {}

@@ -20,8 +20,8 @@ Unity 播放器把 PlayerPrefs 存在 ``HKCU\\Software\\<公司名>\\<产品名>
   控制方式会用到它，MaaFW 项目绝大多数走模拟器 ADB，分辨率由模拟器决定；真正走 PC 的
   Unity 项目寥寥，而且项目自己往往带了改分辨率的预任务（MaaEnd 的 GameSetting 两层都写）。
   别往这里加游戏专属的键表。某个游戏确有需要时，由它的特调或专项自己调：专项参照
-  ``HSRGameResolutionOverride``、MaaEnd 专项的 ``Game.SetResolution``；特调目前没有
-  启动游戏前的钩子，需要时在 ``flavor.py`` 按 ``ensure_game_updated`` 的样子加一个可选钩子。
+  ``HSRGameResolutionOverride``、MaaEnd 专项的 ``Game.SetResolution``；M9A、MSS 有需要时写在
+  各自的账号流程里（照 M9A ``account_run`` 调游戏更新的样子）。
 - 游戏正常退出时 Unity 会把当时的分辨率写回这些值，所以恢复不能只删自己写的那几个，
   必须按快照把原值与原类型整表写回、原本不存在的删掉。
 - 快照写目标值之前先落盘（``data/maafw_resolution_journal/<键路径哈希>.json``），恢复成功才删。

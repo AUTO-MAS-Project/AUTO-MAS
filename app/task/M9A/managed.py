@@ -22,11 +22,11 @@
 队列里残留的这三类任务（beta.1 迁移留下的、#1012 补回的、预设带进来的、手加的）一律按同一套
 规则整理，规则只写在这里，四个入口共用（托管类型在新建时就定了，通用托管不会换成 M9A）：
 
-- 运行前装饰（``arrange.arrange_m9a_queue``，经 ``flavor.decorate_selection``）；
+- 运行前排队列（``arrange.arrange_m9a_queue``，``account_run`` 建计划时调）；
 - 每次启动对全部 M9A 用户的整理（``migration.normalize_m9a_managed_entries``）；
 - 旧版专项迁移与 beta.1 补救（``migration.py``）；
 - 保存账号配置、导入外壳配置、恢复备份时写 ``Task.TaskSnapshot`` 的入口（经引擎的可选钩子
-  ``sanitize_task_snapshot``，见 ``flavor.py``；实现在 ``arrange.settle_m9a_snapshot``）。
+  ``config_hooks``；实现在 ``arrange.settle_m9a_snapshot``）。
 
 规则（按 entry 判，不按任务名）：
 

@@ -160,7 +160,7 @@ def settle_selection(
 ) -> tuple[str | None, str | None]:
     """保存前整理（``config_hooks``）用的 ``(controller 名, 生效的 resource 名)``。
 
-    口径同 :func:`run_selection`，只是 ``Info.Controller`` / ``Info.Resource`` 读不到时按空串（照旧风味路径
+    口径同 :func:`run_selection`，只是 ``Info.Controller`` / ``Info.Resource`` 读不到时按空串（沿用删掉风味前
     ``sanitize_user_task_update`` 的读法）。
     """
 

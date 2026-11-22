@@ -6,10 +6,9 @@
 
 第 10 步起 MSS 跑自己的流程：``manager_factory`` 造 ``manager.MSSManager``（在函数里现导入：本模块启动期就会
 被导入，不拉起流程模块）。配置回调与恢复池仍用中立的通用版（``MaaFW/tools/embedded/config_handler``，不经
-``MaaFW/registration``）：MSS 没有保存前整理，风味路径上那一步对它本来就是空操作。
+``MaaFW/registration``）：MSS 没有保存前整理。
 
-回退第 10 步（回到 MFW 管理器 + 风味路径）只需要把 ``manager_factory`` 换回 ``MaaFW/registration.build_manager``，
-即 revert 翻登记的那一个提交。
+托管属主只收 MSS 项目（导入 / 克隆前的项目校验）；MSS 没有规则表，预览用空表。
 """
 
 from __future__ import annotations

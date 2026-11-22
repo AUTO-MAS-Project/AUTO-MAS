@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from app.models.script_contracts import ScriptConfigHandler
     from app.utils.common.config.restore import ConfigRestorePool, RestoreContext
 
-# 与风味路径（``tools/embedded/flavor.sanitize_user_task_update``）同名，app.log 的检索习惯不变
+# 沿用删掉风味（第 11 步）之前的 logger 名，app.log 的检索习惯不变
 logger = get_logger("MaaFW 特调")
 
 

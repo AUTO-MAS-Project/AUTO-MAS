@@ -25,8 +25,8 @@ M9A 托管由 ``manager.M9AManager``（脚本级）与 ``account_run.M9AAccountR
 ``game_update.py``（官服客户端版本检查与安装）由流程按需导入；``migration.py`` 是旧版 M9A 专项配置的一次性迁移。
 项目更新、内嵌副本、worker 运行、通知正文等都调 ``app/task/MaaFW/tools/`` 下吃普通数据的叶子。
 
-``flavor.py`` 是回退本体：翻登记（``registration.py``）回退后 MFW 管理器重新经它跑 M9A，第 11 步删。
+预览的规则表与导入 / 克隆拒收由 ``registration.py`` 登记的托管属主给出（``rules.M9A_PLAN_RULES``、
+``rules.is_m9a_project``）。MFW 的风味机制第 11 步已删，M9A 不再有经 MFW 管理器运行的回退路径。
 
-保持本包不在导入期拉起任何重模块：``registration.py`` 在函数里现导入流程与配置回调；``app.models.config``
-在类属性里只记了 ``"app.task.M9A.flavor:FLAVOR"`` 这个字符串，引擎按需导入。
+保持本包不在导入期拉起任何重模块：``registration.py`` 在函数里现导入流程与配置回调。
 """

@@ -56,9 +56,10 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `MaaFWPlanRun` 对象上，调用方在 `finally` 里取）。停止经 `MaaFWPlanRun.stop()`。出口要窄到以后能原样换成
   「开始 / 取事件和结果 / 停止」：**不要往事件里塞对象、回调或 Future，不要让它读调用方的状态**；新的输出
   先想清楚是事件还是返回值。任务类 `runner_task` 只剩一层：取配置 → 组装入参 → 调它 → 把事件转成账号日志、
-  运行记录与进度点 → 处理返回值。只和 M9A 有关的「登录交给首任务完成」（`StartupTask`）不在这里：任务类在
-  调用前把首任务标成 `abortRoundMessage`、把登录截止时刻放进 `task_deadlines`，截止已过时 `plan_run` 抛
-  `MaaFWTaskDeadlineExpired`、任务类换成「登录时限已耗尽」；首任务完成后记「已登录」也由任务类按返回的结果做。
+  运行记录与进度点 → 处理返回值。只和 M9A 有关的「登录交给首任务完成」（`M9AStartupTask`）不在这里，也不在
+  通用任务类里：M9A 的账号流程（`app/task/M9A/account_run.py`）在调用前把首任务标成 `abortRoundMessage`、把登录
+  截止时刻放进 `task_deadlines`，截止已过时 `plan_run` 抛 `MaaFWTaskDeadlineExpired`、M9A 流程换成「登录时限已
+  耗尽」；首任务完成后记「已登录」也由它按返回的结果做。通用任务类不传 `task_deadlines`（默认空表）。
   重试循环、历史保存与通知仍在任务类（见下面「任务类还剩什么」）；桌面游戏启停在 `desktop_game`（见下文）。
 - **运行前设置（interface `pretask`）的执行在 `tools/embedded/pretask_run.py`**，做法与 `plan_run` 相同：
   入参只收普通数据（`MaaFWPretaskRunRequest`：计划里的 pretask、工作目录、时限原值、`PI_*` 与 ModAVD adb
@@ -92,8 +93,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   消息标记（`UNRETRYABLE_ENVIRONMENT_MARKERS`，含原生库架构不符）、`result_failure_category`、宿主自己抛的
   `MaaFWGameUpdateRequired` / `MaaFWWorkstationLocked` 都在这里；专项在下发任务前对客户端做的一步判定本次
   无法继续时抛的 `MaaFWClientStepFailed`（文案直接给用户看、不加「MaaFW 运行异常: 」前缀、照常重试）也定义在
-  这里，专项各自继承它（M9A 的 `M9ALoginRequired`，`app/task/M9A/startup.py`），风味的 `MaaFWLoginRequired`
-  只是它的别名。不读配置、不碰调用方。判据的先后不能乱：
+  这里，专项各自继承它（M9A 的 `M9ALoginRequired`，`app/task/M9A/startup.py`）。`MaaFWGameUpdateRequired`
+  现在只有 M9A 的游戏更新会抛，通用任务类不会走到 `game_update_required`。不读配置、不碰调用方。判据的先后不能乱：
   信号先于成功，资源包失败先于环境级失败；异常的类别是运行前设置 → 整次运行超时 → 环境级 → 宿主异常，
   锁屏算不重试但不补「运行环境不可用」。
 - **运行设置的原值解析与给人看的文案也归运行这一块**（三个专项的流程都调，只吃普通数据、不读配置对象）：
@@ -232,11 +233,12 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   - **以后新增一个专项**要做的：一个确切类型的配置类；`registration.py` 里 `ScriptRegistration`（`config_type` 与
     `run_types` 都是它）与 `register_owner()`，并在 `builtin_registration` 里列出、调用。**运行**：专项写自己的流程
     （脚本级管理器 + 账号级任务类 + 唯一的配置读写入口 `config_view`），`manager_factory` 在函数里现导入它，
-    不复用 MFW 管理器、不加风味钩子——照 M9A 的写法（`app/task/M9A/AGENTS.md`「自己的流程」：先拷
+    不复用 MFW 管理器（MFW 的风味钩子第 11 步已删）——照 M9A 的写法（`app/task/M9A/AGENTS.md`「自己的流程」：先拷
     `embedded_manager` / `runner_task`，删掉通用专属的分支，专项的规矩写成普通代码，共用的事调
     `tools/` 下吃普通数据的叶子；不抽带钩子的共用主循环、不造「账号运行上下文」大对象）；新管理器必须带
     **静态 `check_prefetch`**，构造函数不能有副作用。从此合并上游改了 `runner_task` / `embedded_manager` 时，要把
-    同样的改动手工搬进每个专项的那两份（第 11 步之前同一份逻辑有几处）。配置回调用
+    同样的改动手工搬进每个专项的那两份（见下面「合并上游」）。专项对项目的要求（预览的规则表、只收哪种项目、
+    拒收文案）作为 `BuiltinConfigOwner` 的构造参数登记（见下面「项目要求由属主给」）。配置回调用
     `tools/embedded/config_handler.build_maafw_config_handler(<类型>, owner=<属主名>)`（`MaaFW/registration.build_config_handler` 只是转出名；保存前加密、读取前准备、新账号默认队列、复制时克隆视图、删除时
     清理本属主视图、删除后运行池对账一样不能少；要换其中一项用 `dataclasses.replace`，不往工厂里加参数，M9A 的
     `config_hooks.build_m9a_config_handler` 就是这样只换掉了保存前准备），恢复池
@@ -246,65 +248,40 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
     `core/desktop_session/lifecycle.py`、外壳配置导入 `api_service/shell_instances._family_script_config`、M9A 迁移后
     归档 `core/config/manager._settle_m9a_migration`）用 `registration.MAAFW_FAMILY_TYPES`，新专项要加进去；
     M9A、MSS 有了自己的流程以后**仍在里面**，不能删，否则桌面分身、外壳配置导入、M9A 迁移后归档会一起坏。
-    `MAAFW_RUN_TYPES` 是另一回事：只是 MFW 管理器 `_check` 的类型闸门（它肯跑哪些类型），有自己流程的专项不进它；
-    现在仍收 M9A、MSS（M9A 第 9 步、MSS 第 10 步都已翻登记、跑自己的流程，回退时 MFW 管理器要靠它重新收它们），
-    第 11 步删风味时才收窄成只收通用 MFW（见下面「第 11 步的前置件」）。宿主的漏登校验、配置回调、
+    MFW 管理器 `_check` 的类型闸门是另一回事：它只收 `type(cfg) is MaaFWConfig`（第 11 步删风味时收窄，原来的
+    `MAAFW_RUN_TYPES` 已删），有自己流程的专项不进它。宿主的漏登校验、配置回调、
     恢复池都按确切类型查，子类不会落到父类的登记上，漏登记启动就报「专项能力漏登」。
   - **插件形态前要补**（内置形态下不会出现，换成插件前必须做）：(a) 宿主的「托管配置完整加载」信号在有任何托管
     的类型解析不出来（所属插件没加载起来、托管原样留在盘上）时必须为假，清理整轮跳过；(b) 这一轮有任何盘上
     记着的属主没答上来时，不删任何带属主标记的视图——现在只在这种情况下跳过载荷回收，而视图目录名取托管
     uuid 前 12 位、碰撞时会共用目录；(c) 没有属主标记的存量孤儿视图不会自动清，要等宿主切换时补标记或给手动入口。
-- **第 11 步的前置件**（MFW 插件化迁移 P0；第 9、10 步做完后 M9A、MSS 都跑自己的流程，风味路径只剩回退本体；实施方案
-  `D:\MAS\docs\设计参考\MFW迁移P0第9-10步实施方案-20261122.md` §5.7、§8）：
-  - **预览与导入 / 克隆拒收改由属主给**（**默认方案，用户尚未最终拍板**；它改的是总方案 §4.2「页面自己带规则表」
-    的表述）：第 11 步的第一个提交里，`owner_entry.BuiltinConfigOwner` 加两个可选构造参数——`plan_rules`（默认
-    `EMPTY_PLAN_RULES`；M9A 给 `rules.M9A_PLAN_RULES`，MSS 是空表）与 `project_mismatch(interface) -> str | None`（M9A
-    `is_m9a_project`、MSS `is_mss_project` 不认领时给出原拒收文案）；`owners.py` 加 `owner_plan_rules(script_id)` /
-    `owner_project_mismatch(script_id, interface)`；`api_service/interface._preview_flavor` 与
-    `api_service/embedded._project_flavor_mismatch` / `_clone_flavor_mismatch` 改走属主，拒收文案由属主给、原文不变；
-    没有脚本的预览用空表（前端两处预览调用都带 `scriptId`，界面上走不到）。前端不改。用户若坚持「页面带规则表」，
-    就改成预览请求加可选字段 `planRules` 由 M9A 页面带（代价是前端硬编码小游戏与兑换码字段，与后端常量重复一份）。
-    在这之前（第 9、10 步）`api_service` 一行不改：`M9AFlavor` 的声明由 `rules.M9A_PLAN_RULES` 派生，预览、新流程与
-    回退后的旧流程用的是同一份规则。
-  - **删除清单**（预览与拒收改走属主之后）：
-    - `tools/embedded/runner_task.py`：`from .flavor import ...`；`_build_run_plan` 的风味分支；`check` 里的
-      `send_plan_log` 闭包与 `_load_run_state_for_check` 的 `send_log` 参数（`_pending_user_log` 本身保留）；
-      `_build_device_config` 里 `ask_toolkit` 的登录钩子判据（收成 False）与两次钩子调用；`_ensure_game_updated`、
-      `_ensure_logged_in`；`_run_maafw` 里 `StartupTask` 那一段；`_launched_package_name`、`_game_update_checked`、
-      `_login_checked`、`_startup_task` 四个字段；`_restart_client_before_retry` 里清 `_login_checked` 那行；
-      `_skip_tasks_completed_this_run`、`_completed_this_run`、`_retry_rerun_duplicates`（通用名单为空，连同重复提示）；
-      `main_task` 里 `VERDICT_GAME_UPDATE_REQUIRED` 那条分支。
-    - `embedded_manager.py`：`_check` 的闸门收成 `type(cfg) is MaaFWConfig`，删掉 `MAAFW_RUN_TYPES` 这个名字
-      （`MAAFW_FAMILY_TYPES` 留到 P4 由 SDK 声明取代）；可选删掉没有调用方的 `prefetch_script_update` /
-      `discard_prefetched_update`。
-    - 风味本体：`tools/embedded/flavor.py` 整个文件、`flavor_support.py`（`task_name_for_entry` 已在
-      `interface/models.py`）、`app/task/M9A/flavor.py`、`app/task/MSS/flavor.py`、三个配置类上的 `FLAVOR` ClassVar、
-      `owner_entry._record` 的 `flavor_spec` 与 `owners.ManagedRecord.flavor_spec`、`ManagedShape.FLAVOR_SPEC`。
-    - 共用路径里的整理调用：`user_update.prepare_user_update` 里的整理那一步与 `resolve_snapshot_sanitizer`、
-      `restore_service._restore_mas` 里的整理那一步（M9A 的整理已在 `M9A/config_hooks`）。
-    - 端点：`api_service/interface._preview_flavor`；`api_service/embedded._project_flavor_mismatch`、
-      `_clone_flavor_mismatch` 换成属主版本。
-    - 测试与文档：`test_maafw_snapshot_expansion` 改测 `M9A.arrange`、`MSS.arrange` 与新流程；`api/test_maafw_flavor_lock`
-      改成按属主拒收；本文件、`M9A/AGENTS.md`、`MSS/AGENTS.md`、两个包 `__init__` 文档字符串里关于风味与回退本体的
-      说法；对拍从「新旧双跑」收成「单跑新流程 + 金样回归」。
-    - 删完以后 M9A、MSS 的「回退第 9 / 10 步」不再成立（回退本体没了），各自 AGENTS.md 里那一段一并删。
-  - **从现在到第 11 步之间合并上游**：同一份账号流程有三份（通用 `tools/embedded/runner_task.py`、
-    `app/task/M9A/account_run.py`、`app/task/MSS/account_run.py`），脚本级管理器也有三份（`embedded_manager.py`、
-    `app/task/M9A/manager.py`、`app/task/MSS/manager.py`）。合并上游 dev 时，凡是改了 `runner_task` / `embedded_manager`
-    的，同样的改动手工搬进 M9A、MSS 各自那两份（只和通用 MFW 有关的分支除外，例如快照直建；只和 M9A 有关的
-    登录 / 游戏更新 / 首任务只搬进 M9A；MSS 的建计划拆成了 `_load_run_state` / `_plan_head` / `_plan_tail`，按所在段落
-    搬）；改了 `tools/` 下叶子的不用搬（三份都调它）。合并提交只做让合并成立的事（冲突落在通用那份上就在通用那份
-    手解），同步进 M9A、MSS 各一个提交，提交说明里逐个列出同步了哪些函数；尽量缩短第 9 步到第 11 步的间隔。
-    对拍按实施方案 §13.1：
-    1. **实时对拍是第一道门**：同步完以后新旧在同一份代码上跑，必须相等（除 MSS 探测线程等 README 列明的允许差异）。
-    2. **金样跟着合并提交前移**：上游改了行为、金样变红时，在「合并提交的导出目录里反向应用两个翻登记提交」
-       （`git archive <合并提交>` 后 `git apply -R` 那两个提交的补丁）得到的旧路径上 `MFW_PARITY_RECORD=1` 重录；
-       重录前后的差异逐条用这次合并进来的上游改动解释，写进对拍 README 的「重录记录」，解释不了的按回归处理、不许
-       重录盖掉；没被上游改动影响的金样重录后必须逐字节不变。为上游新逻辑补的情形也在这个旧路径上录。
-    3. **第 11 步删掉风味分支之后旧路径不复存在**，上面第 2 条不再可用：已知要进来的上游改动都要在第 11 步之前合并、
-       同步、重录完；之后再合并上游，M、S 组只能靠「同一处改动手工同步进三份、逐条审金样差异」。
-    第一次这样做是合并 #2107、#2108（合并提交 `803aeb744`）：拿锁后的回调与按账号选定同步进了三份管理器，预下载的
-    两个提前返回落在叶子 `project_session.discover_prefetch`，金样重录记录见对拍 README。
+- **项目要求由属主给**（MFW 插件化迁移 P0 第 11 步起；方案 `D:\MAS\docs\设计参考\MFW迁移P0第11-12步实施方案-20261122.md`
+  §3.2）：`owner_entry.BuiltinConfigOwner` 有三个可选构造参数——`plan_rules`（默认 `EMPTY_PLAN_RULES`；M9A 给
+  `rules.M9A_PLAN_RULES`，MSS 与通用 MFW 是空表）、`claims_project`（只收哪种项目；M9A `is_m9a_project`、MSS
+  `is_mss_project`，通用 MFW 不给＝什么都收）、`project_label`（拒收文案里的称呼，M9A / MSS 是 `TYPE_KEY`）；对应
+  方法 `plan_rules()`、`screens_projects()`、`project_mismatch(interface)`。项目更新一侧按**属主名**取：
+  `owners.owner_plan_rules(owner)`、`owner_screens_projects(owner)`、`owner_project_mismatch(owner, interface)`，属主取
+  不到或没实现时分别是空表、假、None。
+  - 预览（`api_service/interface._preview_plan_rules`）按托管的属主取规则表，没有托管或认不出托管时用空表（前端
+    两处预览调用都带 `scriptId`）；核心包的预览只收规则表。
+  - 导入 / 重新导入、克隆（`api_service/embedded._project_mismatch` / `_clone_project_mismatch`，克隆按**目标**托管
+    的属主）在动副本之前判；拒收文案「这不是 M9A 项目。要用别的项目，请新建通用 MFW 托管。」由属主给。
+    **先问 `owner_screens_projects` 再读 interface**：通用 MFW 托管导入坏来源时不多读、不多写一行 app.log；读不出
+    interface、识别本身出错都不拦（交给导入自己报错），识别出错的那行 app.log 按属主名记。
+  - 拒收是用户定的要留的行为；「导入时自动换成 M9A / MSS 类型」已在 `8159700be` 去掉，托管类型在新建时就定了。
+- **合并上游**：同一份账号流程有三份（通用 `tools/embedded/runner_task.py`、`app/task/M9A/account_run.py`、
+  `app/task/MSS/account_run.py`），脚本级管理器也有三份（`embedded_manager.py`、`app/task/M9A/manager.py`、
+  `app/task/MSS/manager.py`），各自一份、互不回退。合并上游 dev 时，凡是改了 `runner_task` / `embedded_manager` 的，
+  同样的改动手工搬进 M9A、MSS 各自那两份（只和通用 MFW 有关的分支除外，例如快照直建；只和 M9A 有关的登录 /
+  游戏更新 / 首任务只搬进 M9A；MSS 的建计划拆成了 `_load_run_state` / `_plan_head` / `_plan_tail`，按所在段落搬）；
+  改了 `tools/` 下叶子的不用搬（三份都调它）。合并提交只做让合并成立的事（冲突落在通用那份上就在通用那份手解），
+  同步进 M9A、MSS 各一个提交，提交说明里逐个列出同步了哪些函数。
+  - **第 11 步删掉风味以后旧路径不复存在**：金样不能再在「反向应用翻登记提交」的旧路径上重录，实时对拍（新旧双跑）
+    也已收掉。合并上游后 G、M、S 三组金样各自守三份流程：变红时逐条审差异，能用这次合并进来的上游改动解释的才改
+    金样（写进对拍 README 的「重录记录」，逐条列出），解释不了的按回归处理、不许重录盖掉；为上游新逻辑补的情形
+    在新流程上录，录完人看一遍产物。
+  - 第一次合并上游是 #2107、#2108（合并提交 `803aeb744`，在第 11 步之前）：拿锁后的回调与按账号选定同步进了三份
+    管理器，预下载的两个提前返回落在叶子 `project_session.discover_prefetch`，金样重录记录见对拍 README。
 - `tools/core/`：七个核心包（interface / native / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
   `project_update/updater.py` 引了 `app.utils.constants`，以及 `project_update` 里的 `projection_heal` /
@@ -316,7 +293,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   interface 与 native 两个库。`worker_protocol` 算 runner 那一块的，agent_env / project_update 不要引它
   （日志前缀之类共用的常量放 `log_redact` 或 native）。接缝里归 runner 的（`plan_run`、`pretask_run`、
   `run_verdict`、`run_redaction`、`run_settings`、`run_messages`、`run_notices`、`attempt_ledger`、`desktop_game`）不导入项目更新一侧的接缝（`project_session`、`embedded_project`……）与专项
-  （任务类 `runner_task` 这类账号级流程、风味）。这几条现在违反了也不会让运行出错，只会让以后
+  （任务类 `runner_task` 这类账号级流程）。这几条现在违反了也不会让运行出错，只会让以后
   拆包时那一块带不走，所以没进核心最小回归；加导入前自己按 AST 查一遍方向。
 - **运行环境的准备与借还归 agent 环境**：`agent_env/runtime_lease.py` 是运行池 base venv + binding 的
   唯一入口——`borrow_runtime_environment` 借（返回 `MaaFWRuntimeLease`：解释器、base venv、binding
@@ -650,12 +627,12 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `data/maafw_update_cache` 按 源 + 版本 + 文件名 命中（Mirror 酱按包的 sha256：它的一次性下载地址每次都变），启动期 `MaaFWMaintenanceService.clean_update_cache`
   删 7 天没碰过的（`transport.prune_update_cache`）。
 - **托管类型在新建时就定了**（2026-11-21 用户定）：导入、重新导入、克隆什么项目都不换类型、不提示、
-  不做转换，启动期也不按项目收敛。通用 MFW 托管什么项目都收（M9A / MSS 项目也按通用项目跑）；特调托管
-  （M9A、MSS）只收自己那种项目：`/maafw/embedded/reimport` 在动副本之前读来源目录的 interface、
+  不做转换，启动期也不按项目收敛。通用 MFW 托管什么项目都收（M9A / MSS 项目也按通用项目跑）；M9A、MSS
+  托管只收自己那种项目：`/maafw/embedded/reimport` 在动副本之前读来源目录的 interface、
   `/maafw/embedded/clone` 在建视图之前读源托管视图（视图不健康时读它的来源目录）的 interface，
-  按该特调的 `matches_project` 判，不认就返回「这不是 M9A 项目。要用别的项目，请新建通用 MFW 托管。」
-  这类原因、盘上什么都不改（`api_service/embedded._project_flavor_mismatch`）；读不出 interface 时不拦，
-  交给导入本身报错。前端沿用导入失败的显示（目录字段下的常驻原因、复用失败的提示）。
+  按目标托管的属主判（`owners.owner_project_mismatch`，见上文「项目要求由属主给」），不认就返回「这不是 M9A
+  项目。要用别的项目，请新建通用 MFW 托管。」这类原因、盘上什么都不改（`api_service/embedded._project_mismatch`）；
+  读不出 interface 时不拦，交给导入本身报错。前端沿用导入失败的显示（目录字段下的常驻原因、复用失败的提示）。
 - **启动期一次性迁移**（`MaaFWMaintenanceService.migrate_embedded_copies_to_payloads`，排在各项回收之前，整段
   在后台任务里跑、不挡主定时器；期间拿不到视图预约的运行按「正在切换版本」跳过一次）：没有标记的老
   副本逐个采纳（`embedded_project.adopt_view`：**载荷内容以视图自身为准**——按视图自己的 interface
@@ -814,20 +791,21 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   和进度。`Run.TaskTimeLimit` / `TaskTimeLimitOverrides` 是单任务时限：只停卡住的那个任务，计划里
   第一个任务或特调声明的关键任务（`abortRoundMessage`）结束本轮，其余记一条失败后继续；继续之前先等
   停止真正生效（`_wait_task_deadline_stop`，上限 `TASK_STOP_SETTLE_SECONDS`），否则下一个任务会被
-  框架以 task_id=0 拒掉。例外是特调声明的收尾任务（`nonfatal_entries` → `nonFatalMessage`，如 M9A 的关闭游戏）：它失败、
-  超时、打转或被脚本侧强停都只截图记一行、不计入本轮失败（超时同样先等停下；停下时恰好又被脚本侧强停就跳过本轮剩余任务），且优先于上面两条；契约见 `tools/embedded/flavor.py`。
-  特调声明的不可选任务（`unselectable_entries`，如 M9A 的小游戏）更早一步：`/maafw/preview` 给它们填
-  `unselectableReason`，账号页不让选；运行时在 `decorate_selection` 之前剔掉、按原因合并记一行，不进计划，
+  框架以 task_id=0 拒掉。例外是专项规则表里的收尾任务（`MaaFWPlanRules.nonfatal` → `nonFatalMessage`，如 M9A 的关闭游戏）：它失败、
+  超时、打转或被脚本侧强停都只截图记一行、不计入本轮失败（超时同样先等停下；停下时恰好又被脚本侧强停就跳过本轮剩余任务），且优先于上面两条；规则表各项的含义见 `core/interface/plan_rules.py`。
+  规则表里的不可选任务（`MaaFWPlanRules.unselectable`，如 M9A 的小游戏）更早一步：`/maafw/preview` 给它们填
+  `unselectableReason`，账号页不让选；运行时在专项排队列之前剔掉、按原因合并记一行，不进计划，
   所以上面几项声明对它不起作用。
-- **规则表与展开任务快照**：上面四类特调声明（不可选、关键任务、收尾任务、`no_default_fallback_inputs`）由
-  `flavor.plan_rules` 收成一份规则表（`core/interface/plan_rules.MaaFWPlanRules`），建计划与预览
-  （`core/interface/preview.apply_preview_plan_rules`）收同一份，核心只认规则表、不认特调。有特调的账号建计划走
-  `core/runner/task_selection`：`inspect_task_snapshot`（失效任务名 / 选项值、红灯、今天不在运行日）→
-  `expand_task_snapshot`（**先**剔不可选、**再**拿出停跑日实例，剩下的才交给 `decorate_selection`；顺序反了，
+- **规则表与展开任务快照**：上面四类规则（不可选、关键任务、收尾任务、`no_default_fallback_inputs`）是一份规则表
+  （`core/interface/plan_rules.MaaFWPlanRules`；M9A 的在 `app/task/M9A/rules.M9A_PLAN_RULES`，由 M9A 的属主交给预览），
+  建计划与预览（`core/interface/preview.apply_preview_plan_rules`）收同一份，核心只认规则表、不认专项。要排队列的
+  专项（M9A、MSS）在自己的账号流程里建计划，走 `core/runner/task_selection`：`inspect_task_snapshot`（失效任务名 /
+  选项值、红灯、今天不在运行日）→
+  `expand_task_snapshot`（**先**剔不可选、**再**拿出停跑日实例，剩下的才交给专项排队列；顺序反了，
   只剩小游戏或全在停跑日的队列会被补上首尾、白开一次模拟器）→ `build_arranged_plan`（依次
   `merge_arranged_queue`：钩子补回的受管任务不受运行日限制，没补回的停跑日实例记成跳过 → 建计划 →
   `apply_plan_rules` / `attach_snapshot_findings`；异常由调用方包成 `MaaFWRunPlanError(describe_plan_failure(…))`，
-  **不收排队列的回调**——展开与它之间是专项自己的普通代码）。通用 MaaFW 仍按快照直接建计划，规则表为空。
+  **不收排队列的回调**——展开与它之间是专项自己的普通代码）。通用 MFW 按快照直接建计划，没有规则表。
 - **原地打转检测**（`Run.LoopGuard`，托管级开关，**默认开**：新建托管取类默认；既有托管配置里写着这个键的不改（全量落盘分不清用户关过还是没碰过），没有这个键的落到类默认；纯逻辑在
   `tools/core/runner/loop_guard.py`）：只看 `Node.Recognition.*` 与 `Node.PipelineNode.*`，按节点名
   找周期 ≤ 8 步的循环，连续各轮都有物理动作（Click / Swipe / 按键…，Custom 与 DoNothing 不算，等待型
@@ -944,8 +922,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
       编译期间 6 个 vCPU 跑满，读盘约 0.15 MB/s，出帧约 0，到标题共 412s。闸门在拉起后约 66s 就放行。
     - 实际场景不会出现脚本等编译：用户跑脚本前必然手动登录过一次，那次已经编完。宿主显卡的着色器
       缓存清不清，实测看不出差别。
-    - **做带游戏自更新的风味专项时必须处理**：游戏自更新以后可能重新编译，而脚本会在没人手动登录的
-      情况下直接撞上。M9A 特调已经有游戏 APK 更新，但它的启动等待由 M9A 自己处理；新做的风味如果
+    - **做带游戏自更新的专项时必须处理**：游戏自更新以后可能重新编译，而脚本会在没人手动登录的
+      情况下直接撞上。M9A 已经有游戏 APK 更新，但它的启动等待由 M9A 自己处理；新做的专项如果
       依赖这道闸门，就要先补上下面这一条，再放开自更新。
     - 以后要处理的话，可以在放行条件里再加「这 8s 里每秒出帧都 ≥ 5」，并把模拟器上的上限放宽到能
       盖住编译（终末地约 420s）。
@@ -982,8 +960,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `input.Default` 写进配置、MXU、MFW-PyQt6 都这样用）。快照里没填的字段存空串（不写 default、
   不迁移），建覆盖时回落：字符串字段没存或存的正好是 `""` 才算没填（纯空白串算有值、原样下发），
   default 原样用、不 strip，default 为空串或没写就不回落（`pipeline_override._string_input_fallback`）；
-  数字 / 布尔 strip 后为空才算没填（`_coerce_input_value`）。password 字段不回落。特调可以声明例外
-  （`flavor.no_default_fallback_inputs`，两条建计划的路都传；`/maafw/preview` 把这些字段的 `default`
+  数字 / 布尔 strip 后为空才算没填（`_coerce_input_value`）。password 字段不回落。专项可以在规则表里声明例外
+  （`MaaFWPlanRules.no_default_fallback_inputs`，专项建计划时传；`/maafw/preview` 按属主给的规则表把这些字段的 `default`
   置成 null，账号页就不会把它显示成「没填时的值」）：M9A 的自定义兑换码 default 是字面量
   「占位」，旧版迁移专门把预填的它清成空串，agent 遇到交不过去的码会中断整个兑换。以前「default 只当
   占位提示、没填就下发空串」的取舍（#478）已撤销：语料里 11 个项目因此拿到坏 override（MaaEnd 表达式缺
@@ -1216,7 +1194,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
 
 ## 运行前登录与启动
 
-- 特调的运行前登录钩子可返回 `StartupTask`，具体契约见 `tools/embedded/flavor.py`。
+- M9A 的运行前登录（`app/task/M9A/login.py`，由 M9A 自己的账号流程调）可返回 `M9AStartupTask`（`app/task/M9A/startup.py`）。
   单次 worker 执行同一份计划。首项公开启动任务成功后继续后续任务，不与宿主进行核验握手。
 - 启动失败时终止本次尝试。启动和日常任务沿用完整计划的编号及各自的超时处理。
 

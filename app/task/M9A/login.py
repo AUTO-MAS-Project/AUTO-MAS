@@ -18,9 +18,8 @@
 
 """B 服（哔哩哔哩渠服）登录：MAS 原生实现，按昵称选号后交给 M9A。
 
-入口是 ``MaaFWFlavor`` 的可选钩子 ``ensure_logged_in``（契约见
-``app/task/MaaFW/tools/embedded/flavor.py`` 模块说明）：MAS 启动模拟器（连带拉起游戏）之后、
-第一个任务下发之前调用，只在 M9A 脚本、ADB controller 且 ``Run.LoginMode == "Mas"`` 时真正做事，
+入口是 :func:`ensure_logged_in`，由 M9A 自己的账号流程（``account_run.py``）调用：
+MAS 启动模拟器（连带拉起游戏）之后、第一个任务下发之前调用，只在 M9A 脚本、ADB controller 且 ``Run.LoginMode == "Mas"`` 时真正做事，
 其余情况直接返回空串（引擎不写日志）。
 
 流程取自实机验证过的 B 服登录界面（16:9，坐标按屏幕宽高取比例，所以分辨率无关）：
@@ -761,7 +760,7 @@ async def ensure_logged_in(
     progress: Progress | None,
     host_adb: Any = None,
 ) -> str | M9AStartupTask:
-    """MAS 原生登录入口（契约见 MaaFW ``flavor.py`` 的 ``ensure_logged_in``）。
+    """MAS 原生登录入口（由 ``account_run.M9AAccountRun`` 在第一个任务下发前调用）。
 
     只在 ``Run.LoginMode == "Mas"`` 时做事；选号完成返回公开启动任务，没做事就是空串。
     """

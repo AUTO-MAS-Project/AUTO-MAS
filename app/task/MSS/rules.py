@@ -6,7 +6,7 @@
 
 三个按 entry 找的任务、重试不补跑的 entry（``MSS_SKIP_ON_RETRY``）、托管类型键、计划表的固定模式都在
 这里。MSS 没有规则表（不可选、关键任务、收尾任务、不回落 default 都没有），建计划用空表。
-``flavor.py`` 与 ``arrange.py`` 都从这里取，之后 MSS 自己的流程也从这里取。
+``arrange.py``、MSS 自己的流程与托管属主（拒收）都从这里取。
 
 只依赖标准库与解析一侧的 interface 模型。
 """

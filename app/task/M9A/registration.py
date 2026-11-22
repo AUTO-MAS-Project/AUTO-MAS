@@ -8,9 +8,7 @@
 ``config_hooks.build_m9a_config_handler()``（通用 MFW 那份只换掉保存前准备），恢复池是
 ``config_hooks.M9A_RESTORE_POOLS``。三样都在函数里现导入：本模块启动期就会被导入，不拉起流程模块。
 
-回退第 9 步（回到 MFW 管理器 + 风味路径）只需要把这三样换回通用 MFW 的
-（``MaaFW/registration.build_manager``、``build_maafw_config_handler(M9AConfig, owner=M9A_OWNER)``、
-``load_maafw_restore_pools``），即 revert 翻登记的那一个提交。
+托管属主还给出预览的规则表（``rules.M9A_PLAN_RULES``）与导入 / 克隆前的项目校验（只收 M9A 项目）。
 """
 
 from __future__ import annotations
