@@ -634,10 +634,13 @@ class _PluginManager:
                 await record.commit()
             # ── 上游 DFS ──
             path = [*path_list, uid_s]
+            # 「重载本项」语境只属于本项：新版本新依赖了一个停着的上游时，上游是一次普通启用，
+            # 否则它会停在「已停用」却挂着实例（RELOAD 语境下状态留给父操作收尾）。
+            up_ctx = LifecycleContext.NORMAL if ctx == LifecycleContext.RELOAD else ctx
             for dep_record in ups:
                 dep_id = dep_record.info.plugin_name
                 deps[dep_id] = await self.enable(
-                    dep_record, held=True, dep_path=path, ctx=ctx
+                    dep_record, held=True, dep_path=path, ctx=up_ctx
                 )
 
             # ── 激活配置根（若有）──
@@ -1022,6 +1025,8 @@ class _PluginManager:
             loader.clear(record)
             cls = loader.load(record)
             record._plugin_cls = cls
+            # 新类的 requires / wants 写在暂存区；先提交，启用时的上游求解才看得到新版本的依赖。
+            await record.commit()
             if want_enabled:
                 await self.enable(
                     record,
@@ -1197,6 +1202,8 @@ class _PluginManager:
                     plugin = Config.plugin_registry[uid]._plugin
                     if isinstance(plugin, (ScriptAdapterPlugin, GameAdapterPlugin)):
                         plugin.precheck_locks()
+                # 装包可能按 Requires-Dist 连带装上别的插件，记下装包前已登记的名字。
+                before = {r.info.plugin_name for r in Config.plugin_registry.values()}
                 restart_required = await uv_tool.install(
                     requirement,
                     plugin_name=plugin_id,
@@ -1225,6 +1232,18 @@ class _PluginManager:
                 ):
                     raise PluginPrecheckError("发现的插件与已验证的安装发行包不一致")
                 try:
+                    # 先加载本次新出现的依赖插件（只加载不启用），目标启用时才找得到上游提供者；
+                    # 否则装完直接启用会报「所需服务无提供者」，要重启后端才行。
+                    created = [
+                        r
+                        for r in Config.plugin_registry.values()
+                        if r.info.plugin_name not in before
+                        and r.uid != record.uid
+                        and r._project_dir is not None
+                        and r._plugin_cls is None
+                    ]
+                    for dep in sorted(created, key=lambda r: r.info.plugin_name):
+                        await self.load(dep, held=True)
                     if record._plugin_cls is not None:
                         result = await self.reload(record, held=True)
                     else:
