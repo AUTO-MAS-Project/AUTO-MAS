@@ -210,6 +210,7 @@ class GameSession:
             raise ValueError(refusal)
         game_name = Config.GameConfig[uid].info.name
         self.script.current.log += f"等待获取游戏实例「{game_name}」。\n"
+        logger.info(f"等待获取游戏实例「{game_name}」")
         await self.script.set_state(status="等待")
         self.control, self.ticket = await GameManager.subscribe(uid)
         self.game_uid = uid
@@ -248,6 +249,7 @@ class GameSession:
                     await asyncio.sleep(1)
             self.device_uid = device_uid
         self.script.current.log += f"已获取游戏实例「{game_name}」。\n"
+        logger.info(f"已获取游戏实例「{game_name}」")
         await self.script.set_state(status="运行")
 
     async def release_account(self) -> None:

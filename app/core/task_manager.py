@@ -78,7 +78,9 @@ class _TaskManager:
         )
         self._factories_bound = False
         self._running: dict[UUID, ScriptExpander] = {}
-        self._recent: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
+        self._recent: OrderedDict[str, tuple[float, dict[str, Any], str]] = (
+            OrderedDict()
+        )
         self._stopping_all = False
         self._restart_pending = False
         self._creating = 0
@@ -453,7 +455,7 @@ class _TaskManager:
         由任务结束或查询触发，使用单调时钟计算年龄；与持久化执行历史分开。
         """
         while self._recent:
-            _, (at, _) = next(iter(self._recent.items()))
+            _, (at, _, _) = next(iter(self._recent.items()))
             if len(self._recent) <= 200 and time.monotonic() - at <= 1800:
                 break
             self._recent.popitem(last=False)
@@ -510,12 +512,14 @@ class _TaskManager:
         if tree is None:
             return None
         info = tree["info"]
+        recent = self._recent.get(str(task_id))
         return TaskStatusOut(
             taskId=str(task_id),
             status="running" if info["status"] == "pending" else info["status"],
             mode=info["mode"],
             trigger=info["trigger"],
             detail=info["result"],
+            finishedAt=recent[2] if recent and info["status"] != "pending" else None,
         )
 
     def get_runtime_snapshot(self) -> TaskRuntimeSnapshot:
@@ -568,6 +572,7 @@ class _TaskManager:
         self._recent[info.task_id] = (
             time.monotonic(),
             TaskTreeData.model_validate(info.model_dump()).model_dump(mode="json"),
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )
         self._prune_recent()
         await self.task_ended.send_async(self, task=info)
