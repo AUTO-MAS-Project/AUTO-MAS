@@ -1160,6 +1160,18 @@ class _PluginManager:
                     )
                 ):
                     return {"restart_required": True}
+                # 主程序升级补装同族插件：前一个补装已把它一起升到满足下限的版本，
+                # 重启后生效；不能当成另一轮安装拒掉，否则它的托管会被旁挂。
+                upgraded = pending.co_upgraded.get(
+                    canonicalize_name(meta.info.package_name or "")
+                )
+                if (
+                    upgraded is not None
+                    and minimum_version is not None
+                    and not meta.info.version
+                    and Version(upgraded) >= minimum_version
+                ):
+                    return {"restart_required": True}
                 raise PluginPrecheckError("已有插件安装等待重启，请先完成该操作")
 
             package = (meta.info.package_name or "").strip()

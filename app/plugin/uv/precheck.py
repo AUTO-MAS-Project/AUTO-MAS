@@ -39,6 +39,10 @@ class CoreCompat:
     conflicts: tuple[str, ...] = ()
     # 其中由主程序钉住的那部分：只能等插件放宽范围。
     host_conflicts: tuple[str, ...] = ()
+    # 求解成功时解出的插件侧发行包（规范化包名，不含主程序钉住的包和本地工程）。
+    resolved: tuple[str, ...] = ()
+    # 无解只来自部分镜像、其余镜像没给出结论；仅 ``partial=True`` 时会返回这种结果。
+    incomplete: bool = False
 
 
 _MAX_CONFLICTS = 8
@@ -77,6 +81,34 @@ def conflict_summary(result: CoreCompat) -> str:
     return "、".join(
         f"{name}（主程序依赖）" if name in host else name for name in result.conflicts
     )
+
+
+def incomplete_message(result: CoreCompat) -> str:
+    """部分镜像判定无解、其余镜像没给出结论时的提示；镜像可能只是还没同步，不算确定无解。"""
+    summary = conflict_summary(result)
+    return (
+        "兼容性检查未完成：部分镜像判定依赖无法同时满足"
+        + (f"（涉及 {summary}）" if summary else "")
+        + "，其余镜像没有给出结论，请稍后重试"
+    )
+
+
+def _resolved_names(path: Path) -> tuple[str, ...]:
+    """读 ``uv pip compile`` 输出里的发行包名；读不懂的行跳过，没有输出文件时为空。"""
+    names: list[str] = []
+    if not path.is_file():
+        return ()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith(("#", "-")):
+            continue
+        try:
+            name = canonicalize_name(Requirement(line.rstrip("\\").strip()).name)
+        except ValueError:
+            continue
+        if name not in names:
+            names.append(name)
+    return tuple(names)
 
 
 def _distribution_name(dist: importlib_metadata.Distribution) -> str | None:
@@ -320,8 +352,13 @@ async def resolve_environment(
     destination: Path | None = None,
     constraints: Sequence[str] = (),
     python_version: str | None = None,
+    partial: bool = False,
 ) -> CoreCompat:
-    """联合求解后仅安装插件侧发行包，固定并排除主程序已有依赖与自带 SDK。"""
+    """联合求解后仅安装插件侧发行包，固定并排除主程序已有依赖与自带 SDK。
+
+    部分镜像无解、其余镜像未完成时默认抛 ``PluginPrecheckError``；``partial=True`` 时
+    改为返回 ``incomplete=True`` 的无解结果，由调用方决定是否换一组目标再试。
+    """
     version = to_pep440(core_version)
     with tempfile.TemporaryDirectory(prefix="auto-mas-resolve-") as temporary:
         root = Path(temporary)
@@ -401,7 +438,7 @@ async def resolve_environment(
                 continue
             if destination is None:
                 await mark_ok(mirror)
-                return CoreCompat(ok=True)
+                return CoreCompat(ok=True, resolved=_resolved_names(resolved))
 
             destination.mkdir(parents=True, exist_ok=True)
             result = await ProcessRunner.run_process(
@@ -447,8 +484,8 @@ async def resolve_environment(
                 ):
                     raise PluginError(f"插件安装结果与求解版本不一致：{requirement}")
             await mark_ok(mirror)
-            return CoreCompat(ok=True)
-        if incomplete:
+            return CoreCompat(ok=True, resolved=_resolved_names(resolved))
+        if incomplete and not unsolvable:
             raise PluginPrecheckError("兼容性检查未完成，请检查网络或稍后重试")
         host = {
             name
@@ -460,13 +497,18 @@ async def resolve_environment(
         }
         core = canonicalize_name(CORE_DISTRIBUTION_NAME)
         conflicts = _conflict_names(unsolvable, (plugins | host) - {core})
-        return CoreCompat(
+        result = CoreCompat(
             ok=False,
             required="shared-environment",
             detail="目标主程序与插件的依赖无法同时满足，请调整插件版本后重试",
             conflicts=conflicts,
             host_conflicts=tuple(name for name in conflicts if name in host - plugins),
+            incomplete=incomplete,
         )
+        if incomplete and not partial:
+            # 镜像可能只是还没同步；只有全部镜像都判定无解才算确定无解。
+            raise PluginPrecheckError(incomplete_message(result))
+        return result
 
 
 async def check_core(

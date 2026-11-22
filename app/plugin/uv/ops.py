@@ -24,7 +24,7 @@ from packaging.version import InvalidVersion, Version
 
 from app.utils import ProcessRunner, get_logger
 
-from ..errors import PluginError
+from ..errors import PluginError, PluginPrecheckError
 
 logger = get_logger("插件 uv")
 
@@ -113,6 +113,92 @@ async def mark_ok(mirror_url: str) -> None:
     await Config.setting.commit()
 
 
+def _pinned_versions(pinned: list[str]) -> dict[str, str]:
+    """从保留目标里取钉在 ``==版本`` 的已装插件发行包；本地工程目录不在其列。"""
+    versions = {}
+    for item in pinned:
+        if Path(item).is_dir():
+            continue
+        requirement = Requirement(item)
+        specifiers = list(requirement.specifier)
+        if len(specifiers) == 1 and specifiers[0].operator == "==":
+            versions[canonicalize_name(requirement.name)] = specifiers[0].version
+    return versions
+
+
+def _installed_requires(package: str) -> set[str]:
+    """已装发行包按 Requires-Dist 直接依赖的包名（规范化）；读不到的返回空集。"""
+    try:
+        requires = importlib_metadata.distribution(package).requires or []
+    except importlib_metadata.PackageNotFoundError:
+        return set()
+    names = set()
+    for text in requires:
+        try:
+            requirement = Requirement(text)
+        except ValueError:
+            continue
+        if requirement.marker is not None and not requirement.marker.evaluate(
+            {"extra": ""}
+        ):
+            continue
+        names.add(canonicalize_name(requirement.name))
+    return names
+
+
+async def _family_release(
+    package_spec: str, pinned: list[str], pins: list[str]
+) -> dict[str, str]:
+    """其余插件全钉住无解时，算出要一起放开的已装插件（包名 → 当前版本）。
+
+    范围：目标单独求解得到的依赖闭包里出现的已装插件，再加上直接依赖了目标或
+    已放开包的已装插件，反复到不再增加。别的插件照旧钉住。
+    """
+    from app.core import Config
+    from app.plugin.runtime.discover import local_libraries
+
+    from .precheck import host_dependencies, resolve_environment
+
+    installed = _pinned_versions(pinned)
+    if not installed:
+        return {}
+    # 只求解不安装；本地源码库照常参与，别的插件不放进来，免得它们的钉子挡住求解。
+    alone = await resolve_environment(
+        targets=[package_spec, *(str(library) for library in local_libraries())],
+        core_version=Config.VERSION,
+        dependencies=host_dependencies(),
+        constraints=pins,
+        partial=True,
+    )
+    if not alone.ok:
+        return {}
+    target = canonicalize_name(Requirement(package_spec).name)
+    released = {name for name in alone.resolved if name in installed}
+    frontier = released | {target}
+    grown = True
+    while grown:
+        grown = False
+        for name in sorted(installed.keys() - released):
+            if _installed_requires(name) & frontier:
+                released.add(name)
+                frontier.add(name)
+                grown = True
+    return {name: installed[name] for name in sorted(released)}
+
+
+def _release_pins(pinned: list[str], released: dict[str, str]) -> list[str]:
+    """把放开的插件从 ``==当前版本`` 改成 ``>=当前版本``（不许降级），其余原样保留。"""
+    result = []
+    for item in pinned:
+        if not Path(item).is_dir():
+            name = canonicalize_name(Requirement(item).name)
+            if name in released:
+                result.append(f"{name}>={released[name]}")
+                continue
+        result.append(item)
+    return result
+
+
 async def install(
     package_spec: str,
     *,
@@ -132,16 +218,15 @@ async def install(
         conflict_summary,
         host_constraints,
         host_dependencies,
+        incomplete_message,
         plugin_targets,
         resolve_environment,
     )
 
     environment.ensure_writable()
     replacing = Requirement(package_spec).name
-    targets = [
-        *plugin_targets(Config.plugin_registry.values(), replacing=replacing),
-        package_spec,
-    ]
+    pinned = plugin_targets(Config.plugin_registry.values(), replacing=replacing)
+    targets = [*pinned, package_spec]
     sources = {
         str(project.resolve()): project.read_text(encoding="utf-8")
         for item in targets
@@ -149,6 +234,8 @@ async def install(
     }
     target = site_dir()
     pins = host_constraints()
+    # 为求解放开钉子的已装插件：规范化包名 → 原版本。
+    released: dict[str, str] = {}
     with tempfile.TemporaryDirectory(
         prefix=".install-", dir=target.parent
     ) as temporary:
@@ -159,8 +246,38 @@ async def install(
             dependencies=host_dependencies(),
             constraints=pins,
             destination=None if dry_run else prepared,
+            partial=True,
         )
         if not result.ok:
+            # 别的插件全钉住时无解：同族插件之间写了次版本上限，要一起升才解得开。
+            released = await _family_release(package_spec, pinned, pins)
+            if released:
+                logger.info(
+                    "安装 {} 时其余插件全部钉住无解，放开同族插件再求解：{}",
+                    package_spec,
+                    "、".join(
+                        f"{name}>={version}" for name, version in released.items()
+                    ),
+                )
+                if prepared.exists():
+                    shutil.rmtree(prepared)
+                result = await resolve_environment(
+                    targets=[*_release_pins(pinned, released), package_spec],
+                    core_version=Config.VERSION,
+                    dependencies=host_dependencies(),
+                    constraints=pins,
+                    destination=None if dry_run else prepared,
+                    partial=True,
+                )
+        if not result.ok:
+            if result.incomplete:
+                raise PluginPrecheckError(
+                    incomplete_message(result),
+                    payload={
+                        "detail": result.detail,
+                        "conflicts": list(result.conflicts),
+                    },
+                )
             summary = conflict_summary(result)
             raise PluginError(
                 "插件与共享环境的依赖无法共同满足"
@@ -183,9 +300,33 @@ async def install(
             distribution.metadata, package_name=replacing, plugin_name=plugin_name
         )
         environment.preserve_local_packages(target, prepared)
+        # 放开钉子后实际换了版本的已装插件；注册表版本由安装后的发现流程统一刷新。
+        upgraded = {
+            name: (old, installed[name].version)
+            for name, old in released.items()
+            if name in installed and Version(installed[name].version) != Version(old)
+        }
+        records = {
+            canonicalize_name(record.info.package_name): record
+            for record in Config.plugin_registry.values()
+            if record.info.package_name
+        }
         restart_required = bool(
             environment.changed_loaded_dependencies(prepared, replacing)
+        ) or any(
+            # 已加载的插件换版只能交给新进程；不能文件已换、进程里还是旧模块。
+            records[name]._plugin_cls is not None
+            for name in upgraded
+            if name in records
         )
+        family_note = ""
+        if upgraded:
+            family_note = "同族插件一起升级：" + "、".join(
+                f"{records[name].info.plugin_name if name in records else name}"
+                f" {old} → {new}"
+                for name, (old, new) in upgraded.items()
+            )
+            logger.info("安装 {} 时{}", replacing, family_note)
         existing_record = Config.plugin_registry.by_name(plugin_name)
         record = environment.InstallationRecord(
             progress=PluginInstallation(
@@ -196,8 +337,9 @@ async def install(
                 version=version,
                 state="waiting_restart" if restart_required else "applying",
                 message="插件依赖已准备，需要重启后端完成安装"
+                + (f"；{family_note}" if family_note else "")
                 if restart_required
-                else None,
+                else family_note or None,
             ),
             core_version=Config.VERSION,
             host_constraints=pins,
@@ -215,6 +357,7 @@ async def install(
             previous_record=existing_record.uid
             if existing_record is not None
             else None,
+            co_upgraded={name: new for name, (_, new) in upgraded.items()},
         )
         if restart_required:
             pending = target.with_suffix(".pending")

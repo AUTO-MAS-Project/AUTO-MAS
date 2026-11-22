@@ -30,6 +30,8 @@ class InstallationRecord(BaseModel):
     healthy_plugins: list[str] = Field(default_factory=list)
     local_sources: dict[str, str] = Field(default_factory=dict)
     previous_record: UUID | None = None
+    # 为解开依赖一起升级的其他已装插件：规范化包名 → 新版本。
+    co_upgraded: dict[str, str] = Field(default_factory=dict)
 
 
 def distributions(directory: Path) -> dict[str, metadata.Distribution]:
