@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import re
 import shlex
 import tempfile
 import threading
@@ -66,11 +65,8 @@ from app.task.MaaFW.tools.core.runner.models import (
     MaaFWDeviceConfig,
     MaaFWRunPlan,
     MaaFWRunResult,
-    MaaFWSkippedTaskPlan,
 )
 from app.task.MaaFW.tools.core.runner.plan_transforms import (
-    PERIOD_DONE_REASONS,
-    RETRY_SKIP_REASON,
     MaaFWPeriodLimits,
     PeriodRecords,
     filter_period_once_tasks,
@@ -80,22 +76,17 @@ from app.task.MaaFW.tools.core.runner.plan_transforms import (
 )
 from app.task.MaaFW.tools.core.runner.run_events import (
     CATEGORY_HOST_ERROR,
-    CATEGORY_SCRIPT_STOPPED,
     CATEGORY_SIGNAL,
     CATEGORY_USER_STOPPED,
     STAGE_CLIENT,
     STAGE_PRETASK,
-    MaaFWTaskEndEvent,
-    MaaFWTaskStartEvent,
 )
 from app.task.MaaFW.tools.core.runner.run_plan import (
-    QUEUE_SKIPPED_TASK_REASON,
     MaaFWRunPlanError,
     resolve_run_selection,
 )
 from app.task.MaaFW.tools.core.runner.service import MaaFWRunnerService
 from app.task.MaaFW.tools.core.runner.task_selection import (
-    OFF_DAY_REASON_SUFFIX,
     MaaFWSnapshotExpansion,
     MaaFWSnapshotInspection,
     apply_plan_rules,
@@ -105,11 +96,7 @@ from app.task.MaaFW.tools.core.runner.task_selection import (
     inspect_task_snapshot,
     merge_arranged_queue,
 )
-from app.task.MaaFW.tools.core.worker_protocol import (
-    SIGNAL_SCREENSHOT_KINDS,
-)
 from app.task.run_flow import (
-    PointState,
     begin_attempt,
     game_update_result,
     operation,
@@ -193,6 +180,24 @@ from .proxy_quota import proxy_times_used_up, proxy_today
 from .resource_failure import (
     describe_resource_failure,
 )
+from .run_messages import (
+    MISSING_TASK_NOTICE_PREFIX,
+    MISSING_TASK_USER_RESULT,
+    RERUN_AFTER_CLEANUP,
+    RERUN_AFTER_SWITCH,
+    RESOURCE_FAILURE_STOP_MESSAGE,
+    describe_failed_result,
+    format_completed_task_labels,
+    format_run_overview_log,
+    format_user_log_line,
+    period_all_done_message,
+    record_event_point,
+    remaining_done_message,
+    retry_skip_log_lines,
+    retry_skipped_tasks,
+    signal_attempt_facts,
+    task_display_name,
+)
 from .run_record import (
     RUN_RECORD_HISTORY_KEY,
     MaaFWRunRecorder,
@@ -207,6 +212,13 @@ from .run_report import (
     failure_summary_tasks,
     format_timeline,
     human_reason,
+)
+from .run_settings import (
+    load_json_dict,
+    load_script_hotkeys,
+    loop_guard,
+    period_limits,
+    task_time_limits,
 )
 from .run_verdict import (
     VERDICT_GAME_UPDATE_REQUIRED,
@@ -228,7 +240,6 @@ from .update_credentials import resolve_update_proxy_url
 logger = get_logger("MaaFW 插件自动代理")
 
 
-_RUN_OVERVIEW_LOG_VALUE_LIMIT = 1200
 # 启动/附着游戏后定位其窗口的等待秒数
 WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
 # Game.WaitTime 填 0 时等游戏窗口出现的上限（秒）
@@ -242,21 +253,8 @@ _PROCESS_TERMINATE_GRACE_SECONDS = 3.0
 
 # 一次尝试算成功、信号、要更新游戏还是失败，失败了重不重试、先不先修资源、重不重启客户端，
 # 都由 run_verdict.judge_attempt 判定（环境级失败的标记也在那里）；主循环只读判定。
-# 资源包加载失败（节点重名、JSON 写错、资源目录不在）：资源文件一次尝试到下一次不会自己变，
-# 重试只会原样再失败、还要白白重启游戏 / 模拟器。与环境级失败（run_verdict）分开说：不是运行环境的事。
-_RESOURCE_FAILURE_STOP_MESSAGE = (
-    "资源包加载失败，重试也不会有别的结果，已停止本轮（不再重启游戏/模拟器）"
-)
-# 资源包加载失败后换了载荷、立刻再跑的那一次：（开头那行，之后「上一次（…）」里的称呼）。
-# 不计入尝试次数，所以不编号。
-_RERUN_AFTER_CLEANUP = (
-    "已清理残留，立即重新运行（不计入尝试次数）",
-    "清理残留后的重新运行",
-)
-_RERUN_AFTER_SWITCH = (
-    "已换上同项目其他托管在用的版本，立即重新运行（不计入尝试次数）",
-    "换版本后的重新运行",
-)
+# 给人看的文案（失败摘要、资源包失败停止、重跑的称呼、重试与周期提示）在 run_messages，
+# 运行设置的原值解析（时限、原地打转、周期名单、键位）在 run_settings。
 # 用户点停止后，等核对 / 清理线程收尾的上限：到点就不等了，预约交给它完成后再放。
 _RELEASE_CHECK_CANCEL_GRACE_SECONDS = 30.0
 # 哪些 worker 日志 / 原生诊断进界面的几组文案规则在 worker_protocol（forwards_to_ui）：
@@ -458,7 +456,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
             if not self.run_plan.tasks:
                 await self.cur_user_item.set_state(status="跳过")
-                return _period_all_done_message(self.run_plan)
+                return period_all_done_message(self.run_plan)
 
             # 本轮前面的用户已经撞上同一资源的停服维护：不再拉起游戏 / 模拟器，
             # 并进那条维护通知的账号列表。代理次数、上次状态都不动。
@@ -570,7 +568,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self.cur_user_config.Task.SelectedPreset or ""
             ).strip()
             self._append_log(
-                _format_run_overview_log(
+                format_run_overview_log(
                     self.run_plan,
                     selected_preset=selected_preset,
                 )
@@ -741,7 +739,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self.run_complete = True
                 if self.cur_user_log is not None:
                     await self.cur_user_log.set_state(status="Success!")
-                completed_task_labels = _format_completed_task_labels(
+                completed_task_labels = format_completed_task_labels(
                     self.run_plan,
                     result.completedTasks,
                 )
@@ -759,41 +757,24 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         project_root=self.project_path,
                         secrets=self._secret_log_variants(),
                     )
-                elif result.timedOut:
-                    message = self._timed_out_user_summary(result)
                 else:
-                    message = _failed_task_user_summary(result, self.run_plan)
-                    retry_skipped = (
-                        sum(
-                            1
-                            for skipped in self.run_plan.skippedTasks
-                            if skipped.reason == _RETRY_SKIP_REASON
-                        )
-                        if self.run_plan is not None
-                        else 0
+                    message = describe_failed_result(
+                        result,
+                        self.run_plan,
+                        run_time_limit=self.script_config.Run.RunTimeLimit,
                     )
-                    total = (
-                        len(self.run_plan.tasks) + retry_skipped
-                        if self.run_plan is not None
-                        else 0
-                    )
-                    done = len(result.completedTasks) + retry_skipped
-                    if total > 1 and done > 0:
-                        message += f"（共 {total} 个任务，完成 {done} 个）"
                 if self.cur_user_log is not None:
                     await self.cur_user_log.set_state(status=message)
                 self._append_log(message, warning=True)
                 self._record_attempt(
                     index + 1,
-                    _format_completed_task_labels(self.run_plan, result.completedTasks),
+                    format_completed_task_labels(self.run_plan, result.completedTasks),
                     message,
                     user_message=result.userMessage,
                     failed_task=result.failedTask,
                     screenshots=[
                         (
-                            _format_completed_task_labels(self.run_plan, [shot.task])[
-                                0
-                            ],
+                            format_completed_task_labels(self.run_plan, [shot.task])[0],
                             Path(shot.path),
                         )
                         for shot in result.failureScreenshots
@@ -826,11 +807,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 if self.run_plan is not None and not self.run_plan.tasks:
                     self.run_complete = True
                     # 计划被重试跳过剔空的，不能说成「周期任务」
-                    self._append_log(
-                        "MaaFW 剩余任务都已完成，停止本轮重试"
-                        if _retry_skipped_tasks(self.run_plan)
-                        else "MaaFW 剩余周期任务已完成，停止本轮重试"
-                    )
+                    self._append_log(remaining_done_message(self.run_plan))
                 else:
                     previous_failure = message
                     if verdict.restart_client:
@@ -1044,7 +1021,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 不看 Info.IfQuickConfig：MaaFW 没有可退回的原生配置，账号页上配的任务队列就是
         # 唯一的任务来源。开关在界面上已经不提供，这里若还读它，被隐藏的旧值会让页面上
         # 能改、运行时却不生效。
-        task_snapshot = _load_json_dict(self.cur_user_config.Task.TaskSnapshot)
+        task_snapshot = load_json_dict(self.cur_user_config.Task.TaskSnapshot)
         selected_preset = str(self.cur_user_config.Task.SelectedPreset or "").strip()
         controller_name, resource_name = self._select_run_selection(interface_model)
         effective_preset = (
@@ -1056,7 +1033,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         flavor = resolve_flavor(self.script_config)
         rules = plan_rules(flavor)
         # 托管级键位（Game.Hotkeys）：坏 JSON / 不是对象当空，字段级的校验在建计划时做。
-        script_hotkeys = _load_script_hotkeys(self.script_config.Game.Hotkeys)
+        script_hotkeys = load_script_hotkeys(self.script_config.Game.Hotkeys)
         # 本方法在工作线程里跑：没给线程安全的回调就只进后端日志。
         log = send_log if send_log is not None else logger.info
         inspection: MaaFWSnapshotInspection | None = None
@@ -1381,8 +1358,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         plan = self.run_plan
         if plan is None:
             raise RuntimeError("MaaFW 运行计划尚未初始化")
-        task_limit_seconds, task_limit_overrides = task_time_limits_from_config(
-            self.script_config
+        task_limit_seconds, task_limit_overrides = task_time_limits(
+            self.script_config.Run.TaskTimeLimit,
+            self.script_config.Run.TaskTimeLimitOverrides,
         )
         # 特调把登录交给首任务完成（StartupTask）：首任务失败即结束本轮，时限截到剩余的登录
         # 时限——截止时刻交给 plan_run，在下发 job 前一刻换算成秒（借环境的耗时照样扣掉）。
@@ -1415,7 +1393,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             task_time_limit_seconds=task_limit_seconds,
             task_time_limit_overrides=task_limit_overrides,
             task_deadlines=task_deadlines,
-            loop_guard=loop_guard_from_config(self.script_config),
+            loop_guard=loop_guard(self._loop_guard_raw()),
             run_secrets=secrets,
             project_log_secrets=self._project_log_secret_variants(secrets),
             redaction_notice=self._log_redaction_notice(),
@@ -1465,6 +1443,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self._login_checked = True
             self._startup_task = None
         return result
+
+    def _loop_guard_raw(self) -> Any:
+        """``Run.LoopGuard`` 的原值（原地打转检测，配置默认开）；读不到按关。"""
+
+        try:
+            return self.script_config.Run.LoopGuard
+        except Exception:
+            return None
 
     def _on_plan_run_event(self, event: MaaFWPlanRunEvent) -> None:
         """``plan_run`` 与 ``pretask_run`` 的事件出口：账号日志、进度点（以本任务为 owner）、运行记录。"""
@@ -1567,10 +1553,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
     def _period_limits(self) -> MaaFWPeriodLimits:
         run = self.script_config.Run
-        return MaaFWPeriodLimits.of(
-            _load_json_list(run.DailyOnceTasks),
-            _load_json_list(run.WeeklyOnceTasks),
-            _load_json_list(run.MonthlyOnceTasks),
+        return period_limits(
+            run.DailyOnceTasks, run.WeeklyOnceTasks, run.MonthlyOnceTasks
         )
 
     def _filter_period_once_tasks(self, plan: MaaFWRunPlan) -> MaaFWRunPlan:
@@ -1624,24 +1608,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         不一次性消费：上一次尝试 worker 崩溃时计划原样沿用，这一行要照样写。
         """
 
-        if self.run_plan is None:
-            return
-        skipped = _retry_skipped_tasks(self.run_plan)
-        if skipped:
-            self._append_log(
-                f"{_RETRY_SKIP_REASON}，不再补跑: "
-                + "、".join(_task_display_name(task) for task in skipped)
-            )
-        duplicates = list(dict.fromkeys(self._retry_rerun_duplicates))
-        if duplicates:
-            labels = _format_completed_task_labels(self.run_plan, duplicates)
-            self._append_log(
-                f"{'、'.join(labels)} 在队列里有多份，分不清完成的是哪一份，重试时全部重跑"
-            )
+        for line in retry_skip_log_lines(self.run_plan, self._retry_rerun_duplicates):
+            self._append_log(line)
 
     def _load_period_task_records(self) -> PeriodRecords:
         return parse_period_records(
-            _load_json_dict(self.cur_user_config.Data.PeriodTaskRecords)
+            load_json_dict(self.cur_user_config.Data.PeriodTaskRecords)
         )
 
     async def _mark_period_tasks_completed(self, completed_tasks: list[str]) -> None:
@@ -2043,7 +2015,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         """
 
         if kind != "load_failed" or self._release_check_done:
-            self._append_log(_RESOURCE_FAILURE_STOP_MESSAGE, warning=True)
+            self._append_log(RESOURCE_FAILURE_STOP_MESSAGE, warning=True)
             return None
         self._release_check_done = True
         from .embedded_project import follow_source_enabled, shell_hint_from_report
@@ -2051,7 +2023,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if follow_source_enabled(self.script_config):
             self._append_log(
                 "开发者模式（跟随来源目录）以来源目录为准，不与官方发行包核对；"
-                + _RESOURCE_FAILURE_STOP_MESSAGE,
+                + RESOURCE_FAILURE_STOP_MESSAGE,
                 warning=True,
             )
             return None
@@ -2111,13 +2083,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 if cleaned
                 else "立即用换上的版本重新运行（不重启游戏/模拟器）"
             )
-            return _RERUN_AFTER_CLEANUP if cleaned else _RERUN_AFTER_SWITCH
+            return RERUN_AFTER_CLEANUP if cleaned else RERUN_AFTER_SWITCH
         if cleaned:
             self._append_log(
                 "清理后的版本已准备好，但本托管这次没能切换过去，下次运行前自动切换",
                 warning=True,
             )
-        self._append_log(_RESOURCE_FAILURE_STOP_MESSAGE, warning=True)
+        self._append_log(RESOURCE_FAILURE_STOP_MESSAGE, warning=True)
         return None
 
     async def _reset_client_for_retry(self, attempt: int) -> tuple[bool, bool]:
@@ -2197,12 +2169,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 attempt=attempt,
                 title=self._attempt_title or f"第 {attempt} 次尝试",
                 planned=(
-                    [(task.name, _task_display_name(task)) for task in plan.tasks]
+                    [(task.name, task_display_name(task)) for task in plan.tasks]
                     if plan is not None
                     else []
                 ),
                 retry_skipped=(
-                    len(_retry_skipped_tasks(plan)) if plan is not None else 0
+                    len(retry_skipped_tasks(plan)) if plan is not None else 0
                 ),
             )
 
@@ -2218,18 +2190,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         """将 worker 推来的阶段、任务起止事件归入本次尝试的专项记录。"""
 
         event = self._run_record_call(lambda: self._run_record.apply(data))
-        if isinstance(event, MaaFWTaskStartEvent):
-            point(self, "special", key=event.name)
-        elif isinstance(event, MaaFWTaskEndEvent):
-            state: PointState = "failed"
-            if event.outcome in ("succeeded", "skipped"):
-                state = event.outcome
-            elif event.outcome == "stopped":
-                if event.category == CATEGORY_USER_STOPPED:
-                    state = "cancelled"
-                elif event.category != CATEGORY_SCRIPT_STOPPED or not event.counted:
-                    state = "stopped"
-            point(self, "special", key=event.name, state=state)
+        task_point = record_event_point(event)
+        if task_point is not None:
+            name, state = task_point
+            point(self, "special", key=name, state=state)
         record = self._run_record.current
         if record is not None and any(
             task.outcome == "succeeded" for task in record.tasks
@@ -2271,40 +2235,26 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         多位用户）。证据图只进那条通知，不当失败截图进统计信息与汇总。
         """
 
-        signal = str(result.signal)
+        facts = signal_attempt_facts(
+            result, self.run_plan, user_messages=SIGNAL_USER_MESSAGES
+        )
+        signal = facts.signal
         self.run_signal = signal
         point(self, "special", state="matched", key=signal)
-        message = SIGNAL_USER_MESSAGES.get(signal, str(result.errorMessage or signal))
+        message = facts.message
         # runner 那行「游戏停服维护中，本轮剩余任务已跳过: <任务>」已进任务日志，
         # 这里只记后端日志，不在界面上再复述一遍。
         logger.warning(
             f"MaaFW 账号 {self.cur_user_item.name} 命中项目信号 {signal}"
-            f"（节点 {result.signalNode}）：{message}"
+            f"（节点 {facts.node}）：{message}"
         )
-        # 证据图只认命中那个任务、kind 是信号那种的：前面任务普通失败的 failed 图不算。
-        evidence = _signal_evidence_shot(result)
-        labels = (
-            _format_completed_task_labels(self.run_plan, result.completedTasks)
-            if self.run_plan is not None
-            else list(result.completedTasks)
-        )
-        # 证据图只随信号通知发一次，不再进统计信息与代理结果汇总；前面任务的普通
-        # 失败截图照常进。
-        report_shots = [
-            (
-                _format_completed_task_labels(self.run_plan, [shot.task])[0]
-                if self.run_plan is not None
-                else shot.task,
-                Path(shot.path),
-            )
-            for shot in result.failureScreenshots
-            if shot is not evidence
-        ]
+        # 证据图只随信号通知发一次，不进统计信息与代理结果汇总（facts.report_shots 已去掉它）；
+        # 前面任务的普通失败截图照常进。
         self._record_attempt(
             attempt,
-            labels,
+            facts.labels,
             message,
-            screenshots=report_shots,
+            screenshots=facts.report_shots,
             category=CATEGORY_SIGNAL,
             signal=signal,
         )
@@ -2320,23 +2270,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         plan = self.run_plan
         if not project_name and plan is not None:
             project_name = str(plan.projectLabel or plan.projectName or "")
-        resource_label = ""
-        if plan is not None:
-            label = str(plan.resource.label or "").strip()
-            resource_label = (
-                label if label and not label.startswith("$") else plan.resourceName
-            )
         self.signal_tracker.record(
             signal,
-            resource_name=plan.resourceName
-            if plan is not None
-            else result.resourceName,
-            resource_label=resource_label,
+            resource_name=facts.resource_name,
+            resource_label=facts.resource_label,
             project_name=project_name,
-            node=result.signalNode,
+            node=facts.node,
             user_id=str(self.cur_user_uid),
             user_name=self.cur_user_item.name,
-            screenshot=Path(evidence.path) if evidence is not None else None,
+            screenshot=facts.evidence_path,
         )
 
     def _is_maintenance_skip(self) -> bool:
@@ -2350,18 +2292,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self.run_signal is not None:
             return SIGNAL_USER_MESSAGES.get(self.run_signal, self.run_signal)
         return None
-
-    def _timed_out_user_summary(self, result: MaaFWRunResult) -> str:
-        limit = self.script_config.Run.RunTimeLimit
-        total = len(self.run_plan.tasks) if self.run_plan is not None else 0
-        stopped_at = ""
-        if result.failedTask and self.run_plan is not None:
-            labels = _format_completed_task_labels(self.run_plan, [result.failedTask])
-            stopped_at = f"，最后停在 {labels[0]}"
-        return (
-            f"MaaFW 任务运行超时（限制 {limit} 分钟，已完成 "
-            f"{len(result.completedTasks)}/{total}{stopped_at}）"
-        )
 
     async def _close_game(self) -> bool:
         """关闭由 MAS 启动的游戏，返回是否关成（本来就没开过算关成）。
@@ -3005,12 +2935,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 失败类的账号日志按 WARNING 进 app.log，事后按级别筛得出来
         (logger.warning if warning else logger.info)(message)
         if self.cur_user_log is None:
-            self._pending_user_log.append(_format_user_log_line(message))
+            self._pending_user_log.append(format_user_log_line(message))
             return
         record = self.cur_user_log
 
         async def publish():
-            await record.append_content(_format_user_log_line(message))
+            await record.append_content(format_user_log_line(message))
             content = record.content
             await self.script_info.set_log("".join(content))
 
@@ -3163,272 +3093,3 @@ def _end_processes(
         logger.warning(f"MaaFW 结束进程后仍在运行: {started[proc].label}")
         failed.append(started[proc])
     return [snapshot for proc, snapshot in started.items() if proc not in alive], failed
-
-
-def _load_json_dict(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        return value
-    if isinstance(value, str) and value.strip():
-        with suppress(json.JSONDecodeError):
-            data = json.loads(value)
-            if isinstance(data, dict):
-                return data
-    return {}
-
-
-def _load_script_hotkeys(value: Any) -> dict[str, dict[str, str]]:
-    """``Game.Hotkeys`` → ``{option 名: {字段名: 组合键}}``；不成形的部分丢掉。"""
-
-    result: dict[str, dict[str, str]] = {}
-    for option_name, fields in _load_json_dict(value).items():
-        if not isinstance(option_name, str) or not isinstance(fields, dict):
-            continue
-        cleaned = {
-            field_name: field_value
-            for field_name, field_value in fields.items()
-            if isinstance(field_name, str) and isinstance(field_value, str)
-        }
-        if cleaned:
-            result[option_name] = cleaned
-    return result
-
-
-def _minutes_to_seconds(minutes: Any) -> int:
-    """配置里的分钟数换算成秒。0 / 负数 / 写坏的值都当「不限」（返回 0）。"""
-
-    try:
-        value = int(minutes)
-    except (TypeError, ValueError):
-        return 0
-    return value * 60 if value > 0 else 0
-
-
-def task_time_limits_from_config(config: Any) -> tuple[int, dict[str, int]]:
-    """读 Run.TaskTimeLimit / Run.TaskTimeLimitOverrides 并换算成秒。
-
-    宿主在拉起 worker 之前算一次，随 job 下发：worker 是独立进程，读不到 Config，
-    核心包也只收秒数，不认宿主的配置键。
-
-    Returns:
-        (默认单任务时限秒数, {任务名: 时限秒数})，0 表示不限。
-    """
-
-    default_seconds = _minutes_to_seconds(config.Run.TaskTimeLimit)
-    # 配置系统里 JSON 项存的是字符串（JSONValidator），读出来再解析一次。
-    overrides = {
-        str(name): _minutes_to_seconds(minutes)
-        for name, minutes in _load_json_dict(config.Run.TaskTimeLimitOverrides).items()
-    }
-    return default_seconds, overrides
-
-
-def loop_guard_from_config(config: Any) -> bool:
-    """读 Run.LoopGuard（原地打转检测，配置默认开）；读不到或写坏按关。"""
-
-    try:
-        return config.Run.LoopGuard is True
-    except Exception:
-        return False
-
-
-def _load_json_list(value: Any) -> list[str]:
-    if isinstance(value, list):
-        return [str(item) for item in value if str(item).strip()]
-    if isinstance(value, str) and value.strip():
-        with suppress(json.JSONDecodeError):
-            data = json.loads(value)
-            if isinstance(data, list):
-                return [str(item) for item in data if str(item).strip()]
-    return []
-
-
-# worker 截图文件名是 ``[<前缀>.]<kind>-<HHMMSS>-<任务>.png``，信号证据图的 kind 与 worker
-# 共用 worker_protocol.SIGNAL_SCREENSHOT_KINDS。
-_SIGNAL_EVIDENCE_NAME_RE = re.compile(
-    r"(?:^|\.)(?:"
-    + "|".join(re.escape(kind) for kind in SIGNAL_SCREENSHOT_KINDS.values())
-    + r")-\d{6}-"
-)
-
-
-def _signal_evidence_shot(result: Any) -> Any | None:
-    """信号命中那个任务的证据图；找不到就不带图（宁缺勿错）。"""
-
-    for shot in getattr(result, "failureScreenshots", None) or ():
-        if shot.task == result.failedTask and _SIGNAL_EVIDENCE_NAME_RE.search(
-            Path(shot.path).name
-        ):
-            return shot
-    return None
-
-
-_FAILURE_REASON_MAX_CHARS = 300
-
-
-def _failure_reason_for_user(result: Any) -> str:
-    """从运行结果里取一句可读的失败原因。
-
-    runner 会把异常原文放进 ``errorMessage``，但它同时也用
-    ``MaaFW 任务执行失败: {exc}`` 发一条日志——那条命中
-    ``worker_protocol._RAW_FAILURE_UI_LOG_MARKERS`` 会被当框架噪声过滤掉。若这里再不取，
-    Python 侧异常（如缺模块）在任务页上就只剩「任务执行失败」四个字。
-
-    框架自身的失败原文可能是整段原生 backtrace，因此只取首个非空行并截断；
-    完整内容仍在本次运行的 ``*.worker.log`` 里。
-    """
-
-    raw = str(
-        getattr(result, "userMessage", None)
-        or getattr(result, "errorMessage", "")
-        or ""
-    ).strip()
-    if not raw:
-        return ""
-    first_line = next((line.strip() for line in raw.splitlines() if line.strip()), "")
-    if not first_line:
-        return ""
-    while len(first_line) > _FAILURE_REASON_MAX_CHARS and "；" in first_line:
-        first_line = first_line.rsplit("；", 1)[0]
-    if len(first_line) > _FAILURE_REASON_MAX_CHARS:
-        first_line = first_line[: _FAILURE_REASON_MAX_CHARS - 1] + "…"
-    return first_line
-
-
-def _failed_task_user_summary(result: Any, plan: Any | None) -> str:
-    if getattr(result, "userMessage", None):
-        return _failure_reason_for_user(result)
-    failed_task = str(getattr(result, "failedTask", "") or "").strip()
-    reason = _failure_reason_for_user(result)
-    if not failed_task:
-        # 还没投递任何任务就失败了（ADB 未就绪、Agent 连接超时、资源加载失败……）：
-        # 不把原因挂到第一个任务头上，用户会去查错任务
-        return f"MaaFW 运行失败{'：' + reason if reason else ''}"
-    suffix = f"：任务执行失败{'：' + reason if reason else ''}"
-    tasks = tuple(getattr(plan, "tasks", ()) or ()) if plan is not None else ()
-    if tasks:
-        for task in tasks:
-            task_name = str(getattr(task, "name", "") or "").strip()
-            task_entry = str(getattr(task, "entry", "") or "").strip()
-            if failed_task and failed_task not in {task_name, task_entry}:
-                continue
-            return f"{_task_display_name(task)}{suffix}"
-    return f"{failed_task or 'MaaFW 任务'}{suffix}"
-
-
-def _task_display_name(task: Any) -> str:
-    label = getattr(task, "label", None)
-    # 红灯记录的 label 已在建计划时解析；用户自己起的名字可以以 $ 开头。
-    queue_skipped = (
-        isinstance(task, MaaFWSkippedTaskPlan)
-        and task.reason == QUEUE_SKIPPED_TASK_REASON
-    )
-    if (
-        isinstance(label, str)
-        and label.strip()
-        and (queue_skipped or not label.lstrip().startswith("$"))
-    ):
-        return label.strip()
-    return str(getattr(task, "name", ""))
-
-
-def _format_completed_task_labels(
-    plan: MaaFWRunPlan | None,
-    task_names: list[str],
-) -> list[str]:
-    labels_by_name = (
-        {task.name: _task_display_name(task) for task in plan.tasks}
-        if plan is not None
-        else {}
-    )
-    return [labels_by_name.get(task_name, task_name) for task_name in task_names]
-
-
-def _format_run_overview_log(
-    plan: MaaFWRunPlan,
-    *,
-    selected_preset: str,
-) -> str:
-    task_names = " -> ".join(_task_display_name(task) for task in plan.tasks) or "-"
-    if len(task_names) > _RUN_OVERVIEW_LOG_VALUE_LIMIT:
-        task_names = task_names[:_RUN_OVERVIEW_LOG_VALUE_LIMIT] + "..."
-    project_name = (
-        plan.projectLabel.strip()
-        if isinstance(plan.projectLabel, str)
-        and plan.projectLabel.strip()
-        and not plan.projectLabel.lstrip().startswith("$")
-        else plan.projectName
-    )
-    project_version = str(plan.piEnv.get("PI_VERSION") or "").strip() or "未知"
-    overview = (
-        "MaaFW 运行总览: "
-        f"project={project_name}; version={project_version}; "
-        f"controller={plan.controllerName}; resource={plan.resourceName}; "
-        f"preset={selected_preset or '自定义'}; "
-        f"enabled_tasks({len(plan.tasks)})={task_names}"
-    )
-    if not plan.skippedTasks:
-        return overview
-
-    # 被跳过的任务此前没有任何出口，用户把任务加进队列却看不出它为什么没跑。
-    skipped_names = " -> ".join(
-        f"{_task_display_name(task)}({task.reason})" for task in plan.skippedTasks
-    )
-    if len(skipped_names) > _RUN_OVERVIEW_LOG_VALUE_LIMIT:
-        skipped_names = skipped_names[:_RUN_OVERVIEW_LOG_VALUE_LIMIT] + "..."
-    return f"{overview}; skipped_tasks({len(plan.skippedTasks)})={skipped_names}"
-
-
-#: 任务报告里「失效任务」一行的前缀：队列里的任务 interface 已没有，本次跳过。
-MISSING_TASK_NOTICE_PREFIX = (
-    "失效任务（interface 内已无，已跳过，请到账号配置里重新添加）"
-)
-#: 其余任务都跑完、但队列里有失效任务时统计报告的结果：照常算完成，不说「全部完成」。
-MISSING_TASK_USER_RESULT = "代理任务完成，但有失效任务"
-#: 特调声明的 skip_on_retry_entries 在重试时被剔掉的原因（进 skippedTasks 与尝试日志）。
-_RETRY_SKIP_REASON = RETRY_SKIP_REASON
-
-
-def _retry_skipped_tasks(plan: MaaFWRunPlan) -> list[MaaFWSkippedTaskPlan]:
-    return [task for task in plan.skippedTasks if task.reason == _RETRY_SKIP_REASON]
-
-
-_PERIOD_DONE_LABELS = {
-    PERIOD_DONE_REASONS["daily"]: "今日",
-    PERIOD_DONE_REASONS["weekly"]: "本周",
-    PERIOD_DONE_REASONS["monthly"]: "本月",
-}
-
-
-def _period_all_done_message(plan: MaaFWRunPlan) -> str:
-    """队列里的任务都因周期限制被跳过时的提示，按实际跳过原因说今日 / 本周 / 本月。"""
-
-    periods: list[str] = []
-    for task in plan.skippedTasks:
-        label = _PERIOD_DONE_LABELS.get(task.reason or "")
-        if label and label not in periods:
-            periods.append(label)
-    ordered = [label for label in ("今日", "本周", "本月") if label in periods]
-    # 运行日的说法只在跳过原因全是「不在运行日」（或再加周期已完成）时用；混了红灯、失效任务
-    # 等别的原因时，照改动前这种情况原本的提示说
-    reasons = [task.reason or "" for task in plan.skippedTasks]
-    off_day = any(reason.endswith(OFF_DAY_REASON_SUFFIX) for reason in reasons)
-    only_off_day_or_period = all(
-        reason.endswith(OFF_DAY_REASON_SUFFIX) or reason in _PERIOD_DONE_LABELS
-        for reason in reasons
-    )
-    if off_day and only_off_day_or_period and not ordered:
-        return "MaaFW 队列里的任务今天都不在运行日，跳过本次运行"
-    if off_day and only_off_day_or_period:
-        return (
-            f"MaaFW 队列里的任务今天不在运行日或已在{' / '.join(ordered)}完成，"
-            "跳过本次运行"
-        )
-    if not periods:
-        return "MaaFW 队列里的周期任务都已在本周期内完成，跳过本次运行"
-    return f"MaaFW 队列里的周期任务都已在{' / '.join(ordered)}完成，跳过本次运行"
-
-
-def _format_user_log_line(message: str) -> str:
-    timestamp = datetime.now().astimezone().strftime("%H:%M:%S")
-    lines = str(message).splitlines() or [""]
-    return "".join(f"[{timestamp}] {line}\n" for line in lines)

@@ -104,7 +104,7 @@ SERVER_MAINTENANCE = "server_maintenance"
 CLIENT_UPDATE_REQUIRED = "client_update_required"
 #: 信号证据截图文件名里的 kind。只用小写字母：问题包导出按
 #: ``<时分秒>.<kind>-<HHMMSS>-<任务>.png`` 收截图，kind 部分是 ``[a-z]+``，带连字符就收不进去。
-#: 宿主按这些 kind 认证据图（``runner_task._signal_evidence_shot``）。
+#: 宿主按这些 kind 认证据图（``run_messages.signal_evidence_shot``）。
 SIGNAL_SCREENSHOT_KINDS = {
     SERVER_MAINTENANCE: "maintenance",
     CLIENT_UPDATE_REQUIRED: "clientupdate",

@@ -489,19 +489,18 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
     def _append_update_log(self, message: str) -> None:
         """记一行更新日志：后端日志 + 脚本实时日志 + 待并入账号日志的缓冲。
 
-        行格式与 ``runner_task._format_user_log_line`` 一致（那边 import maa，
-        不能从这里引用），这样并入账号日志后看不出接缝。
+        行格式由 ``run_messages.update_log_lines`` 给出，与账号日志的
+        ``run_messages.format_user_log_line`` 一致，这样并入账号日志后看不出接缝。
         """
 
-        from app.task.MaaFW.tools.core.log_redact import DETAIL_LOG_PREFIX
+        from app.task.MaaFW.tools.embedded.run_messages import update_log_lines
 
         logger.info(f"MFW 项目更新：{message}")
-        if str(message).startswith(DETAIL_LOG_PREFIX):
+        lines = update_log_lines(message, datetime.now().astimezone())
+        if lines is None:
             # 详情行（如健康检查的完整 traceback）只进后端日志，不上界面与账号日志。
             return
-        timestamp = datetime.now().astimezone().strftime("%H:%M:%S")
-        for line in str(message).splitlines() or [""]:
-            self.project_update_logs.append(f"[{timestamp}] {line}\n")
+        self.project_update_logs.extend(lines)
         self.callbacks.submit(
             self.script_info.set_log("".join(self.project_update_logs))
         )
