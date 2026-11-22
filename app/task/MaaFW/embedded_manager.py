@@ -553,6 +553,28 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             finally:
                 if not handed_off:
                     await release_project_path(import_key)
+        # 与旧专项 lock_script_config 同一约定：拿到托管锁后由 L2 选定游戏会话（游戏 /
+        # 模拟器）、复查预下载；不调的话整轮读不到绑定的游戏与模拟器。放在项目预约交回
+        # 之后（选定可能要等串行游戏），失败时还锁、照实说原因。
+        callback = getattr(self, "after_config_lock", None)
+        if callback is not None:
+            try:
+                await callback(script_config)
+            except BaseException as exc:
+                from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+
+                ticket = self.config_locks.pop(script_config.uid, None)
+                self._script_locked = False
+                if ticket is not None:
+                    await script_config.unlock(ticket)
+                if not isinstance(exc, Exception) or isinstance(
+                    exc, FluxdownCancelUnconfirmed
+                ):
+                    raise
+                logger.opt(exception=True).warning(
+                    f"MFW 取得托管锁后准备运行失败（{script_id}）：{exc}"
+                )
+                return str(exc) or type(exc).__name__
         user_config = script_config.UserData
         self.user_config = user_config
 
