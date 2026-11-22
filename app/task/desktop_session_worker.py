@@ -178,6 +178,9 @@ def run_action(pipe) -> None:
         from app.task.MaaFW.tools.core.controller_win32.service import (
             MaaFWWin32ControllerService,
         )
+        from app.task.MaaFW.tools.embedded.desktop_windows import (
+            list_maafw_desktop_windows,
+        )
 
         service = MaaFWWin32ControllerService()
         hwnd = arguments.get("hwnd")
@@ -191,7 +194,8 @@ def run_action(pipe) -> None:
             text = json.dumps(bool(pid and process_session(pid) == session_id))
         else:
             windows = service.match_controller_windows(
-                json.loads(arguments["controller"])
+                json.loads(arguments["controller"]),
+                list_windows=list_maafw_desktop_windows,
             )
             text = json.dumps(
                 [

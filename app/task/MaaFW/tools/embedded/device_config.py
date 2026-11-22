@@ -36,6 +36,7 @@ from app.task.MaaFW.tools.core.runner.models import MaaFWDeviceConfig, MaaFWRunP
 from app.utils import get_logger
 from app.utils.common.process.session import desktop_process_target
 
+from .desktop_windows import list_maafw_desktop_windows
 from .game_package import resolve_game_package
 
 if TYPE_CHECKING:
@@ -691,7 +692,13 @@ def match_controller_windows(controller: MaaFWController) -> list[Any]:
     # 树内没有服务契约层，直连实现（移植指南 §4 规则 4）
     service = MaaFWWin32ControllerService()
     controller_payload = controller.model_dump(mode="json", by_alias=True)
-    return list(service.match_controller_windows(controller_payload))
+    # 解析库不自己扫桌面（扫描要 MaaFramework 绑定）：扫描函数由这里给，库只在
+    # 控制器是 Win32 且写了窗口规则时才调用它，与以前「没规则不扫描」一致。
+    return list(
+        service.match_controller_windows(
+            controller_payload, list_windows=list_maafw_desktop_windows
+        )
+    )
 
 
 async def list_desktop_window_matches(controller: MaaFWController):

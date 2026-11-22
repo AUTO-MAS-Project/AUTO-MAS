@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import re
-import sys
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from pydantic import BaseModel
 
@@ -41,28 +40,13 @@ class MaaFWWin32ControllerService:
             "key": self.key,
             "displayName": self.display_name,
             "controllerTypes": list(self.controller_types),
-            "capabilities": ["window_scan", "device_spec"],
+            "capabilities": ["device_spec"],
         }
-
-    def list_windows(self) -> list[MaaFWWin32Window]:
-        if sys.platform != "win32":
-            raise RuntimeError("Win32 窗口扫描仅支持 Windows")
-
-        from maa.toolkit import Toolkit
-
-        return [
-            MaaFWWin32Window(
-                hWnd=_normalize_hwnd(window.hwnd),
-                className=str(window.class_name or ""),
-                windowName=str(window.window_name or ""),
-            )
-            for window in Toolkit.find_desktop_windows()
-        ]
 
     def match_controller_windows(
         self,
         controller: BaseModel | dict[str, Any],
-        windows: Iterable[MaaFWWin32Window] | None = None,
+        list_windows: Callable[[], Iterable[MaaFWWin32Window]] | None = None,
     ) -> list[MaaFWWindowMatch]:
         if isinstance(controller, MaaFWController):
             controller_model = controller
@@ -82,7 +66,9 @@ class MaaFWWin32ControllerService:
             # 两个正则都按「全匹配」，取到的是桌面上随便第一个窗口。不认任何窗口，
             # 由调用方要求用户指定窗口句柄。
             return []
-        source_windows = list(windows) if windows is not None else self.list_windows()
+        if list_windows is None:
+            raise RuntimeError("Win32 窗口扫描由调用方提供：请传入 list_windows")
+        source_windows = list(list_windows())
         matched: list[MaaFWWindowMatch] = []
         seen_hwnds: set[int] = set()
 
@@ -161,11 +147,3 @@ def _compile_safe_regex(pattern: str) -> re.Pattern[str]:
             "（如 (x+)+，无法安全匹配，请反馈给项目作者）"
         )
     return re.compile(pattern)
-
-
-def _normalize_hwnd(value: Any) -> int:
-    if hasattr(value, "value"):
-        value = value.value
-    if value is None:
-        return 0
-    return int(value)
