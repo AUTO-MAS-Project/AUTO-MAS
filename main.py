@@ -495,10 +495,14 @@ def main():
                     try:
                         with startup_stage("后端/MFW 后台维护/旧副本迁移"):
                             await Config.maafw_maintenance.migrate_embedded_copies_to_payloads()
-                        with startup_stage("后端/MFW 后台维护/Agent 环境清理"):
-                            await Config.maafw_maintenance.clean_agent_venvs()
+                        with startup_stage("后端/MFW 后台维护/视图属主标记"):
+                            await Config.maafw_maintenance.tag_view_owners()
                         with startup_stage("后端/MFW 后台维护/副本清理"):
                             await Config.maafw_maintenance.clean_embedded_copies()
+                        # 先清副本，再把应保留的视图交给 agent 环境对账：副本删掉以后
+                        # 它引用的隔离 venv 才会变成无人引用。
+                        with startup_stage("后端/MFW 后台维护/Agent 环境清理"):
+                            await Config.maafw_maintenance.clean_agent_venvs()
                         with startup_stage("后端/MFW 后台维护/Runtime 文件清理"):
                             await Config.maafw_maintenance.clean_runtime_blobs()
                         with startup_stage("后端/MFW 后台维护/更新缓存清理"):

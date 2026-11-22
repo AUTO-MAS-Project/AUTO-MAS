@@ -2,7 +2,7 @@
 #   Copyright © 2025-2026 AUTO-MAS Team
 #   SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""老 MFW 副本的启动迁移；只接收脚本查询和进程启动时刻。"""
+"""老 MFW 副本的启动迁移；只接收属主名下托管的查询（普通数据）和进程启动时刻。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.models.config import MaaFWConfig
 from app.utils import get_logger
 
 from .embedded_project import (
@@ -25,19 +24,22 @@ from .embedded_project import (
     copy_is_healthy,
     effective_channel,
     embedded_project_dir,
+    embedded_projects_root,
     imported_source_path,
+    is_embedded_copy_dir_name,
     read_view_marker,
     release_held_reservations,
     set_migration_active,
     settle_adopted_latest,
 )
+from .owners import ManagedRecord
 from .project_path import release_project_path, try_reserve_project_path
-from .update_credentials import resolve_update_proxy_url
 from .view_update import confirm_environments_in_background, sync_view_to_group
 
 logger = get_logger("MFW 迁移")
 
-type ScriptConfigs = Callable[[], Sequence[tuple[str, MaaFWConfig]]]
+# 此刻全部属主名下的托管（事件循环上现问；运行状态每次重问）。
+type ManagedQuery = Callable[[], Sequence[ManagedRecord]]
 
 
 @dataclass(frozen=True)
@@ -65,14 +67,37 @@ async def _finish_file_work[T](work: Awaitable[T]) -> T:
         raise
 
 
+def _running(managed: ManagedQuery, script_id: str) -> bool | None:
+    """托管此刻是否在运行；已不在属主名下为 None。"""
+
+    for record in managed():
+        if record.uid == script_id:
+            return record.running
+    return None
+
+
+def _has_unowned_unadopted_copy(alive_views: set[str]) -> bool:
+    """盘上有没有不归任何已登记属主、也还没采纳的老副本（判定不了属主的，基线要留着）。"""
+
+    root = embedded_projects_root()
+    if not root.is_dir():
+        return False
+    for child in root.iterdir():
+        if not is_embedded_copy_dir_name(child.name) or child.name in alive_views:
+            continue
+        if copy_is_healthy(child) and read_view_marker(child) is None:
+            return True
+    return False
+
+
 async def migrate_embedded_copies_to_payloads(
-    *, script_configs: ScriptConfigs, process_started_at: float
+    *, managed: ManagedQuery, process_started_at: float
 ) -> None:
     """逐副本采纳、统一组版本，再清理旧更新状态；失败留给下次启动重试。
 
-    宿主在调用前确认脚本表完整加载。配置与渠道在事件循环上读取，工作线程只
-    消费路径和标量。全程不写配置；后台执行期间运行前检查按 migration_active
-    识别视图正在切换，任何退出路径都清除此状态。
+    宿主在调用前确认脚本表完整加载、属主的回答算数。托管与渠道在事件循环上读取，
+    工作线程只消费路径和标量。全程不写配置；后台执行期间运行前检查按
+    migration_active 识别视图正在切换，任何退出路径都清除此状态。
     """
 
     set_migration_active(True)
@@ -81,14 +106,15 @@ async def migrate_embedded_copies_to_payloads(
         entries = [
             _MigrationEntry(
                 member=GroupMember(
-                    script_id=uid,
-                    channel=effective_channel(uid, config),
-                    name=str(config.Info.Name or uid[:8]),
-                    proxy_url=resolve_update_proxy_url(config) or None,
+                    script_id=record.uid,
+                    channel=effective_channel(record.uid, shape),
+                    name=str(record.name or record.uid[:8]),
+                    proxy_url=record.proxy_url or None,
                 ),
-                source=imported_source_path(config) or str(config.Info.Path or ""),
+                source=imported_source_path(shape) or str(record.source_path or ""),
             )
-            for uid, config in script_configs()
+            for record in managed()
+            for shape in (record.shape(),)
         ]
         pending = [
             entry
@@ -103,10 +129,10 @@ async def migrate_embedded_copies_to_payloads(
             member = entry.member
             script_id, name = member.script_id, member.name
             view = embedded_project_dir(script_id)
-            config = dict(script_configs()).get(script_id)
-            if config is None:
+            running = _running(managed, script_id)
+            if running is None:
                 continue
-            if config.is_locked:
+            if running:
                 failed += 1
                 logger.warning(f"MFW 副本迁移：脚本「{name}」正在运行，下次启动再试")
                 continue
@@ -119,7 +145,7 @@ async def migrate_embedded_copies_to_payloads(
                 continue
             began = time.monotonic()
             try:
-                if config.is_locked:
+                if _running(managed, script_id):
                     failed += 1
                     continue
                 if await asyncio.to_thread(read_view_marker, view) is not None:
@@ -152,7 +178,7 @@ async def migrate_embedded_copies_to_payloads(
                 settle_adopted_latest, members=[entry.member for entry in entries]
             )
         )
-        await _unify_views_to_group(entries, script_configs=script_configs, held=held)
+        await _unify_views_to_group(entries, managed=managed, held=held)
         logger.info(
             f"MFW 副本迁移完成：采纳 {adopted} 个、失败 {failed} 个、"
             f"统一到组版本 {len(held)} 个，用时 {time.monotonic() - started:.1f} s"
@@ -162,11 +188,17 @@ async def migrate_embedded_copies_to_payloads(
         handed = dict(held)
         held.clear()
         confirm_environments_in_background(members, held=handed)
-        # 失败副本还要靠 committed 记录和包内清单识别原文件，其余作废记录照收。
+        # 失败副本还要靠 committed 记录和包内清单识别原文件，其余作废记录照收。不归任何已登记
+        # 属主的未采纳老副本（属主没登记、判定不了）同样要靠它，有就留着基线。
+        alive_views = {entry.member.script_id for entry in entries}
+        unowned = await asyncio.to_thread(
+            _has_unowned_unadopted_copy,
+            {embedded_project_dir(uid).name for uid in alive_views},
+        )
         await _finish_file_work(
             asyncio.to_thread(
                 _discard_legacy_update_state,
-                keep_adoption_baseline=bool(failed),
+                keep_adoption_baseline=bool(failed) or unowned,
                 process_started_at=process_started_at,
             )
         )
@@ -179,7 +211,7 @@ async def migrate_embedded_copies_to_payloads(
 async def _unify_views_to_group(
     entries: list[_MigrationEntry],
     *,
-    script_configs: ScriptConfigs,
+    managed: ManagedQuery,
     held: dict[str, str],
 ) -> None:
     """逐视图切到谱系 + 渠道的 latest，切过的预约交由调用方移交或释放。"""
@@ -188,10 +220,10 @@ async def _unify_views_to_group(
         member = entry.member
         script_id, name = member.script_id, member.name
         # 账号之间不持视图预约；运行中的脚本还须按配置锁跳过，在事件循环上查。
-        config = dict(script_configs()).get(script_id)
-        if config is None:
+        running = _running(managed, script_id)
+        if running is None:
             continue
-        if config.is_locked:
+        if running:
             logger.info(
                 f"MFW 副本迁移：脚本「{name}」正在运行，统一到组版本留给它跑完后再做"
             )
@@ -201,7 +233,7 @@ async def _unify_views_to_group(
             continue
         result = None
         try:
-            if config.is_locked:
+            if _running(managed, script_id):
                 continue
             result = await _finish_file_work(
                 sync_view_to_group(

@@ -2,20 +2,28 @@
 #   Copyright © 2025-2026 AUTO-MAS Team
 #   SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""MFW 宿主维护；配置事实由宿主提供，资源规则留在引擎宿主接缝。"""
+"""MFW 宿主维护（项目更新一侧驱动）；托管只经属主登记问，资源规则留在引擎宿主接缝。
+
+「哪些托管还在」只问已登记的属主（``owners``），不按配置类判断家族。据此判断「不在了」的每一步
+都先过两道：宿主的「托管配置完整加载」开关为真、属主快照 ``snapshot(require_ready=True)`` 算得出来
+（任何一个属主答不上来、说没加载完就整轮跳过）。视图只在「属主已登记、且属主名下没有这个托管」时
+才删；没有属主标记、属主没登记的视图一律不动，并算进交给 agent 环境与运行池对账的应保留集合。
+顺序由 main 编排：迁移 → 补属主标记 → 清副本 → agent 环境对账 → 共用库 / 更新包缓存 → 运行池对账。
+"""
 
 from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from pathlib import Path
 
-from app.config import ConfigEntry
-from app.models.config import MaaFWConfig
+from app.task.MaaFW.tools.embedded import owners
 from app.utils import get_logger
 
 logger = get_logger("MFW 维护")
+
+ManagedSnapshot = Callable[..., "owners.LiveSnapshot | None"]
 
 
 class MaaFWMaintenanceService:
@@ -24,23 +32,30 @@ class MaaFWMaintenanceService:
     def __init__(
         self,
         *,
-        script_configs: Callable[[], Sequence[tuple[str, ConfigEntry]]],
         scripts_loaded_intact: Callable[[], bool],
         retention_days: Callable[[], int],
         process_started_at: float,
+        managed_snapshot: ManagedSnapshot | None = None,
     ) -> None:
-        self._script_configs = script_configs
         self._scripts_loaded_intact = scripts_loaded_intact
         self._retention_days = retention_days
         self._process_started_at = process_started_at
+        self._managed_snapshot = managed_snapshot or owners.snapshot
 
-    def _scripts(self) -> list[tuple[str, MaaFWConfig]]:
-        """在事件循环上取当前托管快照，不把宿主集合交给工作线程。"""
-        return [
-            (uid, config)
-            for uid, config in self._script_configs()
-            if isinstance(config, MaaFWConfig)
-        ]
+    def _snapshot(self, *, require_ready: bool) -> owners.LiveSnapshot | None:
+        """在事件循环上问一次全部属主；``require_ready`` 时答不上来就是 None。"""
+
+        try:
+            return self._managed_snapshot(require_ready=require_ready)
+        except Exception as exc:  # noqa: BLE001 - 算不出来就当不算数
+            logger.warning(f"MFW 托管属主快照失败：{exc}")
+            return None
+
+    def _records(self) -> list[owners.ManagedRecord]:
+        """此刻全部属主名下的托管（只做正向匹配用，答不上来的属主跳过）。"""
+
+        current = self._snapshot(require_ready=False)
+        return current.records() if current is not None else []
 
     async def migrate_embedded_copies_to_payloads(self) -> None:
         """在依赖终态布局的资源维护之前，把老副本采纳为载荷与视图。"""
@@ -50,9 +65,63 @@ class MaaFWMaintenanceService:
         if not self._scripts_loaded_intact():
             logger.warning("脚本配置未完整加载，跳过 MFW 副本迁移")
             return
+        if self._snapshot(require_ready=True) is None:
+            logger.warning("MFW 托管属主的回答这次不算数，跳过 MFW 副本迁移")
+            return
         await migrate_embedded_copies_to_payloads(
-            script_configs=self._scripts, process_started_at=self._process_started_at
+            managed=self._records, process_started_at=self._process_started_at
         )
+
+    async def tag_view_owners(self) -> None:
+        """给属主确认仍在的托管的视图记下属主（标记 ``owner``），迁移之后、清副本之前做。
+
+        存量视图没有这一项，没有它的视图清理时一律不动；这里每轮补一次。拿不到视图预约（正在
+        运行 / 更新 / 切换）的跳过，下一轮再补；已记了别的属主的不覆盖。
+        """
+
+        from app.task.MaaFW.tools.embedded.embedded_project import (
+            embedded_project_dir,
+            tag_view_owner,
+            view_owner,
+        )
+        from app.task.MaaFW.tools.embedded.project_path import (
+            release_project_path,
+            try_reserve_project_path,
+        )
+
+        if not self._scripts_loaded_intact():
+            return
+        current = self._snapshot(require_ready=True)
+        if current is None:
+            return
+        tagged = 0
+        for owner_name, records in current.by_owner.items():
+            for record in records:
+                if record.uid in current.conflicts:
+                    continue
+                view = embedded_project_dir(record.uid)
+                if not view.is_dir() or view_owner(view) == (owner_name, record.uid):
+                    continue
+                reservation = await try_reserve_project_path(view)
+                if reservation is None:
+                    continue
+                try:
+                    outcome = await asyncio.to_thread(
+                        tag_view_owner, view, owner_name, record.uid
+                    )
+                except OSError as exc:
+                    logger.warning(f"MFW 视图属主标记写入失败: {view} - {exc}")
+                    continue
+                finally:
+                    await release_project_path(reservation)
+                if outcome == "tagged":
+                    tagged += 1
+                elif outcome == "conflict":
+                    logger.warning(
+                        f"MFW 视图 {view.name} 已记着别的属主，不改成 {owner_name}"
+                    )
+        if tagged:
+            logger.debug(f"已给 {tagged} 个 MFW 视图记下属主")
 
     async def clean_agent_venvs(self) -> None:
         """清掉已无脚本引用的 MFW agent 隔离 venv。
@@ -65,13 +134,15 @@ class MaaFWMaintenanceService:
         只有真实启动时它才可信。挂在 check() 上曾把测试替身当成真配置，
         把开发者磁盘上的真 venv 删掉了。
 
-        隔离 venv 归 agent 环境一侧管：这里只按托管快照算出存活视图（有效根），作为普通数据
-        交给 ``pool_reconcile.reconcile_agent_venvs`` 对账回收（存活集合与保护规则见那里）。
+        隔离 venv 归 agent 环境一侧管：这里只按属主快照算出应保留的视图（``live_projects``），
+        作为普通数据交给 ``pool_reconcile.reconcile_agent_venvs`` 对账回收（存活集合与保护规则见那里）。
+        放在清副本之后：副本删掉以后它引用的 venv 才会变成无人引用。
         """
 
         from app.task.MaaFW.tools.embedded.embedded_project import (
             resolve_maafw_project_root,
         )
+        from app.task.MaaFW.tools.embedded.live_projects import keep_view_paths
         from app.task.MaaFW.tools.embedded.pool_reconcile import (
             agent_venvs_root,
             reconcile_agent_venvs,
@@ -82,33 +153,34 @@ class MaaFWMaintenanceService:
         if not self._scripts_loaded_intact():
             logger.warning("脚本配置未完整加载，跳过 MFW 隔离 venv 孤儿清理")
             return
+        current = self._snapshot(require_ready=True)
+        if current is None:
+            logger.warning("MFW 托管属主的回答这次不算数，跳过 MFW 隔离 venv 孤儿清理")
+            return
 
         # 按有效根算存活集合：引用记录和建计划都按副本（视图）路径算，拿来源目录去算
-        # 会把副本引用的 venv 当孤儿删掉。
-        live_paths = [
-            path
-            for uid, config in self._scripts()
-            if (path := str(resolve_maafw_project_root(uid, config)).strip())
+        # 会把副本引用的 venv 当孤儿删掉。有效根都是本机 data/ 下的副本：不存在只说明这个
+        # 脚本还没导入过（新建未选目录、升级后没打开过），它名下不可能有 venv，不计入存活；
+        # 不能像路径模式那样「一个不可达就整轮弃权」，否则任何一个空脚本都会永久关掉回收。
+        missing = [
+            record
+            for record in current.records()
+            if not resolve_maafw_project_root(record.uid, None).exists()
         ]
-
-        # 有效根都是本机 data/ 下的副本：不存在只说明这个脚本还没导入过（新建未选目录、
-        # 升级后没打开过），它名下不可能有 venv，从存活集合里去掉即可；不能像路径模式
-        # 那样「一个不可达就整轮弃权」，否则任何一个空脚本都会永久关掉回收。
-        missing = [path for path in live_paths if not Path(path).exists()]
         if missing:
             logger.debug(
                 f"MFW 隔离 venv 清理：{len(missing)} 个脚本还没有副本，不计入存活"
             )
-            live_paths = [path for path in live_paths if Path(path).exists()]
-
-        reconcile_agent_venvs(live_paths)
+        # 属主确认仍在的视图，加上判定不了「已经不在」的视图（没属主标记、属主没登记）。
+        reconcile_agent_venvs(keep_view_paths(current))
 
     async def clean_embedded_copies(self) -> None:
-        """清掉内嵌副本目录下的两类垃圾：staging 半成品、脚本已不存在的副本。
+        """清掉内嵌副本目录下的两类垃圾：staging 半成品、属主确认托管已不存在的副本。
 
         导入在 ``.staging/`` 里投影完再换入，进程中途退出会留下半成品；删脚本时
         副本删除失败（只读、被占用）也会留下孤儿。两者都是 MAS 自己铺的，不含用户
         内容，按进程启动时刻与视图预约避开后台并发。目录名必须是副本目录名的形状。
+        孤儿只认视图标记里记着属主、属主已登记且名下没有这个托管的；判定不了的留着。
         """
 
         from app.task.MaaFW.tools.embedded.embedded_project import (
@@ -120,6 +192,7 @@ class MaaFWMaintenanceService:
             remove_tree,
             switch_root,
         )
+        from app.task.MaaFW.tools.embedded.live_projects import classify_views
         from app.task.MaaFW.tools.embedded.project_path import (
             release_project_path,
             try_reserve_project_path,
@@ -174,11 +247,18 @@ class MaaFWMaintenanceService:
                 "脚本配置文件非空但没有加载出任何脚本，疑似损坏，跳过 MFW 内嵌副本孤儿清理"
             )
             return
-        live = {embedded_copy_dir_name(uid) for uid, _config in self._scripts()}
+        # 属主答不上来（没加载完、出错）时据此判断「不在」不算数：整段跳过，载荷回收也不做。
+        current = self._snapshot(require_ready=True)
+        if current is None:
+            logger.warning("MFW 托管属主的回答这次不算数，跳过 MFW 内嵌副本孤儿清理")
+            return
+        # 只删「属主已登记、且属主名下没有这个托管」的视图；没有属主标记、属主没登记的不动。
+        views = classify_views(current, root)
+        gone = set(views.gone)
         for child in root.iterdir():
             if child.name == STAGING_DIR_NAME or not child.is_dir():
                 continue
-            if not is_embedded_copy_dir_name(child.name) or child.name in live:
+            if not is_embedded_copy_dir_name(child.name) or child.name not in gone:
                 continue
             # 后台维护期间可能正有导入或运行，沿用 staging 的进程与预约保护。
             try:
@@ -209,17 +289,28 @@ class MaaFWMaintenanceService:
             read_view_marker,
         )
 
+        if views.unanswered_owners:
+            # 视图上记着、这一轮没答上来的属主（插件没装 / 没加载起来）：它名下「视图没了、托管
+            # 还在」的谱系这里看不见，宁可这轮不回收载荷。
+            logger.info(
+                "有视图记着这次没有登记的属主（"
+                + "、".join(sorted(views.unanswered_owners))
+                + "），本轮不回收 MFW 载荷"
+            )
+            return
+        records = current.records()
         live_sources = [
-            imported_source_path(config) or str(config.Info.Path or "")
-            for uid, config in self._scripts()
-            if read_view_marker(embedded_project_dir(uid)) is None
+            imported_source_path(shape) or str(shape.Info.Path or "")
+            for record in records
+            if read_view_marker(embedded_project_dir(record.uid)) is None
+            for shape in (record.shape(),)
         ]
         # 开着开发者模式的脚本：它们私有渠道的 latest 保住，其余私有渠道（关了开关、删了
         # 脚本）摘掉，留下的开发者载荷随后按普通规则回收。
         follow_views = [
-            embedded_copy_dir_name(str(uid))
-            for uid, config in self._scripts()
-            if follow_source_enabled(config)
+            embedded_copy_dir_name(record.uid)
+            for record in records
+            if follow_source_enabled(record.shape())
         ]
         # 引用包括视图、未完成 journal 的目标与仍存活渠道的 latest；本进程新建的不收。
         # 先删无引用载荷，再由下一步共用库回收释放只剩库内硬链接的 blob。
@@ -298,14 +389,12 @@ class MaaFWMaintenanceService:
 
         与 ``clean_agent_venvs`` 同一个道理放在启动清理里：判定依赖「当前
         全部脚本配置」这个全局状态，只有真实启动时它才可信。规则与保守条件见
-        ``tools/embedded/pool_reconcile.py``；这里只负责把权威集合（全部 MaaFW 类
-        脚本的项目目录，``live_projects.collect_live_project_paths``）交过去，并在脚本表
-        疑似没加载起来时弃权。
+        ``tools/embedded/pool_reconcile.py``；这里只负责把权威集合（属主确认仍在的托管的
+        项目目录加判定不了的视图，``live_projects.keep_project_paths``）交过去，并在脚本表
+        疑似没加载起来、属主答不上来时弃权。
         """
 
-        from app.task.MaaFW.tools.embedded.live_projects import (
-            collect_live_project_paths,
-        )
+        from app.task.MaaFW.tools.embedded.live_projects import keep_project_paths
         from app.task.MaaFW.tools.embedded.pool_reconcile import (
             reconcile_runtime_pool,
             runtime_pool_root,
@@ -318,10 +407,14 @@ class MaaFWMaintenanceService:
                 "脚本配置文件非空但没有加载出任何脚本，疑似损坏，跳过 MFW 运行池回收"
             )
             return
+        current = self._snapshot(require_ready=True)
+        if current is None:
+            logger.warning("MFW 托管属主的回答这次不算数，跳过 MFW 运行池回收")
+            return
         try:
             await asyncio.to_thread(
                 reconcile_runtime_pool,
-                collect_live_project_paths(self._scripts()),
+                keep_project_paths(current),
                 reason="startup",
             )
         except Exception as exc:  # noqa: BLE001 - 回收失败不该影响启动
@@ -349,8 +442,9 @@ class MaaFWMaintenanceService:
             resolve_maafw_project_root,
         )
 
+        # 只动属主名下的项目；答不上来的属主这次跳过。
         project_paths = [
-            resolve_maafw_project_root(uid, config) for uid, config in self._scripts()
+            resolve_maafw_project_root(record.uid, None) for record in self._records()
         ]
         await asyncio.to_thread(
             self._clean_native_debug_logs,

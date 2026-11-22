@@ -322,12 +322,12 @@ class AppConfig:
         self._m9a_managed = None
         # ACTIVE 也可能是部分激活的结果；只有加载成功返回后才允许按引用回收。
         self._script_configs_loaded = False
+        from app.task.MaaFW.tools.embedded import owners as maafw_owners
         from app.task.MaaFW.tools.embedded.maintenance import MaaFWMaintenanceService
 
+        # 托管属主的回答只在托管完整加载之后算数：信号由宿主注入项目更新一侧。
+        maafw_owners.set_loaded_signal(self.script_config_loaded_intact)
         self.maafw_maintenance = MaaFWMaintenanceService(
-            script_configs=lambda: tuple(
-                (str(uid), config) for uid, config in self.ScriptConfig.data.items()
-            ),
             scripts_loaded_intact=self.script_config_loaded_intact,
             retention_days=lambda: self.setting.Function.HistoryRetentionTime,
             process_started_at=_PROCESS_STARTED_AT,
