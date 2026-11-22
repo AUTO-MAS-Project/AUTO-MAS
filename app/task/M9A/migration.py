@@ -67,7 +67,9 @@ from app.task.M9A.managed import (
     supports_account_switch,
 )
 from app.task.M9A.rules import FALLBACK_TASK_NAMES, LEGACY_ENTRY_ALIASES
-from app.task.MaaFW.tools.core.interface.models import resolve_task_instance_name
+from app.task.MaaFW.blocks.maafw_interface.interface.models import (
+    resolve_task_instance_name,
+)
 from app.utils import constants as _utils_constants
 from app.utils import get_logger
 
@@ -1161,7 +1163,7 @@ def _read_interface_dict(root: Path) -> dict[str, Any] | None:
 
 def _read_interface_model(root: Path) -> Any | None:
     try:
-        from app.task.MaaFW.tools.core.interface.service import (
+        from app.task.MaaFW.blocks.maafw_interface.interface.service import (
             MaaFWInterfaceService,
         )
 
@@ -1721,7 +1723,9 @@ def _login_mode(payload: dict[str, Any]) -> str:
 def _run_resource(model: Any, payload: dict[str, Any]) -> str | None:
     """脚本运行时实际生效的资源：与建运行计划同一个 ``resolve_run_selection``（原始 JSON 版）。"""
 
-    from app.task.MaaFW.tools.core.runner.run_plan import resolve_run_selection
+    from app.task.MaaFW.blocks.maafw_interface.runner.run_plan import (
+        resolve_run_selection,
+    )
 
     info = payload.get("Info") if isinstance(payload.get("Info"), dict) else {}
     emulator = (

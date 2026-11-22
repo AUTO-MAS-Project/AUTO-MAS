@@ -48,7 +48,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from app.task.MaaFW.tools.core.log_redact import mask_home_path
+from app.task.MaaFW.blocks.maafw_interface.log_redact import mask_home_path
 
 from .run_redaction import redact_secret_text
 

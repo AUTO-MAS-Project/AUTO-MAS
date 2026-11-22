@@ -42,8 +42,10 @@ from typing import Any
 
 from app.config import ConfigEntry
 from app.core import Config
-from app.task.MaaFW.tools.core.interface.loader import load_interface_model_cached
-from app.task.MaaFW.tools.core.runner.run_plan import (
+from app.task.MaaFW.blocks.maafw_interface.interface.loader import (
+    load_interface_model_cached,
+)
+from app.task.MaaFW.blocks.maafw_interface.runner.run_plan import (
     MaaFWRunPlanError,
     resolve_default_snapshot,
 )

@@ -33,50 +33,52 @@ from app.services import execute_script_task
 from app.task.client import client_executable_path, client_launcher_path
 from app.task.emulator_core import close_emulator
 from app.task.game import game_device_id, game_is_emulator, game_target_id
-from app.task.MaaFW.blocks.maafw_native.project_runtime import (
-    describe_project_runtime_architecture_mismatch,
-)
-from app.task.MaaFW.tools.core.controller_win32.service import (
+from app.task.MaaFW.blocks.maafw_interface.controller_win32.service import (
     controller_has_window_rules,
 )
-from app.task.MaaFW.tools.core.interface.agent_command import MaaFWAgentCommandPlan
-from app.task.MaaFW.tools.core.interface.models import (
+from app.task.MaaFW.blocks.maafw_interface.interface.agent_command import (
+    MaaFWAgentCommandPlan,
+)
+from app.task.MaaFW.blocks.maafw_interface.interface.models import (
     MaaFWInterface,
 )
-from app.task.MaaFW.tools.core.interface.preview import (
+from app.task.MaaFW.blocks.maafw_interface.interface.preview import (
     interface_display_name,
 )
-from app.task.MaaFW.tools.core.interface.service import (
+from app.task.MaaFW.blocks.maafw_interface.interface.service import (
     MaaFWInterfaceService,
 )
-from app.task.MaaFW.tools.core.runner.models import (
+from app.task.MaaFW.blocks.maafw_interface.runner.models import (
     MaaFWDeviceConfig,
     MaaFWRunPlan,
     MaaFWRunResult,
 )
-from app.task.MaaFW.tools.core.runner.plan_transforms import (
+from app.task.MaaFW.blocks.maafw_interface.runner.plan_transforms import (
     MaaFWPeriodLimits,
     PeriodRecords,
     filter_period_once_tasks,
     parse_period_records,
     period_records_after,
 )
-from app.task.MaaFW.tools.core.runner.run_events import (
-    CATEGORY_SIGNAL,
-    STAGE_CLIENT,
-    STAGE_PRETASK,
-)
-from app.task.MaaFW.tools.core.runner.run_plan import (
+from app.task.MaaFW.blocks.maafw_interface.runner.run_plan import (
     MaaFWRunPlanError,
     resolve_run_selection,
 )
-from app.task.MaaFW.tools.core.runner.service import MaaFWRunnerService
-from app.task.MaaFW.tools.core.runner.task_selection import (
+from app.task.MaaFW.blocks.maafw_interface.runner.task_selection import (
     MaaFWSnapshotInspection,
     attach_snapshot_findings,
     describe_plan_failure,
     inspect_task_snapshot,
 )
+from app.task.MaaFW.blocks.maafw_native.project_runtime import (
+    describe_project_runtime_architecture_mismatch,
+)
+from app.task.MaaFW.tools.core.runner.run_events import (
+    CATEGORY_SIGNAL,
+    STAGE_CLIENT,
+    STAGE_PRETASK,
+)
+from app.task.MaaFW.tools.core.runner.service import MaaFWRunnerService
 from app.task.run_flow import (
     begin_attempt,
     point,

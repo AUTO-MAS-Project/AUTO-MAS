@@ -146,7 +146,7 @@ async def heal_projection(
 
     async def core_call(view_path: Path, target: Any, after_register: Any) -> Any:
         try:
-            from app.task.MaaFW.tools.core.interface.loader import (
+            from app.task.MaaFW.blocks.maafw_interface.interface.loader import (
                 load_interface_model_cached,
             )
 

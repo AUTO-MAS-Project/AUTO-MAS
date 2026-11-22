@@ -34,7 +34,7 @@ from app.task.M9A.managed import (
     split_message,
     supports_account_switch,
 )
-from app.task.MaaFW.tools.core.interface.models import (
+from app.task.MaaFW.blocks.maafw_interface.interface.models import (
     MaaFWInterface,
     resolve_task_instance_name,
     task_name_for_entry,

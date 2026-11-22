@@ -63,11 +63,7 @@ from typing import Any
 
 import json5
 
-from app.task.MaaFW.blocks.maafw_native.offline_dependencies import (
-    is_offline_dependency_file,
-)
-
-from ..interface.agent_entry import (
+from app.task.MaaFW.blocks.maafw_interface.interface.agent_entry import (
     CFA_FALLBACK_AGENT_ENTRY,
     bundled_python_escape_path,
     describe_cfa_agent_entry_fallback,
@@ -79,6 +75,10 @@ from ..interface.agent_entry import (
     is_relative_entry_path,
     is_uv_launcher,
 )
+from app.task.MaaFW.blocks.maafw_native.offline_dependencies import (
+    is_offline_dependency_file,
+)
+
 from .blob_store import LINK_MIN_BYTES, RuntimeBlobStore, place_fresh
 
 MAX_REPORT_ITEMS = 128

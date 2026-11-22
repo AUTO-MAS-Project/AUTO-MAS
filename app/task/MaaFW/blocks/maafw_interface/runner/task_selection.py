@@ -27,12 +27,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from app.task.MaaFW.tools.core.interface.models import (
+from app.task.MaaFW.blocks.maafw_interface.interface.models import (
     MaaFWInterface,
     resolve_task_instance_name,
 )
-from app.task.MaaFW.tools.core.interface.plan_rules import MaaFWPlanRules
-from app.task.MaaFW.tools.core.interface.task_config import (
+from app.task.MaaFW.blocks.maafw_interface.interface.plan_rules import MaaFWPlanRules
+from app.task.MaaFW.blocks.maafw_interface.interface.task_config import (
     excluded_task_ids_for_weekday,
     find_missing_task_names,
     unchecked_task_ids,

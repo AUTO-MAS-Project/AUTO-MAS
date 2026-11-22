@@ -4,8 +4,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.task.MaaFW.tools.core.interface.agent_command import MaaFWAgentCommandPlan
-from app.task.MaaFW.tools.core.interface.models import MaaFWAgent
+from app.task.MaaFW.blocks.maafw_interface.interface.agent_command import (
+    MaaFWAgentCommandPlan,
+)
+from app.task.MaaFW.blocks.maafw_interface.interface.models import MaaFWAgent
 
 MaaFWControllerType = Literal["Adb", "Win32"]
 # 项目节点 attach.auto_mas 声明的联动信号（见 run_signal.py）。取值就是

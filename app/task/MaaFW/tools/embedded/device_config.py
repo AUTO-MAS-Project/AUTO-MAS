@@ -20,19 +20,22 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from app.task.MaaFW.tools.core.controller_win32.service import (
+from app.task.MaaFW.blocks.maafw_interface.controller_win32.service import (
     MaaFWWin32ControllerService,
     MaaFWWin32Window,
     controller_has_window_rules,
 )
-from app.task.MaaFW.tools.core.interface.models import (
+from app.task.MaaFW.blocks.maafw_interface.interface.models import (
     MaaFWController,
     MaaFWInterface,
 )
-from app.task.MaaFW.tools.core.interface.preview import (
+from app.task.MaaFW.blocks.maafw_interface.interface.preview import (
     build_adb_emulator_extra_capabilities,
 )
-from app.task.MaaFW.tools.core.runner.models import MaaFWDeviceConfig, MaaFWRunPlan
+from app.task.MaaFW.blocks.maafw_interface.runner.models import (
+    MaaFWDeviceConfig,
+    MaaFWRunPlan,
+)
 from app.utils import get_logger
 from app.utils.common.process.session import desktop_process_target
 

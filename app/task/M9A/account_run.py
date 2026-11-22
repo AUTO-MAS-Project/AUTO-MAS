@@ -56,41 +56,47 @@ from app.task.M9A.arrange import arrange_m9a_queue
 from app.task.M9A.managed import OFFICIAL_RESOURCE_NAME
 from app.task.M9A.rules import M9A_PLAN_RULES, M9A_SKIP_ON_RETRY
 from app.task.M9A.startup import M9ALoginRequired, M9AStartupTask
-from app.task.MaaFW.blocks.maafw_native.project_runtime import (
-    describe_project_runtime_architecture_mismatch,
-)
-from app.task.MaaFW.tools.core.controller_win32.service import (
+from app.task.MaaFW.blocks.maafw_interface.controller_win32.service import (
     controller_has_window_rules,
 )
-from app.task.MaaFW.tools.core.interface.agent_command import MaaFWAgentCommandPlan
-from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
-from app.task.MaaFW.tools.core.interface.preview import interface_display_name
-from app.task.MaaFW.tools.core.interface.service import MaaFWInterfaceService
-from app.task.MaaFW.tools.core.runner.models import (
+from app.task.MaaFW.blocks.maafw_interface.interface.agent_command import (
+    MaaFWAgentCommandPlan,
+)
+from app.task.MaaFW.blocks.maafw_interface.interface.models import MaaFWInterface
+from app.task.MaaFW.blocks.maafw_interface.interface.preview import (
+    interface_display_name,
+)
+from app.task.MaaFW.blocks.maafw_interface.interface.service import (
+    MaaFWInterfaceService,
+)
+from app.task.MaaFW.blocks.maafw_interface.runner.models import (
     MaaFWDeviceConfig,
     MaaFWRunPlan,
     MaaFWRunResult,
 )
-from app.task.MaaFW.tools.core.runner.plan_transforms import (
+from app.task.MaaFW.blocks.maafw_interface.runner.plan_transforms import (
     PeriodRecords,
     filter_period_once_tasks,
     parse_period_records,
     period_records_after,
     skip_tasks_completed_this_run,
 )
-from app.task.MaaFW.tools.core.runner.run_events import (
-    CATEGORY_SIGNAL,
-    STAGE_CLIENT,
-    STAGE_PRETASK,
-)
-from app.task.MaaFW.tools.core.runner.run_plan import MaaFWRunPlanError
-from app.task.MaaFW.tools.core.runner.task_selection import (
+from app.task.MaaFW.blocks.maafw_interface.runner.run_plan import MaaFWRunPlanError
+from app.task.MaaFW.blocks.maafw_interface.runner.task_selection import (
     MaaFWSnapshotExpansion,
     MaaFWSnapshotInspection,
     build_arranged_plan,
     describe_plan_failure,
     expand_task_snapshot,
     inspect_task_snapshot,
+)
+from app.task.MaaFW.blocks.maafw_native.project_runtime import (
+    describe_project_runtime_architecture_mismatch,
+)
+from app.task.MaaFW.tools.core.runner.run_events import (
+    CATEGORY_SIGNAL,
+    STAGE_CLIENT,
+    STAGE_PRETASK,
 )
 from app.task.MaaFW.tools.embedded.attempt_ledger import MaaFWAttemptLedger
 from app.task.MaaFW.tools.embedded.desktop_game import (

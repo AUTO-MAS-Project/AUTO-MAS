@@ -397,7 +397,9 @@ def _update_proxy(shape: Any) -> UpdateProxy:
 def _load_interface_model(project_path: Path, *, force_reload: bool = False):
     """读 interface（走核心包的内存/磁盘缓存）；``force_reload`` 用于更新后失效缓存。"""
 
-    from app.task.MaaFW.tools.core.interface import load_interface_model_cached
+    from app.task.MaaFW.blocks.maafw_interface.interface import (
+        load_interface_model_cached,
+    )
 
     return load_interface_model_cached(project_path, force_reload=force_reload)
 
@@ -603,7 +605,9 @@ async def discover_prefetch(request: MaaFWProjectRequest) -> list[DownloadReques
     project = resolve_maafw_project_root(request.script_id, shape).resolve()
     source = _source_config(credentials, shape)
     proxy = _update_proxy(shape).client
-    from app.task.MaaFW.tools.core.interface import load_interface_model_cached
+    from app.task.MaaFW.blocks.maafw_interface.interface import (
+        load_interface_model_cached,
+    )
 
     interface = await asyncio.to_thread(load_interface_model_cached, project)
     marker = await asyncio.to_thread(read_view_marker, project)

@@ -38,15 +38,17 @@ from typing import TYPE_CHECKING, Any
 
 import psutil
 
-from app.task.MaaFW.tools.core.interface.agent_command import MaaFWAgentCommandPlan
-from app.task.MaaFW.tools.core.runner.environment import (
-    MaaFWRunnerEnvironment,
-    worker_run_plan,
+from app.task.MaaFW.blocks.maafw_interface.interface.agent_command import (
+    MaaFWAgentCommandPlan,
 )
-from app.task.MaaFW.tools.core.runner.models import (
+from app.task.MaaFW.blocks.maafw_interface.runner.models import (
     MaaFWDeviceConfig,
     MaaFWRunPlan,
     MaaFWRunResult,
+)
+from app.task.MaaFW.tools.core.runner.environment import (
+    MaaFWRunnerEnvironment,
+    worker_run_plan,
 )
 from app.task.MaaFW.tools.core.runner.run_events import (
     RUN_RECORD_EVENT_TYPE,

@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import json5
 
-from app.task.MaaFW.tools.core.interface.models import (
+from app.task.MaaFW.blocks.maafw_interface.interface.models import (
     SUPPORTED_OPTION_TYPES,
     MaaFWController,
     MaaFWInterface,

@@ -7,7 +7,16 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import psutil
 
-from app.task.MaaFW.tools.core.interface.models import MaaFWAgent, MaaFWInterface
+from app.task.MaaFW.blocks.maafw_interface.interface.models import (
+    MaaFWAgent,
+    MaaFWInterface,
+)
+from app.task.MaaFW.blocks.maafw_interface.runner.models import (
+    MaaFWDeviceConfig,
+    MaaFWRunnerJobPayload,
+    MaaFWRunPlan,
+)
+from app.task.MaaFW.blocks.maafw_interface.runner.run_plan import build_maafw_run_plan
 
 from .environment import (
     DEFAULT_RUNTIME_LEASE_TTL_SECONDS,
@@ -15,12 +24,6 @@ from .environment import (
     prepare_runner_environment,
     release_runner_environment,
 )
-from .models import (
-    MaaFWDeviceConfig,
-    MaaFWRunnerJobPayload,
-    MaaFWRunPlan,
-)
-from .run_plan import build_maafw_run_plan
 from .worker_registry import GLOBAL_MAAFW_WORKER_REGISTRY, MaaFWWorkerRegistry
 
 if TYPE_CHECKING:

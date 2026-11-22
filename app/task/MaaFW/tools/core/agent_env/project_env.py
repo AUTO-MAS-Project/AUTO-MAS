@@ -17,11 +17,11 @@ from typing import Any, Callable
 
 from packaging.version import InvalidVersion, Version
 
+from app.task.MaaFW.blocks.maafw_interface.interface.models import MaaFWInterface
 from app.task.MaaFW.blocks.maafw_native.project_runtime import (
     probe_bundled_maafw_version,
 )
 
-from ..interface.models import MaaFWInterface
 from ..runtime_pool import MaaFWRuntimePool, RuntimeInstaller
 from .env import prepare_agent_envs, project_python_maafw_version
 from .runtime_lease import (

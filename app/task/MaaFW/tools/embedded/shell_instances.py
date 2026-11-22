@@ -65,7 +65,7 @@ from typing import Any, Literal
 from pydantic import TypeAdapter
 
 from app.config import WindowsNameString
-from app.task.MaaFW.tools.core.embedded_labels import (
+from app.task.MaaFW.blocks.maafw_interface.embedded_labels import (
     _CHOICE_TYPES,
     _FIELD_TYPES,
     _SWITCH_FALSE_NAMES,
@@ -77,7 +77,7 @@ from app.task.MaaFW.tools.core.embedded_labels import (
     _readable,
     mxu_option_values,
 )
-from app.task.MaaFW.tools.core.interface.models import (
+from app.task.MaaFW.blocks.maafw_interface.interface.models import (
     MaaFWInterface,
     MaaFWOption,
     MaaFWPreset,
@@ -87,7 +87,7 @@ from app.task.MaaFW.tools.core.interface.models import (
     build_pretask_task_name,
     iter_pretasks,
 )
-from app.task.MaaFW.tools.core.interface.task_config import (
+from app.task.MaaFW.blocks.maafw_interface.interface.task_config import (
     build_global_option_map,
     build_interface_preset_snapshot,
     build_task_option_maps,

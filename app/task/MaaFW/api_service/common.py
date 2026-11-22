@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.task.MaaFW.tools.core.log_redact import mask_home_path
+from app.task.MaaFW.blocks.maafw_interface.log_redact import mask_home_path
 from app.task.MaaFW.tools.core.project_update.state import redact_text
 from app.task.MaaFW.tools.embedded import owners
 from app.task.MaaFW.tools.embedded.embedded_project import (

@@ -50,11 +50,11 @@ from app.task.MaaFW.api_service.update_job import (
     current_update_job,
     record_update_progress,
 )
-from app.task.MaaFW.tools.core.interface.loader import (
+from app.task.MaaFW.blocks.maafw_interface.interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
 )
-from app.task.MaaFW.tools.core.log_redact import DETAIL_LOG_PREFIX
+from app.task.MaaFW.blocks.maafw_interface.log_redact import DETAIL_LOG_PREFIX
 from app.task.MaaFW.tools.core.project_update import (
     ALERT_LOG_PREFIX,
     MaaFWProjectUpdateError,

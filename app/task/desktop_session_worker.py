@@ -175,7 +175,7 @@ def run_action(pipe) -> None:
         import win32gui
         import win32process
 
-        from app.task.MaaFW.tools.core.controller_win32.service import (
+        from app.task.MaaFW.blocks.maafw_interface.controller_win32.service import (
             MaaFWWin32ControllerService,
         )
         from app.task.MaaFW.tools.embedded.desktop_windows import (

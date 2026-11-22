@@ -133,8 +133,10 @@ def check_staging_agent_imports(
     """
 
     try:
+        from app.task.MaaFW.blocks.maafw_interface.interface import (
+            load_interface_model_cached,
+        )
         from app.task.MaaFW.tools.core.agent_env import MaaFWAgentEnvService
-        from app.task.MaaFW.tools.core.interface import load_interface_model_cached
 
         interface = load_interface_model_cached(root)
         plans = MaaFWAgentEnvService().build_command_plans(

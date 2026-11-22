@@ -13,10 +13,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from app.task.MaaFW.blocks.maafw_interface.runner.models import MaaFWRunResult
 from app.task.MaaFW.blocks.maafw_native.project_runtime import (
     ARCHITECTURE_MISMATCH_MARKERS,
 )
-from app.task.MaaFW.tools.core.runner.models import MaaFWRunResult
 from app.task.MaaFW.tools.core.runner.run_events import (
     CATEGORY_ENVIRONMENT,
     CATEGORY_GAME_UPDATE_REQUIRED,

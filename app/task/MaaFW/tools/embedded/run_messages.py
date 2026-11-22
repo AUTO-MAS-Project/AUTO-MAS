@@ -17,16 +17,22 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from app.task.MaaFW.tools.core.log_redact import DETAIL_LOG_PREFIX
-from app.task.MaaFW.tools.core.runner.models import (
+from app.task.MaaFW.blocks.maafw_interface.log_redact import DETAIL_LOG_PREFIX
+from app.task.MaaFW.blocks.maafw_interface.runner.models import (
     MaaFWRunPlan,
     MaaFWSkippedTaskPlan,
 )
-from app.task.MaaFW.tools.core.runner.plan_transforms import (
+from app.task.MaaFW.blocks.maafw_interface.runner.plan_transforms import (
     PERIOD_DONE_REASONS,
 )
-from app.task.MaaFW.tools.core.runner.plan_transforms import (
+from app.task.MaaFW.blocks.maafw_interface.runner.plan_transforms import (
     RETRY_SKIP_REASON as RETRY_SKIP_REASON,
+)
+from app.task.MaaFW.blocks.maafw_interface.runner.run_plan import (
+    QUEUE_SKIPPED_TASK_REASON,
+)
+from app.task.MaaFW.blocks.maafw_interface.runner.task_selection import (
+    OFF_DAY_REASON_SUFFIX,
 )
 from app.task.MaaFW.tools.core.runner.run_events import (
     CATEGORY_SCRIPT_STOPPED,
@@ -34,8 +40,6 @@ from app.task.MaaFW.tools.core.runner.run_events import (
     MaaFWTaskEndEvent,
     MaaFWTaskStartEvent,
 )
-from app.task.MaaFW.tools.core.runner.run_plan import QUEUE_SKIPPED_TASK_REASON
-from app.task.MaaFW.tools.core.runner.task_selection import OFF_DAY_REASON_SUFFIX
 from app.task.MaaFW.tools.core.worker_protocol import SIGNAL_SCREENSHOT_KINDS
 
 if TYPE_CHECKING:  # pragma: no cover - 只给类型检查用

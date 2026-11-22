@@ -3,8 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from app.task.MaaFW.tools.core.interface.agent_command import MaaFWAgentCommandPlan
-from app.task.MaaFW.tools.core.interface.models import (
+from app.task.MaaFW.blocks.maafw_interface.interface.agent_command import (
+    MaaFWAgentCommandPlan,
+)
+from app.task.MaaFW.blocks.maafw_interface.interface.models import (
     MaaFWAgent,
     MaaFWInterface,
 )

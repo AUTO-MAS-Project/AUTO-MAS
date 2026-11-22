@@ -5,8 +5,10 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from app.task.MaaFW.tools.core.interface.agent_command import MaaFWAgentCommandPlan
-from app.task.MaaFW.tools.core.interface.agent_entry import (
+from app.task.MaaFW.blocks.maafw_interface.interface.agent_command import (
+    MaaFWAgentCommandPlan,
+)
+from app.task.MaaFW.blocks.maafw_interface.interface.agent_entry import (
     CFA_FALLBACK_AGENT_ENTRY,
     describe_agent_path_outside_project,
     describe_cfa_agent_entry_fallback,
@@ -15,7 +17,7 @@ from app.task.MaaFW.tools.core.interface.agent_entry import (
     is_relative_entry_path,
     looks_like_project_path,
 )
-from app.task.MaaFW.tools.core.interface.models import MaaFWAgent
+from app.task.MaaFW.blocks.maafw_interface.interface.models import MaaFWAgent
 from app.task.MaaFW.tools.core.runtime_pool._shared import (
     venv_base_python_missing as _venv_base_python_missing,
 )

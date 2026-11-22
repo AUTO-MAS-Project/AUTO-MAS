@@ -30,21 +30,23 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from app.task.MaaFW.tools.core.interface.loader import load_interface_model_cached
-from app.task.MaaFW.tools.core.interface.models import (
+from app.task.MaaFW.blocks.maafw_interface.interface.loader import (
+    load_interface_model_cached,
+)
+from app.task.MaaFW.blocks.maafw_interface.interface.models import (
     MaaFWInterface,
     map_password_values,
     password_input_names,
 )
-from app.task.MaaFW.tools.core.interface.password_values import (
+from app.task.MaaFW.blocks.maafw_interface.interface.password_values import (
     SNAPSHOT_SECRET_SECTIONS,
     sealed_leaves,
     section_as_task_options,
 )
-from app.task.MaaFW.tools.core.interface.task_config import (
+from app.task.MaaFW.blocks.maafw_interface.interface.task_config import (
     mirror_global_options_to_tasks,
 )
-from app.task.MaaFW.tools.core.runner.pipeline_override import (
+from app.task.MaaFW.blocks.maafw_interface.runner.pipeline_override import (
     SECRET_INPUTS_SNAPSHOT_KEY,
 )
 from app.utils import dpapi_decrypt, dpapi_encrypt, get_logger

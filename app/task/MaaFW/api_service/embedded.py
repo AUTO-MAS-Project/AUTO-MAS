@@ -43,14 +43,14 @@ from app.task.MaaFW.api_service.common import (
     maafw_group_members,
     maafw_managed,
 )
-from app.task.MaaFW.tools.core.interface.loader import (
+from app.task.MaaFW.blocks.maafw_interface.interface.loader import (
     load_interface_model,
     load_interface_model_cached,
 )
-from app.task.MaaFW.tools.core.interface.preview import (
+from app.task.MaaFW.blocks.maafw_interface.interface.preview import (
     interface_display_name,
 )
-from app.task.MaaFW.tools.core.log_redact import mask_home_path
+from app.task.MaaFW.blocks.maafw_interface.log_redact import mask_home_path
 from app.task.MaaFW.tools.core.project_update.projection import (
     discover_project_interface,
 )
@@ -690,13 +690,13 @@ def _view_architecture_warnings(view: Path, source: Path | None) -> list[str]:
     ``nativePluginPaths`` 优先，缺省 ``plugins/``）。
     """
 
+    from app.task.MaaFW.blocks.maafw_interface.runner.run_plan import (
+        MaaFWRunPlanError,
+        _build_native_plugin_paths,
+    )
     from app.task.MaaFW.blocks.maafw_native.project_runtime import (
         describe_plugin_architecture_mismatch,
         describe_project_runtime_architecture_mismatch,
-    )
-    from app.task.MaaFW.tools.core.runner.run_plan import (
-        MaaFWRunPlanError,
-        _build_native_plugin_paths,
     )
 
     messages: list[str] = []

@@ -37,11 +37,14 @@ from app.task.MaaFW.api_service.common import (
     maafw_managed,
 )
 from app.task.MaaFW.api_service.embedded import embedded_summary_lines
-from app.task.MaaFW.tools.core.interface.loader import (
+from app.task.MaaFW.blocks.maafw_interface.interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
 )
-from app.task.MaaFW.tools.core.log_redact import DETAIL_LOG_PREFIX, mask_home_path
+from app.task.MaaFW.blocks.maafw_interface.log_redact import (
+    DETAIL_LOG_PREFIX,
+    mask_home_path,
+)
 from app.task.MaaFW.tools.core.project_update.state import redact_text
 from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_proxy_url,
@@ -105,12 +108,12 @@ def _warn_agent_imports(
     """按准备结果里的 agent 计划做导入静态检查，结论只进日志；检查失败静默放行。"""
 
     try:
+        from app.task.MaaFW.blocks.maafw_interface.interface.agent_command import (
+            MaaFWAgentCommandPlan,
+        )
         from app.task.MaaFW.tools.core.agent_env.import_check import (
             check_agent_plan_imports,
             log_agent_import_reports,
-        )
-        from app.task.MaaFW.tools.core.interface.agent_command import (
-            MaaFWAgentCommandPlan,
         )
 
         agents = result.get("agents") or {}

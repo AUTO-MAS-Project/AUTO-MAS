@@ -25,6 +25,10 @@ from typing import Any, Callable
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
 
+from app.task.MaaFW.blocks.maafw_interface.interface.agent_command import (
+    MaaFWAgentCommandPlan,
+)
+from app.task.MaaFW.blocks.maafw_interface.interface.models import MaaFWAgent
 from app.task.MaaFW.blocks.maafw_native.architecture import (
     supported_architecture_target,
 )
@@ -42,8 +46,6 @@ from app.task.MaaFW.blocks.maafw_native.versions import (
     requirement_distribution_name,
 )
 
-from ..interface.agent_command import MaaFWAgentCommandPlan
-from ..interface.models import MaaFWAgent
 from ..runtime_pool import (
     ExtraPackagesInstaller,
     MaaFWRuntimePool,

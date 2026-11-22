@@ -47,8 +47,8 @@ import json
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from app.task.MaaFW.tools.core.interface.loader import parse_json_text
-from app.task.MaaFW.tools.core.interface.models import (
+from app.task.MaaFW.blocks.maafw_interface.interface.loader import parse_json_text
+from app.task.MaaFW.blocks.maafw_interface.interface.models import (
     DUPLICATE_TASK_SUFFIX_SEPARATOR,
     PRETASK_TASK_PREFIX,
 )

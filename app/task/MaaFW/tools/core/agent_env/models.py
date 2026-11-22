@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ..interface.agent_command import MaaFWAgentCommandPlan
+from app.task.MaaFW.blocks.maafw_interface.interface.agent_command import (
+    MaaFWAgentCommandPlan,
+)
 
 
 class MaaFWAgentEnvPrepareResult(BaseModel):

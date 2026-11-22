@@ -30,17 +30,16 @@ from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
 )
 
 if TYPE_CHECKING:
-    from app.task.MaaFW.tools.core.interface.agent_command import (
+    from app.task.MaaFW.blocks.maafw_interface.interface.agent_command import (
         MaaFWAgentCommandPlan,
     )
-    from app.task.MaaFW.tools.core.interface.models import MaaFWAgent
+    from app.task.MaaFW.blocks.maafw_interface.interface.models import MaaFWAgent
+    from app.task.MaaFW.blocks.maafw_interface.runner.models import MaaFWRunPlan
     from app.task.MaaFW.tools.core.runtime_pool import (
         ExtraPackagesInstaller,
         MaaFWRuntimePool,
         RuntimeInstaller,
     )
-
-    from .models import MaaFWRunPlan
 
 
 @dataclass(frozen=True)

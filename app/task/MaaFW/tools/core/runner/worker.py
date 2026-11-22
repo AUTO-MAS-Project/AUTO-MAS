@@ -53,8 +53,11 @@ from .environment import prefer_active_venv_site_packages  # noqa: E402
 # 桌面插件目录也可能安装 MaaFW。先把项目 Runner venv 放到 sys.path 最前，
 # 避免共享插件依赖覆盖项目 requirements 声明的 MaaFW 版本。
 prefer_active_venv_site_packages()
+from app.task.MaaFW.blocks.maafw_interface.runner.run_plan import (  # noqa: E402
+    MaaFWRunPlan,
+)
+
 from .run_events import RUN_RECORD_EVENT_TYPE  # noqa: E402
-from .run_plan import MaaFWRunPlan  # noqa: E402
 from .runner import MaaFWDeviceConfig, MaaFWRunner, MaaFWRunResult  # noqa: E402
 
 _EMIT_LOCK = threading.Lock()

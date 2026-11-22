@@ -32,12 +32,14 @@ from typing import Any
 
 import psutil
 
-from app.task.MaaFW.tools.core.controller_win32.service import (
+from app.task.MaaFW.blocks.maafw_interface.controller_win32.service import (
     controller_has_window_rules,
 )
-from app.task.MaaFW.tools.core.interface.host_path import path_without_host_venv
-from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
-from app.task.MaaFW.tools.core.runner.models import (
+from app.task.MaaFW.blocks.maafw_interface.interface.host_path import (
+    path_without_host_venv,
+)
+from app.task.MaaFW.blocks.maafw_interface.interface.models import MaaFWInterface
+from app.task.MaaFW.blocks.maafw_interface.runner.models import (
     MaaFWPretaskRunPlan,
     MaaFWRunPlan,
 )

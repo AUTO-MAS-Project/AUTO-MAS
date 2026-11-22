@@ -79,7 +79,9 @@ def build_maafw_config_handler(
 
 def expected_game_kind(script, patch):
     """显式选择的公开 controller 决定目标类别，未导入项目时保留两类选择。"""
-    from app.task.MaaFW.tools.core.interface.loader import load_interface_model_cached
+    from app.task.MaaFW.blocks.maafw_interface.interface.loader import (
+        load_interface_model_cached,
+    )
     from app.task.MaaFW.tools.embedded.embedded_project import (
         resolve_maafw_project_root,
     )

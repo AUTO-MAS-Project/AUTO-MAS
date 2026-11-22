@@ -10,15 +10,17 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any
 
-from app.task.MaaFW.tools.core.interface.agent_entry import (
+from app.task.MaaFW.blocks.maafw_interface.interface.agent_entry import (
     agent_exec_outside_project,
     bundled_python_escape_path,
     describe_pretask_exec_outside,
     describe_pretask_python_fallback,
 )
-from app.task.MaaFW.tools.core.interface.host_path import path_without_host_venv
-from app.task.MaaFW.tools.core.interface.loader import parse_json_text
-from app.task.MaaFW.tools.core.interface.models import (
+from app.task.MaaFW.blocks.maafw_interface.interface.host_path import (
+    path_without_host_venv,
+)
+from app.task.MaaFW.blocks.maafw_interface.interface.loader import parse_json_text
+from app.task.MaaFW.blocks.maafw_interface.interface.models import (
     SUPPORTED_OPTION_TYPES,
     MaaFWAgent,
     MaaFWController,
@@ -39,7 +41,7 @@ from app.task.MaaFW.tools.core.interface.models import (
     resolve_task_instance_name,
     simplified_chinese_language_file,
 )
-from app.task.MaaFW.tools.core.interface.task_config import (
+from app.task.MaaFW.blocks.maafw_interface.interface.task_config import (
     MaaFWTaskPresetSnapshot,
     _build_option_defaults,
     _normalize_raw_snapshot,

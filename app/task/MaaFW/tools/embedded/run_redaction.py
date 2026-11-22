@@ -20,11 +20,11 @@ import json
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
-from app.task.MaaFW.tools.core.interface.models import (
+from app.task.MaaFW.blocks.maafw_interface.interface.models import (
     MaaFWInterface,
     password_input_names,
 )
-from app.task.MaaFW.tools.core.interface.password_values import (
+from app.task.MaaFW.blocks.maafw_interface.interface.password_values import (
     MaaFWSecretOpener,
     collect_run_password_values,
     collect_snapshots_password_values,
@@ -32,7 +32,7 @@ from app.task.MaaFW.tools.core.interface.password_values import (
 from app.utils import get_logger
 
 if TYPE_CHECKING:  # pragma: no cover - 只给类型检查用
-    from app.task.MaaFW.tools.core.runner.models import MaaFWRunPlan
+    from app.task.MaaFW.blocks.maafw_interface.runner.models import MaaFWRunPlan
 
 # 与任务类同名：搬过来的那一行 debug 日志在 app.log 里仍按原来的名字检索
 logger = get_logger("MaaFW 插件自动代理")

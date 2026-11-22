@@ -39,13 +39,17 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
-from app.task.MaaFW.tools.core.interface.loader import load_interface_model_cached
-from app.task.MaaFW.tools.core.interface.models import (
+from app.task.MaaFW.blocks.maafw_interface.interface.loader import (
+    load_interface_model_cached,
+)
+from app.task.MaaFW.blocks.maafw_interface.interface.models import (
     build_pretask_task_name,
     iter_pretasks,
     resolve_task_instance_name,
 )
-from app.task.MaaFW.tools.core.interface.preview import interface_text_translator
+from app.task.MaaFW.blocks.maafw_interface.interface.preview import (
+    interface_text_translator,
+)
 from app.task.MaaFW.tools.embedded.embedded_project import (
     resolve_maafw_project_root,
 )

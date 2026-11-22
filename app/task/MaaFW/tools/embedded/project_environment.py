@@ -74,11 +74,13 @@ def prepare_project_environment_sync(
 
     # 与 API 侧同理：这几个模块会拉起 runtime_pool 与 agent_env，只在真要
     # 用时导入。
+    from app.task.MaaFW.blocks.maafw_interface.interface import (
+        load_interface_model_cached,
+    )
     from app.task.MaaFW.tools.core.agent_env.project_env import (
         prepare_project_environment,
         project_environment_fingerprint,
     )
-    from app.task.MaaFW.tools.core.interface import load_interface_model_cached
     from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
         subprocess_proxy_scope,
     )

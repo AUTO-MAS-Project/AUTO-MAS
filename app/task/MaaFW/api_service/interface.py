@@ -31,20 +31,20 @@ from app.task.MaaFW.api_service.common import (
     maafw_effective_root,
     maafw_managed,
 )
-from app.task.MaaFW.tools.core.interface.loader import (
+from app.task.MaaFW.blocks.maafw_interface.interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
 )
-from app.task.MaaFW.tools.core.interface.plan_rules import (
+from app.task.MaaFW.blocks.maafw_interface.interface.plan_rules import (
     EMPTY_PLAN_RULES,
     MaaFWPlanRules,
 )
-from app.task.MaaFW.tools.core.interface.preview import (
+from app.task.MaaFW.blocks.maafw_interface.interface.preview import (
     apply_preview_plan_rules,
     build_interface_preview_data,
     interface_text_translator,
 )
-from app.task.MaaFW.tools.core.log_redact import mask_home_path
+from app.task.MaaFW.blocks.maafw_interface.log_redact import mask_home_path
 from app.task.MaaFW.tools.core.project_update.state import redact_text
 from app.task.MaaFW.tools.embedded import owners
 from app.task.MaaFW.tools.embedded.embedded_project import (

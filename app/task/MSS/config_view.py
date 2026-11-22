@@ -30,10 +30,12 @@ from app.core import Config
 from app.models.config import MSSConfig
 from app.task.client import client_executable_path, client_launcher_path
 from app.task.game import game_device_id, game_is_emulator, game_target_id
+from app.task.MaaFW.blocks.maafw_interface.interface.models import MaaFWInterface
+from app.task.MaaFW.blocks.maafw_interface.runner.plan_transforms import (
+    MaaFWPeriodLimits,
+)
+from app.task.MaaFW.blocks.maafw_interface.runner.run_plan import resolve_run_selection
 from app.task.MaaFW.tools.backup_archive import read_overlay_values
-from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
-from app.task.MaaFW.tools.core.runner.plan_transforms import MaaFWPeriodLimits
-from app.task.MaaFW.tools.core.runner.run_plan import resolve_run_selection
 from app.task.MaaFW.tools.embedded.default_snapshot import fill_default_task_snapshots
 from app.task.MaaFW.tools.embedded.desktop_game import MaaFWDesktopGameSpec
 from app.task.MaaFW.tools.embedded.embedded_project import (

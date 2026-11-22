@@ -42,7 +42,7 @@ def _settle_modules() -> tuple[Any, Any, Any]:
     线程里再取就只是查缓存。"""
 
     from app.task.M9A import arrange, config_view
-    from app.task.MaaFW.tools.core.interface import loader
+    from app.task.MaaFW.blocks.maafw_interface.interface import loader
 
     return config_view, arrange, loader
 

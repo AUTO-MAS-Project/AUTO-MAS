@@ -62,13 +62,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+from app.task.MaaFW.blocks.maafw_interface.log_redact import mask_home_path
 from app.task.MaaFW.blocks.maafw_native.layout import (
     EMBEDDED_COPIES_DIR_PARTS,
     EMBEDDED_PAYLOADS_DIR_NAME,
     EMBEDDED_SWITCH_DIR_NAME,
     PROJECT_PYCACHE_DIR_NAME,
 )
-from app.task.MaaFW.tools.core.log_redact import mask_home_path
 from app.task.MaaFW.tools.core.project_update import payloads
 from app.task.MaaFW.tools.core.project_update.apply import (
     project_state_dir_for,
@@ -1273,7 +1273,7 @@ def _same_version(left: str, right: str) -> bool:
 
 def _reload_interface_cache(view: Path) -> None:
     try:
-        from app.task.MaaFW.tools.core.interface.loader import (
+        from app.task.MaaFW.blocks.maafw_interface.interface.loader import (
             load_interface_model_cached,
         )
 
@@ -1878,8 +1878,10 @@ def import_embedded_project(
     # 加载器对 interface 内容的告警（缺 import 文件、preset 引用不存在的 case……）也进
     # 导入报告，与投影告警同一张表、去重；读不出 interface 不挡导入（运行前会报清楚）。
     try:
-        from app.task.MaaFW.tools.core.interface.loader import load_interface_model
-        from app.task.MaaFW.tools.core.interface.models import (
+        from app.task.MaaFW.blocks.maafw_interface.interface.loader import (
+            load_interface_model,
+        )
+        from app.task.MaaFW.blocks.maafw_interface.interface.models import (
             interface_load_warnings,
         )
 

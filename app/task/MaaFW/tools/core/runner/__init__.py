@@ -2,20 +2,11 @@ from __future__ import annotations
 
 from importlib import import_module
 
-# 惰性导出：本包里建计划的几个模块（run_plan、models、pipeline_override、hotkey、
-# task_selection、plan_transforms）归解析一侧，导入它们会先执行本文件；这里要是急着
-# 导入 environment / service，建计划的导入闭包里就带上了 agent 环境与运行池。
+# 惰性导出：只留执行侧的名字。建计划的几个模块（run_plan、models、pipeline_override、
+# hotkey、task_selection、plan_transforms）已进解析库 ``maafw_interface.runner``，
+# 解析侧的名字从那里取；这里不急着导入 environment / service，免得只导入 worker
+# 协议时就带上 agent 环境与运行池。
 _LAZY_EXPORTS = {
-    "MaaFWDeviceConfig": ".models",
-    "MaaFWResolvedPath": ".models",
-    "MaaFWResourceBundlePlan": ".models",
-    "MaaFWRunPlan": ".models",
-    "MaaFWRunResult": ".models",
-    "MaaFWRunnerJobPayload": ".models",
-    "MaaFWSkippedTaskPlan": ".models",
-    "MaaFWTaskRunPlan": ".models",
-    "MaaFWRunPlanError": ".run_plan",
-    "build_maafw_run_plan": ".run_plan",
     "MaaFWRunnerEnvironment": ".environment",
     "release_runner_environment": ".environment",
     "MaaFWRunnerService": ".service",
@@ -35,17 +26,7 @@ def __dir__() -> list[str]:
 
 
 __all__ = [
-    "MaaFWDeviceConfig",
-    "MaaFWResolvedPath",
-    "MaaFWResourceBundlePlan",
-    "MaaFWRunPlan",
-    "MaaFWRunPlanError",
-    "MaaFWRunResult",
     "MaaFWRunnerEnvironment",
-    "MaaFWRunnerJobPayload",
     "MaaFWRunnerService",
-    "MaaFWSkippedTaskPlan",
-    "MaaFWTaskRunPlan",
-    "build_maafw_run_plan",
     "release_runner_environment",
 ]

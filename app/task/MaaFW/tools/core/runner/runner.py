@@ -65,6 +65,21 @@ try:
 except ImportError:  # pragma: no cover - 只有很老的 binding 会走到
     _ContextEventSinkBase = None
 
+from app.task.MaaFW.blocks.maafw_interface.log_redact import mask_home_path
+from app.task.MaaFW.blocks.maafw_interface.runner.models import (
+    MaaFWDeviceConfig,
+    MaaFWFailureScreenshot,
+    MaaFWResourceFailure,
+    MaaFWRunResult,
+)
+from app.task.MaaFW.blocks.maafw_interface.runner.pipeline_override import (
+    deep_merge_pipeline_override,
+)
+from app.task.MaaFW.blocks.maafw_interface.runner.run_plan import (
+    MaaFWRunPlan,
+    MaaFWTaskRunPlan,
+    _lookup_i18n_text,
+)
 from app.task.MaaFW.blocks.maafw_native.architecture import host_architecture
 from app.task.MaaFW.blocks.maafw_native.pe import detect_pe_architecture
 from app.task.MaaFW.blocks.maafw_native.project_runtime import (
@@ -85,7 +100,6 @@ from app.task.MaaFW.tools.core.agent_env.pip_constraint import (
     apply_agent_pip_constraint,
     write_agent_pip_constraint,
 )
-from app.task.MaaFW.tools.core.log_redact import mask_home_path
 from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     set_project_pycache_prefix,
     strip_host_python_environment,
@@ -110,13 +124,6 @@ from .loop_guard import (
     MaaFWLoopGuard,
     parse_loop_guard_exempt,
 )
-from .models import (
-    MaaFWDeviceConfig,
-    MaaFWFailureScreenshot,
-    MaaFWResourceFailure,
-    MaaFWRunResult,
-)
-from .pipeline_override import deep_merge_pipeline_override
 from .run_events import (
     CATEGORY_AGENT_EXITED,
     CATEGORY_GAME_LAUNCH_FAILED,
@@ -142,7 +149,6 @@ from .run_events import (
     MaaFWTaskEndEvent,
     MaaFWTaskStartEvent,
 )
-from .run_plan import MaaFWRunPlan, MaaFWTaskRunPlan, _lookup_i18n_text
 from .run_signal import (
     CLIENT_UPDATE_REQUIRED,
     SERVER_MAINTENANCE,

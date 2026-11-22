@@ -37,14 +37,14 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Literal
 
-from app.task.MaaFW.tools.core.interface.plan_rules import (
+from app.task.MaaFW.blocks.maafw_interface.interface.plan_rules import (
     EMPTY_PLAN_RULES,
     MaaFWPlanRules,
 )
 from app.utils import get_logger
 
 if TYPE_CHECKING:
-    from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
+    from app.task.MaaFW.blocks.maafw_interface.interface.models import MaaFWInterface
 
 logger = get_logger("MFW 托管属主")
 

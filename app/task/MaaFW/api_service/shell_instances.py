@@ -35,13 +35,15 @@ from app.task.MaaFW.api_service.common import (
     logger,
     maafw_effective_root,
 )
-from app.task.MaaFW.tools.core.interface.loader import (
+from app.task.MaaFW.blocks.maafw_interface.interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
 )
-from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
-from app.task.MaaFW.tools.core.interface.preview import interface_text_translator
-from app.task.MaaFW.tools.core.interface.task_config import (
+from app.task.MaaFW.blocks.maafw_interface.interface.models import MaaFWInterface
+from app.task.MaaFW.blocks.maafw_interface.interface.preview import (
+    interface_text_translator,
+)
+from app.task.MaaFW.blocks.maafw_interface.interface.task_config import (
     normalize_global_options,
     normalize_snapshot,
 )

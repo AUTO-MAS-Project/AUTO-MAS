@@ -61,7 +61,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable, Mapping
 
-from .log_redact import DETAIL_LOG_PREFIX
+from app.task.MaaFW.blocks.maafw_interface.log_redact import DETAIL_LOG_PREFIX
 
 if sys.platform == "win32":
     import _winapi

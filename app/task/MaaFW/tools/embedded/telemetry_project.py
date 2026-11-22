@@ -116,7 +116,9 @@ async def record_project_run(project_path: Path | None, *, script_type: str) -> 
     try:
         if project_path is None:
             raise ValueError("没有项目路径")
-        from app.task.MaaFW.tools.core.interface import load_interface_model_cached
+        from app.task.MaaFW.blocks.maafw_interface.interface import (
+            load_interface_model_cached,
+        )
 
         interface = await asyncio.to_thread(load_interface_model_cached, project_path)
         project = telemetry_project_name(getattr(interface, "github", None))

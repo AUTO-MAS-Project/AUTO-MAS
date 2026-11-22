@@ -48,10 +48,12 @@ SOURCE_ROOT = Path(__file__).resolve().parents[2]
 
 WORKER_MODULE = "app.task.MaaFW.tools.core.runner.worker"
 
-#: worker 允许触达的 ``app.*`` 范围：MaaFW 运行器与它的同层工具包，以及原生库识别库 ``maafw_native``。
+#: worker 允许触达的 ``app.*`` 范围：MaaFW 运行器与它的同层工具包，以及原生库识别库
+#: ``maafw_native``、解析库 ``maafw_interface``。
 ALLOWED_PREFIXES = (
     "app.task.MaaFW.tools.core.",
     "app.task.MaaFW.blocks.maafw_native.",
+    "app.task.MaaFW.blocks.maafw_interface.",
 )
 
 
@@ -294,7 +296,7 @@ def _worker_payload_keys() -> set[str]:
 
 
 def _sample_plan(project: Path):
-    from app.task.MaaFW.tools.core.runner.models import (
+    from app.task.MaaFW.blocks.maafw_interface.runner.models import (
         MaaFWResolvedPath,
         MaaFWResourceBundlePlan,
         MaaFWRunPlan,
@@ -334,7 +336,7 @@ def _sample_plan(project: Path):
 
 
 def test_job_round_trips_to_worker(tmp_path: Path) -> None:
-    from app.task.MaaFW.tools.core.runner.models import (
+    from app.task.MaaFW.blocks.maafw_interface.runner.models import (
         MaaFWDeviceConfig,
         MaaFWRunnerJobPayload,
     )
@@ -379,7 +381,7 @@ def test_job_round_trips_to_worker(tmp_path: Path) -> None:
 
 
 def test_worker_result_survives_host_validation() -> None:
-    from app.task.MaaFW.tools.core.runner.models import (
+    from app.task.MaaFW.blocks.maafw_interface.runner.models import (
         MaaFWFailureScreenshot,
         MaaFWRunResult,
     )
@@ -557,7 +559,7 @@ def _mixed_project(tmp_path: Path, natives: dict[Path, str]) -> Path:
 
 
 def _agent_plan(project: Path, kind: str):
-    from app.task.MaaFW.tools.core.interface.agent_command import (
+    from app.task.MaaFW.blocks.maafw_interface.interface.agent_command import (
         MaaFWAgentCommandPlan,
     )
 

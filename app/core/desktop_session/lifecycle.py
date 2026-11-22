@@ -47,8 +47,10 @@ def supports_task(config: object) -> bool:
 
     if type(config) in MAAFW_FAMILY_TYPES:
         from app.task.game import game_is_emulator
-        from app.task.MaaFW.tools.core.interface.service import MaaFWInterfaceService
-        from app.task.MaaFW.tools.core.runner.run_plan import (
+        from app.task.MaaFW.blocks.maafw_interface.interface.service import (
+            MaaFWInterfaceService,
+        )
+        from app.task.MaaFW.blocks.maafw_interface.runner.run_plan import (
             _select_controller,
             resolve_run_selection,
         )

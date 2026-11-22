@@ -11,7 +11,9 @@ import json
 from contextlib import suppress
 from typing import Any
 
-from app.task.MaaFW.tools.core.runner.plan_transforms import MaaFWPeriodLimits
+from app.task.MaaFW.blocks.maafw_interface.runner.plan_transforms import (
+    MaaFWPeriodLimits,
+)
 
 
 def load_json_dict(value: Any) -> dict[str, Any]:

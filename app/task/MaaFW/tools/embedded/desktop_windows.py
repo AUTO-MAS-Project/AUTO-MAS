@@ -15,7 +15,9 @@ from __future__ import annotations
 import sys
 from typing import Any
 
-from app.task.MaaFW.tools.core.controller_win32.service import MaaFWWin32Window
+from app.task.MaaFW.blocks.maafw_interface.controller_win32.service import (
+    MaaFWWin32Window,
+)
 
 
 def list_maafw_desktop_windows() -> list[MaaFWWin32Window]:

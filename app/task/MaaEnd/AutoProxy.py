@@ -49,13 +49,16 @@ from app.task.emulator_core import (
 )
 from app.task.failure_capture_core import FailureCapture
 from app.task.game import game_device_id
-from app.task.MaaFW.tools.core.embedded_labels import Labels, mxu_option_values
-from app.task.MaaFW.tools.core.interface.loader import load_interface_model
-from app.task.MaaFW.tools.core.interface.task_config import (
+from app.task.MaaFW.blocks.maafw_interface.embedded_labels import (
+    Labels,
+    mxu_option_values,
+)
+from app.task.MaaFW.blocks.maafw_interface.interface.loader import load_interface_model
+from app.task.MaaFW.blocks.maafw_interface.interface.task_config import (
     build_task_option_maps,
     normalize_task_options_by_task,
 )
-from app.task.MaaFW.tools.core.runner.run_plan import (
+from app.task.MaaFW.blocks.maafw_interface.runner.run_plan import (
     _build_pretask_plans,
     _select_resource,
 )

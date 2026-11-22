@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
+from app.task.MaaFW.blocks.maafw_interface.interface.models import MaaFWInterface
 
 TYPE_KEY = "MSS"
 ACTIVITY_ENTRY = "活动快速战斗_入口"

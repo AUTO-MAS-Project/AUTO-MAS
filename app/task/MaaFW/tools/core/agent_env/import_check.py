@@ -36,7 +36,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..interface.agent_command import MaaFWAgentCommandPlan
+from app.task.MaaFW.blocks.maafw_interface.interface.agent_command import (
+    MaaFWAgentCommandPlan,
+)
+
 from ..runtime_pool._shared import output_tail
 from ..runtime_pool.host_environment import (
     set_project_pycache_prefix,

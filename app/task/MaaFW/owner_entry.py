@@ -17,7 +17,7 @@ import uuid
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from app.task.MaaFW.tools.core.interface.plan_rules import (
+from app.task.MaaFW.blocks.maafw_interface.interface.plan_rules import (
     EMPTY_PLAN_RULES,
     MaaFWPlanRules,
 )
@@ -33,7 +33,7 @@ from app.task.MaaFW.tools.embedded.owners import (
 )
 
 if TYPE_CHECKING:
-    from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
+    from app.task.MaaFW.blocks.maafw_interface.interface.models import MaaFWInterface
 
 
 def _host_config() -> Any:
