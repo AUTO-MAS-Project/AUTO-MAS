@@ -28,7 +28,7 @@ from uuid import UUID, uuid4
 import httpx
 from blinker import Namespace
 from packaging.utils import canonicalize_name
-from packaging.version import Version
+from packaging.version import InvalidVersion, Version
 
 from app.config import NodeState, config_manager
 from app.core.ws import Publisher
@@ -156,6 +156,8 @@ class _PluginManager:
         self._source_queue: asyncio.Queue[SourcesChangedPayload] | None = None
         self._source_worker_task: asyncio.Task[None] | None = None
         self._calls: dict[UUID, CallGate] = {}
+        # 本次启动因版本低于存量配置要求而不启用的插件（插件 ID）。
+        self._held_back: frozenset[str] = frozenset()
 
     def trigger_owner(self, entry: ConfigEntry) -> UUID | None:
         """从插件记录、专属配置及游戏或脚本声明中确定配置节点所属插件，未归属插件时返回 None。"""
@@ -320,6 +322,7 @@ class _PluginManager:
 
             await self.enable(core_record, held=True)
 
+            self._held_back = self._below_minimum_family(minimums)
             for record in list(Config.plugin_registry.values()):
                 name = record.info.plugin_name
                 if (
@@ -329,6 +332,12 @@ class _PluginManager:
                     or record._plugin_cls is None
                 ):
                     continue
+                if name in self._held_back:
+                    logger.warning(
+                        f"插件 {name} 本次启动不启用：它或只用它的专项低于存量配置"
+                        "要求的版本，等升级完成后再接手"
+                    )
+                    continue
                 try:
                     await self.enable(record, held=True)
                 except Exception:
@@ -337,7 +346,7 @@ class _PluginManager:
 
             from app.plugin.uv.environment import finish_installation
 
-            finish_installation()
+            finish_installation(held_back=self._held_back)
             self._initialized = True
 
             # ── 源码监视：plugins/*/ 代码变更 → sources_changed → 增量 refresh ──
@@ -1350,7 +1359,7 @@ class _PluginManager:
                     installation.progress.message = "插件加载失败，请检查插件兼容性"
                     write_installation(installation)
                     raise
-                finish_installation()
+                finish_installation(held_back=self._held_back)
                 return result
 
     async def uninstall(self, record: PluginRecord) -> dict[str, Any]:
@@ -1675,6 +1684,52 @@ class _PluginManager:
         except Exception:
             logger.exception("读取存量配置要求的插件版本下限失败，按无下限启动")
             return {}
+
+    def _below_minimum_family(self, minimums: dict[str, Version]) -> frozenset[str]:
+        """已加载版本仍低于下限的插件，加上只为它们服务的上游，这一轮都不启用。
+
+        上游只在启用意图里的下游全在名单里时才一起留下，别的插件照常用得到它。
+        """
+        from app.core.config import Config
+
+        held: set[str] = set()
+        for record in Config.plugin_registry.values():
+            minimum = minimums.get(record.info.plugin_name)
+            if (
+                minimum is None
+                or record.info.source != "installed"
+                or record._plugin_cls is None
+                or not record.info.version
+            ):
+                continue
+            try:
+                if Version(record.info.version) < minimum:
+                    held.add(record.info.plugin_name)
+            except InvalidVersion:
+                continue
+        grown = bool(held)
+        while grown:
+            grown = False
+            for name in sorted(held):
+                record = Config.plugin_registry.by_name(name)
+                if record is None:
+                    continue
+                try:
+                    upstream = self._upstream(record)
+                except PluginError:
+                    continue
+                for provider in upstream:
+                    provider_name = provider.info.plugin_name
+                    if provider_name in held or provider_name == CORE_PLUGIN_NAME:
+                        continue
+                    if all(
+                        other.info.plugin_name in held
+                        for other in self._downstream(provider)
+                        if other.info.enabled
+                    ):
+                        held.add(provider_name)
+                        grown = True
+        return frozenset(held)
 
     def _record_by_plugin_id(self, plugin_id: str) -> PluginRecord | None:
         """按插件 id（plugin_name）查 record；供 requires 边解析。"""

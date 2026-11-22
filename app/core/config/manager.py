@@ -2966,8 +2966,13 @@ class AppConfig:
         return self.managed_configs_loaded()
 
     @staticmethod
-    def _unavailable_items(collection: ConfigCollection) -> list[dict[str, Any]]:
-        """旁挂成员给接口和提示用的描述；名字从盘上原始字典里取。"""
+    def _unavailable_items(
+        collection: ConfigCollection, failures: dict[str, str] | None = None
+    ) -> list[dict[str, Any]]:
+        """旁挂成员给接口和提示用的描述；名字从盘上原始字典里取。
+
+        类型没登记的成员自身不带原因，用启动时该专项插件没能启用的原因补上。
+        """
         from app.core.config.plugin_upgrade import _ADAPTER_PLUGINS
 
         items = []
@@ -2992,37 +2997,65 @@ class AppConfig:
                         if item.reason == "load_failed"
                         else "plugin_unavailable"
                     ),
-                    "detail": item.detail,
+                    "detail": item.detail
+                    or (
+                        (failures or {}).get(plugin[0], "")
+                        if plugin is not None
+                        else ""
+                    ),
                 }
             )
         return items
 
     def unavailable_scripts(self) -> list[dict[str, Any]]:
         """所属插件不可用、原样保留着的托管。"""
-        return self._unavailable_items(self.ScriptConfig)
+        return self._unavailable_items(
+            self.ScriptConfig, getattr(self, "_adapter_plugin_failures", None)
+        )
 
     def unavailable_plans(self) -> list[dict[str, Any]]:
         """所属插件不可用、原样保留着的计划表。"""
-        return self._unavailable_items(self.PlanConfig)
+        return self._unavailable_items(
+            self.PlanConfig, getattr(self, "_adapter_plugin_failures", None)
+        )
 
     def _notice_unavailable_managed(self) -> None:
         """专项插件没装上、托管被原样保留时，启动提示里列出来。"""
         scripts = self.unavailable_scripts()
         plans = self.unavailable_plans()
-        if not (scripts or plans or self._adapter_plugin_failures):
+        failures = self._adapter_plugin_failures
+        if not (scripts or plans or failures):
             return
-        lines = [
-            f"专项插件 {name} 没能装上或启用：{reason}"
-            for name, reason in self._adapter_plugin_failures.items()
-        ]
+        from app.core.config.plugin_upgrade import BELOW_MINIMUM_RESTART
+
+        # 新版本已准备好、只差一次重启，且旁挂的都是这些插件的：不说「不可用」。
+        waiting = bool(failures) and all(
+            reason == BELOW_MINIMUM_RESTART for reason in failures.values()
+        )
+        waiting = waiting and all(
+            item["plugin"] in failures for item in (*scripts, *plans)
+        )
+        if waiting:
+            lines = [
+                f"专项插件 {name} 的新版本已准备好，重启一次后生效" for name in failures
+            ]
+            header = "以下配置暂时原样保留、只读，重启后自动接手："
+            title = "部分专项插件重启后生效"
+        else:
+            lines = [
+                f"专项插件 {name} 暂不可用：{reason}"
+                for name, reason in failures.items()
+            ]
+            header = "以下配置所属插件不可用，已原样保留；插件恢复后会自动还原："
+            title = "部分托管所属插件不可用"
         if scripts or plans:
-            lines.append("以下配置所属插件不可用，已原样保留；插件恢复后会自动还原：")
+            lines.append(header)
             lines.extend(
                 f"{item['typeLabel']} - {item['name'] or item['uid']}"
                 for item in (*scripts, *plans)
             )
         self.startup_notices.append(
-            {"level": "warning", "title": "部分托管所属插件不可用", "lines": lines}
+            {"level": "warning", "title": title, "lines": lines}
         )
 
     def _connect_managed_restore(self) -> None:

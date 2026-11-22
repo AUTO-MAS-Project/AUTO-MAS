@@ -7,6 +7,7 @@ import importlib.metadata as metadata
 import json
 import shutil
 import sys
+from collections.abc import Collection
 from pathlib import Path
 from uuid import UUID
 
@@ -369,8 +370,11 @@ async def apply_pending() -> bool:
     return True
 
 
-def finish_installation() -> None:
-    """在插件完成加载和启用后确认安装；故障保留旧环境供下次启动恢复。"""
+def finish_installation(held_back: Collection[str] = ()) -> None:
+    """在插件完成加载和启用后确认安装；故障保留旧环境供下次启动恢复。
+
+    ``held_back``：版本低于存量配置要求、这一轮有意不启用的插件，不按启用意图判断。
+    """
     from app.core import Config
     from app.plugin.types import PluginState
 
@@ -380,6 +384,8 @@ def finish_installation() -> None:
     if record is None or record.progress.state != "applying":
         return
     for name in {record.progress.pluginName, *record.healthy_plugins}:
+        if name in held_back:
+            continue
         plugin = Config.plugin_registry.by_name(name)
         # pre_enable 失败会保留 disabled；只有达到用户保存的启用意图才算新环境可用。
         if plugin is None or plugin.info.state != (

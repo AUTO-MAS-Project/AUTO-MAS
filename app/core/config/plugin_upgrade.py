@@ -30,6 +30,7 @@ MAAFW_FAMILY_TYPE_NAMES = frozenset(
     {"MaaFWConfig", "M9AConfig", "MSSConfig", "MSSPlanConfig"}
 )
 MAAFW_FAMILY_PLUGINS = frozenset({"maafw_adapter", "m9a_adapter", "mss_adapter"})
+_ADAPTER_PLUGIN_NAMES = frozenset(target[0] for target in _ADAPTER_PLUGINS.values())
 _MINIMUM_ADAPTER_VERSIONS = {
     "maa_adapter": Version("0.1.4"),
     "mumu_adapter": Version("0.1.1"),
@@ -71,13 +72,19 @@ def required_adapter_plugins(config_path: Path) -> dict[str, str]:
 def required_minimum_versions(config_path: Path) -> dict[str, Version]:
     """存量配置要的专项插件里带版本下限的那些：插件 ID → 下限。
 
-    启动前的共享环境准备按它把低于下限的已装专项（连同同族）升上来。
+    启动前的共享环境准备按它把低于下限的已装专项（连同同族）升上来；仍没达标的，
+    插件管理器这一轮不启用它，免得旧类接手配置。
     """
     return {
         name: _MINIMUM_ADAPTER_VERSIONS[name]
         for name in required_adapter_plugins(config_path)
         if name in _MINIMUM_ADAPTER_VERSIONS
     }
+
+
+# 版本没达标、这一轮不接手配置时给用户看的原因。
+BELOW_MINIMUM_RESTART = "新版本已准备好，重启后生效"
+BELOW_MINIMUM_FAILED = "插件版本过低，升级没有完成"
 
 
 async def install_adapter_plugins(required: dict[str, str]) -> None:
@@ -100,6 +107,8 @@ async def install_adapter_plugin(name: str, package: str) -> None:
         and record.info.version
         and Version(record.info.version) < minimum
     )
+    # 专项的旧版本不能接手配置；游戏插件没有旁挂区，仍按原样启用。
+    hold = bool(needs_upgrade) and name in _ADAPTER_PLUGIN_NAMES
     if (
         record is None
         or needs_upgrade
@@ -107,10 +116,18 @@ async def install_adapter_plugin(name: str, package: str) -> None:
         or record._project_dir is None
         or not (record._project_dir / record.info.import_name).is_dir()
     ):
-        await Plugin.install(
-            PluginMeta.build(info={"plugin_name": name, "package_name": package}),
-            minimum_version=minimum,
-        )
+        try:
+            result = await Plugin.install(
+                PluginMeta.build(info={"plugin_name": name, "package_name": package}),
+                minimum_version=minimum,
+            )
+        except Exception as error:
+            if hold:
+                raise RuntimeError(f"{BELOW_MINIMUM_FAILED}：{error}") from error
+            raise
+        if hold and (result or {}).get("restart_required"):
+            # 新版本只在候选目录里，进程里加载的仍是旧版本：不启用、不接手，等重启。
+            raise RuntimeError(BELOW_MINIMUM_RESTART)
         record = Config.plugin_registry.by_name(name)
     if record is None:
         raise RuntimeError(f"适配插件安装后未登记：{name}")
