@@ -512,7 +512,8 @@ class _TaskManager:
         if tree is None:
             return None
         info = tree["info"]
-        recent = self._recent.get(str(task_id))
+        # 与 get_task 一样按标准 UUID 取终态缓存，大写等合法写法也能取到结束时间。
+        recent = self._recent.get(str(UUID(str(task_id))))
         return TaskStatusOut(
             taskId=str(task_id),
             status="running" if info["status"] == "pending" else info["status"],
