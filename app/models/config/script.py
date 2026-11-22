@@ -539,6 +539,9 @@ class MaaUserConfig(DomainEntry):
                     for stage_key in _utils_constants.MAA_STAGE_KEY[2:]
                 }
                 tag_color = "green"
+        activity_first = self._activity_first_stage()
+        if activity_first:
+            tags.append({"text": f"活动优先：{activity_first}", "color": "orange"})
         tags.append({"text": f"主关卡：{plan_data['Stage']}", "color": tag_color})
         backup_stages = [
             plan_data[f"Stage_{i}"]
@@ -551,6 +554,25 @@ class MaaUserConfig(DomainEntry):
             )
         tags.append(_tag_notes(self))
         return json.dumps(tags, ensure_ascii=False)
+
+    def _activity_first_stage(self) -> str | None:
+        """活动关均衡理智开启时，返回当期勾选的最上面一个活动关；无活动或全未勾选时为空。"""
+        if not self.Task.IfEventDepotMaintain:
+            return None
+        try:
+            from app.task.MAA.stage import maa_stage_service
+            from app.task.MAA.tools.activity_inventory import (
+                resolve_activity_inventory_plans,
+            )
+
+            plans, _ = resolve_activity_inventory_plans(
+                self.Task.EventDepotMaintainPlans,
+                maa_stage_service.cached_activity_stages(self.Info.Server),
+            )
+        except Exception:
+            # 标签只作提示，缓存或计划异常时不显示，不影响其它标签。
+            return None
+        return plans[0]["Stage"] if plans else None
 
     @staticmethod
     def get_stage_zh(stage: str) -> str:

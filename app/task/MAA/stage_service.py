@@ -152,6 +152,12 @@ class MaaStageService:
         # 上次活动关卡刷新失败的时间: 冷却期内不再重复请求远端
         self._stage_refresh_failed_at: datetime | None = None
 
+    def cached_activity_stages(self, server: str = "Official") -> list[dict]:
+        """只读本地缓存取当期活动关卡，不联网，供同步计算的账号标签使用。"""
+        server = "Official" if server == "Bilibili" else server
+        stage_data = _parse_stage_data(self._read_cache().content, now=self._now())
+        return stage_data.get(server, {}).get("Info", [])
+
     async def get_stage_info(
         self,
         type: Literal[
