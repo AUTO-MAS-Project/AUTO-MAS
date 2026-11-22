@@ -40,7 +40,6 @@ export default {
   },
   plan: {
     configType: 'MSSPlanConfig',
-    createType: 'MSSPlan',
     displayNameKey: 'core.plan.type.mss',
     // defaultName 会写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
     defaultName: '新 MSS 计划表',

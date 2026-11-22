@@ -3,9 +3,11 @@
 // 不会先闪一下计划表 id。页面同一时刻只有一个，模块级状态足够，每次进页面重取。
 
 import { shallowRef } from 'vue'
-import { PlanComboxIn, Service, type ComboBoxItem } from '@/api'
+import { Service, type ComboBoxItem } from '@/api'
 
 export const PLAN_MODE_FIXED = 'Fixed'
+/** MSS 计划表由 MSS 插件登记的配置类型 */
+const MSS_PLAN_CONFIG_TYPE = 'MSSPlanConfig'
 
 export interface PlanModeOption {
   label: string
@@ -18,11 +20,11 @@ export const mssPlanComboxItems = shallowRef<ComboBoxItem[] | null>(null)
 export const loadMSSPlanComboxItems = async (): Promise<void> => {
   mssPlanComboxItems.value = null
   try {
-    const response = await Service.getPlanComboxApiInfoComboxPlanPost({
-      consumer: PlanComboxIn.consumer.MSS,
+    const response = await Service.pluginPlanOptionsApiPluginOptionsPlansPost(undefined, {
+      type: MSS_PLAN_CONFIG_TYPE,
     })
     if (response?.code !== 200 || !response.data) return
-    mssPlanComboxItems.value = response.data
+    mssPlanComboxItems.value = [{ label: '', value: PLAN_MODE_FIXED }, ...response.data]
   } catch (error) {
     // 取不到计划表时只留「固定」一项，其它设置照常能改
     window.electronAPI
