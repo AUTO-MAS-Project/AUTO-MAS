@@ -5,7 +5,7 @@ from typing import Any
 
 from app.models.config.game_binding import GameBindingOwner
 from app.plugin.base.client import ClientControl
-from app.task.game import current_game_session
+from app.task.game import current_game_session, selected_game_session
 from app.utils import ProcessManager
 
 
@@ -23,7 +23,7 @@ def client_launcher_path(owner: GameBindingOwner) -> Path | None:
 def _bound_client(owner: GameBindingOwner) -> ClientControl | None:
     from app.core import Config
 
-    session = current_game_session.get()
+    session = selected_game_session()
     if session is not None:
         return session.control if isinstance(session.control, ClientControl) else None
     uid = owner.game.game_id
