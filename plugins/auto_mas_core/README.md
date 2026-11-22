@@ -113,6 +113,8 @@ async def teardown_blockers(self) -> list[str]:
 | `core_notify_lifecycle` | `app.core.notify.lifecycle` | `NotificationTaskBase`（宿主自己的类，可直接继承） |
 | `utils_common_game_resolution` | `app.utils.common.game_resolution` | `UnityGameResolutionOverride`、`parse_resolution_option` |
 
+整包再导出的 `utils`、`services`、`services_common_update` 同样给出宿主按需加载的子模块，例如 `process_platform`、`telemetry`、`transport`，取到的就是宿主那一份模块对象，不用再直接导入 `app.*`。
+
 桌面分身里的动作由宿主写死的表分派，分身进程不导入插件包，所以插件只能用通用动作：`request_desktop_action(desktop, "list_windows", {})` 返回分身桌面上的全部窗口 `[[hwnd, 类名, 标题, pid], …]`（MaaFramework 的枚举顺序，已去掉失效句柄），窗口规则由调用方在本进程匹配；`request_desktop_action(desktop, "window_in_session", {"hwnd": "<句柄>"})` 返回这个窗口是否属于该分身。
 
 迁移测试插件可通过 `auto_mas_core.host` 复用现有模拟器、MAA 共用工具等真实宿主能力；这些出口不提供独立宿主或旧任务框架。L2 在派发前向 `UserExpander.history` 绑定当前任务的实际 `TaskHistorySession`，供专项归档使用。

@@ -5,8 +5,15 @@
 """
 
 import importlib
+import sys
 
 import pytest
+
+_PLATFORM_PROCESS = (
+    "app.utils.windows.process"
+    if sys.platform == "win32"
+    else "app.utils.common.process.platform"
+)
 
 
 @pytest.mark.parametrize(
@@ -35,6 +42,23 @@ def test_facade_exports_host_object(facade: str, name: str, host_module: str) ->
     exported = getattr(importlib.import_module(f"auto_mas_core.host.{facade}"), name)
 
     assert exported is getattr(importlib.import_module(host_module), name)
+
+
+@pytest.mark.parametrize(
+    ("facade", "name", "host_module"),
+    [
+        ("utils", "process_platform", _PLATFORM_PROCESS),
+        ("services", "telemetry", "app.services.common.telemetry"),
+        ("services_common_update", "transport", "app.services.common.update.transport"),
+    ],
+)
+def test_facade_exports_host_submodule(
+    facade: str, name: str, host_module: str
+) -> None:
+    """宿主包里还没被导入过的子模块，也能经出口取到宿主那一份模块对象。"""
+    exported = getattr(importlib.import_module(f"auto_mas_core.host.{facade}"), name)
+
+    assert exported is importlib.import_module(host_module)
 
 
 def test_notification_task_base_is_inheritable_host_class() -> None:
