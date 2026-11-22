@@ -222,18 +222,7 @@ from .update_credentials import resolve_update_proxy_url
 
 logger = get_logger("MaaFW 插件自动代理")
 
-
-# 启动/附着游戏后定位其窗口的等待秒数
-WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
-# Game.WaitTime 填 0 时等游戏窗口出现的上限（秒）
-_WINDOW_READY_FALLBACK_SECONDS = 60
-# URL 模式打开链接后找游戏进程的最短时限（秒）：Steam 冷启动要先起客户端再拉游戏
-_URL_LAUNCH_MIN_TIMEOUT_SECONDS = 60
-# 按创建时间认「本次运行期间打开的进程」时的容差（秒），与 ProcessManager.search_process 一致
-_PROCESS_CREATE_TIME_TOLERANCE_SECONDS = 2.0
-# 兜底关闭进程时 terminate 之后等它自己退出的秒数，到点仍在就 kill
-_PROCESS_TERMINATE_GRACE_SECONDS = 3.0
-
+# 桌面游戏启停的时限常量（等窗口、URL 拉起、兜底关闭）只在 desktop_game 里定义一份。
 # 一次尝试算成功、信号、要更新游戏还是失败，失败了重不重试、先不先修资源、重不重启客户端，
 # 都由 run_verdict.judge_attempt 判定（环境级失败的标记也在那里）；主循环只读判定。
 # 给人看的文案（失败摘要、资源包失败停止、重跑的称呼、重试与周期提示）在 run_messages，
