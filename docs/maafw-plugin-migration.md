@@ -45,12 +45,17 @@
 ## 回退
 
 - 代码回退：revert 「MFW、M9A、MSS 改由插件提供，删除内置实现」那个提交，内置实现就回来了。
-- 已经升级过的用户回到旧宿主：
-  1. 关掉后端；
-  2. 把 `config/legacy-maafw-plugin/` 下的文件拷回 `config/`；
-  3. 在旧宿主里卸载 MFW 族插件（或不启用它们），再启动。
+- 已经升级过的用户回到旧宿主，先关掉后端，再按升级前的起点二选一。宿主读哪套配置看 `data/data.db` 里 `version` 表记的数据版本：v2.2 只读 `scripts.yaml` 等 YAML，更早的版本才从 JSON 转换；升级成功后这个版本都是 v2.2。
+  - **升级前已是 v2.2**（配置本来就是 YAML）：
+    1. 把 `config/legacy-maafw-plugin/` 下的文件拷回 `config/`；
+    2. 在旧宿主里卸载 MFW 族插件（或不启用它们），再启动。
+  - **从旧 JSON 配置升上来**：只拷回 `ScriptConfig.json`、`PlanConfig.json` 没用，旧宿主看到 v2.2 不会再读 JSON。要用升级前的整套备份 `config/legacy-json/pre-upgrade/`，配置文件和数据库版本一起还原：
+    1. 把 `pre-upgrade/` 下除 `data.db` 以外的文件按原相对路径拷回 `config/`；
+    2. 把 `pre-upgrade/data.db` 拷回 `data/data.db`；备份里没有 `data.db`（升级前就没有）时，删掉 `data/data.db`；
+    3. 删掉 `config/.config-migration-v2.json`，以及这次升级生成、备份里没有的 `setting.yaml`、`scripts.yaml`、`plans.yaml`、`queues.yaml`、`emulators.yaml`、`tools.yaml`、`game_sign_accounts.yaml`、`games.yaml`；
+    4. 同上卸载 MFW 族插件（或不启用它们），再启动旧宿主，它会从 JSON 重新升级。
 - 只回退代码、不还原备份时，旧宿主读不到 `users`，账号会显示为空。升级之后做的配置修改会随着还原备份一起丢失。
-- 回退后再升级一次不会重新备份（备份已存在）；只要回退时按上面还原过，盘上就是旧形状，转换照常进行。
+- 两处备份都不覆盖已有的文件，回退后再升级一次沿用第一次的备份；只要回退时按上面还原过，盘上就是旧形状，转换照常进行。
 
 ## 开发辅助
 

@@ -14,7 +14,7 @@ type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
 
 /**
  * MaaFW 家族（通用 MFW 与 M9A、MSS）的标记：由 MaaFW 引擎运行，页面走 MFW 自己的四条路由
- * （编辑 / 引导 / 加用户 / 编辑用户），不按普通专项生成路由、也不进插件中心统计。
+ * （编辑 / 引导 / 加用户 / 编辑用户），不按普通专项生成路由；插件中心照常统计。
  */
 export interface MaaFWAdapterProfile {
   /** 后端脚本配置类名（脚本索引里的 type） */
@@ -60,7 +60,7 @@ const pluginAdapters: ScriptFrontendAdapter[] = [maa, whimbox, src]
 
 /**
  * MaaFW 家族，顺序固定为 MaaFW、M9A、MSS。路由名与普通专项同形（`${type}ScriptEdit` 等），
- * 所以不能进 SCRIPT_PLUGIN_EDITORS；MFW 不是插件，也不能进 SCRIPT_PLUGIN_BINDINGS。
+ * 所以不能进 SCRIPT_PLUGIN_EDITORS；三者都是插件，进 SCRIPT_PLUGIN_BINDINGS。
  */
 const maafwAdapters = [maafw, m9a, mss] satisfies ScriptFrontendAdapter[]
 
@@ -87,7 +87,7 @@ export const SCRIPT_PLUGIN_EDITORS = Object.fromEntries(
 export const SCRIPT_PLUGIN_ROUTES = pluginAdapters.flatMap(adapter => adapter.routes)
 export const SCRIPT_PLUGIN_PLANS = toPlanEntries(pluginAdapters)
 
-/** 随主程序编译、不属于插件的计划表类型（MSS）；计划表注册表把它们排在最后 */
+/** MaaFW 家族的计划表类型（MSS）；计划表注册表把它们排在最后 */
 export const SCRIPT_BUILTIN_PLANS = toPlanEntries(maafwAdapters)
 
 /** 全部适配条目的静态资料（utils/scriptMetadata.ts 引用） */
@@ -99,7 +99,10 @@ export const SCRIPT_ADAPTER_METADATA = Object.fromEntries(
 export const MAAFW_FAMILY_ADAPTERS: readonly ScriptFrontendAdapter[] = maafwAdapters
 
 /** 插件中心按所属插件对上托管类型、计划表类型与专项图标。 */
-export const SCRIPT_PLUGIN_BINDINGS: PluginAdapterBinding[] = pluginAdapters.map(adapter => ({
+export const SCRIPT_PLUGIN_BINDINGS: PluginAdapterBinding[] = [
+  ...pluginAdapters,
+  ...MAAFW_FAMILY_ADAPTERS,
+].map(adapter => ({
   pluginId: adapter.pluginId,
   scriptType: adapter.type,
   logo: adapter.metadata.logo,
