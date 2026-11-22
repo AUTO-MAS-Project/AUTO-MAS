@@ -12,7 +12,7 @@ import asyncio
 import copy
 import weakref
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, ClassVar, Generic, Iterator, Literal, Self, TypeVar, cast
 from uuid import UUID, uuid4
@@ -79,6 +79,8 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
     _unresolved: dict[UUID, UnresolvedEntry] = PrivateAttr(default_factory=dict)
     _load_order: list[UUID] = PrivateAttr(default_factory=list)
     _unresolved_lock: asyncio.Lock | None = PrivateAttr(default=None)
+    # 正在还原的旁挂成员：新增时放过与旁挂区的 uid 冲突，原文到根事务提交才移出。
+    _restoring: set[UUID] = PrivateAttr(default_factory=set)
 
     order: list[CollectionOrderItem] = Field(default_factory=list)
     data: dict[UUID, TEntry] = Field(default_factory=dict)
@@ -199,7 +201,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                 assert op.entry_type is not None and op.uid is not None
                 if op.uid in self.effective.data:
                     raise ValueError(f"成员 uid 已存在: {op.uid}")
-                if op.uid in self._unresolved:
+                if op.uid in self._unresolved and op.uid not in self._restoring:
                     # 旁挂成员照样落盘，同一 uid 不能在盘上出现两份。
                     raise ValueError(f"成员 uid 已存在（所属插件不可用）: {op.uid}")
                 # 推迟导入：entry ↔ collection；用 build 避开 pydantic 合成 __init__
@@ -545,11 +547,16 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
     async def materialize_unresolved(self, type_name: str) -> list[UUID]:
         """类型已登记后，把该类型的旁挂成员还原成真成员，回到原来的位置。
 
-        逐条独立提交；解析不了的留在旁挂区，``reason`` 记为 ``load_failed``。
+        逐条一笔根事务：新条目与原位顺序一起提交，原文在同一次提交里移出旁挂区。
+        提交前任何时刻落盘都还是原文；失败、取消都回滚，原文原位留着。
+        解析不了的留在旁挂区，``reason`` 记为 ``load_failed``。
         返回还原成功的 uid（按盘上顺序）。
         """
         if self.activation_state != NodeState.ACTIVE:
             raise ValueError("须先 activate")
+        if config_manager.in_transaction:
+            # 加入外层事务就要等外层提交才交接，这期间 _restoring 已经撤掉。
+            raise RuntimeError("事务内不能还原旁挂成员")
         restored: list[UUID] = []
         async with self._unresolved_guard():
             if self.effective._entry_types.get(type_name) is None:
@@ -557,29 +564,32 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
             for item in self.unresolved():
                 if item.type_name != type_name or item.uid not in self._unresolved:
                     continue
-                # 先出旁挂区，否则新增会被 uid 冲突检查拒绝；失败再放回。
-                del self._unresolved[item.uid]
                 try:
-                    self.add(
-                        type_name, uid=item.uid, payload=copy.deepcopy(item.payload)
-                    )
-                    await self.commit()
+                    await self._restore_unresolved(item)
                 except Exception as exc:  # noqa: BLE001
-                    self._unresolved[item.uid] = UnresolvedEntry(
-                        uid=item.uid,
-                        type_name=item.type_name,
-                        payload=item.payload,
-                        reason="load_failed",
-                        detail=_error_summary(exc),
-                    )
-                    continue
+                    if item.uid in self._unresolved:
+                        # 已回滚：原文一直在旁挂区，只补上原因。
+                        self._unresolved[item.uid] = replace(
+                            item, reason="load_failed", detail=_error_summary(exc)
+                        )
+                        continue
                 restored.append(item.uid)
-            if restored:
-                wanted = [uid for uid in self._merged_order(restored) if uid in self]
+        return restored
+
+    async def _restore_unresolved(self, item: UnresolvedEntry) -> None:
+        self._restoring.add(item.uid)
+        try:
+            async with config_manager.transaction():
+                self.add(
+                    item.type_name, uid=item.uid, payload=copy.deepcopy(item.payload)
+                )
+                await self.commit()
+                wanted = [uid for uid in self._merged_order((item.uid,)) if uid in self]
                 if wanted != list(self.keys()):
                     self.set_order(wanted)
                     await self.commit()
-        return restored
+        finally:
+            self._restoring.discard(item.uid)
 
     def _merged_order(self, floating: Sequence[UUID] = ()) -> list[UUID]:
         """真成员当前顺序里按激活时的前驱插回旁挂成员（及 ``floating`` 里的成员）。
@@ -940,6 +950,10 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         target._activation_state = shell._activation_state
         target._activation = shell._activation
         target._pending_payload = shell._pending_payload
+        if target is self and self._unresolved:
+            # 还原的成员随根事务生效：原文在同一刻移出旁挂区，盘上不会两份或零份。
+            for uid in [uid for uid in self._unresolved if uid in self.data]:
+                del self._unresolved[uid]
 
     # ──────────────── 导出（官方 model_serializer）────────────────
 
