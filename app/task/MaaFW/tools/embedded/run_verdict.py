@@ -27,7 +27,6 @@ from app.task.MaaFW.tools.core.runner.run_events import (
 )
 from app.task.MaaFW.tools.core.worker_protocol import SERVER_MAINTENANCE
 
-from .flavor import MaaFWLoginRequired
 from .plan_run import MaaFWRunTimeoutError
 from .pretask_run import MaaFWPretaskError
 
@@ -53,6 +52,14 @@ class MaaFWGameUpdateRequired(RuntimeError):
 
 class MaaFWWorkstationLocked(RuntimeError):
     """电脑锁着屏，要用交互式桌面的控制器跑不了：本账号本次判失败，不重试。"""
+
+
+class MaaFWClientStepFailed(RuntimeError):
+    """专项在下发任务前对客户端做的一步（如 M9A 的运行前登录）判定本次无法继续；文案直接给用户看。
+
+    按普通失败结算、照常重试，账号日志与推送都用异常原文（不加「MaaFW 运行异常: 」前缀）。
+    专项自己的失败类继承它（M9A 的 ``M9ALoginRequired``）；风味里的 ``MaaFWLoginRequired`` 是它的别名。
+    """
 
 
 #: 判定的结局。
@@ -125,7 +132,7 @@ def _judge_exception(exc: BaseException) -> MaaFWAttemptVerdict:
     message = (
         str(exc)
         if isinstance(
-            exc, (MaaFWPretaskError, MaaFWLoginRequired, MaaFWWorkstationLocked)
+            exc, (MaaFWPretaskError, MaaFWClientStepFailed, MaaFWWorkstationLocked)
         )
         else f"MaaFW 运行异常: {exc}"
     )
@@ -197,6 +204,7 @@ __all__ = [
     "VERDICT_SIGNAL",
     "VERDICT_SUCCEEDED",
     "MaaFWAttemptVerdict",
+    "MaaFWClientStepFailed",
     "MaaFWGameUpdateRequired",
     "MaaFWWorkstationLocked",
     "is_environment_failure",

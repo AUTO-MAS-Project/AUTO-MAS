@@ -75,7 +75,10 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   要不要重启游戏 / 模拟器（`restart_client`）、要不要补「运行环境不可用」那句（`environment_unusable`）、
   命中的信号与是不是停服维护；异常时连同账号日志文案与推送原文（整次运行超时为 None）。环境级失败的
   消息标记（`UNRETRYABLE_ENVIRONMENT_MARKERS`，含原生库架构不符）、`result_failure_category`、宿主自己抛的
-  `MaaFWGameUpdateRequired` / `MaaFWWorkstationLocked` 都在这里。不读配置、不碰调用方。判据的先后不能乱：
+  `MaaFWGameUpdateRequired` / `MaaFWWorkstationLocked` 都在这里；专项在下发任务前对客户端做的一步判定本次
+  无法继续时抛的 `MaaFWClientStepFailed`（文案直接给用户看、不加「MaaFW 运行异常: 」前缀、照常重试）也定义在
+  这里，专项各自继承它（M9A 的 `M9ALoginRequired`，`app/task/M9A/startup.py`），风味的 `MaaFWLoginRequired`
+  只是它的别名。不读配置、不碰调用方。判据的先后不能乱：
   信号先于成功，资源包失败先于环境级失败；异常的类别是运行前设置 → 整次运行超时 → 环境级 → 宿主异常，
   锁屏算不重试但不补「运行环境不可用」。
 - **任务类 `runner_task` 还剩什么**：取配置与账号数据、建计划（调解析一侧）、运行前检查与项目预约、桌面
@@ -172,8 +175,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   interface 与 native 两个库。`worker_protocol` 算 runner 那一块的，agent_env / project_update 不要引它
   （日志前缀之类共用的常量放 `log_redact` 或 native）。接缝里归 runner 的（`plan_run`、`pretask_run`、
   `run_verdict`、`run_redaction`）不导入项目更新一侧的接缝（`project_session`、`embedded_project`……）与专项
-  （任务类 `runner_task` 这类账号级流程、风味）；`run_verdict` 为认登录失败导入 `flavor.MaaFWLoginRequired`
-  是临时例外，删风味时去掉。这几条现在违反了也不会让运行出错，只会让以后
+  （任务类 `runner_task` 这类账号级流程、风味）。这几条现在违反了也不会让运行出错，只会让以后
   拆包时那一块带不走，所以没进核心最小回归；加导入前自己按 AST 查一遍方向。
 - **运行环境的准备与借还归 agent 环境**：`agent_env/runtime_lease.py` 是运行池 base venv + binding 的
   唯一入口——`borrow_runtime_environment` 借（返回 `MaaFWRuntimeLease`：解释器、base venv、binding

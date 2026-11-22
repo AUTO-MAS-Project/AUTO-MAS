@@ -185,7 +185,7 @@ import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from app.task.game import game_is_emulator
 from app.task.MaaFW.tools.core.interface import loader as _interface_loader
@@ -200,6 +200,9 @@ from app.utils import get_logger
 
 from . import embedded_project as _embedded_project
 from .flavor_support import MaaFWSelectionContext, config_value, task_name_for_entry
+
+if TYPE_CHECKING:
+    from .run_verdict import MaaFWClientStepFailed as MaaFWLoginRequired
 
 logger = get_logger("MaaFW 特调")
 
@@ -368,8 +371,15 @@ GameUpdateHook = Callable[..., Awaitable[_utils_game_update.GameUpdateResult]]
 """特调可选的游戏更新钩子，契约见模块说明"""
 
 
-class MaaFWLoginRequired(RuntimeError):
-    """特调的运行前登录钩子判定本次无法继续运行（如 B 服登录失败）；文案直接给用户看。"""
+def __getattr__(name: str) -> Any:
+    # ``MaaFWLoginRequired`` 是 ``run_verdict.MaaFWClientStepFailed`` 的别名（登录钩子判定本次
+    # 无法继续运行，文案直接给用户看）。按需取：本模块在启动期就会被配置回调导入，
+    # 顶层导入 run_verdict 会连带拉起 plan_run 与运行池。
+    if name == "MaaFWLoginRequired":
+        from .run_verdict import MaaFWClientStepFailed
+
+        return MaaFWClientStepFailed
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 @dataclass(frozen=True)

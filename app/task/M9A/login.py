@@ -59,7 +59,7 @@
 https://github.com/AUTO-MAS-Project/AUTO-MAS/pull/1882#issuecomment-6721059637
 该决定不扩大为其他游戏内能力的通用豁免；其余补位范围仍需上游评估依据或维护者明确接受。
 
-失败一律抛 :class:`MaaFWLoginRequired`（文案直接给用户看，本轮按普通失败重试）；
+失败一律抛 :class:`M9ALoginRequired`（文案直接给用户看，本轮按普通失败重试）；
 用户停止（``CancelledError``）照常向上抛，不在截图 / 等帧里吞掉。
 """
 
@@ -81,7 +81,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from app.task.MaaFW.tools.embedded.flavor import MaaFWLoginRequired, StartupTask
+from app.task.M9A.startup import M9ALoginRequired, M9AStartupTask
 from app.utils import get_logger
 from app.utils.common.process.runner import create_subprocess, stop_process
 
@@ -334,7 +334,7 @@ class _Device:
                 stderr=asyncio.subprocess.PIPE,
             )
         except FileNotFoundError as exc:
-            raise MaaFWLoginRequired(
+            raise M9ALoginRequired(
                 f"B 服登录失败：找不到 ADB 可执行文件「{self.program}」；"
                 "请在脚本设置里填写 ADB 路径（可执行文件名不一定是 adb.exe）"
             ) from exc
@@ -373,7 +373,7 @@ class _Device:
         if code != 0 or not data:
             detail = stderr.decode("utf-8", "ignore").strip()
             suffix = f"（{detail}）" if detail else ""
-            raise MaaFWLoginRequired(f"B 服登录失败：ADB 截图失败{suffix}")
+            raise M9ALoginRequired(f"B 服登录失败：ADB 截图失败{suffix}")
         with Image.open(io.BytesIO(data)) as image:
             frame = cv2.cvtColor(np.asarray(image.convert("RGB")), cv2.COLOR_RGB2BGR)
         if not self._aspect_checked:
@@ -396,7 +396,7 @@ class _Device:
         if result.returncode != 0:
             detail = result.stderr.decode("utf-8", "ignore").strip()
             suffix = f"（{detail}）" if detail else ""
-            raise MaaFWLoginRequired(f"B 服登录失败：ADB 点击失败{suffix}")
+            raise M9ALoginRequired(f"B 服登录失败：ADB 点击失败{suffix}")
 
     async def foreground(self, package: str) -> bool:
         result = await self._run(
@@ -425,7 +425,7 @@ class _Device:
             component = f"{package}/{BILIBILI_START_ACTIVITY}"
         result = await self._run("shell", "am", "start", "-n", component, timeout=30.0)
         if result.returncode != 0:
-            raise MaaFWLoginRequired("B 服登录失败：ADB 无法拉起客户端")
+            raise M9ALoginRequired("B 服登录失败：ADB 无法拉起客户端")
 
 
 async def _ocr(device: _Device) -> tuple[np.ndarray, list[tuple[str, Box]]]:
@@ -468,7 +468,7 @@ async def _agree_privacy(
     """
 
     if not _if_agree_bilibili():
-        raise MaaFWLoginRequired(
+        raise M9ALoginRequired(
             "B 服登录失败：检测到 bilibili 隐私政策提示，但未开启「托管Bilibili游戏隐私政策」；"
             "请手动同意，或在「设置 → 功能设置 → 神秘入口」里打开该开关后重试"
         )
@@ -480,7 +480,7 @@ async def _agree_privacy(
         y_range=_AGREE_Y_RANGE,
     )
     if len(buttons) != 1:
-        raise MaaFWLoginRequired("B 服登录失败：隐私政策提示中未找到唯一的「同意」按钮")
+        raise M9ALoginRequired("B 服登录失败：隐私政策提示中未找到唯一的「同意」按钮")
     await device.tap(buttons[0])
     await _progress(progress, "已同意 B 服隐私政策提示")
     logger.info("已同意 B 服隐私政策提示")
@@ -507,7 +507,7 @@ async def _wait_foreground(
             logger.info(f"B 服客户端未在前台，正在拉起: {package}")
             await device.start(package)
         if time.monotonic() > deadline:
-            raise MaaFWLoginRequired(
+            raise M9ALoginRequired(
                 f"B 服登录失败：等待游戏进入前台超时（{package}，请确认包名与模拟器内的客户端一致）"
             )
         await asyncio.sleep(_POLL_SECONDS)
@@ -543,7 +543,7 @@ async def _select_account(
     for attempt in range(3):
         matches = _account_candidates(items, frame, account)
         if len(matches) > 1:
-            raise MaaFWLoginRequired(
+            raise M9ALoginRequired(
                 "B 服登录失败：当前页有多个同名账号，无法确定切换哪一个"
             )
         if matches:
@@ -556,7 +556,7 @@ async def _select_account(
                     device, frame, items, progress=progress
                 )
     else:
-        raise MaaFWLoginRequired(
+        raise M9ALoginRequired(
             f"B 服登录失败：登录记录里未找到账号「{masked}」的完整昵称，"
             "请确认账号已保存且在可见范围内"
         )
@@ -571,7 +571,7 @@ async def _select_account(
         selected = _account_candidates(items, frame, account)
         login_buttons = _pick(items, lambda text: bool(_LOGIN_RE.match(text)), frame)
         if len(selected) > 1 or len(login_buttons) > 1:
-            raise MaaFWLoginRequired("B 服登录失败：无法确认唯一的所选账号或登录按钮")
+            raise M9ALoginRequired("B 服登录失败：无法确认唯一的所选账号或登录按钮")
         if (
             len(selected) == 1
             and len(login_buttons) == 1
@@ -581,7 +581,7 @@ async def _select_account(
         if attempt < 2:
             await asyncio.sleep(_POLL_SECONDS)
     else:
-        raise MaaFWLoginRequired("B 服登录失败：无法确认所选账号，已停止登录")
+        raise M9ALoginRequired("B 服登录失败：无法确认所选账号，已停止登录")
 
     await device.tap(login_buttons[0])
     await _progress(progress, f"已选择账号「{masked}」并点击登录")
@@ -599,7 +599,7 @@ async def _wait_panel_closed(
     closed_frames = 0
     while True:
         if time.monotonic() > deadline:
-            raise MaaFWLoginRequired(
+            raise M9ALoginRequired(
                 "B 服登录失败：点击登录后等待超时，登录面板未关闭或未识别到标题页、游戏主页"
             )
         frame, items = await _ocr(device)
@@ -691,7 +691,7 @@ async def _logout_from_homepage(device: _Device, *, progress: Progress | None) -
                     await device.tap(button)
             await asyncio.sleep(_POLL_SECONDS)
         else:
-            raise MaaFWLoginRequired(
+            raise M9ALoginRequired(
                 f"B 服切号失败：游戏设置中未识别到「{'／'.join(labels)}」"
             )
 
@@ -707,7 +707,7 @@ async def _logout_from_homepage(device: _Device, *, progress: Progress | None) -
         if _has(items, _LOGIN_RECORD) or _title_like(items, frame):
             return
         await asyncio.sleep(min(_POLL_SECONDS, max(0, deadline - time.monotonic())))
-    raise MaaFWLoginRequired("B 服切号失败：退出转场超时，未出现标题页或登录记录面板")
+    raise M9ALoginRequired("B 服切号失败：退出转场超时，未出现标题页或登录记录面板")
 
 
 async def _logout_to_login_panel(
@@ -733,7 +733,7 @@ async def _logout_to_login_panel(
             confirmed = True
             break
     if not confirmed:
-        raise MaaFWLoginRequired(
+        raise M9ALoginRequired(
             "B 服登录失败：标题页的登出确认按钮未出现（标题页布局可能已变）"
         )
     await _progress(progress, "已确认登出当前账号，等待登录记录面板")
@@ -747,7 +747,7 @@ async def _logout_to_login_panel(
             continue
         if _has(items, _LOGIN_RECORD):
             return
-    raise MaaFWLoginRequired("B 服登录失败：登出后没有出现登录记录面板")
+    raise M9ALoginRequired("B 服登录失败：登出后没有出现登录记录面板")
 
 
 async def ensure_logged_in(
@@ -760,7 +760,7 @@ async def ensure_logged_in(
     adb_address: str,
     progress: Progress | None,
     host_adb: Any = None,
-) -> str | StartupTask:
+) -> str | M9AStartupTask:
     """MAS 原生登录入口（契约见 MaaFW ``flavor.py`` 的 ``ensure_logged_in``）。
 
     只在 ``Run.LoginMode == "Mas"`` 时做事；选号完成返回公开启动任务，没做事就是空串。
@@ -775,24 +775,24 @@ async def ensure_logged_in(
         return ""
 
     if not adb_address:
-        raise MaaFWLoginRequired(
+        raise M9ALoginRequired(
             "「由 MAS 登录 B 服」仅支持 ADB 控制器，请切换控制器或把登录方式改回「由 M9A 登录」"
         )
 
     account = str(getattr(getattr(user_config, "Info", None), "Id") or "").strip()
     if not account:
-        raise MaaFWLoginRequired(
+        raise M9ALoginRequired(
             "B 服登录失败：账号为空，请在本账号的「账号」里填写登录记录中显示的完整昵称"
         )
     package = str(package_name or "").strip() or BILIBILI_PACKAGE
     if package != BILIBILI_PACKAGE:
-        raise MaaFWLoginRequired(
+        raise M9ALoginRequired(
             f"B 服登录失败：登录方式选了「由 MAS 登录 B 服」，但要启动的客户端是「{package}」；"
             f"这种登录方式只能用于 B 服客户端（{BILIBILI_PACKAGE}）。"
             "请把游戏资源与游戏包名都改成 B 服，或把登录方式改回「由 M9A 登录」"
         )
     if not _is_bilibili_resource(resource_name):
-        raise MaaFWLoginRequired(
+        raise M9ALoginRequired(
             f"B 服登录失败：登录方式选了「由 MAS 登录 B 服」，但游戏资源是「{resource_name or '未选择'}」；"
             "这种登录方式只支持「B 服」资源，请改选后再运行（或把登录方式改回「由 M9A 登录」）"
         )
@@ -810,7 +810,7 @@ async def ensure_logged_in(
     homepage_logout_tried = False
     while True:
         if time.monotonic() > deadline:
-            raise MaaFWLoginRequired(
+            raise M9ALoginRequired(
                 "B 服登录失败：等待登录界面超时（游戏可能未启动或加载过慢）"
             )
         frame, items = await _ocr(device)
@@ -831,11 +831,11 @@ async def ensure_logged_in(
         if _has(items, _LOGIN_RECORD):
             await _select_account(device, frame, items, account, progress=progress)
             await _wait_panel_closed(device, progress=progress, deadline=deadline)
-            return StartupTask(deadline, "StartUp")
+            return M9AStartupTask(deadline, "StartUp")
 
         if _homepage_visible(frame):
             if homepage_logout_tried:
-                raise MaaFWLoginRequired("B 服切号失败：退出后仍停在游戏主页")
+                raise M9ALoginRequired("B 服切号失败：退出后仍停在游戏主页")
             await _logout_from_homepage(device, progress=progress)
             homepage_logout_tried = True
             unknown_since = None
@@ -859,7 +859,7 @@ async def ensure_logged_in(
         if unknown_since is None:
             unknown_since = time.monotonic()
         elif time.monotonic() - unknown_since >= unknown_budget:
-            raise MaaFWLoginRequired(
+            raise M9ALoginRequired(
                 "B 服登录失败：无法确认当前账号（画面既不是登录记录也不是游戏标题页，"
                 f"已等待 {int(unknown_budget)} 秒）；"
                 "请把游戏停在标题页或退出到登录界面后重试"

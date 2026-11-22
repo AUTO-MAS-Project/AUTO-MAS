@@ -329,8 +329,9 @@ class M9AFlavor:
 
         # 按需导入：本包在导入期不拉起 OCR / 图像与 adb 相关模块（迁移也会导入 flavor）
         from .login import ensure_logged_in
+        from .startup import M9AStartupTask
 
-        return await ensure_logged_in(
+        result = await ensure_logged_in(
             script_config=script_config,
             user_config=user_config,
             resource_name=resource_name,
@@ -340,6 +341,10 @@ class M9AFlavor:
             progress=progress,
             host_adb=host_adb,
         )
+        # 登录模块给的是 M9A 自己的类型，引擎认的是风味的 StartupTask
+        if isinstance(result, M9AStartupTask):
+            return StartupTask(result.deadline, result.entry)
+        return result
 
     async def ensure_game_updated(
         self,
