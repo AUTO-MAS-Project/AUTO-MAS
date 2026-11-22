@@ -82,6 +82,8 @@ if TYPE_CHECKING:
 
 logger = get_logger("插件管理")
 
+_BUSY_MESSAGE = "插件系统忙，请稍后重试"
+
 
 def _requirement_closure(package: str) -> set[str]:
     """已装发行包按 Requires-Dist 展开的依赖闭包（规范化包名，含自身）；读不到的包跳过。"""
@@ -156,6 +158,8 @@ class _PluginManager:
         self._source_queue: asyncio.Queue[SourcesChangedPayload] | None = None
         self._source_worker_task: asyncio.Task[None] | None = None
         self._calls: dict[UUID, CallGate] = {}
+        # 退出开始后不再受理新的生命周期操作；插件之间的服务调用要留到停完任务之后才封。
+        self._entries_sealed = False
         # 本次启动因版本低于存量配置要求而不启用的插件（插件 ID）。
         self._held_back: frozenset[str] = frozenset()
 
@@ -360,9 +364,18 @@ class _PluginManager:
             self._watcher = SourceWatcher(plugins_dir=Config.plugins_path)
             self._watcher.start()
 
-    def seal(self) -> None:
-        """退出开始即拒绝新的公开调用；已有调用由 shutdown 等待实际结束。"""
+    def seal_entries(self) -> None:
+        """退出开始只封外部入口：插件 HTTP 网关和新的生命周期操作。
+
+        服务注册表和调用门留到停完任务之后由 ``shutdown`` 封：任务收尾（停 worker、关游戏、
+        恢复分辨率、放预约）要经插件之间的服务调用完成。
+        """
+        self._entries_sealed = True
         self.http.seal()
+
+    def seal(self) -> None:
+        """封住全部公开调用：HTTP、服务取用和各插件调用门；已有调用由 shutdown 等待实际结束。"""
+        self.seal_entries()
         self.services.seal()
         for gate in self._calls.values():
             gate.accepting = False
@@ -391,9 +404,12 @@ class _PluginManager:
         3. 不改 ``plugin_registry.enabled``；配置落盘由主程序 teardown 末尾
            ``config_manager.flush()`` 统一完成。
 
-        主程序应先停 WS / 任务，再调本方法（见 ``main`` teardown）。
+        主程序应先 ``seal_entries``、停 WS / 任务，再调本方法（见 ``main`` teardown）：
+        任务收尾要用的插件服务到这里才封。
         """
         if not self._initialized:
+            # 初始化没走完（后台初始化被取消）也可能已经登记了部分服务，同样封住。
+            self.seal()
             return
         await self.stop_watching()
         async with self._busy:
@@ -437,9 +453,13 @@ class _PluginManager:
 
     @asynccontextmanager
     async def _hold(self) -> AsyncGenerator[None]:
-        """先取得生命周期互斥资格，再暂停调用；忙时拒绝，不能提前取消业务操作。"""
-        if self._busy.locked() or self._restart_installation is not None:
-            raise PluginBusyError("插件系统忙，请稍后重试")
+        """先取得生命周期互斥资格，再暂停调用；忙时或退出已开始时拒绝，不能提前取消业务操作。"""
+        if (
+            self._busy.locked()
+            or self._restart_installation is not None
+            or self._entries_sealed
+        ):
+            raise PluginBusyError(_BUSY_MESSAGE)
         async with self._busy:
             # 线程回调进入生命周期时绑定本协程，独立子任务不继承它的自禁用资格。
             with call_context():

@@ -567,7 +567,9 @@ def main():
             Startup.close()
             config_manager.seal_triggers()
             Downloads.seal()
-            Plugin.seal()
+            # 这里只封插件的外部入口；插件之间的服务调用要留给停任务时的收尾（停 worker、
+            # 关游戏、恢复分辨率），由后面的 Plugin.shutdown() 在停完任务后再封。
+            Plugin.seal_entries()
             await Plugin.stop_watching()
 
             # 同步封禁新加载，独立回收 MCP；不能让不可取消线程挡住停止主业务。
