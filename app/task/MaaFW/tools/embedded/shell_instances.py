@@ -57,7 +57,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -65,6 +65,18 @@ from typing import Any, Literal
 from pydantic import TypeAdapter
 
 from app.config import WindowsNameString
+from app.task.MaaFW.tools.core.embedded_labels import (
+    _CHOICE_TYPES,
+    _FIELD_TYPES,
+    _SWITCH_FALSE_NAMES,
+    _SWITCH_TRUE_NAMES,
+    Labels,
+    Translate,
+    _case_names,
+    _field_values,
+    _readable,
+    mxu_option_values,
+)
 from app.task.MaaFW.tools.core.interface.models import (
     MaaFWInterface,
     MaaFWOption,
@@ -94,12 +106,6 @@ SOURCE_MFW: ShellSource = "MFW-PyQt6"
 _MFAA_SETTINGS_FILE = "appsettings.json"
 #: MFW-PyQt6 配置里不是任务的四条（按 ``item_id`` 认）
 _MFW_SPECIAL_ITEMS = frozenset({"PreTask", "Controller", "Resource", "Post-Action"})
-#: switch 的布尔值按 case 名对应（PI v2 的 switch 两个 case 通常叫 Yes / No，顺序不固定，
-#: M9A 就同时有 [Yes, No] 与 [No, Yes]），不按下标猜。
-_SWITCH_TRUE_NAMES = frozenset({"yes", "y", "true", "on", "1", "是", "开"})
-_SWITCH_FALSE_NAMES = frozenset({"no", "n", "false", "off", "0", "否", "关"})
-_CHOICE_TYPES = frozenset({"select", "scan_select", "switch"})
-_FIELD_TYPES = frozenset({"input", "hotkey"})
 #: MFW-PyQt6 选项条目的包装键：带其中任一个的是 ``{value, branches?, hidden?}``，否则是裸值
 _MFW_WRAPPER_KEYS = frozenset({"value", "branches", "hidden"})
 
@@ -440,9 +446,6 @@ def assign_user_names(names: Sequence[str], existing: Iterable[str]) -> list[str
 # 实例 → 任务快照
 # ---------------------------------------------------------------------------
 
-#: 把 interface 里的 ``$键`` 文案按项目语言文件翻成给人看的字，翻不出来原样返回。
-Translate = Callable[[str | None], str | None]
-
 
 def _named_item(items: Sequence[Any], raw: str) -> str:
     """controller / resource 按名字（其次按显示名）对上 interface 里的一项，对不上返回空串。"""
@@ -460,14 +463,6 @@ def _named_item(items: Sequence[Any], raw: str) -> str:
     return ""
 
 
-def _readable(raw: str | None, fallback: str, translate: Translate | None) -> str:
-    """显示名：先按语言文件翻，翻不出来（空、仍是 ``$键``）就用 ``fallback``。"""
-
-    text = translate(raw) if translate is not None else raw
-    text = (text or "").strip()
-    return text if text and not text.startswith("$") else fallback
-
-
 def display_name(
     items: Sequence[Any], raw: str, translate: Translate | None = None
 ) -> str:
@@ -478,38 +473,6 @@ def display_name(
         return raw.strip()
     item = next(item for item in items if item.name == name)
     return _readable(item.label, name, translate)
-
-
-class _Labels:
-    """跳过项里写给人看的任务 / 选项 / 取值名：interface 的 label 按语言文件翻过，拿不到才用 name。"""
-
-    def __init__(self, interface: MaaFWInterface, translate: Translate | None) -> None:
-        self._interface = interface
-        self._translate = translate
-        self._tasks: dict[str, str | None] = {}
-        for task in interface.task:
-            self._tasks.setdefault(task.name, task.label)
-        for pretask in iter_pretasks(interface):
-            self._tasks.setdefault(build_pretask_task_name(pretask), pretask.label)
-
-    def task(self, name: str) -> str:
-        return _readable(self._tasks.get(name), name, self._translate)
-
-    def option(self, name: str) -> str:
-        definition = self._interface.option.get(name)
-        label = definition.label if definition is not None else None
-        return _readable(label, name, self._translate)
-
-    def case(self, definition: MaaFWOption, name: str) -> str:
-        case = next(
-            (item for item in definition.cases or [] if item.name == name), None
-        )
-        return _readable(case.label if case else None, name, self._translate)
-
-    def field(self, definition: MaaFWOption, name: str) -> str:
-        fields = [*(definition.inputs or []), *(definition.hotkeys or [])]
-        item = next((item for item in fields if item.name == name), None)
-        return _readable(item.label if item else None, name, self._translate)
 
 
 def plan_instance_import(
@@ -534,7 +497,7 @@ def plan_instance_import(
     """
 
     skipped: list[str] = []
-    labels = _Labels(interface, translate)
+    labels = Labels(interface, translate)
     option_maps = build_task_option_maps(interface)
     global_option_map = build_global_option_map(interface)
     tasks_by_name: dict[str, MaaFWTask] = {}
@@ -724,7 +687,7 @@ def collect_instance_hotkeys(
     # 嵌套在 select / switch 分支下的 hotkey 选项要先认出上级才走得进去，所以按全部选项换算、
     # 最后再挑 hotkey
     skipped: list[str] = []
-    labels = _Labels(interface, None)
+    labels = Labels(interface, None)
     layers = [_shared_option_values(instance, interface, labels, skipped)]
     for task in instance.tasks:
         layers.append(
@@ -759,7 +722,7 @@ def collect_instance_hotkeys(
 def _shared_option_values(
     instance: ShellInstance,
     interface: MaaFWInterface,
-    labels: _Labels,
+    labels: Labels,
     skipped: list[str],
 ) -> dict[str, MaaFWTaskOptionValue]:
     """全局 / 资源级选项并成一张表（同名时外壳全局表里的为准）。"""
@@ -773,7 +736,7 @@ def _shared_option_values(
 def _global_and_resource_option_values(
     instance: ShellInstance,
     interface: MaaFWInterface,
-    labels: _Labels,
+    labels: Labels,
     skipped: list[str],
 ) -> tuple[dict[str, MaaFWTaskOptionValue], dict[str, MaaFWTaskOptionValue]]:
     """``(外壳全局表, 资源级)``：前者是 MXU 的 ``globalOptionValues``、MFW-PyQt6 的
@@ -783,7 +746,7 @@ def _global_and_resource_option_values(
     global_values: dict[str, MaaFWTaskOptionValue] = {}
     resource_values: dict[str, MaaFWTaskOptionValue] = {}
     if instance.source == SOURCE_MXU and instance.global_options:
-        global_values = _mxu_option_values(
+        global_values = mxu_option_values(
             instance.global_options, interface.option, "全局选项", labels, skipped
         )
     if instance.source == SOURCE_MFAA and instance.resource_options is not None:
@@ -817,7 +780,7 @@ def _drop_password_fields(
     values: dict[str, MaaFWTaskOptionValue],
     all_options: Mapping[str, MaaFWOption],
     owner_prefix: str,
-    labels: _Labels,
+    labels: Labels,
     skipped: list[str],
 ) -> None:
     """interface 声明为 password 的 input 字段不从外壳导入（原地去掉），有值的记一条跳过。
@@ -858,7 +821,7 @@ def _task_own_option_values(
     option_map: Mapping[str, MaaFWOption],
     all_options: Mapping[str, MaaFWOption],
     prefix: str,
-    labels: _Labels,
+    labels: Labels,
     skipped: list[str],
 ) -> dict[str, MaaFWTaskOptionValue]:
     """一条任务自己记的选项（不含全局 / 资源级），按实例来源的格式换算。"""
@@ -880,52 +843,16 @@ def _task_own_option_values(
         )
     else:
         values.update(
-            _mxu_option_values(raw_options or {}, option_map, prefix, labels, skipped)
+            mxu_option_values(raw_options or {}, option_map, prefix, labels, skipped)
         )
     _drop_password_fields(values, all_options, prefix, labels, skipped)
     return values
 
 
-def _case_names(definition: MaaFWOption) -> list[str]:
-    return [case.name for case in definition.cases or []]
-
-
-def _field_values(
-    raw: Any,
-    definition: MaaFWOption,
-    owner: str,
-    labels: _Labels,
-    skipped: list[str],
-) -> dict[str, str] | None:
-    """input / hotkey 的 ``{字段名: 值}``：只留 interface 里声明了的字段，值按字符串存。"""
-
-    if not isinstance(raw, dict):
-        return None
-    declared = (
-        [item.name for item in definition.inputs or []]
-        if definition.type == "input"
-        else [item.name for item in definition.hotkeys or []]
-    )
-    fields: dict[str, str] = {}
-    for key, value in raw.items():
-        if str(key) not in declared:
-            skipped.append(f"{owner}的「{labels.field(definition, str(key))}」")
-            continue
-        if value is None or isinstance(value, (dict, list)):
-            continue
-        if isinstance(value, bool):
-            fields[str(key)] = "true" if value else "false"
-        elif isinstance(value, float) and value.is_integer():
-            fields[str(key)] = str(int(value))
-        else:
-            fields[str(key)] = str(value)
-    return fields
-
-
 def _mfaa_resource_option_values(
     instance: ShellInstance,
     all_options: Mapping[str, MaaFWOption],
-    labels: _Labels,
+    labels: Labels,
     skipped: list[str],
 ) -> dict[str, MaaFWTaskOptionValue]:
     """MFAAvalonia 的 ``ResourceOptionItems``：``{资源名: [选项条目…]}``，条目形状同任务选项。
@@ -960,7 +887,7 @@ def _mfaa_collect_options(
     option_map: Mapping[str, MaaFWOption],
     all_options: Mapping[str, MaaFWOption],
     owner_prefix: str,
-    labels: _Labels,
+    labels: Labels,
     values: dict[str, MaaFWTaskOptionValue],
     skipped: list[str],
 ) -> None:
@@ -1006,7 +933,7 @@ def _mfaa_option_value(
     raw: Mapping[str, Any],
     definition: MaaFWOption,
     owner: str,
-    labels: _Labels,
+    labels: Labels,
     skipped: list[str],
 ) -> MaaFWTaskOptionValue | None:
     cases = _case_names(definition)
@@ -1039,80 +966,11 @@ def _mfaa_option_value(
     return None
 
 
-def _mxu_option_values(
-    option_values: Mapping[str, Any],
-    option_map: Mapping[str, MaaFWOption],
-    owner_prefix: str,
-    labels: _Labels,
-    skipped: list[str],
-) -> dict[str, MaaFWTaskOptionValue]:
-    """MXU 的 ``{选项名: {type, caseName | caseNames | value | values}}``（嵌套选项已平铺）。"""
-
-    values: dict[str, MaaFWTaskOptionValue] = {}
-    for name, raw in option_values.items():
-        owner = f"{owner_prefix}「{labels.option(str(name))}」"
-        definition = option_map.get(str(name))
-        if definition is None:
-            skipped.append(owner)
-            continue
-        value = _mxu_option_value(raw, definition, owner, labels, skipped)
-        if value is not None:
-            values[str(name)] = value
-    return values
-
-
-def _mxu_option_value(
-    raw: Any,
-    definition: MaaFWOption,
-    owner: str,
-    labels: _Labels,
-    skipped: list[str],
-) -> MaaFWTaskOptionValue | None:
-    if not isinstance(raw, dict):
-        skipped.append(f"{owner}的取值")
-        return None
-    cases = _case_names(definition)
-    if definition.type in _CHOICE_TYPES:
-        if "caseName" in raw:
-            case = str(raw.get("caseName") or "")
-        elif isinstance(raw.get("value"), bool):
-            wanted = _SWITCH_TRUE_NAMES if raw["value"] else _SWITCH_FALSE_NAMES
-            case = next((name for name in cases if name.casefold() in wanted), "")
-        else:
-            case = str(raw.get("value") or "")
-        # scan_select 的候选是运行时扫出来的，interface 里可能一个都没写
-        if case and (case in cases or (definition.type == "scan_select" and not cases)):
-            return case
-        skipped.append(
-            f"{owner}的取值" + (f"「{labels.case(definition, case)}」" if case else "")
-        )
-        return None
-    if definition.type == "checkbox":
-        selected = raw.get("caseNames")
-        if not isinstance(selected, list):
-            skipped.append(f"{owner}的取值")
-            return None
-        chosen: list[str] = []
-        for item in selected:
-            if str(item) in cases:
-                chosen.append(str(item))
-            else:
-                skipped.append(f"{owner}的取值「{labels.case(definition, str(item))}」")
-        return chosen
-    if definition.type in _FIELD_TYPES:
-        fields = _field_values(raw.get("values"), definition, owner, labels, skipped)
-        if fields is None:
-            skipped.append(f"{owner}的取值")
-        return fields
-    skipped.append(f"{owner}的取值")
-    return None
-
-
 def _mfw_collect_options(
     raw_options: Mapping[str, Any],
     option_map: Mapping[str, MaaFWOption],
     owner_prefix: str,
-    labels: _Labels,
+    labels: Labels,
     values: dict[str, MaaFWTaskOptionValue],
     skipped: list[str],
     hidden_names: set[str] | None = None,
@@ -1168,7 +1026,7 @@ def _mfw_option_value(
     raw: Any,
     definition: MaaFWOption,
     owner: str,
-    labels: _Labels,
+    labels: Labels,
     skipped: list[str],
 ) -> MaaFWTaskOptionValue | None:
     if raw is None:
@@ -1218,6 +1076,7 @@ def _mfw_option_value(
 
 
 __all__ = [
+    "Labels",
     "SOURCE_MFAA",
     "SOURCE_MFW",
     "SOURCE_MXU",
@@ -1228,6 +1087,7 @@ __all__ = [
     "assign_user_names",
     "collect_instance_hotkeys",
     "display_name",
+    "mxu_option_values",
     "plan_instance_import",
     "scan_shell_instances",
 ]
