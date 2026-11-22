@@ -107,20 +107,22 @@ def run_window_action(action: str, arguments: dict) -> int:
     from app.utils.common.process.operations import managed_process
 
     pid = int(arguments["pid"])
-    if process_session(pid) != process_session(os.getpid()):
-        return 1
     process = managed_process(pid)
-    hwnd = (
-        get_main_window_handle(
-            process.pid,
-            arguments.get("title") or None,
-            arguments.get("class") or None,
-        )
-        if process is not None
-        else None
+    if process is None or process.create_time() != arguments["createTime"]:
+        return 1
+    own_session = process_session(os.getpid())
+    try:
+        if process_session(pid) != own_session:
+            return 1
+    except OSError:
+        if not process.is_running():
+            return 1
+        raise
+    hwnd = get_main_window_handle(
+        pid, arguments.get("title") or None, arguments.get("class") or None
     )
     operation = getattr(window, WINDOW_ACTIONS[action])
-    return int(not (hwnd and operation(hwnd)))
+    return int(not (hwnd and process.is_running() and operation(hwnd)))
 
 
 def run_process(pipe, launch: dict, stdout, stderr) -> None:

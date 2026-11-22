@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
@@ -532,6 +533,23 @@ async def test_desktop_worker_exit_stops_only_the_owned_root(monkeypatch, tmp_pa
 
 
 @pytest.mark.skipif(os.name != "nt", reason="需要 Windows 分身进程执行器")
+def test_window_operation_after_target_exit_returns_false():
+    from app.utils.windows.desktop_session import process_worker
+
+    with subprocess.Popen([sys.executable, "-I", "-c", "pass"]) as child:
+        pid = child.pid
+        assert child.wait(timeout=10) == 0
+    del child
+
+    assert (
+        process_worker.run_window_action(
+            "hide_process_window", {"pid": pid, "createTime": 0.0}
+        )
+        == 1
+    )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="需要 Windows 分身进程执行器")
 @pytest.mark.asyncio
 async def test_window_operations_run_in_the_selected_session(monkeypatch, tmp_path):
     from app.utils.common.process.manager import ProcessManager
@@ -539,6 +557,7 @@ async def test_window_operations_run_in_the_selected_session(monkeypatch, tmp_pa
 
     process = Mock(spec=psutil.Process, pid=101)
     process.is_running.return_value = True
+    process.create_time.return_value = 123.0
     manager = ProcessManager()
     manager.target_process = process
     target = session.DesktopProcessTarget(7, tmp_path, tmp_path)

@@ -1229,6 +1229,8 @@ class _PluginManager:
                         result = await self.reload(record, held=True)
                     else:
                         result = await self.load(record, held=True)
+                        if record.info.enabled:
+                            await self.enable(record, held=True)
                 except BaseException:
                     from app.plugin.uv.environment import write_installation
 

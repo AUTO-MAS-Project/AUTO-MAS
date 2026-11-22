@@ -668,7 +668,24 @@ export class DesktopSessionService {
   }
 
   changeWindow(state: DesktopSessionSnapshot['windowState']): void {
-    if (this.host) this.send({ action: 'window', state })
+    if (this.host?.stdin.writable) this.send({ action: 'window', state })
+  }
+
+  async parkForPrompt(promptId: number): Promise<boolean> {
+    if (!this.host) return true
+    try {
+      const result = await this.exchange(
+        { action: 'park_for_prompt', promptId },
+        event =>
+          event.promptId === promptId &&
+          (event.event === 'prompt_parked' ||
+            (event.event === 'command_error' && event.action === 'park_for_prompt')),
+        3000
+      )
+      return result.event === 'prompt_parked'
+    } catch {
+      return false
+    }
   }
 
   changeVolume(volume: number): void {

@@ -124,6 +124,27 @@ it('repairs only through the approved repair operation', async () => {
   }
 })
 
+it('waits for the matching native park reply before showing a prompt', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'mas-desktop-prompt-'))
+  vi.stubGlobal('fetch', async (url: string) =>
+    new URL(url).pathname.endsWith('/describe')
+      ? Response.json({ python: 'python', root, source: root })
+      : Response.json({ updated: true })
+  )
+  const service = new DesktopSessionService(vi.fn(), vi.fn(), vi.fn())
+  try {
+    await service.check()
+    const first = service.parkForPrompt(1)
+    const next = service.parkForPrompt(2)
+    host.report({ event: 'prompt_parked', promptId: 1 })
+    host.report({ event: 'command_error', action: 'park_for_prompt', promptId: 2 })
+    await expect(Promise.all([first, next])).resolves.toEqual([true, false])
+  } finally {
+    await service.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 it.each([
   { idle: true, hostExited: false },
   { idle: false, hostExited: false },
