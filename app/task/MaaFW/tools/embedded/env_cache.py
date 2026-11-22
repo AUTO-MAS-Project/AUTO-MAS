@@ -35,7 +35,7 @@ AUTO-MAS 自己换了随包 Python 之后，旧 runtime 目录仍在盘上、项
 避免的事。所以宿主解释器身份也是命中判据的一部分。
 
 **存在性检查不验内容**：文件还在、但 venv 内部已经坏了这种情况这里会放行。
-兜底仍在：运行前 ``embedded_manager.describe_unusable_runtime()`` 会起解释器
+兜底仍在：运行前 ``runtime_check.describe_unusable_runtime()`` 会起解释器
 核一次 ABI，编辑页的重试按钮也带 ``force`` 直接绕过缓存。
 """
 

@@ -41,7 +41,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from app.config import ConfigCollection, config_manager
 from app.core import Config, Notify, Publisher
@@ -93,12 +93,19 @@ from app.task.MaaFW.tools.embedded.proxy_quota import (
     proxy_times_used_up,
     proxy_today,
 )
+from app.task.MaaFW.tools.embedded.run_notices import (
+    proxy_result_body,
+    signal_summary_title,
+    user_results_text,
+)
+from app.task.MaaFW.tools.embedded.runtime_check import describe_unusable_runtime
+from app.task.MaaFW.tools.embedded.runtime_route import resolve_runtime_pool_route
 from app.task.MaaFW.tools.embedded.signal_notice import (
-    CLIENT_UPDATE_REQUIRED,
     SERVER_MAINTENANCE,
     MaaFWSignalTracker,
     push_signal_notices,
 )
+from app.task.MaaFW.tools.embedded.telemetry_project import record_project_run
 from app.task.MaaFW.tools.embedded.update_credentials import (
     AutoUpdateMode,
     resolve_auto_update_mode,
@@ -123,82 +130,6 @@ def describe_unsupported_host() -> str | None:
     )
 
     return describe_unsupported_architecture()
-
-
-def describe_unusable_runtime(project_path: Path) -> str | None:
-    """运行前自检：这个项目要用的运行池 runtime 还能用吗？
-
-    只在池里已经存在这个项目会用到的那份 runtime 时才探一次（一个子进程，约
-    100ms——解释器本来就要起）。没建过就不拦：那份环境会在运行时按需准备，失败
-    自有它自己的报错路径。
-
-    runtime 的选法与借运行环境（``borrow_runtime_environment``）一致：同一份依赖选择器加同一个
-    引导解释器。只按 MaaFW 版本去池里挑不行——旧版本用便携包 embeddable Python
-    建出的坏环境和修好后新建的好环境 MaaFW 版本相同，挑错了会把能跑的任务拦下。
-
-    拦在 ``check()`` 而不是只靠编辑页的提示：队列与定时任务不经过编辑页，
-    绕不过 check()；而且这里拦下来时模拟器和游戏都还没启动。
-    """
-
-    # 运行池会拉起 uv 与安装器，只在真要用时导入，别让每次 import 都付这份成本。
-    from app.task.MaaFW.tools.core.agent_env.runtime_lease import (
-        describe_runner_runtime_selection,
-    )
-    from app.task.MaaFW.tools.core.runtime_pool import (
-        MaaFWRuntimePoolError,
-        MaaFWRuntimePoolService,
-    )
-    from app.task.MaaFW.tools.core.runtime_pool.binding import (
-        verify_binding,
-        verify_native,
-    )
-
-    try:
-        service = MaaFWRuntimePoolService()
-        # 与 prepare 同一套推导；托管解释器还没装时返回 None，runtime 也就不可能存在。
-        selection = describe_runner_runtime_selection(project_path, service.pool)
-        if selection is None:
-            return None
-    except Exception:  # noqa: BLE001 - 自检失败不该反过来挡住运行
-        return None
-
-    try:
-        # 找到 base 后 get() 会真的起一次解释器核对 ABI，起不来就是坏了。
-        runtime = service.pool.get(selection.runtime_id)
-    except MaaFWRuntimePoolError as exc:  # 原文就是给用户看的
-        return f"MFW 运行环境不可用：{exc}"
-    except Exception:  # noqa: BLE001
-        return None
-    if runtime is None or selection.binding_version is None:
-        # base 没建过 / binding 版本还没定：运行时按需准备，失败自有它的报错路径
-        return None
-    try:
-        # binding 目录存在但清单校验不过（被删了一半、文件被改）→ 拦下来说清楚；
-        # 压根没有则同样交给运行时准备。
-        binding_dir = (
-            service.pool.root / "bindings" / f"maafw-{selection.binding_version}"
-        )
-        if (
-            binding_dir.is_dir()
-            and verify_binding(service.pool.root, selection.binding_version) is None
-        ):
-            return (
-                f"MFW 运行环境不可用：maafw {selection.binding_version} 的 binding 目录"
-                f"校验不通过（{binding_dir}），请重新准备运行环境"
-            )
-        native_dir = service.pool.root / "native" / f"maafw-{selection.binding_version}"
-        if (
-            selection.native_needed
-            and native_dir.is_dir()
-            and verify_native(service.pool.root, selection.binding_version) is None
-        ):
-            return (
-                f"MFW 运行环境不可用：maafw {selection.binding_version} 的官方原生库目录"
-                f"校验不通过（{native_dir}），请重新准备运行环境"
-            )
-    except Exception:  # noqa: BLE001
-        return None
-    return None
 
 
 class MaaFWEmbeddedManager(NotificationTaskBase):
@@ -415,24 +346,9 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
 
     @staticmethod
     def _resolve_runtime_pool_route():
-        """解析 Runtime Pool 路由（root + poolId）。
+        """解析 Runtime Pool 路由（``runtime_route.resolve_runtime_pool_route``）。**只在工作线程里调**。"""
 
-        直接实例化运行池服务，交给 `runtime_route.runtime_pool_route_from_service`
-        解析。跑计划（`plan_run`）缺这两个值会直接拒绝运行。
-
-        **只在工作线程里调**（``asyncio.to_thread``）：构造服务要拿进程级的池锁，
-        别的线程正持锁建 base venv / 装解释器 / 回收时会等上几秒到几分钟，放在事件
-        循环上整个后端都跟着停住。
-        """
-
-        from app.task.MaaFW.tools.core.runtime_pool import (
-            MaaFWRuntimePoolService,
-        )
-        from app.task.MaaFW.tools.embedded.runtime_route import (
-            runtime_pool_route_from_service,
-        )
-
-        return runtime_pool_route_from_service(MaaFWRuntimePoolService())
+        return resolve_runtime_pool_route()
 
     def _build_inner_task(self, route: Any) -> "MaaFWPluginAutoProxyTask":
         """``route`` 是 :meth:`_resolve_runtime_pool_route` 的结果，调用方在工作线程里取。"""
@@ -925,31 +841,19 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         self.project_update_logs = logs + self.project_update_logs
 
     async def _record_project_run(self) -> None:
-        """记一次项目运行；只认白名单里的公开项目，其余记 ``other``。遥测失败不影响任务。"""
-
-        from app.services import telemetry as _service_telemetry
-        from app.task.MaaFW.tools.embedded.telemetry_project import (
-            OTHER_PROJECT,
-            telemetry_project_name,
-        )
+        """记一次项目运行（``telemetry_project.record_project_run``）；遥测失败不影响任务。"""
 
         assert self.script_config is not None
+        project_path: Path | None
         try:
             project_path = resolve_maafw_project_root(
                 str(self.script_info.script_id), self.script_config
             ).resolve()
-            interface = await asyncio.to_thread(
-                self._load_interface_model, project_path
-            )
-            project = telemetry_project_name(getattr(interface, "github", None))
-        except Exception:  # noqa: BLE001 - 遥测失败不影响任务
-            project = OTHER_PROJECT
-        _service_telemetry.record_count(
-            "auto_mas.maafw.project.runs",
-            attributes={
-                "project": project,
-                "script_type": type(self.script_config).__name__.removesuffix("Config"),
-            },
+        except Exception:  # noqa: BLE001 - 遥测失败不影响任务，项目记 other
+            project_path = None
+        await record_project_run(
+            project_path,
+            script_type=type(self.script_config).__name__.removesuffix("Config"),
         )
 
     async def _finalize_inner_task(self) -> None:
@@ -1106,45 +1010,43 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         completed_users = [
             user for user in completed_users if user not in attention_users
         ]
-        title = (
-            f"{datetime.now().strftime('%m-%d')} | "
-            f"{self.script_info.name or '空白'}的{TASK_MODE_ZH[self.execution_mode]}任务报告"
+        mode_zh = TASK_MODE_ZH[self.execution_mode]
+        script_name = self.script_info.name or "空白"
+        title = f"{datetime.now().strftime('%m-%d')} | {script_name}的{mode_zh}任务报告"
+        end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        results_text = user_results_text(
+            [
+                (user.user_id, user.name, user.result)
+                for user in self.script_info.user_list
+            ],
+            self._user_report_lines,
+            self.script_info.result,
         )
-        result: TaskResultData = {
-            "title": f"{TASK_MODE_ZH[self.execution_mode]}任务报告",
-            "script_name": self.script_info.name or "空白",
-            "start_time": self.begin_time,
-            "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "completed_count": len(completed_users),
-            "uncompleted_count": (
-                len(error_users)
-                + len(maintenance_users)
-                + len(attention_users)
-                + len(waiting_users or [])
+        result = cast(
+            TaskResultData,
+            proxy_result_body(
+                mode_zh=mode_zh,
+                script_name=script_name,
+                begin_time=self.begin_time,
+                end_time=end_time,
+                completed=len(completed_users),
+                uncompleted=(
+                    len(error_users)
+                    + len(maintenance_users)
+                    + len(attention_users)
+                    + len(waiting_users or [])
+                ),
+                results_text=results_text,
+                incident_lines=self._run_incident_notices,
+                missing_lines=self._missing_task_notices,
+                summary_title=signal_summary_title(
+                    title,
+                    {record.signal for record in self.signal_tracker.records()},
+                    has_error=bool(error_users),
+                    has_completed=bool(completed_users),
+                ),
             ),
-            # 原地打转 / 单任务超时、失效任务每个账号一行跟在结果后面：通用模板没有单独的块，
-            # 结果框按原样换行
-            "result": "\n\n".join(
-                [
-                    self._user_results_text(),
-                    *(
-                        "\n".join(lines)
-                        for lines in (
-                            self._run_incident_notices,
-                            self._missing_task_notices,
-                        )
-                        if lines
-                    ),
-                ]
-            ),
-        }
-        summary_title = self._signal_summary_title(
-            title,
-            has_error=bool(error_users),
-            has_completed=bool(completed_users),
         )
-        if summary_title:
-            result["summary_title"] = summary_title
         try:
             images = await prepare_screenshot_images(
                 self._failure_screenshots[-NOTIFY_SCREENSHOT_LIMIT:],
@@ -1167,41 +1069,6 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                     level="error", message=f"推送 MFW 代理结果时出现异常: {exc}"
                 ),
             )
-
-    def _user_results_text(self) -> str:
-        """「代理结果」里每个账号一行：跑过的用 runner 给的结果（与账号级统计报告同口径，
-        只有人话），没跑的（运行前检查没过、没轮到）沿用通用的账号结果。"""
-
-        if not self.script_info.user_list:
-            return self.script_info.result
-        return "\n".join(
-            f"{user.name}: {self._user_report_lines.get(user.user_id) or user.result}"
-            for user in self.script_info.user_list
-        )
-
-    def _signal_summary_title(
-        self, title: str, *, has_error: bool, has_completed: bool
-    ) -> str | None:
-        """本轮有信号时代理结果的摘要标题，写明原因；没有信号返回 None（沿用默认）。"""
-
-        signals = {record.signal for record in self.signal_tracker.records()}
-        reasons = [
-            text
-            for signal, text in (
-                (SERVER_MAINTENANCE, "游戏停服维护中"),
-                (CLIENT_UPDATE_REQUIRED, "需要更新游戏客户端"),
-            )
-            if signal in signals
-        ]
-        if not reasons:
-            return None
-        if has_error:
-            state = "存在异常"
-        elif has_completed:
-            state = "部分跳过"
-        else:
-            state = "已跳过"
-        return title.replace("报告", f"{state}（{'、'.join(reasons)}）")
 
     async def _push_signal_notices(self) -> None:
         """本轮撞上的停服维护 / 需要更新客户端，每个「信号 + 资源」发一条通知。"""

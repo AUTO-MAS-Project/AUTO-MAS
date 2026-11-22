@@ -24,7 +24,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
   `default_snapshot`、`env_confirm`、`update_session`、`device_config`、`plan_run`、`pretask_run`、
   `run_verdict`、`run_redaction`、`run_settings`、`run_messages`、`run_notices`、`attempt_ledger`、
-  `desktop_game`、`host_client`、`project_session`、`owners`）。
+  `desktop_game`、`host_client`、`project_session`、`owners`、`runtime_check`、`telemetry_project`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - **设备配置与首任务闸门在 `tools/embedded/device_config.py`**（将来是运行这一块对外的「设备配置」调用，
   三个专项各自的流程都调它）：游戏包名、adb 路径（含「宿主没定下路径时问 Toolkit」，判据由调用方算好
@@ -97,8 +97,10 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `statistics_title`）、成功与「游戏需要手动更新」两种本机提示的标题 / 正文 / 提示条。`LocalNotice` 的构造、
   截图准备、推送仍在调用方。代理次数结算（开跑换日 `proxy_day_rolled`、成功后的 `success_settlement`）在
   `proxy_quota`，一次尝试完成后要写回的周期记录（`period_records_after`）在 `plan_transforms`：都只返回新值，
-  写字段与逐条 `commit` 留在流程里，次数与先后不变。管理器侧的代理结果正文（信号汇总标题、账号结果行、
-  `TaskResultData`）还在管理器里。
+  写字段与逐条 `commit` 留在流程里，次数与先后不变。脚本级「代理结果」的正文也在 `run_notices`：信号摘要
+  标题（`signal_summary_title`）、每个账号一行的结果（`user_results_text`）、`TaskResultData` 形状的正文
+  （`proxy_result_body`）；推送标题、截图准备与推送留在脚本级流程（管理器）。项目运行的遥测在
+  `telemetry_project.record_project_run`（参数是有效根与专项的上报名：`MaaFW` / `M9A` / `MSS`）。
 - **一个账号这次运行的尝试记账在 `tools/embedded/attempt_ledger.py`**（运行这一块，三个专项的账号流程各用
   一份 `MaaFWAttemptLedger`，跨尝试保留）：结构化运行记录（`recorder` 就是 `MaaFWRunRecorder`，任务类的
   `_run_record` 指向它）、每次尝试的结果（`record`：history 状态、记录结局、给通知用的完成清单 / 失败截图 /
@@ -243,6 +245,9 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   （借一次环境 + 备 agent + 项目输入指纹）在 `agent_env/project_env.py`
   （`prepare_project_environment`、`project_environment_fingerprint`），宿主的
   `_prepare_project_environment_sync` 与 `api_service/agent_env` 直接调它，不经 `MaaFWRunnerService`。
+  运行前的运行池自检（`tools/embedded/runtime_check.describe_unusable_runtime`，吃项目路径、放工作线程）与
+  运行池路由（`tools/embedded/runtime_route.resolve_runtime_pool_route`，只在工作线程里调）也归 agent 环境，
+  三个专项的脚本级流程各自调；管理器的 `_resolve_runtime_pool_route` 只是转调。
 - **建计划归解析一侧，agent 命令计划在借环境时算**：`runner/run_plan.py`（选控制器与资源、pretask
   规划、`build_maafw_run_plan`）、`pipeline_override`、`hotkey`、`runner/models.py` 的计划类型、
   `task_selection`、`plan_transforms` 与 `interface/plan_rules` 将来随 interface 进解析库，现在还在原处，

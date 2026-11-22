@@ -68,6 +68,20 @@ def runtime_pool_route_from_service(service: Any) -> MaaFWRuntimePoolRoute:
     return MaaFWRuntimePoolRoute(root=root_path.resolve(), pool_id=pool_id)
 
 
+def resolve_runtime_pool_route() -> MaaFWRuntimePoolRoute:
+    """解析 Runtime Pool 路由（root + poolId）：实例化运行池服务，交给
+    :func:`runtime_pool_route_from_service`。跑计划（``plan_run``）缺这两个值会直接拒绝运行。
+
+    **只在工作线程里调**（``asyncio.to_thread``）：构造服务要拿进程级的池锁，
+    别的线程正持锁建 base venv / 装解释器 / 回收时会等上几秒到几分钟，放在事件
+    循环上整个后端都跟着停住。
+    """
+
+    from app.task.MaaFW.tools.core.runtime_pool import MaaFWRuntimePoolService
+
+    return runtime_pool_route_from_service(MaaFWRuntimePoolService())
+
+
 def _required_runtime_pool_text(
     value: Mapping[str, Any],
     key: str,
@@ -86,5 +100,6 @@ __all__ = [
     "MaaFWRuntimePoolRoute",
     "MaaFWRuntimeRouteError",
     "RUNTIME_POOL_SERVICE",
+    "resolve_runtime_pool_route",
     "runtime_pool_route_from_service",
 ]

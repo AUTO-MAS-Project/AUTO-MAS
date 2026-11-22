@@ -27,7 +27,9 @@ interface.json 的 ``name`` / ``label`` 是自由文本，用户自建的私有�
 
 from __future__ import annotations
 
+import asyncio
 import re
+from pathlib import Path
 
 OTHER_PROJECT = "other"
 
@@ -101,4 +103,29 @@ def telemetry_project_name(github: object) -> str:
     return _PROJECT_BY_REPO.get(repo, OTHER_PROJECT)
 
 
-__all__ = ["OTHER_PROJECT", "telemetry_project_name"]
+async def record_project_run(project_path: Path | None, *, script_type: str) -> None:
+    """记一次项目运行（``auto_mas.maafw.project.runs``）：项目名按 interface 的 ``github`` 对白名单，
+    读不出（``project_path`` 为 None、interface 读失败）记 ``other``。遥测失败不影响任务。
+
+    ``project_path`` 是这次运行的有效根（调用方解析好，解析出错传 None）；``script_type`` 是专项的
+    上报名（通用 MFW ``MaaFW``、``M9A``、``MSS``）。interface 在工作线程里读（走核心包缓存）。
+    """
+
+    from app.services import telemetry as _service_telemetry
+
+    try:
+        if project_path is None:
+            raise ValueError("没有项目路径")
+        from app.task.MaaFW.tools.core.interface import load_interface_model_cached
+
+        interface = await asyncio.to_thread(load_interface_model_cached, project_path)
+        project = telemetry_project_name(getattr(interface, "github", None))
+    except Exception:  # noqa: BLE001 - 遥测失败不影响任务
+        project = OTHER_PROJECT
+    _service_telemetry.record_count(
+        "auto_mas.maafw.project.runs",
+        attributes={"project": project, "script_type": script_type},
+    )
+
+
+__all__ = ["OTHER_PROJECT", "record_project_run", "telemetry_project_name"]
