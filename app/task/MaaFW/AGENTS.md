@@ -920,8 +920,10 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   加解密**——密文怎么认、怎么解开由调用方经 `MaaFWSecretOpener` 交进来）；加解密（DPAPI）与「从配置对象里
   取出快照原值」（`user_task_snapshot` / `script_task_snapshots`）在宿主 `option_secrets`，它给出
   `DPAPI_SECRET_OPENER`；写法（`secret_log_variants`）、按文本 / 按字节打码、打码说明与
-  `LOG_REDACTION_MARKER` 在运行一侧 `tools/embedded/run_redaction`。任务类把快照原值与 opener 交给收集
-  函数得到两组值，再换成写法传给 `plan_run` / `pretask_run`。三者之间只传普通数据，别把配置对象传进解析一侧。
+  `LOG_REDACTION_MARKER` 在运行一侧 `tools/embedded/run_redaction`。两组值也在 `run_redaction` 里凑：
+  `run_secret_values`（计划或 interface 还没有时为空）与 `project_log_secret_variants`（收集出错时退回本次运行
+  那组，记一行 debug）。任务类只从配置里取出快照原值、带上 opener 交给它们，每个调用点（运行前设置、跑计划、
+  资源包失败的摘录）现算一次、不缓存，再换成写法传给 `plan_run` / `pretask_run`。三者之间只传普通数据，别把配置对象传进解析一侧。
 - 加载器写的告警（`logger.warning`）由加载器旁听收集、挂在模型上（`interface_load_warnings`），
   随磁盘缓存保存，进运行计划的 `warnings`（运行日志开头）与导入报告；只给后端看的用
   `extra=_LOG_ONLY`。发行包的毛病能降级就降级：缺 import 文件、scan_dir 不在、缺

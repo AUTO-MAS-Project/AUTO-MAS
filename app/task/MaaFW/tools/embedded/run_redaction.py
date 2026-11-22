@@ -4,18 +4,38 @@
 （``tools/core/interface/password_values``）；加解密（DPAPI）在宿主（``option_secrets``）；
 按值打码归运行（本模块）。``plan_run`` 复制原生日志、转发 worker 输出，``pretask_run`` 的输出，
 ``project_logs`` 的项目日志，``resource_failure`` 摘录失败原因都用这里的函数；要打码的值由调用方
-（任务类）用解析一侧的收集函数算好、经 ``secret_log_variants`` 换成写法后传进来。本模块不读配置、
+（账号流程）经下面的 ``run_secret_values`` / ``project_log_secret_variants`` 算好、经 ``secret_log_variants``
+换成写法后传进来。本模块不读配置、
 不碰加解密。
+
+两组要打码的值也在这里凑齐（``run_secret_values`` / ``project_log_secret_variants``）：调用方从配置里取出
+快照原值（``option_secrets.user_task_snapshot`` / ``script_task_snapshots``）、带上 DPAPI 的 opener 交进来，
+这里交给解析一侧的收集函数。每个要打码的调用点（运行前设置、跑计划、资源包失败的摘录）都现算一次，
+不缓存：重试时计划会变。
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any
 
 from app.task.MaaFW.tools.core.interface.models import (
     MaaFWInterface,
     password_input_names,
 )
+from app.task.MaaFW.tools.core.interface.password_values import (
+    MaaFWSecretOpener,
+    collect_run_password_values,
+    collect_snapshots_password_values,
+)
+from app.utils import get_logger
+
+if TYPE_CHECKING:  # pragma: no cover - 只给类型检查用
+    from app.task.MaaFW.tools.core.runner.models import MaaFWRunPlan
+
+# 与任务类同名：搬过来的那一行 debug 日志在 app.log 里仍按原来的名字检索
+logger = get_logger("MaaFW 插件自动代理")
 
 #: 日志里替换密码原文用的占位。
 REDACTED_SECRET_TEXT = "<已隐藏>"
@@ -108,11 +128,54 @@ def log_redaction_notice(interface: MaaFWInterface, values: list[str]) -> str | 
     return notice
 
 
+def run_secret_values(
+    plan: MaaFWRunPlan | None,
+    interface: MaaFWInterface | None,
+    user_snapshot_raw: Any | None,
+    opener: MaaFWSecretOpener,
+) -> list[str]:
+    """本次运行要打码的密码值：计划里 password 字段的值 + 该账号快照里全部密文解开的值
+    （项目撤掉了 password 标记的字段建计划时照样解开，见 option_secrets）。
+
+    ``user_snapshot_raw`` 是账号 ``Task.TaskSnapshot`` 的原值；计划或 interface 还没有时没有可打码的值。
+    """
+
+    if plan is None or interface is None:
+        return []
+    return collect_run_password_values(plan, interface, user_snapshot_raw, opener)
+
+
+def project_log_secret_variants(
+    run_variants: list[str],
+    script_snapshots_raw: Iterable[Any],
+    interface: MaaFWInterface | None,
+    opener: MaaFWSecretOpener,
+) -> list[str]:
+    """项目日志要打码的写法：项目日志不一定是本次运行的用户写的（上一个账号留下的片段也可能落在
+    本次新增里），所以按脚本全部用户的密码（``script_snapshots_raw``）打码，再并上本次运行的
+    ``run_variants``。收集出错时退回本次运行的那组。"""
+
+    try:
+        values = collect_snapshots_password_values(
+            script_snapshots_raw, interface, opener
+        )
+    except Exception as exc:  # noqa: BLE001 - 取不到时退回本次运行计划里的
+        logger.debug(f"收集脚本全部用户的密码失败，只按本次运行的打码: {exc}")
+        return run_variants
+    return sorted(
+        set(run_variants) | set(secret_log_variants(values)),
+        key=len,
+        reverse=True,
+    )
+
+
 __all__ = [
     "LOG_REDACTION_MARKER",
     "MIN_REDACTED_SECRET_LENGTH",
     "REDACTED_SECRET_TEXT",
     "log_redaction_notice",
+    "project_log_secret_variants",
+    "run_secret_values",
     "redact_secret_bytes",
     "redact_secret_text",
     "secret_byte_pairs",

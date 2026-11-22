@@ -48,10 +48,6 @@ from app.task.MaaFW.tools.core.interface.agent_command import MaaFWAgentCommandP
 from app.task.MaaFW.tools.core.interface.models import (
     MaaFWInterface,
 )
-from app.task.MaaFW.tools.core.interface.password_values import (
-    collect_run_password_values,
-    collect_snapshots_password_values,
-)
 from app.task.MaaFW.tools.core.interface.preview import (
     interface_display_name,
 )
@@ -204,7 +200,12 @@ from .run_record import (
     MaaFWTaskRecord,
     format_incident_lines,
 )
-from .run_redaction import log_redaction_notice, secret_log_variants
+from .run_redaction import (
+    log_redaction_notice,
+    project_log_secret_variants,
+    run_secret_values,
+    secret_log_variants,
+)
 from .run_report import (
     CATEGORY_REASONS,
     MaaFWAttemptReport,
@@ -1395,7 +1396,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             task_deadlines=task_deadlines,
             loop_guard=loop_guard(self._loop_guard_raw()),
             run_secrets=secrets,
-            project_log_secrets=self._project_log_secret_variants(secrets),
+            project_log_secrets=project_log_secret_variants(
+                secrets,
+                script_task_snapshots(self.script_config),
+                self.interface_model,
+                DPAPI_SECRET_OPENER,
+            ),
             redaction_notice=self._log_redaction_notice(),
             game_started_at=self.game_started_at,
             game_start_disk_quiet=self.game_start_disk_quiet,
@@ -1465,14 +1471,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self._run_record.mark_stage(event.stage, event.ok)
 
     def _run_password_values(self) -> list[str]:
-        """本次运行要打码的密码值：计划里 password 字段的值 + 该账号快照里全部密文解开的值
-        （项目撤掉了 password 标记的字段建计划时照样解开，见 option_secrets）。
+        """本次运行要打码的密码值（``run_redaction.run_secret_values``）：从配置里取出快照原值，
+        密文经 DPAPI 认读。每个调用点现算，不缓存。"""
 
-        从配置里取出快照原值（宿主），交给解析一侧的收集函数；密文经 DPAPI 认读。"""
-
-        if self.run_plan is None or self.interface_model is None:
-            return []
-        return collect_run_password_values(
+        return run_secret_values(
             self.run_plan,
             self.interface_model,
             user_task_snapshot(getattr(self, "cur_user_config", None)),
@@ -1483,25 +1485,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         """本次运行要打码的密码值在日志里可能出现的写法（见 run_redaction）。"""
 
         return secret_log_variants(self._run_password_values())
-
-    def _project_log_secret_variants(self, plan_variants: list[str]) -> list[str]:
-        """项目日志不一定是本次运行的用户写的（上一个账号留下的片段也可能落在本次新增里），
-        所以按脚本全部用户的密码打码，再并上本次运行计划里的。"""
-
-        try:
-            values = collect_snapshots_password_values(
-                script_task_snapshots(self.script_config),
-                self.interface_model,
-                DPAPI_SECRET_OPENER,
-            )
-        except Exception as exc:  # noqa: BLE001 - 取不到时退回本次运行计划里的
-            logger.debug(f"收集脚本全部用户的密码失败，只按本次运行的打码: {exc}")
-            return plan_variants
-        return sorted(
-            set(plan_variants) | set(secret_log_variants(values)),
-            key=len,
-            reverse=True,
-        )
 
     def _log_redaction_notice(self) -> str | None:
         """项目有 password 输入框或本次有要打码的值时写进 ``.worker.log`` 开头的打码说明。"""
