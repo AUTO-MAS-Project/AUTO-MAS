@@ -69,6 +69,9 @@ class ClientProcess(ProcessManager):
                 session = current_game_session.get()
                 if session is None:
                     raise RuntimeError("客户端操作不在托管执行会话内")
+                if not session.selected:
+                    # 未选定时只读查询会按配置回落；操作必须持票，不能退成裸进程管理。
+                    raise RuntimeError("游戏会话尚未选定，不能操作游戏进程")
                 if session.control is None:
                     # URL/云端由既有上游入口启动，没有可伪造的本地游戏可执行文件。
                     return await getattr(super(ClientProcess, self), name)(
