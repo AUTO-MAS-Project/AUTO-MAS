@@ -171,6 +171,40 @@ def run_action(pipe) -> None:
             {"screenshots": screenshots, "notReady": not_ready, "error": error}
         )
         code = int(error is not None)
+    elif action == "list_windows":
+        # 通用动作：列出分身桌面上的全部窗口，按 MaaFramework 的枚举顺序；匹配规则由调用方在本进程做。
+        import win32gui
+        import win32process
+        from maa.toolkit import Toolkit
+
+        rows = []
+        for window in Toolkit.find_desktop_windows():
+            hwnd = getattr(window.hwnd, "value", window.hwnd)
+            hwnd = int(hwnd) if hwnd is not None else 0
+            if not win32gui.IsWindow(hwnd):
+                continue
+            rows.append(
+                [
+                    hwnd,
+                    str(window.class_name or ""),
+                    str(window.window_name or ""),
+                    win32process.GetWindowThreadProcessId(hwnd)[1],
+                ]
+            )
+        text = json.dumps(rows)
+        code = 0
+    elif action == "window_in_session":
+        import win32gui
+        import win32process
+
+        hwnd = int(arguments["hwnd"])
+        pid = (
+            win32process.GetWindowThreadProcessId(hwnd)[1]
+            if win32gui.IsWindow(hwnd)
+            else 0
+        )
+        text = json.dumps(bool(pid and process_session(pid) == session_id))
+        code = 0
     elif action == "maafw_windows":
         import win32gui
         import win32process
