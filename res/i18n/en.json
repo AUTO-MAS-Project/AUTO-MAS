@@ -3495,6 +3495,7 @@
   "core.scheduler.scope.accounts": "Accounts: {count}",
   "core.scheduler.scope.allAccounts": "All accounts",
   "core.scheduler.scope.allEntries": "All scripts",
+  "core.scheduler.scope.allSelected": "All selected",
   "core.scheduler.scope.collapse": "Hide accounts for {name}",
   "core.scheduler.scope.emptyQueue": "This queue has no scripts.",
   "core.scheduler.scope.expand": "Show accounts for {name}",

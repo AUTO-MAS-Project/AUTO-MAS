@@ -3495,6 +3495,7 @@
   "core.scheduler.scope.accounts": "{count} 个账号",
   "core.scheduler.scope.allAccounts": "全部账号",
   "core.scheduler.scope.allEntries": "全部托管",
+  "core.scheduler.scope.allSelected": "已全选",
   "core.scheduler.scope.collapse": "收起 {name} 的账号",
   "core.scheduler.scope.emptyQueue": "队列中没有托管",
   "core.scheduler.scope.expand": "展开 {name} 的账号",

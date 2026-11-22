@@ -3495,6 +3495,7 @@
   "core.scheduler.scope.accounts": "{count} アカウント",
   "core.scheduler.scope.allAccounts": "全アカウント",
   "core.scheduler.scope.allEntries": "全スクリプト",
+  "core.scheduler.scope.allSelected": "全選択済み",
   "core.scheduler.scope.collapse": "{name} のアカウントを折りたたむ",
   "core.scheduler.scope.emptyQueue": "このキューにスクリプトはありません。",
   "core.scheduler.scope.expand": "{name} のアカウントを展開",

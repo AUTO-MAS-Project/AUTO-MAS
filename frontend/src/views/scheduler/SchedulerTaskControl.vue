@@ -34,8 +34,8 @@
             />
           </label>
           <SchedulerRunScope
-            v-if="selectedTaskId"
-            :key="selectedTaskId"
+            :key="selectedTaskId ?? undefined"
+            :has-target="!!selectedTarget"
             :model-value="scope"
             :loading="scopeLoading"
             :error="scopeError"

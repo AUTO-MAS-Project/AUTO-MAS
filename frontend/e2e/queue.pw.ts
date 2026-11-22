@@ -155,7 +155,7 @@ test.describe('@queue @scheduler user queue', () => {
         .filter({ hasText: name })
         .click()
       const scopeButton = page.getByRole('button', { name: /Run scope/ })
-      await expect(scopeButton).toContainText('All scripts')
+      await expect(scopeButton).toHaveText('All selected')
       await scopeButton.click()
       const scope = page.getByRole('region', { name: 'Run scope' })
       const expand = (script: { name: string }) =>

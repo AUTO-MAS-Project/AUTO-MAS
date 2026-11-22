@@ -1,7 +1,7 @@
 <template>
   <a-popover
     :open="open"
-    trigger="click"
+    :trigger="triggerDisabled ? [] : 'click'"
     :placement="showAbove ? 'topLeft' : 'bottomLeft'"
     :arrow="false"
     :auto-adjust-overflow="false"
@@ -15,18 +15,22 @@
       ref="trigger"
       type="text"
       class="scope-invoker run-control-trigger"
-      :class="{ customized: ready && rows.length && !allChecked }"
-      :disabled="disabled"
+      :class="{ customized: summary && !error && rows.length && !allChecked }"
+      :disabled="triggerDisabled"
       :aria-expanded="open"
       :aria-controls="open ? panelId : undefined"
-      :aria-label="t('core.scheduler.scope.trigger', { value: summary })"
-      :title="t('core.scheduler.control.runScopeTitle')"
+      :aria-label="
+        triggerLabel ? t('core.scheduler.scope.trigger', { value: triggerLabel }) : undefined
+      "
+      :title="summary"
       @keydown.down.prevent="setOpen(true)"
       @keydown.esc="setOpen(false)"
     >
       <span class="invoker-content">
         <FilterOutlined class="invoker-filter" />
-        <span class="invoker-value">{{ summary }}</span>
+        <span class="invoker-value">{{
+          triggerLabel ?? t('core.scheduler.control.runScopeTitle')
+        }}</span>
         <DownOutlined class="invoker-arrow" :rotate="open ? 180 : 0" />
       </span>
     </a-button>
@@ -146,6 +150,7 @@ import RunScopeEntry from './components/RunScopeEntry.vue'
 import RunScopeStartPoint from './components/RunScopeStartPoint.vue'
 
 const props = defineProps<{
+  hasTarget: boolean
   modelValue?: TaskScopeDraft
   loading?: boolean
   error?: string
@@ -153,6 +158,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: TaskScopeDraft]; refresh: [] }>()
 const draft = computed(() => props.modelValue)
+const triggerDisabled = computed(() => !props.hasTarget || props.disabled)
 const { t } = useI18n()
 const open = ref(false)
 const pickingStart = ref(false)
@@ -201,9 +207,9 @@ const selectedCount = computed(() =>
     0
   )
 )
-const summary = computed(() => {
-  if (props.error) return t('core.scheduler.scope.loadError')
-  if (!ready.value) return t('core.scheduler.scope.loading')
+// 同一目标重读时保留已确认的摘要；切换目标会按任务 ID 重建组件。
+const selectionSummary = computed<string | undefined>(previous => {
+  if (!ready.value) return previous
   if (!rows.value.length) return t('core.scheduler.scope.noEntries')
   if (!chosenEntries.value) return t('core.scheduler.scope.none')
   if (rows.value.some(row => row.unavailable && row.entry.selection !== 'none'))
@@ -216,6 +222,16 @@ const summary = computed(() => {
     return t('core.scheduler.scope.selectedAccounts', { count: selectedCount.value })
   return t('core.scheduler.scope.selectedEntries', { count: chosenEntries.value })
 })
+const summary = computed(() => {
+  if (!props.hasTarget) return undefined
+  return props.error ? t('core.scheduler.scope.loadError') : selectionSummary.value
+})
+const triggerLabel = computed(() =>
+  // 新选任务默认全选，读取名单不会改变选择意图。
+  props.hasTarget && !props.error && (!draft.value || allChecked.value)
+    ? t('core.scheduler.scope.allSelected')
+    : summary.value
+)
 
 function setOpen(value: boolean) {
   if (value) update()
@@ -298,7 +314,8 @@ function setUser(entryUid: string, userUid: string, checked: boolean) {
 
 <style scoped>
 .scope-invoker.ant-btn {
-  display: inline-grid;
+  display: grid;
+  flex-shrink: 0;
   align-items: center;
   width: 146px;
   padding: 0 12px;
@@ -306,7 +323,7 @@ function setUser(entryUid: string, userUid: string, checked: boolean) {
 .scope-invoker.ant-btn > .invoker-content {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr) 12px;
-  column-gap: 8px;
+  column-gap: 4px;
   align-items: center;
   text-align: start;
   font-size: 14px;
