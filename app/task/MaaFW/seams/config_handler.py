@@ -18,7 +18,7 @@
 三种托管类型（通用 MFW、M9A、MSS）都从这里取（M9A 经自己的 ``config_hooks``）：
 :func:`build_maafw_config_handler` 按确切类型与属主名各造一份配置回调，:func:`load_maafw_restore_pools`
 给出 MFW 的恢复池。有自己流程的专项要换掉其中一项时用 ``dataclasses.replace``（``ScriptConfigHandler``
-是 frozen dataclass），恢复池用 ``tools/restore_service`` 公开的部件自己拼，不往这里加参数。
+是 frozen dataclass），恢复池用 ``seams/restore_service`` 公开的部件自己拼，不往这里加参数。
 
 **启动期就会被导入**（``builtin_registration`` 导入各 registration、调 ``create_config_handler()``），所以
 顶层只放轻量导入，回调的实现都在函数里延迟导入。
@@ -102,7 +102,7 @@ def expected_game_kind(script, patch):
 
 
 def load_maafw_restore_pools() -> list[ConfigRestorePool]:
-    """MFW 的两个恢复池（MAS 账号字段池、项目配置池），见 ``tools/restore_service``。"""
+    """MFW 的两个恢复池（MAS 账号字段池、项目配置池），见 ``seams/restore_service``。"""
 
     from app.task.MaaFW.seams.restore_service import RESTORE_POOLS
 

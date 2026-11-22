@@ -8,13 +8,13 @@ agent 环境、worker 运行、结果判定、通知正文、失败截图、周�
 
 MSS 托管不经 MFW 管理器运行，而是走本目录自己的两层流程（MFW 的风味钩子第 11 步已删）。**账号运行的流程三个专项（通用 MFW、
 M9A、MSS）各写一份**，互不继承、互不导入（MSS 不导入 `app.task.M9A` 的任何模块，结构与 M9A 相同的地方也各写
-一份）；共用的只有 `app/task/MaaFW/tools/` 下吃普通数据的叶子（`run_settings`、`run_messages`、`run_notices`、
+一份）；共用的只有 `app/task/MaaFW/blocks/`（积木）与 `seams/`（宿主接缝）下吃普通数据的叶子（`run_settings`、`run_messages`、`run_notices`、
 `run_redaction`、`attempt_ledger`、`host_client`、`desktop_game`、`project_environment`、`resource_repair`、
 `project_path.release_run_reservation`、`task_selection.build_arranged_plan`、`config_handler` 等）。
 
 - `registration.py`：按确切类型 `MSSConfig` 登记。`manager_factory` → `manager.MSSManager`（在函数里现导入，
   启动期只导入登记本身）；配置回调与恢复池**仍是通用的**（`build_maafw_config_handler(MSSConfig, owner=MSS_OWNER)`、
-  `load_maafw_restore_pools`，取自中立模块 `MaaFW/tools/embedded/config_handler`）：MSS 没有保存前整理。另有托管属主
+  `load_maafw_restore_pools`，取自中立模块 `MaaFW/seams/config_handler`）：MSS 没有保存前整理。另有托管属主
   `mss_adapter`（`register_owner()`），它还给出导入 / 克隆前的项目校验（`rules.is_mss_project`，拒收文案的称呼是
   `TYPE_KEY`）；MSS 没有规则表，预览用空表。
 - `manager.py`：`MSSManager`，脚本级编排（运行前检查：类型闸门只认 `MSSConfig`、架构自检、项目会话
@@ -47,9 +47,9 @@ M9A、MSS）各写一份**，互不继承、互不导入（MSS 不导入 `app.ta
 两组打码值；以及上面那几条 MSS 自己的规矩（计划表、活动、爬塔、重试剔除）。
 
 **边界**（本地守卫 `tests/task/test_mss_flow_guard.py`、`test_mss_registration_guard.py`）：
-- 本目录不导入 `app.task.MaaFW.embedded_manager`、`tools/embedded/runner_task`、`app.task.MaaFW.registration`、
+- 本目录不导入 `app.task.MaaFW.embedded_manager`、`runner_task`、`app.task.MaaFW.registration`、
   `app.task.M9A`（`tools/embedded/flavor`、`flavor_support` 第 11 步已删，守卫的禁止名单留着防止加回来）；
-  `registration.py` 可以导入 `app.task.MaaFW.owner_entry`（共用的宿主胶水）。活动探测在 `account_run` 里只有一处 `await stella.…()`。
+  `registration.py` 可以导入 `app.task.MaaFW.seams.owner_entry`（共用的宿主胶水）。活动探测在 `account_run` 里只有一处 `await stella.…()`。
 - 不抽带钩子、回调插槽或抽象方法的共用主循环，不造「账号运行上下文」大对象：重试循环、`check` 的步骤先后、
   `final_task` 的 finally 链、设备配置的拼装顺序、请求组装都在本目录写一份（`_PlanHead` 只是建计划前后两段之间
   传的一小份普通数据，不跨出 `_load_run_state`）。
@@ -71,10 +71,10 @@ M9A、MSS）各写一份**，互不继承、互不导入（MSS 不导入 `app.ta
   `MaaFW/registration`（为属主导入的 `rules.py` 只依赖解析一侧）；调过 `create_config_handler()` 之后也一样。
 
 **合并上游时要手工同步的两个文件**：同一份逻辑在通用流程、M9A、MSS 各有一份（第 11 步删风味以后一直如此）。合并上游
-dev 时，凡是改了 `app/task/MaaFW/tools/embedded/runner_task.py` 的，要把同样的改动搬进本目录的 `account_run.py`
+dev 时，凡是改了 `app/task/MaaFW/runner_task.py` 的，要把同样的改动搬进本目录的 `account_run.py`
 （和 M9A 的那份）；改了 `app/task/MaaFW/embedded_manager.py` 的，搬进 `manager.py`（同上）。建计划那段（`runner_task`
 的 `_load_run_state_for_check` / `_build_run_plan`）在本目录拆成了 `_load_run_state` / `_plan_head` / `_plan_tail`，
-改动按所在的段落搬。改动落在 `tools/` 叶子上的（例如 #2107 的预下载提前返回在 `project_session.discover_prefetch`）
+改动按所在的段落搬。改动落在 `blocks/`、`seams/` 叶子上的（例如 #2107 的预下载提前返回在 `project_session.discover_prefetch`）
 三份都调它，不用搬。合并说明里逐个列出同步了哪些函数；合并后跑金样，变红时怎么审见
 `app/task/MaaFW/AGENTS.md`「合并上游」。
 
@@ -129,7 +129,7 @@ dev 时，凡是改了 `app/task/MaaFW/tools/embedded/runner_task.py` 的，要�
 `USER_CONFIG_CLASS`（`FLAVOR` 类属性第 11 步已删）；`MSSUserConfig(MaaFWUserConfig)` 多一项 `Info.PlanMode`（计划表消费方
 `mss`，`PLAN_BOOK` 的 `MSSPlanConfig`）与 `Info.IfActivityFirst`（活动优先）。
 本目录的 `registration.py` 按确切类型 `MSSConfig` 登记运行（第 10 步起是自己的 `MSSManager`，见上文）、配置回调与
-恢复池（与通用 MFW 同一套，从中立模块 `MaaFW/tools/embedded/config_handler` 取）以及托管属主 `mss_adapter`（见
+恢复池（与通用 MFW 同一套，从中立模块 `MaaFW/seams/config_handler` 取）以及托管属主 `mss_adapter`（见
 `app/task/MaaFW/AGENTS.md`「托管属主登记」）；宿主按确切类型查，不靠继承。
 
 前端托管页 / 账号页是 MSS 的专属页面（`frontend/src/views/mss/`：`MSSScriptEdit.vue`、`MSSUserEdit.vue`，
@@ -139,6 +139,6 @@ dev 时，凡是改了 `app/task/MaaFW/tools/embedded/runner_task.py` 的，要�
 
 只适配桌面端：模拟器端的星塔旅人启动不了游戏，托管页在控制方式一步写明原因；引擎不拦 Adb。
 
-要给 MSS 加任何"专项行为"之前先问：这是不是所有 MaaFW 项目都该有的？是就做进引擎（`app/task/MaaFW/tools/` 下吃
+要给 MSS 加任何"专项行为"之前先问：这是不是所有 MaaFW 项目都该有的？是就做进引擎（`app/task/MaaFW/blocks/` 下吃
 普通数据的叶子，三个专项的流程都调）；不是就写进本目录自己的流程，`app/task/MaaFW/` 里不出现 MSS 逻辑；MSS 对项目
 的要求（只收 MSS 项目）经 `registration.py` 的属主给出。MFW 的风味钩子第 11 步已删，不要加回来。

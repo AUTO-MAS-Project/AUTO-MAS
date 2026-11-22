@@ -19,7 +19,7 @@
 
 密码字段这件事分三处（迁移方案 §3.7），本模块只管宿主这一处——加解密，以及从配置对象里取出
 任务快照的原值（``user_task_snapshot`` / ``script_task_snapshots``）：哪些选项是密码、从快照里
-收集要打码的值在解析一侧（``tools/core/interface/password_values``，密文经 ``DPAPI_SECRET_OPENER``
+收集要打码的值在解析一侧（``blocks/maafw_interface/interface/password_values``，密文经 ``DPAPI_SECRET_OPENER``
 交给它认读）；按值打码在运行一侧（``run_redaction``）。
 """
 

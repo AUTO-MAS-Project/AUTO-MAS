@@ -18,7 +18,7 @@
 
 """运行前更新的「预检备忘」闸门：上次装不上的版本，这次先轻探再决定要不要更新。
 
-新版本登记前在 staging 上真建运行环境（``tools/embedded/precheck.py``），建不出来
+新版本登记前在 staging 上真建运行环境（``blocks/maafw_project_update/host/precheck.py``），建不出来
 就丢掉新版本并按谱系 + 版本写一份备忘（``precheck_memo.py``）。之后每次运行前更新走到「确认有新版本」
 那一步时，核心包会 await 这里构造的闸门：
 

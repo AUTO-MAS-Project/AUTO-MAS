@@ -114,8 +114,8 @@ D:/Dev/AUTO-MAS/
 - ZzzOd：[manager.py](../app/task/ZzzOd/manager.py) 及同目录 AutoProxy、ScriptConfig；恢复服务由宿主装配提供。
 - BAAH：[manager.py](../app/task/BAAH/manager.py) 及同目录 AutoProxy；不假定所有专项支持全部模式。
 - Whimbox：[manager.py](../app/task/Whimbox/manager.py) 及同目录 AutoProxy、ScriptConfig。
-- MaaFW：[embedded\_manager.py](../app/task/MaaFW/embedded_manager.py) 与 [runner\_task.py](../app/task/MaaFW/tools/embedded/runner_task.py) 管理嵌入式 worker，只跑通用 MFW 托管。
-- M9A、MSS：各自的 [M9A/manager.py](../app/task/M9A/manager.py) 与 [MSS/manager.py](../app/task/MSS/manager.py) 及同目录 account\_run，按确切类型在各自的 registration.py 登记，共用 `app/task/MaaFW/tools/` 下的叶子。
+- MaaFW：[embedded\_manager.py](../app/task/MaaFW/embedded_manager.py) 与 [runner\_task.py](../app/task/MaaFW/runner_task.py) 管理嵌入式 worker，只跑通用 MFW 托管。
+- M9A、MSS：各自的 [M9A/manager.py](../app/task/M9A/manager.py) 与 [MSS/manager.py](../app/task/MSS/manager.py) 及同目录 account\_run，按确切类型在各自的 registration.py 登记，共用 `app/task/MaaFW/blocks/` 与 `seams/` 下的叶子。
 
 本文逐方法解释公共调度骨架；专项内部的游戏参数转换、文件格式处理、日志解析和截图算法不逐个展开，入口按上述文件定位。
 

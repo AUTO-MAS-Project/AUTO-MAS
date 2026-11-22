@@ -473,7 +473,7 @@ def reconcile_after_project_update(
     """项目更新提交之后跑一轮回收；maafw 版本换了就豁免旧版本的宽限。
 
     提交前的运行环境预检已经把新版本的 runtime 建好了（见
-    ``tools/embedded/precheck.py``），所以此时删旧的不会让项目暂时跑不了。
+    ``blocks/maafw_project_update/host/precheck.py``），所以此时删旧的不会让项目暂时跑不了。
     阻塞调用，放线程里跑；``project_paths`` 是权威集合，由调用方在事件循环
     线程上先算好传进来（``live_projects.reconcile_in_background``）。
     """

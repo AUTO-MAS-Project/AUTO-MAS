@@ -394,7 +394,7 @@ class MaaFWMaintenanceService:
 
         与 ``clean_agent_venvs`` 同一个道理放在启动清理里：判定依赖「当前
         全部脚本配置」这个全局状态，只有真实启动时它才可信。规则与保守条件见
-        ``tools/embedded/pool_reconcile.py``；这里只负责把权威集合（属主确认仍在的托管的
+        ``blocks/maafw_agent_env/host/pool_reconcile.py``；这里只负责把权威集合（属主确认仍在的托管的
         项目目录加判定不了的视图，``live_projects.keep_project_paths``）交过去，并在脚本表
         疑似没加载起来、属主答不上来时弃权。
         """

@@ -18,7 +18,7 @@
 
 """内置 MaaEnd 复用的 interface 标签可读化与 MXU 选项值换算（解析一侧）。
 
-从 ``tools/embedded/shell_instances.py`` 原样切出，私有名 ``_Labels``、
+从 ``shell_instances.py`` 原样切出，私有名 ``_Labels``、
 ``_mxu_option_values`` 改成公开名 ``Labels``、``mxu_option_values``；外壳文件扫描与宿主依赖
 留在 ``shell_instances``，它从这里导入这几样。
 """

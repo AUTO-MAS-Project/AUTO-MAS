@@ -7,7 +7,7 @@ MaaEnd v2.29.0 打包了 MaaFramework v5.14.0-beta.1 的原生库，binding 被�
 
 备忘按**谱系 + 目标版本**记：``data/mfw/.payloads/<谱系>/precheck-<版本>.json``。
 它是整个组共有的——一个成员预检过某版本失败，组里暂时都不再为它下包。只由本包和
-宿主侧的 ``tools/embedded/precheck_gate.py`` 读写。结构::
+宿主侧的 ``blocks/maafw_project_update/host/precheck_gate.py`` 读写。结构::
 
     {
       "targetVersion": "v2.29.0",

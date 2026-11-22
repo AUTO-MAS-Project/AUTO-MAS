@@ -4,7 +4,7 @@
 
 """内置专项的托管属主入口：按**确切类型**认领自己名下的托管（专项一侧）。
 
-项目更新一侧（``tools/embedded/owners.py``）只经这里交出的普通数据知道托管还在不在、读写项目记录；
+项目更新一侧（``blocks/maafw_project_update/host/owners.py``）只经这里交出的普通数据知道托管还在不在、读写项目记录；
 它不拿配置类，也不拿配置对象。三个内置专项各登记一个（通用 MFW 在 ``app/task/MaaFW/registration.py``，
 M9A、MSS 在各自的 ``registration.py``）：认领用 ``type(config) is <类型>``，类型每次现取，不靠继承——
 以后 M9A、MSS 的配置类不再继承 ``MaaFWConfig``，这里不用改。

@@ -1,7 +1,7 @@
 """运行这一块的按值打码：把密码原文在日志里可能出现的写法换成占位。
 
 密码字段这件事分三处（迁移方案 §3.7）：哪些选项是密码、从快照里收集值归解析
-（``tools/core/interface/password_values``）；加解密（DPAPI）在宿主（``option_secrets``）；
+（``blocks/maafw_interface/interface/password_values``）；加解密（DPAPI）在宿主（``option_secrets``）；
 按值打码归运行（本模块）。``plan_run`` 复制原生日志、转发 worker 输出，``pretask_run`` 的输出，
 ``project_logs`` 的项目日志，``resource_failure`` 摘录失败原因都用这里的函数；要打码的值由调用方
 （账号流程）经下面的 ``run_secret_values`` / ``project_log_secret_variants`` 算好、经 ``secret_log_variants``

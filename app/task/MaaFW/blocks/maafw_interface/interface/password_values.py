@@ -1,8 +1,8 @@
 """按 interface 认出密码字段（PI v2.10.0 ``password: true``），从任务快照的普通数据里收集要打码的值。
 
 密码字段这件事分三处（迁移方案 §3.7）：哪些选项是密码、从快照里收集值归解析（本模块）；
-加解密（DPAPI）在宿主（``tools/embedded/option_secrets``）；按值打码归运行
-（``tools/embedded/run_redaction``）。本模块只依赖标准库与 interface 的模型，**不引宿主的
+加解密（DPAPI）在宿主（``seams/option_secrets``）；按值打码归运行
+（``blocks/maafw_runner/host/run_redaction``）。本模块只依赖标准库与 interface 的模型，**不引宿主的
 加解密**：快照里的密文怎么认、怎么解开，由调用方经 ``MaaFWSecretOpener`` 交进来。
 
 快照是一整份 ``Task.TaskSnapshot``（JSON 字符串或 dict）：密码字段的值在

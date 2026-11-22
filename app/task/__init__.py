@@ -54,8 +54,8 @@ if TYPE_CHECKING:
 # 惰性导出（与 app/core/__init__.py 同一 idiom）。
 #
 # 这里必须惰性：第二层的 worker 子进程用的是 runtime pool 的隔离 venv
-# （只有 maafw 与项目依赖），它以 `-m app.task.MaaFW.tools.core.
-# runner.worker` 启动时，Python 会先执行本文件；若在此
+# （只有 maafw 与项目依赖），它以 `-m app.task.MaaFW.blocks.maafw_runner.
+# core.runner.worker` 启动时，Python 会先执行本文件；若在此
 # 急切导入九个 manager，就会连带拉起 app.core -> httpx/loguru/fastapi，
 # 而那些包在隔离 venv 里并不存在，worker 起不来。
 #

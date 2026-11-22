@@ -65,7 +65,7 @@ def _resolve_requirement(project_path: Path) -> str | None:
     """项目此刻（已是新版本）要钉的 maafw requirement；只进备忘字段。"""
 
     try:
-        # 要读项目自带的 DLL，逻辑在原生库识别库（tools/core/native）里；只在真要写备忘时才导入。
+        # 要读项目自带的 DLL，逻辑在原生库识别库（blocks/maafw_native）里；只在真要写备忘时才导入。
         from app.task.MaaFW.blocks.maafw_native.requirement import (
             resolve_project_maafw_requirement,
         )

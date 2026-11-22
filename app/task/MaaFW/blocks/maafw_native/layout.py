@@ -1,6 +1,6 @@
 """MFW 在 AUTO-MAS 工作目录下的目录布局常量（只用标准库）。
 
-agent 环境、worker 与宿主接缝（``tools/embedded/embedded_project``）都要用；项目更新仍是
+agent 环境、worker 与宿主接缝（``blocks/maafw_project_update/host/embedded_project``）都要用；项目更新仍是
 这些目录唯一的写入方。
 """
 

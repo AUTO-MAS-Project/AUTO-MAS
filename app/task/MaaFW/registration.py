@@ -20,7 +20,7 @@
 跑自己的流程与配置回调（``app/task/M9A/manager``、``config_hooks``）；MSS 第 10 步起跑自己的流程
 （``app/task/MSS/manager``），配置回调与恢复池仍是同一套。这里的 ``build_manager``（MFW 管理器）只跑通用
 MFW。配置回调与恢复池的实现在中立模块
-``tools/embedded/config_handler``，这里的 ``build_config_handler`` / ``load_restore_pools`` 只是转出名。
+``seams/config_handler``，这里的 ``build_config_handler`` / ``load_restore_pools`` 只是转出名。
 """
 
 from __future__ import annotations
@@ -73,12 +73,12 @@ def build_manager(script_item: ScriptItem) -> TaskExecuteBase:
 def build_config_handler(
     config_type: type[ConfigEntry] = MaaFWConfig, *, owner: str = MAAFW_OWNER
 ) -> ScriptConfigHandler:
-    """（转出名）一种托管类型的配置回调，实现在 ``tools/embedded/config_handler``。"""
+    """（转出名）一种托管类型的配置回调，实现在 ``seams/config_handler``。"""
 
     return build_maafw_config_handler(config_type, owner=owner)
 
 
-# （转出名）MFW 的恢复池，实现在 ``tools/embedded/config_handler``
+# （转出名）MFW 的恢复池，实现在 ``seams/config_handler``
 load_restore_pools = load_maafw_restore_pools
 
 

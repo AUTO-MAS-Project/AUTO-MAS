@@ -1,7 +1,7 @@
 """准备与确认一个项目的运行环境（运行池 base + binding，加上项目的 agent 环境）。
 
 宿主的运行前 / 运行后确认、更新预检、编辑页手动准备都走 :func:`prepare_project_environment`
-（宿主侧入口是 ``tools/embedded/project_environment.prepare_project_environment_sync`` 与
+（宿主侧入口是 ``blocks/maafw_project_update/host/project_environment.prepare_project_environment_sync`` 与
 ``api_service/agent_env``）。它借一次运行环境、备好 agent、记下项目输入指纹，返回前一定把
 租约还掉；之后真跑时 worker 按同一套推导借到同一份 base 与 binding。
 """

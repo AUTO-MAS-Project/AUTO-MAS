@@ -2,7 +2,7 @@
 
 协议行与 ``log`` / ``result`` / ``error`` 一样是 worker stdout 上的一行 JSON：
 ``{"type": "record", "data": <下面某个事件>}``。事件的形状、阶段名、结局与失败类别只在
-这里定义；宿主（``tools/embedded/run_record.py``）与 worker（``runner.py``）都从这里取，
+这里定义；宿主（``blocks/maafw_runner/host/run_record.py``）与 worker（``runner.py``）都从这里取，
 换传输通道时只搬这一处。
 
 只记已有判定能可靠得出的东西：阶段是 ``MaaFWRunner`` 里真实存在的初始化步骤，任务结局

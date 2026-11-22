@@ -524,7 +524,7 @@ async def update_maafw_project_if_needed(
     回滚的东西）；**登记之后不再响应取消**，切换做完再返回。一律抛
     ``cancelled=True`` 的 :class:`MaaFWProjectUpdateError`。
     ``github_mirror_urls``：下载地址 → ``(名字, 加速地址)`` 列表，只对 GitHub
-    源生效。镜像清单与开关都在宿主侧（``tools/embedded/update_mirrors.py``），
+    源生效。镜像清单与开关都在宿主侧（``blocks/maafw_project_update/host/update_mirrors.py``），
     核心包只管按顺序试。``projection`` / ``project_lock_*`` 只为签名兼容留着：
     新载荷恒按投影白名单落地，互斥由宿主的谱系锁负责。
     ``allow_misnumbered_rollback``：当前版本是项目发错的高主版本号时按权威源回到更低的
@@ -580,7 +580,7 @@ async def update_maafw_project_if_needed(
         # 调用方既可以用 ``mirror_cdk=`` 参数给 CDK，也可以塞进 source_config；
         # 前者为准只在后者为空时生效。不能用 ``setdefault``：schema 会把未填的
         # CDK 序列化成空串而不是缺键。（这里说的不是全局兜底——凭据只看托管级，
-        # 合并发生在调用方，见 tools/embedded/update_credentials.py。）
+        # 合并发生在调用方，见 blocks/maafw_project_update/host/update_credentials.py。）
         merged_source_config["mirror_cdk"] = inherited_cdk
     if not str(merged_source_config.get("channel") or "").strip():
         merged_source_config["channel"] = update_channel

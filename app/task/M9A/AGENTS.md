@@ -6,7 +6,7 @@
 ## 自己的流程（MFW 插件化迁移第 9 步起，总方案 §3.7）
 
 M9A 托管不经 MFW 管理器运行，而是走本目录自己的两层流程（MFW 的风味钩子第 11 步已删）。**账号运行的流程三个专项（通用 MFW、
-M9A、MSS）各写一份**，互不继承、互不导入；共用的只有 `app/task/MaaFW/tools/` 下吃普通数据的叶子
+M9A、MSS）各写一份**，互不继承、互不导入；共用的只有 `app/task/MaaFW/blocks/`（积木）与 `seams/`（宿主接缝）下吃普通数据的叶子
 （`run_settings`、`run_messages`、`run_notices`、`run_redaction`、`attempt_ledger`、`host_client`、`desktop_game`、
 `project_environment`、`resource_repair`、`project_path.release_run_reservation`、`task_selection.build_arranged_plan`、
 `config_handler`、`restore_service` 公开的部件等）。
@@ -45,9 +45,9 @@ M9A、MSS）各写一份**，互不继承、互不导入；共用的只有 `app/
 架构检查；脚本前后任务、遥测；两组打码值；以及上面那几条 M9A 自己的规矩（游戏更新、登录、首任务、重试剔除）。
 
 **边界**（本地守卫 `tests/task/test_m9a_flow_guard.py`、`test_m9a_registration_guard.py`）：
-- 本目录不导入 `app.task.MaaFW.embedded_manager`、`tools/embedded/runner_task`、`app.task.MaaFW.registration`、
+- 本目录不导入 `app.task.MaaFW.embedded_manager`、`runner_task`、`app.task.MaaFW.registration`、
   `app.task.MSS`（`tools/embedded/flavor`、`flavor_support` 第 11 步已删，守卫的禁止名单留着防止加回来）；
-  `registration.py` 可以导入 `app.task.MaaFW.owner_entry`（共用的宿主胶水）。
+  `registration.py` 可以导入 `app.task.MaaFW.seams.owner_entry`（共用的宿主胶水）。
 - 不抽带钩子、回调插槽或抽象方法的共用主循环，不造「账号运行上下文」大对象：重试循环、`check` 的步骤先后、
   `final_task` 的 finally 链、设备配置的拼装顺序、请求组装都在本目录写一份。
 - 照旧路径**原样保留**、不要顺手改的：logger 名「MaaFW 插件自动代理」/「MFW 内置运行」（配置回调里的整理是
@@ -68,10 +68,10 @@ M9A、MSS）各写一份**，互不继承、互不导入；共用的只有 `app/
   导入 `config_hooks` 本身。
 
 **合并上游时要手工同步的两个文件**：同一份逻辑在通用流程与本目录各有一份（第 11 步删风味以后一直如此）。
-合并上游 dev 时，凡是改了 `app/task/MaaFW/tools/embedded/runner_task.py` 的，要把同样的改动搬进 `account_run.py`；改了
+合并上游 dev 时，凡是改了 `app/task/MaaFW/runner_task.py` 的，要把同样的改动搬进 `account_run.py`；改了
 `app/task/MaaFW/embedded_manager.py` 的，搬进 `manager.py`（MSS 也有自己的流程，同样搬进
 `app/task/MSS/account_run.py` / `manager.py`，见 `app/task/MSS/AGENTS.md`）。合并说明里逐个列出同步了哪些函数。
-改动落在 `tools/` 叶子上的（例如 #2107 的预下载提前返回在 `project_session.discover_prefetch`）三份都调它，不用搬。
+改动落在 `blocks/`、`seams/` 叶子上的（例如 #2107 的预下载提前返回在 `project_session.discover_prefetch`）三份都调它，不用搬。
 合并后跑金样，变红时怎么审见 `app/task/MaaFW/AGENTS.md`「合并上游」。
 
 **对拍**（迁移期间的本地测试，不随 PR 提交；详见它自己的 `tests/task/mfw_parity/README.md`）：从树根用本树解释器跑
@@ -96,7 +96,7 @@ M9A、MSS）各写一份**，互不继承、互不导入；共用的只有 `app/
   一律不支持——四个入口都按它判，不要再各自读资源名。下面四个入口都调它，不要另写一份：
   运行前排队列、启动整理、旧版迁移 / beta.1 补救、写 `Task.TaskSnapshot` 的保存入口。
   「资源是不是官服」在运行前排队列、启动整理、保存入口三处一律取引擎的
-  `tools/core/runner/run_plan.resolve_run_selection`（脚本资源留空时按控制器回落：PC 控制器回落到
+  `blocks/maafw_interface/runner/run_plan.resolve_run_selection`（脚本资源留空时按控制器回落：PC 控制器回落到
   「国际服（EN）」，不是 `interface.resource[0]`）；排队列与保存前整理取 `resource_name` 参数，由调用方
   （账号流程、`config_hooks`）算好传入，启动整理自己按原始 JSON 调它。别在 M9A 里另写回落。
   **保留态的判据是队列内容本身**（有效切号 ≥ 2 且资源支持切号），不是标记：普通保存交回同一份队列照样判成

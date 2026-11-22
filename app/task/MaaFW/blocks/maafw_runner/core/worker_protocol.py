@@ -6,7 +6,7 @@ worker（``runner/worker.py``）跑在运行池的隔离 venv 里，``runner.py`
 详情行前缀定义在那里）：它在 worker 的导入闭包里（见 MaaFW/AGENTS.md），
 宿主导入它也不会拉起 runner 子树。
 
-传输（宿主 ``tools/embedded/runner_task.py`` ↔ ``runner/worker.py``）：
+传输（宿主 ``runner_task.py`` ↔ ``runner/worker.py``）：
 
 - **job**：宿主把运行计划等写进 worker 的 stdin（UTF-8 JSON），写完就关；不落盘——计划里可能有
   解密后的密码选项。``decode_job`` / ``encode_job`` 是两头的读写。

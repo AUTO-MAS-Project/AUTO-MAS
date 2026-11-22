@@ -600,7 +600,7 @@ class MaaFWRuntimePool:
     ) -> dict[str, Any]:
         """按引用对账回收池里过时的东西（取代按 lastUsedAt 宽限 + keep_latest 的 gc）。
 
-        权威清单由宿主侧算好传进来（核心包不读 Config，见 ``tools/embedded/pool_reconcile``）：
+        权威清单由宿主侧算好传进来（核心包不读 Config，见 ``blocks/maafw_agent_env/host/pool_reconcile``）：
 
         - ``valid_runtime_ids``：当前宿主身份下的 base runtime id（所有项目共用一个；
           宿主是 embeddable 且托管解释器未装时算不出，宿主侧整轮弃权不会调到这里）。

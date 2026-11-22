@@ -78,7 +78,7 @@ BGI 前两次失败为后端旧类与延迟加载的新专项混用，重启后�
 
 先保留 `run_report` 的重试时间线、脱敏人话原因、事件提示、失效任务及无运行记录退路。
 当前时间线进入个人统计 `task_details`，代理结果只有用户行；内部统一不能擅自把时间线追加到全局任务报告。
-通过独立结构化接口对接已有报告目标，保留截图、通知条件和 worker 隔离；不得让 `tools/core` 导入 log_box 或宿主模块。
+通过独立结构化接口对接已有报告目标，保留截图、通知条件和 worker 隔离；不得让 `app/task/MaaFW/blocks` 导入 log_box 或宿主模块。
 对多次重试、失败、未开始、取消、跳过和无记录场景逐字比较旧新报告，并运行 MaaFW 核心边界测试。
 
 ## 本轮验证记录
@@ -108,7 +108,7 @@ Ruff check 与格式化通过，git diff --check 通过。
 
 参考代码：HSR/AutoProxy.py 的 _format_current_user_module_results；Whimbox/tools/marker.py
 和 tools/notify.py；MAA/tools/notify.py；SRC/AutoProxy.py；general/AutoProxy.py；
-MaaFW/tools/embedded/runner_task.py 的 _run_record_call/_build_task_details。
+MaaFW/runner_task.py 的 _run_record_call/_build_task_details。
 
 建议第一个 PR 再补的最小契约：对宿主公开可查询的收尾结果，至少区分禁用、成功空结果、
 成功有结果、失败；绑定/读取失败与交付失败应可诊断。当前 close 返回 None 且异常仅记录日志，

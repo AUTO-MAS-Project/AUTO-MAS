@@ -198,7 +198,7 @@ def _maafw_update_source_config(script_config: Any) -> dict[str, str]:
 
     只包含用户可配置的三项：``package_source``（托管级 ``Update.Source``，
     Mirror 酱 / GitHub）、``mirror_cdk``、``channel``。三项**都只看托管级、
-    不做全局兜底**，与 ``tools/embedded/update_credentials.py`` 用的是同一个
+    不做全局兜底**，与 ``blocks/maafw_project_update/host/update_credentials.py`` 用的是同一个
     解析函数，保证手动更新与运行时自动更新的行为一致。
 
     仓库、tag、资产文件名等 GitHub 参数不再由用户填写，由核心包从

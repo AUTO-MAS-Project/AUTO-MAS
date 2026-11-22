@@ -19,7 +19,7 @@
 """MaaFW 内置运行任务管理器。
 
 MAS 在自己的 worker 子进程内加载项目的 MaaFramework 直接驱动，不启动项目
-自带的 UI 外壳；编排实现在 ``tools/embedded/runner_task.py``。这是
+自带的 UI 外壳；编排实现在 ``runner_task.py``。这是
 ``task_manager`` 对 MaaFW 脚本的唯一分派目标。
 
 ``tools/embedded.runner_task`` 会经 runner 包 import ``maa``（导入即打开 DLL），
@@ -27,7 +27,7 @@ MAS 在自己的 worker 子进程内加载项目的 MaaFramework 直接驱动，
 这个代价。
 
 打开项目（拿预约、补视图）、运行前更新与运行环境确认、收尾项目、队列预下载都在
-``tools/embedded/project_session.py``：这里只取配置、组装普通数据的入参、调它、把它的
+``blocks/maafw_project_update/host/project_session.py``：这里只取配置、组装普通数据的入参、调它、把它的
 事件转成日志与进度点，再按结局写回项目记录、发通知、记「跳过」。
 """
 

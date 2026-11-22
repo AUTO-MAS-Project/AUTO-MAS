@@ -1,15 +1,16 @@
 # `app/task/MaaFW` 说明
 
-MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFramework 项目都由它运行。
+MaaFW 是**通用引擎**加上通用 MFW 专项：任何带 `interface.json` 的 MaaFramework 项目都由它运行。引擎在
+`blocks/`（五块积木），本目录根上是通用 MFW 专项自己的管理器、账号流程与端点，见下面「布局与边界」第一条。
 MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配置备份恢复分别覆盖 MAS 账号字段侧车和项目 config/，见末节。
 本文件只记录代码里读不出来、但改错了会出事的约束。
 
 ## 布局与边界
 
 - `embedded_manager.py`：宿主侧管理器——任务调度、更新时机、账号配置副本与写回；打开项目、运行前更新、
-  运行环境确认、收尾项目与预下载调 `tools/embedded/project_session.py`（见下文）。
-- `tools/embedded/maintenance.py`：宿主资源维护入口；公共 Config 注入完整加载状态与保留天数，托管只经属主登记
-  （`tools/embedded/owners.py`，见下面「托管属主登记」）问，`migration.py` 承接老副本采纳、组版本统一和旧更新状态清理。
+  运行环境确认、收尾项目与预下载调 `blocks/maafw_project_update/host/project_session.py`（见下文）。
+- `blocks/maafw_project_update/host/maintenance.py`：宿主资源维护入口；公共 Config 注入完整加载状态与保留天数，托管只经属主登记
+  （`blocks/maafw_project_update/host/owners.py`，见下面「托管属主登记」）问，`migration.py` 承接老副本采纳、组版本统一和旧更新状态清理。
   main 编排迁移后的启动清理，timer 触发每日原生日志清理。
 - `api_service/`：`/api/scripts/maafw/*` 端点背后的全部业务（`common` 托管解析 / 有效项目根 /
   同组候选，`embedded` 副本状态 / 导入 / 克隆 / 候选来源，`interface` 预览 / 包名 / 图片资源 / 项目图标，
@@ -19,15 +20,27 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   （`MaaFWApiReply`）或把异常映射成 HTTP 错误；不在 API 层定义 MFW 私有辅助函数、常量或锁。
   公共 API 入口只组装路由；业务不得导入 `api.py` 或 `app.api`，worker 导入闭包不得碰它们。
   端点 docstring 会进 OpenAPI 生成物，搬业务时留在端点上原样不动。
-- `tools/embedded/`：宿主与核心包之间**唯一**的接缝（`runner_task`、`runtime_route`、
-  `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
-  `update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
-  `default_snapshot`、`env_confirm`、`update_session`、`device_config`、`plan_run`、`pretask_run`、
-  `run_verdict`、`run_redaction`、`run_settings`、`run_messages`、`run_notices`、`attempt_ledger`、
-  `desktop_game`、`host_client`、`project_session`、`owners`、`runtime_check`、`telemetry_project`、
-  `project_environment`、`resource_repair`、`config_handler`）。
-  要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
-- **设备配置与首任务闸门在 `tools/embedded/device_config.py`**（将来是运行这一块对外的「设备配置」调用，
+- **目录按积木分**（MFW 插件化迁移 P0 第 12 步，方案 §3、§5）：`blocks/<导入名>/` 是五块积木，去掉
+  `app.task.MaaFW.blocks.` 前缀就是将来发行包的导入名；`blocks/` 与本目录一样是命名空间包（没有 `__init__.py`）。
+  - `blocks/maafw_interface/`：解析库（interface、建计划的 runner 模块、`controller_win32` 的窗口规则匹配、
+    `log_redact`、内置 MaaEnd 用的 `embedded_labels`）。`blocks/maafw_native/`：原生库识别库。两个库没有状态，
+    只导入自己（库外的 `app.*` 一个都不导入）。
+  - `blocks/maafw_runner/`、`blocks/maafw_agent_env/`、`blocks/maafw_project_update/`：将来做成插件的三块。每块
+    `core/` 是 worker 与子进程也会导入的部分（不导入任何 `host/`、接缝与宿主模块），`host/` 是宿主侧接缝
+    （运行：`plan_run`、`pretask_run`、`device_config`、`desktop_game`、`desktop_windows`、`game_package`、
+    `run_*`、`attempt_ledger`、`proxy_quota`、`resource_failure`、`project_logs`、`signal_notice`；agent 环境：
+    `runtime_route`、`runtime_check`、`env_cache`、`env_trial`、`pool_reconcile`；项目更新：`owners`、
+    `embedded_project`、`project_path`、`project_session`、`project_environment`、`env_confirm`、`maintenance`、
+    `migration`、`live_projects`、`precheck`、`precheck_gate`、`resource_repair`、`update_*`、`view_*`）。
+    块和块的顶层、`core/`、`host/` 的 `__init__.py` 只有说明、不导入任何东西（`python -m` 起 worker 会先执行它们）。
+  - `seams/`：三个专项共用、不归任何一块积木的宿主接缝（`config_handler`、`default_snapshot`、`host_client`、
+    `option_secrets`、`script_lifecycle`、`telemetry_project`、`user_update`、`host_version`、`backup_archive`、
+    `restore_service`、`owner_entry`），P3 由各专项拿走或进 SDK。
+  - 本目录根上其余的是**通用 MFW 专项**自己的：`embedded_manager.py`、账号流程 `runner_task.py`、外壳配置导入
+    `shell_instances.py`、`registration.py`、`api.py`、`api_service/`。
+  - 要读 `Config`、发通知、碰宿主模型，只能在 `host/`、`seams/` 和通用 MFW 专项里做。旧目录 `tools/` 已经清空，
+    不要往里加文件（合并上游时上游往旧路径加的新文件要搬进对应的块）。
+- **设备配置与首任务闸门在 `blocks/maafw_runner/host/device_config.py`**（将来是运行这一块对外的「设备配置」调用，
   三个专项各自的流程都调它）：游戏包名、adb 路径（含「宿主没定下路径时问 Toolkit」，判据由调用方算好
   `ask_toolkit` 传入）、MuMu / 雷电 / ModAVD 的控制档案、截图与输入方式位掩码、adb 就绪超时、Win32
   的窗口句柄与截图 / 鼠标 / 键盘方式、`task_start_gate`（最早下发时刻 + `disk_quiet` / `screen`）。
@@ -37,9 +50,10 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   启停、登录与游戏更新钩子、起 worker 都不在这里；ModAVD 的 MaaFramework 版本门槛也不在这里（要借到
   运行环境才知道版本），在 `plan_run`（见下一条）。`mumu_maafw_adb_extra` /
   `ldplayer_maafw_adb_extra` 与 SDK 的 `maafw_adb_extra` 同形，是为以后交给各自的模拟器适配插件准备的
-  （ModAVD 已经这样做了）。按 interface 窗口规则匹配窗口仍在 `tools/core/controller_win32`（解析一侧，
-  只依赖 `interface`）。
-- **「把一份计划在一台设备上跑完」在 `tools/embedded/plan_run.py`**（将来是运行这一块对外的「跑一份计划」，
+  （ModAVD 已经这样做了）。按 interface 窗口规则匹配窗口仍在 `blocks/maafw_interface/controller_win32`（解析库，
+  只依赖 `interface`）；扫桌面上的窗口要 MaaFramework 绑定，在运行一侧的 `desktop_windows`，由调用方作为
+  `list_windows` 交给它。
+- **「把一份计划在一台设备上跑完」在 `blocks/maafw_runner/host/plan_run.py`**（将来是运行这一块对外的「跑一份计划」，
   三个专项各自的流程都调它，默认带全部保护）：整轮硬杀兜底（worker 自停的截止之后再给
   `_RUN_DEADLINE_GRACE_SECONDS`）、借还运行环境、生成 job、事件通道（建不起来退回 stdout）、起 worker
   （普通子进程与桌面分身两条路）、喂 job、读 stdout / stderr、处理 worker 事件（`handle_event`）、三份日志的
@@ -61,7 +75,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   截止时刻放进 `task_deadlines`，截止已过时 `plan_run` 抛 `MaaFWTaskDeadlineExpired`、M9A 流程换成「登录时限已
   耗尽」；首任务完成后记「已登录」也由它按返回的结果做。通用任务类不传 `task_deadlines`（默认空表）。
   重试循环、历史保存与通知仍在任务类（见下面「任务类还剩什么」）；桌面游戏启停在 `desktop_game`（见下文）。
-- **运行前设置（interface `pretask`）的执行在 `tools/embedded/pretask_run.py`**，做法与 `plan_run` 相同：
+- **运行前设置（interface `pretask`）的执行在 `blocks/maafw_runner/host/pretask_run.py`**，做法与 `plan_run` 相同：
   入参只收普通数据（`MaaFWPretaskRunRequest`：计划里的 pretask、工作目录、时限原值、`PI_*` 与 ModAVD adb
   端口两层进程环境、要打码的写法、桌面分身目标），输出经同一种事件出口（只发账号日志
   `MaaFWPlanRunLog`，失败类的行 `warning` 为真），失败抛 `MaaFWPretaskError`。子进程输出解码、去色、
@@ -72,19 +86,19 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `exit_confirmation()` 记下此刻要等的清理与进程、返回等待入口——账号流程释放项目预约
   （`project_path.release_run_reservation`）前要等它返回真，**这条约束改动时不能丢**。任务类只剩取配置 →
   组装入参 → 调用。
-- **账号运行交回项目预约在 `tools/embedded/project_path.release_run_reservation`**（项目更新一侧，三个专项的
+- **账号运行交回项目预约在 `blocks/maafw_project_update/host/project_path.release_run_reservation`**（项目更新一侧，三个专项的
   账号流程都调）：调用方先把自己记的键置空，再传此刻的进程作用域（`current_process_scope.get()`）、运行前设置的
   `exit_confirmation`（**传方法本身**，只在「作用域已请求停止」那条分支里调）与还在跑的资源包核对任务。作用域
   已请求时把「等作用域收尾 → 清理没失败 → 运行前设置确认退出 → 核对做完」交给作用域保留的后台任务
   （`maafw-confirmed-project-release`），都确认了才放；否则核对还在跑就最多等 30 秒、等不到交给它的完成回调。
   两行告警仍记在「MaaFW 插件自动代理」下。
-- **资源包加载失败后的发行包核对在 `tools/embedded/resource_repair.py`**（项目更新一侧）：一个账号一份
+- **资源包加载失败后的发行包核对在 `blocks/maafw_project_update/host/resource_repair.py`**（项目更新一侧）：一个账号一份
   `MaaFWResourceRepair`（每次运行只核对一次 `checked`，正在跑的核对任务 `task` 交给上面释放预约时等）；入参
   `MaaFWRepairRequest`（托管 id 与名字、开发者模式、渠道、托管级代理、外壳家族）由流程只在要修资源的那条分支
   里从配置组装，账号日志经流程给的 `log(message, *, warning=)` 写出。**核对任务用 `asyncio.shield` 等，被取消
   时先置停止令牌再上抛**，核对自己收到令牌跑完——这两条改动时不能丢。停止原因与重跑那一次的称呼
   （`RESOURCE_FAILURE_STOP_MESSAGE`、`RERUN_AFTER_CLEANUP` / `RERUN_AFTER_SWITCH`）也在这里。
-- **一次尝试的结果判定在 `tools/embedded/run_verdict.py`**（与 `plan_run` 同一块，三个专项的流程将来都调它）：
+- **一次尝试的结果判定在 `blocks/maafw_runner/host/run_verdict.py`**（与 `plan_run` 同一块，三个专项的流程将来都调它）：
   `judge_attempt(结果或异常)` 吃 worker 回报的 `MaaFWRunResult` 或这次尝试里抛出的异常，返回普通数据的
   `MaaFWAttemptVerdict`——结局（`succeeded` / `signal` / `game_update_required` / `failed`）、进运行记录的
   尝试级类别、还重不重试（`retry`）、要不要先修资源包（`repair_resource`，不重启、修过才立刻再跑）、重试前
@@ -98,17 +112,17 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   信号先于成功，资源包失败先于环境级失败；异常的类别是运行前设置 → 整次运行超时 → 环境级 → 宿主异常，
   锁屏算不重试但不补「运行环境不可用」。
 - **运行设置的原值解析与给人看的文案也归运行这一块**（三个专项的流程都调，只吃普通数据、不读配置对象）：
-  `tools/embedded/run_settings.py` 把配置里读出的原值换成运行要的普通数据——JSON 对象 / 列表原值
+  `blocks/maafw_runner/host/run_settings.py` 把配置里读出的原值换成运行要的普通数据——JSON 对象 / 列表原值
   （`load_json_dict` / `load_json_list`）、托管级键位（`load_script_hotkeys`）、单任务时限换算成秒
   （`task_time_limits`，参数是 `Run.TaskTimeLimit` 与 `Run.TaskTimeLimitOverrides` 的原值）、原地打转检测
   （`loop_guard`，只认 `True`；读配置时出错由调用方按关）、周期任务三张名单（`period_limits`）。
-  `tools/embedded/run_messages.py` 是账号日志的行格式（`format_user_log_line`；管理器的运行前更新日志用同格式的
+  `blocks/maafw_runner/host/run_messages.py` 是账号日志的行格式（`format_user_log_line`；管理器的运行前更新日志用同格式的
   `update_log_lines`，详情行返回 None）、运行总览、失败摘要（`describe_failed_result`：整次超时与普通失败两支，
   资源包失败那支仍是 `describe_resource_failure`）、重试剔除与「剩余任务都已完成」的提示、周期全部完成的跳过
   原因、信号命中这次尝试的事实（`signal_attempt_facts`，项目名要读 interface，调用方在工作线程里取）、运行记录
   事件到进度点的映射（`record_event_point`）以及几句固定文案的常量。**它不导入 maa**，管理器也引它；
   日志、状态、记账、进度点仍由调用方照原来的先后做。
-  `tools/embedded/run_notices.py` 是账号级通知的正文：统计报告标题里的结果标记与标题（`statistics_mark` /
+  `blocks/maafw_runner/host/run_notices.py` 是账号级通知的正文：统计报告标题里的结果标记与标题（`statistics_mark` /
   `statistics_title`）、成功与「游戏需要手动更新」两种本机提示的标题 / 正文 / 提示条。`LocalNotice` 的构造、
   截图准备、推送仍在调用方。代理次数结算（开跑换日 `proxy_day_rolled`、成功后的 `success_settlement`）在
   `proxy_quota`，一次尝试完成后要写回的周期记录（`period_records_after`）在 `plan_transforms`：都只返回新值，
@@ -116,7 +130,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   标题（`signal_summary_title`）、每个账号一行的结果（`user_results_text`）、`TaskResultData` 形状的正文
   （`proxy_result_body`）；推送标题、截图准备与推送留在脚本级流程（管理器）。项目运行的遥测在
   `telemetry_project.record_project_run`（参数是有效根与专项的上报名：`MaaFW` / `M9A` / `MSS`）。
-- **一个账号这次运行的尝试记账在 `tools/embedded/attempt_ledger.py`**（运行这一块，三个专项的账号流程各用
+- **一个账号这次运行的尝试记账在 `blocks/maafw_runner/host/attempt_ledger.py`**（运行这一块，三个专项的账号流程各用
   一份 `MaaFWAttemptLedger`，跨尝试保留）：结构化运行记录（`recorder` 就是 `MaaFWRunRecorder`，任务类的
   `_run_record` 指向它）、每次尝试的结果（`record`：history 状态、记录结局、给通知用的完成清单 / 失败截图 /
   人话摘要）、崩溃时记 error（`mark_error`）、存历史前收掉最后一次尝试（`finish_open`）、`plan_run` 交回的
@@ -126,7 +140,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   返回 None）。只收普通数据，不读配置、不碰调用方：`HistoryWrite` / `HistoryAttachmentInput` /
   `HistorySnapshotStatistic` 是宿主的 schema，由流程自己拼；「这次尝试的日志有没有开始时刻」（没有就不记
   history 状态，`status_key=None`）、是否维护跳过、信号文案、检查有没有过都由调用方算好传入。
-- **账号运行要用的宿主 / 模拟器能力在 `tools/embedded/host_client.py`**（宿主或模拟器适配，不归入积木，三个
+- **账号运行要用的宿主 / 模拟器能力在 `seams/host_client.py`**（宿主或模拟器适配，不归入积木，三个
   专项的账号流程都调）：为这次运行开模拟器（`open_emulator_for_run`：写「正在启动模拟器」→
   `open(..., allow_mod_avd=True)` → 冷启动游戏时打 `start_game` 的 launched 点、写「已随模拟器启动游戏」、
   返回那一刻的单调时钟 → `silent` 时藏窗口）、脚本专用 adb server 的进程环境（`script_adb_env`）、锁屏判定
@@ -134,7 +148,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `WORKSTATION_LOCKED_MESSAGE`）。参数是模拟器入口与普通数据，输出经返回值与 `plan_run` 同形的事件出口。
   地址校验与缓存、`opened_emulator` 的置位（调用之前）、首任务闸门的时刻与读盘判据（拿返回值写）、
   `silent` 的取值（调用那一刻读 `IfSilence`）、锁屏时抛 `MaaFWWorkstationLocked` 都留在流程里。
-- **Win32 桌面游戏的启停在 `tools/embedded/desktop_game.py`**（运行这一块，三个专项的账号流程都用）：一个账号
+- **Win32 桌面游戏的启停在 `blocks/maafw_runner/host/desktop_game.py`**（运行这一块，三个专项的账号流程都用）：一个账号
   一份 `MaaFWDesktopGame`，是一台「设备」——开没开过（`opened`）、游戏刚启动的时刻（`started_at`）、链接
   拉起的时刻、本次运行第一次打开链接的时刻、临时改过的 Unity 分辨率、AttachOnly 兜底关闭的分界
   （`mark_run_started`）全是它自己的、跨尝试保留；什么时候开（`ensure_started`）、重试前关（`close`）、最终
@@ -159,7 +173,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   周期任务刷新计划）、失败文案的组装（文案本身在 `run_messages`；资源包失败的人话要读原生报错、超时摘要要读时限配置，所以不在判定里）、
   历史（`HistoryWrite` 的拼装）、统计与通知的发送（尝试记账在 `attempt_ledger`）。跑计划、运行前设置、判定、
   打码与收集密码值、尝试记账都只经上面这些模块的入参出参。
-- **脚本级的项目会话在 `tools/embedded/project_session.py`**（项目更新一侧，将来是这一块对外的「打开项目 /
+- **脚本级的项目会话在 `blocks/maafw_project_update/host/project_session.py`**（项目更新一侧，将来是这一块对外的「打开项目 /
   收尾项目 / 发现更新与预下载」，三个专项各自的流程都调它）：`MaaFWProjectSession` 一个管理器一份。
   打开项目 = `reserve`（拿视图预约；拿不到返回良性跳过的结局：正在切换版本 / 正在更新 / 被占用，脚本记
   「跳过」，**不用异常表达**）→ `prepare`（缺视图就导入、组同步、投影补齐、读 `envConfirmedFor`，返回
@@ -187,11 +201,11 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   再交给 `pool_reconcile.reconcile_runtime_pool` / `reconcile_agent_venvs`。更新预检
   （`precheck.py`，项目更新一侧）只查原生库能不能加载、记失败与备忘；真建环境、agent 导入检查、
   临时 agent 目录的放置与回收都在 `env_trial.trial_environment`。
-- **托管属主登记**（`tools/embedded/owners.py`，项目更新一侧；方案 §3.8，第 8 步）：共享目录（视图、运行池、
+- **托管属主登记**（`blocks/maafw_project_update/host/owners.py`，项目更新一侧；方案 §3.8，第 8 步）：共享目录（视图、运行池、
   agent 环境、载荷库）的清理、`/api/scripts/maafw/*` 端点认托管、同组候选与同来源重建的候选，都**只问已登记的
   属主**，不按配置类判断家族、不靠继承（`isinstance(…, MaaFWConfig)` 一处都不留；三种配置类以后不再继承）。
   - **登记**：每个专项登记一个属主，表里只存「属主名 → 取入口的函数」，每次用前现取；取不到（None、抛异常、
-    `owner_protocol` 不对）就当属主没登记。内置形态的入口是 `app/task/MaaFW/owner_entry.BuiltinConfigOwner`，
+    `owner_protocol` 不对）就当属主没登记。内置形态的入口是 `app/task/MaaFW/seams/owner_entry.BuiltinConfigOwner`，
     按**确切类型**认（`type(config) is <类型>`，类型每次现取）；通用 MFW（`maafw_adapter`）、M9A（`m9a_adapter`）、
     MSS（`mss_adapter`）各在自己的 `registration.py` 里有 `register_owner()`，`builtin_registration` 统一调。
     以后换成插件服务 `maafw.owner.<名字>.v1` 时只换「取入口的函数」。
@@ -235,14 +249,14 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
     （脚本级管理器 + 账号级任务类 + 唯一的配置读写入口 `config_view`），`manager_factory` 在函数里现导入它，
     不复用 MFW 管理器（MFW 的风味钩子第 11 步已删）——照 M9A 的写法（`app/task/M9A/AGENTS.md`「自己的流程」：先拷
     `embedded_manager` / `runner_task`，删掉通用专属的分支，专项的规矩写成普通代码，共用的事调
-    `tools/` 下吃普通数据的叶子；不抽带钩子的共用主循环、不造「账号运行上下文」大对象）；新管理器必须带
+    `blocks/`、`seams/` 下吃普通数据的叶子；不抽带钩子的共用主循环、不造「账号运行上下文」大对象）；新管理器必须带
     **静态 `check_prefetch`**，构造函数不能有副作用。从此合并上游改了 `runner_task` / `embedded_manager` 时，要把
     同样的改动手工搬进每个专项的那两份（见下面「合并上游」）。专项对项目的要求（预览的规则表、只收哪种项目、
     拒收文案）作为 `BuiltinConfigOwner` 的构造参数登记（见下面「项目要求由属主给」）。配置回调用
-    `tools/embedded/config_handler.build_maafw_config_handler(<类型>, owner=<属主名>)`（`MaaFW/registration.build_config_handler` 只是转出名；保存前加密、读取前准备、新账号默认队列、复制时克隆视图、删除时
+    `seams/config_handler.build_maafw_config_handler(<类型>, owner=<属主名>)`（`MaaFW/registration.build_config_handler` 只是转出名；保存前加密、读取前准备、新账号默认队列、复制时克隆视图、删除时
     清理本属主视图、删除后运行池对账一样不能少；要换其中一项用 `dataclasses.replace`，不往工厂里加参数，M9A 的
     `config_hooks.build_m9a_config_handler` 就是这样只换掉了保存前准备），恢复池
-    用 `load_maafw_restore_pools`，要换恢复那一步时用 `tools/restore_service` 公开的 `user_guard` / `mas_files` /
+    用 `load_maafw_restore_pools`，要换恢复那一步时用 `seams/restore_service` 公开的 `user_guard` / `mas_files` /
     `mas_root` / `preview_mas` 与整个 `NATIVE_POOL` 自己拼（M9A 的 `config_hooks.M9A_RESTORE_POOLS`）。登记里的
     配置回调工厂启动期就会被调，它所在的模块只放轻量导入，流程模块与恢复服务都在函数里现导入；按「是 MFW 托管」判断的地方（桌面分身判定
     `core/desktop_session/lifecycle.py`、外壳配置导入 `api_service/shell_instances._family_script_config`、M9A 迁移后
@@ -269,12 +283,12 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
     **先问 `owner_screens_projects` 再读 interface**：通用 MFW 托管导入坏来源时不多读、不多写一行 app.log；读不出
     interface、识别本身出错都不拦（交给导入自己报错），识别出错的那行 app.log 按属主名记。
   - 拒收是用户定的要留的行为；「导入时自动换成 M9A / MSS 类型」已在 `8159700be` 去掉，托管类型在新建时就定了。
-- **合并上游**：同一份账号流程有三份（通用 `tools/embedded/runner_task.py`、`app/task/M9A/account_run.py`、
+- **合并上游**：同一份账号流程有三份（通用 `runner_task.py`、`app/task/M9A/account_run.py`、
   `app/task/MSS/account_run.py`），脚本级管理器也有三份（`embedded_manager.py`、`app/task/M9A/manager.py`、
   `app/task/MSS/manager.py`），各自一份、互不回退。合并上游 dev 时，凡是改了 `runner_task` / `embedded_manager` 的，
   同样的改动手工搬进 M9A、MSS 各自那两份（只和通用 MFW 有关的分支除外，例如快照直建；只和 M9A 有关的登录 /
   游戏更新 / 首任务只搬进 M9A；MSS 的建计划拆成了 `_load_run_state` / `_plan_head` / `_plan_tail`，按所在段落搬）；
-  改了 `tools/` 下叶子的不用搬（三份都调它）。合并提交只做让合并成立的事（冲突落在通用那份上就在通用那份手解），
+  改了 `blocks/`、`seams/` 下叶子的不用搬（三份都调它）。合并提交只做让合并成立的事（冲突落在通用那份上就在通用那份手解），
   同步进 M9A、MSS 各一个提交，提交说明里逐个列出同步了哪些函数。
   - **第 11 步删掉风味以后旧路径不复存在**：金样不能再在「反向应用翻登记提交」的旧路径上重录，实时对拍（新旧双跑）
     也已收掉。合并上游后 G、M、S 三组金样各自守三份流程：变红时逐条审差异，能用这次合并进来的上游改动解释的才改
@@ -282,19 +296,20 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
     在新流程上录，录完人看一遍产物。
   - 第一次合并上游是 #2107、#2108（合并提交 `803aeb744`，在第 11 步之前）：拿锁后的回调与按账号选定同步进了三份
     管理器，预下载的两个提前返回落在叶子 `project_session.discover_prefetch`，金样重录记录见对拍 README。
-- `tools/core/`：七个核心包（interface / native / runner / runtime_pool / agent_env /
-  project_update / controller_win32），按零宿主耦合设计。已知例外只有
-  `project_update/updater.py` 引了 `app.utils.constants`，以及 `project_update` 里的 `projection_heal` /
+- 两个库与三块积木的 `core/` 按零宿主耦合设计。已知例外只有项目更新 `core` 里的
+  `project_update/updater.py` 引了 `app.utils` 的 `MIRROR_ERROR_INFO`，以及 `projection_heal` /
   `range_delta` 用宿主 `app.utils.common.zip_range` 的区间读取器（`RangeHTTPReader`、
   `RangeSpeedGuard`，没有 MFW 语义，MaaEnd 也直接用）——都只在宿主进程里跑；不要再加新的。
-- **三块将来做成插件的积木之间单向依赖**：
-  runner 可以导入 agent_env（含 runtime_pool），agent_env 不导入 runner 与 project_update，
-  project_update 不导入 runner（函数体里的延迟导入、`TYPE_CHECKING` 下的也算）；三块都可以导入
-  interface 与 native 两个库。`worker_protocol` 算 runner 那一块的，agent_env / project_update 不要引它
-  （日志前缀之类共用的常量放 `log_redact` 或 native）。接缝里归 runner 的（`plan_run`、`pretask_run`、
-  `run_verdict`、`run_redaction`、`run_settings`、`run_messages`、`run_notices`、`attempt_ledger`、`desktop_game`）不导入项目更新一侧的接缝（`project_session`、`embedded_project`……）与专项
-  （任务类 `runner_task` 这类账号级流程）。这几条现在违反了也不会让运行出错，只会让以后
-  拆包时那一块带不走，所以没进核心最小回归；加导入前自己按 AST 查一遍方向。
+- **积木之间单向依赖**（函数体里的延迟导入、`TYPE_CHECKING` 下的也算）：两个库只导入自己，解析库不导入
+  原生库识别库、反过来也不；三块插件积木都可以导入两个库；agent 环境不导入运行与项目更新；运行与项目更新
+  互不导入，它们对 agent 环境的直接导入只剩第 12 步时那几处（运行借运行环境、worker 里再确认一次环境、
+  起 worker 的约束目录；项目更新的更新预检、环境确认、对账），P2 换成服务调用，**不要再加新的**。积木不导入
+  `seams/`、通用 MFW 专项与 M9A / MSS；`seams/` 不导入通用 MFW 专项与 M9A / MSS，其中 `host_client`、
+  `telemetry_project` 也不导入项目更新。积木、`seams/` 与通用 MFW 里不出现 `M9AConfig` / `MSSConfig` 这类
+  专项配置类名（唯一例外是 `registration.MAAFW_FAMILY_TYPES`）。`worker_protocol` 算运行那一块的，
+  agent 环境 / 项目更新不要引它（日志前缀之类共用的常量放 `log_redact` 或原生库识别库）。这几条现在违反了也
+  不会让运行出错，只会让以后拆包时那一块带不走，所以没进核心最小回归；本地有按目录认块的 AST 守卫
+  （冻结的那几处导入逐条写了去向），加导入前跑一遍。
 - **运行环境的准备与借还归 agent 环境**：`agent_env/runtime_lease.py` 是运行池 base venv + binding 的
   唯一入口——`borrow_runtime_environment` 借（返回 `MaaFWRuntimeLease`：解释器、base venv、binding
   版本与目录、`worker_env`（binding 相关的键与 agent pip 约束目录 `AUTO_MAS_MAAFW_AGENT_CONSTRAINT_DIR`）、
@@ -304,16 +319,16 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `build_runner_environment`（worker 的 `PYTHONPATH` 等怎么拼）留在运行。项目运行环境的准备与确认
   （借一次环境 + 备 agent + 项目输入指纹）在 `agent_env/project_env.py`
   （`prepare_project_environment`、`project_environment_fingerprint`），宿主的
-  `tools/embedded/project_environment.prepare_project_environment_sync`（项目更新一侧；管理器的同名静态方法只是
+  `blocks/maafw_project_update/host/project_environment.prepare_project_environment_sync`（项目更新一侧；管理器的同名静态方法只是
   转调）与 `api_service/agent_env` 直接调它，不经 `MaaFWRunnerService`。
-  运行前的运行池自检（`tools/embedded/runtime_check.describe_unusable_runtime`，吃项目路径、放工作线程）与
-  运行池路由（`tools/embedded/runtime_route.resolve_runtime_pool_route`，只在工作线程里调）也归 agent 环境，
+  运行前的运行池自检（`blocks/maafw_agent_env/host/runtime_check.describe_unusable_runtime`，吃项目路径、放工作线程）与
+  运行池路由（`blocks/maafw_agent_env/host/runtime_route.resolve_runtime_pool_route`，只在工作线程里调）也归 agent 环境，
   三个专项的脚本级流程各自调；管理器的 `_resolve_runtime_pool_route` 只是转调。
 - **建计划归解析一侧，agent 命令计划在借环境时算**：`runner/run_plan.py`（选控制器与资源、pretask
   规划、`build_maafw_run_plan`）、`pipeline_override`、`hotkey`、`runner/models.py` 的计划类型、
-  `task_selection`、`plan_transforms` 与 `interface/plan_rules` 将来随 interface 进解析库，现在还在原处，
-  但导入闭包里不能有 agent_env、runtime_pool、project_update、宿主模块和 runner 的执行侧（`runner`、
-  `worker`、`environment`、`service`；所以 `runner/__init__.py` 是惰性导出）。它们用到的小工具放解析
+  `task_selection`、`plan_transforms` 与 `interface/plan_rules` 都在解析库 `blocks/maafw_interface/` 里，
+  导入闭包里不能有 agent_env、runtime_pool、project_update、宿主模块和 runner 的执行侧（`runner`、
+  `worker`、`environment`、`service`，在 `blocks/maafw_runner/core/runner/`；两边的 `runner/__init__.py` 都是惰性导出）。它们用到的小工具放解析
   一侧：agent 命令计划的数据模型 `interface/agent_command.MaaFWAgentCommandPlan`（agent_env 与 runner
   都从这里取）、`interface/host_path.path_without_host_venv`、`interface/agent_entry` 的
   `agent_exec_outside_project` 等。建出的计划 `agents` 为空，interface 声明的 agent 放在
@@ -324,7 +339,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   （同时换 `PI_CLIENT_MAAFW_VERSION`）；同一账号这一轮的重试沿用第一次借到的那份（任务类记下返回的 `agent_plans`、重试时传回；以前建计划时算一次、
   重试从 `base_run_plan` 重建，是同一口径）。隔离 venv 的最终目录仍由 worker 里的 `prepare_agent_envs`
   按确切版本定一次、改写计划，见下面「计划阶段不一定知道最终目录」。
-- **原生库识别库 `tools/core/native/`**（将来的库 `maafw_native`）：只看项目目录，认项目自带的
+- **原生库识别库 `blocks/maafw_native/`**（将来的发行包导入名 `maafw_native`）：只看项目目录，认项目自带的
   MaaFramework 原生库——原生库目录在哪与取最高版本、读版本、PE 架构与导入表、能否在本机加载、
   缺依赖 / 完整 / 损坏、架构不符的描述（`project_runtime`、`pe`），项目对 maafw 的版本需求
   （`requirement`、`versions`），本机架构（`architecture`）、`requirements.txt` 解析、
@@ -335,11 +350,12 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `normalize_version` / `exact_version_of` / `MaaFWBindingError`。给 agent 起动钉 maafw、拼 pip
   约束的函数不是「识别」，在 `agent_env/pip_constraint.py`。
 - **worker 子进程**（`runner/worker.py`）以 `python -m` 启动，其导入闭包内的
-  `app.*` 只能落在 `app.task.MaaFW.tools.core.` 之下，由
+  `app.*` 只能落在两个库与三块积木的 `core` 之下（`app.task.MaaFW.blocks.maafw_runner.core.`、
+  `...maafw_native.`、`...maafw_interface.`、`...maafw_agent_env.core.`、`...maafw_project_update.core.`），由
   `tests/task/test_maafw_core.py` 钉死。v5.5.0-beta.4 全员 MFW 挂掉，
   就是链路上多了一处 `from app.utils import ...`。要放宽这条边界，在那个测试里显式加白名单并在
   PR 里说明，不要只改这段文字。
-- **宿主 ↔ worker 协议**（`tools/core/worker_protocol.py`，只依赖标准库与同样只用标准库的 `log_redact`）：
+- **宿主 ↔ worker 协议**（`blocks/maafw_runner/core/worker_protocol.py`，只依赖标准库与同样只用标准库的 `log_redact`）：
   事件格式、两边共用的常量（信号取值与证据截图 kind；`DETAIL_LOG_PREFIX` 定义在 `log_redact`、这里照旧
   对外提供）、日志去向规则、分帧与通道都在这一处，宿主不再复制 runner 的常量（`runner.py` 一导入就
   加载 maa，宿主引不了它）。
@@ -376,7 +392,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
 
 ## 项目目录与运行
 
-- **有效项目根只从一处取**：`tools/embedded/embedded_project.resolve_maafw_project_root`
+- **有效项目根只从一处取**：`blocks/maafw_project_update/host/embedded_project.resolve_maafw_project_root`
   ——**永远是** `data/mfw/<托管 uuid 前 12 位>/` 的视图，没有"路径模式"。`Info.Path` 只是
   导入的来源，运行时不读它（开发者模式下运行前检查会扫一遍它决定要不要重导，跑的仍是视图）；
   导入完成后用户删掉来源也无妨。源码形态的视图同样以 interface 所在目录为根（`assets/` 平铺到视图根，
@@ -604,7 +620,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   更新构建新载荷、视图物化都走它。三条铁律：**永远不往已有文件里写**（硬链接没有写时复制）；小文件
   不进库（锁文件、`.pth`、dist-info 这类最可能被原地改写，M9A 的 bootstrap 就往 `python/*.lock` 里
   追加写）；链接失败就退回复制。可写的东西靠四层挡住：尺寸、排除表、运行期新建即新 inode、运行
-  收尾的写穿巡检（`tools/embedded/view_audit.py`：nlink>1 且修改时间晚于物化时刻才读 sha，确认就
+  收尾的写穿巡检（`blocks/maafw_project_update/host/view_audit.py`：nlink>1 且修改时间晚于物化时刻才读 sha，确认就
   隔离 blob、记 `privatePaths`、标载荷 `damaged`；`damaged` 的载荷下次更新只要全量包）。回收在启动期：`MaaFWMaintenanceService.clean_embedded_copies`
   删无人引用的载荷（`embedded_project.collect_payload_garbage`：引用集 = 视图标记 ∪ 未完成切换的 to，
   谱系还有视图时再加它的 latest（私有渠道的 latest 只在开着开发者模式时算，见「跟随来源目录」）；一个视图都不剩的谱系整个收走，视图丢了但脚本还在的按导入来源保住；
@@ -807,7 +823,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `apply_plan_rules` / `attach_snapshot_findings`；异常由调用方包成 `MaaFWRunPlanError(describe_plan_failure(…))`，
   **不收排队列的回调**——展开与它之间是专项自己的普通代码）。通用 MFW 按快照直接建计划，没有规则表。
 - **原地打转检测**（`Run.LoopGuard`，托管级开关，**默认开**：新建托管取类默认；既有托管配置里写着这个键的不改（全量落盘分不清用户关过还是没碰过），没有这个键的落到类默认；纯逻辑在
-  `tools/core/runner/loop_guard.py`）：只看 `Node.Recognition.*` 与 `Node.PipelineNode.*`，按节点名
+  `blocks/maafw_runner/core/runner/loop_guard.py`）：只看 `Node.Recognition.*` 与 `Node.PipelineNode.*`，按节点名
   找周期 ≤ 8 步的循环，连续各轮都有物理动作（Click / Swipe / 按键…，Custom 与 DoNothing 不算，等待型
   轮询本来就该一直等；没有物理动作的一轮让轮数与时长从头数，否则空等很久后第一次点击会被当场判卡死）、≥ 200 轮、持续 ≥ 10 分钟、最近 30 轮识别结果指纹 ≤ 4 种、单轮中位 ≤ 20 秒
   才判卡死（≥ 100 轮 / 5 分钟先记一行 `[MaaFW 详情]` 的「疑似」）。阈值用生产 `history` 里的 MaaFW 运行单元标定
@@ -822,11 +838,11 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `auto_mas` 的节点会被 MAS 强开。豁免随信号节点同一趟 `get_node_data` 扫描收集，binding 列不出
   节点时退回命中时按名字查。
 - **结构化运行记录**（第 19 条）：worker 经 `_emit` 发 `{"type": "record", "data": …}`，事件形状、阶段名、
-  结局与类别**只在** `tools/core/runner/run_events.py` 定义（换传输通道时只搬它）。runner 的各收尾分支用
+  结局与类别**只在** `blocks/maafw_runner/core/runner/run_events.py` 定义（换传输通道时只搬它）。runner 的各收尾分支用
   `_mark_task_outcome` 记结局，task_end 在下一个任务开始或本轮结束时才发——新增收尾分支要跟着记，漏记的
-  按穿出的异常归类。宿主 `tools/embedded/run_record.py` 按尝试归并（账号流程经 `attempt_ledger` 用它），存进该尝试 history 的
+  按穿出的异常归类。宿主 `blocks/maafw_runner/host/run_record.py` 按尝试归并（账号流程经 `attempt_ledger` 用它），存进该尝试 history 的
   `data["maafw_run_record"]`（snapshot，读用 `read_run_record`，旧历史没有这个键），用于专项报告
-  （`tools/embedded/run_report.py`：最后一次尝试的逐任务时间线；最后没成功
+  （`blocks/maafw_runner/host/run_report.py`：最后一次尝试的逐任务时间线；最后没成功
   时单列各次的原地打转 / 单任务超时）。推送里的失败原因只用 `userMessage`（宿主还没投递任务就抛的
   异常用异常原文，同样过 `human_reason` 过滤）与失败类别的固定说法；`errorMessage`（节点链、框架失败
   事件、原生栈）不进推送，仍照旧写进任务日志、history 状态与调度台完成面板。记录是旁路，
@@ -942,7 +958,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   （`MaaProcessor.MeasureScreencapPerformanceAsync`）。截图失败只记日志、不拦运行。
 - 账号配置在 `check()` 时深拷贝成副本跑，`final_task` 解锁后**整表写回**（#720 / #737）。
   改任何运行期写账号字段的逻辑，都要用落盘探针验证，只看内存会误判成已生效。
-- **空任务队列不留着**（`tools/embedded/default_snapshot.py`）：`Task.TaskSnapshot` 为空时运行会回落到
+- **空任务队列不留着**（`seams/default_snapshot.py`）：`Task.TaskSnapshot` 为空时运行会回落到
   预设或默认勾选（`run_plan.resolve_default_snapshot`），所以建用户、读账号（`Config.get_user`）与运行前
   检查（上锁之前）都按这同一个函数把它写成实打实的队列，账号页上看到的就是要跑的。项目还没导入时
   什么都不写、留给下一次；默认队列定格在写入那一刻，项目以后改了预设不再自动跟。别在前端另写一份规则。
@@ -995,7 +1011,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   与「interface 内已无该任务」的跳过同一个思路。开发者模式下改 interface 最容易撞上。
 - input 字段 `password: true`（PI v2.10.0）的值在 `Task.TaskSnapshot` 里（`taskOptions` 与
   `globalOptions` 两处，`password_values.SNAPSHOT_SECRET_SECTIONS`）是带 `mas-dpapi:` 前缀的
-  DPAPI 密文：`Config.update_user` 写入前按 interface 加密（`tools/embedded/option_secrets`），
+  DPAPI 密文：`Config.update_user` 写入前按 interface 加密（`seams/option_secrets`），
   `runner_task` 建计划前只在内存副本里解密；前端只看到密文、显示「已设置」。没有前缀的是旧明文，
   照常使用、下次保存时加密。checkbox 的 `min_count` / `max_count`（v2.10.1）由加载器放宽成自洽值，
   运行计划里不满足就报错（`MaaFWCheckboxCountError`），不静默截断。密码原文会随 override 进
@@ -1019,17 +1035,17 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `bbcdll/*.log` …）由 `plan_run` 挨着 `.maafw.log` 另存：运行开始记下视图里每个 `.log`
   的大小与开头，收尾只取本次新写的部分拼成临时日志并按 `project_log` 角色归档（每段一行分隔头；
   单个取末尾 2 MB、一次运行总量 8 MB，按行切；按该脚本**全部用户**的密码打码，
-  `tools/embedded/project_logs.py`）。`debug/maafw*.log` 不在其中。问题包按附件角色识别，
+  `blocks/maafw_runner/host/project_logs.py`）。`debug/maafw*.log` 不在其中。问题包按附件角色识别，
   `project_log` 与 `worker_log` 同一条件收（有密码输入框时只收写的时候就打过码的那次）；
   整包备份通过历史快照保留数据库与附件的对应关系。打码按每个写法的 UTF-8 / GBK / UTF-16LE 字节替换
   （`run_redaction.secret_byte_pairs`，`.maafw.log` 同用）。
   **三件事各归各位**（迁移方案 §3.7）：按 interface 认出哪些选项是密码、从任务快照的普通数据里收集要打码的值是
-  解析一侧的纯函数（`tools/core/interface/password_values`：`collect_plan_password_values`、
+  解析一侧的纯函数（`blocks/maafw_interface/interface/password_values`：`collect_plan_password_values`、
   `collect_run_password_values`、`collect_snapshots_password_values`，导入闭包只有 interface，**不引宿主的
   加解密**——密文怎么认、怎么解开由调用方经 `MaaFWSecretOpener` 交进来）；加解密（DPAPI）与「从配置对象里
   取出快照原值」（`user_task_snapshot` / `script_task_snapshots`）在宿主 `option_secrets`，它给出
   `DPAPI_SECRET_OPENER`；写法（`secret_log_variants`）、按文本 / 按字节打码、打码说明与
-  `LOG_REDACTION_MARKER` 在运行一侧 `tools/embedded/run_redaction`。两组值也在 `run_redaction` 里凑：
+  `LOG_REDACTION_MARKER` 在运行一侧 `blocks/maafw_runner/host/run_redaction`。两组值也在 `run_redaction` 里凑：
   `run_secret_values`（计划或 interface 还没有时为空）与 `project_log_secret_variants`（收集出错时退回本次运行
   那组，记一行 debug）。任务类只从配置里取出快照原值、带上 opener 交给它们，每个调用点（运行前设置、跑计划、
   资源包失败的摘录）现算一次、不缓存，再换成写法传给 `plan_run` / `pretask_run`。三者之间只传普通数据，别把配置对象传进解析一侧。
@@ -1059,7 +1075,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
 - 开着开发者模式（`Embedded.FollowSource`）的脚本**不更新**：自动更新跳过、手动检查与应用都拒绝，
   以来源目录为准（见「跟随来源目录」）。下面说的都是普通模式。
 - 下载源 / CDK / 渠道 / 时机**只看托管级 `Update.*`，不做全局兜底**
-  （`tools/embedded/update_credentials.py`）；全局的 `Update.MirrorChyanCDK` / `Update.Channel`
+  （`blocks/maafw_project_update/host/update_credentials.py`）；全局的 `Update.MirrorChyanCDK` / `Update.Channel`
   服务的是 MAS 自身更新。
 - **唯一带全局兜底的是代理**：托管级 `Update.ProxyAddress` 留空跟随全局（设置 → 其他 →
   网络代理），填了只走自己的，同时管更新包下载与运行环境安装（池的 uv / pip、agent venv）。
@@ -1067,11 +1083,11 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   未配置」——地址可能带 `user:pw@`。别改用 `Config.proxy`：那个属性每次访问都往日志写一行
   「使用代理: <地址>」。
 - GitHub 加速镜像是**只有全局**的一项：`Update.GitHubMirror`（`Auto` / `Off`），托管级没有
-  对应字段。清单在 `tools/embedded/update_mirrors.py`，与前端 `mirrorService.ts` 的 gh-proxy
+  对应字段。清单在 `blocks/maafw_project_update/host/update_mirrors.py`，与前端 `mirrorService.ts` 的 gh-proxy
   组同源，改一处要同步另一处。只对 `github.com/<owner>/<repo>/releases/download/...` 生效，
   Mirror 酱的一次性签名地址套前缀会把签名打坏，所以按源分流而不是按地址。
   **没有 sha256 摘要时核心包整个忽略镜像**：经第三方转发的字节必须能校验。
-- **一个组只更新一次**（`tools/embedded/view_update.run_view_update`，运行前自动更新与手动更新
+- **一个组只更新一次**（`blocks/maafw_project_update/host/view_update.run_view_update`，运行前自动更新与手动更新
   共用；旧配置的「运行后」已按运行前执行）：谱系锁（进程内）内先把触发脚本同步到组的 latest，再发现（`current` = 组版本）→ 下载一次
   （取消令牌、GitHub 镜像、按触发脚本解析的代理、进度全部透传）→ 在 `.staging/payload-*` 里从当前
   载荷 + 包建新载荷（`payloads.build_from_package`）→ 在 staging 上预检一次（钉回 binding 也在这里，
@@ -1089,9 +1105,9 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   请求断开不影响更新；过程（推送过的进度事件）与结果按脚本登记在进程内，编辑页打开时经
   `/maafw/update/job` 接回，保留到这个脚本下一次手动更新开始或后端重启。没有停止入口。
   `run_view_update` 的四个调用方（自动、手动、投影补齐、发行包核对）一律经
-  `tools/embedded/update_session.UpdateSession` 组装参数（组与候选、预约、锁时限、停止令牌、
+  `blocks/maafw_project_update/host/update_session.UpdateSession` 组装参数（组与候选、预约、锁时限、停止令牌、
   代理 `UpdateProxy`、进度出口、预检）；更新编排里的运行环境确认（预检、切换后确认、传播后的
-  后台确认）一律走 `tools/embedded/env_confirm`（实现在 `project_environment`，`env_confirm` 在事件循环上
+  后台确认）一律走 `blocks/maafw_project_update/host/env_confirm`（实现在 `project_environment`，`env_confirm` 在事件循环上
   延迟导入、按模块属性取；不要再去管理器上找它）。`env_confirm` 的 `resolve_*` / `build_update_precheck`
   与 `UpdateSession.precheck` / `precheck_builder` 里有函数内导入，只在事件循环上调，交给
   `asyncio.to_thread` / 核心包工作线程的是解析好的可调用对象。核心包发的进度事件是 dict，消费方先经
@@ -1104,7 +1120,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   对载荷清单校验。
 - **投影规则改版**：规则改动会让已登记的载荷少文件时，`PROJECTION_REVISION` 加一，并在
   `project_update/projection_legacy.py` 留一份上一版规则的复刻。运行前检查与手动检查更新时
-  （`tools/embedded/view_heal.py`）按「当前规则留、载荷那一版剔、载荷里没有」比对一次（依据：导入目录 →
+  （`blocks/maafw_project_update/host/view_heal.py`）按「当前规则留、载荷那一版剔、载荷里没有」比对一次（依据：导入目录 →
   缓存的完整包 → GitHub 发行包的 HTTP Range），缺了就用「旧载荷 + 取回的文件」建同版本新载荷、登记
   （`register` 允许规则版本更高的同版本载荷顶替 latest）、切组。新载荷是旧载荷的超集、共同路径内容
   相同且版本号相同，切换按「同内容」走（`embedded_project._is_content_superset` → `fills_only`；版本号不同的：视图里已有的文件
@@ -1184,7 +1200,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
 ## 与专项的区别（别照搬）
 
 - 没有 `ScriptConfig.py`，没有原生编辑器会话；已接入通用配置备份恢复
-  （mas 池为纯字段侧车 + native 项目池，见 `tools/restore_service.py`）。
+  （mas 池为纯字段侧车 + native 项目池，见 `seams/restore_service.py`）。
 - 账号配置上的 `Info.Base`（shared/independent/native）和 `Info.IfQuickConfig` **都没有 MaaFW 运行代码消费**：
   账号页上的任务队列就是唯一的任务来源（`runner_task.py` 建计划处有说明），这两个字段只在
   配置备份恢复里原样带着。不要在 MaaFW 上按三态写逻辑。
@@ -1200,7 +1216,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
 
 ## 测试与排障
 
-- 改 `tools/core/` 先跑 `tests/task/test_maafw_core.py`：核心最小回归，进仓库、长期保留，只收
+- 改 `blocks/` 先跑 `tests/task/test_maafw_core.py`：核心最小回归，进仓库、长期保留，只收
   缺一条就要命的（worker 导入闭包、宿主与 worker 之间的 job 和结果、agent 的 maafw 钉版与
   原生库一致、agent venv 失效判定）。收录标准见 `tests/AGENTS.md`「核心最小回归」；其余 MaaFW
   测试照旧只在本地跑。

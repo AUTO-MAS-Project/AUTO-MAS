@@ -20,7 +20,7 @@
 
 三个专项的脚本级流程都在运行前检查里调（放工作线程），只吃项目路径、返回给用户看的一句话或
 None，不读脚本配置。本机不是 x64 的那句提示在原生库识别库
-（``tools/core/native/architecture.describe_unsupported_architecture``），各流程直接调它。
+（``blocks/maafw_native/architecture.describe_unsupported_architecture``），各流程直接调它。
 """
 
 from __future__ import annotations

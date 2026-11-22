@@ -17,7 +17,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 """``/maafw/shell-instances*`` 端点背后的业务：列出项目目录里外壳（MFAAvalonia / MXU / MFW-PyQt6）
-保存的配置实例，按勾选逐个建成用户。格式解析与换算在 ``tools/embedded/shell_instances``。
+保存的配置实例，按勾选逐个建成用户。格式解析与换算在 ``shell_instances``。
 """
 
 from __future__ import annotations

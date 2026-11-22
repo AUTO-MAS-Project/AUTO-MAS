@@ -58,7 +58,7 @@ def prepare_project_environment_sync(
     先比指纹：项目没更新过、上次准备的环境也还在盘上，就只是一次哈希加
     几个 stat，直接跳过。
 
-    更新事务的提交前预检也走这里（``tools/embedded/precheck.py``），只是
+    更新事务的提交前预检也走这里（``blocks/maafw_project_update/host/precheck.py``），只是
     把 isolated_venv 的 agent 建到 ``agent_env_root``（池根下的预检目录）
     并且 ``store_cache=False`` 不写环境缓存（D6）。手动更新的 API 路径没有
     manager 实例，也用同一份逻辑。
