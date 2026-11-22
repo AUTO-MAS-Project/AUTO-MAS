@@ -104,110 +104,54 @@ from app.task.MaaFW.tools.core.worker_protocol import (
 # MaaFWRunResult 只在 models 里定义一份：宿主用它 model_validate worker 回传的
 # 结果，两边字段一旦分叉，多出来的字段会被 pydantic 静默丢掉（adbReadyTimeout
 # 就这么丢过一次，见下方注释）。
-try:
-    from .loop_guard import (
-        WINDOW_ITERATIONS,
-        LoopGuardVerdict,
-        MaaFWLoopGuard,
-        parse_loop_guard_exempt,
-    )
-    from .models import (
-        MaaFWDeviceConfig,
-        MaaFWFailureScreenshot,
-        MaaFWResourceFailure,
-        MaaFWRunResult,
-    )
-    from .pipeline_override import deep_merge_pipeline_override
-    from .run_events import (
-        CATEGORY_AGENT_EXITED,
-        CATEGORY_GAME_LAUNCH_FAILED,
-        CATEGORY_LOOP_GUARD,
-        CATEGORY_RUN_TIMEOUT,
-        CATEGORY_SCRIPT_STOPPED,
-        CATEGORY_SIGNAL,
-        CATEGORY_TASK_FAILED,
-        CATEGORY_TASK_TIMEOUT,
-        CATEGORY_USER_STOPPED,
-        OUTCOME_FAILED,
-        OUTCOME_LOOP,
-        OUTCOME_STOPPED,
-        OUTCOME_SUCCEEDED,
-        OUTCOME_TIMEOUT,
-        STAGE_AGENT,
-        STAGE_CONTROLLER,
-        STAGE_DEVICE,
-        STAGE_RESOURCE,
-        STAGE_RUNTIME,
-        STAGE_START_GATE,
-        MaaFWStageEvent,
-        MaaFWTaskEndEvent,
-        MaaFWTaskStartEvent,
-    )
-    from .run_plan import MaaFWRunPlan, MaaFWTaskRunPlan, _lookup_i18n_text
-    from .run_signal import (
-        CLIENT_UPDATE_REQUIRED,
-        SERVER_MAINTENANCE,
-        SIGNAL_NOTIFICATION,
-        MaaFWSignalSpec,
-        match_signal,
-        parse_signal_spec,
-        signal_enable_override,
-    )
-except ImportError:
-    from loop_guard import (  # type: ignore[no-redef]
-        WINDOW_ITERATIONS,
-        LoopGuardVerdict,
-        MaaFWLoopGuard,
-        parse_loop_guard_exempt,
-    )
-    from models import (  # type: ignore[no-redef]
-        MaaFWDeviceConfig,
-        MaaFWFailureScreenshot,
-        MaaFWResourceFailure,
-        MaaFWRunResult,
-    )
-    from pipeline_override import (  # type: ignore[no-redef]
-        deep_merge_pipeline_override,
-    )
-    from run_events import (  # type: ignore[no-redef]
-        CATEGORY_AGENT_EXITED,
-        CATEGORY_GAME_LAUNCH_FAILED,
-        CATEGORY_LOOP_GUARD,
-        CATEGORY_RUN_TIMEOUT,
-        CATEGORY_SCRIPT_STOPPED,
-        CATEGORY_SIGNAL,
-        CATEGORY_TASK_FAILED,
-        CATEGORY_TASK_TIMEOUT,
-        CATEGORY_USER_STOPPED,
-        OUTCOME_FAILED,
-        OUTCOME_LOOP,
-        OUTCOME_STOPPED,
-        OUTCOME_SUCCEEDED,
-        OUTCOME_TIMEOUT,
-        STAGE_AGENT,
-        STAGE_CONTROLLER,
-        STAGE_DEVICE,
-        STAGE_RESOURCE,
-        STAGE_RUNTIME,
-        STAGE_START_GATE,
-        MaaFWStageEvent,
-        MaaFWTaskEndEvent,
-        MaaFWTaskStartEvent,
-    )
-    from run_plan import (  # type: ignore[no-redef]
-        MaaFWRunPlan,
-        MaaFWTaskRunPlan,
-        _lookup_i18n_text,
-    )
-    from run_signal import (  # type: ignore[no-redef]
-        CLIENT_UPDATE_REQUIRED,
-        SERVER_MAINTENANCE,
-        SIGNAL_NOTIFICATION,
-        MaaFWSignalSpec,
-        match_signal,
-        parse_signal_spec,
-        signal_enable_override,
-    )
+from .loop_guard import (
+    WINDOW_ITERATIONS,
+    LoopGuardVerdict,
+    MaaFWLoopGuard,
+    parse_loop_guard_exempt,
+)
+from .models import (
+    MaaFWDeviceConfig,
+    MaaFWFailureScreenshot,
+    MaaFWResourceFailure,
+    MaaFWRunResult,
+)
+from .pipeline_override import deep_merge_pipeline_override
+from .run_events import (
+    CATEGORY_AGENT_EXITED,
+    CATEGORY_GAME_LAUNCH_FAILED,
+    CATEGORY_LOOP_GUARD,
+    CATEGORY_RUN_TIMEOUT,
+    CATEGORY_SCRIPT_STOPPED,
+    CATEGORY_SIGNAL,
+    CATEGORY_TASK_FAILED,
+    CATEGORY_TASK_TIMEOUT,
+    CATEGORY_USER_STOPPED,
+    OUTCOME_FAILED,
+    OUTCOME_LOOP,
+    OUTCOME_STOPPED,
+    OUTCOME_SUCCEEDED,
+    OUTCOME_TIMEOUT,
+    STAGE_AGENT,
+    STAGE_CONTROLLER,
+    STAGE_DEVICE,
+    STAGE_RESOURCE,
+    STAGE_RUNTIME,
+    STAGE_START_GATE,
+    MaaFWStageEvent,
+    MaaFWTaskEndEvent,
+    MaaFWTaskStartEvent,
+)
+from .run_plan import MaaFWRunPlan, MaaFWTaskRunPlan, _lookup_i18n_text
+from .run_signal import (
+    CLIENT_UPDATE_REQUIRED,
+    SERVER_MAINTENANCE,
+    SIGNAL_NOTIFICATION,
+    MaaFWSignalSpec,
+    match_signal,
+    parse_signal_spec,
+    signal_enable_override,
+)
 
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 # AgentServer 拒绝握手时打的原生日志（AgentServer.cpp handle_start_up_request），例：

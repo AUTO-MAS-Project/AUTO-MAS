@@ -47,28 +47,15 @@ for stream in (sys.stdout, sys.stderr):
     with suppress(Exception):
         stream.reconfigure(encoding="utf-8", errors="replace")
 
-if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from environment import prefer_active_venv_site_packages  # type: ignore[no-redef]
+# 宿主只以 ``python -m`` 起 worker（``embedded/plan_run.py``），没有按文件路径起的脚本方式。
+from .environment import prefer_active_venv_site_packages  # noqa: E402
 
-    # 桌面插件目录也可能安装 MaaFW。先把项目 Runner venv 放到 sys.path 最前，
-    # 避免共享插件依赖覆盖项目 requirements 声明的 MaaFW 版本。
-    prefer_active_venv_site_packages()
-    from run_events import RUN_RECORD_EVENT_TYPE  # type: ignore[no-redef]
-    from run_plan import MaaFWRunPlan  # type: ignore[no-redef]
-    from runner import (  # type: ignore[no-redef]
-        MaaFWDeviceConfig,
-        MaaFWRunner,
-        MaaFWRunResult,
-    )
-else:
-    from .environment import prefer_active_venv_site_packages
-
-    prefer_active_venv_site_packages()
-    from .run_events import RUN_RECORD_EVENT_TYPE
-    from .run_plan import MaaFWRunPlan
-    from .runner import MaaFWDeviceConfig, MaaFWRunner, MaaFWRunResult
-
+# 桌面插件目录也可能安装 MaaFW。先把项目 Runner venv 放到 sys.path 最前，
+# 避免共享插件依赖覆盖项目 requirements 声明的 MaaFW 版本。
+prefer_active_venv_site_packages()
+from .run_events import RUN_RECORD_EVENT_TYPE  # noqa: E402
+from .run_plan import MaaFWRunPlan  # noqa: E402
+from .runner import MaaFWDeviceConfig, MaaFWRunner, MaaFWRunResult  # noqa: E402
 
 _EMIT_LOCK = threading.Lock()
 # 宿主的事件通道（worker_protocol，命名管道）。None 表示走 stdout：宿主没给通道、打不开，
