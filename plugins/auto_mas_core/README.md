@@ -147,7 +147,7 @@ point(self, "special", state="matched", key="daily_reward")  # 在现有检测�
 
 ## 托管配置的加载状态
 
-专项插件没装上、没加载起来或没启用时，它的托管和计划表不会被删掉：宿主照常启动，把这些条目原样留在配置集合的旁挂区，照旧写回盘上，界面标「所属插件不可用」。插件之后在运行中落到已启用，宿主会把它们还原回原来的位置；下次启动插件正常时直接加载。旁挂区里的条目对 `Config.ScriptConfig` / `Config.PlanConfig` 的 `keys()`、`values()`、`get()`、`in` 都不可见，按 uid 取会抛继承 `KeyError` 的 `UnresolvedEntryError`。只读查询用集合的 `unresolved()` 和 `is_unresolved(uid)`。
+启动时专项插件没装上、没加载起来或没启用，它的托管和计划表不会被删掉（运行中停用、卸载仍按上面的类型移除语义删除）：宿主照常启动，把这些条目原样留在配置集合的旁挂区，照旧写回盘上，界面标「所属插件不可用」。插件之后在运行中落到已启用，宿主会把它们还原回原来的位置；下次启动插件正常时直接加载。旁挂区里的条目对 `Config.ScriptConfig` / `Config.PlanConfig` 的 `keys()`、`values()`、`get()`、`in` 都不可见，按 uid 取会抛继承 `KeyError` 的 `UnresolvedEntryError`。只读查询用集合的 `unresolved()` 和 `is_unresolved(uid)`。
 
 凡是按「托管集合里有没有」来判断某样东西已经没人用、可以清理的（项目副本、环境、缓存目录等），必须先看 `Config.managed_configs_loaded()`：
 

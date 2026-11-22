@@ -65,7 +65,8 @@ M9A、MSS）各写一份**，互不继承、互不导入；共用的只有 `app/
   拿手里的配置对象照常确认，第 11 步起 M41 的金样就是跳过的样子）。收尾项目那一步在 `try` 里，记「MFW 收尾维护失败」后跳过。
 - 启动期导入链：`import app.task.M9A.registration` / `app.task.M9A.migration` 不拉起 `account_run`、`manager`
   （`registration.py` 为属主导入的 `rules.py` 只依赖 `managed.py` 与解析一侧）；调一次 `create_config_handler()` 只多
-  导入 `config_hooks` 本身。
+  导入 `config_hooks` 本身。`migration.py` 由宿主配置单例在启动时导入，模块顶层只导入 `managed.py`：`rules.py` 和
+  MFW 解析库在真要迁移、整理 M9A 托管时才在函数里现导入，没有 M9A 托管的启动不碰解析库（解析库以后不在宿主里）。
 
 **合并上游时要手工同步的两个文件**：同一份逻辑在通用流程与本目录各有一份（第 11 步删风味以后一直如此）。
 合并上游 dev 时，凡是改了 `app/task/MaaFW/runner_task.py` 的，要把同样的改动搬进 `account_run.py`；改了

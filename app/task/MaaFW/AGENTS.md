@@ -24,7 +24,9 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `app.task.MaaFW.blocks.` 前缀就是将来发行包的导入名；`blocks/` 与本目录一样是命名空间包（没有 `__init__.py`）。
   - `blocks/maafw_interface/`：解析库（interface、建计划的 runner 模块、`controller_win32` 的窗口规则匹配、
     `log_redact`、内置 MaaEnd 用的 `embedded_labels`）。`blocks/maafw_native/`：原生库识别库。两个库没有状态，
-    只导入自己（库外的 `app.*` 一个都不导入）。
+    只导入自己（库外的 `app.*` 一个都不导入）。解析库以后不在宿主里，**宿主核心启动时不导入它**：内置 MaaEnd
+    经 `app/task/MaaEnd/mfw_parse.py` 用到时才导入，M9A 一次性迁移与项目更新的 `owners`（配置单例构造时就导入）
+    也只在函数里现导入；往这几处模块顶层加解析库的导入会让宿主离了解析库起不来。
   - `blocks/maafw_runner/`、`blocks/maafw_agent_env/`、`blocks/maafw_project_update/`：将来做成插件的三块。每块
     `core/` 是 worker 与子进程也会导入的部分（不导入任何 `host/`、接缝与宿主模块），`host/` 是宿主侧接缝
     （运行：`plan_run`、`pretask_run`、`device_config`、`desktop_game`、`desktop_windows`、`game_package`、
