@@ -109,6 +109,9 @@ async def teardown_blockers(self) -> list[str]:
 | `utils_common_zip_range` | `app.utils.common.zip_range` | `HealSkip`、`RangeHTTPReader`、`RangeReadCancelled`、`RangeSpeedGuard`、`format_size` |
 | `models_notification_channel` | `app.models.notification.channel` | `DispatchResult`、`NotifyTarget` |
 | `core_config_manager` | `app.core.config.manager` | `normalize_proxy_address` |
+| `core_notify_formats_maafw` | `app.core.notify.formats.maafw` | `build_statistics_payload` |
+| `core_notify_lifecycle` | `app.core.notify.lifecycle` | `NotificationTaskBase`（宿主自己的类，可直接继承） |
+| `utils_common_game_resolution` | `app.utils.common.game_resolution` | `UnityGameResolutionOverride`、`parse_resolution_option` |
 
 桌面分身里的动作由宿主写死的表分派，分身进程不导入插件包，所以插件只能用通用动作：`request_desktop_action(desktop, "list_windows", {})` 返回分身桌面上的全部窗口 `[[hwnd, 类名, 标题, pid], …]`（MaaFramework 的枚举顺序，已去掉失效句柄），窗口规则由调用方在本进程匹配；`request_desktop_action(desktop, "window_in_session", {"hwnd": "<句柄>"})` 返回这个窗口是否属于该分身。
 
