@@ -553,9 +553,24 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             finally:
                 if not handed_off:
                     await release_project_path(import_key)
+        user_config = script_config.UserData
+        self.user_config = user_config
+
+        # 只跑「已启用且剩余天数未耗尽」的用户；单独运行指定了用户时只保留该账号。
+        self.runnable_user_uids = [
+            uid
+            for uid, cfg in user_config.data.items()
+            if cfg.Info.Status
+            and cfg.Info.RemainedDay != 0
+            and self.task_info.is_target_user(str(uid))
+        ]
+        if not self.runnable_user_uids:
+            return "MFW 没有可运行的账号，请在账号管理页添加并启用至少一个账号"
+
         # 与旧专项 lock_script_config 同一约定：拿到托管锁后由 L2 选定游戏会话（游戏 /
         # 模拟器）、复查预下载；不调的话整轮读不到绑定的游戏与模拟器。放在项目预约交回
-        # 之后（选定可能要等串行游戏），失败时还锁、照实说原因。
+        # 之后（选定可能要等串行游戏），也放在确认有可运行账号之后（没有账号就不先占
+        # 游戏、不排队），失败时还锁、照实说原因。
         callback = getattr(self, "after_config_lock", None)
         if callback is not None:
             try:
@@ -575,19 +590,6 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                     f"MFW 取得托管锁后准备运行失败（{script_id}）：{exc}"
                 )
                 return str(exc) or type(exc).__name__
-        user_config = script_config.UserData
-        self.user_config = user_config
-
-        # 只跑「已启用且剩余天数未耗尽」的用户；单独运行指定了用户时只保留该账号。
-        self.runnable_user_uids = [
-            uid
-            for uid, cfg in user_config.data.items()
-            if cfg.Info.Status
-            and cfg.Info.RemainedDay != 0
-            and self.task_info.is_target_user(str(uid))
-        ]
-        if not self.runnable_user_uids:
-            return "MFW 没有可运行的账号，请在账号管理页添加并启用至少一个账号"
 
         self.emulator_manager = await self._resolve_emulator_manager(script_config)
 
