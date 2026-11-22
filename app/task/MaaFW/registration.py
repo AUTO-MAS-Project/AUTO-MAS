@@ -36,8 +36,13 @@ if TYPE_CHECKING:
     from app.models.task import ScriptItem, TaskExecuteBase
     from app.utils.common.config.restore import ConfigRestorePool
 
-# MFW 管理器运行、按「是 MFW 托管」自检的确切类型。第 9、10 步 M9A、MSS 各有自己的流程后
-# 从这里删掉；任何地方要判断「是不是 MFW 托管」都用它按确切类型比，不用 isinstance。
+# 「是 MFW 托管」的确切类型（通用 MFW、M9A、MSS 三个专项都算）：桌面分身判定、外壳配置导入、
+# M9A 迁移后归档这类按家族判断的地方都用它按确切类型比，不用 isinstance。M9A、MSS 有了自己的流程后
+# 仍在里面；插件形态由各专项的声明取代。
+MAAFW_FAMILY_TYPES: tuple[type[ConfigEntry], ...] = (MaaFWConfig, M9AConfig, MSSConfig)
+
+# MFW 管理器（``embedded_manager``）运行前的类型闸门：它肯跑哪些确切类型。现在与家族相同；
+# 第 9、10 步翻登记后回退时它仍要收 M9A、MSS，第 11 步删风味时才收窄成只收通用 MFW。
 MAAFW_RUN_TYPES: tuple[type[ConfigEntry], ...] = (MaaFWConfig, M9AConfig, MSSConfig)
 
 MAAFW_OWNER = "maafw_adapter"

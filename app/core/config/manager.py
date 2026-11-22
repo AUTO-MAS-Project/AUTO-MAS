@@ -2831,7 +2831,7 @@ class AppConfig:
         副本还没建，native 池按来源目录归档；引擎首次运行前还会按有效根再归档一次，指纹去重。
         """
 
-        from app.task.MaaFW.registration import MAAFW_RUN_TYPES
+        from app.task.MaaFW.registration import MAAFW_FAMILY_TYPES
         from app.task.MaaFW.tools.backup_archive import (
             archive_mas_runtime_backup,
             archive_native_backup,
@@ -2845,7 +2845,7 @@ class AppConfig:
                 continue
             try:
                 script_config = self.ScriptConfig[uuid.UUID(uid_text)]
-                if type(script_config) not in MAAFW_RUN_TYPES:
+                if type(script_config) not in MAAFW_FAMILY_TYPES:
                     continue
             except (KeyError, ValueError):
                 continue

@@ -135,12 +135,12 @@ def _family_script_config(script_id: str) -> Any:
 
     import uuid
 
-    from app.task.MaaFW.registration import MAAFW_RUN_TYPES
+    from app.task.MaaFW.registration import MAAFW_FAMILY_TYPES
     from app.task.MaaFW.tools.embedded.owners import NOT_MAAFW_MESSAGE, find_managed
 
     find_managed(script_id)
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
-    if type(script_config) not in MAAFW_RUN_TYPES:
+    if type(script_config) not in MAAFW_FAMILY_TYPES:
         raise TypeError(NOT_MAAFW_MESSAGE)
     return script_config
 

@@ -43,9 +43,9 @@ def supports_task(config: object) -> bool:
         except (OSError, KeyError, ValueError):
             return False
     # MFW 托管按确切类型认（不靠继承：M9A、MSS 以后不再继承 MaaFWConfig）
-    from app.task.MaaFW.registration import MAAFW_RUN_TYPES
+    from app.task.MaaFW.registration import MAAFW_FAMILY_TYPES
 
-    if type(config) in MAAFW_RUN_TYPES:
+    if type(config) in MAAFW_FAMILY_TYPES:
         from app.task.game import game_is_emulator
         from app.task.MaaFW.tools.core.interface.service import MaaFWInterfaceService
         from app.task.MaaFW.tools.core.runner.run_plan import (

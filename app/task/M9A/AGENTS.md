@@ -126,7 +126,7 @@
 登记运行（仍是 `MaaFWEmbeddedManager`）、配置回调与恢复池（与通用 MFW 同一套，`build_config_handler(M9AConfig, owner="m9a_adapter")`），
 以及托管属主 `m9a_adapter`（`register_owner()`，见 `app/task/MaaFW/AGENTS.md`「托管属主登记」）。宿主的回调、
 恢复池、漏登校验都按确切类型查，**不靠继承** `MaaFWConfig`：要判断「是不是 MFW 托管」的地方用
-`app/task/MaaFW/registration.MAAFW_RUN_TYPES` 按确切类型比，不写 `isinstance(…, MaaFWConfig)`。
+`app/task/MaaFW/registration.MAAFW_FAMILY_TYPES` 按确切类型比，不写 `isinstance(…, MaaFWConfig)`。
 
 前端托管页 / 账号页是 M9A 的专属页面（`frontend/src/views/m9a/`：`M9AScriptEdit.vue`、`M9AUserEdit.vue`，
 用 MaaFW 的 pageKit 分节与编排层拼），由同目录的 `entry.ts` 登记（适配条目上的 `maafw` 家族标记）；
