@@ -1366,6 +1366,15 @@ class AppConfig:
         """导出当前配置与历史的一致快照后生成整包备份。"""
         from app.core.config.backup import create_data_backup
 
+        unavailable = [*self.unavailable_scripts(), *self.unavailable_plans()]
+        if unavailable:
+            # 旁挂条目按盘上原样写进备份，加密字段是本机密文，换机或换用户恢复后解不开。
+            logger.warning(
+                "备份里有所属插件不可用的配置，其中加密字段只能在本机本用户下恢复："
+                + "、".join(
+                    f"{i['typeLabel']} - {i['name'] or i['uid']}" for i in unavailable
+                )
+            )
         return await create_data_backup()
 
     async def update_script(
