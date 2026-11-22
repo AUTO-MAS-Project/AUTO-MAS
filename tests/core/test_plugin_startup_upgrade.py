@@ -14,11 +14,13 @@ from zipfile import ZipFile
 
 import pytest
 import tomli_w
+from packaging.version import Version
 
 from app.core.plugin.manager import _PluginManager
 from app.models.config import PluginMeta, PluginRecord, PluginRegistryCollection
-from app.plugin.errors import PluginError
-from app.plugin.uv import ops, precheck
+from app.plugin.errors import PluginError, PluginPrecheckError
+from app.plugin.runtime import loader
+from app.plugin.uv import environment, ops, precheck
 
 
 @pytest.fixture(autouse=True)
@@ -618,3 +620,155 @@ async def test_cold_upgrade_preserves_host_and_config_and_enables_without_restar
         I18n.set_plugin_sources(previous_sources)
         sys.modules.pop("startup_probe", None)
         sys.modules.pop("probe_host", None)
+
+
+FAMILY_MODULES = ("fam_service", "fam_adapter_a", "fam_adapter_b", "fam_adapter_c")
+FAMILY_PLUGIN = "from app.plugin.base import BasePlugin\nclass Plugin(BasePlugin): pass\nPLUGIN=Plugin\n"
+
+
+async def _plugin_family(config, monkeypatch, tmp_path, *, stuck):
+    """已装 0.1 全家（服务 + 只认服务 0.1.x 的两个专项）和一个无关插件，
+    索引里有 0.2 全家和无关插件 2.0；``stuck`` 时另装一个没有新版本的同族专项。"""
+    source = tmp_path / "source"
+    (source / "plugins").mkdir(parents=True)
+    (source / "pyproject.toml").write_text(
+        '[project]\nname="auto-mas"\nversion="5.9.0b1"\ndependencies=[]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config, "source_path", source)
+    registry = PluginRegistryCollection.build([PluginRecord])
+    await registry.activate()
+    monkeypatch.setattr(config, "plugin_registry", registry)
+    site = ops.site_dir(activate=False)
+    monkeypatch.syspath_prepend(str(site))
+    wheels = tmp_path / "wheels"
+    wheels.mkdir()
+
+    def plugin(name, version, *requires):
+        module = name.replace("-", "_")
+        return wheel(
+            wheels,
+            name=name,
+            version=version,
+            module=module,
+            plugin_id=module,
+            content=FAMILY_PLUGIN,
+            requires=["auto-mas-core>=5,<6", *requires],
+        )
+
+    old_service, new_service = "fam-service>=0.1,<0.2", "fam-service>=0.2,<0.3"
+    installed = [
+        plugin("fam-service", "0.1.0"),
+        plugin("fam-adapter-a", "0.1.0", old_service),
+        plugin("fam-adapter-b", "0.1.0", old_service),
+        plugin("fam-unrelated", "1.0"),
+    ]
+    if stuck:
+        installed.append(plugin("fam-adapter-c", "0.1.0", old_service))
+    for path in installed:
+        with ZipFile(path) as archive:
+            archive.extractall(site)
+    plugin("fam-service", "0.2.0")
+    plugin("fam-adapter-a", "0.2.0", new_service)
+    plugin("fam-adapter-b", "0.2.0", new_service)
+    plugin("fam-unrelated", "2.0")
+    importlib.invalidate_caches()
+    from app.plugin.runtime import discover
+
+    await discover.refresh()
+    monkeypatch.setattr(precheck, "candidates", lambda: ["https://offline.test/simple"])
+    execute = precheck.ProcessRunner.run_process
+
+    async def offline(*args, **kwargs):
+        """只把包索引换成本地 wheel 目录，求解与安装都是真 uv。"""
+        args = list(args)
+        if "--index-url" in args:
+            index = args.index("--index-url")
+            args[index : index + 2] = ["--no-index", "--find-links", str(wheels)]
+        return await execute(*args, **kwargs)
+
+    monkeypatch.setattr(precheck.ProcessRunner, "run_process", offline)
+    return registry, site
+
+
+def _installed_versions(site):
+    return {
+        dist.metadata["Name"]: dist.version
+        for dist in importlib.metadata.distributions(path=[str(site)])
+    }
+
+
+def _upgrade_request(package):
+    # 主程序升级补装专项的入口：不带版本，由调用方给版本下限。
+    return PluginMeta.build(
+        info={
+            "package_name": package,
+            "plugin_name": package.replace("-", "_"),
+            "version": "",
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_family_plugins_upgrade_together_and_unrelated_plugin_stays(
+    isolated_app_paths, monkeypatch, tmp_path
+):
+    """装专项 0.2 时已加载的服务插件 0.1 挡路：同族一起升到 0.2、等重启生效，无关插件不动。"""
+    registry, site = await _plugin_family(
+        isolated_app_paths, monkeypatch, tmp_path, stuck=False
+    )
+    manager = _PluginManager()
+    try:
+        await manager.load(registry.by_name("fam_service"))
+        result = await manager.install(
+            _upgrade_request("fam-adapter-a"), minimum_version=Version("0.2.0")
+        )
+        assert result == {"restart_required": True}
+        # 运行中的环境原样，重启后生效的候选环境里整族都是 0.2。
+        assert _installed_versions(site)["fam-service"] == "0.1.0"
+        pending = _installed_versions(site.with_suffix(".pending"))
+        assert {
+            name: pending[name]
+            for name in ("fam-service", "fam-adapter-a", "fam-adapter-b")
+        } == dict.fromkeys(("fam-service", "fam-adapter-a", "fam-adapter-b"), "0.2.0")
+        assert pending["fam-unrelated"] == "1.0"
+        # 同一轮补装兄弟专项：已被一起升到下限以上，等同一次重启即可，不能报错。
+        assert await manager.install(
+            _upgrade_request("fam-adapter-b"), minimum_version=Version("0.2.0")
+        ) == {"restart_required": True}
+        with pytest.raises(PluginPrecheckError, match="等待重启"):
+            await manager.install(
+                _upgrade_request("fam-adapter-b"), minimum_version=Version("0.3.0")
+            )
+    finally:
+        await manager.shutdown()
+        for record in registry.values():
+            loader.clear(record)
+        for name in FAMILY_MODULES:
+            sys.modules.pop(name, None)
+
+
+@pytest.mark.asyncio
+async def test_family_still_unsolvable_after_release_changes_nothing(
+    isolated_app_paths, monkeypatch, tmp_path
+):
+    """放开同族后仍无解（有个同族专项没出新版本）：报依赖冲突，已装环境与登记都不动。"""
+    registry, site = await _plugin_family(
+        isolated_app_paths, monkeypatch, tmp_path, stuck=True
+    )
+    before = _installed_versions(site)
+    manager = _PluginManager()
+    try:
+        with pytest.raises(PluginError) as caught:
+            await manager.install(
+                _upgrade_request("fam-adapter-a"), minimum_version=Version("0.2.0")
+            )
+    finally:
+        await manager.shutdown()
+        for name in FAMILY_MODULES:
+            sys.modules.pop(name, None)
+    assert "网络" not in caught.value.message
+    assert _installed_versions(site) == before
+    assert not site.with_suffix(".pending").exists()
+    assert environment.read_installation() is None
+    assert registry.by_name("fam_service").info.version == "0.1.0"
