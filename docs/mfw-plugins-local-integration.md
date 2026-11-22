@@ -72,14 +72,20 @@ Start-Process .\.venv\Scripts\python.exe -ArgumentList main.py -WorkingDirectory
 
 ```python
 import hashlib, pathlib
+
 site = pathlib.Path(r"plugins\pypi\site-packages")
 blocks = pathlib.Path(r"<积木仓库>\packages")
-for mod, pkg in [("maafw_interface", "auto-mas-maafw-interface"),
-                 ("maafw_native", "auto-mas-maafw-native"),
-                 ("maafw_adapter_kit", "auto-mas-maafw-adapter-kit")]:
+for mod, pkg in [
+    ("maafw_interface", "auto-mas-maafw-interface"),
+    ("maafw_native", "auto-mas-maafw-native"),
+    ("maafw_adapter_kit", "auto-mas-maafw-adapter-kit"),
+]:
     h = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
     a = {p.relative_to(site / mod): h(p) for p in (site / mod).rglob("*.py")}
-    b = {p.relative_to(blocks / pkg / "src" / mod): h(p) for p in (blocks / pkg / "src" / mod).rglob("*.py")}
+    b = {
+        p.relative_to(blocks / pkg / "src" / mod): h(p)
+        for p in (blocks / pkg / "src" / mod).rglob("*.py")
+    }
     print(mod, "与源码一致" if a == b else "不一致")
 ```
 
