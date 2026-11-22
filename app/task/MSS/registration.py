@@ -4,24 +4,30 @@
 
 """MSS 托管的运行、配置、恢复与托管属主接入声明（按确切类型 ``MSSConfig`` 登记）。
 
-现在仍由 MFW 管理器运行、共用 MFW 的配置回调与恢复池（取自中立模块 ``MaaFW/tools/embedded/config_handler``，不经
-``MaaFW/registration``）；第 10 步 MSS 有了自己的流程后，
-只改这里的 ``manager_factory``。
+第 10 步起 MSS 跑自己的流程：``manager_factory`` 造 ``manager.MSSManager``（在函数里现导入：本模块启动期就会
+被导入，不拉起流程模块）。配置回调与恢复池仍用中立的通用版（``MaaFW/tools/embedded/config_handler``，不经
+``MaaFW/registration``）：MSS 没有保存前整理，风味路径上那一步对它本来就是空操作。
+
+回退第 10 步（回到 MFW 管理器 + 风味路径）只需要把 ``manager_factory`` 换回 ``MaaFW/registration.build_manager``，
+即 revert 翻登记的那一个提交。
 """
 
 from __future__ import annotations
 
 from functools import partial
+from typing import TYPE_CHECKING
 
 from app.models.config import MSSConfig
 from app.task.MaaFW.owner_entry import BuiltinConfigOwner
-from app.task.MaaFW.registration import build_manager
 from app.task.MaaFW.tools.embedded import owners
 from app.task.MaaFW.tools.embedded.config_handler import (
     build_maafw_config_handler,
     load_maafw_restore_pools,
 )
 from app.task.registration import ScriptRegistration
+
+if TYPE_CHECKING:
+    from app.models.task import ScriptItem, TaskExecuteBase
 
 MSS_OWNER = "mss_adapter"
 _OWNER = BuiltinConfigOwner(MSS_OWNER, lambda: MSSConfig)
@@ -35,6 +41,14 @@ def register_owner() -> None:
     """把 MSS 名下的托管（确切类型 ``MSSConfig``）登记给项目更新一侧。"""
 
     owners.register_owner(MSS_OWNER, resolve=_resolve_owner)
+
+
+def build_manager(script_item: ScriptItem) -> TaskExecuteBase:
+    """MSS 自己的脚本级管理器（现导入，启动期不拉起流程模块）。"""
+
+    from .manager import MSSManager
+
+    return MSSManager(script_item)
 
 
 REGISTRATION = ScriptRegistration(
