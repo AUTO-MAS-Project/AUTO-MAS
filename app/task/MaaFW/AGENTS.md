@@ -63,7 +63,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   进程树快照的结束、单行上限都从 `plan_run` 拿，不另写一份。合计时限、逐行打码、输出泵、只结束脚本
   解释器后代、失败原因的文案、重跑判定（`pretasks_need_rerun`，参数是计划、interface 与 `Device.HWnd`
   原值）都在这里，细节见下文「项目的运行前设置」一条。`MaaFWPretaskRunner` 一个账号一份、跨尝试共用
-  （停止与清理的状态要跨尝试保留），停止经 `stop()`；`has_live_process` 回答这边还有没有没确认退出的进程，
+  （停止与清理的状态要跨尝试保留），停止经 `stop()`；
   `exit_confirmation()` 记下此刻要等的清理与进程、返回等待入口——任务类释放项目预约（`_release_project_path`）
   前要等它返回真，**这条约束改动时不能丢**。任务类只剩取配置 → 组装入参 → 调用。
 - **一次尝试的结果判定在 `tools/embedded/run_verdict.py`**（与 `plan_run` 同一块，三个专项的流程将来都调它）：
@@ -116,7 +116,10 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   runner 可以导入 agent_env（含 runtime_pool），agent_env 不导入 runner 与 project_update，
   project_update 不导入 runner（函数体里的延迟导入、`TYPE_CHECKING` 下的也算）；三块都可以导入
   interface 与 native 两个库。`worker_protocol` 算 runner 那一块的，agent_env / project_update 不要引它
-  （日志前缀之类共用的常量放 `log_redact` 或 native）。这几条现在违反了也不会让运行出错，只会让以后
+  （日志前缀之类共用的常量放 `log_redact` 或 native）。接缝里归 runner 的（`plan_run`、`pretask_run`、
+  `run_verdict`、`run_redaction`）不导入项目更新一侧的接缝（`project_session`、`embedded_project`……）与专项
+  （任务类 `runner_task` 这类账号级流程、风味）；`run_verdict` 为认登录失败导入 `flavor.MaaFWLoginRequired`
+  是临时例外，删风味时去掉。这几条现在违反了也不会让运行出错，只会让以后
   拆包时那一块带不走，所以没进核心最小回归；加导入前自己按 AST 查一遍方向。
 - **运行环境的准备与借还归 agent 环境**：`agent_env/runtime_lease.py` 是运行池 base venv + binding 的
   唯一入口——`borrow_runtime_environment` 借（返回 `MaaFWRuntimeLease`：解释器、base venv、binding

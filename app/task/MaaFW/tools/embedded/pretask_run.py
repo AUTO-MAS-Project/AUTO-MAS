@@ -15,8 +15,7 @@
 继承管道）；超时或停止只结束 pretask 进程和它下面一路都是脚本解释器的后代，游戏、启动器不碰。
 
 ``MaaFWPretaskRunner`` 跨尝试共用一份：停止与清理的状态要跨尝试保留。项目预约的释放要等这边的
-进程确认退出——``has_live_process`` 回答还有没有活着的进程，``exit_confirmation`` 记下此刻要等的
-清理与进程、返回等待入口。
+进程确认退出——``exit_confirmation`` 记下此刻要等的清理与进程、返回等待入口。
 """
 
 from __future__ import annotations
@@ -183,17 +182,6 @@ class MaaFWPretaskRunner:
 
     def _log(self, message: str, *, warning: bool = False) -> None:
         self._emit(MaaFWPlanRunLog(message, warning))
-
-    @property
-    def has_live_process(self) -> bool:
-        """这边还有没有没确认退出的进程（在跑的、正在结束的），或者清理还没做完。"""
-
-        if self._cleanup is not None and not self._cleanup.done():
-            return True
-        return any(
-            process is not None and process.returncode is None
-            for process in (self._process, self._stopping)
-        )
 
     def exit_confirmation(self) -> Callable[[], Awaitable[bool]]:
         """记下此刻要等的清理与正在结束的进程，返回等待入口。
