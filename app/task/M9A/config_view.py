@@ -4,7 +4,8 @@
 
 """M9A 流程读写配置的唯一入口：只给函数，返回普通值。
 
-``account_run``（账号级）与 ``manager``（脚本级）不直接读脚本配置、账号配置的属性，一律经这里：
+``account_run``（账号级）、``manager``（脚本级）与 ``config_hooks``（配置回调、恢复池）不直接读脚本配置、
+账号配置的属性，一律经这里：
 它们手里的配置对象只当不透明的句柄，交给这里的函数，或原样交给吃配置对象的 M9A 老模块
 （``login.py``）与宿主能力（``close_emulator(self)`` / ``resolve_host_adb(self)`` 读的是任务对象）。
 以后配置类不再继承 ``MaaFWConfig``、换基类（``UserData`` → ``users``、``Info.Status`` → ``info.enabled``）时，
@@ -39,6 +40,7 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     shell_hint_from_report,
 )
 from app.task.MaaFW.tools.embedded.option_secrets import (
+    prepare_user_task_snapshot,
     script_task_snapshots,
     user_task_snapshot,
 )
@@ -150,6 +152,23 @@ def run_selection(
         configured_controller=str(script.Info.Controller or ""),
         emulator_selected=game_is_emulator(script),
         configured_resource=str(script.Info.Resource or ""),
+    )
+
+
+def settle_selection(
+    script: Any, interface_model: MaaFWInterface
+) -> tuple[str | None, str | None]:
+    """保存前整理（``config_hooks``）用的 ``(controller 名, 生效的 resource 名)``。
+
+    口径同 :func:`run_selection`，只是 ``Info.Controller`` / ``Info.Resource`` 读不到时按空串（照旧风味路径
+    ``sanitize_user_task_update`` 的读法）。
+    """
+
+    return resolve_run_selection(
+        interface_model,
+        configured_controller=str(_value(script, "Info", "Controller") or ""),
+        emulator_selected=game_is_emulator(script),
+        configured_resource=str(_value(script, "Info", "Resource") or ""),
     )
 
 
@@ -348,6 +367,32 @@ def account_id(user: Any) -> str:
     return str(_value(user, "Info", "Id") or "").strip()
 
 
+def settle_user_info(user: Any, incoming_info: dict[str, Any]) -> dict[str, Any]:
+    """这次写入之后该账号 ``Info`` 的样子：``{"Id": ..., "Notes": ...}``，本次写入带了就取写入值，
+    没带就取账号现值（读不到按 None）。"""
+
+    return {
+        name: incoming_info[name]
+        if name in incoming_info
+        else _value(user, "Info", name)
+        for name in ("Id", "Notes")
+    }
+
+
+def seal_task_snapshot(script_id: str, script: Any, snapshot: Any) -> Any:
+    """保存前加密快照里的密码（``option_secrets.prepare_user_task_snapshot``）。"""
+
+    return prepare_user_task_snapshot(
+        script_id=script_id, script_config=script, snapshot=snapshot
+    )
+
+
+async def replace_user_fields(user: Any, overlay: dict[str, dict]) -> None:
+    """配置恢复：按分组字段整体回填账号（``user.update(账号类.model_validate(overlay))``）。"""
+
+    await user.update(type(user).model_validate(overlay))
+
+
 def task_snapshot_raw(user: Any) -> Any:
     return user.Task.TaskSnapshot
 
@@ -460,6 +505,7 @@ __all__ = [
     "proxy_url",
     "remained_day",
     "repair_request",
+    "replace_user_fields",
     "run_selection",
     "run_time_limit",
     "run_times_limit",
@@ -468,12 +514,15 @@ __all__ = [
     "script_before_task",
     "script_name",
     "script_uid",
+    "seal_task_snapshot",
     "selected_preset",
     "set_last_proxy_date",
     "set_last_proxy_status",
     "set_period_records",
     "set_proxy_times",
     "set_remained_day",
+    "settle_selection",
+    "settle_user_info",
     "silent_mode",
     "source_path",
     "task_snapshot_raw",
