@@ -15,6 +15,7 @@ import platform
 import shutil
 import sys
 import tempfile
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -126,12 +127,28 @@ def _pinned_versions(pinned: list[str]) -> dict[str, str]:
     return versions
 
 
-def _installed_requires(package: str) -> set[str]:
-    """已装发行包按 Requires-Dist 直接依赖的包名（规范化）；读不到的返回空集。"""
-    try:
-        requires = importlib_metadata.distribution(package).requires or []
-    except importlib_metadata.PackageNotFoundError:
-        return set()
+def _installed_requires(package: str, path: Path | None = None) -> set[str]:
+    """已装发行包按 Requires-Dist 直接依赖的包名（规范化）；读不到的返回空集。
+
+    给了 ``path`` 时只在该目录里找：启动前插件目录还没进导入路径。
+    """
+    if path is None:
+        try:
+            requires = importlib_metadata.distribution(package).requires or []
+        except importlib_metadata.PackageNotFoundError:
+            return set()
+    else:
+        found = next(
+            (
+                dist
+                for dist in importlib_metadata.distributions(path=[str(path)])
+                if canonicalize_name(dist.name or "") == canonicalize_name(package)
+            ),
+            None,
+        )
+        if found is None:
+            return set()
+        requires = found.requires or []
     names = set()
     for text in requires:
         try:
@@ -147,7 +164,11 @@ def _installed_requires(package: str) -> set[str]:
 
 
 async def _family_release(
-    package_spec: str, pinned: list[str], pins: list[str]
+    package_specs: list[str],
+    pinned: list[str],
+    pins: list[str],
+    *,
+    installed_path: Path | None = None,
 ) -> dict[str, str]:
     """其余插件全钉住无解时，算出要一起放开的已装插件（包名 → 当前版本）。
 
@@ -164,7 +185,7 @@ async def _family_release(
         return {}
     # 只求解不安装；本地源码库照常参与，别的插件不放进来，免得它们的钉子挡住求解。
     alone = await resolve_environment(
-        targets=[package_spec, *(str(library) for library in local_libraries())],
+        targets=[*package_specs, *(str(library) for library in local_libraries())],
         core_version=Config.VERSION,
         dependencies=host_dependencies(),
         constraints=pins,
@@ -172,14 +193,14 @@ async def _family_release(
     )
     if not alone.ok:
         return {}
-    target = canonicalize_name(Requirement(package_spec).name)
+    targets = {canonicalize_name(Requirement(spec).name) for spec in package_specs}
     released = {name for name in alone.resolved if name in installed}
-    frontier = released | {target}
+    frontier = released | targets
     grown = True
     while grown:
         grown = False
         for name in sorted(installed.keys() - released):
-            if _installed_requires(name) & frontier:
+            if _installed_requires(name, installed_path) & frontier:
                 released.add(name)
                 frontier.add(name)
                 grown = True
@@ -250,7 +271,7 @@ async def install(
         )
         if not result.ok:
             # 别的插件全钉住时无解：同族插件之间写了次版本上限，要一起升才解得开。
-            released = await _family_release(package_spec, pinned, pins)
+            released = await _family_release([package_spec], pinned, pins)
             if released:
                 logger.info(
                     "安装 {} 时其余插件全部钉住无解，放开同族插件再求解：{}",
@@ -377,8 +398,195 @@ async def install(
         return False
 
 
-async def prepare_environment() -> None:
-    """首次导入前联合修复插件环境；校验成功后替换目录，不触发禁用或清配置。"""
+def _below_minimum(
+    records: list, existing: dict[str, str], minimums: Mapping[str, Version]
+) -> dict[str, Version]:
+    """已装版本低于下限的插件发行包：规范化包名 → 下限；只看给了下限的已装插件。"""
+    raised = {}
+    for record in records:
+        minimum = minimums.get(record.info.plugin_name)
+        if (
+            minimum is None
+            or record.info.source != "installed"
+            or not record.info.package_name
+        ):
+            continue
+        name = canonicalize_name(record.info.package_name)
+        version = existing.get(name)
+        if version is None:
+            continue
+        try:
+            if Version(version) < minimum:
+                raised[name] = minimum
+        except InvalidVersion:
+            continue
+    return raised
+
+
+def _lift_minimums(targets: list[str], raised: Mapping[str, Version]) -> list[str]:
+    """把低于下限的插件目标换成 ``>=下限``，其余原样保留。"""
+    result = []
+    for item in targets:
+        if not Path(item).is_dir():
+            name = canonicalize_name(Requirement(item).name)
+            if name in raised:
+                result.append(f"{name}>={raised[name]}")
+                continue
+        result.append(item)
+    return result
+
+
+async def _solve_minimums(
+    targets: list[str],
+    raised: Mapping[str, Version],
+    pins: list[str],
+    prepared: Path,
+    installed_path: Path,
+):
+    """带上版本下限求解并装进候选目录；解不开或出错时返回 None，由调用方按原样启动。
+
+    先只抬下限、别的插件钉住；无解时照安装时的做法放开同族插件再解一次。
+    """
+    from app.core import Config
+
+    from .precheck import conflict_summary, host_dependencies, resolve_environment
+
+    logger.info(
+        "存量配置要的插件低于版本下限，加载插件前一并升级：{}",
+        "、".join(f"{name}>={version}" for name, version in raised.items()),
+    )
+    try:
+        result = await resolve_environment(
+            targets=_lift_minimums(targets, raised),
+            core_version=Config.VERSION,
+            dependencies=host_dependencies(),
+            constraints=pins,
+            destination=prepared,
+            partial=True,
+        )
+        if not result.ok:
+            pinned = [
+                item
+                for item in targets
+                if Path(item).is_dir()
+                or canonicalize_name(Requirement(item).name) not in raised
+            ]
+            released = await _family_release(
+                [f"{name}>={version}" for name, version in raised.items()],
+                pinned,
+                pins,
+                installed_path=installed_path,
+            )
+            if released:
+                logger.info(
+                    "只抬下限无解，放开同族插件再求解：{}",
+                    "、".join(
+                        f"{name}>={version}" for name, version in released.items()
+                    ),
+                )
+                if prepared.exists():
+                    shutil.rmtree(prepared)
+                result = await resolve_environment(
+                    targets=_lift_minimums(_release_pins(targets, released), raised),
+                    core_version=Config.VERSION,
+                    dependencies=host_dependencies(),
+                    constraints=pins,
+                    destination=prepared,
+                    partial=True,
+                )
+    except Exception as error:  # noqa: BLE001
+        # 离线、镜像没同步、装包出错都不能挡启动；没达标的插件这一轮不接手。
+        logger.opt(exception=True).warning(
+            "启动前没能把插件升到版本下限，先按现有版本启动：{}", error
+        )
+        return None
+    if not result.ok:
+        summary = conflict_summary(result)
+        logger.warning(
+            "启动前没能把插件升到版本下限，先按现有版本启动：{}{}",
+            result.detail,
+            f"（涉及 {summary}）" if summary else "",
+        )
+        return None
+    return result
+
+
+def _library_targets(
+    libraries: Sequence[str], existing: Mapping[str, str]
+) -> tuple[list[str], list[str]]:
+    """宿主内置托管要的库的求解目标：已装且满足的钉 ``==现版本``，其余照需求原样。
+
+    第二项是还没装上或版本不满足的需求。
+    """
+    targets, missing = [], []
+    for text in libraries:
+        requirement = Requirement(text)
+        name = canonicalize_name(requirement.name)
+        version = existing.get(name)
+        if version is not None and requirement.specifier.contains(
+            version, prereleases=True
+        ):
+            targets.append(f"{name}=={version}")
+        else:
+            targets.append(text)
+            missing.append(text)
+    return targets, missing
+
+
+async def _solve_libraries(
+    targets: list[str], missing: list[str], pins: list[str], prepared: Path
+):
+    """带上宿主内置托管要的库求解并装进候选目录；解不开或出错时返回 None。
+
+    库装不上不挡启动：调用方退回不带库的原有流程，用到它的功能运行时再报错。
+    """
+    from app.core import Config
+
+    from .precheck import conflict_summary, host_dependencies, resolve_environment
+
+    if missing:
+        logger.info(
+            "宿主内置托管要的库还没装上，一并装进插件环境：{}", "、".join(missing)
+        )
+    try:
+        result = await resolve_environment(
+            targets=targets,
+            core_version=Config.VERSION,
+            dependencies=host_dependencies(),
+            constraints=pins,
+            destination=prepared,
+            partial=True,
+        )
+    except Exception as error:  # noqa: BLE001
+        logger.opt(exception=True).warning(
+            "宿主内置托管要的库没装上，先照常启动，联网后重启会再装：{}", error
+        )
+        return None
+    if not result.ok:
+        summary = conflict_summary(result)
+        logger.warning(
+            "宿主内置托管要的库没装上，先照常启动：{}{}",
+            result.detail,
+            f"（涉及 {summary}）" if summary else "",
+        )
+        return None
+    return result
+
+
+async def prepare_environment(
+    minimums: Mapping[str, Version] | None = None,
+    libraries: Sequence[str] = (),
+) -> None:
+    """首次导入前联合修复插件环境；校验成功后替换目录，不触发禁用或清配置。
+
+    ``minimums``：存量配置要的插件（插件 ID → 版本下限）。已装版本低于下限时，这次
+    求解带上下限，整族在任何插件模块导入前换成达标的版本；解不开时只记警告、按现有
+    版本继续，没达标的插件由插件管理器这一轮不启用。
+
+    ``libraries``：宿主内置托管要的库（需求串，例如 MaaEnd 用的 MFW 解析库）。它们
+    不是插件，只作为求解目标装进同一个插件环境；已装且满足时不触发求解，装不上时
+    只记警告、照常启动。
+    """
     from app.core import Config
     from app.utils.common.tools import to_pep440
 
@@ -425,29 +633,58 @@ async def prepare_environment() -> None:
         },
     }
     marker = target.parent / "environment.json"
+    unchanged = False
     if marker.is_file():
         try:
-            if json.loads(marker.read_text(encoding="utf-8")) == fingerprint:
-                previous = target.with_suffix(".previous")
-                if previous.exists():
-                    shutil.rmtree(previous)
-                return
+            unchanged = json.loads(marker.read_text(encoding="utf-8")) == fingerprint
         except ValueError:
             logger.warning("插件环境记录损坏，重新准备依赖")
+    previous = target.with_suffix(".previous")
+    # 环境没变也要求解：已装版本低于存量配置要的下限，不能被指纹短路。
+    raised = _below_minimum(records, existing, minimums or {})
+    # 宿主内置托管要的库：已装且满足就钉在现版本，指纹里的已装版本照常管住它。
+    pinned_libraries, missing = _library_targets(libraries, existing)
+    if unchanged and not raised and not missing:
+        if previous.exists():
+            shutil.rmtree(previous)
+        return
 
     logger.info("正在检查并准备插件依赖环境，完成后加载插件")
-    previous = target.with_suffix(".previous")
     with tempfile.TemporaryDirectory(
         prefix=".prepare-", dir=target.parent
     ) as temporary:
         prepared = Path(temporary) / "site-packages"
-        result = await resolve_environment(
-            targets=targets,
-            core_version=Config.VERSION,
-            dependencies=host_dependencies(),
-            constraints=pins,
-            destination=prepared,
-        )
+        result = None
+        if raised:
+            result = await _solve_minimums(
+                [*targets, *libraries], raised, pins, prepared, target
+            )
+            if result is None:
+                if prepared.exists():
+                    shutil.rmtree(prepared)
+                if unchanged and not missing:
+                    if previous.exists():
+                        shutil.rmtree(previous)
+                    return
+        if result is None and libraries:
+            result = await _solve_libraries(
+                [*targets, *pinned_libraries], missing, pins, prepared
+            )
+            if result is None:
+                if prepared.exists():
+                    shutil.rmtree(prepared)
+                if unchanged:
+                    if previous.exists():
+                        shutil.rmtree(previous)
+                    return
+        if result is None:
+            result = await resolve_environment(
+                targets=targets,
+                core_version=Config.VERSION,
+                dependencies=host_dependencies(),
+                constraints=pins,
+                destination=prepared,
+            )
         if not result.ok:
             # 保留当前版本无解时，才允许联合升级；禁用包仍参与，不降级、不转远端源码包。
             if prepared.exists():

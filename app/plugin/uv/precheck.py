@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.metadata as importlib_metadata
 import platform
 import re
+import shutil
 import site
 import sys
 import tempfile
@@ -387,6 +388,8 @@ async def resolve_environment(
                 )
         incomplete = False
         unsolvable = ""
+        # 超时没给出结论的镜像，全部镜像都没结论时写进提示。
+        timed_out: list[str] = []
         architecture = {"amd64": "x86_64", "arm64": "aarch64", "i386": "i686"}.get(
             platform.machine().lower(), platform.machine().lower()
         )
@@ -423,9 +426,16 @@ async def resolve_environment(
             ]
             for package in excluded:
                 args.extend(["--no-emit-package", package])
-            result = await ProcessRunner.run_process(
-                *args, timeout=600, kill_tree_on_cancel=True
-            )
+            try:
+                result = await ProcessRunner.run_process(
+                    *args, timeout=600, kill_tree_on_cancel=True
+                )
+            except TimeoutError:
+                # 单个镜像卡住只算它没给出结论，换下一个镜像。
+                logger.warning("插件依赖解析超时（{}），换下一个镜像", mirror)
+                incomplete = True
+                timed_out.append(mirror)
+                continue
             if result.returncode != 0:
                 # 镜像未收录目标版本时继续尝试，不能提前判定永久冲突。
                 detail = str(result.stderr or result.stdout or "")
@@ -441,24 +451,32 @@ async def resolve_environment(
                 return CoreCompat(ok=True, resolved=_resolved_names(resolved))
 
             destination.mkdir(parents=True, exist_ok=True)
-            result = await ProcessRunner.run_process(
-                ensure(),
-                "pip",
-                "install",
-                "--python",
-                sys.executable,
-                "--target",
-                str(destination),
-                "--no-deps",
-                "--requirements",
-                str(resolved),
-                "--index-url",
-                mirror,
-                "--prerelease",
-                "allow",
-                timeout=600,
-                kill_tree_on_cancel=True,
-            )
+            try:
+                result = await ProcessRunner.run_process(
+                    ensure(),
+                    "pip",
+                    "install",
+                    "--python",
+                    sys.executable,
+                    "--target",
+                    str(destination),
+                    "--no-deps",
+                    "--requirements",
+                    str(resolved),
+                    "--index-url",
+                    mirror,
+                    "--prerelease",
+                    "allow",
+                    timeout=600,
+                    kill_tree_on_cancel=True,
+                )
+            except TimeoutError:
+                # 装到一半被停下的文件不留给下一个镜像。
+                logger.warning("插件依赖安装超时（{}），换下一个镜像", mirror)
+                shutil.rmtree(destination, ignore_errors=True)
+                incomplete = True
+                timed_out.append(mirror)
+                continue
             if result.returncode != 0:
                 incomplete = True
                 logger.warning(
@@ -486,6 +504,12 @@ async def resolve_environment(
             await mark_ok(mirror)
             return CoreCompat(ok=True, resolved=_resolved_names(resolved))
         if incomplete and not unsolvable:
+            if timed_out:
+                raise PluginPrecheckError(
+                    "兼容性检查未完成：镜像 "
+                    + "、".join(timed_out)
+                    + " 响应超时，其余镜像也没有给出结论，请检查网络或稍后重试"
+                )
             raise PluginPrecheckError("兼容性检查未完成，请检查网络或稍后重试")
         host = {
             name

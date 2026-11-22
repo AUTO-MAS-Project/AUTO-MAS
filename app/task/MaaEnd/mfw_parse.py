@@ -14,8 +14,9 @@
 #   Contact: DLmaster_361@163.com
 """MaaEnd 用到的 MFW interface 解析代码，调用时才导入。
 
-解析代码是已发布的库 ``maafw_interface``，不是宿主依赖：装了 MFW 插件才在插件环境里。导入 MaaEnd
-不需要它，只有真正拼游戏启动设置时才要；它不在时抛 ``RuntimeError``，走 MaaEnd 现有的运行前失败提示。
+解析代码是已发布的库 ``maafw_interface``，不是宿主依赖：配置里有 MaaEnd 托管时，宿主在启动前的
+共享环境准备里把它装进插件环境（装了 MFW 插件也会带上）。导入 MaaEnd 不需要它，只有真正拼游戏启动
+设置时才要；它不在时抛 ``RuntimeError``，走 MaaEnd 现有的运行前失败提示。
 """
 
 from __future__ import annotations
@@ -49,8 +50,7 @@ def _module(name: str) -> ModuleType:
         return importlib.import_module(name)
     except ImportError as error:
         raise RuntimeError(
-            "MaaEnd 的游戏启动设置要用 MFW 解析库 maafw_interface，当前没有装上："
-            f"请在插件中心安装 MFW 插件（auto-mas-maafw-adapter）后重试（{error}）"
+            "MaaEnd 启动游戏要用的 MFW 解析库还没装上，联网后重启 AUTO-MAS 会自动安装"
         ) from error
 
 
