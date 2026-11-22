@@ -1398,6 +1398,42 @@ class _PluginManager:
             game_kinds=decl.game_kinds,
         )
 
+    def _script_decl_gate(self, config):
+        """按托管配置找声明及其插件的调用门；声明在、门不在时门为 ``None``。"""
+        for uid, decl in self.script_types.items():
+            if isinstance(config, decl.script_type):
+                return decl, self._calls.get(uid)
+        return None, None
+
+    def script_game_kinds(self, config, patch: dict) -> tuple[str, ...]:
+        """插件托管可绑定的游戏类型：声明了 ``game_kind`` 时按配置收窄，失败时取静态声明。"""
+        decl, gate = self._script_decl_gate(config)
+        if decl is None:
+            raise PluginPrecheckError("托管所属插件当前不可用")
+        if decl.game_kind is None or gate is None:
+            return decl.game_kinds
+        try:
+            kind = gate.wrap(decl.game_kind)(config, patch)
+        except Exception:
+            logger.opt(exception=True).warning(
+                f"插件判定游戏类型失败，按静态声明处理: {type(config).__name__}"
+            )
+            return decl.game_kinds
+        return decl.game_kinds if kind is None else (kind,)
+
+    def script_supports_desktop(self, config) -> bool:
+        """插件托管能否在桌面分身里跑；未声明、插件不可用或判定失败时为否。"""
+        decl, gate = self._script_decl_gate(config)
+        if decl is None or decl.desktop_session is None or gate is None:
+            return False
+        try:
+            return bool(gate.wrap(decl.desktop_session)(config))
+        except Exception:
+            logger.opt(exception=True).warning(
+                f"插件判定桌面分身失败，按不支持处理: {type(config).__name__}"
+            )
+            return False
+
     async def search_game_adapter(
         self, uid: UUID, decl: GameTypeDecl
     ) -> Sequence[GameEntry]:

@@ -45,6 +45,11 @@ class ScriptTypeDecl:
     activity_game: str | None = None
     game_kinds: tuple[str, ...] = ()
     supports_mod_avd: bool = False
+    # 按托管当前配置和保存补丁收窄 game_kinds：返回 "emulator" / "client"；
+    # 返回 None、插件不可用或抛异常时按 game_kinds。同步调用，经插件调用门。
+    game_kind: Callable[[ScriptEntry, dict[str, Any]], str | None] | None = None
+    # 这个托管能否在桌面分身里跑；未声明、插件不可用或抛异常时为不支持。
+    desktop_session: Callable[[ScriptEntry], bool] | None = None
 
 
 class ScriptAdapterPlugin(_AdapterPlugin):

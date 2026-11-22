@@ -101,6 +101,13 @@ point(self, "special", state="matched", key="daily_reward")  # 在现有检测�
 执行上下文接收 `(执行器, RunPoint)`，不新增公共任务树字段、WebSocket 消息或磁盘格式。
 只有收尾时才读取的规则在收尾交付，不伪装成实时监听。更新或关闭动作未由 MAS 接管时，不补报成功。
 
+**按配置判定的游戏类型和桌面分身。** `ScriptTypeDecl` 末尾有两个可选的同步函数，都经插件调用门调用：
+
+- `game_kind(script, patch)`：按托管当前配置和本次保存补丁（运行时选目标时补丁只含 `game`）返回 `"emulator"` 或 `"client"`，把 `game_kinds` 收窄成一项；返回 `None`、插件不可用或抛异常时按静态的 `game_kinds`。保存托管、保存账号和运行时选游戏目标都会用它校验绑定，判断不了时请返回 `None`，不要拦住运行。
+- `desktop_session(script)`：这个托管能否在桌面分身里跑；未声明、插件不可用或抛异常时为不支持（即以前的行为）。
+
+两个函数都会在事件循环里同步执行，只做轻量读取。
+
 **托管级检查与良性跳过。** `UserExpander.check()` 返回字符串时整个托管记「异常」；返回 `ScriptSkip(reason)`（从 `auto_mas_core` 或 `auto_mas_core.adapters.script` 导入）表示这次不是故障、只是暂时不能跑（例如项目正在更新或被占用）：托管和尚未开始的账号记「跳过」，任务收到一条 warning 提示，不派发任何账号。返回 `None` 照常运行。
 
 展开类可以继承 `UserExpander[MyScriptEntry]`，使 `script_config` 保留专项配置类型。仓库的 `pyrightconfig.json` 已声明 SDK 源码路径；包内其他模块使用相对导入，独立插件工程则在自己的开发环境安装 SDK。
