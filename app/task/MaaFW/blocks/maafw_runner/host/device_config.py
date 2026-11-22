@@ -705,17 +705,33 @@ def match_controller_windows(controller: MaaFWController) -> list[Any]:
 
 
 async def list_desktop_window_matches(controller: MaaFWController):
+    """桌面分身里匹配控制器窗口规则的窗口，每项 ``[句柄, 类名, 标题, pid]``。
+
+    分身只经宿主通用的 ``list_windows`` 动作列出窗口（已滤掉失效句柄），按窗口规则匹配在本进程用解析库做，
+    结果与原先在分身里匹配的 ``maafw_windows`` 相同。
+    """
     from app.task.desktop_session_worker import request_desktop_action
 
     desktop = desktop_process_target.get()
     if desktop is None:
         raise RuntimeError("桌面分身会话未配置")
-    _, matches = await request_desktop_action(
-        desktop,
-        "maafw_windows",
-        {"controller": controller.model_dump_json(by_alias=True)},
+    _, rows = await request_desktop_action(desktop, "list_windows", {})
+    pids: dict[int, Any] = {}
+    windows: list[MaaFWWin32Window] = []
+    for row in rows or []:
+        hwnd = int(row[0])
+        pids.setdefault(hwnd, row[3])
+        windows.append(
+            MaaFWWin32Window(hWnd=hwnd, className=str(row[1]), windowName=str(row[2]))
+        )
+    matched = MaaFWWin32ControllerService().match_controller_windows(
+        controller.model_dump(mode="json", by_alias=True),
+        list_windows=lambda: windows,
     )
-    return matches
+    return [
+        [item.hWnd, item.className, item.windowName, pids[item.hWnd]]
+        for item in matched
+    ]
 
 
 async def match_windows_in_session(controller: MaaFWController):
@@ -738,7 +754,7 @@ async def resolve_window_handle(
             from app.task.desktop_session_worker import request_desktop_action
 
             _, exists = await request_desktop_action(
-                desktop, "maafw_windows", {"hwnd": str(parsed_hwnd)}
+                desktop, "window_in_session", {"hwnd": str(parsed_hwnd)}
             )
             if not exists:
                 raise RuntimeError("配置的窗口句柄不在桌面分身内")

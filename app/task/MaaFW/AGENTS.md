@@ -52,7 +52,9 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `ldplayer_maafw_adb_extra` 与 SDK 的 `maafw_adb_extra` 同形，是为以后交给各自的模拟器适配插件准备的
   （ModAVD 已经这样做了）。按 interface 窗口规则匹配窗口仍在 `blocks/maafw_interface/controller_win32`（解析库，
   只依赖 `interface`）；扫桌面上的窗口要 MaaFramework 绑定，在运行一侧的 `desktop_windows`，由调用方作为
-  `list_windows` 交给它。
+  `list_windows` 交给它。桌面分身里（`list_desktop_window_matches` / `resolve_window_handle`）只让分身跑宿主通用的
+  `list_windows` 动作列窗口、在本进程按规则匹配，查配置的句柄在不在分身内用通用的 `window_in_session`；
+  `desktop_session_worker` 里 MFW 专用的 `maafw_windows` 动作已没有调用方，留到 P4 删。
 - **「把一份计划在一台设备上跑完」在 `blocks/maafw_runner/host/plan_run.py`**（将来是运行这一块对外的「跑一份计划」，
   三个专项各自的流程都调它，默认带全部保护）：整轮硬杀兜底（worker 自停的截止之后再给
   `_RUN_DEADLINE_GRACE_SECONDS`）、借还运行环境、生成 job、事件通道（建不起来退回 stdout）、起 worker
