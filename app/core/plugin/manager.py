@@ -1545,6 +1545,15 @@ class _PluginManager:
                     plugin.precheck_locks()
                 except PluginPrecheckError as exc:
                     blockers.append({"plugin": name, "reason": exc.message})
+            # 插件自己的在途工作（运行、更新作业、准备环境）不对应托管锁，由它说明能否拆。
+            try:
+                reasons = await plugin.teardown_blockers()
+            except Exception as exc:
+                logger.exception(f"插件拆卸预检出错: {name}")
+                reasons = [f"预检出错：{exc}"]
+            blockers.extend(
+                {"plugin": name, "reason": str(reason)} for reason in reasons or ()
+            )
         if blockers:
             raise PluginPrecheckError(
                 "；".join(f"插件 `{b['plugin']}`：{b['reason']}" for b in blockers),
