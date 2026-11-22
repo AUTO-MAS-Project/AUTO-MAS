@@ -240,7 +240,12 @@ class _PluginManager:
                 await apply_pending()
             # 只发现元数据；旧插件及其依赖在联合升级完成前不能进入导入环境。
             await discover.refresh(installed_path=site)
-            await uv_tool.prepare_environment()
+            minimums = self._startup_minimums()
+            if minimums:
+                # 存量配置要的专项低于下限时，在任何插件模块导入前连同同族一起升上来。
+                await uv_tool.prepare_environment(minimums=minimums)
+            else:
+                await uv_tool.prepare_environment()
             uv_tool.site_dir()
             from app.core.config import Config
 
@@ -1658,6 +1663,18 @@ class _PluginManager:
         record._config = None
 
     # ==================== record / 状态回写 ====================
+
+    @staticmethod
+    def _startup_minimums() -> dict[str, Version]:
+        """存量配置要的专项插件里带版本下限的那些；读不了配置时按没有处理。"""
+        from app.core.config import Config
+        from app.core.config.plugin_upgrade import required_minimum_versions
+
+        try:
+            return required_minimum_versions(Config.config_path)
+        except Exception:
+            logger.exception("读取存量配置要求的插件版本下限失败，按无下限启动")
+            return {}
 
     def _record_by_plugin_id(self, plugin_id: str) -> PluginRecord | None:
         """按插件 id（plugin_name）查 record；供 requires 边解析。"""

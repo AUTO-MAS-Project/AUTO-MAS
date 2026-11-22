@@ -68,6 +68,18 @@ def required_adapter_plugins(config_path: Path) -> dict[str, str]:
     return required
 
 
+def required_minimum_versions(config_path: Path) -> dict[str, Version]:
+    """存量配置要的专项插件里带版本下限的那些：插件 ID → 下限。
+
+    启动前的共享环境准备按它把低于下限的已装专项（连同同族）升上来。
+    """
+    return {
+        name: _MINIMUM_ADAPTER_VERSIONS[name]
+        for name in required_adapter_plugins(config_path)
+        if name in _MINIMUM_ADAPTER_VERSIONS
+    }
+
+
 async def install_adapter_plugins(required: dict[str, str]) -> None:
     """在领域集合激活前复用插件安装及启用入口，失败时中止配置升级。"""
     for name, package in required.items():
