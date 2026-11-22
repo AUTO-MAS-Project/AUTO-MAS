@@ -19,7 +19,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
 - `tools/embedded/`：宿主与核心包之间**唯一**的接缝（`runner_task`、`runtime_route`、
   `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
   `update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
-  `default_snapshot`、`env_confirm`、`update_session`、`device_config`、`plan_run`）。
+  `default_snapshot`、`env_confirm`、`update_session`、`device_config`、`plan_run`、`pretask_run`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - **设备配置与首任务闸门在 `tools/embedded/device_config.py`**（将来是运行这一块对外的「设备配置」调用，
   三个专项各自的流程都调它）：游戏包名、adb 路径（含「宿主没定下路径时问 Toolkit」，判据由调用方算好
@@ -52,7 +52,17 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   运行记录与进度点 → 处理返回值。只和 M9A 有关的「登录交给首任务完成」（`StartupTask`）不在这里：任务类在
   调用前把首任务标成 `abortRoundMessage`、把登录截止时刻放进 `task_deadlines`，截止已过时 `plan_run` 抛
   `MaaFWTaskDeadlineExpired`、任务类换成「登录时限已耗尽」；首任务完成后记「已登录」也由任务类按返回的结果做。
-  运行前设置、重试循环、桌面游戏启停、历史保存与通知仍在任务类。
+  重试循环、桌面游戏启停、历史保存与通知仍在任务类。
+- **运行前设置（interface `pretask`）的执行在 `tools/embedded/pretask_run.py`**，做法与 `plan_run` 相同：
+  入参只收普通数据（`MaaFWPretaskRunRequest`：计划里的 pretask、工作目录、时限原值、`PI_*` 与 ModAVD adb
+  端口两层进程环境、要打码的写法、桌面分身目标），输出经同一种事件出口（只发账号日志
+  `MaaFWPlanRunLog`，失败类的行 `warning` 为真），失败抛 `MaaFWPretaskError`。子进程输出解码、去色、
+  进程树快照的结束、单行上限都从 `plan_run` 拿，不另写一份。合计时限、逐行打码、输出泵、只结束脚本
+  解释器后代、失败原因的文案、重跑判定（`pretasks_need_rerun`，参数是计划、interface 与 `Device.HWnd`
+  原值）都在这里，细节见下文「项目的运行前设置」一条。`MaaFWPretaskRunner` 一个账号一份、跨尝试共用
+  （停止与清理的状态要跨尝试保留），停止经 `stop()`；`has_live_process` 回答这边还有没有没确认退出的进程，
+  `exit_confirmation()` 记下此刻要等的清理与进程、返回等待入口——任务类释放项目预约（`_release_project_path`）
+  前要等它返回真，**这条约束改动时不能丢**。任务类只剩取配置 → 组装入参 → 调用。
   接缝模块按将来的积木归属分好了，**agent 环境一侧**的接缝（`pool_reconcile`、`env_cache`、
   `env_trial`）只收普通数据（项目路径集合、被替换的版本、待验证的目录），不读脚本配置、不导入
   `embedded_project` / `project_path` 这类项目更新一侧的模块；「哪些项目还在」由项目更新一侧算
@@ -629,13 +639,13 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
 - **项目的运行前设置（interface `pretask`）在每次尝试里跑**，不像账号级「脚本前任务」只跑一次：
   MaaEnd 的「🚀启动游戏（PC）」就是它，此时 `Game.LaunchMode` 是 AttachOnly、`opened_game` 为假，
   MAS 不拉起游戏、重试之间也不关（结束后按 `Game.CloseMode` 兜底，见上一条）。第一次尝试照常跑；它自己失败按普通失败重试；成功过之后的重试只在客户端
-  已经不在时重跑（`_pretasks_need_rerun`：MAS 刚关掉自己起的游戏 / 模拟器——关的时候报错也算，
+  已经不在时重跑（`pretask_run.pretasks_need_rerun`：MAS 刚关掉自己起的游戏 / 模拟器——关的时候报错也算，
   `_close_*` 不论成败都清 `opened_*`、下一轮会重新拉起，见 `_reset_client_for_retry`；或 Win32 下
   控制器窗口找不到——队列末尾的「关闭游戏」任务会把它关掉）。游戏还开着不重跑，免得项目的启动脚本
   对着已在运行的游戏再走一遍。重跑前先清掉「已成功」标记：重跑到一半失败（窗口已被拉起）时，下一轮
   看到窗口在也不能跳过。2026-10-17 生产：以前放在重试循环外，第 2、3 次各 2 ms 报「未找到匹配
   MaaFW Win32 controller 的窗口」；启动器失败时整次运行一轮都不重试。
-  - **等的是 pretask 进程退出，不是输出管道 EOF**（`_run_pretasks`）：它拉起的游戏 / 启动器常常继承
+  - **等的是 pretask 进程退出，不是输出管道 EOF**（`pretask_run.MaaFWPretaskRunner.run`）：它拉起的游戏 / 启动器常常继承
     了输出管道，`communicate()` / `Process.wait()` 都要等管道关闭，会一直卡到游戏退出（本机实测：
     子进程不重定向输出就继承，`close_fds` 管不住）。所以只轮询 `returncode`，退出后最多再读
     `_PRETASK_OUTPUT_DRAIN_SECONDS`，剩下的交给后台读到 EOF（只写后端日志），输出按行实时进运行日志。
@@ -645,8 +655,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
     时，两段各自整串替换都匹配不上（PR #1710 审查）。
   - **时限沿用 `Run.RunTimeLimit`**，一次尝试里全部 pretask 合计；超时与停止只结束 pretask 进程和
     「一路都是脚本解释器」的后代（`_snapshot_pretask_script_descendants`），游戏、启动器及它们起的
-    任何进程都不碰。清理跑在独立任务里、用 `asyncio.shield` 等（`pretask_cleanup`）：超时清理途中
-    用户点停止，清理照样做完，`_shutdown_runner` 等的是同一个清理任务。
+    任何进程都不碰。清理跑在独立任务里、用 `asyncio.shield` 等（`MaaFWPretaskRunner.stop`）：超时清理
+    途中用户点停止，清理照样做完，任务类 `_shutdown_runner` 调的 `stop()` 等的是同一个清理任务。
   - **exec 越出项目目录**（`..` 上跳过头、绝对路径）：投影与运行计划同一口径（`agent_entry.
     bundled_python_escape_path`）——以 `python/python.exe` 结尾的相对写法映射回项目自带的 Python
     （MFABD2 发行包的 `../../python/python.exe`，按 MFAA 的工作目录 `resource/base` 写的），其余

@@ -185,9 +185,10 @@ class MaaFWPlanRunRequest:
 
 @dataclass(frozen=True, slots=True)
 class MaaFWPlanRunLog:
-    """一行给用户看的账号日志。"""
+    """一行给用户看的账号日志；``warning`` 为真的是失败类的行（后端日志按 WARNING 记）。"""
 
     message: str
+    warning: bool = False
 
 
 @dataclass(frozen=True, slots=True)

@@ -1672,8 +1672,8 @@ def _build_pi_env(
     ``PI_USER_DATA_DIR``（PI v2.11.0）取项目根 ``project_root``，即计划的 ``path``——内嵌运行
     时就是视图 ``data/mfw/<托管 uuid 前 12 位>/``。协议的语义是「通用 UI 与子进程共同读写
     config / debug 的目录，便携布局下就是工作目录」，在 MAS 里与它重合的只有这个目录：
-    agent 与 pretask 子进程的 cwd 都是它（``planner`` 的 ``cwd=base_dir``、``runner_task._run_pretasks``
-    的 ``cwd=self.run_plan.path``），runner 的 ``Toolkit.init_option`` 也以它为用户路径，
+    agent 与 pretask 子进程的 cwd 都是它（``planner`` 的 ``cwd=base_dir``、``pretask_run`` 的
+    ``cwd=request.project_path``，任务类传的是计划的 ``path``），runner 的 ``Toolkit.init_option`` 也以它为用户路径，
     MaaFramework 的 ``config/maa_option.json`` 与 ``debug/maafw.log`` 都落在它下面；项目自己
     读写的 ``config/``、``debug/`` 是视图私有文件，换版本时随视图带走。MAS 自己的工作目录
     （后端 cwd）与 ``data/maafw_project_state`` 都不是子进程会去读写的地方，不取它们。

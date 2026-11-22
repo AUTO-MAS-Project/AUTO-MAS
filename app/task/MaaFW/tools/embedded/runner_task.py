@@ -5,7 +5,6 @@ import json
 import os
 import re
 import shlex
-import subprocess
 import tempfile
 import threading
 import time
@@ -47,7 +46,6 @@ from app.task.MaaFW.tools.core.controller_win32.service import (
     controller_has_window_rules,
 )
 from app.task.MaaFW.tools.core.interface.agent_command import MaaFWAgentCommandPlan
-from app.task.MaaFW.tools.core.interface.host_path import path_without_host_venv
 from app.task.MaaFW.tools.core.interface.models import (
     MaaFWInterface,
 )
@@ -109,9 +107,6 @@ from app.task.MaaFW.tools.core.runner.task_selection import (
     inspect_task_snapshot,
     merge_arranged_queue,
 )
-from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
-    strip_host_python_environment,
-)
 from app.task.MaaFW.tools.core.worker_protocol import (
     SIGNAL_SCREENSHOT_KINDS,
 )
@@ -134,7 +129,6 @@ from app.utils.common.process.operations import (
     managed_process,
     terminate_process,
 )
-from app.utils.common.process.runner import create_subprocess, observe_process_exit
 from app.utils.common.process.scope import (
     current_process_scope,
     detached_process_context,
@@ -175,11 +169,9 @@ from .option_secrets import (
     collect_script_password_values,
     log_redaction_notice,
     open_task_snapshot,
-    redact_secret_text,
     secret_log_variants,
 )
 from .plan_run import (
-    WORKER_STREAM_LINE_LIMIT,
     MaaFWPlanRun,
     MaaFWPlanRunEvent,
     MaaFWPlanRunLog,
@@ -190,9 +182,12 @@ from .plan_run import (
     MaaFWTaskDeadlineExpired,
 )
 from .plan_run import MaaFWRunTimeoutError as _MaaFWRunTimeoutError
-from .plan_run import clean_framework_output as _clean_framework_output
-from .plan_run import decode_subprocess_output as _decode_subprocess_output
-from .plan_run import terminate_process_snapshot as _terminate_snapshot
+from .pretask_run import (
+    MaaFWPretaskError,
+    MaaFWPretaskRunner,
+    MaaFWPretaskRunRequest,
+    pretasks_need_rerun,
+)
 from .project_path import (
     is_project_updating,
     release_project_path,
@@ -230,8 +225,6 @@ logger = get_logger("MaaFW 插件自动代理")
 
 
 _RUN_OVERVIEW_LOG_VALUE_LIMIT = 1200
-# 运行前设置的输出同样按 worker 的单行上限读（见 plan_run）
-_WORKER_STREAM_LINE_LIMIT = WORKER_STREAM_LINE_LIMIT
 # 启动/附着游戏后定位其窗口的等待秒数
 WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
 # Game.WaitTime 填 0 时等游戏窗口出现的上限（秒）
@@ -274,42 +267,8 @@ _RERUN_AFTER_SWITCH = (
 )
 # 用户点停止后，等核对 / 清理线程收尾的上限：到点就不等了，预约交给它完成后再放。
 _RELEASE_CHECK_CANCEL_GRACE_SECONDS = 30.0
-# 运行前设置（interface pretask）进程退出后，管道里剩下的输出最多再读这么久。pretask 常常
-# 拉起启动器 / 游戏，它们可能继承了 pretask 的输出管道句柄，管道要等它们退出才到 EOF，
-# 所以等待以 pretask 进程退出为准、不等 EOF（见 ``_run_pretasks``）。
-_PRETASK_OUTPUT_DRAIN_SECONDS = 2.0
-# 等 pretask 进程退出时查一次退出码的间隔：asyncio 的 ``Process.wait()`` 要等管道全部
-# 关闭才返回，会被继承了管道的游戏卡住，只能看 ``returncode``。
-_PRETASK_EXIT_POLL_SECONDS = 0.2
-# 运行前设置输出的行尾：与 ``str.splitlines()`` 对这三种写法同口径，\r\n 算一次换行
-_PRETASK_LINE_END_RE = re.compile(rb"\r\n|\r|\n")
-# 超时或停止时，跟 pretask 进程一起结束的后代：只认这些脚本解释器，且一路往下只穿过
-# 脚本解释器。游戏、启动器以及它们再起的任何进程都不碰（游戏的生命周期交给客户端）。
-_PRETASK_SCRIPT_HOST_NAMES = frozenset(
-    {
-        "python.exe",
-        "pythonw.exe",
-        "py.exe",
-        "pyw.exe",
-        "cmd.exe",
-        "powershell.exe",
-        "pwsh.exe",
-        "wscript.exe",
-        "cscript.exe",
-    }
-)
-# 管道在 pretask 退出后仍被别的程序占着时，把剩下的输出读完的后台任务（只写后端日志）。
-# 不读的话那个程序写满管道缓冲就会卡在写输出上；任务要有强引用，不然会被回收。
-_PRETASK_BACKGROUND_DRAINS: set[asyncio.Task[None]] = set()
-# 判断运行前设置留下的半行有没有看得见的内容时要去掉的部分：完整或被截断的 CSI 控制序列
-# （含 \x1b[?25h 这类带私有参数的）与其余控制字符
-_PRETASK_TAIL_NOISE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]?|[\x00-\x1f\x7f]")
 # 哪些 worker 日志 / 原生诊断进界面的几组文案规则在 worker_protocol（forwards_to_ui）：
 # worker 发事件时按它定 audience，宿主只对旧格式事件与 stdout 上的原生诊断再用它判。
-
-
-class MaaFWPretaskError(RuntimeError):
-    """项目运行前设置失败，文案可直接显示给用户。"""
 
 
 class _MaaFWGameUpdateRequired(RuntimeError):
@@ -412,12 +371,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.project_lock_key: str | None = None
         # 正在跑的那一份计划（plan_run）：停止时经它结束 worker
         self._plan_run: MaaFWPlanRun | None = None
-        self.pretask_process: asyncio.subprocess.Process | None = None
-        # 正在进行的运行前设置清理（见 _terminate_pretask_process）
-        self.pretask_cleanup: asyncio.Task[None] | None = None
-        # 即使清理入口先清空 pretask_process，也要保留退出观察句柄；
-        # 停止确认超时或 native 强杀失败时不能提前放开项目预约。
-        self._stopping_pretask_process: asyncio.subprocess.Process | None = None
+        # 项目的运行前设置（pretask_run）：跨尝试共用一份，停止与清理的状态要跨尝试保留；
+        # 释放项目预约前要等它那边的进程确认退出
+        self._pretasks = MaaFWPretaskRunner(self._on_plan_run_event)
         # ADB 地址、路径与控制档案：同一次模拟器启动内只解析一次，关模拟器时清（见
         # _close_emulator）
         self._adb_state = MaaFWAdbDeviceState()
@@ -1550,10 +1506,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return result
 
     def _on_plan_run_event(self, event: MaaFWPlanRunEvent) -> None:
-        """``plan_run`` 的事件出口：账号日志、进度点（以本任务为 owner）、运行记录。"""
+        """``plan_run`` 与 ``pretask_run`` 的事件出口：账号日志、进度点（以本任务为 owner）、运行记录。"""
 
         if isinstance(event, MaaFWPlanRunLog):
-            self._append_log(event.message)
+            self._append_log(event.message, warning=event.warning)
         elif isinstance(event, MaaFWPlanRunPoint):
             point(self, event.stage, state=event.state, key=event.key)
         elif isinstance(event, MaaFWPlanRunRecord):
@@ -1603,215 +1559,38 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return log_redaction_notice(self.interface_model, self._run_password_values())
 
     async def _shutdown_runner(self) -> None:
-        await self._terminate_pretask_process()
+        await self._pretasks.stop()
         await self._terminate_runner_process()
 
     async def _pretasks_need_rerun(self, client_reset: bool) -> bool:
-        """重试前判断要不要再跑一遍已经成功过的运行前设置。
+        """重试前要不要再跑一遍已经成功过的运行前设置（判据见 ``pretask_run.pretasks_need_rerun``）。"""
 
-        只在客户端已经不在时重跑：MAS 刚关掉自己起的游戏 / 模拟器，或者 Win32 下
-        控制器的窗口已经找不到（游戏由运行前设置拉起、被队列里的「关闭游戏」任务关掉，
-        MAS 不知道它是谁起的）。游戏还开着时不重跑，免得项目的启动脚本对着已在运行的
-        游戏再走一遍。固定 HWnd、控制器没有窗口规则这两种只是「看不出窗口在不在」，
-        不挡前一种：MAS 自己关掉的客户端一定不在了。
-        """
-
-        if self.run_plan is None or not self.run_plan.pretasks:
-            return False
-        if client_reset:
-            self._append_log("游戏/模拟器已在上一次失败后关闭，重新应用运行前设置")
-            return True
-        if self.run_plan.controllerType != "Win32" or self.interface_model is None:
-            return False
-        if optional_int(self.script_config.Device.HWnd):
-            return False
-        controller = find_controller(self.interface_model, self.run_plan.controllerName)
-        if not controller_has_window_rules(controller):
-            return False
-        if await match_windows_in_session(controller):
-            return False
-        self._append_log("未找到游戏窗口，重新应用运行前设置")
-        return True
+        return await pretasks_need_rerun(
+            self.run_plan,
+            self.interface_model,
+            client_reset=client_reset,
+            configured_hwnd=self.script_config.Device.HWnd,
+            emit=self._on_plan_run_event,
+        )
 
     async def _run_pretasks(self) -> None:
+        """取配置、组装入参，交给 ``pretask_run`` 跑这次尝试的运行前设置。"""
+
         if self.run_plan is None:
             raise RuntimeError("MaaFW 运行计划尚未初始化")
-
-        # 宿主的 VIRTUAL_ENV、PYTHON* 等不往下传，PATH 去掉宿主 venv 的脚本目录（Runtime 经
-        # uv run 起后端时它排最前）：pretask 脚本里再起 python 不该落到 MAS 自己的环境上
-        env = strip_host_python_environment()
-        if "PATH" in env:
-            env["PATH"] = path_without_host_venv(env["PATH"]) or ""
-        # 与 agent 同口径（runner._build_agent_env）：pretask 多是项目自带 Python 跑的
-        # 脚本，输出与读文件都按 UTF-8；对非 Python 程序这两个变量无害。
-        env["PYTHONIOENCODING"] = "utf-8"
-        env["PYTHONUTF8"] = "1"
-        env.update(self.run_plan.piEnv)
         # ModAVD 实例：pretask 若用 adb，也走脚本专用 server（同 worker）
-        env.update(await self._script_adb_env())
-        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        # 运行前设置没有自己的时限设置：沿用本托管的「单次运行时间限制」（RunTimeLimit），
-        # 一次尝试里全部运行前设置合计不超过它（MaaFW 豁免了 HardTimeLimit，这里是它缺的外层兜底；
-        # worker 那一段另起计时，见 ``plan_run.MaaFWPlanRun.run``）。
-        limit_minutes = self.script_config.Run.RunTimeLimit or 120
-        loop = asyncio.get_running_loop()
-        pretasks_started_at = loop.time()
-        deadline = pretasks_started_at + float(limit_minutes) * 60
-        secret_variants = self._secret_log_variants()
-        for pretask in self.run_plan.pretasks:
-            display_name = _task_display_name(pretask)
-            if loop.time() >= deadline:
-                # 前面的运行前设置已经用完时限：这一条不再启动（启动了也只会被立刻结束）
-                self._append_log(
-                    f"运行前设置合计已用 {int(loop.time() - pretasks_started_at)} 秒，"
-                    f"超过单次运行时间限制（{limit_minutes} 分钟），"
-                    f"不再启动运行前设置 {display_name}",
-                    warning=True,
-                )
-                raise MaaFWPretaskError(
-                    f"运行前设置「{display_name}」未启动：运行前设置合计已超过单次运行时间限制 "
-                    f"{limit_minutes} 分钟"
-                )
-            self._append_log(f"开始应用运行前设置: {display_name}")
-            started_at = loop.time()
-            if (desktop := desktop_process_target.get()) is not None:
-                from app.utils.windows.desktop_session.process_runner import (
-                    launch_desktop_process,
-                )
-
-                scope = current_process_scope.get()
-                if scope is not None:
-                    scope.ensure_can_start()
-                process = await launch_desktop_process(
-                    desktop,
-                    argv=[str(pretask.executable), *pretask.args],
-                    cwd=Path(self.run_plan.path),
-                    env=env,
-                    merge=True,
-                    retain=scope is not None,
-                    stream_limit=_WORKER_STREAM_LINE_LIMIT,
-                )
-                if scope is not None:
-                    scope.retain_desktop_process(process.stop)
-            else:
-                process = await create_subprocess(
-                    pretask.executable,
-                    *pretask.args,
-                    cwd=self.run_plan.path,
-                    env=env,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
-                    creationflags=creationflags,
-                )
-            self.pretask_process = process
-            # 输出按行实时进运行日志（以前 communicate() 要等进程结束才一次性写出）；末尾
-            # 若干行另留一份，失败时从里面摘原因。
-            tail: list[str] = []
-
-            def write_line(text: str, tail: list[str] = tail) -> None:
-                tail.append(text)
-                if len(tail) > 200:
-                    del tail[:-200]
-                self._append_log(f"[运行前设置] {text}")
-
-            # 打码放在 pump 里做：detach 之后改写后端日志的输出也要过同一套打码
-            pump = _PretaskOutputPump(
-                write_line,
-                redact=lambda line: redact_secret_text(line, secret_variants),
+        adb_env = await self._script_adb_env()
+        await self._pretasks.run(
+            MaaFWPretaskRunRequest(
+                project_path=self.run_plan.path,
+                pretasks=self.run_plan.pretasks,
+                run_time_limit_minutes=self.script_config.Run.RunTimeLimit,
+                plan_env=self.run_plan.piEnv,
+                extra_env=adb_env,
+                secrets=self._secret_log_variants(),
+                desktop=desktop_process_target.get(),
             )
-            reader = asyncio.create_task(pump.run(process.stdout))
-            timed_out = False
-            held = False
-            try:
-                exited = await _wait_pretask_exit(process, deadline - loop.time())
-                if not exited:
-                    timed_out = True
-                    self._append_log(
-                        f"运行前设置 {display_name} 运行了 "
-                        f"{int(loop.time() - started_at)} 秒仍未结束，运行前设置合计已用 "
-                        f"{int(loop.time() - pretasks_started_at)} 秒，超过单次运行时间限制"
-                        f"（{limit_minutes} 分钟），结束它（它启动的游戏 / 启动器不受影响）",
-                        warning=True,
-                    )
-                    await self._terminate_pretask_process()
-            except asyncio.CancelledError:
-                # 停止：进程由 _shutdown_runner 结束；输出交给后台读完，不在这里等。
-                pump.detach(display_name)
-                _keep_pretask_drain(reader)
-                raise
-            finally:
-                if process.returncode is not None and self.pretask_process is process:
-                    self.pretask_process = None
-
-            try:
-                done, _ = await asyncio.wait(
-                    {reader}, timeout=_PRETASK_OUTPUT_DRAIN_SECONDS
-                )
-            except asyncio.CancelledError:
-                pump.detach(display_name)
-                _keep_pretask_drain(reader)
-                raise
-            if reader in done:
-                if not reader.cancelled() and reader.exception() is not None:
-                    logger.warning(
-                        f"读取运行前设置 {display_name} 的输出失败: {reader.exception()}"
-                    )
-            else:
-                # 还没换行的半行不在这里写出（可能是被拆开的密码前半段），留着和之后的
-                # 输出拼成整行、打码后写后端日志
-                held = pump.detach(display_name)
-                _keep_pretask_drain(reader)
-                self._append_log(
-                    f"运行前设置 {display_name} 已退出，但输出管道仍被它启动的程序"
-                    "（多半是游戏或启动器）占用，不再等待之后的输出"
-                    + (
-                        "；最后一行还没换行，输出完整后连同之后的输出写进后端日志"
-                        if held
-                        else ""
-                    )
-                )
-            detail = "\n".join(tail).strip()
-            if timed_out:
-                raise MaaFWPretaskError(
-                    f"运行前设置「{display_name}」超时（运行前设置合计超过单次运行时间限制 "
-                    f"{limit_minutes} 分钟仍未结束，已结束）"
-                )
-            if process.returncode != 0:
-                self._append_log(
-                    f"运行前设置 {display_name} 执行失败（退出码 {process.returncode}）",
-                    warning=True,
-                )
-                # 半行还留在缓冲里时，tail 的最后一行是更早的输出（可能是「成功」那一行），
-                # 不拿它冒充失败原因；半行本身也不写（可能是密码前半段）
-                reason = (
-                    "最后一行输出还没换行，完整内容稍后写进后端日志"
-                    if held
-                    else _pretask_failure_reason(detail)
-                )
-                raise MaaFWPretaskError(f"运行前设置「{display_name}」失败：{reason}")
-            self._append_log(f"运行前设置完成: {display_name}")
-
-    async def _terminate_pretask_process(self) -> None:
-        # 清理放进独立任务、用 shield 等：超时分支正在清理时用户点了停止（调用方被取消），
-        # 清理照样做完；_shutdown_runner 随后进来会等同一个清理任务，而不是看到
-        # pretask_process 已清空就直接返回，留下没结束的 pretask 或脚本子进程。
-        cleanup = self.pretask_cleanup
-        if cleanup is None or cleanup.done():
-            process = self.pretask_process
-            self.pretask_process = None
-            if process is None or process.returncode is not None:
-                return
-            self._stopping_pretask_process = process
-            cleanup = asyncio.create_task(
-                _kill_pretask_process(process, self._append_log)
-            )
-            self.pretask_cleanup = cleanup
-            # 进程核对可能仍在 to_thread() 中。统一取消仅可打断等待，
-            # 不能取消真正负责清理的任务，否则后续释放预约永远等不到。
-            scope = current_process_scope.get()
-            if scope is not None:
-                scope.retain_worker(cleanup)
-        await asyncio.shield(cleanup)
+        )
 
     async def _terminate_runner_process(self) -> None:
         """停止时结束正在跑的 worker（经 ``plan_run`` 的停止入口；没有在跑的就什么都不做）。"""
@@ -2812,27 +2591,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 放开预约；后面的强杀若失败，还可能有旧 pretask 在写目录。
             key, self.project_lock_key = self.project_lock_key, None
             pending = self._release_check_task
-            cleanup = self.pretask_cleanup
-            process = self._stopping_pretask_process
+            # 此刻要等的运行前设置清理与正在结束的 pretask 进程
+            pretasks_exited = self._pretasks.exit_confirmation()
 
             async def release_after_confirmed_stop() -> None:
                 await scope.finished.wait()
                 if scope.cleanup_failed:
                     logger.error("MaaFW 任务进程未确认停止，保留项目占用，拒绝并发修改")
                     return
-                if cleanup is not None:
-                    try:
-                        await asyncio.shield(cleanup)
-                    except Exception as error:
-                        logger.warning(f"MaaFW 运行前设置清理未确认，保留占用: {error}")
-                        return
-                if process is not None:
-                    # pretask 的 stdout 可能由游戏继承，不能用 process.wait()
-                    # 等其管道 EOF；只检查真正的进程退出状态。
-                    if desktop_process_target.get() is not None:
-                        await process.wait_exit()
-                    else:
-                        await observe_process_exit(process)
+                # 清理没确认时 pretask_run 记一句，这里保留占用
+                if not await pretasks_exited():
+                    return
                 if pending is not None:
                     try:
                         await asyncio.shield(pending)
@@ -3428,242 +3197,6 @@ def _end_processes(
         logger.warning(f"MaaFW 结束进程后仍在运行: {started[proc].label}")
         failed.append(started[proc])
     return [snapshot for proc, snapshot in started.items() if proc not in alive], failed
-
-
-def _snapshot_pretask_script_descendants(pid: int) -> list[tuple[int, float, str]]:
-    """运行前设置进程下面、要随它一起结束的脚本解释器后代：``(pid, 创建时间, 进程名)``。
-
-    从 pretask 进程往下走，只认 ``_PRETASK_SCRIPT_HOST_NAMES`` 里的脚本解释器（python、cmd、
-    powershell……），并且只穿过它们继续往下：pretask 直接或经脚本间接起的游戏、启动器
-    不在名单里，它们自己再起的任何进程（哪怕也是 python）都不会走到。宁可少结束，
-    不误杀本应继续运行的游戏。
-    """
-
-    found: list[tuple[int, float, str]] = []
-    try:
-        pending = list(psutil.Process(pid).children())
-    except psutil.Error:
-        return []
-    while pending:
-        child = pending.pop()
-        try:
-            name = child.name()
-            if name.casefold() not in _PRETASK_SCRIPT_HOST_NAMES:
-                continue
-            found.append((child.pid, child.create_time(), name))
-            pending.extend(child.children())
-        except psutil.Error:
-            continue
-    return found
-
-
-async def _wait_pretask_exit(
-    process: asyncio.subprocess.Process, timeout: float
-) -> bool:
-    """等运行前设置进程退出，返回是否在 ``timeout`` 秒内退出。
-
-    只看退出码，不用 ``process.wait()``：asyncio 的 wait() 要等输出管道全部关闭才返回，
-    pretask 拉起的游戏 / 启动器继承了管道句柄时，它会一直等到游戏退出。
-    """
-
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + max(timeout, 0.0)
-    while process.returncode is None:
-        remaining = deadline - loop.time()
-        if remaining <= 0:
-            return False
-        await asyncio.sleep(min(_PRETASK_EXIT_POLL_SECONDS, remaining))
-    return True
-
-
-async def _kill_pretask_process(
-    process: asyncio.subprocess.Process, append_log: Callable[[str], None]
-) -> None:
-    """结束运行前设置进程本身，以及它下面一路都是脚本解释器的后代。"""
-
-    # 先记下要一起结束的脚本解释器后代（pretask 一死，按父子关系就查不到了）。只认
-    # 一路都是脚本解释器的那一支：游戏 / 启动器以及它们起的进程都不在其中。
-    scripts = await asyncio.to_thread(_snapshot_pretask_script_descendants, process.pid)
-    # 不用 process.wait()：它要等输出管道关闭才返回，继承了管道的游戏不退它就不返回。
-    try:
-        if process.returncode is None:
-            if desktop_process_target.get() is None:
-                process.terminate()
-            elif target := managed_process(process.pid):
-                terminate_process(target)
-        if not await _wait_pretask_exit(process, 5):
-            if desktop_process_target.get() is None:
-                process.kill()
-            else:
-                await process.stop()
-            if not await _wait_pretask_exit(process, 5):
-                logger.warning(
-                    f"MaaFW 运行前设置进程（pid {process.pid}）强制结束后 5 秒仍未退出"
-                )
-    except ProcessLookupError:
-        pass
-    except Exception as exc:
-        logger.warning(f"MaaFW 运行前设置进程清理失败: {exc}")
-
-    if scripts:
-        names = "、".join(f"{name}（pid {pid}）" for pid, _created, name in scripts)
-        append_log(
-            f"一并结束运行前设置启动的脚本进程：{names}；它启动的游戏 / 启动器不受影响"
-        )
-        await asyncio.to_thread(
-            _terminate_snapshot,
-            [(pid, created) for pid, created, _name in scripts],
-            owner="MaaFW 运行前设置",
-        )
-
-
-class _PretaskOutputPump:
-    """把运行前设置的输出按行交给 ``sink``（stdout 与 stderr 已合并）。
-
-    按块读、自己分帧：``readline()`` 遇到超过 64 KB 的一行会抛错。行尾与原来整段
-    ``splitlines()`` 同口径：``\\n``、单独的 ``\\r``（进度条原地刷新）、``\\r\\n`` 各算一次
-    换行；``\\r`` 一到就把这一段交出去（进度实时可见），紧跟着的 ``\\n``（哪怕在下一块里）
-    并进同一个换行。每行单独解码（与原来整段解码同一套编码顺序），先过 ``redact`` 打码
-    再交出去。空白行与原来整段 ``strip()`` 后逐行写的口径一致：开头和结尾的空白行不写，
-    夹在中间的照写。
-
-    **打码边界**：只有遇到行尾（或 EOF，此时剩下的就是完整的最后一行）的段落才算完整
-    片段，打码后交出；还没到行尾的部分一直留在缓冲里，不单独发布——密码可能正好被拆在
-    两次读之间，两段各自做整串替换都匹配不上，拼起来就是明文。进程退出后管道还被别的
-    程序占着时，``detach`` 只切换 sink：缓冲里的半行留着，和之后的输出拼成完整一行、
-    打码后改写后端日志，读到 EOF 为止。
-    """
-
-    def __init__(
-        self,
-        sink: Callable[[str], None],
-        *,
-        redact: Callable[[str], str] = lambda line: line,
-    ) -> None:
-        self._sink = sink
-        self._redact = redact
-        self._pending = b""
-        # 上一块以 \r 结尾、那一段已经交出：下一块开头的 \n 是同一个 \r\n，吞掉
-        self._after_cr = False
-        self._seen_text = False
-        self._blank_lines = 0
-
-    async def run(self, stream: asyncio.StreamReader | None) -> None:
-        if stream is None:
-            return
-        while True:
-            chunk = await stream.read(65536)
-            if not chunk:
-                break
-            self._feed(chunk)
-        # EOF：之后不会再有输出，剩下的就是完整的最后一行
-        pending, self._pending = self._pending, b""
-        if pending:
-            self._emit_line(pending)
-
-    def _feed(self, chunk: bytes) -> None:
-        if self._after_cr and chunk.startswith(b"\n"):
-            chunk = chunk[1:]
-        self._after_cr = False
-        # 缓冲里没有行尾（有就已经交出了），只需在新块里找
-        start = 0
-        for match in _PRETASK_LINE_END_RE.finditer(chunk):
-            self._emit_line(self._pending + chunk[start : match.start()])
-            self._pending = b""
-            start = match.end()
-        self._after_cr = start == len(chunk) and chunk.endswith(b"\r")
-        self._pending += chunk[start:]
-
-    def detach(self, display_name: str) -> bool:
-        """之后的输出改写后端日志；返回缓冲里是否有还没到行尾、留待拼接的半行。"""
-
-        def to_backend_log(line: str) -> None:
-            logger.info(f"[运行前设置 {display_name} 退出后的输出] {line}")
-
-        self._sink = to_backend_log
-        # 只剩空白或颜色 / 光标控制码的尾巴（很多命令行程序退出前补一个不带换行的复位码）
-        # 不算半行：它不含报错正文，失败原因照常从已写出的行里摘
-        visible = _PRETASK_TAIL_NOISE_RE.sub(
-            "", _decode_subprocess_output(self._pending)
-        )
-        return bool(visible.strip())
-
-    def _emit_line(self, raw: bytes) -> None:
-        text = _decode_subprocess_output(raw)
-        if not text.strip():
-            # 空白行先记数：后面还有内容才补写（夹在中间），到结尾都没有就不写
-            if self._seen_text:
-                self._blank_lines += 1
-            return
-        for _ in range(self._blank_lines):
-            self._sink("")
-        self._blank_lines = 0
-        self._seen_text = True
-        # 先对整段打码再去尾空白：密码可以以空白结尾，先去尾空白会把它截短而匹配不上
-        self._sink(self._redact(text).rstrip())
-
-
-def _keep_pretask_drain(reader: asyncio.Task[None]) -> None:
-    """让读管道的任务在后台读到 EOF（见 ``_PRETASK_BACKGROUND_DRAINS``）。"""
-
-    if reader.done():
-        return
-    _PRETASK_BACKGROUND_DRAINS.add(reader)
-
-    def finished(task: asyncio.Task[None]) -> None:
-        _PRETASK_BACKGROUND_DRAINS.discard(task)
-        if not task.cancelled() and task.exception() is not None:
-            logger.warning(f"后台读取运行前设置输出失败: {task.exception()}")
-
-    reader.add_done_callback(finished)
-
-
-_PRETASK_LOG_HEADER_RE = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?\s+"
-    r"(?:TRC|DBG|INF|WRN|ERR|FTL|PNC|TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\s+"
-    r"(?:.+?:\d+\s+>\s*)?(?P<body>.+)$"
-)
-_PRETASK_LOG_FIELD_RE = re.compile(
-    r"""(?:^|\s)(?P<key>[A-Za-z_][\w.-]*)=(?P<value>"(?:\\.|[^"\\])*"|'[^']*'|\S+)"""
-)
-
-
-def _pretask_failure_reason(output: str) -> str:
-    """只简化认得出的结构化日志；其余输出去色后原样保留。"""
-
-    line = next(
-        (
-            cleaned
-            for raw in reversed(output.splitlines())
-            if (cleaned := _clean_framework_output(raw).strip())
-        ),
-        "",
-    )
-    if not line:
-        return "没有输出错误详情"
-    match = _PRETASK_LOG_HEADER_RE.fullmatch(line)
-    if match is None:
-        return line
-    body = match["body"]
-    fields = list(_PRETASK_LOG_FIELD_RE.finditer(body))
-    if not fields:
-        return body
-    reason = body[: fields[0].start()].rstrip()
-    for field in fields:
-        if field["key"] != "error":
-            continue
-        value = field["value"]
-        if value.startswith('"'):
-            try:
-                value = json.loads(value)
-            except json.JSONDecodeError:
-                pass
-        elif value.startswith("'"):
-            value = value[1:-1]
-        if value:
-            # 只有字段没有正文时，error 的值本身就是原因，不再套括号
-            reason = f"{reason}（{value}）" if reason else value
-    return reason or line
 
 
 def _load_json_dict(value: Any) -> dict[str, Any]:
