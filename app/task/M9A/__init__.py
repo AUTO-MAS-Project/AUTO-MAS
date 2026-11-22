@@ -19,7 +19,8 @@
 """M9A：MaaFW 引擎的特调类型，不是独立专项。
 
 这里只有三样东西：``flavor.py``（运行前的队列装饰 + "是不是 M9A 项目"的判据 + 游戏更新
-钩子）、``game_update.py``（官服客户端版本检查与安装，由钩子按需导入）与
+钩子；规则常量与判据在 ``rules.py``、排队列与保存前整理在 ``arrange.py``、登录的两种结局在
+``startup.py``，flavor 转调它们）、``game_update.py``（官服客户端版本检查与安装，由钩子按需导入）与
 ``migration.py``（旧版 M9A 专项配置的一次性迁移）。运行、更新、内嵌副本、通知全走
 ``app/task/MaaFW/``。保持本包不在导入期拉起任何重模块：``app.models.config`` 在类属性里
 只记了 ``"app.task.M9A.flavor:FLAVOR"`` 这个字符串，引擎按需导入。

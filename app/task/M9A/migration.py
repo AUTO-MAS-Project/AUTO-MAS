@@ -54,14 +54,10 @@ from pathlib import Path
 from typing import Any, Literal
 
 from app.config.fields.encrypted import EncryptedValue
-from app.task.M9A.flavor import (
+from app.task.M9A.managed import (
     CLOSE_ENTRY,
-    FALLBACK_TASK_NAMES,
-    LEGACY_ENTRY_ALIASES,
     STARTUP_ENTRY,
     SWITCH_ACCOUNT_ENTRY,
-)
-from app.task.M9A.managed import (
     InfoChange,
     Settlement,
     first_text_value,
@@ -70,6 +66,7 @@ from app.task.M9A.managed import (
     split_message,
     supports_account_switch,
 )
+from app.task.M9A.rules import FALLBACK_TASK_NAMES, LEGACY_ENTRY_ALIASES
 from app.task.MaaFW.tools.core.interface.models import resolve_task_instance_name
 from app.utils import constants as _utils_constants
 from app.utils import get_logger

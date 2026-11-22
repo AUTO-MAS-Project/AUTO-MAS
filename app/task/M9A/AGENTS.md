@@ -1,7 +1,7 @@
 # app/task/M9A — M9A 是 MaaFW 的特调类型，不是专项
 
 进这个目录之前先读 `app/task/MaaFW/AGENTS.md`：M9A 的运行、更新、内嵌副本、通知、失败截图、
-周期任务、代理次数……全部是 MaaFW 引擎的既有语义，这里一行都没有重写。本目录只有五个文件（另有接入声明 `registration.py`，见下文「配置类」一段）：
+周期任务、代理次数……全部是 MaaFW 引擎的既有语义，这里一行都没有重写。本目录的文件如下（另有接入声明 `registration.py`，见下文「配置类」一段）：
 
 - `managed.py`：**受管任务**的唯一规则。entry `StartUp`（启动游戏）、`SwitchAccount`（切换账号）、
   `Close1999`（关闭游戏）由 MAS 全权控制，不许留在账号队列里；按 entry 判，不按任务名。
@@ -20,6 +20,12 @@
   **保留态的判据是队列内容本身**（有效切号 ≥ 2 且资源支持切号），不是标记：普通保存交回同一份队列照样判成
   保留、不会被抹掉；用户删到只剩 1 个，下一次保存就收进「账号」。前端不许过滤已在队列里的受管任务再
   保存——那样会绕过这条判据把保留态抹掉。
+- `rules.py` / `arrange.py` / `startup.py`（第 9 步的前置件，M9A 以后自己的流程直接用它们）：
+  `rules.py` 是规则常量与项目判据的唯一一份（`M9A_PLAN_RULES` 四张表、`M9A_SKIP_ON_RETRY`、`TYPE_KEY`、
+  `is_m9a_project`、旧版名字反查表），只依赖 `managed.py` 与解析一侧，启动期迁移从这里取；
+  `arrange.py` 是排队列（`arrange_m9a_queue`）与保存前整理（`settle_m9a_snapshot`）的实现，只吃 interface、
+  队列与调用方取好的值（登录方式、账号），不读配置；`startup.py` 是登录的两种结局（见下面 4a）。
+  下面 `flavor.py` 的声明属性就是 `rules.py` 里的同一份常量，两个方法转调 `arrange.py`。
 - `flavor.py`：`FLAVOR` 对象（满足 `app/task/MaaFW/tools/embedded/flavor.py` 的 `MaaFWFlavor` 协议）。
   它做的事穷举如下，多一件都没有：
   1. `matches_project(interface)`：`mirrorchyan_rid == M9A` / `github` 指向 `MAA1999/M9A` / `name == m9a`，
