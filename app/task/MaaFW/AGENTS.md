@@ -146,6 +146,10 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   流程里。**`started_at` 的置位与清空时机不能动**：MAS 拉起后等出窗口、接管时窗口是等出来的、链接拉起后等出
   窗口时置（都在窗口前置之前），`close` 里清空；流程下发计划时 Win32 用它，ADB 用流程自己从
   `open_emulator_for_run` 拿到的时刻（同一个账号运行只走其中一条路，原来共用一个字段）。
+  **关游戏时读客户端绑定的先后也不能动**：流程给 `close` / `close_after_run` 组 spec 时读 exe / 启动器路径出错
+  不当场抛，记进 `game_path_error` / `launcher_path_error`（任务类的 `_desktop_spec(for_close=True)`），由叶子在
+  原来读路径的那一步再抛——没开过游戏的 `close` 根本不读路径（重试前 `_login_checked = False` 照常执行）；开过的
+  先关进程、再抛，`finally` 照样清状态、恢复分辨率。三个专项的流程照这个写。
 - **任务类 `runner_task` 还剩什么**：取配置与账号数据、建计划（调解析一侧）、运行前检查与项目预约（交回经
   `release_run_reservation`，资源包核对经 `resource_repair`）、桌面
   游戏 / 模拟器什么时候开关（实现在 `desktop_game` / `host_client`）与登录、游戏更新钩子、设备配置（调

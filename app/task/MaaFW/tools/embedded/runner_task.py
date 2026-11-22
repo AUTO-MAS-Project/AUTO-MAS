@@ -883,26 +883,47 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         await self._close_game_after_run(failed=True)
         await self._release_project_path()
 
-    def _desktop_spec(self) -> MaaFWDesktopGameSpec:
+    def _desktop_spec(self, *, for_close: bool = False) -> MaaFWDesktopGameSpec:
         """桌面游戏启停用到的配置原值（``desktop_game``），每个调用点现取。
 
         游戏 exe 与启动器来自客户端绑定（``client_executable_path`` / ``client_launcher_path``）：
         DirectExe 下 MAS 启动它，URL / AttachOnly 下只用来认出游戏。``Game.LaunchMode`` 配置
         激活后一定有默认值，这里的兜底只是防御性的。
+
+        ``for_close``：收尾关游戏用。读客户端绑定出错不在这里抛，记进 spec 交给 ``desktop_game``
+        在原来读路径的那一步再抛——没开过游戏时根本不读路径，开过的先关进程再抛。
         """
 
+        game_path: Path | None = None
+        launcher_path: Path | None = None
+        game_path_error: Exception | None = None
+        launcher_path_error: Exception | None = None
+        try:
+            raw = str(client_executable_path(self.script_config) or "").strip()
+            game_path = Path(raw) if raw else None
+        except Exception as exc:
+            if not for_close:
+                raise
+            game_path_error = exc
+        try:
+            launcher_path = client_launcher_path(self.script_config)
+        except Exception as exc:
+            if not for_close:
+                raise
+            launcher_path_error = exc
         game = self.script_config.Game
-        raw = str(client_executable_path(self.script_config) or "").strip()
         return MaaFWDesktopGameSpec(
             launch_mode=str(game.LaunchMode or "DirectExe").strip(),
-            game_path=Path(raw) if raw else None,
-            launcher_path=client_launcher_path(self.script_config),
+            game_path=game_path,
+            launcher_path=launcher_path,
             url=str(game.URL or "").strip(),
             arguments=game.Arguments,
             wait_seconds=game.WaitTime,
             unity_resolution=parse_resolution_option(game.UnityResolution),
             close_mode=str(game.CloseMode or "OnFailure").strip(),
             configured_hwnd=self.script_config.Device.HWnd,
+            game_path_error=game_path_error,
+            launcher_path_error=launcher_path_error,
         )
 
     def _load_run_state_for_check(
@@ -1748,7 +1769,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     async def _close_game(self) -> bool:
         """关闭由 MAS 启动的游戏，返回是否关成（本来就没开过算关成）；见 ``desktop_game.close``。"""
 
-        return await self._desktop.close(self._desktop_spec())
+        return await self._desktop.close(self._desktop_spec(for_close=True))
 
     async def _close_game_after_run(self, *, failed: bool) -> None:
         """最终收尾关游戏：MAS 启动的照常关，AttachOnly 再按 ``Game.CloseMode`` 兜底。
@@ -1759,7 +1780,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         plan = self.run_plan
         await self._desktop.close_after_run(
-            self._desktop_spec(),
+            self._desktop_spec(for_close=True),
             interface=self.interface_model,
             controller_name=plan.controllerName if plan is not None else None,
             controller_type=plan.controllerType if plan is not None else None,

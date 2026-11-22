@@ -13,6 +13,9 @@ AttachOnly 兜底关闭的分界）全是它自己的、跨尝试保留；什么
 - 「不是 Win32 就不管」留在流程里；``opened`` 与「是不是 MAS 管启动」的判断在这里。
 - ``started_at``（首任务闸门的起算时刻）只在游戏是刚启动的时候置：MAS 拉起后等出窗口、接管时窗口是
   等出来的、链接拉起后等出窗口；``close`` 里清空。流程下发计划时 Win32 用它。
+- 收尾关游戏（``close`` / ``close_after_run``）时客户端绑定可能读不出来：流程组 spec 时把读 exe / 启动器
+  路径的异常记进 ``game_path_error`` / ``launcher_path_error``，这里在**原来读路径的那一步**再抛——没开过
+  游戏就根本不读；开过的先关进程、再抛，清状态的 ``finally`` 照跑。
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ import shlex
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -81,7 +84,9 @@ class MaaFWDesktopGameSpec:
     - ``launcher_path``：AttachOnly 下可选的启动器 exe，MAS 兜底关闭时一并关它；
     - ``url``：``Game.URL`` 去空白；``arguments``：``Game.Arguments`` 原值；``wait_seconds``：``Game.WaitTime`` 原值；
     - ``unity_resolution``：``Game.UnityResolution`` 选了尺寸就是 (宽, 高)，Off 为 None；
-    - ``close_mode``：``Game.CloseMode``（``str(值 or "OnFailure").strip()``）；``configured_hwnd``：``Device.HWnd`` 原值。
+    - ``close_mode``：``Game.CloseMode``（``str(值 or "OnFailure").strip()``）；``configured_hwnd``：``Device.HWnd`` 原值；
+    - ``game_path_error`` / ``launcher_path_error``：只给收尾关游戏用——读那条路径时抛的异常（这时对应的
+      路径字段是 None）。``close`` / ``close_after_run`` 在旧代码读路径的那一步原样再抛，其余入口不看它们。
     """
 
     launch_mode: str
@@ -93,6 +98,24 @@ class MaaFWDesktopGameSpec:
     unity_resolution: tuple[int, int] | None
     close_mode: str
     configured_hwnd: Any
+    game_path_error: Exception | None = field(default=None, repr=False)
+    launcher_path_error: Exception | None = field(default=None, repr=False)
+
+
+def _close_game_path(spec: MaaFWDesktopGameSpec) -> Path | None:
+    """收尾关游戏时读游戏 exe：组 spec 时没读出来，就在这一步把当时的异常抛出去。"""
+
+    if spec.game_path_error is not None:
+        raise spec.game_path_error
+    return spec.game_path
+
+
+def _close_launcher_path(spec: MaaFWDesktopGameSpec) -> Path | None:
+    """收尾关游戏时读启动器 exe：同 ``_close_game_path``。"""
+
+    if spec.launcher_path_error is not None:
+        raise spec.launcher_path_error
+    return spec.launcher_path
 
 
 def desktop_launch_managed(spec: MaaFWDesktopGameSpec) -> bool:
@@ -584,7 +607,8 @@ class MaaFWDesktopGame:
                 if launched_at is not None:
                     # 链接拉起的游戏不是 MAS 的子进程，写一行让用户知道是 MAS 关的
                     self._log("已关闭本次通过链接打开的游戏")
-            game_path = spec.game_path
+            # 先关进程、再读路径：读不出来时游戏进程已关、下面的 finally 照样清状态
+            game_path = _close_game_path(spec)
             if launched_at is not None and game_path is not None:
                 try:
                     if not await self._end_processes_started_since(
@@ -639,7 +663,7 @@ class MaaFWDesktopGame:
 
         since = self._url_first_launched_at
         self._url_first_launched_at = None
-        game_path = spec.game_path
+        game_path = _close_game_path(spec)
         if since is None or game_path is None:
             return
         try:
@@ -683,7 +707,7 @@ class MaaFWDesktopGame:
                 )
             exes = [
                 path
-                for path in (spec.game_path, spec.launcher_path)
+                for path in (_close_game_path(spec), _close_launcher_path(spec))
                 if path is not None
             ]
             await self._end_processes_started_since(
