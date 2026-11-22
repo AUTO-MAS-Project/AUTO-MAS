@@ -567,6 +567,30 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         if not self.runnable_user_uids:
             return "MFW 没有可运行的账号，请在账号管理页添加并启用至少一个账号"
 
+        # 与旧专项 lock_script_config 同一约定：拿到托管锁后由 L2 选定游戏会话（游戏 /
+        # 模拟器）、复查预下载；不调的话整轮读不到绑定的游戏与模拟器。放在项目预约交回
+        # 之后（选定可能要等串行游戏），也放在确认有可运行账号之后（没有账号就不先占
+        # 游戏、不排队），失败时还锁、照实说原因。
+        callback = getattr(self, "after_config_lock", None)
+        if callback is not None:
+            try:
+                await callback(script_config)
+            except BaseException as exc:
+                from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+
+                ticket = self.config_locks.pop(script_config.uid, None)
+                self._script_locked = False
+                if ticket is not None:
+                    await script_config.unlock(ticket)
+                if not isinstance(exc, Exception) or isinstance(
+                    exc, FluxdownCancelUnconfirmed
+                ):
+                    raise
+                logger.opt(exception=True).warning(
+                    f"MFW 取得托管锁后准备运行失败（{script_id}）：{exc}"
+                )
+                return str(exc) or type(exc).__name__
+
         self.emulator_manager = await self._resolve_emulator_manager(script_config)
 
         # 自检看的是有效根：内嵌脚本的运行池版本钉在副本的投影标记上，不在来源目录。
@@ -722,9 +746,17 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             discover_maafw_project_update,
         )
 
+        # 增量依赖开跑时的当前载荷，交给运行前更新（与 prefetch_script_update 一致）；
+        # 这里一旦给出预下载包，运行前更新就会改走全量。
+        if config.Update.PackageMode == "incremental":
+            return []
         if resolve_auto_update_mode(config) == "Off" or follow_source_enabled(config):
             return []
         credentials = resolve_update_credentials(config)
+        # Mirror 酱的一次性下载地址每次发现都不同，预下载的包对不上运行前更新自己拿到
+        # 的地址，只会白下整包、多签地址；在发现之前就跳过。
+        if credentials.package_source == "mirrorchyan":
+            return []
         project = resolve_maafw_project_root(str(config.uid), config).resolve()
         source = {
             "package_source": credentials.package_source,
