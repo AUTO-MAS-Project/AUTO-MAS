@@ -89,6 +89,7 @@ from app.task import (
     ScriptViewWorker,
     UserExpander,
 )
+from app.task.user_expander import ScriptSkip
 
 from ._version import __version__
 from .core_plugin import CorePlugin
@@ -191,6 +192,7 @@ __all__ = [
     "TaskUserItem",
     "UserEntry",
     "UserExpander",
+    "ScriptSkip",
     "WSTaskNoticeData",
     "encrypted",
     "protocol",

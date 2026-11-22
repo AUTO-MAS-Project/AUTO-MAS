@@ -101,6 +101,8 @@ point(self, "special", state="matched", key="daily_reward")  # 在现有检测�
 执行上下文接收 `(执行器, RunPoint)`，不新增公共任务树字段、WebSocket 消息或磁盘格式。
 只有收尾时才读取的规则在收尾交付，不伪装成实时监听。更新或关闭动作未由 MAS 接管时，不补报成功。
 
+**托管级检查与良性跳过。** `UserExpander.check()` 返回字符串时整个托管记「异常」；返回 `ScriptSkip(reason)`（从 `auto_mas_core` 或 `auto_mas_core.adapters.script` 导入）表示这次不是故障、只是暂时不能跑（例如项目正在更新或被占用）：托管和尚未开始的账号记「跳过」，任务收到一条 warning 提示，不派发任何账号。返回 `None` 照常运行。
+
 展开类可以继承 `UserExpander[MyScriptEntry]`，使 `script_config` 保留专项配置类型。仓库的 `pyrightconfig.json` 已声明 SDK 源码路径；包内其他模块使用相对导入，独立插件工程则在自己的开发环境安装 SDK。
 
 ## 静态类型与开发环境
