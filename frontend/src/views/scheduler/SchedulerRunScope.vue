@@ -14,7 +14,7 @@
     <a-button
       ref="trigger"
       type="text"
-      class="scope-invoker"
+      class="scope-invoker run-control-trigger"
       :class="{ customized: ready && rows.length && !allChecked }"
       :disabled="disabled"
       :aria-expanded="open"
@@ -298,39 +298,15 @@ function setUser(entryUid: string, userUid: string, checked: boolean) {
 
 <style scoped>
 .scope-invoker.ant-btn {
-  position: relative;
   display: inline-grid;
   align-items: center;
-  min-width: 150px;
-  height: 40px;
-  border: 0;
-  box-shadow: none;
+  width: 146px;
   padding: 0 12px;
-  border-radius: 0 var(--ant-border-radius) var(--ant-border-radius) 0;
-  background: transparent;
-}
-.scope-invoker::after {
-  content: '';
-  position: absolute;
-  inset-inline-start: 0;
-  inset-block: 10px;
-  width: 1px;
-  background: var(--ant-color-border);
-}
-.scope-invoker:not(:disabled):hover {
-  background: var(--ant-color-fill-secondary);
-}
-.scope-invoker:not(:disabled):is(.customized, [aria-expanded='true']) {
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-link);
-}
-.scope-invoker:is(.customized, [aria-expanded='true'])::after {
-  background: var(--ant-color-primary-border);
 }
 .scope-invoker.ant-btn > .invoker-content {
   display: grid;
-  grid-template-columns: 16px 1fr 12px;
-  column-gap: 9px;
+  grid-template-columns: 16px minmax(0, 1fr) 12px;
+  column-gap: 8px;
   align-items: center;
   text-align: start;
   font-size: 14px;
@@ -339,8 +315,18 @@ function setUser(entryUid: string, userUid: string, checked: boolean) {
 .invoker-filter {
   font-size: 16px;
 }
+.invoker-filter,
+.invoker-arrow {
+  color: var(--ant-color-text-secondary);
+}
+.scope-invoker.customized .invoker-filter,
+.scope-invoker[aria-expanded='true'] .invoker-arrow {
+  color: var(--ant-color-link);
+}
 .invoker-value {
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .invoker-arrow {
   font-size: 11px;
@@ -425,9 +411,5 @@ function setUser(entryUid: string, userUid: string, checked: boolean) {
   overflow: auto;
   text-align: center;
   color: var(--ant-color-text-secondary);
-}
-.scope-invoker:focus-visible {
-  outline: 2px solid var(--ant-color-primary);
-  outline-offset: -2px;
 }
 </style>
