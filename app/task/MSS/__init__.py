@@ -22,7 +22,7 @@
 
 第 10 步起 MSS 托管跑本包自己的两层流程（``manager.MSSManager`` → ``account_run.MSSAccountRun``，
 配置只经 ``config_view`` 读写），不经 MFW 管理器；项目更新、运行池、agent 环境、worker
-运行、判定、记账、通知正文等仍调 ``app/task/MaaFW/tools/`` 下吃普通数据的叶子。规则常量与项目判据在
+运行、判定、记账、通知正文等仍调 ``app/task/MaaFW/blocks/``、``seams/`` 下吃普通数据的叶子。规则常量与项目判据在
 ``rules.py``，排队列的前后两段（活动探测前、后）在 ``arrange.py``。
 
 导入 / 克隆拒收由 ``registration.py`` 登记的托管属主给出（``rules.is_mss_project``），MSS 的规则表为空。

@@ -5,7 +5,7 @@
 """M9A 一个账号这一轮的运行（账号级流程）。
 
 由 ``manager.M9AManager`` 每个账号建一个、直接调 ``main_task``，收尾经 ``_run_final_task``。
-写法照通用 MFW 的账号流程（``MaaFW/tools/embedded/runner_task``）逐段对应，差别只在 M9A 自己的几步：
+写法照通用 MFW 的账号流程（``MaaFW/runner_task``）逐段对应，差别只在 M9A 自己的几步：
 
 - 建计划：展开任务快照（``M9A_PLAN_RULES``）→ ``arrange_m9a_queue``（补首尾、切号）→ 按排好的队列建计划；
 - 设备配置（ADB）：解析 adb 路径（宿主没定下路径、有地址时总去问 Toolkit）→ **游戏更新**（每个账号每次
@@ -15,7 +15,7 @@
   首任务完成才算已登录；
 - 重试：重启客户端时清「已登录」，剔除本次运行已完成的任务用 ``M9A_SKIP_ON_RETRY``。
 
-跑计划、运行前设置、判定、记账、桌面游戏启停、开模拟器、文案与通知正文都调 ``MaaFW/tools/embedded``
+跑计划、运行前设置、判定、记账、桌面游戏启停、开模拟器、文案与通知正文都调 ``MaaFW/blocks``、``MaaFW/seams``
 里的叶子，只传普通数据；读写配置一律经 ``config_view``。日志、进度点、历史与通知的先后与通用流程完全相同
 （logger 名、``lease_owner`` 也照旧）。
 """

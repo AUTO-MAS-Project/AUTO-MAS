@@ -22,7 +22,7 @@ MAS 在自己的 worker 子进程内加载项目的 MaaFramework 直接驱动，
 自带的 UI 外壳；编排实现在 ``runner_task.py``。这是
 ``task_manager`` 对 MaaFW 脚本的唯一分派目标。
 
-``tools/embedded.runner_task`` 会经 runner 包 import ``maa``（导入即打开 DLL），
+``runner_task`` 会经 runner 包 import ``maa``（导入即打开 DLL），
 因此本模块**只在 check() 通过后才延迟导入它**，让不跑 MaaFW 的进程不承担
 这个代价。
 

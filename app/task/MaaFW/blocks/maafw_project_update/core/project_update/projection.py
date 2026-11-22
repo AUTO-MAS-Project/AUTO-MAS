@@ -94,7 +94,7 @@ PROJECTION_REVISION = 2
 UNDECLARED_KEEP_LIMIT = 64 * 1024 * 1024
 # 超过上面上限的顶层目录，只有在 ``OFFLINE_DEPENDENCY_MAX_DEPTH`` 以内（0 = 直接放在目录里）
 # 有 wheel / get-pip.py 才按离线依赖目录整棵带走，见 ``_looks_like_offline_dependency_dir``。
-# 判据与准备运行环境共用（``tools/core/offline_dependencies``）。
+# 判据与准备运行环境共用（``maafw_native/offline_dependencies``）。
 # 根目录上没声明的这些后缀只可能是外壳或外壳的运行时（m9a.exe、MaaEnd.exe、qt6core.dll…）。
 UNDECLARED_BINARY_SUFFIXES = {
     ".exe",

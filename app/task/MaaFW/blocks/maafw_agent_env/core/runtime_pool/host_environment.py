@@ -214,7 +214,7 @@ def apply_proxy_environment(
 # 代理串按线程登记：环境准备整段跑在一个 ``asyncio.to_thread`` 工作线程（或更新事务
 # 的回调线程）里，各处只需从这里取，不用把 proxy_url 穿过 installer / agent_env 的
 # 每个签名。核心包不许读 ``Config``，进入作用域的动作只在宿主侧
-# （``tools/embedded``、``embedded_manager``、``api``）的同步函数体内做。
+# （各积木的 ``host/``、``seams/``、``embedded_manager``、``api``）的同步函数体内做。
 _SUBPROCESS_PROXY_STATE = threading.local()
 
 

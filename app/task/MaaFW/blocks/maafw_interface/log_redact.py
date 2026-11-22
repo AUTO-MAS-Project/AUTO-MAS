@@ -5,8 +5,8 @@ app.log 会随日志包、问题包、Runtime 抓下的后端输出被发出去�
 推送地址，不管用户目录；前端导出时（``issueReportCore.ts`` 的 ``sanitizeText``）才把
 ``os.homedir()`` 换成 ``<HOME>``，这里与它同一个记号。
 
-放在 ``tools/core`` 而不是 ``app/utils``：worker 子进程（runner 子树）与 agent 环境准备也要用，
-它们的导入闭包里只能有 ``app.task.MaaFW.tools.core`` 之下的模块（见 MaaFW/AGENTS.md），宿主侧
+放在解析库而不是 ``app/utils``：worker 子进程（runner 子树）与 agent 环境准备也要用，
+它们的导入闭包里只能有两个库与三块积木 ``core`` 之下的模块（见 MaaFW/AGENTS.md），宿主侧
 的 MFW 代码照样能引。只依赖标准库。
 
 ``DETAIL_LOG_PREFIX`` 放在这里而不是 ``worker_protocol``：运行、agent 环境、项目更新三块都在

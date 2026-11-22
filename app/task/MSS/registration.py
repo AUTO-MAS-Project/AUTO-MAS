@@ -5,7 +5,7 @@
 """MSS 托管的运行、配置、恢复与托管属主接入声明（按确切类型 ``MSSConfig`` 登记）。
 
 第 10 步起 MSS 跑自己的流程：``manager_factory`` 造 ``manager.MSSManager``（在函数里现导入：本模块启动期就会
-被导入，不拉起流程模块）。配置回调与恢复池仍用中立的通用版（``MaaFW/tools/embedded/config_handler``，不经
+被导入，不拉起流程模块）。配置回调与恢复池仍用中立的通用版（``MaaFW/seams/config_handler``，不经
 ``MaaFW/registration``）：MSS 没有保存前整理。
 
 托管属主只收 MSS 项目（导入 / 克隆前的项目校验）；MSS 没有规则表，预览用空表。

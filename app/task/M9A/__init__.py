@@ -23,7 +23,7 @@ M9A 托管由 ``manager.M9AManager``（脚本级）与 ``account_run.M9AAccountR
 登录、游戏更新、首任务时限、重试剔除这些 M9A 自己的规矩是流程里的普通代码，规则常量与判据在
 ``rules.py``、排队列与保存前整理在 ``arrange.py``、登录的两种结局在 ``startup.py``；``login.py``（B 服登录）与
 ``game_update.py``（官服客户端版本检查与安装）由流程按需导入；``migration.py`` 是旧版 M9A 专项配置的一次性迁移。
-项目更新、内嵌副本、worker 运行、通知正文等都调 ``app/task/MaaFW/tools/`` 下吃普通数据的叶子。
+项目更新、内嵌副本、worker 运行、通知正文等都调 ``app/task/MaaFW/blocks/``、``seams/`` 下吃普通数据的叶子。
 
 预览的规则表与导入 / 克隆拒收由 ``registration.py`` 登记的托管属主给出（``rules.M9A_PLAN_RULES``、
 ``rules.is_m9a_project``）。MFW 的风味机制第 11 步已删，M9A 不再有经 MFW 管理器运行的回退路径。

@@ -4,12 +4,12 @@
 
 """M9A 托管的配置回调与恢复池：保存账号、恢复账号字段时整理受管任务（启动 / 切号 / 关闭）。
 
-- :func:`build_m9a_config_handler`：通用 MFW 的配置回调（中立模块 ``MaaFW/tools/embedded/config_handler``）
+- :func:`build_m9a_config_handler`：通用 MFW 的配置回调（中立模块 ``MaaFW/seams/config_handler``）
   只换掉 ``prepare_user_update`` 一项，换成 :func:`prepare_m9a_user_update`；其余（读取前准备、新账号默认
   队列、复制托管克隆视图、删除托管清理视图与运行池对账）原样。
 - :func:`prepare_m9a_user_update`：先整理（:func:`settle_m9a_user_update`）、再加密，两步都在线程里做，先后
   与通用的 ``user_update.prepare_user_update`` 相同。
-- ``M9A_RESTORE_POOLS``：mas 池用 ``MaaFW/tools/restore_service`` 公开的部件拼，恢复那一步换成
+- ``M9A_RESTORE_POOLS``：mas 池用 ``MaaFW/seams/restore_service`` 公开的部件拼，恢复那一步换成
   :func:`restore_m9a_mas`（只整理、不加密，照旧）；native 池原样带上 ``NATIVE_POOL``。
 
 整理的口径是 ``managed.py`` 的规则（实现在 ``arrange.settle_m9a_snapshot``），这里只是外壳：从配置里取出

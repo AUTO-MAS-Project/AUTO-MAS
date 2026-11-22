@@ -24,7 +24,7 @@
 
 放在这里而不是 ``embedded_manager``：触发点是某个账号某次尝试的资源加载失败，在
 ``runner_task`` 的重试循环里，那时它正持着本视图的项目预约（``reservation_held=True``）；
-``tools/embedded`` 是宿主与核心包之间唯一的接缝，核心包不碰宿主，worker 的导入闭包不受影响。
+``host/`` 是宿主与核心包之间的接缝，核心包不碰宿主，worker 的导入闭包不受影响。
 """
 
 from __future__ import annotations

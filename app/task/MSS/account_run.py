@@ -5,7 +5,7 @@
 """MSS 一个账号这一轮的运行（账号级流程）。
 
 由 ``manager.MSSManager`` 每个账号建一个、直接调 ``main_task``，收尾经 ``_run_final_task``。
-写法照通用 MFW 的账号流程（``MaaFW/tools/embedded/runner_task``）逐段对应，差别只在 MSS 自己的几步：
+写法照通用 MFW 的账号流程（``MaaFW/runner_task``）逐段对应，差别只在 MSS 自己的几步：
 
 - 建计划分三段，都包在 ``check`` 原来那个 shield 循环里（用户这时停止，照样等这一整段做完）：
   工作线程里读 interface、展开任务快照（规则表是空表）、取计划表今天那一格、``arrange.mss_arrange_head``；
@@ -16,7 +16,7 @@
 - 没有运行前登录、游戏更新与登录交给首任务（ADB 也照样能跑：``ask_toolkit`` 恒为假，设备配置不插步骤）；
 - 重试：剔除本次运行已完成的任务用 ``MSS_SKIP_ON_RETRY``。
 
-跑计划、运行前设置、判定、记账、桌面游戏启停、开模拟器、文案与通知正文都调 ``MaaFW/tools/embedded``
+跑计划、运行前设置、判定、记账、桌面游戏启停、开模拟器、文案与通知正文都调 ``MaaFW/blocks``、``MaaFW/seams``
 里的叶子，只传普通数据；读写配置一律经 ``config_view``。日志、进度点、历史与通知的先后与通用流程完全相同
 （logger 名、``lease_owner`` 也照旧）。
 """

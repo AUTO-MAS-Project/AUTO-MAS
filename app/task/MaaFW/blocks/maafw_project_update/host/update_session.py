@@ -25,7 +25,7 @@
 :class:`UpdateSession` 里；核心那一步（下载 / 构建 / 补齐 / 核对）仍由调用方写成
 ``core_call`` 交给 :meth:`UpdateSession.run`，因为四条路各不相同。
 
-放在 ``tools/embedded``：要碰视图预约、宿主的运行环境准备与 httpx 代理对象，属于宿主接缝；
+放在项目更新的 ``host/``：要碰视图预约、宿主的运行环境准备与 httpx 代理对象，属于宿主接缝；
 核心包不认识它。
 """
 

@@ -115,7 +115,7 @@ class PayloadCancelled(PayloadError):
 class PayloadTarget:
     """一次更新要落到哪：谱系、触发脚本当前挂的载荷、渠道、staging 与共用库。
 
-    宿主（``tools/embedded``）按视图标记组装，核心更新流程据此从当前载荷 + 更新包
+    宿主（项目更新的 ``host/``）按视图标记组装，核心更新流程据此从当前载荷 + 更新包
     在 staging 里建新载荷、预检、登记。
     """
 

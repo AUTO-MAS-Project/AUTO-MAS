@@ -11,7 +11,7 @@
 
 X 锁照旧直接 ``try_lock_x()``，不走 ``lock_script_config``；拿到锁、确认有可运行账号后照通用 MFW 调 L2 挂的
 ``after_config_lock``（选定游戏会话、复查预下载），账号循环里再按账号选定、跑完交回账号覆盖的目标。
-项目会话、运行池路由与自检、归档、遥测、通知正文都调 ``MaaFW/tools/embedded`` 里的叶子；读写配置一律经
+项目会话、运行池路由与自检、归档、遥测、通知正文都调 ``MaaFW/blocks``、``MaaFW/seams`` 里的叶子；读写配置一律经
 ``config_view``。账号流程模块经 runner 包 import maa（导入即打开 DLL），只在账号开跑前延迟导入。
 """
 
