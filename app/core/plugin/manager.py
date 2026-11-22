@@ -1560,9 +1560,42 @@ class _PluginManager:
                 payload={"blockers": blockers},
             )
 
-    def disable_impact(self, record: PluginRecord) -> list[Literal["scripts", "games"]]:
+    def dependency_view(self, record: PluginRecord) -> dict[str, list[str]]:
+        """只读的依赖关系：直接上游、缺提供者的服务，以及停用 / 卸载会一并拆掉的插件。"""
+        depends_on: list[str] = []
+        missing: list[str] = []
+        for service in record.info.requires:
+            provider = self._provider(service)
+            if provider is None:
+                if service not in missing:
+                    missing.append(service)
+            elif provider.uid != record.uid:
+                name = provider.info.plugin_name
+                if name not in depends_on:
+                    depends_on.append(name)
+        disable_cascade = (
+            [
+                r.info.plugin_name
+                for r in self._teardown_tree(record, enabled_only=True)[1:]
+            ]
+            if record.info.state == PluginState.ENABLED
+            else []
+        )
+        return {
+            "dependsOn": depends_on,
+            "missingServices": missing,
+            "disableCascade": disable_cascade,
+            "uninstallCascade": [
+                r.info.plugin_name
+                for r in self._teardown_tree(record, enabled_only=False)[1:]
+            ],
+        }
+
+    def disable_impact(
+        self, record: PluginRecord
+    ) -> list[Literal["scripts", "games", "plans"]]:
         """汇总停用本插件及级联下游时会删除的配置领域，供前端确认。"""
-        impact: set[Literal["scripts", "games"]] = set()
+        impact: set[Literal["scripts", "games", "plans"]] = set()
         visited: set[UUID] = set()
         pending = [record]
         while pending:
@@ -1574,6 +1607,10 @@ class _PluginManager:
             if cls is not None:
                 if issubclass(cls, ScriptAdapterPlugin):
                     impact.add("scripts")
+                    # 声明了计划类型的专项停用时，计划类型连同全部计划表一起删除。
+                    decl = getattr(cls, "decl", None)
+                    if getattr(decl, "plan_type", None) is not None:
+                        impact.add("plans")
                 if issubclass(cls, GameAdapterPlugin):
                     impact.add("games")
             pending.extend(self._downstream(current))
