@@ -1425,7 +1425,8 @@ class _PluginManager:
         await instance.commit()
         # 须在 unregister 前写盘，否则防抖/flush 可能已扫不到该根
         path = config_manager.get_file(instance)
-        if path is not None:
+        # 激活出过错的根只加载了一部分，整根写回会抹掉没加载上的内容。
+        if path is not None and instance.persist_blocked is None:
             write_file(path, await instance.to_dict())
         config_manager.unregister_root(instance)
         record._config = None

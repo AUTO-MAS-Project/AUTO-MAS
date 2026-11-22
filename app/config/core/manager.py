@@ -187,6 +187,7 @@ class ConfigManager:
         self._save_loop: asyncio.AbstractEventLoop | None = None
         self._save_event: asyncio.Event | None = None
         self._save_failures: dict[UUID, _SaveFailure] = {}
+        self._persist_blocked_logged: set[UUID] = set()
         self._save_retry_delays = (1.0, 2.0, 4.0, 8.0, 16.0)
         self._trigger_group: BackgroundTaskGroup | None = None
         self._trigger_background: BackgroundTaskRegistry | None = None
@@ -553,6 +554,12 @@ class ConfigManager:
             if not records:
                 target.mkdir(parents=True, exist_ok=True)
                 return
+            blocked = [r.path for r in records if r.node.persist_blocked is not None]
+            if blocked:
+                # 备份不能静默少条目。
+                raise ValueError(
+                    "配置未完整加载，不能导出：" + "、".join(str(p) for p in blocked)
+                )
             paths = [Path(os.path.abspath(record.path)) for record in records]
             base = Path(os.path.commonpath([path.parent for path in paths]))
             destinations = [target / path.relative_to(base) for path in paths]
@@ -1030,6 +1037,15 @@ class ConfigManager:
                     continue
             # 构造先登记、激活在后；未激活根没有可保存状态。
             if root.activation_state != NodeState.ACTIVE:
+                continue
+            if root.persist_blocked is not None:
+                # 不抛：退出时的 flush 还要接着收尾；按根只记一次。
+                if root.uid not in self._persist_blocked_logged:
+                    self._persist_blocked_logged.add(root.uid)
+                    logger.error(
+                        f"配置加载出错，不写回以免丢失未加载的内容：{record.path}"
+                        f"（{root.persist_blocked}）"
+                    )
                 continue
             phase: Literal["export", "write"] = "export"
             try:

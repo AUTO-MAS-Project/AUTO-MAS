@@ -302,6 +302,8 @@ class ConfigNode(BaseModel):
         ExecutionOwner, dict[UUID | None, list[StagedOp]]
     ] = PrivateAttr(default_factory=weakref.WeakKeyDictionary)
     _commit_lock: asyncio.Lock | None = PrivateAttr(default=None)
+    # 激活出过错的节点只加载了一部分；整根写回会把没加载上的内容从盘上抹掉。
+    _persist_blocked: str | None = PrivateAttr(default=None)
     # ──────────────── 子类信号隔离 ────────────────
 
     @classmethod
@@ -755,7 +757,20 @@ class ConfigNode(BaseModel):
                     for node, old in previous:
                         node._activation = old
             if activate_error is not None:
+                # 根已置为 ACTIVE，只能另加标记：之后的保存、flush、导出都跳过它。
+                # 摘要只留异常类型：校验错误的原文可能带配置值。
+                self._persist_blocked = (
+                    "、".join(
+                        dict.fromkeys(type(e).__name__ for e in activate_error.errors)
+                    )
+                    or type(activate_error).__name__
+                )
                 raise activate_error
+
+    @property
+    def persist_blocked(self) -> str | None:
+        """激活出错时的错误摘要；非空表示内存里缺了盘上的内容，不能整根写回。"""
+        return self._persist_blocked
 
     async def _activate_from_payload(
         self, payload: dict[str, Any], *, regenerate_uuids: bool = False
