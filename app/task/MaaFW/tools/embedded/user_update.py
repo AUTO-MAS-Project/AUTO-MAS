@@ -13,14 +13,13 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
 
-"""MFW 账号任务更新：特调整理、全局选项兼容与密码准备。"""
+"""MFW 账号任务更新：全局选项兼容与密码准备。"""
 
 import asyncio
 from typing import Any
 
 from app.config import ConfigEntry
 
-from .flavor import resolve_snapshot_sanitizer, sanitize_user_task_update
 from .option_secrets import prepare_user_task_snapshot
 
 
@@ -32,17 +31,7 @@ async def prepare_user_update(
     if not isinstance(task_data, dict) or "TaskSnapshot" not in task_data:
         return
 
-    # 特调的动态导入先在事件循环完成；整理器随后只读取已缓存的特调，避免在线程里冷导入。
-    resolve_snapshot_sanitizer(script)
-
-    # 先收归特调管理的任务及账号，再双写全局选项，最后加密任务和全局表里的密码。
-    await asyncio.to_thread(
-        sanitize_user_task_update,
-        script_id=str(script.uid),
-        script_config=script,
-        user_config=user,
-        data=data,
-    )
+    # 双写全局选项，再加密任务和全局表里的密码（M9A 先收归受管任务，见 M9A/config_hooks）。
     task_data["TaskSnapshot"] = await asyncio.to_thread(
         prepare_user_task_snapshot,
         script_id=str(script.uid),

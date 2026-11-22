@@ -18,8 +18,8 @@
 三种托管类型（通用 MFW、M9A、MSS）各自显式登记（M9A、MSS 的在 ``app/task/M9A/registration.py``、
 ``app/task/MSS/registration.py``）：回调、恢复池、属主都按确切类型认，不靠配置类之间的继承。M9A 第 9 步起
 跑自己的流程与配置回调（``app/task/M9A/manager``、``config_hooks``）；MSS 第 10 步起跑自己的流程
-（``app/task/MSS/manager``），配置回调与恢复池仍是同一套。这里的 ``build_manager``（MFW 管理器）只剩通用 MFW
-在用，回退第 9 / 10 步时 M9A / MSS 的登记换回它。配置回调与恢复池的实现在中立模块
+（``app/task/MSS/manager``），配置回调与恢复池仍是同一套。这里的 ``build_manager``（MFW 管理器）只跑通用
+MFW。配置回调与恢复池的实现在中立模块
 ``tools/embedded/config_handler``，这里的 ``build_config_handler`` / ``load_restore_pools`` 只是转出名。
 """
 
@@ -49,10 +49,6 @@ if TYPE_CHECKING:
 # M9A 迁移后归档这类按家族判断的地方都用它按确切类型比，不用 isinstance。M9A、MSS 有了自己的流程后
 # 仍在里面；插件形态由各专项的声明取代。
 MAAFW_FAMILY_TYPES: tuple[type[ConfigEntry], ...] = (MaaFWConfig, M9AConfig, MSSConfig)
-
-# MFW 管理器（``embedded_manager``）运行前的类型闸门：它肯跑哪些确切类型。现在与家族相同；
-# 第 9、10 步翻登记后回退时它仍要收 M9A、MSS，第 11 步删风味时才收窄成只收通用 MFW。
-MAAFW_RUN_TYPES: tuple[type[ConfigEntry], ...] = (MaaFWConfig, M9AConfig, MSSConfig)
 
 MAAFW_OWNER = "maafw_adapter"
 _OWNER = BuiltinConfigOwner(MAAFW_OWNER, lambda: MaaFWConfig)

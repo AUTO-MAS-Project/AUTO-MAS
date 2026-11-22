@@ -49,7 +49,6 @@ from app.task.MaaFW.tools.core.interface.preview import interface_text_translato
 from app.task.MaaFW.tools.embedded.embedded_project import (
     resolve_maafw_project_root,
 )
-from app.task.MaaFW.tools.embedded.flavor import sanitize_user_task_update
 from app.task.MaaFW.tools.embedded.project_path import (
     release_project_path,
     try_reserve_project_path,
@@ -169,10 +168,6 @@ async def _restore_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> No
     restored = restore_mas_backup(ctx.script_id, ctx.user_id, ts)
     if restored:
         overlay = group_overlay(restored)
-        # 老备份里可能还有特调收归自己管的任务（M9A 的启动 / 切号 / 关闭），与保存同一口径整理
-        await asyncio.to_thread(
-            sanitize_user_task_update, ctx.script_id, ctx.script_config, user, overlay
-        )
         await user.update(type(user).model_validate(overlay))
 
 

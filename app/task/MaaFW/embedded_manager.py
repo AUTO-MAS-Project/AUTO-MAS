@@ -58,7 +58,6 @@ from app.models.notification.report import TaskResultData, TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.game import current_game_session, game_target_id
-from app.task.MaaFW.registration import MAAFW_RUN_TYPES
 from app.task.MaaFW.tools.backup_archive import (
     archive_mas_runtime_backup,
     archive_native_backup,
@@ -237,8 +236,8 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         except (KeyError, ValueError):
             return "MFW 托管配置不存在，请刷新后重试"
 
-        # 按确切类型认（不靠继承）：MFW 管理器现在运行这三种托管。
-        if type(script_config) not in MAAFW_RUN_TYPES:
+        # 按确切类型认（不靠继承）：MFW 管理器只跑通用 MFW 托管，M9A、MSS 跑各自的流程。
+        if type(script_config) is not MaaFWConfig:
             return "托管配置类型错误，不是 MFW 托管类型"
         self.script_config = script_config
 
