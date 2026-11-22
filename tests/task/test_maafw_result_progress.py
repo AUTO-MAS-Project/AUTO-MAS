@@ -4,7 +4,7 @@ import pytest
 import pytest_asyncio
 
 from app.models.config import MaaFWConfig, MaaFWUserConfig
-from app.task.MaaFW.tools.embedded.runner_task import MaaFWPluginAutoProxyTask
+from app.task.MaaFW.runner_task import MaaFWPluginAutoProxyTask
 from app.task.run_flow import RunPoint, observe_run
 from tests.support.scheduler import create_runtime_tree
 
