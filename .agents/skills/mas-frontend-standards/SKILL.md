@@ -37,6 +37,8 @@ Before editing frontend code:
 | Route page | `src/views/<module>/index.vue` or `src/views/Xxx.vue` | `src/components` |
 | Single-module component | `src/views/<module>/components` | `src/components` root |
 | Cross-module component | `src/components` | Copied across page folders |
+| Shared UI primitive / shell | `src/components/ui` (exported via `@/components/ui`) | Hand-rolled raw `a-modal` / page surface / state wrappers per view |
+| Confirmation dialog service | `src/composables/useConfirm.ts` | Repeated `Modal.confirm` option blocks across pages |
 | Business API wrapper | `src/composables/useXxxApi.ts` | Vue page or `src/api` |
 | Reusable page flow | `src/views/<module>/useXxxLogic.ts` or composable | Template expressions |
 | Pure utility | `src/utils` | Copied inside components |
