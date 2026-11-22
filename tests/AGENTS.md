@@ -22,19 +22,12 @@
 
 ## 核心最小回归
 
-`tests/task/test_maafw_core.py` 是 MaaFW 通用引擎（`app/task/MaaFW/blocks/` 下两个库与三块积木的 `core`）的最小回归集。
-M9A 等 MFW 特调和直接导入的各个 `interface.json` 项目都跑在这套核心上，它属于根 `AGENTS.md`「分支与 PR」所说的
-跨功能通用测试，**进仓库、长期保留**，清理测试时不要删它。
+MFW 通用引擎（两块库与三块积木）和 MFW、M9A、MSS 三个专项已改由插件包提供，源码在
+[AUTO-MAS-MaaFW](https://github.com/AUTO-MAS-Project/AUTO-MAS-MaaFW) 与三个专项仓库，原先的
+`tests/task/test_maafw_core.py` 核心最小回归随实现一起交给积木仓库维护，宿主不再放 MFW 引擎的测试。
 
-- 范围只到核心，不覆盖专项；只收缺一条就要命的：守的东西一改坏，MFW 运行就成片失败
-  （worker / agent 起不来、宿主与 worker 之间的数据传不过去、agent 与 runner 版本对不上之类）。
-  单个功能的行为、文案、日志不收。
-- 每条都要便宜稳定：秒级以内、不联网、不要模拟器或真实安装包、不建真 venv、不 skip、
-  不读源码文本做字符串断言、不断言中文文案。
-- 新增一条时在 PR 正文写明：守的是什么、破了怎么炸，以及把被守代码改坏后这条确实会红。
-- 改 `app/task/MaaFW/blocks/` 时先跑它：`uv run --no-sync python -m pytest tests/task/test_maafw_core.py -q`。
-  它红了先看是不是改坏了核心；确实要改边界（比如 worker 导入闭包放进新的包），在测试里显式
-  改白名单并在 PR 里说明，不要删测试。
+宿主这边只守升级链路：识别旧的 MFW 族托管与计划表类型、首次接手前的专属备份、插件装不上时托管旁挂保留，
+用例在 `tests/core/test_plugin_config_upgrade.py`。
 
 ## Agent 规则
 
