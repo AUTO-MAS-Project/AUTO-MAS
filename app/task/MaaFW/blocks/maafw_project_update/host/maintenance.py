@@ -184,6 +184,7 @@ class MaaFWMaintenanceService:
         副本删除失败（只读、被占用）也会留下孤儿。两者都是 MAS 自己铺的，不含用户
         内容，按进程启动时刻与视图预约避开后台并发。目录名必须是副本目录名的形状。
         孤儿只认视图标记里记着属主、属主已登记且名下没有这个托管的；判定不了的留着。
+        有任何视图记着这一轮没答上来的属主时，整轮不删带属主标记的视图（staging 半成品照清）。
         """
 
         from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
@@ -259,6 +260,16 @@ class MaaFWMaintenanceService:
             return
         # 只删「属主已登记、且属主名下没有这个托管」的视图；没有属主标记、属主没登记的不动。
         views = classify_views(current, root)
+        if views.unanswered_owners:
+            # 视图上记着、这一轮没答上来的属主（插件没装 / 没加载起来）：它名下的托管这里看不见，
+            # 而视图目录名只取托管 uuid 前 12 位、撞上时共用目录，答上来的属主说「名下没有」也不算数。
+            # 这轮不删任何带属主标记的视图；它名下「视图没了、托管还在」的谱系也看不见，载荷一并不回收。
+            logger.info(
+                "有视图记着这次没有登记的属主（"
+                + "、".join(sorted(views.unanswered_owners))
+                + "），本轮不清 MFW 内嵌副本、不回收载荷"
+            )
+            return
         gone = set(views.gone)
         for child in root.iterdir():
             if child.name == STAGING_DIR_NAME or not child.is_dir():
@@ -294,15 +305,6 @@ class MaaFWMaintenanceService:
             read_view_marker,
         )
 
-        if views.unanswered_owners:
-            # 视图上记着、这一轮没答上来的属主（插件没装 / 没加载起来）：它名下「视图没了、托管
-            # 还在」的谱系这里看不见，宁可这轮不回收载荷。
-            logger.info(
-                "有视图记着这次没有登记的属主（"
-                + "、".join(sorted(views.unanswered_owners))
-                + "），本轮不回收 MFW 载荷"
-            )
-            return
         records = current.records()
         live_sources = [
             imported_source_path(shape) or str(shape.Info.Path or "")

@@ -159,7 +159,7 @@ class BuiltinConfigOwner:
 
     def list_managed(self) -> OwnerListing:
         host = self._host()
-        ready = bool(host.script_config_loaded_intact())
+        ready = bool(host.managed_configs_loaded())
         items = tuple(
             _record(str(uid), config, order)
             for order, (uid, config) in enumerate(host.ScriptConfig.items())
