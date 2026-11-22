@@ -51,7 +51,6 @@ from app.utils.common.process.runner import create_subprocess, observe_process_e
 from app.utils.common.process.scope import current_process_scope
 
 from .device_config import find_controller, match_windows_in_session, optional_int
-from .option_secrets import redact_secret_text
 from .plan_run import (
     WORKER_STREAM_LINE_LIMIT,
     MaaFWPlanRunLog,
@@ -60,6 +59,7 @@ from .plan_run import (
     decode_subprocess_output,
     terminate_process_snapshot,
 )
+from .run_redaction import redact_secret_text
 
 # 与任务类同一个名字：后端日志里这段流程的行照旧记在「MaaFW 插件自动代理」下
 logger = get_logger("MaaFW 插件自动代理")

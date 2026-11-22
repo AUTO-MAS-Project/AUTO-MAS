@@ -68,7 +68,7 @@ const IMPORT_LIST_PATTERN = /["']?import["']?\s*:\s*\[([^\]]*)\]/g
 const STRING_LITERAL_PATTERN = /"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'/g
 const MAX_INTERFACE_FILES = 64
 const SEALED_SECRET_PREFIX = 'mas-dpapi:'
-// 与 app/task/MaaFW/tools/embedded/option_secrets.py 的 LOG_REDACTION_MARKER 同步：有 password
+// 与 app/task/MaaFW/tools/embedded/run_redaction.py 的 LOG_REDACTION_MARKER 同步：有 password
 // 输入框的项目每次运行的 .worker.log 第一行以它开头，说明这次的 .worker.log / .maafw.log 写的时候
 // 就打过码
 const LOG_REDACTION_MARKER = '[MAS 日志打码]'

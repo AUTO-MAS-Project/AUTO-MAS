@@ -19,7 +19,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
 - `tools/embedded/`：宿主与核心包之间**唯一**的接缝（`runner_task`、`runtime_route`、
   `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
   `update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
-  `default_snapshot`、`env_confirm`、`update_session`、`device_config`、`plan_run`、`pretask_run`）。
+  `default_snapshot`、`env_confirm`、`update_session`、`device_config`、`plan_run`、`pretask_run`、
+  `run_verdict`、`run_redaction`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - **设备配置与首任务闸门在 `tools/embedded/device_config.py`**（将来是运行这一块对外的「设备配置」调用，
   三个专项各自的流程都调它）：游戏包名、adb 路径（含「宿主没定下路径时问 Toolkit」，判据由调用方算好
@@ -40,9 +41,10 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   增量复制与打码、原生报错行摘取、附件收集、强杀前的进程树清理、ModAVD 的 MaaFramework 版本门槛、
   按任务的截止时刻（`task_deadlines`，下发前一刻换算成秒）。
   **只收普通数据**（`MaaFWPlanRunRequest`）：不接收脚本配置、账号配置或任务类实例，不回头碰调用方的对象。
-  打码的值分两组由调用方算好传入，算法仍在 `option_secrets`：`run_secrets`（`.worker.log`、`.maafw.log`、
-  转发的事件与原生诊断）= 本账号这次的 `collect_run_password_values` 的写法；`project_log_secrets`
-  （`.project.log`）= 它并上整个托管全部账号的密码（`collect_script_password_values`）。输出只有两条路：
+  打码的值分两组由调用方算好传入（收集在解析一侧 `interface/password_values`，写法与按值打码在
+  `run_redaction`，见下文「密码字段」）：`run_secrets`（`.worker.log`、`.maafw.log`、转发的事件与原生诊断）
+  = 本账号这次的 `collect_run_password_values` 的写法；`project_log_secrets`（`.project.log`）= 它并上整个
+  托管全部账号的密码（`collect_snapshots_password_values`）。输出只有两条路：
   **事件出口**（一个同步调用的 `MaaFWPlanRunSink`，四种事件：账号日志一行、运行进度点——名字与先后同
   `run_flow`，由调用方以自己为 owner 上报——、worker 推来的结构化运行记录事件、宿主阶段起止）和**返回值**
   （`MaaFWPlanRunOutcome`：结果、附件清单、原生报错行、这次用的 agent 命令计划；运行抛异常时同样的东西留在
@@ -52,7 +54,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   运行记录与进度点 → 处理返回值。只和 M9A 有关的「登录交给首任务完成」（`StartupTask`）不在这里：任务类在
   调用前把首任务标成 `abortRoundMessage`、把登录截止时刻放进 `task_deadlines`，截止已过时 `plan_run` 抛
   `MaaFWTaskDeadlineExpired`、任务类换成「登录时限已耗尽」；首任务完成后记「已登录」也由任务类按返回的结果做。
-  重试循环、桌面游戏启停、历史保存与通知仍在任务类。
+  重试循环、桌面游戏启停、历史保存与通知仍在任务类（见下面「任务类还剩什么」）。
 - **运行前设置（interface `pretask`）的执行在 `tools/embedded/pretask_run.py`**，做法与 `plan_run` 相同：
   入参只收普通数据（`MaaFWPretaskRunRequest`：计划里的 pretask、工作目录、时限原值、`PI_*` 与 ModAVD adb
   端口两层进程环境、要打码的写法、桌面分身目标），输出经同一种事件出口（只发账号日志
@@ -63,7 +65,22 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   （停止与清理的状态要跨尝试保留），停止经 `stop()`；`has_live_process` 回答这边还有没有没确认退出的进程，
   `exit_confirmation()` 记下此刻要等的清理与进程、返回等待入口——任务类释放项目预约（`_release_project_path`）
   前要等它返回真，**这条约束改动时不能丢**。任务类只剩取配置 → 组装入参 → 调用。
-  接缝模块按将来的积木归属分好了，**agent 环境一侧**的接缝（`pool_reconcile`、`env_cache`、
+- **一次尝试的结果判定在 `tools/embedded/run_verdict.py`**（与 `plan_run` 同一块，三个专项的流程将来都调它）：
+  `judge_attempt(结果或异常)` 吃 worker 回报的 `MaaFWRunResult` 或这次尝试里抛出的异常，返回普通数据的
+  `MaaFWAttemptVerdict`——结局（`succeeded` / `signal` / `game_update_required` / `failed`）、进运行记录的
+  尝试级类别、还重不重试（`retry`）、要不要先修资源包（`repair_resource`，不重启、修过才立刻再跑）、重试前
+  要不要重启游戏 / 模拟器（`restart_client`）、要不要补「运行环境不可用」那句（`environment_unusable`）、
+  命中的信号与是不是停服维护；异常时连同账号日志文案与推送原文（整次运行超时为 None）。环境级失败的
+  消息标记（`UNRETRYABLE_ENVIRONMENT_MARKERS`，含原生库架构不符）、`result_failure_category`、宿主自己抛的
+  `MaaFWGameUpdateRequired` / `MaaFWWorkstationLocked` 都在这里。不读配置、不碰调用方。判据的先后不能乱：
+  信号先于成功，资源包失败先于环境级失败；异常的类别是运行前设置 → 整次运行超时 → 环境级 → 宿主异常，
+  锁屏算不重试但不补「运行环境不可用」。
+- **任务类 `runner_task` 还剩什么**：取配置与账号数据、建计划（调解析一侧）、运行前检查与项目预约、桌面
+  游戏 / 模拟器启停与登录、游戏更新钩子、设备配置（调 `device_config`）、**重试主循环**（次数、每次尝试的
+  日志与「上一次（…）」、按 `judge_attempt` 的判定走：信号收尾、资源包修复后不计次数的重跑、重启客户端、
+  周期任务刷新计划）、失败文案的拼装（资源包失败的人话要读原生报错、超时摘要要读时限配置，所以不在判定里）、
+  运行记录、历史、统计与通知。跑计划、运行前设置、判定、打码与收集密码值都只经上面这些模块的入参出参。
+- 接缝模块按将来的积木归属分好了，**agent 环境一侧**的接缝（`pool_reconcile`、`env_cache`、
   `env_trial`）只收普通数据（项目路径集合、被替换的版本、待验证的目录），不读脚本配置、不导入
   `embedded_project` / `project_path` 这类项目更新一侧的模块；「哪些项目还在」由项目更新一侧算
   （`live_projects.collect_live_project_paths` / `reconcile_in_background`，`maintenance` 算隔离 venv 的
@@ -771,7 +788,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   旧配置、坏值形状与降级副本）把这些列成计划提示，运行日志开头「MaaFW 运行计划提示」里各一句，
   与「interface 内已无该任务」的跳过同一个思路。开发者模式下改 interface 最容易撞上。
 - input 字段 `password: true`（PI v2.10.0）的值在 `Task.TaskSnapshot` 里（`taskOptions` 与
-  `globalOptions` 两处，`option_secrets._SECRET_SECTIONS`）是带 `mas-dpapi:` 前缀的
+  `globalOptions` 两处，`password_values.SNAPSHOT_SECRET_SECTIONS`）是带 `mas-dpapi:` 前缀的
   DPAPI 密文：`Config.update_user` 写入前按 interface 加密（`tools/embedded/option_secrets`），
   `runner_task` 建计划前只在内存副本里解密；前端只看到密文、显示「已设置」。没有前缀的是旧明文，
   照常使用、下次保存时加密。checkbox 的 `min_count` / `max_count`（v2.10.1）由加载器放宽成自洽值，
@@ -780,14 +797,14 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `LogInfo << VAR(pipeline_override)` 记整份 override（INFO 级，不是只在 DBG 下），覆盖失败时
   `LogError` 再记一遍。**这份文件由框架直接写，MAS 管不了**，里面的密码是原文。MAS 自己的出口对
   **长度至少 4 个字符**（`MIN_REDACTED_SECRET_LENGTH`）的密码值都已打码
-  （`option_secrets.redact_secret_text`，按文本全局替换成「<已隐藏>」）：`plan_run` 复制到
+  （`run_redaction.redact_secret_text`，按文本全局替换成「<已隐藏>」）：`plan_run` 复制到
   历史详情中 `native_log` 角色的原生日志附件、转发的 worker 事件（事件通道与 stdout 退回格式都先解析、
   只打码给人读的文本，见 `_redact_worker_event`）、stdout 上的原生诊断与 stderr、`.worker.log`、pretask 输出。更短的值**不打码**
   （有意为之，本地测试钉住）：一两个字符全局替换会把日志里所有同样的字符都换掉，日志就没法看了。
   input 值下发失败的计划告警对密码字段一律不带原值、与长度无关（`MaaFWInputValueError(secret=True)`）。
   项目更新撤掉了 password 标记的字段，快照里留着的密文建计划前照样在内存里解开（解不开的告警、丢值，
   不中断整轮），它们与当前仍是 password 的字段同一口径：值进打码集合
-  （`option_secrets.collect_run_password_values`），字段记进快照的 `secretInputs`，下发失败的告警同样不带原值。
+  （`password_values.collect_run_password_values`），字段记进快照的 `secretInputs`，下发失败的告警同样不带原值。
   新增任何落盘 / 转发日志的路径都要过它；agent 进程自己写的日志同样不在 MAS 控制内。
   项目有 password 输入框、或本次有要打码的值时，`worker_log` 附件第一行是以 `LOG_REDACTION_MARKER` 开头的打码说明：
   前端问题包导出（`frontend/electron/services/maafwIssueReportService.ts`）凭它认定这次的
@@ -799,7 +816,15 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `tools/embedded/project_logs.py`）。`debug/maafw*.log` 不在其中。问题包按附件角色识别，
   `project_log` 与 `worker_log` 同一条件收（有密码输入框时只收写的时候就打过码的那次）；
   整包备份通过历史快照保留数据库与附件的对应关系。打码按每个写法的 UTF-8 / GBK / UTF-16LE 字节替换
-  （`option_secrets.secret_byte_pairs`，`.maafw.log` 同用）。
+  （`run_redaction.secret_byte_pairs`，`.maafw.log` 同用）。
+  **三件事各归各位**（迁移方案 §3.7）：按 interface 认出哪些选项是密码、从任务快照的普通数据里收集要打码的值是
+  解析一侧的纯函数（`tools/core/interface/password_values`：`collect_plan_password_values`、
+  `collect_run_password_values`、`collect_snapshots_password_values`，导入闭包只有 interface，**不引宿主的
+  加解密**——密文怎么认、怎么解开由调用方经 `MaaFWSecretOpener` 交进来）；加解密（DPAPI）与「从配置对象里
+  取出快照原值」（`user_task_snapshot` / `script_task_snapshots`）在宿主 `option_secrets`，它给出
+  `DPAPI_SECRET_OPENER`；写法（`secret_log_variants`）、按文本 / 按字节打码、打码说明与
+  `LOG_REDACTION_MARKER` 在运行一侧 `tools/embedded/run_redaction`。任务类把快照原值与 opener 交给收集
+  函数得到两组值，再换成写法传给 `plan_run` / `pretask_run`。三者之间只传普通数据，别把配置对象传进解析一侧。
 - 加载器写的告警（`logger.warning`）由加载器旁听收集、挂在模型上（`interface_load_warnings`），
   随磁盘缓存保存，进运行计划的 `warnings`（运行日志开头）与导入报告；只给后端看的用
   `extra=_LOG_ONLY`。发行包的毛病能降级就降级：缺 import 文件、scan_dir 不在、缺

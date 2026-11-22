@@ -36,7 +36,7 @@ Error）与 ``debug/go-service.stderr.log``（stderr 被重定向到这里，pan
 :data:`PROJECT_LOG_TOTAL_BYTES`（``debug/`` 下的优先、同组里新写的优先），截掉多少写一行说明；
 切口从下一行开始，不留半行（半行里可能是半个密码）。打码与 ``.maafw.log`` 同一口径：按字节把
 密码的各种写法（``secret_log_variants``）在 UTF-8 / GBK / UTF-16LE 下的字节换成「<已隐藏>」
-（``option_secrets.secret_byte_pairs``）。
+（``run_redaction.secret_byte_pairs``）。
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ from pathlib import Path
 
 from app.utils import get_logger
 
-from .option_secrets import redact_secret_bytes, secret_byte_pairs
+from .run_redaction import redact_secret_bytes, secret_byte_pairs
 
 logger = get_logger("MFW 项目日志")
 

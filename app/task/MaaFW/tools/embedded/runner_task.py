@@ -49,6 +49,10 @@ from app.task.MaaFW.tools.core.interface.agent_command import MaaFWAgentCommandP
 from app.task.MaaFW.tools.core.interface.models import (
     MaaFWInterface,
 )
+from app.task.MaaFW.tools.core.interface.password_values import (
+    collect_run_password_values,
+    collect_snapshots_password_values,
+)
 from app.task.MaaFW.tools.core.interface.preview import (
     interface_display_name,
 )
@@ -56,7 +60,6 @@ from app.task.MaaFW.tools.core.interface.service import (
     MaaFWInterfaceService,
 )
 from app.task.MaaFW.tools.core.native.project_runtime import (
-    ARCHITECTURE_MISMATCH_MARKERS,
     describe_project_runtime_architecture_mismatch,
 )
 from app.task.MaaFW.tools.core.runner.models import (
@@ -76,12 +79,7 @@ from app.task.MaaFW.tools.core.runner.plan_transforms import (
     skip_tasks_completed_this_run,
 )
 from app.task.MaaFW.tools.core.runner.run_events import (
-    CATEGORY_ENVIRONMENT,
-    CATEGORY_GAME_UPDATE_REQUIRED,
     CATEGORY_HOST_ERROR,
-    CATEGORY_PRETASK_FAILED,
-    CATEGORY_RESOURCE_FAILURE,
-    CATEGORY_RUN_TIMEOUT,
     CATEGORY_SCRIPT_STOPPED,
     CATEGORY_SIGNAL,
     CATEGORY_USER_STOPPED,
@@ -165,11 +163,10 @@ from .flavor import (
     skip_on_retry_entries,
 )
 from .option_secrets import (
-    collect_run_password_values,
-    collect_script_password_values,
-    log_redaction_notice,
+    DPAPI_SECRET_OPENER,
     open_task_snapshot,
-    secret_log_variants,
+    script_task_snapshots,
+    user_task_snapshot,
 )
 from .plan_run import (
     MaaFWPlanRun,
@@ -181,9 +178,7 @@ from .plan_run import (
     MaaFWPlanRunStage,
     MaaFWTaskDeadlineExpired,
 )
-from .plan_run import MaaFWRunTimeoutError as _MaaFWRunTimeoutError
 from .pretask_run import (
-    MaaFWPretaskError,
     MaaFWPretaskRunner,
     MaaFWPretaskRunRequest,
     pretasks_need_rerun,
@@ -204,6 +199,7 @@ from .run_record import (
     MaaFWTaskRecord,
     format_incident_lines,
 )
+from .run_redaction import log_redaction_notice, secret_log_variants
 from .run_report import (
     CATEGORY_REASONS,
     MaaFWAttemptReport,
@@ -212,6 +208,14 @@ from .run_report import (
     format_timeline,
     human_reason,
 )
+from .run_verdict import (
+    VERDICT_GAME_UPDATE_REQUIRED,
+    VERDICT_SIGNAL,
+    VERDICT_SUCCEEDED,
+    judge_attempt,
+)
+from .run_verdict import MaaFWGameUpdateRequired as _MaaFWGameUpdateRequired
+from .run_verdict import MaaFWWorkstationLocked as _MaaFWWorkstationLocked
 from .signal_notice import (
     MAINTENANCE_LAST_STATUS,
     MAINTENANCE_SKIP_MESSAGE,
@@ -236,22 +240,10 @@ _PROCESS_CREATE_TIME_TOLERANCE_SECONDS = 2.0
 # 兜底关闭进程时 terminate 之后等它自己退出的秒数，到点仍在就 kill
 _PROCESS_TERMINATE_GRACE_SECONDS = 3.0
 
-# 环境级失败：解释器自身坏了、依赖没装上。重试只会原样再失败一遍，而每次重试
-# 还要重启一遍模拟器/游戏——默认 RunTimesLimit=3，白等好几分钟才告诉用户同一件事。
-# 判据取消息标记而不是异常类型：这些错误跨了 runtime_pool 与 runner 两个包，
-# 而 runner_task 有意不在模块层导入 runtime_pool（那会让所有请求都付出导入成本）。
-_UNRETRYABLE_ENVIRONMENT_MARKERS = (
-    "MaaFW runtime Python 自检失败",
-    "MaaFW runtime ABI 探测失败",
-    "runtime Python identity could not be verified",
-    "MaaFW Runner 环境准备失败",
-    "MaaFW Runner 环境准备超时",
-    # 项目自带的 MaaFramework 与本机架构不符：换哪次尝试都是同一份库。运行前自检一般已
-    # 拦下，这里兜住 worker 侧才发现的情况（异常与任务失败两条路都认）。
-    *ARCHITECTURE_MISMATCH_MARKERS,
-)
+# 一次尝试算成功、信号、要更新游戏还是失败，失败了重不重试、先不先修资源、重不重启客户端，
+# 都由 run_verdict.judge_attempt 判定（环境级失败的标记也在那里）；主循环只读判定。
 # 资源包加载失败（节点重名、JSON 写错、资源目录不在）：资源文件一次尝试到下一次不会自己变，
-# 重试只会原样再失败、还要白白重启游戏 / 模拟器。与上面的环境级失败分开说：不是运行环境的事。
+# 重试只会原样再失败、还要白白重启游戏 / 模拟器。与环境级失败（run_verdict）分开说：不是运行环境的事。
 _RESOURCE_FAILURE_STOP_MESSAGE = (
     "资源包加载失败，重试也不会有别的结果，已停止本轮（不再重启游戏/模拟器）"
 )
@@ -269,14 +261,6 @@ _RERUN_AFTER_SWITCH = (
 _RELEASE_CHECK_CANCEL_GRACE_SECONDS = 30.0
 # 哪些 worker 日志 / 原生诊断进界面的几组文案规则在 worker_protocol（forwards_to_ui）：
 # worker 发事件时按它定 audience，宿主只对旧格式事件与 stdout 上的原生诊断再用它判。
-
-
-class _MaaFWGameUpdateRequired(RuntimeError):
-    """特调的游戏更新钩子判定客户端要手动更新：本账号本次判失败，不重试。"""
-
-
-class _MaaFWWorkstationLocked(RuntimeError):
-    """电脑锁着屏，要用交互式桌面的控制器跑不了：本账号本次判失败，不重试。"""
 
 
 # 截图和输入都要落在用户的交互式桌面上的控制器。ADB 不受锁屏影响。
@@ -682,68 +666,42 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         self.interface_model,
                     )
                 result = await self._run_maafw(device_config)
-            except _MaaFWGameUpdateRequired as exc:
-                # 游戏客户端要手动更新：重试多少次都一样，本账号本次直接判失败。
-                # 说明已由 _ensure_game_updated 写进运行日志，这里不再重复。
-                message = str(exc)
-                self._record_attempt(
-                    index + 1, [], message, category=CATEGORY_GAME_UPDATE_REQUIRED
-                )
-                if self.cur_user_log is not None:
-                    await self.cur_user_log.set_state(status=message)
-                await Publisher.send(
-                    id=self.task_info.task_id,
-                    type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=message),
-                )
-                with suppress(Exception):
-                    await Notify.send_notice(
-                        LocalNotice(
-                            title="游戏需要手动更新！",
-                            message=message,
-                            ticker=f"{self.cur_user_item.name}的游戏需要手动更新",
-                            duration_seconds=3,
-                        )
-                    )
-                break
             except Exception as exc:
-                locked = isinstance(exc, _MaaFWWorkstationLocked)
-                message = (
-                    str(exc)
-                    if isinstance(
-                        exc,
-                        (
-                            MaaFWPretaskError,
-                            MaaFWLoginRequired,
-                            _MaaFWWorkstationLocked,
-                        ),
+                # 怎么走只读判定（run_verdict.judge_attempt），文案与通知照旧在这里发。
+                verdict = judge_attempt(exc)
+                message = str(verdict.message)
+                if verdict.outcome == VERDICT_GAME_UPDATE_REQUIRED:
+                    # 游戏客户端要手动更新：重试多少次都一样，本账号本次直接判失败。
+                    # 说明已由 _ensure_game_updated 写进运行日志，这里不再重复。
+                    self._record_attempt(
+                        index + 1, [], message, category=verdict.category
                     )
-                    else f"MaaFW 运行异常: {exc}"
-                )
+                    if self.cur_user_log is not None:
+                        await self.cur_user_log.set_state(status=message)
+                    await Publisher.send(
+                        id=self.task_info.task_id,
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(level="error", message=message),
+                    )
+                    with suppress(Exception):
+                        await Notify.send_notice(
+                            LocalNotice(
+                                title="游戏需要手动更新！",
+                                message=message,
+                                ticker=f"{self.cur_user_item.name}的游戏需要手动更新",
+                                duration_seconds=3,
+                            )
+                        )
+                    break
                 self._append_log(message, warning=True)
-                unretryable = locked or _is_unretryable_failure(message)
                 self._record_attempt(
                     index + 1,
                     [],
                     message,
-                    # 宿主自己抛的多是 MAS 写的人话（「当前 controller 需要 ADB，请在托管管理页
-                    # 选择模拟器」「Path未配置」），推送照它说；带的排障片段由 run_report 滤掉。
-                    # 整次运行超时有固定说法，不用异常原文
-                    user_message=(
-                        None if isinstance(exc, _MaaFWRunTimeoutError) else str(exc)
-                    ),
-                    category=(
-                        CATEGORY_PRETASK_FAILED
-                        if isinstance(exc, MaaFWPretaskError)
-                        else CATEGORY_RUN_TIMEOUT
-                        if isinstance(exc, _MaaFWRunTimeoutError)
-                        else CATEGORY_ENVIRONMENT
-                        if unretryable
-                        else CATEGORY_HOST_ERROR
-                    ),
+                    user_message=verdict.user_message,
+                    category=verdict.category,
                 )
-                if unretryable and not locked:
-                    # 锁屏的说明自带「不重试」，不再重复一句
+                if verdict.environment_unusable:
                     self._append_log(
                         "运行环境不可用，重试也不会有别的结果，已停止本轮",
                         warning=True,
@@ -755,30 +713,31 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     type=protocol.TASK_NOTICE,
                     data=WSTaskNoticeData(level="error", message=message),
                 )
-                if unretryable:
+                if not verdict.retry:
                     break
                 previous_failure = message
-                (
-                    previous_restarted,
-                    client_reset,
-                ) = await self._reset_client_for_retry(index + 1)
+                if verdict.restart_client:
+                    (
+                        previous_restarted,
+                        client_reset,
+                    ) = await self._reset_client_for_retry(index + 1)
                 continue
 
             await self._mark_period_tasks_completed(result.completedTasks)
-            if result.signal is not None:
+            verdict = judge_attempt(result)
+            if verdict.outcome == VERDICT_SIGNAL:
                 # 项目声明的信号节点命中：停服维护 = 本次跳过，需要更新客户端 = 失败；
                 # 两种都是重试多少次都一样，不重启游戏 / 模拟器，直接收尾。
                 point(
                     self,
                     "run",
-                    state="skipped"
-                    if result.signal == SERVER_MAINTENANCE
-                    else "failed",
+                    state="skipped" if verdict.maintenance else "failed",
                 )
                 await self._finish_on_signal(index + 1, result)
                 break
-            point(self, "run", state="succeeded" if result.success else "failed")
-            if result.success:
+            succeeded = verdict.outcome == VERDICT_SUCCEEDED
+            point(self, "run", state="succeeded" if succeeded else "failed")
+            if succeeded:
                 self.run_complete = True
                 if self.cur_user_log is not None:
                     await self.cur_user_log.set_state(status="Success!")
@@ -789,7 +748,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self._append_log("MaaFW 任务完成: " + ", ".join(completed_task_labels))
                 self._record_attempt(index + 1, completed_task_labels, None)
             else:
-                if result.resourceFailure is not None:
+                if verdict.repair_resource and result.resourceFailure is not None:
                     # 资源包没能加载：原因只在原生 ERR 行里，换成一句人话（取不到才保留
                     # 「详见 .maafw.log」）。
                     message = await asyncio.to_thread(
@@ -839,9 +798,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         )
                         for shot in result.failureScreenshots
                     ],
-                    category=_result_failure_category(result),
+                    category=verdict.category,
                 )
-                if result.resourceFailure is not None:
+                if verdict.repair_resource and result.resourceFailure is not None:
                     # 不重启游戏 / 模拟器：资源加载失败不改变游戏状态，换载荷也不碰它们。
                     # 只有刚把载荷里的旧版本残留清掉、视图换过时立刻再跑一次（不占重试次数）。
                     rerun_note = await self._recover_resource_failure(
@@ -854,13 +813,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         client_reset = False
                         continue
                     break
-                if _is_unretryable_failure(result.errorMessage or ""):
+                if not verdict.retry:
                     # worker 在任务里报的环境级失败（如原生库架构不符）：每轮都一样，
                     # 不再为它起停模拟器 / 游戏重试。
-                    self._append_log(
-                        "运行环境不可用，重试也不会有别的结果，已停止本轮",
-                        warning=True,
-                    )
+                    if verdict.environment_unusable:
+                        self._append_log(
+                            "运行环境不可用，重试也不会有别的结果，已停止本轮",
+                            warning=True,
+                        )
                     break
                 await self._refresh_run_plan_after_period_update(result.completedTasks)
                 if self.run_plan is not None and not self.run_plan.tasks:
@@ -873,10 +833,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     )
                 else:
                     previous_failure = message
-                    (
-                        previous_restarted,
-                        client_reset,
-                    ) = await self._reset_client_for_retry(index + 1)
+                    if verdict.restart_client:
+                        (
+                            previous_restarted,
+                            client_reset,
+                        ) = await self._reset_client_for_retry(index + 1)
 
     async def final_task(self) -> None:
         if self._user_finalized:
@@ -1519,18 +1480,21 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
     def _run_password_values(self) -> list[str]:
         """本次运行要打码的密码值：计划里 password 字段的值 + 该账号快照里全部密文解开的值
-        （项目撤掉了 password 标记的字段建计划时照样解开，见 option_secrets）。"""
+        （项目撤掉了 password 标记的字段建计划时照样解开，见 option_secrets）。
+
+        从配置里取出快照原值（宿主），交给解析一侧的收集函数；密文经 DPAPI 认读。"""
 
         if self.run_plan is None or self.interface_model is None:
             return []
         return collect_run_password_values(
             self.run_plan,
             self.interface_model,
-            getattr(self, "cur_user_config", None),
+            user_task_snapshot(getattr(self, "cur_user_config", None)),
+            DPAPI_SECRET_OPENER,
         )
 
     def _secret_log_variants(self) -> list[str]:
-        """本次运行要打码的密码值在日志里可能出现的写法（见 option_secrets）。"""
+        """本次运行要打码的密码值在日志里可能出现的写法（见 run_redaction）。"""
 
         return secret_log_variants(self._run_password_values())
 
@@ -1539,8 +1503,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         所以按脚本全部用户的密码打码，再并上本次运行计划里的。"""
 
         try:
-            values = collect_script_password_values(
-                self.script_config, self.interface_model
+            values = collect_snapshots_password_values(
+                script_task_snapshots(self.script_config),
+                self.interface_model,
+                DPAPI_SECRET_OPENER,
             )
         except Exception as exc:  # noqa: BLE001 - 取不到时退回本次运行计划里的
             logger.debug(f"收集脚本全部用户的密码失败，只按本次运行的打码: {exc}")
@@ -3293,25 +3259,6 @@ def _signal_evidence_shot(result: Any) -> Any | None:
             Path(shot.path).name
         ):
             return shot
-    return None
-
-
-def _is_unretryable_failure(message: str) -> bool:
-    return any(marker in message for marker in _UNRETRYABLE_ENVIRONMENT_MARKERS)
-
-
-def _result_failure_category(result: MaaFWRunResult) -> str | None:
-    """worker 回报失败时尝试级的类别：只看结果里已有的字段与现有的环境级判定。
-
-    返回 None 时由运行记录按任务结局补（任务都没开始是初始化失败）。
-    """
-
-    if result.resourceFailure is not None:
-        return CATEGORY_RESOURCE_FAILURE
-    if result.timedOut:
-        return CATEGORY_RUN_TIMEOUT
-    if _is_unretryable_failure(result.errorMessage or ""):
-        return CATEGORY_ENVIRONMENT
     return None
 
 

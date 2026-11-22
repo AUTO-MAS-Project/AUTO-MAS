@@ -14,8 +14,13 @@
 - 不带前缀：旧版本存下的明文，照常使用，下次保存该账号的任务配置时加密。
 
 运行时解密出来的原文会随 ``pipeline_override`` 进 MaaFramework 的原生调试日志
-（``MaaTaskerPostTask`` 按 DBG 级别记下整份 override）；``runner_task`` 复制原生日志、
-转发 worker 输出、摘录失败原因时用 ``redact_secret_text`` 把它们换成占位。
+（``MaaTaskerPostTask`` 按 DBG 级别记下整份 override）；``plan_run`` 复制原生日志、
+转发 worker 输出、摘录失败原因时把它们换成占位。
+
+密码字段这件事分三处（迁移方案 §3.7），本模块只管宿主这一处——加解密，以及从配置对象里取出
+任务快照的原值（``user_task_snapshot`` / ``script_task_snapshots``）：哪些选项是密码、从快照里
+收集要打码的值在解析一侧（``tools/core/interface/password_values``，密文经 ``DPAPI_SECRET_OPENER``
+交给它认读）；按值打码在运行一侧（``run_redaction``）。
 """
 
 from __future__ import annotations
@@ -30,6 +35,11 @@ from app.task.MaaFW.tools.core.interface.models import (
     MaaFWInterface,
     map_password_values,
     password_input_names,
+)
+from app.task.MaaFW.tools.core.interface.password_values import (
+    SNAPSHOT_SECRET_SECTIONS,
+    sealed_leaves,
+    section_as_task_options,
 )
 from app.task.MaaFW.tools.core.interface.task_config import (
     mirror_global_options_to_tasks,
@@ -86,16 +96,29 @@ def _has_plaintext_secret(task_options: Any, fields: dict[str, frozenset[str]]) 
     return found
 
 
-#: 快照里存选项值的两处：``taskOptions`` 是 ``{任务实例: {option: 值}}``，``globalOptions``
-#: 是 ``{option: 值}``（全局选项每个账号一份）；后者套一层 ``{"_": …}`` 后与前者同形。
-_SECRET_SECTIONS = ("taskOptions", "globalOptions")
+class _DpapiSecretOpener:
+    """解析一侧收集函数用的密文认读（``password_values.MaaFWSecretOpener``）：带
+    ``SECRET_PREFIX`` 的是密文，DPAPI 解开；解不开的返回 None，不是密文的原样返回。"""
+
+    def is_sealed(self, value: str) -> bool:
+        return is_sealed_secret(value)
+
+    def open_value(self, value: str) -> str | None:
+        try:
+            return _open_value(value, "", "")
+        except MaaFWSecretError:
+            return None
 
 
-def _section_as_task_options(snapshot: dict[str, Any], key: str) -> Any:
-    value = snapshot.get(key)
-    if key == "globalOptions":
-        return {"_": value} if isinstance(value, dict) else None
-    return value
+DPAPI_SECRET_OPENER = _DpapiSecretOpener()
+
+#: 快照里存选项值的两处（定义在解析一侧，见 ``password_values``）。
+_SECRET_SECTIONS = SNAPSHOT_SECRET_SECTIONS
+_section_as_task_options = section_as_task_options
+
+
+def _sealed_leaves(value: Any) -> list[str]:
+    return sealed_leaves(value, DPAPI_SECRET_OPENER)
 
 
 def _map_snapshot_secrets(
@@ -162,7 +185,8 @@ def open_task_snapshot(
     补回不在队列里的勾选实例、旧配置迁移会从未勾选实例上取全局值，只解一部分就会漏；解不开
     的告警后丢掉这个值（按默认值跑），不让整轮失败，这类字段界面上已经不按密码显示，用户未必
     找得到去重填。只在内存里解，保存时不动它：interface 降级读丢了选项时也会「看不到」password
-    声明，那时写回明文就泄露了。解出的值要进运行日志的打码集合（``collect_run_password_values``），
+    声明，那时写回明文就泄露了。解出的值要进运行日志的打码集合
+    （``password_values.collect_run_password_values``），
     字段记进 ``SECRET_INPUTS_SNAPSHOT_KEY``，下发失败的计划提示同样不带原值。
     """
 
@@ -246,221 +270,37 @@ def _open_orphan_secrets(snapshot: dict[str, Any]) -> dict[str, Any]:
     return opened
 
 
-#: 日志里替换密码原文用的占位。
-REDACTED_SECRET_TEXT = "<已隐藏>"
-#: 短于这个长度的密码不做全文替换：一两个字符的值会把日志里所有同样的字符都换掉，
-#: 日志就没法看了；这么短的密码本身也谈不上保密。
-MIN_REDACTED_SECRET_LENGTH = 4
-#: 项目有 password 输入框、或本次有要打码的值（账号快照里留着项目已撤掉标记的密文）时，每次运行的
-#: ``.worker.log`` 第一行以它开头（``log_redaction_notice``）。
-#: 问题包导出（frontend/electron/services/maafwIssueReportService.ts）凭这一行认定这次的
-#: ``.worker.log`` / ``.maafw.log`` 是写的时候就打过码的，没有这一行的旧副本不往包里放。两边一起改。
-LOG_REDACTION_MARKER = "[MAS 日志打码]"
+def user_task_snapshot(user_config: Any | None) -> Any | None:
+    """账号配置里 ``Task.TaskSnapshot`` 的原值（JSON 字符串或 dict），交给解析一侧收集要打码的值；
+    没有账号配置、或读不出来就是 None。"""
 
-
-def collect_plan_password_values(plan: Any, interface: MaaFWInterface) -> list[str]:
-    """运行计划里所有 password 字段（PI v2.10.0）的实际值（已解密），去重。
-
-    任务与前置任务的 ``options`` 都看：``{option 名: {字段: 值}}``；再加计划的
-    ``globalOptions``（用户的全局表）——同一选项任务自己也有值时，任务 ``options`` 里只有
-    任务那一层，全局那一层的密码只在这里。
-    """
-
-    fields = password_input_names(interface)
-    if not fields:
-        return []
-    values: list[str] = []
-
-    def collect(value: str, _option_name: str, _field_name: str) -> str:
-        if value not in values:
-            values.append(value)
-        return value
-
-    for item in [*getattr(plan, "tasks", []), *getattr(plan, "pretasks", [])]:
-        options = getattr(item, "options", None)
-        if isinstance(options, dict):
-            map_password_values({"_": options}, fields, collect)
-    global_options = getattr(plan, "globalOptions", None)
-    if isinstance(global_options, dict):
-        map_password_values({"_": global_options}, fields, collect)
-    return values
-
-
-def _user_sealed_values(user_config: Any) -> list[str]:
-    """账号任务快照两处选项值里全部带 ``SECRET_PREFIX`` 的值，解开后去重；解不开的跳过。"""
-
+    if user_config is None:
+        return None
     try:
-        raw = user_config.Task.TaskSnapshot
-        snapshot = json.loads(raw) if isinstance(raw, str) else raw
-    except Exception:  # noqa: BLE001 - 坏快照就没有可收的
-        return []
-    if not isinstance(snapshot, dict):
-        return []
-    values: list[str] = []
-    for key in _SECRET_SECTIONS:
-        for sealed in _sealed_leaves(snapshot.get(key)):
-            try:
-                value = _open_value(sealed, "", "")
-            except MaaFWSecretError:
-                continue
-            if value and value not in values:
-                values.append(value)
-    return values
+        return user_config.Task.TaskSnapshot
+    except Exception:  # noqa: BLE001 - 读不出就没有可收的
+        return None
 
 
-def collect_run_password_values(
-    plan: Any, interface: MaaFWInterface, user_config: Any | None
-) -> list[str]:
-    """本次运行要打码的密码值：计划里 password 字段的值（``collect_plan_password_values``），
-    再并上该账号快照里所有密文解开的值。
+def script_task_snapshots(script_config: Any) -> list[Any]:
+    """脚本下全部账号 ``Task.TaskSnapshot`` 的原值，按账号顺序；读不出的账号跳过。
 
-    后者兜住项目更新撤掉了 password 标记的字段：``open_task_snapshot`` 照样把它们解开交给
-    计划，只看当前声明的话这些原文会不打码地进 ``.worker.log`` / ``.maafw.log``。
+    交给解析一侧的 ``collect_snapshots_password_values``，给不在某次运行里的日志打码用
+    （问题包收项目自己写的日志）。
     """
-
-    values = collect_plan_password_values(plan, interface)
-    if user_config is not None:
-        for value in _user_sealed_values(user_config):
-            if value not in values:
-                values.append(value)
-    return values
-
-
-def _sealed_leaves(value: Any) -> list[str]:
-    if isinstance(value, str):
-        return [value] if is_sealed_secret(value) else []
-    if isinstance(value, dict):
-        return [leaf for item in value.values() for leaf in _sealed_leaves(item)]
-    if isinstance(value, list):
-        return [leaf for item in value for leaf in _sealed_leaves(item)]
-    return []
-
-
-def collect_script_password_values(
-    script_config: Any, interface: MaaFWInterface | None
-) -> list[str]:
-    """脚本下全部账号任务配置里 password 字段的值（已解密），去重。
-
-    给不在某次运行里的日志打码用（问题包收项目自己写的日志）：那些日志可能是任何一个账号
-    跑出来的。``interface`` 读不出来（None）时只认带 ``SECRET_PREFIX`` 的密文——它们一定是
-    密码；旧版本存下的明文要靠 interface 才认得出。解不开的密文跳过（本机本来也跑不了它）。
-    """
-
-    fields = password_input_names(interface) if interface is not None else {}
-    values: list[str] = []
-
-    def add(value: str) -> None:
-        if value and value not in values:
-            values.append(value)
-
-    def collect(value: str, option_name: str, field_name: str) -> str:
-        try:
-            add(_open_value(value, option_name, field_name))
-        except MaaFWSecretError:
-            pass
-        return value
 
     try:
         users = list(script_config.UserData.items())
     except Exception as exc:  # noqa: BLE001 - 读不出账号列表就没有可打码的值
         logger.debug(f"读取脚本账号列表失败，没有可打码的密码值：{exc}")
-        return values
+        return []
+    snapshots: list[Any] = []
     for _, user in users:
         try:
-            raw = user.Task.TaskSnapshot
-            snapshot = json.loads(raw) if isinstance(raw, str) else raw
-        except Exception:  # noqa: BLE001 - 坏快照跳过
+            snapshots.append(user.Task.TaskSnapshot)
+        except Exception:  # noqa: BLE001 - 坏账号跳过
             continue
-        if not isinstance(snapshot, dict):
-            continue
-        # 任务选项与全局选项表两处都收（全局选项的密码只存在后者里）
-        for key in _SECRET_SECTIONS:
-            section = _section_as_task_options(snapshot, key)
-            if not isinstance(section, dict):
-                continue
-            if fields:
-                map_password_values(section, fields, collect)
-            for sealed in _sealed_leaves(section):
-                collect(sealed, "", "")
-    return values
-
-
-def secret_log_variants(values: list[str]) -> list[str]:
-    """一个密码在日志里可能出现的写法：原文，以及 JSON 转义后的两种（中文原样 / \\u 转义）。
-
-    MaaFramework 原生日志把 ``pipeline_override`` 按 JSON 记下来（``MaaTaskerPostTask``
-    的 ``[pipeline_override={...}]``），带引号、反斜杠或中文的密码在那里是转义后的样子。
-    过短的值不收（见 ``MIN_REDACTED_SECRET_LENGTH``）；长的在前，免得先替换掉子串。
-    """
-
-    variants: set[str] = set()
-    for value in values:
-        if len(value) < MIN_REDACTED_SECRET_LENGTH:
-            continue
-        variants.add(value)
-        variants.add(json.dumps(value, ensure_ascii=False)[1:-1])
-        variants.add(json.dumps(value, ensure_ascii=True)[1:-1])
-    return sorted(variants, key=len, reverse=True)
-
-
-#: 按字节打码时每个写法再试的编码：项目日志不一定是 UTF-8（GBK 控制台输出重定向进文件、
-#: Windows 下 UTF-16LE 的日志），``.maafw.log`` 与 ``.project.log`` 共用。
-_SECRET_BYTE_ENCODINGS = ("utf-8", "gbk", "utf-16-le")
-
-
-def secret_byte_pairs(variants: list[str]) -> list[tuple[bytes, bytes]]:
-    """``secret_log_variants`` 的每个写法在 UTF-8 / GBK / UTF-16LE 下的字节，配同一编码的占位；
-    编不了的（GBK 里没有的字）跳过，重复的只留一份，长的在前。"""
-
-    pairs: dict[bytes, bytes] = {}
-    for variant in variants:
-        for encoding in _SECRET_BYTE_ENCODINGS:
-            try:
-                raw = variant.encode(encoding)
-                placeholder = REDACTED_SECRET_TEXT.encode(encoding)
-            except UnicodeEncodeError:
-                continue
-            if raw:
-                pairs.setdefault(raw, placeholder)
-    return sorted(pairs.items(), key=lambda item: len(item[0]), reverse=True)
-
-
-def redact_secret_bytes(data: bytes, pairs: list[tuple[bytes, bytes]]) -> bytes:
-    """按 ``secret_byte_pairs`` 把字节里的密码换成占位。"""
-
-    for raw, placeholder in pairs:
-        if raw in data:
-            data = data.replace(raw, placeholder)
-    return data
-
-
-def redact_secret_text(text: str, variants: list[str]) -> str:
-    """把 ``text`` 里出现的密码（``secret_log_variants`` 给出的写法）换成占位。"""
-
-    for variant in variants:
-        if variant in text:
-            text = text.replace(variant, REDACTED_SECRET_TEXT)
-    return text
-
-
-def log_redaction_notice(interface: MaaFWInterface, values: list[str]) -> str | None:
-    """项目声明了 password 输入框、或本次有要打码的值时写进 ``.worker.log`` 开头的打码说明，
-    都没有就是 None。
-
-    ``values`` 是本次运行要打码的密码值（``collect_run_password_values``）：项目把 password
-    标记全撤掉之后，账号快照里留着的密文解开照样会进日志，那时也要打码、也要写这一行。
-    """
-
-    if not password_input_names(interface) and not values:
-        return None
-    short = sum(1 for value in values if len(value) < MIN_REDACTED_SECRET_LENGTH)
-    notice = (
-        f"{LOG_REDACTION_MARKER} 本次的 .worker.log 与 .maafw.log 已把 "
-        f"{len(values) - short} 个密码值换成「{REDACTED_SECRET_TEXT}」"
-    )
-    if short:
-        notice += f"；另有 {short} 个短于 {MIN_REDACTED_SECRET_LENGTH} 个字符，未打码"
-    return notice
+    return snapshots
 
 
 def prepare_user_task_snapshot(
@@ -490,20 +330,13 @@ def prepare_user_task_snapshot(
 
 
 __all__ = [
-    "LOG_REDACTION_MARKER",
-    "REDACTED_SECRET_TEXT",
+    "DPAPI_SECRET_OPENER",
     "SECRET_PREFIX",
     "MaaFWSecretError",
-    "collect_plan_password_values",
-    "collect_run_password_values",
-    "collect_script_password_values",
     "is_sealed_secret",
-    "log_redaction_notice",
     "open_task_snapshot",
-    "redact_secret_bytes",
-    "redact_secret_text",
-    "secret_byte_pairs",
     "prepare_user_task_snapshot",
+    "script_task_snapshots",
     "seal_task_snapshot",
-    "secret_log_variants",
+    "user_task_snapshot",
 ]

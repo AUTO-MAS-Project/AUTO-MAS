@@ -34,7 +34,7 @@
 - 认得出的情况（节点重名、JSON 写错、节点不是对象……）给一句人话；都认不出时退回清理过的
   第一条相关 ERR 行，这时才保留「详见本次运行的 .maafw.log」。
 - 消息里的路径按项目根给相对路径，再过用户目录脱敏（``log_redact``）与密码打码
-  （``option_secrets``）。
+  （``run_redaction``）。
 
 纯逻辑，宿主侧用（不进 worker 导入闭包）。
 """
@@ -50,7 +50,7 @@ from pathlib import Path
 
 from app.task.MaaFW.tools.core.log_redact import mask_home_path
 
-from .option_secrets import redact_secret_text
+from .run_redaction import redact_secret_text
 
 # 一次尝试最多留这么多条 ERR 行、每条最多这么多字符（``[json=`` 之前的部分通常不到 300）。
 MAX_NATIVE_ERROR_LINES = 400

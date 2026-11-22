@@ -75,13 +75,13 @@ from app.utils.common.process.runner import create_subprocess
 from app.utils.common.process.scope import current_process_scope
 
 from .device_config import task_start_gate
-from .option_secrets import redact_secret_text, secret_byte_pairs
 from .project_logs import copy_project_log_delta, snapshot_project_logs
 from .resource_failure import (
     MAX_NATIVE_ERROR_LINES,
     native_error_excerpt,
     read_native_error_lines,
 )
+from .run_redaction import redact_secret_text, secret_byte_pairs
 
 if TYPE_CHECKING:
     from app.task.run_flow import PointState, RunStage
@@ -1272,7 +1272,7 @@ def _copy_native_debug_log_delta(
     自己写的 ``debug/maafw.log`` 不归 MAS 管，那份仍是原文。
     """
 
-    # 每个写法按 UTF-8 / GBK / UTF-16LE 的字节都换（与 .project.log 同一套，见 option_secrets）。
+    # 每个写法按 UTF-8 / GBK / UTF-16LE 的字节都换（与 .project.log 同一套，见 run_redaction）。
     secret_pairs = secret_byte_pairs(list(secrets))
 
     copied = 0
