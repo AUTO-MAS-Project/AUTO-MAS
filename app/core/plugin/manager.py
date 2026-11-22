@@ -83,6 +83,15 @@ if TYPE_CHECKING:
 logger = get_logger("插件管理")
 
 
+def _mount_local_libraries() -> None:
+    """本地源码库的 src 放到导入路径最前，优先于共享环境里的同名发行包；改库要重启后端。"""
+    for library in discover.local_libraries():
+        path = str(library / "src")
+        if path not in sys.path:
+            sys.path.insert(0, path)
+            logger.info(f"本地库已加入导入路径: {library.name}")
+
+
 class _ServiceResolver:
     """提供注册表的实时查询面，不向插件暴露登记和注销。"""
 
@@ -212,6 +221,7 @@ class _PluginManager:
             core_src = str(src.resolve())
             if core_src not in sys.path:
                 sys.path.insert(0, core_src)
+            _mount_local_libraries()
 
             from app.core.config import Config
 

@@ -220,6 +220,12 @@ def plugin_targets(
             )
         elif record.info.code_drift != PluginCodeDrift.PACKAGE_REMOVED:
             raise PluginError(f"插件无法确定保留的发行版本：{record.info.plugin_name}")
+    # 本地源码库以目录参与求解：依赖它的插件由它满足，它自己的包不装进共享环境。
+    from app.plugin.runtime.discover import local_libraries
+
+    for library in local_libraries():
+        if str(library) not in targets:
+            targets.append(str(library))
     return targets
 
 
