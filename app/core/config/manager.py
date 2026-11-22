@@ -50,6 +50,11 @@ if TYPE_CHECKING:
     from app.utils.common.config import restore as _utils_config_restore
 
 from app.config import ConfigCollection, ConfigEntry, NodeState, config_manager
+from app.core.config.m9a_legacy.migration import (
+    migrate_legacy_m9a_scripts,
+    normalize_m9a_managed_entries,
+    repair_m9a_migration_losses,
+)
 from app.core.config.plugin_upgrade import (
     backup_legacy_src_users,
     install_adapter_plugin,
@@ -114,11 +119,6 @@ from app.models.config import (
 from app.models.schema import PlanComboxConsumer, ScriptStatusOverviewItem
 from app.models.script_access import entry_name, script_users
 from app.models.script_contracts import ScriptConfigHandler
-from app.task.M9A.migration import (
-    migrate_legacy_m9a_scripts,
-    normalize_m9a_managed_entries,
-    repair_m9a_migration_losses,
-)
 from app.utils import constants as _utils_constants
 from app.utils import get_logger, is_supervised
 from app.utils import io as _utils_io

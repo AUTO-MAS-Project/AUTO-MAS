@@ -54,7 +54,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from app.config.fields.encrypted import EncryptedValue
-from app.task.M9A.managed import (
+from app.core.config.m9a_legacy.managed import (
     CLOSE_ENTRY,
     STARTUP_ENTRY,
     SWITCH_ACCOUNT_ENTRY,
@@ -69,10 +69,31 @@ from app.task.M9A.managed import (
 from app.utils import constants as _utils_constants
 from app.utils import get_logger
 
-# 宿主启动时（``app.core.config.manager``）就导入本模块；``rules`` 与 MFW 解析库只在真的要迁移 / 整理
-# M9A 托管时才在函数里现导入，没有 M9A 托管的启动不碰它们（解析库以后不在宿主里）。
+# 宿主启动时（``app.core.config.manager``）就导入本模块；MFW 解析库只在真的要迁移 / 整理
+# M9A 托管时才在函数里现导入，没有 M9A 托管的启动不碰它（解析库以后不在宿主里）。
 
 logger = get_logger("M9A 迁移")
+
+# 旧版 M9A 专项按名字记任务；名字随版本变过（「每日心相」→「每日心相（意志解析）」），
+# 迁移时按 entry 反查。这张表只服务迁移与无 interface 降级，运行期不用。
+LEGACY_ENTRY_ALIASES: dict[str, str] = {
+    "每日心相（意志解析）": "Psychube",
+    "每日心相": "Psychube",
+    "自动深眠": "Limbo",
+    "自动醒梦": "Lucidscape",
+    "启动游戏": STARTUP_ENTRY,
+    "关闭游戏": CLOSE_ENTRY,
+    "切换账号": SWITCH_ACCOUNT_ENTRY,
+}
+# 没有 interface 可查时（迁移的降级路径）按 v4.9 的名字兜底。
+FALLBACK_TASK_NAMES: dict[str, str] = {
+    "Psychube": "每日心相（意志解析）",
+    "Limbo": "自动深眠",
+    "Lucidscape": "自动醒梦",
+    STARTUP_ENTRY: "启动游戏",
+    CLOSE_ENTRY: "关闭游戏",
+    SWITCH_ACCOUNT_ENTRY: "切换账号",
+}
 
 
 def resolve_task_instance_name(task_id: str, valid_task_names: Collection[str]) -> str:
@@ -435,16 +456,12 @@ class _InterfaceIndex:
                 break
 
     def task_name_for_entry(self, entry: str) -> str | None:
-        from app.task.M9A.rules import FALLBACK_TASK_NAMES
-
         if self.available:
             return self.name_by_entry.get(entry)
         return FALLBACK_TASK_NAMES.get(entry)
 
     def resolve_task_name(self, raw_name: str) -> str | None:
         """旧队列里的名字 → 现在的任务名；先按名字，再按旧别名反查 entry。"""
-
-        from app.task.M9A.rules import FALLBACK_TASK_NAMES, LEGACY_ENTRY_ALIASES
 
         name = str(raw_name or "").strip()
         if not name:
@@ -460,8 +477,6 @@ class _InterfaceIndex:
         return None
 
     def entry_of(self, task_name: str) -> str:
-        from app.task.M9A.rules import LEGACY_ENTRY_ALIASES
-
         task = self.task_by_name.get(task_name)
         if task is not None:
             return str(task.get("entry") or "")
