@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
-import threading
 import time
 import uuid
 from contextlib import suppress
@@ -95,7 +94,6 @@ from app.utils.common.game_resolution import (
 )
 from app.utils.common.process.scope import (
     current_process_scope,
-    detached_process_context,
 )
 from app.utils.common.process.session import desktop_process_target
 
@@ -160,8 +158,7 @@ from .pretask_run import (
 )
 from .project_path import (
     is_project_updating,
-    release_project_path,
-    release_project_path_sync,
+    release_run_reservation,
     try_reserve_project_path,
 )
 from .proxy_quota import (
@@ -173,11 +170,9 @@ from .proxy_quota import (
 from .resource_failure import (
     describe_resource_failure,
 )
+from .resource_repair import MaaFWRepairRequest, MaaFWResourceRepair
 from .run_messages import (
     MISSING_TASK_NOTICE_PREFIX,
-    RERUN_AFTER_CLEANUP,
-    RERUN_AFTER_SWITCH,
-    RESOURCE_FAILURE_STOP_MESSAGE,
     describe_failed_result,
     format_completed_task_labels,
     format_run_overview_log,
@@ -243,8 +238,6 @@ _PROCESS_TERMINATE_GRACE_SECONDS = 3.0
 # 都由 run_verdict.judge_attempt 判定（环境级失败的标记也在那里）；主循环只读判定。
 # 给人看的文案（失败摘要、资源包失败停止、重跑的称呼、重试与周期提示）在 run_messages，
 # 运行设置的原值解析（时限、原地打转、周期名单、键位）在 run_settings。
-# 用户点停止后，等核对 / 清理线程收尾的上限：到点就不等了，预约交给它完成后再放。
-_RELEASE_CHECK_CANCEL_GRACE_SECONDS = 30.0
 # 哪些 worker 日志 / 原生诊断进界面的几组文案规则在 worker_protocol（forwards_to_ui）：
 # worker 发事件时按它定 audience，宿主只对旧格式事件与 stdout 上的原生诊断再用它判。
 
@@ -354,11 +347,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 本次尝试的原生 ERR 行（plan_run 返回：原生日志副本里的优先，没有就用 worker stdout /
         # stderr 上的）：资源包加载失败时据此说出具体原因（见 resource_failure）。
         self._attempt_native_errors: list[str] = []
-        # 资源包加载失败后的发行包核对每个账号每次运行只做一次；清理过就额外再跑一次（不占重试
-        # 次数），``_extra_attempts`` 记多出来的几次。
-        self._release_check_done = False
+        # 资源包加载失败后的发行包核对（resource_repair）：每个账号每次运行只做一次，正在跑的核对
+        # 任务留给释放项目预约前等；清理过就额外再跑一次（不占重试次数），``_extra_attempts`` 记
+        # 多出来的几次。
+        self._repair = MaaFWResourceRepair(self._append_log)
         self._extra_attempts = 0
-        self._release_check_task: asyncio.Task[Any] | None = None
         # 各次尝试的记账（attempt_ledger）：结构化运行记录、尝试结果、history 状态与附件，
         # 键是这次尝试的日志记录 id(cur_user_log)。_run_record 就是它里面的那份运行记录。
         self._ledger = MaaFWAttemptLedger()
@@ -1587,91 +1580,23 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return int(self.script_config.Run.RunTimesLimit or 0) + self._extra_attempts
 
     async def _recover_resource_failure(self, kind: str) -> tuple[str, str] | None:
-        """资源包加载失败之后：视图刚换了载荷（清掉了旧版本残留，或经组同步换上了同组兄弟已
-        清理过的那份）就返回下一次的（开头那行, 称呼），该立刻再跑一次；其余情况写一行停止
-        原因、返回 None（不重试）。
+        """资源包加载失败之后与发行包核对（``resource_repair``）：视图换了载荷就返回下一次的
+        （开头那行, 称呼）、该立刻再跑一次；其余情况它写一行停止原因、返回 None。"""
 
-        只有 MaaFramework 拒收资源包（``load_failed``）才核对：资源目录不在（``missing``）不是
-        多了文件。每次运行只核对一次；开发者模式（跟随来源目录）以来源为准、不更新，不核对。
-        """
-
-        if kind != "load_failed" or self._release_check_done:
-            self._append_log(RESOURCE_FAILURE_STOP_MESSAGE, warning=True)
-            return None
-        self._release_check_done = True
         from .embedded_project import follow_source_enabled, shell_hint_from_report
-
-        if follow_source_enabled(self.script_config):
-            self._append_log(
-                "开发者模式（跟随来源目录）以来源目录为准，不与官方发行包核对；"
-                + RESOURCE_FAILURE_STOP_MESSAGE,
-                warning=True,
-            )
-            return None
-
-        import httpx
-
         from .update_credentials import resolve_update_credentials
-        from .view_release_check import (
-            check_view_release,
-            describe_outcome,
-            release_group_members,
-        )
 
-        script_id = str(self.script_info.script_id)
-        proxy_url = resolve_update_proxy_url(self.script_config)
-        try:
-            proxy = httpx.Proxy(proxy_url) if proxy_url else None
-        except Exception:  # noqa: BLE001 - 代理填错按直连，地址不进日志
-            proxy = None
-        stop = threading.Event()
-        task = asyncio.create_task(
-            check_view_release(
-                script_id,
-                channel=resolve_update_credentials(self.script_config).channel,
-                members=lambda: release_group_members(script_id),
-                send_log=self._append_log,
-                proxy=proxy,
-                shell_hint=shell_hint_from_report(self.script_config),
+        return await self._repair.run(
+            kind,
+            MaaFWRepairRequest(
+                script_id=str(self.script_info.script_id),
                 script_name=str(self.script_info.name or ""),
-                cancel_event=stop,
-            )
+                follow_source=follow_source_enabled(self.script_config),
+                channel=resolve_update_credentials(self.script_config).channel,
+                proxy_url=resolve_update_proxy_url(self.script_config),
+                shell_hint=shell_hint_from_report(self.script_config),
+            ),
         )
-        # 核对 / 清理 / 切视图都在工作线程里改载荷与视图：用户这时点停止，得等它收尾再放预约
-        # （_release_project_path 会等这个任务），否则编辑页的导入、手动更新能同时动同一棵视图。
-        self._release_check_task = task
-        try:
-            outcome = await asyncio.shield(task)
-        except asyncio.CancelledError:
-            stop.set()
-            raise
-        self._append_log(describe_outcome(outcome), warning=not outcome.switched)
-        cleaned = outcome.status in {"cleaned", "repointed"}
-        if outcome.switched and outcome.version_changed:
-            # 等锁那几秒里组被推到了新版本、视图跟着换了：本次的 interface 与运行计划是按旧
-            # 版本建的，不能拿来跑新版本。停下，下次运行前按新版本重做检查。
-            self._append_log(
-                f"本托管已换到 {outcome.version or '新版本'}，这一轮不再重新运行，"
-                "下次运行会按新版本重新准备",
-                warning=True,
-            )
-            return None
-        if outcome.switched:
-            # 视图换了载荷就重跑，不看 status：同组兄弟已清理过、本托管经组同步换过来时，
-            # 核对的是换来的那份（status 是 verified / clean），旧视图里的残留照样没了。
-            self._append_log(
-                "已换上清理后的版本，立即重新运行（不重启游戏/模拟器）"
-                if cleaned
-                else "立即用换上的版本重新运行（不重启游戏/模拟器）"
-            )
-            return RERUN_AFTER_CLEANUP if cleaned else RERUN_AFTER_SWITCH
-        if cleaned:
-            self._append_log(
-                "清理后的版本已准备好，但本托管这次没能切换过去，下次运行前自动切换",
-                warning=True,
-            )
-        self._append_log(RESOURCE_FAILURE_STOP_MESSAGE, warning=True)
-        return None
 
     async def _reset_client_for_retry(self, attempt: int) -> tuple[bool, bool]:
         """重试前关掉 MAS 自己起的客户端，返回（是否全部关成, 是否已不在）。
@@ -1863,70 +1788,18 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return True
 
     async def _release_project_path(self) -> None:
+        """交回本账号的项目预约（``project_path.release_run_reservation``）：停止时等作用域收尾、
+        运行前设置的进程确认退出、资源包核对做完再放。"""
+
         if self.project_lock_key is None:
             return
-        scope = current_process_scope.get()
-        if scope is not None and scope.requested:
-            # #1871 的新收尾确认可能早于统一进程清理结束，不能此时
-            # 放开预约；后面的强杀若失败，还可能有旧 pretask 在写目录。
-            key, self.project_lock_key = self.project_lock_key, None
-            pending = self._release_check_task
-            # 此刻要等的运行前设置清理与正在结束的 pretask 进程
-            pretasks_exited = self._pretasks.exit_confirmation()
-
-            async def release_after_confirmed_stop() -> None:
-                await scope.finished.wait()
-                if scope.cleanup_failed:
-                    logger.error("MaaFW 任务进程未确认停止，保留项目占用，拒绝并发修改")
-                    return
-                # 清理没确认时 pretask_run 记一句，这里保留占用
-                if not await pretasks_exited():
-                    return
-                if pending is not None:
-                    try:
-                        await asyncio.shield(pending)
-                    except asyncio.CancelledError:
-                        # 核对通过停止令牌退出也算完成；它由 scope 保留，
-                        # 不会在文件操作尚未结束时被统一取消。
-                        # 若只是当前释放任务被取消，核对仍在运行，则继续保留预约。
-                        if not pending.cancelled():
-                            raise
-                    except Exception as error:
-                        logger.warning(f"MaaFW 项目核对未确认，保留占用: {error}")
-                        return
-                release_project_path_sync(key)
-
-            worker = asyncio.create_task(
-                release_after_confirmed_stop(),
-                name="maafw-confirmed-project-release",
-                context=detached_process_context(),
-            )
-            scope.retain_worker(worker)
-            return
-
-        pending = self._release_check_task
-        if pending is not None and not pending.done():
-            # 资源加载失败后的核对 / 清理还在工作线程里改视图（用户停止时）：等它收尾，等不到就
-            # 把释放交给它的完成回调，预约不能先放。
-            with suppress(BaseException):
-                await asyncio.wait_for(
-                    asyncio.shield(pending),
-                    timeout=_RELEASE_CHECK_CANCEL_GRACE_SECONDS,
-                )
-            if not pending.done():
-                key = self.project_lock_key
-                self.project_lock_key = None
-
-                def _release_later(task: asyncio.Task[Any]) -> None:
-                    # 顺手取走异常，免得报「never retrieved」（同 manager 的 _release_after_work）
-                    if not task.cancelled():
-                        task.exception()
-                    release_project_path_sync(key)
-
-                pending.add_done_callback(_release_later)
-                return
-        await release_project_path(self.project_lock_key)
-        self.project_lock_key = None
+        key, self.project_lock_key = self.project_lock_key, None
+        await release_run_reservation(
+            key,
+            scope=current_process_scope.get(),
+            pretask_exit_confirmation=self._pretasks.exit_confirmation,
+            pending=self._repair.task,
+        )
 
     def _ensure_display_hold(self) -> None:
         """没有生效中的「保持显示开启」请求就再请求一份。

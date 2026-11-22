@@ -43,22 +43,6 @@ if TYPE_CHECKING:  # pragma: no cover - 只给类型检查用
 
 _RUN_OVERVIEW_LOG_VALUE_LIMIT = 1200
 
-# 资源包加载失败（节点重名、JSON 写错、资源目录不在）：资源文件一次尝试到下一次不会自己变，
-# 重试只会原样再失败、还要白白重启游戏 / 模拟器。与环境级失败（run_verdict）分开说：不是运行环境的事。
-RESOURCE_FAILURE_STOP_MESSAGE = (
-    "资源包加载失败，重试也不会有别的结果，已停止本轮（不再重启游戏/模拟器）"
-)
-# 资源包加载失败后换了载荷、立刻再跑的那一次：（开头那行，之后「上一次（…）」里的称呼）。
-# 不计入尝试次数，所以不编号。
-RERUN_AFTER_CLEANUP = (
-    "已清理残留，立即重新运行（不计入尝试次数）",
-    "清理残留后的重新运行",
-)
-RERUN_AFTER_SWITCH = (
-    "已换上同项目其他托管在用的版本，立即重新运行（不计入尝试次数）",
-    "换版本后的重新运行",
-)
-
 #: 任务报告里「失效任务」一行的前缀：队列里的任务 interface 已没有，本次跳过。
 MISSING_TASK_NOTICE_PREFIX = (
     "失效任务（interface 内已无，已跳过，请到账号配置里重新添加）"
@@ -437,9 +421,6 @@ def record_event_point(event: Any) -> tuple[str, PointState] | None:
 __all__ = [
     "MISSING_TASK_NOTICE_PREFIX",
     "MISSING_TASK_USER_RESULT",
-    "RERUN_AFTER_CLEANUP",
-    "RERUN_AFTER_SWITCH",
-    "RESOURCE_FAILURE_STOP_MESSAGE",
     "RETRY_SKIP_REASON",
     "MaaFWSignalFacts",
     "describe_failed_result",

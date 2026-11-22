@@ -67,8 +67,21 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   解释器后代、失败原因的文案、重跑判定（`pretasks_need_rerun`，参数是计划、interface 与 `Device.HWnd`
   原值）都在这里，细节见下文「项目的运行前设置」一条。`MaaFWPretaskRunner` 一个账号一份、跨尝试共用
   （停止与清理的状态要跨尝试保留），停止经 `stop()`；
-  `exit_confirmation()` 记下此刻要等的清理与进程、返回等待入口——任务类释放项目预约（`_release_project_path`）
-  前要等它返回真，**这条约束改动时不能丢**。任务类只剩取配置 → 组装入参 → 调用。
+  `exit_confirmation()` 记下此刻要等的清理与进程、返回等待入口——账号流程释放项目预约
+  （`project_path.release_run_reservation`）前要等它返回真，**这条约束改动时不能丢**。任务类只剩取配置 →
+  组装入参 → 调用。
+- **账号运行交回项目预约在 `tools/embedded/project_path.release_run_reservation`**（项目更新一侧，三个专项的
+  账号流程都调）：调用方先把自己记的键置空，再传此刻的进程作用域（`current_process_scope.get()`）、运行前设置的
+  `exit_confirmation`（**传方法本身**，只在「作用域已请求停止」那条分支里调）与还在跑的资源包核对任务。作用域
+  已请求时把「等作用域收尾 → 清理没失败 → 运行前设置确认退出 → 核对做完」交给作用域保留的后台任务
+  （`maafw-confirmed-project-release`），都确认了才放；否则核对还在跑就最多等 30 秒、等不到交给它的完成回调。
+  两行告警仍记在「MaaFW 插件自动代理」下。
+- **资源包加载失败后的发行包核对在 `tools/embedded/resource_repair.py`**（项目更新一侧）：一个账号一份
+  `MaaFWResourceRepair`（每次运行只核对一次 `checked`，正在跑的核对任务 `task` 交给上面释放预约时等）；入参
+  `MaaFWRepairRequest`（托管 id 与名字、开发者模式、渠道、托管级代理、外壳家族）由流程只在要修资源的那条分支
+  里从配置组装，账号日志经流程给的 `log(message, *, warning=)` 写出。**核对任务用 `asyncio.shield` 等，被取消
+  时先置停止令牌再上抛**，核对自己收到令牌跑完——这两条改动时不能丢。停止原因与重跑那一次的称呼
+  （`RESOURCE_FAILURE_STOP_MESSAGE`、`RERUN_AFTER_CLEANUP` / `RERUN_AFTER_SWITCH`）也在这里。
 - **一次尝试的结果判定在 `tools/embedded/run_verdict.py`**（与 `plan_run` 同一块，三个专项的流程将来都调它）：
   `judge_attempt(结果或异常)` 吃 worker 回报的 `MaaFWRunResult` 或这次尝试里抛出的异常，返回普通数据的
   `MaaFWAttemptVerdict`——结局（`succeeded` / `signal` / `game_update_required` / `failed`）、进运行记录的
@@ -132,7 +145,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   流程里。**`started_at` 的置位与清空时机不能动**：MAS 拉起后等出窗口、接管时窗口是等出来的、链接拉起后等出
   窗口时置（都在窗口前置之前），`close` 里清空；流程下发计划时 Win32 用它，ADB 用流程自己从
   `open_emulator_for_run` 拿到的时刻（同一个账号运行只走其中一条路，原来共用一个字段）。
-- **任务类 `runner_task` 还剩什么**：取配置与账号数据、建计划（调解析一侧）、运行前检查与项目预约、桌面
+- **任务类 `runner_task` 还剩什么**：取配置与账号数据、建计划（调解析一侧）、运行前检查与项目预约（交回经
+  `release_run_reservation`，资源包核对经 `resource_repair`）、桌面
   游戏 / 模拟器什么时候开关（实现在 `desktop_game` / `host_client`）与登录、游戏更新钩子、设备配置（调
   `device_config`）、**重试主循环**（次数、每次尝试的
   日志与「上一次（…）」、按 `judge_attempt` 的判定走：信号收尾、资源包修复后不计次数的重跑、重启客户端、
@@ -521,7 +535,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
 - **旧版本残留与发行包核对**（`project_update/release_check.py`）：导入目录是旧版本被新包覆盖过的，
   新版已删掉的 pipeline 会跟着进载荷，节点重名让 MaaFramework 整包拒收（MAA_Punish v3.12.7 的
   `auto_battle.jsonc`）。导入（普通渠道，`embedded_project._verify_import_release`，硬时限、核对不了照旧
-  导入）与运行时资源包加载失败（`runner_task._recover_resource_failure` → `view_release_check`，每次运行
+  导入）与运行时资源包加载失败（`resource_repair.MaaFWResourceRepair` → `view_release_check`，每次运行
   一次）各核对一次：依据是缓存的同版本完整包 → GitHub 资产中央目录（Range），残留口径同
   `apply._import_origin_orphans`（资源目录含控制器的 `attach_resource_path`）。导入时残留不进载荷、进报告
   `excludedReasons`（原因 `not-in-release`）；运行时建「旧载荷减残留」的同版本载荷、顶替 latest（只顶
