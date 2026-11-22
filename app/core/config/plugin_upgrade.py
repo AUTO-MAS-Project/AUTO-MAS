@@ -34,6 +34,10 @@ _MINIMUM_ADAPTER_VERSIONS = {
     "maa_adapter": Version("0.1.4"),
     "mumu_adapter": Version("0.1.1"),
     "ldplayer_adapter": Version("0.1.1"),
+    # 0.2 起专项要求宿主带托管生命周期钩子；0.1.x 在本宿主上不是受支持的组合。
+    "maafw_adapter": Version("0.2.0"),
+    "m9a_adapter": Version("0.2.0"),
+    "mss_adapter": Version("0.2.0"),
 }
 
 
