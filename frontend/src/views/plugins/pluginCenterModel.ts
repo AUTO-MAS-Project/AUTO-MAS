@@ -26,7 +26,7 @@ export type InstalledFilter = 'all' | 'official' | 'update' | 'fault'
 export const INSTALLED_FILTERS: readonly InstalledFilter[] = ['all', 'official', 'update', 'fault']
 export type MarketFilter = 'all' | 'specialized' | 'extension'
 export const MARKET_FILTERS: readonly MarketFilter[] = ['all', 'specialized', 'extension']
-export type DisableScope = 'scripts' | 'games'
+export type DisableScope = 'scripts' | 'games' | 'plans'
 export type LifecycleAction = 'enable' | 'disable' | 'reload' | 'uninstall'
 
 /** 启停、重载、卸载的按钮文案键。写成字面量而不是拼接，词条审计才查得出失效的 core.plugins.* 键。 */
@@ -322,7 +322,10 @@ function findBinding(
 
 const disableScopes = (value: unknown): DisableScope[] =>
   Array.isArray(value)
-    ? value.filter((scope): scope is DisableScope => scope === 'scripts' || scope === 'games')
+    ? value.filter(
+        (scope): scope is DisableScope =>
+          scope === 'scripts' || scope === 'games' || scope === 'plans'
+      )
     : []
 
 // ---------- 条目整理 ----------

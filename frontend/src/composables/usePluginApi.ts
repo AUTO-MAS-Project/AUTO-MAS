@@ -98,7 +98,7 @@ export function usePluginApi() {
     const installation = prepared ?? (await get()).data
     if (!installation || installation.state === PluginInstallation.state.SUCCEEDED) return
     if (installation.state === PluginInstallation.state.FAILED)
-      throw new OperationResultError('failure')
+      throw new OperationResultError('failure', installation.message ?? undefined)
     if (!managesBackendProcess() || !window.electronAPI?.backendRestart) {
       throw new OperationResultError('unknown', installation.message ?? undefined)
     }
@@ -142,7 +142,7 @@ export function usePluginApi() {
       await reconnectNow('插件环境更新完成')
       const progress = (await get()).data
       if (progress?.state === PluginInstallation.state.FAILED)
-        throw new OperationResultError('failure')
+        throw new OperationResultError('failure', progress.message ?? undefined)
       if (progress?.state !== PluginInstallation.state.SUCCEEDED)
         throw new OperationResultError('unknown')
     } finally {
@@ -185,6 +185,7 @@ export function usePluginApi() {
       while (true) {
         if (disposed) throw new OperationResultError('unknown')
         let state: TriggerTaskResult['state']
+        let reason: string | undefined
         try {
           const response = await requestApi(
             () => Service.getConfigTriggerResultApiConfigTriggersResultPost({ taskId }),
@@ -192,6 +193,8 @@ export function usePluginApi() {
           )
           if (!response.data) throw new OperationResultError('unknown')
           state = response.data.state
+          // 后端给了能展示的失败原因（插件错误）就原样显示
+          reason = response.data.message || undefined
           misses = 0
         } catch {
           if (++misses >= 3) throw new OperationResultError('unknown')
@@ -199,7 +202,8 @@ export function usePluginApi() {
           continue
         }
         if (state === 'succeeded') break
-        if (state === 'failed' || state === 'timed_out') throw new OperationResultError('failure')
+        if (state === 'failed' || state === 'timed_out')
+          throw new OperationResultError('failure', reason)
         if (state === 'cancelled') throw new OperationResultError('cancelled')
         await pause()
       }

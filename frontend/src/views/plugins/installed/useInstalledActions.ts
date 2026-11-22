@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { computed, h, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Modal } from 'ant-design-vue'
 import {
@@ -45,18 +45,53 @@ export function useInstalledActions() {
       : null
   )
 
+  /** 停用连带范围（本插件和会一并停用的下游）里各专项名下的托管与计划表。 */
+  const cascadeUsage = (view: InstalledPluginView) => {
+    const names = new Set([view.pluginId, ...(view.document.disableCascade ?? [])])
+    const scripts: string[] = []
+    let plans = 0
+    for (const item of data.installed.value) {
+      if (!item.binding || !names.has(item.pluginId)) continue
+      const usage = data.usageOf(item)
+      if (usage.kind !== 'counted') continue
+      scripts.push(...usage.scripts.map(script => script.name))
+      plans += usage.planCount ?? 0
+    }
+    return { scripts, plans }
+  }
+
+  const disableContent = (view: InstalledPluginView, scopes: DisableScope[]) => {
+    const text = t('core.plugins.disableConfirmContent', {
+      name: view.name,
+      scopes: scopes.map(scope => t(`core.plugins.disableScope.${scope}`)).join(' / '),
+    })
+    const { scripts, plans } = cascadeUsage(view)
+    if (!scripts.length && !plans) return text
+    const items = [
+      ...scripts,
+      ...(plans ? [t('core.plugins.disableAffectedPlans', { count: plans })] : []),
+    ]
+    return () =>
+      h('div', [
+        h('p', text),
+        h('div', t('core.plugins.disableAffected')),
+        h(
+          'ul',
+          { style: 'margin: 4px 0 0; padding-left: 20px' },
+          items.map(item => h('li', item))
+        ),
+      ])
+  }
+
   const confirm = (view: InstalledPluginView, action: GuardedAction, scopes: DisableScope[]) =>
     new Promise<boolean>(resolve => {
-      // 沿用原有确认文案：卸载始终提示删除配置，停用列出后端给的影响范围。
+      // 沿用原有确认文案：卸载始终提示删除配置，停用列出后端给的影响范围和连带删除的托管、计划表。
       Modal.confirm({
         title: t(CONFIRM_TITLE_KEYS[action]),
         content:
           action === 'uninstall'
             ? t('core.plugins.uninstallConfirmContent', { name: view.name })
-            : t('core.plugins.disableConfirmContent', {
-                name: view.name,
-                scopes: scopes.map(scope => t(`core.plugins.disableScope.${scope}`)).join(' / '),
-              }),
+            : disableContent(view, scopes),
         okText: t(LIFECYCLE_LABEL_KEYS[action]),
         okType: 'danger',
         cancelText: t('core.common.cancel'),
@@ -81,7 +116,9 @@ export function useInstalledActions() {
   const request = async (view: InstalledPluginView, action: LifecycleAction): Promise<boolean> => {
     if (action === 'enable' || action === 'reload') return runLifecycle(view, action)
     let target = view
-    if (view.binding) {
+    // 连带停用下游专项时，确认框要列出它们名下的托管，同样先重取一次用量。
+    const cascades = action === 'disable' && Boolean(view.document.disableCascade?.length)
+    if (view.binding || cascades) {
       // 用量是进页时取的快照，托管可能已在别处新建：判断前重取一次。
       // 重取期间占用全局锁（该行显示进行中、按钮置灰，不能重复点）；失败时按「读取失败」分支拦住。
       if (!lock.acquire({ uid: view.uid, action })) return false

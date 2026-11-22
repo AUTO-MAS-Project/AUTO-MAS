@@ -87,7 +87,12 @@
   </div>
   <div
     v-else-if="
-      !scriptListError && !listLoading && !addLoading && loadedOnce && scripts.length === 0
+      !scriptListError &&
+      !listLoading &&
+      !addLoading &&
+      loadedOnce &&
+      scripts.length === 0 &&
+      unavailableScripts.length === 0
     "
     class="empty-state"
   >
@@ -134,6 +139,13 @@
     @scripts-reordered="handleScriptsReordered"
   />
 
+  <UnavailableConfigCards
+    :items="unavailableScripts"
+    kind="script"
+    :deleting-id="deletingUnavailableId"
+    @delete="handleDeleteUnavailableScript"
+  />
+
   <ScriptCreateDialog
     v-model:open="scriptCreateVisible"
     :templates="templates"
@@ -168,6 +180,7 @@ import {
   UpOutlined,
 } from '@ant-design/icons-vue'
 import ScriptTable from '@/views/scripts/components/ScriptTable.vue'
+import UnavailableConfigCards from '@/components/UnavailableConfigCards.vue'
 import { getApiErrorMessage } from '@/utils/apiError'
 import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vue'
 import type { ScriptType } from '@/types/script'
@@ -211,6 +224,7 @@ const router = useRouter()
 const { deleteScript } = useScriptApi()
 const {
   scripts,
+  unavailable: unavailableScripts,
   loadedOnce,
   loadScripts,
   getScriptUsers,
@@ -460,6 +474,17 @@ const handleDeleteScript = async (script: ScriptListItem) => {
   if (result) {
     // 后端已删除，本地直接移除即可，不必整份重拉
     scripts.value = scripts.value.filter(item => item.id !== script.id)
+  }
+}
+
+const deletingUnavailableId = ref<string | null>(null)
+const handleDeleteUnavailableScript = async (scriptId: string) => {
+  deletingUnavailableId.value = scriptId
+  try {
+    if (await deleteScript(scriptId))
+      unavailableScripts.value = unavailableScripts.value.filter(item => item.uid !== scriptId)
+  } finally {
+    deletingUnavailableId.value = null
   }
 }
 

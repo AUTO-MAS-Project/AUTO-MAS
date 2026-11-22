@@ -16,6 +16,13 @@
         @remove-plan="handleRemovePlan"
       />
 
+      <UnavailableConfigCards
+        :items="unavailablePlans"
+        kind="plan"
+        :deleting-id="deletingUnavailableId"
+        @delete="handleDeleteUnavailablePlan"
+      />
+
       <PlanEmptyState v-if="!planList.length || !currentPlanData" />
 
       <!-- 计划内容 -->
@@ -93,6 +100,9 @@ import {
 import { PLAN_ROTATE_DAYS_DEFAULT, clampRotateDays, type PlanMode } from '@/utils/planDays'
 import PlanHeader from './components/PlanHeader.vue'
 import PlanEmptyState from './components/PlanEmptyState.vue'
+import UnavailableConfigCards, {
+  type UnavailableConfigCard,
+} from '@/components/UnavailableConfigCards.vue'
 import PlanSelector from './components/PlanSelector.vue'
 import PlanConfig from './components/PlanConfig.vue'
 
@@ -122,6 +132,9 @@ const loading = ref(true)
 const tableData = ref<Record<string, any>>({})
 const planTable = ref<{ beforeLeave?: () => boolean } | null>(null)
 const planOperationPending = ref(false)
+// 所属插件不可用的计划表：只读卡片，只能删除
+const unavailablePlans = ref<UnavailableConfigCard[]>([])
+const deletingUnavailableId = ref<string | null>(null)
 const canLeaveTable = () => planTable.value?.beforeLeave?.() ?? true
 
 onBeforeRouteLeave(() => canLeaveTable())
@@ -270,6 +283,19 @@ const handleRemovePlan = async (planId: string) => {
     logger.error(`删除计划失败: ${errorMsg}`)
   } finally {
     planOperationPending.value = false
+  }
+}
+
+const handleDeleteUnavailablePlan = async (planId: string) => {
+  deletingUnavailableId.value = planId
+  try {
+    const response = await deletePlan(planId)
+    if (response.code === 200)
+      unavailablePlans.value = unavailablePlans.value.filter(item => item.uid !== planId)
+  } catch (error) {
+    logger.error(`删除计划失败: ${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    deletingUnavailableId.value = null
   }
 }
 
@@ -522,6 +548,14 @@ const initPlans = useConfigLoader(['config', 'plans'], async read => {
     if (response.code !== 200) {
       throw new Error(response.message || t('core.plan.toast.fetchFailed'))
     }
+    unavailablePlans.value = (response.unavailable ?? []).map(item => ({
+      uid: item.uid,
+      name: item.name ?? '',
+      typeLabel: item.typeLabel,
+      reason: item.reason,
+      plugin: item.plugin,
+      detail: item.detail,
+    }))
 
     const { nextPlanDataMap, nextPlanList } = projectPlanList(response, message =>
       logger.error(message)
