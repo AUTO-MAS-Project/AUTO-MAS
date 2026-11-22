@@ -136,7 +136,7 @@ def build_precheck_validator(
 ) -> Callable[[Path], bool]:
     """构造 ``post_validate`` 回调（收新载荷的 staging 路径）。
 
-    ``prepare`` 是宿主的 ``_prepare_project_environment_sync``（不要绕过它直接调
+    ``prepare`` 是宿主的 ``project_environment.prepare_project_environment_sync``（不要绕过它直接调
     ``agent_env.project_env.prepare_project_environment``：route、代理、interface
     重读都在里面）。``agent_env_root`` 是预检根（``env_trial.precheck_agent_root``）。失败时把 ``{targetVersion, requirement, kind, reason, …}``
     写进 ``failure``，按 ``memo_path_for(目标版本)`` 落备忘（谱系 + 版本，组共有），

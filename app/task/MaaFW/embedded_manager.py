@@ -34,10 +34,8 @@ MAS 在自己的 worker 子进程内加载项目的 MaaFramework 直接驱动，
 from __future__ import annotations
 
 import asyncio
-import threading
 import time
 import uuid
-from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -74,6 +72,9 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     resolve_maafw_project_root,
 )
 from app.task.MaaFW.tools.embedded.owners import RecordPatch, write_managed_record
+from app.task.MaaFW.tools.embedded.project_environment import (
+    prepare_project_environment_sync,
+)
 from app.task.MaaFW.tools.embedded.project_session import (
     BENIGN_SKIPS,
     SKIP_OCCUPIED,
@@ -512,16 +513,6 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             data=WSTaskNoticeData(level=level, message=message),
         )
 
-    @staticmethod
-    def _load_interface_model(project_path: Path, *, force_reload: bool = False):
-        """读 interface（走核心包的内存/磁盘缓存）；``force_reload`` 用于更新后失效缓存。"""
-
-        from app.task.MaaFW.tools.core.interface import (
-            load_interface_model_cached,
-        )
-
-        return load_interface_model_cached(project_path, force_reload=force_reload)
-
     def _on_finalize_cancel_requested(self) -> None:
         """收尾期间用户点了停止：让运行后更新 / 环境确认按停止处理（项目会话的 stop()）。"""
 
@@ -586,120 +577,9 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         )
         await self._send_project_notice(notice)
 
-    @staticmethod
-    def _prepare_project_environment_sync(
-        project_path: Path,
-        cancel_event: threading.Event,
-        send_log: Callable[[str], None],
-        *,
-        agent_env_root: Path | None = None,
-        store_cache: bool = True,
-        proxy_url: str | None = None,
-        lenient_health_check: bool = False,
-        health_warnings_out: list[str] | None = None,
-    ) -> bool:
-        """在工作线程里备好这个项目的运行环境，返回是否真做了准备。
-
-        ``health_warnings_out``：给了就把「报错照跑」放行的原因追加进去，调用方据此决定收尾
-        那句日志怎么写（返回值的含义不变，其它调用方不受影响）。
-
-        先比指纹：项目没更新过、上次准备的环境也还在盘上，就只是一次哈希加
-        几个 stat，直接跳过。
-
-        更新事务的提交前预检也走这里（``tools/embedded/precheck.py``），只是
-        把 isolated_venv 的 agent 建到 ``agent_env_root``（池根下的预检目录）
-        并且 ``store_cache=False`` 不写环境缓存（D6）。静态方法：手动更新的
-        API 路径没有 manager 实例，也要用同一份逻辑。
-
-        ``proxy_url`` 是托管级解析出来的代理（``None`` 表示没解析过，沿用
-        全局），给池里的 uv / pip 与 agent venv 的安装用。
-
-        ``lenient_health_check``：项目自带 Python 的健康检查「报错照跑」，只有运行前 / 运行后的
-        环境确认（``_ensure_project_environment``）传；预检、手动更新、同组传播后的确认都不传
-        （缺省严格，见 ``agent_env.prepare_agent_envs``）。放行过的这次不写环境缓存、不记
-        ``envConfirmedFor``：下次照样重查，编辑页也不会因此显示「已就绪」。
-        """
-
-        # 与 API 侧同理：这几个模块会拉起 runtime_pool 与 agent_env，只在真要
-        # 用时导入。
-        from app.task.MaaFW.tools.core.agent_env.project_env import (
-            prepare_project_environment,
-            project_environment_fingerprint,
-        )
-        from app.task.MaaFW.tools.core.runtime_pool import (
-            MaaFWRuntimePoolService,
-        )
-        from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
-            subprocess_proxy_scope,
-        )
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            mark_env_confirmed,
-            read_view_marker,
-        )
-        from app.task.MaaFW.tools.embedded.env_cache import (
-            load_prepared_environment,
-            store_prepared_environment,
-        )
-        from app.task.MaaFW.tools.embedded.runtime_route import (
-            runtime_pool_route_from_service,
-        )
-
-        # 视图挂的载荷在算指纹之前记下：确认成功后只给这个载荷记 ``envConfirmedFor``
-        # （调用方持有视图预约，期间换不了；来源目录 / staging 没有标记，不记）。
-        marker = read_view_marker(project_path) if store_cache else None
-        confirmed_for = str(marker["payload"]) if marker is not None else None
-
-        def _confirmed() -> None:
-            if confirmed_for is None:
-                return
-            try:
-                mark_env_confirmed(project_path, confirmed_for)
-            except OSError as exc:
-                logger.warning(f"MFW 记录运行环境确认失败（下次运行前再确认）：{exc}")
-
-        fingerprint = project_environment_fingerprint(project_path)
-        if load_prepared_environment(project_path, fingerprint) is not None:
-            _confirmed()
-            return False
-
-        interface = MaaFWEmbeddedManager._load_interface_model(project_path)
-        route = runtime_pool_route_from_service(MaaFWRuntimePoolService())
-        # 代理作用域按线程登记，必须在这个同步函数体内进入：池的 uv / pip 子进程
-        # 与 agent venv 的安装都从 strip_host_python_environment 拿到用户在 MAS
-        # 里填的代理（§2.4）。预检回调与运行前确认都经过这里。
-        with subprocess_proxy_scope(
-            proxy_url if proxy_url is not None else Config.proxy_url
-        ):
-            result = prepare_project_environment(
-                project_path,
-                interface,
-                runtime_pool_root=route.root,
-                runtime_pool_id=route.pool_id,
-                agent_env_root=agent_env_root,
-                send_log=send_log,
-                cancel_event=cancel_event,
-                lenient_health_check=lenient_health_check,
-            )
-        agents = result.get("agents")
-        health_warnings = (
-            agents.get("healthWarnings") if isinstance(agents, dict) else None
-        )
-        if health_warnings:
-            if health_warnings_out is not None:
-                health_warnings_out.extend(str(item) for item in health_warnings)
-            send_log(
-                "运行环境检查没通过、按「报错照跑」放行，这次不记为「运行环境已就绪」，"
-                "下次运行前再查"
-            )
-            return True
-        if store_cache:
-            store_prepared_environment(
-                project_path,
-                str(result.get("projectFingerprint") or "") or fingerprint,
-                result,
-            )
-            _confirmed()
-        return True
+    # 在工作线程里备好项目的运行环境（``project_environment``）：更新编排经 ``env_confirm`` 取那边的
+    # 实现，这里只留同名的转调给按旧名找它的代码。
+    _prepare_project_environment_sync = staticmethod(prepare_project_environment_sync)
 
     async def _ensure_project_environment(self, phase: AutoUpdateMode) -> None:
         """更新之后确认一次运行环境（项目会话做），别把建环境的成本留到账号任务里。

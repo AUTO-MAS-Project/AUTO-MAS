@@ -19,8 +19,7 @@
 """MFW 运行环境确认的公共入口（宿主侧）。
 
 「确认运行环境」= 在项目目录上备好 MaaFramework 运行池与 agent 环境，成功后给视图记
-``envConfirmedFor``。更新编排里有三种用法，都走这里，不再各自延迟导入 manager 去调它的
-私有方法：
+``envConfirmedFor``。更新编排里有三种用法，都走这里，不再各自延迟导入实现去调：
 
 - **更新前预检**（:func:`build_update_precheck`）：新载荷的 staging 登记之前真建一次环境，
   建不出来就丢掉新版本。运行前 / 运行后自动更新、手动更新、投影补齐共用。
@@ -29,10 +28,10 @@
 - **同组传播后的后台确认**：``view_update.confirm_environments_in_background`` 的线程里用
   :func:`resolve_prepare_environment` 取到的实现。
 
-实现仍是 ``MaaFWEmbeddedManager._prepare_project_environment_sync``（静态方法：读
-interface、解析运行池路由、进代理作用域、写环境缓存与 ``envConfirmedFor``）。这里在调用时
-才导入 manager：manager 顶层导入了 ``view_heal`` → ``view_update`` → 本模块，提前导入会
-成环。宽严口径（``lenient_health_check``）见 ``app/task/MaaFW/AGENTS.md``，缺省严格。
+实现在 ``project_environment.prepare_project_environment_sync``（读 interface、解析运行池路由、
+进代理作用域、写环境缓存与 ``envConfirmedFor``）。这里在调用时才导入它、按模块属性取函数（测试在
+那个模块上打补丁就能换掉实现）。宽严口径（``lenient_health_check``）见 ``app/task/MaaFW/AGENTS.md``，
+缺省严格。
 
 **导入只在事件循环上解析**：:func:`resolve_prepare_environment`、
 :func:`resolve_update_precheck`、:func:`build_update_precheck` 里有函数内导入，只在事件循环
@@ -64,7 +63,7 @@ UpdatePrecheckBuilder = Callable[..., Callable[[Path], bool]]
 
 
 def resolve_prepare_environment() -> PrepareEnvironment:
-    """取宿主的运行环境准备实现（``MaaFWEmbeddedManager._prepare_project_environment_sync``）。
+    """取宿主的运行环境准备实现（``project_environment.prepare_project_environment_sync``）。
 
     **在事件循环上调**，把返回的函数交给工作线程（见模块说明）。返回的函数是
     ``(project_path, cancel_event, send_log, **options) -> bool``，在**工作线程**里备好
@@ -83,9 +82,10 @@ def resolve_prepare_environment() -> PrepareEnvironment:
     失败原样抛出，由调用方决定记日志还是当更新失败。
     """
 
-    from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
+    from app.task.MaaFW.tools.embedded import project_environment
 
-    prepare = MaaFWEmbeddedManager._prepare_project_environment_sync
+    # 按模块属性现取：测试在 project_environment 上打的补丁要生效
+    prepare = project_environment.prepare_project_environment_sync
     scope = current_process_scope.get()
     if scope is None:
         return prepare
@@ -108,7 +108,7 @@ def bind_proxy(
 
 
 def resolve_update_precheck() -> UpdatePrecheckBuilder:
-    """在事件循环上解析好预检要的导入（``precheck`` 与 manager），返回与
+    """在事件循环上解析好预检要的导入（``precheck`` 与 ``project_environment``），返回与
     :func:`build_update_precheck` 同参的组装函数。
 
     返回的函数不再导入任何东西，可以带进工作线程里再调（投影补齐要到真预检时才解析运行池
@@ -168,7 +168,7 @@ def build_update_precheck(
     - ``memo_path_for``：按目标版本落预检备忘（组共有）；投影补齐没有新版本，传 None。
 
     **在事件循环上调**（导入在这里解析，见 :func:`resolve_update_precheck`）；返回的回调跑在
-    工作线程里，不再导入 manager 与 ``precheck``。
+    工作线程里，不再导入 ``project_environment`` 与 ``precheck``。
     """
 
     return resolve_update_precheck()(
@@ -197,7 +197,7 @@ async def confirm_switched_environment(
 
     send_log("正在确认新版本的运行环境")
     try:
-        # manager 在事件循环上解析，交给工作线程的只是解析好的函数。
+        # 实现在事件循环上解析，交给工作线程的只是解析好的函数。
         prepare = resolve_prepare_environment()
         await asyncio.to_thread(
             prepare,

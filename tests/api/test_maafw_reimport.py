@@ -152,8 +152,7 @@ async def project(tmp_path, monkeypatch, isolated_app_paths):
         staticmethod(lambda: SimpleNamespace(root=tmp_path / "runtime")),
     )
     monkeypatch.setattr(
-        embedded_manager.MaaFWEmbeddedManager,
-        "_prepare_project_environment_sync",
+        "app.task.MaaFW.tools.embedded.project_environment.prepare_project_environment_sync",
         lambda *_args, **_kwargs: True,
     )
     from app.task.MaaFW.tools.embedded import live_projects

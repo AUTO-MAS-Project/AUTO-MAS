@@ -244,7 +244,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `build_runner_environment`（worker 的 `PYTHONPATH` 等怎么拼）留在运行。项目运行环境的准备与确认
   （借一次环境 + 备 agent + 项目输入指纹）在 `agent_env/project_env.py`
   （`prepare_project_environment`、`project_environment_fingerprint`），宿主的
-  `_prepare_project_environment_sync` 与 `api_service/agent_env` 直接调它，不经 `MaaFWRunnerService`。
+  `tools/embedded/project_environment.prepare_project_environment_sync`（项目更新一侧；管理器的同名静态方法只是
+  转调）与 `api_service/agent_env` 直接调它，不经 `MaaFWRunnerService`。
   运行前的运行池自检（`tools/embedded/runtime_check.describe_unusable_runtime`，吃项目路径、放工作线程）与
   运行池路由（`tools/embedded/runtime_route.resolve_runtime_pool_route`，只在工作线程里调）也归 agent 环境，
   三个专项的脚本级流程各自调；管理器的 `_resolve_runtime_pool_route` 只是转调。
@@ -633,7 +634,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   也没有 `maa/`，补装失败后的半装状态不算）。出厂就带 binding 的项目（M9A、MaaStellaSora、MaaFgo、
   MaaNTE 也都有 requirements.txt）缺别的模块照旧拦。
   **三个调用方三种口径**（`_prepare_project_python_env` 的 `lenient`，经 `prepare_agent_envs` /
-  `prepare_project_environment` / `_prepare_project_environment_sync` 的 `lenient_health_check`
+  `prepare_project_environment` / `prepare_project_environment_sync` 的 `lenient_health_check`
   传下来，**缺省严格**，漏改的调用点不会被放宽）：
   - **运行时宽松（报错照跑）**：worker 起 agent 前（`runner.prepare_agent_python_envs`）与宿主
     运行前 / 运行后的环境确认（`project_session.confirm_environment`）。检查不管因为什么失败都先试补装，
@@ -1028,8 +1029,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `run_view_update` 的四个调用方（自动、手动、投影补齐、发行包核对）一律经
   `tools/embedded/update_session.UpdateSession` 组装参数（组与候选、预约、锁时限、停止令牌、
   代理 `UpdateProxy`、进度出口、预检）；更新编排里的运行环境确认（预检、切换后确认、传播后的
-  后台确认）一律走 `tools/embedded/env_confirm`，不要再延迟导入 manager 调
-  `_prepare_project_environment_sync`。`env_confirm` 的 `resolve_*` / `build_update_precheck`
+  后台确认）一律走 `tools/embedded/env_confirm`（实现在 `project_environment`，`env_confirm` 在事件循环上
+  延迟导入、按模块属性取；不要再去管理器上找它）。`env_confirm` 的 `resolve_*` / `build_update_precheck`
   与 `UpdateSession.precheck` / `precheck_builder` 里有函数内导入，只在事件循环上调，交给
   `asyncio.to_thread` / 核心包工作线程的是解析好的可调用对象。核心包发的进度事件是 dict，消费方先经
   `core/project_update/progress.UpdateProgressEvent.of` 转成类型化模型再读。
