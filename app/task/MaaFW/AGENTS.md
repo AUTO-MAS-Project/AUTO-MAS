@@ -24,7 +24,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
   `default_snapshot`、`env_confirm`、`update_session`、`device_config`、`plan_run`、`pretask_run`、
   `run_verdict`、`run_redaction`、`run_settings`、`run_messages`、`run_notices`、`attempt_ledger`、
-  `project_session`、`owners`）。
+  `host_client`、`project_session`、`owners`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - **设备配置与首任务闸门在 `tools/embedded/device_config.py`**（将来是运行这一块对外的「设备配置」调用，
   三个专项各自的流程都调它）：游戏包名、adb 路径（含「宿主没定下路径时问 Toolkit」，判据由调用方算好
@@ -109,6 +109,14 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   返回 None）。只收普通数据，不读配置、不碰调用方：`HistoryWrite` / `HistoryAttachmentInput` /
   `HistorySnapshotStatistic` 是宿主的 schema，由流程自己拼；「这次尝试的日志有没有开始时刻」（没有就不记
   history 状态，`status_key=None`）、是否维护跳过、信号文案、检查有没有过都由调用方算好传入。
+- **账号运行要用的宿主 / 模拟器能力在 `tools/embedded/host_client.py`**（宿主或模拟器适配，不归入积木，三个
+  专项的账号流程都调）：为这次运行开模拟器（`open_emulator_for_run`：写「正在启动模拟器」→
+  `open(..., allow_mod_avd=True)` → 冷启动游戏时打 `start_game` 的 launched 点、写「已随模拟器启动游戏」、
+  返回那一刻的单调时钟 → `silent` 时藏窗口）、脚本专用 adb server 的进程环境（`script_adb_env`）、锁屏判定
+  （`workstation_lock_reason`：只看 Win32 / Gamepad，查不出来不拦，告警进 app.log；锁屏文案
+  `WORKSTATION_LOCKED_MESSAGE`）。参数是模拟器入口与普通数据，输出经返回值与 `plan_run` 同形的事件出口。
+  地址校验与缓存、`opened_emulator` 的置位（调用之前）、首任务闸门的时刻与读盘判据（拿返回值写）、
+  `silent` 的取值（调用那一刻读 `IfSilence`）、锁屏时抛 `MaaFWWorkstationLocked` 都留在流程里。
 - **任务类 `runner_task` 还剩什么**：取配置与账号数据、建计划（调解析一侧）、运行前检查与项目预约、桌面
   游戏 / 模拟器启停与登录、游戏更新钩子、设备配置（调 `device_config`）、**重试主循环**（次数、每次尝试的
   日志与「上一次（…）」、按 `judge_attempt` 的判定走：信号收尾、资源包修复后不计次数的重跑、重启客户端、

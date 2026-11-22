@@ -94,8 +94,7 @@ from app.task.run_flow import (
     operation,
     point,
 )
-from app.utils import IS_WINDOWS, UTC4, ProcessInfo, get_logger, power
-from app.utils import display as _utils_display
+from app.utils import UTC4, ProcessInfo, get_logger, power
 from app.utils import game_apk as _utils_game_apk
 from app.utils.common.game_resolution import (
     UnityGameResolutionOverride,
@@ -122,7 +121,6 @@ from .device_config import (
     build_win32_device_config,
     choose_game_package,
     find_controller,
-    game_launched_with_emulator,
     list_desktop_window_matches,
     match_controller_windows,
     match_windows_in_session,
@@ -141,6 +139,12 @@ from .flavor import (
     resolve_game_update_hook,
     resolve_login_hook,
     skip_on_retry_entries,
+)
+from .host_client import (
+    WORKSTATION_LOCKED_MESSAGE,
+    open_emulator_for_run,
+    script_adb_env,
+    workstation_lock_reason,
 )
 from .option_secrets import (
     DPAPI_SECRET_OPENER,
@@ -252,10 +256,6 @@ _PROCESS_TERMINATE_GRACE_SECONDS = 3.0
 _RELEASE_CHECK_CANCEL_GRACE_SECONDS = 30.0
 # 哪些 worker 日志 / 原生诊断进界面的几组文案规则在 worker_protocol（forwards_to_ui）：
 # worker 发事件时按它定 audience，宿主只对旧格式事件与 stdout 上的原生诊断再用它判。
-
-
-# 截图和输入都要落在用户的交互式桌面上的控制器。ADB 不受锁屏影响。
-_DESKTOP_CONTROLLER_TYPES = frozenset({"Win32", "Gamepad"})
 
 
 class MaaFWPluginAutoProxyTask(TaskExecuteBase):
@@ -1209,24 +1209,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self.script_config.Game.PackageName, self.run_plan, log=self._append_log
         )
         self._launched_package_name = package_name
-        self._append_log(f"正在启动模拟器: {emulator_index}")
         self.opened_emulator = True
-        device_info = await self.emulator_manager.open(
-            emulator_index, package_name, **self._mod_avd_open_kwargs()
+        # 开模拟器、冷启动游戏时打 launched 点与记时刻、静默时藏窗口（host_client）
+        launch = await open_emulator_for_run(
+            self.emulator_manager,
+            emulator_index,
+            package_name,
+            silent=bool(Config.setting.Function.IfSilence),
+            emit=self._on_plan_run_event,
         )
-        # 只有冷启动才等（判据见 game_launched_with_emulator），首任务闸门按这里记的
-        # 时刻与读盘判据算（task_start_gate）
-        if game_launched_with_emulator(device_info):
-            point(self, "start_game", state="succeeded", key="launched")
-            self.game_started_at = time.monotonic()
-            self.game_start_disk_quiet = True
-            self._append_log(f"已随模拟器启动游戏: {package_name}")
-        else:
-            self.game_started_at = None
-            self.game_start_disk_quiet = False
-        if Config.setting.Function.IfSilence:
-            with suppress(Exception):
-                await self.emulator_manager.setVisible(emulator_index, False)
+        device_info = launch.device_info
+        # 冷启动游戏时首任务闸门改按读盘判据放行（task_start_gate）
+        self.game_started_at = launch.started_at
+        self.game_start_disk_quiet = launch.started_at is not None
         if not device_info.adb_address or device_info.adb_address == "Unknown":
             raise RuntimeError("模拟器未返回可用 ADB 地址")
 
@@ -1327,19 +1322,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 不允许带着没登录（或登录到别的账号）的状态下发任务。
         self._login_checked = True
 
-    def _mod_avd_open_kwargs(self) -> dict[str, Any]:
-        return {"allow_mod_avd": True}
-
     async def _script_adb_env(self) -> dict[str, str]:
-        if self.emulator_manager is None:
-            return {}
-        env = await self.emulator_manager.process_env(
-            game_device_id(self.script_config)
-        )
-        return (
-            {"ANDROID_ADB_SERVER_PORT": env["ANDROID_ADB_SERVER_PORT"]}
-            if env is not None
-            else {}
+        """脚本专用 adb server 的进程环境（``host_client.script_adb_env``）。"""
+
+        return await script_adb_env(
+            self.emulator_manager, game_device_id(self.script_config)
         )
 
     async def _run_maafw(self, device_config: MaaFWDeviceConfig) -> MaaFWRunResult:
@@ -2482,39 +2469,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
 
     async def _ensure_workstation_unlocked(self) -> None:
-        """要用交互式桌面的控制器，锁屏时直接判失败，不进会重启游戏的重试。"""
+        """要用交互式桌面的控制器，锁屏时直接判失败，不进会重启游戏的重试。
 
-        if (
-            not IS_WINDOWS
-            or self.run_plan is None
-            or self.run_plan.controllerType not in _DESKTOP_CONTROLLER_TYPES
-        ):
-            return
-        try:
-            if (desktop := desktop_process_target.get()) is None:
-                reason = await asyncio.to_thread(
-                    _utils_display.input_desktop_unavailable
-                )
-            else:
-                from app.utils.windows.desktop_session.process_runner import (
-                    run_desktop_action,
-                )
+        探测与告警在 ``host_client.workstation_lock_reason``（查不出来不拦）。
+        """
 
-                _, output, _ = await run_desktop_action(
-                    desktop, "input_desktop_unavailable", {}
-                )
-                reason = output.decode("utf-8") if output else None
-        except Exception as error:
-            # 查不出来不拦：这一步是给出明确原因的改善项，不该把本来能跑的任务打掉
-            logger.opt(exception=True).warning(f"检查锁屏状态失败，照常运行：{error}")
-            return
-        if reason is None:
-            return
-        logger.warning(f"MaaFW 运行前检查到锁屏：{reason}")
-        raise _MaaFWWorkstationLocked(
-            "电脑处于锁屏状态，Win32 控制器的项目要在解锁的桌面上才能截图和操作，"
-            "本次不运行、不重试，请解锁后再运行"
+        reason = await workstation_lock_reason(
+            self.run_plan.controllerType if self.run_plan is not None else None,
+            desktop_process_target.get(),
         )
+        if reason is not None:
+            raise _MaaFWWorkstationLocked(WORKSTATION_LOCKED_MESSAGE)
 
     def _release_display_hold(self) -> None:
         hold, self._display_hold = self._display_hold, None
