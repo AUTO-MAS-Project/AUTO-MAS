@@ -108,12 +108,16 @@ def _owner_name() -> str:
     return MSS_OWNER
 
 
+class _ManagedRecordMissing(RuntimeError):
+    """MSS 属主读不到这个托管（多半是运行中被删了）。"""
+
+
 def _managed_record(script_id: str) -> owners.ManagedRecord:
-    """经 MSS 的属主入口读这个托管的记录（配置原值）。"""
+    """经 MSS 的属主入口读这个托管的记录（配置原值）。读不到时抛 :class:`_ManagedRecordMissing`。"""
 
     found = _owner_entry().read_managed(script_id)
     if found.record is None:
-        raise RuntimeError(f"MSS 属主读不到托管 {script_id}：{found.status}")
+        raise _ManagedRecordMissing(f"MSS 属主读不到托管 {script_id}：{found.status}")
     return found.record
 
 
@@ -821,7 +825,12 @@ class MSSManager(NotificationTaskBase):
         if not self._users_completed or self._stop_seen():
             return
         if self._post_run_env_confirm:
-            await self._ensure_project_environment("AfterRun")
+            try:
+                await self._ensure_project_environment("AfterRun")
+            except _ManagedRecordMissing as exc:
+                # 收尾在保存账号配置并解锁之后：托管这时被删了，记一行、跳过这一步，不把本轮
+                # 结果改成异常（运行阶段读不到照旧抛）。旧路径拿手里的配置对象照常确认。
+                logger.warning(f"MFW 收尾时托管已不在，跳过运行环境确认：{exc}")
 
     async def _push_proxy_report(
         self,
