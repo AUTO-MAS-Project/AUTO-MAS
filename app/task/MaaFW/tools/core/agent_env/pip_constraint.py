@@ -18,13 +18,20 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import InvalidWheelFilename, parse_wheel_filename
 from packaging.version import InvalidVersion
 
-from ..native.offline_dependencies import offline_dependency_files
-from ..native.project_runtime import probe_bundled_maafw_version
-from ..native.requirement import (
+from app.task.MaaFW.blocks.maafw_native.offline_dependencies import (
+    offline_dependency_files,
+)
+from app.task.MaaFW.blocks.maafw_native.project_runtime import (
+    probe_bundled_maafw_version,
+)
+from app.task.MaaFW.blocks.maafw_native.requirement import (
     load_project_requirements,
     resolve_project_maafw_requirement,
 )
-from ..native.versions import exact_version_of, requirement_distribution_name
+from app.task.MaaFW.blocks.maafw_native.versions import (
+    exact_version_of,
+    requirement_distribution_name,
+)
 
 
 def pin_agent_maafw_requirement(

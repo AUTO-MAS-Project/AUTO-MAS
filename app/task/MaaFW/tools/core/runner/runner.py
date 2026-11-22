@@ -65,6 +65,15 @@ try:
 except ImportError:  # pragma: no cover - 只有很老的 binding 会走到
     _ContextEventSinkBase = None
 
+from app.task.MaaFW.blocks.maafw_native.architecture import host_architecture
+from app.task.MaaFW.blocks.maafw_native.pe import detect_pe_architecture
+from app.task.MaaFW.blocks.maafw_native.project_runtime import (
+    describe_runtime_architecture_mismatch,
+    host_runtime_rid_dirs,
+    project_maafw_runtime_path,
+    read_runtime_maafw_version,
+    runtime_missing_dependencies,
+)
 from app.task.MaaFW.tools.core.agent_env import (
     project_python_agent_binary_path,
     write_agent_compat_shims,
@@ -77,15 +86,6 @@ from app.task.MaaFW.tools.core.agent_env.pip_constraint import (
     write_agent_pip_constraint,
 )
 from app.task.MaaFW.tools.core.log_redact import mask_home_path
-from app.task.MaaFW.tools.core.native.architecture import host_architecture
-from app.task.MaaFW.tools.core.native.pe import detect_pe_architecture
-from app.task.MaaFW.tools.core.native.project_runtime import (
-    describe_runtime_architecture_mismatch,
-    host_runtime_rid_dirs,
-    project_maafw_runtime_path,
-    read_runtime_maafw_version,
-    runtime_missing_dependencies,
-)
 from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     set_project_pycache_prefix,
     strip_host_python_environment,

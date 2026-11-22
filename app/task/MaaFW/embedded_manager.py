@@ -125,7 +125,7 @@ _BENIGN_SKIPS = BENIGN_SKIPS
 def describe_unsupported_host() -> str | None:
     """本机进程不是 x64 时的「MaaFW 目前只支持 x64」提示；是 x64 时 None。"""
 
-    from app.task.MaaFW.tools.core.native.architecture import (
+    from app.task.MaaFW.blocks.maafw_native.architecture import (
         describe_unsupported_architecture,
     )
 

@@ -20,7 +20,7 @@ import threading
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 
-from ..native.layout import PROJECT_PYCACHE_DIR_NAME
+from app.task.MaaFW.blocks.maafw_native.layout import PROJECT_PYCACHE_DIR_NAME
 
 #: 宿主 ``PYTHON*`` 变量里仅有的放行项。
 PASSTHROUGH_PYTHON_KEYS: frozenset[str] = frozenset(

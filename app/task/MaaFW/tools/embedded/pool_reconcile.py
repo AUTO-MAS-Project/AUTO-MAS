@@ -59,6 +59,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.task.MaaFW.blocks.maafw_native.requirement import (
+    resolve_project_maafw_requirement,
+)
 from app.task.MaaFW.tools.core.agent_env.planner import collect_orphan_agent_venvs
 from app.task.MaaFW.tools.core.agent_env.runtime_lease import (
     describe_runner_runtime_selection,
@@ -67,9 +70,6 @@ from app.task.MaaFW.tools.core.agent_env.venv_share import (
     collect_stale_venv_refs,
     discard_venv_lock_file,
     isolated_venv_guard,
-)
-from app.task.MaaFW.tools.core.native.requirement import (
-    resolve_project_maafw_requirement,
 )
 from app.task.MaaFW.tools.core.runtime_pool import MaaFWRuntimePoolService
 from app.task.MaaFW.tools.core.runtime_pool.binding import (

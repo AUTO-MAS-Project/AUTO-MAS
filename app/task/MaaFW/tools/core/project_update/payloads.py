@@ -1541,7 +1541,7 @@ def _loadable_probe(directory: Path) -> LoadableProbe:
     架构对不上、或依赖的 DLL 不在都算不能用）。"""
 
     def probe() -> bool | None:
-        from app.task.MaaFW.tools.core.native.project_runtime import (
+        from app.task.MaaFW.blocks.maafw_native.project_runtime import (
             project_runtime_usable_on_host,
         )
 
@@ -1711,7 +1711,7 @@ def settle_same_version_latest(
             manifests[payload_id] = manifest
         if len(manifests) < 2:
             return None
-        from app.task.MaaFW.tools.core.native.project_runtime import (
+        from app.task.MaaFW.blocks.maafw_native.project_runtime import (
             project_runtime_usable_on_host,
         )
 

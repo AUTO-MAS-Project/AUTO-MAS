@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from app.task.MaaFW.tools.core.native.project_runtime import (
+from app.task.MaaFW.blocks.maafw_native.project_runtime import (
     ARCHITECTURE_MISMATCH_MARKERS,
 )
 from app.task.MaaFW.tools.core.runner.models import MaaFWRunResult

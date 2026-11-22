@@ -63,6 +63,10 @@ from typing import Any
 
 import json5
 
+from app.task.MaaFW.blocks.maafw_native.offline_dependencies import (
+    is_offline_dependency_file,
+)
+
 from ..interface.agent_entry import (
     CFA_FALLBACK_AGENT_ENTRY,
     bundled_python_escape_path,
@@ -75,7 +79,6 @@ from ..interface.agent_entry import (
     is_relative_entry_path,
     is_uv_launcher,
 )
-from ..native.offline_dependencies import is_offline_dependency_file
 from .blob_store import LINK_MIN_BYTES, RuntimeBlobStore, place_fresh
 
 MAX_REPORT_ITEMS = 128
@@ -2112,7 +2115,7 @@ def _projected_bundled_maafw_version(
     MaaFramework 报进导入报告，而它根本不进副本（超过 64 MB 的 ``dist/`` 不带）。
     """
 
-    from app.task.MaaFW.tools.core.native.project_runtime import (
+    from app.task.MaaFW.blocks.maafw_native.project_runtime import (
         project_maafw_runtime_path,
     )
 
@@ -2666,7 +2669,7 @@ def _mixed_native_runtime_warning(project_root: Path) -> str | None:
     别的架构投影时本来就剔掉。版本读不出来的不参与「版本不同」的判断。
     """
 
-    from app.task.MaaFW.tools.core.native.project_runtime import (
+    from app.task.MaaFW.blocks.maafw_native.project_runtime import (
         PROJECT_MAAFW_DLL_NAME,
         host_runtime_rid_dirs,
         project_maafw_runtime_path,
@@ -2721,7 +2724,7 @@ def _bundled_native_runtime_dir(
     本机那一种不在才退回别的（运行前会按架构不符报出来）。
     """
 
-    from app.task.MaaFW.tools.core.native.project_runtime import (
+    from app.task.MaaFW.blocks.maafw_native.project_runtime import (
         project_maafw_runtime_path,
     )
 
@@ -2764,7 +2767,7 @@ def _bundled_architecture_warnings(
     ``_bundled_native_runtime_dir`` 选 ``runtimes/<rid>`` 同一个近似。
     """
 
-    from app.task.MaaFW.tools.core.native.project_runtime import (
+    from app.task.MaaFW.blocks.maafw_native.project_runtime import (
         describe_plugin_architecture_mismatch,
         describe_runtime_architecture_mismatch,
     )
@@ -2819,7 +2822,7 @@ def probe_bundled_python_version(root: Path, rules: ProjectionRules) -> str | No
 def probe_bundled_maafw_version(root: Path) -> str | None:
     """来源（或更新包）自带 MaaFramework 原生库的版本；探测逻辑在原生库识别库（``native.project_runtime``）。"""
 
-    from app.task.MaaFW.tools.core.native.project_runtime import (
+    from app.task.MaaFW.blocks.maafw_native.project_runtime import (
         probe_bundled_maafw_version as _probe,
     )
 

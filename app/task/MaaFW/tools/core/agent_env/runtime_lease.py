@@ -25,20 +25,25 @@ from typing import Any, Callable
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
 
-from ..interface.agent_command import MaaFWAgentCommandPlan
-from ..interface.models import MaaFWAgent
-from ..native.architecture import supported_architecture_target
-from ..native.project_runtime import project_maafw_runtime_path
-from ..native.requirement import (
+from app.task.MaaFW.blocks.maafw_native.architecture import (
+    supported_architecture_target,
+)
+from app.task.MaaFW.blocks.maafw_native.project_runtime import (
+    project_maafw_runtime_path,
+)
+from app.task.MaaFW.blocks.maafw_native.requirement import (
     bundled_project_maafw_requirement,
     declared_project_maafw_requirement,
 )
-from ..native.versions import (
+from app.task.MaaFW.blocks.maafw_native.versions import (
     MaaFWBindingError,
     exact_version_of,
     normalize_maafw_requirement,
     requirement_distribution_name,
 )
+
+from ..interface.agent_command import MaaFWAgentCommandPlan
+from ..interface.models import MaaFWAgent
 from ..runtime_pool import (
     ExtraPackagesInstaller,
     MaaFWRuntimePool,

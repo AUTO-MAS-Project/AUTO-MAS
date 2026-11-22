@@ -15,16 +15,21 @@ from typing import Callable
 
 from packaging.version import InvalidVersion, Version
 
-from ..interface.agent_command import MaaFWAgentCommandPlan
-from ..interface.agent_entry import describe_uv_agent, is_uv_launcher
-from ..log_redact import DETAIL_LOG_PREFIX, mask_home_path
-from ..native.layout import EMBEDDED_COPIES_DIR_PARTS
-from ..native.offline_dependencies import describe_self_install_materials
-from ..native.requirement import resolve_project_maafw_requirement
-from ..native.requirements_file import (
+from app.task.MaaFW.blocks.maafw_native.layout import EMBEDDED_COPIES_DIR_PARTS
+from app.task.MaaFW.blocks.maafw_native.offline_dependencies import (
+    describe_self_install_materials,
+)
+from app.task.MaaFW.blocks.maafw_native.requirement import (
+    resolve_project_maafw_requirement,
+)
+from app.task.MaaFW.blocks.maafw_native.requirements_file import (
     RequirementsFileError,
     read_requirements_file,
 )
+
+from ..interface.agent_command import MaaFWAgentCommandPlan
+from ..interface.agent_entry import describe_uv_agent, is_uv_launcher
+from ..log_redact import DETAIL_LOG_PREFIX, mask_home_path
 from ..runtime_pool import runtime_managed_uv_executable
 from ..runtime_pool._shared import (
     mask_url_credentials,
@@ -584,7 +589,7 @@ def _repin_project_python_binding(
     返回装完之后 binding 是否与原生库同版本（没动手、动手失败都是 False）。
     """
 
-    from app.task.MaaFW.tools.core.native.project_runtime import (
+    from app.task.MaaFW.blocks.maafw_native.project_runtime import (
         probe_bundled_maafw_version,
     )
 
@@ -1267,7 +1272,7 @@ def project_python_agent_binary_path(
     if not _bundled_maa_bin_missing(python_exe):
         return None
 
-    from app.task.MaaFW.tools.core.native.project_runtime import (
+    from app.task.MaaFW.blocks.maafw_native.project_runtime import (
         project_maafw_runtime_path,
     )
 

@@ -39,12 +39,12 @@ from app.models.notification.report import TaskResultData, TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.game import current_game_session
+from app.task.MaaFW.blocks.maafw_native.architecture import (
+    describe_unsupported_architecture,
+)
 from app.task.MaaFW.tools.backup_archive import (
     archive_mas_runtime_backup,
     archive_native_backup,
-)
-from app.task.MaaFW.tools.core.native.architecture import (
-    describe_unsupported_architecture,
 )
 from app.task.MaaFW.tools.embedded import owners
 from app.task.MaaFW.tools.embedded.owners import RecordPatch, write_managed_record

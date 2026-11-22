@@ -47,16 +47,17 @@ from typing import Any
 from packaging.specifiers import SpecifierSet
 from packaging.version import InvalidVersion, Version
 
-from ..native.architecture import (
+from app.task.MaaFW.blocks.maafw_native.architecture import (
     MaaFWUnsupportedArchitectureError,
     supported_architecture_target,
 )
-from ..native.versions import (
+from app.task.MaaFW.blocks.maafw_native.versions import (
     MaaFWBindingError,
     exact_version_of,
     normalize_version,
     parse_maafw_requirement,
 )
+
 from ._shared import (
     MaaFWRuntimePoolError,
     assert_existing_chain_has_no_reparse,

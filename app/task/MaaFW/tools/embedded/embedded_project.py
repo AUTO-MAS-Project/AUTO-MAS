@@ -62,13 +62,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from app.task.MaaFW.tools.core.log_redact import mask_home_path
-from app.task.MaaFW.tools.core.native.layout import (
+from app.task.MaaFW.blocks.maafw_native.layout import (
     EMBEDDED_COPIES_DIR_PARTS,
     EMBEDDED_PAYLOADS_DIR_NAME,
     EMBEDDED_SWITCH_DIR_NAME,
     PROJECT_PYCACHE_DIR_NAME,
 )
+from app.task.MaaFW.tools.core.log_redact import mask_home_path
 from app.task.MaaFW.tools.core.project_update import payloads
 from app.task.MaaFW.tools.core.project_update.apply import (
     project_state_dir_for,

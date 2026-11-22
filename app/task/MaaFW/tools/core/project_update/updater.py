@@ -76,7 +76,7 @@ from .transport import (
 )
 
 if TYPE_CHECKING:  # 导入 runtime_pool 会连带整个运行池包，选包时才导入
-    from ..native.architecture import ArchitectureTarget
+    from app.task.MaaFW.blocks.maafw_native.architecture import ArchitectureTarget
 
 HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 
@@ -371,7 +371,7 @@ def _host_update_target() -> ArchitectureTarget:
     报错，不悄悄按 x64 去下包。
     """
 
-    from ..native.architecture import (
+    from app.task.MaaFW.blocks.maafw_native.architecture import (
         MaaFWUnsupportedArchitectureError,
         supported_architecture_target,
     )
@@ -469,7 +469,7 @@ def _payload_runtime_incomplete(payload: PayloadTarget) -> bool:
     """当前载荷里 runner 要用的 MaaFramework 原生库缺依赖、真加载也失败（判断不了算没坏）。"""
 
     try:
-        from app.task.MaaFW.tools.core.native.project_runtime import (
+        from app.task.MaaFW.blocks.maafw_native.project_runtime import (
             project_runtime_broken,
         )
 

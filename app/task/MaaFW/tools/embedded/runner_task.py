@@ -33,6 +33,9 @@ from app.services import execute_script_task
 from app.task.client import client_executable_path, client_launcher_path
 from app.task.emulator_core import close_emulator
 from app.task.game import game_device_id, game_is_emulator, game_target_id
+from app.task.MaaFW.blocks.maafw_native.project_runtime import (
+    describe_project_runtime_architecture_mismatch,
+)
 from app.task.MaaFW.tools.core.controller_win32.service import (
     controller_has_window_rules,
 )
@@ -45,9 +48,6 @@ from app.task.MaaFW.tools.core.interface.preview import (
 )
 from app.task.MaaFW.tools.core.interface.service import (
     MaaFWInterfaceService,
-)
-from app.task.MaaFW.tools.core.native.project_runtime import (
-    describe_project_runtime_architecture_mismatch,
 )
 from app.task.MaaFW.tools.core.runner.models import (
     MaaFWDeviceConfig,

@@ -53,6 +53,9 @@ from app.models.schema import (
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import execute_script_task
 from app.task.emulator_core import close_emulator
+from app.task.MaaFW.blocks.maafw_native.project_runtime import (
+    describe_project_runtime_architecture_mismatch,
+)
 from app.task.MaaFW.tools.core.controller_win32.service import (
     controller_has_window_rules,
 )
@@ -61,9 +64,6 @@ from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 from app.task.MaaFW.tools.core.interface.plan_rules import EMPTY_PLAN_RULES
 from app.task.MaaFW.tools.core.interface.preview import interface_display_name
 from app.task.MaaFW.tools.core.interface.service import MaaFWInterfaceService
-from app.task.MaaFW.tools.core.native.project_runtime import (
-    describe_project_runtime_architecture_mismatch,
-)
 from app.task.MaaFW.tools.core.runner.models import (
     MaaFWDeviceConfig,
     MaaFWRunPlan,

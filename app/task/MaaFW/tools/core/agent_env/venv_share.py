@@ -202,7 +202,7 @@ def shared_venv_key_inputs(
     它们的键与加这条规则前逐字一致（不加字段），已建好的共用目录照常命中。
     """
 
-    from app.task.MaaFW.tools.core.native.requirement import (
+    from app.task.MaaFW.blocks.maafw_native.requirement import (
         resolve_project_maafw_requirement,
     )
 

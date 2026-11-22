@@ -48,8 +48,11 @@ SOURCE_ROOT = Path(__file__).resolve().parents[2]
 
 WORKER_MODULE = "app.task.MaaFW.tools.core.runner.worker"
 
-#: worker 允许触达的 ``app.*`` 范围：MaaFW 运行器与它的同层工具包（含原生库识别库 ``native``）。
-ALLOWED_PREFIX = "app.task.MaaFW.tools.core."
+#: worker 允许触达的 ``app.*`` 范围：MaaFW 运行器与它的同层工具包，以及原生库识别库 ``maafw_native``。
+ALLOWED_PREFIXES = (
+    "app.task.MaaFW.tools.core.",
+    "app.task.MaaFW.blocks.maafw_native.",
+)
 
 
 @dataclass(frozen=True)
@@ -178,11 +181,11 @@ def _worker_closure() -> dict[str, set[str]]:
 
 
 def _is_allowed(module: str) -> bool:
-    if module.startswith(ALLOWED_PREFIX):
+    if module.startswith(ALLOWED_PREFIXES):
         return True
     # ``app`` / ``app.task`` / ... 是 worker 自己的祖先包，``python -m`` 必然
     # 要导入它们；它们自身的越界导入仍会被闭包抓到。
-    return ALLOWED_PREFIX.startswith(module + ".")
+    return any(prefix.startswith(module + ".") for prefix in ALLOWED_PREFIXES)
 
 
 def _runner_venv_import_roots() -> set[str]:
@@ -217,7 +220,7 @@ def test_worker_closure_stays_inside_runner_subtree() -> None:
     )
     assert not violations, (
         "worker 会跑在运行池的隔离 venv 里，它的导入闭包不得越出 "
-        f"{ALLOWED_PREFIX}*；越界的是：{detail}"
+        f"{'、'.join(p + '*' for p in ALLOWED_PREFIXES)}；越界的是：{detail}"
     )
 
 
