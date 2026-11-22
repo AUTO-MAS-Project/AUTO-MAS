@@ -23,7 +23,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
   `update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
   `default_snapshot`、`env_confirm`、`update_session`、`device_config`、`plan_run`、`pretask_run`、
-  `run_verdict`、`run_redaction`、`run_settings`、`run_messages`、`project_session`、`owners`）。
+  `run_verdict`、`run_redaction`、`run_settings`、`run_messages`、`run_notices`、`project_session`、`owners`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - **设备配置与首任务闸门在 `tools/embedded/device_config.py`**（将来是运行这一块对外的「设备配置」调用，
   三个专项各自的流程都调它）：游戏包名、adb 路径（含「宿主没定下路径时问 Toolkit」，判据由调用方算好
@@ -92,10 +92,16 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   原因、信号命中这次尝试的事实（`signal_attempt_facts`，项目名要读 interface，调用方在工作线程里取）、运行记录
   事件到进度点的映射（`record_event_point`）以及几句固定文案的常量。**它不导入 maa**，管理器也引它；
   日志、状态、记账、进度点仍由调用方照原来的先后做。
+  `tools/embedded/run_notices.py` 是账号级通知的正文：统计报告标题里的结果标记与标题（`statistics_mark` /
+  `statistics_title`）、成功与「游戏需要手动更新」两种本机提示的标题 / 正文 / 提示条。`LocalNotice` 的构造、
+  截图准备、推送仍在调用方。代理次数结算（开跑换日 `proxy_day_rolled`、成功后的 `success_settlement`）在
+  `proxy_quota`，一次尝试完成后要写回的周期记录（`period_records_after`）在 `plan_transforms`：都只返回新值，
+  写字段与逐条 `commit` 留在流程里，次数与先后不变。管理器侧的代理结果正文（信号汇总标题、账号结果行、
+  `TaskResultData`）还在管理器里。
 - **任务类 `runner_task` 还剩什么**：取配置与账号数据、建计划（调解析一侧）、运行前检查与项目预约、桌面
   游戏 / 模拟器启停与登录、游戏更新钩子、设备配置（调 `device_config`）、**重试主循环**（次数、每次尝试的
   日志与「上一次（…）」、按 `judge_attempt` 的判定走：信号收尾、资源包修复后不计次数的重跑、重启客户端、
-  周期任务刷新计划）、失败文案的拼装（资源包失败的人话要读原生报错、超时摘要要读时限配置，所以不在判定里）、
+  周期任务刷新计划）、失败文案的组装（文案本身在 `run_messages`；资源包失败的人话要读原生报错、超时摘要要读时限配置，所以不在判定里）、
   运行记录、历史、统计与通知。跑计划、运行前设置、判定、打码与收集密码值都只经上面这些模块的入参出参。
 - **脚本级的项目会话在 `tools/embedded/project_session.py`**（项目更新一侧，将来是这一块对外的「打开项目 /
   收尾项目 / 发现更新与预下载」，三个专项各自的流程都调它）：`MaaFWProjectSession` 一个管理器一份。
@@ -190,7 +196,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   project_update 不导入 runner（函数体里的延迟导入、`TYPE_CHECKING` 下的也算）；三块都可以导入
   interface 与 native 两个库。`worker_protocol` 算 runner 那一块的，agent_env / project_update 不要引它
   （日志前缀之类共用的常量放 `log_redact` 或 native）。接缝里归 runner 的（`plan_run`、`pretask_run`、
-  `run_verdict`、`run_redaction`、`run_settings`、`run_messages`）不导入项目更新一侧的接缝（`project_session`、`embedded_project`……）与专项
+  `run_verdict`、`run_redaction`、`run_settings`、`run_messages`、`run_notices`）不导入项目更新一侧的接缝（`project_session`、`embedded_project`……）与专项
   （任务类 `runner_task` 这类账号级流程、风味）。这几条现在违反了也不会让运行出错，只会让以后
   拆包时那一块带不走，所以没进核心最小回归；加导入前自己按 AST 查一遍方向。
 - **运行环境的准备与借还归 agent 环境**：`agent_env/runtime_lease.py` 是运行池 base venv + binding 的

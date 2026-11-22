@@ -198,6 +198,12 @@ from .run_messages import (
     signal_attempt_facts,
     task_display_name,
 )
+from .run_notices import (
+    game_update_notice_text,
+    statistics_mark,
+    statistics_title,
+    success_notice_text,
+)
 from .run_record import (
     RUN_RECORD_HISTORY_KEY,
     MaaFWRunRecorder,
@@ -687,11 +693,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         data=WSTaskNoticeData(level="error", message=message),
                     )
                     with suppress(Exception):
+                        title, text, ticker = game_update_notice_text(
+                            self.cur_user_item.name, message
+                        )
                         await Notify.send_notice(
                             LocalNotice(
-                                title="游戏需要手动更新！",
-                                message=message,
-                                ticker=f"{self.cur_user_item.name}的游戏需要手动更新",
+                                title=title,
+                                message=text,
+                                ticker=ticker,
                                 duration_seconds=3,
                             )
                         )
@@ -2862,17 +2871,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 有失效任务时照常算完成（次数、状态不动），但不能说成「全部完成」；
             # 失败时不再用日志状态那句（里面可能有节点链、框架事件）
             statistics["user_result"] = self._report_result()
-            if self.run_complete and self.missing_task_names:
-                mark = "!"
-            elif self.run_complete:
-                mark = "√"
-            elif self._is_maintenance_skip():
-                mark = MAINTENANCE_LAST_STATUS
-            else:
-                mark = "X"
+            mark = statistics_mark(
+                run_complete=self.run_complete,
+                has_missing=bool(self.missing_task_names),
+                maintenance=self._is_maintenance_skip(),
+            )
             await Notify.push_statistics_report(
                 payload=_format_maafw.build_statistics_payload(
-                    title=f"{datetime.now().strftime('%m-%d')} |{mark}|  {self.cur_user_item.name} 的自动代理统计报告",
+                    title=statistics_title(
+                        datetime.now(), mark, self.cur_user_item.name
+                    ),
                     message=statistics,
                     images=[image for _, image in images],
                 ),
@@ -2893,23 +2901,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
     async def _send_success_notify(self) -> None:
         try:
-            if self.missing_task_names:
-                names = "、".join(self.missing_task_names)
-                await Notify.send_notice(
-                    LocalNotice(
-                        title="MaaFW 自动代理任务完成，但有失效任务",
-                        message=f"账号 {self.cur_user_item.name} 的队列里有 interface 内已没有的任务，"
-                        f"已跳过：{names}",
-                        ticker=f"{self.cur_user_item.name} 有失效任务：{names}",
-                        duration_seconds=3,
-                    )
-                )
-                return
+            title, message, ticker = success_notice_text(
+                self.cur_user_item.name, self.missing_task_names
+            )
             await Notify.send_notice(
                 LocalNotice(
-                    title="MaaFW 自动代理任务完成",
-                    message=f"已完成账号 {self.cur_user_item.name} 的 MaaFW 自动代理任务",
-                    ticker=f"已完成 {self.cur_user_item.name} 的 MaaFW 自动代理任务",
+                    title=title,
+                    message=message,
+                    ticker=ticker,
                     duration_seconds=3,
                 )
             )
