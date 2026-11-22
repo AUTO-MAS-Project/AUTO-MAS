@@ -951,7 +951,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   （不走区间、Mirror 酱也不要差量包）。环境变量 `AUTO_MAS_MAAFW_FORCE_FULL_PACKAGE=1` 与选 `full`
   等效、对所有托管生效，供验收比对与应急。队列预下载（`embedded_manager.prefetch_script_update`）
   只在 `full` 时做：增量要以开跑时的当前载荷为基准，提前下不了，`incremental` 下直接跳过。
-  **直连速度保护**（`range_delta.RangeSpeedGuard`）：只在退回的整包真能走加速镜像时设（镜像没关、
+  **直连速度保护**（`app.utils.common.zip_range.RangeSpeedGuard`，`range_delta` 转出）：只在退回的整包真能走加速镜像时设（镜像没关、
   有镜像、资产有 sha256，与 `transport.download_resumable` 同一判据）——国内直连 GitHub 常年
   100 多 KB/s，40% 预算的上限要十几分钟，不如按镜像下整包；没有更快的路可退时不设。从读文件
   目录起按花在网络上的时间测吞吐，样本够了（≥ `SPEED_GUARD_MIN_SAMPLE_SECONDS` 3 秒或
