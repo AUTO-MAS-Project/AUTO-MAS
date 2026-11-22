@@ -461,24 +461,9 @@ const saveField = async (key: string, value: unknown) => {
   }, key)
 }
 
-const saveTaskConfig = async () => {
-  if (isInitializing.value || !userId) return
-  formData.Task.ExitOnFinish = true
-  await updateUser(scriptId, userId, {
-    Task: {
-      TaskIndex: formData.Task.TaskIndex,
-      ExitOnFinish: true,
-    },
-  })
-}
-
 const handleTaskIndexChange = async (value: number) => {
   formData.Task.TaskIndex = value
-  try {
-    await saveTaskConfig()
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-  }
+  await saveField('Task.TaskIndex', value)
 }
 
 const handleOkNteConfig = async () => {
