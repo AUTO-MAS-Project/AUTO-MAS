@@ -67,6 +67,18 @@ class PLUGIN(BasePlugin):
 
 专项通过 `auto_mas_core.host.core_downloads.download_file()` 消费时传入相同的 `key` 与 `rid`／哈希；宿主只复制本 L2 已交付且身份匹配的缓存文件，文件缺失或身份不匹配则执行正常下载。脚本复制后使用自己的副本，L2 收尾释放引用；最后一次释放取消未完成下载，已完成缓存仍按容量规则回收。
 
+**托管生命周期钩子。** 专项状态不全在 `data/<托管 uid>/` 下、或者保存前要改写账号数据时，覆盖 `ScriptAdapterPlugin` 的下列异步方法。宿主只接子类覆盖了的方法，一个都没覆盖的插件行为不变。
+
+| 方法 | 调用时机 |
+| --- | --- |
+| `on_script_cloned(source, target)` | 复制托管：新托管配置已提交、宿主复制 `data/<来源 uid>` 之前 |
+| `on_script_removed(script_id)` | 删除托管：删除已提交、宿主已删 `data/<uid>` 之后 |
+| `prepare_user_read(script, user_ids)` | 读取账号配置前；`user_ids` 为 `None` 表示整个托管 |
+| `on_user_added(script, user)` | 新账号已提交后；失败时账号保留，不撤回 |
+| `prepare_user_update(script, user, data)` | 保存账号前原地改 `data`；在配置执行门外调用，返回的同步守卫在门内、写入前执行，守卫抛异常则不写入 |
+
+钩子都经本插件的调用门执行：插件停用或重载途中调用得到 `PluginBusyError`，配置不动；覆盖了钩子的插件不可用时，宿主拒绝对其托管的这些操作，不会绕开钩子直接写入。钩子抛出的其他异常原样传给发起操作的接口。需要钩子的插件应把 `auto-mas-core` 的下限设到带钩子的宿主版本，并在导入时检查 `hasattr(ScriptAdapterPlugin, "on_script_cloned")`，旧宿主上钩子不会被调用。
+
 迁移测试插件可通过 `auto_mas_core.host` 复用现有模拟器、MAA 共用工具等真实宿主能力；这些出口不提供独立宿主或旧任务框架。L2 在派发前向 `UserExpander.history` 绑定当前任务的实际 `TaskHistorySession`，供专项归档使用。
 
 任务展开使用 `UserExpander` 与真实模式的 `ModeWorker` 子类：`AutoProxyWorker`、`ScriptConfigWorker`、`ScriptViewWorker`。插件提供实际执行、结果判定以及 `finish()` 所需的保存与恢复，不依赖未实现的历史写入协议。
