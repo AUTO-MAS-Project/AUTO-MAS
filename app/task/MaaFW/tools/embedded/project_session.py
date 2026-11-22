@@ -51,6 +51,7 @@ from app.task.MaaFW.tools.core.file_lockers import describe_lockers_async
 from app.task.MaaFW.tools.core.project_update.payloads import (
     lineage_info_from_interface,
 )
+from app.task.MaaFW.tools.embedded import owners
 from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
     GroupMember,
@@ -194,6 +195,63 @@ class MaaFWProjectRequest:
     prefetch_paths: Any = field(default_factory=dict)
     round_started_at: float = 0.0
     owner: str = ""
+
+
+def current_siblings() -> tuple[MaaFWProjectSibling, ...]:
+    """同来源重建的候选：属主名下的全部托管（含自己，会话会跳过），按宿主托管列表的顺序。
+
+    在事件循环线程上从属主快照（``owners.snapshot(require_ready=False)``）抄出来；一个属主都没答上来时
+    为空。打开项目（``prepare``）的请求才要带它。
+    """
+
+    current = owners.snapshot(require_ready=False)
+    return tuple(
+        MaaFWProjectSibling(
+            script_id=other.uid,
+            name=other.name,
+            source_path=other.source_path,
+            report=other.report,
+            source_version=other.source_version,
+        )
+        for other in (current.records() if current is not None else [])
+    )
+
+
+def project_request_from_record(
+    record: owners.ManagedRecord,
+    *,
+    owner: str,
+    script_name: str = "",
+    params: Any = None,
+    round_started_at: float = 0.0,
+    siblings: tuple[MaaFWProjectSibling, ...] = (),
+) -> MaaFWProjectRequest:
+    """按属主交回的托管记录（``ManagedRecord``，配置原值）组会话请求，字段一一对应。
+
+    给有自己流程的专项用：经自己的属主入口 ``read_managed`` 取记录，``owner`` 传自己的属主名（新建的视图
+    当场记下它）。``params`` 是运行树里脚本节点的任务参数（取队列预下载交来的 ``prefetch_paths``）。
+    通用 MFW 的管理器仍按脚本配置组装（``MaaFWEmbeddedManager._build_project_request``）。
+    """
+
+    return MaaFWProjectRequest(
+        script_id=record.uid,
+        name=record.name,
+        script_name=script_name,
+        source_path=record.source_path,
+        report=record.report,
+        source_version=record.source_version,
+        follow_source=record.follow_source,
+        update_source=record.update_source,
+        channel=record.channel,
+        mirror_cdk=record.mirror_cdk,
+        auto_update_mode=record.auto_update_mode,
+        package_mode=record.package_mode,
+        proxy_address=record.proxy_address,
+        siblings=siblings,
+        prefetch_paths=(params or {}).get("prefetch_paths", {}),
+        round_started_at=round_started_at,
+        owner=owner,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1615,6 +1673,8 @@ __all__ = [
     "MaaFWProjectSink",
     "describe_open_failure",
     "describe_precheck_failure",
+    "current_siblings",
     "describe_update_result",
     "discover_prefetch",
+    "project_request_from_record",
 ]

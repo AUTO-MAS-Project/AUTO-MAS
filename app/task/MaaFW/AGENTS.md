@@ -147,7 +147,9 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   （含更新预检、预下载候选的身份核对）+ `confirm_environment`；收尾项目 = `close`（组同步、写穿巡检、
   原生日志备份清理，切了版本再 `confirm_environment`）；队列预下载 = `discover_prefetch` / `prefetch` /
   `discard_prefetch`，候选留在会话里。**只收普通数据**（`MaaFWProjectRequest`：托管 uid 与名字、来源路径、
-  更新渠道与时机、开发者模式开关、托管级代理、CDK、导入报告原值等，管理器每次现取配置组装），**不写配置**：
+  更新渠道与时机、开发者模式开关、托管级代理、CDK、导入报告原值等，通用 MFW 的管理器每次现取配置组装；有自己
+  流程的专项经自己的属主入口 `read_managed` 取 `ManagedRecord`、用 `project_request_from_record` 组，字段一一
+  对应；打开项目要带的同来源候选两边都用 `current_siblings()` 从属主快照现抄），**不写配置**：
   导入 / 重建后要写回的项目记录（`MaaFWProjectRecordUpdate`）随结局交回，要弹的任务通知
   （`MaaFWProjectNotice`）作返回值交回，都由管理器照原来的时机写回 / 发出。过程输出只经事件出口
   （`MaaFWProjectSink`：项目更新日志一行、`run_flow` 进度点、预下载字节进度），做法同 `plan_run`。

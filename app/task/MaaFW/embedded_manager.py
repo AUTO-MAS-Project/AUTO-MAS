@@ -86,7 +86,7 @@ from app.task.MaaFW.tools.embedded.project_session import (
     MaaFWProjectPoint,
     MaaFWProjectRequest,
     MaaFWProjectSession,
-    MaaFWProjectSibling,
+    current_siblings,
     describe_open_failure,
     discover_prefetch,
 )
@@ -450,20 +450,8 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         """从脚本配置取项目会话要的原值。``with_siblings``：带上同来源重建的候选（打开项目要），
         在事件循环线程上从脚本表抄。"""
 
-        siblings: tuple[MaaFWProjectSibling, ...] = ()
-        if with_siblings:
-            # 属主名下的全部托管（含自己，项目会话会跳过），按宿主托管列表的顺序
-            current = owners.snapshot(require_ready=False)
-            siblings = tuple(
-                MaaFWProjectSibling(
-                    script_id=other.uid,
-                    name=other.name,
-                    source_path=other.source_path,
-                    report=other.report,
-                    source_version=other.source_version,
-                )
-                for other in (current.records() if current is not None else [])
-            )
+        # 属主名下的全部托管（含自己，项目会话会跳过），按宿主托管列表的顺序
+        siblings = current_siblings() if with_siblings else ()
         # 这次经哪个属主读写这个托管（写回项目记录也经它）：打开项目时新建的视图当场记下。
         # 认不出来就不记，留给启动期维护补。
         try:
