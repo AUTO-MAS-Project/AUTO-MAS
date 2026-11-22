@@ -57,6 +57,7 @@ from app.core.config.m9a_legacy.migration import (
 )
 from app.core.config.plugin_upgrade import (
     MAAFW_FAMILY_PLUGINS,
+    adapter_package,
     backup_legacy_maafw_documents,
     backup_legacy_src_users,
     install_adapter_plugin,
@@ -1253,6 +1254,13 @@ class AppConfig:
 
         logger.info(f"添加托管配置: {script}, 从 {script_id} 复制")
 
+        if script not in self.script_classes and (
+            package := adapter_package(f"{script}Config")
+        ):
+            # 改由插件提供的类型，插件没装上或没启用时说清楚该装哪个包，不只回一个 KeyError。
+            raise ValueError(
+                f"{script} 托管由插件提供，插件还没装上或没启用：请在插件中心安装并启用 {package}"
+            )
         if script_id is None:
             async with config_manager.transaction():
                 _config_uid = self.ScriptConfig.add(

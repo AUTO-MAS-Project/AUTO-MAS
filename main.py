@@ -719,6 +719,27 @@ def main():
                 )
             return await call_next(request)
 
+        from fastapi.exception_handlers import http_exception_handler
+        from starlette.exceptions import HTTPException as StarletteHTTPException
+
+        @app.exception_handler(StarletteHTTPException)
+        async def explain_missing_maafw_plugin(request: Request, exc):
+            """/api/scripts/maafw/* 由 MFW 插件挂载；插件没装或没启用时 404 说清楚该装什么。"""
+            if exc.status_code == 404 and request.url.path.startswith(
+                "/api/scripts/maafw/"
+            ):
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "code": 404,
+                        "status": "error",
+                        "message": "这个接口由 MFW 插件提供，插件还没装上或没启用："
+                        "请在插件中心安装并启用 auto-mas-maafw-adapter（依赖的积木会一并装上）；"
+                        "M9A、MSS 托管另需 auto-mas-m9a-adapter、auto-mas-mss-adapter",
+                    },
+                )
+            return await http_exception_handler(request, exc)
+
         app.include_router(core_router)
         app.include_router(info_router)
         app.include_router(mystery_router)

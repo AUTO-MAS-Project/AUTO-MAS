@@ -37,6 +37,12 @@ _MINIMUM_ADAPTER_VERSIONS = {
 }
 
 
+def adapter_package(config_type: str) -> str | None:
+    """已插件化的托管或计划表类型由哪个发行包提供；不认识的类型返回 None。"""
+    target = _ADAPTER_PLUGINS.get(config_type)
+    return target[1] if target else None
+
+
 def required_adapter_plugins(config_path: Path) -> dict[str, str]:
     """按旧托管及计划索引识别升级所需插件，不扫描备份或业务字段中的字符串。"""
     required = {}
