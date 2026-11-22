@@ -126,13 +126,23 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
     `is_locked` 每次读都经属主现问（隔了 await 的地方读到的是此刻的运行状态）；其余字段是快照，写回后要重取。
     外壳配置导入要建账号，是通用 MFW 自己的端点：经属主确认后按确切类型取配置对象（`_family_script_config`）。
   - **回答只在托管完整加载后才算数**：宿主把 `script_config_loaded_intact` 注入成信号（`set_loaded_signal`，
-    `app/core/config/manager.py`）。`snapshot(require_ready=True)` 要信号为真、每个已登记属主都答上来且 `ready`，
-    否则 None；据此判断「不在了」的每一步（迁移、补标记、清副本、agent 环境对账、运行池对账，含运行期的
-    `reconcile_in_background`）拿到 None 就整轮跳过。只做正向匹配的（同组候选、重建候选、原生日志清理）用
-    `require_ready=False`。启动期维护仍在 `Config.init_config` 返回之后才起，这条等待不能丢。
+    `app/core/config/manager.py`）。`snapshot(require_ready=True)` 要信号为真、至少登记了一个属主、每个已登记属主
+    都答上来且 `ready`，否则 None（一个属主都没有时的空快照不算「全都不在了」）；据此判断「不在了」的每一步
+    （迁移、补标记、清副本、agent 环境对账、运行池对账，含运行期的 `reconcile_in_background`）拿到 None 就整轮
+    跳过。`reconcile_in_background` 在调用方线程上算集合、调用方（删除托管的回调、端点）不兜异常，所以它自己
+    兜住算集合时的任何异常（属主回答是坏数据、列 `data/mfw` 报 `OSError`），只记 warning、这一轮跳过。
+    只做正向匹配的（同组候选、重建候选、原生日志清理）用 `require_ready=False`。启动期维护仍在
+    `Config.init_config` 返回之后才起，这条等待不能丢。
   - **视图上的属主标记**：视图标记 `owner = {name, scriptId, at}`（`embedded_project.view_owner` / `tag_view_owner`）。
-    启动期维护在迁移之后、清副本之前给属主确认仍在的托管补上（拿不到预约的下轮再补，已记别的属主不覆盖）；
-    `_realize_view` 换版本、换项目重导时从盘上这棵视图自己的标记带过去，克隆不带源的。
+    导入、重新导入、克隆、同来源重建（含视图不完整时按已登记版本重建）建成视图时当场写上「这次经哪个属主读写
+    这个托管」（`_tag_new_view`，调用方传 `owner`：端点取 `ManagedShape.owner_name`，管理器经
+    `owners.find_managed` 放进 `MaaFWProjectRequest.owner`，复制托管的配置回调由 `build_config_handler(owner=)`
+    声明；说不出属主就不记）。克隆写的是目标托管自己的属主，不带源视图的标记；`_realize_view` 换版本、换项目
+    重导时从盘上这棵视图自己的标记带过去；已记别的属主不覆盖。启动期维护在迁移之后、清副本之前仍给属主确认
+    仍在、还没有标记的存量视图补上（拿不到预约的下轮再补）。新视图当场带标记不多出删除路径：在建它的进程里，
+    清副本的「目录修改时刻晚于进程启动」「视图预约」「切换 journal」三道保护都还在；到下一次启动，属主名单
+    里有它就是 alive，名单里没有才是 gone——那正是托管已删、视图删失败（或托管没落盘）留下的孤儿，迁移前
+    原本就删，只是第 8 步以后要等启动期补过标记才认得出。
   - **清理前要过的判断**：一个视图目录只有 ① 托管完整加载 ② 属主快照算得出来 ③ 标记里有属主且与目录名对得上
     ④ 该属主已登记并答上来 ⑤ 任何属主名下都没有这个托管 ⑥ 早于进程启动 ⑦ 没有未完成的 journal ⑧ 抢得到预约，
     才删（`live_projects.classify_views` 的 `gone`）。没有标记、没有属主、属主没登记、对不上目录名、被多个属主认领的
@@ -147,6 +157,10 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
     清理本属主视图、删除后运行池对账一样不能少）；要按「是 MFW 托管」判断的地方加进 `MAAFW_RUN_TYPES`（第 9、10 步
     M9A、MSS 各有流程后从里面删）。宿主的漏登校验、配置回调、恢复池都按确切类型查，子类不会落到父类的登记上，
     漏登记启动就报「专项能力漏登」。
+  - **插件形态前要补**（内置形态下不会出现，换成插件前必须做）：(a) 宿主的「托管配置完整加载」信号在有任何托管
+    的类型解析不出来（所属插件没加载起来、托管原样留在盘上）时必须为假，清理整轮跳过；(b) 这一轮有任何盘上
+    记着的属主没答上来时，不删任何带属主标记的视图——现在只在这种情况下跳过载荷回收，而视图目录名取托管
+    uuid 前 12 位、碰撞时会共用目录；(c) 没有属主标记的存量孤儿视图不会自动清，要等宿主切换时补标记或给手动入口。
 - `tools/core/`：七个核心包（interface / native / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
   `project_update/updater.py` 引了 `app.utils.constants`，以及 `project_update` 里的 `projection_heal` /

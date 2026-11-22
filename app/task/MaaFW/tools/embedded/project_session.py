@@ -24,7 +24,9 @@
    候选要在拿到谱系锁、登记之后才抄（拿的是切换那一刻的运行状态）。管理器给的候选已经经属主登记
    （``owners.group_members``）现取；以后由这里直接调 ``owners``，不再经构造参数。
 2. ``embedded_project`` / ``update_credentials`` 里的辅助函数还按属性读「脚本配置形状」的对象，
-   这里用请求现摆一个只读的形状交给它们（:func:`_config_shape`），不回写。
+   这里用请求现摆一个只读的形状交给它们（:func:`_config_shape`），不回写。托管级代理留空时，全局
+   代理地址仍经 ``update_credentials.resolve_update_proxy_url`` 兜底读宿主 ``Config.proxy_url``；
+   服务化时由调用方把解析好的代理地址放进 :class:`MaaFWProjectRequest`。
 3. 打开项目时调用方要在预约里接着做自己的事（写回项目记录、补默认队列、拿配置 X 锁），而且用户
    停止时这些也得做完再交回预约：所以预约在 :meth:`MaaFWProjectSession.reserve` 拿、
    :meth:`MaaFWProjectSession.release` 放，调用方把「补视图 + 自己的那几步」包成一个任务交给
