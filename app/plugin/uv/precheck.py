@@ -79,6 +79,16 @@ def conflict_summary(result: CoreCompat) -> str:
     )
 
 
+def _distribution_name(dist: importlib_metadata.Distribution) -> str | None:
+    """规范化的发行名；缺 METADATA（读不了、残缺）的 dist-info 记一条警告后跳过。"""
+    if dist.name is None:
+        logger.warning(
+            "跳过缺少发行名称的元数据：{}", getattr(dist, "_path", "<unknown>")
+        )
+        return None
+    return canonicalize_name(dist.name)
+
+
 def host_dependencies() -> list[str]:
     """从宿主项目元数据读取运行依赖，作为当前 core 兼容性预检的依赖基线。"""
     from app.core import Config
@@ -90,8 +100,9 @@ def host_dependencies() -> list[str]:
 def host_constraints() -> list[str]:
     """沿主程序运行依赖收集实际安装版本，插件不得覆盖这部分环境。"""
     installed = {
-        canonicalize_name(dist.name): dist
+        name: dist
         for dist in importlib_metadata.distributions(path=site.getsitepackages())
+        if (name := _distribution_name(dist)) is not None
     }
     pending = [Requirement(dep) for dep in host_dependencies()]
     visited: set[tuple[str, str]] = set()
@@ -246,8 +257,7 @@ def plugin_targets(
                             for dist in importlib_metadata.distributions(
                                 path=[str(installed_path), *site.getsitepackages()]
                             )
-                            if canonicalize_name(dist.name)
-                            == canonicalize_name(package)
+                            if _distribution_name(dist) == canonicalize_name(package)
                         ),
                         None,
                     )
@@ -421,8 +431,9 @@ async def resolve_environment(
                 )
                 continue
             installed = {
-                canonicalize_name(dist.name): dist.version
+                name: dist.version
                 for dist in importlib_metadata.distributions(path=[str(destination)])
+                if (name := _distribution_name(dist)) is not None
             }
             for line in resolved.read_text(encoding="utf-8").splitlines():
                 if not line.strip() or line.startswith("#"):
