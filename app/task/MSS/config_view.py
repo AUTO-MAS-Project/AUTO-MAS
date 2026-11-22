@@ -303,12 +303,6 @@ def silent_mode() -> bool:
     return bool(Config.setting.Function.IfSilence)
 
 
-def import_paths() -> list[Any]:
-    """worker 的导入路径：MAS 源码根。"""
-
-    return [Config.source_path]
-
-
 # ---------------------------------------------------------------------------
 # 账号
 # ---------------------------------------------------------------------------
@@ -470,7 +464,6 @@ __all__ = [
     "game_wait_time",
     "hotkeys_raw",
     "if_activity_first_raw",
-    "import_paths",
     "is_mss_script",
     "last_proxy_date",
     "lookup_script",

@@ -1099,7 +1099,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             ),
             game_start_disk_quiet=self.game_start_disk_quiet,
             game_wait_seconds=self.script_config.Game.WaitTime,
-            import_paths=[Config.source_path],
             # 与运行前更新 / 预检同一份解析：托管级 Update.ProxyAddress 优先，留空跟随全局
             proxy_url=resolve_update_proxy_url(self.script_config),
             agent_plans=self._worker_agent_plans,

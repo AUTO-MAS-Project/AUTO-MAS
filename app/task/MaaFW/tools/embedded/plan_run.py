@@ -53,6 +53,10 @@ from app.task.MaaFW.tools.core.runner.run_events import (
     STAGE_ENVIRONMENT,
 )
 from app.task.MaaFW.tools.core.runner.service import MaaFWRunnerService
+from app.task.MaaFW.tools.core.runner.worker_launch import (
+    IMPORT_ROOT,
+    WORKER_MODULE,
+)
 from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     subprocess_proxy_scope,
 )
@@ -175,7 +179,8 @@ class MaaFWPlanRunRequest:
     game_started_at: float | None = None
     game_start_disk_quiet: bool = False
     game_wait_seconds: Any = 0
-    import_paths: Sequence[str | Path] = ()
+    #: worker 的导入根；默认是运行器按自己位置算出的 ``IMPORT_ROOT``（MAS 源码根）
+    import_paths: Sequence[str | Path] = field(default_factory=lambda: [IMPORT_ROOT])
     proxy_url: str | None = None
     agent_plans: tuple[MaaFWAgentCommandPlan, ...] | None = None
     extra_env: Mapping[str, str] = field(default_factory=dict)
@@ -523,7 +528,7 @@ class MaaFWPlanRun:
                         argv=[
                             str(runner_environment.python_executable),
                             "-m",
-                            "app.task.MaaFW.tools.core.runner.worker",
+                            WORKER_MODULE,
                         ],
                         cwd=Path.cwd(),
                         env=worker_env,
@@ -537,7 +542,7 @@ class MaaFWPlanRun:
                     process = await create_subprocess(
                         str(runner_environment.python_executable),
                         "-m",
-                        "app.task.MaaFW.tools.core.runner.worker",
+                        WORKER_MODULE,
                         cwd=str(Path.cwd()),
                         env=worker_env,
                         stdin=asyncio.subprocess.PIPE,
