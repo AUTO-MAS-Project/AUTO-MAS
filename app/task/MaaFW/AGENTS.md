@@ -247,13 +247,54 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
     归档 `core/config/manager._settle_m9a_migration`）用 `registration.MAAFW_FAMILY_TYPES`，新专项要加进去；
     M9A、MSS 有了自己的流程以后**仍在里面**，不能删，否则桌面分身、外壳配置导入、M9A 迁移后归档会一起坏。
     `MAAFW_RUN_TYPES` 是另一回事：只是 MFW 管理器 `_check` 的类型闸门（它肯跑哪些类型），有自己流程的专项不进它；
-    现在仍收 M9A、MSS（M9A 第 9 步已翻登记、跑自己的流程，回退时 MFW 管理器要靠它重新收 M9A；MSS 第 10 步同理），
-    第 11 步删风味时才收窄成只收通用 MFW。宿主的漏登校验、配置回调、
+    现在仍收 M9A、MSS（M9A 第 9 步、MSS 第 10 步都已翻登记、跑自己的流程，回退时 MFW 管理器要靠它重新收它们），
+    第 11 步删风味时才收窄成只收通用 MFW（见下面「第 11 步的前置件」）。宿主的漏登校验、配置回调、
     恢复池都按确切类型查，子类不会落到父类的登记上，漏登记启动就报「专项能力漏登」。
   - **插件形态前要补**（内置形态下不会出现，换成插件前必须做）：(a) 宿主的「托管配置完整加载」信号在有任何托管
     的类型解析不出来（所属插件没加载起来、托管原样留在盘上）时必须为假，清理整轮跳过；(b) 这一轮有任何盘上
     记着的属主没答上来时，不删任何带属主标记的视图——现在只在这种情况下跳过载荷回收，而视图目录名取托管
     uuid 前 12 位、碰撞时会共用目录；(c) 没有属主标记的存量孤儿视图不会自动清，要等宿主切换时补标记或给手动入口。
+- **第 11 步的前置件**（MFW 插件化迁移 P0；第 9、10 步做完后 M9A、MSS 都跑自己的流程，风味路径只剩回退本体；实施方案
+  `D:\MAS\docs\设计参考\MFW迁移P0第9-10步实施方案-20261122.md` §5.7、§8）：
+  - **预览与导入 / 克隆拒收改由属主给**（**默认方案，用户尚未最终拍板**；它改的是总方案 §4.2「页面自己带规则表」
+    的表述）：第 11 步的第一个提交里，`owner_entry.BuiltinConfigOwner` 加两个可选构造参数——`plan_rules`（默认
+    `EMPTY_PLAN_RULES`；M9A 给 `rules.M9A_PLAN_RULES`，MSS 是空表）与 `project_mismatch(interface) -> str | None`（M9A
+    `is_m9a_project`、MSS `is_mss_project` 不认领时给出原拒收文案）；`owners.py` 加 `owner_plan_rules(script_id)` /
+    `owner_project_mismatch(script_id, interface)`；`api_service/interface._preview_flavor` 与
+    `api_service/embedded._project_flavor_mismatch` / `_clone_flavor_mismatch` 改走属主，拒收文案由属主给、原文不变；
+    没有脚本的预览用空表（前端两处预览调用都带 `scriptId`，界面上走不到）。前端不改。用户若坚持「页面带规则表」，
+    就改成预览请求加可选字段 `planRules` 由 M9A 页面带（代价是前端硬编码小游戏与兑换码字段，与后端常量重复一份）。
+    在这之前（第 9、10 步）`api_service` 一行不改：`M9AFlavor` 的声明由 `rules.M9A_PLAN_RULES` 派生，预览、新流程与
+    回退后的旧流程用的是同一份规则。
+  - **删除清单**（预览与拒收改走属主之后）：
+    - `tools/embedded/runner_task.py`：`from .flavor import ...`；`_build_run_plan` 的风味分支；`check` 里的
+      `send_plan_log` 闭包与 `_load_run_state_for_check` 的 `send_log` 参数（`_pending_user_log` 本身保留）；
+      `_build_device_config` 里 `ask_toolkit` 的登录钩子判据（收成 False）与两次钩子调用；`_ensure_game_updated`、
+      `_ensure_logged_in`；`_run_maafw` 里 `StartupTask` 那一段；`_launched_package_name`、`_game_update_checked`、
+      `_login_checked`、`_startup_task` 四个字段；`_restart_client_before_retry` 里清 `_login_checked` 那行；
+      `_skip_tasks_completed_this_run`、`_completed_this_run`、`_retry_rerun_duplicates`（通用名单为空，连同重复提示）；
+      `main_task` 里 `VERDICT_GAME_UPDATE_REQUIRED` 那条分支。
+    - `embedded_manager.py`：`_check` 的闸门收成 `type(cfg) is MaaFWConfig`，删掉 `MAAFW_RUN_TYPES` 这个名字
+      （`MAAFW_FAMILY_TYPES` 留到 P4 由 SDK 声明取代）；可选删掉没有调用方的 `prefetch_script_update` /
+      `discard_prefetched_update`。
+    - 风味本体：`tools/embedded/flavor.py` 整个文件、`flavor_support.py`（`task_name_for_entry` 已在
+      `interface/models.py`）、`app/task/M9A/flavor.py`、`app/task/MSS/flavor.py`、三个配置类上的 `FLAVOR` ClassVar、
+      `owner_entry._record` 的 `flavor_spec` 与 `owners.ManagedRecord.flavor_spec`、`ManagedShape.FLAVOR_SPEC`。
+    - 共用路径里的整理调用：`user_update.prepare_user_update` 里的整理那一步与 `resolve_snapshot_sanitizer`、
+      `restore_service._restore_mas` 里的整理那一步（M9A 的整理已在 `M9A/config_hooks`）。
+    - 端点：`api_service/interface._preview_flavor`；`api_service/embedded._project_flavor_mismatch`、
+      `_clone_flavor_mismatch` 换成属主版本。
+    - 测试与文档：`test_maafw_snapshot_expansion` 改测 `M9A.arrange`、`MSS.arrange` 与新流程；`api/test_maafw_flavor_lock`
+      改成按属主拒收；本文件、`M9A/AGENTS.md`、`MSS/AGENTS.md`、两个包 `__init__` 文档字符串里关于风味与回退本体的
+      说法；对拍从「新旧双跑」收成「单跑新流程 + 金样回归」。
+    - 删完以后 M9A、MSS 的「回退第 9 / 10 步」不再成立（回退本体没了），各自 AGENTS.md 里那一段一并删。
+  - **从现在到第 11 步之间合并上游**：同一份账号流程有三份（通用 `tools/embedded/runner_task.py`、
+    `app/task/M9A/account_run.py`、`app/task/MSS/account_run.py`），脚本级管理器也有三份（`embedded_manager.py`、
+    `app/task/M9A/manager.py`、`app/task/MSS/manager.py`）。合并上游 dev 时，凡是改了 `runner_task` / `embedded_manager`
+    的，同样的改动手工搬进 M9A、MSS 各自那两份（只和通用 MFW 有关的分支除外，例如快照直建；只和 M9A 有关的
+    登录 / 游戏更新 / 首任务只搬进 M9A；MSS 的建计划拆成了 `_load_run_state` / `_plan_head` / `_plan_tail`，按所在段落
+    搬）；改了 `tools/` 下叶子的不用搬（三份都调它）。合并后先跑本地对拍 `tests/task/mfw_parity`（实时对拍会报出
+    分叉，金样会报出行为变化），合并说明里逐个列出同步了哪些函数；尽量缩短第 9 步到第 11 步的间隔。
 - `tools/core/`：七个核心包（interface / native / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
   `project_update/updater.py` 引了 `app.utils.constants`，以及 `project_update` 里的 `projection_heal` /

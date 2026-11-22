@@ -60,7 +60,8 @@ M9A、MSS）各写一份**，互不继承、互不导入；共用的只有 `app/
 
 **合并上游时要手工同步的两个文件**：第 9 步到第 11 步之间，同一份逻辑在通用流程与本目录各有一份。合并上游 dev
 时，凡是改了 `app/task/MaaFW/tools/embedded/runner_task.py` 的，要把同样的改动搬进 `account_run.py`；改了
-`app/task/MaaFW/embedded_manager.py` 的，搬进 `manager.py`（MSS 有了自己的流程后，同样搬进 `app/task/MSS/` 的那两份）。
+`app/task/MaaFW/embedded_manager.py` 的，搬进 `manager.py`（第 10 步起 MSS 也有自己的流程，同样搬进
+`app/task/MSS/account_run.py` / `manager.py`，见 `app/task/MSS/AGENTS.md`）。
 合并后先跑实时对拍，它会报出分叉；合并说明里逐个列出同步了哪些函数。
 
 **对拍**（迁移期间的本地测试，不随 PR 提交；详见它自己的 `tests/task/mfw_parity/README.md`）：从树根用本树解释器跑
