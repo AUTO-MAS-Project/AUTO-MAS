@@ -49,19 +49,6 @@ from app.task.emulator_core import (
 )
 from app.task.failure_capture_core import FailureCapture
 from app.task.game import game_device_id
-from app.task.MaaFW.blocks.maafw_interface.embedded_labels import (
-    Labels,
-    mxu_option_values,
-)
-from app.task.MaaFW.blocks.maafw_interface.interface.loader import load_interface_model
-from app.task.MaaFW.blocks.maafw_interface.interface.task_config import (
-    build_task_option_maps,
-    normalize_task_options_by_task,
-)
-from app.task.MaaFW.blocks.maafw_interface.runner.run_plan import (
-    _build_pretask_plans,
-    _select_resource,
-)
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     append_push_log,
@@ -98,6 +85,15 @@ from .inventory_report import (
     inventory_resolve,
     load_reward_groups,
     merge_gain_entries,
+)
+from .mfw_parse import (
+    build_pretask_plans,
+    build_task_option_maps,
+    labels,
+    load_interface_model,
+    mxu_option_values,
+    normalize_task_options_by_task,
+    select_resource,
 )
 from .push_log import MAAEND_PUSH_RULES, maaend_plain_text, maaend_resolve
 from .resource_loader import (
@@ -656,7 +652,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             raise RuntimeError(
                 f"MaaEnd 控制器 {controller_name} 在当前资源中不存在，请重新配置 MaaEnd"
             )
-        resource = _select_resource(interface, "", controller)
+        resource = select_resource(interface, "", controller)
         skipped: list[str] = []
         # 复用现有 MXU 选项转换与 PI 预任务命令解析，不复制上游显示设置逻辑。
         setting_options = self.launcher_game_setting_options.copy()
@@ -685,7 +681,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             setting_options,
             build_task_option_maps(interface)[task_name],
             "游戏启动设置",
-            Labels(interface, None),
+            labels(interface, None),
             skipped,
         )
         if skipped:
@@ -699,7 +695,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             controller_name=controller.name,
             resource_name=resource.name,
         )
-        plans = _build_pretask_plans(
+        plans = build_pretask_plans(
             base_dir=self.maaend_root_path,
             interface_model=interface,
             controller=controller,
