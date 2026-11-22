@@ -83,6 +83,34 @@ if TYPE_CHECKING:
 logger = get_logger("插件管理")
 
 
+def _requirement_closure(package: str) -> set[str]:
+    """已装发行包按 Requires-Dist 展开的依赖闭包（规范化包名，含自身）；读不到的包跳过。"""
+    from packaging.requirements import InvalidRequirement, Requirement
+
+    seen: set[str] = set()
+    pending = [canonicalize_name(package)]
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        try:
+            requires = importlib_metadata.distribution(name).requires or []
+        except importlib_metadata.PackageNotFoundError:
+            continue
+        for text in requires:
+            try:
+                requirement = Requirement(text)
+            except InvalidRequirement:
+                continue
+            if requirement.marker is not None and not requirement.marker.evaluate(
+                {"extra": ""}
+            ):
+                continue
+            pending.append(canonicalize_name(requirement.name))
+    return seen
+
+
 def _mount_local_libraries() -> None:
     """本地源码库的 src 放到导入路径最前，优先于共享环境里的同名发行包；改库要重启后端。"""
     for library in discover.local_libraries():
@@ -1265,10 +1293,37 @@ class _PluginManager:
                     ]
                     for dep in sorted(created, key=lambda r: r.info.plugin_name):
                         await self.load(dep, held=True)
+                    # 早已登记、这次随装包换了一份的依赖插件（来源丢失后重装、从本地源码换成
+                    # 发行包）也停在未加载：只要它是本插件发行包依赖链上的包，同启动时一样
+                    # 加载；单个失败只记日志，目标启用时缺哪个上游会按「所需服务无提供者」报出来。
+                    required = _requirement_closure(package)
+                    for other in sorted(
+                        Config.plugin_registry.values(),
+                        key=lambda r: r.info.plugin_name or "",
+                    ):
+                        if (
+                            other.uid == record.uid
+                            or other._plugin_cls is not None
+                            or other.info.source != "installed"
+                            or other._project_dir is None
+                            or canonicalize_name(other.info.package_name or "")
+                            not in required
+                        ):
+                            continue
+                        try:
+                            await self.load(other, held=True)
+                        except Exception:
+                            logger.exception(
+                                f"加载随安装带入的插件失败: {other.info.plugin_name}"
+                            )
                     if record._plugin_cls is not None:
                         result = await self.reload(record, held=True)
                     else:
                         result = await self.load(record, held=True)
+                        # 登记里留着启用意图（重装、换来源）：同启动时一样按意图启用，
+                        # 否则安装确认会把「意图启用、实际停用」判成失败，下次启动回滚。
+                        if record.info.enabled:
+                            await self.enable(record, held=True)
                 except BaseException:
                     from app.plugin.uv.environment import write_installation
 
