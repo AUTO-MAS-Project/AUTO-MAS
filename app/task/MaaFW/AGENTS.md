@@ -23,7 +23,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
   `update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
   `default_snapshot`、`env_confirm`、`update_session`、`device_config`、`plan_run`、`pretask_run`、
-  `run_verdict`、`run_redaction`、`run_settings`、`run_messages`、`run_notices`、`project_session`、`owners`）。
+  `run_verdict`、`run_redaction`、`run_settings`、`run_messages`、`run_notices`、`attempt_ledger`、
+  `project_session`、`owners`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - **设备配置与首任务闸门在 `tools/embedded/device_config.py`**（将来是运行这一块对外的「设备配置」调用，
   三个专项各自的流程都调它）：游戏包名、adb 路径（含「宿主没定下路径时问 Toolkit」，判据由调用方算好
@@ -98,11 +99,22 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `proxy_quota`，一次尝试完成后要写回的周期记录（`period_records_after`）在 `plan_transforms`：都只返回新值，
   写字段与逐条 `commit` 留在流程里，次数与先后不变。管理器侧的代理结果正文（信号汇总标题、账号结果行、
   `TaskResultData`）还在管理器里。
+- **一个账号这次运行的尝试记账在 `tools/embedded/attempt_ledger.py`**（运行这一块，三个专项的账号流程各用
+  一份 `MaaFWAttemptLedger`，跨尝试保留）：结构化运行记录（`recorder` 就是 `MaaFWRunRecorder`，任务类的
+  `_run_record` 指向它）、每次尝试的结果（`record`：history 状态、记录结局、给通知用的完成清单 / 失败截图 /
+  人话摘要）、崩溃时记 error（`mark_error`）、存历史前收掉最后一次尝试（`finish_open`）、`plan_run` 交回的
+  附件（原样存 `MaaFWPlanRunAttachment`）、history 状态 / 记录原值 / 附件的读取，以及通知里的失败截图、
+  原地打转与单任务超时、任务详情和结果行（`failure_screenshots` / `incident_notice` / `task_details` /
+  `report_result`）。键是这次尝试的日志记录 `id(cur_user_log)`；记录是旁路（`call`：出错只记 warning、
+  返回 None）。只收普通数据，不读配置、不碰调用方：`HistoryWrite` / `HistoryAttachmentInput` /
+  `HistorySnapshotStatistic` 是宿主的 schema，由流程自己拼；「这次尝试的日志有没有开始时刻」（没有就不记
+  history 状态，`status_key=None`）、是否维护跳过、信号文案、检查有没有过都由调用方算好传入。
 - **任务类 `runner_task` 还剩什么**：取配置与账号数据、建计划（调解析一侧）、运行前检查与项目预约、桌面
   游戏 / 模拟器启停与登录、游戏更新钩子、设备配置（调 `device_config`）、**重试主循环**（次数、每次尝试的
   日志与「上一次（…）」、按 `judge_attempt` 的判定走：信号收尾、资源包修复后不计次数的重跑、重启客户端、
   周期任务刷新计划）、失败文案的组装（文案本身在 `run_messages`；资源包失败的人话要读原生报错、超时摘要要读时限配置，所以不在判定里）、
-  运行记录、历史、统计与通知。跑计划、运行前设置、判定、打码与收集密码值都只经上面这些模块的入参出参。
+  历史（`HistoryWrite` 的拼装）、统计与通知的发送（尝试记账在 `attempt_ledger`）。跑计划、运行前设置、判定、
+  打码与收集密码值、尝试记账都只经上面这些模块的入参出参。
 - **脚本级的项目会话在 `tools/embedded/project_session.py`**（项目更新一侧，将来是这一块对外的「打开项目 /
   收尾项目 / 发现更新与预下载」，三个专项各自的流程都调它）：`MaaFWProjectSession` 一个管理器一份。
   打开项目 = `reserve`（拿视图预约；拿不到返回良性跳过的结局：正在切换版本 / 正在更新 / 被占用，脚本记
@@ -196,7 +208,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   project_update 不导入 runner（函数体里的延迟导入、`TYPE_CHECKING` 下的也算）；三块都可以导入
   interface 与 native 两个库。`worker_protocol` 算 runner 那一块的，agent_env / project_update 不要引它
   （日志前缀之类共用的常量放 `log_redact` 或 native）。接缝里归 runner 的（`plan_run`、`pretask_run`、
-  `run_verdict`、`run_redaction`、`run_settings`、`run_messages`、`run_notices`）不导入项目更新一侧的接缝（`project_session`、`embedded_project`……）与专项
+  `run_verdict`、`run_redaction`、`run_settings`、`run_messages`、`run_notices`、`attempt_ledger`）不导入项目更新一侧的接缝（`project_session`、`embedded_project`……）与专项
   （任务类 `runner_task` 这类账号级流程、风味）。这几条现在违反了也不会让运行出错，只会让以后
   拆包时那一块带不走，所以没进核心最小回归；加导入前自己按 AST 查一遍方向。
 - **运行环境的准备与借还归 agent 环境**：`agent_env/runtime_lease.py` 是运行池 base venv + binding 的
@@ -722,7 +734,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
 - **结构化运行记录**（第 19 条）：worker 经 `_emit` 发 `{"type": "record", "data": …}`，事件形状、阶段名、
   结局与类别**只在** `tools/core/runner/run_events.py` 定义（换传输通道时只搬它）。runner 的各收尾分支用
   `_mark_task_outcome` 记结局，task_end 在下一个任务开始或本轮结束时才发——新增收尾分支要跟着记，漏记的
-  按穿出的异常归类。宿主 `tools/embedded/run_record.py` 按尝试归并，存进该尝试 history 的
+  按穿出的异常归类。宿主 `tools/embedded/run_record.py` 按尝试归并（账号流程经 `attempt_ledger` 用它），存进该尝试 history 的
   `data["maafw_run_record"]`（snapshot，读用 `read_run_record`，旧历史没有这个键），用于专项报告
   （`tools/embedded/run_report.py`：最后一次尝试的逐任务时间线；最后没成功
   时单列各次的原地打转 / 单任务超时）。推送里的失败原因只用 `userMessage`（宿主还没投递任务就抛的

@@ -31,7 +31,6 @@ from app.models.notification import LocalNotice
 from app.models.schema import (
     HistoryAttachmentInput,
     HistorySnapshotStatistic,
-    HistoryStatus,
     HistoryWrite,
     WSTaskNoticeData,
 )
@@ -70,9 +69,7 @@ from app.task.MaaFW.tools.core.runner.plan_transforms import (
     skip_tasks_completed_this_run,
 )
 from app.task.MaaFW.tools.core.runner.run_events import (
-    CATEGORY_HOST_ERROR,
     CATEGORY_SIGNAL,
-    CATEGORY_USER_STOPPED,
     STAGE_CLIENT,
     STAGE_PRETASK,
 )
@@ -115,6 +112,7 @@ from app.utils.common.process.scope import (
 )
 from app.utils.common.process.session import desktop_process_target
 
+from .attempt_ledger import MaaFWAttemptLedger
 from .device_config import (
     WIN32_NO_WINDOW_RULES_MESSAGE,
     MaaFWAdbDeviceState,
@@ -182,7 +180,6 @@ from .resource_failure import (
 )
 from .run_messages import (
     MISSING_TASK_NOTICE_PREFIX,
-    MISSING_TASK_USER_RESULT,
     RERUN_AFTER_CLEANUP,
     RERUN_AFTER_SWITCH,
     RESOURCE_FAILURE_STOP_MESSAGE,
@@ -194,9 +191,7 @@ from .run_messages import (
     record_event_point,
     remaining_done_message,
     retry_skip_log_lines,
-    retry_skipped_tasks,
     signal_attempt_facts,
-    task_display_name,
 )
 from .run_notices import (
     game_update_notice_text,
@@ -204,25 +199,12 @@ from .run_notices import (
     statistics_title,
     success_notice_text,
 )
-from .run_record import (
-    RUN_RECORD_HISTORY_KEY,
-    MaaFWRunRecorder,
-    MaaFWTaskRecord,
-    format_incident_lines,
-)
+from .run_record import RUN_RECORD_HISTORY_KEY
 from .run_redaction import (
     log_redaction_notice,
     project_log_secret_variants,
     run_secret_values,
     secret_log_variants,
-)
-from .run_report import (
-    CATEGORY_REASONS,
-    MaaFWAttemptReport,
-    failure_summary,
-    failure_summary_tasks,
-    format_timeline,
-    human_reason,
 )
 from .run_settings import (
     load_json_dict,
@@ -318,9 +300,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # cur_user_log_started_at 是当前这次尝试的开始（日志记录与 history 文件名用）
         self.user_start_time: datetime | None = None
         self.cur_user_log_started_at: datetime | None = None
-        # 每次尝试的结构化结果：worker 回报的人话摘要、失败任务名（推送的时间线与结果行用，
-        # 见 run_report）、完成清单（运行记录不可用时的退路）与失败截图。
-        self._attempt_reports: list[dict[str, Any]] = []
         # on_crash 记下的异常原文：还没进第一次尝试就崩了时，推送靠它说原因
         self._crash_message: str | None = None
         # 当前这次尝试给用户看的称呼（「第 2 次尝试」「清理残留后的重新运行」），与日志开头
@@ -328,8 +307,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 清理后的重跑不计入尝试次数，内部序号会比日志多 1。
         self._attempt_title: str | None = None
         self._history_temp = tempfile.TemporaryDirectory(prefix="mas-maafw-run-")
-        self._history_attachments: dict[int, list[HistoryAttachmentInput]] = {}
-        self._history_statuses: dict[int, HistoryStatus] = {}
         self._history_saved = False
         self._user_finalized = False
         self._user_teardown_pending = False
@@ -403,9 +380,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._release_check_done = False
         self._extra_attempts = 0
         self._release_check_task: asyncio.Task[Any] | None = None
-        # 结构化运行记录（每次尝试一份）：worker 推的阶段 / 任务起止 + 宿主自己的阶段，
-        # 进 history 的 data 与推送里单列的原地打转 / 单任务超时。
-        self._run_record = MaaFWRunRecorder()
+        # 各次尝试的记账（attempt_ledger）：结构化运行记录、尝试结果、history 状态与附件，
+        # 键是这次尝试的日志记录 id(cur_user_log)。_run_record 就是它里面的那份运行记录。
+        self._ledger = MaaFWAttemptLedger()
+        self._run_record = self._ledger.recorder
 
     async def check(self) -> str:
         # 与管理器筛账号同一判据（proxy_quota）：全员到上限时管理器不做运行前更新
@@ -662,13 +640,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     # 先清标记：重跑到一半失败时，下一轮不能因为窗口已被拉起就跳过
                     pretasks_done = False
                     # 计划里没有运行前设置时不记这一段（getattr：记录是旁路，不多读计划）
-                    with self._run_record.stage(
+                    with self._ledger.stage(
                         STAGE_PRETASK,
                         enabled=bool(getattr(self.run_plan, "pretasks", None)),
                     ):
                         await self._run_pretasks()
                     pretasks_done = True
-                with self._run_record.stage(STAGE_CLIENT):
+                with self._ledger.stage(STAGE_CLIENT):
                     await self._ensure_desktop_game_started()
                     device_config = await self._build_device_config(
                         self.run_plan,
@@ -927,7 +905,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self.cur_user_log is not None:
             await self.cur_user_log.set_state(status=f"MaaFW 内置运行任务出现异常: {e}")
             if self.cur_user_log_started_at is not None:
-                self._history_statuses[id(self.cur_user_log)] = "error"
+                self._ledger.mark_error(id(self.cur_user_log))
         try:
             await Publisher.send(
                 id=self.task_info.task_id,
@@ -1441,15 +1419,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self._plan_run = None
             # 附件、原生报错行与 agent 命令计划在运行抛异常时同样要留下
             if run.attachments:
-                self._history_attachments.setdefault(attempt_key, []).extend(
-                    HistoryAttachmentInput(
-                        path=item.path,
-                        kind=item.kind,
-                        role=item.role,
-                        display_name=item.display_name,
-                    )
-                    for item in run.attachments
-                )
+                self._ledger.add_attachments(attempt_key, run.attachments)
             self._attempt_native_errors = list(run.native_errors)
             # 同一账号这一轮只认第一次借环境时算出的 agent 命令计划，重试沿用
             if self._worker_agent_plans is None and run.agent_plans is not None:
@@ -1479,7 +1449,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         elif isinstance(event, MaaFWPlanRunRecord):
             self._on_run_record_event(event.data)
         elif isinstance(event, MaaFWPlanRunStage):
-            self._run_record.mark_stage(event.stage, event.ok)
+            self._ledger.mark_stage(event.stage, event.ok)
 
     def _run_password_values(self) -> list[str]:
         """本次运行要打码的密码值（``run_redaction.run_secret_values``）：从配置里取出快照原值，
@@ -2142,84 +2112,43 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         )
         # 这份日志从零开始，行号也要回到 1，否则会接着上一个账号的行号往下数
 
-    def _run_record_call(self, action: Callable[[], Any]) -> Any:
-        """运行记录是旁路：记录这一侧出了错只记后端日志、返回 None，不影响运行与收尾。"""
-
-        try:
-            return action()
-        except Exception as exc:  # noqa: BLE001 - 旁路不能拖垮运行
-            logger.opt(exception=True).warning(
-                f"MaaFW 运行记录出错（不影响运行）: {exc}"
-            )
-            return None
-
     def _begin_run_record_attempt(self, attempt: int) -> None:
         """这次尝试的结构化记录：与本次尝试的日志（history 记录）同一个键。"""
 
-        def begin() -> None:
-            plan = self.run_plan
-            self._run_record.begin_attempt(
-                id(self.cur_user_log),
-                attempt=attempt,
-                title=self._attempt_title or f"第 {attempt} 次尝试",
-                planned=(
-                    [(task.name, task_display_name(task)) for task in plan.tasks]
-                    if plan is not None
-                    else []
-                ),
-                retry_skipped=(
-                    len(retry_skipped_tasks(plan)) if plan is not None else 0
-                ),
-            )
-
-        self._run_record_call(begin)
+        self._ledger.begin(
+            id(self.cur_user_log),
+            attempt=attempt,
+            title=self._attempt_title,
+            plan=self.run_plan,
+        )
 
     def _run_record_statistic(self, key: int) -> HistorySnapshotStatistic | None:
         """某次尝试的运行记录，包成 history 的 snapshot 统计；没有记录返回 None。"""
 
-        value = self._run_record.history_value(key)
+        value = self._ledger.history_value(key)
         return HistorySnapshotStatistic(value=value) if value is not None else None
 
     def _on_run_record_event(self, data: Any) -> None:
         """将 worker 推来的阶段、任务起止事件归入本次尝试的专项记录。"""
 
-        event = self._run_record_call(lambda: self._run_record.apply(data))
+        event = self._ledger.apply_record_event(data)
         task_point = record_event_point(event)
         if task_point is not None:
             name, state = task_point
             point(self, "special", key=name, state=state)
-        record = self._run_record.current
-        if record is not None and any(
-            task.outcome == "succeeded" for task in record.tasks
-        ):
+        if self._ledger.current_has_success():
             from app.core.script_update_queue import report_script_task_completed
 
             report_script_task_completed()
 
     def run_incident_notice(self) -> str:
-        """本次运行里被原地打转检测或单任务时限停下的任务：进用户与脚本两份报告。
+        """本次运行里被原地打转检测或单任务时限停下的任务（见 ``attempt_ledger.incident_notice``）。"""
 
-        只在最后没成功时列出；后面的重试成功了就不写，免得一份「全部完成」的报告里
-        还挂着前面尝试的问题。结果行（``_report_result``，代理结果里账号那一行也是它）
-        已经点名的最后一次尝试的任务不列，再单列一遍就是同一件事说两次；结果行没点名的
-        （比如不计入失败的任务原地打转，失败的是另一个任务）照常列出。"""
-
-        if self.run_complete:
-            return ""
-
-        def notice() -> str:
-            named: list[MaaFWTaskRecord] = []
-            attempts = self._run_record.attempts()
-            # 与 _report_result 同一分支：信号或运行前检查没过时结果行不是 failure_summary
-            if (
-                attempts
-                and self._signal_user_message() is None
-                and self.check_result == "Pass"
-            ):
-                named = failure_summary_tasks(attempts[-1])
-            return format_incident_lines(self._run_record.incidents(exclude=named))
-
-        return self._run_record_call(notice) or ""
+        return self._ledger.incident_notice(
+            run_complete=self.run_complete,
+            signal_message=self._signal_user_message(),
+            check_passed=self.check_result == "Pass",
+        )
 
     async def _finish_on_signal(self, attempt: int, result: MaaFWRunResult) -> None:
         """worker 回报了信号节点命中：记账、写日志状态。
@@ -2595,9 +2524,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     async def _freeze_notification_images(self) -> None:
         """归档会移动临时文件，通知及跨账号报告先持有自己的图片内容。"""
         self._notification_screenshots = []
-        for label, path in self._collect_failure_screenshots()[
-            -NOTIFY_SCREENSHOT_LIMIT:
-        ]:
+        for label, path in self._ledger.failure_screenshots(
+            run_complete=self.run_complete
+        )[-NOTIFY_SCREENSHOT_LIMIT:]:
             try:
                 self._notification_screenshots.append(
                     (label, await asyncio.to_thread(path.read_bytes))
@@ -2619,26 +2548,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self._append_log(f"冻结通知截图失败：{error}", warning=True)
             logger.opt(exception=True).warning(f"冻结通知截图失败：{error}")
         # 用户停止 / 崩溃时最后一次尝试没走到 _record_attempt：按停止或宿主异常收尾
-        self._run_record_call(
-            lambda: self._run_record.finish_attempt(
-                outcome="stopped" if self.stopped_manually else "failed",
-                category=CATEGORY_USER_STOPPED
-                if self.stopped_manually
-                else CATEGORY_HOST_ERROR,
-            )
-        )
+        self._ledger.finish_open(stopped=self.stopped_manually)
         records = []
         items = list(self.cur_user_item.iter_history_logs())
         for timestamp, log_item in items:
-            status = self._history_statuses.get(id(log_item))
-            if status is None:
-                status = (
-                    "cancelled"
-                    if self.stopped_manually
-                    else "skipped"
-                    if self._is_maintenance_skip()
-                    else "error"
-                )
+            status = self._ledger.history_status(
+                id(log_item),
+                stopped=self.stopped_manually,
+                maintenance=self._is_maintenance_skip(),
+            )
             record = HistoryWrite(
                 time=timestamp.astimezone(UTC4),
                 username=self.cur_user_item.name,
@@ -2647,12 +2565,20 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 message=log_item.status,
                 logs="".join(log_item.content),
             )
-            run_record = self._run_record_call(
+            run_record = self._ledger.call(
                 lambda: self._run_record_statistic(id(log_item))
             )
             if run_record is not None:
                 record.data[RUN_RECORD_HISTORY_KEY] = run_record
-            record.attachments.extend(self._history_attachments.get(id(log_item), []))
+            record.attachments.extend(
+                HistoryAttachmentInput(
+                    path=item.path,
+                    kind=item.kind,
+                    role=item.role,
+                    display_name=item.display_name,
+                )
+                for item in self._ledger.attachments(id(log_item))
+            )
             records.append(record)
         if records:
             await self.history.save_user_history(
@@ -2674,64 +2600,26 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         user_message: str | None = None,
         failed_task: str | None = None,
     ) -> None:
-        """记下本次尝试的结果，供统计通知的「任务详情」与失败截图用。
+        """记下本次尝试的结果（``attempt_ledger.record``），键是这次尝试的日志记录。
 
-        ``category`` / ``signal`` 进结构化运行记录；没给类别的失败由记录按任务结局补
-        （任务都没开始是初始化失败，否则取第一个计入失败的任务的类别）。
-        ``user_message`` / ``failed_task`` 是 worker 回报的人话摘要与失败任务名，推送里的
-        失败原因只从它们和失败类别来（``failure`` 是日志里那句，可能带节点链等排障细节）。
+        这次尝试的日志还没有开始时刻时不记 history 状态（与原来同一判据）。
         """
 
-        if self.cur_user_log_started_at is not None:
-            self._history_statuses[id(self.cur_user_log)] = (
-                "success"
-                if failure is None
-                else "skipped"
-                if self.run_signal == SERVER_MAINTENANCE
-                else "error"
-            )
-        self._run_record_call(
-            lambda: self._run_record.finish_attempt(
-                outcome=(
-                    "success"
-                    if failure is None
-                    else "skipped"
-                    if self.run_signal == SERVER_MAINTENANCE
-                    else "failed"
-                ),
-                category=category,
-                signal=signal,
-            )
+        key = id(self.cur_user_log)
+        self._ledger.record(
+            key,
+            status_key=key if self.cur_user_log_started_at is not None else None,
+            attempt=attempt,
+            title=self._attempt_title,
+            completed=completed_labels,
+            failure=failure,
+            maintenance=self.run_signal == SERVER_MAINTENANCE,
+            screenshots=screenshots,
+            category=category,
+            signal=signal,
+            user_message=user_message,
+            failed_task=failed_task,
         )
-        self._attempt_reports.append(
-            {
-                "attempt": attempt,
-                "title": self._attempt_title or f"第 {attempt} 次尝试",
-                "time": datetime.now().strftime("%H:%M:%S"),
-                "completed": list(completed_labels),
-                "failure": failure,
-                "screenshots": list(screenshots or []),
-                # 对上这次尝试的运行记录（键同 _begin_run_record_attempt）
-                "record_key": id(self.cur_user_log),
-                "user_message": user_message,
-                "failed_task": failed_task,
-            }
-        )
-
-    def _collect_failure_screenshots(self) -> list[tuple[str, Path]]:
-        """本账号要随通知发出去的失败截图（标签, 路径），按时间顺序。
-
-        最终成功的运行不带图：任务详情那边成功时也不提前面尝试的失败，
-        早先尝试的失败画面对已经跑通的一轮没有意义。张数上限由消费方裁。
-        """
-
-        if self.run_complete:
-            return []
-        shots: list[tuple[str, Path]] = []
-        for report in self._attempt_reports:
-            for label, path in report.get("screenshots", ()):
-                shots.append((f"{report['title']} · {label}", path))
-        return shots
 
     def report_screenshots(self) -> list[tuple[str, bytes]]:
         """给托管级「代理结果」报告用的失败截图，标签带上账号名称以区分多账号。"""
@@ -2748,84 +2636,31 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         失效任务时末尾再附一行。整次运行一个任务都没开始时没有时间线，原因在运行结果那行。
         """
 
-        details = self._run_record_call(self._task_timeline)
-        if details is None:
-            details = self._completed_tasks_fallback()
-        incidents = self.run_incident_notice()
-        missing = self.missing_task_notice()
-        return "\n\n".join(part for part in (details, incidents, missing) if part)
-
-    def _attempt_outcomes(self) -> list[MaaFWAttemptReport]:
-        """各次尝试的运行记录，配上 worker 回报的人话摘要与失败任务名。"""
-
-        reports = {report.get("record_key"): report for report in self._attempt_reports}
-        outcomes = []
-        for key, record in self._run_record.attempt_items():
-            report = reports.get(key) or {}
-            outcomes.append(
-                MaaFWAttemptReport(
-                    record=record,
-                    user_message=report.get("user_message"),
-                    failed_task=report.get("failed_task"),
-                )
-            )
-        return outcomes
-
-    def _task_timeline(self) -> str | None:
-        """逐任务时间线；没有运行记录返回 None（由调用方退回完成清单）。"""
-
-        outcomes = self._attempt_outcomes()
-        if not outcomes:
-            return None
-        return format_timeline(outcomes)
-
-    def _completed_tasks_fallback(self) -> str:
-        """运行记录出错、没有可用记录时的退路：只列完成了哪些任务，不带失败原文。"""
-
-        reports = getattr(self, "_attempt_reports", None) or []
-        if not reports:
-            return ""
-        if getattr(self, "run_complete", False):
-            merged: list[str] = []
-            for report in reports:
-                for label in report["completed"]:
-                    if label not in merged:
-                        merged.append(label)
-        else:
-            merged = list(reports[-1]["completed"])
-        return "已完成: " + ("、".join(merged) if merged else "无")
+        return self._ledger.task_details(
+            run_complete=self.run_complete,
+            signal_message=self._signal_user_message(),
+            check_passed=self.check_result == "Pass",
+            missing=self.missing_task_notice(),
+        )
 
     def _report_result(self, *, short: bool = False) -> str:
-        """本账号这次的结果，账号级统计报告与托管级「代理结果」同一口径。
-
-        成功只说完成；失败说失败在哪些任务、为什么（只用人话，见 ``run_report``）；
-        信号与运行前检查跳过沿用原来那句话。``short``：托管级每个账号一行用的简短说法。
+        """本账号这次的结果，账号级统计报告与托管级「代理结果」同一口径（见
+        ``attempt_ledger.report_result``）。``short``：托管级每个账号一行用的简短说法。
         """
 
-        if self.run_complete:
-            if self.missing_task_names:
-                return MISSING_TASK_USER_RESULT
-            return "全部完成" if short else "代理任务全部完成"
-        signal_message = self._signal_user_message()
-        if signal_message is not None:
-            return signal_message
-        if self.check_result != "Pass":
-            return (
+        return self._ledger.report_result(
+            short=short,
+            run_complete=self.run_complete,
+            missing_task_names=self.missing_task_names,
+            signal_message=self._signal_user_message(),
+            check_passed=self.check_result == "Pass",
+            check_status=(
                 self.cur_user_log.status
                 if self.cur_user_log is not None
                 else self.check_result
-            )
-        summary = self._run_record_call(
-            lambda: failure_summary(self._attempt_outcomes())
+            ),
+            crash_message=getattr(self, "_crash_message", None),
         )
-        if summary:
-            return summary
-        crash = getattr(self, "_crash_message", None)
-        if crash is not None:
-            # 还没进第一次尝试就崩了：没有运行记录，按崩溃原因说一句
-            reason = human_reason(crash) or CATEGORY_REASONS[CATEGORY_HOST_ERROR]
-            return f"MaaFW 运行失败：{reason}"
-        return "代理任务未完成"
 
     def proxy_report_line(self) -> str | None:
         """托管级「代理结果」里本账号的那一行；运行前检查没过、也没记日志的返回 None，
