@@ -19,8 +19,8 @@
   :class:`RecordPatch`），导入期间的锁 ``lock_managed(uid)`` / ``unlock_managed(uid, ticket)``，票据
   对外只是一个不透明的字符串。写回由属主自己校验和保存。
 - **属主的回答只有在托管完整加载之后才算数**：:func:`snapshot` 的 ``require_ready=True`` 要宿主
-  注入的「托管配置完整加载」信号（:func:`set_loaded_signal`）为真、且每个已登记属主都答上来、
-  都说自己 ``ready``，有一个不满足就返回 None，据此判断「不在了」的清理整轮跳过。只做正向匹配的
+  注入的「托管配置完整加载」信号（:func:`set_loaded_signal`）为真、至少登记了一个属主、且每个已
+  登记属主都答上来、都说自己 ``ready``，有一个不满足就返回 None，据此判断「不在了」的清理整轮跳过。只做正向匹配的
   （同组候选、同来源重建的候选、原生日志清理）用 ``require_ready=False``：答不上来的属主跳过。
 - 一个 uid 被两个属主同时认领时记进 :attr:`LiveSnapshot.conflicts`：清理保留，端点按类型错误拒绝。
 
@@ -342,10 +342,14 @@ class LiveSnapshot:
 def snapshot(*, require_ready: bool) -> LiveSnapshot | None:
     """抄下全部已登记属主名下的托管（同步调用，在事件循环线程上用）。
 
-    ``require_ready=True``：托管没完整加载、或任何一个已登记属主答不上来 / 说没加载完，返回 None。
+    ``require_ready=True``：托管没完整加载、一个属主都没登记、或任何一个已登记属主答不上来 / 说没
+    加载完，返回 None。一个属主都没有时的空快照不算「全都不在了」：应保留集合会少掉只有来源目录、
+    还没有视图的托管路径，载荷回收也会拿着空的存活来源去跑。
     """
 
     if require_ready and not managed_loaded():
+        return None
+    if require_ready and not _OWNERS:
         return None
     by_owner: dict[str, tuple[ManagedRecord, ...]] = {}
     unavailable: set[str] = set()

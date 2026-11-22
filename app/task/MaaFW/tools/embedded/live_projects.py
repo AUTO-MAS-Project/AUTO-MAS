@@ -166,18 +166,26 @@ def reconcile_in_background(
 
     权威集合在**调用方线程**（事件循环）上先算好：托管表只在事件循环上改，守护线程里
     去问属主会撞上「dict changed size」。托管没完整加载、或有属主答不上来时整轮跳过。
+
+    这一段在调用方线程上跑、调用方（删除托管的回调、端点）都不兜异常：属主回答是坏数据、
+    ``data/mfw`` 列目录报 ``OSError`` 之类的任何异常都在这里兜住，只记一句 warning、这一轮跳过，
+    不让删除托管跳过后面的数据目录清理、也不让接口报错。
     """
 
-    if not owners.managed_loaded():
-        logger.warning(
-            "脚本配置文件非空但没有加载出任何脚本，疑似损坏，跳过 MFW 运行池回收"
-        )
+    try:
+        if not owners.managed_loaded():
+            logger.warning(
+                "脚本配置文件非空但没有加载出任何脚本，疑似损坏，跳过 MFW 运行池回收"
+            )
+            return
+        current = owners.snapshot(require_ready=True)
+        if current is None:
+            logger.warning("MFW 托管属主的回答这次不算数，跳过 MFW 运行池回收")
+            return
+        project_paths = keep_project_paths(current)
+    except Exception as exc:  # noqa: BLE001 - 后台维护，算不出集合就跳过这一轮
+        logger.warning(f"MFW 运行池对账的存活集合没算出来，本轮跳过（{reason}）：{exc}")
         return
-    current = owners.snapshot(require_ready=True)
-    if current is None:
-        logger.warning("MFW 托管属主的回答这次不算数，跳过 MFW 运行池回收")
-        return
-    project_paths = keep_project_paths(current)
 
     def _run() -> None:
         try:
