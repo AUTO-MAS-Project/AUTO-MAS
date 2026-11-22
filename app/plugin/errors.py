@@ -5,15 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.config.errors import ReportableError
 
-class PluginError(Exception):
-    """插件系统基类错误。"""
+
+class PluginError(ReportableError):
+    """插件系统基类错误；消息会作为插件命令的失败原因显示给用户。"""
 
     def __init__(self, message: str, *, payload: dict[str, Any] | None = None) -> None:
         """保存插件错误消息与结构化附加信息，供生命周期和接口层报告失败原因。"""
-        super().__init__(message)
-        self.message = message
-        self.payload = payload or {}
+        super().__init__(message, payload=payload)
 
 
 class PluginBusyError(PluginError):
