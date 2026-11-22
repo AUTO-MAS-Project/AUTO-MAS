@@ -59,7 +59,6 @@ def _record(uid: str, config: Any, order: int) -> ManagedRecord:
         package_mode=config.Update.PackageMode,
         proxy_address=config.Update.ProxyAddress,
         mirror_cdk=config.Update.MirrorChyanCDK,
-        flavor_spec=getattr(type(config), "FLAVOR", None),
         running=bool(getattr(config, "is_locked", False)),
     )
 

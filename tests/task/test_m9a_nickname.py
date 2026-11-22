@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from app.task.M9A import login
-from app.task.MaaFW.tools.embedded.flavor import MaaFWLoginRequired
+from app.task.M9A.startup import M9ALoginRequired
 
 
 @pytest.mark.parametrize(
@@ -54,7 +54,7 @@ def test_account_selection_keeps_identity(
         exact = [box for name, box in rows if name == account]
         assert taps == [exact[0] if exact else rows[0][1], button]
     else:
-        with pytest.raises(MaaFWLoginRequired):
+        with pytest.raises(M9ALoginRequired):
             asyncio.run(task)
         assert button not in taps
 
@@ -137,7 +137,7 @@ def test_home_logout_waits_for_transition(monkeypatch, destination):
     monkeypatch.setattr(login, "_POLL_SECONDS", 1)
     task = login._logout_from_homepage(Device(), progress=None)
     if destination == "timeout":
-        with pytest.raises(MaaFWLoginRequired, match="退出转场超时"):
+        with pytest.raises(M9ALoginRequired, match="退出转场超时"):
             asyncio.run(task)
         assert clock == 5
     else:

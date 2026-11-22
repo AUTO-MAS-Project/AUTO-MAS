@@ -81,7 +81,6 @@ class ManagedRecord:
     package_mode: Any
     proxy_address: Any = field(repr=False)
     mirror_cdk: Any = field(repr=False)
-    flavor_spec: str | None
     running: bool
 
     @property
@@ -137,7 +136,6 @@ class ManagedShape(SimpleNamespace):
                 ImportedAt=record.imported_at,
                 FollowSource=record.follow_source,
             ),
-            FLAVOR_SPEC=record.flavor_spec,
         )
         object.__setattr__(self, "_record", record)
         object.__setattr__(self, "_owner", owner)

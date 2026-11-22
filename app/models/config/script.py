@@ -1277,7 +1277,6 @@ class MaaFWConfig(DomainEntry):
     related_config: ClassVar = {}
     DEFAULT_SCRIPT_NAME: ClassVar = "新 MFW 托管"
     USER_CONFIG_CLASS: ClassVar = MaaFWUserConfig
-    FLAVOR: ClassVar = None
     DEFAULT_TASK_TIME_LIMIT_OVERRIDES: ClassVar = "{ }"
 
     class DeviceFields(ConfigGroup):
@@ -1586,7 +1585,6 @@ class M9AConfig(MaaFWConfig):
 
     DEFAULT_SCRIPT_NAME: ClassVar = "新 M9A 托管"
     USER_CONFIG_CLASS: ClassVar = M9AUserConfig
-    FLAVOR: ClassVar = "app.task.M9A.flavor:FLAVOR"
     DEFAULT_TASK_TIME_LIMIT_OVERRIDES: ClassVar = _M9A_TASK_TIME_LIMIT_OVERRIDES
 
     class InfoFields(MaaFWConfig.InfoFields):
@@ -1676,7 +1674,6 @@ class MSSConfig(MaaFWConfig):
 
     DEFAULT_SCRIPT_NAME: ClassVar = "新 MSS 托管"
     USER_CONFIG_CLASS: ClassVar = MSSUserConfig
-    FLAVOR: ClassVar = "app.task.MSS.flavor:FLAVOR"
 
     class InfoFields(MaaFWConfig.InfoFields):
         Name: str = Field(
