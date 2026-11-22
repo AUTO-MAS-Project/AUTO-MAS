@@ -13,6 +13,9 @@
 5. 建计划，再 ``apply_plan_rules`` 把规则表的标记落到计划上，``attach_snapshot_findings`` 把第 1 步
    的发现接到计划上。建计划失败时用 ``describe_plan_failure`` 补上原因。
 
+第 4、5 步合成一个 ``build_arranged_plan``：调用方先后调 ``expand_task_snapshot``、自己排队列、
+``build_arranged_plan``，排队列不经回调。
+
 本模块与 ``run_plan`` 一样只依赖核心包与标准库，不认识具体项目。
 """
 
@@ -40,6 +43,7 @@ from .run_plan import (
     ALL_TASKS_SKIPPED_MESSAGE,
     NO_RUNNABLE_TASKS_MESSAGE,
     QUEUE_SKIPPED_TASK_REASON,
+    build_maafw_run_plan,
     describe_stale_option_values,
     select_snapshot_tasks,
 )
@@ -380,6 +384,48 @@ def attach_snapshot_findings(
     return plan
 
 
+def build_arranged_plan(
+    base_dir: str | Path,
+    interface: MaaFWInterface,
+    *,
+    expansion: MaaFWSnapshotExpansion,
+    inspection: MaaFWSnapshotInspection,
+    task_ids: Iterable[str],
+    task_options: Mapping[str, Any],
+    task_snapshot: dict[str, Any],
+    controller_name: str | None,
+    resource_name: str | None,
+    script_hotkeys: dict[str, dict[str, str]] | None,
+    rules: MaaFWPlanRules,
+) -> MaaFWRunPlan:
+    """按调用方排好的队列建计划（有规则的专项：展开快照 → 专项自己排队列 → 这里）。
+
+    依次：合上没被补回的停跑日实例（:func:`merge_arranged_queue`）→ 建计划（已选任务拆成
+    ``task_ids`` 交进去；仍带上原始快照，让用户显式设为跳过的实例写进 ``skippedTasks``，并从它取
+    从密文解出来的字段；全局选项取展开时那份；规则表里不回落 default 的字段照规则）→ 落规则表的
+    标记（:func:`apply_plan_rules`）→ 接上快照发现（:func:`attach_snapshot_findings`）。
+
+    异常原样抛出，由调用方统一包成 ``MaaFWRunPlanError(describe_plan_failure(...))``。排队列不经
+    回调：展开与这里之间是调用方自己的普通代码。
+    """
+
+    queue = merge_arranged_queue(expansion, task_ids, task_options)
+    plan = build_maafw_run_plan(
+        base_dir,
+        interface,
+        controller_name=controller_name,
+        resource_name=resource_name,
+        task_snapshot=task_snapshot,
+        task_ids=queue.task_ids,
+        task_options=queue.task_options,
+        global_options=dict(expansion.global_options),
+        script_hotkeys=script_hotkeys,
+        no_default_fallback_inputs=rules.no_default_fallback_inputs,
+        excluded_task_reasons=queue.excluded_task_reasons,
+    )
+    return attach_snapshot_findings(apply_plan_rules(plan, rules), inspection)
+
+
 def describe_plan_failure(
     message: str,
     inspection: MaaFWSnapshotInspection | None,
@@ -413,6 +459,7 @@ __all__ = [
     "MaaFWSnapshotInspection",
     "apply_plan_rules",
     "attach_snapshot_findings",
+    "build_arranged_plan",
     "describe_plan_failure",
     "expand_task_snapshot",
     "inspect_task_snapshot",

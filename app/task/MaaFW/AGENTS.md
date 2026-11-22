@@ -757,9 +757,10 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   （`core/interface/preview.apply_preview_plan_rules`）收同一份，核心只认规则表、不认特调。有特调的账号建计划走
   `core/runner/task_selection`：`inspect_task_snapshot`（失效任务名 / 选项值、红灯、今天不在运行日）→
   `expand_task_snapshot`（**先**剔不可选、**再**拿出停跑日实例，剩下的才交给 `decorate_selection`；顺序反了，
-  只剩小游戏或全在停跑日的队列会被补上首尾、白开一次模拟器）→ `merge_arranged_queue`（钩子补回的受管任务不受
-  运行日限制，没补回的停跑日实例记成跳过）→ 建计划 → `apply_plan_rules` / `attach_snapshot_findings`。通用
-  MaaFW 仍按快照直接建计划，规则表为空。
+  只剩小游戏或全在停跑日的队列会被补上首尾、白开一次模拟器）→ `build_arranged_plan`（依次
+  `merge_arranged_queue`：钩子补回的受管任务不受运行日限制，没补回的停跑日实例记成跳过 → 建计划 →
+  `apply_plan_rules` / `attach_snapshot_findings`；异常由调用方包成 `MaaFWRunPlanError(describe_plan_failure(…))`，
+  **不收排队列的回调**——展开与它之间是专项自己的普通代码）。通用 MaaFW 仍按快照直接建计划，规则表为空。
 - **原地打转检测**（`Run.LoopGuard`，托管级开关，**默认开**：新建托管取类默认；既有托管配置里写着这个键的不改（全量落盘分不清用户关过还是没碰过），没有这个键的落到类默认；纯逻辑在
   `tools/core/runner/loop_guard.py`）：只看 `Node.Recognition.*` 与 `Node.PipelineNode.*`，按节点名
   找周期 ≤ 8 步的循环，连续各轮都有物理动作（Click / Swipe / 按键…，Custom 与 DoNothing 不算，等待型

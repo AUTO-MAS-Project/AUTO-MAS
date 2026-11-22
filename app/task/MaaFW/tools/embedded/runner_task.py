@@ -77,10 +77,10 @@ from app.task.MaaFW.tools.core.runner.task_selection import (
     MaaFWSnapshotInspection,
     apply_plan_rules,
     attach_snapshot_findings,
+    build_arranged_plan,
     describe_plan_failure,
     expand_task_snapshot,
     inspect_task_snapshot,
-    merge_arranged_queue,
 )
 from app.task.run_flow import (
     begin_attempt,
@@ -1003,6 +1003,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     script_hotkeys=script_hotkeys,
                     excluded_task_reasons=inspection.off_day_reasons(),
                 )
+                return attach_snapshot_findings(
+                    apply_plan_rules(plan, rules), inspection
+                )
             else:
                 expansion = expand_task_snapshot(
                     self.project_path,
@@ -1031,24 +1034,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 )
                 # 钩子按固定规则补回的同一实例照常跑、不受运行日影响；其余停跑日实例由核心在
                 # 建计划前排除、记成跳过（不校验选项），全被排除时计划为空。
-                queue = merge_arranged_queue(expansion, arranged_ids, arranged_options)
-                plan = MaaFWRunnerService().build_plan(
+                return build_arranged_plan(
                     self.project_path,
                     interface_model,
+                    expansion=expansion,
+                    inspection=inspection,
+                    task_ids=arranged_ids,
+                    task_options=arranged_options,
+                    task_snapshot=task_snapshot,
                     controller_name=controller_name,
                     resource_name=resource_name,
-                    # 已选任务拆成 task_ids 交给核心；仍带上原始快照，让核心把用户显式设为
-                    # 跳过的实例写进 skippedTasks，并从它取从密文解出来的字段（下发失败的提示
-                    # 按密码处理）。
-                    task_snapshot=task_snapshot,
-                    task_ids=queue.task_ids,
-                    task_options=queue.task_options,
-                    global_options=dict(expansion.global_options),
                     script_hotkeys=script_hotkeys,
-                    no_default_fallback_inputs=rules.no_default_fallback_inputs,
-                    excluded_task_reasons=queue.excluded_task_reasons,
+                    rules=rules,
                 )
-            return attach_snapshot_findings(apply_plan_rules(plan, rules), inspection)
         except Exception as exc:
             raise MaaFWRunPlanError(
                 describe_plan_failure(str(exc), inspection, expansion)
