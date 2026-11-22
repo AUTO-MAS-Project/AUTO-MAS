@@ -54,6 +54,7 @@ ALLOWED_PREFIXES = (
     "app.task.MaaFW.tools.core.",
     "app.task.MaaFW.blocks.maafw_native.",
     "app.task.MaaFW.blocks.maafw_interface.",
+    "app.task.MaaFW.blocks.maafw_agent_env.core.",
 )
 
 
@@ -193,7 +194,7 @@ def _is_allowed(module: str) -> bool:
 def _runner_venv_import_roots() -> set[str]:
     """运行池 venv 里装着的三方包的顶层模块名：maafw binding + BASE_RUNTIME_PACKAGES。"""
 
-    from app.task.MaaFW.tools.core.agent_env.runtime_lease import (
+    from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.runtime_lease import (
         BASE_RUNTIME_PACKAGES,
     )
 
@@ -456,10 +457,10 @@ def _project_with_bundled_maafw(
 def test_agent_maafw_is_pinned_to_bundled_runtime(
     tmp_path: Path, declared: list[str], pinned: list[str]
 ) -> None:
-    from app.task.MaaFW.tools.core.agent_env.env import (
+    from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.env import (
         _load_project_agent_requirements,
     )
-    from app.task.MaaFW.tools.core.agent_env.pip_constraint import (
+    from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.pip_constraint import (
         pin_agent_maafw_requirement,
     )
 
@@ -477,7 +478,9 @@ def test_agent_manifest_carries_the_pin(tmp_path: Path) -> None:
     """agent venv 的复用判据是 ``requirementsHash``；钉版不进哈希，已经装错的 venv
     会因为「依赖清单没变」被永远复用，修了也送不到用户那里。"""
 
-    from app.task.MaaFW.tools.core.agent_env.env import build_agent_env_manifest
+    from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.env import (
+        build_agent_env_manifest,
+    )
 
     declared = ["json-with-comments", "MaaFw"]
     project = _project_with_bundled_maafw(tmp_path, declared)
@@ -491,7 +494,9 @@ def test_agent_manifest_carries_the_pin(tmp_path: Path) -> None:
 
 
 def _fake_venv(root: Path, home: Path) -> Path:
-    from app.task.MaaFW.tools.core.agent_env.planner import venv_python_exe
+    from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.planner import (
+        venv_python_exe,
+    )
 
     venv_path = root / "maafw_venv_fake"
     python = venv_python_exe(venv_path)
@@ -509,7 +514,9 @@ def test_agent_venv_is_invalid_once_base_interpreter_is_gone(tmp_path: Path) -> 
     没了就起不来。这时必须判失效重建，否则所有 Python agent 项目都起不来——源码树
     开发不经过 Runtime，看不到。"""
 
-    from app.task.MaaFW.tools.core.agent_env.env import _is_valid_venv_path
+    from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.env import (
+        _is_valid_venv_path,
+    )
 
     gone = _fake_venv(tmp_path / "a", tmp_path / "deleted-backend-venv")
     assert not _is_valid_venv_path(gone)

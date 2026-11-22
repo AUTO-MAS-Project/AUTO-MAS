@@ -140,14 +140,14 @@ class MaaFWMaintenanceService:
         放在清副本之后：副本删掉以后它引用的 venv 才会变成无人引用。
         """
 
+        from app.task.MaaFW.blocks.maafw_agent_env.host.pool_reconcile import (
+            agent_venvs_root,
+            reconcile_agent_venvs,
+        )
         from app.task.MaaFW.tools.embedded.embedded_project import (
             resolve_maafw_project_root,
         )
         from app.task.MaaFW.tools.embedded.live_projects import keep_view_paths
-        from app.task.MaaFW.tools.embedded.pool_reconcile import (
-            agent_venvs_root,
-            reconcile_agent_venvs,
-        )
 
         if not agent_venvs_root().is_dir():
             return
@@ -395,11 +395,11 @@ class MaaFWMaintenanceService:
         疑似没加载起来、属主答不上来时弃权。
         """
 
-        from app.task.MaaFW.tools.embedded.live_projects import keep_project_paths
-        from app.task.MaaFW.tools.embedded.pool_reconcile import (
+        from app.task.MaaFW.blocks.maafw_agent_env.host.pool_reconcile import (
             reconcile_runtime_pool,
             runtime_pool_root,
         )
+        from app.task.MaaFW.tools.embedded.live_projects import keep_project_paths
 
         if not (runtime_pool_root() / "runtimes").is_dir():
             return

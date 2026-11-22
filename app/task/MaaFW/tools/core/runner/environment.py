@@ -19,27 +19,27 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterable
 
-from app.task.MaaFW.tools.core.agent_env.runtime_lease import (
+from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.runtime_lease import (
     DEFAULT_RUNTIME_LEASE_TTL_SECONDS,
     EnvironmentProgressCallback,
     borrow_runtime_environment,
     return_runtime_environment,
 )
-from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
+from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool.host_environment import (
     strip_host_python_environment,
 )
 
 if TYPE_CHECKING:
+    from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool import (
+        ExtraPackagesInstaller,
+        MaaFWRuntimePool,
+        RuntimeInstaller,
+    )
     from app.task.MaaFW.blocks.maafw_interface.interface.agent_command import (
         MaaFWAgentCommandPlan,
     )
     from app.task.MaaFW.blocks.maafw_interface.interface.models import MaaFWAgent
     from app.task.MaaFW.blocks.maafw_interface.runner.models import MaaFWRunPlan
-    from app.task.MaaFW.tools.core.runtime_pool import (
-        ExtraPackagesInstaller,
-        MaaFWRuntimePool,
-        RuntimeInstaller,
-    )
 
 
 @dataclass(frozen=True)

@@ -46,15 +46,15 @@ from collections.abc import Callable, MutableMapping
 from pathlib import Path
 from typing import Any
 
-from app.task.MaaFW.tools.core.project_update.precheck_memo import (
-    classify_precheck_failure,
-    write_runtime_precheck,
-)
-from app.task.MaaFW.tools.embedded.env_trial import (
+from app.task.MaaFW.blocks.maafw_agent_env.host.env_trial import (
     KIND_AGENT_MODULE_MISSING,
     MaaFWAgentImportMissingError,
     PrepareProjectEnvironment,
     trial_environment,
+)
+from app.task.MaaFW.tools.core.project_update.precheck_memo import (
+    classify_precheck_failure,
+    write_runtime_precheck,
 )
 from app.utils import get_logger
 

@@ -77,7 +77,9 @@ def resolve_runtime_pool_route() -> MaaFWRuntimePoolRoute:
     循环上整个后端都跟着停住。
     """
 
-    from app.task.MaaFW.tools.core.runtime_pool import MaaFWRuntimePoolService
+    from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool import (
+        MaaFWRuntimePoolService,
+    )
 
     return runtime_pool_route_from_service(MaaFWRuntimePoolService())
 

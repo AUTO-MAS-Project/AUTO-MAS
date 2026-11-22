@@ -83,8 +83,10 @@ def _precheck(session: UpdateSession, interface_model: Any) -> Callable[[Path], 
 
     在事件循环上调：导入与预检的组装函数在这里解析好，``validate`` 跑在工作线程里，不再导入。"""
 
-    from app.task.MaaFW.tools.core.runtime_pool import MaaFWRuntimePoolService
-    from app.task.MaaFW.tools.embedded.runtime_route import (
+    from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool import (
+        MaaFWRuntimePoolService,
+    )
+    from app.task.MaaFW.blocks.maafw_agent_env.host.runtime_route import (
         runtime_pool_route_from_service,
     )
 

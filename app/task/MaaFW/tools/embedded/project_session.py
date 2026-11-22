@@ -412,8 +412,10 @@ def _runtime_pool_route():
     循环上整个后端都跟着停住。
     """
 
-    from app.task.MaaFW.tools.core.runtime_pool import MaaFWRuntimePoolService
-    from app.task.MaaFW.tools.embedded.runtime_route import (
+    from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool import (
+        MaaFWRuntimePoolService,
+    )
+    from app.task.MaaFW.blocks.maafw_agent_env.host.runtime_route import (
         runtime_pool_route_from_service,
     )
 
@@ -528,7 +530,7 @@ def describe_update_result(
 def describe_precheck_failure(phase_zh: str, failure: Mapping[str, Any]) -> str:
     """预检失败给用户看的一句话；按 ``kind`` 分文案。"""
 
-    from app.task.MaaFW.tools.core.agent_env.import_check import (
+    from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.import_check import (
         KIND_AGENT_MODULE_MISSING,
     )
     from app.task.MaaFW.tools.core.project_update.precheck_memo import (
@@ -944,7 +946,7 @@ class MaaFWProjectSession:
             if entry_now is not None and str(entry_now["id"]) != str(marker["payload"]):
                 # 要切了：记下切之前钉定的 maafw 版本，切完它若已没有视图在用，运行池
                 # 对账时豁免宽限（与更新提交后同一条路）。
-                from app.task.MaaFW.tools.embedded.pool_reconcile import (
+                from app.task.MaaFW.blocks.maafw_agent_env.host.pool_reconcile import (
                     previous_maafw_version,
                 )
 
@@ -1249,11 +1251,11 @@ class MaaFWProjectSession:
             f"代理 {describe_proxy(shape)}"
         )
         # 记下更新前钉定的 maafw 版本：提交后若换了版本，旧 runtime 不必再等宽限。
+        from app.task.MaaFW.blocks.maafw_agent_env.host.pool_reconcile import (
+            previous_maafw_version,
+        )
         from app.task.MaaFW.tools.embedded.live_projects import (
             reconcile_in_background,
-        )
-        from app.task.MaaFW.tools.embedded.pool_reconcile import (
-            previous_maafw_version,
         )
 
         previous_version = await asyncio.to_thread(previous_maafw_version, project_path)

@@ -5,6 +5,9 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool._shared import (
+    venv_base_python_missing as _venv_base_python_missing,
+)
 from app.task.MaaFW.blocks.maafw_interface.interface.agent_command import (
     MaaFWAgentCommandPlan,
 )
@@ -18,9 +21,6 @@ from app.task.MaaFW.blocks.maafw_interface.interface.agent_entry import (
     looks_like_project_path,
 )
 from app.task.MaaFW.blocks.maafw_interface.interface.models import MaaFWAgent
-from app.task.MaaFW.tools.core.runtime_pool._shared import (
-    venv_base_python_missing as _venv_base_python_missing,
-)
 
 from .venv_share import AGENT_VENV_DIR_PREFIX as AGENT_VENV_DIR_PREFIX
 from .venv_share import (

@@ -27,7 +27,7 @@ from .environment import (
 from .worker_registry import GLOBAL_MAAFW_WORKER_REGISTRY, MaaFWWorkerRegistry
 
 if TYPE_CHECKING:
-    from app.task.MaaFW.tools.core.runtime_pool import (
+    from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool import (
         MaaFWRuntimePool,
         RuntimeInstaller,
     )

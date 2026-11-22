@@ -50,6 +50,13 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
+from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool.binding_fallback import (
+    pep440_to_maafw_tag,
+)
+from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool.installer import (
+    is_package_index_offline,
+    resolve_package_index_candidates,
+)
 from app.task.MaaFW.tools.core.project_update.precheck_memo import (
     KIND_BINDING_UNAVAILABLE,
     KIND_TRANSIENT,
@@ -59,13 +66,6 @@ from app.task.MaaFW.tools.core.project_update.precheck_memo import (
     memo_matches_version,
     read_runtime_precheck,
     write_runtime_precheck,
-)
-from app.task.MaaFW.tools.core.runtime_pool.binding_fallback import (
-    pep440_to_maafw_tag,
-)
-from app.task.MaaFW.tools.core.runtime_pool.installer import (
-    is_package_index_offline,
-    resolve_package_index_candidates,
 )
 from app.utils import get_logger
 

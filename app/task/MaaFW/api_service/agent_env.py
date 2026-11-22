@@ -108,12 +108,12 @@ def _warn_agent_imports(
     """按准备结果里的 agent 计划做导入静态检查，结论只进日志；检查失败静默放行。"""
 
     try:
-        from app.task.MaaFW.blocks.maafw_interface.interface.agent_command import (
-            MaaFWAgentCommandPlan,
-        )
-        from app.task.MaaFW.tools.core.agent_env.import_check import (
+        from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.import_check import (
             check_agent_plan_imports,
             log_agent_import_reports,
+        )
+        from app.task.MaaFW.blocks.maafw_interface.interface.agent_command import (
+            MaaFWAgentCommandPlan,
         )
 
         agents = result.get("agents") or {}
@@ -139,28 +139,28 @@ async def prepare_agent_env(
     # 避免所有 API 请求都为它们付出导入成本。
     from app.core import Publisher
     from app.core.ws import protocol as ws_protocol
-    from app.task.MaaFW.tools.core.agent_env.project_env import (
+    from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.project_env import (
         prepare_project_environment,
         project_environment_fingerprint,
     )
-    from app.task.MaaFW.tools.core.runtime_pool import (
+    from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool import (
         MaaFWRuntimePoolService,
     )
-    from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
+    from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool.host_environment import (
         subprocess_proxy_scope,
     )
-    from app.task.MaaFW.tools.embedded.env_cache import (
+    from app.task.MaaFW.blocks.maafw_agent_env.host.env_cache import (
         has_prepared_environment,
         load_prepared_environment,
         store_prepared_environment,
+    )
+    from app.task.MaaFW.blocks.maafw_agent_env.host.runtime_route import (
+        runtime_pool_route_from_service,
     )
     from app.task.MaaFW.tools.embedded.project_path import (
         is_project_updating,
         release_project_path,
         try_reserve_project_path,
-    )
-    from app.task.MaaFW.tools.embedded.runtime_route import (
-        runtime_pool_route_from_service,
     )
 
     logs: list[str] = []

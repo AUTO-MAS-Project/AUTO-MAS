@@ -567,7 +567,9 @@ def _import_failure_reason(error: str) -> str:
 async def _previous_maafw_version(copy_dir: Path) -> str | None:
     """副本换树（重导 / 克隆覆盖）之前它钉定的 maafw 精确版本；没有副本或读不出为 None。"""
 
-    from app.task.MaaFW.tools.embedded.pool_reconcile import previous_maafw_version
+    from app.task.MaaFW.blocks.maafw_agent_env.host.pool_reconcile import (
+        previous_maafw_version,
+    )
 
     if not copy_dir.is_dir():
         return None

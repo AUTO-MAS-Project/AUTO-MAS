@@ -65,6 +65,23 @@ try:
 except ImportError:  # pragma: no cover - 只有很老的 binding 会走到
     _ContextEventSinkBase = None
 
+from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env import (
+    project_python_agent_binary_path,
+    write_agent_compat_shims,
+)
+from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.env import (
+    AGENT_PROGRAM_MISSING_HINT,
+)
+from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.pip_constraint import (
+    AGENT_PIP_CONSTRAINT_DIR_ENV,
+    agent_maafw_pip_constraint,
+    apply_agent_pip_constraint,
+    write_agent_pip_constraint,
+)
+from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool.host_environment import (
+    set_project_pycache_prefix,
+    strip_host_python_environment,
+)
 from app.task.MaaFW.blocks.maafw_interface.log_redact import mask_home_path
 from app.task.MaaFW.blocks.maafw_interface.runner.models import (
     MaaFWDeviceConfig,
@@ -88,21 +105,6 @@ from app.task.MaaFW.blocks.maafw_native.project_runtime import (
     project_maafw_runtime_path,
     read_runtime_maafw_version,
     runtime_missing_dependencies,
-)
-from app.task.MaaFW.tools.core.agent_env import (
-    project_python_agent_binary_path,
-    write_agent_compat_shims,
-)
-from app.task.MaaFW.tools.core.agent_env.env import AGENT_PROGRAM_MISSING_HINT
-from app.task.MaaFW.tools.core.agent_env.pip_constraint import (
-    AGENT_PIP_CONSTRAINT_DIR_ENV,
-    agent_maafw_pip_constraint,
-    apply_agent_pip_constraint,
-    write_agent_pip_constraint,
-)
-from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
-    set_project_pycache_prefix,
-    strip_host_python_environment,
 )
 
 # 宿主也要用的常量放在不依赖 maa 的 worker_protocol 里（本模块一导入就加载 maa，宿主引不了）
@@ -2889,7 +2891,7 @@ class MaaFWRunner:
             return
 
         self.send_log(f"[Python环境] 开始准备 {len(process_agents)} 个 Agent 环境")
-        from app.task.MaaFW.tools.core.agent_env.env import (
+        from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.env import (
             prepare_agent_envs,
         )
 

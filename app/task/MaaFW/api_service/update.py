@@ -708,13 +708,17 @@ async def _run_apply(req: _UpdateRequest) -> tuple[Any, str | None] | MaaFWApiRe
     """
 
     # 这几个模块会拉起 runtime_pool 与 agent_env，只在真要用时导入。
-    from app.task.MaaFW.tools.core.runtime_pool import MaaFWRuntimePoolService
+    from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool import (
+        MaaFWRuntimePoolService,
+    )
+    from app.task.MaaFW.blocks.maafw_agent_env.host.pool_reconcile import (
+        previous_maafw_version,
+    )
+    from app.task.MaaFW.blocks.maafw_agent_env.host.runtime_route import (
+        runtime_pool_route_from_service,
+    )
     from app.task.MaaFW.tools.embedded.env_confirm import (
         confirm_switched_environment,
-    )
-    from app.task.MaaFW.tools.embedded.pool_reconcile import previous_maafw_version
-    from app.task.MaaFW.tools.embedded.runtime_route import (
-        runtime_pool_route_from_service,
     )
 
     route = await asyncio.to_thread(

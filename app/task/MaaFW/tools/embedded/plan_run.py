@@ -38,6 +38,12 @@ from typing import TYPE_CHECKING, Any
 
 import psutil
 
+from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool.host_environment import (
+    subprocess_proxy_scope,
+)
+from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool.installer import (
+    install_process_factory_scope,
+)
 from app.task.MaaFW.blocks.maafw_interface.interface.agent_command import (
     MaaFWAgentCommandPlan,
 )
@@ -58,12 +64,6 @@ from app.task.MaaFW.tools.core.runner.service import MaaFWRunnerService
 from app.task.MaaFW.tools.core.runner.worker_launch import (
     IMPORT_ROOT,
     WORKER_MODULE,
-)
-from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
-    subprocess_proxy_scope,
-)
-from app.task.MaaFW.tools.core.runtime_pool.installer import (
-    install_process_factory_scope,
 )
 from app.task.MaaFW.tools.core.worker_protocol import (
     AUDIENCE_UI,

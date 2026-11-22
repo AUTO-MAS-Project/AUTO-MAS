@@ -49,7 +49,7 @@ from collections.abc import Callable, MutableMapping
 from pathlib import Path
 from typing import Any
 
-from app.task.MaaFW.tools.core.runtime_pool.installer import (
+from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool.installer import (
     install_process_factory_scope,
 )
 from app.utils import get_logger
@@ -116,7 +116,7 @@ def resolve_update_precheck() -> UpdatePrecheckBuilder:
     才导入。
     """
 
-    from app.task.MaaFW.tools.embedded.env_trial import precheck_agent_root
+    from app.task.MaaFW.blocks.maafw_agent_env.host.env_trial import precheck_agent_root
     from app.task.MaaFW.tools.embedded.precheck import build_precheck_validator
 
     prepare = resolve_prepare_environment()

@@ -59,24 +59,30 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.task.MaaFW.blocks.maafw_native.requirement import (
-    resolve_project_maafw_requirement,
+from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.planner import (
+    collect_orphan_agent_venvs,
 )
-from app.task.MaaFW.tools.core.agent_env.planner import collect_orphan_agent_venvs
-from app.task.MaaFW.tools.core.agent_env.runtime_lease import (
+from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.runtime_lease import (
     describe_runner_runtime_selection,
 )
-from app.task.MaaFW.tools.core.agent_env.venv_share import (
+from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.venv_share import (
     collect_stale_venv_refs,
     discard_venv_lock_file,
     isolated_venv_guard,
 )
-from app.task.MaaFW.tools.core.runtime_pool import MaaFWRuntimePoolService
-from app.task.MaaFW.tools.core.runtime_pool.binding import (
+from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool import (
+    MaaFWRuntimePoolService,
+)
+from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool.binding import (
     prune_selections,
     retained_versions,
 )
-from app.task.MaaFW.tools.core.runtime_pool.identity import infer_exact_maafw_version
+from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool.identity import (
+    infer_exact_maafw_version,
+)
+from app.task.MaaFW.blocks.maafw_native.requirement import (
+    resolve_project_maafw_requirement,
+)
 from app.utils import get_logger
 
 logger = get_logger("MFW 运行池回收")

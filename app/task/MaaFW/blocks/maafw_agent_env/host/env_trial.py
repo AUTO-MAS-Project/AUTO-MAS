@@ -46,7 +46,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from app.task.MaaFW.tools.core.agent_env.import_check import (
+from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.import_check import (
     KIND_AGENT_MODULE_MISSING,
     MaaFWAgentImportMissingError,
     check_agent_plan_imports,
@@ -133,10 +133,12 @@ def check_staging_agent_imports(
     """
 
     try:
+        from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env import (
+            MaaFWAgentEnvService,
+        )
         from app.task.MaaFW.blocks.maafw_interface.interface import (
             load_interface_model_cached,
         )
-        from app.task.MaaFW.tools.core.agent_env import MaaFWAgentEnvService
 
         interface = load_interface_model_cached(root)
         plans = MaaFWAgentEnvService().build_command_plans(

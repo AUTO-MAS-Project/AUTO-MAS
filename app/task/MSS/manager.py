@@ -39,6 +39,12 @@ from app.models.notification.report import TaskResultData, TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.game import current_game_session
+from app.task.MaaFW.blocks.maafw_agent_env.host.runtime_check import (
+    describe_unusable_runtime,
+)
+from app.task.MaaFW.blocks.maafw_agent_env.host.runtime_route import (
+    resolve_runtime_pool_route,
+)
 from app.task.MaaFW.blocks.maafw_native.architecture import (
     describe_unsupported_architecture,
 )
@@ -71,8 +77,6 @@ from app.task.MaaFW.tools.embedded.run_notices import (
     signal_summary_title,
     user_results_text,
 )
-from app.task.MaaFW.tools.embedded.runtime_check import describe_unusable_runtime
-from app.task.MaaFW.tools.embedded.runtime_route import resolve_runtime_pool_route
 from app.task.MaaFW.tools.embedded.signal_notice import (
     SERVER_MAINTENANCE,
     MaaFWSignalTracker,

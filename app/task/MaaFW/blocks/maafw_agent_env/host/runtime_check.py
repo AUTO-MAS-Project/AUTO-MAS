@@ -44,14 +44,14 @@ def describe_unusable_runtime(project_path: Path) -> str | None:
     """
 
     # 运行池会拉起 uv 与安装器，只在真要用时导入，别让每次 import 都付这份成本。
-    from app.task.MaaFW.tools.core.agent_env.runtime_lease import (
+    from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.runtime_lease import (
         describe_runner_runtime_selection,
     )
-    from app.task.MaaFW.tools.core.runtime_pool import (
+    from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool import (
         MaaFWRuntimePoolError,
         MaaFWRuntimePoolService,
     )
-    from app.task.MaaFW.tools.core.runtime_pool.binding import (
+    from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool.binding import (
         verify_binding,
         verify_native,
     )

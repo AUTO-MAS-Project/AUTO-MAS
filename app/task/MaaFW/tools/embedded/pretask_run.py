@@ -32,6 +32,9 @@ from typing import Any
 
 import psutil
 
+from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool.host_environment import (
+    strip_host_python_environment,
+)
 from app.task.MaaFW.blocks.maafw_interface.controller_win32.service import (
     controller_has_window_rules,
 )
@@ -42,9 +45,6 @@ from app.task.MaaFW.blocks.maafw_interface.interface.models import MaaFWInterfac
 from app.task.MaaFW.blocks.maafw_interface.runner.models import (
     MaaFWPretaskRunPlan,
     MaaFWRunPlan,
-)
-from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
-    strip_host_python_environment,
 )
 from app.utils import get_logger
 from app.utils.common.process.operations import managed_process, terminate_process

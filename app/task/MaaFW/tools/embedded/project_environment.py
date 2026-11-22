@@ -74,26 +74,26 @@ def prepare_project_environment_sync(
 
     # 与 API 侧同理：这几个模块会拉起 runtime_pool 与 agent_env，只在真要
     # 用时导入。
-    from app.task.MaaFW.blocks.maafw_interface.interface import (
-        load_interface_model_cached,
-    )
-    from app.task.MaaFW.tools.core.agent_env.project_env import (
+    from app.task.MaaFW.blocks.maafw_agent_env.core.agent_env.project_env import (
         prepare_project_environment,
         project_environment_fingerprint,
     )
-    from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
+    from app.task.MaaFW.blocks.maafw_agent_env.core.runtime_pool.host_environment import (
         subprocess_proxy_scope,
+    )
+    from app.task.MaaFW.blocks.maafw_agent_env.host.env_cache import (
+        load_prepared_environment,
+        store_prepared_environment,
+    )
+    from app.task.MaaFW.blocks.maafw_agent_env.host.runtime_route import (
+        resolve_runtime_pool_route,
+    )
+    from app.task.MaaFW.blocks.maafw_interface.interface import (
+        load_interface_model_cached,
     )
     from app.task.MaaFW.tools.embedded.embedded_project import (
         mark_env_confirmed,
         read_view_marker,
-    )
-    from app.task.MaaFW.tools.embedded.env_cache import (
-        load_prepared_environment,
-        store_prepared_environment,
-    )
-    from app.task.MaaFW.tools.embedded.runtime_route import (
-        resolve_runtime_pool_route,
     )
 
     # 视图挂的载荷在算指纹之前记下：确认成功后只给这个载荷记 ``envConfirmedFor``

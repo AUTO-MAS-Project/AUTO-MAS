@@ -34,16 +34,16 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from app.task.MaaFW.blocks.maafw_agent_env.host.pool_reconcile import (
+    reconcile_after_project_update,
+    reconcile_runtime_pool,
+)
 from app.task.MaaFW.tools.embedded import owners
 from app.task.MaaFW.tools.embedded.embedded_project import (
     embedded_projects_root,
     is_embedded_copy_dir_name,
     resolve_maafw_project_root,
     view_owner,
-)
-from app.task.MaaFW.tools.embedded.pool_reconcile import (
-    reconcile_after_project_update,
-    reconcile_runtime_pool,
 )
 from app.utils import get_logger
 
