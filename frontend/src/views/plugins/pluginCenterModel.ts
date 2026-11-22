@@ -656,6 +656,35 @@ export function lifecycleDecision(
     : { kind: 'direct' }
 }
 
+/** 停用或卸载时后端会一并拆掉的下游插件（disableCascade / uninstallCascade）。 */
+export function lifecycleCascade(
+  action: 'disable' | 'uninstall',
+  view: Pick<InstalledPluginView, 'document'>
+): string[] {
+  const names = action === 'disable' ? view.document.disableCascade : view.document.uninstallCascade
+  return [...(names ?? [])]
+}
+
+/** 停用或卸载会一并删除的托管（名称）与计划表（张数）：本插件及连带范围里各专项名下的。 */
+export function lifecycleAffected(
+  action: 'disable' | 'uninstall',
+  view: Pick<InstalledPluginView, 'pluginId' | 'document'>,
+  installed: readonly InstalledPluginView[],
+  usageOf: (view: InstalledPluginView) => PluginUsage
+): { scripts: string[]; plans: number } {
+  const names = new Set([view.pluginId, ...lifecycleCascade(action, view)])
+  const scripts: string[] = []
+  let plans = 0
+  for (const item of installed) {
+    if (!item.binding || !names.has(item.pluginId)) continue
+    const usage = usageOf(item)
+    if (usage.kind !== 'counted') continue
+    scripts.push(...usage.scripts.map(script => script.name))
+    plans += usage.planCount ?? 0
+  }
+  return { scripts, plans }
+}
+
 // ---------- 操作可见性（只读后端界面提示） ----------
 
 export function actionHint(view: Pick<PluginView, 'ui'>, action: LifecycleAction | 'install') {

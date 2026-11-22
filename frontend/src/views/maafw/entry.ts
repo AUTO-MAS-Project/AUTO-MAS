@@ -6,7 +6,6 @@ import maafwIcon from '@/assets/maafw.png'
  * MaaFW 家族的四条路由由 router/maafwRoutes.ts 生成，不在这里声明（routes 为空）。
  */
 export default {
-  // MFW 不是插件：pluginId 只占位，不进插件中心统计（见 scriptAdapters.ts）
   pluginId: 'maafw_adapter',
   type: 'MaaFW' as const,
   metadata: {
