@@ -79,6 +79,25 @@ class PLUGIN(BasePlugin):
 
 钩子都经本插件的调用门执行：插件停用或重载途中调用得到 `PluginBusyError`，配置不动；覆盖了钩子的插件不可用时，宿主拒绝对其托管的这些操作，不会绕开钩子直接写入。钩子抛出的其他异常原样传给发起操作的接口。需要钩子的插件应把 `auto-mas-core` 的下限设到带钩子的宿主版本，并在导入时检查 `hasattr(ScriptAdapterPlugin, "on_script_cloned")`，旧宿主上钩子不会被调用。
 
+**MFW 专项用到的宿主出口。** 下列 `auto_mas_core.host` 模块只开放 `__all__` 里列出的名字，其余名字取不到；Windows 专属模块在取属性时才导入宿主模块，非 Windows 上导入 SDK 不出错。
+
+| SDK 模块 | 宿主模块 | 开放的名字 |
+| --- | --- | --- |
+| `tools_common_ocr` | `app.tools.common.ocr` | `ocr_image`、`Box`、`OCRItem` |
+| `tools_common_game_calendar` | `app.tools.common.game_calendar` | 子模块 `stella` |
+| `utils_common_process_session` | `app.utils.common.process.session` | `desktop_process_target`、`DesktopProcessTarget` |
+| `utils_windows_desktop_session_process_runner` | `app.utils.windows.desktop_session.process_runner` | `launch_desktop_process`、`open_in_desktop`、`run_desktop_action` |
+| `task_desktop_session_worker` | `app.task.desktop_session_worker` | `request_desktop_action` |
+| `task_run_flow` | `app.task.run_flow` | `point`、`begin_attempt`、`game_update_result`、`operation`、`observe_run`、`RunPoint`、`PointState`、`RunStage` |
+| `task_game` | `app.task.game` | `game_device_id`、`game_is_emulator`、`game_target_id`、`current_game_session` |
+| `task_client` | `app.task.client` | `client_executable_path`、`client_launcher_path`、`ClientProcess` |
+| `utils_common_process_operations` | `app.utils.common.process.operations` | `iter_processes`、`managed_process`、`terminate_process` |
+| `utils_common_zip_range` | `app.utils.common.zip_range` | `HealSkip`、`RangeHTTPReader`、`RangeReadCancelled`、`RangeSpeedGuard`、`format_size` |
+| `models_notification_channel` | `app.models.notification.channel` | `DispatchResult`、`NotifyTarget` |
+| `core_config_manager` | `app.core.config.manager` | `normalize_proxy_address` |
+
+桌面分身里的动作由宿主写死的表分派，分身进程不导入插件包，所以插件只能用通用动作：`request_desktop_action(desktop, "list_windows", {})` 返回分身桌面上的全部窗口 `[[hwnd, 类名, 标题, pid], …]`（MaaFramework 的枚举顺序，已去掉失效句柄），窗口规则由调用方在本进程匹配；`request_desktop_action(desktop, "window_in_session", {"hwnd": "<句柄>"})` 返回这个窗口是否属于该分身。
+
 迁移测试插件可通过 `auto_mas_core.host` 复用现有模拟器、MAA 共用工具等真实宿主能力；这些出口不提供独立宿主或旧任务框架。L2 在派发前向 `UserExpander.history` 绑定当前任务的实际 `TaskHistorySession`，供专项归档使用。
 
 任务展开使用 `UserExpander` 与真实模式的 `ModeWorker` 子类：`AutoProxyWorker`、`ScriptConfigWorker`、`ScriptViewWorker`。插件提供实际执行、结果判定以及 `finish()` 所需的保存与恢复，不依赖未实现的历史写入协议。
