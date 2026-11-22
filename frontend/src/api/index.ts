@@ -1414,6 +1414,7 @@ export type { TriggerWriteIn } from './models/TriggerWriteIn';
 export type { TriggerWriteOut } from './models/TriggerWriteOut';
 export type { UiHintsMap } from './models/UiHintsMap';
 export type { UiTablesList } from './models/UiTablesList';
+export { UnavailableConfigItem } from './models/UnavailableConfigItem';
 export type { UniversalPlanConfig } from './models/UniversalPlanConfig';
 export type { UniversalPlanConfig_Info } from './models/UniversalPlanConfig_Info';
 export type { UniversalPlanConfig_InfoInput } from './models/UniversalPlanConfig_InfoInput';
