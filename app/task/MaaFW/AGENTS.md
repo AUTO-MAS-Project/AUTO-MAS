@@ -230,16 +230,25 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
     （各类型配置回调的 `cleanup_script_files`，带本属主名）遇到视图记着别的属主就不删。只许「以前删、现在不删」，
     不许反过来；代价是存量孤儿视图（没有标记）会留在盘上。
   - **以后新增一个专项**要做的：一个确切类型的配置类；`registration.py` 里 `ScriptRegistration`（`config_type` 与
-    `run_types` 都是它）与 `register_owner()`，并在 `builtin_registration` 里列出、调用；配置回调用
+    `run_types` 都是它）与 `register_owner()`，并在 `builtin_registration` 里列出、调用。**运行**：专项写自己的流程
+    （脚本级管理器 + 账号级任务类 + 唯一的配置读写入口 `config_view`），`manager_factory` 在函数里现导入它，
+    不复用 MFW 管理器、不加风味钩子——照 M9A 的写法（`app/task/M9A/AGENTS.md`「自己的流程」：先拷
+    `embedded_manager` / `runner_task`，删掉通用专属的分支，专项的规矩写成普通代码，共用的事调
+    `tools/` 下吃普通数据的叶子；不抽带钩子的共用主循环、不造「账号运行上下文」大对象）；新管理器必须带
+    **静态 `check_prefetch`**，构造函数不能有副作用。从此合并上游改了 `runner_task` / `embedded_manager` 时，要把
+    同样的改动手工搬进每个专项的那两份（第 11 步之前同一份逻辑有几处）。配置回调用
     `tools/embedded/config_handler.build_maafw_config_handler(<类型>, owner=<属主名>)`（`MaaFW/registration.build_config_handler` 只是转出名；保存前加密、读取前准备、新账号默认队列、复制时克隆视图、删除时
-    清理本属主视图、删除后运行池对账一样不能少；要换其中一项用 `dataclasses.replace`，不往工厂里加参数），恢复池
+    清理本属主视图、删除后运行池对账一样不能少；要换其中一项用 `dataclasses.replace`，不往工厂里加参数，M9A 的
+    `config_hooks.build_m9a_config_handler` 就是这样只换掉了保存前准备），恢复池
     用 `load_maafw_restore_pools`，要换恢复那一步时用 `tools/restore_service` 公开的 `user_guard` / `mas_files` /
-    `mas_root` / `preview_mas` 与整个 `NATIVE_POOL` 自己拼；按「是 MFW 托管」判断的地方（桌面分身判定
+    `mas_root` / `preview_mas` 与整个 `NATIVE_POOL` 自己拼（M9A 的 `config_hooks.M9A_RESTORE_POOLS`）。登记里的
+    配置回调工厂启动期就会被调，它所在的模块只放轻量导入，流程模块与恢复服务都在函数里现导入；按「是 MFW 托管」判断的地方（桌面分身判定
     `core/desktop_session/lifecycle.py`、外壳配置导入 `api_service/shell_instances._family_script_config`、M9A 迁移后
     归档 `core/config/manager._settle_m9a_migration`）用 `registration.MAAFW_FAMILY_TYPES`，新专项要加进去；
     M9A、MSS 有了自己的流程以后**仍在里面**，不能删，否则桌面分身、外壳配置导入、M9A 迁移后归档会一起坏。
     `MAAFW_RUN_TYPES` 是另一回事：只是 MFW 管理器 `_check` 的类型闸门（它肯跑哪些类型），有自己流程的专项不进它；
-    现在仍收 M9A、MSS（翻登记后回退要靠它），第 11 步删风味时才收窄成只收通用 MFW。宿主的漏登校验、配置回调、
+    现在仍收 M9A、MSS（M9A 第 9 步已翻登记、跑自己的流程，回退时 MFW 管理器要靠它重新收 M9A；MSS 第 10 步同理），
+    第 11 步删风味时才收窄成只收通用 MFW。宿主的漏登校验、配置回调、
     恢复池都按确切类型查，子类不会落到父类的登记上，漏登记启动就报「专项能力漏登」。
   - **插件形态前要补**（内置形态下不会出现，换成插件前必须做）：(a) 宿主的「托管配置完整加载」信号在有任何托管
     的类型解析不出来（所属插件没加载起来、托管原样留在盘上）时必须为假，清理整轮跳过；(b) 这一轮有任何盘上

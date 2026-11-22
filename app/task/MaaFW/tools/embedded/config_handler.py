@@ -15,7 +15,7 @@
 
 """MFW 家族托管的配置回调与恢复池（宿主接缝，不归入积木）。
 
-三种托管类型（通用 MFW、M9A、MSS）的 ``registration.py`` 都从这里取：
+三种托管类型（通用 MFW、M9A、MSS）都从这里取（M9A 经自己的 ``config_hooks``）：
 :func:`build_maafw_config_handler` 按确切类型与属主名各造一份配置回调，:func:`load_maafw_restore_pools`
 给出 MFW 的恢复池。有自己流程的专项要换掉其中一项时用 ``dataclasses.replace``（``ScriptConfigHandler``
 是 frozen dataclass），恢复池用 ``tools/restore_service`` 公开的部件自己拼，不往这里加参数。

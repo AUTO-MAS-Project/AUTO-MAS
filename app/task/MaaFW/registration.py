@@ -15,9 +15,10 @@
 
 """通用 MFW 的运行、配置、恢复与托管属主接入声明。
 
-三种托管类型（通用 MFW、M9A、MSS）现在共用 MFW 管理器与同一套配置回调，但各自显式登记
-（M9A、MSS 的在 ``app/task/M9A/registration.py``、``app/task/MSS/registration.py``）：回调、恢复池、
-属主都按确切类型认，不靠配置类之间的继承。配置回调与恢复池的实现在中立模块
+三种托管类型（通用 MFW、M9A、MSS）各自显式登记（M9A、MSS 的在 ``app/task/M9A/registration.py``、
+``app/task/MSS/registration.py``）：回调、恢复池、属主都按确切类型认，不靠配置类之间的继承。M9A 第 9 步起
+跑自己的流程与配置回调（``app/task/M9A/manager``、``config_hooks``）；MSS 现在仍用这里的 MFW 管理器与同一套
+配置回调。配置回调与恢复池的实现在中立模块
 ``tools/embedded/config_handler``，这里的 ``build_config_handler`` / ``load_restore_pools`` 只是转出名。
 """
 
