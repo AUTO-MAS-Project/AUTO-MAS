@@ -16,12 +16,7 @@
         @remove-plan="handleRemovePlan"
       />
 
-      <UnavailableConfigCards
-        :items="unavailablePlans"
-        kind="plan"
-        :deleting-id="deletingUnavailableId"
-        @delete="handleDeleteUnavailablePlan"
-      />
+      <UnavailablePlanCards v-model:items="unavailablePlans" />
 
       <PlanEmptyState v-if="!planList.length || !currentPlanData" />
 
@@ -77,13 +72,13 @@
 
 <script setup lang="ts">
 import { useConfigLoader } from '@/services/configUiSync'
-import { usePlanFieldSave } from './usePlanFieldSave'
+import { buildNestedObject, usePlanFieldSave } from './usePlanFieldSave'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { usePlanApi } from '@/composables/usePlanApi'
-import { projectPlanList, type PlanListItem } from './planList'
+import { projectPlanList, projectUnavailablePlans, type PlanListItem } from './planList'
 import {
   generateUniquePlanName,
   getPlanTypeLabelKey,
@@ -100,9 +95,8 @@ import {
 import { PLAN_ROTATE_DAYS_DEFAULT, clampRotateDays, type PlanMode } from '@/utils/planDays'
 import PlanHeader from './components/PlanHeader.vue'
 import PlanEmptyState from './components/PlanEmptyState.vue'
-import UnavailableConfigCards, {
-  type UnavailableConfigCard,
-} from '@/components/UnavailableConfigCards.vue'
+import UnavailablePlanCards from './components/UnavailablePlanCards.vue'
+import type { UnavailableConfigCard } from '@/components/UnavailableConfigCards.vue'
 import PlanSelector from './components/PlanSelector.vue'
 import PlanConfig from './components/PlanConfig.vue'
 
@@ -134,7 +128,6 @@ const planTable = ref<{ beforeLeave?: () => boolean } | null>(null)
 const planOperationPending = ref(false)
 // 所属插件不可用的计划表：只读卡片，只能删除
 const unavailablePlans = ref<UnavailableConfigCard[]>([])
-const deletingUnavailableId = ref<string | null>(null)
 const canLeaveTable = () => planTable.value?.beforeLeave?.() ?? true
 
 onBeforeRouteLeave(() => canLeaveTable())
@@ -286,19 +279,6 @@ const handleRemovePlan = async (planId: string) => {
   }
 }
 
-const handleDeleteUnavailablePlan = async (planId: string) => {
-  deletingUnavailableId.value = planId
-  try {
-    const response = await deletePlan(planId)
-    if (response.code === 200)
-      unavailablePlans.value = unavailablePlans.value.filter(item => item.uid !== planId)
-  } catch (error) {
-    logger.error(`删除计划失败: ${error instanceof Error ? error.message : String(error)}`)
-  } finally {
-    deletingUnavailableId.value = null
-  }
-}
-
 // 使用即时保存 - 只发送修改的字段（遵循最小原则）
 const savePlanField = usePlanFieldSave(updatePlan, () =>
   viewMode.value === 'simple' ? 'simple' : 'complex'
@@ -357,23 +337,6 @@ const handlePlanChange = async (
   }
 
   return true
-}
-
-// 辅助函数：根据路径构建嵌套对象
-// 例如 "Info.Name" -> { Info: { Name: value } }
-// 例如 "Monday.stages.stage_1" -> { Monday: { stages: { stage_1: value } } }
-const buildNestedObject = (path: string, value: any): Record<string, any> => {
-  const keys = path.split('.')
-  const result: Record<string, any> = {}
-  let current = result
-
-  for (let i = 0; i < keys.length - 1; i++) {
-    current[keys[i]] = {}
-    current = current[keys[i]]
-  }
-
-  current[keys[keys.length - 1]] = value
-  return result
 }
 
 // 优化计划切换逻辑
@@ -548,14 +511,7 @@ const initPlans = useConfigLoader(['config', 'plans'], async read => {
     if (response.code !== 200) {
       throw new Error(response.message || t('core.plan.toast.fetchFailed'))
     }
-    unavailablePlans.value = (response.unavailable ?? []).map(item => ({
-      uid: item.uid,
-      name: item.name ?? '',
-      typeLabel: item.typeLabel,
-      reason: item.reason,
-      plugin: item.plugin,
-      detail: item.detail,
-    }))
+    unavailablePlans.value = projectUnavailablePlans(response)
 
     const { nextPlanDataMap, nextPlanList } = projectPlanList(response, message =>
       logger.error(message)

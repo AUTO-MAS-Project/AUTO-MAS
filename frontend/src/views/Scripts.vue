@@ -96,12 +96,7 @@
     "
     class="empty-state"
   >
-    <NoData :image-style="{ height: '120px' }">
-      <template #description>
-        <h3 class="empty-title">{{ t('core.scripts.empty.title') }}</h3>
-        <p class="empty-description">{{ t('core.scripts.empty.desc') }}</p>
-      </template>
-    </NoData>
+    <ScriptsEmptyState />
   </div>
 
   <div
@@ -139,12 +134,7 @@
     @scripts-reordered="handleScriptsReordered"
   />
 
-  <UnavailableConfigCards
-    :items="unavailableScripts"
-    kind="script"
-    :deleting-id="deletingUnavailableId"
-    @delete="handleDeleteUnavailableScript"
-  />
+  <UnavailableScriptCards v-model:items="unavailableScripts" />
 
   <ScriptCreateDialog
     v-model:open="scriptCreateVisible"
@@ -180,7 +170,8 @@ import {
   UpOutlined,
 } from '@ant-design/icons-vue'
 import ScriptTable from '@/views/scripts/components/ScriptTable.vue'
-import UnavailableConfigCards from '@/components/UnavailableConfigCards.vue'
+import ScriptsEmptyState from '@/views/scripts/components/ScriptsEmptyState.vue'
+import UnavailableScriptCards from '@/views/scripts/components/UnavailableScriptCards.vue'
 import { getApiErrorMessage } from '@/utils/apiError'
 import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vue'
 import type { ScriptType } from '@/types/script'
@@ -474,17 +465,6 @@ const handleDeleteScript = async (script: ScriptListItem) => {
   if (result) {
     // 后端已删除，本地直接移除即可，不必整份重拉
     scripts.value = scripts.value.filter(item => item.id !== script.id)
-  }
-}
-
-const deletingUnavailableId = ref<string | null>(null)
-const handleDeleteUnavailableScript = async (scriptId: string) => {
-  deletingUnavailableId.value = scriptId
-  try {
-    if (await deleteScript(scriptId))
-      unavailableScripts.value = unavailableScripts.value.filter(item => item.uid !== scriptId)
-  } finally {
-    deletingUnavailableId.value = null
   }
 }
 
@@ -860,19 +840,6 @@ const handleToggleUserStatus = async (user: ScriptListUser) => {
   justify-content: center;
   height: calc(100vh - 200px);
   text-align: center;
-}
-
-.empty-title {
-  font-size: 18px;
-  font-weight: 500;
-  margin: 0;
-  color: var(--ant-color-text);
-}
-
-.empty-description {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0;
 }
 
 .header-left {
