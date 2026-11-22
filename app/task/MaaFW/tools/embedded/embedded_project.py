@@ -60,7 +60,7 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from app.task.MaaFW.tools.core.log_redact import mask_home_path
 from app.task.MaaFW.tools.core.native.layout import (
@@ -606,6 +606,67 @@ def _set_follow_source_record(view_dir: Path, record: Mapping[str, Any] | None) 
     return True
 
 
+# 视图标记里「这个视图归哪个托管属主」：``{"name": 属主名, "scriptId": 完整托管 uuid, "at": 时刻}``。
+# 启动期维护对属主确认仍在的托管补上（``tag_view_owner``），换版本时随标记带过去（``_realize_view``），
+# 克隆不带源的标记。清理只删「属主已登记、且属主确认托管已经不在」的视图，没有这一项的一律不删。
+OWNER_FIELD = "owner"
+
+
+def _owner_record_for(view_dir: Path, marker: Mapping[str, Any] | None) -> dict | None:
+    """标记里与这个视图目录对得上的属主记录；对不上（缺字段、uuid 不合法、前缀不符）为 None。"""
+
+    record = (marker or {}).get(OWNER_FIELD)
+    if not isinstance(record, dict):
+        return None
+    name = str(record.get("name") or "").strip()
+    script_id = str(record.get("scriptId") or "").strip()
+    if not name or not script_id:
+        return None
+    try:
+        dir_name = embedded_copy_dir_name(script_id)
+    except EmbeddedProjectError:
+        return None
+    if dir_name != Path(view_dir).name:
+        return None
+    return dict(record)
+
+
+def view_owner(view_dir: Path) -> tuple[str, str] | None:
+    """视图记下的属主 ``(属主名, 完整托管 uuid)``；没有标记 / 没有这一项 / 对不上目录名都为 None。"""
+
+    record = _owner_record_for(view_dir, read_view_marker(view_dir))
+    if record is None:
+        return None
+    return str(record["name"]).strip(), str(record["scriptId"]).strip()
+
+
+TagOutcome = Literal["tagged", "exists", "conflict", "no_marker"]
+
+
+def tag_view_owner(view_dir: Path, name: str, script_id: str) -> TagOutcome:
+    """给视图记下属主（调用方持有该视图的项目预约）。已记了别的属主时不覆盖。
+
+    与 ``envConfirmedFor`` 一样临时文件 + ``os.replace``，其余字段原样；没有标记的老副本写不了。
+    """
+
+    marker = read_view_marker(view_dir)
+    if marker is None:
+        return "no_marker"
+    existing = _owner_record_for(view_dir, marker)
+    if existing is not None:
+        if (
+            str(existing["name"]).strip() == name
+            and str(existing["scriptId"]).strip() == script_id
+        ):
+            return "exists"
+        return "conflict"
+    if embedded_copy_dir_name(script_id) != Path(view_dir).name:
+        return "conflict"
+    marker[OWNER_FIELD] = {"name": name, "scriptId": script_id, "at": _now_text()}
+    payloads.write_json_atomic(Path(view_dir) / VIEW_MARKER_NAME, marker)
+    return "tagged"
+
+
 def follow_source_record(marker: Mapping[str, Any] | None) -> dict[str, Any] | None:
     """标记里的 ``followSource``（开发者模式下这份载荷是从哪个来源状态导入的）；没有为 None。"""
 
@@ -998,6 +1059,8 @@ def _realize_view(
         if assume_marker is not None
         else (read_view_marker(view) if carry else None)
     )
+    # 属主记录只认盘上这棵视图自己的标记（与 carry、谱系无关；克隆不带源的标记）。
+    owner_record = _owner_record_for(view, read_view_marker(view))
     if old_marker is not None and str(old_marker.get("lineage") or "") != lineage:
         # 换了个项目（重导另一个项目的目录）：旧项目的私有状态（它的 config/、debug/）
         # 不该进新项目的视图，整棵换掉，与今天重新导入一致。
@@ -1105,6 +1168,9 @@ def _realize_view(
             marker[FOLLOW_SOURCE_FIELD] = dict(follow_source)
         if adopted_channel is not None:
             marker[ADOPTED_CHANNEL_FIELD] = adopted_channel
+        if owner_record is not None:
+            # 视图归哪个属主与装的是哪个项目、哪个版本无关：换项目重导也照样带过去。
+            marker[OWNER_FIELD] = owner_record
         if old_marker is not None and old_marker.get(ENV_CONFIRMED_FIELD):
             # 同谱系换版本：带上旧的确认记录。它 ≠ 新载荷，下次运行前据此补一次确认；
             # 同载荷重建则仍然相等，不必再确认。
@@ -3431,6 +3497,7 @@ __all__ = [
     "FOLLOW_SOURCE_FIELD",
     "MIGRATION_SWITCHED_BY",
     "ENV_CONFIRMED_FIELD",
+    "OWNER_FIELD",
     "PYCACHE_DIR_NAME",
     "STAGING_DIR_NAME",
     "VIEW_MARKER_NAME",
@@ -3472,6 +3539,8 @@ __all__ = [
     "propagate_payload",
     "read_interface_version",
     "read_view_marker",
+    "tag_view_owner",
+    "view_owner",
     "recover_switches",
     "remove_tree",
     "resolve_maafw_project_root",

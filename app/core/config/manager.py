@@ -1733,9 +1733,10 @@ class AppConfig:
         """[兼容旧专项] 查找存量配置回调，随插件配置能力迁移一并移除。"""
         if isinstance(script, ScriptEntry):
             return None
-        for entry_type, handler in self._script_config_handlers.items():
-            if isinstance(script, entry_type):
-                return handler
+        # 按确切类型查：子类不因父类登记过就拿到父类的回调（M9A、MSS 各自登记）。
+        entry_type = type(script)
+        if entry_type in self._script_config_handlers:
+            return self._script_config_handlers[entry_type]
         raise RuntimeError(f"专项配置处理器未登记: {type(script).__name__}")
 
     def script_supports_mod_avd(self, script: ConfigEntry) -> bool:
@@ -2830,6 +2831,7 @@ class AppConfig:
         副本还没建，native 池按来源目录归档；引擎首次运行前还会按有效根再归档一次，指纹去重。
         """
 
+        from app.task.MaaFW.registration import MAAFW_RUN_TYPES
         from app.task.MaaFW.tools.backup_archive import (
             archive_mas_runtime_backup,
             archive_native_backup,
@@ -2843,7 +2845,7 @@ class AppConfig:
                 continue
             try:
                 script_config = self.ScriptConfig[uuid.UUID(uid_text)]
-                if not isinstance(script_config, MaaFWConfig):
+                if type(script_config) not in MAAFW_RUN_TYPES:
                     continue
             except (KeyError, ValueError):
                 continue

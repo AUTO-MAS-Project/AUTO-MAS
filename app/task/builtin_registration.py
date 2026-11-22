@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from app.models.config import CLASS_BOOK
@@ -45,8 +44,13 @@ def build_builtin_script_capabilities(
         from app.task.MaaEnd.registration import registration as maaend_registration
     with startup_stage("后端/专项注册导入/MaaFW.registration"):
         from app.task.MaaFW.registration import REGISTRATION as maafw
-    with startup_stage("后端/专项注册导入/MaaFW.tools.embedded.script_lifecycle"):
-        from app.task.MaaFW.tools.embedded.script_lifecycle import cleanup_script_files
+        from app.task.MaaFW.registration import register_owner as register_maafw_owner
+    with startup_stage("后端/专项注册导入/M9A.registration"):
+        from app.task.M9A.registration import REGISTRATION as m9a
+        from app.task.M9A.registration import register_owner as register_m9a_owner
+    with startup_stage("后端/专项注册导入/MSS.registration"):
+        from app.task.MSS.registration import REGISTRATION as mss
+        from app.task.MSS.registration import register_owner as register_mss_owner
     with startup_stage("后端/专项注册导入/OkNte.registration"):
         from app.task.OkNte.registration import REGISTRATION as oknte
     with startup_stage("后端/专项注册导入/Okww.registration"):
@@ -60,6 +64,8 @@ def build_builtin_script_capabilities(
             bettergi,
             zzzod_registration(zzzod=zzzod),
             maafw,
+            m9a,
+            mss,
             okww,
             general,
             oknte,
@@ -68,17 +74,9 @@ def build_builtin_script_capabilities(
         ),
         expected_types=CLASS_BOOK.values(),
     )
-    # 所有现有脚本 UUID 都清理可能残留的 MFW 视图；家族专属的
-    # 提交后对账仍只由 MaaFW handler 声明。目录和清理规则归 MFW。
-    return replace(
-        capabilities,
-        config_handlers=tuple(
-            (
-                entry_type,
-                replace(handler, cleanup_script_files=cleanup_script_files)
-                if handler is not None
-                else None,
-            )
-            for entry_type, handler in capabilities.config_handlers
-        ),
-    )
+    # 三种 MFW 托管的属主登记给项目更新一侧（共享目录的清理与 /maafw/* 端点按它认托管）。
+    # 删托管时的视图清理由三种类型各自的配置回调声明，只删本属主的视图。
+    register_maafw_owner()
+    register_m9a_owner()
+    register_mss_owner()
+    return capabilities

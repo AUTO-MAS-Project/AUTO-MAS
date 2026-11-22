@@ -28,6 +28,7 @@ from .embedded_project import (
     clone_embedded_copy,
     embedded_project_dir,
     is_source_form,
+    view_owner,
 )
 from .project_path import release_project_path, try_reserve_project_path
 
@@ -77,9 +78,21 @@ def after_script_removal() -> None:
     reconcile_in_background("script-deleted")
 
 
-async def cleanup_script_files(script_id: str) -> None:
-    """通用数据目录清理后，再删除不在该目录下的 MFW 视图。"""
+async def cleanup_script_files(script_id: str, *, owner: str | None = None) -> None:
+    """通用数据目录清理后，再删除不在该目录下的 MFW 视图。
+
+    由删掉这个托管的属主（``owner``）声明：视图上记着别的属主时不删、记一句（那份视图不归它）。
+    """
     # 视图不放在 data/<uid>/ 下，避免进入配置备份的整目录快照。
     embedded_copy = embedded_project_dir(script_id)
-    if embedded_copy.exists():
-        await asyncio.to_thread(_utils_io.force_rmtree, embedded_copy)
+    if not embedded_copy.exists():
+        return
+    if owner is not None:
+        recorded = await asyncio.to_thread(view_owner, embedded_copy)
+        if recorded is not None and recorded[0] != owner:
+            logger.warning(
+                f"删除托管 {script_id} 时视图记着属主 {recorded[0]}（不是 {owner}），不删: "
+                f"{embedded_copy}"
+            )
+            return
+    await asyncio.to_thread(_utils_io.force_rmtree, embedded_copy)

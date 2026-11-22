@@ -244,9 +244,15 @@ def _load_flavor(spec: str) -> Any | None:
 
 
 def resolve_flavor(script_config: Any) -> MaaFWFlavor | None:
-    """脚本配置对应的特调对象；通用 MaaFW（``FLAVOR`` 为 None）返回 None。"""
+    """脚本配置对应的特调对象；通用 MaaFW（``FLAVOR`` 为 None）返回 None。
 
-    spec = getattr(type(script_config), "FLAVOR", None)
+    项目更新一侧交来的只读形状（``owners.ManagedShape``）不是配置类，特调记在它的
+    ``FLAVOR_SPEC`` 上（属主按托管的确切类型给出）。
+    """
+
+    spec = getattr(script_config, "FLAVOR_SPEC", None) or getattr(
+        type(script_config), "FLAVOR", None
+    )
     if not spec:
         return None
     return _load_flavor(str(spec))
@@ -487,15 +493,16 @@ def sanitize_user_task_update(
 
 
 def flavored_config_classes() -> list[tuple[type, MaaFWFlavor]]:
-    """``CLASS_BOOK`` 里所有声明了特调的 MaaFW 子类，按登记顺序。"""
+    """``CLASS_BOOK`` 里所有声明了特调（类上有 ``FLAVOR``）的托管类型，按登记顺序。
 
-    from app.models.config import CLASS_BOOK, MaaFWConfig
+    只看类上有没有 ``FLAVOR``，不按继承认家族：只有 MFW 托管类型声明这一项。
+    """
+
+    from app.models.config import CLASS_BOOK
 
     found: list[tuple[type, MaaFWFlavor]] = []
     for config_class in CLASS_BOOK.values():
-        if not (
-            isinstance(config_class, type) and issubclass(config_class, MaaFWConfig)
-        ):
+        if not isinstance(config_class, type):
             continue
         spec = getattr(config_class, "FLAVOR", None)
         if not spec:
