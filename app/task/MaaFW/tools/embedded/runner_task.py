@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import shlex
 import tempfile
@@ -67,7 +66,7 @@ from app.task.MaaFW.tools.core.runner.plan_transforms import (
     PeriodRecords,
     filter_period_once_tasks,
     parse_period_records,
-    record_period_completions,
+    period_records_after,
     skip_tasks_completed_this_run,
 )
 from app.task.MaaFW.tools.core.runner.run_events import (
@@ -172,7 +171,12 @@ from .project_path import (
     release_project_path_sync,
     try_reserve_project_path,
 )
-from .proxy_quota import proxy_times_used_up, proxy_today
+from .proxy_quota import (
+    proxy_day_rolled,
+    proxy_times_used_up,
+    proxy_today,
+    success_settlement,
+)
 from .resource_failure import (
     describe_resource_failure,
 )
@@ -876,17 +880,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         await self._close_emulator()
         await self._close_game_after_run(failed=not self.run_complete)
         if self.run_complete:
-            if (
-                self.cur_user_config.Data.ProxyTimes == 0
-                and self.cur_user_config.Info.RemainedDay != -1
-            ):
-                self.cur_user_config.Info.RemainedDay = (
-                    self.cur_user_config.Info.RemainedDay - 1
-                )
-                await self.cur_user_config.commit()
-            self.cur_user_config.Data.ProxyTimes = (
-                self.cur_user_config.Data.ProxyTimes + 1
+            # 当天第一次成功才扣剩余天数（-1 不限不扣），代理次数加 1；逐条写、逐条提交
+            remained_day, proxy_times = success_settlement(
+                self.cur_user_config.Data.ProxyTimes,
+                self.cur_user_config.Info.RemainedDay,
             )
+            if remained_day is not None:
+                self.cur_user_config.Info.RemainedDay = remained_day
+                await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = proxy_times
             await self.cur_user_config.commit()
             self.cur_user_config.Data.LastProxyStatus = "成功"
             await self.cur_user_config.commit()
@@ -1606,18 +1608,18 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if limits.empty:
             return
 
-        records = self._load_period_task_records()
-        new_records = record_period_completions(
-            records, limits, completed_tasks, datetime.now(tz=UTC4)
+        new_records = period_records_after(
+            load_json_dict(self.cur_user_config.Data.PeriodTaskRecords),
+            limits,
+            completed_tasks,
+            datetime.now(tz=UTC4),
         )
-        if new_records != records:
-            self.cur_user_config.Data.PeriodTaskRecords = json.dumps(
-                new_records, ensure_ascii=False
-            )
+        if new_records is not None:
+            self.cur_user_config.Data.PeriodTaskRecords = new_records
             await self.cur_user_config.commit()
 
     async def _mark_run_started(self) -> None:
-        if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") != self.curdate:
+        if proxy_day_rolled(self.cur_user_config.Data.LastProxyDate, self.curdate):
             self.cur_user_config.Data.LastProxyDate = datetime.now(tz=UTC4)
             await self.cur_user_config.commit()
             self.cur_user_config.Data.ProxyTimes = 0

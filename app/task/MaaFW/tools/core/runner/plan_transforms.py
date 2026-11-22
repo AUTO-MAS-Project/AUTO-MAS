@@ -1,7 +1,8 @@
 """运行计划的两种变换：周期任务过滤与记账、重试时剔除本次已完成的任务。
 
 都是纯函数：吃计划、名单、记录、当前时刻这类普通数据，返回新值，不读配置、不写配置。
-宿主（``runner_task``）负责从配置里读出名单与记录、把返回的新记录写回配置。
+宿主（账号流程）负责从配置里读出名单与记录、把返回的新记录写回配置（``period_records_after``
+直接给出要写回的 JSON，不用写时是 None）。
 
 - 周期任务：脚本把任务名分进「每日 / 每周 / 每月仅一次」三张名单；某个任务在当前周期里正常
   完成过（记录里它的周期键等于当前周期键）就跳过。周期键按游戏日界 UTC+4 算，与代理次数的
@@ -14,6 +15,7 @@
 
 from __future__ import annotations
 
+import json
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -178,6 +180,28 @@ def record_period_completions(
     return new_records
 
 
+def period_records_after(
+    records_raw: Mapping[str, Any],
+    limits: MaaFWPeriodLimits,
+    completed_tasks: Iterable[str],
+    now: datetime,
+) -> str | None:
+    """一次尝试正常完成了 ``completed_tasks`` 之后要写回的周期记录（JSON 字符串，中文原样）；
+    不用写（没完成任务、没有周期名单、记录没变）就是 None。
+
+    ``records_raw`` 是配置里那份记录解析出的对象（不成形的部分由 ``parse_period_records`` 丢掉）。
+    """
+
+    completed = list(completed_tasks)
+    if not completed or limits.empty:
+        return None
+    records = parse_period_records(records_raw)
+    new_records = record_period_completions(records, limits, completed, now)
+    if new_records == records:
+        return None
+    return json.dumps(new_records, ensure_ascii=False)
+
+
 @dataclass(frozen=True)
 class MaaFWRetrySkip:
     """重试剔除的结果。
@@ -258,6 +282,7 @@ __all__ = [
     "filter_period_once_tasks",
     "parse_period_records",
     "period_keys",
+    "period_records_after",
     "record_period_completions",
     "skip_tasks_completed_this_run",
 ]
