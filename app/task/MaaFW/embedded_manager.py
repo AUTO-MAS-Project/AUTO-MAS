@@ -2033,31 +2033,62 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             return True
         assert self.user_config is not None
         assert self.script_config is not None
+        owner = self.user_config[user_id]
+        if self._account_emulator_without_device(owner):
+            # 另绑了模拟器却没选实例：会话只订阅游戏、没有设备，之后设备会回落到托管的，
+            # 运行前检查放行、到取 ADB 才报错并把用户指向托管页，这里直接按选定失败处理。
+            await session.release()
+            await self._fail_account_game(
+                index,
+                user_id,
+                "账号绑定的模拟器未选择实例，请在账号的「账号绑定」里选择设备",
+            )
+            return False
         try:
-            await session.select(self.user_config[user_id])
+            await session.select(owner)
         except Exception as exc:  # noqa: BLE001 - 目标已删、设备失效、绑定被拒
             await session.release()
-            reason = str(exc) or type(exc).__name__
-            user_item = self.script_info.user_list[index]
-            logger.warning(
-                f"MFW 账号游戏目标不可用（{self.script_info.name} / {user_item.name}）："
-                f"{reason}"
-            )
-            message = f"账号 {user_item.name} 未运行，游戏目标不可用：{reason}"
-            await user_item.set_state(status="异常")
-            self._user_report_lines[user_item.user_id] = f"游戏目标不可用：{reason}"
-            # 选定中途失败会停在「等待」：其余账号照常运行
-            if self.script_info.status == "等待":
-                await self.script_info.set_state(status="运行")
-            await self.script_info.set_log(message)
-            await Publisher.send(
-                id=self.task_info.task_id,
-                type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=message),
+            await self._fail_account_game(
+                index, user_id, str(exc) or type(exc).__name__
             )
             return False
         self.emulator_manager = await self._resolve_emulator_manager(self.script_config)
         return True
+
+    @staticmethod
+    def _account_emulator_without_device(owner) -> bool:
+        """账号另绑了模拟器目标、设备却是「-」；目标已不存在时不拦，留给 select 报原因。"""
+
+        from app.core import Config
+
+        binding = owner.game
+        if binding.game_id == "-" or binding.device_id != "-":
+            return False
+        target = Config.GameConfig.get(binding.game_id)
+        return target is not None and target.info.type == "emulator"
+
+    async def _fail_account_game(
+        self, index: int, user_id: uuid.UUID, reason: str
+    ) -> None:
+        """账号游戏目标不可用：只把这个账号记异常、写明原因，其余账号照常运行。"""
+
+        user_item = self.script_info.user_list[index]
+        logger.warning(
+            f"MFW 账号游戏目标不可用（{self.script_info.name} / {user_item.name}）："
+            f"{reason}"
+        )
+        message = f"账号 {user_item.name} 未运行，游戏目标不可用：{reason}"
+        await user_item.set_state(status="异常")
+        self._user_report_lines[user_item.user_id] = f"游戏目标不可用：{reason}"
+        # 选定中途失败会停在「等待」：其余账号照常运行
+        if self.script_info.status == "等待":
+            await self.script_info.set_state(status="运行")
+        await self.script_info.set_log(message)
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=message),
+        )
 
     def _reclaim_unused_update_logs(self) -> None:
         """运行前更新的日志交给第一位用户、在它开始运行时并入它的日志落盘；这位用户没进入
