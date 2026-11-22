@@ -528,7 +528,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 f"MFW 用户运行前检查未通过（{self.cur_user_item.name}，{self.cur_user_item.status}）：{self.check_result}"
             )
             # 项目被占用不逐个弹窗：所有账号撞的是同一件事，10 个账号就弹 10 次、响 10 次
-            # 提示音。与 embedded_manager._check 那条「整个脚本一句话跳过，别让每个账号在
+            # 提示音。与打开项目（project_session.reserve）那条「整个脚本一句话跳过，别让每个账号在
             # runner_task 里各报一遍」同一用意；「异常」状态、本账号日志与统计
             # 照常记（见下面与 final_task），汇总与「仅失败时」推送照常带上它。
             if self.cur_user_item.status == "异常" and not self.project_busy_skipped:

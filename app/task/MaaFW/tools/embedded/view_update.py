@@ -20,7 +20,7 @@
 切触发脚本 → 同步同组空闲脚本 → 它们的运行环境确认。
 
 组 = 谱系 + ``Update.Channel``，同组永远挂同一个载荷。运行前自动更新
-（``embedded_manager``）与手动 ``/maafw/update`` 共用这里；两边只在「触发脚本的视图
+（``project_session``）与手动 ``/maafw/update`` 共用这里；两边只在「触发脚本的视图
 预约是谁拿着」「核心更新怎么调」上不同（``core_call`` 由调用方给）。投影补齐与发行包核对
 也挂在这里。四个调用方都经 ``update_session.UpdateSession`` 组装参数再调
 :func:`run_view_update`。

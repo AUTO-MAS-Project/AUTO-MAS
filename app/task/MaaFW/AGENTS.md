@@ -6,7 +6,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
 
 ## 布局与边界
 
-- `embedded_manager.py`：宿主侧管理器——任务调度、更新时机、运行环境确认、账号配置副本与写回。
+- `embedded_manager.py`：宿主侧管理器——任务调度、更新时机、账号配置副本与写回；打开项目、运行前更新、
+  运行环境确认、收尾项目与预下载调 `tools/embedded/project_session.py`（见下文）。
 - `tools/embedded/maintenance.py`：宿主资源维护入口；公共 Config 注入托管快照、完整加载状态与保留天数，`migration.py` 承接老副本采纳、组版本统一和旧更新状态清理。main 编排迁移后的启动清理，timer 触发每日原生日志清理。
 - `api_service/`：`/api/scripts/maafw/*` 端点背后的全部业务（`common` 托管解析 / 有效项目根 /
   同组候选，`embedded` 副本状态 / 导入 / 克隆 / 候选来源，`interface` 预览 / 包名 / 图片资源 / 项目图标，
@@ -20,7 +21,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
   `update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
   `default_snapshot`、`env_confirm`、`update_session`、`device_config`、`plan_run`、`pretask_run`、
-  `run_verdict`、`run_redaction`）。
+  `run_verdict`、`run_redaction`、`project_session`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - **设备配置与首任务闸门在 `tools/embedded/device_config.py`**（将来是运行这一块对外的「设备配置」调用，
   三个专项各自的流程都调它）：游戏包名、adb 路径（含「宿主没定下路径时问 Toolkit」，判据由调用方算好
@@ -80,6 +81,25 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   日志与「上一次（…）」、按 `judge_attempt` 的判定走：信号收尾、资源包修复后不计次数的重跑、重启客户端、
   周期任务刷新计划）、失败文案的拼装（资源包失败的人话要读原生报错、超时摘要要读时限配置，所以不在判定里）、
   运行记录、历史、统计与通知。跑计划、运行前设置、判定、打码与收集密码值都只经上面这些模块的入参出参。
+- **脚本级的项目会话在 `tools/embedded/project_session.py`**（项目更新一侧，将来是这一块对外的「打开项目 /
+  收尾项目 / 发现更新与预下载」，三个专项各自的流程都调它）：`MaaFWProjectSession` 一个管理器一份。
+  打开项目 = `reserve`（拿视图预约；拿不到返回良性跳过的结局：正在切换版本 / 正在更新 / 被占用，脚本记
+  「跳过」，**不用异常表达**）→ `prepare`（缺视图就导入、组同步、投影补齐、读 `envConfirmedFor`，返回
+  `opened` / `failed` / `stopped` 的结局与租约 `MaaFWProjectLease`）→ `release`；运行前更新 = `update`
+  （含更新预检、预下载候选的身份核对）+ `confirm_environment`；收尾项目 = `close`（组同步、写穿巡检、
+  原生日志备份清理，切了版本再 `confirm_environment`）；队列预下载 = `discover_prefetch` / `prefetch` /
+  `discard_prefetch`，候选留在会话里。**只收普通数据**（`MaaFWProjectRequest`：托管 uid 与名字、来源路径、
+  更新渠道与时机、开发者模式开关、托管级代理、CDK、导入报告原值等，管理器每次现取配置组装），**不写配置**：
+  导入 / 重建后要写回的项目记录（`MaaFWProjectRecordUpdate`）随结局交回，要弹的任务通知
+  （`MaaFWProjectNotice`）作返回值交回，都由管理器照原来的时机写回 / 发出。过程输出只经事件出口
+  （`MaaFWProjectSink`：项目更新日志一行、`run_flow` 进度点、预下载字节进度），做法同 `plan_run`。
+  属主登记之前的三处临时做法写在模块开头：同组候选与查脚本名是构造时给的两个现取函数；
+  `embedded_project` 里按属性读配置的辅助函数吃一个由请求摆出来的只读形状；打开项目时管理器在预约里还要
+  写回项目记录、补默认队列、拿 X 锁，所以把这一整段包成任务交给 `hold`，**用户停止时等它做完（有限宽限）
+  再交回预约，等不到就把释放交给任务完成回调**——这条与运行环境确认里的同一套，改动时不能丢。
+  管理器里对应的方法（`_check` 的那一段、`_run_project_update`、`_ensure_project_environment`、
+  `_post_run_view_maintenance`、`check_prefetch` / `prefetch_script_update` / `discard_prefetched_update`）
+  只剩取配置 → 组装入参 → 调用 → 事件转日志 → 处理结局与写回。
 - 接缝模块按将来的积木归属分好了，**agent 环境一侧**的接缝（`pool_reconcile`、`env_cache`、
   `env_trial`）只收普通数据（项目路径集合、被替换的版本、待验证的目录），不读脚本配置、不导入
   `embedded_project` / `project_path` 这类项目更新一侧的模块；「哪些项目还在」由项目更新一侧算
@@ -261,7 +281,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
     按当前 `Info.Path` 强制重导进私有渠道，**不看签名**（补上修改时间没变而漏检的改动）；内容与视图相同
     时不重建视图、只刷新同步时间。返回的 `message` 就是结果（N 个文件变化 / 内容未变化）。脚本运行中
     （`is_locked`）、项目正在更新、视图预约被占用、来源目录不在都直接拒绝，不排队、不打断。
-  - **不更新**：运行前自动更新跳过（`_run_project_update` 开头一行日志）、投影补齐不查，
+  - **不更新**：运行前自动更新跳过（`project_session.update` 开头一行日志）、投影补齐不查，
     `/maafw/update` 的检查与应用都拒绝（`UPDATE_FOLLOW_SOURCE`，源码形态是 `UPDATE_SOURCE_FORM`）。
   - **源码形态**（见下面「源码形态」）一律处在这种模式：`follow_source_enabled` 对导入报告
     `sourceForm` 为真的脚本恒真，开关在界面上锁在开着；源码形态的导入不管调用方传什么都进私有渠道。
@@ -495,7 +515,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   `prepare_project_environment` / `_prepare_project_environment_sync` 的 `lenient_health_check`
   传下来，**缺省严格**，漏改的调用点不会被放宽）：
   - **运行时宽松（报错照跑）**：worker 起 agent 前（`runner.prepare_agent_python_envs`）与宿主
-    运行前 / 运行后的环境确认（`_ensure_project_environment`）。检查不管因为什么失败都先试补装，
+    运行前 / 运行后的环境确认（`project_session.confirm_environment`）。检查不管因为什么失败都先试补装，
     复检仍失败就写一行醒目的【警告】（原因照原文）、照常起 agent。原因记进结果的
     `agents.healthWarnings`：这次不写环境缓存、不记 `envConfirmedFor`（下次照样重查，编辑页
     不会因此显示「已就绪」）；agent 很快退出时「Agent 进程已退出」的报错后面带
@@ -949,7 +969,7 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   本地导入的载荷可以走。托管级 `Update.PackageMode`（编辑页「更新方式」，M9A、MSS 继承）默认
   `incremental`：按上面的规则走区间差量 / Mirror 酱差量包、失败回退全量；选 `full` 时一律下全量包
   （不走区间、Mirror 酱也不要差量包）。环境变量 `AUTO_MAS_MAAFW_FORCE_FULL_PACKAGE=1` 与选 `full`
-  等效、对所有托管生效，供验收比对与应急。队列预下载（`embedded_manager.prefetch_script_update`）
+  等效、对所有托管生效，供验收比对与应急。队列预下载（`project_session.prefetch`，管理器的 `prefetch_script_update` 调它）
   只在 `full` 时做：增量要以开跑时的当前载荷为基准，提前下不了，`incremental` 下直接跳过。
   **直连速度保护**（`app.utils.common.zip_range.RangeSpeedGuard`，`range_delta` 转出）：只在退回的整包真能走加速镜像时设（镜像没关、
   有镜像、资产有 sha256，与 `transport.download_resumable` 同一判据）——国内直连 GitHub 常年

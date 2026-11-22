@@ -18,7 +18,7 @@
 
 """一次「对触发脚本所在组做一次更新类操作」的公共参数与入口（宿主侧）。
 
-``view_update.run_view_update`` 有四个调用方：运行前自动更新（``embedded_manager``）、
+``view_update.run_view_update`` 有四个调用方：运行前自动更新（``project_session``）、
 手动 ``/maafw/update``（``api_service/update.py``）、旧投影规则载荷的补齐（``view_heal``）、
 运行时发行包核对（``view_release_check``）。它们各自要组装的东西——触发脚本、组（渠道）与
 同组候选、谁持视图预约、等谱系锁的上限、日志出口、停止令牌、代理、进度出口、预检——都收在

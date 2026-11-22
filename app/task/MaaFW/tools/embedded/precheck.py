@@ -34,7 +34,7 @@ MaaFgo v2.0.03 漏装了 ``agent/battle/runtime/``，解释器能 ``import maa``
 建环境、导入检查、临时 agent 目录的放置与回收归 agent 环境一侧（``env_trial.py`` 的
 ``trial_environment``）；这里只查新版本自带的原生库能不能加载、记失败原因与备忘、构造回调。
 回调跑在工作线程里，不拿锁、不 await。运行前自动更新
-（``embedded_manager``）与手动更新（``/maafw/update``）共用同一份逻辑，两边只在
+（``project_session``）与手动更新（``/maafw/update``）共用同一份逻辑，两边只在
 「要不要读备忘」上不同（手动不读，见 precheck_gate）。
 """
 
