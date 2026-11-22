@@ -17,11 +17,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.models.emulator import DeviceInfo
+from app.task.MaaFW.blocks.maafw_runner.host.device_config import (
+    game_launched_with_emulator,
+)
+from app.task.MaaFW.blocks.maafw_runner.host.plan_run import (
+    MaaFWPlanRunLog,
+    MaaFWPlanRunPoint,
+    MaaFWPlanRunSink,
+)
 from app.utils import IS_WINDOWS, get_logger
 from app.utils import display as _utils_display
-
-from .device_config import game_launched_with_emulator
-from .plan_run import MaaFWPlanRunLog, MaaFWPlanRunPoint, MaaFWPlanRunSink
 
 # 与任务类同一个名字：后端日志里这段流程的行照旧记在「MaaFW 插件自动代理」下
 logger = get_logger("MaaFW 插件自动代理")

@@ -54,7 +54,7 @@ from app.task.MaaFW.blocks.maafw_project_update.host.embedded_project import (
     is_embedded_copy_dir_name,
     resolve_maafw_project_root,
 )
-from app.task.MaaFW.tools.embedded.game_package import (
+from app.task.MaaFW.blocks.maafw_runner.host.game_package import (
     resolve_game_package,
     resource_paths_for,
 )

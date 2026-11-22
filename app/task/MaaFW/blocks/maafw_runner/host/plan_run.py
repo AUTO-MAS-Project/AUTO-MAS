@@ -52,20 +52,20 @@ from app.task.MaaFW.blocks.maafw_interface.runner.models import (
     MaaFWRunPlan,
     MaaFWRunResult,
 )
-from app.task.MaaFW.tools.core.runner.environment import (
+from app.task.MaaFW.blocks.maafw_runner.core.runner.environment import (
     MaaFWRunnerEnvironment,
     worker_run_plan,
 )
-from app.task.MaaFW.tools.core.runner.run_events import (
+from app.task.MaaFW.blocks.maafw_runner.core.runner.run_events import (
     RUN_RECORD_EVENT_TYPE,
     STAGE_ENVIRONMENT,
 )
-from app.task.MaaFW.tools.core.runner.service import MaaFWRunnerService
-from app.task.MaaFW.tools.core.runner.worker_launch import (
+from app.task.MaaFW.blocks.maafw_runner.core.runner.service import MaaFWRunnerService
+from app.task.MaaFW.blocks.maafw_runner.core.runner.worker_launch import (
     IMPORT_ROOT,
     WORKER_MODULE,
 )
-from app.task.MaaFW.tools.core.worker_protocol import (
+from app.task.MaaFW.blocks.maafw_runner.core.worker_protocol import (
     AUDIENCE_UI,
     UI_LOG_MAX_CHARS,
     WorkerEventServer,

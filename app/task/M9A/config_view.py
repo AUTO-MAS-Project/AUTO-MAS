@@ -47,18 +47,20 @@ from app.task.MaaFW.blocks.maafw_project_update.host.update_credentials import (
     resolve_update_credentials,
     resolve_update_proxy_url,
 )
+from app.task.MaaFW.blocks.maafw_runner.host.desktop_game import MaaFWDesktopGameSpec
+from app.task.MaaFW.blocks.maafw_runner.host.proxy_quota import (
+    proxy_times_used_up as _proxy_times_used_up,
+)
+from app.task.MaaFW.blocks.maafw_runner.host.run_settings import (
+    period_limits as _period_limits,
+)
 from app.task.MaaFW.tools.backup_archive import read_overlay_values
 from app.task.MaaFW.tools.embedded.default_snapshot import fill_default_task_snapshots
-from app.task.MaaFW.tools.embedded.desktop_game import MaaFWDesktopGameSpec
 from app.task.MaaFW.tools.embedded.option_secrets import (
     prepare_user_task_snapshot,
     script_task_snapshots,
     user_task_snapshot,
 )
-from app.task.MaaFW.tools.embedded.proxy_quota import (
-    proxy_times_used_up as _proxy_times_used_up,
-)
-from app.task.MaaFW.tools.embedded.run_settings import period_limits as _period_limits
 from app.utils.common.game_resolution import parse_resolution_option
 
 # ---------------------------------------------------------------------------

@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 # 信号取值也是宿主读结果时要比的，定义在 worker_protocol，这里与宿主共用一份
-from app.task.MaaFW.tools.core.worker_protocol import (
+from app.task.MaaFW.blocks.maafw_runner.core.worker_protocol import (
     CLIENT_UPDATE_REQUIRED,
     SERVER_MAINTENANCE,
 )

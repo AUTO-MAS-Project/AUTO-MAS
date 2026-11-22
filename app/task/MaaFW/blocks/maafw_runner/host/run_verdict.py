@@ -17,7 +17,7 @@ from app.task.MaaFW.blocks.maafw_interface.runner.models import MaaFWRunResult
 from app.task.MaaFW.blocks.maafw_native.project_runtime import (
     ARCHITECTURE_MISMATCH_MARKERS,
 )
-from app.task.MaaFW.tools.core.runner.run_events import (
+from app.task.MaaFW.blocks.maafw_runner.core.runner.run_events import (
     CATEGORY_ENVIRONMENT,
     CATEGORY_GAME_UPDATE_REQUIRED,
     CATEGORY_HOST_ERROR,
@@ -25,7 +25,7 @@ from app.task.MaaFW.tools.core.runner.run_events import (
     CATEGORY_RESOURCE_FAILURE,
     CATEGORY_RUN_TIMEOUT,
 )
-from app.task.MaaFW.tools.core.worker_protocol import SERVER_MAINTENANCE
+from app.task.MaaFW.blocks.maafw_runner.core.worker_protocol import SERVER_MAINTENANCE
 
 from .plan_run import MaaFWRunTimeoutError
 from .pretask_run import MaaFWPretaskError

@@ -73,21 +73,21 @@ from app.task.MaaFW.blocks.maafw_project_update.host.project_session import (
 from app.task.MaaFW.blocks.maafw_project_update.host.update_credentials import (
     AutoUpdateMode,
 )
-from app.task.MaaFW.tools.backup_archive import (
-    archive_mas_runtime_backup,
-    archive_native_backup,
-)
-from app.task.MaaFW.tools.embedded.proxy_quota import proxy_today
-from app.task.MaaFW.tools.embedded.run_messages import update_log_lines
-from app.task.MaaFW.tools.embedded.run_notices import (
+from app.task.MaaFW.blocks.maafw_runner.host.proxy_quota import proxy_today
+from app.task.MaaFW.blocks.maafw_runner.host.run_messages import update_log_lines
+from app.task.MaaFW.blocks.maafw_runner.host.run_notices import (
     proxy_result_body,
     signal_summary_title,
     user_results_text,
 )
-from app.task.MaaFW.tools.embedded.signal_notice import (
+from app.task.MaaFW.blocks.maafw_runner.host.signal_notice import (
     SERVER_MAINTENANCE,
     MaaFWSignalTracker,
     push_signal_notices,
+)
+from app.task.MaaFW.tools.backup_archive import (
+    archive_mas_runtime_backup,
+    archive_native_backup,
 )
 from app.task.MaaFW.tools.embedded.telemetry_project import record_project_run
 from app.task.run_flow import point

@@ -31,7 +31,7 @@ from typing import Any
 
 import psutil
 
-from app.task.MaaFW.tools.core.worker_protocol import (
+from app.task.MaaFW.blocks.maafw_runner.core.worker_protocol import (
     AUDIENCE_WORKER_LOG,
     LEVEL_WARNING,
     EventChannelClient,

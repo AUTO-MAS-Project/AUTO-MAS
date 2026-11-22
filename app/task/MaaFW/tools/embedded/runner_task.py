@@ -88,33 +88,20 @@ from app.task.MaaFW.blocks.maafw_project_update.host.resource_repair import (
 from app.task.MaaFW.blocks.maafw_project_update.host.update_credentials import (
     resolve_update_proxy_url,
 )
-from app.task.MaaFW.tools.core.runner.run_events import (
+from app.task.MaaFW.blocks.maafw_runner.core.runner.run_events import (
     CATEGORY_SIGNAL,
     STAGE_CLIENT,
     STAGE_PRETASK,
 )
-from app.task.MaaFW.tools.core.runner.service import MaaFWRunnerService
-from app.task.run_flow import (
-    begin_attempt,
-    point,
-)
-from app.utils import UTC4, get_logger, power
-from app.utils.common.game_resolution import (
-    parse_resolution_option,
-)
-from app.utils.common.process.scope import (
-    current_process_scope,
-)
-from app.utils.common.process.session import desktop_process_target
-
-from .attempt_ledger import MaaFWAttemptLedger
-from .desktop_game import (
+from app.task.MaaFW.blocks.maafw_runner.core.runner.service import MaaFWRunnerService
+from app.task.MaaFW.blocks.maafw_runner.host.attempt_ledger import MaaFWAttemptLedger
+from app.task.MaaFW.blocks.maafw_runner.host.desktop_game import (
     MaaFWDesktopGame,
     MaaFWDesktopGameSpec,
     describe_desktop_launch_error,
     desktop_launch_managed,
 )
-from .device_config import (
+from app.task.MaaFW.blocks.maafw_runner.host.device_config import (
     WIN32_NO_WINDOW_RULES_MESSAGE,
     MaaFWAdbDeviceState,
     adb_ready_timeout,
@@ -128,6 +115,87 @@ from .device_config import (
     resolve_login_adb_path,
     resolve_window_handle,
 )
+from app.task.MaaFW.blocks.maafw_runner.host.plan_run import (
+    MaaFWPlanRun,
+    MaaFWPlanRunEvent,
+    MaaFWPlanRunLog,
+    MaaFWPlanRunPoint,
+    MaaFWPlanRunRecord,
+    MaaFWPlanRunRequest,
+    MaaFWPlanRunStage,
+)
+from app.task.MaaFW.blocks.maafw_runner.host.pretask_run import (
+    MaaFWPretaskRunner,
+    MaaFWPretaskRunRequest,
+    pretasks_need_rerun,
+)
+from app.task.MaaFW.blocks.maafw_runner.host.proxy_quota import (
+    proxy_day_rolled,
+    proxy_times_used_up,
+    proxy_today,
+    success_settlement,
+)
+from app.task.MaaFW.blocks.maafw_runner.host.resource_failure import (
+    describe_resource_failure,
+)
+from app.task.MaaFW.blocks.maafw_runner.host.run_messages import (
+    MISSING_TASK_NOTICE_PREFIX,
+    describe_failed_result,
+    format_completed_task_labels,
+    format_run_overview_log,
+    format_user_log_line,
+    period_all_done_message,
+    record_event_point,
+    remaining_done_message,
+    signal_attempt_facts,
+)
+from app.task.MaaFW.blocks.maafw_runner.host.run_notices import (
+    statistics_mark,
+    statistics_title,
+    success_notice_text,
+)
+from app.task.MaaFW.blocks.maafw_runner.host.run_record import RUN_RECORD_HISTORY_KEY
+from app.task.MaaFW.blocks.maafw_runner.host.run_redaction import (
+    log_redaction_notice,
+    project_log_secret_variants,
+    run_secret_values,
+    secret_log_variants,
+)
+from app.task.MaaFW.blocks.maafw_runner.host.run_settings import (
+    load_json_dict,
+    load_script_hotkeys,
+    loop_guard,
+    period_limits,
+    task_time_limits,
+)
+from app.task.MaaFW.blocks.maafw_runner.host.run_verdict import (
+    VERDICT_SIGNAL,
+    VERDICT_SUCCEEDED,
+    judge_attempt,
+)
+from app.task.MaaFW.blocks.maafw_runner.host.run_verdict import (
+    MaaFWWorkstationLocked as _MaaFWWorkstationLocked,
+)
+from app.task.MaaFW.blocks.maafw_runner.host.signal_notice import (
+    MAINTENANCE_LAST_STATUS,
+    MAINTENANCE_SKIP_MESSAGE,
+    SERVER_MAINTENANCE,
+    SIGNAL_USER_MESSAGES,
+    MaaFWSignalTracker,
+)
+from app.task.run_flow import (
+    begin_attempt,
+    point,
+)
+from app.utils import UTC4, get_logger, power
+from app.utils.common.game_resolution import (
+    parse_resolution_option,
+)
+from app.utils.common.process.scope import (
+    current_process_scope,
+)
+from app.utils.common.process.session import desktop_process_target
+
 from .host_client import (
     WORKSTATION_LOCKED_MESSAGE,
     open_emulator_for_run,
@@ -140,72 +208,6 @@ from .option_secrets import (
     open_task_snapshot,
     script_task_snapshots,
     user_task_snapshot,
-)
-from .plan_run import (
-    MaaFWPlanRun,
-    MaaFWPlanRunEvent,
-    MaaFWPlanRunLog,
-    MaaFWPlanRunPoint,
-    MaaFWPlanRunRecord,
-    MaaFWPlanRunRequest,
-    MaaFWPlanRunStage,
-)
-from .pretask_run import (
-    MaaFWPretaskRunner,
-    MaaFWPretaskRunRequest,
-    pretasks_need_rerun,
-)
-from .proxy_quota import (
-    proxy_day_rolled,
-    proxy_times_used_up,
-    proxy_today,
-    success_settlement,
-)
-from .resource_failure import (
-    describe_resource_failure,
-)
-from .run_messages import (
-    MISSING_TASK_NOTICE_PREFIX,
-    describe_failed_result,
-    format_completed_task_labels,
-    format_run_overview_log,
-    format_user_log_line,
-    period_all_done_message,
-    record_event_point,
-    remaining_done_message,
-    signal_attempt_facts,
-)
-from .run_notices import (
-    statistics_mark,
-    statistics_title,
-    success_notice_text,
-)
-from .run_record import RUN_RECORD_HISTORY_KEY
-from .run_redaction import (
-    log_redaction_notice,
-    project_log_secret_variants,
-    run_secret_values,
-    secret_log_variants,
-)
-from .run_settings import (
-    load_json_dict,
-    load_script_hotkeys,
-    loop_guard,
-    period_limits,
-    task_time_limits,
-)
-from .run_verdict import (
-    VERDICT_SIGNAL,
-    VERDICT_SUCCEEDED,
-    judge_attempt,
-)
-from .run_verdict import MaaFWWorkstationLocked as _MaaFWWorkstationLocked
-from .signal_notice import (
-    MAINTENANCE_LAST_STATUS,
-    MAINTENANCE_SKIP_MESSAGE,
-    SERVER_MAINTENANCE,
-    SIGNAL_USER_MESSAGES,
-    MaaFWSignalTracker,
 )
 
 logger = get_logger("MaaFW 插件自动代理")

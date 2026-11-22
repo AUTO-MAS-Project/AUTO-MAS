@@ -3,9 +3,9 @@
 M9A 等以 MFW 特调运行的专项，以及直接导入的各个 ``interface.json`` 项目，都跑在同一套
 通用引擎上；这里守的是它们共用的那部分，不属于任何单个专项或单个功能的一次性测试。
 
-只覆盖通用引擎 ``app/task/MaaFW/tools/core/``，不覆盖专项；只收缺一条就要命的：
+只覆盖通用引擎（``app/task/MaaFW/blocks/`` 下各积木的 ``core`` 与两个库），不覆盖专项；只收缺一条就要命的：
 守的东西一改坏，MFW 运行就成片失败。收录标准见 ``tests/AGENTS.md``「核心最小回归」；
-功能与 bug 的边界测试照旧只在本地跑，不往这里放。改 ``tools/core/`` 前先跑：
+功能与 bug 的边界测试照旧只在本地跑，不往这里放。改 ``blocks/`` 前先跑：
 
     python -m pytest tests/task/test_maafw_core.py -q
 """
@@ -31,9 +31,9 @@ SOURCE_ROOT = Path(__file__).resolve().parents[2]
 # ---------------------------------------------------------------------------
 # 一、worker 导入闭包隔离
 #
-# worker 以 ``python -m app.task.MaaFW.tools.core.runner.worker`` 起在**运行池的
-# 隔离 venv** 里：``app/task/MaaFW/tools/embedded/runner_task.py`` 只给它
-# ``import_paths=[SOURCE_ROOT]``，不给宿主 venv 的 site-packages，所以那个解释器里
+# worker 以 ``python -m app.task.MaaFW.blocks.maafw_runner.core.runner.worker`` 起在**运行池的
+# 隔离 venv** 里：起 worker 的 ``blocks/maafw_runner/host/plan_run.py`` 只给它
+# ``import_paths=[IMPORT_ROOT]``（即 SOURCE_ROOT），不给宿主 venv 的 site-packages，所以那个解释器里
 # 只有标准库、maafw binding 和 ``BASE_RUNTIME_PACKAGES`` 那几个包。
 #
 # 因此 worker 能触达的 ``app.*`` 模块必须全部待在 MaaFW 运行器自己的子树里，三方包
@@ -46,12 +46,12 @@ SOURCE_ROOT = Path(__file__).resolve().parents[2]
 # 也不算。
 # ---------------------------------------------------------------------------
 
-WORKER_MODULE = "app.task.MaaFW.tools.core.runner.worker"
+WORKER_MODULE = "app.task.MaaFW.blocks.maafw_runner.core.runner.worker"
 
-#: worker 允许触达的 ``app.*`` 范围：MaaFW 运行器与它的同层工具包，以及原生库识别库
-#: ``maafw_native``、解析库 ``maafw_interface``。
+#: worker 允许触达的 ``app.*`` 范围：运行积木的 ``core``，两个库（原生库识别 ``maafw_native``、
+#: 解析 ``maafw_interface``），以及另两块积木的 ``core``（不归宿主、不依赖 SDK 的部分）。
 ALLOWED_PREFIXES = (
-    "app.task.MaaFW.tools.core.",
+    "app.task.MaaFW.blocks.maafw_runner.core.",
     "app.task.MaaFW.blocks.maafw_native.",
     "app.task.MaaFW.blocks.maafw_interface.",
     "app.task.MaaFW.blocks.maafw_agent_env.core.",
@@ -212,6 +212,11 @@ def _runner_venv_import_roots() -> set[str]:
 
 def test_worker_closure_stays_inside_runner_subtree() -> None:
     assert _module_file(WORKER_MODULE) is not None, "worker 模块不见了，先修路径"
+    from app.task.MaaFW.blocks.maafw_runner.core.runner.worker_launch import (
+        WORKER_MODULE as launched,
+    )
+
+    assert launched == WORKER_MODULE, "宿主起的 worker 与这里守的不是同一个模块"
 
     violations = sorted(
         (module, sorted(sources))
@@ -342,8 +347,13 @@ def test_job_round_trips_to_worker(tmp_path: Path) -> None:
         MaaFWDeviceConfig,
         MaaFWRunnerJobPayload,
     )
-    from app.task.MaaFW.tools.core.runner.service import MaaFWRunnerService
-    from app.task.MaaFW.tools.core.worker_protocol import decode_job, encode_job
+    from app.task.MaaFW.blocks.maafw_runner.core.runner.service import (
+        MaaFWRunnerService,
+    )
+    from app.task.MaaFW.blocks.maafw_runner.core.worker_protocol import (
+        decode_job,
+        encode_job,
+    )
 
     service = MaaFWRunnerService()
     payload = service.create_job_payload(
@@ -405,7 +415,10 @@ def test_worker_result_survives_host_validation() -> None:
     )
     # worker.py 发 {"type": "result", "data": model_dump(mode="json")}，经事件通道按帧
     # 传给宿主，runner_task 用 models.MaaFWRunResult.model_validate 收。
-    from app.task.MaaFW.tools.core.worker_protocol import FrameDecoder, encode_message
+    from app.task.MaaFW.blocks.maafw_runner.core.worker_protocol import (
+        FrameDecoder,
+        encode_message,
+    )
 
     event = {"type": "result", "data": result.model_dump(mode="json")}
     received = FrameDecoder().feed(encode_message(event))
@@ -608,7 +621,7 @@ def test_python_agent_uses_runner_runtime(
     """两份并存时 runner 取版本高的那份，agent 的 MAAFW_BINARY_PATH 与 PATH 上第一个项目
     原生库目录都必须是它。"""
 
-    from app.task.MaaFW.tools.core.runner.runner import (
+    from app.task.MaaFW.blocks.maafw_runner.core.runner.runner import (
         MaaFWRunner,
         runner_maafw_runtime_path,
     )
@@ -638,8 +651,8 @@ def test_native_agent_version_mismatch_fails_before_spawn(
     """原生 agent 固定从 maafw/ 加载，runner 选了另一份且版本不同时，必须在建 AgentClient、
     起子进程之前就抛错，而不是每次起一个注定连不上的 agent、等满连接超时。"""
 
-    from app.task.MaaFW.tools.core.runner import runner as runner_module
-    from app.task.MaaFW.tools.core.runner.runner import MaaFWRunner
+    from app.task.MaaFW.blocks.maafw_runner.core.runner import runner as runner_module
+    from app.task.MaaFW.blocks.maafw_runner.core.runner.runner import MaaFWRunner
 
     project = _mixed_project(tmp_path, {_MAAFW_DIR: _OLD, _NATIVE_DIR: _NEW})
     fake = _fake_runner(project, _agent_plan(project, "project_binary"))
@@ -669,7 +682,7 @@ def test_native_agent_on_plain_layout_not_blocked(
     """项目只自带 maafw/ 一份原生库的常规布局，宿主同时给了运行池里另一版本的官方库，
     runner 用的仍是项目那份，核对必须放行；误报就是所有原生 agent 项目都启动不了。"""
 
-    from app.task.MaaFW.tools.core.runner.runner import MaaFWRunner
+    from app.task.MaaFW.blocks.maafw_runner.core.runner.runner import MaaFWRunner
 
     project = _mixed_project(tmp_path, {_MAAFW_DIR: _NEW})
     pool = tmp_path / "pool" / "native"

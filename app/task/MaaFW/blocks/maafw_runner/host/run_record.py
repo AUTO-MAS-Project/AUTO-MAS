@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
-from app.task.MaaFW.tools.core.runner.run_events import (
+from app.task.MaaFW.blocks.maafw_runner.core.runner.run_events import (
     CATEGORY_INIT_FAILED,
     CATEGORY_LOOP_GUARD,
     CATEGORY_RUN_TIMEOUT,

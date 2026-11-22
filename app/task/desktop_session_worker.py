@@ -178,7 +178,7 @@ def run_action(pipe) -> None:
         from app.task.MaaFW.blocks.maafw_interface.controller_win32.service import (
             MaaFWWin32ControllerService,
         )
-        from app.task.MaaFW.tools.embedded.desktop_windows import (
+        from app.task.MaaFW.blocks.maafw_runner.host.desktop_windows import (
             list_maafw_desktop_windows,
         )
 

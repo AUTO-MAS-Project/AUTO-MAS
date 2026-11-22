@@ -34,13 +34,15 @@ from app.task.MaaFW.blocks.maafw_interface.runner.run_plan import (
 from app.task.MaaFW.blocks.maafw_interface.runner.task_selection import (
     OFF_DAY_REASON_SUFFIX,
 )
-from app.task.MaaFW.tools.core.runner.run_events import (
+from app.task.MaaFW.blocks.maafw_runner.core.runner.run_events import (
     CATEGORY_SCRIPT_STOPPED,
     CATEGORY_USER_STOPPED,
     MaaFWTaskEndEvent,
     MaaFWTaskStartEvent,
 )
-from app.task.MaaFW.tools.core.worker_protocol import SIGNAL_SCREENSHOT_KINDS
+from app.task.MaaFW.blocks.maafw_runner.core.worker_protocol import (
+    SIGNAL_SCREENSHOT_KINDS,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - 只给类型检查用
     from app.task.run_flow import PointState

@@ -94,6 +94,20 @@ from app.task.MaaFW.blocks.maafw_project_update.host.update_credentials import (
     AutoUpdateMode,
     resolve_auto_update_mode,
 )
+from app.task.MaaFW.blocks.maafw_runner.host.proxy_quota import (
+    proxy_times_used_up,
+    proxy_today,
+)
+from app.task.MaaFW.blocks.maafw_runner.host.run_notices import (
+    proxy_result_body,
+    signal_summary_title,
+    user_results_text,
+)
+from app.task.MaaFW.blocks.maafw_runner.host.signal_notice import (
+    SERVER_MAINTENANCE,
+    MaaFWSignalTracker,
+    push_signal_notices,
+)
 from app.task.MaaFW.tools.backup_archive import (
     archive_mas_runtime_backup,
     archive_native_backup,
@@ -101,20 +115,6 @@ from app.task.MaaFW.tools.backup_archive import (
 )
 from app.task.MaaFW.tools.embedded.default_snapshot import (
     fill_default_task_snapshots,
-)
-from app.task.MaaFW.tools.embedded.proxy_quota import (
-    proxy_times_used_up,
-    proxy_today,
-)
-from app.task.MaaFW.tools.embedded.run_notices import (
-    proxy_result_body,
-    signal_summary_title,
-    user_results_text,
-)
-from app.task.MaaFW.tools.embedded.signal_notice import (
-    SERVER_MAINTENANCE,
-    MaaFWSignalTracker,
-    push_signal_notices,
 )
 from app.task.MaaFW.tools.embedded.telemetry_project import record_project_run
 from app.task.run_flow import point
@@ -440,7 +440,9 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         ``run_messages.format_user_log_line`` 一致，这样并入账号日志后看不出接缝。
         """
 
-        from app.task.MaaFW.tools.embedded.run_messages import update_log_lines
+        from app.task.MaaFW.blocks.maafw_runner.host.run_messages import (
+            update_log_lines,
+        )
 
         logger.info(f"MFW 项目更新：{message}")
         lines = update_log_lines(message, datetime.now().astimezone())

@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
-from app.task.MaaFW.tools.core.runner.run_events import (
+from app.task.MaaFW.blocks.maafw_runner.core.runner.run_events import (
     CATEGORY_AGENT_EXITED,
     CATEGORY_ENVIRONMENT,
     CATEGORY_GAME_LAUNCH_FAILED,

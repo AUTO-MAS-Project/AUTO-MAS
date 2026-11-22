@@ -108,7 +108,7 @@ from app.task.MaaFW.blocks.maafw_native.project_runtime import (
 )
 
 # 宿主也要用的常量放在不依赖 maa 的 worker_protocol 里（本模块一导入就加载 maa，宿主引不了）
-from app.task.MaaFW.tools.core.worker_protocol import (
+from app.task.MaaFW.blocks.maafw_runner.core.worker_protocol import (
     AUDIENCE_WORKER_LOG,
     DETAIL_LOG_PREFIX,
     LEVEL_ERROR,

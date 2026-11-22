@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from app.task.MaaFW.blocks.maafw_interface.runner.models import MaaFWRunPlan
-from app.task.MaaFW.tools.core.runner.run_events import (
+from app.task.MaaFW.blocks.maafw_runner.core.runner.run_events import (
     CATEGORY_HOST_ERROR,
     CATEGORY_USER_STOPPED,
     MaaFWTaskEndEvent,

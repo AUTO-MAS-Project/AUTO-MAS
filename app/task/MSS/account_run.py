@@ -99,18 +99,18 @@ from app.task.MaaFW.blocks.maafw_project_update.host.project_path import (
 from app.task.MaaFW.blocks.maafw_project_update.host.resource_repair import (
     MaaFWResourceRepair,
 )
-from app.task.MaaFW.tools.core.runner.run_events import (
+from app.task.MaaFW.blocks.maafw_runner.core.runner.run_events import (
     CATEGORY_SIGNAL,
     STAGE_CLIENT,
     STAGE_PRETASK,
 )
-from app.task.MaaFW.tools.embedded.attempt_ledger import MaaFWAttemptLedger
-from app.task.MaaFW.tools.embedded.desktop_game import (
+from app.task.MaaFW.blocks.maafw_runner.host.attempt_ledger import MaaFWAttemptLedger
+from app.task.MaaFW.blocks.maafw_runner.host.desktop_game import (
     MaaFWDesktopGame,
     describe_desktop_launch_error,
     desktop_launch_managed,
 )
-from app.task.MaaFW.tools.embedded.device_config import (
+from app.task.MaaFW.blocks.maafw_runner.host.device_config import (
     WIN32_NO_WINDOW_RULES_MESSAGE,
     MaaFWAdbDeviceState,
     adb_ready_timeout,
@@ -124,18 +124,7 @@ from app.task.MaaFW.tools.embedded.device_config import (
     resolve_login_adb_path,
     resolve_window_handle,
 )
-from app.task.MaaFW.tools.embedded.host_client import (
-    WORKSTATION_LOCKED_MESSAGE,
-    open_emulator_for_run,
-    script_adb_env,
-    workstation_lock_reason,
-)
-from app.task.MaaFW.tools.embedded.host_version import host_client_version
-from app.task.MaaFW.tools.embedded.option_secrets import (
-    DPAPI_SECRET_OPENER,
-    open_task_snapshot,
-)
-from app.task.MaaFW.tools.embedded.plan_run import (
+from app.task.MaaFW.blocks.maafw_runner.host.plan_run import (
     MaaFWPlanRun,
     MaaFWPlanRunEvent,
     MaaFWPlanRunLog,
@@ -144,18 +133,20 @@ from app.task.MaaFW.tools.embedded.plan_run import (
     MaaFWPlanRunRequest,
     MaaFWPlanRunStage,
 )
-from app.task.MaaFW.tools.embedded.pretask_run import (
+from app.task.MaaFW.blocks.maafw_runner.host.pretask_run import (
     MaaFWPretaskRunner,
     MaaFWPretaskRunRequest,
     pretasks_need_rerun,
 )
-from app.task.MaaFW.tools.embedded.proxy_quota import (
+from app.task.MaaFW.blocks.maafw_runner.host.proxy_quota import (
     proxy_day_rolled,
     proxy_today,
     success_settlement,
 )
-from app.task.MaaFW.tools.embedded.resource_failure import describe_resource_failure
-from app.task.MaaFW.tools.embedded.run_messages import (
+from app.task.MaaFW.blocks.maafw_runner.host.resource_failure import (
+    describe_resource_failure,
+)
+from app.task.MaaFW.blocks.maafw_runner.host.run_messages import (
     MISSING_TASK_NOTICE_PREFIX,
     describe_failed_result,
     format_completed_task_labels,
@@ -167,36 +158,47 @@ from app.task.MaaFW.tools.embedded.run_messages import (
     retry_skip_log_lines,
     signal_attempt_facts,
 )
-from app.task.MaaFW.tools.embedded.run_notices import (
+from app.task.MaaFW.blocks.maafw_runner.host.run_notices import (
     statistics_mark,
     statistics_title,
     success_notice_text,
 )
-from app.task.MaaFW.tools.embedded.run_record import RUN_RECORD_HISTORY_KEY
-from app.task.MaaFW.tools.embedded.run_redaction import (
+from app.task.MaaFW.blocks.maafw_runner.host.run_record import RUN_RECORD_HISTORY_KEY
+from app.task.MaaFW.blocks.maafw_runner.host.run_redaction import (
     log_redaction_notice,
     project_log_secret_variants,
     run_secret_values,
     secret_log_variants,
 )
-from app.task.MaaFW.tools.embedded.run_settings import (
+from app.task.MaaFW.blocks.maafw_runner.host.run_settings import (
     load_json_dict,
     load_script_hotkeys,
     loop_guard,
     task_time_limits,
 )
-from app.task.MaaFW.tools.embedded.run_verdict import (
+from app.task.MaaFW.blocks.maafw_runner.host.run_verdict import (
     VERDICT_SIGNAL,
     VERDICT_SUCCEEDED,
     MaaFWWorkstationLocked,
     judge_attempt,
 )
-from app.task.MaaFW.tools.embedded.signal_notice import (
+from app.task.MaaFW.blocks.maafw_runner.host.signal_notice import (
     MAINTENANCE_LAST_STATUS,
     MAINTENANCE_SKIP_MESSAGE,
     SERVER_MAINTENANCE,
     SIGNAL_USER_MESSAGES,
     MaaFWSignalTracker,
+)
+from app.task.MaaFW.tools.embedded.host_client import (
+    WORKSTATION_LOCKED_MESSAGE,
+    open_emulator_for_run,
+    script_adb_env,
+    workstation_lock_reason,
+)
+from app.task.MaaFW.tools.embedded.host_version import host_client_version
+from app.task.MaaFW.tools.embedded.option_secrets import (
+    DPAPI_SECRET_OPENER,
+    open_task_snapshot,
 )
 from app.task.MSS import config_view
 from app.task.MSS.arrange import (

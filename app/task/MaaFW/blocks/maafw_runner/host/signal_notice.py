@@ -27,7 +27,7 @@ from app.models.notification.channel import DispatchResult, NotifyTarget
 
 # 信号取值与 worker 共用 worker_protocol 那一份；不经 core.runner 包导入（它的 __init__
 # 会拉起 runner 子树）。
-from app.task.MaaFW.tools.core.worker_protocol import (
+from app.task.MaaFW.blocks.maafw_runner.core.worker_protocol import (
     CLIENT_UPDATE_REQUIRED,
     SERVER_MAINTENANCE,
 )
