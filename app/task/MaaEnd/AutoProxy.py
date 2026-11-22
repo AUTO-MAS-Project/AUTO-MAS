@@ -58,7 +58,7 @@ from app.task.MaaFW.tools.core.runner.run_plan import (
     _build_pretask_plans,
     _select_resource,
 )
-from app.task.MaaFW.tools.embedded.shell_instances import _Labels, _mxu_option_values
+from app.task.MaaFW.tools.embedded.shell_instances import Labels, mxu_option_values
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     append_push_log,
@@ -678,11 +678,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 "type": "select",
                 "value": "CN" if server == "官服" else server,
             }
-        values = _mxu_option_values(
+        values = mxu_option_values(
             setting_options,
             build_task_option_maps(interface)[task_name],
             "游戏启动设置",
-            _Labels(interface, None),
+            Labels(interface, None),
             skipped,
         )
         if skipped:
