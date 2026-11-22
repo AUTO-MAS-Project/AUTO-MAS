@@ -9,7 +9,8 @@
 收尾（保存账号配置并解锁、收尾项目、信号通知、代理结果）。差别只在：只认确切类型 ``MSSConfig``；项目会话
 的请求经 MSS 自己的属主入口 ``read_managed`` 取记录组装（属主名 ``mss_adapter``）；遥测的上报名是 ``MSS``。
 
-X 锁照旧直接 ``try_lock_x()``，不走 ``lock_script_config``（所以 ``after_config_lock`` 不会被调，与通用 MFW 相同）。
+X 锁照旧直接 ``try_lock_x()``，不走 ``lock_script_config``；拿到锁、确认有可运行账号后照通用 MFW 调 L2 挂的
+``after_config_lock``（选定游戏会话、复查预下载），账号循环里再按账号选定、跑完交回账号覆盖的目标。
 项目会话、运行池路由与自检、归档、遥测、通知正文都调 ``MaaFW/tools/embedded`` 里的叶子；读写配置一律经
 ``config_view``。账号流程模块经 runner 包 import maa（导入即打开 DLL），只在账号开跑前延迟导入。
 """
@@ -37,6 +38,7 @@ from app.models.emulator import DeviceBase, DeviceProvider
 from app.models.notification.report import TaskResultData, TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
+from app.task.game import current_game_session
 from app.task.MaaFW.tools.backup_archive import (
     archive_mas_runtime_backup,
     archive_native_backup,
@@ -279,6 +281,32 @@ class MSSManager(NotificationTaskBase):
         ]
         if not self.runnable_user_uids:
             return "MFW 没有可运行的账号，请在账号管理页添加并启用至少一个账号"
+
+        # 与旧专项 lock_script_config 同一约定：拿到托管锁后由 L2 选定游戏会话（游戏 /
+        # 模拟器）、复查预下载；不调的话整轮读不到绑定的游戏与模拟器。放在项目预约交回
+        # 之后（选定可能要等串行游戏），也放在确认有可运行账号之后（没有账号就不先占
+        # 游戏、不排队），失败时还锁、照实说原因。
+        callback = getattr(self, "after_config_lock", None)
+        if callback is not None:
+            try:
+                await callback(script_config)
+            except BaseException as exc:
+                from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+
+                ticket = self.config_locks.pop(
+                    config_view.script_uid(script_config), None
+                )
+                self._script_locked = False
+                if ticket is not None:
+                    await script_config.unlock(ticket)
+                if not isinstance(exc, Exception) or isinstance(
+                    exc, FluxdownCancelUnconfirmed
+                ):
+                    raise
+                logger.opt(exception=True).warning(
+                    f"MFW 取得托管锁后准备运行失败（{script_id}）：{exc}"
+                )
+                return str(exc) or type(exc).__name__
 
         self.emulator_manager = await self._resolve_emulator_manager(script_config)
 
@@ -545,21 +573,100 @@ class MSSManager(NotificationTaskBase):
                 logger.opt(exception=True).warning(
                     "MaaFW 运行前字段侧车归档失败，已跳过（不阻断任务）"
                 )
-            route = await asyncio.to_thread(resolve_runtime_pool_route)
-            self.inner_task = self._build_inner_task(route)
-            self._inner_finalized = False
+            # 按账号选定游戏会话，包住该账号的全部尝试与收尾（关游戏、关模拟器都在
+            # _finalize_inner_task 里），账号另绑的目标跑完当场交回。
             try:
-                await self.inner_task.main_task()
-            except asyncio.CancelledError:
-                self.stopped_manually = True
-                raise
-            # 只截 Exception：CancelledError 属 BaseException，必须继续外抛。
-            except Exception as exc:  # noqa: BLE001
-                await self.inner_task.on_crash(exc)
+                try:
+                    selected = await self._select_account_game(index, user_id)
+                except asyncio.CancelledError:
+                    self.stopped_manually = True
+                    raise
+                if not selected:
+                    continue
+                route = await asyncio.to_thread(resolve_runtime_pool_route)
+                self.inner_task = self._build_inner_task(route)
+                self._inner_finalized = False
+                try:
+                    await self.inner_task.main_task()
+                except asyncio.CancelledError:
+                    self.stopped_manually = True
+                    raise
+                # 只截 Exception：CancelledError 属 BaseException，必须继续外抛。
+                except Exception as exc:  # noqa: BLE001
+                    await self.inner_task.on_crash(exc)
+                finally:
+                    await self._finalize_inner_task()
+                    self._reclaim_unused_update_logs()
             finally:
-                await self._finalize_inner_task()
-                self._reclaim_unused_update_logs()
+                session = current_game_session.get()
+                if session is not None:
+                    await session.release_account()
         self._users_completed = True
+
+    async def _select_account_game(self, index: int, user_id: uuid.UUID) -> bool:
+        """按账号选定游戏会话；选定失败时只把这个账号记异常并说明原因，返回 False。
+
+        与旧专项 ``TaskExecuteBase.spawn`` 同一约定：账号绑定为「-」时沿用托管级目标
+        （目标没变，``select`` 直接返回）；另绑了目标就换成它的，失败交回会话、继续下一个
+        账号。选定之后重取模拟器：账号任务开关模拟器、取 ADB 都要用这次选定的那台，
+        留底的实例不能还是托管级或上一个账号的。
+        """
+
+        session = current_game_session.get()
+        if session is None:
+            return True
+        assert self.user_config is not None
+        assert self.script_config is not None
+        owner = self.user_config[user_id]
+        if self._account_emulator_without_device(owner):
+            # 另绑了模拟器却没选实例：会话只订阅游戏、没有设备，之后设备会回落到托管的，
+            # 运行前检查放行、到取 ADB 才报错并把用户指向托管页，这里直接按选定失败处理。
+            await session.release()
+            await self._fail_account_game(
+                index,
+                user_id,
+                "账号绑定的模拟器未选择实例，请在账号的「账号绑定」里选择设备",
+            )
+            return False
+        try:
+            await session.select(owner)
+        except Exception as exc:  # noqa: BLE001 - 目标已删、设备失效、绑定被拒
+            await session.release()
+            await self._fail_account_game(
+                index, user_id, str(exc) or type(exc).__name__
+            )
+            return False
+        self.emulator_manager = await self._resolve_emulator_manager(self.script_config)
+        return True
+
+    @staticmethod
+    def _account_emulator_without_device(owner: Any) -> bool:
+        """账号另绑了模拟器目标、设备却是「-」；目标已不存在时不拦，留给 select 报原因。"""
+
+        return config_view.account_emulator_without_device(owner)
+
+    async def _fail_account_game(
+        self, index: int, user_id: uuid.UUID, reason: str
+    ) -> None:
+        """账号游戏目标不可用：只把这个账号记异常、写明原因，其余账号照常运行。"""
+
+        user_item = self.script_info.user_list[index]
+        logger.warning(
+            f"MFW 账号游戏目标不可用（{self.script_info.name} / {user_item.name}）："
+            f"{reason}"
+        )
+        message = f"账号 {user_item.name} 未运行，游戏目标不可用：{reason}"
+        await user_item.set_state(status="异常")
+        self._user_report_lines[user_item.user_id] = f"游戏目标不可用：{reason}"
+        # 选定中途失败会停在「等待」：其余账号照常运行
+        if self.script_info.status == "等待":
+            await self.script_info.set_state(status="运行")
+        await self.script_info.set_log(message)
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=message),
+        )
 
     def _reclaim_unused_update_logs(self) -> None:
         """这位用户没进入运行时，运行前更新的日志拿回来交给下一位用户。"""

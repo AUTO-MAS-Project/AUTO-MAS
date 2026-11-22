@@ -324,6 +324,16 @@ def runnable(user: Any) -> bool:
     return bool(user.Info.Status and user.Info.RemainedDay != 0)
 
 
+def account_emulator_without_device(user: Any) -> bool:
+    """账号另绑了模拟器目标、设备却是「-」；目标已不存在时不拦，留给 select 报原因。"""
+
+    binding = user.game
+    if binding.game_id == "-" or binding.device_id != "-":
+        return False
+    target = Config.GameConfig.get(binding.game_id)
+    return target is not None and target.info.type == "emulator"
+
+
 def proxy_times_used_up(user: Any, script: Any, today: str) -> bool:
     """今日代理次数是否已达上限（``proxy_quota``，与通用 MFW 同一判据）。"""
 
