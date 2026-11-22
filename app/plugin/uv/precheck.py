@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.metadata as importlib_metadata
 import platform
+import re
 import site
 import sys
 import tempfile
@@ -34,6 +35,48 @@ class CoreCompat:
     ok: bool
     required: str = ""
     detail: str = ""
+    # 无解时 uv 诊断里出现的已知包名（规范化后，按出现顺序）；取不到时为空。
+    conflicts: tuple[str, ...] = ()
+    # 其中由主程序钉住的那部分：只能等插件放宽范围。
+    host_conflicts: tuple[str, ...] = ()
+
+
+_MAX_CONFLICTS = 8
+_WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def _requirement_name(item: str) -> str | None:
+    """取目标、约束或依赖声明的发行包名；本地工程读 pyproject，解析不了时忽略。"""
+    project = Path(item) / "pyproject.toml"
+    try:
+        if project.is_file():
+            return canonicalize_name(
+                tomllib.loads(project.read_text(encoding="utf-8"))["project"]["name"]
+            )
+        return canonicalize_name(Requirement(item).name)
+    except (OSError, ValueError, KeyError, tomllib.TOMLDecodeError):
+        return None
+
+
+def _conflict_names(output: str, candidates: Iterable[str]) -> tuple[str, ...]:
+    """从 uv 无解诊断里挑出已知包名，不解析句式：uv 改了措辞最坏只是取不到名字。"""
+    known = set(candidates)
+    found: list[str] = []
+    for word in _WORD.findall(output):
+        name = canonicalize_name(word.rstrip("._-"))
+        if name in known and name not in found:
+            found.append(name)
+            if len(found) >= _MAX_CONFLICTS:
+                break
+    return tuple(found)
+
+
+def conflict_summary(result: CoreCompat) -> str:
+    """把涉及的包拼成一句给用户看的话，主程序钉住的包加注；没取到名字时为空串。"""
+    host = set(result.host_conflicts)
+    return "、".join(
+        f"{name}（主程序依赖）" if name in host else name for name in result.conflicts
+    )
 
 
 def host_dependencies() -> list[str]:
@@ -290,6 +333,7 @@ async def resolve_environment(
                     ]
                 )
         incomplete = False
+        unsolvable = ""
         architecture = {"amd64": "x86_64", "arm64": "aarch64", "i386": "i686"}.get(
             platform.machine().lower(), platform.machine().lower()
         )
@@ -334,9 +378,10 @@ async def resolve_environment(
                 detail = str(result.stderr or result.stdout or "")
                 logger.warning("插件依赖解析失败（{}）：{}", mirror, detail[-2000:])
                 # uv 的无解诊断与执行错误分开；任一来源未完成时不能确认全体来源均无解。
-                incomplete |= (
-                    result.returncode != 1 or "No solution found" not in detail
-                )
+                if result.returncode == 1 and "No solution found" in detail:
+                    unsolvable = detail
+                else:
+                    incomplete = True
                 continue
             if destination is None:
                 await mark_ok(mirror)
@@ -388,10 +433,22 @@ async def resolve_environment(
             return CoreCompat(ok=True)
         if incomplete:
             raise PluginPrecheckError("兼容性检查未完成，请检查网络或稍后重试")
+        host = {
+            name
+            for item in (*constraints, *dependencies)
+            if (name := _requirement_name(item)) is not None
+        }
+        plugins = {
+            name for item in targets if (name := _requirement_name(item)) is not None
+        }
+        core = canonicalize_name(CORE_DISTRIBUTION_NAME)
+        conflicts = _conflict_names(unsolvable, (plugins | host) - {core})
         return CoreCompat(
             ok=False,
             required="shared-environment",
             detail="目标主程序与插件的依赖无法同时满足，请调整插件版本后重试",
+            conflicts=conflicts,
+            host_conflicts=tuple(name for name in conflicts if name in host - plugins),
         )
 
 
@@ -431,8 +488,10 @@ async def precheck_core_bump(
     )
     if result.ok:
         return []
+    summary = conflict_summary(result)
+    message = f"{result.detail}（涉及 {summary}）" if summary else result.detail
     return [
         VersionConflict(
-            "", CORE_DISTRIBUTION_NAME, result.required, new_version, result.detail
+            "", CORE_DISTRIBUTION_NAME, result.required, new_version, message
         )
     ]
