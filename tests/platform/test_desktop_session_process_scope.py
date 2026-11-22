@@ -28,6 +28,40 @@ def test_desktop_session_keeps_builtin_support_when_whimbox_is_a_plugin():
     assert not lifecycle.supports_task(WhimboxConfig.build())
 
 
+@pytest.mark.parametrize(
+    ("controller", "supported"), [("桌面端", True), ("安卓端", False)]
+)
+def test_desktop_session_judges_mfw_project_by_its_controller(
+    monkeypatch, tmp_path, controller, supported
+):
+    import json
+
+    from app.models.config import MaaFWConfig
+    from app.task.MaaFW.tools.embedded import embedded_project
+
+    (tmp_path / "interface.json").write_text(
+        json.dumps(
+            {
+                "interface_version": 2,
+                "name": "Audit",
+                "controller": [
+                    {"name": "安卓端", "type": "Adb"},
+                    {"name": "桌面端", "type": "Win32", "win32": {}},
+                ],
+                "resource": [{"name": "Default", "path": ["resource"]}],
+                "task": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        embedded_project, "resolve_maafw_project_root", lambda *_: tmp_path
+    )
+    config = MaaFWConfig.model_validate({"Info": {"Controller": controller}})
+
+    assert lifecycle.supports_task(config) is supported
+
+
 @pytest.mark.asyncio
 async def test_desktop_task_can_run_local_update_helper_without_adopting_local_processes(
     monkeypatch, tmp_path
