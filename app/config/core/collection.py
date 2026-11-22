@@ -58,7 +58,15 @@ class UnresolvedEntry:
 
 def _error_summary(exc: BaseException, limit: int = 300) -> str:
     """还原失败的简短原因，给界面和日志看。"""
-    errors = exc.errors if isinstance(exc, ConfigAggregateError) else [exc]
+    errors: list[BaseException] = []
+    pending: list[BaseException] = [exc]
+    while pending:
+        # 逐层提交会把同一个错误包几层聚合，摘要只留最里面的。
+        current = pending.pop(0)
+        if isinstance(current, ConfigAggregateError) and current.errors:
+            pending[:0] = current.errors
+        else:
+            errors.append(current)
     text = "; ".join(f"{type(e).__name__}: {e}" for e in errors) or type(exc).__name__
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
@@ -872,8 +880,10 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         self._unresolved.clear()
         self._load_order.clear()
 
+        keep = self._keep_unknown_types and not regenerate_uuids
         errors: list[Exception] = []
         for item in order:
+            isolatable: tuple[UUID, str, dict[str, Any]] | None = None
             try:
                 if not isinstance(item, dict):
                     raise TypeError(f"order 项须为 dict，收到 {type(item).__name__}")
@@ -889,19 +899,19 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                     payload = cast(dict[str, Any], raw)
                 else:
                     payload = {}
-                if self._keep_unknown_types and not regenerate_uuids:
+                if keep:
                     self._load_order.append(uid)
-                    if (
-                        type_name not in self.effective._entry_types
-                        and uid not in self._unresolved
-                    ):
-                        # 所属插件没登记上：原样留着，照旧落盘，等插件恢复后还原。
-                        self._unresolved[uid] = UnresolvedEntry(
-                            uid=uid,
-                            type_name=type_name,
-                            payload=copy.deepcopy(payload),
-                        )
-                        continue
+                    if uid not in self._unresolved:
+                        if type_name not in self.effective._entry_types:
+                            # 所属插件没登记上：原样留着，照旧落盘，等插件恢复后还原。
+                            self._unresolved[uid] = UnresolvedEntry(
+                                uid=uid,
+                                type_name=type_name,
+                                payload=copy.deepcopy(payload),
+                            )
+                            continue
+                        if uid not in self.effective.data:
+                            isolatable = (uid, type_name, copy.deepcopy(payload))
                 async with config_manager.transaction(new_boundary=True):
                     self.add(
                         type_name,
@@ -911,7 +921,19 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                     )
                     await self.commit()
             except Exception as exc:  # noqa: BLE001
-                errors.append(exc)
+                if isolatable is None:
+                    errors.append(exc)
+                    continue
+                # 类型已登记、只这一条读不进来：只隔离它，原文照旧落盘，其余照常加载。
+                # 旧格式升级是否放行由调用方按旁挂区判断（见 Config.check_data）。
+                uid, type_name, raw_payload = isolatable
+                self._unresolved[uid] = UnresolvedEntry(
+                    uid=uid,
+                    type_name=type_name,
+                    payload=raw_payload,
+                    reason="load_failed",
+                    detail=_error_summary(exc),
+                )
 
         if errors:
             raise ConfigAggregateError(errors)

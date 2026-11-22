@@ -765,17 +765,27 @@ class AppConfig:
             self.ScriptConfig.unresolved() or self.PlanConfig.unresolved()
         ):
             # 旧数据升级要靠插件在场转换，版本号不能带着没解析的成员推进；
+            # 读不了的单条（已升级数据只隔离它）在升级阶段同样拒绝推进。
             # 旁挂成员照旧原样落盘，中止不丢数据。
+            items = [
+                item
+                for collection in (self.ScriptConfig, self.PlanConfig)
+                for item in collection.unresolved()
+            ]
             types = sorted(
-                {
-                    item.type_name
-                    for collection in (self.ScriptConfig, self.PlanConfig)
-                    for item in collection.unresolved()
-                }
+                {item.type_name for item in items if item.reason != "load_failed"}
             )
-            raise RuntimeError(
-                "配置升级时有类型无法识别，所属插件不可用：" + "、".join(types)
-            )
+            failed = [
+                f"{item.type_name} {item.uid}（{item.detail}）"
+                for item in items
+                if item.reason == "load_failed"
+            ]
+            reasons = []
+            if types:
+                reasons.append("有类型无法识别，所属插件不可用：" + "、".join(types))
+            if failed:
+                reasons.append("有配置读不了：" + "；".join(failed))
+            raise RuntimeError("配置升级时" + "；".join(reasons))
         self._notice_unavailable_managed()
         with startup_stage("后端/配置/专项初始化与保存"):
             if version != "v2.2":
@@ -2797,9 +2807,10 @@ class AppConfig:
             )
         # 所属插件不可用的托管也列出，队列里引用它的项才显示得出名字。
         for item in self.unavailable_scripts():
+            why = "配置读不了" if item["reason"] == "load_failed" else "所属插件不可用"
             data.append(
                 {
-                    "label": f"{item['typeLabel']} - {item['name']}（所属插件不可用）",
+                    "label": f"{item['typeLabel']} - {item['name']}（{why}）",
                     "value": item["uid"],
                 }
             )
@@ -3015,14 +3026,31 @@ class AppConfig:
             f"专项插件 {name} 没能装上或启用：{reason}"
             for name, reason in self._adapter_plugin_failures.items()
         ]
-        if scripts or plans:
+        missing = [i for i in (*scripts, *plans) if i["reason"] != "load_failed"]
+        failed = [i for i in (*scripts, *plans) if i["reason"] == "load_failed"]
+        if missing:
             lines.append("以下配置所属插件不可用，已原样保留；插件恢复后会自动还原：")
             lines.extend(
                 f"{item['typeLabel']} - {item['name'] or item['uid']}"
-                for item in (*scripts, *plans)
+                for item in missing
             )
+        if failed:
+            lines.append("以下配置读不了，已原样保留：")
+            lines.extend(
+                f"{item['typeLabel']} - {item['name'] or item['uid']}"
+                for item in failed
+            )
+            for item in failed:
+                logger.warning(
+                    f"配置读不了，原样保留：{item['type']} {item['uid']}（{item['detail']}）"
+                )
+        title = (
+            "部分托管所属插件不可用"
+            if missing or self._adapter_plugin_failures
+            else "部分配置读不了"
+        )
         self.startup_notices.append(
-            {"level": "warning", "title": "部分托管所属插件不可用", "lines": lines}
+            {"level": "warning", "title": title, "lines": lines}
         )
 
     def _connect_managed_restore(self) -> None:
