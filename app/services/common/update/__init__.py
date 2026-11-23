@@ -229,7 +229,7 @@ class UpdateHandler:
         if self.is_switching_source or self.is_locked:
             return False
 
-        # Mirror 酱的下载地址是一次性的, 不能沿用版本检查缓存里的旧地址
+        # Mirror 酱的下载地址是一次性的, 只在开始下载前获取
         if self._get_download_source() == "MirrorChyan":
             await self._refresh_mirror_download_url()
 
@@ -420,8 +420,8 @@ class UpdateHandler:
     async def _refresh_mirror_download_url(self) -> None:
         """重新获取 Mirror 酱的一次性下载地址。
 
-        Mirror 酱的下载地址用过或过期即作废, 而版本检查的四小时缓存不会刷新它,
-        因此每次下载开始前都要重新获取。获取失败时清空缓存地址,
+        Mirror 酱的下载地址用过或过期即作废, 每次下载开始前都要重新获取。
+        获取失败时清空缓存地址,
         由 `_get_download_url` 回落到自建下载站。
         """
 
@@ -430,7 +430,9 @@ class UpdateHandler:
             return None
 
         try:
-            version_info = await self._request_version_info(self.current_version)
+            version_info = await self._request_version_info(
+                self.current_version, for_download=True
+            )
             data = version_info.get("data")
             download_url = data.get("url") if isinstance(data, dict) else None
         except Exception as error:
@@ -444,11 +446,14 @@ class UpdateHandler:
         if download_url is not None:
             logger.info("已刷新 Mirror 酱下载地址")
 
-    async def _request_version_info(self, current_version: str) -> Dict[str, Any]:
+    async def _request_version_info(
+        self, current_version: str, *, for_download: bool = False
+    ) -> Dict[str, Any]:
         """向 Mirror 酱查询最新版本信息。
 
         Args:
             current_version: 本地当前版本号, 用于 Mirror 酱判定增量包。
+            for_download: 为实际下载获取带 CDK 的下载地址。
 
         Returns:
             Mirror 酱返回的完整响应体。
@@ -457,17 +462,19 @@ class UpdateHandler:
             Exception: Mirror 酱返回业务错误码或无法识别的响应时抛出。
         """
 
+        settings = Config.setting.Update
+        params = {
+            "os": "win",
+            "arch": "x64",
+            "current_version": current_version,
+            "channel": settings.Channel,
+        }
+        if for_download and settings.Source == "MirrorChyan" and settings.MirrorChyanCDK:
+            params["cdk"] = settings.MirrorChyanCDK
+
         return await request_mirror_resource(
             "AUTO_MAS",
-            params={
-                "os": "win",
-                "arch": "x64",
-                "current_version": current_version,
-                "cdk": Config.setting.Update.MirrorChyanCDK
-                if Config.setting.Update.Source == "MirrorChyan"
-                else "",
-                "channel": Config.setting.Update.Channel,
-            },
+            params=params,
             proxy=Config.proxy,
             timeout=5,
         )
@@ -502,7 +509,6 @@ class UpdateHandler:
         self.remote_version = data.get("version_name")
         if self.remote_version is None:
             raise Exception("Mirror 酱未返回版本号, 请稍后重试")
-        self.mirror_chyan_download_url = data.get("url")
 
         if version.parse(self.remote_version) > version.parse(current_version):
             # 版本更新信息: 更新日志读取失败只丢日志, 不影响「需要更新」这个结论
