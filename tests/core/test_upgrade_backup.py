@@ -1,0 +1,267 @@
+import json
+import sqlite3
+import zipfile
+from contextlib import closing
+from pathlib import Path
+
+import pytest
+
+from app.core.config import upgrade_backup
+from app.core.config.upgrade_backup import UpgradeBackup
+
+
+def _install(root: Path, version: str | None) -> None:
+    (root / "config").mkdir()
+    (root / "data").mkdir()
+    (root / "history").mkdir()
+    if version is not None:
+        (root / "config" / "frontend_config.json").write_text(
+            json.dumps({"initializedVersion": version}), encoding="utf-8"
+        )
+
+
+def _archives(root: Path) -> list[Path]:
+    return sorted((root / "backup").glob("AUTO-MAS-backup-*.zip"))
+
+
+def _start(root: Path, version: str) -> UpgradeBackup:
+    backup = UpgradeBackup(root=root, desktop_version=version)
+    assert backup.prepare() is None
+    assert backup.begin_migration()
+    return backup
+
+
+def test_snapshot_reads_old_config_and_sqlite_before_migration(tmp_path):
+    _install(tmp_path, "5.8.0")
+    config = tmp_path / "config" / "Config.json"
+    config.write_bytes(b'{"old":true}')
+    (tmp_path / "config" / "setting.yaml").write_bytes(b"old_yaml: true\n")
+    (tmp_path / "history" / "saved.log").write_bytes(b"old history")
+    (tmp_path / "data" / "maafw_update_cache").mkdir()
+    (tmp_path / "data" / "maafw_update_cache" / "cached.zip").touch()
+    with (
+        closing(sqlite3.connect(tmp_path / "data" / "data.db")) as data,
+        closing(sqlite3.connect(tmp_path / "data" / "history.db")) as history,
+    ):
+        data.execute("PRAGMA journal_mode=WAL")
+        data.execute("CREATE TABLE marker (value TEXT)")
+        data.execute("INSERT INTO marker VALUES ('old')")
+        data.commit()
+        history.execute("CREATE TABLE pending_files (value TEXT)")
+        history.execute("INSERT INTO pending_files VALUES ('old absolute path')")
+        history.commit()
+
+        attempt = _start(tmp_path, "v5.9.0-beta.1")
+        config.write_bytes(b'{"new":true}')
+        data.execute("UPDATE marker SET value = 'migrated'")
+        data.commit()
+        attempt.finish()
+
+        restored = tmp_path / "restored"
+        with zipfile.ZipFile(_archives(tmp_path)[0]) as archive:
+            assert archive.read("config/Config.json") == b'{"old":true}'
+            assert archive.read("config/setting.yaml") == b"old_yaml: true\n"
+            assert archive.read("history/saved.log") == b"old history"
+            assert "data/maafw_update_cache/cached.zip" not in archive.namelist()
+            assert "data/data.db-wal" not in archive.namelist()
+            assert "config/upgrade-backup-state.json" not in archive.namelist()
+            archive.extractall(restored)
+        with closing(sqlite3.connect(restored / "data" / "data.db")) as restored_data:
+            assert restored_data.execute("SELECT value FROM marker").fetchone() == (
+                "old",
+            )
+        with closing(
+            sqlite3.connect(restored / "data" / "history.db")
+        ) as restored_history:
+            assert (
+                restored_history.execute("SELECT * FROM pending_files").fetchall() == []
+            )
+        assert history.execute("SELECT * FROM pending_files").fetchone() == (
+            "old absolute path",
+        )
+
+
+def test_old_archives_survive_until_target_business_ready(tmp_path):
+    _install(tmp_path, "5.8.0")
+    _start(tmp_path, "5.9.0-beta.1").finish()
+    stable = _archives(tmp_path)[0]
+    manual = stable.parent / "manual.zip"
+    manual.write_bytes(b"manual")
+    _start(tmp_path, "5.9.0-beta.2").finish()
+    first_beta = next(path for path in _archives(tmp_path) if path != stable)
+    _start(tmp_path, "5.9.0-beta.10").finish()
+    assert not first_beta.exists()
+    last_beta = next(path for path in _archives(tmp_path) if path != stable)
+
+    _start(tmp_path, "5.9.0")
+    # 首次新版未就绪便退出，已有两个回退点和这次生成的 ZIP 均保留。
+    pending = _archives(tmp_path)
+    assert len(pending) == 3
+    assert stable in pending and last_beta in pending
+    restarted = _start(tmp_path, "v5.9.0")
+    assert _archives(tmp_path) == pending
+    restarted.finish()
+    assert _archives(tmp_path) == [stable]
+    assert manual.read_bytes() == b"manual"
+
+
+def test_stable_uses_beta_fallback_then_rotates_to_latest_stable(tmp_path):
+    _install(tmp_path, "5.9.0-beta.1")
+    _start(tmp_path, "5.9.0").finish()
+    beta = _archives(tmp_path)[0]
+    assert "-beta.1-to-v5.9.0-" in beta.name
+    _start(tmp_path, "5.9.1").finish()
+    assert not beta.exists()
+    stable = _archives(tmp_path)[0]
+    assert "-v5.9.0-to-v5.9.1-" in stable.name
+    _start(tmp_path, "5.9.1").finish()
+    _start(tmp_path, "5.9.0").finish()
+    assert _archives(tmp_path) == [stable]
+
+
+def test_retention_still_recognizes_archives_after_restoring_config(tmp_path):
+    _install(tmp_path, "5.8.0")
+    _start(tmp_path, "5.9.0-beta.1").finish()
+    old_stable = _archives(tmp_path)[0]
+    _start(tmp_path, "5.9.0-beta.2").finish()
+    beta = next(path for path in _archives(tmp_path) if path != old_stable)
+
+    (tmp_path / "config" / "upgrade-backup-state.json").unlink()
+    with zipfile.ZipFile(old_stable) as archive:
+        (tmp_path / "config" / "frontend_config.json").write_bytes(
+            archive.read("config/frontend_config.json")
+        )
+
+    _start(tmp_path, "5.9.0-beta.3").finish()
+    assert not old_stable.exists()
+    assert beta in _archives(tmp_path)
+    assert len(_archives(tmp_path)) == 2
+
+
+def test_retry_uses_completed_snapshot_after_zip_publication_fails(
+    tmp_path, monkeypatch
+):
+    _install(tmp_path, "5.8.0")
+    config = tmp_path / "config" / "Config.json"
+    config.write_bytes(b"old")
+
+    def fail_to_publish(_snapshot: Path, _archive: Path) -> None:
+        raise PermissionError("archive unavailable")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(upgrade_backup, "_pack_snapshot", fail_to_publish)
+        startup = UpgradeBackup(root=tmp_path, desktop_version="5.9.0")
+        assert startup.prepare() == "backup_failed"
+        assert startup.begin_migration()
+        startup.finish()
+    assert _archives(tmp_path) == []
+
+    config.write_bytes(b"migrated")
+    _start(tmp_path, "5.9.0").finish()
+    with zipfile.ZipFile(_archives(tmp_path)[0]) as archive:
+        assert archive.read("config/Config.json") == b"old"
+
+
+def test_failed_snapshot_does_not_relabel_migrated_data_or_remove_existing_zip(
+    tmp_path, monkeypatch
+):
+    _install(tmp_path, "5.8.0")
+    _start(tmp_path, "5.9.0-beta.1").finish()
+    stable = _archives(tmp_path)[0]
+    config = tmp_path / "config" / "Config.json"
+    config.write_bytes(b"beta")
+
+    def fail_to_capture(_root: Path, _snapshot: Path) -> None:
+        raise PermissionError("old config is locked")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(upgrade_backup, "_make_snapshot", fail_to_capture)
+        startup = UpgradeBackup(root=tmp_path, desktop_version="5.9.0")
+        assert startup.prepare() == "backup_failed"
+        assert startup.begin_migration()
+        startup.finish()
+    config.write_bytes(b"migrated")
+    restarted = UpgradeBackup(root=tmp_path, desktop_version="5.9.0")
+    assert restarted.prepare() == "snapshot_missing"
+    restarted.finish()
+    assert _archives(tmp_path) == [stable]
+
+
+@pytest.mark.parametrize("initialized_version", [None, "5.8.0"])
+def test_first_start_establishes_baseline_without_archive(
+    tmp_path, initialized_version
+):
+    _install(tmp_path, initialized_version)
+    _start(tmp_path, "5.8.0").finish()
+    assert not (tmp_path / "backup").exists()
+    (tmp_path / "config" / "frontend_config.json").unlink(missing_ok=True)
+    _start(tmp_path, "5.9.0").finish()
+    assert len(_archives(tmp_path)) == 1
+
+
+def test_interruption_before_migration_can_capture_unchanged_old_data(
+    tmp_path, monkeypatch
+):
+    _install(tmp_path, "5.8.0")
+    (tmp_path / "config" / "setting.yaml").write_bytes(b"old")
+
+    def interrupt(_root: Path, _snapshot: Path) -> None:
+        raise InterruptedError("capture did not complete")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(upgrade_backup, "_make_snapshot", interrupt)
+        startup = UpgradeBackup(root=tmp_path, desktop_version="5.9.0")
+        assert startup.prepare() == "backup_failed"
+        # 进程在进入迁移前退出，旧文件仍可用。
+
+    _start(tmp_path, "5.9.0").finish()
+    with zipfile.ZipFile(_archives(tmp_path)[0]) as archive:
+        assert archive.read("config/setting.yaml") == b"old"
+
+
+def test_migration_marker_prevents_wrong_backup_after_journal_failure(
+    tmp_path, monkeypatch
+):
+    _install(tmp_path, "5.7.0")
+    config = tmp_path / "config" / "setting.yaml"
+    config.write_bytes(b"last good")
+    _start(tmp_path, "5.8.0").finish()
+    retained = _archives(tmp_path)
+    config.write_bytes(b"old")
+    write = upgrade_backup.atomic_write
+
+    def lock_state(path: Path, data: bytes) -> None:
+        if path.name == "upgrade-backup-state.json":
+            raise PermissionError("state file is locked")
+        write(path, data)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(upgrade_backup, "atomic_write", lock_state)
+        startup = UpgradeBackup(root=tmp_path, desktop_version="5.9.0")
+        with pytest.raises(PermissionError):
+            startup.prepare()
+        assert not startup.begin_migration()
+        config.write_bytes(b"migrated")
+
+    restarted = UpgradeBackup(root=tmp_path, desktop_version="5.9.0")
+    assert restarted.prepare() is None
+    restarted.begin_migration()
+    restarted.finish()
+    assert _archives(tmp_path) == retained
+
+
+def test_upgrading_after_failed_startup_preserves_last_working_backup(tmp_path):
+    _install(tmp_path, "5.8.0")
+    config = tmp_path / "config" / "setting.yaml"
+    config.write_bytes(b"last good")
+    _start(tmp_path, "5.9.0")
+    retained = _archives(tmp_path)
+    config.write_bytes(b"partially migrated")
+
+    startup = UpgradeBackup(root=tmp_path, desktop_version="5.9.1")
+    assert startup.prepare() == "source_not_ready"
+    assert startup.begin_migration()
+    startup.finish()
+    assert _archives(tmp_path) == retained
+    with zipfile.ZipFile(retained[0]) as archive:
+        assert archive.read("config/setting.yaml") == b"last good"

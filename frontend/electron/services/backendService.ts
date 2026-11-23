@@ -9,7 +9,8 @@ import { captureScheduledWakeupContext, scheduledWakeupBackendReady } from './sc
  */
 
 import * as fs from 'fs'
-import { resolveHttpPort } from './instanceConfig'
+import { app } from 'electron'
+import { getBackendOwnership, isDevelopmentEnvironment, resolveHttpPort } from './instanceConfig'
 import { desktopSessionControlToken, getDesktopSessionChildId } from './desktopSessionControl'
 
 import {
@@ -333,6 +334,13 @@ export class BackendService {
       dataRoot: config.dataRoot,
       env: {
         AUTO_MAS_RUNTIME_DEFER_BUSINESS_START: '1',
+        AUTO_MAS_DESKTOP_VERSION:
+          config.mode === 'managed' &&
+          !isDevelopmentEnvironment() &&
+          getBackendOwnership() === 'owned' &&
+          toRuntimeVersion(app.getVersion()) === resolveRuntimeTargetVersion()
+            ? app.getVersion()
+            : undefined,
         ...getFluxdownInstallEnvironment(),
         AUTO_MAS_DESKTOP_CONTROL_TOKEN: desktopSessionControlToken,
         AUTO_MAS_DESKTOP_PARENT_CHILD_SESSION: getDesktopSessionChildId()?.toString(),

@@ -141,6 +141,8 @@ GROUP BY app_version, flow, disk
 ORDER BY attempts DESC
 ```
 
+整包升级首次启动的自动备份由后端记录 Sentry 计数 `auto_mas.upgrade_backup.attempts`。唯一字段 `outcome` 取 `success` 或 `failure`，归档落盘后才计成功。沿用后端匿名遥测开关。
+
 ## 扩展约束
 
 1. 新增事件须同步更新 TypeScript 类型契约与主进程白名单（`analyticsFeaturePolicy.ts`），并明确限频与去重边界。

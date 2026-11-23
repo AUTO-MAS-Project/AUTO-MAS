@@ -76,6 +76,7 @@
 | T066 | `history_query_finished`：历史记录检索 | 已接入 |
 | T067 | `diagnostic_export_finished`：问题包与普通日志导出 | 已接入 |
 | T068 | `data_backup_export_finished`：MAS 数据备份导出 | 已接入 |
+| 整包升级备份 | 后端指标 `auto_mas.upgrade_backup.attempts`，仅记录创建尝试的成功或失败 | 由迁移前备份流程记录，复用 ZIP 和清理旧档不计 |
 | T069 | `replay_tool_finished`：失败录屏连接、保存与回放 | 已接入 |
 | T070 | `help_link_requested`：应用内帮助文档入口 | 已接入 |
 | T071–T084 | `adapter_setup_finished`：14 类专项配置引导与独有操作 | 已接入：MAA、SRC、MaaEnd、HSR、General、BAAH、MaaFW、M9A、MSS、BetterGI、OK-WW、OK-NTE、ZZZ-OD、Whimbox 各自实际存在的独有引导与保存入口，其余通用读写复用 `config_write_finished` / 任务观察 |
