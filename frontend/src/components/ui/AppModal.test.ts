@@ -135,6 +135,10 @@ describe('AppModal 父子绑定关闭保护', () => {
     // 对 doc-1 触发关闭，弹出第一份待决确认
     const firstClose = ctx.requestClose()
     expect(confirmCalls).toHaveLength(1)
+    expect(confirmCalls[0]!.config.okText).toBe('core.edit.discardChanges')
+    expect(confirmCalls[0]!.config.cancelText).toBe('core.edit.keepEditing')
+    expect(confirmCalls[0]!.config.autoFocusButton).toBe('cancel')
+    expect(confirmCalls[0]!.config.okType).toBe('danger')
     const firstOnOk = confirmCalls[0]!.config.onOk as () => Promise<void>
 
     // 父组件在同一 tick 内先关再开并切到 doc-2：Vue 合并 open 更新后子组件仍看到 open=true，靠 sessionKey 区分会话

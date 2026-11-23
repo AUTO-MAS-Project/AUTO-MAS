@@ -1006,6 +1006,7 @@
   "core.edit.directEngineSra": "SRA",
   "core.edit.directory": "Directory",
   "core.edit.disabled": "Disabled",
+  "core.edit.discardChanges": "Discard changes",
   "core.edit.doNotSwitch": "Do not switch",
   "core.edit.documentation": "Documentation",
   "core.edit.dragRule": "Drag to reorder",

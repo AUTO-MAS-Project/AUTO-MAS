@@ -105,6 +105,7 @@ const canDiscard = (): Promise<boolean> => {
     description: t('core.setting.tray.unsavedContent'),
     okText: t('core.setting.tray.discard'),
     cancelText: t('core.setting.tray.continueEditing'),
+    autoFocusButton: 'cancel',
     zIndex: 1050,
   }).finally(() => {
     confirming.value = false
@@ -150,6 +151,8 @@ onMounted(() => void loadTasks())
     :dirty="dirty"
     :dirty-title="t('core.setting.tray.unsavedTitle')"
     :dirty-description="t('core.setting.tray.unsavedContent')"
+    :dirty-ok-text="t('core.setting.tray.discard')"
+    :dirty-cancel-text="t('core.setting.tray.continueEditing')"
     :submitting="saving"
     :ok-text="t('core.setting.tray.save')"
     :ok-disabled="confirming || !dirty"

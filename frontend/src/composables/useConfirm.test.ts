@@ -55,6 +55,7 @@ describe('openConfirm', () => {
     expect(config.centered).toBe(true)
     expect(config.okType).toBe('danger')
     expect(config.okButtonProps).toEqual({ danger: true })
+    expect(config.autoFocusButton).toBe('cancel')
     expect(config.wrapClassName).toBe('app-confirm-modal')
     expect(config.maskClosable).toBe(false)
 
