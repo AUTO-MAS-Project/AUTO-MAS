@@ -10,6 +10,7 @@ import { captureScheduledWakeupContext, scheduledWakeupBackendReady } from './sc
 
 import * as fs from 'fs'
 import { app } from 'electron'
+import { upgradeBackupToken } from '../ipc/upgradeBackupHandlers'
 import { getBackendOwnership, isDevelopmentEnvironment, resolveHttpPort } from './instanceConfig'
 import { desktopSessionControlToken, getDesktopSessionChildId } from './desktopSessionControl'
 
@@ -334,6 +335,7 @@ export class BackendService {
       dataRoot: config.dataRoot,
       env: {
         AUTO_MAS_RUNTIME_DEFER_BUSINESS_START: '1',
+        AUTO_MAS_UPGRADE_BACKUP_TOKEN: upgradeBackupToken,
         AUTO_MAS_DESKTOP_VERSION:
           config.mode === 'managed' &&
           !isDevelopmentEnvironment() &&

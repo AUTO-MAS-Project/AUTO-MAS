@@ -496,6 +496,7 @@ def main():
                         if not guarded:
                             logger.info("升级备份状态暂不可写，已使用独立迁移标记")
                             backup_warning = "backup_failed"
+                        app.state.upgrade_backup = upgrade_backup
                     app.state.business_message = "正在初始化配置与插件"
 
                 with startup_stage("后端/必要配置初始化"):

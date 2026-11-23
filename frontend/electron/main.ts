@@ -44,6 +44,7 @@ import {
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerAppUpdateHandlers, stopAppUpdateForShutdown } from './ipc/appUpdateHandlers'
+import { registerUpgradeBackupHandlers } from './ipc/upgradeBackupHandlers'
 import { recoverUpdateMaterials } from './services/updateStaging'
 import { registerFluxdownInstallHandlers } from './ipc/fluxdownInstallHandlers'
 import {
@@ -2190,31 +2191,18 @@ ipcMain.handle('save-config', (event, patch, defaults) => {
     const configDir = path.join(appRoot, 'config')
     const configPath = path.join(configDir, 'frontend_config.json')
 
-    const backupDirectory: unknown = patch?.upgradeBackup?.directory
-    if (backupDirectory !== undefined && backupDirectory !== null) {
-      if (typeof backupDirectory !== 'string' || !path.isAbsolute(backupDirectory))
-        throw new Error('Invalid upgrade backup directory')
-      const destination = fs.realpathSync.native(backupDirectory)
-      const sourceRoots = ['config', 'data', 'history'].map(name => {
-        const source = path.join(appRoot, name)
-        return fs.existsSync(source) ? fs.realpathSync.native(source) : source
-      })
-      const insideSource = sourceRoots.some(source => {
-        const relative = path.relative(source, destination)
-        return (
-          relative === '' ||
-          (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
-        )
-      })
-      if (destination === path.parse(destination).root || insideSource)
-        throw new Error('Invalid upgrade backup directory')
-      patch = { ...patch, upgradeBackup: { ...patch.upgradeBackup, directory: destination } }
-    }
-    if (patch?.upgradeBackup)
+    if (patch?.upgradeBackup) {
+      const { enabled } = patch.upgradeBackup
       patch = {
         ...patch,
-        upgradeBackup: { ...loadConfig().upgradeBackup, ...patch.upgradeBackup },
+        upgradeBackup: {
+          ...loadConfig().upgradeBackup,
+          ...(typeof enabled === 'boolean' ? { enabled } : {}),
+        },
       }
+    }
+    if (defaults?.upgradeBackup)
+      defaults = { ...defaults, upgradeBackup: loadConfig().upgradeBackup ?? { enabled: true } }
 
     const config = patchConfigFile(configPath, patch, defaults) as AppConfig
     logger.info(`配置已保存到: ${configPath}`)
@@ -2505,6 +2493,11 @@ app.whenReady().then(async () => {
   const handlersStartedAt = performance.now()
   registerAnalyticsHandlers(() => mainWindow)
   registerFluxdownInstallHandlers(() => mainWindow, getLocalApiEndpoint)
+  registerUpgradeBackupHandlers(
+    () => mainWindow,
+    getLocalApiEndpoint,
+    () => getBackendOwnership() === 'owned'
+  )
   registerAppUpdateHandlers({
     installRoot: updateRoot,
     updatesEnabled: desktopUpdatesEnabled,

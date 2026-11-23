@@ -122,19 +122,29 @@ def test_consecutive_stable_upgrades_keep_both_recent_restore_points(tmp_path):
     assert _archives(tmp_path) == recent
 
 
-def test_retention_still_recognizes_archives_after_restoring_config(tmp_path):
+def test_retention_recognizes_archives_after_replacing_rollback_directories(tmp_path):
     _install(tmp_path, "5.8.0")
+    settings = tmp_path / "config" / "setting.yaml"
+    history = tmp_path / "history" / "saved.log"
+    settings.write_bytes(b"old config")
+    history.write_bytes(b"old history")
     _start(tmp_path, "5.9.0-beta.1").finish()
     old_stable = _archives(tmp_path)[0]
+    settings.write_bytes(b"migrated config")
+    history.write_bytes(b"new history")
     _start(tmp_path, "5.9.0-beta.2").finish()
     beta = next(path for path in _archives(tmp_path) if path != old_stable)
 
-    (tmp_path / "config" / "upgrade-backup-state.json").unlink()
+    displaced = tmp_path / "before-rollback"
+    displaced.mkdir()
+    for name in ("config", "data", "history"):
+        (tmp_path / name).rename(displaced / name)
     with zipfile.ZipFile(old_stable) as archive:
-        (tmp_path / "config" / "frontend_config.json").write_bytes(
-            archive.read("config/frontend_config.json")
-        )
+        archive.extractall(tmp_path)
 
+    _start(tmp_path, "5.8.0").finish()
+    assert settings.read_bytes() == b"old config"
+    assert history.read_bytes() == b"old history"
     _start(tmp_path, "5.9.0-beta.3").finish()
     assert old_stable.exists()
     _start(tmp_path, "6.0.0").finish()
@@ -219,6 +229,112 @@ def test_backup_directory_cannot_be_inside_a_snapshotted_directory(tmp_path):
     assert backup.begin_migration()
     backup.finish()
     assert not directory.exists()
+
+
+def test_move_directory_keeps_restore_points_and_leaves_manual_exports(tmp_path):
+    _install(tmp_path, "5.8.0")
+    old = _start(tmp_path, "5.9.0")
+    old.finish()
+    source = tmp_path / "backup"
+    (source / "manual.zip").write_bytes(b"manual archive")
+    zip_path = _archives(tmp_path)[0]
+    target = tmp_path / "new"
+
+    assert old.move_directory(str(target), expected=str(source))
+    assert not zip_path.exists()
+    assert (source / "manual.zip").read_bytes() == b"manual archive"
+    with zipfile.ZipFile(target / zip_path.name) as archive:
+        assert archive.testzip() is None
+
+    restarted = _start(tmp_path, "5.9.1")
+    restarted.finish()
+    assert restarted.directory_info()["directory"] == str(target)
+    assert len(list(target.glob("AUTO-MAS-backup-*.zip"))) == 2
+
+
+@pytest.mark.parametrize("already_changed", [False, True])
+def test_directory_change_packs_completed_snapshot_from_original_location(
+    tmp_path, monkeypatch, already_changed
+):
+    _install(tmp_path, "5.8.0")
+    config = tmp_path / "config" / "setting.yaml"
+    config.write_bytes(b"old config")
+    source = tmp_path / "backup"
+    target = tmp_path / "new"
+    target.mkdir()
+
+    def fail_to_pack(_snapshot: Path, _archive: Path) -> None:
+        raise OSError("old drive has no space")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(upgrade_backup, "_pack_snapshot", fail_to_pack)
+        startup = UpgradeBackup(root=tmp_path, desktop_version="5.9.0")
+        assert startup.prepare() == "backup_failed"
+        assert startup.begin_migration()
+        startup.finish()
+    config.write_bytes(b"already migrated")
+    assert list(source.glob(".*.snapshot"))
+    assert not _archives(tmp_path)
+
+    if already_changed:
+        # 旧客户端曾只保存了新路径。确认同一路径仍能找回原处的快照。
+        _preferences(tmp_path, enabled=True, directory=target)
+        startup = _start(tmp_path, "5.9.0")
+    assert startup.move_directory(
+        str(target), expected=str(target if already_changed else source)
+    )
+    with zipfile.ZipFile(next(target.glob("*.zip"))) as archive:
+        assert archive.read("config/setting.yaml") == b"old config"
+    assert not list(source.glob(".*.snapshot"))
+    _start(tmp_path, "5.9.0").finish()
+    assert len(list(target.glob("*.zip"))) == 1
+
+
+def test_move_directory_conflict_leaves_old_location_and_archive_untouched(tmp_path):
+    _install(tmp_path, "5.7.0")
+    _start(tmp_path, "5.8.0").finish()
+    backup = _start(tmp_path, "5.9.0")
+    backup.finish()
+    source = tmp_path / "backup"
+    originals = _archives(tmp_path)
+    target = tmp_path / "new"
+    target.mkdir()
+    conflict = target / originals[1].name
+    conflict.write_bytes(b"user file with the same name")
+
+    with pytest.raises(FileExistsError):
+        backup.move_directory(str(target), expected=str(source))
+    assert _archives(tmp_path) == originals
+    assert list(target.iterdir()) == [conflict]
+    assert conflict.read_bytes() == b"user file with the same name"
+    assert _start(tmp_path, "5.9.0").directory_info()["resolvedDirectory"] == str(
+        source
+    )
+
+
+def test_move_directory_recovers_locked_source_after_switch(tmp_path, monkeypatch):
+    _install(tmp_path, "5.8.0")
+    backup = _start(tmp_path, "5.9.0")
+    backup.finish()
+    source = tmp_path / "backup"
+    original = _archives(tmp_path)[0]
+    target = tmp_path / "new"
+    unlink = Path.unlink
+
+    def lock_source(file: Path, *, missing_ok: bool = False) -> None:
+        if file == original:
+            raise PermissionError("old archive in use")
+        unlink(file, missing_ok=missing_ok)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "unlink", lock_source)
+        assert not backup.move_directory(str(target), expected=str(source))
+    assert original.exists()
+    assert (target / original.name).exists()
+
+    _start(tmp_path, "5.9.0").finish()
+    assert not original.exists()
+    assert (target / original.name).exists()
 
 
 def test_retry_uses_completed_snapshot_after_zip_publication_fails(

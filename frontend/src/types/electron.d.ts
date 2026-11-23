@@ -1,6 +1,7 @@
 import type { FluxdownInstallOut, GlobalConfig_UI, GlobalConfig_Update } from '@/api'
 import type { AnalyticsContext, RendererAnalyticsEvent } from '@/types/analytics'
 import type { FrontendCloseRequest } from '@/types/appLifecycle'
+import type { UpgradeBackupDirectory, UpgradeBackupSelection } from '@/types/upgradeBackup'
 import type {
   DesktopSessionRequest,
   DesktopSessionRepair,
@@ -447,6 +448,10 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
     zipPath?: string
     error?: string
   }>
+  getUpgradeBackupDirectory: () => Promise<UpgradeBackupDirectory>
+  chooseUpgradeBackupDirectory: (reset: boolean) => Promise<UpgradeBackupSelection | null>
+  confirmUpgradeBackupDirectory: (id: string) => Promise<UpgradeBackupDirectory>
+  cancelUpgradeBackupDirectory: (id: string) => Promise<void>
   /** 不传 fromOffset 返回整份字符串；传了只返回该字节偏移之后的新增部分。 */
   getLogs: {
     (lines?: number, fileName?: string): Promise<string>
