@@ -964,6 +964,7 @@ export type { OkNtePlanField } from './models/OkNtePlanField';
 export type { OkNtePlanFile } from './models/OkNtePlanFile';
 export type { OkNtePlanKey } from './models/OkNtePlanKey';
 export type { OkNtePlanRoutineItem } from './models/OkNtePlanRoutineItem';
+export type { OkNteTaskArgumentOut } from './models/OkNteTaskArgumentOut';
 export type { OkNteUserConfig } from './models/OkNteUserConfig';
 export type { OkNteUserConfig_Data } from './models/OkNteUserConfig_Data';
 export type { OkNteUserConfig_DataInput } from './models/OkNteUserConfig_DataInput';
