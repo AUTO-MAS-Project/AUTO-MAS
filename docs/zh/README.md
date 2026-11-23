@@ -102,7 +102,7 @@ AUTO-MAS 尊重并保护用户隐私。上述信息会在客户端完成脱敏�
 
 </a>
 
-![Alt](https://repobeats.axiom.co/api/embed/faac2ed458f7eebe0b7f31432224514d50367152.svg "Repobeats analytics image")
+![Repobeats 统计](https://repobeats.axiom.co/api/embed/faac2ed458f7eebe0b7f31432224514d50367152.svg "Repobeats analytics image")
 
 ## Star History
 
