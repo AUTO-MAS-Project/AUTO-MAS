@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, type CSSProperties } from 'vue'
 import { Modal, type ButtonProps } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { useConfirm, type ConfirmTone } from '@/composables/useConfirm'
@@ -20,6 +20,7 @@ const props = withDefaults(
     description?: string
     okText?: string
     cancelText?: string
+    overlayStyle?: CSSProperties
     danger?: boolean
     type?: ButtonProps['type']
     size?: ButtonProps['size']
@@ -33,6 +34,7 @@ const props = withDefaults(
     description: undefined,
     okText: undefined,
     cancelText: undefined,
+    overlayStyle: undefined,
     danger: undefined,
     type: 'default',
     size: 'middle',
@@ -83,6 +85,7 @@ const handleHighRiskClick = async () => {
     :ok-text="resolvedOkText"
     :cancel-text="resolvedCancelText"
     :ok-type="isDanger ? 'danger' : 'primary'"
+    :overlay-style="overlayStyle"
     :disabled="disabled || isBusy"
     @confirm="executeConfirm"
   >

@@ -148,13 +148,15 @@ import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useWhimboxTaskCatalog } from '@/views/whimbox/useWhimboxTaskCatalog'
 import { SCRIPT_LABELS } from '@/utils/scriptLogos'
 
 const { t } = useI18n()
+const { alert } = useConfirm()
 const logger = window.electronAPI.getLogger('奇想盒脚本编辑')
 const route = useRoute()
 const router = useRouter()
@@ -297,9 +299,10 @@ const selectRootPath = async () => {
   const exePath = `${normalized}/${WHIMBOX_EXE_NAME}`
   const exists = await window.electronAPI.fileExists(exePath)
   if (!exists) {
-    Modal.error({
+    void alert({
+      tone: 'error',
       title: t('core.edit.whimboxInvalidDirectory'),
-      content: t('core.edit.whimboxExeNotFound', { p0: WHIMBOX_EXE_NAME }),
+      description: t('core.edit.whimboxExeNotFound', { p0: WHIMBOX_EXE_NAME }),
       okText: t('core.edit.gotIt'),
     })
     return

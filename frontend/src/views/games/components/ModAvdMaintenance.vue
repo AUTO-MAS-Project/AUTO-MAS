@@ -88,12 +88,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Modal } from 'ant-design-vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { gameActionHint, type GameRow } from '@/types/games'
 import { useGameTriggers } from '@/composables/useGameTriggers'
 
 const props = defineProps<{ game: GameRow }>()
 const { t } = useI18n()
+const { confirm } = useConfirm()
 const operations = useGameTriggers()
 const error = ref('')
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -137,9 +138,10 @@ async function run(action: string) {
   }
 }
 function update() {
-  Modal.confirm({
+  void confirm({
+    tone: 'warning',
     title: t('core.games.updateConfirm'),
-    content: t('core.games.updateHint'),
+    description: t('core.games.updateHint'),
     onOk: () => run('update'),
   })
 }

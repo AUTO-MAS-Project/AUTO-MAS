@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vite-plus/test'
-import { openConfirm } from './useConfirm'
+import { openAlert, openConfirm } from './useConfirm'
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void
@@ -17,11 +17,16 @@ function createMockHost() {
     captured = { ...captured, ...patch }
   })
   const destroy = vi.fn()
-  const host = {
-    confirm: vi.fn((config: Record<string, unknown>) => {
+  const makeMethod = () =>
+    vi.fn((config: Record<string, unknown>) => {
       captured = config
       return { update, destroy } as never
-    }),
+    })
+  const host = {
+    confirm: makeMethod(),
+    info: makeMethod(),
+    warning: makeMethod(),
+    error: makeMethod(),
   }
   return {
     host,
@@ -119,5 +124,71 @@ describe('openConfirm', () => {
     ;(getConfig().onCancel as (close?: () => void) => void)(closeSpy)
     expect(closeSpy).toHaveBeenCalledTimes(1)
     await expect(failing).resolves.toBe(false)
+  })
+})
+
+describe('openAlert', () => {
+  it('按语义级别分发到 info/warning/error，并统一注入居中与标题栏避让类', async () => {
+    const { host, getConfig } = createMockHost()
+    const pending = openAlert(
+      {
+        tone: 'error',
+        title: '目录无效',
+        description: '未找到可执行文件',
+        okText: '知道了',
+        zIndex: 999,
+      },
+      host as never
+    )
+
+    expect(host.error).toHaveBeenCalledTimes(1)
+    const config = getConfig()
+    expect(config.centered).toBe(true)
+    expect(config.wrapClassName).toBe('app-confirm-modal')
+    expect(config.zIndex).toBe(999)
+    expect(config.closable).toBe(false)
+
+    await (config.onOk as () => Promise<void>)()
+    await expect(pending).resolves.toBeUndefined()
+  })
+
+  it('异步 onOk 执行中锁定关闭交互，失败后恢复初始 closable 与 maskClosable', async () => {
+    const { host, update, getConfig } = createMockHost()
+    const deferred = createDeferred<void>()
+    const closeSpy = vi.fn()
+
+    const pending = openAlert(
+      {
+        tone: 'info',
+        title: '打开链接',
+        closable: true,
+        maskClosable: true,
+        onOk: () => deferred.promise,
+      },
+      host as never
+    )
+
+    const onOkPromise = (getConfig().onOk as () => Promise<void>)()
+    expect(update).toHaveBeenLastCalledWith({
+      keyboard: false,
+      maskClosable: false,
+      closable: false,
+    })
+
+    ;(getConfig().onCancel as (close?: () => void) => void)(closeSpy)
+    expect(closeSpy).not.toHaveBeenCalled()
+
+    deferred.reject(new Error('open failed'))
+    await expect(onOkPromise).rejects.toThrow('open failed')
+
+    expect(update).toHaveBeenLastCalledWith({
+      keyboard: true,
+      maskClosable: true,
+      closable: true,
+    })
+
+    ;(getConfig().onCancel as (close?: () => void) => void)(closeSpy)
+    expect(closeSpy).toHaveBeenCalledTimes(1)
+    await expect(pending).resolves.toBeUndefined()
   })
 })

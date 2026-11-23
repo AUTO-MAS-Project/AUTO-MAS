@@ -8,7 +8,7 @@
  */
 
 import { h, type VNode } from 'vue'
-import { Modal } from 'ant-design-vue'
+import { openAlert } from '@/composables/useConfirm'
 
 /** 丢弃原因 → 正文词条（未知原因按通用文案兜底） */
 export const configDiscardReasonKey = (reason: string): string => {
@@ -30,9 +30,10 @@ export const showConfigDiscardWarning = (
   t: (key: string, named?: Record<string, string>) => string,
   reason: string
 ): void => {
-  Modal.warning({
+  void openAlert({
+    tone: 'warning',
     title: t('core.edit.configSessionDiscardedTitle'),
-    content: configDiscardContent(t, reason),
+    description: configDiscardContent(t, reason),
     okText: t('core.misc.gotIt'),
     zIndex: 999,
   })

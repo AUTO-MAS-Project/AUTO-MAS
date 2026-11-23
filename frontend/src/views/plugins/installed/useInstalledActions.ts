@@ -1,6 +1,6 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Modal } from 'ant-design-vue'
+import { openConfirm } from '@/composables/useConfirm'
 import {
   LIFECYCLE_LABEL_KEYS,
   lifecycleDecision,
@@ -46,23 +46,19 @@ export function useInstalledActions() {
   )
 
   const confirm = (view: InstalledPluginView, action: GuardedAction, scopes: DisableScope[]) =>
-    new Promise<boolean>(resolve => {
-      // 沿用原有确认文案：卸载始终提示删除配置，停用列出后端给的影响范围。
-      Modal.confirm({
-        title: t(CONFIRM_TITLE_KEYS[action]),
-        content:
-          action === 'uninstall'
-            ? t('core.plugins.uninstallConfirmContent', { name: view.name })
-            : t('core.plugins.disableConfirmContent', {
-                name: view.name,
-                scopes: scopes.map(scope => t(`core.plugins.disableScope.${scope}`)).join(' / '),
-              }),
-        okText: t(LIFECYCLE_LABEL_KEYS[action]),
-        okType: 'danger',
-        cancelText: t('core.common.cancel'),
-        onOk: () => resolve(true),
-        onCancel: () => resolve(false),
-      })
+    // 沿用原有确认文案：卸载始终提示删除配置，停用列出后端给的影响范围。
+    openConfirm({
+      tone: 'danger',
+      title: t(CONFIRM_TITLE_KEYS[action]),
+      description:
+        action === 'uninstall'
+          ? t('core.plugins.uninstallConfirmContent', { name: view.name })
+          : t('core.plugins.disableConfirmContent', {
+              name: view.name,
+              scopes: scopes.map(scope => t(`core.plugins.disableScope.${scope}`)).join(' / '),
+            }),
+      okText: t(LIFECYCLE_LABEL_KEYS[action]),
+      cancelText: t('core.common.cancel'),
     })
 
   const proceed = async (

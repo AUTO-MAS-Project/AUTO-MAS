@@ -132,7 +132,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Modal, message } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { DeleteOutlined, DownOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { Service, type DeviceStatus } from '@/api'
 import type { GameDevice, GameDeviceRow, GameRow } from '@/types/games'
@@ -147,6 +148,7 @@ import ModAvdMaintenance from './ModAvdMaintenance.vue'
 
 const props = defineProps<{ game: GameRow }>()
 const { t } = useI18n()
+const { confirm } = useConfirm()
 const api = useGamesApi()
 const operations = useGameTriggers()
 const creating = ref(false)
@@ -193,9 +195,10 @@ async function refreshDevices() {
 }
 function remove() {
   if (!canRun('delete')) return
-  Modal.confirm({
+  void confirm({
+    tone: 'danger',
     title: t('core.games.deleteConfirm'),
-    content: props.game.document.info?.name,
+    description: props.game.document.info?.name ?? undefined,
     onOk: async () => {
       if (canRun('delete'))
         await api.remove(props.game).catch(error => message.error(String(error)))
@@ -206,7 +209,8 @@ function batchAction({ key }: { key: string | number }) {
   if ((key !== 'stable_mode' && key !== 'capture') || !canRun(key)) return
   const stable = key === 'stable_mode'
   const game = props.game
-  Modal.confirm({
+  void confirm({
+    tone: 'warning',
     title: t(stable ? 'core.games.applyStableMode' : 'core.games.capture'),
     onOk: async () => {
       if (!canRun(key)) return

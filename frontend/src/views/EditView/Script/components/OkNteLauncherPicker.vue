@@ -17,22 +17,24 @@
 </template>
 
 <script setup lang="ts">
-import { Modal } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
+import { useConfirm } from '@/composables/useConfirm'
 import PathPickerField from '@/components/PathPickerField.vue'
 
 defineProps<{ path?: string | null; disabled: boolean }>()
 const emit = defineEmits<{ select: [path: string] }>()
 const { t } = useI18n()
+const { alert } = useConfirm()
 
 const pickFile = async () => {
   const paths = await window.electronAPI.selectFile([{ name: 'Executable', extensions: ['exe'] }])
   const picked = paths?.[0]?.replace(/\\/g, '/')
   if (!picked) return
   if (!picked.toLowerCase().endsWith('.exe') || picked.toLowerCase().endsWith('/htgame.exe')) {
-    Modal.error({
+    void alert({
+      tone: 'error',
       title: t('core.edit.oknteLauncherNotFoundTitle'),
-      content: t('core.edit.oknteLauncherInvalid'),
+      description: t('core.edit.oknteLauncherInvalid'),
       okText: t('core.edit.gotIt'),
     })
     return
@@ -61,9 +63,10 @@ const pickDirectory = async () => {
       }
     }
   }
-  Modal.error({
+  void alert({
+    tone: 'error',
     title: t('core.edit.oknteLauncherNotFoundTitle'),
-    content: t('core.edit.oknteLauncherNotFound'),
+    description: t('core.edit.oknteLauncherNotFound'),
     okText: t('core.edit.gotIt'),
   })
 }

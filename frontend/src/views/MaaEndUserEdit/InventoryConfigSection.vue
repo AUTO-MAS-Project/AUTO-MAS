@@ -131,7 +131,7 @@
 import { computed, ref, watch } from 'vue'
 import { SearchOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
-import { Modal } from 'ant-design-vue'
+import { openConfirm } from '@/composables/useConfirm'
 import type { MaaEndInventoryOptions } from '@/api'
 import {
   INVENTORY_TARGET_MAX,
@@ -244,10 +244,10 @@ function repairTargets() {
     save()
     return
   }
-  Modal.confirm({
+  void openConfirm({
+    tone: 'danger',
     title: t('core.edit.maaEndImsResetInvalid'),
-    content: t('core.edit.maaEndImsResetHint'),
-    okType: 'danger',
+    description: t('core.edit.maaEndImsResetHint'),
     okText: t('core.edit.maaEndImsResetInvalid'),
     cancelText: t('core.edit.cancel'),
     onOk: save,
