@@ -24,6 +24,10 @@ def test_signed_urls_are_reduced_to_origin():
         == "https://example.com"
     )
     assert safe_origin("invalid") == "(hidden)"
+    assert (
+        safe_origin("https://[2001:db8::1]:8443/update.zip?token=private")
+        == "https://[2001:db8::1]"
+    )
 
 
 def test_m7a_nested_root_and_version_marker(tmp_path):
@@ -112,14 +116,19 @@ async def test_same_destination_retry_preserves_both_export_records(
     destination = tmp_path / "package.part"
 
     async def fail(*args, **kwargs):
-        raise httpx.ReadTimeout("transport timed out")
+        request = httpx.Request("GET", url)
+        raise httpx.HTTPStatusError(
+            f"download failed: {url}",
+            request=request,
+            response=httpx.Response(403, request=request),
+        )
 
     async def succeed(url, destination, **kwargs):
         with zipfile.ZipFile(destination, "w") as archive:
             archive.writestr("March7thAssistant/version.txt", "v1.2.3")
         return destination.stat().st_size
 
-    with pytest.raises(httpx.ReadTimeout):
+    with pytest.raises(httpx.HTTPStatusError):
         await downloads.download_file(
             url, destination, timeout=3, downloader="builtin", http_download=fail
         )
@@ -138,10 +147,11 @@ async def test_same_destination_retry_preserves_both_export_records(
     failed, succeeded = history
     assert (failed["status"], failed["error"], failed["size"]) == (
         "failed",
-        "ReadTimeout",
+        "HTTPStatusError",
         0,
     )
     assert failed["diagnostic"]["availability"] == "download_failed"
+    assert failed["diagnostic"]["http_status"] == 403
     assert (succeeded["status"], succeeded["error"], succeeded["size"]) == (
         "success",
         None,

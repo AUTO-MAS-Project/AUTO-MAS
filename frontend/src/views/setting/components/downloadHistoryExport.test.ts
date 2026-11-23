@@ -20,6 +20,22 @@ describe('download history JSON export', () => {
     expect(item).toMatchObject(privateFields)
   })
 
+  it('preserves safe failure details and an IPv6 origin', () => {
+    const item = {
+      ...privateFields,
+      url: 'https://[2001:db8::1]:8443/private/update.zip?token=secret',
+      status: 'failed',
+      error: 'HTTPStatusError',
+      diagnostic: { schema: 1, availability: 'download_failed', http_status: 403 },
+    }
+    expect(JSON.parse(JSON.stringify(downloadHistoryExport(item)))).toEqual({
+      status: 'failed',
+      url: 'https://[2001:db8::1]',
+      error_code: 'HTTPStatusError',
+      diagnostic: { schema: 1, availability: 'download_failed', http_status: 403 },
+    })
+  })
+
   it('exports a successful package summary with only known diagnostic fields', () => {
     const item = {
       ...privateFields,

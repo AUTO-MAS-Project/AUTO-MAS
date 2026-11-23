@@ -128,6 +128,8 @@ async def download_file(
 
     async def write_attempt_record(
         record: _utils_fluxdown_cli.FluxdownDownloadRecord,
+        *,
+        http_status: int | None = None,
     ) -> None:
         nonlocal terminal_written
         record.url = safe_origin(record.url)
@@ -142,6 +144,8 @@ async def download_file(
                 )
             else:
                 details = {"schema": 1, "availability": "download_failed"}
+                if http_status is not None:
+                    details["http_status"] = http_status
             details.update(
                 {
                     "source": frozen_source[:48] or "unknown",
@@ -164,7 +168,10 @@ async def download_file(
                 duration_ms=int((monotonic() - started_at) * 1000),
                 status="failed" if error is not None else "success",
                 error=type(error).__name__ if error is not None else None,
-            )
+            ),
+            http_status=error.response.status_code
+            if isinstance(error, httpx.HTTPStatusError)
+            else None,
         )
 
     if observer is not None:

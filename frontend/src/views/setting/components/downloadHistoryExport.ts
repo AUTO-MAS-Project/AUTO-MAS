@@ -6,6 +6,27 @@ const knownValue = (value: unknown, allowed: readonly string[]) =>
 const count = (value: unknown) =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
 
+const errorCodes = [
+  'HTTPStatusError',
+  'ConnectTimeout',
+  'ReadTimeout',
+  'WriteTimeout',
+  'PoolTimeout',
+  'ConnectError',
+  'ReadError',
+  'WriteError',
+  'ProxyError',
+  'RemoteProtocolError',
+  'TimeoutError',
+  'PermissionError',
+  'FileNotFoundError',
+]
+
+const httpStatus = (value: unknown) => {
+  const status = count(value)
+  return status !== undefined && status >= 100 && status <= 599 ? status : undefined
+}
+
 const downloadOrigin = (value?: string | null) => {
   try {
     const { protocol, hostname } = new URL(value ?? '')
@@ -48,6 +69,7 @@ export const downloadHistoryExport = (item: FluxdownRecord) => {
       'fluxdown_fallback',
     ]),
     url: downloadOrigin(item.url),
+    error_code: knownValue(item.error, errorCodes),
     size: count(item.size),
     duration_ms: count(item.duration_ms),
     segments: count(item.segments),
@@ -70,6 +92,7 @@ export const downloadHistoryExport = (item: FluxdownRecord) => {
               'unknown',
             ]),
             downloader: knownValue(details.downloader, ['FluxDown', 'httpx']),
+            http_status: httpStatus(details.http_status),
             bytes: count(details.bytes),
             entries: count(details.entries),
             expanded_bytes: count(details.expanded_bytes),

@@ -51,7 +51,12 @@ def safe_origin(url: str) -> str:
     """Only retain protocol and hostname, excluding query, path and credentials."""
     try:
         parsed = urlsplit(url)
-        return f"{parsed.scheme}://{parsed.hostname}" if parsed.hostname else "(hidden)"
+        host = parsed.hostname
+        if not host:
+            return "(hidden)"
+        if ":" in host:
+            host = f"[{host}]"
+        return f"{parsed.scheme}://{host}"
     except ValueError:
         return "(hidden)"
 
