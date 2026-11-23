@@ -189,6 +189,7 @@ class ScriptExpander(TaskBase):
 
         entry: ScriptConfigType
         game_token = None
+        selection_failed = False
         try:
             candidate: ScriptConfigType | None = Config.ScriptConfig.get(
                 script.script_id
@@ -267,7 +268,11 @@ class ScriptExpander(TaskBase):
                     )
                     if declaration.expect_builder is not None:
                         self._game_session.expect = declaration.expect_builder(entry)
-                    await self._game_session.select()
+                    try:
+                        await self._game_session.select()
+                    except Exception:
+                        selection_failed = True
+                        raise
                     plugin.game_session = self._game_session
                     plugin.context = self.context.with_params(script.info.params)
                     plugin.history = self.history
@@ -343,6 +348,11 @@ class ScriptExpander(TaskBase):
                 type=protocol.TASK_NOTICE,
                 data=WSTaskNoticeData(level="error", message=str(error)),
             )
+            if selection_failed:
+                # 同旧专项托管级检查失败：一个账号都没开始，账号记「异常」，不留在「等待」。
+                for user in script.user_list:
+                    if user.status == "等待":
+                        await user.set_state(status="异常")
         finally:
             try:
                 if self._game_session is not None:

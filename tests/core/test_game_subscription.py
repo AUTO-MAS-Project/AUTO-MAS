@@ -406,6 +406,84 @@ async def test_restore_failure_preserves_account_success_counts_and_runs_later_s
         assert all(not scripts[sid].is_locked for sid in sids)
 
 
+async def _plugin_script_world(scheduler, monkeypatch, expander, game):
+    """真实调度 + 插件路径：建一个绑定 ``game`` 的插件托管（一位账号），返回托管 uid。"""
+    from uuid import uuid4
+
+    from app.config import config_manager
+    from app.core import Config, Plugin
+    from app.models.config import ScriptEntry, UserEntry
+    from app.plugin.base.script import ScriptTypeDecl
+
+    class Script(ScriptEntry):
+        pass
+
+    manager, scripts, _, _ = scheduler
+    games = ConfigCollection[GameEntry].build([GameEntry])
+    monkeypatch.setattr(Config, "GameConfig", games)
+    monkeypatch.setitem(config_manager._collections, "games", games)
+    await games.activate()
+    gid = games.add(
+        GameEntry, payload={"info": {"name": "测试游戏", "concurrent_execution": False}}
+    )
+    await games.commit()
+
+    class Control(ExternalControl):
+        fail_restore = False
+
+    _GameManager.create_control(config=games[gid], control_class=Control)
+    scripts.add_type(Script)
+    await scripts.commit()
+    binding = game if game is not None else {"game_id": str(gid), "device_id": "-"}
+    sid = scripts.add(Script, payload={"info": {"name": "plugin"}, "game": binding})
+    await scripts.commit()
+    scripts[sid].users.add(UserEntry, payload={"info": {"name": "account"}})
+    await scripts[sid].users.commit()
+    monkeypatch.setattr(
+        manager, "plugin_expander", lambda script, config: expander(script, config)
+    )
+    monkeypatch.setattr(
+        Plugin, "script_types", {uuid4(): ScriptTypeDecl(Script, UserEntry, expander)}
+    )
+    return sid, gid
+
+
+@pytest.mark.asyncio
+async def test_failed_game_selection_marks_waiting_accounts_failed(
+    scheduler, monkeypatch
+):
+    """插件托管选定游戏失败：账号与内置专项一样记「异常」，不留在「等待」。"""
+    from app.models.task import TaskMode
+    from app.task.user_expander import UserExpander
+
+    entered = []
+
+    class Expander(UserExpander):
+        async def main_task(self):
+            entered.append(True)
+
+        def build_worker(self, user, config):
+            raise NotImplementedError
+
+    manager = scheduler[0]
+    reason = "所选游戏的适配插件已停用"
+    sid, _ = await _plugin_script_world(
+        scheduler,
+        monkeypatch,
+        Expander,
+        {"game_id": "-", "device_id": "-", "unavailable_reason": reason},
+    )
+    uid = await manager.start(
+        TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(sid)}}}}
+    )
+    run = manager.task_handler[uid]
+    await asyncio.wait_for(run.accomplish.wait(), 3)
+    script = run.task_info.script_list[0]
+    assert not entered
+    assert script.status == "异常" and reason in script.log
+    assert [(u.status, u.log_record) for u in script.user_list] == [("异常", {})]
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("concurrent_execution", [False, True], ids=["gate", "device"])
 async def test_waiting_for_game_pushes_task_log_before_acquisition(
