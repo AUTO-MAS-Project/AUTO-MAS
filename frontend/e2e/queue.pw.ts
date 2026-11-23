@@ -164,6 +164,11 @@ test.describe('@queue @scheduler user queue', () => {
           scope.getByRole('checkbox', { name: script.account, exact: true })
         ).toBeChecked()
       }
+      const laterAccount = scope.getByRole('checkbox', { name: scripts[0]!.account, exact: true })
+      await laterAccount.uncheck()
+      await scope.getByRole('button', { name: 'Start from here', exact: true }).first().click()
+      await expect(laterAccount).not.toBeChecked()
+      await laterAccount.check()
       await scope.getByRole('checkbox', { name: scripts[1]!.account, exact: true }).uncheck()
       await expect(scopeButton).toContainText('1/2')
       await expect(page.locator('.task-control .ant-btn-primary')).toBeEnabled()
