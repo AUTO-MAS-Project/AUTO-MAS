@@ -75,6 +75,16 @@ def test_notification_task_base_is_inheritable_host_class() -> None:
     assert issubclass(Manager, TaskExecuteBase)
 
 
+def test_busy_error_is_host_class() -> None:
+    """插件按 SDK 给的类认「调用门暂停、注册表已封」，宿主抛的就是这个类。"""
+    import auto_mas_core
+
+    from app.plugin.errors import PluginBusyError
+
+    assert auto_mas_core.PluginBusyError is PluginBusyError
+    assert "PluginBusyError" in auto_mas_core.__all__
+
+
 def test_restricted_facade_rejects_unlisted_name() -> None:
     """只开放 ``__all__`` 的出口不放出宿主模块里别的名字。"""
     module = importlib.import_module("auto_mas_core.host.utils_common_game_resolution")

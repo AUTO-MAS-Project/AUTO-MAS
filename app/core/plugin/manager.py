@@ -82,6 +82,11 @@ if TYPE_CHECKING:
 
 logger = get_logger("插件管理")
 
+# 停用、重载、卸载时等待在途调用收尾的上限（秒）。到时仍有调用没结束就拒绝本次操作、恢复准入，
+# 不让一次生命周期操作无限期挡住正在运行的托管。
+_PAUSE_DRAIN_TIMEOUT = 15.0
+_BUSY_MESSAGE = "插件系统忙，请稍后重试"
+
 
 def _requirement_closure(package: str) -> set[str]:
     """已装发行包按 Requires-Dist 展开的依赖闭包（规范化包名，含自身）；读不到的包跳过。"""
@@ -156,6 +161,8 @@ class _PluginManager:
         self._source_queue: asyncio.Queue[SourcesChangedPayload] | None = None
         self._source_worker_task: asyncio.Task[None] | None = None
         self._calls: dict[UUID, CallGate] = {}
+        # 退出开始后不再受理新的生命周期操作；插件之间的服务调用要留到停完任务之后才封。
+        self._entries_sealed = False
         # 本次启动因版本低于存量配置要求而不启用的插件（插件 ID）。
         self._held_back: frozenset[str] = frozenset()
 
@@ -196,8 +203,23 @@ class _PluginManager:
         try:
             async with config_manager.pause_trigger_owners(owners):
                 # 保留发起调用的任务身份，让 drain 排除自身，避免等待自己返回。
-                for gate, _ in gates.values():
-                    await gate.drain()
+                # 在当前任务里限时等待（不另起任务），否则 drain 认不出发起者自己的调用。
+                pending: UUID | None = None
+                try:
+                    async with asyncio.timeout(_PAUSE_DRAIN_TIMEOUT):
+                        for uid, (gate, _) in gates.items():
+                            pending = uid
+                            await gate.drain()
+                except TimeoutError:
+                    from app.core import Config
+
+                    record = Config.plugin_registry.get(pending)
+                    name = record.info.plugin_name if record is not None else pending
+                    logger.warning(
+                        f"插件 {name} 的在途调用 {_PAUSE_DRAIN_TIMEOUT:g} 秒内没有结束，"
+                        "拒绝本次停用 / 重载 / 卸载，恢复调用准入"
+                    )
+                    raise PluginBusyError(_BUSY_MESSAGE) from None
                 yield
         finally:
             from app.core import Config
@@ -360,9 +382,18 @@ class _PluginManager:
             self._watcher = SourceWatcher(plugins_dir=Config.plugins_path)
             self._watcher.start()
 
-    def seal(self) -> None:
-        """退出开始即拒绝新的公开调用；已有调用由 shutdown 等待实际结束。"""
+    def seal_entries(self) -> None:
+        """退出开始只封外部入口：插件 HTTP 网关和新的生命周期操作。
+
+        服务注册表和调用门留到停完任务之后由 ``shutdown`` 封：任务收尾（停 worker、关游戏、
+        恢复分辨率、放预约）要经插件之间的服务调用完成。
+        """
+        self._entries_sealed = True
         self.http.seal()
+
+    def seal(self) -> None:
+        """封住全部公开调用：HTTP、服务取用和各插件调用门；已有调用由 shutdown 等待实际结束。"""
+        self.seal_entries()
         self.services.seal()
         for gate in self._calls.values():
             gate.accepting = False
@@ -391,9 +422,12 @@ class _PluginManager:
         3. 不改 ``plugin_registry.enabled``；配置落盘由主程序 teardown 末尾
            ``config_manager.flush()`` 统一完成。
 
-        主程序应先停 WS / 任务，再调本方法（见 ``main`` teardown）。
+        主程序应先 ``seal_entries``、停 WS / 任务，再调本方法（见 ``main`` teardown）：
+        任务收尾要用的插件服务到这里才封。
         """
         if not self._initialized:
+            # 初始化没走完（后台初始化被取消）也可能已经登记了部分服务，同样封住。
+            self.seal()
             return
         await self.stop_watching()
         async with self._busy:
@@ -437,9 +471,13 @@ class _PluginManager:
 
     @asynccontextmanager
     async def _hold(self) -> AsyncGenerator[None]:
-        """先取得生命周期互斥资格，再暂停调用；忙时拒绝，不能提前取消业务操作。"""
-        if self._busy.locked() or self._restart_installation is not None:
-            raise PluginBusyError("插件系统忙，请稍后重试")
+        """先取得生命周期互斥资格，再暂停调用；忙时或退出已开始时拒绝，不能提前取消业务操作。"""
+        if (
+            self._busy.locked()
+            or self._restart_installation is not None
+            or self._entries_sealed
+        ):
+            raise PluginBusyError(_BUSY_MESSAGE)
         async with self._busy:
             # 线程回调进入生命周期时绑定本协程，独立子任务不继承它的自禁用资格。
             with call_context():
@@ -767,9 +805,8 @@ class _PluginManager:
             )
             raise PluginOperationError(str(exc), payload={"name": name}) from exc
 
-    @asynccontextmanager
-    async def _pause_activity(self, record: PluginRecord):
-        """收集当前插件及其下游依赖者，在上下文内统一暂停调用与配置操作。"""
+    def _activity_owners(self, record: PluginRecord) -> set[UUID]:
+        """当前插件及其全部传递下游依赖者，即生命周期操作要暂停的范围。"""
         owners: set[UUID] = set()
         pending = [record]
         while pending:
@@ -778,6 +815,12 @@ class _PluginManager:
                 continue
             owners.add(current.uid)
             pending.extend(self._downstream(current))
+        return owners
+
+    @asynccontextmanager
+    async def _pause_activity(self, record: PluginRecord):
+        """收集当前插件及其下游依赖者，在上下文内统一暂停调用与配置操作。"""
+        owners = self._activity_owners(record)
         async with self._pause_owners(owners):
             yield owners
 
@@ -791,17 +834,27 @@ class _PluginManager:
     ) -> dict[str, Any]:
         """递归禁用仍启用的下游，返回本次实际拆卸的完整级联树。"""
         if not held:
-            async with self._hold(), self._pause_activity(record):
-                # 级联停用前对整棵要拆的树一起预检：下游的拒绝不能等到兄弟分支已经拆完、
-                # 托管已经删掉之后才冒出来，再落进上游的失败分支。
-                if (
-                    record.info.state == PluginState.ENABLED
-                    and record._plugin_cls is not None
-                ):
-                    await self._precheck_teardown(
-                        self._teardown_tree(record, enabled_only=True)
+            async with self._hold():
+
+                async def precheck() -> None:
+                    """级联停用前对整棵要拆的树一起预检：下游的拒绝不能等到兄弟分支已经拆完、
+                    托管已经删掉之后才冒出来，再落进上游的失败分支。"""
+                    if (
+                        record.info.state == PluginState.ENABLED
+                        and record._plugin_cls is not None
+                    ):
+                        await self._precheck_teardown(
+                            self._teardown_tree(record, enabled_only=True)
+                        )
+
+                # 先在不关调用门时问一次：有运行在途就直接拒，在跑的托管不受打扰；
+                # 暂停之后再问一次，关上两次检查之间的窗口。
+                await precheck()
+                async with self._pause_activity(record):
+                    await precheck()
+                    return await self.disable(
+                        record, held=True, dep_path=dep_path, ctx=ctx
                     )
-                return await self.disable(record, held=True, dep_path=dep_path, ctx=ctx)
 
         path_list = list(dep_path or [])
         name = record.info.plugin_name
@@ -921,17 +974,22 @@ class _PluginManager:
     ) -> dict[str, Any]:
         """DFS 释放插件运行时；卸包入口可保留注册项，待发行包与配置删除成功后再移除。"""
         if not held:
-            async with self._hold(), self._pause_activity(record):
+            async with self._hold():
+                # 先在不关调用门时预检，暂停之后再预检一次（同停用）。
                 await self._precheck_teardown(
                     self._teardown_tree(record, enabled_only=False)
                 )
-                return await self.unload(
-                    record,
-                    held=True,
-                    dep_path=dep_path,
-                    ctx=ctx,
-                    remove_record=remove_record,
-                )
+                async with self._pause_activity(record):
+                    await self._precheck_teardown(
+                        self._teardown_tree(record, enabled_only=False)
+                    )
+                    return await self.unload(
+                        record,
+                        held=True,
+                        dep_path=dep_path,
+                        ctx=ctx,
+                        remove_record=remove_record,
+                    )
 
         path_list = list(dep_path or [])
         name = record.info.plugin_name
@@ -1021,14 +1079,22 @@ class _PluginManager:
     ) -> dict[str, Any]:
         """拆下启用中的下游并保存完整树，重载本项后按树先父后子恢复。"""
         if not held:
-            async with self._hold(), self._pause_activity(record) as owners:
+            async with self._hold():
                 from app.core import Config
 
                 # 重载会替换整棵实际拆卸树的实例，先检查所有适配器，避免拆到一半才遇到锁。
+                # 先在不关调用门时预检，暂停之后再预检一次（同停用）。
                 await self._precheck_teardown(
-                    [Config.plugin_registry[uid] for uid in owners]
+                    [
+                        Config.plugin_registry[uid]
+                        for uid in self._activity_owners(record)
+                    ]
                 )
-                return await self.reload(record, held=True, dep_path=dep_path)
+                async with self._pause_activity(record) as owners:
+                    await self._precheck_teardown(
+                        [Config.plugin_registry[uid] for uid in owners]
+                    )
+                    return await self.reload(record, held=True, dep_path=dep_path)
 
         path_list = list(dep_path or [])
         name = record.info.plugin_name
@@ -1277,6 +1343,14 @@ class _PluginManager:
                 if existing is not None and existing._plugin_cls is not None
                 else contextlib.nullcontext(set())
             )
+            if existing is not None and existing._plugin_cls is not None:
+                # 升级已加载的插件同样先在不关调用门时预检，暂停之后再预检一次（同停用）。
+                await self._precheck_teardown(
+                    [
+                        Config.plugin_registry[uid]
+                        for uid in self._activity_owners(existing)
+                    ]
+                )
             async with pause as owners:
                 await self._precheck_teardown(
                     [Config.plugin_registry[uid] for uid in owners]
@@ -1371,28 +1445,33 @@ class _PluginManager:
         from app.plugin.uv.environment import ensure_writable
 
         ensure_writable()
-        async with self._hold(), self._pause_activity(record):
-            name = record.info.plugin_name
-            package = record.info.package_name or name
+        async with self._hold():
+            # 先在不关调用门时预检，暂停之后再预检一次（同停用）。
             await self._precheck_teardown(
                 self._teardown_tree(record, enabled_only=False)
             )
-            deps = await self.unload(record, held=True, remove_record=False)
-            from app.core.config import Config
-
-            try:
-                await uv_tool.uninstall(package)
-                (Config.config_path / "plugins" / f"{name}.yaml").unlink(
-                    missing_ok=True
+            async with self._pause_activity(record):
+                name = record.info.plugin_name
+                package = record.info.package_name or name
+                await self._precheck_teardown(
+                    self._teardown_tree(record, enabled_only=False)
                 )
-            except Exception as exc:
-                record.info.state = PluginState.FAULT_LOAD
-                record.info.last_error = str(exc)
-                await record.commit()
-                raise
-            Config.plugin_registry.remove(record.uid)
-            await Config.plugin_registry.commit()
-            return deps
+                deps = await self.unload(record, held=True, remove_record=False)
+                from app.core.config import Config
+
+                try:
+                    await uv_tool.uninstall(package)
+                    (Config.config_path / "plugins" / f"{name}.yaml").unlink(
+                        missing_ok=True
+                    )
+                except Exception as exc:
+                    record.info.state = PluginState.FAULT_LOAD
+                    record.info.last_error = str(exc)
+                    await record.commit()
+                    raise
+                Config.plugin_registry.remove(record.uid)
+                await Config.plugin_registry.commit()
+                return deps
 
     async def refresh_market(self) -> None:
         """全量刷新市场目录（写 ``Config.plugin_catalog``）。"""
