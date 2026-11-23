@@ -94,6 +94,7 @@ export const WS_SYSTEM_NOTICE = 'system.notice'
 
 /** 任务提示消息数据 (type=task.notice) */
 export interface WSTaskNoticeData {
+  sourceScriptType?: string | null
   level: 'info' | 'warning' | 'error'
   message: string
   messageKey?: string | null

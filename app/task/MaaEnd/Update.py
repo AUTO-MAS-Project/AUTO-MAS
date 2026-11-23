@@ -104,5 +104,7 @@ class EndfieldUpdateTask(TaskExecuteBase):
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
                 # 只推原因本身；「终末地更新失败: 」这层前缀由前端词表加，两边都加会说两遍
-                data=WSTaskNoticeData(level="error", message=f"{e}"),
+                data=WSTaskNoticeData(
+                    sourceScriptType="MaaEnd", level="error", message=f"{e}"
+                ),
             )

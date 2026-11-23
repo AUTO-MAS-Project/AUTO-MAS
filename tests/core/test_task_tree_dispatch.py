@@ -46,6 +46,29 @@ class Builtin(TaskExecuteBase):
 
 
 @pytest.mark.asyncio
+async def test_dispatch_error_notice_identifies_the_failing_script(
+    scheduler, monkeypatch
+):
+    from app.core import Publisher
+    from app.core.ws import protocol
+
+    manager, _, _, sid = scheduler
+    monkeypatch.setattr(manager, "manager_factories", {})
+    uid = await manager.start(
+        TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(sid)}}}}
+    )
+    await asyncio.wait_for(manager.task_handler[uid].accomplish.wait(), 4)
+
+    notices = [
+        call.kwargs["data"]
+        for call in Publisher.send.call_args_list
+        if call.kwargs["type"] == protocol.TASK_NOTICE
+        and call.kwargs["data"].level == "error"
+    ]
+    assert [notice.sourceScriptType for notice in notices] == ["General"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("cancel", [False, True])
 async def test_prefetch_follows_new_dispatch_and_waits_for_cancel_cleanup(
     scheduler, monkeypatch, cancel
