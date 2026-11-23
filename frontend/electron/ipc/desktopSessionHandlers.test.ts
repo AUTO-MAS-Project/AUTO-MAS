@@ -218,3 +218,32 @@ it.runIf(process.platform === 'win32' && process.arch === 'x64')(
     expect(mocks.close).not.toHaveBeenCalled()
   }
 )
+
+it.runIf(process.platform === 'win32' && process.arch === 'x64')(
+  '退出确认拦截尚未派发的连接时，结清托管请求以便重试',
+  async () => {
+    const main = new TestWindow()
+    const bridge = registerDesktopSession(
+      () => main as unknown as BrowserWindow,
+      '',
+      () => 'en-US'
+    )
+    const first = invoke(main, 'connect-for-task')
+    const window = preview!
+    const request = invoke(window, 'pending')
+    const quitting = bridge.closeForAppQuit()
+    await vi.waitFor(() => expect(invoke(main, 'prompt:get')).toMatchObject({ kind: 'quit' }))
+
+    await invoke(window, 'start', request)
+    invoke(main, 'prompt:respond', invoke(main, 'prompt:get').id, 'cancel')
+
+    await expect(quitting).resolves.toBe(false)
+    await expect(first).resolves.toBe('cancelled')
+    expect(mocks.start).not.toHaveBeenCalled()
+    const retry = invoke(main, 'connect-for-task')
+    expect(retry).not.toBe(first)
+    expect(invoke(window, 'pending')).toMatchObject({ forTask: true })
+    invoke(window, 'cancel-task-connect')
+    await expect(retry).resolves.toBe('cancelled')
+  }
+)

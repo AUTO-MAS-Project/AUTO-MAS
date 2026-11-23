@@ -487,7 +487,14 @@ export function registerDesktopSession(
   ipcMain.handle('desktop-session:start', async (event, input: unknown) => {
     // 先确认来源，再做任何解析：fromPreview 之外的调用方拿不到校验细节。
     if (!fromPreview(event) || !preview) return { code: 'invalid_request', queues: [] }
-    if (closeFlight) return { code: 'busy', queues: [] }
+    if (closeFlight) {
+      if (autoConnect && !pending.includes(autoConnect.request)) {
+        // 预览已取走请求，但本次启动没有进入服务，退出取消也无法恢复它。
+        finishAutoConnect('cancelled')
+        return { queues: [] }
+      }
+      return { code: 'busy', queues: [] }
+    }
     const window = preview
     const request = normalizeRequest(input)
     const password = (input as Partial<DesktopSessionRequest> | null)?.password
