@@ -146,6 +146,9 @@ async def test_reused_pipeline_installs_package_and_preserves_user_files(
     package = tmp_path / "package.zip"
     with zipfile.ZipFile(package, "w") as archive:
         archive.writestr(exe, b"new engine")
+        if engine == "M7A":
+            archive.writestr("m7a.exe", b"new CLI")
+            archive.writestr("assets/config/version.txt", "2.0")
     from app.task.HSR.tools.update.discover import DiscoveryResult, UpdateCandidate
 
     candidate = UpdateCandidate(
@@ -204,6 +207,7 @@ def m7a_update_release(tmp_path, monkeypatch):
         package = tmp_path / f"release-{version}.zip"
         with zipfile.ZipFile(package, "w") as archive:
             archive.writestr("March7th Assistant.exe", f"engine {version}")
+            archive.writestr("m7a.exe", f"CLI {version}")
             archive.writestr("assets/config/version.txt", version)
         packages[version] = package
     installer.apply_package(
