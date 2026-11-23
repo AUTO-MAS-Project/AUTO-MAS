@@ -63,10 +63,10 @@ class PLUGIN(BasePlugin):
 ```python
 from auto_mas_core.adapters.script import begin_attempt, operation, point
 
-begin_attempt(self, attempt_number)                     # 从 1 起，真正开始重试时触发 retry
-with operation(self, "start_script"):                   # 包裹失败时抛异常的调用
+begin_attempt(self, attempt_number)  # 从 1 起，真正开始重试时触发 retry
+with operation(self, "start_script"):  # 包裹失败时抛异常的调用
     await launcher.start()
-point(self, "special", state="matched", key="daily")    # 在现有检测命中处上报
+point(self, "special", state="matched", key="daily")  # 在现有检测命中处上报
 ```
 
 脚本更新与游戏更新分别使用 `script_update` / `game_update`，仅在受管更新真正进入时报告。
