@@ -3,10 +3,11 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons-vue'
-import type {
-  DesktopSessionRequest,
-  DesktopSessionSnapshot,
-  DesktopQueueResult,
+import {
+  DESKTOP_SESSION_CREDENTIAL_ERRORS,
+  type DesktopSessionRequest,
+  type DesktopSessionSnapshot,
+  type DesktopQueueResult,
 } from '../../../electron/services/desktopSessionProtocol'
 
 import DesktopSessionDiagnostics from './DesktopSessionDiagnostics.vue'
@@ -60,13 +61,6 @@ const canStart = computed(
     !snapshot.value?.busy &&
     !snapshot.value?.closing
 )
-const credentialErrors = new Set([
-  'password_required',
-  'password_invalid',
-  'credential_unreadable',
-  'account_mismatch',
-  'rdp_authentication_failed',
-])
 const errorText = computed(() => {
   const code = snapshot.value?.code
   return code
@@ -79,7 +73,7 @@ const errorSection = computed(() => {
   const code = snapshot.value?.code
   if (!code) return undefined
   if (code === 'rdp_home_compatibility') return t('bootstrap.desktopSession.compatibilitySection')
-  if (credentialErrors.has(code) || code === 'account_locked')
+  if (DESKTOP_SESSION_CREDENTIAL_ERRORS.has(code) || code === 'account_locked')
     return t('bootstrap.desktopSession.accountSection')
   if (code.startsWith('environment_')) return t('bootstrap.desktopSession.environmentSection')
   return undefined
@@ -138,7 +132,8 @@ async function start(secret?: string) {
     })
     if (!response) return
     results.value = response.queues
-    if (response.code && credentialErrors.has(response.code)) passwordDialog.value = true
+    if (response.code && DESKTOP_SESSION_CREDENTIAL_ERRORS.has(response.code))
+      passwordDialog.value = true
     else if (!response.code) pending.value = null
     else if (snapshot.value) snapshot.value = { ...snapshot.value, code: response.code }
   } catch {
@@ -147,6 +142,11 @@ async function start(secret?: string) {
     starting.value = false
     if (!pending.value) void readPending()
   }
+}
+
+function cancelPassword() {
+  password.value = ''
+  void api?.desktopSessionCancelTaskConnect?.()
 }
 
 function submitPassword() {
@@ -341,7 +341,7 @@ onBeforeUnmount(() => {
       :cancel-text="t('bootstrap.desktopSession.cancel')"
       :ok-button-props="{ disabled: !password }"
       @ok="submitPassword"
-      @cancel="password = ''"
+      @cancel="cancelPassword"
     >
       <a-alert
         v-if="snapshot?.code && snapshot.code !== 'password_required' && errorText"

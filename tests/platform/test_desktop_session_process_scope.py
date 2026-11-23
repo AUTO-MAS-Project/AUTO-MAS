@@ -504,6 +504,7 @@ async def test_window_operations_run_in_the_selected_session(monkeypatch, tmp_pa
     from app.utils.windows.desktop_session import process_runner, process_worker
 
     process = Mock(spec=psutil.Process, pid=101)
+    process.create_time.return_value = 123.0
     process.is_running.return_value = True
     manager = ProcessManager()
     manager.target_process = process
@@ -517,7 +518,7 @@ async def test_window_operations_run_in_the_selected_session(monkeypatch, tmp_pa
     show, hide = Mock(return_value=True), Mock(return_value=True)
     monkeypatch.setattr(process_worker, "process_session", lambda _: 7)
     monkeypatch.setattr(
-        operations, "managed_process", lambda pid: process if pid == 101 else None
+        operations, "managed_process", lambda pid, **_: process if pid == 101 else None
     )
     monkeypatch.setattr(
         "app.utils.common.process.manager.get_main_window_handle",
@@ -550,3 +551,258 @@ async def test_window_operations_run_in_the_selected_session(monkeypatch, tmp_pa
         operation.assert_called_once_with(42)
     process.terminate.assert_not_called()
     process.kill.assert_not_called()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "case", ["main", "desktop", "disconnected", "queue", "selection_changed"]
+)
+async def test_manual_start_respects_configured_execution_session(monkeypatch, case):
+    from uuid import uuid4
+
+    from app.api.dispatch import TaskCreateIn, add_task
+    from app.core import Config, TaskManager
+    from app.models.config import GeneralConfig
+    from app.utils.windows.desktop_session import native
+
+    sid, task_id = uuid4(), uuid4()
+    entry = GeneralConfig.build(
+        payload={
+            "Game": {"Enabled": False},
+            "Run": {
+                "ExecutionSession": "main"
+                if case in {"main", "selection_changed"}
+                else "desktop"
+            },
+        }
+    )
+    await entry.activate()
+    monkeypatch.setattr(Config, "ScriptConfig", {str(sid): entry})
+    service = lifecycle._DesktopSessionLifecycle()
+    monkeypatch.setattr(lifecycle, "DesktopSessionLifecycle", service)
+    service.scope_state = (7, False)
+    monkeypatch.setattr(
+        native, "child_session", lambda: None if case == "disconnected" else 7
+    )
+    monkeypatch.setattr(native, "session_state", lambda _: 0)
+    seen = []
+
+    async def start(mode, tasks):
+        seen.append(session.desktop_process_target.get())
+        return task_id
+
+    monkeypatch.setattr(TaskManager, "start", start)
+    root = (
+        {"uid": str(uuid4())}
+        if case == "queue"
+        else {
+            "uid": "-",
+            "children": {0: {"uid": str(sid), "children": {0: {"uid": str(uuid4())}}}},
+        }
+    )
+    result = await add_task(
+        TaskCreateIn.model_validate(
+            {
+                "mode": "AutoProxy",
+                "tasks": {0: root},
+                "requireDesktopSession": case in {"desktop", "selection_changed"},
+            }
+        )
+    )
+    if case in {"disconnected", "selection_changed"}:
+        assert result.code == 409
+        assert result.reason == (
+            "desktop_session_disconnected" if case == "disconnected" else None
+        )
+        assert not seen and not service.task_ids
+    else:
+        assert result.taskId == str(task_id)
+        assert [target.session_id if target else None for target in seen] == [
+            7 if case == "desktop" else None
+        ]
+        assert service.task_ids == ({task_id} if case == "desktop" else set())
+    assert session.desktop_process_target.get() is None
+
+
+@pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")
+@pytest.mark.asyncio
+async def test_desktop_close_separates_external_processes_and_blocks_new_tasks(
+    monkeypatch,
+):
+    from uuid import uuid4
+
+    from app.core import TaskManager
+    from app.utils.windows.desktop_session import inventory, native
+
+    service = lifecycle._DesktopSessionLifecycle()
+    service.set_process_scope(session_id=7, connecting=False)
+    task_id = uuid4()
+    service.task_ids.add(task_id)
+    monkeypatch.setattr(native, "child_session", lambda: 7)
+    tasks = {task_id: object()}
+    attempt = uuid4()
+    monkeypatch.setattr(type(TaskManager), "task_info", property(lambda _: tasks))
+    monkeypatch.setattr(inventory, "has_unmanaged_processes", lambda _: False)
+    assert await service.close_status(7, "idle", attempt_id=attempt) == (
+        True,
+        False,
+        False,
+    )
+
+    tasks.clear()
+    monkeypatch.setattr(inventory, "has_unmanaged_processes", lambda _: True)
+    assert await service.close_status(7, "inspect") == (False, True, False)
+    assert await service.close_status(7, "idle", attempt_id=attempt) == (
+        False,
+        True,
+        False,
+    )
+
+    monkeypatch.setattr(inventory, "has_unmanaged_processes", lambda _: None)
+    assert await service.close_status(7, "idle", attempt_id=attempt) == (
+        False,
+        None,
+        False,
+    )
+
+    monkeypatch.setattr(inventory, "has_unmanaged_processes", lambda _: False)
+    assert await service.close_status(7, "idle", attempt_id=attempt) == (
+        False,
+        False,
+        True,
+    )
+    with pytest.raises(lifecycle.DesktopSessionConflict, match="正在关闭"):
+        await service.dispatch_queues(
+            [], preview_only=True, main_session_queue_ids=set()
+        )
+    await service.close_status(7, "release", attempt_id=uuid4())
+    with pytest.raises(lifecycle.DesktopSessionConflict, match="正在关闭"):
+        await service.dispatch_queues(
+            [], preview_only=True, main_session_queue_ids=set()
+        )
+    await service.close_status(7, "release", attempt_id=attempt)
+    assert service._close_reservation is None
+
+    # 读取响应超时后，释放先于原关闭请求到达时也应保持可派发。
+    assert await service.close_status(7, "idle", attempt_id=attempt) == (
+        False,
+        None,
+        False,
+    )
+    monkeypatch.setattr(native, "session_state", lambda _: 0)
+    assert service._connected_target().session_id == 7
+
+
+@pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")
+@pytest.mark.asyncio
+async def test_desktop_close_reservation_expires_after_controller_loss(monkeypatch):
+    from uuid import uuid4
+
+    from app.utils.windows.desktop_session import inventory, native
+
+    service = lifecycle._DesktopSessionLifecycle()
+    service.set_process_scope(session_id=7, connecting=False)
+    monkeypatch.setattr(native, "child_session", lambda: 7)
+    monkeypatch.setattr(native, "session_state", lambda _: 0)
+    monkeypatch.setattr(inventory, "has_unmanaged_processes", lambda _: False)
+    monkeypatch.setattr(lifecycle, "monotonic", lambda: 5.0)
+    attempt = uuid4()
+    assert await service.close_status(7, "idle", attempt_id=attempt) == (
+        False,
+        False,
+        True,
+    )
+
+    # 客户端未能发送释放；随后其他程序使重新检查不能开始注销。
+    monkeypatch.setattr(inventory, "has_unmanaged_processes", lambda _: True)
+    monkeypatch.setattr(
+        lifecycle, "monotonic", lambda: 5.0 + lifecycle._CLOSE_RESERVATION_SECONDS
+    )
+    assert await service.close_status(7, "idle", attempt_id=uuid4()) == (
+        False,
+        True,
+        False,
+    )
+    assert service._connected_target().session_id == 7
+
+
+@pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")
+def test_desktop_inventory_ignores_mas_jobs_but_not_external_apps(monkeypatch):
+    from app.utils.windows.desktop_session import inventory
+
+    rows = [
+        (1, 20, "unrelated.exe", None),
+        (7, 21, "executor.exe", None),
+        (7, 22, "owned-game.exe", None),
+        (7, 23, "explorer.exe", None),
+    ]
+    monkeypatch.setattr(inventory.win32ts, "WTSEnumerateProcesses", lambda *_: rows)
+    monkeypatch.setattr(inventory, "supervised_processes", lambda _: {21})
+    monkeypatch.setattr(inventory, "desktop_task_processes", lambda _: {22})
+    monkeypatch.setattr(inventory, "process_session", lambda _: 7)
+    monkeypatch.setattr(inventory, "_windows_shell", lambda pid, *_: pid == 23)
+    assert inventory.has_unmanaged_processes(7) is False
+    rows.append((7, 24, "user-app.exe", None))
+    assert inventory.has_unmanaged_processes(7) is True
+
+
+@pytest.mark.skipif(os.name != "nt", reason="需要 Windows 分身进程执行器")
+@pytest.mark.parametrize("created", [None, 124.0, 123.0])
+def test_desktop_window_operation_skips_gone_or_reused_process(monkeypatch, created):
+    from app.utils.windows.desktop_session import process_worker
+
+    target = None if created is None else Mock(spec=psutil.Process, pid=101)
+    if target is not None:
+        target.create_time.return_value = created
+    monkeypatch.setattr(operations, "managed_process", lambda pid, **_: target)
+
+    def exited(_pid):
+        raise OSError(0, "ProcessIdToSessionId", None, 87)
+
+    session_lookup = Mock(side_effect=exited)
+    monkeypatch.setattr(process_worker, "process_session", session_lookup)
+    assert (
+        process_worker.run_window_action(
+            "close_process_window", {"pid": "101", "createTime": 123.0}
+        )
+        == 1
+    )
+    assert session_lookup.call_count == int(created == 123.0)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="需要 Windows 分身宿主")
+def test_desktop_host_disconnects_without_logging_off_on_eof(monkeypatch):
+    from app.core.desktop_session.host import Host
+
+    host = Host.__new__(Host)
+    host.dead = True
+    host.viewer = None
+    host.session_id = 7
+    monkeypatch.setattr(host, "read_commands", lambda: None)
+    monkeypatch.setattr(host, "report", Mock())
+    close = Mock()
+    monkeypatch.setattr(host, "close", close)
+    host.run()
+    close.assert_called_once_with(logoff=False)
+
+
+@pytest.mark.asyncio
+async def test_script_session_support_reads_resources_off_the_event_loop(
+    monkeypatch, tmp_path
+):
+    from threading import get_ident
+
+    from app.models.config import MaaEndConfig
+    from app.task.MaaEnd import resource_loader
+
+    caller = get_ident()
+
+    def load(*_):
+        assert get_ident() != caller
+        return "Win32"
+
+    monkeypatch.setattr(resource_loader, "load_maaend_controller_protocol", load)
+    config = MaaEndConfig.build(payload={"Info": {"Path": str(tmp_path)}})
+    await config.activate()
+    assert await lifecycle.query_task_support(config)

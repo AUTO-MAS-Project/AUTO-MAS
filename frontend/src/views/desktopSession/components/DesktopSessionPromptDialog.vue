@@ -18,16 +18,20 @@ const text = (key: string) => t(`bootstrap.desktopSession.${key}`)
 const copy = {
   dispatch: ['mainFallbackTitle', 'mainFallbackConfirm'],
   takeover: ['takeoverTitle', 'takeoverConfirm'],
-  close: ['closeTitle', 'closeConfirm'],
-  'close-adopted': ['closeTitle', 'adoptedCloseConfirm'],
+  close: ['closeTitle', 'closeQuestion'],
+  'close-adopted': ['closeTitle', 'closeAdoptedQuestion'],
+  quit: ['quitWithDesktopTitle', 'quitWithDesktopQuestion'],
   'close-failed': ['closeFailedTitle', 'closeFailed'],
 } as const
 const title = computed(() => (prompt.value ? text(copy[prompt.value.kind][0]) : ''))
 const description = computed(() => (prompt.value ? text(copy[prompt.value.kind][1]) : ''))
 const notice = computed(() => prompt.value?.kind === 'close-failed')
-const closing = computed(
-  () => prompt.value?.kind === 'close' || prompt.value?.kind === 'close-adopted'
-)
+const closePrompt = computed(() => {
+  const current = prompt.value
+  return current?.kind === 'close' || current?.kind === 'close-adopted' || current?.kind === 'quit'
+    ? current
+    : undefined
+})
 
 function taskLabel(task: DesktopSessionPromptTarget): string {
   if (task.targetKind === 'unknown') return task.label
@@ -81,6 +85,21 @@ onScopeDispose(() => {
   >
     <a-flex v-if="prompt" vertical gap="middle">
       <a-typography-text>{{ description }}</a-typography-text>
+      <template v-if="closePrompt">
+        <a-flex v-if="closePrompt.risk.activeTasks" vertical>
+          <a-typography-text strong>{{ text('closeActiveTasks') }}</a-typography-text>
+          <a-typography-text type="secondary">{{ text('closeActiveTasksHint') }}</a-typography-text>
+        </a-flex>
+        <a-flex v-if="closePrompt.risk.unmanagedPrograms === true" vertical>
+          <a-typography-text strong>{{ text('closeUnmanagedPrograms') }}</a-typography-text>
+          <a-typography-text type="secondary">{{
+            text('closeUnmanagedProgramsHint')
+          }}</a-typography-text>
+        </a-flex>
+        <a-typography-text v-else-if="closePrompt.risk.unmanagedPrograms === null" type="secondary">
+          {{ text('closeUnverifiedPrograms') }}
+        </a-typography-text>
+      </template>
       <section v-if="prompt.kind === 'dispatch'">
         <a-typography-text strong>{{ text('mainFallbackMainGroup') }}</a-typography-text>
         <ul class="task-list">
@@ -109,8 +128,8 @@ onScopeDispose(() => {
         <a-button v-if="prompt.kind === 'close-adopted'" @click="respond('disconnect')">
           {{ text('disconnectOnly') }}
         </a-button>
-        <a-button v-if="closing" type="primary" danger @click="respond('logoff')">
-          {{ text('closeContinue') }}
+        <a-button v-if="closePrompt" type="primary" danger @click="respond('logoff')">
+          {{ text(closePrompt.kind === 'quit' ? 'quitWithDesktopContinue' : 'closeLogoff') }}
         </a-button>
         <a-button v-if="notice" type="primary" @click="respond('acknowledge')">
           {{ text('acknowledge') }}

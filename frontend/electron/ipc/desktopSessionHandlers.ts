@@ -11,10 +11,15 @@ import {
 import { join } from 'node:path'
 import { readdir, readFile } from 'node:fs/promises'
 import AdmZip = require('adm-zip')
-import { DesktopSessionService } from '../services/desktopSessionService'
+import {
+  DesktopSessionService,
+  type DesktopSessionCloseOutcome,
+} from '../services/desktopSessionService'
 import { beginMainFeature } from '../services/featureAnalytics'
 import {
+  DESKTOP_SESSION_CREDENTIAL_ERRORS,
   MAX_DESKTOP_SESSION_TARGETS,
+  type DesktopSessionConnectResult,
   type DesktopQueueResult,
   type DesktopSessionPrompt,
   type DesktopSessionPromptAction,
@@ -43,8 +48,11 @@ const promptActions: Record<DesktopSessionPrompt['kind'], readonly DesktopSessio
   takeover: ['takeover', 'cancel'],
   close: ['logoff', 'cancel'],
   'close-adopted': ['disconnect', 'logoff', 'cancel'],
+  quit: ['logoff', 'cancel'],
   'close-failed': ['acknowledge'],
 }
+
+type CloseOutcome = DesktopSessionCloseOutcome | 'cancelled'
 
 interface PendingPrompt {
   data: DesktopSessionPrompt
@@ -90,8 +98,15 @@ export function registerDesktopSession(
   let preview: BrowserWindow | null = null
   let viewport: Rectangle | null = null
   const pending: DesktopSessionRequest[] = []
+  let autoConnect: {
+    request: DesktopSessionRequest
+    result: Promise<DesktopSessionConnectResult>
+    startFinished: boolean
+    finish: (result: DesktopSessionConnectResult) => void
+  } | null = null
+  let openedForTask = false
   let hidden = false
-  let closeFlight: Promise<boolean> | null = null
+  let closeFlight: Promise<CloseOutcome> | null = null
   let promptId = 0
   const prompts = new Map<BrowserWindow, PendingPrompt>()
 
@@ -107,6 +122,11 @@ export function registerDesktopSession(
     tasks => {
       const main = getMainWindow()
       if (main && !main.isDestroyed()) main.webContents.send('desktop-session:tasks-started', tasks)
+    },
+    async () => {
+      if (!openedForTask) return true
+      if (closeFlight || pending.length || autoConnect) return false
+      return (await confirmClose('task')) !== 'unverified'
     }
   )
 
@@ -189,43 +209,67 @@ export function registerDesktopSession(
     if (preview && viewport) service.position(physicalBounds())
   }
 
-  function confirmClose(): Promise<boolean> {
+  function confirmClose(source: 'window' | 'app' | 'task' = 'window'): Promise<CloseOutcome> {
     if (closeFlight) return closeFlight
-    closeFlight = (async () => {
+    closeFlight = (async (): Promise<CloseOutcome> => {
       const window = preview
-      if (window) prompts.get(window)?.finish('cancel')
-      await service.waitForStart()
-      const owner = window && !window.isDestroyed() ? window : getMainWindow()
-      let logoff = false
+      const owner = source === 'app' ? (getMainWindow() ?? window) : (window ?? getMainWindow())
       try {
-        if (service.active) {
-          if (owner && !owner.isDestroyed()) {
-            if (owner.isMinimized()) owner.restore()
-            if (!owner.isVisible()) owner.show()
-            owner.focus()
+        if (source === 'task') {
+          const outcome = await service.close({ logoff: true, onlyIfIdle: true })
+          if (outcome !== 'closed') return outcome
+        } else {
+          if (source === 'window' && window) prompts.get(window)?.finish('cancel')
+          const quiet =
+            source === 'window' &&
+            !service.snapshot.busy &&
+            (await service.close({ logoff: true, onlyIfIdle: true })) === 'closed'
+          if (!quiet) {
+            const risk = await service.closeRisk()
+            if (owner && !owner.isDestroyed()) {
+              if (owner.isMinimized()) owner.restore()
+              if (!owner.isVisible()) owner.show()
+              owner.focus()
+            }
+            const kind = source === 'app' ? 'quit' : service.adopted ? 'close-adopted' : 'close'
+            const action =
+              owner && owner === window
+                ? await showPreviewPrompt(owner, { kind, risk })
+                : await showPrompt(owner, { kind, risk })
+            if (action !== 'disconnect' && action !== 'logoff') return 'cancelled'
+            if (window) prompts.get(window)?.finish('cancel')
+            await service.close({ logoff: action === 'logoff', onlyIfIdle: false })
           }
-          service.changeWindow('hidden')
-          const kind = service.adopted ? 'close-adopted' : 'close'
-          const action = await showPrompt(owner, { kind })
-          if (action !== 'disconnect' && action !== 'logoff') {
-            if (!hidden) service.changeWindow('visible')
-            return false
-          }
-          logoff = action === 'logoff'
         }
-        await service.close({ logoff })
       } catch {
+        if (source === 'task') return 'unverified'
+        finishAutoConnect('cancelled')
         if (!hidden) service.changeWindow('visible')
         if (owner && owner === window) await showPreviewPrompt(owner, { kind: 'close-failed' })
         else await showPrompt(owner, { kind: 'close-failed' })
-        return false
+        return 'unverified'
       }
       if (window && !window.isDestroyed()) window.destroy()
-      return true
+      return 'closed'
     })().finally(() => {
       closeFlight = null
+      resumeAutoConnect()
     })
     return closeFlight
+  }
+
+  function resumeAutoConnect() {
+    if (!closeFlight && autoConnect?.startFinished) {
+      finishAutoConnect(service.snapshot.state === 'connected' ? 'connected' : 'failed')
+    }
+  }
+
+  function finishAutoConnect(result: DesktopSessionConnectResult) {
+    if (!autoConnect) return
+    const index = pending.indexOf(autoConnect.request)
+    if (index >= 0) pending.splice(index, 1)
+    autoConnect.finish(result)
+    autoConnect = null
   }
 
   function showPreview() {
@@ -263,10 +307,18 @@ export function registerDesktopSession(
       event.preventDefault()
       void confirmClose()
     })
+    window.webContents.on('render-process-gone', () => {
+      if (preview === window) finishAutoConnect('failed')
+    })
+    window.webContents.on('did-fail-load', (_event, _code, _description, _url, isMainFrame) => {
+      if (preview === window && isMainFrame) finishAutoConnect('failed')
+    })
     window.on('closed', () => {
       if (preview === window) {
         preview = null
+        openedForTask = false
         pending.length = 0
+        finishAutoConnect('cancelled')
       }
     })
     window.on('move', updateBounds)
@@ -299,8 +351,40 @@ export function registerDesktopSession(
     }
     const request = normalizeRequest(input)
     if (!request) throw new Error('invalid_selection')
+    if (closeFlight) throw new Error('busy')
+    openedForTask = false
     pending.push(request)
     showPreview()
+  })
+  ipcMain.handle(
+    'desktop-session:connect-for-task',
+    (event): Promise<DesktopSessionConnectResult> => {
+      if (
+        !isApplicationWindowSender(event, getMainWindow(), { allowDevelopment: true }) ||
+        !supportsDesktopSession()
+      ) {
+        return Promise.resolve('failed')
+      }
+      if (closeFlight) return Promise.resolve('cancelled')
+      if (autoConnect) return autoConnect.result
+      if (!preview && !service.active) openedForTask = true
+      const request: DesktopSessionRequest = { queueIds: [], mode: 'proxy', resolution: '1080p' }
+      let finish: (result: DesktopSessionConnectResult) => void = () => undefined
+      const result = new Promise<DesktopSessionConnectResult>(resolve => {
+        finish = resolve
+      })
+      autoConnect = { request, result, finish, startFinished: false }
+      pending.push(request)
+      try {
+        showPreview()
+      } catch {
+        finishAutoConnect('failed')
+      }
+      return result
+    }
+  )
+  ipcMain.handle('desktop-session:cancel-task-connect', event => {
+    if (fromPreview(event)) finishAutoConnect('cancelled')
   })
   ipcMain.handle('desktop-session:check', event => (fromPreview(event) ? service.check() : null))
   ipcMain.handle('desktop-session:repair', (event, approved: unknown) =>
@@ -310,7 +394,7 @@ export function registerDesktopSession(
     if (!fromPreview(event)) return null
     return pending.shift() ?? null
   })
-  ipcMain.handle('desktop-session:start', (event, input: unknown) => {
+  ipcMain.handle('desktop-session:start', async (event, input: unknown) => {
     // 先确认来源，再做任何解析：fromPreview 之外的调用方拿不到校验细节。
     if (!fromPreview(event) || !preview) return { code: 'invalid_request', queues: [] }
     if (closeFlight) return { code: 'busy', queues: [] }
@@ -323,7 +407,7 @@ export function registerDesktopSession(
     ) {
       return { code: 'invalid_request', queues: [] }
     }
-    return service.start(
+    const result = await service.start(
       { ...request, password },
       window.getNativeWindowHandle().readBigUInt64LE(),
       physicalBounds(),
@@ -341,6 +425,19 @@ export function registerDesktopSession(
         },
       }
     )
+    if (!result.code) {
+      if (autoConnect) autoConnect.startFinished = true
+      resumeAutoConnect()
+    } else if (result.code === 'takeover_cancelled') {
+      finishAutoConnect('cancelled')
+    } else if (
+      result.code &&
+      result.code !== 'busy' &&
+      !DESKTOP_SESSION_CREDENTIAL_ERRORS.has(result.code)
+    ) {
+      finishAutoConnect('failed')
+    }
+    return result
   })
   ipcMain.on('desktop-session:bounds', (event, bounds: Rectangle) => {
     if (!fromPreview(event) || !bounds || !preview) return
@@ -411,6 +508,6 @@ export function registerDesktopSession(
     get active() {
       return preview !== null || service.active
     },
-    closeForAppQuit: confirmClose,
+    closeForAppQuit: async () => (await confirmClose('app')) === 'closed',
   }
 }

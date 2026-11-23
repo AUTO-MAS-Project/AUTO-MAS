@@ -344,7 +344,20 @@ class Host:
         elif action == "repair":
             self.repair(frozenset(command["approvedRepairs"]))
         elif action == "close":
-            self.close(command.get("orphanedSessionId"), logoff=command.get("logoff"))
+            orphaned = command.get("orphanedSessionId")
+            if command.get("onlyIfIdle"):
+                from app.utils.windows.desktop_session.inventory import (
+                    has_unmanaged_processes,
+                )
+
+                session = self.session_id if orphaned is None else orphaned
+                if session is not None:
+                    unmanaged = has_unmanaged_processes(session)
+                    if unmanaged is not False:
+                        code = "close_blocked" if unmanaged else "close_unverified"
+                        self.report("command_error", action="close", code=code)
+                        return
+            self.close(orphaned, logoff=command.get("logoff"))
         elif action == "eof":
             self.dead = True
         elif self.viewer is not None:
@@ -422,7 +435,7 @@ class Host:
                 continue
             viewer.pump_until(lambda: self.viewer is not viewer)
         if self.viewer is not None or self.session_id is not None:
-            self.close()
+            self.close(logoff=False)
 
 
 def main() -> None:

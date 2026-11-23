@@ -5,6 +5,7 @@ import type {
   DesktopSessionPrompt,
   DesktopSessionPromptAction,
   DesktopSessionRequest,
+  DesktopSessionConnectResult,
   DesktopSessionRepair,
   DesktopSessionSnapshot,
   DesktopSessionStartResult,
@@ -553,6 +554,8 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   getApiEndpoint: (key: ElectronApiEndpointKey) => Promise<string>
   desktopSessionSupported?: () => Promise<boolean>
   desktopSessionOpen?: (input: DesktopSessionRequest) => Promise<void>
+  desktopSessionConnectForTask?: () => Promise<DesktopSessionConnectResult>
+  desktopSessionCancelTaskConnect?: () => Promise<void>
   desktopSessionCheck?: () => Promise<DesktopSessionSnapshot | null>
   desktopSessionGetPrompt?: () => Promise<DesktopSessionPrompt | null>
   desktopSessionRespondToPrompt?: (id: number, action: DesktopSessionPromptAction) => Promise<void>

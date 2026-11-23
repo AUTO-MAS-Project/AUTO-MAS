@@ -350,3 +350,77 @@ it.each([
     }
   }
 )
+
+it('checks again before automatically signing out after a desktop task finishes', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'mas-desktop-idle-close-'))
+  let idle = false
+  let admitted = 1
+  let unmanagedPrograms = true
+  let transientFailure = false
+  let checks = 0
+  let lostReplyFor: string | undefined
+  const released = new Set<string>()
+  vi.stubGlobal('fetch', async (url: string, options: RequestInit) => {
+    switch (new URL(url).pathname) {
+      case '/internal/desktop-session/describe':
+        return Response.json({ python: 'python', root, source: root })
+      case '/internal/desktop-session/process-scope':
+        return Response.json({ updated: true })
+      case '/internal/desktop-session/state':
+        return Response.json({ idle, admitted })
+      case '/internal/desktop-session/close-status': {
+        const { sessionId, mode, attemptId } = JSON.parse(String(options.body))
+        expect(sessionId).toBe(7)
+        expect(attemptId).toEqual(expect.any(String))
+        if (mode === 'release') {
+          released.add(attemptId)
+          return Response.json({ activeTasks: false, unmanagedPrograms: null, reserved: false })
+        }
+        expect(mode).toBe('idle')
+        checks++
+        if (transientFailure) {
+          transientFailure = false
+          lostReplyFor = attemptId
+          throw new Error('reply lost after reservation')
+        }
+        if (lostReplyFor) expect(released.has(lostReplyFor)).toBe(true)
+        return Response.json({
+          activeTasks: !idle,
+          unmanagedPrograms,
+          reserved: idle && !unmanagedPrograms,
+        })
+      }
+      default:
+        throw new Error(`Unexpected request to ${url}`)
+    }
+  })
+  const closeOnIdle = vi.fn(async () => {
+    const outcome = await service.close({ logoff: true, onlyIfIdle: true })
+    return outcome !== 'unverified'
+  })
+  const service = new DesktopSessionService(vi.fn(), vi.fn(), vi.fn(), closeOnIdle)
+  try {
+    await service.start({ queueIds: [], mode: 'proxy', resolution: '1080p' }, 1n, [0, 0, 100, 100])
+    await vi.waitFor(() => expect(service.snapshot.executing).toBe(true), { timeout: 2500 })
+    expect(closeOnIdle).not.toHaveBeenCalled()
+
+    idle = true
+    await vi.waitFor(() => expect(checks).toBe(1), { timeout: 2500 })
+    expect(host.close).not.toHaveBeenCalled()
+    expect(service.snapshot.state).toBe('connected')
+
+    admitted++
+    unmanagedPrograms = false
+    transientFailure = true
+    await vi.waitFor(() => expect(checks).toBe(2), { timeout: 2500 })
+    expect(lostReplyFor).toBeDefined()
+    expect(released).toContain(lostReplyFor)
+    expect(host.close).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(service.snapshot.state).toBe('idle'), { timeout: 5500 })
+    expect(checks).toBe(3)
+    expect(host.close).toHaveBeenCalledExactlyOnceWith(true)
+  } finally {
+    await service.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 10000)

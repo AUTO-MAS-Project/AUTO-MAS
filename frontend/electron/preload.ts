@@ -394,6 +394,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   desktopSessionSupported: () => ipcRenderer.invoke('desktop-session:supported'),
   desktopSessionOpen: (input: import('./services/desktopSessionProtocol').DesktopSessionRequest) =>
     ipcRenderer.invoke('desktop-session:open', input),
+  desktopSessionConnectForTask: () => ipcRenderer.invoke('desktop-session:connect-for-task'),
+  desktopSessionCancelTaskConnect: () => ipcRenderer.invoke('desktop-session:cancel-task-connect'),
   desktopSessionCheck: () => ipcRenderer.invoke('desktop-session:check'),
   desktopSessionGetPrompt: () => ipcRenderer.invoke('desktop-session:prompt:get'),
   desktopSessionRespondToPrompt: (

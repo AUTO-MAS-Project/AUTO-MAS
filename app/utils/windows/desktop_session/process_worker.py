@@ -18,6 +18,7 @@ from pathlib import Path
 from queue import Empty, Queue
 from tempfile import TemporaryFile
 
+import psutil
 import win32api
 import win32con
 import win32pipe
@@ -107,20 +108,22 @@ def run_window_action(action: str, arguments: dict) -> int:
     from app.utils.common.process.operations import managed_process
 
     pid = int(arguments["pid"])
-    if process_session(pid) != process_session(os.getpid()):
+    created = float(arguments["createTime"])
+    process = managed_process(pid, expected_create_time=created)
+    if process is None or process.create_time() != created:
         return 1
-    process = managed_process(pid)
-    hwnd = (
-        get_main_window_handle(
-            process.pid,
-            arguments.get("title") or None,
-            arguments.get("class") or None,
-        )
-        if process is not None
-        else None
+    try:
+        if process_session(pid) != process_session(os.getpid()):
+            return 1
+    except OSError as error:
+        if error.winerror not in {87, 1168}:
+            raise
+        return 1
+    hwnd = get_main_window_handle(
+        pid, arguments.get("title") or None, arguments.get("class") or None
     )
     operation = getattr(window, WINDOW_ACTIONS[action])
-    return int(not (hwnd and operation(hwnd)))
+    return int(not (hwnd and process.is_running() and operation(hwnd)))
 
 
 def run_process(pipe, launch: dict, stdout, stderr) -> None:
@@ -142,6 +145,7 @@ def run_process(pipe, launch: dict, stdout, stderr) -> None:
             creationflags=job.creation_flags | subprocess.CREATE_NO_WINDOW,
         )
         try:
+            created = psutil.Process(process.pid).create_time()
             job.assign(process.pid, suspended=True, breakaway=False)
         except BaseException:
             process.kill()
@@ -171,11 +175,26 @@ def run_process(pipe, launch: dict, stdout, stderr) -> None:
                     process.pid,
                 )
             ) as root:
-                send(pipe, {"pid": process.pid, "rootHandle": int(root)})
+                send(
+                    pipe,
+                    {
+                        "pid": process.pid,
+                        "rootHandle": int(root),
+                        "jobHandle": job.inherited_handle(),
+                        "createTime": created,
+                    },
+                )
                 if receive(pipe) != {"rootHandleReceived": True}:
                     raise RuntimeError("主端未确认分身进程句柄")
         else:
-            send(pipe, {"pid": process.pid})
+            send(
+                pipe,
+                {
+                    "pid": process.pid,
+                    "jobHandle": job.inherited_handle(),
+                    "createTime": created,
+                },
+            )
         if process.stdin is not None and launch.get("stdin") is not None:
             threading.Thread(
                 target=write_input,

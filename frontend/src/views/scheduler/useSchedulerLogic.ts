@@ -4,7 +4,7 @@ import { message, Modal } from 'ant-design-vue'
 import { translate as t } from '@/i18n'
 import { Service, PowerSignal } from '@/api'
 import { useSchedulerStore } from '@/stores/scheduler'
-import { useTaskApi } from '@/composables/useTaskApi'
+import { TaskStartCancelled, useTaskApi } from '@/composables/useTaskApi'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { scopeRequest, reconcileScope } from '@/composables/taskSelection'
 import { fetchTaskTargets, fetchTaskScope, type TaskTarget } from '@/composables/useTaskOptions'
@@ -102,6 +102,7 @@ export function useSchedulerLogic() {
       await useAudioPlayer().playSound('task_started')
       message.success(t('core.scheduler.toast.taskStarted'))
     } catch (error) {
+      if (error instanceof TaskStartCancelled) return
       message.error(
         error instanceof Error ? error.message : t('core.scheduler.toast.startTaskFailed')
       )

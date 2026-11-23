@@ -43,6 +43,11 @@ const diagnosticGroups = computed(() => {
   ].filter(group => group.items.length)
 })
 
+function cancelRepair() {
+  confirming.value = false
+  void api?.desktopSessionCancelTaskConnect?.()
+}
+
 async function repairEnvironment() {
   const plan = repairConfirmation.value
   if (!plan.length || repairing.value) return
@@ -126,7 +131,7 @@ async function exportLogs() {
     :cancel-text="t('bootstrap.desktopSession.cancel')"
     :ok-button-props="{ danger: true }"
     @ok="repairEnvironment"
-    @cancel="confirming = false"
+    @cancel="cancelRepair"
   >
     <a-alert type="warning" show-icon :message="t('bootstrap.desktopSession.repairConfirm')" />
     <ul>

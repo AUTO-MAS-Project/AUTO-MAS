@@ -21,6 +21,8 @@
 #   Contact: DLmaster_361@163.com
 
 
+from typing import Literal
+
 from fastapi import APIRouter, Body
 from pydantic import (
     BaseModel,
@@ -30,6 +32,7 @@ from pydantic import (
 )
 
 from app.core import Power, TaskManager
+from app.core.desktop_session.lifecycle import DesktopSessionDisconnected
 from app.models.schema import (
     OutBase,
     PowerCountdownSnapshot,
@@ -60,6 +63,10 @@ class TaskCreateIn(BaseModel):
         description="单入口任务要求树，顶层仅包含索引 0",
     )
 
+    requireDesktopSession: bool = Field(
+        default=False, description="本次只允许在桌面分身执行"
+    )
+
     @field_validator("tasks", mode="before")
     @classmethod
     def validate_indices(cls, value):
@@ -82,6 +89,9 @@ class TaskGetOut(OutBase):
 
 class TaskCreateOut(OutBase):
     taskId: str = Field(..., description="新创建的任务ID")
+    reason: Literal["desktop_session_disconnected"] | None = Field(
+        default=None, description="启动未受理时可由客户端处理的原因"
+    )
 
 
 class PowerIn(BaseModel):
@@ -167,7 +177,25 @@ async def get_power_countdown_snapshot() -> PowerCountdownSnapshot:
 async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
 
     try:
-        task_id = await TaskManager.start(task.mode, task.tasks)
+        task_id = None
+        if task.mode == TaskMode.AUTO_PROXY:
+            from app.core.desktop_session.lifecycle import DesktopSessionLifecycle
+
+            task_id = await DesktopSessionLifecycle.start_configured_script(
+                task.tasks[0]
+            )
+        if task_id is None:
+            if task.requireDesktopSession:
+                raise RuntimeError("本次任务已不再配置为在桌面分身执行")
+            task_id = await TaskManager.start(task.mode, task.tasks)
+    except DesktopSessionDisconnected as error:
+        return TaskCreateOut(
+            code=409,
+            status="error",
+            message=str(error),
+            taskId="",
+            reason="desktop_session_disconnected",
+        )
     except RuntimeError as error:
         return TaskCreateOut(code=409, status="error", message=str(error), taskId="")
     except Exception as e:

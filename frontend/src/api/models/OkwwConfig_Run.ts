@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type OkwwConfig_Run = {
     /**
+     * 单独启动托管时使用的 Windows 会话
+     */
+    ExecutionSession?: ('main' | 'desktop' | null);
+    /**
      * 单账号运行总时限（分钟），包含等待和全部重试
      */
     HardTimeLimit?: (number | null);
