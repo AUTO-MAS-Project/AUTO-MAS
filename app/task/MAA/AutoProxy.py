@@ -3298,11 +3298,14 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             logger.info(f"MAA 检查未通过，跳过任务收尾: {self.check_result}")
             return
 
+        game_tasks_completed = (
+            self.run_book["Annihilation"] and self.run_book["Routine"]
+        )
         self.history.begin_user_history_capture(
             self.script_info,
             self.cur_user_item,
             failed=bool(self.cur_user_item.log_record)
-            and not (self.run_book["Annihilation"] and self.run_book["Routine"])
+            and not game_tasks_completed
             and not self.stopped_manually,
         )
 
@@ -3336,14 +3339,16 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             logger.info("MAA 收尾: 回写 MAA 配置")
             await agree_bilibili(self.maa_tasks_path, False)
 
-        # 是否成功提前判定：ExitEmulator 模式随后就关闭模拟器，失败画面的
-        # 补截必须赶在关模拟器之前
-        if_success = self.run_book["Annihilation"] and self.run_book["Routine"]
+        account_completed = game_tasks_completed and self.install_error is None
 
         # 失败画面：失败尝试路径已在关模拟器前留下的优先；否则现在取
         # （如总时限中止，模拟器此时仍开着）。成功轮不取，手动停止只保留已有图。
         failure_shot: Path | None = self._failure_shot
-        if not if_success and failure_shot is None and not self.stopped_manually:
+        if (
+            not game_tasks_completed
+            and failure_shot is None
+            and not self.stopped_manually
+        ):
             failure_shot = await self._take_failure_shot()
 
         if self.script_config.Run.TaskTransitionMethod == "ExitEmulator":
@@ -3418,10 +3423,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         statistics["start_time"] = self.user_start_time.strftime("%Y-%m-%d %H:%M:%S")
         statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         statistics["maa_result"] = (
-            "代理任务全部完成"
-            if (self.run_book["Annihilation"] and self.run_book["Routine"])
-            else self.cur_user_item.result
+            "代理任务全部完成" if game_tasks_completed else self.cur_user_item.result
         )
+        if self.install_error is not None:
+            statistics["maa_result"] += f"。{self.install_error}"
         # 培养步骤以 MAA 成功日志为准，练度刷新延迟也不漏掉本轮的阶段结果。
         cultivate_progress = log_statistics.parse_cultivate_progress(
             line
@@ -3456,13 +3461,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 self._cultivate_achievement_summary
             )
 
-        success_symbol = "√" if if_success else "X"
+        success_symbol = "√" if account_completed else "X"
 
         # 任务被中止时，只要日志中已经完成过体力任务，也应发送掉落统计；
         # 失败轮取到现场画面时同样发送——登录失败这类开局即败的轮次，用户
         # 只能靠图看到卡在哪，不能因为没跑过体力就把现场吞掉。
         images: list[NotificationImage] = []
-        if not if_success and failure_shot is not None:
+        if not game_tasks_completed and failure_shot is not None:
             try:
                 loaded = await prepare_screenshot_images(
                     [(self.cur_user_item.name, failure_shot)],
@@ -3478,7 +3483,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             except Exception as e:
                 logger.warning(f"失败画面转码失败，通知不带图: {e}")
                 images = []
-        if self.run_book["Annihilation"] and self.run_book["Routine"]:
+        if game_tasks_completed:
             if (
                 self.cur_user_config.Data.ProxyTimes == 0
                 and self.cur_user_config.Info.RemainedDay != -1
@@ -3492,6 +3497,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             )
             await self.cur_user_config.commit()
 
+        if account_completed:
             await self.cur_user_item.set_state(status="完成")
             logger.success(f"账号 {self.cur_user_uid} 的自动代理任务已完成")
         else:
@@ -3516,7 +3522,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             log_warning=logger.opt(exception=True).warning,
         )
 
-        if self.run_book["Annihilation"] and self.run_book["Routine"]:
+        if account_completed:
             await Notify.send_notice(
                 LocalNotice(
                     title="成功完成一个自动代理任务！",
@@ -3527,7 +3533,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             )
 
         should_send_statistics = (
-            if_success
+            game_tasks_completed
             or bool(images)
             or bool(cultivate_progress)
             or _has_completed_sanity_task(

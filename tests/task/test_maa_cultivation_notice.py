@@ -4,6 +4,7 @@ import asyncio
 import importlib
 import json
 from datetime import datetime, timezone
+from functools import partial
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -21,6 +22,8 @@ from app.task.MAA.tools.cultivate.types import (
     ProgressionSnapshot,
     Recipe,
 )
+from app.task.MAA.tools.update_errors import MaaUpdateUnsafeError
+from app.task.MAA.tools.UpdateMAA import MaaUpdaterRunningError
 from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
@@ -292,13 +295,39 @@ async def test_progress_refresh_preserves_targets_until_confirmed(
 
 
 @pytest.mark.asyncio
-async def test_updater_still_writing_preserves_account_settlement(finalizer):
-    from app.task.MAA.tools.UpdateMAA import MaaUpdaterRunningError
+@pytest.mark.parametrize(
+    "still_writing", [True, False], ids=["updater-running", "version-unconfirmed"]
+)
+async def test_update_error_preserves_game_results_and_reports_account_failure(
+    finalizer, monkeypatch, still_writing
+):
+    module = importlib.import_module("app.task.MAA.AutoProxy")
+    monkeypatch.setattr(module.Publisher, "send", AsyncMock())
+    finalizer.task_id = "task"
+    finalizer.on_crash = partial(AutoProxyTask.on_crash, finalizer)
+    finalizer.cur_user_config.Info.IfQuickConfig = False
+    record = SimpleNamespace(status="Success!", content=[])
+    records = {finalizer.log_start_time: record}
+    finalizer.cur_user_item.log_record = records
+    finalizer.cur_user_item.iter_history_logs = records.items
+    if still_writing:
+        error = MaaUpdaterRunningError("更新器仍在运行")
+        await finalizer.on_crash(error)
+    else:
+        error = MaaUpdateUnsafeError("未确认 MAA 已完成更新")
+        finalizer._complete_round_update.side_effect = error
 
-    finalizer.install_error = MaaUpdaterRunningError("正在写盘")
     await AutoProxyTask.final_task(finalizer)
-    finalizer._stop_round_process.assert_not_awaited()
-    finalizer._complete_round_update.assert_not_awaited()
+    if still_writing:
+        finalizer._stop_round_process.assert_not_awaited()
+        finalizer._complete_round_update.assert_not_awaited()
     finalizer.run_user_scripts_after.assert_awaited_once()
     finalizer.history.save_user_history.assert_awaited_once()
+    assert finalizer.history.save_user_history.await_args.args[0][0].status == "success"
     assert finalizer.cur_user_config.Data.ProxyTimes == 1
+    assert finalizer.cur_user_item.status == "异常"
+    Notify.send_notice.assert_not_awaited()
+    Notify.push_statistics_report.assert_awaited_once()
+    report = Notify.push_statistics_report.await_args.kwargs["payload"]
+    assert "|X|" in report.title
+    assert str(error) in report.text
