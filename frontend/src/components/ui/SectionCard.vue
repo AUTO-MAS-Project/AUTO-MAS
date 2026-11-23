@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useId, type Component } from 'vue'
+import { computed, useId, useSlots, type Component } from 'vue'
 import { DownOutlined, RightOutlined } from '@ant-design/icons-vue'
 
 /**
@@ -31,6 +31,10 @@ const props = withDefaults(
 )
 
 const collapsed = defineModel<boolean>('collapsed', { default: false })
+const slots = useSlots()
+const hasHeader = computed(() =>
+  Boolean(props.title || props.subtitle || props.collapsible || slots.title || slots.actions)
+)
 const titleId = useId()
 const bodyId = useId()
 
@@ -50,7 +54,7 @@ const toggleCollapsed = () => {
     ]"
     :data-section-anchor="anchorId"
   >
-    <div class="section-header">
+    <div v-if="hasHeader" class="section-header">
       <h3>
         <button
           v-if="collapsible"
