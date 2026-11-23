@@ -10,7 +10,7 @@ from fastapi import FastAPI
 
 from app.api import setting
 from app.config import config_manager
-from app.core import Config, downloads
+from app.core import Config, download_diagnostics, downloads
 from app.core.download_diagnostics import describe_package, safe_origin
 from app.models.config import GlobalConfig
 from tests.config_support import activate_config
@@ -51,6 +51,51 @@ def test_invalid_zip_signature_is_reported_without_extraction(tmp_path):
     package = tmp_path / "broken.zip"
     package.write_bytes(b"PK" + b"broken")
     assert describe_package(package)["format"] == "zip-invalid"
+
+
+def test_large_zip_directory_is_skipped_before_parsing(tmp_path, monkeypatch):
+    package = tmp_path / "large-directory.zip"
+    with zipfile.ZipFile(package, "w") as archive:
+        entry = zipfile.ZipInfo("version.txt")
+        entry.comment = b"x" * 2000
+        archive.writestr(entry, "v1.2.3")
+
+    def forbid_parsing(*args, **kwargs):
+        pytest.fail("ZIP diagnostics parsed a directory over its byte budget")
+
+    # Use a small budget so the test exercises the same limit without a large fixture.
+    monkeypatch.setattr(
+        download_diagnostics, "_MAX_ZIP_INSPECTION_BYTES", 1024, raising=False
+    )
+    monkeypatch.setattr(zipfile.ZipInfo, "__init__", forbid_parsing)
+    assert describe_package(package) == {
+        "schema": 1,
+        "format": "zip",
+        "bytes": package.stat().st_size,
+    }
+
+
+def test_unrecognized_version_markers_count_towards_read_limit(tmp_path, monkeypatch):
+    package = tmp_path / "many-markers.zip"
+    with zipfile.ZipFile(package, "w") as archive:
+        for index in range(7):
+            archive.writestr(f"{index}/version.txt", "unknown")
+        archive.writestr("last/version.txt", "v1.2.3")
+
+    opened = []
+    open_entry = zipfile.ZipFile.open
+
+    def record_open(archive, entry, *args, **kwargs):
+        opened.append(entry.filename)
+        return open_entry(archive, entry, *args, **kwargs)
+
+    monkeypatch.setattr(zipfile.ZipFile, "open", record_open)
+    assert describe_package(package) == {
+        "schema": 1,
+        "format": "zip",
+        "bytes": package.stat().st_size,
+    }
+    assert opened == [f"{index}/version.txt" for index in range(6)]
 
 
 @pytest.mark.asyncio

@@ -6,16 +6,45 @@ Never store raw signed URLs, ZIP entry lists, arbitrary text files or payloads.
 
 from __future__ import annotations
 
+import io
 import re
 import zipfile
 from pathlib import Path
 from urllib.parse import urlsplit
 
-_MAX_ENTRIES = 100_000
+# 限制实际读取量，ZIP64 和带注释的 ZIP 同样经过此预算。
+_MAX_ZIP_INSPECTION_BYTES = 4 * 1024 * 1024
 _MAX_MARKERS = 6
+_MAX_MARKER_BYTES = 256
+_MAX_COMPRESSED_MARKER_BYTES = 4096
 _VERSION = re.compile(r"v?\d{1,4}(?:\.\d{1,4}){1,4}(?:[-.][A-Za-z0-9.-]+)?")
 _URL_IN_ERROR = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 _MARKER_NAMES = {"version.txt", "version", "version.json"}
+
+
+class _ZipInspectionLimit(Exception):
+    """ZIP 诊断超过读取或版本标记预算。"""
+
+
+class _BoundedZipReader(io.FileIO):
+    """拒绝超额的 ZIP 目录读取，避免解析器先分配超大目录。"""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(path, "rb")
+        self._remaining = _MAX_ZIP_INSPECTION_BYTES
+
+    def read(self, size: int = -1, /) -> bytes:
+        if size > self._remaining:
+            raise _ZipInspectionLimit
+        # zipfile 查找带注释的目录尾时会在文件尾部调用无参 read。
+        # 此时读至多剩余预算加一字节，用于区分恰好 EOF 与仍有数据。
+        limit = self._remaining + 1 if size < 0 else size
+        data = super().read(limit)
+        assert data is not None
+        self._remaining -= len(data)
+        if self._remaining < 0:
+            raise _ZipInspectionLimit
+        return data
 
 
 def safe_origin(url: str) -> str:
@@ -50,48 +79,48 @@ def describe_package(path: Path) -> dict[str, object]:
         return result
 
     try:
-        with zipfile.ZipFile(path) as archive:
+        with _BoundedZipReader(path) as stream, zipfile.ZipFile(stream) as archive:
             entries = archive.infolist()
-            result["format"] = "zip"
-            result["entries"] = len(entries)
-            result["expanded_bytes"] = sum(i.file_size for i in entries)
-            if len(entries) > _MAX_ENTRIES:
-                result["inspection"] = "entry_limit"
-                return result
-            roots = sorted(
-                {
-                    i.filename.replace("\\", "/").split("/")[0]
-                    for i in entries
-                    if i.filename
-                }
-            )
-            # Use only the count, not raw entry names: they can contain user data.
-            result["root_count"] = len(roots)
-            # Only whitelist known release root names; arbitrary filenames stay private.
-            known_roots = {"update", "March7thAssistant", "March7thAssistant_full"}
-            result["known_roots"] = sorted(set(roots) & known_roots)
+            roots = set()
             markers: list[dict[str, str]] = []
+            attempts = 0
             for item in entries:
-                if len(markers) >= _MAX_MARKERS:
-                    break
-                parts = item.filename.replace("\\", "/").lower().split("/")
+                relative = item.filename.replace("\\", "/")
+                if relative:
+                    roots.add(relative.partition("/")[0])
+                name = relative.rpartition("/")[2].lower()
                 if (
-                    item.is_dir()
-                    or item.file_size > 256
-                    or not parts
-                    or parts[-1] not in _MARKER_NAMES
+                    name not in _MARKER_NAMES
+                    or item.file_size > _MAX_MARKER_BYTES
+                    or item.compress_size > _MAX_COMPRESSED_MARKER_BYTES
+                    or item.compress_type
+                    not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
                 ):
                     continue
+                if attempts >= _MAX_MARKERS:
+                    raise _ZipInspectionLimit
+                attempts += 1
                 try:
                     with archive.open(item) as reader:
-                        value = reader.read(257).decode("utf-8", errors="replace")
-                    match = _VERSION.search(value)
-                    if match is not None:
-                        # No arbitrary filename or file content in diagnostics.
-                        markers.append({"name": parts[-1], "version": match.group(0)})
+                        value = reader.read(_MAX_MARKER_BYTES + 1).decode(
+                            "utf-8", errors="replace"
+                        )
                 except (OSError, ValueError, RuntimeError, zipfile.BadZipFile):
                     continue
-            result["version_markers"] = markers
+                match = _VERSION.search(value)
+                if match is not None:
+                    markers.append({"name": name, "version": match.group(0)})
+            known_roots = {"update", "March7thAssistant", "March7thAssistant_full"}
+            result.update(
+                format="zip",
+                entries=len(entries),
+                expanded_bytes=sum(item.file_size for item in entries),
+                root_count=len(roots),
+                known_roots=sorted(roots & known_roots),
+                version_markers=markers,
+            )
+    except _ZipInspectionLimit:
+        result["format"] = "zip"
     except (OSError, ValueError, zipfile.BadZipFile, zipfile.LargeZipFile):
         # A 7z/exe/partial file is not automatically a corrupt archive.
         try:

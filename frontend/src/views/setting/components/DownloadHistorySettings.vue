@@ -5,6 +5,7 @@ import { message } from 'ant-design-vue'
 import type { GlobalConfig, FluxdownRecord } from '@/api'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import SettingRow from '@/components/ui/SettingRow.vue'
+import { downloadHistoryExport } from './downloadHistoryExport'
 
 const props = defineProps<{ settings: GlobalConfig }>()
 const { t } = useI18n()
@@ -58,10 +59,11 @@ const canExportHistory = (item: FluxdownRecord) =>
 // 有诊断摘要或失败信息的单条下载记录可导出为 JSON 文件
 const handleExportHistory = async (item: FluxdownRecord) => {
   try {
-    const fileName = `fluxdown-download-${(item.timestamp ?? '').replace(/[: ]/g, '-')}.json`
+    const exported = downloadHistoryExport(item)
+    const fileName = `fluxdown-download-${(exported.timestamp ?? '').replace(/[: ]/g, '-')}.json`
     const result = await window.electronAPI.saveTextFile(
       fileName,
-      JSON.stringify(item, null, 2),
+      JSON.stringify(exported, null, 2),
       [{ name: 'JSON', extensions: ['json'] }],
       {
         dialogTitle: t('core.setting.others.historyExportDialogTitle'),

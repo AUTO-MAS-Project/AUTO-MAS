@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n'
 import type { WhimboxConfig_Update } from '@/api'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import { SectionCard } from '@/components/ui'
 
 defineProps<{ ready: boolean }>()
 const update = defineModel<WhimboxConfig_Update>('update', { required: true })
@@ -15,10 +16,7 @@ const handleEnabled = (enabled: boolean) => {
 </script>
 
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('core.edit.updateTakeover') }}</h3>
-    </div>
+  <SectionCard variant="plain" :title="t('core.edit.updateTakeover')">
     <a-form-item>
       <template #label>
         <FieldLabelWithHint
@@ -29,7 +27,7 @@ const handleEnabled = (enabled: boolean) => {
       </template>
       <a-switch :checked="update.TakeoverEnabled" :disabled="!ready" @change="handleEnabled" />
     </a-form-item>
-  </div>
+  </SectionCard>
 </template>
 
 <style scoped src="@/styles/scriptEditForm.css"></style>

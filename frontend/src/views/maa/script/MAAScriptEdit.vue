@@ -1,264 +1,266 @@
 <template>
-  <ScriptEditHeader script-type="MAA" :title="t('core.edit.editScript')" @cancel="handleCancel" />
+  <ConfigEditShell :surface="false">
+    <template #header>
+      <ScriptEditHeader
+        script-type="MAA"
+        :title="t('core.edit.editScript')"
+        @cancel="handleCancel"
+      />
+    </template>
 
-  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card
-      :title="t('plugins.maa_adapter.edit.maaScriptConfiguration')"
-      :loading="pageLoading"
-      class="config-card"
-    >
-      <template #extra>
-        <a-tag color="blue" class="type-tag"> MAA </a-tag>
-      </template>
-
-      <a-alert :message="t('core.edit.howUseThis')" type="info" show-icon class="notice-alert">
-        <template #description>
-          <div class="notice-content">
-            <p>{{ t('core.edit.annihilationLaunchesItsOwn') }}</p>
-            <p>{{ t('plugins.maa_adapter.edit.maaAdapterSupportsEmulators') }}</p>
-          </div>
+    <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
+      <a-card
+        :title="t('plugins.maa_adapter.edit.maaScriptConfiguration')"
+        :loading="pageLoading"
+        class="config-card"
+      >
+        <template #extra>
+          <a-tag color="blue" class="type-tag"> MAA </a-tag>
         </template>
-      </a-alert>
 
-      <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
-        <!-- 基本信息 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.basicInfo') }}</h3>
-          </div>
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item name="name">
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.scriptName')"
-                    :hint="t('core.edit.giveScriptNameYou')"
-                    variant="form"
+        <a-alert :message="t('core.edit.howUseThis')" type="info" show-icon class="notice-alert">
+          <template #description>
+            <div class="notice-content">
+              <p>{{ t('core.edit.annihilationLaunchesItsOwn') }}</p>
+              <p>{{ t('plugins.maa_adapter.edit.maaAdapterSupportsEmulators') }}</p>
+            </div>
+          </template>
+        </a-alert>
+
+        <a-form
+          ref="formRef"
+          :model="formData"
+          :rules="rules"
+          layout="vertical"
+          class="config-form"
+        >
+          <!-- 基本信息 -->
+          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+            <a-row :gutter="24">
+              <a-col :span="8">
+                <a-form-item name="name">
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.scriptName')"
+                      :hint="t('core.edit.giveScriptNameYou')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-input
+                    v-model:value="formData.name"
+                    :placeholder="t('core.edit.enterScriptName')"
+                    size="large"
+                    class="modern-input"
+                    @blur="handleChange('Info', 'Name', formData.name)"
                   />
-                </template>
-                <a-input
-                  v-model:value="formData.name"
-                  :placeholder="t('core.edit.enterScriptName')"
-                  size="large"
-                  class="modern-input"
-                  @blur="handleChange('Info', 'Name', formData.name)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="16">
-              <a-form-item name="path" :rules="rules.path">
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('plugins.maa_adapter.edit.maaPath')"
-                    :hint="t('core.edit.pickFolderHoldingMaa2')"
-                    variant="form"
+                </a-form-item>
+              </a-col>
+              <a-col :span="16">
+                <a-form-item name="path" :rules="rules.path">
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('plugins.maa_adapter.edit.maaPath')"
+                      :hint="t('core.edit.pickFolderHoldingMaa2')"
+                      variant="form"
+                    />
+                  </template>
+                  <PathPickerField
+                    v-model="formData.path"
+                    mode="folder"
+                    :placeholder="t('core.edit.pickFolderHoldingMaa')"
+                    :pick-label="t('core.edit.pickFolder')"
+                    @pick="selectMAAPath"
                   />
-                </template>
-                <PathPickerField
-                  v-model="formData.path"
-                  mode="folder"
-                  :placeholder="t('core.edit.pickFolderHoldingMaa')"
-                  :pick-label="t('core.edit.pickFolder')"
-                  @pick="selectMAAPath"
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </SectionCard>
+
+          <!-- 模拟器管理 -->
+          <SectionCard variant="plain" :title="t('core.edit.emulators')">
+            <a-row :gutter="24"> </a-row>
+          </SectionCard>
+
+          <!-- 运行配置 -->
+          <SectionCard variant="plain" :title="t('core.edit.runConfiguration')">
+            <ScriptHardTimeoutField
+              v-model:value="maaConfig.Run.HardTimeLimit"
+              @save="handleChange('Run', 'HardTimeLimit', maaConfig.Run.HardTimeLimit)"
+            />
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.accountSwitchingMethod')"
+                      :hint="t('core.edit.whatDoWhenSwitching')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-select
+                    v-model:value="maaConfig.Run.TaskTransitionMethod"
+                    size="large"
+                    @change="handleChange('Run', 'TaskTransitionMethod', $event)"
+                  >
+                    <a-select-option value="ExitEmulator">{{
+                      t('core.edit.restartEmulator')
+                    }}</a-select-option>
+                    <a-select-option value="ExitGame">{{
+                      t('core.edit.restartArknights')
+                    }}</a-select-option>
+                    <a-select-option value="NoAction">{{
+                      t('core.edit.switchAccountDirectly')
+                    }}</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <ScriptRunLimitField
+                  v-model="maaConfig.Run.ProxyTimesLimit"
+                  kind="daily"
+                  :label="t('core.edit.runsPerDayThis')"
+                  :hint="t('core.edit.skipRunOnceThis')"
+                  enhanced
+                  @save="handleChange('Run', 'ProxyTimesLimit', maaConfig.Run.ProxyTimesLimit)"
                 />
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
-
-        <!-- 模拟器管理 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.emulators') }}</h3>
-          </div>
-          <a-row :gutter="24"> </a-row>
-        </div>
-
-        <!-- 运行配置 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.runConfiguration') }}</h3>
-          </div>
-          <ScriptHardTimeoutField
-            v-model:value="maaConfig.Run.HardTimeLimit"
-            @save="handleChange('Run', 'HardTimeLimit', maaConfig.Run.HardTimeLimit)"
+              </a-col>
+            </a-row>
+            <a-row :gutter="24">
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.annihilationTimeoutMinutes')"
+                      :hint="t('core.edit.treatAnnihilationRunAs')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-input-number
+                    v-model:value="maaConfig.Run.AnnihilationTimeLimit"
+                    :min="1"
+                    :max="9999"
+                    size="large"
+                    class="modern-number-input"
+                    style="width: 100%"
+                    @blur="
+                      handleChange(
+                        'Run',
+                        'AnnihilationTimeLimit',
+                        maaConfig.Run.AnnihilationTimeLimit
+                      )
+                    "
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.dailyRunTimeoutMinutes')"
+                      :hint="t('core.edit.treatDailyRunAs2')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-input-number
+                    v-model:value="maaConfig.Run.RoutineTimeLimit"
+                    :min="1"
+                    :max="9999"
+                    size="large"
+                    class="modern-number-input"
+                    style="width: 100%"
+                    @blur="handleChange('Run', 'RoutineTimeLimit', maaConfig.Run.RoutineTimeLimit)"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <ScriptRunLimitField
+                  v-model="maaConfig.Run.RunTimesLimit"
+                  kind="retry"
+                  :label="t('core.edit.retryLimit')"
+                  :hint="t('core.edit.ifRunStillUnfinished')"
+                  enhanced
+                  @save="handleChange('Run', 'RunTimesLimit', maaConfig.Run.RunTimesLimit)"
+                />
+              </a-col>
+            </a-row>
+          </SectionCard>
+          <SectionCard variant="plain" :title="t('core.edit.gameUpdate')">
+            <a-row :gutter="24">
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.checkGameUpdateBefore')"
+                      :hint="t('core.edit.beforeStartingMaaCompare')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-select
+                    v-model:value="maaConfig.Run.IfCheckGameUpdate"
+                    size="large"
+                    style="width: 100%"
+                    @change="handleChange('Run', 'IfCheckGameUpdate', $event)"
+                  >
+                    <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                    <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.installGamePackageAutomatically')"
+                      :hint="t('core.edit.whenClientDetectedAs')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-select
+                    v-model:value="maaConfig.Run.IfAutoInstallGameApk"
+                    size="large"
+                    style="width: 100%"
+                    :disabled="!maaConfig.Run.IfCheckGameUpdate"
+                    @change="handleChange('Run', 'IfAutoInstallGameApk', $event)"
+                  >
+                    <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                    <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.gameUpdateTimeoutMinutes')"
+                      :hint="t('core.edit.timeoutDownloadingInstallingGame')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-input-number
+                    v-model:value="maaConfig.Run.GameUpdateTimeLimit"
+                    :min="1"
+                    :max="9999"
+                    size="large"
+                    class="modern-number-input"
+                    style="width: 100%"
+                    :disabled="!maaConfig.Run.IfCheckGameUpdate"
+                    @blur="
+                      handleChange('Run', 'GameUpdateTimeLimit', maaConfig.Run.GameUpdateTimeLimit)
+                    "
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </SectionCard>
+          <MaaUpdateSettings
+            v-model:update="maaConfig.Update"
+            :ready="!isInitializing"
+            @change="(key, value) => handleChange('Update', key, value)"
           />
-          <a-row :gutter="24">
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.accountSwitchingMethod')"
-                    :hint="t('core.edit.whatDoWhenSwitching')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="maaConfig.Run.TaskTransitionMethod"
-                  size="large"
-                  @change="handleChange('Run', 'TaskTransitionMethod', $event)"
-                >
-                  <a-select-option value="ExitEmulator">{{
-                    t('core.edit.restartEmulator')
-                  }}</a-select-option>
-                  <a-select-option value="ExitGame">{{
-                    t('core.edit.restartArknights')
-                  }}</a-select-option>
-                  <a-select-option value="NoAction">{{
-                    t('core.edit.switchAccountDirectly')
-                  }}</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <ScriptRunLimitField
-                v-model="maaConfig.Run.ProxyTimesLimit"
-                kind="daily"
-                :label="t('core.edit.runsPerDayThis')"
-                :hint="t('core.edit.skipRunOnceThis')"
-                enhanced
-                @save="handleChange('Run', 'ProxyTimesLimit', maaConfig.Run.ProxyTimesLimit)"
-              />
-            </a-col>
-          </a-row>
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.annihilationTimeoutMinutes')"
-                    :hint="t('core.edit.treatAnnihilationRunAs')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="maaConfig.Run.AnnihilationTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                  @blur="
-                    handleChange(
-                      'Run',
-                      'AnnihilationTimeLimit',
-                      maaConfig.Run.AnnihilationTimeLimit
-                    )
-                  "
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.dailyRunTimeoutMinutes')"
-                    :hint="t('core.edit.treatDailyRunAs2')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="maaConfig.Run.RoutineTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RoutineTimeLimit', maaConfig.Run.RoutineTimeLimit)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="maaConfig.Run.RunTimesLimit"
-                kind="retry"
-                :label="t('core.edit.retryLimit')"
-                :hint="t('core.edit.ifRunStillUnfinished')"
-                enhanced
-                @save="handleChange('Run', 'RunTimesLimit', maaConfig.Run.RunTimesLimit)"
-              />
-            </a-col>
-          </a-row>
-        </div>
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.gameUpdate') }}</h3>
-          </div>
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.checkGameUpdateBefore')"
-                    :hint="t('core.edit.beforeStartingMaaCompare')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="maaConfig.Run.IfCheckGameUpdate"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleChange('Run', 'IfCheckGameUpdate', $event)"
-                >
-                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.installGamePackageAutomatically')"
-                    :hint="t('core.edit.whenClientDetectedAs')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="maaConfig.Run.IfAutoInstallGameApk"
-                  size="large"
-                  style="width: 100%"
-                  :disabled="!maaConfig.Run.IfCheckGameUpdate"
-                  @change="handleChange('Run', 'IfAutoInstallGameApk', $event)"
-                >
-                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.gameUpdateTimeoutMinutes')"
-                    :hint="t('core.edit.timeoutDownloadingInstallingGame')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="maaConfig.Run.GameUpdateTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                  :disabled="!maaConfig.Run.IfCheckGameUpdate"
-                  @blur="
-                    handleChange('Run', 'GameUpdateTimeLimit', maaConfig.Run.GameUpdateTimeLimit)
-                  "
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
-        <MaaUpdateSettings
-          v-model:update="maaConfig.Update"
-          :ready="!isInitializing"
-          @change="(key, value) => handleChange('Update', key, value)"
-        />
-      </a-form>
-    </a-card>
-  </ConfigLockPanel>
+        </a-form>
+      </a-card>
+    </ConfigLockPanel>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
@@ -269,6 +271,7 @@ import { createMaaScriptDraft } from './maaScriptDraft'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import PathPickerField from '@/components/PathPickerField.vue'
+import { ConfigEditShell, SectionCard } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { onMounted, reactive, ref } from 'vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
