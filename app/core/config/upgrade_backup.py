@@ -9,8 +9,9 @@ import zipfile
 from collections.abc import Callable
 from contextlib import closing, suppress
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
 from packaging.version import Version
@@ -59,6 +60,8 @@ class _BackupAttempt(BaseModel):
     target: ReleaseVersion
     captured_at: datetime
     id: UUID = Field(default_factory=uuid4)
+    owner: str | None = None
+    directory: str | None = None
     published: bool = False
     settled: bool = False
     retired: bool = False
@@ -75,6 +78,11 @@ class _BackupState(BaseModel):
     data_version: ReleaseVersion | None = None
     ready_version: ReleaseVersion | None = None
     attempts: list[_BackupAttempt] = Field(default_factory=list)
+
+
+class _BackupPreferences(BaseModel):
+    enabled: bool = True
+    directory: str | None = None
 
 
 def _release_version(value: object) -> str | None:
@@ -186,9 +194,12 @@ class UpgradeBackup:
         version = _release_version(desktop_version)
         if version is None:
             raise ValueError("桌面版本无效，无法识别整包升级")
-        self.root = root
+        self.root = root.resolve()
         self.version = version
-        self.directory = root / "backup"
+        self.default_directory = self.root / "backup"
+        self.directory = self.default_directory
+        self.owner = sha256(os.fsencode(os.path.normcase(str(self.root)))).hexdigest()
+        self.enabled = True
         self.state_path = root / "config" / UPGRADE_BACKUP_STATE
         self.migration_mark = root / "data" / UPGRADE_MIGRATION_MARK
         self.state = _BackupState()
@@ -208,20 +219,41 @@ class UpgradeBackup:
     def _registration_path(self, attempt: _BackupAttempt) -> Path:
         return self.directory / f".{attempt.id.hex}.archive.json"
 
-    def _initial_version(self) -> str | None:
+    def _owns_attempt(self, attempt: _BackupAttempt) -> bool:
+        if attempt.owner is None:
+            return (
+                self.directory == self.default_directory and attempt.directory is None
+            )
+        return attempt.owner == self.owner and attempt.directory == os.path.normcase(
+            str(self.directory)
+        )
+
+    def _frontend_config(self) -> dict[str, Any]:
         try:
             data = json.loads(
                 (self.root / "config" / "frontend_config.json").read_text(
                     encoding="utf-8"
                 )
             )
-        except (FileNotFoundError, UnicodeError, json.JSONDecodeError):
-            return None
-        return (
-            _release_version(data.get("initializedVersion"))
-            if isinstance(data, dict)
-            else None
-        )
+        except FileNotFoundError:
+            return {}
+        if not isinstance(data, dict):
+            raise ValueError("无法确认自动备份设置")
+        return data
+
+    def _set_directory(self, configured: str | None) -> None:
+        if configured is None:
+            return
+        path = Path(configured)
+        if not path.is_absolute() or _is_redirected(path):
+            raise ValueError("自动备份目录必须是实际的绝对路径")
+        resolved = path.resolve()
+        if resolved == resolved.parent or any(
+            resolved.is_relative_to((self.root / name).resolve())
+            for name in _DATA_DIRECTORIES
+        ):
+            raise ValueError("自动备份目录不能位于备份源目录内或磁盘根目录")
+        self.directory = resolved
 
     def prepare(
         self, *, on_backup: Callable[[], None] | None = None
@@ -230,10 +262,13 @@ class UpgradeBackup:
 
         if _is_redirected(self.state_path.parent) or _is_redirected(self.state_path):
             raise ValueError("升级备份状态路径被重定向")
+        config = self._frontend_config()
+        preferences = _BackupPreferences.model_validate(config.get("upgradeBackup", {}))
+        self.enabled = preferences.enabled
         try:
             self.state = _BackupState.model_validate_json(self.state_path.read_bytes())
         except FileNotFoundError:
-            self.state.data_version = self._initial_version()
+            self.state.data_version = _release_version(config.get("initializedVersion"))
             self.state.ready_version = self.state.data_version
         try:
             marked_version = self.migration_mark.read_text(encoding="ascii")
@@ -244,6 +279,16 @@ class UpgradeBackup:
             self.state.data_version = _release_version(marked_version)
             if self.state.data_version is None:
                 raise ValueError("升级备份迁移标记无效")
+        if not self.enabled:
+            self.prepared = True
+            return None
+
+        try:
+            self._set_directory(preferences.directory)
+        except (OSError, ValueError) as error:
+            self.prepared = True
+            self.error = error
+            return "backup_failed"
         source = self.state.data_version
         if source is None:
             self.prepared = True
@@ -273,6 +318,7 @@ class UpgradeBackup:
                     if item.source == source
                     and item.target == self.version
                     and not item.settled
+                    and self._owns_attempt(item)
                 ),
                 None,
             )
@@ -281,6 +327,8 @@ class UpgradeBackup:
                     source=source,
                     target=self.version,
                     captured_at=datetime.now(UTC),
+                    owner=self.owner,
+                    directory=os.path.normcase(str(self.directory)),
                 )
                 self.state.attempts.append(self.attempt)
                 self._save()
@@ -289,7 +337,7 @@ class UpgradeBackup:
                 (
                     item
                     for item in reversed(self.state.attempts)
-                    if item.target == self.version
+                    if item.target == self.version and self._owns_attempt(item)
                 ),
                 None,
             )
@@ -372,7 +420,12 @@ class UpgradeBackup:
             self._save()
             if self.using_migration_mark:
                 self.migration_mark.unlink(missing_ok=True)
-        if self.downgrade or self.error is not None or self.using_migration_mark:
+        if (
+            not self.enabled
+            or self.downgrade
+            or self.error is not None
+            or self.using_migration_mark
+        ):
             return
 
         if self.attempt is not None:
@@ -385,15 +438,19 @@ class UpgradeBackup:
                 raise ValueError("升级备份目录被重定向")
             self._plan_cleanup(self.attempt)
 
-        if any(item.retired for item in self.state.attempts):
+        retired = [
+            item
+            for item in self.state.attempts
+            if item.retired and self._owns_attempt(item)
+        ]
+        if retired:
             if _is_redirected(self.directory):
                 raise ValueError("升级备份目录被重定向")
-            for item in self.state.attempts:
-                if item.retired:
-                    (self.directory / item.filename).unlink(missing_ok=True)
-                    self._registration_path(item).unlink(missing_ok=True)
+            for item in retired:
+                (self.directory / item.filename).unlink(missing_ok=True)
+                self._registration_path(item).unlink(missing_ok=True)
             self.state.attempts = [
-                item for item in self.state.attempts if not item.retired
+                item for item in self.state.attempts if item not in retired
             ]
             self._save()
 
@@ -410,6 +467,7 @@ class UpgradeBackup:
                 continue
             if (
                 archived.published
+                and self._owns_attempt(archived)
                 and path == self._registration_path(archived)
                 and archived.id not in known
             ):
@@ -420,30 +478,51 @@ class UpgradeBackup:
             (
                 item
                 for item in self.state.attempts
-                if item.published and not item.retired
+                if item.published and not item.retired and self._owns_attempt(item)
             ),
             key=lambda item: item.captured_at,
             reverse=True,
         )
-        latest: dict[bool, UUID] = {}
+        existing = []
         for item in published:
-            is_beta = Version(item.source).is_prerelease
-            if is_beta in latest:
+            archive = self.directory / item.filename
+            if not archive.is_file() or _is_redirected(archive):
+                continue
+            existing.append((item, Version(item.source)))
+
+        target = Version(self.version)
+        current = (target.major, target.minor)
+        previous = max(
+            (
+                (version.major, version.minor)
+                for _, version in existing
+                if (version.major, version.minor) < current
+            ),
+            default=current,
+        )
+        retained = {
+            item.id
+            for item, version in existing
+            if (version.major, version.minor) in {current, previous}
+        }
+        # 版本段之外仍保留可用的渠道回退点，公测版同时保留最近公测。
+        channels = {False, True} if target.is_prerelease else {False}
+        valid_count = 0
+        for item, version in existing:
+            channel = version.is_prerelease
+            if valid_count >= 2 and channel not in channels:
                 continue
             if item.id != attempt.id:
                 try:
                     _check_zip(self.directory / item.filename)
                 except (OSError, ValueError, zipfile.BadZipFile):
                     continue
-            latest[is_beta] = item.id
-
+            retained.add(item.id)
+            valid_count += 1
+            channels.discard(channel)
+            if valid_count >= 2 and not channels:
+                break
         attempt.settled = True
-        if not latest:
-            self._save()
-            return
-        if not Version(self.version).is_prerelease and False in latest:
-            latest.pop(True, None)
-        retained = set(latest.values())
         for item in published:
             item.retired = item.id not in retained
         # 先提交清理决定，重启能继续清理而不会重新备份已经迁移的数据。

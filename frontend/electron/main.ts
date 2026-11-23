@@ -316,6 +316,7 @@ const isAutoStart = process.argv.includes('--auto-start') || isScheduledWakeup
 // 配置接口
 interface AppConfig extends DesktopMascotHostPreferences {
   confirmBeforeClose: boolean
+  upgradeBackup?: { enabled?: boolean; directory?: string | null }
   lastCloseAction: 'quit' | 'tray'
   UI: {
     IfShowTray: boolean
@@ -2188,6 +2189,32 @@ ipcMain.handle('save-config', (event, patch, defaults) => {
     const appRoot = getAppRoot()
     const configDir = path.join(appRoot, 'config')
     const configPath = path.join(configDir, 'frontend_config.json')
+
+    const backupDirectory: unknown = patch?.upgradeBackup?.directory
+    if (backupDirectory !== undefined && backupDirectory !== null) {
+      if (typeof backupDirectory !== 'string' || !path.isAbsolute(backupDirectory))
+        throw new Error('Invalid upgrade backup directory')
+      const destination = fs.realpathSync.native(backupDirectory)
+      const sourceRoots = ['config', 'data', 'history'].map(name => {
+        const source = path.join(appRoot, name)
+        return fs.existsSync(source) ? fs.realpathSync.native(source) : source
+      })
+      const insideSource = sourceRoots.some(source => {
+        const relative = path.relative(source, destination)
+        return (
+          relative === '' ||
+          (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
+        )
+      })
+      if (destination === path.parse(destination).root || insideSource)
+        throw new Error('Invalid upgrade backup directory')
+      patch = { ...patch, upgradeBackup: { ...patch.upgradeBackup, directory: destination } }
+    }
+    if (patch?.upgradeBackup)
+      patch = {
+        ...patch,
+        upgradeBackup: { ...loadConfig().upgradeBackup, ...patch.upgradeBackup },
+      }
 
     const config = patchConfigFile(configPath, patch, defaults) as AppConfig
     logger.info(`配置已保存到: ${configPath}`)

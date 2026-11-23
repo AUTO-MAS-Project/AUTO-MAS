@@ -90,33 +90,36 @@ def test_old_archives_survive_until_target_business_ready(tmp_path):
     _start(tmp_path, "5.9.0-beta.2").finish()
     first_beta = next(path for path in _archives(tmp_path) if path != stable)
     _start(tmp_path, "5.9.0-beta.10").finish()
-    assert not first_beta.exists()
-    last_beta = next(path for path in _archives(tmp_path) if path != stable)
+    assert first_beta.exists()
+    last_beta = next(
+        path
+        for path in _archives(tmp_path)
+        if "-beta.2-to-v5.9.0-beta.10-" in path.name
+    )
 
     _start(tmp_path, "5.9.0")
     # 首次新版未就绪便退出，已有两个回退点和这次生成的 ZIP 均保留。
     pending = _archives(tmp_path)
-    assert len(pending) == 3
+    assert len(pending) == 4
     assert stable in pending and last_beta in pending
     restarted = _start(tmp_path, "v5.9.0")
     assert _archives(tmp_path) == pending
     restarted.finish()
-    assert _archives(tmp_path) == [stable]
+    assert _archives(tmp_path) == pending
     assert manual.read_bytes() == b"manual"
 
 
-def test_stable_uses_beta_fallback_then_rotates_to_latest_stable(tmp_path):
-    _install(tmp_path, "5.9.0-beta.1")
+def test_consecutive_stable_upgrades_keep_both_recent_restore_points(tmp_path):
+    _install(tmp_path, "5.8.0")
     _start(tmp_path, "5.9.0").finish()
-    beta = _archives(tmp_path)[0]
-    assert "-beta.1-to-v5.9.0-" in beta.name
-    _start(tmp_path, "5.9.1").finish()
-    assert not beta.exists()
     stable = _archives(tmp_path)[0]
-    assert "-v5.9.0-to-v5.9.1-" in stable.name
+    _start(tmp_path, "5.9.1").finish()
+    recent = _archives(tmp_path)
+    assert stable in recent
+    assert any("-v5.9.0-to-v5.9.1-" in path.name for path in recent)
     _start(tmp_path, "5.9.1").finish()
     _start(tmp_path, "5.9.0").finish()
-    assert _archives(tmp_path) == [stable]
+    assert _archives(tmp_path) == recent
 
 
 def test_retention_still_recognizes_archives_after_restoring_config(tmp_path):
@@ -133,9 +136,89 @@ def test_retention_still_recognizes_archives_after_restoring_config(tmp_path):
         )
 
     _start(tmp_path, "5.9.0-beta.3").finish()
+    assert old_stable.exists()
+    _start(tmp_path, "6.0.0").finish()
     assert not old_stable.exists()
     assert beta in _archives(tmp_path)
+    assert len(_archives(tmp_path)) == 3
+
+
+def test_rotation_removes_older_segments_when_two_newer_archives_exist(tmp_path):
+    _install(tmp_path, "5.7.0")
+    _start(tmp_path, "5.8.0").finish()
+    earliest = _archives(tmp_path)[0]
+    _start(tmp_path, "5.9.0").finish()
+    assert earliest.exists()
+    _start(tmp_path, "6.1.0").finish()
+    assert not earliest.exists()
     assert len(_archives(tmp_path)) == 2
+
+
+def test_beta_keeps_latest_stable_fallback_outside_the_rolling_segments(tmp_path):
+    _install(tmp_path, "5.7.0")
+    _start(tmp_path, "5.8.0-beta.1").finish()
+    stable = _archives(tmp_path)[0]
+    _start(tmp_path, "5.8.0-beta.2").finish()
+    old_beta = next(path for path in _archives(tmp_path) if path != stable)
+    _start(tmp_path, "5.9.0-beta.1").finish()
+    _start(tmp_path, "6.0.0-beta.1").finish()
+
+    assert stable.exists()
+    assert not old_beta.exists()
+    assert len(_archives(tmp_path)) == 3
+
+
+def _preferences(root: Path, *, enabled: bool, directory: Path | None = None) -> None:
+    file = root / "config" / "frontend_config.json"
+    config = json.loads(file.read_text(encoding="utf-8"))
+    config["upgradeBackup"] = {
+        "enabled": enabled,
+        "directory": str(directory) if directory is not None else None,
+    }
+    file.write_text(json.dumps(config), encoding="utf-8")
+
+
+def test_disabling_backup_preserves_archives_and_tracks_the_data_version(tmp_path):
+    _install(tmp_path, "5.7.0")
+    _start(tmp_path, "5.8.0").finish()
+    previous = _archives(tmp_path)
+    _preferences(tmp_path, enabled=False)
+    _start(tmp_path, "5.9.0").finish()
+    assert _archives(tmp_path) == previous
+    _preferences(tmp_path, enabled=True)
+    _start(tmp_path, "5.9.1").finish()
+    assert any("-v5.9.0-to-v5.9.1-" in path.name for path in _archives(tmp_path))
+
+
+def test_shared_custom_directory_never_rotates_other_installations_archives(tmp_path):
+    left, right, shared = (tmp_path / name for name in ("left", "right", "shared"))
+    for directory in (left, right, shared):
+        directory.mkdir()
+    for installation in (left, right):
+        _install(installation, "5.7.0")
+        _preferences(installation, enabled=True, directory=shared)
+    _start(right, "5.8.0").finish()
+    foreign = next(shared.glob("*.zip"))
+    for version in ("5.8.0", "5.9.0", "6.0.0"):
+        _start(left, version).finish()
+    assert foreign.exists()
+    assert len(list(shared.glob("*.zip"))) == 3
+
+    _preferences(left, enabled=True)
+    _start(left, "6.1.0").finish()
+    assert len(_archives(left)) == 1
+    assert len(list(shared.glob("*.zip"))) == 3
+
+
+def test_backup_directory_cannot_be_inside_a_snapshotted_directory(tmp_path):
+    _install(tmp_path, "5.8.0")
+    directory = tmp_path / "config" / "backup"
+    _preferences(tmp_path, enabled=True, directory=directory)
+    backup = UpgradeBackup(root=tmp_path, desktop_version="5.9.0")
+    assert backup.prepare() == "backup_failed"
+    assert backup.begin_migration()
+    backup.finish()
+    assert not directory.exists()
 
 
 def test_retry_uses_completed_snapshot_after_zip_publication_fails(
