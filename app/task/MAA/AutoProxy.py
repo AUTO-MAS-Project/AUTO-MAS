@@ -20,7 +20,8 @@ import re
 import shutil
 import time
 import uuid
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Sequence
+from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -1711,25 +1712,42 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             self.install_error, MaaUpdaterRunningError
         )
 
+    @contextmanager
+    def _pause_run_timeout(self) -> Iterator[None]:
+        """等待 MAA 退出或安装更新期间保留账号的剩余代理时间。"""
+        timeout = self._run_timeout
+        if timeout is None or (deadline := timeout.when()) is None:
+            yield
+            return
+
+        loop = asyncio.get_running_loop()
+        remaining = deadline - loop.time()
+        timeout.reschedule(None)
+        try:
+            yield
+        finally:
+            timeout.reschedule(loop.time() + remaining)
+
     async def _stop_round_process(self, *, wait_for_exit: bool) -> None:
         """队列完成日志早于退出动作，优先等 MAA 自行写回登记，再确认停写。"""
-        try:
-            if wait_for_exit:
-                proc = self.maa_process_manager.process
-                assert proc is not None
-                try:
-                    await asyncio.wait_for(proc.wait(), timeout=10)
-                except TimeoutError:
-                    pass
-                else:
-                    if await process.is_process_stopped(self.maa_exe_path):
-                        return
-            await self.maa_process_manager.kill()
-        except Exception as error:
-            raise MaaUpdaterRunningError(
-                "无法确认 MAA 已停写，已停止后续代理"
-            ) from error
-        await stop_maa_gui(self.maa_exe_path)
+        with self._pause_run_timeout() if wait_for_exit else nullcontext():
+            try:
+                if wait_for_exit:
+                    proc = self.maa_process_manager.process
+                    assert proc is not None
+                    try:
+                        await asyncio.wait_for(proc.wait(), timeout=10)
+                    except TimeoutError:
+                        pass
+                    else:
+                        if await process.is_process_stopped(self.maa_exe_path):
+                            return
+                await self.maa_process_manager.kill()
+            except Exception as error:
+                raise MaaUpdaterRunningError(
+                    "无法确认 MAA 已停写，已停止后续代理"
+                ) from error
+            await stop_maa_gui(self.maa_exe_path)
 
     async def _complete_round_update(self) -> None:
         """一次真实启动只检查一次登记；官方安装单独计时。"""
@@ -1738,18 +1756,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self._round_needs_update = False
         if self.stopped_manually:
             return
-        timeout = self._run_timeout
-        deadline = timeout.when() if timeout else None
-        started = asyncio.get_running_loop().time()
-        if timeout is not None and deadline is not None:
-            timeout.reschedule(None)
-        try:
+        with self._pause_run_timeout():
             await self.install_round_update(self.pending_update)
-        finally:
-            if timeout is not None and deadline is not None:
-                timeout.reschedule(
-                    deadline + asyncio.get_running_loop().time() - started
-                )
 
     async def _finalize_task(self) -> None:
         """收尾：全部收尾动作结束后，还原 overlay 覆写的库存缓存。

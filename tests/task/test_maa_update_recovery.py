@@ -328,6 +328,37 @@ def test_switch_install_root_archives_previous_recovery_journal(installation, tm
 
 
 @pytest.mark.asyncio
+async def test_completed_round_exit_preserves_remaining_account_time(
+    monkeypatch, tmp_path
+):
+    from app.task.MAA.AutoProxy import AutoProxyTask
+
+    loop = asyncio.get_running_loop()
+    now = loop.time()
+    monkeypatch.setattr(loop, "time", lambda: now)
+
+    async def delayed_exit():
+        nonlocal now
+        now += 5
+        await asyncio.sleep(0)
+
+    proxy = object.__new__(AutoProxyTask)
+    proxy.maa_exe_path = tmp_path / "MAA.exe"
+    proxy.maa_process_manager = SimpleNamespace(
+        process=SimpleNamespace(wait=delayed_exit)
+    )
+    monkeypatch.setattr(
+        installer.process, "is_process_stopped", AsyncMock(return_value=True)
+    )
+
+    async with asyncio.timeout(60) as timeout:
+        proxy._run_timeout = timeout
+        now += 58  # 本轮队列完成，账号还剩 2 秒可用于下一轮。
+        await proxy._stop_round_process(wait_for_exit=True)
+        assert timeout.when() - now == pytest.approx(2)
+
+
+@pytest.mark.asyncio
 async def test_round_install_has_its_own_time_budget_and_respects_stop(monkeypatch):
     from app.task.MAA.AutoProxy import AutoProxyTask
 
