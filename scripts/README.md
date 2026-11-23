@@ -11,6 +11,14 @@ uv run --no-sync python scripts/pr_check.py --all             # 运行全部本�
 uv run --no-sync python scripts/pr_check.py --dry-run         # 仅查看将执行的门禁
 ```
 
+如需在每次 `git push` 时自动获得温和提示，可自愿启用仓库内置钩子（默认不阻断推送，并会自动串联本机既有的 `.git/hooks/`）：
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+环境变量：`MAS_SKIP_PR_CHECK=1` 临时跳过；`MAS_PR_CHECK_STRICT=1` 切为失败即阻断。
+
 ## 本地打包与 Runtime 验证
 
 在仓库根目录使用 PowerShell 7 运行：

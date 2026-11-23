@@ -54,7 +54,7 @@ Vue 容器计数，不能把所有格式的行数相加当成源码物理行数�
 
 ## 验证
 
-前端检查使用当前 `package.json`：`yarn lint`、`yarn typecheck`、`yarn format:check`。
+常规前端静态检查（`yarn lint`、`yarn typecheck`、`yarn format:check`、`audit:i18n` 与 Vue 行数基线）可在仓库根目录统一运行 `uv run --no-sync python scripts/pr_check.py`。
 行为测试按影响面选择，本机需要限并发时用 `yarn test --maxWorkers=4`。
 浏览器验证先运行 `yarn e2e:check`，再通过 `yarn e2e --grep '<标签>'` 启动隔离环境。
 独立检出默认按开发环境运行，无需 `.env`；验证生产行为须显式设置 `AUTO_MAS_ENV=production` 并隔离用户数据与遥测。

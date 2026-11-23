@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -304,8 +305,18 @@ def run_gates(gates: list[Gate], *, dry_run: bool = False) -> int:
     failures: list[str] = []
     for gate in gates:
         print(f"==> [{gate.id}] {gate.title} ...", flush=True)
+        resolved = shutil.which(gate.command[0])
+        if resolved is None:
+            failures.append(
+                format_failure(
+                    gate,
+                    f"未找到可执行命令 '{gate.command[0]}'，请确认对应工具链已安装并加入 PATH。",
+                )
+            )
+            print(f"    FAIL [{gate.id}] (missing executable: {gate.command[0]})")
+            continue
         proc = subprocess.run(
-            gate.command,
+            (resolved, *gate.command[1:]),
             cwd=gate.cwd,
             capture_output=True,
             text=True,

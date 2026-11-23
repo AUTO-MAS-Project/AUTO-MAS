@@ -70,8 +70,9 @@ Apply these constraints before selecting or combining sub-skills.
 6. For frontend work, load `mas-frontend-standards`; for UI or user-facing component behavior, also load `mas-frontend-ui`.
 7. When local patterns and generalized guidance differ, prefer concrete maintainer review comments and fold them back into the selected sub-skills.
 8. 用户可见的改动必须带一个 changelog 碎片：跑 `python scripts/changelog.py add <分类> <项目键> "<一句话>"`。分类、项目键、字数上限、`beta-only` / `highlight` 的规则见 [根目录 AGENTS.md](../../../AGENTS.md) 的「写作约束」与脚本本身，这里不复述。
+9. 完成改动准备提交或提 PR 前，建议运行 `uv run --no-sync python scripts/pr_check.py`（纯文档/测试/CI 改动加 `--skip-changelog`），提前按改动路径跑完对应 CI 门禁并按输出修复。
 
-9. Treat telemetry coverage as part of feature completion: load `mas-telemetry` for observable workflow changes and state whether the change reuses, extends or intentionally omits collection. Existing wrappers must not be double-instrumented. An event declaration or coverage-table entry is not proof that its real caller is observed.
+10. Treat telemetry coverage as part of feature completion: load `mas-telemetry` for observable workflow changes and state whether the change reuses, extends or intentionally omits collection. Existing wrappers must not be double-instrumented. An event declaration or coverage-table entry is not proof that its real caller is observed.
 
 ## Routing Rules
 

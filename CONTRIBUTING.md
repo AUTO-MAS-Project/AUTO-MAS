@@ -30,6 +30,7 @@
    | --- | --- | --- |
    | 后端 HTTP 接口 | `app/api/setting.py`、`app/api/queue.py` | 路由保持薄适配；破坏性接口须加 `tags=["Delete"]`；改完 schema 跑 `cd frontend && yarn openapi`，禁手改 `frontend/src/api/` |
    | 后端配置模型 | `app/models/config/setting.py` | `ConfigEntry`/`ConfigGroup` 单点声明，经 `app/config/wire.py` 派生 API 契约 |
+   | WebSocket 通信 | [docs/websocket-architecture.md](docs/websocket-architecture.md) | 前后端共用唯一主连接 `/api/core/ws`，统一 `WSEnvelope` 信封 |
    | 前端页面 / 弹窗 | `frontend/src/views/setting/`、`frontend/src/components/ui/` | 单个 `.vue` ≤ 500 行；三语词表（`zh-CN`/`en-US`/`ja-JP`）同步更新；暗色只用 `--ant-*` / `html.dark` |
    | 回归测试 | `tests/scripts/test_pr_check.py`、`frontend/src/composables/useSaveQueue.test.ts` | 后端 `uv run --no-sync python -m pytest <路径> -q`；前端 Node-only（无 `jsdom`） |
 
@@ -41,6 +42,12 @@
 
    # 一键跑完本地全部相关 CI 门禁（纯文档/测试/CI 改动加 --skip-changelog）：
    uv run --no-sync python scripts/pr_check.py
+   ```
+
+   可选开启本地 `pre-push` 温和提示钩子（默认只提醒不阻断推送，并兼容已有的 `.git/hooks/`）：
+
+   ```powershell
+   git config core.hooksPath .githooks
    ```
 
    全绿后推送分支并向 `AUTO-MAS-Project/AUTO-MAS:dev` 提 PR（纯文档/测试/CI PR 加上 `skip-changelog` 标签）。

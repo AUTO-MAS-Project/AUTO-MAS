@@ -48,6 +48,12 @@
 3. 若任务涉及贡献流程、分支、提交、PR/Issue 正文或版本记录，回到文档站确认。
 4. 若任务涉及主程序代码，仍需在主程序仓库中查看相邻实现并遵守本地风格。
 
+## 维护约定
+
+- `SKILL.md` 保持短而可执行，长参考放入 `references/`；不要把主程序完整实现复制进 Skill，稳定规则沉淀为清单、表格或反模式。
+- `description` 写清触发场景，便于 Agent 自动匹配。
+- 跨 Skill 引用只指向本仓库内的 Skill，或 `AUTO-MAS-Project/*` 与 `doc.auto-mas.top`；引入第三方素材时用纯文本署名并附许可声明，不留可抓取的外部链接。
+
 ## 教程制作
 
 Codex 可调用 `$mas-doc-tutorial`；DeepSeek Harness 或未发现 Skill 的宿主可显式读取
