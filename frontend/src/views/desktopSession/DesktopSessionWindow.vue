@@ -131,13 +131,14 @@ async function start(secret?: string) {
       mode: mode.value,
       resolution: resolution.value,
       password: secret,
+      taskConnectId: request?.taskConnectId,
     })
     if (!response) return
     results.value = response.queues
     if (response.code && DESKTOP_SESSION_CREDENTIAL_ERRORS.has(response.code)) {
       passwordDialog.value = true
     } else {
-      if (!response.code || (request?.forTask && response.code !== 'busy')) pending.value = null
+      if (!response.code || request?.forTask) pending.value = null
       if (response.code && snapshot.value)
         snapshot.value = { ...snapshot.value, code: response.code }
     }
@@ -151,8 +152,8 @@ async function start(secret?: string) {
 
 async function cancelTaskConnect() {
   const request = pending.value
-  if (request && !request.forTask) return
-  await api?.desktopSessionCancelTaskConnect?.()
+  if (request?.taskConnectId === undefined) return
+  await api?.desktopSessionCancelTaskConnect?.(request.taskConnectId)
   if (pending.value === request) pending.value = null
   await readPending()
 }

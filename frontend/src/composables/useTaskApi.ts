@@ -1,3 +1,4 @@
+import { translate as t } from '@/i18n'
 import { configSessionRequest } from './useTaskOptions'
 import { TaskMode } from '@/api'
 import { observeFeature } from '@/utils/featureAnalytics'
@@ -113,6 +114,9 @@ export async function requestTaskStart(
       window.electronAPI.desktopSessionConnectForTask
     ) {
       const connection = await window.electronAPI.desktopSessionConnectForTask()
+      if (connection === 'preview_unavailable') {
+        throw new Error(t('bootstrap.desktopSession.errors.preview_unavailable'))
+      }
       if (connection === 'cancelled') throw new TaskStartCancelled()
       if (connection === 'connected') {
         response = await Service.addTaskApiDispatchStartPost({

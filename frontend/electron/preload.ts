@@ -395,7 +395,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   desktopSessionOpen: (input: import('./services/desktopSessionProtocol').DesktopSessionRequest) =>
     ipcRenderer.invoke('desktop-session:open', input),
   desktopSessionConnectForTask: () => ipcRenderer.invoke('desktop-session:connect-for-task'),
-  desktopSessionCancelTaskConnect: () => ipcRenderer.invoke('desktop-session:cancel-task-connect'),
+  desktopSessionCancelTaskConnect: (id: number) =>
+    ipcRenderer.invoke('desktop-session:cancel-task-connect', id),
   desktopSessionCheck: () => ipcRenderer.invoke('desktop-session:check'),
   desktopSessionGetPrompt: () => ipcRenderer.invoke('desktop-session:prompt:get'),
   desktopSessionRespondToPrompt: (
@@ -412,8 +413,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ) => ipcRenderer.invoke('desktop-session:repair', plan),
   desktopSessionExportLogs: () => ipcRenderer.invoke('desktop-session:export-logs'),
   desktopSessionPending: () => ipcRenderer.invoke('desktop-session:pending'),
-  desktopSessionStart: (input: import('./services/desktopSessionProtocol').DesktopSessionRequest) =>
-    ipcRenderer.invoke('desktop-session:start', input),
+  desktopSessionStart: (
+    input: import('./services/desktopSessionProtocol').DesktopSessionStartRequest
+  ) => ipcRenderer.invoke('desktop-session:start', input),
   desktopSessionBounds: (bounds: Electron.Rectangle) =>
     ipcRenderer.send('desktop-session:bounds', bounds),
   desktopSessionWindow: (action: 'show' | 'hide') =>

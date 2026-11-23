@@ -187,7 +187,7 @@ it.runIf(process.platform === 'win32' && process.arch === 'x64').each([
   )
   const start = Promise.withResolvers<{ queues: [] }>()
   mocks.start.mockReturnValue(start.promise)
-  const connecting = invoke(window, 'start', { queueIds: [], mode: 'proxy', resolution: '1080p' })
+  const connecting = invoke(window, 'start', invoke(window, 'pending'))
   const quitting = bridge.closeForAppQuit()
   await vi.waitFor(() => expect(invoke(main, 'prompt:get')).toMatchObject({ kind: 'quit' }))
   snapshot.state = 'connected'
@@ -244,8 +244,9 @@ it.runIf(process.platform === 'win32' && process.arch === 'x64')(
     expect(mocks.start).not.toHaveBeenCalled()
     const retry = invoke(main, 'connect-for-task')
     expect(retry).not.toBe(first)
-    expect(invoke(window, 'pending')).toMatchObject({ forTask: true })
-    invoke(window, 'cancel-task-connect')
+    const nextRequest = invoke(window, 'pending')
+    expect(nextRequest).toMatchObject({ forTask: true })
+    invoke(window, 'cancel-task-connect', nextRequest.taskConnectId)
     await expect(retry).resolves.toBe('cancelled')
   }
 )
@@ -267,8 +268,47 @@ it.runIf(process.platform === 'win32' && process.arch === 'x64')(
 
     const retry = invoke(main, 'connect-for-task')
     expect(window.webContents.isCrashed()).toBe(false)
-    expect(invoke(window, 'pending')).toMatchObject({ forTask: true })
-    invoke(window, 'cancel-task-connect')
+    const nextRequest = invoke(window, 'pending')
+    expect(nextRequest).toMatchObject({ forTask: true })
+    invoke(window, 'cancel-task-connect', nextRequest.taskConnectId)
     await expect(retry).resolves.toBe('cancelled')
+  }
+)
+
+it.runIf(process.platform === 'win32' && process.arch === 'x64').each(['unresponsive', 'timeout'])(
+  '预览未接单时结束启动等待，拒绝迟到的请求 (%s)',
+  async failure => {
+    vi.useFakeTimers()
+    try {
+      const main = new TestWindow()
+      registerDesktopSession(
+        () => main as unknown as BrowserWindow,
+        '',
+        () => 'en-US'
+      )
+      const first = invoke(main, 'connect-for-task')
+      const window = preview!
+      const expired = invoke(window, 'pending')
+      if (failure === 'unresponsive') {
+        window.emit('unresponsive')
+        await expect(invoke(main, 'connect-for-task')).resolves.toBe('preview_unavailable')
+        window.emit('responsive')
+      } else {
+        await vi.advanceTimersByTimeAsync(300_000)
+      }
+      await expect(first).resolves.toBe('preview_unavailable')
+
+      const retry = invoke(main, 'connect-for-task')
+      const current = invoke(window, 'pending')
+      expect(current.taskConnectId).not.toBe(expired.taskConnectId)
+      await expect(invoke(window, 'start', expired)).resolves.toMatchObject({
+        code: 'preview_unavailable',
+      })
+      expect(mocks.start).not.toHaveBeenCalled()
+      invoke(window, 'cancel-task-connect', current.taskConnectId)
+      await expect(retry).resolves.toBe('cancelled')
+    } finally {
+      vi.useRealTimers()
+    }
   }
 )

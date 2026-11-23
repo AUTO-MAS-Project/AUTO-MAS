@@ -15,7 +15,11 @@ export const DESKTOP_SESSION_CREDENTIAL_ERRORS: ReadonlySet<string> = new Set([
   'rdp_authentication_failed',
 ])
 
-export type DesktopSessionConnectResult = 'connected' | 'cancelled' | 'failed'
+export type DesktopSessionConnectResult =
+  | 'connected'
+  | 'cancelled'
+  | 'failed'
+  | 'preview_unavailable'
 
 export const DESKTOP_SESSION_REPAIRS = [
   'child_enabled',
@@ -34,8 +38,11 @@ export interface DesktopSessionRequest {
 }
 
 export type DesktopSessionPendingRequest = Omit<DesktopSessionRequest, 'password'> & {
+  taskConnectId?: number
   forTask: boolean
 }
+
+export type DesktopSessionStartRequest = DesktopSessionRequest & { taskConnectId?: number }
 
 export interface DesktopSessionSnapshot {
   state: 'idle' | 'checking' | 'blocked' | 'connecting' | 'connected' | 'disconnected'

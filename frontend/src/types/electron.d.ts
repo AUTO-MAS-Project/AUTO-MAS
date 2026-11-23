@@ -6,6 +6,7 @@ import type {
   DesktopSessionPrompt,
   DesktopSessionPromptAction,
   DesktopSessionRequest,
+  DesktopSessionStartRequest,
   DesktopSessionConnectResult,
   DesktopSessionRepair,
   DesktopSessionSnapshot,
@@ -556,7 +557,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   desktopSessionSupported?: () => Promise<boolean>
   desktopSessionOpen?: (input: DesktopSessionRequest) => Promise<void>
   desktopSessionConnectForTask?: () => Promise<DesktopSessionConnectResult>
-  desktopSessionCancelTaskConnect?: () => Promise<void>
+  desktopSessionCancelTaskConnect?: (id: number) => Promise<void>
   desktopSessionCheck?: () => Promise<DesktopSessionSnapshot | null>
   desktopSessionGetPrompt?: () => Promise<DesktopSessionPrompt | null>
   desktopSessionRespondToPrompt?: (id: number, action: DesktopSessionPromptAction) => Promise<void>
@@ -564,7 +565,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   desktopSessionRepair?: (plan: DesktopSessionRepair[]) => Promise<string | undefined>
   desktopSessionExportLogs?: () => Promise<boolean>
   desktopSessionPending?: () => Promise<DesktopSessionPendingRequest | null>
-  desktopSessionStart?: (request: DesktopSessionRequest) => Promise<DesktopSessionStartResult>
+  desktopSessionStart?: (request: DesktopSessionStartRequest) => Promise<DesktopSessionStartResult>
   desktopSessionBounds?: (bounds: { x: number; y: number; width: number; height: number }) => void
   desktopSessionWindow?: (action: 'show' | 'hide') => void
   desktopSessionVolume?: (volume: number) => void

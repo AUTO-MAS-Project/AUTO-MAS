@@ -37,6 +37,8 @@ import desktopSessionMessages from '../services/desktopSessionMessages.json'
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+const PREVIEW_ACCEPT_TIMEOUT_MS = 300_000
+
 const MODES: readonly DesktopSessionRequest['mode'][] = ['proxy', 'native']
 const RESOLUTIONS: readonly DesktopSessionRequest['resolution'][] = ['1080p', 'primary']
 
@@ -110,7 +112,10 @@ export function registerDesktopSession(
   let previewLoadFailed = false
   let viewport: Rectangle | null = null
   const pending: DesktopSessionRequest[] = []
+  let nextTaskConnectId = 0
   let autoConnect: {
+    id: number
+    acceptTimer?: ReturnType<typeof setTimeout>
     request: DesktopSessionRequest
     result: Promise<DesktopSessionConnectResult>
     startFinished: boolean
@@ -158,6 +163,7 @@ export function registerDesktopSession(
   function setRendererResponsive(window: BrowserWindow, responsive: boolean) {
     if (!responsive) {
       unresponsive.add(window)
+      if (window === preview && autoConnect?.acceptTimer) finishAutoConnect('preview_unavailable')
       return
     }
     unresponsive.delete(window)
@@ -355,6 +361,7 @@ export function registerDesktopSession(
     if (!autoConnect) return
     const index = pending.indexOf(autoConnect.request)
     if (index >= 0) pending.splice(index, 1)
+    clearTimeout(autoConnect.acceptTimer)
     autoConnect.finish(result)
     autoConnect = null
   }
@@ -462,13 +469,24 @@ export function registerDesktopSession(
       }
       if (closeFlight) return Promise.resolve('cancelled')
       if (autoConnect) return autoConnect.result
+      if (preview && unresponsive.has(preview)) return Promise.resolve('preview_unavailable')
       if (!preview && !service.active) openedForTask = true
       const request: DesktopSessionRequest = { queueIds: [], mode: 'proxy', resolution: '1080p' }
       let finish: (result: DesktopSessionConnectResult) => void = () => undefined
       const result = new Promise<DesktopSessionConnectResult>(resolve => {
         finish = resolve
       })
-      autoConnect = { request, result, finish, startFinished: false }
+      autoConnect = {
+        id: ++nextTaskConnectId,
+        request,
+        result,
+        finish,
+        startFinished: false,
+        acceptTimer: setTimeout(
+          () => finishAutoConnect('preview_unavailable'),
+          PREVIEW_ACCEPT_TIMEOUT_MS
+        ),
+      }
       pending.push(request)
       try {
         showPreview()
@@ -478,8 +496,8 @@ export function registerDesktopSession(
       return result
     }
   )
-  ipcMain.handle('desktop-session:cancel-task-connect', event => {
-    if (fromPreview(event)) finishAutoConnect('cancelled')
+  ipcMain.handle('desktop-session:cancel-task-connect', (event, id: unknown) => {
+    if (fromPreview(event) && autoConnect && autoConnect.id === id) finishAutoConnect('cancelled')
   })
   ipcMain.handle('desktop-session:check', event => (fromPreview(event) ? service.check() : null))
   ipcMain.handle('desktop-session:repair', (event, approved: unknown) =>
@@ -488,13 +506,21 @@ export function registerDesktopSession(
   ipcMain.handle('desktop-session:pending', event => {
     if (!fromPreview(event)) return null
     const request = pending.shift()
-    return request ? { ...request, forTask: request === autoConnect?.request } : null
+    if (!request) return null
+    return request === autoConnect?.request
+      ? { ...request, forTask: true, taskConnectId: autoConnect.id }
+      : { ...request, forTask: false }
   })
   ipcMain.handle('desktop-session:start', async (event, input: unknown) => {
     // 先确认来源，再做任何解析：fromPreview 之外的调用方拿不到校验细节。
     if (!fromPreview(event) || !preview) return { code: 'invalid_request', queues: [] }
+    const id = (input as { taskConnectId?: unknown } | null)?.taskConnectId
+    const taskConnect = id === undefined ? null : autoConnect
+    if (id !== undefined && (!taskConnect || id !== taskConnect.id)) {
+      return { code: 'preview_unavailable', queues: [] }
+    }
     if (closeFlight) {
-      if (autoConnect && !pending.includes(autoConnect.request)) {
+      if (taskConnect) {
         // 预览已取走请求，但本次启动没有进入服务，退出取消也无法恢复它。
         finishAutoConnect('cancelled')
         return { queues: [] }
@@ -510,7 +536,7 @@ export function registerDesktopSession(
     ) {
       return { code: 'invalid_request', queues: [] }
     }
-    const result = await service.start(
+    const start = service.start(
       { ...request, password },
       window.getNativeWindowHandle().readBigUInt64LE(),
       physicalBounds(),
@@ -532,16 +558,19 @@ export function registerDesktopSession(
         },
       }
     )
+    if (taskConnect) {
+      clearTimeout(taskConnect.acceptTimer)
+      taskConnect.acceptTimer = undefined
+    }
+    const result = await start
+    if (!taskConnect || autoConnect !== taskConnect) return result
+
     if (!result.code) {
-      if (autoConnect) autoConnect.startFinished = true
+      taskConnect.startFinished = true
       resumeAutoConnect()
     } else if (result.code === 'takeover_cancelled') {
       finishAutoConnect('cancelled')
-    } else if (
-      result.code &&
-      result.code !== 'busy' &&
-      !DESKTOP_SESSION_CREDENTIAL_ERRORS.has(result.code)
-    ) {
+    } else if (result.code && !DESKTOP_SESSION_CREDENTIAL_ERRORS.has(result.code)) {
       finishAutoConnect('failed')
     }
     return result
