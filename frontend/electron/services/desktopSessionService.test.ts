@@ -213,6 +213,39 @@ it.each([
   }
 )
 
+it('stops tasks admitted by the backend before the first poll when the session disconnects', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'mas-desktop-disconnected-stop-'))
+  let running = false
+  const stopped = vi.fn()
+  vi.stubGlobal('fetch', async (url: string) => {
+    switch (new URL(url).pathname) {
+      case '/internal/desktop-session/describe':
+        return Response.json({ python: 'python', root, source: root })
+      case '/internal/desktop-session/process-scope':
+        return Response.json({ updated: true })
+      case '/internal/desktop-session/state':
+        return Response.json({ idle: !running, admitted: Number(running) })
+      case '/internal/desktop-session/stop':
+        if (running) stopped()
+        running = false
+        return Response.json({ idle: true })
+      default:
+        throw new Error('Unexpected request')
+    }
+  })
+  const service = new DesktopSessionService(vi.fn(), vi.fn(), vi.fn())
+  try {
+    await service.start({ queueIds: [], mode: 'proxy', resolution: '1080p' }, 1n, [0, 0, 100, 100])
+    running = true
+    host.report({ event: 'state', state: 'disconnected' })
+    await vi.waitFor(() => expect(stopped).toHaveBeenCalledOnce(), { timeout: 2000 })
+    expect(running).toBe(false)
+  } finally {
+    await service.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 it('dispatches and stops tasks through the same main backend', async () => {
   const root = mkdtempSync(join(tmpdir(), 'mas-desktop-dispatch-'))
   const queueId = '00000000-0000-4000-8000-000000000001'

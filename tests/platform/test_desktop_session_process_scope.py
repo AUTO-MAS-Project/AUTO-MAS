@@ -746,6 +746,14 @@ async def test_desktop_close_separates_external_processes_and_blocks_new_tasks(
     monkeypatch.setattr(native, "session_state", lambda _: 0)
     assert service._connected_target().session_id == 7
 
+    # Windows 已自行注销原分身，用户仍应能确认关闭旧预览并收尾。
+    monkeypatch.setattr(native, "child_session", lambda: None)
+    assert await service.close_status(7, "confirmed", attempt_id=uuid4()) == (
+        False,
+        None,
+        True,
+    )
+
 
 @pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")
 @pytest.mark.asyncio

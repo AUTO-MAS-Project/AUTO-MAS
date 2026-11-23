@@ -5,6 +5,7 @@ import { message } from 'ant-design-vue'
 import { EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons-vue'
 import {
   DESKTOP_SESSION_CREDENTIAL_ERRORS,
+  type DesktopSessionPendingRequest,
   type DesktopSessionRequest,
   type DesktopSessionSnapshot,
   type DesktopQueueResult,
@@ -15,7 +16,7 @@ import DesktopSessionDiagnostics from './DesktopSessionDiagnostics.vue'
 const { t, te } = useI18n()
 const preview = ref<HTMLElement | null>(null)
 const snapshot = shallowRef<DesktopSessionSnapshot | null>(null)
-const pending = shallowRef<DesktopSessionRequest | null>(null)
+const pending = shallowRef<DesktopSessionPendingRequest | null>(null)
 const readingPending = ref(false)
 const results = shallowRef<DesktopQueueResult[]>([])
 const mode = ref<DesktopSessionRequest['mode']>('proxy')
@@ -144,9 +145,18 @@ async function start(secret?: string) {
   }
 }
 
+async function cancelTaskConnect() {
+  const request = pending.value
+  if (request && !request.forTask) return
+  await api?.desktopSessionCancelTaskConnect?.()
+  if (pending.value === request) pending.value = null
+  await readPending()
+}
+
 function cancelPassword() {
   password.value = ''
-  void api?.desktopSessionCancelTaskConnect?.()
+  passwordDialog.value = false
+  void cancelTaskConnect()
 }
 
 function submitPassword() {
@@ -304,6 +314,7 @@ onBeforeUnmount(() => {
           :starting="starting"
           @check="check"
           @repair-finished="onRepairFinished"
+          @repair-cancelled="cancelTaskConnect"
         />
       </a-flex>
     </div>

@@ -230,8 +230,9 @@ class _DesktopSessionLifecycle:
             try:
                 matches = child_session() == session_id
             except OSError:
-                matches = False
-            if not matches:
+                return has_tasks, None, False
+            # 已消失或已替换的会话仍需收尾旧预览，宿主会再次核对注销目标。
+            if not matches and mode != "confirmed":
                 return has_tasks, None, False
             unmanaged = (
                 None if mode == "confirmed" else has_unmanaged_processes(session_id)

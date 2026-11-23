@@ -16,6 +16,7 @@ const { snapshot } = defineProps<{
 const emit = defineEmits<{
   check: []
   'repair-finished': [code: string | undefined]
+  'repair-cancelled': []
 }>()
 const repairing = defineModel<boolean>('repairing', { required: true })
 const confirming = defineModel<boolean>('confirming', { required: true })
@@ -45,7 +46,7 @@ const diagnosticGroups = computed(() => {
 
 function cancelRepair() {
   confirming.value = false
-  void api?.desktopSessionCancelTaskConnect?.()
+  emit('repair-cancelled')
 }
 
 async function repairEnvironment() {

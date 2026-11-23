@@ -33,6 +33,10 @@ export interface DesktopSessionRequest {
   password?: string
 }
 
+export type DesktopSessionPendingRequest = Omit<DesktopSessionRequest, 'password'> & {
+  forTask: boolean
+}
+
 export interface DesktopSessionSnapshot {
   state: 'idle' | 'checking' | 'blocked' | 'connecting' | 'connected' | 'disconnected'
   windowState: 'visible' | 'hidden' | 'minimized'

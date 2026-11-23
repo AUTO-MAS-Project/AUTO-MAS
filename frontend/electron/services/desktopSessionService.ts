@@ -90,6 +90,7 @@ export class DesktopSessionService {
   private stopOperation: Promise<void> | null = null
   private repairOperation: Promise<string | undefined> | null = null
   private monitor: NodeJS.Timeout | undefined
+  private disconnectCleanupPending = false
   private reportedIdle = 0
   private retryIdleAt = 0
   private volume = 0
@@ -119,7 +120,16 @@ export class DesktopSessionService {
   }
 
   private patch(patch: Partial<DesktopSessionSnapshot>): void {
-    this.snapshot = { ...this.snapshot, ...patch }
+    const previous = this.snapshot
+    this.snapshot = { ...previous, ...patch }
+    if (
+      previous.state !== 'disconnected' &&
+      this.snapshot.state === 'disconnected' &&
+      this.snapshot.sessionId !== undefined
+    ) {
+      // 任务可由后端直接受理，断线时本地的执行标记可能尚未更新。
+      this.disconnectCleanupPending = true
+    }
     this.changed(this.snapshot)
   }
 
@@ -581,7 +591,9 @@ export class DesktopSessionService {
   private scheduleMonitor(): void {
     clearTimeout(this.monitor)
     if (
-      (this.snapshot.executing || this.snapshot.state === 'connected') &&
+      (this.snapshot.executing ||
+        this.snapshot.state === 'connected' ||
+        this.disconnectCleanupPending) &&
       !this.snapshot.closing
     ) {
       this.monitor = setTimeout(() => void this.monitorExecution(), 1000)
@@ -593,8 +605,9 @@ export class DesktopSessionService {
     const monitor = this.monitor
     try {
       if (this.snapshot.state === 'disconnected') {
+        const executing = this.snapshot.executing
         await this.stopTasks()
-        this.patch({ code: 'executor_interrupted' })
+        if (executing) this.patch({ code: 'executor_interrupted' })
       } else {
         const { idle, admitted } = await request<{ idle: boolean; admitted: number }>(
           getLocalApiEndpoint(),
@@ -632,6 +645,7 @@ export class DesktopSessionService {
     )
       .then(({ idle }) => {
         if (!idle) throw new DesktopSessionError('executor_failed')
+        this.disconnectCleanupPending = false
         this.patch({ executing: false })
       })
       .finally(() => {
@@ -667,7 +681,7 @@ export class DesktopSessionService {
   }
 
   private async stopTasksAndCloseViewer(options?: { logoff?: boolean }): Promise<void> {
-    if (this.snapshot.executing) await this.stopTasks()
+    if (this.snapshot.executing || this.disconnectCleanupPending) await this.stopTasks()
     await this.closeViewer(options)
   }
 
@@ -729,10 +743,11 @@ export class DesktopSessionService {
           throw new DesktopSessionError('session_changed')
         }
         if (status.activeTasks) await this.stopTasks()
-      } else if (this.snapshot.executing) {
+      } else if (this.snapshot.executing || this.disconnectCleanupPending) {
         await this.stopTasks()
       }
       await this.closeViewer(options)
+      this.disconnectCleanupPending = false
       reservation = undefined
       this.host?.stdin.end()
       this.host = null

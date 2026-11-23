@@ -316,7 +316,7 @@ class Host:
         # 只注销本次登录成功后登记的会话，或由 Electron 转交的已登记会话。
         self.viewer = None
         self.rdp_logon = None
-        if session is not None and logoff:
+        if session is not None and logoff and child_session() == session:
             self.session_id = session
             start = time.monotonic()
             logoff_child(session)

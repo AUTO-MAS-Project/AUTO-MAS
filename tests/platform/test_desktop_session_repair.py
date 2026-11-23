@@ -158,20 +158,26 @@ def test_repair_restores_configuration_when_connection_is_not_confirmed(
 
 
 @pytest.mark.parametrize(
-    "registered_session,logoff_requested,keeps_session",
+    "registered_session,current_child,logoff_requested,remaining_child",
     [
-        (None, True, True),
-        (42, None, True),
-        (42, False, True),
-        (42, True, False),
+        (None, 42, True, 42),
+        (42, 42, None, 42),
+        (42, 42, False, 42),
+        (42, 42, True, None),
+        (42, 43, True, 43),
     ],
 )
 def test_close_after_disconnect_logs_off_only_registered_session(
-    tmp_path, monkeypatch, registered_session, logoff_requested, keeps_session
+    tmp_path,
+    monkeypatch,
+    registered_session,
+    current_child,
+    logoff_requested,
+    remaining_child,
 ):
     from app.core.desktop_session import host
 
-    session = 42
+    session = current_child
     reports = []
 
     def current_session():
@@ -195,7 +201,7 @@ def test_close_after_disconnect_logs_off_only_registered_session(
     instance.report_viewer("state", state="disconnected", code="connect_timeout")
     instance.command({"action": "close", "logoff": logoff_requested})
 
-    assert session == (42 if keeps_session else None)
+    assert session == remaining_child
     assert reports[-1] == ("state", {"state": "idle"})
 
 

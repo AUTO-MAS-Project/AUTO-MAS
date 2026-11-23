@@ -475,7 +475,8 @@ export function registerDesktopSession(
   )
   ipcMain.handle('desktop-session:pending', event => {
     if (!fromPreview(event)) return null
-    return pending.shift() ?? null
+    const request = pending.shift()
+    return request ? { ...request, forTask: request === autoConnect?.request } : null
   })
   ipcMain.handle('desktop-session:start', async (event, input: unknown) => {
     // 先确认来源，再做任何解析：fromPreview 之外的调用方拿不到校验细节。
