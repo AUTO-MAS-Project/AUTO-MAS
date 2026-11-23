@@ -29,6 +29,7 @@ const state = (taskId: string): TaskRuntimeState => ({
   mode: TaskMode.AUTO_PROXY,
   trigger: TaskTriggerReason.MANUAL,
   scriptId: 'same-config',
+  targetId: null,
   userId: null,
   stopping: false,
   scripts: [],
