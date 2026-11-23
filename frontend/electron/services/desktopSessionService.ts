@@ -17,11 +17,11 @@ import type {
 type HostEvent = Record<string, unknown> & { event: string }
 type RuntimeDescription = { python: string; source: string; root: string }
 type StartPrompts = {
-  confirmTakeover: () => Promise<boolean>
+  confirmTakeover: () => Promise<boolean | null>
   confirmTaskDispatch: (targets: {
     desktop: DesktopQueueResult[]
     main: DesktopQueueResult[]
-  }) => Promise<'split' | 'desktop' | 'cancel'>
+  }) => Promise<'split' | 'desktop' | 'cancel' | null>
 }
 type QueueDispatchPlan = {
   queueIds: string[]
@@ -432,8 +432,9 @@ export class DesktopSessionService {
           prompts
         ) {
           await this.closeViewer({ logoff: false })
-          if (!(await prompts.confirmTakeover()))
-            throw new DesktopSessionError('takeover_cancelled')
+          const takeover = await prompts.confirmTakeover()
+          if (takeover === null) throw new DesktopSessionError('prompt_unavailable')
+          if (!takeover) throw new DesktopSessionError('takeover_cancelled')
           await this.updateParentScope(null, true)
           event = await connect(existing)
         }
@@ -540,6 +541,7 @@ export class DesktopSessionService {
     const desktop = preview.filter(target => !target.code)
     const main = preview.filter(target => target.code === 'unsupported_target')
     const choice = main.length ? await prompts.confirmTaskDispatch({ desktop, main }) : 'desktop'
+    if (choice === null) throw new DesktopSessionError('prompt_unavailable')
     if (choice === 'cancel') return
     return {
       queueIds: preview

@@ -386,8 +386,11 @@ export function registerDesktopSession(
       window.getNativeWindowHandle().readBigUInt64LE(),
       physicalBounds(),
       {
-        confirmTakeover: async () =>
-          !closeFlight && (await showPrompt(window, { kind: 'takeover' })) === 'takeover',
+        confirmTakeover: async () => {
+          if (closeFlight) return false
+          const action = await showPrompt(window, { kind: 'takeover' })
+          return action === null ? null : action === 'takeover'
+        },
         confirmTaskDispatch: async ({ desktop, main }) => {
           if (closeFlight) return 'cancel'
           const action = await showPrompt(window, {
@@ -395,6 +398,7 @@ export function registerDesktopSession(
             desktop: desktop.map(promptTarget),
             main: main.map(promptTarget),
           })
+          if (action === null) return null
           return action === 'split' || action === 'desktop' ? action : 'cancel'
         },
       }
