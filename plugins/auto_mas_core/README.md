@@ -23,19 +23,17 @@
 
 # auto_mas_core
 
-AUTO-MAS 插件基类、配置骨架与开发 SDK。运行时由宿主提供真实实现；SDK 不提供独立运行的宿主。
+AUTO-MAS 插件基类、配置骨架与开发 SDK。运行时由宿主提供真实实现，SDK 本身不包含独立宿主。
 
-## 版本与安装
+## 版本与构建
 
-发行版本与宿主一致，由 `scripts/changelog.py` 从 `CHANGELOG.md` 生成，沿用发布 CI 的 PEP 440 版本转换。宿主依赖同时生成到 `host-dependencies.txt`，供 wheel 元数据、共享环境解析和升级预检对齐。修改宿主依赖后运行 `python scripts/changelog.py sync`。
+- **发行版本**：跟随主程序，由 `scripts/changelog.py` 从 `CHANGELOG.md` 同步生成（含 PEP 440 版本转换与 `host-dependencies.txt`）。修改宿主依赖后运行 `python scripts/changelog.py sync`。
+- **协议版本**：`PLUGIN_API_VERSION = "6"` 独立表示插件协议兼容性。插件应在 `pyproject.toml` 中声明兼容的宿主发行范围（如 `auto_mas_core>=5.8,<5.9`），加载器会同时校验协议版本。
+- **本地加载与打包**：本地宿主直接加载 `src/` 并在插件共享环境登记元数据；打包发行使用 `uv build plugins/auto_mas_core`（含 `py.typed`）。
 
-`PLUGIN_API_VERSION = "6"` 是独立的插件协议版本，不能用作 SDK 发行版本。插件声明兼容的宿主发行范围，例如 `auto_mas_core>=5.8,<5.9`；加载器同时检查协议版本。
+## 最小插件入口
 
-本地宿主直接加载本目录 `src/`，并在插件共享环境登记对应发行元数据，不要求 uv workspace。发布包使用 `uv build plugins/auto_mas_core`；`py.typed` 随 wheel 发布。
-
-## 最小入口
-
-插件使用普通包和 `src/` 布局，在 `pyproject.toml` 声明发行信息、SDK 依赖及插件门禁 keywords，包入口导出 `PLUGIN`：
+插件使用普通 Python 包 + `src/` 布局，在 `pyproject.toml` 中声明元数据、SDK 依赖与插件 keywords，并在包入口导出 `PLUGIN`：
 
 ```python
 from auto_mas_core import BasePlugin, PLUGIN_API_VERSION
@@ -47,97 +45,65 @@ class PLUGIN(BasePlugin):
         get_logger("demo").info("插件已启用")
 ```
 
-插件通过 SDK 导入公开能力，避免直接依赖宿主 `app.*` 内部模块。配置使用 `PluginConfig`、`ConfigEntry`、`ConfigGroup`、`collection` 和现有 stage/commit、锁与信号机制。宿主从构造时起跟踪配置根，保存成功后才注销。卸载删除该插件的全部所属配置。
+插件通过 SDK 导入公开能力，避免直接依赖宿主内部 `app.*` 模块。自有配置继承 `PluginConfig`，沿用 `ConfigEntry`、`ConfigGroup`、`collection` 与现有的 stage/commit、锁与信号机制。卸载插件会清除该插件所属的全部配置。
 
-## 生命周期与资源
+## 生命周期、服务与路由
 
-宿主在 `pre_enable()` 前绑定 `self.services` 和 `self.background_tasks`。后台工作使用当前实例的任务组。停用、卸载和重载时，宿主关闭新调用准入，等待在途调用及真实背景工作结束；插件负责其外部进程、订阅和私有资源。
-
-服务通过 `provides_services` 声明，使用 `self.services.get(name)` 或 `require(name)` 消费，提供者启用早于依赖它的插件。HTTP 使用 `plugin_route` 声明，宿主在执行前绑定调用参数，业务异常不会触发二次调用。
-
-`on_teardown()` 用于程序退出清理，保留用户的启用选择。普通禁用沿用类型移除语义；适配器重载通过 `reload_type` 保留配置身份与引用。
+- **资源绑定与停用**：宿主在 `pre_enable()` 前绑定 `self.services` 与 `self.background_tasks`。停用、卸载或重载时，宿主先关闭新调用准入并等待在途调用与后台任务结束；外部进程、订阅与私有资源由插件自行释放。
+- **服务与 HTTP**：跨插件服务通过 `provides_services` 声明，使用 `self.services.get(name)` / `require(name)` 消费（提供者先于依赖者启用）。HTTP 路由使用 `plugin_route` 声明。
+- **退出与重载**：`on_teardown()` 用于应用退出清理（保留启用状态）；普通禁用会移除类型及关联配置；适配器重载通过 `reload_type` 保留配置身份与引用。
 
 ## 游戏与专项适配
 
-游戏和脚本通过 `GameTypeDecl` / `ScriptTypeDecl` 提交真实配置类型、控制器或展开类。宿主注入 `AdapterRuntime`；`GameControl.runtime` 提供当前 `silent` 和 `block_ad` 策略。覆写系统阶段入口时调用 `super()`。
-
-专项 `ScriptTypeDecl.prefetch_check` 接收脚本配置，异步返回 `list[DownloadRequest]`，空列表表示无需预下载。初查不取锁，L3 运行前取得配置锁后再复查。下载交由统一管理器，L3 从任务参数的专用 `prefetch_paths` 键读取资源键到路径的映射；不自动传入 L4。资源键默认是原 URL，`DownloadRequest.key` 可用插件命名空间内的稳定键替代变化的下载地址。
-
-资源键只定位资源；文件身份仍按 `rid`、`content_hash`、空身份的顺序确定。同一键和身份共享下载，URL 更新不会中止在用传输，后续重试使用最新地址；身份变化会另建文件，旧文件继续保留。查询、等待和释放必须使用同一资源键，Python 调用可用 `request.cache_key`，HTTP 释放可传 `key`，原 `url` 输入继续有效。
-
-专项通过 `auto_mas_core.host.core_downloads.download_file()` 消费时传入相同的 `key` 与 `rid`／哈希；宿主只复制本 L2 已交付且身份匹配的缓存文件，文件缺失或身份不匹配则执行正常下载。脚本复制后使用自己的副本，L2 收尾释放引用；最后一次释放取消未完成下载，已完成缓存仍按容量规则回收。
-
-迁移测试插件可通过 `auto_mas_core.host` 复用现有模拟器、MAA 共用工具等真实宿主能力；这些出口不提供独立宿主或旧任务框架。L2 在派发前向 `UserExpander.history` 绑定当前任务的实际 `TaskHistorySession`，供专项归档使用。
-
-任务展开使用 `UserExpander` 与真实模式的 `ModeWorker` 子类：`AutoProxyWorker`、`ScriptConfigWorker`、`ScriptViewWorker`。插件提供实际执行、结果判定以及 `finish()` 所需的保存与恢复，不依赖未实现的历史写入协议。
-
-**自动代理进度。** 不需要为专项绘制流程图或迁移用户配置。`auto_mas_core.adapters.script`
-提供运行内的观察接口；宿主识别自动代理的执行、收尾及任务结果，未报告的步骤保持未知。
-有细节的专项直接在已有动作、判定和规则的来源上报告：
+- **类型声明**：通过 `GameTypeDecl` / `ScriptTypeDecl` 提交配置类型、控制器或展开类；宿主注入 `AdapterRuntime`（`GameControl.runtime` 提供当前 `silent` / `block_ad` 策略）。覆写系统阶段入口时须调用 `super()`。
+- **任务展开**：继承 `UserExpander[MyScriptEntry]` 与具体模式 Worker（`AutoProxyWorker`、`ScriptConfigWorker`、`ScriptViewWorker`）。L2 派发前自动绑定 `UserExpander.history`（`TaskHistorySession`）。
+- **预下载与缓存键**：`ScriptTypeDecl.prefetch_check` 异步返回 `list[DownloadRequest]`（初查不取锁，L3 持锁后复查）。资源键默认是 URL，可用 `DownloadRequest.key` 指定插件命名空间内的稳定键；文件身份按 `rid` → `content_hash` → 空身份确定。消费时通过 `auto_mas_core.host.core_downloads.download_file()` 传入相同的 `key` 与身份信息，复制缓存后使用自身副本，L2 收尾释放引用。
+- **自动代理进度上报**：`auto_mas_core.adapters.script` 提供运行期进度接口（`observe_run(callback)` 接收 `(执行器, RunPoint)`，不改公共任务树或 WS 协议）：
 
 ```python
 from auto_mas_core.adapters.script import begin_attempt, operation, point
 
-begin_attempt(self, attempt_number)  # 从 1 起，只在真正开始下一次尝试时产生 retry
-with operation(self, "start_script"):  # 只包住失败时抛异常的调用
+begin_attempt(self, attempt_number)                     # 从 1 起，真正开始重试时触发 retry
+with operation(self, "start_script"):                   # 包裹失败时抛异常的调用
     await launcher.start()
-point(self, "special", state="matched", key="daily_reward")  # 在现有检测命中处
+point(self, "special", state="matched", key="daily")    # 在现有检测命中处上报
 ```
 
-脚本更新和游戏更新分别用 `script_update`、`game_update`，只在注册的更新动作真正进入时报告。
-主动中止不是运行失败，后续收尾仍可成功；子任务完成不等于整轮成功。`observe_run(callback)` 在当前
-执行上下文接收 `(执行器, RunPoint)`，不新增公共任务树字段、WebSocket 消息或磁盘格式。
-只有收尾时才读取的规则在收尾交付，不伪装成实时监听。更新或关闭动作未由 MAS 接管时，不补报成功。
-
-展开类可以继承 `UserExpander[MyScriptEntry]`，使 `script_config` 保留专项配置类型。仓库的 `pyrightconfig.json` 已声明 SDK 源码路径；包内其他模块使用相对导入，独立插件工程则在自己的开发环境安装 SDK。
-
-## 静态类型与开发环境
-
-SDK 顶层及 `host.*`、`utils`、`services`、`plugin` 的静态导出直接引用宿主的真实类型；运行时仍按需加载宿主能力。配置继承、泛型、装饰器和单例方法的类型不应通过动态 `__getattr__` 退化为 `Any`。
-
-当前 wheel 包含 `py.typed`，但没有携带 `app.*` 的类型桩。独立插件工程仅安装 wheel 仍不足以解析宿主类型；开发时需要同版本宿主源码，并将宿主根目录加入 Pyright/Pylance 的 `extraPaths`。使用源码版 SDK 时，同时加入 `plugins/auto_mas_core/src`。`py.typed` 只标记包提供类型信息，不会补齐这些外部定义。
-
-在宿主仓库运行 `pyright tests/core/plugin_sdk_typing.py plugins/auto_mas_core/src/auto_mas_core`，验证配置构建、集合泛型、虚拟字段、响应模型和宿主单例的类型。该文件是静态契约，不作为 pytest 运行入口。按项目开发方式，插件调试和类型检查依托匹配的宿主源码，不单独交付宿主类型桩。
+脚本更新与游戏更新分别使用 `script_update` / `game_update`，仅在受管更新真正进入时报告。
 
 ## 宿主服务与通知
 
-`auto_mas_core.services` 导出真实的 `BackgroundTaskManager`、`Downloads`、`Notify` 和 `run_in_worker`。跨插件服务总线位于 `auto_mas_core.plugin.services`；新插件优先使用实例绑定的 `self.services`。
-
-从 `auto_mas_core.notify` 获取宿主的实际 `Notify` 单例及消息类型，直接沿用渠道、模板、统计和签到摘要；没有插件专用通知协议或绑定：
+- `auto_mas_core.services` 导出宿主的 `BackgroundTaskManager`、`Downloads`、`Notify` 与 `run_in_worker`。
+- `auto_mas_core.notify` 直接复用宿主通知渠道、模板、统计与签到摘要：
 
 ```python
 from auto_mas_core.notify import Notify, NotifyPayload
 
-# 位于插件异步方法内
 result = await Notify.send_global(
-    NotifyPayload(title="通知标题", text="通知正文"), include_system=True
+    NotifyPayload(title="通知标题", text="通知正文"),
+    include_system=True,
 )
 ```
 
-`send_user()`、`send_statistics()` 和 `push_proxy_result()` 分别复用账号通知、统计策略和代理结果流程。`attempted == 0` 不表示已投递。通知服务统一读取新用户的 `notify` 配置和来源专项保留的 `Notify` 分组；调用方直接传入用户配置。
+`send_user()`、`send_statistics()`、`push_proxy_result()` 分别复用账号通知、统计策略与代理结果流程；`attempted == 0` 不代表已投递。
 
-## 界面与多语言
+## 静态类型与开发环境
 
-插件市场的名称、简介和标签统一在 README 开头的 `<!-- auto-mas:i18n … -->` 注释内声明，
-使用 `display_name_i18n`、`description_i18n`、`tags_i18n` 三个语言映射。
-这份 README 经 `project.readme` 进入发行包 METADATA 正文及 PyPI JSON 的 `info.description`，
-本地源码、已安装插件和未安装的市场条目共用同一解析方式。
-`project.description` 使用普通简介，`keywords` 保留普通关键词和插件身份标记，
-`project.urls` 只保存真实链接，不再用 URL 或 Keywords 携带多语言 JSON。
-此处仅描述市场展示元数据；插件业务界面的语言资源仍按下述资源机制提供。
+- SDK 顶层及 `host.*`、`utils`、`services`、`plugin` 均静态引用宿主真实类型；wheel 含 `py.typed`，但不打包 `app.*` 类型桩。
+- 独立插件工程开发时需配合同版本宿主源码，并将宿主根目录（源码版 SDK 另加 `plugins/auto_mas_core/src`）加入 Pyright / Pylance 的 `extraPaths`。
+- 在主仓库中可通过 `pyright tests/core/plugin_sdk_typing.py plugins/auto_mas_core/src/auto_mas_core` 校验 SDK 静态类型契约。
 
-宿主提供插件中心、市场和声明式配置页面。插件语言资源放在包内 `i18n/`，键使用 `plugins.<plugin_id>.*`；core 与插件资源由同一个后端快照提供。当前 SDK 不声明任意 iframe、自定义元素或动态前端资源加载器。
+## 市场元数据与界面多语言
 
-## 插件配置命令
+- **市场展示信息**：在插件 README 顶部使用 `<!-- auto-mas:i18n ... -->` 声明 `display_name_i18n`、`description_i18n`、`tags_i18n`（随 `project.readme` 进入发行包 METADATA，本地源码与市场共用解析）。
+- **界面词表**：放在包内 `i18n/` 目录，键名以 `plugins.<plugin_id>.*` 为前缀，与 core 词表由同一后端快照下发。
 
-插件自有配置继承 `PluginConfig`。在配置分组声明 `field: Trigger = None`，用 `@trigger_field("group.field")` 绑定无参同步或异步实例方法。
+## 插件配置触发器（Trigger）
 
-用 `entry.write_trigger(group, field, value)` 写入命令。传 `None` 跳过，传 `True` 启动或返回当前任务 UUID，传 `False` 请求取消当前任务。配置 `update()` 也接受同样的命令值，仍返回 `None`。属性读取返回 `UUID | None`。接口使用配置自身 UID，可通过 `/api/config/triggers/write` 写入，并通过 `/api/config/triggers/result` 查任务结果。触发器字段和 UUID 从配置文件及备份中省略。
+- 在 `PluginConfig` 分组中声明 `field: Trigger = None`（或 `trigger(timeout=120, description="...")`，默认超时 15 分钟），并用 `@trigger_field("group.field")` 绑定无参同步或异步方法。
+- 通过 `entry.write_trigger(group, field, value)` 或 `/api/config/triggers/write` 写入（`True` 启动/返回当前任务 UUID，`False` 请求取消，`None` 跳过），通过 `/api/config/triggers/result` 查询结果；触发器字段不写入配置文件和备份。
+- 同步处理器在独立线程池运行，异步处理器中的阻塞调用应使用 `run_in_worker`；需确保副作用完整收尾时可声明 `finish_on_cancel=True`。
 
-配置管理器托管执行和回收。同步处理器进入独立线程池，异步处理器通过事件循环运行。异步处理器中的阻塞调用应使用 `run_in_worker`。默认超时 15 分钟。可在字段声明时使用 `field: Trigger = trigger(timeout=120, description="刷新资源")` 覆盖，单位秒。取消或超时后，已经开始的线程调用须实际退出才清除字段占用。插件方法若有必须完整收尾的副作用，可以声明 `finish_on_cancel=True`，让已经开始的处理器安全完成后再结束任务。可中断的异步方法应使用 `finally` 清理资源。
+## 临时桥接说明
 
-
-## 旧脚本更新桥接
-
-`auto_mas_core.host.core_script_update`、`core_script_update_recovery` 和 `core_script_update_queue` 仅供临时复用旧 manager 的测试适配使用，不作为新插件更新协议。
-预下载由 L2 的 `PrefetchSession` 统一处理；恢复汇总位于 `app/task/script_update.py`。检查、安装和恢复业务后续全部迁入 L2，再删除旧 manager 的兼容入口及这些桥接。
+`auto_mas_core.host.core_script_update`、`core_script_update_recovery` 与 `core_script_update_queue` 仅用于旧 manager 过渡期复用，不作为新插件的更新协议；后续将统一迁入 L2 后移除。
