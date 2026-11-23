@@ -43,7 +43,9 @@ class TestWindow extends EventEmitter {
   getContentBounds = () => ({ x: 0, y: 0, width: 600, height: 400 })
   getNativeWindowHandle = () => Buffer.alloc(8)
   loadFile = async () => {
-    this.webContents.mainFrame.url += '#/desktop-session'
+    this.crashed = false
+    this.webContents.mainFrame.url =
+      pathToFileURL(resolve('test-app/dist/index.html')).href + '#/desktop-session'
   }
 }
 
@@ -242,6 +244,29 @@ it.runIf(process.platform === 'win32' && process.arch === 'x64')(
     expect(mocks.start).not.toHaveBeenCalled()
     const retry = invoke(main, 'connect-for-task')
     expect(retry).not.toBe(first)
+    expect(invoke(window, 'pending')).toMatchObject({ forTask: true })
+    invoke(window, 'cancel-task-connect')
+    await expect(retry).resolves.toBe('cancelled')
+  }
+)
+
+it.runIf(process.platform === 'win32' && process.arch === 'x64')(
+  '预览崩溃后再次启动托管会重新加载页面并处理新的连接请求',
+  async () => {
+    const main = new TestWindow()
+    registerDesktopSession(
+      () => main as unknown as BrowserWindow,
+      '',
+      () => 'en-US'
+    )
+    const first = invoke(main, 'connect-for-task')
+    const window = preview!
+    window.crashed = true
+    window.webContents.emit('render-process-gone')
+    await expect(first).resolves.toBe('failed')
+
+    const retry = invoke(main, 'connect-for-task')
+    expect(window.webContents.isCrashed()).toBe(false)
     expect(invoke(window, 'pending')).toMatchObject({ forTask: true })
     invoke(window, 'cancel-task-connect')
     await expect(retry).resolves.toBe('cancelled')

@@ -339,6 +339,7 @@ it.each([
   { choice: 'split', dispatchedIds: ['desktop', 'emulator'], mainIds: ['emulator'] },
   { choice: 'desktop', dispatchedIds: ['desktop'] },
   { choice: 'cancel', dispatchedIds: [] },
+  { choice: null, dispatchedIds: [] },
 ] as const)(
   'waits for the mixed-session choice ($choice)',
   async ({ choice, dispatchedIds, ...expected }) => {
@@ -387,7 +388,7 @@ it.each([
           },
         }
       )
-      expect(result.code).toBeUndefined()
+      expect(result.code).toBe(choice === null ? 'prompt_unavailable' : undefined)
       expect(submissions).toEqual(
         dispatchedIds.length
           ? [

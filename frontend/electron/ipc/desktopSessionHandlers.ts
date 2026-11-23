@@ -107,6 +107,7 @@ export function registerDesktopSession(
     return desktopSessionMessages['en-US']
   }
   let preview: BrowserWindow | null = null
+  let previewLoadFailed = false
   let viewport: Rectangle | null = null
   const pending: DesktopSessionRequest[] = []
   let autoConnect: {
@@ -358,13 +359,26 @@ export function registerDesktopSession(
     autoConnect = null
   }
 
+  function loadPreview(window: BrowserWindow) {
+    previewLoadFailed = false
+    const dev = getDevelopmentServerUrl()
+    const load = dev
+      ? window.loadURL(`${dev}#/desktop-session`)
+      : window.loadFile(join(app.getAppPath(), 'dist', 'index.html'), { hash: '/desktop-session' })
+    void load.catch(() => {
+      if (preview !== window) return
+      previewLoadFailed = true
+      finishAutoConnect('failed')
+    })
+  }
+
   function showPreview() {
     if (preview && !preview.isDestroyed()) {
       if (preview.isMinimized()) preview.restore()
       preview.show()
       preview.focus()
-      if (pending.length && hasRenderer(preview))
-        preview.webContents.send('desktop-session:pending')
+      if (previewLoadFailed || !hasRenderer(preview)) loadPreview(preview)
+      else if (pending.length) preview.webContents.send('desktop-session:pending')
       return
     }
     viewport = null
@@ -397,9 +411,6 @@ export function registerDesktopSession(
     window.webContents.on('render-process-gone', () => {
       if (preview === window) finishAutoConnect('failed')
     })
-    window.webContents.on('did-fail-load', (_event, _code, _description, _url, isMainFrame) => {
-      if (preview === window && isMainFrame) finishAutoConnect('failed')
-    })
     window.on('closed', () => {
       if (preview === window) {
         preview = null
@@ -417,12 +428,7 @@ export function registerDesktopSession(
       updateBounds()
       updateWindowState()
     })
-    const dev = getDevelopmentServerUrl()
-    if (dev) void window.loadURL(`${dev}#/desktop-session`)
-    else
-      void window.loadFile(join(app.getAppPath(), 'dist', 'index.html'), {
-        hash: '/desktop-session',
-      })
+    loadPreview(window)
   }
 
   ipcMain.handle(
@@ -509,8 +515,11 @@ export function registerDesktopSession(
       window.getNativeWindowHandle().readBigUInt64LE(),
       physicalBounds(),
       {
-        confirmTakeover: async () =>
-          !closeFlight && (await showPrompt(window, { kind: 'takeover' })) === 'takeover',
+        confirmTakeover: async () => {
+          if (closeFlight) return false
+          const action = await showPrompt(window, { kind: 'takeover' })
+          return action === null ? null : action === 'takeover'
+        },
         confirmTaskDispatch: async ({ desktop, main }) => {
           if (closeFlight) return 'cancel'
           const action = await showPrompt(window, {
@@ -518,6 +527,7 @@ export function registerDesktopSession(
             desktop: desktop.map(promptTarget),
             main: main.map(promptTarget),
           })
+          if (action === null) return null
           return action === 'split' || action === 'desktop' ? action : 'cancel'
         },
       }
