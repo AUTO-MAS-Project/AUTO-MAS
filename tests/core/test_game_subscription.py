@@ -449,6 +449,62 @@ async def _plugin_script_world(scheduler, monkeypatch, expander, game):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("deferred", [False, True], ids=["preselected", "deferred"])
+async def test_plugin_deferred_game_selection_waits_for_runnable_accounts(
+    scheduler, monkeypatch, deferred
+):
+    """插件声明「确认有可运行账号之后自己选定」：没有可运行账号时不占游戏、不排队；
+    有账号时由插件选定。没声明的类型照旧由 L2 在派 L3 之前选定。"""
+    from app.models.task import TaskMode
+    from app.task.user_expander import UserExpander
+
+    runnable = [False]
+    seen: list[bool] = []
+
+    class Expander(UserExpander):
+        defer_game_session = deferred
+
+        async def main_task(self):
+            self._entered = True
+            seen.append(self.game_session.control is not None)
+            if runnable[0]:
+                await self.select_game_session()
+                seen.append(self.game_session.control is not None)
+
+        def build_worker(self, user, config):
+            raise NotImplementedError
+
+    manager = scheduler[0]
+    sid, gid = await _plugin_script_world(scheduler, monkeypatch, Expander, None)
+    game_manager = _GameManager()
+    monkeypatch.setattr("app.core.GameManager", game_manager)
+
+    async def run_once():
+        uid = await manager.start(
+            TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(sid)}}}}
+        )
+        run = manager.task_handler[uid]
+        await asyncio.wait_for(run.accomplish.wait(), 3)
+        return run.task_info.script_list[0]
+
+    if deferred:
+        # 串行游戏被别的托管占着：没有可运行账号的这一轮不该排队等它。
+        _, holder = await game_manager.subscribe(gid)
+        try:
+            script = await run_once()
+        finally:
+            await game_manager.unsubscribe(holder)
+        assert seen == [False]
+        assert "等待获取游戏实例" not in script.log
+        seen.clear()
+
+    runnable[0] = True
+    script = await run_once()
+    assert seen == ([False, True] if deferred else [True, True])
+    assert "已获取游戏实例「测试游戏」" in script.log
+
+
+@pytest.mark.asyncio
 async def test_failed_game_selection_marks_waiting_accounts_failed(
     scheduler, monkeypatch
 ):

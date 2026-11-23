@@ -268,11 +268,14 @@ class ScriptExpander(TaskBase):
                     )
                     if declaration.expect_builder is not None:
                         self._game_session.expect = declaration.expect_builder(entry)
-                    try:
-                        await self._game_session.select()
-                    except Exception:
-                        selection_failed = True
-                        raise
+                    if not plugin.defer_game_session:
+                        # 声明了的插件在确认有可运行账号之后自己选定（同旧专项
+                        # after_config_lock），没有账号就不占游戏、不排队。
+                        try:
+                            await self._game_session.select()
+                        except Exception:
+                            selection_failed = True
+                            raise
                     plugin.game_session = self._game_session
                     plugin.context = self.context.with_params(script.info.params)
                     plugin.history = self.history

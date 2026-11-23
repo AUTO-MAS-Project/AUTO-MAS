@@ -157,6 +157,8 @@ def on_stop_requested(self) -> None:
         self._manager._on_finalize_cancel_requested()
 ```
 
+**确认有账号之后再选定游戏。** 默认 L2 在派发 L3 之前选定托管绑定的游戏会话（可能要排队等串行游戏或设备）。L3 类属性 `defer_game_session = True` 表示「由我在确认有可运行账号之后选定」：L2 不提前选定，L3 在确认之后 `await self.select_game_session()`；没有可运行账号就不调，不占游戏、不排队。`select_game_session(config=None)` 的参数不使用，可以直接交给旧专项管理器当 `after_config_lock` 回调（`manager.after_config_lock = self.select_game_session`）。选定失败照原样抛出，由调用方按托管级检查失败处理。没声明的插件行为不变；没声明时 L2 选定失败，托管记「异常」、发 error 提示，尚未开始的账号记「异常」。这两项在旧宿主上不存在，插件要兼容旧宿主时用 `hasattr(UserExpander, "select_game_session")` 判断，旧宿主上 L2 仍会提前选定。
+
 展开类可以继承 `UserExpander[MyScriptEntry]`，使 `script_config` 保留专项配置类型。仓库的 `pyrightconfig.json` 已声明 SDK 源码路径；包内其他模块使用相对导入，独立插件工程则在自己的开发环境安装 SDK。
 
 ## 托管配置的加载状态
