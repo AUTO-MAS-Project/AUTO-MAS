@@ -653,13 +653,13 @@ class MaaManager(ScriptManagerBase):
                 # 用户停止也会经过账号收尾；未确认停写时，父层不能还原原生配置。
                 if isinstance(task, AutoProxyTask) and task.stop_unconfirmed:
                     self._updater_running = True
+                # 即使安装失败并停止后续账号，也要把当前账号的失败截图带入汇总通知。
+                if images := getattr(task, "report_image_pairs", None):
+                    self._rollup_image_pairs.extend(images)
             if isinstance(task, AutoProxyTask):
                 if task.install_error is not None:
                     raise task.install_error
                 self._remember_pending_update()
-            # AutoProxyTask 失败时在关模拟器前存有现场画面；ScriptConfig 会话没有
-            if getattr(task, "report_image_pairs", None):
-                self._rollup_image_pairs.extend(task.report_image_pairs)
 
     async def prefetch_script_update(self) -> None:
         from .tools.fluxdown_update import PreparedUpdate

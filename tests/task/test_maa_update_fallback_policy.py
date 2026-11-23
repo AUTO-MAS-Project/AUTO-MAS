@@ -3,9 +3,12 @@
 import asyncio
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, Mock
+from uuid import uuid4
 
 import pytest
 
+from app.models.config import MaaConfig
+from app.models.notification import NotificationImage
 from app.task.MAA import manager
 from app.task.MAA.tools.update_errors import MaaUpdateUnsafeError
 from tests.runtime_support import RuntimeStub as SimpleNamespace
@@ -222,6 +225,50 @@ async def test_failed_update_injects_runtime_config_and_restores_pending_package
     restored = json.loads((root / "config/gui.new.json").read_text(encoding="utf-8"))
     assert restored == original
     assert read_pending_update(root) == ("v6.1.0", str(package))
+
+
+@pytest.mark.asyncio
+async def test_batch_keeps_failure_image_when_install_stops_later_accounts(
+    managed_run, monkeypatch
+):
+    users = [uuid4(), uuid4()]
+    managed_run.maintenance = False
+    managed_run.task_info.mode = "AutoProxy"
+    managed_run.task_info.is_queue_task = False
+    managed_run.script_config = MaaConfig()
+    managed_run.script_info.user_list = [
+        SimpleNamespace(user_id=str(uid)) for uid in users
+    ]
+    managed_run.game_update_results = {}
+    managed_run.emulator_manager = Mock()
+    managed_run.user_config = {
+        uid: SimpleNamespace(
+            Info=SimpleNamespace(Server="Official"),
+            Data=SimpleNamespace(
+                LastProxyDate=manager._utils_constants.game_now("Official")
+            ),
+        )
+        for uid in users
+    }
+    managed_run.check = AsyncMock(return_value="Pass")
+    managed_run.prepare = AsyncMock()
+    managed_run._recover_unconfirmed_update = AsyncMock()
+    managed_run._prepare_software_update_once = AsyncMock()
+    managed_run.check_user_before_run = AsyncMock(return_value=True)
+    task = object.__new__(manager.AutoProxyTask)
+    image = NotificationImage(id="failure", data=b"capture")
+    task.report_image_pairs = [("账号一", image)]
+    task.install_error = MaaUpdateUnsafeError("安装未完成")
+    monkeypatch.setitem(manager.METHOD_BOOK, "AutoProxy", lambda **kwargs: task)
+    managed_run.run_user_task = AsyncMock()
+
+    with pytest.raises(MaaUpdateUnsafeError) as raised:
+        await managed_run.main_task()
+    assert raised.value is task.install_error
+    assert managed_run._rollup_image_pairs == [("账号一", image)]
+    managed_run.run_user_task.assert_awaited_once_with(
+        managed_run.script_info.user_list[0], task
+    )
 
 
 @pytest.mark.asyncio
