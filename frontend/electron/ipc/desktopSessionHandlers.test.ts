@@ -312,3 +312,55 @@ it.runIf(process.platform === 'win32' && process.arch === 'x64').each(['unrespon
     }
   }
 )
+
+it
+  .runIf(process.platform === 'win32' && process.arch === 'x64')
+  .each(['while connecting', 'while waiting for password'])(
+  '预览失去响应后结束密码等待，并允许重新连接 (%s)',
+  async failure => {
+    const main = new TestWindow()
+    registerDesktopSession(
+      () => main as unknown as BrowserWindow,
+      '',
+      () => 'en-US'
+    )
+    const first = invoke(main, 'connect-for-task')
+    const window = preview!
+    const expired = invoke(window, 'pending')
+    const [, bounds] = mocks.on.mock.calls.find(([name]) => name === 'desktop-session:bounds')!
+    bounds(
+      { sender: window.webContents, senderFrame: window.webContents.mainFrame },
+      { x: 0, y: 0, width: 500, height: 300 }
+    )
+    const start = Promise.withResolvers<{ code: string; queues: [] }>()
+    mocks.start.mockReturnValueOnce(start.promise)
+    const connecting = invoke(window, 'start', expired)
+    if (failure === 'while connecting') {
+      window.emit('unresponsive')
+      expect(invoke(main, 'connect-for-task')).toBe(first)
+    }
+    start.resolve({ code: 'password_required', queues: [] })
+    if (failure === 'while waiting for password') {
+      await expect(connecting).resolves.toMatchObject({ code: 'password_required' })
+      window.emit('unresponsive')
+    } else {
+      await expect(connecting).resolves.toMatchObject({ code: 'preview_unavailable' })
+    }
+    await expect(first).resolves.toBe('preview_unavailable')
+
+    window.emit('responsive')
+    const retry = invoke(main, 'connect-for-task')
+    const current = invoke(window, 'pending')
+    expect(current.taskConnectId).not.toBe(expired.taskConnectId)
+    await expect(
+      invoke(window, 'start', { ...expired, password: 'late-password' })
+    ).resolves.toMatchObject({
+      code: 'preview_unavailable',
+    })
+    expect(mocks.start).toHaveBeenCalledTimes(1)
+    mocks.start.mockResolvedValueOnce({ queues: [] })
+    snapshot.state = 'connected'
+    await invoke(window, 'start', current)
+    await expect(retry).resolves.toBe('connected')
+  }
+)

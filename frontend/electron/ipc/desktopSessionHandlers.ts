@@ -118,7 +118,7 @@ export function registerDesktopSession(
     acceptTimer?: ReturnType<typeof setTimeout>
     request: DesktopSessionRequest
     result: Promise<DesktopSessionConnectResult>
-    startFinished: boolean
+    phase: 'waiting-preview' | 'connecting' | 'waiting-password' | 'start-finished'
     finish: (result: DesktopSessionConnectResult) => void
   } | null = null
   let openedForTask = false
@@ -163,7 +163,12 @@ export function registerDesktopSession(
   function setRendererResponsive(window: BrowserWindow, responsive: boolean) {
     if (!responsive) {
       unresponsive.add(window)
-      if (window === preview && autoConnect?.acceptTimer) finishAutoConnect('preview_unavailable')
+      if (
+        window === preview &&
+        (autoConnect?.phase === 'waiting-preview' || autoConnect?.phase === 'waiting-password')
+      ) {
+        finishAutoConnect('preview_unavailable')
+      }
       return
     }
     unresponsive.delete(window)
@@ -352,7 +357,7 @@ export function registerDesktopSession(
   }
 
   function resumeAutoConnect() {
-    if (!closeFlight && autoConnect?.startFinished) {
+    if (!closeFlight && autoConnect?.phase === 'start-finished') {
       finishAutoConnect(service.snapshot.state === 'connected' ? 'connected' : 'failed')
     }
   }
@@ -481,7 +486,7 @@ export function registerDesktopSession(
         request,
         result,
         finish,
-        startFinished: false,
+        phase: 'waiting-preview',
         acceptTimer: setTimeout(
           () => finishAutoConnect('preview_unavailable'),
           PREVIEW_ACCEPT_TIMEOUT_MS
@@ -561,16 +566,23 @@ export function registerDesktopSession(
     if (taskConnect) {
       clearTimeout(taskConnect.acceptTimer)
       taskConnect.acceptTimer = undefined
+      taskConnect.phase = 'connecting'
     }
     const result = await start
     if (!taskConnect || autoConnect !== taskConnect) return result
 
     if (!result.code) {
-      taskConnect.startFinished = true
+      taskConnect.phase = 'start-finished'
       resumeAutoConnect()
     } else if (result.code === 'takeover_cancelled') {
       finishAutoConnect('cancelled')
-    } else if (result.code && !DESKTOP_SESSION_CREDENTIAL_ERRORS.has(result.code)) {
+    } else if (DESKTOP_SESSION_CREDENTIAL_ERRORS.has(result.code)) {
+      if (unresponsive.has(window)) {
+        finishAutoConnect('preview_unavailable')
+        return { ...result, code: 'preview_unavailable' }
+      }
+      taskConnect.phase = 'waiting-password'
+    } else {
       finishAutoConnect('failed')
     }
     return result
