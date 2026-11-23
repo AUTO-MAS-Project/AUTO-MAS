@@ -3,7 +3,7 @@ import { onScopeDispose, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { translate as t } from '@/i18n'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
-import { useTaskApi } from '@/composables/useTaskApi'
+import { TaskStartCancelled, useTaskApi } from '@/composables/useTaskApi'
 
 interface TrayTaskActionsOptions {
   active: Readonly<Ref<boolean>>
@@ -39,7 +39,7 @@ export function useTrayTaskActions(options: TrayTaskActionsOptions): void {
         })
       })
       .catch(error => {
-        if (disposed) return
+        if (disposed || error instanceof TaskStartCancelled) return
         const errorMsg =
           (error instanceof Error ? error.message : String(error)) ||
           t('core.scheduler.toast.startTaskFailed')

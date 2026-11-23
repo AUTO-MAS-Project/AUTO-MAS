@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type MaaFWConfig_RunInput = {
     /**
+     * 单独启动托管时使用的 Windows 会话
+     */
+    ExecutionSession?: ('main' | 'desktop' | null);
+    /**
      * 每天正常完成一次后，当天剩余时间跳过的 MaaFW 任务名列表
      */
     DailyOnceTasks?: (string | null);

@@ -17,6 +17,7 @@ const { snapshot } = defineProps<{
 const emit = defineEmits<{
   check: []
   'repair-finished': [code: string | undefined]
+  'repair-cancelled': []
 }>()
 const repairing = defineModel<boolean>('repairing', { required: true })
 const confirming = defineModel<boolean>('confirming', { required: true })
@@ -43,6 +44,11 @@ const diagnosticGroups = computed(() => {
     { title: 'accountSection', items: checks.filter(check => isAccountCheck(check.code)) },
   ].filter(group => group.items.length)
 })
+
+function cancelRepair() {
+  confirming.value = false
+  emit('repair-cancelled')
+}
 
 async function repairEnvironment() {
   const plan = repairConfirmation.value
@@ -128,7 +134,7 @@ async function exportLogs() {
     :cancel-text="t('bootstrap.desktopSession.cancel')"
     ok-danger
     @ok="repairEnvironment"
-    @cancel="confirming = false"
+    @cancel="cancelRepair"
   >
     <a-alert type="warning" show-icon :message="t('bootstrap.desktopSession.repairConfirm')" />
     <ul>

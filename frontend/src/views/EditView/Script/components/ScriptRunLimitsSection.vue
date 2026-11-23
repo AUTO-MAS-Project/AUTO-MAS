@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import ScriptExecutionSessionField from './ScriptExecutionSessionField.vue'
 import ScriptHardTimeoutField from './ScriptHardTimeoutField.vue'
 import ScriptRunLimitField from './ScriptRunLimitField.vue'
 
@@ -23,6 +24,7 @@ const { t } = useI18n()
 </script>
 
 <template>
+  <ScriptExecutionSessionField />
   <ScriptHardTimeoutField v-model:value="hardTimeLimit" @save="emit('save', 'HardTimeLimit')" />
   <a-row :gutter="24">
     <a-col :span="8">

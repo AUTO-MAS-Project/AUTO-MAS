@@ -91,8 +91,18 @@ const RETAINED_UNUSED_KEYS = new Map([
 // desktopSessionHandlers.ts 的原生关闭对话框通过 JSON 属性读取这些键。
 const ELECTRON_MESSAGE_KEYS = [
   'bootstrap.desktopSession.closeTitle',
-  'bootstrap.desktopSession.closeConfirm',
-  'bootstrap.desktopSession.closeContinue',
+  'bootstrap.desktopSession.closeQuestion',
+  'bootstrap.desktopSession.closeAdoptedQuestion',
+  'bootstrap.desktopSession.closeLogoff',
+  'bootstrap.desktopSession.closeActiveTasksHint',
+  'bootstrap.desktopSession.closeUnmanagedProgramsHint',
+  'bootstrap.desktopSession.closeUnverifiedPrograms',
+  'bootstrap.desktopSession.quitWithDesktopTitle',
+  'bootstrap.desktopSession.quitWithDesktopQuestion',
+  'bootstrap.desktopSession.quitWithDesktopContinue',
+  'bootstrap.desktopSession.disconnectOnly',
+  'bootstrap.desktopSession.cancel',
+  'bootstrap.desktopSession.closeFailedTitle',
   'bootstrap.desktopSession.closeFailed',
 ]
 
