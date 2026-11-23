@@ -124,7 +124,7 @@
     @delete="handleDeleteScript"
     @add-user="handleAddUser"
     @edit-user="handleEditUser"
-    :on-delete-user="handleDeleteUser"
+    :delete-user="handleDeleteUser"
     @start-maa-config="handleStartMAAConfig"
     @start-src-config="handleStartSRCConfig"
     @start-maa-end-config="handleStartMaaEndConfig"

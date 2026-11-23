@@ -75,8 +75,7 @@
                     :password-expanded="expandedUserPasswords.has(user.id)"
                     @toggle-disclosure="toggleDisclosure"
                     @edit="emit('editUser', $event)"
-                    :on-delete="props.onDeleteUser"
-                    @delete="emit('deleteUser', $event)"
+                    :delete-user="props.deleteUser"
                     @toggle-status="emit('toggleUserStatus', $event)"
                   />
                 </template>
@@ -119,7 +118,7 @@ interface Props {
   copyingScriptId?: string | null
   searching?: boolean
   retryingUsers?: ReadonlySet<string>
-  onDeleteUser?: (user: ScriptListUser) => void | Promise<unknown>
+  deleteUser: (user: ScriptListUser) => void | Promise<unknown>
 }
 
 interface Emits {
@@ -133,8 +132,6 @@ interface Emits {
   (e: 'addUser', script: ScriptListItem): void
 
   (e: 'editUser', user: ScriptListUser): void
-
-  (e: 'deleteUser', user: ScriptListUser): void
 
   (e: 'startMaaConfig', script: ScriptListItem): void
 

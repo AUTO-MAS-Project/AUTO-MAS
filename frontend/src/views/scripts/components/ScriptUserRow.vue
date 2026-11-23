@@ -24,11 +24,10 @@ const props = defineProps<{
   user: ScriptListUser
   accountExpanded: boolean
   passwordExpanded: boolean
-  onDelete?: (user: ScriptListUser) => void | Promise<unknown>
+  deleteUser: (user: ScriptListUser) => void | Promise<unknown>
 }>()
 const emit = defineEmits<{
   edit: [user: ScriptListUser]
-  delete: [user: ScriptListUser]
   toggleStatus: [user: ScriptListUser]
   toggleDisclosure: [userId: string, kind: 'account' | 'password']
 }>()
@@ -58,8 +57,7 @@ const handlePasswordClick = (user: ScriptListUser) =>
 const handleZzzOdAccountClick = (user: ScriptListUser) =>
   copyAndExpand(user, 'account', getZzzOdAccountValue(user))
 const handleEditUser = (user: ScriptListUser) => emit('edit', user)
-const handleDeleteUser = (user: ScriptListUser) =>
-  props.onDelete ? props.onDelete(user) : emit('delete', user)
+const handleDeleteUser = (user: ScriptListUser) => props.deleteUser(user)
 const handleToggleUserStatus = (user: ScriptListUser) => emit('toggleStatus', user)
 // 获取账号ID显示文本
 const getUserIdDisplayText = (user: ScriptListUser): string => {
