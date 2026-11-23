@@ -504,6 +504,71 @@ async def test_github_resources_are_installed_before_return(resource_install, fl
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("interruption", [None, "offline", "cancelled"])
+async def test_round_install_repairs_managed_resource_downgrade(
+    resource_install, monkeypatch, interruption
+):
+    root, target_clock, downloader = resource_install
+    monkeypatch.chdir(root.parent)
+    await resource.prepare_install_resources(root, cdk=None, github=True)
+    scheduler = object.__new__(manager.MaaManager)
+    scheduler.script_config = script_config()
+    scheduler.script_info = SimpleNamespace(script_id="test-script")
+    scheduler.maa_set_path = root / "config"
+    scheduler._update_config_dir = scheduler.maa_set_path
+    scheduler._updater_running = False
+    (root / "MAA.exe").touch()
+    pending = ("v6.1.0", "ready.zip")
+    with zipfile.ZipFile(root / pending[1], "w") as package:
+        package.writestr(
+            "resource/version.json", '{"last_updated":"2026-10-01 00:00:00.000"}'
+        )
+        package.writestr("resource/tasks/test.json", '{"opaque":"older"}')
+    monkeypatch.setattr(manager, "read_installed_release", lambda _: ("v6.0.0", "x64"))
+    monkeypatch.setattr(
+        manager.process, "is_process_stopped", AsyncMock(return_value=True)
+    )
+
+    async def install(*, target, pending):
+        with zipfile.ZipFile(root / pending[1]) as package:
+            package.extract("resource/version.json", root)
+            package.extract("resource/tasks/test.json", root)
+        if interruption == "cancelled":
+            raise asyncio.CancelledError
+
+    scheduler._install_pending_software_update = install
+    if interruption:
+        resource.latest_resource_clock.side_effect = OSError("offline")
+        error_type = (
+            asyncio.CancelledError
+            if interruption == "cancelled"
+            else manager.MaaUpdateUnsafeError
+        )
+        with pytest.raises(error_type):
+            await scheduler._install_round_update(pending)
+        # 新一批仍应先恢复已知降级的资源，再进入允许离线沿用旧安装的普通检查。
+        restarted = object.__new__(manager.MaaManager)
+        restarted.script_config = scheduler.script_config
+        restarted.script_info = scheduler.script_info
+        restarted.maa_set_path = scheduler.maa_set_path
+        restarted._maa_update_checked = False
+        restarted._prepare_software_update = AsyncMock()
+        task = SimpleNamespace(update_config_dir=scheduler.maa_set_path)
+        with pytest.raises(manager.MaaUpdateUnsafeError):
+            await restarted._prepare_software_update_once(task)
+        restarted._prepare_software_update.assert_not_awaited()
+        resource.latest_resource_clock.side_effect = None
+        await restarted._prepare_software_update_once(task)
+        restarted._prepare_software_update.assert_awaited_once()
+    else:
+        await scheduler._install_round_update(pending)
+    assert not scheduler._round_resource_record.exists()
+    assert resource.read_resource_clock(root) == target_clock
+    assert (root / "resource/tasks/test.json").read_text() == '{"opaque":"upstream"}'
+    downloader.assert_awaited_once()  # 安装前已缓存资源包。
+
+
+@pytest.mark.asyncio
 async def test_corrupt_resource_download_blocks_launch(resource_install):
     install, _, downloader = resource_install
 

@@ -693,6 +693,11 @@ class MaaManager(ScriptManagerBase):
     async def _prepare_software_update_once(self, task: AutoProxyTask) -> None:
         """首位实际运行账号做更新准备；同批后续账号仅执行本地安全检查。"""
         self._update_config_dir = task.update_config_dir
+        if self._round_resource_record.is_file():
+            await run_script_update(
+                ScriptUpdateRequest(str(self.script_info.script_id), "MAA"),
+                self._restore_round_resources,
+            )
         if not self._maa_update_checked:
             await run_script_update(
                 ScriptUpdateRequest(str(self.script_info.script_id), "MAA"),
@@ -704,8 +709,8 @@ class MaaManager(ScriptManagerBase):
         else:
             await self._check_software_update_safety()
 
-    async def _check_software_update_safety(self) -> None:
-        """后续账号只检查本地安装是否安全，避免重复更新请求。"""
+    async def _check_software_update_safety(self) -> datetime | None:
+        """检查本地安装，接管时返回当前资源版本供本体安装后核对。"""
         root = self.maa_set_path.parent
         if self._updater_running or not await process.is_process_stopped(
             root / "MAA.Updater.exe"
@@ -718,17 +723,20 @@ class MaaManager(ScriptManagerBase):
             raise MaaUpdateUnsafeError(
                 "MAA 官方更新器报告安装失败，不能安全启动后续账号任务"
             )
-        if self.script_config.Update.TakeoverEnabled and (
+        if not self.script_config.Update.TakeoverEnabled:
+            return None
+        if (
             not (root / "MAA.exe").is_file()
             or (
                 (release := read_installed_release(root)) is None
                 or parse_version(release[0]) is None
             )
-            or read_resource_clock(root) is None
+            or (clock := read_resource_clock(root)) is None
         ):
             raise MaaUpdateUnsafeError(
                 "MAA 当前安装或资源状态无法确认，不能安全启动后续账号任务"
             )
+        return clock
 
     async def _prepare_software_update(self, task: AutoProxyTask) -> bool:
         """启动前尽力更新；普通准备失败时沿用当前安装继续任务。"""
@@ -901,13 +909,75 @@ class MaaManager(ScriptManagerBase):
             raise MaaUpdateUnsafeError("无法核实 MAA 待装包版本，已停止后续代理")
         if compare_versions(current, target) >= 0:
             return
-        await self._check_software_update_safety()
+        resource_clock = await self._check_software_update_safety()
+
+        async def install() -> None:
+            if resource_clock is not None:
+                # 官方安装器可能覆盖整个资源树；取消或断电后仍须记得恢复目标。
+                try:
+                    _utils_io.write_file(
+                        self._round_resource_record,
+                        {"minimum": resource_clock.isoformat()},
+                    )
+                except OSError as error:
+                    raise MaaUpdateUnsafeError(
+                        "无法保存 MAA 资源恢复记录，已停止安装"
+                    ) from error
+            await self._install_pending_software_update(target=version, pending=pending)
+            if resource_clock is not None:
+                await self._restore_round_resources()
+
         await run_script_update(
-            ScriptUpdateRequest(str(self.script_info.script_id), "MAA"),
-            self._install_pending_software_update,
-            target=version,
-            pending=pending,
+            ScriptUpdateRequest(str(self.script_info.script_id), "MAA"), install
         )
+
+    @property
+    def _round_resource_record(self) -> Path:
+        key = _utils_config_archive.config_root_key(self.maa_set_path.parent)
+        return Path.cwd() / "data/maa_update/pending" / f"{key}.resources.json"
+
+    async def _restore_round_resources(self) -> None:
+        """本体包覆盖了较新的托管资源时，恢复到安装前的版本或更高。"""
+        root = self.maa_set_path.parent
+        record = self._round_resource_record
+
+        def resources_ready(minimum: datetime) -> bool:
+            clock = read_resource_clock(root)
+            return (
+                clock is not None
+                and clock >= minimum
+                and not has_incomplete_resource_update(root)
+            )
+
+        try:
+            minimum = datetime.fromisoformat(
+                _utils_io.read_dict_file(record)["minimum"]
+            )
+            if not resources_ready(minimum):
+                if not self.script_config.Update.TakeoverEnabled:
+                    raise MaaUpdateUnsafeError(
+                        "MAA 资源低于安装前版本，请恢复资源或开启更新接管后重试"
+                    )
+                assert self._update_config_dir is not None
+                github = use_maa_github_update(
+                    self.script_config,
+                    config_dirs=[self._update_config_dir, self.maa_set_path],
+                )
+                _, cdk = resolve_takeover_credentials(self.script_config)
+                await prepare_install_resources(
+                    root, github=github, cdk=cdk, progress=self.script_info.set_log
+                )
+                if not resources_ready(minimum):
+                    raise MaaUpdateUnsafeError(
+                        "MAA 本体更新后的资源未恢复到安装前版本，已停止后续代理"
+                    )
+            record.unlink()
+        except MaaUpdateUnsafeError:
+            raise
+        except Exception as error:
+            raise MaaUpdateUnsafeError(
+                "MAA 本体更新后未能恢复资源，已停止后续代理"
+            ) from error
 
     async def _install_pending_software_update(
         self, *, target: str | None = None, pending: tuple[str, str] | None = None
