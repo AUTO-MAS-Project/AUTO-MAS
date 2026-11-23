@@ -1,16 +1,38 @@
 import { describe, expect, it, vi } from 'vite-plus/test'
 import { openConfirm } from './useConfirm'
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
+function createMockHost() {
+  let captured: Record<string, unknown> = {}
+  const update = vi.fn((patch: Record<string, unknown>) => {
+    captured = { ...captured, ...patch }
+  })
+  const destroy = vi.fn()
+  const host = {
+    confirm: vi.fn((config: Record<string, unknown>) => {
+      captured = config
+      return { update, destroy } as never
+    }),
+  }
+  return {
+    host,
+    update,
+    getConfig: () => captured,
+  }
+}
+
 describe('openConfirm', () => {
   it('高危确认注入 danger、居中与标题栏避让类，并在 onOk 完成后返回 true', async () => {
-    let captured: Record<string, unknown> = {}
-    const host = {
-      confirm: vi.fn((config: Record<string, unknown>) => {
-        captured = config
-        return {} as never
-      }),
-    }
-
+    const { host, getConfig } = createMockHost()
     const onOk = vi.fn().mockResolvedValue(undefined)
     const pending = openConfirm(
       {
@@ -24,29 +46,59 @@ describe('openConfirm', () => {
       host as never
     )
 
-    expect(captured.centered).toBe(true)
-    expect(captured.okType).toBe('danger')
-    expect(captured.okButtonProps).toEqual({ danger: true })
-    expect(captured.wrapClassName).toBe('app-confirm-modal')
-    expect(captured.maskClosable).toBe(false)
+    const config = getConfig()
+    expect(config.centered).toBe(true)
+    expect(config.okType).toBe('danger')
+    expect(config.okButtonProps).toEqual({ danger: true })
+    expect(config.wrapClassName).toBe('app-confirm-modal')
+    expect(config.maskClosable).toBe(false)
 
-    await (captured.onOk as () => Promise<void>)()
+    await (config.onOk as () => Promise<void>)()
     expect(onOk).toHaveBeenCalledTimes(1)
     await expect(pending).resolves.toBe(true)
   })
 
-  it('点击取消时返回 false，onOk 抛错时不伪装成成功', async () => {
-    let captured: Record<string, unknown> = {}
-    const host = {
-      confirm: vi.fn((config: Record<string, unknown>) => {
-        captured = config
-        return {} as never
-      }),
-    }
+  it('异步确认未结束时锁定取消与 Esc，期间触发取消不会提前改变结果', async () => {
+    const { host, update, getConfig } = createMockHost()
+    const deferred = createDeferred<void>()
+    const closeSpy = vi.fn()
+
+    const pending = openConfirm(
+      {
+        title: '删除队列',
+        maskClosable: true,
+        onOk: () => deferred.promise,
+      },
+      host as never
+    )
+
+    const onOkPromise = (getConfig().onOk as () => Promise<void>)()
+
+    // 开始执行异步确认后应立即锁住取消按钮、Esc 与遮罩关闭
+    expect(update).toHaveBeenLastCalledWith({
+      cancelButtonProps: { disabled: true },
+      keyboard: false,
+      maskClosable: false,
+      closable: false,
+    })
+
+    // 确认仍在执行中时尝试取消，不应关闭也不应把结果算成 false
+    ;(getConfig().onCancel as (close?: () => void) => void)(closeSpy)
+    expect(closeSpy).not.toHaveBeenCalled()
+
+    deferred.resolve()
+    await onOkPromise
+    await expect(pending).resolves.toBe(true)
+  })
+
+  it('异步确认失败后恢复取消与 Esc 交互，随后取消可正常返回 false', async () => {
+    const { host, update, getConfig } = createMockHost()
+    const closeSpy = vi.fn()
 
     const failing = openConfirm(
       {
         title: '保存失败测试',
+        maskClosable: true,
         onOk: async () => {
           throw new Error('network failed')
         },
@@ -54,10 +106,18 @@ describe('openConfirm', () => {
       host as never
     )
 
-    await expect((captured.onOk as () => Promise<void>)()).rejects.toThrow('network failed')
+    await expect((getConfig().onOk as () => Promise<void>)()).rejects.toThrow('network failed')
 
-    // 失败后用户取消，Promise 应正常落定为 false，不永久挂起
-    ;(captured.onCancel as () => void)()
+    // 失败后应恢复取消按钮、Esc 与初始 maskClosable
+    expect(update).toHaveBeenLastCalledWith({
+      cancelButtonProps: { disabled: false },
+      keyboard: true,
+      maskClosable: true,
+      closable: false,
+    })
+
+    ;(getConfig().onCancel as (close?: () => void) => void)(closeSpy)
+    expect(closeSpy).toHaveBeenCalledTimes(1)
     await expect(failing).resolves.toBe(false)
   })
 })

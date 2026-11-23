@@ -35,21 +35,35 @@ const TONE_ICONS = {
  * 供非 setup 逻辑复用的统一确认弹窗入口。
  *
  * 默认居中、沿用 appOverlays.css 的标题栏避让，高危确认自动应用 danger 样式。
+ * 异步确认执行期间锁定取消按钮与 Esc，避免尚未完成的确认被提前算成取消；
  * 传入 Modal.useModal() 实例时可完整继承局部 ConfigProvider 上下文。
  */
 export function openConfirm(options: ConfirmOptions, host: ConfirmHost = Modal): Promise<boolean> {
   const tone: ConfirmTone = options.tone ?? 'warning'
   const Icon = TONE_ICONS[tone]
+  const initialMaskClosable = options.maskClosable ?? false
 
   return new Promise<boolean>(resolve => {
     let settled = false
+    let running = false
+    let modalInstance: ReturnType<ConfirmHost['confirm']> | undefined
+
     const finish = (value: boolean) => {
       if (settled) return
       settled = true
       resolve(value)
     }
 
-    host.confirm({
+    const setInteractionLocked = (locked: boolean) => {
+      modalInstance?.update?.({
+        cancelButtonProps: { disabled: locked },
+        keyboard: !locked,
+        maskClosable: locked ? false : initialMaskClosable,
+        closable: false,
+      })
+    }
+
+    modalInstance = host.confirm({
       title: options.title,
       content: options.description,
       icon: h(Icon),
@@ -58,18 +72,33 @@ export function openConfirm(options: ConfirmOptions, host: ConfirmHost = Modal):
       cancelText: options.cancelText,
       okType: tone === 'danger' ? 'danger' : 'primary',
       okButtonProps: tone === 'danger' ? { danger: true } : undefined,
+      cancelButtonProps: { disabled: false },
       centered: true,
-      maskClosable: options.maskClosable ?? false,
+      keyboard: true,
+      closable: false,
+      maskClosable: initialMaskClosable,
       zIndex: options.zIndex,
       wrapClassName: 'app-confirm-modal',
       onOk: async () => {
-        if (options.onOk) {
-          await options.onOk()
+        if (running) return
+        running = true
+        setInteractionLocked(true)
+        try {
+          if (options.onOk) {
+            await options.onOk()
+          }
+          finish(true)
+        } catch (error) {
+          running = false
+          setInteractionLocked(false)
+          throw error
         }
-        finish(true)
       },
-      onCancel: () => {
+      // 带 1 个参数让 AntD ActionButton 把关闭控制权交给本回调：执行中不关闭也不提前算作取消。
+      onCancel: (close?: () => void) => {
+        if (running) return
         finish(false)
+        if (typeof close === 'function') close()
       },
     })
   })
