@@ -5,117 +5,34 @@ description: Define AUTO-MAS backend models and configuration framework usage. U
 
 # MAS Data Model
 
-## Objective
+适用于 `app/models/schema.py`、`app/api/` 端点模型、`app/models/config/` 配置模型、`app/config/` 框架调用及 `task` 运行态模型。涉及调度任务树/锁时联动 `mas-task-scheduler`。
 
-Build backend data models that are explicit, consistent, and evolution-friendly.
+## 配置框架红线
 
-## Scope
+涉及配置定义、读写、事务、锁、信号、持久化、API 投影或历史升级前，**必读 [references/config-framework.md](references/config-framework.md)**。
 
-Apply to model definitions and configuration usage:
+- **单点声明**：配置字段只在 `ConfigEntry` / `ConfigGroup`（带类型与中文 `description`）声明一次，集合用 `ConfigCollection[T]` + `collection(...)`；API 投影一律经 `app/config/wire.py` 派生。
+- **禁止绕过框架**：禁止原地修改容器、直接改 `order`/`data` 或整组替换；热写必须通过整字段赋值或公开集合操作暂存，再在同一 Task 中 `await commit()`。
+- **运行态与常量**：运行态放 `PrivateAttr`，类常量放 `ClassVar`；计算字段用 `Virtual[T]` + `@virtual_field(...)`。
+- **启动快速初始化**：`activate(fast_init=True)` 共享单次局部事务，任一字段或 Init 信号失败必须整体回滚并退回逐字段路径，禁止复用失败尝试的值或假设外部副作用可回滚。
+- **框架变更需授权**：未经用户确认不得修改配置基类框架设计。
 
-1. Shared API contracts (`app/models/schema.py`) and endpoint-local contracts (`app/api/`)
-2. Persisted/runtime config models (`app/models/config/`) and framework/callers (`app/config/`)
-3. task/runtime state models (`task`)
+## 分层归属与类型约束
 
-For scheduling requirement trees, runtime UUIDs, Config-based task nodes, virtual results and lock ownership, also use [mas-task-scheduler](../mas-task-scheduler/SKILL.md). Its confirmed target tree has TaskItem directly containing script runs; migration-only queue wrappers and legacy aliases are not model-design precedents.
+1. **三层隔离**：`schema.py` / `app/api/`（对外契约）、`config`（持久化与校验）、`task`（运行态）职责分离。任务运行状态/日志的 Config 类订阅直接声明在任务模型定义之后，导入时不得触发宿主初始化。
+2. **明确类型**：优先具体类型、`Literal` 或枚举，避免 `Any`、无边界 `Dict[str, Any]` 与字符串化布尔/数字；可变默认值用 `default_factory`。
+3. **日期时间**：配置时间字段一律使用完整 `datetime`（UTC 存储，naive 输入按 UTC 解释，`tz(...)` 控制读取，序列化输出 UTC）。
+4. **可选与校验**：用类型系统或字段省略表达可选，禁止塞入非法占位哨兵值；校验器只补下层容器/`ref(...)` 未覆盖的缺失不变量，**禁止在校验器中执行网络/文件/进程副作用**。区分 Pydantic 拒绝约束与 `Annotated` 归一化语义。
+5. **敏感数据**：隔离 `password`/`token`/`key` 等敏感字段，禁止误暴露至响应模型，加解密逻辑不写进 schema 层。
 
-## Configuration Framework
+## 演进与迁移
 
-For config definitions, reads/writes, lifecycle, transactions, locks, signals, persistence, API projections or historical upgrades, read [config-framework.md](references/config-framework.md) before implementation. It records the framework invariants and points to current source and the developer manual. Ordinary schema/task-only work does not require this reference.
+- **内部改动彻底迁移**：MAS 内部模型变更须把历史数据与全部内部调用方迁至新契约，**不保留旧业务分支或平行字段**。
+- **迁移入口**：字段迁移用 `legacy(group=..., name=..., convert=...)`（仅作输入转换，非第二套运行契约）；结构与数据库升级归启动升级编排。
+- **禁止重复或无消费者字段**：新增字段前先核对已有字段（含特殊值如 `=0`）是否已表达同一语义，不为一个用户选择建两个重叠字段；未具备持久化、UI 与运行消费前，不提前加未来占位字段。
 
-Configuration fields are declared once in `ConfigEntry`/`ConfigGroup`; collections use `ConfigCollection[T]`. Hot writes stage whole-field or collection operations, then await `commit()`. Per-op transactions, explicit transaction boundaries and persistence completion are distinct contracts. Framework design changes follow existing user authorization; explain and obtain a decision for unapproved design changes before editing the base implementation.
+## 审查清单
 
-For startup activation, callers may pass `activate(fast_init=True)` to share one
-local transaction across the current Entry's field loop. The fast attempt keeps
-strict field order and immediate Init signals; any field or Init-signal failure
-rolls it back completely and reruns the original per-field path from the first
-field. Do not reuse values from the failed attempt or treat external side
-effects as transactional. The option does not change ordinary runtime
-`commit()` boundaries; the full lifecycle and activation-tree restrictions are
-in [config-framework.md](references/config-framework.md).
-
-## Model Ownership
-
-1. Shared `schema.py` and endpoint-local models define external API contracts; config projections derive from config classes through `app/config/wire.py`.
-2. `config` models define persisted configuration structure and validation behavior.
-3. `task` models define runtime execution state and orchestration-facing status.
-4. Keep transport contracts, persistence, and runtime state distinct. Task runtime status/log notifications are model business: declare Config class subscriptions directly after the task model definitions. Receivers may resolve the existing task registration, WS publisher and shared payload contracts at execution time; importing declarations alone must not initialize the host. Do not move L1 orchestration into models or add per-task sender injection.
-5. `ConfigEntry` subclasses contain `ConfigGroup` fields declared with typed Pydantic `Field` definitions and Chinese descriptions. Defaults and mutable values use suitable factories.
-6. `ConfigCollection[T]` records allowed concrete entry types; nested collections are declared through `collection(...)`. Runtime state belongs in `PrivateAttr`, class constants in `ClassVar`.
-
-## Structure And Types
-
-1. Use nested group models for meaningful domains (`Info`, `Run`, `Notify`, `Data`).
-2. Keep shared semantics aligned with `mas-schema-naming`.
-3. Keep domain-specific fields inside dedicated domain blocks.
-4. Keep index items and payload models separated.
-5. Prefer concrete types over `Any`.
-6. Use `Literal` or explicit enums for bounded value sets.
-7. Use optional types only when missing value has real business meaning.
-8. Avoid stringly-typed booleans/numbers in new model fields.
-9. Config date/time fields use complete `datetime`: UTC storage, naive input interpreted as UTC, `tz(...)` controls attribute reads, and serialization exports stored UTC. UI formatting does not truncate values.
-10. When a field is optional by omission, prefer absence over sentinel values that violate the declared type.
-
-## Defaults And Validation
-
-1. Use safe defaults for collection fields (`default_factory` when mutable).
-2. Use `None` defaults only for truly optional semantics.
-3. Avoid hidden execution-policy changes in defaults.
-4. Keep validation close to model definition.
-5. Keep correction/normalization deterministic.
-6. Do not encode high-level business workflow in low-level field validators.
-7. Reuse guarantees from config containers and declarative fields, including reference existence/type validation through `ref(...)`; validate only business invariants not already covered.
-8. Favor validators that reject or normalize one missing invariant, not "just in case" fallbacks for impossible states.
-9. Pydantic constraints reject invalid input; standard `Annotated` types provide explicitly defined normalization/default fallback. Keep those semantics distinct and avoid external corrector arguments.
-10. Computed config fields use `Virtual[T]` plus `@virtual_field(...)`. Reactive fields, UI visibility, encryption and legacy conversion have separate declarations described in the config reference.
-
-## Relationships And Sensitive Data
-
-1. Keep IDs typed consistently as strings in API-facing schema unless migration is planned.
-2. Keep relation fields explicit (`scriptId`, `userId`, `queueId`).
-3. Keep index models lightweight and independent of heavy payload models.
-4. Avoid duplicating relationship semantics with synonym fields.
-5. Mark and isolate sensitive fields clearly (`password`, `token`, `key`).
-6. Avoid exposing sensitive values in response models unless explicitly required.
-7. Keep encryption/decryption policy out of schema contracts and in proper model/service layers.
-
-## Evolution And Migration
-
-1. MAS-owned internal feature and model changes migrate historical data and all internal callers to the current contract; do not retain old business branches or parallel fields for backward compatibility.
-2. Recognize and convert historical formats at the migration boundary; ordinary business code uses only the current structure. Preserve user data and migration failure recovery according to the configuration reference.
-3. Config field migration uses `legacy(group=..., name=..., convert=...)`; document-structure and database upgrades belong to startup upgrade orchestration. Treat `legacy` as input conversion, not a second runtime contract.
-4. Avoid adding a second config field for the same user choice.
-5. If modes are mutually exclusive, merge them into one selector and make downstream toggling explicit.
-6. If modes are not mutually exclusive, keep one existing selector as the source of truth.
-7. Do not introduce future raw-config save fields or detailed-mode markers until persistence, UI, and runtime consumption all exist.
-8. Do not add placeholders for a future config surface when the product still lacks the corresponding edit entry or consumer.
-
-## Anti-Patterns
-
-1. One model serving unrelated responsibilities across layers.
-2. New fields duplicating existing semantics with different names.
-3. Validator logic performing network/file/process side effects.
-4. Unbounded `Dict[str, Any]` replacing known structured fields.
-5. Large domain policies hidden in model defaults.
-6. Defensive validators re-checking invariants enforced by lower-level config containers.
-7. Separate config options forcing users to choose the same domain concept twice.
-8. Optional fields represented by invalid placeholder values instead of omission or a correct union type.
-9. In-place container mutations, direct `order/data` edits, or whole-group replacement that bypass field staging, locks, signals and rollback.
-10. Adding a config class without its owning collection/registry, dependency activation order, derived API contract or actual consumer.
-
-## Review Checklist
-
-1. Model belongs to the correct layer (`schema/config/task`).
-2. Field naming aligns with canonical shared semantics.
-3. Types and optionality express real business meaning.
-4. Defaults are safe and behaviorally stable.
-5. Constraints are explicit and deterministic.
-6. Sensitive fields are protected from accidental exposure.
-7. Internal changes migrate historical data and callers to the current contract; external API obligations are assessed separately under `mas-api-contract`.
-8. Placement follows `mas-module-boundary` and API usage follows `mas-api-contract`.
-9. New validators check only missing invariants, not guarantees already provided by base containers.
-10. New config fields do not duplicate an existing selector or tab/mode choice.
-11. Optionality is expressed by the type system or field absence, not by values that conflict with the declared type.
-12. Config fields have exact types/defaults/Chinese descriptions in semantic `ConfigGroup` blocks and remain the single source for API projections.
-13. Collections declare allowed entry types, reference targets are registered before dependent activation, and partial updates preserve omission/null/masked-value semantics.
-14. Changes respect the transaction, whole-field assignment, signal, lock and persistence invariants in the config reference; verification uses isolated files and external-service substitutes.
+- 归属层正确（`schema`/`config`/`task`），命名对齐 `mas-schema-naming`，API 对齐 `mas-api-contract`。
+- 集合声明了具体成员类型，引用目标先于依赖项激活，局部更新区分省略 / `null` / 脱敏占位值。
+- 事务、整字段赋值、信号、锁与持久化满足 `config-framework.md`，测试使用隔离文件与外部替身。

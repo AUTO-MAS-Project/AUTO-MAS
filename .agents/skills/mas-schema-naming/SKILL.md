@@ -5,79 +5,23 @@ description: Define canonical naming for new backend config groups and API contr
 
 # MAS Schema Naming
 
-## Objective
-Standardize naming for future specialized backend schema implementations.
+约束**新增**后端配置分组与共享语义命名；默认不批量重命名既有遗留模块。公开配置模型字段统一 `PascalCase`，新脚本配置用 `Info`/`Run`/`Emulator` 分组，用户配置用 `Info`/`Data`/`Notify` 及领域专属分组。
 
-This skill constrains new domain work by default. It does not require retroactive renaming of existing legacy modules unless explicitly requested.
+## 共享语义标准命名表
 
-## Global Constraints
-Apply these constraints while using this skill.
+语义相同时必须复用下表名称，禁止同义漂移（如 `RootPath` 替代 `Path`）或跨组错放：
 
-1. Make minimal necessary changes first; avoid broad refactors unless explicitly requested.
-2. Align with current code style and existing project conventions in the touched module.
-3. Avoid over-engineering, over-abstraction, and defensive programming that does not match existing code patterns.
-4. Study similar existing implementations deeply before coding and follow established local patterns.
+| 语义 | 标准名 | 分组 | 语义 | 标准名 | 分组 |
+| --- | --- | --- | --- | --- | --- |
+| 脚本显示名 | `Name` | `Info` | 用户显示名 / ID | `Name` / `Id` | `User.Info` |
+| 脚本路径 | `Path` | `Info` | 用户启用状态 | `Status` | `User.Info` |
+| 模拟器 ID / 索引 | `Id` / `Index` | `Emulator` | 剩余天数 / 备注 / 标签 | `RemainedDay` / `Notes` / `Tag` | `User.Info` |
+| 切换策略 | `TaskTransitionMethod` | `Run` | 上次代理日期 / 次数 | `LastProxyDate` / `ProxyTimes` | `User.Data` |
+| 每日代理上限 | `ProxyTimesLimit` | `Run` | 人工核查结果 | `IfPassCheck` | `User.Data` |
+| 重试次数 / 超时 | `RunTimesLimit` / `RunTimeLimit` | `Run` | 通知总开关 / 统计 | `Enabled` / `IfSendStatistic` | `User.Notify` |
+| 邮件开关 / 收件人 | `IfSendMail` / `ToAddress` | `User.Notify` | Server 酱开关 / Key | `IfServerChan` / `ServerChanKey` | `User.Notify` |
 
-## Apply Workflow
-1. Determine whether the field is shared semantic or domain-specific semantic.
-2. For shared semantic, use the canonical name from this skill.
-3. For domain-specific semantic, keep naming local to the domain block.
-4. Keep public config-model field style consistent: `PascalCase`.
-5. When touching legacy modules, prefer compatibility-first edits and avoid broad rename-only refactors.
+## 规则
 
-## Canonical Structure For New Domains
-New script config entries use semantic groups such as `Info`, `Run` and, when meaningful, `Emulator`; user entries use `Info`, `Data`, `Notify` and domain-specific `Task/Stage/Game` groups. Entries derive from `ConfigEntry`/`DomainEntry`, groups from `ConfigGroup`, with fields/defaults/descriptions declared once.
-
-API projections derive from these classes through `ConfigInput[T]`/`ConfigPayload[T]`; omission/null representation is a contract concern, not a reason to duplicate optional group declarations. Existing business field names remain stable. See [the configuration framework reference](../mas-data-model/references/config-framework.md) for declarations and [API contracts](../mas-api-contract/SKILL.md) for endpoint-local/shared model placement.
-
-## Shared Naming Matrix
-Use these names when semantics are the same.
-
-| Semantic | Canonical name | Block |
-| --- | --- | --- |
-| Script display name | `Name` | `Info` |
-| Script runtime path | `Path` | `Info` |
-| Emulator id | `Id` | `Emulator` |
-| Emulator index | `Index` | `Emulator` |
-| Transition strategy | `TaskTransitionMethod` | `Run` |
-| Daily proxy limit | `ProxyTimesLimit` | `Run` |
-| Retry limit | `RunTimesLimit` | `Run` |
-| Runtime timeout | `RunTimeLimit` | `Run` |
-| User display name | `Name` | `User.Info` |
-| User id | `Id` | `User.Info` |
-| User enabled status | `Status` | `User.Info` |
-| Remaining day budget | `RemainedDay` | `User.Info` |
-| User note | `Notes` | `User.Info` |
-| User tag payload | `Tag` | `User.Info` |
-| Last proxy date | `LastProxyDate` | `User.Data` |
-| Proxy run count | `ProxyTimes` | `User.Data` |
-| Manual-check result | `IfPassCheck` | `User.Data` |
-| Notify enabled | `Enabled` | `User.Notify` |
-| Send statistic | `IfSendStatistic` | `User.Notify` |
-| Send mail | `IfSendMail` | `User.Notify` |
-| Mail receiver | `ToAddress` | `User.Notify` |
-| ServerChan enabled | `IfServerChan` | `User.Notify` |
-| ServerChan key | `ServerChanKey` | `User.Notify` |
-
-## Boundary For Domain-Specific Names
-1. Keep domain-specific semantics inside dedicated domain blocks.
-2. Do not force shared naming when semantics differ.
-3. Do not add synonym fields for the same semantic in one block.
-
-## Drift To Avoid In New Work
-1. Same semantic, different names (`Path` vs `RootPath`).
-2. Same semantic, different block placement (`Data` vs `Info`).
-3. Same semantic, mixed boolean style in the same block.
-
-## Compatibility Rule
-When canonicalizing an existing public field:
-
-1. Keep read compatibility for legacy payloads during migration.
-2. Prefer writing canonical names in new responses.
-3. Remove legacy names only after consumer migration is complete.
-
-## PR Checklist
-1. New specialized schema models follow this canonical matrix for shared semantics.
-2. Domain-specific fields stay in domain-specific blocks.
-3. No new synonym names are introduced for existing shared semantics.
-4. Legacy modules are not renamed in bulk unless explicitly in scope.
+- 领域专属字段留在专属分组，不强套共享名，也不在同一分组加同义字段。
+- 规范化既有公开字段时，迁移期保持旧输入读取兼容、新响应写标准名，待消费方全迁完再删旧名。
