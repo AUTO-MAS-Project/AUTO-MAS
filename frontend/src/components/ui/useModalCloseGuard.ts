@@ -2,6 +2,8 @@ import { onScopeDispose, watch, type Ref } from 'vue'
 
 export interface ModalCloseGuardOptions {
   open: Ref<boolean>
+  /** 编辑会话标识：父组件在同一更新轮次切换编辑对象时，靠它区分新旧会话 */
+  sessionKey?: () => unknown
   dirty: () => boolean
   submitting: () => boolean
   confirmDiscard: () => Promise<boolean>
@@ -11,7 +13,7 @@ export interface ModalCloseGuardOptions {
 /**
  * 弹窗关闭保护状态机。
  *
- * 每次打开（open 变化）分配独立会话序号并仅允许一个待决确认；
+ * 每次打开或切换 sessionKey 分配独立会话序号并仅允许一个待决确认；
  * 确认结果返回时若已切换会话、窗口已关闭、已卸载或已进入提交态，则忽略旧确认。
  */
 export function useModalCloseGuard(options: ModalCloseGuardOptions) {
@@ -19,20 +21,17 @@ export function useModalCloseGuard(options: ModalCloseGuardOptions) {
   let disposed = false
   let pendingConfirm: { sessionId: number; promise: Promise<boolean> } | null = null
 
-  // 使用 sync 刷新：父组件在同一 tick 内先关再开（切另一份编辑）也能立即递增会话序号。
-  watch(
-    options.open,
-    () => {
-      sessionId += 1
-      pendingConfirm = null
-    },
-    { flush: 'sync' }
-  )
+  const invalidateSession = () => {
+    sessionId += 1
+    pendingConfirm = null
+  }
+
+  // 使用 sync 刷新：在同一 tick 内切换 open 或 sessionKey 时立即使旧确认失效。
+  watch([options.open, () => options.sessionKey?.()], invalidateSession, { flush: 'sync' })
 
   onScopeDispose(() => {
     disposed = true
-    sessionId += 1
-    pendingConfirm = null
+    invalidateSession()
   })
 
   const requestClose = (): Promise<boolean> => {
@@ -50,6 +49,7 @@ export function useModalCloseGuard(options: ModalCloseGuardOptions) {
     }
 
     const currentSession = sessionId
+    const currentKey = options.sessionKey?.()
     const promise = (async () => {
       try {
         const confirmed = await options.confirmDiscard()
@@ -57,6 +57,7 @@ export function useModalCloseGuard(options: ModalCloseGuardOptions) {
           !confirmed ||
           disposed ||
           sessionId !== currentSession ||
+          !Object.is(options.sessionKey?.(), currentKey) ||
           !options.open.value ||
           options.submitting()
         ) {

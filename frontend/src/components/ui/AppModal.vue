@@ -48,6 +48,8 @@ const props = withDefaults(
     submitting?: boolean
     /** 有未保存变更：点击取消或遮罩关闭前弹出确认 */
     dirty?: boolean
+    /** 编辑会话标识：父组件在同一轮更新切换编辑对象时传新值，防止旧确认误关新编辑 */
+    sessionKey?: string | number | symbol | null
     dirtyTitle?: string
     dirtyDescription?: string
     /** body: 由弹窗正文单滚动体滚动；none: 交给内部独立面板（如编辑器）管理滚动 */
@@ -74,6 +76,7 @@ const props = withDefaults(
     okDisabled: false,
     submitting: false,
     dirty: false,
+    sessionKey: undefined,
     dirtyTitle: undefined,
     dirtyDescription: undefined,
     scroll: 'body',
@@ -124,6 +127,7 @@ const resolvedWrapClassName = computed(() =>
 
 const { requestClose } = useModalCloseGuard({
   open,
+  sessionKey: () => props.sessionKey,
   dirty: () => props.dirty,
   submitting: () => props.submitting,
   confirmDiscard: () =>
@@ -142,6 +146,11 @@ const { requestClose } = useModalCloseGuard({
 const handleCancel = () => {
   void requestClose()
 }
+
+defineExpose({
+  /** 供使用自定义头部/底部插槽的调用方走同一套提交锁定与未保存关闭保护 */
+  requestClose,
+})
 
 const handleOk = () => {
   if (props.submitting || props.okDisabled) return
