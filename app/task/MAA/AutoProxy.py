@@ -1582,17 +1582,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     for task in failed_sanity:
                         self.task_dict[task] = False
 
-                # 队列结束日志早于退出动作，等 MAA 写回配置后再读待装登记。
-                if self.cur_user_log.status in ("Success!", "MAA 部分任务执行失败"):
-                    maa_process = self.maa_process_manager.process
-                    assert maa_process is not None
-                    try:
-                        await asyncio.wait_for(maa_process.wait(), timeout=10)
-                    except TimeoutError:
-                        if not await process.kill_process(self.maa_exe_path):
-                            raise MaaUpdaterRunningError(
-                                "无法确认 MAA 已停写，已停止后续代理"
-                            )
+                await self._stop_round_process(
+                    wait_for_exit=self.cur_user_log.status
+                    in ("Success!", "MAA 部分任务执行失败")
+                )
 
                 if self.cur_user_log.status == "Success!":
                     # 剩余任务成功不覆盖此前明确失败且没有重试的体力任务。
@@ -1616,15 +1609,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                         f"{self.cur_user_log.status}\n正在中止相关程序"
                     )
 
-                    await self.maa_process_manager.kill()
                     # 关模拟器之前把现场画面留下来：模拟器一关 adb 就补不到了。
                     # 每次失败尝试都刷新，最后一次失败的画面才是最终现场。
                     self._failure_shot = await self._take_failure_shot()
                     await close_emulator(self)
-                    if not await process.kill_process(self.maa_exe_path):
-                        raise MaaUpdaterRunningError(
-                            "无法确认 MAA 已停写，已停止后续代理"
-                        )
 
                     # 绿票商店每月顺手买一次，失败不重试也不惊动用户，月份没写回下次调度自会再来
                     if self.mode == "GreenTicketStore":
@@ -1715,6 +1703,30 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             f"账号 {self.cur_user_item.name} 本轮跳过库存保持/养成执行, "
             "请检查 MAA 数据目录的写入权限"
         )
+
+    async def _stop_round_process(self, *, wait_for_exit: bool) -> None:
+        """队列完成日志早于退出动作，优先等 MAA 自行写回登记，再确认停写。"""
+        try:
+            if wait_for_exit:
+                proc = self.maa_process_manager.process
+                assert proc is not None
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=10)
+                except TimeoutError:
+                    pass
+                else:
+                    if await process.is_process_stopped(self.maa_exe_path):
+                        return
+            await self.maa_process_manager.kill()
+            if await process.kill_process(
+                self.maa_exe_path
+            ) and await process.is_process_stopped(self.maa_exe_path):
+                return
+        except Exception as error:
+            raise MaaUpdaterRunningError(
+                "无法确认 MAA 已停写，已停止后续代理"
+            ) from error
+        raise MaaUpdaterRunningError("无法确认 MAA 已停写，已停止后续代理")
 
     async def _complete_round_update(self) -> None:
         """一次真实启动只检查一次登记；官方安装单独计时。"""
@@ -3294,11 +3306,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             logger.info("MAA 收尾: 停止 MAA 进程")
             # 任务收尾时 MAA 多半还在跑任务, 发关闭消息会弹「确定要退出吗」把收尾卡住;
             # 需要等 MAA 自己退出去落盘的只有配置会话 (ScriptConfig)。
-            await self.maa_process_manager.kill()
-            stopped = await process.kill_process(self.maa_exe_path)
             try:
-                if self._round_needs_update and not stopped:
-                    raise MaaUpdaterRunningError("无法确认 MAA 已停写，已停止后续代理")
+                await self._stop_round_process(wait_for_exit=False)
                 self._remember_pending_update()
                 await self._complete_round_update()
             except (MaaUpdateUnsafeError, MaaUpdaterRunningError) as error:

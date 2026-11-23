@@ -76,7 +76,7 @@ async def test_maa_finalizer_archives_original_without_system_temp(
         run_book={"Annihilation": False, "Routine": False},
         stopped_manually=False,
         install_error=None,
-        _round_needs_update=False,
+        _stop_round_process=AsyncMock(),
         _complete_round_update=AsyncMock(),
         maa_log_monitor=SimpleNamespace(stop=AsyncMock()),
         maa_process_manager=SimpleNamespace(kill=AsyncMock()),

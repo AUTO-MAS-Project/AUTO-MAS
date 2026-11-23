@@ -166,7 +166,7 @@ def finalizer(monkeypatch, tmp_path):
         run_book={"Annihilation": True, "Routine": True},
         stopped_manually=False,
         install_error=None,
-        _round_needs_update=False,
+        _stop_round_process=AsyncMock(),
         _complete_round_update=AsyncMock(),
         maa_log_monitor=SimpleNamespace(stop=AsyncMock()),
         maa_process_manager=SimpleNamespace(kill=AsyncMock()),
@@ -289,3 +289,16 @@ async def test_progress_refresh_preserves_targets_until_confirmed(
     assert json.loads(config.Task.CultivateTargets) == (
         [] if result == "success" else json.loads(raw)
     )
+
+
+@pytest.mark.asyncio
+async def test_updater_still_writing_preserves_account_settlement(finalizer):
+    from app.task.MAA.tools.UpdateMAA import MaaUpdaterRunningError
+
+    finalizer.install_error = MaaUpdaterRunningError("正在写盘")
+    await AutoProxyTask.final_task(finalizer)
+    finalizer._stop_round_process.assert_not_awaited()
+    finalizer._complete_round_update.assert_not_awaited()
+    finalizer.run_user_scripts_after.assert_awaited_once()
+    finalizer.history.save_user_history.assert_awaited_once()
+    assert finalizer.cur_user_config.Data.ProxyTimes == 1

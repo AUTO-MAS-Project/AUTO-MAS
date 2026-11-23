@@ -646,13 +646,18 @@ class MaaManager(ScriptManagerBase):
             if isinstance(task, AutoProxyTask):
                 self._active_proxy_task = task
                 await self._prepare_software_update_once(task)
-            await self.run_user_task(
-                self.script_info.user_list[self.script_info.current_index], task
-            )
+            try:
+                await self.run_user_task(
+                    self.script_info.user_list[self.script_info.current_index], task
+                )
+            finally:
+                # 用户停止也会经过账号收尾；未确认停写时，父层不能还原原生配置。
+                if isinstance(task, AutoProxyTask) and isinstance(
+                    task.install_error, MaaUpdaterRunningError
+                ):
+                    self._updater_running = True
             if isinstance(task, AutoProxyTask):
                 if task.install_error is not None:
-                    if isinstance(task.install_error, MaaUpdaterRunningError):
-                        self._updater_running = True
                     raise task.install_error
                 self._remember_pending_update()
             # AutoProxyTask 失败时在关模拟器前存有现场画面；ScriptConfig 会话没有

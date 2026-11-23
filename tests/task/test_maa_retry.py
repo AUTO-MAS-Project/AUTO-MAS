@@ -241,7 +241,10 @@ async def test_task_failure_retry_scope(
         "get_stage_info",
         AsyncMock(return_value={"Activity": [{"Value": "ACT-1", "Drop": "30013"}]}),
     )
-    monkeypatch.setattr(module.process, "kill_process", AsyncMock())
+    monkeypatch.setattr(module.process, "kill_process", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        module.process, "is_process_stopped", AsyncMock(return_value=True)
+    )
     monkeypatch.setattr(module.Notify, "send_notice", AsyncMock())
     monkeypatch.setattr(module.Publisher, "send", AsyncMock())
     if cultivate:
