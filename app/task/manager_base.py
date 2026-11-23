@@ -177,7 +177,9 @@ class ScriptManagerBase(NotificationTaskBase):
         )
         logger.info(line)
         await self.send_notice(
-            level="error" if status == "异常" else "info", message=line
+            level="error" if status == "异常" else "info",
+            message=line,
+            source_script_type=self.script_info.info.script_type,
         )
 
     async def skip_user(
@@ -190,7 +192,11 @@ class ScriptManagerBase(NotificationTaskBase):
         # 专项的 check() 已经标记为跳过时保留该状态，不能改成代理失败。
         if user.status == "等待":
             await user.set_state(status="异常")
-        await self.send_notice(level="error", message=reason)
+        await self.send_notice(
+            level="error",
+            message=reason,
+            source_script_type=self.script_info.info.script_type,
+        )
 
     def maintenance_game(self, user_config: UserConfigType) -> str | None:
         """专项按账号区服声明公告对象；未接入公告的专项不查询。"""

@@ -353,13 +353,19 @@ class TaskExecuteBase(ABC):
         return TaskMode.SCRIPT_CONFIG if mode == TaskMode.SCRIPT_VIEW else mode
 
     async def send_notice(
-        self, *, level: Literal["info", "warning", "error"], message: str
+        self,
+        *,
+        level: Literal["info", "warning", "error"],
+        message: str,
+        source_script_type: str | None = None,
     ) -> None:
         """[兼容旧专项] 旧专项通知便捷入口；新代码使用所属业务层的既有通知能力。"""
         await Publisher.send(
             id=self.task_info.task_id,
             type=protocol.TASK_NOTICE,
-            data=WSTaskNoticeData(level=level, message=message),
+            data=WSTaskNoticeData(
+                sourceScriptType=source_script_type, level=level, message=message
+            ),
         )
 
     @property

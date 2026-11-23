@@ -290,7 +290,11 @@ class ScriptExpander(TaskBase):
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=str(error)),
+                data=WSTaskNoticeData(
+                    sourceScriptType=script.info.script_type,
+                    level="error",
+                    message=str(error),
+                ),
             )
         finally:
             await self._release_script_lock()
