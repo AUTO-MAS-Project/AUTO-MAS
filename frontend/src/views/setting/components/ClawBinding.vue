@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { CheckCircleOutlined, QrcodeOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import type { UnwrapNestedRefs } from 'vue'
 import type { useClawBinding } from '../useClawBinding'
+import { AppModal } from '@/components/ui'
 import QQGroupCommands from './QQGroupCommands.vue'
 import QQManualCredentials from './QQManualCredentials.vue'
 
@@ -183,15 +184,14 @@ onBeforeUnmount(() => clearInterval(groupsTimer))
       </a-typography-paragraph>
     </a-form>
   </div>
-  <a-modal
+  <AppModal
     :open="binding.open"
     :title="binding.label('LoginTitle')"
     :width="400"
-    :z-index="1050"
+    layer="nested"
+    footer="none"
     :get-container="getContainer"
-    :footer="null"
     :body-style="{ maxHeight: 'calc(100vh - 160px)', overflowY: 'auto' }"
-    centered
     @cancel="binding.close"
   >
     <div class="qr-content">
@@ -221,7 +221,7 @@ onBeforeUnmount(() => clearInterval(groupsTimer))
         t('core.common.confirm')
       }}</a-button>
     </div>
-  </a-modal>
+  </AppModal>
 </template>
 
 <style scoped>

@@ -1,9 +1,6 @@
 <template>
   <!-- 外部脚本更新 -->
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('core.edit.hsrExternalUpdate') }}</h3>
-    </div>
+  <SectionCard variant="plain" :title="t('core.edit.hsrExternalUpdate')">
     <div class="section-hint">{{ t('core.edit.hsrUpdateSectionHint') }}</div>
     <a-row :gutter="24">
       <a-col :xs="24" :lg="12">
@@ -174,7 +171,7 @@
         </a-col>
       </a-row>
     </a-form-item>
-  </div>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
@@ -182,6 +179,7 @@ import { computed, onBeforeUnmount, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import { SectionCard } from '@/components/ui'
 import {
   useHSRPluginApi,
   type HSRCapabilitySnapshot,

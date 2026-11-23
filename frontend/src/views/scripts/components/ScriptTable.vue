@@ -75,6 +75,7 @@
                     :password-expanded="expandedUserPasswords.has(user.id)"
                     @toggle-disclosure="toggleDisclosure"
                     @edit="emit('editUser', $event)"
+                    :on-delete="props.onDeleteUser"
                     @delete="emit('deleteUser', $event)"
                     @toggle-status="emit('toggleUserStatus', $event)"
                   />
@@ -118,6 +119,7 @@ interface Props {
   copyingScriptId?: string | null
   searching?: boolean
   retryingUsers?: ReadonlySet<string>
+  onDeleteUser?: (user: ScriptListUser) => void | Promise<unknown>
 }
 
 interface Emits {

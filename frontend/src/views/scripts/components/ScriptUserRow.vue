@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
+import { ConfirmActionButton } from '@/components/ui'
 import { parseStatusTagList } from '@/composables/useStatusTag'
 import type { ScriptListItem, ScriptListUser } from '../scriptListModel'
 import {
@@ -23,6 +24,7 @@ const props = defineProps<{
   user: ScriptListUser
   accountExpanded: boolean
   passwordExpanded: boolean
+  onDelete?: (user: ScriptListUser) => void | Promise<unknown>
 }>()
 const emit = defineEmits<{
   edit: [user: ScriptListUser]
@@ -56,7 +58,8 @@ const handlePasswordClick = (user: ScriptListUser) =>
 const handleZzzOdAccountClick = (user: ScriptListUser) =>
   copyAndExpand(user, 'account', getZzzOdAccountValue(user))
 const handleEditUser = (user: ScriptListUser) => emit('edit', user)
-const handleDeleteUser = (user: ScriptListUser) => emit('delete', user)
+const handleDeleteUser = (user: ScriptListUser) =>
+  props.onDelete ? props.onDelete(user) : emit('delete', user)
 const handleToggleUserStatus = (user: ScriptListUser) => emit('toggleStatus', user)
 // 获取账号ID显示文本
 const getUserIdDisplayText = (user: ScriptListUser): string => {
@@ -225,22 +228,23 @@ const getZzzOdAccountText = (user: ScriptListUser): string => {
             {{ t('core.comp.edit') }}
           </a-button>
         </a-tooltip>
-        <a-popconfirm
-          :title="t('core.comp.deleteThisUser')"
-          :description="t('core.comp.thisCannotBeUndone')"
-          :ok-text="t('core.comp.ok')"
-          :cancel-text="t('core.comp.cancel')"
-          @confirm="handleDeleteUser(user)"
-        >
-          <a-tooltip :title="t('core.comp.deleteUser')">
-            <a-button type="default" size="middle" danger class="user-action-btn">
-              <template #icon>
-                <DeleteOutlined />
-              </template>
-              {{ t('core.comp.delete') }}
-            </a-button>
-          </a-tooltip>
-        </a-popconfirm>
+        <a-tooltip :title="t('core.comp.deleteUser')">
+          <ConfirmActionButton
+            :title="t('core.comp.deleteThisUser')"
+            :description="t('core.comp.thisCannotBeUndone')"
+            :ok-text="t('core.comp.ok')"
+            :cancel-text="t('core.comp.cancel')"
+            :confirm="() => handleDeleteUser(user)"
+            tone="danger"
+            size="middle"
+            class="user-action-btn"
+          >
+            <template #icon>
+              <DeleteOutlined />
+            </template>
+            {{ t('core.comp.delete') }}
+          </ConfirmActionButton>
+        </a-tooltip>
       </div>
     </div>
   </div>
